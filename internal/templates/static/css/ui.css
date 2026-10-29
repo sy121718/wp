@@ -1027,7 +1027,7 @@ details[open] > summary::after { transform: rotate(0deg); }
 .badge-mute    { background: var(--sky-c-bg-hover, #ececec);   color: var(--sky-c-text-mute, #5f6670); }
 
 /* 语义名 → 外观的映射点。Go 侧一律出**语义** tone（ok / warn / danger / mute / info，
-   见 docs/rules/template-boundary.md §语义 vs 外观），颜色只在这两个别名里定义：
+   见 AGENTS.md §语义 vs 外观），颜色只在这两个别名里定义：
    换一套视觉（改色、换图标、换成圆点）改这里，Go 与模板不动。
    别名而不是把 Go 的 return 改成 success/warning：通用词在语义层更稳，且 "ok/warn"
    这组说法已被 sessionEventTone 用着（ai/sessions 的事件徽标）。 */

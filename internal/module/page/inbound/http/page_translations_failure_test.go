@@ -2,7 +2,7 @@ package pagehttp
 
 // page_translations_failure_test.go — 翻译工作台整页 GET 的失败出口回归（task-122，批次 B）。
 //
-// 被守的边界（docs/rules/template-boundary.md 的「整页 GET 的失败出口」）：
+// 被守的边界（AGENTS.md 的「整页 GET 的失败出口」）：
 //  1. 每一种结论都是**同一页**的完整 HTML —— 整页 GET 由浏览器导航发起，回 JSON / 裸文本 /
 //     半截渲染，用户拿到的都是一个坏掉的页面：没有标题栏与菜单，地址栏还停在原处；
 //  2. 状态码是结论的一部分：参数缺失 400、资源不存在 404、取数失败 500。

@@ -2,7 +2,7 @@ package pagemodel
 
 // page_redirect_model.go — 重定向路由（page_routes 的 redirect 行）的最小读写面。
 //
-// 表所有权说明：page_routes 属 publication 模块（docs/02-domain.md §page_routes），
+// 表所有权说明：page_routes 属 publication 模块（AGENTS.md §page_routes），
 // 「激活 / 取消激活 / 标记重定向 / 按实体批量删除」都经 pubcontract 走。
 // 本文件只补两个 contract 尚未提供、而 SEO-025 的重定向管理页必须用到的最小能力：
 //   · 列出本工程全部 redirect 行（回答「当前有哪些 301」）；

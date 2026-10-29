@@ -1,5 +1,5 @@
 // Package scaffold 插件脚手架：`plugin init <name>` 生成标准插件模板工程
-// （docs/06-plugin-system.md §5，对标 strapi generate / GrapesJS 插件模板）。
+// （AGENTS.md §5，对标 strapi generate / GrapesJS 插件模板）。
 //
 // 生成即合法：manifest 可过 plugincomp.ParseManifest，模板文件命名符合
 // components/{template}.jet 约定，migrations 示例含 CREATE SCHEMA + 建表。
@@ -108,7 +108,7 @@ func componentTemplate(label string) string {
 `)
 }
 
-// migrationSQL 示例迁移（CREATE SCHEMA + 建表，docs/06 §8 约定）。
+// migrationSQL 示例迁移（CREATE SCHEMA + 建表，AGENTS.md §8 约定）。
 func migrationSQL(name string) string {
 	return fmt.Sprintf(`-- 001_init.sql — %s 插件 L1 数据层初始化
 CREATE SCHEMA IF NOT EXISTS plugin_%s;
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS plugin_%s.demo_records (
 func readme(name string) string {
 	return fmt.Sprintf(`# %s 插件
 
-标准插件模板（docs/06-plugin-system.md）。目录说明：
+标准插件模板（AGENTS.md）。目录说明：
 
 - manifest.json         插件清单（组件 + 预设 + 迁移声明）
 - components/           组件 Jet 模板（{{.V.字段}} 走检查器 props）

@@ -319,7 +319,7 @@ func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 // 双向断言是刻意的：只断言「传了豁免就为空」会被一条恒返回空的巡检骗过，
 // 而恒空的门禁比没有门禁更糟（它给出已经检查过的错觉）。
 //
-// 豁免名单的**值**不在这里定义（那是工程判断，归口 docs/rules/database.md 与 pkg/rls）——
+// 豁免名单的**值**不在这里定义（那是工程判断，归口 AGENTS.md 与 pkg/rls）——
 // 测试里写出来的这两个名字是审计 DB-01 的口径，用于对账，不是第二份真源。
 func TestAuditRLSCoverageWhitelist(t *testing.T) {
 	db := newPartitionFixture(t)

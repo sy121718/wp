@@ -1,6 +1,6 @@
 package feature
 
-// product_override_test.go — 商品页双轨链路（迁移 281/282，docs/04-C-instance-override.md）：
+// product_override_test.go — 商品页双轨链路（迁移 281/282，AGENTS.md）：
 // 模式分叉判据、模板更新的 stale 分流、重新套用预设、两类回滚。
 //
 // 复用 detailFixture（真实装配：隔离 PG schema + 生产迁移 + 商品/模板/发布三套 service）。

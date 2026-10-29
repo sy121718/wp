@@ -64,41 +64,34 @@ func (h *Handle) returnBulkApprove(c *gin.Context, raw map[string]json.RawMessag
 		return
 	}
 	operatorID, operatorName := operatorFromContext(c)
-	res := orderWriteBulkResult{Items: make([]orderWriteBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		item := orderWriteBulkItem{ID: rawID}
-		id, perr := strconv.ParseUint(rawID, 10, 64)
-		switch {
-		case perr != nil || id == 0:
-			// 形状先行：这一条压根不是 id，没有库也能判出来。
-			item.Message = orderWriteParamText(c)
-		default:
-			_, err := h.svc.ApproveReturn(ctx, &orderdto.ReturnReviewReq{
-				ReturnID: id,
-				Remark:   remark,
-				// 批量一律不自动入库（见文件头注释）：批档白名单里也没有这个键。
-				AutoReceive: false,
-				// 操作人由会话覆盖写入，绝不受请求体影响。
-				OperatorType: orderOperatorTypeAdmin,
-				OperatorID:   operatorID,
-				OperatorName: operatorName,
-			})
-			if err != nil {
-				logger.Scene(orderWriteScene).With("id", rawID).Error(err, "批量同意退货申请失败")
-				item.Message = orderReasonText(c, err)
-			} else {
-				item.Updated = true
-			}
-		}
-		if item.Updated {
-			res.Updated++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
+
+	// 整批预检 + 全成或全败（B06）：与状态流转 / 取消两个批档同一形态。
+	if blocked := orderBulkShapeBlocked(c, ids); len(blocked) > 0 {
+		orderBulkReject(c, blocked)
+		return
 	}
-	response.Success(c, res)
+	// **整批同一事务**（ApproveReturnBatch）：任一条不可审即全部回滚。
+	reqs := make([]*orderdto.ReturnReviewReq, 0, len(ids))
+	for _, rawID := range ids {
+		id, _ := strconv.ParseUint(rawID, 10, 64)
+		reqs = append(reqs, &orderdto.ReturnReviewReq{
+			ReturnID: id,
+			Remark:   remark,
+			// 批量一律不自动入库（见文件头注释）：批档白名单里也没有这个键。
+			AutoReceive: false,
+			// 操作人由会话覆盖写入，绝不受请求体影响。
+			OperatorType: orderOperatorTypeAdmin,
+			OperatorID:   operatorID,
+			OperatorName: operatorName,
+		})
+	}
+	if err := h.svc.ApproveReturnBatch(ctx, reqs); err != nil {
+		logger.Scene(orderWriteScene).Error(err, "批量同意退货申请失败")
+		orderBulkReject(c, orderBulkReasonBlocked(ids[0], orderReasonText(c, err)))
+		return
+	}
+	response.Success(c, orderWriteBulkResult{Updated: len(ids)})
 }
 
 // returnBulkReject 批档拒绝退货（POST /api/order/return/reject 的批档形状）：理由必填。
@@ -120,34 +113,28 @@ func (h *Handle) returnBulkReject(c *gin.Context, raw map[string]json.RawMessage
 		return
 	}
 	operatorID, operatorName := operatorFromContext(c)
-	res := orderWriteBulkResult{Items: make([]orderWriteBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		item := orderWriteBulkItem{ID: rawID}
-		id, perr := strconv.ParseUint(rawID, 10, 64)
-		switch {
-		case perr != nil || id == 0:
-			item.Message = orderWriteParamText(c)
-		default:
-			if _, err := h.svc.RejectReturn(ctx, &orderdto.ReturnReviewReq{
-				ReturnID:     id,
-				Remark:       remark,
-				OperatorType: orderOperatorTypeAdmin,
-				OperatorID:   operatorID,
-				OperatorName: operatorName,
-			}); err != nil {
-				logger.Scene(orderWriteScene).With("id", rawID).Error(err, "批量拒绝退货申请失败")
-				item.Message = orderReasonText(c, err)
-			} else {
-				item.Updated = true
-			}
-		}
-		if item.Updated {
-			res.Updated++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
+
+	// 与同意批档同一形态：整批预检 + 全成或全败。
+	if blocked := orderBulkShapeBlocked(c, ids); len(blocked) > 0 {
+		orderBulkReject(c, blocked)
+		return
 	}
-	response.Success(c, res)
+	reqs := make([]*orderdto.ReturnReviewReq, 0, len(ids))
+	for _, rawID := range ids {
+		id, _ := strconv.ParseUint(rawID, 10, 64)
+		reqs = append(reqs, &orderdto.ReturnReviewReq{
+			ReturnID:     id,
+			Remark:       remark,
+			OperatorType: orderOperatorTypeAdmin,
+			OperatorID:   operatorID,
+			OperatorName: operatorName,
+		})
+	}
+	if err := h.svc.RejectReturnBatch(ctx, reqs); err != nil {
+		logger.Scene(orderWriteScene).Error(err, "批量拒绝退货申请失败")
+		orderBulkReject(c, orderBulkReasonBlocked(ids[0], orderReasonText(c, err)))
+		return
+	}
+	response.Success(c, orderWriteBulkResult{Updated: len(ids)})
 }

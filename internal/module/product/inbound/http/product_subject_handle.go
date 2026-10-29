@@ -383,7 +383,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 // 商品不存在（含没给 product 参数）渲染 .empty-state + 返回列表链接，**不 500**：
 // 手输 URL、书签失效、商品刚被删都会走到这里，500 什么也说明不了。
 // 但状态码要说实话：这是「这个 URL 指向的商品不存在」= 404 + no-store
-// （契约见 docs/rules/template-boundary.md §整页 GET 的失败出口），此前一律 200 且可缓存。
+// （契约见 AGENTS.md §整页 GET 的失败出口），此前一律 200 且可缓存。
 //
 // 取数**失败**与「不存在」此前也混在同一条路径上：`derr == nil && detail != nil` 把
 // 「读不出来」（连接断了、权限、超时）一起吞成了「商品不存在」空态 —— 用户以为商品被删了。
@@ -411,7 +411,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 // 前端不自己拼属性名 —— 属性值改名后前端那份就会显示旧名字。
 // ProductsVariantPreview 组合生成的**预览**（POST /admin/products/variant/preview，不落库）。
 //
-// 用户口径（docs/14 §8）：「生产只是显示，并不会存入数据库，必须保存才行」。
+// 用户口径（AGENTS.md §8）：「生产只是显示，并不会存入数据库，必须保存才行」。
 // 因此本端点只回答「点这次生成会往前端清单里追加哪些行」：
 //   - 笛卡尔积、维度与数量上限、与既有组合的去重全在 service（与落库路径同一套规则）；
 //   - SKU 由服务端按变体 SKU 规则生成（前端不复刻这套算法），运营可在清单里逐行改写；

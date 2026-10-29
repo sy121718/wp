@@ -7,7 +7,7 @@ package contenttemplatehttp
 // 这里只注册后台列表页与带样例实体参数的编辑跳转。
 //
 // 权限：注册落点在 contenttemplate_page_router.go；页面 GET 的 Casbin 待补
-//（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3），写动作已挂 /api/contenttemplate/* 权限点。
+//（见 AGENTS.md §4.3），写动作已挂 /api/contenttemplate/* 权限点。
 
 // 分工：数据的取回与聚合在 contenttemplate service（Impact），这里只把它翻译成
 // 模板能直接渲染的形状，并把「查不出来 / 可能不完整」这两种状态说清楚 ——

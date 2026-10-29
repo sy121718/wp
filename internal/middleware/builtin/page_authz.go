@@ -1,6 +1,6 @@
 package builtin
 
-// page_authz.go — 后台**页面 GET** 的鉴权判定（审计项见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
+// page_authz.go — 后台**页面 GET** 的鉴权判定（审计项见 AGENTS.md §4.3）。
 //
 // 背景：菜单按权限渲染，但**菜单隐藏不是访问控制** —— 任何登录账号直接输 URL 就能进。
 // 实测（2026-10-08）：页面组 GET 里只有 28 条挂了 Casbin，analytics / content / block /

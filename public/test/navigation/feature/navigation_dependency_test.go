@@ -1,6 +1,6 @@
 package feature
 
-// navigation_dependency_test.go — 导航变更的失效传播（审计遗留缺口，docs/03-pipeline.md §8）。
+// navigation_dependency_test.go — 导航变更的失效传播（审计遗留缺口，AGENTS.md §8）。
 //
 // 缺口：pipeline.DepKindMenu 常量早已定义、依赖表的 CHECK 也早已放行 'menu'（迁移 174），
 // 但**全仓没有任何发射点、构建期也没登记这条依赖** —— 改公开站点导航（navigations 表）后，

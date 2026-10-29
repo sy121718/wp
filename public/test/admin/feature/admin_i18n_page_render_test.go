@@ -32,6 +32,7 @@ import (
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
@@ -284,7 +285,7 @@ func TestAdminI18nEntriesPageFailureFollowsRequestLanguage(t *testing.T) {
 	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "Internal server error, please try again later" {
 		t.Fatalf("英文失败文案不符: %q", msg)
 	}
-	i18n.InjectForTest(map[string]map[string]string{"MsgInternalError": {"zh-CN": "注入的默认语言兜底"}}, nil)
+	i18n.InjectForTest(map[string]map[string]string{response.InternalKey: {"zh-CN": "注入的默认语言兜底"}}, nil)
 	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "注入的默认语言兜底" {
 		t.Fatalf("默认语言回退不符: %q", msg)
 	}

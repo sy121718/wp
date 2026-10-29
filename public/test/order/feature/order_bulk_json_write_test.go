@@ -19,6 +19,7 @@ package feature
 // 排查方向从第一次就错了（模板漏声明 data-write-extra 时的真实现象）。
 
 import (
+	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -95,15 +96,25 @@ func TestOrderBulkShapeViolationsAreRejectedBeforeService(t *testing.T) {
 	}
 }
 
-// bulkResult 批档响应的 data 段（字段名即 Go 字段名，见 order_bulk_write.go 的类型声明）。
+// bulkResult 批档**成功**响应的 data 段（字段名即 Go 字段名，见 order_bulk_write.go）。
+//
+// 没有 skipped / items：批量写要么全成、要么全败（AGENTS.md §写操作）。
+// 失败走 409 + data.items（见 bulkReject）。
 type bulkResult struct {
 	Updated int `json:"Updated"`
-	Skipped int `json:"Skipped"`
-	Items   []struct {
-		ID      string `json:"ID"`
-		Updated bool   `json:"Updated"`
-		Message string `json:"Message"`
-	} `json:"Items"`
+}
+
+// bulkReject 批档**失败**响应的解析结果（409 + data.items）。
+type bulkReject struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		Items []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Message string `json:"message"`
+		} `json:"items"`
+	} `json:"data"`
 }
 
 // orderBulkSend 用真装配发一个批档请求，返回 data 段。
@@ -111,7 +122,7 @@ func orderBulkSend(t *testing.T, engine *gin.Engine, path, body string) bulkResu
 	t.Helper()
 	rec := bulkJSONPost(engine, path, body)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("批档应 200（业务不可流转是逐条 skipped，不是形状错），实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("批档全部可执行时应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	var envelope struct {
 		Data bulkResult `json:"data"`
@@ -122,32 +133,45 @@ func orderBulkSend(t *testing.T, engine *gin.Engine, path, body string) bulkResu
 	return envelope.Data
 }
 
-// TestOrderBulkBusinessRejectionsSkipWithoutStoppingTheBatch 业务档：200 + 逐条 skipped，
-// 一条不可流转不影响其余订单，且被跳过的订单状态**一个字节都没变**。
-func TestOrderBulkBusinessRejectionsSkipWithoutStoppingTheBatch(t *testing.T) {
+// orderBulkRejectSend 发一个预期**整批被拒**的批档请求，返回 409 明细。
+func orderBulkRejectSend(t *testing.T, engine *gin.Engine, path, body string) bulkReject {
+	t.Helper()
+	rec := bulkJSONPost(engine, path, body)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("整批被拒应回 409，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	var out bulkReject
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("拒绝响应不是预期 JSON：%v（%s）", err, rec.Body.String())
+	}
+	if len(out.Data.Items) == 0 {
+		t.Fatalf("整批被拒必须给 data.items（用户要知道是哪一条、为什么）")
+	}
+	return out
+}
+
+// TestOrderBulkBusinessRejectionsRejectWholeBatch 业务档：整批 409 + data.items，
+// 且**一条都不许改**（AGENTS.md §写操作：批量要么全成、要么全败）。
+//
+// 旧行为是「成功 N / 跳过 M」逐条回执。用户拿到那个结果既不知道是哪一条挡住的，
+// 也没法只重试那一条 —— 而这一批本可以整批回滚、改完再提交。
+func TestOrderBulkBusinessRejectionsRejectWholeBatch(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
 	}
-	_, variantID := f.addProduct(t, "批档业务档商品", 12, 30)
-
+	_, vid := f.addProduct(t, "批档业务档商品", 20, 50)
 	mkOrder := func(email string) uint64 {
-		req := f.createBaseReq(variantID, 1)
+		req := f.createBaseReq(vid, 1)
 		req.CustomerEmail = email
-		res, err := f.orders.CreateOrder(t.Context(), req)
+		res, err := f.orders.CreateOrder(context.Background(), req)
 		if err != nil {
-			t.Fatalf("造单失败（%s）：%v", email, err)
+			t.Fatalf("建单失败: %v", err)
 		}
 		return res.ID
 	}
 	ok := mkOrder("bulk-biz-ok@example.com")
 	badEdge := mkOrder("bulk-biz-edge@example.com")
-	// 不存在的单：取当前最大 id 之后很远的值（与删除类的 missing-row 用例同手法）。
-	var maxID uint64
-	if err := f.db.Raw("SELECT COALESCE(MAX(id), 0) FROM orders").Scan(&maxID).Error; err != nil {
-		t.Fatalf("读最大订单 id 失败: %v", err)
-	}
-	missingID := maxID + 999999
 
 	gin.SetMode(gin.TestMode)
 	h := orderhttp.NewHandle(f.orders)
@@ -155,42 +179,28 @@ func TestOrderBulkBusinessRejectionsSkipWithoutStoppingTheBatch(t *testing.T) {
 	engine.POST("/api/order/status", h.ChangeStatus)
 	engine.POST("/api/order/cancel", h.CancelOrder)
 
-	// ① 一条合法边 + 一条状态机不允许的边 + 一条不存在的单。
+	// ① pending 单直接流到 completed：状态机不允许 ⇒ 整批拒绝。
 	body := `{"ids":["` + strconv.FormatUint(ok, 10) + `","` + strconv.FormatUint(badEdge, 10) +
-		`","` + strconv.FormatUint(missingID, 10) + `"],"toStatus":"completed","remark":"批档业务档"}`
-	res := orderBulkSend(t, engine, "/api/order/status", body)
-	if res.Updated != 0 {
-		t.Errorf("pending 单不能直接流到 completed，应全部跳过，实际 updated=%d", res.Updated)
+		`"],"toStatus":"completed","remark":"批档业务档"}`
+	rejected := orderBulkRejectSend(t, engine, "/api/order/status", body)
+	if rejected.Code != http.StatusConflict {
+		t.Errorf("拒绝响应的 code 应与 HTTP 状态一致（409），实际 %d", rejected.Code)
 	}
-	if res.Skipped != 3 {
-		t.Errorf("三条都该跳过，实际 skipped=%d（响应：%+v）", res.Skipped, res)
+	// 明细必须能定位：每条一行，带 id 与原因文案。
+	if len(rejected.Data.Items) != 1 {
+		t.Fatalf("应给出挡住整批的那一条，实际 %d 条：%+v", len(rejected.Data.Items), rejected.Data.Items)
 	}
-	if len(res.Items) != 3 {
-		t.Fatalf("应逐条回执 3 条，实际 %d", len(res.Items))
+	if rejected.Data.Items[0].ID == "" || rejected.Data.Items[0].Message == "" {
+		t.Errorf("明细缺 id 或原因：%+v", rejected.Data.Items[0])
 	}
-	seenIDs := map[string]bool{}
-	for _, it := range res.Items {
-		seenIDs[it.ID] = true
-		if it.Updated {
-			t.Errorf("订单 %s 不该被标记成功", it.ID)
-		}
-		if it.Message == "" {
-			t.Errorf("被跳过的订单 %s 必须带上原因（否则页面只看到「被跳过」，不知道为什么）", it.ID)
-		}
-	}
-	for _, id := range []uint64{ok, badEdge, missingID} {
-		if !seenIDs[strconv.FormatUint(id, 10)] {
-			t.Errorf("逐条回执里缺少订单 %d（回执必须与请求的 ids 一一对应）", id)
-		}
-	}
-	// 被跳过的订单状态一个都不许变。
+	// 整批不动：两张单都还停在 pending。
 	for _, id := range []uint64{ok, badEdge} {
 		if got := f.orderStatusOf(t, id); got != "pending" {
-			t.Errorf("订单 %d 被跳过却改了状态：%s（业务档不接受部分写入）", id, got)
+			t.Errorf("订单 %d 在整批被拒后改了状态：%s（批量必须全败）", id, got)
 		}
 	}
 
-	// ② 同一批里一条能取消、一条已经取消过 ⇒ 后者 skipped，前者照常完成。
+	// ② 已取消的单一混进来 ⇒ 整批拒绝，可取消的那张也不能被取消。
 	cancelable := mkOrder("bulk-biz-cancel-ok@example.com")
 	already := mkOrder("bulk-biz-cancel-twice@example.com")
 	if _, err := f.orders.CancelOrder(t.Context(), &orderdto.CancelOrderReq{
@@ -202,14 +212,20 @@ func TestOrderBulkBusinessRejectionsSkipWithoutStoppingTheBatch(t *testing.T) {
 		"ids":    []string{strconv.FormatUint(cancelable, 10), strconv.FormatUint(already, 10)},
 		"remark": "批档业务档取消",
 	})
-	res2 := orderBulkSend(t, engine, "/api/order/cancel", string(payload))
-	if res2.Updated != 1 || res2.Skipped != 1 {
-		t.Errorf("应 1 成功 1 跳过，实际 updated=%d skipped=%d（%+v）", res2.Updated, res2.Skipped, res2)
+	_ = orderBulkRejectSend(t, engine, "/api/order/cancel", string(payload))
+	if got := f.orderStatusOf(t, cancelable); got != "pending" {
+		t.Errorf("整批被拒时可取消的订单不该被取消，实际 %s", got)
 	}
-	if got := f.orderStatusOf(t, cancelable); got != "cancelled" {
-		t.Errorf("可取消的订单应被取消，实际 %s", got)
-	}
-	if got := f.orderStatusOf(t, already); got != "cancelled" {
-		t.Errorf("已取消的订单状态不该被二次改动，实际 %s", got)
+
+	// ③ 反证：整批都可执行时照常成功（证明拒绝不是"批量永远失败"）。
+	fine := mkOrder("bulk-biz-fine@example.com")
+	fine2 := mkOrder("bulk-biz-fine2@example.com")
+	payload2, _ := json.Marshal(map[string]any{
+		"ids":    []string{strconv.FormatUint(fine, 10), strconv.FormatUint(fine2, 10)},
+		"remark": "批档合法取消",
+	})
+	okRes := orderBulkSend(t, engine, "/api/order/cancel", string(payload2))
+	if okRes.Updated != 2 {
+		t.Errorf("两条都能取消时应更新 2 条，实际 %d", okRes.Updated)
 	}
 }

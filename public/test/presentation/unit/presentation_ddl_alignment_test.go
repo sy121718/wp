@@ -5,7 +5,7 @@
 //  2. 真实 DDL 下创建实例，project_id / template_id / stale / active_artifact_id
 //     等真实列全部落库（修复前 model 写的是不存在的 status / artifact_hash）；
 //  3. 内容变更 → pipeline.Fanout → presentation 精确反查 + 自动重建 + 重新发布
-//     （与 PIPE-3 的 page 侧链路同形，docs/03-pipeline.md §8.2/§8.3）。
+//     （与 PIPE-3 的 page 侧链路同形，AGENTS.md §8.2/§8.3）。
 package unit
 
 import (

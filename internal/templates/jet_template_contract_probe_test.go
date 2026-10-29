@@ -229,7 +229,7 @@ func TestJetContractMissingKeyIsTheDifferenceCell(t *testing.T) {
 
 // TestJetContractHasValIfEverRegisteredMustEqualNotIsNil 前向闸门。
 //
-// 本次结论是「不新增 hasVal」（见 docs/rules/jet-template-contract.md）。
+// 本次结论是「不新增 hasVal」（见 AGENTS.md）。
 // 这条守的是将来：**若下一批真在生产里注册了 hasVal，它必须逐格等于 !isNil**，否则 red ——
 // 冗余两份判据的漂移在这里第一次发生时就暴露，而不是等某个页面少一行文案。
 func TestJetContractHasValIfEverRegisteredMustEqualNotIsNil(t *testing.T) {
@@ -285,7 +285,7 @@ func TestJetContractTranslatorMustNotBeASetGlobal(t *testing.T) {
 //
 // 现状：本仓两条渲染路径都把第一个参数传 nil（internal/templates/jet_render.go:82、
 // fragment_render.go:78 `t.Execute(&buf, nil, data)`），且渲染入口只有一个数据通道（data）——
-// 要用 per-render 变量通道必须改渲染实现，属下一批（本批不得改，补丁见 docs/rules/jet-template-contract.md）。
+// 要用 per-render 变量通道必须改渲染实现，属下一批（本批不得改，补丁见 AGENTS.md）。
 // 注：历史上这里指的是 pkg/view/driver/jet（已删除的零调用引擎门面），两条路径的实际写法一脉相承。
 func TestJetContractPerRenderVarsChannelReachesInclude(t *testing.T) {
 	set := memSet(t, map[string]string{

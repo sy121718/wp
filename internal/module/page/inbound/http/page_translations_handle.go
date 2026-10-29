@@ -47,7 +47,7 @@ import (
 )
 
 // === 翻译工作台（页面面 + 保存）===
-// 页面翻译工作台（多语言 P5c，docs/06-D §7.8）：页面列表行内「多语言」按钮进来的那一页。
+// 页面翻译工作台（多语言 P5c，AGENTS.md §7.8）：页面列表行内「多语言」按钮进来的那一页。
 //
 // 整页服务端渲染 + HTMX 片段刷新；本文件做三件事 —— 装配页面数据（译文分组、复用提示、
 // 完成度）、保存译文，以及本功能自己的回跳与回执。支撑它的「全站 (source_hash, context)
@@ -82,7 +82,7 @@ import (
 // （core.TranslatableFields），SQL 侧无法表达；因此只能把全站草稿文档读回来，
 // 用与构建期同一个函数 builder.CollectContentCandidates 收集。
 //
-// 代价与取舍（详见 docs/06-D §15.12）：
+// 代价与取舍（详见 AGENTS.md §15.12）：
 //   - 一次扫描 = 一条 SELECT 取回全站 pages.draft_document（JSONB）+ 全量 JSON 解析，
 //     内存占用与「页面数 × 文档大小」同阶；
 //   - 进程内缓存 TTL 30s，页面数超过 siteContentScanPageLimit 时主动跳过全站统计
@@ -90,7 +90,7 @@ import (
 //   - 更彻底的做法是新增「候选使用表」（page_id, source_hash, context，草稿保存时维护），
 //     代价是每次草稿写入多一次索引维护与一张新表，本轮不做（遗留项）。
 //
-// 块内文本已纳入本索引（docs/06-D §15.14）：扫描页面草稿时同时记录「哪些页面引用了哪些块」
+// 块内文本已纳入本索引（AGENTS.md §15.14）：扫描页面草稿时同时记录「哪些页面引用了哪些块」
 // （settings.structure 页眉/页脚绑定 + core.globalref 节点），再按块文档收集候选，
 // 归属到引用它的页面——这样工作台行、复用提示与全站完成度分母三者口径一致。
 // contentTranslationPort 工作台使用的内容译文读写端口。
@@ -210,7 +210,7 @@ type pageTranslationsData struct {
 	// 元素是**事实**（哪一行 + 词条），取词留给模板。
 	Errors []pagedto.TranslationRowErrorResp
 	// LoadFailed / LoadError 主数据**没读到**（取数失败）：LoadFailed 为真时这一页没成立，
-	// LoadError 是归口后的那条词条事实（原文只进日志）。契约：docs/rules/template-boundary.md
+	// LoadError 是归口后的那条词条事实（原文只进日志）。契约：AGENTS.md
 	// 的「整页 GET 的失败出口」；模板必须**先判失败、再判空态**。
 	LoadFailed bool
 	LoadError  pageMsg

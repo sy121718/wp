@@ -75,7 +75,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	a.mountPublicFace()
 }
 
-// setupStaticFace 挂载静态访问面（docs/03-pipeline.md §5）。
+// setupStaticFace 挂载静态访问面（AGENTS.md §5）。
 //
 // ActiveRoot 位于产物根下两级（{root}/public/active，pipeline.ActiveRoot() 单源），
 // 符号链接目标相对可达。因此访问面根必须是 active 目录本身；文件由 StaticFS

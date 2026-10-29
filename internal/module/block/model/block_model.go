@@ -66,7 +66,7 @@ type BlockEntity struct {
 	CreateTime time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt  time.Time       `gorm:"column:update_time;not null"`
 
-	// Version 乐观并发版本（B2 迁移 679）。与文档根的 schemaVersion 是两件事：
+	// Version 乐观并发版本（B2 迁移 676）。与文档根的 schemaVersion 是两件事：
 	// 这一列只防丢更新，不表达"字段含义变没变"。
 	Version int64 `gorm:"column:version;not null;default:1"`
 
@@ -153,7 +153,7 @@ func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *Bl
 //
 // projectID 非空时在工程作用域内写（blocks 带 FORCE 策略）：越界写会被 WITH CHECK
 // 直接拒绝而不是静默改到别的工程。为空沿用「不限工程」的历史形态（DB-009 剩余清单）。
-// blocks.version 来自 B2 迁移 679。
+// blocks.version 来自 B2 迁移 676。
 //
 // expectedVersion 必须为正数；WHERE与version自增在同一条UPDATE内，缺失版本拒绝。
 // 返回是否命中，由service区分不存在与并发冲突。

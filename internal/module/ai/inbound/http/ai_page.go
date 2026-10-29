@@ -81,8 +81,42 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-// fabSessionKey 悬浮球的会话键（EnsureSession 按 userID 隔离，所以每个人一条）。
+// fabSessionKey 悬浮球会话键的**前缀**。
+//
+// 会话键在 ai_session 表上全局唯一（uk_ai_session_key），所以「每个人一条悬浮球会话」
+// 不能靠同一个常量 + 服务层按 userID 过滤来实现 —— 第一个人的那条会把 key 占住，
+// 后来者要么命中它（读别人的历史），要么报冲突。真实形态是**按用户派生 key**：
+//
+//	admin-fab:<userID>
+//
+// 服务层的归属校验（EnsureSession / RecentDialogue 比对 create_by）是第二道防线：
+// 即使有人手工构造出别人的 key，也读不到内容。
 const fabSessionKey = "admin-fab"
+
+// fabSendReq 悬浮球一次提问的请求体（会话键按用户派生，见 fabSessionKeyOf）。
+//
+// 抽成函数的理由：handler 的语句数有上限（架构门禁 pendingControllerStatements），
+// 而"把页面上下文拼成请求体"是独立编排，不属于该 handler 的主体。
+func fabSendReq(c *gin.Context, providerKey, model, input string) *aidto.SendMessageReq {
+	uid := userID(c)
+	return &aidto.SendMessageReq{
+		SessionKey:  fabSessionKeyOf(uid),
+		ProviderKey: providerKey,
+		Model:       model,
+		Input:       composeFabInput(c, input),
+		UserText:    input,
+		UserID:      uid,
+	}
+}
+
+// fabSessionKeyOf 按用户派生悬浮球会话键。
+//
+// 为什么不用「常量 + 服务层过滤」：uk_ai_session_key 是全局唯一约束，
+// 同一个常量只能存在一行。派生 key 让每个用户各占一行，唯一约束反而成了护栏
+// （同一用户并发提问时只会写入一条）。
+func fabSessionKeyOf(uid int64) string {
+	return fabSessionKey + ":" + strconv.FormatInt(uid, 10)
+}
 
 // fabInputLimit 一次提问的字符上限。
 //
@@ -118,14 +152,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		truncated = true
 	}
 
-	res, err := h.svc.SendMessage(c.Request.Context(), aidto.SendMessageReq{
-		SessionKey:  fabSessionKey,
-		ProviderKey: providerKey,
-		Model:       model,
-		Input:       composeFabInput(c, input),
-		UserText:    input,
-		UserID:      userID(c),
-	})
+	res, err := h.svc.SendMessage(c.Request.Context(), *fabSendReq(c, providerKey, model, input))
 	if err != nil {
 		h.renderFabError(c, fabMsg(aienums.MsgFabFailed), c.PostForm("ctxPath"))
 		return
@@ -447,7 +474,7 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 // mcpSwitchTone 对外接入开关 → 徽标分档。
 //
 // 分档而不是让模板写 {{if .McpEnabled}}badge-success{{else}}…：阈值（什么算「开」）
-// 是这片代码的语义，颜色是 CSS 的事 —— 模板只把分档写进 class（见 docs/rules/template-boundary.md）。
+// 是这片代码的语义，颜色是 CSS 的事 —— 模板只把分档写进 class（见 AGENTS.md）。
 func mcpSwitchTone(enabled bool) string {
 	if enabled {
 		return "ok"
@@ -1315,7 +1342,7 @@ type sessionServicePort interface {
 	FoldPlan(ctx context.Context, req aidto.FoldPlanReq) (*aidto.FoldPlanResult, error)
 	SendMessage(ctx context.Context, req aidto.SendMessageReq) (*aidto.SendMessageResult, error)
 	SendMessageStream(ctx context.Context, req aidto.SendMessageReq, emit func(aiservice.StreamEvent)) (*aidto.SendMessageResult, error)
-	RecentDialogue(ctx context.Context, key string, limit int) ([]aidto.DialogueTurn, error)
+	RecentDialogue(ctx context.Context, key string, limit int, userID int64) ([]aidto.DialogueTurn, error)
 }
 
 // SessionPageHandle 会话管理页处理器。

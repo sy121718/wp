@@ -18,10 +18,12 @@ package routers
 // 把「不小心多挂/少挂了路由」当成新基线写进去，这份快照就失去意义了。
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"go_wp/config"
@@ -35,23 +37,45 @@ const routeSnapshotEnv = "WP_DUMP_ROUTES"
 //
 // 两个测试共用：TestDumpRoutesForAudit（给 check-permission-gaps.sh 取路由）
 // 与 TestRouteSnapshotStable（与快照比对）。
+//
+// 完整装配会初始化进程级组件与依赖，两个路由审计共享一次快照，避免重复装配。
 func bootstrapRouter(t *testing.T) []string {
 	t.Helper()
+	// 装配失败要在**调用它的那个测试**上失败，所以错误随缓存一起传出来重放；
+	// 不能在 once 里 Fatalf（那只对一个测试生效，另一个测试会静默拿到空清单）。
+	routeDumpOnce.Do(func() {
+		routeDumpLines, routeDumpErr = assembleRouteDump()
+	})
+	if routeDumpErr != nil {
+		t.Fatalf("%v", routeDumpErr)
+	}
+	// 缓存跨测试复用：返回副本，避免某个测试排序/裁剪时改到共享切片。
+	out := make([]string, len(routeDumpLines))
+	copy(out, routeDumpLines)
+	return out
+}
+
+var (
+	routeDumpOnce  sync.Once
+	routeDumpLines []string
+	routeDumpErr   error
+)
+
+// assembleRouteDump 真正做一次装配（只被 routeDumpOnce 调用一次）。
+func assembleRouteDump() ([]string, error) {
 	configPath := strings.TrimSpace(os.Getenv("GOWP_AUDIT_CONFIG"))
 	if configPath == "" {
 		configPath = "../../config.yaml"
 	}
 	if err := config.Init(configPath); err != nil {
-		t.Fatalf("配置加载失败: %v", err)
+		return nil, fmt.Errorf("配置加载失败: %w", err)
 	}
 	if _, err := config.GetServer(); err != nil {
-		t.Fatalf("server 配置解析失败: %v", err)
+		return nil, fmt.Errorf("server 配置解析失败: %w", err)
 	}
 	if err := config.InitComponents(); err != nil {
-		t.Fatalf("组件初始化失败: %v", err)
+		return nil, fmt.Errorf("组件初始化失败: %w", err)
 	}
-	t.Cleanup(func() { _ = config.CloseComponents() })
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	SetupRoutes(router, func() error { return nil })
@@ -61,7 +85,7 @@ func bootstrapRouter(t *testing.T) []string {
 		lines = append(lines, r.Method+" "+r.Path)
 	}
 	sort.Strings(lines)
-	return lines
+	return lines, nil
 }
 
 // TestRouteSnapshotStable 路由清单与 testdata/routes.snapshot 逐字节比对。

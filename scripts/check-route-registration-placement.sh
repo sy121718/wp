@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-route-registration-placement.sh — 路由注册只能写在 router 文件里（docs/02-X §8）。
+# check-route-registration-placement.sh — 路由注册只能写在 router 文件里（AGENTS.md §8）。
 #
 # 为什么需要它：`.GET(` / `.POST(` 写在哪个文件里不影响任何东西 —— 编译通过、路由照常注册、
 # 测试照常绿。于是「handler 文件里顺手注册一条路由」不会被任何人发现，直到下一次重构时
@@ -130,7 +130,7 @@ if [ "${#VIOLATIONS[@]}" -gt 0 ]; then
   修法：把注册语句搬进同目录的 <模块>_router.go（API）或 <模块>_page_router.go（后台页面），
   handler 留在原文件；装配函数（SetupXxxRoutes / SetupXxxPages）跟注册一起搬。
   确实需要留在原地的，登记进 scripts/route-registration-allow.txt 并写明理由。
-  详见 docs/02-X-route-assembly-unification.md §4（目标形态）与 §8（本门禁）。
+  详见 AGENTS.md §4（目标形态）与 §8（本门禁）。
 TIP
 fi
 

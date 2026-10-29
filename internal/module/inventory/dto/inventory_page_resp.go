@@ -174,6 +174,12 @@ type InventoryPageResp struct {
 	Directions       []OptionResp
 	Movements        []MovementRowResp
 
+	// —— 流水页（/admin/inventory/movements）——
+	//
+	// FilterSKU 与库存管理页的 SelectedSKU 是**两个不同的槽**：库存页是「选一个 SKU 横看各仓」，
+	// 流水页是「跨 SKU 的时间轴筛选」，两者共用同一个 sku 查询参数但语义不同，
+	// 合成一个字段会让模板再也分不出自己在读哪一页的上下文。
+	FilterSKU       string
 	FilterWarehouse string
 	FilterDirection string
 	FilterReason    string
@@ -200,4 +206,49 @@ type InventoryPageResp struct {
 type ProjectOptionResp struct {
 	ID   string
 	Name string
+}
+
+// TransferListPageResp 调拨单页的视图。
+//
+// 为什么单独一个类型而不是塞进 InventoryPageResp：调拨页的键集与库存三页**不是包含关系**
+// （它没有 Warehouses 之外的库存页字段，却有 StatusOptions / Rows / Keyword 这些只在
+// 调拨与 SKU 台账两页出现的键）。塞进共用类型会让库存三页平白多出永远不会渲染的字段，
+// 而空字段渲染出来就是空白 —— 那正是 InventoryPageResp 合并三页时极力避免的形态。
+type TransferListPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []ProjectOptionResp
+	SelectedProject string
+	Warehouses      []WarehouseRowResp
+
+	Rows          []*TransferRowResp
+	FilterStatus  string
+	Keyword       string
+	StatusOptions []OptionResp
+
+	ListQuery  string
+	Pagination pagination.Page
+}
+
+// StockSKUListPageResp 仓库商品 SKU 台账页的视图（迁移 642 / B3）。
+//
+// 与 TransferListPageResp 同理由单独成类型：它多出 FilterWarehouse / FilterKeyword /
+// LinkQuery 这些调拨页没有的槽，合进共用类型只会制造永不渲染的空字段。
+type StockSKUListPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []ProjectOptionResp
+	SelectedProject string
+	Warehouses      []WarehouseRowResp
+
+	Rows            []StockSKURowResp
+	FilterWarehouse string
+	FilterKeyword   string
+	FilterStatus    string
+	StatusOptions   []OptionResp
+
+	ListQuery  string
+	Pagination pagination.Page
 }

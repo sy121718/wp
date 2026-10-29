@@ -103,7 +103,7 @@ func TestMenusPageRendersCollapsedTree(t *testing.T) {
 	// 缩进是「看得出从属关系」的全部依据：顶级行不缩进，子行按 depth 递进。
 	// 缩进量在 CSS 里算（theme.css 的 .tree-cell → calc(var(--tree-depth) * 1.5rem)），
 	// 模板只把层级放进变量 —— 所以这里断言的是变量值，不再是内联算式
-	//（docs/rules/template-boundary.md：模板不给外观，算在 CSS 里）。
+	//（AGENTS.md：模板不给外观，算在 CSS 里）。
 	if !strings.Contains(html, "--tree-depth:0") {
 		t.Error("顶级行应无缩进（--tree-depth:0）")
 	}

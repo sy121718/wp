@@ -32,6 +32,10 @@ func InitComponents() error {
 		return err
 	}
 
+	if suppressWorkers.Load() {
+		cfg.Set(keyRunWorker, false)
+	}
+
 	for _, prepare := range runtimePreparers {
 		prepare()
 	}

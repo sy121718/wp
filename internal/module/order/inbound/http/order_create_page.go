@@ -2,7 +2,7 @@ package orderhttp
 
 // order_create_page.go — 后台代客建单页（GET /admin/orders/new + POST /admin/orders/create）。
 //
-// 立项与四条决策见 docs/02-W-admin-order-create.md：
+// 立项与四条决策见 AGENTS.md：
 //
 //	1. 入口形态 —— 独立整页（字段 20+ 且明细可多行，抽屉放不下；抽屉关闭态下
 //	   「失败即整屏丢输入」更致命）。

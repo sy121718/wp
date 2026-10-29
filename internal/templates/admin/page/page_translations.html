@@ -1,4 +1,4 @@
-{* admin/page_translations.html — 翻译工作台（多语言 P5c，docs/06-D §7.8 决策 F10/F11/F12）。
+{* admin/page_translations.html — 翻译工作台（多语言 P5c，AGENTS.md §7.8 决策 F10/F11/F12）。
    入口：页面列表行内「多语言」按钮（不做独立菜单）；本页不做独立 JS，交互全部为
    服务端渲染 + 原生表单（语言切换 onchange 提交、保存整表 POST + PRG 回跳）。
    可翻译行由 handler 用 builder.CollectContentCandidates 生成，与构建期同源。 *}
@@ -8,7 +8,7 @@
      · 分组是**同一张编辑表按组件分段**（组件 / 字段 / 原文 / 译文 / 状态 / 来源），
        组件名落在合并整行的分组行里。为什么不是 tabs / 每组一张表：各组表头完全相同，
        且全部组共用页头一个「保存全部」—— 拆成多块会让这次保存切成互相看不见的几段，
-       面板全渲染时体积也不省（见 docs/02-L P1-5 的方案评审）。 *}
+       面板全渲染时体积也不省（见 AGENTS.md P1-5 的方案评审）。 *}
 {* 文案一律走 t(key, 中文兜底) / tf(key, 中文兜底, %s 参数)：range 内不能写赋值语句，
    先把两个函数存进变量 tr / tf 再取词。Go 侧只交事实（key + 兜底 + 参数），
    任何成品串都不该从这里进页面 —— 成品串会把整页文案锁死在一种语言。 *}
@@ -62,7 +62,7 @@
     {* 三档的顺序：参数非法 → 取数失败 → （读到了）内容。
        参数非法是「这一页打不开，改地址」，取数失败是「没读到，稍后重试」，
        空态是「读到了、只是没有可翻译的行」—— 混在一起运营会以为文本被删了
-       （docs/rules/template-boundary.md「失败槽：失败优先于空态」）。 *}
+       （AGENTS.md：失败优先于空态」）。 *}
     {{if paramInvalid}}
     <section class="card list-card" role="alert">
         <div class="empty-state">

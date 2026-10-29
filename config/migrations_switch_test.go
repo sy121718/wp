@@ -72,3 +72,47 @@ func TestForceMigrationsOverridesConfig(t *testing.T) {
 		t.Fatal("ForceMigrations 之后必须强制执行迁移与 seed")
 	}
 }
+
+// TestSuppressWorkersUsesComponentConfig 验证迁移策略作用于实际组件配置，
+// 而非 Viper 全局单例；正常启动仍遵守原消费者配置。
+func TestSuppressWorkersUsesComponentConfig(t *testing.T) {
+	originalConfig := v
+	originalComponents, originalPreparers := runtimeComponents, runtimePreparers
+	originalRegistry, originalInited := initializedRegistry, runtimeInited
+	originalSuppression := suppressWorkers.Load()
+	t.Cleanup(func() {
+		_ = CloseComponents()
+		v = originalConfig
+		runtimeComponents, runtimePreparers = originalComponents, originalPreparers
+		initializedRegistry, runtimeInited = originalRegistry, originalInited
+		suppressWorkers.Store(originalSuppression)
+	})
+	for _, migration := range []bool{false, true} {
+		cfg := viper.New()
+		cfg.Set(keyRunWorker, true)
+		v = cfg
+		runtimeInited = false
+		runtimePreparers = nil
+		suppressWorkers.Store(false)
+		if migration {
+			SuppressWorkers()
+		}
+		called := false
+		runtimeComponents = []runtimeComponent{{Name: "queue-policy-probe", Init: func(componentConfig *viper.Viper) error {
+			called = true
+			if componentConfig != cfg || componentConfig.GetBool(keyRunWorker) != !migration {
+				t.Fatalf("迁移=%v 时实际组件消费者策略不正确", migration)
+			}
+			return nil
+		}}}
+		if err := InitComponents(); err != nil {
+			t.Fatal(err)
+		}
+		if !called {
+			t.Fatal("未走真实组件初始化入口")
+		}
+		if err := CloseComponents(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

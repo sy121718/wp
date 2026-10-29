@@ -1,7 +1,7 @@
 package richdoc
 
 // richdoc_known_drift_test.go — 已知未收敛缺陷的**自退役**回归桩
-//（挂账位置：docs/10-todo.md CMP-15、docs/06-B-dual-track-adr.md 决策 5 的「⚠️ 仍存一类」）。
+//（挂账位置：AGENTS.md CMP-15、AGENTS.md 决策 5 的「⚠️ 仍存一类」）。
 //
 // 缺陷：畸形嵌套（HTML 内容模型本身非法，如 <a> 里嵌 <table>）经 x/net/html 解析后再序列化，
 // 不是自身解析的不动点；而 import.go 的 inlineTextNode 只按 token 流渲染、不按解析结果重新分组，
@@ -41,7 +41,7 @@ func TestRoundTripMalformedNestingKnownDrift(t *testing.T) {
 
 	if html1.HTML == html2.HTML {
 		t.Fatalf("该缺陷似乎已修复（往返已收敛）：请把本测试改成收敛断言（调用 checkRoundTrip），"+
-			"并从 docs/10-todo.md CMP-15 与 docs/06-B-dual-track-adr.md 决策 5 移除这条件挂账。\n第一次 %q",
+			"并从 AGENTS.md CMP-15 与 AGENTS.md 决策 5 移除这条件挂账。\n第一次 %q",
 			html1.HTML)
 	}
 

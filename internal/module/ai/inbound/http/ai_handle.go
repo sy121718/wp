@@ -192,7 +192,7 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 	}
 
 	res, err := h.svc.SendMessageStream(c.Request.Context(), aidto.SendMessageReq{
-		SessionKey:  fabSessionKey,
+		SessionKey:  fabSessionKeyOf(int64(builtin.CurrentUserID(c))),
 		ProviderKey: providerKey,
 		Model:       model,
 		Input:       composeFabInput(c, input),
@@ -229,12 +229,13 @@ func fabDoneNote(res *aidto.SendMessageResult, truncated bool) string {
 //
 // 存在的理由：悬浮球与概览页的提问框都是单次问答的渲染形态 —— 关掉面板、刷新页面、
 // 切到另一个后台页，界面上就只剩一个空输入框，看起来像搜索引擎；而服务端一直是
-// 同一条会话在续写（fabSessionKey 固定，历史进 stablePrefix）。模型记得上一轮，
+// 同一条会话在续写（按用户派生的 fab key，历史进 stablePrefix）。模型记得上一轮，
 // 用户却看不见，于是「它是个搜索框」这个印象来自界面而不是能力。
 //
 // 只读、不建会话：首访（还没问过任何问题）回空数组而不是 404。
 func (h *SessionPageHandle) FabHistory(c *gin.Context) {
-	turns, err := h.svc.RecentDialogue(c.Request.Context(), fabSessionKey, 0)
+	uid := int64(builtin.CurrentUserID(c))
+	turns, err := h.svc.RecentDialogue(c.Request.Context(), fabSessionKeyOf(uid), 0, uid)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
 		return

@@ -1277,6 +1277,19 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 	}
 	now := time.Now()
 	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.changeStatusTx(ctx, tx, projectID, req, now)
+	})
+}
+
+// changeStatusTx 状态流转的事务体（供单条与批量共用）。
+//
+// 抽出来的理由（B06）：批量流转必须**同一事务**——逐条调用 ChangeStatus 时每条各开
+// 一个事务，第 3 条失败前两条已经提交，用户拿到的是一个"整批被拒但前两条已生效"
+// 的矛盾结果。整批在同一事务里跑，任一条失败就全部回滚。
+func (s *Service) changeStatusTx(ctx context.Context, tx *gorm.DB, projectID string,
+	req *orderdto.ChangeStatusReq, now time.Time) error {
+	to := strings.TrimSpace(req.ToStatus)
+	{
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
 		}
@@ -1317,6 +1330,42 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 			Remark:       strings.TrimSpace(req.Remark),
 			CreateTime:   now,
 		})
+	}
+}
+
+// ChangeStatusBatch 批量状态流转：**整批同一事务**，任一条失败全部回滚（B06）。
+//
+// 为什么必须在 service 层而不是控制器循环调用：每条各开一个事务时，第 N 条失败前
+// N-1 条已经提交，"整批被拒"就成了一句假话（用户看到拒绝，库里却已经改了）。
+// 这里把整批放进一个事务：先全部加锁校验，再统一提交。
+//
+// 返回的 blocked 给出口拼 data.items（id / 原因），nil 表示整批成功。
+func (s *Service) ChangeStatusBatch(ctx context.Context, reqs []*orderdto.ChangeStatusReq) (err error) {
+	if len(reqs) == 0 {
+		return orderenums.Err(orderenums.ErrInvalidParam)
+	}
+	now := time.Now()
+	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, req := range reqs {
+			if req == nil || req.OrderID == 0 {
+				return orderenums.Err(orderenums.ErrInvalidParam)
+			}
+			to := strings.TrimSpace(req.ToStatus)
+			if !isKnownStatus(to) {
+				return orderenums.Err(orderenums.ErrStatusInvalid)
+			}
+			if to == ordermodel.OrderStatusCancelled || to == ordermodel.OrderStatusRefunded {
+				return orderenums.Err(orderenums.ErrStatusTransition)
+			}
+			projectID, perr := s.locateOrderProject(ctx, req.OrderID)
+			if perr != nil {
+				return perr
+			}
+			if terr := s.changeStatusTx(ctx, tx, projectID, req, now); terr != nil {
+				return terr
+			}
+		}
+		return nil
 	})
 }
 
@@ -1345,6 +1394,21 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 	}
 	now := time.Now()
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.cancelOrderTx(ctx, tx, scopeProjectID, req, reason, scopeProjectID, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &orderdto.CancelOrderResp{}, nil
+}
+
+// cancelOrderTx 取消订单的事务体（供单条与批量共用）。
+//
+// 与 changeStatusTx 同一理由（B06）：批量取消必须整批一个事务 ——
+// 逐条调用时第 N 条失败前 N-1 条已提交，"整批被拒"就是假话。
+func (s *Service) cancelOrderTx(ctx context.Context, tx *gorm.DB, scopeProjectID string,
+	req *orderdto.CancelOrderReq, reason, _ string, now time.Time) error {
+	{
 		if serr := rls.ScopeTx(tx, scopeProjectID); serr != nil {
 			return serr
 		}
@@ -1402,11 +1466,34 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 			}
 		}
 		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
-	return &orderdto.CancelOrderResp{}, nil
+}
+
+// CancelOrderBatch 批量取消：**整批同一事务**，任一条失败全部回滚（B06）。
+func (s *Service) CancelOrderBatch(ctx context.Context, reqs []*orderdto.CancelOrderReq) (err error) {
+	if len(reqs) == 0 {
+		return orderenums.Err(orderenums.ErrInvalidParam)
+	}
+	now := time.Now()
+	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, req := range reqs {
+			if req == nil || req.OrderID == 0 {
+				return orderenums.Err(orderenums.ErrInvalidParam)
+			}
+			reason := strings.TrimSpace(req.Reason)
+			if reason == "" {
+				return orderenums.Err(orderenums.ErrCancelReasonRequired)
+			}
+			scopeProjectID, perr := s.resolveOrderProject(ctx, req.OrderID, req.ProjectID)
+			if perr != nil {
+				return perr
+			}
+			if terr := s.cancelOrderTx(ctx, tx, scopeProjectID, req, reason, scopeProjectID, now); terr != nil {
+				return terr
+			}
+		}
+		return nil
+	})
 }
 
 // RefundOrder 后台退款入口：改状态 + 记支付流水号；**未发货时归还库存**（BIZ-07 方案 A）。

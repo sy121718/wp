@@ -792,3 +792,79 @@ func TestPurchaseReceiptConcurrentNoDoubleReceive(t *testing.T) {
 		t.Fatalf("并发收满后状态应为 received，实际 %q", got)
 	}
 }
+
+// TestFinishedAndCancelledPurchaseOrderAreNotEditable 终态采购单不可编辑（B05）。
+//
+// 缺陷形态：状态机 assertPurchaseTransition 只约束**流转**，不约束**编辑**。
+// 于是 finished / cancelled 的单仍能被 UpdatePurchaseOrder 改 —— 而
+// 「已入库的行不可再改」那条只挡 ReceivedQuantity > 0：
+//
+//   · cancelled 且从未入库：ReceivedQuantity 全是 0 → 整行替换放行 →
+//     一张已结案的取消单被改成可继续流转的形状，状态却还是 cancelled；
+//   · finished：结案意味着数量与金额已确认，改它就是改历史。
+//
+// 判据是"这张单还允不允许被编辑"，而不是"改的是哪个字段" ——
+// 按字段分档会出现"改备注可以、改数量不行"这种谁都记不住的半开边界。
+func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
+	f := newPurchaseFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	// 建仓要在建商品之前：商品变体要落到某条货行上，而没有默认仓时
+	// mustProduct 会以 ErrWarehouseDefaultMissing 失败。
+	wh := f.createWarehouse(t, "TW", "终态测试仓", true)
+	p1 := mustProduct(t, f, "终态采购商品")
+	v1 := f.firstVariant(t, p1.ID)
+	src := mustPurchaseSource(t, f, "EXT_TW", "终态测试货源", purchaseenums.SourceTypeExternal)
+
+	cancelled := mustPurchaseOrder(t, f, "PO-2026-CXL", src.ID, wh.ID,
+		[]purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 5, 10)})
+	if _, err := f.purchase.CancelPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{ID: cancelled.ID}); err != nil {
+		t.Fatalf("取消采购单失败: %v", err)
+	}
+
+	// ① 已取消的单不能改行。
+	_, err := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
+		ID: cancelled.ID, ReplaceLines: true,
+		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 1, 10)},
+	})
+	if err == nil {
+		t.Fatal("已取消的采购单不该还能整行替换 —— 那会让结案的单变回可流转的形状")
+	}
+	purchaseErr(t, err, purchaseenums.ErrPurchaseStatusInvalid)
+
+	// ② 也不能改非行字段。
+	note := "偷偷改一下"
+	if _, uerr := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
+		ID: cancelled.ID, Remark: &note,
+	}); uerr == nil {
+		t.Fatal("已取消的采购单不该还能改备注")
+	}
+
+	// ③ 已结案的单同样不可改：下单 → 收满 → 结案。
+	finished := mustPurchaseOrder(t, f, "PO-2026-FIN", src.ID, wh.ID,
+		[]purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 3, 10)})
+	// 建单默认就是 ordered（AsDraft 才停 draft），无需再下单。
+	for i, line := range finished.Lines {
+		mustReceiveLine(t, f, finished.ID, line.ID, line.Quantity, "FIN-REQ-"+string(rune('A'+i)))
+	}
+	if _, ferr := f.purchase.FinishPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{ID: finished.ID}); ferr != nil {
+		t.Fatalf("结案失败: %v", ferr)
+	}
+	if _, uerr := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
+		ID: finished.ID, Remark: &note,
+	}); uerr == nil {
+		t.Fatal("已结案的采购单不该还能改")
+	}
+
+	// ④ 反证：草稿单仍可改（证明不是"全都拒"）。
+	draft := mustPurchaseOrder(t, f, "PO-2026-DFT", src.ID, wh.ID,
+		[]purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 2, 10)})
+	if _, derr := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
+		ID: draft.ID, ReplaceLines: true,
+		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 4, 10)},
+	}); derr != nil {
+		t.Fatalf("草稿单应可编辑，实际 %v", derr)
+	}
+}

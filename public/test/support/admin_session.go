@@ -50,6 +50,7 @@ var testRedisDBByDir = map[string]int{
 	"public/test/user/feature":                 4,
 	"public/test/architecture":                 5,
 	"public/test/order/feature":                6,
+	"public/test/user/unit":                    7,
 }
 
 // testRedisDBForCaller 取调用方所在目录对应的 DB 号；未登记即失败，避免新包静默退回 DB 0。

@@ -145,6 +145,21 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 	}
 	// 行上的工程即解析结果（策略保证同工程），后续写入一律以它作为作用域。
 	projectID = order.ProjectID
+
+	// **终态单不可改**（B05）：finished / cancelled 是终态，改它等于让一张已经结案的
+	// 采购单重新变回可流转的草稿 —— 状态机拦不住这条，因为它只约束流转、不约束编辑。
+	//
+	// 两种终态的后果不同，都要拦：
+	//   · cancelled：取消时若已入库，库存已经退回去了；再改行会让"采购数量"与
+	//     "实际入库流水"对不上，而流水是审计依据。
+	//   · finished：结案意味着数量与金额已确认，改它就是改历史。
+	//
+	// 备注类修改（不动行、不改金额）也一并拒绝：判据是"这张单还允不允许被编辑"，
+	// 而不是"改的是哪个字段" —— 按字段分档会让"改备注可以、改数量不行"这种
+	// 半开状态出现，而那种边界谁都记不住。
+	if prr := assertPurchaseEditable(order.Status); prr != nil {
+		return nil, prr
+	}
 	if req.SourceID != nil {
 		source, serr := s.resolvePurchaseSource(ctx, projectID, *req.SourceID)
 		if serr != nil {
@@ -342,6 +357,19 @@ func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.Pur
 //	resume     异常 → 推导向        只有异常中的单需要解除
 //	finish     已到货/部分 → 已完结       没到过货的单「提前关单」没有意义（取消才是它）
 //	cancel     草稿/已下单/部分/异常 → 已取消   已到货的货进了仓，要走退货；已完结已收尾
+// assertPurchaseEditable 终态单不允许任何编辑。
+//
+// 与 assertPurchaseTransition 分开：那个判「这次流转允不允许」，
+// 这个判「这张单还允不允许被改」—— 两件事，混在一个函数里会让
+// "流转合法但编辑非法"这类组合无处表达。
+func assertPurchaseEditable(current string) error {
+	switch current {
+	case purchaseenums.PurchaseStatusFinished, purchaseenums.PurchaseStatusCancelled:
+		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusInvalid)
+	}
+	return nil
+}
+
 func assertPurchaseTransition(current, target string) error {
 	switch target {
 	case purchaseenums.PurchaseStatusOrdered:

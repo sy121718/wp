@@ -57,7 +57,7 @@ func validateRecordReq(req *artifactdto.RecordReq) error {
 	return nil
 }
 
-// Record 归档产物元数据与内容对象闭包（docs/03-pipeline.md §4）。
+// Record 归档产物元数据与内容对象闭包（AGENTS.md §4）。
 // 产物字节由 pipeline.ArtifactStore 在构建期落盘，本方法只做数据库投影：
 // 元数据行 + manifest 内文件闭包写入 content_objects / page_artifact_objects，
 // 三者同一事务提交；hash 重复时按产物不可变语义幂等返回现有记录。

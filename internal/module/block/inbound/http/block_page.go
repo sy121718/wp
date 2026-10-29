@@ -39,7 +39,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
@@ -235,18 +234,14 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		// 文案带当前版本号：走 response.MsgText + Args 这条既有的参数化通道
 		// （词条里是 %s），而不是把版本号拼进错误串 —— 拼进去就没有占位符可用，
 		// 英文界面会拿到中英混杂的一句。
-		if status, ok := facing.StatusOf(uerr); ok && status == http.StatusConflict {
+		if errors.Is(uerr, blockcontract.ErrBlockVersionConflict) {
 			response.ErrorWithMessage(c, http.StatusConflict,
 				response.ArgsText(c, blockenums.ErrBlockVersionConflict,
 					blockenums.FallbackFor(blockenums.ErrBlockVersionConflict), versionConflictArgs(uerr)))
 			return
 		}
-		// 这条分支原先**只回 500 归口文案、不落任何日志**（F 线实测：合成 payload 触发 500，
-		// 日志里空空如也，排障无从下手）。响应形状不变（仍是归口文案），
-		// 错误原文只进结构化日志 —— 与同文件其它写路径（CreateBlock / DeleteBlock）的写法一致。
-		logger.Scene("block").With("op", "SaveBlockContent").With("block_id", req.ID).
-			With("path", c.Request.URL.Path).Error(uerr, "工作台保存块内容失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
+		// 非版本冲突同样按声明事实分档，内部原文只进统一出口日志。
+		response.ErrorStatusAuto(c, blockErrScene, uerr)
 		return
 	}
 	// 所有保存成功统一JSON；导航由工作台基于已校验的meta.returnUrl决定。

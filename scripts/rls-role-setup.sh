@@ -29,7 +29,7 @@
 # 刻意 **不** 自动改 config.yaml：切连接用户会让「没接好工程作用域」的路径全部查不到
 # 数据（fail closed 而不是报错，很难定位）。必须先把各 model 的读写路径都包上
 # pkg/rls.InProjectScope 之后再切 —— 顺序见 AGENTS.md「数据库」段的 RLS 条目与
-# docs/rls-role-cutover.md。
+# AGENTS.md。
 #
 # 用法：bash scripts/rls-role-setup.sh [角色名]
 set -euo pipefail
@@ -178,6 +178,21 @@ printf '%s\n' "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO $ROLE" |
 printf '%s\n' "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $ROLE" | run_as_admin >/dev/null
 printf '%s\n' "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO $ROLE" | run_as_admin >/dev/null
 
+# 2b) 插件迁移沙箱（B01）：本角色同时充当 `plugin.Service.PluginMigrationRole`。
+#
+#     插件迁移 SQL 直接来自插件 zip，此前只靠 validatePluginStatement 的正则黑名单拦。
+#     实测（2026-10-29）它可被 `DO $$ BEGIN EXECUTE 'DROP' || ' TABLE public.sys_config'; END $$`
+#     绕过，且 `SET LOCAL search_path` **不是安全边界**（显式 public.xxx 照样生效）。
+#     改成由数据库权限兜底后，同一实验得到 `must be owner of table` —— 真拦住。
+#
+#     授权只给"能建自己的 schema"，**刻意不给 public 的 CREATE**：
+#       · CREATE ON DATABASE  → 插件可以 CREATE SCHEMA plugin_<id>
+#       · 不给 GRANT CREATE ON SCHEMA public → 插件无法在公共 schema 建/删任何对象
+#     这两条加在一起才是沙箱：靠的是数据库，不是文本匹配。
+echo "→ 插件迁移沙箱授权（只给建 schema，不给 public 的 CREATE）"
+printf '%s\n' "GRANT CREATE ON DATABASE $DB_NAME TO $ROLE" | run_as_admin >/dev/null
+printf '%s\n' "REVOKE CREATE ON SCHEMA public FROM $ROLE" | run_as_admin >/dev/null
+
 # 3) 属性核对：授权看起来成功、角色却仍带 BYPASSRLS，是这套改造最贵的失败方式。
 ATTR_SUPER="$(printf '%s\n' "SELECT 'ATTR_SUPER=' || rolsuper FROM pg_roles WHERE rolname = '$ROLE'" | run_as_admin | pick_value ATTR_SUPER)"
 ATTR_BYPASS="$(printf '%s\n' "SELECT 'ATTR_BYPASS=' || rolbypassrls FROM pg_roles WHERE rolname = '$ROLE'" | run_as_admin | pick_value ATTR_BYPASS)"
@@ -226,7 +241,7 @@ if [ -z "$PROBE" ]; then
     echo "✗ 没有合格的探针表：需要一张「带 project_id、已启用 RLS、有数据且数据分属 ≥2 个工程」的表。" >&2
     echo "   候选实测：$DIAG" >&2
     echo "   空表 / 单工程表无法验证 RLS（0 行对 0 行说明不了任何事）—— 请先造数据（至少两个工程各一行），" >&2
-    echo "   或按 docs/rls-role-cutover.md 换一张有数据的表再跑。" >&2
+    echo "   或按 AGENTS.md 换一张有数据的表再跑。" >&2
     exit 1
 fi
 
@@ -287,7 +302,7 @@ cat <<'TXT'
      用 pkg/rls.InProjectScope(ctx, db, projectID, fn) 包起来。
      **必须先做完这一步再切角色**：顺序反过来的话，没包 scope 的路径会静默返回 0 行
      （fail closed 不报错），表现为「功能突然查不到数据」而没有任何错误日志。
-     盘点与检索命令见 docs/rls-role-cutover.md（含当前缺口清单）。
+     盘点与检索命令见 AGENTS.md（含当前缺口清单）。
 
   2. 改 config.yaml 的 database.user / database.password 为本角色，重启应用。
      · 口令建议走环境变量注入：database.password 留空 + GOWP_DATABASE_PASSWORD=...

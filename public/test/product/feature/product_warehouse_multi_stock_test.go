@@ -1,6 +1,6 @@
 // product_warehouse_multi_stock_test.go — 商品侧第一批（2026-09-19 用户拍板口径）的链路用例。
 //
-// 覆盖五组口径（docs/14-product-sku-and-cost-model.md §1.1 / §1.4 / §9.3）：
+// 覆盖五组口径（AGENTS.md §1.1 / §1.4 / §9.3）：
 //
 //  1. **仓库侧裸码 / 商品侧带前缀**：同一商品多仓各一行，仓库里那行的 sku_code 是裸码；
 //  2. **多仓逐仓建行 + 前缀仓定前缀**：勾了哪些仓就在哪些仓各建一行，第一个仓决定主体 SKU 前缀；
@@ -280,7 +280,7 @@ func TestProductCreateQuantityTracking(t *testing.T) {
 	}
 }
 
-// TestProductListStockAggregationThreeStates 列表「库存」列的三态聚合（docs/14 §1.4）。
+// TestProductListStockAggregationThreeStates 列表「库存」列的三态聚合（AGENTS.md §1.4）。
 //
 // 混合状态**绝不求和**：任一仓不跟踪就整体显示「无限」—— 求和等于把无限当 0，
 // 页面会显示成「有货」，而实际是「卖不完」。这条是本文件里最值钱的断言。
@@ -371,7 +371,7 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 
 // TestProductCreateReuseInSecondWarehouse 多仓创建时第二个仓已有同裸码 → **复用**（不是错误）。
 //
-// 这一条刻意写清楚：docs/14 §1.1 的多仓口径是「该仓已有同裸码的行 → 复用那一行，不新建（幂等）」，
+// 这一条刻意写清楚：AGENTS.md §1.1 的多仓口径是「该仓已有同裸码的行 → 复用那一行，不新建（幂等）」，
 // 所以「第 N 个仓已有该编码」是**正常路径**，不是冲突；真正的冲突只剩两处 ——
 // 主体 SKU 在工程内重复（预检 + 唯一索引兜底）与仓内外部编码指向了另一个商品（N:1 弱校验）。
 func TestProductCreateReuseInSecondWarehouse(t *testing.T) {

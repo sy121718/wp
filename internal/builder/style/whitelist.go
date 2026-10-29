@@ -22,7 +22,7 @@
 //   - 容器/主题查询（queries）：尺寸查询 + 主题档位 style 查询，分层输出；
 //   - 子元素样式（target）：".badge" 等受限类选择器（后代语义，1~3 段）。
 //
-// 不在本引擎表达的（有意取舍，见 docs/06-E-plugin-authoring.md）：
+// 不在本引擎表达的（有意取舍，见 AGENTS.md）：
 //   - 伪元素（::before/::after）与 content 属性 —— content 是字符串注入载体，
 //     装饰性伪元素请写进 assets/*.css；
 //   - keyframes 与复杂动画 —— 走 assets/*.css；

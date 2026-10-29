@@ -229,7 +229,19 @@
                     rows.push(obj);
                 }
             }
-            if (rows.length === 0) return;            // 一行都没有：不发这个键
+            // 一行都没有：**发空数组**，不发"键不存在"。
+            //
+            // 语义判据（与 data-write-lines 一致，也与三个 *string/*slice DTO 的约定一致）：
+            // 「删光所有行」是明确的清空意图，而"键不存在"表示本次不改。
+            // 让两者都表现成"不发键"，用户删完所有行后保存 = 什么都没发生，
+            // 而界面已经显示成功 —— 这正是 data-write-keep-empty 那条缺陷的同一种形态。
+            //
+            // 单对象（data-write-json-single）例外：它没有"空对象"的合法形态
+            // （{} 会被后端当成"填了个空结构"），所以清空时仍不发键。
+            if (rows.length === 0) {
+                if (!isSingleRow(name, form)) out[name] = [];
+                return;
+            }
             out[name] = rows.length === 1 && !/\[\]$/.test(name) && isSingleRow(name, form)
                 ? rows[0]
                 : rows;
@@ -442,13 +454,34 @@
         return body;
     }
 
-    // keepEmptyNames：表单内标了 data-keep-empty 的控件名。
+    // keepEmptyNames：本表单里「空串有语义」的字段名，两个来源合并：
+    //
+    //   ① 表单级 data-write-keep-empty="a,b" —— 模板作者声明"这几个字段的空串要保留"。
+    //   ② 控件级 <input data-keep-empty> —— 逐控件标。
+    //
+    // 为什么必须两个都认（这是实测到的真缺陷）：两个商品模板写的是**表单级**
+    // data-write-keep-empty，而基座此前只读控件级 data-keep-empty。门禁
+    // check-write-attributes.sh 认前者是合法属性，于是模板一直"合规"、
+    // 属性却从未生效：
+    //
+    //   product_category_form.html 的父级下拉选「（顶级分类）」时值是空串，后端语义是
+    //   「nil = 本次不改，空串 = 提升为顶级」。空串被当成"没填"删掉之后，
+    //   用户点「提升为顶级」实际什么都没改，界面却显示保存成功。
+    //
+    // 两种写法并存是历史原因（控件级先有）；这里合并成一个判据，不再各算一遍。
     function keepEmptyNames(form) {
         var out = [];
+        function add(n) {
+            n = String(n || '').trim();
+            if (n && out.indexOf(n) < 0) out.push(n);
+        }
+        // ① 表单级：逗号分隔的字段名表。
+        String(form.getAttribute('data-write-keep-empty') || '')
+            .split(',').forEach(add);
+        // ② 控件级。
         var els = form.querySelectorAll('[data-keep-empty][name]');
         for (var i = 0; i < els.length; i++) {
-            var n = els[i].getAttribute('name');
-            if (out.indexOf(n) < 0) out.push(n);
+            add(els[i].getAttribute('name'));
         }
         return out;
     }

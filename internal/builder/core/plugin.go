@@ -1,6 +1,6 @@
 package core
 
-// 插件组件的编译内核契约（docs/06-plugin-system.md §5/§7）。
+// 插件组件的编译内核契约（AGENTS.md §5/§7）。
 //
 // 共享形状（PluginPropControl / CollectionBinding / PluginComponentSpec /
 // PluginResolver）住在 internal/builder/source —— 零依赖的共享形状包。

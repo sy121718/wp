@@ -26,12 +26,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 // 容器镜像：来自 versions.go 的单一真源（与生产主库/会话存储大版本对齐）。
@@ -130,25 +130,19 @@ func acquireRedis(t *testing.T) (string, string, error) {
 
 // pingPG 探测 PG 端点连通性（connect_timeout=5s，避免不可达地址长时间挂起）。
 func pingPG(ep PGEndpoint) error {
-	config, err := pgProbeConfig(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database))
+	dsn := pgAppendParams(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database), [2]string{"connect_timeout", "5"})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err
 	}
-	sqlDB := stdlib.OpenDB(*config)
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
 	defer sqlDB.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return sqlDB.PingContext(ctx)
-}
-
-// 超时写入驱动配置，避免把 keyword 参数接到 URI 上而破坏查询串。
-func pgProbeConfig(dsn string) (*pgx.ConnConfig, error) {
-	config, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		return nil, err
-	}
-	config.ConnectTimeout = 5 * time.Second
-	return config, nil
 }
 
 // pingRedis 探测 Redis 端点连通性（3s 超时）。

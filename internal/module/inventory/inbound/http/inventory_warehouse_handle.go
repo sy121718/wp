@@ -21,7 +21,7 @@ import (
 // 为什么拆页而不是折叠：库存管理原先把「仓库配置 / 变动原因字典 / 手动改库存 / 看流水」
 // 四件事压在同一页，靠 <details> 收纳 —— 折叠只是把「平铺」换成「叠起来」，
 // 一页装多了就该拆页。仓库是与货源同构的独立实体，配一次长期不动，
-// 不该占库存日常操作的版面（评审判据见 docs/02-H-admin-page-shell.md §7）。
+// 不该占库存日常操作的版面（评审判据见 AGENTS.md §7）。
 func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)

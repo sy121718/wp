@@ -288,5 +288,5 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 		t.Fatalf("n=10000 档 SQL 次数 %d，与单商品页 %d 不等（页内取数必须与工程内商品数无关）", got, totals[1])
 	}
 	t.Logf("n=10000：SQL 总次数=%d（与 1 商品页逐条相同）；残余的线性项只在单条语句内部，"+
-		"不在语句条数上（见 docs/audit/product-list-n1-report.md §5 末段）", got)
+		"不在语句条数上（见 AGENTS.md §5 末段）", got)
 }

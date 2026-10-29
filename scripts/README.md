@@ -26,7 +26,7 @@ bash scripts/check-permission-gaps.sh   # 需要本地数据库
 
 `check-workbench.sh` 要求开发环境有 Node：检查 Go 生成契约是否漂移、工作台 ESM 能否解析及加载、公共控件资产和实际面板编辑链路。Node 不参与生产资产构建。修改对齐重复项声明后，在仓库根目录运行 `go run ./cmd/workbench-contracts` 更新生成文件。
 
-ArtifactStore、PublicationStore 和静态交付链路已经实现；失效的旧脚本仍不代表当前发行流程。生产构建用 `go build -o app ./cmd`，后台模板和静态文件须一并交付。发行包设计见 `docs/11-foundation-and-open-source.md`。
+ArtifactStore、PublicationStore 和静态交付链路已经实现；失效的旧脚本仍不代表当前发行流程。生产构建用 `go build -o app ./cmd`，后台模板和静态文件须一并交付。发行包设计见 `AGENTS.md。
 ## 巡检与守卫脚本
 
 CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台文案 / 内部错误出口 / 多端 CSS / 库存 SKU 之后，本地先过一遍再推）：

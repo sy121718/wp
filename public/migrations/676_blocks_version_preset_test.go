@@ -1,6 +1,6 @@
 package migrations_test
 
-// 679_blocks_version_preset_test.go — 迁移 679（blocks 加并发版本与预设来源）的落地结果。
+// 676_blocks_version_preset_test.go — 迁移 676（blocks 加并发版本与预设来源）的落地结果。
 //
 // 为什么值得单独钉住：B2 之后的一切都建立在这三列上 —— 保存要带 expectedVersion、
 // 冲突要回 409、编译要锁定版本、预设来源要能追溯。如果列或约束没真正落地，
@@ -17,8 +17,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// blocksVersionPresetVersion 679 的版本号（与 register_blocks_version_preset.go 一致）。
-const blocksVersionPresetVersion = "679-blocks-version-preset"
+// blocksVersionPresetVersion 676 的版本号（与 register_blocks_version_preset.go 一致）。
+const blocksVersionPresetVersion = "676-blocks-version-preset"
 
 // TestBlocksVersionPresetColumnsLand 三列落地，且默认值是 1 而不是 0。
 func TestBlocksVersionPresetColumnsLand(t *testing.T) {
@@ -71,7 +71,7 @@ func TestBlocksVersionPresetConstraintsEnforced(t *testing.T) {
 	// projects 表没有 status 列（实测 \d projects：id/name/settings/create_time/update_time
 	// + 两个 retention 列），只插最小必填三列。
 	if err := db.Raw(`INSERT INTO projects (id, name, settings, create_time, update_time)
-		VALUES (gen_random_uuid(), 'b2-679-约束工程', '{}'::jsonb, now(), now()) RETURNING id`).Scan(&projectID).Error; err != nil {
+		VALUES (gen_random_uuid(), 'b2-676-约束工程', '{}'::jsonb, now(), now()) RETURNING id`).Scan(&projectID).Error; err != nil {
 		t.Fatalf("建工程失败: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestBlocksVersionPresetConstraintsEnforced(t *testing.T) {
 	}
 }
 
-// TestBlocksVersionPresetIdempotent 重跑 679 不报错、不改数据。
+// TestBlocksVersionPresetIdempotent 重跑 676 不报错、不改数据。
 //
 // 幂等是迁移的硬要求（AGENTS.md §数据库）：ADD COLUMN 已存在、
 // 约束已存在都必须成为空操作。这里跑第二遍然后断言行数与版本值没变 ——
@@ -115,7 +115,7 @@ func TestBlocksVersionPresetIdempotent(t *testing.T) {
 
 	var projectID string
 	if err := db.Raw(`INSERT INTO projects (id, name, settings, create_time, update_time)
-		VALUES (gen_random_uuid(), 'b2-679-幂等工程', '{}'::jsonb, now(), now()) RETURNING id`).Scan(&projectID).Error; err != nil {
+		VALUES (gen_random_uuid(), 'b2-676-幂等工程', '{}'::jsonb, now(), now()) RETURNING id`).Scan(&projectID).Error; err != nil {
 		t.Fatalf("建工程失败: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO blocks (project_id, name, version) VALUES (?, ?, 7)`,

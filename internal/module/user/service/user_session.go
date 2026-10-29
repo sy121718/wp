@@ -334,14 +334,26 @@ func (s *Service) ResolveVisitorID(ctx context.Context, token string) (userID ui
 // TouchSession 刷新设备最后活跃时间。
 //
 // 失败只记日志：用户已经登录成功这件事，不该因为「活跃时间没写上」而改变。
+//
+// **只更新仍然存在的会话**（`XX` 条件写，SEC-03）。这一条是安全要求，不是优化：
+// Touch 是读-改-写，中间有一个窗口能被撤销插进来 ——
+//
+//	Touch 读到会话 → Revoke 删除会话 → Touch 写回
+//
+// 而 Redis 的 `SET ... KEEPTTL` 在 key 不存在时**不会失败**，它会把 key 当成
+// 无过期时间写进去（实测 TTL = -1）。于是被撤销的会话不仅复活，还永不过期。
+// 加上 XX 之后，会话已撤销时这次写入不生效 —— 那是正常情况（用户正好退出），
+// 不打错误日志。
 func (s *Service) TouchSession(ctx context.Context, sess *UserAuthSession) {
 	if sess == nil || sess.UserID == 0 || strings.TrimSpace(sess.Token) == "" {
 		return
 	}
 	sess.LastActiveAt = time.Now().Unix()
-	// 用 KEEPTTL 覆盖写：活跃时间要更新，但**不能**顺手把会话续期 ——
+	// 用 KEEPTTL 条件写：活跃时间要更新，但**不能**顺手把会话续期 ——
 	// 那会让「24 小时的会话」变成「只要一直在点就一直有效」。
-	if err := cache.SetJSONKeepTTL(ctx, sessionKey(sess.Token), sess); err != nil {
+	//
+	// 落空（written=false）说明会话在读到之后被撤销/过期了：什么都不做。
+	if _, err := cache.SetJSONKeepTTLIfExists(ctx, sessionKey(sess.Token), sess); err != nil {
 		logger.Scene("user").Error(err, "更新设备活跃时间失败")
 	}
 }
@@ -509,4 +521,23 @@ func dropSession(ctx context.Context, userID uint64, hash string) error {
 		return err
 	}
 	return unindexSession(ctx, userID, hash)
+}
+
+// —— 测试钩子（仅供 *_test.go 使用，生产代码不要调用）——
+//
+// 为什么导出而不是让测试自己拼 key：会话 key = 前缀 + token 哈希，这套编码是**实现细节**。
+// 测试里复制一份会让「key 格式变了而测试还在验证旧格式」变成静默失效 —— 那种情况下
+// 断言全绿但什么都没验。导出这三个函数，测试就只能跟着实现走。
+
+// SetSessionForTest 按生产编码写入一条会话（含 TTL）。
+func SetSessionForTest(ctx context.Context, sess *UserAuthSession, ttl time.Duration) error {
+	return cache.SetJSON(ctx, sessionKey(sess.Token), sess, ttl)
+}
+
+// SessionHashForTest 令牌 → 会话索引哈希（撤销路径的入参形态）。
+func SessionHashForTest(token string) string { return tokenHash(strings.TrimSpace(token)) }
+
+// SessionTTLForTest 会话 key 的剩余存活时间（-2 = 不存在，-1 = 永不过期）。
+func SessionTTLForTest(ctx context.Context, token string) (time.Duration, error) {
+	return cache.TTL(ctx, sessionKey(token))
 }

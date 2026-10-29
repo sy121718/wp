@@ -7,7 +7,7 @@ package projecthttp
 // scripts/check-route-registration-placement.sh 守这条。
 //
 // 页面写动作的 Casbin 权限点路径与迁移前逐字一致；页面 GET 的 Casbin 待补
-//（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
+//（见 AGENTS.md §4.3）。
 
 import (
 	"github.com/gin-gonic/gin"

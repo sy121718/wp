@@ -1,5 +1,5 @@
 // Package plugincomp 插件组件定义：manifest.json 的解析、校验与编译规格构建
-// （docs/06-plugin-system.md §5）。装配层（plugin 模块）在安装时校验 manifest，
+// （AGENTS.md §5）。装配层（plugin 模块）在安装时校验 manifest，
 // 在编译/工作台装配时按 enabled 插件集构建 core.PluginComponentSpec。
 //
 // 依赖方向：plugincomp → core + style（内核契约），plugin 模块 → plugincomp。

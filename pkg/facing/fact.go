@@ -101,7 +101,15 @@ func FactOf(err error) (Fact, bool) {
 	if IsBusinessKey(raw) {
 		return Fact{Key: raw, Fallback: raw, Business: true}, true
 	}
-	// ③ 复合形态：`key: 明细`。
+	// ③ 复合形态：`key: 明细`。分隔符**只认 ASCII 冒号**。
+	//
+	// 全角冒号刻意不受支持：它是"写错了"的形态，而不是另一种合法写法。
+	// 判据在 inventory 的 TestInventoryErrMsgSplitsFacts 里写得很清楚 ——
+	// 「分隔符写错一个字符（全角）就退化成内部故障」,两条用例必须同时在。
+	// 把全角也当合法，等于让写错的地方静默通过，而协议形态就不再可判定。
+	//
+	// （模块若确实要写全角，应在**自己的取词层**处理，不要放宽这条共享判据：
+	//  pkg/facing 是所有出口共用的，一处放宽=全局语义变化。）
 	idx := strings.IndexByte(raw, ':')
 	if idx <= 0 {
 		return Fact{}, false

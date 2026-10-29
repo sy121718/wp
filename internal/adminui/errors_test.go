@@ -15,6 +15,7 @@ package adminui
 
 import (
 	"errors"
+	"go_wp/internal/text"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,8 +45,11 @@ func TestAdminWriteFailedTextBlankFallsBackToInternal(t *testing.T) {
 		if recorder.Code != http.StatusBadRequest {
 			t.Fatalf("写失败入口应是 400，got %d（raw=%q）", recorder.Code, raw)
 		}
-		if !strings.Contains(recorder.Body.String(), MsgInternalError) {
-			t.Fatalf("空文案应回落到 %s，got body=%s", MsgInternalError, recorder.Body.String())
+		// 断言**归口文案**而不是裸 key：出口会把 key 取成当前语言的译文，
+		// 裸 key 只应出现在日志里（translate 未命中时原样返回，正是"把
+		// MsgInternalError 直接发给客户端"那条缺陷）。
+		if !strings.Contains(recorder.Body.String(), text.InternalFallback) {
+			t.Fatalf("空文案应回落到归口文案（%s），got body=%s", text.InternalFallback, recorder.Body.String())
 		}
 	}
 }
@@ -80,8 +84,8 @@ func TestPageErrorBadRequestHidesRawError(t *testing.T) {
 		t.Fatalf("参数错误出口应是 400，got %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, MsgInternalError) {
-		t.Fatalf("响应体应带归口 key %s，got body=%s", MsgInternalError, body)
+	if !strings.Contains(body, text.InternalFallback) {
+		t.Fatalf("响应体应带归口文案（%s），got body=%s", text.InternalFallback, body)
 	}
 	if strings.Contains(body, secret) || strings.Contains(body, "42P01") || strings.Contains(body, "sys_roles") {
 		t.Fatalf("原始错误泄漏进了响应体：%s", body)
@@ -101,8 +105,8 @@ func TestPageErrorInternalIsInternalExit(t *testing.T) {
 		t.Fatalf("局部内部错误出口应是 500，got %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, MsgInternalError) {
-		t.Fatalf("响应体应带归口 key %s，got body=%s", MsgInternalError, body)
+	if !strings.Contains(body, text.InternalFallback) {
+		t.Fatalf("响应体应带归口文案（%s），got body=%s", text.InternalFallback, body)
 	}
 	if strings.Contains(body, secret) || strings.Contains(body, "42P01") || strings.Contains(body, "order_coupons") {
 		t.Fatalf("原始错误泄漏进了响应体：%s", body)

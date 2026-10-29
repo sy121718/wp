@@ -43,11 +43,14 @@ func NewToolIdempotencyModel(db *gorm.DB) *ToolIdempotencyModel {
 //
 // 过期**不删行**：这是个只读路径，顺手删除会让一次查询变成写事务，
 // 而它会在工具调用的热路径上被调用。历史行由人工定期清。
-func (m *ToolIdempotencyModel) Lookup(ctx context.Context, tool, key string) (row ToolIdempotencyRow, ok bool, err error) {
+func (m *ToolIdempotencyModel) Lookup(ctx context.Context, tool string, actor int64, key string) (row ToolIdempotencyRow, ok bool, err error) {
+	// actor 必须在 WHERE 里（SEC-05）：幂等键的作用域是 (tool, actor, key)。
+	// 少这一个条件，两个用户用同一个 idempotencyKey 就会互相命中 ——
+	// 后一个拿到前一个的写结果，且不真正执行写入。
 	err = m.db.WithContext(ctx).Table(tableNameAIToolIdempotency).
 		Select("tool_name, idem_key, result_text, create_time").
-		Where("tool_name = ? AND idem_key = ? AND create_time > now() - ?::interval",
-			tool, key, idempotencyWindow.String()).
+		Where("tool_name = ? AND actor = ? AND idem_key = ? AND create_time > now() - ?::interval",
+			tool, actor, key, idempotencyWindow.String()).
 		Limit(1).
 		Scan(&row).Error
 	if err != nil {
@@ -67,12 +70,15 @@ func (m *ToolIdempotencyModel) Lookup(ctx context.Context, tool, key string) (ro
 //
 // 只存 result_text，不存 result_data：写工具的返回值是给人读的一句话；
 // 带结构化数据的工具不该是写工具（那类数据的消费者是渲染通道，见 ai_session_render.go）。
-func (m *ToolIdempotencyModel) Save(ctx context.Context, tool, key, resultText string) error {
+func (m *ToolIdempotencyModel) Save(ctx context.Context, tool string, actor int64, key, resultText string) error {
+	// actor 必须写进行：唯一约束是 (tool_name, actor, idem_key)，
+	// 不写它会落成 0 —— 于是所有没有主体的调用共用一个作用域，隔离形同不存在。
 	return m.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Table(tableNameAIToolIdempotency).
 		Create(map[string]any{
 			"tool_name":   tool,
+			"actor":       actor,
 			"idem_key":    key,
 			"result_text": resultText,
 		}).Error

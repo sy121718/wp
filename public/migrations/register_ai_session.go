@@ -2,7 +2,7 @@ package migrations
 
 import "sync"
 
-// register_ai_session.go — AI 会话与事件日志（512，见 docs/16-ai-session-and-cache.md）。
+// register_ai_session.go — AI 会话与事件日志（512，见 AGENTS.md）。
 func registerAISession() {
 	registerAISessionOnce.Do(registerAISessionSeed)
 }

@@ -2,7 +2,7 @@
 # check-jet-translation-call-sites.sh — 禁止「赋值右侧直调取词函数」这一 Jet 写法。
 #
 # 为什么需要它：取词 .["t"] 的三种形态里，只有这一种是**语法层**被拒的（实测原文见
-# docs/rules/jet-template-contract.md §4.3，用例 TestJetContractAssignmentFormDependsOnChannel）：
+# AGENTS.md §4.3，用例 TestJetContractAssignmentFormDependsOnChannel）：
 #
 #     {{x := .["t"]("k", "兜底")}}     →  Jet Runtime Error: unexpected node type .["t"] in unary expression evaluating
 #     {{ .["t"]("k", "兜底") }}        →  正常（直调形态，现网 3462 处）
@@ -18,7 +18,7 @@
 # 允许：{{tr := .["t"]}}（不带调用的赋值）、{{ .["t"](…) }}（直调）、map("t", .["t"], …)、
 #       {{if isset(.["t"])}} 之类的非赋值用法。
 #
-# 与 docs/rules/jet-template-contract.md §6.2.1 的同源正则相比只多一步：**先剥掉 Jet 注释
+# 与 AGENTS.md §6.2.1 的同源正则相比只多一步：**先剥掉 Jet 注释
 # {* … *}**（换成等长空白、保留换行，行号仍与原文一一对应）。注释里的字面量不是调用，
 # 照报是假红 —— 教训来自 check-empty-state-table-head.sh：某模板注释里写了「表头在
 # {{range}} 里提不出来」，被当成真 token 压栈，于是同文件的真空态被误报、另一个文件反而漏报。

@@ -9,7 +9,7 @@
  * 固定值不是露白就是溢出。这里算出 scale 写进 CSS 变量，纯 CSS 负责应用。
  *
  * 视口宽度由模板给（data-preview-viewport），默认 1440 —— 与「桌面」验收视口一致
- * （docs/rules/frontend.md 的三条视口之一）。
+ * （AGENTS.md 的三条视口之一）。
  */
 (function (global) {
     'use strict';

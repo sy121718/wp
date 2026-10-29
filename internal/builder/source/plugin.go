@@ -17,7 +17,7 @@ import "io/fs"
 // 仍由装配层 internal/builder/plugincomp 与 style 引擎完成，经 CompileStyles 闭包注入。
 
 // PluginPropControl 插件组件的单个检查器控件声明（manifest props 段投影）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 type PluginPropControl struct {
 	// Kind 控件类型白名单：text/textarea/number/boolean/select/color/unit/media。
 	Kind string `json:"kind"`
@@ -32,7 +32,7 @@ type PluginPropControl struct {
 }
 
 // CollectionBinding 插件组件集合绑定（docs/06 §9，不变量 4 白名单）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 type CollectionBinding struct {
 	// Source 集合源标识（"content:{entityType}" 等）。
 	Source string
@@ -43,7 +43,7 @@ type CollectionBinding struct {
 }
 
 // StyleSink 样式桶的最小写入能力：把一条已作用域化的规则追加进产物 CSS 的断点桶。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 //
 // 为什么是接口而不是具体类型：编译期的样式桶实现是 core.CSSBuckets（住在内核里），
 // 而本包不能 import core —— 那样共享形状又变回内核的一部分，契约包照样被钉死在 core 上。
@@ -68,7 +68,7 @@ type StyleSink interface {
 }
 
 // PluginComponentSpec 插件组件的编译规格（编译内核消费的中性形状）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 type PluginComponentSpec struct {
 	// Type 组件类型标识："plugin.{pluginID}.{name}"（与内置 "core.*" 命名空间隔离）。
 	Type string
@@ -89,7 +89,7 @@ type PluginComponentSpec struct {
 }
 
 // PluginResolver 插件组件解析契约：按节点类型返回组件规格。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 // 实现方为装配层（dashboard/page service 经 plugin 模块构建，仅含 enabled 插件）。
 // 确定性：同一插件版本集构建的 resolver 查询结果恒定。
 type PluginResolver interface {
@@ -97,7 +97,7 @@ type PluginResolver interface {
 }
 
 // PluginFS 单个启用插件的模板文件系统视图（插件模板复合加载的输入形状）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 //
 // 为什么在本包而不是 internal/templates：插件契约（internal/module/plugin/contract）
 // 要用它声明 Assembly.PluginFS，而契约包不得反向依赖 builder 内核 —— templates 包自身

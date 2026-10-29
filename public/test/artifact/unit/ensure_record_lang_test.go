@@ -1,7 +1,7 @@
 package unit
 
 // ensure_record_lang_test.go — page_artifacts 的语言维度（多语言 P3 前置，
-// docs/06-D-site-i18n.md §15.5 第 1 条）。
+// AGENTS.md §15.5 第 1 条）。
 //
 // 覆盖：同页两语言各登记一行互不覆盖、同语言同版本新内容保持独立身份、
 // 空语言兜底站点默认语言、按内容哈希精确取行、响应回带 lang。

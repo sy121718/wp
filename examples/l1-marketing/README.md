@@ -30,7 +30,7 @@ zip -r /tmp/campaignkit-1.0.0.zip manifest.json components assets migrations
    `DROP SCHEMA` / `CREATE ROLE` / `GRANT` / 访问 `public.` / 文件与系统目录；
 2. `schemaVersion` 是整数：**同版本重装幂等跳过**，升版本按「DROP 旧 schema + 跑全量」重建；
 3. 表建好了也**不能直接进可视化**：`collections.json`（L2 内容源）尚未实现，
-   组件模板目前拿不到集合数据（见 `docs/06-E-plugin-authoring.md` §2 的「不能做什么」）。
+   组件模板目前拿不到集合数据（见 `AGENTS.md` §2 的「不能做什么」）。
 
 ## 排错
 

@@ -3,7 +3,7 @@ package builder
 // css_verify_multidevice.go — 产物级「多端硬规则」守卫（审计 UI-015）。
 //
 // css_verify.go 原本只做一件事：产物里引用的 sky-* 动画必须有对应 @keyframes。
-// 本文件把同一层校验扩成**多端硬规则守卫**，规则来自 docs/02-C0-component-base-spec.md 6.9 节
+// 本文件把同一层校验扩成**多端硬规则守卫**，规则来自 AGENTS.md 6.9 节
 // 与 AGENTS.md「测试」一节的多端适配硬规则：
 //
 //  1. bare-hover                     裸 :hover —— 依赖悬停的规则没有包在 @media (hover: hover) 里。

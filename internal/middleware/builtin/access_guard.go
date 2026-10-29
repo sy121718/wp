@@ -198,12 +198,31 @@ func AccessGuardMiddleware(prefix string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// **访问变体归一**（B01）：同一份受限产物不止一种 URL 写法，守卫必须认全，
+		// 否则每条漏掉的变体都是一次直出。实测漏过的三类（access_guard_test.go 的
+		// TestAccessGuardCoversContentVariants 钉住）：
+		//   · `/about/index.html.gz` / `.br` —— 预压缩字节由 PrecompressedAssetMiddleware 直出；
+		//     它不以 `/index.html` 结尾，ResolveActiveEntry 判「不是激活条目」→ 直接放行；
+		//   · `/About`、`/ABOUT/index.html` —— 磁盘上的产物名大小写固定，
+		//     但路径归一后能否命中取决于文件系统；不放行是安全的方向。
+		//
+		// 归一顺序：先剥编码后缀（它属于「同一份内容的另一种传输形式」），
+		// 再交给 ResolveActiveEntry；大小写变体在解析失败时按不敏感方式再试一次。
+		clean = stripContentEncodingSuffix(clean)
 		root := pipeline.ActiveRoot()
 		// 条目名必须用访问面**实际命中的那一个**（ResolveActiveEntry）：
 		// `/about` 与 `/about/index.html` 取的是同一份产物，而页面 URL 真叫
 		// `/foo/index.html` 时它又是另一份产物 —— 这条归一与静态面同源，
 		// 是守卫不被「显式文件名」绕过的前提。
 		entry, isEntry := pipeline.ResolveActiveEntry(root, clean)
+		if !isEntry {
+			// 大小写变体：产物名是固定大小写，而 URL 里的大小写由请求方决定。
+			// 只有**能唯一解析**时才采用（多个候选就交给静态面按不存在处理，
+			// 不在守卫里猜"用户想去哪个页面"）。
+			if folded, okFold := resolveEntryFolded(root, clean); okFold {
+				entry, isEntry = folded, true
+			}
+		}
 		if !isEntry {
 			// 不是激活条目：可能是产物内普通文件请求（/about/guard.json 会走到这里，
 			// 因为 about 是符号链接、而 guard.json 本身不是）。
@@ -509,4 +528,67 @@ func serveUnlockFailure(c *gin.Context, guard *pipeline.GuardMeta, back string, 
 	c.Data(accessWrongPasswordStatus, "text/html; charset=utf-8",
 		pipeline.RenderGuardPage(meta, back, showError))
 	c.Abort()
+}
+
+// contentEncodingSuffixes 内容编码后缀（预压缩字节的文件名后缀）。
+//
+// 与 pipeline.PrecompressedSuffix 的关系：那个常量是**生成侧**的真源（构建期写 .gz），
+// 这里多列 .br 是因为访问面要防的是「将来加了 brotli 而守卫没跟上」——
+// 漏掉的后果是受限页面按 brotli 字节直出，而不是报错。
+var contentEncodingSuffixes = []string{pipeline.PrecompressedSuffix, ".br"}
+
+// stripContentEncodingSuffix 剥掉内容编码后缀（只剥一层）。
+//
+// 为什么守卫要剥它：`.gz` 是**同一份产物**的另一种传输形式，不是另一个页面。
+// 守卫判定必须发生在编码层之前 —— 否则受限页面的预压缩字节就绕过了访问判定。
+func stripContentEncodingSuffix(clean string) string {
+	for _, suffix := range contentEncodingSuffixes {
+		if trimmed, ok := strings.CutSuffix(clean, suffix); ok && trimmed != "" {
+			return trimmed
+		}
+	}
+	return clean
+}
+
+// resolveEntryFolded 按**大小写不敏感**再解析一次激活条目（唯一命中才采用）。
+//
+// 存在的理由：受限产物的 URL 可能被写成 `/About`。静态面能否命中取决于文件系统
+// （Linux 上不命中 → 404，表面上"没泄漏"），但把安全建立在「文件系统恰好区分大小写」
+// 上是不成立的 —— macOS / Windows 的开发机与容器挂载都可能不区分。
+//
+// 既然一次大小写变体在那些环境下会真的直出内容，守卫就必须认它。
+// 只在**恰好一个**候选时采用：多个候选说明请求本身有歧义，交给静态面按不存在处理。
+func resolveEntryFolded(root, clean string) (string, bool) {
+	defer func() {}()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", false
+	}
+	lowered := strings.ToLower(clean)
+	var hit string
+	matches := 0
+	for _, e := range entries {
+		name := strings.ToLower(e.Name())
+		// 条目名本身就是 URL 段；大小写变体匹配「第一段」。
+		if lowered != name && !strings.HasPrefix(lowered, name+"/") {
+			continue
+		}
+		// 用真实大小写的条目名重建路径，再走一次常规解析。
+		//
+		// 余下部分按**条目名长度**从原路径切（`/ABOUT/index.html` 切掉 5 个字符
+		// `ABOUT`，剩 `/index.html`），保留后续段的原始写法。
+		candidate := e.Name() + clean[len(e.Name()):]
+		// ResolveActiveEntry 返回的是**条目名**（不是完整路径）：/about/index.html
+		// 归一到条目 about。守卫后续的 activeEntryDir(entry) 要的正是条目名 ——
+		// 传完整路径会让它去 Lstat `about/index.html`，而符号链接是 `about`，
+		// 于是判成「不是激活条目」并放行（这就是大小写变体漏过的那条路）。
+		if resolved, ok := pipeline.ResolveActiveEntry(root, candidate); ok {
+			hit = resolved
+			matches++
+		}
+	}
+	if matches == 1 {
+		return hit, true
+	}
+	return "", false
 }

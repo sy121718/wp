@@ -230,3 +230,57 @@ func TestPathRankingKeysetPagination(t *testing.T) {
 		}
 	}
 }
+
+// TestSummaryUVIsNotSumOfDailyUV 跨日重复访客不得被 SUM 重复计数（PUB-07 / B07）。
+//
+// 缺陷形态：走预聚合表时 UV 取 SUM(visitors)，而 visitors 是**按天**去重的计数。
+// 同一个人周一与周三各来一次，两天各记 1，SUM 得 2 —— 但区间内的真实 UV 是 1。
+// 这不是精度问题，是把"访问人次"冒充成"访客数"：一个回访率高的站会被算成
+// 访客接近 PV，而它其实只有一小撮人在反复来。
+//
+// 判据：同一批明细，走汇总与走明细必须给出**相同**的 UV（本用例的交叉验证）。
+func TestSummaryUVIsNotSumOfDailyUV(t *testing.T) {
+	f := newAnalyticsFixture(t)
+	today := utcDay(time.Now())
+	day1 := today.AddDate(0, 0, -3)
+	day2 := today.AddDate(0, 0, -1)
+
+	// 同一个访客 v1 在两天各来一次；v2 只在 day1 来。
+	seedView(t, f, "/a", "v1", day1.Add(2*time.Hour))
+	seedView(t, f, "/a", "v2", day1.Add(3*time.Hour))
+	seedView(t, f, "/a", "v1", day2.Add(2*time.Hour))
+	runRollup(t, f.svc)
+
+	// ① 走汇总（窗口完全在过去）。
+	sum := summaryOf(t, f, dayStr(day1), dayStr(day2))
+	if sum.Source != analyticsdto.SourceSummary {
+		t.Fatalf("完全落在过去的窗口应读预聚合表，实际 %q", sum.Source)
+	}
+	// 区间真实 UV = {v1, v2} = 2（不是 SUM(2+1)=3）。
+	if sum.Total != 3 {
+		t.Fatalf("PV 应为 3，实际 %d", sum.Total)
+	}
+	if sum.Visitors != 2 {
+		t.Fatalf("区间 UV 应为 2（v1 跨天只算一次），实际 %d —— "+
+			"SUM(按天 UV) 把回访者重复计数，把「人次」冒充成「人数」", sum.Visitors)
+	}
+
+	// ② 按天维度仍应各自给出当天 UV（那才是按天去重的正确用法）。
+	if len(sum.Daily) != 2 {
+		t.Fatalf("应有两天的按天数据: %+v", sum.Daily)
+	}
+	if sum.Daily[0].Visitors != 2 || sum.Daily[1].Visitors != 1 {
+		t.Fatalf("按天 UV 应各自去重（day1=2, day2=1），实际 %d / %d",
+			sum.Daily[0].Visitors, sum.Daily[1].Visitors)
+	}
+
+	// ③ 交叉验证：同一批数据走明细必须给出相同的区间 UV。
+	detail := summaryOf(t, f, dayStr(day1), dayStr(today))
+	if detail.Source != analyticsdto.SourceDetail {
+		t.Fatalf("含今天的窗口应读明细表，实际 %q", detail.Source)
+	}
+	if detail.Visitors != sum.Visitors {
+		t.Fatalf("汇总与明细的 UV 不一致：汇总 %d，明细 %d（同一批数据不该有两个答案）",
+			sum.Visitors, detail.Visitors)
+	}
+}

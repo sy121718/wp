@@ -7,7 +7,7 @@ package userhttp
 // scripts/check-route-registration-placement.sh 守这条。
 //
 // 页面写动作额外按**对应 API 的路径**走 Casbin 权限点，与 /api/customer/* 完全同源，
-// 一个字符都不改；页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
+// 一个字符都不改；页面 GET 的 Casbin 待补（见 AGENTS.md §4.3）。
 //
 // 为什么页面不并进 SetupUserRoutes：客户详情页要读订单摘要，而订单模块装配在 user
 // **之后**（订单依赖 user 的访客开号端口），页面注册只能等订单契约就绪后由装配层调用。
@@ -73,7 +73,7 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 		adminui.PageSlot(CustomersListPageTemplate),
 		h.CustomersPage)
 	// 客户概览：目录（客户）下的第一项。只读 —— 只读不等于不鉴权，菜单隐藏不是访问控制
-	//（docs/02-Z §4.3）。与列表页同源（同一张 users 表的两种看法），借同一个读权限点。
+	//（AGENTS.md §4.3）。与列表页同源（同一张 users 表的两种看法），借同一个读权限点。
 	pages.GET("/customers/overview",
 		adminui.PageAuthz("/api/customer/list"),
 		adminui.PageSlot(CustomerOverviewPageTemplate),

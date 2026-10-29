@@ -67,12 +67,25 @@ check-all: ## 门禁全量（无依赖组 + 数据库组）
 	bash scripts/check-all.sh --with-db
 
 .PHONY: test-race
-test-race: ## 竞态检测（CI 目前无 -race，这是手动入口：核心六域）
-	# workbench 在列：它的画布 handler 曾经直接往 builder 的进程级 schema 缓存里 merge
-	# 插件 schema（活的 data race，已修）；不放进来就没有任何判据拦得住它回来。
+test-race: ## 竞态检测（CI 的 race-detector job 直接调它，不是手动入口）
+	# 这条命令有两个消费者：CI 的 race-detector job 与本地手动跑。所以注释必须准 ——
+	# 它曾经写"CI 目前无 -race"，而 CI 早已加了 job 调用本目标；按旧注释读会以为
+	# 竞态只能靠人记得手动跑。
+	#
+	# 覆盖范围按「有并发写共享状态」的域挑，不是所有包：
+	#   · pkg / pipeline / builder —— 全局缓存与编译管线（进程级 schema 缓存）
+	#   · workbench —— 画布 handler 曾直接往 builder 的 schema 缓存里 merge 插件 schema，
+	#     活的 data race（已修）；不放进来就没有判据拦得住它回来
+	#   · publication / presentation —— 发布激活与实例状态的多 goroutine 路径
+	#   · order / cart / inventory / user / runtimefragment —— 订单、预占、库存、
+	#     会话与访客片段：都是"同一资源被多请求同时改"的形态，最需要 -race
+	#   · ai / mcp —— MCP 幂等记录与会话事件（B02 的隔离改造依赖这层判据）
 	go test -race -p 4 ./pkg/... ./internal/pipeline/... ./internal/builder/... \
 		./internal/module/workbench/... ./internal/module/publication/... ./internal/module/presentation/... \
-		-count=1 -timeout 20m
+		./internal/module/order/... ./internal/module/cart/... ./internal/module/inventory/... \
+		./internal/module/user/... ./internal/module/runtimefragment/... ./internal/module/ai/... \
+		./internal/mcp/... \
+		-count=1 -timeout 30m
 
 .PHONY: migrate
 # -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。

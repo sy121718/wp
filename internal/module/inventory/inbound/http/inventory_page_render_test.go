@@ -2,7 +2,7 @@ package inventoryhttp
 
 // inventory_page_render_test.go — 库存三页（库存管理 / 仓库管理 / 变动原因字典）整页失败出口的回归护栏。
 //
-// 被守的边界（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」；
+// 被守的边界（AGENTS.md §「整页 GET 的失败出口：失败也必须是『这一页』」；
 // 规范样板 navigation_page_handle.go:290-317）：
 //
 //  1. 取数失败仍是**这一页**：同一模板 + 完整页壳 + Content-Type: text/html ——

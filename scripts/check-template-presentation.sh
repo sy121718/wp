@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-template-presentation.sh — 模板做展示判断，不写字面外观（docs/rules/template-boundary.md）。
+# check-template-presentation.sh — 模板做展示判断，不写字面外观（AGENTS.md）。
 #
 # 口径（2026-10-08 更新）：**Go 给业务事实与权限事实，Jet 决定展示状态（含 tone 语义档），
 # CSS 决定外观**。展示判断归前端，所以「模板按事实选 tone」是**合法形态**，本脚本不把它
@@ -107,7 +107,7 @@ fi
 if [ "$new_violations" -gt 0 ]; then
     echo >&2
     echo "模板表现层门禁：${new_violations} 处违规。" >&2
-    echo "  Go 给业务事实、Jet 决定展示状态、CSS 决定外观：见 docs/rules/template-boundary.md。" >&2
+    echo "  Go 给业务事实、Jet 决定展示状态、CSS 决定外观：见 AGENTS.md。" >&2
     echo "  上面每一条的判据说明见该文档 §语义 vs 外观（三条禁令）与 §门禁。" >&2
     echo "  存量（尚未收敛的）按文件登记在 ${ALLOW_FILE}，新增违规不豁免。" >&2
     exit 1

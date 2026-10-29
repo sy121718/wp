@@ -7,6 +7,7 @@ package aiservice
 // 看起来像卡住，而服务端没有任何异常，日志也是干净的。
 
 import (
+	"context"
 	"testing"
 
 	aidto "go_wp/internal/module/ai/dto"
@@ -61,7 +62,7 @@ func TestRecentDialogueRejectsEmptyKey(t *testing.T) {
 	// 空会话键是调用方的错误（不是「没有历史」）：要报错而不是静默回空，
 	// 否则界面永远看不到历史也不会有人发现参数没传对。
 	svc := NewSessionService(nil)
-	if _, err := svc.RecentDialogue(nil, "  ", 0); err == nil {
+	if _, err := svc.RecentDialogue(context.Background(), "  ", 0, 0); err == nil {
 		t.Error("空会话键应当报错")
 	}
 }

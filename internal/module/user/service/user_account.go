@@ -58,10 +58,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/contract"
-	"go_wp/internal/module/user/contract"
-	"go_wp/internal/module/user/dto"
-	"go_wp/internal/module/user/enums"
+	mailcontract "go_wp/internal/module/mail/contract"
+	usercontract "go_wp/internal/module/user/contract"
+	userdto "go_wp/internal/module/user/dto"
+	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/upload"
@@ -406,7 +406,7 @@ func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordR
 		return err
 	}
 	now := time.Now()
-	return s.m.UpdateFields(ctx, e.ID, map[string]any{
+	if uerr := s.m.UpdateFields(ctx, e.ID, map[string]any{
 		"password":              string(hashed),
 		"activation_key":        nil,
 		"activation_expires_at": nil,
@@ -415,7 +415,10 @@ func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordR
 		"login_failure_count": 0,
 		"locked_until_time":   nil,
 		"update_time":         now,
-	})
+	}); uerr != nil {
+		return uerr
+	}
+	return nil
 }
 
 const (

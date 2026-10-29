@@ -108,7 +108,7 @@ type CreateOrderReq struct {
 	// ProvisionGuestAccount 是否给这个邮箱开号并把初始密码寄过去（**显式请求字段**）。
 	//
 	// 三态，且是**唯一**的开号依据；订单来源由建单入口决定，不参与开户判定
-	// （见 docs/02-W-admin-order-create.md §4）。
+	// （见 AGENTS.md §4）。
 	//
 	//	nil   —— 调用方未表态。只有既有的前台 checkout 链路会这样：它走购物车结算，
 	//	         没有「是否开户」这个决定，因此保持既有行为（下单即开户），前台行为逐字不变；

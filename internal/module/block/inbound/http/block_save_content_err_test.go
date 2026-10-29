@@ -82,6 +82,9 @@ func (e *stubVersionConflict) Facing() (string, string) {
 	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
 }
 func (e *stubVersionConflict) Version() string { return e.version }
+func (e *stubVersionConflict) Is(target error) bool {
+	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
+}
 
 // saveContentResp 调用 SaveBlockContent 并返回原始状态码、原始响应体与解析后的 JSON。
 //
@@ -266,5 +269,20 @@ func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
 		if strings.Contains(parsed.Message, leak) {
 			t.Errorf("文案里出现了内部标识 %q：%s", leak, parsed.Message)
 		}
+	}
+}
+
+// 版本冲突之外的业务拒绝沿声明状态返回，不被统一伪装成409或500。
+func TestSaveBlockContentBusinessErrorPreservesDeclaredStatus(t *testing.T) {
+	svc := &stubBlockService{
+		detail:    &blockdto.BlockResp{ID: "b-1", Name: "页脚", Version: 7},
+		updateErr: blockenums.Err(blockenums.ErrBlockInvalidDoc),
+	}
+	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":7}`)
+	if status != http.StatusBadRequest || parsed.Code != http.StatusBadRequest {
+		t.Fatalf("业务校验应400: status=%d body=%s", status, raw)
+	}
+	if parsed.Message != blockenums.FallbackFor(blockenums.ErrBlockInvalidDoc) {
+		t.Fatalf("应输出声明文案且不含内部标识: %s", raw)
 	}
 }

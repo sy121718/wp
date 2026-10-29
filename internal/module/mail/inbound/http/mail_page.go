@@ -1585,45 +1585,16 @@ func toAnyRows[T any](in []T) []any {
 	return out
 }
 
-// —— 画布页数据与取数（来自 main 的画布改造；handler 只交视图对象）——
-func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.AutomationItem) gin.H {
-	nodesJSON, merr := json.Marshal(item.Nodes)
-	if merr != nil {
-		nodesJSON = []byte("[]")
-	}
-	meta := h.automationCanvasMeta(c, item)
-	metaJSON, _ := json.Marshal(meta)
-	return gin.H{
-		"title": mailenums.PageTitleAutomationCanvas.Key,
-		"A":     item,
-		// 新建流程要能在一屏内完成：名称与触发方式是画布顶栏的两个输入控件，
-		// 下拉选项与服务端校验共用 enums 的同一份枚举。
-		"IsNew":    item.ID == 0,
-		"Triggers": triggerOptions(mailTranslate(c), item.TriggerType),
-		// 频率的初始态：新流程按 every_time（改造前的默认）渲染。
-		"FrequencyEveryTime": item.TriggerFrequency != mailmodel.TriggerFrequencyOnce,
-		"FrequencyOnce":      item.TriggerFrequency == mailmodel.TriggerFrequencyOnce,
-		"NodeTypes":          paletteFromMeta(meta["nodeTypes"]),
-		"NodesJSON":          utils.JsonSafe(string(nodesJSON)),
-		"MetaJSON":           utils.JsonSafe(string(metaJSON)),
-		"jsVer":              automationJsVer(),
-		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
-		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
-		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
-		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
-		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-in-up"}),
-	}
-}
-
-// automationCanvasView 画布页的强类型视图（main 的 gin.H 版 automationCanvasData 的迁移形态）。
+// automationCanvasView 画布页的强类型视图。
 //
-// 为什么保留 automationCanvasData：模板里除了强类型字段，还要 IsNew / Triggers /
-// Frequency* / NodeTypes —— 这些是画布顶栏的控件选项，由 palette 与 enums 现算，
-// 不适合塞进 DTO 字段（每次请求都一样、且与实体无关）。所以两者并存：
-// View 交页面壳与脚本数据，其余由模板从 Data 取。
+// 这里曾经并存一份 gin.H 版 automationCanvasData（"模板从 Data 取控件选项"），
+// 但 automationCanvasView 把 IsNew / Triggers / Frequency* / NodeTypes 全部收进
+// AutomationCanvasPageResp 之后，它已经没有调用点、模板也不再读 —— 属于死代码。
+// page-view-dto 门禁正是在这类地方起作用：台账写着「gin.H 归零」，实际还有 6 处，
+// 因为那条门禁从未进过 check-all.sh。
 func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.AutomationItem) *maildto.AutomationCanvasPageResp {
-	// 直接序列化，不从 automationCanvasData 的 gin.H 里回读 —— 那里已经过一层
-	// utils.JsonSafe，回读再包一层就成了双重转义（模板里 JSON.parse 会失败）。
+	// 直接序列化节点与元数据：先 Marshal 再 JsonSafe。若先包一层 JsonSafe 再回读，
+	// 就会双重转义，模板里 JSON.parse 会失败。
 	nodesJSON, merr := json.Marshal(item.Nodes)
 	if merr != nil {
 		nodesJSON = []byte("[]")
@@ -1647,14 +1618,6 @@ func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.Auto
 }
 
 // automationCanvasPalette 画布顶栏的控件选项（模板从 Data 取，不做业务推导）。
-
-// stringOf 从 gin.H 取字符串值（内部同包辅助，只用于上面的迁移过渡）。
-func stringOf(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
 
 func (h *mailPageHandle) automationForCanvas(c *gin.Context) (*maildto.AutomationItem, bool) {
 	id, hasID := mailQueryID(c)
@@ -1742,18 +1705,6 @@ func (h *mailPageHandle) emailNodeDisabled(c *gin.Context) (bool, string) {
 	}
 	return true, mailLabel(mailTranslate(c), mailenums.AutomationCanvasEmailDisabled)
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 // MailTemplateEditor 邮件模板可视化编辑器（四栏）。
 //

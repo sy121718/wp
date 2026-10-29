@@ -24,6 +24,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/internal/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
@@ -313,5 +314,141 @@ func TestAISessionConcurrentEnsureSameKeyKeepsSingleSession(t *testing.T) {
 	}
 	if total != 1 {
 		t.Fatalf("同一 key 的并发写入应只留一条会话，实际 %d 条", total)
+	}
+}
+
+// TestSessionIsolatedByOwner 同一把 session_key 在**不同用户**手里不能互相读到。
+//
+// 守的缺陷形态（SEC-05）：ai_session.session_key 是**全局唯一**，而 EnsureSession 与
+// RecentDialogue 此前只按 key 查、不比对 create_by —— 悬浮球那条固定 key
+// （admin-fab）于是成了所有人共用的一条会话：A 问过的问题，B 打开面板就看到全部历史。
+// 代码注释写着「按 userID 隔离」，实现里没有；这类"注释承诺了、代码没做"的缺陷
+// 只有断真实数据才抓得到。
+//
+// 两层防线各一条判据：
+//  1. EnsureSession：别人拿着同一把 key 续写，必须拿不到那条会话；
+//  2. RecentDialogue：即便 key 被猜到，也读不出别人的对话历史。
+func TestSessionIsolatedByOwner(t *testing.T) {
+	svc, db := newAISessionService(t)
+	ctx := context.Background()
+
+	const (
+		alice int64 = 1001
+		bob   int64 = 1002
+		key         = "admin-fab:1001" // Alice 派生出来的 key（Bob 不该能用）
+	)
+
+	// Alice 建会话并落一轮对话。
+	sess, err := svc.EnsureSession(ctx, key, "openai", "gpt-x", "Alice 的会话", alice)
+	if err != nil {
+		t.Fatalf("Alice 建会话失败: %v", err)
+	}
+	if sess.CreateBy != alice {
+		t.Fatalf("会话归属应为 %d，实际 %d", alice, sess.CreateBy)
+	}
+
+	if _, err := svc.AppendEvent(ctx, aidto.AppendEventReq{
+		SessionID: sess.ID, Kind: string(aienums.EventKindUser),
+		Content: "ALICE-SECRET-QUESTION",
+		UserID:  alice,
+	}); err != nil {
+		t.Fatalf("写 Alice 的用户事件失败: %v", err)
+	}
+
+	// ① Bob 用同一把 key 续写：必须被拒（归属不符按「不存在」处理）。
+	if _, err := svc.EnsureSession(ctx, key, "openai", "gpt-x", "Bob 想续写", bob); err == nil {
+		t.Fatal("Bob 拿 Alice 的 key 建/续会话竟然成功了 —— 会话归属没有校验")
+	}
+
+	// ② Bob 读历史：必须是空（不是 Alice 的内容，也不报错泄露"这把 key 有主"）。
+	turns, err := svc.RecentDialogue(ctx, key, 10, bob)
+	if err != nil {
+		t.Fatalf("读历史不该报错（归属不符按无会话处理），实际: %v", err)
+	}
+	for _, turn := range turns {
+		if strings.Contains(turn.Text, "ALICE-SECRET-QUESTION") {
+			t.Fatalf("Bob 读到了 Alice 的对话历史：%q", turn.Text)
+		}
+	}
+	if len(turns) != 0 {
+		t.Fatalf("Bob 不该看到任何轮次，实际 %d 条", len(turns))
+	}
+
+	// ③ Alice 自己读得到（证明上面不是"谁都读不到"）。
+	own, err := svc.RecentDialogue(ctx, key, 10, alice)
+	if err != nil {
+		t.Fatalf("Alice 读自己的历史失败: %v", err)
+	}
+	if len(own) == 0 {
+		t.Fatal("Alice 读不到自己的对话历史")
+	}
+
+	// ④ 会话总数仍是 1：Bob 那次失败没有偷偷建出第二条。
+	var count int64
+	if err := db.Model(&aimodel.AISessionEntity{}).Where("session_key = ?", key).Count(&count).Error; err != nil {
+		t.Fatalf("统计会话数失败: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("同一把 key 应只有 1 条会话，实际 %d", count)
+	}
+}
+
+// TestToolIdempotencyIsolatedByActor 幂等键必须按调用主体隔离（SEC-05）。
+//
+// 缺陷形态：幂等台账的唯一约束原先是 (tool_name, idem_key)，**不含主体**。
+// idempotencyKey 由客户端生成（MCP 客户端 / 模型自拟的 uuid、retry-1 之类），
+// 撞键完全可能。于是后一个用户用同一个 key 时：
+//
+//	· 拿到前一个人的写结果（跨用户回放，result_text 可能含业务数据）；
+//	· 且**不真正执行写入** —— 他以为成功了，实际什么都没写。
+//
+// 判据：同一 (tool, key) 在两个 actor 下各自独立执行、各自落一条记录。
+func TestToolIdempotencyIsolatedByActor(t *testing.T) {
+	_, db := newAISessionService(t)
+	store := aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))
+
+	const (
+		alice int64 = 2001
+		bob   int64 = 2002
+		tool        = "inventory.adjust"
+		key         = "retry-1" // 客户端固定用它，撞键很现实
+	)
+	ctxFor := func(uid int64) context.Context { return mcp.WithUserID(context.Background(), uid) }
+
+	// Alice 执行并落结果。
+	if err := store.Save(ctxFor(alice), tool, key, mcp.Result{Text: "ALICE-RESULT"}); err != nil {
+		t.Fatalf("Alice 落幂等记录失败: %v", err)
+	}
+
+	// ① Bob 用**同一个 key**：不能命中 Alice 的记录。
+	if res, ok, err := store.Lookup(ctxFor(bob), tool, key); err != nil {
+		t.Fatalf("Bob 查幂等记录出错: %v", err)
+	} else if ok {
+		t.Fatalf("Bob 命中了 Alice 的幂等记录（result=%q）—— 跨用户回放，且他的写不会真的执行", res.Text)
+	}
+
+	// ② Alice 自己仍然命中（证明隔离不是"谁都查不到"）。
+	if res, ok, err := store.Lookup(ctxFor(alice), tool, key); err != nil {
+		t.Fatalf("Alice 查幂等记录出错: %v", err)
+	} else if !ok || res.Text != "ALICE-RESULT" {
+		t.Fatalf("Alice 应命中自己的记录，实际 ok=%v result=%q", ok, res.Text)
+	}
+
+	// ③ Bob 自己写一条同 key：必须成功（唯一约束按主体分作用域）。
+	if err := store.Save(ctxFor(bob), tool, key, mcp.Result{Text: "BOB-RESULT"}); err != nil {
+		t.Fatalf("Bob 用同一 key 落记录失败（唯一约束未按主体分作用域）: %v", err)
+	}
+	if res, ok, _ := store.Lookup(ctxFor(bob), tool, key); !ok || res.Text != "BOB-RESULT" {
+		t.Fatalf("Bob 应读到自己那条，实际 ok=%v result=%q", ok, res.Text)
+	}
+
+	// ④ 落库确实是两条（不是被 ON CONFLICT 吃掉一条）。
+	var count int64
+	if err := db.Table("ai_tool_idempotency").
+		Where("tool_name = ? AND idem_key = ?", tool, key).Count(&count).Error; err != nil {
+		t.Fatalf("统计幂等记录失败: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("同一 (tool,key) 在两个 actor 下应有 2 条记录，实际 %d", count)
 	}
 }

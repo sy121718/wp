@@ -1,6 +1,6 @@
 package unit
 
-// page_publications_test.go — 每语言激活状态（多语言 P3，docs/06-D-site-i18n.md §15.5 第 2 条）。
+// page_publications_test.go — 每语言激活状态（多语言 P3，AGENTS.md §15.5 第 2 条）。
 //
 // 回归对象：pages.active_path 单值时，Publish(en-US) 会把 /about 当作本页旧路径
 // 取消激活（Deactivate 删除路由行），「一页多语言同时在线」不成立。

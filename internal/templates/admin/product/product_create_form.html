@@ -40,7 +40,7 @@
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.products.ph.name", "商品名称") }}" required>
             <input type="text" class="form-input" name="slug" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
-            {* 主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）：这是商品的**身份编码**。
+            {* 主体 SKU 编码（规则见 AGENTS.md）：这是商品的**身份编码**。
                可留空 —— 服务端按 URL 段派生；填了并选了归属仓时自动加仓库码前缀（已带前缀不重复加）。 *}
             <label class="form-label" for="create-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
             <div class="form-inline">
@@ -49,7 +49,7 @@
                        placeholder="{{ .["t"]("admin.products.ph.sku", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
                        autocomplete="off">
             </div>
-            {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，docs/14 §1.1）：
+            {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，AGENTS.md §1.1）：
                一个控件承担两种意图 ——
                  · 下拉里选到某仓已有的**裸码** → 那一行本来就在，直接**复用**它（不新建行，登记进本变体的引用）；
                  · 自己打一个新码 → 在勾选的每个仓各建一行（仓库侧写裸码）。

@@ -1,6 +1,6 @@
 package orderservice
 
-// order_guest_account_switch_test.go — 开号开关的语义（docs/02-W-admin-order-create.md §4）。
+// order_guest_account_switch_test.go — 开号开关的语义（AGENTS.md §4）。
 //
 // 这一条判据的全部价值在于「默认档」：后台代客建单默认**不开号、不发初始密码邮件**，
 // 而前台 checkout 的「下单即开户」必须一个字都不变。两者只能靠**显式请求字段**

@@ -1,4 +1,4 @@
-// detail_template_mode.go — 实例「双轨」能力端口（迁移 281 / 282，docs/04-C-instance-override.md）。
+// detail_template_mode.go — 实例「双轨」能力端口（迁移 281 / 282，AGENTS.md）。
 //
 // 双轨 = 同一实体的详情页有两种文档来源：跟随共享模板（template 模式）与实例自带独立文档
 // （document 模式）。本端口是这条能力域对外的全部动作：切换模式（写入独立文档 / 重新套用

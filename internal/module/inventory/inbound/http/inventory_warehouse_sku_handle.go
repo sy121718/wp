@@ -46,11 +46,11 @@ func (h *inventoryPageHandle) InventoryStockSKUsPage(c *gin.Context) {
 	pageview.Render(c, data)
 }
 
-// stockSKUsData 取齐台账页的数据并组成视图。
+// stockSKUsData 取齐台账页的数据并组成视图（强类型，见 StockSKUListPageResp）。
 //
-// 返回 gin.H 而不是强类型 DTO：与调拨页同一手法 —— 失败页（inventoryPageErrorData）
-// 与正常页共用一套键，强类型 DTO 与「零值键集」两张形状会各漂一份。
-func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.StockSKUPageReq) (gin.H, error) {
+// 曾返回 gin.H，理由是"失败页与正常页共用一套键"；但失败页已是强类型
+// inventoryLoadFailedView，那条理由不成立，gin.H 只是没迁完的残留。
+func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.StockSKUPageReq) (*inventorydto.StockSKUListPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -95,19 +95,19 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		"keyword":     query.Keyword,
 		"status":      query.Status,
 	})
-	return gin.H{
-		"title":           tr(inventoryenums.InventoryStockSKUsTitle, "仓库商品 SKU"),
-		"menu":            "inventory-skus",
-		"Projects":        projectOptions(projects),
-		"SelectedProject": selected,
-		"Warehouses":      warehouses,
-		"Rows":            rows,
-		"FilterWarehouse": strings.TrimSpace(query.WarehouseID),
-		"FilterKeyword":   strings.TrimSpace(query.Keyword),
-		"FilterStatus":    strings.TrimSpace(query.Status),
-		"StatusOptions":   stockStatusOptions(c),
-		"ListQuery":       binding.ListQuery(c, inventorySKUBackKeys...),
-		"Pagination":      pg,
+	return &inventorydto.StockSKUListPageResp{
+		Title:           tr(inventoryenums.InventoryStockSKUsTitle, "仓库商品 SKU"),
+		Menu:            "inventory-skus",
+		Projects:        projectOptions(projects),
+		SelectedProject: selected,
+		Warehouses:      warehouses,
+		Rows:            rows,
+		FilterWarehouse: strings.TrimSpace(query.WarehouseID),
+		FilterKeyword:   strings.TrimSpace(query.Keyword),
+		FilterStatus:    strings.TrimSpace(query.Status),
+		StatusOptions:   stockStatusOptions(c),
+		ListQuery:       binding.ListQuery(c, inventorySKUBackKeys...),
+		Pagination:      pg,
 	}, nil
 }
 

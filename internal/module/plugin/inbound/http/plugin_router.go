@@ -1,6 +1,6 @@
 package pluginhttp
 
-// plugin_router.go — 插件模块路由自装配（docs/06-plugin-system.md）。
+// plugin_router.go — 插件模块路由自装配（AGENTS.md）。
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）；权限点 seed 见
 // public/migrations/032_plugin_permissions.sql。
 

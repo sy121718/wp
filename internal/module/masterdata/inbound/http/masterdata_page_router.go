@@ -6,7 +6,7 @@ package masterdatahttp
 // handler 在 masterdata_page.go。路由注册只出现在 *_router.go，门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
-// 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
+// 页面 GET 的 Casbin 待补（见 AGENTS.md §4.3）。
 
 import (
 	"github.com/gin-gonic/gin"

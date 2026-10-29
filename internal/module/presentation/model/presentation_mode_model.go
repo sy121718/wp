@@ -2,7 +2,7 @@ package presentationmodel
 
 // presentation_mode_model.go — 渲染模式（迁移 282，商品页双轨）与它带来的两个差异化查询。
 //
-// 两种模式（docs/04-C-instance-override.md）：
+// 两种模式（AGENTS.md）：
 //   template：文档 = 绑定模板的文档，每次构建参与；模板更新可全局下发（默认，零回归）；
 //   document：文档 = override_document（该商品自己的文档）；模板更新不影响它。
 //

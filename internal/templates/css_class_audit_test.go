@@ -344,7 +344,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: nil,
 		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
 	},
-	// 档位词表（ok/warn/danger/mute/info）有几份副本，权威是 docs/rules/template-boundary.md:161：
+	// 档位词表（ok/warn/danger/mute/info）有几份副本，权威是 AGENTS.md：
 	//   · 本条的 values（Go 侧登记，TestDynamicClassToneValuesInVocabulary 按它判模板自选档）；
 	//   · scripts/check-template-presentation.sh:39 的 TONE_VOCAB（门禁判据 4 执行用）。
 	// 漂移不会**静默**失色 —— 模板自选档越表会被判据 4 直接判红（红可见），届时按 doc:161 两侧同时对齐，
@@ -370,7 +370,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 			"admin/user/customer_badges.html:22 `badge-{{tone}}`（状态档）、:24 `badge-{{tone}}`（邮箱验证档）、" +
 			"admin/user/customer_badges.html:30 `badge-{{tone}}`（筛选口径与 RFM 分段徽章，三页共用）",
 		values: []string{"ok", "warn", "danger", "mute", "info"},
-		note: "取值域 = 各产出点返回值的并集（语义档，见 docs/rules/template-boundary.md §语义 vs 外观）：" +
+		note: "取值域 = 各产出点返回值的并集（语义档，见 AGENTS.md §语义 vs 外观）：" +
 			"Go 侧 —— mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
 			"recipientStatusTone{warn,mute}、i18n.ContentEngineTone{info,mute}（product 的译文来源档，internal/module/product/inbound/http/product_translations.go 产出）、pricingLineTone（internal/module/product/service/product_pricing_page.go）/tagKindTone/variationTone{info,mute}、" +
 			"orderenums.OrderStatusTone{warn,info,ok,danger,mute}、ReturnStatusTone{warn,ok,mute}、" +
@@ -419,7 +419,7 @@ var reToneAssign = regexp.MustCompile(`\{\{[^}]*\b([a-z][A-Za-z0-9_]*)\s*:?=\s*"
 
 // TestDynamicClassToneValuesInVocabulary 模板自己产出的档必须落在词表内。
 //
-// 展示判断归模板（见 docs/rules/template-boundary.md §语义 vs 外观）之后，模板会在
+// 展示判断归模板（见 AGENTS.md §语义 vs 外观）之后，模板会在
 // `badge-{{tone}}` 前按事实选档，也就可能写出词表外的档（"error"、"critical"…）。
 // 这类档在 ui.css 没有 `.badge-<档>` 别名：页面不报错，只是**静默失色** —— 所以由本测试钉住，
 // 与 scripts/check-template-presentation.sh 判据 4 同一条口径（脚本守模板文件，本测试守词表本身）。
@@ -464,7 +464,7 @@ func TestDynamicClassToneValuesInVocabulary(t *testing.T) {
 					checked++
 					if !vocab[value] {
 						t.Errorf("%s:%d 用 `badge-{{%s}}` 取档，但该变量在 %s:%d 被赋成词表外的 %q："+
-							"ui.css 里没有 `.badge-%s` 别名，这一档会静默失色。词表与分工见 docs/rules/template-boundary.md",
+							"ui.css 里没有 `.badge-%s` 别名，这一档会静默失色。词表与分工见 AGENTS.md",
 							r, i+1, m[1], r, at, value, value)
 					}
 				}

@@ -25,7 +25,7 @@ type uiBlock struct {
 // uiBaseClasses 基座样式类名：只写 class 也应注入 ui.css（UIK-002：样式与行为解耦）。
 //
 // 口径＝「作者会手写的控件外观类」，唯一来源是 ui.css 里成段的控件外观
-// （docs/02-F-ui-kit.md §10.2「类名清单（唯一来源：static/css/ui.css）」）。
+// （AGENTS.md §10.2「类名清单（唯一来源：static/css/ui.css）」）。
 // 三类类名**故意不收**，收了就是给产物白送字节：
 //   - 工具类（w-full / flex / gap-* / text-sm / mt-* / mb-* …）：几乎每页都有，
 //     命中即注入整份 ui.css，等于让所有产物一起膨胀；

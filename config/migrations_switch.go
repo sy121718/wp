@@ -43,6 +43,16 @@ func ForceMigrations() { forceMigrations.Store(true) }
 // forceMigrationsSet 供测试复位（生产路径只置位、不复位）。
 func forceMigrationsSet(v bool) { forceMigrations.Store(v) }
 
+// keyRunWorker 配置键（queue 段）：是否启动后台消费者。
+const keyRunWorker = "queue.run_worker"
+
+// suppressWorkers 记录进程角色；配置尚未加载时也能先声明迁移模式。
+var suppressWorkers atomic.Bool
+
+// SuppressWorkers 禁止显式迁移进程启动消费者。
+// InitComponents 将策略写入真正传给组件的配置实例，pkg/queue 仍只读取配置。
+func SuppressWorkers() { suppressWorkers.Store(true) }
+
 var migrationsSkipLogged sync.Once
 
 // logMigrationsSkipped 跳过时打一条 INFO，且只打一次。

@@ -2,7 +2,7 @@ package producthttp
 
 // product_taxonomy_page_render_test.go — 分类 / 品牌 / 标签三页整页 GET 的出口判据。
 //
-// 契约见 docs/rules/template-boundary.md §整页 GET 的失败出口：取数失败的整页 GET **也必须是
+// 契约见 AGENTS.md §整页 GET 的失败出口：取数失败的整页 GET **也必须是
 // 「这一页」**（同一份模板 + 页壳 + 侧边菜单 + `Cache-Control: no-store`），状态码按档位说实话：
 //
 //	主数据没读到            → 500

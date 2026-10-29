@@ -106,18 +106,59 @@ func SetJSON(ctx context.Context, key string, value any, ttl time.Duration) erro
 // 用 SetJSON + 固定 TTL 重写会把「记住我」的长会话悄悄缩回默认时长，
 // 而先读 TTL 再按剩余时长写回会引入一次额外的往返与竞态窗口。
 func SetJSONKeepTTL(ctx context.Context, key string, value any) error {
+	_, err := setJSONKeepTTL(ctx, key, value, false)
+	return err
+}
+
+// SetJSONKeepTTLIfExists 仅当 key **仍然存在**时覆盖写入，返回是否写入成功。
+//
+// 存在的理由是一个真实的提权形态（SEC-03，2026-10-29 实测）：
+// 「刷新最后活跃时间」是**读-改-写**，中间有一个窗口能被撤销插进来：
+//
+//	Touch 读到会话 → Revoke 删除会话 → Touch 用 KeepTTL 写回
+//
+// 而 Redis 的 `SET ... KEEPTTL` 在 key **不存在**时不会失败，它会把 key 当成
+// 无过期时间写进去（实测 TTL = -1）。于是被撤销的会话不仅复活，还永不过期。
+//
+// 用 `XX`（只在 key 存在时设置）把这一步变成条件写：会话已被撤销时写入不生效，
+// 返回 false 让调用方知道「这次 Touch 落空了」—— 那是正常情况（用户正好退出），
+// 不是错误。
+func SetJSONKeepTTLIfExists(ctx context.Context, key string, value any) (bool, error) {
+	return setJSONKeepTTL(ctx, key, value, true)
+}
+
+// setJSONKeepTTL 两者的共同实现（onlyIfExists 决定是否带 XX）。
+func setJSONKeepTTL(ctx context.Context, key string, value any, onlyIfExists bool) (bool, error) {
 	client, err := GetRedis()
 	if err != nil {
-		return err
+		return false, err
 	}
 	payload, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("序列化缓存 JSON 失败: %w", err)
+		return false, fmt.Errorf("序列化缓存 JSON 失败: %w", err)
 	}
-	if err := client.Set(ctx, key, payload, redis.KeepTTL).Err(); err != nil {
-		return fmt.Errorf("刷新缓存失败: %w", err)
+	// XX + KeepTTL：只在 key 已存在时改内容、且不动过期时间。
+	//
+	// 为什么用 `SetArgs` 而不是 `Set(..., redis.KeepTTL)`：后者在 key 不存在时会
+	// **创建**它（无过期时间），正是要消灭的那条路。`XX` 让它变成条件写。
+	args := redis.SetArgs{KeepTTL: true}
+	if onlyIfExists {
+		args.Mode = "XX"
 	}
-	return nil
+	if err := client.SetArgs(ctx, key, payload, args).Err(); err != nil {
+		return false, fmt.Errorf("刷新缓存失败: %w", err)
+	}
+	// `SET ... XX` 在 key 不存在时不报错但也不写入，Redis 不回「写没写」——
+	// 所以要**再确认一次存在性**。这一次往返是必须的：调用方要区分
+	// 「更新了」与「会话已被撤销」。
+	if !onlyIfExists {
+		return true, nil
+	}
+	n, cerr := client.Exists(ctx, key).Result()
+	if cerr != nil {
+		return false, fmt.Errorf("确认缓存写入结果失败: %w", cerr)
+	}
+	return n > 0, nil
 }
 
 // TTL 返回 key 的剩余存活时间（语义与 Redis TTL 一致：-2 = key 不存在，-1 = 无过期时间）。

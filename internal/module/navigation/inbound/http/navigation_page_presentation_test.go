@@ -2,7 +2,7 @@ package navigationhttp
 
 // navigation_page_presentation_test.go — 管理页「展示值由谁产出」的回归护栏。
 //
-// 被守的边界（docs/rules/template-boundary.md）：Go 只出事实，模板出文案（Jet 取词到
+// 被守的边界（AGENTS.md）：Go 只出事实，模板出文案（Jet 取词到
 // 具体语言），CSS 出外观。这里断言三件在别处都不会红的事：
 //
 //	1. 行内「打开方式」不是 Go 预制的成品文案，而是模板按同一批 key 取词 ——

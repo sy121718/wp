@@ -21,7 +21,7 @@
 {{filterReason := ""}}{{if isset(.FilterReason)}}{{filterReason = .FilterReason}}{{end}}
 {{filterTimeFrom := ""}}{{if isset(.FilterTimeFrom)}}{{filterTimeFrom = .FilterTimeFrom}}{{end}}
 {{filterTimeTo := ""}}{{if isset(.FilterTimeTo)}}{{filterTimeTo = .FilterTimeTo}}{{end}}
-{* 装载失败槽（docs/rules/template-boundary.md §整页 GET 的失败出口）：只在「这一页没读到」
+{* 装载失败槽（AGENTS.md §整页 GET 的失败出口）：只在「这一页没读到」
    那条路径上有值（Go 侧零值数据 + 500 + Cache-Control: no-store），正常渲染一律为空串。
    失败优先于空态 —— 「没读到」与「读到了、只是空的」是两件事。 *}
 {{loadError := .["LoadError"]}}

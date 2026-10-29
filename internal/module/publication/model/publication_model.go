@@ -19,14 +19,14 @@ const (
 	tableNameReceipts   = "publication_receipts"
 )
 
-// 路由占用类型（docs/02-domain.md §page_routes）。
+// 路由占用类型（AGENTS.md §page_routes）。
 const (
 	RouteReserved = "reserved"
 	RouteActive   = "active"
 	RouteRedirect = "redirect"
 )
 
-// 回执状态（docs/03-pipeline.md §9 publication_receipts）。
+// 回执状态（AGENTS.md §9 publication_receipts）。
 const (
 	ReceiptPending    = "pending"
 	ReceiptCommitted  = "committed"

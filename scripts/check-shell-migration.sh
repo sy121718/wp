@@ -21,7 +21,7 @@
 #
 # 口径（改口径等于改门禁，复算时三条必须一致，脚本头与 shell-migration-allow.txt 各写一份）：
 #   · 只统计 *.go；**跳过整行注释**（行首可选空白后 `//`）。注释里的 `shell.RenderJump(`
-#     会让计数虚高，而虚高的数字会让人不再相信这个门禁（docs/rules/testing.md 记的坑）；
+#     会让计数虚高，而虚高的数字会让人不再相信这个门禁（AGENTS.md 记的坑）；
 #   · `internal/shell/**` 自身不计（包内自引用不是使用点）；
 #   · _test.go 与 public/test/** 记 test 桶，其余记 prod 桶；
 #   · 计数单位是**出现次数**，不是文件数或行数。

@@ -1,7 +1,7 @@
 package pagemodel
 
 // page_publication_model.go — 页面「每语言激活状态」持久化
-// （多语言 P3，docs/06-D-site-i18n.md §15.5 第 2 条）。
+// （多语言 P3，AGENTS.md §15.5 第 2 条）。
 //
 // 为什么单独成表：pages.active_path 单值只能记住一个语言的激活路径，
 // Publish(en-US) 于是把 /zh-CN/about 当成「本页旧路径」取消激活。

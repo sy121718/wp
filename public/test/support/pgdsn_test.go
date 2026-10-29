@@ -23,7 +23,7 @@ func TestPGProbePreservesDSNShapesAndTimeout(t *testing.T) {
 		pgDSN("127.0.0.1", "5432", "root", "a b", "wp_test"),
 		"host=127.0.0.1 port=5432 user=root password='a b' dbname=wp_test sslmode=disable TimeZone=Asia/Shanghai synchronous_commit=off",
 	} {
-		config, err := pgProbeConfig(dsn)
+		config, err := pgconn.ParseConfig(pgAppendParams(dsn, [2]string{"connect_timeout", "5"}))
 		if err != nil {
 			t.Fatalf("连接探测配置解析失败: %v", err)
 		}

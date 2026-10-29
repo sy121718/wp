@@ -27,7 +27,7 @@
 {{editBlocked := false}}
 {{if isset(.EditBlocked)}}{{editBlocked = .EditBlocked}}{{end}}
 {* 整页装载失败的归口文案（只在 Go 侧失败路径上有值：500/400 + no-store）；
-   契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。 *}
+   契约见 AGENTS.md §整页 GET 的失败出口。 *}
 {* 富文本（商品描述）要的三个资源由**调用方页面**引：片段只出结构与扩展入口。
    漏引的表现是编辑器变成一个没有工具条的空框，页面不报错。 *}
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
@@ -305,7 +305,7 @@
     </div>
 
     {{if !editBlocked}}
-    {* ==== 变体清单（docs/14 §8 预览—保存模型）====
+    {* ==== 变体清单（AGENTS.md §8 预览—保存模型）====
        从详情页搬来（详情页只读）：清单里的「生成 / 移除」都不写库，「保存变体清单」才落库。
        初始行 = 库里已有的变体（不是重算笛卡尔积），所以上次删掉的组合不会自己冒出来。 *}
     <section class="card list-card">
@@ -486,7 +486,7 @@
     {* ==== SEO 检查：已收进抽屉（入口在页头）====
        它只读计算、不写库、不改产物；原先是一张折叠卡常驻在页面底部 —— 而「这个商品 SEO 怎么样」
        是按需问的问题，不该在每次编辑时都占一段版面。 *}
-    {* ==== 详情页模板（docs/04-C-instance-override.md §5，双轨版）====
+    {* ==== 详情页模板（AGENTS.md §5，双轨版）====
        模式徽标 + 两个模式各自的入口 —— template 模式下改布局的正确位置是**模板**
        （改一次、全站跟随的商品都变）；document 模式才改这个商品自己的文档。
        影响面（影响 N 个商品）写在按钮上：不写就让用户凭猜，而猜错是整站一起变样。
@@ -582,7 +582,7 @@
     </template>
 
     {{if len(p.VariationAttributes) > 0}}
-    {* 组合生成（docs/14 §8）：勾选属性值 → 笛卡尔积 → **追加进清单**（不落库）；
+    {* 组合生成（AGENTS.md §8）：勾选属性值 → 笛卡尔积 → **追加进清单**（不落库）；
        「生成全部组合」= 不勾选任何值（服务端按全部启用值展开，与接口路径同一条语义）。
        勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用。 *}
     <template id="tpl-variant-generate-{{p.ID}}">

@@ -9,7 +9,7 @@ import (
 	"go_wp/internal/module/content/dto"
 )
 
-// 内容实体字段白名单（docs/02-domain.md §2.3，不变量 4 的唯一入口）。
+// 内容实体字段白名单（AGENTS.md §2.3，不变量 4 的唯一入口）。
 // 键 = entity_type，值 = 允许的字段路径（ContentResolver.ResolveString 与
 // contenttemplate 的 Binding 校验共用同一白名单，禁止两处各维护一份）。
 var fieldWhitelist = map[string][]string{
@@ -28,7 +28,7 @@ var fieldWhitelist = map[string][]string{
 //     它虽然也是作者填的文本，但翻译一个不输出的值没有意义，
 //     反而会让「这个词在英文版里评分为何不对」变得难以解释。
 //
-// 语境命名与商品域一致（docs/06-D §7.5）：article.title / article.body …。
+// 语境命名与商品域一致（AGENTS.md §7.5）：article.title / article.body …。
 var translatableFields = map[string]map[string]bool{
 	"article": {
 		"title":   true,
@@ -224,6 +224,6 @@ type ContentService interface {
 // 实现必须容错——失效失败不能影响已经成功的内容写入。
 type DependencyInvalidator interface {
 	// Invalidate 标记依赖源 (kind,key) 变更；kind/key 语义见
-	// docs/03-pipeline.md §8.1 与 pipeline.DepKind* 常量。
+	// AGENTS.md §8.1 与 pipeline.DepKind* 常量。
 	Invalidate(ctx context.Context, kind, key string)
 }

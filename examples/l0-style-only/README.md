@@ -37,4 +37,4 @@ zip -r /tmp/styletile-1.0.0.zip manifest.json components
 - 装上了但页面没变化：确认插件是「启用」状态，且页面重新构建过
   （组件编译进产物，已发布页面需要重建）。
 
-能力边界（能做什么 / 不能做什么）见 `docs/06-E-plugin-authoring.md`。
+能力边界（能做什么 / 不能做什么）见 `AGENTS.md`。

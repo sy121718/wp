@@ -42,7 +42,7 @@ type PublicationState struct {
 	Guard *GuardMeta
 }
 
-// PublicationStore 访问面 URL 激活契约（docs/03-pipeline.md §5）。
+// PublicationStore 访问面 URL 激活契约（AGENTS.md §5）。
 // 只负责 URL → 文件系统状态的原子切换，不构建产物、不查询数据库。
 //
 // URI 边界：activate/deactivate/inspect 的 path 必须已规范化。
@@ -55,7 +55,7 @@ type PublicationStore interface {
 	Inspect(path string) (*PublicationState, error)
 }
 
-// LocalPublicationStore 本地文件系统实现（docs/03-pipeline.md §5）：
+// LocalPublicationStore 本地文件系统实现（AGENTS.md §5）：
 // 符号链接切换策略——activate(path, loc) 为临时 symlink + 原子 rename 覆盖。
 //
 // **单实例前提**（架构文档「部署形态」）：激活状态就是本机磁盘上的一组符号链接。
@@ -84,7 +84,7 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 	}
 
 	rel := relActivePath(p)
-	// 父子前缀互斥防线（docs/06-D §4.4 硬坑）：先确认祖先链上没有符号链接占位，
+	// 父子前缀互斥防线（AGENTS.md §4.4 硬坑）：先确认祖先链上没有符号链接占位，
 	// 再 MkdirAll。否则 MkdirAll 会跟随祖先符号链接在不可变产物目录内部建目录，
 	// 随后落地的符号链接进入 artifacts/{hash}，污染产物且上溯层数错算成悬空链接。
 	if err = s.ensureAncestorsAreDirs(rel); err != nil {

@@ -138,8 +138,12 @@ for dirpath, _, files in os.walk(root):
 
             # data-write-builder：页面级组装器会把**页面字段名**映射成 DTO 字段
             #（membership 的 thresholdYuan → thresholdAmount、freeShipping+discountPercent
-            # → entitlements 数组）。这种映射只有页面脚本知道，本门禁看不到 —— 跳过对账，
-            # 由各自的 .test.cjs 守（membership_write.test.cjs / product_bundle_write.test.cjs）。
+            # → entitlements 数组）。这种映射只有页面脚本知道，本门禁看不到 —— 跳过对账。
+            #
+            # 谁来守这些映射：各自的 .test.cjs —— onboarding 侧是
+            # ui/membership_write.test.cjs，商品侧是 ui/product_variant_write.test.cjs。
+            # 注释此前把后者写成 product_bundle_write.test.cjs（bundle 概念已下线，
+            # 那个文件从来不存在），于是"由测试守"这句话对商品变体行一直是假的。
             if 'data-write-builder=' in attrs:
                 continue
 

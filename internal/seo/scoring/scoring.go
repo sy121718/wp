@@ -1,6 +1,6 @@
 // Package scoring 实现 SEO 评分引擎（纯函数、无 IO、表驱动）。
 //
-// 规则源：docs/02-E1-seo-scoring-rules.md（本地 rubric + Yoast 公开方法论 + RankMath + Lighthouse 印证）。
+// 规则源：AGENTS.md（本地 rubric + Yoast 公开方法论 + RankMath + Lighthouse 印证）。
 // 输入由调用方从 Page Document AST + settings.seo 提取，本包只做计算。
 package scoring
 
@@ -78,7 +78,7 @@ type Result struct {
 	Grade string
 	// Profile 本次评分使用的页型权重档案（nil = 默认权重）。
 	//
-	// 回显是文档的硬要求（docs/02-E1 §5「调权必须在结果里回显本页型权重及理由」）：
+	// 回显是文档的硬要求（AGENTS.md §5「调权必须在结果里回显本页型权重及理由」）：
 	// 只算分不回显的话，编辑者看到同一份内容在商品页比文章页高几分时无从解释，
 	// 只能怀疑评分器不稳 —— 而理由（Reason）本来就在 Profile 上，不传出去等于白写。
 	Profile  *Profile
@@ -183,7 +183,7 @@ func ProductProfile() *Profile {
 // LandingProfile 落地页：提技术/标题/元描述。
 //
 // 文档的落地页调权是「提高 tech / title / **meta**，降低 content 深度」
-// （docs/02-E1 §5）。meta 这一项此前漏了：落地页的点击来自 SERP 摘要，
+// （AGENTS.md §5）。meta 这一项此前漏了：落地页的点击来自 SERP 摘要，
 // 元描述该拿的权重比文章页高，不是简单沿用 5% 的默认值。
 func LandingProfile() *Profile {
 	return &Profile{Type: "landing", Weights: map[string]float64{

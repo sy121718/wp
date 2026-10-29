@@ -699,7 +699,7 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     border-radius: var(--r-md); color: var(--sky-c-text-mute); text-decoration: none; font-size: 13px;
     transition: background var(--tr-fast), color var(--tr-fast);
     /* 缩进：模板只给层级（--tree-depth），间距在这里算 —— 模板不产出外观
-       （docs/rules/template-boundary.md）。min() 保留旧的封顶口径：层级 > 3 后不再加宽。 */
+       （AGENTS.md）。min() 保留旧的封顶口径：层级 > 3 后不再加宽。 */
     padding-left: calc(8px + min(var(--tree-depth, 0), 3) * 12px);
 }
 @media (hover: hover) {
@@ -1193,7 +1193,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .data-table tbody tr.is-selected { background: var(--sky-c-bg-active, #eceff2); }
 /* ── 10.1 树状列表行（菜单管理）：缩进 + 折叠三角 + 名称 ────────────────
    层级缩进：模板只把服务端算好的 Depth 放进 CSS 变量（--tree-depth），间距在这里算
-   （docs/rules/template-boundary.md：模板不给外观；改间距/换皮只动这一行）；
+   （AGENTS.md：模板不给外观；改间距/换皮只动这一行）；
    这里同时管这一格内部的横向排布：折叠三角 / 折角 / 名称依次贴左 ——
    表格单元格默认居中，那样缩进出来的层级会被居中抹平，一眼看不出从属关系。 */
 .tree-cell { padding-inline-start: calc(var(--tree-depth, 0) * 1.5rem); }

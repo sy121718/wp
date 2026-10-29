@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-contract-deps.sh — 契约包的依赖方向（AGENTS.md 不变量 7、docs/01-overview.md §5）。
+# check-contract-deps.sh — 契约包的依赖方向（AGENTS.md 不变量 7、AGENTS.md §5）。
 #
 # 为什么需要一条脚本而不是靠评审记：不变量 7 把「契约包不得反向 import builder/core」
 # 写成死线，但这条死线此前只活在文档里 —— 契约包多 import 一个 builder 子包，本模块
