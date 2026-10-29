@@ -4,6 +4,7 @@ import {
     meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, buildInsertNode,
 } from '../core.js';
 import { previewRequestURL } from '../preview.js';
+import { paletteUnavailableReason } from '../palette.js';
 
 import { starterPresets } from '../starter-presets.js';
 import { openBusinessPreset, presetIdentity } from '../business-presets.js';
@@ -117,6 +118,12 @@ export const canvasMethods = {
                     button.className = 'wb-palette-item';
                     button.draggable = true;
                     button.dataset.type = item.type;
+                    var unavailable = paletteUnavailableReason(item, meta);
+                    if (unavailable) {
+                        button.draggable = false;
+                        button.setAttribute('aria-disabled', 'true');
+                        button.title = unavailable;
+                    }
                     var appearance = elementAppearance(item.type);
                     var compact = categoryOf(item.type) === 'basic';
                     button.innerHTML = '<span class="wb-palette-icon" aria-hidden="true"></span>';
@@ -140,9 +147,10 @@ export const canvasMethods = {
                         host.append(button, template);
                     } else {
                         button.appendChild(name);
-                        button.title = item.hint;
+                        button.title = unavailable || item.hint;
                     }
                     button.addEventListener('click', function () {
+                        if (unavailable) { self.setNotice(unavailable); return; }
                         var pending = self.pendingInsertTarget;
                         if (pending && self.findNode(pending.id)) {
                             self.insertComponent(item, pending.id, pending.placement);
@@ -153,6 +161,7 @@ export const canvasMethods = {
                         self.showEdit();
                     });
                     button.addEventListener('dragstart', function (event) {
+                        if (unavailable) { event.preventDefault(); return; }
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', item.type);
                     });
@@ -371,6 +380,8 @@ export const canvasMethods = {
             // 于是「从组件库拖入或点击插入」的节点天然满足 Go 侧最小校验。
             insertComponent(item, targetID, placement) {
                 if (!item) return;
+                var unavailable = paletteUnavailableReason(item, meta);
+                if (unavailable) { this.setNotice(unavailable); return; }
                 // 槽位块禁止插进文档：块面板已置灰，但拖拽、粘贴等路径都要拦住 ——
                 // 拦漏一处就会得到「文档里一份 + 站点结构一份」的两个页眉。
                 var slotRole = this.slotRoleOf(item.props && item.props.blockId);

@@ -54,6 +54,7 @@
 .wb-inspector-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; scrollbar-width: thin; padding: 1px; }
 .wb-palette-item { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 88px; padding: 14px 7px; border: 1px solid var(--sky-c-border); border-radius: 7px; background: var(--sky-c-surface); color: var(--sky-c-text); text-align: center; cursor: pointer; }
 .wb-palette-item strong { display: block; font-size: var(--ui-fs-xs); font-weight: 500; margin-top: 9px; }
+.wb-palette-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .wb-palette-item .wb-palette-icon { display: block; color: var(--sky-c-text-secondary); }
 .wb-palette-icon svg { width: 23px; height: 23px; }
 .wb-palette-item > span:not(.wb-palette-icon) { margin-top: 4px; font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); }

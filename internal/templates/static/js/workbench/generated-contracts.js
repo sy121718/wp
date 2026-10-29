@@ -470,7 +470,10 @@ export const paletteSpec = {
                 "subtitleField": "product.subtitle",
                 "titleField": "product.name",
                 "titleTag": "h2"
-            }
+            },
+            "requiredEntityTypes": [
+                "product"
+            ]
         },
         "core.productCard": {
             "type": "core.productCard",
@@ -487,7 +490,10 @@ export const paletteSpec = {
                 "tagsField": "item.tags",
                 "titleField": "item.name",
                 "titleTag": "h3"
-            }
+            },
+            "requiredEntityTypes": [
+                "product"
+            ]
         },
         "core.productList": {
             "type": "core.productList",

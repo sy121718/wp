@@ -87,11 +87,12 @@ type Component struct {
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
-		TypeName:        Type,
-		ValidateExtra:   validateExtra,
-		PaletteCategory: core.PaletteCategoryBasic,
-		DisplayName:     "商品卡",
-		Hint:            "吃商品数据的最小展示单元（可作集合卡模板）",
+		TypeName:             Type,
+		ValidateExtra:        validateExtra,
+		PaletteCategory:      core.PaletteCategoryBasic,
+		PaletteEntityContext: true,
+		DisplayName:          "商品卡",
+		Hint:                 "吃商品数据的最小展示单元（可作集合卡模板）",
 		DefaultProps: map[string]any{
 			"imageField":        "item.images",
 			"titleField":        "item.name",

@@ -42,6 +42,9 @@ type AtomSpec[P any] struct {
 	// DefaultProps 插入时的默认 Props（示例内容，保证「插入即合法」）。
 	// 键必须在 Props 的 JSON 字段集合内（注册期校验）。
 	DefaultProps map[string]any
+	// PaletteEntityContext 默认插入依赖当前实体；实体类型从默认字段绑定导出。
+	// 自带集合或支持显式选品的组件不声明，保留普通页面的合法配置入口。
+	PaletteEntityContext bool
 }
 
 // Atom 泛型原子组件基座，实现 Component 接口。
@@ -81,11 +84,12 @@ func (a Atom[P]) Translatable() []string { return a.Spec.Translatable }
 // 即进组件库，未声明则视为不进库（core.PaletteOf 判定）。
 func (a Atom[P]) Palette() PaletteMeta {
 	return PaletteMeta{
-		Type:         a.Spec.TypeName,
-		DisplayName:  a.Spec.DisplayName,
-		Hint:         a.Spec.Hint,
-		Category:     a.Spec.PaletteCategory,
-		DefaultProps: a.Spec.DefaultProps,
+		Type:               a.Spec.TypeName,
+		DisplayName:        a.Spec.DisplayName,
+		Hint:               a.Spec.Hint,
+		Category:           a.Spec.PaletteCategory,
+		DefaultProps:       a.Spec.DefaultProps,
+		NeedsEntityContext: a.Spec.PaletteEntityContext,
 	}
 }
 

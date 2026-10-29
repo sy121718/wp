@@ -9,7 +9,7 @@ function methods(file, name, globals = {}) {
         .replace('export const ' + name, 'var ' + name);
     const context = vm.createContext({ console, JSON, URL, URLSearchParams, setTimeout, clearTimeout, window:{location:{href:"https://editor.test/workbench"}},
         meta: { pageId: 'page-1', draftPath: '/demo', target: { type: 'page', save: { path: '/api/page/draft/save' }, saveBody: { versionKey: 'expectedVersion' } } },
-        csrfHeaders: (h) => h, ...globals });
+        csrfHeaders: (h) => h, paletteUnavailableReason: () => '', ...globals });
     vm.runInContext(fs.readFileSync(__dirname + '/preview.js','utf8').replace(/export (function|const) /g,'$1 '), context);
     vm.runInContext(source, context);
     return context[name];
@@ -28,6 +28,28 @@ function editor(globals = {}) {
     }, methods('state', 'stateMethods', { document, window: {} }), methods('api', 'apiMethods', { document, window: {}, alert() {}, ...globals }));
     return { wb, buttons };
 }
+
+test('组件默认插入按声明要求当前实体，集合与显式选品保留入口', async () => {
+    const {paletteItems, paletteUnavailableReason} = await import('./palette.js');
+    const item = type => paletteItems.find(row => row.type === type);
+    const page = {target:{type:'page'}};
+    const product = {target:{type:'template'},entityType:'product',entityId:'p'};
+    for (const type of ['core.product','core.productCard']) {
+        assert.match(paletteUnavailableReason(item(type), page), /实体上下文/);
+        assert.equal(paletteUnavailableReason(item(type), product), '');
+        assert.equal(paletteUnavailableReason(item(type), {...product,target:{type:'instance'}}), '');
+        assert.match(paletteUnavailableReason(item(type), {...product,noEntity:true}), /实体上下文/);
+        assert.match(paletteUnavailableReason(item(type), {...product,entityType:'article'}), /实体上下文/);
+    }
+    for (const type of ['core.productList','core.productSelector','core.heading']) {
+        assert.equal(paletteUnavailableReason(item(type), page), '');
+    }
+    const canvas = methods('canvas', 'canvasMethods', {meta:page,paletteUnavailableReason});
+    const wb = {doc:{root:[]},setNotice(message){this.notice=message;},makeIdAllocator(){throw new Error('限制入口不得分配节点');}};
+    canvas.insertComponent.call(wb,item('core.product'));
+    assert.equal(wb.doc.root.length,0);
+    assert.match(wb.notice,/实体上下文/);
+});
 
 test('保存成功须同步结束按钮忙碌态并更新版本与状态', async () => {
     const { wb, buttons } = editor({ fetch: async () => ({ ok: true, json: async () => ({ code: 200, data: { draftVersion: 2 } }) }) });

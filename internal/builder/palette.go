@@ -46,6 +46,35 @@ func ComponentPalette() (map[string]core.PaletteMeta, error) {
 				return nil, fmt.Errorf("组件 %s 的默认 Props 无法序列化: %w", name, err)
 			}
 		}
+		if meta.NeedsEntityContext {
+			component, err := core.Lookup(name)
+			if err != nil {
+				return nil, err
+			}
+			provider, ok := component.(core.FieldBindingProvider)
+			if !ok {
+				return nil, fmt.Errorf("组件 %s 声明实体上下文但未提供字段绑定", name)
+			}
+			raw, err := json.Marshal(meta.DefaultProps)
+			if err != nil {
+				return nil, err
+			}
+			refs, err := provider.FieldBindings(&core.Node{Type: name, Props: raw})
+			if err != nil {
+				return nil, fmt.Errorf("组件 %s 默认字段绑定无效: %w", name, err)
+			}
+			seen := map[string]bool{}
+			for _, ref := range refs {
+				if ref.EntityType != "" && !seen[ref.EntityType] {
+					seen[ref.EntityType] = true
+					meta.RequiredEntityTypes = append(meta.RequiredEntityTypes, ref.EntityType)
+				}
+			}
+			if len(meta.RequiredEntityTypes) == 0 {
+				return nil, fmt.Errorf("组件 %s 声明实体上下文但默认字段绑定为空", name)
+			}
+			sort.Strings(meta.RequiredEntityTypes)
+		}
 		out[name] = meta
 	}
 	return out, nil

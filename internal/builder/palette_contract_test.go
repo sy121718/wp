@@ -14,11 +14,29 @@ package builder
 
 import (
 	json "go_wp/pkg/jsonx"
+	"reflect"
 	"sort"
 	"testing"
 
 	"go_wp/internal/builder/core"
 )
+
+func TestPaletteDefaultEntityContext(t *testing.T) {
+	items, err := ComponentPalette()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, typ := range []string{"core.product", "core.productCard"} {
+		if !reflect.DeepEqual(items[typ].RequiredEntityTypes, []string{"product"}) {
+			t.Errorf("%s 默认插入必须声明真实商品绑定上下文: %v", typ, items[typ].RequiredEntityTypes)
+		}
+	}
+	for _, typ := range []string{"core.productList", "core.productSelector", "core.heading"} {
+		if len(items[typ].RequiredEntityTypes) != 0 {
+			t.Errorf("%s 有独立配置路径，不应整体限制: %v", typ, items[typ].RequiredEntityTypes)
+		}
+	}
+}
 
 // paletteNeedsChildren 需要默认子树的组件：它们的「插入即合法」不在本测试覆盖范围内。
 //

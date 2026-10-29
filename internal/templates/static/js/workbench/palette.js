@@ -69,12 +69,23 @@ function paletteItemFor(type) {
         type: type,
         label: meta.displayName,
         hint: meta.hint || '',
+        requiredEntityTypes: (meta.requiredEntityTypes || []).slice(),
         props: deepClone(meta.defaultProps) || {}
     };
 }
 
 /** 组件库条目（含可编译的默认 Props，来源见文件头）。 */
 export const paletteItems = paletteTypes().map(paletteItemFor).filter(function (item) { return !!item; });
+
+/** 默认插入的上下文限制来自组件声明；不推断列表或显式选品的业务语义。 */
+export function paletteUnavailableReason(item, context) {
+    var required = item && item.requiredEntityTypes || [];
+    if (!required.length) return '';
+    var target = context && context.target && context.target.type || context && context.saveBase;
+    if ((target === 'template' || target === 'instance') && !context.noEntity && context.entityId &&
+        required.every(function (type) { return type === context.entityType; })) return '';
+    return '需要对应内容模板的实体上下文';
+}
 
 /** 组件库分组：分组顺序来自 paletteGroupOrder，组内顺序沿用 paletteItems 的顺序。 */
 export const paletteGroups = paletteGroupOrder.map(function (group) {

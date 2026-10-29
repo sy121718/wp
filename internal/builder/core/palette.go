@@ -48,6 +48,10 @@ type PaletteMeta struct {
 	// 键必须在组件 Props 的 JSON 字段集合内（注册期校验，拼错即 panic）；
 	// nil 表示无需默认值（组件插入时 props 为空对象）。
 	DefaultProps map[string]any `json:"defaultProps,omitempty"`
+	// NeedsEntityContext 声明默认插入需要当前实体，采集时由字段绑定推导类型。
+	NeedsEntityContext bool `json:"-"`
+	// RequiredEntityTypes 默认字段绑定所需的实体类型，供编辑器限制插入入口。
+	RequiredEntityTypes []string `json:"requiredEntityTypes,omitempty"`
 }
 
 // PaletteProvider 由「出现在组件库里」的组件实现：返回组件库呈现元数据。

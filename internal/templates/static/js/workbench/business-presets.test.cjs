@@ -118,7 +118,7 @@ test('缺项目或写基座明确反馈，不打开无法提交的对话框', ()
 
 test('真实调色板保留基础组件拖放，业务预设点击命名且元数据缺席不报错', () => {
     const e=setup(),root=e.document.createElement('div');root.id='wb-palette';e.document.body.append(root);
-    Object.assign(e.sandbox,{meta:e.meta,starterPresets:[],libraryCategories:[{key:'other',title:'其他'},{key:'presets',title:'预设'}],paletteItems:[{type:'core.text',label:'文本',hint:'p'}],categoryOf:()=> 'other',elementAppearance:()=>['text','p']});
+    Object.assign(e.sandbox,{meta:e.meta,paletteUnavailableReason:()=>'',starterPresets:[],libraryCategories:[{key:'other',title:'其他'},{key:'presets',title:'预设'}],paletteItems:[{type:'core.text',label:'文本',hint:'p'}],categoryOf:()=> 'other',elementAppearance:()=>['text','p']});
     const source=fs.readFileSync(__dirname+'/methods/canvas.js','utf8').replace(/^import[\s\S]*?;\n/gm,'').replace('export const canvasMethods','var canvasMethods');
     vm.runInContext(source,e.sandbox);
     const self={...e.self,libraryCategory:'all',libraryFilter:'',paletteOpen:{},insertPreset:p=>e.sandbox.openBusinessPreset(e.self,p,e.meta)};
