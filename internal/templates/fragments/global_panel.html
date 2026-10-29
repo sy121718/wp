@@ -16,18 +16,18 @@
 <div class="wb-field wb-field-color" data-wb-theme-color="{{f.Name}}" data-wb-theme-path="{{f.Path}}"><label>{{tr(f.LabelKey, f.LabelFallback)}}</label></div>
 {{else if f.Kind == "select"}}
 <div class="wb-field"><label>{{tr(f.LabelKey, f.LabelFallback)}}</label>
-    <select name="{{f.Name}}">
+    <select name="{{f.Name}}" data-wb-theme-path="{{f.Path}}">
         {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{tr(o.LabelKey, o.LabelFallback)}}</option>{{end}}
     </select>
 </div>
 {{else if f.Kind == "datalist"}}
 {* 字体这类「有常用值但不该锁死」的字段：可填可选。 *}
 <div class="wb-field"><label>{{tr(f.LabelKey, f.LabelFallback)}}</label>
-    <input type="text" name="{{f.Name}}" value="{{f.Value}}" list="theme-dl-{{f.Name}}" spellcheck="false">
+    <input type="text" name="{{f.Name}}" data-wb-theme-path="{{f.Path}}" value="{{f.Value}}" list="theme-dl-{{f.Name}}" spellcheck="false">
     <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{tr(o.LabelKey, o.LabelFallback)}}</option>{{end}}</datalist>
 </div>
 {{else}}
-<div class="wb-field"><label>{{tr(f.LabelKey, f.LabelFallback)}}</label><input type="text" name="{{f.Name}}" value="{{f.Value}}"></div>
+<div class="wb-field"><label>{{tr(f.LabelKey, f.LabelFallback)}}</label><input type="text" name="{{f.Name}}" data-wb-theme-path="{{f.Path}}" value="{{f.Value}}"></div>
 {{end}}
 {{end}}
 {{end}}

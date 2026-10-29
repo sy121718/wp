@@ -26,6 +26,7 @@ var RICH_UPLOAD_ENDPOINT = '/api/media/upload';
 // 工作台草稿以 AST JSON 提交（methods/api.js draft/save），不是表单提交，
 // 因此必须写回节点属性；值未变化时跳过，避免初始化污染 undo 栈。
 function syncRichValue(ctx, path, input) {
+    if (ctx.self.findNode && ctx.self.findNode(ctx.node.id) !== ctx.node) return;
     var html = input.value || '';
     var prev = get(ctx, path) == null ? '' : String(get(ctx, path));
     if (html === prev) return;

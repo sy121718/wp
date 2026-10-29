@@ -8,15 +8,16 @@ export const panelsMethods = {
             // ---- 左侧面板双视图切换 ----
             // ---- 左侧面板统一切换（library/edit/settings/global/history） ----
             showPanel(view) {
+                this.view = view;
+                this.setPreviewMode(false);
+                var titles = { library: '组件库', edit: '元素属性', settings: '页面设置', global: '全局设置', history: '修订历史' };
+                var heading = document.querySelector('.wb-sidebar-top > span');
+                if (heading) heading.textContent = titles[view] || '组件库';
+                document.querySelectorAll('.wb-document-menu[open]').forEach(function (menu) { menu.open = false; });
                 var views = ['library', 'edit', 'settings', 'global', 'history'];
                 views.forEach(function (v) {
                     var el = document.getElementById('wb-panel-' + v);
                     if (el) el.hidden = (v !== view);
-                });
-                // 图标栏高亮：编辑视图归入「组件」入口。
-                var railView = (view === 'edit') ? 'library' : view;
-                document.querySelectorAll('.wb-rail-btn').forEach(function (b) {
-                    b.classList.toggle('is-active', b.id === 'wb-rail-' + railView);
                 });
                 if (view === 'library') this.showLibraryPanel();
                 if (view === 'edit') this.showEditPanel();
@@ -43,12 +44,11 @@ export const panelsMethods = {
                 if (this.selectedSlot) { this.renderSlotPanel(); return; }
                 var node = this.findNode(this.selectedId);
                 var title = document.getElementById('wb-edit-title');
-                if (title) title.textContent = node ? (controlLabel(String(node.type).replace('core.', '')) + ' · ' + (node.name || node.id)) : '组件';
-                // 从槽位态回到普通节点：恢复被槽位面板隐藏的三个节点操作按钮。
-                ['wb-edit-hide', 'wb-edit-lock', 'wb-edit-delete'].forEach(function (id) {
-                    var el = document.getElementById(id);
-                    if (el) el.hidden = false;
-                });
+                if (title) title.textContent = node ? (node.name || controlLabel(String(node.type).replace('core.', ''))) : '组件';
+                var subtitle = document.getElementById('wb-edit-subtitle');
+                if (subtitle) subtitle.textContent = node ? node.type.replace('core.', '') + ' · ' + node.id : '';
+                var selection = document.getElementById('wb-selection-label');
+                if (selection) selection.textContent = node ? ' / ' + (node.name || node.type.replace('core.', '')) : '';
                 this.syncInspector();
             },
 
@@ -65,11 +65,6 @@ export const panelsMethods = {
                 var labels = { header: '页眉', footer: '页脚', announcement: '公告条' };
                 var label = labels[slot.slot] || slot.slot;
                 if (title) title.textContent = label + ' · 站点结构';
-                // 隐藏 / 锁定 / 删除对槽位没有意义：它不是本页文档里的节点。
-                ['wb-edit-hide', 'wb-edit-lock', 'wb-edit-delete'].forEach(function (id) {
-                    var el = document.getElementById(id);
-                    if (el) el.hidden = true;
-                });
                 if (!panel) return;
                 var refName = '';
                 (meta.blocks || []).forEach(function (b) { if (b.id === slot.ref) refName = b.name; });
@@ -319,59 +314,38 @@ export const panelsMethods = {
                     var form = new URLSearchParams();
                     form.append('id', meta.themeId);
                     Array.prototype.forEach.call(body.querySelectorAll('[name]'), function (el) {
-                        form.append(el.name, (el.value || '').trim());
+                        var slot = el.closest('[data-wb-theme-color]');
+                        var input = slot && slot.querySelector('.wb-color-text');
+                        form.append(el.name, ((input || el).value || '').trim());
                     });
                     form.append('headerBlockId', t.headerBlockId || '');
                     form.append('footerBlockId', t.footerBlockId || '');
                     var done = wbBusy(saveBtn, { label: '保存中…' });
-                    // redirect: 'manual' 是这条判断的关键 —— 服务端**成功走 303**（PRG 跳回设置页）、
-                    // **失败走 200 + 就地重渲整页**（52 字段的长表单不能跳页，否则用户填的全丢）。
-                    // 让 fetch 自动跟随重定向的话，两种结果在 r.ok 眼里都是 true：失败会被报成
-                    // 「已保存」，而用户以为改好了、实际一个值都没落库。不跟随之后：
-                    //   成功 → opaqueredirect（status 0、body 不可读）；
-                    //   失败 → 200 + 一整页 HTML（里面的 .badge-warning 就是原因）。
-                    fetch('/admin/themes/settings/save', {
-                        method: 'POST',
-                        headers: csrfHeaders({}),
-                        body: form,
-                        redirect: 'manual'
-                    })
-                        .then(function (r) {
-                            done();
-                            if (r.type !== 'opaqueredirect' && r.status !== 303) {
-                                return self.explainSaveFailure(r);
+                    fetch('/admin/themes/settings/save?id=' + encodeURIComponent(meta.themeId), {
+                        method: 'POST', credentials: 'same-origin', headers: csrfHeaders({}), body: form
+                    }).then(function (response) {
+                        return response.text().then(function (html) {
+                            var result = new DOMParser().parseFromString(html, 'text/html');
+                            var success = response.ok && result.querySelector('[data-jump-state="ok"]');
+                            if (!success) {
+                                var error = result.querySelector('[data-jump-state="err"] .jump-message, .badge-warning, .form-error');
+                                throw new Error(error && error.textContent.trim() || '主题设置未保存，请检查输入值。');
                             }
-                            // 本地缓存按提交键名回写（与后端 SaveThemeSettings 的约定一致）。
-                            Array.prototype.forEach.call(body.querySelectorAll('[name]'), function (el) {
-                                self.setThemePath(t, el.name, (el.value || '').trim());
+                            body.querySelectorAll('[name]').forEach(function (el) {
+                                var slot = el.closest('[data-wb-theme-color]');
+                                var input = slot && slot.querySelector('.wb-color-text');
+                                self.setThemePath(t, slot ? slot.dataset.wbThemePath : (el.dataset.wbThemePath || el.name), ((input || el).value || '').trim());
                             });
                             meta.themeSettings = t;
-                            alert('已保存，主题将合入全部页面；页面需重新构建后生效。');
-                        })
-                        .catch(function () {
-                            done();
-                            alert('保存失败，请重试');
+                            self.doc.settings = self.doc.settings || {};
+                            self.doc.settings.theme = clone(t);
+                            self.setNotice('主题已保存，重新构建后应用到已发布页面');
+                            self.refreshCanvas();
                         });
+                    }).then(done)
+                        .catch(function (error) { done(); self.setNotice(error.message || '保存失败，请重试'); });
                 });
                 body.appendChild(saveBtn);
-            },
-            // explainSaveFailure 保存失败时把服务端的归口提示读出来再弹。
-            //
-            // 失败响应是**一整页 HTML**（服务端就地重渲），原因就写在那句 `.badge-warning` 里
-            //（值不合法 / 校验不过 / 整站刷新失败）—— 把原文透出来比一句「请重试」有用得多，
-            // 否则用户只会反复点同一个按钮。取不到就往「主题管理 → 设置」指路。
-            explainSaveFailure(resp) {
-                return resp.text().then(function (html) {
-                    var text = '';
-                    try {
-                        var doc = new DOMParser().parseFromString(html, 'text/html');
-                        var el = doc.querySelector('.badge-warning');
-                        text = (el && el.textContent) ? el.textContent.trim() : '';
-                    } catch (e) {
-                        text = '';
-                    }
-                    alert('保存失败：' + (text || '服务端拒绝了这次保存，请到「主题管理 → 设置」查看详细提示。'));
-                });
             },
             setThemePath(obj, path, value) {
                 var parts = path.split('.');

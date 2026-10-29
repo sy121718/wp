@@ -1,177 +1,128 @@
-/* workbench.css — 可视化编辑器四区布局样式（docs/03-A §1）。
-   变量沿用后台 theme.css 的设计 Token（颜色在 [data-theme] 下，
-   页面 <html data-theme="light"> 生效）。 */
-
-/* 编辑器专属 token（theme.css 未覆盖，补在此处） */
-:root {
-    --sky-c-canvas-bg: #ececec; /* 画布工作区背景（中性灰，非主题色） */
+/* 工作台使用独立中性色，页面主题色只影响画布内容。 */
+.wb-body {
+    --sky-c-primary: #18181b; --sky-c-primary-deep: #343438; --sky-c-primary-bg: #f0f0f2;
+    --sky-c-surface: #fff; --sky-c-bg: #fafafa; --sky-c-bg-hover: #f5f5f5;
+    --sky-c-border: #e7e7e9; --sky-c-text: #202024; --sky-c-text-secondary: #52525b; --sky-c-text-mute: #82828b;
+    --sky-c-canvas-bg: #f2f2f3;
+    display: flex; flex-direction: column; height: 100dvh; margin: 0; overflow: hidden;
+    color: var(--sky-c-text); background: var(--sky-c-surface); font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+    font-size: var(--ui-fs-sm);
 }
-
-.wb-body { display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
-
-/* ===== 顶栏 ===== */
-.wb-topbar {
-    display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    padding: 8px 16px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
-    background: var(--sky-c-surface, #fff);
+[data-theme="dark"] .wb-body {
+    --sky-c-primary: #ececef; --sky-c-primary-deep: #fff; --sky-c-primary-bg: #333337;
+    --sky-c-surface: #202023; --sky-c-bg: #18181b; --sky-c-bg-hover: #2b2b30;
+    --sky-c-border: #38383e; --sky-c-text: #ececef; --sky-c-text-secondary: #b0b0b8; --sky-c-text-mute: #9696a0; --sky-c-canvas-bg: #151518;
 }
-.wb-topbar-left, .wb-topbar-right { display: flex; align-items: center; gap: 8px; }
-.wb-topbar-center { display: flex; gap: 4px; }
-.wb-status { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; margin-right: 4px; }
-
-/* ===== 按钮 ===== */
-.wb-chip.is-active { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
-
-/* ===== 主区三栏 ===== */
+.wb-body *, .wb-body *::before, .wb-body *::after { box-sizing: border-box; }
+.wb-body button, .wb-body input, .wb-body textarea { font-family: inherit; }
+.wb-body [hidden] { display: none !important; }
+.wb-body svg { width: 17px; height: 17px; vertical-align: middle; flex: none; }
+.wb-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 60px; flex: none; padding: 0 18px; border-bottom: 1px solid var(--sky-c-border); background: var(--sky-c-surface); z-index: 50; }
+.wb-topbar-left, .wb-topbar-right { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.wb-brand { display: flex; align-items: center; gap: 8px; color: var(--sky-c-text); text-decoration: none; white-space: nowrap; }
+.wb-brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: #18181b; color: #fff; font-size: var(--ui-fs-2xl); font-weight: 800; letter-spacing: -2px; padding-right: 2px; }
+.wb-brand-caption { font-size: var(--ui-fs-2xs); letter-spacing: 1.5px; color: var(--sky-c-text-mute); }
+.wb-topbar-divider { height: 20px; width: 1px; background: var(--sky-c-border); margin: 0 5px; }
+.wb-document-menu { position: relative; min-width: 0; }
+.wb-document-menu summary { display: flex; align-items: center; gap: 12px; padding: 8px; cursor: pointer; list-style: none; }
+.wb-document-menu summary::-webkit-details-marker { display: none; }
+.wb-document-name { max-width: 180px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.wb-document-options { position: absolute; left: 0; top: calc(100% + 8px); width: min(220px, 80vw); background: var(--sky-c-surface); border: 1px solid var(--sky-c-border); box-shadow: 0 12px 36px #00000012; padding: 6px; border-radius: 10px; }
+.wb-document-options button, .wb-document-options a { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 6px; background: transparent; color: inherit; text-decoration: none; padding: 10px; font-size: var(--ui-fs-sm); cursor: pointer; text-align: left; }
+.wb-topbar-center { display: flex; gap: 3px; padding: 4px; border: 1px solid var(--sky-c-border); border-radius: 9px; background: var(--sky-c-bg); }
+.wb-device { display: grid; place-items: center; width: 34px; height: 29px; color: var(--sky-c-text-mute); background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
+.wb-device.is-active { color: var(--sky-c-text); background: var(--sky-c-surface); box-shadow: 0 1px 4px #00000012; }
+.wb-status { max-width: 180px; font-size: var(--ui-fs-xs); color: var(--sky-c-text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-status[data-state="dirty"]::before { content: ''; display: inline-block; width: 5px; height: 5px; background: currentColor; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.wb-status[data-state="error"] { color: var(--sky-c-danger, #b91c1c); }
+.wb-body .wb-btn-primary { background: #18181b; color: #fff; }
+.wb-body .wb-btn { gap: 6px; }
 .wb-main { display: flex; flex: 1; min-height: 0; position: relative; }
-.wb-main.is-immersive .wb-inspector,
-.wb-main.is-immersive .wb-navigator { display: none; }
-.wb-main.is-immersive .wb-canvas-wrap { padding: 20px; }
-
-/* 左检查器 */
-.wb-inspector {
-    width: min(100%, 300px); min-width: min(100%, 300px); overflow-y: auto;
-    border-right: 1px solid var(--sky-c-border, #e5e7eb); padding: 12px;
-    display: flex; flex-direction: column; gap: 12px;
-}
-.wb-tabs { display: flex; gap: 4px; }
-.wb-tabs button {
-    flex: 1; padding: 6px 0; border: none; background: none; cursor: pointer;
-    border-bottom: 2px solid transparent; font-size: 13px;
-}
-.wb-tabs button.is-active { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
-.wb-inspector-body { display: flex; flex-direction: column; gap: 10px; }
-.wb-palette { padding-bottom: 10px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
-.wb-palette-item {
-    min-height: 54px; padding: 7px 8px; text-align: left; cursor: pointer;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 7px; background: var(--sky-c-surface, #fff);
-}
-@media (hover: hover) {
-.wb-palette-item:hover { border-color: var(--sky-c-primary, #3d444f); background: var(--sky-c-primary-bg, #eceef1); }
-}
-.wb-palette-item strong, .wb-palette-item span { display: block; }
-.wb-palette-item strong { font-size: 13px; }
-.wb-palette-item span { margin-top: 2px; color: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
-.wb-field label:not(.wb-check-field):not(.checkbox) { display: block; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin-bottom: 4px; }
-.wb-field input:not([type="checkbox"]):not([type="radio"]), .wb-field select, .wb-field textarea {
-    width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 6px;
-}
-
-/* 中央画布 */
-.wb-canvas-wrap { flex: 1; min-width: 0; background: var(--sky-c-canvas-bg, #f3f4f6);
-                  display: flex; justify-content: center; padding: 16px; overflow: auto; }
-.wb-canvas-frame { width: 100%; transition: max-width .25s ease; }
-.wb-canvas-frame.is-tablet { max-width: 768px; }
-.wb-canvas-frame.is-mobile { max-width: 375px; }
-#wb-canvas { width: 100%; height: 100%; min-height: 60vh; border: 1px solid var(--sky-c-border, #e5e7eb);
-             border-radius: 8px; background: #fff; }
-
-/* 浮动大纲树 */
-.wb-navigator {
-    position: absolute; right: 12px; top: 12px; width: min(100%, 280px); max-height: calc(100% - 24px);
-    display: flex; flex-direction: column; z-index: 30;
-    background: var(--sky-c-surface, #fff); border: 1px solid var(--sky-c-border, #e5e7eb);
-    border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
-}
+.wb-inspector { width: min(296px, 85vw); flex: 0 0 min(296px, 85vw); min-width: 0; background: var(--sky-c-surface); border-right: 1px solid var(--sky-c-border); display: flex; flex-direction: column; overflow: hidden; }
+.wb-sidebar-top { display: flex; align-items: center; justify-content: space-between; flex: none; height: 49px; padding: 0 18px; border-bottom: 1px solid var(--sky-c-border); font-weight: 600; }
+.wb-collapse { border: 0; background: none; color: var(--sky-c-text-mute); font-size: var(--ui-fs-xs); cursor: pointer; padding: 8px 0 8px 10px; }
+.wb-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; gap: 14px; padding: 16px; }
+.wb-panel[hidden] { display: none; }
+.wb-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wb-panel-head strong { display: block; font-size: var(--ui-fs-md); font-weight: 600; }
+.wb-eyebrow { display: block; color: var(--sky-c-text-mute); font-size: var(--ui-fs-2xs); margin-bottom: 5px; }
+.wb-element-id { display: block; color: var(--sky-c-text-mute); font-size: var(--ui-fs-2xs); margin-top: 5px; }
+.wb-edit-head { padding: 1px 0 4px; }
+.wb-tabs { display: flex; flex: none; gap: 4px; border-bottom: 1px solid var(--sky-c-border); }
+.wb-tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--sky-c-text-mute); padding: 10px 0; cursor: pointer; font-size: var(--ui-fs-xs); }
+.wb-tabs button.is-active { border-bottom-color: var(--sky-c-text); color: var(--sky-c-text); font-weight: 600; }
+.wb-inspector-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; scrollbar-width: thin; padding: 1px; }
+.wb-palette-item { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 88px; padding: 14px 7px; border: 1px solid var(--sky-c-border); border-radius: 7px; background: var(--sky-c-surface); color: var(--sky-c-text); text-align: center; cursor: pointer; }
+.wb-palette-item strong { display: block; font-size: var(--ui-fs-xs); font-weight: 500; margin-top: 9px; }
+.wb-palette-item .wb-palette-icon { display: block; color: var(--sky-c-text-secondary); }
+.wb-palette-icon svg { width: 23px; height: 23px; }
+.wb-palette-item > span:not(.wb-palette-icon) { margin-top: 4px; font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); }
+.wb-palette-item.wb-palette-icon-button { width: 100%; min-height: 52px; padding: 10px; }
+.wb-palette-tip { display: grid; gap: 5px; min-width: min(100%, 100px); }
+.wb-palette-tip strong { font-size: var(--ui-fs-xs); font-weight: 600; }
+.wb-palette-tip code { font-size: var(--ui-fs-2xs); font-family: ui-monospace, monospace; color: var(--sky-c-text-mute); }
+.wb-library-categories { display: flex; flex-wrap: wrap; gap: 6px; }
+.wb-library-categories button { border: 1px solid var(--sky-c-border); background: var(--sky-c-surface); color: var(--sky-c-text-secondary); border-radius: 6px; padding: 6px 9px; font-size: var(--ui-fs-2xs); cursor: pointer; }
+.wb-library-categories button.is-active { background: var(--sky-c-primary); border-color: var(--sky-c-primary); color: var(--sky-c-surface); }
+.wb-field label:not(.wb-check-field):not(.checkbox) { display: block; font-size: var(--ui-fs-xs); color: var(--sky-c-text-secondary); margin-bottom: 6px; }
+.wb-field input:not([type="checkbox"]):not([type="radio"]), .wb-field select, .wb-field textarea { width: 100%; padding: 7px 9px; font-size: var(--ui-fs-sm); border: 1px solid var(--sky-c-border); border-radius: 6px; background: var(--sky-c-surface); color: inherit; }
+.wb-stage { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.wb-canvas-toolbar { height: 49px; flex: none; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--sky-c-text-mute); border-bottom: 1px solid var(--sky-c-border); background: var(--sky-c-bg); font-size: var(--ui-fs-2xs); }
+.wb-breadcrumb, .wb-canvas-tools { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wb-breadcrumb { overflow: hidden; white-space: nowrap; }
+.wb-breadcrumb strong { font-weight: 500; color: var(--sky-c-text-secondary); }
+.wb-canvas-wrap { display: flex; flex: 1; justify-content: center; min-width: 0; min-height: 0; padding: 24px; overflow: auto; background: var(--sky-c-canvas-bg); }
+.wb-canvas-frame { flex: 0 0 auto; width: 100%; height: 100%; background: #fff; box-shadow: 0 4px 24px #00000005; }
+#wb-canvas { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.wb-navigator { position: absolute; right: 24px; top: 60px; width: min(280px, 92vw); max-height: calc(100% - 84px); display: flex; flex-direction: column; z-index: 45; background: var(--sky-c-surface); border: 1px solid var(--sky-c-border); border-radius: 10px; box-shadow: 0 12px 40px #00000014; overflow: hidden; }
 .wb-navigator.is-hidden { display: none; }
-.wb-navigator-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
-.wb-search { margin: 0 12px 8px; padding: 6px 8px; font-size: 13px;
-             border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 6px; }
-.wb-tree { list-style: none; margin: 0; padding: 4px 6px 10px; overflow-y: auto; font-size: 13px; }
-.wb-tree ul { list-style: none; padding-left: 16px; }
-.wb-node {
-    display: flex; align-items: center; gap: 6px; padding: 4px 6px;
-    border-radius: 6px; cursor: pointer; user-select: none;
-}
-@media (hover: hover) {
-.wb-node:hover { background: var(--sky-c-bg-hover, #ececec); }
-}
-.wb-node.is-selected { background: var(--sky-c-primary-bg, #eceef1); outline: 1px solid var(--sky-c-primary, #3d444f); }
-.wb-node.is-drop-target { background: var(--sky-c-primary-bg, #eceef1); position: relative; }
-.wb-node.is-drop-before::before, .wb-node.is-drop-after::after {
-    content: ''; position: absolute; left: 4px; right: 4px; height: 2px;
-    background: var(--sky-c-primary, #3d444f); border-radius: 2px;
-}
+.wb-navigator-head { display: flex; align-items: center; gap: 2px; padding: 10px 12px; cursor: grab; touch-action: none; }
+.wb-navigator-head strong { flex: 1; font-size: var(--ui-fs-xs); }
+.wb-navigator.is-folded > :not(.wb-navigator-head) { display: none; }
+.wb-search { margin: 0 12px 8px; padding: 8px 10px; font-size: var(--ui-fs-xs); border: 1px solid var(--sky-c-border); border-radius: 6px; background: var(--sky-c-surface); color: inherit; }
+.wb-library-search { margin: 0; width: 100%; }
+.wb-tree { list-style: none; margin: 0; padding: 4px 6px 10px; overflow-y: auto; font-size: var(--ui-fs-xs); }
+.wb-tree ul { list-style: none; padding-left: 14px; }
+.wb-node { position: relative; display: flex; align-items: center; gap: 6px; padding: 7px 6px; border-radius: 5px; cursor: pointer; user-select: none; }
+.wb-node .wb-node-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-node.is-selected { background: var(--sky-c-primary-bg); outline: 1px solid var(--sky-c-border); }
+.wb-node.is-drop-target { background: var(--sky-c-primary-bg); }
+.wb-node.is-drop-before::before, .wb-node.is-drop-after::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; background: var(--sky-c-primary); }
 .wb-node.is-drop-before::before { top: -2px; }
 .wb-node.is-drop-after::after { bottom: -2px; }
-.wb-node.is-drop-inside { outline: 1px dashed var(--sky-c-primary, #3d444f); }
-.wb-node.is-drop-inside::after { content: '放入容器'; margin-left: auto; color: var(--sky-c-primary, #3d444f); font-size: 10px; }
-.wb-node .wb-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-caret { border: none; background: none; cursor: pointer; width: 16px; text-align: center; }
-
-/* ===== 底栏 ===== */
-.wb-bottombar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 16px;
-    border-top: 1px solid var(--sky-c-border, #e5e7eb); background: var(--sky-c-surface, #fff);
-}
-.wb-flex-spacer { flex: 1; }
-.wb-empty { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; }
-/* ===== 左侧双视图（组件库 / 组件编辑，对标 WP 编辑器范式） ===== */
-.wb-panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-/* 左侧面板（组件库 / 结构树）可拖拽调宽：拖右下角手柄，双击手柄区可折叠 */
-#wb-panel-library, #wb-panel-navigator {
-    resize: horizontal; overflow: auto;
-    min-width: min(100%, 180px); max-width: 560px;
-    box-sizing: border-box;
-}
-.wb-panel[hidden] { display: none; }
-.wb-panel-head { display: flex; align-items: center; gap: 8px; }
-.wb-panel-head strong { font-size: 14px; }
-.wb-panel-head .wb-icon-btn { font-size: 18px; line-height: 1; padding: 2px 6px; }
-.wb-library-search { margin: 0; }
-.wb-inspector > .wb-panel { flex: 1; overflow-y: auto; }
-.wb-inspector-body { flex: 1; min-height: 0; overflow-y: auto; }
-
-/* ===== 大纲树行修复：caret 单行不折行、行操作悬浮显示 ===== */
-.wb-caret { white-space: nowrap; font-size: 11px; color: var(--sky-c-text-mute, #6b7280); }
-.wb-node-flag { font-size: 10px; color: var(--sky-c-text-mute, #6b7280); border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 4px; padding: 0 3px; flex: none; }
-.wb-node-actions { margin-left: auto; display: none; gap: 2px; flex: none; }
-.wb-node.is-selected .wb-node-actions { display: inline-flex; }
-@media (hover: hover) {
-.wb-node:hover .wb-node-actions, .wb-node:focus-within .wb-node-actions { display: inline-flex; }
-}
-.wb-node-action {
-    border: none; background: none; cursor: pointer; font-size: 12px; line-height: 1;
-    padding: 2px 4px; border-radius: 4px; color: var(--sky-c-text-mute, #6b7280);
-}
-@media (hover: hover) {
-.wb-node-action:hover { background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f); }
-}
+.wb-node.is-drop-inside { outline: 1px dashed var(--sky-c-primary); }
+.wb-caret { border: 0; background: transparent; cursor: pointer; width: 16px; text-align: center; white-space: nowrap; font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); }
+.wb-node-flag { font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); border: 1px solid var(--sky-c-border); border-radius: 4px; padding: 0 3px; flex: none; }
+.wb-node-actions { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; padding: 2px; background: var(--sky-c-surface); border-radius: 5px; }
+.wb-node.is-selected .wb-node-actions, .wb-node:focus-within .wb-node-actions { display: inline-flex; }
+.wb-node-action { border: 0; background: transparent; cursor: pointer; font-size: var(--ui-fs-xs); padding: 4px; border-radius: 4px; color: var(--sky-c-text-secondary); }
 .wb-tree li.is-collapsed > ul { display: none; }
-/* 大纲树在窄屏下不被画布挤压：允许自身横向滚动 */
-.wb-navigator { overflow: hidden; }
-.wb-tree { min-width: 0; }
-
-/* ===== 窄屏适配：左侧变覆盖抽屉、画布保持可横向滚动，不塌缩 ===== */
-@media (max-width: 900px) {
-    .wb-main { position: relative; }
-    .wb-inspector {
-        position: absolute; left: 0; top: 0; bottom: 0; z-index: 40;
-        width: min(320px, 88vw); min-width: 0;
-        background: var(--sky-c-surface, #fff);
-        box-shadow: 4px 0 20px rgba(0,0,0,.12);
-        transform: translateX(-100%); transition: transform .2s ease;
-    }
-    .wb-inspector.is-open { transform: translateX(0); }
-    .wb-canvas-wrap { overflow-x: auto; padding: 10px; }
-    .wb-canvas-frame { min-width: min(100%, 375px); }
-    .wb-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
-    .wb-navigator { width: min(280px, 92vw); }
+.wb-flex-spacer { flex: 1; }
+.wb-empty { color: var(--sky-c-text-mute); font-size: var(--ui-fs-xs); line-height: 1.8; }
+.wb-main.is-immersive .wb-inspector, .wb-main.is-immersive .wb-navigator, .wb-main.is-immersive .wb-canvas-toolbar { display: none; }
+.wb-main.is-immersive .wb-canvas-wrap { padding: 0; }
+.wb-sidebar-restore { position: fixed; left: 0; top: 50%; z-index: 60; width: 26px; height: 64px; border: 1px solid var(--sky-c-border); border-left: 0; border-radius: 0 7px 7px 0; background: var(--sky-c-surface); color: var(--sky-c-text); cursor: pointer; box-shadow: 2px 0 10px #00000008; font-size: var(--ui-fs-xl); }
+@media (hover: hover) {
+    .wb-document-options button:hover, .wb-document-options a:hover, .wb-node:hover { background: var(--sky-c-bg-hover); }
+    .wb-node:hover .wb-node-actions { display: inline-flex; }
+    .wb-body .wb-btn-primary:hover { background: #36363a; }
 }
-
-
-/* ===== 大纲树操作按钮：悬浮浮层,不挤压节点名 ===== */
-.wb-node { position: relative; }
-.wb-node .wb-node-name { flex: 1 1 auto; min-width: 0; }
-.wb-node-actions {
-    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-    margin-left: 0; padding: 1px 3px; border-radius: 5px;
-    background: var(--sky-c-surface, #fff);
-    box-shadow: 0 1px 6px rgba(0,0,0,.18);
+@media (max-width: 1100px) {
+    .wb-brand-caption, .wb-canvas-hint, #wb-selection-label { display: none; }
+    .wb-status { max-width: 96px; }
+    .wb-document-name { max-width: 110px; }
 }
-.wb-node.is-selected .wb-node-actions { background: #eaf1fe; }
-
+@media (max-width: 760px) {
+    .wb-topbar { height: auto; min-height: 60px; flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+    .wb-topbar-left { flex: 1; }
+    .wb-topbar-right { width: 100%; justify-content: flex-end; }
+    .wb-status { flex: 1; max-width: none; }
+    .wb-inspector { position: absolute; left: 0; top: 0; bottom: 0; z-index: 40; width: min(296px, 85vw); box-shadow: 4px 0 20px #00000010; }
+    .wb-canvas-toolbar { padding: 0 12px; }
+    .wb-canvas-wrap { padding: 12px; }
+    .wb-canvas-frame.is-mobile { max-width: 100%; }
+    .wb-navigator { right: 8px; }
+}
 
 /* ===== 媒体库选择器弹层 ===== */
 #wb-media-modal { position: fixed; inset: 0; z-index: 100; }
@@ -338,29 +289,6 @@
 .wb-media-field.has-image .wb-media-tip { display: none; }
 .wb-media-row { display: flex; gap: 6px; }
 
-/* ===== 左侧图标栏（组件/页面设置/全局设置/修订历史/结构树） ===== */
-.wb-main { display: flex; }
-.wb-rail {
-    display: flex; flex-direction: row; align-items: center;
-    gap: 4px; padding: 8px 10px;
-    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
-    background: var(--sky-c-surface, #fff);
-}
-.wb-rail-btn {
-    width: 32px; height: 32px; border: none; border-radius: 8px;
-    background: transparent; cursor: pointer; font-size: 16px;
-    color: var(--sky-c-text-secondary, #4b5563);
-    display: flex; align-items: center; justify-content: center;
-}
-@media (hover: hover) {
-.wb-rail-btn:hover { background: var(--sky-c-bg-hover, #f3f4f6); }
-}
-.wb-rail-btn.is-active { background: var(--sky-c-primary-bg, #eff6ff); color: var(--sky-c-primary, #3d444f); }
-/* 顶栏内的图标栏：去掉独立工具栏的 padding/border/背景，融入顶栏一行 */
-.wb-topbar .wb-rail { padding: 0; border-bottom: none; background: transparent; gap: 2px; }
-/* 顶栏里的图标按钮略小一点，与 8px 顶栏内边距协调 */
-.wb-topbar .wb-rail-btn { width: 30px; height: 30px; font-size: 15px; }
-
 /* ===== 组件库页签（组件 | 全局块 | SEO） ===== */
 .wb-lib-tabs { display: flex; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
 .wb-lib-tabs button {
@@ -371,7 +299,7 @@
 .wb-lib-tabs button.is-active { color: var(--sky-c-primary, #3d444f); border-bottom-color: var(--sky-c-primary, #3d444f); font-weight: 500; }
 
 /* ===== 手风琴分组 ===== */
-.wb-palette-accordion, .wb-palette-blocks { padding: 8px; overflow-y: auto; flex: 1; }
+.wb-palette-accordion, .wb-palette-blocks { padding: 0; overflow-y: auto; flex: 1; }
 .wb-palette-group {
     display: flex; align-items: center; gap: 6px; width: 100%;
     padding: 8px 6px; margin-top: 4px;
@@ -395,6 +323,7 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 }
 .wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
 .wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
+.wb-palette-group-body.wb-palette-icons { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 
 /* ===== 结构树右键菜单 ===== */
 .wb-context-menu {
@@ -577,8 +506,8 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 /* ===== 动效增强（2026-09 重设计：统一缓动 + 微交互） ===== */
 /* 动效时间与曲线统一由 ui.css 提供。 */
 /* —— 通用元素过渡基线：color/背景/边框/阴影 统一 150ms 缓出 —— */
-.wb-btn, .wb-icon-btn, .wb-chip, .wb-seg-btn, .wb-dev-btn,
-.wb-rail-btn, .wb-node-action, .wb-dims-link, .wb-unit-select {
+.wb-btn, .wb-icon-btn, .wb-seg-btn, .wb-dev-btn,
+.wb-node-action, .wb-dims-link, .wb-unit-select {
     transition: background-color var(--ui-motion-fast),
                 color var(--ui-motion-fast),
                 border-color var(--ui-motion-fast),
@@ -607,22 +536,6 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 .wb-node.is-selected {
     transition: background-color 180ms var(--ui-ease-spring), outline-color 120ms var(--ui-ease-out);
 }
-
-/* —— 左侧图标栏：hover 背景 + 激活指示条滑入 —— */
-.wb-rail-btn { position: relative; }
-/* 指示条用 transform 缩放（不再动 height）：满高基准 + translateY(-50%) 仍以按钮垂直
-   中心为轴展开，scaleY 终态与旧的 55%/70% 高度几何等价，且不触发布局动画。 */
-.wb-rail-btn::before {
-    content: ''; position: absolute; left: 0; top: 50%;
-    width: 3px; height: 100%; border-radius: 0 3px 3px 0;
-    background: var(--sky-c-primary, #3d444f);
-    transform: translateY(-50%) scaleY(0);
-    transition: transform 150ms var(--ui-ease-out);
-}
-@media (hover: hover) {
-.wb-rail-btn:hover::before { transform: translateY(-50%) scaleY(.55); }
-}
-.wb-rail-btn.is-active::before { transform: translateY(-50%) scaleY(.7); }
 
 /* 面板进场动效由 ui.css 的 .wb-panel 提供。 */
 
@@ -907,8 +820,6 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
    ========================================================================== */
 
 /* ---- 1. 面板骨架：面板内边距 12px，分组之间 16px ---- */
-.wb-inspector { padding: 12px; gap: 16px; }
-.wb-inspector-body { gap: 16px; }
 .wb-inspector-group { margin: 0 0 16px; }
 .wb-inspector-group:last-child { margin-bottom: 0; }
 .wb-inspector-group > .wb-inspector-section { margin: 0 0 8px; }

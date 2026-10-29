@@ -23,7 +23,7 @@ func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("工作台布局渲染失败: %v", err)
 	}
-	for _, want := range []string{`id="wb-immersive"`, `aria-pressed="false"`, "聚焦模式 (Ctrl+P)", `id="wb-canvas"`, `id="wb-panel-library"`} {
+	for _, want := range []string{`id="wb-sidebar-restore"`, `id="wb-library-close"`, "收起面板并预览", `id="wb-canvas"`, `id="wb-panel-library"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("工作台渲染缺少 %q", want)
 		}
@@ -32,11 +32,18 @@ func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"toggleImmersive()", "aria-pressed", "is-immersive", "case 'p': this.toggleImmersive()"} {
+	for _, want := range []string{"toggleImmersive()", "this.setPreviewMode(!this.immersive)", "case 'p': this.toggleImmersive()"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("工作台聚焦模式脚本缺少 %q", want)
 		}
 	}
+	workspace := readTemplateFile(t, "static/js/workbench/methods/workspace.js")
+	for _, want := range []string{"is-immersive", "wb-sidebar-restore", "wb-editor-state", "preview: this.immersive"} {
+		if !strings.Contains(workspace, want) {
+			t.Errorf("预览与恢复面板缺少 %q", want)
+		}
+	}
+
 }
 
 func TestUI022AdminLoginResponsiveContract(t *testing.T) {

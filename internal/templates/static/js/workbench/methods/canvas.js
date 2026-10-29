@@ -4,6 +4,9 @@ import {
     meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, buildInsertNode,
 } from '../core.js';
 
+import { starterPresets } from '../starter-presets.js';
+import { libraryCategories, categoryOf, elementAppearance } from '../experience.js';
+
 export const canvasMethods = {
             // ---------------- 画布直改支持 ----------------
             // textFieldOf 组件类型 → 就地编辑的文本 prop 键（双击编辑回写目标）。
@@ -20,6 +23,7 @@ export const canvasMethods = {
                 this.selectedId = id;
                 switch (op) {
                     case 'copy': this.copyNode(); break;
+                    case 'duplicate': this.duplicate(); break;
                     case 'cut': this.cutNode(); break;
                     case 'paste-inside': this.pasteInto(id); break;
                     case 'delete': this.deleteSelected(); break;
@@ -31,11 +35,11 @@ export const canvasMethods = {
                         if (n) {
                             this.snapshot();
                             n.props = n.props || {};
-                            n.props.advanced = n.props.advanced || {};
-                            n.props.advanced.interaction = n.props.advanced.interaction || {};
+                            var owner = n.type === 'core.container' ? n.props : (n.props.advanced = n.props.advanced || {});
+                            owner.interaction = owner.interaction || {};
                             // 切换：同值再点取消。
-                            n.props.advanced.interaction.entrance =
-                                n.props.advanced.interaction.entrance === value ? '' : value;
+                            owner.interaction.entrance =
+                                owner.interaction.entrance === value ? '' : value;
                             this.saveState = 'dirty';
                             this.renderTree(); this.refreshCanvas(); this.renderUI();
                         }
@@ -45,10 +49,10 @@ export const canvasMethods = {
                         if (n2) {
                             this.snapshot();
                             n2.props = n2.props || {};
-                            n2.props.advanced = n2.props.advanced || {};
-                            n2.props.advanced.interaction = n2.props.advanced.interaction || {};
-                            n2.props.advanced.interaction.hoverEffect =
-                                n2.props.advanced.interaction.hoverEffect === value ? '' : value;
+                            var owner2 = n2.type === 'core.container' ? n2.props : (n2.props.advanced = n2.props.advanced || {});
+                            owner2.interaction = owner2.interaction || {};
+                            owner2.interaction.hoverEffect =
+                                owner2.interaction.hoverEffect === value ? '' : value;
                             this.saveState = 'dirty';
                             this.renderTree(); this.refreshCanvas(); this.renderUI();
                         }
@@ -65,23 +69,38 @@ export const canvasMethods = {
                 if (!root) return;
                 root.innerHTML = '';
                 var self = this;
+                var categories = document.getElementById('wb-library-categories');
+                if (categories) {
+                    categories.replaceChildren();
+                    libraryCategories.forEach(function (category) {
+                        var button = document.createElement('button');
+                        button.type = 'button';
+                        button.textContent = category.title;
+                        button.className = self.libraryCategory === category.key ? 'is-active' : '';
+                        button.setAttribute('aria-pressed', String(self.libraryCategory === category.key));
+                        button.addEventListener('click', function () { self.libraryCategory = category.key; self.renderPaletteComponents(); });
+                        categories.appendChild(button);
+                    });
+                }
                 var f = (this.libraryFilter || '').toLowerCase();
                 function match(text) { return !f || text.toLowerCase().indexOf(f) >= 0; }
                 function makeGroup(title, key, fill) {
                     var hits = fill();
                     if (!hits.length) return;
-                    var open = !!f || !!self.paletteOpen[key]; // 搜索时全部展开
+                    var open = true;
                     var head = document.createElement('button');
                     head.type = 'button';
                     head.className = 'wb-palette-group' + (open ? ' is-open' : '');
                     head.innerHTML = '<span class="wb-palette-caret"></span>';
+                    head.setAttribute('aria-expanded', 'true');
                     head.appendChild(document.createTextNode(title));
                     var body = document.createElement('div');
-                    body.className = 'wb-palette-group-body';
+                    body.className = 'wb-palette-group-body' + (key === 'basic' ? ' wb-palette-icons' : '');
                     if (!open) body.style.display = 'none';
                     head.addEventListener('click', function () {
-                        self.paletteOpen[key] = !self.paletteOpen[key];
+                        self.paletteOpen[key] = body.style.display === 'none';
                         head.classList.toggle('is-open', self.paletteOpen[key]);
+                        head.setAttribute('aria-expanded', String(self.paletteOpen[key]));
                         body.style.display = self.paletteOpen[key] ? '' : 'none';
                     });
                     hits.forEach(function (el) { body.appendChild(el); });
@@ -94,9 +113,31 @@ export const canvasMethods = {
                     button.className = 'wb-palette-item';
                     button.draggable = true;
                     button.dataset.type = item.type;
-                    button.innerHTML = '<strong></strong><span></span>';
-                    button.querySelector('strong').textContent = item.label;
-                    button.querySelector('span').textContent = item.hint;
+                    var appearance = elementAppearance(item.type);
+                    var compact = categoryOf(item.type) === 'basic';
+                    button.innerHTML = '<span class="wb-palette-icon" aria-hidden="true"></span>';
+                    button.querySelector('.wb-palette-icon').innerHTML = window.WPIcons ? window.WPIcons.svg(appearance[0]) : '';
+                    var host = button;
+                    var name = document.createElement('strong');
+                    name.textContent = item.label;
+                    if (compact) {
+                        host = document.createElement('span');
+                        host.setAttribute('data-wb-hover', 'hint');
+                        button.classList.add('wb-palette-icon-button', 'wb-hover-trigger');
+                        button.setAttribute('aria-label', item.label + '（' + appearance[1] + '）');
+                        var template = document.createElement('template');
+                        template.className = 'wb-hover-panel';
+                        var tip = document.createElement('div');
+                        tip.className = 'wb-palette-tip';
+                        var tag = document.createElement('code');
+                        tag.textContent = appearance[1];
+                        tip.append(name, tag);
+                        template.content.appendChild(tip);
+                        host.append(button, template);
+                    } else {
+                        button.appendChild(name);
+                        button.title = item.hint;
+                    }
                     button.addEventListener('click', function () {
                         var pending = self.pendingInsertTarget;
                         if (pending && self.findNode(pending.id)) {
@@ -111,7 +152,7 @@ export const canvasMethods = {
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', item.type);
                     });
-                    return button;
+                    return host;
                 }
                 // 区块预设项：整段 AST 片段（对比 makeItem 的单组件 type+props）。
                 function makePresetItem(p) {
@@ -149,20 +190,18 @@ export const canvasMethods = {
                     });
                     return button;
                 }
-                var any = false;
-                paletteGroups.forEach(function (group) {
-                    makeGroup(group.title, group.key, function () {
-                        return group.types.map(function (type) {
-                            return paletteItems.filter(function (e) { return e.type === type; })[0];
-                        }).filter(function (item) { return item && match(item.label + item.hint + item.type); })
-                          .map(makeItem);
+                libraryCategories.filter(function (category) { return !['all', 'presets'].includes(category.key); }).forEach(function (category) {
+                    if (!f && self.libraryCategory !== 'all' && self.libraryCategory !== category.key) return;
+                    makeGroup(category.title, category.key, function () {
+                        return paletteItems.filter(function (item) {
+                            return categoryOf(item.type) === category.key && match(item.label + item.hint + item.type + elementAppearance(item.type)[1]);
+                        }).map(makeItem);
                     });
-                    any = any || root.lastChild !== null;
                 });
                 // 区块预设分组：插件 manifest 声明的预组合 AST 片段（docs/06 §5.2），
                 // 作为独立分组挂在组件页签末尾，一键插入整段结构。
-                var presets = (meta.presets || []);
-                if (presets.length) {
+                var presets = starterPresets.concat(meta.presets || []);
+                if (presets.length && (f || this.libraryCategory === 'presets' || this.libraryCategory === 'all')) {
                     makeGroup('区块预设', 'presets', function () {
                         return presets.filter(function (p) {
                             return p && match((p.label || '') + ' ' + (p.category || ''));
@@ -387,13 +426,7 @@ export const canvasMethods = {
                 // 必须用批内记账的分配器：newId 只查「已入档」节点，而本批节点要等
                 // 全部重写完成后才 push 进 root，用 newId 会让同批同前缀节点撞成同一个 ID
                 // （删除命中错误节点 + 构建期 ValidateNodeID 拒绝发布）。
-                var allocId = this.makeIdAllocator();
-                (function assign(list) {
-                    (list || []).forEach(function (n) {
-                        n.id = allocId(n.id || 'node');
-                        assign(n.children);
-                    });
-                })(nodes);
+                this.prepareInsertedNodes(nodes);
                 // 顶级平铺：本项目无强制根容器，预组合区块（Section）顶级平铺是一等形态。
                 for (var i = 0; i < nodes.length; i++) this.doc.root.push(nodes[i]);
                 // 选中首个节点，便于立即编辑。
@@ -546,6 +579,7 @@ export const canvasMethods = {
                     });
                 }
                 doc.addEventListener('dragover', function (event) {
+                    if (self.immersive) return;
                     event.preventDefault();
                     // 槽位子树不接收落点：往页眉里插组件等于往「站点结构那份块」插，
                     // 而这里改的是本页文档 —— 落点必须落在本页节点上。
@@ -566,6 +600,7 @@ export const canvasMethods = {
                     if (!event.relatedTarget) clearDropMarks();
                 });
                 doc.addEventListener('drop', function (event) {
+                    if (self.immersive) return;
                     event.preventDefault();
                     clearDropMarks();
                     // 槽位子树不作为落点：目标置空 → 组件插到文档末尾（顶级平铺），
@@ -576,7 +611,7 @@ export const canvasMethods = {
                     // 预设拖入：按 id 找回预设并整段插入（与点击一致的顶级平铺）。
                     var presetID = event.dataTransfer.getData('application/x-wb-preset');
                     if (presetID) {
-                        var preset = (meta.presets || []).filter(function (x) { return x.id === presetID; })[0];
+                        var preset = starterPresets.concat(meta.presets || []).filter(function (x) { return x.id === presetID; })[0];
                         if (preset) self.insertPreset(preset);
                         return;
                     }
@@ -612,17 +647,39 @@ export const canvasMethods = {
                 var n = 1; while (this.findNode(prefix + '-' + n)) n++;
                 return prefix + '-' + n;
             },
+            prepareInsertedNodes(nodes) {
+                var allocate = this.makeIdAllocator();
+                var anchors = {};
+                (function assign(list) {
+                    list.forEach(function (node) {
+                        node.id = allocate(node.id || 'node');
+                        var advanced = node.props && node.props.advanced;
+                        if (advanced && advanced.customId) {
+                            var previous = advanced.customId;
+                            advanced.customId = node.id + '-anchor';
+                            anchors[previous] = advanced.customId;
+                        }
+                        assign(node.children || []);
+                    });
+                })(nodes);
+                (function link(list) {
+                    list.forEach(function (node) {
+                        if (node.type === 'core.button' && node.props.action === 'anchor' && anchors[node.props.value]) node.props.value = anchors[node.props.value];
+                        link(node.children || []);
+                    });
+                })(nodes);
+            },
             deepCopyStripMeta(node) {
                 var copy = clone(node);
                 copy.id = '';
                 copy.locked = false; copy.hidden = false;
-                (function strip(list) { (list || []).forEach(function (c) { c.id = ''; c.locked = false; strip(c.children); }); })(copy.children);
+                (function strip(list) { (list || []).forEach(function (c) { c.id = ''; c.locked = false; c.hidden = false; strip(c.children); }); })(copy.children);
                 return copy;
             },
             copyNode() {
                 var node = this.findNode(this.selectedId); if (!node) return;
                 this.clipboard = { mode: 'copy', node: clone(node) };
-                this.styleClipboard = clone(node.props || {});
+                this.copyStyle();
             },
             cutNode() {
                 var node = this.findNode(this.selectedId); if (!node) return;
@@ -633,10 +690,7 @@ export const canvasMethods = {
                 this.snapshot();
                 var node = this.deepCopyStripMeta(this.clipboard.node);
                 var self = this;
-                // 整棵粘贴子树共用一个 ID 分配器：newId 只查文档，批量重写时同前缀会全部
-                // 落成 node-1（子树内 ID 重复 → 校验直接拒绝）。
-                var alloc = this.makeIdAllocator();
-                (function assign(list) { (list || []).forEach(function (c) { c.id = alloc(c.id || 'node'); assign(c.children); }); })([node]);
+                this.prepareInsertedNodes([node]);
                 if (parentId) {
                     var parent = this.findNode(parentId);
                     if (!parent) { this.doc.root.push(node); }
@@ -657,9 +711,7 @@ export const canvasMethods = {
                 this.snapshot();
                 var node = this.deepCopyStripMeta(this.clipboard.node);
                 var self = this;
-                // 同 pasteInto：整棵子树共用一个分配器，避免批量重写撞出重复 ID。
-                var alloc = this.makeIdAllocator();
-                (function assign(list) { (list || []).forEach(function (c) { c.id = alloc(c.id || 'node'); assign(c.children); }); })([node]);
+                this.prepareInsertedNodes([node]);
                 var loc = this.findLocation(nodeId);
                 if (!loc) return;
                 var afterAt = loc.index + 1;
@@ -670,27 +722,58 @@ export const canvasMethods = {
                 this.selectedId = node.id;
                 this.renderTree(); this.syncInspector(); this.refreshCanvas(); this.renderUI();
             },
+            copyStyle() {
+                var node = this.findNode(this.selectedId);
+                if (!node) return;
+                this.styleClipboard = { type: node.type, props: clone(node.props || {}) };
+                this.setNotice('样式已复制');
+            },
             pasteStyle() {
                 var node = this.findNode(this.selectedId);
-                if (!node || !this.styleClipboard) return;
+                var source = this.styleClipboard;
+                if (!node || !source) { this.setNotice('请先复制一个元素的样式'); return; }
+                var paths = node.type === 'core.container'
+                    ? ['layout', 'box', 'visual', 'position', 'styleEx', 'interaction'] : ['advanced', 'typography'];
+                if (source.type === node.type) {
+                    (componentSchemas[node.type] || []).forEach(function (control) {
+                        if (control.section && control.section !== 'content' && !/(^|\.)customId$/.test(control.key)) paths.push(control.key);
+                    });
+                } else {
+                    paths = paths.filter(function (path) { return path === 'advanced' || path === 'typography'; });
+                }
                 this.snapshot();
-                node.props = clone(this.styleClipboard);
-                this.refreshCanvas(); this.syncInspector();
+                node.props = node.props || {};
+                paths.forEach(function (path) {
+                    var parts = path.split('.');
+                    var value = parts.reduce(function (object, key) { return object == null ? undefined : object[key]; }, source.props);
+                    if (value === undefined) return;
+                    value = clone(value);
+                    if (path === 'advanced') {
+                        delete value.customId;
+                        if (node.props.advanced && node.props.advanced.customId) value.customId = node.props.advanced.customId;
+                    }
+                    var target = node.props;
+                    parts.slice(0, -1).forEach(function (key) { target = target[key] = target[key] || {}; });
+                    target[parts[parts.length - 1]] = clone(value);
+                });
+                this.renderTree(); this.refreshCanvas(); this.syncInspector(); this.renderUI();
             },
             duplicate() {
                 var node = this.findNode(this.selectedId); if (!node) return;
                 var backupClip = this.clipboard;
                 this.clipboard = { mode: 'copy', node: clone(node) };
-                var parent = this.findParent(this.selectedId);
-                this.pasteInto(parent ? parent.id : '');
+                this.pasteAfter(node.id);
                 this.clipboard = backupClip;
+                this.showEdit();
             },
             deleteSelected() {
                 if (!this.selectedId) return;
                 this.snapshot();
                 this.removeById(this.selectedId);
                 this.selectedId = '';
-                this.renderTree(); this.refreshCanvas(); this.syncInspector();
+                this.invalidateInspector();
+                this.renderTree(); this.refreshCanvas(); this.syncInspector(); this.renderUI();
+                this.showLibrary();
             },
 
 };
