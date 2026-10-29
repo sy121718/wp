@@ -395,7 +395,6 @@ POST /admin/projects/create
 POST /admin/roles/bulk-delete
 POST /admin/roles/create
 POST /admin/roles/delete
-POST /admin/roles/permissions/save
 POST /admin/roles/update
 POST /admin/settings/locales/rows
 POST /admin/settings/locales/save

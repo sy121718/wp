@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-29T17:08:32+08:00
+-- 生成时间：2026-10-29T18:02:06+08:00
 
 --
 -- PostgreSQL database dump
@@ -400,7 +400,8 @@ CREATE TABLE public.ai_tool_idempotency (
     idem_key text NOT NULL,
     result_text text DEFAULT ''::text NOT NULL,
     result_data jsonb,
-    create_time timestamp with time zone DEFAULT now() NOT NULL
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    actor bigint DEFAULT 0 NOT NULL
 );
 
 
@@ -5954,11 +5955,11 @@ ALTER TABLE ONLY public.ai_session
 
 
 --
--- Name: ai_tool_idempotency uk_ai_tool_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: ai_tool_idempotency uk_ai_tool_idempotency_actor; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ai_tool_idempotency
-    ADD CONSTRAINT uk_ai_tool_idempotency UNIQUE (tool_name, idem_key);
+    ADD CONSTRAINT uk_ai_tool_idempotency_actor UNIQUE (tool_name, actor, idem_key);
 
 
 --
