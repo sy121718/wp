@@ -14,24 +14,12 @@
 
 # ---- 公开面 ----
 internal/routers/routes.go accessUnlockPath	站点守卫解锁页：未登录访客唯一的自救入口，带 IP 限流（10 次/分钟）压 bcrypt 爆破成本
-internal/module/runtimefragment/router.go /_fragments/:type	访客片段面：逐 capability 白名单 + 声明式认证策略（anonymous/session），写状态能力必须自带 CSRF
 internal/module/analytics/inbound/http/analytics_router.go /analytics/collect	访客采集端点：控制面/访问面分离的明文例外
 internal/module/cart/inbound/http/cart_router.go /payment/callback	支付网关回调：调用方不是后台用户，鉴权靠 HMAC 验签（失败只回四条业务 key）
-internal/module/user/inbound/http/user_router.go /register	公开注册（访客自助开户）
 internal/module/ai/inbound/http/ai_router.go /mcp	公开面（外部接入点）：调用方不是后台用户，而是持有对外访问令牌（PAT）的 MCP 客户端 —— 鉴权是「Bearer 令牌校验 + 令牌 scope ∩ 账号 Casbin 权限」两关（见 ai_mcp_endpoint.go），没有会话可挂。挂上 CasbinMiddlewareForPath 反而会把这唯一合法的调用方挡在外面
-internal/module/user/inbound/http/user_router.go /resend	公开重发激活邮件（带敏感操作限流）
-internal/module/user/inbound/http/user_router.go /login	访客登录（带敏感操作限流）
-internal/module/user/inbound/http/user_router.go /logout	访客登出
-internal/module/user/inbound/http/user_router.go /forgot	公开忘记密码（带敏感操作限流）
-internal/module/user/inbound/http/user_router.go /reset	公开重置密码（带敏感操作限流）
 cmd/builder/main.go /builder/generate	测试构建工具进程：cmd/builder 是独立于主服务的开发/测试辅助进程，不参与主路由装配
 
 # ---- 自助面（登录即授权） ----
-internal/module/user/inbound/http/user_router.go /account/profile	账户中心：组级 requireUser() 已强制登录，改的是自己的资料
-internal/module/user/inbound/http/user_router.go /account/preference	同上：自己的偏好
-internal/module/user/inbound/http/user_router.go /account/password	同上：自己的密码（旧密码校验在 service 内）
-internal/module/user/inbound/http/user_router.go /account/sessions/revoke	同上：撤销自己的会话
-internal/module/user/inbound/http/user_router.go /account/sessions/revoke-others	同上：撤销自己的其他会话
 
 # ---- 只读 / 纯计算（POST 传参，不写库不写产物） ----
 internal/module/workbench/inbound/http/router.go /workbench/preview	工作台预览：渲染草稿，不落库不写产物，与本页 GET 同权

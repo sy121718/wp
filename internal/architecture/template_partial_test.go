@@ -11,7 +11,7 @@ import (
 //
 // 判据是**处数**（双向）：后台模板里手写的 <div class="empty-state"> 只能减少 ——
 // 新写一处就失败，改完一处忘了下调预算也失败。这是「同一形态只写一遍」唯一能自动守住的形式。
-const emptyStateBudget = 71
+const emptyStateBudget = 69
 
 const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 
@@ -21,7 +21,7 @@ const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 // 2026-10 定时上下线（PIPE-7）下线时从 163 降到 160（-3：
 // pages.html 的两个排定徽标 + 面板片段的空态徽标随文件一起删掉），
 // 预算只减不增，所以这里同步下调 —— 留在 163 会让「已经收口」与「一点没改」在清单上长得一样。
-const badgeBudget = 160
+const badgeBudget = 156
 
 const badgePartial = "internal/templates/admin/partials/badge.html"
 

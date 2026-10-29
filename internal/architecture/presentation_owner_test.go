@@ -121,7 +121,6 @@ var pendingModuleText = map[string]int{
 	"internal/module/plugin/service/plugin.go":                               1,
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":        4,
 	"internal/module/user/inbound/http/customer_bulk_write.go":               3,
-	"internal/module/user/inbound/http/user_page.go":                         1,
 	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
 	"internal/module/workbench/inbound/http/workbench_err.go":                3,
 	// 页面逻辑拆成 5 个文件后，两处取词跟着调用点走（都在预览编译的出口）。

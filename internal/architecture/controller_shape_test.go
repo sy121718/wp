@@ -439,7 +439,6 @@ func TestControllerMethodSize(t *testing.T) {
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":              true,
 	"internal/module/page/inbound/http/page_translations_handle.go": true,
-	"internal/module/user/inbound/http/user_page.go":                true,
 	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
 	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
 	"internal/module/workbench/inbound/http/inspector_handle.go": true,
