@@ -28,3 +28,24 @@ func (h *ProductPublicHandle) Variants(c *gin.Context) {
 	}
 	response.Success(c, data)
 }
+
+// ProductCatalogHandle 只绑定数据查询并返回JSON。
+type ProductCatalogHandle struct {
+	svc productcontract.PublicCatalogReader
+}
+
+func NewProductCatalogHandle(svc productcontract.PublicCatalogReader) *ProductCatalogHandle {
+	return &ProductCatalogHandle{svc: svc}
+}
+func (h *ProductCatalogHandle) List(c *gin.Context) {
+	req, ok := binding.Query[productdto.PublicCatalogReq](c)
+	if !ok {
+		return
+	}
+	data, err := h.svc.PublicCatalog(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorStatusAuto(c, "product", err)
+		return
+	}
+	response.Success(c, data)
+}

@@ -175,7 +175,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	}); err != nil {
 		return nil, err
 	}
-	s.bumpFragmentCache(ctx, projectID)
+
 	// Done 取真正删掉的行数（锁定集合大小，且已校验 == len(ids)）。
 	res.Done = deleted
 	return res, nil

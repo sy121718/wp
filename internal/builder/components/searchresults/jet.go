@@ -12,6 +12,8 @@ import (
 type View struct {
 	Placeholder     string
 	BaseFragmentURL string
+	EmptyQuery      string
+	NoResults       string
 	Notice          string
 	// LabelSR / SubmitText 搜索框的可访问标签与按钮文字（审计 I18N-010）。
 	LabelSR    string
@@ -48,5 +50,5 @@ func (v View) DeclareFeatures() (attrs, classes []string) {
 	if v.Notice != "" {
 		return nil, nil
 	}
-	return []string{"hx-get", "hx-target", "hx-swap", "hx-include", "hx-trigger"}, nil
+	return []string{"data-site-read", "data-site-view", "data-site-search"}, nil
 }

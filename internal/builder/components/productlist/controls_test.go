@@ -88,11 +88,11 @@ func TestFilterSectionsFromOptions(t *testing.T) {
 			t.Fatalf("筛选块 %q 不该为空", section.Title)
 		}
 		for _, opt := range section.Options {
-			if opt.Href == "" || opt.FragmentGet == "" || opt.PushURL == "" {
+			if opt.Href == "" || opt.ActionQuery == "" || opt.PushURL == "" {
 				t.Fatalf("选项 %q 三样 URL 必须齐全: %+v", opt.Label, opt)
 			}
-			if !strings.Contains(opt.FragmentGet, "nodeId=list1") || !strings.Contains(opt.FragmentGet, "projectId=proj-1") {
-				t.Fatalf("片段请求必须带实例配置: %s", opt.FragmentGet)
+			if strings.Contains(opt.ActionQuery, "nodeId=") || strings.Contains(opt.ActionQuery, "projectId=") {
+				t.Fatalf("数据请求只带工程与查询事实: %s", opt.ActionQuery)
 			}
 			if strings.Contains(opt.PushURL, "nodeId") || strings.Contains(opt.PushURL, "projectId") {
 				t.Fatalf("推送 URL 不该带实例配置（地址栏只放语义参数）: %s", opt.PushURL)
@@ -137,17 +137,10 @@ func TestTemplateRendersInteractiveAttributes(t *testing.T) {
 	html := buf.String()
 	for _, want := range []string{
 		"data-sky-product-list",
-		"/_fragments/productList?",
-		"hx-push-url=",
-		// 触发器是**无条件 load**，不带 `[...]` 事件过滤器。
-		//
-		// 原先写作 `load[location.search.length > 1]` 想让「地址栏没有查询时别请求」——
-		// 那个表达式要经 htmx 的 Function() 求值，而更早一版的 hx-vals 里那段
-		// `js:Object.fromEntries(...)` 在 htmx 的包裹规则下是**语法错误**，每次请求都抛，
-		// 交互全废。现在改为：无条件 load，由片段端点判断「有没有语义参数」，
-		// 没有就回 204（htmx 对 204 不交换）—— 判据回到服务端，客户端不再需要任何求值。
-		`hx-trigger="load"`,
-		`hx-target="closest [data-sky-product-list]"`,
+		"/api/site/product/catalog?",
+		`data-site-view="catalog"`,
+		`data-catalog-query=`,
+		`<template data-catalog-card>`,
 		"sky-product-list-filter-option",
 		"sky-product-list-tool-option",
 		"is-disabled", // 热度排序的禁用占位
@@ -199,7 +192,7 @@ func TestSortOptionsHaveDisabledPlaceholder(t *testing.T) {
 		t.Fatalf("排序应有 6 个可点 + 1 个禁用占位，实际 %d", len(view.SortOptions))
 	}
 	last := view.SortOptions[len(view.SortOptions)-1]
-	if !last.Disabled || last.DisabledHint == "" || last.FragmentGet != "" {
+	if !last.Disabled || last.DisabledHint == "" || last.ActionQuery != "" {
 		t.Fatalf("热度应是禁用占位且不给链接: %+v", last)
 	}
 	if !view.ShowSort || !view.ShowPageSize || !view.ShowColumns {
@@ -221,7 +214,7 @@ func TestPagerLinksCarrySemanticParams(t *testing.T) {
 	if !view.HasPager || !view.HasPrev || !view.HasNext {
 		t.Fatalf("第 2 页（共 3 条、每页 1 条）应上下页都有: %+v", view)
 	}
-	if !strings.Contains(view.NextLink.PushURL, "page=3") || !strings.Contains(view.NextLink.FragmentGet, "page=3") {
+	if !strings.Contains(view.NextLink.PushURL, "page=3") || !strings.Contains(view.NextLink.ActionQuery, "page=3") {
 		t.Fatalf("下一页链接应指向第 3 页: %s", view.NextLink.PushURL)
 	}
 	if !strings.Contains(view.PrevLink.PushURL, "page=1") {

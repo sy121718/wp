@@ -58,6 +58,7 @@ var uiBaseClasses = []string{
 
 var uiBlocks = []uiBlock{
 	{file: "site-data.js", attrs: []string{"data-site-read"}, noStyle: true},
+	{file: "site-catalog.js", attrs: []string{"data-site-catalog", "data-site-search"}, noStyle: true},
 	{file: "site-product.js", attrs: []string{"data-site-product"}, noStyle: true},
 	{file: "write-base.js", attrs: []string{"data-write"}, noStyle: true},
 	{file: "requires_js.js", attrs: []string{"data-requires-js"}, noStyle: true},

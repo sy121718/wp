@@ -11,7 +11,10 @@ package contenthttp
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
 
 import (
+	"github.com/gin-gonic/gin"
+	"go_wp/internal/middleware/builtin"
 	"gorm.io/gorm"
+	"time"
 
 	"go_wp/internal/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -44,4 +47,9 @@ func SetupContentRoutes(rg *permission.RouteGroup, db *gorm.DB, collections core
 	g.GET("/collections", permission.ContentCollections, handle.Collections)
 	g.POST("/delete", permission.ContentDelete, handle.Delete)
 	return svc
+}
+
+// SetupContentPublicRoutes 注册公开搜索JSON，独立于后台会话。
+func SetupContentPublicRoutes(router *gin.Engine, reader contentcontract.PublicSearchReader) {
+	router.GET("/api/site/search", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
 }

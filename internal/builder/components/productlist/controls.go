@@ -3,10 +3,10 @@
 // 所有控件都是**链接**（<a>）而不是 select/checkbox：
 //
 //	· 无 JS 时它们是可点的普通链接（整页跳转，URL 语义参数照旧生效）；
-//	· 有 HTMX 时同一批链接带 hx-get / hx-push-url，变成局部刷新；
+//	· 有 JS 时同一批链接更新语义参数并读取 JSON，仅更新结果区域；
 //	· 键盘可达与读屏语义都是链接原生带来的，不需要额外 ARIA 体操。
 //
-// 每个控件同时给出三个 URL：href（降级整页跳转）、FragmentGet（片段请求）、PushURL（地址栏）。
+// 每个控件给出原生链接、明确的参数变化与默认地址栏查询串。
 // 三者的分工见 links.go。
 package productlist
 
@@ -140,8 +140,8 @@ type ControlOption struct {
 	DisabledHint string
 	// Href 降级链接（只带语义参数；无 JS 时整页跳转）。
 	Href string
-	// FragmentGet 片段请求 URL（实例配置 + 当前语义参数 + 本次变化）。
-	FragmentGet string
+	// ActionQuery 此控件改变的语义参数；前端与当前选中状态合并。
+	ActionQuery string
 	// PushURL 地址栏要推的查询串（只带语义参数）。
 	PushURL string
 }
@@ -627,9 +627,8 @@ func buildPriceSection(p *Props, lc linkContext, view *View) {
 	if currentMax != nil {
 		view.PriceToValue = trimNumber(*currentMax)
 	}
-	// 表单两条路：有 JS 走片段局部刷新（hx-get 带实例配置），没 JS 走原生 GET 到干净 URL
+	// 表单两条路：有 JS 读取 JSON 并更新结果区域，没 JS 走原生 GET 到干净 URL
 	// （action 只带语义参数，表单字段把 minPrice / maxPrice 附上去，冷启动补正接住结果）。
-	view.PriceFragmentGet = lc.fragmentGet(url.Values{})
 	view.PriceFormAction = lc.pushURL(url.Values{})
 }
 
@@ -706,11 +705,11 @@ func controlOption(lc linkContext, label string, active bool, override url.Value
 		Label:  label,
 		Active: active,
 		// Href 是**降级链接**（无 JS 时整页跳转）→ 绝对地址；
-		// PushURL 是地址栏要变成的查询串（htmx 按当前路径推入历史）→ 保持相对。
+		// PushURL 是地址栏要变成的查询串（前端按当前路径推入历史）→ 保持相对。
 		// 两者此前同值，于是降级链接只能是 "?page=2"（查询相对引用），
 		// 不满足「站内地址一律绝对」的约定。
 		Href:        lc.fallbackHref(override),
-		FragmentGet: lc.fragmentGet(override),
+		ActionQuery: override.Encode(),
 		PushURL:     lc.pushURL(override),
 	}
 }

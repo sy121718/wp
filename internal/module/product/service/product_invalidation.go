@@ -1,9 +1,7 @@
 package productservice
 
-// 要修的口径差：商品主写路径（Create/Update/Delete + 变体 + 定价 + 分类/品牌/标签）
-// 此前只调 bumpFragmentCache —— 那只是 Redis 里运行时片段 HTML 的版本号，与静态产物
-// 字节毫无关系。于是「改标题 / 改价 / 上下架 / 分类 / 增删商品」之后，详情页与集合
-// 列表页的静态产物可以一直是旧字节，且任何日志都不会提示。
+// 商品主写路径（Create/Update/Delete、变体、定价、分类与标签）通过同事务 outbox
+// 使详情和集合列表产物失效；公开 JSON 读取直接返回当前事实，不再缓存 HTML。
 //
 // 链路（与 content 模块的同名链路逐字对齐）：
 //

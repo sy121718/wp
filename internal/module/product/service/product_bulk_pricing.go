@@ -108,7 +108,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		}); err != nil {
 			return nil, err
 		}
-		s.bumpFragmentCache(ctx, projectID)
+
 		// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。
 		// 整批已经提交：重算失败只记日志，不报失败（否则用户重试会重复调价）。
 		if _, rerr := s.recalcPricingAutoTags(ctx, projectID); rerr != nil {

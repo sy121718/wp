@@ -35,16 +35,8 @@ import (
 // maxParamLen 查询参数值长度上限（防超长注入）。
 const maxParamLen = 200
 
-// maxParamCount GET 的参数名数量上限（名 ≤64 / 值 ≤200 字节在下面各自拦）。
-//
-// 为什么是 48 而不是「几个键就够」：商品列表片段的**实例配置本身就有十几个键**
-// （nodeId / projectId / 布局 / 展示槽位 / 字段槽位 / 条数 / 每页条数…，实测典型配置 13 个），
-// 再加上筛选维度、属性维度与页码，一次片段请求常见十几到二十几个参数名。
-// 上限只有 10 时这些请求会被自己拒成 400（「参数过多」）—— 而且只在真实 HTTP
-// 路径上发生，单测直调处理器看不见（正是它一直没被发现的原因）。
-//
-// 保留防护意义：上限本身就是为了拦住“一次性灌入几百个键”的拄量请求，
-// 48 个名 × （≤64 + ≤200）字节仍远低于常见的 URL 长度上限。
+// maxParamCount 限制剩余白名单片段的查询参数数量。
+// 商品列表和搜索已迁公开 JSON，不再接受组件实例配置。
 const maxParamCount = 48
 
 // maxFormParamCount POST 的参数名数量上限：表单用「并行数组」表达结构化入参
@@ -194,7 +186,7 @@ func FragmentEndpoint(c *gin.Context) {
 		return
 	}
 	// 处理器：返回 HTML 片段（handler 内部对用户数据 escape）。
-	htmlFragment, cacheHit, err := renderWithOptionalCache(c.Request.Context(), typeName, spec, req)
+	htmlFragment, err := spec.Render(c.Request.Context(), req)
 	if err != nil {
 		// ErrNoChange：本次请求无需替换目标 → 204（htmx 对 204 不交换）。
 		// 不能当错误处理：它不是失败，把「无需替换」打成 500 会让前端
@@ -208,9 +200,6 @@ func FragmentEndpoint(c *gin.Context) {
 		// 「成功片段是英文、错误提示是中文」。文案与兜底中文见 fragment_err.go 的 key 表。
 		c.String(http.StatusInternalServerError, fragmentErrTextOf(req.T, fragmentErrTextRenderFailed))
 		return
-	}
-	if cacheHit {
-		c.Header("X-Fragment-Cache", "HIT")
 	}
 	// 渲染**成功之后**才写 cookie：失败响应配上一个已经更新的 cookie，
 	// 会让「页面显示什么」与「服务端记住了什么」各说各话。

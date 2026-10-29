@@ -563,7 +563,7 @@ export const paletteSpec = {
         "core.searchResults": {
             "type": "core.searchResults",
             "displayName": "站内搜索",
-            "hint": "搜索框 + 结果列表（片段现拉）",
+            "hint": "搜索框 + 结果列表（JSON数据）",
             "category": "basic",
             "defaultProps": {
                 "limit": 8,
@@ -682,7 +682,7 @@ export const paletteSpec = {
         "core.userForms": {
             "type": "core.userForms",
             "displayName": "账号表单",
-            "hint": "登录 / 注册 / 找回密码 / 账号面板（片段现拉）",
+            "hint": "登录、注册、找回密码与账号管理，使用 JSON 接口",
             "category": "basic",
             "defaultProps": {
                 "mode": "login",

@@ -1,12 +1,3 @@
-// product_search_fragments_test.go — 站内搜索与实时价格核对两个运行时片段（BIZ-2）。
-//
-// 走**真实**的 runtimefragment 端点 + 真实 PG（生产迁移）+ 真实 service + 真实 Jet 片段模板：
-// 断言的是「访问面到底吐出了什么 HTML」，而不是内部状态。四件事必须成立：
-//
-//  1. 只搜已上架商品与已发布内容 —— 草稿商品、没有线上页面的文章都不得出现；
-//  2. 结果链接逐字来自发布面（实例 url_path），没有路径的条目只输出标题，绝不拼 slug 约定；
-//  3. LIKE 通配符被转义 —— 搜「100%」不等于「以 100 开头」（不转义时后者会命中）；
-//  4. 商品实时价片段：产物里的价与库里一致时沉默，不一致时明确交代当前价。
 package feature
 
 import (
@@ -22,11 +13,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	contentcontract "go_wp/internal/module/content/contract"
+	contenthttp "go_wp/internal/module/content/inbound/http"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	runtimefragment "go_wp/internal/module/runtimefragment"
 )
 
 // seedArticle 造一篇文章（contents 表；标题与摘要在 data JSONB 里）。
@@ -47,110 +39,80 @@ func seedArticle(t *testing.T, f *detailFixture, title, slug, excerpt string) st
 	return id
 }
 
-// fragmentGet 请求一个匿名片段端点，返回响应体（非 200 直接失败）。
-func fragmentGet(t *testing.T, capability string, params url.Values) string {
+// searchJSON 走生产公开JSON路由；不用片段注册表或展示模板。
+func searchJSON(t *testing.T, f *detailFixture, q string) contentcontract.PublicSearchData {
 	t.Helper()
+	contents := contentservice.NewService(contentmodel.NewModel(f.db))
+	reader := contentservice.NewPublicSearchService(contents, f.products, f.pres)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	runtimefragment.SetupFragmentRoutes(engine)
+	contenthttp.SetupContentPublicRoutes(engine, reader)
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_fragments/"+capability+"?"+params.Encode(), nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("片段 %s 应 200，实际 %d body=%s", capability, rec.Code, oneLine(rec.Body.String()))
+	params := url.Values{"projectId": {f.projectID}, "q": {q}}
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/site/search?"+params.Encode(), nil))
+	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("搜索必须返回JSON: %d %s", rec.Code, rec.Body.String())
 	}
-	return rec.Body.String()
+	var body struct {
+		Data contentcontract.PublicSearchData `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, html := range []string{"<ul", "<li", "没有找到与", "请输入搜索"} {
+		if strings.Contains(rec.Body.String(), html) {
+			t.Fatalf("搜索数据混入展示成品 %q", html)
+		}
+	}
+	return body.Data
 }
 
-// TestSearchResultsFragmentLinksOnlyPublished 搜索片段：只出「真的能看到」的东西。
-func TestSearchResultsFragmentLinksOnlyPublished(t *testing.T) {
+func TestSearchJSONOnlyPublishedPaths(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-
-	// 一个已上架商品 + 一个已发布的详情页实例（线上路径由发布面给）。
-	published := f.createProduct(t, "帆布鞋", "canvas-shoes", "轻便透气", 129, 199)
+	id := f.createProduct(t, "帆布鞋", "canvas-shoes", "轻便透气", 129, 199)
 	status := productenums.StatusPublished
-	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: published, Status: &status}); err != nil {
-		t.Fatalf("上架商品失败: %v", err)
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: id, Status: &status}); err != nil {
+		t.Fatal(err)
 	}
-	inst := f.publish(t, published, "/products/canvas-shoes")
-
-	// 一个草稿商品（同名关键词，但没上架）。
-	f.createProduct(t, "帆布鞋 草稿版", "canvas-draft", "还没上架", 99, 119)
-
-	// 一篇命中关键词的文章，但**没有发布实例** —— 不该出现在结果里。
-	seedArticle(t, f, "帆布鞋护理指南", "shoe-care", "怎么洗才不掉色")
-
-	contentSvc := contentservice.NewService(contentmodel.NewModel(f.db))
-	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
-		d.ContentSearchProvider = contentSvc
-		d.ProductSearchProvider = f.products
-		d.PublishedEntityLocator = f.pres
-	}))
-
-	body := fragmentGet(t, "searchResults", url.Values{"q": {"帆布鞋"}, "projectId": {f.projectID}})
-	if !strings.Contains(body, "帆布鞋") {
-		t.Fatalf("已上架商品应出现在结果里：%s", oneLine(body))
+	inst := f.publish(t, id, "/real/shoes")
+	noPage := f.createProduct(t, "帆布鞋没有详情", "canvas-no-page", "", 1, 2)
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: noPage, Status: &status}); err != nil {
+		t.Fatal(err)
 	}
-	wantLink := "href=\"" + inst.URLPath + "\""
-	if !strings.Contains(body, wantLink) {
-		t.Fatalf("结果链接应逐字来自发布面的线上路径 %q：%s", inst.URLPath, oneLine(body))
+	f.createProduct(t, "帆布鞋草稿", "canvas-draft", "", 1, 2)
+	seedArticle(t, f, "帆布鞋护理指南", "shoe-care", "未发布文章")
+	out := searchJSON(t, f, "帆布鞋")
+	if len(out.Products) != 1 || out.Products[0].ID != id || !strings.HasSuffix(out.Products[0].URL, inst.URLPath) || len(out.Articles) != 0 {
+		t.Fatalf("公开搜索泄露隐藏或猜URL: %+v", out)
 	}
-	if strings.Contains(body, "草稿版") {
-		t.Fatalf("草稿商品不得出现在站内搜索里：%s", oneLine(body))
-	}
-	if strings.Contains(body, "护理指南") {
-		t.Fatalf("没有线上页面的内容不得出现在站内搜索里（未发布内容不外泄）：%s", oneLine(body))
-	}
-
-	// 无结果：给一句人话，而不是空块或 500。
-	empty := fragmentGet(t, "searchResults", url.Values{"q": {"不存在的关键词"}, "projectId": {f.projectID}})
-	if !strings.Contains(empty, "没有找到与") {
-		t.Fatalf("无结果应给提示：%s", oneLine(empty))
-	}
-
-	// 空关键词：提示而不是报错。
-	blank := fragmentGet(t, "searchResults", url.Values{"q": {"   "}, "projectId": {f.projectID}})
-	if !strings.Contains(blank, "请输入搜索关键词") {
-		t.Fatalf("空关键词应给提示：%s", oneLine(blank))
+	for _, q := range []string{"不存在的关键词", "   "} {
+		empty := searchJSON(t, f, q)
+		if len(empty.Articles) != 0 || len(empty.Products) != 0 {
+			t.Fatalf("空态只能交空事实: %+v", empty)
+		}
 	}
 }
 
-// TestSearchResultsEscapesLikeWildcards LIKE 通配符必须按字面量匹配。
-//
-// 不转义时「100%」会退化成「以 100 开头」，把「100 元包邮」这类不相关的商品也捞出来 ——
-// 用户以为搜到了，其实是搜索在按另一套规则工作。
-func TestSearchResultsEscapesLikeWildcards(t *testing.T) {
+func TestSearchJSONEscapesLikeWildcards(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-
-	// 「100 元包邮」不含百分号；搜「100%」不该命中它。
-	deco := f.createProduct(t, "100 元包邮小样", "sample-100", "凑单用", 100, 120)
 	status := productenums.StatusPublished
-	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: deco, Status: &status}); err != nil {
-		t.Fatalf("上架商品失败: %v", err)
+	for _, product := range []struct{ name, slug string }{{"100 元包邮小样", "sample-100"}, {"纯棉 100% 毛巾", "towel-100"}} {
+		id := f.createProduct(t, product.name, product.slug, "吸水", 39, 59)
+		if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: id, Status: &status}); err != nil {
+			t.Fatal(err)
+		}
+		f.publish(t, id, "/real/"+product.slug)
 	}
-	// 「纯棉 100%」才是真正含 % 的那个。
-	real := f.createProduct(t, "纯棉 100% 毛巾", "towel-100", "吸水", 39, 59)
-	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: real, Status: &status}); err != nil {
-		t.Fatalf("上架商品失败: %v", err)
-	}
-
-	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
-		d.ProductSearchProvider = f.products
-		d.PublishedEntityLocator = f.pres
-	}))
-
-	body := fragmentGet(t, "searchResults", url.Values{"q": {"100%"}, "projectId": {f.projectID}})
-	if !strings.Contains(body, "纯棉 100% 毛巾") {
-		t.Fatalf("含百分号的商品应被搜到：%s", oneLine(body))
-	}
-	if strings.Contains(body, "100 元包邮小样") {
-		t.Fatalf("不含百分号的商品不该被命中（通配符未转义）：%s", oneLine(body))
+	out := searchJSON(t, f, "100%")
+	if len(out.Products) != 1 || out.Products[0].Name != "纯棉 100% 毛巾" {
+		t.Fatalf("LIKE必须字面匹配: %+v", out)
 	}
 }

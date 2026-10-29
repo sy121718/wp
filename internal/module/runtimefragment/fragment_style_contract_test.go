@@ -31,8 +31,7 @@ var builtinFragmentCapabilities = []string{
 	"commentList", "commentSubmit",
 	"forgotForm", "loginForm", "loginPanel", "membershipBadge", "membershipPanel",
 	"orderDetail", "ordersList",
-	"productList",
-	"registerForm", "resetForm", "returnRequest", "searchResults",
+	"registerForm", "resetForm", "returnRequest",
 }
 
 // nonProductFragmentCapabilities 运行期注册的**非产品**能力 → 理由。
@@ -62,8 +61,8 @@ func TestFragmentStyleTablesCoverRegistry(t *testing.T) {
 	for _, typ := range builtinFragmentCapabilities {
 		builtin[strings.ToLower(typ)] = true
 	}
-	if len(builtin) != 19 {
-		t.Fatalf("内置能力对照集只有 %d 项（预期 19，已将购物车六项迁至 JSON）：对表断言可能在空转", len(builtin))
+	if len(builtin) != 17 {
+		t.Fatalf("内置能力对照集只有 %d 项（预期 17，购物车六项与列表搜索两项已迁至 JSON）：对表断言可能在空转", len(builtin))
 	}
 
 	// ① 每个内置能力都要有样式归属（有族 / 无样式清单）。

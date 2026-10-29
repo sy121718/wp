@@ -60,24 +60,24 @@ import (
 // 端口名常量：与 wiringManifest 的 Port 字段一一对应。routes.go 只经这些常量标记，
 // 手写字符串一旦拼错，自检就会「永远通过」——那比没有自检更糟。
 const (
-	portContentCollectionSource    = "content.CollectionSourceProvider"
-	portProductCollectionSource    = "product.CollectionSourceProvider"
-	portProductContentStore        = "product.SetContentStore"
-	portContentContentStore        = "content.SetContentStore"
-	portMailCipherSecret           = "mail.SetCipherSecret"
-	portWebhookCipherSecret        = "webhook.SetCipherSecret"
-	portWebhookDispatcher          = "order.SetWebhookDispatcher"
-	portProductInventoryService    = "product.SetInventoryService"
-	portProductInventoryModel      = "product.SetInventory"
-	portInventoryVariantStockRefs  = "inventory.SetVariantWarehouseStocks"
-	portPurchaseVariantCost        = "purchase.SetVariantCost"
-	portProductMasterDataChanges   = "product.SetMasterDataChanges"
-	portPurchaseMasterDataChanges  = "purchase.SetMasterDataChanges"
-	portProductAvailability        = "product.SetAvailabilityPort"
-	portProductArchiveEnsurer      = "product.SetArchiveInstanceEnsurer"
-	portProductPublishedLocator    = "product.SetPublishedEntityLocator"
-	portProductPurchaseChecker     = "product.SetPurchaseChecker"
-	portProductFragmentCacheBumper = "product.SetFragmentCacheBumper"
+	portContentCollectionSource   = "content.CollectionSourceProvider"
+	portProductCollectionSource   = "product.CollectionSourceProvider"
+	portProductContentStore       = "product.SetContentStore"
+	portContentContentStore       = "content.SetContentStore"
+	portMailCipherSecret          = "mail.SetCipherSecret"
+	portWebhookCipherSecret       = "webhook.SetCipherSecret"
+	portWebhookDispatcher         = "order.SetWebhookDispatcher"
+	portProductInventoryService   = "product.SetInventoryService"
+	portProductInventoryModel     = "product.SetInventory"
+	portInventoryVariantStockRefs = "inventory.SetVariantWarehouseStocks"
+	portPurchaseVariantCost       = "purchase.SetVariantCost"
+	portProductMasterDataChanges  = "product.SetMasterDataChanges"
+	portPurchaseMasterDataChanges = "purchase.SetMasterDataChanges"
+	portProductAvailability       = "product.SetAvailabilityPort"
+	portProductArchiveEnsurer     = "product.SetArchiveInstanceEnsurer"
+	portProductPublishedLocator   = "product.SetPublishedEntityLocator"
+	portProductPurchaseChecker    = "product.SetPurchaseChecker"
+	portProductPublicIndex        = "product.SetPublicCatalogIndex"
 	// 页面读模型的两条只读端口：注入发生在**模块自装配内部**（product.SetInventoryDeps /
 	// product.SetDetailTemplateDeps 收到依赖后转交给 service 的读模型），装配段只标记
 	// 「Setup 调用发生过」，与 portProductContentStore 同一手法。
@@ -155,11 +155,9 @@ const (
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portRuntimeFragCollectionResolver = "runtimefragment.SetDependencies.CollectionResolver"
-	portRuntimeFragProductDataSource  = "runtimefragment.SetDependencies.ProductDataSource"
-	portRuntimeFragContentSearch      = "runtimefragment.SetDependencies.ContentSearchProvider"
-	portRuntimeFragProductSearch      = "runtimefragment.SetDependencies.ProductSearchProvider"
-	portRuntimeFragPublishedLocator   = "runtimefragment.SetDependencies.PublishedEntityLocator"
+	portPublicSearchContent           = "content.PublicSearchService.articles"
+	portPublicSearchProduct           = "content.PublicSearchService.products"
+	portPublicSearchIndex             = "content.PublicSearchService.publications"
 	portRuntimeFragSitePageResolver   = "runtimefragment.SetDependencies.SitePageResolver"
 	portRuntimeFragProject            = "runtimefragment.SetDependencies.FragmentProject"
 	portRuntimeFragVisitorOrderReader = "runtimefragment.SetDependencies.VisitorOrderReader"
@@ -280,8 +278,8 @@ var wiringManifest = []wiringEntry{
 		"分类新建 / 改名后归档页不跟上（线上仍是旧路径）"},
 	{portProductPublishedLocator, "presentation", "product", wiringRequiredPort,
 		"商品集合项的 url 全空（列表页商品没有链接）"},
-	{portProductFragmentCacheBumper, "runtimefragment", "product", wiringRequiredPort,
-		"商品写操作后片段 HTML 缓存不失效，前台继续显示过期价"},
+	{portProductPublicIndex, "presentation", "product", wiringRequiredPort,
+		"公开商品列表缺少目标语言的上线实体候选集合"},
 	{portProductPurchaseChecker, "order", "product", wiringOptionalDegraded,
 		"「商品评论必须买过」不生效：任何登录访客都能提交商品评论（提交仍进审核队列）"},
 
@@ -363,15 +361,11 @@ var wiringManifest = []wiringEntry{
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
 	// —— 运行时片段层（访问面）——
-	{portRuntimeFragCollectionResolver, "集合源注册表（core）", "runtimefragment", wiringRequiredPort,
-		"商品列表片段直接报「集合解析器未接入（装配缺陷）」"},
-	{portRuntimeFragProductDataSource, "product", "runtimefragment", wiringRequiredPort,
-		"片段侧商品组件取不到受限数据源（回退按名路由）"},
-	{portRuntimeFragContentSearch, "content", "runtimefragment", wiringRequiredContract,
+	{portPublicSearchContent, "content", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有内容结果"},
-	{portRuntimeFragProductSearch, "product", "runtimefragment", wiringRequiredContract,
+	{portPublicSearchProduct, "product", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有商品结果"},
-	{portRuntimeFragPublishedLocator, "presentation", "runtimefragment", wiringRequiredContract,
+	{portPublicSearchIndex, "presentation", "content.PublicSearchService", wiringRequiredContract,
 		"搜索结果永远不给链接（路径解析缺失，宁可不给链接也不输出死链）"},
 	{portRuntimeFragSitePageResolver, "page", "runtimefragment", wiringOptionalDegraded,
 		"槽位链接不渲染（不输出死链）+ 日志告警，其余片段照常"},

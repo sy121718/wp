@@ -19,9 +19,6 @@ package productservice
 //   product_ref_guard.go     删除前的跨工程引用守卫
 
 import (
-	"context"
-	"strings"
-
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -66,17 +63,12 @@ type Service struct {
 	changes masterdatacontract.MasterDataService
 	// publishedLocator 实体 → 已上线详情页路径（BIZ-2 / EDT-012）。
 	// 集合项 url 字段只填真实已发布路径；未注入时留空（预览无站点上下文时正常）。
-	publishedLocator presentationcontract.PublishedEntityLocator
+	publishedLocator   presentationcontract.PublishedEntityLocator
+	publicCatalogIndex presentationcontract.PublishedEntityIndex
 	// archiveEnsurer 归档页按需创建（审计 EDT-004）：新建 / 改名分类时让归档页跟上。
 	// 未注入时分类照常保存（归档页是派生视图，不是分类的一部分）。
 	archiveEnsurer presentationcontract.ArchiveInstanceEnsurer
-	// fragmentCacheBumper 商品写操作后使运行时片段 HTML 缓存失效（PERF-002）。
-	fragmentCacheBumper func(context.Context, string)
-	// invalidator 静态产物失效端口（审计 ARCH-01，装配期注入，可空）。
-	//
-	// 与 fragmentCacheBumper 是**两条不同的链**：那个刷的是运行时片段 HTML 的
-	// Redis 版本号，这个把事件交给发布内核去标记静态产物 stale 并重建。
-	// 只接前者正是 ARCH-01 的口径差（片段刷新了 ≠ 详情页与列表页的静态产物更新了）。
+	// invalidator 静态构建产物依赖失效端口。
 	invalidator productcontract.DependencyInvalidator
 	// purchases 购买事实只读端口（「买过才能评」的输入，由 order 模块实现；可缺）。
 	//
@@ -187,21 +179,6 @@ func (s *Service) SetArchiveInstanceEnsurer(port presentationcontract.ArchiveIns
 // 同一个端口注入给片段层（runtimefragment）那处一直是 fail-fast，这里对齐。
 func (s *Service) SetPublishedEntityLocator(port presentationcontract.PublishedEntityLocator) {
 	s.publishedLocator = port
-}
-
-// SetFragmentCacheBumper 注入片段缓存失效回调（装配期调用）。
-//
-// **必须注入**（审计 CQ-019 判为 required-port）：为空时商品写操作后片段 HTML 缓存
-// 不失效，前台继续显示**过期价** —— 缓存里那份 HTML 看起来完全正常。
-// 注入源是包级函数 runtimefragment.BumpFragmentCacheVersion，恒可得，故断言成本为零。
-func (s *Service) SetFragmentCacheBumper(fn func(context.Context, string)) {
-	s.fragmentCacheBumper = fn
-}
-
-func (s *Service) bumpFragmentCache(ctx context.Context, projectID string) {
-	if s.fragmentCacheBumper != nil && strings.TrimSpace(projectID) != "" {
-		s.fragmentCacheBumper(ctx, projectID)
-	}
 }
 
 // 编译期契约断言。

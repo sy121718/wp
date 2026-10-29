@@ -14,14 +14,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder/core"
 	commentcontract "go_wp/internal/module/comment/contract"
-	contentcontract "go_wp/internal/module/content/contract"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
 	pagecontract "go_wp/internal/module/page/contract"
-	presentationcontract "go_wp/internal/module/presentation/contract"
-	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	usercontract "go_wp/internal/module/user/contract"
@@ -49,17 +45,6 @@ type Deps struct {
 	// 未注入时落**空哈希**（不是明文、也不是假哈希）：调用方据此略过来源维度的限流与取证，
 	// 而「拿不到来源」与「来源是空串」在库里必须分得开（后者会让所有请求共用一个来源额度）。
 	CommentSourceHasher func(ip string) string
-	// CollectionResolver 集合源注册表（builder/core；required-port）。
-	CollectionResolver core.CollectionResolver
-	// ProductDataSource 商品构建期数据源（product；required-port）。
-	// 取数口径必须与静态产物里的那份一致，否则「点筛选得到的」与「产物里的」会是两批数据。
-	ProductDataSource productcontract.ProductDataSource
-	// ContentSearchProvider 内容检索（content；required-contract）。
-	ContentSearchProvider contentcontract.SearchPort
-	// ProductSearchProvider 商品检索（product；required-contract）。
-	ProductSearchProvider productcontract.SearchPort
-	// PublishedEntityLocator 实体 → 已上线路径（presentation；required-contract）。
-	PublishedEntityLocator presentationcontract.PublishedEntityLocator
 	// SitePageResolver 系统页面槽位解析（page；可缺 → 槽位一律为空）。
 	// 只依赖 page 模块的**受限读接口**：片段层拿不到发布 / 删除 / 改 URL 的能力。
 	SitePageResolver pagecontract.SitePageResolver

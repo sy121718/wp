@@ -7,7 +7,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -146,32 +145,12 @@ func TestRegistryTypes(t *testing.T) {
 	}
 }
 
-// TestFragmentEndpointProductListParamBudget 商品列表片段的典型请求必须过得去（审计 PERF-019）。
-//
-// 实例配置本身就有十几个参数名（实测典型配置 13 个），再加筛选、属性维度与页码。
-// 上限只有 10 时这些请求被自己拒成 400（「参数过多」），而且只在真实 HTTP 路径上发生 ——
-// 单测直调处理器看不见，正是它一直没被发现的原因 —— 所以这条走完整端点。
-func TestFragmentEndpointProductListParamBudget(t *testing.T) {
-	deps.CollectionResolver = &stubCollection{items: []map[string]any{listItem("shirt", "衬衫")}}
-	defer func() { deps.CollectionResolver = nil }()
-	params := url.Values{}
-	for k, v := range map[string]string{
-		// 实例配置：由产物烘入（productlist 侧 fragmentQuery 的白名单）。
-		"nodeId": "list-1", "projectId": "proj-1", "layout": "grid", "columns": "auto",
-		"currency": "¥", "titleTag": "h3", "emptyText": "暂无商品", "linkPrefix": "/products/",
-		"titleField": "item.name", "priceField": "item.priceRange", "linkField": "item.slug",
-		"limit": "12", "pageSize": "12",
-		// 语义参数：访客可改。
-		"status": "published", "categoryId": "11111111-1111-1111-1111-111111111111",
-		"option.color": "red", "option.size": "m", "page": "2",
-	} {
-		params.Set(k, v)
-	}
-	if len(params) <= 10 {
-		t.Fatalf("这条用例要覆盖「参数名超过旧上限 10」的场景，当前只有 %d 个", len(params))
-	}
-	w := doGet(t, newRouter(), "/_fragments/productList?"+params.Encode())
-	if w.Code != http.StatusOK {
-		t.Fatalf("%d 个参数名的典型商品列表请求应 200，实际 %d: %s", len(params), w.Code, w.Body.String())
+// 已迁移JSON的能力必须离开HTML能力白名单。
+func TestCatalogAndSearchHTMLCapabilitiesRemoved(t *testing.T) {
+	for _, capability := range []string{"productList", "searchResults"} {
+		w := doGet(t, newRouter(), "/_fragments/"+capability)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("旧HTML入口%s仍可用: %d", capability, w.Code)
+		}
 	}
 }

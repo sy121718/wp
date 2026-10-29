@@ -102,11 +102,9 @@ type View struct {
 	// PriceFromValue / PriceToValue 滑块与输入框的当前值（未设的端点回落到边界）。
 	PriceFromValue string
 	PriceToValue   string
-	// PriceFragmentGet 有 JS 时的片段请求（带实例配置）。
-	PriceFragmentGet string
 	// PriceFormAction 无 JS 时的原生表单 action（只带语义参数）。
 	PriceFormAction string
-	// FilterSections 筛选栏各块与其选项（含每个选项的降级链接 / 片段请求 / 推送 URL）。
+	// FilterSections 筛选栏各块与其选项（含每个选项的原生链接 / 参数变化 / 地址栏查询串）。
 	FilterSections  []FilterSection
 	SortOptions     []ControlOption
 	PageSizeOptions []ControlOption
@@ -122,7 +120,7 @@ type View struct {
 	Labels ListLabels
 	// PageText 「第 N 页」的成品文案（含计数，由 ApplyI18n 一次算好）。
 	PageText string
-	// PrevLink / NextLink 上下页控件（含降级链接 / 片段请求 / 推送 URL）。
+	// PrevLink / NextLink 上下页控件（含原生链接 / 参数变化 / 地址栏查询串）。
 	PrevLink ControlOption
 	NextLink ControlOption
 	// TotalPages 总页数（分页源给不出总量时为 0 —— 那时只有上下页，没有页码可算）。
@@ -136,9 +134,19 @@ type View struct {
 	// Gaps 页码之间的省略号位置（与 PageItems 同长，true 表示该项之前有省略）。
 	Gaps []bool
 
-	// FragmentQuery 构建期拼好的实例配置（片段请求的固定部分，不进 URL）。
-	FragmentQuery string
-	// PushQuery 当前语义参数（片段渲染时才有；构建期为空 = 默认态）。
+	// DataQuery / DataURL 公开数据请求，不携带作者模板或展示配置。
+	DataQuery         string
+	DataURL           string
+	Currency          string
+	TitleTag          string
+	ImageField        string
+	ImageAltField     string
+	TitleField        string
+	PriceField        string
+	ComparePriceField string
+	TagsField         string
+	CategorySingle    bool
+	// PushQuery 当前语义参数；静态产物作为前端合并地址栏参数的基线。
 	PushQuery string
 
 	// —— 列表页链接（系统页面槽位 shop）——
@@ -155,10 +163,6 @@ type View struct {
 //
 // 两个字段都要探测，且顺序与 BuildView 取数据同源（issue #35：专用组件优先用
 // **业务侧声明的受限数据源** ctx.Product，未注入时才退回通用集合注册表 ctx.Collection）。
-//
-// 只测 ctx.Collection 会漏掉片段渲染路径 —— 片段装配恰恰**只注入 Product**，
-// 于是能力探测为假、筛选栏整块不渲染。表现极具迷惑性：产物里首次渲染有筛选栏，
-// 点一下筛选之后就永久消失（片段换回来的列表没有它），用户看到「越操作越少」。
 func collectionFilterOptionsProvider(ctx *core.RenderContext) (core.CollectionFilterOptionsProvider, bool) {
 	if ctx == nil {
 		return nil, false
@@ -333,7 +337,12 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		view.Cards = append(view.Cards, cardViewOf(p, item, ctx.ResolveSiteLink))
 	}
 
-	view.FragmentQuery = lc.instanceQuery
+	view.DataQuery = lc.instanceQuery
+	view.DataURL = catalogPath + "?" + lc.instanceQuery
+	view.Currency, view.TitleTag = effectiveCurrency(p), effectiveTitleTag(p)
+	view.CategorySingle = p.CategoryMulti == "off"
+	view.ImageField, view.ImageAltField, view.TitleField = p.ImageField, p.ImageAltField, p.TitleField
+	view.PriceField, view.ComparePriceField, view.TagsField = p.PriceField, p.ComparePriceField, p.TagsField
 	view.PushQuery = lc.pushQuery
 	// 槽位解析是零成本的 map 读：没有条目就是「这个站还没指定商品列表页」，
 	// 与「槽位绑了但那页没发布」同一条路（page 侧只返回已发布的绑定）。
@@ -565,12 +574,7 @@ func resolveProductsPage(ctx *core.RenderContext, source string, filter map[stri
 	return items, 0, err
 }
 
-// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：商品列表的容器 div 恒带
-// 片段属性（product_list.jet 第一行）—— 包括空态：容器必须先渲染出来，HTMX 就位后才能按
-// URL 上的查询参数把结果 load 进来。这也是「列表页首屏零数据查询」得以成立的地方。
+// DeclareFeatures 声明静态外壳的数据读取行为，空结果也保留交互入口。
 func (v View) DeclareFeatures() (attrs, classes []string) {
-	// 不再声明 hx-vals：产物的列表容器已经不用它了（那段 js: 表达式在 htmx 的
-	// 求值规则下是语法错误，见 product_list.jet）。声明了产物里没有的属性会被
-	// ui_feature_crosscheck 抓住 —— 上报条件与模板输出分叉，会误导性能与缓存分析。
-	return []string{"hx-get", "hx-trigger", "hx-target", "hx-swap"}, nil
+	return []string{"data-site-read", "data-site-view", "data-site-catalog"}, nil
 }

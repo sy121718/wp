@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"go_wp/pkg/database"
 	"go_wp/pkg/rls"
 )
 
@@ -418,6 +419,10 @@ func (m *Model) ListRowFacts(ctx context.Context, projectID string, productIDs [
 // 空串或非 uuid 直接返回 rls.ErrInvalidProjectID。不接受「不限工程」这种读法：换非超级
 // 角色后它不会报错，只会静默退化成 0 行（集合卡整块变空，产物看着完全正常）。
 type CollectionFilter struct {
+	// IDs 为 nil 时沿用构建集合；非 nil 空集合必须返回零行。
+	IDs        []string
+	Order      string
+	Keyword    string
 	ProjectID  string
 	Status     string
 	CategoryID string
@@ -525,6 +530,13 @@ func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFi
 			"(SELECT COUNT(*)::int FROM product_ratings r WHERE r.product_id = products.id) AS rating_count")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
+	}
+	if f.IDs != nil {
+		q = q.Where("products.id IN ?", f.IDs)
+	}
+	if f.Keyword != "" {
+		pattern := "%" + database.EscapeLikePattern(f.Keyword) + "%"
+		q = q.Where("(name ILIKE ? ESCAPE '\\' OR subtitle ILIKE ? ESCAPE '\\')", pattern, pattern)
 	}
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
@@ -638,7 +650,21 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	// 都从 core.BuildProjectID(ctx) 拿 —— 缺工程时**显式报 ErrInvalidProjectID**，
 	// 不退化成「不限工程」（后者换非超级角色后静默 0 行，集合卡整块变空）。
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
-		q := m.collectionQuery(tx, ctx, f).Order("sort ASC, create_time ASC, id ASC")
+		q := m.collectionQuery(tx, ctx, f)
+		switch f.Order {
+		case "newest":
+			q = q.Order("create_time DESC, id ASC")
+		case "oldest":
+			q = q.Order("create_time ASC, id ASC")
+		case "priceAsc":
+			q = q.Order("min_price ASC NULLS LAST, id ASC")
+		case "priceDesc":
+			q = q.Order("min_price DESC NULLS LAST, id ASC")
+		case "ratingDesc":
+			q = q.Order("rating_avg DESC NULLS LAST, id ASC")
+		default:
+			q = q.Order("sort ASC, create_time ASC, id ASC")
+		}
 		if limit > 0 {
 			q = q.Limit(limit).Offset(offset)
 		}

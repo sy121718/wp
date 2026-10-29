@@ -15,6 +15,7 @@ import (
 func uiSrcForTest() map[string]string {
 	return map[string]string{
 		"_util.js":         "/* util */ window.WBUI=window.WBUI||{};",
+		"site-catalog.js":  "/* site-catalog */",
 		"site-data.js":     "/* site-data */",
 		"site-product.js":  "/* site-product */",
 		"requires_js.js":   "/* requires_js */",
@@ -124,7 +125,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "site-data.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
+	want := []string{"_util.js", "site-data.js", "site-catalog.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)

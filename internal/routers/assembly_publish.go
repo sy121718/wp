@@ -25,6 +25,7 @@ import (
 	buildcontract "go_wp/internal/module/build/contract"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
+	contentservice "go_wp/internal/module/content/service"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -89,40 +90,22 @@ func (a *assembly) buildPublishingModules() {
 	// 集合解析注入：注册表即 core.CollectionResolver（按源分发到内容 / 商品解析器，
 	// 同时实现 CollectionSchemaProvider 供组件按白名单严格校验）。
 	collectionResolver := core.CollectionResolver(collectionRegistry)
-	// 商品列表片段（issue #27）：访问面的筛选/排序/分页局部刷新出口需要同一份集合解析器 ——
-	// 片段渲染调 builder.RenderNodeHTML 复用构建期组件，取数自然也要走同一个注册表，
-	// 否则「点筛选得到的」与「静态产物里的」会是两批数据。
-	a.fragDeps.CollectionResolver = collectionResolver
-	marks.mark(portRuntimeFragCollectionResolver)
-	// 商品构建期数据源（issue #35）：组件直连受限接口，不再只靠按名路由。
-	// ProductService 嵌入了 ProductDataSource，装配处拿到的契约天然能传。
-	a.fragDeps.ProductDataSource = productSvc
-	marks.mark(portRuntimeFragProductDataSource)
-	// 站内搜索片段（BIZ-2）：两条检索端口 + 一条「实体 → 已上线路径」解析端口。
-	//
-	// 检索端口是「按消费方收窄」的又一例：访问面片段只需要「按关键词取一批」这一条
-	// 只读能力，而 content / product 的服务契约各自带着全部写方法。路径端口拿的是
-	// 自动发布模块的只读面 —— 搜索结果要给链接，而链接必须指向**真实已上线**的页面
-	// （未发布 / 查不到就不给链接，绝不输出死链）。三条都 fail-fast：漏接的表现是
-	// 「搜索永远没有结果」，比启动时报错隐蔽得多。
+	// 访客搜索复用两个收窄检索端口，组合发生在内容服务。
 	contentSearch, ok := contentSvc.(contentcontract.SearchPort)
 	if !ok {
 		panic("内容模块未实现检索端口（SearchPort）")
 	}
-	a.fragDeps.ContentSearchProvider = contentSearch
-	marks.mark(portRuntimeFragContentSearch)
+	marks.mark(portPublicSearchContent)
 	productSearch, ok := productSvc.(productcontract.SearchPort)
 	if !ok {
 		panic("商品模块未实现检索端口（SearchPort）")
 	}
-	a.fragDeps.ProductSearchProvider = productSearch
-	marks.mark(portRuntimeFragProductSearch)
+	marks.mark(portPublicSearchProduct)
 	publishedLocator, ok := presentationSvc.(presentationcontract.PublishedEntityLocator)
 	if !ok {
 		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
 	}
-	a.fragDeps.PublishedEntityLocator = publishedLocator
-	marks.mark(portRuntimeFragPublishedLocator)
+	marks.mark(portPublicSearchIndex)
 	// 商品侧同一端口（集合项 url 字段）：原写法是「命中即注入、未命中静默跳过」，
 	// 跳过的表现是「商品集合项的 url 全空、列表页商品没有链接」—— 静默降级（审计 CQ-019）。
 	// 改为断言：装配缺陷在启动时炸掉。
@@ -134,6 +117,20 @@ func (a *assembly) buildPublishingModules() {
 		panic("商品模块未提供已上线路径解析注入点（SetPublishedEntityLocator）")
 	}
 	marks.mark(portProductPublishedLocator)
+	publicIndex, ok := presentationSvc.(presentationcontract.PublishedEntityIndex)
+	if !ok {
+		panic("自动发布模块未实现公开实体索引")
+	}
+	if setter, ok := productSvc.(interface {
+		SetPublicCatalogIndex(presentationcontract.PublishedEntityIndex)
+	}); ok {
+		setter.SetPublicCatalogIndex(publicIndex)
+	} else {
+		panic("商品模块未提供公开实体索引注入点")
+	}
+	marks.mark(portProductPublicIndex)
+	contenthttp.SetupContentPublicRoutes(a.router, contentservice.NewPublicSearchService(contentSearch, productSearch, publicIndex))
+
 	// 归档页按需创建（审计 EDT-004）：分类新建 / 改名时让对应归档页跟上。
 	// 与上面的已上线定位端口同一方向（product 拿收窄接口），注入点在 presentation
 	// 装配之后 —— 端口本身就是 presentation 的服务。
@@ -147,16 +144,6 @@ func (a *assembly) buildPublishingModules() {
 		panic("商品模块未提供归档页创建注入点（SetArchiveInstanceEnsurer）")
 	}
 	marks.mark(portProductArchiveEnsurer)
-	// 片段缓存失效回调（PERF-002，审计 CQ-019）：静默跳过时改价后前台继续显示过期价，
-	// 且缓存里那份 HTML 看不出任何异常。注入源是包级函数，恒可得，故断言。
-	if setter, ok := productSvc.(interface {
-		SetFragmentCacheBumper(func(context.Context, string))
-	}); ok {
-		setter.SetFragmentCacheBumper(runtimefragment.BumpFragmentCacheVersion)
-	} else {
-		panic("商品模块未提供片段缓存失效注入点（SetFragmentCacheBumper）")
-	}
-	marks.mark(portProductFragmentCacheBumper)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc, a.adminPages, a.workbenchPages)
 	// 页面工具（page_find）：注册点在这里而不是与其它工具并列 —— pageService
@@ -804,6 +791,7 @@ func (a *assembly) runSelfCheck() {
 // mountPublicFace 公开端点与兜底路由：运行时片段端点 + 未匹配路由处理。
 func (a *assembly) mountPublicFace() {
 	producthttp.SetupProductPublicRoutes(a.router, a.productSvc)
+	producthttp.SetupProductCatalogRoutes(a.router, a.productSvc)
 	producthttp.SetupProductOptionsRoutes(a.router, a.productSvc)
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(a.router)

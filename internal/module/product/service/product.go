@@ -294,7 +294,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err = s.recalcAutoTags(ctx, projectID); err != nil {
 		return nil, err
 	}
-	s.bumpFragmentCache(ctx, projectID)
+
 	return s.toResp(ctx, e)
 }
 
@@ -498,7 +498,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		logger.Scene("product").With("productID", e.ID).Error(rerr,
 			"商品已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
-	s.bumpFragmentCache(ctx, e.ProjectID)
+
 	return s.toResp(ctx, e)
 }
 
@@ -612,7 +612,7 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	}); err != nil {
 		return err
 	}
-	s.bumpFragmentCache(ctx, e.ProjectID)
+
 	return nil
 }
 

@@ -315,7 +315,7 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 	}); err != nil {
 		return nil, err
 	}
-	s.bumpFragmentCache(ctx, plan.projectID)
+
 	return plan.res, nil
 }
 

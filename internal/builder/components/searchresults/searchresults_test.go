@@ -12,7 +12,7 @@ func TestBuildViewIncludesLangAndProject(t *testing.T) {
 	if v.Notice != "" {
 		t.Fatalf("unexpected notice: %q", v.Notice)
 	}
-	for _, want := range []string{"projectId=proj-1", "lang=en-US", "limit=5", "/_fragments/searchResults?"} {
+	for _, want := range []string{"projectId=proj-1", "lang=en-US", "limit=5", "/api/site/search?"} {
 		if !strings.Contains(v.BaseFragmentURL, want) {
 			t.Fatalf("BaseFragmentURL %q missing %q", v.BaseFragmentURL, want)
 		}
@@ -53,12 +53,12 @@ func TestSearchWidgetRendersWithoutEvaluatedAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, want := range []string{`role="search"`, `method="get"`, `name="q"`, `hx-trigger="load"`, `aria-live="polite"`, "/_fragments/searchResults?"} {
+	for _, want := range []string{`role="search"`, `method="get"`, `name="q"`, `data-site-view="search"`, `aria-live="polite"`, "/api/site/search?"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("搜索产物缺少 %q", want)
 		}
 	}
-	for _, forbidden := range []string{"hx-vals=", "load[", "js:"} {
+	for _, forbidden := range []string{"hx-", "load[", "js:", "/_fragments/"} {
 		if strings.Contains(html, forbidden) {
 			t.Fatalf("搜索产物仍需动态求值: %q", forbidden)
 		}

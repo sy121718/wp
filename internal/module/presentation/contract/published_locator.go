@@ -18,3 +18,9 @@ type PublishedEntityLocator interface {
 	// 路径已是最终访问路径（含语言前缀），调用方不要再拼语言前缀。
 	PublishedEntityPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (map[string]string, error)
 }
+
+// PublishedEntityIndex 公开列表的候选集合。只列目标语言真实 Publication 中已激活的路径。
+// 独立于按ID定位端口，空候选集合绝不表示“全部实体”。
+type PublishedEntityIndex interface {
+	PublishedEntityIndex(context.Context, string, string, string) (map[string]string, error)
+}

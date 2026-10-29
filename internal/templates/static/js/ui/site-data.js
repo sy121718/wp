@@ -1,7 +1,7 @@
 /* 静态产物的数据读取基座。业务数据只能进入前端视图，接口不携带 HTML。 */
 (function (global) {
     'use strict';
-    var views = Object.create(null), pending = new Map(), ready = false;
+    var views = Object.create(null), preparations = Object.create(null), pending = new Map(), ready = false;
     var selector = '[data-site-read][data-site-view]';
 
     function endpoint(raw) {
@@ -30,7 +30,11 @@
         var generation = (el._siteGeneration || 0) + 1;
         el._siteGeneration = generation;
         el.setAttribute('aria-busy', 'true');
-        return Promise.resolve().then(function () { return request(endpoint(el.getAttribute('data-site-read'))); })
+        return Promise.resolve().then(function () {
+                var prepare = preparations[el.getAttribute('data-site-view')];
+                if (prepare) prepare(el);
+                return request(endpoint(el.getAttribute('data-site-read')));
+            })
             .then(function (data) {
                 if (!el.isConnected || el._siteGeneration !== generation) return;
                 render(el, data);
@@ -73,7 +77,7 @@
         }).observe(global.document.documentElement, {childList:true, subtree:true});
     }
     global.WPSiteData = {
-        register:function (name, render) { views[name] = render; if (ready) scan(global.document); },
+        register:function (name, render, prepare) { views[name] = render; preparations[name] = prepare; if (ready) scan(global.document); },
         refresh:refresh
     };
     if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', start, {once:true});

@@ -1,17 +1,11 @@
-{* search_widget.jet — 站内搜索外壳（core.searchResults，BIZ-2）。
-
-   表单无 JS 时原生 GET 提交到当前页（?q=…）；有 HTMX 时 hx-get 拉片段。
-   结果区 load 补正；地址栏查询由片段入口从 HX-Current-URL 合并，与 productList 同法。 *}
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-sky-search>
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-sky-search{{ if !.V.Notice }} data-site-search data-site-read="{{ .V.BaseFragmentURL }}" data-site-view="search" data-search-empty="{{ .V.EmptyQuery }}" data-search-no-results="{{ .V.NoResults }}"{{ end }}>
 {{ if .V.Notice }}<p class="sky-search-notice">{{ .V.Notice }}</p>{{ else }}
-<form class="sky-search-form" method="get" action="" hx-get="{{ .V.BaseFragmentURL }}" hx-target=".sky-search-mount" hx-swap="innerHTML" hx-include="[name='q']" role="search">
-<label class="sky-search-label"><span class="sky-search-sr">{{ .V.LabelSR }}</span><input class="sky-search-input" type="search" name="q" placeholder="{{ .V.Placeholder }}" autocomplete="off" enterkeyhint="search"></label>
+<form class="sky-search-form" method="get" action="" role="search" data-site-search-form>
+<label class="sky-search-label"><span class="sky-search-sr">{{ .V.LabelSR }}</span><input class="sky-search-input" type="search" name="q" placeholder="{{ .V.Placeholder }}" autocomplete="off" enterkeyhint="search" maxlength="64"></label>
 <button class="sky-search-submit" type="submit">{{ .V.SubmitText }}</button>
 </form>
-<div class="sky-search-mount" aria-live="polite"
-     hx-get="{{ .V.BaseFragmentURL }}"
-     hx-trigger="load"
-     hx-target="this"
-     hx-swap="innerHTML"></div>
+<p data-site-status role="status" aria-live="polite"></p>
+<template data-search-hit><li class="sky-search-item"><a class="sky-search-title"></a><p class="sky-search-excerpt"></p></li></template>
+<div class="sky-search-mount" aria-live="polite" data-search-results></div>
 {{ end }}
 </div>

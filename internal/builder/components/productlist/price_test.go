@@ -30,8 +30,8 @@ func TestPriceSectionRendersRangesAndSlider(t *testing.T) {
 		if strings.Contains(opt.PushURL, "nodeId") || strings.Contains(opt.PushURL, "projectId") {
 			t.Fatalf("档位链接的推送 URL 不该带实例配置: %s", opt.PushURL)
 		}
-		if !strings.Contains(opt.FragmentGet, "nodeId=list1") {
-			t.Fatalf("档位链接的片段请求必须带实例配置: %s", opt.FragmentGet)
+		if strings.Contains(opt.ActionQuery, "nodeId=") || strings.Contains(opt.ActionQuery, "projectId=") {
+			t.Fatalf("档位数据请求不应带作者展示配置: %s", opt.ActionQuery)
 		}
 	}
 }

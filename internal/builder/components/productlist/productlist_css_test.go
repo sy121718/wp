@@ -65,7 +65,7 @@ func TestProductListCSSColumnsPerMode(t *testing.T) {
 	for _, c := range cases {
 		out := listCSSFor(&Props{Layout: c.layout, Columns: c.columns})
 		items := listRuleText(t, out, ".sky-c-t .sky-product-list-items {")
-		if !strings.Contains(items, "grid-template-columns: "+c.want+";") {
+		if !strings.Contains(items, "grid-template-columns: var(--catalog-columns, "+c.want+");") {
 			t.Errorf("layout=%q columns=%q: 期望 grid-template-columns: %s;, 实际块:\n%s", c.layout, c.columns, c.want, items)
 		}
 	}
@@ -152,7 +152,7 @@ func TestProductListCSSMobileSingleColumn(t *testing.T) {
 		t.Errorf("1fr 应只出现一次 (mobile 覆盖), 实际:\n%s", grid)
 	}
 	// 列表模式: 宽视口本身就是 1fr, 于是两份 (desktop + mobile 覆盖)。
-	if list := listCSSFor(&Props{Layout: LayoutList}); strings.Count(list, "grid-template-columns: 1fr;") != 2 {
+	if list := listCSSFor(&Props{Layout: LayoutList}); strings.Count(list, "grid-template-columns: 1fr;") != 1 || !strings.Contains(list, "grid-template-columns: var(--catalog-columns, 1fr);") {
 		t.Errorf("列表模式期望 desktop + mobile 各一条 1fr:\n%s", list)
 	}
 }

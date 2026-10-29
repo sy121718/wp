@@ -124,6 +124,11 @@ func SetupProductPublicRoutes(router *gin.Engine, svc productcontract.PublicVari
 	router.GET("/api/site/product/variants", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
 }
 
+// SetupProductCatalogRoutes 是访客商品列表的数据入口。
+func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCatalogReader) {
+	router.GET("/api/site/product/catalog", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
+}
+
 // registerProductPublishHistoryAPI 发布历史（迁移 673）。
 //
 // 单独一条权限点而不是复用 product:get / product:list：这条交的是**谁在什么时候点了发布、

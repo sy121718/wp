@@ -51,8 +51,6 @@ func fragmentUnstyledCapabilities() map[string]string {
 		"accountPreferenceForm": "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
 		"accountPasswordForm":   "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
 		"accountSessionsPanel":  "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"productList":           "商品列表片段由 core.productList 组件用同一个 node id 渲染（类名与静态产物同源），样式来自组件私有层",
-		"searchResults":         "搜索结果片段的 .sky-search-* 当前没有任何样式定义（遗留的裸 HTML），整改归属待定",
 		// 会员身份两个能力（BIZ-3）：模板只输出等级名 / 权益短句 / 一句降级文案，
 		// .sky-membership-* 是保留命名空间下的**语义钩子**（站点主题可覆写），
 		// 基座里刻意不给布局 —— 徽标与面板的宽窄由放置它的容器决定，

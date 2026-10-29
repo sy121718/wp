@@ -13,7 +13,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  grid-template-columns: {{cols}};
+  grid-template-columns: var(--catalog-columns, {{cols}});
 }
 
 /* 窄视口: 恒单列. */

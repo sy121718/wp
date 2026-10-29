@@ -125,6 +125,7 @@ func uiCSSSectionResourcesWithoutStyle() map[string]string {
 		"requires_js.js":   "放行依赖脚本的提交按钮，只有行为，无样式",
 		"write-base.js":    "统一写请求的行为基座，无样式，展示外观由宿主提供",
 		"site-commerce.js": "消费购物车事实的行为脚本，外观由静态壳与组件样式提供",
+		"site-catalog.js":  "列表与搜索JSON视图行为，外观由组件静态CSS提供",
 		"site-product.js":  "商品事实展示的行为脚本，无样式，外观归宿主组件",
 		"htmx.min.js":      "行为库：htmx 指令不带来任何基座外观（它的过渡类在 htmx 源码里）",
 		"_util.js":         "基座助手：只提供 WBUI 注册表与工具函数，无样式",
