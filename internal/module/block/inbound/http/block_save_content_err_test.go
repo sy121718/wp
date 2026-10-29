@@ -27,6 +27,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
+	"go_wp/pkg/facing"
 
 	"github.com/gin-gonic/gin"
 )
@@ -72,6 +73,15 @@ func (s *stubBlockService) CloneAST(context.Context, *blockdto.CloneReq) (*block
 func (s *stubBlockService) ListBlockSourceRefs(context.Context, string) ([]blockcontract.BlockUsage, error) {
 	panic("SaveBlockContent 不应调用 ListBlockSourceRefs")
 }
+
+// stubVersionConflict 与 service 层的 versionConflictError 同形（key + 兜底 + 版本号）。
+type stubVersionConflict struct{ version string }
+
+func (e *stubVersionConflict) Error() string { return blockenums.ErrBlockVersionConflict }
+func (e *stubVersionConflict) Facing() (string, string) {
+	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
+}
+func (e *stubVersionConflict) Version() string { return e.version }
 
 // saveContentResp 调用 SaveBlockContent 并返回原始状态码、原始响应体与解析后的 JSON。
 //
@@ -217,4 +227,41 @@ func assertControlledMessage(t *testing.T, got string, allowed ...string) {
 		}
 	}
 	t.Fatalf("文案不在受控集合里：got %q，允许 %v（写侧改了 key 或读侧白名单失配都会落这里）", got, allowed)
+}
+
+// TestSaveBlockContentVersionConflictIs409WithVersion 版本冲突走 409 + 带版本号的受控文案。
+//
+// 守的形态（B2 / B1 契约 §3）：并发保存的冲突是**可重试的用户动作**，不是基础设施故障。
+// 两个后果如果搞错，用户都得不到可行动的信息：
+//
+//	· 当成 500 → 前端走「系统内部错误」提示，用户以为出了 bug，不会想到刷新重试；
+//	· 文案里不带当前版本 → 用户只能整页刷新，无法知道"别人的改动到第几版了"。
+func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
+	// service 层的 conflict 错误形状：声明 409，并实现 facing.Source + Version()。
+	// 不用 `key|param` 字符串：facing.FactOf 只认「单段 key / key: 明细」，带竖线的
+	// 整串过不了业务判据会退成 500（这条是实测踩出来的）。
+	conflict := facing.WithStatus(&stubVersionConflict{version: "7"}, http.StatusConflict)
+
+	svc := &stubBlockService{
+		detail:    &blockdto.BlockResp{ID: "b-1", Name: "页脚", Version: 7},
+		updateErr: conflict,
+	}
+	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":3}`)
+
+	if status != http.StatusConflict {
+		t.Fatalf("版本冲突应回 409，实际 %d：%s", status, raw)
+	}
+	if parsed.Code != http.StatusConflict {
+		t.Errorf("JSON code 应与 HTTP 状态一致（409），实际 %d", parsed.Code)
+	}
+	// 文案必须带版本号 7：前端据此提示「当前第 7 版，刷新后重试」。
+	if !strings.Contains(parsed.Message, "7") {
+		t.Errorf("冲突文案应带当前版本号 7，实际 %q", parsed.Message)
+	}
+	// 不许把内部 key 或错误原文漏出去。
+	for _, leak := range []string{"ErrBlockVersionConflict", "blockenums"} {
+		if strings.Contains(parsed.Message, leak) {
+			t.Errorf("文案里出现了内部标识 %q：%s", leak, parsed.Message)
+		}
+	}
 }

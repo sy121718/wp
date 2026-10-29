@@ -2,7 +2,6 @@
 package blockcontract
 
 import (
-
 	"context"
 	blockenums "go_wp/internal/module/block/enums"
 
@@ -75,6 +74,8 @@ var (
 	ErrInvalidReuseMode = blockenums.Err(blockenums.ErrBlockInvalidReuseMode)
 	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
 	ErrBlockInUse = blockenums.Err(blockenums.ErrBlockInUse)
+	// ErrBlockVersionConflict 保存时 expectedVersion 与库里不一致（409，B2）。
+	ErrBlockVersionConflict = blockenums.Err(blockenums.ErrBlockVersionConflict)
 )
 
 // BlockReader / BlockWriter 是 AI 工具用的窄接口。

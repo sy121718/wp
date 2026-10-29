@@ -16,6 +16,7 @@ import (
 	blockservice "go_wp/internal/module/block/service"
 	"go_wp/pkg/binding"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -180,6 +181,12 @@ func (h *Handle) CloneAST(c *gin.Context) {
 // 修复前按 err.Error() 中文文案 strings.Contains 匹配（文案改动即失效）；
 // 修复后基于 blockservice 包 sentinel error 精确 errors.Is 判定。
 func blockErrorStatus(err error) int {
+	// 声明过状态码的错误优先：facing.WithStatus 是「错误声明处给状态码」的既定形态
+	// （AGENTS.md §响应与文案），在这里再用一张 switch 表重算一遍必然漂移 ——
+	// 版本冲突（409）就只声明在 service 里，switch 表认不出来会退成 500。
+	if status, ok := facing.StatusOf(err); ok {
+		return status
+	}
 	switch {
 	case errors.Is(err, blockservice.ErrNotFound), errors.Is(err, blockservice.ErrProjectNotFound):
 		return http.StatusNotFound

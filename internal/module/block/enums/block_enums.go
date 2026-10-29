@@ -19,6 +19,13 @@ const (
 	ErrBlockInvalidCategory = "ErrBlockInvalidCategory" // 块分类不合法
 	ErrBlockDuplicate       = "ErrBlockDuplicate"       // 同名块已存在
 
+	// ErrBlockVersionConflict 保存时 expectedVersion 与库里不一致（B2：并发编辑同一全局块）。
+	//
+	// 为什么必须单独一条而不是复用别的错误：它要回 409 而不是 400，且要把**当前版本号**
+	// 带给前端 —— 前端据此提示"别人先改过，请刷新后重试"，而不是让用户以为是自己填错了。
+	// 静默覆盖的后果是全局块被多页面引用、可能正在线上跑，被覆盖的编辑不报错也不可追回。
+	ErrBlockVersionConflict = "ErrBlockVersionConflict" // 块已被其他人修改
+
 	ErrBlockInvalidReuseMode = "ErrBlockInvalidReuseMode" // 块复用方式不合法（仅支持 global/template）
 	ErrBlockInUse            = "ErrBlockInUse"            // 全局块已被页面或主题引用，无法删除或切换为一次性复制；可强制删除（引用页面将退化为无该块）
 
@@ -78,6 +85,7 @@ const (
 //
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 var errFallbacks = map[string]string{
+	ErrBlockVersionConflict:  "该全局块已被其他人修改（当前第 %s 版），请刷新后重试",
 	ErrBlockParamRequired:    "块参数不能为空",
 	ErrBlockNotFound:         "全局块不存在",
 	ErrProjectNotFound:       "工程不存在",

@@ -22,6 +22,16 @@ type UpdateReq struct {
 	Category  string          `json:"category" form:"category"`   // 自由分类（空则保留原值）
 	ReuseMode string          `json:"reuseMode" form:"reuseMode"` // 空 then 保留原值；global→template 需无引用（否则 ErrBlockInUse）
 	Document  json.RawMessage `json:"document" form:"document"`
+
+	// ExpectedVersion 乐观并发基准（B2 迁移 676 的 blocks.version）。
+	//
+	// 0 表示**不校验**，只给「显式知道自己在做什么」的调用方用（新建后立即保存、
+	// 数据迁移、测试夹具）。浏览器与 AI 入口都必须带真值 —— 不带就等于回到覆盖式保存，
+	// 而覆盖式保存丢失的是别人刚改的整棵树，且不报错。
+	//
+	// 用 uint64 而不是 *uint64：0 与"缺失"在这里是同一件事（不校验），
+	// 多一个指针只会让调用方多一层判空。
+	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion"`
 }
 
 // SaveContentReq 工作台保存块内容（POST /admin/blocks/save-content）的请求体。
@@ -33,6 +43,8 @@ type SaveContentReq struct {
 	Name      string          `json:"name" form:"name"`
 	Document  json.RawMessage `json:"document" form:"document"`
 	ReturnURL string          `json:"returnUrl" form:"returnUrl"`
+	// ExpectedVersion 同 UpdateReq.ExpectedVersion：0 = 不校验。
+	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion"`
 }
 
 // DetailReq 按 ID 查询块请求。
