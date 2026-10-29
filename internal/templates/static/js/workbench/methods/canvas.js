@@ -447,6 +447,8 @@ export const canvasMethods = {
             refreshCanvas() {
                 var self = this;
                 if (!document.getElementById('wb-canvas')) return;
+                // 撤销/结构变更已切换文档，等待中的局部结果从此失效。
+                this._patchSeq = (this._patchSeq || 0) + 1;
                 if (this._canvasTimer) return; // 已排程：等待合并，提交时使用最新 doc
                 this._canvasTimer = setTimeout(function () {
                     self._canvasTimer = null;
@@ -465,6 +467,8 @@ export const canvasMethods = {
             submitCanvas() {
                 var frame = document.getElementById('wb-canvas');
                 if (!frame) return;
+                // flushCanvas 和直接提交也必须终止上一轮局部回写。
+                this._patchSeq = (this._patchSeq || 0) + 1;
                 if (meta.saveBase === 'template') {
                     this.submitTemplateCanvas();
                     return;
@@ -568,7 +572,9 @@ export const canvasMethods = {
                         html: fresh.outerHTML,
                         css: styleEl ? styleEl.textContent : null,
                     }, location.origin);
-                }).catch(function () { self.refreshCanvas(); });
+                }).catch(function () {
+                    if (self._patchSeq === seq) self.refreshCanvas();
+                });
             },
             bindCanvasDrop() {
                 var frame = document.getElementById('wb-canvas');

@@ -304,3 +304,74 @@ test('表单字段结构操作读取最新值，撤销恢复标签和顺序', ()
     wb.undo();
     assert.equal(JSON.stringify(wb.doc), before);
 });
+
+function canvasEditor() {
+    const pending = [];
+    const messages = [];
+    const timers = [];
+    const submissions = [];
+    const frame = { name: 'wb-canvas', contentWindow: { postMessage(message) { messages.push(message); } } };
+    const form = {
+        elements: { id: {}, expectedVersion: {}, draftDocument: {}, csrf_token: {} },
+        submit() { submissions.push(JSON.parse(this.elements.draftDocument.value)); }
+    };
+    const document = { getElementById(id) { return id === 'wb-canvas' ? frame : id === 'wb-preview-form' ? form : null; } };
+    const DOMParser = class {
+        parseFromString(html) {
+            return { querySelector(selector) { return selector === 'style' ? { textContent: 'css:' + html } : { outerHTML: html }; } };
+        }
+    };
+    const wb = Object.assign({ doc: { root: [{ id: 'n1', props: { text: '原文' } }] }, draftVersion: 1 },
+        methods('canvas', 'canvasMethods', {
+            document, DOMParser, location: { origin: 'https://example.test' }, getCSRFToken: () => 'csrf',
+            setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
+        }));
+    wb.fetchCanvasHTML = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
+    return { wb, pending, messages, timers, submissions };
+}
+
+const settleCanvas = () => new Promise(resolve => setImmediate(resolve));
+
+for (const mode of ['refreshCanvas', 'flushCanvas']) {
+    test('画布全页刷新必须拒绝此前迟到的局部结果：' + mode, async () => {
+        const { wb, pending, messages, timers, submissions } = canvasEditor();
+        wb.patchCanvas('n1');
+        wb.doc.root[0].props.text = '撤销后的正文';
+        wb[mode]();
+        if (mode === 'refreshCanvas') timers.shift()();
+        pending[0].resolve('<p>撤销前的旧正文</p>');
+        await settleCanvas();
+        assert.equal(submissions.length, 1);
+        assert.equal(submissions[0].root[0].props.text, '撤销后的正文');
+        assert.equal(messages.length, 0, '旧局部结果不得覆盖全页刷新后的文档');
+    });
+}
+
+test('画布较早请求失败不得干扰更新后的预览', async () => {
+    const { wb, pending, messages, timers } = canvasEditor();
+    wb.patchCanvas('n1');
+    wb.patchCanvas('n1');
+    pending[1].resolve('<p>最新正文</p>');
+    await settleCanvas();
+    pending[0].reject(new Error('旧请求失败'));
+    await settleCanvas();
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].html, '<p>最新正文</p>');
+    assert.equal(timers.length, 0, '过期失败不得再次重载最新画布');
+});
+
+test('画布只回填最新局部结果并正常恢复当前失败', async () => {
+    const { wb, pending, messages, timers } = canvasEditor();
+    wb.patchCanvas('n1');
+    wb.patchCanvas('n1');
+    pending[1].resolve('<p>最新正文</p>');
+    await settleCanvas();
+    pending[0].resolve('<p>旧正文</p>');
+    await settleCanvas();
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].html, '<p>最新正文</p>');
+    wb.patchCanvas('n1');
+    pending[2].reject(new Error('当前请求失败'));
+    await settleCanvas();
+    assert.equal(timers.length, 1, '只有当前失败仍应回退全页刷新');
+});
