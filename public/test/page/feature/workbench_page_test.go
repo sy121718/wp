@@ -45,16 +45,14 @@ func TestWorkbenchPageShell(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	for _, fragment := range []string{
-		// 外壳骨架（2026-09 重构后）：左侧图标条 wb-rail-* + 抽屉面板 wb-panel-*，
-		// 检查器为 inspector-panel，状态条为 wb-status；旧的 topbar / inspector /
-		// bottombar 三块已并入该布局。
-		"wb-rail-library", "wb-rail-navigator", "wb-palette", "组件", "wb-canvas", "wb-canvas-frame",
+		// 常驻组件面板、画布工具栏与可浮动的结构树构成编辑工作区。
+		"wb-panel-library", "wb-navigator-toggle", "wb-palette", "组件", "wb-canvas", "wb-canvas-frame",
 		"wb-navigator", "inspector-panel", "wb-status",
 		"wb-save-draft", "wb-publish", "wb-device-desktop",
 		`id="wb-bootstrap"`, `{"settings":{},"root":[]}`,
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,
 		`id="wb-schemas"`, `"core.heading"`,
-		// 前端已拆分为 ES modules（docs/09 §3）：入口 index.js + core + methods/*。
+		// 前端入口为 ES modules：index.js + core + methods/*。
 		"/static/js/workbench/index.js", "存草稿", "editor=1",
 		// 富文本编辑器为 Trix，本地 vendor 资源（不再走 CDN）。
 		"/static/vendor/trix/trix.umd.js", "/static/vendor/trix/trix.css",

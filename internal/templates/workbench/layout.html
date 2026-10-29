@@ -1,5 +1,5 @@
-{* workbench/layout.html — 可视化编辑器四区布局外壳（docs/03-A §1） *}
-{* 独立于后台 admin 布局：顶栏 / 左检查器 / 画布 / 大纲树 / 底栏 *}
+{* 可视化编辑器：组件与检查器共用左栏，画布居中，结构树独立浮动。 *}
+
 {* 取词：数据由 shell.Prepare 注入（t / lang 同一来源，四种画布模式都走它）。
    tr 在顶层声明一次、全程复用 —— Jet 里 .["t"](…) 不能出现在赋值右侧与 yield 参数里，
    且循环内取词必须先声明变量（internal/templates/CLAUDE.md「i18n key 扫描」一节）。
@@ -20,7 +20,7 @@
    工作台引了 theme.css 所以视觉与后台一致）。放在 workbench.css 之前，便于后者按需覆盖。 *}
 <link rel="stylesheet" href="/static/css/ui.css">
 <link rel="stylesheet" href="/static/vendor/trix/trix.css?v={{.jsVer}}">
-    <link rel="stylesheet" href="/static/css/workbench.css?v=20260906c">
+    <link rel="stylesheet" href="/static/css/workbench.css?v={{.jsVer}}">
     {* 无障碍 P1 增量层：动效降级 + 键盘焦点轮廓（必须最后加载以覆盖焦点态） *}
     <link rel="stylesheet" href="/static/css/workbench-a11y.css?v=20260908a">
 </head>
@@ -29,39 +29,40 @@
     {* ===== 顶栏 ===== *}
     <header class="wb-topbar">
         <div class="wb-topbar-left">
-            <a href="/admin" class="wb-btn wb-btn-ghost" title="{{tr("workbench.ui.nav.back", "返回后台")}}">← {{tr("workbench.ui.nav.back", "返回后台")}}</a>
-            <nav class="wb-rail" aria-label="{{tr("workbench.ui.a11y.panelSwitch", "面板切换")}}">
-                <button type="button" class="wb-rail-btn is-active" id="wb-rail-library" title="{{tr("workbench.ui.nav.library", "组件库")}}">▦</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-add" title="{{tr("workbench.ui.nav.add", "添加组件")}}">＋</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-settings" title="{{tr("workbench.ui.nav.pageSettings", "页面设置")}}">⚙</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-seo" title="{{tr("workbench.ui.nav.seo", "SEO 设置与评分")}}">🔍</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-global" title="{{tr("workbench.ui.nav.global", "全局设置（主题）")}}">◐</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-history" title="{{tr("workbench.ui.nav.history", "修订历史")}}">↺</button>
-                <button type="button" class="wb-rail-btn" id="wb-rail-navigator" title="{{tr("workbench.ui.nav.tree", "结构树")}}">☰</button>
-            </nav>
+            <a href="/admin/pages" class="wb-brand" aria-label="{{tr("workbench.ui.nav.back", "返回后台")}}"><span class="wb-brand-mark">w</span><strong>go_wp</strong><span class="wb-brand-caption">CANVAS</span></a>
+            <span class="wb-topbar-divider"></span>
+            <details class="wb-document-menu">
+                <summary aria-label="{{tr("workbench.ui.nav.pageMenu", "页面菜单")}}"><span class="wb-document-name">{{.title}}</span><span data-wb-icon="chevron-down" aria-hidden="true"></span></summary>
+                <div class="wb-document-options">
+                    <button type="button" data-wb-view="settings"><span data-wb-icon="settings-2" aria-hidden="true"></span>{{tr("workbench.ui.nav.pageSettings", "页面设置")}}</button>
+                    <button type="button" data-wb-view="global"><span data-wb-icon="palette" aria-hidden="true"></span>{{tr("workbench.ui.nav.global", "全局设置（主题）")}}</button>
+                    <button type="button" data-wb-view="history"><span data-wb-icon="history" aria-hidden="true"></span>{{tr("workbench.ui.nav.history", "修订历史")}}</button>
+                    <a href="/admin/pages"><span data-wb-icon="arrow-left" aria-hidden="true"></span>{{tr("workbench.ui.nav.back", "返回后台")}}</a>
+                </div>
+            </details>
         </div>
-
-        <div class="wb-topbar-center" role="tablist" aria-label="{{tr("workbench.ui.a11y.breakpoints", "响应式断点")}}">
-            <button type="button" class="wb-btn wb-chip is-active" id="wb-device-desktop" title="{{tr("workbench.ui.bp.desktop", "桌面（自适应宽度）")}}">🖥 {{tr("workbench.ui.bp.desktopShort", "桌面")}}</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-laptop" title="{{tr("workbench.ui.bp.laptop", "笔记本 1024px")}}">💻 1024</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-tablet" title="{{tr("workbench.ui.bp.tablet", "平板 768px")}}">▭ 768</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-mobileL" title="{{tr("workbench.ui.bp.mobileL", "手机横屏 640px")}}">▤ 640</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-mobile" title="{{tr("workbench.ui.bp.mobile", "手机竖屏 375px")}}">📱 375</button>
+        <div class="wb-topbar-center" role="group" aria-label="{{tr("workbench.ui.a11y.breakpoints", "响应式断点")}}">
+            <button type="button" class="wb-device is-active" id="wb-device-desktop" aria-pressed="true" aria-label="{{tr("workbench.ui.bp.desktopShort", "桌面")}}" title="{{tr("workbench.ui.bp.desktop", "桌面（自适应宽度）")}}"><span data-wb-icon="monitor" aria-hidden="true"></span></button>
+            <button type="button" class="wb-device" id="wb-device-tablet" aria-pressed="false" aria-label="{{tr("workbench.ui.bp.tablet", "平板 768px")}}" title="768 px"><span data-wb-icon="tablet" aria-hidden="true"></span></button>
+            <button type="button" class="wb-device" id="wb-device-mobile" aria-pressed="false" aria-label="{{tr("workbench.ui.bp.mobile", "手机竖屏 375px")}}" title="375 px"><span data-wb-icon="smartphone" aria-hidden="true"></span></button>
         </div>
 
         <div class="wb-topbar-right">
+            <button type="button" class="wb-icon-btn" id="wb-undo" disabled aria-label="{{tr("workbench.ui.bottom.undo", "撤销")}}" title="Ctrl / ⌘ Z"><span data-wb-icon="undo-2" aria-hidden="true"></span></button>
+            <button type="button" class="wb-icon-btn" id="wb-redo" disabled aria-label="{{tr("workbench.ui.bottom.redo", "重做")}}" title="Ctrl / ⌘ Shift Z"><span data-wb-icon="redo-2" aria-hidden="true"></span></button>
             {{if isset(.instanceMode)}}
             {* 双轨状态条（迁移 282）：编辑者必须随时知道改的是共享模板还是这一个商品。
                renderModeLabel 由 Go 侧按请求语言取词（workbench_instance.go），这里只输出成品文案。 *}
             <span class="wb-status" id="wb-instance-mode" title="{{.renderModeLabel}}">{{.renderModeLabel}}</span>
             {{end}}
-            <span class="wb-status" id="wb-status">{{tr("workbench.ui.status.ready", "就绪")}}</span>
+            <span class="wb-status" id="wb-status" role="status" aria-live="polite">{{tr("workbench.ui.status.ready", "就绪")}}</span>
             {* 可选键必须用 isset 判断（internal/templates/CLAUDE.md 第一节）：页面模式与块模式的
                数据里**没有** isTemplate —— 写 {{if .isTemplate}} 会让 Jet 在缺键上类型不符，
                表现为「HTTP 200 + 这一行之后的 HTML 整块消失」（缺陷 B1，页面/块编辑器整页截断）。
                && 的短路是必须的：isset 为假时右侧不再求值（v6.3.2 实测），
                等价写法是双层 {{if isset}} 嵌套，但那要把下面的页面分支整段复制一遍。
                回归守卫：public/test/workbench/feature/workbench_layout_render_test.go *}
+            <button type="button" class="wb-btn wb-btn-secondary" id="wb-save-draft">{{tr("workbench.ui.action.saveDraft", "存草稿")}}</button>
             {{if isset(.isTemplate) && .isTemplate}}
             {* 结构模板（页眉 / 页脚）没有实体来源：预览不解析字段绑定。这条提示要在编辑器里
                看得见，否则作者会以为「该出现的实体字段没出现」是渲染坏了。多端：纯文本状态条，
@@ -74,25 +75,23 @@
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/preview?id={{.pageId}}" target="_blank">{{tr("workbench.ui.action.preview", "预览")}}</a>
             <button type="button" class="wb-btn wb-btn-primary" id="wb-publish">{{tr("workbench.ui.action.publish", "发布")}}</button>
             {{end}}
-            <button type="button" class="wb-btn wb-btn-secondary" id="wb-save-draft">{{tr("workbench.ui.action.saveDraft", "存草稿")}}</button>
+
         </div>
     </header>
 
     <div class="wb-main" id="wb-main">
 
         {* ===== 左侧面板：顶部标签条（组件/页面设置/全局设置/修订历史）+ 结构树，下方按标签切换内容 ===== *}
-        <aside class="wb-inspector">
+        <aside class="wb-inspector is-open">
+            <div class="wb-sidebar-top"><span>{{tr("workbench.ui.library.heading", "组件库")}}</span><button type="button" class="wb-collapse" id="wb-library-close" aria-label="{{tr("workbench.ui.action.collapsePreview", "收起面板并预览")}}">‹ {{tr("workbench.ui.action.collapse", "收起")}}</button></div>
             {* 组件库视图：页签（组件 | 全局块 | SEO） *}
             <section class="wb-panel" id="wb-panel-library" aria-label="{{tr("workbench.ui.library.heading", "组件库")}}">
-                <div class="wb-panel-head">
-                    <strong>{{tr("workbench.ui.library.heading", "组件库")}}</strong>
-                    <button type="button" class="wb-icon-btn" id="wb-library-close" title="{{tr("workbench.ui.action.collapse", "收起")}}">×</button>
-                </div>
                 <div class="wb-lib-tabs" role="tablist">
                     <button type="button" class="is-active" data-libtab="components">{{tr("workbench.ui.library.tabComponents", "组件")}}</button>
                     <button type="button" data-libtab="blocks">{{tr("workbench.ui.library.tabBlocks", "全局块")}}</button>
                 </div>
                 <input type="search" class="wb-search wb-library-search" id="wb-library-search" placeholder="{{tr("workbench.ui.library.searchPlaceholder", "搜索组件…")}}">
+                <div class="wb-library-categories" id="wb-library-categories" role="group" aria-label="{{tr("workbench.ui.library.categories", "组件分类")}}"></div>
                 <p class="wb-library-hint" id="wb-library-hint" style="display:none"></p>
                 <div class="wb-inspector-body" id="wb-library-body">
                     <div class="wb-palette-accordion" id="wb-palette"></div>
@@ -102,17 +101,15 @@
             </section>
             {* 编辑视图：选中组件后显示 *}
             <section class="wb-panel" id="wb-panel-edit" aria-label="{{tr("workbench.ui.edit.ariaLabel", "组件编辑")}}" hidden>
-                <div class="wb-panel-head">
-                    <button type="button" class="wb-icon-btn" id="wb-back-library" title="{{tr("workbench.ui.edit.openLibrary", "打开组件库")}}">+</button>
-                    <strong id="wb-edit-title">{{tr("workbench.ui.library.tabComponents", "组件")}}</strong>
-                    <span class="wb-flex-spacer"></span>
-                    <button type="button" class="wb-icon-btn" id="wb-edit-hide" title="{{tr("workbench.ui.edit.hideToggle", "编辑期隐藏/显示")}}">👁</button>
-                    <button type="button" class="wb-icon-btn" id="wb-edit-lock" title="{{tr("workbench.ui.edit.lockToggle", "锁定/解锁")}}">🔓</button>
-                    <button type="button" class="wb-icon-btn" id="wb-edit-delete" title="{{tr("workbench.ui.edit.delete", "删除组件")}}">🗑</button>
+                <div class="wb-panel-head wb-edit-head">
+                    <div><span class="wb-eyebrow">{{tr("workbench.ui.edit.editing", "正在编辑")}}</span><strong id="wb-edit-title">{{tr("workbench.ui.library.tabComponents", "组件")}}</strong><span id="wb-edit-subtitle" class="wb-element-id"></span></div>
+                    <button type="button" class="wb-icon-btn" id="wb-back-library" aria-label="{{tr("workbench.ui.edit.openLibrary", "打开组件库")}}" title="{{tr("workbench.ui.edit.openLibrary", "打开组件库")}}"><span data-wb-icon="x" aria-hidden="true"></span></button>
                 </div>
-                <div class="wb-tabs" role="tablist">
-                    <button type="button" class="is-active">{{tr("workbench.ui.edit.tabContent", "内容")}}</button>
-                    <button type="button">{{tr("workbench.ui.edit.tabStyle", "样式")}}</button>
+                <div class="wb-tabs" role="tablist" aria-label="{{tr("workbench.ui.edit.ariaLabel", "组件编辑")}}">
+                    <button type="button" role="tab" aria-selected="true" data-tab="content" class="is-active">{{tr("workbench.ui.edit.tabContent", "内容")}}</button>
+                    <button type="button" role="tab" aria-selected="false" data-tab="layout">{{tr("workbench.ui.edit.tabLayout", "布局")}}</button>
+                    <button type="button" role="tab" aria-selected="false" data-tab="style">{{tr("workbench.ui.edit.tabStyle", "样式")}}</button>
+                    <button type="button" role="tab" aria-selected="false" data-tab="motion">{{tr("workbench.ui.edit.tabMotion", "动效")}}</button>
                 </div>
                 <div class="wb-inspector-body" id="inspector-panel">
                     <p class="wb-empty">{{tr("workbench.ui.edit.empty", "在画布或大纲树中选择节点")}}</p>
@@ -140,16 +137,20 @@
         </aside>
 
         {* ===== 中央画布 ===== *}
-        <section class="wb-canvas-wrap">
+        <section class="wb-stage">
+            <div class="wb-canvas-toolbar"><div class="wb-breadcrumb"><span>{{tr("workbench.ui.canvas.page", "页面")}}</span><span>/</span><strong id="wb-device-label">{{tr("workbench.ui.canvas.responsive", "响应式")}}</strong><span id="wb-selection-label"></span></div><div class="wb-canvas-tools"><span class="wb-canvas-hint">{{tr("workbench.ui.canvas.directHint", "双击文字直接编辑")}}</span><button type="button" class="wb-btn wb-btn-ghost wb-btn-sm" id="wb-navigator-toggle" aria-pressed="false"><span data-wb-icon="layers" aria-hidden="true"></span>{{tr("workbench.ui.tree.pageStructure", "页面结构")}}</button></div></div>
+            <div class="wb-canvas-wrap">
             <div class="wb-canvas-frame" id="wb-canvas-frame">
                 <iframe id="wb-canvas" name="wb-canvas" title="{{tr("workbench.ui.canvas.title", "画布")}}" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else if isset(.isTemplate) && .isTemplate}}/workbench/template/preview?{{.previewQS}}{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
+            </div>
             </div>
         </section>
 
         {* ===== 浮动大纲树 ===== *}
-        <aside class="wb-navigator" id="wb-navigator">
+        <aside class="wb-navigator is-hidden" id="wb-navigator">
             <div class="wb-navigator-head">
                 <strong>{{tr("workbench.ui.tree.heading", "结构")}}</strong>
+                <button type="button" class="wb-icon-btn" id="wb-navigator-collapse" aria-label="{{tr("workbench.ui.tree.fold", "折叠结构树")}}">−</button>
                 <button type="button" class="wb-icon-btn" id="wb-navigator-close" title="{{tr("workbench.ui.action.collapse", "收起")}}">×</button>
             </div>
             <input type="search" class="wb-search" placeholder="{{tr("workbench.ui.tree.searchPlaceholder", "搜索组件或 ID…")}}">
@@ -159,15 +160,7 @@
         </aside>
     </div>
 
-    {* ===== 底栏 ===== *}
-    <footer class="wb-bottombar">
-        <button type="button" class="wb-btn wb-btn-ghost" id="wb-page-settings">{{tr("workbench.ui.nav.pageSettings", "页面设置")}}</button>
-        <button type="button" class="wb-btn wb-btn-ghost" id="wb-navigator-toggle">{{tr("workbench.ui.bottom.outline", "大纲树")}}</button>
-        <button type="button" class="wb-btn wb-btn-ghost" id="wb-undo">{{tr("workbench.ui.bottom.undo", "撤销")}}</button>
-        <button type="button" class="wb-btn wb-btn-ghost" id="wb-redo">{{tr("workbench.ui.bottom.redo", "重做")}}</button>
-        <span class="wb-flex-spacer"></span>
-        <button type="button" class="wb-btn wb-btn-ghost" id="wb-immersive" aria-pressed="false">{{tr("workbench.ui.bottom.immersive", "聚焦模式 (Ctrl+P)")}}</button>
-    </footer>
+    <button type="button" id="wb-sidebar-restore" class="wb-sidebar-restore" hidden aria-label="{{tr("workbench.ui.edit.restorePanel", "恢复编辑面板")}}">›</button>
 
     {* 草稿数据岛：workbench.js 读取并初始化前端状态机 *}
     {* 媒体库选择器弹层：左树右库（分类筛选），点选回填，支持直接上传 *}

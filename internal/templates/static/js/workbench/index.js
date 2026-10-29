@@ -23,6 +23,7 @@ import { treeMethods } from './methods/tree.js';
 import { inspectorMethods } from './methods/inspector.js';
 import { mediaMethods } from './methods/media.js';
 import { apiMethods } from './methods/api.js';
+import { workspaceMethods } from './methods/workspace.js';
 import { shortcutsMethods } from './methods/shortcuts.js';
 
 /** workbench 实例工厂：初始状态 + 各功能模块方法合并。 */
@@ -34,13 +35,14 @@ export function workbench() {
 
         // 视图状态
         device: 'desktop',
-        tab: 'content',         // 检查器页签：content / style（与 layout.html 页签按钮初始高亮一致）
-        view: 'edit',           // 左侧面板视图：edit / library / settings / global / history
+        tab: 'content',         // 内容 / 布局 / 样式 / 动效
+        view: 'library',           // 左侧面板视图：edit / library / settings / global / history
         paletteOpen: { basic: true },  // 组件库手风琴展开状态（默认展开基础组件）
         libraryFilter: '',
         pendingInsertTarget: null, // 画布「+ 插入组件」浮标记住的插入位置
         immersive: false,
-        navigatorOpen: true,
+        navigatorOpen: false,
+        libraryCategory: 'basic',
         filter: '',
         busy: false,
         saveState: '',
@@ -84,7 +86,7 @@ export function workbench() {
     },
         stateMethods, canvasMethods, historyMethods, nodesMethods,
         panelsMethods, treeMethods, inspectorMethods, mediaMethods,
-        apiMethods, shortcutsMethods);
+        apiMethods, workspaceMethods, shortcutsMethods);
 }
 
 // 直接装配原生事件，避免宿主 Webview 的 Alpine 表达式缓存影响工作台操作。

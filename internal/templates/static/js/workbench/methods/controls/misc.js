@@ -250,16 +250,22 @@ export function modeAfter(ctx) {
 // container 布局面板（嵌套结构未走 ct 声明，字段路径与编译端手写对齐）。
 export function containerLayout(ctx) {
     field(ctx, '语义标签', 'props.tag', 'segment', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
-    heading(ctx, 'Flex 布局');
-    field(ctx, '排列方向', 'props.layout.flex.direction', 'segment', [['column', '纵向'], ['row', '横向']], function () { set(ctx, 'props.layout.engine', 'flex'); });
-    field(ctx, '主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕'], ['space-evenly', '均分']]);
-    field(ctx, '交叉对齐', 'props.layout.flex.align', 'segment', [['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
-    checkbox(ctx, '允许换行', 'props.layout.flex.wrap');
-    unitInput(ctx, '组件间距', 'props.layout.flex.gap');
-    heading(ctx, '尺寸与留白');
-    dimensionsField(ctx, '内边距（三端）', 'props.box.padding');
-    dimensionsField(ctx, '外边距（三端）', 'props.box.margin');
-    unitInput(ctx, '最小高度', 'props.box.minHeight');
+    field(ctx, '排版方式', 'props.layout.engine', 'segment', [['flex', 'Flex'], ['grid', 'Grid']], function () { ctx.self.syncInspector(); });
+    if (get(ctx, 'props.layout.engine') === 'grid') {
+        heading(ctx, '网格布局');
+        [['desktop', '桌面列数'], ['tablet', '平板列数'], ['mobile', '手机列数']].forEach(function (device) {
+            field(ctx, device[1], 'props.layout.grid.columns.' + device[0], 'select', [[1, '1 列'], [2, '2 列'], [3, '3 列'], [4, '4 列'], [6, '6 列']], null, { number: true });
+        });
+        unitInput(ctx, '列间距', 'props.layout.grid.columnGap');
+        unitInput(ctx, '行间距', 'props.layout.grid.rowGap');
+    } else {
+        heading(ctx, 'Flex 布局');
+        field(ctx, '排列方向', 'props.layout.flex.direction', 'segment', [['column', '纵向'], ['row', '横向']]);
+        field(ctx, '主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕'], ['space-evenly', '均分']]);
+        field(ctx, '交叉对齐', 'props.layout.flex.align', 'segment', [['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
+        checkbox(ctx, '允许换行', 'props.layout.flex.wrap');
+        unitInput(ctx, '组件间距', 'props.layout.flex.gap');
+    }
 }
 // container 视觉面板。
 // 容器背景/边框/圆角/阴影/布局/动效均已统一到 schema 驱动的折叠区块，无需手写面板。
@@ -312,12 +318,12 @@ export function interactionPanel(ctx) {
     var IA = (ctx.node.type === 'core.container') ? 'props.interaction' : 'props.advanced.interaction';
     field(ctx, '入场动画', IA + '.entrance', 'select', [
         ['', '无'],
-        ['fade-in', '淡入'], ['fade-up', '淡入·上'], ['fade-down', '淡入·下'],
-        ['fade-left', '淡入·右移'], ['fade-right', '淡入·左移'],
-        ['zoom-in', '缩放进入'], ['zoom-out', '缩放退出'],
-        ['slide-up', '上滑'], ['slide-down', '下滑'],
-        ['slide-left', '右滑'], ['slide-right', '左滑'],
-        ['flip-x', '翻转 X'], ['flip-y', '翻转 Y'],
+        ['fade-in', '淡入'], ['fade-in-up', '淡入·上'], ['fade-in-down', '淡入·下'],
+        ['fade-in-left', '淡入·右移'], ['fade-in-right', '淡入·左移'],
+        ['zoom-in', '缩放进入'], ['zoom-in-out', '缩放退出'],
+        ['slide-in-up', '上滑'], ['slide-in-down', '下滑'],
+        ['slide-in-left', '右滑'], ['slide-in-right', '左滑'],
+        ['flip-in-x', '翻转 X'], ['flip-in-y', '翻转 Y'],
         ['blur-in', '模糊入场'], ['bounce-in', '弹跳入场'], ['rotate-in', '旋转入场']
     ]);
     field(ctx, '时长', IA + '.entranceDuration', 'select', [
@@ -434,10 +440,17 @@ export function renderInspectorExtras(ctx) {
         if (ctx.node.type === 'core.heading' || ctx.node.type === 'core.text') {
             into(ctx, sectionFor(ctx, 'style', '基础'), function () { typographyPanel(ctx, 'props.typography'); });
         }
-        into(ctx, sectionFor(ctx, 'motion', '动效'), interactionPanel);
-    } else {
+    } else if (ctx.self.tab === 'motion') {
+        into(ctx, sectionFor(ctx, 'motion', '动效与交互'), interactionPanel);
+    } else if (ctx.self.tab === 'layout') {
+        if (ctx.node.type === 'core.container') {
+            var group = sectionFor(ctx, 'layout', '布局');
+            var fields = Array.from(group.children).filter(function (child) { return child.tagName !== 'SUMMARY'; });
+            into(ctx, group, containerLayout);
+            fields.forEach(function (field) { group.appendChild(field); });
+        }
+    } else if (ctx.self.tab === 'content') {
         into(ctx, sectionFor(ctx, 'content', '内容'), function () {
-            if (ctx.node.type === 'core.container') containerLayout(ctx);
             if (ctx.node.type === 'core.divider') dividerInset(ctx);
             if (ctx.node.type === 'core.slider') sliderPanel(ctx);
             if (ctx.node.type === 'core.list') listPanel(ctx);
@@ -454,9 +467,21 @@ export function renderInspectorExtras(ctx) {
             }
         });
     }
+    ctx.panel.querySelectorAll('[data-wb-section]').forEach(function (section, index) { if (index === 0 || ctx.self.tab === 'motion') section.open = true; });
+    if (ctx.self.tab !== 'content') return;
+    var nameWrap = document.createElement('div');
+    nameWrap.className = 'wb-field';
+    var nameLabel = document.createElement('label');
+    nameLabel.textContent = '元素名称';
+    var nameInput = document.createElement('input');
+    nameInput.value = ctx.node.name || '';
+    nameInput.setAttribute('aria-label', '元素名称');
+    nameInput.addEventListener('change', function () { commit(ctx, 'name', nameInput.value); ctx.self.showEditPanel(); });
+    nameWrap.append(nameLabel, nameInput);
+    ctx.panel.prepend(nameWrap);
     var actions = document.createElement('div');
     actions.className = 'wb-inspector-actions';
-    [['复制组件', ctx.self.copyNode.bind(ctx.self)], ['粘贴样式', ctx.self.pasteStyle.bind(ctx.self)]].forEach(function (pair) {
+    [['创建副本', ctx.self.duplicate.bind(ctx.self)], ['复制样式', ctx.self.copyStyle.bind(ctx.self)], ['粘贴样式', ctx.self.pasteStyle.bind(ctx.self)], [ctx.node.hidden ? '显示元素' : '隐藏元素', function () { ctx.self.toggleHidden(ctx.node.id); ctx.self.syncInspector(); }], [ctx.node.locked ? '解锁元素' : '锁定元素', function () { ctx.self.toggleLocked(ctx.node.id); ctx.self.syncInspector(); }], ['删除元素', ctx.self.deleteSelected.bind(ctx.self)]].forEach(function (pair) {
         var button = document.createElement('button');
         button.type = 'button';
         button.className = 'wb-btn wb-btn-secondary wb-btn-sm';
