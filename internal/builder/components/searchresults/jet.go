@@ -48,5 +48,5 @@ func (v View) DeclareFeatures() (attrs, classes []string) {
 	if v.Notice != "" {
 		return nil, nil
 	}
-	return []string{"hx-get", "hx-target", "hx-swap", "hx-include", "hx-vals", "hx-trigger"}, nil
+	return []string{"hx-get", "hx-target", "hx-swap", "hx-include", "hx-trigger"}, nil
 }

@@ -125,16 +125,36 @@ test('粘贴样式不得替换目标文字、链接或内容绑定',()=>{
 });
 
 test('基础分类和四页签覆盖常见 HTML 元素与嵌套属性',async()=>{
-    const {categoryOf,inspectorTabOf}=await import('./experience.js');
+    const {categoryOf,inspectorTabOf,initialInspectorTabOf}=await import('./experience.js');
     for (const type of ['container','heading','text','button','image','list','quote','video','table']) assert.equal(categoryOf('core.'+type),'basic');
     assert.equal(categoryOf('core.productList'),'commerce');
-    assert.equal(categoryOf('plugin.new'),'commerce');
+    assert.equal(categoryOf('plugin.new'),'plugins');
+    for (const type of ['articleList','searchResults','nav','form']) assert.equal(categoryOf('core.'+type),'site');
     assert.equal(inspectorTabOf('content','text'),'content');
+    assert.equal(inspectorTabOf('collection','collection.source'),'content');
+    assert.equal(inspectorTabOf('style','columns.desktop'),'layout');
+    assert.equal(inspectorTabOf('style','layout'),'layout');
     assert.equal(inspectorTabOf('style','advanced.padding.desktop'),'layout');
     assert.equal(inspectorTabOf('border','advanced.border.width'),'style');
     assert.equal(inspectorTabOf('style','transform'),'style');
     assert.equal(inspectorTabOf('background','visual.bgColor'),'style');
     assert.equal(inspectorTabOf('style','advanced.interaction.entrance'),'motion');
+    assert.equal(initialInspectorTabOf('core.container'),'layout');
+    assert.equal(initialInspectorTabOf('core.spacer'),'layout');
+    assert.equal(initialInspectorTabOf('core.divider'),'style');
+    assert.equal(initialInspectorTabOf('core.list'),'content');
+});
+
+test('自动选择布局页签时，高亮和无障碍选中态一起同步', () => {
+    const buttons = ['content','layout','style','motion'].map(tab => ({ dataset: {tab},
+        classList: {toggle(_name, selected) { this.selected = selected; }},
+        setAttribute(_name, value) { this.selected = value; } }));
+    const inspector = methods('inspector', 'inspectorMethods', { document: {
+        querySelectorAll: () => buttons, getElementById: () => null
+    } });
+    inspector.syncInspector.call({ tab: 'layout' });
+    assert.deepEqual(buttons.map(b => b.selected), ['false','true','false','false']);
+    assert.deepEqual(buttons.map(b => b.classList.selected), [false,true,false,false]);
 });
 
 
@@ -158,4 +178,81 @@ test('撤销后迟到的富文本事件不能污染历史和当前文档',()=>{
     let snapshots=0;
     context.syncRichValue({node:oldNode,self:{findNode:()=>({id:'text-1'}),snapshot(){snapshots++;}}},'props.text',{value:'迟到的输入'});
     assert.equal(snapshots,0);
+});
+
+function controlContext(globals = {}) {
+    const context = vm.createContext({ console, ...globals });
+    for (const file of ['base', 'text', 'repeater']) {
+        const source = fs.readFileSync(__dirname + '/methods/controls/' + file + '.js', 'utf8')
+            .replace(/^import[^;]+;/gm, '').replace(/export /g, '');
+        vm.runInContext(source, context);
+    }
+    return context;
+}
+
+test('重复项先保留旧快照，连续编辑与增删都能逐步撤销', () => {
+    const control = controlContext({ clone: v => JSON.parse(JSON.stringify(v)) });
+    const { wb } = editor();
+    wb.doc.root[0].props.items = [{ text: '第一项', question: '问题', answer: '旧答案' }];
+    wb.findNode = id => wb.doc.root.find(n => n.id === id);
+    wb.patchCanvas = () => {};
+    wb.invalidateInspector = () => {};
+    const ctx = { self: wb, node: wb.doc.root[0] };
+    control.updateItems(ctx, items => { items[0].text = '第二项'; });
+    control.updateItems(ctx, items => { items[0].text = '第三项'; });
+    wb.undo();
+    assert.equal(wb.doc.root[0].props.items[0].text, '第二项');
+    wb.undo();
+    assert.equal(wb.doc.root[0].props.items[0].text, '第一项');
+    ctx.node = wb.doc.root[0];
+    control.commit(ctx, 'props.items.0.answer', '富文本新答案');
+    control.updateItems(ctx, items => { items[0].question = '新问题'; });
+    assert.equal(ctx.node.props.items[0].answer, '富文本新答案');
+    control.updateItems(ctx, items => { items.push({ text: '新增项' }); });
+    control.updateItems(ctx, items => { items.splice(0, 1); });
+    wb.undo();
+    assert.equal(wb.doc.root[0].props.items.length, 2);
+    wb.undo();
+    assert.equal(wb.doc.root[0].props.items.length, 1);
+    assert.equal(wb.doc.root[0].props.items[0].question, '新问题');
+});
+
+test('弹层图标选择器能打开、搜索和回填，并拒绝把未知图标作为 HTML', () => {
+    function element() {
+        return { children: [], style: {}, attrs: {}, events: {}, classList: { add() {}, toggle() {} },
+            appendChild(child) { this.children.push(child); },
+            contains(child) { return child === this || this.children.includes(child); },
+            setAttribute(key, value) { this.attrs[key] = value; },
+            addEventListener(key, fn) { this.events[key] = fn; },
+            set innerHTML(value) { this.html = value; this.children = []; },
+            get innerHTML() { return this.html; } };
+    }
+    const document = { createElement: element, events: {},
+        addEventListener(key, fn) { this.events[key] = fn; }, removeEventListener(key) { delete this.events[key]; } };
+    const names = ['check', 'shield'];
+    const WPIcons = { names, svg: name => '<svg>' + name + '</svg>', label: name => name,
+        filter: (_category, _style, keyword) => names.filter(name => name.includes(keyword)) };
+    const control = controlContext({ document, window: { WPIcons } });
+    let selected;
+    const picker = control.iconPopupPicker({}, '列表图标', 'check', value => { selected = value; });
+    const button = picker.btn, popup = picker.pop;
+    assert.equal(button.innerHTML, '<svg>check</svg>');
+    button.events.click();
+    assert.equal(button.attrs['aria-expanded'], 'true');
+    const svgChild = element();
+    button.children.push(svgChild);
+    document.events.click({ target: svgChild });
+    assert.equal(button.attrs['aria-expanded'], 'true');
+    const search = popup.children[0].children[0];
+    search.value = 'shield';
+    search.events.input();
+    const grid = popup.children[1];
+    assert.equal(grid.children.length, 1);
+    grid.children[0].events.click();
+    assert.equal(selected, 'shield');
+    assert.equal(button.attrs['aria-expanded'], 'false');
+    const fallback = element();
+    control.renderIcon(fallback, '<img src=x>', '');
+    assert.equal(fallback.innerHTML, undefined);
+    assert.equal(fallback.textContent, '<img src=x>');
 });

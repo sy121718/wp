@@ -118,10 +118,6 @@ export const shortcutsMethods = {
                 tabButtons.forEach(function (button) {
                     button.addEventListener('click', function () {
                         self.tab = button.dataset.tab;
-                        tabButtons.forEach(function (b) {
-                            b.classList.toggle('is-active', b === button);
-                            b.setAttribute('aria-selected', b === button ? 'true' : 'false');
-                        });
                         self.syncInspector();
                     });
                 });

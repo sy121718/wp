@@ -213,7 +213,7 @@ export function typographyPanel(ctx, typoPath) {
 
 // renderIcon 安全渲染图标：仅白名单（WPIcons.names）名走 innerHTML（SVG 来自常量），
 // 其余（自定义/未知名）退回 textContent，杜绝非白名单值注入。
-export function renderIcon(ctx, el, name, fallback) {
+export function renderIcon(el, name, fallback) {
     if (name && window.WPIcons && window.WPIcons.names && window.WPIcons.names.indexOf(name) >= 0) {
         el.innerHTML = window.WPIcons.svg(name);
     } else {
@@ -224,7 +224,7 @@ export function renderIcon(ctx, el, name, fallback) {
 // iconFilterBar 图标选择器工具栏：搜索框 + 分类标签。
 // names 为可用图标名全集（可能是 opts.names 子集）；onchange 在筛选状态变化时回调。
 // 返回 { el, filtered() }：el 为工具栏 DOM，filtered() 返回按当前分类+关键词筛选后的图标名。
-export function iconFilterBar(ctx, names, onchange) {
+export function iconFilterBar(names, onchange) {
     var state = { category: '', style: '', keyword: '' };
     var bar = document.createElement('div');
     bar.className = 'wb-icon-toolbar';
@@ -299,6 +299,8 @@ export function iconPopupPicker(ctx, triggerLabel, current, onPick, opts) {
     btn.className = 'wb-icon-pop';
     renderIcon(btn, current, '＋');
     btn.title = '选择图标';
+    btn.setAttribute('aria-label', triggerLabel || '选择图标');
+    btn.setAttribute('aria-expanded', 'false');
     // 浮层。
     var pop = document.createElement('div');
     pop.className = 'wb-icon-pop-menu';
@@ -311,10 +313,11 @@ export function iconPopupPicker(ctx, triggerLabel, current, onPick, opts) {
     var toolbar = iconFilterBar(names, function () { page = 1; buildGrid(); });
     // 命名 closer：仅在浮层打开时挂载，关闭即解绑，避免每次构建累积 document 级监听器。
     function onDocClick(ev) {
-        if (!pop.contains(ev.target) && ev.target !== btn) closePop();
+        if (!pop.contains(ev.target) && !btn.contains(ev.target)) closePop();
     }
     function closePop() {
         pop.style.display = 'none';
+        btn.setAttribute('aria-expanded', 'false');
         document.removeEventListener('click', onDocClick);
     }
     // 分页：图标上千个，一次渲染既慢又难找；每页固定数量 + 底部翻页。
@@ -341,6 +344,7 @@ export function iconPopupPicker(ctx, triggerLabel, current, onPick, opts) {
             var b=document.createElement('button'); b.type='button';
             b.className='wb-icon-cell'+(cur===nm?' is-active':'');
             b.title=window.WPIcons?window.WPIcons.label(nm):nm;
+            b.setAttribute('aria-label', b.title);
             renderIcon(b, nm, '');
             b.addEventListener('click', function(){ closePop(); onPick(nm); });
             grid.appendChild(b);
@@ -400,6 +404,7 @@ export function iconPopupPicker(ctx, triggerLabel, current, onPick, opts) {
     btn.addEventListener('click', function(){
         if (pop.style.display === 'block') { closePop(); return; }
         pop.style.display = 'block';
+        btn.setAttribute('aria-expanded', 'true');
         buildGrid();
         document.addEventListener('click', onDocClick);
     });

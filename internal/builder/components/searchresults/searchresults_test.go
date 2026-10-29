@@ -3,6 +3,8 @@ package searchresults
 import (
 	"strings"
 	"testing"
+
+	"go_wp/internal/templates"
 )
 
 func TestBuildViewIncludesLangAndProject(t *testing.T) {
@@ -28,5 +30,37 @@ func TestBuildViewMissingProjectNotice(t *testing.T) {
 	v := BuildView(&Props{}, "", "zh-CN")
 	if v.Notice == "" {
 		t.Fatal("missing project should set notice")
+	}
+}
+
+// 冷启动沿用片段入口合并地址栏查询的能力，模板不执行 CSP 禁止的 JS 表达式。
+func TestSearchWidgetRendersWithoutEvaluatedAttributes(t *testing.T) {
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl, err := set.GetTemplate("search_widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	err = tpl.Execute(&output, nil, struct {
+		Classes  string
+		CustomID string
+		V        View
+	}{V: BuildView(&Props{}, "proj-1", "zh-CN")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, want := range []string{`role="search"`, `method="get"`, `name="q"`, `hx-trigger="load"`, `aria-live="polite"`, "/_fragments/searchResults?"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("搜索产物缺少 %q", want)
+		}
+	}
+	for _, forbidden := range []string{"hx-vals=", "load[", "js:"} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("搜索产物仍需动态求值: %q", forbidden)
+		}
 	}
 }

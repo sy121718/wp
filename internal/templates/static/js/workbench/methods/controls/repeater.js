@@ -1,25 +1,29 @@
 // workbench/methods/controls/repeater.js — 各组件 repeater 手写面板（从 methods/inspector.js 提取）。
 
-import { alignMutation } from '../../core.js';
+import { alignMutation, clone } from '../../core.js';
 import { alignedRepeaters } from '../../generated-contracts.js';
 import { commit, get, set, heading } from './base.js';
 import { iconPopupPicker, richTextField } from './text.js';
+
+// 从最新节点复制后再修改，快照才能保留修改前的值，也不会覆盖富文本刚提交的答案。
+function updateItems(ctx, change) {
+    var items = clone(get(ctx, 'props.items') || []);
+    change(items);
+    commit(ctx, 'props.items', items);
+}
 
 // list 列表面板：样式 + 项 repeater。
 export function listPanel(ctx) {
     heading(ctx, '列表项');
     // 列表样式（图标/序号/圆点）已由 schema 驱动（ct tag）渲染。
-    if (!Array.isArray(get(ctx, 'props.items'))) set(ctx, 'props.items', []);
-    var items = get(ctx, 'props.items');
-    function save() { commit(ctx, 'props.items', items); }
+    var items = get(ctx, 'props.items') || [];
     items.forEach(function (item, idx) {
         var row = document.createElement('div'); row.className = 'wb-repeater-row';
         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
         if (get(ctx, 'props.style') === 'icon') {
             // 弹层图标选择：点击图标按钮弹出 SVG 网格，点选回填。
             var ipo = iconPopupPicker(ctx, '图标', item.icon || 'check', function (v) {
-                item.icon = v;
-                save();
+                updateItems(ctx, function (next) { next[idx].icon = v; });
                 ipo.refresh(v);
             }, { allowEmpty: true });
             var ipoWrap = document.createElement('div');
@@ -29,19 +33,19 @@ export function listPanel(ctx) {
             mid.appendChild(ipoWrap);
         }
         var text = document.createElement('input'); text.type = 'text'; text.placeholder = '列表项文本'; text.value = item.text || '';
-        text.addEventListener('change', function () { item.text = text.value; save(); });
+        text.addEventListener('change', function () { updateItems(ctx, function (next) { next[idx].text = text.value; }); });
         mid.appendChild(text);
         var link = document.createElement('input'); link.type = 'text'; link.placeholder = '链接（可选）'; link.value = item.link || '';
-        link.addEventListener('change', function () { item.link = link.value; save(); });
+        link.addEventListener('change', function () { updateItems(ctx, function (next) { next[idx].link = link.value; }); });
         mid.appendChild(link);
         var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
-        del.addEventListener('click', function () { items.splice(idx, 1); save(); ctx.self.syncInspector(); });
+        del.addEventListener('click', function () { updateItems(ctx, function (next) { next.splice(idx, 1); }); ctx.self.syncInspector(); });
         row.appendChild(mid); row.appendChild(del);
         ctx.panel.appendChild(row);
     });
     var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
     add.textContent = '+ 添加列表项';
-    add.addEventListener('click', function () { items.push({ icon: 'check', text: '新列表项', link: '' }); save(); ctx.self.syncInspector(); });
+    add.addEventListener('click', function () { updateItems(ctx, function (next) { next.push({ icon: 'check', text: '新列表项', link: '' }); }); ctx.self.syncInspector(); });
     ctx.panel.appendChild(add);
 }
 
@@ -67,24 +71,22 @@ export function infoboxPanel(ctx) {
 // Items 为数组字段且无 ct tag（schema 反射不递归数组），故答案与展开态在此手写。
 export function faqPanel(ctx) {
     heading(ctx, '常见问题');
-    if (!Array.isArray(get(ctx, 'props.items'))) set(ctx, 'props.items', []);
-    var items = get(ctx, 'props.items');
-    function save() { commit(ctx, 'props.items', items); }
+    var items = get(ctx, 'props.items') || [];
     items.forEach(function (it, idx) {
         var row = document.createElement('div'); row.className = 'wb-repeater-row';
         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
         var q = document.createElement('input'); q.type = 'text'; q.placeholder = '问题' + (idx + 1);
         q.value = it.question || '';
-        q.addEventListener('change', function () { it.question = q.value; save(); });
+        q.addEventListener('change', function () { updateItems(ctx, function (next) { next[idx].question = q.value; }); });
         mid.appendChild(q);
         var openLabel = document.createElement('label'); openLabel.className = 'wb-check-field';
         var openCk = document.createElement('input'); openCk.type = 'checkbox'; openCk.checked = !!it.open;
-        openCk.addEventListener('change', function () { it.open = openCk.checked; save(); });
+        openCk.addEventListener('change', function () { updateItems(ctx, function (next) { next[idx].open = openCk.checked; }); });
         openLabel.appendChild(openCk); openLabel.appendChild(document.createTextNode('默认展开'));
         mid.appendChild(openLabel);
         row.appendChild(mid);
         var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
-        del.addEventListener('click', function () { items.splice(idx, 1); save(); ctx.self.syncInspector(); });
+        del.addEventListener('click', function () { updateItems(ctx, function (next) { next.splice(idx, 1); }); ctx.self.syncInspector(); });
         row.appendChild(del);
         ctx.panel.appendChild(row);
         // 答案：富文本（Trix），另起一块（编辑器需要横向空间，不塞进 repeater 行）。
@@ -96,15 +98,13 @@ export function faqPanel(ctx) {
     });
     var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
     add.textContent = '+ 添加常见问题';
-    add.addEventListener('click', function () { items.push({ question: '新问题', answer: '', open: false }); save(); ctx.self.syncInspector(); });
+    add.addEventListener('click', function () { updateItems(ctx, function (next) { next.push({ question: '新问题', answer: '', open: false }); }); ctx.self.syncInspector(); });
     ctx.panel.appendChild(add);
 }
 
 // social_buttons 面板：平台 repeater。
 export function socialPanel(ctx) {
-    if (!Array.isArray(get(ctx, 'props.items'))) set(ctx, 'props.items', []);
-    var items = get(ctx, 'props.items');
-    function save() { commit(ctx, 'props.items', items); }
+    var items = get(ctx, 'props.items') || [];
     var platforms = ['facebook', 'x', 'instagram', 'youtube', 'tiktok', 'telegram', 'whatsapp', 'pinterest', 'linkedin'];
     var labels = { facebook: 'Facebook', x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok', telegram: 'Telegram', whatsapp: 'WhatsApp', pinterest: 'Pinterest', linkedin: 'LinkedIn' };
     items.forEach(function (item, idx) {
@@ -113,19 +113,19 @@ export function socialPanel(ctx) {
         var platChoices = platforms.map(function (pl) { return [pl, labels[pl]]; });
         var sel = window.WBUI.select.create(platChoices, item.platform || 'facebook', {
             key: 'props.items.' + idx + '.platform', label: '社交平台',
-            onChange: function (v) { item.platform = v; save(); }
+            onChange: function (v) { updateItems(ctx, function (next) { next[idx].platform = v; }); }
         }).root;
         var link = document.createElement('input'); link.type = 'text'; link.placeholder = '链接地址'; link.value = item.url || '';
-        link.addEventListener('change', function () { item.url = link.value; save(); });
+        link.addEventListener('change', function () { updateItems(ctx, function (next) { next[idx].url = link.value; }); });
         mid.appendChild(sel); mid.appendChild(link);
         var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
-        del.addEventListener('click', function () { items.splice(idx, 1); save(); ctx.self.syncInspector(); });
+        del.addEventListener('click', function () { updateItems(ctx, function (next) { next.splice(idx, 1); }); ctx.self.syncInspector(); });
         row.appendChild(mid); row.appendChild(del);
         ctx.panel.appendChild(row);
     });
     var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
     add.textContent = '+ 添加平台';
-    add.addEventListener('click', function () { items.push({ platform: 'facebook', url: '' }); save(); ctx.self.syncInspector(); });
+    add.addEventListener('click', function () { updateItems(ctx, function (next) { next.push({ platform: 'facebook', url: '' }); }); ctx.self.syncInspector(); });
     ctx.panel.appendChild(add);
 }
 

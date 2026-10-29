@@ -61,6 +61,11 @@ export const inspectorMethods = {
                 var tab = this.tab;
                 Array.from(panel.querySelectorAll('[data-wb-section]')).forEach(function (group) {
                     var section = group.dataset.wbSection;
+                    if (section === 'collection') {
+                        var summary = group.querySelector('summary');
+                        var count = summary && summary.querySelector('.wb-group-count');
+                        if (summary) { summary.textContent = '数据源'; if (count) summary.appendChild(count); }
+                    }
                     Array.from(group.children).forEach(function (field) {
                         if (field.tagName === 'SUMMARY') return;
                         var input = field.matches('[data-wb-path]') ? field : field.querySelector('[data-wb-path]');
@@ -241,6 +246,12 @@ export const inspectorMethods = {
 
             // ---------------- 可视化属性检查器（docs/02-C3 schema 驱动） ----------------
             syncInspector() {
+                var activeTab = this.tab;
+                document.querySelectorAll('.wb-tabs [data-tab]').forEach(function (button) {
+                    var selected = button.dataset.tab === activeTab;
+                    button.classList.toggle('is-active', selected);
+                    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                });
                 // 注意：服务端片段就绪后的填充依赖下方闭包控件函数（函数声明会提升）——
                 // htmx 路径要用同一批闭包控件函数填充 slot，提前 return 会导致面板控件为空。
                 // 说明：控件函数已按功能拆分到 methods/controls/*，统一通过 ctx 传递面板/节点/实例。

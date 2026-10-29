@@ -15,9 +15,7 @@ import { alignedRepeaters, paletteSpec } from './generated-contracts.js';
 //      插入时要按 allocId 分配节点 ID，属于前端构造逻辑。
 //      注意：子树里**不含任何 Props 默认值**，那些走 defaultPropsOf（Go 侧真源）。
 //
-// 图标映射：当前组件库条目只渲染显示名 + 说明（见 methods/canvas.js 的 makeItem），
-// 不存在图标表 —— 所以这里不预先建一张没人用的表。将来要加图标时在本文件加一张
-// type → 图标名 的映射（那是真正需要人工的部分），而不是回到手写条目。
+// 图标、HTML 标识与展示分类由 experience.js 维护；本模块只负责声明数据与默认内容。
 //
 // 为什么独立成文件：组件库数据与「插入时补齐的最小内容」是纯数据，抽出来后可被
 // 浏览器 ES module 消费，也能被 node 直接 import 求值 —— 「组件库条目插入后必须

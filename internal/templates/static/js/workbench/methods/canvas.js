@@ -5,7 +5,7 @@ import {
 } from '../core.js';
 
 import { starterPresets } from '../starter-presets.js';
-import { libraryCategories, categoryOf, elementAppearance } from '../experience.js';
+import { libraryCategories, categoryOf, elementAppearance, initialInspectorTabOf } from '../experience.js';
 
 export const canvasMethods = {
             // ---------------- 画布直改支持 ----------------
@@ -72,7 +72,9 @@ export const canvasMethods = {
                 var categories = document.getElementById('wb-library-categories');
                 if (categories) {
                     categories.replaceChildren();
-                    libraryCategories.forEach(function (category) {
+                    libraryCategories.filter(function (category) {
+                        return category.key !== 'plugins' || paletteItems.some(function (item) { return categoryOf(item.type) === 'plugins'; });
+                    }).forEach(function (category) {
                         var button = document.createElement('button');
                         button.type = 'button';
                         button.textContent = category.title;
@@ -405,6 +407,7 @@ export const canvasMethods = {
                     this.doc.root.push(node);
                 }
                 this.selectedId = node.id;
+                this.tab = initialInspectorTabOf(node.type);
                 this.renderTree();
                 this.syncInspector();
                 this.refreshCanvas();
