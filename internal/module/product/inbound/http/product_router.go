@@ -121,12 +121,12 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 
 // SetupProductPublicRoutes 访客只读数据入口，独立于后台会话与权限域。
 func SetupProductPublicRoutes(router *gin.Engine, svc productcontract.PublicVariantReader) {
-	router.GET("/api/site/product/variants", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
+	permission.NewRouteGroup(router.Group("")).GET("/api/site/product/variants", permission.Exempt, builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
 }
 
 // SetupProductCatalogRoutes 是访客商品列表的数据入口。
 func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCatalogReader) {
-	router.GET("/api/site/product/catalog", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
+	permission.NewRouteGroup(router.Group("")).GET("/api/site/product/catalog", permission.Exempt, builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
 }
 
 // registerProductPublishHistoryAPI 发布历史（迁移 673）。
@@ -652,5 +652,5 @@ func productTranslateMiddleware() gin.HandlerFunc {
 
 // SetupProductOptionsRoutes 公开商品选项仅返回安全事实。
 func SetupProductOptionsRoutes(router *gin.Engine, svc productcontract.PublicProductOptionsReader) {
-	router.GET("/api/site/product/options", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
+	permission.NewRouteGroup(router.Group("")).GET("/api/site/product/options", permission.Exempt, builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
 }

@@ -22,6 +22,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 工作树可显式复用隔离审计配置；默认仍取仓库配置。
+CONFIG_PATH="${GOWP_AUDIT_CONFIG:-config.yaml}"
+
 status=0
 
 # —— 方向 B：纯文本扫描（不需要数据库）——
@@ -48,7 +51,7 @@ yaml_db() {
         /^database:/ { in_db = 1; next }
         /^[a-zA-Z]/ { in_db = 0 }
         in_db && $1 == key":" { print $2; exit }
-    ' config.yaml
+    ' "$CONFIG_PATH"
 }
 DB_HOST="${DB_HOST:-${GOWP_DATABASE_HOST:-$(yaml_db host)}}"
 DB_PORT="${DB_PORT:-${GOWP_DATABASE_PORT:-$(yaml_db port)}}"

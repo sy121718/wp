@@ -1,6 +1,9 @@
 package permission
 
 import (
+	"github.com/gin-gonic/gin"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -76,4 +79,59 @@ func TestDeclareIdempotentForSameRoute(t *testing.T) {
 	snapshotReg(t)
 	Declare("POST", "/api/__test__/perm-d", ProductUpdate)
 	Declare("POST", "/api/__test__/perm-d", ProductUpdate)
+}
+
+// 显式访客登记只增加审计事实，不能绕过原有会话、CSRF或归属中间件。
+func TestExemptRouteKeepsMiddlewareAndExactMethod(t *testing.T) {
+	snapshotReg(t)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := NewRouteGroup(router.Group("/api/site/exempt-audit", func(c *gin.Context) {
+		if c.GetHeader("X-Visitor-CSRF") != "valid" {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.Next()
+	}))
+	own := api.Group("", func(c *gin.Context) {
+		if c.GetHeader("X-Visitor-ID") != "owner" {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
+	})
+	own.POST("/change", Exempt, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	for _, tc := range []struct {
+		csrf, user string
+		status     int
+	}{
+		{"", "", http.StatusForbidden}, {"valid", "", http.StatusUnauthorized}, {"valid", "owner", http.StatusNoContent},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/site/exempt-audit/change", nil)
+		req.Header.Set("X-Visitor-CSRF", tc.csrf)
+		req.Header.Set("X-Visitor-ID", tc.user)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != tc.status {
+			t.Fatalf("访客保护应为%d，实际%d", tc.status, rec.Code)
+		}
+	}
+	want := "POST /api/site/exempt-audit/change"
+	found := false
+	for _, e := range Exempts() {
+		if e == want {
+			found = true
+		}
+		if e == "GET /api/site/exempt-audit/change" {
+			t.Fatal("不能因路径相同而豁免未登记方法")
+		}
+	}
+	if !found {
+		t.Fatal("真实注册的访客路由必须进入精确审计名单")
+	}
+	for _, spec := range Snapshot() {
+		if spec.Path == "/api/site/exempt-audit/change" {
+			t.Fatal("访客路由不生成后台权限点")
+		}
+	}
 }

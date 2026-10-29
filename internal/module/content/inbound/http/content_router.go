@@ -51,5 +51,5 @@ func SetupContentRoutes(rg *permission.RouteGroup, db *gorm.DB, collections core
 
 // SetupContentPublicRoutes 注册公开搜索JSON，独立于后台会话。
 func SetupContentPublicRoutes(router *gin.Engine, reader contentcontract.PublicSearchReader) {
-	router.GET("/api/site/search", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
+	permission.NewRouteGroup(router.Group("")).GET("/api/site/search", permission.Exempt, builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
 }

@@ -159,14 +159,14 @@ func SetupOrderPublicRoutes(router *gin.Engine, svc ordercontract.VisitorOrderPo
 	if router == nil || svc == nil {
 		return
 	}
-	publicAPI := router.Group("/api/site/orders", middleware...)
+	publicAPI := permission.NewRouteGroup(router.Group("/api/site/orders", middleware...))
 	publicAPI.Use(builtin.RequestRateLimitMiddleware(90, time.Minute), requireVisitorOrderUser())
 	h := &PublicHandle{svc: svc}
-	publicAPI.GET("", h.VisitorList)
-	publicAPI.GET("/detail", h.VisitorDetail)
-	publicAPI.GET("/returnable", h.VisitorReturnable)
-	publicAPI.GET("/returns", h.VisitorReturns)
-	publicAPI.POST("/returns", h.VisitorRequestReturn)
+	publicAPI.GET("", permission.Exempt, h.VisitorList)
+	publicAPI.GET("/detail", permission.Exempt, h.VisitorDetail)
+	publicAPI.GET("/returnable", permission.Exempt, h.VisitorReturnable)
+	publicAPI.GET("/returns", permission.Exempt, h.VisitorReturns)
+	publicAPI.POST("/returns", permission.Exempt, h.VisitorRequestReturn)
 }
 func requireVisitorOrderUser() gin.HandlerFunc {
 	return func(c *gin.Context) {

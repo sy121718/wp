@@ -25,6 +25,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 工作树可显式复用隔离审计配置；默认仍取仓库配置。
+CONFIG_PATH="${GOWP_AUDIT_CONFIG:-config.yaml}"
+
 if ! command -v psql >/dev/null 2>&1; then
     echo "缺少 psql，无法比对菜单与路由。" >&2
     exit 1
@@ -35,7 +38,7 @@ yaml_db() {
         /^database:/ { in_db = 1; next }
         /^[a-zA-Z]/ { in_db = 0 }
         in_db && $1 == key":" { print $2; exit }
-    ' config.yaml
+    ' "$CONFIG_PATH"
 }
 
 # 优先级：显式 DB_* 覆盖 → 应用的环境变量 → config.yaml（与 check-permission-gaps.sh 同规则）。

@@ -2,10 +2,13 @@
 # Page authorization audit: source + reviewed route snapshot + read-only menu query.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# 工作树可显式复用隔离审计配置；默认仍取仓库配置。
+CONFIG_PATH="${GOWP_AUDIT_CONFIG:-config.yaml}"
 command -v psql >/dev/null || { echo "psql is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 yaml_db() {
-    awk -v key="$1" '/^database:/{in_db=1;next} /^[a-zA-Z]/{in_db=0} in_db && $1==key":"{print $2;exit}' config.yaml
+    awk -v key="$1" '/^database:/{in_db=1;next} /^[a-zA-Z]/{in_db=0} in_db && $1==key":"{print $2;exit}' "$CONFIG_PATH"
 }
 DB_HOST="${DB_HOST:-${GOWP_DATABASE_HOST:-$(yaml_db host)}}"
 DB_PORT="${DB_PORT:-${GOWP_DATABASE_PORT:-$(yaml_db port)}}"

@@ -142,7 +142,7 @@ func runtimeWriteRoutes() ([]route, error) {
 	cmd.Env = append(os.Environ(), "WP_DUMP_ROUTES=1")
 	raw, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("导出运行时路由表失败（需要数据库；先在仓库根目录配好 config.yaml）：%w", err)
+		return nil, fmt.Errorf("导出运行时路由表失败（需要数据库；使用根目录 config.yaml 或显式 GOWP_AUDIT_CONFIG）：%w", err)
 	}
 	var out []route
 	for _, line := range strings.Split(string(raw), "\n") {
@@ -194,7 +194,7 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	// 漏配的端点没有契约，check-write-fields.sh 会明确报「端点不在契约里」。
 	idsOf := func(name string) []string {
 		if mod == "" {
-			return nil   // 拿不到模块名 → 不做猜测（宁可漏配，让门禁报出来）
+			return nil // 拿不到模块名 → 不做猜测（宁可漏配，让门禁报出来）
 		}
 		return []string{mod + ":" + name}
 	}

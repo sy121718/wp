@@ -6,6 +6,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/common/captcha/handle"
+	"go_wp/internal/permission"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +29,7 @@ func SetupCaptchaRoutes(rg *gin.RouterGroup) {
 		return
 	}
 
-	rg.GET("/captcha",
+	permission.NewRouteGroup(rg).GET("/captcha", permission.Exempt,
 		builtin.RequestRateLimitMiddleware(captchaRateLimit, captchaRateWindow),
 		handle.CaptchaHandle)
 }

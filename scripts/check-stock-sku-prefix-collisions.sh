@@ -25,6 +25,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 工作树可显式复用隔离审计配置；默认仍取仓库配置。
+CONFIG_PATH="${GOWP_AUDIT_CONFIG:-config.yaml}"
+
 if ! command -v psql >/dev/null 2>&1; then
     echo "缺少 psql，无法预检库存 SKU 前缀冲突。" >&2
     exit 1
@@ -36,7 +39,7 @@ yaml_db() {
         /^database:/ { in_db = 1; next }
         /^[a-zA-Z]/ { in_db = 0 }
         in_db && $1 == key":" { print $2; exit }
-    ' config.yaml
+    ' "$CONFIG_PATH"
 }
 
 # 优先级：显式 DB_* 覆盖 → 应用的环境变量（config.envBindableKeys）→ config.yaml。
@@ -44,8 +47,8 @@ yaml_db() {
 # CI 里是从 config.yaml.example 复制来的 —— 只读 yaml 会拿到 example 的空口令，psql 就连不上。
 # 连接参数来自 config.yaml 的 database 段；缺文件时说清楚，别让 awk 打一行
 # "cannot open" 之后再用空值去连库（那时的报错离根因很远）。
-if [[ ! -f config.yaml ]]; then
-    echo "缺少 config.yaml（连接参数从 database 段读取；CI 由 config.yaml.example 复制）。" >&2
+if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "缺少审计配置（默认 config.yaml，可用 GOWP_AUDIT_CONFIG 显式指定；连接参数从 database 段读取）。" >&2
     exit 2
 fi
 

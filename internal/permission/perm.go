@@ -32,10 +32,11 @@ import (
 // 拼错不可能静默上线。
 type Perm string
 
-// Exempt 显式豁免：该路由挂在 Casbin 组下但不声明权限点（例如登录后人人可用的自用接口）。
+// Exempt 显式声明此路由不需要后台权限点（登录前置、自用接口或独立访客域）。
+// 访客域仍由自己的会话、CSRF和归属规则保护；登记不会改动中间件链。
 //
 // 用 Exempt 而不是省略参数：豁免必须是**看得见的选择**，而不是忘记写。装配末尾会把豁免
-// 清单打进启动日志，scripts/check-permission-gaps.sh 的 EXEMPT 数组是同一份名单。
+// 清单打进启动日志，scripts/check-permission-gaps.sh 直接消费同一份运行时名单。
 const Exempt Perm = ""
 
 // spec 一条权限点的元数据（来自 codes.go 的常量表）。

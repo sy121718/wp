@@ -5,27 +5,28 @@ import (
 	"go_wp/internal/middleware/builtin"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/internal/permission"
 	"go_wp/pkg/response"
 )
 
 // setupSiteUserRoutes 直接挂载访客 API，独立于后台 Session/CSRF/Casbin。
 func setupSiteUserRoutes(router *gin.Engine, h *Handle) {
-	api := router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware())
-	api.GET("/session", h.SiteSession)
+	api := permission.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()))
+	api.GET("/session", permission.Exempt, h.SiteSession)
 	limit := builtin.RequestRateLimitMiddleware(userSensitiveRateLimit, userSensitiveRateWindow)
-	api.POST("/login", limit, h.SiteLogin)
-	api.POST("/register", limit, h.SiteRegister)
-	api.POST("/forgot", limit, h.SiteForgot)
-	api.POST("/reset", limit, h.SiteReset)
-	api.POST("/logout", h.SiteLogout)
+	api.POST("/login", permission.Exempt, limit, h.SiteLogin)
+	api.POST("/register", permission.Exempt, limit, h.SiteRegister)
+	api.POST("/forgot", permission.Exempt, limit, h.SiteForgot)
+	api.POST("/reset", permission.Exempt, limit, h.SiteReset)
+	api.POST("/logout", permission.Exempt, h.SiteLogout)
 	own := api.Group("", requireSiteUser())
-	own.GET("/account", h.SiteAccount)
-	own.GET("/sessions", h.SiteDevices)
-	own.POST("/account/profile", h.SiteUpdateProfile)
-	own.POST("/account/preference", h.SiteUpdatePreference)
-	own.POST("/account/password", limit, h.SiteChangePassword)
-	own.POST("/sessions/revoke", h.SiteRevokeDevice)
-	own.POST("/sessions/revoke-others", h.SiteRevokeOtherDevices)
+	own.GET("/account", permission.Exempt, h.SiteAccount)
+	own.GET("/sessions", permission.Exempt, h.SiteDevices)
+	own.POST("/account/profile", permission.Exempt, h.SiteUpdateProfile)
+	own.POST("/account/preference", permission.Exempt, h.SiteUpdatePreference)
+	own.POST("/account/password", permission.Exempt, limit, h.SiteChangePassword)
+	own.POST("/sessions/revoke", permission.Exempt, h.SiteRevokeDevice)
+	own.POST("/sessions/revoke-others", permission.Exempt, h.SiteRevokeOtherDevices)
 }
 
 func requireSiteUser() gin.HandlerFunc {

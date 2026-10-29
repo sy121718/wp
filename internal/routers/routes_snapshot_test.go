@@ -37,7 +37,11 @@ const routeSnapshotEnv = "WP_DUMP_ROUTES"
 // 与 TestRouteSnapshotStable（与快照比对）。
 func bootstrapRouter(t *testing.T) []string {
 	t.Helper()
-	if err := config.Init("../../config.yaml"); err != nil {
+	configPath := strings.TrimSpace(os.Getenv("GOWP_AUDIT_CONFIG"))
+	if configPath == "" {
+		configPath = "../../config.yaml"
+	}
+	if err := config.Init(configPath); err != nil {
 		t.Fatalf("配置加载失败: %v", err)
 	}
 	if _, err := config.GetServer(); err != nil {

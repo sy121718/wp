@@ -23,14 +23,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# 有意豁免的接口：必须匿名可达（登录、验证码），或登录后人人可用的自用接口。
-# 往这里加之前先回答一句：这个接口被任意登录用户随便调，会不会出事？
-EXEMPT=(
-    "GET /api/admin/profile"
-    "GET /api/captcha"
-    "POST /api/admin/login"
-    "POST /api/admin/logout"
-)
+# 工作树可显式复用隔离审计配置；默认仍取仓库配置。
+CONFIG_PATH="${GOWP_AUDIT_CONFIG:-config.yaml}"
+
+# 对账只读运行时的精确方法与路径，路径前缀不作为豁免依据。
+permission_gaps() {
+    comm -23 "$1" "$2" | comm -23 - "$3"
+}
+self_gaps=$(permission_gaps \
+    <(printf '%s\n' 'GET /api/site/known' 'GET /api/site/unknown' 'POST /api/site/known') \
+    <(printf '') \
+    <(printf '%s\n' 'GET /api/site/known'))
+if [[ "$self_gaps" != $'GET /api/site/unknown\nPOST /api/site/known' ]]; then
+    echo "权限缺口对账自检失败：未登记路径或方法被放过" >&2
+    exit 1
+fi
 
 if ! command -v psql >/dev/null 2>&1; then
     echo "缺少 psql，无法比对权限点。" >&2
@@ -43,7 +50,7 @@ yaml_db() {
         /^database:/ { in_db = 1; next }
         /^[a-zA-Z]/ { in_db = 0 }
         in_db && $1 == key":" { print $2; exit }
-    ' config.yaml
+    ' "$CONFIG_PATH"
 }
 
 # 优先级：显式 DB_* 覆盖 → 应用的环境变量（config.envBindableKeys）→ config.yaml。
@@ -77,18 +84,18 @@ PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAM
     "SELECT DISTINCT api_method || ' ' || api_path FROM sys_permission WHERE api_path <> '' AND status = 1;" \
     | sed "s/^[[:space:]]*//;s/[[:space:]]*$//" | grep -v "^$" | sort -u > "$tmp_perms"
 
-printf '%s\n' "${EXEMPT[@]}" | sort -u > "$tmp_exempt"
+awk '/^EXEMPT / {print $2" "$3}' "$tmp_raw" | sort -u > "$tmp_exempt"
 
-comm -23 "$tmp_routes" "$tmp_perms" | comm -23 - "$tmp_exempt" > "$tmp_gap" || true
+permission_gaps "$tmp_routes" "$tmp_perms" "$tmp_exempt" > "$tmp_gap" || true
 
 echo "  路由 $(wc -l < "$tmp_routes") 条 / 权限点 $(wc -l < "$tmp_perms") 条 / 已豁免 $(wc -l < "$tmp_exempt") 条"
 
 if [ -s "$tmp_gap" ]; then
     echo
-    echo "✗ 以下接口挂了 Casbin 但没有权限点 —— 任何账号（含超管）调用都会被拒 403："
+    echo "✗ 以下接口既未声明后台权限，也未在注册处声明访客域豁免："
     sed "s/^/    /" "$tmp_gap"
     echo
-    echo "  修法：加一条权限点常量（internal/permission/codes.go）+ 在路由注册处声明（RouteGroup 的第二参），"
+    echo "  后台API声明独立权限点；访客API保留认证/CSRF并在同一注册处显式声明 Exempt。"
     echo "  装配末尾 permission.SyncToDB 会幂等 upsert 进 sys_permission 与超管策略（审计 SEC-011）—— 不再需要 seed 迁移。"
     echo "  （历史样板见 public/migrations/079_content_collections_permission.sql 与 151。）"
     exit 1
