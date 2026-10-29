@@ -4,15 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"go_wp/pkg/binding"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"go_wp/internal/adminui"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 
@@ -37,55 +36,33 @@ type customerBulkResult struct {
 	Items    []customerBulkItem `json:"items"`
 }
 
-// The boundary accepts numeric identifiers only; normalization precedes the limit.
-func customerBulkBody(c *gin.Context, withStatus bool) ([]uint64, int, bool) {
-	rawMap, err := binding.ParseJSON[map[string]json.RawMessage](c)
-	if err != nil || *rawMap == nil {
-		response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
-		return nil, 0, false
-	}
-	raw := *rawMap
-	for key, value := range raw {
-		if (key != "ids" && (!withStatus || key != "status")) || strings.TrimSpace(string(value)) == "null" {
-			response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
-			return nil, 0, false
-		}
-	}
-	var input []uint64
-	if err := json.Unmarshal(raw["ids"], &input); err != nil {
-		response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
-		return nil, 0, false
-	}
-	status := 0
-	if withStatus {
-		if err := json.Unmarshal(raw["status"], &status); err != nil || (status != userenums.StatusActive && status != userenums.StatusDisabled) {
-			response.ErrorWithMessage(c, 400, userenums.ErrCustomerStatusInvalid)
-			return nil, 0, false
-		}
-	}
-	idsText := make([]string, len(input))
-	for i, id := range input {
-		idsText[i] = strconv.FormatUint(id, 10)
-	}
-	normalized, err := bulkids.Normalize(idsText)
+// customerBulkBody 绑定固定请求形状；请求归一和校验由 DTO 完成。
+func customerBulkBody[T interface{ CustomerBulkValues() ([]uint64, int, error) }](c *gin.Context) ([]uint64, int, bool) {
+	req, err := binding.ParseJSON[T](c)
 	if err != nil {
-		var limit *bulkids.IDsError
-		if errors.As(err, &limit) {
-			response.ErrorWithMessage(c, 400, fmt.Sprintf(i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c)), strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
-		} else {
-			response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
-		}
+		customerBulkRequestError(c, err)
 		return nil, 0, false
 	}
-	if len(normalized) == 0 {
-		response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
+	ids, status, err := (*req).CustomerBulkValues()
+	if err != nil {
+		customerBulkRequestError(c, err)
 		return nil, 0, false
-	}
-	ids := make([]uint64, len(normalized))
-	for i, id := range normalized {
-		ids[i], _ = strconv.ParseUint(id, 10, 64)
 	}
 	return ids, status, true
+}
+
+// customerBulkRequestError 统一输出既有请求错误；数量与上限来自 DTO 返回的错误事实。
+func customerBulkRequestError(c *gin.Context, err error) {
+	var limit *bulkids.IDsError
+	if errors.As(err, &limit) {
+		response.ErrorWithMessage(c, 400, fmt.Sprintf(i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c)), strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
+		return
+	}
+	key := userenums.ErrInvalidParam
+	if fact, ok := facing.FactOf(err); ok && fact.Key == userenums.ErrCustomerStatusInvalid {
+		key = userenums.ErrCustomerStatusInvalid
+	}
+	response.ErrorWithMessage(c, 400, key)
 }
 
 // customerAPIErrorText 逐条写操作的错误文案（JSON 出口，必须交成品文本）。
@@ -124,7 +101,7 @@ func customerUnlockMessage(res *userdto.CustomerUnlockResp) string {
 
 // BulkCustomerStatus preserves the single-customer service boundary per item.
 func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
-	ids, status, ok := customerBulkBody(c, true)
+	ids, status, ok := customerBulkBody[userdto.CustomerBulkStatusReq](c)
 	if !ok {
 		return
 	}
@@ -150,7 +127,7 @@ func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 
 // BulkCustomerUnlock reports no-op separately from changed login state and failures.
 func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
-	ids, _, ok := customerBulkBody(c, false)
+	ids, _, ok := customerBulkBody[userdto.CustomerBulkUnlockReq](c)
 	if !ok {
 		return
 	}

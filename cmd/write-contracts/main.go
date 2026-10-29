@@ -1,6 +1,6 @@
 // Command write-contracts 生成写端点的字段契约。
 //
-// 详见同目录 README 与 .thinkrail/context/TASK-frontend-batch-2-write-base.md。
+// 从运行时路由、绑定调用与 DTO 标签生成，供前端字段门禁对账。
 package main
 
 import (
@@ -14,7 +14,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -205,7 +207,7 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	verbs := map[string]string{
 		"create": "Create", "update": "Update", "delete": "Delete",
 		"save": "Save", "add": "Add", "remove": "Remove",
-		"bulk-delete": "BulkDelete", "bulk-update": "BulkUpdate", "bulk-status": "BulkStatus",
+		"bulk-delete": "BulkDelete", "bulk-update": "BulkUpdate", "bulk-status": "BulkStatus", "bulk-unlock": "BulkUnlock",
 		"toggle": "Toggle", "apply": "Apply", "restore": "Restore",
 		"import": "Import", "upload": "Upload", "sort": "Sort",
 		"activate": "Activate", "deactivate": "Deactivate", "approve": "Approve",
@@ -238,6 +240,9 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 		if len(camel) > 0 {
 			cands = append(cands, verb+strings.Join(camel, ""))
 			cands = append(cands, verb+camel[len(camel)-1])
+			if strings.HasPrefix(verb, "Bulk") {
+				cands = append(cands, "Bulk"+strings.Join(camel, "")+strings.TrimPrefix(verb, "Bulk"))
+			}
 			if segs[1] != mod {
 				cands = append(cands, strings.Join(camel, "")+verb)
 			}
@@ -282,7 +287,7 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	return ""
 }
 
-// moduleOfRoutePath 从API路径确定处理器所属模块；角色路由复用admin聚合。
+// moduleOfRoutePath 从 API 路径确定处理器所属模块；角色与客户是所属模块的资源前缀。
 func moduleOfRoutePath(path string) string {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segs) < 2 {
@@ -290,6 +295,9 @@ func moduleOfRoutePath(path string) string {
 	}
 	if segs[1] == "role" {
 		return "admin"
+	}
+	if segs[1] == "customer" {
+		return "user"
 	}
 	return segs[1]
 }
@@ -447,6 +455,17 @@ func dtoFromGenericHelperCall(body *ast.BlockStmt) string {
 		if !ok {
 			return true
 		}
+		// helper[requestdto.Req](c) 的显式类型实参也是绑定来源。
+		if indexed, ok := call.Fun.(*ast.IndexExpr); ok {
+			// 仅追本地辅助函数；不能把 binding.Query 等只读入口误当写绑定。
+			_, localHelper := indexed.X.(*ast.Ident)
+			if sel, ok := indexed.Index.(*ast.SelectorExpr); ok && localHelper {
+				if pkg, ok := sel.X.(*ast.Ident); ok && strings.HasSuffix(pkg.Name, "dto") {
+					found = pkg.Name + "." + sel.Sel.Name
+					return false
+				}
+			}
+		}
 		for _, arg := range call.Args {
 			lit, ok := arg.(*ast.FuncLit)
 			if !ok || lit.Type.Params == nil || len(lit.Type.Params.List) == 0 {
@@ -495,61 +514,119 @@ var scalarTypes = map[string]bool{
 
 // scanDTOs 扫出「DTO 全名（pkg.Type）→ 字段表 + 表字段」。
 func scanDTOs() (map[string]dtoInfo, error) {
-	out := map[string]dtoInfo{}
+	return scanDTOsFrom("internal")
+}
+
+// scanDTOsFrom 先收齐类型再展开匿名字段，避免跨文件声明顺序影响结果。
+func scanDTOsFrom(root string) (map[string]dtoInfo, error) {
+	types := map[string]*ast.StructType{}
 	fset := token.NewFileSet()
-	err := filepath.WalkDir("internal", func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
-		f, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil || f.Name == nil {
-			return nil
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
 		}
-		pkgName := f.Name.Name
-		ast.Inspect(f, func(n ast.Node) bool {
-			ts, ok := n.(*ast.TypeSpec)
+		for _, decl := range f.Decls {
+			gen, ok := decl.(*ast.GenDecl)
 			if !ok {
-				return true
+				continue
 			}
-			st, ok := ts.Type.(*ast.StructType)
-			if !ok || st.Fields == nil {
-				return true
-			}
-			var fields []fieldSchema
-			var tables []tableSchema
-			for _, fld := range st.Fields.List {
-				if fld.Tag == nil || len(fld.Names) == 0 {
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
 					continue
 				}
-				tag := parseStructTag(fld.Tag.Value)
-				form := tag["form"]
-				jsonTag := strings.Split(tag["json"], ",")[0]
-				name := strings.Split(form, ",")[0]
-				if name == "" || name == "-" {
-					// 没有 form tag 时退到 json tag：DTO 可能还没补 form（本批会补），
-					// 但契约要能提前算出前端该写什么 name。
-					name = jsonTag
+				if st, ok := ts.Type.(*ast.StructType); ok {
+					types[f.Name.Name+"."+ts.Name.Name] = st
 				}
-				if name == "" || name == "-" {
-					continue
-				}
-				shape := collectionShape(fld.Type)
-				if shape != "" {
-					tables = append(tables, tableSchema{Name: name, Shape: shape})
-				}
-				fields = append(fields, fieldSchema{
-					Name:     name,
-					Required: strings.Contains(tag["binding"], "required"),
-				})
 			}
-			if len(fields) > 0 {
-				out[pkgName+"."+ts.Name.Name] = dtoInfo{Fields: fields, Tables: tables}
-			}
-			return true
-		})
+		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]dtoInfo{}
+	for name := range types {
+		info := dtoFields(name, types, map[string]bool{})
+		if len(info.Fields) > 0 {
+			out[name] = info
+		}
+	}
+	return out, nil
+}
+
+func dtoFields(name string, types map[string]*ast.StructType, visiting map[string]bool) dtoInfo {
+	st := types[name]
+	if st == nil || st.Fields == nil || visiting[name] {
+		return dtoInfo{}
+	}
+	visiting[name] = true
+	defer delete(visiting, name)
+	pkg := strings.SplitN(name, ".", 2)[0]
+	var info dtoInfo
+	for _, fld := range st.Fields.List {
+		tag := map[string]string{}
+		if fld.Tag != nil {
+			tag = parseStructTag(fld.Tag.Value)
+		}
+		formName := strings.Split(tag["form"], ",")[0]
+		jsonName := strings.Split(tag["json"], ",")[0]
+		if len(fld.Names) == 0 && formName == "" && jsonName == "" {
+			expr := fld.Type
+			optional := false
+			if star, ok := expr.(*ast.StarExpr); ok {
+				expr = star.X
+				optional = !requiredField(tag["binding"])
+			}
+			embedded := ""
+			switch typ := expr.(type) {
+			case *ast.Ident:
+				embedded = pkg + "." + typ.Name
+			case *ast.SelectorExpr:
+				if p, ok := typ.X.(*ast.Ident); ok {
+					embedded = p.Name + "." + typ.Sel.Name
+				}
+			}
+			child := dtoFields(embedded, types, visiting)
+			if optional || strings.Contains(","+tag["binding"]+",", ",omitempty,") {
+				for i := range child.Fields {
+					child.Fields[i].Required = false
+				}
+			}
+			info.Fields = append(info.Fields, child.Fields...)
+			info.Tables = append(info.Tables, child.Tables...)
+			continue
+		}
+		fieldName := formName
+		if fieldName == "" || fieldName == "-" {
+			fieldName = jsonName
+		}
+		if fieldName == "" || fieldName == "-" {
+			continue
+		}
+		if shape := collectionShape(fld.Type); shape != "" {
+			info.Tables = append(info.Tables, tableSchema{Name: fieldName, Shape: shape})
+		}
+		info.Fields = append(info.Fields, fieldSchema{Name: fieldName, Required: requiredField(tag["binding"])})
+	}
+	return info
+}
+
+// requiredField 只认当前字段的无条件 required；条件校验和 dive 后的元素校验不提升到容器。
+func requiredField(binding string) bool {
+	for _, rule := range strings.Split(binding, ",") {
+		switch strings.TrimSpace(rule) {
+		case "required":
+			return true
+		case "omitempty", "omitnil", "omitzero", "dive":
+			return false
+		}
+	}
+	return false
 }
 
 // collectionShape 判断一个字段形状是否 formdata 表达不了。
@@ -602,30 +679,15 @@ func isScalarExpr(e ast.Expr) bool {
 // parseStructTag 解析 struct tag 字面量（含反引号或双引号包裹）。
 func parseStructTag(lit string) map[string]string {
 	out := map[string]string{}
-	lit = strings.Trim(lit, "`\"")
-	for lit != "" {
-		lit = strings.TrimLeft(lit, " ")
-		i := 0
-		for i < len(lit) && lit[i] > ' ' && lit[i] != ':' {
-			i++
+	raw, err := strconv.Unquote(lit)
+	if err != nil {
+		return out
+	}
+	tag := reflect.StructTag(raw)
+	for _, key := range []string{"form", "json", "binding"} {
+		if value, ok := tag.Lookup(key); ok {
+			out[key] = value
 		}
-		if i == 0 || i+1 >= len(lit) || lit[i] != ':' || lit[i+1] != '"' {
-			break
-		}
-		key := lit[:i]
-		lit = lit[i+2:]
-		j := 0
-		for j < len(lit) && lit[j] != '"' {
-			if lit[j] == '\\' {
-				j++
-			}
-			j++
-		}
-		if j >= len(lit) {
-			break
-		}
-		out[key] = lit[:j]
-		lit = lit[j+1:]
 	}
 	return out
 }

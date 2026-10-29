@@ -50,7 +50,6 @@ var pendingControllerNormalize = map[string]bool{
 	"internal/module/navigation/inbound/http/navigation_add_source_handle.go": true,
 	"internal/module/navigation/inbound/http/navigation_delete_handle.go":     true,
 	"internal/module/order/inbound/http/order_write.go":                       true,
-	"internal/module/user/inbound/http/customer_bulk_write.go":                true,
 }
 
 // pendingControllerFiles 还没按 <模块>_router.go / <域>_handle.go 命名的控制器文件。

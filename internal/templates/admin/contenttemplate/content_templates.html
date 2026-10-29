@@ -154,7 +154,7 @@
                         {{else}}
                         {* 同一（工程, 类型）下只允许一套生效：切换是 POST，与 JSON 接口共用权限点
                            contenttemplate:activate（页面入口经 CasbinMiddlewareForPath 映射）。 *}
-                        <button type="submit" data-requires-js hidden class="btn btn-sm" data-write-url="/api/contenttemplate/activate" data-write="single"
+                        <button type="submit" data-requires-js hidden class="btn btn-sm" data-write-url="/api/contenttemplate/activate" data-write="single" data-write-extra="id"
                                 name="id" value="{{t.ID}}">{{tr("admin.content.templates.activate", "设为生效")}}</button>
                         {{end}}
                     </td>
