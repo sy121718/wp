@@ -37,6 +37,23 @@ test('访客收到HTML登录页时明确失败且不跳转后台',async()=>{
  const e=env({}, {ok:true,status:200,type:'text/html',redirected:true});await e.submit();assert.deepEqual(e.nav,[]);assert.match(e.status.textContent,/content-type/);assert.equal(e.input.value,'用户已填写的值');
 });
 
+test('商品写入拒绝HTTP重定向，非JSON结果留在原表单提示',async()=>{
+ const e=env({'data-write-url':'/api/product/update'}, {ok:true,status:200,type:'text/html',redirected:true});
+ await e.submit();
+ assert.equal(e.calls[0].opts.redirect,'error');
+ assert.deepEqual(e.nav,[]);
+ assert.match(e.status.textContent,/content-type/);
+ assert.equal(e.input.value,'用户已填写的值');
+});
+
+test('商品成功回执中的导航字段不能替代前端显式导航声明',async()=>{
+ const response={ok:true,status:200,payload:{code:200,message:'已保存',data:{id:'a1',redirect:'/server-chosen'}}};
+ const stay=env({'data-write-url':'/api/product/update'},response);
+ await stay.submit();assert.deepEqual(stay.nav,[]);
+ const go=env({'data-write-url':'/api/product/update','data-write-nav':'/admin/products/edit?product={id}'},response);
+ await go.submit();assert.deepEqual(go.nav,['/admin/products/edit?product=a1']);
+});
+
 test('编辑预览统一阻止JSON写、原生POST和HTMX写，保留输入且零网络',async()=>{
  const e=env({}, {preview:true});await e.submit();assert.equal(e.calls.length,0);assert.match(e.status.textContent,/模拟预览/);assert.equal(e.input.value,'用户已填写的值');
  const native={...e.form,hasAttribute:()=>false,getAttribute:n=>n==='method'?'post':null};let stopped=false;

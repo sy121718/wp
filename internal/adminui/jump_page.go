@@ -1,18 +1,14 @@
 package adminui
 
-// jump_page.go — **提示页**（admin/jump.html）的渲染数据与渲染入口，全站只有这一份契约。
-//
-// 为什么单独成文件、且归本包：提示页有两个渲染入口 —— 写动作的 shell.RenderJump（HTTP 200）
-// 与页面拒绝的 adminui.Reject（真实 403/500）。两者曾经各持一个同名 struct（「过渡期极小复制」），
-// 字段名就是模板契约，漂移一次整页正文/链接就**静默变空**（模板对缺字段是运行时报错，
-// 但那种失败只在真实渲染时才出现，而单测常常只断言 HTTP 状态码）。
-// 现在视图与渲染入口都只此一处，两边都调它。
-//
-// 依赖方向：shell → adminui（单向），所以 shell 可以引用本文件；adminui 不反向引用 shell。
+// 既有提示模板的渲染契约。认证拒绝和商品操作不再使用此出口。
+// 依赖方向保持 shell → adminui，不反向依赖 shell。
 
 import (
 	"github.com/gin-gonic/gin"
 )
+
+// ShellInjector 向既有页面模板注入外壳键，签名与 Prepare 一致。
+type ShellInjector func(c *gin.Context, data gin.H) gin.H
 
 // JumpView 提示页的渲染数据（字段名是模板契约，admin/jump.html 按名取）。
 //
@@ -42,16 +38,14 @@ type JumpView struct {
 
 // RenderJumpPage 渲染提示页（标题取正文的成品串：标签页说清刚才发生了什么）。
 //
-// status 由调用方给：写动作是 200（失败也是一次成功的响应，只是结论是失败），
-// 页面拒绝是真实 403/500（200 会让失败看起来像成功，监控与客户端都靠状态码区分）。
+// status 由既有调用方给出，鉴权失败使用 Reject 的 JSON 出口。
 func RenderJumpPage(c *gin.Context, status int, v JumpView) {
 	RenderJumpPageWith(c, status, v, Prepare)
 }
 
 // RenderJumpPageWith 同 RenderJumpPage，但由调用方给壳键注入器。
 //
-// 拒绝出口（reject.go）要保留「壳由调用方实现」这条边界（ShellInjector 的全部意义），
-// 所以它用这个变体；写动作出口（shell.RenderJump）没有这层需要，直接用 Prepare。
+// 注入器用于壳装配与渲染契约测试；不参与认证拒绝响应。
 func RenderJumpPageWith(c *gin.Context, status int, v JumpView, inject ShellInjector) {
 	if c == nil {
 		return

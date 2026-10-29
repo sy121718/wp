@@ -1,20 +1,7 @@
 package adminui
 
-// prepare_render_test.go — 页面鉴权拒绝出口的**端到端**判据：真 Prepare + 真 Jet。
-//
-// 本文件自 internal/shell/reject_render_test.go 迁入（task-92 批 2a）：它钉的对象是
-// 「adminui.Prepare 注入的壳键 → adminui.Reject → 真模板」这条链，装配归本包之后，
-// 它必须站在装配这一侧（迁出前它是 shell 的内部测试包，靠包内直呼 Prepare 避开
-// scripts/check-shell-migration.sh 的使用面统计）。
-//
-// 与 internal/adminui/reject_test.go 的分工（两处都要，判的是不同东西）：
-//   · 那边（外部测试包 adminui_test）钉出口自身的分档、注入次数、归口文案，并用**手工壳键夹具**
-//     渲染真实 Jet —— 它证明「模板要的键齐了」，**证明不了真 Prepare 会给出这套键**；
-//   · 本文件把真 Prepare 的输出交给 adminui.Reject，渲成真页 layout → partials/sidebar →
-//     admin/jump.html，端到端证明「拒绝页拿到的外壳键齐全」＋「真 403 + no-store + 完整 HTML」。
-//
-// 为什么必须有这一层：Jet 缺键不报错，只输出**半截页面**（模板在中间某行中断），
-// 而 htmx 那一档的表现是「点了没反应」—— 最难查的故障形态，只能靠整页产物兜住。
+// 既有提示模板的真 Prepare + 真 Jet 契约：外壳键、导航与完整 HTML 必须一致。
+// 认证拒绝已经迁成 JSON，此处直接验证仍在使用的渲染函数。
 
 import (
 	"net/http"
@@ -41,8 +28,8 @@ func prepareRenderNavTree() []admindto.MenuTreeNode {
 	}
 }
 
-// TestRejectPageRendersFullShellWithRealPrepare 页面被拒时渲染出的整页：外壳键全齐、错误出口可见。
-func TestRejectPageRendersFullShellWithRealPrepare(t *testing.T) {
+// TestJumpTemplateRendersFullShellWithRealPrepare 既有模板的整页渲染应包含完整外壳和提示内容。
+func TestJumpTemplateRendersFullShellWithRealPrepare(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	// 模板根相对包目录：internal/adminui → internal/templates。
@@ -54,7 +41,7 @@ func TestRejectPageRendersFullShellWithRealPrepare(t *testing.T) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"product.list": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
 		c.Set(adminctx.NavTreeKey, prepareRenderNavTree())
-		Reject(Prepare)(c, http.StatusForbidden, "adminui.reject.test.missing")
+		RenderJumpPageWith(c, http.StatusOK, JumpView{OK: true, Msg: "已完成", Back: "/admin", BackText: "返回后台"}, Prepare)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/products", nil)
@@ -63,19 +50,19 @@ func TestRejectPageRendersFullShellWithRealPrepare(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("拒绝页必须是真实 403（200 会让失败看起来像成功），实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("模板应渲染成功，实际 %d", rec.Code)
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("拒绝页必须 no-store，实际 %q", got)
+		t.Fatalf("提示模板页必须 no-store，实际 %q", got)
 	}
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "</html>") {
-		t.Fatalf("拒绝页不是完整页面（缺 </html>）—— 缺键会让 Jet 在中间中断，长度 %d", len(body))
+		t.Fatalf("提示模板页不是完整页面（缺 </html>）—— 缺键会让 Jet 在中间中断，长度 %d", len(body))
 	}
 	if strings.Contains(body, "{{") {
-		t.Fatal("拒绝页残留模板语法（Jet 在中间某行中断）")
+		t.Fatal("提示模板页残留模板语法（Jet 在中间某行中断）")
 	}
 
 	// Prepare 注入的壳键 + 出口自己的内容，逐项必须在整页里能看见。
@@ -88,11 +75,11 @@ func TestRejectPageRendersFullShellWithRealPrepare(t *testing.T) {
 		`<meta name="csrf-token"`,                        // csrf_token（layout head）
 		`X-CSRF-Token`,                                   // hx-headers
 		`name="redirect"`,                                // lang_redirect 隐藏域
-		`data-jump-state="err"`,                          // 错误出口（不是 ok 档）
-		`class="jump-msg">无权限访问</p>`,                     // 受控文案（词条缺失回落原文）
+		`data-jump-state="ok"`,                           // 成功提示
+		`class="jump-msg">已完成</p>`,                       // 受控文案（词条缺失回落原文）
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("拒绝页缺少 %q —— Prepare 注入的壳键或出口内容没渲染出来，长度 %d", want, len(body))
+			t.Fatalf("提示模板页缺少 %q —— Prepare 注入的壳键或出口内容没渲染出来，长度 %d", want, len(body))
 		}
 	}
 

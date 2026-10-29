@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
+	"go_wp/pkg/enums"
 	"go_wp/pkg/response"
 
 	"github.com/alicebob/miniredis/v2"
@@ -92,5 +94,41 @@ func TestSessionBecomesInvalidAfterLogout(t *testing.T) {
 	}
 	if status := request(); status != http.StatusUnauthorized {
 		t.Fatalf("注销后的旧 cookie 应被拒绝：got=%d want=%d", status, http.StatusUnauthorized)
+	}
+}
+
+func TestSessionAuthRejectsPagesAndHTMXWithoutNavigation(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		for _, hx := range []string{"", "true", "TRUE", " true ", "false"} {
+			engine := gin.New()
+			reached := false
+			engine.Any("/protected", SessionAuthMiddleware(), func(c *gin.Context) { reached = true; c.Status(http.StatusNoContent) })
+			req := httptest.NewRequest(method, "/protected", nil)
+			req.Header.Set("Accept", "text/html")
+			req.Header.Set("HX-Request", hx)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+			if reached || rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "未登录或登录已过期") {
+				t.Fatalf("%s HX=%q应拒绝为401：reached=%v status=%d body=%s", method, hx, reached, rec.Code, rec.Body.String())
+			}
+			if !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") || rec.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("认证拒绝应为不可缓存JSON：%v", rec.Header())
+			}
+			for _, header := range []string{"Location", "HX-Redirect", "HX-Location"} {
+				if rec.Header().Get(header) != "" {
+					t.Fatalf("认证拒绝不得输出导航头%s", header)
+				}
+			}
+		}
+	}
+}
+
+func TestAuthenticationStoreUnavailableKeeps503JSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	respondAuthFailure(c, enums.ErrAuthUnavailable)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "认证状态暂时不可用") || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("认证依赖故障应为503 JSON：%d %s", rec.Code, rec.Body.String())
 	}
 }

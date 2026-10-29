@@ -549,7 +549,7 @@
         }
         return fetch(url, {
             method:'POST', body:body, headers:headers, credentials:'same-origin',
-            redirect:visitor ? 'error' : 'follow'
+            redirect:'error'
         }).then(function (res) {
             if (visitor) {
                 var next = res.headers.get('X-CSRF-Token');
@@ -674,8 +674,7 @@
             var text = messageOf(res);
             var ctype = res.headers.get('Content-Type') || '';
             if (ctype.indexOf('application/json') < 0) {
-                // 非 JSON（典型是会话过期回登录页 HTML）：不吞，直接走。
-                if (res.redirected && attr(form, submitter, 'data-write-url').indexOf('/api/site/') !== 0) { window.location.assign(res.url); return; }
+                // 提示只在当前页面展示；导航只能来自显式 data-write-nav 声明。
                 throw new Error('unexpected content-type');
             }
             return res.json().then(function (payload) {

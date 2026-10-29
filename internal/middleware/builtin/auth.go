@@ -1,23 +1,13 @@
 package builtin
 
 import (
-	"net/http"
-	"strings"
-
 	"go_wp/pkg/auth"
+	"go_wp/pkg/enums"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
-	"go_wp/pkg/reqparams"
 )
-
-// loginPagePath 登录页路径。
-//
-// 说明：页面登录路由由 admin 模块注册（SetupAdminShellPages → /admin/login，
-// 模板 internal/templates/admin/login.html），与 /api/admin/login 是同一路径的
-// 页面侧；本常量与它保持同值。
-const loginPagePath = "/admin/login"
 
 // SessionAuthMiddleware Session + Cookie 认证中间件。
 //
@@ -35,11 +25,8 @@ const loginPagePath = "/admin/login"
 // 请求处理完成后刷新在线心跳（auth.RefreshOnline）。
 // 无需 JWT 自动续期：cookie 由浏览器自动携带，过期由 Cookie MaxAge 控制。
 //
-// 失败场景（未登录态统一按请求类型区分响应）：
-//   - 无 cookie session / session 无效 / 会话已失效 / 账号被封禁：
-//     HTMX 请求（HX-Request: true）或 Accept 含 text/html 的 GET → 302 重定向登录页；
-//     其余（JSON API / XHR）→ 401 JSON（response.ErrorWithMessage）
-//   - Redis 不可用 → 返回 503 "认证状态暂时不可用"（系统错误，不区分请求类型）
+// 未登录、过期和封禁均返回 401 JSON；认证存储不可用返回 503 JSON。
+// 所有拒绝响应不缓存，不因 Accept 或 HX 请求头改成跳转。
 //
 // 适用位置：需要登录认证的路由组或单路由。
 func SessionAuthMiddleware() gin.HandlerFunc {
@@ -51,23 +38,22 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 			if err != nil {
 				logger.Scene("middleware").With("reason", "会话读取失败").With("err", err).Warn("认证失败")
 			}
-			respondAuthRequired(c, "未登录或登录已过期")
+			respondAuthFailure(c, enums.ErrUnauthorized)
 			c.Abort()
 			return
 		}
 
 		// 2) 句柄 → 身份：身份只可能来自服务端映射（Redis）。句柄无效 / 已过期 /
-		//    已登出一律按未登录处理、不区分原因 —— 区分会让「Redis 挂了」与「没登录」
-		//    走成两条路径，而它们对用户应当完全一样（去登录）。
+		//    已登出按未登录处理；存储故障保留 503，不误报为凭据失效。
 		idx, err := auth.GetSessionIndex(c.Request.Context(), cs.SessionID)
 		if err != nil {
-			response.ErrorWithMessage(c, 503, "认证状态暂时不可用")
+			respondAuthFailure(c, enums.ErrAuthUnavailable)
 			c.Abort()
 			return
 		}
 		if idx == nil || idx.UserID == 0 {
 			logger.Scene("middleware").With("reason", "会话句柄无效或已失效").Warn("认证失败")
-			respondAuthRequired(c, "登录会话已失效，请重新登录")
+			respondAuthFailure(c, enums.ErrSessionExpired)
 			c.Abort()
 			return
 		}
@@ -77,13 +63,13 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 		//    封禁判断的依据不再是一个客户端可以声称的值。
 		blocked, err := auth.IsBlocked(c.Request.Context(), idx.UserID, idx.IssuedAt)
 		if err != nil {
-			response.ErrorWithMessage(c, 503, "认证状态暂时不可用")
+			respondAuthFailure(c, enums.ErrAuthUnavailable)
 			c.Abort()
 			return
 		}
 		if blocked {
 			logger.Scene("middleware").With("reason", "账号被封禁下线").Warn("认证失败")
-			respondAuthRequired(c, "账号已被强制下线")
+			respondAuthFailure(c, enums.ErrForcedLogout)
 			c.Abort()
 			return
 		}
@@ -93,13 +79,13 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 		//    于是同一账号此前建立的句柄全部对不上 → 后登录顶掉先登录。
 		session, err := auth.GetUserSession(c.Request.Context(), idx.UserID)
 		if err != nil {
-			response.ErrorWithMessage(c, 503, "认证状态暂时不可用")
+			respondAuthFailure(c, enums.ErrAuthUnavailable)
 			c.Abort()
 			return
 		}
 		if session == nil || session.SessionID != cs.SessionID {
 			logger.Scene("middleware").With("reason", "登录会话已失效").Warn("认证失败")
-			respondAuthRequired(c, "登录会话已失效，请重新登录")
+			respondAuthFailure(c, enums.ErrSessionExpired)
 			c.Abort()
 			return
 		}
@@ -120,27 +106,8 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// respondAuthRequired 未登录态的统一响应：按请求类型区分。
-//
-// - HTMX 请求（HX-Request: true）：302 重定向到登录页（HTMX 自动跟随跳转）
-// - Accept 含 text/html 的 GET（浏览器直接打开页面）：302 重定向到登录页
-// - 其余（JSON API / 非浏览器 XHR）：401 JSON，保持 response.ErrorWithMessage 风格
-func respondAuthRequired(c *gin.Context, message string) {
-	if wantsLoginPage(c) {
-		c.Redirect(http.StatusFound, loginPagePath)
-		return
-	}
-	response.ErrorWithMessage(c, http.StatusUnauthorized, message)
-}
-
-// wantsLoginPage 判断当前请求是否期望页面（应重定向登录页而非返回 JSON）。
-func wantsLoginPage(c *gin.Context) bool {
-	// HTMX 请求：任意 method 都按页面交互处理（POST 表单提交后登录过期同样跳转）。
-	// 判据委托 pkg/reqparams（与全仓同一份实现，pkg 不 import internal，方向合规）。
-	if reqparams.IsHXRequest(c) {
-		return true
-	}
-	// 浏览器页面导航：GET 且 Accept 声明可接收 HTML。
-	return c.Request.Method == http.MethodGet &&
-		strings.Contains(c.GetHeader("Accept"), "text/html")
+// respondAuthFailure 只返回认证事实，登录入口及后续导航由前端显式决定。
+func respondAuthFailure(c *gin.Context, key string) {
+	c.Header("Cache-Control", "no-store")
+	response.ErrorStatusAuto(c, "middleware", enums.AuthError(key))
 }
