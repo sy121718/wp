@@ -46,7 +46,7 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	root, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{
 		ProjectID: f.projectID, Name: "男装", Slug: "men", Sort: 2,
 		SEOTitle: "男装 SEO 标题", SEODescription: "男装 SEO 描述",
-		Image: "/img/men.jpg", Description: "男装分类描述",
+		Image: "/storage/img/men.jpg", Description: "男装分类描述",
 	})
 	if err != nil {
 		t.Fatalf("建顶级分类失败: %v", err)
@@ -90,7 +90,7 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 		t.Fatalf("分类详情失败: %v", err)
 	}
 	if got.SEOTitle != "男装 SEO 标题" || got.SEODescription != "男装 SEO 描述" ||
-		got.Image != "/storage/img/men.jpg" || got.Description != "男装分类描述" {
+		got.Image != testMediaBaseURL+"/img/men.jpg" || got.Description != "男装分类描述" {
 		t.Fatalf("分类 SEO / 图 / 描述字段应按媒体地址规范回读: %+v", got)
 	}
 
@@ -289,13 +289,13 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	ctx := context.Background()
 	brand, err := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{
 		ProjectID: f.projectID, Name: "山野", Slug: "shanye",
-		Logo: "/img/logo.svg", Description: "户外品牌",
+		Logo: "/storage/img/logo.svg", Description: "户外品牌",
 		SEOTitle: "山野 SEO 标题", SEODescription: "山野 SEO 描述", Sort: 3,
 	})
 	if err != nil {
 		t.Fatalf("建品牌失败: %v", err)
 	}
-	if brand.Logo != "/storage/img/logo.svg" || brand.Description != "户外品牌" ||
+	if brand.Logo != testMediaBaseURL+"/img/logo.svg" || brand.Description != "户外品牌" ||
 		brand.SEOTitle != "山野 SEO 标题" || brand.SEODescription != "山野 SEO 描述" || brand.Sort != 3 {
 		t.Fatalf("品牌字段应按媒体地址规范回读: %+v", brand)
 	}
@@ -533,7 +533,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 
 	// 品牌：建品牌 → 页面能看到 logo / slug / 描述（建走用例，页面的写入口已迁到 JSON 端点）。
 	if _, cerr := f.svc.CreateBrand(t.Context(), &productdto.CreateBrandReq{
-		ProjectID: f.projectID, Name: "山野", Slug: "shanye", Logo: "/img/logo.svg",
+		ProjectID: f.projectID, Name: "山野", Slug: "shanye", Logo: "/storage/img/logo.svg",
 	}); cerr != nil {
 		t.Fatalf("建品牌失败: %v", cerr)
 	}
@@ -542,7 +542,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("品牌页应 200，实际 %d", rec.Code)
 	}
 	brandBody := rec.Body.String()
-	for _, want := range []string{"商品品牌", "山野", "shanye", "/storage/img/logo.svg", "新建品牌", ">删除</button>"} {
+	for _, want := range []string{"商品品牌", "山野", "shanye", testMediaBaseURL + "/img/logo.svg", "新建品牌", ">删除</button>"} {
 		if !strings.Contains(brandBody, want) {
 			t.Fatalf("品牌页缺少 %q", want)
 		}

@@ -211,7 +211,7 @@ func TestProductCollectionResolveItems(t *testing.T) {
 	}
 	// 图片给真数组（集合卡的既有渲染约定是「数组取首元素」）。
 	images, ok := first["images"].([]any)
-	if !ok || len(images) != 2 || images[0] != "/storage/summer-shirt-1.jpg" {
+	if !ok || len(images) != 2 || images[0] != testMediaBaseURL+"/summer-shirt-1.jpg" {
 		t.Fatalf("images 应为 URL 数组：%+v", first["images"])
 	}
 	// 白名单之外的字段不进集合项（集合项只暴露可渲染字段）。
@@ -251,9 +251,9 @@ func TestProductCollectionBuildsIntoArtifact(t *testing.T) {
 	for _, want := range []string{
 		"夏季衬衫", "冬季外套", // 商品名（标题字段）
 		"99 ~ 199", "299", // 价格区间（变体派生）
-		"/storage/summer-shirt-1.jpg", // 图集首图（数组取首元素）
-		"/products/summer-shirt",      // 链接前缀 + slug
-		"sky-cardstack-card",          // 卡片结构确实渲染了
+		testMediaBaseURL + "/summer-shirt-1.jpg", // 图集首图（数组取首元素）
+		"/products/summer-shirt",                 // 链接前缀 + slug
+		"sky-cardstack-card",                     // 卡片结构确实渲染了
 	} {
 		if !strings.Contains(compiled.HTML, want) {
 			t.Fatalf("构建产物应含 %q", want)

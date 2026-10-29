@@ -261,7 +261,7 @@ func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	price := 99.0
 	p, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "默认值商品", Slug: "defaults",
-		AttributeIDs: []string{color.ID}, DefaultPrice: &price, DefaultImage: "/img/default.jpg",
+		AttributeIDs: []string{color.ID}, DefaultPrice: &price, DefaultImage: "/storage/img/default.jpg",
 	})
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
@@ -285,7 +285,7 @@ func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	if created.Price != 99 {
 		t.Fatalf("新建变体应继承商品默认价 99，实际 %v", created.Price)
 	}
-	if created.Image != "/storage/img/default.jpg" {
+	if created.Image != testMediaBaseURL+"/img/default.jpg" {
 		t.Fatalf("新建变体应继承默认图，实际 %q", created.Image)
 	}
 }

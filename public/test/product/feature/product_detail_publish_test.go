@@ -184,12 +184,12 @@ func TestProductDetailPublishEndToEnd(t *testing.T) {
 
 	html := activeHTML(t, "/products/summer-shirt")
 	for _, want := range []string{
-		"夏季衬衫",                            // product.name → 标题
-		"夏季衬衫卖点",                          // product.subtitle
-		"¥99 ~ 199",                       // product.priceRange（多变体区间）
-		"/storage/summer-shirt-cover.jpg", // product.defaultImage
-		"/storage/summer-shirt-1.jpg",     // product.images（图集）
-		"纯棉透气",                            // product.description（富文本清洗后输出）
+		"夏季衬衫",      // product.name → 标题
+		"夏季衬衫卖点",    // product.subtitle
+		"¥99 ~ 199", // product.priceRange（多变体区间）
+		testMediaBaseURL + "/summer-shirt-cover.jpg", // product.defaultImage
+		testMediaBaseURL + "/summer-shirt-1.jpg",     // product.images（图集）
+		"纯棉透气",                                       // product.description（富文本清洗后输出）
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("激活产物应含 %q，实际: %s", want, html)
@@ -374,7 +374,7 @@ func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
 	// 断言的是**页面标记**而不是 CSS：编译期样式无论是否输出选择器都会进产物，
 	// 只按类名断言会在「选择器根本没渲染」时误判通过。
 	for _, want := range []string{
-		`<div class="sky-product-options">`,                    // 规格选择器容器
+		`<div class="sky-product-options">`,                                // 规格选择器容器
 		`<input type="radio" class="sky-product-option-radio sky-sr-only"`, // 可选值（键盘 / 触屏 / 鼠标都可用）
 		`<label class="sky-product-option-value"`,
 		`<div class="sky-product-variant">`, // 规格组合行

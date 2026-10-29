@@ -89,7 +89,7 @@ func TestImageCMSBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if !strings.Contains(c.HTML, "/storage/bind.jpg") || !strings.Contains(c.HTML, "<img") {
+	if !strings.Contains(c.HTML, testMediaBaseURL+"/bind.jpg") || !strings.Contains(c.HTML, "<img") {
 		t.Errorf("绑定解析异常: %s", c.HTML)
 	}
 }
@@ -105,7 +105,7 @@ func TestImageValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := compile(t, svgImageDoc(t, tc.props))
+			_, err := compile(t, svgImageDoc(t, tc.props), builder.WithCompileMode(builder.CompileModePublish))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}

@@ -18,7 +18,7 @@ func TestImageCompilePipeline(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`<img src="/storage/hero.jpg"`,
+		`<img src="` + testMediaBaseURL + `/hero.jpg"`,
 		`loading="lazy"`,
 		`decoding="async"`,
 		`alt="局部覆盖"`,
@@ -33,8 +33,8 @@ func TestImageCompilePipeline(t *testing.T) {
 // TestImageValidateProps 图片组件校验：非法地址/叶子约束。
 func TestImageValidateProps(t *testing.T) {
 	cases := []struct{ name, json, want string }{
-		{"非法地址", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"a b"}}]}`, "媒体值非法"},
-		{"图片带子节点", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"/x.jpg"},"children":[{"id":"c1","type":"core.image","props":{"src":"/y.jpg"}}]}]}`, "叶子节点"},
+		{"非法地址", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"javascript:alert(1)"}}]}`, "必须提供完整 HTTP(S) 地址"},
+		{"图片带子节点", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"/storage/x.jpg"},"children":[{"id":"c1","type":"core.image","props":{"src":"/storage/y.jpg"}}]}]}`, "叶子节点"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

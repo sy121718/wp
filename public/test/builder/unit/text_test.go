@@ -46,7 +46,7 @@ func TestTextPlainSpan(t *testing.T) {
 
 // TestTextRichMode 富文本模式：结构化片段 + 白名单清洗。
 func TestTextRichMode(t *testing.T) {
-	props := `{"mode":"richtext","text":"<p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul><script>alert(1)</script><img src=x onerror=alert(2)>"}`
+	props := `{"mode":"richtext","text":"<p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul><script>alert(1)</script><img src=javascript:alert(3) onerror=alert(2)>"}`
 	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -59,11 +59,11 @@ func TestTextRichMode(t *testing.T) {
 			t.Errorf("HTML 缺少 %q: %s", want, c.HTML)
 		}
 	}
-	// img 属白名单标签：标签本身保留，但非法 src（src=x）与 onerror 事件属性被剥离。
+	// img 属白名单标签：标签本身保留，但危险 src（javascript:）与 onerror 事件属性被剥离。
 	if !strings.Contains(c.HTML, "<img>") {
 		t.Errorf("合法 img 标签应保留（属性剥离后）: %s", c.HTML)
 	}
-	for _, bad := range []string{"<script", "onerror=", "<input", "src=x"} {
+	for _, bad := range []string{"<script", "onerror=", "<input", "javascript:"} {
 		if strings.Contains(c.HTML, bad) {
 			t.Errorf("危险内容未被清洗: %q in %s", bad, c.HTML)
 		}
@@ -180,7 +180,7 @@ func TestTextValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := compile(t, textDoc(t, tc.props))
+			_, err := compile(t, textDoc(t, tc.props), builder.WithCompileMode(builder.CompileModePublish))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}

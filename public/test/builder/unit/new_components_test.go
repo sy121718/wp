@@ -156,7 +156,7 @@ func TestVideoLocalMp4(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.video","id":"v2","props":{"url":"/storage/videos/demo.mp4","controls":true,"autoplay":true,"muted":true}}]}`
 	html, _ := compileDoc(t, doc)
 
-	if !strings.Contains(html, "<video") || !strings.Contains(html, `<source src="/storage/videos/demo.mp4"`) {
+	if !strings.Contains(html, "<video") || !strings.Contains(html, `<source src="`+testMediaBaseURL+`/videos/demo.mp4"`) {
 		t.Fatalf("本地视频应输出 video/source: %s", html[:400])
 	}
 	if !strings.Contains(html, " autoplay") || !strings.Contains(html, " muted") {

@@ -24,7 +24,7 @@ var hoverGovernanceDocs = []struct {
 	name string
 	doc  string
 }{
-	{"core.gallery", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"g1","type":"core.gallery","props":{"items":[{"url":"/a.jpg","alt":"图","caption":"图注"}],"captionMode":"hover","hover":{"scale":"1.05","overlay":"dark"}}}]}`},
+	{"core.gallery", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"g1","type":"core.gallery","props":{"items":[{"url":"/storage/a.jpg","alt":"图","caption":"图注"}],"captionMode":"hover","hover":{"scale":"1.05","overlay":"dark"}}}]}`},
 	{"core.infobox", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.infobox","props":{"title":"标题","text":"正文","link":"/x","btnText":"了解更多","hoverBg":"#eeeeee"}}]}`},
 	{"core.list", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"l1","type":"core.list","props":{"items":[{"text":"条目","link":"/x"}],"linkColorHover":"#f00","iconColorHover":"#0f0","iconBgColorHover":"#eef"}}]}`},
 	{"core.languages", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"lg1","type":"core.languages","props":{"hoverColor":"#f00"}}]}`},
@@ -33,7 +33,7 @@ var hoverGovernanceDocs = []struct {
 	{"core.nav", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"n1","type":"core.nav","props":{"items":[{"label":"首页","url":"/"}],"hoverColor":"#f00"}}]}`},
 	{"core.tabs", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"t1","type":"core.tabs","props":{"tabs":[{"label":"一"},{"label":"二"}]},"children":[{"id":"t1a","type":"core.heading","props":{"text":"面板一","tag":"h3"}},{"id":"t1b","type":"core.heading","props":{"text":"面板二","tag":"h3"}}]}]}`},
 	{"core.form", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"f1","type":"core.form","props":{"submitLabel":"提交","fields":[{"type":"text","label":"姓名","name":"name"}]}}]}`},
-	{"core.image", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"im1","type":"core.image","props":{"src":"/a.jpg","alt":"图","hover":{"scale":"1.05"}}}]}`},
+	{"core.image", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"im1","type":"core.image","props":{"src":"/storage/a.jpg","alt":"图","hover":{"scale":"1.05"}}}]}`},
 	{"core.container", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"c1","type":"core.container","props":{"tag":"section","styleEx":{"backgroundHover":"#eeeeee"},"layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"c1a","type":"core.heading","props":{"text":"子内容","tag":"h3"}}]}]}`},
 }
 

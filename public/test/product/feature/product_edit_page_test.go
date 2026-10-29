@@ -39,8 +39,8 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	price := 99.0
 	// 主图参建：编辑页必须把它回填进媒体控件的隐藏域 —— ProductRowResp 漏赋值时控件恒空，
 	// 而保存路径会读那个隐藏域（三种形态见 TestProductEditPageSavesDefaultImage）。
-	// 注意归一：/img/x 会被 upload.StorageURL 变成 /storage/img/x，所以只比对文件名片段。
-	coverImage := "/img/product-cover.jpg"
+	// 历史 /storage/img/x 由受信媒体基址输出完整 URL，保留文件名回显断言。
+	coverImage := "/storage/img/product-cover.jpg"
 	created, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "编辑前", Slug: "before-edit", DefaultPrice: &price,
 		DefaultImage: coverImage,
@@ -163,7 +163,7 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 	price := 99.0
 	created, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "主图保存", Slug: "default-image-save",
-		DefaultPrice: &price, DefaultImage: "/img/product-cover.jpg",
+		DefaultPrice: &price, DefaultImage: "/storage/img/product-cover.jpg",
 	})
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
@@ -199,7 +199,7 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 	}
 
 	// 2. 提交新值 → 落库（漏读这个字段的现场就在这里）。
-	newImage := "/img/product-cover-new.png"
+	newImage := "/storage/img/product-cover-new.png"
 	save(&newImage)
 	if got := readImage("提交新主图"); !strings.Contains(got, "product-cover-new.png") {
 		t.Fatalf("主图未落库：实际 %q", got)
