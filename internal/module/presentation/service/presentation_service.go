@@ -39,6 +39,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -66,10 +67,12 @@ const instanceLockStripes = 64
 
 // Service presentation 模块业务实现。
 type Service struct {
-	m         *presentationmodel.Model
-	templates contenttemplatecontract.ContentTemplateService
-	registry  core.EntitySourceRegistry
-	project   projectcontract.ProjectService
+	actionTargetReferences  source.ActionTargetReferenceReader
+	actionTargetInvalidator source.ActionTargetInvalidator
+	m                       *presentationmodel.Model
+	templates               contenttemplatecontract.ContentTemplateService
+	registry                core.EntitySourceRegistry
+	project                 projectcontract.ProjectService
 	// blocks 全局块契约：内容模板内部可用 core.globalref 引用页眉/页脚等区块，
 	// 构建期由这里内联展开（与手工 Page 路径同一机制，docs/02-D §1.2）。
 	blocks blockcontract.BlockService

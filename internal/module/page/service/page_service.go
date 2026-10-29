@@ -30,6 +30,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	"go_wp/internal/module/artifact/contract"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/blueprint/contract"
@@ -58,9 +59,11 @@ var _ pagecontract.PageService = (*Service)(nil)
 // 发布链路持有 pipeline 内核（内存态可由数据库重建）与相邻模块契约，
 // 不直接依赖 GORM 之外的模块实现。
 type Service struct {
-	model     *pagemodel.Model
-	project   projectcontract.ProjectService
-	artifacts artifactcontract.ArtifactService
+	actionTargetReferences  source.ActionTargetReferenceReader
+	actionTargetInvalidator source.ActionTargetInvalidator
+	model                   *pagemodel.Model
+	project                 projectcontract.ProjectService
+	artifacts               artifactcontract.ArtifactService
 	// pageArtifacts 页面产物元数据的只读视图（artifact 契约的另一个窄接口）。
 	// 与 artifacts 是**同一个对象**的两种能力：ArtifactService 管记录/GC/状态，
 	// PageArtifactReader 管「按 id 反查 hash / 产物挂在哪张页面」这类 page 模块要的读。

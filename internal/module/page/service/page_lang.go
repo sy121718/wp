@@ -460,6 +460,7 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 		projectID = page.ProjectID
 	}
 	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
+	deps = append(deps, pipeline.ActionTargetDependencies(in.Usage)...)
 	if s.pageUsesContentTranslation(ctx, in) {
 		// 内容译文的 revision 必须**带工程作用域**（DB-009 第五批）：sys_translation 的策略
 		// 放行「本工程行 + 全局行」，不带作用域时本工程译文的写入不会推进 revision，
@@ -682,6 +683,12 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	if err != nil {
 		return 0, err
 	}
+	defer func() {
+		if err == nil {
+			s.invalidateActionTarget(ctx, page.ID)
+		}
+	}()
+
 	l := strings.TrimSpace(lang)
 	if l == "" {
 		return 0, ErrInvalidParam

@@ -6,6 +6,7 @@ import "go_wp/pkg/facing"
 import "strings"
 
 const (
+	ErrActionTargetInUse = "page.err.actionTargetInUse"
 	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
 	// —— 页面级语言排除（迁移 491）——
 	//
@@ -258,6 +259,7 @@ func ValidatePageContentContract(kind, targetType string, targetID *string) bool
 //
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 var errFallbacks = map[string]string{
+	ErrActionTargetInUse:        "这个目标仍被页面或区块引用，请先替换引用后再删除",
 	ErrPageLangExcluded:         "该语言已从这一页的产出范围里排除，请先恢复再发布",
 	ErrCannotExcludeDefaultLang: "站点默认语言不能排除：产物的原文就是它",
 	ErrLangAlreadyExcluded:      "该语言已经被排除过了",
@@ -292,3 +294,6 @@ func Err(key string) error { return facing.New(key, errFallbacks[key]) }
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
 // 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
 func FallbackFor(key string) string { return errFallbacks[key] }
+
+// ActionTargetInUse 在声明处固定被引用目标的冲突状态。
+func ActionTargetInUse() error { return facing.WithStatus(Err(ErrActionTargetInUse), 409) }

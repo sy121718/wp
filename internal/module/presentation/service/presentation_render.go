@@ -448,6 +448,7 @@ func presentationDependencies(entityType, entityID, templateID, projectID string
 	collectionSources []string, usage *pipeline.CompileUsage) []pipeline.Dependency {
 	dep := pipeline.DirectContentKey(entityType, entityID)
 	out := []pipeline.Dependency{{Kind: dep.Kind, Key: dep.Key}}
+	out = append(out, pipeline.ActionTargetDependencies(usage)...)
 	// 集合依赖（审计 ARCH-01）：模板文档里声明的集合源（content:product 等）的**成员与
 	// 成员可见字段**变化会让本实例的字节变化 —— 分类归档页（EDT-004）就是这一类：
 	// 它的 direct_content 键只认自己那个分类（product_category:{id}），商品增删改

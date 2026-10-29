@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,6 +29,7 @@ func TestUpdateURLCrashWindowConvergesOnRecovery(t *testing.T) {
 	ctx := context.Background()
 	page := createPage(t, svc, projectID, "/url-old", headingDocument)
 	buildAndPublish(t, svc, page.ID)
+	beforePublication := publicationsOfDB(t, db, page.ID)
 
 	// 故障注入：命中「FS 已切到新 URL、DB 事务尚未提交」窗口（真实崩溃会连进程一起终止）。
 	injected := errors.New("故障注入：进程终止于切换访问面之后、DB 落定之前")
@@ -51,6 +53,9 @@ func TestUpdateURLCrashWindowConvergesOnRecovery(t *testing.T) {
 	if got := routeOccupiedAt(t, db, projectID, "/url-old"); got == "" {
 		t.Fatal("崩溃窗口里旧路径的保留路由不应被迁移掉")
 	}
+	if got := publicationsOfDB(t, db, page.ID); !reflect.DeepEqual(got, beforePublication) {
+		t.Fatalf("事务失败必须保留完整原发布指针与hash: before=%+v after=%+v", beforePublication, got)
+	}
 	// 窗口现场三：回执停在 pending（交启动恢复判定），且记下了旧路径与处置方式。
 	if got := receiptStateForAction(t, db, "/url-new", "update_url"); got != "pending" {
 		t.Fatalf("改 URL 回执应保持 pending，实际 %q", got)
@@ -72,6 +77,11 @@ func TestUpdateURLCrashWindowConvergesOnRecovery(t *testing.T) {
 	}
 	if got := publicationActivePath(t, db, page.ID); got != "/url-new" {
 		t.Fatalf("恢复后激活路径应为 /url-new，实际 %q", got)
+	}
+	for _, pub := range publicationsOfDB(t, db, page.ID) {
+		if pub.ActivePath == "/url-new" && pub.ArtifactHash != activeRouteArtifactHash(t, db, projectID, "/url-new") {
+			t.Fatalf("恢复必须同时迁新产物hash: %+v", pub)
+		}
 	}
 	// 收敛二：路由表与新路径、旧路径一致（旧路径按 WithRedirect 登记为 redirect）。
 	if got := routeOccupiedAt(t, db, projectID, "/url-new"); got != "active" {

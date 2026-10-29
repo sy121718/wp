@@ -151,20 +151,6 @@ func (m *Model) MoveDraftPathTx(ctx context.Context, tx *gorm.DB, projectID, pag
 		Updates(map[string]any{"draft_path": newPath, "update_time": at}).Error
 }
 
-// MovePublicationPathTx 在外部事务内同步某语言的激活路径与 pages 单值镜像。
-func (m *Model) MovePublicationPathTx(ctx context.Context, tx *gorm.DB, projectID, pageID, lang, activePath string, at time.Time) error {
-	if err := rls.ScopeTx(tx, projectID); err != nil {
-		return err
-	}
-	if uerr := tx.WithContext(ctx).Model(&PublicationEntity{}).
-		Where("page_id = ? AND lang = ?", pageID, lang).
-		Updates(map[string]any{"active_path": activePath, "update_time": at}).Error; uerr != nil {
-		return uerr
-	}
-	return tx.WithContext(ctx).Model(&PageEntity{}).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{"active_path": activePath, "update_time": at}).Error
-}
-
 // MarkPublishedLangTx 在外部事务内记录某语言激活状态（page_publications upsert + pages 镜像）。
 func (m *Model) MarkPublishedLangTx(ctx context.Context, tx *gorm.DB, projectID string, rec PublicationRecord) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {

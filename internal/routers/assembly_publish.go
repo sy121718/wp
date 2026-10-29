@@ -624,6 +624,7 @@ func (a *assembly) startRuntimeTasks() {
 	}
 	fanout.SetRebuilder(pipeline.SourceTypePresentation, presentationRebuilder)
 	marks.mark(portPipelinePresentationRebuilder)
+	wireActionTargetReferences(pageService, blockSvc, a.contentTemplateSvc, presentationSvc, fanout)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
 	// 商品写路径的静态产物失效（审计 ARCH-01）：与 content 侧同一手法 —— 商品模块只声明

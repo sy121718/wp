@@ -592,6 +592,10 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 	if err != nil {
 		return mapPersistenceError(err)
 	}
+	if err = s.ensureActionTargetUnused(ctx, page.ProjectID, page.ID); err != nil {
+		return err
+	}
+
 	if s.routes != nil {
 		// 先按已激活路径把页面从访问面下线，再清 DB 路由占用。
 		paths, lerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{

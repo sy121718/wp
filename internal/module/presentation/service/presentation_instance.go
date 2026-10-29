@@ -246,6 +246,10 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 		}
 		return err
 	}
+	if err = s.ensureActionTargetUnused(ctx, inst.ProjectID, inst.ID); err != nil {
+		return err
+	}
+
 	// 反激活失败必须中止删除：否则实例行已删、URL 占用残留，后续同路径
 	// 发布/激活会被「已占用」拒绝且无实例可查（状态分裂）。
 	//
@@ -590,6 +594,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err == nil {
+			s.invalidateActionTarget(ctx, inst.ID)
+		}
+	}()
+
 	newLogical, err := s.normalizeLogicalPath(ctx, inst.ProjectID, req.NewPath)
 	if err != nil {
 		return nil, presentationenums.ErrDetail(presentationenums.ErrInvalidPath, err.Error())

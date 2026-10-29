@@ -15,11 +15,12 @@ import (
 
 // 响应消息（未接 i18n 前中文常量）。
 const (
-	MsgCreateSuccess  = "MsgCreateSuccess"  // 自动发布实例创建成功
-	MsgRebuildSuccess = "MsgRebuildSuccess" // 实例重建成功
-	MsgListSuccess    = "MsgListSuccess"    // 实例列表获取成功
-	MsgDetailSuccess  = "MsgDetailSuccess"  // 实例详情获取成功
-	MsgDeleteSuccess  = "MsgDeleteSuccess"  // 实例已删除
+	ErrActionTargetInUse = "presentation.err.actionTargetInUse"
+	MsgCreateSuccess     = "MsgCreateSuccess"  // 自动发布实例创建成功
+	MsgRebuildSuccess    = "MsgRebuildSuccess" // 实例重建成功
+	MsgListSuccess       = "MsgListSuccess"    // 实例列表获取成功
+	MsgDetailSuccess     = "MsgDetailSuccess"  // 实例详情获取成功
+	MsgDeleteSuccess     = "MsgDeleteSuccess"  // 实例已删除
 	// MsgPreviewSuccess 预览渲染成功（未落库、未激活，issue #14）。
 	MsgPreviewSuccess = "MsgPreviewSuccess"
 	// MsgUpdateURLSuccess 实例 URL 修改成功（新路径已激活、旧路径已按策略处置）。
@@ -69,6 +70,7 @@ const (
 // 兜底是**声明处**的话：写模块自己的口径，不写某个页面的口径 —— 同一个错误在列表页、
 // 详情页、AI 工具里的措辞应该一致，页面若需要更具体的话，由页面自己的文案补，不经错误事实。
 var errFallbacks = map[string]string{
+	ErrActionTargetInUse:     "这个目标仍被页面或区块引用，请先替换引用后再删除",
 	ErrInvalidParam:          "参数不合法：请检查后重试。",
 	ErrNotFound:              "实例不存在，可能已被删除。",
 	ErrNoTemplate:            "该内容类型没有可用的模板。",
@@ -116,3 +118,6 @@ const (
 	// StatusDraft 仅有草稿/未上线。
 	StatusDraft = "draft"
 )
+
+// ActionTargetInUse 在声明处固定被引用目标的冲突状态。
+func ActionTargetInUse() error { return facing.WithStatus(Err(ErrActionTargetInUse), 409) }

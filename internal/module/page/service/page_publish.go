@@ -532,6 +532,9 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 		s.notFoundHTMLOf(ctx, page.ProjectID)); rerr != nil {
 		logger.Scene("publication").With("pageId", page.ID).Error(rerr, "sitemap/robots 刷新失败")
 	}
+	if oldPath != path {
+		s.invalidateActionTarget(ctx, page.ID)
+	}
 	s.notifyIndexNow(ctx, page.ProjectID, path)
 	// 互指刷新（审计 I18N-01 续）：本语言激活成功后，同页其余**已发布**语言的语言切换器
 	// 与 hreflang 可能因此变成单向的（它们是在本语言上线之前构建的，那时看不到本语言）。
@@ -1242,6 +1245,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err == nil {
+			s.invalidateActionTarget(ctx, page.ID)
+		}
+	}()
+
 	// 站点语言集合在**任何内核调用之前**解析（审计 I18N-02 收尾）。
 	//
 	// 为什么必须在切访问面之前：改 URL 要按启用语言逐语言迁移保留路由，而路径解析
@@ -1381,7 +1390,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		activationPlan = &plan
 	}
 	if err = s.applyUpdateURL(ctx, updateURLApplyInput{
-		Page: page, ArtifactRowID: artifactRowID, Lang: lang,
+		Page: page, ArtifactRowID: artifactRowID, ArtifactHash: activeHashOf(st), Lang: lang,
 		KernelNewPath: kernelNewPath, NewLogicalPath: newPath,
 		OldLogicalPath: oldPath, OldKernelPath: publishedPath,
 		WithRedirect: req.WithRedirect, Deps: deps, RouteLangs: routeLangs,
@@ -1582,6 +1591,7 @@ func (s *Service) applyPublishActivation(ctx context.Context, in publishActivati
 type updateURLApplyInput struct {
 	Page           *pagemodel.PageEntity
 	ArtifactRowID  string
+	ArtifactHash   string
 	Lang           string
 	KernelNewPath  string
 	NewLogicalPath string
@@ -1618,7 +1628,10 @@ func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) er
 		if ferr := s.publishWindowFaultHit(); ferr != nil {
 			return ferr
 		}
-		if merr := s.model.MovePublicationPathTx(ctx, tx, in.Page.ProjectID, in.Page.ID, in.Lang, in.KernelNewPath, now); merr != nil {
+		if merr := s.model.MarkPublishedLangTx(ctx, tx, in.Page.ProjectID, pagemodel.PublicationRecord{
+			PageID: in.Page.ID, Lang: in.Lang, ActivePath: in.KernelNewPath,
+			ArtifactID: in.ArtifactRowID, ArtifactHash: in.ArtifactHash, PublishedAt: now,
+		}); merr != nil {
 			return merr
 		}
 		// 依赖投影与路由同事务：它是「依赖源变更时精确标 stale」的依据，
@@ -1887,7 +1900,7 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 		return false, lerr
 	}
 	if err := s.applyUpdateURL(ctx, updateURLApplyInput{
-		Page: page, ArtifactRowID: rowID, Lang: lang,
+		Page: page, ArtifactRowID: rowID, ArtifactHash: hash, Lang: lang,
 		KernelNewPath:  item.Path,
 		NewLogicalPath: rule.Strip(lang, item.Path),
 		// 事务没提交时 draft_path 仍是旧逻辑路径；若事务其实已提交（只是回执未结案），
@@ -1908,6 +1921,7 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 	}
 	logger.Scene("page").With("pageId", page.ID).With("path", item.Path).
 		Info("改 URL 在崩溃前已生效，已补齐数据库状态")
+	s.invalidateActionTarget(ctx, page.ID)
 	return true, nil
 }
 
