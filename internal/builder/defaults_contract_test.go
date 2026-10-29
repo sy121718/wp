@@ -302,7 +302,11 @@ func TestPaletteInsertNodesCompile(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s 文档解析失败: %v", n.Type, err)
 			}
-			if _, err = Compile(page, WithComponentSet(set), WithContentResolver(paletteContentResolver{})); err != nil {
+			opts := []CompileOption{WithComponentSet(set), WithContentResolver(paletteContentResolver{})}
+			if n.Type == "core.addToCart" {
+				opts = append(opts, WithCompileMode(CompileModePreview))
+			}
+			if _, err = Compile(page, opts...); err != nil {
 				t.Errorf("%s 插入后编译失败: %v", n.Type, err)
 			}
 		})

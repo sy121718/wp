@@ -23,7 +23,7 @@ const fragLangDoc = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "片段", "description": "片段"}},
   "root": [
     {"id": "p1", "type": "core.product", "props": {"titleField": "product.name", "optionsField": "product.options", "variantsField": "product.variants"}},
-    {"id": "a1", "type": "core.addToCart", "props": {"optionsField": "product.options", "variantsField": "product.variants"}}
+    {"id": "a1", "type": "core.addToCart", "props": {}}
   ]
 }`
 
@@ -61,6 +61,7 @@ func compileFragLangDoc(t *testing.T, opts ...CompileOption) string {
 	opts = append([]CompileOption{
 		WithComponentSet(i18nTestComponentSet(t)),
 		WithContentResolver(fragLangResolver{}),
+		WithArchiveEntity("product", "current-product"),
 	}, opts...)
 	res, err := Compile(p, opts...)
 	if err != nil {

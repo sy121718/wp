@@ -15,7 +15,7 @@ class Element {
     async fire(key) { return this.events[key]({ key: '', preventDefault() {} }); }
 }
 function elements(root) { return [root, ...root.children.flatMap(elements)]; }
-function setup(fetch, props = { productSource: 'specific' }, type = 'core.addToCart') {
+function setup(fetch, props = { productSource: 'specific' }, type = 'core.productSelector') {
     const panel = new Element('div'), node = { id: 'a', type, props };
     const state = { snapshots: 0, syncs: 0 };
     const get = (ctx, path) => path.split('.').reduce((v, key) => v && v[key], ctx.node);
@@ -31,38 +31,23 @@ function setup(fetch, props = { productSource: 'specific' }, type = 'core.addToC
 const response = data => ({ ok: true, json: async () => ({ code: 200, data }) });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-test('共享选品入口使用公开事实，切商品清旧规格且规格名称按纯文本输出', async () => {
-    const calls = [];
-    const ui = setup(async url => { calls.push(url); return response(url.includes('/catalog') ? { items: [{ id: 'p', name: '<b>设计杯</b>' }] } : { id: 'p', name: '<b>设计杯</b>', variants: [{ id: 'v', sku: 'CUP', options: { color: 'red' } }], options: [{ key: 'color', values: [{ key: 'red', name: '<img onerror=alert(1)>' }] }] }); }, { productSource: 'specific', variantId: 'old' });
-    await flush(); const products = ui.byLabel('已发布商品');
-    assert.equal(products.options[1].textContent, '<b>设计杯</b>');
-    products.value = 'p'; await products.fire('change'); await flush();
-    assert.equal(ui.node.props.productId, 'p'); assert.equal(ui.node.props.variantId, ''); assert.equal(ui.state.snapshots, 1);
-    const variants = ui.byLabel('商品规格'); assert.equal(variants.options[1].textContent, '<img onerror=alert(1)>');
-    assert.ok(calls.every(url => url.startsWith('/api/site/product/')));
-    assert.ok(calls.every(url => url.includes('projectId=project')));
+test('规格展示器搜索使用公开事实，名称按纯文本且没有作者固定规格选择', async () => {
+ const calls=[];const ui=setup(async url=>{calls.push(url);return response(url.includes('/catalog')?{items:[{id:'p',name:'<b>设计杯</b>'}]}:{id:'p',name:'<img src=x>',variants:[{id:'v'}]});});
+ await flush();const products=ui.byLabel('已发布商品');assert.equal(products.options[1].textContent,'<b>设计杯</b>');
+ products.value='p';await products.fire('change');await flush();assert.equal(ui.node.props.productId,'p');assert.equal(ui.byLabel('商品规格'),undefined);assert.ok(calls.every(url=>url.startsWith('/api/site/product/')));
 });
 
-test('迟到的旧商品规格不能覆盖新选择，读取失败保留原规格', async () => {
-    const pending = {};
-    const ui = setup(url => url.includes('/catalog') ? Promise.resolve(response({ items: [{ id: 'one', name: '一' }, { id: 'two', name: '二' }] })) : new Promise(resolve => { pending[new URL(url, 'http://test').searchParams.get('productId')] = resolve; }), { productSource: 'specific', productId: 'one', variantId: 'original' });
-    await flush(); const products = ui.byLabel('已发布商品');
-    assert.equal(ui.byLabel('商品规格').value, 'original');
-    products.value = 'two'; await products.fire('change');
-    pending.two(response({ id: 'two', name: '二', variants: [{ id: 'new', sku: '新规格' }] })); await flush();
-    pending.one(response({ id: 'one', name: '一', variants: [{ id: 'old', sku: '过期规格' }] })); await flush();
-    assert.deepEqual(ui.byLabel('商品规格').options.map(v => v.value), ['', 'new']);
-    assert.equal(ui.node.props.productId, 'two');
-    const failed = setup(async url => url.includes('/catalog') ? response({ items: [] }) : { ok: false, json: async () => ({ code: 404, message: '商品不可用' }) }, { productSource: 'specific', productId: 'one', variantId: 'original' });
-    await flush(); assert.equal(failed.node.props.variantId, 'original'); assert.equal(failed.byLabel('商品规格').value, 'original');
-    assert.match(elements(failed.panel).find(el => el.attributes.role === 'status').textContent, /原选择已保留/);
+test('切换规格展示器来源一次历史清理旧引用',async()=>{
+ const ui=setup(async()=>response({items:[]}),{productSource:'specific',productId:'one'});
+ await elements(ui.panel).find(el=>el.tagName==='BUTTON'&&el.textContent==='当前商品').fire('click');
+ assert.equal(ui.state.snapshots,1);assert.equal(ui.state.syncs,1);assert.equal(ui.node.props.productId,'');await flush();
 });
 
-test('切换商品来源只记一次历史并清理旧引用，规格选择器共用选品但不重复选规格', async () => {
-    const ui = setup(async () => response({ items: [] }), { productSource: 'specific', productId: 'one', variantId: 'old' });
-    await elements(ui.panel).find(el => el.tagName === 'BUTTON' && el.textContent === '当前商品').fire('click');
-    assert.equal(ui.state.snapshots, 1); assert.equal(ui.state.syncs, 1); assert.equal(ui.node.props.productId, ''); assert.equal(ui.node.props.variantId, '');
-    const selector = setup(async () => response({ items: [] }), { productSource: 'specific' }, 'core.productSelector');
-    assert.ok(selector.byLabel('已发布商品')); assert.equal(selector.byLabel('商品规格'), undefined);
-    await flush();
+test('加购旧接线明确转换，保留文案数量和样式，不保留其它商品或动作',()=>{
+ const code=fs.readFileSync(__dirname+'/methods/controls/addtocart.js','utf8').replace(/^import.*$/gm,'').replace(/export (function|const) /g,'$1 ');
+ const sandbox=vm.createContext({Object});vm.runInContext(code,sandbox);
+ const a={props:{label:'放入购物袋',showQuantity:true,color:'#111',advanced:{customClass:'x'},productSource:'specific',productId:'another',variantId:'fixed',currency:'¥',variantMode:'perVariant'},actions:{success:{kind:'external',url:'https://invalid.test'}}};
+ assert.equal(sandbox.hasRetiredCartWiring(a),true);sandbox.clearRetiredCartWiring(a);
+ assert.deepEqual(a,{props:{label:'放入购物袋',showQuantity:true,color:'#111',advanced:{customClass:'x'}}});assert.equal(sandbox.hasRetiredCartWiring(a),false);
+ const b={props:{label:'新按钮'}};assert.equal(sandbox.hasRetiredCartWiring(b),false);
 });

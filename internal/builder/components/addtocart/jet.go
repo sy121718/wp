@@ -14,18 +14,8 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Row 一个加购行（逐变体模式下一行一个变体；单变体模式只有一行）。
-type Row struct {
-	// VariantID 变体 id（构建期烘进 hidden input —— 客户端无法伪造成别的变体，
-	// 但即使伪造也只会买到他自己选的那件，价格仍由服务端现算）。
-	VariantID string
-	// Label 规格标签（如「颜色 红色 · 尺寸 L」）；单变体模式为空。
-	Label string
-	// Price 展示价（含货币符号）。
-	Price string
-	// ComparePrice 划线价（空则不输出）。
-	ComparePrice string
-}
+// Row 当前商品的一项可购买规格，不携带作者指定商品或价格展示配置。
+type Row struct{ VariantID, Label string }
 
 // View 加购组件渲染视图。
 type View struct {
@@ -50,22 +40,9 @@ type View struct {
 	ShowQuantity bool
 	// Rows 加购行。
 	Rows []Row
-	// ShowRowPrice 是否在行内显示价格。
-	//
-	// 只在**多行**时为真：行内价格的作用是区分「这一行是哪件、多少钱」，
-	// 多规格商品里每行价格不同、非显示不可；单 SKU 只有一行，
-	// 而价格已经由商品详情区在标题下展示过了 —— 再显示一次是同一屏里的重复信息。
-	ShowRowPrice bool
-	// Notice 无法加购时的提示（商品没有启用变体）。空表示正常渲染。
-	//
-	// 用提示而不是构建失败：商品暂时没上架变体是**数据状态**，不是配置错误 ——
-	// 为它让整页构建失败，等于一次运营操作把页面打没了。
-	Notice string
-	// noticeKey Notice 对应的词条 key（非导出：模板只消费文案本身）。
-	//
-	// 按 key 取词而不是「拿当前值反查属于哪条词条」：两条提示的译文一旦相同，
-	// 值比较就分不清是哪一条，改译文会改错地方。
-	noticeKey string
+	// ChooseVariant 为真时由买家选择规格，未选不提交。
+	ChooseVariant bool
+	VariantAria   string
 }
 
 // 界面文案键（多语言 P5b）。
@@ -76,11 +53,8 @@ type View struct {
 const (
 	TextKeyButton = "site.component.addToCart.button"
 	// TextKeyQtyAria 数量输入框的无障碍名（模板里此前硬编码「数量」）。
-	TextKeyQtyAria = "site.component.addToCart.qtyAria"
-	// TextKeyNoticeNoProject / TextKeyNoticeNoVariant 两条降级提示的词条
-	//（都只在异常数据状态下出现，见 BuildView）。
-	TextKeyNoticeNoProject = "site.component.addToCart.notice.noProject"
-	TextKeyNoticeNoVariant = "site.component.addToCart.notice.noVariant"
+	TextKeyQtyAria     = "site.component.addToCart.qtyAria"
+	TextKeyVariantAria = "site.component.addToCart.variantAria"
 )
 
 // 中文兜底：取词函数为 nil（未接入 i18n）时用这些值，产物与接入前逐字一致。
@@ -89,10 +63,6 @@ const (
 	textFallbackButton = defaultLabel
 	// textFallbackQtyAria 数量输入框无障碍名的中文兜底。
 	textFallbackQtyAria = "数量"
-	// noticeNoProject / noticeNoVariant 提示语的中文兜底：BuildView 把它们写进
-	// View.Notice 作为初值，ApplyI18n 再按 View 记下的 key 覆盖（不做值比较）。
-	noticeNoProject = "加购暂不可用（未取到站点工程）"
-	noticeNoVariant = "暂无可购买的规格"
 )
 
 // ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
@@ -110,14 +80,12 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 		return
 	}
 	v.QtyAria = text(TextKeyQtyAria, textFallbackQtyAria)
+	v.VariantAria = text(TextKeyVariantAria, "请选择规格")
 	// 按钮文字：作者填过的那条走内容翻译（sys_translation），这里只管缺省值。
 	if v.Label == textFallbackButton {
 		v.Label = text(TextKeyButton, textFallbackButton)
 	}
-	// 提示语：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
-	if v.noticeKey != "" {
-		v.Notice = text(v.noticeKey, v.Notice)
-	}
+
 }
 
 // CompileCSS 导出样式编译（复用组件内部的 compileCSS）。
@@ -127,8 +95,7 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 // BuildView 生成加购视图。
 //
-// content 为构建期注入的解析器（商品实体解析器）：两个槽位字段都必须取到值 ——
-// 取不到说明字段写错或数据源不对，构建期报错比产出一个点不动的按钮好。
+// content 是当前详情商品的构建期解析器，字段固定，不接受作者查询或其它商品引用。
 //
 // lang 为本次编译的目标语言，随静态表单保留。
 func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
@@ -140,79 +107,33 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		Label:        effectiveLabel(p),
 		QtyAria:      textFallbackQtyAria,
 		ShowQuantity: p.ShowQuantity,
+		VariantAria:  "请选择规格",
 	}
 	if content == nil {
-		return View{}, fmt.Errorf("%w: 当前页面没有商品，请选择指定商品", core.ErrIncompleteNode)
+		return View{}, fmt.Errorf("%w: 请将加购按钮放在商品详情中，按钮会自动使用当前商品", core.ErrIncompleteNode)
 	}
 	if view.ProjectID == "" {
-		// 没有工程 id 的表单提交不了（API 校验工程归属）。
-		//
-		// 但**不构建失败**：并非所有编译路径都带工程 id —— pipeline.DefaultCompile 的
-		// 注释明确写着「不解析站点级资源」。为它让整页构建失败，等于「一个按钮坏了，
-		// 整页发布不了」，而页面其余部分明明好好的。
-		// 所以降级成一句**看得见**的提示：访客看到「暂不可用」，页面作者能顺着它去查，
-		// 而不是静默渲染一个点了没反应的按钮。
-		view.Notice, view.noticeKey = noticeNoProject, TextKeyNoticeNoProject
-		return view, nil
+		return View{}, fmt.Errorf("%w: 当前商品缺少站点工程", core.ErrIncompleteNode)
 	}
 
-	optionsField := strings.TrimSpace(p.OptionsField)
-	if optionsField == "" {
-		optionsField = "product.options"
-	}
-	variantsField := strings.TrimSpace(p.VariantsField)
-	if variantsField == "" {
-		variantsField = "product.variants"
-	}
-	rawOptions, err := content.ResolveString(optionsField)
+	rawOptions, err := content.ResolveString("product.options")
 	if err != nil {
-		return View{}, fmt.Errorf("解析规格维度字段 %q 失败: %w", p.OptionsField, err)
+		return View{}, fmt.Errorf("解析规格维度字段 %q 失败: %w", "product.options", err)
 	}
-	rawVariants, err := content.ResolveString(variantsField)
+	rawVariants, err := content.ResolveString("product.variants")
 	if err != nil {
-		return View{}, fmt.Errorf("解析变体组合字段 %q 失败: %w", p.VariantsField, err)
+		return View{}, fmt.Errorf("解析变体组合字段 %q 失败: %w", "product.variants", err)
 	}
 
 	groups := product.ParseOptionGroups(rawOptions)
-	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID, view.Lang)
-	if p.VariantID != "" {
-		selected := options[:0]
-		for _, option := range options {
-			if option.ID == p.VariantID {
-				selected = append(selected, option)
-			}
-		}
-		if len(selected) == 0 {
-			return View{}, fmt.Errorf("所选规格不属于当前商品或已停用")
-		}
-		options = selected
-	}
+	options := product.ParseVariantOptions(rawVariants, groups, "", view.ProjectID, view.Lang)
 	if len(options) == 0 {
-		return View{}, fmt.Errorf("%w: 商品暂无可用规格，请选择有效商品和规格", core.ErrIncompleteNode)
+		return View{}, fmt.Errorf("%w: 当前商品暂无可购买规格", core.ErrIncompleteNode)
 	}
-
-	if effectiveMode(p) == ModePerVariant {
-		rows := make([]Row, 0, len(options))
-		for _, o := range options {
-			rows = append(rows, Row{
-				VariantID:    o.ID,
-				Label:        o.Labels,
-				Price:        o.Price,
-				ComparePrice: o.ComparePrice,
-			})
-		}
-		view.Rows = rows
-		view.ShowRowPrice = len(rows) > 1
-		return view, nil
+	for _, option := range options {
+		view.Rows = append(view.Rows, Row{VariantID: option.ID, Label: option.Labels})
 	}
-
-	// 单变体模式取**第一个**启用变体，不猜「哪个是默认变体」——
-	// 商品数据里没有这个概念，凭空造一个会与规格选择器的首选项打架。
-	// 多变体商品想在卡片上一键加购，请用逐变体模式（或接受「加的是第一档」）。
-	first := options[0]
-	view.Rows = []Row{{VariantID: first.ID, Price: first.Price, ComparePrice: first.ComparePrice}}
-	// 单行：价格已在商品详情区展示过，行内不再重复（见 ShowRowPrice 注释）。
-	view.ShowRowPrice = false
+	view.ChooseVariant = len(view.Rows) > 1
 	return view, nil
 }
 
@@ -221,5 +142,5 @@ func (v View) DeclareFeatures() (attrs, classes []string) {
 	if len(v.Rows) == 0 {
 		return nil, nil
 	}
-	return []string{"data-site-read", "data-site-cart", "data-write", "data-requires-js"}, nil
+	return []string{"data-site-read", "data-site-cart", "data-write", "data-requires-js", "data-component-instance"}, nil
 }

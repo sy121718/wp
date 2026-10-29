@@ -47,7 +47,7 @@ func TestProductBindingPreviewOnlyToleratesIncomplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{"core.addToCart", "core.productSelector"} {
-		for _, props := range []string{`{}`, `{"productSource":"specific"}`} {
+		for _, props := range []string{`{}`} {
 			page := productBindingPage(kind, props)
 			compiled, err := Compile(page, WithCompileMode(CompileModePreview), WithComponentSet(set))
 			if err != nil {
@@ -68,15 +68,15 @@ func TestProductBindingSpecificProductAndVariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := &productdto.PublicProductOptionsResp{ID: bindingProductID, Name: "设计杯", Variants: []productdto.PublicProductVariantOptionResp{{ID: bindingVariantID, SKU: "CUP", Price: 2900, Options: map[string]string{}}}}
+	data := &productdto.PublicProductOptionsResp{ID: bindingProductID, Name: "设计杯", Options: []productdto.PublicProductOptionResp{{Key: "color", Name: "颜色", Values: []productdto.PublicProductOptionValueResp{{Key: "red", Name: "红色"}, {Key: "blue", Name: "蓝色"}}}}, Variants: []productdto.PublicProductVariantOptionResp{{ID: bindingVariantID, SKU: "CUP", Price: 2900, Options: map[string]string{"color": "red"}}, {ID: "other-variant", SKU: "BLUE", Price: 2900, Options: map[string]string{"color": "blue"}}}}
 	src := bindingProductSource{data: data}
-	props := `{"productSource":"specific","productId":"` + bindingProductID + `","variantId":"` + bindingVariantID + `"}`
+	props := `{"productSource":"specific","productId":"` + bindingProductID + `"}`
 	opts := []CompileOption{WithCompileMode(CompileModePublish), WithComponentSet(set), WithProjectID(bindingProductID), WithProductDataSource(src)}
-	compiled, err := Compile(productBindingPage("core.addToCart", props), opts...)
+	compiled, err := Compile(productBindingPage("core.productSelector", props), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(compiled.HTML, `value="`+bindingVariantID+`"`) || strings.Contains(compiled.HTML, "sky-incomplete") {
+	if !strings.Contains(compiled.HTML, `data-variant-id="`+bindingVariantID+`"`) || strings.Contains(compiled.HTML, "sky-incomplete") {
 		t.Fatalf("指定商品应冻结正确规格: %s", compiled.HTML)
 	}
 	// 数据错误与失效引用不能被预览容错吞掉。
@@ -85,14 +85,13 @@ func TestProductBindingSpecificProductAndVariant(t *testing.T) {
 		src         bindingProductSource
 	}{
 		{"未知商品", props, bindingProductSource{err: errors.New("商品不存在")}},
-		{"规格不归属", strings.ReplaceAll(props, bindingVariantID, "f2b5c28c-aa2c-43b2-95d6-36dfc8ac2674"), src},
 		{"非法商品ID", `{"productSource":"specific","productId":"not-a-uuid"}`, src},
-		{"非法字段", `{"optionsField":"product.costPrice"}`, src},
-		{"未完成仍拒绝非法字段", `{"productSource":"specific","optionsField":"product.costPrice"}`, src},
+		{"非法字段", `{"optionsField":"article.options"}`, src},
+		{"未完成仍拒绝非法字段", `{"productSource":"specific","optionsField":"article.options"}`, src},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Compile(productBindingPage("core.addToCart", tc.props), WithCompileMode(CompileModePreview), WithComponentSet(set), WithProjectID(bindingProductID), WithProductDataSource(tc.src))
+			_, err := Compile(productBindingPage("core.productSelector", tc.props), WithCompileMode(CompileModePreview), WithComponentSet(set), WithProjectID(bindingProductID), WithProductDataSource(tc.src))
 			if err == nil || errors.Is(err, core.ErrIncompleteNode) {
 				t.Fatalf("必须明确拒绝非法或失效引用: %v", err)
 			}

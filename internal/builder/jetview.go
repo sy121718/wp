@@ -859,19 +859,17 @@ func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 // （片段端据此定位工程），而那个通用助手只把内容解析器传给 BuildView。
 // 工程 id 来自构建上下文（与导航取站点级资源同源），不猜、不从字段里凑。
 func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p addtocartPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	classes, customID := advancedClasses(node, &p, ctx)
-	addtocartPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	content, err := productbinding.Resolve(ctx, p.ProductSource, p.ProductID)
+	p, err := core.DecodeProps[addtocartPkg.Props](node.Props)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
-	view, err := addtocartPkg.BuildView(&p, content, ctx.ProjectID, ctx.Lang)
+	entityType, entityID := ctx.ArchiveEntity()
+	if entityType != "product" || entityID == "" {
+		return nil, fmt.Errorf("%w: 请将加购按钮放在商品详情中，按钮会自动使用当前商品", core.ErrIncompleteNode)
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	addtocartPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view, err := addtocartPkg.BuildView(&p, ctx.Content, ctx.ProjectID, ctx.Lang)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}

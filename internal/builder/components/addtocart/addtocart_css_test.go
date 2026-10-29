@@ -26,7 +26,7 @@ func TestCompileCSSDefaults(t *testing.T) {
 	for _, want := range []string{
 		"width: min(100%, 520px)",                   // 宽度不写死
 		"min-height: 44px",                          // 触屏可点区域
-		"background: var(--sky-c-primary, #2563eb)", // 缺省主色走主题 Token
+		"background: var(--sky-c-primary, #171717)", // 缺省主色走主题 Token
 		"@media (hover: hover)",                     // hover 形态只在支持 hover 的环境输出
 		"filter: brightness(0.94)",                  // 按压反馈（不带媒体查询，触屏也要有）
 		":hover",                                    // 交互反馈必须带伪类：AddHover/AddActive 不替你加，
@@ -45,27 +45,6 @@ func TestCompileCSSDefaults(t *testing.T) {
 	}
 }
 
-// TestCompileCSSPerVariant 逐变体模式额外输出堆叠规则（窄屏也读得顺的那一组）。
-func TestCompileCSSPerVariant(t *testing.T) {
-	p := baseProps()
-	p.VariantMode = ModePerVariant
-	css := addToCartCSSFor(t, p)
-	for _, want := range []string{
-		"padding-top: var(--sky-space-5, 10px)",
-		"border-top: 1px solid var(--sky-c-border, #e5e7eb)",
-		"width: min(100%, 240px)", // 按钮仍不写死宽度
-		"align-items: stretch",
-	} {
-		if !strings.Contains(css, want) {
-			t.Fatalf("逐变体样式缺少 %q；实际样式：\n%s", want, css)
-		}
-	}
-	// 首行不留分隔线（每行都带 border-top 时，第一行上方会多一条悬空的线）。
-	if !strings.Contains(css, ":first-of-type") {
-		t.Fatalf("逐变体模式需要首行去分隔线的规则；实际样式：\n%s", css)
-	}
-}
-
 // TestCompileCSSColorOverride 自定义颜色覆盖缺省主色。
 func TestCompileCSSColorOverride(t *testing.T) {
 	p := baseProps()
@@ -74,7 +53,7 @@ func TestCompileCSSColorOverride(t *testing.T) {
 	if !strings.Contains(css, "background: #f00") {
 		t.Fatalf("自定义颜色未生效：\n%s", css)
 	}
-	if strings.Contains(css, "#2563eb") {
+	if strings.Contains(css, "#171717") {
 		t.Fatalf("自定义颜色时不该再出现缺省主色：\n%s", css)
 	}
 }

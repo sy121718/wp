@@ -36,95 +36,37 @@ const (
 		"]"
 )
 
-// baseProps 一份齐备的 Props（各用例只在它上面改一处）。
-func baseProps() *Props {
-	return &Props{
-		Source:        "product",
-		OptionsField:  "product.options",
-		VariantsField: "product.variants",
-	}
-}
-
+func baseProps() *Props { return &Props{} }
 func baseContent() stubContent {
 	return stubContent{"product.options": optionsJSON, "product.variants": variantsJSON}
 }
 
-// TestValidateExtra 允许编辑中间态，字段只接受固定商品事实。
-func TestValidateExtra(t *testing.T) {
-	tests := []struct {
-		name    string
-		props   *Props
-		wantErr bool
-	}{
-		{"齐备合法", baseProps(), false},
-		{"默认规格维度字段", &Props{VariantsField: "product.variants"}, false},
-		{"默认变体组合字段", &Props{OptionsField: "product.options"}, false},
-		{"默认两字段", &Props{}, false},
-		{"任意查询字段不允许", &Props{OptionsField: "product.costPrice"}, true},
-		{"只填空格不算声明", &Props{OptionsField: "  ", VariantsField: "product.variants"}, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateExtra(tt.props, "n1")
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("validateExtra(%+v) err=%v, wantErr=%v", tt.props, err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// TestBuildViewSingleMode 单变体模式：只输出一行，取第一个启用变体，不带规格标签。
-func TestBuildViewSingleMode(t *testing.T) {
-	v, err := BuildView(baseProps(), baseContent(), "proj-1", "")
+func TestBuildViewBuyerChoosesOnlyCurrentProductVariants(t *testing.T) {
+	v, err := BuildView(&Props{ShowQuantity: true}, baseContent(), "proj-1", "zh")
 	if err != nil {
-		t.Fatalf("BuildView 失败: %v", err)
+		t.Fatal(err)
 	}
-	if v.Notice != "" {
-		t.Fatalf("不该有提示: %q", v.Notice)
+	if len(v.Rows) != 2 || !v.ChooseVariant || !v.ShowQuantity {
+		t.Fatalf("多规格应由买家在当前表单选择: %+v", v)
 	}
-	if len(v.Rows) != 1 {
-		t.Fatalf("单变体模式应只有一行，实际 %d", len(v.Rows))
-	}
-	row := v.Rows[0]
-	if row.VariantID != "v-red" {
-		t.Fatalf("应取第一个启用变体，实际 %q", row.VariantID)
-	}
-	if row.Label != "" {
-		t.Fatalf("单变体模式不该输出规格标签，实际 %q", row.Label)
-	}
-	if !strings.Contains(row.Price, "99.00") {
-		t.Fatalf("价格应带货币符号与数值，实际 %q", row.Price)
+	if v.Rows[0].VariantID != "v-red" || v.Rows[1].VariantID != "v-blue" || !strings.Contains(v.Rows[1].Label, "蓝色") {
+		t.Fatalf("规格只应来自当前商品的启用项: %+v", v.Rows)
 	}
 	if v.Action != CartAddPath || v.ProjectID != "proj-1" {
-		t.Fatalf("表单基础字段不对: %+v", v)
+		t.Fatalf("加购动作固定: %+v", v)
 	}
 }
-
-// TestBuildViewPerVariantMode 逐变体模式：每个启用变体一行，带规格标签。
-func TestBuildViewPerVariantMode(t *testing.T) {
-	p := baseProps()
-	p.VariantMode = ModePerVariant
-	p.ShowQuantity = true
-	v, err := BuildView(p, baseContent(), "proj-1", "")
-	if err != nil {
-		t.Fatalf("BuildView 失败: %v", err)
+func TestBuildViewOneVariantIsAutomatic(t *testing.T) {
+	v, err := BuildView(baseProps(), stubContent{"product.options": "[]", "product.variants": `[{"id":"only","enabled":true,"sku":"DEFAULT"}]`}, "proj-1", "")
+	if err != nil || v.ChooseVariant || len(v.Rows) != 1 || v.Rows[0].VariantID != "only" {
+		t.Fatalf("唯一规格应自动使用: %+v %v", v, err)
 	}
-	if len(v.Rows) != 2 {
-		t.Fatalf("未启用的变体不该出现（应 2 行），实际 %d：%+v", len(v.Rows), v.Rows)
-	}
-	if v.Rows[0].Label == "" || v.Rows[1].Label == "" {
-		t.Fatalf("逐变体模式必须输出规格标签，否则「红色」与「蓝色」两行长得一样: %+v", v.Rows)
-	}
-	if !strings.Contains(v.Rows[0].Label, "红色") || !strings.Contains(v.Rows[1].Label, "蓝色") {
-		t.Fatalf("规格标签应含属性值展示名: %+v", v.Rows)
-	}
-	for _, row := range v.Rows {
-		if row.VariantID == "v-off" {
-			t.Fatal("已停用的变体不能出现在可加购列表里")
+}
+func TestLegacyProductWiringRequiresExplicitConversion(t *testing.T) {
+	for _, raw := range []string{`{"productSource":"specific","productId":"old"}`, `{"variantId":"old"}`, `{"currency":"¥"}`, `{"variantMode":"perVariant"}`, `{"source":"product","optionsField":"product.options"}`} {
+		if _, err := core.DecodeProps[Props]([]byte(raw)); err == nil || !strings.Contains(err.Error(), "改为当前商品加购") {
+			t.Fatalf("旧接线不能静默继续执行: %s %v", raw, err)
 		}
-	}
-	if !v.ShowQuantity {
-		t.Fatal("数量输入开关应透传")
 	}
 }
 
@@ -136,23 +78,9 @@ func TestBuildViewEmptyVariantsIsIncomplete(t *testing.T) {
 	}
 }
 
-// TestBuildViewWithoutProjectIDRendersNotice 缺站点工程 id 时降级为可见提示，不让整页构建失败。
-//
-// 这条边界要守住：pipeline.DefaultCompile 明确不解析站点级资源（不带工程 id），
-// 把它当致命错误会让「草稿冻结一个含加购按钮的页面」直接失败 ——
-// 一个按钮坏了整页发布不了，而页面其余部分明明好好的。
-func TestBuildViewWithoutProjectIDRendersNotice(t *testing.T) {
-	for _, pid := range []string{"", "   "} {
-		v, err := BuildView(baseProps(), baseContent(), pid, "")
-		if err != nil {
-			t.Fatalf("缺工程 id 不该让构建失败（实际 %v）", err)
-		}
-		if v.Notice == "" {
-			t.Fatal("缺工程 id 时必须给出可见提示，而不是渲染一个点了没反应的按钮")
-		}
-		if len(v.Rows) != 0 {
-			t.Fatalf("不可用时不该输出加购行: %+v", v.Rows)
-		}
+func TestBuildViewWithoutProjectIsIncomplete(t *testing.T) {
+	if _, err := BuildView(baseProps(), baseContent(), "", ""); !errors.Is(err, core.ErrIncompleteNode) {
+		t.Fatalf("缺工程应局部占位并拒绝发布: %v", err)
 	}
 }
 
@@ -187,6 +115,8 @@ func TestApplyI18n(t *testing.T) {
 			return "Add to cart"
 		case TextKeyQtyAria:
 			return "Quantity"
+		case TextKeyVariantAria:
+			return "Choose variant"
 		}
 		t.Errorf("多取了文案键: %q", key)
 		return fallback
@@ -197,8 +127,8 @@ func TestApplyI18n(t *testing.T) {
 	if v.QtyAria != "Quantity" {
 		t.Fatalf("数量框无障碍名应取译文，实际 %q（英文站点上读屏器会念中文）", v.QtyAria)
 	}
-	if len(asked) != 2 {
-		t.Fatalf("正常渲染只该取按钮与数量框两条文案，实际取了 %d 条: %v", len(asked), asked)
+	if len(asked) != 3 {
+		t.Fatalf("正常渲染只该取按钮、数量与规格三条文案，实际取了 %d 条: %v", len(asked), asked)
 	}
 	// 兜底值必须原样传下去：取词函数缺该词条时返回 fallback，产物要停在中文而不是空串。
 	if asked[TextKeyQtyAria] != textFallbackQtyAria {
@@ -221,18 +151,6 @@ func TestApplyI18n(t *testing.T) {
 	}
 	if v2.QtyAria != "Quantity" {
 		t.Fatalf("自定义按钮文字不该带走数量框的取词（两件事各自独立），实际 %q", v2.QtyAria)
-	}
-
-	// 降级提示：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
-	v2b := &View{Label: textFallbackButton, Notice: noticeNoVariant, noticeKey: TextKeyNoticeNoVariant}
-	v2b.ApplyI18n(func(key, fallback string) string {
-		if key == TextKeyNoticeNoVariant {
-			return "No variant available"
-		}
-		return fallback
-	})
-	if v2b.Notice != "No variant available" {
-		t.Fatalf("降级提示应按记录的 key 取译文，实际 %q", v2b.Notice)
 	}
 
 	// 无翻译函数 → 全部保持中文兜底，不 panic。
@@ -260,15 +178,5 @@ func TestEffectiveButtonText(t *testing.T) {
 	}
 	if got := effectiveLabel(&Props{Label: "立刻购买"}); got != "立刻购买" {
 		t.Fatalf("自定义文字应原样使用，实际 %q", got)
-	}
-}
-
-// TestEffectiveMode 未知变体呈现方式兜底为单变体。
-func TestEffectiveMode(t *testing.T) {
-	if got := effectiveMode(&Props{VariantMode: "weird"}); got != ModeSingle {
-		t.Fatalf("未知模式应兜底 single，实际 %q", got)
-	}
-	if got := effectiveMode(&Props{VariantMode: ModePerVariant}); got != ModePerVariant {
-		t.Fatalf("perVariant 应原样保留，实际 %q", got)
 	}
 }

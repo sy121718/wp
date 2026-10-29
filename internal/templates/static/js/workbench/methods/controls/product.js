@@ -1,15 +1,6 @@
-// 两种商品组件共用浅层选品入口；文档只记录商品与规格引用。
+// 独立规格展示器的选品入口；加购按钮不使用作者选品。
 import { meta } from '../../core.js';
 import { get, set, commit } from './base.js';
-
-export function variantName(variant, options) {
-    var names = (options || []).map(function (option) {
-        var key = (variant.options || {})[option.key];
-        var value = (option.values || []).find(function (item) { return item.key === key; });
-        return value ? value.name : '';
-    }).filter(Boolean);
-    return names.join(' · ') || (variant.sku ? '默认规格（' + variant.sku + '）' : '默认规格');
-}
 
 export function productBindingPanel(ctx) {
     var root = document.createElement('div');
@@ -46,7 +37,6 @@ export function productBindingPanel(ctx) {
     searchButton.className = 'wb-btn wb-btn-secondary wb-btn-sm'; searchButton.textContent = '搜索';
     searchRow.append(search, searchButton); root.appendChild(searchRow);
     var product = selectField('已发布商品');
-    var variant = ctx.node.type === 'core.addToCart' ? selectField('商品规格') : null;
     var status = document.createElement('p'); status.className = 'wb-field-hint'; status.setAttribute('role', 'status');
     root.appendChild(status);
     var searchSeq = 0, optionSeq = 0, timer;
@@ -92,12 +82,6 @@ export function productBindingPanel(ctx) {
     }
     async function loadOptions(id) {
         var seq = ++optionSeq;
-        if (variant) {
-            variant.replaceChildren(); option(variant, '', '自动选择可用规格');
-            var previous = get(ctx, 'props.variantId') || '';
-            if (previous) option(variant, previous, '已选规格（正在读取）');
-            variant.value = previous; variant.disabled = true;
-        }
         if (!id) return;
         status.textContent = '正在读取商品规格…';
         try {
@@ -105,15 +89,6 @@ export function productBindingPanel(ctx) {
             if (!active() || seq !== optionSeq || configured !== id) return;
             selectedName = data.name;
             Array.from(product.options).forEach(function (item) { if (item.value === id) item.textContent = data.name; });
-            if (variant) {
-                variant.replaceChildren(); option(variant, '', '自动选择可用规格');
-                (data.variants || []).forEach(function (item) { option(variant, item.id, variantName(item, data.options)); });
-                var current = get(ctx, 'props.variantId') || '';
-                if (current && !(data.variants || []).some(function (item) { return item.id === current; })) {
-                    option(variant, current, '原规格已停用，请重新选择');
-                }
-                variant.value = current; variant.disabled = false;
-            }
             status.textContent = (data.variants || []).length ? '' : '此商品没有可用规格，请选择其他商品。';
         } catch (err) {
             if (active() && seq === optionSeq && configured === id) status.textContent = err.message + '，原选择已保留。';
@@ -124,7 +99,6 @@ export function productBindingPanel(ctx) {
         commit(ctx, 'props.productId', configured, function () { set(ctx, 'props.variantId', ''); });
         loadOptions(configured);
     });
-    if (variant) variant.addEventListener('change', function () { commit(ctx, 'props.variantId', variant.value); });
     searchButton.addEventListener('click', searchProducts);
     search.addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); clearTimeout(timer); searchProducts(); } });
     search.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { if (active()) searchProducts(); }, 300); });

@@ -10,6 +10,7 @@ import { richTextField, typographyPanel, classesControl } from './text.js';
 import { listPanel, infoboxPanel, socialPanel, bindRepeaterPanel, marqueePanel, navPanel, faqPanel } from './repeater.js';
 import { tablePanel, formPanel } from './structured.js';
 import { productBindingPanel } from './product.js';
+import { addToCartPanel } from './addtocart.js';
 
 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
 export function schemaField(ctx, ctl) {
@@ -453,7 +454,8 @@ export function renderInspectorExtras(ctx) {
         }
     } else if (ctx.self.tab === 'content') {
         into(ctx, sectionFor(ctx, 'content', '内容'), function () {
-            if (ctx.node.type === 'core.addToCart' || ctx.node.type === 'core.productSelector') productBindingPanel(ctx);
+            if (ctx.node.type === 'core.productSelector') productBindingPanel(ctx);
+            if (ctx.node.type === 'core.addToCart') addToCartPanel(ctx);
             if (ctx.node.type === 'core.divider') dividerInset(ctx);
             if (ctx.node.type === 'core.slider') sliderPanel(ctx);
             if (ctx.node.type === 'core.list') listPanel(ctx);

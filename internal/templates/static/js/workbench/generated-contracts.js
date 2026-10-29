@@ -47,13 +47,8 @@ export const paletteSpec = {
             "hint": "加入购物车（价格与库存由服务校验）",
             "category": "basic",
             "defaultProps": {
-                "currency": "¥",
                 "label": "加入购物车",
-                "optionsField": "product.options",
-                "showQuantity": false,
-                "source": "product",
-                "variantMode": "single",
-                "variantsField": "product.variants"
+                "showQuantity": false
             }
         },
         "core.articleList": {

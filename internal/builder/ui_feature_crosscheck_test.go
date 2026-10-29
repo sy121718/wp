@@ -414,8 +414,8 @@ func crosscheckScenarios() []crosscheckScenario {
 		},
 		{
 			name:  "加购-有变体",
-			nodes: []*core.Node{probeNode("atc-1", "core.addToCart", `{"optionsField":"product.options","variantsField":"product.variants"}`)},
-			opts:  []CompileOption{WithProjectID("proj-crosscheck"), WithContentResolver(variantFixtureResolver{})},
+			nodes: []*core.Node{probeNode("atc-1", "core.addToCart", `{}`)},
+			opts:  []CompileOption{WithProjectID("proj-crosscheck"), WithContentResolver(variantFixtureResolver{}), WithArchiveEntity("product", "current-product")},
 		},
 	}
 }
