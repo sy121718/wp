@@ -27,36 +27,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// fillVariantListStocks 给变体清单行填上按仓分组的仓库明细（就地写）。
-//
-// 失败策略与 fillVariantStock 同一档：库存读不到**不让整页失败**，行上的明细留空。
-// 理由一致 —— 明细是展示与校准的入口，不是商品的组成部分。
-//
-// 但「留空」有两种意思，必须分开：一次读失败若被当成「这个变体没挂任何货」，
-// 用户随手一保存就把它原有的关联裁掉了。所以每一行都带上 StocksKnown ——
-// 它明确回答「明细读到了没有」，模板据此决定这一行的明细要不要参与提交
-// （见 admin/product/variant_stock_panel.html 与 ui/product_variant_write.js）。
-func (s *Service) fillVariantListStocks(ctx context.Context, projectID string, rows []productdto.VariantListRowResp) {
+// fillVariantListStocks 一次读取库存事实，同时填充仓库明细与跟踪库存总数。
+// 读取失败返回错误，禁止把故障当成清空关联或零库存。
+func (s *Service) fillVariantListStocks(ctx context.Context, projectID string, rows []*productdto.VariantResp) error {
 	if s.inv == nil || len(rows) == 0 {
-		return
+		return nil
 	}
 	ids := make([]string, 0, len(rows))
-	for i := range rows {
-		if rows[i].ID != "" {
-			ids = append(ids, rows[i].ID)
+	for _, row := range rows {
+		if row != nil && row.ID != "" {
+			ids = append(ids, row.ID)
 		}
-	}
-	if len(ids) == 0 {
-		return
 	}
 	entities, err := s.m.ListVariantsByIDs(ctx, ids, projectID)
 	if err != nil {
-		return
+		return err
 	}
-	// 变体 → 引用清单（顺序按 JSON 里的记录顺序，同仓多条保持建立时的先后）。
 	refsByVariant := make(map[string][]productmodel.WarehouseSKURef, len(entities))
-	stockIDs := make([]string, 0, len(entities))
-	seen := make(map[string]bool, len(entities))
+	stockIDs := make([]string, 0)
+	seen := map[string]bool{}
 	for _, e := range entities {
 		refs := productmodel.DecodeWarehouseSKUs(e.WarehouseSKUs)
 		refsByVariant[e.ID] = refs
@@ -69,9 +58,9 @@ func (s *Service) fillVariantListStocks(ctx context.Context, projectID string, r
 	}
 	byStock := make(map[string]*inventorycontract.StockFact, len(stockIDs))
 	if len(stockIDs) > 0 {
-		facts, ferr := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
-		if ferr != nil {
-			return
+		facts, err := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
+		if err != nil {
+			return err
 		}
 		for _, f := range facts {
 			if f != nil {
@@ -79,10 +68,21 @@ func (s *Service) fillVariantListStocks(ctx context.Context, projectID string, r
 			}
 		}
 	}
-	for i := range rows {
-		rows[i].Stocks = groupVariantStockRows(refsByVariant[rows[i].ID], byStock)
-		rows[i].StocksKnown = true
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		refs := refsByVariant[row.ID]
+		row.Stocks = groupVariantStockRows(refs, byStock)
+		row.StockTotal = 0
+		for _, ref := range refs {
+			if fact := byStock[ref.StockID]; fact != nil && fact.TrackQuantity {
+				row.StockTotal += fact.Quantity
+			}
+		}
+		row.StocksKnown = true
 	}
+	return nil
 }
 
 // groupVariantStockRows 引用清单 + 行事实 → 按仓分组的目标行（分组顺序 = 首次出现顺序）。

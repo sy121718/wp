@@ -1,6 +1,6 @@
 package productservice
 
-// product_bulk_pricing.go — 批量改价用例（task-156，dd.txt §5.1/§5.3/§5.4）。
+// product_bulk_pricing.go — 批量改价用例。
 //
 // 与另外五个批量删除一样，这一个也**整批一个事务**：勾选的商品要么全改、要么一个都不改。
 // 任何一条不能处理（商品不在了 / 算价失败）就把整批退回，并在 data.items 里列出可定位的条目。
@@ -17,14 +17,15 @@ package productservice
 
 import (
 	"context"
+	"go_wp/pkg/rls"
 	"net/http"
+	"sort"
 
 	"gorm.io/gorm"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/logger"
 )
 
 // BulkApplyPricing 批量按规则改价（POST /api/product/bulk-pricing 的 service 入口）。
@@ -74,48 +75,69 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 	// 都能在写入之前把整批退回去。
 	plans := make([]*pricingPlan, 0, len(ids))
 	unchanged := 0
-	for _, id := range ids {
-		rule := req.Rule
-		rule.ProjectID = projectID
-		rule.Scope = productenums.PricingScopeProduct
-		rule.TargetID = id
-		plan, perr := s.computePricingPlan(ctx, &productdto.PricingApplyReq{
-			PricingRuleReq: rule, Note: req.Note, OperatorID: req.OperatorID,
-		})
-		switch {
-		case perr == nil:
-			plans = append(plans, plan)
-			res.ChangedVariants += plan.res.ChangedCount
-		case isPricingNothingChanged(perr):
-			// 本来就在目标价上：不是失败，不写空台账。整批全是这种情况时
-			// 一个事务都不开（见下面的 len(plans) == 0 分支）。
-			unchanged++
-		case pricingUnpriceable(perr):
-			// 「这个商品上没有可改价的变体」（捆绑容器只有容器价）是**这一条不能处理**，
-			// 不是规则整体无解：进 blocked，让报错能定位到具体商品；其它错误（规则参数
-			// 在这批数据上算不出来 / 读库失败）仍然整批退回。
-			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))
-		default:
-			return nil, perr
+	sort.Strings(ids)
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := rls.ScopeTx(tx, projectID); err != nil {
+			return err
 		}
-	}
-	if len(blocked) > 0 {
-		return nil, bulkRejected(blocked)
-	}
-	if len(plans) > 0 {
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			return s.writePricingPlansTx(ctx, tx, plans)
-		}); err != nil {
-			return nil, err
+		if err := s.m.LockPricingTagsTx(ctx, tx, projectID, productenums.TagKindRule); err != nil {
+			return err
 		}
+		locked, err := s.m.LockProductsTx(ctx, tx, ids, projectID)
+		if err != nil {
+			return err
+		}
+		present := make(map[string]bool, len(locked))
+		for _, id := range locked {
+			present[id] = true
+		}
+		for _, id := range ids {
+			if !present[id] {
+				blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))
+			}
+		}
+		if len(blocked) > 0 {
+			return bulkRejected(blocked)
+		}
+		for _, id := range ids {
+			rule := req.Rule
+			rule.ProjectID = projectID
+			rule.Scope = productenums.PricingScopeProduct
+			rule.TargetID = id
+			plan, perr := s.computePricingPlan(ctx, tx, &productdto.PricingApplyReq{
+				PricingRuleReq: rule, Note: req.Note, OperatorID: req.OperatorID,
+			})
+			switch {
+			case perr == nil:
+				plans = append(plans, plan)
+				res.ChangedVariants += plan.res.ChangedCount
+			case isPricingNothingChanged(perr):
+				// 本来就在目标价上：不是失败；在锁定快照上确认无变化，不写空台账。
+				unchanged++
+			case pricingUnpriceable(perr):
+				// 「这个商品上没有可改价的变体」（捆绑容器只有容器价）是**这一条不能处理**，
+				// 不是规则整体无解：进 blocked，让报错能定位到具体商品；其它错误（规则参数
+				// 在这批数据上算不出来 / 读库失败）仍然整批退回。
+				blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))
+			default:
+				return perr
+			}
+		}
+		if len(blocked) > 0 {
+			return bulkRejected(blocked)
+		}
+		if err := s.writePricingPlansTx(ctx, tx, plans); err != nil {
+			return err
+		}
+		if len(plans) > 0 {
+			_, err := s.recalcPricingAutoTagsTx(ctx, tx, projectID)
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 
-		// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。
-		// 整批已经提交：重算失败只记日志，不报失败（否则用户重试会重复调价）。
-		if _, rerr := s.recalcPricingAutoTags(ctx, projectID); rerr != nil {
-			logger.Scene("product").With("project", projectID).Error(rerr,
-				"批量调价已写入，但自动标签重算失败（归属待下次写操作重算）")
-		}
-	}
 	// Done = 请求项数：走到这里就说明整批都处理了（AGENTS「批量要么全成要么全败」）。
 	//
 	// 「本来就是目标价」不是失败、也不是「没处理」——它是**处理结果为无变化**，

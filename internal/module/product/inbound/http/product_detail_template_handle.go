@@ -13,7 +13,6 @@ import (
 	ctoutbound "go_wp/internal/module/product/outbound/contenttemplate"
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
@@ -32,7 +31,7 @@ import (
 //
 //	· 详情页模板：模板文档组装 / 首次发布 / 切换模板 / 改 URL / 预览编排 →
 //	  internal/module/product/service/product_detail_template_ops.go；
-//	  整页读模型 → internal/module/product/service/product_detail_template_page.go
+//	  模板业务读取 → internal/module/product/service/product_detail_template_page.go
 //	  （两个文件名像、职责不同，改之前看各自文件头）。
 //
 // SEO 评分的视图层在 product_score_handle.go（三个实体共用），不在本文件。
@@ -163,21 +162,15 @@ func detailTemplateWriteJSON[T any](c *gin.Context, run func(req *T, deps produc
 	detailTemplateFinish(c, run(req, deps))
 }
 
-// detailTemplateFinish 写动作的收尾：成功一句回执；取商品失败 404；其余业务失败 400。
+// detailTemplateFinish 写动作统一使用错误声明处的状态码与文案事实。
 func detailTemplateFinish(c *gin.Context, err error) {
 	if err == nil {
 		response.SuccessMsg(c, productActionDoneMsg)
 		return
 	}
-	if errors.Is(err, response.ErrHandled) {
-		return
+	if !errors.Is(err, response.ErrHandled) {
+		response.ErrorStatusAuto(c, productErrScene, err)
 	}
-	status := http.StatusBadRequest
-	var lookup *productservice.DetailTemplateProductLookupError
-	if errors.As(err, &lookup) {
-		status = http.StatusNotFound
-	}
-	detailTemplateWriteFail(c, status, detailTemplateErrMsg(err))
 }
 
 // CreateDetailTemplate POST /api/product/detail-template/create：
@@ -363,61 +356,44 @@ func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDe
 	}
 }
 
-// ProductDetailTemplatePage GET /admin/products/template：某商品的详情页模板选择与预览页。
-//
-// 取数失败**不在这里出口**：整页 GET 只有末尾那一次渲染（成功 / 失败同模板同页壳，
-// 差别只有状态码 / no-store / 失败槽）—— 契约见 AGENTS.md §整页 GET 的失败出口。
-//
-// 这一屏的两个出口判断留在控制器，因为它们都是**HTTP 出口**而不是取数结论：
-//
-//	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
-//	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
+// ProductDetailTemplatePage 只命名传递现成商品、模板目录与发布实例。
 func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
 	if !ok {
 		return
 	}
-	h.renderDetailTemplatePage(c, req)
-}
-
-// renderDetailTemplatePage 详情页模板页的三条落地分支（未装配 / 取数失败 / 没选商品）。
-//
-// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
-// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
-func (h *ProductPageHandle) renderDetailTemplatePage(c *gin.Context, req *productdto.ProductDetailTemplatePageReq) {
-	if h.templates == nil || h.instances == nil {
-		pageview.Render(c, detailTemplateUnassembledView())
-		return
-	}
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误。
-	view, err := h.reader.ProductDetailTemplatePage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	if view.NoProduct {
-		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
-		c.Redirect(http.StatusFound, productListPath)
+	product, err := h.products.Get(c.Request.Context(), &productdto.GetReq{ID: req.ProductID, ProjectID: scope.ProjectID})
+	if err != nil {
+		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, view)
-}
-
-// detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
-//
-// Ready 为假 → 模板走「详情页模板能力未装配」那一块；**不置失败事实** —— 那是
-// 「取数没读到」的槽，两者混用会让「没装配」被说成「数据读不出来」，而前者要人去查装配。
-func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageResp {
-	view := detailTemplateLoadFailureView(http.StatusOK)
-	return view
-}
-
-// detailTemplateLoadFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
-func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplatePageResp {
-	return productdto.ProductDetailTemplatePageResp{
-		Projects:  []projectdto.ProjectResp{},
-		Templates: []productdto.DetailTemplateOptionResp{},
+	candidates, err := h.reader.QueryDetailTemplates(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
 	}
+	defaultID, err := h.reader.QueryDefaultDetailTemplate(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	bound, err := h.reader.QueryBoundDetailTemplate(c.Request.Context(), scope.ProjectID, product.ID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	path := h.reader.ProductDetailPath(c.Request.Context(), scope.ProjectID, product)
+	pageview.Render(c, pageview.Objects(
+		pageview.Object("Scope", scope), pageview.Object("Product", product),
+		pageview.Object("Templates", candidates), pageview.Object("DefaultTemplateID", defaultID),
+		pageview.Object("Bound", bound), pageview.Object("DetailPath", path),
+		pageview.Object("Available", h.templates != nil && h.instances != nil),
+	))
 }
 
 // ProductDetailTemplatePreview POST /admin/products/template/preview：
@@ -445,19 +421,6 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
 	return
-}
-
-// detailTemplateErrMsg 把业务错误收敛成一条事实：key 与兜底都取自声明处。
-//
-// 这里没有「本页的错误来自哪个对端」的补丁表了：presentation 与 contenttemplate 的 enums
-// 现在各自带 errFallbacks（同 membership / content / navigation 的形态），FactOf 给出的事实
-// 本身就带着中文兜底，页面拿到的是一句能读的话，而不是 ErrPathOccupied 这种标识符。
-func detailTemplateErrMsg(err error) facing.Msg {
-	fact, ok := facing.FactOf(err)
-	if !ok || !fact.Business {
-		return facing.Msg{}
-	}
-	return facing.Msg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。

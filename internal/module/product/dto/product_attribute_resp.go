@@ -24,7 +24,7 @@ type AttributeResp struct {
 	IsVariation bool                 `json:"isVariation"`
 	Sort        int                  `json:"sort"`
 	Values      []AttributeValueResp `json:"values"`
-	// ValueCount / VariationValueCount 是列表展示用的只读派生值。
+	// ValueCount 是全部值数量；VariationValueCount 是启用值数量，供变体组合约束复用。
 	ValueCount          int            `json:"valueCount"`
 	VariationValueCount int            `json:"variationValueCount"`
 	CreatedAt           utils.JSONTime `json:"createdAt"`

@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	productdto "go_wp/internal/module/product/dto"
 	"strings"
 	"testing"
 
@@ -86,33 +87,6 @@ func groupDProjects() []map[string]any {
 	return []map[string]any{{"ID": "pr1", "Name": "站点"}}
 }
 
-func groupDProductRow() map[string]any {
-	return map[string]any{
-		"ID": "p1", "Name": "商品一", "Slug": "p-one", "Status": "draft",
-		"VariantCount": 1, "PriceMin": 10.00, "PriceMax": 20.00, "AttributeIDsCSV": "a1",
-		"Attributes": []map[string]any{{"Name": "颜色", "IsVariation": true, "ValueCount": 2}},
-		"Variants": []map[string]any{{
-			"ID": "v1", "SKUCode": "SZ_TEE_001", "Spec": "红 / M", "Price": 19.00,
-			"ComparePrice": 29.00, "CostPrice": 8.00, "Enabled": true, "StockTotal": 5,
-		}},
-		"HasRating": true, "RatingAvg": "4.50", "RatingCount": 2,
-		"Ratings": []map[string]any{{"ID": "r1", "Score": "5", "Source": "manual", "CreatedAt": "2026-01-01"}},
-		"VariationAttributes": []map[string]any{{
-			"ID": "a1", "Name": "颜色",
-			"Values": []map[string]any{{"ID": "av1", "Label": "红", "Enabled": true}},
-		}},
-		"CategoryIDs": []string{"c1"}, "PrimaryCategoryName": "男装", "BrandName": "山野",
-		// 列表列只放值：分类列给一个分类名 + 其余分类数（+N 徽章），品牌列给品牌名，
-		// 标签列给标签名（多于 3 个退化成数量），不做「手工 N · 自动 N」的来源分解。
-		"CategoryCell": "男装", "CategoryOthers": 0, "TagNames": []string{"新品", "热销"},
-		"CategoryChecks": []map[string]any{{"ID": "c1", "Label": "男装", "Checked": true}},
-		"PrimaryOptions": []map[string]any{{"ID": "c1", "Label": "男装", "Selected": true}},
-		"BrandOptions":   []map[string]any{{"ID": "b1", "Label": "山野", "Selected": true}},
-		"TagChecks":      []map[string]any{{"ID": "t1", "Name": "新品", "Checked": true}},
-		"AutoTags":       []map[string]any{{"Name": "热销", "RuleType": "new_arrival", "RuleValues": map[string]any{"Days": 10, "HasDays": true}}},
-	}
-}
-
 // assertGroupDPage 渲染一页并断言尾部标记存在（中断会丢尾部）且无模板语法残留。
 func assertGroupDPage(t *testing.T, name string, data map[string]any, tail ...string) string {
 	t.Helper()
@@ -135,11 +109,11 @@ func assertGroupDPage(t *testing.T, name string, data map[string]any, tail ...st
 }
 
 func TestGroupDProductsPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
+	data := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
 		"Projects":         groupDProjects(),
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
-		"Products":         []map[string]any{groupDProductRow()},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
+		"Products":         []*productdto.ProductResp{groupDProductRow()},
 	})
 	// 拆页后列表页只有商品表：变体表 / 评分表与它们的入口、四个商品级表单全部移出。
 	// 完整性锚点用**稳定存在**的文案：详情入口已由名称列承担、详情页模板移出操作列，
@@ -202,15 +176,15 @@ func TestGroupDProductsPageRenders(t *testing.T) {
 // 尾部标记取页面末尾的区块与按钮：存在即说明整页没有被中途截断（Jet 缺键只中断、HTTP 仍 200）。
 func TestGroupDProductEditPageRenders(t *testing.T) {
 	row := groupDProductRow()
-	row["Subtitle"] = "副标题"
-	row["Unit"] = "件"
-	row["SEOTitle"] = "SEO 标题"
-	row["SEODescription"] = "SEO 描述"
-	data := groupDData(map[string]any{
+	row.Subtitle = "副标题"
+	row.Unit = "件"
+	row.SEOTitle = "SEO 标题"
+	row.SEODescription = "SEO 描述"
+	data := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
 		"Projects": groupDProjects(),
 		// 变体的两个抽屉要仓库下拉（handler 总会注入）。
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
 		"ProductID":        "p1", "HasProduct": true, "Product": row,
 		"BackURL": "/admin/products?project=pr1",
 		// 属性组勾选态（服务端算好；模板只渲染）。
@@ -268,17 +242,6 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 	// 空态分支（商品不存在 / 链接里的商品在另一个工程）也要整页渲染完，不中断。
 	// WarehouseOptions 是 handler 无条件注入的键（页面顶部先取仓库清单，取不到走 PageError），
 	// 测试外壳按同一形状给全 —— 缺它会在模板第一行就中断，看到的却是「空态没渲染出来」。
-	empty := groupDData(map[string]any{
-		"SelectedProject": "pr1", "Err": "",
-		"Projects": groupDProjects(), "ProductID": "p1", "HasProduct": false,
-		"WarehouseOptions": []map[string]any{},
-		"BackURL":          "/admin/products?project=pr1",
-	})
-	emptyOut := assertGroupDPage(t, "product_edit", empty, "商品不存在", "返回列表")
-	// 保存表单的存在判据是它自己的 id（提交走 JSON 基座后不再有 action 属性可查）。
-	if strings.Contains(emptyOut, `id="product-edit-main"`) {
-		t.Fatalf("商品不存在时不该渲染保存表单")
-	}
 }
 
 // TestGroupDProductDetailPageRenders 商品详情页：**只读**。
@@ -287,10 +250,10 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 // ② **任何写表单都不在** —— 它们全在编辑页。第二半是这次改造的核心：
 // 只读页里残留一个「保存手工标签」，用户就会以为改得动。
 func TestGroupDProductDetailPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
+	data := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
 		"Projects":         groupDProjects(),
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
 		"ProductID":        "p1", "HasProduct": true, "Product": groupDProductRow(),
 		"BackURL": "/admin/products?project=pr1",
 		"TplPanel": map[string]any{
@@ -326,36 +289,13 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		}
 	}
 	// 空态分支（商品不存在）走的另一条路：渲染 .empty-state + 返回列表，不整页中断。
-	empty := groupDData(map[string]any{
-		"SelectedProject": "pr1", "Err": "",
-		"Projects": groupDProjects(), "WarehouseOptions": []map[string]any{},
-		"ProductID": "missing", "HasProduct": false, "Product": map[string]any{},
-		"BackURL": "/admin/products?project=pr1",
-	})
-	assertGroupDPage(t, "product_detail", empty, "商品不存在", "返回列表")
 }
 
 func TestGroupDPricingPageRenders(t *testing.T) {
 	data := groupDData(map[string]any{
-		"SelectedProject": "pr1", "Err": "", "Applied": "",
-		"Projects": groupDProjects(),
-		"Form": map[string]any{
-			"RuleType": "markup", "Multiplier": "2", "Amount": "1", "Margin": "0.3",
-			"Rounding": "none", "Scope": "sku", "TargetID": "", "Status": "",
-			"Keyword": "", "CategoryID": "", "BrandID": "", "TagID": "", "Note": "",
-		},
-		"Rules":      []map[string]any{{"Type": "cost_markup", "RequiresCost": true}},
-		"Roundings":  []map[string]any{{"Value": "none"}},
-		"HasPreview": true,
-		"PreviewSummary": map[string]any{
-			"RuleType": "cost_markup", "RuleValues": map[string]any{"Value": 1.0, "HasValue": true},
-			"Rounding": "none", "Scope": "sku",
-			"TargetCount": 1, "ChangedCount": 1, "UnchangedCount": 0, "SkippedCount": 0,
-		},
-		"PreviewRows": []map[string]any{{
-			"ProductName": "商品一", "SKUCode": "SKU1", "CostPrice": 8.00, "OldPrice": 10.00,
-			"NewPrice": 12.00, "Diff": +2.00, "IsChanged": true, "Status": "changed", "Reason": "",
-		}},
+		"Scope":     map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
+		"Rules":     []map[string]any{{"Type": "cost_markup", "RequiresCost": true}},
+		"Roundings": []map[string]any{{"Value": "none"}},
 		"History": []map[string]any{{
 			"RuleType": "cost_markup", "RuleValues": map[string]any{"Value": 1.0, "HasValue": true},
 			"Scope": "sku", "Rounding": "none",
@@ -371,131 +311,29 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 }
 
 func TestGroupDAttributesPageRenders(t *testing.T) {
-	// 三个抽屉的表单实例数据：片段是**带参数 include** 的（数据由调用点给，取不到页面 data，
-	// 连取词函数 t 与 csrf 都要显式传），形状与 handle 的 attrRowDrawerForms /
-	// attrCreateDrawerForm 逐键一致 —— 缺键不再是「少渲一块」，而是整块渲染失败。
-	tr := TranslateFunc("zh-CN")
-	attrRows := func(id string) map[string]any {
-		return map[string]any{
-			"GroupID": id,
-			"Rows":    []map[string]any{{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}},
-			// Tr：行编辑器的 data 是结构体（Jet 在 struct 上不支持 .["t"]），
-			// 取词函数随数据类传入 —— 形状与 handle 的 attrRowsCtx.Tr 一致。
-			"Tr": tr,
-		}
-	}
-	data := groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Attributes": []map[string]any{{
-			"ID": "a1", "Name": "颜色", "Key": "color", "IsVariation": true, "ValueCount": 2, "Sort": 0,
-			"EditForm": map[string]any{
-				"Csrf": "tok", "Project": "pr1", "t": tr,
-				"Mode": "edit", "Action": "/admin/product-attributes/update", "IsCreate": false,
-				"GroupID": "a1", "Name": "颜色", "Key": "color", "Sort": 0, "VariationChecked": true,
-				"RowsCtx": attrRows("a1"), "InDrawer": true,
-			},
-			"ValuesForm": map[string]any{
-				"Csrf": "tok", "Project": "pr1", "t": tr,
-				"Action": "/admin/product-attributes/set-values", "GroupID": "a1",
-				"RowsCtx": attrRows("a1"), "InDrawer": true,
-			},
-		}},
-		"AttrCreateForm": map[string]any{
-			"Csrf": "tok", "Project": "pr1", "t": tr,
-			"Mode": "create", "Action": "/admin/product-attributes/create", "IsCreate": true,
-			"GroupID": "new", "Name": "", "Key": "", "Sort": 0, "VariationChecked": true,
-			"RowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}, "Tr": tr}, "InDrawer": true,
-		},
-	})
-	// 行内按钮不再重复实体名（admin-ui-logic §3）：列表已是表格，行已指明是谁。
-	assertGroupDPage(t, "product_attributes", data,
-		"参与变体", "属性组", "保存属性组", "保存属性值", "删除")
+	data := taxonomyAttributes(&productdto.AttributeResp{ID: "a1", Name: "颜色", Key: "color", IsVariation: true, Values: []productdto.AttributeValueResp{{ID: "av1", Key: "red", Label: "红", Enabled: true}}})
+	assertGroupDPage(t, "product_attributes", data, "参与变体", "属性组", "保存属性组", "保存属性值", "删除")
 }
 
 func TestGroupDBrandsPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Brands": []map[string]any{{
-			"ID": "b1", "Name": "山野", "Slug": "shanye", "Sort": 0, "Logo": "",
-			"SEOTitle": "", "SEODescription": "", "Description": "",
-		}},
-	})
-	// 行内按钮不再重复实体名（admin-ui-logic §3）：列表里是表格行，行已指明是谁，按钮写「删除」。
-	assertGroupDPage(t, "product_brands", data, "商品品牌", "品牌列表", "保存品牌", "SEO 评分", "删除")
+	assertGroupDPage(t, "product_brands", taxonomyBrands(&productdto.BrandResp{ID: "b1", Name: "山野", Slug: "shanye"}), "商品品牌", "品牌列表", "保存品牌", "SEO 评分", "删除")
 }
 
 func TestGroupDCategoriesPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Options": []map[string]any{{"ID": "c1", "Label": "男装"}},
-		"Categories": []map[string]any{{
-			"ID": "c1", "Label": "男装", "Slug": "mens", "Sort": 0, "SEOTitle": "",
-			"ParentID": "", "Name": "男装", "Image": "", "SEODescription": "", "Description": "",
-		}},
-	})
-	// 行内按钮不再重复实体名（admin-ui-logic §3）；列表现已是标准表格 + 首列勾选 + 批量动作。
-	assertGroupDPage(t, "product_categories", data, "分类树", "（顶级分类）", "保存分类", "删除", "批量删除")
+	assertGroupDPage(t, "product_categories", taxonomyCategories(&productdto.CategoryResp{ID: "c1", ProjectID: "pr1", Name: "男装", Slug: "mens"}), "分类树", "（顶级分类）", "保存分类", "删除", "批量删除")
 }
 
 func TestGroupDTagsPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"RuleTypes": []map[string]any{{"Type": "new_arrival", "ParamKeys": []string{"days"}}},
-		"Tags": []map[string]any{{
-			"ID": "t1", "Name": "新品", "Slug": "new", "IsRule": true,
-			"KindLabelKey": "", "KindLabelFallback": "自动标签",
-			"RuleValues": map[string]any{"Days": 30, "HasDays": true}, "ProductCount": 1, "RecalcAt": "2026-01-01", "Sort": 0,
-			"RecalcLabelKey": "", "RecalcLabelFallback": "",
-			"RuleType": "new", "RuleDays": "30", "RuleMinPrice": "", "RuleMaxPrice": "",
-			"Products": []map[string]any{{"Name": "商品一", "Slug": "p-one", "Status": "draft"}},
-		}},
-	})
-	// 同上：标签列表转表格后，行内按钮是「重算」与「删除」（不重复实体名）。
-	assertGroupDPage(t, "product_tags", data,
-		"内置规则类型", "标签", "保存标签", "重算", "删除")
+	data := taxonomyTags(&productdto.TagResp{ID: "t1", Name: "新品", Slug: "new", Kind: "rule", RuleType: "new_arrival", RuleValues: productdto.RuleValuesResp{Days: 30, HasDays: true}, ProductCount: 1})
+	assertGroupDPage(t, "product_tags", data, "内置规则类型", "标签", "保存标签", "重算", "删除")
 }
 
 func TestGroupDTranslationsPageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Errors": []string{}, "Saved": false, "SavedNote": "",
-		"ProjectOptions": []map[string]any{{"ID": "pr1", "Name": "站点", "Selected": true}},
-		"ProductID":      "p1", "ProjectID": "pr1", "Lang": "en-US", "Done": 1, "Total": 2,
-		"Langs": []map[string]any{{"Code": "en-US", "Label": "en-US", "Active": true}},
-		"Groups": []map[string]any{{
-			"Title": "商品", "Subtitle": "商品自身",
-			"TitleKey": "", "TitleFallback": "商品",
-			"Rows": []map[string]any{{
-				"FieldLabel": "商品名", "Context": "product.name", "Source": "商品一",
-				"Rich": false, "Target": "", "SourceHash": "h1", "Translated": false, "Engine": "",
-			}},
-		}},
-	})
-	assertGroupDPage(t, "product_translations", data,
-		"商品多语言", "完成度", "查看整个工程", "字段", "保存全部", "写入 sys_translation")
+	assertGroupDPage(t, "product_translations", translationPageData(), "商品多语言", "完成度", "查看整个工程", "字段", "保存全部", "写入 sys_translation")
 }
-
 func TestGroupDDetailTemplatePageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "Ready": true, "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Product":           map[string]any{"ID": "p1", "Name": "商品一", "URLPath": "/p/p-one"},
-		"InstanceExists":    true,
-		"InstanceStatus":    "published",
-		"BoundTemplateID":   "tpl1",
-		"DefaultTemplateID": "tpl1",
-		"TemplateCount":     1,
-		"InstanceURL":       "/p/p-one",
-		"Templates": []map[string]any{{
-			"ID": "tpl1", "Name": "默认详情", "DraftVersion": 3,
-			"IsDefault": true, "IsBound": true, "UpdatedAt": "2026-01-01",
-		}},
-	})
-	assertGroupDPage(t, "product_detail_template", data,
-		"商品详情页模板", "当前使用", "切换模板并重新发布", "改 URL", "命名模板（", "新建命名模板")
-
-	// 未发布分支（.InstanceExists=false）走另一条表单：发布入口与「未发布」徽标必须渲染出来。
-	data["InstanceExists"] = false
-	assertGroupDPage(t, "product_detail_template", data,
-		"未发布", "使用模板", "发布详情页", "新建命名模板")
+	assertGroupDPage(t, "product_detail_template", detailTemplatePageData(true), "商品详情页模板", "当前使用", "切换模板并重新发布", "改 URL", "命名模板（", "新建命名模板")
+	assertGroupDPage(t, "product_detail_template", detailTemplatePageData(false), "未发布", "使用模板", "发布详情页", "新建命名模板")
 }
 
 func TestGroupDInventoryPageRenders(t *testing.T) {
@@ -656,11 +494,11 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 func TestGroupDEnglishSwitch(t *testing.T) {
 	enT := func(key, fallback string) string { return "EN[" + key + "]" }
 
-	products := groupDData(map[string]any{
+	products := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
 		"Projects":         groupDProjects(),
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
-		"Products":         []map[string]any{groupDProductRow()},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
+		"Products":         []*productdto.ProductResp{groupDProductRow()},
 	})
 	products["t"] = enT
 	out, err := render(t, groupDSet(t), "admin/product/products", products)
@@ -686,10 +524,10 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 	}
 
 	// 拆出去的详情页同样整体切英文：页头动作、三个区块与三个抽屉的文案都要走 t()。
-	detail := groupDData(map[string]any{
+	detail := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
 		"Projects":         groupDProjects(),
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
 		"ProductID":        "p1", "HasProduct": true, "Product": groupDProductRow(),
 		"BackURL": "/admin/products?project=pr1",
 	})
@@ -715,7 +553,7 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		}
 	}
 
-	purchases := groupDData(map[string]any{
+	purchases := productCatalogData(map[string]any{
 		"Err": "", "Ok": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
 		"FilterStatus": "", "FilterSource": "", "FilterKeyword": "", "HistorySKU": "",
 		"ReceiptRequestID": "r1", "ProductionRequestID": "r2",

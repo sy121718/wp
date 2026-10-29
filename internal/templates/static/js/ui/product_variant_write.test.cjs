@@ -108,11 +108,11 @@ function install({ rows = [], stockRows = {} } = {}) {
     }
     const win = {
         document: doc,
-        WPJsonWrite: {
+        WBUI: {writeBase: {
             registerPayloadBuilder(name, fn) {
                 builders[name] = fn;
             }
-        }
+        }}
     };
     vm.runInNewContext(fs.readFileSync(__dirname + '/product_variant_write.js', 'utf8'), {window: win});
     return win;

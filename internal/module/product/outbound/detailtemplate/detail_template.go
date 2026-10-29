@@ -1,17 +1,9 @@
-// Package detailtemplate 内容模板 + 自动发布实例 → 商品「详情页模板」整页选项的适配器。
-//
-// 位置判据（internal/module/CLAUDE.md §outbound）：这里**要翻译** ——
-// contenttemplate 的 TemplateResp（id / 名字 / 草稿版本 / 更新时间 / 文档 / 角色 / 生效标记）
-// 与 presentation 的 InstanceResp（实例、渲染模式、产物哈希 …）都不是这一屏要的形状，
-// 而这一屏只取各自的两三个字段。
-//
-// 一个适配器跨两个上游模块，是因为端口本身就是两者之并集（见
-// product/contract/detail_template_port.go）。依赖方向：本包 → 两个模块的 **contract**
-// （不认识对方的 service / model）。
 package detailtemplate
 
 import (
 	"context"
+	"go_wp/pkg/facing"
+	"net/http"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -19,17 +11,12 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// instanceReader 本包需要的自动发布能力（消费者侧最窄接口）。
-//
-// 收窄成一条而不是直接收 presentationcontract.PresentationService：
-// 这一屏的**读**只用到 GetByEntity，写动作（预览 / 首次发布 / 换模板）留在控制器
-// （它们要 gin.Context 里的提交值与提示页出口）。收窄后这份依赖在测试里可用一个
-// 两行的桩替代，且换 presentation 的实现不会波及这里。
+// instanceReader 读取实体当前发布实例。
 type instanceReader interface {
 	GetByEntity(ctx context.Context, req *presentationcontract.GetByEntityReq) (res *presentationcontract.InstanceResp, err error)
 }
 
-// modeReader is optional: absent mode support leaves the basic binding panel usable.
+// modeReader 提供文档快照与模板引用统计；未注入时只读取绑定事实。
 type modeReader interface {
 	ListSnapshots(ctx context.Context, req *presentationcontract.ListSnapshotsReq) ([]*presentationdto.SnapshotSummary, error)
 	CountByTemplate(ctx context.Context, req *presentationcontract.CountByTemplateReq) (*presentationdto.CountByTemplateResp, error)
@@ -92,6 +79,9 @@ func (p *Port) DefaultDetailTemplate(ctx context.Context, projectID, entityType 
 		return "", nil
 	}
 	tpl, rerr := p.templates.ResolveTemplateScoped(ctx, projectID, entityType)
+	if status, ok := facing.StatusOf(rerr); ok && status == http.StatusNotFound {
+		return "", nil
+	}
 	if rerr != nil {
 		return "", rerr
 	}
@@ -101,65 +91,79 @@ func (p *Port) DefaultDetailTemplate(ctx context.Context, projectID, entityType 
 	return tpl.TemplateID, nil
 }
 
-// BoundDetailTemplate 该实体当前绑定的发布实例。
-//
-// 读不到 / 实例为空一律按「没有实例」返回，不往上抛错：这一屏对实例的依赖是展示，
-// 前置条件是模板清单 —— 实例读不出来时页面仍要能让人点「首次发布」。
-func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) productcontract.BoundTemplateView {
+// BoundDetailTemplate 区分“尚无实例”和“实例查询失败”。
+func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) (productcontract.BoundTemplateView, error) {
 	if p.instances == nil || entityID == "" {
-		return productcontract.BoundTemplateView{}
+		return productcontract.BoundTemplateView{}, nil
 	}
-	// 工程同样显式透下去：presentation 侧 GetByEntity 不带工程时多工程下解析不出唯一工程，
-	// 这里按「没有实例」吞掉会让页面把「读不到」显示成「还没发布」。
-	inst, ierr := p.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
+	inst, err := p.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
 		EntityType: entityType, EntityID: entityID, ProjectID: projectID,
 	})
-	if ierr != nil || inst == nil {
-		return productcontract.BoundTemplateView{}
+	if status, ok := facing.StatusOf(err); ok && status == http.StatusNotFound {
+		return productcontract.BoundTemplateView{}, nil
+	}
+	if err != nil {
+		return productcontract.BoundTemplateView{}, err
+	}
+	if inst == nil {
+		return productcontract.BoundTemplateView{}, nil
 	}
 	return productcontract.BoundTemplateView{
-		Exists:                  true,
-		InstanceID:              inst.ID,
-		TemplateID:              inst.TemplateID,
-		Status:                  inst.Status,
-		URLPath:                 inst.URLPath,
-		RenderMode:              inst.RenderMode,
+		Exists: true, InstanceID: inst.ID, TemplateID: inst.TemplateID,
+		Status: inst.Status, URLPath: inst.URLPath, RenderMode: inst.RenderMode,
 		SourceTemplateVersionID: inst.SourceTemplateVersionID,
-	}
+	}, nil
 }
 
-// DetailTemplatePanel reads only facts needed by both product pages.
-func (p *Port) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) productcontract.DetailTemplatePanelFacts {
+// DetailTemplatePanel 读取发布关联事实；任何已装配查询失败都向上返回。
+func (p *Port) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) (productcontract.DetailTemplatePanelFacts, error) {
 	out := productcontract.DetailTemplatePanelFacts{}
 	if p.templates == nil || p.instances == nil || entityID == "" {
-		return out
+		return out, nil
 	}
 	out.Available = true
-	out.Bound = p.BoundDetailTemplate(ctx, projectID, entityType, entityID)
+	var err error
+	out.Bound, err = p.BoundDetailTemplate(ctx, projectID, entityType, entityID)
+	if err != nil {
+		return out, err
+	}
 	if !out.Bound.Exists {
-		return out
+		return out, nil
 	}
 	if out.Bound.RenderMode == presentationcontract.RenderModeDocument && out.Bound.SourceTemplateVersionID != "" {
-		if tpl, err := p.templates.ResolveTemplateScoped(ctx, projectID, entityType); err == nil && tpl != nil {
+		tpl, err := p.templates.ResolveTemplateScoped(ctx, projectID, entityType)
+		if status, ok := facing.StatusOf(err); ok && status == http.StatusNotFound {
+			err = nil
+		}
+		if err != nil {
+			return out, err
+		}
+		if tpl != nil {
 			out.CurrentTemplateVersionID = tpl.VersionID
 		}
 	}
 	if p.mode == nil {
-		return out
+		return out, nil
 	}
 	if out.Bound.RenderMode == presentationcontract.RenderModeDocument {
-		if snaps, err := p.mode.ListSnapshots(ctx, &presentationcontract.ListSnapshotsReq{InstanceID: out.Bound.InstanceID, ProjectID: projectID, Limit: 8}); err == nil {
-			out.Snapshots = make([]productcontract.DetailTemplateSnapshotFacts, 0, len(snaps))
-			for _, snap := range snaps {
-				if snap != nil {
-					out.Snapshots = append(out.Snapshots, productcontract.DetailTemplateSnapshotFacts{ID: snap.ID, CreatedAt: snap.CreatedAt})
-				}
+		snaps, err := p.mode.ListSnapshots(ctx, &presentationcontract.ListSnapshotsReq{InstanceID: out.Bound.InstanceID, ProjectID: projectID, Limit: 8})
+		if err != nil {
+			return out, err
+		}
+		out.Snapshots = make([]productcontract.DetailTemplateSnapshotFacts, 0, len(snaps))
+		for _, snap := range snaps {
+			if snap != nil {
+				out.Snapshots = append(out.Snapshots, productcontract.DetailTemplateSnapshotFacts{ID: snap.ID, CreatedAt: snap.CreatedAt})
 			}
 		}
 	}
-	if count, err := p.mode.CountByTemplate(ctx, &presentationcontract.CountByTemplateReq{TemplateID: out.Bound.TemplateID, ProjectID: projectID}); err == nil && count != nil {
+	count, err := p.mode.CountByTemplate(ctx, &presentationcontract.CountByTemplateReq{TemplateID: out.Bound.TemplateID, ProjectID: projectID})
+	if err != nil {
+		return out, err
+	}
+	if count != nil {
 		out.HasAffectedTemplateCount = true
 		out.AffectedTemplateCount = count.TemplateMode
 	}
-	return out
+	return out, nil
 }

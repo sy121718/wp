@@ -7,11 +7,7 @@ import (
 )
 
 func TestProductListHelpRoutesEditsToEditPage(t *testing.T) {
-	data := groupDData(map[string]any{
-		"SelectedProject": "pr1", "Err": "",
-		"Projects": groupDProjects(), "Products": []map[string]any{groupDProductRow()},
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
-	})
+	data := productCatalogData(nil)
 	for _, tc := range []struct {
 		name, lang, lead, edit, tail, expected string
 	}{

@@ -97,3 +97,38 @@ func TestCustomerBulkRejectsInvalidTargetAndLimit(t *testing.T) {
 		t.Fatalf("超限未整批拒绝: code=%d writes=%v", code, fake.statusIDs)
 	}
 }
+
+func TestCustomerBulkTypedRequestsKeepStrictShapeAndErrorMessages(t *testing.T) {
+	_, invalid := customerBulkJSON(t, &fakeCustomerAdmin{}, "/api/customer/bulk-status", `{"ids":[42],"status":0,"extra":1}`)
+	_, statusInvalid := customerBulkJSON(t, &fakeCustomerAdmin{}, "/api/customer/bulk-status", `{"ids":[42],"status":2}`)
+	for _, tc := range []struct {
+		path, body  string
+		statusError bool
+	}{
+		{"bulk-status", `{"ids":[42],"status":null}`, false},
+		{"bulk-status", `{"ids":[42]}`, true},
+		{"bulk-status", `{"ids":[42],"status":"0"}`, true},
+		{"bulk-status", `{"ids":[42],"status":2}`, true},
+		{"bulk-status", `{"ids":[42],"status":0,"extra":null}`, false},
+		{"bulk-status", `{"IDS":[42],"status":0}`, false},
+		{"bulk-status", `{"ids":null,"status":0}`, false},
+		{"bulk-status", `{"ids":["42"],"status":0}`, false},
+		{"bulk-status", `null`, false},
+		{"bulk-unlock", `{"ids":[42],"status":0}`, false},
+		{"bulk-unlock", `{"ids":[42],"extra":null}`, false},
+		{"bulk-unlock", `{"IDS":[42]}`, false},
+		{"bulk-unlock", `{"ids":null}`, false},
+		{"bulk-unlock", `{"ids":[]}`, false},
+		{"bulk-unlock", `null`, false},
+	} {
+		fake := &fakeCustomerAdmin{}
+		code, body := customerBulkJSON(t, fake, "/api/customer/"+tc.path, tc.body)
+		want := invalid["message"]
+		if tc.statusError {
+			want = statusInvalid["message"]
+		}
+		if code != http.StatusBadRequest || body["message"] != want || len(fake.statusIDs) != 0 {
+			t.Fatalf("请求形状改变了既有拒绝语义或触发了写入：%s %s status=%d body=%v", tc.path, tc.body, code, body)
+		}
+	}
+}

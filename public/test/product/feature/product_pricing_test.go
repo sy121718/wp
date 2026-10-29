@@ -832,8 +832,8 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-pricing", adminui.PageSlot(producthttp.ProductPricingPageTemplate), handle.ProductPricingPage)
-	engine.POST("/admin/product-pricing/preview", adminui.PageSlot(producthttp.ProductPricingPageTemplate), handle.ProductPricingPreview)
-	// 应用调价已改接口端点（页面走 ui/write-base.js）；试算保留页面 POST（结果是表格）。
+	engine.POST("/api/product/pricing/preview", producthttp.NewProductHandle(f.svc).PreviewPricing)
+	// 预览与应用都走 JSON API，页面只负责首次 GET。
 	engine.POST("/api/product/pricing/apply", producthttp.NewProductHandle(f.svc).ApplyPricing)
 	return engine, f
 }
@@ -861,7 +861,7 @@ func TestPricingAdminPages(t *testing.T) {
 		}
 	}
 
-	// 预览：200 且渲染出试算明细（不落库）。
+	// 预览：200 JSON 明细（不落库），不返回 HTML。
 	form := url.Values{}
 	form.Set("projectId", f.projectID)
 	form.Set("ruleType", productenums.PricingRuleFixedPrice)
@@ -869,31 +869,31 @@ func TestPricingAdminPages(t *testing.T) {
 	form.Set("rounding", productenums.PricingRoundingEnd99)
 	form.Set("scope", productenums.PricingScopeProduct)
 	form.Set("targetId", p.ID)
-	rec = postForm(engine, "/admin/product-pricing/preview", form)
+	rec = postForm(engine, "/api/product/pricing/preview", form)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("预览应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	previewBody := rec.Body.String()
-	for _, want := range []string{"试算预览（未落库）", "后台改价商品", "66.99", "改价"} {
-		if !strings.Contains(previewBody, want) {
-			t.Fatalf("预览结果缺少 %q", want)
-		}
+	previewEnv := decodeJSONEnvelope(t, rec)
+	var preview productdto.PricingPreviewResp
+	if err := json.Unmarshal(mustPricingJSON(t, previewEnv.Data), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.TargetCount != 1 || len(preview.Lines) != 1 || preview.Lines[0].NewPrice != 66.99 || preview.Lines[0].Diff != -433.01 {
+		t.Fatalf("预览应返回数值明细：%s", rec.Body.String())
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 500 {
 		t.Fatalf("页面试算不该改库，实际 %v", got)
 	}
 
-	// 非法参数：200 + 页内错误提示（表单值保留，不重定向）。
+	// 非法参数：400 JSON；前端基座保持现有 DOM 输入。
 	bad := url.Values{}
 	bad.Set("projectId", f.projectID)
 	bad.Set("ruleType", productenums.PricingRuleCostMultiple)
 	bad.Set("scope", productenums.PricingScopeProduct)
 	bad.Set("targetId", p.ID)
-	rec = postForm(engine, "/admin/product-pricing/preview", bad)
-	// 页内提示必须是**可读文案**：原先断言 body 里带 enums 裸 key，而裸 key 铺到页面上
-	// 正是第三波 CQ-009 形态③要收口的形态。现在统一经 productErrText 取词。
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "定价规则参数不合法") {
-		t.Fatalf("非法参数应在页内提示，实际 %d：%s", rec.Code, rec.Body.String())
+	rec = postForm(engine, "/api/product/pricing/preview", bad)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(rec.Body.String(), "定价规则参数不合法") {
+		t.Fatalf("非法参数应为400 JSON错误，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), productenums.ErrPricingRuleParamsInvalid) {
 		t.Fatalf("页面上不应出现 enums 裸 key，实际 %s", rec.Body.String())
@@ -901,19 +901,17 @@ func TestPricingAdminPages(t *testing.T) {
 
 	// 应用：接口回执（含本次改动数），价格落库、留痕可见。
 	form.Set("note", "后台改价")
-	applyBody := map[string]any{}
-	for k, vals := range form {
-		if len(vals) > 0 {
-			applyBody[k] = vals[0]
-		}
-	}
-	rec = postJSON(t, engine, "/api/product/pricing/apply", applyBody)
+	rec = postForm(engine, "/api/product/pricing/apply", form)
 	appliedEnv := decodeJSONEnvelope(t, rec)
 	if appliedEnv.Code != http.StatusOK {
 		t.Fatalf("应用调价应成功，实际 %d：%s", appliedEnv.Code, appliedEnv.Message)
 	}
-	if !strings.Contains(appliedEnv.Message, "1 个变体") {
-		t.Fatalf("应用成功回执应含本次改动数，实际 %q", appliedEnv.Message)
+	var applied productdto.PricingApplyResp
+	if err := json.Unmarshal(mustPricingJSON(t, appliedEnv.Data), &applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied.ChangedCount != 1 || applied.AdjustmentID == "" {
+		t.Fatalf("应用回执缺少业务事实：%s", rec.Body.String())
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 66.99 {
 		t.Fatalf("应用后库里应为 66.99，实际 %v", got)
@@ -927,8 +925,17 @@ func TestPricingAdminPages(t *testing.T) {
 	}
 
 	// 无改动时应用：失败回执（不写空台账）。
-	rec = postJSON(t, engine, "/api/product/pricing/apply", applyBody)
+	rec = postForm(engine, "/api/product/pricing/apply", form)
 	if got := decodeJSONEnvelope(t, rec); got.Code == http.StatusOK || strings.TrimSpace(got.Message) == "" {
 		t.Fatalf("无改动时应用应回失败 + 可读文案，实际 %d：%q", got.Code, got.Message)
 	}
+}
+
+func mustPricingJSON(t *testing.T, data any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

@@ -6,19 +6,14 @@ package producthttp
 // 与分类 / 品牌（product_taxonomy_handle.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
 
 import (
-	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
-
-// 标签页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
-var productTagsBackKeys = []string{"project", "keyword", "page", "limit"}
 
 // ==========================================================================
 // 标签的接口面：JSON 入参、pkg/response 出参、消息取 enums。
@@ -154,56 +149,36 @@ func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 // 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
 // ==========================================================================
 
-// ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
 func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	req, ok := binding.Query[productdto.ProductTagsPageReq](c)
+	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductTagsPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	if view == nil {
-		pageview.Fail(c, errors.New("页面读模型返回空视图"))
+	req.ProjectID = scope.ProjectID
+	result, err := h.products.QueryTags(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
 		return
 	}
-
-	// 行与两个抽屉的初值都在读模型里装好（TagPageRows / TagCreateForm）；筛选上下文作为请求
-	// 事实由入口塞进入参，读模型直接搬进视图。
-	pageview.Render(c, view)
+	rules := h.products.ListTagRuleTypes(c.Request.Context())
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("RuleTypes", rules)))
 }
 
-// ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
-//
-// 为什么按需取：标签页首屏此前对每个标签取一次命中商品（GetTag），SQL 条数与标签数
-// 成正比，且命中数据（每标签最多 500 行）会一起撑大页面。现在首屏只给数量，
-// 展开某个标签时才发这一组查询（标签存在性 + 总数 + 本页行），与页面上有多少标签无关。
-//
-// 归属：挂在后台**页面组**（Session + CSRF），不叠加 Casbin 权限点 —— 与同组的
-// /products/seo-score、/products/variant/preview 同一先例：它是只读渲染，不落任何库
-// （写面仍然逐个挂 Casbin），因此不需要新权限点，也不会出现「有路由无权限点 ⇒ 含超管
-// 全员 403」。渲染出的商品行只读，行内没有任何写入口。
-//
-// 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
-// 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
+// ProductTagHitsFragment 只读命中结果交原对象，失败由统一 JSON 出口给真实状态码。
 func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	req, ok := binding.Query[productdto.ListTagProductsPageReq](c)
 	if !ok {
 		return
 	}
-	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
-	// 行、总数与分页事实的形状在 service（纯函数）：控制器只把取回来的那一页交出去。
-	data, cause := productservice.TagHitsFragmentData(req, res, err)
-	if cause != nil {
-		data["Err"] = response.MessageOf(c, "product", cause)
+	result, err := h.products.ListTagProductsPage(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
 	}
-	// 行、总数与分页事实都由读模型摊好（TagHitsFragmentData）：命中商品行就是 service 的
-	// TagProductResp，模板读 p.Name/p.Slug/p.Status；片段不按 HasPagination 设闸
-	// （单页非空时也要渲染两个禁用按钮，「还有没有下一页」是页面上可读的事实）。
-	pageview.Render(c, data)
+	pageview.Render(c, pageview.Objects(pageview.Object("Query", req), pageview.Object("Result", result)))
 }

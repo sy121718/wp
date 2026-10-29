@@ -15,21 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_translations_handle.go — 商品译文工作台：候选收集、逐行校验、保存与「按依赖标记待重建」。
-//
-// 候选来自构建期同一份收集逻辑（productcontract.TranslationCandidate），译文写 sys_translation
-// 后要把用到这些 key 的实例标记待重建 —— 少标一次的表现是「译好了但线上还是旧语言」。
-//
-// 这一屏的取数（工程 / 站点语言 / 商品域候选 / 现有译文 / 分组装配）与保存编排
-//（逐行校验 / 变更判定 / 写入 / 标记重建）都在商品 service 的读模型里：
-// 保存前必须先重建这一屏（逐行校验要候选原文、变更判定要现有译文、标记要实体身份），
-// 两者是**同一次取数**，拆开就会各查一遍、且两条路径的视图慢慢长成两个形状。
-//
-// 控制器只剩三件事：读请求（查询串 / JSON 体）、调读模型、出口（整页渲染 / JSON 回执）。
-// 译文读写端口与「标记待重建」端口也住在 service —— 装配层经构造函数转交，控制器不持有。
-//
-// 路由分两个组：整页 GET 在 /admin（页面组），保存 POST 在 /api/product（authorizedAPI 声明式组）。
-// 注册入口因此由装配层调用（SetupProductTranslationRoutes 同时拿到两个组）。
+// 商品译文的页面读取与 JSON 保存入口。
+// 页面分别传递工程范围与译文业务对象；保存只消费独立命令结果。
 
 // productTranslationPort 译文读写端口（= service 侧端口的别名；测试注入隔离 schema 的写入器）。
 type productTranslationPort = productservice.ProductTranslationStorePort
@@ -77,7 +64,7 @@ func (h *ProductTranslationHandle) SetContentTranslationStore(port productTransl
 	}
 }
 
-// translationsReader 取这一屏的读模型（保存编排与整屏取数在同一个接口里）。
+// translationsReader 取得译文查询与保存契约。
 func (h *ProductTranslationHandle) translationsReader() (productcontract.ProductTranslationsReader, error) {
 	reader, ok := h.products.(productcontract.ProductTranslationsReader)
 	if !ok {
@@ -102,13 +89,18 @@ func (h *ProductTranslationHandle) renderPage(c *gin.Context, req *productdto.Pr
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, view)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Translations", view)))
 }
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。
 //
 // 出口是 JSON 回执（页面表单已改由 ui/write-base.js 提交）：成功 → 基座存 flash 并刷新整页；
-// 失败 → 逐行结论的 400（响应出口取词一次）。逐行校验、变更判定、写入与待重建标记都在读模型。
+// 失败 → 逐行结论的 400（响应出口取词一次）。逐行校验、变更判定、写入与待重建标记都由 service 执行。
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	req, ok := binding.JSON[productdto.SaveProductTranslationsReq](c)
 	if !ok {
@@ -124,29 +116,29 @@ func (h *ProductTranslationHandle) saveAndReply(c *gin.Context, req *productdto.
 		replySaveRejected(c, view, err)
 		return
 	}
-	response.SuccessMsg(c, view.SaveMessage)
+	response.SuccessMsg(c, productservice.TranslationsSavedMsg(view.Written, view.StaleMarkFailed))
 }
 
 // replySaveRejected 保存失败的两种形状：读模型报错走统一失败出口，逐行拒绝给 400 + 逐行事实。
-func replySaveRejected(c *gin.Context, view *productdto.ProductTranslationsPageResp, err error) {
+func replySaveRejected(c *gin.Context, view *productcontract.TranslationSaveResult, err error) {
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	response.ErrorRows(c, http.StatusBadRequest, productservice.TranslationsErrorsTitle(), view.SaveRows)
+	response.ErrorRows(c, http.StatusBadRequest, productservice.TranslationsErrorsTitle(), view.Errors)
 }
 
-// page 取这一屏的读模型并调它（装配缺陷在这里变成错误，不是请求期的类型断言）。
-func (h *ProductTranslationHandle) page(c *gin.Context, req *productdto.ProductTranslationsPageReq) (*productdto.ProductTranslationsPageResp, error) {
+// page 调用译文业务查询；装配缺失返回错误。
+func (h *ProductTranslationHandle) page(c *gin.Context, req *productdto.ProductTranslationsPageReq) (*productcontract.ProductTranslations, error) {
 	reader, err := h.translationsReader()
 	if err != nil {
 		return nil, err
 	}
-	return reader.ProductTranslationsPage(c.Request.Context(), req)
+	return reader.QueryProductTranslations(c.Request.Context(), req)
 }
 
-// save 同 page，作用于保存编排。
-func (h *ProductTranslationHandle) save(c *gin.Context, req *productdto.SaveProductTranslationsReq) (*productdto.ProductTranslationsPageResp, error) {
+// save 调用独立的译文保存命令。
+func (h *ProductTranslationHandle) save(c *gin.Context, req *productdto.SaveProductTranslationsReq) (*productcontract.TranslationSaveResult, error) {
 	reader, err := h.translationsReader()
 	if err != nil {
 		return nil, err

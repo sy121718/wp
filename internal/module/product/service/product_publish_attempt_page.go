@@ -1,14 +1,6 @@
 package productservice
 
-// product_publish_attempt_page.go — 发布记录页的「发布历史」面板取数（迁移 673）。
-//
-// 这一格回答的是「这个商品都试过哪几次发布、谁点的、为什么没成」。台账在 presentation
-// 模块（presentation_publish_attempts），商品侧只做工程解析与入参归一，翻译在
-// outbound/publishrecord。
-//
-// 交 JSON 而不是 HTML 片段（internal/templates/CLAUDE.md §json_swap）：前端用页面里
-// 已渲染的 Jet <template> 填 DOM，后端只给事实（状态给码值，时间给已格式化的文本 ——
-// 前端与模板都没有第二份时间格式化实现）。
+// 按工程与商品查询发布历史；界面形态由前端格式化。
 
 import (
 	"context"
@@ -33,18 +25,14 @@ const (
 // 端口未装配**不算失败**：返回 Ready=false，面板据此显示「发布历史没接上」——
 // 那是装配缺陷的可见提示，与「读不到」是两档。
 func (s *Service) ProductPublishAttempts(ctx context.Context, req *productdto.PublishAttemptListReq) (*productdto.PublishAttemptListResp, error) {
-	projects, err := s.project.List(ctx)
+	if req == nil {
+		return nil, productenums.Err(productenums.ErrInvalidParam)
+	}
+	scope, err := s.ResolveCatalogScope(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	selected := ""
-	if req != nil {
-		selected = strings.TrimSpace(req.ProjectID)
-	}
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	if selected == "" || !ProjectExists(projects, selected) {
+	if scope.ProjectID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -70,9 +58,9 @@ func (s *Service) ProductPublishAttempts(ctx context.Context, req *productdto.Pu
 	// 为什么不是 OFFSET 分页：台账只增不删，翻页期间的写入会让 OFFSET 跳行/重行；
 	// 而取「最新 N*size 条」在只增表上恒为同一批前缀 —— 重复请求不会得到不同的行，
 	// 前端按 id 去重后追加即幂等。代价是每次多传已看过的行，历史总量在几十条量级。
-	want := pageNo * size
-	if want > publishAttemptMaxSize {
-		want = publishAttemptMaxSize
+	want := publishAttemptMaxSize
+	if pageNo <= publishAttemptMaxSize/size {
+		want = pageNo * size
 	}
 
 	res := &productdto.PublishAttemptListResp{
@@ -84,7 +72,7 @@ func (s *Service) ProductPublishAttempts(ctx context.Context, req *productdto.Pu
 	if !res.Ready {
 		return res, nil
 	}
-	pg, err := s.pagePublishAttempts.PublishAttempts(ctx, selected, productID, want)
+	pg, err := s.pagePublishAttempts.PublishAttempts(ctx, scope.ProjectID, productID, want)
 	if err != nil {
 		return nil, err
 	}

@@ -93,10 +93,10 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 		}
 	}
 
-	// 有评分：徽章里的 4.50 · 2 条是**投影算出来的**，不是任何列上存着的值。
+	// 有评分：HTML 交付聚合值，前端统一格式化两位小数；条数仍由后端聚合。
 	// 详情页一次只渲染一个商品的子资源，所以有评分 / 无评分要分别请求。
 	body := productDetailBody(t, engine, f.projectID, rated)
-	for _, want := range []string{"4.50", "2 条"} {
+	for _, want := range []string{`<span data-product-rating="4.5">4.5</span>`, "2 条"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("有评分的商品详情页应包含 %q", want)
 		}
@@ -104,7 +104,7 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	// 增删入口在编辑页（详情页只读）：入口搬走不等于丢掉，且必须挂在 JSON 写基座上。
 	editBody := getProductEditPage(engine, f.projectID, rated)
 	for _, want := range []string{
-		"4.50", "2 条", "添加评分",
+		`<span data-product-rating="4.5">4.5</span>`, "2 条", "添加评分",
 		`data-write-url="/api/product/rating/add"`,
 		`data-write-url="/api/product/rating/delete"`,
 	} {
@@ -116,8 +116,8 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 		t.Fatalf("详情页是只读页，不该出现评分增删入口")
 	}
 	assertRatingFormsInsideHost(t, editBody)
-	// 两条明细各自的分值都在（4.00 与 5.00）。
-	if !strings.Contains(body, "4.00") || !strings.Contains(body, "5.00") {
+	// 两条明细的原分值完整交给同一个前端格式化控件。
+	if !strings.Contains(body, `<td><span data-product-rating="4">4</span></td>`) || !strings.Contains(body, `<td><span data-product-rating="5">5</span></td>`) {
 		t.Fatalf("页面应列出每条评分的分值")
 	}
 	// 无评分的商品显示明确的空态，而不是「0.00 分 / 0 条」—— 这个区分是本页最容易写错的地方。
@@ -125,7 +125,7 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	if !strings.Contains(unratedBody, "这个商品还没有评分。") {
 		t.Fatalf("无评分商品应显示明确的空态文案")
 	}
-	if strings.Contains(unratedBody, "0.00") {
+	if strings.Contains(unratedBody, `data-product-rating=`) {
 		t.Fatalf("无评分不该被渲染成 0.00（没有评分 ≠ 0 分）")
 	}
 }
@@ -162,7 +162,7 @@ func TestProductRatingAddAndDeleteViaJSON(t *testing.T) {
 		t.Fatalf("添加评分应成功，实际 HTTP %d code=%d message=%s", rec.Code, env.Code, env.Message)
 	}
 	body := productDetailBody(t, engine, f.projectID, product)
-	if !strings.Contains(body, "4.50") || !strings.Contains(body, "1 条") {
+	if !strings.Contains(body, `<span data-product-rating="4.5">4.5</span>`) || !strings.Contains(body, "1 条") {
 		t.Fatalf("添加后详情页应显示 4.50 · 1 条")
 	}
 

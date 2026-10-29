@@ -5,7 +5,7 @@ package productservice_test
 //
 // 判据三条，都必须会变红：
 //  1. 台账装配期间**逐批次明细查询 0 次** —— 把 s.GetPriceAdjustment 的逐批调用加回
-//     pricingHistory，本用例立即失败（失败信息打出命中的语句）；
+//     ListPriceAdjustments，本用例立即失败（失败信息打出命中的语句）；
 //  2. SQL 总次数**与批次数无关**（1 批与 10 批两档相等）—— 批量化之后取数条数由
 //     「这一屏要哪些数据」决定，不由行数决定；
 //  3. 两档都真的把明细逐条展开了（每批 2 条）—— 否则「一次都不查」也能满足前两条。
@@ -112,20 +112,6 @@ func seedPricingHistoryFixture(t *testing.T, db *gorm.DB, projectID string, batc
 	return ids
 }
 
-// historyItemsOf 取台账行的明细（台账行的 Items 恒为 []map[string]any）。
-func historyItemsOf(t *testing.T, row map[string]any, where string) []map[string]any {
-	t.Helper()
-	raw, ok := row["Items"]
-	if !ok {
-		t.Fatalf("%s：台账行缺 Items 键：%+v", where, row)
-	}
-	items, ok := raw.([]map[string]any)
-	if !ok {
-		t.Fatalf("%s：Items 不是 []map[string]any，实际 %T", where, raw)
-	}
-	return items
-}
-
 // TestProductPricingHistorySQLCountIsConstantInBatchCount 1 批与 10 批两档：
 // 逐批次明细查询 0 次、SQL 总次数相等、两档的明细都逐条展开。
 func TestProductPricingHistorySQLCountIsConstantInBatchCount(t *testing.T) {
@@ -152,16 +138,16 @@ func TestProductPricingHistorySQLCountIsConstantInBatchCount(t *testing.T) {
 			rows: []projectdto.ProjectResp{{ID: projectID, Name: "台账 SQL 判据"}},
 		})
 		probe.reset()
-		view, err := s.ProductPricingPage(ctx, &productdto.ProductPricingPageReq{ProjectID: projectID})
+		history, err := s.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{ProjectID: projectID, Limit: 10, IncludeItems: true})
 		if err != nil {
 			t.Fatalf("批次数=%d：台账读模型失败：%v", batches, err)
 		}
-		if len(view.History) != batches {
-			t.Fatalf("批次数=%d：台账 %d 行，期望 %d", batches, len(view.History), batches)
+		if len(history) != batches {
+			t.Fatalf("批次数=%d：台账 %d 行，期望 %d", batches, len(history), batches)
 		}
 		items := 0
-		for _, row := range view.History {
-			items += len(historyItemsOf(t, row, fmt.Sprintf("批次数=%d", batches)))
+		for _, row := range history {
+			items += len(row.Items)
 		}
 		return runStat{total: probe.total(), lookups: probe.perAdjustmentItemLookups(), items: items}
 	}

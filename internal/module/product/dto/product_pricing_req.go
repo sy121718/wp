@@ -1,7 +1,11 @@
 // product_pricing_req.go — 定价工具入参（issue #13）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	productenums "go_wp/internal/module/product/enums"
+	json "go_wp/pkg/jsonx"
+	"net/url"
+)
 
 // PricingRuleReq 定价工具的规则与作用范围（试算与落库共用同一份入参）。
 //
@@ -13,6 +17,10 @@ type PricingRuleReq struct {
 	RuleType string `json:"ruleType" form:"ruleType"`
 	// RuleParams 规则参数（键集合由规则类型决定；白名单外的键一律拒绝）。
 	RuleParams json.RawMessage `json:"ruleParams" form:"-"`
+	// 表单中的数值原文由 BindForm 归一到 RuleParams；JSON 使用 ruleParams。
+	Multiplier string `json:"-" form:"multiplier"`
+	Amount     string `json:"-" form:"amount"`
+	Margin     string `json:"-" form:"margin"`
 	// Rounding 尾数处理（none / integer / end_9 / end_99）；留空按 none。
 	Rounding string `json:"rounding" form:"rounding"`
 	// Scope 作用范围（sku / product / filter）。
@@ -46,6 +54,8 @@ type PricingApplyReq struct {
 type ListPriceAdjustmentReq struct {
 	ProjectID string `form:"projectId"`
 	Limit     int    `form:"limit"`
+	// IncludeItems 批量读取各调价批次的明细，不逐批次查询。
+	IncludeItems bool `form:"includeItems"`
 }
 
 // GetPriceAdjustmentReq 单批次留痕详情（含逐变体明细）。
@@ -56,4 +66,40 @@ type ListPriceAdjustmentReq struct {
 type GetPriceAdjustmentReq struct {
 	ID        string `form:"id" binding:"required"`
 	ProjectID string `form:"projectId"`
+}
+
+// BindForm 统一预览与应用的表单参数；规则合法性仍由 service 校验。
+func (r *PricingRuleReq) BindForm(vals url.Values) error {
+	if vals.Has("ruleParams") {
+		return bindRawJSONField(vals, "ruleParams", &r.RuleParams)
+	}
+	r.RuleParams = PricingParams(r.RuleType, r.Multiplier, r.Amount, r.Margin)
+	return nil
+}
+
+// PricingParams 按规则类型从平铺的字符串参数拼规则参数（只取本类型用得到的键）。
+//
+// 非法数字**不给键** —— service 统一报「参数缺失或不是数字」，这里不重复一套校验；
+// NaN / 正负无穷同档（它们进了算价会得到一整批 NaN 价格）。
+func PricingParams(ruleType, multiplier, amount, margin string) json.RawMessage {
+	params := map[string]any{}
+	switch ruleType {
+	case productenums.PricingRuleCostMultiple:
+		if v, err := OptFloat("multiplier", multiplier); err == nil && v != nil {
+			params["multiplier"] = *v
+		}
+	case productenums.PricingRuleCostMarkup, productenums.PricingRuleFixedPrice:
+		if v, err := OptFloat("amount", amount); err == nil && v != nil {
+			params["amount"] = *v
+		}
+	case productenums.PricingRuleTargetMargin:
+		if v, err := OptFloat("margin", margin); err == nil && v != nil {
+			params["margin"] = *v
+		}
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return raw
 }

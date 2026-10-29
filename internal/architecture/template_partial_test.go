@@ -21,7 +21,7 @@ const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 // 2026-10 定时上下线（PIPE-7）下线时从 163 降到 160（-3：
 // pages.html 的两个排定徽标 + 面板片段的空态徽标随文件一起删掉），
 // 预算只减不增，所以这里同步下调 —— 留在 163 会让「已经收口」与「一点没改」在清单上长得一样。
-const badgeBudget = 156
+const badgeBudget = 154
 
 const badgePartial = "internal/templates/admin/partials/badge.html"
 

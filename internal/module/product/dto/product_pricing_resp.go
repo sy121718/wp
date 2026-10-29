@@ -10,7 +10,7 @@ import (
 type PricingRuleTypeResp struct {
 	Type string `json:"type"`
 	// 展示名与参数说明都是文案，按 Type 写在模板里（pricing_rule_fields.html）。
-	// RequiresCost 该规则是否依赖变体成本价（缺成本价的变体将被跳过）。
+	// RequiresCost 该规则是否依赖变体成本价（预览标记缺成本价的变体，应用整批拒绝）。
 	RequiresCost bool `json:"requiresCost"`
 }
 
@@ -26,11 +26,13 @@ type PricingLineResp struct {
 	ProductSlug string `json:"productSlug"`
 	VariantID   string `json:"variantId"`
 	SKUCode     string `json:"skuCode"`
-	// CostPrice 变体当前成本价（为 nil 表示未填；成本类规则会跳过该变体）。
+	// CostPrice 变体当前成本价（为 nil 表示未填；成本类规则无法算价）。
 	CostPrice *float64 `json:"costPrice"`
 	OldPrice  float64  `json:"oldPrice"`
 	// NewPrice 试算出的新售价（skipped 时等于 OldPrice，作为「不改动」的明确占位）。
 	NewPrice float64 `json:"newPrice"`
+	// Diff 差值由同一算价结果给出，前端只格式化。
+	Diff float64 `json:"diff"`
 	// Status changed / unchanged / skipped。
 	Status string `json:"status"`
 	// Reason 跳过原因（enums 键；非 skipped 为空串）。
@@ -69,10 +71,9 @@ type PricingApplyResp struct {
 	ProjectID    string         `json:"projectId"`
 	TargetCount  int            `json:"targetCount"`
 	ChangedCount int            `json:"changedCount"`
-	SkippedCount int            `json:"skippedCount"`
 	// RecalculatedTags 本次落库后顺带重算的自动标签数（变体价格变 → 价格区间/促销规则可能变归属）。
 	RecalculatedTags int `json:"recalculatedTags"`
-	// Lines 仅含**实际改动**的变体（未改动与被跳过的不写留痕）。
+	// Lines 仅含实际改动的变体；任何无法算价的变体都会拒绝整批。
 	Lines []*PricingLineResp `json:"lines"`
 }
 
@@ -116,6 +117,6 @@ type PriceAdjustmentResp struct {
 	Note         string                  `json:"note"`
 	OperatorID   string                  `json:"operatorId"`
 	CreatedAt    utils.JSONTime          `json:"createdAt"`
-	// Items 逐变体明细（仅详情接口填充；列表接口为 nil）。
+	// Items 逐变体明细（详情接口或列表 IncludeItems 时填充）。
 	Items []*PriceAdjustmentItemResp `json:"items,omitempty"`
 }

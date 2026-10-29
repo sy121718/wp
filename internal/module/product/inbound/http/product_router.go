@@ -50,7 +50,6 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
@@ -72,7 +71,6 @@ const (
 	ProductPublishRecordPageTemplate  = "admin/product/product_publish_records.html"
 	ProductDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
 	ProductAttributesPageTemplate     = "admin/product/product_attributes.html"
-	ProductAttributeRowsTemplate      = "admin/product/product_attribute_rows.html"
 	ProductCategoriesPageTemplate     = "admin/product/product_categories.html"
 	ProductCategoryParentsTemplate    = "admin/product/product_category_parent_options.html"
 	ProductBrandsPageTemplate         = "admin/product/product_brands.html"
@@ -106,8 +104,6 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	handle := NewProductHandle(svc)
 
 	g := rg.Group("/product")
-	// 取词注入：service 层的展示文案（内置规则名 / 描述等）按请求语言渲染。
-	g.Use(productTranslateMiddleware())
 
 	registerProductCoreAPI(g, handle)
 	registerProductDetailTemplateAPI(g, handle)
@@ -292,13 +288,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	if pages == nil {
 		return nil
 	}
-	// 取词注入：本域页面 handler 里的 `ctx := c.Request.Context()` 因此自带取词函数
-	// （service 层的展示文案 —— 内置规则名与描述、筛选标签等 —— 按请求语言渲染）。
-	//
-	// 用**子组**而不是直接在 pages 上 Use：pages 是装配层创建的共享页面组，
-	// 直接 Use 会把中间件挂到其它模块的路由链上。子组前缀留空，路径逐字不变。
-	pages = pages.Group("")
-	pages.Use(productTranslateMiddleware())
 	// 商品管理页（issue #5）：页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作复用商品 API 权限点做 Casbin 鉴权（与既有管理页一致）。
 	productPages := NewProductPageHandle(products, reader, projects)
@@ -410,11 +399,8 @@ func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductP
 func registerProductAttributePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 属性库（issue #7）——
 	// 属性组与属性值可跨商品复用，故独立页面。
-	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
+	// 值编辑器在前端增删行；提交时由 API 校验并原子保存整份清单。
 	pages.GET("/product-attributes", adminui.PageAuthz("/api/product/attribute/list"), adminui.PageSlot(ProductAttributesPageTemplate), productPages.ProductAttributesPage)
-	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
-	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
-	pages.POST("/product-attributes/value-rows", adminui.BareSlot(ProductAttributeRowsTemplate), productPages.ProductAttributesValueRows)
 }
 
 // registerProductTaxonomyPages 注册分类与品牌（issue #10）的页面路由。
@@ -443,9 +429,7 @@ func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHa
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
 	pages.GET("/product-tags", adminui.PageAuthz("/api/product/tag/list"), adminui.PageSlot(ProductTagsPageTemplate), productPages.ProductTagsPage)
 	// 命中商品片段（审计 PERF-02）：标签页首屏不再逐标签内联命中商品，展开时按页取。
-	// 只读渲染、不落库，故与同组的 /products/seo-score、/products/variant/preview 同一先例
-	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
-	// 含超管全员 403」那种缺口）。
+	// 命中片段复用标签读取权限，避免可展开内容绕过列表授权。
 	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), adminui.PageSlot(ProductTagHitsTemplate), productPages.ProductTagHitsFragment)
 	// 商品挂手工标签同样走 /api/product/update（自动标签不在这份表单里）。
 }
@@ -458,10 +442,7 @@ func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPa
 	// 四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集批量改价。
 	// 试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
 	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductPricingPageTemplate), productPages.ProductPricingPage)
-	// 试算保留页面 POST：结果是**一张表格**（逐变体的成本 / 原价 / 新价 / 差值 / 结果），
-	// 只有整页重渲才渲染得出来；它不落库，没有写动作要迁。应用调价已迁到
-	// /api/product/pricing/apply（页面走 ui/write-base.js，落库后整页刷新看台账）。
-	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), adminui.PageSlot(ProductPricingPageTemplate), productPages.ProductPricingPreview)
+	// 试算和应用均走 JSON API；前端消费试算结果，应用后刷新台账。
 
 	// —— 商品域翻译工作台（issue #12）——
 	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。路由在装配层同时挂到
@@ -509,10 +490,8 @@ func BindDetailTemplateModePort(port presentationcontract.DetailTemplateModePort
 	detailTemplateModePort = port
 }
 
-// ==========================================================================
-// 模块入口：两个处理器类型、构造与装配注入
-// ==========================================================================
-// 原先单独一个 product_page.go；它只放这两个类型，构造点与路由声明点分开没有收益 ——
+// ===================================================================// 模块入口：两个处理器类型、构造与装配注入
+// ===================================================================// 原先单独一个 product_page.go；它只放这两个类型，构造点与路由声明点分开没有收益 ——
 // 路由是「谁被暴露」，类型是「谁来处理」，两者是同一张表的两列。
 
 // variantSelectionPrefix 组合生成表单里「属性组 → 勾选值」的字段名前缀。
@@ -615,11 +594,9 @@ func (h *ProductPageHandle) SetInventoryDeps(inventory inventorycontract.Invento
 	}
 }
 
-// ==========================================================================
-// 接口面处理器（JSON handler 的接收者）。
+// ===================================================================// 接口面处理器（JSON handler 的接收者）。
 // 页面面处理器是 ProductPageHandle（见 product_page.go）。
-// ==========================================================================
-// ProductHandle product 接口处理器。
+// ===================================================================// ProductHandle product 接口处理器。
 type ProductHandle struct {
 	svc productcontract.ProductService
 }
@@ -627,27 +604,6 @@ type ProductHandle struct {
 // NewProductHandle 构造。
 func NewProductHandle(svc productcontract.ProductService) *ProductHandle {
 	return &ProductHandle{svc: svc}
-}
-
-// productTranslateMiddleware 让本模块的 service 能按请求语言取词。
-//
-// service 层没有语言上下文（语言来自后台 Cookie / Accept-Language，只有 gin.Context
-// 知道），而译文工作台要取**字段名**（商品名 / 描述 / SEO 标题…，见 contract.FieldLabel）——
-// 那些 key 与中文兜底住在 enums，这里只负责带上「当前请求语言」。这里把
-// shell.TranslateFor(c) 放进 Request 的 Context，handler 里 `ctx := c.Request.Context()`
-// 因此自带取词函数 —— 既不必给每个 contract 方法加 tr 参数，也不会漏掉任何一个调用点。
-//
-// 其余展示文案（状态、规则名、筛选标签、跳过原因）不经过这里：取值进数据，措辞进模板
-// 或响应出口。
-//
-// 未挂本中间件的路径（单测直调 service）行为不变：取词函数缺失时 service 回落中文兜底
-// （见 service/product_shared.go 的 translateFrom）。
-func productTranslateMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tr := productservice.TranslateFunc(shell.TranslateFor(c))
-		c.Request = c.Request.WithContext(productservice.WithTranslate(c.Request.Context(), tr))
-		c.Next()
-	}
 }
 
 // SetupProductOptionsRoutes 公开商品选项仅返回安全事实。

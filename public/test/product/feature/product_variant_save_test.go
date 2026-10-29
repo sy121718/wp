@@ -16,7 +16,9 @@ package feature
 import (
 	"bytes"
 	"context"
+	"errors"
 	"go_wp/internal/adminui"
+	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -373,10 +375,10 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	}
 }
 
-// —— 验收 5：有库存时跳过该行，且不整批失败 ——
+// —— 验收 5：存在不可删除行时整批拒绝，所有修改保持原状 ——
 
-// TestVariantSaveSkipsStockRow 清单外要删的行：有非零库存 → 跳过并逐条回带原因。
-func TestVariantSaveSkipsStockRow(t *testing.T) {
+// TestVariantSaveRejectsStockRow 清单外存在非零库存时整批拒绝，既有行修改也不落库。
+func TestVariantSaveRejectsStockRow(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
 		return
@@ -396,31 +398,27 @@ func TestVariantSaveSkipsStockRow(t *testing.T) {
 	kept := variantByOption(t, f, p.ID, pv.Rows[3].OptionValues)
 	f.addStock(t, withStock, 3)
 
-	// 清单只留一个：其余三个都在删除范围内（一个有库存被拦下，两个真的删掉）。
-	res := f.save(t, p.ID, []productdto.VariantListResp{{
-		VariantID: kept.ID, SKUCode: kept.SKUCode, OptionValues: kept.OptionValues,
-	}})
-	if res.Deleted != 2 {
-		t.Fatalf("无库存的那两行应被删除，实际 deleted=%d", res.Deleted)
+	// 一行有库存时整个清单被拒，保留行的 SKU 更新也不能提交。
+	before := f.variantsOf(t, p.ID)
+	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{VariantID: kept.ID, SKUCode: kept.SKUCode + "_EDIT", OptionValues: kept.OptionValues}}})
+	var rejected facing.BlockedError
+	if !errors.As(err, &rejected) || len(rejected.BlockedItems()) != 1 || rejected.BlockedItems()[0].ID != withStock.ID || rejected.BlockedItems()[0].ReasonKey != productenums.VariantSkipHasStock {
+		t.Fatalf("应整批拒绝并定位库存行：%v", err)
 	}
-	if len(res.Skipped) != 1 {
-		t.Fatalf("应有 1 行被跳过（库存），实际 %d：%+v", len(res.Skipped), res.Skipped)
-	}
-	if res.Skipped[0].Reason != productenums.VariantSkipHasStock {
-		t.Fatalf("有库存的那一行应报 %s，实际 %+v", productenums.VariantSkipHasStock, res.Skipped)
-	}
-	// 不整批失败：被拦下的变体仍在库里，其余照常删掉。
 	after := f.variantsOf(t, p.ID)
-	ids := map[string]bool{}
+	if len(after) != len(before) {
+		t.Fatalf("拒绝后应零删除：before=%d after=%d", len(before), len(after))
+	}
+	codes := map[string]string{}
+	for _, v := range before {
+		codes[v.ID] = v.SKUCode
+	}
 	for _, v := range after {
-		ids[v.ID] = true
+		if codes[v.ID] != v.SKUCode {
+			t.Fatalf("拒绝后不应提交 SKU 更新：%s", v.ID)
+		}
 	}
-	if !ids[withStock.ID] || !ids[kept.ID] {
-		t.Fatalf("被跳过的变体与保留的变体必须留在库里：%+v", ids)
-	}
-	if len(after) != 2 {
-		t.Fatalf("除被跳过与保留的两行外，其余应被删除，实际剩 %d 个", len(after))
-	}
+
 }
 
 // —— 验收 6：服务端不信任前端 ——
@@ -477,34 +475,26 @@ func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 		t.Fatalf("规范化后为空段应报 %s，实际 %q", productenums.ErrVariantSKUEmpty, msg)
 	}
 	// 新增行直接抄库里的 SKU：唯一性按 product_id + sku_code 判，明确拒绝（前端提交的值不作数）。
-	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
-		SKUCode: stored.SKUCode, OptionValues: pv.Rows[1].OptionValues,
-	}})
-	if !strings.Contains(msg, productenums.ErrSkuTaken) {
-		t.Fatalf("抄用已占用的 SKU 应报 %s，实际 %q", productenums.ErrSkuTaken, msg)
+	_, conflictErr := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{SKUCode: stored.SKUCode, OptionValues: pv.Rows[1].OptionValues}}})
+	var conflict facing.BlockedError
+	if !errors.As(conflictErr, &conflict) || len(conflict.BlockedItems()) != 1 || conflict.BlockedItems()[0].ID != "row:1" || conflict.BlockedItems()[0].ReasonKey != productenums.ErrSkuTaken {
+		t.Fatalf("抄用已占用的 SKU 应定位到提交行：%v", conflictErr)
 	}
-	// 同一个变体在清单里出现两次：第二行按「跳过」处理并回带原因（不整批失败、不重复写）。
-	dup := f.save(t, p.ID, []productdto.VariantListResp{{
-		VariantID: stored.ID, SKUCode: stored.SKUCode, OptionValues: stored.OptionValues,
-	}, {
-		VariantID: stored.ID, SKUCode: stored.SKUCode, OptionValues: stored.OptionValues,
-	}})
-	dupSkipped := false
-	for _, skip := range dup.Skipped {
-		if skip.Reason == productenums.VariantSkipDuplicated {
-			dupSkipped = true
+	// 重复行导致整批被拒，第一行的 SKU 更新也必须回滚。
+	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{VariantID: stored.ID, SKUCode: stored.SKUCode + "_EDIT"}, {VariantID: stored.ID, SKUCode: stored.SKUCode}}})
+	var rejected facing.BlockedError
+	if !errors.As(err, &rejected) || len(rejected.BlockedItems()) != 1 || rejected.BlockedItems()[0].ReasonKey != productenums.ErrVariantListDuplicated {
+		t.Fatalf("重复行必须拒绝：%v", err)
+	}
+	for _, v := range f.variantsOf(t, p.ID) {
+		if v.ID == stored.ID && v.SKUCode != stored.SKUCode {
+			t.Fatalf("重复拒绝后发生了写入：%+v", v)
 		}
 	}
-	if !dupSkipped {
-		t.Fatalf("同一组合重复出现时应记一条 %s，实际 %+v", productenums.VariantSkipDuplicated, dup.Skipped)
-	}
-	if dup.Created != 0 || dup.Updated != 0 || dup.Deleted != 0 {
-		t.Fatalf("重复行不该产生任何写入：created=%d updated=%d deleted=%d",
-			dup.Created, dup.Updated, dup.Deleted)
-	}
+
 }
 
-// —— 页面链路：预览回 JSON、保存回详情页带结论 ——
+// —— 页面链路：预览与保存均返回统一 JSON ——
 
 // TestVariantListPagePreviewAndSaveFlow 后台页面的两个端点在真实链路里可用。
 func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
@@ -518,11 +508,10 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 保存成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
-	// 保存是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）：表单 POST 已不存在。
+	// 保存由页面 data-write-url 声明的 JSON 端点处理。
 	engine.POST("/api/product/variant/save", producthttp.NewProductHandle(f.products).SaveVariantList)
 
 	rec := postForm(engine, "/admin/products/variant/preview", url.Values{
@@ -534,22 +523,19 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 		t.Fatalf("预览应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	var preview struct {
-		OK   bool `json:"ok"`
-		Rows []struct {
-			SKUCode      string          `json:"skuCode"`
-			OptionValues json.RawMessage `json:"optionValues"`
-			Spec         string          `json:"spec"`
-		} `json:"rows"`
+		Code int
+		Data productdto.PreviewVariantResp
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
 		t.Fatalf("预览响应不是合法 JSON: %v（%s）", err, rec.Body.String())
 	}
-	if !preview.OK || len(preview.Rows) != 2 {
-		t.Fatalf("勾选 1×2 应返回 2 行，实际 ok=%v rows=%d", preview.OK, len(preview.Rows))
+	if preview.Code != 200 || len(preview.Data.Rows) != 2 {
+		t.Fatalf("勾选 1×2 应返回 2 行，实际 codeOK=%v rows=%d", preview.Code == 200, len(preview.Data.Rows))
 	}
-	for _, row := range preview.Rows {
-		if row.SKUCode == "" || row.Spec == "" || len(row.OptionValues) == 0 {
-			t.Fatalf("预览行必须带 SKU / 规格文本 / 组合：%+v", row)
+	for _, row := range preview.Data.Rows {
+		if row.SKUCode == "" || len(row.OptionValues) == 0 {
+			t.Fatalf("预览行必须带 SKU / 原始规格组合：%+v", row)
 		}
 	}
 	// 预览不落库（页面链路同样如此）。
@@ -560,8 +546,8 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	rec = postJSON(t, engine, "/api/product/variant/save", map[string]any{
 		"projectId": f.projectID, "productId": p.ID, "warehouseId": f.warehouse.ID,
 		"rows": []map[string]any{
-			{"variantId": "", "skuCode": preview.Rows[0].SKUCode, "optionValues": json.RawMessage(preview.Rows[0].OptionValues)},
-			{"variantId": "", "skuCode": preview.Rows[1].SKUCode, "optionValues": json.RawMessage(preview.Rows[1].OptionValues)},
+			{"variantId": "", "skuCode": preview.Data.Rows[0].SKUCode, "optionValues": json.RawMessage(preview.Data.Rows[0].OptionValues)},
+			{"variantId": "", "skuCode": preview.Data.Rows[1].SKUCode, "optionValues": json.RawMessage(preview.Data.Rows[1].OptionValues)},
 		},
 	})
 	if rec.Code != http.StatusOK {
@@ -577,8 +563,8 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
 		t.Fatalf("保存响应不是合法 JSON: %v（%s）", err, rec.Body.String())
 	}
-	// 成功回执是一句复合句（计数 + 跳过原因），页面用 data-write-flash 把它带过整页刷新。
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Message, "新增 2 个") || saved.Data.Created != 2 {
+	// 成功回执使用统一消息，写入计数只保留在 data。
+	if saved.Code != http.StatusOK || saved.Message == "" || saved.Data.Created != 2 {
 		t.Fatalf("回执应含新增计数与计数本身，实际 code=%d message=%q created=%d", saved.Code, saved.Message, saved.Data.Created)
 	}
 	if got := f.variantsOf(t, p.ID); len(got) != 2 {

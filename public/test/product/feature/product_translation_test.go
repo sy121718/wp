@@ -388,8 +388,8 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		if c.SourceHash != i18n.ContentHash(c.SourceText) {
 			t.Fatalf("候选 %s（%q）的 source_hash 与原文不符", c.Context, c.SourceText)
 		}
-		if c.EntityName == "" || c.FieldLabel == "" {
-			t.Fatalf("候选 %s 缺少实体名 / 字段中文名", c.Context)
+		if c.EntityName == "" || c.Field == "" {
+			t.Fatalf("候选 %s 缺少实体名 / 字段标识", c.Context)
 		}
 	}
 

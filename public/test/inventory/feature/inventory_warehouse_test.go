@@ -634,7 +634,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
-	// 新建变体是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）。
+	// 新建变体是 JSON 端点（页面声明 data-write-url，由统一基座发起 fetch）。
 	engine.POST("/api/product/variant/create", producthttp.NewProductHandle(f.products).CreateVariant)
 
 	rec := httptestGet(engine, "/admin/products?project="+f.projectID)
@@ -642,8 +642,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		t.Fatalf("商品列表页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	listBody := rec.Body.String()
-	if !strings.Contains(listBody, `href="/admin/products/new"`) {
-		t.Fatalf("商品列表缺少独立新建页入口")
+	if !strings.Contains(listBody, `href="/admin/products/new?project=`+f.projectID+`"`) {
+		t.Fatalf("商品列表缺少保留当前工程的独立新建页入口")
 	}
 	if strings.Contains(listBody, `name="warehouseIds"`) {
 		t.Fatalf("商品列表不应再承载新建商品的多仓表单")
@@ -655,7 +655,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 	body := rec.Body.String()
 	// 独立页 include product_create_form.html；断言仓库选项处于创建表单之内，
-	// 而非误命中页面上其他位置的仓库名。表单已迁 JSON 写基座，句柄是 id + data-write-api。
+	// 而非误命中页面上其他位置的仓库名。表单已迁 JSON 写基座，句柄是 id + data-write-url。
 	// 从 <form 起截，不假定 id 紧跟在 <form 后面 —— 迁到新契约后 data-write /
 	// data-write-url 排在 id 之前（属性顺序不属于契约）。
 	idAt := strings.Index(body, `id="product-create-form"`)

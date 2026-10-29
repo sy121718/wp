@@ -250,7 +250,7 @@ func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCatego
 // 逐层点进去的导航（parentId）与子级懒加载已退役 —— 列表本身就是整棵树，
 // 逐层导航与树并存只会让人在两套「在哪一层」的心智模型之间来回切。
 // 旧的 ListCategories（全树契约）留给构建期与其它调用方，本方法管后台分页。
-func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error) {
+func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryListResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -274,14 +274,14 @@ func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCate
 		if lerr != nil {
 			return nil, lerr
 		}
-		return &productdto.CategoryPageResp{Items: buildCategoryPageTree(rows), Total: total}, nil
+		return &productdto.CategoryListResp{Items: buildCategoryPageTree(rows), Total: total}, nil
 	}
 	rows, matchTotal, lerr := s.m.ListCategorySearchForest(ctx, projectID, keyword)
 	if lerr != nil {
 		return nil, lerr
 	}
 	roots := buildCategoryPageTree(rows)
-	res = &productdto.CategoryPageResp{Total: int64(len(roots)), MatchTotal: matchTotal}
+	res = &productdto.CategoryListResp{Total: int64(len(roots)), MatchTotal: matchTotal}
 	start := (page - 1) * size
 	if start >= len(roots) {
 		// 页码越界：分页条由调用方按 Total 夹住，这里只保证不切出 panic。

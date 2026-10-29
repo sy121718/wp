@@ -3,8 +3,8 @@
 // 覆盖验收 4「后台可管理属性组与属性值」的服务端部分：
 //
 //	· GET /admin/product-attributes 渲染完整页（属性组、值、参与变体标记都在 HTML 里）；
-//	· POST /admin/product-attributes/value-rows 的值编辑器片段（HTMX）按 action
-//	  增删一行并回渲染有序行数据 —— 这是「编辑中的值」唯一的归一路径。
+//	· POST /api/product/attribute/set-values 消费浏览器整形后的 values JSON 数组。
+//	  增删、禁用、排序和清空通过同一请求保存。
 //
 // 用真实 Jet 模板渲染（与生产同一 template root），断言的是「页面里到底有没有
 // 那几样东西」，而不是「我们自己写下的配置」。
@@ -58,7 +58,7 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-attributes", adminui.PageSlot(producthttp.ProductAttributesPageTemplate), handle.ProductAttributesPage)
-	engine.POST("/admin/product-attributes/value-rows", adminui.BareSlot(producthttp.ProductAttributeRowsTemplate), handle.ProductAttributesValueRows)
+	engine.POST("/api/product/attribute/set-values", producthttp.NewProductHandle(f.svc).SetAttributeValues)
 	return engine, f
 }
 
@@ -105,61 +105,42 @@ func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 	}
 }
 
-// TestAttributeValueRowsFragmentAddRemove 值编辑器片段：
-// add 增一行、remove 减一行，且返回的是有序的 values[n] 表单字段。
-func TestAttributeValueRowsFragmentAddRemove(t *testing.T) {
+// TestAttributeValuesFormWritesJSON 用浏览器写基座的 values JSON 字段保存增删与禁用。
+func TestAttributeValuesFormWritesJSON(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
 		return
 	}
-	group, err := f.svc.CreateAttribute(t.Context(), &productdto.CreateAttributeReq{
-		ProjectID: f.projectID, Name: "尺寸", Key: "size",
-		Values: []productdto.AttributeValueReq{
-			{Label: "S", Key: "s"},
-			{Label: "M", Key: "m"},
-		},
-	})
+	group, err := f.svc.CreateAttribute(t.Context(), &productdto.CreateAttributeReq{ProjectID: f.projectID, Name: "尺寸", Key: "size", Values: []productdto.AttributeValueReq{{Label: "S", Key: "s"}, {Label: "M", Key: "m"}}})
 	if err != nil {
-		t.Fatalf("创建属性组失败: %v", err)
+		t.Fatal(err)
 	}
-
-	// add：两行 → 三行（新行为空占位）。
-	form := url.Values{}
-	form.Set("action", "add")
-	form.Set("groupId", group.ID)
-	form.Set("values[0].id", group.Values[0].ID)
-	form.Set("values[0].key", "s")
-	form.Set("values[0].label", "S")
-	form.Set("values[1].id", group.Values[1].ID)
-	form.Set("values[1].key", "m")
-	form.Set("values[1].label", "M")
-	rec := postForm(engine, "/admin/product-attributes/value-rows", form)
+	payload := `[{"id":"` + group.Values[1].ID + `","key":"m","label":"中码","sort":"2","enabled":"false"},{"key":"l","label":"L","sort":"1","enabled":"true"}]`
+	rec := postForm(engine, "/api/product/attribute/set-values", url.Values{"id": {group.ID}, "projectId": {f.projectID}, "values": {payload}})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("保存应返回 JSON 200: %d %s", rec.Code, rec.Body.String())
+	}
+	got, err := f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: group.ID, ProjectID: f.projectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Values) != 2 || got.Values[0].Key != "l" || got.Values[1].ID != group.Values[1].ID || got.Values[1].Label != "中码" || got.Values[1].Enabled {
+		t.Fatalf("增删/保留身份/禁用/排序错误: %+v", got.Values)
+	}
+	rec = postForm(engine, "/api/product/attribute/set-values", url.Values{"id": {group.ID}, "projectId": {f.projectID}, "values": {"[]"}})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("片段应 200，实际 %d", rec.Code)
+		t.Fatalf("清空失败: %s", rec.Body.String())
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "values[2].label") {
-		t.Fatalf("add 后应出现第 3 行：%s", body)
-	}
-
-	// remove：删第 0 行（S）后保留原索引 1，避免失败回显把用户行值压紧错位。
-	form.Set("action", "remove")
-	form.Set("removeIndex", "0")
-	rec = postForm(engine, "/admin/product-attributes/value-rows", form)
-	body = rec.Body.String()
-	if strings.Contains(body, "values[2].label") || strings.Contains(body, "values[0].label") {
-		t.Fatalf("remove 后只应保留原索引 1 的一行：%s", body)
-	}
-	needle := "values[1].label\" value=\"M\""
-	if !strings.Contains(body, needle) {
-		t.Fatalf("remove 第 0 行后原索引 1 的显示名应为 M：%s", body)
+	got, err = f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: group.ID, ProjectID: f.projectID})
+	if err != nil || len(got.Values) != 0 {
+		t.Fatalf("清空未落库: %+v %v", got, err)
 	}
 }
 
 // TestAttributePageCreateAndSetValues 建组 + 整体保存值（服务端归一与排序）。
 //
 // 页面写链路已迁到 ui/write-base.js（模板直调 /api/product/attribute/{create,set-values}），
-// 这里直接验用例：形状（values[] 行数组）由 json_write.test.cjs 与页面渲染测试分别钉住。
+// 这里直接验用例：values 行数组由 product-attribute-values.test.cjs 与页面渲染测试分别钉住。
 func TestAttributePageCreateAndSetValues(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {

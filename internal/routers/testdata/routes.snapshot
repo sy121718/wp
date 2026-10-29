@@ -384,10 +384,8 @@ POST /admin/permissions/create
 POST /admin/permissions/delete
 POST /admin/permissions/update
 POST /admin/plugins/install
-POST /admin/product-attributes/value-rows
 POST /admin/product-brands/seo-score
 POST /admin/product-categories/seo-score
-POST /admin/product-pricing/preview
 POST /admin/products/seo-score
 POST /admin/products/template/preview
 POST /admin/products/variant/preview

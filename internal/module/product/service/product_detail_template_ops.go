@@ -1,19 +1,7 @@
 package productservice
 
-// product_detail_template_ops.go —— 「详情页模板」的**写动作与预览编排**（issue #14）。
-//
-// 与同目录 product_detail_template_page.go 的分工（两个文件名像、职责不同，改之前先看这段）：
-//   - product_detail_template_page.go = **整页读模型**：GET /admin/products/template 的候选模板
-//     清单 / 默认模板 / 绑定实例 → productdto.ProductDetailTemplatePageResp（含分页、失败槽）；
-//   - 本文件 = **写动作与预览的编排**：模板文档组装、首次发布、切换模板重新发布、改 URL、
-//     发布前预览。不返回任何页面视图，也不渲染 HTML —— 渲染与错误映射留在 HTTP 层。
-//
-// 与 product_seo_score.go 的关系：同包，模板流程若需要评分输入可直接调用那边导出的用例
-//（SeoScoreInputOf / SeoEntityScore），不需要 import。**本文件现状不消费评分** ——
-// 模板的发布与预览与分数无关；把「调用评分用例」写成事实而不是形式。
-//
-// 依赖以**窄端口**注入（DetailTemplateInstancePort / ProductReadPort / project 的 URL 规则读口），
-// 实参由 inbound/http 传入（它持有装配期注入的那几份契约）。本文件同样**不依赖 HTTP 框架**。
+// 详情模板写动作与预览编排。读取原对象由 product_detail_template_page.go 提供，
+// 本文件负责模板文档、首次发布、切换、路径更新与构建预览，不构造页面视图。
 
 import (
 	"context"

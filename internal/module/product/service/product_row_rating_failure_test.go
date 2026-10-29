@@ -1,21 +1,7 @@
 package productservice_test
 
-// product_row_rating_failure_test.go — 「评分读不到」不得渲染成「暂无评分」
-//（dd.txt 3.5 验收表最后一行）。
-//
-// 详情页与编辑页各验三档：
-//  1. **确实没有评分**（查询成功、零行）→ 照常渲染：LoadFailed=false、行 HasRating=false、
-//     RatingCount=0。这一档是反面判据：把「空结果」也当成失败就会在这里变红。
-//  2. **有评分** → 均值与条数照常进成品行（证明失败档不是靠关掉整块评分换来的）。
-//  3. **评分读不到**（数据库故障）→ 读模型返回 error、LoadFailed=true、HTTPStatus=500，
-//     且不留半截成品行。把 ratingsOf 的吞错（err != nil → 返回空 RatingResp）加回去，
-//     这一档立刻变红 —— 那正是修复前的形状：数据库故障被渲染成「暂无评分」。
-//
-// 注入只命中 product_ratings 的查询（GORM Query 回调 + tx.AddError），工程 / 商品 / 分类 /
-// 品牌 / 标签的取数照常成功 —— 否则页面会在更早一步失败，判据就证明不了「是评分这一步」。
-// 命中次数一并断言：注入没生效时测试报「判据无效」，而不是绿着过去。
-//
-// 表结构来自生产迁移（support.NewMigratedPGTestDB），不手抄 CREATE TABLE。
+// 评分读取三档：查询成功但零行、有真实评分、查询失败。
+// 失败必须返回错误和 nil 商品，不能伪装成暂无评分；生产迁移提供真实表结构。
 
 import (
 	"context"
@@ -100,7 +86,7 @@ func seedRatingFailureFixture(t *testing.T, db *gorm.DB, projectID string) ratin
 }
 
 // assertNoRatingRow 「确实没有评分」档：行装配出来了，且是零评分（不是失败）。
-func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductRowResp, err error) {
+func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductResp, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s：确实没有评分不该判失败，实际 error=%v", page, err)
@@ -108,29 +94,29 @@ func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductRowRes
 	if view == nil {
 		t.Fatalf("%s：确实没有评分时成品行没装配出来", page)
 	}
-	if view.HasRating || view.RatingCount != 0 {
+	if view.Rating.HasRating || view.Rating.RatingCount != 0 {
 		t.Fatalf("%s：零评分档期望 HasRating=false、RatingCount=0，实际 HasRating=%v、RatingCount=%d",
-			page, view.HasRating, view.RatingCount)
+			page, view.Rating.HasRating, view.Rating.RatingCount)
 	}
 }
 
 // assertRatedRow 「有评分」档：均值与条数照常。
-func assertRatedRow(t *testing.T, page string, view *productdto.ProductRowResp, err error) {
+func assertRatedRow(t *testing.T, page string, view *productdto.ProductResp, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s：有评分的商品不该判失败，实际 error=%v", page, err)
 	}
-	if view == nil || !view.HasRating || view.RatingCount != 1 || view.RatingAvg != "4.50" {
+	if view == nil || !view.Rating.HasRating || view.Rating.RatingCount != 1 || view.Rating.Rating != 4.50 {
 		t.Fatalf("%s：有评分档期望 HasRating=true、RatingCount=1、RatingAvg=4.50，实际 %+v", page, view)
 	}
 }
 
 // assertRatingReadFailure 「评分读不到」档：error + 500 出口 + 不留半截行。
-func assertRatingReadFailure[T any](t *testing.T, page string, view *T, row *productdto.ProductRowResp, err error) {
+func assertRatingReadFailure[T any](t *testing.T, page string, view *T, row *productdto.ProductResp, err error) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("%s：评分读不到时必须返回 error（否则页面会把数据库故障渲染成「暂无评分」，"+
-			"dd.txt 3.5 验收表最后一行）；实际 error=nil、半截行=%+v", page, row)
+			"评分故障不能当成空结果）；实际 error=nil、半截行=%+v", page, row)
 	}
 	if row != nil {
 		t.Fatalf("%s：失败档不该留下装配了一半的成品行：%+v", page, row)
@@ -167,22 +153,22 @@ func TestProductDetailPageRatingReadFailureIsNotNoRating(t *testing.T) {
 	ctx := context.Background()
 
 	// 档位一：确实没有评分。
-	emptyView, err := s.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{ProjectID: projectID, ProductID: fx.noRating})
+	emptyView, err := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})
 	if emptyView == nil {
 		t.Fatalf("详情页读模型返回 nil 视图")
 	}
-	assertNoRatingRow(t, "详情页（无评分）", emptyView.Product, err)
+	assertNoRatingRow(t, "详情页（无评分）", emptyView, err)
 
 	// 档位二：有评分。
-	ratedView, rerr := s.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{ProjectID: projectID, ProductID: fx.rated})
+	ratedView, rerr := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.rated})
 	if ratedView == nil {
 		t.Fatalf("详情页读模型返回 nil 视图")
 	}
-	assertRatedRow(t, "详情页（有评分）", ratedView.Product, rerr)
+	assertRatedRow(t, "详情页（有评分）", ratedView, rerr)
 
 	// 档位三：评分读不到。
 	probe := attachRatingReadFailure(t, db)
-	view, derr := s.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{ProjectID: projectID, ProductID: fx.noRating})
+	view, derr := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})
 	assertRatingReadFailure(t, "详情页（评分读不到）", view, nil, derr)
 	assertProbeHit(t, probe, "详情页")
 	t.Logf("详情页：error=%v", derr)
@@ -200,20 +186,20 @@ func TestProductEditPageRatingReadFailureIsNotNoRating(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	emptyView, err := s.ProductEditPage(ctx, &productdto.ProductEditPageReq{ProjectID: projectID, ProductID: fx.noRating})
+	emptyView, err := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})
 	if emptyView == nil {
 		t.Fatalf("编辑页读模型返回 nil 视图")
 	}
-	assertNoRatingRow(t, "编辑页（无评分）", emptyView.Product, err)
+	assertNoRatingRow(t, "编辑页（无评分）", emptyView, err)
 
-	ratedView, rerr := s.ProductEditPage(ctx, &productdto.ProductEditPageReq{ProjectID: projectID, ProductID: fx.rated})
+	ratedView, rerr := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.rated})
 	if ratedView == nil {
 		t.Fatalf("编辑页读模型返回 nil 视图")
 	}
-	assertRatedRow(t, "编辑页（有评分）", ratedView.Product, rerr)
+	assertRatedRow(t, "编辑页（有评分）", ratedView, rerr)
 
 	probe := attachRatingReadFailure(t, db)
-	view, derr := s.ProductEditPage(ctx, &productdto.ProductEditPageReq{ProjectID: projectID, ProductID: fx.noRating})
+	view, derr := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})
 	assertRatingReadFailure(t, "编辑页（评分读不到）", view, nil, derr)
 	assertProbeHit(t, probe, "编辑页")
 	t.Logf("编辑页：error=%v", derr)

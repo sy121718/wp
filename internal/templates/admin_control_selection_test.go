@@ -18,6 +18,7 @@ package templates
 import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
+	productdto "go_wp/internal/module/product/dto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -283,29 +284,12 @@ func templateLineWith(t *testing.T, src, needle string) string {
 // 且页面里不再出现「未填」。
 func TestCatalogEmptyCellPlaceholderIsConsistent(t *testing.T) {
 	const placeholder = `<span class="text-mute">—</span>`
-
-	brands := assertGroupDPage(t, "product_brands", groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Brands": []map[string]any{{
-			// Slug 与 SEOTitle 都为空：两列的空值形态必须一样。
-			"ID": "b1", "Name": "山野", "Slug": "", "Sort": 0, "Logo": "",
-			"SEOTitle": "", "SEODescription": "", "Description": "",
-		}},
-	}), "商品品牌")
+	brands := assertGroupDPage(t, "product_brands", taxonomyBrands(&productdto.BrandResp{ID: "b1", Name: "山野"}), "商品品牌")
 	assertEmptyCellPlaceholder(t, "product_brands", brands, placeholder)
-
-	categories := assertGroupDPage(t, "product_categories", groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Options": []map[string]any{{"ID": "c1", "Label": "男装"}},
-		"Categories": []map[string]any{{
-			"ID": "c1", "Label": "男装", "Slug": "", "Sort": 0, "SEOTitle": "",
-			"ParentID": "", "Name": "男装", "Image": "", "SEODescription": "", "Description": "",
-		}},
-	}), "分类树")
+	categories := assertGroupDPage(t, "product_categories", taxonomyCategories(&productdto.CategoryResp{ID: "c1", ProjectID: "pr1", Name: "男装"}), "分类树")
 	assertEmptyCellPlaceholder(t, "product_categories", categories, placeholder)
 }
 
-// assertEmptyCellPlaceholder 一页里「Slug 空 + SEO 标题空」两处占位形态一致。
 func assertEmptyCellPlaceholder(t *testing.T, name, out, placeholder string) {
 	t.Helper()
 	if strings.Contains(out, "未填") {

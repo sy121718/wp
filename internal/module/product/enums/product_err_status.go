@@ -23,6 +23,7 @@ import "net/http"
 // errStatuses 业务错误 key → HTTP 状态码。未登记的 key 走 pkg/response 的默认分档
 // （业务 400 / 非业务 500）。
 var errStatuses = map[string]int{
+	ErrVariantListDuplicated: http.StatusConflict,
 	// —— 404：资源不存在 ——
 	ErrNotFound:                  http.StatusNotFound,
 	ErrAttrNotFound:              http.StatusNotFound,
@@ -32,21 +33,24 @@ var errStatuses = map[string]int{
 	ErrPricingAdjustmentNotFound: http.StatusNotFound,
 
 	// —— 409：唯一性 / 被引用 / 状态冲突 ——
-	ErrBulkRejected:        http.StatusConflict,
-	ErrSlugTaken:           http.StatusConflict,
-	ErrSkuTaken:            http.StatusConflict,
-	ErrContainerSKUTaken:   http.StatusConflict,
-	ErrAttrKeyTaken:        http.StatusConflict,
-	ErrBrandSlugTaken:      http.StatusConflict,
-	ErrCategorySlugTaken:   http.StatusConflict,
-	ErrTagSlugTaken:        http.StatusConflict,
-	ErrVariantHasStock:     http.StatusConflict,
-	ErrAttrInUse:           http.StatusConflict,
-	ErrBrandInUse:          http.StatusConflict,
-	ErrCategoryInUse:       http.StatusConflict,
-	ErrCategoryHasChildren: http.StatusConflict,
-	ErrTagCrossProject:     http.StatusConflict,
-	ErrTagNotManual:        http.StatusConflict,
+	ErrPricingCostMissing:   http.StatusConflict,
+	ErrPricingOutOfRange:    http.StatusConflict,
+	ErrPricingTargetChanged: http.StatusConflict,
+	ErrBulkRejected:         http.StatusConflict,
+	ErrSlugTaken:            http.StatusConflict,
+	ErrSkuTaken:             http.StatusConflict,
+	ErrContainerSKUTaken:    http.StatusConflict,
+	ErrAttrKeyTaken:         http.StatusConflict,
+	ErrBrandSlugTaken:       http.StatusConflict,
+	ErrCategorySlugTaken:    http.StatusConflict,
+	ErrTagSlugTaken:         http.StatusConflict,
+	ErrVariantHasStock:      http.StatusConflict,
+	ErrAttrInUse:            http.StatusConflict,
+	ErrBrandInUse:           http.StatusConflict,
+	ErrCategoryInUse:        http.StatusConflict,
+	ErrCategoryHasChildren:  http.StatusConflict,
+	ErrTagCrossProject:      http.StatusConflict,
+	ErrTagNotManual:         http.StatusConflict,
 }
 
 // StatusFor 该 key 声明的状态码（未登记返回 0，由出口按默认分档）。

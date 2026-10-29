@@ -515,7 +515,15 @@ func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *product
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
-	return s.toResp(ctx, e)
+	res, err = s.toResp(ctx, e)
+	if err != nil {
+		return nil, err
+	}
+	res.Rating, err = s.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: res.ID, ProjectID: res.ProjectID})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // List 商品列表（不返回 metadata 与变体明细；价格区间由变体聚合算出）。
@@ -944,8 +952,10 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	for _, v := range variants {
 		resp.Variants = append(resp.Variants, toVariantResp(v))
 	}
-	// 库存展示值查询期投影（issue #32）：一次批量取真源汇总。
-	s.fillVariantStock(ctx, resp.ProjectID, resp.Variants)
+	// 仓库关联与库存总数使用同一次事实读取，失败向调用方返回。
+	if err := s.fillVariantListStocks(ctx, resp.ProjectID, resp.Variants); err != nil {
+		return nil, err
+	}
 	// 商品级库存聚合（列表「库存」列的三态，docs/14 §1.4）：详情接口同样带上，
 	// 后台列表页逐商品取详情时就不必再单独打一次库存接口。
 	s.fillProductStock(ctx, resp.ProjectID, []*productdto.ProductResp{resp})
@@ -1153,73 +1163,6 @@ func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.Vari
 		}
 	}
 	resp.PriceMin, resp.PriceMax = minV, maxV
-}
-
-// fillVariantStock 用库存真源汇总填充变体响应的库存投影值（issue #32）。
-//
-// 库存不再有商品侧缓存列，展示值只能**查询期投影**：
-//
-//   - 一次批量取真源按变体汇总（不是逐条查）；
-//   - 未注入库存 model（纯商品单测路径）时保持 0 —— 调用方**不可**据此判断可用量；
-//   - 投影失败不影响商品本身的读取（库存是展示值，不是商品的组成部分）。
-//
-// 641 之后求和的对象是「这个变体引用了哪些货行」：同一变体在同一仓可以有多条货行
-// （自有码 / 客户码 / 不同批次），按 inventory_stocks.variant_id 求和已经答不对。
-// 引用清单本来就在变体这一行上（warehouse_skus），所以这里不必跨模块查一次再查回来。
-//
-// 死线不变：可用量判断一律走库存真源的带行锁路径，永远不看这个投影值。
-func (s *Service) fillVariantStock(ctx context.Context, projectID string, variants []*productdto.VariantResp) {
-	if s.inv == nil || len(variants) == 0 {
-		return
-	}
-	ids := make([]string, 0, len(variants))
-	for _, v := range variants {
-		if v != nil && v.ID != "" {
-			ids = append(ids, v.ID)
-		}
-	}
-	stockIDs := make([]string, 0, len(ids))
-	perVariant := make(map[string][]string, len(ids))
-	entities, err := s.m.ListVariantsByIDs(ctx, ids, projectID)
-	if err != nil {
-		return
-	}
-	seen := make(map[string]bool, len(ids))
-	for _, e := range entities {
-		refs := productmodel.DecodeWarehouseSKUs(e.WarehouseSKUs)
-		for _, r := range refs {
-			perVariant[e.ID] = append(perVariant[e.ID], r.StockID)
-			if !seen[r.StockID] {
-				seen[r.StockID] = true
-				stockIDs = append(stockIDs, r.StockID)
-			}
-		}
-	}
-	totals := make(map[string]int, len(ids))
-	if len(stockIDs) > 0 {
-		facts, ferr := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
-		if ferr != nil {
-			return
-		}
-		byStock := make(map[string]*inventorycontract.StockFact, len(facts))
-		for _, f := range facts {
-			byStock[f.StockID] = f
-		}
-		for variantID, ids := range perVariant {
-			total := 0
-			for _, id := range ids {
-				if f := byStock[id]; f != nil && f.TrackQuantity {
-					total += f.Quantity
-				}
-			}
-			totals[variantID] = total
-		}
-	}
-	for _, v := range variants {
-		if v != nil {
-			v.StockTotal = totals[v.ID]
-		}
-	}
 }
 
 // toVariantResp 变体实体 → 响应。
@@ -1479,9 +1422,7 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 // 返回顺序：商品自身 → 分类（商品引用顺序）→ 品牌 → 标签 → 属性组。
 // 实体不存在 / 引用已失效 → 跳过该实体，不报错（与详情页读取口径一致）。
 //
-// 工程作用域由调用方给出（DB-009 收口）：翻译工作台在页面上已经按当前工程取数
-// （ProjectOptions / data.ProjectID 就在同一个函数里），没有任何理由再让本模块
-// 走无作用域读 —— 那在非超级角色下会静默 0 行，表现为「商品不存在」。
+// 工程作用域由调用方显式给出，保证候选与原文都受同一工程权限约束。
 func (s *Service) ProductTranslationCandidates(ctx context.Context, projectID, productID string) (list []productcontract.TranslationCandidate, err error) {
 	e, gerr := s.m.Get(ctx, productID, projectID)
 	if gerr != nil {
@@ -1524,20 +1465,19 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 	if e == nil {
 		return nil, nil
 	}
-	tr := translateFrom(ctx)
-	list = append(list, productTextCandidates(tr, e)...)
+	list = append(list, productTextCandidates(e)...)
 
 	categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, decodeStrings(e.CategoryIDs), e.ProjectID)
 	if cerr != nil {
 		return nil, cerr
 	}
 	for _, row := range categoryRows {
-		list = append(list, entityTextCandidates(tr, productcontract.EntityTypeCategory, row.ID, row.Name,
+		list = append(list, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
 		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
-			list = append(list, entityTextCandidates(tr, productcontract.EntityTypeBrand, row.ID, row.Name,
+			list = append(list, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
 				map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 		}
 	}
@@ -1546,7 +1486,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 		return nil, terr
 	}
 	for _, row := range tagRows {
-		list = append(list, entityTextCandidates(tr, productcontract.EntityTypeTag, row.ID, row.Name,
+		list = append(list, entityTextCandidates(productcontract.EntityTypeTag, row.ID, row.Name,
 			map[string]string{"name": row.Name})...)
 	}
 	attrRows, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
@@ -1554,7 +1494,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 		return nil, aerr
 	}
 	for _, row := range attrRows {
-		list = append(list, attributeTextCandidates(tr, row)...)
+		list = append(list, attributeTextCandidates(row)...)
 	}
 	return list, nil
 }
@@ -1565,9 +1505,8 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 	if cerr != nil {
 		return nil, cerr
 	}
-	tr := translateFrom(ctx)
 	for _, row := range categories {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeCategory, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
 	// 全量取（0, 0）：译文候选要覆盖工程里所有品牌 / 标签，漏掉的会变成永远没有译文入口。
@@ -1576,7 +1515,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, berr
 	}
 	for _, row := range brands {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeBrand, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
 	tags, terr := s.m.ListTags(ctx, projectID, "", "", 0, 0)
@@ -1584,7 +1523,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, terr
 	}
 	for _, row := range tags {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeTag, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeTag, row.ID, row.Name,
 			map[string]string{"name": row.Name}))
 	}
 	attrs, aerr := s.m.ListAttributesByProject(ctx, projectID)
@@ -1592,7 +1531,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, aerr
 	}
 	for _, row := range attrs {
-		list = appendUniqueCandidates(list, seen, attributeTextCandidates(tr, row))
+		list = appendUniqueCandidates(list, seen, attributeTextCandidates(row))
 	}
 	return list, nil
 }
@@ -1611,10 +1550,8 @@ func appendUniqueCandidates(dst []productcontract.TranslationCandidate, seen map
 }
 
 // productTextCandidates 商品自身可翻译字段的候选（图集 alt 逐元素展开）。
-//
-// tr 由调用点传：候选里的 FieldLabel 是**展示文案**（后台翻译页的字段列），
-// 必须按请求语言取词（见 product_shared.go 的 translateFrom 通道）。
-func productTextCandidates(tr TranslateFunc, e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
+// 字段名称的显示与取词由前端负责，候选只保留白名单字段标识。
+func productTextCandidates(e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
 	values := map[string]string{
 		"name":        e.Name,
 		"subtitle":    e.Subtitle,
@@ -1624,13 +1561,13 @@ func productTextCandidates(tr TranslateFunc, e *productmodel.ProductEntity) []pr
 	for _, field := range productcontract.TranslatableFields(productcontract.EntityTypeProduct) {
 		if field == "imageAlts" {
 			for _, alt := range decodeStrings(e.ImageAlts) {
-				if c, ok := makeCandidate(tr, productcontract.EntityTypeProduct, e.ID, e.Name, field, alt); ok {
+				if c, ok := makeCandidate(productcontract.EntityTypeProduct, e.ID, e.Name, field, alt); ok {
 					list = append(list, c)
 				}
 			}
 			continue
 		}
-		if c, ok := makeCandidate(tr, productcontract.EntityTypeProduct, e.ID, e.Name, field, values[field]); ok {
+		if c, ok := makeCandidate(productcontract.EntityTypeProduct, e.ID, e.Name, field, values[field]); ok {
 			list = append(list, c)
 		}
 	}
@@ -1641,10 +1578,10 @@ func productTextCandidates(tr TranslateFunc, e *productmodel.ProductEntity) []pr
 //
 // values 是「字段名 → 原文」映射（原样传入，不做翻译）；
 // 字段集合仍取自 contract 的唯一来源，不在此另列。
-func entityTextCandidates(tr TranslateFunc, entityType, id, name string, values map[string]string) []productcontract.TranslationCandidate {
+func entityTextCandidates(entityType, id, name string, values map[string]string) []productcontract.TranslationCandidate {
 	list := make([]productcontract.TranslationCandidate, 0, len(values))
 	for _, field := range productcontract.TranslatableFields(entityType) {
-		if c, ok := makeCandidate(tr, entityType, id, name, field, values[field]); ok {
+		if c, ok := makeCandidate(entityType, id, name, field, values[field]); ok {
 			list = append(list, c)
 		}
 	}
@@ -1652,16 +1589,16 @@ func entityTextCandidates(tr TranslateFunc, entityType, id, name string, values 
 }
 
 // attributeTextCandidates 属性组的候选：组名 + 属性值展示文本逐元素。
-func attributeTextCandidates(tr TranslateFunc, e *productmodel.ProductAttributeEntity) []productcontract.TranslationCandidate {
+func attributeTextCandidates(e *productmodel.ProductAttributeEntity) []productcontract.TranslationCandidate {
 	if e == nil {
 		return nil
 	}
 	list := make([]productcontract.TranslationCandidate, 0, 4)
-	if c, ok := makeCandidate(tr, productcontract.EntityTypeAttribute, e.ID, e.Name, "name", e.Name); ok {
+	if c, ok := makeCandidate(productcontract.EntityTypeAttribute, e.ID, e.Name, "name", e.Name); ok {
 		list = append(list, c)
 	}
 	for _, v := range normalizeValuesFromRaw(e.Values) {
-		if c, ok := makeCandidate(tr, productcontract.EntityTypeAttribute, e.ID, e.Name, "values", v.Label); ok {
+		if c, ok := makeCandidate(productcontract.EntityTypeAttribute, e.ID, e.Name, "values", v.Label); ok {
 			list = append(list, c)
 		}
 	}
@@ -1669,7 +1606,7 @@ func attributeTextCandidates(tr TranslateFunc, e *productmodel.ProductAttributeE
 }
 
 // makeCandidate 组装一条候选（跳过规则命中 / 不在白名单内 → false）。
-func makeCandidate(tr TranslateFunc, entityType, id, name, field, source string) (productcontract.TranslationCandidate, bool) {
+func makeCandidate(entityType, id, name, field, source string) (productcontract.TranslationCandidate, bool) {
 	if !productcontract.IsTranslatableField(entityType, field) {
 		return productcontract.TranslationCandidate{}, false
 	}
@@ -1678,7 +1615,7 @@ func makeCandidate(tr TranslateFunc, entityType, id, name, field, source string)
 	}
 	return productcontract.TranslationCandidate{
 		EntityType: entityType, EntityID: id, EntityName: name,
-		Field: field, FieldLabel: productcontract.FieldLabel(tr, entityType, field),
+		Field:      field,
 		Context:    productcontract.FieldContext(entityType, field),
 		SourceText: source, SourceHash: i18n.ContentHash(source),
 	}, true

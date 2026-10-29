@@ -196,54 +196,6 @@ func TranslatableFields(entityType string) []string {
 	return out
 }
 
-// EntityTypeLabel 实体类型的展示名（后台翻译页分组标题）。
-//
-// tr 由调用点给：本包不依赖 gin / shell，取词函数一律从 inbound / service 传进来
-// （与 productservice.translateFrom 同一条约定）。中文是兜底，词条 key 见迁移 449。
-//
-// 「值 → (key, 兜底)」的映射**只有一份**，在 productenums.EntityTypeLabel
-// （internal/module/CLAUDE.md §enums）：本函数只是把它接成 tr 形态。此前这里自带一个 switch，
-// 而控制器的译文工作台另写一份同判据的 key + 兜底表 —— 两份映射的下场是同一个实体类型
-// 在两个入口叫两个名字（不报错、门禁也不红）。
-func EntityTypeLabel(tr func(key, fallback string) string, entityType string) string {
-	key, fallback := productenums.EntityTypeLabel(entityType)
-	return tr(key, fallback)
-}
-
-// FieldLabel 可翻译字段的展示名（后台翻译页字段列；未知字段原样返回 —— 字段名是数据）。
-func FieldLabel(tr func(key, fallback string) string, entityType, field string) string {
-	switch entityType + "." + field {
-	case EntityTypeProduct + ".name":
-		return tr(productenums.ProductTranslationsFieldProductName, "商品名")
-	case EntityTypeProduct + ".subtitle":
-		return tr(productenums.ProductTranslationsFieldProductSubtitle, "副标题")
-	case EntityTypeProduct + ".description":
-		return tr(productenums.ProductTranslationsFieldProductDescription, "描述")
-	case EntityTypeProduct + ".imageAlts":
-		return tr(productenums.ProductTranslationsFieldProductImageAlts, "图片 alt")
-	case EntityTypeCategory + ".name":
-		return tr(productenums.ProductTranslationsFieldCategoryName, "分类名")
-	case EntityTypeCategory + ".description":
-		return tr(productenums.ProductTranslationsFieldCategoryDescription, "分类描述")
-	case EntityTypeCategory + ".seoTitle":
-		return tr(productenums.ProductTranslationsFieldCategorySeoTitle, "分类 SEO 标题")
-	case EntityTypeBrand + ".name":
-		return tr(productenums.ProductTranslationsFieldBrandName, "品牌名")
-	case EntityTypeBrand + ".description":
-		return tr(productenums.ProductTranslationsFieldBrandDescription, "品牌描述")
-	case EntityTypeBrand + ".seoTitle":
-		return tr(productenums.ProductTranslationsFieldBrandSeoTitle, "品牌 SEO 标题")
-	case EntityTypeTag + ".name":
-		return tr(productenums.ProductTranslationsFieldTagName, "标签名")
-	case EntityTypeAttribute + ".name":
-		return tr(productenums.ProductTranslationsFieldAttributeName, "属性组名")
-	case EntityTypeAttribute + ".values":
-		return tr(productenums.ProductTranslationsFieldAttributeValues, "属性值展示文本")
-	default:
-		return field
-	}
-}
-
 // FieldContext 拼装内容译文的语境界定 "{实体类型}.{字段名}"（docs/06-D §7.5）。
 //
 // 与 core.ContentContext 同形，但它在这里由**具体实体类型 + 字段名**拼出，

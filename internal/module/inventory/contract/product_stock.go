@@ -34,6 +34,7 @@ type StockFact struct {
 
 // ProductStockReader exposes only inventory facts used by product projections and deletion guards.
 type ProductStockReader interface {
+	VariantDeletionFactsTx(context.Context, *gorm.DB, string, []string, []string) (*VariantDeletionFacts, error)
 	// StockFactsByStockIDs 按货行 id 批量取事实（商品侧把变体引用的 id 清单交过来）。
 	StockFactsByStockIDs(ctx context.Context, projectID string, stockIDs []string) (facts []*StockFact, err error)
 	// VariantHasStockMovement 该变体是否有过任何库存流水（删变体的守卫）。
@@ -42,6 +43,7 @@ type ProductStockReader interface {
 
 // ProductStockLookup holds read-only warehouse and inventory facts for product use cases.
 type ProductStockLookup interface {
+	VariantDeletionFactsTx(context.Context, *gorm.DB, string, []string, []string) (*VariantDeletionFacts, error)
 	ResolveWarehouse(ctx context.Context, projectID, warehouseID string) (ref *productcontract.WarehouseRef, err error)
 	GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWarehouseSKUReq) (res *inventorydto.WarehouseSKUResp, err error)
 	// StockFactsByStockIDs 与 ProductStockReader 上同名方法同一个实现（这里再列一次是
@@ -106,4 +108,10 @@ type ProductStockTarget struct {
 type ProductStockPort interface {
 	ProductStockLookup
 	ProductStockWriter
+}
+
+// VariantDeletionFacts 同一事务内取得的删除守卫事实；货行锁持续到调用方提交。
+type VariantDeletionFacts struct {
+	Stocks             []*StockFact
+	MovementVariantIDs []string
 }

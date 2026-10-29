@@ -125,9 +125,34 @@
         return cur;
     }
 
+    // 模板声明显示格式；JSON 保留原始时刻、数组与数值。
+    function fieldText(node, value) {
+        if (value === null || value === undefined || value === '') { return ''; }
+        var format = node.getAttribute('data-field-format');
+        var min = node.getAttribute('data-field-min');
+        if (min !== null && Number(value) < Number(min)) { return ''; }
+        var text;
+        if (format === 'datetime') {
+            var date = new Date(value);
+            if (isNaN(date.getTime())) { return ''; }
+            var pad = function (n) { return String(n).padStart(2, '0'); };
+            text = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+                ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+        } else if (format === 'duration') {
+            var ms = Number(value);
+            if (!isFinite(ms) || ms <= 0) { return ''; }
+            text = ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+        } else if (format === 'list') {
+            text = Array.isArray(value) ? value.join(', ') : '';
+        } else {
+            text = String(value);
+        }
+        return text + (node.getAttribute('data-field-suffix') || '');
+    }
+
     /** setField 把一个标量值写进节点：data-field 走 textContent，data-field-attr 走属性。 */
     function setField(node, key, value) {
-        var text = value === null || value === undefined ? '' : String(value);
+        var text = fieldText(node, value);
         var attr = node.getAttribute && node.getAttribute('data-field-attr');
         if (attr) {
             if (!SAFE_ATTRS[attr]) {

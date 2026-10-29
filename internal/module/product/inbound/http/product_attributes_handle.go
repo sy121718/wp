@@ -1,87 +1,34 @@
 package producthttp
 
 import (
-	"context"
-	"errors"
+	"github.com/gin-gonic/gin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"strings"
-
-	"github.com/gin-gonic/gin"
 )
 
-// product_attributes_handle.go — 商品属性库（属性组 / 属性值）：列表页与它的抽屉表单。
-//
-// 属性分两组形态：**规格属性**（isVariation，参与变体生成）与普通属性（只作展示与筛选）。
-// 属性值行（ProductAttributesValueRows）是 HTMX 片段，商品编辑页与新建页都复用它。
-
-// 接口面（原先的 product_handle.go 属性段）在前，后台页面在后。
-
-// ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
-
-// ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductAttributesPageReq](c)
+	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	// 取数编排、成品行与两个抽屉的初值都在 service.ProductAttributesPage。
-	view, err := h.reader.ProductAttributesPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
-		// 失败出口是 JSON：不装配、不渲染同一页（档位由声明处给，见 productenums.StatusFor）。
 		pageview.Fail(c, err)
 		return
 	}
-	if view == nil {
-		// 契约上视图恒非 nil；真为空是编程错误，交出口按 500 处理而不是在这里解引用。
-		pageview.Fail(c, errors.New("属性页读模型返回空视图"))
+	req.ProjectID = scope.ProjectID
+	result, err := h.products.QueryAttributes(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
 		return
 	}
-	// 行与两个抽屉的初值都在读模型里装（AttrPageRows / AttrCreateDrawerForm）。
-	pageview.Render(c, view)
+
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
 }
 
-// ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
-//
-// 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
-func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
-	req, ok := binding.Form[productdto.AttributeRowsFormReq](c)
-	if !ok {
-		return
-	}
-	pageview.Render(c, productservice.AttrValueRows(req))
-}
-
-// attributeOptions 属性组勾选列表（新建抽屉 / 编辑页；本批起不再让人手打 UUID）。
-//
-// 取数与标签口径（名字 + 标识 key，只给名字会在同名属性组之间选错）唯一一份在
-// service 的 AttributeOptionViews —— 编辑页这条老路径与新建页读模型共用同一个结论，
-// 两处各拼一遍时「带上 key」这条规则改一处就漏一处。
-//
-// 上限同样取 service 的常量：抽屉与新建页是同一类「一屏全量勾选」，两处各写一个 200
-// 时改一处会静默分叉。
-func (h *ProductPageHandle) attributeOptions(ctx context.Context, projectID string) (out []productdto.AttributeOptionResp, err error) {
-	out = []productdto.AttributeOptionResp{}
-	if strings.TrimSpace(projectID) == "" {
-		return out, nil
-	}
-	list, lerr := h.products.ListAttributes(ctx, &productdto.ListAttributeReq{
-		ProjectID: projectID, Size: productservice.PageAttributeOptionSize,
-	})
-	if lerr != nil {
-		return nil, lerr
-	}
-	return productservice.AttributeOptionViews(list), nil
-}
-
-// ==========================================================================
-// 属性接口：JSON 入参、pkg/response 出参、消息取 enums。
-// 本层只做绑定与转发：值组的归一 / 去重 / 排序、引用校验一律在 service。
-// ==========================================================================
 // CreateAttribute 新建属性组（可同时带初始属性值）。
 func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 	req, ok := binding.JSON[productdto.CreateAttributeReq](c)

@@ -1,6 +1,7 @@
 package templates
 
 import (
+	productdto "go_wp/internal/module/product/dto"
 	"strings"
 	"testing"
 
@@ -42,12 +43,12 @@ func productP2Text(n *html.Node) string {
 
 func TestProductP2ListStatusAndMetrics(t *testing.T) {
 	row := groupDProductRow()
-	row["Status"] = "published"
-	row["RatingAvg"] = "4.50"
-	row["RatingCount"] = 12
-	root := productP2Render(t, "products", groupDData(map[string]any{
+	row.Status = "published"
+	row.Rating.Rating = 4.5
+	row.Rating.RatingCount = 12
+	root := productP2Render(t, "products", productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
-		"WarehouseOptions": []map[string]any{}, "Products": []map[string]any{row},
+		"WarehouseOptions": []map[string]any{}, "Products": []*productdto.ProductResp{row},
 	}))
 	_, headers, cells := productP2Table(t, root)
 	if len(cells) != len(headers) {
@@ -56,22 +57,22 @@ func TestProductP2ListStatusAndMetrics(t *testing.T) {
 	if productP2Text(cells[2]) != "已上架" || len(peAll(cells[2], func(n *html.Node) bool { return peClass(n, "badge") })) != 1 {
 		t.Fatalf("商品状态须显示本地化徽章，实际 %q", productP2Text(cells[2]))
 	}
-	if productP2Text(cells[len(cells)-3]) != "4.50" || productP2Text(cells[len(cells)-2]) != "12" {
+	if productP2Text(cells[len(cells)-3]) != "4.5" || productP2Text(cells[len(cells)-2]) != "12" {
 		t.Fatalf("评分平均值与条数须分列，实际 %q / %q", productP2Text(cells[len(cells)-3]), productP2Text(cells[len(cells)-2]))
 	}
-	row["HasRating"] = false
-	row["RatingCount"] = 0
-	root = productP2Render(t, "products", groupDData(map[string]any{
+	row.Rating.HasRating = false
+	row.Rating.RatingCount = 0
+	root = productP2Render(t, "products", productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
-		"WarehouseOptions": []map[string]any{}, "Products": []map[string]any{row},
+		"WarehouseOptions": []map[string]any{}, "Products": []*productdto.ProductResp{row},
 	}))
 	_, _, cells = productP2Table(t, root)
 	if productP2Text(cells[len(cells)-3]) != "—" || productP2Text(cells[len(cells)-2]) != "0" {
 		t.Fatal("无评分与零分须区分，条数仍显示 0")
 	}
-	root = productP2Render(t, "products", groupDData(map[string]any{
+	root = productP2Render(t, "products", productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
-		"WarehouseOptions": []map[string]any{}, "Products": []map[string]any{},
+		"WarehouseOptions": []map[string]any{}, "Products": []*productdto.ProductResp{},
 	}))
 	_, headers, cells = productP2Table(t, root)
 	if peAttr(cells[0], "colspan") != "12" || len(headers) != 12 {
@@ -80,17 +81,7 @@ func TestProductP2ListStatusAndMetrics(t *testing.T) {
 }
 
 func TestProductP2AttributeValueCountIsNumber(t *testing.T) {
-	tr := TranslateFunc("zh-CN")
-	rows := map[string]any{"GroupID": "a1", "Rows": []map[string]any{}, "Tr": tr}
-	root := productP2Render(t, "product_attributes", groupDData(map[string]any{
-		"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
-		"Attributes": []map[string]any{{
-			"ID": "a1", "Name": "颜色", "Key": "color", "ValueCount": 4, "IsVariation": true,
-			"EditForm":   map[string]any{"Csrf": "tok", "Project": "pr1", "t": tr, "Action": "/admin/product-attributes/update", "IsCreate": false, "GroupID": "a1", "Name": "颜色", "Key": "color", "Sort": 0, "VariationChecked": true, "RowsCtx": rows, "InDrawer": true},
-			"ValuesForm": map[string]any{"Csrf": "tok", "Project": "pr1", "t": tr, "Action": "/admin/product-attributes/set-values", "GroupID": "a1", "RowsCtx": rows, "InDrawer": true},
-		}},
-		"AttrCreateForm": map[string]any{"Csrf": "tok", "Project": "pr1", "t": tr, "Action": "/admin/product-attributes/create", "IsCreate": true, "GroupID": "new", "Name": "", "Key": "", "Sort": 0, "VariationChecked": true, "RowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}, "Tr": tr}, "InDrawer": true},
-	}))
+	root := productP2Render(t, "product_attributes", taxonomyAttributes(&productdto.AttributeResp{ID: "a1", Name: "颜色", Key: "color", IsVariation: true, ValueCount: 4, Values: []productdto.AttributeValueResp{{Label: "红"}, {Label: "蓝"}, {Label: "绿"}, {Label: "黄"}}}))
 	_, _, cells := productP2Table(t, root)
 	if got := productP2Text(cells[4]); got != "4" {
 		t.Fatalf("属性值列须为纯数值，实际 %q", got)
@@ -106,10 +97,7 @@ func TestProductP2SEOFieldsHaveCounters(t *testing.T) {
 		// 商品页与品牌页都是 0：SEO 标题 / 描述已分别合并进「商品名 + 副标题」与
 		// 「品牌名 + 品牌描述」（2026-09-30），三处（含分类）都不再有独立输入框。
 		{"product_edit", productEditPageData(), 0},
-		{"product_brands", groupDData(map[string]any{
-			"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
-			"Brands": []map[string]any{{"ID": "b1", "Name": "山野", "Slug": "outdoor", "Sort": 1, "SEOTitle": "标题", "SEODescription": "描述", "UpdatedAt": "今天"}},
-		}), 0},
+		{"product_brands", taxonomyBrands(&productdto.BrandResp{ID: "b1", Name: "山野", Slug: "outdoor", Sort: 1, SEOTitle: "标题", SEODescription: "描述"}), 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,13 +130,8 @@ func TestProductP2SEOFieldsHaveCounters(t *testing.T) {
 }
 
 func TestProductP2DetailTemplateKeepsActionIDsWithoutDisplayingThem(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "Ready": true, "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"Product":        map[string]any{"ID": "p1", "Name": "商品一", "URLPath": "/p/p-one"},
-		"InstanceExists": true, "InstanceStatus": "published", "BoundTemplateID": "tpl1", "DefaultTemplateID": "tpl1",
-		"TemplateCount": 1, "InstanceURL": "/p/p-one",
-		"Templates": []map[string]any{{"ID": "tpl1", "Name": "默认详情", "DraftVersion": 3, "IsDefault": true, "IsBound": true, "UpdatedAt": "今天"}},
-	})
+	data := detailTemplatePageData(true)
+	data["Templates"] = data["Templates"].([]map[string]any)[:1]
 	root := productP2Render(t, "product_detail_template", data)
 	table, headers, cells := productP2Table(t, root)
 	if len(headers) != 5 || len(cells) != len(headers) {

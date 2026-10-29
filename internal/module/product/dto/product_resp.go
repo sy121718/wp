@@ -4,11 +4,12 @@ package productdto
 import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/utils"
-	"time"
 )
 
 // ProductResp 商品详情（含变体列表）。
 type ProductResp struct {
+	// Rating 为评分汇总数值；明细通过 ListRatings 读取。
+	Rating      *RatingResp     `json:"rating"`
 	ID          string          `json:"id"`
 	ProjectID   string          `json:"projectId"`
 	Name        string          `json:"name"`
@@ -20,7 +21,7 @@ type ProductResp struct {
 	// 变体 SKU 以它为主体拼接。
 	SKUCode string `json:"skuCode"`
 	Status  string `json:"status"`
-	// PublishedAt 上架时间（issue #11，RFC3339；未上架为空串）：
+	// PublishedAt 上架时刻（JSON 为 Unix 毫秒；未上架为零值）：
 	// 自动标签的「新品」规则以它为判定基准。
 	PublishedAt    utils.JSONTime `json:"publishedAt"`
 	Sort           int            `json:"sort"`
@@ -62,7 +63,7 @@ type ProductResp struct {
 	CreatedAt utils.JSONTime `json:"createdAt"`
 	UpdatedAt utils.JSONTime `json:"updatedAt"`
 
-	// —— 库存聚合（商品列表「库存」列，docs/14 §1.4，2026-09-19 口径）——
+	// —— 库存聚合（商品列表「库存」列）——
 	//
 	// 真源只有 inventory_stocks（商品侧不留任何副本），这三项是**查询期聚合的虚拟字段**：
 	//
@@ -102,20 +103,22 @@ type ProductWarehouseStockResp struct {
 
 // VariantResp 变体。
 type VariantResp struct {
-	ID           string          `json:"id"`
-	ProductID    string          `json:"productId"`
-	SKUCode      string          `json:"skuCode"`
-	Barcode      string          `json:"barcode"`
-	Price        float64         `json:"price"`
-	ComparePrice *float64        `json:"comparePrice"`
-	CostPrice    *float64        `json:"costPrice"`
-	Image        string          `json:"image"`
-	OptionValues json.RawMessage `json:"optionValues"`
-	Enabled      bool            `json:"enabled"`
-	Sort         int             `json:"sort"`
-	StockTotal   int             `json:"stockTotal"`
-	CreatedAt    utils.JSONTime  `json:"createdAt"`
-	UpdatedAt    utils.JSONTime  `json:"updatedAt"`
+	Stocks       []VariantStockGroupResp `json:"stocks"`
+	StocksKnown  bool                    `json:"stocksKnown"`
+	ID           string                  `json:"id"`
+	ProductID    string                  `json:"productId"`
+	SKUCode      string                  `json:"skuCode"`
+	Barcode      string                  `json:"barcode"`
+	Price        float64                 `json:"price"`
+	ComparePrice *float64                `json:"comparePrice"`
+	CostPrice    *float64                `json:"costPrice"`
+	Image        string                  `json:"image"`
+	OptionValues json.RawMessage         `json:"optionValues"`
+	Enabled      bool                    `json:"enabled"`
+	Sort         int                     `json:"sort"`
+	StockTotal   int                     `json:"stockTotal"`
+	CreatedAt    utils.JSONTime          `json:"createdAt"`
+	UpdatedAt    utils.JSONTime          `json:"updatedAt"`
 }
 
 // GenerateVariantsResp 变体组合生成结果（issue #8）。
@@ -144,169 +147,4 @@ type ListResp struct {
 	PriceMax     float64        `json:"priceMax"`
 	VariantCount int            `json:"variantCount"`
 	UpdatedAt    utils.JSONTime `json:"updatedAt"`
-}
-
-// ProductRowResp 商品行的渲染视图（列表页的一行 / 详情页 / 编辑页的同一个商品）。
-//
-// 汇总段（VariantCount / PriceMin / PriceMax / HasRating / RatingAvg / RatingCount /
-// CategoryCell / CategoryOthers / BrandName / TagLabel）只回答「有哪些商品」，列表页只用这一段；
-// 明细段（Variants / Ratings / CategoryChecks / TagChecks / AutoTags / VariationAttributes …）
-// 是某个商品的子资源，详情页与编辑页用。两页共用**同一份组装**：同一个值在两处各算一遍，
-// 分叉时没有任何东西会报错。
-type ProductRowResp struct {
-	ID   string
-	Name string
-	Slug string
-	// SKUCode 主体 SKU（products.sku_code）：详情页基本信息区只读展示 + 一句话说明唯一性范围。
-	SKUCode string
-	Status  string
-
-	// Subtitle / Unit / DescriptionHTML 只有编辑表单读（列表与详情页不需要，
-	// 所以它们不进「汇总段」那批共用取值）。
-	Subtitle string
-	Unit     string
-	// DescriptionHTML 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
-	DescriptionHTML string
-	// DefaultImage 主图（编辑页的单图媒体控件）：与 ProductResp.DefaultImage 同源，
-	// 已归一为存储 URL（upload.StorageURL）。**必须与详情响应一起赋值**：编辑页保存时
-	// 基座会把表单里的隐藏域整份发成 UpdateReq.DefaultImage，所以「这里空着」与
-	// 「保存时清空」是同一件事。
-	DefaultImage string
-
-	// PriceMin / PriceMax 价格区间原值（元）：展示文本由模板 amount() 生成。
-	PriceMin float64
-	PriceMax float64
-
-	VariantCount int
-	// Variants 变体清单行（docs/14 §8）：种子是库里已有的变体，行上带可编辑的 SKU 与
-	// 规范化后的 option_values（保存时原样回传）。
-	Variants []VariantListRowResp
-
-	// Attributes 引用的属性组（同一属性组可被多个商品共用，这里只展示引用与属性值）；
-	// VariationAttributes 只列参与变体的组（组合生成面板用）。
-	Attributes          []*AttributeResp
-	VariationAttributes []*AttributeResp
-
-	// 分类与品牌：勾选态 / 选中态都由 service 算好，模板只做展示。
-	CategoryChecks []CategoryCheckRowResp
-	// CategoryCell / CategoryOthers 是列表列要的「一个值 + 其余数量」：
-	// 一列一个概念，单元格放值，不把「挂载 N 个分类 · 主分类 X」拼成一句话。
-	CategoryCell   string
-	CategoryOthers int
-	// PrimaryOptions / BrandOptions 是「含空项的下拉」的选项事实：空项带词条 key + 中文兜底，
-	// 数据项只给名字 —— 取词在模板（见 service 的 productPickOptions）。
-	PrimaryOptions []PickOptionResp
-	BrandOptions   []PickOptionResp
-	BrandName      string
-
-	// 标签：TagChecks 手工标签勾选挂载，AutoTags 是只读的自动标签（归属由规则重算维护）；
-	// TagNames 是列表列要的标签名（手工 + 自动合并，只给事实，不拼接、不计数）。
-	TagChecks []TagCheckRowResp
-	AutoTags  []AutoTagRowResp
-	TagNames  []string
-
-	// 评分：明细 + 投影值。没有评分时 HasRating=false —— 空态与「评分 0」是两回事。
-	Ratings     []RatingRowResp
-	HasRating   bool
-	RatingAvg   string
-	RatingCount int
-
-	// Stock 库存列（三态 + 分仓明细）；nil = 这一行不带库存（模板整格跳过）。
-	Stock *StockCellResp
-}
-
-// 行元素一律是结构体，只有**片段/抽屉的数据根**保持 map —— 后者是 Jet 的取值方式决定的：
-// 模板用 .["t"] 取词，索引语法只对 map 生效，struct 根会渲染失败。行元素没有这个约束
-// （模板一律用 .Field 读），结构体换来的是编译期保护与「字段改名模板没跟」的编译失败，
-// 而不是渲染期才暴露的空值。
-
-// VariantListRowResp 变体清单表的一行。
-//
-// OptionValues 是**规范化后的 JSON 文本**（空 / null 归一为 {}）：它同时是行上的 data 属性值
-// 与预览去重的入参，前端 JSON.parse 所以必须是合法 JSON；Spec 是服务端拼好的规格可读文本。
-type VariantListRowResp struct {
-	ID           string
-	SKUCode      string
-	Spec         string
-	OptionValues string
-	// 价格是原值（元）；可空金额用指针，模板 amountDash() 负责 — 占位。
-	Price        float64
-	ComparePrice *float64
-	CostPrice    *float64
-	Enabled      bool
-	StockTotal   int
-	// Stocks 该变体的**仓库明细**（B8）：按仓分组的货行 + 当前在库。
-	//
-	// 编辑态显示的就是当前在库 —— 保存时把这些行原样带回、改过的数量即「目标值」。
-	// 分组由服务端算好（见 dto.VariantStockGroupResp 的注释：模板不做归并）。
-	Stocks []VariantStockGroupResp
-	// StocksKnown 明细是否真的读到了。
-	//
-	// 与「Stocks 为空」的区别很重要：读失败时明细留空，但那份空**不可信** ——
-	// 前端不能把「空」当成「这个变体没挂货」提交，那会在一次读故障之后
-	// 把用户原有的关联全裁掉（见 product_variant_stock_rows.go 的 Prune）。
-	// 前端只在 StocksKnown 为真时才组装这一行的 stocks。
-	StocksKnown bool
-}
-
-// CategoryCheckRowResp 分类勾选框的一行（勾选态由服务端算好，模板不做集合运算）。
-type CategoryCheckRowResp struct {
-	ID      string
-	Label   string
-	Checked bool
-}
-
-// TagCheckRowResp 手工标签勾选框的一行。
-type TagCheckRowResp struct {
-	ID      string
-	Name    string
-	Checked bool
-}
-
-// AutoTagRowResp 自动标签（只读展示：归属由规则重算维护，手工改会被下一次重算覆盖）。
-type AutoTagRowResp struct {
-	ID   string
-	Name string
-	// RuleType / RuleValues 自动标签的规则（措辞在 tag_rule_text.html）。
-	RuleType   string
-	RuleValues RuleValuesResp
-}
-
-// PickOptionResp 下拉选项的一行（「含空项的下拉」共用这一份形状）。
-//
-// 空项与数据项只差一个 IsNone：空项那一行的文案由模板按用途取词（主分类 / 品牌 / 捆绑来源
-// 各是各的句子），数据项给名字（分类名 / 品牌名 / 商品名，翻不了）。
-type PickOptionResp struct {
-	Value    string
-	Label    string
-	Selected bool
-	IsNone   bool
-}
-
-// RatingRowResp 评分明细的一行。
-type RatingRowResp struct {
-	ID        string
-	Score     string
-	Source    string
-	CreatedAt time.Time
-}
-
-// StockCellResp 库存列（三态 + 分仓明细）。
-//
-// 三态口径（docs/14 §1.4）：任一仓不跟踪 → infinite（**绝不求和**，求和等于把无限当 0）；
-// 全部跟踪 → 各仓数量之和；一个仓都没有这一行 → none（未入库）。
-type StockCellResp struct {
-	State string
-	Total int
-	// Rows 按**工程仓库清单**逐仓列出 —— 「某仓没有库存行」同样是一条信息，
-	// 只列有行的仓会让运营以为这个商品只在那几个仓。
-	Rows []StockRowResp
-}
-
-// StockRowResp 分仓明细的一行。
-type StockRowResp struct {
-	WarehouseID    string
-	WarehouseLabel string
-	State          string
-	Quantity       int
 }

@@ -1,21 +1,8 @@
 package productservice
 
-// product_translations_page.go — 商品译文工作台（/admin/products/translations）的屏幕读模型与保存编排。
-//
-// 一屏两入口（GET 打开 / POST 保存），两者**共用同一次取数**：保存前必须先把这一屏重建
-// 出来 —— 逐行校验要拿候选原文（防表单被裁剪/篡改）、变更判定要拿现有译文、标记待重建
-// 要拿分组里的实体身份。所以读模型与保存编排放在一个文件里，不拆成两处各查一遍。
-//
-// 依赖方向（与控制器一致，一个字没变）：
-//   - 候选文本 → 本模块自己的 ProductTranslationCandidates / ProjectTranslationCandidates
-//     （与构建期同一份收集逻辑，白名单不在这一层另写）；
-//   - 站点语言 → project 契约（DefaultLocale / EnabledLangs）；
-//   - 译文读写 → 收窄端口（生产实现 = pkg/i18n.ContentWriter，sys_translation 表）；
-//   - 待重建标记 → page 契约的 MarkStaleForI18n + 自动发布实例端口（可空）。
-//
-// 工程作用域（审计 I18N-009）：译文与候选都按本工程读写 —— 工作台本来就是按工程选商品的
-// （project 查询参数）；不带作用域的读在 RLS 下静默 0 行，表现为「点开某个商品的翻译说
-// 商品不存在」。
+// 商品域原文、译文的查询与保存编排。
+// 查询返回可复用的内容事实；保存独立校验候选、检测变化并写入，返回保存结论。
+// 候选与译文按工程隔离，字段白名单与构建期共用。
 
 import (
 	"context"
@@ -71,80 +58,50 @@ func (s *Service) translationPort() (ProductTranslationStorePort, error) {
 	return i18n.NewContentWriterDefault()
 }
 
-// ProductTranslationsPage 工作台整屏的取数。
-//
-// 顺序（逐字保留，与下沉前一致）：工程选项 → 站点源语言 → 目标语言 → 商品域候选 →
-// 现有译文 → 分组装配。只有**工程清单读不到**算这一页打不开（调用方走提示页出口）；
-// 其余各自降级：语言清单不可读回退站点默认语言、译文明细读不到按「全部未译」渲染。
-func (s *Service) ProductTranslationsPage(ctx context.Context, req *productdto.ProductTranslationsPageReq) (*productdto.ProductTranslationsPageResp, error) {
+// QueryProductTranslations 返回工程范围内的译文事实，不生成表单选项。
+func (s *Service) QueryProductTranslations(ctx context.Context, req *productdto.ProductTranslationsPageReq) (*productcontract.ProductTranslations, error) {
 	if req == nil {
 		req = &productdto.ProductTranslationsPageReq{}
 	}
-	view := &productdto.ProductTranslationsPageResp{
-		// Title 存**词条 key**（不是取好词的中文）：页壳的 Prepare 会把 title 按当前请求语言
-		// 翻一次（fallback 就是 key 本身，与 page 模块的翻译工作台同一形态）。
-		ProjectID:      strings.TrimSpace(req.ProjectID),
-		ProductID:      strings.TrimSpace(req.ProductID),
-		Langs:          []productdto.TranslationLangOptionResp{},
-		Groups:         []productdto.ProductTranslationGroupResp{},
-		ProjectOptions: []productdto.ProjectTranslationOptionResp{},
+	scope, err := s.ResolveCatalogScope(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
 	}
-
-	options, projectIDs, oerr := s.translationProjectOptions(ctx, view.ProjectID)
-	if oerr != nil {
-		return nil, oerr
-	}
-	view.ProjectOptions = options
-	if view.ProjectID == "" && len(projectIDs) > 0 {
-		view.ProjectID = projectIDs[0]
-	}
-
-	// 目标语言 = 站点启用语言剔除源语言（同语言互译没有意义）。
-	// 一个都不剩时 Langs 为空 = NoTargetLang，页面走可行动空态；这里**不能**再
-	// 退回「默认选中源语言」——那等于把 langs[0] 选中、翻了个寂寞，也看不出问题在哪。
-	sourceLang := s.translationSourceLang(ctx, view.ProjectID)
-	targetLangs := targetTranslationLangs(s.translationEnabledLangs(ctx, view.ProjectID), sourceLang)
-	view.SourceLang = sourceLang
-	view.NoTargetLang = len(targetLangs) == 0
-	view.Lang = strings.TrimSpace(req.Lang)
-	if !containsTranslationLang(targetLangs, view.Lang) {
-		view.Lang = ""
-		if len(targetLangs) > 0 {
-			view.Lang = targetLangs[0]
+	result := &productcontract.ProductTranslations{ProjectID: scope.ProjectID, ProductID: strings.TrimSpace(req.ProductID), Groups: []productcontract.TranslationEntity{}}
+	result.SourceLang = s.translationSourceLang(ctx, scope.ProjectID)
+	result.Langs = targetTranslationLangs(s.translationEnabledLangs(ctx, scope.ProjectID), result.SourceLang)
+	result.Lang = strings.TrimSpace(req.Lang)
+	if !containsTranslationLang(result.Langs, result.Lang) {
+		result.Lang = ""
+		if len(result.Langs) > 0 {
+			result.Lang = result.Langs[0]
 		}
 	}
-	for _, code := range targetLangs {
-		view.Langs = append(view.Langs, productdto.TranslationLangOptionResp{Code: code, Label: code, Active: code == view.Lang})
+	cands, err := s.translationCandidates(ctx, scope.ProjectID, result.ProductID)
+	if err != nil {
+		return nil, err
 	}
-
-	// 商品域候选：指定商品时只列该商品的（含引用实体），否则列整个工程。
-	cands, cerr := s.translationCandidates(ctx, view.ProjectID, view.ProductID)
-	if cerr != nil {
-		return nil, cerr
-	}
-
-	// 现有译文（含 engine，用于徽章与「是否变化」判定）。
-	// 没有目标语言时不查译文：空语言码查不出任何东西，白跑一次库。
 	targets := map[string]i18n.ContentTargetInfo{}
-	if view.Lang != "" && len(cands) > 0 {
-		if port, perr := s.translationPort(); perr == nil {
-			if got, lerr := port.LoadDetailsForProject(ctx, view.ProjectID, view.Lang, translationCandidateHashes(cands)); lerr == nil {
-				targets = got
+	if result.Lang != "" && len(cands) > 0 {
+		port, err := s.translationPort()
+		if err != nil {
+			return nil, err
+		}
+		targets, err = port.LoadDetailsForProject(ctx, scope.ProjectID, result.Lang, translationCandidateHashes(cands))
+		if err != nil {
+			return nil, err
+		}
+	}
+	result.Groups = translationGroups(cands, targets)
+	for _, g := range result.Groups {
+		for _, row := range g.Rows {
+			result.Total++
+			if row.Target != "" {
+				result.Done++
 			}
 		}
 	}
-
-	view.Groups = translationGroups(cands, targets)
-	for _, g := range view.Groups {
-		for _, r := range g.Rows {
-			view.Total++
-			if r.Translated {
-				view.Done++
-			}
-		}
-		view.RowCount += len(g.Rows)
-	}
-	return view, nil
+	return result, nil
 }
 
 // translationCandidates 商品域候选文本（单商品入口 / 整工程入口）。
@@ -169,40 +126,26 @@ func (s *Service) translationCandidates(ctx context.Context, projectID, productI
 //  2. 变更判定：只有译文文本确实变化才写库并触发重建（幂等，重复保存零写入）；
 //  3. 译文变化 → 标记待重建：手工页面走全站 i18n 标记，自动发布实例按 direct_content
 //     键精确标记受影响实体（商品页面属这类）。少标一次的表现是「译好了但线上还是旧语言」。
-func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (res *productdto.ProductTranslationsPageResp, err error) {
-	// 出口要的两样（逐行事实与成功回执）在这里一次填好：取词在响应出口发生，业务层只给事实。
-	defer func() {
-		if res == nil {
-			return
-		}
-		res.SaveRows = saveRowsOf(res.Errors)
-		if res.Saved {
-			// 标记失败时换一句回执：原句「已标记待重建」在那种情况下是**假话**。
-			res.SaveMessage = TranslationsSavedMsg(res.Written, res.StaleMarkFailed)
-		}
-	}()
+func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (res *productcontract.TranslationSaveResult, err error) {
 	if req == nil {
 		req = &productdto.SaveProductTranslationsReq{}
 	}
-	view, err := s.ProductTranslationsPage(ctx, &productdto.ProductTranslationsPageReq{
-		ProjectID: req.ProjectID,
-		ProductID: req.ProductID,
-		Lang:      req.Lang,
-	})
+	scope, err := s.ResolveCatalogScope(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	cands, err := s.translationCandidates(ctx, scope.ProjectID, strings.TrimSpace(req.ProductID))
+	if err != nil {
+		return nil, err
+	}
+	groups := translationGroups(cands, nil)
+	view := &productcontract.TranslationSaveResult{}
 
-	// 写入用的是**请求里原样的三个值**（不是视图里归一后的 ProjectID / Lang）：视图那三个是
-	// 「这一屏显示哪个工程 / 哪种语言」的结论（空工程回退第一个、空语言落到第一个目标语言），
-	// 而写入是「用户点了保存的那一屏」——两者在「按源语言落库」这条兼容路径上会分叉，
-	// 归一后再写会把提交落到另一种语言上（自动发布实例是逐启用语言构建的，源语言那一份
-	// 产物同样读 sys_translation，见 translationLangAllowed 的注释）。
-	projectID := strings.TrimSpace(req.ProjectID)
+	// 工程使用已验证的作用域，语言保留请求值；写入不得回退到另一个目标语言。
+	projectID := scope.ProjectID
 	lang := strings.TrimSpace(req.Lang)
 
 	if !s.translationLangAllowed(ctx, projectID, lang) {
-		view.LangInvalid = true
 		view.Errors = translationRowErrorFacts(productenums.MsgTranslationLangInvalid)
 		return view, nil
 	}
@@ -214,15 +157,15 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 	}
 
 	// 第一步：逐行校验（全部通过才写库，避免「部分成功」的中间态）。
-	var rowErrors []productdto.TranslationRowErrorResp
+	var rowErrors []facing.Labeled
 	items := make([]i18n.ContentWriteItem, 0, len(contexts))
 	writeKeys := make([]string, 0, len(contexts))
 	queued := map[string]bool{}
 	for i := range contexts {
 		contextName := strings.TrimSpace(contexts[i])
-		source, ok := translationSourceOf(view.Groups, contextName, hashes[i])
+		source, ok := translationSourceOf(groups, contextName, hashes[i])
 		if !ok {
-			rowErrors = append(rowErrors, productdto.TranslationRowErrorResp{Label: contextName, Msg: translationFactOf(productenums.MsgTranslationStale)})
+			rowErrors = append(rowErrors, facing.Labeled{Label: contextName, Msg: translationFactOf(productenums.MsgTranslationStale)})
 			continue
 		}
 		target := strings.TrimSpace(targets[i])
@@ -235,7 +178,7 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 		}
 		queued[key] = true
 		if verr := validateProductTranslationTarget(contextName, source, target); verr != "" {
-			rowErrors = append(rowErrors, productdto.TranslationRowErrorResp{Label: contextName, Msg: translationFactOf(verr)})
+			rowErrors = append(rowErrors, facing.Labeled{Label: contextName, Msg: translationFactOf(verr)})
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{
@@ -314,7 +257,9 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 				view.StaleMarkFailed = true
 			}
 		}
-		s.markTranslationInstancesStale(ctx, view.Groups, changedKeys)
+		if s.markTranslationInstancesStale(ctx, groups, changedKeys) {
+			view.StaleMarkFailed = true
+		}
 	}
 	view.Saved = true
 	view.Written = written
@@ -327,18 +272,21 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 // 因此按「语境 + 指纹」回查本次渲染出的候选行，命中即视为该实体受影响
 // （保守超集：宁可多标记，也不漏标记 —— 与页面侧「引用块即登记依赖」同一口径）。
 //
-// 未注入实例端口 / 无变化 / 标记失败：只记日志，不影响保存结果（译文已落库）。
-func (s *Service) markTranslationInstancesStale(ctx context.Context, groups []productdto.ProductTranslationGroupResp, changedKeys []string) {
+// 返回是否有标记失败；译文已落库，失败事实进入保存结论，提醒重新发布。
+func (s *Service) markTranslationInstancesStale(ctx context.Context, groups []productcontract.TranslationEntity, changedKeys []string) bool {
 	if s.translationInstances == nil || len(changedKeys) == 0 {
-		return
+		return false
 	}
+	failed := false
 	for _, ref := range translationAffectedEntities(groups, changedKeys) {
 		dep := pipeline.DirectContentKey(ref.EntityType, ref.EntityID)
 		if _, err := s.translationInstances.MarkStaleByDependency(ctx, dep.Kind, dep.Key); err != nil {
+			failed = true
 			logger.Scene("product").With("entity_type", ref.EntityType).With("entity_id", ref.EntityID).
 				Error(err, "商品译文保存后标记自动发布实例待重建失败")
 		}
 	}
+	return failed
 }
 
 // translationEntityRef 受影响的商品域实体（自动发布实例标记用）。
@@ -348,7 +296,7 @@ type translationEntityRef struct {
 }
 
 // translationAffectedEntities 本次写入的译文对应的实体（按 (指纹, 语境) 回查候选行）。
-func translationAffectedEntities(groups []productdto.ProductTranslationGroupResp, changedKeys []string) []translationEntityRef {
+func translationAffectedEntities(groups []productcontract.TranslationEntity, changedKeys []string) []translationEntityRef {
 	byCandidate := map[string][]translationEntityRef{}
 	for _, g := range groups {
 		for _, r := range g.Rows {
@@ -379,11 +327,11 @@ type translationSourceCandidate struct {
 }
 
 // translationSourceOf 按语境 + hash 反查本次提交对应的原文（防表单被裁剪/篡改）。
-func translationSourceOf(groups []productdto.ProductTranslationGroupResp, contextName, hash string) (translationSourceCandidate, bool) {
+func translationSourceOf(groups []productcontract.TranslationEntity, contextName, hash string) (translationSourceCandidate, bool) {
 	for _, g := range groups {
 		for _, r := range g.Rows {
 			if r.Context == contextName && r.SourceHash == hash {
-				return translationSourceCandidate{SourceText: r.Source, SourceHash: r.SourceHash, Rich: r.Rich}, true
+				return translationSourceCandidate{SourceText: r.Source, SourceHash: r.SourceHash, Rich: r.Field == "description"}, true
 			}
 		}
 	}
@@ -446,52 +394,37 @@ func translationFactOf(msg string) facing.Msg {
 }
 
 // translationRowErrorFacts 页面级错误（对应不到具体某一行）→ 事实行，顺序即发生顺序。
-func translationRowErrorFacts(keys ...string) []productdto.TranslationRowErrorResp {
-	out := make([]productdto.TranslationRowErrorResp, 0, len(keys))
+func translationRowErrorFacts(keys ...string) []facing.Labeled {
+	out := make([]facing.Labeled, 0, len(keys))
 	for _, k := range keys {
 		if fact := translationFactOf(k); fact.Key != "" || fact.Fallback != "" {
-			out = append(out, productdto.TranslationRowErrorResp{Msg: fact})
+			out = append(out, facing.Labeled{Msg: fact})
 		}
 	}
 	return out
 }
 
-// translationGroups 按实体分组并挂上现有译文。
-//
-// 不收取词函数（调用点给事实，取词在页面里）：分组标题里的实体类型名是**词条**
-// （TitleKey / TitleFallback），实体名是**数据**（Title），两样分开交。
-//
-// 实体类型 → (key, 兜底) 的映射在 productenums.EntityTypeLabel（一份，不再就地 switch）。
-func translationGroups(cands []productcontract.TranslationCandidate, targets map[string]i18n.ContentTargetInfo) []productdto.ProductTranslationGroupResp {
+// translationGroups 按实体身份关联原文与现有译文，不生成标题或字段标签。
+func translationGroups(cands []productcontract.TranslationCandidate, targets map[string]i18n.ContentTargetInfo) []productcontract.TranslationEntity {
 	order := make([]string, 0, len(cands))
-	index := map[string]*productdto.ProductTranslationGroupResp{}
+	index := map[string]*productcontract.TranslationEntity{}
 	for _, c := range cands {
 		key := c.EntityType + "/" + c.EntityID
 		g, ok := index[key]
 		if !ok {
-			titleKey, titleFallback := productenums.EntityTypeLabel(c.EntityType)
-			g = &productdto.ProductTranslationGroupResp{
-				Key:           key,
-				EntityType:    c.EntityType,
-				EntityID:      c.EntityID,
-				Title:         c.EntityName,
-				TitleKey:      titleKey,
-				TitleFallback: titleFallback,
-				Subtitle:      c.EntityType,
-			}
+			g = &productcontract.TranslationEntity{EntityType: c.EntityType, EntityID: c.EntityID, EntityName: c.EntityName}
+
 			index[key] = g
 			order = append(order, key)
 		}
 		info := targets[i18n.ContentIndexKey(c.SourceHash, c.Context)]
-		g.Rows = append(g.Rows, productdto.ProductTranslationResp{
-			Context: c.Context, Field: c.Field, FieldLabel: c.FieldLabel,
+		g.Rows = append(g.Rows, productcontract.TranslationValue{
+			Context: c.Context, Field: c.Field,
 			Source: c.SourceText, SourceHash: c.SourceHash,
 			Target: info.TargetText, Engine: info.Engine,
-			Translated: info.TargetText != "",
-			Rich:       c.Field == "description",
 		})
 	}
-	out := make([]productdto.ProductTranslationGroupResp, 0, len(order))
+	out := make([]productcontract.TranslationEntity, 0, len(order))
 	for _, key := range order {
 		out = append(out, *index[key])
 	}
@@ -526,26 +459,6 @@ func translationWriteHashes(items []i18n.ContentWriteItem) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// translationProjectOptions 工程下拉（返回选项与工程 id 顺序；未指定时回退第一个工程）。
-func (s *Service) translationProjectOptions(ctx context.Context, want string) (options []productdto.ProjectTranslationOptionResp, ids []string, err error) {
-	if s.project == nil {
-		return nil, nil, nil
-	}
-	list, lerr := s.project.List(ctx)
-	if lerr != nil {
-		return nil, nil, lerr
-	}
-	selected := strings.TrimSpace(want)
-	if selected == "" && len(list) > 0 {
-		selected = list[0].ID
-	}
-	for _, p := range list {
-		ids = append(ids, p.ID)
-		options = append(options, productdto.ProjectTranslationOptionResp{ID: p.ID, Name: p.Name, Selected: p.ID == selected})
-	}
-	return options, ids, nil
 }
 
 // translationSourceLang 站点源语言。
@@ -590,7 +503,7 @@ func (s *Service) translationEnabledLangs(ctx context.Context, projectID string)
 // translationLangAllowed 目标语言是否属于站点启用语言。
 //
 // 判据只要求「在启用清单里」，**不额外排除源语言**：页面下拉已经不列源语言、默认目标也
-// 不会落在它上面（见 ProductTranslationsPage），但写入侧保留按源语言落库的兼容路径 ——
+// 不会落在它上面（见 QueryProductTranslations），但写入侧保留按源语言落库的兼容路径 ——
 // 自动发布实例是逐启用语言构建的（presentation.publishAllLangs），源语言那一份产物同样读
 // sys_translation，收紧判据会让这条链路静默失效。
 func (s *Service) translationLangAllowed(ctx context.Context, projectID, lang string) bool {
@@ -611,10 +524,7 @@ func containsTranslationLang(langs []string, want string) bool {
 	return false
 }
 
-// TranslationsSavedMsg 译文保存成功的回执事实（0 条 = 没有需要写入的变化）。
-//
-// 具名占位符 {n} 走 facing.Msg.Named（出口用 i18n.FillTranslate 填充，语序归词条）。
-// TranslationsSavedMsg 保存成功的回执事实。
+// TranslationsSavedMsg 译文保存回执事实；具名参数由响应出口填充。
 //
 // staleMarkFailed 为真时换一条词条：译文写进去了，但「标记页面待重建」失败 ——
 // 那种情况下原句「译文变更已标记待重建」是假话，而运营需要知道「产物要手动重新发布一次」。
@@ -639,13 +549,4 @@ func TranslationsSavedMsg(written int, staleMarkFailed bool) facing.Msg {
 // TranslationsErrorsTitle 保存被拒时逐行结论的标题事实。
 func TranslationsErrorsTitle() facing.Msg {
 	return facing.Msg{Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"}
-}
-
-// saveRowsOf 逐行错误 → 出口用的带标签事实。
-func saveRowsOf(errs []productdto.TranslationRowErrorResp) []facing.Labeled {
-	rows := make([]facing.Labeled, 0, len(errs))
-	for _, e := range errs {
-		rows = append(rows, facing.Labeled{Label: e.Label, Msg: e.Msg})
-	}
-	return rows
 }

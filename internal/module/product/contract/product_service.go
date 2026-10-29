@@ -20,6 +20,10 @@ type ProductService interface {
 	PublicVariantReader
 	PublicCatalogReader
 	PublicProductOptionsReader
+	CatalogProductQueries
+	CatalogTaxonomyQueries
+	QueryDetailTemplatePanel(context.Context, string, string) (DetailTemplatePanelFacts, error)
+	CatalogScopeReader
 	// ProductDataSource 构建期数据源（只读；写方法不在它上面）。
 	ProductDataSource
 	// VariantSnapshotPort 订单域按下单快照取商品事实（只读，一个方法）。
@@ -98,7 +102,7 @@ type ProductService interface {
 	// 数的是**行**（后台把树摊平成表格行后分页，总数说的就是这些行），供分页算总页数。
 	CountCategories(ctx context.Context, req *productdto.ListCategoryReq) (n int64, err error)
 	// ListCategoryPage 后台分类树受限分页读；不改变 ListCategories 全树契约。
-	ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error)
+	ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryListResp, err error)
 	DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error)
 
 	CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (res *productdto.BrandResp, err error)
@@ -128,7 +132,7 @@ type ProductService interface {
 	// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。
 	// 与 ListTagProducts 并列而不是替换它：接口形态仍要「一次拿一段」的语义，
 	// 页面形态要的是「总数 + 第几页 + 本页行」。
-	ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsPageResp, err error)
+	ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsListResp, err error)
 	DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error)
 	// ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
 	ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp)

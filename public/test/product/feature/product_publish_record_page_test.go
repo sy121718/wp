@@ -38,11 +38,11 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 
 	f.publish(t, liveID, "/products/pub-live")
 
-	view, err := f.products.ProductPublishRecordPage(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID})
+	view, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("发布记录页读模型失败: %v", err)
 	}
-	if !view.Ready {
+	if !view.Available {
 		t.Fatal("端口已装配，Ready 应为 true")
 	}
 	if view.Total != 2 || len(view.Records) != 2 {
@@ -79,14 +79,14 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	}
 
 	// 状态筛选按「当前发布状态」而不是商品 status 列：两档各自只留自己的那一行。
-	active, err := f.products.ProductPublishRecordPage(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "active"})
+	active, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "active"})
 	if err != nil {
 		t.Fatalf("active 筛选失败: %v", err)
 	}
 	if active.Total != 1 || len(active.Records) != 1 || active.Records[0].ProductID != liveID {
 		t.Fatalf("active 只应留下已上线的那一行：total=%d %+v", active.Total, active.Records)
 	}
-	none, err := f.products.ProductPublishRecordPage(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "none"})
+	none, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "none"})
 	if err != nil {
 		t.Fatalf("none 筛选失败: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	}
 
 	// 关键词筛选走商品表：命中 slug 也命中名称之外的字段（真实 SQL 才验得到）。
-	kw, err := f.products.ProductPublishRecordPage(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Keyword: "素商品"})
+	kw, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Keyword: "素商品"})
 	if err != nil {
 		t.Fatalf("关键词筛选失败: %v", err)
 	}
@@ -111,12 +111,12 @@ func TestPublishRecordPageNotWired(t *testing.T) {
 		return
 	}
 	f.createProduct(t, "素商品", "pub-none2", "没实例", 9, 9)
-	view, err := f.products.ProductPublishRecordPage(context.Background(),
+	view, err := f.products.QueryPublishRecords(context.Background(),
 		&productdto.ProductPublishRecordPageReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("未装配档不该报错（那是部署侧提示，不是读失败）: %v", err)
 	}
-	if view.Ready {
+	if view.Available {
 		t.Fatal("没接端口时 Ready 必须是 false")
 	}
 	if len(view.Records) != 0 {
@@ -131,7 +131,7 @@ func TestPublishRecordPageUnknownProject(t *testing.T) {
 		return
 	}
 	f.withPublishRecordPort()
-	_, err := f.products.ProductPublishRecordPage(context.Background(),
+	_, err := f.products.QueryPublishRecords(context.Background(),
 		&productdto.ProductPublishRecordPageReq{ProjectID: "does-not-exist"})
 	if err == nil {
 		t.Fatal("未知工程应报错")

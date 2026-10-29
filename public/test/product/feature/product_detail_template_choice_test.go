@@ -516,7 +516,7 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("详情模板页应 200，实际 %d", rec.Code)
+		t.Fatalf("详情模板页应 200，实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -625,14 +625,14 @@ func (p *detailTemplateFailingPort) DefaultDetailTemplate(context.Context, strin
 	return "", nil
 }
 
-func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
+func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string, string, string) (productcontract.BoundTemplateView, error) {
 	p.derived++
-	return productcontract.BoundTemplateView{}
+	return productcontract.BoundTemplateView{}, nil
 }
 
-func (p *detailTemplateFailingPort) DetailTemplatePanel(context.Context, string, string, string) productcontract.DetailTemplatePanelFacts {
+func (p *detailTemplateFailingPort) DetailTemplatePanel(context.Context, string, string, string) (productcontract.DetailTemplatePanelFacts, error) {
 	p.derived++
-	return productcontract.DetailTemplatePanelFacts{}
+	return productcontract.DetailTemplatePanelFacts{}, nil
 }
 
 // TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries 主数据读不到：
@@ -673,12 +673,8 @@ func TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries(t *test
 	}
 }
 
-// TestProductDetailTemplatePageAnnotationFailuresStillRenderPage 标注类失败不参与失败判定：
-// 默认模板解析不到、绑定实例读不到时页面照常 200 可用。
-//
-// 这两条是「顺带知道一下」的事实。把它们计入失败会让发布链路一抖整页就红，
-// 而页面此时正需要有人去点「首次发布」—— 挡住的正是修复它的那一步。
-func TestProductDetailTemplatePageAnnotationFailuresStillRenderPage(t *testing.T) {
+// TestProductDetailTemplatePageEmptyFactsStillRenderPage 未配置默认模板且未创建实例是正常空态。
+func TestProductDetailTemplatePageEmptyFactsStillRenderPage(t *testing.T) {
 	engine, f := newDetailTemplatePageEngine(t)
 	if engine == nil {
 		return
@@ -690,14 +686,14 @@ func TestProductDetailTemplatePageAnnotationFailuresStillRenderPage(t *testing.T
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("标注类失败时页面应 200，实际 %d，body=%s", rec.Code, headOfBody(rec.Body.String()))
+		t.Fatalf("空事实时页面应 200，实际 %d，body=%s", rec.Code, headOfBody(rec.Body.String()))
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "夏季衬衫") {
 		t.Fatalf("页面主体（商品）仍应渲染，body=%s", headOfBody(body))
 	}
 	if strings.HasPrefix(strings.TrimSpace(body), "{") {
-		t.Fatal("标注类失败仍应是页面，不是 JSON 报文")
+		t.Fatal("空事实仍应是页面，不是 JSON 报文")
 	}
 	// 没有实例 = 还没发布过：页面要据此提示「还没发布」，而不是留空让人猜。
 	if !strings.Contains(body, "未发布") {
@@ -717,12 +713,12 @@ func (p *detailTemplateEmptyPort) DefaultDetailTemplate(context.Context, string,
 	return "", nil
 }
 
-func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
-	return productcontract.BoundTemplateView{}
+func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string, string) (productcontract.BoundTemplateView, error) {
+	return productcontract.BoundTemplateView{}, nil
 }
 
-func (p *detailTemplateEmptyPort) DetailTemplatePanel(context.Context, string, string, string) productcontract.DetailTemplatePanelFacts {
-	return productcontract.DetailTemplatePanelFacts{}
+func (p *detailTemplateEmptyPort) DetailTemplatePanel(context.Context, string, string, string) (productcontract.DetailTemplatePanelFacts, error) {
+	return productcontract.DetailTemplatePanelFacts{}, nil
 }
 
 // headOfBody 失败诊断里的 body 前缀（失败时整页可能很长，只留开头足够定位）。

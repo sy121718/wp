@@ -111,7 +111,8 @@ const (
 	//
 	//	ErrVariantSKUEmpty      —— 行上的 SKU 为空（或规范化后为空）且系统生成不出编码；
 	//	ErrVariantOptionsInvalid —— 新增行的规格组合不合法（空组合 / 组不属于商品 / 取值越界）。
-	ErrVariantSKUEmpty       = "ErrVariantSKUEmpty"       // 变体的 SKU 编码不能为空
+	ErrVariantSKUEmpty       = "ErrVariantSKUEmpty" // 变体的 SKU 编码不能为空
+	ErrVariantListDuplicated = "ErrVariantListDuplicated"
 	ErrVariantOptionsInvalid = "ErrVariantOptionsInvalid" // 变体的规格组合不合法
 
 	// ErrVariantStockDuplicated 仓库明细里同一仓同一仓库 SKU 出现多次（B8）。
@@ -263,6 +264,12 @@ const (
 	ErrPricingFilterEmpty = "ErrPricingFilterEmpty"
 	// ErrPricingNothingChanged 没有任何变体的价格需要改动（不写库、不留痕）。
 	ErrPricingNothingChanged = "ErrPricingNothingChanged"
+	// ErrPricingCostMissing 缺少成本，不能应用成本类定价。
+	ErrPricingCostMissing = "ErrPricingCostMissing"
+	// ErrPricingOutOfRange 新价超出可存储范围。
+	ErrPricingOutOfRange = "ErrPricingOutOfRange"
+	// ErrPricingTargetChanged 等待锁期间作用范围发生变化。
+	ErrPricingTargetChanged = "ErrPricingTargetChanged"
 	// ErrPricingAdjustmentNotFound 调价批次不存在。
 	ErrPricingAdjustmentNotFound = "ErrPricingAdjustmentNotFound"
 	// ErrPricingTargetTooMany 筛选集命中的商品数超过单批上限（拒绝「一次改太多」）。

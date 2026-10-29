@@ -17,6 +17,7 @@ package templates
 
 import (
 	"fmt"
+	productdto "go_wp/internal/module/product/dto"
 	"strings"
 	"testing"
 
@@ -99,19 +100,11 @@ func b2bOldData(t *testing.T, c b2bCase) map[string]any {
 // b2bNewData 迁移后 handler 注入的事实键（Items 仍照旧在场）。
 func b2bNewData(t *testing.T, c b2bCase) map[string]any {
 	t.Helper()
-	data := adminShellData()
-	data["TagID"] = "t1"
-	data["ProjectID"] = c.project
-	data["TagName"] = "标签"
-	data["Total"] = c.total
-	data["Items"] = b2bRows(c.rows)
-	pg := pagination.Page{Total: int64(c.total), Page: c.page, Limit: c.size}
-	pg.PageParam = "page"
-	pg.DropLimit = true
-	data["Pagination"] = pg
-	// 基址来自请求串（生产形态）：翻页链接由模板推出来，Pagination.Base 留空。
-	data["req_path"] = "/admin/product-tags/hits?id=t1&project=" + c.project + "&size=20"
-	return data
+	rows := make([]*productdto.TagProductResp, c.rows)
+	for i := range rows {
+		rows[i] = &productdto.TagProductResp{ID: "r", Name: "商品", Slug: "sku", Status: "on"}
+	}
+	return tagHitsData(c.total, c.page, c.size, c.project, rows)
 }
 
 func b2bRender(t *testing.T, data map[string]any) string {

@@ -2,6 +2,8 @@ package inventorymodel
 
 import (
 	"context"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 )
@@ -38,4 +40,24 @@ func (m *Model) StockFactsByStockIDs(ctx context.Context, projectID string, stoc
 		})
 	}
 	return facts, nil
+}
+
+// VariantDeletionFactsTx 按库存写操作的仓库/SKU顺序锁定货行，再读取变体流水身份。
+func (m *Model) VariantDeletionFactsTx(ctx context.Context, tx *gorm.DB, projectID string, variantIDs, stockIDs []string) (*inventorycontract.VariantDeletionFacts, error) {
+	result := &inventorycontract.VariantDeletionFacts{}
+	if len(stockIDs) > 0 {
+		rows := []*StockEntity{}
+		if err := tx.WithContext(ctx).Where("project_id = ? AND id IN ?", projectID, stockIDs).Order("warehouse_id ASC, sku_code ASC, id ASC").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			result.Stocks = append(result.Stocks, &inventorycontract.StockFact{StockID: row.ID, Quantity: row.Quantity, ReservedQuantity: row.ReservedQuantity, TrackQuantity: row.TrackQuantity})
+		}
+	}
+	if len(variantIDs) > 0 {
+		if err := tx.WithContext(ctx).Table("inventory_stock_movements").Where("project_id = ? AND variant_id IN ?", projectID, variantIDs).Distinct("variant_id").Pluck("variant_id", &result.MovementVariantIDs).Error; err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }

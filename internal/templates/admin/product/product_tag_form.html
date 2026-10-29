@@ -1,67 +1,33 @@
-{* admin/product/product_tag_form.html — 标签表单（新建 / 编辑共用片段）。
 
-   新建抽屉（tpl-tag-create）与列表每行的编辑抽屉（tpl-tag-edit-<id>）字段完全同构
-   （名称 / URL 段 / 类型 / 排序 / 规则），差别只有提交地址、id 隐藏域与「规则字段有没有初值」。
-   两处各抄一份必然分叉，而分叉不会编译失败，只会在某一条入口上静默丢字段。
-
-   —— 写动作走 ui/write-base.js（声明式 JSON 写基座）——
-   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-url 声明，客户端序列化成 JSON，
-     csrf 走 X-CSRF-Token 头；
-   · 失败不再「原地重渲染整张表单」：基座把响应里的 message 写进 data-write-status，
-     用户已填的内容本来就还在 DOM 里（没有整页替换），输入一个字都不用重打；
-   · **规则参数是嵌套对象**（端点是 {ruleType:"new_arrival", ruleParams:{days:30}}），
-     而 DOM 里只有扁平的 name=days / minPrice / maxPrice —— data-write-object 按
-     「驱动 select 当前选项声明的键」把它们收成 ruleParams：
-       · 哪些键进对象由 option 的 data-rule-keys 决定，而它来自 service 的规则表
-         （TagRuleTypeResp.ParamKeys）—— 前端不另抄一份映射，否则切了规则类型就会发
-         一个必被 rejectUnknownRuleKeys 拒掉的键；
-       · 第四段 kind=rule 是启用条件：手工标签带 ruleType 会被服务端明确拒绝，
-         而类型是运行期选的，模板决定不了，只能声明成条件；
-       · 容器内的字段一律不进顶层标量（同一个 name 交给端点两次，严格白名单整条拒）。
-
-   数据键：
-     · t / tf —— adminui.PrepareBare 注入的取词函数（片段是带参数 include，拿不到页面 data）；
-     · Mode / Project / ID —— 端点分支、id 与 projectId 隐藏域的依据；
-     · Name / Slug / IsRule / Sort / RuleType / RuleDays / RuleMinPrice / RuleMaxPrice —— 初值；
-     · RuleTypes —— 规则下拉（含每个规则接受的参数键）。
-
-   表单字段名与 /api/product/tag/{create,update} 的绑定逐字一致，改这里等于改协议。 *}
 {{tr := .["t"]}}
 {{tf := .["tf"]}}
-{{create := .Mode == "create"}}
-{{kind := "manual"}}{{if .IsRule}}{{kind = "rule"}}{{end}}
+{{create := !isset(.Entity)}}
+{{entity := map("ID", "", "Name", "", "Slug", "", "Kind", "manual", "Sort", 0, "RuleType", "")}}{{if !create}}{{entity = .Entity}}{{end}}
+{{kind := entity.Kind}}
         <div data-write-host>
-        {* 走 htmx 原生表单提交（formdata）。两个「formdata 与 JSON 不一样」的地方由
-           ui/write-base.js 解决（它就是替代 json_write.js 那套基座的）：
-             · data-write-object：把 .tag-rule-fields 里扁平的 days/minPrice/maxPrice
-               收成 ruleParams 对象 —— 哪些键进对象由 ruleType 当前选项的 data-rule-keys 决定，
-               条件是 kind=rule；
-             · 空值键删除：`sort=` 空串会让后端 *int 绑成 0（「没填」变成「改成 0」）。
-           后端那边 CreateTagReq/UpdateTagReq 实现了 BindForm —— json.RawMessage 在表单体上
-           反射绑不了（实测 ShouldBind 直接报错），由 DTO 自己把 JSON 字符串解析一次。 *}
+
         <form data-write="custom" data-write-url="/api/product/tag/{{if create}}create{{else}}update{{end}}" class="form-stack" data-write-close="[data-drawer]"
               data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule">
             <input type="hidden" name="projectId" value="{{.Project}}">
-            {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
+            {{if !create}}<input type="hidden" name="id" value="{{entity.ID}}">{{end}}
             <div class="form-inline">
-                <input aria-label="{{tr("admin.product_tags.label.name", "标签名称")}}" class="form-input" type="text" name="name" value="{{.Name}}" placeholder="{{tr("admin.product_tags.label.name", "标签名称")}}" required>
-                <input aria-label="{{tr("admin.product_tags.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{.Slug}}" placeholder="{{tr("admin.product_tags.label.slug", "URL 段")}}" autocomplete="off">
+                <input aria-label="{{tr("admin.product_tags.label.name", "标签名称")}}" class="form-input" type="text" name="name" value="{{entity.Name}}" placeholder="{{tr("admin.product_tags.label.name", "标签名称")}}" required>
+                <input aria-label="{{tr("admin.product_tags.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{entity.Slug}}" placeholder="{{tr("admin.product_tags.label.slug", "URL 段")}}" autocomplete="off">
                 <select class="form-select" name="kind" aria-label="{{tr("admin.product_tags.label.kind", "类型")}}">
                     <option value="manual" {{if kind == "manual"}}selected{{end}}>{{tr("admin.product_tags.kindManual", "手工标签")}}</option>
                     <option value="rule" {{if kind == "rule"}}selected{{end}}>{{tr("admin.product_tags.kindRule", "自动标签（按规则）")}}</option>
                 </select>
-                <input aria-label="{{tr("admin.product_tags.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{.Sort}}" placeholder="{{tr("admin.product_tags.ph.sort", "排序")}}" inputmode="numeric" step="1">
+                <input aria-label="{{tr("admin.product_tags.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{entity.Sort}}" placeholder="{{tr("admin.product_tags.ph.sort", "排序")}}" inputmode="numeric" step="1">
             </div>
-            {* 规则区：驱动 select 与参数输入框必须在**同一个容器**里（.tag-rule-fields）——
-               data-write-object 的第一段就是这个容器，第四段的条件字段（kind）在容器外。 *}
+
             <div class="form-inline tag-rule-fields">
                 <select class="form-select" name="ruleType" aria-label="{{tr("admin.product_tags.label.rule", "规则")}}">
-                    <option value="" {{if .RuleType == ""}}selected{{end}}>{{tr("admin.product_tags.ruleEmpty", "（手工标签留空）")}}</option>
-                    {{range i, r := .RuleTypes}}<option value="{{r.Type}}" data-rule-keys="{{range j, k := r.ParamKeys}}{{if j}},{{end}}{{k}}{{end}}" {{if r.Type == .RuleType}}selected{{end}}>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.name", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.name", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.name", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</option>{{end}}
+                    <option value="" {{if entity.RuleType == ""}}selected{{end}}>{{tr("admin.product_tags.ruleEmpty", "（手工标签留空）")}}</option>
+                    {{range i, r := .RuleTypes}}<option value="{{r.Type}}" data-rule-keys="{{range j, k := r.ParamKeys}}{{if j}},{{end}}{{k}}{{end}}" {{if r.Type == entity.RuleType}}selected{{end}}>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.name", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.name", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.name", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</option>{{end}}
                 </select>
-                <input aria-label="{{tr("admin.product_tags.ph.days", "days（上架 N 天内，1~365）")}}" class="form-input" type="number" name="days" value="{{.RuleDays}}" placeholder="{{tr("admin.product_tags.ph.daysShort", "days（1~365）")}}" inputmode="numeric" min="1" max="365" step="1">
-                <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{.RuleMinPrice}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">
-                <input aria-label="maxPrice" class="form-input" type="text" name="maxPrice" value="{{.RuleMaxPrice}}" placeholder="maxPrice" inputmode="decimal" autocomplete="off">
+                <input aria-label="{{tr("admin.product_tags.ph.days", "days（上架 N 天内，1~365）")}}" class="form-input" type="number" name="days" value="{{if !create}}{{if entity.RuleValues.HasDays}}{{entity.RuleValues.Days}}{{end}}{{end}}" placeholder="{{tr("admin.product_tags.ph.daysShort", "days（1~365）")}}" inputmode="numeric" min="1" max="365" step="1">
+                <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{if !create}}{{if entity.RuleValues.HasMinPrice}}{{entity.RuleValues.MinPrice}}{{end}}{{end}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">
+                <input aria-label="maxPrice" class="form-input" type="text" name="maxPrice" value="{{if !create}}{{if entity.RuleValues.HasMaxPrice}}{{entity.RuleValues.MaxPrice}}{{end}}{{end}}" placeholder="maxPrice" inputmode="decimal" autocomplete="off">
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>

@@ -7,9 +7,7 @@ package producthttp
 
 import (
 	"go_wp/pkg/binding"
-	"go_wp/pkg/facing"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,22 +17,9 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-)
-
-// 商品列表页的地址：详情页等整页 GET 在「资源已不在了」时 302 回列表。
-const productListPath = "/admin/products"
-
-// 本文件各页的筛选上下文键表（每页一份）。
-//
-// 同一份键表服务两条路径：**渲染时**拼进表单 action 的 query、**提交回来时**按同一份表读回。
-// 两处分叉的表现是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净，
-// 所以键表只留这一份，不要在两处各写字面量。
-var (
-	productPricingBackKeys = []string{"project"}
 )
 
 // productErrScene 日志场景名（与 product 模块其它 logger.Scene("product") 一致）。
@@ -104,7 +89,7 @@ func (h *ProductHandle) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	list, err := h.svc.List(c.Request.Context(), req)
+	list, err := h.svc.QueryProducts(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
@@ -133,8 +118,7 @@ func (h *ProductHandle) Delete(c *gin.Context) {
 // permission_code 唯一、超管策略由它逐行生成，一个权限点只能绑一条 API 路由 —— 复用会让
 // 其中一条路径拿不到策略而 403。批量删与单删本来也是两次授权决定。
 //
-// 逐条原因在这里取词：service 只回业务 key（ReasonKey），成品句由 productErrText 按请求
-// 语言给。取词只在 inbound 有，service 拿不到也不该拿。
+// 整批冲突明细由 service 交事实，统一 JSON 出口按请求语言取词。
 func (h *ProductHandle) BulkDelete(c *gin.Context) {
 	req, ok := binding.JSON[productdto.BulkDeleteReq](c)
 	if !ok {
@@ -216,209 +200,165 @@ func (h *ProductHandle) GenerateVariants(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgVariantGenerateSuccess, res)
 }
 
-// 编辑路径的默认值语义由 service 保证：本层只做绑定与转发，不补字段。
-var _ = http.StatusOK
-
-// ==========================================================================
-// 商品列表页：筛选、分页、行内状态与分类/标签单元格。
-//
-// 筛选条与分页是全后台通用形态（GET 表单 + select）；本页不拼筛选上下文 query ——
-// 列表页的返回地址只需要工程一个条件（productListFilterURL）。
-
-// ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
-//
-// 三动作：绑参数 → 调读模型 → 返回视图。取数失败直接返回错误，页面出口由 adminui.Page
-// 统一写成 {code,message,data}（业务 400 / 其余 500），模板里没有失败分支。
+// ProductsPage 逐份读取业务对象；字段展示与分页链接由模板生成。
 func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductListPageReq](c)
 	if !ok {
 		return
 	}
-	view, err := h.reader.ProductListPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, view)
+	result, err := h.products.QueryProducts(c.Request.Context(), &productdto.ListReq{ProjectID: scope.ProjectID, Keyword: req.Keyword, Status: req.Status, Page: req.Page, Size: 20})
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	categories, err := h.products.CategoryNodes(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	brands, err := h.products.CatalogBrands(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	tags, err := h.products.CatalogTags(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	warehouses, err := h.products.CatalogWarehouses(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req),
+		pageview.Object("Result", result), pageview.Object("Categories", categories), pageview.Object("Brands", brands),
+		pageview.Object("Tags", tags), pageview.Object("WarehouseOptions", warehouses),
+		pageview.Object("Rules", h.products.ListPricingRuleTypes(c.Request.Context())),
+		pageview.Object("Roundings", h.products.ListPricingRoundingOptions(c.Request.Context()))))
 }
 
-// productListPageSize 商品列表每页条数（服务端分页）。
-//
-// 唯一实现在 service 的 ProductListPageSize：列表页取数已下沉进读模型，两处各写一个 20
-// 时改一处会让「共 N 条」的推算与实际取回的行数对不上。
-//
-// 20 与后台其它列表页同一量级：列表行要逐个取商品详情组装视图，
-// 一页取太多等于把「翻页」换成「一屏卡顿」。
-const productListPageSize = productservice.ProductListPageSize
-
-// productPageNumber 解析页码：空值 / 非数字 / 越界一律退回第 1 页。
-//
-// 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
-// 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
-// ==========================================================================
-// 商品新建页。
-//
-// 表单的提交已迁到 JSON 写基座（static/js/ui/write-base.js + /api/product/create），页面这边
-// 只剩「读数据 → 渲染」：没有回填槽、没有失败重渲染、也不再有页面的写 handler。
-// 字段名与 dto.CreateReq 的 json 标签的逐字对齐由 product_create_form_protocol_test.go 钉住
-// —— 模板写错一个 name 的后果是字段静默丢失（商品建出来了，某个字段是空的）。
-
-// 左侧基础信息表单（字段名与 dto.CreateReq 一致），
-// 右侧模板卡片区（默认模板 + 候选列表 + 预览入口）；模板绑定与可视化自定义
-// 在创建后的详情页继续（create 不落实例，绑定发生在首次发布）。
-
-// —— 商品建表单的失败分档出口（渐进增强；模板见 admin/product/product_create_form.html）——
-//
-// 本节起是原先的 product_create.go（新建页与它的表单字段协议）。
-// ==========================================================================
-
-// ProductNewPage GET /admin/products/new：商品新建整页。
-//
-// 本批（整页 GET 取数下沉）之后控制器只剩三步：**读参数 → 调读模型 → 渲染**。
-// 工程清单、工程存在性校验、仓库选项、属性组选项、每仓 SKU 候选、模板清单与默认模板、
-// 15 个 data 键的装配、以及「哪个失败点算 400 / 哪个算 500」的编排，全部在
-// service.ProductNewPage 里（取数口径与页面的档位是业务结论，不是 HTTP 结论）。
-//
-// 三个具体后果：
-//
-//	· 控制器里不再有 gin.H 装配与取数助手调用 —— 页面数据只有一个来源（dto 视图）；
-//	· 状态码与 no-store 由视图带出来（view.Result），不再在这里判档，
-//	  于是「失败页长什么样」不再有第二种写法；
-//	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
-//	  交给 service 就等于把语言钉进业务层。
+// ProductNewPage 只交创建商品所需的原始候选。
 func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
 	req, ok := binding.Query[productdto.ProductNewPageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductNewPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, view)
+	warehouses, err := h.products.CatalogWarehouses(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	attributes, err := h.products.CatalogAttributes(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	skus, err := h.products.CatalogWarehouseSKUs(c.Request.Context(), scope.ProjectID, warehouses)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	templates, err := h.products.CatalogEntityTemplates(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("WarehouseOptions", warehouses),
+		pageview.Object("Attributes", attributes), pageview.Object("WarehouseSKUOptions", skus), pageview.Object("TemplateCatalog", templates)))
 }
 
-// ==========================================================================
-// 商品编辑页（整页 + 回显）。
-//
-// 保存走 JSON 写基座（static/js/ui/write-base.js）：字段名与 /api/product/update 的
-// UpdateReq json 标签逐字一致，由 product_edit_form_protocol_test.go 对账；
-// 失败只在原页结果区出现，服务端不再有「把刚提交的值原样送回」那一层。
-
-// ProductEditPage GET /admin/products/edit：商品基本字段编辑页。
-// 为什么单独成页，而不是并进商品详情页：
-//   - 详情页的职能是**子资源维护**（变体清单 / 评分 / 属性引用 / 分类与品牌 / 手工标签），
-//     那里的每个表单都作用在「这个商品的某个子资源」上；
-//   - 商品**自身**的字段（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 / SEO / 图集）
-//     自本页出现之前**只有创建时能填**，建完之后再也没有入口 —— 编辑入口缺位是真实缺口，
-//     不是版式问题；
-//   - 商品域翻译工作台（多语言）原先占着列表操作列的一格，本批收进编辑页：多语言改的是
-//     这个商品的字段译文，与「改这个商品」是同一件事。
-//
-// 表单协议：字段名与 /api/product/update 的 UpdateReq 的 json 标签**逐字对齐**
-// （name / slug / sku / status / defaultPrice / unit / weight / seoTitle / seoDescription /
-// images / imageAlts / attributeIds / categoryIds / primaryCategoryId / brandId / tagIds），
-// 改字段名等于改协议。
-//
-// 提交后回编辑页（PRG）而不是回列表：用户在这里改的是**这一个商品**，
-// 弹回列表等于让他重新找一遍再点进来（与详情页的写操作同一口径）。
-//
-// 本节起是原先的 product_edit.go（编辑页，字段名与 UpdateReq 的 json 标签逐字对齐）。
-// ==========================================================================
-
+// ProductEditPage 选择器与主体均读取成功才渲染；读取故障不能被解释为主动解绑。
 func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductEditPageReq](c)
 	if !ok {
 		return
 	}
-	h.renderProductEditPage(c, req.ProjectID, req.ProductID, "", false)
-}
-
-func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, _ bool) {
-	// 取数编排、表单回显、返回地址全在读模型里（service.ProductEditPage 末尾调 FillProductEditFormEcho）。
-	view, err := h.reader.ProductEditPage(c.Request.Context(), &productdto.ProductEditPageReq{
-		ProjectID: selected, ProductID: productID,
-	})
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩原地重渲染这一条路会给 Err。
-	view.Err = submitErr
-	// 属性组候选读失败：撤掉保存入口并按当前语言归口 ——「选择器缺失」与「用户主动取消了
-	// 全部引用」在 POST 上同形，读故障时不能装作后者。
-	if view.AttributeOptionsErr != nil {
-		view.EditBlocked = true
-		if view.Err == "" {
-			view.Err = response.MessageOf(c, "product", view.AttributeOptionsErr)
-		}
+	product, err := h.products.Get(c.Request.Context(), &productdto.GetReq{ProjectID: scope.ProjectID, ID: req.ProductID})
+	if err != nil {
+		pageview.Fail(c, err)
+		return
 	}
-	pageview.Render(c, view)
+	categories, err := h.products.CategoryNodes(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	brands, err := h.products.CatalogBrands(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	tags, err := h.products.CatalogTags(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	attributes, err := h.products.CatalogAttributes(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	warehouses, err := h.products.CatalogWarehouses(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	skus, err := h.products.CatalogWarehouseSKUs(c.Request.Context(), scope.ProjectID, warehouses)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	panel, err := h.products.QueryDetailTemplatePanel(c.Request.Context(), scope.ProjectID, product.ID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("Categories", categories),
+		pageview.Object("Brands", brands), pageview.Object("Tags", tags), pageview.Object("Attributes", attributes),
+		pageview.Object("WarehouseOptions", warehouses), pageview.Object("WarehouseSKUOptions", skus), pageview.Object("TplPanel", panel)))
 }
 
-// ==========================================================================
-// 商品详情页：变体生成/预览/保存、评分、属性挂载、删除与预览框。
-//
-// 变体从「规格属性组合」生成：预览先算再存（variantPreviewRow），保存按 fingerPrint 覆盖式写入。
-
-// ProductDetailPage GET /admin/products/detail：单个商品的详情页（**只读**）。
-//
-// 为什么是独立页，而不是列表页里的第二、三张表（admin-ui-logic §1）：列表页只该回答
-// 「有哪些商品」；变体与评分是**某个商品的子资源**，属于该商品的详情。原来三张表平铺在
-// 列表页上，等于让列表页承载实体详情 —— 商品一多，变体表与评分表就是两份与商品表错位的
-// 长表，改一个商品要跨三处找入口。
-//
-// 本节起是原先的 product_detail_page.go（详情页）。
-// ==========================================================================
-
-// 本页只**看**：基本信息 / 属性引用 / 分类与品牌 / 标签 / 捆绑构成 / 变体清单 / 评分 /
-// 详情页模板的绑定状态。全部写动作（含变体与评分）在 ProductEditPage ——
-// 读与写混在同一页时用户分不清「我在看还是在改」，而且每个写表单都要带 CSRF、
-// 错误回显与回跳地址，那是编辑页的职责。
-//
-// 商品不存在（含没给 product 参数）渲染 .empty-state + 返回列表链接，**不 500**：
-// 手输 URL、书签失效、商品刚被删都会走到这里，500 什么也说明不了。
-// 但状态码要说实话：这是「这个 URL 指向的商品不存在」= 404 + no-store
-// （契约见 AGENTS.md §整页 GET 的失败出口），此前一律 200 且可缓存。
-//
-// 取数**失败**与「不存在」此前也混在同一条路径上：`derr == nil && detail != nil` 把
-// 「读不出来」（连接断了、权限、超时）一起吞成了「商品不存在」空态 —— 用户以为商品被删了。
-// 现在三档分开：业务上的「不存在」= 404；参数不合法 = 400；其余 = 500 + no-store。
-//
-// 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
-// （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
+// ProductDetailPage 只读详情直接消费商品对象与模板绑定事实。
 func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductDetailPageReq](c)
 	if !ok {
 		return
 	}
-	// 取数、三档判定、行装配、捆绑构成、返回地址全在 service.ProductDetailPage。
-	view, err := h.reader.ProductDetailPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, view)
+	product, err := h.products.Get(c.Request.Context(), &productdto.GetReq{ProjectID: scope.ProjectID, ID: req.ProductID})
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	panel, err := h.products.QueryDetailTemplatePanel(c.Request.Context(), scope.ProjectID, product.ID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("TplPanel", panel)))
 }
 
-// variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
-//
-// Spec 是**服务端**拼的可读规格文本（与详情页表格同一份 specLabel），
-// 前端不自己拼属性名 —— 属性值改名后前端那份就会显示旧名字。
-// ProductsVariantPreview 组合生成的**预览**（POST /admin/products/variant/preview，不落库）。
-//
-// 用户口径（AGENTS.md §8）：「生产只是显示，并不会存入数据库，必须保存才行」。
-// 因此本端点只回答「点这次生成会往前端清单里追加哪些行」：
-//   - 笛卡尔积、维度与数量上限、与既有组合的去重全在 service（与落库路径同一套规则）；
-//   - SKU 由服务端按变体 SKU 规则生成（前端不复刻这套算法），运营可在清单里逐行改写；
-//   - 响应是 JSON 而不是 HTMX 片段：前端要把这些行**追加**进已渲染的清单 DOM，
-//     而清单的初始行由服务端渲染（库里已有变体），两者是同一种行结构。
-//
-// 失败回 400 + 可读文案（走 productErrText 取词，不把 enums 裸 key 或 PG 报错铺给前端）。
+// ProductsVariantPreview 返回变体业务数据，规格显示由前端按属性定义格式化。
 func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	form, ok := binding.Form[productdto.VariantPreviewFormReq](c)
 	if !ok {
@@ -429,57 +369,7 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
-	// 规格文本（Spec）由 service 用同一份属性组算出：控制器不再为了拼这句话回查一次商品
-	// （那次回查可以静默拿到空 attrs，于是整列规格变「—」而不报错）。
-	res.OK = true
-	c.JSON(http.StatusOK, res)
-}
-
-// productBulkText 一条结论文案的事实（key + 中文兜底）。
-type productBulkText struct{ key, fallback string }
-
-// fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
-// JSON 出口用 response.MsgText 取成品串。
-//
-// 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
-// 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
-func (t productBulkText) fact(args ...string) facing.Msg {
-	m := facing.Msg{Key: t.key, Fallback: t.fallback}
-	if len(args) > 0 {
-		m = m.WithArgs(args...)
-	}
-	return m
-}
-
-// 变体清单保存的结论文案（详情页编辑表单的回执）。
-var (
-	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
-	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}
-	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
-)
-
-// variantSaveMsg 保存结果的回带结论（事实 + 原因 key，取词在响应出口一次完成）。
-//
-// 「一条都没变」与「跳过若干」必须能区分：都写成「保存成功」时，用户无法判断是
-// 清单本来就与库里一致，还是有行被拦下了（被拦下的行下一次还会出现在清单里）。
-// 跳过明细只报原因 key（受控枚举），由响应出口按当前语言取词后再拼进结论。
-func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
-	if res == nil {
-		return response.InternalMsg()
-	}
-	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
-		return productVariantSaveNoChange.fact()
-	}
-	reasons := make([]string, 0, len(res.Skipped))
-	for _, skip := range res.Skipped {
-		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: productenums.VariantSkipFallback(skip.Reason)}))
-	}
-	args := []string{strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted)}
-	built := response.MsgText(c, productVariantSaveSaved.fact(args...))
-	if len(reasons) > 0 {
-		built += " " + response.MsgText(c, productVariantSaveSkipped.fact(strconv.Itoa(len(res.Skipped)), strings.Join(reasons, "；")))
-	}
-	return facing.Msg{Fallback: built}
+	response.Success(c, res)
 }
 
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
@@ -488,9 +378,7 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.
 // 可编辑的 skuCode 与 optionValues。服务端逐条重算（见 service.SaveVariantList），
 // 客户端提交的形状一律不作数。
 //
-// 结论是一句**复合句**（「已保存 N 条」+「跳过 M 条：原因」）：一段 key 表达不了，因此走
-// message 回给页面；页面用 data-write-flash 把它带过保存后的整页刷新 —— 清单刷新后才是库里的
-// 样子，被跳过的那几行也才会重新出现在清单里（它们本来就是「没能写进去」的那些行）。
+// 整批成功返回统一成功消息与计数；冲突由错误出口返回 data.items。
 func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 	req, ok := binding.JSON[productdto.SaveVariantListReq](c)
 	if !ok {
@@ -503,7 +391,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessMsg(c, variantSaveMsg(c, res), res)
+	response.SuccessMsg(c, productActionDoneMsg, res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -603,69 +491,31 @@ func renderPreviewPlaceholder(c *gin.Context, key, fallback string) {
 //
 // 商品与文章两个预览帧共用同一份模板：占位页长得一样，没有理由各写一份。
 
-// —— 定价工具（预览 → 应用 → 台账）——
-//
-// 预览与应用的输入是同一份表单解析（readPricingForm），只是前者不落库 —— 两条路径
-// 各解析一次的话，「预览说会变成 9.9、应用后变成 10.0」这种分叉不会报错。
-//
-// 与属性 / 分类 / 品牌页同一模式：GET 渲染完整页，只用 GET/POST。三个不同之处：
-//
-//  1. **预览**（验收 4）：POST /admin/product-pricing/preview 直接把试算结果渲染回同一页
-//     （200，不是提示页）—— 预览必须能看到明细，而明细只在这一次响应里；
-//     表单值原样回填，用户接着点「应用调价」用的就是刚刚预览过的那份参数。
-//     它是**只读**的，所以仍是页面 POST（原生表单 + csrf_token 隐藏域）。
-//  2. **应用**（验收 3）：POST /api/product/pricing/apply 走 service 落库 + 留痕，
-//     由 ui/write-base.js 提交，成功回执含本次改动的变体数（页面上是 flash 结论行）。
-//  3. **留痕**（验收 4）：页面下半部分是调价台账，每个批次可展开看到逐变体「原价 → 新价」。
-//
-// 接口面在前，后台页面在后。
-
-// ProductPricingPage 定价工具页：规则参考表 + 改价表单 + 留痕台账。
+// ProductPricingPage 只读取工程、规则目录与调价记录；提交结果由 JSON API 返回。
 func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
-	h.renderPricingPageWith(c, nil, nil, "")
-}
-
-// ProductPricingPreview 试算（不落库、不留痕），结果渲染回同一页。
-func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) {
-	req, ok := binding.Form[productdto.PricingFormReq](c)
+	req, ok := binding.Query[productdto.ProductProjectReq](c)
 	if !ok {
 		return
 	}
-	form := req.Form()
-	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req.Rule()})
-	if err != nil {
-		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
-		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
-		h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
-	}
-	h.renderPricingPageWith(c, &form, preview, "")
-}
-
-// renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
-//
-// 取数编排（工程清单 / 规则参考表 / 改价表单初值 / 留痕台账）与视图装配都在 service 的读模型
-// （`ProductService.ProductPricingPage`）—— 这里只剩三件事：读参数、调读模型、渲染。
-//
-// form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
-// 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
-func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	req, ok := binding.Query[productdto.ProductPricingPageReq](c)
-	if !ok {
-		return
-	}
-	// 表单回显与试算结果是**写路径的产物**（本次请求里已经在内存中），不来自查询串。
-	req.Form, req.Preview, req.ErrMsg = form, preview, errMsg
-	view, err := reader.ProductPricingPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
-	view.ListQuery = binding.ListQuery(c, productPricingBackKeys...)
-	pageview.Render(c, view)
+	var history []*productdto.PriceAdjustmentResp
+	if scope.ProjectID != "" {
+		history, err = h.products.ListPriceAdjustments(c.Request.Context(), &productdto.ListPriceAdjustmentReq{ProjectID: scope.ProjectID, Limit: 10, IncludeItems: true})
+		if err != nil {
+			pageview.Fail(c, err)
+			return
+		}
+	}
+	pageview.Render(c, pageview.Objects(
+		pageview.Object("Scope", scope),
+		pageview.Object("Rules", h.products.ListPricingRuleTypes(c.Request.Context())),
+		pageview.Object("Roundings", h.products.ListPricingRoundingOptions(c.Request.Context())),
+		pageview.Object("History", history),
+	))
 }
 
 // ==========================================================================
@@ -696,67 +546,19 @@ func (h *ProductHandle) PreviewPricing(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgPricingPreviewSuccess, res)
 }
 
-// ApplyPricing 应用调价（POST /api/product/pricing/apply）：算价 → 写回 product_variants.price
-// → 留痕（同一事务）→ 顺带重算自动标签。
-//
-// 入参**平铺**（ruleType / multiplier / amount / margin / rounding / scope / …），不套
-// ruleParams 子对象：页面表单本来就是平铺的（partials/pricing_rule_fields.html），而
-// 「哪个规则用哪个参数」的判定只有 pricingParamsFromForm 一份 —— 在这里另写一套装配，
-// 就会出现「填了 amount 却被当成 multiplier」这类只在一个入口发生的静默错配
-// （与 BulkPricing 同一条理由）。
-//
-// 页面调用它时提交的字符串值也说明了为什么不能直接用 PricingApplyReq：
-// ruleParams 是 json.RawMessage，DOM 里只有字符串，{"multiplier":"1.2"} 会被
-// ruleFloat 当成 "1.2" 去 ParseFloat（带引号）而判成「不是数字」。
+// ApplyPricing 应用调价：算价、写回与留痕由 service 保证事务，操作人取会话。
 func (h *ProductHandle) ApplyPricing(c *gin.Context) {
-	req, ok := binding.JSON[productPricingApplyReq](c)
+	req, ok := binding.JSON[productdto.PricingApplyReq](c)
 	if !ok {
 		return
 	}
-	res, err := h.svc.ApplyPricing(c.Request.Context(), &productdto.PricingApplyReq{
-		PricingRuleReq: productdto.PricingRuleReq{
-			ProjectID: req.ProjectID, RuleType: req.RuleType, Rounding: req.Rounding,
-			Scope: req.Scope, TargetID: req.TargetID,
-			Status: req.Status, Keyword: req.Keyword, CategoryID: req.CategoryID,
-			BrandID: req.BrandID, TagID: req.TagID,
-			RuleParams: productdto.PricingParams(req.RuleType, req.Multiplier, req.Amount, req.Margin),
-		},
-		Note: strings.TrimSpace(req.Note),
-		// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
-		OperatorID: builtin.OperatorName(c),
-	})
+	req.OperatorID = builtin.OperatorName(c)
+	res, err := h.svc.ApplyPricing(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	// 回执是业务事实（key + 计数）：取词只发生在响应出口一次。
-	response.SuccessMsg(c, facing.Msg{
-		Key:      productenums.ProductPricingApplied,
-		Fallback: "已应用调价：本次改动 %s 个变体，明细见下方留痕台账。",
-		Args:     []string{strconv.Itoa(res.ChangedCount)},
-	})
-}
-
-// productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。
-//
-// 与 productBulkPricingReq 刻意分成两个类型：那个带 ids 且 scope/targetId 由 service
-// 逐商品覆盖，这个由表单的 scope/targetId 决定范围。合成一个会让批量入口悄悄接受
-// 「scope=filter」这种它并不支持的形状（值被忽略，用户以为生效了）。
-type productPricingApplyReq struct {
-	ProjectID  string `json:"projectId"`
-	Note       string `json:"note"`
-	RuleType   string `json:"ruleType"`
-	Multiplier string `json:"multiplier"`
-	Amount     string `json:"amount"`
-	Margin     string `json:"margin"`
-	Rounding   string `json:"rounding"`
-	Scope      string `json:"scope"`
-	TargetID   string `json:"targetId"`
-	Status     string `json:"status"`
-	Keyword    string `json:"keyword"`
-	CategoryID string `json:"categoryId"`
-	BrandID    string `json:"brandId"`
-	TagID      string `json:"tagId"`
+	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)
 }
 
 // BulkPricing 批量「按规则改价」（POST /api/product/bulk-pricing）。
@@ -766,7 +568,7 @@ type productPricingApplyReq struct {
 //
 // 规则参数**平铺在顶层**（ruleType / multiplier / amount / margin / rounding），不套一层 rule
 // 对象：页面表单本来就是一个平铺表单（pricing_rule_fields.html），而「哪个规则用哪个参数」的
-// 判定全在 pricingParamsFromForm —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
+// 判定全在 dto.PricingParams —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
 // multiplier」这类只在一个入口发生的错。
 func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	req, ok := binding.JSON[productdto.BulkPricingJSONReq](c)

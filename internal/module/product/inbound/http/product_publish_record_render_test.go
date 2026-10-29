@@ -8,7 +8,9 @@
 package producthttp
 
 import (
+	"context"
 	"errors"
+	productcontract "go_wp/internal/module/product/contract"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -38,10 +40,7 @@ func publishRecordRequest(t *testing.T, h *ProductPageHandle, target string) *ht
 
 func TestProductPublishRecordPageRendersStates(t *testing.T) {
 	published := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
-	view := productPublishRecordPageViewStub(func(v *productdto.ProductPublishRecordPageResp) {
-		v.Projects = []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}
-		v.SelectedProject = "p1"
-		v.SiteName = "工程一"
+	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
 		v.Total = 3
 		v.Records = []productdto.PublishRecordRowResp{
 			{
@@ -61,7 +60,7 @@ func TestProductPublishRecordPageRendersStates(t *testing.T) {
 			{ProductID: "prod-3", ProductName: "没建实例", ProductSlug: "none"},
 		}
 	})
-	reader := &productPageReaderStub{publishView: view}
+	reader := &publicationReaderStub{publishView: view}
 	h := &ProductPageHandle{reader: reader, products: reader}
 
 	rec := publishRecordRequest(t, h, "/admin/products/publish-records?project=p1&status=active&keyword=%E5%95%86")
@@ -96,12 +95,10 @@ func TestProductPublishRecordPageRendersStates(t *testing.T) {
 
 // 端口未装配：页面照常 200，给一句「还没接入」—— 不是「一个都没发布」，也不是 500。
 func TestProductPublishRecordPageNotWiredRendersHint(t *testing.T) {
-	view := productPublishRecordPageViewStub(func(v *productdto.ProductPublishRecordPageResp) {
-		v.Ready = false
-		v.Projects = []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}
-		v.SelectedProject = "p1"
+	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
+		v.Available = false
 	})
-	reader := &productPageReaderStub{publishView: view}
+	reader := &publicationReaderStub{publishView: view}
 	h := &ProductPageHandle{reader: reader, products: reader}
 
 	rec := publishRecordRequest(t, h, "/admin/products/publish-records?project=p1")
@@ -114,11 +111,33 @@ func TestProductPublishRecordPageNotWiredRendersHint(t *testing.T) {
 	}
 }
 
-// 读模型失败：同页完整 HTML + 500 + no-store（与其它整页 GET 同档）。
+// 读取失败：返回 JSON 500，不渲染空记录页面。
 func TestProductPublishRecordPageLoadFailureIsJSON500(t *testing.T) {
-	reader := &productPageReaderStub{publishErr: errors.New("驱动：读发布登记失败")}
+	reader := &publicationReaderStub{publishErr: errors.New("驱动：读发布登记失败")}
 	h := &ProductPageHandle{reader: reader, products: reader}
 
 	rec := publishRecordRequest(t, h, "/admin/products/publish-records?project=p1")
 	assertProductJSONFailure(t, "发布记录页主数据失败", rec, http.StatusInternalServerError, "内部错误")
+}
+
+// publicationReaderStub 只实现本域使用的查询能力，其他入口调用即失败。
+type publicationReaderStub struct {
+	productcontract.ProductService
+	productcontract.ProductPageReader
+	publishView *productcontract.PublishRecordList
+	publishErr  error
+	publishReqs []*productdto.ProductPublishRecordPageReq
+}
+
+func (s *publicationReaderStub) ResolveCatalogScope(context.Context, string) (*productcontract.CatalogScope, error) {
+	return &productcontract.CatalogScope{ProjectID: "p1", Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}, nil
+}
+func (s *publicationReaderStub) QueryPublishRecords(_ context.Context, req *productdto.ProductPublishRecordPageReq) (*productcontract.PublishRecordList, error) {
+	s.publishReqs = append(s.publishReqs, req)
+	return s.publishView, s.publishErr
+}
+func publishRecordListStub(change func(*productcontract.PublishRecordList)) *productcontract.PublishRecordList {
+	r := &productcontract.PublishRecordList{Available: true, Records: []productdto.PublishRecordRowResp{}, Page: 1, Limit: 20}
+	change(r)
+	return r
 }

@@ -17,15 +17,13 @@ package productservice
 // 它们分别是规则的输入与营销展示字段，改价工具替用户改它们是越权。
 
 // 设计约束（验收 1）：只接受四个内置定价规则与四种尾数处理，**不接受自由表达式**。
-// 因此这里是一张写死的注册表，每条规则自带四件事：
+// 因此这里是一张写死的注册表，规则只提供参数校验与价格计算：
 //
 //	Normalize  严格校验参数（未知键 / 类型不符 / 越界一律拒绝）并归一为落库形态；
-//	Describe   把参数翻成人类可读描述（后台展示，规则语义只有这一份）；
 //	Compute    由成本价算出售价（纯函数，不碰数据库）；
-//	FormValue  取归一后的核心参数值（后台表单回填用）。
 //
 // 算出的售价一律经 applyPricingRounding 处理尾数后才落库 —— 两条路径（预览与应用）
-// 共用同一份实现，预览看到的数字就是应用后写进 product_variants.price 的数字。
+// 共用同一份实现；应用时重新读取锁定快照，成本有变化时按当前成本算价。
 
 import (
 	"context"
@@ -47,8 +45,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
 )
 
@@ -56,7 +54,7 @@ const (
 	// defaultPricingAdjustments 留痕列表默认条数；maxPricingAdjustments 为其上限。
 	defaultPricingAdjustments = 20
 	maxPricingAdjustments     = 200
-	// maxPricingAdjustmentItems 单个批次的明细展示上限（只有详情接口会用到）。
+	// maxPricingAdjustmentItems 单个批次的明细读取上限。
 	maxPricingAdjustmentItems = 500
 	// maxPricingProducts 筛选集单批命中的商品数上限。
 	// 批量改价是不可逆的经营动作（虽然有留痕），一次改几百个商品已经足够，
@@ -85,7 +83,7 @@ type pricingRequest struct {
 // PreviewPricing 按规则试算并返回逐变体明细（**不落库、不留痕**）。
 //
 // 预览与应用走同一份算价逻辑（normalizePricingRequest → resolvePricingTargets →
-// computePricingLines），因此预览里看到的每个数字就是应用后会写进库的数字。
+// computePricingLines）；应用时会重新读取锁定快照，预览本身不冻结价格。
 func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPreviewReq) (res *productdto.PricingPreviewResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -94,7 +92,7 @@ func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPre
 	if err != nil {
 		return nil, err
 	}
-	targets, err := s.resolvePricingTargets(ctx, pr)
+	targets, err := resolvePricingTargets(ctx, s.m, pr)
 	if err != nil {
 		return nil, err
 	}
@@ -117,38 +115,11 @@ func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPre
 	}, nil
 }
 
-// ApplyPricing 应用调价：算价 → 写回 product_variants.price → 写留痕（同一事务）→ 重算自动标签。
-//
-// 批量入口（BulkApplyPricing）**不走这一个**，而是逐商品调 applyPricingOnce、整批结束后
-// 只重算一次：现状控制器逐商品调用本方法，N 个商品就触发 N 次全工程标签重算
-// （每次都是全量幂等重算，多余 N-1 次）。
-func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
-	res, err = s.applyPricingOnce(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。
-	// 调价已经提交：重算失败只记日志、不回滚不报错（理由见 product.go 的 Update）。
-	recalc, rerr := s.recalcPricingAutoTags(ctx, res.ProjectID)
-	if rerr != nil {
-		logger.Scene("product").With("project", res.ProjectID).Error(rerr,
-			"调价已写入，但自动标签重算失败（归属待下次写操作重算）")
-	} else {
-		res.RecalculatedTags = recalc
-	}
-	return res, nil
+// ApplyPricing 将算价、价格、留痕、失效与自动标签归属放在同一事务内。
+func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (*productdto.PricingApplyResp, error) {
+	return s.applyPricingOnce(ctx, req)
 }
 
-// applyPricingOnce 一次调价的完整落库（算价 → 写回 → 留痕 → 失效），**不重算自动标签**。
-//
-// 拆出来只为一件事：让批量用例能把 N 次重算压成一次，同时不复制算价 / 事务 / 台账这份
-// 编排（复制一份就是第二份真相）。调用方负责收尾的重算。
-//
-// 三个决定性的语义：
-//   - 只有**真正发生变化**的变体才写库、才留痕：无改动的行写一遍等于伪造「改动记录」；
-//   - 一条改动都没有时整体报错（ErrPricingNothingChanged），不写空批次 —— 空台账比没有台账更误导；
-//   - 价格写回与留痕在同一事务里（半截状态「改了价却没有记录」是留痕功能的致命伤）。
-//
 // pricingPlan 一次调价的**计算结果**：算与写分开，批量改价才能把 N 条计算汇总到
 // 一个事务里写。逐条写（事务在循环里）= 第 3 条失败时前 2 条已提交，用户看到的数字
 // 与实际落库不一致，而这种不一致没有任何东西能修回来。
@@ -164,7 +135,8 @@ type pricingPlan struct {
 // isPricingNothingChanged 判断「本来就在目标价上」。它不是失败：service 不写空台账，
 // 批量入口把它算进 unchanged 而不是 blocked。
 func isPricingNothingChanged(err error) bool {
-	return err != nil && strings.TrimSpace(err.Error()) == productenums.ErrPricingNothingChanged
+	fact, ok := facing.FactOf(err)
+	return ok && fact.Business && fact.Key == productenums.ErrPricingNothingChanged
 }
 
 // computePricingPlan 算价并组装待写清单（不落库、不发失效、不重算标签）。
@@ -173,7 +145,7 @@ func isPricingNothingChanged(err error) bool {
 //   - 只有**真正发生变化**的变体才进 updated / items：无改动的行写一遍等于伪造「改动记录」；
 //   - 一条改动都没有时返回 ErrPricingNothingChanged，不产出空批次 —— 空台账比没有台账更误导；
 //   - adj / items / updated / changeInputs 在同一 plan 里，写入时必须同事务（见 writePricingPlansTx）。
-func (s *Service) computePricingPlan(ctx context.Context, req *productdto.PricingApplyReq) (*pricingPlan, error) {
+func (s *Service) computePricingPlan(ctx context.Context, tx *gorm.DB, req *productdto.PricingApplyReq) (*pricingPlan, error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -181,13 +153,27 @@ func (s *Service) computePricingPlan(ctx context.Context, req *productdto.Pricin
 	if err != nil {
 		return nil, err
 	}
-	targets, err := s.resolvePricingTargets(ctx, pr)
+	targets, err := s.resolvePricingTargetsTx(ctx, tx, pr)
 	if err != nil {
 		return nil, err
 	}
 	lines, counts, err := s.computePricingLines(ctx, pr, targets)
 	if err != nil {
 		return nil, err
+	}
+	blocked := make([]facing.BlockedItem, 0)
+	for _, line := range lines {
+		if line.Status != productenums.PricingLineSkipped {
+			continue
+		}
+		reason := productenums.ErrPricingCostMissing
+		if line.Reason == productenums.PricingSkipOutOfRange {
+			reason = productenums.ErrPricingOutOfRange
+		}
+		blocked = append(blocked, bulkBlocked(line.VariantID, line.ProductName+" / "+line.SKUCode, reason))
+	}
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
 	}
 	if counts.changed == 0 {
 		return nil, productenums.Err(productenums.ErrPricingNothingChanged)
@@ -258,7 +244,6 @@ func (s *Service) computePricingPlan(ctx context.Context, req *productdto.Pricin
 			ProjectID:    pr.projectID,
 			TargetCount:  len(lines),
 			ChangedCount: counts.changed,
-			SkippedCount: counts.skipped,
 			Lines:        changedLines,
 		},
 	}, nil
@@ -301,17 +286,20 @@ func (s *Service) writePricingPlansTx(ctx context.Context, tx *gorm.DB, plans []
 	return s.recordChangesTx(ctx, tx, changes...)
 }
 
-// applyPricingOnce 一次调价的完整落库（算价 → 写回 → 留痕 → 失效），**不重算自动标签**。
-//
-// 拆出来只为一件事：让批量用例能把 N 次重算压成一次，同时不复制算价 / 事务 / 台账这份
-// 编排（复制一份就是第二份真相）。调用方负责收尾的重算。
+// applyPricingOnce 将价格、标签、审计和发布失效事件保留在同一事务内。
 func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
-	plan, err := s.computePricingPlan(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	var plan *pricingPlan
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		return s.writePricingPlansTx(ctx, tx, []*pricingPlan{plan})
+		var err error
+		plan, err = s.computePricingPlan(ctx, tx, req)
+		if err != nil {
+			return err
+		}
+		if err := s.writePricingPlansTx(ctx, tx, []*pricingPlan{plan}); err != nil {
+			return err
+		}
+		plan.res.RecalculatedTags, err = s.recalcPricingAutoTagsTx(ctx, tx, plan.projectID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -332,7 +320,7 @@ func (s *Service) ListPricingRoundingOptions(ctx context.Context) (list []*produ
 	return pricingRoundingOptions()
 }
 
-// ListPriceAdjustments 调价留痕列表（新的在前；不含逐变体明细）。
+// ListPriceAdjustments 调价留痕列表（新的在前；IncludeItems 时批量附带明细）。
 func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.ListPriceAdjustmentReq) (list []*productdto.PriceAdjustmentResp, err error) {
 	var projectID string
 	limit := defaultPricingAdjustments
@@ -357,6 +345,19 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 	list = make([]*productdto.PriceAdjustmentResp, 0, len(rows))
 	for _, row := range rows {
 		list = append(list, toAdjustmentResp(row, nil))
+	}
+	if req != nil && req.IncludeItems {
+		ids := make([]string, 0, len(list))
+		for _, a := range list {
+			ids = append(ids, a.ID)
+		}
+		grouped, err := s.pricingHistoryItems(ctx, projectID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range list {
+			a.Items = grouped[a.ID]
+		}
 	}
 	return list, nil
 }
@@ -392,7 +393,7 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	return toAdjustmentResp(row, adjustmentItemResps(details, names)), nil
 }
 
-// adjustmentProductNames 批量取明细涉及的当前商品名（失败不阻断留痕读取）。
+// adjustmentProductNames 批量取明细涉及的当前商品名；读取失败明确上抛。
 //
 // projectID 由调用方给出（读留痕时已经解析过）：读的是 products（迁移 215 名单），
 // 缺作用域时名字全取不到、返回空 map —— 留痕详情里的商品名会整列变空。
@@ -554,17 +555,17 @@ func pricingFilterJSON(f productmodel.PricingFilter) json.RawMessage {
 // resolvePricingTargets 解析作用范围，返回参与试算的「商品 + 变体」列表。
 //
 // 顺序稳定（商品排序 → 变体排序），保证同一份数据每次预览输出同样的行序。
-func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest) (targets []*pricingTarget, err error) {
+func resolvePricingTargets(ctx context.Context, m *productmodel.Model, pr *pricingRequest) (targets []*pricingTarget, err error) {
 	switch pr.scope {
 	case productenums.PricingScopeSKU:
-		v, gerr := s.m.GetVariant(ctx, pr.targetID)
+		v, gerr := m.GetVariant(ctx, pr.targetID)
 		if gerr != nil {
 			if errors.Is(gerr, gorm.ErrRecordNotFound) {
 				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 			}
 			return nil, gerr
 		}
-		p, perr := s.m.Get(ctx, v.ProductID, pr.projectID)
+		p, perr := m.Get(ctx, v.ProductID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
@@ -574,14 +575,14 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		return []*pricingTarget{{product: p, variant: v}}, nil
 
 	case productenums.PricingScopeProduct:
-		p, perr := s.m.Get(ctx, pr.targetID, pr.projectID)
+		p, perr := m.Get(ctx, pr.targetID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 			}
 			return nil, perr
 		}
-		variants, verr := s.m.ListVariants(ctx, p.ID)
+		variants, verr := m.ListVariants(ctx, p.ID)
 		if verr != nil {
 			return nil, verr
 		}
@@ -595,7 +596,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		return targets, nil
 
 	default:
-		products, lerr := s.m.ListProductsForPricing(ctx, pr.filter)
+		products, lerr := m.ListProductsForPricing(ctx, pr.filter)
 		if lerr != nil {
 			return nil, lerr
 		}
@@ -611,7 +612,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		for _, p := range products {
 			ids = append(ids, p.ID)
 		}
-		variants, verr := s.m.ListVariantsByProducts(ctx, ids)
+		variants, verr := m.ListVariantsByProducts(ctx, ids)
 		if verr != nil {
 			return nil, verr
 		}
@@ -641,8 +642,7 @@ type pricingCounts struct {
 
 // computePricingLines 逐变体算价（纯计算，不写库）。
 //
-// 单条变体算不出来（缺成本价 / 结果超范围）时只跳过这一条：
-// 一个没填成本的 SKU 不该让整批调价失败，预览会把跳过原因摆出来。
+// 预览保留无法算价的条目；应用入口会将这些条目转成整批拒绝，不能部分落库。
 func (s *Service) computePricingLines(ctx context.Context, pr *pricingRequest, targets []*pricingTarget) (lines []*productdto.PricingLineResp, counts pricingCounts, err error) {
 	lines = make([]*productdto.PricingLineResp, 0, len(targets))
 	for _, t := range targets {
@@ -681,6 +681,7 @@ func (s *Service) computePricingLines(ctx context.Context, pr *pricingRequest, t
 			continue
 		}
 		line.NewPrice = rounded
+		line.Diff = float64(pricingCentsOf(rounded)-pricingCentsOf(t.variant.Price)) / 100
 		// 比较用分（整数）而不是浮点：12.30 与 12.3 不该被算成「有改动」。
 		if pricingCentsOf(t.variant.Price) == pricingCentsOf(rounded) {
 			setPricingLineStatus(line, productenums.PricingLineUnchanged, "")
@@ -711,18 +712,21 @@ func pricingCentsRound(amount float64) int64 {
 	return int64(amount*100 - 0.5)
 }
 
-// recalcPricingAutoTags 定价落库后的自动标签重算（#11 的「变体写操作后」时机），
-// 返回本次重算的自动标签数（后台 / 接口可核对这次调价影响了多少标签归属）。
-func (s *Service) recalcPricingAutoTags(ctx context.Context, projectID string) (n int, err error) {
-	if projectID == "" {
-		return 0, nil
-	}
-	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
+// recalcPricingAutoTagsTx 使用当前价格事务重算归属；失败与价格、台账一起回滚。
+func (s *Service) recalcPricingAutoTagsTx(ctx context.Context, tx *gorm.DB, projectID string) (int, error) {
+	scoped := *s
+	scoped.m = productmodel.NewModel(tx)
+	tags, err := scoped.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 	if err != nil {
 		return 0, err
 	}
+	now := time.Now().UTC()
 	for _, tag := range tags {
-		if _, err = s.recalcTag(ctx, tag); err != nil {
+		ids, err := scoped.ruleHitProductIDs(ctx, projectID, tag.RuleType, tag.RuleParams)
+		if err != nil {
+			return 0, err
+		}
+		if err := scoped.recalcTagTx(ctx, tx, tag, ids, now); err != nil {
 			return 0, err
 		}
 	}
@@ -750,14 +754,12 @@ type pricingRule struct {
 	// Type 落库的 rule_type。
 	Type string
 	// 展示名与参数说明是文案，按 Type 写在模板里（pricing_rule_fields.html）。
-	// RequiresCost 规则是否依赖变体成本价（缺成本价的变体被跳过而不是整批失败）。
+	// RequiresCost 规则是否依赖成本价；缺成本时预览列出原因，应用整批拒绝。
 	RequiresCost bool
 	// Normalize 校验并归一参数。
 	Normalize func(params json.RawMessage) (json.RawMessage, error)
 	// Compute 由成本价算售价（未归一 / 归一后的参数都能解析，调用方只用归一后的）。
 	Compute func(cost float64, params json.RawMessage) (float64, error)
-	// FormValue 核心参数值（后台表单回填的字符串形态）。
-	FormValue func(params json.RawMessage) string
 }
 
 // pricingRules 内置定价规则表（顺序即后台展示顺序）。新增规则只在这里追加。
@@ -775,10 +777,6 @@ var pricingRules = []*pricingRule{
 			}
 			return cost * v, nil
 		},
-		FormValue: func(params json.RawMessage) string {
-			v, _ := pricingParamFloat(params, "multiplier")
-			return formatPricingNumber(v)
-		},
 	},
 	{
 		Type:         productenums.PricingRuleCostMarkup,
@@ -792,10 +790,6 @@ var pricingRules = []*pricingRule{
 				return 0, pricingParamsErr(i18n.ErrorDetail(productenums.DetailPricingParamMissingOrNaN, "field", "amount"))
 			}
 			return cost + v, nil
-		},
-		FormValue: func(params json.RawMessage) string {
-			v, _ := pricingParamFloat(params, "amount")
-			return formatPricingNumber(v)
 		},
 	},
 	{
@@ -815,10 +809,6 @@ var pricingRules = []*pricingRule{
 			}
 			return cost / (1 - v), nil
 		},
-		FormValue: func(params json.RawMessage) string {
-			v, _ := pricingParamFloat(params, "margin")
-			return formatPricingNumber(v)
-		},
 	},
 	{
 		Type:         productenums.PricingRuleFixedPrice,
@@ -832,10 +822,6 @@ var pricingRules = []*pricingRule{
 				return 0, pricingParamsErr(i18n.ErrorDetail(productenums.DetailPricingParamMissingOrNaN, "field", "amount"))
 			}
 			return v, nil
-		},
-		FormValue: func(params json.RawMessage) string {
-			v, _ := pricingParamFloat(params, "amount")
-			return formatPricingNumber(v)
 		},
 	},
 }
@@ -1106,7 +1092,6 @@ func pricingRuleTypeOptions() (out []*productdto.PricingRuleTypeResp) {
 	return out
 }
 
-// pricingRoundingOptions 尾数处理清单。
 // pricingRoundingOptions 尾数处理清单（只给取值，名字在模板）。
 func pricingRoundingOptions() (out []*productdto.PricingRoundingOptionResp) {
 	out = make([]*productdto.PricingRoundingOptionResp, 0, len(pricingRoundings))

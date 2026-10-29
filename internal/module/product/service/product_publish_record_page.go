@@ -1,27 +1,16 @@
 package productservice
 
-// product_publish_record_page.go — 商品发布记录整页（B9）。
-//
-// 一屏一个方法（同商品列表页 / 详情页模板页）：控制器只剩「绑参数 → 调这里 → 渲染」。
-//
-// 这一屏回答的问题是「我的商品现在发布成什么样了」—— 三个维度：发布到哪个站点路径、
-// 什么时候、是不是最新的。**没有「历史」这一维**：库里没有记录每次发布尝试成功/失败的
-// 明细表（回执只覆盖访问面切换那一段，完成后只留终态），所以这里不编造「上次失败」这类
-// 行，只给当前状态。这一取舍写进了报告。
-//
-// 先分页后取发布登记：发布登记是**按实例批量读**（presentation 侧一次查里带 IN），
-// 每页 20 个商品的实例数在几十的量级，一次批量读比逐商品查省掉 N 次往返。
+// 聚合商品与当前发布登记；发布尝试历史由独立查询提供。
+// 状态筛选依赖完整发布事实，因此先批量读取并合并，再按筛选结果分页。
 
 import (
 	"context"
 	"sort"
 	"strings"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
-	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/pkg/pagination"
 )
 
 // ProductPublishRecordPageSize 发布记录每页条数（与商品列表同量级）。
@@ -34,89 +23,42 @@ const (
 	publishFilterNone   = "none"
 )
 
-// ProductPublishRecordPage 发布记录整页的读模型。
-//
-// 失败档位与商品列表页一致：工程清单读不到 500；?project=<不存在的 id> 是 400；
-// 商品列表或发布登记读不到 500（这一屏的每一行都是发布事实，静默跳过会让人以为
-// 「那个商品没发布」）。
-func (s *Service) ProductPublishRecordPage(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (res *productdto.ProductPublishRecordPageResp, err error) {
-	view := &productdto.ProductPublishRecordPageResp{
-		Projects:     []projectdto.ProjectResp{},
-		Records:      []productdto.PublishRecordRowResp{},
-		Limit:        ProductPublishRecordPageSize,
-		FilterStatus: "",
+// QueryPublishRecords 聚合商品与各语言发布登记，按发布状态过滤后分页。
+func (s *Service) QueryPublishRecords(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (*productcontract.PublishRecordList, error) {
+	if req == nil {
+		req = &productdto.ProductPublishRecordPageReq{}
 	}
-	var firstErr error
-	fail := func(e error) {
-		if firstErr == nil {
-			firstErr = e
-		}
+	result := &productcontract.PublishRecordList{
+		Available: s.pagePublishRecords != nil, Records: []productdto.PublishRecordRowResp{},
+		Page: 1, Limit: ProductPublishRecordPageSize,
 	}
-
-	projects, perr := s.project.List(ctx)
-	if perr != nil {
-		fail(perr)
-	} else {
-		view.Projects = projects
+	if !result.Available {
+		return result, nil
 	}
-	selected := ""
-	if req != nil {
-		selected = strings.TrimSpace(req.ProjectID)
+	scope, err := s.ResolveCatalogScope(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
 	}
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	view.SelectedProject = selected
-	view.SiteName = projectName(projects, selected)
-	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		fail(productenums.Err(productenums.ErrInvalidParam))
-	}
-
-	keyword, status, page := "", "", 1
-	if req != nil {
-		keyword = strings.TrimSpace(req.Keyword)
-		status = normalizePublishStatus(req.Status)
-		if req.Page > 0 {
-			page = req.Page
-		}
-	}
-	view.FilterKeyword = keyword
-	view.FilterStatus = status
-	view.Page = page
-	// 端口未装配 = 这一屏没有数据源（装配缺陷）。不置 err：页面照常 200，
-	// 只是给一句「发布能力未装配」—— 与「读不到」是两档。
-	view.Ready = s.pagePublishRecords != nil
-	if firstErr != nil || !view.Ready {
-		return view, firstErr
-	}
-
-	// 状态筛选里 active / draft 是**发布状态**，与商品的 status 列无关，因此不能下推到
-	// 商品表的 WHERE（那边没有这一列）。做法：把过滤放在合并之后，并按「过滤后的总数」
-	// 分页 —— 先分页再过滤会出现「本页 0 行、总数 40」这种自相矛盾的组合。
-	products, perr := s.listProductsForPublishRecord(ctx, selected, keyword)
-	if perr != nil {
-		return view, perr
+	products, err := s.listProductsForPublishRecord(ctx, scope.ProjectID, strings.TrimSpace(req.Keyword))
+	if err != nil {
+		return nil, err
 	}
 	if len(products) == 0 {
-		view.Pagination = pagination.Page{Total: 0, Page: 1, Limit: view.Limit}
-		return view, nil
+		return result, nil
 	}
 	ids := make([]string, 0, len(products))
 	for _, p := range products {
 		ids = append(ids, p.ID)
 	}
-	langs, lerr := s.pagePublishRecords.Langs(ctx, selected, ids)
-	if lerr != nil {
-		return view, lerr
+	langs, err := s.pagePublishRecords.Langs(ctx, scope.ProjectID, ids)
+	if err != nil {
+		return nil, err
 	}
-	rows := mergePublishRows(products, langs, status)
-	// 「共 N 条」= 合并（并按状态筛过）之后的行数：分页单位是行，不是商品表的 COUNT ——
-	// 状态筛选掉一半时，用 COUNT 会让「共 40 条」与「本页 0 行」同时出现。
-	view.Total = int64(len(rows))
-	view.Page = clampPublishPage(page, view.Total, view.Limit)
-	view.Records = pagePublishRows(rows, view.Page, view.Limit)
-	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
-	return view, nil
+	rows := mergePublishRows(products, langs, normalizePublishStatus(req.Status))
+	result.Total = int64(len(rows))
+	result.Page = clampPublishPage(req.Page, result.Total, result.Limit)
+	result.Records = pagePublishRows(rows, result.Page, result.Limit)
+	return result, nil
 }
 
 // listProductsForPublishRecord 取本工程（按关键词过滤）的全部商品。
@@ -171,7 +113,7 @@ func mergePublishRows(products []*productmodel.ProductEntity,
 
 // publishRowMatchesStatus 状态筛选：active（已上线）/ draft（有实例未上线）/ none（无实例）。
 //
-// **stale 不参与这里**：失待重建的已上线商品仍是 active（线上有内容，只是旧的），
+// **stale 不参与这里**：待重建的已上线商品仍是 active（线上有内容，只是旧的），
 // 那一列单独显示。把它并进筛选会让「想看线上有没有」的人看不到线上旧内容。
 func publishRowMatchesStatus(row productdto.PublishRecordRowResp, status string) bool {
 	switch status {
@@ -201,19 +143,6 @@ func sortPublishLangs(in []productdto.PublishRecordLangResp) []productdto.Publis
 		return out[i].Lang < out[j].Lang
 	})
 	return out
-}
-
-// projectName 取选中工程的名字（「站点」那一列的值）。
-//
-// 由读模型给而不是模板按 id 去 Projects 里找：Jet 没有「按条件取数组元素」的写法，
-// 模板里 range 一遍工程去比 id 就是业务判断（templates/CLAUDE.md 禁）。
-func projectName(projects []projectdto.ProjectResp, id string) string {
-	for i := range projects {
-		if projects[i].ID == id {
-			return projects[i].Name
-		}
-	}
-	return ""
 }
 
 // normalizePublishStatus 未知取值退回「全部」：查询串不是可信边界，

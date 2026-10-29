@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -48,7 +49,7 @@ func (s translationProjectStub) DefaultLocale(context.Context, string) (string, 
 // 给失败页只会让人以为「这个工程没有可翻译的内容」。
 func TestProductTranslationsPageProjectListFailureIsAnError(t *testing.T) {
 	s := NewService(nil, translationProjectStub{listErr: errors.New("projects read failed")})
-	view, err := s.ProductTranslationsPage(context.Background(), &productdto.ProductTranslationsPageReq{ProjectID: "p1"})
+	view, err := s.QueryProductTranslations(context.Background(), &productdto.ProductTranslationsPageReq{ProjectID: "p1"})
 	if err == nil {
 		t.Fatal("工程清单读不到时工作台必须报错（不能渲染成「没有可翻译内容」）")
 	}
@@ -91,7 +92,7 @@ func TestTargetTranslationLangsExcludesSource(t *testing.T) {
 }
 
 // TestSaveProductTranslationsRejectsLangOutsideEnabled 目标语言不在启用清单里 = 保存被拒、
-// 页面重渲并列出结论（**不是**静默按空语言写库）。
+// 由 JSON 出口列出拒绝结论，不按空语言写库。
 func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
 	s := NewService(nil, translationProjectStub{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
@@ -99,9 +100,9 @@ func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
 		Contexts: []string{"product.name"}, Hashes: []string{"h1"}, Targets: []string{"Shirt"},
 	})
 	if err != nil {
-		t.Fatalf("保存编排不应报错（结论走视图）: %v", err)
+		t.Fatalf("保存编排不应报错（结论走命令结果）: %v", err)
 	}
-	if !view.LangInvalid || view.Saved || len(view.Errors) != 1 {
+	if view.Saved || len(view.Errors) != 1 {
 		t.Fatalf("非法语言应给一条结论且不落库，实际 %+v", view)
 	}
 	if view.Errors[0].Msg.Key != productenums.MsgTranslationLangInvalid {
@@ -121,7 +122,7 @@ func TestSaveProductTranslationsParallelArraysMustAlign(t *testing.T) {
 		Targets:  []string{"Shirt"},
 	})
 	if err != nil {
-		t.Fatalf("保存编排不应报错（结论走视图）: %v", err)
+		t.Fatalf("保存编排不应报错（结论走命令结果）: %v", err)
 	}
 	if view.Saved || len(view.Errors) != 1 {
 		t.Fatalf("长度不齐应整批拒绝，实际 Saved=%v Errors=%+v", view.Saved, view.Errors)
@@ -143,5 +144,21 @@ func TestSaveProductTranslationsNoRowsIsSavedWithoutWrite(t *testing.T) {
 	}
 	if !view.Saved || view.Written != 0 || len(view.Errors) != 0 {
 		t.Fatalf("无提交内容应给「已保存、写入 0 条」，实际 %+v", view)
+	}
+}
+
+type failingTranslationInstances struct{ calls int }
+
+func (s *failingTranslationInstances) MarkStaleByDependency(context.Context, string, string) ([]string, error) {
+	s.calls++
+	return nil, errors.New("instance invalidation unavailable")
+}
+
+func TestTranslationInstanceInvalidationFailureRemainsVisible(t *testing.T) {
+	port := &failingTranslationInstances{}
+	s := &Service{translationInstances: port}
+	groups := []productcontract.TranslationEntity{{EntityType: productcontract.EntityTypeProduct, EntityID: "product-1", Rows: []productcontract.TranslationValue{{Context: "product.name", SourceHash: "hash-1"}}}}
+	if !s.markTranslationInstancesStale(context.Background(), groups, []string{i18n.ContentIndexKey("hash-1", "product.name")}) || port.calls != 1 {
+		t.Fatalf("实例失效失败必须进入保存结论，calls=%d", port.calls)
 	}
 }

@@ -1,6 +1,6 @@
 {* 控制面的控件基座唯一入口：后台、工作台和控件验证页共用。
    顺序为 htmx → 助手 → 控件 → 扫描入口。访问面仍由 builder 按能力裁剪。
-   htmx 排在最前：控件入口 index.js 监听 htmx:after:swap 重扫，后台所有局部刷新
+   htmx 排在最前：htmx-bridge.js 将换页事件接入统一控件扫描，后台局部刷新
    都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
 <script src="/static/js/ui/htmx.min.js"></script>
 <script src="/static/js/ui/site-preview.js"></script>
@@ -8,10 +8,10 @@
 {* 写表单的唯一基座：整形（删空值键 / 嵌套字段）+ 提交 + 收尾（toast / 导航 / 刷新）。
    紧随 htmx 之后、任何控件之前 —— 它在 document 上以捕获阶段接 submit，
    晚加载会让早期提交走原生提交（整页跳转）。
-   取代了 json_write.js + write-base.js + write_feedback.js 三个文件。 *}
+   取代了旧 json_write.js、htmx_form_body.js、write_feedback.js。 *}
 <script src="/static/js/ui/write-base.js"></script>
-{* 写动作的局部刷新：服务端回 JSON 片段 + 目标选择器，本文件按 JSON 里的 html 换入目标。
-   与写基座的分工：基座管**提交与结论**，它管**换页面里的那一块**（两者都要读响应）。 *}
+{* 数据请求的局部刷新：服务端回 JSON 事实，本文件按页面声明的行模板填充 DOM。
+   写基座负责提交与结论，json_swap 负责数据响应的展示。 *}
 <script src="/static/js/ui/json_swap.js"></script>
 {* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
    没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
@@ -33,6 +33,8 @@
 <script src="/static/js/ui/mediafield.js"></script>
 <script src="/static/js/ui/daterange.js"></script>
 <script src="/static/js/ui/product-category-tree.js"></script>
+<script src="/static/js/ui/product-display.js"></script>
+<script src="/static/js/ui/product-attribute-values.js"></script>
 <script src="/static/js/ui/product_variant_write.js"></script>
 <script src="/static/js/ui/tree-table.js"></script>
 <script src="/static/js/ui/perm-tree.js"></script>
@@ -53,4 +55,5 @@
 <script src="/static/js/ui/site-commerce.js"></script>
 <script src="/static/js/ui/site-orders.js"></script>
 <script src="/static/js/ui/site-user.js"></script>
+<script src="/static/js/ui/product-pricing.js"></script>
 <script src="/static/js/ui/index.js"></script>

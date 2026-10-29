@@ -1,10 +1,6 @@
-{* admin/product_categories.html — 商品分类管理：树形层级 + 排序 + slug + SEO 字段（issue #10） *}
-{* 列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §7）：
-     · 页头一行：标题 + ? 悬浮说明；右侧工程选择与主行动同行；
-     · 正文零说明文字；列表是 .list-card 内的标准表格；
-     · 首列勾选（全选 + 批量删除）、末列操作（编辑 / 删除）；
-     · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
+
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/rich_editor.html"}}
@@ -13,20 +9,15 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
-{* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
-   混在一起会让运营以为是分类被删了。 *}
-{{selectedProject := .SelectedProject}}
-{* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）；
-   直接 {{.FilterKeyword}} 在缺键时会报错中断整页（HTTP 仍 200，后面整块 HTML 消失）。 *}
-{{fKeyword := .["FilterKeyword"]}}
+
+
+{{selectedProject := .Scope.ProjectID}}
+
+{{fKeyword := .Query.Keyword}}
 {{canCreate := isset(.Buttons["product.category_create"])}}
 {{canUpdate := isset(.Buttons["product.category_update"])}}
 {{canDelete := isset(.Buttons["product.category_delete"])}}
-{* 描述类字段用富文本（评审规则 admin-ui-logic §9）：分类描述是「一段话」，单行 input 放不下。
-   字段结构统一走 partials/rich_editor.html（隐藏 input + trix-editor + 扩展脚本），
-   页面不再各写一套 trix-editor。 *}
+
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
@@ -41,11 +32,11 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
+            {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-categories">
                 <label class="sr-only" for="categories-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
                 <select class="form-select" id="categories-project" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
+                    {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
@@ -57,16 +48,12 @@
         </div>
     </header>
 
-    {* 写动作直接调 JSON 端点（ui/write-base.js 基座）：删除 / 批量删除 / 新建 / 编辑四个动作
-       各自声明 data-write-url，结论就地显示在 data-write-status 里，不再经页面 POST 渲染提示页。
-       失败时已填内容与已勾选的勾选一并保留 —— 这是基座的行为，本页不再回滚任何状态。 *}
 
-    {* 没有面包屑导航：列表本身就是整棵树（顶级分类带全部子类），
-       不再「点父级进下一层」—— 两套「现在在哪一层」的心智模型只会互相干扰。 *}
+
+
 
     <section class="card list-card">
-        {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
-           分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。 *}
+
         <div class="filter-bar">
             <form method="get" action="/admin/product-categories" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
@@ -82,28 +69,18 @@
             </form>
         </div>
 
-        {{if isset(.SearchMode)}}{{if .SearchMode}}<p role="status">{{tr("admin.product_categories.search.matchCount", "匹配")}} {{.MatchTotal}} {{tr("admin.product_categories.search.matchSuffix", "条；上级路径仅供定位")}}</p>{{end}}{{end}}
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头是「这个列表有哪些列」的唯一说明，
-           空数据就把它一起藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
-           空态落在 tbody 的整行里（colspan = 实际列数）；<form> 依旧包住 <table>。 *}
-        {* 空态分两档（审计 D9 的同一手法）：筛选无结果 → 说清「是筛出来的空」并给重置；
-           工程里真的没有分类 → 指到本页页头那个新建抽屉。 *}
-        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
-           提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。 *}
-        {* 表单本身不带 data-write-url：批量与单条删除的目标不同，端点声明落在各自的按钮/表单上
-           （json_write.js 的 attrFrom：按钮优先、表单兜底；表单不声明 = 不会被继承成 fetch）。
-           data-list-bulk 只是作用域锚点，给「勾选框在这里、动作在别处」的形态留一个可寻址的根。
-           csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
+        {{if .Query.Keyword != ""}}<p role="status">{{tr("admin.product_categories.search.matchCount", "匹配")}} {{.Result.MatchTotal}} {{tr("admin.product_categories.search.matchSuffix", "条；上级路径仅供定位")}}</p>{{end}}
+
+
+
+
         <form data-category-tree-form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint" role="status" hidden></p>
-            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if canDelete}}{{if len(.Categories) > 0}}
+
+            {{if canDelete}}{{if len(.Result.Items) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖 data-bulk-bar /
-                   formaction 等），装不下一串 data-write-* 声明。class 与 data-confirm 与它与同形。
-                   成功条目按 items[].deleted 就地移除行；批量档**刻意不自动刷新** ——
-                   「已删 N / 跳过 M + 逐条原因」一闪而过就看不完了。 *}
+
                 <button data-write="bulk" data-write-url="/api/product/category/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload
                         data-msg-none-selected="{{tr("admin.product_categories.bulk.noneSelected", "没有勾选任何分类，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
@@ -112,7 +89,7 @@
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
-            {* 批量结果区：与单条删除共用本表单内的这一个（基座先找表单内、再找 host 里的）。 *}
+
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_categories.list.title", "分类树") }}">
                 <table class="data-table">
@@ -128,12 +105,11 @@
                     </tr>
                     </thead>
                     <tbody>
-                    {{if len(.Categories) == 0}}
-                    {* 空态整行：colspan = 5 个实际渲染的列（勾选列 + 分类 / URL 段 / 排序 + 操作）。
-                       勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
+                    {{if len(.Result.Items) == 0}}
+
                     <tr><td colspan="5" class="cell-wrap">
                         <div class="empty-state">
-                            {{if isset(.Filtered) && .Filtered}}
+                            {{if .Query.Keyword != ""}}
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.filteredTitle", "没有匹配的分类") }}</p>
                             <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                             <div class="empty-actions">
@@ -151,24 +127,18 @@
                         </div>
                     </td></tr>
                     {{else}}
-                    {{range _, row := .Categories}}
-                    {* Depth 按可选键取（模板单测直接渲染本页时行数据里没有它）：
-                       缺键时点号访问会中断整页渲染 —— HTTP 仍 200，整块 HTML 却不见了。 *}
+                    {{range _, row := .Result.Items}}
+
                     {{rowDepth := 0}}{{if isset(row.Depth)}}{{rowDepth = row.Depth}}{{end}}
-                    <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{rowDepth + 1}}" {{if isset(.SearchMode)}}{{if .SearchMode}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}{{end}}>
+                    <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{rowDepth + 1}}" {{if .Query.Keyword != ""}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}>
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        {* 树状行：层级由服务端按父子关系算好（模板不自己推 Depth），
-                           子行缩进 + 树枝前缀，父行加粗、子行普通字重 —— 一眼看出谁挂在谁下面。 *}
-                        <td class="tree-cell" style="--tree-depth:{{rowDepth}}">{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if rowDepth == 0}}<strong>{{row.Label}}</strong>{{else}}{{row.Label}}{{end}}
-                        {* 父级属于别的工程（或父级行已不存在）：这类行的 ParentID 指向本工程之外，
-                           只看分类名看不出来，给个可见标记 —— 真正的修法是在抽屉里改父级或删掉它。
-                           键缺时点号访问会中断整页渲染，故先 isset。
-                           同一句话在抽屉的父级下拉里也出现（product_category_form.html），
-                           两处必须用同一个 key（词条见迁移 508）。 *}
-                        {{if isset(row.ParentOutOfScope)}}{{if row.ParentOutOfScope}}<span class="badge badge-warning">{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}</span>{{end}}{{end}}
-                        {{if row.SearchMode}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
+
+                        <td class="tree-cell" style="--tree-depth:{{rowDepth}}">{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if rowDepth == 0}}<strong>{{row.Name}}</strong>{{else}}{{row.Name}}{{end}}
+
+                        {{parentPresent := row.ParentID == ""}}{{range _, candidate := .Categories}}{{if candidate.ID == row.ParentID}}{{parentPresent = true}}{{end}}{{end}}{{if !parentPresent}}<span class="badge badge-warning">{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}</span>{{end}}
+                        {{if .Query.Keyword != ""}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
                         <td class="col-actions">
@@ -186,20 +156,16 @@
                 </table>
             </div>
         </form>
-        {* 分页条按当前层级或搜索命中计数；
-           单页或空数据时 handler 不注入 Pagination 事实（HasPagination() 为假），片段自然不渲染。 *}
-        {{include "../partials/pagination.html"}}
+
+        {{include "catalog_pagination.html"}}
     </section>
 
-    {* 行内删除表单与编辑抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。
-       这批隐藏表单共用宿主里的一个结果区（基座先找表单内、找不到再找 closest('[data-write-host]')）：
-       单条删除成功后整页刷新，所以这段只在**失败**时才可见（被引用 / 网络故障），不会一闪而过。 *}
+
     <div data-write-host>
     <p class="form-hint" data-write-status role="status" hidden></p>
-    {{range _, row := .Categories}}
+    {{range _, row := .Result.Items}}
     {{if canDelete}}
-    {* single 档只发 {id} + data-write-extra 点名的字段：多工程部署下 projectId 必须带上，
-       否则 service 只能走「唯一工程」兜底，多于一个工程时直接 ErrInvalidParam。 *}
+
     <form data-write="delete" data-write-url="/api/product/category/delete" id="category-del-{{row.ID}}" class="hidden-form" data-write-reload
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_categories.list.deleteConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}" data-confirm-danger>
@@ -209,16 +175,7 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-category-edit-{{row.ID}}">
-        {{if isset(row.EditForm)}}{{include "product_category_form.html" row.EditForm}}{{else}}
-        <form data-write="update" data-write-url="/api/product/category/update" data-write-close="[data-drawer]">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="id" value="{{row.ID}}">
-            <button type="button" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{row.ID}}">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
-            <div id="category-seo-score-{{row.ID}}"></div>
-            <p class="form-hint" data-write-status role="status" hidden></p>
-            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
-        </form>
-        {{end}}
+        {{include "product_category_form.html" map("Entity", row, "Project", selectedProject, "Categories", .Categories, "t", tr)}}
     </template>
     {{end}}
     {{end}}
@@ -226,9 +183,7 @@
 
     {{if canCreate}}
     <template id="tpl-category-create">
-        {{if isset(.CategoryCreateForm)}}{{include "product_category_form.html" .CategoryCreateForm}}{{else}}
-        <form data-write="create" data-write-url="/api/product/category/create" data-write-close="[data-drawer]"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
-        {{end}}
+        {{include "product_category_form.html" map("Project", selectedProject, "Categories", .Categories, "t", tr)}}
     </template>
     {{end}}
 </div>
