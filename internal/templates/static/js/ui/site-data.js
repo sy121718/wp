@@ -9,14 +9,19 @@
         if (url.origin !== global.location.origin || !url.pathname.startsWith('/api/site/')) throw new Error('无效的数据地址');
         return url.pathname + url.search;
     }
+    function readError(message, status) {
+        var error = new Error(message);
+        error.status = Number(status) || 0;
+        return error;
+    }
     function request(url) {
         if (pending.has(url)) return pending.get(url);
         var work = global.fetch(url, {credentials:'same-origin', headers:{Accept:'application/json'}, redirect:'error'})
             .then(function (res) {
                 var csrf = res.headers && res.headers.get('X-CSRF-Token');
                 if (csrf) { global.WPSiteSession = global.WPSiteSession || {}; global.WPSiteSession.csrfToken = csrf; }
-                return res.json().then(function (body) {
-                    if (!res.ok || !body || (body.code !== 0 && body.code !== 200)) throw new Error(body && body.message || '数据读取失败');
+                return res.json().catch(function () { throw readError('数据读取失败', res.status); }).then(function (body) {
+                    if (!res.ok || !body || (body.code !== 0 && body.code !== 200)) throw readError(body && body.message || '数据读取失败', res.status);
                     return body.data;
                 });
             });
@@ -58,7 +63,7 @@
                 el.setAttribute('data-site-error', 'true');
                 var status = el.querySelector('[data-site-status]');
                 if (status) status.textContent = err.message;
-                el.dispatchEvent(new CustomEvent('site:data:error', {bubbles:true, detail:{message:err.message}}));
+                el.dispatchEvent(new CustomEvent('site:data:error', {bubbles:true, detail:{message:err.message,status:Number(err.status)||0}}));
             }).finally(function () {
                 if (el._siteGeneration === generation) el.setAttribute('aria-busy', 'false');
             });

@@ -98,3 +98,21 @@ test('组件未声明当前模拟状态则回default，未接模拟renderer仍�
     api.registerPreview('privateAccount',(node,state)=>node.textContent=state,['default','unauthenticated']);
     await api.refresh(root);assert.equal(root.textContent,'default');assert.equal(fetches,0);
 });
+
+
+test('读取失败事件携带真实HTTP状态，非JSON错误不泄漏解析原文', async()=>{
+    let response;
+    const api=env(async()=>response);
+    const root=target('variantPrice');
+    for(const status of [401,403,404,500]) {
+        response={ok:false,status,json:async()=>({code:status,message:'请求未完成'})};
+        await api.refresh(root);
+        assert.equal(root.events.at(-1).detail.status,status);
+        assert.equal(root.events.at(-1).detail.message,'请求未完成');
+        assert.equal(root.textContent,'原内容');
+    }
+    response={ok:false,status:502,json:async()=>{throw new SyntaxError('内部网关响应原文');}};
+    await api.refresh(root);
+    assert.equal(root.events.at(-1).detail.status,502);
+    assert.equal(root.events.at(-1).detail.message,'数据读取失败');
+});
