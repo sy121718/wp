@@ -828,8 +828,7 @@ func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 // userFormsViewOf 转换访客账号表单节点（issue #36）。
 //
-// 手写而不是走 contentAtomViewOf：它要的是构建上下文里的**工程 id 与语言**
-// （片段地址带它们），而那个通用助手只把内容解析器传给 BuildView。
+// 账号表单需要工程与语言事实，并在构建期解析显式的登录后目标。
 func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p userformsPkg.Props
 	if len(node.Props) > 0 {

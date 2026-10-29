@@ -1,21 +1,22 @@
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-user-form="{{ .V.Mode }}" data-component-instance="{{ .NodeID }}" data-user-next="{{ .V.Next }}" data-site-read="/api/site/user/session" data-site-view="userSession" data-site-poll="60">
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-user-form="{{ .V.Mode }}" data-component-instance="{{ .NodeID }}" data-user-next="{{ .V.Next }}" data-user-auto-title="{{ .V.AutoTitle }}" data-site-read="/api/site/user/session" data-site-view="userSession" data-site-poll="60">
 {{ if .V.ShowTitle }}<h2 class="sky-user-title" data-user-title>{{ .V.Title }}</h2>{{ end }}
+{{ if .V.Description }}<p class="sky-user-description">{{ .V.Description }}</p>{{ end }}
+<div hidden data-user-preview-labels>{{ range _,item := .V.PreviewLabels }}<span data-user-preview-label="{{ item.State }}">{{ item.Text }}</span>{{ end }}</div>
 <div hidden data-user-titles>{{ range _,item := .V.Titles }}<span data-user-mode-title="{{ item.Mode }}">{{ item.Title }}</span>{{ end }}</div>
 <p data-site-status role="status" aria-live="polite"></p><button class="sky-user-link" type="button" data-user-retry hidden>{{ .V.RetryText }}</button>
 <div data-user-guest hidden><p>{{ .V.Labels.Account.Guest }}</p><button class="sky-user-link" type="button" data-user-mode="login">{{ .V.Labels.Login.Submit }}</button>
 </div>
 <div data-user-views>
-<section class="sky-user-form" data-user-section="login"{{ if .V.Mode != "login" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="login" data-component-part="login" tabindex="-1"{{ if .V.Mode != "login" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/login" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/login">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <label class="sky-user-field">{{ .V.Labels.Login.Identity }}<input class="sky-user-input" type="text" name="account" required autocomplete="username"></label>
 <label class="sky-user-field">{{ .V.Labels.Login.Password }}<input class="sky-user-input" type="password" name="password" required autocomplete="current-password"></label>
 <label class="sky-user-check"><input type="checkbox" name="remember" value="1">{{ .V.Labels.Login.Remember }}</label><button class="sky-user-submit" type="submit">{{ .V.Labels.Login.Submit }}</button>
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
-<button class="sky-user-link" type="button" data-user-mode="register">{{ .V.Labels.Login.Register }}</button>
-<button class="sky-user-link" type="button" data-user-mode="forgot">{{ .V.Labels.Login.Forgot }}</button>
+<nav class="sky-user-secondary"><button class="sky-user-link" type="button" data-user-mode="register">{{ .V.Labels.Login.Register }}</button><button class="sky-user-link" type="button" data-user-mode="forgot">{{ .V.Labels.Login.Forgot }}</button></nav>
 </section>
-<section class="sky-user-form" data-user-section="register"{{ if .V.Mode != "register" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="register" data-component-part="register" tabindex="-1"{{ if .V.Mode != "register" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/register" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/register">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <label class="sky-user-field">{{ .V.Labels.Register.Username }}<input class="sky-user-input" type="text" name="username" required minlength="3" maxlength="50" autocomplete="username"></label>
@@ -26,7 +27,7 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <p class="sky-user-alt">{{ .V.Labels.Register.AfterNote }}</p><button class="sky-user-link" type="button" data-user-mode="login">{{ .V.Labels.Register.Login }}</button>
 </section>
-<section class="sky-user-form" data-user-section="forgot"{{ if .V.Mode != "forgot" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="forgot" data-component-part="forgot" tabindex="-1"{{ if .V.Mode != "forgot" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/forgot" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/forgot">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <label class="sky-user-field">{{ .V.Labels.Forgot.Email }}<input class="sky-user-input" type="email" name="email" required autocomplete="email"></label>
@@ -34,7 +35,7 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <p class="sky-user-alt">{{ .V.Labels.Forgot.Privacy }}</p><button class="sky-user-link" type="button" data-user-mode="login">{{ .V.Labels.Forgot.BackLogin }}</button>
 </section>
-<section class="sky-user-form" data-user-section="reset"{{ if .V.Mode != "reset" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="reset" data-component-part="reset" tabindex="-1"{{ if .V.Mode != "reset" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/reset" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/reset">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <input type="hidden" name="key"><label class="sky-user-field">{{ .V.Labels.Reset.Email }}<input class="sky-user-input" type="email" name="email" required autocomplete="email"></label>
@@ -43,13 +44,13 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <p class="sky-user-alt">{{ .V.Labels.Reset.RevokeNote }}</p><button class="sky-user-link" type="button" data-user-mode="login">{{ .V.Labels.Forgot.BackLogin }}</button>
 </section>
-<section class="sky-user-form" data-user-section="account"{{ if .V.Mode != "account" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="account" data-component-part="account" tabindex="-1"{{ if .V.Mode != "account" }} hidden{{ end }}>
 <p>{{ .V.Labels.Account.LoggedIn }} <strong data-user-value="displayName"></strong></p><nav class="sky-user-nav"><button type="button" class="sky-user-link" data-user-mode="profile">{{ .V.TitleKeys.profile }}</button><button type="button" class="sky-user-link" data-user-mode="preference">{{ .V.TitleKeys.preference }}</button><button type="button" class="sky-user-link" data-user-mode="password">{{ .V.TitleKeys.password }}</button><button type="button" class="sky-user-link" data-user-mode="sessions">{{ .V.TitleKeys.sessions }}</button></nav><form class="sky-user-fields" method="post" action="/api/site/user/logout" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/logout">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <button class="sky-user-submit" type="submit">{{ .V.Labels.Account.Logout }}</button>
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 </section>
-<section class="sky-user-form" data-user-section="profile"{{ if .V.Mode != "profile" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="profile" data-component-part="profile" tabindex="-1"{{ if .V.Mode != "profile" }} hidden{{ end }}>
 <dl class="sky-user-meta"><dt>{{ .V.Labels.Profile.Username }}</dt><dd data-user-value="username"></dd><dt>{{ .V.Labels.Profile.Email }}</dt><dd data-user-value="email"></dd><dt>{{ .V.Labels.Profile.RegisteredAt }}</dt><dd data-user-value="registeredAt"></dd><dt>{{ .V.Labels.Profile.LastLogin }}</dt><dd data-user-value="lastLoginTime"></dd></dl><form class="sky-user-fields" method="post" action="/api/site/user/account/profile" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/account/profile">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <div class="sky-user-grid"><label class="sky-user-field">{{ .V.Labels.Profile.Nickname }}<input class="sky-user-input" type="text" name="nickname" autocomplete="nickname"></label>
@@ -68,7 +69,7 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <button class="sky-user-link" type="button" data-user-mode="account">{{ .V.Labels.Account.AccountCenter }}</button>
 </section>
-<section class="sky-user-form" data-user-section="preference"{{ if .V.Mode != "preference" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="preference" data-component-part="preference" tabindex="-1"{{ if .V.Mode != "preference" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/account/preference" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/account/preference">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <input type="hidden" name="theme"><input type="hidden" name="locale"><label class="sky-user-field">{{ .V.Labels.Preference.PageSize }}<input class="sky-user-input" type="number" name="pageSize" required min="1" max="200"></label>
@@ -77,7 +78,7 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <button class="sky-user-link" type="button" data-user-mode="account">{{ .V.Labels.Account.AccountCenter }}</button>
 </section>
-<section class="sky-user-form" data-user-section="password"{{ if .V.Mode != "password" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="password" data-component-part="password" tabindex="-1"{{ if .V.Mode != "password" }} hidden{{ end }}>
 <form class="sky-user-fields" method="post" action="/api/site/user/account/password" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/account/password">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <label class="sky-user-field">{{ .V.Labels.Password.Current }}<input class="sky-user-input" type="password" name="oldPassword" required autocomplete="current-password"></label>
@@ -86,7 +87,7 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 <button class="sky-user-link" type="button" data-user-mode="account">{{ .V.Labels.Account.AccountCenter }}</button>
 </section>
-<section class="sky-user-form" data-user-section="sessions"{{ if .V.Mode != "sessions" }} hidden{{ end }}>
+<section class="sky-user-form" data-user-section="sessions" data-component-part="sessions" tabindex="-1"{{ if .V.Mode != "sessions" }} hidden{{ end }}>
 <div data-user-devices data-label-current="{{ .V.Labels.Sessions.CurrentDevice }}" data-label-unknown="{{ .V.Labels.Sessions.UnknownBrowser }}" data-label-active="{{ .V.Labels.Sessions.LastActive }}" data-label-created="{{ .V.Labels.Sessions.LoggedInAt }}"><p data-user-empty hidden>{{ .V.Labels.Sessions.Empty }}</p><ul class="sky-user-devices" data-user-device-list></ul><template data-user-device><li class="sky-user-device"><strong data-device-agent></strong><span class="sky-user-tag" data-device-current hidden>{{ .V.Labels.Sessions.CurrentDevice }}</span><p class="sky-user-device-meta" data-device-meta></p><form class="sky-user-fields" method="post" action="/api/site/user/sessions/revoke" data-write="custom" data-write-handler="user.forms" data-write-url="/api/site/user/sessions/revoke">
 <fieldset class="sky-user-fields" data-user-fields disabled>
 <input type="hidden" name="id"><button class="sky-user-submit" type="submit">{{ .V.Labels.Sessions.Revoke }}</button>
@@ -97,5 +98,5 @@
 </fieldset><p data-write-status role="status" aria-live="polite"></p></form>
 </div><button class="sky-user-link" type="button" data-user-mode="account">{{ .V.Labels.Account.AccountCenter }}</button>
 </section>
-</div><div data-user-account-read hidden></div><div data-user-devices-read hidden></div><noscript><p class="sky-user-notice">{{ .V.ScriptHint }}</p></noscript>
+</div>{{ if .V.HasAuthenticatedAction }}<template data-component-action="authenticated" data-action-kind="{{ .V.AuthenticatedAction.Kind }}" data-action-instance="{{ .V.AuthenticatedAction.InstanceID }}" data-action-part="{{ .V.AuthenticatedAction.PartKey }}" data-action-url="{{ .V.AuthenticatedAction.URL }}"></template>{{ end }}<div data-user-account-read hidden></div><div data-user-devices-read hidden></div><noscript><p class="sky-user-notice">{{ .V.ScriptHint }}</p></noscript>
 </div>

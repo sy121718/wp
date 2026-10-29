@@ -49,36 +49,52 @@ var formSpecs = map[string]formSpec{
 // Props 访客账号表单属性。
 type Props struct {
 	// Mode 账号组件初始显示的表单或面板。
-	Mode string `json:"mode,omitempty" ct:"select,login=登录,register=注册,forgot=找回密码,reset=重置密码,account=账号面板,profile=账号资料,preference=账号偏好,password=修改密码,sessions=登录设备,default=login,sec=content,label=表单形态"`
+	Mode string `json:"mode,omitempty"`
 	// Title 区块标题（留空用该形态的默认标题）。
-	Title string `json:"title,omitempty" ct:"text,maxlen=30,sec=content,label=标题"`
+	Title       string `json:"title,omitempty" ct:"text,maxlen=30,sec=content,label=标题"`
+	Description string `json:"description,omitempty" ct:"textarea,maxlen=240,sec=content,label=说明"`
 	// ShowTitle 是否显示标题。
 	ShowTitle bool `json:"showTitle,omitempty" ct:"bool,sec=content,label=显示标题"`
 	// Next 登录成功后的站内路径，留空则在组件中显示账号面板。
-	Next string `json:"next,omitempty" ct:"text,maxlen=200,sec=content,label=成功后跳转"`
+	Next string `json:"next,omitempty"`
 	// Color 主色（提交按钮）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=主色"`
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
+type Component struct{ core.Atom[Props] }
+
+// 内部表单切换由账号组件管理，只提供一个可选的登录后目标。
+func (*Component) Actions() []core.ActionSpec {
+	return []core.ActionSpec{{Key: "authenticated", AllowedKinds: []core.ActionKind{core.ActionPage, core.ActionPresentation, core.ActionLocal, core.ActionInstance}, TargetCapability: "user.account"}}
+}
+func (*Component) RequiredActions() []string { return nil }
+func (*Component) Parts() []core.PartSpec {
+	parts := make([]core.PartSpec, 0, 9)
+	for _, mode := range []string{ModeLogin, ModeRegister, ModeForgot, ModeReset, ModeAccount, ModeProfile, ModePreference, ModePassword, ModeSessions} {
+		parts = append(parts, core.PartSpec{Key: mode, Capabilities: []string{"user." + mode}})
+	}
+	return parts
+}
+
 // Widget 基座实例。
-var Widget = core.Atom[Props]{
+var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
-		DisplayName:     "账号表单",
-		Hint:            "登录、注册、找回密码与账号管理，使用 JSON 接口",
+		DisplayName:     "账号中心",
+		Hint:            "登录注册、找回密码、资料偏好与设备管理，自动衔接完整流程",
 		PaletteCategory: core.PaletteCategoryBasic,
 		DefaultProps: map[string]any{
-			"mode":      "login",
-			"title":     "登录",
+			"mode":      "account",
+			"title":     "",
 			"showTitle": true,
 			"next":      "",
 		},
 		TypeName: Type,
 		// 标题是作者填的文案，参与内容翻译。
-		Translatable: []string{"title"},
+		Translatable: []string{"title", "description"},
 	},
-}
+}}
 
 // effectiveMode 有效形态（未知值兜底登录 —— 登录表单是这组里最常见的入口）。
 func effectiveMode(p *Props) string {
