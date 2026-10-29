@@ -43,7 +43,8 @@ func (AssignmentEntity) TableName() string { return "membership_assignments" }
 //
 // 读路径**只读**：查不到就返回 gorm.ErrRecordNotFound，由 service 在内存里兜底到默认等级。
 // 这里刻意不提供「查不到就建一行」的方法 —— 那是在访问面读路径写库，
-// 不在 AGENTS.md 不变量 1 的两个明文例外里。
+// 不在 AGENTS.md 不变量 1 允许的路径里（访客业务 API 处理业务数据可以，
+// 但读路径顺手写库不属于任何一档）。
 func (m *Model) GetAssignment(ctx context.Context, projectID string, userID uint64) (e *AssignmentEntity, err error) {
 	err = m.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
 		var ierr error

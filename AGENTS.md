@@ -83,8 +83,20 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 
 ## 架构不变量（注释以「AGENTS.md 不变量 N」引用）
 
-1. **控制面与访问面分离**：访客请求不查库、不执行 Jet、不解释 AST；URL→文件由 PublicationStore 状态决定。
-   例外仅两处：POST /analytics/collect（只写一条、响应恒 204）与 AccessGuard 只读访客会话（不查 PG、不写、不续期、fail closed）。
+1. **控制面与访问面分离**：分四档判定，不要混为一谈。
+   - **普通页面 GET**：只由 PublicationStore 定位静态产物 —— 不查控制面数据库、不运行 Jet、不解释 AST；
+     URL→文件的关系完全由发布状态决定。
+   - **明确注册的访客业务 API**（购物车、会话、订单、AI 采集等）：按自身鉴权、CSRF、限流与模块契约
+     处理业务数据；**不得**为渲染页面而回读页面/区块 AST 或执行 Jet，返回值是数据不是页面。
+     「明确注册」是判据不是形容词：能力必须逐条声明（`internal/module/runtimefragment` 的能力白名单 /
+     独立模块路由 + 权限点），不是任意路径都能当业务 API。
+   - **构建与预览**：在控制面解析文档与模板，不服务访客请求。
+   - **存量 HTML 动态片段**：逐条登记在迁移台账里，随业务区块改造逐批迁成 JSON；
+     **不得因为「现在已经是 HTML」就新增同类调用点**。台账见
+     `public/docs/业务区块解耦-B0台账.md`（当前 22 处）。
+
+   两处既有特例仍然成立，但它们不是上面四档之外的新例外：POST /analytics/collect
+   （只写一条、响应恒 204）与 AccessGuard 只读访客会话（不查 PG、不写、不续期、fail closed）。
 2. **两条发布路径共享同一管线**：Page 与 PresentationInstance 都走 Publish Compiler → ArtifactStore → PublicationStore。
 3. **Blueprint 用完即弃**，ContentTemplate 每次构建参与。
 4. **Binding 不是 Query DSL**：Document 只存白名单 FieldBinding/CollectionSource/MediaBinding。
