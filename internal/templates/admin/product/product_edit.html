@@ -1,114 +1,81 @@
-{* admin/product_edit.html — 商品编辑：**商品域唯一的编辑界面** *}
-{* 职能（评审见 ~/.dsh/skills/admin-ui-logic §1 / §3）：
-   本页回答「怎么改这个商品」，详情页回答「这个商品由什么组成」（只读）。
-   因此这里承接全部写动作：基本字段（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 /
-   SEO / 图集）、属性引用、分类与品牌、手工标签、**变体清单**、**评分**、SEO 检查、
-   详情页模板的双轨动作（进入自定义 / 编辑模板 / 重新套用预设 / 回滚），以及多语言入口。
-   详情页只读之后这些能力必须有地方去 —— 搬到这里而不是留在原地，否则等于把功能封掉。
-   版式：§2.1 正文零说明文字（口径进 .help 悬浮）、§2.2 页级动作与页头同行、
-   §3 一列一个概念、只读事实用 .kv 成对呈现。
-   表单协议：字段名与 UpdateReq 的 json 标签逐字对齐，改字段名等于改协议；
-   变体 / 评分的 action 与字段名与搬页前逐字相同（改版式不改协议）。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
 {{extends "../layout.html"}}
 {{import "../partials/media_gallery.html"}}
 {{import "../partials/media_field.html"}}
 {{import "../partials/rich_editor.html"}}
-{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{end}}
+{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}{{tnf := .["tn"]}}
-{{selectedProject := .SelectedProject}}
+{{selectedProject := .Scope.ProjectID}}
 {{warehouseOptions := .WarehouseOptions}}
 {{canUpdate := isset(.Buttons["product.update"])}}
 {{canVariantCreate := isset(.Buttons["product.variant_create"])}}
 {{canVariantGenerate := isset(.Buttons["product.variant_generate"])}}
 {{editBlocked := false}}
-{{if isset(.EditBlocked)}}{{editBlocked = .EditBlocked}}{{end}}
-{* 整页装载失败的归口文案（只在 Go 侧失败路径上有值：500/400 + no-store）；
-   契约见 AGENTS.md §整页 GET 的失败出口。 *}
-{* 富文本（商品描述）要的三个资源由**调用方页面**引：片段只出结构与扩展入口。
-   漏引的表现是编辑器变成一个没有工具条的空框，页面不报错。 *}
+
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{if .HasProduct}}：{{.Product.Name}}{{end}}</h1>
+                <h1>{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{if isset(.Product)}}：{{.Product.Name}}{{end}}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.products.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.edit.hint.fields", "这里改的是商品自身的字段。留空的数字字段（默认价格 / 重量）表示「不设置」，不会被写成 0；主体 SKU 留空表示不改（存量编码一律不重写）。") }}<br><br>{{ .["t"]("admin.products.edit.hint.sub", "变体、评分、属性引用、分类与品牌、手工标签都在") }}<a href="/admin/products/detail?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.hint.detailStrong", "详情") }}</a>{{ .["t"]("admin.products.edit.hint.subTail", "页只读展示；要改就在本页改 —— 本页是商品域唯一的编辑界面。") }}<br><br>{{ .["t"]("admin.products.edit.hint.lang", "多语言在本页右上角进入：改的是这个商品各字段的译文，保存后前台按语言取用。") }}</span>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.edit.hint.fields", "这里改的是商品自身的字段。留空的数字字段（默认价格 / 重量）表示「不设置」，不会被写成 0；主体 SKU 留空表示不改（存量编码一律不重写）。") }}<br><br>{{ .["t"]("admin.products.edit.hint.sub", "变体、评分、属性引用、分类与品牌、手工标签都在") }}<a href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.hint.detailStrong", "详情") }}</a>{{ .["t"]("admin.products.edit.hint.subTail", "页只读展示；要改就在本页改 —— 本页是商品域唯一的编辑界面。") }}<br><br>{{ .["t"]("admin.products.edit.hint.lang", "多语言在本页右上角进入：改的是这个商品各字段的译文，保存后前台按语言取用。") }}</span>
                 </span>
             </div>
         </div>
-        {* 页面主行动（保存）与页级动作同行（§2.2）：按钮在页头，字段留在表单里 ——
-           用 form="product-edit-main" 关联（HTML 不允许把 form 套在页头外面，样板：
-           article_edit.html 的页头保存按钮）。
-           商品不存在时没有那个表单，按钮也不渲染（否则点了没反应）。 *}
+
         <div class="page-actions">
-            {* SEO 评分（原底部折叠卡 → 抽屉）：打开即算，「SEO 评分」按钮按需重算。 *}
-            {{if .HasProduct}}
+
+            {{if isset(.Product)}}
             <button type="button" class="btn"
-                    data-drawer-url="/admin/products/seo/drawer?productId={{.ProductID}}&project={{.SelectedProject}}"
+                    data-drawer-url="/admin/products/seo/drawer?productId={{.Product.ID}}&project={{.Scope.ProjectID}}"
                     data-drawer-title="{{ .["t"]("admin.products.seo.title", "SEO 检查") }}">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
             {{end}}
-            <a class="btn btn-ghost" href="{{.BackURL}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
-            {{if .HasProduct}}
-            <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
-            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
-            {* disabled + data-requires-js：无 JS 时表单没有可用端点（基座不接管，原生提交会落到
-               一个不存在的页面上），所以按钮在 JS 把它放出来之前是真的按不动。 *}
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+            {{if isset(.Product)}}
+            <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
+            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
+
             {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.common.action.save", "保存") }}</button>{{end}}
             {{end}}
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {* 保存成功等写动作结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-       本页的 Err 只剩「表单校验失败原地重渲染」这一条来源。 *}
+    {{if !isset(.Product)}}
 
-    {{if !.HasProduct}}
-    {* 空态：读到了、但这个工程下没有这个商品（失败档已改 JSON 出口，不再是这一页的形态）。 *}
     <section class="card card-body">
         <div class="empty-state">
             <p class="empty-title">{{ .["t"]("admin.product_detail.notFound.title", "商品不存在") }}</p>
             <p class="empty-desc">{{ .["t"]("admin.product_detail.notFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
             <div class="empty-actions">
-                <a class="btn btn-primary" href="{{.BackURL}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+                <a class="btn btn-primary" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
             </div>
         </div>
     </section>
     {{else}}
     {{p := .Product}}
-    {* id 是页头保存按钮的关联目标（form="product-edit-main"）：字段全部留在这个表单里，
-       页头只放按钮。 *}
-    {* 详情页模板的两个动作（重新套用预设 / 回滚文档）成功后整页刷新，结论经 flash 带过来。
-       落点固定在本页顶部：那两个表单所在的折叠区默认收起着，结论放在折叠体里刷新后看不见。 *}
+{{imagesInput := ""}}{{range i, image := p.Images}}{{if i > 0}}{{imagesInput = imagesInput + "\n"}}{{end}}{{imagesInput = imagesInput + image}}{{end}}
+{{imageAltsInput := ""}}{{range i, alt := p.ImageAlts}}{{if i > 0}}{{imageAltsInput = imageAltsInput + "\n"}}{{end}}{{imageAltsInput = imageAltsInput + alt}}{{end}}
+
     <p class="form-hint badge" role="status" hidden></p>
-    {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
-       新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
+
     <div class="product-edit-panes">
-    {* 提交走写基座（static/js/ui/write-base.js）：data-write="update" 表示「整表单发到
-       UpdateReq」。字段名与 DTO 的 form tag 逐字对齐 —— 类型不在这里声明：
-       · 标量（int / float64 / bool / []string）：formdata 的字符串服务端直接绑得进（实测）；
-       · 空值键由基座统一删掉（「留空 = 不设置」），不需要逐字段点名；
-       · 只有表单表达不了的形状才声明：-lines（多行文本→数组）、-json-wrap（裸 HTML→jsonb）、
-         -keep-empty（空串有语义的字段）。
-       csrf 走请求头（基座自动带 X-CSRF-Token），表单里没有隐藏域。 *}
+
     {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form data-write="update" data-write-url="/api/product/update" id="product-edit-main" class="card card-body form-stack"
-          {* keep-empty="primaryCategoryId"：空串表示**解绑主分类**（UpdateReq 的注释写着
-             「nil 表示本次不改，指向空串表示解绑」），不能像普通空值那样删掉。 *}
+
           data-write-keep-empty="primaryCategoryId"
 
           data-write-lines="images,imageAlts"
           data-write-json-wrap="descriptionHtml:description">{{end}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
-        {* 写结论落在表单最上方：保存按钮在页头，失败原因若出现在表单底部，视线根本走不到。 *}
+
         <p class="form-hint" data-write-status role="status" hidden></p>
 
         <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
@@ -119,16 +86,9 @@
         <label class="form-label" for="product-edit-subtitle">{{ .["t"]("admin.products.label.subtitle", "副标题") }}</label>
         <input type="text" class="form-input" id="product-edit-subtitle" name="subtitle" value="{{p.Subtitle}}" autocomplete="off">
 
-        {* 商品描述：库里是 {"html": "..."}（jsonb），表单里走富文本字段。
-           字段名 descriptionHtml 而不是 description —— 表单给的是裸 HTML，
-           包装成 jsonb 对象在 handler 里做（见 product_edit_page.go）。
-           默认收起（2026-09-30）：富文本本体很高，而改描述是低频动作；收起时字段仍在
-           DOM 里、照常随表单提交（提交载体是富文本片段里的隐藏 input），展开只点一下标题。
-           注意「收起」不等于「不提交」：富文本按编辑器序列化写回（与文章正文同一行为），
-           所以保存一次商品就会把描述重新序列化一遍 —— 视觉等价、字节可能变。 *}
         <details class="edit-fold">
             <summary>{{ .["t"]("admin.products.label.description", "商品描述") }}</summary>
-            {{yield richEditor(field="descriptionHtml", key="product", value=p.DescriptionHTML)}}
+            {{yield richEditor(field="descriptionHtml", key="product", value="")}}
         </details>
 
         <label class="form-label" for="product-edit-slug">{{ .["t"]("admin.products.col.slug", "URL 段") }}</label>
@@ -143,67 +103,44 @@
         <div class="form-inline">
             <label for="product-edit-status">{{ .["t"]("admin.products.col.status", "状态") }}
                 <select class="form-select" id="product-edit-status" name="status">
-                    {{range _, o := .Statuses}}
-                    {* 显示名按取值取词（后端只给值域与选中态）；未知取值原样输出，不静默改写。 *}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.Value == ""}}{{tr("admin.products.status.all", "全部状态")}}{{else if o.Value == "draft"}}{{tr("admin.products.status.draft", "草稿")}}{{else if o.Value == "published"}}{{tr("admin.products.status.published", "已上架")}}{{else if o.Value == "archived"}}{{tr("admin.products.status.archived", "已下架")}}{{else}}{{o.Value}}{{end}}</option>
-                    {{end}}
+                    <option value="" {{if p.Status == ""}}selected{{end}}>{{tr("admin.products.status.all", "全部状态")}}</option>
+<option value="draft" {{if p.Status == "draft"}}selected{{end}}>{{tr("admin.products.status.draft", "草稿")}}</option>
+<option value="published" {{if p.Status == "published"}}selected{{end}}>{{tr("admin.products.status.published", "已上架")}}</option>
+<option value="archived" {{if p.Status == "archived"}}selected{{end}}>{{tr("admin.products.status.archived", "已下架")}}</option>
                 </select>
             </label>
             <label for="product-edit-price">{{ .["t"]("admin.products.edit.defaultPrice", "默认价格") }}
-                <input type="text" class="form-input" id="product-edit-price" name="defaultPrice" value="{{.DefaultPriceInput}}"
+                <input type="text" class="form-input" id="product-edit-price" name="defaultPrice" value="{{if isset(p.DefaultPrice)}}{{p.DefaultPrice}}{{end}}"
                        inputmode="decimal" placeholder="{{ .["t"]("admin.products.edit.ph.price", "留空即不设置") }}" autocomplete="off">
             </label>
             <label for="product-edit-unit">{{ .["t"]("admin.products.label.unit", "单位") }}
                 <input type="text" class="form-input" id="product-edit-unit" name="unit" value="{{p.Unit}}" autocomplete="off">
             </label>
             <label for="product-edit-weight">{{ .["t"]("admin.products.label.weight", "重量") }}
-                <input type="text" class="form-input" id="product-edit-weight" name="weight" value="{{.WeightInput}}"
+                <input type="text" class="form-input" id="product-edit-weight" name="weight" value="{{if isset(p.Weight)}}{{p.Weight}}{{end}}"
                        inputmode="decimal" placeholder="{{ .["t"]("admin.products.edit.ph.weight", "留空即不设置") }}" autocomplete="off">
             </label>
         </div>
 
-        {* SEO 是纯文本字段（技能 §8 硬规则）：meta 里出现富文本标签等于把标签喂给搜索引擎，
-           所以用 textarea 而不是富文本；长度只是展示建议，超长不拦截保存。 *}
-        {* 宽度按**字段内容**定，同一张表单里不再一半满行、一半 320px：
-           · SEO 标题与描述是一对短文本 → 并排两列（各约半栏，成对感比「半截」清楚）；
-           · 图集与 alt 是「一行一个地址」的多行列表 → 满行（320px 放一条 URL 就折行）。
-           原来的 input-wide 名字叫 wide、实际是 min(100%,320px) 的窄限，四个字段一起被压成半截。 *}
-        {* SEO 标题与 SEO 描述已合并进「商品」与「副标题」（2026-09-30）：
-           商品名就是网页标题、副标题就是 meta description —— 见 entity_source_fields.go 的说明。
-           这里不再有这两个输入框，编辑者不用把同一个标题抄两遍。 *}
-
-        {* 主图与图集各占一整行（同日曾并排，实测后改回）：
-           两者是**同一类控件**（虚线图框 + 媒体库），并排后屏幕上并排出现两个虚线「＋」框，
-           看着像同一个控件的两个格子；图集网格也被挤成窄窄一列。
-           纵向排列本身就在说「先定主图、再排图集」，不必靠横向并置省那几十像素。 *}
-        {* 主图（default_image）：契约里一直支持（CreateReq.DefaultImage / UpdateReq 的 *string
-           「不传即不改」），构建期还拿它当**图集为空时的兜底图** —— 但页面上从来没有这个字段，
-           于是运营只能通过导入或接口设它。补上：单图媒体字段，走媒体库。
-           放在图集之前，与「先定主图、再排图集」的语义顺序一致。 *}
         <label class="form-label">{{ .["t"]("admin.products.label.defaultImage", "主图") }}</label>
         {{yield mediaField(field="defaultImage", key="product", value=p.DefaultImage,
             pickLabel=tr("admin.common.media.pick", "媒体库"),
             clearLabel=tr("admin.common.media.clear", "清除"))}}
 
-        {* 图集：多图控件（缩略图网格 + 媒体库多选 + 逐张 alt）。原来是「一行一个地址」的
-           textarea —— 看不到图长什么样，也没有从媒体库挑的入口，敲错要等发布才发现。
-           alt 与图集**逐行对应**，所以它们合成一个控件（两个字段仍是分开提交的）。 *}
-        {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=.ImagesInput, alts=.ImageAltsInput,
+        {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=imagesInput, alts=imageAltsInput,
             heading=tr("admin.products.label.images", "图集"),
             addLabel=tr("admin.products.media.add", "添加图片"),
             altPlaceholder=tr("admin.products.media.altPlaceholder", "这张图的 alt 文本"),
             emptyLabel=tr("admin.products.media.empty", "还没有图片 —— 点网格里的「＋」从媒体库里挑，上传也在媒体库里做。"))}}
 
-        {* 属性组：勾选列表（可选值由服务端给出）。勾选态来自商品当前引用的 id；
-           一个都不勾 = 解绑全部（服务端按整体替换处理）。 *}
         <details class="edit-fold"><summary>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</summary>
-        {{if isset(.AttributeChecks)}}
-        {{if len(.AttributeChecks) > 0}}
+        {{if isset(.Attributes)}}
+        {{if len(.Attributes) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
-            {{range _, a := .AttributeChecks}}
+            {{range _, a := .Attributes}}
             <label class="var-value">
-                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{if a.Checked}}checked{{end}}> {{a.Label}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
+                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{range _, id := p.AttributeIDs}}{{if id == a.ID}}checked{{end}}{{end}}> {{a.Name}}{{if a.Key != ""}}（{{a.Key}}）{{end}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
             </label>
             {{end}}
         </fieldset>
@@ -212,15 +149,14 @@
         {{end}}
         {{end}}
 
-        {* 分类与品牌：分类可多选（主分类必属于挂载分类，不变量由服务端维持），品牌单选。 *}
         </details>
         <details class="edit-fold"><summary>{{ .["t"]("admin.products.taxonomy.title", "分类与品牌") }}</summary>
-        {{if len(p.CategoryChecks) > 0}}
+        {{if len(.Categories) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.taxonomy.legendCategories", "挂载分类（可多选，一个都不勾即解绑全部）") }}</legend>
-            {{range _, c := p.CategoryChecks}}
+            {{range _, c := .Categories}}
             <label class="var-value">
-                <input type="checkbox" name="categoryIds" value="{{c.ID}}" {{if c.Checked}}checked{{end}}> {{c.Label}}
+                <input type="checkbox" name="categoryIds" value="{{c.ID}}" {{range _, id := p.CategoryIDs}}{{if id == c.ID}}checked{{end}}{{end}}> {{repeat("　", c.Depth)}}{{c.Name}}
             </label>
             {{end}}
         </fieldset>
@@ -230,72 +166,65 @@
         <div class="form-inline">
             <label for="product-edit-primary">{{ .["t"]("admin.products.taxonomy.primaryLabel", "主分类") }}
                 <select class="form-select" id="product-edit-primary" name="primaryCategoryId">
-                    {* 选项两条取值链：带事实字段的（「（不指定主分类）」）走 tr 取词；数据项给分类名
-                       （含层级缩进），原样输出 —— 翻不了的数据与要按语言取词的文案不能混成一条。 *}
-                    {{range _, o := p.PrimaryOptions}}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr("admin.products.option.noPrimaryCategory", "（不指定主分类）")}}{{else}}{{o.Label}}{{end}}</option>
-                    {{end}}
+
+                    <option value="" {{if p.PrimaryCategoryID == ""}}selected{{end}}>{{tr("admin.products.option.noPrimaryCategory", "（不指定主分类）")}}</option>
+{{range _, c := .Categories}}<option value="{{c.ID}}" {{if c.ID == p.PrimaryCategoryID}}selected{{end}}>{{repeat("　", c.Depth)}}{{c.Name}}</option>{{end}}
                 </select>
             </label>
             <label for="product-edit-brand">{{ .["t"]("admin.products.taxonomy.brandLabel", "品牌") }}
                 <select class="form-select" id="product-edit-brand" name="brandId">
-                    {{range _, o := p.BrandOptions}}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr("admin.products.option.noBrand", "（不指定品牌）")}}{{else}}{{o.Label}}{{end}}</option>
-                    {{end}}
+                    <option value="" {{if p.BrandID == ""}}selected{{end}}>{{tr("admin.products.option.noBrand", "（不指定品牌）")}}</option>
+{{range _, b := .Brands}}<option value="{{b.ID}}" {{if b.ID == p.BrandID}}selected{{end}}>{{b.Name}}</option>{{end}}
                 </select>
             </label>
         </div>
 
-        {* 手工标签：自动标签只读展示（归属由规则重算维护，手工改会被下一次重算覆盖）。 *}
         </details>
         <details class="edit-fold"><summary>{{ .["t"]("admin.products.tags.title", "标签") }}</summary>
-        {{if len(p.TagChecks) > 0}}
+        {{if len(.Tags) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
-            {{range _, t := p.TagChecks}}
+            {{range _, t := .Tags}}{{if t.Kind == "manual"}}
             <label class="var-value">
-                <input type="checkbox" name="tagIds" value="{{t.ID}}" {{if t.Checked}}checked{{end}}> {{t.Name}}
+                <input type="checkbox" name="tagIds" value="{{t.ID}}" {{range _, id := p.TagIDs}}{{if id == t.ID}}checked{{end}}{{end}}> {{t.Name}}
             </label>
-            {{end}}
+            {{end}}{{end}}
         </fieldset>
         {{else}}
         <p class="text-mute text-sm">{{ .["t"]("admin.products.tags.noManualLead", "这个工程还没有手工标签，先到") }}<a href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.products.hint.tagLink", "商品标签") }}</a>{{ .["t"]("admin.products.taxonomy.noCategoriesTail", "页建一个。") }}</p>
         {{end}}
-        {{if len(p.AutoTags) > 0}}
+        {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
-            {{range _, t := p.AutoTags}}
+            {{range _, t := p.Tags}}{{if t.Kind == "rule"}}
             <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
-            {{end}}
+            {{end}}{{end}}
         </fieldset>
         {{end}}
         </details>
 
-        {* 主行动（保存）在页头：这里只留取消，避免同一个动作出现两个按钮。
-           写结论（失败原因 / 已保存）落在下面这行状态区：不再有「原地重渲染整张表单」这条出口。 *}
         <div class="action-row">
-            <a class="btn btn-ghost" href="{{.BackURL}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
         </div>
     {{if editBlocked}}</fieldset></section>{{else}}</form>{{end}}
     <aside class="product-edit-aside">
         <section class="card card-body">
-            {* 详情页预览（与文章编辑页同构）：用详情页模板渲染，看清发布后的形态。
-               它只反映**已保存**的数据 —— 改完先保存，再点「刷新预览」。 *}
+
             <h2 class="card-title">{{ .["t"]("admin.products.preview.heading", "详情页预览") }}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
                     <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.preview.hint", "这里用详情页模板渲染这个商品，看到的就是访客看到的样子（图集、变体分组、关联分区都在）。它只反映**已保存**的内容：改完先点保存，再点「刷新预览」。") }}</span>
                 </span>
             </h2>
-            {{if .HasProduct}}
+            {{if isset(.Product)}}
             <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ .["t"]("admin.products.preview.heading", "详情页预览")}}" role="button" tabindex="0">
                 <iframe id="product-preview-frame" name="product-preview-frame" sandbox="allow-same-origin"
-                        src="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}"
+                        src="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}"
                         title="{{ .["t"]("admin.products.preview.heading", "详情页预览") }}"></iframe>
             </div>
             <div class="action-row">
-                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}" target="product-preview-frame">{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</a>
-                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}" target="_blank" rel="noopener">{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</a>
+                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" target="product-preview-frame">{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</a>
+                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" target="_blank" rel="noopener">{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</a>
             </div>
             {{else}}
             <p class="page-sub">{{ .["t"]("admin.products.preview.needSave", "保存这个商品后，这里会显示它的详情页真实形态。") }}</p>
@@ -305,16 +234,13 @@
     </div>
 
     {{if !editBlocked}}
-    {* ==== 变体清单（AGENTS.md §8 预览—保存模型）====
-       从详情页搬来（详情页只读）：清单里的「生成 / 移除」都不写库，「保存变体清单」才落库。
-       初始行 = 库里已有的变体（不是重算笛卡尔积），所以上次删掉的组合不会自己冒出来。 *}
+
     <section class="card list-card">
         <div class="list-toolbar">
-            {* 列表卡的标题用 .card-title（theme.css §13 为 .list-card .list-toolbar .card-title 定过样式，
-               裸 <strong> 是写法漂移；样板 admin/analytics.html 的 .card-header > .card-title）。 *}
+
             <span class="card-title">{{ .["t"]("admin.products.variants.title", "变体") }}</span>
             <span class="toolbar-spacer"></span>
-            {{if canVariantGenerate}}{{if len(p.VariationAttributes) > 0}}
+            {{if canVariantGenerate}}{{if len(p.Attributes) > 0}}
             <button type="button" class="btn btn-sm" data-drawer-open="#tpl-variant-generate-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.combo.generate", "生成组合") }}">{{ .["t"]("admin.products.combo.generate", "生成组合") }}</button>
             {{end}}{{end}}
             {{if canVariantCreate}}
@@ -322,15 +248,9 @@
             {{end}}
         </div>
         <p class="text-mute text-sm">{{ .["t"]("admin.products.variants.listHint", "清单里的「生成 / 移除」都不写库：生成只是把组合显示在这里，「保存变体清单」才落库。") }}</p>
-        {* 保存走 JSON 写基座：清单行不是具名控件，rows 由 ui/product_variant_write.js 注册的
-           builder 从清单 DOM 组装；成功后的结论经 data-write-flash 带过随后的整页刷新
-           （清单刷新后才是库里的样子，被跳过的那几行也才会重新出现）。 *}
+
         <p class="form-hint badge" role="status" hidden></p>
-        {* 走 htmx 原生提交 + 页面级组装器：
-           data-write-builder="product-variant-rows" 由 ui/product_variant_write.js 注册到
-           htmx 基座（ui/write-base.js 的 WBFormBody），从清单 DOM 组装 rows。
-           DTO 侧 SaveVariantListReq 实现了 BindForm，把 rows 这个 JSON 字符串解析成切片
-           （gin 的 form 映射不支持点号嵌套，Rows 元素里还带 optionValues map）。 *}
+
         <form data-write="update" data-write-url="/api/product/variant/save"
               data-write-builder="product-variant-rows" data-write-reload
               data-variant-form
@@ -346,17 +266,16 @@
                     <tr data-variant-empty><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
                     {{end}}
                     {{range _, v := p.Variants}}
-                    <tr data-variant-row data-variant-id="{{v.ID}}" data-option-values="{{v.OptionValues}}">
+                    <tr data-variant-row data-variant-id="{{v.ID}}" data-option-values="{{if len(v.OptionValues) > 0}}{{"" + v.OptionValues}}{{else}}{}{{end}}">
                         <td><input type="text" class="form-input" data-variant-sku value="{{v.SKUCode}}" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
-                        <td>{{v.Spec}}</td>
+                        <td><span data-product-spec="{{v.ID}}"></span></td>
                         <td>{{amount(v.Price)}}</td>
                         <td>{{amountDash(v.ComparePrice)}}</td>
                         <td>{{amountDash(v.CostPrice)}}</td>
                         <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
                         <td>
                             {{v.StockTotal}}
-                            {* 仓库明细（B8）：展开到下一行的整幅面板里改 —— 塞进这一格会变成
-                               一格里三条货 + 三个数量框，翻两屏都读不出一行变体的库存。 *}
+
                             <button type="button" class="btn btn-sm btn-ghost" data-variant-stocks-toggle
                                     aria-expanded="false">{{ .["t"]("admin.products.stocks.toggle", "仓库明细") }}</button>
                         </td>
@@ -365,8 +284,7 @@
                             <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
                         </td>
                     </tr>
-                    {* 明细行紧跟在变体行后：折叠时整行隐藏。data-variant-stocks-row 与上面的
-                       data-variant-id 一一对应，JS 按前一行取归属变体。 *}
+
                     <tr data-variant-stocks-row hidden>
                         <td colspan="8">
                             {{include "variant_stock_panel.html" map("groups", v.Stocks, "known", v.StocksKnown, "t", tr)}}
@@ -382,21 +300,19 @@
                 <select class="form-select" id="variant-save-warehouse-{{p.ID}}" name="warehouseId">
                     <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                     {{range _, w := warehouseOptions}}
-                    <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                    <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                     {{end}}
                 </select>
                 {{end}}
                 <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
             </div>
         </form>
-        {* 仓库明细的候选货（**整页一份**）：每个仓的货品清单，JS 把它填进每行的下拉。
-           不在每行内联：一个 200 变体的商品按行渲候选会渲出几万个 <option>。
-           这里只出机器可读的数据，不参与提交（<template> 里的控件不进表单）。 *}
+
         {{if isset(.WarehouseSKUOptions)}}
         {{skuGroups := .WarehouseSKUOptions}}
         <template data-stock-catalog>
             {{range _, cg := skuGroups}}
-            <optgroup label="{{cg.Label}}" data-warehouse-id="{{cg.WarehouseID}}" data-warehouse-code="{{cg.WarehouseCode}}">
+            <optgroup label="{{cg.WarehouseName}}（{{cg.WarehouseCode}}）" data-warehouse-id="{{cg.WarehouseID}}" data-warehouse-code="{{cg.WarehouseCode}}">
                 {{range _, it := cg.Items}}
                 <option value="{{it.StockID}}"
                         data-warehouse-id="{{cg.WarehouseID}}"
@@ -406,14 +322,13 @@
                         data-name="{{it.Name}}"
                         data-image="{{it.ImageURL}}"
                         data-quantity="{{it.Quantity}}"
-                        data-track="{{if it.TrackQuantity}}1{{else}}0{{end}}">{{it.Label}}</option>
+                        data-track="{{if it.TrackQuantity}}1{{else}}0{{end}}">{{it.SKUCode}}{{if it.ExternalSKU != "" && it.ExternalSKU != it.SKUCode}} · {{it.ExternalSKU}}{{end}}</option>
                 {{end}}
             </optgroup>
             {{end}}
         </template>
         {{end}}
 
-        {* 清单行的结构只写一份：JS 追加新行时克隆它（列数、按钮、data 属性与既有行逐字一致）。 *}
         <template data-variant-row-tpl>
             <tr data-variant-row data-variant-id="" data-option-values="">
                 <td><input type="text" class="form-input" data-variant-sku value="" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
@@ -439,29 +354,27 @@
         </template>
     </section>
 
-    {* ==== 评分：子资源表 + 它的入口（添加评分） ==== *}
     <section class="card list-card" data-write-host>
         <div class="list-toolbar">
             <span class="card-title">{{ .["t"]("admin.products.rating.label", "评分") }}</span>
-            <span class="badge badge-mute">{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
+            <span class="badge badge-mute">{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.Rating.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
             <span class="toolbar-spacer"></span>
             {{if canUpdate}}
             <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-rating-add-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.rating.add", "添加评分") }}">＋ {{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
             {{end}}
         </div>
-        {* 删除按钮挂在表格外的隐藏表单上（按钮用 form="<id>" 关联）：失败原因要落在卡片里，
-           否则请求在原地静默失败、用户只看到「点了没反应」。 *}
+
         <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
             <table class="data-table">
                 <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
                 <tbody>
-                {{if len(p.Ratings) == 0}}
+                {{if len(p.Rating.Items) == 0}}
                 <tr><td colspan="4" class="text-mute text-sm">{{ .["t"]("admin.products.ratings.empty", "这个商品还没有评分。") }}</td></tr>
                 {{end}}
-                {{range _, r := p.Ratings}}
+                {{range _, r := p.Rating.Items}}
                 <tr>
-                    <td>{{r.Score}}</td>
+                    <td><span data-product-rating="{{r.Score}}">{{amount(r.Score)}}</span></td>
                     <td>{{r.Source}}</td>
                     <td>{{if isset(r.CreatedAt)}}{{formatTime(r.CreatedAt)}}{{end}}</td>
                     <td class="col-actions">
@@ -472,9 +385,8 @@
                 </tbody>
             </table>
         </div>
-        {* 行内删除表单必须留在卡片内：基座失败时把原因写进最近的 [data-write-host] 结果槽，
-           放到卡片外面就落不进那个槽（症状是「点了删除没反应」）。 *}
-        {{range _, r := p.Ratings}}
+
+        {{range _, r := p.Rating.Items}}
         <form data-write="delete" data-write-url="/api/product/rating/delete" id="rating-del-{{r.ID}}" class="hidden-form" data-write-reload
               data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -483,54 +395,42 @@
         {{end}}
     </section>
 
-    {* ==== SEO 检查：已收进抽屉（入口在页头）====
-       它只读计算、不写库、不改产物；原先是一张折叠卡常驻在页面底部 —— 而「这个商品 SEO 怎么样」
-       是按需问的问题，不该在每次编辑时都占一段版面。 *}
-    {* ==== 详情页模板（AGENTS.md §5，双轨版）====
-       模式徽标 + 两个模式各自的入口 —— template 模式下改布局的正确位置是**模板**
-       （改一次、全站跟随的商品都变）；document 模式才改这个商品自己的文档。
-       影响面（影响 N 个商品）写在按钮上：不写就让用户凭猜，而猜错是整站一起变样。
-       详情页只读展示绑定状态，写动作全部收在本页。 *}
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Available}}
-    {* 低频：绑定状态与两个模式的写入口（重新套用预设 / 回滚）都是「配一次就不动」的，
-       默认收起。卡内是两个 form-inline（按钮 + 隐藏域 + 回滚的版本下拉）——
-       折起来不丢字段：版本下拉在展开后可选，且收起时折叠区内的内容仍在 DOM 里，
-       表单照常可提交（与 .section-fold 的既有用法一致）。 *}
+
     <details class="section-fold card">
         <summary>
             <span class="fold-title">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</span>
-            {{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
+            {{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
         </summary>
         <div class="fold-body">
-        {{if isset(.TplPanel.InstanceID)}}
-        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
-        {{if .TplPanel.Status == "published" || .TplPanel.Status == "active"}}
+        {{if isset(.TplPanel.Bound.InstanceID)}}
+        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
+        {{if .TplPanel.Bound.Status == "published" || .TplPanel.Bound.Status == "active"}}
         <div class="flex gap-sm">
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
-            {{if .TplPanel.RenderMode == "document"}}
-            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.product_detail.template.customize", "进入自定义（仅此商品）") }}</a>
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+            {{if .TplPanel.Bound.RenderMode == "document"}}
+            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.Bound.InstanceID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.product_detail.template.customize", "进入自定义（仅此商品）") }}</a>
             {{else}}
-            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if .TplPanel.HasAffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
+            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if .TplPanel.HasAffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
             {{end}}
         </div>
-        {{if .TplPanel.RenderMode == "document"}}
+        {{if .TplPanel.Bound.RenderMode == "document"}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.docHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
-        {{if .TplPanel.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
-        {* 提交走 JSON 写基座：实例 ID 与工程随请求显式回传（端点是实例级的，不再按商品反查）；
-           按钮在 JS 放出之前是 hidden + disabled —— 没有 JS 就没有可用端点，不能留一个点了没反应的原生提交。 *}
+        {{if .TplPanel.Bound.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.Bound.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
+
         <form data-write="custom" data-write-url="/api/product/detail-template/reapply-preset" class="form-inline" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
+            <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
+            <input type="hidden" name="instanceId" value="{{.TplPanel.Bound.InstanceID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if len(.TplPanel.Snapshots) > 0}}
         <form data-write="custom" data-write-url="/api/product/detail-template/rollback-document" class="form-inline" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
+            <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
+            <input type="hidden" name="instanceId" value="{{.TplPanel.Bound.InstanceID}}">
             <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
@@ -557,7 +457,6 @@
     {{end}}
     {{end}}
 
-    {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
         <form data-write="create" data-write-url="/api/product/variant/create" class="form-stack">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -570,7 +469,7 @@
             <select class="form-select" id="variant-warehouse-{{p.ID}}" name="warehouseId">
                 <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                 {{end}}
             </select>
             {{end}}
@@ -581,10 +480,8 @@
         </form>
     </template>
 
-    {{if len(p.VariationAttributes) > 0}}
-    {* 组合生成（AGENTS.md §8）：勾选属性值 → 笛卡尔积 → **追加进清单**（不落库）；
-       「生成全部组合」= 不勾选任何值（服务端按全部启用值展开，与接口路径同一条语义）。
-       勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用。 *}
+    {{if len(p.Attributes) > 0}}
+
     <template id="tpl-variant-generate-{{p.ID}}">
         <div class="form-stack" data-variant-generate
              data-product="{{p.ID}}" data-project="{{selectedProject}}" data-csrf="{{csrf}}"
@@ -598,11 +495,11 @@
             <select class="form-select" id="generate-warehouse-{{p.ID}}" data-generate-warehouse>
                 <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                 {{end}}
             </select>
             {{end}}
-            {{range _, a := p.VariationAttributes}}
+            {{range _, a := p.Attributes}}{{if a.IsVariation}}
             <fieldset class="var-group">
                 <legend>{{a.Name}}</legend>
                 {{range _, v := a.Values}}
@@ -614,7 +511,8 @@
                 {{end}}
             </fieldset>
             {{end}}
-            <p class="text-mute text-sm" data-generate-status role="status"></p>
+{{end}}
+<p class="text-mute text-sm" data-generate-status role="status"></p>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button type="button" class="btn btn-primary" data-generate-selected>{{ .["t"]("admin.products.combo.generateSelected", "生成勾选组合") }}</button>
@@ -637,14 +535,11 @@
         </form>
     </template>
 
-
     {{end}}
     {{end}}
 </div>
+<script type="application/json" id="product-display-data">{{writeJson(.Product)}}</script>
 <script src="/static/vendor/trix/trix.umd.js"></script>
-{* 文末再引一次扩展入口（partials/rich_editor.html 注释里的推荐做法）：partial 嵌在表单中间，
-   会先于 vendor 的 trix.umd.js 执行。补这一次，扩展才在 Trix 就绪后再走一遍 boot，
-   工具条被换成项目自定义那套 —— 分类页 / 品牌页 / 文章页都这么写；本页原先漏了，
-   描述字段因此一直停在 Trix 默认工具条（图标按钮、英文 title、Tab 不可达）。 *}
+
 <script src="/static/js/rich-editor/index.js"></script>
 {{end}}

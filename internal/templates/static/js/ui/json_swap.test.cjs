@@ -394,3 +394,20 @@ test('data-json-more：hx-get 里还没有 page 参数时补上', () => {
     env.ext.def.htmx_before_swap(elt, detail);
     assert.equal(elt.getAttribute('hx-get'), '/api/product/publish-attempts?productId=p1&page=2');
 });
+
+
+test('模板格式化原始时刻、耗时、语言数组与重试次数', () => {
+    const env = makeEnv(['createdAt', 'durationMs', 'langs', 'attempts']);
+    const template = env.win.document.querySelector('#tpl-row');
+    const fields = template.content.querySelectorAll('[data-field]');
+    fields[0].setAttribute('data-field-format', 'datetime');
+    fields[1].setAttribute('data-field-format', 'duration');
+    fields[2].setAttribute('data-field-format', 'list');
+    fields[3].setAttribute('data-field-min', '2');
+    fields[3].setAttribute('data-field-suffix', 'x');
+    const createdAt = new Date(2026, 9, 29, 12, 5).getTime();
+    const row = env.win.WBJSON.fillRow(template, {createdAt, durationMs: 1250, langs: ['zh-CN', 'en-US'], attempts: 3}, '');
+    assert.deepEqual(row.children.map((node) => node.textContent), ['2026-10-29 12:05', '1.3s', 'zh-CN, en-US', '3x']);
+    const plain = env.win.WBJSON.fillRow(template, {createdAt: null, durationMs: 20, langs: [], attempts: 1}, '');
+    assert.deepEqual(plain.children.map((node) => node.textContent), ['', '20ms', '', '']);
+});

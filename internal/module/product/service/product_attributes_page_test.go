@@ -9,69 +9,21 @@ package productservice
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
-	projectdto "go_wp/internal/module/project/dto"
 )
 
-// TestProductAttributesPageUnknownProjectStopsBeforeFanout 未知工程 = 400 + 一条派生取数都不发。
-//
-// 把 `?project=<不存在的 id>` 做成 200 会让页面显示「这个工程下没有属性组」——
-// 而真实事实是「这个工程不存在」，正确动作是换一个工程，不是去新建属性组。
-func TestProductAttributesPageUnknownProjectStopsBeforeFanout(t *testing.T) {
-	s, _, _ := newProductPageReadModel(productPageProjectStub{
-		rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
-	})
-	view, err := s.ProductAttributesPage(context.Background(), &productdto.ProductAttributesPageReq{ProjectID: "does-not-exist"})
-	if err == nil || err.Error() != productenums.ErrInvalidParam {
-		t.Fatalf("未知工程应返回 %s，实际 err=%v", productenums.ErrInvalidParam, err)
-	}
-	wantPageFailure(t, "未知工程", view, err, http.StatusBadRequest)
-}
-
-// TestProductAttributesPageProjectListFailureIsFiveHundred 工程清单读不到 = 500。
-func TestProductAttributesPageProjectListFailureIsFiveHundred(t *testing.T) {
-	s, _, _ := newProductPageReadModel(productPageProjectStub{
-		err: errors.New(`pq: relation "projects" does not exist`),
-	})
-	view, err := s.ProductAttributesPage(context.Background(), &productdto.ProductAttributesPageReq{})
-	if err == nil {
-		t.Fatal("工程清单读不到必须返回错误")
-	}
-	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
-}
-
-// TestProductAttributesPageVariationNormalization variation 只认 1 / 0，其余当「全部」。
-//
-// 归一错时 `?variation=yes` 会被当成一个永远命中不了的筛选值：页面显示「没有匹配的属性组」，
-// 用户以为自己筛错了，其实是这个参数根本没有对应的档位。
-func TestProductAttributesPageVariationNormalization(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"1", "1"},
-		{"0", "0"},
-		{"yes", ""},
-		{"", ""},
-		{"  ", ""},
-	} {
-		t.Run("variation="+tc.in, func(t *testing.T) {
-			// 工程清单给空：selected 为空 → 计数与取页整段跳过（不碰 nil model）。
-			s, _, _ := newProductPageReadModel(productPageProjectStub{})
-			view, err := s.ProductAttributesPage(context.Background(), &productdto.ProductAttributesPageReq{Variation: tc.in})
-			if err != nil {
-				t.Fatalf("空工程清单不是失败：%v", err)
-			}
-			if view.FilterVariation != tc.want {
-				t.Fatalf("variation=%q 归一后应为 %q，实际 %q", tc.in, tc.want, view.FilterVariation)
-			}
-			// 「筛过没有」的判据要跟着归一后的值走，否则空结果会被说成「筛出来是空的」。
-			if wantFiltered := tc.want != ""; view.Filtered != wantFiltered {
-				t.Fatalf("variation=%q 时 Filtered 应为 %v，实际 %v", tc.in, wantFiltered, view.Filtered)
-			}
-		})
+func TestAttributeQueryVariationNormalization(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{{"1", "1"}, {"0", "0"}, {"yes", ""}, {"  ", ""}} {
+		q := normalizedTaxonomyQuery(&productdto.CatalogTaxonomyReq{Variation: tc.in, Page: 999})
+		if q.Variation != tc.want {
+			t.Fatalf("归一结果=%q，want %q", q.Variation, tc.want)
+		}
+		result, err := (&Service{}).QueryAttributes(context.Background(), &q)
+		if err != nil || len(result.Items) != 0 || result.Page != 1 {
+			t.Fatalf("空工程不得查库: %+v %v", result, err)
+		}
 	}
 }
 

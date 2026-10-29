@@ -6,8 +6,7 @@
 
    数据契约（调用点必须先备好，否则 include 会渲染成空下拉）：
      · Rules / Roundings —— service 给的内置清单（唯一来源，不要在模板里写死选项）
-     · Form              —— 可选：表单初值（RuleType / Multiplier / Amount / Margin / Rounding）。
-                            没有就按空表单渲染（列表页的批量改价抽屉：初值就是空白）。
+     初值由浏览器选择清单首项；输入默认留空，提交失败时原 DOM 保留。
    include 共享调用点作用域，故这里直接用 .["t"] 取词；变量名带 pf 前缀，
    避免与调用点自己的 form / rules 同名（Jet 同作用域重复声明会报错）。
 
@@ -18,23 +17,22 @@
    aria-label 保留，与调用点 scope / 筛选集两行的写法一致。 *}
 {{pfRules := .Rules}}
 {{pfRoundings := .Roundings}}
-{{pfForm := map("RuleType", "", "Multiplier", "", "Amount", "", "Margin", "", "Rounding", "")}}{{if isset(.Form)}}{{pfForm = .Form}}{{end}}
 <div class="form-inline">
     <label class="form-label" for="pricing-rule-type">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</label>
     <select class="form-select" id="pricing-rule-type" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">
         {{range _, r := pfRules}}
-        <option value="{{r.Type}}" {{if r.Type == pfForm.RuleType}}selected{{end}}>{{include "pricing_rule_name.html" map("rt", r.Type, "kind", "name", "t", .["t"])}}</option>
+        <option value="{{r.Type}}">{{include "pricing_rule_name.html" map("rt", r.Type, "kind", "name", "t", .["t"])}}</option>
         {{end}}
     </select>
-    <input type="text" class="form-input" name="multiplier" value="{{pfForm.Multiplier}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
-    <input type="text" class="form-input" name="amount" value="{{pfForm.Amount}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phAmount", "amount（成本加价 / 统一售价）") }}" inputmode="decimal" autocomplete="off">
-    <input type="text" class="form-input" name="margin" value="{{pfForm.Margin}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMargin", "margin（目标毛利率，0.3 = 30%）") }}" inputmode="decimal" autocomplete="off">
+    <input type="text" class="form-input" name="multiplier" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
+    <input type="text" class="form-input" name="amount" placeholder="{{ .["t"]("admin.product_pricing.apply.phAmount", "amount（成本加价 / 统一售价）") }}" inputmode="decimal" autocomplete="off">
+    <input type="text" class="form-input" name="margin" placeholder="{{ .["t"]("admin.product_pricing.apply.phMargin", "margin（目标毛利率，0.3 = 30%）") }}" inputmode="decimal" autocomplete="off">
 </div>
 <div class="form-inline">
     <label class="form-label" for="pricing-rounding">{{ .["t"]("admin.product_pricing.apply.labelRounding", "尾数") }}</label>
     <select class="form-select" id="pricing-rounding" name="rounding" aria-label="{{ .["t"]("admin.product_pricing.apply.roundingAria", "尾数处理") }}">
         {{range _, r := pfRoundings}}
-        <option value="{{r.Value}}" {{if r.Value == pfForm.Rounding}}selected{{end}}>{{include "pricing_rounding_text.html" map("v", r.Value, "t", .["t"])}}</option>
+        <option value="{{r.Value}}">{{include "pricing_rounding_text.html" map("v", r.Value, "t", .["t"])}}</option>
         {{end}}
     </select>
 </div>

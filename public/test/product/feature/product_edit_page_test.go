@@ -242,85 +242,17 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	}
 }
 
-// failedAttributeListService 制造「属性组清单读失败」这一档。
-//
-// 为什么 GET 那一半改成在读模型的**产出**上注入：取数编排已下沉（service.ProductEditPage 内部
-// 调 s.ListAttributes），而 Go 的嵌入方法不经过外层包装 —— 覆盖 ListAttributes 对读模型不再生效，
-// 断言会变成「页面 200、属性组还在」的假绿。现在 ProductEditPage 不再走嵌入的 ProductService，
-// 而是显式委托给真读模型，再覆盖成故障档：与真实故障在视图层同形（AttributeOptionsErr 非空、
-// 候选为空、整页仍 200）。
-//
-// 本文件只守 GET 这一半：保存链路已迁到 /api/product/update 的 JSON 基座，页面 POST 不存在了。
+// failedAttributeListService 在页面实际消费的目录查询边界注入故障，验证失败 JSON 出口。
 type failedAttributeListService struct {
 	productcontract.ProductService
-	reader productcontract.ProductPageReader
+	calls     int
+	projectID string
 }
 
-func (s failedAttributeListService) ListAttributes(context.Context, *productdto.ListAttributeReq) ([]*productdto.AttributeResp, error) {
+func (s *failedAttributeListService) CatalogAttributes(_ context.Context, projectID string) ([]*productdto.AttributeResp, error) {
+	s.calls++
+	s.projectID = projectID
 	return nil, errors.New("injected attribute list failure: internal detail")
-}
-
-func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageResp, error) {
-	view, err := s.reader.ProductEditPage(ctx, req)
-	if view != nil {
-		view.AttributeOptionsErr = errors.New("injected attribute list failure: internal detail")
-		view.AttributeOptions = nil
-	}
-	return view, err
-}
-
-// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就编译不过
-// （reader 是构造实参的静态类型，不再有运行期断言 → 500 兜底页这条路径）。
-func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageResp, error) {
-	return s.reader.ProductNewPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageResp, error) {
-	return s.reader.ProductListPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageResp, error) {
-	return s.reader.ProductDetailPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormResp, error) {
-	return s.reader.ProductCreateForm(ctx, req)
-}
-
-func (s failedAttributeListService) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
-	return s.reader.ProductPricingPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductDetailTemplatePage(context.Context, *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
-	return nil, nil
-}
-
-func (s failedAttributeListService) ProductPublishRecordPage(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (*productdto.ProductPublishRecordPageResp, error) {
-	return s.reader.ProductPublishRecordPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
-	return s.reader.ProductCategoriesPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
-	return s.reader.ProductBrandsPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
-	return s.reader.ProductTagsPage(ctx, req)
-}
-
-func (s failedAttributeListService) CategoryParentOptions(ctx context.Context, req *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
-	return s.reader.CategoryParentOptions(ctx, req)
-}
-
-func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
-	return s.reader.ProductAttributesPage(ctx, req)
-}
-
-func (s failedAttributeListService) ProductPublishAttempts(ctx context.Context, req *productdto.PublishAttemptListReq) (*productdto.PublishAttemptListResp, error) {
-	return s.reader.ProductPublishAttempts(ctx, req)
 }
 
 func TestProductEditPageAttributeListFailure(t *testing.T) {
@@ -341,20 +273,22 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc, reader: f.svc}, failedAttributeListService{ProductService: f.svc, reader: f.svc}, f.projects)
+	failing := &failedAttributeListService{ProductService: f.svc}
+	handle := producthttp.NewProductPageHandle(failing, f.svc, f.projects)
 	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
 
 	page := httptest.NewRecorder()
 	engine.ServeHTTP(page, httptest.NewRequest(http.MethodGet,
 		"/admin/products/edit?project="+f.projectID+"&product="+created.ID, nil))
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `role="alert"`) ||
-		!strings.Contains(page.Body.String(), "内部错误，请稍后重试") ||
-		strings.Contains(page.Body.String(), `id="product-edit-main"`) ||
-		strings.Contains(page.Body.String(), `data-write-url="/api/product/variant/save"`) ||
-		strings.Contains(page.Body.String(), `data-write-url="/api/product/rating/add"`) ||
-		strings.Contains(page.Body.String(), "injected attribute list failure") {
-		t.Fatalf("属性取数失败应展示归口错误且不渲染危险表单：状态=%d，页面尾部=%s", page.Code, tailOfPage(page.Body.String(), 900))
+	if failing.calls != 1 || failing.projectID != f.projectID {
+		t.Fatalf("属性查询故障未在当前工程注入：calls=%d project=%q", failing.calls, failing.projectID)
 	}
+	if page.Code != http.StatusInternalServerError || !strings.HasPrefix(page.Header().Get("Content-Type"), "application/json") ||
+		!strings.Contains(page.Body.String(), "内部错误") || strings.Contains(page.Body.String(), "<html") ||
+		strings.Contains(page.Body.String(), "injected attribute list failure") || strings.Contains(page.Body.String(), "internal detail") {
+		t.Fatalf("属性取数失败应返回 500 JSON 且不泄露内部原文：%d %s", page.Code, page.Body.String())
+	}
+
 }
 
 // tailOfPage 取页面尾部若干字符（渲染中断时用来看断在哪一段）。

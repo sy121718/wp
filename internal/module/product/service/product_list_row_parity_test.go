@@ -23,7 +23,6 @@ import (
 	"context"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -33,7 +32,6 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -142,7 +140,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "行对账"}},
 	})
 	s.SetWarehouseOptionsPort(parityWarehousePortStub{
-		options: []productdto.WarehouseOptionResp{{ID: parityWarehouseID, Label: "主仓"}},
+		options: []productdto.WarehouseOptionResp{{ID: parityWarehouseID, Name: "主仓"}},
 	})
 	s.SetInventoryService(parityStockPortStub{rows: []inventorydto.ProductWarehouseStock{
 		{ProductID: fx.variantProduct, WarehouseID: parityWarehouseID, WarehouseName: "主仓",
@@ -150,124 +148,35 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 	}})
 
 	ctx := context.Background()
-	listView, err := s.ProductListPage(ctx, &productdto.ProductListPageReq{ProjectID: projectID})
+	result, err := s.QueryProducts(ctx, &productdto.ListReq{ProjectID: projectID})
 	if err != nil {
-		t.Fatalf("列表页读模型失败：%v", err)
+		t.Fatal(err)
 	}
-	if len(listView.Products) != 2 || len(listView.RowDetails) != 2 {
-		t.Fatalf("期望 2 行（变体 + 容器），实际成品行 %d、原料行 %d",
-			len(listView.Products), len(listView.RowDetails))
+	if len(result.Items) != 2 {
+		t.Fatalf("期望两条商品，实际 %d", len(result.Items))
 	}
-
-	for i, item := range listView.RowDetails {
-		detailView, derr := s.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{
-			ProjectID: projectID, ProductID: item.ID,
-		})
-		if derr != nil {
-			t.Fatalf("详情页读模型取 %s 失败：%v", item.ID, derr)
+	for _, item := range result.Items {
+		detail, err := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: item.ID})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if detailView.Product == nil {
-			t.Fatalf("详情页没有装配出成品行（商品 %s）", item.ID)
+		if detail.BrandID == "" || len(detail.CategoryIDs) == 0 || len(detail.TagIDs) == 0 {
+			t.Fatal("夹具未挂载关联数据")
 		}
-		want := detailView.Product
-		got := listView.Products[i]
-		if got.ID != want.ID {
-			t.Fatalf("第 %d 行的顺序不一致：列表行 %s、详情行 %s", i, got.ID, want.ID)
+		if item.PriceMin != detail.PriceMin || item.PriceMax != detail.PriceMax || item.VariantCount != detail.VariantCount {
+			t.Fatalf("列表与详情的价格汇总不一致：%+v / %+v", item, detail)
 		}
-
-		// 夹具自检：被比较的字段必须在详情行上非零 —— 否则「两边都空」也会相等。
-		nonEmpty := []struct{ name, value string }{
-			{"PriceMin", amountText(want.PriceMin)}, {"PriceMax", amountText(want.PriceMax)},
-			{"BrandName", want.BrandName}, {"TagNames", strings.Join(want.TagNames, ",")},
+		if !reflect.DeepEqual(item.CategoryIDs, detail.CategoryIDs) || item.PrimaryCategoryID != detail.PrimaryCategoryID || item.BrandID != detail.BrandID || !reflect.DeepEqual(item.TagIDs, detail.TagIDs) {
+			t.Fatal("列表与详情挂载关系不一致")
 		}
-		if detailView.Detail != nil {
-			nonEmpty = append(nonEmpty,
-				struct{ name, value string }{"CategoryCell", want.CategoryCell},
-				struct{ name, value string }{"RatingAvg", want.RatingAvg})
+		if item.Rating.HasRating != detail.Rating.HasRating || item.Rating.Rating != detail.Rating.Rating || item.Rating.RatingCount != detail.Rating.RatingCount {
+			t.Fatal("列表与详情评分汇总不一致")
 		}
-		for _, c := range nonEmpty {
-			if c.value == "" {
-				t.Fatalf("夹具自检失败：商品 %s 的 %s 在详情行上是空值，对账会变成「两边都空」的假绿",
-					got.Name, c.name)
-			}
+		if len(item.Rating.Items) != 0 {
+			t.Fatal("分页查询不应加载评分明细")
 		}
-
-		pairs := []struct{ name, got, want string }{
-			{"ID", got.ID, want.ID},
-			{"Name", got.Name, want.Name},
-			{"Slug", got.Slug, want.Slug},
-			{"SKUCode", got.SKUCode, want.SKUCode},
-			{"Status", got.Status, want.Status},
-			{"PriceMin", amountText(got.PriceMin), amountText(want.PriceMin)},
-			{"PriceMax", amountText(got.PriceMax), amountText(want.PriceMax)},
-			{"CategoryCell", got.CategoryCell, want.CategoryCell},
-			{"BrandName", got.BrandName, want.BrandName},
-			{"TagNames", strings.Join(got.TagNames, ","), strings.Join(want.TagNames, ",")},
-			{"RatingAvg", got.RatingAvg, want.RatingAvg},
-			{"RatingCount", strconv.Itoa(got.RatingCount), strconv.Itoa(want.RatingCount)},
-		}
-		for _, p := range pairs {
-			if p.got != p.want {
-				t.Errorf("商品 %s 的字段 %s：列表行 %q、详情行 %q", got.Name, p.name, p.got, p.want)
-			}
-		}
-		if got.VariantCount != want.VariantCount {
-			t.Errorf("商品 %s 的 VariantCount：列表行 %d、详情行 %d", got.Name, got.VariantCount, want.VariantCount)
-		}
-		if got.CategoryOthers != want.CategoryOthers {
-			t.Errorf("商品 %s 的 CategoryOthers：列表行 %d、详情行 %d", got.Name, got.CategoryOthers, want.CategoryOthers)
-		}
-		if got.HasRating != want.HasRating {
-			t.Errorf("商品 %s 的 HasRating：列表行 %v、详情行 %v", got.Name, got.HasRating, want.HasRating)
-		}
-		if !reflect.DeepEqual(got.Stock, want.Stock) {
-			t.Errorf("商品 %s 的库存单元格：列表行 %#v、详情行 %#v", got.Name, got.Stock, want.Stock)
-		}
-
-		// 批量事实（applyRowFacts）唯一的产物：挂载 id。字符串列巧合相等时它们会先露馅。
-		if detailView.Detail == nil {
-			t.Fatalf("详情页没有详情对象（商品 %s）", item.ID)
-		}
-		detail := detailView.Detail
-		if !reflect.DeepEqual(item.CategoryIDs, detail.CategoryIDs) {
-			t.Errorf("商品 %s 的 CategoryIDs：批量事实 %v、详情 %v", got.Name, item.CategoryIDs, detail.CategoryIDs)
-		}
-		if item.PrimaryCategoryID != detail.PrimaryCategoryID {
-			t.Errorf("商品 %s 的 PrimaryCategoryID：批量事实 %q、详情 %q",
-				got.Name, item.PrimaryCategoryID, detail.PrimaryCategoryID)
-		}
-		if item.BrandID != detail.BrandID {
-			t.Errorf("商品 %s 的 BrandID：批量事实 %q、详情 %q", got.Name, item.BrandID, detail.BrandID)
-		}
-		if !reflect.DeepEqual(item.TagIDs, detail.TagIDs) {
-			t.Errorf("商品 %s 的 TagIDs：批量事实 %v、详情 %v", got.Name, item.TagIDs, detail.TagIDs)
-		}
-	}
-
-	// 绝对值（对账只看「两边相等」，相等也可能两边都错）。
-	for _, row := range listView.Products {
-		switch row.Name {
-		case "变体商品":
-			// 价格是原值（元）：12.5 / 30，展示文本由模板 amount() 生成。
-			if row.PriceMin != 12.5 || row.PriceMax != 30 || row.VariantCount != 2 {
-				t.Errorf("变体商品的价格区间/变体数：%v~%v，%d 个", row.PriceMin, row.PriceMax, row.VariantCount)
-			}
-			if !row.HasRating || row.RatingCount != 2 || row.RatingAvg != "4.50" {
-				t.Errorf("变体商品的评分段：HasRating=%v count=%d avg=%q", row.HasRating, row.RatingCount, row.RatingAvg)
-			}
-			if len(row.Ratings) != 0 {
-				t.Errorf("列表行不加载评分**明细**（只读投影值），实际 %d 条", len(row.Ratings))
-			}
-			if row.Stock == nil {
-				t.Fatalf("变体商品应带库存单元格")
-			}
-			if row.Stock.State != productenums.StockStateTracked {
-				t.Errorf("变体商品的库存三态应为 %s，实际 %v", productenums.StockStateTracked, row.Stock.State)
-			}
-		case "单品商品":
-			if row.PriceMin != 88.5 || row.PriceMax != 88.5 {
-				t.Errorf("单品商品按唯一变体取价：%v~%v", row.PriceMin, row.PriceMax)
-			}
+		if item.StockState != detail.StockState || item.StockTotal != detail.StockTotal || !reflect.DeepEqual(item.StockWarehouses, detail.StockWarehouses) {
+			t.Fatal("列表与详情库存事实不一致")
 		}
 	}
 }

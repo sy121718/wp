@@ -32,7 +32,6 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
-	"go_wp/pkg/pagination"
 	"go_wp/pkg/utils"
 	"sort"
 	"strconv"
@@ -48,7 +47,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
-	viewpkg "go_wp/pkg/view"
 )
 
 const (
@@ -394,7 +392,7 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 //
 // 越界的 page 不报错：收敛到最后一页（Total 仍是真实值），不会把一个翻页越界
 // 变成一条错误提示 —— 翻页本来就是可以走到头再点一下的操作。
-func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsPageResp, err error) {
+func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsListResp, err error) {
 	if req == nil || req.TagID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -430,45 +428,11 @@ func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListT
 	if lerr != nil {
 		return nil, lerr
 	}
-	return &productdto.TagProductsPageResp{
+	return &productdto.TagProductsListResp{
 		TagID: tag.ID, TagName: tag.Name,
-		Total: int(total), Page: page, PageSize: size, TotalPage: totalPage,
+		Total: int(total), Page: page, PageSize: size,
 		Items: toTagProductResps(rows),
 	}, nil
-}
-
-// TagHitsFragmentData 标签「命中商品」片段的数据根（模板读 map：Items / Pagination / Err / TagID…）。
-//
-// 为什么数据根在这里而不是控制器：片段根必须是 map（模板用 .["t"] 取词，Jet 的索引只对
-// map 生效），而「把取回来的页摊成模板键」属于这一屏的形状 —— 形状只写一份，控制器只负责
-// 绑定、调它、出口。
-//
-// **失败时只带 Err、不带 Items**（与模板头部写的契约一致）。这不是风格选择：模板的分支是
-// `{{if isset(.Items)}}正常{{else}}Err{{end}}`，Items 一旦存在就走正常分支，而正常分支无条件
-// 读 .TagName —— 失败路径拿不到 TagName，Jet 在 gin.H（具名 map 类型）上取缺键**不是**返回
-// 空串，而是 `no field or method 'TagName'` 中断整页，最终 500「页面暂时无法显示」。
-// 跨工程标签 id 那条路径（mapTagNotFound → ErrTagNotFound）以前就是撞在这里，
-// 回归见 public/test/product/feature 的 TestTagHitsFragmentPagesWithinProjectScope。
-//
-// 入参是「取回来的那一页」而不是 Service：形状是纯函数（与查库无关），这样 handler 只多
-// 一条赋值，单测也能不接库直接钉住键集。
-func TagHitsFragmentData(req *productdto.ListTagProductsPageReq, res *productdto.TagProductsPageResp, err error) (data map[string]any, cause error) {
-	data = map[string]any{"TagID": "", "ProjectID": "", "Err": ""}
-	if req != nil {
-		data["TagID"], data["ProjectID"] = req.TagID, req.ProjectID
-	}
-	if err != nil || res == nil {
-		return data, err
-	}
-	data["TagName"], data["Total"], data["Page"] = res.TagName, res.Total, res.Page
-	data["PageSize"], data["TotalPage"] = res.PageSize, res.TotalPage
-	data["Items"] = res.Items
-	// 分页只给事实（文案与翻页链接由模板的 pager()/queryURL() 出）；DropLimit：本端点只认
-	// project/id/page/size，翻页链接不带 limit。基址由模板从请求串推（pageBase 去掉 page/limit）。
-	data[viewpkg.PaginationKey] = pagination.Page{
-		Total: int64(res.Total), Page: res.Page, Limit: res.PageSize, DropLimit: true,
-	}
-	return data, nil
 }
 
 // pagesOf 总页数（空列表也算 1 页：页面要显示「第 1 / 1 页」，而不是「第 1 / 0 页」）。

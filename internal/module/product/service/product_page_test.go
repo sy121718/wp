@@ -2,13 +2,8 @@ package productservice
 
 import (
 	"context"
-	"errors"
-	"net/http"
-	"testing"
 
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 )
@@ -84,72 +79,3 @@ func newProductPageReadModel(projects productPageProjectStub) (*Service, *produc
 	s.SetEntityTemplatePort(tpl)
 	return s, wh, tpl
 }
-
-// TestProductNewPageInvalidProjectStopsBeforeFanout 非法工程 = 400 + 一条派生取数都不发。
-func TestProductNewPageInvalidProjectStopsBeforeFanout(t *testing.T) {
-	s, wh, tpl := newProductPageReadModel(productPageProjectStub{
-		rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
-	})
-	view, err := s.ProductNewPage(context.Background(), &productdto.ProductNewPageReq{ProjectID: "does-not-exist"})
-	if err == nil || err.Error() != productenums.ErrInvalidParam {
-		t.Fatalf("非法工程应返回 %s，实际 err=%v", productenums.ErrInvalidParam, err)
-	}
-	wantPageFailure(t, "非法工程", view, err, http.StatusBadRequest)
-	if wh.calls != 0 || tpl.calls != 0 {
-		t.Fatalf("非法工程不该发任何派生取数，实际仓库端口 %d 次、模板端口 %d 次", wh.calls, tpl.calls)
-	}
-}
-
-// TestProductNewPageProjectReadFailureIsFiveHundred 工程清单读不出来 = 500（不是空态、也不是 400）。
-func TestProductNewPageProjectReadFailureIsFiveHundred(t *testing.T) {
-	s, wh, tpl := newProductPageReadModel(productPageProjectStub{
-		err: errors.New(`pq: relation "projects" does not exist`),
-	})
-	view, err := s.ProductNewPage(context.Background(), &productdto.ProductNewPageReq{ProjectID: "p1"})
-	if err == nil {
-		t.Fatal("工程清单读不出来必须返回错误")
-	}
-	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
-	if wh.calls != 0 || tpl.calls != 0 {
-		t.Fatalf("主数据失败后不该继续查，实际仓库端口 %d 次、模板端口 %d 次", wh.calls, tpl.calls)
-	}
-}
-
-// TestProjectExistsMatchesListedProjects 工程存在性判据（控制器与读模型共用的那一份）。
-func TestProjectExistsMatchesListedProjects(t *testing.T) {
-	rows := []projectdto.ProjectResp{{ID: "p1"}, {ID: "p2"}}
-	if !ProjectExists(rows, "p2") {
-		t.Fatal("清单里的工程应判为存在")
-	}
-	if ProjectExists(rows, "p3") || ProjectExists(rows, "") || ProjectExists(nil, "p1") {
-		t.Fatal("不在清单里 / 空 id / 空清单都应判为不存在")
-	}
-}
-
-// TestAttributeOptionViewsKeepsKeyInLabel 属性组标签口径：名字 + 标识 key。
-//
-// 只给名字会在同名属性组之间选错（商品详情页与属性页都按 key 指代属性组），
-// 而这条规则改一处就漏一处 —— 所以它必须有一条会变红的判据。
-func TestAttributeOptionViewsKeepsKeyInLabel(t *testing.T) {
-	rows := []*productdto.AttributeResp{
-		{ID: "a1", Name: "颜色", Key: "color", IsVariation: true},
-		{ID: "a2", Name: "无 key"},
-		nil,
-	}
-	got := AttributeOptionViews(rows)
-	if len(got) != 2 {
-		t.Fatalf("nil 行应跳过，期望 2 项，实际 %d", len(got))
-	}
-	if got[0].Label != "颜色（color）" {
-		t.Fatalf("标签应是「名字（key）」，实际 %q", got[0].Label)
-	}
-	if !got[0].IsVariation {
-		t.Fatal("IsVariation 应透传（模板据此显示「参与变体」徽标）")
-	}
-	if got[1].Label != "无 key" {
-		t.Fatalf("没有 key 时不该拼空的括号，实际 %q", got[1].Label)
-	}
-}
-
-var _ productcontract.WarehouseOptionsPort = (*productPageWarehousePortStub)(nil)
-var _ productcontract.EntityTemplatePort = (*productPageTemplatePortStub)(nil)

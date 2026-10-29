@@ -20,24 +20,22 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
 
 // publishRecordBodyWithButtons 渲染发布记录页，并按需注入菜单按钮授权。
 func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string {
 	t.Helper()
-	view := productPublishRecordPageViewStub(func(v *productdto.ProductPublishRecordPageResp) {
-		v.Projects = []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}
-		v.SelectedProject = "p1"
+	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
 		v.Total = 1
 		v.Records = []productdto.PublishRecordRowResp{{
 			ProductID: "prod-1", ProductName: "已上线商品", ProductSlug: "live",
 			HasInstance: true, Online: true,
 		}}
 	})
-	reader := &productPageReaderStub{publishView: view}
+	reader := &publicationReaderStub{publishView: view}
 	handle := &ProductPageHandle{reader: reader, products: reader}
 
 	gin.SetMode(gin.TestMode)
@@ -68,13 +66,13 @@ func TestProductPublishRecordHistoryButtonAndTemplate(t *testing.T) {
 		`data-json-key="id"`,
 		`data-json-more="page"`,
 		// 行模板的每一个 data-field 都在（少一个 = 一列静默空白）
-		`data-field="createdAtText"`,
+		`data-field="createdAt" data-field-format="datetime"`,
 		`data-field="operatorName"`,
-		`data-field="langsText"`,
+		`data-field="langs" data-field-format="list"`,
 		`data-field="artifactHash"`,
-		`data-field="durationText"`,
-		`data-field="attemptsText"`,
-		`data-field="errorText"`,
+		`data-field="durationMs" data-field-format="duration"`,
+		`data-field="attempts" data-field-min="2" data-field-suffix="x"`,
+		`class="ph-error" data-when="failed" data-when-field="outcome"`,
 		// 触发源七档（671 的 CHECK 是七值，少一档那次尝试显示成空白）
 		`data-when="create"`, `data-when="manual"`, `data-when="template_switch"`,
 		`data-when="update_url"`, `data-when="rollback"`, `data-when="override"`,

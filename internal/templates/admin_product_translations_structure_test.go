@@ -22,25 +22,13 @@ import (
 // translationPageData 工作台的渲染数据：两组、三行（其中一行译文为空 —— 空行占位是本页的契约）。
 func translationPageData() map[string]any {
 	return groupDData(map[string]any{
-		"SelectedProject": "pr1",
-		"ProjectID":       "pr1", "ProductID": "p1", "Lang": "en-US", "SourceLang": "zh-CN",
-		"Langs": []map[string]any{
-			{"Code": "en-US", "Label": "English", "Active": true},
-			{"Code": "ja-JP", "Label": "日本語", "Active": false},
+		"Scope": map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
+		"Translations": map[string]any{"ProjectID": "pr1", "ProductID": "p1", "Lang": "en-US", "SourceLang": "zh-CN", "Langs": []string{"en-US", "ja-JP"}, "Done": 1, "Total": 2,
+			"Groups": []map[string]any{{"EntityType": "product", "EntityID": "p1", "EntityName": "商品", "Rows": []map[string]any{
+				{"Field": "name", "Context": "product.name", "Source": "夏季衬衫", "Target": "Summer Shirt", "SourceHash": "h1", "Engine": "manual"},
+				{"Field": "subtitle", "Context": "product.subtitle", "Source": "纯棉", "Target": "", "SourceHash": "h2", "Engine": ""},
+			}}},
 		},
-		"Done": 1, "Total": 2, "NoTargetLang": false, "Errors": []map[string]any{},
-		"ProjectOptions": []map[string]any{{"ID": "pr1", "Name": "主站", "Selected": true}},
-		"Groups": []map[string]any{{
-			"TitleKey": "x", "TitleFallback": "商品", "Title": "商品", "Subtitle": "product.name",
-			"Rows": []map[string]any{
-				{"FieldLabel": "商品名", "Context": "product.name", "Source": "夏季衬衫",
-					"Target": "Summer Shirt", "SourceHash": "h1", "Rich": false,
-					"Translated": true, "Engine": "manual", "EngineTone": "success"},
-				{"FieldLabel": "副标题", "Context": "product.subtitle", "Source": "纯棉",
-					"Target": "", "SourceHash": "h2", "Rich": false,
-					"Translated": false, "Engine": "", "EngineTone": "mute"},
-			},
-		}},
 	})
 }
 

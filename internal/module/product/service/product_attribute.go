@@ -171,17 +171,20 @@ func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAtt
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.m.GetAttribute(ctx, req.ID, projectID)
-	if err != nil {
-		return nil, mapNotFound(err)
-	}
 	values := sanitizeAttributeValues(req.Values)
-	e.Values = encodeAttributeValues(values)
-	e.UpdatedAt = time.Now().UTC()
+	var e *productmodel.ProductAttributeEntity
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
 		}
+		// 全列保存必须基于锁内现值，避免保存属性值覆盖并发修改的组名或开关。
+		locked, lerr := s.m.GetAttributeForUpdateTx(ctx, tx, req.ID, projectID)
+		if lerr != nil {
+			return mapNotFound(lerr)
+		}
+		e = locked
+		e.Values = encodeAttributeValues(values)
+		e.UpdatedAt = time.Now().UTC()
 		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}

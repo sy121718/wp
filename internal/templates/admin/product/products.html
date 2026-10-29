@@ -1,18 +1,5 @@
-{* admin/products.html — 商品管理：商品列表（issue #8） *}
-{* 职能与边界（评审见 ~/.dsh/skills/admin-ui-logic §1 / §7）：本页只回答「有哪些商品」。
-   变体与评分是**某个商品的子资源**，连同原编辑抽屉的四个商品级表单，已整块移到
-   admin/product_detail.html（点名称进入）—— 列表页不再承载实体详情：
-   三张表平铺时，变体表与评分表是与商品表错位的两份长表，改一个商品要跨三处找入口。
-   版式细则（全站列表页同一骨架，§7）：
-     · 页头一行：标题 + ? 悬浮说明；右侧工程选择与主行动同行（§2.2）；
-     · 正文零说明文字：领域导览整段进 .help 悬浮，默认 0 高度（§2.1）；
-     · 筛选栏在列表卡内：关键词 + 状态 + 查询 / 重置，服务端渲染、无 JS 也能用；
-     · 列表是标准 data-table + 末列操作（.col-actions），分页条在表格之后；
-     · 一列一个概念、单元格放值不拼句子：分类与品牌各占一列，空值是 —（§3）；
-     · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套，塞进 td 会被解析器提前闭合表格）。
-   操作列只有三个动作：编辑（进编辑页，多语言入口在那边）、预览、删除 ——
-   「详情」由名称列承担，不在操作列重复一个同义入口。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{block pageTitle()}}{{ .["t"]("admin.products.title", "商品") }}{{end}}
@@ -20,11 +7,11 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{selectedProject := .SelectedProject}}
+{{selectedProject := .Scope.ProjectID}}
 {{warehouseOptions := .WarehouseOptions}}
-{{fKeyword := .FilterKeyword}}
-{{fStatus := .FilterStatus}}
-{{fPage := .Page}}
+{{fKeyword := .Query.Keyword}}
+{{fStatus := .Query.Status}}
+{{fPage := .Result.Page}}
 {{canCreate := isset(.Buttons["product.create"])}}
 {{canDelete := isset(.Buttons["product.delete"])}}
 {{canUpdate := isset(.Buttons["product.update"])}}
@@ -40,18 +27,18 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
+            {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/products">
                 <label class="sr-only" for="products-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
                 <select class="form-select" id="products-project" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
+                    {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
             </form>
             {{end}}
             {{if canCreate}}
-<a class="btn btn-primary" href="/admin/products/new">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
+<a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
             {{end}}
         </div>
     </header>
@@ -59,8 +46,6 @@
     <section class="card list-card">
         <h2 class="card-title">{{ .["t"]("admin.products.list.title", "商品列表") }}</h2>
 
-        {* 筛选栏：普通 GET 表单（零 JS），提交后条件留在控件上；分页链接由服务端带上同样
-           的条件（productListFilterURL），翻页不会把筛选丢掉。 *}
         <div class="filter-bar">
             <form method="get" action="/admin/products" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
@@ -72,7 +57,7 @@
                 <div class="filter-field">
                     <label for="products-filter-status">{{ .["t"]("admin.products.col.status", "状态") }}</label>
                     <select class="form-select" id="products-filter-status" name="status">
-                        {* 状态三档是商品域固定枚举，选项形状写在模板里；选中态比筛选值。 *}
+
                         <option value=""{{if fStatus == ""}} selected{{end}}>{{tr("admin.products.status.all", "全部状态")}}</option>
                         <option value="draft"{{if fStatus == "draft"}} selected{{end}}>{{tr("admin.products.status.draft", "草稿")}}</option>
                         <option value="published"{{if fStatus == "published"}} selected{{end}}>{{tr("admin.products.status.published", "已上架")}}</option>
@@ -86,19 +71,6 @@
             </form>
         </div>
 
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头是「这个列表有哪些列」的唯一说明，
-           筛出 0 行就把它一起藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
-           空态落在 tbody 的整行里（colspan = 实际列数）；<form> 依旧包住 <table>
-           （批量动作与勾选框必须同属一个 form，见 permissions.html 的同一手法）。 *}
-        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
-           提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
-           操作列里的按钮都带 form="<id>"，各自归属自己的隐藏表单、不会误触发这个批量表单：
-           单行删除的隐藏表单声明 data-write-url（走 ui/write-base.js），
-           预览的隐藏表单是原生 POST + target="_blank"（只读、开新标签，不需要基座）。 *}
-        {* 批量删除走 ui/write-base.js（与单行删除同一个基座）：结论不再靠整页提示页，
-           而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
-           keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
-           点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
         <form data-write="bulk" data-write-url="/api/product/bulk-delete" data-list-bulk data-write-reload
               data-write-extra="projectId"
               data-msg-none-selected="{{tr("admin.products.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
@@ -108,16 +80,14 @@
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint badge" role="status" hidden></p>
             <p class="form-hint" data-write-status role="status" hidden></p>
-            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if canDelete || canUpdate}}{{if len(.Products) > 0}}
+
+            {{if canDelete || canUpdate}}{{if len(.Result.Items) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {{if canDelete}}
                 {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.products.bulkDeleteConfirm", "删除选中的商品及其全部变体？"), danger=true)}}
                 {{end}}
                 {{if canUpdate}}
-                {* 按规则改价（本批）：定价工具的入口收进批量操作区 —— 它作用的对象本来就是
-                   「选出来的这几个商品」。按钮只负责开抽屉（type=button，不提交批量表单），
-                   规则参数在抽屉里填，提交方式见页尾 tpl-product-pricing 的说明。 *}
+
                 <button type="button" class="btn btn-sm" data-drawer-open="#tpl-product-pricing" data-drawer-title="{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}">{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}</button>
                 {{end}}
             {{yield bulkBarClose()}}
@@ -143,15 +113,12 @@
                 </tr>
                 </thead>
                 <tbody>
-                {{if len(.Products) == 0}}
-                {* 空态整行：colspan = 12 个实际渲染的列（勾选列 + 10 个业务列 + 操作列）。
-                   勾选列在空态下**不渲染**行内控件 —— 没有行可勾，放一个 name="ids" 的
-                   控件只会让人以为还能选（表头的全选框由列本身承担，与已修好的权限页一致）。 *}
+                {{if len(.Result.Items) == 0}}
+
                 <tr><td colspan="12" class="cell-wrap">
                     <div class="empty-state">
                         {{if fKeyword != "" || fStatus != ""}}
-                        {* 有筛选条件却零结果：说清「是筛出来的空」，并给一条回到全部的路 ——
-                           与「这个工程还没有商品」是两回事，文案混用会让人以为商品丢了。 *}
+
                         <p class="empty-title">{{ .["t"]("admin.products.list.emptyFilteredTitle", "没有符合条件的商品") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.products.list.emptyFiltered", "换个关键词或状态再试，也可以清掉筛选看全部商品。") }}</p>
                         <div class="empty-actions">
@@ -162,79 +129,50 @@
                         <p class="empty-desc">{{ .["t"]("admin.products.list.empty", "新建一个商品，系统会自动生成它的第一个变体。") }}</p>
                         {{if canCreate}}
                         <div class="empty-actions">
-                <a class="btn btn-primary" href="/admin/products/new">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
+                <a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
                         </div>
                         {{end}}
                         {{end}}
                     </div>
                 </td></tr>
                 {{else}}
-                {{range _, p := .Products}}
+                {{range _, p := .Result.Items}}
                 <tr>
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    {* 名称列只回答「叫什么」：属性引用是商品结构（属于详情），不放这一列。
-                       名称本身就是进详情的入口 —— 操作列不再重复一个「详情」按钮。 *}
+
                     <td><a class="row-title-link" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}"><strong>{{p.Name}}</strong></a></td>
-                    {* 状态徽章：从同一份状态选项里取该值的**词条事实**再取词（避免在模板里另写一份
-                       状态→文案的映射）；取不到（值不在选项里、或该条没有事实字段）时退回状态原值。 *}
+
                     <td>{{st := p.Status}}{{sl := st}}{{if st == "draft"}}{{sl = tr("admin.products.status.draft", "草稿")}}{{else if st == "published"}}{{sl = tr("admin.products.status.published", "已上架")}}{{else if st == "archived"}}{{sl = tr("admin.products.status.archived", "已下架")}}{{else}}{{sl = tr("admin.products.status.all", "全部状态")}}{{end}}<span class="badge">{{sl}}</span></td>
                     <td>{{p.VariantCount}}</td>
                     <td>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</td>
-                    {* 库存列（docs/14 §1.4）：三态 + 分仓明细。
-                       · 任一仓不跟踪 → ∞（**绝不求和** —— 求和等于把无限当 0，页面会显示成有货）；
-                       · 全部跟踪 → 各仓数量之和（0 就显示 0）；
-                       · 任何仓都没有这一行 → 未入库。
-                       展开用 details/summary 而不是纯 hover：触屏与键盘都能开（同一份数据两种入口），
-                       鼠标用户点一下也一样。 *}
+
                     <td>
-                        {{if isset(p.Stock)}}
-                        {{stock := p.Stock}}
                         <details class="stock-cell">
-                            <summary aria-label="{{ .["t"]("admin.products.stock.expand", "展开分仓库存") }}">
-                                {{if stock.State == "infinite"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.products.stock.infinite", "∞ 无限"))}}
-                                {{else}}
-                                    {{if stock.State == "tracked"}}{{stock.Total}}
-                                    {{else}}<span class="text-mute">{{ .["t"]("admin.products.stock.none", "未入库") }}</span>{{end}}
-                                {{end}}
+                            <summary aria-label="{{tr("admin.products.stock.expand", "展开分仓库存")}}">
+                            {{if p.StockState == "infinite"}}{{tr("admin.products.stock.infinite", "∞ 无限")}}{{else if p.StockState == "tracked"}}{{p.StockTotal}}{{else}}{{tr("admin.products.stock.none", "未入库")}}{{end}}
                             </summary>
-                            {{if isset(stock.Rows)}}
-                            {{if len(stock.Rows) > 0}}
                             <ul class="stock-rows">
-                                {{range _, r := stock.Rows}}
-                                <li>
-                                    <span class="stock-wh">{{r.WarehouseLabel}}</span>
-                                    {{if r.State == "infinite"}}<span>{{ .["t"]("admin.products.stock.infiniteShort", "∞") }}</span>
-                                    {{else}}
-                                        {{if r.State == "tracked"}}<span>{{r.Quantity}}</span>
-                                        {{else}}<span class="text-mute">{{ .["t"]("admin.products.stock.none", "未入库") }}</span>{{end}}
-                                    {{end}}
-                                </li>
-                                {{end}}
+                            {{range _, w := warehouseOptions}}
+                                {{state := "none"}}{{quantity := 0}}
+                                {{range _, stock := p.StockWarehouses}}{{if stock.WarehouseID == w.ID}}{{state = stock.State}}{{quantity = stock.Quantity}}{{end}}{{end}}
+                                <li><span class="stock-wh">{{w.Name}}（{{w.Code}}）</span>
+                                {{if state == "infinite"}}<span>{{tr("admin.products.stock.infiniteShort", "∞")}}</span>{{else if state == "tracked"}}<span>{{quantity}}</span>{{else}}<span class="text-mute">{{tr("admin.products.stock.none", "未入库")}}</span>{{end}}</li>
+                            {{end}}
                             </ul>
-                            {{end}}
-                            {{end}}
                         </details>
-                        {{else}}<span class="text-mute">—</span>{{end}}
                     </td>
-                    {* 分类列只放一个值：主分类（没设主分类时退回挂载的第一个分类），
-                       其余分类数用 +N 徽章跟在后面 —— 不把「挂载 N 个分类 · 主分类 X」拼成句子。 *}
-                    <td>{{if isset(p.CategoryCell)}}{{if p.CategoryCell != ""}}{{p.CategoryCell}}{{if isset(p.CategoryOthers)}}{{if p.CategoryOthers > 0}} <span class="badge badge-mute">+{{p.CategoryOthers}}</span>{{end}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{end}}</td>
-                    <td>{{if isset(p.BrandName)}}{{if p.BrandName != ""}}{{p.BrandName}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    {* 标签列回答「这个商品挂了哪些标签」：列的是标签名（多于 3 个退化成数量），
-                       不写「手工 N · 自动 N」—— 读这一列的人不关心来源分解，那是标签页的问题。 *}
-                    {* 标签列只放名字：多于 3 个时退化成数量词条（词条自己决定「{n} 个」/「{n} tags」的语序），
-                       拼接与取词都在模板这一侧完成 —— 后端只给 p.TagNames 这个事实。 *}
-                    <td>{{if isset(p.TagNames)}}{{if len(p.TagNames) > 3}}{{tn("admin.products.list.tagCount", "{n} 个", map("n", len(p.TagNames)))}}{{else if len(p.TagNames) > 0}}{{range i, n := p.TagNames}}{{if i > 0}}、{{end}}{{n}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    {* 平均分与评分条数分列；无评分不同于 0 分，平均分显示空值，条数保留 0。 *}
-                    <td>{{if p.HasRating}}{{p.RatingAvg}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td>{{p.RatingCount}}</td>
-                    {* 操作列只留在这一行才做的事：
-                       · 编辑 —— 商品基本字段与多语言的入口（详情页是子资源维护页，不做基本字段编辑）；
-                       · 预览 —— 按当前详情页模板渲染前台效果；
-                       · 删除。
-                       「详情」不在这一列重复：名称列就是它（同一维度不给两个入口）。 *}
+
+                    {{categoryName := ""}}{{categoryCount := 0}}
+                    {{range _, c := .Categories}}{{range _, id := p.CategoryIDs}}{{if c.ID == id}}{{categoryCount = categoryCount + 1}}{{if categoryName == "" || c.ID == p.PrimaryCategoryID}}{{categoryName = c.Name}}{{end}}{{end}}{{end}}{{end}}
+                    <td>{{if categoryName != ""}}{{categoryName}}{{if categoryCount > 1}} <span class="badge badge-mute">+{{categoryCount - 1}}</span>{{end}}{{else}}—{{end}}</td>
+                    {{brandName := ""}}{{range _, b := .Brands}}{{if b.ID == p.BrandID}}{{brandName = b.Name}}{{end}}{{end}}
+                    <td>{{if brandName != ""}}{{brandName}}{{else}}—{{end}}</td>
+                    <td>{{if len(p.TagIDs) > 3}}{{tn("admin.products.list.tagCount", "{n} 个", map("n", len(p.TagIDs)))}}{{else}}{{tagCount := 0}}{{range _, t := .Tags}}{{range _, id := p.TagIDs}}{{if t.ID == id}}{{if tagCount > 0}}、{{end}}{{t.Name}}{{tagCount = tagCount + 1}}{{end}}{{end}}{{end}}{{if tagCount == 0}}—{{end}}{{end}}</td>
+                    <td>{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{else}}—{{end}}</td>
+                    <td>{{p.Rating.RatingCount}}</td>
+
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.edit", "编辑") }}</a>
                         <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("admin.products.row.preview", "预览") }}</button>
@@ -247,16 +185,12 @@
             </table>
         </div>
         </form>
-        {{include "../partials/pagination.html"}}
+        {{include "catalog_pagination.html" .}}
     </section>
 
-    {* ==== 行内表单：全部放表格外，按钮用 form="<id>" 关联 ==== *}
-    {* 商品接入 ui/write-base.js 的第一个动作：删除走 JSON 接口，失败原因落在结果区、
-       成功整页刷新（列表的派生列由服务端重算，就地改 DOM 会同源不上）。
-       data-write-host 与结果区是这条链路的声明点，别的行内表单后续也往这里接。 *}
     <div data-write-host>
     <p class="form-hint" data-write-status role="status" hidden></p>
-    {{range _, p := .Products}}
+    {{range _, p := .Result.Items}}
     <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" target="_blank">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -265,49 +199,20 @@
     <form data-write="delete" data-write-url="/api/product/delete" id="product-del-{{p.ID}}" class="hidden-form" data-write-reload
           data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
-        {* projectId 必须点名带上：service 的 resolveProjectID 在它为空的只肯走「唯一工程」兜底，
-           多工程部署下直接拒。csrf_token 改走 X-CSRF-Token 头，隐藏域不再需要。 *}
+
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
     </form>
     {{end}}
     </div>
 
-    {* 建表单抽屉（`tpl-product-create`）已删除：新建商品是重表单（15 字段 + 属性组多选 +
-       多仓多选 + 模板选择），已改为独立整页 /admin/products/new，本页两个入口都是整页链接。
-       这个 template 没有任何 `data-drawer-open` 指向它 —— 属于「渲染了却永远打不开」的死块，
-       而它每次渲染都要白付一份完整表单（含仓库 SKU 候选 datalist 与全部属性组）的开销。
-       将来若要把新建放回抽屉，注意同时恢复 handler 侧的 `InDrawer` 键与片段里的 inDrawer
-       隐藏域 —— 提交失败重渲染时靠那个隐藏域还原抽屉形态（见 product_create_form.html）。 *}
-
-    {* ===== 按规则改价抽屉：勾选若干商品后按内置规则批量改价 =====
-       为什么不能用普通表单提交：抽屉内容被克隆到 document 级（见 ui/drawer.js），
-       而勾选框在**批量表单**里 —— 原生提交一个字都带不上来。所以这里声明
-       data-write-ids-scope="[data-list-bulk]" 把勾选的 ids 指回那个表单，
-       提交由 ui/write-base.js 发 JSON（data-write-url + data-write=bulk），
-       结论就地写进 data-write-status 区 —— 不再有 HX-Redirect 那种整页跳转技巧。
-       这里**不写 data-confirm**：把「售价会立刻写库」作为可见提示行呈现，
-       抽屉本身的填写与点击就是那次确认。
-       「规则 + 尾数」两行与定价工具页共用同一片段，字段名不会分叉。
-       列表筛选（keyword / status / page）不随请求发送：结论行就地显示，整页刷新自然保留筛选。 *}
     {{if canUpdate}}
     <template id="tpl-product-pricing">
-        {* ids 在**另一个表单**里（批量表单），抽屉内容被克隆到 document 级 —— 所以这里靠
-           data-write-ids-scope 指回去。不写这一条，基座在本表单内收 ids 恒为空数组，
-           症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
-        {* 走 htmx 原生提交（formdata）。两个关键声明：
-             · data-write-ids-scope：ids 在**另一个表单**（批量表单）里，抽屉内容被克隆到
-               document 级 —— 不指回去的话，在抽屉内找 [name=ids] 恒为空，
-               症状是「点了应用调价什么也没发生」而提示只说「没勾选任何项」；
-             · data-reload-on-ok：调价后整页刷新（售价与派生列由服务端重算）。
-           规则字段（ruleType / multiplier / amount / margin / rounding）来自
-           include 的 pricing_rule_fields.html，formdata 会一并提交，不需要额外声明。 *}
+
         <form data-write="bulk" data-write-url="/api/product/bulk-pricing" class="form-stack" data-write-reload
               data-write-ids-scope="[data-list-bulk]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            {* 批量调价的结论不再用页面上的结论区：迁到 htmx 后成功直接刷新、
-               被拒由 toast 说原因（X-Message 头）。原来的 data-write-flash-target
-               是「刷新前存结论、落地后显示」那套的落点，本页已不需要。 *}
+
             <p class="form-hint" data-write-status role="status" hidden></p>
             <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
             <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>
@@ -323,7 +228,5 @@
     </template>
     {{end}}
 
-
-<script src="/static/js/product-create-form.js" defer></script>
 </div>
 {{end}}

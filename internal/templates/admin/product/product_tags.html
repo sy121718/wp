@@ -1,30 +1,20 @@
-{* admin/product_tags.html — 商品标签：手工标签 + 内置规则自动标签（issue #11） *}
-{* 命中商品按需加载（审计 PERF-02）：首屏只给「命中 N 个商品」的数量，
-   点它才用 HTMX 取一页商品（片段端点 /admin/product-tags/hits）—— 首屏 SQL 条数
-   不随标签数增长，命中数据也不会把首屏撑大。 *}
-{* 列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §7）：
-     · 页头一行：标题 + ? 悬浮说明；右侧工程选择、重算与主行动同行；
-     · 正文零说明文字（原 intro / 规则口径 / 新建表单旁的解释整段进 .help 悬浮）；
-     · 标签列表是标准 data-table + 末列操作；命中关系（标签 × 商品）是一张平坦表格；
-     · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
-{* 多端适配：表单行用公共 form-inline，表格在可聚焦的 table-wrap 内横向滚动，
-   窄屏折行不撑破卡片；控件全是原生 input/select/checkbox + label ——
-   鼠标点选、触屏点按、键盘（Tab 进组、空格勾选、回车提交）都可用。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
+
+
+
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}{{tnf := .["tn"]}}
-{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
-{* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
-   混在一起会让运营以为是标签被删了。 *}
-{{selectedProject := .SelectedProject}}
+
+
+{{selectedProject := .Scope.ProjectID}}
 {{ruleTypes := .RuleTypes}}
-{* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）。 *}
-{{fKeyword := .["FilterKeyword"]}}
+
+{{fKeyword := .Query.Keyword}}
 {{canCreate := isset(.Buttons["product.tag_create"])}}
 {{canUpdate := isset(.Buttons["product.tag_update"])}}
 {{canDelete := isset(.Buttons["product.tag_delete"])}}
@@ -40,11 +30,11 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
+            {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-tags">
                 <label class="sr-only" for="tags-project">{{ .["t"]("admin.product_tags.projectAria", "站点工程") }}</label>
                 <select class="form-select" id="tags-project" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
+                    {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
@@ -57,18 +47,15 @@
         </div>
     </header>
 
-    {* 页级重算表单：与上面的「重算本工程全部自动标签」按钮用 form="<id>" 关联。
-       action 上的 ListQuery 把筛选上下文随 query 提交，提示页回跳时恢复。 *}
-    {* 全量重算：htmx 原生提交（formdata），成功后整页刷新 —— 命中数与「上次重算」时间
-       都由服务端算，就地改 DOM 会同源不上。 *}
+
+
     <form data-write="custom" data-write-url="/api/product/tag/recalc" id="tag-recalc-all" class="hidden-form" data-write-reload>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
 
     <section class="card card-body">
         <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.title", "标签列表") }}</h2>
-        {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
-           分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。 *}
+
         <div class="filter-bar">
             <form method="get" action="/admin/product-tags" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
@@ -84,28 +71,18 @@
             </form>
         </div>
 
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头是「这个列表有哪些列」的唯一说明，
-           筛出 0 行就把它一起藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
-           空态落在 tbody 的整行里（colspan = 实际列数）；<form> 依旧包住 <table>。 *}
-        {* 空态分两档（审计 D9 的同一手法）：筛选无结果 → 说清「是筛出来的空」并给重置；
-           工程里真的没有标签 → 指到本页页头那个新建抽屉。 *}
-        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的。
-           勾选列只加在标签表上；下面的「命中的商品」是标签 × 商品的关系表（只读展示），
-           它的删除入口属于商品，不在这里批量。 *}
-        {* 表单不声明 data-write-url：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
-           按钮优先、表单兜底）。data-list-bulk 是作用域锚点。 *}
+
+
+
+
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            {* 批量结果不再用页面上的结论区：迁移到 htmx 后成功直接刷新、被拒由 toast 说原因。
-               原来的 data-write-flash-target 是「刷新前存结论、落地后显示」那套的落点，
-               本页已不需要（留着会是一块永远为空的区域，配对测试会报）。 *}
-            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if canDelete}}{{if len(.Tags) > 0}}
+
+
+            {{if canDelete}}{{if len(.Result.Items) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖），
-                   装不下一串 data-write-* 声明。 *}
-                {* 批量是整批一个事务、要么全成要么全败（AGENTS「写操作」节）：后端锁不到某条就
-                   整批不删、明细放 data.items —— 所以前端不做逐条移除，成功刷新、被拒由 toast 说原因。 *}
+
+
                 <button data-write="bulk" data-write-url="/api/product/tag/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload data-write-confirm="{{tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
@@ -128,12 +105,11 @@
                 </tr>
                 </thead>
                 <tbody>
-                {{if len(.Tags) == 0}}
-                {* 空态整行：colspan = 8 个实际渲染的列（勾选列 + 标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 + 操作）。
-                   勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
+                {{if len(.Result.Items) == 0}}
+
                 <tr><td colspan="8" class="cell-wrap">
                     <div class="empty-state">
-                        {{if isset(.Filtered) && .Filtered}}
+                        {{if .Query.Keyword != ""}}
                         <p class="empty-title">{{ .["t"]("admin.product_tags.list.emptyFilteredTitle", "没有匹配的标签") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                         <div class="empty-actions">
@@ -151,36 +127,31 @@
                     </div>
                 </td></tr>
                 {{else}}
-                {{range _, t := .Tags}}
+                {{range _, t := .Result.Items}}
                 <tr>
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{t.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
                     <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td><span class="badge badge-{{if t.IsRule}}info{{else}}mute{{end}}">{{if t.IsRule}}{{tr("admin.product_tags.kind.rule", "自动")}}{{else if t.Kind == "manual"}}{{tr("admin.product_tags.kind.manual", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
-                    <td>{{if t.IsRule}}{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    {* 命中数按需展开（审计 PERF-02）：首屏只给数量（一次批量聚合算出），
-                       点它才去片段端点取这一页商品 —— 首屏 SQL 条数与标签数无关，
-                       命中数据也不会把首屏撑大。0 个商品时没有可看的内容，不做成按钮。 *}
+                    <td><span class="badge badge-{{if t.Kind == "rule"}}info{{else}}mute{{end}}">{{if t.Kind == "rule"}}{{tr("admin.product_tags.kind.rule", "自动")}}{{else if t.Kind == "manual"}}{{tr("admin.product_tags.kind.manual", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
+                    <td>{{if t.Kind == "rule"}}{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+
                     <td>
                         {{if t.ProductCount > 0}}
-                        {* id 是 hx-swap-oob 的落点：展开片段翻页时把「当前命中的真实数量」写回来。
-                           数量会在别处变动（解绑商品、删商品），而这个按钮是**首屏渲染的静态值** ——
-                           用户拿它判断「还有多少要处理」，过时了就会让人反复点开同一个空标签。 *}
+
                         <button type="button" class="btn btn-sm" id="tag-hit-count-{{t.ID}}"
                                 hx-get="/admin/product-tags/hits?project={{selectedProject}}&id={{t.ID}}&page=1"
                                 hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
                         {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
                     </td>
-                    {* RecalcAt 是数据（时间值，显示格式由 formatTime 决定）；「未重算过」这句话只在这里出现 ——
-                       后端不再带文案事实。 *}
-                    <td>{{if t.RecalcAt}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
+
+                    <td>{{if t.RecalcAt.TimeOrZero()}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                         {{end}}
-                        {{if t.IsRule}}
+                        {{if t.Kind == "rule"}}
                         <button data-requires-js hidden type="submit" form="tag-recalc-{{t.ID}}" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.recalc", "重算") }}</button>
                         {{end}}
                         {{if canDelete}}
@@ -194,27 +165,14 @@
             </table>
         </div>
         </form>
-        {* 分页条（审计 D13）：全量渲染改成按页渲染，页高不再随标签数无上限增长
-           （命中数仍由 service 的一次批量聚合给出，不受分页影响）；
-           单页或空数据时 handler 不注入 Pagination 事实（HasPagination() 为假），片段自然不渲染。 *}
-        {{include "../partials/pagination.html"}}
+
+        {{include "catalog_pagination.html"}}
     </section>
 
-    {* 命中商品展开区（审计 02-L P1-7）：**卡片外壳在片段里**
-       （partials/product_tag_hits.html 自带 .card + .card-title + 内容），页面上只留一个
-       空的锚点容器 —— 点开之前页面上没有任何与命中商品有关的视觉元素，不再是一张
-       「只有标题 + 一行提示」的空壳卡（admin-ui-logic §1：当前数据下没有内容的控件不出现）；
-       内容到了才由片段把整张卡带出来。
-       为什么不做 tabs（评审已否决）：hx-target 指的正是这个容器，卡片若变成 hidden 的 tab
-       面板，HTMX 会把商品行换进看不见的地方 —— 用户点了「N 个商品」什么也没发生，
-       要救它就得再加一段「响应到达后切 tab」的 JS 联动，成本高于收益。
-       三条 aria 属性必须留在**页面上这个空容器**上，不能搬进片段：片段每次替换都会把播报
-       区域一起重建，读屏就不再播报换入的内容（role / aria-live / aria-label 缺一即一次
-       静默回归）。容器不随 .Tags 有无而显隐 —— 它是 hx-target 的落点，无标签时页面上本就
-       没有任何 hx-get 按钮，而这个无类、无文本的空 div 既不占视觉也不产生朗读内容。 *}
+
     <div id="tag-hits-panel" role="region" aria-live="polite" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}"></div>
 
-    {* 只读参考：内置规则类型（要查的时候才展开，不占正文版面）。 *}
+
     <details class="section-fold card">
         <summary>
             <span class="fold-title">{{ .["t"]("admin.product_tags.rules.title", "内置规则类型") }}</span>
@@ -238,11 +196,10 @@
         </div>
     </details>
 
-    {* 行内表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
-    {{range _, t := .Tags}}
-    {{if t.IsRule}}
-    {* mode=form 发整张表单（projectId + tagId），成功后整页刷新：命中数与「上次重算」
-       都是服务端算出来的，就地改 DOM 会与列表里的同一批数字不同源。 *}
+
+    {{range _, t := .Result.Items}}
+    {{if t.Kind == "rule"}}
+
     <form data-write="custom" data-write-url="/api/product/tag/recalc" id="tag-recalc-{{t.ID}}" class="hidden-form" data-write-reload>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
@@ -257,29 +214,14 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-tag-edit-{{t.ID}}">
-        {{if isset(t.EditForm)}}{{include "product_tag_form.html" t.EditForm}}{{else}}
-        {* 兜底形态：抽屉数据没装配（读取失败页）时也必须是**能用的**表单 —— 指向已删除的
-           页面 POST 会让按钮 404，而失败页上没人会去查它为什么没反应。 *}
-        <form data-write="update" data-write-url="/api/product/tag/update" class="form-stack" data-write-close="[data-drawer]">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="id" value="{{t.ID}}">
-            <input class="form-input" name="name" value="{{t.Name}}" required>
-            <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
-        </form>
-        {{end}}
+        {{include "product_tag_form.html" map("Entity", t, "Project", selectedProject, "RuleTypes", ruleTypes, "t", tr, "tf", .["tf"])}}
     </template>
     {{end}}
     {{end}}
 
     {{if canCreate}}
     <template id="tpl-tag-create">
-        {{if isset(.TagCreateForm)}}{{include "product_tag_form.html" .TagCreateForm}}{{else}}
-        <form data-write="create" data-write-url="/api/product/tag/create" class="form-stack" data-write-close="[data-drawer]">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input class="form-input" name="name" required>
-            <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>
-        </form>
-        {{end}}
+        {{include "product_tag_form.html" map("Project", selectedProject, "RuleTypes", ruleTypes, "t", tr, "tf", .["tf"])}}
     </template>
     {{end}}
 </div>

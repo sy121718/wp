@@ -18,14 +18,14 @@
 {{block topbarTitle()}}{{ .["t"]("admin.products.publish.title", "发布记录") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
-{{selectedProject := .SelectedProject}}
-{{siteName := .SiteName}}
-{{records := .Records}}
-{{total := .Total}}
-{{ready := .Ready}}
+{{selectedProject := .Scope.ProjectID}}
+{{siteName := ""}}{{range _, p := .Scope.Projects}}{{if p.ID == selectedProject}}{{siteName = p.Name}}{{end}}{{end}}
+{{records := .Records.Records}}
+{{total := .Records.Total}}
+{{ready := .Records.Available}}
 {{canHistory := isset(.Buttons["product.publish_attempts"])}}
-{{fKeyword := .FilterKeyword}}
-{{fStatus := .FilterStatus}}
+{{fKeyword := .Query.Keyword}}
+{{fStatus := .Query.Status}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -39,11 +39,11 @@
             <p class="page-sub">{{tr("admin.products.publish.programLead", "发布的具体动作在多语言的")}}<a href="/admin/product-translations?project={{selectedProject}}">{{tr("admin.products.publish.programLink", "翻译与发布")}}</a>{{tr("admin.products.publish.programTail", "页；模板绑定在商品的编辑页。本页与它们读同一份发布真源。")}}</p>
         </div>
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
+            {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/products/publish-records">
                 <label class="sr-only" for="pub-project">{{tr("admin.inventory.field.project", "站点工程")}}</label>
                 <select class="form-select" id="pub-project" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
+                    {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
@@ -208,7 +208,7 @@
         </table>
         </div>
         {* 分页条基址带当前筛选（工程 / 关键词 / 状态）：翻页不丢条件。 *}
-        {{include "../partials/pagination.html"}}
+        {{include "catalog_pagination.html" map("Result", map("Total", .Records.Total, "Page", .Records.Page, "Size", .Records.Limit), "req_path", .["req_path"], "t", tr)}}
     </section>
     {{end}}
 
@@ -226,7 +226,7 @@
        返回同一批前缀，扩展按 data-json-key 去重后追加，连点不会插出重复行。 *}
     <template id="tpl-publish-attempt">
         <div class="ph-row" data-row>
-            <span class="ph-time" data-field="createdAtText"></span>
+            <span class="ph-time" data-field="createdAt" data-field-format="datetime"></span>
             <span class="ph-outcome">
                 <span data-when="success" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.publish.history.ok", "成功"))}}</span>
                 <span data-when="failed" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "danger", "label", tr("admin.products.publish.history.failed", "失败"))}}</span>
@@ -242,13 +242,13 @@
                 <span data-when="auto_rebuild" data-when-field="trigger">{{tr("admin.products.publish.history.t.auto", "自动重建")}}</span>
             </span>
             <span class="ph-who" data-field="operatorName"></span>
-            <span class="ph-langs" data-field="langsText"></span>
+            <span class="ph-langs" data-field="langs" data-field-format="list"></span>
             <span class="ph-artifact" data-field="artifactHash"></span>
             <span class="ph-cost">
-                <span data-field="durationText"></span>
-                <span data-field="attemptsText"></span>
+                <span data-field="durationMs" data-field-format="duration"></span>
+                <span data-field="attempts" data-field-min="2" data-field-suffix="x"></span>
             </span>
-            <span class="ph-error" data-field="errorText"></span>
+            <span class="ph-error" data-when="failed" data-when-field="outcome">{{tr("admin.products.publish.history.failed", "失败")}}</span>
         </div>
     </template>
 

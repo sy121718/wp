@@ -447,8 +447,8 @@ func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
 	// 用别的工程的标签 id 查本工程：直接「标签不存在」，不是「查到 0 条」（后者会让
 	// 「这个标签是空的」与「这个标签不属于你」看起来一样）。
 	rec = httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=1", projectA, tagB))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("跨工程标签应回 200 片段，实际 %d", rec.Code)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("跨工程标签应回 JSON 404，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "标签不存在") {
 		t.Fatalf("跨工程标签应提示「标签不存在」，实际：%s", body)
@@ -457,7 +457,7 @@ func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
 	// 空工程（无标签、无商品）拿别的工程的标签 id 也一样：不泄露任何商品。
 	projectC := f.newProject(t, "丙工程")
 	rec = httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=1", projectC, tagA))
-	if body := rec.Body.String(); !strings.Contains(body, "标签不存在") || len(fragmentProductNames(body)) != 0 {
+	if body := rec.Body.String(); rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(body, "标签不存在") || len(fragmentProductNames(body)) != 0 {
 		t.Fatalf("空工程查别的工程的标签应是「标签不存在」且不泄露任何商品：%s", body)
 	}
 }

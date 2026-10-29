@@ -1,20 +1,5 @@
-// product_project_scope_transmit_test.go —— 两处「调用方手里有工程 id，却没交给下游取数一跳」
-// 的工程作用域判据（P170）。
-//
-// 同一缺陷形态在多工程部署下有两种后果：
-//
-//	· 取商品那一跳不带作用域 → product 侧 resolveProjectID 在「显式工程为空且工程数 != 1」时
-//	  回 ErrInvalidParam：整页 400（商品详情页 / 捆绑配置页）或评分退化成空态；
-//	· **静默降级**（derr 被刻意忽略的那两跳）：属性组读不回来 → 规格文本只剩 optionKey、
-//	  来源属性的勾选清单整块变空 —— 页面 200、不报错、日志干净，用户只看到「没有可勾选属性」。
-//
-// 为什么既有用例照不出：它们都跑在**单工程**夹具上，兜底解析出的那一个恰好就是唯一的那个，
-// 「传了」与「没传」行为等价。本文件在 variantListFixture 之上再建第二个工程（与
-// product_detail_template_project_scope_test.go 同法），漏传立刻变成可观测的差异。
-//
-// 断言的是「多工程下必须成功且内容完整」，不是只看状态码：变体预览那条断言规格文本是
-// **属性组名 + 值标签**（「颜色 红」）而不是退化后的原始 key（「color red」）——
-// 退化时这条断言不会命中。
+// 多工程下，商品查询与变体预览必须显式传递工程范围。
+// 预览交付原始组合值；页面交付同工程属性定义，规格名称由前端组合。
 package feature
 
 import (
@@ -33,11 +18,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
-
-// scopeTransmitSpec 规格文本的期望值：属性组名 + 值标签。
-//
-// 与退化形态（「color red」，组名与值都退回原始 key）刻意不同字：只有正常档才会命中它。
-const scopeTransmitSpec = "颜色 红"
 
 // scopeTransmitFixture 双工程夹具：variantListFixture（工程 A + 生产迁移 + 真 inventory / product）
 // 之上再建第二个工程；本文件的商品一律建在工程 A，页面 / 端点显式带 project=f.projectID。
@@ -146,10 +126,7 @@ func TestProductDetailPageTransmitsProjectScope(t *testing.T) {
 	}
 }
 
-// TestVariantPreviewTransmitsProjectScope 第 4 条：变体预览端点取属性组那一跳带作用域。
-//
-// 漏传时 derr 被忽略、attrs 退化为空，spec 静默降级成 optionKey（「color red」）——
-// 状态码照常 200，只有规格文本看得出来。故断言的是 spec 的字面内容。
+// TestVariantPreviewTransmitsProjectScope 预览与页面原对象都须保留多工程范围。
 func TestVariantPreviewTransmitsProjectScope(t *testing.T) {
 	engine, f := newScopeTransmitEngine(t)
 	if engine == nil {
@@ -169,14 +146,29 @@ func TestVariantPreviewTransmitsProjectScope(t *testing.T) {
 		t.Fatalf("预览应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	payload := jsonMap(t, rec.Body.Bytes())
-	rows := asList(t, payload["rows"], "rows")
+	if payload["code"] != float64(http.StatusOK) {
+		t.Fatalf("预览必须使用统一成功外壳：%+v", payload)
+	}
+	data := asMap(t, payload["data"], "data")
+	if data["productId"] != p.ID {
+		t.Fatalf("预览商品不一致：%+v", data)
+	}
+	rows := asList(t, data["rows"], "data.rows")
 	if len(rows) != 1 {
 		t.Fatalf("勾选 1 个值应返回 1 行，实际 %d：%+v", len(rows), payload)
 	}
 	row := asMap(t, rows[0], "rows[0]")
-	if row["spec"] != scopeTransmitSpec {
-		t.Fatalf("预览行的规格文本 = %v，want %q（漏传作用域时属性组为空，spec 退化成 optionKey：%q）",
-			row["spec"], scopeTransmitSpec, row["optionKey"])
+	values := asMap(t, row["optionValues"], "optionValues")
+	if len(values) != 1 || values["color"] != "red" || row["skuCode"] == "" {
+		t.Fatalf("预览应保留规范组合与 SKU：%+v", row)
+	}
+	if _, exists := row["spec"]; exists {
+		t.Fatalf("规格成品句不应回到后端：%+v", row)
+	}
+	page := productDetailBody(t, engine, f.projectID, p.ID)
+	product := productDisplayData(t, page)
+	if product.ProjectID != f.projectID || len(product.Attributes) != 1 || product.Attributes[0].ID != attr.ID || product.Attributes[0].Name != "颜色" || product.Attributes[0].Values[0].Label != "红" {
+		t.Fatalf("页面必须交付同工程原属性定义，不能退化为空属性：%+v", product.Attributes)
 	}
 }
 

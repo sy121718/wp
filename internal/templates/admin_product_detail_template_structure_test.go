@@ -13,6 +13,7 @@ package templates
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -23,18 +24,16 @@ import (
 // 两支都要覆盖 —— 只测一支时另一支的端点写错没人发现。
 func detailTemplatePageData(published bool) map[string]any {
 	p := groupDProductRow()
-	p["URLPath"] = "p-one"
+
 	return groupDData(map[string]any{
-		"SelectedProject": "pr1", "Ready": true, "Err": "",
-		"Projects": groupDProjects(),
-		"Product":  p, "ProductID": "p1",
+		"Scope":     map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
+		"Available": true, "Product": p, "DetailPath": "/products/p-one",
 		"Templates": []map[string]any{
-			{"ID": "tpl1", "Name": "活动版式详情页", "DraftVersion": 1, "IsDefault": true, "IsBound": true},
-			{"ID": "tpl2", "Name": "极简详情页", "DraftVersion": 3, "IsDefault": false, "IsBound": false},
+			{"ID": "tpl1", "Name": "活动版式详情页", "DraftVersion": 1, "UpdatedAt": time.Time{}},
+			{"ID": "tpl2", "Name": "极简详情页", "DraftVersion": 3, "UpdatedAt": time.Time{}},
 		},
-		"TemplateCount":  2,
-		"InstanceExists": published, "InstanceURL": "/products/p-one",
-		"InstanceStatus": "已发布", "BoundTemplateID": "tpl1", "DefaultTemplateID": "tpl1",
+		"Bound":             map[string]any{"Exists": published, "URLPath": "/products/p-one", "Status": "active", "TemplateID": "tpl1"},
+		"DefaultTemplateID": "tpl1",
 	})
 }
 

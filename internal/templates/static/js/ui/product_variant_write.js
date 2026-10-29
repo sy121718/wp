@@ -1,5 +1,5 @@
 /**
- * 商品编辑页的变体清单 + 每行的「仓库明细」（docs/14 §8 的「预览—保存」模型 + B8）。
+ * 商品编辑页的变体清单与每行仓库明细，采用预览后整批保存。
  *
  * 四条规则决定这段脚本的形态：
  * 1. 事件用 document 级委托 —— 抽屉内容是从 <template> 克隆进 DOM 的，逐个绑监听会在
@@ -222,7 +222,7 @@
             if (!tr) { return; }
             tr.setAttribute('data-option-values', JSON.stringify(row.optionValues || {}));
             var spec = tr.querySelector('[data-cell-spec]');
-            if (spec) { spec.textContent = row.spec || ''; }
+            if (spec) { spec.textContent = global.WBProductDisplay.formatSpec(row.optionValues, global.WBProductDisplay.attributes); }
             var sku = tr.querySelector('[data-variant-sku]');
             if (sku) { sku.value = row.skuCode || ''; }
             body.appendChild(frag);
@@ -327,12 +327,12 @@
         }).then(function (res) {
             return res.json().catch(function () { return null; });
         }).then(function (data) {
-            if (!data || !data.ok) {
+            if (!data || data.code !== 200) {
                 var reason = data && data.message ? data.message : '';
                 setGenerateStatus((box.getAttribute('data-msg-failed') || '') + reason);
                 return;
             }
-            var rows = data.rows || [];
+            var rows = data.data && data.data.rows || [];
             appendVariantRows(rows);
             if (rows.length) {
                 setGenerateStatus((box.getAttribute('data-msg-added') || '').replace('%d', String(rows.length)));
@@ -364,16 +364,11 @@
     }
 
     // rows 由清单 DOM 组装（不是表单控件），基座收不到 —— 用它的 builder 逃生舱补上。
-    // 组装规则只有一份：两个基座并存期间各注册一次（见 ui/write-base.js 的 registerPayloadBuilder）。
+    // 通过唯一写基座登记清单组装器。
     function variantRowsBuilder(form, submitter, payload) {
         payload.rows = variantRows();
         return payload;
     }
 
-    if (global.WPJsonWrite && global.WPJsonWrite.registerPayloadBuilder) {
-        global.WPJsonWrite.registerPayloadBuilder('product-variant-rows', variantRowsBuilder);
-    }
-    if (global.WBFormBody && global.WBFormBody.registerPayloadBuilder) {
-        global.WBFormBody.registerPayloadBuilder('product-variant-rows', variantRowsBuilder);
-    }
+    global.WBUI.writeBase.registerPayloadBuilder('product-variant-rows', variantRowsBuilder);
 })(window);

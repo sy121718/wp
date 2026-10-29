@@ -4,7 +4,6 @@ package productdto
 import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/utils"
-	"time"
 )
 
 // TagResp 标签。
@@ -44,54 +43,18 @@ type TagProductResp struct {
 	Status string `json:"status"`
 }
 
-// TagRowResp 标签管理页的一行（模板直接渲染的成品行）。
-//
-// 为什么在 dto 里而不是控制器里拼 gin.H：行里的每一项都是**数据** —— 类型、规则、
-// 重算时间（原样时间串）。类型的中文名、「未重算过」这类**文案**一律在
-// product_tags.html 里按数据分支取词，dto 不带任何成品串。
-//
-// EditForm 是抽屉片段的数据（product_tag_form.html 的数据根）。它必须留在
-// **渲染期**装配：里面要 csrf_token（请求态）与 t/tf（由 text.Inject 注入），
-// 而 Jet 在 struct 上不支持 `.["t"]`，所以那一层只能是 map。
-type TagRowResp struct {
-	ID   string
-	Name string
-	Slug string
-	Kind string
-	// IsRule/HasRuleParams 规则型标签（决定表单里规则字段显不显示）。
-	IsRule        bool
-	HasRuleParams bool
-	// KindRule/KindManual 两个类型常量的镜像：模板里 select 的选中判断用。
-	KindRule   string
-	KindManual string
-	RuleType   string
-	// RuleValues 规则参数的取值（数字与「有没有」），措辞在 tag_rule_text.html。
-	RuleValues RuleValuesResp
-	// RecalcAt 上次重算的原样时间串（未重算过时为空串）。
-	RecalcAt time.Time
-	// RuleDays/RuleMinPrice/RuleMaxPrice 规则参数的回填文本。
-	RuleDays     string
-	RuleMinPrice string
-	RuleMaxPrice string
-	ProductCount int
-	Sort         int
-	// EditForm 行内编辑抽屉的片段数据（渲染期装配，见类型注释）。
-	EditForm map[string]any
-}
-
-// TagProductsPageResp 命中商品的一页（审计 PERF-02）。
+// TagProductsListResp 命中商品的一页（审计 PERF-02）。
 //
 // 分页元数据与商品行分开：后台展开区要能显示「共 N 条，第 X-Y 条」，而商品行本身
 // 只占一小段 —— 只回行不回元数据的话，翻页链接与总数就得由前端另算一次。
-type TagProductsPageResp struct {
+type TagProductsListResp struct {
 	TagID   string `json:"tagId"`
 	TagName string `json:"tagName"`
 	// Total 该标签命中的商品总数（不受本页条数影响）。
 	Total int `json:"total"`
-	// Page 当前页（从 1 开始）；TotalPage 至少为 1（空列表也算一页）。
-	Page      int `json:"page"`
-	PageSize  int `json:"pageSize"`
-	TotalPage int `json:"totalPage"`
+	// Page 当前页（从 1 开始）。
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
 	// Items 本页的商品行。
 	Items []*TagProductResp `json:"items"`
 }

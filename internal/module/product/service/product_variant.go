@@ -86,6 +86,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
@@ -863,7 +864,9 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 		res.Variants = append(res.Variants, toVariantResp(v))
 	}
 	// 库存展示值查询期投影（issue #32）。
-	s.fillVariantStock(ctx, p.ProjectID, res.Variants)
+	if err := s.fillVariantListStocks(ctx, p.ProjectID, res.Variants); err != nil {
+		return nil, err
+	}
 	return res, nil
 }
 
@@ -1210,8 +1213,7 @@ func shortHash(s string) string {
 //   · 生成（PreviewVariantCombinations）—— 只算不写，把笛卡尔积按组合去重后交回前端清单；
 //   · 删除（前端行为）—— 只是从清单里移出，服务端没有「删一行」的入口；
 //   · 保存（SaveVariantList）—— 以清单为准：新增缺失的组合、更新改过的 SKU、
-//     删除清单外的既有变体；清单外要删的行若**有非零库存或被捆绑成员引用**则跳过，
-//     逐条回带原因（不整批失败、不静默）。
+//     删除清单外的既有变体；任一行不能删除时整批拒绝，并返回可定位原因。
 //
 // 与 GenerateVariants 的关系：后者是「直接落库」的接口路径（导入 / 接口 / 批量生成），
 // 语义一字未改；本段服务的是后台抽屉的预览—保存交互。
@@ -1277,7 +1279,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		}
 		seen[optionKey(decodeOptionPairs(raw))] = true
 	}
-	res = &productdto.PreviewVariantResp{OK: true, ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewResp{}}
+	res = &productdto.PreviewVariantResp{ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewResp{}}
 	for _, pairs := range expandCombinations(dims) {
 		key := optionKey(pairs)
 		if seen[key] {
@@ -1291,9 +1293,6 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		taken[code] = true
 		res.Rows = append(res.Rows, &productdto.VariantPreviewResp{
 			OptionValues: raw, OptionKey: key, SKUCode: code,
-			// 规格文本在这里算：属性组是本次请求已经查过的那一份，控制器不必再查一次
-			// （再查的那次可以静默拿到空 attrs，于是页面上规格列整列变空而不报错）。
-			Spec: SpecLabel(raw, attributeResps(attrs)),
 		})
 	}
 	return res, nil
@@ -1307,25 +1306,46 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 //     （历史组合可能引用了后来被删的组 / 值，用前端传的组合判定会让老数据卡住保存）；
 //   - SKU 逐段规范化（normalizeVariantSKU），为空或规范化后为空一律报
 //     ErrVariantSKUEmpty；唯一性按 product_id + sku_code（前端提交的值不作数）；
-//   - 删除清单外的既有变体前先查引用面（三个：非零库存 / 捆绑成员引用 /
-//     有过库存流水），命中任一即跳过该行并逐条回带原因，不整批失败。
+//   - 删除清单外的既有变体前锁定库存事实；非零库存或历史流水使整批拒绝。
 func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVariantListReq) (res *productdto.SaveVariantListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
-	if gerr != nil {
-		return nil, gerr
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
 	}
-	p, gerr := s.m.Get(ctx, req.ProductID, projectID)
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := rls.ScopeTx(tx, projectID); err != nil {
+			return err
+		}
+		var saveErr error
+		res, saveErr = s.saveVariantListTx(ctx, tx, projectID, req)
+		return saveErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.recalcProjectAutoTags(ctx, req.ProductID, projectID); err != nil {
+		logger.Scene("product").With("productID", req.ProductID).Error(err, "变体清单已保存，自动标签待重算")
+	}
+	if err := s.fillVariantListStocks(ctx, projectID, res.Variants); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// saveVariantListTx 在同一事务内锁定商品与变体、校验完整清单并写入。
+func (s *Service) saveVariantListTx(ctx context.Context, tx *gorm.DB, projectID string, req *productdto.SaveVariantListReq) (res *productdto.SaveVariantListResp, err error) {
+	p, gerr := s.m.GetForUpdateTx(ctx, tx, req.ProductID, projectID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs), projectID)
+	attrs, aerr := s.m.ListAttributesByIDsForShareTx(ctx, tx, decodeStrings(p.AttributeIDs), projectID)
 	if aerr != nil {
 		return nil, aerr
 	}
-	existing, lerr := s.m.ListVariants(ctx, p.ID)
+	existing, lerr := s.m.ListVariantsForUpdateTx(ctx, tx, p.ID)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -1350,7 +1370,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		}
 	}
 	now := time.Now().UTC()
-	res = &productdto.SaveVariantListResp{ProductID: p.ID, Skipped: []productdto.VariantSaveSkipResp{}}
+	res = &productdto.SaveVariantListResp{ProductID: p.ID}
 	kept := make(map[string]bool, len(req.Rows))
 	seenKeys := make(map[string]bool, len(req.Rows))
 	var updated, created []*productmodel.VariantEntity
@@ -1362,16 +1382,12 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		if vid := strings.TrimSpace(row.VariantID); vid != "" {
 			v := byID[vid]
 			if v == nil {
-				// 清单里的既有变体已经被别处删掉（并发删除）：跳过并说明，不当成新增行。
-				res.Skipped = append(res.Skipped, productdto.VariantSaveSkipResp{
-					VariantID: vid, Reason: productenums.VariantSkipVariantMissing,
-				})
-				continue
+				// 清单引用已删除的变体：整批拒绝，不把它当成新增行。
+				return nil, variantListRejected(vid, row.SKUCode, productenums.VariantSkipVariantMissing)
 			}
 			key := optionKey(decodeOptionPairs(v.OptionValues))
 			if seenKeys[key] {
-				res.Skipped = append(res.Skipped, variantSkipOf(v, productenums.VariantSkipDuplicated, ""))
-				continue
+				return nil, variantListRejected(v.ID, v.SKUCode, productenums.ErrVariantListDuplicated)
 			}
 			seenKeys[key] = true
 			kept[v.ID] = true
@@ -1384,11 +1400,11 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 				return nil, productenums.Err(productenums.ErrVariantSKUEmpty)
 			}
 			if code == v.SKUCode {
-				// 没改 SKU：这一行一个字都不写（也不留痕）。
+				// SKU 未改不更新变体字段；仓库明细仍由 stockPlan 处理。
 				continue
 			}
 			if id, taken := owner[code]; taken && id != v.ID {
-				return nil, productenums.Err(productenums.ErrSkuTaken)
+				return nil, variantListRejected(v.ID, code, productenums.ErrSkuTaken)
 			}
 			if old := strings.TrimSpace(v.SKUCode); old != "" {
 				delete(owner, old)
@@ -1410,11 +1426,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		raw := encodeOptionPairs(pairs)
 		key := optionKey(pairs)
 		if seenKeys[key] {
-			res.Skipped = append(res.Skipped, productdto.VariantSaveSkipResp{
-				SKUCode: strings.TrimSpace(row.SKUCode), OptionValues: raw,
-				Reason: productenums.VariantSkipDuplicated,
-			})
-			continue
+			return nil, variantListRejected(fmt.Sprintf("row:%d", i+1), row.SKUCode, productenums.ErrVariantListDuplicated)
 		}
 		seenKeys[key] = true
 		code := normalizeVariantSKU(row.SKUCode)
@@ -1426,7 +1438,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			return nil, productenums.Err(productenums.ErrVariantSKUEmpty)
 		}
 		if _, taken := owner[code]; taken {
-			return nil, productenums.Err(productenums.ErrSkuTaken)
+			return nil, variantListRejected(fmt.Sprintf("row:%d", i+1), code, productenums.ErrSkuTaken)
 		}
 		v, verr := s.newVariantFromDefaults(ctx, p, &productdto.CreateVariantReq{
 			ProductID: p.ID, OptionValues: raw,
@@ -1459,32 +1471,63 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		return nil, sperr
 	}
 
-	// 清单外要删的既有变体：先查引用面（库存 / 捆绑成员 / 流水），跳过的行逐条记原因。
+	// 清单外的既有变体：在同一事务内读取库存与流水事实，收集全部拒绝原因。
 	type pendingDelete struct {
 		v      *productmodel.VariantEntity
 		before masterdatacontract.FieldSnapshot
 	}
 	var deletions []pendingDelete
+	removedIDs, stockIDs := []string{}, []string{}
+	for _, v := range existing {
+		if !kept[v.ID] {
+			removedIDs = append(removedIDs, v.ID)
+			stockIDs = append(stockIDs, stockIDsOfRefs(productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs))...)
+		}
+	}
+	facts, err := s.variantDeletionFactsTx(ctx, tx, p.ProjectID, removedIDs, stockIDs)
+	if err != nil {
+		return nil, err
+	}
+	stocked := map[string]bool{}
+	for _, fact := range facts.Stocks {
+		if fact.Quantity != 0 {
+			stocked[fact.StockID] = true
+		}
+	}
+	moved := map[string]bool{}
+	for _, id := range facts.MovementVariantIDs {
+		moved[id] = true
+	}
+	blocked := []facing.BlockedItem{}
 	for _, v := range existing {
 		if kept[v.ID] {
 			continue
 		}
-		reason, detail, rerr := s.variantDeleteBlockReason(ctx, p.ProjectID, v)
-		if rerr != nil {
-			return nil, rerr
+		reason := ""
+		for _, ref := range productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs) {
+			if stocked[ref.StockID] {
+				reason = productenums.VariantSkipHasStock
+				break
+			}
+		}
+		if reason == "" && moved[v.ID] {
+			reason = productenums.VariantSkipHasMovement
 		}
 		if reason != "" {
-			res.Skipped = append(res.Skipped, variantSkipOf(v, reason, detail))
+			blocked = append(blocked, facing.BlockedItem{ID: v.ID, Name: v.SKUCode, ReasonKey: reason, Fallback: productenums.VariantSkipFallback(reason)})
 			continue
 		}
 		deletions = append(deletions, pendingDelete{v: v, before: variantChangeSnapshot(v, nil)})
+	}
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
 	}
 
 	// 写：新增 / 更新 / 库存行 / 逐条删除 / 留痕全部在**同一个事务**里 ——
 	// 「清单外的行要删、清单里的行要建」是一个整体动作，中途失败留下「删了没建」或
 	// 「建了没删」的半截清单，正是这个模型要避免的（AGENTS.md「写操作的事务与回滚」）。
-	// 被引用 / 有库存的行在进入这里之前已经逐条跳过（res.Skipped），不构成中途失败。
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+	// 所有拒绝检查通过后才执行第一笔持久化写入。
+	if err = func() error {
 		if serr := rls.ScopeTx(tx, p.ProjectID); serr != nil {
 			return serr
 		}
@@ -1519,41 +1562,43 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 				masterdataenums.OriginVariantGenerate, req.OperatorID, item.before, nil))
 			res.Deleted++
 		}
+		if err := s.enqueueProductInvalidationTx(ctx, tx, p.ProjectID, p.ID); err != nil {
+			return err
+		}
 		return s.recordChangesTx(ctx, tx, changes...)
-	}); err != nil {
+	}(); err != nil {
 		return nil, err
 	}
-	// 重算时机之一：变体写操作后（价格与规格集合都可能变了）。
-	// 失败不回滚也不报错 —— 清单已经提交，归属是可重算的派生数据。理由见 product.go 的 Update。
-	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
-		logger.Scene("product").With("productID", p.ID).Error(rerr,
-			"变体清单已保存，但自动标签重算失败（归属待下次写操作重算）")
-	}
-	after, rerr := s.m.ListVariants(ctx, p.ID)
+	after, rerr := s.m.ListVariantsForUpdateTx(ctx, tx, p.ID)
 	if rerr != nil {
 		return nil, rerr
 	}
 	for _, v := range after {
 		res.Variants = append(res.Variants, toVariantResp(v))
 	}
-	s.fillVariantStock(ctx, p.ProjectID, res.Variants)
 	return res, nil
 }
 
-// variantSkipOf 组装「跳过一行」的回带信息（原因取 enums 常量 = i18n key）。
-//
-// detail 是**可定位明细**（引用面 / 工程 / 商品 id），与 Reason 分开两个字段：
-// Reason 只承载受控原因枚举（提示页直接展示）；自由文本若拼进 Reason 会让提示页出现
-// 不可控内容，所以明细只能走响应体里的 Detail，不能拼进 Reason。反之单条删除路径
-// （DeleteVariant）返回的是错误，那里按 key：detail 的既有形态拼接，明细照常可见。
-func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) productdto.VariantSaveSkipResp {
-	if v == nil {
-		return productdto.VariantSaveSkipResp{Reason: reason, Detail: detail}
+// variantListRejected 一条冲突使整个保存被拒，并提供定位信息。
+func variantListRejected(id, sku, reason string) error {
+	fallback := productenums.FallbackFor(reason)
+	if fallback == "" {
+		fallback = productenums.VariantSkipFallback(reason)
 	}
-	return productdto.VariantSaveSkipResp{
-		VariantID: v.ID, SKUCode: v.SKUCode,
-		OptionValues: orJSON(v.OptionValues, "{}"), Reason: reason, Detail: detail,
+	return bulkRejected([]facing.BlockedItem{{ID: id, Name: sku, ReasonKey: reason, Fallback: fallback}})
+}
+
+func (s *Service) variantDeletionFactsTx(ctx context.Context, tx *gorm.DB, projectID string, variants, stocks []string) (*inventorycontract.VariantDeletionFacts, error) {
+	if len(variants) == 0 {
+		return &inventorycontract.VariantDeletionFacts{}, nil
 	}
+	if s.inv != nil {
+		return s.inv.VariantDeletionFactsTx(ctx, tx, projectID, variants, stocks)
+	}
+	if s.invSvc != nil {
+		return s.invSvc.VariantDeletionFactsTx(ctx, tx, projectID, variants, stocks)
+	}
+	return &inventorycontract.VariantDeletionFacts{}, nil
 }
 
 // stockIDsOfRefs 引用清单 → 货行 id 清单（过滤空的 StockID，保持记录顺序）。
@@ -1947,18 +1992,6 @@ func normalizeVariantIDs(ids []string) []string {
 		if len(out) >= VariantAvailabilityLookupMaxIDs {
 			break
 		}
-	}
-	return out
-}
-
-// attributeResps 属性实体 → 响应形状（SpecLabel 吃 dto 形态；值列表与列表页同一份归一）。
-func attributeResps(entities []*productmodel.ProductAttributeEntity) []*productdto.AttributeResp {
-	out := make([]*productdto.AttributeResp, 0, len(entities))
-	for _, e := range entities {
-		if e == nil {
-			continue
-		}
-		out = append(out, toAttributeResp(e))
 	}
 	return out
 }

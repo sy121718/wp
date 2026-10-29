@@ -1,27 +1,7 @@
 package productservice_test
 
-// product_list_page_bench_test.go — 商品列表页的**耗时基准**（dd.txt 第九节 A5「1 / 20 / 100 条商品
-// 均有 SQL 次数和耗时基准」与第十一节合并门槛的交付物之一）。
-//
-// 与本包 product_list_page_sql_count_test.go 的分工是**刻意分开**的两件事：
-//   - 那边是**判据**：逐商品详情查询 == 0、三档（1/20/100）SQL 总次数相等 —— 硬断言，
-//     往 productRowsFromList 里加一行逐商品 s.Get 必须让它变红（真实输出见
-//     AGENTS.md §5）；
-//   - 这边是**记录**：墙钟耗时只 t.Logf，**不做任何耗时阈值断言**。
-//
-// 为什么耗时不断言：阈值断言在负载抖动时随机变红，而变红那一次不指向任何代码缺陷；
-// flaky 的门禁会被人关掉，然后连「SQL 次数」这条真判据也一起没人看。耗时结论写进报告、由人复核。
-//
-// 为什么不用 Go Benchmark（func BenchmarkXxx + -bench）：验收要的是一条可复跑的命令
-// （go test -run … -v，输出直接贴进报告），而 -bench 默认不跑；这里也不需要 benchstat 那套
-// 统计口径。为什么不新造压测基建：库、种子行、工程桩、SQL 探针全部复用 sql_count 用例的既有件
-// （同一测试包 productservice_test），本文件只加「计时 + 记录」。
-//
-// 测量口径：每档先热身 1 次（连接池建立、prepared statement 编译、PG 计划缓存都不是被测对象），
-// 再连测 5 次，记录 min / 中位数 / max；结论用**中位数**，min 只作「这台机器能做到多快」的参考。
-// SQL 计数探针全程挂在 db 上（一次调用 17 条语句、每条一次字符串拷贝，量级微秒），三档同一份开销。
-// 探针挂的是三条链（Query / Row / Raw）—— 补挂 Row 之前本页被漏计 1 条（ListRowFacts 的 SELECT），
-// 所以旧记录里的 SQL=16 是**探针口径**少 1，不是页面少一条语句。
+// 商品列表查询耗时记录；SQL次数与逐行查询约束由同包独立用例断言。
+// 各档热身后测五次，只报告耗时，不使用受机器负载影响的硬阈值。
 
 import (
 	"cmp"
@@ -81,18 +61,18 @@ func TestProductListPageWallClockByProductCount(t *testing.T) {
 
 // measureListPage 测「n 个商品 × 第 page 页」这一档：热身 → 连测 → 记录耗时与 SQL 次数。
 //
-// err / LoadFailed / 行数三处是**测量的前提校验**（读模型失败时那几次计时毫无意义），
+// error / 行数两处是**测量的前提校验**（读模型失败时那几次计时毫无意义），
 // 不是新判据 —— 真正的判据在 product_list_page_sql_count_test.go 里，本文件不复制一份口径：
 // SQL 次数与逐商品详情次数只**记录**，相等性断言留给那边。
 func measureListPage(t *testing.T, ctx context.Context, s *productservice.Service, probe *sqlCountProbe,
 	projectID string, n, page int) {
 	t.Helper()
-	newReq := func() *productdto.ProductListPageReq {
-		return &productdto.ProductListPageReq{ProjectID: projectID, Page: page}
+	newReq := func() *productdto.ListReq {
+		return &productdto.ListReq{ProjectID: projectID, Page: page}
 	}
 
 	for i := 0; i < listPageBenchWarmup; i++ {
-		if _, err := s.ProductListPage(ctx, newReq()); err != nil {
+		if _, err := s.QueryProducts(ctx, newReq()); err != nil {
 			t.Fatalf("n=%d 第 %d 页：热身调用失败：%v", n, page, err)
 		}
 	}
@@ -102,16 +82,16 @@ func measureListPage(t *testing.T, ctx context.Context, s *productservice.Servic
 	for i := 0; i < listPageBenchReps; i++ {
 		probe.reset()
 		start := time.Now()
-		view, err := s.ProductListPage(ctx, newReq())
+		view, err := s.QueryProducts(ctx, newReq())
 		elapsed := time.Since(start)
 		if err != nil {
 			t.Fatalf("n=%d 第 %d 页：列表页读模型失败：%v", n, page, err)
 		}
-		if len(view.Products) == 0 {
+		if len(view.Items) == 0 {
 			t.Fatalf("n=%d 第 %d 页：成品行 0 条，行装配没走到（计时没有意义）", n, page)
 		}
 		durs = append(durs, elapsed)
-		sqlCount, lookups, rowCount = probe.total(), probe.perProductDetailLookups(), len(view.Products)
+		sqlCount, lookups, rowCount = probe.total(), probe.perProductDetailLookups(), len(view.Items)
 	}
 
 	slices.SortFunc(durs, func(a, b time.Duration) int { return cmp.Compare(a, b) })

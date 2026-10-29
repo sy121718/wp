@@ -1,35 +1,12 @@
 package productservice_test
 
-// product_pricing_history_parity_test.go — 台账成品行与**逐批次 Get 明细**口径的对账
-// （dd.txt 第八批 8.1「价格结果与原规则一致」在台账这一屏的等价物）。
-//
-// 改造把 pricingHistory 的「每批一次 GetPriceAdjustment」换成「一次批量读明细 + 按
-// adjustment_id 分组装配」，风险是**行内容悄悄变了**：模板 product_pricing.html 读的是
-// RuleType / RuleValues / Scope / Rounding / FilterParts / ChangedCount / VariantCount /
-// CreatedAt（原样 RFC3339，格式化在模板）/ OperatorID / Note，以及明细逐条的 ProductName / SKUCode / OldPrice /
-// NewPrice / Diff。少任何一项都不报错，只会让某一列变空。
-//
-// 对账单位是**整行**（含 Items 逐条）：①读模型 view.History；②按原实现在测试内重建
-// 期望行（ListPriceAdjustments + 逐批 GetPriceAdjustment）。②里的金额与时间文本用同源
-// 口径复现 —— money.FormatYuan 是导出函数，「正数带 + 号」与「RFC3339 → 本地
-// 2006-01-02 15:04」两条规则在此复述一次（它们是台账这条口径的全部内容）。
-//
-// 堵住的两种假绿：
-//   · 两边都空也相等 —— 先做夹具自检（明细条数、商品名有无、金额与时间文本非空）；
-//   · 只比批次行、漏掉明细 —— 逐条比 Items 的顺序与字段。
-//
-// 表结构来自生产迁移，不手抄 CREATE TABLE。
-
+// 批量含明细查询必须与逐批详情保持完整业务数据等价，而不是复制模板行再比较。
 import (
 	"context"
-	"fmt"
-	json "go_wp/pkg/jsonx"
-	"go_wp/pkg/utils"
 	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
-
 	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -37,127 +14,54 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 台账行的金额是原值（元），展示格式由模板 amount()/amountDash() 生成。
-
-// referencePricingHistoryRows 按**原实现**（逐批次 Get 明细）重建台账行。
-//
-// GetPriceAdjustmentReq 显式带 ProjectID：原调用点不传、靠「唯一工程」兜底，
-// 本用例的工程桩只有一个工程，两条路径解析出同一个作用域。
-func referencePricingHistoryRows(t *testing.T, s *productservice.Service, ctx context.Context, projectID string) []map[string]any {
-	t.Helper()
-	// 10 = 台账最多列几个批次（service 的 pricingHistoryLimit，未导出；夹具批数远小于它）。
-	list, err := s.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{ProjectID: projectID, Limit: 10})
-	if err != nil {
-		t.Fatalf("参照实现：留痕列表读失败：%v", err)
-	}
-	rows := make([]map[string]any, 0, len(list))
-	for _, a := range list {
-		detail, derr := s.GetPriceAdjustment(ctx, &productdto.GetPriceAdjustmentReq{ID: a.ID, ProjectID: projectID})
-		src := a
-		if derr == nil {
-			src = detail
-		}
-		items := make([]map[string]any, 0, len(src.Items))
-		for _, it := range src.Items {
-			items = append(items, map[string]any{
-				"ProductName": it.ProductName, "SKUCode": it.SKUCode,
-				"OldPrice": it.OldPrice, "NewPrice": it.NewPrice, "Diff": it.Diff,
-			})
-		}
-		rows = append(rows, map[string]any{
-			"ID": src.ID, "RuleType": src.RuleType, "RuleValues": src.RuleValues,
-			"Scope": src.Scope, "Rounding": src.Rounding, "FilterParts": src.FilterParts,
-			"ChangedCount": src.ChangedCount, "VariantCount": src.VariantCount,
-			"Note": src.Note, "OperatorID": src.OperatorID,
-			"CreatedAt": src.CreatedAt,
-			"Items":     items,
-		})
-	}
-	return rows
-}
-
-// historyJSON 台账行 → 可比对的文本（失败信息里给全量证据，而不是只说「不一致」）。
-func historyJSON(t *testing.T, rows []map[string]any) string {
-	t.Helper()
-	data, err := json.MarshalIndent(rows, "", "  ")
-	if err != nil {
-		t.Fatalf("台账行序列化失败：%v", err)
-	}
-	return string(data)
-}
-
-// TestProductPricingHistoryRowsMatchPerBatchDetailPath 三批台账（2 条明细 / 空批次 / 3 条明细）：
-// 读模型产出的行与逐批次 Get 口径**逐字段一致**。
 func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
-	support.SeedProjectRow(t, db, projectID, "台账行对账")
-	// 空批次那一档是「这一批没有逐变体明细」的模板分支；第 3 条明细的商品已删除，
-	// 商品名该留空（留痕快照仍可读）。
+	support.SeedProjectRow(t, db, projectID, "调价记录对账")
 	seedPricingHistoryFixture(t, db, projectID, []int{2, 0, 3})
-
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
-		rows: []projectdto.ProjectResp{{ID: projectID, Name: "台账行对账"}},
+		rows: []projectdto.ProjectResp{{ID: projectID, Name: "调价记录对账"}},
 	})
 	ctx := context.Background()
-
-	view, err := s.ProductPricingPage(ctx, &productdto.ProductPricingPageReq{ProjectID: projectID})
+	history, err := s.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{ProjectID: projectID, Limit: 10, IncludeItems: true})
 	if err != nil {
-		t.Fatalf("台账读模型失败：%v", err)
+		t.Fatal(err)
 	}
-	if len(view.History) != 3 {
-		t.Fatalf("台账 %d 行，期望 3 行（含空批次）", len(view.History))
+	if len(history) != 3 {
+		t.Fatalf("调价记录数量=%d，期望3（含空批次）", len(history))
 	}
-
-	// 夹具自检：被比较的字段不能两边都空，否则对账是假绿。
 	named, blank, total := 0, 0, 0
-	for i, row := range view.History {
-		where := fmt.Sprintf("第 %d 行", i+1)
-		for _, field := range []string{"RuleType", "Scope", "Rounding"} {
-			text, _ := row[field].(string)
-			if text == "" {
-				t.Fatalf("夹具自检失败：%s 的 %s 是空文本（%q）", where, field, text)
-			}
+	for _, row := range history {
+		want, err := s.GetPriceAdjustment(ctx, &productdto.GetPriceAdjustmentReq{ID: row.ID, ProjectID: projectID})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if at, ok := row["CreatedAt"].(utils.JSONTime); !ok || at.IsZero() {
-			t.Fatalf("夹具自检失败：%s 的 CreatedAt 是零值（%v）", where, row["CreatedAt"])
+		// 空批次允许 nil 与空切片同义；其余字段必须逐字段一致。
+		if len(row.Items) == 0 && len(want.Items) == 0 {
+			row.Items, want.Items = nil, nil
 		}
-		if note, _ := row["Note"].(string); note == "" {
-			t.Fatalf("夹具自检失败：%s 的备注是空文本", where)
+		if !reflect.DeepEqual(row, want) {
+			t.Fatalf("批量记录与单批详情不一致：got=%+v want=%+v", row, want)
 		}
-		items := historyItemsOf(t, row, where)
-		total += len(items)
-		for _, it := range items {
-			for _, field := range []string{"OldPrice", "NewPrice", "Diff"} {
-				if amount, ok := it[field].(float64); !ok || amount == 0 {
-					t.Fatalf("夹具自检失败：%s 明细的 %s 不是非零金额（%v）", where, field, it[field])
-				}
+		if row.CreatedAt.IsZero() || row.Note == "" || row.RuleType == "" {
+			t.Fatalf("夹具缺少批次事实：%+v", row)
+		}
+		total += len(row.Items)
+		for i, item := range row.Items {
+			if item.SKUCode == "" || item.OldPrice == 0 || item.NewPrice == 0 || item.Diff == 0 {
+				t.Fatalf("夹具缺少明细事实：%+v", item)
 			}
-			if sku, _ := it["SKUCode"].(string); sku == "" {
-				t.Fatalf("夹具自检失败：%s 明细的 SKUCode 是空文本", where)
-			}
-			if name, _ := it["ProductName"].(string); name == "" {
+			if item.ProductName == "" {
 				blank++
 			} else {
 				named++
 			}
-		}
-		// 明细顺序是这一屏的口径之一：同一批内按 sku_code 升序（夹具按倒序插入）。
-		for j := 1; j < len(items); j++ {
-			prev, _ := items[j-1]["SKUCode"].(string)
-			cur, _ := items[j]["SKUCode"].(string)
-			if prev > cur {
-				t.Fatalf("夹具自检失败：%s 的明细不是按 SKU 升序（%q 在 %q 之前）", where, prev, cur)
+			if i > 0 && row.Items[i-1].SKUCode > item.SKUCode {
+				t.Fatal("批量明细未保持SKU升序")
 			}
 		}
 	}
 	if total != 5 || named == 0 || blank == 0 {
-		t.Fatalf("夹具自检失败：明细 %d 条（期望 5）、有商品名 %d 条、无商品名 %d 条（两边都要有）", total, named, blank)
-	}
-
-	want := referencePricingHistoryRows(t, s, ctx, projectID)
-	if !reflect.DeepEqual(view.History, want) {
-		t.Fatalf("台账行与逐批次 Get 口径不一致：读模型 = %s；参照实现 = %s",
-			historyJSON(t, view.History), historyJSON(t, want))
+		t.Fatalf("夹具明细=%d，有名=%d，无名=%d", total, named, blank)
 	}
 }

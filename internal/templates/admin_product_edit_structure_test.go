@@ -24,7 +24,7 @@ import (
 )
 
 // productEditProtocolFields 编辑表单的协议字段（与 /api/product/update 的 UpdateReq
-// json 标签逐字对齐，见 product_edit_page.go 的文件头）：改字段名等于改协议，
+// json 标签逐字对齐，见 product_req.go 的 UpdateReq）：改字段名等于改协议，
 // 也因此是「页头保存按钮提交的东西与改造前一致」的可复算判据。
 var productEditProtocolFields = []string{
 	// csrf_token 不在清单里：它从表单隐藏域改成请求头（基座发 X-CSRF-Token），
@@ -41,21 +41,19 @@ var productEditProtocolFields = []string{
 // 商品存在 + 捆绑商品 + 详情页模板面板（document 模式、有历史版本）——
 // 这样 5 张内容卡与两个折叠区的最全形态都被渲染到，判据才有覆盖面。
 func productEditPageData() map[string]any {
-	return groupDData(map[string]any{
+	return productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "", "Done": "",
 		"Projects":  groupDProjects(),
 		"ProductID": "p1", "HasProduct": true, "Product": groupDProductRow(),
 		"BackURL":          "/admin/products?project=pr1",
-		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Name": "苏州仓", "Code": "SZ", "IsDefault": true}},
 		"AttributeChecks":  []map[string]any{{"ID": "a1", "Label": "颜色（color）", "IsVariation": true, "Checked": true}},
 		"ImagesInput":      "https://cdn.example.com/1.jpg",
 		"ImageAltsInput":   "图一",
 		"WeightInput":      "0.5", "DefaultPriceInput": "10.00",
 		// 捆绑商品：多渲染一张 .card（捆绑构成的编辑入口），卡片计数因此是 6。
 		"TplPanel": map[string]any{
-			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1",
-			"Status": "published", "RenderMode": "document",
-			"SourceTemplateVersionID": "v1", "CurrentTemplateVersionID": "v2",
+			"Available": true, "Bound": map[string]any{"InstanceID": "inst1", "TemplateID": "tpl1", "Status": "published", "RenderMode": "document", "SourceTemplateVersionID": "v1"}, "CurrentTemplateVersionID": "v2",
 			"HasAffectedTemplateCount": true, "AffectedTemplateCount": 3,
 			"Snapshots": []map[string]any{{"ID": "s1", "CreatedAt": time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)}},
 		},

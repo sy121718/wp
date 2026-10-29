@@ -1,42 +1,37 @@
 {{extends "../layout.html"}}
-{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{end}}
+{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
-{{selectedProject := .["SelectedProject"]}}
-{{defaultTplID := .DefaultTemplateID}}
+
+{{selectedProject := .Scope.ProjectID}}
+{{defaultTplID := .TemplateCatalog.DefaultID}}
 {{warehouseOptions := .WarehouseOptions}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
             <h1>{{ .["t"]("admin.products.create.submit", "新建商品") }}</h1>
         </div>
-        {* 整页表单必须有返回出口：本页不设 InDrawer，片段里那个「取消」按钮不会渲染，
-           放弃创建时页面上不能没有任何出口（结构沿用 product_edit.html 的 page-actions，
-           URL 带当前工程，避免返回时静默切回默认工程）。 *}
+
         <div class="page-actions">
             <a class="btn btn-ghost" href="/admin/products?project={{selectedProject}}">← {{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
         </div>
     </header>
-    {* 写动作的结论由 JSON 写基座就地回显（表单顶部的 data-write-status，见 product_create_form.html）：
-       本页不再有服务端渲染的提交失败页，也没有回填片段。 *}
+
     <div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(280px,2fr);gap:16px;align-items:start">
         <section class="card card-body">
             <h2 class="card-title mb-lg">{{ .["t"]("admin.products.create.title", "基础信息") }}</h2>
-            {* 与列表页抽屉共用同一份建表单片段（含仓库 SKU 候选与属性组勾选）：
-               两处各抄一份必然分叉，而分叉不会编译失败，只会在某条入口上静默丢字段。 *}
+
             {{include "product_create_form.html"}}
         </section>
         <section class="card card-body">
             <h2 class="card-title mb-lg">{{ .["t"]("admin.products.detailTemplate.title", "详情页模板") }}</h2>
-            {{if .TemplatesAvail}}
-                {{if isset(.Templates)}}
-                {{if len(.Templates) > 0}}
+            {{if .TemplateCatalog.Available}}
+                {{if isset(.TemplateCatalog.Items)}}
+                {{if len(.TemplateCatalog.Items) > 0}}
                 <ul class="list-plain">
-                    {{range _, tpl := .Templates}}
+                    {{range _, tpl := .TemplateCatalog.Items}}
                     <li>
                         <strong>{{tpl.Name}}</strong>
                         {{if tpl.ID == defaultTplID}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.common.default", "默认"))}}{{end}}

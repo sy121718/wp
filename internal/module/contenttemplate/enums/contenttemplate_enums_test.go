@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,6 +22,14 @@ import (
 
 	"go_wp/pkg/facing"
 )
+
+func TestNotFoundDeclares404(t *testing.T) {
+	for _, err := range []error{Err(ErrNotFound), ErrDetail(ErrNotFound, "模板 tpl-1")} {
+		if status, ok := facing.StatusOf(err); !ok || status != http.StatusNotFound {
+			t.Fatalf("模板不存在应携带 404，实际 status=%d ok=%v err=%v", status, ok, err)
+		}
+	}
+}
 
 // fallbackExclusions 不需要兜底的常量 → 理由（成功回执永远不作为错误响应返回）。
 var fallbackExclusions = map[string]string{

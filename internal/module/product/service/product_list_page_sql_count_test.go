@@ -225,12 +225,12 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	checkPage := func(label string, page int, wantRows int, wantTotal int64) int {
 		t.Helper()
 		probe.reset()
-		view, err := s.ProductListPage(ctx, &productdto.ProductListPageReq{ProjectID: projectID, Page: page})
+		view, err := s.QueryProducts(ctx, &productdto.ListReq{ProjectID: projectID, Page: page})
 		if err != nil {
 			t.Fatalf("%s：列表页读模型失败：%v", label, err)
 		}
-		if len(view.Products) != wantRows {
-			t.Fatalf("%s：成品行 %d 条，期望 %d", label, len(view.Products), wantRows)
+		if len(view.Items) != wantRows {
+			t.Fatalf("%s：成品行 %d 条，期望 %d", label, len(view.Items), wantRows)
 		}
 		if view.Total != wantTotal {
 			t.Fatalf("%s：总数 %d，期望 %d", label, view.Total, wantTotal)
@@ -254,7 +254,7 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 			seedListProductsBulk(t, db, projectID, seeded+1, n)
 			seeded = n
 		}
-		wantRows := min(n, productservice.ProductListPageSize)
+		wantRows := min(n, 20)
 		label := fmt.Sprintf("n=%d（本页 %d 行）", n, wantRows)
 		totals[n] = checkPage(label, 1, wantRows, int64(n))
 		t.Logf("%s：SQL 总次数=%d，逐商品详情查询=0，读 products 表=%d",
@@ -269,7 +269,7 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	// （N+1 的另一种形态是「每行补一次」，翻页时同样会暴露）。
 	for page := 2; page <= 5; page++ {
 		label := fmt.Sprintf("100 商品第 %d 页", page)
-		got := checkPage(label, page, productservice.ProductListPageSize, 100)
+		got := checkPage(label, page, 20, 100)
 		if got != totals[1] {
 			t.Fatalf("第 %d 页 SQL 次数 %d，与单商品页 %d 不等（页内取数必须与商品数、页码无关）",
 				page, got, totals[1])
@@ -282,8 +282,8 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	//（count(*) 要数的行、列表 ORDER BY … LIMIT/OFFSET 要跳过的索引项）。
 	seedListProductsBulk(t, db, projectID, seeded+1, 10000)
 	seeded = 10000
-	label := fmt.Sprintf("n=10000（工程内 %d 行、本页 %d 行）", seeded, productservice.ProductListPageSize)
-	got := checkPage(label, 1, productservice.ProductListPageSize, int64(seeded))
+	label := fmt.Sprintf("n=10000（工程内 %d 行、本页 %d 行）", seeded, 20)
+	got := checkPage(label, 1, 20, int64(seeded))
 	if got != totals[1] {
 		t.Fatalf("n=10000 档 SQL 次数 %d，与单商品页 %d 不等（页内取数必须与工程内商品数无关）", got, totals[1])
 	}

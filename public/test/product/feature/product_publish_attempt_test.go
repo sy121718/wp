@@ -8,16 +8,16 @@ package feature
 //
 // 覆盖三件在界面上看不出来的事：
 //   1. 发布成功会**自动**留一行（不需要任何一次点击）—— 这是「全记」的前提；
-//   2. 失败也留（含原因原文）：那是运营唯一能查到的失败证据；
+//   2. 失败也留；内部错误原文不进入商品查询响应；
 //   3. 分页是 page/size/hasMore：累计口径下重复取同一页得到同一批行（前端按 id 去重）。
 
 import (
 	"context"
 	"testing"
 
+	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
 	publishrecordoutbound "go_wp/internal/module/product/outbound/publishrecord"
-	presentationdto "go_wp/internal/module/presentation/dto"
 )
 
 // withPublishAttemptPort 给 fixture 的商品 service 接上发布历史端口
@@ -55,8 +55,8 @@ func TestPublishAttemptsRecordsEveryPublish(t *testing.T) {
 	if row.Trigger != "create" {
 		t.Fatalf("建实例触发的发布应记 create: %+v", row)
 	}
-	if row.CreatedAtText == "" {
-		t.Fatalf("时间必须已格式化（前端只填 textContent）: %+v", row)
+	if row.CreatedAt.TimeOrZero().IsZero() {
+		t.Fatalf("必须返回原始发布时刻，由前端格式化: %+v", row)
 	}
 	if row.ArtifactVersion == 0 || row.ArtifactHash == "" {
 		t.Fatalf("成功的尝试要指向产物版本与 hash: %+v", row)

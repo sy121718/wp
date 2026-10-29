@@ -28,8 +28,6 @@ import (
 
 // dtoValueObjects 允许不带 Req / Resp 后缀的导出类型（既进请求也进回执的共用形状）。
 var dtoValueObjects = map[string]string{
-	"PricingForm":       "表单回填值：试算后原样回填的取值，由 Req.Form() 产生",
-	"AttrValueFormRow":  "表单行：属性值行，请求提交与页面回显是同一形状",
 	"FieldKind":         "绑定原语的类型事实（product_form_req.go）",
 	"FieldValueError":   "绑定原语的错误类型（product_form_req.go）",
 	"BulkRejectedError": "错误包装：整批拒绝时把可定位条目带出 service（既不是入参也不是回执）",

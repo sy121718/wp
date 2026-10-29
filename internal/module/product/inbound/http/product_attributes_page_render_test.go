@@ -17,7 +17,6 @@ package producthttp
 
 import (
 	"go_wp/internal/adminui"
-	productenums "go_wp/internal/module/product/enums"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -27,7 +26,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
 
@@ -55,135 +53,41 @@ func attributesPageRequest(t *testing.T, h *ProductPageHandle, target string) *h
 	return rec
 }
 
-// attributesPageEnv 读模型桩 + 工程清单（与 taxonomyEnv 同形，只是读模型走视图）。
-func attributesPageEnv(view *productdto.ProductAttributesPageResp, err error) (*ProductPageHandle, *productPageReaderStub) {
-	reader := &productPageReaderStub{attributesPageView: view, attributesPageErr: err}
-	h := &ProductPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: reader, reader: reader,
-	}
-	return h, reader
-}
-
-// TestProductAttributesPageSuccessRendersRowsAndDrawers 正常档：行、两个抽屉模板、参数转发一次到位。
 func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
-		v.SelectedProject = "p1"
-		v.AttributeDetails = []*productdto.AttributeResp{
-			{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, ValueCount: 3},
-		}
-		v.Total = 1
-	})
-	h, reader := attributesPageEnv(view, nil)
-
-	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=p1&keyword=col&variation=1&page=2")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("正常档应为 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	stub := &productPageReaderStub{attributes: []*productdto.AttributeResp{{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, Values: []productdto.AttributeValueResp{{ID: "v1", Label: "红色", Sort: 3, Enabled: true}}}}}
+	rec := attributesPageRequest(t, &ProductPageHandle{products: stub}, "/admin/product-attributes?project=p1&keyword=col&variation=1&page=2")
+	if rec.Code != 200 {
+		t.Fatalf("渲染失败: %d %s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Cache-Control"); got == "no-store" {
-		t.Fatal("正常档不该 no-store（那是失败页的档）")
-	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		"<html", "</body>", "</html>",
-		// 行与抽屉外壳：行装配仍留在控制器，漏装会让页面看起来「没有属性组」。
-		`color`, `颜色`,
-		`tpl-attr-edit-a1`, `tpl-attr-values-a1`, `tpl-attr-create`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("页面缺 %q，body=%s", want, headOf(body))
+	for _, want := range []string{"</html>", "颜色", "红色", "tpl-attr-edit-a1", "tpl-attr-values-a1", "tpl-attr-create", "data-attribute-add", "data-write-json=\"values\""} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("缺少%s", want)
 		}
 	}
-	// 参数转发：四个查询串参数一个都不能丢（丢掉 page 会让翻页回到第 1 页而链接显示第 2 页）。
-	if len(reader.attributesPageReqs) != 1 {
-		t.Fatalf("读模型应被调用一次，实际 %d 次", len(reader.attributesPageReqs))
-	}
-	got := reader.attributesPageReqs[0]
-	if got.ProjectID != "p1" || got.Keyword != "col" || got.Variation != "1" || got.Page != 2 {
-		t.Fatalf("查询串没原样转发给读模型：%+v", got)
+	if len(stub.queryReqs) != 1 || stub.queryReqs[0].Keyword != "col" || stub.queryReqs[0].Page != 2 || stub.queryReqs[0].Variation != "1" {
+		t.Fatalf("查询参数丢失: %+v", stub.queryReqs)
 	}
 }
-
-// TestProductAttributesPageUnknownProjectIsBadRequest 未知工程：400 + no-store，仍是「这一页」。
 func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
-	})
-	h, _ := attributesPageEnv(view, productenums.Err(productenums.ErrInvalidParam))
-	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=does-not-exist")
-	assertProductJSONFailure(t, "属性页未知工程", rec, http.StatusBadRequest, "请求参数无效")
-}
-
-// 读模型没接上这一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
-// 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
-// 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
-
-// TestProductAttributesPageNilViewIsGuarded 读模型返回 nil 视图：不 panic，交 500 JSON。
-//
-// 契约上视图恒非 nil，但契约是**约定**而不是类型保证 —— 控制器那一层守卫必须存在，
-// 否则一次装配/实现失误会变成 nil 解引用（整个进程 recover 成一张无信息错误页）。
-func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
-	reader := &productPageReaderStub{}
-	reader.attributesPageView = nil
-	h := &ProductPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: reader, reader: reader,
-	}
-	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=p1")
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("nil 视图应兜成 500，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Fatalf("nil 视图兜底也走 JSON 出口，Content-Type=%q", ct)
+	stub := &productPageReaderStub{}
+	rec := attributesPageRequest(t, &ProductPageHandle{products: stub}, "/admin/product-attributes?project=missing")
+	assertProductJSONFailure(t, "工程不存在", rec, http.StatusBadRequest, "请求参数无效")
+	if len(stub.queryReqs) != 0 {
+		t.Fatal("无效工程之后仍查属性")
 	}
 }
-
-// TestProductAttributesPageUsesJSONWriteBase 属性页的写动作必须声明在 JSON 写基座上。
-//
-// 本批把 create/update/set-values/delete/bulk-delete 五个页面 POST 换成同名的 /api 端点，
-// 页面侧只留下 data-write-* 声明。这类改动的失败模式是**静默**的：漏一处声明，按钮还在、
-// 点了没反应（基座不认这个表单），而没有任何一条既有判据会红 —— 原来守这五条 htmx 出口的
-// 用例（product_attribute_form_fail_test.go / product_attribute_form_fail_render_test.go）
-// 已随功能删除。
 func TestProductAttributesPageUsesJSONWriteBase(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
-		v.SelectedProject = "p1"
-		v.AttributeDetails = []*productdto.AttributeResp{
-			{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, ValueCount: 3},
-		}
-		v.Total = 1
-	})
-	h, _ := attributesPageEnv(view, nil)
-
-	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=p1")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("正常档应为 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	stub := &productPageReaderStub{attributes: []*productdto.AttributeResp{{ID: "a1", Name: "颜色"}}}
+	rec := attributesPageRequest(t, &ProductPageHandle{products: stub}, "/admin/product-attributes?project=p1")
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
 	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		// 列表级：批量表单容器 + 批量按钮的就地声明。
-		`data-list-bulk`,
-		`data-write-url="/api/product/attribute/bulk-delete"`,
-		`data-write-reload`,
-		// 行级：单条删除（端点只吃 ID，所以不带 data-write-extra）。
-		`data-write-url="/api/product/attribute/delete"`,
-		// 抽屉里的两条表单（编辑 = update、值编辑 = set-values）。
-		`data-write-url="/api/product/attribute/update"`,
-		`data-write-url="/api/product/attribute/set-values"`,
-		// 状态位：基座把失败/成功文案写进它。
-		`data-write-status`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("属性页缺少 %s —— 该写动作没接到 JSON 写基座上", want)
+	for _, action := range []string{"create", "update", "delete", "bulk-delete", "set-values"} {
+		if !strings.Contains(rec.Body.String(), "/api/product/attribute/"+action) {
+			t.Errorf("缺少%s", action)
 		}
 	}
-	// 负向：三条已删的页面 POST 不能再出现在页面里（残留即「点了走整页跳转」）。
-	for _, gone := range []string{
-		"/admin/product-attributes/bulk-delete",
-		"/admin/product-attributes/delete",
-		"/admin/product-attributes/set-values",
-	} {
-		if strings.Contains(body, gone) {
-			t.Fatalf("属性页仍引用已删除的页面 POST %q", gone)
-		}
+	if strings.Contains(rec.Body.String(), "/admin/product-attributes/value-rows") {
+		t.Fatal("行编辑仍回传服务端")
 	}
 }

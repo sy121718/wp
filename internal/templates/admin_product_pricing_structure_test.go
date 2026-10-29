@@ -1,13 +1,6 @@
 package templates
 
-// admin_product_pricing_structure_test.go — 定价工具页的写动作用 JSON 写基座（批次 D）。
-//
-// 这一页与其它页不同：**同一张表单承载两个动作**。
-//   · 试算（preview）是只读的，结果是一张表格，必须整页重渲才渲染得出来 —— 保留原生提交；
-//   · 应用调价（apply）是写动作，走 /api/product/pricing/apply，由 ui/write-base.js 提交。
-//
-// 因此判据的重点不是「表单挂没挂基座」，而是**表单本身绝不能挂**：一旦 form 带
-// data-write-api，试算也会被拦进 fetch，用户再也看不到试算表（点了没反应/没表格）。
+// 定价试算与应用共用写基座；JSON 结果由前端渲染，GET 只读取业务对象。
 import (
 	"strings"
 	"testing"
@@ -15,32 +8,12 @@ import (
 	"golang.org/x/net/html"
 )
 
-// pricingPageData 定价页的渲染数据（与 ProductPricingPageResp 同形）。
-//
-// HasPreview=false：本测试只钉写通道的接线，试算表那一段与它无关，
-// 少一份假明细就少一处「模板字段改了却没人发现」的假绿来源。
 func pricingPageData() map[string]any {
 	return groupDData(map[string]any{
-		"SelectedProject": "pr1",
-		"Projects":        groupDProjects(),
-		"Rules": []map[string]any{
-			{"Type": "multiplier", "Name": "成本乘倍数", "Params": "multiplier", "RequiresCost": true},
-		},
-		"Roundings": []map[string]any{
-			{"Value": "0.01", "Name": "保留两位小数"},
-		},
-		"Form": map[string]any{
-			"ProjectID": "pr1", "RuleType": "multiplier", "Multiplier": "1.2",
-			"Amount": "", "Margin": "", "Rounding": "0.01", "Scope": "filter",
-			"TargetID": "", "Status": "", "Keyword": "",
-			"CategoryID": "", "BrandID": "", "TagID": "", "Note": "",
-		},
-		"HasPreview":     false,
-		"PreviewSummary": map[string]any{},
-		"PreviewRows":    []map[string]any{},
-		"History":        []map[string]any{},
-		"Err":            "",
-		"ListQuery":      "project=pr1",
+		"Scope":     map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
+		"Rules":     []map[string]any{{"Type": "cost_multiple", "RequiresCost": true}},
+		"Roundings": []map[string]any{{"Value": "none"}},
+		"History":   []map[string]any{},
 	})
 }
 
@@ -58,26 +31,22 @@ func renderPricingPage(t *testing.T) (*html.Node, string) {
 	return root, out
 }
 
-// TestPricingFormKeepsNativePreview 表单本身保持原生提交（试算要整页重渲才出表格）。
-func TestPricingFormKeepsNativePreview(t *testing.T) {
+func TestPricingPreviewUsesJSONBase(t *testing.T) {
 	root, out := renderPricingPage(t)
-
-	form := firstNode(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "action") == "/admin/product-pricing/preview"
-	})
-	if form == nil {
-		t.Fatalf("找不到 action=/admin/product-pricing/preview 的表单；输出片段：%s", snippet(out))
+	form := firstNode(root, func(n *html.Node) bool { return peEl(n, "form") && peHasAttr(n, "data-pricing-form") })
+	if form == nil || peAttr(form, "data-write-url") != "/api/product/pricing/preview" || peAttr(form, "data-write") != "custom" {
+		t.Fatalf("预览必须复用JSON写基座：%s", snippet(out))
 	}
-	if peHasAttr(form, "data-write-url") {
-		t.Fatalf("表单本身不能挂 data-write-api —— 那会把「预览试算」也拦进 fetch，试算表就没了")
-	}
-	// CSRF 隐藏域必须留着：试算仍是原生 POST，没有基座的 X-CSRF-Token 头可用。
 	if !hasInputNamed(form, "csrf_token") {
-		t.Fatalf("试算仍是原生表单提交，csrf_token 隐藏域不能删")
+		t.Fatal("JSON FormData请求仍需CSRF隐藏字段")
 	}
-	// 旧的应用端点不该再出现在任何地方（formaction 也不行）。
-	if strings.Contains(out, "/admin/product-pricing/apply") {
-		t.Fatalf("输出里仍有已删除的页面端点 /admin/product-pricing/apply")
+	for _, old := range []string{"/admin/product-pricing/preview", "/admin/product-pricing/apply"} {
+		if strings.Contains(out, old) {
+			t.Fatalf("保留了页面POST路径：%s", old)
+		}
+	}
+	if !strings.Contains(out, "data-preview-lines") || !strings.Contains(out, "/static/js/ui/product-pricing.js") {
+		t.Fatal("缺少消费JSON结果的节点与控件")
 	}
 }
 
@@ -92,7 +61,7 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 		apply = n
 	}
 	if apply == nil {
-		t.Fatalf("找不到挂 hx-post=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
+		t.Fatalf("找不到挂 data-write-url=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
 	}
 	if got := peAttr(apply, "data-write-url"); got != "/api/product/pricing/apply" {
 		t.Fatalf("应用按钮的 data-write-url = %q，want /api/product/pricing/apply", got)
@@ -106,15 +75,15 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 		}
 	}
 	if peAttr(apply, "data-write-confirm") == "" {
-		t.Fatalf("应用调价会立刻写库，按钮必须带 data-confirm")
+		t.Fatalf("应用调价会立刻写库，按钮必须带 data-write-confirm")
 	}
 
-	// 试算按钮不能带端点：它与应用按钮同在一个表单里，被基座接走就再也出不了试算表。
+	// 试算按钮继承 form 的预览端点，应用按钮覆盖为应用端点。
 	preview := firstNode(root, func(n *html.Node) bool {
 		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "data-write-url")
 	})
 	if preview == nil {
-		t.Fatalf("找不到试算按钮（应当是不带 data-write-api 的 submit 按钮）")
+		t.Fatalf("找不到试算按钮（应当继承 form 的 data-write-url）")
 	}
 }
 
@@ -123,7 +92,7 @@ func TestPricingPageStatusAndFlashTargets(t *testing.T) {
 	root, out := renderPricingPage(t)
 
 	form := firstNode(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "action") == "/admin/product-pricing/preview"
+		return peEl(n, "form") && peHasAttr(n, "data-pricing-form")
 	})
 	if form == nil {
 		t.Fatalf("找不到改价表单；输出片段：%s", snippet(out))

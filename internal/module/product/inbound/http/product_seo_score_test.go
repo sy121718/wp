@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/seo/scoring"
 )
@@ -108,7 +109,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 	product := productRowForRender()
 	products := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
 		"title": "编辑商品", "menu": "products",
-		"Projects": []gin.H{}, "SelectedProject": "proj-1",
+		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Attributes": []*productdto.AttributeResp{}, "Categories": []*productdto.CategoryResp{}, "Brands": []*productdto.BrandResp{}, "Tags": []*productdto.TagResp{},
 		"WarehouseOptions": []gin.H{}, "Err": "",
 		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
 		"Product":         product,
@@ -132,9 +133,8 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 
 	categories := renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
 		"title": "商品分类", "menu": "product-categories",
-		"Projects": []gin.H{}, "SelectedProject": "proj-1", "Options": []gin.H{},
-		"Categories": []gin.H{{"ID": "c1", "Name": "男装", "Slug": "men", "Label": "男装", "Sort": 0,
-			"SEOTitle": "", "SEODescription": "", "Description": "", "Image": "", "ParentID": ""}},
+		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Query": &productdto.CatalogTaxonomyReq{}, "Result": &productdto.CategorySearchResp{Page: 1, Size: 20, Items: []*productdto.CategoryResp{{ID: "c1", Name: "男装", Slug: "men"}}}, "Categories": []*productdto.CategoryResp{}, "req_path": "/admin/product-categories",
+
 		// SEO 按钮在每行的编辑抽屉里，而抽屉由权限决定显隐 —— 不给权限时整块不渲染。
 		"Buttons": map[string]any{"product.category_update": true},
 		"Err":     "",
@@ -147,9 +147,8 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 
 	brands := renderAdminTemplate(t, "admin/product/product_brands.html", productPageLayoutData(gin.H{
 		"title": "商品品牌", "menu": "product-brands",
-		"Projects": []gin.H{}, "SelectedProject": "proj-1",
-		"Brands": []gin.H{{"ID": "b1", "Name": "示例品牌", "Slug": "demo", "Sort": 0,
-			"Logo": "", "SEOTitle": "", "SEODescription": "", "Description": ""}},
+		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Query": &productdto.CatalogTaxonomyReq{}, "Result": &productdto.TaxonomyListResp[*productdto.BrandResp]{Page: 1, Size: 20, Items: []*productdto.BrandResp{{ID: "b1", Name: "示例品牌", Slug: "demo"}}}, "req_path": "/admin/product-brands",
+
 		"Buttons": map[string]any{"product.brand_update": true},
 		"Err":     "",
 	}))
@@ -185,33 +184,15 @@ func testTranslateFunc() func(key, fallback string) string {
 
 // productRowForRender 商品行数据的渲染用例夹具（详情页 / 编辑页 / 捆绑区块 / 评分片段共用）。
 //
-// 行由读模型装配（service/product_row.go），形状是 dto.ProductRowResp —— 本夹具与它逐字段对齐。
+// 直接使用 dto.ProductResp 业务对象，与生产页面读取的数据契约相同。
 // 模板读 `p.X` 时 struct 缺字段会**渲染期报错**（map 缺键只是 nil），所以这个夹具同时充当
 // 「模板 ↔ 结构体」的渲染守卫；字段级双向对账见 product_row_template_test.go。
-func productRowForRender() *productdto.ProductRowResp {
-	attr := &productdto.AttributeResp{ID: "a1", Name: "颜色", IsVariation: true}
-	return &productdto.ProductRowResp{
-		ID: "p1", Name: "纯棉 T 恤", Slug: "tee", Status: "published",
-		PriceMin: 59, PriceMax: 99, VariantCount: 1,
-		Variants: []productdto.VariantListRowResp{{
-			ID: "v1", SKUCode: "SZ_TEE_001", Spec: "颜色 白色",
-			Price: 59, ComparePrice: nil, CostPrice: nil, Enabled: true, StockTotal: 10,
-			OptionValues: "{}",
-		}},
-		Attributes:          []*productdto.AttributeResp{attr},
-		VariationAttributes: []*productdto.AttributeResp{attr},
-		CategoryChecks:      []productdto.CategoryCheckRowResp{{ID: "c1", Label: "男装", Checked: true}},
-		CategoryCell:        "男装",
-		PrimaryOptions:      []productdto.PickOptionResp{{Value: "c1", Label: "男装", Selected: true}},
-		BrandOptions:        []productdto.PickOptionResp{{Label: "（不指定品牌）", Selected: true, IsNone: true}},
-		BrandName:           "—",
-		TagChecks:           []productdto.TagCheckRowResp{},
-		AutoTags:            []productdto.AutoTagRowResp{},
-		TagNames:            []string{"—"},
-		Ratings:             []productdto.RatingRowResp{},
-		HasRating:           false,
-		RatingAvg:           "0.00",
-		RatingCount:         0,
+func productRowForRender() *productdto.ProductResp {
+	attr := &productdto.AttributeResp{ID: "a1", Key: "color", Name: "颜色", IsVariation: true, Values: []productdto.AttributeValueResp{}}
+	return &productdto.ProductResp{
+		ID: "p1", ProjectID: "p1", Name: "测试商品", Slug: "tee", Status: "published", PriceMin: 59, PriceMax: 99, VariantCount: 1,
+		Variants:   []*productdto.VariantResp{{ID: "v1", SKUCode: "SZ_TEE_001", Price: 59, Enabled: true, StockTotal: 10, OptionValues: json.RawMessage("{}")}},
+		Attributes: []*productdto.AttributeResp{attr}, Categories: []*productdto.CategoryResp{{ID: "c1", Name: "男装"}}, Rating: &productdto.RatingResp{},
 	}
 }
 
@@ -253,7 +234,7 @@ func TestProductEditRendersMediaGallery(t *testing.T) {
 	product := productRowForRender()
 	out := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
 		"title": "编辑商品", "menu": "products",
-		"Projects": []gin.H{}, "SelectedProject": "proj-1",
+		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Attributes": []*productdto.AttributeResp{}, "Categories": []*productdto.CategoryResp{}, "Brands": []*productdto.BrandResp{}, "Tags": []*productdto.TagResp{},
 		"WarehouseOptions": []gin.H{}, "Err": "",
 		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
 		"Product":         product,

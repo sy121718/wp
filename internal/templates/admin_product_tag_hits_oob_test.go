@@ -32,6 +32,7 @@ package templates
 // `<hx-partial>`、`<template hx type="partial">`、以及含嵌套子元素三种形态均有效。
 
 import (
+	productdto "go_wp/internal/module/product/dto"
 	"os"
 	"strings"
 	"testing"
@@ -40,15 +41,9 @@ import (
 // fragmentWithItems 命中片段的真实数据形态（与 TestProductTagHitsFragmentProvidesCardShell 同源）：
 // 有 Items 才走正常分支，回写指令也在那个分支里。
 func fragmentWithItems() map[string]any {
-	return groupDData(map[string]any{
-		"TagID": "t1", "ProjectID": "pr1", "TagName": "清仓",
-		"Total":      120,
-		"Items":      []map[string]any{{"ID": "p1", "Name": "上架商品", "Slug": "p-one", "Status": "published"}},
-		"Pagination": tagHitsFacts(120, 2, 50, "pr1"),
-	})
+	return tagHitsData(120, 2, 50, "pr1", []*productdto.TagProductResp{{ID: "p1", Name: "上架商品", Slug: "p-one", Status: "published"}})
 }
 
-// TestTagHitsPartialTargetsCountButton 片段必须带一条指向命中数按钮的 partial 指令。
 func TestTagHitsPartialTargetsCountButton(t *testing.T) {
 	out, err := render(t, groupDSet(t), "admin/product/product_tag_hits", fragmentWithItems())
 	if err != nil {

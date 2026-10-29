@@ -45,25 +45,25 @@ func (f *variantListFixture) seedVariants(t *testing.T, p *productdto.ProductRes
 
 // editableRow 读回编辑页那一行（Get + fillVariantListStocks 的对外等价物）。
 func (f *variantListFixture) editableRow(t *testing.T, p *productdto.ProductResp,
-	optionValues []byte) productdto.VariantListRowResp {
+	optionValues []byte) *productdto.VariantResp {
 	t.Helper()
-	view, err := f.products.ProductEditPage(context.Background(), &productdto.ProductEditPageReq{
-		ProjectID: f.projectID, ProductID: p.ID,
+	product, err := f.products.Get(context.Background(), &productdto.GetReq{
+		ProjectID: f.projectID, ID: p.ID,
 	})
 	if err != nil {
 		t.Fatalf("读编辑页失败: %v", err)
 	}
-	if view.Product == nil {
+	if product == nil {
 		t.Fatal("编辑页应带回商品行")
 	}
 	want := optionKeyOf(t, optionValues)
-	for _, row := range view.Product.Variants {
+	for _, row := range product.Variants {
 		if optionKeyOf(t, []byte(row.OptionValues)) == want {
 			return row
 		}
 	}
 	t.Fatalf("编辑页里没有组合 %s 的变体行", want)
-	return productdto.VariantListRowResp{}
+	return nil
 }
 
 // TestVariantStockRowsReadBack 明细读得回来：分组按仓、数量是当前在库、StocksKnown=true。
@@ -95,6 +95,9 @@ func TestVariantStockRowsReadBack(t *testing.T) {
 	}
 	if group.Rows[0].SKUCode == "" {
 		t.Fatal("货行要有编码（模板显示与判重键都靠它）")
+	}
+	if row.StockTotal != group.Rows[0].Quantity {
+		t.Fatalf("变体汇总与已读取明细必须同源：total=%d row=%d", row.StockTotal, group.Rows[0].Quantity)
 	}
 	if !group.Rows[0].TrackQuantity {
 		t.Fatal("填了数字的行必须是被跟踪的（变动路径写回时两列同一条 UPDATE）")

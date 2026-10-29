@@ -25,6 +25,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	json "go_wp/pkg/jsonx"
 )
 
 // grantProductPerms 让测试以「有写权限的用户」身份渲染页面。
@@ -172,10 +173,30 @@ func TestVariantGenerateSelectionsCreateCombinations(t *testing.T) {
 		t.Fatalf("勾选两个值应生成 2 个组合，实际 %d", detail.VariantCount)
 	}
 	detailBody := getProductDetailPage(engine, f.projectID, product.ID)
-	for _, want := range []string{"颜色 RED", "颜色 BLUE"} {
-		if !strings.Contains(detailBody, want) {
-			t.Fatalf("页面缺少规格文本 %q", want)
+	display := productDisplayData(t, detailBody)
+	if len(display.Attributes) != 1 || display.Attributes[0].ID != attr.ID || display.Attributes[0].Name != "颜色" || len(display.Variants) != 2 {
+		t.Fatalf("页面缺少完整属性与变体数据：%+v", display)
+	}
+	labels := map[string]string{}
+	for _, value := range display.Attributes[0].Values {
+		labels[value.Key] = value.Label
+	}
+	if labels["red"] != "RED" || labels["blue"] != "BLUE" {
+		t.Fatalf("属性值标签被丢失：%v", labels)
+	}
+	seen := map[string]bool{}
+	for _, variant := range display.Variants {
+		var values map[string]string
+		if err := json.Unmarshal(variant.OptionValues, &values); err != nil {
+			t.Fatal(err)
 		}
+		seen[values["color"]] = true
+		if !strings.Contains(detailBody, `<span data-product-spec="`+variant.ID+`"></span>`) {
+			t.Fatalf("变体 %s 缺少前端规格显示位置", variant.ID)
+		}
+	}
+	if len(seen) != 2 || !seen["red"] || !seen["blue"] {
+		t.Fatalf("页面变体组合不完整：%v", seen)
 	}
 }
 
@@ -238,4 +259,23 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 			t.Fatalf("变体区不应再出现旧提交形态 %q", bad)
 		}
 	}
+}
+
+// productDisplayData 从真实页面取显示控件的原始对象，验证模板与脚本之间的数据契约。
+func productDisplayData(t *testing.T, body string) *productdto.ProductResp {
+	t.Helper()
+	const opening = `<script type="application/json" id="product-display-data">`
+	_, rest, found := strings.Cut(body, opening)
+	if !found {
+		t.Fatal("商品页面缺少显示数据")
+	}
+	raw, _, closed := strings.Cut(rest, "</script>")
+	if !closed {
+		t.Fatal("商品显示数据没有闭合")
+	}
+	var result productdto.ProductResp
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatalf("商品显示数据不是原始 JSON：%v", err)
+	}
+	return &result
 }

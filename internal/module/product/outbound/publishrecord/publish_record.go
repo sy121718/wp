@@ -11,8 +11,7 @@ package publishrecord
 
 import (
 	"context"
-	"strconv"
-	"strings"
+	"go_wp/pkg/utils"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -71,15 +70,11 @@ func (p *Port) PublishAttempts(ctx context.Context, projectID, productID string,
 	for _, r := range page.Rows {
 		res.Rows = append(res.Rows, productdto.PublishAttemptRowResp{
 			ID:              r.ID,
-			CreatedAtText:   r.CreatedAt.Local().Format("2006-01-02 15:04"),
+			CreatedAt:       utils.NewJSONTime(r.CreatedAt),
 			Trigger:         r.Trigger,
 			Outcome:         r.Outcome,
-			ErrorText:       r.ErrorText,
 			Langs:           r.Langs,
-			LangsText:       strings.Join(r.Langs, ", "),
 			Attempts:        r.Attempts,
-			AttemptsText:    attemptsText(r.Attempts),
-			DurationText:    durationText(r.DurationMs),
 			ArtifactVersion: r.ArtifactVersion,
 			ArtifactHash:    r.ArtifactHash,
 			OperatorName:    r.OperatorName,
@@ -114,25 +109,4 @@ func (p *Port) Langs(ctx context.Context, projectID string, entityIDs []string) 
 		})
 	}
 	return out, nil
-}
-
-// attemptsText 重试次数：一次成就不显示（模板据此留空）。
-//
-// 「重试」不是"第几次发布"而是"编译结果被丢弃重来"的次数 —— 有值才说明这一回不顺利。
-func attemptsText(n int) string {
-	if n <= 1 {
-		return ""
-	}
-	return strconv.Itoa(n) + "x"
-}
-
-// durationText 耗时显示：<1s 给毫秒，其余给一位小数的秒。
-func durationText(ms int64) string {
-	if ms <= 0 {
-		return ""
-	}
-	if ms < 1000 {
-		return strconv.FormatInt(ms, 10) + "ms"
-	}
-	return strconv.FormatFloat(float64(ms)/1000, 'f', 1, 64) + "s"
 }

@@ -19,15 +19,6 @@ import (
 //（那种情况 HTTP 仍 200、后半截整块消失）。渲染外壳与断言工具复用同包的 groupDData /
 // renderAdminPage。
 
-// pricingFieldsForm 片段需要的表单初值（键名与 PricingRuleReq 的字段一致）。
-func pricingFieldsForm() map[string]any {
-	return map[string]any{
-		"RuleType": "markup", "Multiplier": "2", "Amount": "1", "Margin": "0.3",
-		"Rounding": "none", "Scope": "sku", "TargetID": "", "Status": "",
-		"Keyword": "", "CategoryID": "", "BrandID": "", "TagID": "", "Note": "",
-	}
-}
-
 func pricingFieldsRules() []map[string]any {
 	return []map[string]any{{"Type": "markup", "Name": "成本加价", "RequiresCost": true, "Params": "amount"}}
 }
@@ -45,23 +36,16 @@ func TestPricingRuleFieldsLabelContract(t *testing.T) {
 			// 调用点一：独立定价工具页。
 			page: "product_pricing",
 			data: groupDData(map[string]any{
-				"SelectedProject": "pr1", "Err": "", "Applied": "",
-				"Projects": groupDProjects(),
-				"Form":     pricingFieldsForm(), "Rules": pricingFieldsRules(), "Roundings": pricingFieldsRoundings(),
-				"HasPreview": false, "History": []map[string]any{},
+				"Scope": map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
+				"Rules": pricingFieldsRules(), "Roundings": pricingFieldsRoundings(),
+				"History": []map[string]any{},
 			}),
 		},
 		{
 			// 调用点二：商品列表页的批量改价抽屉（片段在 `<template id="tpl-product-pricing">` 内，
-			// 由表单里的 Rules / Roundings / Form 三个键决定要不要渲染）。
+			// 由表单里的 Rules / Roundings 两个目录决定要不要渲染）。
 			page: "products",
-			data: groupDData(map[string]any{
-				"SelectedProject": "pr1", "Err": "",
-				"Projects":         groupDProjects(),
-				"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
-				"Products":         []map[string]any{groupDProductRow()},
-				"Form":             pricingFieldsForm(), "Rules": pricingFieldsRules(), "Roundings": pricingFieldsRoundings(),
-			}),
+			data: productCatalogData(map[string]any{"req_path": "/admin/products", "Rules": pricingFieldsRules(), "Roundings": pricingFieldsRoundings()}),
 		},
 	}
 

@@ -1,32 +1,19 @@
-{* admin/product_detail.html — 商品详情：**只读** *}
-{* 职能（评审见 ~/.dsh/skills/admin-ui-logic §1）：本页回答「这个商品由什么组成」，
-   一个字都不改。全部写动作在 admin/product_edit.html（商品域唯一的编辑界面）：
-   基本字段 / 属性引用 / 分类与品牌 / 手工标签 / 变体清单 / 评分 / SEO 检查 /
-   详情页模板的双轨动作 —— 详情页只读之后，那些能力在那里，不在这里。
-   为什么本页不再放表单：读与写混在同一页时，用户分不清「我现在是在看还是在改」，
-   而且每个写表单都要带 CSRF、错误回显、回跳地址 —— 那是编辑页的职责。
-   版式：§2.1 正文零说明文字（商品级说明整段进 .help 悬浮）、§2.2 页级动作与页头同行、
-   §7 子资源表沿用标准骨架（.list-card + .list-toolbar + .data-table）、
-   §3 一列一个概念（单元格放值不拼句子）、只读事实用 .kv 的「标签 + 值」成对形态。
-   唯一的 POST 是「预览」：它渲染前台效果、不写任何库。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
 {{extends "../layout.html"}}
-{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{end}}
+{{block pageTitle()}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}{{tnf := .["tn"]}}
 {{csrf := .["csrf_token"]}}
-{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。
-   注意它与下面 `.HasProduct` 为假的「商品不存在」空态是**两档**：
-   这一档是「没读到」（数据库 / 超时 / 权限），那一档是「读到了、库里没有这一条」。 *}
-{{selectedProject := .SelectedProject}}
+
+{{selectedProject := .Scope.ProjectID}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}</h1>
-                {{if .HasProduct}}<span class="badge">{{.Product.Status}}</span>{{end}}
+                <h1>{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}</h1>
+                {{if isset(.Product)}}<span class="badge">{{.Product.Status}}</span>{{end}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
                     <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_detail.hint.readonly", "本页是**只读**的：属性引用、分类与品牌、手工标签、变体清单、评分、SEO 检查、详情页模板的改动都在「编辑」页（商品列表行的「编辑」进入）。这里只回答这个商品由什么组成。") }}<br><br>{{ .["t"]("admin.product_detail.hint.autoTags", "自动标签只读 —— 它的归属由规则重算维护，手工改会被下一次重算覆盖。") }}<br><br>{{ .["t"]("admin.product_detail.hint.rating", "评分是独立明细：平均值与条数由明细算出；「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选。") }}</span>
@@ -34,73 +21,65 @@
             </div>
         </div>
         <div class="page-actions">
-            <a class="btn btn-ghost" href="{{.BackURL}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
-            {{if .HasProduct}}
-            {* 只读页不给编辑入口（用户明确要求）：要看/改字段去列表行的「编辑」；
-               这里只留两个「看」的出口 —— 详情页模板配置与前台预览。 *}
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+            {{if isset(.Product)}}
+
             <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
             <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("admin.products.row.preview", "预览") }}</button>
             {{end}}
         </div>
     </header>
 
-    {{if !.HasProduct}}
+    {{if !isset(.Product)}}
     <section class="card card-body">
         <div class="empty-state">
             <p class="empty-title">{{ .["t"]("admin.product_detail.notFound.title", "商品不存在") }}</p>
             <p class="empty-desc">{{ .["t"]("admin.product_detail.notFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
             <div class="empty-actions">
-                <a class="btn btn-primary" href="{{.BackURL}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+                <a class="btn btn-primary" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
             </div>
         </div>
     </section>
     {{else}}
     {{p := .Product}}
 
-    {* ==== 基本信息：只读事实（.kv，标签 + 值成对） ==== *}
     <section class="card card-body">
         <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.name", "商品") }}</dt><dd>{{p.Name}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.slug", "URL 段") }}</dt><dd>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
-            {* 主体 SKU（products.sku_code，迁移 246）：只读展示。它的唯一性范围是**本工程** ——
-               同工程的两个商品不能共用同一主体 SKU（部分唯一索引 uq_products_project_sku_code），
-               变体 SKU 以它为主体拼接；跨工程 / 跨仓库可以有同名编码。 *}
+
             <div class="kv-item"><dt>{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</dt><dd>{{if isset(p.SKUCode)}}{{if p.SKUCode != ""}}<code>{{p.SKUCode}}</code>{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}} <span class="text-mute text-sm">{{ .["t"]("admin.product_detail.sku.scope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.status", "状态") }}</dt><dd><span class="badge">{{p.Status}}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.variants", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</dt><dd>{{if len(p.Attributes) == 0}}<span class="text-mute">—</span>{{else}}{{range _, a := p.Attributes}}<span class="badge badge-{{if a.IsVariation}}info{{else}}mute{{end}}">{{a.Name}}{{if a.IsVariation}}{{ .["t"]("admin.products.row.variationSuffix", "（参与变体）") }}{{end}} × {{a.ValueCount}}</span>{{end}}{{end}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.categories", "分类") }}</dt><dd>{{if isset(p.CategoryCell)}}{{if p.CategoryCell != ""}}{{p.CategoryCell}}{{if isset(p.CategoryOthers)}}{{if p.CategoryOthers > 0}} <span class="badge badge-mute">+{{p.CategoryOthers}}</span>{{end}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{end}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.brand", "品牌") }}</dt><dd>{{if isset(p.BrandName)}}{{if p.BrandName != ""}}{{p.BrandName}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.categories", "分类") }}</dt><dd>{{if len(p.Categories) > 0}}{{range i, c := p.Categories}}{{if i > 0}}、{{end}}{{c.Name}}{{end}}{{else}}—{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.brand", "品牌") }}</dt><dd>{{if isset(p.Brand)}}{{p.Brand.Name}}{{else}}—{{end}}</dd></div>
         </dl>
 
-        {* 标签：手工 + 自动都只读展示（改动在编辑页）。 *}
         <h3>{{ .["t"]("admin.products.tags.title", "标签") }}</h3>
-        {{if len(p.TagChecks) > 0}}
+        {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
-            {{range _, t := p.TagChecks}}
-            {{if t.Checked}}<span class="var-value">{{t.Name}}</span>{{end}}
+            {{range _, t := p.Tags}}
+            {{if t.Kind == "manual"}}<span class="var-value">{{t.Name}}</span>{{end}}
             {{end}}
         </fieldset>
         {{end}}
-        {{if len(p.AutoTags) > 0}}
+        {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
-            {{range _, t := p.AutoTags}}
+            {{range _, t := p.Tags}}{{if t.Kind == "rule"}}
             <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
-            {{end}}
+            {{end}}{{end}}
         </fieldset>
         {{end}}
-        {{if len(p.TagChecks) == 0}}{{if len(p.AutoTags) == 0}}
+        {{if len(p.Tags) == 0}}
         <p class="text-mute text-sm">{{ .["t"]("admin.products.tags.none", "这个商品还没有标签。") }}</p>
-        {{end}}{{end}}
+        {{end}}
     </section>
 
-    {* ==== 变体清单：只读（改动在编辑页）====
-       列只放读的人要判断的值：SKU / 规格 / 价格 / 对比价 / 成本价 / 启用 / 库存，
-       末列给「各仓库存」的跳转 —— 它是查看动作，不是编辑。 *}
     <section class="card list-card">
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.products.variants.title", "变体") }}</strong>
@@ -109,8 +88,7 @@
         </div>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
             <table class="data-table data-table-wide">
-                {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
-                   一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
+
                 <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.stockLink", "库存明细") }}</th></tr></thead>
                 <tbody>
                 {{if len(p.Variants) == 0}}
@@ -119,7 +97,7 @@
                 {{range _, v := p.Variants}}
                 <tr>
                     <td><code>{{v.SKUCode}}</code></td>
-                    <td>{{v.Spec}}</td>
+                    <td><span data-product-spec="{{v.ID}}"></span></td>
                     <td>{{amount(v.Price)}}</td>
                     <td>{{amountDash(v.ComparePrice)}}</td>
                     <td>{{amountDash(v.CostPrice)}}</td>
@@ -135,23 +113,22 @@
         </div>
     </section>
 
-    {* ==== 评分：只读明细（增删在编辑页）==== *}
     <section class="card list-card">
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.products.rating.label", "评分") }}</strong>
-            <span class="badge badge-mute">{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
+            <span class="badge badge-mute">{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.Rating.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
             <span class="toolbar-spacer"></span>
         </div>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
             <table class="data-table">
                 <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th></tr></thead>
                 <tbody>
-                {{if len(p.Ratings) == 0}}
+                {{if len(p.Rating.Items) == 0}}
                 <tr><td colspan="3" class="text-mute text-sm">{{ .["t"]("admin.products.ratings.empty", "这个商品还没有评分。") }}</td></tr>
                 {{end}}
-                {{range _, r := p.Ratings}}
+                {{range _, r := p.Rating.Items}}
                 <tr>
-                    <td>{{r.Score}}</td>
+                    <td><span data-product-rating="{{r.Score}}">{{amount(r.Score)}}</span></td>
                     <td>{{r.Source}}</td>
                     <td>{{if isset(r.CreatedAt)}}{{formatTime(r.CreatedAt)}}{{end}}</td>
                 </tr>
@@ -161,17 +138,14 @@
         </div>
     </section>
 
-    {* ==== 详情页模板：只读展示绑定状态 ====
-       两个模式的徽标与预览在这里；进入自定义 / 编辑模板 / 重新套用预设 / 回滚都在编辑页
-       （它们会改文档，属写动作）。 *}
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Available}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
-        {{if isset(.TplPanel.InstanceID)}}
-        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
-        {{if .TplPanel.Status == "published" || .TplPanel.Status == "active"}}
-        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
+        {{if isset(.TplPanel.Bound.InstanceID)}}
+        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
+        {{if .TplPanel.Bound.Status == "published" || .TplPanel.Bound.Status == "active"}}
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
         {{else}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.unpublishedHint", "模板已绑定但尚未发布：先在详情页模板页完成首次发布。") }}</p>
         {{end}}
@@ -182,7 +156,6 @@
     {{end}}
     {{end}}
 
-    {* ==== 行内表单：预览（只读渲染，不写库）==== *}
     <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" target="_blank">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -191,4 +164,5 @@
 
     {{end}}
 </div>
+<script type="application/json" id="product-display-data">{{writeJson(.Product)}}</script>
 {{end}}

@@ -13,6 +13,8 @@ package feature
 
 import (
 	"context"
+	"errors"
+	"go_wp/pkg/facing"
 	"strings"
 	"testing"
 
@@ -219,37 +221,33 @@ func TestVariantDeleteGuardTwoReasons(t *testing.T) {
 	f.changeStock(t, movedOnly, inventoryenums.DirectionIn, 2)
 	f.changeStock(t, movedOnly, inventoryenums.DirectionOut, 2)
 
-	// 清单里一个都不保留 → 四个变体全在删除范围内：两种原因各一条，其余两个应被真的删掉。
-	res, err := f.saveListRaw(t, p.ID, []productdto.VariantListResp{})
-	if err != nil {
-		t.Fatalf("保存空清单应只在逐条跳过里体现（不整批失败），实际报错: %v", err)
-	}
-	if res.Deleted != 2 {
-		t.Fatalf("只有无引用面的两个该被删，实际 deleted=%d", res.Deleted)
+	// 清单中任一删除受阻，所有变体都应保留。
+	_, err := f.saveListRaw(t, p.ID, []productdto.VariantListResp{})
+	var rejected facing.BlockedError
+	if !errors.As(err, &rejected) {
+		t.Fatalf("应整批拒绝：%v", err)
 	}
 	reasons := map[string]string{}
-	for _, skip := range res.Skipped {
-		reasons[skip.VariantID] = skip.Reason
+	for _, item := range rejected.BlockedItems() {
+		reasons[item.ID] = item.ReasonKey
 	}
-	want := map[string]string{
-		withStock.ID: productenums.VariantSkipHasStock,
-		movedOnly.ID: productenums.VariantSkipHasMovement,
-	}
-	for id, reason := range want {
+	for id, reason := range map[string]string{withStock.ID: productenums.VariantSkipHasStock, movedOnly.ID: productenums.VariantSkipHasMovement} {
 		if reasons[id] != reason {
-			t.Fatalf("变体 %s 应报 %s，实际 %+v", id, reason, res.Skipped)
+			t.Fatalf("拒绝原因不符：%v", reasons)
 		}
 	}
-	// 被拦下的变体必须还在库里（守卫是「不改状态」，不是「删了一半」）；
-	// 没有引用面的必须真的没了（证明上面的 deleted=2 不是别处凑出来的）。
 	left := f.variantsOf(t, p.ID)
-	if len(left) != 2 {
-		t.Fatalf("被拦下的两个变体必须留在库里，实际 %d 个", len(left))
+	if len(left) != len(variants) {
+		t.Fatalf("整批拒绝后不应删除任一行：%d", len(left))
 	}
+	found := false
 	for _, v := range left {
 		if v.ID == unreferenced.ID {
-			t.Fatalf("无引用面的变体 %s 应已被删除，实际仍在库里", unreferenced.ID)
+			found = true
 		}
+	}
+	if !found {
+		t.Fatal("无引用的行也不能被部分删除")
 	}
 
 	// 单条删除路径共用同一个守卫（同一批原因 key，不是另一套文案）。

@@ -28,7 +28,6 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
-	"go_wp/pkg/facing"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,12 +107,12 @@ func (p *detailTemplateRecordingPort) DefaultDetailTemplate(ctx context.Context,
 	return p.inner.DefaultDetailTemplate(ctx, projectID, entityType)
 }
 
-func (p *detailTemplateRecordingPort) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) productcontract.BoundTemplateView {
+func (p *detailTemplateRecordingPort) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) (productcontract.BoundTemplateView, error) {
 	p.calls = append(p.calls, "Bound:"+projectID)
 	return p.inner.BoundDetailTemplate(ctx, projectID, entityType, entityID)
 }
 
-func (p *detailTemplateRecordingPort) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) productcontract.DetailTemplatePanelFacts {
+func (p *detailTemplateRecordingPort) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) (productcontract.DetailTemplatePanelFacts, error) {
 	p.calls = append(p.calls, "Panel:"+projectID)
 	return p.inner.DetailTemplatePanel(ctx, projectID, entityType, entityID)
 }
@@ -220,19 +219,19 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 
 	// 1) 商品属于解析出的工程：不带 projectId 也必须取到它。
 	//    漏给作用域时 product 侧 resolveProjectID 在多工程下回 ErrInvalidParam -> HTTPStatus 400。
-	view, err := f.products.ProductDetailTemplatePage(ctx, &productdto.ProductDetailTemplatePageReq{ProductID: mine})
+	scope, err := f.products.ResolveCatalogScope(ctx, "")
 	if err != nil {
-		t.Fatalf("不带 projectId 打开详情模板页读模型报错：%v", err)
+		t.Fatal(err)
 	}
-	if view.SelectedProject != selected {
-		t.Fatalf("解析出的工程 = %q，want %q", view.SelectedProject, selected)
+	product, err := f.products.Get(ctx, &productdto.GetReq{ID: mine, ProjectID: scope.ProjectID})
+	if err != nil || product.ID != mine || scope.ProjectID != selected {
+		t.Fatalf("工程范围商品读取失败：scope=%+v product=%+v err=%v", scope, product, err)
 	}
-	if !view.Ready {
-		t.Fatalf("商品属于解析出的工程，页面应就绪（Ready=false 说明取数被参数档打断：取商品那一跳没带作用域）")
+	if _, err := f.products.QueryDetailTemplates(ctx, scope.ProjectID); err != nil {
+		t.Fatal(err)
 	}
-	if !view.Ready || view.Product.ID != mine {
-		t.Fatalf("页面读模型未取到该商品：Ready=%v Product=%+v，want %s", view.Ready, view.Product, mine)
-	}
+	f.products.QueryDefaultDetailTemplate(ctx, scope.ProjectID)
+	f.products.QueryBoundDetailTemplate(ctx, scope.ProjectID, mine)
 	// 端口侧对参：三个取数口收到的 projectID 必须等于页面上解析出的 selected。
 	// 漏传（空串）在多工程下就让 contenttemplate 回 ErrProjectRequired；传成**另一个**工程的 id
 	// 页面照样 200，只有逐个方法对参才照得出来。
@@ -245,14 +244,11 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 	//    这里**不**断言 404：本夹具用的是超级用户连接，RLS 策略不生效（AGENTS.md 的 DB-009
 	//    切换顺序：先包 rls.InProjectScope、再把 database.user 换成非超级角色），跨工程可见性
 	//    由 RLS 那一层负责 —— 断言 404 等于在这里测「RLS 切完了没有」，那是另一条链路的事。
-	otherView, otherErr := f.products.ProductDetailTemplatePage(ctx, &productdto.ProductDetailTemplatePageReq{ProductID: others})
+	_, otherErr := f.products.Get(ctx, &productdto.GetReq{ID: others, ProjectID: scope.ProjectID})
 	if otherErr != nil {
-		t.Fatalf("读另一个工程的商品不该报参数错（那是「没带作用域」的症状）：%v", otherErr)
+		t.Fatalf("跨工程查询不应丢失参数作用域：%v", otherErr)
 	}
-	if _, business := facing.FactOf(otherErr); business {
-		_ = otherView
-		t.Fatalf("取商品那一跳没把解析出的工程传下去（多工程下 resolveProjectID 回业务参数错）")
-	}
+
 }
 
 // TestProductDetailTemplatePageGETRendersWithoutProjectParam 端点层：多工程站点上**不带** projectId

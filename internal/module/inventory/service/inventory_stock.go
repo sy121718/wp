@@ -1231,3 +1231,8 @@ func listWarehouseSKUStatus(req *inventorydto.ListWarehouseSKUReq) string {
 	}
 	return req.Status
 }
+
+// VariantDeletionFactsTx 将商品清单事务传入库存守卫，不另开连接读取旧状态。
+func (s *Service) VariantDeletionFactsTx(ctx context.Context, tx *gorm.DB, projectID string, variantIDs, stockIDs []string) (*inventorycontract.VariantDeletionFacts, error) {
+	return s.m.VariantDeletionFactsTx(ctx, tx, projectID, variantIDs, stockIDs)
+}

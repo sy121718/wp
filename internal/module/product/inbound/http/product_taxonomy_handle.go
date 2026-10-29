@@ -2,86 +2,75 @@ package producthttp
 
 import (
 	"context"
-	"errors"
+	"github.com/gin-gonic/gin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-
-	"github.com/gin-gonic/gin"
-)
-
-// product_taxonomy_handle.go — 商品的两套「归类」：分类树与品牌（接口面 + 后台页面）。
-//
-// 两者在界面上分属两个菜单页，但它们是同一类东西：都只被商品**引用**、都参与筛选、
-// 都有 slug / 引用守卫 / 批量删除，改一处口径另一处必须跟着看。
-// 标签是第三种归类，但它有规则注册表与重算时机、改动频率完全不同，所以单独一份（product_tag.go）。
-
-// 两页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
-var (
-	productCategoriesBackKeys = []string{"project", "keyword", "page", "limit"}
-	productBrandsBackKeys     = []string{"project", "keyword", "page", "limit"}
 )
 
 func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	// 取参数交给 binding.Query，取数编排在 service（取哪些、按什么顺序、哪条失败算 400 /
-	// 哪条只降级，都是业务结论。见 service.ProductCategoriesPage）。
-	req, ok := binding.Query[productdto.ProductCategoriesPageReq](c)
+	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	if view == nil {
-		pageview.Fail(c, errors.New("页面读模型返回空视图"))
+	req.ProjectID = scope.ProjectID
+	result, err := h.products.QueryCategories(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
 		return
 	}
-
-	// 候选下拉、新建抽屉与行都在读模型里装好（CategoryPickOptions / CategoryDrawerForm /
-	// CategoryTreeRows）；入口只把「回到本页的筛选上下文」这条请求事实填进入参。
-	pageview.Render(c, view)
+	categories, err := h.products.CategoryNodes(c.Request.Context(), scope.ProjectID)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("Categories", categories)))
 }
-
-// ProductCategoryParents is a bounded, project-scoped parent picker search.
-//
-// 工程存在性判定、关键词为空给空候选、候选形状（PickOptionResp）全在 service 的
-// CategoryParentOptions 里 —— 这一层只做绑定与转交。
 func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductCategoryParentsReq](c)
+	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	data, err := h.reader.CategoryParentOptions(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, data)
-}
+	req.ProjectID = scope.ProjectID
+	result, err := h.products.SearchCategoryParents(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
 
-// ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
+}
 func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductBrandsPageReq](c)
+	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	view, err := h.reader.ProductBrandsPage(c.Request.Context(), req)
+	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 行在读模型里装好（BrandPageRows）；入口只填请求事实 ListQuery。
-	pageview.Render(c, view)
-}
+	req.ProjectID = scope.ProjectID
+	result, err := h.products.QueryBrands(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
 
-// ==========================================================================
+	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
+}
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {
 	req, ok := binding.JSON[productdto.CreateCategoryReq](c)

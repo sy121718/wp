@@ -1,11 +1,10 @@
 package templates
 
 import (
+	productdto "go_wp/internal/module/product/dto"
 	"regexp"
 	"strings"
 	"testing"
-
-	"go_wp/pkg/pagination"
 )
 
 // admin_product_tag_hits_card_test.go — 「命中的商品」卡改为内容驱动（审计 02-L P1-7）。
@@ -27,21 +26,9 @@ var tagHitsAnchorRe = regexp.MustCompile(`<div id="tag-hits-panel"[^>]*>`)
 
 // tagHitsPageData 标签页的最小数据：一个手工标签带 3 个命中商品（命中数按钮因此渲染）。
 func tagHitsPageData() map[string]any {
-	return groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"FilterKeyword": "", "Filtered": false,
-		"RuleTypes": []map[string]any{{"Type": "new", "Name": "新品", "Params": "days"}},
-		"Tags": []map[string]any{{
-			"ID": "t1", "Name": "清仓", "Slug": "clearance", "Kind": "manual",
-			"KindLabelKey": "", "KindLabelFallback": "手工",
-			"IsRule": false, "ProductCount": 3,
-			"RecalcAt": "", "RecalcLabelKey": "admin.product_tags.recalc.none", "RecalcLabelFallback": "未按规则重算过",
-			"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
-		}},
-	})
+	return taxonomyTags(&productdto.TagResp{ID: "t1", Name: "清仓", Slug: "clearance", Kind: "manual", ProductCount: 3})
 }
 
-// ① 首屏：只有标签列表这张卡，命中卡整张不渲染（只剩一个空的锚点容器）。
 func TestProductTagsPageRendersEmptyHitsAnchorOnly(t *testing.T) {
 	out, err := render(t, groupDSet(t), "admin/product/product_tags", tagHitsPageData())
 	if err != nil {
@@ -80,7 +67,7 @@ func TestProductTagsPageRendersEmptyHitsAnchorOnly(t *testing.T) {
 	// 标签数为 0 时同样不出现命中卡（现状如此，别改坏）：没有可点的命中数按钮，
 	// 页面上就不该有任何与命中商品有关的元素。
 	empty := tagHitsPageData()
-	empty["Tags"] = []map[string]any{}
+	empty["Result"] = &productdto.TaxonomyListResp[*productdto.TagResp]{Items: []*productdto.TagResp{}, Page: 1, Size: 20}
 	out, err = render(t, groupDSet(t), "admin/product/product_tags", empty)
 	if err != nil {
 		t.Fatalf("空标签页渲染失败: %v", err)
@@ -96,12 +83,7 @@ func TestProductTagsPageRendersEmptyHitsAnchorOnly(t *testing.T) {
 // ② 片段自带卡壳 + 表格：点开「N 个商品」之后出现的就是这张带壳的卡。
 func TestProductTagHitsFragmentProvidesCardShell(t *testing.T) {
 	// 分页交事实（task-109 B2b）：模板自己按**本页实际行数**算 info 区间、用 queryURL 拼 hx-get。
-	data := groupDData(map[string]any{
-		"TagID": "t1", "ProjectID": "pr1", "TagName": "清仓",
-		"Total":      120,
-		"Items":      []map[string]any{{"ID": "p1", "Name": "上架商品", "Slug": "p-one", "Status": "published"}},
-		"Pagination": tagHitsFacts(120, 2, 50, "pr1"),
-	})
+	data := tagHitsData(120, 2, 50, "pr1", []*productdto.TagProductResp{{ID: "p1", Name: "上架商品", Slug: "p-one", Status: "published"}})
 	out, err := render(t, groupDSet(t), "admin/product/product_tag_hits", data)
 	if err != nil {
 		t.Fatalf("命中商品片段渲染失败: %v", err)
@@ -133,43 +115,17 @@ func TestProductTagHitsFragmentProvidesCardShell(t *testing.T) {
 // ②b 取数失败与「当前没有命中」两个分支同样自带卡壳 —— 落到锚点里的任何东西都得有容器，
 // 否则提示会裸露在无背景的空白区域里。
 func TestProductTagHitsFragmentBranchesCarryCardShell(t *testing.T) {
-	tests := []struct {
-		name string
-		data map[string]any
-		want string
-	}{
-		{
-			name: "取数失败",
-			data: map[string]any{"TagID": "t1", "ProjectID": "pr1", "Err": "标签不存在"},
-			want: "标签不存在",
-		},
-		{
-			name: "没有商品命中",
-			data: map[string]any{
-				"TagID": "t1", "ProjectID": "pr1", "TagName": "清仓",
-				"Total": 0, "Items": []map[string]any{},
-				"Pagination": tagHitsFacts(0, 1, 50, "pr1"),
-			},
-			want: "当前没有商品命中这个标签",
-		},
+	out, err := render(t, groupDSet(t), "admin/product/product_tag_hits", tagHitsData(0, 1, 50, "pr1", []*productdto.TagProductResp{}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out, err := render(t, groupDSet(t), "admin/product/product_tag_hits", groupDData(tt.data))
-			if err != nil {
-				t.Fatalf("片段渲染失败: %v", err)
-			}
-			for _, want := range []string{`class="card card-body"`, "命中的商品", tt.want} {
-				if !strings.Contains(out, want) {
-					t.Fatalf("%s 分支缺少 %q：\n%s", tt.name, want, out)
-				}
-			}
-		})
+	for _, want := range []string{`class="card card-body"`, "命中的商品", "当前没有商品命中这个标签"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("空态缺少 %s: %s", want, out)
+		}
 	}
 }
 
-// ③ 播报区域仍在页面的空容器上：HTMX 把片段换进一个带 aria-live 的区域，读屏才播报新内容；
-// 三条属性缺任何一条都是一次静默回归（页面上完全看不出来）。
 func TestProductTagHitsAnchorStaysLiveRegion(t *testing.T) {
 	out, err := render(t, groupDSet(t), "admin/product/product_tags", tagHitsPageData())
 	if err != nil {
@@ -187,14 +143,4 @@ func TestProductTagHitsAnchorStaysLiveRegion(t *testing.T) {
 	if strings.Contains(anchor, `aria-label=""`) {
 		t.Fatalf("锚点容器应有区域名（aria-label）：%s", anchor)
 	}
-}
-
-// tagHitsFacts 命中商品片段的分页事实（与 handler 注入方式一致：Base 固定、KeepLimit=false）。
-func tagHitsFacts(total, page, size int, projectID string) pagination.Page {
-	pg := pagination.Page{Total: int64(total), Page: page, Limit: size}
-	pg.Base = "/admin/product-tags/hits"
-	pg.PageParam = "page"
-	pg.DropLimit = true
-	_ = projectID
-	return pg
 }

@@ -1,48 +1,28 @@
-{* admin/product/product_attribute_rows.html — 属性值编辑行（issue #7） *}
-{* 数据：Rows（原始表单行，含 Index / Sort 字符串）+ GroupID（所在组的 id）。
-   容器 id 按约定 attr-values-<GroupID>；按钮用 hx-post 打回本片段，
-   hx-include 带上整个表单（hx-include 不会把按钮自身算进去），
-   服务端重建有序行数据后回渲染，替换容器 innerHTML。
-   按钮是 type="button"：它们只走 htmx，**没有**原生提交兜底 —— 原先并排写的
-   formaction / formmethod 是 htmx 迁移前的残留，浏览器对 type=button 根本不读它们。 *}
-{* 取词：本片段两条渲染路径（HTMX 片段端点 / 抽屉表单的 include）的渲染数据都由
-   adminui.PrepareBare 注入 t（handler 的 attrRowsCtxData）—— 这里按 chain 索引取，
-   不再走「struct 自带 Tr 函数字段」那套写法（struct 上的 `.["t"]` 会报 can't use t as
-   field name in struct type，数据改成 gin.H 之后这条限制就不存在了）。 *}
-{{groupId := .GroupID}}
-{{target := "#attr-values-" + groupId}}
 {{tr := .["t"]}}
-{{if len(.Rows) == 0}}
-<p class="hint">{{tr("admin.product_attributes.values.empty", "还没有属性值。点下面的「+ 添加值」开始。")}}</p>
-{{end}}
-<div class="attr-value-table">
-    <div class="attr-value-head" aria-hidden="true">
-        <span class="attr-value-idx">#</span>
-        <span>{{tr("admin.product_attributes.col.key", "标识")}}</span>
-        <span>{{tr("admin.product_attributes.values.col.label", "显示名")}}</span>
-        <span>{{tr("admin.product_attributes.values.col.sort", "排序")}}</span>
-        <span>{{tr("admin.product_attributes.values.col.status", "状态")}}</span>
-        <span class="attr-value-op">{{tr("admin.common.col.actions", "操作")}}</span>
-    </div>
-    {{range i, v := .Rows}}
-    <div class="attr-value-row">
-        <span class="attr-value-idx">{{v.Index}}</span>
-        <input type="hidden" name="values[{{v.Index}}].id" value="{{v.ID}}">
-        <input type="text" class="form-input" name="values[{{v.Index}}].key" value="{{v.Key}}" placeholder="{{tr("admin.product_attributes.values.ph.key", "留空自动生成")}}" autocomplete="off">
-        <input type="text" class="form-input" name="values[{{v.Index}}].label" value="{{v.Label}}" placeholder="{{tr("admin.product_attributes.values.ph.label", "如 红色 / S")}}" required>
-        <input type="text" class="form-input" name="values[{{v.Index}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric">
-        <label class="attr-switch">
-            <input type="hidden" name="values[{{v.Index}}].enabled" value="0">
-            <input type="checkbox" name="values[{{v.Index}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}
-        </label>
-        <span class="attr-value-op">
-            <button type="button" class="btn btn-sm"
-                    hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"remove","removeIndex":"{{i}}"}'
-                    hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">{{tr("admin.common.action.delete", "删除")}}</button>
-        </span>
-    </div>
-    {{end}}
+<div data-attribute-values>
+<div data-attribute-value-list>
+{{if isset(.Values)}}{{range _, value := .Values}}
+<div class="attr-value-row" data-attribute-value-row>
+<input data-attribute-field="id" type="hidden" value="{{value.ID}}">
+<input data-attribute-field="key" class="form-input" value="{{value.Key}}" aria-label="{{tr("admin.product_attributes.col.key", "标识")}}">
+<input data-attribute-field="label" class="form-input" value="{{value.Label}}" required aria-label="{{tr("admin.product_attributes.values.col.label", "显示名")}}">
+<input data-attribute-field="sort" class="form-input" type="number" value="{{value.Sort}}" aria-label="{{tr("admin.product_attributes.values.col.sort", "排序")}}">
+<label><input data-attribute-field="enabled" type="checkbox" {{if value.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}</label>
+<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("admin.common.action.delete", "删除")}}</button>
+<template name="values" data-row><input type="hidden" name="id" value="{{value.ID}}"><input type="hidden" name="key" value="{{value.Key}}"><input type="hidden" name="label" value="{{value.Label}}"><input type="hidden" name="sort" value="{{value.Sort}}"><input type="hidden" name="enabled" value="{{value.Enabled}}"></template>
 </div>
-<button type="button" class="btn btn-sm"
-        hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"add"}'
-        hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">+ {{tr("admin.product_attributes.values.add", "添加值")}}</button>
+{{end}}{{end}}
+</div>
+<template data-attribute-prototype>
+<div class="attr-value-row" data-attribute-value-row>
+<input data-attribute-field="id" type="hidden" value="">
+<input data-attribute-field="key" class="form-input" value="" aria-label="{{tr("admin.product_attributes.col.key", "标识")}}">
+<input data-attribute-field="label" class="form-input" value="" required aria-label="{{tr("admin.product_attributes.values.col.label", "显示名")}}">
+<input data-attribute-field="sort" class="form-input" type="number" value="0" aria-label="{{tr("admin.product_attributes.values.col.sort", "排序")}}">
+<label><input data-attribute-field="enabled" type="checkbox" checked> {{tr("admin.product_attributes.values.enabled", "启用")}}</label>
+<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("admin.common.action.delete", "删除")}}</button>
+<template name="values" data-row></template>
+</div>
+</template>
+<button type="button" class="btn btn-sm" data-attribute-add>+ {{tr("admin.product_attributes.values.add", "添加值")}}</button>
+</div>

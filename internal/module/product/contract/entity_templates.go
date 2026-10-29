@@ -1,6 +1,6 @@
 // entity_templates.go — 商品后台页「详情模板清单 + 默认模板」的只读端口。
 //
-// 消费者是商品模块的页面读模型（`service.ProductNewPage` 的右侧模板卡片区），
+// 消费者是商品模块的 CatalogEntityTemplates 查询，
 // 实现方是内容模板模块。与 WarehouseOptionsPort 同一取舍：**只声明读方法** ——
 // contenttemplate 的 ContentTemplateService 上还有建模板 / 改模板 / 激活版本这类写能力，
 // 渲染一张卡片不需要其中任何一条。

@@ -1,34 +1,5 @@
-{* admin/product/product_tag_hits.html — 标签命中商品片段（审计 PERF-02；卡壳迁入 02-L P1-7）。 *}
-{* 渲染数据（shell.Prepare 注入 t / csrf_token 等外壳键，故这里用 .["t"] 取词）：
-     · TagName / TagID / ProjectID；
-     · Total / Page / PageSize / TotalPage；
-     · Pagination —— pkg/pagination.Page 事实（Total / Page / Limit / Base …）。info 行的区间
-       在本模板里按**本页实际行数**算（from=(Page-1)*Limit+1、to=from+len(Items)-1），
-       不用事实里的 Start/End：service 的 Count 与 List 是两次独立事务、无同一快照，
-       并发解绑会让本页行数少于整页，按 Total 算出的区间会当场变成假话；
-     · Items = [{ID, Name, Slug, Status}] 本页商品行（**有没有行**决定是否渲染分页条：
-       单页非空也要渲染两个禁用按钮，所以这里不套 HasPagination()）；
-     · 翻页按钮是 hx-get 打回本端点（不是 <a href>）：URL 由 queryURL 拼，
-       键序 id → page → project 与旧实现的 url.Values.Encode() 逐字节一致，空 project 也回带成 project=；
-     · Err —— 取数失败时只带这一项，文案已过 productErrText 白名单。
-    这是**片段**不是整页：不 extends layout，由标签页的 hx-get 换进 #tag-hits-panel；
-    翻页按钮同样 hx-get 回本端点（整页跳转会把展开区之外的状态一起丢掉）。
-    **卡片外壳（.card + .card-title）在这里**（审计 02-L P1-7）：页面上 #tag-hits-panel
-    只是一个空的锚点容器 —— 内容到了才由这张卡出现，首屏不再有「只有标题 + 一行提示」
-    的空壳卡（admin-ui-logic §1：当前数据下没有内容的控件不出现）。三个分支（正常 /
-    取数失败 / 无数据）都自带卡壳，因为落到锚点里的任何东西都得有可见的容器。
-    role="region" / aria-live 留在页面上那个空容器上，这里不能再放一份：片段每次被替换，
-    播报区域若跟着重建，读屏就不会播报换入的内容（详见 product_tags.html 的同一段注释）。
-    取词尽量复用既有词条（hitTitle / hitLead / hitCountTail / hitEmpty / shell.pagination.*），
-    只有「提示语」与「取数失败前缀」是本批新增。 *}
-{* 命中数回写：翻页时把外层标签列表里那个「N 个商品」按钮的文字换成**当前的真实数**。
-   
-   为什么需要：那个按钮的数字是首屏渲染的静态值，而命中数会在别处变动（解绑商品、删商品）。
-   用户展开片段后看到表格与信息行都是新的，旁边标签列表的人数却是旧的 —— 他会反复点开同一个空标签。
-   
-   为什么用副区域回写而不是把整页重渲染：这次请求的 hx-target 是 #tag-hits-panel，
-   换掉整页会把用户已展开的面板、滚动位置、筛选栏输入全部重置。回写只改那一格。 *}
-{{if isset(.Items)}}
+{* 标签命中列表消费 Result 原对象；页码、区间与链接由模板生成。读取失败由 JSON 出口处理。 *}
+{{if isset(.Result.Items)}}
 {* 命中数回写（htmx 4 的 partial 指令）。
    用 <template hx type="partial"> 而不是 <hx-partial>：两者在本仓 vendored bundle 下等价
    （bundle 的 #Ie 把 <hx-名> 通用改写成 <template hx type="名">，实测都能更新目标、不留残留），
@@ -45,23 +16,23 @@
 
    为什么不带 hx-get：这条指令只负责把过时的数字换掉。带上 GET 会让它成为第三个
    可点入口，而真实翻页按钮只有上/下两个。 *}
-<template hx type="partial" hx-target="#tag-hit-count-{{.TagID}}">{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</template>
+<template hx type="partial" hx-target="#tag-hit-count-{{.Result.TagID}}">{{.Result.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</template>
 {{end}}
 <section class="card card-body">
     <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>
-    {{if isset(.Items)}}
+    {{if isset(.Result.Items)}}
     <div class="hits-head">
-        <strong>{{.TagName}}</strong>
-        <span class="hint">{{ .["t"]("admin.product_tags.list.hitLead", "命中 ") }}{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>
+        <strong>{{.Result.TagName}}</strong>
+        <span class="hint">{{ .["t"]("admin.product_tags.list.hitLead", "命中 ") }}{{.Result.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>
     </div>
-    {{if len(.Items) == 0}}
+    {{if len(.Result.Items) == 0}}
     <p class="hint">{{ .["t"]("admin.product_tags.list.hitEmpty", "当前没有商品命中这个标签。") }}</p>
     {{else}}
     <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}">
         <table class="data-table data-table-wide">
             <thead><tr><th>{{ .["t"]("admin.product_tags.col.product", "商品") }}</th><th>{{ .["t"]("admin.product_tags.col.slug", "URL 段") }}</th><th>{{ .["t"]("admin.product_tags.col.state", "状态") }}</th></tr></thead>
             <tbody>
-            {{range _, p := .Items}}
+            {{range _, p := .Result.Items}}
             <tr>
                 <td><strong>{{p.Name}}</strong></td>
                 <td>{{if p.Slug}}<code>{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
@@ -72,18 +43,12 @@
         </table>
     </div>
     <nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
-        {{pg := pager(.Pagination)}}{{tr := .["t"]}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "id", "project", "size")}}{{end}}{{end}}{{from := (pg.Page - 1) * pg.Limit + 1}}{{to := from + len(.Items) - 1}}<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, from, to)}}</div>
+        {{tr := .["t"]}}{{page := .Result.Page}}{{size := .Result.PageSize}}{{base := pageBase(.["req_path"], "page", "id", "project", "size")}}{{from := (page - 1) * size + 1}}{{to := from + len(.Result.Items) - 1}}<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), .Result.Total, from, to)}}</div>
         <div class="pagination-pages">
-            {{if pg.HasPrev()}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .TagID, "page", pg.PrevPage(), "project", .ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.prev", "上一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.prev", "上一页") }}</span>{{end}}
-            {{if pg.HasNext()}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .TagID, "page", pg.NextPage(), "project", .ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.next", "下一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.next", "下一页") }}</span>{{end}}
+            {{if page > 1}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .Result.TagID, "page", page - 1, "project", .Query.ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.prev", "上一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.prev", "上一页") }}</span>{{end}}
+            {{if page * size < .Result.Total}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .Result.TagID, "page", page + 1, "project", .Query.ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.next", "下一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.next", "下一页") }}</span>{{end}}
         </div>
     </nav>
-    {{end}}
-    {{else}}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_tags.hits.error", "命中商品没能取出来：") }}{{.Err}}</p>
-    {{end}}{{else}}
-    <p class="hint">{{ .["t"]("admin.product_tags.list.hitHint", "点标签列表里「命中」列的条数，在这里按页查看该标签命中的商品。") }}</p>
     {{end}}
     {{end}}
 </section>

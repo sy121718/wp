@@ -1,10 +1,6 @@
-{* admin/product_brands.html — 商品品牌管理：logo + 描述 + slug + SEO 字段（issue #10） *}
-{* 版式遵循 theme.css「后台页壳」段（评审规则见 ~/.dsh/skills/admin-ui-logic SKILL §2.1/§2.2）：
-     · 正文零说明文字 —— 领域说明整段进 .help 悬浮，默认 0 高度；
-     · 主行动与工程选择器同一行置于 .page-head，不再单独占一张卡；
-     · 列表是标准表格 + 右侧操作列（.col-actions），行内表单放表格外用 form="id" 关联；
-     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+
+
+
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/media_field.html"}}
@@ -14,18 +10,15 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
-{* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
-   混在一起会让运营以为是品牌被删了。 *}
-{{selectedProject := .SelectedProject}}
-{* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）。 *}
-{{fKeyword := .["FilterKeyword"]}}
+
+
+{{selectedProject := .Scope.ProjectID}}
+
+{{fKeyword := .Query.Keyword}}
 {{canCreate := isset(.Buttons["product.brand_create"])}}
 {{canUpdate := isset(.Buttons["product.brand_update"])}}
 {{canDelete := isset(.Buttons["product.brand_delete"])}}
-{* 富文本字段的资源：Trix 走本地 vendor（零 CDN），rich-editor 是本项目在 Trix 上的扩展。
-   样式在这里引一次；trix.umd.js 与扩展入口在文件末尾引（见「资源」段）。 *}
+
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
@@ -40,11 +33,11 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
+            {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-brands">
                 <label class="sr-only" for="brands-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
                 <select class="form-select" id="brands-project" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
+                    {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
@@ -56,12 +49,10 @@
         </div>
     </header>
 
-    {* 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页）；ListQuery 把筛选上下文
-       随表单 query 提交，回跳时由 shell.BackPath 恢复。 *}
+
 
     <section class="card list-card">
-        {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
-           分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。 *}
+
         <div class="filter-bar">
             <form method="get" action="/admin/product-brands" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
@@ -77,34 +68,22 @@
             </form>
         </div>
 
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头是「这个列表有哪些列」的唯一说明，
-           空数据就把它一起藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
-           空态落在 tbody 的整行里（colspan = 实际列数）；<form> 依旧包住 <table>。 *}
-        {* 空态分两档（审计 D9 的同一手法）：筛选无结果 → 说清「是筛出来的空」并给重置；
-           工程里真的没有品牌 → 指到本页页头那个新建抽屉。 *}
-        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
-           提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        {* 表单不声明 data-write-url：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
-           按钮优先、表单兜底）。data-list-bulk 是作用域锚点，给「勾选框在这里、动作在别处」留根。
-           csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
+
+
+
+
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            {* 批量结果不再用页面上的结论区：迁移到 htmx 后，成功直接刷新列表、
-               被拒由全局 toast 说原因（X-Message 头）。原来的 data-write-flash-target
-               是「刷新前把结论存 sessionStorage、落地后再显示」那一套的落点，
-               本页已不需要它 —— 留着会是一块永远为空的区域（配对测试会报）。 *}
-            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if canDelete}}{{if len(.Brands) > 0}}
+
+
+            {{if canDelete}}{{if len(.Result.Items) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {* 走 htmx 原生提交。批量在本仓是**整批一个事务、要么全成要么全败**（AGENTS
-                   「写操作」节）：后端锁不到某一条就整批不删并把明细放 data.items。
-                   所以前端不需要「按 items[].deleted 逐条移除行」那套 —— 成功就刷新列表
-                   （行还在不在、派生列怎么变由服务端重算），被拒就由 toast 说原因。 *}
+
                 <button data-write="bulk" data-write-url="/api/product/brand/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload data-write-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
-            {* 批量结果区：与单条删除共用本表单内的这一个（基座先找表单内、再找 host 里的）。 *}
+
             <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_brands.list.title", "品牌列表") }}">
             <table class="data-table">
@@ -121,12 +100,11 @@
                 </tr>
                 </thead>
                 <tbody>
-                {{if len(.Brands) == 0}}
-                {* 空态整行：colspan = 6 个实际渲染的列（勾选列 + 品牌 / URL 段 / 排序 / 更新时间 + 操作）。
-                   勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
+                {{if len(.Result.Items) == 0}}
+
                 <tr><td colspan="6" class="cell-wrap">
                     <div class="empty-state">
-                        {{if isset(.Filtered) && .Filtered}}
+                        {{if .Query.Keyword != ""}}
                         <p class="empty-title">{{ .["t"]("admin.product_brands.empty.filteredTitle", "没有匹配的品牌") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                         <div class="empty-actions">
@@ -144,7 +122,7 @@
                     </div>
                 </td></tr>
                 {{else}}
-                {{range _, b := .Brands}}
+                {{range _, b := .Result.Items}}
                 <tr>
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
@@ -171,20 +149,17 @@
             </table>
         </div>
         </form>
-        {* 分页条（审计 D13）：全量渲染改成按页渲染，页高不再随品牌数无上限增长；
-           单页或空数据时 handler 不注入 Pagination 事实（HasPagination() 为假），片段自然不渲染。 *}
-        {{include "../partials/pagination.html"}}
+
+        {{include "catalog_pagination.html"}}
     </section>
 
-    {* 行内表单与抽屉模板必须放在表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器
-       提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
-    {* 这批隐藏表单共用一个结果区（基座先找表单内、找不到再找 closest('[data-write-host]')）：
-       单条删除成功后整页刷新，所以这段只在**失败**时才可见（被引用 / 网络故障）。 *}
+
+
     <div data-write-host>
     <p class="form-hint" data-write-status role="status" hidden></p>
-    {{range _, b := .Brands}}
+    {{range _, b := .Result.Items}}
     {{if canDelete}}
-    {* single 档：表单只带 id + projectId，htmx 原生提交（formdata）后按整页刷新收尾。 *}
+
     <form data-write="delete" data-write-url="/api/product/brand/delete" id="brand-del-{{b.ID}}" class="hidden-form" data-write-reload
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -193,12 +168,7 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-brand-edit-{{b.ID}}">
-        {* 走 htmx 原生表单提交（formdata）：端点仍是那个 JSON 端点 —— binding.JSON 按
-           Content-Type 自适应，MCP/AI 发 JSON、这里发 formdata，两边都能进。
-           hx-swap="none"：响应是 {code,message,data}，没有要换进 DOM 的内容；
-           结论由全局监听从 X-Message 头取出交给 WBUI.toast（ui/write_feedback.js）。
-           空值字段由 ui/write-base.js 删掉 —— formdata 里 `sort=` 会让后端 *int
-           绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
+
         <form data-write="update" data-write-url="/api/product/brand/update" data-write-close="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
@@ -207,31 +177,26 @@
                 <input aria-label="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{b.Slug}}" placeholder="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" autocomplete="off">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{b.Sort}}" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
             </div>
-            {* logo 从行内挪出来单独成块：媒体字段是块级（缩略图 + 输入 + 两个按钮），
-               塞进 .form-inline 会把那一行撑成两行、左右都错位。 *}
+
             {{logoValue := b.Logo}}
             {{yield mediaField(field="logo", key=b.ID, value=logoValue,
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
-            {* SEO 标题 / 描述已合并进「品牌名称 / 品牌描述」（2026-09-30）：不再单开两个输入框。 *}
-            {* 品牌描述是「一段话」，单行 input 放不下 —— 改用全站统一的富文本片段。
-               存量纯文本由 rich-editor/index.js 在装载时转义 + 分段（纯文本绝不当作 HTML 直接塞给编辑器）。 *}
+
+
             <label class="form-label" for="rich-description-{{b.ID}}">{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}</label>
             {{yield richEditor(field="description", key=b.ID, value=b.Description)}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                {* SEO 评分（审计 SEO-016）：品牌页按落地页权重评分；title 唯一性检查（SEO-018）
-                   列出冲突页面。hx-include 取本表单字段（含 id / projectId / csrf）。
-                   只读计算，不写库不改产物，故与保存一样只走页面组 Session + CSRF。 *}
+
                 <button type="button" class="btn"
                         hx-post="/admin/product-brands/seo-score" hx-include="closest form"
                         hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
                 <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
             </div>
-            {* 结果区在表单内：失败时抽屉不关、已填内容一个字段都不动，只在这里点出原因。 *}
+
             <p class="form-hint" data-write-status role="status" hidden></p>
-            {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。
-               hx-target 指向它，少一个字符按钮就静默失效 —— 别在其中插空格。 *}
+
             <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>
         </form>
     </template>
@@ -263,7 +228,7 @@
     </template>
     {{end}}
 </div>
-{* 资源：Trix 本体 + 本项目在它之上的扩展入口（入口幂等，抽屉每次打开重复引入也不会重复初始化）。 *}
+
 <script src="/static/vendor/trix/trix.umd.js"></script>
 <script src="/static/js/rich-editor/index.js"></script>
 {{end}}

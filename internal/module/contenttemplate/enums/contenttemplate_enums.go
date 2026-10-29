@@ -6,6 +6,7 @@ package contenttemplateenums
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"go_wp/pkg/facing"
@@ -56,7 +57,11 @@ var errFallbacks = map[string]string{
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
 func Err(key string) error {
-	return facing.New(key, errFallbacks[key])
+	err := facing.New(key, errFallbacks[key])
+	if key == ErrNotFound {
+		return facing.WithStatus(err, http.StatusNotFound)
+	}
+	return err
 }
 
 // ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后（判据只认 ": "）。

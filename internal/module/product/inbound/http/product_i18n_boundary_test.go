@@ -10,30 +10,16 @@ import (
 
 var controllerTranslatePattern = regexp.MustCompile(`response\.MsgText\(|response\.ArgsText\(|text\.MsgText\(|text\.TranslateArgs\(|shell\.TranslateFor\(`)
 
-// TestControllerI18nBoundary 商品模块控制器取词边界（internal/module/CLAUDE.md §inbound/http）。
-//
-// 判据：控制器只交**文案事实**（`adminui.Msg` = `adminui.Msg{Key, Fallback, Args}`），
-// 取词在模板里（`{{tr := .["t"]}}` / `{{tf := .["tf"]}}`）；片段一律经 `text.Inject`。
-// 理由是二开：后台是 Go 渲染、词条在 sys_i18n 里，控制器里写「错误 → 文案」的映射，
-// 等于加一门语言要回头改控制器（这是本模块 41 处取词收口时的起点）。
-//
-// 允许保留的只有下表这几处，各属四类例外之一。清单**只减不增**，两个方向都判失败：
-//
-//	· 新写一处控制器取词 → 失败（否则这条规则会在下一次并行改造里被悄悄加回来）；
-//	· 登记项不再命中 → 也失败（登记表退化成注释就没人看它了，与 rawSQLDebtList 同一判据）。
+// TestControllerI18nBoundary 控制器只传文案事实，界面取词归模板、响应取词归 JSON 出口。
+// 商品控制器的取词存量已清零，不允许重新登记展示加工。
 func TestControllerI18nBoundary(t *testing.T) {
-	allow := map[string]string{
-		"product_router.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
-			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
-		"product_subject_handle.go": "复合句与视图槽：变体保存的 Tail 拼接、定价回执三段拼句、" +
-			"来源标签字面量、面板 ErrorText；0.3 随视图槽删除",
-	}
+	allow := map[string]string{}
 
 	hits := scanControllerTranslate(t)
 	for file, lines := range hits {
 		if _, ok := allow[file]; !ok {
 			t.Errorf("%s 出现控制器取词（第 %s 行）—— 控制器只交事实、取词在模板（片段经 "+
-				"text.Inject）；确属例外就登记进 allow 并写明属于哪一类",
+				"text.Inject），禁止重新引入后端展示文案",
 				file, strings.Join(lines, ", "))
 		}
 	}

@@ -46,7 +46,7 @@ func (h *PublishAttemptHandle) ProductPublishAttempts(c *gin.Context) {
 	}
 	res, err := h.reader.ProductPublishAttempts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, 500, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.Success(c, res)
