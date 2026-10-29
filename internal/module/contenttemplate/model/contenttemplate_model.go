@@ -290,17 +290,8 @@ func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *Ver
 // 版本行先落库而草稿 Save 失败时，指针停在旧版本，新版本成为不可达孤儿，
 // 且 draft_version 已自增导致重试版本号错位。
 func (m *Model) SaveWithVersion(ctx context.Context, projectID string, v *VersionEntity, e *TemplateEntity) error {
-	// content_templates 带 FORCE 策略：新版本行落库与草稿更新同事务，且都要承本工程作用域。
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		if err := tx.Create(v).Error; err != nil {
-			return err
-		}
-		return tx.Model(&TemplateEntity{}).Where("id = ? AND project_id = ?", e.ID, projectID).Updates(map[string]any{
-			"draft_document":     e.DraftDocument,
-			"draft_version":      e.DraftVersion,
-			"current_version_id": e.CurrentVersionID,
-			"update_time":        e.UpdatedAt,
-		}).Error
+		return m.SaveWithVersionTx(ctx, tx, projectID, e.DraftVersion-1, v, e)
 	})
 }
 

@@ -136,6 +136,9 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 		ID: verID, TemplateID: e.ID, Version: e.DraftVersion, Document: doc,
 		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: e.UpdatedAt,
 	}, e); err != nil {
+		if errors.Is(err, contenttemplatemodel.ErrDraftVersionConflict) {
+			return nil, contenttemplateenums.DraftVersionConflict()
+		}
 		return nil, err
 	}
 	// 模板产生新版本 = 引用它的产物过期（页面 / 自动发布实例）。

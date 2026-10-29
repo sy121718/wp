@@ -13,10 +13,11 @@ import (
 
 // 响应消息（未接 i18n 前中文常量）。
 const (
-	MsgCreateSuccess = "MsgCreateSuccess" // 模板创建成功
-	MsgUpdateSuccess = "MsgUpdateSuccess" // 模板更新成功
-	MsgListSuccess   = "MsgListSuccess"   // 模板列表获取成功
-	MsgDetailSuccess = "MsgDetailSuccess" // 模板详情获取成功
+	ErrDraftVersionConflict = "ErrDraftVersionConflict"
+	MsgCreateSuccess        = "MsgCreateSuccess" // 模板创建成功
+	MsgUpdateSuccess        = "MsgUpdateSuccess" // 模板更新成功
+	MsgListSuccess          = "MsgListSuccess"   // 模板列表获取成功
+	MsgDetailSuccess        = "MsgDetailSuccess" // 模板详情获取成功
 
 	ErrInvalidParam = "ErrInvalidParam" // 参数错误
 	ErrNotFound     = "ErrNotFound"     // 模板不存在
@@ -41,6 +42,7 @@ const (
 
 // errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
 var errFallbacks = map[string]string{
+	ErrDraftVersionConflict:   "草稿版本已更新，请刷新后重试",
 	ErrInvalidParam:           "参数不合法：请检查名称、类型与文档后重试。",
 	ErrNotFound:               "模板不存在，可能已被删除。",
 	ErrTemplateInUse:          "这套模板仍被自动发布实例引用，不能删除。",
@@ -86,3 +88,6 @@ const (
 	// Heading 模板列表页标题；回跳提示页的「立即前往」链接文字复用同一条词条（不新增全站词条）。
 	Heading = "admin.content.templates.heading"
 )
+
+// DraftVersionConflict 在声明处固定版本冲突的状态码。
+func DraftVersionConflict() error { return facing.WithStatus(Err(ErrDraftVersionConflict), 409) }
