@@ -95,7 +95,7 @@ export const canvasMethods = {
                     head.setAttribute('aria-expanded', 'true');
                     head.appendChild(document.createTextNode(title));
                     var body = document.createElement('div');
-                    body.className = 'wb-palette-group-body';
+                    body.className = 'wb-palette-group-body' + (key === 'basic' ? ' wb-palette-icons' : '');
                     if (!open) body.style.display = 'none';
                     head.addEventListener('click', function () {
                         self.paletteOpen[key] = body.style.display === 'none';
@@ -114,11 +114,30 @@ export const canvasMethods = {
                     button.draggable = true;
                     button.dataset.type = item.type;
                     var appearance = elementAppearance(item.type);
-                    button.innerHTML = '<span class="wb-palette-icon" aria-hidden="true"></span><strong></strong><span class="wb-palette-tag"></span>';
+                    var compact = categoryOf(item.type) === 'basic';
+                    button.innerHTML = '<span class="wb-palette-icon" aria-hidden="true"></span>';
                     button.querySelector('.wb-palette-icon').innerHTML = window.WPIcons ? window.WPIcons.svg(appearance[0]) : '';
-                    button.querySelector('strong').textContent = item.label;
-                    button.querySelector('.wb-palette-tag').textContent = appearance[1];
-                    button.title = item.hint;
+                    var host = button;
+                    var name = document.createElement('strong');
+                    name.textContent = item.label;
+                    if (compact) {
+                        host = document.createElement('span');
+                        host.setAttribute('data-wb-hover', 'hint');
+                        button.classList.add('wb-palette-icon-button', 'wb-hover-trigger');
+                        button.setAttribute('aria-label', item.label + '（' + appearance[1] + '）');
+                        var template = document.createElement('template');
+                        template.className = 'wb-hover-panel';
+                        var tip = document.createElement('div');
+                        tip.className = 'wb-palette-tip';
+                        var tag = document.createElement('code');
+                        tag.textContent = appearance[1];
+                        tip.append(name, tag);
+                        template.content.appendChild(tip);
+                        host.append(button, template);
+                    } else {
+                        button.appendChild(name);
+                        button.title = item.hint;
+                    }
                     button.addEventListener('click', function () {
                         var pending = self.pendingInsertTarget;
                         if (pending && self.findNode(pending.id)) {
@@ -133,7 +152,7 @@ export const canvasMethods = {
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', item.type);
                     });
-                    return button;
+                    return host;
                 }
                 // 区块预设项：整段 AST 片段（对比 makeItem 的单组件 type+props）。
                 function makePresetItem(p) {

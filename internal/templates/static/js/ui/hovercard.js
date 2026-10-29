@@ -18,6 +18,7 @@
  *
  * 触发与关闭：鼠标进入触发器或面板（面板里可能有链接，所以要能移进去）、键盘聚焦、
  * 触屏点按（点一下开、再点一下关）、Escape、页面滚动或窗口缩放。
+ * data-wb-hover="hint" 用于操作按钮：点击与拖拽关闭提示，继续执行按钮原有操作。
  *
  * 不做 init 扫描：全部走 document 级委托，htmx 换入的新行天然生效，不必登记 WBUI.scan。
  */
@@ -124,6 +125,7 @@
     document.addEventListener('click', function (e) {
         var host = hostOf(e.target);
         if (host) {
+            if (host.getAttribute('data-wb-hover') === 'hint') { close(); return; }
             // 触屏没有 hover：点一下开、再点一下关。
             if (current && current.host === host) { close(); } else { open(host); }
             return;
@@ -133,6 +135,9 @@
 
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') { close(); }
+    });
+    document.addEventListener('dragstart', function () {
+        if (current && current.host.getAttribute('data-wb-hover') === 'hint') { close(); }
     });
 
     // 坐标是打开那一刻算的：滚动与缩放都会让它失效，直接关掉比跟踪重算更不容易出错

@@ -56,8 +56,11 @@
 .wb-palette-item strong { display: block; font-size: var(--ui-fs-xs); font-weight: 500; margin-top: 9px; }
 .wb-palette-item .wb-palette-icon { display: block; color: var(--sky-c-text-secondary); }
 .wb-palette-icon svg { width: 23px; height: 23px; }
-.wb-palette-item .wb-palette-tag { margin-top: 4px; font-size: var(--ui-fs-2xs); font-family: ui-monospace, monospace; color: var(--sky-c-text-mute); }
-.wb-palette-item > span:not(.wb-palette-icon):not(.wb-palette-tag) { margin-top: 4px; font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); }
+.wb-palette-item > span:not(.wb-palette-icon) { margin-top: 4px; font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute); }
+.wb-palette-item.wb-palette-icon-button { width: 100%; min-height: 52px; padding: 10px; }
+.wb-palette-tip { display: grid; gap: 5px; min-width: min(100%, 100px); }
+.wb-palette-tip strong { font-size: var(--ui-fs-xs); font-weight: 600; }
+.wb-palette-tip code { font-size: var(--ui-fs-2xs); font-family: ui-monospace, monospace; color: var(--sky-c-text-mute); }
 .wb-library-categories { display: flex; flex-wrap: wrap; gap: 6px; }
 .wb-library-categories button { border: 1px solid var(--sky-c-border); background: var(--sky-c-surface); color: var(--sky-c-text-secondary); border-radius: 6px; padding: 6px 9px; font-size: var(--ui-fs-2xs); cursor: pointer; }
 .wb-library-categories button.is-active { background: var(--sky-c-primary); border-color: var(--sky-c-primary); color: var(--sky-c-surface); }
@@ -320,6 +323,7 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 }
 .wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
 .wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
+.wb-palette-group-body.wb-palette-icons { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 
 /* ===== 结构树右键菜单 ===== */
 .wb-context-menu {
