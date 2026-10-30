@@ -1083,6 +1083,8 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .empty-state .empty-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--sky-c-text-secondary, #4b5563); }
 .empty-state .empty-desc { margin: 0; max-width: 46ch; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
 .empty-state .empty-actions { display: flex; flex-wrap: wrap; gap: var(--ui-sp-sm); justify-content: center; margin-top: var(--ui-sp-xs); }
+/* 作者组件样式会覆盖 UA 的 hidden 默认值；仅在 SEO 结果区恢复隐藏语义。 */
+[data-seo-audit-scope] [hidden] { display: none; }
 
 /* ── 6. 区块标题层级：h2 只做锚点，不再与页头 h1 抢等同重量 ────────────── */
 .card-body > h2:first-child { margin-top: 0; }

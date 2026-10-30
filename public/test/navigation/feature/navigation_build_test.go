@@ -51,6 +51,12 @@ func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigat
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(db), projects)
+	// 写端口（标页面 / 标实例 / 入队）在**所有**导航写路径上都是必需依赖：
+	// 未装配时 Create / Update / Delete / SwapMove 一律 fail closed（writePortsReady）。
+	// 本夹具装配的是真实实现而不是探针 —— 库里真会出现 pages.stale=true、
+	// presentation input_version 前进、build_jobs 多出一条 menu_stale 任务，
+	// 于是「失效真的发生了」与「CRUD 真的成功了」分开断言（探针只能证明前者被调用过）。
+	attachNavWritePorts(t, navSvc, db, projects)
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))

@@ -48,7 +48,6 @@ package pubservice
 import (
 	"cmp"
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/url"
@@ -59,6 +58,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/seo"
@@ -498,13 +498,8 @@ const (
 	AuditHreflangIncomplete = "hreflang_incomplete"
 )
 
-// AuditIssue 一条体检结论。
-type AuditIssue struct {
-	Path    string // 产物访问路径（如 /about）
-	Item    string // 检查项标识
-	Level   string // error / warning / info
-	Message string
-}
+// AuditIssue / AuditIssueParams / AuditResult 的类型定义在 seo_audit_result.go：
+// 结论只说事实（谁的哪个检查项、什么原值），不拼句子。
 
 // AuditDocument 单份产物的解析结果（检查项共用一次解析）。
 type AuditDocument struct {
@@ -590,48 +585,55 @@ func isInternalLink(href string) bool {
 //
 // activePaths 是**服务出去的路径集合**（含 301 旧路径），内链与 hreflang 都对照它 ——
 // 这一步能抓出「改 URL 之后没人更新链接」留下的死链，而那类问题在草稿里完全看不见。
+//
+// 输出只有事实：文案取词与展示形态归模板/前端，这里不出现任何成品句。
 func AuditSite(docs []AuditDocument, activePaths map[string]bool) (issues []AuditIssue) {
 	byTitle := map[string][]string{}
 	for _, d := range docs {
 		if d.Title == "" {
-			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditTitleMissing, Level: AuditLevelError,
-				Message: "页面没有 <title>"})
+			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditTitleMissing, Level: AuditLevelError})
 		} else {
 			byTitle[d.Title] = append(byTitle[d.Title], d.Path)
 		}
 		if d.Description == "" {
-			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditDescriptionMissing, Level: AuditLevelWarning,
-				Message: "页面没有 meta description"})
+			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditDescriptionMissing, Level: AuditLevelWarning})
 		}
 		if d.Canonical == "" {
-			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditCanonicalMissing, Level: AuditLevelWarning,
-				Message: "页面没有 canonical"})
+			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditCanonicalMissing, Level: AuditLevelWarning})
 		}
 		for _, src := range d.ImageSrcs {
 			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditImageAltMissing, Level: AuditLevelWarning,
-				Message: "图片缺少 alt：" + src})
+				Params: AuditIssueParams{Src: src}})
 		}
 		for _, href := range d.Links {
 			if !linkExists(href, activePaths) {
 				issues = append(issues, AuditIssue{Path: d.Path, Item: AuditInternalLinkBroken, Level: AuditLevelError,
-					Message: "站内链接指向不存在的路径：" + href})
+					Params: AuditIssueParams{Href: href}})
 			}
 		}
 		// hreflang：出现就必须至少两条（只有一条等于没声明互指），且目标都在激活集合内。
 		if len(d.Hreflangs) == 1 {
-			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditHreflangIncomplete, Level: AuditLevelWarning,
-				Message: "hreflang 只有一条，缺少互指"})
+			issues = append(issues, AuditIssue{Path: d.Path, Item: AuditHreflangIncomplete, Level: AuditLevelWarning})
 		}
 	}
-	for title, pages := range byTitle {
+	// 标题分组是 map：map 的遍历顺序每次不同，直接 append 会让同一份产物产出
+	// 顺序不定的结论列表（构建确定性，AGENTS.md 不变量 5 的同一条理由）。
+	titles := make([]string, 0, len(byTitle))
+	for title := range byTitle {
+		titles = append(titles, title)
+	}
+	slices.Sort(titles)
+	for _, title := range titles {
+		pages := byTitle[title]
 		if len(pages) < 2 {
 			continue
 		}
 		slices.Sort(pages)
-		// 必须把命中页面**列进结论**：只报「有 2 个页面重复」等于给了一个无法行动的结果 ——
-		// 运营知道有问题，却不知道该去改哪一页。这是体检类功能的常见失手。
-		issues = append(issues, AuditIssue{Path: strings.Join(pages, ", "), Item: AuditTitleDuplicate, Level: AuditLevelWarning,
-			Message: "重复的 title（" + title + "）出现在 " + itoa(len(pages)) + " 个页面：" + strings.Join(pages, "、")})
+		// 命中页面**全部**进结论、按排序给出：只报「有 2 个页面重复」等于给了一个
+		// 无法行动的结果；只报首个命中则等于把另外几页藏起来。
+		// Path 留空：这条结论不属于任何单页（见 seo_audit_result.go 的包注释）。
+		issues = append(issues, AuditIssue{Item: AuditTitleDuplicate, Level: AuditLevelWarning,
+			Params: AuditIssueParams{Title: title, Paths: append([]string(nil), pages...)}})
 	}
 	return issues
 }
@@ -658,21 +660,6 @@ func linkExists(href string, activePaths map[string]bool) bool {
 		}
 	}
 	return false
-}
-
-// itoa 小整数转字符串（避免为一个用例引入 strconv 的间接层）。
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }
 
 // CollectActiveDocuments 遍历激活目录，读出全部 HTML 产物（只读，不解析链接目标）。
@@ -726,16 +713,23 @@ func CollectActiveDocuments(dir string, activePaths []string) (docs []AuditDocum
 // 它们自己的内链进来，而对照的是本工程的路由表，结果是满屏误报的死链。
 //
 // 只读产物文件：不写库、不发请求、不碰访问面，可以在任何时刻跑。
-func (s *Service) RunSEOAudit(ctx context.Context, projectID string) (issues []AuditIssue, scanned int, err error) {
+//
+// 两种空结果都是 200，但含义不同，别合并：
+// scanned=0 表示**没有产物**（还没发布过）；scanned>0 且 count=0 表示**查过、没问题**。
+// 依赖读取失败照常上抛（工程路由表读不出来 = 这次体检没跑成，不能当成「零问题」）。
+//
+// projectID 为空是**请求缺参**，按参数错误归口（enums 声明处给 400），
+// 不是内部错误：调用方漏传与数据库挂了不该显示同一句话。
+func (s *Service) RunSEOAudit(ctx context.Context, projectID string) (AuditResult, error) {
 	if strings.TrimSpace(projectID) == "" {
-		return nil, 0, errors.New("缺少站点工程")
+		return AuditResult{}, pubenums.ErrProjectMissing()
 	}
 	paths, err := s.model.ListActivePaths(ctx, projectID)
 	if err != nil {
-		return nil, 0, err
+		return AuditResult{}, err
 	}
 	if len(paths) == 0 {
-		return nil, 0, nil // 还没有激活产物：体检无从谈起，不是错误
+		return newAuditResult(0, nil), nil // 还没有激活产物：体检无从谈起，不是错误
 	}
 	active := make(map[string]bool, len(paths))
 	for _, p := range paths {
@@ -743,7 +737,7 @@ func (s *Service) RunSEOAudit(ctx context.Context, projectID string) (issues []A
 	}
 	docs, err := CollectActiveDocuments(pipeline.ActiveRoot(), paths)
 	if err != nil {
-		return nil, 0, err
+		return AuditResult{}, err
 	}
 	mine := make([]AuditDocument, 0, len(docs))
 	for _, d := range docs {
@@ -751,5 +745,5 @@ func (s *Service) RunSEOAudit(ctx context.Context, projectID string) (issues []A
 			mine = append(mine, d)
 		}
 	}
-	return AuditSite(mine, active), len(mine), nil
+	return newAuditResult(len(mine), AuditSite(mine, active)), nil
 }

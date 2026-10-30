@@ -61,6 +61,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"slices"
 	"strconv"
@@ -119,6 +120,41 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 	return affected, nil
 }
 
+// MarkMenuStaleTx 实现 pagecontract.PageMenuStalePort：调用方事务内标记菜单依赖失效。
+//
+// 端口之所以收在 contract 而实现落在这里：事务句柄来自调用方（navigation 写译文的
+// 同一个 tx），本方法**不开事务、不碰文件系统**，只转给 model 的那一条原子 UPDATE
+// （标 stale + input_version + 1 在同一条语句里，见 pagemodel.MarkMenuStaleTx）。
+//
+// 为什么不做「service 级扇出」：扇出属于按依赖键标记的通用入口
+// （MarkStaleByDependency），而本端口的工程与菜单位置都由调用方给定 —— 再扇出一次
+// 会把别的工程同位置的页面一起打上 stale，那已经不是「这次译文变更的影响面」了。
+func (s *Service) MarkMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (int64, error) {
+	if s == nil || s.model == nil {
+		// 未装配 model 的 Service 是装配缺陷，不是「没有受影响页面」（同 FindPagesByDependency）。
+		return 0, ErrProjectRequired
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	return s.model.MarkMenuStaleTx(ctx, tx, projectID, kind, at)
+}
+
+// MarkNavigationStaleTx 实现 navigation 写路径的**按菜单项**同事务标记。
+//
+// 与 MarkMenuStaleTx 同一形状、不同依赖键：这里是 navigation:{itemID}（只引用了某一支的
+// 页面登记的键），那边是 menu:{project}:{kind}。两者都不开事务、不碰文件系统，
+// 只转给 model 的同名原子 UPDATE。
+func (s *Service) MarkNavigationStaleTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string) (int64, error) {
+	if s == nil || s.model == nil {
+		return 0, ErrProjectRequired
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	return s.model.MarkNavigationStaleTx(ctx, tx, projectID, navigationID)
+}
+
 // RebuildStale 实现 pipeline.StaleRebuilder：重建受影响的页面。
 //
 // 策略（§8.3）：每个受影响页面按站点启用语言逐个构建（只产生 staged Artifact）；
@@ -129,23 +165,62 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 // 超限部分入队（enqueueOverflowBuildJobs），队列 worker 消费时**走同一条编排**
 // （RunPageBuildJob）—— 报告 ARCH-04 的根因就是这两条路径各有一份实现。
 //
-// 单个页面失败不阻断其余页面（记日志后继续），返回值为 nil：
-// 调用方是内容写入的后置副作用，失败已由 stale 标记兜底。
+// 单个页面失败不阻断其余页面（记日志后继续），返回值为 nil —— 这是**既有契约**：
+// 调用方是内容写入的后置副作用，失败已由 stale 标记兜底，异步派发方（Fanout 的
+// go runRebuild）也据此忽略返回值。唯一的外泄错误是「超限部分没排上队」：
+// 那不是「某页重建失败」，而是「这一批根本没有入口再收敛」，静默吞掉会变成永久停更。
+// 需要逐页错误判据的场景用 RebuildStaleStrict。
 func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
+	_, err := s.rebuildStale(ctx, ids, false)
+	if errors.Is(err, ErrRebuildOverloaded) {
+		// 超限是正常处置（其余已入队），不算失败；入队失败会以另一个错误返回（见 rebuildStale）。
 		return nil
 	}
+	return err
+}
+
+// RebuildStaleStrict 实现「逐页严格传播错误」的同步重建端口。
+//
+// 与 RebuildStale 共用同一条编排（rebuildStale），差别只在错误口径：第一页失败就
+// 带着页面 ID 返回，不再继续。调用方（菜单 stale 的同步重建）据此判断这次依赖变更
+// 到底收敛没有 —— 拿 RebuildStale 的 nil 当成功判据是错的（它对全批失败也返回 nil）。
+//
+// 超限溢出部分依旧入队（与 RebuildStale 同一上限），但返回 ErrRebuildOverloaded：
+// 「其余已入队」是一个必须被调用方看见的事实，而不是静默成功。
+func (s *Service) RebuildStaleStrict(ctx context.Context, ids []string) error {
+	_, err := s.rebuildStale(ctx, ids, true)
+	return err
+}
+
+// rebuildStale 两端口共用的编排；strict 决定单页失败是「记日志继续」还是「立即返回」。
+func (s *Service) rebuildStale(ctx context.Context, ids []string, strict bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	overloaded := false
+	var overflowErr error
 	if len(ids) > maxAutoRebuildPages {
 		// 超限部分交给构建队列（审计 DB-007）：此前只能丢弃并靠「下次触发」兜底，
 		// 而「下次触发」未必会来 —— 内容改完站点却一直不更新，是这条路径最容易留下的现象。
 		overflow := append([]string(nil), ids[maxAutoRebuildPages:]...)
 		ids = ids[:maxAutoRebuildPages]
-		s.enqueueOverflowBuildJobs(ctx, overflow)
+		overloaded = true
+		if eerr := s.enqueueOverflowBuildJobs(ctx, overflow); eerr != nil {
+			// 入队失败不能让超限部分静默消失：严格模式下它是硬错误（调用方必须重试），
+			// 尽力而为模式下记 Error 后继续（与既有口径一致）—— 但错误仍随返回值外泄，
+			// 因为「没排上队」不是某页失败，而是这一批没有别的收敛入口。
+			logger.Scene("dependency").With("count", len(overflow)).
+				Error(eerr, "超限重建页面入队失败")
+			overflowErr = fmt.Errorf("超限重建入队: %w", eerr)
+		}
 	}
 	rebuilt, published := 0, 0
 	for _, id := range ids {
 		if ctx.Err() != nil {
-			return nil
+			if strict {
+				return rebuilt, ctx.Err()
+			}
+			return rebuilt, nil
 		}
 		// 逐工程定位（DB-009 第三批）：ids 来自依赖扇出（可能跨工程），而 pages 带 FORCE
 		// 策略 —— 不设作用域的 GetByID 在换非超级角色后一律 ErrRecordNotFound，
@@ -153,6 +228,11 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 		page, err := s.locatePageInProjects(ctx, id)
 		if err != nil {
 			logger.Scene("dependency").With("page_id", id).Warn("自动重建跳过：页面不存在或已删除")
+			// 严格模式：定位失败也是失败（页面可能刚被删、或是脏 id）。尽力而为模式保持原有
+			// 跳过语义 —— 那条路径的 ids 来自扇出，含已删除页面是常态。
+			if strict {
+				return rebuilt, fmt.Errorf("重建页面 %s: %w", id, err)
+			}
 			continue
 		}
 		// 计划里的语言集与旧发布范围都按**发布口径**取（审计 I18N-02）：这条路径会构建
@@ -166,6 +246,9 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			// 除了日志，还把「失败在计划阶段」落到页面行上（见 markRebuildFailure 的注释）：
 			// 界面上看到的 stale 从此能区分「还没轮到」与「重建失败过」。
 			s.markRebuildFailure(ctx, page, pageRebuildStagePlan)
+			if strict {
+				return rebuilt, fmt.Errorf("重建页面 %s（计划阶段）: %w", id, perr)
+			}
 			continue
 		}
 		r, p, rerr := s.rebuildPage(ctx, plan)
@@ -175,6 +258,9 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			logger.Scene("dependency").With("page_id", id).
 				Error(rerr, "依赖失效后的自动重建失败（页面保持 stale）")
 			s.markRebuildFailure(ctx, page, pageRebuildStageBuild)
+			if strict {
+				return rebuilt, fmt.Errorf("重建页面 %s: %w", id, rerr)
+			}
 			continue
 		}
 		s.clearRebuildFailure(ctx, page)
@@ -183,7 +269,13 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 		logger.Scene("dependency").With("rebuilt", rebuilt).With("published", published).
 			Info("依赖失效后的自动重建完成")
 	}
-	return nil
+	if overflowErr != nil {
+		return rebuilt, overflowErr
+	}
+	if overloaded {
+		return rebuilt, ErrRebuildOverloaded
+	}
+	return rebuilt, nil
 }
 
 // persistDependencies 把本次产物的依赖集合写入 page_dependencies（自足入口：自带事务）。

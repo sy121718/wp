@@ -18,11 +18,8 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	navigationdto "go_wp/internal/module/navigation/dto"
-	navigationmodel "go_wp/internal/module/navigation/model"
-	navigationservice "go_wp/internal/module/navigation/service"
+
 	presentationdto "go_wp/internal/module/presentation/dto"
-	projectmodel "go_wp/internal/module/project/model"
-	projectservice "go_wp/internal/module/project/service"
 
 	"go_wp/internal/pipeline"
 )
@@ -38,9 +35,12 @@ func TestPresentationMenuDependencyAndStale(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 导航服务：projects 传 nil（服务内回退 projects 表清单，只用于逐工程定位）。
-	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db),
-		projectservice.NewService(projectmodel.NewProjectModel(f.db)))
+	// 导航服务：**真实五端口**（与 internal/routers 的 navigationWritePorts 同形）。
+	//
+	// 裸 NewService 直接 Create/Update 是本轮之前"改导航、实例不重建"的成因：
+	// 写入口在没有端口时必须 fail closed，而 fix 之后的 Update 走的是同事务标记 + 入队，
+	// 所以这里必须给它真实端口，否则测到的只是"拒绝"而不是"传播"。
+	navSvc := f.newNavService()
 	if _, err := navSvc.Create(ctx, &navigationdto.CreateReq{
 		ProjectID: f.projectID, Title: "旧菜单", Path: "/old-menu", Kind: "header",
 	}); err != nil {
@@ -79,7 +79,9 @@ func TestPresentationMenuDependencyAndStale(t *testing.T) {
 		t.Fatalf("绑定页眉导航的实例应声明恰好 1 条 menu:{pid}:header 依赖，实际 %d 条", n)
 	}
 
-	// 2) 触发：扇出注册 presentation 来源，导航写操作经适配器反查依赖表。
+	// 2) 触发：导航写操作经真实五端口在同事务里标 stale + 入队。
+	//    五端口之一正是 Instances（presentation 的 MarkInstanceMenuStaleTx），
+	//    它内部按依赖表反查——所以这里不需要再单独注册扇出适配器。
 	fanout := pipeline.NewFanout()
 	fanout.Register(pipeline.SourceTypePresentation, f.pres)
 	navSvc.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))

@@ -64,6 +64,10 @@ func newNavDependencyEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageServ
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	nav := navigationservice.NewService(navigationmodel.NewModel(db), projects)
+	// 写端口（标页面 / 标实例 / 入队）是 Create / Update / Delete 的必需依赖：
+	// 缺任一即 fail closed。本用例断言「改导航 → 收藏该位置的页面被标 stale」，
+	// 用的是真实端口（pages.stale / build_jobs 都是可观测结果，不是探针调用次数）。
+	attachNavWritePorts(t, nav, db, projects)
 	navSvc = nav
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))

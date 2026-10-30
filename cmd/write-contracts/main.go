@@ -181,10 +181,23 @@ func runtimeWriteRoutes() ([]route, error) {
 //   - 否则退化为「全部资源词都出现在 handler 名里且唯一」。
 //
 // 多条命中就放弃 —— 配错会让门禁按错的 DTO 对账，比不配更糟。
+//
+// 例外只有一类：显式别名 exactHandlerAliases。它解决的是「路由文件名与 handler 名
+// 完全不同名」的个例，而不是用来豁免门禁 —— 别名失配（handler 不存在 / 模块不符）
+// 时不产出任何契约，由 check-write-fields.sh 按「端点不在契约里」报出来。
 func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segs) < 3 {
 		return ""
+	}
+	// 显式别名优先：极少数写入口的 handler 名与路径段的动词、资源名都不对应
+	//（/api/order/shipment/create → ShipOrder），常规拼名规则永远拼不出来。
+	// 别名只在「handler 已被真实扫描到、模块作用域一致、且该 handler 确实绑定了 dto 包类型」
+	// 时采纳；任何一条不满足就落回常规规则（宁可漏配让门禁报出来，也不伪造一条契约）。
+	if alias, ok := exactHandlerAliases[path]; ok {
+		if id, hit := resolveAliasHandler(alias, mod, segs[1], handlerDTO); hit {
+			return id
+		}
 	}
 	rest := segs[2:]
 	if segs[1] != mod {
@@ -294,6 +307,46 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 		return hits[0]
 	}
 	return ""
+}
+
+// exactHandlerAliases 路径 → handler 名，仅用于「handler 名与路径段拼不出来」的个例。
+//
+// 判据（三条全中才允许新增一条）：
+//  1. 该端点确实在运行时路由表里注册为写方法（否则别名是死配置）；
+//  2. handler 方法名无法由「动词表 + 资源段驼峰」拼出（先用常规规则验证，拼得出来的
+//     不走别名 —— 别名越多，契约就越像手抄）；
+//  3. 模块作用域一致：handler 必须已由 scanHandlerBindings 从**同一模块目录**扫出来
+//     并绑定 dto 包类型，别名只做「选哪个已扫到的 handler」，绝不凭空指定 DTO。
+//
+// 现状只有一条：POST /api/order/shipment/create 注册的是 h.ShipOrder
+// （order_router.go 的 sg.POST("/create", …, h.ShipOrder)），动词是 create、资源词是
+// shipment，常规候选 CreateShipment / Create 都不存在。若该 handler 改名或改绑定，
+// resolveAliasHandler 会拒绝采纳，契约随之缺失，门禁报「端点不在契约里」。
+var exactHandlerAliases = map[string]string{
+	"/api/order/shipment/create": "ShipOrder",
+}
+
+// resolveAliasHandler 校验别名仍成立，返回权威键 "模块:Handler"。
+//
+// 分两步拒绝：先查带模块前缀的键是否存在（模块作用域），再回读它绑定的 DTO 是否
+// 属于该模块的 dto 包 —— 双保险，防止 handler 被搬到别的模块后别名悄悄指错地方。
+func resolveAliasHandler(name, mod, routeModule string, handlerDTO map[string]string) (string, bool) {
+	if mod == "" || name == "" {
+		return "", false
+	}
+	// 路由前缀声明的模块必须与从源码目录推得的模块一致（/api/order/... ↔ internal/module/order）。
+	if routeModule != mod {
+		return "", false
+	}
+	id := mod + ":" + name
+	dto, ok := handlerDTO[id]
+	if !ok {
+		return "", false
+	}
+	if !strings.HasPrefix(dto, mod+"dto.") {
+		return "", false
+	}
+	return id, true
 }
 
 // moduleOfRoutePath 从 API 路径确定处理器所属模块；角色与客户是所属模块的资源前缀。

@@ -8,6 +8,7 @@ const (
 	ErrJobNotFound     = "ErrJobNotFound"     // 构建任务不存在
 	ErrExecutorMissing = "ErrExecutorMissing" // 该来源类型没有注册执行器
 	ErrInvalidSource   = "ErrInvalidSource"   // 来源类型不在白名单内
+	ErrInvalidMenuKind = "ErrInvalidMenuKind" // 菜单位置不在四值白名单内（menu_stale 入队）
 )
 
 const (
@@ -27,6 +28,7 @@ var errFallbacks = map[string]string{
 	ErrJobNotFound:     "构建任务不存在",
 	ErrExecutorMissing: "该来源类型没有注册构建执行器，任务无法执行",
 	ErrInvalidSource:   "非法的菜单项来源，仅支持 custom/page/article/product/category/block，且非 custom 必须指定来源实体",
+	ErrInvalidMenuKind: "菜单位置无效，仅支持 header/header_mobile/footer/footer_mobile",
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。

@@ -14,6 +14,7 @@ package pagemodel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -116,6 +117,25 @@ func (m *Model) DeleteRedirectRoute(ctx context.Context, projectID, path string)
 	})
 	if err != nil {
 		return 0, err
+	}
+	return res.RowsAffected, nil
+}
+
+// DeleteRedirectRouteTx 在**调用方事务**内删除单条重定向行，返回受影响行数。
+//
+// 与 DeleteRedirectRoute 的差别不只是事务句柄：它把"删到几行"交给调用方判断。
+// 下线回执要求 1 行（0 行说明锁内复验之后行已被别人处置，按归属冲突处理），
+// 而合并跳转链等幂等场景要的正是 0 行也算成功。两个语义不同的调用方不能共用
+// 一个"0 行也当成功"的原语。
+func (m *Model) DeleteRedirectRouteTx(ctx context.Context, tx *gorm.DB, projectID, path string) (n int64, err error) {
+	if tx == nil {
+		return 0, errors.New("page: 删除重定向行必须在调用方事务内")
+	}
+	res := tx.WithContext(ctx).Model(&PageRouteEntity{}).
+		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindRedirect).
+		Delete(&PageRouteEntity{})
+	if res.Error != nil {
+		return 0, res.Error
 	}
 	return res.RowsAffected, nil
 }

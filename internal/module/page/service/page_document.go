@@ -618,18 +618,38 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 		return err
 	}
 
+	// 顺序（与改址/回滚同一框架，见 page_publish.go 的下线回执一节）：
+	//
+	//	登记下线意图（pending 回执，记下每条路径此刻的归属事实）
+	//	  → 稳定顾问锁（page:<id>，页面软删之后仍可锁）
+	//	    → 实体行锁（页还在时与发布/改址互斥）
+	//	      → 业务事务：清路由占用 + 软删 + 在同一事务里置 businessCommitted
+	//	        → 提交后：路径锁内复验归属 → 撤链 → 结案
+	//
+	// 为什么不先删链接再删库（旧实现就是这样）：撤链不可逆，而"这些链接原本属于谁、
+	// 指向哪份产物"只在 DB 行还在时能查。先删之后任何一次崩溃都留下无主链接，
+	// 且再也没有地方记着它们 —— 回执把这件事实挪到删库之前登记，收尾变成可重放。
 	if s.routes != nil {
-		// 先按已激活路径把页面从访问面下线，再清 DB 路由占用。
 		paths, lerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
 			ProjectID: page.ProjectID, PageID: req.ID,
 		})
 		if lerr != nil {
 			return lerr
 		}
-		if err = s.deactivatePaths(paths); err != nil {
-			return err
+		paths = normalizeOldPaths(paths)
+		if len(paths) > 0 {
+			intent, rerr := s.registerDeactivationIntent(ctx, page.ProjectID, req.ID, page.DraftPath, paths)
+			if rerr != nil {
+				// 登记失败即中止：没有回执就再没有地方记着这些链接的归属。
+				return rerr
+			}
+			if derr := s.deleteWithDeactivation(ctx, page, intent); derr != nil {
+				return derr
+			}
+			return nil
 		}
 	}
+	// 没有激活路径（从未发布）：不需要回执，业务事务单独提交。
 	// 先清媒体引用再软删：引用缓存失败则整单删除中断，避免留下「页面已删、引用仍在」的残留。
 	// 媒体引用表归 media 模块（无 …Tx 变体），因此它在事务之外，且必须在软删之前 ——
 	// 软删之后媒体模块就读不到这个 refID 对应的引用了。
@@ -660,10 +680,79 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 	return nil
 }
 
-// deactivatePaths 解除一组路径的访问面激活（删除 active 符号链接，幂等）。
-// publication 为 nil（降级装配 / 单元测试）时跳过。
-func (s *Service) deactivatePaths(paths []string) error {
-	if s.publication == nil {
+// deactivatePathsOf 解除一组路径的访问面激活，**但只动属于本归属者的那些**。
+//
+// 这里刻意**不保留**无条件版本（原来那个 deactivatePaths）：它是 os.Remove 符号链接，路径在
+// 释放之后可能已经被**另一个页面/实例**接管 —— 此时删掉的不是「我的旧链接」，而是
+// 别人刚上线的链接：线上立刻 404，且没有任何一方会察觉这次是「清理」干的。
+//
+// 归属核对与 FS 处置在**同一次路径锁持锁期**内完成（顺序即判据）：
+//  1. 锁内读本归属者当前仍在服务的路径集合。任何一条不在清单里 → 判 errOldPathTaken，
+//     **一条都不删**（不做部分删除，见下方补偿说明）—— 别人的链接由别人负责；
+//  2. 清单核对通过后逐条解除。逐条之间不会再有人接管（同一路径的竞争者都要先取这把锁），
+//     因此不存在「查到一半被别人抢走」的窗口。
+//
+// **批删除的补偿口径（明确失败面）**：Deactivate 是 os.Remove(符号链接)，单个动作幂等；
+// 一轮里第 k 条失败时前 k-1 条已经删掉，本函数**不做回滚**（把删掉的链接再建回去需要
+// 产物定位器，而这里手里没有，硬造可能建出指向错误产物的链接 —— 比少删更糟）。
+// 因此失败语义定为「可重放」而不是「全或无」：
+//   - 失败时调用方一律 keepPublishReceiptPending，回执留在 pending；
+//   - 重放时 os.Remove 对已删路径返回 IsNotExist，Deactivate 幂等返回 nil；
+//   - 归属清单在重放时重新读，已删路径不会再进候选，不会被误判成「被别人接管」。
+//
+// 取舍理由：少删一条旧链接的后果是「旧 URL 还能访问到旧产物」，下一次收敛会再删；
+// 而错误重建链接的后果是线上指向错内容，且没有重放能发现它。
+//
+// 返回 errOldPathTaken 表示「不是本次处置的对象」：调用方据此判 superseded，只结案不写。
+func (s *Service) deactivatePathsOf(projectID, pageID string, paths []string) error {
+	if s == nil || s.publication == nil {
+		return nil
+	}
+	cleaned := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	// 归属核对与 FS 处置必须在**同一次持锁期**内：先查清单再删链接的两段式，中间
+	// 恰好就是别人接管这条路径的窗口 —— 那时删掉的是它刚上线的链接。
+	//
+	// 核对是「全有或全无地进入删除阶段」：任一条不归我 → 整批不删。这样调用方拿到的
+	// errOldPathTaken 永远对应「一条都没动」，不存在「一半删了」这种无法归因的状态。
+	return s.withPaths(cleaned, func() error {
+		if s.routes != nil && strings.TrimSpace(pageID) != "" {
+			// 一次性取本归属者当前仍在服务的路径集合：清单里没有 = 这条路径已不归我
+			// （被别人接管，或本来就没占上），既不删 DB 行也不动 FS。
+			owned, lerr := s.routes.ListActivePaths(context.WithoutCancel(context.Background()),
+				&pubcontract.ListActivePathsReq{ProjectID: projectID, PageID: pageID})
+			if lerr != nil {
+				return lerr
+			}
+			for _, p := range cleaned {
+				if !containsPath(owned, p) {
+					// 不是我的：留给它的当前归属者（按路由行判 superseded，只结案不处置）。
+					return fmt.Errorf("%w: %s", errOldPathTaken, p)
+				}
+			}
+		}
+		return s.deactivatePathsUnlocked(cleaned)
+	})
+}
+
+// deactivatePathsUnlocked 逐条解除访问面激活，**假定调用方已持路径锁**。
+//
+// 调用者只有 deactivatePathsOf —— 它在同一持锁期内先做
+// 归属核对，所以这里不再（也无法）核对：进到这里时「这些路径仍归我」已经被证明过。
+//
+// 契约（不可重入）：只允许在 withPaths/withPath 的 fn 内调用。Go 的 sync.Mutex 不认识
+// goroutine，内层再取同一分片会永久自锁 —— 因此「取锁 / 不取锁」两个版本必须显式分开，
+// 而不是让同一个函数靠判断「是否已持锁」猜。
+func (s *Service) deactivatePathsUnlocked(paths []string) error {
+	if s == nil || s.publication == nil {
 		return nil
 	}
 	for _, p := range paths {
@@ -1140,4 +1229,370 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 		return nil, err
 	}
 	return html, nil
+}
+
+// deleteWithDeactivation 执行「有激活路径的页面删除」：业务事务 + 收尾撤链。
+//
+// 三步的边界必须看清（这也是本函数写这么长的唯一理由）：
+//
+//  1. **业务事务**（顾问锁 + 行锁下）：清路由占用 + 软删 + 置 businessCommitted。
+//     三者同进同出：只清路由不软删会留下"页面还在但路径全释放"的窗口，只软删不清
+//     路由则留下永久占用；而 businessCommitted 若不在同一事务里置上，崩溃后收敛
+//     永远不敢动那些链接（宁可不删也不误删，但链接就此永久残留）。
+//  2. **提交之后**：取同一把顾问锁（页已软删，行锁取不到了）→ 路径锁内复验归属 →
+//     撤链 → 结案。撤链放在事务外是因为它是不可回退的 FS 副作用：先提交再撤链，
+//     崩溃留下的只是"页面已删、链接还在"，回执 pending 会在下一轮补完。
+//  3. **失败分流**：业务事务明确失败（页面仍在）→ 撤链从未发生 → 结案 rolled_back；
+//     提交成功但撤链失败 → 保留 pending，收敛按登记时的身份重判，绝不返回删除失败
+//     （页面已经删掉了，报错会让调用方以为要重试，而重试只会再次命中"页面不存在"）。
+func (s *Service) deleteWithDeactivation(ctx context.Context, page *pagemodel.PageEntity, in *deactivationIntent) error {
+	// 清媒体引用：失败即中止，此时还没有任何持久副作用（回执 pending 会在下一轮
+	// 判为"业务未提交"并结案，链接保持原样）。
+	if s.media != nil {
+		if _, rerr := s.media.SyncReferences(ctx, &mediacontract.SyncRefsInput{
+			RefKind:  "page",
+			RefID:    in.PageID,
+			RefTitle: page.DraftPath,
+		}); rerr != nil {
+			return rerr
+		}
+	}
+	// callbackCompleted 记「回调跑到了最后一步」：它**不等于已提交**。GORM 的
+	// Transaction 会把 Commit 的错误也返回，所以「回调末尾标记为真 + txErr 非空」
+	// 恰好就是"提交不明"这一格；反之标记为假时错误一定发生在提交之前。
+	callbackCompleted := false
+	txErr := s.model.TransactionScoped(ctx, in.ProjectID, func(tx *gorm.DB) error {
+		// 稳定顾问锁先于行锁：页面行一旦软删，行锁就再也取不到，而"正在进行的删除"
+		// 与"恢复侧撤链"仍必须互斥 —— 两侧取的是同一把键（page:<id>）。
+		if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, in.PageID); aerr != nil {
+			return aerr
+		}
+		// 页还在时仍取行锁：正常 publish / UpdateURL 只取这把行锁、不取顾问锁，
+		// 只靠顾问锁与它们并不互斥。
+		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, in.ProjectID, in.PageID); lerr != nil {
+			return lerr
+		}
+		// 锁内复验路径集合：登记之后页面可能又发布了 / 改了语言集合，
+		// 那时按登记清单撤链会撤掉刚上线的新链接。
+		current, cerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
+			ProjectID: in.ProjectID, PageID: in.PageID,
+		})
+		if cerr != nil {
+			return cerr
+		}
+		if uerr := deactivationPathsUnchanged(in.Paths, current); uerr != nil {
+			return uerr
+		}
+		if rerr := s.routes.DeleteRoutesByPageTx(ctx, tx, &pubcontract.DeleteRoutesReq{
+			ProjectID: in.ProjectID, PageID: in.PageID,
+		}); rerr != nil {
+			return rerr
+		}
+		if serr := s.model.SoftDeleteTx(ctx, tx, in.ProjectID, in.PageID, time.Now().UTC()); serr != nil {
+			return serr
+		}
+		if merr := s.markDeactivationCommitted(ctx, tx, in); merr != nil {
+			return merr
+		}
+		callbackCompleted = true
+		return nil
+	})
+	if txErr != nil && !callbackCompleted {
+		// 回调在走到末尾标记前就返回了错误：事务一定没提交，链接没动过（撤链在提交之后），
+		// 结案为已回滚。
+		s.abortPublishReceipt(ctx, in.ReceiptID, "删除业务事务未提交，链接保持原样")
+		logger.Scene("publication").With("pageId", in.PageID).Error(txErr, "页面删除失败（业务事务未提交）")
+		return mapPersistenceError(txErr)
+	}
+	if txErr != nil {
+		// 回调跑到了末尾标记、却仍拿到错误：**只有提交阶段可能出错**。GORM 的 Transaction
+		// 把 Commit 的错误也返回，而「提交已生效但连接报错」是真实可能 —— 此时业务数据
+		// 已经删了。这既不是明确回滚也不是明确成功：保留 pending，交给重放时用锁内重读
+		// 的真实状态判定（回执里的 businessCommitted 就是为此而存）。
+		s.keepPublishReceiptPending(in.ReceiptID, "删除业务事务提交结果不明")
+		logger.Scene("publication").With("pageId", in.PageID).Error(txErr, "页面删除提交结果不明（回执保持 pending 交收敛重判）")
+		return mapPersistenceError(txErr)
+	}
+	if !callbackCompleted {
+		// 事务函数正常返回却没走到标记：按未提交处理，不撤链。
+		s.abortPublishReceipt(ctx, in.ReceiptID, "删除业务事务未置提交标记")
+		return nil
+	}
+	if werr := s.withdrawDeactivatedLinks(ctx, in.ProjectID, in.PageID, in.ReceiptID); werr != nil {
+		s.keepPublishReceiptPending(in.ReceiptID, "删除已提交，撤链失败")
+		logger.Scene("publication").With("pageId", in.PageID).
+			Error(werr, "删除已提交但撤链失败（回执保持 pending 交收敛重放）")
+		return nil
+	}
+	if cerr := s.completePublishReceipt(ctx, in.ReceiptID); cerr != nil {
+		s.NotifyPendingReceipt()
+		return nil
+	}
+	return nil
+}
+
+// withdrawDeactivatedLinks 在**顾问锁 + 路径锁**内撤掉一批访问路径，先复验归属。
+//
+// 撤链判据全部来自登记时的不可变事实（ReceiptPathIdentity）：重放时路由行早已被删，
+// 回查"这条路是否曾归我"不可能得到答案 —— 能回答的只有"它现在归谁"。
+func (s *Service) withdrawDeactivatedLinks(ctx context.Context, projectID, pageID, receiptID string) error {
+	if s == nil || s.publication == nil || s.routes == nil {
+		// 没有回执端口/访问面存储就无法判定归属 —— 这不是"没有要撤的链接"。
+		// 用受控错误让调用方保留 pending，而不是 return nil 冒充撤完。
+		return fmt.Errorf("%w: 缺少访问面或回执端口，无法复核归属", errOldPathTaken)
+	}
+	return s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		// 页已软删，这里只有顾问锁可取；与业务侧同一把键，时间线不交错。
+		if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, pageID); aerr != nil {
+			return aerr
+		}
+		// **锁内重读**回执：state / businessCommitted / pathArtifacts 都必须在同一把锁
+		// 下重新取，不能用调用方在锁外读到的那份快照（判定与动手之间业务侧可能取消了）。
+		row, lerr := s.routes.LoadDeactivationReceiptTx(ctx, tx, pageReceiptOwner(pageID), projectID, receiptID)
+		if lerr != nil {
+			return lerr
+		}
+		if row.ReceiptState != "pending" {
+			// 已终态（committed / rolled_back / superseded）：no-op，不改写终态。
+			return nil
+		}
+		if !deactivationBusinessCommittedFromData(row.ReceiptData) {
+			// 业务未提交：不动任何链接，保 pending（下一次收敛再判）。
+			return fmt.Errorf("%w: 下线意图的业务变更尚未提交", errOldPathTaken)
+		}
+		paths := normalizeOldPaths(deactivationOldPathsFromData(row.ReceiptData))
+		if len(paths) == 0 {
+			// 没有路径事实就无法证明这些链接属于本页：fail closed，不照删。
+			return fmt.Errorf("%w: 回执缺少路径事实，无法复核归属", errOldPathTaken)
+		}
+		rows := deactivationPathArtifactsFromData(row.ReceiptData)
+		return s.withPaths(paths, func() error {
+			for _, p := range paths {
+				if strings.TrimSpace(p) == "" {
+					continue
+				}
+				identity, ok := rows[p]
+				if !ok || identity.Locator == "" && identity.ArtifactID == "" && identity.ReceiptID == "" {
+					// 缺 identity：路由行可能已经删掉，只剩 Locator 才能认出"还是我那条"。
+					// 无从复核就不动手（宁可留 pending，也不误删别人的链接）。
+					return fmt.Errorf("%w: 路径 %s 缺少登记时的归属身份", errOldPathTaken, p)
+				}
+				if oerr := s.verifyDeactivatedPathOwner(ctx, tx, projectID, pageID, p, identity); oerr != nil {
+					return oerr
+				}
+				if derr := s.publication.Deactivate(p); derr != nil {
+					return fmt.Errorf("撤掉访问路径 %s 失败: %w", p, derr)
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// verifyDeactivatedPathOwner 路径锁内复验：这条路径此刻还指向登记时那条链接。
+//
+// 两条判据各自独立，缺一不可（见 ReceiptPathIdentity 注释）：
+//   - 路由占用：不存在 → 占用行已删（撤链无害）；存在但不是本页 → 已被接管，拒绝；
+//   - 访问面链接：登记时没有定位器 → 只剩路由判据；有定位器 → 现在必须还是它。
+//     同 artifact 换了 owner 也会让路由判据失败 —— 内容寻址让两条链接可能指向同一份
+//     字节，只看 Locator 认不出"这是别人刚接管的同产物"。
+func (s *Service) verifyDeactivatedPathOwner(ctx context.Context, tx *gorm.DB, projectID, pageID, path string,
+	registered pubcontract.ReceiptPathIdentity) error {
+	if s.routes != nil {
+		owner, oerr := s.routes.RouteOwnerTx(ctx, tx, projectID, path)
+		if oerr != nil && !errors.Is(oerr, gorm.ErrRecordNotFound) {
+			return oerr
+		}
+		if oerr == nil && owner != nil {
+			if owner.ProjectID != projectID {
+				return fmt.Errorf("%w: 路径 %s 已属于其它工程", errOldPathTaken, path)
+			}
+			if owner.PageID == nil || *owner.PageID != pageID {
+				return fmt.Errorf("%w: 路径 %s 的路由占用已转给其它实体", errOldPathTaken, path)
+			}
+		}
+	}
+	if s.publication == nil {
+		return fmt.Errorf("%w: 缺少访问面存储，无法复核路径 %s 的链接身份", errOldPathTaken, path)
+	}
+	if strings.TrimSpace(registered.Locator) == "" {
+		// 登记时没捕获到定位器：路由行删除后就再无判据。「只剩路由判据」在删除链上是
+		// **不成立**的（路由行正是这次操作删掉的），所以这里 fail closed —— 宁可不撤、
+		// 留 pending 由人看，也不能照删一条无法证明归属的链接。
+		return fmt.Errorf("%w: 路径 %s 缺少登记时的访问面定位器，无法复核归属", errOldPathTaken, path)
+	}
+	st, ierr := s.publication.Inspect(path)
+	if ierr != nil {
+		return ierr
+	}
+	if st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+		// 链接已经不在（上一次重放撤掉了一半）：幂等，允许继续。
+		return nil
+	}
+	if current := strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key); current != registered.Locator {
+		return fmt.Errorf("%w: 路径 %s 的访问面链接已指向别的产物", errOldPathTaken, path)
+	}
+	return nil
+}
+
+// withdrawProjectDeactivatedLinks 项目级下线意图的撤链：顾问键退化为工程键。
+//
+// 与 page 版的差别只在锁键与归属判据：
+//   - 顾问锁取 "project:<id>"：这一格没有实体可锁（重定向行两端归属者都为空），
+//     而同一路径上的重定向重建走 Activate/Redirect 的共享路径锁，所以**路径锁**
+//     才是与竞争者交错的边界，顾问锁只用来与"另一次项目级下线"串行。
+//   - 归属判据不接受任何"本页占用"：重定向的占用者本来就是 NULL，只认
+//     ①当前路由行仍是 redirect（或已不存在），②访问面链接仍是登记时那一条。
+func (s *Service) withdrawProjectDeactivatedLinks(ctx context.Context, projectID, receiptID string) error {
+	if s == nil || s.publication == nil || s.routes == nil {
+		return fmt.Errorf("%w: 缺少访问面或回执端口，无法复核归属", errOldPathTaken)
+	}
+	return s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		if aerr := s.model.LockProjectEntityAdvisoryTx(ctx, tx, projectID); aerr != nil {
+			return aerr
+		}
+		row, lerr := s.routes.LoadDeactivationReceiptTx(ctx, tx, projectReceiptOwner(projectID), projectID, receiptID)
+		if lerr != nil {
+			return lerr
+		}
+		if row.ReceiptState != "pending" {
+			return nil
+		}
+		if !deactivationBusinessCommittedFromData(row.ReceiptData) {
+			return fmt.Errorf("%w: 下线意图的业务变更尚未提交", errOldPathTaken)
+		}
+		paths := normalizeOldPaths(deactivationOldPathsFromData(row.ReceiptData))
+		if len(paths) == 0 {
+			return fmt.Errorf("%w: 回执缺少路径事实，无法复核归属", errOldPathTaken)
+		}
+		rows := deactivationPathArtifactsFromData(row.ReceiptData)
+		return s.withPaths(paths, func() error {
+			for _, p := range paths {
+				if strings.TrimSpace(p) == "" {
+					continue
+				}
+				identity, ok := rows[p]
+				if !ok || identity.Locator == "" && identity.ArtifactID == "" && identity.ReceiptID == "" {
+					return fmt.Errorf("%w: 路径 %s 缺少登记时的归属身份", errOldPathTaken, p)
+				}
+				if oerr := s.verifyProjectRedirectOwner(ctx, tx, projectID, p, identity); oerr != nil {
+					return oerr
+				}
+				if derr := s.publication.Deactivate(p); derr != nil {
+					return fmt.Errorf("撤掉访问路径 %s 失败: %w", p, derr)
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// publisherRouteKindRedirect 路由表里"这条路径是 301"的 route_kind 取值。
+//
+// 直接用本模块 model 的同一常量：page/model/page_redirect_model.go 已声明
+// RouteKindRedirect 并读 page_routes（该文件的存在理由见其头注释）。再抄一份
+// 字面量只会多一处会漂移的同源事实。
+const publisherRouteKindRedirect = pagemodel.RouteKindRedirect
+
+// verifyProjectRedirectOwner 项目级下线的归属复验。
+//
+// 与 page 版的「路由归属必须还是本页」不同：重定向行的 page_id / presentation_id
+// 都是 NULL，唯一能区分代次的事实是访问面链接本身。因此：
+//   - 路由行存在但不是 redirect（被某页的 active 占用）→ 已接管，拒绝；
+//   - 路由行指向别的工程 → 拒绝；
+//   - 路由行不存在 → 上一次重放删过（幂等），继续按链接判；
+//   - 链接还在且正是登记时的 Locator → 撤；已不在 → 幂等；不是它 → 拒绝。
+func (s *Service) verifyProjectRedirectOwner(ctx context.Context, tx *gorm.DB, projectID, path string,
+	registered pubcontract.ReceiptPathIdentity) error {
+	if s.routes != nil {
+		owner, oerr := s.routes.RouteOwnerTx(ctx, tx, projectID, path)
+		if oerr != nil && !errors.Is(oerr, gorm.ErrRecordNotFound) {
+			return oerr
+		}
+		if oerr == nil && owner != nil {
+			if strings.TrimSpace(owner.ProjectID) != "" && owner.ProjectID != projectID {
+				return fmt.Errorf("%w: 路径 %s 已属于其它工程", errOldPathTaken, path)
+			}
+			if owner.RouteKind != "" && owner.RouteKind != publisherRouteKindRedirect {
+				return fmt.Errorf("%w: 路径 %s 已被其它实体作为 %s 占用", errOldPathTaken, path, owner.RouteKind)
+			}
+		}
+	}
+	if s.publication == nil {
+		return fmt.Errorf("%w: 缺少访问面存储，无法复核路径 %s 的链接身份", errOldPathTaken, path)
+	}
+	if strings.TrimSpace(registered.Locator) == "" {
+		return fmt.Errorf("%w: 路径 %s 缺少登记时的访问面定位器，无法复核归属", errOldPathTaken, path)
+	}
+	st, ierr := s.publication.Inspect(path)
+	if ierr != nil {
+		return ierr
+	}
+	if st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+		return nil
+	}
+	if st.Kind != pipeline.PublicationRedirect {
+		return fmt.Errorf("%w: 路径 %s 的访问面已被改成 %s", errOldPathTaken, path, st.Kind)
+	}
+	if current := strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key); current != registered.Locator {
+		return fmt.Errorf("%w: 路径 %s 的访问面链接已指向别的产物", errOldPathTaken, path)
+	}
+	return nil
+}
+
+// deactivationPathArtifactsFromData 读回执 receipt_data.pathArtifacts。
+//
+// 解析失败返回空表：调用方据此只剩"路由归属"这一条判据 —— 保守方向是不撤链，
+// 而不是按一份读不出来的清单照删。businessCommitted 同理单独读一次（见 recovery 侧），
+// 两件事必须分开判断：有路径事实不代表业务提交过。
+func deactivationPathArtifactsFromData(raw []byte) map[string]pubcontract.ReceiptPathIdentity {
+	if len(raw) == 0 {
+		return nil
+	}
+	var probe struct {
+		PathArtifacts map[string]pubcontract.ReceiptPathIdentity `json:"pathArtifacts"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+	return probe.PathArtifacts
+}
+
+// deactivationBusinessCommittedFromData 读回执 receipt_data.businessCommitted。
+//
+// 解析失败按 false 处理：false 在恢复侧的含义是"保留 pending、不动任何链接"，
+// 这是安全方向（宁可晚一轮收敛，也不在业务是否提交未知时动手撤链）。
+func deactivationBusinessCommittedFromData(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var probe struct {
+		BusinessCommitted bool `json:"businessCommitted"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	return probe.BusinessCommitted
+}
+
+// deactivationOldPathsFromData 读回执 receipt_data.oldPaths（登记时落下的路径清单）。
+//
+// 为什么不信调用方传进来的 paths：那份清单来自锁外的一次 ListActivePaths，判定与动手
+// 之间页面可能又发布了 / 改了语言集合。锁内重读回执里的清单才是"这条意图登记的那些
+// 路径"，与 PathArtifacts 同源。
+func deactivationOldPathsFromData(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var probe struct {
+		OldPaths []string `json:"oldPaths"`
+		OldPath  string   `json:"oldPath"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+	if len(probe.OldPaths) == 0 && strings.TrimSpace(probe.OldPath) != "" {
+		return []string{probe.OldPath}
+	}
+	return probe.OldPaths
 }

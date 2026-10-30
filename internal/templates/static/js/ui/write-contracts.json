@@ -103,6 +103,7 @@
   "/api/product/variant/update": {"dto":"productdto.UpdateVariantReq","handler":"UpdateVariant","fields":[{"name":"id","required":true},{"name":"projectId","required":false},{"name":"skuCode","required":false},{"name":"barcode","required":false},{"name":"price","required":false},{"name":"comparePrice","required":false},{"name":"costPrice","required":false},{"name":"image","required":false},{"name":"optionValues","required":false},{"name":"enabled","required":false},{"name":"sort","required":false}]},
   "/api/project/create": {"dto":"projectdto.CreateReq","handler":"Create","fields":[{"name":"name","required":true},{"name":"settings","required":false}]},
   "/api/project/update": {"dto":"projectdto.UpdateReq","handler":"Update","fields":[{"name":"id","required":true},{"name":"name","required":true},{"name":"settings","required":false}]},
+  "/api/publication/seo-audit": {"dto":"pubdto.SeoAuditReq","handler":"SeoAudit","fields":[{"name":"project","required":false}]},
   "/api/role/create": {"dto":"admindto.RoleCreateReq","handler":"RoleCreate","fields":[{"name":"role_code","required":true},{"name":"role_name","required":true},{"name":"status","required":false},{"name":"sort_order","required":false},{"name":"remark","required":false}]},
   "/api/role/delete": {"dto":"admindto.RoleDeleteReq","handler":"RoleDelete","fields":[{"name":"id","required":true}]},
   "/api/role/menu/save": {"dto":"admindto.RoleMenuSaveReq","handler":"RoleMenuSave","fields":[{"name":"role_id","required":true},{"name":"menu_ids","required":false}]},

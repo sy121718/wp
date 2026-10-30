@@ -58,6 +58,9 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	if id == "" || (dir != dirUp && dir != dirDown) {
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
+	// 定位这一跳在锁**外**（locateNavigation 走 rls.InProjectScope，会自开事务、另取连接；
+	// 放进已开事务里会让外层未提交的数据不可见，也可能与同表写入自锁）。它只用来拿工程
+	// 归属与跨工程比对，真正的判定在锁内重做一遍（见 withMenuWriteTx 内）。
 	item, err := s.locateNavigation(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -69,63 +72,101 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 		// 跨工程一律拒：调用方手上的工程与该项真实归属不一致时，改的不是它以为的那棵树。
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
-	nodes, err := s.Tree(ctx, item.ProjectID, item.Kind)
+	var (
+		moved   bool
+		confID  string
+		snapIDs []*navigationdto.NavigationNode
+	)
+	at := time.Now().UTC()
+	// 交换 + 三类失效在同一事务、同一把锁内：只交换不失效会留下「顺序已变、产物未变」，
+	// 只失效不交换则给一次不存在的改动发新代次 —— 两者都只能靠同事务消除。
+	// **邻位选择也在锁内**：锁外选邻位、锁内交换时，别人在两步之间插入/删除同级项，
+	// 交换的就是一对早已不是邻位的行（结果仍「成功」，顺序却更乱）。
+	err = s.withMenuWriteTx(ctx, item.ProjectID, func(tx *gorm.DB) error {
+		// 锁内重读实体：父级与位置可能已被并发改动（锁外读的那份只用于工程比对）。
+		rows, lerr := s.m.ListTx(ctx, tx, item.ProjectID, item.Kind)
+		if lerr != nil {
+			return lerr
+		}
+		cur := findNavRow(rows, item.ID)
+		if cur == nil {
+			return navigationenums.Err(navigationenums.ErrNotFound)
+		}
+		nodes := buildTree(rows)
+		snapIDs = nodes
+		siblings := navSiblingsOf(nodes, cur.ParentID)
+		idx := -1
+		for i, node := range siblings {
+			if node.ID == cur.ID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			// 定位到了行、却不在它自己的同级列表里：父子关系或作用域已经不一致（异常数据）。
+			return navigationenums.Err(navigationenums.ErrNotFound)
+		}
+		next := idx - 1
+		if dir == dirDown {
+			next = idx + 1
+		}
+		if next < 0 || next >= len(siblings) {
+			// 已到边界（按钮在首/末项上本就是禁用态，这里兜手工请求）：列表顺序未改动。
+			moved = false
+			return nil
+		}
+		a, b := siblings[idx], siblings[next]
+		if a.SortOrder == b.SortOrder {
+			// 并列：交换取值不产生位移（并列由 id ASC 决胜）。零写，明确回业务文案。
+			return navigationenums.Err(navigationenums.ErrSortTied)
+		}
+		expA, terr := parseSnapshotToken(a.UpdatedAt)
+		if terr != nil {
+			return terr
+		}
+		expB, terr := parseSnapshotToken(b.UpdatedAt)
+		if terr != nil {
+			return terr
+		}
+		if serr := s.m.SwapSortOrdersTx(ctx, tx, item.ProjectID,
+			navigationmodel.SwapRow{ID: a.ID, SortOrder: b.SortOrder, Expected: expA},
+			navigationmodel.SwapRow{ID: b.ID, SortOrder: a.SortOrder, Expected: expB}); serr != nil {
+			var conflict *navigationmodel.SwapConflictError
+			if errors.As(serr, &conflict) {
+				confID = conflict.ID
+			}
+			return serr
+		}
+		if merr := s.markMenuStaleInTx(ctx, tx, item.ProjectID, item.Kind, at); merr != nil {
+			return merr
+		}
+		if cur.ParentID != nil && strings.TrimSpace(*cur.ParentID) != "" {
+			// 顺序变了的是**父项**的子树：按项引用父项的页面/实例必须重建。
+			// 顶层没有父项 —— 那里由上面 menu 键覆盖。
+			if merr := s.markNavigationStaleInTx(ctx, tx, item.ProjectID, strings.TrimSpace(*cur.ParentID)); merr != nil {
+				return merr
+			}
+		}
+		if merr := s.markNavigationStaleInTx(ctx, tx, item.ProjectID, a.ID); merr != nil {
+			return merr
+		}
+		if merr := s.markNavigationStaleInTx(ctx, tx, item.ProjectID, b.ID); merr != nil {
+			return merr
+		}
+		moved = true
+		return nil
+	})
 	if err != nil {
+		if confID != "" {
+			return nil, staleVersionMessage(s.staleTitle(ctx,
+				&navigationmodel.NavigationEntity{ProjectID: item.ProjectID, ID: confID,
+					Title: snapshotTitle(snapIDs, confID)}))
+		}
 		return nil, err
 	}
-	siblings := navSiblingsOf(nodes, item.ParentID)
-	idx := -1
-	for i, node := range siblings {
-		if node.ID == item.ID {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		// 定位到了行、却不在它自己的同级列表里：父子关系或作用域已经不一致（异常数据）。
-		return nil, navigationenums.Err(navigationenums.ErrNotFound)
-	}
-	next := idx - 1
-	if dir == dirDown {
-		next = idx + 1
-	}
-	if next < 0 || next >= len(siblings) {
-		// 已到边界（按钮在首/末项上本就是禁用态，这里兜手工请求）：列表顺序未改动。
+	if !moved {
 		return &navigationdto.SwapMoveResp{Moved: false, Reason: swapReasonBoundary}, nil
 	}
-	a, b := siblings[idx], siblings[next]
-	if a.SortOrder == b.SortOrder {
-		// 并列：交换取值不产生位移（并列由 id ASC 决胜）。零写，明确回业务文案。
-		return nil, navigationenums.Err(navigationenums.ErrSortTied)
-	}
-	expA, err := parseSnapshotToken(a.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	expB, err := parseSnapshotToken(b.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	err = s.m.SwapSortOrders(ctx, item.ProjectID,
-		navigationmodel.SwapRow{ID: a.ID, SortOrder: b.SortOrder, Expected: expA},
-		navigationmodel.SwapRow{ID: b.ID, SortOrder: a.SortOrder, Expected: expB})
-	if err != nil {
-		var conflict *navigationmodel.SwapConflictError
-		if errors.As(err, &conflict) {
-			return nil, staleVersionMessage(s.staleTitle(ctx,
-				&navigationmodel.NavigationEntity{ProjectID: item.ProjectID, ID: conflict.ID,
-					Title: snapshotTitle(nodes, conflict.ID)}))
-		}
-		return nil, err
-	}
-	s.invalidateMenu(ctx, item.ProjectID, item.Kind)
-	if item.ParentID != nil && strings.TrimSpace(*item.ParentID) != "" {
-		// 顺序变了的是**父项**的子树：按项引用父项的页面/实例必须重建。
-		// 顶层没有父项 —— 那里由上面 menu 键覆盖。
-		s.invalidateNavigation(ctx, item.ProjectID, strings.TrimSpace(*item.ParentID))
-	}
-	s.invalidateNavigation(ctx, item.ProjectID, a.ID)
-	s.invalidateNavigation(ctx, item.ProjectID, b.ID)
 	return &navigationdto.SwapMoveResp{Moved: true}, nil
 }
 
@@ -158,6 +199,16 @@ func navSiblingsOf(nodes []*navigationdto.NavigationNode, parentID *string) []*n
 		}
 		if found := navSiblingsOf(n.Children, parentID); found != nil {
 			return found
+		}
+	}
+	return nil
+}
+
+// findNavRow 在事务内读回的行集合里按 id 找实体（找不到返回 nil）。
+func findNavRow(rows []*navigationmodel.NavigationEntity, id string) *navigationmodel.NavigationEntity {
+	for _, r := range rows {
+		if r != nil && r.ID == id {
+			return r
 		}
 	}
 	return nil

@@ -38,11 +38,8 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, err
 	}
 	parentID := normalizeParentID(req.ParentID)
-	// 父引用先校验：不存在的父 / 跨工程父 / 跨类型父都会让该节点在构建期树装配时
-	// 成为孤儿（永远挂不上根，产物里静默消失）。
-	if verr := s.validateParent(ctx, projectID, kind, "", parentID); verr != nil {
-		return nil, verr
-	}
+	// 父引用（不存在的父 / 跨工程父 / 跨类型父会让该节点在构建期树装配时成为孤儿，
+	// 永远挂不上根、产物里静默消失）在事务内、锁内校验 —— 见下面的 validateParentTx。
 	sourceType, sourceID, target, err := normalizeSource(req.SourceType, req.SourceID, req.Target)
 	if err != nil {
 		return nil, err
@@ -52,184 +49,270 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, perr
 	}
 
-	exists, err := s.m.ExistsPath(ctx, projectID, kind, path, "")
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, navigationenums.Err(navigationenums.ErrPathTaken)
-	}
-
-	// 排序：未显式指定（0）时追加到同级末尾，保证同级 sort_order 唯一，
-	// 管理页的「上移/下移」才能稳定交换。
-	sortOrder := req.SortOrder
-	if sortOrder == 0 {
-		maxOrder, merr := s.m.MaxSortOrder(ctx, projectID, kind, parentID)
-		if merr != nil {
-			return nil, merr
-		}
-		sortOrder = maxOrder + 1
-	}
-
 	now := time.Now().UTC()
 	e := &navigationmodel.NavigationEntity{
 		ID: uuid.NewString(), ProjectID: projectID, Title: title, Path: path,
-		Kind: kind, ParentID: parentID, SortOrder: sortOrder,
+		Kind: kind, ParentID: parentID, SortOrder: req.SortOrder,
 		SourceType: sourceType, SourceID: sourceID, Target: target,
 		PanelBlockID: panelBlockID, PanelWidth: panelWidth,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.Create(ctx, e); err != nil {
-		return nil, err
+	// 写入 + 两类失效在**同一个事务、同一把工程内容写锁**下完成：
+	// 新菜单项会改变该位置产出的 HTML（位置键），只放某一支的页面只登记了项键
+	//（navigation:{itemID}），两条键都要打；任一步失败整笔回滚，绝不留
+	// 「菜单已建、产物没失效」或「失效已标、菜单回滚」的半截状态。
+	at := time.Now().UTC()
+	var out *navigationmodel.NavigationEntity
+	if werr := s.withMenuWriteTx(ctx, e.ProjectID, func(tx *gorm.DB) error {
+		// 唯一性与排序取号都在**锁内**：锁外查重、锁内写会让两个并发 Create 都通过检查
+		//（同 path 重复）或拿到同一个 max+1（同级排序并列）。
+		// 父引用同样在锁内复验：锁外校验通过、锁内父项刚被删掉，就会建出孤儿节点。
+		if verr := s.validateParentTx(ctx, tx, projectID, kind, "", parentID); verr != nil {
+			return verr
+		}
+		exists, xerr := s.m.ExistsPathTx(ctx, tx, projectID, kind, path, "")
+		if xerr != nil {
+			return xerr
+		}
+		if exists {
+			return navigationenums.Err(navigationenums.ErrPathTaken)
+		}
+		// 排序：未显式指定（0）时追加到同级末尾，保证同级 sort_order 唯一，
+		// 管理页的「上移/下移」才能稳定交换。
+		if e.SortOrder == 0 {
+			maxOrder, merr := s.m.MaxSortOrderTx(ctx, tx, projectID, kind, parentID)
+			if merr != nil {
+				return merr
+			}
+			e.SortOrder = maxOrder + 1
+		}
+		if cerr := s.m.CreateTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		if merr := s.markMenuStaleInTx(ctx, tx, e.ProjectID, e.Kind, at); merr != nil {
+			return merr
+		}
+		if merr := s.markNavigationStaleInTx(ctx, tx, e.ProjectID, e.ID); merr != nil {
+			return merr
+		}
+		// 回读必须**在事务内**：库列是 timestamptz（微秒精度），而内存里的 time.Now() 带纳秒。
+		// 直接 toResp(e) 会把纳秒精度的 update_time 当乐观锁 token 发出去，调用方原样回带时
+		// 与库内值不等（SaveWithExpected 是 WHERE update_time = ?），表现为「刚建好就报版本
+		// 冲突」；把内存值截断到微秒也不行 —— PG 对 timestamptz(6) 的纳秒是**四舍五入**，
+		// 截断会差 1 微秒、token 照样比不中。回读是唯一可靠的做法。
+		//
+		// 放在事务内（提交前）而不是提交后：写已提交、回读却失败时若返 5xx，调用方重试会
+		// **新建第二条**。放进事务里，回读失败就整笔回滚 —— 失败即「什么都没发生」，重试安全。
+		fresh, ferr := s.m.GetForUpdateTx(ctx, tx, projectID, e.ID)
+		if ferr != nil {
+			return ferr
+		}
+		out = fresh
+		return nil
+	}); werr != nil {
+		return nil, werr
 	}
-	// 失效派发（写已提交之后）：新菜单项会改变该位置产出的 HTML；按项引用的页面
-	//（页眉只放某一支）只登记了 navigation:{itemID}，故两条键都要派发。
-	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
-	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
-	// 回读一次再返回（与 Update 同形）：库列是 timestamptz（微秒精度），而这里内存里的
-	// time.Now() 带纳秒 —— 直接 toResp(e) 会把纳秒精度的 update_time 当乐观锁 token 发出去，
-	// 调用方原样回带时与库内值不等（SaveWithExpected 是 WHERE update_time = ?），
-	// 表现为「刚建好就报版本冲突」。
-	//
-	// 为什么不用「把内存值截断到微秒」这条捷径：PG 对 timestamptz(6) 的纳秒是**四舍五入**
-	// 而不是截断，截断会差 1 微秒、token 照样比不中。回读是唯一可靠的做法。
-	//
-	// 取舍（有意保留，与 Update 同形）：写已提交，回读失败仍返回 error —— 调用方若据此重试
-	// 会新建第二条。这里选「宁可报一次错，也不发一个可能比不中的 token」：发错 token 的后果
-	// 是该条目此后每次保存都误报版本冲突，比一次可见的失败更难排查。
-	created, gerr := s.m.Get(ctx, e.ProjectID, e.ID)
-	if gerr != nil {
-		return nil, gerr
+	if out == nil {
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
-	return toResp(created), nil
+	return toResp(out), nil
 }
 
 // Update 更新导航项：仅更新传入的非空字段，变更 path/kind 时重校验唯一性。
+//
+// 结构（与 Create 同形）：锁外**只定位归属**（请求只带 id，要先逐工程探测出 project_id），
+// 锁内用 GetForUpdateTx 重读当前行（FOR UPDATE），再基于**当前值**合并 req、校验、判新旧
+// kind、写、失效、回读。锁外那份实体只用来拿 ProjectID/ID，其余字段一律不参与判定。
+//
+// 为什么不能在锁外算好再进锁：从「定位」到「拿到工程内容写锁」之间，另一个写者可能已把
+// 这一行从 header 改到 footer。用锁外快照的 kind 去校验父引用/路径唯一性会校验错的维度；
+// 用锁外快照的旧 kind 打失效，真正被改掉的那个位置一条 stale 都不派发 —— 症状是「保存
+// 成功、某个位置的页面/实例停在旧菜单上」，且没有任何错误可查。
 func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res *navigationdto.NavigationResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
-	// 定位这一跳逐工程探测归属（请求只给 id）。拿到实体后**全程带工程作用域**：
-	// 唯一性校验（ExistsPath）、写入（Save）与回读（Get）都用 e.ProjectID，
-	// 一律受 navigations 的 FORCE 策略约束（DB-009）。原先的「不限工程」定位在换
-	// 非超级角色后是静默的 ErrNotFound —— 表现为「导航项明明在却报不存在」。
-	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
+	// 锁外只定位归属（逐工程探测，请求不带工程）。拿到 ProjectID 之后一切都在事务内。
+	located, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
 	}
+	projectID, navID := located.ProjectID, located.ID
 
-	updates := map[string]any{"update_time": time.Now().UTC()}
-	title, path, kind := e.Title, e.Path, e.Kind
-
+	// 请求侧能算的东西先算（纯函数，不依赖库内值）。与库内值**合并**推迟到锁内。
+	var (
+		reqTitle    *string
+		reqPath     *string
+		reqKind     *string
+		newParent   *string
+		parentGiven bool
+	)
 	if req.Title != nil {
-		title = strings.TrimSpace(*req.Title)
-		updates["title"] = title
+		v := strings.TrimSpace(*req.Title)
+		reqTitle = &v
 	}
 	if req.Path != nil {
-		path = strings.TrimSpace(*req.Path)
-		updates["path"] = path
+		v := strings.TrimSpace(*req.Path)
+		reqPath = &v
 	}
 	if req.Kind != nil {
-		kind = strings.TrimSpace(*req.Kind)
-		updates["kind"] = kind
-	}
-	if err = validateField(title, path, kind); err != nil {
-		return nil, err
+		v := strings.TrimSpace(*req.Kind)
+		reqKind = &v
 	}
 	if req.ParentID != nil {
-		newParent := normalizeParentID(req.ParentID)
-		// 自引用、或挂到自己的后代下都会成环：构建期树装配永远到不了根节点，
-		// 整棵子树从产物里静默消失（后台列表仍显示正常）。
-		if verr := s.validateParent(ctx, e.ProjectID, kind, e.ID, newParent); verr != nil {
-			return nil, verr
-		}
-		updates["parent_id"] = newParent
+		parentGiven = true
+		newParent = normalizeParentID(req.ParentID)
 	}
-	if req.SortOrder != nil {
-		updates["sort_order"] = *req.SortOrder
-	}
-	// 来源与打开方式：三字段联动校验（来源切到非 custom 时必须同时给出来源实体）。
-	if req.SourceType != nil || req.SourceID != nil || req.Target != nil {
-		sourceType := e.SourceType
-		if req.SourceType != nil {
-			sourceType = *req.SourceType
-		}
-		sourceID := e.SourceID
-		if req.SourceID != nil {
-			sourceID = normalizeSourceID(req.SourceID)
-		}
-		target := e.Target
-		if req.Target != nil {
-			target = *req.Target
-		}
-		st, sid, tg, serr := normalizeSource(sourceType, sourceID, target)
-		if serr != nil {
-			return nil, serr
-		}
-		updates["source_type"], updates["source_id"], updates["target"] = st, sid, tg
-	}
-	// 悬浮面板（超级菜单）：nil = 不改动；PanelBlockID 指向空串 = 清除面板。
+	// 来源三字段联动校验要读到「当前值」，所以整段推迟到锁内（见下）。
+	sourceGiven := req.SourceType != nil || req.SourceID != nil || req.Target != nil
+	// normalizePanelBlockID 已经返回 *string 且空白归一为 nil（与 Create / 渲染期同一口径），
+	// 这里不能再取地址：&v 是 **string，与 updates["panel_block_id"] 的 *string 语义不符，
+	// 还会把"选了空块"重新变成非 nil 指针。
+	var panelBlockID *string
 	if req.PanelBlockID != nil {
-		updates["panel_block_id"] = normalizePanelBlockID(req.PanelBlockID)
+		panelBlockID = normalizePanelBlockID(req.PanelBlockID)
 	}
+	var panelWidth *string
 	if req.PanelWidth != nil {
 		w, werr := normalizePanelWidth(*req.PanelWidth)
 		if werr != nil {
 			return nil, werr
 		}
-		updates["panel_width"] = w
+		panelWidth = &w
 	}
-
-	// path/kind 任一变化时重校验同工程同 kind 同 path 唯一（排除自身）。
-	if req.Path != nil || req.Kind != nil {
-		exists, err := s.m.ExistsPath(ctx, e.ProjectID, kind, path, e.ID)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			return nil, navigationenums.Err(navigationenums.ErrPathTaken)
-		}
-	}
-
-	// 乐观锁（两个入口的并发保护）：ExpectedUpdatedAt 非空时，库内 update_time 必须仍是
-	// 调用方手上的那个值，否则整条更新不落库并回可定位的错误。
-	// 不自动合并、不追加后缀、不丢弃其中一方 —— 「两边同时改」这件事只有人能裁决。
+	// 乐观锁期望值同样先解析（纯字符串处理）。
 	expected, perr := parseExpectedUpdatedAt(req.ExpectedUpdatedAt)
 	if perr != nil {
 		return nil, perr
 	}
-	if expected == nil {
-		if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
-			return nil, err
+
+	at := time.Now().UTC()
+	var out *navigationmodel.NavigationEntity
+	if werr := s.withMenuWriteTx(ctx, projectID, func(tx *gorm.DB) error {
+		// 锁内重读当前行（FOR UPDATE）：以下所有判定都基于这一份快照。
+		cur, gerr := s.m.GetForUpdateTx(ctx, tx, projectID, navID)
+		if errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return navigationenums.Err(navigationenums.ErrNotFound)
 		}
-	} else {
-		// 受影响行数 0：实体上一步已定位过（不存在会在上面返回 ErrNotFound），
-		// 所以这里只可能是「库内 update_time 已经不是期望值」——另一处入口改过这一项。
-		rows, serr := s.m.SaveWithExpected(ctx, e.ProjectID, e.ID, updates, *expected)
-		if serr != nil {
-			return nil, serr
+		if gerr != nil {
+			return gerr
 		}
-		if rows == 0 {
-			return nil, staleVersionMessage(s.staleTitle(ctx, e))
+
+		updates := map[string]any{"update_time": at}
+		title, path, kind := cur.Title, cur.Path, cur.Kind
+		if reqTitle != nil {
+			title = *reqTitle
+			updates["title"] = title
 		}
+		if reqPath != nil {
+			path = *reqPath
+			updates["path"] = path
+		}
+		if reqKind != nil {
+			kind = *reqKind
+			updates["kind"] = kind
+		}
+		if verr := validateField(title, path, kind); verr != nil {
+			return verr
+		}
+		if parentGiven {
+			updates["parent_id"] = newParent
+		}
+		if req.SortOrder != nil {
+			updates["sort_order"] = *req.SortOrder
+		}
+		// 来源与打开方式：三字段联动，未给出的那两个沿用**当前值**（不是锁外快照）。
+		if sourceGiven {
+			sourceType, sourceID, target := cur.SourceType, cur.SourceID, cur.Target
+			if req.SourceType != nil {
+				sourceType = *req.SourceType
+			}
+			if req.SourceID != nil {
+				sourceID = normalizeSourceID(req.SourceID)
+			}
+			if req.Target != nil {
+				target = *req.Target
+			}
+			st, sid, tg, serr := normalizeSource(sourceType, sourceID, target)
+			if serr != nil {
+				return serr
+			}
+			updates["source_type"], updates["source_id"], updates["target"] = st, sid, tg
+		}
+		if req.PanelBlockID != nil {
+			// 面板块必写：请求给了该字段就以归一结果为准，归一为 nil 时把 NULL 落库（清除面板）。
+			if panelBlockID == nil {
+				updates["panel_block_id"] = nil
+			} else {
+				updates["panel_block_id"] = *panelBlockID
+			}
+		}
+		if panelWidth != nil {
+			updates["panel_width"] = *panelWidth
+		}
+
+		// 父引用与路径唯一性都用**当前 kind** 判定（kind 可能刚被本次改掉）。
+		if parentGiven {
+			if verr := s.validateParentTx(ctx, tx, projectID, kind, navID, newParent); verr != nil {
+				return verr
+			}
+		}
+		if reqPath != nil || reqKind != nil {
+			exists, xerr := s.m.ExistsPathTx(ctx, tx, projectID, kind, path, navID)
+			if xerr != nil {
+				return xerr
+			}
+			if exists {
+				return navigationenums.Err(navigationenums.ErrPathTaken)
+			}
+		}
+		if expected == nil {
+			if uerr := s.m.SaveTx(ctx, tx, projectID, navID, updates); uerr != nil {
+				return uerr
+			}
+		} else {
+			// 受影响行数 0：行刚在锁内读到过（不存在已在上面返回），所以只可能是
+			// 「库内 update_time 已经不是期望值」——另一处入口改过这一项。
+			rows, serr := s.m.SaveWithExpectedTx(ctx, tx, projectID, navID, updates, *expected)
+			if serr != nil {
+				return serr
+			}
+			if rows == 0 {
+				return staleVersionMessage(s.staleTitle(ctx, cur))
+			}
+		}
+		// 新旧两个位置都失效：位置可能被一起改（header ↔ footer），旧位置的产物里同样
+		// 烘着这份菜单，只失效新位置会让旧页面上留着已经改掉的菜单项。cur.Kind 是锁内
+		// 读到的**当前**旧位置，不是锁外快照。
+		if merr := s.markMenuStaleInTx(ctx, tx, projectID, kind, at); merr != nil {
+			return merr
+		}
+		if cur.Kind != kind {
+			if merr := s.markMenuStaleInTx(ctx, tx, projectID, cur.Kind, at); merr != nil {
+				return merr
+			}
+		}
+		if merr := s.markNavigationStaleInTx(ctx, tx, projectID, navID); merr != nil {
+			return merr
+		}
+		// 回读也在事务内：写已成功却因回读失败而返 5xx，会让调用方重试一次「同样的写」。
+		fresh, ferr := s.m.GetForUpdateTx(ctx, tx, projectID, navID)
+		if ferr != nil {
+			return ferr
+		}
+		out = fresh
+		return nil
+	}); werr != nil {
+		return nil, werr
 	}
-	// 失效派发放在写成功之后、回读之前：回读失败不该让「已经提交的导航变更」漏掉派发。
-	// 位置可能被一起改（header ↔ footer），新旧两个位置都要失效 —— 旧位置的产物里
-	// 同样烘着这份菜单，只失效新位置会让旧页面上留着已经改掉的菜单项。
-	s.invalidateMenu(ctx, e.ProjectID, kind)
-	if e.Kind != kind {
-		s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	if out == nil {
+		// 事务体没有产出实体：装配层出问题（keep an explicit failure instead of nil deref）。
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
-	// 按项引用：改标题/来源/链接/子项都会改变「以该项为根」的产物字节。
-	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
-	updated, err := s.m.Get(ctx, e.ProjectID, e.ID)
-	if err != nil {
-		return nil, err
-	}
-	return toResp(updated), nil
+	return toResp(out), nil
 }
 
 // Get 按 ID 查询导航项。
@@ -284,18 +367,25 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 	if err != nil {
 		return err
 	}
-	rows, err := s.m.List(ctx, e.ProjectID, e.Kind)
-	if err != nil {
-		return err
-	}
-	if derr := s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
-		return derr
-	}
-	// 失效派发（删除已提交之后）：被删的整棵子树会从该位置的产物里消失；按项引用
-	// 该项的页面同样要重建（它现在渲染不出根了）。
-	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
-	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
-	return nil
+	// 「读子树 → 批量删 → 失效」在同一事务、同一把锁内：锁外读子树、锁内删的写法会在
+	// 两步之间漏掉别人刚挂上来的子项（留下孤儿节点，构建期被渲染成顶级项）。
+	// 被删的整棵子树会从该位置的产物里消失（位置键），按项引用该项的页面同样要重建
+	//（它现在渲染不出根了，项键）。
+	at := time.Now().UTC()
+	return s.withMenuWriteTx(ctx, e.ProjectID, func(tx *gorm.DB) error {
+		// 子树在**锁内**读：锁外读、锁内删会在两步之间漏掉别人刚挂上来的子项。
+		rows, lerr := s.m.ListTx(ctx, tx, e.ProjectID, e.Kind)
+		if lerr != nil {
+			return lerr
+		}
+		if derr := s.m.DeleteManyTx(ctx, tx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
+			return derr
+		}
+		if merr := s.markMenuStaleInTx(ctx, tx, e.ProjectID, e.Kind, at); merr != nil {
+			return merr
+		}
+		return s.markNavigationStaleInTx(ctx, tx, e.ProjectID, e.ID)
+	})
 }
 
 // navDescendantIDs 返回自身 + 全部子孙 ID（深度优先）。
@@ -511,51 +601,13 @@ func isValidKind(kind string) bool {
 		kind == kindFooter || kind == kindFooterMobile
 }
 
-// maxParentDepth 父链上溯深度上限：兜底历史脏数据形成的环（正常菜单不超过 3~4 层）。
-const maxParentDepth = 64
-
-// validateParent 校验父引用合法：自引用、成环、跨工程、跨类型、父项不存在一律拒绝。
+// 父引用校验的判据（不存在 / 跨工程 / 跨类型 / 自引用 / 成环一律 ErrInvalidParent）只在
+// validateParentTx 一处实现：它读的是**调用方事务内**的行集合，"所有行同一快照"这件事
+// 顺带把成环检测变成一次子树比对（旧实现逐跳上溯 Get，每一跳都是另一个事务快照）。
 //
-// 此前 parent_id 直接落库、零校验：一旦把节点挂到自己或自己的后代下就形成环，
-// 构建期树装配从根节点出发递归，环上的节点永远到不了根 —— 整棵子树在产物里
-// 静默消失（后台列表照常显示），排查成本极高。
-func (s *Service) validateParent(ctx context.Context, projectID, kind, selfID string, parentID *string) error {
-	if parentID == nil {
-		return nil
-	}
-	cur := strings.TrimSpace(*parentID)
-	if cur == "" {
-		return nil
-	}
-	if selfID != "" && cur == selfID {
-		return navigationenums.Err(navigationenums.ErrInvalidParent)
-	}
-	for depth := 0; depth < maxParentDepth; depth++ {
-		// 父链上溯带工程作用域：跨工程父引用本来就要拒绝，作用域让它同时受策略约束。
-		parent, err := s.m.Get(ctx, projectID, cur)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return navigationenums.Err(navigationenums.ErrInvalidParent)
-			}
-			return err
-		}
-		if parent.ProjectID != projectID {
-			return navigationenums.Err(navigationenums.ErrInvalidParent)
-		}
-		if kind != "" && parent.Kind != kind {
-			return navigationenums.Err(navigationenums.ErrInvalidParent)
-		}
-		if parent.ParentID == nil || strings.TrimSpace(*parent.ParentID) == "" {
-			return nil // 到达根节点，链路合法
-		}
-		next := strings.TrimSpace(*parent.ParentID)
-		if selfID != "" && next == selfID {
-			return navigationenums.Err(navigationenums.ErrInvalidParent)
-		}
-		cur = next
-	}
-	return navigationenums.Err(navigationenums.ErrInvalidParent)
-}
+// 为什么旧实现被删掉而不是留着备用：两处实现同一规则时，任何一侧改动都会让另一侧悄悄
+// 漂移；而「环上的节点永远到不了根 → 整棵子树在产物里静默消失（后台列表照常显示）」
+// 正是这条规则存在的理由，判据不允许有两份。
 
 // normalizeParentID 把空字符串父 ID 规范为 nil（表示根导航项）。
 func normalizeParentID(p *string) *string {

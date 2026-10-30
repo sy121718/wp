@@ -58,6 +58,15 @@ var rawSQLAllowedList = []rawSQLEntry{
 			"无表、无 Entity 可映射的 PG 顾问锁函数调用，GORM 没有对应表达能力",
 	},
 	{
+		File: "internal/module/page/model/page_tx.go",
+		Max:  1,
+		Reason: "LockPageEntityAdvisoryTx 的 pg_advisory_xact_lock(hashtext(?))：" +
+			"无表、无 Entity 可映射的 PG 事务级顾问锁，GORM 没有对应表达能力。" +
+			"它补的是行锁取不到的那一段：页面被软删之后 LockPageForActivationTx 永远" +
+			"返回 ErrRecordNotFound，而删除/退役遗留链接的撤销仍必须与正在进行的那次删除互斥" +
+			"（与 presentation / product 的同类调用同一先例，各自带类型前缀的键）",
+	},
+	{
 		File: "internal/module/mail/model/mail_marketing_model.go",
 		Max:  1,
 		Reason: "BatchUpdateContactImportFields 的 UPDATE mail_contacts AS c SET … FROM (SELECT … FROM jsonb_array_elements(?::jsonb) AS r) AS v WHERE lower(c.email) = lower(v.email) RETURNING lower(c.email)：" +

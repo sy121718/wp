@@ -42,7 +42,7 @@ var htmlLiteralBudget = map[string]int{
 	// 常量里，门禁只能看见「2 处」；现在看得见包装点了。**这是记账口径变清楚，
 	// 不是新增了拼 HTML 的地方** —— 注入路径要往已渲染的产物字节里插脚本，
 	// 走不了 Jet 模板。
-	"internal/module/workbench/service/workbench.go":           31,
+	"internal/module/workbench/service/workbench.go": 31,
 	// 页面逻辑按域拆成 5 个文件后，三处 HTML 字面量跟着边界点走：
 	// 两处（模板文案填充 / 页面渲染失败）在画布出口，一处（<script> 包装）在桥接文件。
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go": 3,

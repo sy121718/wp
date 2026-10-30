@@ -119,7 +119,7 @@ func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID
 			Where("deleted_at IS NULL AND project_id = ?", projectID).
 			Where("id IN (?)", affected).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			Updates(map[string]any{"stale": true, "update_time": at}).Error
+			Updates(staleMarkUpdates(at)).Error
 	})
 	if err != nil {
 		return nil, err

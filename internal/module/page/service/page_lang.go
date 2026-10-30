@@ -50,6 +50,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -704,13 +705,28 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 		activePath = strings.TrimSpace(pub.ActivePath)
 	}
 	if activePath != "" {
-		if derr := s.deactivatePaths([]string{activePath}); derr != nil {
+		// 有激活路径 ⇒ 走下线回执（与删页同一框架）。顺序：
+		//
+		//	登记下线意图（pending 回执，记下这条路径此刻的归属事实）
+		//	  → 反查清单在锁内复验（登记之后页面又发布过就拒绝）
+		//	    → 顾问锁 → 实体行锁 → 业务事务（排除 + 清账本/暂存/计划 + 置 businessCommitted）
+		//	      → 提交后：路径锁内复验归属 → 撤链 → 结案
+		//
+		// 为什么不再"先撤链再改 DB"：撤链不可逆，而"这条链接原本归谁、指向哪份产物"
+		// 只在 page_publications 行还在时查得到（下面这几步正好把它删掉）。中间崩溃
+		// 就留下无主链接，且没有任何地方记着它 —— 回执把这份事实挪到改库之前登记。
+		intent, rerr := s.registerDeactivationIntent(ctx, page.ProjectID, page.ID, activePath, []string{activePath})
+		if rerr != nil {
+			return 0, rerr
+		}
+		if derr := s.excludeLangWithDeactivation(ctx, page, l, activePath, excluded, pub != nil, intent); derr != nil {
 			return 0, derr
 		}
-		retired = 1
+		logger.Scene("publication").With("pageId", page.ID).With("lang", l).With("retired", 1).
+			Info("已排除本页的该语言并下线其产物")
+		return 1, nil
 	}
 
-	excluded := appendExcludedLang(page.ExcludedLangs, l)
 	if terr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
 		if uerr := s.model.UpdateExcludedLangsTx(ctx, tx, page.ProjectID, page.ID, excluded); uerr != nil {
 			return uerr
@@ -728,13 +744,6 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 		if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, page.ProjectID, page.ID, l); plerr != nil {
 			return plerr
 		}
-		if activePath != "" && s.routes != nil {
-			if rerr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
-				ProjectID: page.ProjectID, Path: activePath,
-			}); rerr != nil {
-				return rerr
-			}
-		}
 		return nil
 	}); terr != nil {
 		return 0, terr
@@ -743,6 +752,100 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	logger.Scene("publication").With("pageId", page.ID).With("lang", l).With("retired", retired).
 		Info("已排除本页的该语言并下线其产物")
 	return retired, nil
+}
+
+// excludeLangWithDeactivation 执行「有激活路径的排除该语言」：业务事务 + 收尾撤链。
+//
+// 与 deleteWithDeactivation 同形，差别只在业务写入的内容（改排除集合、清本语言的
+// 账本/暂存/计划，而不是软删页面），因此收尾与失败分流逐条对齐：
+//
+//  1. 业务事务（顾问锁 + 行锁下）：路径集合复验 → 排除集合 + 三个本语言清理 +
+//     置 businessCommitted，同进同出。
+//  2. 提交之后：同一把顾问锁 → 路径锁内复验归属 → 撤链 → 结案。
+//  3. 明确失败 → 撤链从未发生 → 结案 rolled_back；提交成功但撤链失败 → 保 pending，
+//     绝不返回失败（排除已生效，报错只会让调用方重试，而重试会命中"已被排除"）。
+func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemodel.PageEntity, lang, activePath string,
+	excluded []string, hasPub bool, in *deactivationIntent) error {
+	// callbackCompleted 记「回调跑到了最后一步」，不等于已提交：Transaction 会把
+	// Commit 的错误一并返回，标记为真且 txErr 非空正是"提交不明"。
+	callbackCompleted := false
+	txErr := s.model.TransactionScoped(ctx, in.ProjectID, func(tx *gorm.DB) error {
+		// 稳定顾问锁先于行锁（与删页/收敛同一把键），再取实体行锁与 publish/改址互斥。
+		if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, in.PageID); aerr != nil {
+			return aerr
+		}
+		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, in.ProjectID, in.PageID); lerr != nil {
+			return lerr
+		}
+		// 锁内复验：登记之后这一页可能又发布过该语言（激活路径变了 / 多出别的路径），
+		// 那时按登记清单撤链会撤掉刚上线的链接。
+		current, cerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
+			ProjectID: in.ProjectID, PageID: in.PageID,
+		})
+		if cerr != nil {
+			return cerr
+		}
+		got := normalizeOldPaths(current)
+		// 该语言的那条路径必须仍在本页的激活集合里：不在了说明登记之后它已被下线/改址，
+		// 本次意图的撤链对象不复存在，按失败处理（回执留 pending 由收敛按登记身份重判）。
+		if !containsPath(got, activePath) {
+			return fmt.Errorf("%w: 路径 %s 已不在本页的激活集合内", errOldPathTaken, activePath)
+		}
+		if uerr := s.model.UpdateExcludedLangsTx(ctx, tx, in.ProjectID, in.PageID, excluded); uerr != nil {
+			return uerr
+		}
+		if hasPub {
+			if derr := s.model.DeletePublicationsByLangTx(ctx, tx, in.ProjectID, in.PageID, lang); derr != nil {
+				return derr
+			}
+		}
+		if serr := s.model.DeleteStagingsByLangTx(ctx, tx, in.ProjectID, in.PageID, lang); serr != nil {
+			return serr
+		}
+		if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, in.ProjectID, in.PageID, lang); plerr != nil {
+			return plerr
+		}
+		// 路由行：带归属者（少传 PageID 时 deactivateRouteScope 会退化成 page_id IS NOT NULL，
+		// 可能删到别人刚上线的 active 行）。
+		if rerr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+			ProjectID: in.ProjectID, Path: activePath, PageID: in.PageID,
+		}); rerr != nil {
+			return rerr
+		}
+		if merr := s.markDeactivationCommitted(ctx, tx, in); merr != nil {
+			return merr
+		}
+		callbackCompleted = true
+		return nil
+	})
+	if txErr != nil && !callbackCompleted {
+		s.abortPublishReceipt(ctx, in.ReceiptID, "排除语言的业务事务未提交，访问面保持原样")
+		logger.Scene("publication").With("pageId", in.PageID).With("lang", lang).
+			Error(txErr, "排除语言失败（业务事务未提交）")
+		return mapPersistenceError(txErr)
+	}
+	if txErr != nil {
+		// 走到末尾标记后仍报错 = 只有提交阶段可能出错，业务数据可能已经生效。
+		// 保留 pending，由重放时的锁内重读判定（businessCommitted 已随业务同事务落下）。
+		s.keepPublishReceiptPending(in.ReceiptID, "排除语言业务事务提交结果不明")
+		logger.Scene("publication").With("pageId", in.PageID).With("lang", lang).
+			Error(txErr, "排除语言提交结果不明（回执保持 pending 交收敛重判）")
+		return mapPersistenceError(txErr)
+	}
+	if !callbackCompleted {
+		s.abortPublishReceipt(ctx, in.ReceiptID, "排除语言的业务事务未置提交标记")
+		return nil
+	}
+	if werr := s.withdrawDeactivatedLinks(ctx, in.ProjectID, in.PageID, in.ReceiptID); werr != nil {
+		s.keepPublishReceiptPending(in.ReceiptID, "排除语言已提交，撤链失败")
+		logger.Scene("publication").With("pageId", in.PageID).With("lang", lang).
+			Error(werr, "排除语言已提交但撤链失败（回执保持 pending 交收敛重放）")
+		return nil
+	}
+	if cerr := s.completePublishReceipt(ctx, in.ReceiptID); cerr != nil {
+		s.NotifyPendingReceipt()
+	}
+	return nil
 }
 
 // RestorePageLang 解除排除（只解除，**不自动重新发布**）。
@@ -889,24 +992,25 @@ func (s *Service) LocaleRetireImpact(ctx context.Context, projectID, lang string
 	return len(routes), nil
 }
 
-// RetireLocale 下线该语言的全部已激活路由，并清理它的发布 / 暂存指针。
+// RetireLocale 下线该语言在**各页**的已激活路径，并清理对应的发布 / 暂存指针。
 //
-// 两段，顺序刻意如此（2026-09 收口；原实现是三段各自提交）：
+// 形态（2026-10 收口，与删页/排除语言同一框架）：
 //
-//  1. **先清访问面符号链接**（deactivatePaths）：跨系统动作，不能进数据库事务 ——
-//     事务回滚撤不掉已经删掉的符号链接，把它塞进事务只是换一种半截状态
-//     （DB 回滚了、访问面却已经下线）。它自身幂等（删不存在的链接不报错），
-//     所以「链接已删、后面的事务失败」是可重跑收敛的：page_publications 的指针还在，
-//     下一次 RetireLocale 仍能从它重新算出这批路径。
-//  2. **再在一个事务里做全部数据库写入**：publication 的 page_routes 占用解除
-//     （契约里的 DeactivateTx）+ page 自己的发布 / 暂存指针删除（两个 …Tx 变体）。
-//     这两半此前各自提交，中途失败会留下「页面已退役但路径仍占用」或「路径已释放
-//     但指针还在（后台仍显示已发布）」；现在要么都生效、要么都不生效。
+//  1. 按 page 分组各预登记一条 page/deactivate 回执（记下每页那几条路径此刻的归属事实）；
+//  2. **一个事务**里做完全部业务变更：按 pageID 升序逐页取稳定顾问锁 + 实体行锁
+//     （固定顺序，避免两路退役互相把对方锁死）、在该锁下复验该页路径集合、
+//     解除路由占用、删本语言的发布/暂存/计划指针，并在**同一事务**里置各回执的
+//     businessCommitted。「原语言的清理全成全败」保持不变 —— 不按页分组提交业务；
+//  3. 提交之后逐条回执撤链；任意一条 FS 撤链失败，只有那一条回执保 pending，
+//     其余照常结案，收敛例程按回执里捕获的身份重放。
 //
-// 为什么符号链接必须排在事务**之前**而不是提交之后：待清理的路径是从 page_publications
-// 反查出来的（localeActiveRoutes），指针一旦提交删除就再也没有入口能算出该清哪些链接 ——
-// 那时若符号链接删除失败（权限 / IO），残留链接会永久留在访问面上且无人认领，重跑也找不到它。
-// 反过来（先删链接、事务再失败）数据库保持完整，重跑即收敛，方向是 fail closed。
+// 为什么不再"先删符号链接再改库"：撤链不可逆，而待撤的路径是从 page_publications
+// 反查出来的（localeActiveRoutes），指针一旦删掉就再没有入口能算出该清哪些链接 ——
+// 中间崩溃留下的是无主残留，且无人认领。回执把这份事实挪到改库之前登记。
+//
+// 为什么按页分组的回执而不是一条工程级回执：回执的归属是 (source_type, source_id)，
+// 而 source_id 必须是真实实体 id（uuid 列）；一条工程级回执要么伪造一个 page id，
+// 要么让恢复侧无从取实体级锁。退役天然跨多页，因此每页一条、共用一个业务事务。
 func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (retired int, err error) {
 	routes, err := s.localeActiveRoutes(ctx, projectID, lang)
 	if err != nil {
@@ -918,55 +1022,140 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 	if s.routes == nil {
 		return 0, nil // 降级装配（单测 / 精简部署）：没有路由契约就没有可下线的路径
 	}
-	// 只删 DB 行会让 /site 继续输出旧产物（符号链接才是访问面的真源），
-	// 且此后没有任何入口能查到该清哪个链接 —— 与页面删除同一根因。
-	paths := make([]string, 0, len(routes))
-	seenPath := map[string]bool{}
+	// 按页分组（路径去重、页按 id 升序）：顺序固定，锁序才固定。
+	pathsByPage := make(map[string][]string, len(routes))
+	pageOrder := make([]string, 0, len(routes))
 	for _, r := range routes {
-		if seenPath[r.Path] {
+		pageID := strings.TrimSpace(r.PageID)
+		path := strings.TrimSpace(r.Path)
+		if pageID == "" || path == "" {
 			continue
 		}
-		seenPath[r.Path] = true
-		paths = append(paths, r.Path)
+		if _, ok := pathsByPage[pageID]; !ok {
+			pageOrder = append(pageOrder, pageID)
+		}
+		pathsByPage[pageID] = append(pathsByPage[pageID], path)
 	}
-	if err = s.deactivatePaths(paths); err != nil {
-		return 0, err
+	if len(pageOrder) == 0 {
+		return 0, nil
 	}
-	// 事务：page_routes 占用解除 + page 的发布 / 暂存指针，两半同进同出。
+	sort.Strings(pageOrder)
+	intents := make([]*deactivationIntent, 0, len(pageOrder))
+	cleanup := func() {
+		// 登记失败就一条都不留：没有回执的意图不该留在库里等收敛去猜。
+		for _, in := range intents {
+			s.abortPublishReceipt(ctx, in.ReceiptID, "语言退役未开始，回执作废")
+		}
+	}
+	for _, pageID := range pageOrder {
+		paths := normalizeOldPaths(pathsByPage[pageID])
+		if len(paths) == 0 {
+			continue
+		}
+		in, rerr := s.registerDeactivationIntent(ctx, projectID, pageID, firstNonEmptyPath(paths), paths)
+		if rerr != nil {
+			cleanup()
+			return 0, rerr
+		}
+		intents = append(intents, in)
+	}
+	if len(intents) == 0 {
+		return 0, nil
+	}
 	// 作用域由 TransactionScoped 设（不要在这里再调 rls.InProjectScope：它自带事务边界，
 	// 会在事务里另开一个 —— 见 pkg/rls.ScopeTx 的论证）。
-	if terr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
-		for _, r := range routes {
-			if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
-				ProjectID: projectID, Path: r.Path,
-			}); derr != nil {
-				return derr
+	// callbackCompleted 记「回调跑到了最后一步」，不等于已提交：Transaction 会把
+	// Commit 的错误一并返回，标记为真且 txErr 非空正是"提交不明"。
+	callbackCompleted := false
+	txErr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		for _, in := range intents {
+			// 锁序固定（pageID 升序）＋ 稳定顾问锁先于行锁：两路退役/删页同时进行时
+			// 取锁顺序一致，不会互相等成环。页可能刚被删掉 —— 行锁取不到即整批失败，
+			// 由调用方重试（此时那一页已经不在 routes 里了）。
+			if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, in.PageID); aerr != nil {
+				return aerr
 			}
-		}
-		// 发布 / 暂存指针：**只删该语言** —— 另一语言还在服务，整页删会让它失去已发布状态。
-		seenPage := map[string]bool{}
-		for _, r := range routes {
-			if seenPage[r.PageID] {
-				continue
+			if _, lerr := s.model.LockPageForActivationTx(ctx, tx, in.ProjectID, in.PageID); lerr != nil {
+				return lerr
 			}
-			seenPage[r.PageID] = true
-			if perr := s.model.DeletePublicationsByLangTx(ctx, tx, projectID, r.PageID, lang); perr != nil {
+			// 锁内复验：登记之后这一页可能又发布了该语言（路径集合变了），
+			// 那时按登记清单撤链会撤掉刚上线的链接。
+			current, cerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
+				ProjectID: in.ProjectID, PageID: in.PageID,
+			})
+			if cerr != nil {
+				return cerr
+			}
+			got := normalizeOldPaths(current)
+			for _, p := range in.Paths {
+				if !containsPath(got, p) {
+					return fmt.Errorf("%w: 路径 %s 已不在本页的激活集合内", errOldPathTaken, p)
+				}
+			}
+			for _, p := range in.Paths {
+				// 归属者必须显式带上，否则 deactivateRouteScope 退化成 page_id IS NOT NULL。
+				if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+					ProjectID: projectID, Path: p, PageID: in.PageID,
+				}); derr != nil {
+					return derr
+				}
+			}
+			// 发布 / 暂存指针：**只删该语言** —— 另一语言还在服务，整页删会让它失去已发布状态。
+			if perr := s.model.DeletePublicationsByLangTx(ctx, tx, projectID, in.PageID, lang); perr != nil {
 				return perr
 			}
-			if serr := s.model.DeleteStagingsByLangTx(ctx, tx, projectID, r.PageID, lang); serr != nil {
+			if serr := s.model.DeleteStagingsByLangTx(ctx, tx, projectID, in.PageID, lang); serr != nil {
 				return serr
 			}
 			// 发布计划同样只删该语言（审计 I18N-01）：语言都退役了，它的冻结输入
 			// 没有任何重建入口会再读到；留着只会在语言被重新启用时被误当成「仍然有效」，
 			// 于是一批按旧配置冻结的输入重新生效。
-			if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, projectID, r.PageID, lang); plerr != nil {
+			if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, projectID, in.PageID, lang); plerr != nil {
 				return plerr
 			}
+			// businessCommitted 与业务写入同一个 tx：分开两笔时中间崩溃会留下
+			// "业务已提交、回执仍说未提交"，恢复便永远不敢撤那些链接。
+			if merr := s.markDeactivationCommitted(ctx, tx, in); merr != nil {
+				return merr
+			}
 		}
+		callbackCompleted = true
 		return nil
-	}); terr != nil {
-		// 事务回滚 ⇒ 一条路由都没退役：返回 0，而不是把事务里数到一半的计数当成功报出去。
-		return 0, terr
+	})
+	if txErr != nil && !callbackCompleted {
+		// 回调未走到末尾 ⇒ 事务一定回滚 ⇒ 一条路由都没退役：计数不按数到一半报出去。
+		for _, in := range intents {
+			s.abortPublishReceipt(ctx, in.ReceiptID, "语言退役的业务事务未提交，访问面保持原样")
+		}
+		return 0, txErr
+	}
+	if txErr != nil {
+		// 走到末尾标记后仍报错 = 提交阶段出错，业务数据可能已落。全部保 pending，
+		// 让重放按锁内重读的 businessCommitted 逐条判定，而不是在这里猜哪个成了。
+		for _, in := range intents {
+			s.keepPublishReceiptPending(in.ReceiptID, "语言退役业务事务提交结果不明")
+		}
+		logger.Scene("publication").With("lang", lang).
+			Error(txErr, "语言退役提交结果不明（回执全部保持 pending 交收敛重判）")
+		return 0, txErr
+	}
+	if !callbackCompleted {
+		for _, in := range intents {
+			s.abortPublishReceipt(ctx, in.ReceiptID, "语言退役的业务事务未置提交标记")
+		}
+		return 0, nil
+	}
+	// 提交后逐条撤链：某页撤链失败只让那一条保 pending，其余照常结案。
+	for _, in := range intents {
+		if werr := s.withdrawDeactivatedLinks(ctx, projectID, in.PageID, in.ReceiptID); werr != nil {
+			s.keepPublishReceiptPending(in.ReceiptID, "语言退役已提交，撤链失败")
+			logger.Scene("publication").With("pageId", in.PageID).With("lang", lang).
+				Warn("语言退役已提交但撤链失败（回执保持 pending 交收敛重放）: " + werr.Error())
+			continue
+		}
+		if cerr := s.completePublishReceipt(ctx, in.ReceiptID); cerr != nil {
+			s.NotifyPendingReceipt()
+		}
 	}
 	return len(routes), nil
 }

@@ -15,6 +15,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"slices"
 	"strings"
@@ -76,6 +77,17 @@ type InstanceEntity struct {
 	StagedArtifactID  *string `gorm:"column:staged_artifact_id"`
 	ActiveArtifactID  *string `gorm:"column:active_artifact_id"`
 	Stale             bool    `gorm:"column:stale;not null"`
+	// InputVersion 编译输入代次（迁移 699）：**输入变更**（草稿保存 / 译文扇出 / 依赖标记）
+	// 与那次变更在同一个事务里原子 +1；**激活不推进**，只按它做谓词
+	// （WHERE input_version = $expect）证明「我编译的是最新输入」。
+	//
+	// 为什么不是「提交顺序号」：提交顺序只说明谁后提交，不说明谁编译的是新输入 ——
+	// 旧输入晚到照样拿到更大的号并覆盖新产物。激活只验证、不推进，也让同一批多语言
+	// 发布里每种语言读到的都是同一个值（不会因第一种语言成功而让其余语言失败）。
+	//
+	// 与 page 侧 PageEntity.InputVersion 同一语义、同一迁移；与 build_jobs.input_version
+	// （**任务序列号**）语义独立，双向禁止赋值（迁移 699 的注释与规划草案 §2.6）。
+	InputVersion int64 `gorm:"column:input_version;not null"`
 	// DeletedAt 保留列（本轮不启用软删语义，删除走聚合内级联硬删）。
 	DeletedAt   *time.Time `gorm:"column:deleted_at"`
 	PublishedAt *time.Time `gorm:"column:published_at"`
@@ -186,6 +198,35 @@ func (m *Model) DependencyDB(ctx context.Context) *gorm.DB {
 // Transaction 透传事务（service 编排聚合内原子写入）。
 func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// ErrCommitUncertain 回调已跑完、但提交本身失败（提交结果不明）。
+//
+// 与"回调里出错 → 明确回滚"必须区分：后者可以断言"业务没发生"，前者不能 ——
+// 连接在 COMMIT 阶段断开时数据库可能已经提交。把它当回滚处理会 Abort 掉一条
+// 其实已经生效的业务意图，撤链永远不再重放（线上残留死链接）。
+var ErrCommitUncertain = errors.New("presentation: 事务提交结果不明")
+
+// InTransaction 带"回调是否跑完"事实的事务封装。
+//
+// 判据只有一条：回调返回 error → 明确回滚（callbackCompleted=false）；
+// 回调返回 nil 但 Transaction 仍然报错 → **提交不明**（uncertain=true），
+// 错误一律包成 ErrCommitUncertain，让调用方按"可能已提交"处理。
+//
+// callbackCompleted 由**包装器自己的闭包**置位（而不是靠闭包外的标志 + 事后猜测）：
+// gorm 只在回调返回 nil 时才执行 COMMIT —— 这一点是分流的唯一依据。
+func (m *Model) InTransaction(ctx context.Context, fn func(tx *gorm.DB) error) (callbackCompleted, uncertain bool, err error) {
+	err = m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rerr := fn(tx)
+		if rerr == nil {
+			callbackCompleted = true
+		}
+		return rerr
+	})
+	if err != nil && callbackCompleted {
+		return true, true, fmt.Errorf("%w: %v", ErrCommitUncertain, err)
+	}
+	return callbackCompleted, false, err
 }
 
 // CreateInstance 新增实例。
@@ -301,6 +342,28 @@ func (m *Model) ListStaleInstanceIDsByRegistryVersion(ctx context.Context, curre
 	return ids, err
 }
 
+// ListStaleInstanceIDs 列出**本工程**内待重建（stale = true）且未删除的实例 id。
+//
+// 排序是 (update_time, id) 升序：menu_stale 的同步重建按这个顺序逐条执行，最老的
+// 变更先收敛；给确定的顺序是为了让「同一批 stale 数据两次调用拿到同一序列」，
+// 否则失败边界会随查询计划漂移（哪一条先失败取决于块返回顺序）。
+//
+// 工程维度必填而不是可选（与 ListInstances 同一理由）：presentation_instances 带
+// FORCE 策略，无作用域的读在非超级角色下是空集（fail closed），而「列表空」会让
+// 「一个实例都没重建」看起来像「本来就没事」。
+func (m *Model) ListStaleInstanceIDs(ctx context.Context, projectID string) (ids []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, errors.New("project id is required")
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL AND stale", projectID).
+			Order("update_time ASC, id ASC").
+			Pluck("id", &ids).Error
+	})
+	return ids, err
+}
+
 // MarkStaleByIDs 在**指定工程作用域内**按实例 ID 列表标记待重建，返回本次真正命中的实例 ID。
 //
 // 与 MarkStale 的差别是返回值：本方法用 RETURNING id 回读真实命中的行，而不是回带入参 ——
@@ -325,7 +388,7 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 		return tx.Model(&rows).
 			Where("project_id = ? AND deleted_at IS NULL AND id IN ?", projectID, ids).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			Updates(map[string]any{"stale": true, "update_time": at}).Error
+			Updates(staleMarkUpdates(at)).Error
 	})
 	if err != nil {
 		return nil, err
@@ -336,6 +399,25 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 	return marked, nil
 }
 
+// staleMarkUpdates 「把实例标记为待重建」的唯一写法：stale=true 与 input_version 原子 +1。
+//
+// 为什么两者必须同一条语句、且写成表达式（input_version + 1）而不是读改写：
+//   - 标记 stale 恰恰就是「输入变了、产物过期」这件事本身。只标 stale 不推进版本会留下
+//     「已过期但版本没变」的行 —— 那次变更编译出来的产物一旦晚到，激活谓词
+//     （input_version = $expect）会放行它，旧字节覆盖新字节（与 page 侧同名助手同理由）；
+//   - 读改写要先 SELECT 再 UPDATE，两条语句之间别的入口的 +1 会被覆盖掉（丢版本）；
+//     gorm.Expr 让 +1 在数据库里原子完成，并发标记互不覆盖。
+//
+// 为什么抽成一个函数：本模块有四个标记入口（按 id / 按依赖 / 按模板依赖 / 整站译文），
+// 各拼一份 map 时新加入口漏掉 input_version 不会有任何编译错误。
+func staleMarkUpdates(at time.Time) map[string]any {
+	return map[string]any{
+		"stale":         true,
+		"input_version": gorm.Expr("input_version + 1"),
+		"update_time":   at,
+	}
+}
+
 // MarkStale 批量标记实例待重建（依赖失效后的落库动作）。
 func (m *Model) MarkStale(ctx context.Context, projectID string, ids []string, at time.Time) (n int64, err error) {
 	if len(ids) == 0 {
@@ -344,7 +426,7 @@ func (m *Model) MarkStale(ctx context.Context, projectID string, ids []string, a
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		res := tx.Model(&InstanceEntity{}).
 			Where("project_id = ? AND id IN ?", projectID, ids).
-			Updates(map[string]any{"stale": true, "update_time": at})
+			Updates(staleMarkUpdates(at))
 		n = res.RowsAffected
 		return res.Error
 	})
@@ -375,7 +457,7 @@ func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string, at time.
 func (m *Model) markStaleForI18nIn(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (n int64, err error) {
 	res := tx.WithContext(ctx).Model(&InstanceEntity{}).
 		Where("project_id = ? AND deleted_at IS NULL", projectID).
-		Updates(map[string]any{"stale": true, "update_time": at})
+		Updates(staleMarkUpdates(at))
 	return res.RowsAffected, res.Error
 }
 
@@ -623,7 +705,41 @@ func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, projectID, id, templateID 
 		return err
 	}
 	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+		"template_id":   templateID,
+		"input_version": gorm.Expr("input_version + 1"),
+		"update_time":   at,
+	}).Error
+}
+
+// RecordBatchTemplateTx / RecordBatchURLTx 记录**本次发布批次自己编译出来的**绑定与路径。
+//
+// 与 UpdateInstanceTemplateTx / UpdateInstanceURLTx 的差别只有一处：**不推进
+// input_version**。这两个方法的调用方是 persistMultiLangArtifacts —— 它在同一批事务里
+// 先落快照/产物、再把这批产物依据的 template_id / url_path 记下来。那不是「输入变了」，
+// 而是「我按这份输入编译完了」：批次进入第二阶段还要用冻结时的版本做谓词
+// （WHERE input_version = $expect）证明没有更新的输入插进来，若这里顺手 +1，
+// 谓词会被自己推进掉 —— 表现为每次发布都判定「输入已变」而失败，或者更糟：
+// 把并发的真实推进掩盖成「我自己推的」。
+//
+// 反过来，用户可见的绑定写入（ReapplyPreset / 保存独立文档 / 改 URL）必须走推进版本
+// 的那两个方法：那是真正的输入变化，在途的旧批次必须因此失效。
+func (m *Model) RecordBatchTemplateTx(tx *gorm.DB, projectID, id, templateID string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
 		"template_id": templateID,
+		"update_time": at,
+	}).Error
+}
+
+// RecordBatchURLTx 见 RecordBatchTemplateTx（同一条理由：记录批次输出，不是输入变化）。
+func (m *Model) RecordBatchURLTx(tx *gorm.DB, projectID, id, urlPath string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+		"url_path":    urlPath,
 		"update_time": at,
 	}).Error
 }
@@ -643,8 +759,9 @@ func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, projectID, id, urlPath string, 
 		return err
 	}
 	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
-		"url_path":    urlPath,
-		"update_time": at,
+		"url_path":      urlPath,
+		"input_version": gorm.Expr("input_version + 1"),
+		"update_time":   at,
 	}).Error
 }
 
@@ -662,6 +779,7 @@ func (m *Model) UpdateInstanceOverrideTx(tx *gorm.DB, projectID, id string, docu
 	}
 	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
 		"override_document": document,
+		"input_version":     gorm.Expr("input_version + 1"),
 		"update_time":       at,
 	}).Error
 }
@@ -676,12 +794,254 @@ func (m *Model) ClearInstanceOverrideTx(tx *gorm.DB, projectID, id, templateID s
 	}
 	updates := map[string]any{
 		"override_document": nil,
+		"input_version":     gorm.Expr("input_version + 1"),
 		"update_time":       at,
 	}
 	if templateID != "" {
 		updates["template_id"] = templateID
 	}
 	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(updates).Error
+}
+
+// PersistPublishInputURLTx 事务内**持久化一次改 URL 输入意图**（url_path + input_version + 1）。
+//
+// 与 RecordBatchURLTx 的分界线（这是"输入意图线性化"的唯一实现）：
+//   - RecordBatchURLTx 记的是「我这个批次按这份路径编译完了」，**输出**，不动版本；
+//   - 本方法记的是「用户说要改成这个路径」，**输入**，必须推进版本 —
+//     否则两个并发改 URL（A→/x、B→/y）各自冻结、各自提交都能成功，后者静默覆盖前者，
+//     谁都不会收到冲突（输入意图根本没有被记录过一次）。
+//
+// 时机：在**冻结段**（持实例锁）内先落意图，再拿返回的新版本作为本批次的 expect。
+// 同一次提交里既推进又作为自身谓词基准，因此不会自拒；后到的并发批次在行锁内
+// 看到 locked.InputVersion != frozen.inputVersion 即判冲突（errInputVersionMoved）。
+//
+// 落库即意图，编译失败也**不回滚**：控制面 url_path 已经是新值、旧产物仍在线
+// （指针没动），实例被标 stale 等待下一次重建 —— 这是"输入已变、产物待追"的正常形态，
+// 不是回滚。调用方不得把它描述成"修改失败、什么都没变"。
+//
+// 返回推进后的新版本号（UPDATE 用 RETURNING 回读，不推算）。
+func (m *Model) PersistPublishInputURLTx(tx *gorm.DB, projectID, id, urlPath string, at time.Time) (int64, error) {
+	if strings.TrimSpace(urlPath) == "" {
+		return 0, errors.New("url path is required")
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return 0, err
+	}
+	var rows []struct{ InputVersion int64 }
+	err := tx.Model(&rows).
+		Where("id = ? AND project_id = ?", id, projectID).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "input_version"}}}).
+		Updates(map[string]any{
+			"url_path":      urlPath,
+			"input_version": gorm.Expr("input_version + 1"),
+			// stale 与意图**同一条语句**置位：新路径还没有产物（编译在锁外），
+			// 实例此刻确实"线上内容与输入不符"。不能"随后再标" —— 那之间存在一个窗口，
+			// 该行看起来既是新输入又有在线产物，任何读侧都会把它当干净的；
+			// 而崩在这个窗口里就再没有人会去标它（意图已落库，没有回执再提示它）。
+			"stale":       true,
+			"update_time": at,
+		}).Error
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, gorm.ErrRecordNotFound
+	}
+	return rows[0].InputVersion, nil
+}
+
+// MarkStaleWithoutVersion 只标 stale、**不推进** input_version（持久补偿专用）。
+//
+// 与 MarkStale（staleMarkUpdates：stale + version+1）的区别是语义而非便利：
+//   - MarkStale 用于「输入变了，产物过期」—— 版本必须动，在途批次要因此失效；
+//   - 本方法用于「线上与库已经一致了，只是这份产物本身需要重做」—— 回执 superseded
+//     收敛就属于这一类：输入没变（版本已被别的 attempt 推过），在这里再 +1 会把正在跑的
+//     发布无故判过期，而它们编译的输入未必有问题。
+func (m *Model) MarkStaleWithoutVersion(ctx context.Context, projectID string, ids []string, at time.Time) (n int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return 0, errors.New("project id is required")
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res := tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND id IN ?", projectID, ids).
+			Updates(map[string]any{"stale": true, "update_time": at})
+		n = res.RowsAffected
+		return res.Error
+	})
+	return n, err
+}
+
+// MarkInstanceMenuStaleTx 在**调用方的事务**内，把「活跃或暂存产物声明了该菜单位置依赖」
+// 的实例标记为待重建，返回真正命中的行数（RETURNING 回读，不是入参回显）。
+//
+// 命中口径与 MarkStaleByDependency 逐字一致（presentationDepScope + 三个指针），差别是
+// 按菜单依赖键（pipeline.MenuKey = menu:{projectID}:{kind}）定位，调用方只给 kind。
+//
+// 版本语义与其它标记入口**相同**：菜单译文烘进 HTML 字节，是实体的编译输入，所以走
+// staleMarkUpdates（stale=true 与 input_version 原子 +1）。只标 stale 会让「旧输入编译
+// 的产物」在激活谓词 input_version = $expect 处仍然通过，随后把 stale 清回 false。
+// 导航侧 build_jobs.input_version 是任务序列号，与本列无关，不参与、不赋值。
+//
+// 事务与作用域：tx 由调用方给（导航把「译文 UPSERT + 页标记 + 实例标记 + 队列入队」放进
+// 同一个事务），这里只用 rls.ScopeTx 把工程作用域设进那个事务。
+//
+// kind 白名单在此校验：未知种类直接报错，不静默把全站实例标脏。
+func (m *Model) MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (n int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, errors.New("project id is required")
+	}
+	if !IsMenuStaleKind(kind) {
+		return 0, fmt.Errorf("unknown menu kind %q", kind)
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return 0, err
+	}
+	// 依赖键由调用方给的是 kind，键的构造只在这里出现一份。
+	key := "menu:" + projectID + ":" + kind
+	var rows []InstanceEntity
+	if err := tx.WithContext(ctx).Model(&rows).
+		Where("deleted_at IS NULL AND project_id = ?", projectID).
+		Where("id IN (?)", presentationDepScope(tx, depKindMenu, key)).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Updates(staleMarkUpdates(at)).Error; err != nil {
+		return 0, err
+	}
+	return int64(len(rows)), nil
+}
+
+// MarkInstanceNavigationStaleTx 在**调用方的事务**内，把「活跃或暂存产物声明了
+// **按具体菜单项**（navigation:{itemID}）依赖」的实例标记为待重建，返回命中行数。
+//
+// 为什么必须有这一条：渲染期记录两种导航消费 —— 按位置记 menu:{project}:{kind}、
+// 按项记 navigation:{itemID}（builder/core/render.go 的 UseMenu / UseNavigation）。
+// 只处理前者时，按项引用的实例既不会被标 stale（产物停在旧菜单），也没有版本屏障
+// （旧输入编译的产物在激活谓词处照旧通过，随后把 stale 清回 false）。
+//
+// 命中口径与 MarkInstanceMenuStaleTx 逐字一致（presentationDepScope + staleMarkUpdates）：
+// 唯一差别是依赖种类与键的构造 —— 按项键用全局唯一 UUID，不带工程分量
+// （见 pipeline.NavigationKey），所以键不能再拼 projectID；工程作用域仍由
+// Where project_id 与 rls.ScopeTx 保证。
+//
+// 版本语义相同：菜单项内容烘进 HTML 字节，是编译输入 → stale=true 与 input_version 原子 +1。
+// 导航侧 build_jobs.input_version 是任务序列号，与本列无关，不参与、不赋值。
+func (m *Model) MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string, at time.Time) (n int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, errors.New("project id is required")
+	}
+	if strings.TrimSpace(navigationID) == "" {
+		return 0, errors.New("navigation id is required")
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return 0, err
+	}
+	key := depKindNavigation + ":" + navigationID
+	var rows []InstanceEntity
+	if err := tx.WithContext(ctx).Model(&rows).
+		Where("deleted_at IS NULL AND project_id = ?", projectID).
+		Where("id IN (?)", presentationDepScope(tx, depKindNavigation, key)).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Updates(staleMarkUpdates(at)).Error; err != nil {
+		return 0, err
+	}
+	return int64(len(rows)), nil
+}
+
+// depKindNavigation 按项导航依赖的种类名，与 pipeline.DepKindNavigation 逐字一致
+// （同 depKindMenu 的理由：model 只做本模块表访问，常量在 model 单测里交叉断言）。
+const depKindNavigation = "navigation"
+
+// depKindMenu 菜单依赖的种类名，与 pipeline.DepKindMenu 逐字一致。
+//
+// 为什么不 import pipeline：presentation/model 能 import pipeline（服务层已经在用），
+// 但 model 只做本模块表访问，依赖种类是**构建口径**而不是表结构 —— 复制一个字面量
+// 会让「pipeline 改名、这边静默 0 行」。所以这里只放常量，并在 model 单测里用
+// pipeline.DepKindMenu 交叉断言（见 presentation_menu_stale_test.go），改名时测试先红。
+const depKindMenu = "menu"
+
+// 菜单类型：与导航 / build 两侧的 menuKinds 逐字一致（四个会进 HTML 的位置）。
+const (
+	MenuStaleKindHeader       = "header"
+	MenuStaleKindHeaderMobile = "header_mobile"
+	MenuStaleKindFooter       = "footer"
+	MenuStaleKindFooterMobile = "footer_mobile"
+)
+
+// IsMenuStaleKind 是否是本模块认识的菜单种类（未知种类直接报错，不静默全站标记）。
+func IsMenuStaleKind(kind string) bool {
+	switch kind {
+	case MenuStaleKindHeader, MenuStaleKindHeaderMobile, MenuStaleKindFooter, MenuStaleKindFooterMobile:
+		return true
+	}
+	return false
+}
+
+// LockInstanceForActivationTx 在**调用方的事务**内锁定实例行并回读当前事实（纯锁读，不写）。
+//
+// 这是规划草案 §2.3 的 P2：「SELECT … FOR UPDATE 锁实体行 + 复验版本」。它只做两件事：
+// 把行锁住（此后并发的激活/标记在本事务提交前排队），把锁内的**权威值**读出来
+// （尤其是 input_version）。写一律交给 WriteInstanceActivationTx —— 锁读与写分开，
+// 是为了让「复验 → 外部副作用（FS 激活）→ 落库」这段顺序在调用方眼里是显式的三步，
+// 也让 model 不必知道 FS 的存在（model 纯 DB，规划草案 §2.3 的硬约束）。
+//
+// 为什么用 First + id 等值谓词而不是 MarkStaleByIDs 那种 ANY(数组)：这里锁的是**一行**，
+// 单行等值能走主键索引、锁粒度最小；数组形态只在批量标记时需要（参数规模问题）。
+//
+// 返回 gorm.ErrRecordNotFound 表示实例已不存在（或不在本工程作用域内）。
+func (m *Model) LockInstanceForActivationTx(ctx context.Context, tx *gorm.DB, projectID, id string) (e *InstanceEntity, err error) {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return nil, err
+	}
+	var row InstanceEntity
+	if err = tx.WithContext(ctx).Model(&InstanceEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND project_id = ? AND deleted_at IS NULL", id, projectID).
+		First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// ErrInputVersionMoved 激活谓词未命中：锁内读到的 input_version 与冻结时捕获的不等。
+//
+// 这是一个**哨兵**（不是对外文案）：service 据此判定「本次批次编译的输入已过期」，
+// 丢弃本次产物、重试或放弃，绝不把旧字节激活上去。对外错误由 service 换成
+// presentationenums.ErrInputMoved（409）。
+var ErrInputVersionMoved = errors.New("presentation input version moved")
+
+// WriteInstanceActivationTx 在**调用方的事务**内落下激活结果，并以 input_version 作谓词。
+//
+// 与 UpdateInstancePointersTx 的差别只有一处：WHERE 里多了 input_version = ?，
+// 且**不推进**它（激活不是输入变化，规划草案 §2.2）。0 行命中返回 ErrInputVersionMoved。
+//
+// 为什么谓词不能省成「锁内 SELECT 过就不用再判」：锁内 SELECT 与 UPDATE 之间确实没有
+// 别的写入者能插进来（行锁在），但**同一事务内**前面的语句可能已经推进过版本
+// （例如批次记录路径误用了推进变体）—— 谓词是最后一道自检，把「我用旧版本编译、
+// 却把它当新版本落下」变成一条明确的错误而不是一次静默覆盖。
+func (m *Model) WriteInstanceActivationTx(tx *gorm.DB, projectID string, e *InstanceEntity, expectInputVersion int64) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	res := tx.Model(&InstanceEntity{}).
+		Where("id = ? AND project_id = ? AND input_version = ?", e.ID, projectID, expectInputVersion).
+		Updates(map[string]any{
+			"current_snapshot_id": e.CurrentSnapshotID,
+			"staged_snapshot_id":  e.StagedSnapshotID,
+			"staged_artifact_id":  e.StagedArtifactID,
+			"active_artifact_id":  e.ActiveArtifactID,
+			"stale":               e.Stale,
+			"published_at":        e.PublishedAt,
+			"update_time":         e.UpdatedAt,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrInputVersionMoved
+	}
+	return nil
 }
 
 // FindInstanceByPath 查同工程内占用该路径的其他展示实例（改 URL 的占用预检）。
@@ -759,7 +1119,7 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 			Where("deleted_at IS NULL AND project_id = ?", projectID).
 			Where("id IN (?)", affected).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			Updates(map[string]any{"stale": true, "update_time": at}).Error
+			Updates(staleMarkUpdates(at)).Error
 	})
 	if err != nil {
 		return nil, err
@@ -833,4 +1193,29 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		return nil
 	})
 	return rows, err
+}
+
+// LockPresentationEntityAdvisoryTx 在**调用方事务**内取"presentation:<实例 id>"的
+// 事务级顾问锁（pg_advisory_xact_lock，提交/回滚自动释放）。
+//
+// 用途唯一：实例行已经被物理删除（DeleteInstanceTx 是真 DELETE），此时没有行可锁，
+// 而"撤掉它遗留的访问面链接"仍必须与"正在进行的那次删除"互斥。删除路径在同一个
+// 事务里也会取这把锁，所以两侧的时间线不会交错到对方的中间态。
+//
+// 为什么不是进程内锁：物理删行之后不能退化到只靠进程锁 —— 多实例部署时锁不到同一处，
+// 而这里的副作用（撤链）是不可回退的。键取 "presentation:<id>" 与本模块其它锁键同源，
+// 不与 product 的 outbox 键冲突（后者是 "类型:实体" 的另一种组合，且已 hashtext 化）。
+func (m *Model) LockPresentationEntityAdvisoryTx(ctx context.Context, tx *gorm.DB, instanceID string) error {
+	if tx == nil {
+		return errors.New("presentation: 实体顾问锁必须在调用方事务内取")
+	}
+	key := strings.TrimSpace(instanceID)
+	if key == "" {
+		return ErrInstanceNil
+	}
+	// pg_advisory_xact_lock 是无表、无 Entity 可映射的数据库函数调用，GORM 没有对应
+	// 表达能力（与 internal/module/product/model/product_outbox_model.go 同一先例，
+	// 登记在 internal/architecture/raw_sql_boundary_test.go 的 rawSQLAllowedList）。
+	return tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtext(?))",
+		"presentation:"+key).Error
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	navigationservice "go_wp/internal/module/navigation/service"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/pkg/i18n"
@@ -72,14 +73,14 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	t.Logf("原始错误（只应进日志）: %v", uerr)
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	handle := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
-	handle.SetContentWriter(writer)
-	navigationhttp.SetNavigationTranslationWriter(handle)
-	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
+	// 真实写链：三个端口都真实现，事务边界与行读取走同一 navigation model。
+	// 不再有包级 singleton —— 写服务注入到本次用例自己的句柄上（见 ports 文件头）。
+	handle := navigationhttp.NewHandle(navSvc)
+	wireNavigationTranslationWriter(t, db, handle, navSvc.(*navigationservice.Service), projects)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", navigationhttp.NewHandle(navSvc).Update)
+	router.POST("/api/navigation/update", handle.Update)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, translationWriteRequest(projectID, "en-US", "首页", "Home"))
@@ -113,14 +114,12 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	handle := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
-	handle.SetContentWriter(i18n.NewContentWriter(db))
-	navigationhttp.SetNavigationTranslationWriter(handle)
-	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
+	handle := navigationhttp.NewHandle(navSvc)
+	wireNavigationTranslationWriter(t, db, handle, navSvc.(*navigationservice.Service), projects)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", navigationhttp.NewHandle(navSvc).Update)
+	router.POST("/api/navigation/update", handle.Update)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, translationWriteRequest(projectID, "en-US", "首页", "Home"))
@@ -141,23 +140,6 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	if row.Error != nil || target != "Home" {
 		t.Fatalf("译文未落库: err=%v target=%q", row.Error, target)
 	}
-}
-
-// navTranslationSpyMarker / navTranslationSpyMenus 观察「本次保存是否派发了失效」。
-//
-// 这两个端口的接口类型在模块内未导出，但方法集是公开契约：测试包给出自己的实现即可，
-// 装配期注入后就能断言「被拒的请求一行都没往外扩散」。
-type navTranslationSpyMarker struct{ calls int }
-
-func (s *navTranslationSpyMarker) MarkStaleForI18n(context.Context) error {
-	s.calls++
-	return nil
-}
-
-type navTranslationSpyMenus struct{ kinds []string }
-
-func (s *navTranslationSpyMenus) InvalidateMenuLabels(_ context.Context, _ string, kinds []string) {
-	s.kinds = append(s.kinds, kinds...)
 }
 
 // translationWriteRaw 直接发一段 JSON body —— 形状用例要自己造畸形体，不能走构造器。
@@ -192,18 +174,12 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	handle := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
-	handle.SetContentWriter(i18n.NewContentWriter(db))
-	marker := &navTranslationSpyMarker{}
-	menus := &navTranslationSpyMenus{}
-	handle.SetPageMarker(marker)
-	handle.SetMenuInvalidator(menus)
-	navigationhttp.SetNavigationTranslationWriter(handle)
-	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
+	handle := navigationhttp.NewHandle(navSvc)
+	wireNavigationTranslationWriter(t, db, handle, navSvc.(*navigationservice.Service), projects)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", navigationhttp.NewHandle(navSvc).Update)
+	router.POST("/api/navigation/update", handle.Update)
 
 	context := i18n.ContentContext("navigation", "label")
 	hash := i18n.ContentHash("首页")
@@ -228,8 +204,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 			if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {
 				t.Fatalf("被拒的请求不该写库，但已有 %d 行译文", got)
 			}
-			if marker.calls != 0 || len(menus.kinds) != 0 {
-				t.Fatalf("被拒的请求不该派发失效：pageMarker=%d kinds=%v", marker.calls, menus.kinds)
+			if n := menuStaleJobs(t, db, projectID); n != 0 {
+				t.Fatalf("被拒的请求不该入队任何重建任务，实际 %d 条", n)
 			}
 		})
 	}
@@ -245,8 +221,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {
 		t.Fatalf("空译文不该写库，但已有 %d 行", got)
 	}
-	if marker.calls != 0 || len(menus.kinds) != 0 {
-		t.Fatalf("没有真正变更时不该派发失效：pageMarker=%d kinds=%v", marker.calls, menus.kinds)
+	if n := menuStaleJobs(t, db, projectID); n != 0 {
+		t.Fatalf("没有真正变更时不该入队任何重建任务，实际 %d 条", n)
 	}
 
 	// 3) 正对照：同一形状、非空 target → 200、真落库、真派发失效。
@@ -258,7 +234,10 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 1 {
 		t.Fatalf("合法写入应落 1 行译文，实际 %d", got)
 	}
-	if marker.calls == 0 || len(menus.kinds) == 0 {
-		t.Fatalf("真正变更后必须派发失效：pageMarker=%d kinds=%v", marker.calls, menus.kinds)
+	// 正对照的另一半：真正变更后必须真的入队（真实 build 队列，不是探针计数）。
+	// 判据用「至少一条 menu_stale 任务」，不绑数量：同一原文可能同时出现在多个位置，
+	// 逐位置各入一条才是对的，绑死数量会把正确实现判红。
+	if n := menuStaleJobs(t, db, projectID); n == 0 {
+		t.Fatal("真正变更后必须为受影响位置可靠入队 menu_stale 任务")
 	}
 }

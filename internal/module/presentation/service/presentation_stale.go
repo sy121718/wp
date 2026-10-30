@@ -213,6 +213,111 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	return nil
 }
 
+// RebuildStaleSync 逐条同步重建本工程内 stale 的实例（实现 StaleRebuildPort）。
+//
+// 与 RebuildStale 的差别是**错误语义**，不是策略：
+//   - RebuildStale 是「能入队就入队、入不了就尽力重建」，两处失败都只记日志、最后恒返回
+//     nil —— 对 menu_stale 的消费者那是最坏结果：队列任务被判 succeeded，而实例一个都
+//     没重建，菜单标签永远停在旧字节；
+//   - 本方法把「任一条失败」原样返回给调用方，让任务失败而不是假装成功。**绝不再次入队
+//     算成功**：入队等于把这份工作重新交给自己（本方法正是那条队列的消费侧），任务号会
+//     被标成功，而重建实际没发生 —— 那是把「没做成」写成「做成了」。
+//
+// 顺序与补偿：已成功的实例保留（重建是内容寻址 + 幂等的，重试只会复用同一行产物，
+// 不堆版本）；失败的实例保持 stale，由下一次触发或队列重试收敛。这里不做任何 FS 回滚
+// （规划草案 §2.5：失败不补偿，回滚 rename 会覆盖并发成功者）。
+//
+// 作用域：只重建**本工程**内 stale 的实例。projectID 必填 —— presentation_instances 带
+// FORCE 策略，无作用域的全表扫描在非超级角色下返回空集（fail closed），表现是
+// 「任务成功了、一个实例都没重建」，且日志里什么都没有。
+func (s *Service) RebuildStaleSync(ctx context.Context, projectID string) (rebuilt int, err error) {
+	pid := strings.TrimSpace(projectID)
+	if pid == "" {
+		return 0, presentationenums.Err(presentationenums.ErrProjectRequired)
+	}
+	ids, lerr := s.m.ListStaleInstanceIDs(ctx, pid)
+	if lerr != nil {
+		return 0, lerr
+	}
+	if len(ids) == 0 {
+		// 没有待重建的实例是**正常收敛态**（例如菜单改动只影响手工页面），不是错误。
+		return 0, nil
+	}
+	for _, id := range ids {
+		if cerr := ctx.Err(); cerr != nil {
+			return rebuilt, cerr
+		}
+		if rerr := s.RebuildInstance(ctx, id); rerr != nil {
+			logger.Scene("dependency").With("presentation_id", id).With("project_id", pid).
+				Error(rerr, "menu_stale 同步重建失败（实例保持 stale，错误上抛而不是再次入队）")
+			return rebuilt, rerr
+		}
+		rebuilt++
+	}
+	logger.Scene("dependency").With("project_id", pid).With("rebuilt", rebuilt).
+		Info("menu_stale 同步重建完成")
+	return rebuilt, nil
+}
+
+// MarkInstanceMenuStaleTx 实现 presentationcontract.PresentationStalePort：在**调用方事务**内
+// 按菜单位置标记受影响实例，返回真实命中行数。
+//
+// 为什么这层转发必须存在：contract 声明了接口，model 有同名实现，但装配层用
+// presentation.Service 去断言该端口（routers/assembly_publish.go:719 的 panic 分支、
+// assembly_navigation_translation.go:93 的类型断言）。缺这一层转发不是"少一个便捷方法"，
+// 而是**装配期直接 panic / 菜单译文写入 fail closed** —— 前者让整个进程起不来。
+//
+// 校验放在这层：工程与种类属于调用方输入，未知种类必须报**同包错误事实**
+// （presentationenums），而不是把 model 的裸 error 漏到响应里（AGENTS.md 文案两条链）。
+// 事务与作用域语义完全交给 model（tx 由调用方给，model 用 rls.ScopeTx 设作用域）。
+func (s *Service) MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB,
+	projectID, kind string, at time.Time) (n int64, err error) {
+	if tx == nil {
+		return 0, presentationenums.ErrDetail(presentationenums.ErrInvalidParam, "menu stale mark requires caller transaction")
+	}
+	pid := strings.TrimSpace(projectID)
+	if pid == "" {
+		return 0, presentationenums.Err(presentationenums.ErrProjectRequired)
+	}
+	if !presentationmodel.IsMenuStaleKind(kind) {
+		return 0, presentationenums.ErrDetail(presentationenums.ErrInvalidParam, "unknown menu kind "+kind)
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	return s.m.MarkInstanceMenuStaleTx(ctx, tx, pid, kind, at)
+}
+
+// MarkInstanceNavigationStaleTx 实现 presentationcontract.PresentationStalePort：在**调用方事务**内
+// 按**具体菜单项**（navigation:{itemID}）标记受影响实例，返回真实命中行数。
+//
+// 与位置版并列而不是替代：渲染期两种消费各记各的键（按位置 menu:{project}:{kind}、
+// 按项 navigation:{itemID}），只标位置会让按项引用的实例既不 stale 也越过版本屏障。
+//
+// 校验同位置版：工程与 menu item id 是调用方输入，缺一个直接报本包错误事实，
+// 不让"空 id 匹配 0 行"变成静默不标记。事务与作用域交给 model（rls.ScopeTx）。
+func (s *Service) MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB,
+	projectID, navigationID string, at time.Time) (n int64, err error) {
+	if tx == nil {
+		return 0, presentationenums.ErrDetail(presentationenums.ErrInvalidParam, "navigation stale mark requires caller transaction")
+	}
+	pid := strings.TrimSpace(projectID)
+	if pid == "" {
+		return 0, presentationenums.Err(presentationenums.ErrProjectRequired)
+	}
+	nid := strings.TrimSpace(navigationID)
+	if nid == "" {
+		return 0, presentationenums.ErrDetail(presentationenums.ErrInvalidParam, "navigation id is required")
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	return s.m.MarkInstanceNavigationStaleTx(ctx, tx, pid, nid, at)
+}
+
+// 编译期证明本服务满足装配层断言的端口（缺方法时这里先红，而不是运行期 panic）。
+var _ presentationcontract.PresentationStalePort = (*Service)(nil)
+
 // enqueueStaleRebuilds 把受影响实例全部交给构建队列（PERF-020）。
 //
 // 入队是幂等的：队列侧部分唯一索引保证同一实例同时只有一条待办，扇出反复标记

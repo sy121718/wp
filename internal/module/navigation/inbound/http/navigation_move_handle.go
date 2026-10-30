@@ -1,40 +1,24 @@
-// navigation_move_handle.go — 同级上移 / 下移的**严格形状 union 分支**
-// （POST /api/navigation/update 的 action="move"）。
+package navigationhttp
+
+// navigation_move_handle.go — 同级上移 / 下移的写入口（POST /api/navigation/update，action="move"）。
 //
-// 为什么并进 update 而不是另开端点：权限锚点。sys_permission 每个 code 只有一列
-// api_path / api_method，给「修改导航」再挂一条 /api/navigation/move 就会出现两套锚点 ——
-// 角色授权只会授到其中一条，用户随即遇到「能改却不能挪」。页面这一侧原先的
-// POST /navigations/move 也正是**借用** /api/navigation/update 的权限动作
-// （builtin.CasbinMiddlewareForPath），并过来以后权限与 CSRF 链一字不变。
-//
-// 判别键是 action 标签（与 delete 的「按形状判别」不同：delete 两个分支各只有一个键，
-// 形状本身就是判别键；move 与普通 update 共享 id 与若干可写字段，只能靠显式标签分清）。
-// 白名单、null / 非字符串、未知键、以及「无 action 却带 move 专属键」的混形一律 400 ——
-// 猜错分支会挪错位置，而顺序是持久化事实，没有撤销。
-//
-// 作用域与并发语义全部留在 service.SwapMove：
-//   - projectId 只做 **locator 校验**（非空且与该导航项所属工程不一致 → ErrInvalidParam），
-//     客户端作用域不在这里再判一次权限；
-//   - 边界（首项上移 / 末项下移）**不是错误**：200 + {moved:false, reason:"boundary"}，
-//     前端整页刷新后顺序不变；
-//   - 同级 sort_order 并列 → ErrSortTied（业务拒绝，走 navigationErrorStatus 的 400 档）；
+// 契约（迁移前逐字保留）：
+//   - 顶层只认 action / id / projectId / dir（严格白名单，多一个键就 400）；
+//   - id 与 dir 必填（非空字符串）；dir 的取值为 up / down，**枚举判据在 service**
+//     （SwapMove 一份），handler 只判「是字符串且非空」，避免两份枚举出现静默分叉；
+//   - projectId 可选（缺省 = 不校验工程归属）；显式 null / 非字符串仍拒；
 //   - 版本冲突 → ErrStaleVersion（409，客户端刷新后重做）；
 //   - move **不做客户端版本承诺**：请求里没有 update_time / expected_updated_at，
 //     SwapMove 自己读树快照、按快照里的版本写，冲突时整事务回滚且零派发。
-package navigationhttp
 
 import (
-	json "go_wp/pkg/jsonx"
-
 	"github.com/gin-gonic/gin"
 
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 )
-
-// navigationMoveAction action 键的 move 档取值。
-const navigationMoveAction = "move"
 
 // navigationMoveKeys move 档顶层允许出现的键（**严格白名单**）。
 //
@@ -48,18 +32,41 @@ var navigationMoveKeys = map[string]bool{
 	"dir":       true,
 }
 
-// navigationWriteHasMoveKeys 旧分支的混形守卫：出现 move 专属键即拒。
+// moveNavigationEnvelope 把已解析的 move 分支**结构映射**成 moveNavigation 的顶层键值。
 //
-// 与 navigationWriteHasTranslationKeys 同一理由：UpdateReq 里没有 projectId / dir，
-// 带了它们却又不带 action，说明调用方按另一份契约在说话 —— 按旧语义默默忽略会让
-// 「字段改生效了、作用域被丢掉」，而调用方还以为自己限定过一次工程。
-func navigationWriteHasMoveKeys(raw map[string]json.RawMessage) bool {
-	for _, key := range []string{"dir", "projectId"} {
-		if _, ok := raw[key]; ok {
-			return true
-		}
+// dto 的 MoveRequest() 已经判掉：id / dir 必填非空、projectId 显式 null 与非字符串一律
+// 形状错（Route 阶段已拒）。这里只把已解析的字段拼回同形键值，白名单与调用仍在那份
+// helper 里，不重复业务判据。
+func (h *Handle) moveNavigationEnvelope(c *gin.Context, env *navigationdto.UpdateEnvelope) {
+	if err := env.ValidateMove(); err != nil {
+		response.ParamError(c)
+		return
 	}
-	return false
+	req, err := env.MoveRequest()
+	if err != nil {
+		response.ParamError(c)
+		return
+	}
+	raw := map[string]json.RawMessage{}
+	for key, value := range map[string]string{"id": req.ID, "dir": req.Dir} {
+		encoded, merr := json.Marshal(value)
+		if merr != nil {
+			response.ParamError(c)
+			return
+		}
+		raw[key] = encoded
+	}
+	// projectId 是可选键：缺省 = 不校验工程归属；dto 已把显式 null 与空串收敛成空串
+	//（不校验），非空才写这一格 —— 空串与缺省在本分支语义相同。
+	if req.ProjectID != "" {
+		encoded, merr := json.Marshal(req.ProjectID)
+		if merr != nil {
+			response.ParamError(c)
+			return
+		}
+		raw["projectId"] = encoded
+	}
+	h.moveNavigation(c, raw)
 }
 
 // moveNavigation 解析 move 档并调用 service 的原子交换（一次调用 = 一个事务）。

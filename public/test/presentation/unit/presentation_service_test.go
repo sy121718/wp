@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	buildmodel "go_wp/internal/module/build/model"
+	buildservice "go_wp/internal/module/build/service"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentmodel "go_wp/internal/module/content/model"
@@ -22,6 +24,10 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	navigationmodel "go_wp/internal/module/navigation/model"
+	navigationservice "go_wp/internal/module/navigation/service"
+	pagemodel "go_wp/internal/module/page/model"
+	pageservice "go_wp/internal/module/page/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -120,6 +126,32 @@ func newPresFixtureWith(t *testing.T,
 		db: db, content: contentSvc, templates: tplSvc, pres: presSvc,
 		routes: routes, projectID: project.ID,
 	}
+}
+
+// buildService 真实 build 服务（导航写端口的 Queue 用同一 db，不 noop）。
+func (f *presFixture) buildService() *buildservice.Service {
+	return buildservice.NewService(buildmodel.NewModel(f.db))
+}
+
+// navWriteDeps 与 internal/routers 同形的真实五端口（page / presentation / build）。
+//
+// 未接齐时 navigation 的菜单写入口会 fail closed —— 裸 NewService 建 navSvc 再直接
+// Create/Update，是本轮之前"改导航、实例不重建"的成因。
+func (f *presFixture) navWriteDeps() navigationservice.NavigationWriteDeps {
+	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil,
+		projectservice.NewService(projectmodel.NewProjectModel(f.db)), nil, nil, nil, nil, nil)
+	return navigationservice.NavigationWriteDeps{
+		Pages: pages, Instances: f.pres, Items: pages,
+		ItemInstances: f.pres, Queue: f.buildService(),
+	}
+}
+
+// newNavService 建一个已接真实五端口的导航服务（与实例共用同一 db）。
+func (f *presFixture) newNavService() *navigationservice.Service {
+	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db),
+		projectservice.NewService(projectmodel.NewProjectModel(f.db)))
+	navSvc.SetWritePorts(f.navWriteDeps())
+	return navSvc
 }
 
 // createTemplate 用真实 contenttemplate service 建模板（article 类型，binding 到 title）。

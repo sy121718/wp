@@ -30,10 +30,10 @@ func readTheme(t *testing.T) string {
 func TestTokenFamiliesExist(t *testing.T) {
 	src := readTheme(t)
 	families := map[string]*regexp.Regexp{
-		"间距 --space-*":   regexp.MustCompile(`--space-(\d+)\s*:\s*([0-9.]+)(px|rem)`),
-		"圆角 --radius-*":  regexp.MustCompile(`--radius-([a-z]+)\s*:\s*([0-9.]+)(px|rem)`),
-		"字号 --text-*":    regexp.MustCompile(`--text-([a-z0-9]+)\s*:\s*([0-9.]+)(px|rem)`),
-		"动效 --motion-*":  regexp.MustCompile(`--motion-([a-z]+)\s*:\s*([0-9.]+)(ms|s)`),
+		"间距 --space-*":  regexp.MustCompile(`--space-(\d+)\s*:\s*([0-9.]+)(px|rem)`),
+		"圆角 --radius-*": regexp.MustCompile(`--radius-([a-z]+)\s*:\s*([0-9.]+)(px|rem)`),
+		"字号 --text-*":   regexp.MustCompile(`--text-([a-z0-9]+)\s*:\s*([0-9.]+)(px|rem)`),
+		"动效 --motion-*": regexp.MustCompile(`--motion-([a-z]+)\s*:\s*([0-9.]+)(ms|s)`),
 	}
 	for label, re := range families {
 		matches := re.FindAllStringSubmatch(src, -1)
@@ -79,9 +79,9 @@ func TestSpaceScaleIsMonotonic(t *testing.T) {
 func TestTokenValuesAreNotDuplicated(t *testing.T) {
 	src := readTheme(t)
 	for label, re := range map[string]*regexp.Regexp{
-		"间距":  regexp.MustCompile(`--space-\d+\s*:\s*([0-9.]+)(px|rem)`),
-		"圆角":  regexp.MustCompile(`--radius-[a-z]+\s*:\s*([0-9.]+)(px|rem)`),
-		"字号":  regexp.MustCompile(`--text-[a-z0-9]+\s*:\s*([0-9.]+)(px|rem)`),
+		"间距": regexp.MustCompile(`--space-\d+\s*:\s*([0-9.]+)(px|rem)`),
+		"圆角": regexp.MustCompile(`--radius-[a-z]+\s*:\s*([0-9.]+)(px|rem)`),
+		"字号": regexp.MustCompile(`--text-[a-z0-9]+\s*:\s*([0-9.]+)(px|rem)`),
 	} {
 		seen := map[string]bool{}
 		for _, m := range re.FindAllStringSubmatch(src, -1) {

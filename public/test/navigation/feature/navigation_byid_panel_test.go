@@ -52,6 +52,10 @@ func newNavPanelEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageService,
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	nav := navigationservice.NewService(navigationmodel.NewModel(db), projects)
+	// 写端口（标页面 / 标实例 / 入队）是 Create / Update / Delete 的必需依赖：
+	// 缺任一即 fail closed。本用例断言的正是「按项引用 → 改菜单项 → 引用页被标 stale」，
+	// 所以装配真实实现（本页也算真实命中：标记落在 pages.stale 上）。
+	attachNavWritePorts(t, nav, db, projects)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks = blockservice.NewService(blockmodel.NewBlockModel(db), projects)
@@ -152,6 +156,67 @@ func TestNavigationPanelBlockDependencyAndInvalidation(t *testing.T) {
 	if !navPageStale(t, db, pageID) {
 		t.Fatalf("修改面板块后，引用它的页面未被标记待重建（依赖闭环断了）")
 	}
+}
+
+// TestNavigationPanelBlockIDUpdateContract 面板引用三态（未传保留 / 空串清 NULL / 非空写值）。
+//
+// 三态是同一条归一链上的三个分支，任何一支走错都不会报错、只表现为"面板没清掉"或
+// "没改动的字段被清空"。空串清除尤其容易退化：归一函数把空白变成 nil，若调用方再把
+// nil 当成"本次不改动"，显式清除就永久失效。
+func TestNavigationPanelBlockIDUpdateContract(t *testing.T) {
+	db, _, navSvc, blocks, projectID := newNavPanelEnv(t)
+	if db == nil {
+		return
+	}
+	ctx := context.Background()
+	first, err := blocks.Create(ctx, &blockdto.CreateReq{ProjectID: projectID, Name: "面板一",
+		Document: json.RawMessage("{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"p1\",\"type\":\"core.heading\",\"props\":{\"text\":\"面板一\",\"tag\":\"div\"}}]}")})
+	if err != nil {
+		t.Fatalf("创建面板块失败: %v", err)
+	}
+	second, err := blocks.Create(ctx, &blockdto.CreateReq{ProjectID: projectID, Name: "面板二",
+		Document: json.RawMessage("{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"p2\",\"type\":\"core.heading\",\"props\":{\"text\":\"面板二\",\"tag\":\"div\"}}]}")})
+	if err != nil {
+		t.Fatalf("创建第二个面板块失败: %v", err)
+	}
+
+	itemID := addNavItem(t, navSvc, projectID, "产品", "/products", nil, "self")
+	// 未传 PanelBlockID（nil 指针）→ 保留原值。
+	if _, err := navSvc.Update(ctx, &navigationdto.UpdateReq{ID: itemID, PanelBlockID: &first.ID}); err != nil {
+		t.Fatalf("挂面板失败: %v", err)
+	}
+	renamed := "产品中心"
+	if _, err := navSvc.Update(ctx, &navigationdto.UpdateReq{ID: itemID, Title: &renamed}); err != nil {
+		t.Fatalf("未传 PanelBlockID 的更新失败: %v", err)
+	}
+	if got := navPanelBlockID(t, db, itemID); got == nil || *got != first.ID {
+		t.Fatalf("未传 PanelBlockID 应保留原面板 %s，实际 %v", first.ID, got)
+	}
+	// 空串 → 归一为 NULL 落库（显式清除）。
+	empty := "   "
+	if _, err := navSvc.Update(ctx, &navigationdto.UpdateReq{ID: itemID, PanelBlockID: &empty}); err != nil {
+		t.Fatalf("清除面板失败: %v", err)
+	}
+	if got := navPanelBlockID(t, db, itemID); got != nil {
+		t.Fatalf("空串应把面板清成 NULL，实际仍为 %q", *got)
+	}
+	// 非空 → 写入新值。
+	if _, err := navSvc.Update(ctx, &navigationdto.UpdateReq{ID: itemID, PanelBlockID: &second.ID}); err != nil {
+		t.Fatalf("改挂面板失败: %v", err)
+	}
+	if got := navPanelBlockID(t, db, itemID); got == nil || *got != second.ID {
+		t.Fatalf("非空值应写入面板 %s，实际 %v", second.ID, got)
+	}
+}
+
+// navPanelBlockID 直接读库取菜单项当前面板引用（nil = NULL 列）。
+func navPanelBlockID(t *testing.T, db *gorm.DB, itemID string) *string {
+	t.Helper()
+	var row struct{ PanelBlockID *string }
+	if err := db.Raw("SELECT panel_block_id FROM navigations WHERE id = ?", itemID).Scan(&row).Error; err != nil {
+		t.Fatalf("读面板引用失败: %v", err)
+	}
+	return row.PanelBlockID
 }
 
 // TestNavigationMobileKindPositions 位置扩展为四个：移动端可用、两端数据独立、非法位置被拒。

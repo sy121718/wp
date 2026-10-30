@@ -69,8 +69,9 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"SEO 控制台", "演示站", "/guides/seo", "42", "17",
-		"/api/publication/seo-audit", "data-seo-audit-result", `hx-post="/api/publication/seo-audit"`,
-		`hx-target="[data-seo-audit-result]"`, `hx-swap="innerHTML"`,
+		"data-seo-audit-action", "data-seo-audit-result",
+		`data-write="custom"`, `data-write-url="/api/publication/seo-audit"`,
+		`data-write-handler="publication.seo-audit"`, "data-write-latest",
 		"来源统计当前不可用",
 		"sitemap / feed 实时状态当前不可用", "外部搜索平台数据当前不可用",
 	} {
@@ -95,7 +96,7 @@ func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 		"Paths": []analyticscontract.PathCount{}, "HasPaths": false, "AnalyticsError": false, "Buttons": map[string]bool{},
 	}
 	body := renderAdminTemplate(t, "admin/analytics/seo.html", base)
-	if strings.Contains(body, `hx-post="/api/publication/seo-audit"`) {
+	if strings.Contains(body, `data-write-url="/api/publication/seo-audit"`) {
 		t.Fatal("缺少 seo:audit 权限时不应渲染体检动作")
 	}
 	if !strings.Contains(body, "需要 SEO 体检权限") {

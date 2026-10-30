@@ -56,10 +56,9 @@ func (m *Model) UpdateThemeSnapshotTx(ctx context.Context, tx *gorm.DB, projectI
 	}
 	return tx.WithContext(ctx).Model(&PageEntity{}).
 		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-		UpdateColumns(map[string]any{
+		UpdateColumns(mergeInputChange(map[string]any{
 			"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,theme}', ?, true)", themeJSON),
-			"update_time":    at,
-		}).Error
+		}, at)).Error
 }
 
 func (m *Model) ListThemePageStructureSnapshotsTx(ctx context.Context, tx *gorm.DB, projectID, themeID string) ([]ThemePageStructureSnapshot, error) {
@@ -91,10 +90,9 @@ func (m *Model) UpdateStructureSnapshotTx(ctx context.Context, tx *gorm.DB, proj
 	}
 	return tx.WithContext(ctx).Model(&PageEntity{}).
 		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-		UpdateColumns(map[string]any{
+		UpdateColumns(mergeInputChange(map[string]any{
 			"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,structure}', ?, true)", structureJSON),
-			"update_time":    at,
-		}).Error
+		}, at)).Error
 }
 
 func (m *Model) MarkStaleForThemeTx(ctx context.Context, tx *gorm.DB, projectID, themeID string, at time.Time) error {
@@ -103,5 +101,9 @@ func (m *Model) MarkStaleForThemeTx(ctx context.Context, tx *gorm.DB, projectID,
 	}
 	return tx.WithContext(ctx).Model(&PageEntity{}).
 		Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
-		UpdateColumns(map[string]any{"stale": true, "update_time": at}).Error
+		UpdateColumns(map[string]any{
+			"stale":         true,
+			"input_version": gorm.Expr("input_version + 1"),
+			"update_time":   at,
+		}).Error
 }

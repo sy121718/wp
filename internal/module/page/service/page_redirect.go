@@ -22,6 +22,7 @@ package pageservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -223,14 +224,93 @@ func (s *Service) DeleteRedirect(ctx context.Context, req *pagedto.RedirectDelet
 		}
 		return err
 	}
-	if err = s.publication.Deactivate(path); err != nil {
-		return err
+	// 解除激活前必须持路径锁：解激活是「读现场 → 删符号链接」，与另一实体在同一条
+	// 路径上的激活交错时，删掉的可能是它刚上线的链接。
+	//
+	// 删除本身走**下线回执**（与删页 / 排除语言 / 语言退役同一套框架），因为它是
+	// 「FS 先 DB」的多路径不可回退副作用：设备断电在删链接与删行之间，没有持久载体
+	// 就再没人知道那条链接该撤。重定向行的 page_id / presentation_id 都是 NULL，
+	// 没有任何实体 id 可作归属 —— 因此它的回执是**项目级来源**（source_type='project'，
+	// SourceID 必须是本工程 uuid），恢复时按路径锁内的链接身份复验谁是真主人。
+	if s.routes == nil {
+		return ErrRedirectUnavailable
 	}
-	if _, err = s.model.DeleteRedirectRoute(ctx, projectID, path); err != nil {
-		return err
+	intent, rerr := s.registerProjectDeactivationIntent(ctx, projectID, path)
+	if rerr != nil {
+		return rerr
+	}
+	// 业务事务：锁内复验「这条路径此刻仍是一条归本工程的重定向，且访问面链接仍是
+	// 登记时的那一条」，然后删路由行 + 置 businessCommitted（同进同出）。
+	//
+	// callbackCompleted 记「回调跑到了最后一步」，不等于已提交：GORM 的 Transaction
+	// 会把 Commit 的错误一并返回，标记为真且 txErr 非空正是"提交不明"。
+	callbackCompleted := false
+	txErr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		// 项目级顾问锁：与另一次项目级下线串行；与发布竞争的交错由下面的路径锁负责。
+		if aerr := s.model.LockProjectEntityAdvisoryTx(ctx, tx, projectID); aerr != nil {
+			return aerr
+		}
+		return s.withPath(path, func() error {
+			if oerr := s.verifyProjectRedirectOwner(ctx, tx, projectID, path, intent.PathArtifacts[path]); oerr != nil {
+				return oerr
+			}
+			res, derr := s.model.DeleteRedirectRouteTx(ctx, tx, projectID, path)
+			if derr != nil {
+				return derr
+			}
+			// 受影响行必须是 1：0 行说明锁内复验之后行被并发的另一次删除拿走了，
+			// 此时按归属冲突处理，绝不当成功（否则回执会把别人的删除算成本次成果）。
+			if res == nil || res.RowsAffected != 1 {
+				return fmt.Errorf("%w: 路径 %s 的重定向行已不归本事务处置", ErrRedirectConflict, path)
+			}
+			if merr := s.markDeactivationCommitted(ctx, tx, intent); merr != nil {
+				return merr
+			}
+			callbackCompleted = true
+			return nil
+		})
+	})
+	if txErr != nil && !callbackCompleted {
+		// 回调未走到末尾 ⇒ 事务一定回滚 ⇒ 路由行还在、链接没动过。
+		s.abortPublishReceipt(ctx, intent.ReceiptID, "重定向删除的业务事务未提交，访问面保持原样")
+		logger.Scene("page").With("path", path).Error(txErr, "重定向删除失败（业务事务未提交）")
+		return redirectDeleteError(txErr)
+	}
+	if txErr != nil {
+		// 走到末尾标记后仍报错 = 只有提交阶段可能出错，行可能已经删了。
+		s.keepPublishReceiptPending(intent.ReceiptID, "重定向删除的业务事务提交结果不明")
+		logger.Scene("page").With("path", path).
+			Error(txErr, "重定向删除提交结果不明（回执保持 pending 交收敛重判）")
+		return mapPersistenceError(txErr)
+	}
+	if !callbackCompleted {
+		s.abortPublishReceipt(ctx, intent.ReceiptID, "重定向删除的业务事务未置提交标记")
+		return nil
+	}
+	// 提交之后撤链：失败只保 pending —— 行已经删了，报错会让调用方重试，而重试只会
+	// 再次命中"重定向不存在"。
+	if werr := s.withdrawProjectDeactivatedLinks(ctx, projectID, intent.ReceiptID); werr != nil {
+		s.keepPublishReceiptPending(intent.ReceiptID, "重定向已删除，撤链失败")
+		logger.Scene("page").With("path", path).
+			Error(werr, "重定向已删除但撤链失败（回执保持 pending 交收敛重放）")
+		return nil
+	}
+	if cerr := s.completePublishReceipt(ctx, intent.ReceiptID); cerr != nil {
+		s.NotifyPendingReceipt()
+		return nil
 	}
 	logger.Scene("page").With("path", path).Info("重定向已删除")
 	return nil
+}
+
+// redirectDeleteError 把删除事务的错误翻译成对外事实：
+// 归属冲突（行已不归本次处置 / 链接已被改成别的形态）必须让调用方看见 409，
+// 而不是被压成「重定向不存在」—— 后者会让操作者以为是自己点错了。
+func redirectDeleteError(err error) error {
+	if errors.Is(err, ErrRedirectConflict) {
+		return ErrRedirectConflict
+	}
+	return mapPersistenceError(err)
 }
 
 // MergeRedirectChain 把一条重定向的跳转链合并为直达（A→B、B→C 合成 A→C）。
@@ -350,6 +430,9 @@ func (s *Service) redirectOwnerLabels(ctx context.Context, projectID string, rec
 }
 
 // writeRedirectArtifact 落盘 301 产物并激活到源路径（覆盖既有链接，幂等）。
+//
+// 只有 Activate 进路径锁：PutRedirect 是**不可变产物**写（内容寻址，写完即只读），
+// 给它取活动链接锁既无收益，还会把慢 IO 拖进临界区。
 func (s *Service) writeRedirectArtifact(sourcePath, targetPath string) (err error) {
 	ra, err := pipeline.NewRedirectArtifact(targetPath, 301)
 	if err != nil {
@@ -359,7 +442,7 @@ func (s *Service) writeRedirectArtifact(sourcePath, targetPath string) (err erro
 	if err != nil {
 		return err
 	}
-	return s.publication.Activate(sourcePath, loc)
+	return s.withPath(sourcePath, func() error { return s.publication.Activate(sourcePath, loc) })
 }
 
 // resolveRedirectTail 沿重定向链前进，返回最终落点；途中出现重复节点即成环。
