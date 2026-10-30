@@ -76,6 +76,11 @@ var errFallbacks = map[string]string{
 	ErrProjectRequired:    "请先选择要操作的站点工程",
 	ErrStaleVersion:       "该菜单项已被其他窗口修改，请刷新后重试",
 	ErrSortTied:           "同一级里存在重复的排序值，本次没有产生位移；请先把这一级的顺序理顺",
+	ErrSourceKindFailed:   "导航菜单原文读取失败，请稍后重试",
+	// —— 译文整表写入（事务化）的三条，声明与状态码见 navigation_enums_translation_write.go ——
+	ErrTranslationDuplicate:        "同一菜单文字在一批提交里出现了多次，请只保留一行",
+	ErrTranslationWriteFailed:      "译文保存失败，请稍后重试",
+	ErrTranslationWriteUnavailable: "译文写入服务未就绪，请联系管理员",
 }
 
 // Err 声明一条自带对外文案的导航业务错误（兜底与本表同源）。
@@ -114,7 +119,7 @@ const (
 	TranslationHeading = "admin.navigation_translations.heading" // 导航译文
 
 	// 译文工作台的保存结果文案。
-	Saved     = "admin.navigation_translations.saved"     // 已保存 %d 条译文；已标记受影响页面待重建（下次构建生效）
+	Saved     = "admin.navigation_translations.saved"     // 已保存 %s 条译文；已标记受影响页面待重建（下次构建生效）
 	SavedNone = "admin.navigation_translations.savedNone" // 没有需要写入的变化
 
 	// 译文工作台的行级校验与整体失败文案（进页面错误槽）。
@@ -125,6 +130,10 @@ const (
 	ErrNotTranslatable    = "admin.navigation_translations.err.notTranslatable"    // %s：该菜单文字不参与翻译（纯数字或纯符号）
 	ErrSaveFailed         = "admin.navigation_translations.err.saveFailed"         // 保存失败：%s
 	ErrProjectListFailed  = "admin.navigation_translations.err.projectListFailed"  // 读取工程列表失败，请稍后重试
+
+	// SavedFallback 是 Saved 的中文兜底：词条缺失（新库尚未跑迁移、或运营改坏了词条）
+	// 时落到这句，**不带**占位符残留。
+	SavedFallback = "已保存 %s 条译文；已标记受影响页面待重建（下次构建生效）。"
 
 	// 导航菜单列表页与写路径共用的事实文案（页面标题被回跳链接复用）。
 	Heading              = "admin.navigations.heading"               // 导航菜单
@@ -138,8 +147,14 @@ const (
 	InternalKey = "navigation.err.internal" // 操作失败，请稍后重试（细节只进日志）
 
 	// 导航类型标题（译文工作台按位置分组）。
-	KindFooter = "admin.navigations.kind.footer" // 页脚导航
-	KindHeader = "admin.navigations.kind.header" // 页眉导航
+	//
+	// 四个位置各一条 key（与导航菜单页 kind 下拉、workbench 检查器的位置词同源）：
+	// 桌面与移动端是两个位置、两份数据，标题必须分得开 —— 译文工作台此前只认
+	// header/footer 两条，移动端菜单既不能翻译也看不出自己改的是哪一份。
+	KindFooter       = "admin.navigations.kind.footer"       // 页脚导航
+	KindFooterMobile = "admin.navigations.kind.footerMobile" // 页脚导航（移动端）
+	KindHeader       = "admin.navigations.kind.header"       // 页眉导航
+	KindHeaderMobile = "admin.navigations.kind.headerMobile" // 页眉导航（移动端）
 
 	// 面板块默认名的位置词（新建块时按当前请求语言拼出，见 navigation_page_handle.go）。
 	PanelBlockNameMenu         = "admin.navigations.panel.blockName.menu"         // 菜单
@@ -160,3 +175,16 @@ const (
 	SourceProduct  = "admin.navigations.source.product"  // 产品
 	SourceCategory = "admin.navigations.source.category" // 分类
 )
+
+// SavedMsg 译文保存成功的回执事实：key + 中文兜底 + 数字参数。
+//
+// 为什么是函数而不是「常量 + 调用点自己 Sprintf」：
+//   - enums 只负责**声明事实**（key、兜底、参数），取词与填参都在出口（pkg/response 的
+//     SuccessMsg → ArgsText）做一次 —— handler 里再 Sprintf 一遍就是把取词搬回来，
+//     英文语序拼不出来，且词条被运营改坏时无处回退；
+//   - 参数是**字符串**（facing.Msg 的 Args），调用方不用记 %d / %s 的差别。
+//     Saved 的模板是带 %s 的整句，ArgsText 只在「模板全是 %s」时才注入，
+//     否则落 SavedFallback —— 兜底同样带 %s，所以两种情形下句子都是完整的。
+func SavedMsg(written string) facing.Msg {
+	return facing.Msg{Key: Saved, Fallback: SavedFallback}.WithArgs(written)
+}

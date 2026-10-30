@@ -59,4 +59,9 @@
 <script src="/static/js/ui/site-orders.js"></script>
 <script src="/static/js/ui/site-user.js"></script>
 <script src="/static/js/ui/product-pricing.js"></script>
+{* 产物 SEO 体检的结果展示：向写基座注册 publication.seo-audit 处理器。
+   必须在 write-base.js 之后（它要 registerResultHandler），且在任何可能派发提交的
+   控件之前 —— 注册晚于第一次点击会让那次提交按「未注册的写结果处理能力」失败。
+   排在 index.js 之前是硬要求：index.js 是扫描入口，控件注册扫描前必须就位。 *}
+<script src="/static/js/ui/seo-audit.js"></script>
 <script src="/static/js/ui/index.js"></script>

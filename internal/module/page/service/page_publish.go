@@ -104,6 +104,7 @@ import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -448,58 +449,158 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 	// 登记 pending 回执，必须在访问面切换之前（AR2-002 / TX-009）：切换是不可逆的
 	// 副作用，登记放在之后，崩溃窗口里就查不到「这次发布发生过」。登记拿不到回执 id
 	// 一律中止发布 —— 带着未知状态去切访问面，正是这条回执要消灭的分裂状态。
+	//
+	// CapturedInputVersion 是本页在**捕获段**读到的输入代次：收敛例程要靠它区分
+	// 「这次激活编译的是哪一代输入」，从而判断线上那份产物是否已过期（§2.7.2 G2）。
+	// attempt 身份就是这条预登记回执自己的 id，不另造编号（§2.7.1）。
 	receiptID, rerr := s.beginPublishReceipt(ctx, publishReceiptInput{
 		Action:    pubcontract.ReceiptActionSwitchActive,
 		ProjectID: page.ProjectID, PageID: page.ID, Path: path, Lang: lang,
 		FromArtifactID: fromArtifactID, ToArtifactID: stagedArt.ID, OldPath: oldPath,
+		CapturedInputVersion: page.InputVersion,
+		FromReceiptID:        s.capturedFromReceiptID(ctx, page.ProjectID, page.ID, lang),
 	})
 	if rerr != nil {
 		return nil, rerr
 	}
-
-	hash, err := s.publisher.Publish(page.ID)
-	if err != nil {
-		// 内核保证「激活失败线上保持不变」（pipeline.Publisher.Publish 同一分支），
-		// 属于可判定的无副作用失败：显式结案为已回滚，不留给启动恢复一个假 pending。
-		s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
-		logger.Scene("publication").With("pageId", page.ID).Error(err, "发布失败")
-		return nil, mapPublishError(err)
+	// 回执 id 是这次尝试的身份，必须能落进 page_publications.receipt_id（bigint）。
+	// 解析失败即阻止激活：没有成功身份的激活会让收敛把这次真实成功当成「历史行」。
+	receiptSeq, seqErr := parseReceiptID(receiptID)
+	if seqErr != nil {
+		s.abortPublishReceipt(ctx, receiptID, "回执 id 无法解析为数值身份")
+		return nil, ErrPublishLedgerUnavailable
 	}
-	// 访问面已切换（符号链接原子替换）。此后任何失败都不能判定为「没生效」，
-	// 一律保留 pending，交给启动恢复按链接的实际指向补齐或回滚。
-	//
-	// 数据库侧四步（活跃指针、旧路径取消占用、新路径路由激活）收在**一个事务**里：
-	// 此前它们各自成事务，中途失败会留下「指针已是新产物、旧路由还 active」这类
-	// 半截状态，只能靠启动恢复逐步对齐。
-	now := time.Now().UTC()
+
 	// 计划只在本次确实要重冻时才带（persistPlan）：正常路径下它已随 Build 落库，
 	// 这里再写一次只会把 update_time 抖动一遍。
 	activationPlan := (*pipeline.PublicationPlan)(nil)
 	if persistPlan {
 		activationPlan = &plan
 	}
-	if aerr := s.applyPublishActivation(ctx, publishActivationInput{
-		Page: page, Lang: lang, Path: path,
-		ArtifactID: stagedArt.ID, ArtifactHash: hash, OldPath: oldPath,
-		Plan: activationPlan,
-	}); aerr != nil {
-		// FS 已原子激活（线上已生效），此处 DB 事务整体回滚属于部分成功：
-		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。
-		// 回执保持 pending：启动恢复看得到链接已指向本次产物，会补写这套状态。
+	// 提交段（§2.3 P1-P5）：**同一实体行锁**内复验输入代次 → 切访问面 → 写数据库 → 提交。
+	//
+	// 为什么必须在这一步才切 FS：编译耗时且无副作用，可以放在锁外；但「我编译的是最新
+	// 输入」这条判断只有在切换前一刻、且没有任何人能同时改输入时才成立。此前复构建在
+	// 校验之后、切换之前，中间那段窗口里 SaveDraft / 菜单译文扇出 / 依赖标记都能把页面
+	// 推进一代，于是旧输入编译出来的产物照样上线（裁定 R1/R3）。
+	//
+	// 顺序固定为：锁 → 复验版本 → StageArtifact（只读校验）→ 切 FS → 写 DB → COMMIT。
+	// 不能把 FS 放在 COMMIT 之后（那样 DB 与访问面之间又多一个窗口），也不能在锁外补偿
+	// （「用 from 产物 rename 回去」会覆盖锁外已经成功的并发激活者，裁定 R2 → §2.5 删除）。
+	now := time.Now().UTC()
+	hash := ""
+	activated := false
+	txErr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		snap, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID)
+		if lerr != nil {
+			return lerr
+		}
+		if snap.InputVersion != page.InputVersion {
+			// 捕获之后有人改了输入（草稿 / 译文 / 依赖标记）：这份产物已过期，绝不能上线。
+			// DB 一个字节都没写，属于可判定的无副作用失败。
+			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+				With("captured", page.InputVersion).With("current", snap.InputVersion).
+				Warn("发布放弃：捕获的输入代次已过期（期间内容或依赖变更）")
+			return ErrInputMoved
+		}
+		// StageArtifact 只读校验（暂存未被别的构建换掉），不碰文件系统。
+		stagedHash, serr := s.publisher.StageArtifact(page.ID)
+		if serr != nil {
+			return serr
+		}
+		if stagedHash != stagedArt.ArtifactHash {
+			// 同一页面被并发构建过：暂存已是另一份产物，本次要激活的那份不再是最新暂存。
+			return ErrRebuildRequired
+		}
+		// 故障注入点（测试用；生产恒 nil）：命中「锁已持、访问面尚未切换」窗口，
+		// 用来证明此处的失败不会留下任何 FS 副作用。
+		if ferr := s.publishWindowFaultHit(); ferr != nil {
+			return ferr
+		}
+		// 切访问面（符号链接原子替换）。执行到这里说明锁在手、版本已复验。
+		//
+		// 顺序说明（与路径锁的关系）：Publisher 内部在 activatePath 里取路径锁，持有期只包住
+		// 「读链接 → 写链接」这一段；本函数持有的实体锁挡的是同一页的并发激活。**锁内归属
+		// 复验在切完之后**：紧随其后的 ActivateTx 带归属表达式，做条件写，影响 0 行即说明
+		// 路径已被另一实体抢占（跨实体），那时必须整体回滚而不是把账本记成本页成功。
+		if aerr := s.publisher.ActivateStagedArtifact(page.ID); aerr != nil {
+			return aerr
+		}
+		activated = true
+		hash = stagedHash
+		// 数据库侧四步（活跃指针、可选计划、旧路径取消占用、新路径路由激活）与切换同一事务：
+		// 提交即三者一致；回滚即账本仍是旧指针（FS 已换而 DB 未提交的窗口由回执收敛负责）。
+		if merr := s.model.MarkPublishedLangTx(ctx, tx, page.ProjectID, pagemodel.PublicationRecord{
+			PageID: page.ID, Lang: lang, ActivePath: path,
+			ArtifactID: stagedArt.ID, ArtifactHash: hash, PublishedAt: now,
+			// 成功身份与激活同事务落库：崩溃后收敛才能判定「这条回执已经兑现」。
+			ReceiptID: receiptSeq,
+		}); merr != nil {
+			return merr
+		}
+		if activationPlan != nil {
+			if perr := s.model.UpdatePublicationPlanRecordTx(ctx, tx, page.ID, lang, *activationPlan, page.DraftVersion, now); perr != nil {
+				return perr
+			}
+		}
+		if s.routes == nil {
+			return nil
+		}
+		if oldPath != "" && oldPath != path {
+			// 归属者必填（与 ActivateTx 对称）：DeactivateTx 在归属双空时退化成
+			// 「本工程该路径上的任一 active 行」，会把另一页已接管的旧路径删掉。
+			if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+				ProjectID: page.ProjectID, Path: oldPath, PageID: page.ID,
+			}); derr != nil {
+				return derr
+			}
+		}
+		// 锁内归属复验（跨实体判据的唯一落点）：ActivateTx 的 ON CONFLICT 归属表达式在归属者
+		// 不同时影响 0 行并返回 ErrRouteOccupied。失败必须整体回滚 —— 此时 FS 已切到本页产物，
+		// 但路由仍归别人，继续提交会写出「账本说是本页、路由说是别人的」。回滚后 activated=true
+		// 走 keepPending 分支，收敛按「链接身份 + 账本归属」重判。
+		if _, aerr := s.routes.ActivateTx(ctx, tx, &pubcontract.ActivateReq{
+			ProjectID: page.ProjectID, Path: path, PageID: page.ID, ArtifactID: stagedArt.ID,
+		}); aerr != nil {
+			return fmt.Errorf("访问面已切换但路径归属复验失败（另一实体已接管该路径）: %w", aerr)
+		}
+		// 旧路径的处置（路由条件写 + 符号链接解除）**不在这段事务里**：
+		// commitOldPathSettle 会先做条件写、**自行提交**，然后才动文件系统。若把它
+		// 塞在返回前，外层提交点就落在它的 FS 之后 —— 「链接已撤、路由行回滚」且没有
+		// 任何回执能重放这段。挪到提交之后（见下方 withPaths 段），与 update_url 的
+		// settleOldPathLocked 同一形状。
+		return nil
+	})
+	if txErr != nil {
+		if !activated {
+			// 访问面没换：DB 已整体回滚，属于无副作用失败，显式结案为已回滚。
+			s.abortPublishReceipt(ctx, receiptID, "提交段未切换访问面")
+			logger.Scene("publication").With("pageId", page.ID).Error(txErr, "发布失败（访问面未切换）")
+			return nil, mapPublishError(txErr)
+		}
+		// FS 已激活而 DB 事务回滚：线上已生效、账本落后。**不做锁外 rename from 补偿**
+		// （那会覆盖锁外已经成功的并发激活者，裁定 R2/§2.5）；保留 pending，由收敛例程
+		// 在实体锁内按「链接身份 + DB 归属 + 版本」判定向前完成还是入队重建。
 		s.keepPublishReceiptPending(receiptID, "DB 激活状态写入失败")
 		logger.Scene("publication").With("pageId", page.ID).With("hash", hash).
-			Error(aerr, "发布 FS 已激活，但 DB 激活状态事务失败（线上已生效，重试可收敛）")
-		return nil, fmt.Errorf("发布已生效但数据库状态同步失败: %w", aerr)
+			Error(txErr, "发布 FS 已激活，但 DB 激活状态事务失败（线上已生效，交收敛判定）")
+		return nil, fmt.Errorf("发布已生效但数据库状态同步失败: %w", txErr)
 	}
-	// 旧路径的访问面符号链接必须另行解除：/site 直接服务 active 目录的文件系统状态，
-	// 只删 DB 路由行会让旧 URL 继续输出旧产物（同页双 active 占用），且此后没有任何
-	// 入口能查到该清哪个链接 —— 与页面删除同一根因。这一步在事务之外（文件系统），
-	// 失败保持回执 pending，由启动恢复重放（补链接删除是幂等的）。
+	// 旧路径处置：DB 已提交（== 账本与指针已是新路径），这里**重新取同实体锁 + 路径锁**
+	// 复核归属后处置旧路径（DB 条件写已由 commitOldPathSettle 自行提交，FS 在其后）。
+	//
+	// 失败只保留 pending：访问面与库都已一致，处置可重放；报失败会让调用方重试并再切
+	// 一次访问面。被别的归属者接管则什么都不做（errOldPathTaken，归它负责）。
 	if s.routes != nil && oldPath != "" && oldPath != path {
-		if derr := s.deactivatePaths([]string{oldPath}); derr != nil {
-			s.keepPublishReceiptPending(receiptID, "解除旧路径访问面激活失败")
-			logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前解除旧路径访问面激活失败")
-			return nil, derr
+		if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, path, oldPath, false); derr != nil {
+			if errors.Is(derr, errOldPathTaken) {
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
+					Warn("发布后旧路径已不归本页：不处置（由当前归属者负责）")
+			} else {
+				s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
+					Error(derr, "发布后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+			}
 		}
 	}
 
@@ -732,37 +833,80 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		Action:    pubcontract.ReceiptActionRollback,
 		ProjectID: page.ProjectID, PageID: page.ID, Path: targetArt.CanonicalPath, Lang: lang,
 		FromArtifactID: fromArtifactID, ToArtifactID: targetArt.ID, OldPath: oldPath,
+		CapturedInputVersion: page.InputVersion,
+		FromReceiptID:        s.capturedFromReceiptID(ctx, page.ProjectID, page.ID, lang),
 	})
 	if rerr != nil {
 		return nil, rerr
 	}
-	if err = s.publisher.Rollback(page.ID, req.TargetHash); err != nil {
-		// 内核保证「激活失败线上保持不变」，属于可判定的无副作用失败：显式结案，不留给
-		// 启动恢复一个假 pending。
-		s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
-		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚失败")
-		return nil, mapPublishError(err)
+	receiptSeq, seqErr := parseReceiptID(receiptID)
+	if seqErr != nil {
+		s.abortPublishReceipt(ctx, receiptID, "回执 id 无法解析为数值身份")
+		return nil, ErrPublishLedgerUnavailable
 	}
 
+	// 提交段与发布同构（§2.8：rollback 是同实体激活入口之一）。
+	//
+	// 回滚不重新编译，所以「输入是否过期」不决定它能否上线（用户就是要回到旧版本）——
+	// 但**锁仍然必须有**：回滚与发布同时对同一页操作时，两者都在改同一条链接与同一行
+	// 账本，没有锁时后写者会把前者的结果覆盖成互相矛盾的组合（链接是他的、指针是我的）。
 	now := time.Now().UTC()
-	// 数据库三步同事务（活跃指针 + 旧路径取消占用 + 目标路径路由激活）。
-	if aerr := s.applyRollback(ctx, rollbackApplyInput{
-		Page: page, Lang: lang, TargetPath: targetArt.CanonicalPath,
-		TargetID: targetArt.ID, TargetHash: targetArt.ArtifactHash, OldPath: oldPath,
-	}); aerr != nil {
-		// FS 已切到历史产物（线上已生效）：保留 pending，交启动恢复补齐数据库状态。
+	rolledBack := false
+	txErr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID); lerr != nil {
+			return lerr
+		}
+		// 故障注入点（测试用；生产恒 nil）：锁已持、访问面尚未切换。
+		if ferr := s.publishWindowFaultHit(); ferr != nil {
+			return ferr
+		}
+		if rerr := s.publisher.Rollback(page.ID, req.TargetHash); rerr != nil {
+			return rerr
+		}
+		rolledBack = true
+		// 数据库三步与切换同一事务（活跃指针 + 旧路径取消占用 + 目标路径路由激活）。
+		if aerr := s.applyRollbackTx(ctx, tx, page.ProjectID, pagemodel.PublicationRecord{
+			PageID: page.ID, Lang: lang, ActivePath: targetArt.CanonicalPath,
+			ArtifactID: targetArt.ID, ArtifactHash: targetArt.ArtifactHash, PublishedAt: now,
+			// 回滚也是成功激活：账本上的成功身份必须是这条回执。
+			ReceiptID: receiptSeq,
+		}, oldPath); aerr != nil {
+			return aerr
+		}
+		// 回滚到不同路径的历史产物时，旧路径的访问面链接必须一并解除：/site 直接服务
+		// active 目录的文件系统状态，残留链接会继续输出旧产物。
+		//
+		// 但处置**不在这段事务里**：commitOldPathSettle 先做条件写并自行提交，然后才动
+		// 文件系统。留在返回前会让外层提交点落在 FS 之后（链接已撤、路由行回滚，且没有
+		// 回执能重放）。挪到提交之后（见下方 withPaths 段），与 update_url 同形。
+		return nil
+	})
+	if txErr != nil {
+		if !rolledBack {
+			s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
+			logger.Scene("page").With("pageId", page.ID).Error(txErr, "回滚失败（访问面未切换）")
+			return nil, mapPublishError(txErr)
+		}
+		// FS 已切到历史产物而 DB 回滚：线上已生效、账本落后。保留 pending 交收敛，
+		// 不做锁外补偿（与发布同一理由，裁定 R2/§2.5）。
 		s.keepPublishReceiptPending(receiptID, "DB 激活状态写入失败")
 		logger.Scene("page").With("pageId", page.ID).With("hash", req.TargetHash).
-			Error(aerr, "回滚 FS 已激活，但 DB 激活状态事务失败（线上已生效，重试可收敛）")
-		return nil, fmt.Errorf("回滚已生效但数据库状态同步失败: %w", aerr)
+			Error(txErr, "回滚 FS 已激活，但 DB 激活状态事务失败（线上已生效，交收敛判定）")
+		return nil, fmt.Errorf("回滚已生效但数据库状态同步失败: %w", txErr)
 	}
-	// 回滚到不同路径的历史产物时，旧路径的访问面链接必须另行解除（DB 行已在事务里
-	// 取消占用）：/site 直接服务 active 目录的文件系统状态，残留链接会继续输出旧产物。
+	// 旧路径处置：DB 已提交，这里重新取实体锁 + 路径锁复核归属后处置旧路径
+	// （路由条件写由 commitOldPathSettle 自行提交，FS 在其后）。失败只保 pending：
+	// 访问面与库都已一致，处置可重放。
 	if s.routes != nil && oldPath != "" && oldPath != targetArt.CanonicalPath {
-		if derr := s.deactivatePaths([]string{oldPath}); derr != nil {
-			s.keepPublishReceiptPending(receiptID, "解除旧路径访问面激活失败")
-			logger.Scene("page").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "回滚前解除旧路径访问面激活失败")
-			return nil, derr
+		if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, targetArt.CanonicalPath, oldPath, false); derr != nil {
+			if errors.Is(derr, errOldPathTaken) {
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
+					Warn("回滚后旧路径已不归本页：不处置（由当前归属者负责）")
+			} else {
+				s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
+					Error(derr, "回滚后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+			}
 		}
 	}
 	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
@@ -1355,59 +1499,74 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		FromArtifactID: s.publishedArtifactIDOf(ctx, page, lang),
 		OldPath:        publishedPath,
 		Redirect:       req.WithRedirect,
+		// 改 URL 同样携带捕获代次：收敛要用它判断新路径上的产物是否还是最新一代输入。
+		CapturedInputVersion: page.InputVersion,
+		FromReceiptID:        s.capturedFromReceiptID(ctx, page.ProjectID, page.ID, lang),
 	})
 	if rerr != nil {
 		return nil, rerr
 	}
-	if _, err = s.publisher.UpdateURL(ctx, page.ID, kernelNewPath, req.WithRedirect); err != nil {
-		// 内核保证「构建失败不激活、激活失败线上不变」（pipeline.Publisher.UpdateURL
-		// 的各错误分支都在 publishLocked 之前）：属于可判定的无副作用失败，显式结案，
-		// 不留给启动恢复一个假 pending。
-		s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
-		logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改失败")
-		return nil, mapPublishError(err)
+	receiptSeq, seqErr := parseReceiptID(receiptID)
+	if seqErr != nil {
+		s.abortPublishReceipt(ctx, receiptID, "回执 id 无法解析为数值身份")
+		return nil, ErrPublishLedgerUnavailable
 	}
-	st, _ := s.publisher.Status(page.ID)
+	// **整段切换到提交都在同一把路径锁内**：publisher.UpdateURL 里的激活与旧路径处置
+	// 各自只取一次锁，锁一放，另一实体就能在「路由 DB 还没写」的窗口里把这把路径抢走并
+	// 提交 —— 我们的 ActivateTx 随后影响 0 行（被察觉）或落到别人后面（被覆盖）。
+	// 同一把锁把「FS 切换 → 产物归档 → 路由 DB 提交」串成一个不可交错的段；
+	// 锁序仍是 实体锁（事务内）→ 路径锁，与主链一致。
+	var st *pipeline.Status
+	var artifactRowID string
+	var deps []pipeline.Dependency
+	var updated bool
+	var txErr error
+	lockErr := s.withPaths([]string{kernelNewPath, publishedPath}, func() error {
+		if _, uerr := s.publisher.UpdateURL(ctx, page.ID, kernelNewPath, req.WithRedirect); uerr != nil {
+			// 内核保证「构建失败不激活、激活失败线上不变」（pipeline.Publisher.UpdateURL
+			// 的各错误分支都在 publishLocked 之前）：属于可判定的无副作用失败，显式结案，
+			// 不留给启动恢复一个假 pending。
+			s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
+			logger.Scene("page").With("pageId", page.ID).Error(uerr, "URL 修改失败")
+			return uerr
+		}
+		st, _ = s.publisher.Status(page.ID)
+		// 产物归档与数据库提交段仍在同一把路径锁内：一旦在切完 FS 之后放锁，另一实体
+		// 就能在这段里抢走路由行并提交 —— 我们的 ActivateTx 随后要么影响 0 行（被察觉）
+		// 要么排在别人后面（覆盖）。锁序仍是 实体锁（事务内）→ 路径锁，与主链一致。
+		var aerr error
+		artifactRowID, deps, aerr = s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON, lang)
+		if aerr != nil {
+			// FS 已切到新路径：保留 pending，恢复流程会用同一份源文档重做归档。
+			s.keepPublishReceiptPending(receiptID, "产物归档失败")
+			logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(aerr, "URL 修改后产物归档失败")
+			return fmt.Errorf("产物归档失败: %w", aerr)
+		}
+		updated, txErr = s.updateURLCommitUnderLock(ctx, page, lang, st, kernelNewPath, newPath, oldPath,
+			publishedPath, req.WithRedirect, routeLangs, plan, persistPlan, receiptID, receiptSeq, artifactRowID, deps)
+		return nil
+	})
+	if lockErr != nil {
+		return nil, mapPublishError(lockErr)
+	}
 
-	// 新产物归档换取 page_artifacts 行 ID：路由 artifact_id 是 uuid 列，
-	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
-	// 归档源文档用内核构建输入（st.DocumentJSON，即活动产物冻结源文档），
-	// 与 restoreKernelForUpdate 的编译输入一致（H4）。
-	artifactRowID, deps, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON, lang)
-	if err != nil {
-		// FS 已切到新路径：保留 pending，恢复流程会用同一份源文档重做归档。
-		s.keepPublishReceiptPending(receiptID, "产物归档失败")
-		logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(err, "URL 修改后产物归档失败")
-		return nil, err
+	if txErr != nil {
+		if handled := s.settleUpdateURLFailure(ctx, page, lang, kernelNewPath, receiptID, updated, txErr); handled != nil {
+			return nil, handled
+		}
 	}
-
-	// 数据库各步收在**一个事务**里（applyUpdateURL 与启动恢复共用同一段实现）：
-	// draft_path 迁移、该语言激活路径迁移、各语言 reserved 路由改名、新路径路由激活、
-	// 旧路径处置（301 或取消激活）、依赖记录同步。任一步失败整体回滚 + 回执保持
-	// pending，由启动恢复按链接的实际指向补齐。
-	activationPlan := (*pipeline.PublicationPlan)(nil)
-	if persistPlan {
-		activationPlan = &plan
-	}
-	if err = s.applyUpdateURL(ctx, updateURLApplyInput{
-		Page: page, ArtifactRowID: artifactRowID, ArtifactHash: activeHashOf(st), Lang: lang,
-		KernelNewPath: kernelNewPath, NewLogicalPath: newPath,
-		OldLogicalPath: oldPath, OldKernelPath: publishedPath,
-		WithRedirect: req.WithRedirect, Deps: deps, RouteLangs: routeLangs,
-		Plan: activationPlan,
-	}); err != nil {
-		s.keepPublishReceiptPending(receiptID, "DB 状态写入失败")
-		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).
-			Error(err, "URL 修改 FS 已切换，但 DB 事务失败（线上已生效，恢复会补齐）")
-		return nil, fmt.Errorf("URL 修改已生效但数据库状态同步失败: %w", err)
-	}
-	// 旧路径的访问面处置（跨系统动作，事务之外）：非重定向时解除链接，重定向时重放
-	// 同一份 301 产物 —— 内核那一步失败只记日志，不在这里重放就会留下「DB 说
-	// redirect、FS 还指着旧页面」的错位。两步都幂等；失败保持 pending，恢复会重放。
-	if derr := s.settleOldPath(kernelNewPath, publishedPath, req.WithRedirect); derr != nil {
-		s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
-		logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).Error(derr, "旧 URL 访问面处置失败")
-		return nil, derr
+	// 旧路径访问面处置：数据库已提交（主提交那段不再动文件系统），这里**重取同实体锁**、
+	// 锁内复核归属后执行。失败只保留 pending —— 数据库已经是对的状态，处置可以重放，
+	// 报失败会让调用方以为改 URL 没成功而去重试，重试会再切一次访问面。
+	if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, kernelNewPath, publishedPath, req.WithRedirect); derr != nil {
+		if errors.Is(derr, errOldPathTaken) {
+			logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).
+				Warn("改 URL 完成后旧路径已不归本页：不处置（由当前归属者负责）")
+		} else {
+			s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
+			logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).
+				Error(derr, "改 URL 后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+		}
 	}
 	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
 		logger.Scene("page").With("pageId", page.ID).With("receiptId", receiptID).
@@ -1445,6 +1604,100 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 		return page.ActivePathValue(), nil
 	}
 	return "", nil
+}
+
+// updateURLCommitUnderLock 是改 URL 的数据库提交段：调用方必须**已持有新/旧路径的
+// 路径锁**（见 UpdateURL），函数内部再取同实体行锁，锁序为实体锁 → 路径锁，
+// 与主链发布一致。返回 updated 表示「数据库步骤全部执行过」，txErr 是提交段的
+// 真实错误；两者都不代表提交成功 —— 提交发生在 TransactionScoped 返回时，
+// 调用方据 updated 才可判定是否「已生效但同步失败」。
+func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.PageEntity, lang string, st *pipeline.Status, kernelNewPath, newPath, oldPath, publishedPath string, withRedirect bool, routeLangs []string, plan pipeline.PublicationPlan, persistPlan bool, receiptID string, receiptSeq int64, artifactRowID string, deps []pipeline.Dependency) (updated bool, txErr error) {
+	// 数据库各步收在**一个事务**里（applyUpdateURL 与启动恢复共用同一段实现）：
+	// draft_path 迁移、该语言激活路径迁移、各语言 reserved 路由改名、新路径路由激活、
+	// 依赖记录同步。任一步失败整体回滚。
+	activationPlan := (*pipeline.PublicationPlan)(nil)
+	if persistPlan {
+		activationPlan = &plan
+	}
+	// 锁内复验顺序固定：访问面现场 → 旧路径现状 → 输入代次 → 故障注入 → 写数据库。
+	// 每一步都是「锁外发生的动作在锁内复核」，先复核再写，失败即整体不写。
+	txErr = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		snap, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID)
+		if lerr != nil {
+			return lerr
+		}
+		// 验收读数放进锁内：内核切新路径发生在锁外，锁内可能已被别人换掉。
+		withdrawArt, withdrawHash, ok := s.updateURLArtifactAt(kernelNewPath)
+		if !ok || withdrawHash != activeHashOf(st) {
+			return errUpdateURLWithdrawn
+		}
+		// 访问面此刻若已经不在旧路径上，说明有人在我们之后又切过一次：从旧路径处置
+		// 开始就对不上，宁可放弃（回执保持 pending，由收敛按现场重新判定）。
+		if publishedPath != "" && publishedPath != kernelNewPath && s.activeArtifactHashAt(publishedPath) != "" &&
+			s.activeKindAt(publishedPath) != pipeline.PublicationRedirect && publishedPath != withdrawArt.CanonicalPath {
+			return errUpdateURLWithdrawn
+		}
+		if snap.InputVersion != page.InputVersion {
+			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+				With("captured", page.InputVersion).With("current", snap.InputVersion).
+				Warn("改 URL 放弃：捕获的输入代次已过期（期间内容或依赖变更）")
+			return ErrInputMoved
+		}
+		if ferr := s.publishWindowFaultHit(); ferr != nil {
+			return ferr
+		}
+		// 旧路径访问面处置**不在这里**：它要动文件系统，必须在数据库提交之后再取锁复核
+		// 才能做（见 settleOldPathLocked），否则就是「链接已撤、事务回滚」。
+		if aerr := s.applyUpdateURL(ctx, tx, updateURLApplyInput{
+			Page: page, ArtifactRowID: artifactRowID, ArtifactHash: activeHashOf(st), Lang: lang,
+			KernelNewPath: kernelNewPath, NewLogicalPath: newPath,
+			OldLogicalPath: oldPath, OldKernelPath: publishedPath,
+			WithRedirect: withRedirect, Deps: deps, RouteLangs: routeLangs,
+			Plan: activationPlan, ReceiptID: receiptSeq,
+		}); aerr != nil {
+			return aerr
+		}
+		updated = true
+		return nil
+	})
+	return updated, txErr
+}
+
+// settleUpdateURLFailure 把改 URL 提交段的错误翻译成回执处置与对外错误。
+// 判据只看两件事：错误类型，以及数据库步骤是否执行过（updated）。返回 nil 表示
+// 已就地处置、调用方继续往下走；返回非 nil 则直接作为接口错误。
+func (s *Service) settleUpdateURLFailure(ctx context.Context, page *pagemodel.PageEntity, lang, kernelNewPath, receiptID string, updated bool, txErr error) error {
+	switch {
+	case errors.Is(txErr, errUpdateURLWithdrawn):
+		// 访问面已不是本次改 URL 的产物：不写 DB，交收敛按现场重判。
+		s.keepPublishReceiptPending(receiptID, "新路径访问面已被别的激活替代")
+		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).
+			Warn("改 URL 放弃：锁内发现新路径上的产物已不是本次激活的那一份")
+	case !updated && errors.Is(txErr, ErrInputMoved):
+		// 输入代次已前进：DB 一个字节都没写，可判定的无副作用失败，显式结案。
+		s.abortPublishReceipt(ctx, receiptID, "捕获的输入代次已过期")
+		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).
+			Error(txErr, "URL 修改放弃（输入已变，未落定数据库）")
+	case !updated:
+		// 其它失败（锁内复验不通过 / DB 步骤失败 / 故障注入）：数据库整体没写，但访问面
+		// 已经切到新路径（内核那一步在锁外完成了）。这条回执必须留 pending 让收敛重放 ——
+		// 显式结案会留下「线上是新路径、库里是旧路径」且再没人收。
+		s.keepPublishReceiptPending(receiptID, "改 URL 提交段失败")
+		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).
+			Error(txErr, "URL 修改失败（数据库未落定，回执保持 pending 交收敛重放）")
+	default:
+		// updated = 数据库步骤全都执行过、只有提交失败：同样是「FS 已切、库没跟上」。
+		s.keepPublishReceiptPending(receiptID, "DB 状态写入失败")
+		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).
+			Error(txErr, "URL 修改 FS 已切换，但 DB 事务失败（线上已生效，恢复会补齐）")
+	}
+	if errors.Is(txErr, ErrInputMoved) || errors.Is(txErr, errUpdateURLWithdrawn) {
+		return mapPublishError(txErr)
+	}
+	if updated {
+		return fmt.Errorf("URL 修改已生效但数据库状态同步失败: %w", txErr)
+	}
+	return mapPublishError(txErr)
 }
 
 // ---- 内核记录重建辅助 ----
@@ -1575,7 +1828,7 @@ func (s *Service) applyPublishActivation(ctx context.Context, in publishActivati
 		}
 		if in.OldPath != "" && in.OldPath != in.Path {
 			if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
-				ProjectID: in.Page.ProjectID, Path: in.OldPath,
+				ProjectID: in.Page.ProjectID, Path: in.OldPath, PageID: in.Page.ID,
 			}); derr != nil {
 				return derr
 			}
@@ -1611,17 +1864,24 @@ type updateURLApplyInput struct {
 	// 可空的理由与 publishActivationInput.Plan 相同：恢复路径重放同一段实现，
 	// 而计划早已随构建落库，不该被恢复重写成「一次新的发布决策」。
 	Plan *pipeline.PublicationPlan
+	// ReceiptID 本次改 URL 的回执数值身份（写进 page_publications.receipt_id）。
+	// 主链传本次回执；恢复路径传**该回执自己**的 id —— 二者必须是同一条，否则
+	// 收敛无法判定「账本上的成功身份是不是我这条回执兑现的」。
+	ReceiptID int64
 }
 
-// applyUpdateURL 在一个事务里落定改 URL 的全部数据库状态（主链与恢复共用）。
+// applyUpdateURL 在**调用方已持有实体行锁的事务内**落定改 URL 的全部数据库状态
+// （主链与收敛共用同一段实现）。
 //
 // 五步同事务：draft_path 迁移 → 该语言激活路径迁移 → 各语言 reserved/本语言 active
-// 路由改名 → 新路径路由激活 → 旧路径处置（301 或取消激活）。
-// 顺序与语义和改动前逐条一致，区别只在于「中途失败整体回滚」——
-// 不再出现「FS 已是新 URL、pages.draft_path 与 page_routes 还在旧路径」。
-func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) error {
+// 路由改名 → 新路径路由激活 → 旧路径路由处置（301 或取消激活）。
+//
+// 事务边界不在这里：改 URL 的提交段是「锁 → 复验版本 → 旧路径处置 → 本函数 → 提交」，
+// 由调用方开事务并持有行锁（与主链发布同一框架，page_publish.go 的发布提交段）。
+// 本函数若自开事务，锁就落不到 FS 处置与指针写入之间，屏障等于没有。
+func (s *Service) applyUpdateURL(ctx context.Context, tx *gorm.DB, in updateURLApplyInput) error {
 	now := time.Now().UTC()
-	return s.model.TransactionScoped(ctx, in.Page.ProjectID, func(tx *gorm.DB) error {
+	{
 		if merr := s.model.MoveDraftPathTx(ctx, tx, in.Page.ProjectID, in.Page.ID, in.NewLogicalPath, now); merr != nil {
 			return merr
 		}
@@ -1631,6 +1891,7 @@ func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) er
 		if merr := s.model.MarkPublishedLangTx(ctx, tx, in.Page.ProjectID, pagemodel.PublicationRecord{
 			PageID: in.Page.ID, Lang: in.Lang, ActivePath: in.KernelNewPath,
 			ArtifactID: in.ArtifactRowID, ArtifactHash: in.ArtifactHash, PublishedAt: now,
+			ReceiptID: in.ReceiptID,
 		}); merr != nil {
 			return merr
 		}
@@ -1678,87 +1939,295 @@ func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) er
 			// 该函数第一个参数是 targetPath，传旧路径自身等于生成一条 A→A 的自环 301。
 			// 它落在内容寻址 store 里、从不被激活，所以线上行为一直是对的（生效的是内核那份），
 			// 代价是每工程每改一次 URL 就多一份永不使用的垃圾产物。已删除，勿再引入。
-			_, rerr := s.routes.RedirectTx(ctx, tx, &pubcontract.RedirectReq{
+			// 同为条件写：res 为 nil = 这条旧路径上已没有本页的占用行（被别人接管或从未
+			// 占用），按归属冲突返回，让外层整体回滚而不是把「切换了 redirect」当成成功。
+			res, rerr := s.routes.RedirectTx(ctx, tx, &pubcontract.RedirectReq{
 				ProjectID: in.Page.ProjectID, OldPath: in.OldKernelPath, PageID: in.Page.ID,
 			})
-			return rerr
-		}
-		return s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
-			ProjectID: in.Page.ProjectID, Path: in.OldKernelPath,
-		})
-	})
-}
-
-// rollbackApplyInput 回滚的 DB 步骤入参（主链与恢复共用）。
-type rollbackApplyInput struct {
-	Page       *pagemodel.PageEntity
-	Lang       string
-	TargetPath string
-	TargetID   string
-	TargetHash string
-	// OldPath 回滚前的线上路径（与目标路径不同才需要取消它的激活）。
-	OldPath string
-}
-
-// applyRollback 在一个事务里落定回滚的数据库状态（主链与恢复共用）。
-func (s *Service) applyRollback(ctx context.Context, in rollbackApplyInput) error {
-	now := time.Now().UTC()
-	return s.model.TransactionScoped(ctx, in.Page.ProjectID, func(tx *gorm.DB) error {
-		if merr := s.model.MarkPublishedLangTx(ctx, tx, in.Page.ProjectID, pagemodel.PublicationRecord{
-			PageID: in.Page.ID, Lang: in.Lang, ActivePath: in.TargetPath,
-			ArtifactID: in.TargetID, ArtifactHash: in.TargetHash, PublishedAt: now,
-		}); merr != nil {
-			return merr
-		}
-		if ferr := s.publishWindowFaultHit(); ferr != nil {
-			return ferr
-		}
-		if s.routes == nil {
+			if rerr != nil {
+				return rerr
+			}
+			if res == nil {
+				return fmt.Errorf("%w: %s（redirect 未命中本页占用行）", errOldPathTaken, in.OldKernelPath)
+			}
 			return nil
 		}
-		if in.OldPath != "" && in.OldPath != in.TargetPath {
+		return s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+			ProjectID: in.Page.ProjectID, Path: in.OldKernelPath, PageID: in.Page.ID,
+		})
+	}
+}
+
+// applyRollback 回滚的数据库步骤（**必须在调用方已持有实体行锁的事务内**调用）。
+//
+// 主链（Rollback）与收敛（recoverRollbackReceipt）共用这一份：两边都要「活跃指针 +
+// 旧路径取消占用 + 目标路径路由激活」同事务落定，差别只在外层的锁与判定。
+//
+// 调用方负责：拿锁（LockPageForActivationTx）、切访问面（Publisher.Rollback）、
+// 以及决定提交还是回滚。本方法只写数据库 —— model 不碰文件系统，service 编排
+// （裁定 ③）。
+func (s *Service) applyRollbackTx(ctx context.Context, tx *gorm.DB, projectID string, rec pagemodel.PublicationRecord, oldPath string) error {
+	if merr := s.model.MarkPublishedLangTx(ctx, tx, projectID, rec); merr != nil {
+		return merr
+	}
+	if s.routes == nil {
+		return nil
+	}
+	if oldPath != "" && oldPath != rec.ActivePath {
+		if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+			ProjectID: projectID, Path: oldPath, PageID: rec.PageID,
+		}); derr != nil {
+			return derr
+		}
+	}
+	_, aerr := s.routes.ActivateTx(ctx, tx, &pubcontract.ActivateReq{
+		ProjectID: projectID, Path: rec.ActivePath, PageID: rec.PageID, ArtifactID: rec.ArtifactID,
+	})
+	return aerr
+}
+
+// settleOldPathLocked 在主提交**之后**重取同实体锁，锁内复核归属后再处置旧路径。
+//
+// 为什么必须重取锁：主提交那段事务把锁放掉之后，另一条 attempt 可能已经成功激活了
+// 同一个页面（同路径、甚至同一份产物）—— 此时再按「旧路径」删链接，删掉的就是别人的
+// 现场。复验放在**锁内**，处置也在锁内做（DB 条件写 + FS），失败时事务回滚、回执保持
+// pending 重放 —— 数据库的主提交不回滚（那部分已经生效且正确）。
+//
+// page 是这次尝试的页面 id；lang 只用于日志定位。
+func (s *Service) settleOldPathLocked(ctx context.Context, pageID, projectID, newPath, oldPath string, withRedirect bool) error {
+	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
+		return nil
+	}
+	loc, perr := s.prepareOldPathSettle(newPath, oldPath, withRedirect)
+	if perr != nil {
+		return perr
+	}
+	// 锁层级（**全仓唯一顺序，不可重入**）：
+	//   实体行锁（LockPageForActivationTx，事务内）
+	//   → 路径锁（withPaths，唯一入口）
+	//     → 锁内复验（账本/身份/owner）
+	//     → FS 副作用（commitOldPathSettle 内部**不再取锁**）
+	//
+	// 顺序**必须**与主发布链一致（主链是 事务 → 实体锁 → FS）：把路径锁放到事务外层
+	// 就成了 路径锁 → 实体锁，与主链的 实体锁 → 路径锁 反向，两条链在同一对
+	// (page, path) 上并发即经典 ABBA 死锁。跨实体竞争者不受本页实体锁约束这一点，
+	// 由「实体锁内再取路径锁」覆盖 —— 路径锁的持有期仍然完整包住复验与 FS。
+	txErr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, projectID, pageID); lerr != nil {
+			return lerr
+		}
+		return s.withPaths([]string{newPath, oldPath}, func() error {
+			// 锁内复核（路径锁与实体锁同时在手）：判据是「本次的目标路径仍在账本里，
+			// 且旧路径已不在账本里」——
+			// 说明主提交那段改址确实生效了，这条旧路径才属于本次处置的对象。
+			// 两者任一不成立 = 现场已被另一条 attempt 改写，本轮不处置（归它自己处置）。
+			ledgerPaths, cerr := s.model.PublicationActivePathsTx(ctx, tx, pageID)
+			if cerr != nil {
+				return cerr
+			}
+			stillOurs := false
+			for _, p := range ledgerPaths {
+				if p == oldPath {
+					stillOurs = false
+					break
+				}
+				if p == newPath {
+					stillOurs = true
+				}
+			}
+			if !stillOurs {
+				logger.Scene("publication").With("pageId", pageID).With("newPath", newPath).
+					Warn("旧路径处置复核：账本已不指向本次目标，不处置")
+				return errOldPathTaken
+			}
+			return s.commitOldPathSettle(ctx, tx, projectID, pageID, newPath, oldPath, withRedirect, loc)
+		})
+	})
+	if txErr != nil {
+		return txErr
+	}
+	// commitOldPathSettle 已在内部提交了 DB 条件写；这里补文件系统处置。
+	//
+	// 失败语义：DB 已经落定、只有 FS 没做 —— 调用方让回执保持 pending，收敛按登记身份
+	// 重放（Deactivate 幂等、Activate 内容寻址）。不在这里回滚 DB：回滚换来的只是
+	// 「路由行回来了、链接也还在」的旧状态，而回执已经记录过这次处置的意图。
+	if ferr := s.settleOldPathFS(oldPath, withRedirect, loc); ferr != nil {
+		return fmt.Errorf("旧路径访问面处置失败 %s: %w", oldPath, ferr)
+	}
+	return nil
+}
+
+// prepareOldPathSettle 处置旧路径的第一半：**只做只读与内容寻址写入，不碰激活面**。
+//
+// 拆成两半是因为命名空间隔离不能靠「先决定、再动手」：决定与动手之间若被别的
+// attempt 抢先，动的就不是它该动的那一行。落盘重定向产物是内容寻址的幂等写
+// （同内容同 hash，不会改变任何可见状态），可以先做；真正的激活/取消由
+// commitOldPathSettle 在契约事务里按**条件写**完成。
+func (s *Service) prepareOldPathSettle(newPath, oldPath string, withRedirect bool) (*pipeline.Locator, error) {
+	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
+		return nil, nil
+	}
+	if !withRedirect {
+		return nil, nil
+	}
+	if s.store == nil || s.publication == nil {
+		return nil, nil
+	}
+	ra, rerr := pipeline.NewRedirectArtifact(newPath, 301)
+	if rerr != nil {
+		return nil, rerr
+	}
+	loc, perr := s.store.PutRedirect(ra)
+	if perr != nil {
+		return nil, perr
+	}
+	return &loc, nil
+}
+
+// errOldPathTaken 旧路径此刻已不属于「按预期处置的那一方」（被别的页面/实例占用，
+// 或已被别的 attempt 改写）。不是失败：调用方据此判 superseded，只结案不写。
+var errOldPathTaken = errors.New("旧路径已被其它归属者占用或改写")
+
+// containsPath 判路径是否在集合里（路由清单是 []string，量级极小，线性扫即可）。
+func containsPath(paths []string, path string) bool {
+	for _, p := range paths {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
+// commitOldPathSettle 处置旧路径的第二半：在调用方事务内先做**条件写**核对命名空间
+// 归属，再在该事务持有期内执行文件系统处置。
+//
+// 为什么必须条件写：本实体锁只锁住「自己这一页」，防不住另一页在这期间抢走旧路径
+// （page_id 不同，行锁管不到）。清理/改写别人的行比不动它更糟 —— 所以这里用
+// route_kind + 归属者做前置条件，影响 0 行即判 errOldPathTaken，绝不「先删再说」。
+//
+// 顺序：DB 条件写 → FS。FS 失败时事务回滚，命名空间回到处置前，回执保持 pending 重放。
+func (s *Service) commitOldPathSettle(ctx context.Context, tx *gorm.DB, projectID, pageID, newPath, oldPath string,
+	withRedirect bool, loc *pipeline.Locator) error {
+	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
+		return nil
+	}
+	// 顺序：先做 DB 条件写（归属不复验由调用方在锁内完成），**再单独提交**事务，
+	// 最后才动文件系统。
+	//
+	// 为什么 FS 不能在这个事务内执行：事务的提交发生在函数返回之后，而路径锁由调用方
+	// 的 withPaths 持有 —— 那个人为的窗口是「DB 已条件写但未提交、FS 已改」，提交失败
+	// 就留下「链接已撤、路由行还在」且无回执可重放。先把条件写的结论落盘（Commit），
+	// FS 只在提交成功之后做：失败时留下的是「路由行已处置、链接还在」，由回执
+	// pending 重放（幂等 Deactivate / 内容寻址 Activate）收敛，方向一致。
+	if err := s.settleRouteWrite(ctx, tx, projectID, pageID, oldPath, withRedirect); err != nil {
+		return err
+	}
+	if tx != nil {
+		if cerr := tx.Commit().Error; cerr != nil {
+			return cerr
+		}
+	}
+	// FS 副作用：**本函数不取路径锁** —— 调用方 settleOldPathLocked 已在最外层持
+	// {newPath, oldPath} 两把，且 DB 条件写与 FS 共享同一次持锁期。此处再取会命中同一
+	// 分片（sync.Mutex 不认识 goroutine）→ 永久自锁。契约：本函数必须在 settleOldPathLocked
+	// 的 withPaths 内被调用。
+	return s.settleOldPathFS(oldPath, withRedirect, loc)
+}
+
+// settleRouteWrite 旧路径的**数据库条件写**（本页占用行改 redirect 或释放）。
+//
+// 拆出来是为了让"条件写的结论先提交、文件系统处置在后"这两段的边界显式可见：
+// 把 FS 塞进同一个事务函数里，提交点就落在 FS 之后了。
+func (s *Service) settleRouteWrite(ctx context.Context, tx *gorm.DB, projectID, pageID, oldPath string, withRedirect bool) error {
+	if s.routes != nil {
+		if withRedirect {
+			// 只把**本页**的占用行（active 或 reserved）改成 redirect。
+			//
+			// RedirectTx 返回 (res, err)：res 为 nil 说明这条路径当前**没有**本页可切换的
+			// 占用行 —— 归属已被别人拿走（RedirectInTx 的 UPDATE 带归属条件，影响 0 行后
+			// 才会走 INSERT，撞唯一约束则报 ErrRouteOccupied；两种结局都不会静默成功）。
+			// 这里把「res 为空」也判成归属冲突而不是当成功继续往下做 FS：继续做会删掉 /
+			// 覆盖别人刚接管的链接。
+			res, rerr := s.routes.RedirectTx(ctx, tx, &pubcontract.RedirectReq{
+				ProjectID: projectID, OldPath: oldPath, PageID: pageID,
+			})
+			if rerr != nil {
+				return rerr
+			}
+			if res == nil {
+				return fmt.Errorf("%w: %s（redirect 未命中本页占用行）", errOldPathTaken, oldPath)
+			}
+		} else {
+			// 只删**本页**的 active 行。DeactivateTx 是 Delete：影响 0 行静默成功，
+			// 因此删之前必须先确认这条路径**现在仍归本页**（否则删的就是别人刚上线的行）。
+			owned, oerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
+				ProjectID: projectID, PageID: pageID,
+			})
+			if oerr != nil {
+				return oerr
+			}
+			if !containsPath(owned, oldPath) {
+				return fmt.Errorf("%w: %s", errOldPathTaken, oldPath)
+			}
 			if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
-				ProjectID: in.Page.ProjectID, Path: in.OldPath,
+				ProjectID: projectID, Path: oldPath, PageID: pageID,
 			}); derr != nil {
 				return derr
 			}
 		}
-		_, aerr := s.routes.ActivateTx(ctx, tx, &pubcontract.ActivateReq{
-			ProjectID: in.Page.ProjectID, Path: in.TargetPath, PageID: in.Page.ID, ArtifactID: in.TargetID,
-		})
-		return aerr
-	})
+	}
+	return nil
 }
 
-// settleOldPath 处置旧路径的**访问面**状态（跨系统补偿：文件系统，事务边界之外）。
+// settleOldPathFS 旧路径的**文件系统处置**（提交之后执行，由调用方持路径锁）。
 //
-// 幂等 + 可重放：非重定向直接删链接（未激活时 Deactivate 返回 nil）；重定向重放
-// 同一份 301 产物并重新激活（内容寻址，重复 Put 是 no-op）。失败时把错误交回调用方，
-// 让回执保持 pending —— 下次启动重放同一段补齐，而 DB 那几步是幂等的。
-func (s *Service) settleOldPath(newPath, oldPath string, withRedirect bool) error {
-	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
-		return nil
-	}
+// 单独成函数而不是内联进 settleRouteWrite：那两段之间必须有一次提交（见
+// commitOldPathSettle 的注释），把 FS 留在「写库函数」里会让边界看起来像同一笔事务。
+// 契约（不可重入）：只允许在调用方的 withPaths 内调用，本函数不取路径锁。
+func (s *Service) settleOldPathFS(oldPath string, withRedirect bool, loc *pipeline.Locator) error {
 	if !withRedirect {
-		return s.deactivatePaths([]string{oldPath})
-	}
-	if s.store == nil || s.publication == nil {
+		if s.publication == nil {
+			return nil
+		}
+		if derr := s.publication.Deactivate(oldPath); derr != nil {
+			return fmt.Errorf("解除访问面激活失败 %s: %w", oldPath, derr)
+		}
 		return nil
 	}
-	ra, rerr := pipeline.NewRedirectArtifact(newPath, 301)
-	if rerr != nil {
-		return rerr
+	if loc == nil || s.publication == nil {
+		return nil
 	}
-	loc, perr := s.store.PutRedirect(ra)
-	if perr != nil {
-		return perr
-	}
-	if aerr := s.publication.Activate(oldPath, loc); aerr != nil {
+	if aerr := s.publication.Activate(oldPath, *loc); aerr != nil {
 		return aerr
 	}
-	logger.Scene("page").With("oldPath", oldPath).With("newPath", newPath).
-		Info("旧路径的 301 已重放（改 URL 恢复）")
+	logger.Scene("page").With("oldPath", oldPath).Info("旧路径的 301 已落盘并激活")
 	return nil
+}
+
+// InspectPublicationPath 读一条访问路径当前的定位器（provider:key），供用例断言
+// "重定向删除后链接是否真的不在了"。运维/测试能力不进服务契约，走类型断言。
+// 返回 ("", false) 表示这条路径上没有任何激活产物。
+func (s *Service) InspectPublicationPath(path string) (string, bool) {
+	if s == nil || s.publication == nil {
+		return "", false
+	}
+	st, err := s.publication.Inspect(path)
+	if err != nil || st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+		return "", false
+	}
+	return strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key), true
+}
+
+// activeKindAt 读路径当前的激活种类（未激活 / 读不到时为空串）。
+func (s *Service) activeKindAt(path string) string {
+	if s == nil || s.publication == nil {
+		return ""
+	}
+	state, err := s.publication.Inspect(path)
+	if err != nil || state == nil {
+		return ""
+	}
+	return state.Kind
 }
 
 // activeArtifactHashAt 读路径当前激活产物的 hash（未激活 / 重定向 / 读不到时为空串）。
@@ -1830,53 +2299,256 @@ func (s *Service) ensureUpdateURLArtifactRow(ctx context.Context, page *pagemode
 	return rowID, deps, nil
 }
 
-// recoverSwitchActiveReceipt 补齐「发布：FS 已切、DB 没跟上」的回执。
+// recoverSwitchActiveReceipt 收敛「发布：FS 已切、DB 可能没跟上」的回执。
 //
-// 判定证据：路径上的符号链接确实指向本次要激活的产物（hash 相等）。
-// 证据不足一律走回滚分支（只结案、不动数据库）——判定错会写出错误的活跃指针。
+// 判定必须按 §2.7.2 的四步走，且**全部在同一个实体行锁内**（G1）：锁外读链接再写数据库
+// 的写法在「读到之后、写入之前」被别人成功激活时会把那个成功结果覆盖掉（裁定 R2/R3）。
+//
+//	G1 锁：LockPageForActivationTx 拿 pages 行锁，此后同实体的其它激活入口排队；
+//	G2 版本：回执捕获的输入代次 vs 当前值 —— 决定这次激活的产物是否已过期；
+//	G3 链接身份：路径上的符号链接是否指向**本回执自己的**产物（ownArtifactID 的 hash），
+//	   而不是「DB 里是谁」（那是 G4）；
+//	G4 DB 归属：page_publications 该语言的 artifact_id 是否仍等于 from（没被别的成功者替代）。
+//
+// 结论只有三种：
+//
+//	· G3 与 G4 双命中（链接是我的、账本还是 from）→ 向前完成，落 DB 并结案；
+//	· 链接是我的、账本已被别人写走（G4 落空）→ superseded：本次不写任何 DB，只结案；
+//	· 版本已过期但链接仍是我的旧产物（G2 落空 + G3 命中）→ **不能只结案**：线上正跑着过期
+//	  字节，必须入队重建让队列收敛（§2.7.3）；入队失败则保留 pending 等下一轮。
+//
+// 链接不是我的（G3 落空）→ 本次激活从未生效：账本保持原样，只结案为回滚。
 func (s *Service) recoverSwitchActiveReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
-	actualHash := s.activeArtifactHashAt(item.Path)
-	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
-	if herr != nil {
-		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
-		return false, nil
-	}
-	if actualHash == "" || expectedHash == "" || actualHash != expectedHash {
-		// 切换没发生（或指向的还是旧产物）：数据库保持原样即可，只结案。
-		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
-			With("actual", actualHash).With("expected", expectedHash).
-			Warn("未结案的发布回执判定为「未生效」，标记回滚")
-		s.abortPublishReceipt(ctx, item.ID, "访问面未指向本次产物")
-		return false, nil
-	}
+	// expectedVersion 是「本次激活当时捕获的输入代次」，直接取回执登记时落下的事实。
+	//
+	// 0 = 未知（旧回执 / 调用方不提供）：G2 按「仍有效」放行 —— 把未知当过期会让所有
+	// 旧回执永远停在 pending，比放过一次更糟。非 0 才是可比的版本事实。
+	expectedVersion := item.CapturedInputVersion
 	page, perr := s.locatePageInProjects(ctx, item.SourceID)
 	if perr != nil {
 		s.abortPublishReceipt(ctx, item.ID, "页面不存在")
 		return false, nil
 	}
-	if err := s.applyPublishActivation(ctx, publishActivationInput{
-		Page: page, Lang: buildLang(item.Lang), Path: item.Path,
-		ArtifactID: item.ToArtifactID, ArtifactHash: expectedHash, OldPath: item.OldPath,
-	}); err != nil {
-		return false, err
+	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
+	if herr != nil || expectedHash == "" {
+		// 产物行缺失时无法证明链接指向「我的」那一份：保守结案，不动 DB。
+		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
+		return false, nil
+	}
+	// G3 初判（锁外）：链接不是本次产物 → 本次激活没生效，账本保持原样。锁内会再读一次。
+	if s.activeArtifactHashAt(item.Path) != expectedHash {
+		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
+			With("expected", expectedHash).Warn("未结案的发布回执判定为「未生效」，标记回滚")
+		s.abortPublishReceipt(ctx, item.ID, "访问面未指向本次产物")
+		return false, nil
+	}
+	lang := buildLang(item.Lang)
+	// ownSeq 是「这条回执自己的身份」：账本上记的若也是它，说明这次激活已经兑现过
+	// （重复结案，幂等）；记的是别的正数，说明是别人兑现的。解析失败不静默归零 ——
+	// 0 会被读成「历史行」，那正好是本次要消灭的歧义。
+	ownSeq, seqErr := parseReceiptID(item.ID)
+	if seqErr != nil {
+		return false, seqErr
+	}
+	converged, superseded, expired := false, false, false
+	// versionAtLock 锁内读到的输入代次，只用于日志（判定用的是锁内快照本身）。
+	var versionAtLock int64
+	txErr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		// G1：实体行锁。此后同实体的激活入口（主链 / 队列 / 回滚 / 收敛）全部排队。
+		snap, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID)
+		if lerr != nil {
+			return lerr
+		}
+		// G4：账本该语言的当前产物（from 侧事实）与成功身份（哪条回执兑现的）。
+		curID, cerr := s.model.PublicationArtifactIDTx(ctx, tx, page.ID, lang)
+		if cerr != nil {
+			return cerr
+		}
+		curSeq, serr := s.model.PublicationReceiptIDTx(ctx, tx, page.ID, lang)
+		if serr != nil {
+			return serr
+		}
+		// G3 权威读数（锁内再读一次：锁外那次之后链接可能已被别人换掉）。
+		if s.activeArtifactHashAt(item.Path) != expectedHash {
+			superseded = true
+			return nil
+		}
+		if curID != "" && curID != item.FromArtifactID {
+			// 账本已被别的成功激活写走：写下去会覆盖那个更新且正确的状态（裁定 R2）。
+			superseded = true
+			return nil
+		}
+		// G4b：成功身份核验。同产物、同版本也可能已被**别的回执**成功激活过，
+		// 所以版本相等不构成「这次是我兑现的」证据。但也不能反过来把「账本上不是我的 id」
+		// 一律当成被别人取代 —— 崩溃窗口里账本记的往往是**前一次**的成功身份。
+		//
+		// 判据因此分两种前态（见 receiptIdentityVerdict）：
+		//   - 账本上是我自己的 id：已经落过账，幂等前向补齐；
+		//   - 账本上仍是我出发时的身份（FromReceiptID 精确相等，含 "0"）：没人动过，允许补齐；
+		//   - 其它：一个**新的**成功身份 → 我确实被取代了。
+		// FromReceiptID 为空（历史回执 / 未记录）时退回「身份未知」口径：只在账本出现
+		// 与 own 不同的**非零**身份时判 superseded —— 保守但不误杀。
+		switch receiptIdentityVerdict(item.FromReceiptID, ownSeq, curSeq) {
+		case identitySuperseded:
+			logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+				With("ledgerReceiptId", curSeq).With("fromReceiptId", item.FromReceiptID).
+				Warn("账本上的成功身份属于另一条回执：本次判定为已被替代")
+			superseded = true
+			return nil
+		}
+		// G2：输入代次（expectedVersion 的来由与「未知」的处理见函数头注释）。
+		versionAtLock = snap.InputVersion
+		if expectedVersion > 0 && snap.InputVersion != expectedVersion {
+			// 版本过期但链接仍是我的旧产物：线上正跑过期字节，不能只结案（§2.7.3），
+			// 交回外层入队重建。
+			expired = true
+			return nil
+		}
+		written, werr := s.model.WritePageForwardCompletionTx(ctx, tx, page.ProjectID, pagemodel.PublicationRecord{
+			PageID: page.ID, Lang: lang, ActivePath: item.Path,
+			ArtifactID: item.ToArtifactID, ArtifactHash: expectedHash, PublishedAt: time.Now().UTC(),
+			// 前向完成同样是一次成功激活：账本上的成功身份必须记成本条回执。
+			ReceiptID: ownSeq,
+		}, snap.InputVersion, item.FromArtifactID)
+		if werr != nil {
+			return werr
+		}
+		if !written {
+			// 谓词未命中（页面已删 / 版本被推进 / 账本被替代）：不冒充成功。
+			superseded = true
+			return nil
+		}
+		// 旧路径处置不在这段事务里：commitOldPathSettle 自己做条件写并**自行提交**，
+		// 然后才动文件系统（提交在 FS 之前）。留在返回前会让外层提交点落在 FS 之后，
+		// 回滚就留下「链接已撤、路由行还在」。处置在提交之后执行（见下方 withPaths 段）。
+		converged = true
+		return nil
+	})
+	if txErr != nil {
+		return false, txErr
+	}
+	if superseded {
+		logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+			Warn("发布回执判定为已被替代：不写数据库，只结案")
+		s.abortPublishReceipt(ctx, item.ID, "本次激活已被替代")
+		return false, nil
+	}
+	if expired || !converged {
+		// 版本过期而 own 链接仍在线：入队重建把线上收敛到最新输入；入队不成功则保留
+		// pending，让下一轮收敛再来（回执不丢，问题不静默）。
+		if s.enqueueStalePageRebuild(ctx, page) {
+			logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+				With("captured", expectedVersion).With("actual", versionAtLock).
+				Warn("发布回执的产物已过期（own 链接仍在线），已入队重建")
+			s.abortPublishReceipt(ctx, item.ID, "产物已过期，已入队重建")
+			return false, nil
+		}
+		s.keepPublishReceiptPending(item.ID, "产物已过期但未入队，等待重建收敛")
+		return false, nil
+	}
+	// 旧路径处置在提交之后、重新取同一实体锁与路径锁内完成（与主链同形）。
+	// DB 已一致，处置失败只让回执保 pending，下一轮收敛重放。
+	if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, item.Path, item.OldPath, false); derr != nil && !errors.Is(derr, errOldPathTaken) {
+		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
+		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
+			Error(derr, "收敛补齐后旧路径处置失败（回执留 pending 重放）")
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
 	}
-	if serr := s.settleOldPath(item.Path, item.OldPath, false); serr != nil {
-		return false, serr
-	}
 	logger.Scene("publication").With("pageId", page.ID).With("path", item.Path).
-		Info("发布在崩溃前已生效，已补齐数据库状态")
+		Info("发布在崩溃前已生效，已在实体锁内补齐数据库状态")
 	return true, nil
 }
 
+// enqueueStalePageRebuild 把单页交给构建队列做一次依赖意图的重建（收敛专用）。
+//
+// 为什么不能像超限那样逐语言入队：收敛只关心「这一页是否被重新编译并重新激活」，
+// 语言集合由队列执行体（RunPageBuildJob 的空 lang 分支）按站点语言集解析 —— 那里
+// 才是唯一权威，在这里再解析一次只多一份可能过期的副本。
+//
+// 返回 false 表示「没排上」：队列未接入，或入队失败。此时调用方必须保留回执 pending，
+// 绝不能当成功结案 —— 过期的线上字节不会自己变新。
+func (s *Service) enqueueStalePageRebuild(ctx context.Context, page *pagemodel.PageEntity) bool {
+	if s == nil || page == nil {
+		return false
+	}
+	if s.buildQueue == nil {
+		logger.Scene("publication").With("pageId", page.ID).
+			Warn("收敛入队失败：构建队列未接入，页面保持 stale 等待后续触发")
+		return false
+	}
+	inputHash := hash(page.DraftDocument)
+	if qerr := s.buildQueue.EnqueuePageBuild(ctx, page.ID, page.ProjectID, "",
+		pagecontract.BuildIntentDependency, page.DraftVersion, inputHash); qerr != nil {
+		logger.Scene("publication").With("pageId", page.ID).
+			Error(qerr, "收敛入队失败：重建任务未排上队")
+		return false
+	}
+	return true
+}
+
+// ledgerReceiptIDOf 读账本上某语言的成功身份（0 = 无行 / 历史 NULL）。
+//
+// 只用于**锁外**的结论分流：真正下判断一律在实体行锁内重读一次（这里是给
+// 「新路径暂无产物」这类案外情况找一条不丢意图的去处，不是判据本身）。
+func (s *Service) ledgerReceiptIDOf(ctx context.Context, projectID, pageID, lang string) (int64, error) {
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(pageID) == "" {
+		return 0, nil
+	}
+	var seq int64
+	terr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		cur, cerr := s.model.PublicationReceiptIDTx(ctx, tx, pageID, lang)
+		if cerr != nil {
+			return cerr
+		}
+		seq = cur
+		return nil
+	})
+	return seq, terr
+}
+
 // recoverUpdateURLReceipt 补齐「改 URL：FS 已切到新路径、DB 没跟上」的回执。
+//
+// 判定与主链提交段同一框架，且**全部在同一个实体行锁内**（与 recoverSwitchActiveReceipt 同口径）：
+//
+//	L1 锁：LockPageForActivationTx 拿 pages 行锁，此后同实体的其它激活入口排队；
+//	L2 现场：新路径上的链接必须**仍指向**「按新路径编译」的产物（canonicalPath == 新路径）。
+//	   这一条只证明发生过一次改 URL，不证明是**我这条回执**兑现的；
+//	L3 归属 + 身份：账本该语言的 artifact_id 必须仍是回执记的 from（没被别的成功者写走），
+//	   且 receipt_id 为空（历史行 / 从未写入）或就是我 —— 记着另一个正数时，本次判 superseded。
+//	   **同路径、同 artifact 的另一条回执（同内容重试）只有这一条能区分开**；
+//	L4 版本：回执捕获的输入代次与锁内当前值不等 → 新路径上跑的是过期字节，入队重建，
+//	   不写账本（写下去等于把过期产物钉成「最新成功」）；
+//	L5 处置：数据库步骤全部在锁内事务中，旧路径处置放在**提交之后**。顺序反过来
+//	   （先结案再处置）会让处置失败失去重放入口；把处置夹进事务则一旦 FS 故障，
+//	   每次重放都撞同一处、回执永远出不去。提交后处置失败 → 终态已正确、回执留 pending。
 func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
 	_, hash, ok := s.updateURLArtifactAt(item.Path)
 	if !ok {
+		// 新路径上此刻没有产物。**但这不等于「本次没生效」**：同一页面可能先登记了 A→B、
+		// 再登记 B→C，A 这条回执仍在线（线上跑着它的产物，只是入口在 C）。收敛按
+		// create_time 升序领取，正常情况下 A 先判定；一旦顺序被反（A 的重放失败过、或
+		// 别的实例先领走了），乱序到这里若直接结案，就把一条仍在线的意图丢掉了。
+		// 判据交给锁内：账本是不是仍记着我这条回执的身份（L3）。账本若已前进到别的
+		// 回执，锁内会判 superseded；仍是空的/是我的，就说明还没人兑现过，保持 pending
+		// 等它自己的那次重放（同页面同语言两个 pending 不该互相吃掉）。
+		seq, seqErr := parseReceiptID(item.ID)
+		if seqErr != nil {
+			return false, seqErr
+		}
+		cur, cerr := s.ledgerReceiptIDOf(ctx, item.ProjectID, item.SourceID, buildLang(item.Lang))
+		if cerr != nil {
+			return false, cerr
+		}
+		if cur == 0 || cur == seq {
+			s.keepPublishReceiptPending(item.ID, "新路径暂无产物，且账本尚未记入其它回执身份")
+			logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
+				Warn("改 URL 回执：新路径暂无产物但账本未前进，保留 pending 交下一轮")
+			return false, nil
+		}
 		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
-			Warn("未结案的改 URL 回执判定为「未生效」，标记回滚")
+			With("ledgerReceiptId", cur).Warn("未结案的改 URL 回执判定为「未生效」，标记回滚")
 		s.abortPublishReceipt(ctx, item.ID, "访问面未指向本次改 URL 的新产物")
 		return false, nil
 	}
@@ -1886,6 +2558,12 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 		return false, nil
 	}
 	lang := buildLang(item.Lang)
+	itemSeq, seqErr := parseReceiptID(item.ID)
+	if seqErr != nil {
+		return false, seqErr
+	}
+	// 归档（必要时新建产物行）必须在**事务之外**：它写的是 artifact 模块的表，
+	// 与改 URL 的数据库步骤不是同一个事务边界；崩溃点若落在归档之前，这里补上。
 	rowID, deps, aerr := s.ensureUpdateURLArtifactRow(ctx, page, hash, item.FromArtifactID, lang)
 	if aerr != nil {
 		return false, aerr
@@ -1899,25 +2577,105 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 	if lerr != nil {
 		return false, lerr
 	}
-	if err := s.applyUpdateURL(ctx, updateURLApplyInput{
-		Page: page, ArtifactRowID: rowID, ArtifactHash: hash, Lang: lang,
-		KernelNewPath:  item.Path,
-		NewLogicalPath: rule.Strip(lang, item.Path),
-		// 事务没提交时 draft_path 仍是旧逻辑路径；若事务其实已提交（只是回执未结案），
-		// 这里取到的是新路径 —— 那时的改名是一个 no-op，重放安全。
-		OldLogicalPath: page.DraftPath,
-		OldKernelPath:  item.OldPath,
-		WithRedirect:   item.Redirect,
-		Deps:           deps,
-		RouteLangs:     routeLangs,
-	}); err != nil {
-		return false, err
+	// 锁内读到的现场，只用于锁外的结论分流（判定本身在事务内完成）。
+	var superseded, expired bool
+	var versionAtLock int64
+	txErr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		snap, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID)
+		if lerr != nil {
+			return lerr
+		}
+		versionAtLock = snap.InputVersion
+		// L2：锁内权威读数（锁外那次之后链接可能已被别人换掉）。
+		_, curHash, live := s.updateURLArtifactAt(item.Path)
+		if !live || curHash != hash {
+			superseded = true
+			return nil
+		}
+		// L3：账本归属与成功身份。
+		curID, cerr := s.model.PublicationArtifactIDTx(ctx, tx, page.ID, lang)
+		if cerr != nil {
+			return cerr
+		}
+		curSeq, serr := s.model.PublicationReceiptIDTx(ctx, tx, page.ID, lang)
+		if serr != nil {
+			return serr
+		}
+		if curID != "" && curID != item.FromArtifactID && curID != rowID {
+			superseded = true
+			return nil
+		}
+		// 同路径、同 artifact 的两次成功激活（同内容重试）只有身份能区分（判据与
+		// recoverSwitchActiveReceipt 的 G4b 共用 receiptIdentityVerdict，见其注释）：
+		// 账本上已出现一个既不是我也不是我出发身份的成功身份，才判定为被取代。
+		if receiptIdentityVerdict(item.FromReceiptID, itemSeq, curSeq) == identitySuperseded {
+			logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+				With("ledgerReceiptId", curSeq).With("fromReceiptId", item.FromReceiptID).
+				Warn("改 URL 回执：账本上的成功身份属于另一条回执，本次判定为已被替代")
+			superseded = true
+			return nil
+		}
+		// L4：输入代次。判据与 recoverSwitchActiveReceipt 逐字相同（0 = 旧回执没有该事实，
+		// 按「仍有效」放行）：两个收敛入口对同一份捕获事实给出不同结论，等于没有判据。
+		if item.CapturedInputVersion > 0 && snap.InputVersion != item.CapturedInputVersion {
+			// 版本过期但新路径仍是本次产物：线上正跑过期字节，不能只结案 —— 交外层
+			// 入队重建；入队不成功则保持 pending，让下一轮收敛再来。
+			expired = true
+			return nil
+		}
+		// L5：数据库步骤与旧路径处置都在这段事务里做，且**实体锁仍被持有** ——
+		// 处置是 FS 动作而事务回滚撤不回 FS，但本实体锁 + 路由归属条件写已经把
+		// 「另一条 attempt 抢先」挡在这段之外（抢占者会在 DeactivateTx/RedirectTx 的
+		// 归属条件上影响 0 行，或撞上锁排队），而事务失败时留下的「FS 已改、DB 未写」
+		// 正是回执 pending 要重放的状态。
+		aerr := s.applyUpdateURL(ctx, tx, updateURLApplyInput{
+			Page: page, ArtifactRowID: rowID, ArtifactHash: hash, Lang: lang,
+			KernelNewPath:  item.Path,
+			NewLogicalPath: rule.Strip(lang, item.Path),
+			// 事务没提交时 draft_path 仍是旧逻辑路径；若事务其实已提交（只是回执未结案），
+			// 这里取到的是新路径 —— 那时的改名是一个 no-op，重放安全。
+			OldLogicalPath: page.DraftPath,
+			OldKernelPath:  item.OldPath,
+			WithRedirect:   item.Redirect,
+			Deps:           deps,
+			RouteLangs:     routeLangs,
+			// 成功身份 = **这条回执自己**：恢复补写与主链写的是同一个身份，
+			// 否则「账本上的 receipt_id 是谁」会随入口不同而漂移。
+			ReceiptID: itemSeq,
+		})
+		if aerr != nil {
+			return aerr
+		}
+		return nil
+	})
+	if txErr != nil {
+		// 处置或数据库失败：回执保持 pending，下一轮收敛重放同一段（两步都幂等）。
+		return false, txErr
+	}
+	if superseded {
+		logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+			Warn("改 URL 回执判定为已被替代 / 访问面已非本次产物：不写数据库，只结案")
+		s.abortPublishReceipt(ctx, item.ID, "改 URL 已被替代")
+		return false, nil
+	}
+	if expired {
+		if s.enqueueStalePageRebuild(ctx, page) {
+			logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+				With("captured", item.CapturedInputVersion).With("actual", versionAtLock).
+				Warn("改 URL 回执的产物已过期（新路径仍在线），已入队重建")
+			s.abortPublishReceipt(ctx, item.ID, "产物已过期，已入队重建")
+			return false, nil
+		}
+		s.keepPublishReceiptPending(item.ID, "产物已过期但未入队，等待重建收敛")
+		return false, nil
+	}
+	if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, item.Path, item.OldPath, item.Redirect); derr != nil && !errors.Is(derr, errOldPathTaken) {
+		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
+		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
+			Error(derr, "改 URL 收敛后旧路径处置失败（回执留 pending 重放）")
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
-	}
-	if serr := s.settleOldPath(item.Path, item.OldPath, item.Redirect); serr != nil {
-		return false, serr
 	}
 	logger.Scene("page").With("pageId", page.ID).With("path", item.Path).
 		Info("改 URL 在崩溃前已生效，已补齐数据库状态")
@@ -1925,44 +2683,101 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 	return true, nil
 }
 
-// recoverRollbackReceipt 补齐「回滚：FS 已切回历史产物、DB 没跟上」的回执。
+// recoverRollbackReceipt 收敛「回滚：FS 已切回历史产物、DB 没跟上」的回执。
+//
+// 判定与发布收敛同一套四步（G1 锁 / G3 链接身份 / G4 DB 归属），差别只有一条：
+// **回滚不看输入代次**。回滚的语义就是「回到旧输入编译出来的那份字节」，
+// 用版本相等当闸门会把回滚本身判成过期（而它恰恰是用户主动要求的状态）。
 func (s *Service) recoverRollbackReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
-	actualHash := s.activeArtifactHashAt(item.Path)
-	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
-	if herr != nil {
-		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
-		return false, nil
-	}
-	if actualHash == "" || expectedHash == "" || actualHash != expectedHash {
-		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
-			With("actual", actualHash).With("expected", expectedHash).
-			Warn("未结案的回滚回执判定为「未生效」，标记回滚")
-		s.abortPublishReceipt(ctx, item.ID, "访问面未指向回滚目标产物")
-		return false, nil
-	}
 	page, perr := s.locatePageInProjects(ctx, item.SourceID)
 	if perr != nil {
 		s.abortPublishReceipt(ctx, item.ID, "页面不存在")
 		return false, nil
 	}
-	if err := s.applyRollback(ctx, rollbackApplyInput{
-		Page: page, Lang: buildLang(item.Lang), TargetPath: item.Path,
-		TargetID: item.ToArtifactID, TargetHash: expectedHash, OldPath: item.OldPath,
-	}); err != nil {
-		return false, err
+	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
+	if herr != nil {
+		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
+		return false, nil
+	}
+	if expectedHash == "" {
+		// 目标产物行不存在：无法证明链接指向「我的」那一份，保守结案不动 DB。
+		s.abortPublishReceipt(ctx, item.ID, "回滚目标产物缺失")
+		return false, nil
+	}
+	if s.activeArtifactHashAt(item.Path) != expectedHash {
+		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
+			With("expected", expectedHash).Warn("未结案的回滚回执判定为「未生效」，标记回滚")
+		s.abortPublishReceipt(ctx, item.ID, "访问面未指向回滚目标产物")
+		return false, nil
+	}
+	lang := buildLang(item.Lang)
+	itemSeq, seqErr := parseReceiptID(item.ID)
+	if seqErr != nil {
+		return false, seqErr
+	}
+	converged, superseded := false, false
+	txErr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, page.ProjectID, page.ID); lerr != nil {
+			return lerr
+		}
+		curID, cerr := s.model.PublicationArtifactIDTx(ctx, tx, page.ID, lang)
+		if cerr != nil {
+			return cerr
+		}
+		// G3 权威读数：链接仍是回滚目标，才轮得到 G4 判断归属。
+		if s.activeArtifactHashAt(item.Path) != expectedHash {
+			superseded = true
+			return nil
+		}
+		if curID != "" && curID != item.FromArtifactID {
+			// 账本已被别的成功激活写走（回滚之后又有发布上线）：不覆盖。
+			superseded = true
+			return nil
+		}
+		if aerr := s.applyRollbackTx(ctx, tx, page.ProjectID, pagemodel.PublicationRecord{
+			PageID: page.ID, Lang: lang, ActivePath: item.Path,
+			ArtifactID: item.ToArtifactID, ArtifactHash: expectedHash, PublishedAt: time.Now().UTC(),
+			// 收敛补写的成功身份 = 这条回执自己（与主链同一身份，不另造）。
+			ReceiptID: itemSeq,
+		}, item.OldPath); aerr != nil {
+			return aerr
+		}
+		// 旧路径处置同样不在事务内（理由见 recoverSwitchActiveReceipt）：
+		// commitOldPathSettle 先提交条件写，再在提交之后动文件系统。
+		converged = true
+		return nil
+	})
+	if txErr != nil {
+		return false, txErr
+	}
+	if superseded {
+		logger.Scene("publication").With("receiptId", item.ID).With("pageId", page.ID).
+			Warn("回滚回执判定为已被替代：不写数据库，只结案")
+		s.abortPublishReceipt(ctx, item.ID, "回滚已被替代")
+		return false, nil
+	}
+	if !converged {
+		s.keepPublishReceiptPending(item.ID, "回滚未收敛")
+		return false, nil
+	}
+	if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, item.Path, item.OldPath, false); derr != nil && !errors.Is(derr, errOldPathTaken) {
+		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
+		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
+			Error(derr, "回滚收敛后旧路径处置失败（回执留 pending 重放）")
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
 	}
-	if serr := s.settleOldPath(item.Path, item.OldPath, false); serr != nil {
-		return false, serr
-	}
-	logger.Scene("page").With("pageId", page.ID).With("path", item.Path).
-		Info("回滚在崩溃前已生效，已补齐数据库状态")
+	logger.Scene("publication").With("pageId", page.ID).With("path", item.Path).
+		Info("回滚在崩溃前已生效，已在实体锁内补齐数据库状态")
 	return true, nil
 }
 
 // ErrPublishLedgerUnavailable 发布回执登记失败（无法判定状态，因此不切换访问面）。
+// errUpdateURLWithdrawn 改 URL 提交段在锁内发现「新路径上的产物已不是本次激活的那一份」。
+// 不是错误用户输入，也不是失败：不写任何数据库状态，回执保持 pending 交收敛按现场重判。
+var errUpdateURLWithdrawn = errors.New("改 URL 提交段：新路径访问面已被其它激活替代")
+
 var ErrPublishLedgerUnavailable = errors.New("发布回执登记失败，未切换访问面")
 
 // publishReceiptInput 登记 pending 回执的入参。
@@ -1985,6 +2800,53 @@ type publishReceiptInput struct {
 	OldPath string
 	// Redirect 旧路径是否登记为 301（仅 update_url 使用）。
 	Redirect bool
+	// CapturedInputVersion 捕获段读到的 pages.input_version（迁移 699）。
+	//
+	// 用途：收敛例程在实体锁内比对「线上链接的产物是哪一代输入编译的」，据此判定
+	// 该按本次激活向前完成，还是判定为过期并去入队重建（§2.7.2 G2 / §2.7.3）。
+	// 原样交给 publication 登记，**不补值**：拿登记时刻的当前版本顶替空值，等于把
+	// 「提交时看到的版本」冒充「编译时捕获的版本」。
+	CapturedInputVersion int64
+	// PathArtifacts 每条待下线路径在登记时刻的**己方身份**（仅 deactivate 使用）。
+	//
+	// 下线回执不靠"重放时回查路由是否曾归我"判定归属 —— 那时行已经被删掉了，查不到
+	// 就是没有；能依赖的只有登记这一刻捕获的事实：这条路径指向哪个产物、由哪次成功
+	// 激活写下、访问面上的定位器是什么。执行撤链前拿它与路径锁内的当前 owner 比对。
+	PathArtifacts map[string]pubcontract.ReceiptPathIdentity
+	// FromReceiptID 捕获段读到的账本成功身份（page_publications.receipt_id，迁移 701）。
+	//
+	// 语义三态，**原样交给 publication 登记，不得在登记时补造**：
+	//   - "0"：捕获段确认没有前次成功身份（首次发布 / 账本行还没写 receipt_id）；
+	//   - ""：调用方没有这个事实（未注入台账读取 / 读失败）—— 未知，恢复退回 artifact 判据；
+	//   - 十进制 id：前一次的成功身份。
+	//
+	// 为什么必须如实记录：第二次发布的崩溃窗口（FS 已切、DB 未提交）里，账本上留着的
+	// 仍是**前一次**的成功身份。恢复时「当前身份 != 我」不能直接判 superseded ——
+	// 那会把合法的前向补齐误杀成「被别人取代」。只有知道「我出发时是谁」才分得清
+	// 「没人动过」和「有人抢在我前面成功了」。
+	FromReceiptID string
+}
+
+// capturedFromReceiptID 读该页该语言账本上的成功回执身份，返回给登记端的原样事实。
+//
+// "0" 与 "" 的区别是本函数的全部要点：真的确认了「没有前次成功」（读到行但
+// receipt_id 为 NULL，或本语言从未发布）返回 "0"；读取失败返回 ""（未知）——
+// 把读失败说成「没有前次成功」，恢复时就会把一个真实的前任身份当成不存在，
+// 于是它接管别人的成功状态而毫无察觉。
+func (s *Service) capturedFromReceiptID(ctx context.Context, projectID, pageID, lang string) string {
+	if s == nil || s.model == nil {
+		return ""
+	}
+	id, err := s.model.PublicationReceiptIDTxAny(ctx, projectID, pageID, lang)
+	if err != nil {
+		logger.Scene("publication").With("pageId", pageID).With("lang", lang).
+			Warn("捕获段读取账本成功身份失败：按未知（空串）登记")
+		return ""
+	}
+	if id <= 0 {
+		return "0"
+	}
+	return strconv.FormatInt(id, 10)
 }
 
 // beginPublishReceipt 登记 pending 回执，返回回执 id 与失败原因（AR2-002 / TX-009）。
@@ -2007,10 +2869,22 @@ func (s *Service) beginPublishReceipt(ctx context.Context, in publishReceiptInpu
 		ProjectID: in.ProjectID, Path: in.Path, PageID: in.PageID,
 		FromArtifactID: in.FromArtifactID, ToArtifactID: in.ToArtifactID, Lang: in.Lang,
 		Action: action, OldPath: in.OldPath, Redirect: in.Redirect,
+		// 捕获段的输入代次必须随回执落库：收敛在实体锁内要靠它判断「线上那份产物
+		// 编译的是哪一代输入」。登记时**不补值**（缺省就是缺省，不拿当前版本顶替）。
+		CapturedInputVersion: in.CapturedInputVersion,
+		// 出发时的成功身份同理：恢复要回答「我接替的是谁」，这个事实只能在登记这一刻
+		// 记录 —— 它描述的是过去，无法在恢复时回查（回查到的是**现在**的身份）。
+		FromReceiptID: in.FromReceiptID,
+		// 下线意图的路径身份同样只能在登记这一刻取：DB 行一删，重放时再也查不到。
+		PathArtifacts: in.PathArtifacts,
 	})
 	if err == nil && strings.TrimSpace(id) == "" {
 		err = errors.New("发布回执登记未返回 id")
 	}
+	// 身份三项（ownArtifactID / capturedInputVersion / attemptNo）的持久化在
+	// publication 侧（receipt_data jsonb，§2.7.1）。本模块只提供事实：own 产物 = 本次
+	// ToArtifactID，捕获代次 = in.CapturedInputVersion，attempt 身份 = 回执自身的 id
+	// （预登记即 attempt，不另造编号）。
 	if err != nil {
 		logger.Scene("publication").With("pageId", in.PageID).With("path", in.Path).With("action", action).
 			Error(err, "发布回执登记失败（不切换访问面）")
@@ -2062,6 +2936,107 @@ func (s *Service) keepPublishReceiptPending(receiptID, reason string) {
 }
 
 // completePublishReceipt 结案（访问面与数据库已一致）。
+// parseReceiptID 把回执的对外形态（十进制 id 字符串）解析成写进账本的数值身份。
+//
+// 为什么必须解析而不是原样存：page_publications.receipt_id 是 bigint，收敛要拿它和
+// 回执自己的 id 比对「这条回执是不是兑现者」。解析失败**不得**静默退化成 0 —— 0 在
+// 账本里意味着「历史行，没有成功身份」，把解析失败当成历史行会让收敛放过一个真实
+// 的成功尝试。失败时返回错误，由调用方阻止激活（不切访问面、不写 DB）。
+// receiptIdentity 是「这条回执与账本成功身份的关系」的三态判定结果。
+type receiptIdentity int
+
+const (
+	// identityAccepted 账本上的身份允许本次前向补齐（是我自己，或仍是我出发时的前态）。
+	identityAccepted receiptIdentity = iota
+	// identitySuperseded 账本上已是一个**新的**成功身份：本次被取代，只能结案不能覆盖。
+	identitySuperseded
+)
+
+// receiptIdentityVerdict 判定「账本上当前的成功身份」是否允许本条回执前向补齐。
+//
+// 三态输入（fromRaw 是登记时如实记录的 FromReceiptID）：
+//   - "0"：捕获段确认出发时没有前次成功身份；
+//   - ""：未知（历史回执 / 旧消费者）—— 按最保守口径；
+//   - 十进制 id：出发时的成功身份。
+//
+// 为什么要区分「我自己」与「我出发时的那个人」：
+//   - 账本 == ownSeq：这条回执已经兑现过（崩溃在结案之前），幂等补齐即可；
+//   - 账本 == fromRaw：正常第二次发布的崩溃窗口 —— FS 已切、DB 未提交，账本上留着的
+//     仍是前一次的成功身份。这是**合法恢复**，不是被取代；
+//   - 其它：期间有另一条回执成功激活过，写下去就覆盖了更新且正确的状态。
+//
+// 未知（""）时只把「非零且不等于 own」的身份判为取代：没有前态可比，就只能保守 ——
+// 但 curSeq 为 0（历史行 / 尚无身份）时必须放行，否则每一条老回执都会被判取代，
+// 等于把「不知道」读成「被抢了」。
+//
+// fromRaw 非法（非十进制 / 负数）：当作未知处理并**不报错**。它来自数据库里一条历史回执，
+// 让恢复整体失败远比「退回保守判据」更糟 —— 这条回执还是要被收敛掉。
+func receiptIdentityVerdict(fromRaw string, ownSeq, curSeq int64) receiptIdentity {
+	if ownSeq > 0 && curSeq == ownSeq {
+		return identityAccepted
+	}
+	if ownSeq <= 0 {
+		// 本次没有数值身份（回执 id 未能解析）：无从比对，只能退回「账本上有别人的新身份」。
+		if curSeq > 0 {
+			return identitySuperseded
+		}
+		return identityAccepted
+	}
+	raw := strings.TrimSpace(fromRaw)
+	if raw == "" {
+		if curSeq > 0 {
+			return identitySuperseded
+		}
+		return identityAccepted
+	}
+	fromSeq, perr := strconv.ParseInt(raw, 10, 64)
+	if perr != nil || fromSeq < 0 {
+		// 未知口径：与 raw == "" 相同。
+		if curSeq > 0 && curSeq != ownSeq {
+			return identitySuperseded
+		}
+		return identityAccepted
+	}
+	if curSeq == fromSeq {
+		return identityAccepted
+	}
+	return identitySuperseded
+}
+
+// CaptureFromReceiptIDForTest 是 capturedFromReceiptID 的导出口（测试断言「同一实现」）。
+//
+// 导出而不是在用例里重写一份判定：重写出来的公式无论多像，都不能证明生产跑的是它。
+func (s *Service) CaptureFromReceiptIDForTest(ctx context.Context, projectID, pageID, lang string) string {
+	return s.capturedFromReceiptID(ctx, projectID, pageID, lang)
+}
+
+// ReceiptIdentityVerdictForTest 是 receiptIdentityVerdict 的导出口（同上）。
+// 返回 "accepted" / "superseded"。
+func ReceiptIdentityVerdictForTest(fromRaw string, ownSeq, curSeq int64) string {
+	if receiptIdentityVerdict(fromRaw, ownSeq, curSeq) == identitySuperseded {
+		return "superseded"
+	}
+	return "accepted"
+}
+
+// ParseReceiptID 是 parseReceiptID 的导出口，供测试断言「同一实现」而被判。
+func ParseReceiptID(receiptID string) (int64, error) { return parseReceiptID(receiptID) }
+
+func parseReceiptID(receiptID string) (int64, error) {
+	raw := strings.TrimSpace(receiptID)
+	if raw == "" {
+		return 0, nil
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("发布回执 id 不是十进制数值: %q: %w", raw, err)
+	}
+	if id <= 0 {
+		return 0, fmt.Errorf("发布回执 id 必须为正数: %q", raw)
+	}
+	return id, nil
+}
+
 func (s *Service) completePublishReceipt(ctx context.Context, receiptID string) error {
 	if s == nil || s.routes == nil || receiptID == "" {
 		return nil
@@ -2096,6 +3071,8 @@ var recoverableReceiptActions = []string{
 	pubcontract.ReceiptActionSwitchActive,
 	pubcontract.ReceiptActionUpdateURL,
 	pubcontract.ReceiptActionRollback,
+	// 下线：删页 / 删语言时撤链的可靠载体。同一条清单同时是领取条件与判定条件。
+	pubcontract.ReceiptActionDeactivate,
 }
 
 // recoverableReceiptAction 判断某个动作是否在本模块的收敛范围内（不在册一律跳过，
@@ -2118,6 +3095,8 @@ func (s *Service) recoverOne(ctx context.Context, item pubcontract.PendingReceip
 		return s.recoverUpdateURLReceipt(ctx, item)
 	case pubcontract.ReceiptActionRollback:
 		return s.recoverRollbackReceipt(ctx, item)
+	case pubcontract.ReceiptActionDeactivate:
+		return s.recoverDeactivateReceipt(ctx, item)
 	}
 	return s.recoverSwitchActiveReceipt(ctx, item)
 }
@@ -2206,20 +3185,55 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 		return res, nil, nil
 	}
 	start := time.Now()
+	// 每种来源各一条队列。project 级回执（重定向下线）没有实体可作 source_id，
+	// 与 page 级混在同一条领取里不行：ClaimPendingReceipts 按单个 SourceType 过滤，
+	// 而页码级回执的判定要取实体锁、project 级只能按路径处置 —— 两套判定不能互相套用。
+	for _, sourceType := range receiptClaimSourceTypes {
+		s.convergeSource(ctx, sourceType, maxBatches, &res, &itemErrs, &claimErr)
+	}
+	s.lastConvergeAt.Store(time.Now().Unix())
+	s.logPendingReceiptConverge(res, time.Since(start))
+	return res, claimErr, itemErrs
+}
+
+// receiptClaimSourceTypes 本模块收敛负责的两类来源（顺序固定：先页码级，再项目级）。
+var receiptClaimSourceTypes = []string{
+	pubcontract.ReceiptSourcePage,
+	pubcontract.ReceiptSourceProject,
+}
+
+// claimableReceiptSource 判「这条来源+动作的组合属于本模块」。
+//
+// 项目级来源只可能是下线（redirect 删除）：project 不是实体，无从补齐发布状态，
+// 任何非 deactivate 的 project 回执都不该被本模块领取 —— 宁可留在 pending 里被看见，
+// 也不要拿页码级的判据去"补齐"它。
+func claimableReceiptSource(sourceType, action string) bool {
+	switch sourceType {
+	case pubcontract.ReceiptSourcePage:
+		return true
+	case pubcontract.ReceiptSourceProject:
+		return action == pubcontract.ReceiptActionDeactivate
+	default:
+		return false
+	}
+}
+
+// convergeSource 收敛单一来源类型的回执（分批领取 → 逐条重放）。
+func (s *Service) convergeSource(ctx context.Context, sourceType string, maxBatches int, res *pendingReceiptConvergeResult, itemErrs *[]error, claimErr *error) {
 	for batch := 0; maxBatches <= 0 || batch < maxBatches; batch++ {
 		if cerr := ctx.Err(); cerr != nil {
-			itemErrs = append(itemErrs, cerr)
-			break
+			*itemErrs = append(*itemErrs, cerr)
+			return
 		}
 		items, cerr := s.routes.ClaimPendingReceipts(ctx, &pubcontract.ReceiptsQueryReq{
-			SourceType: pubcontract.ReceiptSourcePage,
+			SourceType: sourceType,
 			Actions:    recoverableReceiptActions,
 			Limit:      pendingReceiptConvergeBatch,
 		})
 		if cerr != nil {
-			claimErr = cerr
-			logger.Scene("publication").Error(cerr, "领取未结案发布回执失败（本轮收敛中止）")
-			break
+			*claimErr = cerr
+			logger.Scene("publication").With("sourceType", sourceType).Error(cerr, "领取未结案发布回执失败（本轮收敛中止）")
+			return
 		}
 		if len(items) == 0 {
 			break
@@ -2230,7 +3244,7 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 		for _, item := range items {
 			// 领取条件已经筛过一遍，这里是第二道（防止领取口径将来被放宽后静默扩大重放范围：
 			// 拿发布形态的判据去「补齐」一条路由回执，会把路由变更纠正成发布状态）。
-			if item.SourceType != pubcontract.ReceiptSourcePage || !recoverableReceiptAction(item.Action) {
+			if !claimableReceiptSource(item.SourceType, item.Action) || !recoverableReceiptAction(item.Action) {
 				continue
 			}
 			handled++
@@ -2239,7 +3253,7 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 				failed++
 				logger.Scene("publication").With("receiptId", item.ID).With("action", item.Action).
 					With("path", item.Path).Error(rerr, "发布回执收敛失败（保留 pending，下一轮重试）")
-				itemErrs = append(itemErrs, fmt.Errorf("回执 %s(%s): %w", item.ID, item.Action, rerr))
+				*itemErrs = append(*itemErrs, fmt.Errorf("回执 %s(%s): %w", item.ID, item.Action, rerr))
 				continue
 			}
 			if done {
@@ -2256,12 +3270,9 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 		}
 		// 本批没有一行属于本收敛例程（领取口径与判定口径不一致）：再领还是同一批，收手。
 		if handled == 0 {
-			break
+			return
 		}
 	}
-	s.lastConvergeAt.Store(time.Now().Unix())
-	s.logPendingReceiptConverge(res, time.Since(start))
-	return res, claimErr, itemErrs
 }
 
 // logPendingReceiptConverge 记一条结构化收敛日志（收敛条数 / 失败条数 / 耗时）。
@@ -2471,6 +3482,13 @@ type pageRebuildPlan struct {
 	// DraftVersion / InputHash 计划生成时冻结的输入版本。
 	DraftVersion int64
 	InputHash    string
+	// InputVersion 计划生成时捕获的**实体输入代次**（pages.input_version，迁移 699）。
+	//
+	// 它与 DraftVersion 不是一回事：DraftVersion 只覆盖「草稿被保存」，而
+	// input_version 还覆盖译文扇出、依赖标记（主题/块/i18n/菜单）等一切让已编译字节
+	// 过期的事件。发布激活要用它做闸门（WHERE input_version = $expect），
+	// 用 DraftVersion 当闸门会放行「草稿没动但菜单译文变了」的旧产物。
+	InputVersion int64
 	// Intent 构建意图（pagecontract.BuildIntent*）。
 	Intent string
 }
@@ -2514,6 +3532,9 @@ func (s *Service) planPageRebuild(ctx context.Context, page *pagemodel.PageEntit
 	plan := &pageRebuildPlan{
 		Page: page, Intent: normalizeRebuildIntent(intent),
 		DraftVersion: page.DraftVersion, InputHash: hash(page.DraftDocument),
+		// 输入代次在这里一并冻结：计划是「这一次重建的事实」，构建与随后的激活判定
+		// 必须看同一个值（中途再读一次 pages 会读到被别的标记推进后的新值）。
+		InputVersion: page.InputVersion,
 	}
 	if len(langs) == 0 {
 		resolved, err := s.publishLangsOf(ctx, page.ProjectID)
@@ -2661,28 +3682,34 @@ func (s *Service) SetBuildQueue(q pagecontract.BuildQueueEnqueuer) {
 // 输入版本：draft_version 与草稿文档摘要一起进任务行，作为去重键与审计依据
 // （不再用空 hash 充当「这是依赖重建」的隐式操作码 —— 意图由 intent 列显式表达）。
 //
-// 单个页面入队失败只记日志：这是一条尽力而为的旁路（同步那部分已经重建完了），
-// 抛错会让调用方误以为整批失败。
-func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
+// 返回值是「没被排上」的错误聚合（nil = 全部入队成功或以排上队的方式处置）：
+//   - 队列未接入时返回错（调用方据此判断「剩余页面只是在等下次触发」而不是「已排上」）；
+//   - 单页入队失败只记日志并计入聚合错误，但**不中断**其余页面（尽力而为的旁路）；
+//   - 返回聚合错误的目的只有一个：让严格模式的调用方（RebuildStaleStrict）能如实报告
+//     「这一批没有全部收敛」，而不是拿 nil 当成功判据。既有调用方忽略返回值，行为不变。
+func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
-		return
+		return nil
 	}
 	if s.buildQueue == nil {
 		logger.Scene("dependency").With("affected", len(ids)).
 			Warn("自动重建超出单次上限且构建队列未接入，剩余页面保持 stale 等待后续触发")
-		return
+		return fmt.Errorf("构建队列未接入，%d 个超限页面未排上队: %w", len(ids), ErrRebuildOverloaded)
 	}
 	queued := 0
+	var errs []error
 	for _, id := range ids {
 		// 同 RebuildStale：入队前也要按工程作用域读一次页面（漏作用域时整批任务静默不再入队）。
 		page, err := s.locatePageInProjects(ctx, id)
 		if err != nil {
+			errs = append(errs, fmt.Errorf("超限重建入队：页面 %s 定位失败: %w", id, err))
 			continue
 		}
 		langs, lerr := s.publishLangsOf(ctx, page.ProjectID)
 		if lerr != nil {
 			logger.Scene("dependency").With("page_id", id).
 				Error(lerr, "超限重建入队跳过：站点语言清单不可读，入队默认语言一种会让其余语言永久停在旧字节")
+			errs = append(errs, fmt.Errorf("超限重建入队：页面 %s 的站点语言清单不可读: %w", id, lerr))
 			continue
 		}
 		inputHash := hash(page.DraftDocument)
@@ -2691,6 +3718,7 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 				pagecontract.BuildIntentDependency, page.DraftVersion, inputHash); qerr != nil {
 				logger.Scene("dependency").With("page_id", id).With("lang", lang).
 					Error(qerr, "超限重建任务入队失败")
+				errs = append(errs, fmt.Errorf("超限重建入队：页面 %s 语言 %s: %w", id, lang, qerr))
 				continue
 			}
 			queued++
@@ -2698,6 +3726,10 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 	}
 	logger.Scene("dependency").With("queued", queued).With("affected", len(ids)).
 		Info("超限的自动重建已交给构建队列")
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
 }
 
 // RebuildArtifact 用 DB 冻结的 source_document 重新编译并落盘，恢复丢失的产物文件。
@@ -3132,4 +4164,360 @@ func toSEOFindingItem(f compliance.Finding) pagedto.SEOFindingItemResp {
 		URL: f.URL, Lang: f.Lang, ArtifactHash: f.ArtifactHash,
 		Rule: f.Rule, Level: string(f.Level), Evidence: f.Evidence, Expect: f.Expect,
 	}
+}
+
+// ============ 下线回执（删除 / 退役的可靠载体） ============
+//
+// 为什么删除也要回执：删页 / 删语言的第一步是撤掉访问面链接（不可逆副作用），
+// 最后一步才是业务事务提交。中间任何一次崩溃都会留下"DB 说页面还在、链接已经没了"
+// 或无主的链接 —— 没有任何地方记着这些链接原本属于谁、指向哪份产物。回执就是
+// 那份记录：它在动访问面**之前**登记，业务事务在同一次提交里置 businessCommitted，
+// 收尾由收敛例程按回执里捕获的路径身份完成。
+
+// deactivationIntent 一次下线意图的登记结果（不可变）。路径集合与身份都取自登记时刻。
+type deactivationIntent struct {
+	ReceiptID     string
+	ProjectID     string
+	PageID        string
+	Paths         []string
+	PathArtifacts map[string]pubcontract.ReceiptPathIdentity
+}
+
+// pageReceiptOwner 本模块回执所属实体（source_type + source_id 成对给，协议只有一份）。
+func pageReceiptOwner(pageID string) pubcontract.ReceiptOwner {
+	return pubcontract.ReceiptOwner{SourceType: pubcontract.ReceiptSourcePage, SourceID: pageID}
+}
+
+// projectReceiptOwner 项目级下线回执的归属：SourceID 必须是本工程 uuid
+// （publication 侧 receiptOwnerOf 会拒掉任何与 ProjectID 不一致的来源）。
+func projectReceiptOwner(projectID string) pubcontract.ReceiptOwner {
+	return pubcontract.ReceiptOwner{SourceType: pubcontract.ReceiptSourceProject, SourceID: projectID}
+}
+
+// pathIdentities 取每条路径在登记时刻的己方身份：账本（产物 + 成功身份）+ 访问面定位器。
+//
+// 三者互不替代（见 ReceiptPathIdentity 注释）：内容寻址让同一条链接可能指向别人的
+// 同一份字节，所以只记 artifact id 不足以证明归属；历史行可能没有 artifact / receipt，
+// 那就只剩定位器可判。读不到账本时按链接事实登记，并在日志里留痕（不静默当成"无身份"）。
+func (s *Service) pathIdentities(ctx context.Context, projectID, pageID string, paths []string) map[string]pubcontract.ReceiptPathIdentity {
+	out := make(map[string]pubcontract.ReceiptPathIdentity, len(paths))
+	// 直线读（非 Tx）：登记发生在取实体锁**之前**，此处多带一次工程作用域即可；
+	// page_publications 由实体锁 + 归属校验保护，不需要在这一步加锁。
+	pubs, perr := s.model.ListPublicationsInProject(ctx, projectID, pageID)
+	if perr != nil {
+		logger.Scene("publication").With("pageId", pageID).
+			Warn("读取页面语言账本失败，下线意图的路径归属按链接事实记录: " + perr.Error())
+		pubs = nil
+	}
+	for _, p := range paths {
+		key := strings.TrimSpace(p)
+		if key == "" {
+			continue
+		}
+		var id pubcontract.ReceiptPathIdentity
+		for _, pub := range pubs {
+			if strings.TrimSpace(pub.ActivePath) != key {
+				continue
+			}
+			id.ArtifactID = strings.TrimSpace(pub.ArtifactID)
+			if pub.ReceiptID > 0 {
+				id.ReceiptID = strconv.FormatInt(pub.ReceiptID, 10)
+			}
+			break
+		}
+		if s.publication != nil {
+			if st, ierr := s.publication.Inspect(key); ierr == nil && st != nil && st.Locator != nil {
+				id.Locator = strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key)
+			}
+		}
+		if id.ArtifactID != "" || id.ReceiptID != "" || id.Locator != "" {
+			out[key] = id
+		}
+	}
+	return out
+}
+
+// registerDeactivationIntent 在**动任何访问面之前**把下线意图登记成 pending 回执。
+//
+// 登记失败必须阻止整个操作：没有回执就再没有地方记着"这些链接原本属于谁、指向什么"，
+// 而删除一旦提交就不可撤销。
+//
+// 这里不持有任何 DB 行锁：只做一次 INSERT（独立短事务），否则"持业务行锁再另开
+// 连接写回执"就是自锁。
+func (s *Service) registerDeactivationIntent(ctx context.Context, projectID, pageID, primaryPath string, paths []string) (*deactivationIntent, error) {
+	if s == nil || s.routes == nil {
+		return nil, errors.New("下线意图登记端口未装配")
+	}
+	cleaned := normalizeOldPaths(paths)
+	// owner 与路径都来自**本模块的持久行**，不接受请求入参自证：否则调用方传别人的
+	// 页面 id 就能登记出"撤别人链接"的意图。
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(pageID) == "" {
+		return nil, errors.New("下线意图缺少页面归属事实")
+	}
+	ids := s.pathIdentities(ctx, projectID, pageID, cleaned)
+	path := strings.TrimSpace(primaryPath)
+	if path == "" {
+		path = firstNonEmptyPath(cleaned)
+	}
+	id, rerr := s.routes.BeginPublishReceipt(ctx, &pubcontract.BeginPublishReceiptReq{
+		ProjectID: projectID, Path: path, PageID: pageID,
+		Action:        pubcontract.ReceiptActionDeactivate,
+		OldPaths:      cleaned,
+		OldPath:       firstNonEmptyPath(cleaned),
+		PathArtifacts: ids,
+	})
+	if rerr != nil {
+		return nil, fmt.Errorf("登记下线意图失败（未改动访问面）: %w", rerr)
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("登记下线意图失败（未改动访问面）: 回执登记未返回 id")
+	}
+	return &deactivationIntent{
+		ReceiptID: id, ProjectID: projectID, PageID: pageID,
+		Paths: cleaned, PathArtifacts: ids,
+	}, nil
+}
+
+// registerProjectDeactivationIntent 登记一条**项目级**下线意图（重定向删除）。
+//
+// redirect 行的 page_id / presentation_id 都是 NULL：没有任何实体 id 可作回执归属，
+// 伪造一个 page id 会让恢复例程按错误归属去取锁。项目级 source 正是为这一格准备的
+// （publication 侧 ReceiptSourceProject，只允许 action=deactivate，SourceID 必须等于 ProjectID）。
+func (s *Service) registerProjectDeactivationIntent(ctx context.Context, projectID, path string) (*deactivationIntent, error) {
+	if s == nil || s.routes == nil {
+		return nil, errors.New("下线意图登记端口未装配")
+	}
+	projectID = strings.TrimSpace(projectID)
+	path = strings.TrimSpace(path)
+	if projectID == "" || path == "" {
+		return nil, errors.New("下线意图缺少工程或路径事实")
+	}
+	ids := s.redirectPathIdentities(ctx, path)
+	id, rerr := s.routes.BeginPublishReceipt(ctx, &pubcontract.BeginPublishReceiptReq{
+		ProjectID:     projectID,
+		Path:          path,
+		Action:        pubcontract.ReceiptActionDeactivate,
+		OldPaths:      []string{path},
+		OldPath:       path,
+		PathArtifacts: ids,
+		Owner: &pubcontract.ReceiptOwner{
+			SourceType: pubcontract.ReceiptSourceProject,
+			SourceID:   projectID,
+		},
+	})
+	if rerr != nil {
+		return nil, fmt.Errorf("登记下线意图失败（未改动访问面）: %w", rerr)
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("登记下线意图失败（未改动访问面）: 回执登记未返回 id")
+	}
+	return &deactivationIntent{
+		ReceiptID: id, ProjectID: projectID, Paths: []string{path}, PathArtifacts: ids,
+	}, nil
+}
+
+// redirectPathIdentities 采集一条重定向路径在登记时刻的归属身份。
+//
+// 与 page 版 pathIdentities 的区别只有一处：重定向行没有页面账本可查，
+// 归属只剩访问面链接本身（Locator）。路由占用归属由路由表本身在锁内核验。
+func (s *Service) redirectPathIdentities(ctx context.Context, path string) map[string]pubcontract.ReceiptPathIdentity {
+	out := make(map[string]pubcontract.ReceiptPathIdentity, 1)
+	key := strings.TrimSpace(path)
+	if key == "" {
+		return out
+	}
+	var id pubcontract.ReceiptPathIdentity
+	if s.publication != nil {
+		if st, ierr := s.publication.Inspect(key); ierr == nil && st != nil && st.Locator != nil {
+			id.Locator = strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key)
+		}
+	}
+	out[key] = id
+	return out
+}
+
+// recoverProjectDeactivateReceipt 项目级下线的收敛：没有实体锁可继，业务事实全在回执里。
+//
+// 判据（与 page 版同型，只是归属换成"工程 + 路径"）：
+// businessCommitted 为假 → 保 pending 不动访问面（业务随时可能提交）；
+// 为真 → 锁内重读、复核路径身份后撤链 → 结案。
+func (s *Service) recoverProjectDeactivateReceipt(ctx context.Context, item pubcontract.PendingReceiptResp, projectID string) (bool, error) {
+	if _, perr := parseReceiptID(item.ID); perr != nil {
+		return false, perr
+	}
+	if werr := s.withdrawProjectDeactivatedLinks(ctx, projectID, item.ID); werr != nil {
+		logger.Scene("publication").With("receiptId", item.ID).With("projectId", projectID).
+			Warn("项目级下线回执的撤链被归属复验拒绝，保持 pending 待下一轮: " + werr.Error())
+		return false, werr
+	}
+	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
+		return false, cerr
+	}
+	return true, nil
+}
+
+// normalizeOldPaths 去空白、去重、保序。
+func normalizeOldPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		v := strings.TrimSpace(p)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+// firstNonEmptyPath 取第一个非空路径（回执的 path 列要求非空）。
+func firstNonEmptyPath(paths []string) string {
+	for _, p := range paths {
+		if v := strings.TrimSpace(p); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// deactivationPathsUnchanged 业务事务内复验：路径集合与登记时一致才允许继续。
+//
+// 不等意味着「登记之后页面又发布了 / 改了语言集合」，那时按登记清单撤链会撤掉刚上线
+// 的新链接。拒绝比尽力而为安全：调用方看到明确失败，回执留 pending，下一轮按当时的
+// 真实路径集合重新判断。
+func deactivationPathsUnchanged(registered []string, current []string) error {
+	want := normalizeOldPaths(registered)
+	got := normalizeOldPaths(current)
+	if len(want) != len(got) {
+		return fmt.Errorf("%w: 登记的下线路径集合与当前不一致", errOldPathTaken)
+	}
+	index := make(map[string]struct{}, len(got))
+	for _, p := range got {
+		index[p] = struct{}{}
+	}
+	for _, p := range want {
+		if _, ok := index[p]; !ok {
+			return fmt.Errorf("%w: 登记的下线路径集合与当前不一致", errOldPathTaken)
+		}
+	}
+	return nil
+}
+
+// markDeactivationCommitted 在**业务事务内**记下"下线意图对应的业务变更已提交"。
+//
+// 必须与业务写入同一个 tx：分开两笔时，中间崩溃会留下"业务已提交、回执仍说未提交"，
+// 恢复便永远不敢动那些链接（宁可不删也不误删，但链接就此永久残留）。
+func (s *Service) markDeactivationCommitted(ctx context.Context, tx *gorm.DB, in *deactivationIntent) error {
+	if s == nil || s.routes == nil || in == nil {
+		return nil
+	}
+	if tx == nil {
+		return errors.New("下线意图提交标记必须在业务事务内")
+	}
+	// 归属随意图走：页码级用 page owner，项目级（重定向删除）用 project owner。
+	// 用落库判据而不是入参判据 —— 伪造不了：PageID 为空只可能是项目级意图。
+	owner := projectReceiptOwner(in.ProjectID)
+	if strings.TrimSpace(in.PageID) != "" {
+		owner = pageReceiptOwner(in.PageID)
+	}
+	return s.routes.MarkDeactivationCommittedTx(ctx, tx, owner,
+		in.ProjectID, in.ReceiptID, in.PathArtifacts)
+}
+
+// ============ 下线回执的恢复（收敛例程） ============
+
+// recoverDeactivateReceipt 收敛一条下线意图（顾问锁 → 重读本行事实 → 决定撤链或结案）。
+//
+// 领取结果是快照，不能当结论：ClaimPendingReceipts 没有租约，同一行可被多个收敛
+// 同时领到，而业务事务可能正在写。顺序因此固定成：
+//
+//	顾问锁（page:<id>，页已软删时这是唯一可取的实体级锁）
+//	  → 经 publication 的 Tx 端口重读本回执的 state + businessCommitted + pathArtifacts
+//	    → 业务未提交：保留 pending，**不动任何链接**（业务随时可能提交）
+//	    → 已终态（committed / rolled_back）：no-op 返回，不改终态
+//	    → 业务已提交：路径锁内复验归属 → 撤链 → 结案
+func (s *Service) recoverDeactivateReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
+	if s == nil || s.publication == nil || s.routes == nil {
+		return false, nil
+	}
+	projectID := strings.TrimSpace(item.ProjectID)
+	pageID := strings.TrimSpace(item.SourceID)
+	if item.SourceType == pubcontract.ReceiptSourceProject {
+		// 项目级下线（重定向删除）：project 不是实体，没有页面锁、没有发布账本可判。
+		// 它的归属事实全在登记时的路径身份里，撤链由 project 版收敛负责。
+		pageID = ""
+	}
+	// 工程 + 实体 id 只用来**定位**（开事务作用域、取顾问锁键、构造期望归属）。
+	//
+	// 路径清单**不在这里判**：领取结果是锁外快照，item.OldPaths 为空既可能是历史回执
+	// 也可能只是投影没带这一项，而"路径为空"被当成 abort 判据时，一条其实该撤链的
+	// 有效意图会被判死（业务已提交、链接永久残留）。真实清单与身份一律由
+	// withdrawDeactivatedLinks 在顾问锁内重读回执取；缺事实在那里报受控错误、保 pending。
+	if projectID == "" || (item.SourceType == pubcontract.ReceiptSourcePage && pageID == "") {
+		// 连定位事实都没有（历史回执 / 非本模块来源）：无从开作用域，结案为未生效。
+		s.abortPublishReceipt(ctx, item.ID, "下线意图缺少工程/页面事实")
+		return false, nil
+	}
+	if item.SourceType == pubcontract.ReceiptSourceProject {
+		return s.recoverProjectDeactivateReceipt(ctx, item, projectID)
+	}
+	if _, perr := parseReceiptID(item.ID); perr != nil {
+		return false, perr
+	}
+	var (
+		abandon   bool
+		committed bool
+	)
+	txErr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, pageID); aerr != nil {
+			return aerr
+		}
+		row, lerr := s.routes.LoadDeactivationReceiptTx(ctx, tx, pageReceiptOwner(pageID), projectID, item.ID)
+		if lerr != nil {
+			if errors.Is(lerr, gorm.ErrRecordNotFound) {
+				abandon = true
+				return nil
+			}
+			return lerr
+		}
+		if row.ReceiptState != "pending" {
+			// 已被并发结案：本行没我什么事。终态不改写（superseded 也是一种终态）。
+			abandon = true
+			return nil
+		}
+		if !deactivationBusinessCommittedFromData(row.ReceiptData) {
+			// 业务变更还没提交 —— 这不等于"业务不会发生"：预登记之后、业务事务取到
+			// 同一把顾问锁之前的窗口里，恢复会看到 false，而业务随时可能提交。
+			// 因此**不能终态化**（abort 会把一个尚未开始的有效意图判死，业务随后
+			// 提交成功却再无回执可撤链 → 永久残留）。保 pending、不动访问面。
+			return nil
+		}
+		committed = true
+		return nil
+	})
+	if txErr != nil {
+		return false, txErr
+	}
+	if abandon {
+		return false, nil
+	}
+	if !committed {
+		s.keepPublishReceiptPending(item.ID, "下线意图的业务变更尚未提交")
+		return false, nil
+	}
+	if werr := s.withdrawDeactivatedLinks(ctx, projectID, pageID, item.ID); werr != nil {
+		// 被新 owner 接管 / 链接已改指 / 缺身份：留 pending、不结案，也不动别人的链。
+		// 错误必须上抛（不能 return nil）：调用方据此把这条计为待重试而不是已完成。
+		logger.Scene("publication").With("receiptId", item.ID).With("pageId", pageID).
+			Warn("下线回执的撤链被归属复验拒绝，保持 pending 待下一轮: " + werr.Error())
+		return false, werr
+	}
+	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
+		return false, cerr
+	}
+	return true, nil
 }

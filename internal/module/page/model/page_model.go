@@ -49,6 +49,14 @@ type PageEntity struct {
 	StagedArtifactID  *string         `gorm:"column:staged_artifact_id"`
 	ActiveArtifactID  *string         `gorm:"column:active_artifact_id"`
 	Stale             bool            `gorm:"column:stale;not null"`
+	// InputVersion 编译输入代次（迁移 699）：**输入变更**（草稿保存 / 译文扇出 / 依赖标记）
+	// 在与该变更同一个事务里原子 +1；**激活不推进**，只按它做谓词
+	// （WHERE input_version = $expect）证明「我编译的是最新输入」。
+	//
+	// 为什么不是「提交顺序号」：提交顺序只说明谁后提交，不说明谁编译的是新输入 ——
+	// 旧输入晚到照样拿到更大的号并覆盖新产物。激活只验证、不推进，也让同一批多语言
+	// 发布里每种语言读到的都是同一个值（不会因第一个语言成功而让其余语言失败）。
+	InputVersion int64 `gorm:"column:input_version;not null"`
 	// ExcludedLangs 本页排除的语言（迁移 491，见 page_langs_model.go）：被排除的语言
 	// 本页不产出，也不进语言切换器 / hreflang / sitemap；空数组 = 全部站点语言都产出。
 	ExcludedLangs StringArray `gorm:"column:excluded_langs;type:text[]"`
@@ -227,10 +235,9 @@ func (m *Model) UpdateThemeSnapshot(ctx context.Context, projectID, pageID strin
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
 			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-			UpdateColumns(map[string]any{
+			UpdateColumns(mergeInputChange(map[string]any{
 				"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,theme}', ?, true)", themeJSON),
-				"update_time":    time.Now().UTC(),
-			}).Error
+			}, time.Now().UTC())).Error
 	})
 }
 
@@ -277,10 +284,9 @@ func (m *Model) UpdateStructureSnapshot(ctx context.Context, projectID, pageID s
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
 			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-			UpdateColumns(map[string]any{
+			UpdateColumns(mergeInputChange(map[string]any{
 				"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,structure}', ?, true)", structureJSON),
-				"update_time":    time.Now().UTC(),
-			}).Error
+			}, time.Now().UTC())).Error
 	})
 }
 
@@ -318,7 +324,7 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string
 		if err := tx.Model(&rows).
 			Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			Updates(map[string]any{"stale": true, "update_time": time.Now().UTC()}).Error; err != nil {
+			Updates(staleMarkUpdates(time.Now().UTC())).Error; err != nil {
 			return err
 		}
 		ids = pageIDsOf(rows)
@@ -370,11 +376,77 @@ func (m *Model) markStaleForI18nIn(ctx context.Context, tx *gorm.DB, projectID s
 		Model(&rows).
 		Where("project_id = ? AND deleted_at IS NULL", projectID).
 		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-		Updates(map[string]any{"stale": true, "update_time": at}).Error
+		Updates(staleMarkUpdates(at)).Error
 	if err != nil {
 		return nil, err
 	}
 	return pageIDsOf(rows), nil
+}
+
+// staleMarkUpdates 「把页面标记为待重建」的唯一写法：stale=true 与 input_version 原子 +1。
+//
+// 为什么必须一起写、且写成表达式（input_version + 1）而不是读改写：
+//   - 版本号只在**输入变更**时推进；标记 stale 恰恰就是「输入变了、产物过期」这件事本身，
+//     两者分开写会留下「已过期但版本没变」的行 —— 那次变更编译出来的产物一旦晚到，
+//     激活谓词（input_version = $expect）会放行它，等于闸门失效；
+//   - 读改写需要先 SELECT 再 UPDATE，两条语句之间其它事务的 +1 会被覆盖掉（丢版本）；
+//     gorm.Expr 让 +1 在数据库里原子完成，与并发标记互不覆盖。
+//
+// 参数只有 at：本 map 的每一项都是「标记」这件事的一部分，不接受调用方各自拼 map
+// （四个标记入口各拼一份时，新加的入口漏掉 input_version 不会有任何编译错误）。
+
+// draftSaveUpdates 保存草稿的列集合（自带事务与透传事务两条入口共用一份）。
+//
+// 草稿文档 / 路径 / 版本一变，产物依据的输入就变了，因此与 stale=true 一样属于
+// 「输入变更」：input_version 必须**同一条语句**原子 +1（理由见 staleMarkUpdates）。
+// 写成助手而不是两处各拼一份：SaveDraftWithRevision 与 SaveDraftWithRevisionTx
+// 任何一处漏掉 input_version，走那条入口的保存就不会让在途的激活失败。
+func draftSaveUpdates(path string, document json.RawMessage, nextVersion int64, updatedAt time.Time) map[string]any {
+	return map[string]any{
+		"draft_path":     path,
+		"draft_document": document,
+		"draft_version":  nextVersion,
+		"stale":          true,
+		"input_version":  gorm.Expr("input_version + 1"),
+		"update_time":    updatedAt,
+	}
+}
+
+func staleMarkUpdates(at time.Time) map[string]any {
+	return map[string]any{
+		"stale":         true,
+		"input_version": gorm.Expr("input_version + 1"),
+		"update_time":   at,
+	}
+}
+
+// inputChangeUpdates 只改**编译输入**、不标 stale 的列集合（主题快照 / 结构快照 /
+// 语言排除 / 草稿路径）。
+//
+// 为什么这几处也算「输入变更」：它们全部写进 draft_document 或其等价物（路径决定
+// canonical 地址，语言排除决定产出范围），产物依据的输入因此变了，在途的编译结果
+// 就不再代表最新输入。漏掉任何一处，那次变更之前开始的编译晚到时会带着旧版本号
+// 通过激活谓词，覆盖掉新输入编译出的产物 —— 与 staleMarkUpdates 的失效场景同源。
+//
+// 不置 stale：这四处各自的调用方（主题刷新 / 语言排除 / 改 URL）已在同一事务或紧随
+// 其后做了自己的标记动作，这里只负责版本这只闸门。
+func inputChangeUpdates(at time.Time) map[string]any {
+	return map[string]any{
+		"input_version": gorm.Expr("input_version + 1"),
+		"update_time":   at,
+	}
+}
+
+// mergeInputChange 把 inputChangeUpdates 并进调用方自己的列集合。
+//
+// 用助手而不是让调用方把 "input_version" 抄进各自 map：抄写会漏（新入口不会因此
+// 编译失败），而漏掉的后果是在途编译结果能通过激活谓词 —— 一个只在并发下才现形、
+// 事后无从追查的覆盖。覆盖顺序固定：调用方的列在前，版本与时间在后。
+func mergeInputChange(cols map[string]any, at time.Time) map[string]any {
+	for k, v := range inputChangeUpdates(at) {
+		cols[k] = v
+	}
+	return cols
 }
 
 // MarkStaleByIDs 在**指定工程作用域内**按页面 ID 列表标记待重建，返回**本次真正命中**的页面 ID。
@@ -416,12 +488,15 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		var rows []PageEntity
 		// UpdateColumns 而不是 Updates：前者跳过 GORM 的自动时间戳填充，本方法
-		// 的语义是「只改 stale，不动 update_time」（at 参数留给将来用）。
+		// 的语义是「只标 stale + 推进版本，不动 update_time」（at 参数留给将来用）。
 		if err := tx.Model(&rows).
 			Where("project_id = ? AND deleted_at IS NULL AND id = ANY(string_to_array(?, ',')::uuid[])",
 				projectID, strings.Join(ids, ",")).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			UpdateColumns(map[string]any{"stale": true}).Error; err != nil {
+			UpdateColumns(map[string]any{
+				"stale":         true,
+				"input_version": gorm.Expr("input_version + 1"),
+			}).Error; err != nil {
 			return err
 		}
 		marked = pageIDsOf(rows)
@@ -589,7 +664,7 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string
 			Where("project_id = ? AND deleted_at IS NULL AND ("+blockRefMatchCond+" OR "+blockStructureMatchCond+")",
 				projectID, blockID, blockID, blockID, blockID).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-			Updates(map[string]any{"stale": true, "update_time": time.Now().UTC()}).Error; err != nil {
+			Updates(staleMarkUpdates(time.Now().UTC())).Error; err != nil {
 			return err
 		}
 		ids = pageIDsOf(rows)
@@ -775,13 +850,7 @@ func (m *Model) SaveDraftWithRevision(
 		}
 		result := tx.Model(&PageEntity{}).
 			Where("id = ? AND project_id = ? AND deleted_at IS NULL AND draft_version = ?", pageID, projectID, expectedVersion).
-			Updates(map[string]any{
-				"draft_path":     path,
-				"draft_document": document,
-				"draft_version":  nextVersion,
-				"stale":          true,
-				"update_time":    updatedAt,
-			})
+			Updates(draftSaveUpdates(path, document, nextVersion, updatedAt))
 		if result.Error != nil {
 			return result.Error
 		}
@@ -804,7 +873,7 @@ func (m *Model) MoveDraftPath(ctx context.Context, projectID, pageID, newPath st
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
 			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-			Updates(map[string]any{"draft_path": newPath, "update_time": at}).Error
+			Updates(mergeInputChange(map[string]any{"draft_path": newPath}, at)).Error
 	})
 }
 

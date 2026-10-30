@@ -63,6 +63,9 @@ func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
 type routeOwner struct {
 	pageID         string
 	presentationID string
+	// projectID 项目级下线（无 page / presentation 归属的链接）专用。
+	// 三者**恰好一个**非空，见 sourceType。
+	projectID string
 }
 
 // parseRouteOwner 解析归属者并校验恰好一个非空。
@@ -83,6 +86,9 @@ func parseRouteOwner(pageID, presentationID string) (routeOwner, error) {
 // 筛选「自己该管的那一批回执」，各写一遍字面量迟早分叉，而分叉的表现是
 // 「回执留在 pending 但没有任何收敛例程认领它」。
 func (o routeOwner) sourceType() string {
+	if o.projectID != "" {
+		return pubdto.ReceiptSourceProject
+	}
 	if o.presentationID != "" {
 		return pubdto.ReceiptSourcePresentation
 	}
@@ -91,6 +97,9 @@ func (o routeOwner) sourceType() string {
 
 // sourceID 回执来源 id（source_id 是 uuid NOT NULL 列，必须写归属者本身）。
 func (o routeOwner) sourceID() string {
+	if o.projectID != "" {
+		return o.projectID
+	}
 	if o.presentationID != "" {
 		return o.presentationID
 	}

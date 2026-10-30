@@ -11,13 +11,26 @@ import (
 
 	"gorm.io/gorm"
 
+	artifactmodel "go_wp/internal/module/artifact/model"
+	artifactservice "go_wp/internal/module/artifact/service"
+	blockmodel "go_wp/internal/module/block/model"
+	blockservice "go_wp/internal/module/block/service"
+	buildmodel "go_wp/internal/module/build/model"
+	buildservice "go_wp/internal/module/build/service"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationmodel "go_wp/internal/module/navigation/model"
 	navigationservice "go_wp/internal/module/navigation/service"
+	pagemodel "go_wp/internal/module/page/model"
+	pageservice "go_wp/internal/module/page/service"
+	presentationmodel "go_wp/internal/module/presentation/model"
+	presentationservice "go_wp/internal/module/presentation/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/public/test/support"
 )
@@ -39,7 +52,45 @@ func newNavigationService(t *testing.T) (*navigationservice.Service, *projectser
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	return navigationservice.NewService(navigationmodel.NewModel(db), projects), projects, project.ID, db
+	svc := navigationservice.NewService(navigationmodel.NewModel(db), projects)
+	attachNavigationWritePorts(t, svc, db, projects)
+	return svc, projects, project.ID, db
+}
+
+// attachNavigationWritePorts 注入菜单 CRUD 的同事务失效端口（五端口全齐）。
+//
+// 为什么必须用真实实现而不是空桩：service 侧 writePortsReady 是**全齐才放行**（缺任一即
+// ErrTranslationWriteUnavailableError，也就是本文件此前四条用例报的
+// navigation.err.translation.unavailable）。这个 fail closed 是对的 —— 缺端口时
+// 「保存成功、线上停在旧菜单」是真实出现过的形态，所以修的是夹具不是生产判据。
+//
+// 而空桩只满足「放行」这一层，证明不了依赖键拼对、命中口径选对。这里装的是测试库里
+// 的真实 page / presentation / build 服务，写入口照常往同一事务里落库：
+//   - Pages / Items：page 模块按位置键与按项键标手工页面 stale；
+//   - Instances / ItemInstances：presentation 模块标实例 stale 并推进 input_version
+//     （两条独立命中口径：menu:{project}:{kind} 与 navigation:{itemID}）；
+//   - Queue：build 模块写一条 menu_stale 任务。
+//
+// 本文件只断言导航项本身的读写与渲染（不查 stale 列与队列），真实端口的作用是让写入口
+// 走它生产里的那条路径，而不是被一层直通桩改写。
+func attachNavigationWritePorts(t *testing.T, svc *navigationservice.Service,
+	db *gorm.DB, projects projectcontract.ProjectService) {
+	t.Helper()
+	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
+	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
+	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), artifacts, routes, projects, blocks,
+		nil, nil, nil, nil)
+	instances := presentationservice.NewService(presentationmodel.NewModel(db),
+		nil, nil, projects, blocks, routes)
+	queue := buildservice.NewService(buildmodel.NewModel(db))
+	svc.SetWritePorts(navigationservice.NavigationWriteDeps{
+		Pages:         pages,
+		Instances:     instances,
+		Items:         pages,
+		ItemInstances: instances,
+		Queue:         queue,
+	})
 }
 
 // createNav 创建一条导航项并返回响应（测试失败即中止）。

@@ -1,7 +1,7 @@
 {* admin/order_ship_form.html — 发货表单（抽屉片段，迁移 624 / 625，S3）
 
    由 GET /admin/orders/ship-form?orderId= 渲染（adminui.BareSlot：不带页壳）。
-   表单提交走 data-write-api → POST /api/order/shipment/create（JSON），
+   表单提交走 data-write + data-write-url → POST /api/order/shipment/create（JSON），
    成功后 admin.js 按 data-write-nav 重载当前页。
 
    三个数字全部来自 service（Form.Lines 的 Quantity / Shipped / Remaining）：
@@ -10,7 +10,7 @@
 {{tr := .["t"]}}
 {{form := .Form}}
 {{csrf := .CSRFToken}}
-<form data-write-api="/api/order/shipment/create" data-write-nav method="post">
+<form data-write="create" data-write-url="/api/order/shipment/create" data-write-nav method="post">
     {{include "../partials/csrf_field.html" map("csrf", csrf)}}
     <input type="hidden" name="orderId" value="{{form.OrderID}}">
     {* 幂等键：每次渲染一个。双击提交 / 网络重试只会产生一张发货单，库存也只减一次。 *}

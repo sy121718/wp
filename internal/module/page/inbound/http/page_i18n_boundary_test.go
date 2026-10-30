@@ -22,8 +22,8 @@ var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\
 //	· 登记项不再命中 → 也失败（登记表退化成注释就没人看它了，与 rawSQLDebtList 同一判据）。
 func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
-		"pages_handle.go":         "JSON 出口成品串：错误事实的 Tail 复合形态（多段拼接）",
-		"page_jump.go":            "提示页出口（RenderJump 那条链要成品串）+ Tail 复合形态",
+		"pages_handle.go": "JSON 出口成品串：错误事实的 Tail 复合形态（多段拼接）",
+		"page_jump.go":    "提示页出口（RenderJump 那条链要成品串）+ Tail 复合形态",
 	}
 
 	hits := scanControllerTranslate(t)

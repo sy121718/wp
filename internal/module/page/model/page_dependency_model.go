@@ -144,7 +144,7 @@ func markStaleByDependencyIn(ctx context.Context, tx *gorm.DB, projectID, kind, 
 	if err := tx.WithContext(ctx).Model(&rows).
 		Where("project_id = ? AND deleted_at IS NULL AND id IN (?)", projectID, affected).
 		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
-		Updates(map[string]any{"stale": true, "update_time": at}).Error; err != nil {
+		Updates(staleMarkUpdates(at)).Error; err != nil {
 		return nil, err
 	}
 	return pageIDsOf(rows), nil

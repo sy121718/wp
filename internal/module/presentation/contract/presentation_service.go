@@ -3,6 +3,9 @@ package presentationcontract
 
 import (
 	"context"
+	"time"
+
+	"gorm.io/gorm"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/module/presentation/dto"
@@ -136,6 +139,56 @@ const (
 	RenderModeTemplate = presentationdto.RenderModeTemplate
 	RenderModeDocument = presentationdto.RenderModeDocument
 )
+
+// PresentationStalePort 自动发布实例侧的「按菜单位置失效」最小端口。
+//
+// 为什么这个端口住在这里，而不是 navigation 只声明自己的：导航的译文整表写入要在
+// **同一个事务**里标记 page / presentation / 入队 build 三处（AGENTS.md 跨模块写必须
+// 同进同出），而导航不许 import presentation 的 service / model。于是消费者侧声明端口、
+// 装配层用真实服务实现 —— 与 navigationcontract 里的同名声明同形，这里是**实现侧**的
+// 显式承诺：presentation.Service 必须满足它，装配期一旦掉线就编译不过。
+//
+// 与 PresentationService 上已有的 MarkStaleByDependency 严格区分：
+//   - 那条按 (kind,key) 全键匹配，关心的是「哪个依赖变了」；
+//   - 这条只收 kind（菜单位置），键的构造留在 presentation 内部，导航不需要知道
+//     menu:{project}:{kind} 这种拼法。
+type PresentationStalePort interface {
+	// MarkInstanceMenuStaleTx 在调用方事务内，把「活跃或暂存产物声明了该菜单位置依赖」的
+	// 实例标记为待重建，返回真正命中的行数（RETURNING 回读，不是入参回显）。
+	//
+	// 版本语义与其它标记入口一致：stale=true 与实体 input_version 原子 +1（菜单译文烘进
+	// HTML，是该实例的编译输入）。导航侧的 build_jobs.input_version 是队列任务序列号，
+	// 与本列无关 —— 不读、不传、不赋值。
+	MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (n int64, err error)
+
+	// MarkInstanceNavigationStaleTx 在调用方事务内，把「活跃或暂存产物声明了**该具体
+	// 菜单项**依赖」（依赖键 navigation:{navigationID}）的实例标记为待重建，返回真实命中行数。
+	//
+	// 为什么与位置版并列：渲染期按两种粒度记录导航消费（builder/core/render.go 的
+	// UseMenu → menu:{project}:{kind}、UseNavigation → navigation:{itemID}），只标位置会让
+	// 按项引用的实例既不被标 stale、也没有版本屏障（旧输入编译的产物在激活谓词处照旧通过）。
+	//
+	// 键的构造留在 presentation 内部：导航只给 menu item id，不需要知道 navigation:{id} 拼法。
+	// 版本语义与位置版一致：stale=true 与实体 input_version 原子 +1；导航侧
+	// build_jobs.input_version 是任务序列号，不读、不传、不赋值。
+	MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string, at time.Time) (n int64, err error)
+}
+
+// StaleRebuildPort 待重建实例的**同步**重建端口（menu_stale 消费侧用）。
+//
+// 为什么必须单开一条：既有 RebuildStale 是「能入队就入队、入不了就逐条尽力重建」的
+// 尽力而为入口 —— 它在两处都会**吞掉单条失败**（enqueueStaleRebuilds 与逐条循环都只
+// 记日志后 continue，最后恒 return nil）。对 menu_stale 的消费者来说那正是最坏的结果：
+// 队列任务被标记为 succeeded，而实例一个都没重建，菜单标签永远停在旧字节，日志里
+// 只有一条 Warn。本端口因此把「逐条重建、任一失败即返回该错误」写成契约。
+//
+// 与 RebuildStale 的关系：不是替换，是并列。旧入口的调用方（周期收敛、启动期）需要的
+// 正是「尽力而为、不阻断」，它们继续用它；需要「要么全成、要么看见错误」的新调用方用本端口。
+type StaleRebuildPort interface {
+	// RebuildStaleSync 逐条同步重建本工程内 stale 的实例，返回成功条数；
+	// **任一条失败立即返回该错误**（已成功的保留，不补偿 —— 重建是幂等的，重试即可收敛）。
+	RebuildStaleSync(ctx context.Context, projectID string) (rebuilt int, err error)
+}
 
 // BuildQueueEnqueuer 自动重建任务的入队端口（PERF-020）。
 //

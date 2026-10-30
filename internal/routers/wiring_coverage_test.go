@@ -61,9 +61,12 @@ var moduleInternalSetters = map[string]string{
 	"SetContentWriter":      "content.SetupContentPages：模块内 i18n.NewContentWriterDefault() 构造后转交",
 	"SetCollectionSchemas":  "content.SetupContentRoutes：形参 collections 转交集合源注册",
 	// —— navigation ——
-	"SetBlockPanelPort":  "navigation.SetupNavigationPages：形参 blocks（BlockService）转交页面 handle",
-	"SetMenuInvalidator": "navigation.SetupNavigationPages：形参 navigations 的收窄断言（navTranslationMenuInvalidator）转交",
-	"SetPageMarker":      "navigation.SetupNavigationPages：形参 pageSvc 的收窄断言（navTranslationPageMarker）转交；admin.SetupAdminPages 另有一处形参 pages 转交（同名同义）",
+	//
+	// SetMenuInvalidator / SetPageMarker 两条豁免已随译文写链下沉而删除：那两个端口
+	// 现在由装配层直接交给 service 的 TranslationWriter（见 wiring.go 的四条
+	// navigation.TranslationWriter* 端口与 assembly_publish.go 的注入点），页面句柄
+	// 不再转手它们 —— 豁免条目在扫描里已无对应调用，留着会被 reportOutdatedExemptions 判死。
+	"SetBlockPanelPort": "navigation.SetupNavigationPages：形参 blocks（BlockService）转交页面 handle",
 	// —— ai ——
 	"SetCallLogWriter":     "ai.SetupAIRoutes：模块内 aimodel.NewCallLogModel(db) 构造（调用流水写侧）",
 	"SetCallLogReader":     "ai.SetupAIRoutes：同一个 callLog 实例的读侧（同一个 model，无跨模块依赖）",

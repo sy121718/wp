@@ -150,7 +150,18 @@ const (
 	portContentTemplateInvalidator       = "contenttemplate.SetInvalidator"
 	portNavigationSourceResolver         = "navigation.SetSourceResolver"
 	portNavigationMenuDispatcher         = "navigation.SetMenuStaleDispatcher"
-	portDashboardBlueprints              = "dashboard.SetBlueprints"
+	// —— 导航译文 MVC 写链（menu_stale 同事务派发 + 严格同步重建消费）——
+	// 一次写入依赖**三个别的模块的同事务端口**，三个分开登记而不是合成一条：
+	// 合成后装配自检只能报「译文写没接上」，说不出「合成写了、实例没标」这种半边状态。
+	// 后端执行器（RegisterExecutor）不登记在这里：它是构造参数式注册（不是可空端口），
+	// 与 portPageBuildQueue 同一取舍，由 registerMenuStaleExecutor 的装配期断言守。
+	portNavigationTranslationWriter = "navigation.SetTranslationWriteService"
+	portNavigationPageStalePort     = "navigation.TranslationWriter(page)"
+	portNavigationInstanceStalePort = "navigation.TranslationWriter(presentation)"
+	portNavigationMenuStaleEnqueue  = "navigation.TranslationWriter(build)"
+	// 菜单 CRUD 的同事务失效端口（page 位置 / page 项 / build 入队）：与译文写路径同一份。
+	portNavigationMenuWritePorts = "navigation.SetWritePorts"
+	portDashboardBlueprints      = "dashboard.SetBlueprints"
 	// 概览页的跨模块只读数据（订单聚合 / 访问统计 / 路径→页面类型）。
 	// 三条依赖都由 setter 注入：概览页是唯一同时需要它们的页面，其余页面不受影响。
 	portDashboardOverview   = "dashboard.SetOverviewPorts(frontend)"
@@ -350,6 +361,26 @@ var wiringManifest = []wiringEntry{
 		"来源菜单项退化为记录自身的 title/path（不解析目标实体）"},
 	{portNavigationMenuDispatcher, "pipeline.Fanout", "navigation", wiringRequiredPort,
 		"改公开站点导航不派发任何失效：已发布页面的页眉/页脚永远停在旧菜单（全站可见且无报错）"},
+	// —— 导航译文写链（menu_stale）——
+	//
+	// 四条都是「写成功、派发丢了」的静默失配：译文整表提交是一条事务化流转
+	// （navigationservice.TranslationWriter），它把「写译文 + 标页面 + 标实例 + 入队」
+	// 放进同一个事务。三个端口缺任何一条，事务就整体 fail closed（译文一条都写不进去，
+	// 回执是 500）—— 这正是它们必须是 required-port 的理由：不存在「部分生效」的可见降级。
+	// 第一条（SetTranslationWriteService）缺的是**注入点本身**：未注入时译文分支
+	// fail closed 成 500（导航译文工作台的保存按钮永远报「存储不可用」）。
+	{portNavigationTranslationWriter, "navigation（TranslationWriter 构造于装配层）", "navigation.inbound/http", wiringRequiredPort,
+		"译文保存回退到旧的三次独立提交路径或整体不可用：写成功而 stale/入队丢失，站点停在旧菜单标签且无报错"},
+	{portNavigationPageStalePort, "page", "navigation.TranslationWriter", wiringRequiredPort,
+		"译文写成功但手工页面不标 stale：已发布页面永远停在旧菜单文字"},
+	{portNavigationInstanceStalePort, "presentation", "navigation.TranslationWriter", wiringRequiredPort,
+		"译文写成功但自动发布实例不标 stale：详情页/商品页停在旧菜单文字，线上与库里都看不出异常"},
+	{portNavigationMenuStaleEnqueue, "build", "navigation.TranslationWriter", wiringRequiredPort,
+		"译文写成功但重建任务不入队：既无页面级重建也无实例级重建，只能等下一次人工触发"},
+	// 菜单 CRUD 的同事务失效端口（位置键 / 项键 / 入队）：与译文写路径是同一份适配器。
+	// 缺它时 CRUD 写入口 fail closed —— 与「只写数据、不派发失效」相比，500 是可见且可诊断的。
+	{portNavigationMenuWritePorts, "page/build", "navigation（菜单 CRUD）", wiringRequiredPort,
+		"菜单增删改排序只写数据不派发失效：已发布页面/实例停在旧菜单上且无报错"},
 	{portDashboardBlueprints, "blueprint", "dashboard", wiringOptionalDegraded,
 		"新建页面表单不显示「从蓝图开始」下拉（建页照常走空白草稿）"},
 	{portDashboardOverview, "order/analytics/page", "dashboard", wiringOptionalDegraded,

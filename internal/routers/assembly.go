@@ -201,6 +201,9 @@ type assembly struct {
 	buildSvc       buildcontract.BuildService
 	blueprintSvc   blueprintcontract.BlueprintService
 	navigationSvc  navigationcontract.NavigationService
+	// navigationHandle 导航 JSON 入口的句柄（SetupNavigationRoutes 返回）。
+	// 只有译文写服务要在发布侧注入（见 wirePublishingPorts）；它不参与路由注册。
+	navigationHandle *navigationhttp.Handle
 
 	collectionRegistry core.CollectionRegistry
 	contentSvc         contentcontract.ContentService
@@ -532,7 +535,11 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	blueprintSvc := blueprinthttp.SetupBlueprintRoutes(authorizedAPI, db)
 	// 公开站点导航（0-C，与后台 menu 严格隔离）。工程契约用于只带 id 的入口逐工程定位
 	// 工程归属（DB-009：navigations 带 FORCE 策略，作用域只能落到具体工程）。
-	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projectService)
+	//
+	// 同时拿回 *Handle：它的译文写服务（TranslationWriteService）依赖 page / presentation /
+	// build 三个跨模块**同事务**端口，而这三个模块在发布侧才装配完 —— 句柄先放在 a 上，
+	// 等 wirePublishingPorts 里端口齐了再注入（见 a.navigationHandle）。
+	navigationSvc, navigationHandle := navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projectService)
 	// 蓝图契约在下面接线给 page（SetBlueprints）：新建页面可从蓝图初始化文档。
 	// 集合源注册表（装配期注册，构建期只读，issue #9）：各领域模块注册自己的集合源
 	// （内容集合 / 商品集合），集合类组件与集合源元数据接口只认注册表 —— 构建层
@@ -635,6 +642,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	a.buildSvc = buildSvc
 	a.blueprintSvc = blueprintSvc
 	a.navigationSvc = navigationSvc
+	a.navigationHandle = navigationHandle
 	a.collectionRegistry = collectionRegistry
 	a.contentSvc = contentSvc
 	a.entityRegistry = entityRegistry

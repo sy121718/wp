@@ -52,6 +52,7 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/shell"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	pageview "go_wp/pkg/view"
@@ -649,11 +650,22 @@ type navigationTranslationRow struct {
 	Translated bool
 }
 
-// navigationTranslationGroup 按位置（header / footer）分组。
+// navigationTranslationGroup 按菜单位置分组（四个位置各自一组，顺序即规范顺序）。
+//
+// 分组恒存在：某个位置没有菜单项时也出这一组（模板据此显示「该位置还没有菜单项」），
+// 读失败时组上带 LoadFailed + 该位置的错误事实 —— 其余位置照常展示，不是整页失败。
 type navigationTranslationGroup struct {
 	Kind  string
 	Title string
 	Rows  []navigationTranslationRow
+	// LoadFailed 该位置读取失败（行读取或来源解析任一失败）。
+	//
+	// 为什么组要带这个标记：共享来源索引只为失败位置产出 KindReadError，而「哪个组失败」
+	// 必须由读侧把 Kind 对回分组；模板据此把该组渲染成错误槽，而不是渲染成空菜单 ——
+	// 「读不到」与「这里没有菜单」是两件事，合并就是静默不收敛。
+	LoadFailed bool
+	// LoadError 该位置的错误事实（key + 中文兜底）。模板自己取词（range 内取不到 t）。
+	LoadError navigationLoadError
 }
 
 // navigationTranslationHandle 导航译文工作台。
@@ -661,38 +673,46 @@ type navigationTranslationHandle struct {
 	navigations navigationcontract.NavigationService
 	projects    projectcontract.ProjectService
 	writer      *i18n.ContentWriter
-	// pages 译文变更后标记手工页面待重建（与商品 / 文章工作台同一动作）。
-	// 菜单文字出现在**每个页面**上，所以这里没有「精确到某页」的选项 ——
-	// 按 i18n:content 依赖条目做全站标记，与页面翻译工作台同一链路。
-	pages navTranslationPageMarker
-	// menus 译文变更后派发导航依赖失效（自动发布实例侧）。
-	//
-	// 只标页面是不够的：菜单文字同样烘在 presentation 实例的产物里，那些实例
-	// 没有 i18n:content 全站标记的落点，会永远停在旧标签上（与刚修好的 menu 依赖
-	// 缺口同源）。派发口径与导航项增删改完全一致（menu:{projectID}:{kind}），
-	// 这里只按位置发起，键构造与扇出都在发布内核，不自创第三套。
-	menus navTranslationMenuInvalidator
+	// 注意：本句柄**只读**。写路径（含「标页面 / 标实例 / 入队」三处同事务失效）
+	// 已整体下沉到 navigationservice.TranslationWriter，入口是
+	// POST /api/navigation/update（action="translations"，见 navigation_handle.go）。
+	// 这里曾经挂过 pages / menus 两个失效端口 —— 那是把服务端事务编排的端口借道
+	// 页面句柄转手（跨模块端口经由 UI 层的字段传递），装配一漏就是静默不标记；
+	// 现在端口只在装配层直接交给 service，本句柄只回答「这一屏要显示什么」。
 }
 
-// navTranslationPageMarker 页面侧的最小失效端口（消费者侧定义，跨模块只依赖这条）。
-type navTranslationPageMarker interface {
-	MarkStaleForI18n(ctx context.Context) error
-}
-
-// navTranslationMenuInvalidator 导航依赖的最小失效端口（消费者侧定义）。
+// navigationTranslationSourceOpen 译文工作台读侧需要的最小来源索引端口（消费者侧定义）。
 //
-// 实现方是 navigation 模块自己的 Service —— 它持有 SetMenuStaleDispatcher 注入的
-// 派发端口，所以「改菜单项」与「改菜单文字」走的是同一段失效逻辑、同一条装配链。
-type navTranslationMenuInvalidator interface {
-	InvalidateMenuLabels(ctx context.Context, projectID string, kinds []string)
+// 为什么在消费者侧声明窄接口而不是收编进 NavigationService：导航服务还有别的消费者
+// （构建期适配器、MCP、菜单管理页），它们的契约与本页无关；把「工作台读什么」塞进
+// 公共接口等于让每个实现都得回答这个问题。生产实现是
+// navigationservice.Service.OpenSourceIndex —— 四个 kind 全收集、严格来源解析、
+// 逐位置失败事实，全部复用，本页不复制 hash / 语境 / 来源算法。
+type navigationTranslationSourceOpen interface {
+	OpenSourceIndex(ctx context.Context, projectID string) (navigationcontract.SourceIndex, error)
 }
 
-// SetPageMarker 注入页面失效端口（装配期）。
-func (h *navigationTranslationHandle) SetPageMarker(m navTranslationPageMarker) { h.pages = m }
+// sourceIndex 打开本页使用的来源索引。
+//
+// 三种形态分开（都不能混成「空索引」）：
+//   - 实现了窄接口 → 用它（生产路径）；
+//   - 未实现（老实现 / 测试桩）→ 返回 (nil, nil)：不静默回退到旧 Tree 读法，
+//     页面退化为空态 —— 回退会把「没接上」伪装成「这里没有菜单」；
+//   - 打开失败 → 返回错误，由调用方落成整页错误槽。
+func (h *navigationTranslationHandle) sourceIndex(ctx context.Context, projectID string) (navigationcontract.SourceIndex, error) {
+	if h == nil || h.navigations == nil {
+		return nil, nil
+	}
+	opener, ok := h.navigations.(navigationTranslationSourceOpen)
+	if !ok {
+		return nil, nil
+	}
+	return opener.OpenSourceIndex(ctx, projectID)
+}
 
-// SetMenuInvalidator 注入导航依赖失效端口（装配期）。
-func (h *navigationTranslationHandle) SetMenuInvalidator(m navTranslationMenuInvalidator) {
-	h.menus = m
+// indexFailureFact 索引打开失败的事实（取词由调用方在请求语言里做一次）。
+func indexFailureFact(err error) navigationLoadError {
+	return navigationLoadErrorOf(err)
 }
 
 // NewNavigationTranslationHandle 构造。
@@ -715,6 +735,9 @@ func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 	lang := strings.TrimSpace(c.Query("lang"))
 	data := h.build(c.Request.Context(), projectID, lang, navTr(c))
 	data.filter(strings.TrimSpace(c.Query("keyword")))
+	// 有位置读取失败时不进空态：空态说「没有可翻译的菜单文字」，而失败位置的事实
+	// 恰恰是「不知道有没有」—— 分组错误槽必须能渲染出来（否则读失败又被压成一句空话）。
+	data.LoadDegraded = data.anyGroupFailed()
 	pageview.Render(c, data)
 }
 
@@ -734,6 +757,11 @@ type navigationTranslationsData struct {
 	Lang         string
 	Langs        []translationLangOption
 	Groups       []navigationTranslationGroup
+	// LoadDegraded 至少有一个位置读取失败（模板据此放弃整页空态，改渲染分组错误槽）。
+	//
+	// 它不是业务派生，而是「本次渲染走哪一支」的事实：空态那一支整块替换掉表单，
+	// 一旦进去，失败位置的事实就没有落点了。
+	LoadDegraded bool
 	RowCount     int
 	Done         int
 	Saved        bool
@@ -772,6 +800,19 @@ func (d *navigationTranslationsData) filter(keyword string) {
 		d.VisibleCount -= len(rows) - len(selected)
 	}
 	// RowCount/Done/HasData 均描述本次完整加载结果，空态据此识别筛选无匹配。
+}
+
+// anyGroupFailed 本次是否有位置读取失败。
+func (d *navigationTranslationsData) anyGroupFailed() bool {
+	if d == nil {
+		return false
+	}
+	for i := range d.Groups {
+		if d.Groups[i].LoadFailed {
+			return true
+		}
+	}
+	return false
 }
 
 // noteHashKind 记下「某个原文出现在某个菜单位置」（不受列表去重影响）。
@@ -858,7 +899,12 @@ func navigationTranslationFilteredLocation(projectID, lang, keyword string) stri
 	return "/admin/navigations/translations?" + q.Encode()
 }
 
-// build 组装工作台数据：两个位置的全部菜单项 → 现有译文。
+// build 组装工作台数据：四个位置的菜单项 → 现有译文（工程优先、全局回落）。
+//
+// 来源一律由**共享来源索引**给出（Service.OpenSourceIndex）：四 kind 全收集、hash 只算一次、
+// 「这段原文出现在哪些位置」只维护一份。本函数不复制 hash / 语境 / 来源解析 —— 它只做读侧
+// 的三件事：① 按索引条目组织分组与去重；② 自己判「是否参与翻译」并丢掉不可翻译行；
+// ③ 把逐位置读取失败落成该组的错误槽（其余位置照常展示）。
 func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang string,
 	tr func(key, fallback string) string) *navigationTranslationsData {
 	data := &navigationTranslationsData{
@@ -890,6 +936,40 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 	if projectID == "" {
 		return data
 	}
+	index, ierr := h.sourceIndex(ctx, projectID)
+	if ierr != nil {
+		// 一个位置都没读成（或整个索引打不开）：整页给一条归口错误，不伪装成「没有菜单」。
+		// 原始错误只进日志；对外只给事实（key + 兜底），取词在这里发生一次。
+		logger.Scene("navigation").With("project", projectID).Error(ierr, "读取导航来源索引失败")
+		fact := indexFailureFact(ierr)
+		data.Errors = []string{tr(fact.Key, fact.Fallback)}
+		return data
+	}
+	if index == nil {
+		// 索引未装配：这是**装配缺陷**，不是「这里没有菜单」。
+		//
+		// 生产实现（navigationservice.Service.OpenSourceIndex）恒返回非 nil 索引，
+		// 只有「Service 没实现窄接口」或「句柄没接上 navigations」才走到这里。
+		// 此前这里直接 return 保留空态：四个位置全空、页面一句话都不说，症状与
+		// 「菜单确实为空」完全相同 —— 最难定位的一类假空态。现在与「索引打不开」
+		// 走同一条出口：整页一条归口错误（对外只有事实，原文进日志）。
+		logger.Scene("navigation").With("project", projectID).
+			Error(errors.New("导航来源索引未装配"), "导航译文工作台：来源索引端口缺失")
+		fact := navigationLoadErrorOf(errors.New("导航来源索引未装配"))
+		data.Errors = []string{tr(fact.Key, fact.Fallback)}
+		return data
+	}
+	// 逐位置失败先落成组错误槽：模板需要一个「哪个位置读不到」的落点。
+	failed := map[string]navigationLoadError{}
+	for _, f := range index.KindErrors() {
+		if f.Kind == "" {
+			continue
+		}
+		failed[f.Kind] = navigationLoadErrorOf(f.Err)
+	}
+	// 索引条目按 hash 升序：同一 hash 只列一行（译文按原文寻址，列出多行会让「改哪一行
+	// 才算数」变得不清楚）。位置事实来自索引的 Kinds 并集 —— 同一段文字同时出现在页眉与
+	// 页脚时，保存后两个位置都要被失效派发命中（见 kindsForHashes）。
 	seen := map[string]bool{}
 	hashes := make([]string, 0, 8)
 	type rowRef struct {
@@ -898,48 +978,59 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 		hash     string
 	}
 	var refs []rowRef
-	for _, kind := range []string{"header", "footer"} {
-		nodes, terr := h.navigations.Tree(ctx, projectID, kind)
-		if terr != nil {
-			logger.Scene("navigation").With("kind", kind).Error(terr, "读取导航树失败")
+	// 分组用「位置」作键：索引条目可能跨位置，插入顺序不能决定分组位置。
+	groupOf := map[string]int{}
+	for _, kind := range navigationTranslationKinds() {
+		// 分组索引必须就是**本次刚追加的位置下标**：下面 groupOf[home] 用它把行与回读
+		// 目标写进同一个组。这里若只记「已登记」而填 -1，所有行都会被塞进最后一组
+		// （四位置工作台表现为：只有末位有内容、其余三个位置恒空态）。
+		groupOf[kind] = len(data.Groups)
+		fact, ok := failed[kind]
+		data.Groups = append(data.Groups, navigationTranslationGroup{
+			Kind: kind, Title: navKindTitleKey(kind), Rows: []navigationTranslationRow{},
+			LoadFailed: ok, LoadError: fact,
+		})
+	}
+	for _, entry := range index.Entries() {
+		if seen[entry.Hash] {
 			continue
 		}
-		group := navigationTranslationGroup{Kind: kind, Title: navKindTitle(tr, kind), Rows: []navigationTranslationRow{}}
-		var walk func(list []*navigationdto.NavigationNode)
-		walk = func(list []*navigationdto.NavigationNode) {
-			for _, n := range list {
-				if n == nil {
-					continue
-				}
-				src := strings.TrimSpace(n.Title)
-				if src != "" && i18n.ShouldTranslateContent(src) {
-					h := i18n.ContentHash(src)
-					// 位置记录**先于去重**：同一段文字同时出现在页眉与页脚时只列一行，
-					// 但两个位置都要能被失效派发命中（见 kindsForHashes）。
-					data.noteHashKind(h, kind)
-					// 同一段文字在多个菜单项里出现时只保留一行（译文按原文寻址，
-					// 列出多行会让「改哪一行才算数」变得不清楚）。
-					if !seen[h] {
-						seen[h] = true
-						hashes = append(hashes, h)
-						refs = append(refs, rowRef{groupIdx: len(data.Groups), rowIdx: len(group.Rows), hash: h})
-						group.Rows = append(group.Rows, navigationTranslationRow{
-							Context: navigationTranslationContext(), NodeID: n.ID, Kind: kind,
-							Path: n.Path, Source: src, SourceHash: h,
-						})
-					}
-				}
-				walk(n.Children)
-			}
+		// 可翻译判据只在这里判一次：索引刻意不提前丢行（写侧要能给出准确原因），
+		// 读侧只展示可翻译的原文 —— 纯数字 / 纯符号 / 空串在页面上没有可填的译文。
+		if !i18n.ShouldTranslateContent(entry.Source) {
+			continue
 		}
-		walk(nodes)
-		data.RowCount += len(group.Rows)
-		data.Groups = append(data.Groups, group)
+		seen[entry.Hash] = true
+		hashes = append(hashes, entry.Hash)
+		home := translationRowKind(entry.Kinds)
+		gi, ok := groupOf[home]
+		if !ok {
+			// 索引里出现未登记的位置（协议与实现漂移）：不为它编造分组，跳过该条目。
+			// 这不影响其余位置 —— 未登记位置永远不会显示成「读失败」。
+			continue
+		}
+		data.noteHashKind(entry.Hash, home)
+		for _, k := range entry.Kinds {
+			if k == home {
+				continue
+			}
+			data.noteHashKind(entry.Hash, k)
+		}
+		refs = append(refs, rowRef{groupIdx: gi, rowIdx: len(data.Groups[gi].Rows), hash: entry.Hash})
+		data.Groups[gi].Rows = append(data.Groups[gi].Rows, navigationTranslationRow{
+			Context: entry.Context, Kind: home,
+			Path: indexEntryPath(index, entry), Source: entry.Source, SourceHash: entry.Hash,
+		})
+	}
+	for i := range data.Groups {
+		data.RowCount += len(data.Groups[i].Rows)
 	}
 	data.HasData = data.RowCount > 0
 	data.VisibleCount = data.RowCount
 	if h.writer != nil && len(hashes) > 0 {
-		targets, lerr := h.writer.LoadTargets(ctx, lang, hashes)
+		// 工程优先、全局回落：与新建工程/构建期同一口径（LoadTargets 只读全局行，
+		// 会让本工程自己的译法在工作台上「消失」）。
+		targets, lerr := h.writer.LoadTargetsForProject(ctx, projectID, lang, hashes)
 		if lerr != nil {
 			logger.Scene("navigation").With("lang", lang).Error(lerr, "读取现有导航译文失败")
 		} else {
@@ -957,12 +1048,89 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 	return data
 }
 
-// navKindTitle 菜单位置的当前语言名（key 与导航页的 kind 下拉同源：admin.navigations.kind.*）。
-func navKindTitle(tr func(key, fallback string) string, kind string) string {
-	if kind == "footer" {
-		return tr(navigationenums.KindFooter, "页脚导航")
+// navKindTitleKey 菜单位置的标题 key（取词在模板里发生：range 内拿不到根数据的 t）。
+//
+// 四个位置与导航菜单页的 kind 下拉**同源**（同一批 key）：页眉 / 页眉（移动端）/ 页脚 /
+// 页脚（移动端）。桌面与移动端是两个位置、两份数据，标题必须分得开 —— 合成一条会让运营
+// 在两份菜单里看到同一个标题，无从判断自己改的是哪一份。
+func navKindTitleKey(kind string) string {
+	switch kind {
+	case navKindHeaderMobile:
+		return navigationenums.KindHeaderMobile
+	case navKindFooter:
+		return navigationenums.KindFooter
+	case navKindFooterMobile:
+		return navigationenums.KindFooterMobile
+	default:
+		return navigationenums.KindHeader
 	}
-	return tr(navigationenums.KindHeader, "页眉导航")
+}
+
+// navigationTranslationKinds 工作台的分组顺序（= 共享来源索引的收集顺序）。
+//
+// 与 service 的 navigationSourceKinds 同序，但**不引用它**：那个是包内私有常量，inbound
+// 引不到；而顺序本身就是页面契约（页眉→页眉移动端→页脚→页脚移动端），写在这里可读。
+// 漏登记某个位置时该位置的条目会被跳过（不编造分组），不会静默归到别的组里。
+func navigationTranslationKinds() []string {
+	return []string{navKindHeader, navKindHeaderMobile, navKindFooter, navKindFooterMobile}
+}
+
+// translationRowKind 条目在页面上落在哪一组：取 Kinds 里规范顺序最靠前的那个。
+//
+// 索引已保证 Kinds 按规范顺序去重，所以这里只是「取第一个已登记的位置」——
+// 不做第二套排序规则。
+func translationRowKind(kinds []string) string {
+	rank := map[string]int{}
+	for i, k := range navigationTranslationKinds() {
+		rank[k] = i
+	}
+	best, bestRank := "", len(rank)
+	for _, k := range kinds {
+		r, ok := rank[k]
+		if !ok {
+			continue
+		}
+		if r < bestRank {
+			best, bestRank = k, r
+		}
+	}
+	return best
+}
+
+// indexEntryPath 条目在页面上展示的链接。
+//
+// 展示形状属读侧，所以不塞进 contract：共享来源索引只回答「哪段原文、哪些位置」，
+// 「哪个节点的哪个链接」要回菜单树里找。查不到就留空（页面只少一列提示，不伪造链接）。
+func indexEntryPath(index navigationcontract.SourceIndex, entry navigationcontract.TranslationSourceEntry) string {
+	if nodes, ok := index.(navigationcontract.SourceIndexNodes); ok {
+		for _, n := range nodes.Nodes(entry.Hash) {
+			if p := strings.TrimSpace(n.Path); p != "" {
+				return p
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+// navigationLoadError 一条错误事实（key + 中文兜底），模板自己取词。
+//
+// 为什么不是成品句：页面视图的语言由模板的 t 决定，Go 侧若在这里取词，
+// 同一份数据换语言就得重算（而数据是 GET 时构造一次的）。
+type navigationLoadError struct {
+	Key      string
+	Fallback string
+}
+
+// navigationLoadErrorOf 从错误里取事实。
+//
+// 业务错误（索引的 KindReadError 就是 enums 声明的业务错误）取 key + 兜底；
+// 非业务错误走归口 key（原始文本只该出现在日志里，页面给不出定位价值）。
+func navigationLoadErrorOf(err error) navigationLoadError {
+	if fact, ok := facing.FactOf(err); ok {
+		return navigationLoadError{Key: fact.Key, Fallback: fact.Fallback}
+	}
+	return navigationLoadError{Key: navigationenums.InternalKey, Fallback: "操作失败，请稍后重试（细节只进日志）"}
 }
 
 // navigation_page_handle.go — 导航菜单页写动作的**出口**：整页提示（shell.RenderJump，

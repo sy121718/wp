@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"time"
+
+	"gorm.io/gorm"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	pagedto "go_wp/internal/module/page/dto"
@@ -192,6 +195,24 @@ type PagePathKindLookup interface {
 	KindsOfPaths(ctx context.Context, projectID string, paths []string) (map[string]string, error)
 }
 
+// PageMenuStalePort 导航译文变更时「标记页面待重建」的冻结端口（裁定 ⑫ · 主审 ⑭）。
+//
+// 导航在写译文的**同一个事务**里调用它：菜单变化必须与译文一起提交，否则会出现
+// 「译文已提交、页面没标」的半截状态 —— 而 page 侧没有任何自动补的入口。
+// 事务句柄从 navigation 传进来（句柄从 model 下传、边界在调用方 service，见 AGENTS.md「写操作」）。
+//
+// 为什么单独一个单方法接口而不是复用 MarkStaleByDependency：暴露一个 (kind, key) 都能
+// 随便传的入口，等于给导航开了一条通用标记通道；这个端口的语义固定为「某工程某菜单位置
+// 的依赖失效」，签名由 navigation 契约钉住，两边只有这一条路。
+//
+// 实现必须同时推进 pages.input_version（同一条 UPDATE 里原子 +1）：只标 stale 不推进
+// 版本，会让「本次变更之前就编译好、正在等激活的产物」通过激活谓词并上线。
+type PageMenuStalePort interface {
+	// MarkMenuStaleTx 在调用方事务内标记引用该菜单位置的页面，返回命中页数。
+	// kind 是菜单位置（header / header_mobile / footer / footer_mobile）。
+	MarkMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (n int64, err error)
+}
+
 // BuildQueueEnqueuer 构建队列的入队端口（审计 DB-007）。
 //
 // 由 build 模块实现、装配期注入。接口定义在**本模块**（而不是反向 import build 的契约）：
@@ -227,6 +248,19 @@ const (
 // ==========================================================================
 // 对外能力：别的模块能用 page 做什么
 // ==========================================================================
+
+// RebuildBatchCapacity 单次同步重建端口一次能**全部受理**的页面数上限
+// （RebuildStale / RebuildStaleStrict 共用同一上限）。
+//
+// 为什么公开：调用方要按这个数分块才能拿到「要么全做完、要么带着具体页面 id 失败」的
+// 语义。超过它的一批会被截断并把溢出入队，严格模式随后返回 ErrRebuildOverloaded ——
+// 对「本次必须收敛」的调用方（menu_stale 执行器）而言那是失败而不是部分成功，所以它
+// 必须知道这个数并自己分块，而不是靠猜一个魔数。
+//
+// 谁定义：值由 page 模块的实现定（service 侧 maxAutoRebuildPages），这里是对外承诺的
+// 同一份数值；两处必须一致，internal/module/page/service/rebuild_batch_capacity_test.go
+// 有对账用例钉住（不一致即红，纯逻辑、不需数据库）。
+const RebuildBatchCapacity = 20
 
 // PageService 手工 Page 草稿、修订与发布管理能力。
 type PageService interface {
@@ -373,7 +407,21 @@ type PageService interface {
 	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
 	// RebuildStale 重建指定页面（依赖失效后的自动重建端口，PIPE-3）：
 	// 按站点启用语言逐个构建（只产生 staged Artifact），此前已发布的语言自动发布。
+	//
+	// **契约（保留原样，不收紧）**：本方法是「尽力而为」的批量端口 —— 单页失败只记日志、
+	// 不影响其余页面，最终返回 nil。异步派发方（Fanout 的 go runRebuild）依赖这条语义。
+	// 需要「逐页错误必须让调用方看见」的同步场景用 RebuildStaleStrict，不要改这条。
 	RebuildStale(ctx context.Context, ids []string) error
+	// RebuildStaleStrict 重建指定页面并**逐页严格传播错误**（同步、可靠）。
+	//
+	// 与 RebuildStale 的差别只有错误口径：单页失败会中断整批并返回该错误（含页面 ID 的
+	// 包装），不再「记日志 + return nil」。触发方（如菜单 stale 的同步重建路径）据此判定
+	// 「这一次依赖变更到底收敛了没有」—— 用 RebuildStale 的成功返回值当判据是错的：
+	// 它连「一个页面都没重建成功」也会返回 nil。
+	//
+	// 超限溢出的部分仍然入队（与 RebuildStale 同一上限，见下面的 RebuildBatchCapacity），
+	// 此时返回 ErrRebuildOverloaded，让调用方知道「本批没有全部同步完成」。
+	RebuildStaleStrict(ctx context.Context, ids []string) error
 	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 页眉·页脚·槽位绑定），
 	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
 	CountBlockReference(ctx context.Context, blockID string) (int64, error)

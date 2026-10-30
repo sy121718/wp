@@ -135,6 +135,17 @@ type Service struct {
 	// 多实例部署下每个实例各记各的，不做全局真源（这是进程健康信号，不是业务状态）。
 	lastConvergeAt atomic.Int64
 
+	// pathLock 访问面路径的进程内互斥（pipeline.PublicationPathLocker）。
+	//
+	// 为什么需要：实体行锁只锁「自己这一页」，另一页 / 另一个展示实例在检查与
+	// os.Remove 之间把同一条链接换成它的，删除方照样会把新链接删掉 —— 两边都
+	// 认为自己是对的，线上直接 404。路由行条件写挡得住「删别人的行」，挡不住
+	// 这一层时间窗口。
+	//
+	// 构造时默认为 pipeline.DefaultPathLocker()（进程共享）；SetPublicationPathLocker
+	// 传 nil 表示明确关闭，此时所有 FS 处置 fail closed（不动访问面）。
+	pathLock pipeline.PublicationPathLocker
+
 	// checkoutCountries 结算表单国家下拉的来源（装配期注入，构建期按本页语言取一份）。
 	//
 	// 是**函数**而不是一份切片：国家选项与语言有关（sys_area 的中文名 / 英文名两列），
@@ -155,6 +166,11 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
 	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	s := &Service{
+		// 默认取**进程共享**实例（pipeline.DefaultPathLocker）：路径锁是正确性的
+		// 一部分，不是可选优化，漏装配不得退化成无锁 —— 两份 ProcessPathLocker
+		// 等于两把互不相干的锁，而漏装配既不编译报错也不测试失败，只会在线上以
+		// 「偶尔消失的一条链接」出现。装配层要替换就统一换成同一个指针。
+		pathLock:    pipeline.DefaultPathLocker(),
 		model:       model,
 		artifacts:   artifacts,
 		routes:      routes,
@@ -197,6 +213,38 @@ func (s *Service) SetPageArtifacts(reader artifactcontract.PageArtifactReader) {
 
 func (s *Service) SetStructureTemplatePort(port pipeline.StructureTemplatePort) {
 	s.structureTemplates = port
+}
+
+// SetPublicationPathLocker 注入访问面路径锁（装配期调用；默认已是进程共享实例）。
+//
+// **必须与 presentation 服务、Publisher 用同一个指针**：两份 ProcessPathLocker 是两把
+// 互不相干的锁，page 与实例同时处置同一条路径时等于没加锁。装配层若不显式注入，
+// 默认的 pipeline.DefaultPathLocker() 天然满足这一点。
+// 传 nil 是明确关闭：FS 处置随即 fail closed（返回 pipeline.ErrPathLockerUnavailable，
+// 不做任何符号链接改动），留待下一次收敛重放 —— 不允许在无互斥下改访问面。
+func (s *Service) SetPublicationPathLocker(locker pipeline.PublicationPathLocker) {
+	s.pathLock = locker
+}
+
+// withPaths 在访问面路径锁内执行 fn（见 pipeline.PublicationPathLocker）。
+//
+// 锁键取**归一后的物理访问路径**（pipeline 侧统一归一）：锁保护的是 public/active 下
+// 那一条符号链接，用工程 ID 或页面 ID 当键只会得到一把与别人不相干的锁。
+//
+// 锁层级（不可重入，违反即死锁）：实体行锁 → withPaths → 锁内复核 → store 副作用。
+// store 侧永不取本锁，因此内部调用链不会重入。
+func (s *Service) withPaths(paths []string, fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	// 统一走 pipeline.WithPathLock：nil 接口上直接调方法会在实现之前 panic，
+	// 这一层的 nil 判定必须在**调用之前**完成。
+	return pipeline.WithPathLock(s.pathLock, paths, fn)
+}
+
+// withPath 单路径便捷形式。
+func (s *Service) withPath(path string, fn func() error) error {
+	return s.withPaths([]string{path}, fn)
 }
 
 // SetContentTranslationStore 注入内容译文读取端口（测试用；生产走 pkg/i18n 默认存储）。
@@ -353,6 +401,10 @@ var (
 	ErrNoStagedArtifact     = pageenums.Err(pageenums.ErrNoStagedArtifact)
 	ErrRollbackTargetMiss   = pageenums.Err(pageenums.ErrRollbackTargetMiss)
 	ErrRebuildRequired      = pageenums.Err(pageenums.ErrRebuildRequired)
+	// ErrInputMoved 激活复验失败：编译之后输入又前进了一代（裁定 ① 的判据）。
+	ErrInputMoved = pageenums.Err(pageenums.ErrInputMoved)
+	// ErrRebuildOverloaded 同步重建超过单批上限，其余已入队（不是故障）。
+	ErrRebuildOverloaded = pageenums.Err(pageenums.ErrRebuildOverloaded)
 
 	// 重定向管理（审计 SEO-025）。ErrRedirectUnavailable 覆盖「装配期未注入路由契约」
 	// 这一种明确异常：此时新增/删除重定向只会产生「线上生效但账上没有」的半成品，
@@ -362,6 +414,7 @@ var (
 	ErrRedirectOccupied    = pageenums.Err(pageenums.ErrRedirectOccupied)
 	ErrRedirectTargetMiss  = pageenums.Err(pageenums.ErrRedirectTargetMiss)
 	ErrRedirectLoop        = pageenums.Err(pageenums.ErrRedirectLoop)
+	ErrRedirectConflict    = pageenums.Err(pageenums.ErrRedirectConflict)
 )
 
 const (

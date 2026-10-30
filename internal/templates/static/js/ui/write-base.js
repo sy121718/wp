@@ -26,6 +26,8 @@
  *   data-write-confirm  提交前确认文案
  *   data-write-extra    逗号分隔的额外字段名（从表单按 name 取）
  *   data-write-outcome  仅 bulk：receipt / review / update / add
+ *   data-write-latest   裸属性，仅同一表单可能并发提交时开：旧响应不得盖新响应
+ *   data-write-items    裸属性，仅错误明细 opt-in：失败时消费响应的 data.items（见下）
  *
  * ═══ 唯一的整形属性 ══════════════════════════════════════════════════════════
  *
@@ -53,6 +55,13 @@
  *
  * ═══ 基座内置规则（模板不用声明）════════════════════════════════════════════
  *
+ *   · **默认不丢弃迟到响应**：同一次提交的成功、失败与解锁都照常生效。这是绝大多数
+ *     写表单的形态 —— 它们提交期间禁用按钮，一次只有一个在飞。
+ *   · `data-write-latest` 开的那一类表单相反：每提交一次就递增该表单的请求代号，
+ *     成功 / 失败 / catch / 解锁四处都先比对代号与 `form.isConnected` 再动手 ——
+ *     旧响应不渲染、不提示、不解锁新请求，节点已从文档摘下时一概不碰 DOM。
+ *     典型消费者是「同一个表单可被连点重跑」的只读检查（如产物 SEO 体检）：
+ *     后一次的结果才代表当前状态，前一次迟到的结论会盖掉它。
  *   · 空值键一律不发 —— `sort=` 会让后端 *int 绑成 0（「没填」变成「改成 0」），
  *     而**省掉该键**才是 nil。实测确认过三种形态。
  *   · 例外：<input data-keep-empty> 标了的不删（空串有语义，如 parentId 解绑）。
@@ -62,6 +71,10 @@
  *     那条路径已删除，这些属性一并删掉。
  *   · bulk 的 ids 从 [name=ids]:checked 取。
  *   · 宿主元素从 closest('[data-write]') 找。
+ *   · **错误明细（data.items）默认不消费**：只有 bulk 档（整批被拒的既有形态）与显式声明
+ *     `data-write-items` 的表单才逐条列出；其余 create/update 表单失败时只显示一句结论。
+ *     为什么默认关：data.items 是「整批拒绝」的形状（facing.BlockedError），单条写入的
+ *     失败通常没有可定位的行；无条件展示会让每个表单都把原始条目摊到界面上。
  *   · 提交期间自动禁按钮，请求结束后恢复。
  */
 // ── 关于行数（方案目标 ≤450，当前 ~735）────────────────────────────────────
@@ -526,6 +539,8 @@
         return out;
     }
 
+    // 一行明细：id: 原因；id 或原因为空时只给另一项。
+    // bulk 回执与错误明细（itemsOf）共用这一份格式，别再写第二份。
     function failureLine(item) {
         var reason = String(item.message || item.text || '');
         var id = item.id === undefined || item.id === null ? '' : String(item.id);
@@ -567,18 +582,63 @@
     }
 
     function toast(text, ok) {
-        if (!text || !window.WBUI || typeof WBUI.toast !== 'function') return;
-        WBUI.toast(text, { type: ok ? 'ok' : 'error', duration: ok ? 3000 : 6000 });
+        // 全程走 window.WBUI，不用裸标识符：裸 WBUI 依赖「window 就是全局对象」，
+        // 一旦这段代码跑在 vm / 沙箱 / 非浏览器宿主里就是 ReferenceError，
+        // 而前一行刚判断过 window.WBUI 存在 —— 判的和用的必须同一个东西。
+        var ui = window.WBUI;
+        if (!text || !ui || typeof ui.toast !== 'function') return;
+        ui.toast(text, { type: ok ? 'ok' : 'error', duration: ok ? 3000 : 6000 });
+    }
+
+    // ── 迟到响应保护（仅 data-write-latest）──────────────────────────────────
+    //
+    // 判据是「这次请求还是不是当前那一次」，两个条件缺一不可：
+    //
+    //   ① generation 相同 —— 表单上又提交过一次，本次已经是历史；
+    //   ② form.isConnected —— 节点已被换出文档（htmx 局部替换、抽屉关闭）。
+    //
+    // 只判 ② 不够：同一节点连跑两次时两次都 isConnected，迟到的第一次会把第二次的
+    // 结果盖掉。只判 ① 也不够：节点摘掉后代号不再递增，迟到的响应仍会把内容写进
+    // 一个已经不在页面上的 DOM（表现为「旧表单复活」或写进已关闭的抽屉）。
+    //
+    // 未声明 data-write-latest 的表单不建代号，ticketOf 返回 null，各处保护直接放行 ——
+    // 存量行为一个字节都不变。
+    function latestMode(form, submitter) {
+        return hasAttr(form, submitter, 'data-write-latest');
+    }
+
+    function ticketOf(form, guarded) {
+        if (!guarded) return null;
+        form.__wbWriteGeneration = (form.__wbWriteGeneration || 0) + 1;
+        return form.__wbWriteGeneration;
+    }
+
+    // stale 为 true 时，本次提交的一切副作用都放弃。
+    function stale(ticket, form) {
+        if (ticket === null) return false;
+        if (form.__wbWriteGeneration !== ticket) return true;
+        return form.isConnected === false;
     }
 
     // ── ③ 收尾 ──────────────────────────────────────────────────────────────
 
-    function lock(form, on) {
+    // lock 记下「第一次锁之前的 disabled 状态」，解锁时还原。
+    //
+    // guarded=false（默认，所有存量表单）：保持原逻辑 —— 每次上锁都按当前值重记。
+    //   它们提交期间只有一个请求在飞，谈不上重入。
+    // guarded=true（仅 data-write-latest）：只有属性不存在时才记，后续重入沿用初次记录，
+    //   否则第二次上锁会读到「已被自己禁用」的现状，把本来启用的按钮永久锁死。
+    //   标记值：data-was-disabled="1" 表示原本禁用（解锁保持禁用）；
+    //           属性存在但为 "" 表示原本启用（解锁恢复可用）。
+    //   判据是属性在不在，不是它的真值 —— 空串也是有效记录。
+    function lock(form, on, guarded) {
         form.setAttribute('aria-busy', on ? 'true' : 'false');
         var btns = form.querySelectorAll('button[type="submit"], input[type="submit"]');
         for (var i = 0; i < btns.length; i++) {
             if (on) {
-                if (!btns[i].dataset.wasDisabled) btns[i].setAttribute('data-was-disabled', btns[i].disabled ? '1' : '');
+                if (!guarded || !btns[i].hasAttribute('data-was-disabled')) {
+                    btns[i].setAttribute('data-was-disabled', btns[i].disabled ? '1' : '');
+                }
                 btns[i].disabled = true;
             } else {
                 btns[i].disabled = btns[i].getAttribute('data-was-disabled') === '1';
@@ -669,7 +729,10 @@
             ids.forEach(function (id) { body.append('ids', id); });
         }
 
-        lock(form, true);
+        var guarded = latestMode(form, submitter);
+        var ticket = ticketOf(form, guarded);
+
+        lock(form, true, guarded);
         send(form, submitter, body).then(function (res) {
             var text = messageOf(res);
             var ctype = res.headers.get('Content-Type') || '';
@@ -679,29 +742,76 @@
             }
             return res.json().then(function (payload) {
                 if (!res.ok || !payload || payload.code >= 400) {
+                    if (stale(ticket, form)) return;
                     var fail = (payload && payload.message) || msg(form, submitter, 'failed');
-                    setStatus(form, fail, 'error', itemsOf(payload, mode));
+                    setStatus(form, fail, 'error', itemsOf(form, submitter, payload, mode));
                     toast(fail, false);
                     return;
                 }
+                // 并发重入：旧请求即使成功，也不得写状态、派事件、关抽屉、导航。
+                // 放在 finishOk 之前 —— 它内部一连串副作用没法事后撤回。
+                if (stale(ticket, form)) return;
                 return finishOk(form, submitter, mode, payload, text);
             });
         }).catch(function (err) {
             // 网络层失败：输入与勾选一律保留。
+            //
+            // 迟到判定放在最前面：res.json() 自己 reject（响应被截断、代理回了半截
+            // JSON）也会走到这里，那时本次提交一样是历史。
+            if (stale(ticket, form)) return;
             setStatus(form, msg(form, submitter, 'failed') || err.message, 'error');
         }).then(function () {
-            lock(form, false);
+            if (stale(ticket, form)) return;
+            lock(form, false, guarded);
         });
     }
 
-    // itemsOf 整批被拒时的逐条明细（在错误的 data.items 里）。
-    function itemsOf(payload, mode) {
-        if (!payload || mode !== 'bulk') return null;
-        var data = payload.data || {};
-        var items = data.items || [];
+    // ── 错误明细（data.items）───────────────────────────────────────────────
+    //
+    // 形状是 blockedDataOf 的 [{id,name,reasonKey,message}]，message 已是成品句。
+    // 只呈现，不取词、不拼句。
+    function itemsWanted(form, submitter, mode) {
+        if (mode === 'bulk') return true;
+        return hasAttr(form, submitter, 'data-write-items');
+    }
+
+    // 测试出口的纯函数视图：即 bulk 的行格式 failureLine。
+    function itemText(it) {
+        if (!it || typeof it !== 'object') return '';
+        return failureLine(it);
+    }
+
+    // opt-in 档只认声明的字符串字段：message → reasonKey → name 依次回落，
+    // id 与原因同一条尺子：原始对象/数组/数字一律不转字符串，非字符串 id 当空。
+    // 只写 String(it.id) 会让合法 message + 对象 id 输出 "[object Object]: 原因"。
+    function optInLine(it) {
+        if (!it || typeof it !== 'object' || Array.isArray(it)) return '';
+        var reason = textOf(it.message) || textOf(it.reasonKey) || textOf(it.name);
+        if (!reason) return '';
+        var id = textOf(it.id);
+        return id && reason ? id + ': ' + reason : reason;
+    }
+
+    function textOf(v) {
+        return typeof v === 'string' ? v.replace(/^\s+|\s+$/g, '') : '';
+    }
+
+    // 返回 null = 本次不展示明细。bulk 判据与格式逐字沿用旧版：任何带 message/text 的项都列。
+    function itemsOf(form, submitter, payload, mode) {
+        if (!payload || !itemsWanted(form, submitter, mode)) return null;
+        var data = payload.data;
+        var items = data && typeof data === 'object' && !Array.isArray(data) ? data.items : null;
+        if (!Array.isArray(items)) return null;
+        var bulk = mode === 'bulk';
         var lines = [];
         items.forEach(function (it) {
-            if (it && (it.message || it.text)) lines.push(failureLine(it));
+            var line = '';
+            if (bulk) {
+                if (it && (it.message || it.text)) line = failureLine(it);
+            } else {
+                line = optInLine(it);
+            }
+            if (line) lines.push(line);
         });
         return lines;
     }
@@ -813,9 +923,9 @@
         });
     }
 
-    // 暴露两个纯函数给测试用（node:test 里以 vm 加载，见 write-base.test.cjs）。
+    // 暴露纯函数与注册器给测试用（node:test 里以 vm 加载，见 write-base.test.cjs）。
     window.WBUI = window.WBUI || {};
-    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, registerPayloadBuilder: registerPayloadBuilder, registerResultHandler: registerResultHandler };
+    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, itemsOf: itemsOf, itemText: itemText, registerPayloadBuilder: registerPayloadBuilder, registerResultHandler: registerResultHandler };
     // 旧附属脚本（product_variant_write.js 等）仍在向这两个名字注册组装器，
     // 保留别名让它们不必同时改动 —— 迁完那批模板后可以删掉。
     window.WPJsonWrite = window.WPJsonWrite || { registerPayloadBuilder: registerPayloadBuilder };

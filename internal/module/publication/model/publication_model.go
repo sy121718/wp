@@ -4,9 +4,14 @@ package pubmodel
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
+	"database/sql"
+	"errors"
+	"strconv"
 	"strings"
 	"time"
+
+	pubdto "go_wp/internal/module/publication/dto"
+	json "go_wp/pkg/jsonx"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -124,6 +129,22 @@ func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteE
 		return tx.WithContext(ctx).Model(&RouteEntity{}).
 			Where("project_id = ? AND path = ?", projectID, path).First(e).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// RouteOwnerTx 在**调用方事务**内读一条路径当前的占用归属（无行返回 gorm.ErrRecordNotFound）。
+//
+// 为什么必须有 Tx 形态：presentation 的旧路径处置/删除/退役持实体行锁，必须在
+// "判定 → 副作用"这段里回读同一事务内的归属事实。用非事务 GetRoute 会走另一条连接，
+// 既看不到本事务尚未提交的条件写，也可能与自己的行锁互等。
+// 不新开事务、不写、不设作用域（作用域由调用方按 publication_route.go 文件头的约定设进 tx）。
+func (m *Model) RouteOwnerTx(ctx context.Context, tx *gorm.DB, projectID, path string) (*RouteEntity, error) {
+	e := &RouteEntity{}
+	err := tx.WithContext(ctx).Model(&RouteEntity{}).
+		Where("project_id = ? AND path = ?", projectID, path).First(e).Error
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +302,118 @@ func (m *Model) ClaimPendingReceipts(ctx context.Context, sourceType string, act
 	return list, nil
 }
 
+// ReceiptStatesTx 按 id 批量读取回执的最终状态（id 十进制串 → receipt_state）。
+//
+// 用途：调用方把"本次改址关联的成功回执"记在一条 update_url 回执里，判定是否执行
+// 旧路径处置时必须回读这些 id 的**当前**状态。批量一次查完：逐条查会让判定开销随
+// 语言数线性增长，且更容易读到互相不一致的快照。
+//
+// 不存在的 id 不出现在结果里（不报错）：调用方按 len(结果) != len(入参) 判"证据不足"，
+// 这比在这里猜一个默认状态安全 —— 猜 pending 会让判定永久悬空，猜 committed 会误执行处置。
+func (m *Model) ReceiptStatesTx(tx *gorm.DB, ids map[string]string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	wanted := make([]int64, 0, len(ids))
+	strOf := make(map[int64]string, len(ids))
+	for _, raw := range ids {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		wanted = append(wanted, id)
+		strOf[id] = v
+	}
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		ID    int64  `gorm:"column:id"`
+		State string `gorm:"column:receipt_state"`
+	}
+	db := tx
+	if db == nil {
+		db = m.db
+	}
+	if err := db.WithContext(context.Background()).Model(&ReceiptEntity{}).
+		Select("id", "receipt_state").Where("id IN ?", wanted).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		out[strOf[row.ID]] = row.State
+	}
+	return out, nil
+}
+
+// ReceiptAttemptVerdict 三态判定（定义在 dto：contract 要用它但不能 import model）。
+type ReceiptAttemptVerdict = pubdto.ReceiptAttemptVerdict
+
+const (
+	ReceiptAttemptNoEvidence ReceiptAttemptVerdict = pubdto.ReceiptAttemptNoEvidence
+	ReceiptAttemptInProgress ReceiptAttemptVerdict = pubdto.ReceiptAttemptInProgress
+	ReceiptAttemptSucceeded  ReceiptAttemptVerdict = pubdto.ReceiptAttemptSucceeded
+	ReceiptAttemptFailed     ReceiptAttemptVerdict = pubdto.ReceiptAttemptFailed
+)
+
+// ReceiptAttemptVerdictTx 判定一组关联回执（语言 → 同批 switch_active 回执 id）
+// 是否整体成功：全部 committed 且**至少一条**在账本上留下了成功身份。
+//
+// 「账本归属」由调用方通过 ownedLangs 提供（presentation 侧传自己账本里的 receipt_id，
+// page 侧传 page_publications 的 receipt_id）：本模块不读别人的账本表，只读自己的回执表。
+//
+// 返回三态而不是布尔，是为了让调用方区分「明确失败（可终态化）」与「证据还没到
+// （必须留 pending 下一轮再判）」。早期把两者压成一个 bool，导致关联回执仍是 pending
+// 时就把处置意图判死 —— 而那条回执的结案恰恰可能在本轮稍后才落库。
+func (m *Model) ReceiptAttemptVerdictTx(tx *gorm.DB, links map[string]string,
+	ownedLangs map[string]string) (ReceiptAttemptVerdict, error) {
+	states, err := m.ReceiptStatesTx(tx, links)
+	if err != nil {
+		return ReceiptAttemptNoEvidence, err
+	}
+	want := 0
+	missing := false
+	interim := false
+	for lang, raw := range links {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		want++
+		st, ok := states[id]
+		if !ok {
+			// 关联里引用的行不存在：没有反证，也没有证据 —— 不能据此判死。
+			missing = true
+			continue
+		}
+		switch st {
+		case ReceiptCommitted:
+		case ReceiptPending:
+			// 还没定：**保留可重试**，绝不终态化。
+			interim = true
+			delete(links, lang)
+			_ = lang
+		default:
+			// rolled_back / superseded：明确失败。
+			return ReceiptAttemptFailed, nil
+		}
+	}
+	if want == 0 || missing || interim {
+		return ReceiptAttemptInProgress, nil
+	}
+	// 全部 committed：还要求账本承认其中至少一条（本次 attempt 真的留下过成功身份）。
+	for lang, raw := range links {
+		if owned := strings.TrimSpace(ownedLangs[lang]); owned != "" && owned == strings.TrimSpace(raw) {
+			return ReceiptAttemptSucceeded, nil
+		}
+	}
+	return ReceiptAttemptFailed, nil
+}
+
 // CountPendingReceipts 统计仍未结案的回执数（可观测：健康检查 / 后台）。
 //
 // 与领取用同一套过滤条件，两者看到的必须是同一批行 —— 口径一旦分叉，
@@ -305,12 +438,124 @@ func (m *Model) CreateReceipt(ctx context.Context, e *ReceiptEntity) error {
 	return m.ReceiptDB(ctx).Create(e).Error
 }
 
-// RollbackPendingReceipts 把全部 pending 回执标记为 rolled_back（启动恢复），返回处理行数。
+// ErrReceiptNotPending 回执状态条件未命中的受控哨兵（并发结案 / 状态已前进）。
+var ErrReceiptNotPending = errors.New("publication: 回执已不在 pending 状态")
+
+// MarkDeactivationCommittedTx 在**调用方业务事务内**记录「这次下线意图的业务变更已提交」。
 //
-// WHERE 只认 receipt_state = pending：已 committed / rolled_back 的行是既有结论，
-// 恢复流程不得覆盖（进程重复启动时因此是幂等的）。
-func (m *Model) RollbackPendingReceipts(ctx context.Context, now time.Time) (n int64, err error) {
-	result := m.ReceiptDB(ctx).
+// 为什么只写 receipt_data.businessCommitted 而不动 receipt_state：
+//   - receipt_state 必须保持 pending，否则 ClaimPendingReceipts（只认 pending）永远领不到
+//     那些「业务已提交、链接还没撤」的回执，撤销动作就没人做了；
+//   - 反过来，先置 committed 再撤链接，等于把"已完成"记在了没完成之前。
+//
+// committed 只由 CompletePublishReceipt 在**全部链接撤掉之后**写。
+//
+// 为什么它与业务变更共用同一个 tx：标记本身也是持久事实。若标记单独提交，进程在
+// 「标记已写、业务未提交」之间崩掉，恢复就会把一次**没发生**的删除当成"该撤链接"。
+// 同 tx 让两者要么都成立、要么都不成立 —— 那时 pending 行的 businessCommitted 缺键，
+// 恢复读到的就是"业务未提交"。
+//
+// 校验：id + source_type + source_id + action=deactivate + receipt_state=pending +
+// receipt_data.projectId = 调用方工程（工程事实缺失也算不匹配，不放行）。
+// 任何一条不满足都返回受控错误（0 行），由调用方拒绝整笔业务而不是静默继续。
+// 句柄必须是真事务（见 requireRealTx）：自动提交的 db 句柄会让"同 tx"这件事悄悄失效。
+func (m *Model) MarkDeactivationCommittedTx(tx *gorm.DB, owner pubdto.ReceiptOwner, projectID string,
+	id int64, pathArtifacts map[string]pubdto.ReceiptPathIdentity) error {
+	if terr := requireRealTx(tx); terr != nil {
+		return terr
+	}
+	if id <= 0 {
+		return ErrReceiptNotPending
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return ErrReceiptNotPending
+	}
+	payload := map[string]any{"businessCommitted": true}
+	if len(pathArtifacts) > 0 {
+		payload["pathArtifacts"] = pathArtifacts
+	}
+	encoded, merr := json.Marshal(payload)
+	if merr != nil {
+		return merr
+	}
+	// 单条 UPDATE：用 jsonb || 合并写业务事实，保留登记时的其余键（lang / oldPaths /
+	// 关联回执 / fromReceiptId 一个都不能丢）。不用"读-改-写"是为了不把并发结案的
+	// 窗口拉长到两次往返。
+	// 归属校验必须用**调用方给的 owner 事实**（source_type + source_id + 工程 + id + action），
+	// 不能只写 source_type IN ('page','presentation')：那样同工程里另一条实体的回执
+	// 也能被这次标记命中，等于把 A 的业务提交事实写到 B 的意图上。
+	result := tx.Model(&ReceiptEntity{}).
+		Where("id = ? AND source_type = ? AND source_id = ? AND action = ? AND receipt_state = ?",
+			id, owner.SourceType, owner.SourceID, pubdto.ReceiptActionDeactivate, ReceiptPending).
+		Where("receipt_data->>'projectId' = ?", strings.TrimSpace(projectID)).
+		Update("receipt_data", gorm.Expr("receipt_data || ?::jsonb", string(encoded)))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrReceiptNotPending
+	}
+	return nil
+}
+
+// LoadDeactivationReceiptTx 在**调用方事务内**（通常是已持有业务实体锁的那个事务）
+// 重读一条 deactivate 回执的当前事实：状态 + 业务提交标记 + 每条路径的归属事实。
+//
+// 为什么不复用领取结果：ClaimPendingReceipts 只是短事务里 FIND ... SKIP LOCKED，
+// 释放事务即释放行锁、没有租约 —— 同一行可以被多个收敛同时领到。所以领取返回的
+// ReceiptEntity 只是"某一刻的快照"，拿它决定"要不要撤链接"会让两个收敛互相打脸。
+// 唯一可信的读法是在**同一把业务锁**之下重读本行，本方法就是那个读。
+func (m *Model) LoadDeactivationReceiptTx(tx *gorm.DB, owner pubdto.ReceiptOwner, projectID string,
+	id int64) (e *ReceiptEntity, err error) {
+	if terr := requireRealTx(tx); terr != nil {
+		return nil, terr
+	}
+	if owner.IsZero() {
+		return nil, errors.New("publication: 下线回执读取必须给出显式 owner")
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var row ReceiptEntity
+	// 工程条件**写进 SQL**、不做事后比较：事后比较时"recceipt_data 里没有 projectId"
+	// 会得到空串，而 (空串 != expected) 的写法只要有一处分叉就变成放行 —— 缺事实必须
+	// 等同于不匹配。与 Mark 用同一条谓词，两处判定不可能漂移。
+	if err = tx.Model(&ReceiptEntity{}).
+		Where("id = ? AND source_type = ? AND source_id = ? AND action = ?",
+			id, owner.SourceType, owner.SourceID, pubdto.ReceiptActionDeactivate).
+		Where("receipt_data->>'projectId' = ?", strings.TrimSpace(projectID)).
+		First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// requireRealTx 判定句柄是不是**真的在事务里**（不是自动提交的 db、不是 typed-nil）。
+//
+// 与该模块既有写路径同一口径（internal/module/build/model/build_model.go 的 requireTx、
+// pkg/i18n/content_write.go）：本机 gorm.io/gorm@v1.31.2 里事务句柄只有
+// *sql.Tx 与 *gorm.PreparedStmtTX 两种，PreparedStmtTX 内嵌的 Tx 可能是 typed-nil，
+// 所以两者都判 nil。少了这层，传进来一个普通 *gorm.DB 也能"成功"，而
+// "标记与业务同事务"这条硬约束就静默失效了。
+func requireRealTx(tx *gorm.DB) error {
+	if tx == nil || tx.Statement == nil || tx.Statement.ConnPool == nil {
+		return errors.New("publication: 该操作必须在调用方真实事务内执行")
+	}
+	if err := tx.Error; err != nil {
+		return err
+	}
+	switch conn := tx.Statement.ConnPool.(type) {
+	case *sql.Tx:
+		if conn == nil {
+			return errors.New("publication: 该操作必须在调用方真实事务内执行")
+		}
+	case *gorm.PreparedStmtTX:
+		if conn == nil || conn.Tx == nil {
+			return errors.New("publication: 该操作必须在调用方真实事务内执行")
+		}
+	default:
+		return errors.New("publication: 该操作必须在调用方真实事务内执行")
+// receiptDataProjectID 已并入 LoadDeactivationReceiptTx 的 SQL 谓词（缺事实即不匹配）。
 		Where("receipt_state = ?", ReceiptPending).
 		Updates(map[string]any{"receipt_state": ReceiptRolledBack, "completed_at": now})
 	return result.RowsAffected, result.Error

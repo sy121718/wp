@@ -426,8 +426,17 @@ func WithDependencies(fn DependencyProvider) Option {
 //
 // 并发保护：单进程内互斥；多实例部署由 Phase 0-A1 build 模块（数据库 + 队列）负责。
 type Publisher struct {
-	store   Store
-	pub     PublicationStore
+	store Store
+	pub   PublicationStore
+	// paths 访问面路径锁（必须与 page / presentation 服务**同一个指针**）。
+	//
+	// Publisher 的内存互斥在页面 ID 上（p.mu + p.pages），它挡不住另一条实体在同一
+	// 物理路径上的处置 —— 那种交错只认「归一后的访问路径」。因此凡是要改访问面符号
+	// 链接的地方都在这把锁内执行；锁只覆盖 FS 副作用，不覆盖编译与 Store 写。
+	//
+	// 零值为可用实例（ProcessPathLocker），构造时默认取进程共享实例
+	// （DefaultPathLocker），装配层可用 SetPublicationPathLocker 换指针。
+	paths   PublicationPathLocker
 	compile CompileFn
 	// deps 构建期依赖提供者（可选）：为 Manifest.dependencies 供数。
 	deps DependencyProvider
@@ -442,6 +451,7 @@ func NewPublisher(store Store, pub PublicationStore, opts ...Option) *Publisher 
 	p := &Publisher{
 		store:   store,
 		pub:     pub,
+		paths:   DefaultPathLocker(),
 		compile: DefaultCompile,
 		pages:   map[string]*PageRecord{},
 	}
@@ -449,6 +459,57 @@ func NewPublisher(store Store, pub PublicationStore, opts ...Option) *Publisher 
 		opt(p)
 	}
 	return p
+}
+
+// SetPublicationPathLocker 注入访问面路径锁（装配期调用）。
+//
+// 必须与 page / presentation 服务用同一个实例：默认的 DefaultPathLocker() 天然满足，
+// 换指针时三处必须一起换。传 nil 后 FS 副作用 fail closed（返回 ErrPathLockerUnavailable）。
+func (p *Publisher) SetPublicationPathLocker(locker PublicationPathLocker) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.paths = locker
+}
+
+// withPaths 持路径锁执行 fn（见 PublicationPathLocker 的不可重入约定）。
+//
+// 本包内的调用层级恒为：p.mu（页面状态）→ withPaths → store 副作用。**持 p.mu 的
+// XxxLocked 方法一律调用 withPaths，不假设自己已在锁内** —— 路径锁与 p.mu 是两把
+// 不同的锁，前者按访问路径分片、后者按页面 ID；混为一谈会导致「以为外层有锁」的
+// 漏保护或「外层已取锁」的自锁。唯一例外是已经在本函数体内再嵌套调用：那种情况
+// 由带 locked 后缀的 FS 辅助方法承担，它们自己**不取锁**。
+func (p *Publisher) withPaths(paths []string, fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	return WithPathLock(p.paths, paths, fn)
+}
+
+// activatePath 在路径锁内激活 path → loc（**唯一对外取锁入口**）。
+//
+// 包内**不存在**「靠 ctx 布尔免锁」的通用通道：ctx 可以跨 goroutine 传播，用它判断
+// 「是否已持锁」会让另一路并发请求在一段与自己无关的 ctx 里被误免锁（不同路径也免锁 =
+// 直接漏保护）。因此重入只允许出现在**同步的私有 locked 调用**之间，且逐处显式可见：
+//
+//	activatePath / activatePathLocked   取锁版（对外）
+//	activatePathInLock                  不取锁版（只允许在 withPaths 的 fn 内调用）
+//
+// 需要嵌套时由外层显式选 InLock 版本 —— 编译器看不到违反，但每一处都在评审视野里。
+func (p *Publisher) activatePath(path string, loc Locator) error {
+	return p.withPaths([]string{path}, func() error { return p.activatePathInLock(path, loc) })
+}
+
+// activatePathInLock 假定调用方**已持路径锁**：只做副作用，不再取锁。
+//
+// 契约（不可重入，违反即永久阻塞 —— sync.Mutex 不认识 goroutine）：只能在
+// withPaths 的 fn 内调用。
+func (p *Publisher) activatePathInLock(path string, loc Locator) error {
+	return p.pub.Activate(path, loc)
+}
+
+// deactivatePathInLock 同上，解除激活的不取锁版本。
+func (p *Publisher) deactivatePathInLock(path string) error {
+	return p.pub.Deactivate(path)
 }
 
 // SetCompile 运行时替换编译函数（装配感知编译注入，方案 C：页眉/页脚块内联）。
@@ -578,10 +639,41 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 }
 
 // Publish 激活暂存产物（0-A1 §2.3）：校验后原子切换活跃指针，旧活跃版本转 Superseded。
+//
+// 保留为「StageArtifact + ActivateStagedArtifact」的组合（两步都在**同一个** p.mu 临界区里
+// 完成），既有调用点的语义与失败形态一字不变 —— 内核不关心调用方把这两步放在哪个
+// 数据库事务里，它只保证「校验通过才切换、切换失败线上不变」。
 func (p *Publisher) Publish(pageID string) (hash string, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if _, err = p.stageArtifactLocked(pageID); err != nil {
+		return "", err
+	}
+	if err = p.activateStagedLocked(pageID); err != nil {
+		return "", err
+	}
+	return p.pages[pageID].ActiveHash, nil
+}
+
+// StageArtifact 校验暂存产物与当前路径一致并返回它的 hash（**不动文件系统**）。
+//
+// 为什么要把 Publish 拆成两步：发布判定需要「比对输入代次 → 切访问面 → 写数据库指针」
+// 落在同一个数据库事务的持锁窗口内（page 的激活入口见 page/model 的
+// LockPageForActivationTx）。原来的 Publish 把校验与切换绑在一起，调用方想在
+// 校验之后、切换之前插一次数据库判定时无处可插 —— 只能在此之前做，于是判定与切换
+// 之间又出现了窗口。拆开之后：调用方先 StageArtifact（读，无副作用），
+// 再做判定，最后在持锁事务内调 ActivateStagedArtifact。
+//
+// 返回的 hash 是**当前暂存产物**的 hash（调用方据此确认「要激活的就是我编译的那份」）。
+func (p *Publisher) StageArtifact(pageID string) (hash string, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stageArtifactLocked(pageID)
+}
+
+// stageArtifactLocked 是 StageArtifact 的持锁实现（Publish 组合时复用，避免二次加锁）。
+func (p *Publisher) stageArtifactLocked(pageID string) (hash string, err error) {
 	rec, ok := p.pages[pageID]
 	if !ok {
 		return "", ErrPageNotFound
@@ -599,19 +691,43 @@ func (p *Publisher) Publish(pageID string) (hash string, err error) {
 	if a.CanonicalPath != rec.Path {
 		return "", fmt.Errorf("暂存产物路径 %s 与当前页面路径 %s 不一致，请重新构建", a.CanonicalPath, rec.Path)
 	}
+	return rec.StagedHash, nil
+}
 
-	if err = p.pub.Activate(rec.Path, loc); err != nil {
+// ActivateStagedArtifact 把校验通过的暂存产物切到线上路径（符号链接 rename）。
+//
+// 这是本内核唯一的外部副作用入口。调用方必须在**已经持有一致性判定**（例如页面行锁 +
+// 输入代次比对通过）的同一个数据库事务里调用它：本方法只保证「切换本身是原子的、
+// 失败时线上不变」，它不知道、也不该知道数据库事务的边界。
+//
+// 返回错误时线上版本保持不变（Activate 内部先建临时链接再 rename，失败发生在 rename 之前）。
+func (p *Publisher) ActivateStagedArtifact(pageID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.activateStagedLocked(pageID)
+}
+
+// activateStagedLocked 是 ActivateStagedArtifact 的持锁实现。
+func (p *Publisher) activateStagedLocked(pageID string) error {
+	rec, ok := p.pages[pageID]
+	if !ok {
+		return ErrPageNotFound
+	}
+	if rec.StagedHash == "" {
+		return ErrNoStagedArtifact
+	}
+	loc := ArtifactLocator(rec.StagedHash)
+	if err := p.activatePath(rec.Path, loc); err != nil {
 		// 激活失败线上保持不变（保持 ready）。
 		logger.Scene("build").With("pageId", rec.ID).Error(err, "激活失败（线上保持不变）")
 		rec.Status = rec.currentStatus()
-		return "", fmt.Errorf("激活失败（线上版本保持不变）: %w", err)
+		return fmt.Errorf("激活失败（线上版本保持不变）: %w", err)
 	}
-
 	p.supersedeActiveLocked(rec)
 	rec.ActiveHash = rec.StagedHash
 	rec.Status = StatePublished
 	rec.markLatestHistory(rec.StagedHash, StatePublished, rec.Path)
-	return rec.ActiveHash, nil
+	return nil
 }
 
 // Rollback 秒级回滚（0-A1 §2.4 / AGENTS.md §6.4）：
@@ -636,7 +752,7 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 	if err = p.store.VerifyArtifact(loc, targetHash); err != nil {
 		return err
 	}
-	if err = p.pub.Activate(rec.Path, loc); err != nil {
+	if err = p.activatePath(rec.Path, loc); err != nil {
 		logger.Scene("build").With("pageId", rec.ID).Error(err, "回滚失败")
 		return fmt.Errorf("回滚激活失败（线上版本保持不变）: %w", err)
 	}
@@ -740,12 +856,18 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(rerr, "旧 URL 301 产物落盘失败（新 URL 已生效）")
 			return oldPath, nil
 		}
-		if aerr := p.pub.Activate(oldPath, rl); aerr != nil {
+		// 锁键同时含新旧路径：本函数刚刚在 nPath 上激活过，旧路径处置与「另一实体
+		// 从反方向改址」必须按同一全序取锁才不会互锁（pipeline 侧按分片索引排序）。
+		if aerr := p.withPaths([]string{nPath, oldPath}, func() error {
+			return p.activatePathInLock(oldPath, rl)
+		}); aerr != nil {
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(aerr, "旧 URL 301 激活失败（新 URL 已生效）")
 			return oldPath, nil
 		}
 	} else {
-		if derr := p.pub.Deactivate(oldPath); derr != nil {
+		if derr := p.withPaths([]string{nPath, oldPath}, func() error {
+			return p.deactivatePathInLock(oldPath)
+		}); derr != nil {
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(derr, "旧 URL 取消激活失败（新 URL 已生效）")
 			return oldPath, nil
 		}
@@ -909,7 +1031,10 @@ func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
 	if a.CanonicalPath != rec.Path {
 		return fmt.Errorf("暂存产物路径 %s 与当前页面路径 %s 不一致，请重新构建", a.CanonicalPath, rec.Path)
 	}
-	if err = p.pub.Activate(rec.Path, loc); err != nil {
+	// publishLocked 由 Publish / ActivateStagedArtifact 在持有 p.mu 时调用，
+	// 但 p.mu 与路径锁是两把锁（前者按页面 ID，后者按访问路径），此处仍需取路径锁；
+	// 不存在重入：路径锁在整个包内只在 withPaths 里取，且 withPaths 内部不再调用它。
+	if err = p.activatePath(rec.Path, loc); err != nil {
 		rec.Status = rec.currentStatus()
 		return fmt.Errorf("激活失败（线上版本保持不变）: %w", err)
 	}

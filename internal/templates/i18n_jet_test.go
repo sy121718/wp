@@ -535,10 +535,25 @@ type navigationTranslationRow struct {
 	Translated bool
 }
 
+// navigationTranslationFact 模板里 {{tr(...)}} 的第二参数形态：取词函数要的是
+// 「key + 兜底」两个事实，不是一个成品句。
+type navigationTranslationFact struct {
+	Key      string
+	Fallback string
+}
+
+// navigationTranslationGroup 一个菜单位置在译文工作台里的现成数据。
+//
+// LoadFailed / LoadError 与 Rows 并列而不是塞进某一行：它们回答的是**这个位置**读没读到
+// 来源（逐位置降级），与「这一行有没有译文」不是一回事。模板按 g.LoadFailed 分流到错误
+// 出口，缺这两个字段时 Jet 直接报 "can't use LoadFailed as field name in struct type"，
+// 整页 500 —— 这正是渲染夹具必须与模板字段一一对齐的原因。
 type navigationTranslationGroup struct {
-	Kind  string
-	Title string
-	Rows  []navigationTranslationRow
+	Kind       string
+	Title      string
+	Rows       []navigationTranslationRow
+	LoadFailed bool
+	LoadError  navigationTranslationFact
 }
 
 func TestArticleTranslationsPageRenders(t *testing.T) {

@@ -336,8 +336,8 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			entries:    nil,
 			err:        navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
 			// 出口不再拼定位段：pageview.Fail → response.businessText 只用 fact.Fallback。
-			want:       "该菜单项已被其他窗口修改，请刷新后重试",
-			absent:     []string{"MsgInternalError"},
+			want:   "该菜单项已被其他窗口修改，请刷新后重试",
+			absent: []string{"MsgInternalError"},
 		},
 		{
 			name:       "key+定位 / 词条在场 en-US → 英文 + 半角定位",
@@ -345,7 +345,7 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			entries: map[string]map[string]string{
 				navigationenums.ErrStaleVersion: {"zh-CN": "该菜单项已被其他窗口修改，请刷新后重试", "en-US": "This menu item was changed in another window; refresh and try again"},
 			},
-			err:    navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
+			err: navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
 			// 不带定位段（见下一条的说明）。
 			want:   "This menu item was changed in another window; refresh and try again",
 			absent: []string{"ErrStaleVersion"},

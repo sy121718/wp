@@ -10,6 +10,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -143,10 +144,9 @@ func (m *Model) UpdateExcludedLangsTx(ctx context.Context, tx *gorm.DB, projectI
 	}
 	res := tx.WithContext(ctx).Model(&PageEntity{}).
 		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-		Updates(map[string]any{
+		Updates(mergeInputChange(map[string]any{
 			"excluded_langs": val,
-			"update_time":    gorm.Expr("now()"),
-		})
+		}, time.Now().UTC()))
 	if res.Error != nil {
 		return res.Error
 	}

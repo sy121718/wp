@@ -9,7 +9,6 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/permission"
 
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -41,20 +40,20 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 	// 它是「发布中断后有多少回执没收敛」的运维入口。
 	g.GET("/receipts/pending", permission.PublicationReceiptsPending, PublicationPendingReceipts(svc))
 
-	// 产物 SEO 体检（审计 SEO-019）：同步跑一次并返回结论。
+	// 产物 SEO 体检（审计 SEO-019）：同步跑一次并返回**事实** JSON。
 	//
 	// 同步而不是异步任务：体检只读产物文件、不写库、不出网，一个中型站点几百份 HTML
 	// 的解析在毫秒级 —— 引入任务队列只会让「点了按钮没反应」成为新的排查对象。
-	// 真实路由需要 publication:seo_audit，额外校验迁移 183 的 seo:audit；
-	// 两条既有策略都必须命中，页面动作仍按 seo:audit 展示。
+	//
 	// 这条路由上挂了**两条** Casbin 策略：声明式那条按真实路径（publication:seo_audit），
 	// 中间件那条额外校验迁移 183 的 seo:audit（/api/seo/audit 是虚拟对象、没有独立路由）——
 	// 显式声明后者，否则 permission.RoutesOf 查不到 seo:audit，AI 工具按 fail closed 一律 forbidden。
+	// 两条都必须命中，页面动作仍按 seo:audit 展示。
+	//
+	// 出口不再有片段槽位（BareSlot）：审计是业务动作，在任何请求头组合下都回
+	// {code,message,data}，结果由页面的专用 JS（ui/seo-audit.js）按事实渲染。
 	permission.Declare(http.MethodPost, "/api/seo/audit", permission.SEOAudit)
 	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
-		adminui.BareSlot(SeoAuditResultTemplate), seoAuditHandler(svc.RunSEOAudit))
+		NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
 	return svc
 }
-
-// SeoAuditResultTemplate SEO 审计结果（htmx 片段：整块结果区就地替换）。
-const SeoAuditResultTemplate = "admin/analytics/seo_audit_result.html"
