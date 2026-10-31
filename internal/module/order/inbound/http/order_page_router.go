@@ -23,6 +23,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 // ——— 后台页面（/admin/*，BIZ-1 销售侧）———
@@ -95,7 +96,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	orderPages := NewOrderPageHandle(svc, projects, dict)
 	pages.GET("/orders",
 		adminui.PageAuthz("/api/order/list"),
-		adminui.PageSlot(OrderListPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		orderPages.OrdersPage)
 	// 销售概览页（GET /admin/orders/overview）：整页只读报表 —— 只读不等于不鉴权，
 	// 菜单隐藏不是访问控制（AGENTS.md §4.3）。obj 取该页菜单绑的码 order:overview 声明的

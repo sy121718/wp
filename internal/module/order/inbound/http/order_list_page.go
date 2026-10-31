@@ -175,7 +175,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 			"fulfillment": filter.Fulfillment,
 		}),
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, OrderListPageTemplate, view)
 }
 
 // ordersPageData 订单列表页的三块取数（列表 + 状态计数 + 履约计数 + 详情）。
