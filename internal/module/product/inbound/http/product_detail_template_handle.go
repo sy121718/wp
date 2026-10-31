@@ -205,7 +205,7 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		return
 	}
 	path := h.reader.ProductDetailPath(c.Request.Context(), scope.ProjectID, product)
-	pageview.Render(c, pageview.Objects(
+	pageview.RenderTemplate(c, ProductDetailTemplatePageTemplate, pageview.Objects(
 		pageview.Object("Scope", scope), pageview.Object("Product", product),
 		pageview.Object("Templates", candidates), pageview.Object("DefaultTemplateID", defaultID),
 		pageview.Object("Bound", bound), pageview.Object("DetailPath", path),

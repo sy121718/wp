@@ -12,6 +12,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -209,9 +210,9 @@ func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products", adminui.PageSlot(ProductListPageTemplate), h.ProductsPage)
-	engine.GET("/admin/products/new", adminui.PageSlot(ProductNewPageTemplate), h.ProductNewPage)
-	engine.GET("/admin/products/detail", adminui.PageSlot(ProductDetailPageTemplate), h.ProductDetailPage)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), h.ProductsPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), h.ProductNewPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -230,7 +231,7 @@ func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, m
 	for _, m := range mw {
 		engine.Use(m)
 	}
-	engine.GET("/admin/products", adminui.PageSlot(ProductListPageTemplate), h.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), h.ProductsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -247,13 +248,13 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 	// 按路径分派到对应的整页 handler：调用点只给「这是哪一页」，不必再各自搭一个引擎。
 	switch route {
 	case "/admin/product-attributes":
-		engine.GET(route, adminui.PageSlot(ProductAttributesPageTemplate), h.ProductAttributesPage)
+		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductAttributesPage)
 	case "/admin/product-categories":
-		engine.GET(route, adminui.PageSlot(ProductCategoriesPageTemplate), h.ProductCategoriesPage)
+		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
 	case "/admin/product-brands":
-		engine.GET(route, adminui.PageSlot(ProductBrandsPageTemplate), h.ProductBrandsPage)
+		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
 	case "/admin/product-tags":
-		engine.GET(route, adminui.PageSlot(ProductTagsPageTemplate), h.ProductTagsPage)
+		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
 	default:
 		t.Fatalf("productPageRequestFor 不认识这条路由 %q", route)
 	}

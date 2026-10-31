@@ -8,7 +8,6 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	projectdto "go_wp/internal/module/project/dto"
 )
 
 const taxonomyDriverText = `pq: relation "product_attributes" does not exist (SQLSTATE 42P01)`
@@ -67,7 +66,6 @@ var taxonomyPages = []taxonomyPage{
 
 func taxonomyHandle(stub *productPageReaderStub) *ProductPageHandle {
 	return &ProductPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: stub,
 	}
 }

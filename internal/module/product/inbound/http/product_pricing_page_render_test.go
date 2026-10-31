@@ -3,6 +3,7 @@ package producthttp
 import (
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -52,7 +53,7 @@ func pricingPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/product-pricing", adminui.PageSlot(ProductPricingPageTemplate), h.ProductPricingPage)
+	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), h.ProductPricingPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

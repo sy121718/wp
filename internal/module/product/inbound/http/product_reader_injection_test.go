@@ -30,8 +30,8 @@ func readerIfaceType() reflect.Type {
 // TestPageHandleReaderIsConstructorRequired 读模型是构造函数的第 2 个形参，类型必须是读模型接口。
 func TestPageHandleReaderIsConstructorRequired(t *testing.T) {
 	ctor := reflect.TypeOf(NewProductPageHandle)
-	if ctor.NumIn() != 3 {
-		t.Fatalf("NewProductPageHandle 应有 3 个形参（products / reader / projects），实际 %d 个", ctor.NumIn())
+	if ctor.NumIn() != 2 {
+		t.Fatalf("NewProductPageHandle 应有 2 个形参（products / reader），实际 %d 个", ctor.NumIn())
 	}
 	if got, want := ctor.In(1), readerIfaceType(); got != want {
 		t.Fatalf("第 2 个形参应为 %v，实际 %v（读模型不再是构造实参 = 漏接退化成运行期）", want, got)

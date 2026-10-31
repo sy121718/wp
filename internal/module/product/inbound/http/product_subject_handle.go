@@ -233,7 +233,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req),
+	pageview.RenderTemplate(c, ProductListPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req),
 		pageview.Object("Result", result), pageview.Object("Categories", categories), pageview.Object("Brands", brands),
 		pageview.Object("Tags", tags), pageview.Object("WarehouseOptions", warehouses),
 		pageview.Object("Rules", h.products.ListPricingRuleTypes(c.Request.Context())),
@@ -271,7 +271,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("WarehouseOptions", warehouses),
+	pageview.RenderTemplate(c, ProductNewPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("WarehouseOptions", warehouses),
 		pageview.Object("Attributes", attributes), pageview.Object("WarehouseSKUOptions", skus), pageview.Object("TemplateCatalog", templates)))
 }
 
@@ -326,7 +326,7 @@ func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("Categories", categories),
+	pageview.RenderTemplate(c, ProductEditPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("Categories", categories),
 		pageview.Object("Brands", brands), pageview.Object("Tags", tags), pageview.Object("Attributes", attributes),
 		pageview.Object("WarehouseOptions", warehouses), pageview.Object("WarehouseSKUOptions", skus), pageview.Object("TplPanel", panel)))
 }
@@ -352,7 +352,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("TplPanel", panel)))
+	pageview.RenderTemplate(c, ProductDetailPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Product", product), pageview.Object("TplPanel", panel)))
 }
 
 // PreviewVariant 返回变体业务数据，规格显示由前端按属性定义格式化。
@@ -459,7 +459,7 @@ func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
 			return
 		}
 	}
-	pageview.Render(c, pageview.Objects(
+	pageview.RenderTemplate(c, ProductPricingPageTemplate, pageview.Objects(
 		pageview.Object("Scope", scope),
 		pageview.Object("Rules", h.products.ListPricingRuleTypes(c.Request.Context())),
 		pageview.Object("Roundings", h.products.ListPricingRoundingOptions(c.Request.Context())),

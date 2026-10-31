@@ -94,7 +94,7 @@ func TestScorePanelsReturnEntityFacts(t *testing.T) {
 		cats:   []*productdto.CategoryResp{{ID: "c1", ProjectID: "proj-1", Name: "男装", Slug: "men"}},
 		brands: []*productdto.BrandResp{{ID: "b1", ProjectID: "proj-1", Name: "示例品牌", Slug: "brand"}},
 	}
-	h := NewProductPageHandle(fake, nil, nil)
+	h := NewProductPageHandle(fake, nil)
 	cases := []struct {
 		id, kind, profile, title, path string
 		handler                        gin.HandlerFunc
@@ -145,7 +145,7 @@ func TestScorePanelsReportFailureStatusAndNeverExposeInternalError(t *testing.T)
 			{"数据库失败", "e1", "proj-1", errors.New("postgres password=private database failed"), 500},
 		} {
 			t.Run(kind+"/"+tc.name, func(t *testing.T) {
-				h := NewProductPageHandle(&fakeProductService{err: tc.err}, nil, nil)
+				h := NewProductPageHandle(&fakeProductService{err: tc.err}, nil)
 				handler := h.SeoScore
 				if kind == "category" {
 					handler = h.CategorySeoScore

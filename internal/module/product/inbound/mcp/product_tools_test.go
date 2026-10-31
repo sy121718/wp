@@ -239,3 +239,47 @@ func TestProductGetPointsAtFind(t *testing.T) {
 		t.Fatal("product_get 的说明里要指出 id 从哪来")
 	}
 }
+
+// TestDescribeProductReportsStockUnknown product_get 的文本必须把「库存读取失败」说出来
+// （PRD-017：故障如实显示）。
+//
+// 旧实现只 switch StockState：读失败时三态是零值，于是它落进 default 说「未入库（任何仓库
+// 都没有该商品的库存行）」—— 把「这次没查到」当成事实告诉用户，而后台列表已经是
+// 「库存读取失败」。两处口径必须一致。
+func TestDescribeProductReportsStockUnknown(t *testing.T) {
+	unknown := &productdto.ProductResp{
+		ID: "p-unknown", ProjectID: "proj-1", Name: "故障商品", StockUnknown: true,
+	}
+	got := describeProduct(unknown)
+	if !strings.Contains(got, "读取失败") {
+		t.Fatalf("库存读取失败必须如实说明，实际文本：%q", got)
+	}
+	if strings.Contains(got, "未入库") {
+		t.Fatalf("故障不是「未入库」：两种事实必须显示成不同的话，实际：%q", got)
+	}
+	if strings.Contains(got, "不限") || strings.Contains(got, "各仓合计") {
+		t.Fatalf("故障时不得伪造三态结论，实际：%q", got)
+	}
+
+	// 反证：真的没有库存行（none）仍按原口径说「未入库」—— 这两句不能合并。
+	none := &productdto.ProductResp{ID: "p-none", ProjectID: "proj-1", Name: "未入库商品"}
+	if got := describeProduct(none); !strings.Contains(got, "未入库") {
+		t.Fatalf("没有任何库存行仍应说「未入库」，实际：%q", got)
+	}
+}
+
+// TestDescribeProductStockUnknownEnglishLang 英文语言下同样如实说「读取失败」。
+//
+// describeProduct 在 MCP 出口是**纯事实文本**（不走 tr 取词），所以两种语言下这一行一致；
+// 本用例守的是「别把故障那行写成一个只在中文下成立的措辞」：MCP 的接口面不被语言切换影响。
+func TestDescribeProductStockUnknownLanguageInvariant(t *testing.T) {
+	unknown := &productdto.ProductResp{ID: "p-unknown", ProjectID: "proj-1", Name: "Broken", StockUnknown: true}
+	first := describeProduct(unknown)
+	second := describeProduct(unknown)
+	if first != second {
+		t.Fatalf("同一份事实两次描述必须逐字相同（MCP 文本不带状态）：%q vs %q", first, second)
+	}
+	if strings.Contains(first, "stockUnknown") {
+		t.Fatalf("说明里不应出现裸字段名，实际：%q", first)
+	}
+}

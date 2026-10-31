@@ -150,6 +150,14 @@
 
                     <td>
                         <details class="stock-cell">
+                            {{if p.StockUnknown}}
+                            {* 库存读取失败（PRD-017）：三态与分仓明细在这次请求里都没有值，照旧按 none 渲染
+                               会显示成「未入库」—— 那是把它当成事实在说。所以这里只交代故障本身，且不展开分仓：
+                               那一屏列出的每个仓都是伪「未入库」。列表本身不因这个附属读取失败而整体失败。 *}
+                            <summary aria-label="{{tr("admin.products.stock.unknown", "库存读取失败")}}">
+                                {{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.products.stock.unknown", "库存读取失败"))}}
+                            </summary>
+                            {{else}}
                             <summary aria-label="{{tr("admin.products.stock.expand", "展开分仓库存")}}">
                             {{if p.StockState == "infinite"}}{{tr("admin.products.stock.infinite", "∞ 无限")}}{{else if p.StockState == "tracked"}}{{p.StockTotal}}{{else}}{{tr("admin.products.stock.none", "未入库")}}{{end}}
                             </summary>
@@ -161,6 +169,7 @@
                                 {{if state == "infinite"}}<span>{{tr("admin.products.stock.infiniteShort", "∞")}}</span>{{else if state == "tracked"}}<span>{{quantity}}</span>{{else}}<span class="text-mute">{{tr("admin.products.stock.none", "未入库")}}</span>{{end}}</li>
                             {{end}}
                             </ul>
+                            {{end}}
                         </details>
                     </td>
 

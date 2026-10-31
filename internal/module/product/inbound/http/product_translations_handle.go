@@ -6,7 +6,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
-	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -35,14 +34,9 @@ type productTranslationWiring interface {
 	SetI18nStaleMarker(m productservice.I18nStaleMarker)
 }
 
-// NewProductTranslationHandle 构造商品域翻译页处理器（instances 可为 nil）。
-//
-// projects 参数保留在签名里是为了**装配层的对称**（同一个 Setup 函数里几个依赖一起给），
-// 取数已由 service 自己经 project 契约完成；pages 在这里转交给 service 做「保存后标记
-// 手工页面待重建」（收窄成只要 MarkStaleForI18n 的端口）。
-func NewProductTranslationHandle(products productcontract.ProductService, projects projectcontract.ProjectService,
+// NewProductTranslationHandle 注入译文用例及保存后的失效标记端口。
+func NewProductTranslationHandle(products productcontract.ProductService,
 	pages pagecontract.PageService, instances ProductTranslationInstancePort) *ProductTranslationHandle {
-	_ = projects
 	if w, ok := products.(productTranslationWiring); ok {
 		w.SetTranslationInstances(instances)
 		if pages != nil {
@@ -79,11 +73,6 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	h.renderPage(c, req)
-}
-
-// renderPage 取这一屏的读模型并渲染（失败走 JSON 出口）。
-func (h *ProductTranslationHandle) renderPage(c *gin.Context, req *productdto.ProductTranslationsPageReq) {
 	view, err := h.page(c, req)
 	if err != nil {
 		pageview.Fail(c, err)
@@ -94,7 +83,7 @@ func (h *ProductTranslationHandle) renderPage(c *gin.Context, req *productdto.Pr
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Translations", view)))
+	pageview.RenderTemplate(c, ProductTranslationsPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Translations", view)))
 }
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。
@@ -106,11 +95,6 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	h.saveAndReply(c, req)
-}
-
-// saveAndReply 保存并回执：成功一句事实文案；失败按「读模型报错 / 逐行拒绝」两档回（取词在出口发生一次）。
-func (h *ProductTranslationHandle) saveAndReply(c *gin.Context, req *productdto.SaveProductTranslationsReq) {
 	view, err := h.save(c, req)
 	if err != nil || !view.Saved {
 		replySaveRejected(c, view, err)

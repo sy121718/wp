@@ -26,7 +26,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 		return
 	}
 
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
+	pageview.RenderTemplate(c, ProductAttributesPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
 }
 
 // CreateAttribute 新建属性组（可同时带初始属性值）。

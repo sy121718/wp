@@ -6,6 +6,7 @@ import (
 	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
+	pageview "go_wp/pkg/view"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/edit", adminui.PageSlot(ProductEditPageTemplate), h.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), h.ProductEditPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
 	return rec

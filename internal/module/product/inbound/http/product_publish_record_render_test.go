@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	productcontract "go_wp/internal/module/product/contract"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -32,7 +33,7 @@ func publishRecordRequest(t *testing.T, h *ProductPageHandle, target string) *ht
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/products/publish-records",
-		adminui.PageSlot(ProductPublishRecordPageTemplate), h.ProductPublishRecordPage)
+		pageview.UseRenderer(adminui.RenderPage), h.ProductPublishRecordPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

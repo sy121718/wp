@@ -3,6 +3,7 @@ package producthttp
 import (
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -41,7 +42,7 @@ func translationObjectsRequest(t *testing.T, facts *productcontract.ProductTrans
 	h := &ProductTranslationHandle{products: &translationFactsReader{facts: facts, err: readErr}}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/translations", adminui.PageSlot(ProductTranslationsPageTemplate), h.ProductTranslations)
+	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), h.ProductTranslations)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/translations?project=p1", nil))
 	return rec
@@ -105,7 +106,7 @@ func TestDetailTemplateRendersBindingFromOriginalObjects(t *testing.T) {
 	h := &ProductPageHandle{products: reader, reader: reader, templates: &templateCatalogPort{}, instances: &templateInstancePort{}}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/template", adminui.PageSlot(ProductDetailTemplatePageTemplate), h.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailTemplatePage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/template?project=p1&product=prod-1", nil))
 	body := rec.Body.String()

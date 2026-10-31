@@ -143,5 +143,5 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 		return
 	}
 	rules := h.products.ListTagRuleTypes(c.Request.Context())
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("RuleTypes", rules)))
+	pageview.RenderTemplate(c, ProductTagsPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("RuleTypes", rules)))
 }

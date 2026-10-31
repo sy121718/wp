@@ -551,13 +551,20 @@ func describeProduct(res *productdto.ProductResp) string {
 	//   infinite = 至少一个仓不跟踪库存（等价于「要多少有多少」）；
 	//   tracked  = 全部仓都跟踪，后面那个数才有意义；
 	//   none     = 任何仓都没有库存行，**不等于 0**（「没入库」与「入库了但没货」是两回事）。
-	switch res.StockState {
-	case productenums.StockStateInfinite:
-		writeLine(&b, "库存", "不限（至少一个仓库不跟踪库存）")
-	case productenums.StockStateTracked:
-		writeLine(&b, "库存", strconv.Itoa(res.StockTotal)+"（各仓合计）")
-	default:
-		writeLine(&b, "库存", "未入库（任何仓库都没有该商品的库存行）")
+	//
+	// StockUnknown 必须先判（PRD-017）：那一行的三态是零值，照 default 说「未入库」就是
+	// 把「这次没查到」当成事实告诉用户 —— 后台列表同样按「库存读取失败」显示，两处口径一致。
+	if res.StockUnknown {
+		writeLine(&b, "库存", "读取失败（库存聚合这次没有查成功，数值未知；重试或到后台确认）")
+	} else {
+		switch res.StockState {
+		case productenums.StockStateInfinite:
+			writeLine(&b, "库存", "不限（至少一个仓库不跟踪库存）")
+		case productenums.StockStateTracked:
+			writeLine(&b, "库存", strconv.Itoa(res.StockTotal)+"（各仓合计）")
+		default:
+			writeLine(&b, "库存", "未入库（任何仓库都没有该商品的库存行）")
+		}
 	}
 	// 上架时间：用户会问「什么时候上的架」，而「新品」的判断也靠它。
 	writeLine(&b, "创建时间", res.CreatedAt.String())

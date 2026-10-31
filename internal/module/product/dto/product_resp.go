@@ -75,6 +75,14 @@ type ProductResp struct {
 	// 求和等于把无限当 0，页面会显示成「有货」，而实际是「卖不完」。
 	StockState string `json:"stockState"`
 	StockTotal int    `json:"stockTotal"`
+	// StockUnknown 库存**读取故障**的事实（PRD-017）：为 true 表示这一行的库存三项
+	// 不是「查出来是空」，而是「这次没查到」。
+	//
+	// 为什么要一个独立字段而不是再加一个 StockState 值：三态是库存**业务语义**
+	// （无限 / 跟踪 / 无行），「没查到」不是第四种状态，而是一次读取故障的事实。
+	// 显示口径已裁决（PRD-017）：后台列表与 MCP 都如实显示「读取失败」，
+	// 不把零值冒充成「未入库」。三态与已售量判断都不受影响：可用量永远走库存真源的带行锁路径。
+	StockUnknown bool `json:"stockUnknown,omitempty"`
 	// StockWarehouses 分仓明细：只列**产生过库存行**的仓（没有任何行的仓在页面上显示「未入库」，
 	// 由页面按工程仓库清单补齐 —— 服务端不凭空造行，见 fillProductStock 的注释）。
 	StockWarehouses []*ProductWarehouseStockResp `json:"stockWarehouses,omitempty"`

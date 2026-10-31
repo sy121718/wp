@@ -28,5 +28,5 @@ func (h *ProductPageHandle) ProductPublishRecordPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Records", result)))
+	pageview.RenderTemplate(c, ProductPublishRecordPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Records", result)))
 }

@@ -31,7 +31,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("Categories", categories)))
+	pageview.RenderTemplate(c, ProductCategoriesPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("Categories", categories)))
 }
 
 // ProductCategoryParents 返回父级候选原对象，按钮与层级缩进由前端生成。
@@ -64,7 +64,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 		return
 	}
 
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
+	pageview.RenderTemplate(c, ProductBrandsPageTemplate, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
 }
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {

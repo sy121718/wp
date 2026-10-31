@@ -10,6 +10,7 @@
 package producthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -43,7 +44,7 @@ func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/products/publish-records", func(c *gin.Context) {
 		c.Set(adminctx.ButtonsKey, buttons)
-		adminui.PageSlot(ProductPublishRecordPageTemplate)(c)
+		pageview.UseRenderer(adminui.RenderPage)(c)
 		handle.ProductPublishRecordPage(c)
 	})
 	rec := httptest.NewRecorder()
