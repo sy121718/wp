@@ -132,7 +132,7 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageview.Render(c, h.automationCanvasView(c, item))
+	pageview.RenderTemplate(c, AutomationCanvasTemplate, h.automationCanvasView(c, item))
 }
 
 // automationJsVer 自动化编辑器脚本的缓存版本（模块目录下 .js 的最新 mtime）。
@@ -226,7 +226,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	if err != nil {
 		// 取数失败：归口文案 + 空列表（空列表不可省，理由见视图字段的注释）。
 		view.Err = mailErrPageText(c, err)
-		pageview.Render(c, view)
+		pageview.RenderTemplate(c, AutomationPageTemplate, view)
 		return
 	}
 	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
@@ -240,7 +240,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	}
 	view.Automations = autoRows
 	view.AutoTotal = automations.Total
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, AutomationPageTemplate, view)
 }
 
 // automationFormValues 编辑页表单当前值。
@@ -383,7 +383,7 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	}
 	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
 	mailRunDetailTexts(mailTranslate(c), detail)
-	pageview.Render(c, &maildto.AutomationRunPageResp{
+	pageview.RenderTemplate(c, AutomationRunPageTemplate, &maildto.AutomationRunPageResp{
 		Title: mailenums.PageTitleAutomationRun.Key,
 		D:     detail,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）。
@@ -473,7 +473,7 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	if err != nil {
 		// 取数失败：归口文案 + 零值（五个计数走视图零值）。
 		view.Err = mailErrPageText(c, err)
-		pageview.Render(c, view)
+		pageview.RenderTemplate(c, AutomationRunsPageTemplate, view)
 		return
 	}
 	// 运行文案（error_message）落库时是「key + 参数」编码，到出口才按语言还原。
@@ -498,7 +498,7 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize, Base: base,
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, AutomationRunsPageTemplate, view)
 }
 
 // mailCampaignsPageSize 活动每页条数。
@@ -531,13 +531,13 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 
 	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize})
 	if err != nil {
-		pageview.Render(c, mailCampaignsErrData(c, err))
+		pageview.RenderTemplate(c, CampaignsPageTemplate, mailCampaignsErrData(c, err))
 		return
 	}
 	if fixed := mailCampaignsClampPage(page, campaigns.Total); fixed != page {
 		page = fixed
 		if campaigns, err = h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize}); err != nil {
-			pageview.Render(c, mailCampaignsErrData(c, err))
+			pageview.RenderTemplate(c, CampaignsPageTemplate, mailCampaignsErrData(c, err))
 			return
 		}
 	}
@@ -560,7 +560,7 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize, Base: "/admin/mail/campaigns",
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, CampaignsPageTemplate, view)
 }
 
 // mailCampaignsErrData 取数失败时的页面数据。
@@ -679,7 +679,7 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		Total: report.Total, Page: page, Limit: mailCampaignsPageSize,
 		Base: fmt.Sprintf("/admin/mail/campaign?id=%d", id),
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, CampaignPageTemplate, view)
 }
 
 // MailCampaignReportJSON 报表数据接口（图表 / 外部核对用同一份口径）。
@@ -774,7 +774,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	}
 	contacts, err := filter()
 	if err != nil {
-		pageview.Render(c, mailContactsErrData(c, err))
+		pageview.RenderTemplate(c, ContactsPageTemplate, mailContactsErrData(c, err))
 		return
 	}
 	// 页号收敛（见 mailContactsClampPage）：越界时用收敛后的页码重取一次。
@@ -782,7 +782,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	if fixed := mailContactsClampPage(page, contacts.Total); fixed != page {
 		page = fixed
 		if contacts, err = filter(); err != nil {
-			pageview.Render(c, mailContactsErrData(c, err))
+			pageview.RenderTemplate(c, ContactsPageTemplate, mailContactsErrData(c, err))
 			return
 		}
 	}
@@ -813,7 +813,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize}) {
 		logger.Scene("mail").Error(errors.New("联系人视图缺少 Pagination 字段"), "分页事实挂载失败")
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, ContactsPageTemplate, view)
 }
 
 // mailContactsErrData 取数失败时的页面数据。
@@ -1035,7 +1035,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// 运营连那句归口文案都看不到。这两条分支此前正是这样。
 	accountRows, accountTotal, accountPage, err := h.mail.ListAccountsPage(ctx, "", mailPageNumber(c.Query("account_page")), mailListPageSize)
 	if err != nil {
-		pageview.Render(c, mailPageErrData(c, err))
+		pageview.RenderTemplate(c, AccountsPageTemplate, mailPageErrData(c, err))
 		return
 	}
 
@@ -1051,7 +1051,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// 模板 include 里 isset 守卫自然跳过。
 	_ = adminui.AttachPaginationView(view, "", nil,
 		mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"))
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, AccountsPageTemplate, view)
 }
 
 // mailPageErrData 取数失败时的页面数据：归口文案 + 让模板能整页渲染完的空列表。
@@ -1304,7 +1304,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 失败路径必须注入 title 与空集合：缺 title 会在 layout 中断、缺 Templates
 		// 会在列表行中断，两者都表现为「HTTP 200 + 半页 HTML」，运营连归口文案都看不全。
-		pageview.Render(c, mailTemplatesErrData(c, err))
+		pageview.RenderTemplate(c, TemplatesPageTemplate, mailTemplatesErrData(c, err))
 		return
 	}
 	view := &maildto.TemplatesPageResp{
@@ -1324,7 +1324,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 		mailListPaginationFacts(total, page, "page", "/admin/mail/templates")) {
 		logger.Scene("mail").Error(errors.New("模板页视图缺少 Pagination 字段"), "分页事实挂载失败")
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, TemplatesPageTemplate, view)
 }
 
 // mailTemplatesErrData 取数失败时的页面数据：归口文案 + 空列表。
@@ -1722,7 +1722,7 @@ func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
 		"compiledHtml": item.BodyCompiledHTML,
 		"compiledText": item.BodyCompiledText,
 	})
-	pageview.Render(c, &maildto.TemplateEditorPageResp{
+	pageview.RenderTemplate(c, TemplateEditorPageTemplate, &maildto.TemplateEditorPageResp{
 		Title:    mailenums.PageTitleTemplateEditor.Key,
 		T:        item,
 		MetaJSON: utils.JsonSafe(string(metaJSON)),

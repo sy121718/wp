@@ -18,6 +18,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	mailcontract "go_wp/internal/module/mail/contract"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 // setupMailPageRoutes 注册邮箱后台页（pages = /admin 页面组）。
@@ -28,7 +29,8 @@ import (
 // CampaignsPageTemplate 邮件活动列表页的模板名（页面出口由页面槽带进上下文）。
 const (
 	CampaignsPageTemplate = "admin/mail/mail_campaigns.html"
-	// 其余页面模板名：迁移到 PageSlot 后，模板名由路由声明、handler 只交视图对象。
+	// 其余页面模板名：已迁 pageview.UseRenderer 的页面由 handler 自己声明模板（RenderTemplate），
+	// 页面模板名一律由 handler 的 RenderTemplate 声明，路由只装配统一渲染器。
 	AccountsPageTemplate       = "admin/mail/mail.html"
 	TemplatesPageTemplate      = "admin/mail/mail_templates.html"
 	ContactsPageTemplate       = "admin/mail/mail_contacts.html"
@@ -50,7 +52,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// —— 发信账号 ——
 	pages.GET("/mail",
 		adminui.PageAuthz("/api/mail/account/list"),
-		adminui.PageSlot(AccountsPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailPage)
 	pages.POST("/mail/account/save", builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
 	pages.POST("/mail/account/delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
@@ -59,13 +61,13 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// —— 邮件模板 ——
 	pages.GET("/mail/templates",
 		adminui.PageAuthz("/api/mail/template/list"),
-		adminui.PageSlot(TemplatesPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailTemplatesPage)
 	// 可视化编辑器（四栏）：**复用模板保存的权限点**，不新增权限点 —— 页面路由可复用
 	// （AGENTS.md「权限点：一条 API 路由一个独立权限点；页面路由可复用」）。
 	pages.GET("/mail/templates/editor",
 		adminui.PageAuthz("/api/mail/template/list"),
-		adminui.PageSlot(TemplateEditorPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailTemplateEditor)
 	pages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
 	pages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
@@ -78,7 +80,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// —— 联系人 ——
 	pages.GET("/mail/contacts",
 		adminui.PageAuthz("/api/mail/contact/list"),
-		adminui.PageSlot(ContactsPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailContactsPage)
 	pages.POST("/mail/contact/import", builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
 	pages.POST("/mail/contact/status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
@@ -98,7 +100,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// —— 群发活动（列表 + 报表）——
 	pages.GET("/mail/campaigns",
 		adminui.PageAuthz("/api/mail/campaign/list"),
-		adminui.PageSlot(CampaignsPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailCampaignsPage)
 	pages.POST("/mail/campaign/save", builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
 	pages.POST("/mail/campaign/start", builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
@@ -107,7 +109,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// 活动报表（#38 P1）：打开 / 点击 / 退订与收件人明细。报表是只读，权限沿用活动列表。
 	pages.GET("/mail/campaign",
 		adminui.PageAuthz("/api/mail/campaign/list"),
-		adminui.PageSlot(CampaignPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailCampaignPage)
 
 	// 旧「邮件营销」页已拆成「联系人」与「群发活动」两页。这里保留 302 而不是让路径 404：
@@ -119,23 +121,23 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// —— 自动化 ——
 	pages.GET("/mail/automation",
 		adminui.PageAuthz("/api/mail/automation/list"),
-		adminui.PageSlot(AutomationPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailAutomationPage)
 	// 运行记录（排障）：流程是配置、实例是现场，拆成两页各答一个问题。
 	pages.GET("/mail/automation/runs",
 		adminui.PageAuthz("/api/mail/automation/list"),
-		adminui.PageSlot(AutomationRunsPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailAutomationRunsPage)
 	pages.GET("/mail/automation/run",
 		adminui.PageAuthz("/api/mail/automation/list"),
-		adminui.PageSlot(AutomationRunPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailAutomationRunDetail)
 	// 画布：**流程的唯一编辑器**。带 ?id=N 是编辑，不带 id 是新建 ——
 	// 表单编辑页（旧 /mail/automation/edit）已删除，不留重定向：留一条跳转就等于
 	// 「两个入口」以另一种形式复活。
 	pages.GET("/mail/automation/canvas",
 		adminui.PageAuthz("/api/mail/automation/list"),
-		adminui.PageSlot(AutomationCanvasTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailAutomationCanvas)
 	pages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	pages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)

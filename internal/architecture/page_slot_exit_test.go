@@ -127,7 +127,9 @@ func controllerCallsCHTML(t *testing.T, root, method string) []string {
 func TestPageSlotHandlersUseRenderOnly(t *testing.T) {
 	root := repoRoot(t)
 	wired := pageSlotWiredHandlers(t, root)
-	if len(wired) < 50 {
+	// 下限守卫只防「扫描失效」，不是覆盖率预算：每迁完一个模块的页面出口就按实际值下调
+	// （order → mail 两轮迁移后 50 → 48），只减不增。
+	if len(wired) < 48 {
 		t.Fatalf("只找到 %d 个挂 PageSlot 的 handler：判据失效（路由写法变了？）", len(wired))
 	}
 	for method, pos := range wired {
