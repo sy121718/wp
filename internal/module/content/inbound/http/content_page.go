@@ -314,15 +314,12 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	// 由 partial 现算；单页 / 空集时模板自然不渲染。
 	//
 	// 翻页保留关键词；写动作的结论不再经查询参数回带（走提示页），基地址上只有筛选。
-	if !adminui.AttachPaginationView(data, "/admin/articles",
-		map[string]string{"keyword": keyword},
-		pagination.Page{Total: total, Page: page, Limit: limit}) {
-		logger.Scene("content").Error(errors.New("文章列表视图缺少 Pagination 字段"), "分页事实挂载失败")
-	}
+	data.Pagination = pagination.Page{Total: total, Page: page, Limit: limit,
+		Base: reqparams.FilterBaseURL("/admin/articles", map[string]string{"keyword": keyword})}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
 	// 本批只做可见性，不做自动重建（见 content_page.go）。
 	data.StaleImpact = articleStaleImpact(ctx, h)
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, ArticlesPageTemplate, data)
 }
 
 // articleClampPage 把页码收敛到实际总页数以内（total=0 时收敛到第 1 页）。
@@ -365,13 +362,13 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	pageview.Render(c, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c)))
+	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c)))
 }
 
 // ArticleCreate 新建文章（POST /admin/articles/create，权限点 content:create）。
 //
 // 只回 JSON（同 ArticleUpdate 的说明）。新建成功后由前端的 data-write-nav 带 id 跳编辑页
-//（表单上声明 "/admin/articles/edit?id={id}"）—— 后端不发 302 / HX-Redirect。
+// （表单上声明 "/admin/articles/edit?id={id}"）—— 后端不发 302 / HX-Redirect。
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 	form := articleFormOf(c)
 	if form.Title == "" {
@@ -893,7 +890,7 @@ var articleImportFallbacks = map[string]string{
 // 从 Trix 编辑器同步，服务端零往返。Form 键集与编辑页 articleEditPageData 的 form
 // 对齐（模板点号取值，缺键会让 Jet 报错并截断整页）。
 func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
-	pageview.Render(c, &contentdto.ArticleNewPageResp{
+	pageview.RenderTemplate(c, ArticleNewPageTemplate, &contentdto.ArticleNewPageResp{
 		Title: articleNewTitle,
 		Menu:  "articles",
 		// 全空表单：新建页不取数，字段集与编辑页对齐（缺键会让 Jet 报错并截断整页）。
@@ -1426,7 +1423,7 @@ func articleTranslationTextField(field string) (key, fallback string) {
 // ArticleTranslations GET /admin/articles/translations。
 func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 	data := h.build(c, strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("keyword")))
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 }
 
 // SaveArticleTranslations POST /admin/articles/translations/save（整表提交）。
@@ -1440,7 +1437,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	// 保存校验必须使用提交时的同一页，否则第二页的行会被误判为原文已变化。
 	if page != data.Page || c.PostForm("limit") != strconv.Itoa(data.Limit) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrPageChanged, "列表页码已变化，请刷新后重试")}
-		pageview.Render(c, data)
+		pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 		return
 	}
 
@@ -1449,12 +1446,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrRowCountMismatch, "提交的行数不一致，请刷新后重试")}
-		pageview.Render(c, data)
+		pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 		return
 	}
 	if h.writer == nil {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrStorageUnavailable, "译文存储不可用")}
-		pageview.Render(c, data)
+		pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 		return
 	}
 
@@ -1495,7 +1492,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	}
 	if len(rowErrors) > 0 {
 		data.Errors = rowErrors
-		pageview.Render(c, data)
+		pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 		return
 	}
 	if len(items) == 0 {
@@ -1536,7 +1533,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 			data.Errors = []articleMsg{articleTranslationFilled(c,
 				contentenums.TranslationsErrSaveFailed, "保存失败：{detail}",
 				map[string]string{"detail": adminui.MsgText(c, articleErrMsgQuiet(c, uerr))})}
-			pageview.Render(c, data)
+			pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 			return
 		}
 	}
@@ -2315,4 +2312,3 @@ const (
 // 这是**过渡形态**：那两处 view 仍是 map 装配（下一批迁），而在这一批把它们一起改会
 // 让「下拉选项」与「页面装配」两件事混在同一个 diff 里 —— 出问题时分不清是哪边改坏的。
 // point: 迁移完成后本函数与那两个 []gin.H 参数一起删除。
-

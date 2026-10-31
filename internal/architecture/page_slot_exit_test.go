@@ -128,8 +128,8 @@ func TestPageSlotHandlersUseRenderOnly(t *testing.T) {
 	root := repoRoot(t)
 	wired := pageSlotWiredHandlers(t, root)
 	// 下限守卫只防「扫描失效」，不是覆盖率预算：每迁完一个模块的页面出口就按实际值下调
-	// （order → mail → page → inventory → user → workbench 六轮迁移后 50 → 48 → 44 → 38 → 33 → 31），只减不增。
-	if len(wired) < 31 {
+	// （order → mail → page → inventory → user → workbench → content 七轮迁移后 50 → 48 → 44 → 38 → 33 → 31 → 27），只减不增。
+	if len(wired) < 27 {
 		t.Fatalf("只找到 %d 个挂 PageSlot 的 handler：判据失效（路由写法变了？）", len(wired))
 	}
 	for method, pos := range wired {

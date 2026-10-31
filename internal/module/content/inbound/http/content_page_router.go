@@ -22,6 +22,7 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 // ContentPreviewNoticeTemplate 预览 iframe 的替代页（与商品预览共用同一份模板）。
@@ -44,6 +45,9 @@ const ArticleNewPageTemplate = "admin/content/article_new.html"
 
 // ArticleTranslationsTemplate 文章译文页的模板名。
 const ArticleTranslationsTemplate = "admin/content/article_translations.html"
+
+// ArticleEditPageTemplate 文章编辑页的模板名（GET /articles/edit）。
+const ArticleEditPageTemplate = "admin/content/article_edit.html"
 
 // 内容模块两个片段出口的模板名（片段出口不带页壳）。
 const (
@@ -73,7 +77,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	}
 	pages.GET("/articles",
 		adminui.PageAuthz("/api/content/list"),
-		adminui.PageSlot(ArticlesPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		articlePages.ArticlesPage)
 	// 待重建影响面清单（只读抽屉片段）：与页头徽章同一个查询，徽章给数、抽屉给清单。
 	// 鉴权复用列表页的读权限点 —— 片段里就是全站待重建页面清单，不挂鉴权等于把它
@@ -90,9 +94,12 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 「本页面入口按 POST 语义鉴权」，让动词不匹配这件事在代码里可见。
 	pages.GET("/articles/new",
 		builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost),
-		adminui.PageSlot(ArticleNewPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		articlePages.ArticleNewPage)
-	pages.GET("/articles/edit", adminui.PageAuthz("/api/content/list"), articlePages.ArticleEditPage)
+	pages.GET("/articles/edit",
+		adminui.PageAuthz("/api/content/list"),
+		pageview.UseRenderer(adminui.RenderPage),
+		articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	pages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
@@ -112,12 +119,12 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	}
 	pages.GET("/articles/translations",
 		adminui.PageAuthz("/api/content/list"),
-		adminui.PageSlot(ArticleTranslationsTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		articleTranslations.ArticleTranslations)
-	// POST 也挂 PageSlot：失败时回的是**同一张译文页**（200 + 逐行错误）。
+	// POST 也装配同一个渲染器：失败时回的是**同一张译文页**（200 + 逐行错误）。
 	pages.POST("/articles/translations/save",
 		builtin.CasbinMiddlewareForPath("/api/content/update"),
-		adminui.PageSlot(ArticleTranslationsTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
