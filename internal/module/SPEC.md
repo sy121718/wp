@@ -14,13 +14,7 @@ parent: go-wp-arch
 
 标准目录：`contract`（接口 + 不可变 DTO）、`dto`（请求绑定与校验）、`enums`（枚举、错误 key + 兜底、状态码、界面 key）、`model`（本模块表访问）、`service`（业务规则与事务边界）、`inbound/http`（控制器）、`inbound/mcp`（AI 工具）、`outbound`（外部系统适配）。
 
-每层的准入与禁令见 `internal/module/CLAUDE.md`，本节不复述。三条最常被踩的：
-
-- 控制器方法体只有「绑定 → 调 service → 出口」；模板名只出现在 router 的 `adminui.PageSlot` / `BareSlot`。
-- service 只出数据与事实（`pkg/facing` 的 key + 兜底），不拼句；事务边界在这里。
-- **取词的边界是「谁拥有词条」，不是「谁调 i18n」**：service 可以按 ctx 里的取词函数把**声明处已有的事实**（enums 的 key + 兜底）取成当前语言，只是调一次内存查询；被禁的是自造词条（`"admin./shell./user./workbench."` 这类 key 字面量）。
-- 成品句不进 dto 的**语言绑定字段**（译文、已取词的 `Err` / `ErrMsg`）——换一种语言就要重算，由页面出口或模板临时填。
-- model 不写业务规则、不跨聚合事务、不声明列型、不出现别人的表名。
+每层的准入与禁令见 `internal/module/CLAUDE.md`，本节不复述。
 
 ## 模块与边界
 

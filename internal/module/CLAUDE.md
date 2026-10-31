@@ -23,9 +23,8 @@
 
 ## service
 - 只返回数据对象与事实（`pkg/facing` 的 key + 兜底）；**不拼句**。
-- 取词：允许按 ctx 里的取词函数（`translateFrom(ctx)`）把**声明处已有的事实**取成当前语言文案
-  —— 词条 key 与中文兜底都住在 enums，service 只是调 `i18n.Translate` 那一次内存查询。
-  禁止的是「自造词条」：service 里不许出现 `"admin./shell./user./workbench."` 这类 key 字面量。
+- 不取词：取词只有模板 t/tf 与 `pkg/response.MessageOf` 两个出口；service 只交 key + 中文兜底 + 参数。
+  自造词条同样禁止：service 里不许出现 `"admin./shell./user./workbench."` 这类 key 字面量。
 - 成品句不进 dto 的**语言绑定字段**（`Text` / 已取词的 `Err` / `ErrMsg`）：它们换一种语言就要重算，
   由页面出口或模板临时填；dto 里只放 key + 参数这类语言无关的事实。
 - 事务边界在这里：涉及两处以上写入必须同一事务，句柄从 model 下传。

@@ -314,7 +314,7 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 //
 //	· `DO $$ BEGIN EXECUTE 'DROP' || ' TABLE public.sys_config'; END $$` 执行成功 ——
 //	  拼接后的语句文本里没有连续的 "drop ... table" 模式，黑名单一条都不命中（表真被删了，
-//	  随后由迁移重建；事故记录见 public/docs/业务区块解耦-B0台账.md §12）；
+//	  随后由迁移重建）；
 //	· `SET LOCAL search_path TO plugin_x` 之后 `CREATE TABLE public.y` 仍然成功 ——
 //	  search_path 只影响**未限定**的名字，不是权限。
 //
