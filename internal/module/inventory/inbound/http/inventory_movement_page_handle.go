@@ -46,7 +46,7 @@ func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
 // 漏一个字段是零值、而不是模板取不到键导致整页中断。此前这里返回 gin.H，理由是
 // "失败页与正常页共用一套键"，但失败页早已是强类型 inventoryLoadFailedView，
 // 那条理由不成立，gin.H 只是没跟着迁完的残留。
-func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.MovementPageReq) (*inventorydto.InventoryPageResp, error) {
+func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.MovementPageReq) (*InventoryPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -83,7 +83,7 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 		"timeFrom":    query.TimeFrom,
 		"timeTo":      query.TimeTo,
 	})
-	return &inventorydto.InventoryPageResp{
+	return &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryMovementsTitle, "库存流水"),
 		Menu:            "inventory-movements",
 		Projects:        projectOptions(projects),
@@ -107,8 +107,8 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 //
 // 与 listMovements 共用（库存管理页也调它）：两处各写一份映射时，日后新增一列只改一侧，
 // 表现是「同一个流水在两页显示不同的成本」—— 这类分叉只在对比时才看得出来。
-func movementRowResp(tr func(key, fallback string) string, m *inventorydto.MovementResp) inventorydto.MovementRowResp {
-	return inventorydto.MovementRowResp{
+func movementRowResp(tr func(key, fallback string) string, m *inventorydto.MovementResp) MovementRowResp {
+	return MovementRowResp{
 		ID: m.ID, StockID: m.StockID, SKUCode: m.SKUCode,
 		StockName: m.StockName, StockImageURL: m.StockImageURL,
 		WarehouseName: m.WarehouseName, WarehouseCode: m.WarehouseCode,

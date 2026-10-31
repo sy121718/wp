@@ -39,7 +39,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		return
 	}
 	tr := shell.TranslateFor(c)
-	pageview.RenderTemplate(c, InventoryWarehousesPageTemplate, &inventorydto.WarehousesPageResp{
+	pageview.RenderTemplate(c, InventoryWarehousesPageTemplate, &WarehousesPageResp{
 		Title:               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		Menu:                "inventory-warehouses",
 		Projects:            toAnySlice(projects),
@@ -150,9 +150,9 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 }
 
 // listWarehouses 某工程的仓库（模板直接渲染类型徽标、默认仓徽标与状态）。
-func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (out []inventorydto.WarehouseRowResp, err error) {
+func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (out []WarehouseRowResp, err error) {
 	ctx := c.Request.Context()
-	out = []inventorydto.WarehouseRowResp{}
+	out = []WarehouseRowResp{}
 	if projectID == "" {
 		return out, nil
 	}
@@ -162,7 +162,7 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	}
 	tr := shell.TranslateFor(c)
 	for _, w := range rows {
-		item := inventorydto.WarehouseRowResp{
+		item := WarehouseRowResp{
 			ID: w.ID, Code: w.Code, Name: w.Name, Type: w.Type, Status: w.Status,
 			IsDefault:      w.IsDefault,
 			Sort:           w.Sort,
@@ -179,9 +179,9 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 // —— 取词 / 文案 ——
 
 // warehouseTypeOptions 仓库类型下拉项（文案 key 见迁移 243 的 seed）。
-func warehouseTypeOptions(c *gin.Context) []inventorydto.WarehouseTypeOptionResp {
+func warehouseTypeOptions(c *gin.Context) []WarehouseTypeOptionResp {
 	tr := shell.TranslateFor(c)
-	return []inventorydto.WarehouseTypeOptionResp{
+	return []WarehouseTypeOptionResp{
 		{Value: inventoryenums.WarehouseTypeSelf, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeSelf)},
 		{Value: inventoryenums.WarehouseTypeThirdParty, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeThirdParty)},
 		{Value: inventoryenums.WarehouseTypeVirtual, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeVirtual)},
@@ -204,8 +204,8 @@ func warehouseTypeLabelText(tr func(key, fallback string) string, typ string) st
 	}
 }
 
-func warehouseFormData(c *gin.Context, projectID string, edit bool, row *inventorydto.WarehouseRowResp) *inventorydto.WarehouseFormResp {
-	return &inventorydto.WarehouseFormResp{
+func warehouseFormData(c *gin.Context, projectID string, edit bool, row *WarehouseRowResp) *WarehouseFormResp {
+	return &WarehouseFormResp{
 		IsEdit: edit, Row: row, SelectedProject: projectID,
 		WarehouseTypes: warehouseTypeOptions(c),
 	}

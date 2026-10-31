@@ -95,7 +95,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	//
 	// 三态（迁移 261）：∞ 无限（track_quantity = false）/ 数字（跟踪且有数量）/
 	// 未入库（这个仓没有这条 SKU 的库存行）。
-	stockRows := []inventorydto.StockByWarehouseRowResp{}
+	stockRows := []StockByWarehouseRowResp{}
 	if sku != "" {
 		rows, serr := h.inventory.ListStocksBySKU(ctx, &inventorydto.ListStockBySKUReq{
 			ProjectID: selected, SKUCode: sku,
@@ -114,7 +114,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			if r == nil {
 				// 未入库：该仓没有这条 SKU 的库存行。没有可编辑的对象，
 				// 因此数量列给提示、行内表单不渲染（表单要定位到一行）。
-				stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
+				stockRows = append(stockRows, StockByWarehouseRowResp{
 					WarehouseID: w.ID, Present: false,
 					WarehouseName: w.Name, WarehouseCode: w.Code,
 					SKUCode:       sku,
@@ -122,9 +122,9 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 				})
 				continue
 			}
-			// 字段含义见 inventorydto.StockByWarehouseRowResp（WarehouseID 是行内编辑的定位键，
+			// 字段含义见 StockByWarehouseRowResp（WarehouseID 是行内编辑的定位键，
 			// ExternalSKU 空串合法，TrackQuantity 与 Quantity 必须成对给出）。
-			stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
+			stockRows = append(stockRows, StockByWarehouseRowResp{
 				WarehouseID: w.ID, Present: true,
 				WarehouseName: r.WarehouseName, WarehouseCode: r.WarehouseCode,
 				VariantID: r.VariantID, SKUCode: r.SKUCode,
@@ -163,7 +163,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	}
 
 	tr := shell.TranslateFor(c)
-	pageData := &inventorydto.InventoryPageResp{
+	pageData := &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryTitle, "库存管理"),
 		Menu:            "inventory",
 		Projects:        projectOptions(projects),
@@ -217,9 +217,9 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 // total 是该过滤条件下的**真实总条数**（契约的 CountMovements，与 ListMovements 同一份
 // 过滤条件）；curPage 是**收敛后**的页码（page 越界时回落到末页）。out 只装本页数据。
 func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, warehouseID,
-	direction, reasonCode, timeFrom, timeTo string, page, limit int) (out []inventorydto.MovementRowResp, total int64, curPage int, err error) {
+	direction, reasonCode, timeFrom, timeTo string, page, limit int) (out []MovementRowResp, total int64, curPage int, err error) {
 	ctx := c.Request.Context()
-	out = []inventorydto.MovementRowResp{}
+	out = []MovementRowResp{}
 	if projectID == "" {
 		return out, 0, 1, nil
 	}

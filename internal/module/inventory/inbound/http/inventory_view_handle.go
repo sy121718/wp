@@ -1,14 +1,19 @@
-package inventorydto
+package inventoryhttp
 
 import (
+	inventorydto "go_wp/internal/module/inventory/dto"
 	"go_wp/pkg/pagination"
 )
 
-// inventory_page_resp.go — 后台库存页的行元素。
+// inventory_view_handle.go — 库存页的行元素与整页根视图（模板直接读）。
 //
-// 只放「一行就是一条事实」的结构：库存页的两张表（某 SKU 的各仓库存、库存流水）。
-// 页面数据根仍是 map（模板用 .["t"] 取词，Jet 的索引只对 map 生效），行元素一律结构体 ——
-// 键名写错在结构体上是编译错误，在 map 上是「渲染成空白」且页面照样 200。
+// 只放「一行就是一条事实」的结构与「这一屏要哪些键」的根：这些类型的导出字段名
+// 就是模板契约（internal/templates/admin/inventory/*.html 的 .Field）。
+// 接口响应的 DTO 留在 dto —— 搬之前两类形状在同一包里混居，
+// 「这是给模板的还是给 API 的」只能靠逐个读消费点回答。
+//
+// StockSKURowResp 是唯一共存的一项：它同时是接口读模型
+// （InventoryService.ListStockSKURows 的返回，经 contract 别名暴露），所以留在 dto。
 
 // StockByWarehouseRowResp 某 SKU 在各仓的库存，**按仓库展开**而不是只列已有的库存行。
 //
@@ -98,7 +103,7 @@ type WarehouseRowResp struct {
 	// 用接口面那个类型的指针而不是把字段拍平：拍平会让「凭据三件套」在页面 DTO 上出现第二份，
 	// 而它们的安全论证（明文不落库、密文不出接口、只回布尔与掩码）写在 WarehouseThirdPartyResp 上 ——
 	// 两份形状意味着两份论证，改一处不会让另一处报错。
-	ThirdParty *WarehouseThirdPartyResp
+	ThirdParty *inventorydto.WarehouseThirdPartyResp
 }
 
 // ReasonRowResp 变动原因一行（原因管理页表格与各页的原因下拉共用）。
@@ -222,7 +227,7 @@ type TransferListPageResp struct {
 	SelectedProject string
 	Warehouses      []WarehouseRowResp
 
-	Rows          []*TransferRowResp
+	Rows          []*inventorydto.TransferRowResp
 	FilterStatus  string
 	Keyword       string
 	StatusOptions []OptionResp
@@ -243,7 +248,7 @@ type StockSKUListPageResp struct {
 	SelectedProject string
 	Warehouses      []WarehouseRowResp
 
-	Rows            []StockSKURowResp
+	Rows            []inventorydto.StockSKURowResp
 	FilterWarehouse string
 	FilterKeyword   string
 	FilterStatus    string

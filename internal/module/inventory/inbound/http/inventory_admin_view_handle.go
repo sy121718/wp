@@ -1,6 +1,6 @@
-package inventorydto
+package inventoryhttp
 
-// inventory_admin_page_resp.go — 库存模块**各页根视图**（页面 GET 的回执形状）。
+// inventory_admin_view_handle.go — 库存模块**各页根视图**（页面 GET 的回执形状）。
 //
 // 与同目录 inventory_page_resp.go 的分工：那一份只放「一行就是一条事实」的行元素
 // （StockByWarehouseRowResp / MovementRowResp / WarehouseRowResp …），是**行**；

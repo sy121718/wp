@@ -42,7 +42,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	tr := shell.TranslateFor(c)
 	// 与库存 / 仓库两页共用同一个视图类型（InventoryPageResp 是三页键集的超集）：
 	// 多给的键不渲染，收益是「键集齐全」由类型保证而不是靠三份装配互相比对。
-	pageview.RenderTemplate(c, InventoryReasonsPageTemplate, &inventorydto.InventoryPageResp{
+	pageview.RenderTemplate(c, InventoryReasonsPageTemplate, &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		Menu:            "inventory-reasons",
 		Projects:        projectOptions(projects),
@@ -135,9 +135,9 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 // name 列是 i18n key：这里统一取词成文案后再交给模板 —— 页面上永远不该出现
 // inventory.reason.purchase_in 这样的裸 key。取不到词条时回退到 code（短、可辨认，
 // 且与同一行的 code 列一致），而不是回退到那个又长又不像话的 key。
-func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out []inventorydto.ReasonRowResp, err error) {
+func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out []ReasonRowResp, err error) {
 	ctx := c.Request.Context()
-	out = []inventorydto.ReasonRowResp{}
+	out = []ReasonRowResp{}
 	if projectID == "" {
 		return out, nil
 	}
@@ -149,7 +149,7 @@ func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out
 	}
 	tr := shell.TranslateFor(c)
 	for _, r := range rows {
-		out = append(out, inventorydto.ReasonRowResp{
+		out = append(out, ReasonRowResp{
 			ID: r.ID, Code: r.Code, Name: tr(r.Name, r.Code),
 			Direction: r.Direction, DirectionLabel: directionLabel(tr, r.Direction),
 			IsBuiltin: r.IsBuiltin, Status: r.Status, Sort: r.Sort,
@@ -163,8 +163,8 @@ func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out
 //
 // 调整入口不做入库（入库必须挂采购单 / 生产单）：把入库原因列进下拉等于鼓励
 // 绕过单据直接入库，那正是这次收口要消灭的路径。
-func adjustReasonOptions(reasons []inventorydto.ReasonRowResp) (out []inventorydto.ReasonRowResp) {
-	out = []inventorydto.ReasonRowResp{}
+func adjustReasonOptions(reasons []ReasonRowResp) (out []ReasonRowResp) {
+	out = []ReasonRowResp{}
 	for _, r := range reasons {
 		if r.Status != inventoryenums.StatusActive {
 			continue
@@ -178,8 +178,8 @@ func adjustReasonOptions(reasons []inventorydto.ReasonRowResp) (out []inventoryd
 }
 
 // directionOptions 库存变动方向的可选项（出 / 入 / 调整三类，仅供**筛选**使用）。
-func directionOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
-	return []inventorydto.OptionResp{
+func directionOptions(tr func(key, fallback string) string) []OptionResp {
+	return []OptionResp{
 		{Value: inventoryenums.DirectionIn, Label: directionLabel(tr, inventoryenums.DirectionIn)},
 		{Value: inventoryenums.DirectionOut, Label: directionLabel(tr, inventoryenums.DirectionOut)},
 		{Value: inventoryenums.DirectionAdjust, Label: directionLabel(tr, inventoryenums.DirectionAdjust)},
@@ -189,9 +189,9 @@ func directionOptions(tr func(key, fallback string) string) []inventorydto.Optio
 // adjustDirectionOptions 库存调整入口可选的方向：盘点（adjust）与报损（out）。
 //
 // 文案走取词而不是硬编码：这是本批新增的用户可见文案，英文界面不该看到中文。
-func adjustDirectionOptions(c *gin.Context) []inventorydto.OptionResp {
+func adjustDirectionOptions(c *gin.Context) []OptionResp {
 	tr := shell.TranslateFor(c)
-	return []inventorydto.OptionResp{
+	return []OptionResp{
 		{Value: inventoryenums.DirectionAdjust, Label: tr(inventoryenums.InventoryAdjustDirectionAdjust, "盘点（填目标绝对量）")},
 		{Value: inventoryenums.DirectionOut, Label: tr(inventoryenums.InventoryAdjustDirectionOut, "报损（填本次减少量）")},
 	}
@@ -211,8 +211,8 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 	}
 }
 
-func reasonFormData(c *gin.Context, projectID string) *inventorydto.ReasonFormResp {
-	return &inventorydto.ReasonFormResp{
+func reasonFormData(c *gin.Context, projectID string) *ReasonFormResp {
+	return &ReasonFormResp{
 		SelectedProject: projectID,
 		Directions:      toAnySlice(directionOptions(shell.TranslateFor(c))),
 	}

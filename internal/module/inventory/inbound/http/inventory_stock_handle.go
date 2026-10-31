@@ -123,8 +123,8 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 // 一次批量的读法：商品清单与变体各查一次，查询次数与商品数无关
 // （原先是「List 一页 + 逐个 Get」，100 个商品 = 101 次往返）。
 // 商品契约未注入（装配漏接）时下拉为空、页面照常渲染 —— 不因一处装配缺失 500。
-func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID string) (out []inventorydto.VariantOptionResp, err error) {
-	out = []inventorydto.VariantOptionResp{}
+func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID string) (out []VariantOptionResp, err error) {
+	out = []VariantOptionResp{}
 	if projectID == "" || h.products == nil {
 		return out, nil
 	}
@@ -133,7 +133,7 @@ func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID stri
 		return nil, err
 	}
 	for _, o := range options {
-		out = append(out, inventorydto.VariantOptionResp{
+		out = append(out, VariantOptionResp{
 			VariantID: o.VariantID, ProductID: o.ProductID, SKUCode: o.SKUCode,
 			Label: o.ProductName + " · " + o.SKUCode,
 		})
@@ -142,7 +142,7 @@ func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID stri
 }
 
 // skuOfVariant 从下拉项里按变体 id 取 SKU 编码（找不到返回空串，页面提示无匹配）。
-func skuOfVariant(options []inventorydto.VariantOptionResp, variantID string) string {
+func skuOfVariant(options []VariantOptionResp, variantID string) string {
 	for _, o := range options {
 		if o.VariantID == variantID {
 			return o.SKUCode

@@ -43,11 +43,11 @@ func (s *transferPageRenderStub) CountTransfers(context.Context, *inventorydto.L
 }
 
 // warehouseRowLister 固定返回两个仓库（源 / 目标），供「同意」抽屉的下拉渲染。
-func warehouseRowLister(_ *gin.Context, projectID string) ([]inventorydto.WarehouseRowResp, error) {
+func warehouseRowLister(_ *gin.Context, projectID string) ([]WarehouseRowResp, error) {
 	if projectID == "" {
-		return []inventorydto.WarehouseRowResp{}, nil
+		return []WarehouseRowResp{}, nil
 	}
-	return []inventorydto.WarehouseRowResp{
+	return []WarehouseRowResp{
 		{ID: "wh-from", Code: "SZ", Name: "苏州仓"},
 		{ID: "wh-to", Code: "SH", Name: "上海仓"},
 	}, nil

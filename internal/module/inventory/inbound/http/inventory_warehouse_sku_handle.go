@@ -50,7 +50,7 @@ func (h *inventoryPageHandle) InventoryStockSKUsPage(c *gin.Context) {
 //
 // 曾返回 gin.H，理由是"失败页与正常页共用一套键"；但失败页已是强类型
 // inventoryLoadFailedView，那条理由不成立，gin.H 只是没迁完的残留。
-func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.StockSKUPageReq) (*inventorydto.StockSKUListPageResp, error) {
+func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.StockSKUPageReq) (*StockSKUListPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -95,7 +95,7 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		"keyword":     query.Keyword,
 		"status":      query.Status,
 	})
-	return &inventorydto.StockSKUListPageResp{
+	return &StockSKUListPageResp{
 		Title:           tr(inventoryenums.InventoryStockSKUsTitle, "仓库商品 SKU"),
 		Menu:            "inventory-skus",
 		Projects:        projectOptions(projects),
@@ -158,9 +158,9 @@ func (h *inventoryPageHandle) InventoryStockStatus(c *gin.Context) {
 }
 
 // stockStatusOptions 货行状态下拉（空值 = 不限，只用于筛选条）。
-func stockStatusOptions(c *gin.Context) []inventorydto.OptionResp {
+func stockStatusOptions(c *gin.Context) []OptionResp {
 	tr := text.TranslateFunc(c)
-	return []inventorydto.OptionResp{
+	return []OptionResp{
 		{Value: inventoryenums.StatusActive, Label: statusLabel(tr, inventoryenums.StatusActive)},
 		{Value: inventoryenums.StatusDisabled, Label: statusLabel(tr, inventoryenums.StatusDisabled)},
 	}

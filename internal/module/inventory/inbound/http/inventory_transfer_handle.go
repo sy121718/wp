@@ -41,7 +41,7 @@ func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
 
 // transfersData 取齐调拨页的数据并组成视图（强类型，见 TransferListPageResp）。
 func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
-	query *inventorydto.ListTransferReq) (*inventorydto.TransferListPageResp, error) {
+	query *inventorydto.ListTransferReq) (*TransferListPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -73,7 +73,7 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	if werr != nil {
 		return nil, werr
 	}
-	return &inventorydto.TransferListPageResp{
+	return &TransferListPageResp{
 		Warehouses:      warehouses,
 		Title:           tr(inventoryenums.InventoryTransfersTitle, "调拨单"),
 		Menu:            "inventory-transfers",
@@ -211,7 +211,7 @@ type inventoryTransferPageHandle struct {
 	projects  projectcontract.ProjectService
 	// warehouses 仓库下拉（与库存页同一份仓库列表）：注入 listWarehouses 而不是
 	// 再持一个 InventoryService —— 那一屏只要「列仓库」一条能力。
-	warehouses func(c *gin.Context, projectID string) ([]inventorydto.WarehouseRowResp, error)
+	warehouses func(c *gin.Context, projectID string) ([]WarehouseRowResp, error)
 }
 
 // NewInventoryTransferPageHandle 构造。
@@ -220,13 +220,13 @@ type inventoryTransferPageHandle struct {
 // 两边各查一次会让「默认仓徽标」这类展示在同一份数据上出现两种说法。
 func NewInventoryTransferPageHandle(transfers inventoryTransferContract,
 	projects projectcontract.ProjectService,
-	warehouseLister func(c *gin.Context, projectID string) ([]inventorydto.WarehouseRowResp, error)) *inventoryTransferPageHandle {
+	warehouseLister func(c *gin.Context, projectID string) ([]WarehouseRowResp, error)) *inventoryTransferPageHandle {
 	return &inventoryTransferPageHandle{transfers: transfers, projects: projects, warehouses: warehouseLister}
 }
 
 // transferStatusOptions 调拨单状态筛选（六态；requested / rejected 见迁移 651）。
-func transferStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
-	return []inventorydto.OptionResp{
+func transferStatusOptions(tr func(key, fallback string) string) []OptionResp {
+	return []OptionResp{
 		{Value: "", Label: tr(inventoryenums.InventoryFilterAll, "（全部）")},
 		{Value: "requested", Label: tr(inventoryenums.InventoryTransfersStatusRequested, "待审批")},
 		{Value: "pending", Label: tr(inventoryenums.InventoryTransfersStatusPending, "待出货")},
