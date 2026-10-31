@@ -161,7 +161,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 		// **展示口径**（一个总数），不是业务计算。
 		Todo: h.buildTodoView(c.Request.Context(), selected),
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, OrderSalesPageTemplate, view)
 }
 
 // todoView 待办块的三个数字（装配三个 map 键，handler 侧只留一条语句）。

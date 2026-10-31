@@ -59,7 +59,7 @@ func (h *orderShipmentPageHandle) PendingShipPage(c *gin.Context) {
 		return
 	}
 	data, _ := h.pendingShipView(c, query)
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, PendingShipPageTemplate, data)
 }
 
 // pendingShipWindow 分页窗口（与其它列表页同一口径：默认 20、上限 100）。
@@ -194,7 +194,7 @@ func (h *orderShipmentPageHandle) ShipFormFragment(c *gin.Context) {
 		return
 	}
 	tr := text.TranslateFunc(c)
-	pageview.Render(c, gin.H{
+	pageview.RenderTemplate(c, ShipFormPageTemplate, gin.H{
 		"Form":      form,
 		"t":         tr,
 		"CSRFToken": binding.CSRFToken(c),
@@ -207,5 +207,5 @@ func (h *orderShipmentPageHandle) OrderCarriersPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageview.Render(c, h.carrierView(c, query.ProjectID))
+	pageview.RenderTemplate(c, OrderCarriersPageTemplate, h.carrierView(c, query.ProjectID))
 }

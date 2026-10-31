@@ -111,10 +111,10 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	}
 	// 库存预警由装配层后置注入（SetSalesStockAlerts）—— 订单模块不 import 库存的 dto。
 	registerSalesPageAlerts(salesPages)
-	// 页面出口由 PageSlot 装配（handler 只交视图对象）。
+	// 页面出口由统一渲染器装配，模板名在 handler 的 RenderTemplate 调用处声明。
 	pages.GET("/orders/overview",
 		adminui.PageAuthz("/admin/orders/overview"),
-		adminui.PageSlot(OrderSalesPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		salesPages.SalesOverviewPage)
 	// 这个权限点同时仍是可授权对象：声明它不只是为了拦请求 —— 侧栏菜单绑 order:overview，
 	// 角色分权经 menu_ids 收集到它，
@@ -181,12 +181,12 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 就等于把同一份授权写第二处（sys_permission 每个权限点只有一列 api_path）。
 	shipPages := NewOrderShipmentPageHandle(svc, projects)
 	pages.GET("/orders/pending-ship", adminui.PageAuthz("/api/order/shipment/pending"),
-		adminui.PageSlot(PendingShipPageTemplate), shipPages.PendingShipPage)
+		pageview.UseRenderer(adminui.RenderPage), shipPages.PendingShipPage)
 	// 发货抽屉片段：权限点取「能发货」那条（看不到它的人不该拿到这张表单）。
 	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
-		adminui.BareSlot(ShipFormPageTemplate), shipPages.ShipFormFragment)
+		pageview.UseRenderer(adminui.RenderBare), shipPages.ShipFormFragment)
 	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
-		adminui.PageSlot(OrderCarriersPageTemplate), shipPages.OrderCarriersPage)
+		pageview.UseRenderer(adminui.RenderPage), shipPages.OrderCarriersPage)
 	// 模板名与路由同处（失败与成功渲染的必须是同一张模板）。
 	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderPendingShip)
 	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierList)
