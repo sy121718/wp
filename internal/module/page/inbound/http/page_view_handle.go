@@ -1,6 +1,17 @@
-package pagedto
+package pagehttp
+
+// page_view_handle.go — 页面出口的视图类型（模板直接读的导出字段）。
+//
+// 与 dto 的分工：dto 只放请求绑定与接口响应；这些类型只被 pageview.RenderTemplate /
+// adminui.PrepareBareView 消费，导出字段名就是模板契约键。
+//
+// 原先它们住在 dto 包里，于是「页面视图」与「接口 DTO」在同一个包中混居：
+// 想回答「这个类型是给模板的还是给 API 的」只能靠逐个读消费点。
+//
+// PageLangStateResp 留在 dto：它带 json tag、经 contract 别名对外暴露（接口 DTO）。
 
 import (
+	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/utils"
 )
@@ -34,7 +45,7 @@ type PageRowResp struct {
 	Kind         string
 	DraftPath    string
 	ActivePath   string
-	Publications []PagePublicationResp
+	Publications []pagedto.PagePublicationResp
 	Active       bool
 	Staged       bool
 	Stale        bool
@@ -49,39 +60,6 @@ type PageRowResp struct {
 	LangScope     string
 	LangStatusKey string
 	LangStatusFb  string
-}
-
-// HistoryRowResp 修订历史行视图。
-//
-// CreatedAt 交的是**事实**（时间对象），展示格式由模板的 dateTime() 决定 —— 与 PageRowResp 同一口径：
-// Go 只交时刻，不替模板选格式。
-type HistoryRowResp struct {
-	Version   int64
-	Path      string
-	CreatedAt utils.JSONTime
-}
-
-// StaleItemResp 「全站待重建」清单的一行。
-//
-// 跨工程清单必须带工程名：每个工程都可能有一个一模一样的 /about，只给路径分不清是哪一个
-// （页面列表页本身有「所属工程」上下文，这一块没有）。
-type StaleItemResp struct {
-	ID          string
-	Path        string
-	ProjectName string
-	// Published 是否已上线（有活跃产物路径）：用来区分「已发布但有更新未发布」与「从未上线」——
-	// 后者的处置方式不同（重建也还不会出现在访问面，要先发布）。
-	Published bool
-	// FailedStageKey / FailedStageFallback 最近一次自动重建失败的**阶段事实**
-	// （两个都空 = 没有失败痕迹）。非空即「这页不是还没轮到，而是重建失败过」——
-	// 与 stale 徽标合起来才能回答「为什么它还在这儿」。
-	//
-	// 行上不放拼好的句子：那一句由「前缀词条 + 阶段词条 + 时刻」三段组成，
-	// 控制器拼的那一刻就是它替渲染期定语言的时刻（语言是请求级的）。
-	FailedStageKey      string
-	FailedStageFallback string
-	// FailedAt 失败时刻（事实；格式由模板的 siteDateTime 决定）。
-	FailedAt *utils.JSONTime
 }
 
 // TranslationLangOptionResp 工作台语言下拉项。
@@ -140,6 +118,46 @@ type TranslationRowResp struct {
 type TranslationGroupResp struct {
 	Component string
 	Rows      []TranslationRowResp
+}
+
+// TranslationMissPageResp 未翻译清单页（/admin/page-translation-misses）的视图。
+//
+// 它是**报告片段**：整页由前端壳承载，这个 handler 只出报告区那块。
+type TranslationMissPageResp struct {
+	CSRFToken       string
+	Projects        any
+	SelectedProject string
+	Rows            any
+	// Err 取数失败的归口事实（key + 中文兜底），取词在模板里发生。
+	Err any
+}
+
+// PageHistoryListResp 版本历史列表片段（fragments/history_list）。
+type PageHistoryListResp struct {
+	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
+	Revisions []HistoryRowResp
+	// Error 是**事实**（key + 中文兜底），取词在片段模板里做。
+	Error any
+}
+
+// TranslationErrorsResp 译文保存失败时的**逐行错误片段**（admin/partials/translation_errors.html）。
+//
+// 片段出口：保存失败就地替换 #page-translations-errors，不重渲整页 ——
+// 页面与已填译文都没动过，重渲只会把一次校验失败变成一次全量查询。
+type TranslationErrorsResp struct {
+	// Errors 逐行错误：Label 是「哪一行」（原文 context 名，可空 = 页面级），
+	// Msg 是词条事实 —— 两者在模板里合成一句。
+	Errors []TranslationRowErrorResp
+}
+
+// HistoryRowResp 修订历史行视图。
+//
+// CreatedAt 交的是**事实**（时间对象），展示格式由模板的 dateTime() 决定 —— 与 PageRowResp 同一口径：
+// Go 只交时刻，不替模板选格式。
+type HistoryRowResp struct {
+	Version   int64
+	Path      string
+	CreatedAt utils.JSONTime
 }
 
 // TranslationRowErrorResp 逐行错误：Label 是「哪一行」（原文 context 名，可能为空 = 页面级），

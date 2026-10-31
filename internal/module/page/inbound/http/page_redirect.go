@@ -151,7 +151,7 @@ func (h *Handle) RedirectBulkDelete(c *gin.Context) {
 //
 // 写动作的结论不在本页回显（走 shell.RenderJump，见 page_jump.go）：ErrKey 只剩
 // 「新建失败后原地回填输入」这一条来源（redirectCreateFailure），其余读侧键已删。
-func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) *pagedto.RedirectPageResp {
+func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) *RedirectPageResp {
 	lang := response.RequestLanguage(c)
 	t := templates.TranslateFunc(lang)
 	token, err := builtin.GetCSRFToken(c)
@@ -166,7 +166,7 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 	// （视图只带这一屏真正要的数据 —— 否则"哪些键是页壳给的"在类型上分不出来）。
 	_ = lang
 	_ = token
-	view := &pagedto.RedirectPageResp{
+	view := &RedirectPageResp{
 		Title:           t(pageenums.RedirectTitle, "重定向管理"),
 		PagePath:        redirectPagePath,
 		ErrKey:          errKey,

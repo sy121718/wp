@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	pagecontract "go_wp/internal/module/page/contract"
-	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/pkg/logger"
@@ -95,15 +94,15 @@ const staleOverviewLimit = 8
 // 按空态处理（此时下方列表也正落在「还没有页面」那一档）。
 // tr 由调用方传入（取词只在 handler 层做）：本函数要组装「最近一次重建失败」的文案，
 // 而它自己拿不到 gin.Context。
-func (h *pagesAdminHandle) staleOverview(ctx context.Context) *pagedto.StaleOverviewResp {
-	empty := &pagedto.StaleOverviewResp{
-		Available: true, Total: 0, Pages: []pagedto.StaleItemResp{},
+func (h *pagesAdminHandle) staleOverview(ctx context.Context) *StaleOverviewResp {
+	empty := &StaleOverviewResp{
+		Available: true, Total: 0, Pages: []StaleItemResp{},
 		// Limit 给真实口径（模板在空态下不读它，但零值会让「清单上限是多少」在两个分支里
 		// 出现两种答案）。
 		Limit: staleOverviewLimit, Truncated: false,
 	}
-	unavailable := &pagedto.StaleOverviewResp{
-		Available: false, Total: 0, Pages: []pagedto.StaleItemResp{},
+	unavailable := &StaleOverviewResp{
+		Available: false, Total: 0, Pages: []StaleItemResp{},
 		Limit: 0, Truncated: false,
 	}
 	if h == nil || h.pages == nil {
@@ -129,10 +128,10 @@ func (h *pagesAdminHandle) staleOverview(ctx context.Context) *pagedto.StaleOver
 		logger.Scene("page").Warn("全站待重建清单返回空结果（契约实现异常）")
 		return unavailable
 	}
-	items := make([]pagedto.StaleItemResp, 0, len(res.Pages))
+	items := make([]StaleItemResp, 0, len(res.Pages))
 	for i := range res.Pages {
 		stage, at := rebuildFailureFact(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt)
-		items = append(items, pagedto.StaleItemResp{
+		items = append(items, StaleItemResp{
 			ID:                  res.Pages[i].ID,
 			Path:                strings.TrimSpace(res.Pages[i].Path),
 			ProjectName:         strings.TrimSpace(res.Pages[i].ProjectName),
@@ -142,7 +141,7 @@ func (h *pagesAdminHandle) staleOverview(ctx context.Context) *pagedto.StaleOver
 			FailedAt:            at,
 		})
 	}
-	return &pagedto.StaleOverviewResp{
+	return &StaleOverviewResp{
 		Available: true,
 		Total:     res.Total,
 		Pages:     items,

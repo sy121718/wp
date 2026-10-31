@@ -8,7 +8,6 @@ package pagehttp
 // 少了它，tone 被加回投影时页面照样渲染，两份判据并存、迟早不一致。
 
 import (
-	pagedto "go_wp/internal/module/page/dto"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -42,11 +41,11 @@ func TestRedirectPageDataCarriesCountsNotTones(t *testing.T) {
 
 // TestTranslationRowCarriesEngineNotTone 译文行只交 engine 事实，字段名即契约（反射：删字段/改名都会红）。
 func TestTranslationRowCarriesEngineNotTone(t *testing.T) {
-	typ := reflect.TypeOf(pagedto.TranslationRowResp{})
+	typ := reflect.TypeOf(TranslationRowResp{})
 	if _, ok := typ.FieldByName("Engine"); !ok {
-		t.Fatal("pagedto.TranslationRowResp.Engine 是模板选档依据的事实，不能删")
+		t.Fatal("TranslationRowResp.Engine 是模板选档依据的事实，不能删")
 	}
 	if _, ok := typ.FieldByName("EngineTone"); ok {
-		t.Fatal("pagedto.TranslationRowResp.EngineTone 又回来了：档位由模板按 r.Engine 选（internal/templates/admin/page/page_translations.html:154）")
+		t.Fatal("TranslationRowResp.EngineTone 又回来了：档位由模板按 r.Engine 选（internal/templates/admin/page/page_translations.html:154）")
 	}
 }

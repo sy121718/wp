@@ -121,18 +121,18 @@ func (h *pagesAdminHandle) applyPageLangChange(c *gin.Context, restore bool) {
 // 用户仍能翻译与保存（那是本页的主职能），只是看不到这一门语言该不该产出。
 // 归口而不是透出驱动原文：这里拿不到业务错误（PageLangStates 只回驱动错误 / 工程缺失），
 // 原文进日志，页面上只给一句「读取失败」。
-func (h *pagesAdminHandle) pageLangStatesOf(ctx context.Context, pageID string) ([]pagedto.PageLangResp, pageMsg) {
+func (h *pagesAdminHandle) pageLangStatesOf(ctx context.Context, pageID string) ([]PageLangResp, pageMsg) {
 	if h.pages == nil {
-		return []pagedto.PageLangResp{}, pageMsg{}
+		return []PageLangResp{}, pageMsg{}
 	}
 	states, err := h.pages.PageLangStates(ctx, pageID)
 	if err != nil {
 		logger.Scene("page").With("pageId", pageID).Error(err, "读取页面语言产出状态失败")
-		return []pagedto.PageLangResp{}, pageInternalMsg()
+		return []PageLangResp{}, pageInternalMsg()
 	}
-	rows := make([]pagedto.PageLangResp, 0, len(states))
+	rows := make([]PageLangResp, 0, len(states))
 	for _, st := range states {
-		row := pagedto.PageLangResp{
+		row := PageLangResp{
 			Lang: st.Lang, IsDefault: st.IsDefault, Excluded: st.Excluded, Published: st.Published,
 		}
 		// 三档状态的取值与文案都归 pageenums（LangStatusOf 派生取值、

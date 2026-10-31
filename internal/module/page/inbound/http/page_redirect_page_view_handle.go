@@ -1,8 +1,14 @@
-package pagedto
+package pagehttp
 
-// page_redirect_page_resp.go — 重定向管理页的渲染视图（页面 GET 的回执形状）。
+import (
+	pagedto "go_wp/internal/module/page/dto"
+)
+
+// page_redirect_page_view_handle.go — 重定向管理页的渲染视图（页面 GET 的回执形状）。
 //
-// 与 page_resp.go 的分工：那一份是接口契约；这一份是页面视图（模板直接读）。
+// 原先住在 dto/page_redirect_page_resp.go：那份是页面的渲染视图（模板直接读），
+// 而接口契约在 dto/page_redirect_resp.go —— 两者混居时「这是给模板的还是给 API 的」
+// 只能靠逐个读消费点回答。
 // **导出字段名就是模板契约**：internal/templates/admin/page/page_redirects.html 里的
 // `.Field` 必须在这里有同名导出字段。
 //
@@ -26,9 +32,9 @@ type RedirectPageResp struct {
 	CreateTarget string
 	CreateFailed bool
 
-	Projects        []RedirectProjectOptionResp
+	Projects        []pagedto.RedirectProjectOptionResp
 	SelectedProject string
-	Items           []RedirectItemResp
+	Items           []pagedto.RedirectItemResp
 	Total           int
 	EffectiveCount  int
 

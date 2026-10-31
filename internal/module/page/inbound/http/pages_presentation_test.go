@@ -9,13 +9,12 @@ import (
 
 	"strings"
 
-	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/pkg/utils"
 )
 
 func TestPageRowUpdatedAtCarriesTimeFact(t *testing.T) {
-	field, ok := reflect.TypeOf(pagedto.PageRowResp{}).FieldByName("UpdatedAt")
+	field, ok := reflect.TypeOf(PageRowResp{}).FieldByName("UpdatedAt")
 	if !ok || field.Type != reflect.TypeOf(utils.JSONTime{}) {
 		t.Fatalf("UpdatedAt must carry JSONTime, got %v", field.Type)
 	}
@@ -40,7 +39,7 @@ func TestPagePresentationHasNoBackendUIHelpers(t *testing.T) {
 }
 
 func TestTranslationProjectionCarriesFacts(t *testing.T) {
-	typ := reflect.TypeOf(pagedto.TranslationRowResp{})
+	typ := reflect.TypeOf(TranslationRowResp{})
 	if _, ok := typ.FieldByName("ReuseHint"); ok {
 		t.Fatal("ReuseHint is UI text")
 	}

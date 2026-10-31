@@ -114,7 +114,7 @@ type pagesPageData struct {
 	Title    string `view:"title"`
 	Menu     string `view:"menu"`
 	Projects []projectcontract.ProjectResp
-	Pages    []pagedto.PageRowResp
+	Pages    []PageRowResp
 	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
 	// 不是另一个需要先去的页面。
 	Blueprints []blueprintOption
@@ -157,9 +157,9 @@ type pagesPageData struct {
 	// LangOptions 站点启用语言（筛选栏「语言」下拉的候选；默认语言在前）。
 	//
 	// 空切片 / 只有一种语言 = 没有可筛的东西：那时整条语言筛选不渲染。
-	LangOptions []pagedto.PageListLangOptionResp
+	LangOptions []PageListLangOptionResp
 	// LangStateOptions 该语言的产出状态候选（与行徽标同一套取值与词条）。
-	LangStateOptions []pagedto.PageListStateOptionResp
+	LangStateOptions []PageListStateOptionResp
 	// SelectedLang 当前筛的语言（空 = 没有按语言筛）。
 	SelectedLang string
 	// FilteredLang 用户是否**指定**了语言（?lang= 命中启用语言清单）。
@@ -180,7 +180,7 @@ type pagesPageData struct {
 	// 为什么与 ReceiptKnown 的形态不同（那里总是给键、用布尔分流）：那份观测只有「读到 / 没读到」
 	// 两种状态；这份还有「读到了但是空」这一种，而 nil 切片与空切片在模板里长得一样 ——
 	// 必须由比较列表多一个 Available 才能分开。两者共用的判据是**降级渲染时不得给出乐观结论**。
-	StaleOverview *pagedto.StaleOverviewResp
+	StaleOverview *StaleOverviewResp
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
@@ -289,10 +289,10 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 // pageRowsOf 把 service 的页面摘要映射成列表行。
 //
 // 纯映射：不取附加数据、不查库 —— 行的每个字段都来自 service 交回的摘要本身。
-func (h *pagesAdminHandle) pageRowsOf(pages []pagedto.PageResp) []pagedto.PageRowResp {
-	rows := make([]pagedto.PageRowResp, 0, len(pages))
+func (h *pagesAdminHandle) pageRowsOf(pages []pagedto.PageResp) []PageRowResp {
+	rows := make([]PageRowResp, 0, len(pages))
 	for _, p := range pages {
-		row := pagedto.PageRowResp{
+		row := PageRowResp{
 			ID: p.ID, ProjectID: p.ProjectID, Kind: p.Kind,
 			DraftPath: p.DraftPath, Publications: p.Publications, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
@@ -321,7 +321,7 @@ func (h *pagesAdminHandle) pageRowsOf(pages []pagedto.PageResp) []pagedto.PageRo
 //
 // 只有一种语言时三项一律给空：恒为单值、且状态取值与「全量」等价的下拉是噪声，
 // 不是能力（同一理由见筛选栏模板里工程下拉 `len(.Projects) > 1` 的判据）。
-func pageListLangFilter(langs []string, wantLang, wantState string) (options []pagedto.PageListLangOptionResp, states []pagedto.PageListStateOptionResp, selected string) {
+func pageListLangFilter(langs []string, wantLang, wantState string) (options []PageListLangOptionResp, states []PageListStateOptionResp, selected string) {
 	langs = dedupeLangs(langs)
 	if len(langs) <= 1 {
 		return nil, nil, ""
@@ -335,9 +335,9 @@ func pageListLangFilter(langs []string, wantLang, wantState string) (options []p
 			break
 		}
 	}
-	options = make([]pagedto.PageListLangOptionResp, 0, len(langs))
+	options = make([]PageListLangOptionResp, 0, len(langs))
 	for i := range langs {
-		options = append(options, pagedto.PageListLangOptionResp{
+		options = append(options, PageListLangOptionResp{
 			Value: langs[i], Label: langs[i],
 			Default: langs[i] == defaultLang, Active: langs[i] == selected,
 		})
@@ -350,13 +350,13 @@ func pageListLangFilter(langs []string, wantLang, wantState string) (options []p
 //
 // 值与词条都从 pageenums 取：下拉里出现一个行徽标写不出来的状态就是错的。
 // 默认选中「已发布」—— 运营问「哪些页面已经出了日语」的次数远多于问相反的问题。
-func pageListStateOptions(want string) []pagedto.PageListStateOptionResp {
+func pageListStateOptions(want string) []PageListStateOptionResp {
 	active := pageenums.LangStatusParse(want, pageenums.LangStatusPublished)
 	order := []string{pageenums.LangStatusPublished, pageenums.LangStatusDraft, pageenums.LangStatusExcluded}
-	out := make([]pagedto.PageListStateOptionResp, 0, len(order))
+	out := make([]PageListStateOptionResp, 0, len(order))
 	for _, status := range order {
 		key, fallback := pageenums.LangStatusLabel(status)
-		out = append(out, pagedto.PageListStateOptionResp{
+		out = append(out, PageListStateOptionResp{
 			Value: status, Key: key, Fallback: fallback, Active: status == active,
 		})
 	}
@@ -885,15 +885,15 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
-	view := &pagedto.PageHistoryListResp{Revisions: []pagedto.HistoryRowResp{}, Error: pageMsg{}}
+	view := &PageHistoryListResp{Revisions: []HistoryRowResp{}, Error: pageMsg{}}
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {
 			view.Error = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
 		} else {
-			views := make([]pagedto.HistoryRowResp, 0, len(revs))
+			views := make([]HistoryRowResp, 0, len(revs))
 			for _, r := range revs {
-				views = append(views, pagedto.HistoryRowResp{
+				views = append(views, HistoryRowResp{
 					Version: r.Version, Path: r.DraftPath,
 					CreatedAt: r.CreatedAt,
 				})
