@@ -94,7 +94,6 @@ package mailhttp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html"
@@ -115,7 +114,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
@@ -495,9 +493,9 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	// 分页只给事实：总数 / 页码 / 每页 / 基址由本行注入，信息行、翻页按钮与链接
 	// 全部由 admin/partials/pagination.html 按请求语言渲染。单页 / 空数据不注入键
 	// （与迁移前的空 map 同义），片段里 isset 守卫自然跳过。
-	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
+	view.Pagination = pagination.Page{
 		Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize, Base: base,
-	})
+	}
 	pageview.RenderTemplate(c, AutomationRunsPageTemplate, view)
 }
 
@@ -557,9 +555,9 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
 		ListQuery: mailPageQuery(page),
 	}
-	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
+	view.Pagination = pagination.Page{
 		Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize, Base: "/admin/mail/campaigns",
-	})
+	}
 	pageview.RenderTemplate(c, CampaignsPageTemplate, view)
 }
 
@@ -675,10 +673,10 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	}
 	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
 	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
-	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
+	view.Pagination = pagination.Page{
 		Total: report.Total, Page: page, Limit: mailCampaignsPageSize,
 		Base: fmt.Sprintf("/admin/mail/campaign?id=%d", id),
-	})
+	}
 	pageview.RenderTemplate(c, CampaignPageTemplate, view)
 }
 
@@ -808,11 +806,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		ListQuery: mailContactsListQuery(keyword, status, tags, page),
 	}
 	// 基地址带上筛选，翻页才保留筛选条件（否则翻到第 2 页就回到全量）。
-	if !adminui.AttachPaginationView(view, mailContactsPath,
-		map[string]string{"keyword": keyword, "status": status, "tags": tags},
-		pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize}) {
-		logger.Scene("mail").Error(errors.New("联系人视图缺少 Pagination 字段"), "分页事实挂载失败")
-	}
+	view.Pagination = mailContactsPagination(contacts.Total, page, keyword, status, tags)
 	pageview.RenderTemplate(c, ContactsPageTemplate, view)
 }
 
@@ -828,6 +822,17 @@ const mailContactsPath = "/admin/mail/contacts"
 //
 // 与回跳键表 mailContactsBackKeys 同一份键名：页面拼进 action、服务端用 shell.BackPath 读回，
 // 两处分叉的表现是「写完跳回去筛选静默丢了」—— 页面不报错、日志也干净。
+// mailContactsPagination 联系人页的分页事实。Base 必须带筛选：pagination.html 按 Base
+// 生成页码链接，空 Base 会让「下一页」变成没有 href 的纯文字。
+func mailContactsPagination(total int64, page int, keyword, status, tags string) pagination.Page {
+	return pagination.Page{
+		Total: total, Page: page, Limit: mailContactsPageSize,
+		Base: reqparams.FilterBaseURL(mailContactsPath, map[string]string{
+			"keyword": keyword, "status": status, "tags": tags,
+		}),
+	}
+}
+
 func mailContactsListQuery(keyword, status, tags string, page int) string {
 	params := map[string]string{"keyword": keyword, "status": status, "tags": tags}
 	if page > 1 {
@@ -1049,8 +1054,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	}
 	// 分页只注入事实；单页 / 空数据不注入键（与迁移前键缺失同义），
 	// 模板 include 里 isset 守卫自然跳过。
-	_ = adminui.AttachPaginationView(view, "", nil,
-		mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"))
+	view.Pagination = mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail")
 	pageview.RenderTemplate(c, AccountsPageTemplate, view)
 }
 
@@ -1316,14 +1320,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 		// Err 只由上面的取数失败分支注入。
 	}
 	// 分页只注入事实；单页 / 空数据不注入键，模板 include 的 isset 守卫自然跳过。
-	//
-	// **必须对视图本身调用**（不是它的 PrepareView 产物）：AttachPaginationView 靠反射
-	// 写视图的 Pagination 字段，传 gin.H 会静默失败（返回 false）。这里原先是
-	// `adminui.PrepareView(c, …)` 的产物 —— 分页条整条不渲染，而页面其余部分完全正常。
-	if !adminui.AttachPaginationView(view, "", nil,
-		mailListPaginationFacts(total, page, "page", "/admin/mail/templates")) {
-		logger.Scene("mail").Error(errors.New("模板页视图缺少 Pagination 字段"), "分页事实挂载失败")
-	}
+	view.Pagination = mailListPaginationFacts(total, page, "page", "/admin/mail/templates")
 	pageview.RenderTemplate(c, TemplatesPageTemplate, view)
 }
 

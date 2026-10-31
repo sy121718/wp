@@ -25,6 +25,8 @@ type CampaignsPageResp struct {
 	// Err 取数失败时的归口提示（空串 = 无错误）。
 	Err string
 	// Pagination 分页事实（模板 admin/partials/pagination.html 按这个键读）。
+	//
+	// 由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
@@ -69,6 +71,7 @@ type AutomationListPageResp struct {
 	// Buttons 不在这里：它由 adminui.Prepare 从请求上下文注入（模板侧透明）。
 	BackPath string
 
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
@@ -160,7 +163,7 @@ type AutomationCanvasPageResp struct {
 	// 邮件节点是否可用：站点没配 marketing 用途的发信账号时灰掉并给原因。
 	NodeDisabled       bool
 	NodeDisabledReason string
-	JSVer     string `view:"jsVer"`
+	JSVer              string `view:"jsVer"`
 	// KeyframesCSS 按需内联的动效关键帧（本次只用到入场一个）。
 	// 不声明就是零字节 —— 后台不常驻加载 63 条营销动效，谁用谁声明。
 	KeyframesCSS string
@@ -204,6 +207,7 @@ type AutomationRunsPageResp struct {
 	CountFailed    int64
 	CountStopped   int64
 
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
@@ -222,6 +226,7 @@ type ContactsPageResp struct {
 	ListQuery string
 	Err       string
 
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
@@ -234,6 +239,7 @@ type AccountsPageResp struct {
 	Accounts []any
 	Err      string
 
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
@@ -243,15 +249,17 @@ type TemplatesPageResp struct {
 	Templates     []any
 	TemplateTotal int64
 	Err           string
-	Pagination    pagination.Page
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
+	Pagination pagination.Page
 }
 
 // CampaignReportPageResp 活动报表页。
 type CampaignReportPageResp struct {
 	Title string
 	// R 报表数据（活动信息 + 收件人明细）。
-	R          any
-	Page       int
+	R    any
+	Page int
+	// Pagination 分页事实：由 handler 直接赋值，不经渲染层反射。
 	Pagination pagination.Page
 }
 
