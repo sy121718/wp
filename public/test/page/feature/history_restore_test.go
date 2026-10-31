@@ -17,7 +17,7 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/module/page/inbound/http"
+	pagehttp "go_wp/internal/module/page/inbound/http"
 
 	"github.com/gin-gonic/gin"
 )

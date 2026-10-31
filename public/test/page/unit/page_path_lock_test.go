@@ -7,9 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/module/page/dto"
-	"go_wp/internal/module/page/service"
-	projectdto "go_wp/internal/module/project/dto"
+	pagedto "go_wp/internal/module/page/dto"
+	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/pipeline"
 )
 
@@ -31,9 +30,9 @@ func TestPageServiceUsesProcessSharedPathLock(t *testing.T) {
 	// 注入共享实例必须幂等（装配层重复接线不改变语义）。
 	// svc 是聚合契约 PageService，锁端口只在具体服务上：用类型断言取真实实现，
 	// 而不是往契约接口里塞测试用方法（契约不该为测试变形）。
-	concrete, ok := svc.(*service.Service)
+	concrete, ok := svc.(*pageservice.Service)
 	if !ok {
-		t.Fatalf("页面服务具体类型不是 *service.Service，实际 %T", svc)
+		t.Fatalf("页面服务具体类型不是 *pageservice.Service，实际 %T", svc)
 	}
 	concrete.SetPublicationPathLocker(shared)
 	concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
@@ -117,21 +116,17 @@ func TestPathLockConcurrentSamePathNeverOverlaps(t *testing.T) {
 
 // TestPageRedirectFailsClosedWithoutPathLock 锁被关掉时，删除重定向必须在碰 FS 之前失败。
 func TestPageRedirectFailsClosedWithoutPathLock(t *testing.T) {
-	_, svc, projects, projectID := newPageServiceWithRoutes(t)
-	proj, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "锁关闭用例"})
-	if err != nil {
-		t.Fatalf("建工程失败: %v", err)
-	}
+	_, svc, _, projectID := newPageServiceWithRoutes(t)
 
-	concrete, ok := svc.(*service.Service)
+	concrete, ok := svc.(*pageservice.Service)
 	if !ok {
-		t.Fatalf("页面服务具体类型不是 *service.Service，实际 %T", svc)
+		t.Fatalf("页面服务具体类型不是 *pageservice.Service，实际 %T", svc)
 	}
 	concrete.SetPublicationPathLocker(nil)
 	defer concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
 
-	err = svc.DeleteRedirect(context.Background(), &dto.RedirectDeleteReq{
-		ProjectID: proj.ID,
+	err := svc.DeleteRedirect(context.Background(), &pagedto.RedirectDeleteReq{
+		ProjectID: projectID,
 		Path:      "/lock/closed",
 	})
 	if err == nil {
@@ -139,14 +134,13 @@ func TestPageRedirectFailsClosedWithoutPathLock(t *testing.T) {
 	}
 	// 真正要证明的是「发布链上清旧路径的入口」在锁关闭时也拒绝：用**真实业务入口**
 	// （删页 → deactivatePathsOf）造夹具，不打任何测试专用导出口。
-	_ = projectID
-	page := createPage(t, svc, proj.ID, "/lock/closed-page", publishContextDoc)
+	page := createPage(t, svc, projectID, "/lock/closed-page", publishContextDoc)
 	buildAndPublish(t, svc, page.ID)
 	if live := activeLinkExists(t, "/lock/closed-page"); !live {
 		t.Fatal("前置失败：页面应已上线")
 	}
 
-	derr := svc.Delete(context.Background(), &dto.DeleteReq{ID: page.ID})
+	derr := svc.Delete(context.Background(), &pagedto.DeleteReq{ID: page.ID})
 	if derr == nil {
 		t.Fatal("路径锁关闭时删页仍返回成功：存在无互斥的 FS 处置")
 	}

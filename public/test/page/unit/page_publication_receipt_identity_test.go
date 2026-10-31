@@ -61,7 +61,6 @@ func latestSwitchActiveReceiptID(t *testing.T, db *gorm.DB, path string) int64 {
 // 同版本同产物的两次成功在账本上无法区分，恢复会把别人的成功当成自己的。
 func TestPublishRecordsReceiptIdentityInLedger(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
-	ctx := context.Background()
 	page := createPage(t, svc, projectID, "/identity", emptyRevDoc)
 	buildAndPublish(t, svc, page.ID)
 

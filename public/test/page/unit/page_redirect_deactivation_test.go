@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/pipeline"
+
 	"gorm.io/gorm"
 
 	pagedto "go_wp/internal/module/page/dto"
@@ -147,6 +149,21 @@ func TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit(t *testing.T)
 }
 
 // TestRecoverProjectDeactivateWithdrawsAfterCommit 业务已提交 ⇔ 回执可撤链并结案。
+// redirectLocatorOf 读某路径当前访问面定位器（Provider:Key 形态，与回执登记值同口径）。
+//
+// 路径身份必须取真实链接：编一个前缀会让撤链前的复验永远失败，用例就成了自说自话。
+func redirectLocatorOf(t *testing.T, urlPath string) string {
+	t.Helper()
+	state, err := (&pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}).Inspect(urlPath)
+	if err != nil {
+		t.Fatalf("读取访问面状态失败: %v", err)
+	}
+	if state == nil || state.Locator == nil {
+		return ""
+	}
+	return state.Locator.Provider + ":" + state.Locator.Key
+}
+
 func TestRecoverProjectDeactivateWithdrawsAfterCommit(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -162,7 +179,7 @@ func TestRecoverProjectDeactivateWithdrawsAfterCommit(t *testing.T) {
 	//
 	// 路径身份必须用**真实的访问面定位器**：撤链前的复验要求"现在这条链接还是登记时的
 	// 那一条"，编一个前缀会让复验永远失败 —— 那样用例就成了自说自话。
-	locator := redirectLocatorOf(t, svc, "/promo/summer")
+	locator := redirectLocatorOf(t, "/promo/summer")
 	if locator == "" {
 		t.Fatal("新增重定向后访问面应能读到定位器")
 	}

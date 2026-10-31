@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/module/page/dto"
+	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 )

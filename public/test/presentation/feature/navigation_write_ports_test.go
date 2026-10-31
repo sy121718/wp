@@ -32,7 +32,6 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationmodel "go_wp/internal/module/navigation/model"
 	navigationservice "go_wp/internal/module/navigation/service"
-	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -46,7 +45,6 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/pipeline"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )

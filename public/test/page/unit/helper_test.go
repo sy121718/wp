@@ -36,6 +36,7 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/public/test/support"
+
 	"gorm.io/gorm"
 )
 
@@ -143,7 +144,7 @@ func newPageServiceWithNavigationWrite(t *testing.T) (*gorm.DB, pagecontract.Pag
 	// 不表示简化装配，而是这两个依赖只服务构建入口，本组用例不构建实例产物。
 	instances := presentationservice.NewService(
 		presentationmodel.NewModel(db), nil, nil, projects, blocks, routes)
-	queue := buildservice.NewService(buildmodel.NewBuildModel(db))
+	queue := buildservice.NewService(buildmodel.NewModel(db))
 	navSvc.SetWritePorts(navigationservice.NavigationWriteDeps{
 		Pages:         pageMenuStaleAdapter{svc: pages},
 		Instances:     presentationMenuStaleAdapter{svc: instances},

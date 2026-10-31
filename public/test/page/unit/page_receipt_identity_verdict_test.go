@@ -146,7 +146,8 @@ func TestPublishCapturesPreviousSuccessIdentity(t *testing.T) {
 	}
 
 	// 再发布一次：第二次 attempt 登记时捕获到的「出发身份」= 第一次的回执 id。
-	if _, err := svc.SaveDraft(ctx, &saveDraftReqOf(page.ID, publishContextDoc)); err != nil {
+	draftReq := saveDraftReqOf(page.ID, publishContextDoc)
+	if _, err := svc.SaveDraft(ctx, &draftReq); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
 	buildAndPublish(t, svc, page.ID)

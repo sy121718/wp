@@ -15,6 +15,7 @@ import (
 	"time"
 
 	pagedto "go_wp/internal/module/page/dto"
+	pageservice "go_wp/internal/module/page/service"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
 
@@ -58,10 +59,10 @@ func TestDeleteRegistersDeactivationReceiptAndWithdrawsLinks(t *testing.T) {
 	if rec.ReceiptState != pubmodel.ReceiptCommitted {
 		t.Fatalf("删除完成后下线回执应已结案（committed），实际 %q", rec.ReceiptState)
 	}
-	if !deactivationBusinessCommittedFromData(rec.ReceiptData) {
+	if !pageservice.DeactivationBusinessCommittedFromData(rec.ReceiptData) {
 		t.Fatal("业务事务必须与 businessCommitted 同事务落库，否则恢复永远不敢撤链")
 	}
-	if ids := deactivationPathArtifactsFromData(rec.ReceiptData); len(ids) == 0 {
+	if ids := pageservice.DeactivationPathArtifactsFromData(rec.ReceiptData); len(ids) == 0 {
 		t.Fatal("回执必须记下每条路径登记时刻的归属事实（重放时路由行已删，查不回来）")
 	}
 	// 访问面已撤：链接不再指向页面产物。

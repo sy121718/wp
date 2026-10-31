@@ -20,6 +20,7 @@ import (
 
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationservice "go_wp/internal/module/presentation/service"
 )
 
 // seedLedger 直接写一行账本（半失效账本的唯一可信造法：绕过发布链，只改账本事实）。
@@ -115,9 +116,9 @@ func TestRollbackRejectsLedgerTakenByAnotherAttempt(t *testing.T) {
 
 	// 该形态能否被拒，取决于 From 与 Own 是否真的不同 —— 单线程下两次读都在锁外/锁内
 	// 同一份数据上，所以这里直接验证判据函数本身（真实调用路径见交错测试）。
-	from := []ledgerIdentity{{Lang: "zh-CN", ReceiptID: "700001", ArtifactID: ownArtifact}}
-	own := []ledgerIdentity{{Lang: "zh-CN", ReceiptID: "700002", ArtifactID: ownArtifact}}
-	if cerr := compareRollbackLedger(from, own); cerr == nil {
+	from := []presentationservice.LedgerIdentity{{Lang: "zh-CN", ReceiptID: "700001", ArtifactID: ownArtifact}}
+	own := []presentationservice.LedgerIdentity{{Lang: "zh-CN", ReceiptID: "700002", ArtifactID: ownArtifact}}
+	if cerr := presentationservice.CompareRollbackLedger(from, own); cerr == nil {
 		t.Fatal("同产物、不同 receipt_id 的账本必须被判为受控冲突")
 	}
 
