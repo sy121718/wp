@@ -36,11 +36,10 @@ func (s *Service) PublishRecords(ctx context.Context, projectID, entityType stri
 	if entityType == "" {
 		return []presentationcontract.PublishRecordRow{}, nil
 	}
-	all, err := s.m.ListInstances(ctx, projectID, entityType)
+	instances, err := s.currentInstances(ctx, projectID, entityType, entityIDs)
 	if err != nil {
 		return nil, err
 	}
-	instances := filterInstancesByEntity(all, entityIDs)
 	if len(instances) == 0 {
 		return []presentationcontract.PublishRecordRow{}, nil
 	}
@@ -113,25 +112,38 @@ func instanceRow(inst *presentationmodel.InstanceEntity, pub presentationmodel.P
 	return row
 }
 
-// filterInstancesByEntity 只留指定实体（entityIDs 为空 = 全部），保持入参顺序。
-func filterInstancesByEntity(all []*presentationmodel.InstanceEntity, entityIDs []string) []*presentationmodel.InstanceEntity {
-	if len(entityIDs) == 0 {
-		return all
+// currentInstances 取本次要拼装发布登记的实例集合。
+//
+// 两条读法的分界是「调用方有没有点名实体」：
+//
+//   - **给了实体 id**（发布记录页有状态档：它必须先知道全工程发布状态才能过滤，
+//     所以给的是全工程商品 id）：让 entity_id IN (...) 下推到数据库，只搬这些实体的
+//     实例行，不再把本工程该类型的全部实例读回来在内存里按 map 过滤；
+//   - **没给**（entityIDs 为空 = contract 里的「本工程该类型全部」）：仍然走
+//     ListInstances —— 那本来就是全量语义，换成 IN 也没有更少。
+//
+// 两条都已经在 model 层包了工程作用域；这里不再重复拼 project_id 条件。
+func (s *Service) currentInstances(ctx context.Context, projectID, entityType string,
+	entityIDs []string) ([]*presentationmodel.InstanceEntity, error) {
+	ids := normalizeEntityIDs(entityIDs)
+	if len(ids) == 0 {
+		return s.m.ListInstances(ctx, projectID, entityType)
 	}
-	wanted := make(map[string]bool, len(entityIDs))
+	return s.m.ListInstanceFactsByEntities(ctx, projectID, entityType, ids)
+}
+
+// normalizeEntityIDs 去掉空白与空串（保序去重）：空串进 IN 会让整条查询白跑一趟，
+// 而重复 id 只会让分批边界重复搬同一行。
+func normalizeEntityIDs(entityIDs []string) []string {
+	out := make([]string, 0, len(entityIDs))
+	seen := make(map[string]bool, len(entityIDs))
 	for _, id := range entityIDs {
-		if id = strings.TrimSpace(id); id != "" {
-			wanted[id] = true
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
 		}
-	}
-	if len(wanted) == 0 {
-		return all
-	}
-	out := make([]*presentationmodel.InstanceEntity, 0, len(wanted))
-	for _, inst := range all {
-		if wanted[inst.EntityID] {
-			out = append(out, inst)
-		}
+		seen[id] = true
+		out = append(out, id)
 	}
 	return out
 }
