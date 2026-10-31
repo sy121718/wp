@@ -682,6 +682,12 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 
 // deactivatePathsOf 解除一组路径的访问面激活，**但只动属于本归属者的那些**。
 //
+// ⚠ 当前没有生产调用方：页面删除链已改为「登记下线回执 → 业务事务清路由 → 提交后
+// withdrawDeactivatedLinks 撤链」（page_publish.go 的下线回执一节），这是删页唯一入口；
+// DeleteRedirect 清理工程级重定向走 registerProjectDeactivationIntent 的独立分支。
+// 本函数保留是**实现参考**（批删除的归属核对 + 失败不回滚的可重放口径写在这里），
+// 不要在新代码里重新把它接回删除链：删除链需要的是「可重放的回执」，不是无状态批删。
+//
 // 这里刻意**不保留**无条件版本（原来那个 deactivatePaths）：它是 os.Remove 符号链接，路径在
 // 释放之后可能已经被**另一个页面/实例**接管 —— 此时删掉的不是「我的旧链接」，而是
 // 别人刚上线的链接：线上立刻 404，且没有任何一方会察觉这次是「清理」干的。
@@ -1494,6 +1500,13 @@ func (s *Service) withdrawProjectDeactivatedLinks(ctx context.Context, projectID
 // 字面量只会多一处会漂移的同源事实。
 const publisherRouteKindRedirect = pagemodel.RouteKindRedirect
 
+// publisherRouteKindReserved 路由表里"这条路径只是草稿占用"的 route_kind 取值。
+//
+// page/model 的白名单只声明了 Active/Redirect（跨模块不 import 对方 model，按本模块
+// 用到的值独立声明），reserved 本模块此前不读，故按 publication model 的同义常量补值；
+// 改名判据 renameReserved（publication_route_tx_model.go:85）用的就是这一个值。
+const publisherRouteKindReserved = "reserved"
+
 // verifyProjectRedirectOwner 项目级下线的归属复验。
 //
 // 与 page 版的「路由归属必须还是本页」不同：重定向行的 page_id / presentation_id
@@ -1534,6 +1547,10 @@ func (s *Service) verifyProjectRedirectOwner(ctx context.Context, tx *gorm.DB, p
 	if st.Kind != pipeline.PublicationRedirect {
 		return fmt.Errorf("%w: 路径 %s 的访问面已被改成 %s", errOldPathTaken, path, st.Kind)
 	}
+	// 种类判完后仍要判链接身份：上面的 kind 判据读的是**当前**路由行，而在「路径换了
+	// owner、kind 又被改回 redirect」这类混合现场里，kind 可能已经看起来对。链接身份是
+	// 唯一不依赖 DB 行是否还在的判据 —— 它挡的是「这条符号链接已经不是登记时那一条」。
+	// 结论仍是 errOldPathTaken（不撤、保 pending）。
 	if current := strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key); current != registered.Locator {
 		return fmt.Errorf("%w: 路径 %s 的访问面链接已指向别的产物", errOldPathTaken, path)
 	}

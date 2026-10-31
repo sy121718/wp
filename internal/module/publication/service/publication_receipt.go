@@ -62,9 +62,15 @@ type publishReceiptData struct {
 	// CapturedInputVersion 登记时调用方交来的编译捕获代次（见 BeginPublishReceiptReq）。
 	//
 	// 落在 receipt_data 而不是新列：回执的附加事实本来就全在这一个 jsonb 里，加列要迁移、
-	// 要让旧行回填，而这一项对旧回执的语义就是「缺省 = 未知」（omitempty 让新行也只在
-	// 有事实时才出现该键，读侧缺键与 0 完全等价）。
-	CapturedInputVersion int64 `json:"capturedInputVersion,omitempty"`
+	// 要让旧行回填，而这一项对旧回执的语义就是「缺省 = 未知」（零值时不写该键，读侧缺键
+	// 与 0 完全等价）。
+	//
+	// 为什么是 omitzero 而不是 omitempty：本仓 JSON 引擎是 encoding/json/v2（经
+	// pkg/jsonx，见其包注释的差异表）。v2 的 omitempty 语义是「省略 JSON 空值」——
+	// 只省略 null、""、[]、{}；数值 0 与布尔 false **不是** JSON 空值，照常写出。
+	// 数值/布尔的零值省略在 v2 里只有 omitzero（等价全局选项 OmitZeroStructFields）。
+	// 写成 omitempty 会让 capturedInputVersion:0 落库，把「未知」变成一个真实数字。
+	CapturedInputVersion int64 `json:"capturedInputVersion,omitzero"`
 	// OldPaths 本次改址要处置的全部旧路径（多语言）；OldPath 只是首条兼容值。
 	OldPaths []string `json:"oldPaths,omitempty"`
 	// SuccessfulReceipts 本次改址关联的成功回执（语言 → switch_active 回执 id 十进制串）。

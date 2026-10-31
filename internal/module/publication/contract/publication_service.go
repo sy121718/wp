@@ -56,6 +56,11 @@ type (
 	ReceiptOwner       = pubdto.ReceiptOwner
 	PendingReceiptResp = pubdto.PendingReceiptResp
 	ReceiptsQueryReq   = pubdto.ReceiptsQueryReq
+
+	// RouteOwnerResp 一条路径的当前占用者（kind + 归属实体）。
+	// 与上面同一原因重导出：page 侧要读它来判「这条路径还是不是我的」，
+	// 直连 publication/dto 会被 module_boundary_test.go 的 CQ-005 拦下。
+	RouteOwnerResp = pubdto.RouteOwnerResp
 )
 
 // ReceiptAttemptVerdict 关联回执的整体判定（四态，见 dto 定义）。

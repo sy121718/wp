@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	builddto "go_wp/internal/module/build/dto"
@@ -37,8 +38,9 @@ var menuKinds = map[string]struct{}{
 //  1. 校验句柄是真实事务 —— 没有它就谈不上「同事务」，后面两步都没有意义；
 //  2. 校验 kind 与工程 id —— 先于取号：非法输入不该消耗版本号（虽然回滚能撤销，
 //     但「参数错却先写了一张序列表」会让失败路径多一次无谓的写入）；
-//  3. 在 tx 内取号（原子 UPSERT 递增）；
-//  4. 以该版本号为分量构造 build_input_hash 并插入任务行。
+//  3. 物化并复验工程 id —— 空串或非 UUID 一律在这里拒绝，绝不让它进 uuid 列；
+//  4. 在 tx 内取号（原子 UPSERT 递增）；
+//  5. 以该版本号为分量构造 build_input_hash 并插入任务行。
 //
 // build_input_hash 由 contentKey + 版本号组成：内容键保证「不同位置互不相干」，
 // 版本号保证「同位置的每一次真实变化都是新工作」—— A→B→A 的第三次改动拿到的是
@@ -60,9 +62,14 @@ func (s *Service) EnqueueMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID
 	}
 	// 工程 id 已经过 MenuStaleSourceID 的 uuid.Parse，这里取规范形式写 ProjectID 列：
 	// 大小写变体进 uuid 列会变成两个工程，而 source_id 用的一定是规范形式。
-	canonicalProject, _, _ := builddto.SplitMenuStaleSourceID(sourceID)
-	if canonicalProject == "" {
-		return 0, buildenums.Err(buildenums.ErrInvalidParam)
+	//
+	// 取出来之后必须**重新验证**（canonicalProjectID）：它接下来会作为字面量参数进
+	// build_job_seq 的 uuid 列，而 PG 对 uuid 列不做「空串转 NULL」的宽容处理 —— 逐字
+	// 传空串会得到 22P02 invalid input syntax for type uuid: ""，把「参数非法」伪装成
+	// 一条数据库内部错误冒到调用方（菜单 CRUD 会因此报「创建导航项失败: ERROR: ...」）。
+	canonicalProject, cerr := canonicalProjectID(sourceID)
+	if cerr != nil {
+		return 0, cerr
 	}
 
 	// 取号与插行都在同一个 tx 上：要么两者都提交，要么随调用方一起回滚。
@@ -94,6 +101,26 @@ func (s *Service) EnqueueMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID
 		return 0, cerr
 	}
 	return version, nil
+}
+
+// canonicalProjectID 从 menu_stale 的 source_id（「工程:位置」）取回可写入 uuid 列的工程 id。
+//
+// 两道判据缺一不可：
+//   - 拆出来的前缀非空；
+//   - 它本身能过 uuid.Parse —— 这个值最终作为字面量绑定到 build_job_seq.project_id
+//     （uuid NOT NULL）。只判非空会让 "abc" 这种形状走到 PG 才失败。
+//
+// 不做「空串归一成 NULL」的兜底：该列在 build_job_seq 上是 NOT NULL，归一只把参数错误
+// 推迟成 NOT NULL 违例（23502）。非法输入就该在进入 SQL 之前被拒绝。
+func canonicalProjectID(sourceID string) (string, error) {
+	projectID, _, ok := builddto.SplitMenuStaleSourceID(sourceID)
+	if !ok {
+		return "", buildenums.Err(buildenums.ErrInvalidParam)
+	}
+	if _, err := uuid.Parse(projectID); err != nil {
+		return "", buildenums.Err(buildenums.ErrInvalidParam)
+	}
+	return projectID, nil
 }
 
 // menuStaleInputHash menu_stale 的构建输入标识：「内容键#版本号」。

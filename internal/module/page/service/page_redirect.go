@@ -218,11 +218,35 @@ func (s *Service) DeleteRedirect(ctx context.Context, req *pagedto.RedirectDelet
 	if err != nil {
 		return ErrInvalidPath
 	}
-	if _, err = s.model.GetRedirectRoute(ctx, projectID, path); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	// 前置存在性判定只问「这条路径在 page_routes 里有行吗」，**不按 kind 过滤**：
+	// 按 route_kind='redirect' 查时，「行还在、但种类/归属已经变了」（某页刚在这条
+	// 路径上发布、接管成 active）会表现为查不到 → 报「重定向不存在」，把一次真实的
+	// 冲突说成不存在，运维会以为数据丢了。
+	//
+	// 语义边界：
+	//   · 行不存在            → ErrRedirectNotFound（真的没有这条重定向）；
+	//   · 行存在但不是 redirect → ErrRedirectConflict（刚被别的操作改动，刷新后重试）；
+	//   · 行是 redirect          → 继续走下面的锁内复验（判据仍在 verifyProjectRedirectOwner，
+	//                            那里用 errOldPathTaken 表达「已不归本事务处置」）。
+	// 两条错误都**不会删行、不会撤链**。
+	// 读法：RouteOwnerTx 只在**调用方事务**内可用（publication_service.go:179-184 ——
+	// 归属判定必须在锁内，锁外读等于没读），它内部直接 tx.Session，传 nil 必崩。
+	// 这里只做一次只读探测，包一个短事务即可；真正的归属复验仍在下面业务事务的锁内
+	// （verifyProjectRedirectOwner），本段只负责把 NotFound / Conflict 区分清楚。
+	var owner *pubcontract.RouteOwnerResp
+	oerr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		row, rerr := s.routes.RouteOwnerTx(ctx, tx, projectID, path)
+		owner = row
+		return rerr
+	})
+	if oerr != nil {
+		if errors.Is(oerr, gorm.ErrRecordNotFound) {
 			return ErrRedirectNotFound
 		}
-		return err
+		return oerr
+	}
+	if owner == nil || owner.RouteKind != publisherRouteKindRedirect {
+		return ErrRedirectConflict
 	}
 	// 解除激活前必须持路径锁：解激活是「读现场 → 删符号链接」，与另一实体在同一条
 	// 路径上的激活交错时，删掉的可能是它刚上线的链接。

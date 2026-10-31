@@ -124,6 +124,22 @@ type Service struct {
 	// page_url_rollback_ledger_test.go（改 URL / 回滚的收敛与幂等）。
 	publishWindowFault func() error
 
+	// postSwitchFault 是「访问面已切换、数据库尚未落定」窗口的**第二个**注入点（生产恒为 nil）。
+	//
+	// 与 publishWindowFault 互不替代，差别是注入位置在窗口的**另一侧**：
+	//   · publishWindowFault：命中点在 DB 事务内部、FS 切换之前 → 事务整体回滚，
+	//     FS 从未切换。要证明的是「半截写随事务回滚」。
+	//   · postSwitchFault（本字段）：命中点在回滚链的 DB 三步**已经写完**、事务回调
+	//     即将提交之前（rolledBack 已置 true）→ 进程若在此刻被 kill，FS 已指向目标
+	//     产物，事务与回执都还没落定。这正是 TX-009 要消除的那个窗口，也是启动恢复
+	//     「按链接实际指向补齐」唯一真正的输入。
+	//
+	// 为什么必须两条都在：只有前一条时，「FS 已切、DB 未落定」这一侧只能靠推理声称
+	// 收敛能处理；有了后一条，收敛路径被真实回执驱动跑过一次。
+	// 测试见 public/test/page/unit/page_url_rollback_ledger_test.go
+	// 的 TestRollbackCommitsSwitchBeforeDeathConvergesOnRecovery。
+	postSwitchFault func() error
+
 	// convergeWake 发布回执收敛的进程内快通道（容量 1）。
 	//
 	// 写路径在**事务提交之后**非阻塞地推一下，正常路径毫秒级收敛；
@@ -307,6 +323,14 @@ func (s *Service) SetPublishWindowFault(fn func() error) {
 		return
 	}
 	s.publishWindowFault = fn
+}
+
+// SetPostSwitchFault 注入「FS 已切换、DB 三步已写、事务未提交」窗口的故障（见字段注释；测试用）。
+func (s *Service) SetPostSwitchFault(fn func() error) {
+	if s == nil {
+		return
+	}
+	s.postSwitchFault = fn
 }
 
 // fanoutProjectIDs 返回逐工程扇出要用的工程清单。

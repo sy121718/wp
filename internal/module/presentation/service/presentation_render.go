@@ -945,7 +945,8 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 		// 冲突：编译结果整体作废，重新冻结实例状态再来一次。产物是内容寻址的，
 		// 重试若产出同样的字节，落库阶段按 hash 复用同一行（recordArtifactTx），不会堆出版本。
 		logger.Scene("build").With("instanceId", inst.ID).With("attempt", attempt).
-			Warn("发布会话的实例状态或编译输入已被推进，丢弃本次编译结果并重新冻结")
+			With("reason", moved.Error()).
+			Warn("发布会话的实例状态或编译输入已被推进，丢弃本次编译结果并重新冻结: " + moved.Error())
 	}
 	return "", fmt.Errorf("发布会话连续 %d 次被并发的发布批次推进实例状态，本次中止: %w", publishAttempts, moved)
 }
@@ -1102,9 +1103,19 @@ func (s *Service) persistMultiLangArtifactsTx(ctx context.Context, tx *gorm.DB, 
 	}
 	for i := range results {
 		b := &results[i]
-		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, b.built, b.lang, version, now)
+		presetID := b.artifactID
+		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, b.built, b.lang, version, presetID, now)
 		if aerr != nil {
 			return "", "", aerr
+		}
+		// 回执里的 to、账本行与路由占用写的产物必须是**同一行**：登记发生在事务之外、
+		// 激活之前，崩溃恢复据此核验「产物在不在」。若这里拿到的 id 与登记的 id 分叉，
+		// 恢复会去核验一个不存在的产物，把一次成功的切换判成失败。
+		// 目前不可能触发 —— 锁是按实例的，同实例的发布批次串行，事务内按同 hash 命中的
+		// 必然是登记前读到的那一行。这条断言防的是将来有人放宽/绕过实例锁。
+		if presetID != "" && aid != presetID {
+			return "", "", fmt.Errorf("产物身份与登记的发布回执不一致（账本 %s / 回执 %s）: %w",
+				aid, presetID, presentationenums.Err(presentationenums.ErrBuildFailed))
 		}
 		b.artifactID = aid
 		if b.lang == defaultLang {

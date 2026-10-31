@@ -505,6 +505,17 @@ func (s *Service) invalidateMenu(ctx context.Context, projectID, kind string) {
 // stale —— 可靠入队只保证「会重建一次」，保证不了「旧编译晚到不能覆盖」。版本屏障
 // 只有与菜单写同事务给出才有意义。零命中允许，不调用不允许。
 func (s *Service) markMenuStaleInTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) error {
+	// 工程 id 在这里物化并复验：它会被下游（page / presentation / build 三条端口）当作
+	// 字面量参数写进各自的 uuid 列，而 PG 对 uuid 列**不**做「空串转 NULL」的宽容处理 ——
+	// 逐字传空串得到的是 22P02（invalid input syntax for type uuid: ""），
+	// 一路冒成「创建导航项失败: ERROR: ...」，把参数非法伪装成数据库内部错误。
+	//
+	// 判据：非空 + 能过 uuid.Parse（与 withMenuWriteTx 的口径一致，那里也会取规范形式）。
+	// 不做空串到 NULL 的兜底：build_job_seq.project_id 是 NOT NULL，归一只会把错误推迟成
+	// 23502，问题从「参数非法」变成「库里缺值」。
+	if _, perr := uuid.Parse(strings.TrimSpace(projectID)); perr != nil {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
 	if _, err := s.menuPages.MarkMenuStaleTx(ctx, tx, projectID, kind, at); err != nil {
 		return err
 	}

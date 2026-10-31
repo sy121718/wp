@@ -33,8 +33,10 @@ const tableNameBuildJobSeq = "build_job_seq"
 //   - INSERT … (project_id, kind)：首行由列的 DEFAULT 1 落下起点；
 //   - clause.OnConflict{Columns: 主键}：PG 生成 ON CONFLICT (project_id, kind) DO UPDATE，
 //     同键并发写入由行锁串行化 —— 这正是版本号要的「严格更大」；
-//   - DoUpdates 只写两列：next_version = next_version + 1（gorm 把表名补成
-//     build_job_seq.next_version，右侧与手写 SQL 同形）与 update_time = now()。
+//   - DoUpdates 只写两列：next_version = build_job_seq.next_version + 1 与
+//     update_time = now()。右侧的表限定名是**我们显式写的**：gorm 只负责把左侧
+//     列名拼进 SET，不会替你限定右侧引用，而不限定的 next_version 会同时匹配目标行
+//     与 excluded，PG 报 42702（歧义）。
 //     gorm 的自动时间戳只覆盖 Create 的零值、以及 Zeroer 类型的 Updates，
 //     这是 UPSERT 的 UPDATE 分支，必须显式写；
 //   - clause.Returning 列出 next_version：分配与读回是同一条语句，中间没有窗口。
@@ -53,13 +55,31 @@ func (m *Model) NextMenuStaleVersionTx(tx *gorm.DB, projectID, kind string) (ver
 	//
 	// 目标字段与列型严格对应：next_version 是 bigint NOT NULL，所以是 int64 而不是指针
 	// （指针留给可空列）。
-	got := seqRow{}
+	//
+	// 两个主键列必须**随对象带入**：gorm 的 Create 把结构体的零值也显式写进 VALUES
+	//（INSERT INTO build_job_seq (project_id, kind, next_version) VALUES ('','',0)），
+	// 不会因为列上有 NOT NULL / DEFAULT 就跳过它 —— 空串因此直接撞上 uuid 列的
+	// 22P02（invalid input syntax for type uuid: ""），而不是落到默认值。
+	//
+	// next_version 则相反：它**必须**留在对象之外（Omit）。零值 int64 同样会被写进
+	// VALUES，于是首行插入显式写 0、覆盖列上的 DEFAULT 1，RETURNING 又把同一个 0 扫回
+	// got.NextVersion，被下面的 <= 0 判据判成 ErrRecordNotFound ——「首建菜单报 record
+	// not found」。列 DEFAULT 是首号唯一真相，这里只让它说话。
+	//
+	// Omit 只影响 INSERT 的列集合，不影响 RETURNING 的扫回目标：Create 回调在
+	// ConvertToCreateValues 之前就把 clause.Returning 挂上（gorm v1.31.2、
+	// callbacks/create.go:52-65），Scan 的落点始终是 db.Statement.Dest（即 &got）。
+	got := seqRow{ProjectID: projectID, Kind: kind}
 	res := tx.Table(tableNameBuildJobSeq).
+		Omit("NextVersion").
 		Clauses(
 			clause.OnConflict{
 				Columns: []clause.Column{{Name: "project_id"}, {Name: "kind"}},
 				DoUpdates: clause.Assignments(map[string]any{
-					"next_version": gorm.Expr("next_version + 1"),
+					// 右侧必须写表限定名：ON CONFLICT DO UPDATE 的 SET 右侧，未限定的
+					// next_version 同时匹配目标表与 excluded 两行，PG 直接报
+					// column reference "next_version" is ambiguous (SQLSTATE 42702)。
+					"next_version": gorm.Expr(tableNameBuildJobSeq + ".next_version + 1"),
 					"update_time":  gorm.Expr("now()"),
 				}),
 			},

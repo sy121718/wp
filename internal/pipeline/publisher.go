@@ -478,11 +478,24 @@ func (p *Publisher) SetPublicationPathLocker(locker PublicationPathLocker) {
 // 不同的锁，前者按访问路径分片、后者按页面 ID；混为一谈会导致「以为外层有锁」的
 // 漏保护或「外层已取锁」的自锁。唯一例外是已经在本函数体内再嵌套调用：那种情况
 // 由带 locked 后缀的 FS 辅助方法承担，它们自己**不取锁**。
+//
+// 外层（另一个包）已经按同一全序持锁时，入口要用 InLock 版：page service 的改 URL
+// 主链就是这样 —— 它在自己的 withPaths 内调用 UpdateURLInLock，而不是 UpdateURL，
+// 否则会在这把分片 mutex 上自锁（不可重入，永久阻塞）。
 func (p *Publisher) withPaths(paths []string, fn func() error) error {
 	if fn == nil {
 		return nil
 	}
 	return WithPathLock(p.paths, paths, fn)
+}
+
+// oldPathWithPaths 处置旧路径时的取锁分叉：调用方已持锁就直接执行，否则自己取
+// 「新旧路径」这对锁再执行（改址的两端必须同一次取锁，见 UpdateURL 第 4 步）。
+func (p *Publisher) oldPathWithPaths(newPath, oldPath string, pathLockHeld bool, fn func() error) error {
+	if pathLockHeld {
+		return fn()
+	}
+	return p.withPaths([]string{newPath, oldPath}, fn)
 }
 
 // activatePath 在路径锁内激活 path → loc（**唯一对外取锁入口**）。
@@ -768,7 +781,27 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 // UpdateURL 修改访问路径（AGENTS.md §6.5）：
 // 先基于新 URL 构建并原子激活新 URL，再按显式策略处理旧 URL（301 / 取消激活）。
 // withRedirect 为 true 时旧 URL 注册 301 永久重定向（规范 0-A2 §1.1）。
+//
+// 本方法自己取路径锁（activatePath / withPaths）。调用方若**已经在**同一对路径的
+// withPaths 内（典型是 page service 的改 URL 主链：它要把「FS 切换 → 产物归档 →
+// 路由 DB 提交」串成一个不可交错的段），必须改用 UpdateURLInLock —— 否则同一个
+// ProcessPathLocker 分片 mutex 被同一 goroutine 取两次，永久阻塞（不可重入）。
 func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string, withRedirect bool) (oldPath string, err error) {
+	return p.updateURL(ctx, pageID, newPath, withRedirect, false)
+}
+
+// UpdateURLInLock 与 UpdateURL 同语义，但**不再取路径锁**。
+//
+// 契约：调用方必须已持 kernelNewPath 与旧路径的同两次分片锁（按分片索引升序 ——
+// 由 ProcessPathLocker 负责排序，调用方只需把它们放进同一次 withPaths）。违反了
+// 不会报错，只会让 FS 副作用逃出调用方的临界区；取第二次锁则直接自锁。
+func (p *Publisher) UpdateURLInLock(ctx context.Context, pageID string, newPath string, withRedirect bool) (oldPath string, err error) {
+	return p.updateURL(ctx, pageID, newPath, withRedirect, true)
+}
+
+// updateURL 是 UpdateURL / UpdateURLInLock 的共同实现；pathLockHeld 决定三处 FS
+// 取锁点是「自己取」还是「直接用 InLock 版」。
+func (p *Publisher) updateURL(ctx context.Context, pageID string, newPath string, withRedirect bool, pathLockHeld bool) (oldPath string, err error) {
 	p.mu.Lock()
 	rec, ok := p.pages[pageID]
 	if !ok {
@@ -835,7 +868,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	if rec.Version != version {
 		return oldPath, ErrVersionConflict
 	}
-	if err = p.publishLocked(rec, a.Hash); err != nil {
+	if err = p.publishLockedWith(rec, a.Hash, pathLockHeld); err != nil {
 		return oldPath, err
 	}
 
@@ -858,14 +891,15 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 		}
 		// 锁键同时含新旧路径：本函数刚刚在 nPath 上激活过，旧路径处置与「另一实体
 		// 从反方向改址」必须按同一全序取锁才不会互锁（pipeline 侧按分片索引排序）。
-		if aerr := p.withPaths([]string{nPath, oldPath}, func() error {
+		// 调用方已持这对锁时（UpdateURLInLock）直接进 InLock 版，不再取第二次。
+		if aerr := p.oldPathWithPaths(nPath, oldPath, pathLockHeld, func() error {
 			return p.activatePathInLock(oldPath, rl)
 		}); aerr != nil {
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(aerr, "旧 URL 301 激活失败（新 URL 已生效）")
 			return oldPath, nil
 		}
 	} else {
-		if derr := p.withPaths([]string{nPath, oldPath}, func() error {
+		if derr := p.oldPathWithPaths(nPath, oldPath, pathLockHeld, func() error {
 			return p.deactivatePathInLock(oldPath)
 		}); derr != nil {
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(derr, "旧 URL 取消激活失败（新 URL 已生效）")
@@ -1021,8 +1055,15 @@ func (p *Publisher) ArtifactExists(hash string) error {
 	return p.store.VerifyArtifact(ArtifactLocator(hash), hash)
 }
 
-// publishLocked 在锁内执行发布（UpdateURL 复用）。
+// publishLocked 在锁内执行发布（Publish / ActivateStagedArtifact 等调用点复用）：
+// 自己取路径锁的版本，等价于 publishLockedWith(rec, stagedHash, false)。
 func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
+	return p.publishLockedWith(rec, stagedHash, false)
+}
+
+// publishLockedWith 在锁内执行发布；pathLockHeld 决定激活那一步是自己取路径锁
+// （activatePath）还是直接用 InLock 版（调用方已持锁，典型是 UpdateURLInLock）。
+func (p *Publisher) publishLockedWith(rec *PageRecord, stagedHash string, pathLockHeld bool) error {
 	loc := ArtifactLocator(stagedHash)
 	a, err := p.store.GetArtifact(loc)
 	if err != nil {
@@ -1031,10 +1072,17 @@ func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
 	if a.CanonicalPath != rec.Path {
 		return fmt.Errorf("暂存产物路径 %s 与当前页面路径 %s 不一致，请重新构建", a.CanonicalPath, rec.Path)
 	}
-	// publishLocked 由 Publish / ActivateStagedArtifact 在持有 p.mu 时调用，
-	// 但 p.mu 与路径锁是两把锁（前者按页面 ID，后者按访问路径），此处仍需取路径锁；
-	// 不存在重入：路径锁在整个包内只在 withPaths 里取，且 withPaths 内部不再调用它。
-	if err = p.activatePath(rec.Path, loc); err != nil {
+	// publishLockedWith 由 Publish / ActivateStagedArtifact / UpdateURL 在持有 p.mu 时调用，
+	// 但 p.mu 与路径锁是两把锁（前者按页面 ID，后者按访问路径），默认仍需取路径锁；
+	// pathLockHeld=true 是唯一的重入许可：调用方已在同一路径的 withPaths 内
+	// （UpdateURLInLock），此时必须走 InLock 版，否则分片 mutex 自锁（不可重入）。
+	var aerr error
+	if pathLockHeld {
+		aerr = p.activatePathInLock(rec.Path, loc)
+	} else {
+		aerr = p.activatePath(rec.Path, loc)
+	}
+	if err = aerr; err != nil {
 		rec.Status = rec.currentStatus()
 		return fmt.Errorf("激活失败（线上版本保持不变）: %w", err)
 	}

@@ -104,6 +104,7 @@ import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -119,6 +120,7 @@ import (
 	pagemodel "go_wp/internal/module/page/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
+	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/seo"
 	"go_wp/internal/seo/compliance"
@@ -565,10 +567,20 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 			return fmt.Errorf("访问面已切换但路径归属复验失败（另一实体已接管该路径）: %w", aerr)
 		}
 		// 旧路径的处置（路由条件写 + 符号链接解除）**不在这段事务里**：
-		// commitOldPathSettle 会先做条件写、**自行提交**，然后才动文件系统。若把它
+		// settleOldPathLocked 会**另起**一段事务做条件写（提交由事务框架完成），
+		// 提交返回后才动文件系统。若把它
 		// 塞在返回前，外层提交点就落在它的 FS 之后 —— 「链接已撤、路由行回滚」且没有
 		// 任何回执能重放这段。挪到提交之后（见下方 withPaths 段），与 update_url 的
 		// settleOldPathLocked 同一形状。
+		//
+		// 故障注入（测试用；生产恒 nil）：此刻访问面**已切**（activated=true）、DB 四步
+		// 已写、事务**尚未提交** —— 窗口的另一侧。上面 :519 的 publishWindowFault 命中在
+		// 切换**之前**（FS 从未建立链接，证明的是「半截写随事务回滚」），这里命中在切换
+		// **之后**（链接已经指向本页产物，证明的是「收敛能按链接现状补完」）。两者互补，
+		// 互不替代。
+		if ferr := s.postSwitchFaultHit(); ferr != nil {
+			return ferr
+		}
 		return nil
 	})
 	if txErr != nil {
@@ -587,10 +599,14 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 		return nil, fmt.Errorf("发布已生效但数据库状态同步失败: %w", txErr)
 	}
 	// 旧路径处置：DB 已提交（== 账本与指针已是新路径），这里**重新取同实体锁 + 路径锁**
-	// 复核归属后处置旧路径（DB 条件写已由 commitOldPathSettle 自行提交，FS 在其后）。
+	// 复核归属后处置旧路径（DB 条件写在 settleOldPathLocked 自己的事务里提交，FS 在其后）。
 	//
 	// 失败只保留 pending：访问面与库都已一致，处置可重放；报失败会让调用方重试并再切
 	// 一次访问面。被别的归属者接管则什么都不做（errOldPathTaken，归它负责）。
+	// oldPathSettleFailed 落地「keep pending 是终端动作」：旧路径处置失败时不再结案。
+	// 不 return 错误（调用方会以为发布失败而重试，重试会再切一次访问面），
+	// 只跳过下面的 complete，让回执留在 pending 交收敛重放。
+	oldPathSettleFailed := false
 	if s.routes != nil && oldPath != "" && oldPath != path {
 		if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, path, oldPath, false); derr != nil {
 			if errors.Is(derr, errOldPathTaken) {
@@ -600,6 +616,7 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 				s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
 				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
 					Error(derr, "发布后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+				oldPathSettleFailed = true
 			}
 		}
 	}
@@ -607,11 +624,13 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 	// 结案：访问面（符号链接）与数据库（page_publications + 指针 + 路由行）已经一致。
 	// 结案本身失败不阻断发布 —— 此时两边都已就位，回执留在 pending 只会被收敛例程
 	// 幂等收尾（Inspect 看到链接指向本次产物 → 补完成）。
-	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
-		logger.Scene("publication").With("pageId", page.ID).With("receiptId", receiptID).
-			Error(cerr, "发布回执结案失败（状态已一致，收敛例程会幂等收尾）")
-		// 事务已提交、回执却没收口：推快通道让收敛立刻把它收掉（非阻塞，丢了有定时兜底）。
-		s.NotifyPendingReceipt()
+	if !oldPathSettleFailed {
+		if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
+			logger.Scene("publication").With("pageId", page.ID).With("receiptId", receiptID).
+				Error(cerr, "发布回执结案失败（状态已一致，收敛例程会幂等收尾）")
+			// 事务已提交、回执却没收口：推快通道让收敛立刻把它收掉（非阻塞，丢了有定时兜底）。
+			s.NotifyPendingReceipt()
+		}
 	}
 	logger.Scene("publication").With("pageId", page.ID).With("hash", hash).Info("发布完成")
 	// 站点级 SEO 产物与自定义 404 页：发布激活后刷新
@@ -876,9 +895,16 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		// 回滚到不同路径的历史产物时，旧路径的访问面链接必须一并解除：/site 直接服务
 		// active 目录的文件系统状态，残留链接会继续输出旧产物。
 		//
-		// 但处置**不在这段事务里**：commitOldPathSettle 先做条件写并自行提交，然后才动
-		// 文件系统。留在返回前会让外层提交点落在 FS 之后（链接已撤、路由行回滚，且没有
+		// 但处置**不在这段事务里**：settleOldPathLocked 另起一段事务做条件写，提交返回后
+		// 才动文件系统。留在返回前会让外层提交点落在 FS 之后（链接已撤、路由行回滚，且没有
 		// 回执能重放）。挪到提交之后（见下方 withPaths 段），与 update_url 同形。
+		//
+		// 故障注入（测试用；生产恒 nil）：此刻 FS 已切到目标产物、DB 三步已写、事务
+		// **尚未提交** —— 正是「FS 已切、DB 未落定」窗口的另一侧。注入返回错误等价于
+		// 进程在此刻被 kill：回调返回→事务回滚、回执留 pending、错误上抛交收敛。
+		if ferr := s.postSwitchFaultHit(); ferr != nil {
+			return ferr
+		}
 		return nil
 	})
 	if txErr != nil {
@@ -895,8 +921,11 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		return nil, fmt.Errorf("回滚已生效但数据库状态同步失败: %w", txErr)
 	}
 	// 旧路径处置：DB 已提交，这里重新取实体锁 + 路径锁复核归属后处置旧路径
-	// （路由条件写由 commitOldPathSettle 自行提交，FS 在其后）。失败只保 pending：
+	// （路由条件写由 settleOldPathLocked 的第二段事务提交，FS 在其后）。失败只保 pending：
 	// 访问面与库都已一致，处置可重放。
+	// oldPathSettleFailed 落地「keep pending 是终端动作」：旧路径处置失败时不再结案
+	// （不 return 错误，理由同发布主链）。
+	oldPathSettleFailed := false
 	if s.routes != nil && oldPath != "" && oldPath != targetArt.CanonicalPath {
 		if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, targetArt.CanonicalPath, oldPath, false); derr != nil {
 			if errors.Is(derr, errOldPathTaken) {
@@ -906,14 +935,17 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 				s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
 				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).
 					Error(derr, "回滚后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+				oldPathSettleFailed = true
 			}
 		}
 	}
-	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
-		logger.Scene("page").With("pageId", page.ID).With("receiptId", receiptID).
-			Error(cerr, "回滚回执结案失败（状态已一致，收敛例程会幂等收尾）")
-		// 同上：事务已提交、回执未收口 —— 快通道让收敛立刻收掉。
-		s.NotifyPendingReceipt()
+	if !oldPathSettleFailed {
+		if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
+			logger.Scene("page").With("pageId", page.ID).With("receiptId", receiptID).
+				Error(cerr, "回滚回执结案失败（状态已一致，收敛例程会幂等收尾）")
+			// 同上：事务已提交、回执未收口 —— 快通道让收敛立刻收掉。
+			s.NotifyPendingReceipt()
+		}
 	}
 	st, _ := s.publisher.Status(page.ID)
 	respStatus := pipeline.StatePublished
@@ -1438,7 +1470,36 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if publishedPath == "" {
 		publishedPath = oldRoutePath
 	}
-
+	// FS 切换前的**旧路径**归属预检（与新路径的 ensureRouteNotOccupied 对称）。
+	//
+	// 内核切完新路径后会按旧线上路径撤链/落 301（pipeline/publisher.go:877-905 的
+	// oldPathWithPaths 分支），那一步只认内核记录、不查 DB 归属。若这条路径已被别的
+	// 实体接管（active/redirect），真正的拒绝发生在事务内的 renameReserved
+	//（publication_route_tx_model.go:85-93），而那时访问面已经被改掉 —— 别人的访客
+	// 直接断连，且 FS 撤链撤不回来。所以拒绝必须前移到任何 FS 动作之前，判据与
+	// renameReserved 同源：reserved（草稿占用）允许迁移，其余 kind 只允许自己的行。
+	if publishedPath != "" {
+		// RouteOwnerTx 只在调用方事务内可用（contract publication_service.go:179-184），
+		// 传 nil tx 会 panic；这里照 page_redirect.go:244-252 的短事务只读探测写法。
+		var owner *pubcontract.RouteOwnerResp
+		oerr := s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+			row, rerr := s.routes.RouteOwnerTx(ctx, tx, page.ProjectID, publishedPath)
+			owner = row
+			return rerr
+		})
+		switch {
+		case errors.Is(oerr, gorm.ErrRecordNotFound):
+			// 旧路径上没有占用行：与本页从未在这条线上激活的形态一致，放行
+			//（后续改名段按幂等成功处理）。
+		case oerr != nil:
+			return nil, oerr
+		case owner != nil && owner.RouteKind != publisherRouteKindReserved &&
+			(owner.PageID == nil || *owner.PageID != page.ID):
+			logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).
+				Warn("改 URL 被拒绝：旧路径已被其它实体接管，不能在本页名下处置")
+			return nil, pubenums.Err(pubenums.ErrRouteActiveRename)
+		}
+	}
 	// 发布计划（审计 I18N-01）：改 URL 会在新路径上**重新编译**一份产物，
 	// 它必须与既有产物声明同一套互指；计划已冻结且草稿未变时原样沿用。
 	plan, persistPlan, err := s.publicationPlanFor(ctx, page, lang)
@@ -1522,7 +1583,9 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	var updated bool
 	var txErr error
 	lockErr := s.withPaths([]string{kernelNewPath, publishedPath}, func() error {
-		if _, uerr := s.publisher.UpdateURL(ctx, page.ID, kernelNewPath, req.WithRedirect); uerr != nil {
+		// 已在外层 withPaths 内：必须走 InLock 版 —— UpdateURL 会再取同一对分片锁，
+		// 而 ProcessPathLocker 的 mutex 不可重入（同一 goroutine 取两次 = 永久阻塞）。
+		if _, uerr := s.publisher.UpdateURLInLock(ctx, page.ID, kernelNewPath, req.WithRedirect); uerr != nil {
 			// 内核保证「构建失败不激活、激活失败线上不变」（pipeline.Publisher.UpdateURL
 			// 的各错误分支都在 publishLocked 之前）：属于可判定的无副作用失败，显式结案，
 			// 不留给启动恢复一个假 pending。
@@ -1558,6 +1621,8 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// 旧路径访问面处置：数据库已提交（主提交那段不再动文件系统），这里**重取同实体锁**、
 	// 锁内复核归属后执行。失败只保留 pending —— 数据库已经是对的状态，处置可以重放，
 	// 报失败会让调用方以为改 URL 没成功而去重试，重试会再切一次访问面。
+	// oldPathSettleFailed 落地「keep pending 是终端动作」：旧路径处置失败时不再结案。
+	oldPathSettleFailed := false
 	if derr := s.settleOldPathLocked(ctx, page.ID, page.ProjectID, kernelNewPath, publishedPath, req.WithRedirect); derr != nil {
 		if errors.Is(derr, errOldPathTaken) {
 			logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).
@@ -1566,13 +1631,20 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 			s.keepPublishReceiptPending(receiptID, "旧路径访问面处置失败")
 			logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).
 				Error(derr, "改 URL 后旧路径处置失败（DB 已一致，回执留 pending 重放）")
+			// 注意：这里 keep pending 之后**不能**紧跟 complete（会被盖成
+			// committed，旧路径 301 再没人重放），也**不能** return 把错误上抛
+			// （调用方会以为改 URL 失败而重试，重试会再切一次访问面）。
+			// 故跳过结案后继续走到返回：回执留 pending，由收敛例程重放。
+			oldPathSettleFailed = true
 		}
 	}
-	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
-		logger.Scene("page").With("pageId", page.ID).With("receiptId", receiptID).
-			Error(cerr, "改 URL 回执结案失败（状态已一致，收敛例程会幂等收尾）")
-		// 同上：事务已提交、回执未收口 —— 快通道让收敛立刻收掉。
-		s.NotifyPendingReceipt()
+	if !oldPathSettleFailed {
+		if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
+			logger.Scene("page").With("pageId", page.ID).With("receiptId", receiptID).
+				Error(cerr, "改 URL 回执结案失败（状态已一致，收敛例程会幂等收尾）")
+			// 同上：事务已提交、回执未收口 —— 快通道让收敛立刻收掉。
+			s.NotifyPendingReceipt()
+		}
 	}
 	status := pipeline.StatePublished
 	if st != nil && st.Status != "" {
@@ -2006,7 +2078,7 @@ func (s *Service) settleOldPathLocked(ctx context.Context, pageID, projectID, ne
 	//   实体行锁（LockPageForActivationTx，事务内）
 	//   → 路径锁（withPaths，唯一入口）
 	//     → 锁内复验（账本/身份/owner）
-	//     → FS 副作用（commitOldPathSettle 内部**不再取锁**）
+	//     → FS 副作用（settleOldPathLocked 在提交返回后执行，**不再取锁**）
 	//
 	// 顺序**必须**与主发布链一致（主链是 事务 → 实体锁 → FS）：把路径锁放到事务外层
 	// 就成了 路径锁 → 实体锁，与主链的 实体锁 → 路径锁 反向，两条链在同一对
@@ -2040,13 +2112,14 @@ func (s *Service) settleOldPathLocked(ctx context.Context, pageID, projectID, ne
 					Warn("旧路径处置复核：账本已不指向本次目标，不处置")
 				return errOldPathTaken
 			}
-			return s.commitOldPathSettle(ctx, tx, projectID, pageID, newPath, oldPath, withRedirect, loc)
+			return s.writeOldPathSettleTx(ctx, tx, projectID, pageID, oldPath, withRedirect)
 		})
 	})
 	if txErr != nil {
 		return txErr
 	}
-	// commitOldPathSettle 已在内部提交了 DB 条件写；这里补文件系统处置。
+	// 事务已提交（TransactionScoped 返回 nil 即回调返回且提交成功）；FS 处置在其后执行。
+	// 顺序不可反 —— 反了就是「链接已撤、DB 回滚」，而且 FS 撤不回来。
 	//
 	// 失败语义：DB 已经落定、只有 FS 没做 —— 调用方让回执保持 pending，收敛按登记身份
 	// 重放（Deactivate 幂等、Activate 内容寻址）。不在这里回滚 DB：回滚换来的只是
@@ -2062,7 +2135,7 @@ func (s *Service) settleOldPathLocked(ctx context.Context, pageID, projectID, ne
 // 拆成两半是因为命名空间隔离不能靠「先决定、再动手」：决定与动手之间若被别的
 // attempt 抢先，动的就不是它该动的那一行。落盘重定向产物是内容寻址的幂等写
 // （同内容同 hash，不会改变任何可见状态），可以先做；真正的激活/取消由
-// commitOldPathSettle 在契约事务里按**条件写**完成。
+// writeOldPathSettleTx 在契约事务里按**条件写**完成。
 func (s *Service) prepareOldPathSettle(newPath, oldPath string, withRedirect bool) (*pipeline.Locator, error) {
 	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
 		return nil, nil
@@ -2098,40 +2171,25 @@ func containsPath(paths []string, path string) bool {
 	return false
 }
 
-// commitOldPathSettle 处置旧路径的第二半：在调用方事务内先做**条件写**核对命名空间
-// 归属，再在该事务持有期内执行文件系统处置。
+// writeOldPathSettleTx 处置旧路径的第二半：在调用方事务内做**条件写**核对命名空间归属。
 //
 // 为什么必须条件写：本实体锁只锁住「自己这一页」，防不住另一页在这期间抢走旧路径
 // （page_id 不同，行锁管不到）。清理/改写别人的行比不动它更糟 —— 所以这里用
 // route_kind + 归属者做前置条件，影响 0 行即判 errOldPathTaken，绝不「先删再说」。
 //
-// 顺序：DB 条件写 → FS。FS 失败时事务回滚，命名空间回到处置前，回执保持 pending 重放。
-func (s *Service) commitOldPathSettle(ctx context.Context, tx *gorm.DB, projectID, pageID, newPath, oldPath string,
-	withRedirect bool, loc *pipeline.Locator) error {
-	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
+// 顺序：DB 条件写 →（事务回调返回，TransactionScoped 提交）→ FS。提交由事务框架完成，
+// **本函数绝不手动 Commit**：在 gorm 的事务回调里调 tx.Commit() 之后，框架在回调返回时
+// 会再 Commit 一次并返回 sql.ErrTxDone —— 于是每一次**已经成功**的条件写都被判成失败，
+// 旧路径处置永远走「失败保 pending」分支（线上表现：301 永不落盘、回执永不结案）。
+//
+// FS 必须在提交之后做：反了就是「链接已撤、DB 回滚」，而且 FS 撤不回来。位置见
+// settleOldPathLocked（提交返回后再调 settleOldPathFS）。
+func (s *Service) writeOldPathSettleTx(ctx context.Context, tx *gorm.DB, projectID, pageID, oldPath string,
+	withRedirect bool) error {
+	if strings.TrimSpace(oldPath) == "" {
 		return nil
 	}
-	// 顺序：先做 DB 条件写（归属不复验由调用方在锁内完成），**再单独提交**事务，
-	// 最后才动文件系统。
-	//
-	// 为什么 FS 不能在这个事务内执行：事务的提交发生在函数返回之后，而路径锁由调用方
-	// 的 withPaths 持有 —— 那个人为的窗口是「DB 已条件写但未提交、FS 已改」，提交失败
-	// 就留下「链接已撤、路由行还在」且无回执可重放。先把条件写的结论落盘（Commit），
-	// FS 只在提交成功之后做：失败时留下的是「路由行已处置、链接还在」，由回执
-	// pending 重放（幂等 Deactivate / 内容寻址 Activate）收敛，方向一致。
-	if err := s.settleRouteWrite(ctx, tx, projectID, pageID, oldPath, withRedirect); err != nil {
-		return err
-	}
-	if tx != nil {
-		if cerr := tx.Commit().Error; cerr != nil {
-			return cerr
-		}
-	}
-	// FS 副作用：**本函数不取路径锁** —— 调用方 settleOldPathLocked 已在最外层持
-	// {newPath, oldPath} 两把，且 DB 条件写与 FS 共享同一次持锁期。此处再取会命中同一
-	// 分片（sync.Mutex 不认识 goroutine）→ 永久自锁。契约：本函数必须在 settleOldPathLocked
-	// 的 withPaths 内被调用。
-	return s.settleOldPathFS(oldPath, withRedirect, loc)
+	return s.settleRouteWrite(ctx, tx, projectID, pageID, oldPath, withRedirect)
 }
 
 // settleRouteWrite 旧路径的**数据库条件写**（本页占用行改 redirect 或释放）。
@@ -2143,14 +2201,28 @@ func (s *Service) settleRouteWrite(ctx context.Context, tx *gorm.DB, projectID, 
 		if withRedirect {
 			// 只把**本页**的占用行（active 或 reserved）改成 redirect。
 			//
-			// RedirectTx 返回 (res, err)：res 为 nil 说明这条路径当前**没有**本页可切换的
-			// 占用行 —— 归属已被别人拿走（RedirectInTx 的 UPDATE 带归属条件，影响 0 行后
-			// 才会走 INSERT，撞唯一约束则报 ErrRouteOccupied；两种结局都不会静默成功）。
-			// 这里把「res 为空」也判成归属冲突而不是当成功继续往下做 FS：继续做会删掉 /
-			// 覆盖别人刚接管的链接。
+			// 「旧路径已不归本页」在 RedirectTx 上有**两种**表现，必须归一成同一个结论，
+			// 否则其中一种会被上层当成「处置失败」：
+			//   a) res == nil —— 这条路径上已没有本页可切换的占用行；
+			//   b) ErrRouteOccupied —— RedirectInTx 的 UPDATE 带归属条件、影响 0 行，于是
+			//      走 INSERT 建 redirect 行，撞 (project_id, path) 唯一约束（别人的占用还在）。
+			//
+			// 结论统一是 errOldPathTaken：**旧路径的所有权已不在本页时，处置的语义是
+			// 「跳过」而不是「失败」** —— 不删、不改他人的路由行，也不让这条回执停在
+			// pending 里制造收不掉的噪声（三个调用点：改 URL 主链、回滚主链、回执收敛，
+			// 都把 errOldPathTaken 判成「不处置」并照常结案）。
+			//
+			// 本页自己的冲突（同语言重复处置）落到这里同样是幂等跳过：DB 与 FS 都还没动，
+			// 重复清理本来就没有副作用可产生。
+			//
+			// 其它错误（DB 故障等）仍原样上抛：那是真失败，回执必须留 pending 重放 ——
+			// 调用方据此走 keepPublishReceiptPending 并在其后跳过硬结案（该动作是终端）。
 			res, rerr := s.routes.RedirectTx(ctx, tx, &pubcontract.RedirectReq{
 				ProjectID: projectID, OldPath: oldPath, PageID: pageID,
 			})
+			if isRouteOccupiedErr(rerr) {
+				return fmt.Errorf("%w: %s（redirect 未命中本页占用行，已归他人）", errOldPathTaken, oldPath)
+			}
 			if rerr != nil {
 				return rerr
 			}
@@ -2179,10 +2251,20 @@ func (s *Service) settleRouteWrite(ctx context.Context, tx *gorm.DB, projectID, 
 	return nil
 }
 
+// isRouteOccupiedErr 判「这条路径已被他人占用」这个业务事实。
+//
+// 不能写成 errors.Is(err, pubenums.ErrRouteOccupied)：port 契约把占位错误折成
+// facing.New(key, 兜底)（publication/service 的 …Tx 出口），key 是**错误文案**而不是
+// 哨兵值，errors.Is 永远不成立。本包既有的两处占用判定（page_document.go:169 / :413）
+// 用的就是 key 子串匹配，这里沿用同一口径，不新造第三套判法。
+func isRouteOccupiedErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), pubenums.ErrRouteOccupied)
+}
+
 // settleOldPathFS 旧路径的**文件系统处置**（提交之后执行，由调用方持路径锁）。
 //
 // 单独成函数而不是内联进 settleRouteWrite：那两段之间必须有一次提交（见
-// commitOldPathSettle 的注释），把 FS 留在「写库函数」里会让边界看起来像同一笔事务。
+// writeOldPathSettleTx 的注释），把 FS 留在「写库函数」里会让边界看起来像同一笔事务。
 // 契约（不可重入）：只允许在调用方的 withPaths 内调用，本函数不取路径锁。
 func (s *Service) settleOldPathFS(oldPath string, withRedirect bool, loc *pipeline.Locator) error {
 	if !withRedirect {
@@ -2418,8 +2500,8 @@ func (s *Service) recoverSwitchActiveReceipt(ctx context.Context, item pubcontra
 			superseded = true
 			return nil
 		}
-		// 旧路径处置不在这段事务里：commitOldPathSettle 自己做条件写并**自行提交**，
-		// 然后才动文件系统（提交在 FS 之前）。留在返回前会让外层提交点落在 FS 之后，
+		// 旧路径处置不在这段事务里：settleOldPathLocked 另起一段事务做条件写，提交由
+		// 事务框架完成，然后才动文件系统（提交在 FS 之前）。留在返回前会让外层提交点落在 FS 之后，
 		// 回滚就留下「链接已撤、路由行还在」。处置在提交之后执行（见下方 withPaths 段）。
 		converged = true
 		return nil
@@ -2452,6 +2534,8 @@ func (s *Service) recoverSwitchActiveReceipt(ctx context.Context, item pubcontra
 		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
 		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
 			Error(derr, "收敛补齐后旧路径处置失败（回执留 pending 重放）")
+		// keep pending 是终端动作（同 recoverUpdateURLReceipt）：不能紧跟硬结案。
+		return false, nil
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
@@ -2673,6 +2757,10 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
 		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
 			Error(derr, "改 URL 收敛后旧路径处置失败（回执留 pending 重放）")
+		// keep pending 是终端动作：这里硬结案会把「旧路径没处置完」盖成 committed，
+		// 301/旧链就再没人重放（线上表现：旧路径不跳转、回执已结案）。
+		// 处置失败不是致命错误（DB 已一致），交下一轮收敛重放即可。
+		return false, nil
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
@@ -2743,7 +2831,7 @@ func (s *Service) recoverRollbackReceipt(ctx context.Context, item pubcontract.P
 			return aerr
 		}
 		// 旧路径处置同样不在事务内（理由见 recoverSwitchActiveReceipt）：
-		// commitOldPathSettle 先提交条件写，再在提交之后动文件系统。
+		// settleOldPathLocked 先在自己的事务里提交条件写，再在提交之后动文件系统。
 		converged = true
 		return nil
 	})
@@ -2764,6 +2852,8 @@ func (s *Service) recoverRollbackReceipt(ctx context.Context, item pubcontract.P
 		s.keepPublishReceiptPending(item.ID, "旧路径访问面处置失败")
 		logger.Scene("publication").With("receiptId", item.ID).With("oldPath", item.OldPath).
 			Error(derr, "回滚收敛后旧路径处置失败（回执留 pending 重放）")
+		// keep pending 是终端动作（同 recoverUpdateURLReceipt）：不能紧跟硬结案。
+		return false, nil
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr
@@ -2907,6 +2997,18 @@ func (s *Service) publishedArtifactIDOf(ctx context.Context, page *pagemodel.Pag
 		return ""
 	}
 	return *pub.ArtifactID
+}
+
+// postSwitchFaultHit 触发「FS 已切换、DB 事务尚未提交」窗口的故障注入点（生产恒 nil）。
+//
+// 与 publishWindowFaultHit 是窗口的两侧，互不替代（见 Service.postSwitchFault 字段注释）：
+// 那个在 FS 切换之前、事务内部命中（FS 从未切换，要证明事务回滚）；
+// 这个在 DB 三步写完之后、事务回调返回之前命中（FS 已切换，要证明收敛按链接现状补齐）。
+func (s *Service) postSwitchFaultHit() error {
+	if s == nil || s.postSwitchFault == nil {
+		return nil
+	}
+	return s.postSwitchFault()
 }
 
 // publishWindowFaultHit 触发「访问面已切换、数据库尚未写入」窗口的故障注入点
@@ -3220,6 +3322,9 @@ func claimableReceiptSource(sourceType, action string) bool {
 
 // convergeSource 收敛单一来源类型的回执（分批领取 → 逐条重放）。
 func (s *Service) convergeSource(ctx context.Context, sourceType string, maxBatches int, res *pendingReceiptConvergeResult, itemErrs *[]error, claimErr *error) {
+	// lastBatch 是本轮**上一次**领到的 id 有序集合。它只用来判「本轮还有没有进展」，
+	// 不参与任何业务判定。
+	lastBatch := ""
 	for batch := 0; maxBatches <= 0 || batch < maxBatches; batch++ {
 		if cerr := ctx.Err(); cerr != nil {
 			*itemErrs = append(*itemErrs, cerr)
@@ -3238,6 +3343,21 @@ func (s *Service) convergeSource(ctx context.Context, sourceType string, maxBatc
 		if len(items) == 0 {
 			break
 		}
+		// 领到与上一批**完全相同**的集合 = 这一批一条都没被移出 pending（全部 fail closed、
+		// 保持 pending，即 recoverOne 返回 done=false 的那种）。继续领只会把同一批再判一遍，
+		// 而 ClaimPendingReceipts 不做「已处理」标记，所以这里必须自己收手 —— 这不是收敛失败，
+		// 是「本轮已无进展」：交给下一轮 ticker / NotifyPendingReceipt 重新触发，届时任何
+		// 真实状态变化（业务提交、路径登记补齐）都会让这个集合不同。
+		//
+		// 判在领取之后、重放之前：这一批正要被判一遍，若它已经等于上一批，那一遍的结果
+		// 只会与上遍逐条相同（判定是只读的、pending 行没被任何一方改写），没有重放的必要。
+		batchKey := receiptBatchKey(items)
+		if batchKey == lastBatch {
+			logger.Scene("publication").With("sourceType", sourceType).With("batch", batch).
+				With("items", len(items)).Debug("发布回执收敛：本批与上一批完全相同（本轮无进展，收手等下一轮）")
+			break
+		}
+		lastBatch = batchKey
 		res.claimed += len(items)
 		res.batches++
 		handled, failed := 0, 0
@@ -3273,6 +3393,25 @@ func (s *Service) convergeSource(ctx context.Context, sourceType string, maxBatc
 			return
 		}
 	}
+}
+
+// receiptBatchKey 把本批领取结果压成一个可比较的键（id 有序集合）。
+//
+// 排序而非依赖领取顺序：ClaimPendingReceipts 的顺序由查询决定，同一批行的相对次序
+// 可能变（相同 created_at 的并列行），但「是不是同一批」只看 id 集合。
+//
+// ID 在对外 DTO 里是字符串（model 层是 bigint，出口已转成十进制文本），所以直接排序，
+// 不再经 strconv —— 转换只发生在 model → dto 这一处。
+func receiptBatchKey(items []pubcontract.PendingReceiptResp) string {
+	if len(items) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
 }
 
 // logPendingReceiptConverge 记一条结构化收敛日志（收敛条数 / 失败条数 / 耗时）。

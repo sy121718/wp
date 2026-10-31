@@ -337,6 +337,10 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 		}
 		fresh.InputVersion = newVersion
 		fresh.URLPath = in
+		// stale 与意图是同一条语句写的（见 PersistPublishInputURLTx）：冻结快照必须
+		// 同步这一列，否则提交段的指纹校验会把「我自己刚置的 stale」判成别人推进的
+		// 状态，白重试一轮（实测：每次改 URL 都 +2 代而非 +1）。
+		fresh.Stale = true
 		*inst = *fresh
 		inputPersisted = true
 	}
@@ -460,6 +464,28 @@ func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.Ins
 	// currentReceiptIDs(lang) 空串 = 账本行还没有 receipt_id（700 之前的历史行）：
 	// 与"没有前次成功"不同，登记时按未知上送，消费方退回 artifact 身份核验。
 	currentReceiptIDs := s.publishedReceiptIDsByLang(ctx, inst.ID, results)
+
+	// 回执要写「切到哪个产物」（switch_active 的 to 必须非空），而产物行要到下面的事务里
+	// 才写。所以产物 id 在这里**先定下来**，登记与落库用同一个值：
+	//   · 同实例同 hash 已有产物行（重建幂等复用分支）→ 用那一行的 id；
+	//   · 否则预生成一个，事务内按这个 id 建行。
+	// 两条路都不改「登记先于 FS」的次序 —— 这里只读账本里已提交的行，不写任何东西。
+	// 顺序必须在登记之前：to 为空时 beginPublishReceipt 会按参数错误拒绝这条回执。
+	for i := range results {
+		b := &results[i]
+		if b.artifactID != "" {
+			continue
+		}
+		existingID, aerr := s.m.FindArtifactIDByHash(ctx, inst.ID, b.built.Hash)
+		switch {
+		case aerr == nil:
+			b.artifactID = existingID
+		case errors.Is(aerr, gorm.ErrRecordNotFound):
+			b.artifactID = uuid.NewString()
+		default:
+			return "", timing, fmt.Errorf("解析 %s 的产物身份失败（未切换访问面）: %w", b.accessPath, aerr)
+		}
+	}
 
 	// 收据登记放在**事务之外、FS 之前**：回执必须能在崩溃窗口里回答「这次切换发生过没有」，
 	// 而它自己是 publication 模块的表。放进本事务会让「回执可见」与「符号链接已切」
@@ -966,8 +992,14 @@ type builtArtifact struct {
 }
 
 // recordArtifactTx 事务内写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
+//
+// presetID 是调用方在**登记发布回执之前**就定下的产物 id（见 commitPublish）：
+// 回执里的 to 必须与账本 / 路由写下的产物是同一行，否则崩溃恢复会去核验一个不存在的
+// 产物。命中复用行时仍返回 existing.ID —— 预设值本来就是「按同 hash 查到的那一行」，
+// 两者必然相等；不相等只在锁被放宽、同实例出现并发发布时才可能，由调用方的断言兜住。
+// 预设为空（历史调用点）则自己生成，行为与改前一致。
 func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *presentationmodel.InstanceEntity,
-	snapID string, built builtArtifact, lang string, version int64, now time.Time) (artifactID string, err error) {
+	snapID string, built builtArtifact, lang string, version int64, presetID string, now time.Time) (artifactID string, err error) {
 	if existing, gerr := s.m.GetArtifactByHashTx(tx, inst.ID, built.Hash); gerr == nil {
 		return existing.ID, nil
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
@@ -985,8 +1017,12 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 	if err != nil {
 		return "", err
 	}
+	artifactUUID := strings.TrimSpace(presetID)
+	if artifactUUID == "" {
+		artifactUUID = uuid.NewString()
+	}
 	e := &presentationmodel.ArtifactEntity{
-		ID: uuid.NewString(), PresentationInstanceID: inst.ID, SnapshotID: snapID,
+		ID: artifactUUID, PresentationInstanceID: inst.ID, SnapshotID: snapID,
 		Version: version, Lang: strings.TrimSpace(lang), SourceHash: built.Manifest.SourceHash,
 		BuildInputHash:   built.Manifest.BuildInputHash,
 		ArtifactProvider: "local", ArtifactKey: built.Loc.Key, ArtifactHash: built.Hash,
@@ -1160,6 +1196,9 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 	// 回执所属实例：单个语言的切换是否生效由回执证明，批次是否收敛要看语言账本与实例指针
 	// （见 convergeInstanceBatch）。跨批次累积，最后统一收敛。
 	touched := make(map[string]string)
+	// lastBatch 是本轮**上一次**领到的 id 有序集合。它只用来判「本轮还有没有进展」，
+	// 不参与任何业务判定。
+	lastBatch := ""
 	for batch := 0; maxBatches <= 0 || batch < maxBatches; batch++ {
 		if cerr := ctx.Err(); cerr != nil {
 			itemErrs = append(itemErrs, cerr)
@@ -1178,6 +1217,21 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 		if len(items) == 0 {
 			break
 		}
+		// 领到与上一批**完全相同**的集合 = 这一批一条都没被移出 pending（全部 fail closed、
+		// 保持 pending，即重放返回 done=false 的那种）。继续领只会把同一批再判一遍，而
+		// ClaimPendingReceipts 不做「已处理」标记，所以这里必须自己收手 —— 这不是收敛失败，
+		// 是「本轮已无进展」：交给下一轮 ticker / NotifyPendingReceipt 重新触发，届时任何
+		// 真实状态变化（业务提交、路径登记补齐）都会让这个集合不同。
+		//
+		// 判在领取之后、重放之前：这一批正要被判一遍，若它已经等于上一批，那一遍的结果
+		// 只会与上遍逐条相同（判定是只读的、pending 行没被任何一方改写），没有重放的必要。
+		batchKey := presentationReceiptBatchKey(items)
+		if batchKey == lastBatch {
+			logger.Scene("publication").With("batch", batch).With("items", len(items)).
+				Debug("多语言发布回执收敛：本批与上一批完全相同（本轮无进展，收手等下一轮）")
+			break
+		}
+		lastBatch = batchKey
 		res.claimed += len(items)
 		res.batches++
 		handled, failed := 0, 0
@@ -1234,6 +1288,22 @@ func (s *Service) convergePendingReceipts(ctx context.Context, maxBatches int) (
 	s.lastConvergeAt.Store(time.Now().Unix())
 	s.logPendingReceiptConverge(res, time.Since(start))
 	return res, claimErr, itemErrs
+}
+
+// presentationReceiptBatchKey 把本批领取结果压成一个可比较的键（id 有序集合）。
+//
+// 排序而非依赖领取顺序：ClaimPendingReceipts 的顺序由查询决定，同一批行的相对次序
+// 可能变（相同 created_at 的并列行），但「是不是同一批」只看 id 集合。
+func presentationReceiptBatchKey(items []pubcontract.PendingReceiptResp) string {
+	if len(items) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
 }
 
 // logPendingReceiptConverge 记一条结构化收敛日志（收敛条数 / 失败条数 / 耗时）。
@@ -1951,6 +2021,14 @@ func (s *Service) receiptIdentityVerdictTx(ctx context.Context, tx *gorm.DB, ins
 			continue
 		case own != "" && ledger == own:
 			sawOwn = true
+		case links[lang] != "" && ledger == strings.TrimSpace(links[lang]):
+			// 账本当前身份就是**本回执登记的那次激活**（links 是语言 → 激活回执 id）：
+			// 说明本 attempt 的激活已经落过账，重放是幂等补处置，不是"被取代"。
+			//
+			// 这一档不能省：update_url 回执自己的 id 永远不会出现在语言账本里
+			// （账本存的是 switch_active 回执 id），少了它，**每一次**旧路径重放都会
+			// 落进 default 判成 superseded 而被 rolled_back —— 幂等重放永远不可达。
+			sawOwn = true
 		case from >= 0 && ledger == strconv.FormatInt(from, 10):
 			sawFrom = true
 		case from == -1:
@@ -2210,8 +2288,14 @@ func (s *Service) oldPathFSTargetAllowsDeactivate(oldPath string) error {
 	if st == nil || st.Kind == pipeline.PublicationNone {
 		return nil
 	}
+	// 与 301 分支同一条裁量：旧路径上挂着本实例上一次发布的产物（page）或本实例此前
+	// 设的 301（redirect）都是**正常现场**，归属已由 DeactivateTx 的事务内条件写确认。
+	// 只有拿不出归属证据的异常占位（读不出状态 / 非符号链接）才在这里拦下。
+	if st.Kind == pipeline.PublicationPage || st.Kind == pipeline.PublicationRedirect {
+		return nil
+	}
 	logger.Scene("publication").With("oldPath", oldPath).With("kind", st.Kind).
-		Warn("旧路径已被其他产物占用，跳过下线（保留 pending 重放）")
+		Warn("旧路径的访问面占位无法归属本实例，跳过下线（保留 pending 重放）")
 	return errOldPathFSTargetForeign
 }
 
@@ -2234,13 +2318,21 @@ func (s *Service) oldPathFSTargetAllowsRedirect(oldPath, newPath string) error {
 	if st == nil || st.Kind == pipeline.PublicationNone {
 		return nil
 	}
-	if st.Kind == pipeline.PublicationRedirect && st.Redirect != nil &&
-		strings.TrimSpace(st.Redirect.TargetPath) == strings.TrimSpace(newPath) {
+	// 常规改址时旧路径上**必然**还挂着本实例上一次发布的普通产物（kind=page）：
+	// 归属已由 RedirectTx 在事务内按 (project_id, path, owner) 条件写确认过，
+	// 这里再把它当"别人的产物"拒掉，等于让每一次 301 都失败（实测：旧路径永远停在
+	// page 产物、update_url 回执永不结案）。手工页面侧（page/service settleOldPathFS）
+	// 同样不做 FS 归属复核，两条发布路径的判据必须一致。
+	if st.Kind != pipeline.PublicationRedirect {
+		return nil
+	}
+	// 只有"别人或过期的 301"才拒绝：覆盖它会改变另一条重定向的意图。
+	if st.Redirect != nil && strings.TrimSpace(st.Redirect.TargetPath) == strings.TrimSpace(newPath) {
 		return nil
 	}
 	logger.Scene("publication").With("oldPath", oldPath).With("newPath", newPath).
 		With("kind", st.Kind).
-		Warn("旧路径的访问面已经指向别的目标，跳过 301 覆盖（保留 pending 重放）")
+		Warn("旧路径的 301 目标已指向别处，跳过覆盖（保留 pending 重放）")
 	return errOldPathFSTargetForeign
 }
 
@@ -2280,7 +2372,9 @@ func (s *Service) convergeSupersededAttemptTx(ctx context.Context, tx *gorm.DB,
 	}
 	// 标 stale 用的是**不推进版本**的变体：这里不是「输入变了」，而是「线上需要重建」。
 	// 推进版本会把正在跑的发布判成过期，而它们编译的输入未必有问题。
-	if _, serr := s.m.MarkStaleWithoutVersion(ctx, inst.ProjectID, []string{inst.ID}, time.Now().UTC()); serr != nil {
+	// 必须走 Tx 变体：本函数在已持有该实例行锁的事务里（MarkStaleWithoutVersion 自开事务
+	// 会去更新同一行 -> 自锁挂死，见该函数注释）。
+	if _, serr := s.m.MarkStaleWithoutVersionTx(tx, inst.ProjectID, []string{inst.ID}, time.Now().UTC()); serr != nil {
 		return serr
 	}
 	logger.Scene("publication").With("instanceId", inst.ID).With("url", item.Path).
@@ -2579,7 +2673,7 @@ func (s *Service) ensureDeactivationPathsUnchanged(ctx context.Context,
 // 执行前提（调用方保证）：业务 DB 变更**已提交**、且已持有同一把业务实体锁 ——
 // 所以这里只管"撤链"这一件事，不再做业务判据。路径锁包住全部路径，锁内逐条复验
 // 归属，别人的链接一律不动。
-func (s *Service) withdrawDeactivatedLinks(ctx context.Context, projectID, instanceID string,
+func (s *Service) withdrawDeactivatedLinks(ctx context.Context, tx *gorm.DB, projectID, instanceID string,
 	ids map[string]pubcontract.ReceiptPathIdentity, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -2589,7 +2683,7 @@ func (s *Service) withdrawDeactivatedLinks(ctx context.Context, projectID, insta
 			if strings.TrimSpace(p) == "" {
 				continue
 			}
-			if oerr := s.verifyDeactivatedPathOwner(ctx, projectID, instanceID, p, ids[p]); oerr != nil {
+			if oerr := s.verifyDeactivatedPathOwner(ctx, tx, projectID, instanceID, p, ids[p]); oerr != nil {
 				return oerr
 			}
 			if derr := s.publication.Deactivate(p); derr != nil {
@@ -2606,10 +2700,14 @@ func (s *Service) withdrawDeactivatedLinks(ctx context.Context, projectID, insta
 //   - 路由占用：不存在 → 没有占用方（撤链无害）；存在但不是本实例 → 已被接管，报可重试；
 //   - 访问面链接：登记时没有定位器 → 只剩路由判据；有定位器 → 现在必须还是它，
 //     否则说明链接已被别的产物覆盖，绝不能顺着下手。
-func (s *Service) verifyDeactivatedPathOwner(ctx context.Context, projectID, instanceID, path string,
+func (s *Service) verifyDeactivatedPathOwner(ctx context.Context, tx *gorm.DB, projectID, instanceID, path string,
 	registered pubcontract.ReceiptPathIdentity) error {
 	if s.routes != nil {
-		owner, oerr := s.routes.RouteOwnerTx(ctx, nil, projectID, path)
+		// RouteOwnerTx 只认**调用方事务**（publication_service.go:179-184：归属判定必须在锁内），
+		// 它内部直接 tx.Session —— 传 nil 会 panic（gorm.(*DB).Session(0x0)）。
+		// 本函数的调用方 withdrawDeactivatedLinksLocked 已经开好事务并做了工程作用域切换，
+		// 这里沿用同一 tx：既满足端口契约，也让归属判定与撤链处在同一个锁域里。
+		owner, oerr := s.routes.RouteOwnerTx(ctx, tx, projectID, path)
 		if oerr != nil && !errors.Is(oerr, gorm.ErrRecordNotFound) {
 			return oerr
 		}
@@ -2778,7 +2876,7 @@ func (s *Service) withdrawDeactivatedLinksLocked(ctx context.Context, projectID,
 			return fmt.Errorf("%w: 下线回执缺少路径事实", errPublishStateMoved)
 		}
 		executed = true
-		return s.withdrawDeactivatedLinks(ctx, projectID, instanceID, ids, lockedPaths)
+		return s.withdrawDeactivatedLinks(ctx, tx, projectID, instanceID, ids, lockedPaths)
 	})
 	if txErr != nil {
 		return false, txErr

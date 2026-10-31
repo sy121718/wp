@@ -592,6 +592,34 @@ func (m *Model) GetArtifactByHash(ctx context.Context, instanceID, hash string) 
 	return &row, nil
 }
 
+// FindArtifactIDByHash 按 (实例, 产物哈希) 只取产物行 id；未找到返回 gorm.ErrRecordNotFound。
+//
+// 与 GetArtifactByHash 同一谓词，区别只在该走**事务外还是事务内**：发布回执在事务之外
+// 登记（登记必须先于文件系统切换提交，理由见 presentation/service/publishReceipt 的注释），
+// 而产物行要到随后的事务里才写。登记时要知道「这条回执指向哪个产物 id」，只能先在事务外
+// 问一句「同实例同 hash 已有行吗」——复用行的 id 必须与事务内 GetArtifactByHashTx 命中的
+// 那一行是同一个，否则回执指向的产物与账本/路由写下的产物会分叉。
+//
+// 只 pluck id：产物行带 manifest（JSONB，产物里最大的列），这里一个字节都用不上
+// （同 GetArtifactHash 的列白名单理由）。读的是**已提交**行的快照 —— 锁是按实例加的，
+// 同实例不会并发发布，所以「读到的复用行」与事务内命中的必然是同一行。
+func (m *Model) FindArtifactIDByHash(ctx context.Context, instanceID, hash string) (id string, err error) {
+	if strings.TrimSpace(instanceID) == "" || strings.TrimSpace(hash) == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+	err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).
+		Where("presentation_instance_id = ? AND artifact_hash = ?", instanceID, hash).
+		Select("id").Limit(1).Scan(&id).Error
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		// Scan 到零值 = 没有这一行（id 是主键，生产 DDL 不允许空串）。
+		return "", gorm.ErrRecordNotFound
+	}
+	return id, nil
+}
+
 // GetArtifact 按产物 ID 查询（详情口径：带 manifest 全量）。
 func (m *Model) GetArtifact(ctx context.Context, id string) (e *ArtifactEntity, err error) {
 	var row ArtifactEntity
@@ -830,7 +858,15 @@ func (m *Model) PersistPublishInputURLTx(tx *gorm.DB, projectID, id, urlPath str
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return 0, err
 	}
-	var rows []struct{ InputVersion int64 }
+	// 必须是实体切片：GORM 的表名与 RETURNING 写回目标都取自 Model 的那个值。
+	//   · 匿名结果切片（[]struct{InputVersion int64}）：既拿不到表名（生成
+	//     UPDATE "" SET ...，SQLSTATE 42601 syntax error at or near ""），也没有
+	//     可回填的列字段；
+	//   · 单实体（InstanceEntity）：表名对了，但 ScanUpdate 写回的是实体本身、
+	//     RowsAffected 停在 0 —— 而 UPDATE ... RETURNING 是本仓库唯一合法的多行回读
+	//     形态，与 page/model/page_model.go 的 pageIDsOf 同构（Model(&rows) 配
+	//     clause.Returning，rows 为实体切片）。
+	var rows []InstanceEntity
 	err := tx.Model(&rows).
 		Where("id = ? AND project_id = ?", id, projectID).
 		Clauses(clause.Returning{Columns: []clause.Column{{Name: "input_version"}}}).
@@ -861,20 +897,39 @@ func (m *Model) PersistPublishInputURLTx(tx *gorm.DB, projectID, id, urlPath str
 //     收敛就属于这一类：输入没变（版本已被别的 attempt 推过），在这里再 +1 会把正在跑的
 //     发布无故判过期，而它们编译的输入未必有问题。
 func (m *Model) MarkStaleWithoutVersion(ctx context.Context, projectID string, ids []string, at time.Time) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		var terr error
+		n, terr = m.MarkStaleWithoutVersionTx(tx, projectID, ids, at)
+		return terr
+	})
+	return n, err
+}
+
+// MarkStaleWithoutVersionTx 与 MarkStaleWithoutVersion 同义，但写进**调用方事务**。
+//
+// 为什么必须有一个 Tx 变体（不是便利重载）：调用方 presentation 的收敛路径在
+// LockInstanceForActivationTx 已经持有该实例行锁的事务里做这件事。非 Tx 版会自己
+// 开一个事务（rls.InProjectScope -> db.Transaction），那条语句要更新同一行 -> 新连接
+// 等外层事务的行锁、外层等内层返回 —— **自锁挂死**，表现为收敛永久零进展：
+// pg_stat_activity 上一条 idle in transaction 握着锁、另一条 active 在等 transactionid
+// （实测该用例 120s 不返回）。
+func (m *Model) MarkStaleWithoutVersionTx(tx *gorm.DB, projectID string, ids []string, at time.Time) (n int64, err error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
 	if strings.TrimSpace(projectID) == "" {
 		return 0, errors.New("project id is required")
 	}
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		res := tx.Model(&InstanceEntity{}).
-			Where("project_id = ? AND id IN ?", projectID, ids).
-			Updates(map[string]any{"stale": true, "update_time": at})
-		n = res.RowsAffected
-		return res.Error
-	})
-	return n, err
+	if tx == nil {
+		return 0, errors.New("presentation: MarkStaleWithoutVersionTx 需要调用方事务")
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	res := tx.Model(&InstanceEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).
+		Updates(map[string]any{"stale": true, "update_time": at})
+	return res.RowsAffected, res.Error
 }
 
 // MarkInstanceMenuStaleTx 在**调用方的事务**内，把「活跃或暂存产物声明了该菜单位置依赖」
