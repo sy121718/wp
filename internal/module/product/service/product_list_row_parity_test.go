@@ -1,23 +1,6 @@
 package productservice_test
 
-// product_list_row_parity_test.go — 列表页成品行与**详情页成品行**的对账
-// （dd.txt 3.5「列表字段与改造前一致」）。
-//
-// 改造把「逐商品取详情」换成了「一次批量补料 + 批量评分」，风险是**字段悄悄变了**：
-// 列表模板（products.html）读的是汇总段（价格 / 分类 / 品牌 / 标签 / 评分 / 库存），
-// 这几个值的原料从「完整详情对象」换成了「列表项 + 批量事实」，少了任何一项都不会报错，
-// 只会让某一列变成空的 —— 所以这里在**同一个库、同一份索引、同一批端口桩**上把两条
-// 读模型各跑一遍逐字段对账（详情页走的是 s.Get + productRow 的详情路径）。
-//
-// 对账不成立的两种常见假绿，本用例各自堵住：
-//   · 两边都空也相等 —— 先做夹具自检，断言被比较的字段在详情行上**非零**；
-//   · 只比字符串列、漏掉原料 —— 同时比 CategoryIDs / PrimaryCategoryID / BrandID / TagIDs
-//     （批量事实唯一的产物）与库存单元格整块。
-//
-// 容器价（bundle）在两条路径上分别由 applyRowFacts / applyPriceRange 算：本用例的容器
-// 商品那一档就是对这两个口径的对账（两处各写一遍必然分叉，而分叉的表现只是价格不一样）。
-//
-// 表结构来自生产迁移，不手抄 CREATE TABLE。
+// 同一迁移库、同一批库存桩逐字段比较列表与详情，并先断言夹具非空，防止两边都漏字段的假绿。
 
 import (
 	"context"
@@ -111,6 +94,14 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 		f.singleProduct, projectID,
 		"["+strconv.Quote(categoryA)+"]", categoryA, brand, "["+strconv.Quote(manualTag)+"]")
 
+	attributeID := uuid.NewString()
+	exec(`INSERT INTO product_attributes (id, project_id, key, name, create_time, update_time)
+		VALUES (?, ?, 'material', '材质', now(), now())`, attributeID, projectID)
+	for _, productID := range []string{f.variantProduct, f.singleProduct} {
+		exec(`UPDATE products SET attribute_ids = ?::jsonb, images_alt = ?::jsonb WHERE id = ?`,
+			"["+strconv.Quote(attributeID)+"]", `["商品主图"]`, productID)
+	}
+
 	for i, price := range []string{"12.50", "30.00"} {
 		exec(`INSERT INTO product_variants (id, product_id, sku_code, price, enabled, sort)
 			VALUES (?, ?, ?, ?::numeric, true, ?)`,
@@ -162,6 +153,12 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 		}
 		if detail.BrandID == "" || len(detail.CategoryIDs) == 0 || len(detail.TagIDs) == 0 {
 			t.Fatal("夹具未挂载关联数据")
+		}
+		if len(detail.AttributeIDs) == 0 || len(detail.Attributes) == 0 || len(detail.ImageAlts) == 0 {
+			t.Fatal("夹具缺少属性或图片替代文本")
+		}
+		if !reflect.DeepEqual(item.AttributeIDs, detail.AttributeIDs) || !reflect.DeepEqual(item.Attributes, detail.Attributes) || !reflect.DeepEqual(item.ImageAlts, detail.ImageAlts) {
+			t.Fatalf("列表与详情的属性及图片替代文本不一致：%+v / %+v", item, detail)
 		}
 		if item.PriceMin != detail.PriceMin || item.PriceMax != detail.PriceMax || item.VariantCount != detail.VariantCount {
 			t.Fatalf("列表与详情的价格汇总不一致：%+v / %+v", item, detail)

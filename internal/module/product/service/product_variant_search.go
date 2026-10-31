@@ -41,7 +41,10 @@ func (s *Service) ListVariantOptions(ctx context.Context, req *productdto.ListVa
 		ids = append(ids, p.ID)
 		nameOf[p.ID] = p.Name
 	}
-	variants, verr := s.m.ListVariantsByProducts(ctx, ids)
+	// 窄投影（id / product_id / sku_code / price / cost_price / enabled / sort）：
+	// 下拉只画这几项，选项 JSON 与图片一起搬回来纯属带宽。口径不变，停用变体仍在结果里，
+	// 由下面的 Enabled 判断过滤（那是业务规则，不放进 SQL）。
+	variants, verr := s.m.ListVariantOptionFacts(ctx, ids)
 	if verr != nil {
 		return nil, verr
 	}

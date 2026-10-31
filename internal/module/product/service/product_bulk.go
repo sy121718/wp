@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -78,8 +77,10 @@ func bulkIDsErr(err error) error {
 //	· 改造后：校验批量化，**要删的商品在同一个事务里删**（删除 + 逐商品失效 + 整批留痕），
 //	  任一步失败整批回滚并报错。「逐项跳过」的语义不变（不存在的项不进删除集合）。
 //
-// 行锁：删除集合是先「锁定 + 读快照」再删 —— LockProductsTx 按 id 升序 FOR UPDATE，
-// 锁住的行就是本次要删的行；锁之后行数对不上（被并发删掉）即整批回滚，不留半截状态。
+// 行锁与留痕快照：LockProductsTx 按 id 升序 FOR UPDATE 锁住删除集合，锁到的行就是本次
+// 要删的行；锁之后行数对不上（被并发删掉）即整批回滚。**留痕快照在锁后读**：
+// ListProductsByIDsForUpdateTx / ListVariantsByProductsForUpdateTx 拿同一事务里的锁后整行。
+// 事务前那次读只取商品名称（整批拒绝时报出是哪几条），不进任何快照。
 func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -97,22 +98,22 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	if err != nil {
 		return nil, err
 	}
-	// 留痕快照要在事务前取（删除后就读不到了）：一次查回整批商品与它们的全部变体。
-	rows, err := s.m.ListProductsByIDs(ctx, ids, projectID)
+	// 事务前只取**名称**，用途限于「整批拒绝时报出是哪几条」—— 它不进任何留痕快照。
+	//
+	// 旧写法在这里整行读商品与全部变体、再拿它们当留痕快照，那是**锁前**的读：
+	// 校验与删除之间别人可以改掉名称 / 价格 / 变体成本，快照里记的却是改之前的值，
+	// 于是「审计说删的是 A，实际删掉的是 B」。快照改在锁后读（见下面事务内）。
+	named, err := s.m.ListProductsByIDs(ctx, ids, projectID)
 	if err != nil {
 		return nil, err
 	}
-	variants, err := s.m.ListVariantsByProducts(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	names := make(map[string]string, len(rows))
-	for _, e := range rows {
+	names := make(map[string]string, len(named))
+	for _, e := range named {
 		names[e.ID] = e.Name
 	}
 	deleted := 0
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
 		locked, lerr := s.m.LockProductsTx(ctx, tx, ids, projectID)
@@ -139,16 +140,40 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		for _, id := range locked {
 			lockedSet[id] = true
 		}
-		// 留痕按**锁定到的**商品组装（并发删掉的那些不写留痕 —— 它们不是本次删的）。
-		inputs := make([]*masterdatacontract.ChangeInput, 0, len(locked)+len(variants))
-		for _, e := range rows {
+		// 留痕快照必须在**锁后**取：LockProductsTx 只锁了这批商品行（而且只 Pluck id），
+		// 变体行此前一行都没锁，于是旧写法（锁前读的 rows / variants）会把并发提交的
+		// 改名、改价、成本价回写记成「删除前的旧值」—— 审计与真正删掉的行对不上。
+		//
+		// 顺序：工程锁（已在上面）→ 商品（LockProductsTx 已按 id 升序锁住，这里按同一
+		// 顺序逐条拿锁后整行）→ 变体（同一顺序逐个锁定读取）。locked 是升序的，
+		// 所以与 LockProductsTx 的加锁顺序一致，不引入新的死锁面。
+		lockedProducts := make([]*productmodel.ProductEntity, 0, len(locked))
+		for _, id := range locked {
+			e, perr := s.m.GetForUpdateTx(ctx, tx, id, projectID)
+			if perr != nil {
+				return perr
+			}
+			lockedProducts = append(lockedProducts, e)
+		}
+		lockedVariants := make([]*productmodel.VariantEntity, 0, len(locked))
+		for _, id := range locked {
+			rows, verr := s.m.ListVariantsForUpdateTx(ctx, tx, id)
+			if verr != nil {
+				return verr
+			}
+			lockedVariants = append(lockedVariants, rows...)
+		}
+		// 留痕按**锁定到的**商品组装（并发删掉的那些不写留痕 —— 它们不是本次删的；
+		// 上面的读已按锁定集合逐条走，这里的判断是防御性的）。
+		inputs := make([]*masterdatacontract.ChangeInput, 0, len(lockedProducts)+len(lockedVariants))
+		for _, e := range lockedProducts {
 			if !lockedSet[e.ID] {
 				continue
 			}
 			inputs = append(inputs, productChangeInput(e, masterdataenums.ActionDelete,
 				masterdataenums.OriginProduct, "", productChangeSnapshot(e), nil))
 		}
-		for _, v := range variants {
+		for _, v := range lockedVariants {
 			if !lockedSet[v.ProductID] {
 				continue
 			}
@@ -187,9 +212,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 // 不是参数错（400），也不是内部故障（500）。出口照常读 pkg/facing.StatusOf，不认识这个类型。
 func bulkRejected(items []facing.BlockedItem) error {
 	return &productdto.BulkRejectedError{
-		Err: facing.WithStatus(
-			facing.New(productenums.ErrBulkRejected, productenums.ProductErrFallbacks[productenums.ErrBulkRejected]),
-			http.StatusConflict),
+		Err:   productenums.Err(productenums.ErrBulkRejected),
 		Items: items,
 	}
 }
@@ -236,44 +259,52 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.m.ListCategoriesByIDs(ctx, ids, projectID)
-	if err != nil {
-		return nil, err
-	}
-	childCounts, err := s.m.CountCategoryChildrenByIDs(ctx, ids, projectID)
-	if err != nil {
-		return nil, err
-	}
-	hits, err := s.batchRefHits(ctx, ids, func(scope []string) (map[string]*productmodel.BatchRefHit, error) {
-		return s.m.ProductRefsByCategoryIDs(ctx, ids, scope)
-	})
-	if err != nil {
-		return nil, err
-	}
-	present := make(map[string]bool, len(rows))
-	names := make(map[string]string, len(rows))
-	for _, r := range rows {
-		present[r.ID] = true
-		names[r.ID] = r.Name
-	}
-	blocked := make([]facing.BlockedItem, 0)
-	for _, id := range ids {
-		switch {
-		case !present[id]:
-			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
-		case childCounts[id] > 0:
-			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryHasChildren))
-		case hits[id].Referenced():
-			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryInUse))
-		}
-	}
-	if len(blocked) > 0 {
-		// 任何一条不能删 → **一条都不删**（判据见 internal/module/CLAUDE.md「列表页批量操作」）。
-		return nil, bulkRejected(blocked)
-	}
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
+		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		rows, err := scoped.m.ListCategoriesByIDs(ctx, ids, projectID)
+		if err != nil {
+			return err
+		}
+		childCounts, err := scoped.m.CountCategoryChildrenByIDs(ctx, ids, projectID)
+		if err != nil {
+			return err
+		}
+		hits, err := scoped.batchRefHits(ctx, ids, func(scope []string) (map[string]*productmodel.BatchRefHit, error) {
+			return scoped.m.ProductRefsByCategoryIDs(ctx, ids, scope)
+		})
+		if err != nil {
+			return err
+		}
+		present := make(map[string]bool, len(rows))
+		names := make(map[string]string, len(rows))
+		for _, r := range rows {
+			if strings.EqualFold(r.ProjectID, projectID) {
+				present[r.ID] = true
+				names[r.ID] = r.Name
+			}
+		}
+		blocked := make([]facing.BlockedItem, 0)
+		for _, id := range ids {
+			switch {
+			case !present[id]:
+				blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+			case childCounts[id] > 0:
+				blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryHasChildren))
+			case hits[id].Referenced():
+				blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryInUse))
+			}
+		}
+		if len(blocked) > 0 {
+			// 任何一条不能删 → **一条都不删**（判据见 internal/module/CLAUDE.md「列表页批量操作」）。
+			return bulkRejected(blocked)
+		}
+		if err := rls.ScopeTx(tx, projectID); err != nil {
+			return err
 		}
 		n, derr := s.m.DeleteCategoriesTx(ctx, tx, ids)
 		if derr != nil {
@@ -346,7 +377,7 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 		return nil, bulkRejected(blocked)
 	}
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
 		n, derr := s.m.DeleteBrandsTx(ctx, tx, ids)
@@ -420,7 +451,7 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 		return nil, bulkRejected(blocked)
 	}
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
 		n, derr := s.m.DeleteAttributesTx(ctx, tx, ids)
@@ -509,7 +540,7 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 	if len(scopes) > 0 {
 		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 			for _, pid := range scopes {
-				if serr := rls.ScopeTx(tx, pid); serr != nil {
+				if serr := s.productWriteScopeTx(ctx, tx, pid); serr != nil {
 					return serr
 				}
 				gids := groups[pid]

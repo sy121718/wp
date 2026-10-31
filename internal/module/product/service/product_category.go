@@ -33,6 +33,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
 	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
 )
@@ -78,9 +79,16 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 	// 分类行与静态产物失效事件同事务（审计 ARCH-01）：分类改名 / 增删会改归档页与
 	// 商品列表页的字节（列表项内嵌分类展示名），事件必须与这次写一起生效或一起回滚。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		parentID, perr := scoped.resolveCategoryParent(ctx, projectID, strings.TrimSpace(req.ParentID), "")
+		if perr != nil {
+			return perr
+		}
+		e.ParentID = parentID
 		if cerr := s.m.CreateCategoryTx(ctx, tx, e); cerr != nil {
 			return cerr
 		}
@@ -149,52 +157,67 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return nil, productenums.Err(productenums.ErrCategoryNameRequired)
-		}
-		e.Name = name
-	}
-	if req.Slug != nil {
-		slug := normalizeSlug(*req.Slug)
-		if slug == "" {
-			return nil, productenums.Err(productenums.ErrInvalidParam)
-		}
-		if taken, serr := s.m.CategorySlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
-			return nil, serr
-		} else if taken {
-			return nil, productenums.Err(productenums.ErrCategorySlugTaken)
-		}
-		e.Slug = slug
-	}
 	if req.ParentID != nil {
-		parentID, perr := s.resolveCategoryParent(ctx, e.ProjectID, strings.TrimSpace(*req.ParentID), e.ID)
-		if perr != nil {
+		if _, perr := s.resolveCategoryParent(ctx, projectID, strings.TrimSpace(*req.ParentID), req.ID); perr != nil {
 			return nil, perr
 		}
-		e.ParentID = parentID
 	}
-	if req.Description != nil {
-		e.Description = *req.Description
-	}
-	if req.Image != nil {
-		e.Image = mediaURL(*req.Image)
-	}
-	if req.SEOTitle != nil {
-		e.SEOTitle = *req.SEOTitle
-	}
-	if req.SEODescription != nil {
-		e.SEODescription = *req.SEODescription
-	}
-	if req.Sort != nil {
-		e.Sort = *req.Sort
-	}
-	e.UpdatedAt = time.Now().UTC()
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		locked, gerr := scoped.m.GetCategory(ctx, req.ID, projectID)
+		if gerr != nil {
+			return mapNotFound(gerr)
+		}
+		if !strings.EqualFold(locked.ProjectID, projectID) {
+			return productenums.Err(productenums.ErrNotFound)
+		}
+		e = locked
+		if req.Name != nil {
+			name := strings.TrimSpace(*req.Name)
+			if name == "" {
+				return productenums.Err(productenums.ErrCategoryNameRequired)
+			}
+			e.Name = name
+		}
+		if req.Slug != nil {
+			slug := normalizeSlug(*req.Slug)
+			if slug == "" {
+				return productenums.Err(productenums.ErrInvalidParam)
+			}
+			if taken, serr := scoped.m.CategorySlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
+				return serr
+			} else if taken {
+				return productenums.Err(productenums.ErrCategorySlugTaken)
+			}
+			e.Slug = slug
+		}
+		if req.ParentID != nil {
+			parentID, perr := scoped.resolveCategoryParent(ctx, e.ProjectID, strings.TrimSpace(*req.ParentID), e.ID)
+			if perr != nil {
+				return perr
+			}
+			e.ParentID = parentID
+		}
+		if req.Description != nil {
+			e.Description = *req.Description
+		}
+		if req.Image != nil {
+			e.Image = mediaURL(*req.Image)
+		}
+		if req.SEOTitle != nil {
+			e.SEOTitle = *req.SEOTitle
+		}
+		if req.SEODescription != nil {
+			e.SEODescription = *req.SEODescription
+		}
+		if req.Sort != nil {
+			e.Sort = *req.Sort
+		}
+		e.UpdatedAt = time.Now().UTC()
 		if uerr := s.m.UpdateCategoryTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
@@ -259,18 +282,9 @@ func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCate
 		return nil, err
 	}
 	keyword := strings.TrimSpace(req.Keyword)
-	page, size := req.Page, req.Size
-	if page < 1 {
-		page = 1
-	}
-	if size < 1 {
-		size = 20
-	}
-	if size > 100 {
-		size = 100
-	}
+	paging := utils.NormalizePaging(req.Page, req.Size, 20, 100)
 	if keyword == "" {
-		rows, total, lerr := s.m.ListCategoryRootsPage(ctx, projectID, size, (page-1)*size)
+		rows, total, lerr := s.m.ListCategoryRootsPage(ctx, projectID, paging.Size, paging.Offset)
 		if lerr != nil {
 			return nil, lerr
 		}
@@ -282,16 +296,7 @@ func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCate
 	}
 	roots := buildCategoryPageTree(rows)
 	res = &productdto.CategoryListResp{Total: int64(len(roots)), MatchTotal: matchTotal}
-	start := (page - 1) * size
-	if start >= len(roots) {
-		// 页码越界：分页条由调用方按 Total 夹住，这里只保证不切出 panic。
-		return res, nil
-	}
-	end := start + size
-	if end > len(roots) {
-		end = len(roots)
-	}
-	res.Items = roots[start:end]
+	res.Items, _ = pagination.Slice(roots, paging.Page, paging.Size)
 	return res, nil
 }
 
@@ -327,36 +332,43 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	if err != nil {
 		return err
 	}
-	if _, gerr := s.m.GetCategory(ctx, req.ID, projectID); gerr != nil {
-		return mapNotFound(gerr)
-	}
-	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID, projectID); cerr != nil {
-		return cerr
-	} else if n > 0 {
-		return productenums.Err(productenums.ErrCategoryHasChildren)
-	}
-	// 引用检查必须**跨工程**（审计 DB-03 §1.2 / §5.1 第 2 条）：此前的 ProductUsingCategory 把
-	// 作用域收在本工程，别的工程仍引用这条分类时命中 0 行 ⇒ 删除放行 ⇒ products.category_ids
-	// 里留下永久悬空 id。扫描按工程逐个设置作用域取并集，与连接角色无关（见 model 的文件头）。
-	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
-		return s.m.ProductRefsByCategory(ctx, req.ID, ids)
-	})
-	if rerr != nil {
-		return rerr
-	}
-	if ref.Referenced() {
-		// 命中即拒绝，明细里给出引用面 / 工程 / 商品，由人决定处置（不自动清理）。
-		return crossProjectRefBlocked(productenums.ErrCategoryInUse, ref)
+	scope, err := s.crossProjectRefScope(ctx)
+	if err != nil {
+		return err
 	}
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
-			return serr
+		if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
+			return err
 		}
-		if derr := s.m.DeleteCategoryTx(ctx, tx, req.ID); derr != nil {
-			return derr
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		row, err := scoped.m.GetCategory(ctx, req.ID, projectID)
+		if err != nil {
+			return mapNotFound(err)
 		}
-		return s.enqueueInvalidationTx(ctx, tx, projectID,
-			invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: req.ID})
+		if !strings.EqualFold(row.ProjectID, projectID) {
+			return productenums.Err(productenums.ErrNotFound)
+		}
+		if n, err := scoped.m.CountCategoryChildren(ctx, req.ID, projectID); err != nil {
+			return err
+		} else if n > 0 {
+			return productenums.Err(productenums.ErrCategoryHasChildren)
+		}
+		ref, err := scoped.m.ProductRefsByCategory(ctx, req.ID, scope)
+		if err != nil {
+			return err
+		}
+		if ref.Referenced() {
+			return crossProjectRefBlocked(productenums.ErrCategoryInUse, ref)
+		}
+		// 跨工程扫描会切换事务作用域，删除前恢复目标工程。
+		if err := rls.ScopeTx(tx, projectID); err != nil {
+			return err
+		}
+		if err := s.m.DeleteCategoryTx(ctx, tx, req.ID); err != nil {
+			return err
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID, invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: req.ID})
 	})
 }
 

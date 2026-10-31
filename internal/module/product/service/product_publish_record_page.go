@@ -1,7 +1,14 @@
 package productservice
 
 // 聚合商品与当前发布登记；发布尝试历史由独立查询提供。
-// 状态筛选依赖完整发布事实，因此先批量读取并合并，再按筛选结果分页。
+//
+// 两条读法按**过滤能否下推到商品表**分档，不是两种风格：
+//   - 无状态筛选：状态列不在 products 表里也不需要判断，先 count 夹页、再取本页投影，
+//     发布端口只收本页 id —— 页内成本与工程内商品数无关（PRD-011 的无状态档）；
+//   - 有状态筛选（active/draft/none）：发布状态是跨模块事实，过滤必须发生在与发布登记
+//     合并**之后**。所以这一类仍要全量读商品再合并过滤，绝不能先切商品页再过滤 ——
+//     那会让「第 2 页」只在前 20 个商品里找已上线的，直接漏行。
+// 有状态档的跨模块有界查询（让状态进到正确分页路径）另行推进，本文件不声称已完成。
 
 import (
 	"context"
@@ -11,6 +18,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/pagination"
 )
 
 // ProductPublishRecordPageSize 发布记录每页条数（与商品列表同量级）。
@@ -39,38 +47,79 @@ func (s *Service) QueryPublishRecords(ctx context.Context, req *productdto.Produ
 	if err != nil {
 		return nil, err
 	}
-	products, err := s.listProductsForPublishRecord(ctx, scope.ProjectID, strings.TrimSpace(req.Keyword))
+	keyword := strings.TrimSpace(req.Keyword)
+	status := normalizePublishStatus(req.Status)
+	if status == "" {
+		return s.queryPublishRecordsPaged(ctx, scope.ProjectID, keyword, req.Page, result)
+	}
+	return s.queryPublishRecordsByStatus(ctx, scope.ProjectID, keyword, status, req.Page, result)
+}
+
+// queryPublishRecordsPaged 无状态筛选档：count → 夹页 → 只读本页，再把本页 id 交发布端口。
+//
+// 顺序是判据不是优化：夹页必须在取数之前（否则 page=999 会先去读第 19980 行再丢掉），
+// 发布端口必须在拿到本页之后才调用，且空页**不调用** ——
+// contract 里 「entityIDs 为空 = 本工程全部」，空页传空切片会把它变成全工程读。
+func (s *Service) queryPublishRecordsPaged(ctx context.Context, projectID, keyword string, page int,
+	result *productcontract.PublishRecordList) (*productcontract.PublishRecordList, error) {
+	total, err := s.m.CountForPublishRecords(ctx, projectID, keyword)
+	if err != nil {
+		return nil, err
+	}
+	result.Total = total
+	if total == 0 {
+		return result, nil
+	}
+	result.Page = pagination.ClampPage(page, result.Limit, total)
+	products, err := s.m.ListForPublishRecordsPage(ctx, projectID, keyword, result.Limit, (result.Page-1)*result.Limit)
 	if err != nil {
 		return nil, err
 	}
 	if len(products) == 0 {
 		return result, nil
 	}
+	langs, err := s.readPublishLangs(ctx, projectID, products)
+	if err != nil {
+		return nil, err
+	}
+	// 无状态档不过滤，行与商品一一对应；仍走同一合并函数，形状与有状态档不会分叉。
+	result.Records = mergePublishRows(products, langs, "")
+	return result, nil
+}
+
+// queryPublishRecordsByStatus 有状态筛选档：过滤依赖跨模块发布事实，只能先全量合并再切页。
+//
+// 这条路径的成本随工程内商品数增长（PRD-011 已记录）。它**不能**改写成「先切商品页再
+// 过滤」：那样 total 与可见行数都会错，且越是已上线稀少的工程错得越离谱。
+func (s *Service) queryPublishRecordsByStatus(ctx context.Context, projectID, keyword, status string, page int,
+	result *productcontract.PublishRecordList) (*productcontract.PublishRecordList, error) {
+	products, err := s.m.ListForPublishRecords(ctx, projectID, keyword)
+	if err != nil {
+		return nil, err
+	}
+	if len(products) == 0 {
+		return result, nil
+	}
+	langs, err := s.readPublishLangs(ctx, projectID, products)
+	if err != nil {
+		return nil, err
+	}
+	rows := mergePublishRows(products, langs, status)
+	result.Total = int64(len(rows))
+	result.Records, result.Page = pagination.Slice(rows, page, result.Limit)
+	return result, nil
+}
+
+// readPublishLangs 按给定商品读各语言发布明细（空集合直接返回，不碰端口）。
+func (s *Service) readPublishLangs(ctx context.Context, projectID string, products []*productmodel.ProductEntity) (map[string][]productdto.PublishRecordLangResp, error) {
+	if len(products) == 0 {
+		return nil, nil
+	}
 	ids := make([]string, 0, len(products))
 	for _, p := range products {
 		ids = append(ids, p.ID)
 	}
-	langs, err := s.pagePublishRecords.Langs(ctx, scope.ProjectID, ids)
-	if err != nil {
-		return nil, err
-	}
-	rows := mergePublishRows(products, langs, normalizePublishStatus(req.Status))
-	result.Total = int64(len(rows))
-	result.Page = clampPublishPage(req.Page, result.Total, result.Limit)
-	result.Records = pagePublishRows(rows, result.Page, result.Limit)
-	return result, nil
-}
-
-// listProductsForPublishRecord 取本工程（按关键词过滤）的全部商品。
-//
-// 为什么不用分页读：状态筛选在合并之后（见上），分页也必须在那之后；
-// 而商品表的行数是这个后台里可控的量级（一个工程的商品数），全量取三列足够。
-//
-// **不能**用 s.m.List(ctx, projectID, keyword, "", 0, 0) 表达「全量」：那里的 (limit, offset)
-// 直传 gorm，Limit(0) 生成的是 LIMIT 0 —— 零行，一页空白且不报错。model 侧为此另开了
-// ListForPublishRecords（同一筛选口径、不分页）。
-func (s *Service) listProductsForPublishRecord(ctx context.Context, projectID, keyword string) ([]*productmodel.ProductEntity, error) {
-	return s.m.ListForPublishRecords(ctx, projectID, keyword)
+	return s.pagePublishRecords.Langs(ctx, projectID, ids)
 }
 
 // mergePublishRows 商品 × 发布登记 → 一行一个商品（多语言折叠进 Langs）。
@@ -158,38 +207,4 @@ func normalizePublishStatus(status string) string {
 	default:
 		return ""
 	}
-}
-
-// clampPublishPage 页码收敛：越界退回末页（与其它列表页同口径）。
-func clampPublishPage(page int, total int64, limit int) int {
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = ProductPublishRecordPageSize
-	}
-	pages := int((total + int64(limit) - 1) / int64(limit))
-	if pages > 0 && page > pages {
-		return pages
-	}
-	return page
-}
-
-// pagePublishRows 按页码切本页行（切片边界自身归一，负 offset 在 Go 里是 panic）。
-func pagePublishRows(rows []productdto.PublishRecordRowResp, page, limit int) []productdto.PublishRecordRowResp {
-	if limit < 1 {
-		limit = ProductPublishRecordPageSize
-	}
-	start := (page - 1) * limit
-	if start < 0 {
-		start = 0
-	}
-	if start >= len(rows) {
-		return []productdto.PublishRecordRowResp{}
-	}
-	end := start + limit
-	if end > len(rows) {
-		end = len(rows)
-	}
-	return rows[start:end]
 }

@@ -36,16 +36,13 @@ func (s *Service) ProductPublishAttempts(ctx context.Context, req *productdto.Pu
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 
-	productID := ""
+	productID := strings.TrimSpace(req.ProductID)
 	pageNo, size := 1, publishAttemptPageSize
-	if req != nil {
-		productID = strings.TrimSpace(req.ProductID)
-		if req.Size > 0 {
-			size = req.Size
-		}
-		if req.Page > 0 {
-			pageNo = req.Page
-		}
+	if req.Size > 0 {
+		size = req.Size
+	}
+	if req.Page > 0 {
+		pageNo = req.Page
 	}
 	if productID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)

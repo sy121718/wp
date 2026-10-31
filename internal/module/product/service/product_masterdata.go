@@ -78,7 +78,8 @@ func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantE
 	if s.changes == nil || v == nil {
 		return "", nil
 	}
-	p, gerr := s.m.Get(ctx, v.ProductID, scopeID)
+	// 只要变体所属工程的 id：三列投影，不搬商品描述与元数据。
+	p, gerr := s.m.GetRefFacts(ctx, v.ProductID, scopeID)
 	if gerr != nil {
 		return "", mapNotFound(gerr)
 	}

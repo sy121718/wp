@@ -298,7 +298,7 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 		if err := s.writePricingPlansTx(ctx, tx, []*pricingPlan{plan}); err != nil {
 			return err
 		}
-		plan.res.RecalculatedTags, err = s.recalcPricingAutoTagsTx(ctx, tx, plan.projectID)
+		plan.res.RecalculatedTags, err = s.recalcAutoTagsTx(ctx, tx, plan.projectID)
 		return err
 	}); err != nil {
 		return nil, err
@@ -411,7 +411,7 @@ func (s *Service) adjustmentProductNames(ctx context.Context, projectID string, 
 	if len(ids) == 0 {
 		return names, nil
 	}
-	rows, lerr := s.m.ListProductsByIDs(ctx, ids, projectID)
+	rows, lerr := s.m.ListNameFactsByIDs(ctx, ids, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -565,7 +565,8 @@ func resolvePricingTargets(ctx context.Context, m *productmodel.Model, pr *prici
 			}
 			return nil, gerr
 		}
-		p, perr := m.Get(ctx, v.ProductID, pr.projectID)
+		// 调价行只画商品名与链接：四列投影，不搬描述 / 图集 / 元数据 / 默认价。
+		p, perr := m.GetSummaryFacts(ctx, v.ProductID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
@@ -575,7 +576,7 @@ func resolvePricingTargets(ctx context.Context, m *productmodel.Model, pr *prici
 		return []*pricingTarget{{product: p, variant: v}}, nil
 
 	case productenums.PricingScopeProduct:
-		p, perr := m.Get(ctx, pr.targetID, pr.projectID)
+		p, perr := m.GetSummaryFacts(ctx, pr.targetID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
@@ -710,27 +711,6 @@ func pricingCentsRound(amount float64) int64 {
 		return int64(amount*100 + 0.5)
 	}
 	return int64(amount*100 - 0.5)
-}
-
-// recalcPricingAutoTagsTx 使用当前价格事务重算归属；失败与价格、台账一起回滚。
-func (s *Service) recalcPricingAutoTagsTx(ctx context.Context, tx *gorm.DB, projectID string) (int, error) {
-	scoped := *s
-	scoped.m = productmodel.NewModel(tx)
-	tags, err := scoped.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
-	if err != nil {
-		return 0, err
-	}
-	now := time.Now().UTC()
-	for _, tag := range tags {
-		ids, err := scoped.ruleHitProductIDs(ctx, projectID, tag.RuleType, tag.RuleParams)
-		if err != nil {
-			return 0, err
-		}
-		if err := scoped.recalcTagTx(ctx, tx, tag, ids, now); err != nil {
-			return 0, err
-		}
-	}
-	return len(tags), nil
 }
 
 // 定价参数与金额的取值范围（越界即拒绝，不做静默裁剪）。

@@ -17,7 +17,6 @@ package productservice
 
 import (
 	"context"
-	"go_wp/pkg/rls"
 	"net/http"
 	"sort"
 
@@ -52,7 +51,8 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.m.ListProductsByIDs(ctx, ids, projectID)
+	// 这里只要「在不在 + 叫什么」两件事，四列投影足够；整行读取在批量勾选时会很重。
+	existing, err := s.m.ListNameFactsByIDs(ctx, ids, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 	unchanged := 0
 	sort.Strings(ids)
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := rls.ScopeTx(tx, projectID); err != nil {
+		if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
 			return err
 		}
 		if err := s.m.LockPricingTagsTx(ctx, tx, projectID, productenums.TagKindRule); err != nil {
@@ -130,7 +130,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 			return err
 		}
 		if len(plans) > 0 {
-			_, err := s.recalcPricingAutoTagsTx(ctx, tx, projectID)
+			_, err := s.recalcAutoTagsTx(ctx, tx, projectID)
 			return err
 		}
 		return nil

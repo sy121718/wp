@@ -88,8 +88,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
-	"go_wp/pkg/rls"
 )
 
 // maxSKUProbe SKU 编码的探测次数上限（基码被历史删除的变体占住时向后找空位）。
@@ -145,7 +143,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	// 变体行 + 该仓库存行 + 变更记录必须同事务：变体落了库、库存行没建起来
 	//（或留痕没写）就是半截状态，只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, p.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, p.ProjectID); serr != nil {
 			return serr
 		}
 		if cerr := s.m.CreateVariantTx(ctx, tx, v); cerr != nil {
@@ -162,18 +160,15 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 		}
 		// issue #19：新增变体 → 变更记录。带上归属仓（默认发货仓）与 SKU 编码 ——
 		// 这两件事只在此刻确定，之后编辑路径不再改动它们。
-		return s.recordChangesTx(ctx, tx, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
-			masterdataenums.OriginVariant, req.OperatorID, nil, variantChangeSnapshot(v, ref)))
+		if err := s.recordChangesTx(ctx, tx, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
+			masterdataenums.OriginVariant, req.OperatorID, nil, variantChangeSnapshot(v, ref))); err != nil {
+			return err
+		}
+		_, err := s.recalcAutoTagsTx(ctx, tx, p.ProjectID)
+		return err
 	})
 	if err != nil {
 		return nil, err
-	}
-	// 重算时机之一：变体写操作后 —— 价格 / 对比价参与自动标签规则判定。
-	// 失败不回滚也不报错，理由见 product.go 的 Update（变体已提交、归属可重算、
-	// recalcTag 内部自开事务无法嵌套）。
-	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
-		logger.Scene("product").With("productID", p.ID).Error(rerr,
-			"变体已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	return toVariantResp(v), nil
 }
@@ -189,20 +184,11 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
-	// issue #19：改前快照必须在任何赋值之前取；工程维度只在留痕端口已注入时才查
-	//（纯商品单测路径不读库）。DB-009 之后这次「按变体反查工程」也需要工程作用域，
-	// 所以先把请求给的工程解析出来当作用域。
-	scopeID := ""
-	if s.changes != nil {
-		if scopeID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
-			return nil, err
-		}
-	}
-	projectID, err := s.variantProjectID(ctx, v, scopeID)
+	// 自动标签与商品锁也需要工程作用域，不再依赖是否装配留痕端口。
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	before := variantChangeSnapshot(v, nil)
 	if req.SKUCode != nil {
 		code := strings.TrimSpace(*req.SKUCode)
 		if code == "" {
@@ -213,38 +199,53 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		} else if taken {
 			return nil, productenums.Err(productenums.ErrSkuTaken)
 		}
-		v.SKUCode = code
 	}
-	if req.Barcode != nil {
-		v.Barcode = *req.Barcode
-	}
-	if req.Price != nil {
-		v.Price = *req.Price
-	}
-	if req.ComparePrice != nil {
-		v.ComparePrice = req.ComparePrice
-	}
-	if req.CostPrice != nil {
-		v.CostPrice = req.CostPrice
-	}
-	if req.Image != nil {
-		v.Image = mediaURL(*req.Image)
-	}
-	if req.OptionValues != nil {
-		v.OptionValues = req.OptionValues
-	}
-	if req.Enabled != nil {
-		v.Enabled = *req.Enabled
-	}
-	if req.Sort != nil {
-		v.Sort = *req.Sort
-	}
-	v.UpdatedAt = time.Now().UTC()
 	// 变体行与它的变更记录同事务：留痕写不进去（或变体更新失败）都不该留下半截改动。
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := transactionScope(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
+		// 与定价共用规则标签 → 商品 → 变体的锁序，避免跨商品重算时反序等待。
+		if xerr := s.m.LockPricingTagsTx(ctx, tx, projectID, productenums.TagKindRule); xerr != nil {
+			return xerr
+		}
+		if _, xerr := s.m.GetForUpdateTx(ctx, tx, v.ProductID, projectID); xerr != nil {
+			return mapNotFound(xerr)
+		}
+		locked, lerr := s.m.GetVariantForUpdateTx(ctx, tx, v.ID, v.ProductID)
+		if lerr != nil {
+			return mapNotFound(lerr)
+		}
+		v = locked
+		before := variantChangeSnapshot(v, nil)
+		if req.SKUCode != nil {
+			v.SKUCode = strings.TrimSpace(*req.SKUCode)
+		}
+		if req.Barcode != nil {
+			v.Barcode = *req.Barcode
+		}
+		if req.Price != nil {
+			v.Price = *req.Price
+		}
+		if req.ComparePrice != nil {
+			v.ComparePrice = req.ComparePrice
+		}
+		if req.CostPrice != nil {
+			v.CostPrice = req.CostPrice
+		}
+		if req.Image != nil {
+			v.Image = mediaURL(*req.Image)
+		}
+		if req.OptionValues != nil {
+			v.OptionValues = req.OptionValues
+		}
+		if req.Enabled != nil {
+			v.Enabled = *req.Enabled
+		}
+		if req.Sort != nil {
+			v.Sort = *req.Sort
+		}
+		v.UpdatedAt = time.Now().UTC()
 		if uerr := s.m.UpdateVariantTx(ctx, tx, v); uerr != nil {
 			return uerr
 		}
@@ -254,18 +255,17 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		}
 		// issue #19：字段级变更留痕 —— SKU 编码 / 条码 / 售价 / 划线价 / 成本价 /
 		// 启用状态 / 规格组合，只写真正变化的字段。
-		return s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionUpdate,
-			masterdataenums.OriginVariant, req.OperatorID, before, variantChangeSnapshot(v, nil)))
+		if xerr := s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionUpdate,
+			masterdataenums.OriginVariant, req.OperatorID, before, variantChangeSnapshot(v, nil))); xerr != nil {
+			return xerr
+		}
+		_, xerr := s.recalcAutoTagsTx(ctx, tx, projectID)
+		return xerr
 	})
 	if err != nil {
 		return nil, err
 	}
-	// 重算时机之一：变体写操作后（改价格 / 改启用状态都会改自动标签归属）。
-	// 失败不回滚也不报错，理由见 product.go 的 Update。
-	if rerr := s.recalcProjectAutoTags(ctx, v.ProductID, projectID); rerr != nil {
-		logger.Scene("product").With("productID", v.ProductID).Error(rerr,
-			"变体已保存，但自动标签重算失败（归属待下次写操作重算）")
-	}
+
 	return toVariantResp(v), nil
 }
 
@@ -277,33 +277,18 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	if req == nil || req.ID == "" {
 		return productenums.Err(productenums.ErrInvalidParam)
 	}
-	v, gerr := s.m.GetVariant(ctx, req.ID)
+	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
+	if gerr != nil {
+		return gerr
+	}
+	v, gerr := s.m.GetVariantScoped(ctx, req.ID, projectID)
 	if gerr != nil {
 		return mapNotFound(gerr)
-	}
-	// issue #19：删除前取快照与工程（删完之后这两个值都查不到了）。
-	// DB-009：这次「按变体反查工程」同样需要工程作用域，所以先把请求给的工程解析出来
-	//（留痕与守卫端口都没注入时保持原样：一次库都不读 —— 删除守卫读的是
-	// inventory_stocks / inventory_stock_movements，
-	// 两张表都在迁移 215 名单里，缺作用域会静默放行删除）。
-	var projectID, scopeID string
-	if s.changes != nil || s.inv != nil || s.invSvc != nil {
-		if scopeID, gerr = s.resolveProjectID(ctx, req.ProjectID); gerr != nil {
-			return gerr
-		}
-	}
-	if s.changes != nil {
-		if projectID, gerr = s.variantProjectID(ctx, v, scopeID); gerr != nil {
-			return gerr
-		}
 	}
 	// 删除守卫：库存非零 / 捆绑成员引用 / 有过库存流水（命中任一即拒绝）。
 	// 与「保存变体清单」的清单外删除共用**同一个**守卫函数 —— 两处各写一份必然分叉，
 	// 表现为「接口能删掉、抽屉保存删不掉」这类只在一条路径上出现的缺陷。
 	guardScope := projectID
-	if guardScope == "" {
-		guardScope = scopeID
-	}
 	if reason, detail, rerr := s.variantDeleteBlockReason(ctx, guardScope, v); rerr != nil {
 		return rerr
 	} else if reason != "" {
@@ -321,12 +306,20 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		}
 		return errors.New(reason)
 	}
-	before := variantChangeSnapshot(v, nil)
-	// 删除与留痕同事务：删掉了却没留痕，或留痕了却没删掉，都是错账。
+	// 删除与留痕同事务，归属校验不依赖留痕端口。
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := transactionScope(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
+		if _, xerr := s.m.GetForUpdateTx(ctx, tx, v.ProductID, projectID); xerr != nil {
+			return mapNotFound(xerr)
+		}
+		locked, xerr := s.m.GetVariantForUpdateTx(ctx, tx, v.ID, v.ProductID)
+		if xerr != nil {
+			return mapNotFound(xerr)
+		}
+		v = locked
+		before := variantChangeSnapshot(v, nil)
 		if derr := s.m.DeleteVariantTx(ctx, tx, req.ID); derr != nil {
 			return derr
 		}
@@ -334,21 +327,15 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, v.ProductID); xerr != nil {
 			return xerr
 		}
-		return s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
-			masterdataenums.OriginVariant, req.OperatorID, before, nil))
+		if err := s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
+			masterdataenums.OriginVariant, req.OperatorID, before, nil)); err != nil {
+			return err
+		}
+		_, err := s.recalcAutoTagsTx(ctx, tx, projectID)
+		return err
 	})
 	if err != nil {
 		return err
-	}
-	// 重算时机之一：变体写操作后（删掉唯一命中价格区间的变体会让商品脱钩）。
-	recalcScope := scopeID
-	if recalcScope == "" {
-		recalcScope = projectID
-	}
-	// 删除已经提交：重算失败只记日志，不让这次删除看起来失败了（否则用户重试会得到「不存在」）。
-	if rerr := s.recalcProjectAutoTags(ctx, v.ProductID, recalcScope); rerr != nil {
-		logger.Scene("product").With("productID", v.ProductID).Error(rerr,
-			"变体已删除，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	return nil
 }
@@ -830,7 +817,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	// 变体清单、各仓库存行、变更记录三处在**同一个事务**里：一次「生成组合」要么整批落库、
 	// 要么一行都不落 —— 半截状态会让前台的规格选择器少行（AGENTS.md「写操作的事务与回滚」）。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, p.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, p.ProjectID); serr != nil {
 			return serr
 		}
 		if xerr := s.m.SaveVariantsTx(tx, updated, created); xerr != nil {
@@ -844,18 +831,15 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 				return xerr
 			}
 		}
-		return s.recordChangesTx(ctx, tx, changeInputs...)
+		if err := s.recordChangesTx(ctx, tx, changeInputs...); err != nil {
+			return err
+		}
+		_, err := s.recalcAutoTagsTx(ctx, tx, p.ProjectID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
 	res.Created = len(created)
-	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。
-	// 失败不回滚也不报错，理由见 product.go 的 Update。
-	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
-		logger.Scene("product").With("productID", p.ID).Error(rerr,
-			"变体已生成，但自动标签重算失败（归属待下次写操作重算）")
-	}
-
 	after, rerr := s.m.ListVariants(ctx, p.ID)
 	if rerr != nil {
 		return nil, rerr
@@ -1316,18 +1300,19 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		return nil, err
 	}
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := rls.ScopeTx(tx, projectID); err != nil {
+		if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
 			return err
 		}
 		var saveErr error
 		res, saveErr = s.saveVariantListTx(ctx, tx, projectID, req)
+		if saveErr != nil {
+			return saveErr
+		}
+		_, saveErr = s.recalcAutoTagsTx(ctx, tx, projectID)
 		return saveErr
 	})
 	if err != nil {
 		return nil, err
-	}
-	if err := s.recalcProjectAutoTags(ctx, req.ProductID, projectID); err != nil {
-		logger.Scene("product").With("productID", req.ProductID).Error(err, "变体清单已保存，自动标签待重算")
 	}
 	if err := s.fillVariantListStocks(ctx, projectID, res.Variants); err != nil {
 		return nil, err
@@ -1528,7 +1513,7 @@ func (s *Service) saveVariantListTx(ctx context.Context, tx *gorm.DB, projectID 
 	// 「建了没删」的半截清单，正是这个模型要避免的（AGENTS.md「写操作的事务与回滚」）。
 	// 所有拒绝检查通过后才执行第一笔持久化写入。
 	if err = func() error {
-		if serr := rls.ScopeTx(tx, p.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, p.ProjectID); serr != nil {
 			return serr
 		}
 		if xerr := s.m.SaveVariantsTx(tx, updated, created); xerr != nil {
@@ -1769,7 +1754,8 @@ var _ productcontract.VariantSnapshotPort = (*Service)(nil)
 
 // VariantSnapshots 按变体 id 批量取下单快照需要的事实。只读、无副作用。
 //
-// projectID 是必填的工程作用域（审计 DB-009）：见端口与 model.ListByIDs 的注释。
+// projectID 是必填的工程作用域（审计 DB-009）：作用域口径与 model.ListByIDs 一致。
+// 商品侧只补商品名与工程两列（model.ListNameFactsByIDs）—— 快照不搬商品描述与元数据。
 func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, projectID string) (list []*productcontract.VariantSnapshot, err error) {
 	ids := dedupeNonEmpty(variantIDs)
 	if len(ids) == 0 {
@@ -1793,7 +1779,8 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 	}
 	// 商品名与工程一并补齐：作用域与变体那次读取同源（端口入参的 projectID），
 	// 不在这里另取工程上下文 —— 消费方给的工程就是唯一真源。
-	products, err := s.m.ListByIDs(ctx, productIDs, projectID)
+	// 快照只用商品名与工程两列：走窄投影，不把商品描述与元数据搬进下单/加购进程。
+	products, err := s.m.ListNameFactsByIDs(ctx, productIDs, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -2036,7 +2023,7 @@ func (s *Service) VariantSnapshotsInWarehouse(ctx context.Context, refs []produc
 			productIDs = append(productIDs, v.ProductID)
 		}
 	}
-	products, err := s.m.ListByIDs(ctx, productIDs, projectID)
+	products, err := s.m.ListNameFactsByIDs(ctx, productIDs, projectID)
 	if err != nil {
 		return nil, err
 	}

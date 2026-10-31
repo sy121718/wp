@@ -23,7 +23,7 @@ package productservice
 // 入库登记不参与商品模块的任何状态判断，本方法也只动 cost_price 一列。
 //
 // issue #19 起这次回写也进主数据变更记录：成本价是定价工具的成本口径，属于主数据。
-// 留痕的改前 / 改后快照只差 cost_price 一列，故不需要二次读库；
+// 留痕快照取事务锁后行，改后只替换 cost_price，不再读回更新结果；
 // operatorID 由调用方（入库登记）从会话带下来 —— 记的是「谁登记了这次入库」。
 
 // 翻译入口在商品列表行内「多语言」按钮（/admin/products/translations）：页面按
@@ -60,7 +60,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
 )
 
@@ -263,8 +262,13 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	// 一次商品创建 = 一个事务：商品 + 首个变体 + 各仓库存行 + 变更记录。
 	// 任一步失败整体回滚 —— 「有商品没库存行」这种半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
+		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		if _, xerr := scoped.validateCategoryIDs(ctx, projectID, decodeStrings(e.CategoryIDs)); xerr != nil {
+			return xerr
 		}
 		if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, []*productmodel.VariantEntity{v}); xerr != nil {
 			return mapContainerSKUConflict(xerr)
@@ -280,21 +284,19 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		}
 		// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
 		// 变体那条带上了前缀仓，这是该事实在商品侧唯一可留痕的地方。
-		return s.recordChangesTx(ctx, tx,
+		if err := s.recordChangesTx(ctx, tx,
 			productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
 				nil, productChangeSnapshot(e)),
 			variantChangeInput(projectID, v, masterdataenums.ActionCreate, masterdataenums.OriginVariant, req.OperatorID,
 				nil, variantChangeSnapshot(v, claim)),
-		)
+		); err != nil {
+			return err
+		}
+		_, err := s.recalcAutoTagsTx(ctx, tx, projectID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	// 重算时机之一：商品写操作后 —— 新建商品若已满足某条自动规则（如价格区间），
-	// 立刻归位，不必等到下一次重算。
-	if err = s.recalcAutoTags(ctx, projectID); err != nil {
-		return nil, err
-	}
-
 	return s.toResp(ctx, e)
 }
 
@@ -311,8 +313,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
-	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
-	before := productChangeSnapshot(e)
 	if req.Name != nil {
 		if strings.TrimSpace(*req.Name) == "" {
 			return nil, productenums.Err(productenums.ErrNameRequired)
@@ -348,12 +348,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		// products violates check constraint ..."）不该出现在接口响应里。
 		if !isProductStatus(newStatus) {
 			return nil, productenums.Err(productenums.ErrInvalidParam)
-		}
-		// 上架时间（issue #11）：进入 published 时记录，作为自动标签「新品」规则的基准。
-		// 已是 published 的重复提交不刷新（否则改一次名字就把商品「重新上架」了）。
-		if newStatus == productenums.StatusPublished && e.Status != productenums.StatusPublished {
-			now := time.Now().UTC()
-			e.PublishedAt = &now
 		}
 		e.Status = newStatus
 	}
@@ -393,7 +387,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	if req.TagIDs != nil {
 		// 手工标签引用先校验再落库（同一工程内 + 必须存在 + 必须手工标签）。
-		// 自动标签的归属由 recalcProjectAutoTags 在本次更新末尾重算，这里给的空数组
+		// 自动标签的归属在同一写事务内重算，这里给的空数组
 		// 不会真的把它们摘掉。
 		ids, terr := s.resolveTagIDs(ctx, e.ProjectID, req.TagIDs)
 		if terr != nil {
@@ -449,7 +443,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	e.UpdatedAt = time.Now().UTC()
 	// 商品行与变更记录同事务：改成功了却没留痕（或反过来）都是错账。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, e.ProjectID); serr != nil {
 			return serr
 		}
 		// 并发保护的落点：进事务后**加锁重读**，把「本次请求没碰的字段」换成库里的现值。
@@ -463,12 +457,30 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		// applyCategoryRefs 这些**要查库**的校验，重放等于把整套校验再跑一遍，且容易漏。
 		// 反过来做更稳：事务外那份 e 已经带着「本次请求的全部效果」（含归一后的值），
 		// 只需把**请求没提的字段**用加锁读到的现值覆盖 —— 那些正是可能被别人改过的。
+		if xerr := s.m.LockPricingTagsTx(ctx, tx, e.ProjectID, productenums.TagKindRule); xerr != nil {
+			return xerr
+		}
 		locked, lerr := s.m.GetForUpdateTx(ctx, tx, req.ID, e.ProjectID)
 		if lerr != nil {
 			return mapNotFound(lerr)
 		}
+		before := productChangeSnapshot(locked)
 		preserveUntouchedFields(e, locked, req)
+		if req.CategoryIDs != nil || req.PrimaryCategoryID != nil {
+			scoped := *s
+			scoped.m = productmodel.NewModel(tx)
+			ids, primary, xerr := scoped.applyCategoryRefs(ctx, e.ProjectID, req.CategoryIDs, decodeStrings(locked.CategoryIDs), req.PrimaryCategoryID, locked.PrimaryCategoryID)
+			if xerr != nil {
+				return xerr
+			}
+			e.CategoryIDs, e.PrimaryCategoryID = orJSONList(ids), primary
+		}
+		e.PublishedAt = locked.PublishedAt
 		e.UpdatedAt = time.Now().UTC()
+		// 状态迁移以锁后现值为准，重复上架和无关编辑保留原上架时刻。
+		if req.Status != nil && e.Status == productenums.StatusPublished && locked.Status != productenums.StatusPublished {
+			e.PublishedAt = &e.UpdatedAt
+		}
 		if xerr := s.m.UpdateTx(ctx, tx, e); xerr != nil {
 			return mapContainerSKUConflict(xerr)
 		}
@@ -478,25 +490,14 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		// issue #19：字段级变更留痕 —— 上下架状态 / 名称 / URL 段 / 商品级默认售价 / 品牌。
 		// 只写真正变化的字段：改一次备注不会在审计里留一串空记录。
-		return s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionUpdate,
-			masterdataenums.OriginProduct, req.OperatorID, before, productChangeSnapshot(e)))
+		if xerr := s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionUpdate,
+			masterdataenums.OriginProduct, req.OperatorID, before, productChangeSnapshot(e))); xerr != nil {
+			return xerr
+		}
+		_, xerr := s.recalcAutoTagsTx(ctx, tx, e.ProjectID)
+		return xerr
 	}); err != nil {
 		return nil, err
-	}
-	// 重算时机之一：商品写操作后 —— 改状态（上架 / 下架）与改标签引用都会影响自动标签归属。
-	//
-	// 失败**不回滚也不报错**（与上面的写事务分开看）。原因有三条：
-	//   1. 商品行与留痕已经提交，它们是对的 —— 报错会让用户以为保存失败，重试还会再改一遍；
-	//   2. 自动标签归属是**可重算的派生数据**：下一次任何商品写操作都会把该工程重算一遍，
-	//      所以「这次没算成」不会永久错下去；
-	//   3. 真把它塞进上面的事务做不到：recalcTag 内部自己开事务（逐标签一次），
-	//      嵌进外层事务要么报错要么变成两段提交，比现在的补偿更差。
-	//
-	// 记 Error 而不是 Warn：归属算错会让「按标签筛选」的结果与预期不符，
-	// 那是要有人看一眼的事，不该淹没在 Warn 里。
-	if rerr := s.recalcProjectAutoTags(ctx, e.ID, e.ProjectID); rerr != nil {
-		logger.Scene("product").With("productID", e.ID).Error(rerr,
-			"商品已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 
 	return s.toResp(ctx, e)
@@ -528,8 +529,8 @@ func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *product
 
 // List 商品列表（不返回 metadata 与变体明细；价格区间由变体聚合算出）。
 func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*productdto.ProductResp, err error) {
-	page, size := pageArgs(req)
-	rows, err := s.m.List(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status, size, (page-1)*size)
+	paging := pageArgs(req)
+	rows, err := s.m.List(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status, paging.Size, paging.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +538,10 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	variants, err := s.m.ListVariantsByProducts(ctx, ids)
+	// 列表页只用变体算价格区间与变体数（applyPriceRange 只读 Price），所以取定价事实投影：
+	// 选项 JSON、图片、成本、仓库引用在这屏一个都不渲染。行集合与全行那条完全相同
+	// （同一个 WHERE），因此 VariantCount 与详情仍相等。
+	variants, err := s.m.ListVariantPriceFacts(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +557,6 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	list = make([]*productdto.ProductResp, 0, len(rows))
 	for _, r := range rows {
 		resp := s.toListResp(r)
-		resp.AttributeIDs = decodeStrings(r.AttributeIDs)
 		resp.Attributes = attrs[r.ID]
 		applyPriceRange(resp, byProduct[r.ID])
 		list = append(list, resp)
@@ -585,28 +588,41 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	if gerr != nil {
 		return gerr
 	}
-	e, gerr := s.m.Get(ctx, req.ID, projectID)
+	// 归属解析（窄读，只取 id + 工程）：拿到删除目标的工程，也保住「不存在 / 别的工程」
+	// 原来的 404 —— 作用域用的是解析出来的工程，与后续事务里的一致。
+	ref, gerr := s.m.GetRefFacts(ctx, req.ID, projectID)
 	if gerr != nil {
 		return mapNotFound(gerr)
 	}
-	// issue #19：删除是最需要留痕的一类动作 —— 先取商品与全部变体的快照，
-	// 删成功后逐实体落「delete」记录（new 为空、old 为删除前的取值）。
-	variants, verr := s.m.ListVariants(ctx, req.ID)
-	if verr != nil {
-		return verr
-	}
-	inputs := make([]*masterdatacontract.ChangeInput, 0, len(variants)+1)
-	inputs = append(inputs, productChangeInput(e, masterdataenums.ActionDelete,
-		masterdataenums.OriginProduct, req.OperatorID, productChangeSnapshot(e), nil))
-	for _, v := range variants {
-		inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
-			masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
-	}
-	// 删除与留痕同事务：删掉了却没留痕（或留痕了却没删掉）都是错账 ——
-	// 商品、变体、各仓库存行由外键级联一起删，留痕是同一事务里的最后一步。
+	// issue #19：删除是最需要留痕的一类动作 —— 快照必须是**锁后**的取值。
+	//
+	// 旧写法在事务外读商品与全部变体、先构造审计再进事务加锁：校验与加锁之间别人可以
+	// 改名 / 改价 / 回写成本价，于是审计记下的是旧值、实际删掉的是新值（与 UpdateVariantCost
+	// 修掉的是同一个旧快照窗口）。现在读快照放在锁之后：
+	//
+	//	工程 guard（productWriteScopeTx）→ 父商品 GetForUpdateTx（显式工程谓词）
+	//	→ 该商品的变体稳定锁后读取 → 组 before 快照 → 删除 / 失效 / 留痕。
+	//
+	// 锁序与其它商品写操作一致（工程 → 父商品 → 变体），且只锁本工程这一条商品。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, ref.ProjectID); serr != nil {
 			return serr
+		}
+		e, lerr := s.m.GetForUpdateTx(ctx, tx, req.ID, ref.ProjectID)
+		if lerr != nil {
+			// 锁后查不到（并发已删 / 工程在事务外被改走）保持原有的「不存在」语义。
+			return mapNotFound(lerr)
+		}
+		variants, verr := s.m.ListVariantsForUpdateTx(ctx, tx, e.ID)
+		if verr != nil {
+			return verr
+		}
+		inputs := make([]*masterdatacontract.ChangeInput, 0, len(variants)+1)
+		inputs = append(inputs, productChangeInput(e, masterdataenums.ActionDelete,
+			masterdataenums.OriginProduct, req.OperatorID, productChangeSnapshot(e), nil))
+		for _, v := range variants {
+			inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
+				masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
 		}
 		if derr := s.m.DeleteTx(ctx, tx, req.ID); derr != nil {
 			return derr
@@ -809,9 +825,10 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 	if len(dedup) == 0 {
 		return out, nil
 	}
-	// 一次批量取回（复用 ListProductsByIDs，避免逐个 id 一次往返）：该方法自带工程作用域，
-	// 这里不改它的实现（作用域补全由 DB-05 在另一条线上统一处理）。
-	rows, lerr := s.m.ListProductsByIDs(ctx, dedup, projectID)
+	// 第一步一次批量取回**本工程**的（只读 id 与工程：这里不渲染商品内容，
+	// 整行读取会把描述与图集一并搬回）。本工程查不到的那批不在这里定性 ——
+	// 「不存在」与「属于别的工程」要看第二步的归属诊断（见下方 lookupRelatedOwners）。
+	rows, lerr := s.m.ListIDFactsByIDs(ctx, dedup, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -822,7 +839,7 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 		}
 		byID[r.ID] = r
 	}
-	var selfRefs, missing, crossProject []string
+	var selfRefs, missing, crossProject, unresolved []string
 	for _, id := range dedup {
 		if selfID != "" && id == selfID {
 			selfRefs = append(selfRefs, id)
@@ -830,7 +847,9 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 		}
 		row, ok := byID[id]
 		if !ok {
-			missing = append(missing, id)
+			// 本工程没查到 ≠ 不存在：上一行只认本工程（六个窄读的同一口径），
+			// 归属得另问一次。先攒起来，循环后再批量诊断（一次诊断，不按 id 一条）。
+			unresolved = append(unresolved, id)
 			continue
 		}
 		if projectID != "" && row.ProjectID != projectID {
@@ -844,6 +863,23 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 			continue
 		}
 		out = append(out, id)
+	}
+	// 归属诊断（专用、只读、逐工程作用域）：只问「本工程没查到且不是自引用」的那批 id。
+	//
+	// 空集不查库；工程清单拿不到 / 诊断本身出错一律 fail closed —— 归属查不清时宁可整笔
+	// 拒绝，也不把一条跨工程引用当成「不存在」写进 related_ids（那正是 PROD-01 要堵的）。
+	if len(unresolved) > 0 {
+		owners, oerr := s.lookupRelatedOwners(ctx, unresolved)
+		if oerr != nil {
+			return nil, oerr
+		}
+		for _, id := range unresolved {
+			if owner, ok := owners[id]; ok {
+				crossProject = append(crossProject, id+"@"+owner)
+				continue
+			}
+			missing = append(missing, id)
+		}
 	}
 	if len(selfRefs)+len(missing)+len(crossProject) == 0 {
 		return out, nil
@@ -864,6 +900,36 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 			"n", strconv.Itoa(len(crossProject)), "ids", strings.Join(crossProject, "；")))
 	}
 	return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrRelatedInvalid), i18n.JoinErrorDetails(parts...))
+}
+
+// lookupRelatedOwners 「本工程没查到」的那批 id 到底属于谁（key = 商品 id，值 = 工程 id）。
+//
+// 为什么单独一条路（PROD-01：跨工程条目要能定位到人）：
+//
+//   - ListIDFactsByIDs 按设计只认本工程，它读不到外工程的行 —— 拿它做跨工程判定，
+//     差集永远落进「不存在」，明细里那句「属于工程 X」永远说不出来；
+//   - 也不能把那条查询的工程谓词放宽：那等于给**写入口**开一条任意读别工程商品的路。
+//
+// 于是只对「本工程已确认不存在、且不是自引用」的那一小撮 id 走这条专用诊断：
+//
+//	· 只读 products 的两列（id / project_id），不返回任何商品内容；
+//	· 工程清单经 project 契约取（projects 表不带 project_id、不在迁移 215 名单里，
+//	  不需要 RLS 作用域就能列全）；**这不是「用户可见工程」的过滤**，它只是扫描范围；
+//	· 逐工程 rls.ScopeTx + 显式 project_id 谓词，与跨工程引用扫描同一范式，
+//	  结果不依赖连接是不是超级 / BYPASSRLS 角色；
+//	· 结果只喂给拒绝明细，**不进任何成功响应**：成功的读接口看不到别的工程的行。
+//
+// 失败一律 fail closed（原样返回错误）：归属查不清时不能把跨工程引用当成「不存在」放行。
+// 空 id 集不查库；ids 非空但清单为空直接报错，与 crossProjectRefScope 的既有口径一致。
+func (s *Service) lookupRelatedOwners(ctx context.Context, ids []string) (owners map[string]string, err error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	scope, serr := s.crossProjectRefScope(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	return s.m.LookupIDOwners(ctx, scope, ids)
 }
 
 // attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。
@@ -984,7 +1050,9 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 //	               页面会显示成「有货」，而实际是「卖不完」；多规格商品里任一规格不跟踪同理；
 //	· 全部跟踪   → tracked，StockTotal = 各行数量之和（**0 就显示 0**，与「未入库」不同）。
 //
-// 失败不阻断商品读取：库存列是展示投影，读不到就保持零值（页面按未入库显示）；
+// 失败不阻断商品读取：库存列是展示投影，读不到就把该行标成 StockUnknown（PRD-017 裁决：
+// **故障事实如实显示**）—— 页面（后台列表）显示「库存读取失败」、MCP 工具如实说「读取失败」，
+// 不拿零值冒充「未入库」。列表不因这个附属读取失败整体失败，其余列照常可读。
 // 未装库存用例（纯商品单测路径）时空转。可用量判断一律走库存真源的带行锁路径，绝不看这个投影。
 func (s *Service) fillProductStock(ctx context.Context, projectID string, resps []*productdto.ProductResp) {
 	if s.invSvc == nil || len(resps) == 0 || strings.TrimSpace(projectID) == "" {
@@ -1001,6 +1069,19 @@ func (s *Service) fillProductStock(ctx context.Context, projectID string, resps 
 	}
 	rows, err := s.invSvc.WarehouseStocksByProducts(ctx, projectID, ids)
 	if err != nil {
+		// 读失败**不改**商品读取本身的成功/失败（库存列是展示投影，库存真源在别处），
+		// 但绝不能静默：从前这里直接 return，库房一侧一断，整屏商品的库存列一起退化成
+		// 「未入库」，而日志里一个字都没有 —— 现场看起来像「数据被人清空了」。
+		// 显示口径已裁决（PRD-017）：故障如实显示为「库存读取失败」，不再按「未入库」看。
+		logger.SceneCtx("product", ctx).With("project", projectID).With("products", len(ids)).
+			Error(err, "商品库存投影读取失败（库存列按空值显示；显示口径见 DEC-02）")
+		// 把「这次没查到」与「查出来是空」分开记在行上（PRD-017 的验收点）：
+		// 三态仍保持零值，下游（模板 / MCP）按这个标记显示故障而不是「未入库」。
+		for _, resp := range resps {
+			if resp != nil {
+				resp.StockUnknown = true
+			}
+		}
 		return
 	}
 	byProduct := make(map[string][]inventorycontract.ProductWarehouseStock, len(ids))
@@ -1135,8 +1216,15 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 		// product_row.go 的补偿，API/MCP 出口没有，漏了这里接口那一列恒为空。
 		DefaultPrice: e.DefaultPrice, DefaultImage: e.DefaultImage,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
-		ImageAlts: decodeStrings(e.ImageAlts),
+		ImageAlts: decodeStrings(e.ImageAlts), AttributeIDs: decodeStrings(e.AttributeIDs),
+		CategoryIDs: decodeStrings(e.CategoryIDs), TagIDs: decodeStrings(e.TagIDs),
 		CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
+	}
+	if e.PrimaryCategoryID != nil {
+		resp.PrimaryCategoryID = *e.PrimaryCategoryID
+	}
+	if e.BrandID != nil {
+		resp.BrandID = *e.BrandID
 	}
 	if len(resp.Images) == 0 {
 		resp.Images = []string{}
@@ -1153,16 +1241,14 @@ func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.Vari
 	if len(variants) == 0 {
 		return
 	}
-	minV, maxV := variants[0].Price, variants[0].Price
-	for _, v := range variants[1:] {
-		if v.Price < minV {
-			minV = v.Price
-		}
-		if v.Price > maxV {
-			maxV = v.Price
-		}
+	// 走共享价格汇总（product_variant_price.go）：这是第三处「由变体算区间」的实现，
+	// 自己写一遍等于把「空指针怎么处理、同价怎么办」再分叉一次。口径不变 ——
+	// 后台列表一直算全部变体（含停用），onlyEnabled=false 与之逐字相同。
+	summary := summarizeVariantPrices(variants, false)
+	if !summary.HasAny {
+		return
 	}
-	resp.PriceMin, resp.PriceMax = minV, maxV
+	resp.PriceMin, resp.PriceMax = summary.MinPrice, summary.MaxPrice
 }
 
 // toVariantResp 变体实体 → 响应。
@@ -1196,7 +1282,8 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if err != nil {
 		return nil, err
 	}
-	product, err := s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID)
+	// 评分行只用到商品的身份与工程：走三列投影，不搬描述与元数据。
+	product, err := s.m.GetRefFacts(ctx, strings.TrimSpace(req.ProductID), projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -1217,7 +1304,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	// 已发布详情页读评分（product_source 的 rating 投影），只写表不发失效会让
 	// 「评分改了、前台不变」—— 而且没有任何自动发现路径（下次构建才生效）。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, product.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, product.ProjectID); serr != nil {
 			return serr
 		}
 		if cerr := s.m.CreateRatingTx(ctx, tx, row); cerr != nil {
@@ -1239,7 +1326,8 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	if err != nil {
 		return nil, err
 	}
-	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID); err != nil {
+	// 这里只要「商品存在」这一个事实：三列投影足够，不必读整行。
+	if _, err = s.m.GetRefFacts(ctx, strings.TrimSpace(req.ProductID), projectID); err != nil {
 		return nil, mapNotFound(err)
 	}
 	return s.ratingRespOf(ctx, projectID, strings.TrimSpace(req.ProductID))
@@ -1259,7 +1347,7 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	}
 	// 删除与失效事件同事务，理由同 AddRating。
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
 		if derr := s.m.DeleteRatingTx(ctx, tx, strings.TrimSpace(req.ID)); derr != nil {
@@ -1399,16 +1487,23 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 		// 留痕端口未注入（纯商品单测路径）：只做成本价回写本身。
 		return s.m.UpdateVariantCost(ctx, variantID, cost, now)
 	}
-	before := variantChangeSnapshot(v, nil)
-	after := variantChangeSnapshot(v, nil)
-	after["cost_price"] = masterdatacontract.FormatPrice(cost)
-	// 成本价回写与它的变更记录**同事务**（AGENTS.md「写操作的事务与回滚」）：
-	// 成本价是定价工具的成本口径，改了却没留下这一笔就是错账，只能靠对账发现。
-	// 留痕端口未注入时 recordChangesTx 空转（与原先的 recordChanges 一致）。
+	// 成本价回写与留痕同事务；快照必须取锁后值，避免把并发改价归入本次入库。
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, resolved); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, resolved); serr != nil {
 			return serr
 		}
+		// 与其它商品写操作保持商品 → 变体的锁序，并显式验证工程归属。
+		if _, lerr := s.m.GetForUpdateTx(ctx, tx, v.ProductID, resolved); lerr != nil {
+			return mapNotFound(lerr)
+		}
+		locked, lerr := s.m.GetVariantForUpdateTx(ctx, tx, variantID, v.ProductID)
+		if lerr != nil {
+			return mapNotFound(lerr)
+		}
+		v = locked
+		before := variantChangeSnapshot(v, nil)
+		after := variantChangeSnapshot(v, nil)
+		after["cost_price"] = masterdatacontract.FormatPrice(cost)
 		if uerr := s.m.UpdateVariantCostTx(ctx, tx, variantID, cost, now); uerr != nil {
 			return uerr
 		}

@@ -1,30 +1,32 @@
 package productservice
 
-// product_row_facts_unit_test.go — 行装配原料的**纯函数**判据（不起库、不 import support）。
-//
-// 为什么这一份留在内部测试包：它要直接调 applyRowFacts / ratingRespOfAgg（未导出）。
-// 带库的判据在外部测试包 productservice_test 里 —— support 经 internal/routers 传递依赖
-// product/service，内部测试包导入它会构成测试期导入环（go vet: import cycle not allowed in test）。
-//
-// applyRowFacts 不碰价格的理由：列表项的价格区间由变体派生（applyPriceRange），
-// 行原料只补挂载 id —— 它若顺手改写价格，列表页与详情页就会各说一套（不报错、测试也不红）。
+// 列表事实与价格派生的纯函数测试；数据库等式测试留在外部包，避免 support 导入环。
 
 import (
+	"reflect"
 	"testing"
 
-	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// TestApplyRowFactsKeepsPrice 行原料只补挂载 id，不改写价格区间。
-func TestApplyRowFactsKeepsPrice(t *testing.T) {
-	item := &productdto.ProductResp{PriceMin: 1.50, PriceMax: 9.50}
-	applyRowFacts(item, productmodel.ProductRowFacts{})
-	if item.PriceMin != 1.50 || item.PriceMax != 9.50 {
-		t.Fatalf("行原料不该改写价格区间：%v~%v", item.PriceMin, item.PriceMax)
+// TestListProjectionKeepsPriceAndReferences 挂载事实来自列表投影，价格仍由变体派生。
+func TestListProjectionKeepsPriceAndReferences(t *testing.T) {
+	primary, brand := "category-a", "brand-a"
+	row := &productmodel.ProductEntity{
+		AttributeIDs: []byte(`["attribute-a"]`), CategoryIDs: []byte(`["category-a"]`),
+		TagIDs: []byte(`["tag-a"]`), ImageAlts: []byte(`["主图"]`),
+		PrimaryCategoryID: &primary, BrandID: &brand,
 	}
-	if item.DefaultPrice != nil {
-		t.Fatalf("行原料不该填商品级默认售价：%v", item.DefaultPrice)
+	item := (&Service{}).toListResp(row)
+	if !reflect.DeepEqual(item.AttributeIDs, []string{"attribute-a"}) || !reflect.DeepEqual(item.CategoryIDs, []string{primary}) || !reflect.DeepEqual(item.TagIDs, []string{"tag-a"}) || !reflect.DeepEqual(item.ImageAlts, []string{"主图"}) || item.PrimaryCategoryID != primary || item.BrandID != brand {
+		t.Fatalf("列表投影丢失挂载字段：%+v", item)
+	}
+	applyPriceRange(item, []*productmodel.VariantEntity{{Price: 1.50}, {Price: 9.50}})
+	if item.PriceMin != 1.50 || item.PriceMax != 9.50 || item.DefaultPrice != nil {
+		t.Fatalf("挂载投影干扰变体价格：%+v", item)
+	}
+	if item.PrimaryCategoryID != primary || item.BrandID != brand {
+		t.Fatal("价格派生改写挂载事实")
 	}
 }
 

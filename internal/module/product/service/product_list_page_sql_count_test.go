@@ -5,16 +5,15 @@ package productservice_test
 // 判据三条，都必须会变红：
 //   1. 行组装期间**逐商品详情查询 0 次** —— 把 s.Get 逐商品调用加回列表页或
 //      productRowsFromList，本用例立即失败（失败信息会打出命中的语句）；
-//   2. 读 `products` 表的语句条数 == 3（列表 / count(*) / 批量挂载事实各一次）——
-//      s.Get（WHERE id = ）与逐商品 ListRowFacts（id IN）**两种形态都数得进来**；
+//   2. 读 `products` 表的语句条数 == 2（列表 / count(*) 各一次）——
+//      详情读取或同表补偿读取，无论等值还是 IN 查询都计入预算；
 //   3. SQL 次数**不随商品数（1 / 20 / 100 / 10000 档）线性增长** —— 页内取数必须是常数条。
 //
 // 为什么用 gorm 回调计数而不是 pg_stat_statements：判据要区分「语句的形状」——
 // 「逐商品详情查询」的形状是 FROM "products" 且 WHERE id = （s.Get → First），
 // 而列表查询是 WHERE project_id = …；库级累计量既分不出这两者，也混进了进程里别处的语句。
 //
-// 探针必须挂满**三条链**（Query / Row / Raw）：漏掉 Row 会少计 `.Scan()` / `.Rows()` 整类语句，
-// 本页因此漏 1 条（ListRowFacts 的 SELECT：真实 17 条、漏计报 16 条）—— 见 attachSQLCountProbe。
+// 探针覆盖 Query / Row / Raw，避免漏计 Scan、Rows 与作用域设置。
 //
 // 为什么这些用例在**外部测试包**（productservice_test）：它们要真实的迁移库
 // （support.NewMigratedPGTestDB），而 support 传递依赖 internal/routers →
@@ -63,8 +62,7 @@ type sqlCountProbe struct {
 //
 // 三条链各管一类语句，少一条就有一整类隐形：
 //   - Query（gorm:query）：Find / First / Count 这类链式读；
-//   - Row（gorm:row）：**`.Scan()` / `.Rows()` 走的是另一条链** —— 漏掉它，本页少计 1 条
-//     （ListRowFacts 的 SELECT：真实 17 条、漏计报 16 条），且整类 Scan 形态的读根本不进计数；
+//   - Row（gorm:row）：Scan / Rows 的读取同样计入预算；
 //   - Raw（gorm:raw）：rls.InProjectScope 每个带作用域的读都会发一条
 //     `set_config('app.project_id', …)` —— 它们是真实往返，不是测试噪音。
 //
@@ -115,13 +113,11 @@ func (p *sqlCountProbe) perProductDetailLookups() int {
 	return n
 }
 
-// listPageProductsTableReads 本页**读 products 表**的语句条数：列表查询、count(*) 与批量挂载事实各一条。
+// listPageProductsTableReads 列表与计数各读一次商品表，挂载事实包含在列表投影中。
 //
 // 它与 perProductDetailLookups 是两层判据：那一层认「WHERE id = 」这一种形状（s.Get），
-// 这一层认**表名** —— 逐商品 ListRowFacts 的形状是 project_id = … AND id IN (…)（见
-// model.product_model.go 的 ListRowFacts），没有 `id = ` 字样，只有这一层数得到它。
-// 补挂 Row 链之前，它连计数都不进（探针看不见），形状判据对它是盲的。
-const listPageProductsTableReads = 3
+// 这一层按表名计数，同时防住等值查详情与 IN 回读商品事实。
+const listPageProductsTableReads = 2
 
 // productsReadStmt 判断一条语句是不是「读 products 表」。
 func productsReadStmt(sql string) bool {
@@ -240,8 +236,8 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 				label, lookups, probe.dump())
 		}
 		if reads := probe.productTableReads(); reads != listPageProductsTableReads {
-			t.Fatalf("%s：本页读了 products 表 %d 次，期望 %d 次（列表 / count(*) / 批量挂载事实各一次）——"+
-				"逐商品读无论哪种形态（s.Get 的 WHERE id = 或 ListRowFacts 的 id IN）都会把它推高。命中语句：\n%s",
+			t.Fatalf("%s：本页读了 products 表 %d 次，期望 %d 次（列表 / count(*) 各一次）——"+
+				"额外详情或同表补偿读取都会超出预算。命中语句：\n%s",
 				label, reads, listPageProductsTableReads, probe.dumpProductTableReads())
 		}
 		return probe.total()

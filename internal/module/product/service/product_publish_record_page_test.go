@@ -112,25 +112,3 @@ func TestNormalizePublishStatus(t *testing.T) {
 		}
 	}
 }
-
-func TestClampPublishPageAndSlice(t *testing.T) {
-	rows := make([]productdto.PublishRecordRowResp, 25)
-	for i := range rows {
-		rows[i].ProductID = "p"
-	}
-	if got := clampPublishPage(0, 25, 20); got != 1 {
-		t.Fatalf("页码 <1 应收敛成 1，得到 %d", got)
-	}
-	if got := clampPublishPage(9, 25, 20); got != 2 {
-		t.Fatalf("越界页码应收敛到末页 2，得到 %d", got)
-	}
-	if got := clampPublishPage(1, 0, 20); got != 1 {
-		t.Fatalf("空集时页码保持 1，得到 %d", got)
-	}
-	if got := pagePublishRows(rows, 2, 20); len(got) != 5 {
-		t.Fatalf("第二页应有 5 行，得到 %d", len(got))
-	}
-	if got := pagePublishRows(rows, 9, 20); len(got) != 0 {
-		t.Fatalf("越界页应回空切片而不是 panic，得到 %d 行", len(got))
-	}
-}

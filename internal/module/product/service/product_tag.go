@@ -46,7 +46,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/rls"
+	"go_wp/pkg/pagination"
 )
 
 const (
@@ -94,19 +94,21 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	// 规则命中集合**先在事务外求值**：规则求值内部走 rls.InProjectScope（自带事务、另取连接），
-	// 塞进已开的事务里既看不到未提交数据又可能自锁（见 pkg/rls.ScopeTx 的说明）。
-	var hitIDs []string
-	if e.Kind == productenums.TagKindRule {
-		if hitIDs, err = s.ruleHitProductIDs(ctx, projectID, e.RuleType, e.RuleParams); err != nil {
-			return nil, err
-		}
-	}
 	// 标签行与它的首次归属重算**同事务**：规则型标签建好即算一次（避免「刚建出来一个都没命中」
 	// 的假象），而「有标签、没归属」或反过来的半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
+		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		var hitIDs []string
+		if e.Kind == productenums.TagKindRule {
+			var err error
+			hitIDs, err = scoped.ruleHitProductIDs(ctx, projectID, e.RuleType, e.RuleParams)
+			if err != nil {
+				return err
+			}
 		}
 		if cerr := s.m.CreateTagTx(ctx, tx, e); cerr != nil {
 			return cerr
@@ -142,46 +144,51 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 	if err != nil {
 		return nil, mapTagNotFound(err)
 	}
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return nil, productenums.Err(productenums.ErrTagNameRequired)
-		}
-		e.Name = name
-	}
-	if req.Slug != nil {
-		slug := normalizeSlug(*req.Slug)
-		if slug == "" {
-			return nil, productenums.Err(productenums.ErrInvalidParam)
-		}
-		if taken, serr := s.m.TagSlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
-			return nil, serr
-		} else if taken {
-			return nil, productenums.Err(productenums.ErrTagSlugTaken)
-		}
-		e.Slug = slug
-	}
-	if req.Sort != nil {
-		e.Sort = *req.Sort
-	}
-	if req.Kind != nil || req.RuleType != nil || req.RuleParams != nil {
-		if err = applyTagShapeUpdate(e, req); err != nil {
-			return nil, err
-		}
-	}
-	e.UpdatedAt = time.Now().UTC()
-	// 命中集合先在事务外求值（同 CreateTag：规则求值自带事务，不能嵌进已开的事务）。
-	var hitIDs []string
-	if e.Kind == productenums.TagKindRule {
-		if hitIDs, err = s.ruleHitProductIDs(ctx, e.ProjectID, e.RuleType, e.RuleParams); err != nil {
-			return nil, err
-		}
-	}
-	// 标签定义变更与按新规则重算**同事务**：分开提交时「改了规则、归属还是旧的」会让
-	// 后台的命中列表与新规则不一致，而这正是运营用来核对规则写对没有的那一屏。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
-			return serr
+		if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
+			return err
+		}
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		var err error
+		e, err = scoped.m.GetTag(ctx, req.ID, projectID)
+		if err != nil {
+			return mapTagNotFound(err)
+		}
+		if req.Name != nil {
+			name := strings.TrimSpace(*req.Name)
+			if name == "" {
+				return productenums.Err(productenums.ErrTagNameRequired)
+			}
+			e.Name = name
+		}
+		if req.Slug != nil {
+			slug := normalizeSlug(*req.Slug)
+			if slug == "" {
+				return productenums.Err(productenums.ErrInvalidParam)
+			}
+			if taken, serr := scoped.m.TagSlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
+				return serr
+			} else if taken {
+				return productenums.Err(productenums.ErrTagSlugTaken)
+			}
+			e.Slug = slug
+		}
+		if req.Sort != nil {
+			e.Sort = *req.Sort
+		}
+		if req.Kind != nil || req.RuleType != nil || req.RuleParams != nil {
+			if err = applyTagShapeUpdate(e, req); err != nil {
+				return err
+			}
+		}
+		e.UpdatedAt = time.Now().UTC()
+		var hitIDs []string
+		if e.Kind == productenums.TagKindRule {
+			hitIDs, err = scoped.ruleHitProductIDs(ctx, projectID, e.RuleType, e.RuleParams)
+			if err != nil {
+				return err
+			}
 		}
 		if uerr := s.m.UpdateTagTx(ctx, tx, e); uerr != nil {
 			return uerr
@@ -387,11 +394,10 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 	if cerr != nil {
 		return nil, cerr
 	}
-	// 偏移量按「最长一页也不越界」算：page 很大时 offset 会溢出 int，先按页数封顶。
-	totalPage := pagesOf(int(total), size)
-	if page > totalPage {
-		page = totalPage
-	}
+	// 页码收敛复用分页薄工具（pkg/pagination.ClampPage）：越界夹到末页、0 页归 1，
+	// 与属性页 / 商品列表同一规则。收敛在取数之前，所以 page=999 不会先发一条深 OFFSET
+	// 再丢掉；同时 (page-1)*size 不会溢出 int。
+	page = pagination.ClampPage(page, size, total)
 	rows, lerr := s.m.ListProductsByTagPage(ctx, tag.ID, projectID, (page-1)*size, size)
 	if lerr != nil {
 		return nil, lerr
@@ -401,14 +407,6 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 		Total: int(total), Page: page, PageSize: size,
 		Items: toTagProductResps(rows),
 	}, nil
-}
-
-// pagesOf 总页数（空列表也算 1 页：页面要显示「第 1 / 1 页」，而不是「第 1 / 0 页」）。
-func pagesOf(total, size int) int {
-	if size <= 0 || total <= 0 {
-		return 1
-	}
-	return (total + size - 1) / size
 }
 
 // DeleteTag 删除标签：先把引用从商品上解绑，再删标签行（同一事务）。
@@ -447,7 +445,7 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 		// project_tags 在迁移 215 的 RLS 名单里且是 FORCE ROW LEVEL SECURITY：
 		// 不设作用域时，非超级角色的事务里 `DELETE ... WHERE id = ?` 匹配 0 行而**不报错**，
 		// 接口回 200 —— 一次假删除（同文件其它事务 109/184/644 都设了 scope，这里漏了）。
-		if serr := rls.ScopeTx(tx, tag.ProjectID); serr != nil {
+		if serr := s.productWriteScopeTx(ctx, tx, tag.ProjectID); serr != nil {
 			return serr
 		}
 		if rerr := s.m.RemoveTagFromProductsTx(tx, tag.ID, tag.ProjectID, now); rerr != nil {
@@ -500,16 +498,43 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 			return nil, err
 		}
 	}
-	for _, tag := range tags {
-		n, rerr := s.recalcTag(ctx, tag)
-		if rerr != nil {
-			return nil, rerr
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
+			return err
 		}
-		if tag.Kind != productenums.TagKindRule {
-			continue
+		scoped := *s
+		scoped.m = productmodel.NewModel(tx)
+		if req.TagID != "" {
+			current, err := scoped.m.GetTag(ctx, strings.TrimSpace(req.TagID), projectID)
+			if err != nil {
+				return mapTagNotFound(err)
+			}
+			tags = []*productmodel.ProductTagEntity{current}
+		} else {
+			var err error
+			tags, err = scoped.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
+			if err != nil {
+				return err
+			}
 		}
-		res.Recalculated++
-		res.Products += n
+		now := time.Now().UTC()
+		for _, tag := range tags {
+			if tag.Kind != productenums.TagKindRule {
+				continue
+			}
+			ids, err := scoped.ruleHitProductIDs(ctx, projectID, tag.RuleType, tag.RuleParams)
+			if err != nil {
+				return err
+			}
+			if err := scoped.recalcTagTx(ctx, tx, tag, ids, now); err != nil {
+				return err
+			}
+			res.Recalculated++
+			res.Products += len(ids)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	after, lerr := s.ListTags(ctx, &productdto.ListTagReq{ProjectID: projectID})
 	if lerr != nil {
@@ -565,35 +590,13 @@ func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []stri
 	return out, nil
 }
 
-// recalcTag 按规则重算单个标签的商品归属（手工标签直接返回 0，一个字都不动）。
-//
-// 命中集合的求值（读）在事务外完成：规则求值是多表只读查询，且内部走 rls.InProjectScope
-// （自带事务），放进外层事务只会拉长持锁时间并可能自锁。「替换归属 + 记重算时间」两处写
-// 落在同一个事务里（recalcTagTx）。
-func (s *Service) recalcTag(ctx context.Context, tag *productmodel.ProductTagEntity) (n int, err error) {
-	if tag == nil || tag.Kind != productenums.TagKindRule {
-		return 0, nil
-	}
-	ids, err := s.ruleHitProductIDs(ctx, tag.ProjectID, tag.RuleType, tag.RuleParams)
-	if err != nil {
-		return 0, err
-	}
-	now := time.Now().UTC()
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		return s.recalcTagTx(ctx, tx, tag, ids, now)
-	}); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
 // recalcTagTx 在调用方事务里「整体替换该标签的商品归属 + 记重算时间」——两处写必须原子。
 //
 // 原先这两步分属两个事务：归属已经替换、UpdateTag 失败时 recalc_at 还是上一次的值，
 // 后台按它核对「重算时机」会得出错误结论（看起来最近没重算过，实际归属已经变了）。
 func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmodel.ProductTagEntity,
 	ids []string, now time.Time) (err error) {
-	if serr := rls.ScopeTx(tx, tag.ProjectID); serr != nil {
+	if serr := s.productWriteScopeTx(ctx, tx, tag.ProjectID); serr != nil {
 		return serr
 	}
 	// 替换前先取旧成员：只有「归属真的变了」的商品才需要重建（见下面的差异扇出）。
@@ -627,46 +630,26 @@ func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmode
 	return s.m.UpdateTagTx(ctx, tx, tag)
 }
 
-// recalcAutoTags 重算某工程下的全部自动标签（商品 / 变体写操作后的隐式重算入口）。
-func (s *Service) recalcAutoTags(ctx context.Context, projectID string) (err error) {
-	if projectID == "" {
-		return nil
-	}
-	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
+// recalcAutoTagsTx 复用调用方事务重算归属，失败与业务写入一起回滚。
+// 调用方须在任何行锁前取得工程协调锁，再修改业务事实。
+func (s *Service) recalcAutoTagsTx(ctx context.Context, tx *gorm.DB, projectID string) (int, error) {
+	scoped := *s
+	scoped.m = productmodel.NewModel(tx)
+	tags, err := scoped.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 	if err != nil {
-		return err
+		return 0, err
 	}
+	now := time.Now().UTC()
 	for _, tag := range tags {
-		if _, err = s.recalcTag(ctx, tag); err != nil {
-			return err
+		ids, err := scoped.ruleHitProductIDs(ctx, projectID, tag.RuleType, tag.RuleParams)
+		if err != nil {
+			return 0, err
+		}
+		if err := scoped.recalcTagTx(ctx, tx, tag, ids, now); err != nil {
+			return 0, err
 		}
 	}
-	return nil
-}
-
-// recalcProjectAutoTags 按商品 id 反查工程后重算（商品 / 变体写操作后的统一收口）。
-//
-// 商品已不存在（例如刚被删除）时直接返回：归属随商品行一起消失，没有需要重算的东西。
-// projectID 是工程作用域（DB-009）：products 有 RLS 策略，这次反查同样要在作用域内。
-// 调用方没有工程上下文时（纯商品单测路径）按唯一工程兜底 —— 唯一的兜底入口，
-// 不静默跳过作用域（那正是换角色后「静默 0 行」的来源）。
-func (s *Service) recalcProjectAutoTags(ctx context.Context, productID, projectID string) (err error) {
-	if productID == "" {
-		return nil
-	}
-	if strings.TrimSpace(projectID) == "" {
-		if projectID, err = s.resolveProjectID(ctx, ""); err != nil {
-			return err
-		}
-	}
-	p, gerr := s.m.Get(ctx, productID, projectID)
-	if gerr != nil {
-		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return gerr
-	}
-	return s.recalcAutoTags(ctx, p.ProjectID)
+	return len(tags), nil
 }
 
 // ruleHitProductIDs 单条规则的命中商品 id（已过滤到本工程、顺序确定）。
@@ -691,7 +674,7 @@ func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string,
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, lerr := s.m.ListProductsByIDs(ctx, ids, projectID)
+	rows, lerr := s.m.ListIDFactsByIDs(ctx, ids, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}

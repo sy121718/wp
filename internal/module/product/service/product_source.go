@@ -105,7 +105,9 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 		}
 	}
 	// 变体与属性组各批量取一次（列表页专用，零 N+1）：价格区间的派生需要变体。
-	variants, err := s.m.ListVariantsByProducts(ctx, ids)
+	// 窄投影：导出到集合项的只有编码 / 价格 / 划线价 / 图片 / 规格组合 / 启用，
+	// 成本价与仓库引用不进构建产物（口径不变，只少搬列）。
+	variants, err := s.m.ListVariantDisplayFacts(ctx, ids)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -183,15 +185,36 @@ func (s *Service) ResolveCollectionPage(ctx context.Context, source string, q co
 	return core.CollectionPage{Items: items, Total: total}, nil
 }
 
-// taxonomyIndex 一次取回该批商品引用的分类 / 品牌 / 标签（列表页专用，零 N+1）。
-//
-// projectID 由调用方给出（集合源的过滤条件）：三张表都在迁移 215 名单里，
-// 缺作用域时换非超级角色后分类 / 品牌 / 标签整批读空 —— 列表卡的展示名会全部消失
-// （审计 db-03 §2.5）。这里不自己从 rows 推断工程：作用域必须是**取数时用的那个**，
-// rows 是它的结果，从结果反推会让「读错了工程」这件事看起来仍然成立。
+// tagIndex 只加载本页引用的标签，供目录和完整关联索引复用。
+func (s *Service) tagIndex(ctx context.Context, projectID string, rows []*productmodel.ProductEntity) (map[string]*productmodel.ProductTagEntity, error) {
+	ids := []string{}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		for _, id := range decodeStrings(row.TagIDs) {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	tags := map[string]*productmodel.ProductTagEntity{}
+	if len(ids) == 0 {
+		return tags, nil
+	}
+	loaded, err := s.m.ListTagsByIDs(ctx, ids, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range loaded {
+		tags[row.ID] = row
+	}
+	return tags, nil
+}
+
+// taxonomyIndex 批量读取完整关联；工程作用域与商品查询一致，不从结果反推。
 func (s *Service) taxonomyIndex(ctx context.Context, projectID string, rows []*productmodel.ProductEntity) (categories map[string]*productmodel.ProductCategoryEntity, brands map[string]*productmodel.ProductBrandEntity, tags map[string]*productmodel.ProductTagEntity, err error) {
-	categoryIDs, brandIDs, tagIDs := []string{}, []string{}, []string{}
-	seenCategory, seenBrand, seenTag := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	categoryIDs, brandIDs := []string{}, []string{}
+	seenCategory, seenBrand := map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
 		for _, id := range decodeStrings(r.CategoryIDs) {
 			if !seenCategory[id] {
@@ -202,12 +225,6 @@ func (s *Service) taxonomyIndex(ctx context.Context, projectID string, rows []*p
 		if r.BrandID != nil && !seenBrand[*r.BrandID] {
 			seenBrand[*r.BrandID] = true
 			brandIDs = append(brandIDs, *r.BrandID)
-		}
-		for _, id := range decodeStrings(r.TagIDs) {
-			if !seenTag[id] {
-				seenTag[id] = true
-				tagIDs = append(tagIDs, id)
-			}
 		}
 	}
 	categories, brands, tags = map[string]*productmodel.ProductCategoryEntity{}, map[string]*productmodel.ProductBrandEntity{}, map[string]*productmodel.ProductTagEntity{}
@@ -229,16 +246,8 @@ func (s *Service) taxonomyIndex(ctx context.Context, projectID string, rows []*p
 			brands[row.ID] = row
 		}
 	}
-	if len(tagIDs) > 0 {
-		tagRows, terr := s.m.ListTagsByIDs(ctx, tagIDs, projectID)
-		if terr != nil {
-			return nil, nil, nil, terr
-		}
-		for _, row := range tagRows {
-			tags[row.ID] = row
-		}
-	}
-	return categories, brands, tags, nil
+	tags, err = s.tagIndex(ctx, projectID, rows)
+	return categories, brands, tags, err
 }
 
 // CollectionSchemas 实现 core.CollectionSchemaProvider：商品集合源的元数据。
@@ -669,30 +678,22 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 	}
 	if len(variants) > 0 {
 		out["sku"] = variants[0].SKUCode
-		minPrice, maxPrice := variants[0].Price, variants[0].Price
-		var compare float64
-		hasCompare := false
-		for _, v := range variants {
-			if v.Price < minPrice {
-				minPrice = v.Price
-			}
-			if v.Price > maxPrice {
-				maxPrice = v.Price
-			}
-			if v.ComparePrice != nil && (!hasCompare || *v.ComparePrice > compare) {
-				compare, hasCompare = *v.ComparePrice, true
+		// 价格汇总走共享纯函数（product_variant_price.go）：这里仍是「全部变体都算」
+		// （onlyEnabled=false），与目录的「只看启用」不同 —— DEC-01 待定，本批不改口径。
+		// 改的只是同价决胜与遍历写法：决胜规则从此只有一份，两条公开路径不会分叉。
+		summary := summarizeVariantPrices(variants, false)
+		if summary.HasAny {
+			out["price"] = formatPrice(summary.MinPrice)
+			out["minPrice"] = formatPrice(summary.MinPrice)
+			out["maxPrice"] = formatPrice(summary.MaxPrice)
+			if summary.MinPrice == summary.MaxPrice {
+				out["priceRange"] = formatPrice(summary.MinPrice)
+			} else {
+				out["priceRange"] = formatPrice(summary.MinPrice) + " ~ " + formatPrice(summary.MaxPrice)
 			}
 		}
-		out["price"] = formatPrice(minPrice)
-		out["minPrice"] = formatPrice(minPrice)
-		out["maxPrice"] = formatPrice(maxPrice)
-		if minPrice == maxPrice {
-			out["priceRange"] = formatPrice(minPrice)
-		} else {
-			out["priceRange"] = formatPrice(minPrice) + " ~ " + formatPrice(maxPrice)
-		}
-		if hasCompare {
-			out["comparePrice"] = formatPrice(compare)
+		if summary.MaxCompare != nil {
+			out["comparePrice"] = formatPrice(*summary.MaxCompare)
 		}
 	}
 	// 评分（issue #30）：由评分明细投影算出（明细已 Preload），商品表上没有评分列。
@@ -1151,7 +1152,7 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
-	variants, verr := s.m.ListVariants(ctx, e.ID)
+	variants, verr := s.m.ListVariantDisplayFacts(ctx, []string{e.ID})
 	if verr != nil {
 		return nil, verr
 	}

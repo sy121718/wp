@@ -67,13 +67,6 @@ func (s *Service) QueryCategories(ctx context.Context, query *productdto.Catalog
 		return nil, err
 	}
 	page := pagination.ClampPage(q.Page, q.Size, found.Total)
-	if page != req.Page {
-		req.Page = page
-		found, err = s.ListCategoryPage(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-	}
 	result.Items, result.Total, result.MatchTotal, result.Page = FlattenCategoryTree(found.Items), found.Total, found.MatchTotal, page
 	return result, nil
 }

@@ -6,7 +6,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/rls"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +16,7 @@ func (s *Service) resolvePricingTargetsTx(ctx context.Context, tx *gorm.DB, pr *
 		return nil, err
 	}
 	pr.projectID = projectID
-	if err := rls.ScopeTx(tx, projectID); err != nil {
+	if err := s.productWriteScopeTx(ctx, tx, projectID); err != nil {
 		return nil, err
 	}
 	if err := s.m.LockPricingTagsTx(ctx, tx, projectID, productenums.TagKindRule); err != nil {
