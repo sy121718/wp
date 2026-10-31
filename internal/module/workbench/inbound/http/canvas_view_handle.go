@@ -1,6 +1,6 @@
-package workbenchdto
+package workbenchhttp
 
-// canvas_page_resp.go — 工作台画布整页（workbench/layout）的渲染视图。
+// canvas_view_handle.go — 工作台画布整页（workbench/layout）的渲染视图。
 //
 // 这一屏的模板键**全是小写**（`{{.title}}` / `{{.jsVer}}` / `{{.isBlock}}` …），
 // 与后台其它页的大小写风格不同 —— 它是编辑器壳，模板由自己的工作台 JS 消费。

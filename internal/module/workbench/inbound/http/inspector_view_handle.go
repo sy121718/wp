@@ -1,6 +1,6 @@
-package workbenchdto
+package workbenchhttp
 
-// inspector_fragment_resp.go — 工作台**片段出口**的渲染视图（htmx / fetch 局部替换）。
+// inspector_view_handle.go — 工作台**片段出口**的渲染视图（htmx / fetch 局部替换）。
 //
 // 与整页 layout 视图分开：片段的键集只有几个槽位，整页是一屏编辑器状态。
 //

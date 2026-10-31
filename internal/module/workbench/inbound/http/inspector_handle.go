@@ -31,7 +31,7 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 		// 空态分支同样经 PrepareBare：片段模板里的取词（workbench.ui.inspector.empty 等）
 		// 靠它注入的 t —— 漏注入时 Jet **静默**输出空串（不是报错、状态码 200、日志干净），
 		// 空面板会变成一句话都没有。两条分支走同一个入口，不各写一份。
-		pageview.RenderTemplate(c, InspectorPanelTemplate, adminui.PrepareBareView(c, &workbenchdto.InspectorPanelResp{NodeID: ""}))
+		pageview.RenderTemplate(c, InspectorPanelTemplate, adminui.PrepareBareView(c, &InspectorPanelResp{NodeID: ""}))
 		return
 	}
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
@@ -50,7 +50,7 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	// 模板里的 workbench.ui.inspector.* 由渲染期按请求语言取，控制器不再提前取词。
 	// 注意本片段的**面板正文**仍是 service 拼串产出的 HTML（Sections[].HTML / Title 等），
 	// 那部分的取词留在 service —— 它没有模板槽位可放（见 workbench/service 文件头）。
-	pageview.RenderTemplate(c, InspectorPanelTemplate, adminui.PrepareBareView(c, &workbenchdto.InspectorPanelResp{
+	pageview.RenderTemplate(c, InspectorPanelTemplate, adminui.PrepareBareView(c, &InspectorPanelResp{
 		NodeID: nodeID, NodeType: node.Type,
 		Sections: sections,
 	}))
@@ -71,7 +71,7 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	// 才有统一的形状。**本片段今天并不消费 t/tf** —— 树 HTML 整块由
 	// workbenchservice.RenderOutlineHTML 拼串产出（Go 拼串，取词在 service 侧经 tr 完成），
 	// 模板只有一句 {{ .HTML | unsafe }}。注入在这里是为了「模板侧新增取词」时不必再想起它。
-	pageview.RenderTemplate(c, OutlineTreeTemplate, adminui.PrepareBareView(c, &workbenchdto.OutlineTreeResp{
+	pageview.RenderTemplate(c, OutlineTreeTemplate, adminui.PrepareBareView(c, &OutlineTreeResp{
 		HTML: workbenchservice.RenderOutlineHTML(page.Root, selectedID, filter, workbenchTrFunc(c)),
 	}))
 }
@@ -129,7 +129,7 @@ func renderWorkbenchPageErrorText(c *gin.Context, status int, key, text string) 
 	lang := response.RequestLanguage(c)
 	c.Header("Cache-Control", "no-store")
 	// 失败页是带状态码的独立整页外壳，pageview 只有无状态码入口（见任务书 DEC-W2），故仍走 c.HTML。
-	c.HTML(status, "workbench/error", adminui.PrepareBareView(c, &workbenchdto.WorkbenchErrorPageResp{
+	c.HTML(status, "workbench/error", adminui.PrepareBareView(c, &WorkbenchErrorPageResp{
 		Lang:     lang,
 		T:        templates.TranslateFunc(lang),
 		Title:    text,

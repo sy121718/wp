@@ -45,7 +45,6 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
-	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -246,7 +245,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 	// 但「只挂外壳、不装业务服务」的渲染测试与降级装配路径都可能走到这里 ——
 	// 首页是登录后的第一跳，它挂掉等于后台进不去。
 	if h.projects == nil || h.pages == nil {
-		pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+		pageview.RenderTemplate(c, DashboardPageTemplate, &DashboardPageResp{
 			Title: workbenchenums.MsgDashboardTitle,
 			Menu:  "dashboard",
 		})
@@ -263,7 +262,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		// 从前这里塞的是驱动原文（`pq: relation "projects" does not exist`），
 		// 等于把库结构写给每个登录用户看。原文只进日志。
 		logger.Scene("workbench").Error(err, "概览数据读取失败")
-		pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+		pageview.RenderTemplate(c, DashboardPageTemplate, &DashboardPageResp{
 			Title: workbenchenums.MsgDashboardTitle,
 			Menu:  "dashboard",
 			Err:   response.InternalText(c),
@@ -274,7 +273,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 	// 2026-10 改版：页面统计（工程 / 页面总数 / 已发布 / 草稿 / 最近更新）整块下线 ——
 	// 那些数字的落点是 /admin/pages 与工程列表，而概览页每渲染一次都要为全部工程
 	// 逐个 List 一遍页面，这几百毫秒在「登录后的第一跳」上是纯浪费。
-	pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+	pageview.RenderTemplate(c, DashboardPageTemplate, &DashboardPageResp{
 		Title: workbenchenums.MsgDashboardTitle,
 		Menu:  "dashboard",
 		// 区间在 handler 里解析（query → from/to），三块（KPI / 趋势 / 榜单）共用同一个窗口。

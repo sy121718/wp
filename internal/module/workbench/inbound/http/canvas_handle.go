@@ -13,7 +13,6 @@ import (
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
-	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/logger"
@@ -115,7 +114,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
 		Title:     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
 		PageID:    page.ID,
 		IsBlock:   false,
@@ -194,7 +193,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
 		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		PageID:   block.ID,
 		IsBlock:  true,
@@ -310,7 +309,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
-	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
 		Title:      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		PageID:     tpl.ID,
 		IsBlock:    false,
