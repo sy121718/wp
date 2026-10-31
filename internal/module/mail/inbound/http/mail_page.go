@@ -214,11 +214,11 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		page = 1
 	}
 	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailAutomationPageSize})
-	view := &maildto.AutomationListPageResp{
+	view := &AutomationListPageResp{
 		Title:       mailLabel(tr, mailenums.PageTitleAutomation),
 		Page:        page,
 		ListQuery:   mailPageQuery(page),
-		Automations: []maildto.AutomationRowResp{},
+		Automations: []AutomationRowResp{},
 		BackPath:    c.Request.URL.RequestURI(),
 	}
 	if err != nil {
@@ -228,9 +228,9 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		return
 	}
 	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
-	autoRows := make([]maildto.AutomationRowResp, 0, len(automations.Items))
+	autoRows := make([]AutomationRowResp, 0, len(automations.Items))
 	for _, a := range automations.Items {
-		autoRows = append(autoRows, maildto.AutomationRowResp{
+		autoRows = append(autoRows, AutomationRowResp{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			Status: a.Status, Version: a.Version,
 			TriggerLabel: triggerLabelOf(tr, a.TriggerType),
@@ -381,7 +381,7 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	}
 	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
 	mailRunDetailTexts(mailTranslate(c), detail)
-	pageview.RenderTemplate(c, AutomationRunPageTemplate, &maildto.AutomationRunPageResp{
+	pageview.RenderTemplate(c, AutomationRunPageTemplate, &AutomationRunPageResp{
 		Title: mailenums.PageTitleAutomationRun.Key,
 		D:     detail,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）。
@@ -457,7 +457,7 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 		Page:         page,
 		PageSize:     mailAutomationRunsPageSize,
 	})
-	view := &maildto.AutomationRunsPageResp{
+	view := &AutomationRunsPageResp{
 		Title:     mailLabel(tr, mailenums.PageTitleAutomationRuns),
 		Page:      page,
 		FilterID:  automationID,
@@ -544,7 +544,7 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	accounts, _ := h.mail.ListAccounts(ctx, "")
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
-	view := &maildto.CampaignsPageResp{
+	view := &CampaignsPageResp{
 		Title:         mailLabel(tr, mailenums.PageTitleCampaigns),
 		Campaigns:     toAnySlice(campaigns.Items),
 		CampaignTotal: campaigns.Total,
@@ -565,8 +565,8 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 //
 // 空值不是可选的：admin/mail/mail_campaigns.html 在提示条之后就用 .Page / .CampaignTotal /
 // len(.Campaigns) 渲染列表，缺键会让 Jet **在那一行中断**（HTTP 仍是 200、正文整块消失）。
-func mailCampaignsErrData(c *gin.Context, err error) *maildto.CampaignsPageResp {
-	return &maildto.CampaignsPageResp{
+func mailCampaignsErrData(c *gin.Context, err error) *CampaignsPageResp {
+	return &CampaignsPageResp{
 		Title:     mailenums.PageTitleCampaigns.Key,
 		Err:       mailErrPageText(c, err),
 		Campaigns: []any{},
@@ -664,7 +664,7 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 			}
 		}
 	}
-	view := &maildto.CampaignReportPageResp{
+	view := &CampaignReportPageResp{
 		Title: mailenums.PageTitleCampaignReport.Key,
 		R:     report,
 		Page:  page,
@@ -792,7 +792,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		tagOptions = nil
 	}
 
-	view := &maildto.ContactsPageResp{
+	view := &ContactsPageResp{
 		Title:        mailLabel(tr, mailenums.PageTitleContacts),
 		Contacts:     toAnyRows(contacts.Items),
 		ContactTotal: contacts.Total,
@@ -841,8 +841,8 @@ func mailContactsListQuery(keyword, status, tags string, page int) string {
 	return mailListQuery(params)
 }
 
-func mailContactsErrData(c *gin.Context, err error) *maildto.ContactsPageResp {
-	return &maildto.ContactsPageResp{
+func mailContactsErrData(c *gin.Context, err error) *ContactsPageResp {
+	return &ContactsPageResp{
 		Title:      mailenums.PageTitleContacts.Key,
 		Err:        mailErrPageText(c, err),
 		Contacts:   []any{},
@@ -1044,7 +1044,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 		return
 	}
 
-	view := &maildto.AccountsPageResp{
+	view := &AccountsPageResp{
 		// 标题取词在组装侧做（mailLabel）：只交 key 的话词条缺失 / i18n 未初始化时
 		// 页面上是裸 key（admin.mail.accounts.heading）。同模块其余四页都是这个形态。
 		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
@@ -1065,8 +1065,8 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 // 只注入 Err 的分支因此永远渲染不完 —— 运营既看不到列表，也只有半页 HTML。
 //
 // **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
-func mailPageErrData(c *gin.Context, err error) *maildto.AccountsPageResp {
-	return &maildto.AccountsPageResp{
+func mailPageErrData(c *gin.Context, err error) *AccountsPageResp {
+	return &AccountsPageResp{
 		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
 		Err:      mailErrPageText(c, err),
 		Accounts: []any{},
@@ -1311,7 +1311,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 		pageview.RenderTemplate(c, TemplatesPageTemplate, mailTemplatesErrData(c, err))
 		return
 	}
-	view := &maildto.TemplatesPageResp{
+	view := &TemplatesPageResp{
 		// 同上：标题在组装侧取词，缺词条回落中文兜底，不留裸 key。
 		Title:         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		Templates:     toAnyRows(rows),
@@ -1327,8 +1327,8 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 // mailTemplatesErrData 取数失败时的页面数据：归口文案 + 空列表。
 //
 // 空列表不可省：模板随后就用 .TemplateTotal / len(.Templates) 渲染。
-func mailTemplatesErrData(c *gin.Context, err error) *maildto.TemplatesPageResp {
-	return &maildto.TemplatesPageResp{
+func mailTemplatesErrData(c *gin.Context, err error) *TemplatesPageResp {
+	return &TemplatesPageResp{
 		Title:     mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		Err:       mailErrPageText(c, err),
 		Templates: []any{},
@@ -1589,7 +1589,7 @@ func toAnyRows[T any](in []T) []any {
 // AutomationCanvasPageResp 之后，它已经没有调用点、模板也不再读 —— 属于死代码。
 // page-view-dto 门禁正是在这类地方起作用：台账写着「gin.H 归零」，实际还有 6 处，
 // 因为那条门禁从未进过 check-all.sh。
-func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.AutomationItem) *maildto.AutomationCanvasPageResp {
+func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.AutomationItem) *AutomationCanvasPageResp {
 	// 直接序列化节点与元数据：先 Marshal 再 JsonSafe。若先包一层 JsonSafe 再回读，
 	// 就会双重转义，模板里 JSON.parse 会失败。
 	nodesJSON, merr := json.Marshal(item.Nodes)
@@ -1597,7 +1597,7 @@ func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.Auto
 		nodesJSON = []byte("[]")
 	}
 	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
-	return &maildto.AutomationCanvasPageResp{
+	return &AutomationCanvasPageResp{
 		Title:        mailenums.PageTitleAutomationCanvas.Key,
 		A:            item,
 		NodesJSON:    utils.JsonSafe(string(nodesJSON)),
@@ -1719,7 +1719,7 @@ func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
 		"compiledHtml": item.BodyCompiledHTML,
 		"compiledText": item.BodyCompiledText,
 	})
-	pageview.RenderTemplate(c, TemplateEditorPageTemplate, &maildto.TemplateEditorPageResp{
+	pageview.RenderTemplate(c, TemplateEditorPageTemplate, &TemplateEditorPageResp{
 		Title:    mailenums.PageTitleTemplateEditor.Key,
 		T:        item,
 		MetaJSON: utils.JsonSafe(string(metaJSON)),
