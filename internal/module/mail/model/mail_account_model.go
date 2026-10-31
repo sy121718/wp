@@ -16,6 +16,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 	"strings"
 	"time"
 
@@ -238,7 +239,7 @@ func (m *MailModel) ListAccountsPage(ctx context.Context, purpose string, onlyEn
 	if limit < 1 {
 		limit = 20
 	}
-	err = q.Order("is_default DESC, id ASC").Offset((current - 1) * limit).Limit(limit).Find(&list).Error
+	err = q.Order("is_default DESC, id ASC").Offset(utils.PageOffset(current, limit)).Limit(limit).Find(&list).Error
 	return list, total, current, err
 }
 
@@ -338,7 +339,7 @@ func (m *MailModel) ListTemplatesPage(ctx context.Context, key string, page, lim
 	if limit < 1 {
 		limit = 20
 	}
-	err = q.Order("template_key ASC, locale ASC, id ASC").Offset((current - 1) * limit).Limit(limit).Find(&list).Error
+	err = q.Order("template_key ASC, locale ASC, id ASC").Offset(utils.PageOffset(current, limit)).Limit(limit).Find(&list).Error
 	return list, total, current, err
 }
 

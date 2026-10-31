@@ -35,6 +35,7 @@ import (
 	"go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 // 编译期断言：本模块服务满足对外契约。
@@ -56,7 +57,7 @@ func (s *Service) ListContacts(ctx context.Context, req *maildto.ContactFilterRe
 		Keyword: req.Keyword,
 		Status:  req.Status,
 		Tags:    req.Tags,
-		Offset:  (page - 1) * size,
+		Offset:  utils.PageOffset(page, size),
 		Limit:   size,
 	})
 	if err != nil {
