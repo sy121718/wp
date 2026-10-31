@@ -46,6 +46,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -53,7 +54,9 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationmodel "go_wp/internal/module/navigation/model"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
 )
 
@@ -92,6 +95,42 @@ type Service struct {
 	projects projectcontract.ProjectService
 	// sources 来源实体解析器（装配层注入；未注入时来源项退化为记录自身 title/path）。
 	sources navigationcontract.SourceResolver
+	// sourceRowsPort 共享来源索引的行端口注入点（仅测试设置；nil = 走 model 直传）。
+	//
+	// 见 navigation_translation_source.go 的 OpenSourceIndex / sourceProvider：
+	// 它存在只是为了让「某个菜单位置读失败」可被单测注入，装配与线上行为不受影响。
+	sourceRowsPort sourceRows
+	// rowsTx 事务内行读取端口（译文写路径的来源索引用；见 navigation_translation_source_tx.go）。
+	//
+	// 为什么单独一个字段而不是复用 sourceRowsPort：那个端口的读法是「自开作用域」的
+	// （rls.InProjectScope 会新开事务、另取连接），写路径要求读在**同一事务**上 ——
+	// 两者语义不同（快照不同），共用一个字段等于让调用方猜「这次拿到的是哪一种」。
+	// nil 时写路径的 OpenSourceIndexTx 显式失败（不返回空索引）。
+	rowsTx sourceRowsTxPort
+	// writeTx 菜单 CRUD 的事务边界（写路径专用；nil = 未装配，写入口 fail closed）。
+	//
+	// 为什么 CRUD 也要事务：译文写路径已把「译文 + 页 stale + 实例 stale + 可靠入队」
+	// 收进同一事务并持有工程级内容写锁（i18n.LockProjectContentWrite）。菜单 CRUD 若仍
+	// 各写各的自动提交，锁就只串行化了一半的写者 —— 译文事务在锁内读到的来源是「提交前
+	// 快照」，并发新增到同 hash 的另一个位置不会被派发 stale，而那一侧没有任何补偿入口。
+	// 所以 CRUD 必须进同一把锁、同一个事务，并在事务内完成失效标记。
+	writeTx TxRunner
+	// menuPages / menuItems / menuQueue 是 CRUD 同事务失效的三个端口（与译文写路径同源：
+	// 消费者侧最小形状，由装配层注入）。缺任一端口即装配缺陷，写入口 fail closed ——
+	// 只写数据不派发失效正是本批要消灭的「保存成功、线上不变」。
+	menuPages navigationcontract.PageStalePort
+	// menuInstances 自动发布实例的按位置失效（presentation 模块）。
+	//
+	// 与译文写路径的 w.instances 是**同一个端口**：两条写链对「哪个位置要让实例重编」
+	// 的口径必须一致，否则同一次变更在页面上生效、在实例上停在旧 HTML。
+	menuInstances navigationcontract.PresentationStalePort
+	menuItems     navigationcontract.MenuItemStalePort
+	// menuItemInstances 自动发布实例的按**菜单项**失效（presentation 模块）。
+	//
+	// 与 menuItems（手工页面按项）成对：core 的 UseNavigation 只记 navigation:{itemID}，
+	// 只登记了这一支的实例产物既不被位置键命中，也不会被页面的项键标记代替。
+	menuItemInstances navigationcontract.MenuItemPresentationStalePort
+	menuQueue         navigationcontract.MenuStaleEnqueuePort
 	// staleMenu 导航变更后的依赖失效派发端口（装配层注入；见 navigation_stale.go）。
 	// navigation 不 import page / presentation / pipeline，只把「哪个工程哪个位置变了」
 	// 交给注入方；未注入时写操作照常成功但不会让任何产物失效（必需端口，装配期自检拦）。
@@ -102,8 +141,100 @@ type Service struct {
 //
 // projects 必填：漏接装配时逐工程定位直接失败（不再回退到直读 projects 表）
 // 的只读清单（见 navigation_service.go 的 projectIDs），并记 warning。
+// rowsTx 的生产实现在这里**直接注入**：它只依赖 m，没有任何跨模块能力，构造器一眼
+// 看得出它不为空。此前该字段只在单测里被手动填充，生产实例上恒为 nil ——
+// OpenSourceIndexTx 因此对每一次真实写译文都返回 ErrProjectRequired，而单测（自己塞桩）
+// 全绿：这是「测试桩掩盖了生产断点」的典型形态。
 func NewService(m *navigationmodel.Model, projects projectcontract.ProjectService) *Service {
-	return &Service{m: m, projects: projects}
+	s := &Service{m: m, projects: projects}
+	if m != nil {
+		s.rowsTx = navigationRowsModelTx{m: m}
+		// 事务边界同样只依赖 m：写入口在端口齐备前会 fail closed（见 writePortsReady）。
+		s.writeTx = m
+	}
+	return s
+}
+
+// NavigationWriteDeps 菜单 CRUD 同事务失效需要的跨模块端口（构造期注入一次）。
+//
+// 三个端口与译文写路径**同一组真实实现**（装配层建一次、两个构造点共用），因此两条写
+// 路径对「哪个位置失效、哪些页面要重建」的口径不可能漂移。
+type NavigationWriteDeps struct {
+	// Pages 手工页面按位置失效（page 模块）。
+	Pages navigationcontract.PageStalePort
+	// Instances 自动发布实例按位置失效（presentation 模块）。
+	//
+	// 必需端口，不是可选优化：实例的旧编译若不在同一事务里推进 input_version，
+	// 它晚到的产物会盖掉新 HTML 并把 stale 清掉 —— 可靠入队只保证「会重建一次」，
+	// 保证不了「旧编译晚到不能覆盖新结果」。版本屏障只能与菜单写同事务给出。
+	Instances navigationcontract.PresentationStalePort
+	// Items 手工页面按菜单项失效（page 模块）。
+	Items navigationcontract.MenuItemStalePort
+	// ItemInstances 自动发布实例按菜单项失效（presentation 模块）。
+	//
+	// 必需端口：按项引用的实例既不在位置键反查里，也没有同事务屏障时，
+	// 它的旧编译晚到会通过激活谓词覆盖新 HTML 并清掉 stale。
+	ItemInstances navigationcontract.MenuItemPresentationStalePort
+	// Queue 自动发布实例的可靠重建入队（build 模块）。
+	Queue navigationcontract.MenuStaleEnqueuePort
+}
+
+// SetWritePorts 注入菜单 CRUD 的同事务失效端口（装配期调用一次，之后只读）。
+func (s *Service) SetWritePorts(d NavigationWriteDeps) {
+	if s == nil {
+		return
+	}
+	s.menuPages, s.menuInstances = d.Pages, d.Instances
+	s.menuItems, s.menuItemInstances = d.Items, d.ItemInstances
+	s.menuQueue = d.Queue
+}
+
+// writePortsReady 写入口的装配自检（fail closed，不做「尽力而为」降级）。
+//
+// 只写数据、不派发失效的菜单 CRUD 正是此前那种「保存成功、线上停在旧菜单」的形态，
+// 所以缺端口时整笔拒绝，而不是打完日志照常提交。
+func (s *Service) writePortsReady() error {
+	if s == nil || s.m == nil || s.writeTx == nil {
+		return navigationenums.ErrTranslationWriteUnavailableError()
+	}
+	if s.menuPages == nil || s.menuInstances == nil ||
+		s.menuItems == nil || s.menuItemInstances == nil || s.menuQueue == nil {
+		return navigationenums.ErrTranslationWriteUnavailableError()
+	}
+	return nil
+}
+
+// withMenuWriteTx 在调用方事务里执行一次菜单写：设作用域 → 取工程级内容写锁 → 业务写 + 失效。
+//
+// 顺序不可交换：锁必须在读来源/读路径唯一性之前取（否则读到的是锁外快照），
+// 而作用域必须先于锁（scope 是 set_config，锁键按显式 projectID 派生，两者互不依赖，
+// 但同事务内的语句必须都在正确的作用域下执行）。
+//
+// 锁与译文写路径是**同一把**（i18n.LockProjectContentWrite，键 = 规范 uuid + "i18n.content:"）：
+// 这就是「菜单 CRUD 与译文写互斥」的落点 —— 同 hash 新增位置时，译文事务不会在
+// 「已读来源、未提交」的窗口里漏掉新位置；反过来译文正在提交时，CRUD 会等它结束。
+func (s *Service) withMenuWriteTx(ctx context.Context, projectID string, fn func(tx *gorm.DB) error) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	if err := s.writePortsReady(); err != nil {
+		return err
+	}
+	canonical, perr := uuid.Parse(projectID)
+	if perr != nil {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	projectID = canonical.String()
+	return s.writeTx.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if lerr := i18n.LockProjectContentWrite(ctx, tx, projectID); lerr != nil {
+			return lerr
+		}
+		return fn(tx)
+	})
 }
 
 // 编译期契约断言。
@@ -192,6 +323,41 @@ func parseExpectedUpdatedAt(raw *string) (*time.Time, error) {
 		}
 	}
 	return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
+}
+
+// validateParentTx 事务内版的父引用校验（同一份规则，只换连接）。
+//
+// 环检测走同一棵树：用 tx 列本工程本位置的全部行拼子树 —— 复用自动提交版的
+// navDescendantIDs 规则，不另写一份「怎么算后代」。
+func (s *Service) validateParentTx(ctx context.Context, tx *gorm.DB, projectID, kind, selfID string, parentID *string) error {
+	if parentID == nil {
+		return nil
+	}
+	rows, err := s.m.ListTx(ctx, tx, projectID, kind)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, r := range rows {
+		if r.ID == *parentID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// 不存在 / 跨工程 / 跨类型（kind 过滤已把后两者排除在结果之外）。
+		return navigationenums.Err(navigationenums.ErrInvalidParent)
+	}
+	if selfID == "" {
+		return nil
+	}
+	// 成环：自己或自己的后代不能当父级。
+	for _, id := range navDescendantIDs(rows, selfID) {
+		if id == *parentID {
+			return navigationenums.Err(navigationenums.ErrInvalidParent)
+		}
+	}
+	return nil
 }
 
 // staleVersionMessage 乐观锁冲突的业务错误：ErrStaleVersion + 定位信息（撞了的菜单项标题）。
@@ -319,6 +485,62 @@ func (s *Service) invalidateMenu(ctx context.Context, projectID, kind string) {
 		logger.Scene("navigation").With("project_id", projectID).With("kind", kind).
 			Error(err, "导航变更后的失效派发失败（产物保持原状，需手动重建）")
 	}
+}
+
+// markMenuStaleInTx 菜单写事务内的按位置失效：页标记 → 实例标记 → 可靠入队。
+//
+// 三件事都必须在调用方事务内，且与被改动的菜单行一起提交：
+//   - 页面的 stale 标记（同一 tx，标 stale 与 input_version + 1 一条语句完成）；
+//   - 自动发布实例的同形标记（同一 tx，同样是「标 stale + 推进 input_version」）；
+//   - menu_stale 任务的可靠入队（同一 tx，worker 提交后才可能领到）。
+//
+// 为什么不是 invalidateMenu：那条走 pipeline.Fanout，它**自开事务**（rls.InProjectScope）
+// 且异步 go runRebuild —— 在调用方事务里调用它既不在同一事务、失败也无法回滚，等于
+// 把已经写好的菜单回滚掉却留下标记。
+//
+// 为什么实例标记**不能**由入队代替（这里此前写反过，主审已退回）：
+// 「新增位置零命中」只是对**新位置**成立（实例的旧产物里确实还没有这个依赖）；而对
+// **已有位置/已有实例**，改一次菜单项就会让它们的旧编译过期。若此时不推进实例的
+// input_version，那个旧编译晚到时会通过激活谓词（代次没变）、写进新 HTML 并清掉
+// stale —— 可靠入队只保证「会重建一次」，保证不了「旧编译晚到不能覆盖」。版本屏障
+// 只有与菜单写同事务给出才有意义。零命中允许，不调用不允许。
+func (s *Service) markMenuStaleInTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) error {
+	if _, err := s.menuPages.MarkMenuStaleTx(ctx, tx, projectID, kind, at); err != nil {
+		return err
+	}
+	if _, err := s.menuInstances.MarkInstanceMenuStaleTx(ctx, tx, projectID, kind, at); err != nil {
+		return err
+	}
+	if _, err := s.menuQueue.EnqueueMenuStaleTx(ctx, tx, projectID, kind); err != nil {
+		return err
+	}
+	return nil
+}
+
+// markNavigationStaleInTx 菜单写事务内的**按菜单项**失效：手工页面 + 自动发布实例。
+//
+// 只登记了 navigation:{itemID} 的产物不会被按位置键命中（页眉只放某一支），所以按项
+// 写操作两条键都要打：位置键覆盖「整个位置的产物」，项键覆盖「只引用这一支的页面与实例」。
+//
+// 实例侧必须同事务：这不是「可靠重建」，而是**版本屏障** —— 推进实例 input_version 后，
+// 已在路上的旧编译即使晚到也会被激活谓词挡掉。可靠重建由按 kind 的 menu_stale 任务负责
+// （CRUD 已入队），两者不是一件事，不能互相替代。
+func (s *Service) markNavigationStaleInTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string) error {
+	navigationID = strings.TrimSpace(navigationID)
+	if navigationID == "" {
+		return nil
+	}
+	// 页：手工页面标 stale（同 tx，标 stale 与代次 +1 一条语句）。
+	if _, err := s.menuItems.MarkNavigationStaleTx(ctx, tx, projectID, navigationID); err != nil {
+		return err
+	}
+	// 实例：同形屏障，按项键 navigation:{itemID}。零命中是合法结果（没有实例只引用这一支），
+	// 但**必须调用** —— 有实例时它推进 input_version，旧编译晚到会被激活谓词挡掉。
+	// 位置键（markMenuStaleInTx）命中不到「只引用这一支」的实例，两者不能互相替代。
+	if _, err := s.menuItemInstances.MarkInstanceNavigationStaleTx(ctx, tx, projectID, navigationID, time.Now().UTC()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // invalidateNavigation 把一次「具体菜单项」写操作的结果派发给依赖扇出。

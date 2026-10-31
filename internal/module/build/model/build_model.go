@@ -7,6 +7,7 @@ package buildmodel
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,10 @@ const tableNameBuildJobs = "build_jobs"
 const (
 	SourceTypePage         = "page"
 	SourceTypePresentation = "presentation"
+	// SourceTypeMenuStale 导航菜单变化触发的重建（与迁移 698 的 CHECK 逐字对应）。
+	// 它的 source_id 不是裸 UUID 而是「工程 UUID:菜单位置」，见 builddto.SplitMenuStaleSourceID；
+	// 任务完成时取号的来源是 build_job_seq 的 (project_id, kind) 版本，由 inputVersion 携带。
+	SourceTypeMenuStale = "menu_stale"
 )
 
 // 任务状态（与 DDL 的 CHECK 逐字对应）。
@@ -74,10 +79,27 @@ type Entity struct {
 	Attempt          int        `gorm:"column:attempt;not null"`
 	LeaseToken       *string    `gorm:"column:lease_token"`
 	LeaseExpiresTime *time.Time `gorm:"column:lease_expires_time"`
-	CreateTime       time.Time  `gorm:"column:create_time;not null"`
-	StartedAt        *time.Time `gorm:"column:started_at"`
-	CompletedAt      *time.Time `gorm:"column:completed_at"`
+	// InputVersion menu_stale 的输入版本（迁移 698）；其余来源为 NULL —— 历史来源没有
+	// 「按位置单调递增」的输入号，用 0 充数会和真实版本号混淆，所以列可空、不回溯填值。
+	InputVersion *int64 `gorm:"column:input_version"`
+	// ContextKey menu_stale 的去重语境「工程 UUID:菜单位置」（迁移 698），与
+	// uq_build_jobs_context_version 一起把「同一位置同一版本只排一次」写进数据库；
+	// 其余来源为 NULL（它们各自按 source_id 去重，不需要第二个语境键）。
+	// 列是实体的一部分而不是只在 SQL 里出现：写入路径（CreateTx）必须真的把它落库，
+	// 否则唯一索引在 NULL 上永远不生效（PG 的 UNIQUE 允许多个 NULL）。
+	ContextKey *string `gorm:"column:context_key"`
+	// CreateTime 入队时刻（claim 按它先入先出）。
+	CreateTime  time.Time  `gorm:"column:create_time;not null"`
+	StartedAt   *time.Time `gorm:"column:started_at"`
+	CompletedAt *time.Time `gorm:"column:completed_at"`
 }
+
+// ErrTxRequired 入队必须在调用方的事务里执行（CreateTx / NextMenuStaleVersionTx）。
+//
+// 它是一类**声明处事实**：本模块的可靠入队只接受调用方已经 scope 好的真实事务，
+// 自己绝不开事务、不提交、不回滚，也不替调用方设作用域 —— 那会把「和业务写入同事务」
+// 这条保证换成「两次独立提交」。
+var ErrTxRequired = fmt.Errorf("构建队列的事务内操作需要调用方已开启的真实事务句柄")
 
 // TableName 表名。
 func (Entity) TableName() string { return tableNameBuildJobs }
@@ -112,6 +134,63 @@ func (m *Model) Enqueue(ctx context.Context, e *Entity) (created bool, err error
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// CreateTx 在调用方事务里插入一条任务行（menu_stale 的可靠入队入口）。
+//
+// 与 Enqueue 的三处差别，每一处都是刻意的：
+//   - 句柄是调用方给的 tx：入队必须与触发它的业务写入同事务提交，
+//     否则「写入成功、任务丢了」与「任务在、写入回滚」两种半成品都会出现；
+//   - **不用 ON CONFLICT DO NOTHING**：menu_stale 的去重键里带着 input_version，
+//     版本号在 tx 内取号时已递增，冲突意味着「同一个版本被入队了两次」= 调用方漏取号，
+//     这是缺陷而不是幂等命中。静默吞掉会表现为「菜单改了、队列没动」；
+//   - 不自开事务、不设作用域：scope 由调用方在 tx 上设好（build_jobs 无策略，见包注释）。
+//
+// 未提交的 tx 句柄是被拒绝的：`tx.Statement.ConnPool` 只可能是 *sql.Tx / *gorm.PreparedStmtTX。
+func (m *Model) CreateTx(tx *gorm.DB, e *Entity) error {
+	if err := requireTx(tx); err != nil {
+		return err
+	}
+	if e == nil {
+		return fmt.Errorf("构建任务不能为空")
+	}
+	res := tx.Model(&Entity{}).Create(e)
+	if res.Error != nil {
+		if database.IsUniqueViolation(res.Error) {
+			// 唯一键冲突 = 调用了 CreateTx 却没有先取新版本号，或者同一版本重复入队。
+			// 把结论抬到 error 上：调用方据此回滚事务并修代码，而不是以为「工作已在队列里」。
+			return fmt.Errorf("构建任务唯一键冲突（同一来源与输入版本已在队列中）: %w", res.Error)
+		}
+		return res.Error
+	}
+	return nil
+}
+
+// requireTx 判定句柄是不是真的在事务里。
+//
+// 形状照抄 pkg/i18n 的 requireTx（content_write.go）：*gorm.PreparedStmtTX 内嵌的 Tx
+// 可能是 typed-nil，写路径上会直接 panic，所以两处都判 nil。
+func requireTx(tx *gorm.DB) error {
+	if tx == nil || tx.Statement == nil || tx.Statement.ConnPool == nil {
+		return ErrTxRequired
+	}
+	if err := tx.Error; err != nil {
+		return err
+	}
+	switch conn := tx.Statement.ConnPool.(type) {
+	case *sql.Tx:
+		if conn == nil {
+			return ErrTxRequired
+		}
+		return nil
+	case *gorm.PreparedStmtTX:
+		if conn == nil || conn.Tx == nil {
+			return ErrTxRequired
+		}
+		return nil
+	default:
+		return ErrTxRequired
+	}
 }
 
 // Claim 取一条待办任务、置为 running 并**原子发出租约令牌**。

@@ -197,7 +197,7 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	}
 
 	// 详情页模板：两个 form-inline（重新套用预设 / 回滚文档）都在同一个折叠区内。
-	// 判据从 action 换成 data-write-api：两个动作已迁到 JSON 写基座，表单不再有页面端点。
+	// 判据从 action 换成 data-write-url（写基座的端点声明）：两个动作已迁到 JSON 写基座，表单不再有页面端点。
 	reapply := productEditFormByWriteAPI(stack, "/api/product/detail-template/reapply-preset")
 	rollback := productEditFormByWriteAPI(stack, "/api/product/detail-template/rollback-document")
 	if len(reapply) != 1 || len(rollback) != 1 {
@@ -382,21 +382,21 @@ func submitInFold(t *testing.T, fold *html.Node, api string) {
 	t.Helper()
 	forms := productEditFormByWriteAPI(fold, api)
 	if len(forms) != 1 {
-		t.Fatalf("折叠区内应恰好一个 data-write-api=%s 的表单，实际 %d 个", api, len(forms))
+		t.Fatalf("折叠区内应恰好一个 data-write-url=%s 的表单，实际 %d 个", api, len(forms))
 	}
 	btns := peAll(forms[0], func(n *html.Node) bool {
 		return peEl(n, "button") && strings.EqualFold(peAttr(n, "type"), "submit")
 	})
 	if len(btns) != 1 {
-		t.Fatalf("折叠区内的 data-write-api=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
+		t.Fatalf("折叠区内的 data-write-url=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
 	}
 	// 无 JS 时按钮必须是 hidden + disabled：表单没有原生端点，按得动就等于「点了没反应」。
 	// 三个都是布尔属性（值为空串），存在性用 peHasAttr 判，不能拿 peAttr 的返回值当判据。
 	if !peHasAttr(btns[0], "data-requires-js") || !peHasAttr(btns[0], "disabled") || !peHasAttr(btns[0], "hidden") {
-		t.Fatalf("data-write-api=%s 的提交按钮缺少 data-requires-js/hidden/disabled", api)
+		t.Fatalf("data-write-url=%s 的提交按钮缺少 data-requires-js/hidden/disabled", api)
 	}
 	if peUp(btns[0], func(n *html.Node) bool { return n == fold }) == nil {
-		t.Fatalf("data-write-api=%s 的提交按钮不在折叠区内：收起时它就点不到了", api)
+		t.Fatalf("data-write-url=%s 的提交按钮不在折叠区内：收起时它就点不到了", api)
 	}
 }
 

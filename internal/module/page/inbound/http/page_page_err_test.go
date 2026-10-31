@@ -78,6 +78,7 @@ func TestBusinessSentinelsAreRecognisable(t *testing.T) {
 		pageservice.ErrPathOccupied,
 		pageservice.ErrRebuildRequired,
 		pageservice.ErrNoStagedArtifact,
+		pageservice.ErrInputMoved,
 	}
 	c := pageErrCtx(t, "")
 	for _, err := range sentinels {

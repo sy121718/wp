@@ -14,6 +14,8 @@ import (
 	buildmodel "go_wp/internal/module/build/model"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
+
+	"github.com/google/uuid"
 )
 
 var _ buildcontract.BuildService = (*Service)(nil)
@@ -108,17 +110,39 @@ func normalizeIntent(raw string) (string, bool) {
 	}
 }
 
+// canonicalSourceID 把来源实体 id 归一到 uuid 的规范文本形态（小写带连字符 36 字符）。
+//
+// 为什么入队必须归一（迁移 698 之后不再有数据库兜底）：source_id 在 698 之前是 uuid 列，
+// 非规范写法（大写、无连字符、带花括号）由 PG 的 uuid 输入函数自动归一，同一实体的两种
+// 写法在 uq_build_jobs_running_source / uq_build_jobs_pending 上撞同一条键；改成 text 之后
+// **逐字比较**，不归一就是同来源两条 running（互斥失效）、同一份工作两条 pending（去重失效）。
+// 归一放在 service 而不是 model：这是「入参接受什么形状」的规则，与落库形状无关；
+// model 只管按给定的值写行。menu_stale 走另一条专用入口，口径一致（dto.MenuStaleSourceID）。
+//
+// 非法 UUID 返回 ok=false，由调用方翻成参数错误（400）：宽松接受会让队列里出现
+// worker 无法还原的 source_id，失败点从入队时刻推迟到消费时刻，排查成本更高。
+func canonicalSourceID(raw string) (string, bool) {
+	id, err := uuid.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	return id.String(), true
+}
+
 // Enqueue 入队一条构建任务。
 //
 // created=false 表示同一目标、同一构建输入的工作已在队列里（迁移 171 的部分唯一索引兜底）。
 // 注意它**不覆盖正在跑的那份工作**：内容在构建期间又变了就该再排一份，
 // 队列里那份待办会在这条 running 结束后被认领。
+//
+// sourceID 必须是 uuid：入队前归一成规范文本（见 canonicalSourceID），非法值报参数错误。
+// 白名单只收 page / presentation —— menu_stale 有**专用入口** EnqueueMenuStaleTx，
+// 它必须与业务写入同事务并经过号源取号，不能从这个通用入口插队进来。
 func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *builddto.Job, created bool, err error) {
 	if s == nil || s.m == nil || req == nil {
 		return nil, false, buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	sourceType := strings.TrimSpace(req.SourceType)
-	sourceID := strings.TrimSpace(req.SourceID)
 	switch sourceType {
 	case buildmodel.SourceTypePage, buildmodel.SourceTypePresentation:
 	default:
@@ -126,7 +150,8 @@ func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *b
 		// 这里能给出「来源类型不支持」这个可读结论，也不会留下半条任务。
 		return nil, false, buildenums.Err(buildenums.ErrInvalidSource)
 	}
-	if sourceID == "" {
+	sourceID, ok := canonicalSourceID(req.SourceID)
+	if !ok {
 		return nil, false, buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	intent, ok := normalizeIntent(req.Intent)
@@ -317,10 +342,15 @@ func toDto(e *buildmodel.Entity) *builddto.Job {
 	if e.ProjectID != nil {
 		projectID = *e.ProjectID
 	}
+	inputVersion := int64(0)
+	if e.InputVersion != nil {
+		inputVersion = *e.InputVersion
+	}
 	return &builddto.Job{
 		ID: strconv.FormatInt(e.ID, 10), SourceType: e.SourceType, SourceID: e.SourceID,
 		ProjectID: projectID, Lang: e.Lang, Intent: e.Intent,
-		DraftVersion: e.DraftVersion, BuildInputHash: e.BuildInputHash, Status: e.Status,
+		DraftVersion: e.DraftVersion, BuildInputHash: e.BuildInputHash,
+		InputVersion: inputVersion, Status: e.Status,
 		ArtifactID: e.ArtifactID, ErrorMessage: msg, Attempt: e.Attempt,
 		CreatedAt: utils.NewJSONTime(e.CreateTime), StartedAt: utils.NewJSONTimePtr(e.StartedAt), CompletedAt: utils.NewJSONTimePtr(e.CompletedAt),
 	}

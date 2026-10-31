@@ -101,7 +101,6 @@ var pendingMsgTextDomain = map[string]int{
 	"internal/module/page/inbound/http/page_translations_handle.go":      2,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go": 2,
 	"internal/module/user/inbound/http/user_page.go":                     1,
-	"internal/module/publication/inbound/http/seo_audit_result.go":       1,
 	"internal/module/page/inbound/http/pages_handle.go":                  1,
 	"internal/module/mail/inbound/http/mail_err.go":                      1,
 	"internal/module/admin/inbound/http/admin_err.go":                    1,

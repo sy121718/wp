@@ -26,6 +26,7 @@ import (
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	navigationservice "go_wp/internal/module/navigation/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
@@ -103,6 +104,11 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	}
 
 	var navSvc navigationcontract.NavigationService
+	// navImpl 具体类型（来源索引与写服务都挂在具体 Service 上）。
+	// navHandle 是 SetupNavigationRoutes 返回的**真实句柄**：写服务注入到它上面，
+	// 与生产装配同一处。两者都由路由注册函数一并返回，测试不另造一份。
+	var navImpl *navigationservice.Service
+	var navHandle *navigationhttp.Handle
 	var pages pagecontract.PageService
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		GinMode:         gin.TestMode,
@@ -129,7 +135,9 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 			authorizedAPI := permission.NewRouteGroup(
 				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
 
-			navSvc = navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projects)
+			registered, registeredHandle := navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projects)
+			navSvc, navHandle = registered, registeredHandle
+			navImpl, _ = registered.(*navigationservice.Service)
 
 			artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 			routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
@@ -138,19 +146,20 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 				nil, nil, navSvc, nil)
 			navigationhttp.SetupNavigationPages(adminPages, navSvc, projects, pages, blocks)
 
-			// 译文写入端口在装配层是用**默认库**句柄接的（i18n.NewContentWriterDefault），
-			// 测试库是隔离 schema ⇒ 那里拿不到句柄，写分支会 fail closed（500）。
-			// 显式换成测试库句柄：本用例验收的是鉴权链，不是「默认库有没有配好」。
-			translations := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
-			translations.SetContentWriter(i18n.NewContentWriter(db))
-			navigationhttp.SetNavigationTranslationWriter(translations)
+			// 译文写服务注入到 **SetupNavigationRoutes 返回的那个真实句柄** 上，与生产装配
+			// （assembly_publish.go 的 SetTranslationWriteService）同一处、同一形状。
+			//
+			// 为什么不沿用旧的页面句柄 singleton：那套注入点已随译文 MVC 删除，
+			// 而现在写服务的依赖是三个**同事务**跨模块端口（页标记 / 实例标记 / 入队），
+			// 端口由测试库句柄真实构造 —— 本用例验收的是鉴权链，写分支必须真的能走完，
+			// 否则「无策略被 403 拦住」之前的 500 会让断言失去意义。
+			wireNavigationTranslationWriter(t, db, navHandle, navImpl, projects)
 		},
 	})
 	if err != nil {
 		t.Fatalf("初始化测试引擎失败: %v", err)
 	}
 	t.Cleanup(func() {
-		navigationhttp.SetNavigationTranslationWriter(nil)
 		if closeErr := cleanup(); closeErr != nil {
 			t.Errorf("清理测试资源失败: %v", closeErr)
 		}

@@ -127,6 +127,8 @@ func countMenuDependency(t *testing.T, f *presFixture, instanceID, key string) i
 // newNavDispatch 导航服务 + 失效派发链（与真实装配同形），并把导航解析器注入实例侧。
 func newNavDispatch(t *testing.T, f *presFixture) *navigationservice.Service {
 	t.Helper()
+	// nil 工程契约（本用例只用事务内来源索引与译文写服务，不走工程校验）；
+	// 写端口由 wirePresentationTranslationWriter 一起给出，不在这里另装。
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db), nil)
 	fanout := pipeline.NewFanout()
 	fanout.Register(pipeline.SourceTypePresentation, f.pres)
@@ -198,17 +200,17 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 	sourceText, target string) {
 	t.Helper()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
-	handle := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
-	handle.SetContentWriter(i18n.NewContentWriter(f.db))
-	handle.SetMenuInvalidator(navSvc)
-	// 译文保存现在是真实 JSON 写接口：句柄的端口（writer / pages / menus）在这里注入，
-	// 端点那边只负责判别形状与转发（见 internal/module/navigation/inbound/http/navigation_translations_handle.go）。
-	navigationhttp.SetNavigationTranslationWriter(handle)
-	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
+	// 译文保存是真实 JSON 写接口，写服务注入到**本用例自己的句柄**上：
+	// 旧的页面句柄 singleton 与 SetMenuInvalidator 已随译文 MVC 删除（见
+	// internal/module/navigation/inbound/http/navigation_translations_handle.go 文件头），
+	// 现在的失效派发在 TranslationWriter 事务内由三个同事务端口完成 —— 本用例要验的
+	// 正是「真实端口 × 真实依赖键」是否把实例标成了 stale。
+	handle := navigationhttp.NewHandle(navSvc)
+	wirePresentationTranslationWriter(t, f, handle, navSvc, projects)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", navigationhttp.NewHandle(navSvc).Update)
+	router.POST("/api/navigation/update", handle.Update)
 
 	body := fmt.Sprintf(
 		`{"action":"translations","project":%q,"lang":"en-US","rows":[{"context":%q,"hash":%q,"target":%q}]}`,

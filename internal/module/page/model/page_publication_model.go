@@ -12,7 +12,10 @@ package pagemodel
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+
+	"go_wp/pkg/rls"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,6 +32,9 @@ type PublicationEntity struct {
 	ArtifactHash string    `gorm:"column:artifact_hash;not null"`
 	PublishedAt  time.Time `gorm:"column:published_at;not null"`
 	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
+	// ReceiptID 成功激活这份产物的发布回执 id（迁移 701），即这次尝试的身份。
+	// NULL = 历史行或调用链路没有回执设施 —— 收敛据此退到「链接身份 + 账本归属」判据。
+	ReceiptID *int64 `gorm:"column:receipt_id"`
 }
 
 func (PublicationEntity) TableName() string { return tableNamePagePublications }
@@ -42,6 +48,61 @@ type PublicationRecord struct {
 	ArtifactID   string
 	ArtifactHash string
 	PublishedAt  time.Time
+	// ReceiptID 成功激活的回执 id（0 = 本条写入口没有回执身份，落 NULL）。
+	//
+	// 为什么必须随激活落库：同一代输入、同一份产物被判两次成功（主链 + 崩溃补完成）
+	// 在 (version, artifact) 上完全不可区分，收敛只能靠「这条回执是不是兑现者」区分。
+	// 0 → NULL 而不是写 0：0 不是回执，写进列里就成了一个假的成功身份。
+	ReceiptID int64
+}
+
+// receiptIDColumn 把记录里的回执身份转成要写进 receipt_id 列的值。
+//
+// 0 → NULL（而不是 0）：0 不是回执，写进去就成了一个假的成功身份，收敛会拿它去比
+// 「这条回执兑现了吗」并得到永远不相等的结果。NULL 才是「本次写入口没有回执设施」。
+func (r PublicationRecord) receiptIDColumn() *int64 {
+	if r.ReceiptID <= 0 {
+		return nil
+	}
+	id := r.ReceiptID
+	return &id
+}
+
+// ListStalePageIDs 返回本工程内**被标记 stale 且未软删**的页面 id（含已发布与未发布）。
+//
+// 用途：依赖失效（菜单译文 / 按项菜单）之后，失效执行器要按完整依赖键重建「受影响的
+// 页面」，而不是只重建草稿列表里那批还没发布过的 —— 线上正在服务的页面同样是受影响面，
+// 且它才是用户看到的那一面。
+//
+// 判据只有两条，刻意不筛「是否已发布」：
+//   - pages.stale = true（被依赖失效标记过）；
+//   - pages.deleted_at IS NULL（软删的页面不重建）。
+//
+// 调用方如果需要「已发布」这一维，用自己的发布口径再筛 —— 在这里顺手 JOIN 一张账本表
+// 会把两条口径焊死在一条 SQL 里，改任一条都要动另一条。
+//
+// 排序（update_time ASC, id ASC）：失效执行器按批次领取，**必须先标先建**。不排序时
+// 每次领取顺序由执行计划决定，超过单批上限的工程会反复重建同一小撮页面，剩下的永远
+// 轮不到 —— 表现就是「每次都重建 20 个、线上一直没收敛」。按标记时间升序 + id 兜底
+// （同一批标记的 update_time 可能相同）才能保证重试是单调向前的。
+//
+// 不分页、不截断：截断是调用方批次预算的事（它知道自己的上限），这里返回全量候选 ——
+// 端口截断会让「谁被截掉」变成数据层的一个隐性决策，而上限值随时会调。
+//
+// projectID 必填（DB-009）：pages 带 FORCE 策略，仍显式带工程条件，会话变量与谓词双保险。
+func (m *Model) ListStalePageIDs(ctx context.Context, projectID string) (ids []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	var rows []artifactIDRow
+	if err = m.db.WithContext(ctx).Model(&PageEntity{}).
+		Select("id::text AS id").
+		Where("project_id = ? AND deleted_at IS NULL AND stale = true", projectID).
+		Order("update_time ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return dedupeStrings(artifactIDsOf(rows)), nil
 }
 
 // PublicationDB 返回已绑定 page_publications 表的 GORM 实例。
@@ -80,6 +141,26 @@ func (m *Model) ListPublications(ctx context.Context, pageID string) (list []Pub
 	return list, err
 }
 
+// ListPublicationsInProject 在**工程作用域内**列出页面全部语言的激活状态（语言升序）。
+//
+// 与 ListPublications 的差别只有作用域：page_publications 没有 project_id 列，跨工程
+// 归属靠页面行（pages 带 FORCE 策略）。下线意图的登记发生在取实体锁之前，那里拿不到
+// 页面行来间接限定范围 —— 显式带 projectID 走 rls.ScopeTx，才不会在换了非超级角色
+// 之后读到别的工程的账本行（RLS 会直接把越界行挡掉，而不是静默返回空）。
+func (m *Model) ListPublicationsInProject(ctx context.Context, projectID, pageID string) (list []PublicationEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	if strings.TrimSpace(pageID) == "" {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PublicationEntity{}).Where("page_id = ?", pageID).
+			Order("lang ASC").Find(&list).Error
+	})
+	return list, err
+}
+
 // MarkPublishedLang 记录某语言激活状态：page_publications upsert 与 pages 单值镜像
 // 在同一事务提交（同聚合原子组合）。pages 的 active_path/active_artifact_id/published_at
 // 是「最近发布语言」的镜像，只为兼容既有单值读取方，不再作为多语言真源。
@@ -91,6 +172,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 		row := &PublicationEntity{
 			PageID: rec.PageID, Lang: rec.Lang, ActivePath: rec.ActivePath,
 			ArtifactHash: rec.ArtifactHash, PublishedAt: rec.PublishedAt, UpdatedAt: rec.PublishedAt,
+			ReceiptID: rec.receiptIDColumn(),
 		}
 		if rec.ArtifactID != "" {
 			id := rec.ArtifactID
@@ -99,7 +181,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 		if cerr := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "page_id"}, {Name: "lang"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"active_path", "artifact_id", "artifact_hash", "published_at", "update_time",
+				"active_path", "artifact_id", "artifact_hash", "published_at", "update_time", "receipt_id",
 			}),
 		}).Create(row).Error; cerr != nil {
 			return cerr
@@ -181,8 +263,9 @@ func (m *Model) MarkStagedLang(ctx context.Context, pageID, lang, artifactID, ar
 		}).Create(row).Error; cerr != nil {
 			return cerr
 		}
+		// 不写 stale=false：构建不等于发布（详见 MarkStagedLangTx 的同名说明）。
 		return tx.Model(&PageEntity{}).Where("id = ? AND deleted_at IS NULL", pageID).
-			Updates(map[string]any{"staged_artifact_id": artifactID, "stale": false, "update_time": at}).Error
+			Updates(map[string]any{"staged_artifact_id": artifactID, "update_time": at}).Error
 	})
 }
 

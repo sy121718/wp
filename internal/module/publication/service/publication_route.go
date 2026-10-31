@@ -432,6 +432,23 @@ func (s *Service) ActivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Activ
 }
 
 // DeactivateTx 在外层事务内取消路径占用（幂等：无占用时不报错）。
+// RouteOwnerTx 在**调用方事务**内读路径当前的占用归属（contract 读端口）。
+//
+// 存在的理由只有一个：presentation 的旧路径处置/删除/退役必须在"持实体行锁 + 持路径锁"
+// 的同一段里回读归属 —— 读在锁外，代码就无法证明"我要处置的这条路径此刻仍归我"。
+// 读失败（含无行）原样返回，调用方按"无归属"处理。
+func (s *Service) RouteOwnerTx(ctx context.Context, tx *gorm.DB, projectID, path string) (*pubdto.RouteOwnerResp, error) {
+	row, err := s.model.RouteOwnerTx(ctx, tx, projectID, path)
+	if err != nil {
+		return nil, err
+	}
+	out := &pubdto.RouteOwnerResp{
+		ProjectID: row.ProjectID, Path: row.Path, RouteKind: row.RouteKind,
+		PageID: row.PageID, PresentationID: row.PresentationID, ArtifactID: row.ArtifactID,
+	}
+	return out, nil
+}
+
 func (s *Service) DeactivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeactivateReq) (err error) {
 	if tx == nil {
 		return errTxRequired

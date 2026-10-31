@@ -28,12 +28,23 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	artifactmodel "go_wp/internal/module/artifact/model"
+	artifactservice "go_wp/internal/module/artifact/service"
+	buildmodel "go_wp/internal/module/build/model"
+	buildservice "go_wp/internal/module/build/service"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationmodel "go_wp/internal/module/navigation/model"
 	navigationservice "go_wp/internal/module/navigation/service"
+	pagemodel "go_wp/internal/module/page/model"
+	pageservice "go_wp/internal/module/page/service"
+	presentationmodel "go_wp/internal/module/presentation/model"
+	presentationservice "go_wp/internal/module/presentation/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 )
 
 // seedNavigation 经 model 的写入路径（带工程作用域）落一行导航项。
@@ -54,6 +65,43 @@ func seedNavigation(t *testing.T, db *gorm.DB, projectID, title, path string) st
 	return id
 }
 
+// attachNavigationWritePorts 给菜单写路径装同事务失效端口（五端口全齐，**真实实现**）。
+//
+// 为什么必须装：service 侧 writePortsReady 是「全齐才放行（fail closed）」——
+// 缺任一端口，Create / Update / Delete / SwapMove 全部返回
+// navigation.err.translation.unavailable。本文件 :140 的 Update 与 :152 的 Delete
+// 正是这一档，不装端口它们连「定位到工程 B 的那一行」都走不到，断言会变成
+// 「用例红在与 RLS 无关的装配缺件上」。
+//
+// 为什么是真实实现而不是直通桩：本文件要证明的是「逐工程定位到的归属被正确带进
+// 写入事务」，桩只能让写入口放行、证明不了策略作用域真的生效。装进去的
+// page / presentation / build 三服务都用**同一个非超级角色 db** 构造，端口内的语句
+// 因此同样受 FORCE 策略约束 —— 与生产装配（routers 的 navigationWritePorts）
+// 的差别只有「拿进程单例还是拿测试库句柄」，不是两张不同的判据。
+//
+// 读路径（Get）不需要端口：writePortsReady 只拦写入口，:167 那条负样本保持原样。
+func attachNavigationWritePorts(t *testing.T, svc *navigationservice.Service,
+	db *gorm.DB, projects projectcontract.ProjectService) {
+	t.Helper()
+	if svc == nil || db == nil {
+		t.Fatal("装写端口需要真实的导航服务与同一作用域的库句柄")
+	}
+	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
+	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), artifacts, routes, projects,
+		nil, nil, nil, nil, nil)
+	instances := presentationservice.NewService(presentationmodel.NewModel(db),
+		nil, nil, projects, nil, routes)
+	queue := buildservice.NewService(buildmodel.NewModel(db))
+	svc.SetWritePorts(navigationservice.NavigationWriteDeps{
+		Pages:         pages,
+		Instances:     instances,
+		Items:         pages,
+		ItemInstances: instances,
+		Queue:         queue,
+	})
+}
+
 // navigationScopeFixture 造「非超级角色 + 两个工程 + navigation service（注入工程契约）」。
 func navigationScopeFixture(t *testing.T) (*gorm.DB, *navigationservice.Service, string, string) {
 	t.Helper()
@@ -61,6 +109,7 @@ func navigationScopeFixture(t *testing.T) (*gorm.DB, *navigationservice.Service,
 	resetProjects(t, db, role)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	svc := navigationservice.NewService(navigationmodel.NewModel(db), projects)
+	attachNavigationWritePorts(t, svc, db, projects)
 	pA, pB := uuid.NewString(), uuid.NewString()
 	seedProject(t, db, pA, "工程 A")
 	seedProject(t, db, pB, "工程 B")

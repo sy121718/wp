@@ -9,7 +9,9 @@ package builddto
 // 依赖重建走的是「有就排上、没有就算了」的幂等语义，误判成人工构建会让后台列表失真。
 type EnqueueReq struct {
 	SourceType string `json:"sourceType" form:"sourceType" binding:"required"`
-	SourceID   string `json:"sourceId" form:"sourceId" binding:"required"`
+	// SourceID 来源实体 id，必须是 uuid：service 在入队前归一成规范文本（迁移 698 把
+	// build_jobs.source_id 放宽成 text，数据库不再替非规范写法兜底），非法值受控拒绝（400）。
+	SourceID string `json:"sourceId" form:"sourceId" binding:"required"`
 	// ProjectID 任务所属工程（显式入库，消费侧不必再反推来源行）。
 	ProjectID string `json:"projectId" form:"projectId"`
 	// Lang 构建语言；留空 = 默认语言。

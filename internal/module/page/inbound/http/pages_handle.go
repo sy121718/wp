@@ -816,7 +816,9 @@ func pageErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, pageservice.ErrDraftVersionConflict),
 		errors.Is(err, pageservice.ErrPathOccupied),
-		errors.Is(err, pageservice.ErrRebuildRequired):
+		errors.Is(err, pageservice.ErrRebuildRequired),
+		// 输入在编译与激活之间前进了（裁定 ①）：当前状态与请求冲突，刷新/重建后可重试。
+		errors.Is(err, pageservice.ErrInputMoved):
 		return http.StatusConflict
 	// 页面级语言排除（迁移 491）：「这一页不产出该语言」/「默认语言不能排除」都是
 	// **当前状态与请求冲突**（刷新后能看到真实状态），不是调用方写错参数，

@@ -426,8 +426,14 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 
 // activate 把本次产物激活到线上 URL（覆盖 active 符号链接）。
 // 调用时机：实例 / 快照 / 产物行 / 指针全部落库成功之后。
+// 路径锁：激活写的是访问面那一条符号链接，与 page 发布、与其它实例的改址/下线共用
+// 同一个物理路径空间。实体条带锁与 DB 行锁都只按实体分，拦不住"两个实体先后写同一条
+// 链接"，所以这里再套一层按归一物理路径的进程内互斥（pipeline.PublicationPathLocker）。
+// 锁层级：实体条带锁 → DB 实体行锁 → withPath → store 副作用（store 内部不取锁）。
 func (s *Service) activate(urlPath string, built builtArtifact) error {
-	if err := s.publication.Activate(urlPath, built.Loc); err != nil {
+	if err := s.withPath(urlPath, func() error {
+		return s.publication.Activate(urlPath, built.Loc)
+	}); err != nil {
 		return fmt.Errorf("激活 %s 失败: %w", urlPath, err)
 	}
 	return nil
@@ -920,72 +926,35 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 		}
 
 		var commitTiming phaseTiming
-		primaryArtifactID, commitTiming, moved = s.commitPublish(ctx, inst, frozen, results)
+		primaryArtifactID, commitTiming, moved = s.commitPublish(ctx, inst, frozen, results, intent.oldPaths)
 		metrics.lockWaitCommit += commitTiming.lockWait
 		metrics.commit += commitTiming.work
 		if moved == nil {
 			return primaryArtifactID, nil
 		}
-		if !errors.Is(moved, errPublishStateMoved) {
+		// 两种「可以重试」的作废（迁移 699 起是两条而不是一条）：
+		//   - errPublishStateMoved：实例行被别的批次改过（指纹不等）；
+		//   - errInputVersionMoved：行没被改，但**输入代次**被推进（保存草稿 / 译文扇出 /
+		//     依赖标记都不换指针列，只有版本看得见）。
+		// 两者都在任何写入之前判定，因此是零副作用失败，可以放心重新冻结。
+		// 其余错误（编译失败、FS 激活失败、落库失败）**不重试**：那些已经产生过副作用，
+		// 重试只会把同一份旧输入再激活一遍。
+		if !errors.Is(moved, errPublishStateMoved) && !errors.Is(moved, errInputVersionMoved) {
 			return "", moved
 		}
-		// 冲突：编译结果整体作废（校验在任何写入之前，因此这里是零副作用失败），
-		// 重新冻结实例状态再来一次。产物是内容寻址的，重试若产出同样的字节，
-		// 落库阶段按 hash 复用同一行（recordArtifactTx），不会堆出版本。
+		// 冲突：编译结果整体作废，重新冻结实例状态再来一次。产物是内容寻址的，
+		// 重试若产出同样的字节，落库阶段按 hash 复用同一行（recordArtifactTx），不会堆出版本。
 		logger.Scene("build").With("instanceId", inst.ID).With("attempt", attempt).
-			Warn("发布会话的实例状态已被并发批次推进，丢弃本次编译结果并重新冻结")
+			Warn("发布会话的实例状态或编译输入已被推进，丢弃本次编译结果并重新冻结")
 	}
 	return "", fmt.Errorf("发布会话连续 %d 次被并发的发布批次推进实例状态，本次中止: %w", publishAttempts, moved)
 }
 
-// publishOneLang 单语言结案：登记回执 → 激活访问面 → 登记路由 → 写语言账本 → 结案。
-//
-// 任一步失败都向上返回，且该语言的 publication 行不会被写入（它只在走到倒数第二步
-// 时才写）—— 「数据库声称已发布」与「文件真的在线」之间不允许有窗口。
-// 回执保留 pending 时记录的正是「切到了哪一步」，交由启动恢复补齐或结案为未生效。
-func (s *Service) publishOneLang(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	b *langBuildResult, fromArtifactID string, now time.Time) error {
-	// 切换是不可逆的访问面副作用：先有账本才谈得上恢复（登记失败即中止，不切换）。
-	receiptID, berr := s.beginPublishReceipt(ctx, inst, b.accessPath, b.lang, fromArtifactID, b.artifactID)
-	if berr != nil {
-		return fmt.Errorf("登记 %s 的发布回执失败（未切换访问面）: %w", b.accessPath, berr)
-	}
-	if aerr := s.activate(b.accessPath, b.built); aerr != nil {
-		s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
-		return aerr
-	}
-	// 路由登记失败不再只是日志里的 Warn（审计 AR2-004）：访问面已切换、路由账本缺行，
-	// 会让占用预检 / 回滚 / 删除 / GC 全部依据错误的路由表决策。回执保持 pending。
-	if rerr := s.registerRoute(ctx, inst, b.accessPath, b.artifactID); rerr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
-			Error(rerr, "多语言路由登记失败（访问面已激活，回执待恢复）")
-		// 回执留在 pending：推一次进程内快通道让收敛立刻重放（主链失败收口，非阻塞）。
-		s.NotifyPendingReceipt()
-		return fmt.Errorf("登记 %s 的路由占用失败（访问面已激活，回执 %s 待恢复）: %w",
-			b.accessPath, receiptID, rerr)
-	}
-	// 语言账本：走到这里，这个语言的 URL 才真的可访问。
-	if merr := s.m.MarkPublishedLang(ctx, presentationmodel.PublicationRecord{
-		PresentationID: inst.ID, Lang: b.lang, ActivePath: b.accessPath,
-		ArtifactID: b.artifactID, ArtifactHash: b.built.Hash, PublishedAt: now,
-	}); merr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
-			Error(merr, "多语言语言账本写入失败（访问面与路由已生效，回执待恢复）")
-		// 同上：回执留在 pending，快通道让收敛按访问面证据补齐（幂等）。
-		s.NotifyPendingReceipt()
-		return fmt.Errorf("写入 %s 的发布账本失败（访问面已激活，回执 %s 待恢复）: %w",
-			b.accessPath, receiptID, merr)
-	}
-	// 结案失败只意味着账本没落终结态：访问面、路由与语言账本都已生效，未结案回执会在
-	// 下次启动恢复时按同样证据补齐（幂等），因此不把该语言判为失败。
-	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
-			Warn("多语言发布回执结案失败（访问面、路由与语言账本已生效，留待恢复补齐）: " + cerr.Error())
-		// 状态已一致、回执没收口：推快通道让收敛立刻幂等收尾。
-		s.NotifyPendingReceipt()
-	}
-	return nil
-}
+// 单语言结案（回执 → 激活 → 路由 → 账本）原先住在 publishOneLang 里，现在**内联**在
+// commitPublish 的事务体内（presentation_publish.go）：五步必须与实例行锁、版本复验、
+// 其它语言、指针推进共享**同一次提交**，抽成函数只会让 tx 每层都要透传一次，而透传
+// 本身并不产生任何安全边界。原来「每语言各自一个事务」的写法已删除 —— 那种写法下
+// 「语言 A 已上线、语言 B 因版本过期被拒」是合法中间态，正是规划草案 §2.3 要消除的。
 
 // finalizeMultiLangBatch 整批成功后的收尾：推进实例指针（active/staged = 默认语言产物）、
 // 清 stale、记发布时间。
@@ -1036,12 +1005,46 @@ func (s *Service) publishedArtifactsByLang(ctx context.Context, instanceID strin
 	return out
 }
 
-// persistMultiLangArtifacts 一次快照 + 多语言账本产物行 + 模板/路径变更 + 依赖记录。
+// publishedReceiptIDsByLang 本次发布前各语言账本上的成功回执身份（语言 → 回执 id）。
 //
-// 这个事务**不声明任何语言已上线**：它只登记「本次构建产出了哪些字节」（产物行）与
-// 「构建输入是什么」（快照、依赖）。语言账本行与实例指针由逐语言结案和批次收尾各自
-// 写入 —— 把「记账」与「上线」分开，才有 AR2-003 要的那条不变式。
-func (s *Service) persistMultiLangArtifacts(ctx context.Context, inst *presentationmodel.InstanceEntity,
+// 与 publishedArtifactsByLang 成对：一个是"从哪个产物出发"，一个是"从哪条成功回执接替"。
+// 必须在本次写账本**之前**读（commitPublish 在登记回执之前调用）。
+//
+// 没有行、或历史行 receipt_id 为 NULL 时值为空串 = **未知**，不是"确认没有前次成功"：
+// 前者是"这次该语言没有前科"，后者对应显式的 "0"。两者在恢复侧的判据不同，
+// 这里不做任何猜测性归一。
+func (s *Service) publishedReceiptIDsByLang(ctx context.Context, instanceID string,
+	results []langBuildResult) map[string]string {
+	out := make(map[string]string, len(results))
+	for i := range results {
+		lang := strings.TrimSpace(results[i].lang)
+		if lang == "" {
+			continue
+		}
+		id, err := s.m.PublishedReceiptID(ctx, instanceID, lang)
+		if err != nil {
+			// 读失败不阻断发布：这条事实只服务恢复侧的取代判定，
+			// 缺失时按"未知"上送（宁可保守到"可能已被取代"，也不凭空断言身份）。
+			logger.Scene("publication").With("instanceId", instanceID).With("lang", lang).
+				Warn("读取语言账本成功回执身份失败，本次按未知上送")
+			continue
+		}
+		out[lang] = strings.TrimSpace(id)
+	}
+	return out
+}
+
+// persistMultiLangArtifactsTx 一次快照 + 多语言产物行 + 模板/路径变更 + 依赖记录（**事务形态**）。
+//
+// 事务由调用方给（commitPublish 把「锁行 → 复验版本 → 逐语言激活 → 账本/指针」整段包在
+// 同一个事务里，见那里的注释）。这里刻意**不声明任何语言已上线**：它只登记「本次构建产出
+// 了哪些字节」（产物行）与「构建输入是什么」（快照、依赖），语言账本行与实例指针由调用方
+// 在同一事务的后半段写入 —— 记账与上线分开，才有 AR2-003 要的那条不变式。
+//
+// 为什么从「自成事务」改成「收 tx」：版本谓词必须与产物行、账本、指针在同一次提交里判定。
+// 分开提交会出现「产物行与快照已落、指针因版本过期没推进」的半截状态，而那批产物行
+// 正是旧输入烘出来的字节 —— 下次按 hash 复用（recordArtifactTx）会把旧字节当成新结果。
+func (s *Service) persistMultiLangArtifactsTx(ctx context.Context, tx *gorm.DB, inst *presentationmodel.InstanceEntity,
 	tpl *contenttemplatecontract.ResolvedTemplate, results []langBuildResult, now time.Time,
 	logicalPath, defaultLang string, mode *instanceModePending) (primaryArtifactID, snapID string, err error) {
 	snapID = uuid.NewString()
@@ -1051,73 +1054,72 @@ func (s *Service) persistMultiLangArtifacts(ctx context.Context, inst *presentat
 		Document: tpl.Document, CreatedAt: now,
 	}
 
-	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if cerr := s.m.CreateSnapshotTx(tx, snap); cerr != nil {
-			return cerr
+	if cerr := s.m.CreateSnapshotTx(tx, snap); cerr != nil {
+		return "", "", cerr
+	}
+	// 渲染模式与独立文档（双轨，迁移 282）与快照/产物/指针同事务：
+	// 分开写会留下「文档已换、模式没换」的中间态，下一次模板更新就会按
+	// template 模式把它重建回模板文档 —— 用户的自定义凭空消失。
+	if mode != nil {
+		if uerr := s.m.UpdateInstanceModeTx(tx, inst.ProjectID, inst.ID, mode.renderMode, mode.document, now); uerr != nil {
+			return "", "", uerr
 		}
-		// 渲染模式与独立文档（双轨，迁移 282）与快照/产物/指针同事务：
-		// 分开写会留下「文档已换、模式没换」的中间态，下一次模板更新就会按
-		// template 模式把它重建回模板文档 —— 用户的自定义凭空消失。
-		if mode != nil {
-			if uerr := s.m.UpdateInstanceModeTx(tx, inst.ProjectID, inst.ID, mode.renderMode, mode.document, now); uerr != nil {
-				return uerr
+		inst.RenderMode = mode.renderMode
+		if mode.renderMode == presentationmodel.RenderModeDocument {
+			inst.OverrideDocument = mode.document
+		} else {
+			inst.OverrideDocument = nil
+		}
+	}
+	if inst.TemplateID != tpl.TemplateID {
+		// RecordBatch* 而不是 UpdateInstance*：这里记的是「本批次按这份绑定编译完了」，
+		// 不是「输入变了」—— 版本必须停在冻结时的值，第二阶段才拿它做谓词
+		// （见 model.RecordBatchTemplateTx 的注释）。
+		if uerr := s.m.RecordBatchTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
+			return "", "", uerr
+		}
+		inst.TemplateID = tpl.TemplateID
+		// 换底稿 = 放弃独立文档（双轨语义）：产物已按新模板编译，文档列若留着旧自定义，
+		// 下次重建又会拿旧文档盖掉新模板 —— 与本次「切换」自相矛盾。
+		// mode != nil 时上面已处理（ReapplyPreset 的「换模板 + 回跟随」路径同时给两者）。
+		if mode == nil && (presentationmodel.IsDocumentMode(inst.RenderMode) || len(inst.OverrideDocument) > 0) {
+			if cerr := s.m.ClearInstanceModeTx(tx, inst.ProjectID, inst.ID, now); cerr != nil {
+				return "", "", cerr
 			}
-			inst.RenderMode = mode.renderMode
-			if mode.renderMode == presentationmodel.RenderModeDocument {
-				inst.OverrideDocument = mode.document
-			} else {
-				inst.OverrideDocument = nil
-			}
+			inst.RenderMode = presentationmodel.RenderModeTemplate
+			inst.OverrideDocument = nil
 		}
-		if inst.TemplateID != tpl.TemplateID {
-			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
-				return uerr
-			}
-			inst.TemplateID = tpl.TemplateID
-			// 换底稿 = 放弃独立文档（双轨语义）：产物已按新模板编译，文档列若留着旧自定义，
-			// 下次重建又会拿旧文档盖掉新模板 —— 与本次「切换」自相矛盾。
-			// mode != nil 时上面已处理（ReapplyPreset 的「换模板 + 回跟随」路径同时给两者）。
-			if mode == nil && (presentationmodel.IsDocumentMode(inst.RenderMode) || len(inst.OverrideDocument) > 0) {
-				if cerr := s.m.ClearInstanceModeTx(tx, inst.ProjectID, inst.ID, now); cerr != nil {
-					return cerr
-				}
-				inst.RenderMode = presentationmodel.RenderModeTemplate
-				inst.OverrideDocument = nil
-			}
+	}
+	if logicalPath != "" && inst.URLPath != logicalPath {
+		if uerr := s.m.RecordBatchURLTx(tx, inst.ProjectID, inst.ID, logicalPath, now); uerr != nil {
+			return "", "", uerr
 		}
-		if logicalPath != "" && inst.URLPath != logicalPath {
-			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ProjectID, inst.ID, logicalPath, now); uerr != nil {
-				return uerr
-			}
-			inst.URLPath = logicalPath
+		inst.URLPath = logicalPath
+	}
+	version, verr := s.m.NextArtifactVersionTx(tx, inst.ID)
+	if verr != nil {
+		return "", "", verr
+	}
+	for i := range results {
+		b := &results[i]
+		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, b.built, b.lang, version, now)
+		if aerr != nil {
+			return "", "", aerr
 		}
-		version, verr := s.m.NextArtifactVersionTx(tx, inst.ID)
-		if verr != nil {
-			return verr
+		b.artifactID = aid
+		if b.lang == defaultLang {
+			primaryArtifactID = aid
 		}
-		for i := range results {
-			b := &results[i]
-			aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, b.built, b.lang, version, now)
-			if aerr != nil {
-				return aerr
-			}
-			b.artifactID = aid
-			if b.lang == defaultLang {
-				primaryArtifactID = aid
-			}
+	}
+	if primaryArtifactID == "" && len(results) > 0 {
+		primaryArtifactID = results[0].artifactID
+	}
+	// 依赖记录挂在默认语言产物上（各语言依赖集合相同）。
+	if len(results) > 0 {
+		deps := results[0].built.Manifest.Dependencies
+		if derr := s.persistDependenciesTx(tx, inst.ID, primaryArtifactID, deps, now); derr != nil {
+			return "", "", derr
 		}
-		if primaryArtifactID == "" && len(results) > 0 {
-			primaryArtifactID = results[0].artifactID
-		}
-		// 依赖记录挂在默认语言产物上（各语言依赖集合相同）。
-		if len(results) > 0 {
-			deps := results[0].built.Manifest.Dependencies
-			return s.persistDependenciesTx(tx, inst.ID, primaryArtifactID, deps, now)
-		}
-		return nil
-	})
-	if err != nil {
-		return "", "", err
 	}
 	return primaryArtifactID, snapID, nil
 }

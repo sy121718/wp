@@ -51,8 +51,10 @@ var emptyMeansSemantic = regexp.MustCompile(`(指向空串|空串表示)`)
 // （nil = 不改、空串 = 解绑），删键就会把「解绑」变成「不改」。
 //
 // 判据因此是「空串被删掉之后，消费方还能不能区分『没填』与『显式置空』」：
-//   · PostForm 取值：不能区分也不需要区分（键不存在 = 空串）；
-//   · binding 绑定到 *string：能区分，而语义相反 —— 必须 keep-empty。
+//
+//	· PostForm 取值：不能区分也不需要区分（键不存在 = 空串）；
+//	· binding 绑定到 *string：能区分，而语义相反 —— 必须 keep-empty。
+//
 // 键是 **form tag 的值**（模板 name 与它逐字对齐），不是字段名推出来的小驼峰 ——
 // 两者在 `PanelBlockID` 上正好不同：form tag 是 `panelBlockId`（小写 d），
 // 而按字段名推会得到 `panelBlockID`。2026-11 给全部 dto 补 form tag 之后，

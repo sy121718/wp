@@ -18,6 +18,8 @@
 package binding
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -92,6 +94,26 @@ func JSON[T any](c *gin.Context) (*T, bool) {
 		}
 	}
 	return &req, true
+}
+
+// JSONLimited 限制完整请求体大小后复用 JSON 的绑定与校验。
+// 超限整体失败，避免截断后把合法前缀当成完整请求；字段白名单由 DTO 定义。
+func JSONLimited[T any](c *gin.Context, maxBytes int64) (*T, bool) {
+	if maxBytes <= 0 || c.Request == nil || c.Request.Body == nil {
+		response.ParamError(c)
+		return nil, false
+	}
+	// 使用 N 而非 N+1，避免调用方传 MaxInt64 时溢出。
+	reader := &io.LimitedReader{R: c.Request.Body, N: maxBytes}
+	body, err := io.ReadAll(reader)
+	var extra [1]byte
+	n, tailErr := io.ReadFull(c.Request.Body, extra[:])
+	if err != nil || n > 0 || (tailErr != nil && tailErr != io.EOF) {
+		response.ParamError(c)
+		return nil, false
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	return JSON[T](c)
 }
 
 // isFormBody 判断这次请求是不是表单体（urlencoded 或 multipart）。

@@ -1,7 +1,11 @@
 // Package pubenums 统一管理 publication 模块业务消息。
 package pubenums
 
-import "go_wp/pkg/facing"
+import (
+	"net/http"
+
+	"go_wp/pkg/facing"
+)
 
 const (
 	ErrRouteOccupied  = "ErrRouteOccupied"  // 目标路径已被其他页面占用
@@ -9,15 +13,12 @@ const (
 	ErrReceiptPending = "ErrReceiptPending" // 存在未完成的发布回执，请先恢复或标记失败
 	// ErrInvalidParam 请求本身不合法（nil 请求、缺少必要字段等），与路径/占用无关。
 	ErrInvalidParam = "ErrInvalidParam" // 请求参数无效
+	// ErrProjectRequired 体检请求没有给出站点工程（body 与 query 都为空）。
+	// 与 project / page 等模块同 key、同文案："请先选择要操作的站点工程"。
+	ErrProjectRequired = "ErrProjectRequired" // 请先选择要操作的站点工程
 	// ErrRouteActiveRename 对已激活（线上）路径执行草稿改名：非法状态转移，
 	// 应走页面改 URL（UpdateURL）流程而非直接改 active 行。
 	ErrRouteActiveRename = "ErrRouteActiveRename" // 已激活的线上路径不能直接改名，请通过页面改 URL 流程操作
-	// ErrAuditFailed SEO 体检本身失败（读不到产物目录、解析异常等）。
-	//
-	// 存在的理由同 order / user 模块的 ErrInternal：RunSEOAudit 返回的可能是基础设施
-	// 错误的原文（带路径甚至 SQL 片段），直接铺给后台页面违反 CQ-009；这里给一条
-	// 可翻译的归口文案，原文进日志。
-	ErrAuditFailed = "ErrAuditFailed" // SEO 体检失败，请查看服务端日志
 	// ErrInternal 未归类的系统错误对外统一文案（AGENTS.md「错误文案三件套」的②）。
 	//
 	// 与 adminenums.ErrInternal **同 key**（值都是 "ErrInternal"）：这是同一句通用归口文案
@@ -46,13 +47,22 @@ var errFallbacks = map[string]string{
 	ErrRouteNotFound:     "路径占用不存在",
 	ErrReceiptPending:    "存在未完成的发布回执，请先恢复或标记失败",
 	ErrInvalidParam:      "请求参数无效",
+	ErrProjectRequired:   "请先选择要操作的站点工程",
 	ErrRouteActiveRename: "已激活的线上路径不能直接改名，请通过页面改 URL 流程操作",
-	ErrAuditFailed:       "SEO 体检失败，请查看服务端日志",
 	ErrInternal:          "操作失败，请稍后重试",
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
 func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// ErrProjectMissing 体检缺少站点工程 → 参数错误（400）。
+//
+// 状态码在**声明处**给（AGENTS.md「状态码在错误声明处给」），出口只调
+// response.ErrorStatusAuto：少了这一处，漏传工程会以 500 出现在日志里，
+// 把前端的一个空下拉框伪装成服务端故障。
+func ErrProjectMissing() error {
+	return facing.WithStatus(Err(ErrProjectRequired), http.StatusBadRequest)
+}
 
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
 // 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。

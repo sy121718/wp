@@ -4,6 +4,8 @@ package buildcontract
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	builddto "go_wp/internal/module/build/dto"
 )
 
@@ -14,6 +16,21 @@ type (
 	ListReq        = builddto.ListReq
 	QueueStatsResp = builddto.QueueStatsResp
 )
+
+// MenuStaleSourceID / SplitMenuStaleSourceID 是 menu_stale 来源标识的编解码，对消费方暴露为**函数**。
+//
+// 为什么是 func 包装而不是 var 重导出（var X = builddto.Y）：var 是可写变量，任何一处
+// contract.SplitMenuStaleSourceID = ... 都能在运行期换掉全部消费方的解析规则，而契约层
+// 的语义正好要求「不可变」。包装还能把实现细节（dto 包的存在）挡在契约后面：
+// 消费方只依赖 contract，dto 以后拆文件 / 改签名都不会穿透到它们。
+func MenuStaleSourceID(projectID, kind string) (sourceID string, ok bool) {
+	return builddto.MenuStaleSourceID(projectID, kind)
+}
+
+// SplitMenuStaleSourceID 拆 menu_stale 的 source_id（worker 消费侧据此还原工程与位置）。
+func SplitMenuStaleSourceID(sourceID string) (projectID, kind string, ok bool) {
+	return builddto.SplitMenuStaleSourceID(sourceID)
+}
 
 // 任务状态常量（跨模块传值用；与 build_jobs 的 CHECK 逐字对应）。
 const (
@@ -33,6 +50,11 @@ type Executor func(ctx context.Context, job *builddto.Job) error
 // BuildService 构建任务队列能力。
 type BuildService interface {
 	// Enqueue 入队（同一目标同一构建输入的待办任务幂等，不会重复排队）。
+	//
+	// req.SourceID 必须是 uuid：入队前归一到规范文本（迁移 698 之后 source_id 是 text 列，
+	// 逐字比较 —— 不归一会让同一实体的大写 / 无连字符写法各占一条互斥键与去重键）。
+	// 非法 UUID 返回 ErrInvalidParam（400）。只收 page / presentation；menu_stale 走
+	// EnqueueMenuStaleTx 这条同事务专用入口。
 	Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *builddto.Job, created bool, err error)
 	// EnqueuePageBuild 供 page 模块把超出单次上限的自动重建交给队列。
 	//
@@ -44,6 +66,16 @@ type BuildService interface {
 	// EnqueuePresentationBuild 供 presentation 模块把自动重建交给队列（PERF-020）。
 	// 同一实例的待办任务幂等（部分唯一索引去重），重复入队不会堆出多份。
 	EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error
+	// EnqueueMenuStaleTx 在调用方事务里为「某工程的某个菜单位置」可靠入队一条 menu_stale 任务，
+	// 返回本次分配的输入版本号（单调递增，同版本唯一）。
+	//
+	// 契约边界（逐条都是调用方的责任，本方法一件都不代做）：
+	//   - tx 必须是调用方已开启、已 scope 的真实事务；本方法不开事务、不提交、不回滚、不设 scope；
+	//   - 只在**确有真实变化**的这一条路径上调用：每次调用都会分配一个新的、更大的版本号；
+	//   - 返回的版本号进 build_input_hash（与 source_id 一起），因此 A→B→A 的来回改动
+	//     仍然是三次不同的工作，不会被队列里的旧任务吞掉；
+	//   - 失败时返回 error 且不留任务：版本号与任务行都在同一个事务里，由调用方统一回滚。
+	EnqueueMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string) (inputVersion int64, err error)
 	// RunOnce 取一条待办任务并执行；返回 false 表示队列为空。
 	//
 	// 认领是原子的：同一条任务只会被一个 worker 拿到，且同一来源同时最多一条在跑；

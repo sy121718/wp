@@ -34,6 +34,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
+	navigationservice "go_wp/internal/module/navigation/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
@@ -52,7 +53,10 @@ import (
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+
+	"gorm.io/gorm"
 )
 
 // buildPublishingModules 装配发布侧主干：自动发布实例、插件宿主、页面模块，
@@ -397,6 +401,14 @@ func (a *assembly) wirePublishingPorts() {
 		}
 		return rebuilder.RebuildInstance(ctx, job.SourceID)
 	})
+	// menu_stale 执行器（导航译文 / 菜单变更触发的重建）：
+	//
+	// **注册必须早于下面的 StartWorkers**。worker 抢到的第一条 menu_stale 任务若还没有
+	// 执行器，build worker 会判 ErrExecutorMissing 直接 Failed 且**不重试** —— 表现就是
+	// 「改完菜单文字，页面永远停在旧标签，队列里一条 failed」。所以这里显式排在启动之前，
+	// 并由 registerMenuStaleExecutor 内部对端口做 fail-fast 断言（端口不齐即 panic）。
+	registerMenuStaleExecutor(buildSvc, pageService, presentationSvc)
+
 	// worker 数固定 2：单页构建是 CPU + IO 混合，把并发调高只是在同一台机器上互相抢资源。
 	// 多实例部署下每个实例各起 2 个是安全的 —— 取任务走 SKIP LOCKED，同一条任务只被一个 worker 拿到。
 	buildSvc.StartWorkers(context.Background(), 2)
@@ -670,6 +682,71 @@ func (a *assembly) startRuntimeTasks() {
 	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
 	navigationSvc.SetSourceResolver(navsource.New(pageService, contentSvc, presentationSvc, blockSvc))
 	marks.mark(portNavigationSourceResolver)
+
+	// 导航译文整表提交的写链（本批核心）：把「写译文 + 标手工页面 + 标自动发布实例 +
+	// 入队重建」接成**一个事务**。
+	//
+	// 三个端口的共同前提是**同一个 *gorm.DB**：适配器不自己开事务，全部用调用方传进来的
+	// tx 句柄。用另一个连接池 / 另一次 Transaction 就不再是同进同出，失效会在提交后才丢。
+	if a.navigationHandle == nil {
+		// 装配缺陷：SetupNavigationRoutes 返回的句柄没接上。缺它时译文保存整体 fail closed
+		//（500 + 归口文案），绝不能悄悄退回「接受请求但什么都没写」。
+		panic("导航 JSON 入口句柄未装配（SetupNavigationRoutes 返回值未接上）")
+	}
+	contentWriter, werr := i18n.NewContentWriterDefault()
+	if werr != nil {
+		// 译文存储是写路径的硬依赖：拿不到就整个写链 fail closed（不是降级）。
+		panic("译文存储（i18n.ContentWriter）不可用：" + werr.Error())
+	}
+	if _, ok := pageService.(pagecontract.PageMenuStalePort); !ok {
+		panic("页面模块未实现同事务菜单标记端口（PageMenuStalePort）")
+	}
+	if _, ok := pageService.(navigationMenuItemStale); !ok {
+		panic("页面模块未实现同事务**按菜单项**标记（navigation 契约 MenuItemStalePort）")
+	}
+	if _, ok := a.buildSvc.(interface {
+		EnqueueMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string) (int64, error)
+	}); !ok {
+		panic("构建模块未实现 menu_stale 同事务入队（MenuStaleEnqueuePort）")
+	}
+	// 菜单 CRUD 的同事务失效端口：与译文写路径**同一份适配器**（见 navigationWritePorts）。
+	// 缺它时 CRUD 写入口 fail closed（500 归口），绝不退回「只写数据不派发失效」。
+	if setter, ok := navigationSvc.(interface {
+		SetWritePorts(navigationservice.NavigationWriteDeps)
+	}); ok {
+		setter.SetWritePorts(navigationWritePorts(pageService, presentationSvc, a.buildSvc))
+		marks.mark(portNavigationMenuWritePorts)
+	} else {
+		panic("导航模块未提供写端口注入点（SetWritePorts）")
+	}
+	if _, ok := presentationSvc.(presentationcontract.PresentationStalePort); !ok {
+		panic("自动发布实例模块未实现同事务菜单标记端口（PresentationStalePort）")
+	}
+	a.navigationHandle.SetTranslationWriteService(newNavigationTranslationWriter(
+		a.db, navigationSvc, projectService, pageService, presentationSvc, a.buildSvc, contentWriter))
+	markNavigationTranslationWriteWired(marks, pageService, presentationSvc, a.buildSvc)
+}
+
+// markNavigationTranslationWriteWired 一次性把导航写链（译文整表 + 菜单 CRUD）的四条端口
+// 标成已接线。
+//
+// 四条必须同时成立：任何一条单独存在都只表示「事务里只有一部分失效被写进去」，
+// 而那正是本批要消灭的静默不收敛。断言方式与其它 wiring 一致（按能力断言，不 import
+// 实现包）：缺任一条即 panic，绝不留下「部分生效」的可见降级。
+func markNavigationTranslationWriteWired(marks wiringMarks, pageSvc pagecontract.PageService,
+	presentationSvc presentationcontract.PresentationService, buildSvc buildcontract.BuildService) {
+	marks.mark(portNavigationTranslationWriter)
+	if _, ok := pageSvc.(pagecontract.PageMenuStalePort); ok {
+		marks.mark(portNavigationPageStalePort)
+	}
+	if _, ok := presentationSvc.(presentationcontract.PresentationStalePort); ok {
+		marks.mark(portNavigationInstanceStalePort)
+	}
+	if _, ok := buildSvc.(interface {
+		EnqueueMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string) (int64, error)
+	}); ok {
+		marks.mark(portNavigationMenuStaleEnqueue)
+	}
 }
 
 // mountAdminPages 后台页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）。

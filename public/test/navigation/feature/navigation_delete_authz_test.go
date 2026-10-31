@@ -482,7 +482,7 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 
 	i18n.InjectForTest(map[string]map[string]string{
 		navigationenums.ErrNotFound: {"zh-CN": "合成-导航项不存在", "en-US": "synth-navigation-item-missing"},
-		navInternalKey: {"zh-CN": "合成-操作失败", "en-US": "synth-operation-failed"},
+		navInternalKey:              {"zh-CN": "合成-操作失败", "en-US": "synth-operation-failed"},
 	}, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 

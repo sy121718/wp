@@ -70,6 +70,17 @@ CREATE INDEX IF NOT EXISTS idx_build_jobs_lease_expires
 -- 存量任务回填工程作用域（带 to_regclass 守卫：这两张表在本迁移之前早已存在，
 -- 守卫只是让「只跑了部分迁移的库」不至于整条失败）。回填不改变任务状态，只把
 -- 「这条工作属于哪个工程」从隐式变成显式。
+--
+-- 两处比较都写成 source_id::text = id::text（两侧显式 cast 到 text）。
+-- 理由不是风格而是两种列型都要成立：迁移 698 会把 source_id 改成 text，而本迁移在
+-- 全新库上的重跑/重放可能发生在 698 之后 —— 那时 j.source_id 是 text、p.id 是 uuid，
+-- PG 没有 text = uuid 与 uuid = text 算子（pg_operator 里 0 行，pg_cast 里 uuid↔text
+-- 也没有隐式/赋值转换），语句直接报 operator does not exist。
+-- 只把右侧改成 p.id::text 不够：698 **之前**的库上左侧仍是 uuid 列，那样会撞
+-- uuid = text 的同一个错误。两端都 cast 成 text 才是对两个阶段都成立的等式：
+-- 值与改型前逐字等价（uuid 列参与比较时 PG 仍然按 uuid 语义比较，只是先各自取文本，
+-- 规范形式 36 字符逐字相同）；menu_stale 的「uuid:位置」文本与任何 id 都不等 → 保持 NULL。
+-- 显式 ::text 是为列型无关性服务的，不改变本迁移的语义。
 DO $$
 BEGIN
     IF to_regclass('pages') IS NOT NULL THEN
@@ -78,7 +89,7 @@ BEGIN
           FROM pages p
          WHERE j.project_id IS NULL
            AND j.source_type = 'page'
-           AND j.source_id = p.id;
+           AND j.source_id::text = p.id::text;
     END IF;
     IF to_regclass('presentation_instances') IS NOT NULL THEN
         UPDATE build_jobs j
@@ -86,7 +97,7 @@ BEGIN
           FROM presentation_instances i
          WHERE j.project_id IS NULL
            AND j.source_type = 'presentation'
-           AND j.source_id = i.id;
+           AND j.source_id::text = i.id::text;
     END IF;
 END $$;
 

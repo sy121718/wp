@@ -6,7 +6,7 @@ package templates
 // 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作都走 /api/product/detail-template/*，
 // 由 internal/templates/static/js/ui/write-base.js 提交。结构判据钉住四件事：
 //
-//  1. 每个写表单都带 data-write-api 且指向自己的端点（一条路由一个权限点）；
+//  1. 每个写表单都带 data-write + data-write-url 且指向自己的端点（一条路由一个权限点）；
 //  2. 表单里不再有 csrf_token 隐藏域（基座发 X-CSRF-Token 头，留它会被当未知字段拒掉）；
 //  3. 提交按钮带 data-requires-js hidden disabled（无 JS 时不可点，而不是点了没反应）；
 //  4. 页面有 data-write-flash-target —— 结论行是「刷新后显示一次」的唯一落点。

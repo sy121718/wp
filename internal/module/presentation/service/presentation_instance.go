@@ -53,6 +53,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"sort"
 	"strings"
 	"time"
 
@@ -273,10 +274,22 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	//
 	// 要覆盖**全部**已激活路径而不只是当前 url_path：改过 URL 的实例还有一条
 	// 旧路径的 301 链接，漏掉它 = 实例删了、线上旧路径仍 301 到一个死页面。
-	for _, p := range s.instanceActivePaths(ctx, inst) {
-		if derr := s.publication.Deactivate(p); derr != nil {
-			return fmt.Errorf("删除实例前反激活 URL 失败 %s: %w", p, derr)
-		}
+	//
+	// 锁：先取**实例条带锁**（与发布/回滚共用同一把，挡住"删除与激活在同一实例上交错"），
+	// 再在锁内重读路径并整段 `withPaths` 包住全部反激活 —— 路径集合与副作用之间的间隔
+	// 因此不再有窗口。此前是锁外读路径、锁外 deactivate：读到路径之后，另一次发布可以
+	// 把这条路径换成别人的产物，我们随即把它删掉（删的是别人的线上链接）。
+	lock := s.lockInstance(inst.EntityType, inst.EntityID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	paths := s.instanceActivePaths(ctx, inst)
+	// 下线意图必须在**动访问面之前**持久登记（pending）：进程在下面任何一个时刻被 kill，
+	// 都有"该撤哪些路径"的持久依据，收敛例程会把它做完。登记失败即中止删除 ——
+	// 没有依据的撤链等于不可重放的破坏。
+	intent, ierr := s.registerDeactivationIntent(ctx, inst, paths)
+	if ierr != nil {
+		return ierr
 	}
 	// 路由占用同步释放 + 实例行删除：两处都是持久化写入，且分属两个模块
 	// （page_routes 在 publication、实例行在 presentation），按 AGENTS.md
@@ -286,19 +299,44 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	// （外键指向已删除的实例），同路径再发布永远被拒；反过来只删路由行则留下
 	// 「实例还在、路径已释放」的分裂状态。两种半截状态都由这个事务消除。
 	//
-	// 反激活（上面的循环）**刻意留在事务外**：它删的是访问面目录里的符号链接 ——
+	// 反激活（上面的循环）**刻意留在事务之前**：它删的是访问面目录里的符号链接 ——
 	// 文件系统不在数据库事务边界内，属 AGENTS.md 允许的「补偿只用于跨库/外部系统」
 	// 那一类，且 Deactivate 幂等、可重跑。顺序也是刻意的：先反激活再开事务，
 	// 事务回滚时链接已下线（线上 404，而不是把已删内容继续挂在旧路径上），
 	// 重跑一次 Delete 会再走一遍幂等反激活 + 事务即可收敛；把反激活放到提交之后，
 	// 失败就留下「实例没了、链接还在」的死路径，且再没有实例行可以据以定位它们。
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+	//
+	// **但"先 FS 后 DB"必须带补偿**（主审退回点）：DB 事务失败时，上面那些链接已经
+	// 被删掉了，若不恢复就变成"实例还在、线上 404"的新半截状态。补偿用 preload 到的
+	// 原链接目标在**仍持条带锁**的同一段里回放；恢复本身失败时不再掩盖原错误，
+	// 由调用方看到"删除失败 + 恢复失败"两条事实（链接状态以回执/对账为准）。
+	var txErr error
+	var commitUncertain bool
+	if _, commitUncertain, txErr = s.m.InTransaction(ctx, func(tx *gorm.DB) error {
 		// 工程作用域由**调用方**设进这个事务：publication 的 …Tx 变体的契约就是
 		// 「调用方负责开启事务 + 设置作用域」（见 publication_route.go 文件头），
 		// 而 page_routes 带 FORCE 策略（迁移 215）—— 不设作用域时那条删行在非超级
 		// 角色下匹配 0 行且不报错（fail closed），随后删实例行会被外键拒绝。
 		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {
 			return serr
+		}
+		// 稳定锁 → 行锁 → 路径集合复验：恢复侧也会先取同一把 advisory，
+		// 所以"业务正在提交"与"恢复正在撤链"不会交错。行锁此外还挡住同实例的发布。
+		// 与恢复侧同一顺序与同一把键：稳定顾问锁**无条件先取**，行锁其次。
+		if lerr := s.lockPresentationEntityOrAdvisory(ctx, tx, inst.ProjectID, inst.ID); lerr != nil {
+			return lerr
+		}
+		// 行锁内重读当前路径集合：与登记时刻不等说明这次删除要撤的路径已经变了
+		// （另一次改址插进来），拒绝执行且**不动访问面**，让调用方重试。
+		if cerr := s.ensureDeactivationPathsUnchanged(ctx, inst, intent.Paths); cerr != nil {
+			return cerr
+		}
+		// 与业务删行**同事务**写下"业务变更已提交"事实：分开提交会制造
+		// "标记说已提交、业务其实回滚了"，随后恢复把一次没发生的删除当成该撤链接执行掉。
+		if merr := s.routes.MarkDeactivationCommittedTx(ctx, tx,
+			pubcontract.ReceiptOwner{SourceType: pubcontract.ReceiptSourcePresentation, SourceID: inst.ID},
+			inst.ProjectID, intent.ReceiptID, intent.PathArtifacts); merr != nil {
+			return fmt.Errorf("登记下线已提交事实失败: %w", merr)
 		}
 		if s.routes != nil {
 			if rerr := s.routes.DeleteRoutesByPresentationTx(ctx, tx, &pubcontract.DeleteRoutesByPresentationReq{
@@ -308,10 +346,25 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 			}
 		}
 		return s.m.DeleteInstanceTx(tx, projectID, req.ID)
-	}); err != nil {
-		return err
+	}); txErr != nil {
+		if commitUncertain {
+			// 提交结果不明（回调已跑完但 COMMIT 报错）：业务行**可能已经删了**。
+			// 这里绝不能 Abort —— Abort 会把一条可能已生效的下线意图终态化，
+			// 撤链从此不再重放（实例已删、链接永久残留）。回执保持 pending，
+			// 由收敛在稳定锁下重读 businessCommitted 事实后自行判定。
+			s.NotifyPendingReceipt()
+			return txErr
+		}
+		// 明确回滚 → 业务删行没有发生。回执的 businessCommitted 也随之没有写进去，
+		// 于是收敛侧看到 false 会保留 pending、不动访问面。这里只把这次明确的回滚
+		// 结案（链接本来就没动过，Abort 是精确的）。
+		s.abortPublishReceipt(ctx, intent.ReceiptID, "删除事务回滚")
+		return txErr
 	}
-	return nil
+	// 提交成功之后才动访问面：先 FS 后 DB 会让"第 k 条撤链失败"留下半截（实例已删、
+	// 部分链接仍在），而链接的撤除不可回滚；先 DB 后 FS 则失败只表现为
+	// "回执仍 pending、链接多留一会儿"，收敛会重放。
+	return s.completeDeactivationIntent(ctx, inst, intent)
 }
 
 // instanceActivePaths 实例在访问面上已激活的全部路径（当前路径 + 历史 301 路径）。
@@ -658,28 +711,45 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 		return nil, err
 	}
 
+	// 旧路径处置意图：**在发布之前**组装好（每语言一条），由发布会话在激活之前
+	// 登记成 update_url 回执 —— 激活不可回滚，而"旧路径该 301 还是下线"这份事实
+	// 只能在这里一次性交代清楚。旧语言清单同样取自锁内重读之后（oldPubs），
+	// 免得与刚被并发改掉的账本对不上。
+	//
+	// 只在**语言条目真的搬了**（旧路径 ≠ 新路径）时登记：同一路径不算改 URL 的旧路径，
+	// 否则会登记一条「把 /x 301 到 /x」的回执，恢复时又被自己判成事实错误而结案 ——
+	// 白白占一条 pending。这正是页面级 samePath 之外的必要过滤：实例级逻辑路径可能
+	// 早已等于目标（例如前一次提交改了绑定而账本行还停在旧值）。
+	plan := make([]oldPathIntent, 0, len(oldPubs))
+	for _, pub := range oldPubs {
+		if pub.ActivePath == "" || pub.ActivePath == newLogical {
+			continue
+		}
+		from := ""
+		if pub.ArtifactID != nil {
+			from = *pub.ArtifactID
+		}
+		plan = append(plan, oldPathIntent{
+			lang: pub.Lang, oldPath: pub.ActivePath, newPath: newLogical,
+			fromArtifactID: from, redirect: req.WithRedirect,
+		})
+	}
 	// mode=nil：改 URL 不是改渲染模式。
-	primaryArtifactID, err := s.publishAllLangs(ctx, inst, publishIntent{
+	_, err = s.publishAllLangs(ctx, inst, publishIntent{
 		// 模板沿用实例当前绑定（改 URL 不是换模板）：空显式 id = 绑定优先且不回落
 		//「同类型最新」，由发布会话按锁内重读的行解析。
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			return s.resolveBoundTemplate(ctx, fresh, "")
 		},
 		logicalPath: newLogical,
-		trigger:     presentationmodel.PublishTriggerURL,
+		// 输入意图：冻结事务里把新路径与 input_version+1 一起落库（见
+		// PersistPublishInputURLTx）。这是"两个并发改 URL 谁赢"的唯一判定点。
+		inputPath: newLogical,
+		oldPaths:  plan,
+		trigger:   presentationmodel.PublishTriggerURL,
 	})
 	if err != nil {
 		return nil, publishFailedErr(err)
-	}
-	// 旧路径处置：逐语言取消激活或 301。
-	for _, pub := range oldPubs {
-		if pub.ActivePath == "" {
-			continue
-		}
-		if derr := s.disposeOldPath(ctx, inst, pub.ActivePath, newLogical, primaryArtifactID, req.WithRedirect); derr != nil {
-			logger.Scene("build").With("instanceId", inst.ID).With("oldPath", pub.ActivePath).
-				Warn("改 URL 后旧路径处置失败（新路径已生效）: " + derr.Error())
-		}
 	}
 	logger.Scene("build").With("instanceId", inst.ID).With("oldPath", oldLogical).With("newPath", newLogical).
 		Info("详情页 URL 修改完成")
@@ -748,74 +818,6 @@ func (s *Service) ensurePathFree(ctx context.Context, projectID, path, excludeIn
 		return presentationenums.Err(presentationenums.ErrPathOccupied)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
-	}
-	return nil
-}
-
-// registerRoute 把实例的线上路径登记进 page_routes（active，同归属者幂等）。
-//
-// 登记的目的是让「谁占着这个路径」成为可查事实：不登记时页面侧发布/改 URL 的
-// 占用预检（IsPathOccupied 查 page_routes）看不见详情页，两边可以先后激活同一
-// 路径，后者覆盖前者的线上内容且全程无报错。routes 为 nil（降级装配）时跳过。
-func (s *Service) registerRoute(ctx context.Context, inst *presentationmodel.InstanceEntity, urlPath, artifactID string) error {
-	if s.routes == nil {
-		return nil
-	}
-	if _, err := s.routes.Activate(ctx, &pubcontract.ActivateReq{
-		ProjectID:      inst.ProjectID,
-		Path:           urlPath,
-		PresentationID: inst.ID,
-		ArtifactID:     artifactID,
-	}); err != nil {
-		return err
-	}
-	return nil
-}
-
-// disposeOldPath 处置改 URL 后遗留的旧路径。
-//
-//   - withRedirect：落盘 301 产物（不经过 Compiler，只有 redirect.json）并激活
-//     到旧路径，同时把路由行标记为 redirect —— 旧链接继续可用，SEO 权重转移；
-//   - 否则：取消旧路径的访问面激活并释放路由占用 —— 旧链接 404。
-//
-// 调用时机固定在「新路径已激活」之后，失败由调用方记日志而不回滚新路径。
-func (s *Service) disposeOldPath(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	oldPath, newPath, artifactID string, withRedirect bool) error {
-	if withRedirect {
-		ra, err := pipeline.NewRedirectArtifact(newPath, 301)
-		if err != nil {
-			return err
-		}
-		loc, err := s.store.PutRedirect(ra)
-		if err != nil {
-			return err
-		}
-		if err = s.publication.Activate(oldPath, loc); err != nil {
-			return err
-		}
-		if s.routes != nil {
-			if _, err = s.routes.Redirect(ctx, &pubcontract.RedirectReq{
-				ProjectID:      inst.ProjectID,
-				OldPath:        oldPath,
-				PresentationID: inst.ID,
-				ArtifactID:     artifactID,
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := s.publication.Deactivate(oldPath); err != nil {
-		return err
-	}
-	if s.routes != nil {
-		if err := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
-			ProjectID:      inst.ProjectID,
-			Path:           oldPath,
-			PresentationID: inst.ID,
-		}); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -1032,25 +1034,167 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 			Warn("产物回滚目标文件不在位，拒绝回滚")
 		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
-	if aerr = s.publication.Activate(inst.URLPath, loc); aerr != nil {
-		logger.Scene("build").With("presentation_id", inst.ID).With("path", inst.URLPath).
-			Error(aerr, "产物回滚激活失败")
-		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, aerr.Error())
-	}
+	// 锁序与发布/改址/下线同一套：条带锁（已持）→ 稳定业务锁 + 行锁 → 路径锁 →
+	// 归属与身份复验 → 副作用 → 指针提交。此前这里只有条带锁 + 路径锁，缺"锁内复验
+	// 这次切换是否仍然成立"：读完路径到动手之间，另一次发布会把这条路径换成新产物，
+	// 回滚随即用旧产物把它盖掉（线上内容倒退且账本不一致）。
 	now := time.Now().UTC()
 	artID := art.ID
+	// From：进入回滚之前的账本身份（锁外读，只作为"我基于哪一代做出这个请求"的陈述）。
+	fromLedger, ferr := s.ledgerIdentities(ctx, inst.ID)
+	if ferr != nil {
+		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, ferr.Error())
+	}
+	var lockedLedger []ledgerIdentity
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {
+			return serr
+		}
+		// 与下线/恢复同一顺序（稳定顾问锁 → 行锁）：回滚也可能与"删除之后的撤链重放"
+		// 撞在同一条路径上，锁序不一致等于两把锁。
+		if lerr := s.lockPresentationEntityOrAdvisory(ctx, tx, inst.ProjectID, inst.ID); lerr != nil {
+			return lerr
+		}
+		locked, lerr := s.m.LockInstanceForActivationTx(ctx, tx, inst.ProjectID, inst.ID)
+		if lerr != nil {
+			return lerr
+		}
+		// 行锁内重读当前账本身份：路径相同不代表同一次发布（同版本可被多次激活），
+		// 所以除路径外还要比"此刻的账本由哪一次 attempt 成立"，再决定是否沿用旧产物。
+		lockedPaths := s.instanceActivePaths(ctx, locked)
+		if !containsPath(lockedPaths, inst.URLPath) {
+			return fmt.Errorf("%w: 回滚目标路径已不属于本实例", errOldPathFSTargetForeign)
+		}
+		// From（回滚前的账本身份）/ Own（行锁内回读的账本身份）逐个语言比对。
+		//
+		// 判据是 (receiptID, artifact) 这一**对**，不是单看 artifact：
+		//   · 两个 attempt 可以命中同一份产物（内容寻址 + 同版本重建），只比 artifact
+		//     就分不出"镜像里的账本是我写的"还是"是另一次成功发布写的"——后者必须拒绝；
+		//   · From 的身份为空是历史行（本列上线前），按已裁规则退化为 artifact 比较；
+		//   · 任何一条语言的 Own ≠ From（同 artifact 也算）→ 受控冲突，**不动访问面**。
+		lockedLedger, lerr = s.ledgerIdentitiesTx(ctx, tx, inst.ID)
+		if lerr != nil {
+			return lerr
+		}
+		if cerr := compareRollbackLedger(fromLedger, lockedLedger); cerr != nil {
+			return cerr
+		}
 		inst.ActiveArtifactID = &artID
 		inst.StagedArtifactID = &artID
 		inst.Stale = false
 		inst.PublishedAt = &now
 		inst.UpdatedAt = now
-		return s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst)
+		if uerr := s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst); uerr != nil {
+			return uerr
+		}
+		// 访问面切换与指针提交在同一段（路径锁在事务内层）：先写文件再提交，提交失败
+		// 时链接已被新产物覆盖，但指针没动 → 下次发布按账本重放即可（Activate 是对同一
+		// 路径的原子 rename，重跑收敛）。
+		return s.withPath(inst.URLPath, func() error {
+			return s.publication.Activate(inst.URLPath, loc)
+		})
 	})
 	if err != nil {
+		logger.Scene("build").With("presentation_id", inst.ID).With("path", inst.URLPath).
+			Error(err, "产物回滚激活失败")
 		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, err.Error())
 	}
 	return s.toResp(ctx, inst)
+}
+
+// ledgerIdentity 一条语言账本在某一时刻的归属事实（回滚身份判据的原子单位）。
+//
+// 两个字段必须一起比：content addressing + 同版本重建会让两次不同的 attempt 命中
+// 同一份产物，只比 artifact 分不出是谁写的账本。
+type ledgerIdentity struct {
+	Lang       string
+	ReceiptID  string
+	ArtifactID string
+}
+
+// ledgerIdentities 锁外读账本身份（"我基于哪一代发起这次回滚"）。
+func (s *Service) ledgerIdentities(ctx context.Context, instanceID string) ([]ledgerIdentity, error) {
+	rows, err := s.m.ListPublicationsForInstance(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	return ledgerIdentitiesOf(rows), nil
+}
+
+// ledgerIdentitiesTx 锁内读账本身份（Own）。
+func (s *Service) ledgerIdentitiesTx(ctx context.Context, tx *gorm.DB, instanceID string) ([]ledgerIdentity, error) {
+	rows, err := s.m.ListPublicationsTx(tx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	return ledgerIdentitiesOf(rows), nil
+}
+
+func ledgerIdentitiesOf(rows []presentationmodel.PublicationEntity) []ledgerIdentity {
+	out := make([]ledgerIdentity, 0, len(rows))
+	for _, row := range rows {
+		art := ""
+		if row.ArtifactID != nil {
+			art = strings.TrimSpace(*row.ArtifactID)
+		}
+		out = append(out, ledgerIdentity{
+			Lang:       row.Lang,
+			ReceiptID:  strings.TrimSpace(row.ReceiptID),
+			ArtifactID: art,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Lang < out[j].Lang })
+	return out
+}
+
+// compareRollbackLedger 锁内比较 From（发起时的账本）与 Own（行锁内回读的账本）。
+//
+// 判据按已裁规则：
+//   - 语言维度必须一致（期间新增/删掉语言 = 目标已漂移）；
+//   - Own 的 receiptID 非空时必须等于 From 的 receiptID —— **同一 artifact 也拒绝**，
+//     因为"另一次成功发布恰好复用了同一份产物"与"镜像里还是我那一代"是两件事；
+//   - From 的 receiptID 为空是历史行（700 之前），退化为 artifact 相等比较；
+//   - 任何不一致 → 受控冲突（errPublishStateMoved），调用方据此拒绝且**不动访问面**。
+func compareRollbackLedger(from, own []ledgerIdentity) error {
+	if len(from) != len(own) {
+		return fmt.Errorf("%w: 回滚期间账本语言集合发生变化", errPublishStateMoved)
+	}
+	byLang := make(map[string]ledgerIdentity, len(from))
+	for _, row := range from {
+		byLang[row.Lang] = row
+	}
+	for _, row := range own {
+		f, ok := byLang[row.Lang]
+		if !ok {
+			return fmt.Errorf("%w: 回滚期间新增了语言账本 %s", errPublishStateMoved, row.Lang)
+		}
+		if row.ReceiptID != "" && f.ReceiptID != "" {
+			if row.ReceiptID != f.ReceiptID {
+				return fmt.Errorf("%w: 语言 %s 的账本已由另一次成功发布接管（from=%s own=%s）",
+					errPublishStateMoved, row.Lang, f.ReceiptID, row.ReceiptID)
+			}
+			continue
+		}
+		// 历史兼容档：任一侧缺回执身份时只能比产物。
+		if row.ArtifactID != f.ArtifactID {
+			return fmt.Errorf("%w: 语言 %s 的账本产物在回滚期间发生变化", errPublishStateMoved, row.Lang)
+		}
+	}
+	return nil
+}
+
+// containsPath 路径是否在集合里（精确比较，不做前缀/模糊匹配）。
+func containsPath(paths []string, want string) bool {
+	w := strings.TrimSpace(want)
+	if w == "" {
+		return false
+	}
+	for _, p := range paths {
+		if strings.TrimSpace(p) == w {
+			return true
+		}
+	}
+	return false
 }
 
 // RollbackDocument 快照级文档回滚：取历史快照的文档重发（重新编译，实体数据取最新）。

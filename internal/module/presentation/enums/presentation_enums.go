@@ -64,6 +64,15 @@ const (
 	ErrRollbackFailed = "presentation.err.rollbackFailed"
 	// ErrSnapshotMismatch 目标快照不属于该实例（防止拿别人的快照回滚自己）。
 	ErrSnapshotMismatch = "presentation.err.snapshotMismatch"
+	// ErrInputMoved 本次发布编译依据的输入已过期（实体 input_version 在编译之后被推进）。
+	//
+	// 触发点：发布第二阶段在实体行锁内做版本复验（WHERE input_version = $expect），
+	// 锁内读到的版本与冻结时捕获的不等 —— 说明编译期间又有一次真实输入变化进来
+	// （保存草稿 / 译文扇出 / 依赖标记），本次产物烘的是旧输入。
+	//
+	// 状态码 409（与 ActionTargetInUse 同档）：这是**并发冲突**而不是服务故障，调用方
+	// 重试即可拿到最新输入；给 500 会把它混进真正的构建失败里，运维看不出区别。
+	ErrInputMoved = "presentation.err.inputMoved"
 )
 
 // errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
@@ -88,6 +97,7 @@ var errFallbacks = map[string]string{
 	ErrRollbackTargetMiss:    "回滚目标不存在，或产物文件已缺失。",
 	ErrRollbackFailed:        "回滚激活失败，线上版本保持不变。",
 	ErrSnapshotMismatch:      "目标快照不属于这个实例，不能用来回滚。",
+	ErrInputMoved:            "内容刚刚又改过一次，本次发布依据的输入已过期，请重试。",
 }
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
@@ -126,3 +136,8 @@ const (
 
 // ActionTargetInUse 在声明处固定被引用目标的冲突状态。
 func ActionTargetInUse() error { return facing.WithStatus(Err(ErrActionTargetInUse), 409) }
+
+// InputMoved 发布输入在编译期间被推进（版本谓词未命中）→ 409。
+//
+// 与 ErrInputMoved 同源：声明处的兜底就是出口文案，这里只固定状态码。
+func InputMoved() error { return facing.WithStatus(Err(ErrInputMoved), http.StatusConflict) }

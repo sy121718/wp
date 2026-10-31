@@ -12,7 +12,10 @@ package unit
 import (
 	"context"
 	"errors"
+	"fmt"
 	json "go_wp/pkg/jsonx"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -250,4 +253,184 @@ func linkedArtifactHash(t *testing.T, urlPath string) string {
 		t.Fatalf("路径 %s 应是页面产物，实际 kind=%s", urlPath, state.Kind)
 	}
 	return strings.TrimPrefix(state.Locator.Key, "artifacts/")
+}
+
+// ---- 改 URL 的激活屏障（2026-10-30 定点整改）----
+//
+// 三件事此前没有任何用例守着，且都不是文档问题：
+//
+//	B1 同路径、同 artifact 的**另一条**回执成功后，老回执重放不得覆盖它的成功身份；
+//	B2 旧路径处置失败时必须保持 pending 且可以重试（此前先结案再处置，失败即失去重放入口）；
+//	B3 编译/切换没成功时不得执行旧路径处置（新路径没有产物，旧路径必须原样在线）。
+
+// insertUpdateURLReceipt 直插一条 update_url 的 pending 回执（记下从哪个路径改到哪）。
+//
+// 只走「回执表 → 恢复例程」这一条真实入口：页面、产物行、访问面链接都用生产同形的夹具。
+func insertUpdateURLReceipt(t *testing.T, db *gorm.DB, pageID, toPath, oldPath, lang, fromArtifactID string, redirect bool, capturedVersion int64) int64 {
+	t.Helper()
+	data := fmt.Sprintf(`{"projectId":%q,"lang":%q,"oldPath":%q,"redirect":%t,"capturedInputVersion":%d}`,
+		projectIDOfPage(t, db, pageID), lang, oldPath, redirect, capturedVersion)
+	var id int64
+	if err := db.Raw(`INSERT INTO publication_receipts (source_type, source_id, action, path, from_artifact_id, receipt_state, receipt_data, create_time)
+		VALUES ('page', ?, 'update_url', ?, ?, 'pending', ?::jsonb, now()) RETURNING id`,
+		pageID, toPath, fromArtifactID, data).Scan(&id).Error; err != nil {
+		t.Fatalf("插入改 URL 回执失败: %v", err)
+	}
+	return id
+}
+
+// projectIDOfPage 读页面所属工程（回执的 receipt_data 里要带它，恢复据此定位）。
+func projectIDOfPage(t *testing.T, db *gorm.DB, pageID string) string {
+	t.Helper()
+	var projectID string
+	if err := db.Raw(`SELECT project_id FROM pages WHERE id = ?`, pageID).Scan(&projectID).Error; err != nil {
+		t.Fatalf("读取页面工程失败: %v", err)
+	}
+	return projectID
+}
+
+// TestUpdateURLOldReceiptDoesNotOverrideNewerSuccess 同路径、同 artifact 的另一条回执
+// 成功后，老回执重放不得覆盖成功身份（B1）。
+//
+// 现场：页面从 /url-a 改到 /url-b 的两次尝试（同内容，产物 hash 相同）都留下了 pending
+// 回执；后一条已经成功兑现（账本记着它的 id）。老回执被重放时，链接、产物、路径全部
+// 与它自己记的一致 —— 只看「版本相等」或「artifact 相等」会判成功，把账本身份改成老的，
+// 于是下一次收敛再也分不清谁是最新。
+func TestUpdateURLOldReceiptDoesNotOverrideNewerSuccess(t *testing.T) {
+	db, svc, _, projectID := newPageService(t)
+	ctx := context.Background()
+	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
+	page := createPage(t, svc, projectID, "/url-a", headingDocument)
+
+	hash := "hash-update-url-attempt"
+	writeArtifactDir(t, root, hash)
+	artifactID := insertArtifactRow(t, db, page.ID, hash)
+	linkActivePath(t, root, "/url-b", hash)
+
+	// 老回执先落库（create_time 更早），新回执照常更靠后。
+	insertUpdateURLReceipt(t, db, page.ID, "/url-b", "/url-a", "zh-CN", artifactID, true, 0)
+	newID := insertUpdateURLReceipt(t, db, page.ID, "/url-b", "/url-a", "zh-CN", artifactID, true, 0)
+	// 新回执已兑现：账本记着它。
+	if err := db.Exec(`UPDATE page_publications SET receipt_id = ? WHERE page_id = ? AND lang = 'zh-CN'`,
+		newID, page.ID).Error; err != nil {
+		t.Fatalf("预置账本身份失败: %v", err)
+	}
+
+	recovered, rolledBack, rerr := recoverPending(t, svc, ctx)
+	if rerr != nil {
+		t.Fatalf("恢复失败: %v", rerr)
+	}
+	if got := ledgerReceiptID(t, db, page.ID, "zh-CN"); got != newID {
+		t.Fatalf("老回执不得覆盖新回执的成功身份：期望 %d，实际 %d", newID, got)
+	}
+	if recovered+rolledBack != 2 {
+		t.Fatalf("两条回执都应被判定并结案，实际 recovered=%d rolledBack=%d", recovered, rolledBack)
+	}
+	if got := draftPathOf(t, db, page.ID); got != "/url-b" {
+		t.Fatalf("收敛后草稿路径应为 /url-b，实际 %q", got)
+	}
+}
+
+// TestUpdateURLOldPathSettleFailureKeepsPending 旧路径处置失败时必须保持 pending（B2）。
+//
+// 现场：新路径已切到本次产物、账本仍是 from、版本一致 —— 判定这一步一定通过；
+// 处置这一步失败（旧路径位置被一个目录占住，301 链接建不出来）。修复前的顺序是
+// 先 complete 再 settle：处置一失败回执已结案，那次失败再没有任何重放入口。
+func TestUpdateURLOldPathSettleFailureKeepsPending(t *testing.T) {
+	db, svc, _, projectID := newPageService(t)
+	ctx := context.Background()
+	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
+	page := createPage(t, svc, projectID, "/dest/settle-old", headingDocument)
+
+	hash := "hash-settle-failure"
+	writeArtifactDir(t, root, hash)
+	artifactID := insertArtifactRow(t, db, page.ID, hash)
+	linkActivePath(t, root, "/settle-new", hash)
+	// 旧路径位置的**父目录**被一个普通文件占住：301 重放要在这里建符号链接，
+	// 祖先链检查直接失败（rename 阶段遇到「已被占位」不会静默破坏现场）。
+	oldDir := activeDir(t)
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatalf("创建访问面根失败: %v", err)
+	}
+	blocker := filepath.Join(oldDir, "dest")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("预置占位文件失败: %v", err)
+	}
+	blockedOldPath := "/dest/settle-old"
+	receiptID := insertUpdateURLReceipt(t, db, page.ID, "/settle-new", blockedOldPath, "zh-CN", artifactID, true, 0)
+
+	if _, _, rerr := recoverPending(t, svc, ctx); rerr != nil {
+		t.Fatalf("恢复应把失败交回调用方（保留 pending），实际 %v", rerr)
+	}
+	if got := receiptStateForAction(t, db, "/settle-new", "update_url"); got != "pending" {
+		t.Fatalf("旧路径处置失败后回执必须保持 pending（否则没有重放入口），实际 %q", got)
+	}
+	// 数据库一个字节都不该落定：草稿路径仍是旧值，账本没有成功身份。
+	if got := draftPathOf(t, db, page.ID); got != blockedOldPath {
+		t.Fatalf("处置失败必须整体回滚，draft_path 实际 %q", got)
+	}
+	if got := ledgerReceiptID(t, db, page.ID, "zh-CN"); got != 0 {
+		t.Fatalf("处置失败不得写入成功身份，实际 %d", got)
+	}
+	// 处置失败发生在开事务之前：回执从未被领取走成「卡住」的状态，下一轮照样能领到它。
+	if got := receiptStateForAction(t, db, "/settle-new", "update_url"); got != "pending" {
+		t.Fatalf("回执状态必须仍可被再次领取，实际 %q", got)
+	}
+	// 修好现场后重放同一段：必须能收敛（幂等 + 可重放）。
+	if err := os.Remove(blocker); err != nil {
+		t.Fatalf("清理占位文件失败: %v", err)
+	}
+	recovered, rolledBack, rerr := recoverPending(t, svc, ctx)
+	if rerr != nil {
+		t.Fatalf("修好现场后重放失败: %v", rerr)
+	}
+	if recovered != 1 || rolledBack != 0 {
+		t.Fatalf("重放应补完成 1 条，实际 %d / %d", recovered, rolledBack)
+	}
+	if got := receiptStateForAction(t, db, "/settle-new", "update_url"); got != "committed" {
+		t.Fatalf("重放成功后回执应结案为 committed，实际 %q", got)
+	}
+	if got := ledgerReceiptID(t, db, page.ID, "zh-CN"); got != receiptID {
+		t.Fatalf("重放成功应把本条回执身份写进账本：期望 %d，实际 %d", receiptID, got)
+	}
+	if kind := activeKind(t, blockedOldPath); kind != "redirect" {
+		t.Fatalf("重放成功后旧路径应已按 WithRedirect 处置为 301，实际 %q", kind)
+	}
+}
+
+// TestUpdateURLWithoutSwitchSkipsOldPathSettle 编译/切换没成功时不得处置旧路径（B3）。
+//
+// 现场：新路径上没有任何产物（内核切换没发生），回执是 pending。旧路径必须原样在线 ——
+// 「意图已落库」不等于「激活成功」，在新路径还没有字节的时候把旧路径改成 301，
+// 访客会从一条能看的页面被送去一个 404。
+func TestUpdateURLWithoutSwitchSkipsOldPathSettle(t *testing.T) {
+	db, svc, _, projectID := newPageService(t)
+	ctx := context.Background()
+	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
+	page := createPage(t, svc, projectID, "/no-switch-old", headingDocument)
+
+	// 旧路径仍在线，指向一份真实产物。
+	oldHash := "hash-no-switch-old"
+	writeArtifactDir(t, root, oldHash)
+	oldArtifactID := insertArtifactRow(t, db, page.ID, oldHash)
+	linkActivePath(t, root, "/no-switch-old", oldHash)
+	if err := db.Exec(`INSERT INTO page_publications (page_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time)
+		VALUES (?, 'zh-CN', '/no-switch-old', ?, ?, now(), now())`, page.ID, oldArtifactID, oldHash).Error; err != nil {
+		t.Fatalf("预置账本失败: %v", err)
+	}
+	// 新路径上什么都不放 = 切换没发生。
+	insertUpdateURLReceipt(t, db, page.ID, "/no-switch-new", "/no-switch-old", "zh-CN", oldArtifactID, true, 0)
+
+	if _, _, rerr := recoverPending(t, svc, ctx); rerr != nil {
+		t.Fatalf("恢复失败: %v", rerr)
+	}
+	if kind := activeKind(t, "/no-switch-old"); kind != "page" {
+		t.Fatalf("切换未成功时旧路径必须仍是在线页面（不得被处置成 %q）", kind)
+	}
+	if got := receiptStateForAction(t, db, "/no-switch-new", "update_url"); got != "pending" {
+		t.Fatalf("账本未前进时老回执应保留 pending 等自己的重放，实际 %q", got)
+	}
+	if got := ledgerReceiptID(t, db, page.ID, "zh-CN"); got != 0 {
+		t.Fatalf("不得写入任何成功身份，实际 %d", got)
+	}
 }

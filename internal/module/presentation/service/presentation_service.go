@@ -138,6 +138,54 @@ type Service struct {
 	// 用计数而不是 bool：收敛可能被定时器与写路径快通道同时触发（也允许用例直接调），
 	// bool 会被先结束的那一轮提前清掉，后一轮恢复驱动的写入又开始推信号。
 	converging atomic.Int32
+	// lastOldPathPending 最近一次「旧路径处置未完成」的时刻（unix 秒，仅供可观测/自检。
+	// 该事实最终以回执 pending 行呈现，本字段不是判据）。
+	lastOldPathPending atomic.Int64
+	// pathLock 访问面路径的**进程内**互斥（pipeline.PublicationPathLocker）。
+	//
+	// 与 instanceLocks 的分工：instanceLocks 按实体分片，只管"同一实例的写入串行化"；
+	// 它拦不住两个**不同实体**先后写同一条访问路径 —— 那两个实体各自拿各自的实体锁，
+	// 都在自己的锁内做「读现场 → 判断 → 改符号链接」，中间可以任意交错，结果是一方
+	// os.Remove 掉另一方刚上线的链接，而两边都认为自己是对的。路径锁按归一后的物理
+	// 访问路径分片，是唯一能拦住这种交错的锁。
+	//
+	// 默认取 pipeline.DefaultPathLocker()（进程共享单例）：锁的效力来自"同一把锁"，
+	// 各服务各自 new 一个 ProcessPathLocker 等于没有锁，而且漏装配不会编译报错、
+	// 不会测试失败，只在线上表现为"偶尔消失的一条链接"。装配层要换实现就整体换。
+	pathLock pipeline.PublicationPathLocker
+}
+
+// SetPublicationPathLocker 注入访问面路径锁（装配期调用；默认已是进程共享实例）。
+//
+// 显式传 nil 表示"没有互斥能力"：此时所有访问面副作用一律 fail closed
+// （返回 pipeline.ErrPathLockerUnavailable），处置意图留在 pending 等收敛重放 ——
+// 而不是"悄悄无锁执行"，后者删掉别人链接时没有任何人会发现。
+func (s *Service) SetPublicationPathLocker(locker pipeline.PublicationPathLocker) {
+	s.pathLock = locker
+}
+
+// withPaths 在持有全部 paths 的路径锁期间执行 fn（pipeline.PublicationPathLocker 的唯一入口）。
+//
+// 锁层级（不可重入，违反即死锁）：实体条带锁 → DB 实体行锁 → withPaths → 锁内复核 → store 副作用。
+// store 内部永不取本锁，因此内部调用链不会重入。
+//
+// 锁键取**归一后的物理访问路径**（语言已包含在路径里，如 /en/...），不加工程/语言前缀：
+// 锁保护的是 public/active 下那一条符号链接，加前缀只会得到一把与别人不相干的锁。
+func (s *Service) withPaths(paths []string, fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	locker := s.pathLock
+	if locker == nil {
+		// fail closed：没有互斥就不动访问面，让调用方留 pending 重放。
+		return pipeline.ErrPathLockerUnavailable
+	}
+	return locker.WithPaths(paths, fn)
+}
+
+// withPath 单路径便捷形式。
+func (s *Service) withPath(path string, fn func() error) error {
+	return s.withPaths([]string{path}, fn)
 }
 
 // lockInstance 取某实体的实例级锁（按 entity 维度：创建 / 重建 / 改 URL / 回滚互斥同一把）。
@@ -179,6 +227,7 @@ func NewService(m *presentationmodel.Model,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
 		routes:      routes,
+		pathLock:    pipeline.DefaultPathLocker(),
 		// 容量 1：同一时刻只留一个待处理信号，多次写入合并成一次收敛。
 		convergeWake: make(chan struct{}, 1),
 	}

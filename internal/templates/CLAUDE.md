@@ -34,6 +34,9 @@ write_feedback 三件已删除）。契约见该文件头，要点：
   `-confirm`、`-extra`（bulk 点名要发的字段）、`-outcome`（仅 bulk）。
 - **声明可以写在 form 或提交按钮上**，两者都有时按钮优先。这是「一个表单并排几个动作」的落点
   （批量启停 / 批量删除端点不同），**不是历史残留**。
+- **可选行为开关**（裸属性，基座按 `hasAttr` 只读存在性——带值等于没写）：
+  `data-write-items`（失败时消费响应里的 `data.items` 逐条列明细；bulk 本来就会消费，
+  写上是冗余但合法）、`data-write-latest`（同一表单可能并发提交时开：迟到响应不得盖新响应）。
 - 失败不重渲染片段：4xx + JSON 由基座 toast；用户已填内容留在 DOM。
 
 ### 有意保留的整形属性（**不是残留，别删**）
@@ -56,7 +59,8 @@ write_feedback 三件已删除）。契约见该文件头，要点：
 `-flash` / `-flash-target`（→ `-reload`，结论经 sessionStorage 跨刷新）、`data-close-on-ok`（→ `-close`）、
 `data-reload-on-ok`（→ `-reload`）、`data-write-html`（→ `-json-wrap`）。
 
-`scripts/check-write-attributes.sh` 守这张表：写表单上出现已删属性即变红。
+`scripts/check-write-attributes.sh` 守这张表：写表单上出现已删属性即变红；未登记的
+`data-write-*` 裸属性同样变红；行为开关带值（`-items="1"`）变红。
 
 - 非基座增强脚本不再自挂 `htmx:after:swap`：控件用 `WBUI.scan` + `MutationObserver`
   （`ui/index.js`），需要 htmx 认领新 DOM 时广播 `wb:rescan`（`ui/htmx-bridge.js` 翻译）。

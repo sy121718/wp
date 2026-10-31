@@ -8,6 +8,7 @@ package pubservice
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,10 +35,15 @@ func TestAuditSiteDetectsBrokenInternalLink(t *testing.T) {
 	issues := AuditSite([]AuditDocument{doc}, map[string]bool{"/about": true, "/shop": true})
 	found := false
 	for _, it := range issues {
-		if it.Item == AuditInternalLinkBroken && strings.Contains(it.Message, "/gone-page") {
+		// 结论只带事实：死链的目标原值在 Params.Href，不再是拼好的句子。
+		// 这里断言**精确相等**（原来的 Contains 会被 "/gone-page-x" 之类的邻近值蒙混过关）。
+		if it.Item == AuditInternalLinkBroken && it.Params.Href == "/gone-page" {
 			found = true
 			if it.Level != AuditLevelError {
 				t.Errorf("死链应是 error 级，实际 %s", it.Level)
+			}
+			if it.Path != "/about" {
+				t.Errorf("死链结论应归属 /about，实际 %q", it.Path)
 			}
 		}
 	}
@@ -64,11 +70,18 @@ func TestAuditSiteDetectsDuplicateTitle(t *testing.T) {
 	for _, it := range issues {
 		if it.Item == AuditTitleDuplicate {
 			hits++
-			if !strings.Contains(it.Message, "/a") || !strings.Contains(it.Message, "/b") {
-				t.Errorf("重复 title 结论应列出全部命中页面，实际 %q", it.Message)
+			// 命中页面在 Params.Paths（完整、已排序），标题原值在 Params.Title。
+			// Paths 用切片精确相等：漏一页、多一页、顺序漂移都会红 —— 这比
+			// 原先在成品句里找子串更强（子串相等时顺序信息已经丢了）。
+			if !slices.Equal(it.Params.Paths, []string{"/a", "/b"}) {
+				t.Errorf("重复 title 结论应列出全部命中页面 [/a /b]，实际 %v", it.Params.Paths)
 			}
-			if strings.Contains(it.Message, "/c") {
-				t.Errorf("标题唯一的页面不该出现在结论里: %q", it.Message)
+			if it.Params.Title != "同一个标题" {
+				t.Errorf("重复 title 结论应带标题原值，实际 %q", it.Params.Title)
+			}
+			// 这条结论不属于任何单页：伪造首个命中页做归属是旧形态的缺陷。
+			if it.Path != "" {
+				t.Errorf("重复 title 结论不该有归属页面，实际 %q", it.Path)
 			}
 		}
 	}

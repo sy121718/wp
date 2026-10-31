@@ -49,6 +49,17 @@ const (
 	ErrNoStagedArtifact   = "ErrNoStagedArtifact"   // 无暂存产物，请先构建
 	ErrRollbackTargetMiss = "ErrRollbackTargetMiss" // 回滚目标产物不存在
 	ErrRebuildRequired    = "ErrRebuildRequired"    // 草稿已变更，请重新构建后再发布
+	// ErrInputMoved 编译之后、激活之前输入又变了（草稿 / 译文 / 菜单依赖任一推进了
+	// pages.input_version），本次产物依据的已不是最新输入 —— 拒绝激活，页面保持 stale。
+	//
+	// 与 ErrRebuildRequired 的区分：后者是「产物与当前草稿不一致，请重新构建」；
+	// 前者是「我编译完到这里为止，输入又前进了一代」，重试时机由队列/用户决定。
+	ErrInputMoved = "ErrInputMoved" // 输入已变更，请重新构建后再发布
+	// ErrRebuildOverloaded 本轮同步重建超过了单批上限，超出部分已入队异步执行。
+	//
+	// 它不是故障：入队是正常处置（队列会重试到收敛）。调用方看到它时应当理解为
+	// 「本批没有全部同步完成」，而不是「这次依赖变更失败了」。
+	ErrRebuildOverloaded = "ErrRebuildOverloaded" // 本轮重建超过单批上限，其余已入队
 
 	// 系统页面槽位（BIZ-1）。
 	ErrInvalidSlot  = "ErrInvalidSlot"  // 槽位键不在白名单内
@@ -60,6 +71,10 @@ const (
 	ErrRedirectOccupied    = "ErrRedirectOccupied"    // 源路径已被占用
 	ErrRedirectTargetMiss  = "ErrRedirectTargetMiss"  // 目标路径不存在或未激活
 	ErrRedirectLoop        = "ErrRedirectLoop"        // 重定向成环
+	// ErrRedirectConflict 删除时归属已变：锁内复验发现这条重定向行或它的访问面链接
+	// 已不归本次处置（并发删除 / 被新发布接管）。它是冲突而不是"不存在" ——
+	// 后者会让操作者以为自己点错了。
+	ErrRedirectConflict = "ErrRedirectConflict" // 重定向已被其它操作改动
 )
 
 const (
@@ -188,6 +203,8 @@ var errFallbacks = map[string]string{
 	ErrNoStagedArtifact:         "无暂存产物，请先构建",
 	ErrRollbackTargetMiss:       "回滚目标产物不存在",
 	ErrRebuildRequired:          "草稿已变更，请重新构建后再发布",
+	ErrInputMoved:               "编译期间内容已更新，本次发布已取消，请重新构建后再发布",
+	ErrRebuildOverloaded:        "本轮需要重建的页面超过单批上限，其余已排入队列",
 	ErrInvalidSlot:              "槽位键不在允许范围内，请回到列表页重新选择",
 	ErrSlotPageMiss:             "要绑定的页面不存在、已被删除，或不属于当前工程",
 	ErrRedirectUnavailable:      "重定向能力未接入，暂时无法管理重定向",
@@ -195,6 +212,7 @@ var errFallbacks = map[string]string{
 	ErrRedirectOccupied:         "源路径已被占用，不能为它重复配置重定向",
 	ErrRedirectTargetMiss:       "目标路径不存在或尚未激活，请先确认目标页面已发布",
 	ErrRedirectLoop:             "该重定向会形成循环跳转，已拒绝",
+	ErrRedirectConflict:         "该重定向刚被其它操作改动，请刷新后重试",
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
