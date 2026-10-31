@@ -38,7 +38,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 | model | 本模块表的 CRUD、聚合内原子组合 | 业务规则、跨聚合事务、别人的表名、import service |
 | contract | 接口 + 不可变 DTO | import 别人的 service/model、反向依赖 builder/core |
 | enums | 枚举、错误 key + 中文兜底 + 状态码、界面 key | 取词、拼句（兜底是原文，不是成品调用） |
-| inbound/http | binding.* → 调 service → return（JSON 出口） | 第二段业务逻辑、拼 map/串、取词、adminui.Render*、模板名、编译归一 |
+| inbound/http | binding.* → 调 service → JSON 出口；页面 GET 成功用 pageview.RenderTemplate 声明模板 | 第二段业务逻辑、拼 map/串、取词、adminui.Render*、编译归一 |
 | inbound/mcp | 工具定义与参数校验 | 重抄 dto 字段表、直连 model |
 | outbound | 外部系统适配 | 业务规则 |
 
@@ -46,7 +46,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
-| routers | 装配、路由注册、页面出口（adminui.PageSlot / BareSlot） | 业务逻辑、SQL |
+| routers | 装配、路由注册、统一渲染实现（pageview.UseRenderer）；存量 Slot 逐模块迁移 | 业务逻辑、SQL |
 | adminui | 后台渲染出口（Prepare / Page / Bare / 错误出口转发） | 业务语义、数据派生 |
 | text | 界面文案线（注入 t/tf、InternalMsg、FactOf） | 业务语义、读模型 |
 | builder/** | 构建期编译与组件 | 控制面 DB 写、访客请求处理 |
@@ -62,7 +62,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 | binding | 绑定唯一入口（JSON/Form/Query/Field/ListQuery/CSRFToken） | 业务校验 |
 | facing | 错误事实（key + 兜底 + 状态码） | 取词、日志 |
 | response | JSON 出口取词与状态码 | 业务语义 |
-| view | 视图结果接口（PageStatus/PageNoStore） | 渲染实现 |
+| view | 视图结果接口、请求级渲染接线与统一失败出口 | 模板引擎实现、业务逻辑 |
 | i18n logger database cache rls jsonx utils money pagination pathkit safepath | 基础设施 | import internal/** |
 | auth casbin crypto captcha mailer queue upload validate sitehttps sitetz datarule reqparams backpath bulkids enums | 能力包（provider 型带 provider/ 实现） | 业务语义、import internal/** |
 
@@ -128,7 +128,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 | 格 | 何时 | 形态 |
 |---|---|---|
 | JSON | 所有写动作、所有非页面请求、页面 GET 失败 | {code,message,data} + 真实状态码 |
-| 页面视图 | 页面 GET 成功 | 控制器 pageview.Render(c, data)；router 用 adminui.PageSlot / BareSlot 渲染 Jet |
+| 页面视图 | 页面 GET 成功 | 控制器 pageview.RenderTemplate(c, tpl, data) 选择模板；统一渲染器注入语言、t/tf 和页面上下文；存量 Slot 逐模块迁移 |
 | 字节流 | 构建器预览、下载、SSE | 直接写 body 后 return nil, response.ErrHandled |
 
 - 状态码在错误声明处给（facing.WithStatus），出口只调 response.ErrorStatusAuto：400 参数 / 401 未登录 / 403 无权限 / 404 不存在 / 409 冲突与版本 / 500 其余。
