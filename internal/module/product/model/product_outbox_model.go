@@ -36,6 +36,11 @@ type OutboxEventEntity struct {
 // TableName 表名（与迁移 309 一致）。
 func (OutboxEventEntity) TableName() string { return "product_outbox_events" }
 
+// LockEntityTx 在事务内协调同一键的写入，提交或回滚时自动释放。
+func (m *Model) LockEntityTx(ctx context.Context, tx *gorm.DB, key string) error {
+	return tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtext(?))", key).Error
+}
+
 // NextOutboxRevisionTx 取该实体的下一次变更版本（同实体单调递增）。
 //
 // 事务级顾问锁的用途：两个并发事务同时改同一实体时，MAX+1 会算出同一个版本号。
@@ -46,8 +51,7 @@ func (m *Model) NextOutboxRevisionTx(ctx context.Context, tx *gorm.DB, entityTyp
 	// 锁键取「实体类型:实体 id」的哈希：不同实体互不阻塞，同一实体串行。
 	// 这一句保留 gorm 的 Exec：pg_advisory_xact_lock 是无表、无 Entity 可映射的
 	// 数据库函数调用，GORM 没有对应表达能力（门禁登记在 rawSQLAllowedList）。
-	if err := tx.WithContext(ctx).Exec(
-		"SELECT pg_advisory_xact_lock(hashtext(?))", entityType+":"+entityID).Error; err != nil {
+	if err := m.LockEntityTx(ctx, tx, entityType+":"+entityID); err != nil {
 		return 0, err
 	}
 	var next int64

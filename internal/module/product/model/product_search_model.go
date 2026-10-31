@@ -13,7 +13,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/database"
 	"go_wp/pkg/rls"
 )
 
@@ -41,7 +40,7 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 	if limit <= 0 || limit > maxProductSearchLimit {
 		limit = maxProductSearchLimit
 	}
-	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	pattern := literalKeywordPattern(keyword)
 	// 站内搜索是对外可观察的读取路径（anonymous 片段），漏包作用域的表现是
 	// 换非超级角色后**搜索结果恒为空**且没有任何日志 —— 比报错更难查。
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

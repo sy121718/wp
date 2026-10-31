@@ -12,7 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/database"
+	"go_wp/pkg/pagination"
 	"go_wp/pkg/rls"
 )
 
@@ -41,10 +41,7 @@ func (m *Model) CategoryDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&ProductCategoryEntity{})
 }
 
-// GetCategory 按 ID 查分类。
-//
-// projectID 由**调用方**给出（不从行里读回来）：product_categories 在迁移 215 名单里，
-// 跨工程的分类在策略下不可见，读不到即 ErrRecordNotFound —— 隔离生效后的期望结果。
+// GetCategory 在工程作用域内按 ID 查分类；写入者仍须显式校验返回行归属。
 func (m *Model) GetCategory(ctx context.Context, id, projectID string) (e *ProductCategoryEntity, err error) {
 	e = &ProductCategoryEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
@@ -104,7 +101,7 @@ func (m *Model) ListCategories(ctx context.Context, projectID, keyword string) (
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	})
@@ -122,7 +119,7 @@ func (m *Model) CountCategories(ctx context.Context, projectID, keyword string) 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		return q.Count(&n).Error
 	})
@@ -166,6 +163,10 @@ func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, lim
 			Where(categoryRootFilter, projectID, projectID)
 		if e := countQ.Count(&total).Error; e != nil {
 			return e
+		}
+		if limit > 0 && int64(offset) >= total {
+			page := pagination.ClampPage(offset/limit+1, limit, total)
+			offset = (page - 1) * limit
 		}
 		// 原是一条 WITH RECURSIVE（roots → tree，UNION ALL 递归 + 数组路径防环 + depth < 64）。
 		// GORM 没有 CTE API（v1.31.1 实测：clause.With 是空结构体，gorm 内部零使用），
@@ -266,7 +267,7 @@ func categoryRowsOf(all []ProductCategoryEntity, matched map[string]bool) []*Cat
 // 其余都是「仅供定位」的祖先。全量返回不做分页 —— 命中越多每棵树越浅，
 // 这里宁可整片森林一起读，也不引入「命中分页 + 树分页」两套坐标。
 func (m *Model) ListCategorySearchForest(ctx context.Context, projectID, keyword string) (rows []*CategoryPageRow, matchTotal int64, err error) {
-	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	pattern := literalKeywordPattern(keyword)
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		matchQ := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
 			Where(`project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, projectID, pattern, pattern)
@@ -430,7 +431,7 @@ func (m *Model) ProductUsingCategory(ctx context.Context, categoryID, projectID 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductEntity{}).
 			Where("category_ids @> ?::jsonb OR primary_category_id = ?", string(probe), categoryID).
-			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+			Order("sort ASC, create_time ASC, id ASC").Limit(1).Take(e).Error
 	})
 	return e, err
 }

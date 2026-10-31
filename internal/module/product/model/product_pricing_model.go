@@ -218,7 +218,7 @@ func (m *Model) listProductsForPricing(tx *gorm.DB, ctx context.Context, f Prici
 		q = q.Where("status = ?", f.Status)
 	}
 	if f.Keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+f.Keyword+"%")
+		q = q.Where("name ILIKE ?", productKeywordPattern(f.Keyword))
 	}
 	if f.CategoryID != "" {
 		probe, merr := json.Marshal([]string{f.CategoryID})

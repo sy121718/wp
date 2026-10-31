@@ -120,7 +120,7 @@ func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string, l
 			q = q.Where("kind = ?", kind)
 		}
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		q = q.Order("sort ASC, create_time ASC, id ASC")
 		if limit > 0 {
@@ -143,7 +143,7 @@ func (m *Model) CountTags(ctx context.Context, projectID, kind, keyword string) 
 			q = q.Where("kind = ?", kind)
 		}
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		return q.Count(&n).Error
 	})
@@ -399,10 +399,14 @@ func (m *Model) RemoveTagFromProductsTx(tx *gorm.DB, tagID, projectID string, no
 	}).Error
 }
 
-// ListProductsByIDs 批量取商品行（引用校验、工程过滤用，避免 N+1）。
+// ListProductsByIDs 批量取商品**整行**（当前唯一生产调用方是批量删除前的留痕快照）。
 //
-// projectID 由**调用方**给出：products 在迁移 215 名单里，跨工程的行读不到（这是期望行为 ——
-// 本方法的两个用途「捆绑引用校验」「按工程过滤 id」都要求只看到本工程的行）。
+// 只问一件事的调用方不要用它：按 id 判「是否已发布」用 ListStatusFactsByIDs、
+// 补商品名用 ListNameFactsByIDs、判「在不在本工程」用 ListIDFactsByIDs、
+// 画名字与链接用 GetSummaryFacts。整行读取会把 description / metadata / images
+// 一并搬进进程，而这些列一个都不参与那几处判断。
+//
+// projectID 由**调用方**给出：products 在迁移 215 名单里，跨工程的行读不到（这是期望行为）。
 // 缺作用域时的表现是**返回空列表**：调用方按「请求了哪些 id、拿到了哪些」做差集时，
 // 会把本工程存在的商品也判成「已删除」。
 func (m *Model) ListProductsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {

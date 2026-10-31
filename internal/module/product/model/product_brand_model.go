@@ -99,7 +99,7 @@ func (m *Model) ListBrands(ctx context.Context, projectID, keyword string, limit
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductBrandEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		q = q.Order("sort ASC, create_time ASC, id ASC")
 		if limit > 0 {
@@ -119,7 +119,7 @@ func (m *Model) CountBrands(ctx context.Context, projectID, keyword string) (n i
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductBrandEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
 		}
 		return q.Count(&n).Error
 	})
@@ -193,7 +193,7 @@ func (m *Model) ProductUsingBrand(ctx context.Context, brandID, projectID string
 	e = &ProductEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("brand_id = ?", brandID).
-			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+			Order("sort ASC, create_time ASC, id ASC").Limit(1).Take(e).Error
 	})
 	return e, err
 }

@@ -71,6 +71,7 @@ type refBatchRow struct {
 	CategoryIDs       json.RawMessage `gorm:"column:category_ids"`
 	AttributeIDs      json.RawMessage `gorm:"column:attribute_ids"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids"`
+	RelatedIDs        json.RawMessage `gorm:"column:related_ids"`
 }
 
 // newBatchRefHits 给每个候选 id 预先铺一个空桶 —— 调用方按 id 取值时不必判 nil。
@@ -214,6 +215,45 @@ func (m *Model) ProductRefsByAttributeIDs(ctx context.Context, attributeIDs, pro
 		}
 		for i := range rows {
 			for _, id := range matchCandidateIDs(rows[i].AttributeIDs, set) {
+				hits[id].addProject(pid)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hits, nil
+}
+
+// ProductRefsByRelatedIDs 批量反查「这批商品各自被哪些商品当作相关商品引用」（related_ids jsonb 数组）。
+//
+// 为什么需要它（PRD-016）：related_ids 是商品表的**自引用**，落在 JSONB 数组里，没有外键
+// 兜底。删除商品时既不阻止、也不清理、读取侧也不剔除 —— 于是别人的 related_ids 里会留下
+// 一个指向已删商品的 id，编辑页打开时那个 id 仍在。
+//
+// **这条只是「看得见」的能力，不是策略**：DEC-04 还没定（阻止删除 / 同事务清理 / 明确
+// 容忍并在读取剔除）。三种策略都要先能回答「谁引用了它」，所以先把这条只读扫描补上，
+// 由口径决定后接进删除路径或读取路径 —— 在此之前不在删除里加任何隐藏行为。
+//
+// 与另外三条同形：每工程一条查询（jsonb_exists_any 走 GIN），不逐商品往返。
+func (m *Model) ProductRefsByRelatedIDs(ctx context.Context, productIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
+	ids := normalizeProjectIDs(productIDs)
+	hits := newBatchRefHits(ids, []string{"products.related_ids"})
+	if len(ids) == 0 {
+		return hits, nil
+	}
+	set := idSet(ids)
+	err := m.eachRefScope(ctx, projectIDs, func(tx *gorm.DB, pid string) error {
+		rows := make([]refBatchRow, 0)
+		if err := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select("id, project_id, sku_code, related_ids").
+			Where("project_id = ? AND jsonb_exists_any(related_ids, ?::text[])", pid, textArrayParam(ids)).
+			Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := range rows {
+			for _, id := range matchCandidateIDs(rows[i].RelatedIDs, set) {
 				hits[id].addProject(pid)
 			}
 		}

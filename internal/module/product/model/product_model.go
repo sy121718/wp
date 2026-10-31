@@ -208,7 +208,7 @@ func (m *Model) Get(ctx context.Context, id, projectID string) (e *ProductEntity
 // GetWithoutScope 按 ID 读商品行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
 // 原唯一调用方 ProductTranslationCandidates 已改成带作用域读（契约补了 projectID 形参，
-// 翻译工作台把手里的当前工程传下来）。// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
+// 翻译工作台把手里的当前工程传下来）—— 所以它**当前没有任何生产调用方**。
 //
 // 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
 // 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
@@ -230,11 +230,15 @@ func (m *Model) GetWithoutScope(ctx context.Context, id string) (e *ProductEntit
 // **没有作用域的查询会静默返回 0 行**（fail closed 不报错）。空串或非 uuid 会被 rls
 // 直接拒掉（rls.ErrInvalidProjectID），不会退化成「查一个不存在的工程」那种更难排查的形态。
 //
-// 唯一调用方是 ProductService.VariantSnapshots（跨模块只读端口 VariantSnapshotPort），
-// 消费方三条链：order 下单落快照 / cart 加购与结算 / productLivePrice 价格核对片段。
-// 三者都能拿到工程（片段那条由商品组件把工程烘进片段 URL），所以这条链上不再保留
-// 不带作用域的入口 —— 曾经这里是 ListByIDsWithoutScope，换非超级角色的后果是
-// 「订单快照为空、加购拿不到变体、价格核对对不出任何结论」且一条错误日志都没有。
+// **当前没有任何生产调用方**：三条链（order 下单落快照 / cart 加购与结算 /
+// productLivePrice 价格核对片段）都只需要商品名或发布状态，已分别改走
+// ListNameFactsByIDs 与 ListStatusFactsByIDs 的窄投影。本方法保留是因为
+// public/test/rls 用它钉住「批量按 id 取商品必带工程作用域」这条护栏
+// （rls_product_scope_test.go、nonsuperuser/product_byids_scope_test.go）。
+// 需要整行的新调用方应当先说明为什么整行必需，否则用上面两条窄投影。
+//
+// 曾经这里是 ListByIDsWithoutScope，换非超级角色的后果是「订单快照为空、
+// 加购拿不到变体、价格核对对不出任何结论」且一条错误日志都没有。
 func (m *Model) ListByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -243,6 +247,130 @@ func (m *Model) ListByIDs(ctx context.Context, ids []string, projectID string) (
 	// 策略谓词读到的仍是 NULL，查询静默返回 0 行（与 collectionQuery 同一条禁令）。
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
+	return list, err
+}
+
+// productStatusFactColumns 访客与跨模块链路上只校验「是否已发布」时的投影白名单。
+//
+// 三个消费方（公开变体接口、两条变体快照）都只需要 id / 工程 / 名字或状态，
+// 但过去一律走 ListByIDs 的全行读取 —— 于是 description、metadata、images 这些
+// 大 JSONB 列被一并搬进访客请求与下单快照的进程内存。响应里不打印不等于没搬：
+// 任何一次整行日志、任何一处误加字段都会立刻外泄。
+const productStatusFactColumns = "id, project_id, status"
+
+// productNameFactColumns 只补齐「变体行缺的商品名与工程」时的投影白名单。
+const productNameFactColumns = "id, project_id, name"
+
+// productPublicOptionColumns 公开规格接口的商品侧投影。
+//
+// 这条路径只用 id / 工程 / 名（译文源）/ 状态（是否已发布）/ attribute_ids（规格维度来源），
+// 描述、图集、定价、关联与元数据一个都不参与。曾走 Get 全行读取。
+const productPublicOptionColumns = "id, project_id, name, status, attribute_ids"
+
+// ListStatusFactsByIDs 按 id 批量取「工程 + 状态」两列事实，**必带工程作用域**。
+//
+// 作用域是两层，缺一不可：rls.InProjectScope 开策略谓词（缺工程或非 uuid 时 rls 直接拒），
+// 查询本身再显式写 project_id 条件 —— 策略只在**非超级角色**下生效，超级用户 / BYPASSRLS
+// 连接（运维脚本、迁移、本模块的 model 单测）拿它一个都挡不住，只靠策略就会读到别的工程。
+func (m *Model) ListStatusFactsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productStatusFactColumns).
+			Where("project_id = ? AND id IN ?", projectID, ids).Find(&list).Error
+	})
+	return list, err
+}
+
+// productSummaryColumns 「只画这一行的名字与链接」时的投影白名单（调价目标行）。
+const productSummaryColumns = "id, project_id, name, slug"
+
+// GetSummaryFacts 按 id 取「身份 + 工程 + 名 + slug」四列，**必带工程作用域**。
+//
+// 调价目标行只画商品名与链接，却曾整行读取商品（描述、图集、元数据、默认价一并搬回）。
+func (m *Model) GetSummaryFacts(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
+	e = &ProductEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productSummaryColumns).
+			Where("project_id = ? AND id = ?", projectID, id).First(e).Error
+	})
+	return e, err
+}
+
+// productRefColumns 「这一行是否存在、属于哪个工程」这条问题的投影白名单。
+//
+// 评分写入（要工程）、评分列表（只要存在）、变体留痕归属反查（要工程）三处都用它取代
+// 整行读取 —— 它们从不渲染商品内容，却曾把 description / metadata / 图集一并搬回。
+const productRefColumns = "id, project_id, status"
+
+// productIDFactColumns 「这批 id 里哪些属于本工程」这条问题的投影白名单。
+//
+// 两个调用点（标签规则命中 id 的工程兜底、关联引用校验）都只读 id 与工程两列，
+// 却曾整行读取商品 —— 关联校验一次可能点名上千个 id，整行读取把描述与图集一起搬回。
+const productIDFactColumns = "id, project_id"
+
+// ListIDFactsByIDs 按 id 批量取「身份 + 工程」两列，**必带工程作用域**。
+//
+// 跨工程的行读不到，两层同时挡：project_id 谓词（与策略无关，超级 / BYPASSRLS 连接照样成立）
+// 与策略谓词。所以「请求了哪些 id、拿到了哪些」的差集天然就是
+// 「不存在 / 不属于本工程 / 已删除」三段判定。
+func (m *Model) ListIDFactsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productIDFactColumns).
+			Where("project_id = ? AND id IN ?", projectID, ids).Find(&list).Error
+	})
+	return list, err
+}
+
+// GetRefFacts 按 id 取「身份 + 工程 + 状态」三列，**必带工程作用域**。
+//
+// 未命中（含「是别的工程的 id」）返回 gorm.ErrRecordNotFound，调用方照旧转 mapNotFound：
+// 隔离判定不依赖连接角色 —— project_id 谓词在超级角色下同样把外工程行挡成未命中。
+func (m *Model) GetRefFacts(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
+	e = &ProductEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productRefColumns).
+			Where("project_id = ? AND id = ?", projectID, id).First(e).Error
+	})
+	return e, err
+}
+
+// GetPublicOptionFacts 按 id 取公开规格接口要的五列事实，**必带工程作用域**。
+//
+// 与 Get 的差别是投影与谓词：Get 只包策略（会话变量），这里额外写死 project_id ——
+// 访客侧读的是别的工程的商品 id 时必须是「未命中」，不能因为连接角色不同而读到。
+// 调用方在未命中时要的是 mapNotFound（与 Get 同一语义），命中与否仍靠 ErrRecordNotFound 判定。
+func (m *Model) GetPublicOptionFacts(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
+	e = &ProductEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productPublicOptionColumns).
+			Where("project_id = ? AND id = ?", projectID, id).First(e).Error
+	})
+	return e, err
+}
+
+// ListNameFactsByIDs 按 id 批量取「商品名 + 工程」两列，供变体快照补齐归属。
+//
+// 变体表没有商品名与工程列，快照链要按 product_id 批量补齐；快照只用这两列，
+// 全行读取会把商品描述与元数据搬进下单进程。
+func (m *Model) ListNameFactsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select(productNameFactColumns).
+			Where("project_id = ? AND id IN ?", projectID, ids).Find(&list).Error
 	})
 	return list, err
 }
@@ -303,11 +431,8 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	// （fail closed 不报错），是比裸查更难排查的静默失效。
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
-			// sku_code 必须在 Select 里：列表少取它时，工具返回的「SKU=」永远是空串 ——
-			// 而工具说明承诺了会给出 SKU（见 product_tools.go 的 product_find）。
-			// default_price 也必须在 Select 里：它是商品级默认售价，toListResp 直接拷贝它，
-			// 漏了它接口出口那一列恒为空（页面路径另有 product_row.go 的补偿，接口没有）。
-			Select("id, project_id, name, slug, sku_code, status, images, sort, default_image, default_price, create_time, update_time")
+			// 列表事实一次投影完整，挂载关系不再回读同一张商品表。
+			Select("id, project_id, name, slug, sku_code, status, images, images_alt, attribute_ids, category_ids, primary_category_id, brand_id, tag_ids, sort, default_image, default_price, create_time, update_time")
 		q = productKeywordFilter(q, keyword)
 		if status != "" {
 			q = q.Where("status = ?", status)
@@ -325,9 +450,12 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 // （下拉不渲染它们，读了就是白搬）。
 func (m *Model) ListForVariantOptions(ctx context.Context, projectID string) (list []*ProductEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		// 尾键 id ASC（PRD-006 同一条理由）：这份清单虽然不分页，但同 sort、同 create_time
+		// 的两行在**每次查询**里可能出现不同先后 —— 顺序取决于表的物理读序。下拉框按返回
+		// 顺序渲染，于是同一份数据两次打开给出不同的选项顺序，运营会以为数据变了。
 		return tx.WithContext(ctx).Model(&ProductEntity{}).
 			Select("id, name").
-			Order("sort ASC, create_time DESC").
+			Order("sort ASC, create_time DESC, id ASC").
 			Find(&list).Error
 	})
 	return list, err
@@ -338,77 +466,6 @@ func (m *Model) ListForVariantOptions(ctx context.Context, projectID string) (li
 // PG 的绑定参数上限是 65535，这里取一个远小于它的值：一个批次就是一次往返，
 // 500 个 id 已经覆盖任何一页的商品数，再大只增加单条 SQL 的解析成本。
 const idBatchSize = 500
-
-// ProductRowFacts 商品列表行装配要的挂载事实（**既不是商品详情，也不是完整商品行**）。
-//
-// 为什么单列一次读法，而不是把这几列并进 List 的 Select：List 的返回体是
-// GET /api/product/list 的对外响应（inbound/http/product_core.go 的 handle.List 直接
-// 序列化），往它的 ProductResp 里补字段等于改对外响应形状。列表行真正缺的只有
-// 「挂载 id + 容器价」这几列，就按这几列单独读一次（本项目一次、与商品数无关）。
-//
-// jsonb 列保持 json.RawMessage（与 ProductEntity 同一形状）：解码归 service 的
-// decodeStrings 一处做，model 不另立一份解码。
-type ProductRowFacts struct {
-	// CategoryIDs 挂载的分类 id 数组（jsonb）。
-	CategoryIDs json.RawMessage
-	// PrimaryCategoryID 主分类（可空）。
-	PrimaryCategoryID string
-	// BrandID 品牌（可空）。
-	BrandID string
-	// TagIDs 挂载的标签 id 数组（jsonb，手工 + 自动）。
-	TagIDs json.RawMessage
-}
-
-// rowFactsRow ListRowFacts 的扫描目标：只含被 Select 出来的列（不是完整商品行）。
-type rowFactsRow struct {
-	ID                string          `gorm:"column:id"`
-	CategoryIDs       json.RawMessage `gorm:"column:category_ids"`
-	PrimaryCategoryID *string         `gorm:"column:primary_category_id"`
-	BrandID           *string         `gorm:"column:brand_id"`
-	TagIDs            json.RawMessage `gorm:"column:tag_ids"`
-}
-
-// ListRowFacts 按 id 批量读列表行的挂载事实（列表页消 N+1 的第二条批量读）。
-//
-// projectID 是**必填的工程作用域**（products 在迁移 215 名单里，缺作用域会静默 0 行）；
-// 空 id 列表直接返回空 map，不发 IN ()；读失败返回 error，由调用方判失败。
-func (m *Model) ListRowFacts(ctx context.Context, projectID string, productIDs []string) (map[string]ProductRowFacts, error) {
-	ids := make([]string, 0, len(productIDs))
-	for _, id := range productIDs {
-		if id = strings.TrimSpace(id); id != "" {
-			ids = append(ids, id)
-		}
-	}
-	out := make(map[string]ProductRowFacts, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
-	var rows []rowFactsRow
-	for start := 0; start < len(ids); start += idBatchSize {
-		end := min(start+idBatchSize, len(ids))
-		var batch []rowFactsRow
-		if err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-			return tx.WithContext(ctx).Model(&ProductEntity{}).
-				Select("id, category_ids, primary_category_id, brand_id, tag_ids").
-				// 与评分批量读同理：project_id 显式进 WHERE（RLS 换角色前不生效）。
-				Where("project_id = ? AND id IN ?", projectID, ids[start:end]).Scan(&batch).Error
-		}); err != nil {
-			return nil, err
-		}
-		rows = append(rows, batch...)
-	}
-	for _, r := range rows {
-		f := ProductRowFacts{CategoryIDs: r.CategoryIDs, TagIDs: r.TagIDs}
-		if r.PrimaryCategoryID != nil {
-			f.PrimaryCategoryID = *r.PrimaryCategoryID
-		}
-		if r.BrandID != nil {
-			f.BrandID = *r.BrandID
-		}
-		out[r.ID] = f
-	}
-	return out, nil
-}
 
 // CollectionFilter 集合源的取数条件（issue #21：状态 + 分类 / 品牌 / 标签）。
 //
@@ -533,10 +590,21 @@ func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFi
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
 	if f.IDs != nil {
-		q = q.Where("products.id IN ?", f.IDs)
+		// 候选 id 走**单个数组参数**而不是 IN 列表（PRD-007）。
+		//
+		// 语义完全不变：PG 内部把 IN (a,b,c) 规范化成 = ANY('{a,b,c}')，两种写法是同一个
+		// ScalarArrayOpExpr，计划与结果一致。变的是**绑定参数个数**：
+		// 公开目录给的候选是本工程已上线实体全集，十万级商品时 IN 列表会绑十万个参数，
+		// 而 PostgreSQL 扩展协议的上限是 65535 —— 超过就直接报
+		// "extended protocol limited to 65535 parameters"，目录整页 500。
+		//
+		// 这条不改变「候选仍是全集」这个事实（PRD-007 的成本主体），也不是把无界 IN
+		// 假装成有界：真正的「上线条件进入分页路径」要跨模块分页口径（DEC-06 待定）。
+		// 它只保证现有写法在真实规模下不会因为参数个数先炸掉。
+		q = q.Where("products.id = ANY((?::text[])::uuid[])", textArrayParam(f.IDs))
 	}
 	if f.Keyword != "" {
-		pattern := "%" + database.EscapeLikePattern(f.Keyword) + "%"
+		pattern := literalKeywordPattern(f.Keyword)
 		q = q.Where("(name ILIKE ? ESCAPE '\\' OR subtitle ILIKE ? ESCAPE '\\')", pattern, pattern)
 	}
 	if f.Status != "" {
@@ -697,23 +765,85 @@ func productKeywordFilter(q *gorm.DB, keyword string) *gorm.DB {
 	if keyword == "" {
 		return q
 	}
-	pattern := "%" + keyword + "%"
+	pattern := productKeywordPattern(keyword)
 	return q.Where("name ILIKE ? OR sku_code ILIKE ?", pattern, pattern)
 }
 
-// Count 列表总数（与 List 同过滤条件）。
+// productKeywordPattern 后台搜索的关键词模式串：**两端通配、不转义**。
+//
+// 这里是本模块 list/count 的唯一构造点（商品 / 属性 / 品牌 / 标签 / 分类 / 定价），
+// 这样做的理由不是「少写几个字符」，而是 PRD-005 那件事：同一个后台里有的入口按字面量
+// 搜（collectionQuery 与分类搜索森林已用 database.EscapeLikePattern + ESCAPE '\'），
+// 有的入口把 % 和 _ 当通配符。两种口径并存本身可以讨论，但**不能是八份手写副本** ——
+// 那样连「现在到底有几种口径」都要靠 grep 才知道，将来统一时也必然漏掉几处。
+//
+// 语义待定（任务书 DEC-05）：百分号 / 下划线 / 反斜杠是否按字面量处理。定下来之前
+// **不擅自改变现有匹配结果**（用户搜 50% 仍会像通配符那样命中），所以此处保持不转义；
+// 定下来之后只改这一个函数与 literalKeywordPattern（另一条口径的唯一构造点）。
+func productKeywordPattern(keyword string) string {
+	return "%" + keyword + "%"
+}
+
+// literalKeywordPattern 按**字面量**匹配的关键词模式串：先转义反斜杠 / 百分号 / 下划线，两端再加 %。
+//
+// 与 productKeywordPattern 并存是当前的**事实**，不是笔误：后台列表按通配、对外可观察
+// 的读取路径（集合源 / 站内搜索 / 分类搜索森林）按字面量。两条口径各自只有一处构造点，
+// 所以「现在到底有几种口径」不必靠 grep 才能回答；DEC-05 定下来时也只改这两个函数。
+//
+// 配套约束：用它的 Where 必须带 ESCAPE 子句（见 pkg/database.EscapeLikePattern 的注释），
+// 否则转义符自己变成普通字符，转义失效反而让用户搜不到「50%」。
+func literalKeywordPattern(keyword string) string {
+	return "%" + database.EscapeLikePattern(keyword) + "%"
+}
+
+// publishRecordProductFilter 发布记录页的商品过滤：count 与本页投影共用一份。
+//
+// 与 List 的关键词同源（productKeywordFilter），工程谓词在这里**显式**写出来：
+// 该页的 count 与投影必须是同一个过滤，任何一处漏掉工程条件都会让 total 与
+// 可翻到的行数对不上，而症状只是「总数徽章不准」。
+func publishRecordProductFilter(q *gorm.DB, projectID, keyword string) *gorm.DB {
+	return productKeywordFilter(q.Where("project_id = ?", projectID), keyword)
+}
+
 // ListForPublishRecords 工程内全部商品的 id / name / slug（发布记录页用，B9）。
 //
 // 与 List 的区别：**不分页、不带 status**。发布记录页的状态筛选筛的是「当前发布状态」
 // （已上线 / 有实例未上线 / 未建实例），那一列不在 products 表里 —— 过滤发生在与发布登记
-// 合并之后，所以商品必须先全量取。只读三列：列表页要渲染的图、价格、描述一律不搬。
+// 合并之后，所以按状态过滤的那一档商品必须先全量取。只读三列：列表页要渲染的图、价格、
+// 描述一律不搬。
+//
+// 无状态筛选那一档不走这里：它在取发布事实之前就该分页（CountForPublishRecords +
+// ListForPublishRecordsPage），全量读只留给「必须先知道全部发布事实才能过滤」的调用方。
 //
 // 注意 List 的 (limit, offset) 是 gorm 直传的：Limit(0) 生成 LIMIT 0（**零行**，不是不限），
 // 所以这里不能靠 List(ctx, ..., 0, 0) 表达「全量」，必须另开一个读法。
 func (m *Model) ListForPublishRecords(ctx context.Context, projectID, keyword string) (list []*ProductEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug")
-		return productKeywordFilter(q, keyword).Order("sort ASC, create_time DESC").Find(&list).Error
+		q := publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug"), projectID, keyword)
+		return q.Order("sort ASC, create_time DESC, id ASC").Find(&list).Error
+	})
+	return list, err
+}
+
+// CountForPublishRecords 发布记录页的关键词口径总数（与 ListForPublishRecordsPage 同过滤）。
+//
+// 存在的理由：无状态筛选时，页内取数必须是 count + 本页投影两条 —— 没有它就只能
+// 先全量读商品再在内存里切页，成本随工程内商品数线性增长（PRD-011）。
+func (m *Model) CountForPublishRecords(ctx context.Context, projectID, keyword string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}), projectID, keyword).Count(&n).Error
+	})
+	return n, err
+}
+
+// ListForPublishRecordsPage 发布记录页的本页投影（只读 id / project_id / name / slug）。
+//
+// 排序与 ListForPublishRecords 逐字相同（含唯一尾键 id），所以「第 N 页」在全量读与
+// 分页读两种路径下是同一批行 —— 这是把无状态档换成分页读而不改变可见结果的前提。
+func (m *Model) ListForPublishRecordsPage(ctx context.Context, projectID, keyword string, limit, offset int) (list []*ProductEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug"), projectID, keyword)
+		return q.Order("sort ASC, create_time DESC, id ASC").Limit(limit).Offset(offset).Find(&list).Error
 	})
 	return list, err
 }
@@ -758,8 +888,15 @@ func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, id string) (err error
 }
 
 // ListVariants 某商品全部变体。
+//
+// 尾键 id ASC（PRD-006 同一理由，但这里的后果更重）：变体顺序会**进构建产物**——
+// 集合源把 variants 序列化成 JSON，商品卡的 SKU 取的是第一行（productFieldValues 的
+// out["sku"] = variants[0].SKUCode）。sort 与 create_time 都相同时，没有唯一尾键的
+// ORDER BY 由物理读序决定，同一份数据两次构建可能给出不同的首个 SKU，
+// 直接违反不变量 5（确定性构建）。
 func (m *Model) ListVariants(ctx context.Context, productID string) (list []*VariantEntity, err error) {
-	err = m.VariantDB(ctx).Where("product_id = ?", productID).Order("sort ASC, create_time ASC").Find(&list).Error
+	err = m.VariantDB(ctx).Where("product_id = ?", productID).
+		Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -768,7 +905,35 @@ func (m *Model) ListVariantsByProducts(ctx context.Context, productIDs []string)
 	if len(productIDs) == 0 {
 		return nil, nil
 	}
-	err = m.VariantDB(ctx).Where("product_id IN ?", productIDs).Order("sort ASC").Find(&list).Error
+	// 尾键 id ASC：同 sort 的变体在每次构建里必须是同一顺序（见 ListVariants 的注释）。
+	err = m.VariantDB(ctx).Where("product_id IN ?", productIDs).
+		Order("sort ASC, id ASC").Find(&list).Error
+	return list, err
+}
+
+// variantPriceFactColumns 定价事实的投影白名单：公开目录画价格只需要这五列。
+//
+// 与 ListVariantsByProducts 的差别只有投影宽度，不是第二套口径 ——
+// 价格/划线价/启用状态都还是同一批行、同一个 product_id 索引。
+const variantPriceFactColumns = "id, product_id, price, compare_price, enabled"
+
+// ListVariantPriceFacts 批量取若干商品的**定价事实**（公开目录 / 集合项价格用）。
+//
+// 为什么单独一条而不复用 ListVariantsByProducts：那条要全行（变体编辑、生成、
+// 库存清单都要 SKU / 选项 / 图片 / 时间…）。公开目录只算三件事 —— 最低价、最高价、
+// 划线价 —— 却把 option_values、metadata、barcode、image 一起搬回进程，纯属带宽。
+//
+// **口径不变**（DEC-01 仍待定）：这里返回的就是全部变体（启用与停用都在），
+// 「只看启用」「划线价归谁」仍是调用方的业务决定，本方法不替它选。
+// 谁要按启用筛选，自己按 Enabled 判 —— 别指望 SQL 少返几行把语义改掉。
+func (m *Model) ListVariantPriceFacts(ctx context.Context, productIDs []string) (list []*VariantEntity, err error) {
+	if len(productIDs) == 0 {
+		return nil, nil
+	}
+	// 尾键 id ASC：与 ListVariantsByProducts 同一顺序（价格汇总的同价决胜已按 id 定，
+	// 但「第一行」在别处仍被读，顺序必须与全行那条一致）。
+	err = m.VariantDB(ctx).Select(variantPriceFactColumns).
+		Where("product_id IN ?", productIDs).Order("sort ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -796,6 +961,74 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string, projectID s
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id IN ?", ids).Find(&list).Error
 	})
+	return list, err
+}
+
+// variantPublicFactColumns 访客侧变体事实的投影白名单。
+//
+// 公开变体接口（PublicVariants）只回答四件事：这是哪个变体、属于哪个商品、什么价、
+// 是否启用。cost_price 尤其**不能进这条投影** —— 它不在响应里，但全行读取意味着
+// 成本价会被搬进访客请求的进程内存，任何一次误加字段（或日志打印整行）都会立刻外泄。
+const variantPublicFactColumns = "id, product_id, price, enabled"
+
+// ListVariantPublicFacts 按 ID 批量取访客侧要的变体事实（四列，不含成本）。
+//
+// 与 ListVariantsByIDs 的差别只有投影宽度与依赖边界：那条服务后台写链与订单快照
+// （要 SKU / 仓库引用 / 选项…），这条只服务访客请求。工程作用域仍包着，理由与
+// ListVariantsByIDs 相同（product_variants 自身没有 project_id 列，隔离发生在归属商品）。
+func (m *Model) ListVariantPublicFacts(ctx context.Context, ids []string, projectID string) (list []*VariantEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&VariantEntity{}).
+			Select(variantPublicFactColumns).Where("id IN ?", ids).Find(&list).Error
+	})
+	return list, err
+}
+
+// variantOptionFactColumns 后台选品下拉需要的变体列。
+//
+// 下拉每行只画 SKU / 商品名 / 售价 / 成本 / 启用：选项 JSON、图片、仓库引用、时间列
+// 一个都不渲染。与 variantPriceFactColumns 的区别是它还要 sku_code 与 cost_price
+// （订单代客建单要显示成本），所以不能复用那五列。
+const variantOptionFactColumns = "id, product_id, sku_code, price, cost_price, enabled, sort"
+
+// ListVariantOptionFacts 按商品批量取下拉候选中要的变体列（窄投影）。
+//
+// 口径不变：仍然返回全部变体（启用与停用都在，由调用方按 Enabled 过滤 —— 那是业务判断）。
+// 与 ListVariantsByProducts 的差别只有投影宽度：那条服务变体编辑与库存清单，要全行。
+func (m *Model) ListVariantOptionFacts(ctx context.Context, productIDs []string) (list []*VariantEntity, err error) {
+	if len(productIDs) == 0 {
+		return nil, nil
+	}
+	err = m.VariantDB(ctx).Select(variantOptionFactColumns).
+		Where("product_id IN ?", productIDs).Order("sort ASC, id ASC").Find(&list).Error
+	return list, err
+}
+
+// variantDisplayFactColumns 构建期 / 公开渲染要的变体列。
+//
+// productFieldValues 只用这九列：编码、价格、划线价、图片、规格组合（optionsJSON 与
+// variantsJSON 都要 option_values）、启用状态、排序。成本价、条码、元数据、仓库引用
+// 与时间列在构建产物里一个都不出现 —— 搬回来就等于把成本价写进产物进程。
+const variantDisplayFactColumns = "id, product_id, sku_code, price, compare_price, image, option_values, enabled, sort"
+
+// ListVariantDisplayFacts 构建期解析商品字段时的变体投影（口径不变，只是列变窄）。
+//
+// 与 ListVariantsByProducts 的差别是投影宽度：那条服务变体编辑、定价试算与删除留痕，
+// 那些路径要仓库引用、元数据与时间列，不能窄。这里只服务 productFieldValues。
+//
+// 排序保留 create_time（不投影它，只用于 ORDER BY）：这条投影同时服务「集合源整页」
+// 与「单商品解析」两条路径，后者原来的顺序是 sort ASC, create_time ASC —— 少了它，
+// 同 sort 变体的先后会变，构建产物里的首个 SKU（variants[0]）随之改变。
+func (m *Model) ListVariantDisplayFacts(ctx context.Context, productIDs []string) (list []*VariantEntity, err error) {
+	if len(productIDs) == 0 {
+		return nil, nil
+	}
+	err = m.VariantDB(ctx).Select(variantDisplayFactColumns).
+		Where("product_id IN ?", productIDs).
+		Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -834,6 +1067,14 @@ func (m *Model) GetVariantScopedTx(ctx context.Context, tx *gorm.DB, id, project
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {
 	e = &VariantEntity{}
 	err = m.VariantDB(ctx).Where("id = ?", id).First(e).Error
+	return e, err
+}
+
+// GetVariantForUpdateTx 锁定变体最新行，局部编辑与独立成本/仓库写入串行。
+func (m *Model) GetVariantForUpdateTx(ctx context.Context, tx *gorm.DB, id, productID string) (e *VariantEntity, err error) {
+	e = &VariantEntity{}
+	err = tx.WithContext(ctx).Where("id = ? AND product_id = ?", id, productID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).First(e).Error
 	return e, err
 }
 
@@ -960,8 +1201,10 @@ func (m *Model) SaveVariantsTx(tx *gorm.DB, updated, created []*VariantEntity) (
 // （A 改名、B 改副标题 → 最终只剩 B 的）。加写事务不解决这个问题，必须在**读到**的那一刻
 // 就锁住行，让后到的事务排队。
 //
-// 为什么不用 LockProductsTx：那个只 Pluck 出 id（批量删除只需要知道哪些行还在），
-// 这里是「要拿整行做字段级赋值」，需要完整实体。
+// 为什么不用 LockProductsTx：那个只 Pluck 出 id，只够做「这批 id 还在不在」的集合校验，
+// 拿不到整行。要整行（字段级赋值、删除前的留痕快照）就用这里；
+// 批量场景要整行用每条商品一次这里的调用（变体侧另有 ListVariantsForUpdateTx），
+// 同样 FOR UPDATE、按 id 升序，不另开一套批量读。
 //
 // 作用域由调用方在本事务上设好（与其它 Tx 变体同一口径，见 product_bulk_model.go 头部）。
 func (m *Model) GetForUpdateTx(ctx context.Context, tx *gorm.DB, id, projectID string) (e *ProductEntity, err error) {
@@ -989,9 +1232,11 @@ func (m *Model) ListAllColumnsForTranslation(ctx context.Context, projectID stri
 		return nil, nil
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		// 尾键 id ASC 同上：这份是待翻清单的输入，调用方按去重键聚合；顺序漂移本身不改变
+		// 集合，但会让两次执行的绑定参数与 EXPLAIN 不可比（PRD-018 的测量前提）。
 		return tx.WithContext(ctx).Model(&ProductEntity{}).
 			Where("project_id = ?", projectID).
-			Order("sort ASC, create_time DESC").
+			Order("sort ASC, create_time DESC, id ASC").
 			Find(&list).Error
 	})
 	return list, err

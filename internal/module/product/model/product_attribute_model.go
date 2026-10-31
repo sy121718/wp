@@ -102,12 +102,12 @@ func (m *Model) ListAttributes(ctx context.Context, projectID, keyword string, v
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+			q = q.Where("name ILIKE ? OR key ILIKE ?", productKeywordPattern(keyword), productKeywordPattern(keyword))
 		}
 		if variation != nil {
 			q = q.Where("is_variation = ?", *variation)
 		}
-		return q.Order("sort ASC, create_time ASC").Limit(limit).Offset(offset).Find(&list).Error
+		return q.Order("sort ASC, create_time ASC, id ASC").Limit(limit).Offset(offset).Find(&list).Error
 	})
 	return list, err
 }
@@ -117,7 +117,7 @@ func (m *Model) CountAttributes(ctx context.Context, projectID, keyword string, 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+			q = q.Where("name ILIKE ? OR key ILIKE ?", productKeywordPattern(keyword), productKeywordPattern(keyword))
 		}
 		if variation != nil {
 			q = q.Where("is_variation = ?", *variation)
@@ -150,7 +150,7 @@ func (m *Model) ListAttributesByIDs(ctx context.Context, ids []string, projectID
 func (m *Model) ListAttributesByProject(ctx context.Context, projectID string) (list []*ProductAttributeEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).
-			Order("sort ASC, create_time ASC").Find(&list).Error
+			Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	})
 	return list, err
 }
@@ -234,7 +234,7 @@ func (m *Model) ProductUsingAttribute(ctx context.Context, attributeID, projectI
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductEntity{}).
 			Where("attribute_ids @> ?::jsonb", string(probe)).
-			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+			Order("sort ASC, create_time ASC, id ASC").Limit(1).Take(e).Error
 	})
 	return e, err
 }
