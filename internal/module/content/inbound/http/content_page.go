@@ -498,7 +498,7 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	// Score 里的文案**仍由 Go 侧取词**：这份视图是 fragments/seo_score.html 的渲染契约，
 	// 而该模板由内容 / 商品 / 工程三处共用、且不在本模块写权限内，三份同形 Go 视图必须与
 	// 模板同批取词化；本批保持原样（已在报告里登记为待办）。
-	pageview.Render(c, &contentdto.SeoScoreFragmentView{
+	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &contentdto.SeoScoreFragmentView{
 		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
 	})
 }
@@ -534,7 +534,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 		return
 	}
 	data := item.Data
-	pageview.Render(c, &contentdto.ArticleSeoDrawerResp{
+	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &contentdto.ArticleSeoDrawerResp{
 		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
 		IsNew: false,
 	})
@@ -559,10 +559,10 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
 	}
 	if h == nil || h.instances == nil {
-		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
 		EntityType: articleEntityType, EntityID: id,
@@ -570,10 +570,10 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
@@ -686,14 +686,14 @@ var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
 func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	item, err := h.articleByID(c)
 	if err != nil {
-		pageview.Render(c, &contentdto.ArticleImportFragmentView{
+		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
 			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
 		})
 		return
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(item.Data, "body"))
 	if err != nil {
-		pageview.Render(c, &contentdto.ArticleImportFragmentView{
+		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
 			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
 		})
 		return
@@ -701,7 +701,7 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	// 片段的取词函数（t / tf）由 PrepareBare 统一注入：手工塞 "t" 的写法漏一处就是
 	// 静默空白（模板拿到 nil 时所有取词一起变空串，不报错、不 500）。
 	// Err 交的是**事实**（key + 中文兜底），模板按当前语言取词。
-	pageview.Render(c, &contentdto.ArticleImportFragmentView{
+	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
 		Preview: articleImportPreviewViewOf(res, shell.TranslateFor(c)), Err: articleMsg{},
 	})
 }
@@ -1313,7 +1313,7 @@ func (h *articlePageHandle) ArticleStaleDrawer(c *gin.Context) {
 			RebuildFailure: rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	pageview.Render(c, &contentdto.StalePagesDrawerResp{
+	pageview.RenderTemplate(c, ArticleStaleDrawerTemplate, &contentdto.StalePagesDrawerResp{
 		Rows: rows, Total: res.Total, Truncated: res.Truncated,
 		Limit: staleImpactPageLimit, MultiProject: len(projects) > 1,
 	})
