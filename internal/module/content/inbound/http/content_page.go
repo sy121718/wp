@@ -498,7 +498,7 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	// Score 里的文案**仍由 Go 侧取词**：这份视图是 fragments/seo_score.html 的渲染契约，
 	// 而该模板由内容 / 商品 / 工程三处共用、且不在本模块写权限内，三份同形 Go 视图必须与
 	// 模板同批取词化；本批保持原样（已在报告里登记为待办）。
-	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &contentdto.SeoScoreFragmentView{
+	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &SeoScoreFragmentView{
 		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
 	})
 }
@@ -534,7 +534,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 		return
 	}
 	data := item.Data
-	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &contentdto.ArticleSeoDrawerResp{
+	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &ArticleSeoDrawerResp{
 		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
 		IsNew: false,
 	})
@@ -581,8 +581,8 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 }
 
 // previewPlaceholderResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
-func previewPlaceholderResp(c *gin.Context, text string) contentdto.PreviewNoticeResp {
-	return contentdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
+func previewPlaceholderResp(c *gin.Context, text string) PreviewNoticeResp {
+	return PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
 }
 
 // —— 表单与视图 ——
@@ -686,14 +686,14 @@ var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
 func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	item, err := h.articleByID(c)
 	if err != nil {
-		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
+		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
 			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
 		})
 		return
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(item.Data, "body"))
 	if err != nil {
-		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
+		pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
 			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
 		})
 		return
@@ -701,7 +701,7 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	// 片段的取词函数（t / tf）由 PrepareBare 统一注入：手工塞 "t" 的写法漏一处就是
 	// 静默空白（模板拿到 nil 时所有取词一起变空串，不报错、不 500）。
 	// Err 交的是**事实**（key + 中文兜底），模板按当前语言取词。
-	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &contentdto.ArticleImportFragmentView{
+	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
 		Preview: articleImportPreviewViewOf(res, shell.TranslateFor(c)), Err: articleMsg{},
 	})
 }
@@ -890,11 +890,11 @@ var articleImportFallbacks = map[string]string{
 // 从 Trix 编辑器同步，服务端零往返。Form 键集与编辑页 articleEditPageData 的 form
 // 对齐（模板点号取值，缺键会让 Jet 报错并截断整页）。
 func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
-	pageview.RenderTemplate(c, ArticleNewPageTemplate, &contentdto.ArticleNewPageResp{
+	pageview.RenderTemplate(c, ArticleNewPageTemplate, &ArticleNewPageResp{
 		Title: articleNewTitle,
 		Menu:  "articles",
 		// 全空表单：新建页不取数，字段集与编辑页对齐（缺键会让 Jet 报错并截断整页）。
-		Form: &contentdto.ArticleFormResp{},
+		Form: &ArticleFormResp{},
 	})
 }
 
@@ -957,12 +957,12 @@ func (f articleForm) data() map[string]any {
 // ?ok= / ?done= 回带（见 content_error_handle.go）。Err 与行的状态文案都是**事实**不是拼好的句子 ——
 // 取词在模板里发生（见 articles.html）。因此本函数不需要取词函数参数：语言是请求级的，
 // 在这里提前翻等于替渲染期做决定。
-func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) *contentdto.ArticleListPageResp {
-	rows := make([]contentdto.ArticleListRowResp, 0, len(list))
+func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) *ArticleListPageResp {
+	rows := make([]ArticleListRowResp, 0, len(list))
 	for _, it := range list {
 		rows = append(rows, articleListRow(it, published[it.ID]))
 	}
-	return &contentdto.ArticleListPageResp{
+	return &ArticleListPageResp{
 		Title:          articlePageTitle,
 		Menu:           "articles",
 		Rows:           rows,
@@ -983,10 +983,10 @@ func articleListPageData(list []*contentdto.ContentResp, published map[string]st
 //
 // 发布状态只有两种取值来源：查到了线上路径（已发布）或没查到（未发布 / 未建实例）。
 // 不区分「未发布」与「查询失败」—— 列表页不是排查页，编辑页会给出完整状态。
-func articleListRow(it *contentdto.ContentResp, urlPath string) contentdto.ArticleListRowResp {
+func articleListRow(it *contentdto.ContentResp, urlPath string) ArticleListRowResp {
 	published := strings.TrimSpace(urlPath) != ""
 	stateKey, stateFallback := articleStateLabel(published)
-	return contentdto.ArticleListRowResp{
+	return ArticleListRowResp{
 		ID:        it.ID,
 		Title:     articleTextOrEmpty(articleStr(it.Data, "title")),
 		Slug:      articleTextOrEmpty(it.Slug),
@@ -1025,13 +1025,13 @@ func articleStateLabel(published bool) (key, fallback string) {
 // 而该模板由内容 / 商品 / 工程三处共用、不在本模块写权限内 —— 三份同形 Go 视图必须与模板
 // 同批取词化，本批保持原样（已在报告里登记）。除 Score 外，本函数出的都是事实或数据。
 func articleEditPageData(ctx context.Context, h *articlePageHandle, item *contentdto.ContentResp,
-	id string, pageErr articleMsg, lang string, trs ...func(key, fallback string) string) *contentdto.ArticleEditPageResp {
+	id string, pageErr articleMsg, lang string, trs ...func(key, fallback string) string) *ArticleEditPageResp {
 	tr := articlePublishTr(trs)
 	data := gin.H{}
 	if item != nil {
 		data = item.Data
 	}
-	form := contentdto.ArticleEditFormResp{
+	form := ArticleEditFormResp{
 		ID:            id,
 		Slug:          articleSlugOf(item),
 		Title:         articleStr(data, "title"),
@@ -1042,7 +1042,7 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		Revision:      articleRevisionOf(item),
 		UpdatedAt:     articleUpdatedAtOf(item),
 	}
-	out := &contentdto.ArticleEditPageResp{
+	out := &ArticleEditPageResp{
 		Title:           articleEditTitle,
 		Menu:            "articles",
 		IsNew:           item == nil && id == "",
@@ -1093,7 +1093,7 @@ func articleTemplateEditURL(templateID, entityType, entityID, projectID string) 
 // 三个按钮的可用性条件必须在这里判清楚：一个点了会 500 的按钮比不给按钮更糟。
 // 新建中（还没有文章 id）、没有工程、页面能力未装配 —— 三种情况各给各的说法。
 func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, id string,
-	projectOptions []contentdto.OptionResp) contentdto.ArticleImportBlockResp {
+	projectOptions []OptionResp) ArticleImportBlockResp {
 	if id == "" {
 		return articleImportUnavailable(articleMsg{Key: contentenums.ImportHintSaveFirst, Fallback: "先保存这篇文章，再回来把它导入画布。"})
 	}
@@ -1112,7 +1112,7 @@ func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, 
 	if slug != "" {
 		defaultPath = articleImportPathPrefix + slug
 	}
-	return contentdto.ArticleImportBlockResp{
+	return ArticleImportBlockResp{
 		ImportAvailable:     true,
 		ImportProjects:      projectOptions,
 		ImportDefaultPath:   defaultPath,
@@ -1125,9 +1125,9 @@ func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, 
 //
 // 理由同 articlePublishUnavailable：模板用点号取值，缺键会让 Jet 报错并截断整页。
 // hint 是**事实**（key + 中文兜底）不是拼好的句子 —— 取词在模板里发生（见 article_edit.html）。
-func articleImportUnavailable(hint articleMsg) contentdto.ArticleImportBlockResp {
+func articleImportUnavailable(hint articleMsg) ArticleImportBlockResp {
 	// 不可用形态 = 该结构体的零值 + 提示事实（理由同 articlePublishUnavailable）。
-	return contentdto.ArticleImportBlockResp{ImportHint: hint}
+	return ArticleImportBlockResp{ImportHint: hint}
 }
 
 // itemData 取实体字段（item 为空时给空表，避免调用方到处判空）。
@@ -1201,11 +1201,11 @@ const staleImpactPageLimit = 8
 //
 // 统一返回 gin.H 而不是结构体：模板里是 map 取值链（.StaleImpact.Pages），
 // 嵌套 map 在 Jet 上的求值路径最短、也最容易用 isset 判存在。
-func staleImpactView(available bool, pages []contentdto.StalePageRowResp, total int, truncated bool, hint articleMsg) *contentdto.StaleImpactResp {
+func staleImpactView(available bool, pages []StalePageRowResp, total int, truncated bool, hint articleMsg) *StaleImpactResp {
 	if pages == nil {
-		pages = []contentdto.StalePageRowResp{}
+		pages = []StalePageRowResp{}
 	}
-	return &contentdto.StaleImpactResp{
+	return &StaleImpactResp{
 		Available: available,
 		Pages:     pages,
 		Total:     total,
@@ -1225,7 +1225,7 @@ func staleImpactView(available bool, pages []contentdto.StalePageRowResp, total 
 // 降级语义与 page 侧一致：失败 → Available=false（显示「读不到」），**绝不**渲染成
 // 「0 个待重建」（那会把一次读取失败伪装成一切正常）；契约返回 (nil, nil) 是异常形态，
 // 同样按读不到处理。
-func articleStaleImpact(ctx context.Context, h *articlePageHandle) *contentdto.StaleImpactResp {
+func articleStaleImpact(ctx context.Context, h *articlePageHandle) *StaleImpactResp {
 	if h == nil || h.pages == nil {
 		// 与 block 侧的待重建影响面文案**共用同一批 key**（两个页面说的是同一件事，
 		// 各写一份的下场是同一个现象在两页上有两种说法 —— 见本文件顶部注释）。
@@ -1254,11 +1254,11 @@ func articleStaleImpact(ctx context.Context, h *articlePageHandle) *contentdto.S
 		logger.Scene("content").Warn("全站待重建清单返回空结果（契约实现异常）")
 		return staleImpactView(false, nil, 0, false, articleMsg{})
 	}
-	pages := make([]contentdto.StalePageRowResp, 0, len(res.Pages))
+	pages := make([]StalePageRowResp, 0, len(res.Pages))
 	for i := range res.Pages {
 		// 投影成视图自己的行类型，而不是把契约 DTO 直接交给模板：
 		// 契约改名/加字段不该打断页面渲染，而视图声明「这一屏要哪几个字段」。
-		pages = append(pages, contentdto.StalePageRowResp{
+		pages = append(pages, StalePageRowResp{
 			ID:          res.Pages[i].ID,
 			Path:        res.Pages[i].Path,
 			ProjectID:   res.Pages[i].ProjectID,
@@ -1296,13 +1296,13 @@ func (h *articlePageHandle) ArticleStaleDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	rows := make([]contentdto.StalePageRowResp, 0, len(res.Pages))
+	rows := make([]StalePageRowResp, 0, len(res.Pages))
 	// 工程数决定「所属工程」列显不显示：单工程时那一列整列都是同一个名字，
 	// 是纯噪声；多工程时缺了它又分不清两个工程同名的 /about。
 	projects := make(map[string]struct{}, 2)
 	for i := range res.Pages {
 		projects[res.Pages[i].ProjectID] = struct{}{}
-		rows = append(rows, contentdto.StalePageRowResp{
+		rows = append(rows, StalePageRowResp{
 			ID:          res.Pages[i].ID,
 			Path:        res.Pages[i].Path,
 			ProjectName: res.Pages[i].ProjectName,
@@ -1313,7 +1313,7 @@ func (h *articlePageHandle) ArticleStaleDrawer(c *gin.Context) {
 			RebuildFailure: rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	pageview.RenderTemplate(c, ArticleStaleDrawerTemplate, &contentdto.StalePagesDrawerResp{
+	pageview.RenderTemplate(c, ArticleStaleDrawerTemplate, &StalePagesDrawerResp{
 		Rows: rows, Total: res.Total, Truncated: res.Truncated,
 		Limit: staleImpactPageLimit, MultiProject: len(projects) > 1,
 	})
@@ -2189,7 +2189,7 @@ func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 // articlePublishView 组装发布区块渲染数据（纯函数，取数在 articlePublishViewData）。
 //
 // id 为空（新建中）时不查任何东西：还没有实体，发布无从谈起。
-func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []contentdto.OptionResp) contentdto.ArticlePublishBlockResp {
+func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []OptionResp) ArticlePublishBlockResp {
 	if strings.TrimSpace(id) == "" {
 		return articlePublishUnavailable(articlePublishHintMsg(articleSaveFirstHint))
 	}
@@ -2197,7 +2197,7 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 		return articlePublishUnavailable(articlePublishHintMsg(articlePublishDepsMissingText))
 	}
 
-	out := contentdto.ArticlePublishBlockResp{PublishConfigured: true}
+	out := ArticlePublishBlockResp{PublishConfigured: true}
 	inst, err := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
 		EntityType: articleEntityType, EntityID: id,
 	})
@@ -2229,9 +2229,9 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 //
 // hint 与 NoTemplateHint 是**事实**（key + 中文兜底，见 articlePublishHintMsg）：template
 // 取词在渲染期发生，控制器不拼句子。
-func articlePublishUnavailable(hint articleMsg) contentdto.ArticlePublishBlockResp {
+func articlePublishUnavailable(hint articleMsg) ArticlePublishBlockResp {
 	// 不可用形态 = 该结构体的零值 + 提示事实。缺字段是编译错误，不再靠人眼比对两份函数。
-	return contentdto.ArticlePublishBlockResp{
+	return ArticlePublishBlockResp{
 		PublishHint: hint,
 		// 与可用形态同型：两边都是 articleMsg 事实。一边给事实、另一边给空串的下场是
 		// 模板只能按最宽松的形态写（见 hint 的注释）。
@@ -2245,7 +2245,7 @@ func articlePublishUnavailable(hint articleMsg) contentdto.ArticlePublishBlockRe
 // 此时猜一个常见前缀反而可能撞上真实存在的列表页（博客列表常占 /blog）——
 // 撞车的表现是发布被拒，而用户根本不知道是"默认值"的错。
 func articleDetailDefaultPath(ctx context.Context, h *articlePageHandle,
-	projectOptions []contentdto.OptionResp, slug, id string) string {
+	projectOptions []OptionResp, slug, id string) string {
 	if len(projectOptions) > 0 {
 		if pid := projectOptions[0].ID; pid != "" {
 			if p := siteurl.DetailPathForProject(ctx, h.projects, pid, siteurl.KindArticle, slug, id); p != "" {
@@ -2260,8 +2260,8 @@ func articleDetailDefaultPath(ctx context.Context, h *articlePageHandle,
 }
 
 // articleProjectOptions 工程下拉（发布时必须落到一个工程：实例表的 project_id 非空）。
-func articleProjectOptions(ctx context.Context, h *articlePageHandle) []contentdto.OptionResp {
-	out := []contentdto.OptionResp{}
+func articleProjectOptions(ctx context.Context, h *articlePageHandle) []OptionResp {
+	out := []OptionResp{}
 	if h.projects == nil {
 		return out
 	}
@@ -2270,14 +2270,14 @@ func articleProjectOptions(ctx context.Context, h *articlePageHandle) []contentd
 		return out
 	}
 	for _, p := range list {
-		out = append(out, contentdto.OptionResp{ID: p.ID, Name: p.Name})
+		out = append(out, OptionResp{ID: p.ID, Name: p.Name})
 	}
 	return out
 }
 
 // articleTemplateOptions 文章类型的内容模板下拉（空表 = 这个站还没有文章详情模板）。
-func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []contentdto.TemplateOptionResp {
-	out := []contentdto.TemplateOptionResp{}
+func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []TemplateOptionResp {
+	out := []TemplateOptionResp{}
 	if h.templates == nil {
 		return out
 	}
@@ -2286,7 +2286,7 @@ func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []content
 		return out
 	}
 	for _, t := range list {
-		out = append(out, contentdto.TemplateOptionResp{ID: t.ID, Name: t.Name, Version: t.DraftVersion})
+		out = append(out, TemplateOptionResp{ID: t.ID, Name: t.Name, Version: t.DraftVersion})
 	}
 	return out
 }

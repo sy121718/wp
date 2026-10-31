@@ -1,4 +1,4 @@
-package contentdto
+package contenthttp
 
 // 文章编辑页（/admin/articles/edit、/admin/articles/new）的强类型视图。
 //

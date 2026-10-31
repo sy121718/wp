@@ -1,6 +1,6 @@
-package contentdto
+package contenthttp
 
-// content_fragment_resp.go — 内容模块**片段出口**的渲染视图（htmx 局部替换用）。
+// content_view_handle.go — 内容模块**片段出口**的渲染视图（htmx 局部替换用）。
 //
 // 与整页视图分开：片段的键集通常只有一个槽位，整页是一屏数据。两者的失败形态不同
 // （整页失败要给页壳，片段失败只给一块），混在一个文件里会让这件事看不出来。

@@ -171,7 +171,7 @@ func TestArticleImportPreviewView(t *testing.T) {
 func TestArticleImportBlockViewStates(t *testing.T) {
 	h := &articlePageHandle{pages: stubPageService{}}
 	item := &contentdto.ContentResp{ID: "a1", Slug: "hello", Data: map[string]any{"title": "标题", "body": "<p>x</p>"}}
-	projects := []contentdto.OptionResp{{ID: "p1", Name: "官网"}}
+	projects := []OptionResp{{ID: "p1", Name: "官网"}}
 
 	v := articleImportBlockView(h, item, "a1", projects)
 	if !v.ImportAvailable {
