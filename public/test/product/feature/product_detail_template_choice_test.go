@@ -15,6 +15,7 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -482,7 +483,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"contenttemplate.create": true})
 	})
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
 	// 新建 / 首次发布 / 切换三个写动作已从页面 POST 迁到 /api/product/detail-template/*：
 	// 页面表单走 ui/write-base.js 直调接口，页面只剩下整页 GET 与只读预览。
@@ -491,7 +492,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
 	})
-	engine.GET("/admin/products/template", adminui.PageSlot(producthttp.ProductDetailTemplatePageTemplate), handle.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
 	engine.GET("/admin/products/preview-frame", handle.ProductPreviewFrame)
 	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)

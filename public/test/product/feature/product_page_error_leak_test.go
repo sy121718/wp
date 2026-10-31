@@ -102,10 +102,10 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	}
 	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
 	// 这个 feature 包从不装配 i18n，pkg/response 的 translate 未命中时退回**声明处的兜底**
-	// （productenums.Err 用 ProductErrFallbacks 给错误配的中文）—— 所以在这个引擎上
+	// （productenums.Err 用 FallbackFor 给错误配的中文）—— 所以在这个引擎上
 	// 「业务文案」的可见形态就是那句中文，而不是裸 key。生产装配后它被译成对应语言的词条。
 	// 业务错误保留声明处事实，JSON 回执不得泄漏内部标识。
-	if env.Message != productenums.ProductErrFallbacks[productenums.ErrNotFound] {
+	if env.Message != productenums.FallbackFor(productenums.ErrNotFound) {
 		t.Fatalf("业务错误应透出声明处的兜底文案，message=%s", env.Message)
 	}
 }

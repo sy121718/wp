@@ -97,6 +97,20 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 					default:
 						valid = false
 					}
+				case "pageview.RenderTemplate":
+					if len(x.Args) != 3 {
+						valid = false
+						break
+					}
+					switch x.Args[1].(type) {
+					case *ast.Ident:
+					case *ast.BasicLit:
+						if x.Args[1].(*ast.BasicLit).Kind != token.STRING {
+							valid = false
+						}
+					default:
+						valid = false
+					}
 				case "pageview.Render", "pageview.Fail":
 				default:
 					valid = false
@@ -149,14 +163,17 @@ func TestObjectQueryPipelineRejectsDerivedShapes(t *testing.T) {
 		{"result = h.svc.Update(c.Request.Context(), req)", false},
 		{"result = map[string]any{\"items\": result}", false},
 	} {
-		src := strings.Replace(base, "PLACEHOLDER", tc.code, 1)
-		f, err := parser.ParseFile(token.NewFileSet(), "pipeline.go", src, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := isObjectQueryPipeline(f.Decls[0].(*ast.FuncDecl).Body)
-		if got != tc.want {
-			t.Errorf("%s: got %v, want %v", tc.code, got, tc.want)
+		for _, render := range []string{"pageview.Render(c,", "pageview.RenderTemplate(c, ProductListPageTemplate,"} {
+			src := strings.Replace(base, "PLACEHOLDER", tc.code, 1)
+			src = strings.Replace(src, "pageview.Render(c,", render, 1)
+			f, err := parser.ParseFile(token.NewFileSet(), "pipeline.go", src, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := isObjectQueryPipeline(f.Decls[0].(*ast.FuncDecl).Body)
+			if got != tc.want {
+				t.Errorf("%s %s: got %v, want %v", render, tc.code, got, tc.want)
+			}
 		}
 	}
 }

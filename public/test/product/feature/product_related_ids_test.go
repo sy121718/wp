@@ -20,6 +20,7 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -225,5 +226,80 @@ func TestCreateRelatedIDsAcceptsSameProjectReferences(t *testing.T) {
 	}
 	if len(res.RelatedIDs) != 1 || res.RelatedIDs[0] != target.ID {
 		t.Fatalf("related_ids 应落库 %s，实际 %v", target.ID, res.RelatedIDs)
+	}
+}
+
+// TestRelatedOwnerLookupStaysScoped 归属诊断只回答「属于谁」，不把别工程的商品内容漏出来。
+//
+// 诊断是写入口的拒绝明细用的（本工程查不到 → 问一句归属）。这里直接对着 model 方法守边界：
+//   - 本工程的 id 照常回答归属；
+//   - 别工程的 id 也回答归属（这就是它的用途：明细里要报「属于工程 X」）；
+//   - 不存在的 id 不出现在结果里（调用方据此仍判「不存在」）；
+//   - 空白 / 空串 / 重复输入被归一，不给 uuid 列送脏值。
+func TestRelatedOwnerLookupStaysScoped(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	otherProject := f.secondProject(t)
+	mine := f.mkRelatedProduct(t, f.projectID, "归属甲", "owner-a")
+	theirs := f.mkRelatedProduct(t, otherProject, "归属乙", "owner-b")
+	ghost := uuid.NewString()
+
+	owners, err := productmodel.NewModel(f.db).LookupIDOwners(ctx, []string{f.projectID, otherProject}, []string{mine.ID, theirs.ID, ghost, "  ", theirs.ID, ""})
+	if err != nil {
+		t.Fatalf("归属诊断不该失败: %v", err)
+	}
+	if got := owners[mine.ID]; got != f.projectID {
+		t.Fatalf("本工程商品归属应为 %s，实际 %q", f.projectID, got)
+	}
+	if got := owners[theirs.ID]; got != otherProject {
+		t.Fatalf("别工程商品归属应为 %s，实际 %q", otherProject, got)
+	}
+	if _, ok := owners[ghost]; ok {
+		t.Fatalf("不存在的 id 不该有归属: %v", owners)
+	}
+	if len(owners) != 2 {
+		t.Fatalf("归属结论应只有两条（空白与重复不产生条目），实际 %v", owners)
+	}
+}
+
+// TestRelatedOwnerLookupEmptyInputSkipsQuery 空输入不查库（也不能退化成「全部工程」）。
+func TestRelatedOwnerLookupEmptyInputSkipsQuery(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	owners, err := productmodel.NewModel(f.db).LookupIDOwners(context.Background(), []string{f.projectID}, nil)
+	if err != nil {
+		t.Fatalf("空输入不该报错: %v", err)
+	}
+	if len(owners) != 0 {
+		t.Fatalf("空输入不该有归属结论，实际 %v", owners)
+	}
+}
+
+// TestRelatedIDsCrossProjectDetailNamesOwnerProject 跨工程引用的拒绝明细**必须点出对方工程**。
+//
+// 与上面的 TestRelatedIDsRejectsCrossProjectReference 的区别：那条守「整条被拒 + 明细能定位」，
+// 这条守「明细里那一段是**跨工程**那一段，不是不存在的」—— 两者判反了运营会去删一个
+// 根本不存在的商品。
+func TestRelatedIDsCrossProjectDetailNamesOwnerProject(t *testing.T) {
+	f := newFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	otherProject := f.secondProject(t)
+	mine := f.mkRelatedProduct(t, f.projectID, "本工程商品", "rel-detail-mine")
+	theirs := f.mkRelatedProduct(t, otherProject, "别工程商品", "rel-detail-theirs")
+	_, err := f.svc.Update(ctx, &productdto.UpdateReq{
+		ID: mine.ID, ProjectID: f.projectID, RelatedIDs: []string{theirs.ID},
+	})
+	requireRelatedRejected(t, err, theirs.ID+"@"+otherProject, productenums.DetailRelatedCrossProject)
+	// 不能反过来被判成「不存在」：两条明细词条是不同的事实。
+	if msg := err.Error(); strings.Contains(msg, productenums.DetailRelatedMissing) {
+		t.Fatalf("跨工程条目不该被判成不存在: %v", err)
 	}
 }

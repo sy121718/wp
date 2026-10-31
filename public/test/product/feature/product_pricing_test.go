@@ -14,6 +14,7 @@ import (
 	"context"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/url"
 	"os"
@@ -830,8 +831,8 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.GET("/admin/product-pricing", adminui.PageSlot(producthttp.ProductPricingPageTemplate), handle.ProductPricingPage)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
+	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), handle.ProductPricingPage)
 	engine.POST("/api/product/pricing/preview", producthttp.NewProductHandle(f.svc).PreviewPricing)
 	// 预览与应用都走 JSON API，页面只负责首次 GET。
 	engine.POST("/api/product/pricing/apply", producthttp.NewProductHandle(f.svc).ApplyPricing)

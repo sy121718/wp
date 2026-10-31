@@ -12,6 +12,8 @@ package feature
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -101,6 +103,84 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	}
 	if len(kw.Records) != 1 || kw.Records[0].ProductID != plainID {
 		t.Fatalf("关键词应只命中一个商品：%+v", kw.Records)
+	}
+}
+
+func TestPublishRecordPageNormalizesEmptyAndOutOfRange(t *testing.T) {
+	f := newDetailFixture(t)
+	if f == nil {
+		return
+	}
+	f.withPublishRecordPort()
+	productID := f.createProduct(t, "分页商品", "pub-page-bounds", "未发布", 9, 9)
+	for _, tc := range []struct {
+		name, status, keyword string
+		page                  int
+		wantID                string
+	}{
+		{name: "状态筛选空集", status: "active", page: 999},
+		{name: "关键词空集", keyword: "no-match-product", page: 999},
+		{name: "非空越界夹末页", status: "none", page: 999, wantID: productID},
+		{name: "负页码归首页", status: "none", page: -1, wantID: productID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			view, err := f.products.QueryPublishRecords(context.Background(), &productdto.ProductPublishRecordPageReq{
+				ProjectID: f.projectID, Status: tc.status, Keyword: tc.keyword, Page: tc.page,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.Page != 1 || view.Limit != 20 || !view.Available || view.Records == nil {
+				t.Fatalf("分页事实未归一: %+v", view)
+			}
+			if view.Total != int64(len(view.Records)) {
+				t.Fatalf("单页 total/rows 不一致: %+v", view)
+			}
+			if tc.wantID == "" {
+				if view.Total != 0 {
+					t.Fatalf("空筛选返回记录: %+v", view)
+				}
+			} else if view.Total != 1 || view.Records[0].ProductID != tc.wantID {
+				t.Fatalf("末页商品丢失: %+v", view)
+			}
+		})
+	}
+}
+
+func TestPublishRecordPageClampsToActualLastPage(t *testing.T) {
+	f := newDetailFixture(t)
+	if f == nil {
+		return
+	}
+	f.withPublishRecordPort()
+	for i := 0; i < 21; i++ {
+		f.createProduct(t, fmt.Sprintf("分页商品%d", i), fmt.Sprintf("pub-many-%d", i), "未发布", 9, 9)
+	}
+	ctx := context.Background()
+	first, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "none", Page: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "none", Page: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Total != 21 || last.Total != first.Total || len(first.Records) != 20 || len(last.Records) != 1 || last.Page != 2 {
+		t.Fatalf("多页事实不一致: first=%+v last=%+v", first, last)
+	}
+	for _, row := range first.Records {
+		if row.ProductID == last.Records[0].ProductID {
+			t.Fatal("跨页重复商品")
+		}
+	}
+	for _, page := range []int{999, int(^uint(0) >> 1)} {
+		got, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "none", Page: page})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, last) {
+			t.Fatalf("越界结果与末页不等: page=%d got=%+v last=%+v", page, got, last)
+		}
 	}
 }
 

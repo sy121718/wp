@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -509,7 +510,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
 	// 保存由页面 data-write-url 声明的 JSON 端点处理。
 	engine.POST("/api/product/variant/save", producthttp.NewProductHandle(f.products).SaveVariantList)
@@ -618,8 +619,8 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 	rec := httptest.NewRecorder()
 	// 变体清单在**编辑页**（详情页只读）：清单的初始行 / 保存入口都在那里。
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

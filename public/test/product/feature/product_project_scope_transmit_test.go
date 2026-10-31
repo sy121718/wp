@@ -5,6 +5,7 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -57,8 +58,8 @@ func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(base.products, base.products, base.projects)
-	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
+	handle := producthttp.NewProductPageHandle(base.products, base.products)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
 	return engine, f
 }

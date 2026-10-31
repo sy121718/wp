@@ -45,7 +45,7 @@ func TestProductPreviewFailureIsJSONWithoutNavigation(t *testing.T) {
 		{"依赖缺失", productID, nil, 500, "详情页模板能力尚未就绪"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+			h := producthttp.NewProductPageHandle(f.products, f.products)
 			h.SetDetailTemplateDeps(f.templates, tc.port)
 			engine := gin.New()
 			engine.GET("/admin/products/preview-frame", h.ProductPreviewFrame)

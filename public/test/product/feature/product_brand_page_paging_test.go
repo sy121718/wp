@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,8 +62,8 @@ func newBrandPagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, *projectservice.Ser
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	h := producthttp.NewProductPageHandle(svc, svc, projects)
-	engine.GET("/admin/product-brands", adminui.PageSlot(producthttp.ProductBrandsPageTemplate), h.ProductBrandsPage)
+	h := producthttp.NewProductPageHandle(svc, svc)
+	engine.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
 	return engine, db, projects
 }
 

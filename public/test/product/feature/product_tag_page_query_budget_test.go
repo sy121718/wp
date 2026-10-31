@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"regexp"
 	"sort"
@@ -120,8 +121,8 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	h := producthttp.NewProductPageHandle(svc, svc, projects)
-	engine.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
+	h := producthttp.NewProductPageHandle(svc, svc)
+	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
 	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(svc).ListTagProducts)
 	return &tagPageFixture{engine: engine, db: db, projects: projects, counter: counter}
 }

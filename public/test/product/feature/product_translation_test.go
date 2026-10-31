@@ -16,6 +16,7 @@ import (
 	"context"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -187,11 +188,11 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
-	handle := producthttp.NewProductTranslationHandle(f.products, f.projects, pages, nil)
+	handle := producthttp.NewProductTranslationHandle(f.products, pages, nil)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/products/translations", adminui.PageSlot(producthttp.ProductTranslationsPageTemplate), handle.ProductTranslations)
+	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
 	// 保存已改接口端点（页面走 ui/write-base.js），页面 POST 已下线。
 	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
 	return engine
@@ -790,7 +791,7 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	// 工作台注入实例失效端口（presentation 契约实现，与线上装配同形）。
 	gin.SetMode(gin.TestMode)
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
-	handle := producthttp.NewProductTranslationHandle(f.products, f.projects, pages, f.pres)
+	handle := producthttp.NewProductTranslationHandle(f.products, pages, f.pres)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)

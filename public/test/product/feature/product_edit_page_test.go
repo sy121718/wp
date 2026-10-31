@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -274,8 +275,8 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
 	failing := &failedAttributeListService{ProductService: f.svc}
-	handle := producthttp.NewProductPageHandle(failing, f.svc, f.projects)
-	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
+	handle := producthttp.NewProductPageHandle(failing, f.svc)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 
 	page := httptest.NewRecorder()
 	engine.ServeHTTP(page, httptest.NewRequest(http.MethodGet,

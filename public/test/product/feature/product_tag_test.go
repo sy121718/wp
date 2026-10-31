@@ -17,6 +17,7 @@ import (
 	"context"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"reflect"
 	"strings"
@@ -483,14 +484,14 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), handle.ProductTagsPage)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
+	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), handle.ProductTagsPage)
 	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
 	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(f.svc).ListTagProducts)
-	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
-	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
-	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/write-base.js）。
 	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f

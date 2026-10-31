@@ -22,8 +22,11 @@ package rlstest
 // 全程在非超级角色下跑（rlsFixture 负责 SET ROLE，并用 rls.BypassedRole 自检）：
 // 超级用户无条件绕过 RLS，用 root 跑这套断言会全绿而没有一行是真的。
 //
-// 失败能力：把 model.ListByIDs 里的 rls.InProjectScope 摘掉（退回裸读），
-// 第 2 条会读到工程 B 的变体、第 3 条不再报错 —— 两条一起红。
+// 失败能力：把商品侧补齐那一步（model.ListNameFactsByIDs）里的 rls.InProjectScope
+// 摘掉（退回裸读），第 2 条会读到工程 B 的商品名与工程、第 3 条不再报错 —— 两条一起红。
+//
+// 为什么不是 ListByIDs：它现在没有生产调用方（快照只要商品名与工程两列），
+// 快照链走的是窄投影，护栏也就落在窄投影上。
 
 import (
 	"context"

@@ -38,6 +38,21 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	f.publish(t, b, "/real/catalog-b")
 	f.publish(t, draft, "/real/catalog-draft")
 	f.products.SetPublicCatalogIndex(f.pres)
+	category, err := f.products.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "目录分类", Slug: "catalog-category"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brand, err := f.products.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: f.projectID, Name: "目录品牌", Slug: "catalog-brand"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag, err := f.products.CreateTag(ctx, &productdto.CreateTagReq{ProjectID: f.projectID, Name: "目录标签", Slug: "catalog-tag", Kind: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.products.Update(ctx, &productdto.UpdateReq{ID: a, CategoryIDs: []string{category.ID}, BrandID: &brand.ID, TagIDs: []string{tag.ID}}); err != nil {
+		t.Fatal(err)
+	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	producthttp.SetupProductCatalogRoutes(engine, f.products)
@@ -76,9 +91,28 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	if !reflect.DeepEqual([]string{first.Items[0].ID, second.Items[0].ID}, []string{b, a}) {
 		t.Fatalf("价格排序未先于分页: %+v %+v", first.Items, second.Items)
 	}
+	counts := productQueryCounts(t, f.db, func() {
+		out, err := f.products.PublicCatalog(ctx, &productdto.PublicCatalogReq{ProjectID: f.projectID, Sort: "priceAsc", PageSize: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(out.Items) != 2 || !reflect.DeepEqual(out.Items[1].Tags, []string{"目录标签"}) {
+			t.Fatalf("目录标签丢失: %+v", out)
+		}
+	})
+	if counts["product_tags"] != 1 || counts["product_categories"] != 0 || counts["product_brands"] != 0 {
+		t.Errorf("目录应只读一批标签: %v", counts)
+	}
 	item := second.Items[0]
 	if item.Price == nil || *item.Price != 12900 || item.MaxPrice == nil || *item.MaxPrice != 19900 || !strings.HasSuffix(item.URL, "/real/catalog-a") || item.Images[0] != "https://cdn.example.test/catalog.jpg" {
 		t.Fatalf("金额或真实路径事实错误: %+v", item)
+	}
+	spaced, err := f.products.PublicCatalog(ctx, &productdto.PublicCatalogReq{ProjectID: f.projectID, Sort: " priceAsc ", PageSize: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*spaced, first) {
+		t.Errorf("排序归一前后结果应相等: %+v / %+v", spaced, first)
 	}
 	query.Set("page", "99")
 	if out := read(query, 200); out.Total != first.Total || len(out.Items) != 0 {
@@ -113,6 +147,19 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	query.Set("projectId", f.projectID)
 	query.Set("pageSize", "61")
 	read(query, 400)
+	// 页码边界（PRD-008）：上限 100、余量 60、默认 12 是**明写**的契约（常量在
+	// product_catalog.go 顶部），越界一律 400 —— 不替调用方夹页，也不对数据库发起一次
+	// 深 OFFSET。DEC-05（100 页上限与越界是空页还是夹页）定下来时改的是那一组常量。
+	query.Set("pageSize", "12")
+	query.Set("page", "101")
+	read(query, 400)
+	query.Set("page", "-1")
+	read(query, 400)
+	query.Set("page", "100")
+	if out := read(query, 200); out.Page != 100 || len(out.Items) != 0 || out.Total != first.Total {
+		t.Fatalf("第 100 页是合法页码，应返回空列表但总数不变: %+v", out)
+	}
+	query.Del("page")
 	query.Set("projectId", "invalid")
 	read(query, 400)
 }

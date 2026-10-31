@@ -630,7 +630,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"product:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
 	})
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)

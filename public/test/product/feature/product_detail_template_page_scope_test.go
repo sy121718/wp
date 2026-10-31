@@ -28,6 +28,7 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,7 +72,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"contenttemplate.create": true})
 	})
-	handle := producthttp.NewProductPageHandle(base.products, base.products, base.projects)
+	handle := producthttp.NewProductPageHandle(base.products, base.products)
 	handle.SetDetailTemplateDeps(base.templates, base.pres)
 	// 注入**真实**端口（与 handle.SetDetailTemplateDeps 内部注入的是同一个构造）外加一层记录壳：
 	// 本文件的断言要同时看到「页面 200」与「三个端口方法各自收到的工程 id」。退回空端口规避，
@@ -83,7 +84,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	engine.GET("/admin/products/template", adminui.PageSlot(producthttp.ProductDetailTemplatePageTemplate), handle.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
 	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
 	return engine, scope, port
 }

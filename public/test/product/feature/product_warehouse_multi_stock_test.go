@@ -18,6 +18,7 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,6 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -553,12 +556,12 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
 	// 断言表单控件存在与否的用例要把这条路由注册上，否则请求 404、页面为空、断言全红。
-	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
 
 	// 新建整页里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
 	// 多仓勾选（同名多值）、数量开关与数量框、可搜索下拉的候选 datalist。
@@ -691,9 +694,9 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))
@@ -712,6 +715,90 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("库存列缺少 %q", want)
+		}
+	}
+}
+
+// stockFailurePort 恒失败的库存端口：模拟「库存一侧读不通」的那次请求。
+//
+// 只替换一个方法：页面路径上的其余库存能力（仓库清单 / 认领）仍走真实实现，
+// 于是这里测到的是「聚合失败时的渲染」，不是一整套桩的行为。
+type stockFailurePort struct {
+	inventorycontract.ProductStockPort
+	err error
+}
+
+func (s stockFailurePort) WarehouseStocksByProducts(context.Context, string, []string) ([]inventorydto.ProductWarehouseStock, error) {
+	return nil, s.err
+}
+
+// TestProductsPageStockUnknownRendersFailure 库存聚合失败时列表**如实显示故障**（PRD-017）。
+//
+// 旧模板按 StockState 兜底成 "none"，于是读失败被渲染成「未入库」—— 与「真的没有库存行」
+// 长得一样。本用例钉两件事：① 显示「库存读取失败」；② 不展开分仓（那一屏的每个仓
+// 都会是伪造的「未入库」），同时列表整体仍然是 200、商品行照常出现。
+func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	if _, err := f.products.Create(ctx, &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "故障可见商品", Slug: "col-unknown", SKUCode: "COL-UNKNOWN",
+	}); err != nil {
+		t.Fatalf("建商品失败: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	grantProductPerms(engine)
+	// 故障只注入 **service**：StockUnknown 是 fillProductStock 打的标记
+	// （internal/module/product/service/product.go 的 WarehouseStocksByProducts 失败分支），
+	// 而 handler 的 SetInventoryDeps 只换页面装配自己的仓库清单依赖，service 仍拿着真实
+	// inventory —— 那样库存查询会成功、该商品 0 行、照实渲染「未入库」，测到的就不是故障了。
+	f.products.SetInventoryService(stockFailurePort{ProductStockPort: f.inventory, err: errors.New("injected: 库存读失败")})
+	handle := producthttp.NewProductPageHandle(f.products, f.products)
+	// handler 侧保持真实依赖：仓库清单要是也被桩替换，渲染路径就偏离被测事实。
+	handle.SetInventoryDeps(f.inventory)
+	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("库存读取失败不得让列表整体失败，实际 %d", rec.Code)
+	}
+	page := rec.Body.String()
+	if !strings.Contains(page, "故障可见商品") {
+		t.Fatal("库存故障不该吞掉商品行（其余列仍应可读）")
+	}
+	if !strings.Contains(page, "库存读取失败") {
+		t.Fatal("库存读取失败必须如实显示，不能按「未入库」渲染")
+	}
+	if strings.Contains(page, "stock-rows") {
+		t.Fatal("故障时不得展开分仓明细：那一屏的每个仓都是伪造的「未入库」")
+	}
+	if strings.Contains(page, "未入库") {
+		t.Fatal("故障不是「未入库」：两种事实必须显示成不同的话")
+	}
+}
+
+// TestProductStockUnknownI18nSeeded 迁移 698 的词条必须真的进库（中 / 英各一条）。
+func TestProductStockUnknownI18nSeeded(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	if err := migrations.RunSeeds(f.db); err != nil {
+		t.Fatalf("执行生产数据种子失败: %v", err)
+	}
+	for _, lang := range []string{"zh-CN", "en-US"} {
+		var n int
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'admin.products.stock.unknown' AND lang = ?", lang).Scan(&n).Error; err != nil {
+			t.Fatalf("查词条失败: %v", err)
+		}
+		if n == 0 {
+			t.Fatalf("%s 的 admin.products.stock.unknown 词条缺失（迁移 698 未生效）", lang)
 		}
 	}
 }

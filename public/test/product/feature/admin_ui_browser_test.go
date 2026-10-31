@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	pageview "go_wp/pkg/view"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -74,10 +75,10 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	h := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	router.GET("/admin/product-brands", adminui.PageSlot(producthttp.ProductBrandsPageTemplate), h.ProductBrandsPage)
-	router.GET("/admin/product-categories", adminui.PageSlot(producthttp.ProductCategoriesPageTemplate), h.ProductCategoriesPage)
-	router.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
+	h := producthttp.NewProductPageHandle(f.svc, f.svc)
+	router.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
+	router.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
+	router.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
 	// JSON读取与保存使用真实业务服务，供集中浏览器验收；不代替生产鉴权链路测试。
 	write := producthttp.NewProductHandle(f.svc)
 	router.GET("/api/product/category/parents", write.ProductCategoryParents)
