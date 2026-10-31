@@ -287,7 +287,7 @@ func (s *Service) ListStocks(ctx context.Context, req *inventorydto.ListStockReq
 	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
 		return nil, err
 	}
-	rows, err := s.m.ListStockRows(ctx, filter, size, (page-1)*size)
+	rows, err := s.m.ListStockRows(ctx, filter, size, utils.PageOffset(page, size))
 	if err != nil {
 		return nil, err
 	}
@@ -997,7 +997,7 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 		WarehouseID: strings.TrimSpace(listWarehouseSKUWarehouseID(req)),
 		Keyword:     strings.TrimSpace(listWarehouseSKUKeyword(req)),
 		Status:      strings.TrimSpace(listWarehouseSKUStatus(req)),
-	}, size, (page-1)*size)
+	}, size, utils.PageOffset(page, size))
 	if err != nil {
 		return nil, err
 	}

@@ -47,6 +47,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 )
 
 // 调拨单状态（迁移 630；requested / rejected 由迁移 651 补入）。
@@ -731,7 +732,7 @@ func (s *Service) ListTransfers(ctx context.Context, req *inventorydto.ListTrans
 	rows, err := s.m.ListTransfers(ctx, inventorymodel.TransferListFilter{
 		ProjectID: projectID, Status: strings.TrimSpace(req.Status),
 		Keyword: strings.TrimSpace(req.Keyword),
-	}, size, (page-1)*size)
+	}, size, utils.PageOffset(page, size))
 	if err != nil {
 		return nil, err
 	}

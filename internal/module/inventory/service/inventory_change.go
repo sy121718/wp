@@ -328,7 +328,7 @@ func (s *Service) ListMovements(ctx context.Context, req *inventorydto.ListMovem
 		return nil, err
 	}
 	page, size := movementPageArgs(req)
-	rows, err := s.m.ListMovementRows(ctx, filter, size, (page-1)*size)
+	rows, err := s.m.ListMovementRows(ctx, filter, size, utils.PageOffset(page, size))
 	if err != nil {
 		return nil, err
 	}
