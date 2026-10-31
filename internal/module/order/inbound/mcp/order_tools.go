@@ -172,12 +172,15 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			if projectID == "" {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "projectId 不能为空"}
 			}
+			// 分页归一化只有一处（pkg/utils）：这里不再另留一份 clamp，避免两套口径。
+			limit, offset := utils.NormalizeLimitOffset(args.PageSize, args.Offset,
+				couponDefaultLimit, couponMaxLimit)
 			req := &orderdto.CouponListReq{
 				ProjectID: projectID,
 				Keyword:   strings.TrimSpace(args.Keyword),
 				Status:    strings.TrimSpace(args.Status),
-				Limit:     clampCouponLimit(args.PageSize),
-				Offset:    clampOffset(args.Offset),
+				Limit:     limit,
+				Offset:    offset,
 			}
 			res, err := r.ListCoupons(ctx, req)
 			if err != nil {
@@ -289,23 +292,6 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 		})
 
 	return []mcp.Tool{list, get, create, update, del}, nil
-}
-
-func clampCouponLimit(v int) int {
-	if v <= 0 {
-		return couponDefaultLimit
-	}
-	if v > couponMaxLimit {
-		return couponMaxLimit
-	}
-	return v
-}
-
-func clampOffset(v int) int {
-	if v < 0 {
-		return 0
-	}
-	return v
 }
 
 func couponSaveReq(a CouponWriteReq) *orderdto.CouponSaveReq {
@@ -1311,13 +1297,15 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 			if projectID == "" {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "projectId 不能为空"}
 			}
+			limit, offset := utils.NormalizeLimitOffset(args.PageSize, args.Offset,
+				returnDefaultLimit, returnMaxLimit)
 			res, err := r.ListReturns(ctx, &orderdto.ReturnListReq{
 				ProjectID: projectID,
 				Keyword:   strings.TrimSpace(args.Keyword),
 				Status:    strings.TrimSpace(args.Status),
 				OrderID:   args.OrderID,
-				Limit:     clampReturnLimit(args.PageSize),
-				Offset:    clampOffset(args.Offset),
+				Limit:     limit,
+				Offset:    offset,
 			})
 			if err != nil {
 				return mcp.Result{}, err
@@ -1452,16 +1440,6 @@ func fillReturnReceiveOperator(ctx context.Context, req *orderdto.ReturnReceiveR
 		req.OperatorType = "admin"
 		req.OperatorID = uint64(uid)
 	}
-}
-
-func clampReturnLimit(v int) int {
-	if v <= 0 {
-		return returnDefaultLimit
-	}
-	if v > returnMaxLimit {
-		return returnMaxLimit
-	}
-	return v
 }
 
 // returnRespText 写操作回执用的简版：只有退货单本身，没有订单快照与明细。

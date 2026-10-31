@@ -24,6 +24,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
 )
 
@@ -105,7 +106,7 @@ func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdt
 		res, err := h.svc.ListPendingShip(ctx, &orderdto.PendingShipReq{
 			ProjectID: selected,
 			Keyword:   strings.TrimSpace(query.Keyword),
-			Offset:    (page - 1) * limit,
+			Offset:    utils.PageOffset(page, limit),
 			Limit:     limit,
 		})
 		if err != nil {

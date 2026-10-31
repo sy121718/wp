@@ -36,6 +36,7 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
+	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
 )
 
@@ -129,7 +130,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 			Status:    filter.Status,
 			Keyword:   filter.Keyword,
 			OrderID:   filter.OrderID,
-			Offset:    (page - 1) * limit,
+			Offset:    utils.PageOffset(page, limit),
 			Limit:     limit,
 		})
 		if lerr != nil {

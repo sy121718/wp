@@ -38,6 +38,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
 	"go_wp/pkg/pagination"
+	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
 )
 
@@ -204,7 +205,7 @@ func (h *orderPageHandle) ordersPageData(c *gin.Context, selected string, filter
 		PaymentMethod:     filter.PaymentMethod,
 		CreatedVia:        filter.CreatedVia,
 		FulfillmentStatus: filter.Fulfillment,
-		Offset:            (page - 1) * limit,
+		Offset:            utils.PageOffset(page, limit),
 		Limit:             limit,
 	})
 	if lerr != nil {
