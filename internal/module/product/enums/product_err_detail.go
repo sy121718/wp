@@ -1,60 +1,50 @@
 package productenums
 
-// product_err_detail.go — 商品域业务错误的**补充说明**词条（key + 具名参数 + 中文兜底）。
-//
-// 背景（系统性通道，见 pkg/i18n/errdetail.go）：service 判断被拒时习惯写成
-//
-//	fmt.Errorf("%s：%s", enums.ErrXxx, "属性组 a1 未参与该商品的变体")
-//
-// 读侧（productErrText）只按「key：」前缀认出前半截业务 key 去取词，**后半截中文原样
-// 拼在译文后面** —— 英文界面上永远是中文，而它恰好是信息量最大的那一半。
-//
-// 本文件是那半句的真源：service 侧用 i18n.ErrorDetail(常量, name, value, …) 产出
-// 「key + 参数」，读侧取词并填 {name} 占位符。中文兜底留在这里（i18n 未初始化 /
-// 词条缺失时用），与 ProductErrFallbacks 同一形态（同目录 product_err_fallbacks.go）。
+// 商品错误明细声明。service 交付键与具名参数，响应出口取词并填充；
+// 缺词或占位符无效时使用声明处中文兜底。
 const (
-	// —— 定价规则参数（service/product_pricing_rule.go）——
-	DetailPricingParamsNotObject   = "admin.product_pricing.detail.paramsNotObject"
-	DetailPricingParamRequired     = "admin.product_pricing.detail.paramRequired"
-	DetailPricingParamNotNumber    = "admin.product_pricing.detail.paramNotNumber"
-	DetailPricingParamMissingOrNaN = "admin.product_pricing.detail.paramMissingOrNotNumber"
-	DetailPricingParamRange        = "admin.product_pricing.detail.paramOutOfRange"
-	DetailPricingParamRangePlain   = "admin.product_pricing.detail.paramOutOfRangePlain"
-	DetailPricingUnknownKeys       = "admin.product_pricing.detail.unknownKeys"
-	DetailPricingUnknownRuleType   = "admin.product_pricing.detail.unknownRuleType"
-	DetailPricingUnknownRounding   = "admin.product_pricing.detail.unknownRounding"
+	// 定价规则参数。
+	DetailPricingParamsNotObject   = "product.err.pricingParamsNotObject"
+	DetailPricingParamRequired     = "product.err.pricingParamRequired"
+	DetailPricingParamNotNumber    = "product.err.pricingParamNotNumber"
+	DetailPricingParamMissingOrNaN = "product.err.pricingParamMissingOrNaN"
+	DetailPricingParamRange        = "product.err.pricingParamRange"
+	DetailPricingParamRangePlain   = "product.err.pricingParamRangePlain"
+	DetailPricingUnknownKeys       = "product.err.pricingUnknownKeys"
+	DetailPricingUnknownRuleType   = "product.err.pricingUnknownRuleType"
+	DetailPricingUnknownRounding   = "product.err.pricingUnknownRounding"
 
-	// —— 标签规则参数（service/product_tag_rule.go）——
-	DetailTagParamsNotObject = "admin.product_tags.detail.paramsNotObject"
-	DetailTagParamRequired   = "admin.product_tags.detail.paramRequired"
-	DetailTagParamNotInteger = "admin.product_tags.detail.paramNotInteger"
-	DetailTagParamNotNumber  = "admin.product_tags.detail.paramNotNumber"
-	DetailTagParamRange      = "admin.product_tags.detail.paramOutOfRange"
-	DetailTagParamRangePlain = "admin.product_tags.detail.paramOutOfRangePlain"
-	DetailTagUnknownKeys     = "admin.product_tags.detail.unknownKeys"
-	DetailTagPriceNeedsOne   = "admin.product_tags.detail.priceNeedsOne"
-	DetailTagPriceOrderWrong = "admin.product_tags.detail.priceOrderWrong"
-	DetailTagUnknownRuleType = "admin.product_tags.detail.unknownRuleType"
+	// 标签规则参数。
+	DetailTagParamsNotObject = "product.err.tagParamsNotObject"
+	DetailTagParamRequired   = "product.err.tagParamRequired"
+	DetailTagParamNotInteger = "product.err.tagParamNotInteger"
+	DetailTagParamNotNumber  = "product.err.tagParamNotNumber"
+	DetailTagParamRange      = "product.err.tagParamRange"
+	DetailTagParamRangePlain = "product.err.tagParamRangePlain"
+	DetailTagUnknownKeys     = "product.err.tagUnknownKeys"
+	DetailTagPriceNeedsOne   = "product.err.tagPriceNeedsOne"
+	DetailTagPriceOrderWrong = "product.err.tagPriceOrderWrong"
+	DetailTagUnknownRuleType = "product.err.tagUnknownRuleType"
 
 	// —— 变体组合（service/product_variant.go）——
-	DetailVariationCountExceed           = "admin.products.detail.variationCountExceed"
-	DetailVariationDimensionExceed       = "admin.products.detail.variationDimensionExceed"
-	DetailVariationAttributeUnreferenced = "admin.products.detail.variationAttributeUnreferenced"
-	DetailVariationAttributeNotInProduct = "admin.products.detail.variationAttributeNotInProduct"
-	DetailVariationValueNotEnabled       = "admin.products.detail.variationValueNotEnabled"
+	DetailVariationCountExceed           = "product.err.variationCountExceed"
+	DetailVariationDimensionExceed       = "product.err.variationDimensionExceed"
+	DetailVariationAttributeUnreferenced = "product.err.variationAttributeUnreferenced"
+	DetailVariationAttributeNotInProduct = "product.err.variationAttributeNotInProduct"
+	DetailVariationValueNotEnabled       = "product.err.variationValueNotEnabled"
 
 	// —— 批量改价范围（service/product_pricing.go）——
-	DetailPricingFilterProjectRequired   = "admin.product_pricing.detail.filterProjectRequired"
-	DetailPricingFilterConditionRequired = "admin.product_pricing.detail.filterConditionRequired"
-	DetailPricingTargetTooMany           = "admin.product_pricing.detail.targetTooMany"
+	DetailPricingFilterProjectRequired   = "product.err.pricingFilterProjectRequired"
+	DetailPricingFilterConditionRequired = "product.err.pricingFilterConditionRequired"
+	DetailPricingTargetTooMany           = "product.err.pricingTargetTooMany"
 
-	// —— 相关商品引用（service/product_crud.go）——
-	DetailRelatedSelfReference = "admin.products.detail.relatedSelfReference"
-	DetailRelatedMissing       = "admin.products.detail.relatedMissing"
-	DetailRelatedCrossProject  = "admin.products.detail.relatedCrossProject"
+	// 相关商品引用。
+	DetailRelatedSelfReference = "product.err.relatedSelfReference"
+	DetailRelatedMissing       = "product.err.relatedMissing"
+	DetailRelatedCrossProject  = "product.err.relatedCrossProject"
 
 	// —— 删除守卫的跨工程引用明细（service/product_ref_guard.go）——
-	DetailRefGuardBlocked = "admin.products.detail.refGuardBlocked"
+	DetailRefGuardBlocked = "product.err.refGuardBlocked"
 )
 
 // ErrDetailFallbacks 上面那组词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。

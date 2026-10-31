@@ -14,3 +14,30 @@ const (
 	ProductTranslationsErrTargetEmpty       = "admin.product_translations.err.targetEmpty"
 	ProductTranslationsErrShapeMismatch     = "admin.product_translations.err.shapeMismatch"
 )
+
+// 响应消息与既有界面引用 key；不属于领域状态。
+const (
+	MsgCreateSuccess          = "MsgCreateSuccess"
+	MsgUpdateSuccess          = "MsgUpdateSuccess"
+	MsgDeleteSuccess          = "MsgDeleteSuccess"
+	MsgListSuccess            = "MsgListSuccess"
+	MsgDetailSuccess          = "MsgDetailSuccess"
+	MsgVariantGenerateSuccess = "MsgVariantGenerateSuccess"
+	MsgPricingPreviewSuccess  = "MsgPricingPreviewSuccess"
+	MsgPricingApplySuccess    = "MsgPricingApplySuccess"
+	BulkTagPartial            = "product.bulk.tagPartial"
+	BulkTagDone               = "product.bulk.tagDone"
+	BulkAttrPartial           = "product.bulk.attrPartial"
+	BulkAttrDone              = "product.bulk.attrDone"
+	BulkCategoryPartial       = "product.bulk.categoryPartial"
+	BulkCategoryDone          = "product.bulk.categoryDone"
+	BulkBrandPartial          = "product.bulk.brandPartial"
+	BulkBrandDone             = "product.bulk.brandDone"
+	BulkProductPartial        = "product.bulk.productPartial"
+	BulkProductDone           = "product.bulk.productDone"
+	BulkPricingNoneSelected   = "product.bulk.pricingNoneSelected"
+	BulkVariantNoChange       = "product.bulk.variantSaveNoChange"
+	BulkVariantSaved          = "product.bulk.variantSaveSaved"
+	BulkVariantSkipped        = "product.bulk.variantSaveSkipped"
+	MsgProductSaved           = "product.msg.saved"
+)

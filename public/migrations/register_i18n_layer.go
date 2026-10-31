@@ -362,4 +362,14 @@ func registerI18nDataLayer() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrAuditFailed'",
 		SQL:          mustSQL("258_publication_audit_failed_i18n.sql"),
 	})
+
+	// 698：PRD-017 的「库存读取失败」词条（商品列表库存列与 MCP 详情共用同一条事实）。
+	// 判定只看本批自己的 key：264 的库存三态译文运营可能已改过，拿它们当哨兵会让本 seed
+	// 反复重放。计数 = 2（本批只有 zh-CN / en-US 两条），SQL 里是 ON CONFLICT DO NOTHING。
+	registerSeed(Seed{
+		Version:      "698-i18n-seed-product-stock-unknown",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang IN ('zh-CN','en-US') AND item_key = 'admin.products.stock.unknown'",
+		SQL:          mustSQL("698_product_stock_unknown_i18n.sql"),
+	})
 }

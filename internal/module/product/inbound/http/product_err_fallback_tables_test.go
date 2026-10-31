@@ -3,7 +3,7 @@ package producthttp
 // product_err_fallback_tables_test.go — 出口层兜底表的守卫 + 「未登记业务 key」的稳定兜底（task-158 §7.3）。
 //
 // 三张表各有归属，守卫也各在各处：
-//   · 本模块 Err* 的展示原文 → internal/module/product/enums 的 ProductErrFallbacks
+//   · 本模块 Err* 的展示原文 → internal/module/product/enums 的 FallbackFor
 //     （覆盖面守卫在 productenums 包里）；
 //   · 别模块 key（inventory / presentation）→ 各自的 enums 兜底表（product 不再替对方留补丁表）；
 //   · 跳过原因（VariantSkip*）→ productenums.VariantSkipFallbacks ——
@@ -83,7 +83,7 @@ func enumsStringConstants(t *testing.T) map[string]string {
 
 // TestSkipReasonFallbacksCoverEnumsSkipKeys 每条跳过原因都要有出口层的展示原文。
 //
-// 跳过原因不走 productErrFactOf（取值过不了业务判据），所以它们的表与 ProductErrFallbacks 分开；
+// 跳过原因不走 productErrFactOf（取值过不了业务判据），所以它们的表与 FallbackFor 分开；
 // 两张表现在都在 enums（声明处）：VariantSkip* 住 productenums.VariantSkipFallbacks，覆盖面守卫
 // 在 enums 包的 product_skip_fallbacks_test.go —— 这里只留「出口取词时用的是不是这张表」这一条。
 func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
@@ -128,7 +128,7 @@ func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 func TestBusinessErrTextKeepsDeclarationFallback(t *testing.T) {
 	c, _ := newHXContext(t, "", "")
 	key := productenums.ErrNameRequired
-	want := productenums.ProductErrFallbacks[key]
+	want := productenums.FallbackFor(key)
 	if want == "" {
 		t.Fatalf("%q 在 enums 兜底表里没有登记", key)
 	}

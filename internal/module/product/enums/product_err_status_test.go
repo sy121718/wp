@@ -22,9 +22,9 @@ import (
 // TestErrStatusesOnlyCoverDeclaredKeys 登记表里的 key 必须真的存在（否则就是死条目）。
 func TestErrStatusesOnlyCoverDeclaredKeys(t *testing.T) {
 	declared := errKeyConstants(t) // 取值 → 常量名
-	for key := range errStatuses {
+	for key := range errFallbacks {
 		if _, ok := declared[key]; !ok {
-			t.Fatalf("errStatuses 登记了本包不存在的 key %q —— 改名后残留的条目永远不会生效", key)
+			t.Fatalf("错误声明登记了本包不存在的 key %q —— 改名后残留的条目永远不会生效", key)
 		}
 	}
 }
@@ -50,5 +50,18 @@ func TestCompositeErrorKeepsStatus(t *testing.T) {
 	}
 	if fact, ok := facing.FactOf(err); !ok || fact.Key != ErrSlugTaken {
 		t.Fatalf("复合错误应保住业务 key，实际 %+v（ok=%v）", fact, ok)
+	}
+}
+
+func TestErrorDefinitionsCarryFallbackAndStatus(t *testing.T) {
+	for key, definition := range errFallbacks {
+		fact, ok := facing.FactOf(Err(key))
+		if !ok || fact.Key != key || fact.Fallback != definition.fallback {
+			t.Errorf("错误事实与声明不一致: key=%s fact=%+v", key, fact)
+		}
+		status, hasStatus := facing.StatusOf(Err(key))
+		if hasStatus != (definition.status != 0) || (hasStatus && status != StatusFor(key)) {
+			t.Errorf("错误状态与声明不一致: key=%s status=%d present=%v", key, status, hasStatus)
+		}
 	}
 }

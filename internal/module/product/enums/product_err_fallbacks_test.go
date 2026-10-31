@@ -109,7 +109,7 @@ func TestEveryErrorKeyHasFallback(t *testing.T) {
 
 	var missing, forbidden []string
 	for val, name := range consts {
-		text := strings.TrimSpace(ProductErrFallbacks[val])
+		text := strings.TrimSpace(FallbackFor(val))
 		if strings.HasPrefix(name, "Err") {
 			if text == "" {
 				missing = append(missing, fmt.Sprintf("%s (=%q)", name, val))
@@ -124,7 +124,7 @@ func TestEveryErrorKeyHasFallback(t *testing.T) {
 	sort.Strings(forbidden)
 	if len(missing) > 0 {
 		t.Errorf("有 %d 条业务错误 key 没有中文兜底，缺词条时页面会显示裸 key：\n  %s\n"+
-			"补进 enums.ProductErrFallbacks（文案与 seed 的 zh-CN 词条保持一致）",
+			"补进 enums.errFallbacks（文案与 seed 的 zh-CN 词条保持一致）",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 	if len(forbidden) > 0 {
@@ -134,7 +134,7 @@ func TestEveryErrorKeyHasFallback(t *testing.T) {
 	}
 
 	var orphan []string
-	for key := range ProductErrFallbacks {
+	for key := range errFallbacks {
 		name, ok := consts[key]
 		if !ok || !strings.HasPrefix(name, "Err") {
 			orphan = append(orphan, key)
@@ -187,7 +187,7 @@ func TestErrorKeyValuesAreUnique(t *testing.T) {
 // 不该由它决定文案。
 func TestFallbackTablesAreDisjoint(t *testing.T) {
 	tables := map[string]map[string]string{
-		"ProductErrFallbacks":     ProductErrFallbacks,
+		"errFallbacks":            errorFallbackTexts(),
 		"ErrDetailFallbacks":      ErrDetailFallbacks,
 		"TranslationMsgFallbacks": TranslationMsgFallbacks,
 	}
@@ -209,7 +209,7 @@ func TestFallbackTablesAreDisjoint(t *testing.T) {
 
 // TestFallbackTextsAreReadable 兜底原文必须是一句可读的话，而不是裸 key 的副本。
 func TestFallbackTextsAreReadable(t *testing.T) {
-	for key, text := range ProductErrFallbacks {
+	for key, text := range errorFallbackTexts() {
 		if strings.TrimSpace(text) == "" {
 			t.Errorf("key %q 的兜底是空串（页面上会留下空白错误槽）", key)
 		}
@@ -220,4 +220,12 @@ func TestFallbackTextsAreReadable(t *testing.T) {
 			t.Errorf("key %q 的兜底含具名占位符（%q）—— 这一层不做填充，占位符会原样摆给运营看", key, text)
 		}
 	}
+}
+
+func errorFallbackTexts() map[string]string {
+	texts := make(map[string]string, len(errFallbacks))
+	for key, definition := range errFallbacks {
+		texts[key] = definition.fallback
+	}
+	return texts
 }
