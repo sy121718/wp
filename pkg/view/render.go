@@ -1,28 +1,4 @@
-// Package view 是视图契约的公共面：渲染接线（render.go）、失败出口、分页契约（list.go）、
-// 视图结果接口（result.go）、跳转助手（redirect.go）。全包只做出口，不含业务、不持引擎。
-//
-// 定位：
-//   - 不认识 gin、不认识请求上下文渲染细节、不读 config —— 模板名与渲染实现由路由装配注入；
-//   - **不持有引擎、不做变量累积**：ThinkPHP 那种「View::$data 挂在单例上」的写法在这里
-//     是缺陷而非特性 —— Go 是常驻进程，跨请求累积会让人权限、语言、CSRF 串号。
-//     请求级数据的正确形态是调用方在 vars 里放**捕获本次请求的闭包**
-//     （如 t(key, fallback)、can(code)），或直接放标量。
-//
-// 具体模板引擎在 internal/templates（templates.NewJetHTMLRender），
-// 依赖方向单向：internal → pkg。
 package view
-
-// render.go — 页面出口的**唯一接线**：控制器只写 pageview.Render(c, data) / pageview.Fail(c, err)。
-//
-// 模板名与渲染实现由路由装配注入（adminui.PageSlot / BareSlot）—— 控制器因此不持模板名、
-// 不 import 渲染层，也不会退化成「每屏一份 RenderPage 调用」。渲染仍然是 UI 线的实现
-// （internal/adminui 的 RenderPage / RenderBare），这里只做两件事：
-//
-//  1. 把「这一屏渲染哪个模板、谁来渲染」从装配点带到 handler（请求上下文，一个请求一次）；
-//  2. 失败的唯一形态是 JSON（{code,message,data} + 真实状态码），不吞不转。
-//
-// 为什么在 pkg 而不是 internal：控制器（业务模块）要调它，而依赖方向是
-// cmd → routers → module → pkg；放进 internal 会让业务模块反向依赖 UI 实现。
 
 import (
 	"errors"
@@ -41,17 +17,27 @@ const (
 	ctxRendererKey = "view.renderer"
 )
 
-// Slot 装配用中间件：把这一屏的模板名与渲染实现放进请求上下文，随后交给 handler。
-//
-// 用法（路由装配点，模板名与权限点同处）：
-//
-//	pages.GET("/products", perm, adminui.PageSlot(ProductListPageTemplate), h.ProductsPage)
+// Slot 为存量页面装配模板与渲染器；新页面由处理器调用 RenderTemplate 选择模板。
 func Slot(tpl string, render Renderer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(ctxTplKey, tpl)
 		c.Set(ctxRendererKey, render)
 		c.Next()
 	}
+}
+
+// UseRenderer 统一装配渲染实现；模板由页面处理器在 RenderTemplate 调用处声明。
+func UseRenderer(render Renderer) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(ctxRendererKey, render)
+		c.Next()
+	}
+}
+
+// RenderTemplate 直接选择模板，仍复用请求级上下文注入与统一失败出口。
+func RenderTemplate(c *gin.Context, tpl string, data any) {
+	c.Set(ctxTplKey, tpl)
+	Render(c, data)
 }
 
 // Render 控制器交视图：成功页走 Jet，片段走片段出口。
@@ -61,7 +47,7 @@ func Slot(tpl string, render Renderer) gin.HandlerFunc {
 func Render(c *gin.Context, data any) {
 	render, tpl, ok := slotOf(c)
 	if !ok {
-		response.ErrorInternal(c, "view", errors.New("视图出口未装配：路由缺 adminui.PageSlot / BareSlot"))
+		response.ErrorInternal(c, "view", errors.New("视图出口未装配：路由缺渲染器"))
 		return
 	}
 	if data == nil {

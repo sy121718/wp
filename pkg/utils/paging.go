@@ -20,11 +20,13 @@ func NormalizePaging(page, size, defaultSize, maxSize int) Paging {
 	if size > maxSize {
 		size = maxSize
 	}
-	return Paging{
-		Page:   page,
-		Size:   size,
-		Offset: (page - 1) * size,
+	maxInt := int(^uint(0) >> 1)
+	offset := maxInt
+	// 超出可表示范围时保留越界语义，避免回绕到首页或负偏移。
+	if size > 0 && page-1 <= maxInt/size {
+		offset = (page - 1) * size
 	}
+	return Paging{Page: page, Size: size, Offset: offset}
 }
 
 // NormalizeLimitOffset 归一化 limit/offset 分页（offset 从 0 起算）。
