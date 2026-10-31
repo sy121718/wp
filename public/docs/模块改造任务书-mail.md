@@ -59,8 +59,23 @@
   不用第二套语义；唯一尾键保持。
 - **断言**：越界页、空集、排序并列三例；SQL 条数不增。
 
-### 后续
-- 错误与文案域（`mail_err.go` 19.2K）：按规范 §6 分批。
+## 4bis 执行进度（本轮已完成，证据见 `public/docs/mail模块改造执行记录.md`）
+
+| 批次 | 状态 | 提交 |
+|---|---|---|
+| M0-1（十条页面路由） | 完成 | 75576ddb |
+| M0-2（六处反射分页 → 直接字段） | 完成 | 599ee94f |
+| M1（14 个页面视图类型搬出 dto） | 完成 | b666c201 |
+| M2（OptionResp 搬出 dto，dto 展示字段归零） | 完成 | 9ae8d1d1 |
+| M3（offset 收敛到 `utils.PageOffset`） | 完成 | 57f7c128 |
+| M4（错误与文案域） | **核查后结项**：29 个 Err* 与 errFallbacks 逐条对应（missing=0、多余=0），service 内界面 key 0 处 | — |
+
+结果：`mail_page_router.go` 内 PageSlot 0 处、`mail_page.go` 内 `pageview.Render(` 0 处、
+反射分页 0 处、`(page - 1) * ` 0 处、dto 展示字段 0 处。
+踩坑三条已写入执行记录 §3：反射挂载被覆盖的 Base、控制器 60 行上限、`_handle` 命名门禁。
+
+### 后续（本轮未做）
+- 剩余 3 处非测试 `gin.H`（页面视图临时形状）：改结构体须与模板契约同批。
 - `mail_page.go` 79.7K 拆分属独立任务（按域拆 `*_page.go`），不在本任务范围。
 
 ## 5 待决 DEC（登记 `public/docs/mail业务裁决-DEC.md`）
