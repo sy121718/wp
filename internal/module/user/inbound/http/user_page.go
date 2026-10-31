@@ -639,7 +639,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			RegisteredFrom: utils.NewJSONTimePtr(customerPageDayStart(filter.RegisteredFrom)),
 			RegisteredTo:   utils.NewJSONTimePtr(customerPageDayEnd(filter.RegisteredTo)),
 			UserIDs:        filterIDs,
-			Offset:         (page - 1) * limit,
+			Offset:         utils.PageOffset(page, limit),
 			Limit:          limit,
 		})
 		if err != nil {
@@ -1384,7 +1384,7 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 			To:        rng.To,
 			Segment:   segment,
 			Limit:     limit,
-			Offset:    (page - 1) * limit,
+			Offset:    utils.PageOffset(page, limit),
 		})
 		if rerr != nil {
 			errMsg = customerRfmUnavailableLabel.msg()
