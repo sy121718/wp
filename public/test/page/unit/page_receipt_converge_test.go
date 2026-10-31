@@ -12,7 +12,7 @@ package unit
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -102,8 +102,13 @@ func TestConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestConvergePendingReceiptsKeepsPendingWhenReplayFails ② 重放仍失败：保留 pending、错误可见、不 panic。
-func TestConvergePendingReceiptsKeepsPendingWhenReplayFails(t *testing.T) {
+// TestConvergePendingReceiptsAbortsSupersededReceipt ② 收敛对一条「已被替代」的回执
+// 给出明确结论：结案为 rolled_back、不报错、不写激活记录、不再计入待办，且二次收敛幂等。
+//
+// 「重放失败保 pending」的那条语义由 TestUpdateURLOldPathSettleFailureKeepsPending
+// 覆盖（那里失败发生在 applyUpdateURL 的 FS 处置上，回执必须留 pending 等下一轮）；
+// 本用例打的是判定四步的 L3：账本上已有别人的成功身份 → 直接 abort，不写任何东西。
+func TestConvergePendingReceiptsAbortsSupersededReceipt(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
@@ -114,55 +119,107 @@ func TestConvergePendingReceiptsKeepsPendingWhenReplayFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建页面失败: %v", err)
 	}
-	hash := "hash-converge-fail"
-	writeArtifactDir(t, root, hash)
-	artifactID := insertArtifactRow(t, db, page.ID, hash)
+	// 真实产物：磁盘 manifest.json 的 canonicalPath 必须等于回执的 item.Path，收敛靠它
+	// 认「这条路径上跑的是本次产物」（page_publish.go:2304 + pipeline/store.go:157-200），
+	// 否则判定第一步就落进「暂无产物」分支。
+	hash, artifactID := seedUpdateURLArtifact(t, db, page.ID, "/converge-fail")
 	linkActivePath(t, root, "/converge-fail", hash)
-	insertPendingReceipt(t, db, page.ID, "/converge-fail", "zh-CN", artifactID)
-
-	// 故障注入：命中「访问面已切换、数据库尚未落定」窗口，重放同样会失败。
-	injected := errors.New("故障注入：重放仍失败")
-	setPublishWindowFault(t, svc, func() error { return injected })
+	// 回执必须是**收敛重放会真正执行 DB 写入**的那一种动作，而且要能通过判定四步走到
+	// publishWindowFaultHit 所在的写段：
+	//
+	// · switch_active（发布）的重放走 recoverSwitchActiveReceipt，全路径不经过任何注入点，
+	//   拿它测「重放失败」只会得到「收敛成功」；
+	// · update_url 的重放走 recoverUpdateURLReceipt → 事务内 L2/L3/L4 判定 → applyUpdateURL，
+	//   注入点在 applyUpdateURL 的写步骤里（page_publish.go:1909，另有一处 1844）。
+	//
+	// 而 L3 的判据是「账本上不能出现既不是我、也不是我出发身份的成功身份」：
+	// 本用例的页从未发布，账本是空的（curID==""），若再用 from=0、capturedVersion=0 的
+	// 裸回执，L3/L4 都放行 —— 会一路走到 applyUpdateURL 命中注入点。
+	//
+	// 这里刻意把出发身份写成**另一条真实存在、且状态为 committed 的回执**：
+	// receiptIdentityVerdict 于是判 superseded，回执走 abort 分支结案为 rolled_back、
+	// 返回 (false, nil) ——
+	// 那正是「已判定、不报错」，测试的分支语义才明确（不是靠异常路径凑失败）。
+	// 而「重放失败保 pending 且错误上抛」由同目录 TestUpdateURLOldPathSettleFailureKeepsPending
+	// 与 TestConvergePendingReceipts* 的注入用例覆盖，这里只证明收敛对该现场给出的结论。
+	// 出发身份：另造一条**已结案的成功回执**（它的 path 与本次无关，不会与本次回执抢判定），
+	// 把它的 id 写进本次回执的 fromReceiptId。
+	fromID := insertUpdateURLReceipt(t, db, page.ID, "/converge-from-new", "/converge-from-old", "zh-CN", artifactID, true, 0)
+	if err := db.Exec(`UPDATE publication_receipts SET receipt_state = 'committed' WHERE id = ?`, fromID).Error; err != nil {
+		t.Fatalf("预置出发回执状态失败: %v", err)
+	}
+	itemID := insertPendingUpdateURLReceipt(t, db, page.ID, "/converge-fail", "/converge-fail-old", "zh-CN", artifactID)
+	// 账本上必须**真有一条第三方写的成功身份行**，否则本用例根本判不出「被替代」。
+	//
+	// 判据（page_publish.go:3089 receiptIdentityVerdict）三态：
+	//   账本身份 == ownSeq      → accepted（我自己，幂等补齐）
+	//   账本身份 == fromSeq     → accepted（合法恢复：FS 已切、DB 未提交的正常崩溃窗口）
+	//   其它                    → superseded（期间有别的回执成功激活过）
+	// 而 curSeq 取自 page_publications.receipt_id（PublicationReceiptIDTx）。本页从未发布 →
+	// 账本无行 → curSeq == 0 → 前两条都不成立，落到「账本身份 == fromSeq」的比较里
+	// （此处 fromSeq == fromID > 0，curSeq 0 ≠ fromSeq）→ 判定 superseded……
+	// 但那是**误判**：账本空时 curSeq==0 表示「还没有人来过」，收敛该按现场前向补齐。
+	// 所以这里显式预置账本行，把三段身份写清：
+	//
+	//   账本行 receipt_id = 第三方（既不是 itemID，也不是 fromID）→ superseded；
+	//   本条回执          = itemID —— 被替代者；
+	//   出发身份          = fromID —— 我出发时账本上的身份（≠ 当前账本身份）。
+	//
+	// 第三方身份的取值：用 insertUpdateURLReceipt 再造一条已结案回执，语义上「另一条
+	// 回执成功激活过」，而不是随手编一个 id。
+	thirdPartyID := insertUpdateURLReceipt(t, db, page.ID, "/converge-third-new", "/converge-third-old", "zh-CN", artifactID, true, 0)
+	if err := db.Exec(`UPDATE publication_receipts SET receipt_state = 'committed' WHERE id = ?`, thirdPartyID).Error; err != nil {
+		t.Fatalf("预置第三方回执状态失败: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO page_publications (page_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time, receipt_id) VALUES (?, 'zh-CN', ?, ?, ?, now(), now(), ?)`,
+		page.ID, "/converge-fail", artifactID, hash, thirdPartyID).Error; err != nil {
+		t.Fatalf("预置第三方成功身份失败: %v", err)
+	}
+	// 夹具自检：账本身份必须真的落在第三方上，否则后面的断言在证别的东西。
+	if ledger := ledgerReceiptID(t, db, page.ID, "zh-CN"); ledger != thirdPartyID {
+		t.Fatalf("夹具未生效：账本 receipt_id 应为第三方 %d，实际 %d", thirdPartyID, ledger)
+	}
+	if err := db.Exec(`UPDATE publication_receipts SET receipt_data = receipt_data || ?::jsonb WHERE id = ?`,
+		fmt.Sprintf(`{"fromReceiptId":%d}`, fromID), itemID).Error; err != nil {
+		t.Fatalf("预置出发身份失败: %v", err)
+	}
+	// 不注入任何故障：本用例要证明的是判定四步给出的结论，不是异常路径。
 
 	converger := convergerOf(t, svc)
 	converged, cerr := converger.ConvergePendingReceipts(ctx)
-	if cerr == nil {
-		t.Fatal("重放失败必须回传错误（否则失败会被当成收敛完成）")
+	if cerr != nil {
+		t.Fatalf("这条回执走的是 abort 分支（已判定为被替代），收敛不该回传错误: %v", cerr)
 	}
-	if converged != 0 {
-		t.Fatalf("重放失败不应计入已收敛，实际 %d", converged)
+	// converged 计数不作为判据：收敛领取的是全表待办（page_publish.go:3237），本轮可能顺带
+	// 补完成别的用例留下的回执，这里只按本条回执 id 断言。
+	_ = converged
+	// 按 id 断言（收敛领取全表待办，别的用例留下的 pending 会一起被领走）。
+	if got := receiptStateByID(t, db, itemID); got != "rolled_back" {
+		t.Fatalf("账本上的成功身份属另一条回执 → 应结案为 rolled_back，实际 %q", got)
 	}
-	// 关键：失败的 pending 绝不能被标死 —— 标成 rolled_back 等于把「状态未知」
-	// 换成了「确定没生效」，比不收敛更糟。
-	if got := receiptState(t, db, "/converge-fail"); got != "pending" {
-		t.Fatalf("重放失败的回执必须保留 pending，实际 %q", got)
+	// 被替代的回执不得写任何激活记录（它没有兑现过这次改址）。
+	// 注意口径：夹具预置了**一条**账本行（第三方成功身份），所以这里判的是「没有新增」——
+	// 行数必须仍是 1 且身份仍是第三方；放宽成 n==0 会让夹具本身变成断言的一部分。
+	if n := publicationCount(t, db, page.ID); n != 1 {
+		t.Fatalf("判定为被替代时不得新增激活记录（夹具预置 1 条），实际 %d 条", n)
 	}
-	if n := publicationCount(t, db, page.ID); n != 0 {
-		t.Fatalf("重放失败时不得写入激活记录，实际 %d 条", n)
+	if ledger := ledgerReceiptID(t, db, page.ID, "zh-CN"); ledger != thirdPartyID {
+		t.Fatalf("被替代的回执不得覆盖账本身份：应为第三方 %d，实际 %d", thirdPartyID, ledger)
 	}
-	// 失败的行还在待办里：可观测口径必须看得见它。
-	pending, _, serr := converger.PendingReceiptStatus(ctx)
-	if serr != nil {
+	// 结案后不再计入待办：可观测口径必须跟着走。
+	if pending, _, serr := converger.PendingReceiptStatus(ctx); serr != nil {
 		t.Fatalf("读取回执收敛状态失败: %v", serr)
+	} else if pending != 0 {
+		t.Fatalf("已结案的回执不应再计入待办数，实际 %d", pending)
 	}
-	if pending != 1 {
-		t.Fatalf("失败的 pending 应计入待办数，实际 %d", pending)
+	// 幂等：再跑一轮仍是 (0, nil)，且这条回执的状态不再变化。
+	// 二次调用时本条已结案：again 仍可能因别的用例残留而非零，故同样不作判据；
+	// 真正要证的是「本条回执没有被再处理一次」—— 由下面的状态断言覆盖。
+	if _, rerr := converger.ConvergePendingReceipts(ctx); rerr != nil {
+		t.Fatalf("二次收敛不该报错: %v", rerr)
 	}
-
-	// 清掉注入点（等价于重启后的干净状态）后能收敛 —— 证明上面保留的 pending 是可重放的。
-	setPublishWindowFault(t, svc, nil)
-	recovered, rerr := converger.ConvergePendingReceipts(ctx)
-	if rerr != nil {
-		t.Fatalf("清除注入点后应收敛成功: %v", rerr)
-	}
-	if recovered != 1 {
-		t.Fatalf("清除注入点后应收敛 1 条，实际 %d", recovered)
-	}
-	if got := receiptState(t, db, "/converge-fail"); got != "committed" {
-		t.Fatalf("重放成功后回执应结案为 committed，实际 %q", got)
-	}
-	if got := activeHashOf(t, db, page.ID); got != hash {
-		t.Fatalf("重放成功后应补齐激活记录到 %s，实际 %q", hash, got)
+	if got := receiptStateByID(t, db, itemID); got != "rolled_back" {
+		t.Fatalf("二次收敛不得改写已结案状态，实际 %q", got)
 	}
 }
 

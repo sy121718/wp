@@ -132,19 +132,22 @@ func (f *menuFixture) seedSourceRow(t *testing.T, sourceType string) string {
 	var sql string
 	switch sourceType {
 	case buildmodel.SourceTypePage:
-		sql = `INSERT INTO pages (id, project_id, kind, content_target_type, draft_document,
-			created_at, updated_at)
-			VALUES (?, ?, 'notFound', 'none', '{}'::jsonb, now(), now())`
+		// 时间列是 create_time / update_time（205_db019_time_columns_full.sql 改的名），
+		// 写 created_at 会撞 SQLSTATE 42703。
+		// draft_path 是 NOT NULL（init_builder_schema.sql:88），由 id 派生一条合法路径。
+		sql = `INSERT INTO pages (id, project_id, kind, content_target_type, draft_path,
+			draft_document, create_time, update_time)
+			VALUES (?, ?, 'notFound', 'none', '/seed/' || ?, '{}'::jsonb, now(), now())`
 	case buildmodel.SourceTypePresentation:
 		sql = `INSERT INTO presentation_instances (id, project_id, entity_type, entity_id, url_path,
-			template_id, created_at, updated_at)
+			template_id, create_time, update_time)
 			VALUES (?, ?, 'product', ?, ?, ?, now(), now())`
 	default:
 		t.Fatalf("未知的来源类型 %q", sourceType)
 	}
 	var err error
 	if sourceType == buildmodel.SourceTypePage {
-		err = f.db.Exec(sql, id, f.projectID).Error
+		err = f.db.Exec(sql, id, f.projectID, id).Error
 	} else {
 		var templateID string
 		if e := f.db.Raw("SELECT id FROM content_templates WHERE project_id = ? LIMIT 1", f.projectID).
@@ -153,8 +156,10 @@ func (f *menuFixture) seedSourceRow(t *testing.T, sourceType string) string {
 		}
 		if templateID == "" {
 			templateID = uuid.NewString()
-			if e := f.db.Exec(`INSERT INTO content_templates (id, project_id, name, kind, definition,
-				created_at, updated_at)
+			// 列名以生产迁移为准（init_builder_schema.sql:56-66 + 205 改名）：
+			// entity_type / draft_document，不是 kind / definition。
+			if e := f.db.Exec(`INSERT INTO content_templates (id, project_id, name, entity_type, draft_document,
+				create_time, update_time)
 				VALUES (?, ?, 'menu_stale 测试模板', 'page', '{}'::jsonb, now(), now())`,
 				templateID, f.projectID).Error; e != nil {
 				t.Fatalf("准备模板行失败: %v", e)
@@ -698,10 +703,19 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	}
 	pageID := f.seedSourceRow(t, buildmodel.SourceTypePage)
 	instanceID := f.seedSourceRow(t, buildmodel.SourceTypePresentation)
+	// 三条任务必须真的存在（page / presentation / menu_stale），否则下面的回填没有可命中的行。
+	if err := f.svc.EnqueuePageBuild(context.Background(), pageID, f.projectID, "zh-CN",
+		buildmodel.IntentManual, 3, "hash-page"); err != nil {
+		t.Fatalf("page 入队失败: %v", err)
+	}
+	if err := f.svc.EnqueuePresentationBuild(context.Background(), instanceID, f.projectID); err != nil {
+		t.Fatalf("presentation 入队失败: %v", err)
+	}
 	f.enqueue(t, "header")
 
 	// 先清掉入队时写上的 project_id，模拟「迁移 295 之前入库的旧行」。
-	if err := f.db.Exec("UPDATE build_jobs SET project_id = NULL").Error; err != nil {
+	// 只清旧来源（page / presentation）：698 之后 menu_stale 行有 shape CHECK 要求 project_id 非空。
+	if err := f.db.Exec("UPDATE build_jobs SET project_id = NULL WHERE source_type <> 'menu_stale'").Error; err != nil {
 		t.Fatalf("清空 project_id 失败: %v", err)
 	}
 
@@ -762,9 +776,10 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 				t.Fatalf("%s 的 project_id 应被回填成本工程，实际 %v", r.SourceType, r.ProjectID)
 			}
 		case buildmodel.SourceTypeMenuStale:
-			// menu_stale 的 source_id 是「uuid:位置」，与 pages.id 永不相等 —— 保持 NULL 才是对的。
-			if r.ProjectID != nil {
-				t.Fatalf("menu_stale 行不该被 295 的回填命中，实际 project_id=%v", r.ProjectID)
+			// menu_stale 是 698 才有的来源类型，行本身带着自己的工程 id（shape CHECK 要求非空），
+			// 而 295 的回填只作用于 project_id IS NULL 的旧行 —— 所以这里它必须仍是入队时那个值。
+			if r.ProjectID == nil || *r.ProjectID != f.projectID {
+				t.Fatalf("menu_stale 行不该被 295 的回填改动，实际 project_id=%v", r.ProjectID)
 			}
 		}
 	}
@@ -784,7 +799,13 @@ func (f *menuFixture) checkVersion(t *testing.T, version, stage string) {
 		t.Fatalf("迁移 %s 未注册", version)
 	}
 	var n int64
-	if err := f.db.Raw(target.CheckSQL, target.TableName).Scan(&n).Error; err != nil {
+	// CheckSQL 不都带占位符：只有引用 $1 的版本才需要传表名，否则 PG 会报
+	// "expected 0 arguments, got 1"。
+	var checkArgs []any
+	if strings.Contains(target.CheckSQL, "$1") || strings.Contains(target.CheckSQL, "?") {
+		checkArgs = append(checkArgs, target.TableName)
+	}
+	if err := f.db.Raw(target.CheckSQL, checkArgs...).Scan(&n).Error; err != nil {
 		t.Fatalf("%s：执行 %s 的 CheckSQL 失败: %v", stage, version, err)
 	}
 	if n != 1 {
@@ -884,7 +905,10 @@ func TestLegacyMigration295ReplaysAfter698(t *testing.T) {
 //   - uuid vs text、text vs uuid：不成立；
 //   - 两端 ::text：两种阶段都成立（698 前后都安全的唯一形态）。
 //
-// 临时表是会话级的，只活在本用例的连接上，不污染迁移模板库。
+// 探针用**无人引用的 CTE** 而不是临时表：CREATE TEMP TABLE 是连接级会话状态，
+// 而连接池（以及 NewMigratedPGTestDB 起库时的 TEMPLATE 复制）让它不可靠 ——
+// 实测在本包直接报错（gorm 只回了空信息：&{<ptr> <nil> 0 0 <ptr> 0}）。
+// CTE 是单条语句级别的，用完即消失，判据（算子是否可用）完全相同。
 func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -901,30 +925,28 @@ func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 		}
 	}
 
-	if err := f.db.Exec("CREATE TEMP TABLE stage_probe_uuid (id uuid)"); err != nil {
-		t.Fatalf("建 uuid 阶段探针表失败: %v", err)
+	// 两张同形状探针：uuid 型一列、text 型一列，行内容无关（判据是算子可用性）。
+	probeUUID := "probe_uuid(id)"
+	probeText := "probe_text(id)"
+	assertOperatorWorks := func(stage, query string) {
+		t.Helper()
+		if err := f.db.Exec(query).Error; err != nil {
+			t.Fatalf("%s：该比较应成立，实际错误 %v", stage, err)
+		}
 	}
-	if err := f.db.Exec("CREATE TEMP TABLE stage_probe_text (id text)"); err != nil {
-		t.Fatalf("建 text 阶段探针表失败: %v", err)
-	}
-	defer f.db.Exec("DROP TABLE IF EXISTS stage_probe_uuid")
-	defer f.db.Exec("DROP TABLE IF EXISTS stage_probe_text")
 
 	// 两端 ::text：两个阶段都成立。
-	if err := f.db.Exec("SELECT 1 FROM stage_probe_uuid u WHERE u.id::text = u.id::text").Error; err != nil {
-		t.Fatalf("uuid 阶段两端 ::text 应成立: %v", err)
-	}
-	if err := f.db.Exec("SELECT 1 FROM stage_probe_text u WHERE u.id::text = u.id::text").Error; err != nil {
-		t.Fatalf("text 阶段两端 ::text 应成立: %v", err)
-	}
+	assertOperatorWorks("uuid 阶段两端 ::text",
+		"WITH "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_uuid u WHERE u.id::text = u.id::text")
+	assertOperatorWorks("text 阶段两端 ::text",
+		"WITH "+probeText+" AS (SELECT ''::text AS id) SELECT 1 FROM probe_text u WHERE u.id::text = u.id::text")
 	// 裸比较只在 uuid = uuid 成立。
-	if err := f.db.Exec("SELECT 1 FROM stage_probe_uuid a JOIN stage_probe_uuid b ON a.id = b.id").Error; err != nil {
-		t.Fatalf("uuid 阶段的裸比较应成立（改型前的原语句）: %v", err)
-	}
+	assertOperatorWorks("uuid 阶段的裸比较（改型前的原语句）",
+		"WITH "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_uuid a JOIN probe_uuid b ON a.id = b.id")
 	assertOperatorMissing("uuid 阶段只给右侧 cast",
-		"SELECT 1 FROM stage_probe_uuid a JOIN stage_probe_text b ON a.id = b.id")
+		"WITH "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id), "+probeText+" AS (SELECT ''::text AS id) SELECT 1 FROM probe_uuid a JOIN probe_text b ON a.id = b.id")
 	assertOperatorMissing("text 阶段不给 cast",
-		"SELECT 1 FROM stage_probe_text a JOIN stage_probe_uuid b ON a.id = b.id")
+		"WITH "+probeText+" AS (SELECT ''::text AS id), "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_text a JOIN probe_uuid b ON a.id = b.id")
 }
 
 // TestLegacySourcesSourceIDCanonicalized 旧来源的 source_id 在入队时归一成规范 UUID 文本。

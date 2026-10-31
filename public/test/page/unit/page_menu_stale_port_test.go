@@ -47,10 +47,15 @@ func navMenuDocument(kind string) string {
 }
 
 // seedMenuItem 给某工程某位置建一条菜单项（编译期解析该位置时要有内容，空菜单校验会失败）。
-func seedMenuItem(t *testing.T, svc navigationcontract.NavigationService, projectID, kind, title string) {
+//
+// Path 必须给 ASCII：菜单项链接进 core.nav 的白名单（builder/components/nav/nav.go:190
+// → core.IsSafeURL → urlSafeRe，controls.go:395 只收 [A-Za-z0-9./:?=&%~#+_@-]），
+// 用 "/"+title 拼中文路径会让构建期直接判「菜单项链接非法」。标题仍用中文，
+// 本用例只关心依赖键命中，不受影响。
+func seedMenuItem(t *testing.T, svc navigationcontract.NavigationService, projectID, kind, title, path string) {
 	t.Helper()
 	if _, err := svc.Create(context.Background(), &navigationdto.CreateReq{
-		ProjectID: projectID, Title: title, Path: "/" + title, Kind: kind,
+		ProjectID: projectID, Title: title, Path: path, Kind: kind,
 		SourceType: "custom", Target: "self",
 	}); err != nil {
 		t.Fatalf("创建菜单项(%s/%s)失败: %v", kind, title, err)
@@ -85,7 +90,7 @@ func TestMenuStalePortHitsProductionDependencyKey(t *testing.T) {
 	// fail closed（writePortsReady），裸 NewService 建出的实例只能读。
 	db, svc, navSvc, projects, projectID := newPageServiceWithNavigationWrite(t)
 	ctx := context.Background()
-	seedMenuItem(t, navSvc, projectID, menuKindHeader, "首页")
+	seedMenuItem(t, navSvc, projectID, menuKindHeader, "首页", "/home")
 
 	// 第二个工程：证明端口不跨工程误命中（键里带工程 id 正是为此）。
 	other, err := projects.Create(ctx, &projectdto.CreateReq{Name: "另一工程"})
@@ -93,7 +98,7 @@ func TestMenuStalePortHitsProductionDependencyKey(t *testing.T) {
 		t.Fatalf("创建第二个工程失败: %v", err)
 	}
 	// 同一 service 可服务任意工程（端口与工程无关）：换工程只换 projectID。
-	seedMenuItem(t, navSvc, other.ID, menuKindHeader, "首页")
+	seedMenuItem(t, navSvc, other.ID, menuKindHeader, "首页", "/home")
 
 	page := createPage(t, svc, projectID, "/menu-owner", navMenuDocument(menuKindHeader)).ID
 	buildAndPublish(t, svc, page)
@@ -143,8 +148,8 @@ func TestMenuStalePortHitsProductionDependencyKey(t *testing.T) {
 func TestMenuStalePortIsPositionExact(t *testing.T) {
 	db, svc, navSvc, _, projectID := newPageServiceWithNavigationWrite(t)
 	ctx := context.Background()
-	seedMenuItem(t, navSvc, projectID, menuKindHeader, "首页")
-	seedMenuItem(t, navSvc, projectID, menuKindFooter, "关于")
+	seedMenuItem(t, navSvc, projectID, menuKindHeader, "首页", "/home")
+	seedMenuItem(t, navSvc, projectID, menuKindFooter, "关于", "/about")
 
 	headerPage := createPage(t, svc, projectID, "/pos/header", navMenuDocument(menuKindHeader)).ID
 	footerPage := createPage(t, svc, projectID, "/pos/footer", navMenuDocument(menuKindFooter)).ID

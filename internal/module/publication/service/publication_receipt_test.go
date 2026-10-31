@@ -47,19 +47,48 @@ func newReceiptService(t *testing.T) (*gorm.DB, *pubservice.Service) {
 }
 
 // receiptDataOf 读回执的 receipt_data 原文（直接看落库事实，不经过任何投影）。
+// id 按最终 schema 收 int64：迁移 201 把 publication_receipts 的主键换成了 bigint identity。
 func receiptDataOf(t *testing.T, db *gorm.DB, id int64) map[string]any {
 	t.Helper()
-	var raw []byte
-	if err := db.Raw("SELECT receipt_data FROM publication_receipts WHERE id = ?", id).Scan(&raw).Error; err != nil {
+	// receipt_data 是 jsonb：无论 Scan 进 []byte 还是 json.RawMessage，database/sql 都
+	// 按「[]uint8 列」逐元素赋值，报
+	// `converting driver.Value type []uint8 (...) to a uint8: invalid syntax`
+	// （json.RawMessage 只实现 Marshaler/Unmarshaler，不是 sql.Scanner）。
+	// 显式 ::text 把 jsonb 取成 JSON 文本，再当字符串收下 —— 这是取值形态，不是绕过约束。
+	var raw string
+	if err := db.Raw("SELECT receipt_data::text FROM publication_receipts WHERE id = ?", id).Scan(&raw).Error; err != nil {
 		t.Fatalf("读取 receipt_data 失败: %v", err)
 	}
 	var out map[string]any
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &out); err != nil {
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &out); err != nil {
 			t.Fatalf("解析 receipt_data 失败: %v (原文 %s)", err, string(raw))
 		}
 	}
 	return out
+}
+
+// insertPendingReceipt 手工插一条 pending 回执（历史行 / 任意形态），返回其 id。
+//
+// 三条硬约束都来自**最终** schema —— 注意不是 init_builder_schema 的初始定义：
+//   - id 是 bigint identity：迁移 201_db019_db020_batch1.sql:49-57 把原来的 uuid 主键
+//     整列换掉（ADD id_new ... IDENTITY → UPDATE 回填 → DROP 旧 id → RENAME），
+//     所以这里 RETURNING 自增 id，不再自己编 uuid；
+//   - receipt_data 是 jsonb：驱动把 string 直接发给 jsonb 会报
+//     `invalid input syntax for type json (SQLSTATE 22P02)`，所以先显式 ::text 再 ::jsonb ——
+//     这不是绕过校验，而是把「一段 JSON 文本」明确成 jsonb 值；
+//   - jsonb 列装不进非法 JSON 文本 —— 想造「读不成的旧事实」只能造「合法 JSON 但
+//     字段类型对不上」的形态（见 TestLegacyReceiptWithoutVersionReadsAsUnknown）。
+func insertPendingReceipt(t *testing.T, db *gorm.DB, sourceType, sourceID, action, path, data string) int64 {
+	t.Helper()
+	var id int64
+	if err := db.Raw(`INSERT INTO publication_receipts
+		(source_type, source_id, action, path, receipt_state, receipt_data)
+		VALUES (?, ?, ?, ?, 'pending', ?::text::jsonb) RETURNING id`,
+		sourceType, sourceID, action, path, data).Scan(&id).Error; err != nil {
+		t.Fatalf("插入历史回执失败: %v", err)
+	}
+	return id
 }
 
 // TestBeginPublishReceiptPersistsCapturedInputVersion 非 0 的捕获代次必须原样落进 receipt_data，
@@ -135,7 +164,8 @@ func TestBeginPublishReceiptUnknownVersionStaysZero(t *testing.T) {
 }
 
 // TestLegacyReceiptWithoutVersionReadsAsUnknown 旧回执（receipt_data 里根本没有这个键，
-// 或是别处手工写的 json）走真实表 + 真实列表读回来必须是 0 —— 兼容旧行只允许「当作未知」。
+// 或是别处手工写的、当前结构体读不成的 json）走真实表 + 真实列表读回来必须是 0 ——
+// 兼容旧行只允许「当作未知」。
 //
 // 这里刻意手工 INSERT 而不是走 BeginPublishReceipt：要造的是"历史行"，即本次改动之前
 // 落库的形态（receipt_data 里没有 capturedInputVersion）。用真实列 + 真实读路径，
@@ -149,19 +179,20 @@ func TestLegacyReceiptWithoutVersionReadsAsUnknown(t *testing.T) {
 		{"无该键的旧行", `{"lang":"zh-CN","projectId":"` + receiptTestProjectID + `","oldPath":"/old"}`, "/legacy-no-key"},
 		{"空对象", `{}`, "/legacy-empty"},
 		{"只带重定向与旧路径", `{"redirect":true,"oldPath":"/old","projectId":"` + receiptTestProjectID + `"}`, "/legacy-redirect"},
-		{"解析不了的坏 json", `{"capturedInputVersion":`, "/legacy-broken"},
+		// 第五种形态：jsonb **对象**，但字段类型与结构体不符（capturedInputVersion 是字符串）。
+		// 这是真实可落库的「读不懂的旧事实」—— 解码失败走零值，投影必须是 0。
+		//
+		// 为什么不是「非法 JSON 文本」：receipt_data 列类型就是 jsonb，PG 在写入时就拒绝
+		// 非法 JSON（SQLSTATE 22P02），这种行根本不可能存在于真实库里；把夹具写成
+		// 不可落库的形态只会让测试在准备阶段失败，测不到任何读侧语义。
+		{"字段类型读不成的旧行", `{"capturedInputVersion":"不是数字"}`, "/legacy-broken"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			db, svc := newReceiptService(t)
 			ctx := context.Background()
-			if err := db.Exec(`INSERT INTO publication_receipts
-				(source_type, source_id, action, path, receipt_state, receipt_data)
-				VALUES (?, ?, ?, ?, 'pending', ?::jsonb)`,
-				pubdto.ReceiptSourcePresentation, receiptTestPresentationID,
-				pubdto.ReceiptActionSwitchActive, c.path, c.data).Error; err != nil {
-				t.Fatalf("插入历史回执失败: %v", err)
-			}
+			insertPendingReceipt(t, db, pubdto.ReceiptSourcePresentation, receiptTestPresentationID,
+				pubdto.ReceiptActionSwitchActive, c.path, c.data)
 			list, err := svc.ListPendingReceipts(ctx)
 			if err != nil {
 				t.Fatalf("列出未结案回执失败: %v", err)
@@ -186,14 +217,9 @@ func TestLegacyReceiptWithoutVersionReadsAsUnknown(t *testing.T) {
 func TestVersionedReceiptCarriesVersionThroughRealList(t *testing.T) {
 	db, svc := newReceiptService(t)
 	ctx := context.Background()
-	if err := db.Exec(`INSERT INTO publication_receipts
-		(source_type, source_id, action, path, receipt_state, receipt_data)
-		VALUES (?, ?, ?, ?, 'pending', ?::jsonb)`,
-		pubdto.ReceiptSourcePresentation, receiptTestPresentationID,
+	insertPendingReceipt(t, db, pubdto.ReceiptSourcePresentation, receiptTestPresentationID,
 		pubdto.ReceiptActionSwitchActive, "/carried-version",
-		`{"lang":"zh-CN","capturedInputVersion":42}`).Error; err != nil {
-		t.Fatalf("插入回执失败: %v", err)
-	}
+		`{"lang":"zh-CN","capturedInputVersion":42}`)
 	list, err := svc.ListPendingReceipts(ctx)
 	if err != nil {
 		t.Fatalf("列出未结案回执失败: %v", err)
@@ -226,6 +252,9 @@ func TestBeginPublishReceiptNegativeVersionNormalized(t *testing.T) {
 }
 
 // parseReceiptID 校验 service 返回的回执 id 是可解析的十进制主键（不是 attempt 身份）。
+//
+// 主键在最终 schema 里是 bigint identity（迁移 201 换掉了最初的 uuid 主键），
+// 所以这里按十进制解析 —— 与 DB-019 之后所有账本读取口径一致。
 func parseReceiptID(t *testing.T, id string) error {
 	t.Helper()
 	if _, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64); err != nil {
@@ -269,10 +298,13 @@ func insertDeactivationReceipt(t *testing.T, db *gorm.DB, sourceType, sourceID, 
 	if err != nil {
 		t.Fatalf("编码 receipt_data 失败: %v", err)
 	}
+	// jsonb 入参必须显式 `::text::jsonb`：直接 `?::jsonb` 时驱动把 string 当 jsonb 发，
+	// PG 报 `invalid input syntax for type json (SQLSTATE 22P02)`。id 是 bigint identity
+	// （迁移 201 换掉了最初的 uuid 主键），用 RETURNING 回读，不自己编 id。
 	var id int64
 	if err := db.Raw(`INSERT INTO publication_receipts
 		(source_type, source_id, action, path, receipt_state, receipt_data)
-		VALUES (?, ?, ?, ?, 'pending', ?::jsonb) RETURNING id`,
+		VALUES (?, ?, ?, ?, 'pending', ?::text::jsonb) RETURNING id`,
 		sourceType, sourceID, pubdto.ReceiptActionDeactivate, path, string(encoded)).Scan(&id).Error; err != nil {
 		t.Fatalf("插入下线回执失败: %v", err)
 	}

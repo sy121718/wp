@@ -22,6 +22,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	artifactmodel "go_wp/internal/module/artifact/model"
+	artifactservice "go_wp/internal/module/artifact/service"
+	blockmodel "go_wp/internal/module/block/model"
+	blockservice "go_wp/internal/module/block/service"
+	buildmodel "go_wp/internal/module/build/model"
+	buildservice "go_wp/internal/module/build/service"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -29,6 +35,8 @@ import (
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navigationmodel "go_wp/internal/module/navigation/model"
 	navigationservice "go_wp/internal/module/navigation/service"
+	pagemodel "go_wp/internal/module/page/model"
+	pageservice "go_wp/internal/module/page/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -124,17 +132,36 @@ func countMenuDependency(t *testing.T, f *presFixture, instanceID, key string) i
 	return n
 }
 
-// newNavDispatch 导航服务 + 失效派发链（与真实装配同形），并把导航解析器注入实例侧。
+// newNavDispatch 导航服务 + 同事务写端口（与真实装配同形），并把导航解析器注入实例侧。
 func newNavDispatch(t *testing.T, f *presFixture) *navigationservice.Service {
 	t.Helper()
-	// nil 工程契约（本用例只用事务内来源索引与译文写服务，不走工程校验）；
-	// 写端口由 wirePresentationTranslationWriter 一起给出，不在这里另装。
+	// nil 工程契约（本用例只用事务内来源索引与译文写服务，不走工程校验）。
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db), nil)
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePresentation, f.pres)
-	navSvc.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
+	// 写端口是导航写的**必需依赖**：未装配时 Create/Update 直接 fail closed
+	// （navigation.err.translation.unavailable），下面 createNavItem 会假红。
+	navSvc.SetWritePorts(navWriteDeps(t, f, navSvc))
 	f.pres.SetNavigationService(navSvc)
 	return navSvc
+}
+
+// navWriteDeps 本包可用的真实端口集（页/实例/按项/按项实例/入队）。
+//
+// 不复用 pipeline.Fanout + MenuStaleAdapter：那条是**异步派发**的旧路，
+// 菜单写的失效已改成同事务端口调用，挂 dispatcher 只会让断言看着像证明过了。
+func navWriteDeps(t *testing.T, f *presFixture, navSvc *navigationservice.Service) navigationservice.NavigationWriteDeps {
+	t.Helper()
+	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
+	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(f.db))
+	blocks := blockservice.NewService(blockmodel.NewBlockModel(f.db), projects)
+	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), artifacts, f.routes, projects, blocks,
+		nil, nil, navSvc, nil)
+	return navigationservice.NavigationWriteDeps{
+		Pages:         pages,
+		Instances:     f.pres,
+		Items:         pages,
+		ItemInstances: f.pres,
+		Queue:         buildservice.NewService(buildmodel.NewModel(f.db)),
+	}
 }
 
 // createNavItem 建一个导航项（标题即菜单文字）。

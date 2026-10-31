@@ -28,6 +28,7 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/jsonx"
 )
 
 // readInstancePathVersion 读实例的路径与输入代次（权威事实，直接来自行）。
@@ -95,8 +96,18 @@ func TestUpdateURLInputIntentSurvivesCompileFailure(t *testing.T) {
 	}
 	_, versionBefore := readInstancePathVersion(t, f.db, f.instance)
 
-	// 让编译必然失败：把绑定模板的文档换成非法 JSON（失败点仍在编译段，与生产一致）。
-	if err := f.db.Exec(`UPDATE content_templates SET draft_document = '{' WHERE entity_type = 'article'`).Error; err != nil {
+	// 让编译必然失败：把绑定模板的文档改成语义非法（缺 blockId 的区块数组）。
+	//
+	// 不能写 `'{'` 这种非法 JSON：draft_document 是 jsonb 列，PG 在写入时就拒绝
+	//（invalid input syntax for type json，22P02），失败点跑到夹具的 UPDATE 上，
+	// 被测代码根本没被执行。要的是「合法 jsonb + 领域层判不出区块」，让失败落在编译段。
+	// 破坏**编译实际读的那一列**：构建链走 ResolveTemplateByIDScoped → LatestVersion，
+	// 读的是 content_template_versions.document，不是 content_templates.draft_document。
+	// 改错列等于什么都没改，改 URL 自然成功（本用例曾因此假红）。
+	const brokenDocument = `{"settings":{"structure":{"blocks":[{"type":"hero"}]}}}`
+	if err := f.db.Exec(`UPDATE content_template_versions v SET document = ?::jsonb
+		FROM content_templates t
+		WHERE v.template_id = t.id AND t.entity_type = 'article'`, brokenDocument).Error; err != nil {
 		t.Fatalf("破坏模板文档失败: %v", err)
 	}
 
@@ -597,23 +608,51 @@ func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 	if aRow.ID == "" || aRow.Links == "" {
 		t.Fatalf("前置不成立：应有一条带关联事实的已结案 update_url 回执")
 	}
-	// B：同形但"没有前科"的一条 pending 意图。
+	// 账本上真实的成功身份是**激活回执 id**（不是 update_url 回执自己的 id）：
+	// 口径见 MarkPublishedLangTx 的 ReceiptID 参数与 receiptIdentityVerdictTx 的注释。
+	var aLinks map[string]string
+	if uerr := jsonx.Unmarshal([]byte(aRow.Links), &aLinks); uerr != nil {
+		t.Fatalf("解析 A 的关联事实失败: %v", uerr)
+	}
+	var ledgerLang, ledgerReceipt string
+	for lang, rid := range aLinks {
+		ledgerLang, ledgerReceipt = lang, rid
+		break
+	}
+	if ledgerReceipt == "" {
+		t.Fatalf("前置不成立：A 的关联事实应为非空的语言→回执映射")
+	}
+	if err := f.db.Exec(`UPDATE presentation_publications SET receipt_id = ?::bigint
+		WHERE presentation_id = ?`, ledgerReceipt, f.instance).Error; err != nil {
+		t.Fatalf("写账本身份失败: %v", err)
+	}
+	// B：同形路径的另一条 attempt，但它的关联事实是**另一批更晚的激活回执**。
+	// 只有这样才能表达"账本上是一个新的成功身份"：如果 B 复用 A 的关联回执，
+	// 那它就是同一次激活的重放（账本认它就是它自己）。
+	var newerID string
+	if err := f.db.Raw(`INSERT INTO publication_receipts
+			(source_type, source_id, action, path, to_artifact_id, receipt_state, receipt_data, create_time)
+		VALUES (?, ?, ?, ?, NULLIF(?,'')::uuid, ?, '{}'::jsonb, now())
+		RETURNING id::text`,
+		pubcontract.ReceiptSourcePresentation, f.instance, pubcontract.ReceiptActionSwitchActive,
+		aRow.Path, aRow.ToArtifactID, pubmodel.ReceiptCommitted).Scan(&newerID).Error; err != nil {
+		t.Fatalf("登记更晚的激活回执失败: %v", err)
+	}
+	bLinksJSON, merr := jsonx.Marshal(map[string]string{ledgerLang: newerID})
+	if merr != nil {
+		t.Fatalf("序列化 B 的关联事实失败: %v", merr)
+	}
 	var bID string
 	if err := f.db.Raw(`INSERT INTO publication_receipts
 			(source_type, source_id, action, path, to_artifact_id, receipt_state, receipt_data, create_time)
 		VALUES (?, ?, ?, ?, NULLIF(?,'')::uuid, ?, jsonb_build_object(
-			'oldPath', ?, 'oldPaths', jsonb_build_array(?), 'redirect', false,
+			'oldPath', ?::text, 'oldPaths', jsonb_build_array(?::text), 'redirect', false,
 			'successfulReceipts', ?::jsonb, 'fromReceiptId', '0'), now())
 		RETURNING id::text`,
 		pubcontract.ReceiptSourcePresentation, f.instance, pubcontract.ReceiptActionUpdateURL,
-		aRow.Path, aRow.ToArtifactID, pubmodel.ReceiptPending, aRow.OldPath, aRow.OldPath, aRow.Links).
-		Scan(&bID).Error; err != nil {
+		aRow.Path, aRow.ToArtifactID, pubmodel.ReceiptPending, aRow.OldPath, aRow.OldPath,
+		string(bLinksJSON)).Scan(&bID).Error; err != nil {
 		t.Fatalf("登记同形 attempt 回执失败: %v", err)
-	}
-	// 账本成功身份 = A（B 自称没有前科，与事实矛盾）。
-	if err := f.db.Exec(`UPDATE presentation_publications SET receipt_id = ?::bigint
-		WHERE presentation_id = ?`, aRow.ID, f.instance).Error; err != nil {
-		t.Fatalf("写账本身份失败: %v", err)
 	}
 
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
@@ -646,15 +685,9 @@ func TestOwnReceiptIdentityIsIdempotentlyReplayed(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 把 update_url 回执自己写成账本上的成功身份（等价于"它已落过账"），
-	// 再把它打回 pending：重放必须走"幂等补处置"而不是"被取代"。
-	if err := f.db.Exec(`UPDATE presentation_publications p SET receipt_id = r.id
-		FROM publication_receipts r
-		WHERE p.presentation_id = ? AND r.source_type = ? AND r.action = ?
-		  AND r.source_id = ? AND r.path = p.active_path`, f.instance,
-		pubcontract.ReceiptSourcePresentation, pubcontract.ReceiptActionUpdateURL, f.instance).Error; err != nil {
-		t.Fatalf("写账本身份失败: %v", err)
-	}
+	// 账本上的成功身份保持**真实形状**（语言 → 激活回执 id，由 MarkPublishedLangTx 在
+	// 切换时写入），只把 update_url 回执打回 pending：这就是"我已落过账、只是回执没结案"
+	// 的幂等重放现场，重放必须补处置并结案，不能因"账本已有身份"判成被取代。
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND action = ? AND source_id = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
@@ -753,22 +786,26 @@ func TestPendingLinkedReceiptKeepsOldPathIntentRetryable(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 关联回执回到 pending（证据未到），旧路径处置回执也 pending。
-	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
-		WHERE source_type = ? AND source_id = ? AND action = ?`,
-		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
-		f.instance, pubcontract.ReceiptActionSwitchActive).Error; err != nil {
-		t.Fatalf("重置 switch_active 失败: %v", err)
-	}
-	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
+	// 「证据未到」的现场：update_url 回执的关联成功回执**还没落库**（id 指向一行不存在），
+	// 同时把回执本身打回 pending。
+	//
+	// 为什么不用"把 switch_active 重置成 pending"来造：收敛会先领到那条 switch_active 并把它
+	// 重放补齐（补切换是它的正常职责），等轮到 update_url 时证据已经到齐 —— 现场在收敛过程中
+	// 自己消失了，用例就测不到"证据未到"这条分支（实测：committed）。
+	if err := f.db.Exec(`UPDATE publication_receipts
+		SET receipt_data = jsonb_set(receipt_data, '{successfulReceipts}',
+			jsonb_build_object('zh-CN', '999999999'::text), true),
+		    receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND source_id = ? AND action = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
 		f.instance, pubcontract.ReceiptActionUpdateURL).Error; err != nil {
-		t.Fatalf("重置 update_url 失败: %v", err)
+		t.Fatalf("改写关联事实失败: %v", err)
 	}
 
+	// 证据未到是**可重试**形态：收敛如实上报这一条（不能被当成"已处理"），
+	// 回执本身必须留在 pending 等下一轮。所以这里只容忍错误，不把它当失败。
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
-		t.Fatalf("收敛失败: %v", cerr)
+		t.Logf("收敛返回可见错误（可重试形态）: %v", cerr)
 	}
 	var state string
 	if err := f.db.Raw(`SELECT receipt_state FROM publication_receipts

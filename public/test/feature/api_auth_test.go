@@ -205,43 +205,46 @@ func TestApiBusinessRoutesRejectAnonymousJSONRequest(t *testing.T) {
 	}
 }
 
-func TestApiBusinessRoutesRedirectPageRequestsToLogin(t *testing.T) {
+// TestApiBusinessRoutesPageRequestsStay401JSON 页面式/HTMX 请求也一律 401 JSON，不跳转。
+//
+// 契约来自 internal/middleware/builtin/auth.go 的注释：未登录、过期和封禁均返回 401 JSON；
+// 所有拒绝响应不缓存，**不因 Accept 或 HX 请求头改成跳转**；登录入口与后续导航由前端
+// 显式决定。所以 Accept: text/html 与 HX-Request: true 两种"浏览器形态"都不该拿到 302。
+func TestApiBusinessRoutesPageRequestsStay401JSON(t *testing.T) {
 	engine, _ := newAuthFeatureEngine(t)
 
-	// 浏览器页面导航：GET + Accept: text/html → 302 登录页。
-	recorder, err := support.SendRequest(engine, support.RequestOptions{
-		Method: http.MethodGet,
-		Path:   "/api/ping",
-		Headers: map[string]string{
-			"Accept": "text/html,application/xhtml+xml",
-		},
-	})
-	if err != nil {
-		t.Fatalf("发送请求失败: %v", err)
+	cases := []struct {
+		name    string
+		headers map[string]string
+	}{
+		{name: "浏览器页面导航", headers: map[string]string{"Accept": "text/html,application/xhtml+xml"}},
+		{name: "HTMX 请求", headers: map[string]string{"HX-Request": "true"}},
 	}
-	if recorder.Code != http.StatusFound {
-		t.Fatalf("页面类 GET 请求应 302: got=%d want=%d", recorder.Code, http.StatusFound)
-	}
-	if got := recorder.Header().Get("Location"); got != "/admin/login" {
-		t.Fatalf("重定向地址不正确: got=%s want=%s", got, "/admin/login")
-	}
-
-	// HTMX 请求：HX-Request: true → 302 登录页。
-	recorder, err = support.SendRequest(engine, support.RequestOptions{
-		Method: http.MethodGet,
-		Path:   "/api/ping",
-		Headers: map[string]string{
-			"HX-Request": "true",
-		},
-	})
-	if err != nil {
-		t.Fatalf("发送请求失败: %v", err)
-	}
-	if recorder.Code != http.StatusFound {
-		t.Fatalf("HTMX 请求应 302: got=%d want=%d", recorder.Code, http.StatusFound)
-	}
-	if got := recorder.Header().Get("Location"); got != "/admin/login" {
-		t.Fatalf("HTMX 重定向地址不正确: got=%s want=%s", got, "/admin/login")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder, err := support.SendRequest(engine, support.RequestOptions{
+				Method:  http.MethodGet,
+				Path:    "/api/ping",
+				Headers: tc.headers,
+			})
+			if err != nil {
+				t.Fatalf("发送请求失败: %v", err)
+			}
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("%s 应 401（不跳转）: got=%d want=%d body=%s",
+					tc.name, recorder.Code, http.StatusUnauthorized, recorder.Body.String())
+			}
+			if loc := recorder.Header().Get("Location"); loc != "" {
+				t.Fatalf("%s 不应下发 Location（拒绝响应不改写成跳转）: got=%q", tc.name, loc)
+			}
+			resp, perr := support.ParseStandardResponse(recorder)
+			if perr != nil {
+				t.Fatalf("%s 拒绝对应是 JSON 标准响应，解析失败: %v", tc.name, perr)
+			}
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("%s 信封 code 应为 401，实际 %d", tc.name, resp.Code)
+			}
+		})
 	}
 }
 

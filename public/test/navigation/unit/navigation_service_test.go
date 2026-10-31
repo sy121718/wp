@@ -35,17 +35,17 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newNavigationService 隔离 PG schema + AutoMigrate projects/navigations + 装配 service。
+// newNavigationService 建生产迁移库 + 装配 service（五端口真实实现）。
 // 返回 service、projects（供建工程）、projectID、db（供直接 SQL 断言）。
 func newNavigationService(t *testing.T) (*navigationservice.Service, *projectservice.Service, string, *gorm.DB) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	// 建库走生产迁移（AutoMigrate 只建 projects / navigations 两张表，而写入口的
+	// menuPages / menuInstances 端口要读写 pages、presentation_instances —— 精简库会撞
+	// SQLSTATE 42P01 relation "pages" does not exist）。判据：端口是真实实现，就得给它
+	// 真实的表；不手抄 CREATE TABLE（AGENTS.md 测试约定）。
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil, nil, "", nil
-	}
-	if err := db.AutoMigrate(&projectmodel.ProjectEntity{}, &navigationmodel.NavigationEntity{}); err != nil {
-		t.Fatalf("AutoMigrate 失败: %v", err)
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "测试工程"})
@@ -225,20 +225,22 @@ func TestNavigationMenuIsolation(t *testing.T) {
 		t.Fatalf("导航实体应绑定 navigations 表: %q", got)
 	}
 
-	// 本 schema 仅迁移 projects + navigations，无 sys_menus 表仍能完成导航读写。
+	// 判据是**行为**而不是「表不存在」：迁移库本来就有 sys_menus（后台权限菜单），
+	// 隔离的意思是导航读写一点都不碰它。把表临时改名，导航读写若真的引用它就会直接
+	// 报 relation 不存在 —— 这比静态查表名强，也不依赖精简 schema。
+	if err := db.Exec("ALTER TABLE sys_menus RENAME TO sys_menus_hidden_for_isolation").Error; err != nil {
+		t.Fatalf("临时改名 sys_menus 失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if e := db.Exec("ALTER TABLE sys_menus_hidden_for_isolation RENAME TO sys_menus").Error; e != nil {
+			t.Errorf("恢复 sys_menus 表名失败（后续用例会受影响）: %v", e)
+		}
+	})
+
 	if _, err := svc.Create(ctx, &navigationdto.CreateReq{ProjectID: projectID, Title: "首页", Path: "/", Kind: "header"}); err != nil {
-		t.Fatalf("无 sys_menus 表时创建导航应成功: %v", err)
+		t.Fatalf("sys_menus 不可见时创建导航应成功（说明写路径不依赖后台菜单）: %v", err)
 	}
 	if _, err := svc.List(ctx, &navigationdto.ListReq{ProjectID: projectID, Kind: "header"}); err != nil {
-		t.Fatalf("无 sys_menus 表时列出导航应成功: %v", err)
-	}
-
-	// 确认 schema 中不存在 sys_menus 表（导航读写与之零关联）。
-	var menuCount int64
-	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'sys_menus'`).Scan(&menuCount).Error; err != nil {
-		t.Fatalf("查询 sys_menus 失败: %v", err)
-	}
-	if menuCount != 0 {
-		t.Fatalf("测试 schema 不应包含 sys_menus 表，导航模块必须与后台菜单隔离")
+		t.Fatalf("sys_menus 不可见时列出导航应成功: %v", err)
 	}
 }

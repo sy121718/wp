@@ -370,7 +370,10 @@ func TestUpsertTxReturnsTxError(t *testing.T) {
 	writer := i18n.NewContentWriter(db)
 	ctx := t.Context()
 
-	failed := db.Session(&gorm.Session{NewDB: true})
+	// Session 只有 config.Context/PrepareStmt/SkipHooks 非空时才克隆 Statement（gorm
+	// v1.31.2 gorm.go:261-294），裸 NewDB 会让 failed.Statement 与 db.Statement 共享同一指针，
+	// 改 ConnPool 就污染了整包共用的 db（后续 txRowCount 报连接已断开）。带上 Context 触发克隆。
+	failed := db.Session(&gorm.Session{NewDB: true, Context: ctx})
 	failed.Statement.ConnPool = &brokenConnPool{}
 	failed.Error = errBrokenConn
 

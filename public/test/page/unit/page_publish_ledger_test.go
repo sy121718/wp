@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"os"
 	"path/filepath"
@@ -117,6 +118,11 @@ func recoverPending(t *testing.T, svc pagecontract.PageService, ctx context.Cont
 }
 
 // insertArtifactRow 直插一条 page_artifacts 行（返回 id）：回执恢复要按 id 反查 hash。
+//
+// 这一行**只提供 page_artifacts 元数据**：收敛判定不读它（判定读磁盘，见
+// seedUpdateURLArtifact 的注释）。因此 artifact_key='key-x' 与这里传入的 artifact_hash
+// 都不参与判定：前者只在 Inspect 还原 Locator 时被跳过（判定取链接的 Key，
+// page_publish.go:2307-2310），后者只是这一列的可读值。
 func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	t.Helper()
 	var id string
@@ -133,6 +139,40 @@ func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	return id
 }
 
+// seedUpdateURLArtifact 用生产的产物构造 + 落盘入口造一份**真实**产物，并登记元数据行。
+//
+// 判定链路读的是**磁盘**：LocalStore.GetArtifact（internal/pipeline/store.go:157-200）
+// 读 artifacts/<hash>/{manifest.json,index.html} 并重算 artifactPayloadHash 校验；
+// Artifact.CanonicalPath 来自磁盘 manifest.json 的 canonicalPath，**不是**数据库
+// page_artifacts.manifest 那一列。所以「改 URL 的新路径上有产物」只能靠这份真实产物
+// 表达 —— 手写 index.html 或只插 DB 行，GetArtifact 都会失败，收敛永远落进
+// updateURLArtifactAt 的 false 分支。
+//
+// Manifest 必填项依据 internal/pipeline/artifact.go:248-250：canonicalPath 与 sourceId
+// 缺一即报错。PutArtifact 返回的 Locator 不用 —— 判定用的 Locator 由访问面链接还原。
+func seedUpdateURLArtifact(t *testing.T, db *gorm.DB, pageID, urlPath string) (hash, artifactID string) {
+	t.Helper()
+	art, err := pipeline.NewArtifact([]byte("<html><body>seed</body></html>"), &pipeline.Manifest{
+		ManifestSchemaVersion:     1,
+		PageDocumentSchemaVersion: 1,
+		CompilerVersion:           "v1",
+		SourceID:                  pageID,
+		SourceType:                "page",
+		CanonicalPath:             urlPath,
+		SourceHash:                "src",
+		BuildInputHash:            "bih",
+		Lang:                      "zh-CN",
+	})
+	if err != nil {
+		t.Fatalf("构造产物失败: %v", err)
+	}
+	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
+	if _, perr := store.PutArtifact(art); perr != nil {
+		t.Fatalf("落盘产物失败: %v", perr)
+	}
+	return art.Hash, insertArtifactRow(t, db, pageID, art.Hash)
+}
+
 // linkActivePath 在访问面根目录下建一个指向产物的符号链接（模拟「切换已发生」）。
 func linkActivePath(t *testing.T, root, urlPath, hash string) {
 	t.Helper()
@@ -146,6 +186,12 @@ func linkActivePath(t *testing.T, root, urlPath, hash string) {
 	target, err := filepath.Rel(filepath.Dir(link), filepath.Join(root, "artifacts", hash))
 	if err != nil {
 		t.Fatalf("计算相对链接目标失败: %v", err)
+	}
+	// 幂等：测试间共享同一个 ActiveStore 根目录，同一路径可能已有上一次留下的链接
+	//（例如绑定前先发布一次再接管旧路径）。先摘掉旧链接再建，等价于生产 rename 的覆盖语义；
+	// 忽略 ENOENT —— 也只是「本来就没有」。
+	if rerr := os.Remove(link); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		t.Fatalf("清理旧访问面链接失败: %v", rerr)
 	}
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("创建符号链接失败: %v", err)
@@ -161,6 +207,25 @@ func insertPendingReceipt(t *testing.T, db *gorm.DB, pageID, path, lang, artifac
 		pageID, path, artifactID, data).Error; err != nil {
 		t.Fatalf("插入回执失败: %v", err)
 	}
+}
+
+// insertPendingUpdateURLReceipt 直插一条 pending 的**改 URL** 回执。
+//
+// 与 insertPendingReceipt（switch_active）的区别：这条动作的重放会真正执行 DB 写步骤
+// （recoverUpdateURLReceipt → applyUpdateURL），因此 publishWindowFault 的注入点
+// （page_publish.go:1667）在收敛路径上真实命中 —— 发布类回执的重放不经过任何注入点。
+func insertPendingUpdateURLReceipt(t *testing.T, db *gorm.DB, pageID, newPath, oldPath, lang, artifactID string) int64 {
+	t.Helper()
+	// 旧路径写在 receipt_data 里（publication_receipts 没有 old_path 列，旧路径是回执的
+	// 事实而不是表的列），与 insertUpdateURLReceipt 同一形状。
+	data := fmt.Sprintf(`{"projectId":%q,"lang":%q,"oldPath":%q,"redirect":false}`,
+		projectIDOfPage(t, db, pageID), lang, oldPath)
+	var id int64
+	if err := db.Raw("INSERT INTO publication_receipts (source_type, source_id, action, path, to_artifact_id, receipt_state, receipt_data, create_time) VALUES ('page', ?, 'update_url', ?, ?, 'pending', ?::jsonb, now()) RETURNING id",
+		pageID, newPath, artifactID, data).Scan(&id).Error; err != nil {
+		t.Fatalf("插入改 URL 回执失败: %v", err)
+	}
+	return id
 }
 
 // ---- AR2-002：发布主链必须自己登记回执（修复「回执只实现了恢复端」） ----
@@ -179,6 +244,17 @@ func setPublishWindowFault(t *testing.T, svc pagecontract.PageService, fn func()
 		t.Fatal("页面服务未提供发布窗口故障注入口")
 	}
 	injector.SetPublishWindowFault(fn)
+}
+
+// setPostSwitchFault 注入「FS 已切、DB 三步已写、事务未提交」窗口的故障（nil = 清除）。
+// 与 setPublishWindowFault 是窗口的两侧（见 Service.postSwitchFault 字段注释）。
+func setPostSwitchFault(t *testing.T, svc pagecontract.PageService, fn func() error) {
+	t.Helper()
+	injector, ok := svc.(interface{ SetPostSwitchFault(func() error) })
+	if !ok {
+		t.Fatal("页面服务未提供提交前窗口故障注入口")
+	}
+	injector.SetPostSwitchFault(fn)
 }
 
 // receiptRouterFailure 只让回执登记失败，其余能力透传给真实契约
@@ -262,9 +338,13 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatalf("构建失败: %v", berr)
 	}
 
-	// 故障注入：恰好命中「访问面已切换、数据库尚未写入」窗口（真实崩溃会连进程一起终止）。
+	// 故障注入：必须打在**切换之后**的那一侧（service.postSwitchFault）。
+	//
+	// 不能用 setPublishWindowFault：它命中在 publisher.ActivateStagedArtifact 之前
+	// （page_publish.go 的 :519），访问面链接根本不会建立 —— 而本用例要测的正是
+	// 「链接已建立、DB 没写」这个窗口。注在切换前只会测到另一条分支（无副作用失败）。
 	injected := errors.New("故障注入：进程终止于切换访问面之后、写数据库之前")
-	setPublishWindowFault(t, svc, func() error { return injected })
+	setPostSwitchFault(t, svc, func() error { return injected })
 
 	if _, perr := svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); perr == nil {
 		t.Fatal("窗口故障注入后 Publish 应报错，实际返回成功")
@@ -286,7 +366,7 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 	}
 
 	// 进程重启：清掉注入点，跑启动恢复。
-	setPublishWindowFault(t, svc, nil)
+	setPostSwitchFault(t, svc, nil)
 	recovered, rolledBack, rerr := recoverPending(t, svc, ctx)
 	if rerr != nil {
 		t.Fatalf("恢复失败: %v", rerr)

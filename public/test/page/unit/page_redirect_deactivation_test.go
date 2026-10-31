@@ -107,9 +107,18 @@ func TestDeleteRedirectRejectsTakenOverLink(t *testing.T) {
 	if kind := activeKind(t, "/promo/winter"); kind != "redirect" {
 		t.Fatalf("复验失败不得撤链，访问面应保持 redirect: %s", kind)
 	}
-	state, _ := projectReceiptStateOf(t, db, projectID, "/promo/winter")
-	if state != "rolled_back" {
-		t.Fatalf("明确失败应结案为 rolled_back（业务事务确实回滚了）: %s", state)
+	// 本用例命中的是**登记之前**的前置判定：DeleteRedirect 先用 RouteOwnerTx 读一次归属
+	// （page_redirect.go 的前置存在性判定），route_kind 已不是 redirect → 直接返回
+	// ErrRedirectConflict，根本没走到 registerProjectDeactivationIntent，所以**不会有回执**。
+	// 这不是缺陷：没有意图登记就没有需要重放的撤链动作，路由行与链接也一个字节没动。
+	var receiptCount int64
+	if qerr := db.Raw(`SELECT count(*) FROM publication_receipts
+		WHERE source_type = 'project' AND source_id = ? AND path = ? AND action = 'deactivate'`,
+		projectID, "/promo/winter").Scan(&receiptCount).Error; qerr != nil {
+		t.Fatalf("统计项目级下线回执失败: %v", qerr)
+	}
+	if receiptCount != 0 {
+		t.Fatalf("前置判定失败（登记之前就返回）不应留下回执，实际 %d 条", receiptCount)
 	}
 }
 

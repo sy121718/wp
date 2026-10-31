@@ -28,6 +28,7 @@ package feature
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -175,3 +176,80 @@ var (
 	_ navigationcontract.MenuItemPresentationStalePort = navWritePortsBypass{}
 	_ navigationcontract.MenuStaleEnqueuePort          = navWritePortsBypass{}
 )
+
+// navStaleCounter 计数**同事务端口**被调用的次数与键。
+//
+// 为什么计数点在这里而不是 dispatcher：菜单写的失效已改为与写同事务的端口调用
+// （navigation_service.go 的 markMenuStaleInTx / markNavigationStaleInTx），
+// MenuStaleDispatcher 不再参与菜单 CRUD，挂它只会得到恒 0。
+//
+// 计数条件只看「端口被调用且没报错」，不看命中行数：零命中是合法结果（没有任何页面
+// 声明该依赖），但「必须调用」是契约 —— 有依赖时才有版本屏障，这是要守住的那条。
+type navStaleCounter struct {
+	mu   sync.Mutex
+	menu []string
+	nav  []string
+}
+
+func (c *navStaleCounter) recordMenu(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.menu = append(c.menu, key)
+}
+
+func (c *navStaleCounter) recordNav(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nav = append(c.nav, key)
+}
+
+// counts 返回 (菜单位置调用数, 菜单项调用数)。
+func (c *navStaleCounter) counts() (menu, nav int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.menu), len(c.nav)
+}
+
+// snapshot 返回两份键的快照（断言键内容时用）。
+func (c *navStaleCounter) snapshot() ([]string, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.menu...), append([]string(nil), c.nav...)
+}
+
+type navStaleCountPages struct {
+	c   *navStaleCounter
+	nav navigationcontract.PageStalePort
+}
+
+func (w navStaleCountPages) MarkMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (int64, error) {
+	n, err := w.nav.MarkMenuStaleTx(ctx, tx, projectID, kind, at)
+	if err == nil {
+		w.c.recordMenu(projectID + "|" + kind)
+	}
+	return n, err
+}
+
+type navStaleCountItems struct {
+	c   *navStaleCounter
+	nav navigationcontract.MenuItemStalePort
+}
+
+func (w navStaleCountItems) MarkNavigationStaleTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string) (int64, error) {
+	n, err := w.nav.MarkNavigationStaleTx(ctx, tx, projectID, navigationID)
+	if err == nil {
+		w.c.recordNav(projectID + "|" + navigationID)
+	}
+	return n, err
+}
+
+// navStaleCountDeps 用计数装饰器包住 Pages/Items，其余三端口仍用真实实现（端口必须全齐）。
+func navStaleCountDeps(fx navWritePortFixture, c *navStaleCounter) navigationservice.NavigationWriteDeps {
+	return navigationservice.NavigationWriteDeps{
+		Pages:         navStaleCountPages{c: c, nav: fx.Pages},
+		Instances:     fx.Instances,
+		Items:         navStaleCountItems{c: c, nav: fx.Items},
+		ItemInstances: fx.ItemInstances,
+		Queue:         fx.Queue,
+	}
+}

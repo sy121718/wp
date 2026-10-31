@@ -97,8 +97,11 @@ func TestNavigationCreateHidesInternalError(t *testing.T) {
 	c, w := newNavErrContext(http.MethodPost, "/api/navigation/create", reqBody)
 	h.Create(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("非法工程 id 属内部错误，状态码应为 500，实际 %d，body=%s", w.Code, w.Body.String())
+	// 创建路径在进入持久化之前就复验工程 id（service 侧 uuid.Parse），
+	// 所以非法 id 是**参数错**（400 + 业务事实），而不是把 22P02 冒成内部错误。
+	// 判据仍是「不直出数据库原文」：状态码变了，泄漏口径不变。
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("非法工程 id 应在参数校验处被拒（400），实际 %d，body=%s", w.Code, w.Body.String())
 	}
 	assertNoInternalLeak(t, w.Body.String())
 }

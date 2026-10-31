@@ -43,15 +43,17 @@ func capturedInputVersionOfPage(t *testing.T, db *gorm.DB, pageID string) int64 
 // beginReceiptDataOf 读该路径上最新一条 switch_active 回执的 receipt_data 原文。
 func beginReceiptDataOf(t *testing.T, db *gorm.DB, path string) []byte {
 	t.Helper()
-	var data []byte
-	statement := "SELECT receipt_data FROM publication_receipts WHERE path = ? AND action = 'switch_active' ORDER BY id DESC LIMIT 1"
-	if err := db.Raw(statement, path).Scan(&data).Error; err != nil {
+	// jsonb 列按 ::text 读：driver 交给 Scan 的是 []uint8，直接扫进 []byte 会逐元素赋值
+	//（converting driver.Value type []uint8 to a uint8）。同 publication 侧测试的读法。
+	var text string
+	statement := "SELECT receipt_data::text FROM publication_receipts WHERE path = ? AND action = 'switch_active' ORDER BY id DESC LIMIT 1"
+	if err := db.Raw(statement, path).Scan(&text).Error; err != nil {
 		t.Fatalf("读取回执失败: %v", err)
 	}
-	if len(data) == 0 {
+	if text == "" {
 		t.Fatalf("路径 %s 上没有 switch_active 回执", path)
 	}
-	return data
+	return []byte(text)
 }
 
 // receiptCapturedVersion 从 receipt_data 里取捕获代次；缺键返回 0（未知）。

@@ -16,6 +16,7 @@ package unit
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	pagemodel "go_wp/internal/module/page/model"
@@ -97,9 +98,11 @@ func TestListStalePageIDsOrderedByMarkTime(t *testing.T) {
 	third := createPage(t, svc, projectID, "/stale/third", publishContextDoc).ID
 
 	// 故意让标记时间与 id 顺序相反：只按 id 排序时这里会通不过。
+	// 分钟数按 text 传：`? || ' minutes'` 里 ? 的推断类型是 text，传 int 会报
+	// unable to encode 30 into text format for text (OID 25)。
 	statement := "UPDATE pages SET stale = true, update_time = now() - (? || ' minutes')::interval WHERE id = ?"
 	for i, id := range []string{first, second, third} {
-		if err := db.Exec(statement, 30-i*10, id).Error; err != nil {
+		if err := db.Exec(statement, strconv.Itoa(30-i*10), id).Error; err != nil {
 			t.Fatalf("设置标记时间失败: %v", err)
 		}
 	}

@@ -264,6 +264,7 @@ func navCountTranslations(t *testing.T, db *gorm.DB, projectID, hash string) int
 func TestNavTranslationWritePersistsAndDispatches(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	res, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "Home"}))
 	if err != nil {
@@ -291,6 +292,7 @@ func TestNavTranslationWritePersistsAndDispatches(t *testing.T) {
 func TestNavTranslationWriteIsolatedByProjectAndFallsBack(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	if _, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "Home"})); err != nil {
 		t.Fatalf("工程 A 写入失败: %v", err)
@@ -340,6 +342,7 @@ func TestNavTranslationWriteEmptyTargetIsIgnored(t *testing.T) {
 func TestNavTranslationWriteRejectsUnknownHash(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 	unknown := strings.Repeat("a", 64)
 
 	_, err := navWrite(t, env.writer, env.projectID, navWriteLang,
@@ -366,6 +369,7 @@ func TestNavTranslationWriteRejectsUntranslatable(t *testing.T) {
 	env := newNavWriteEnv(t)
 	title := "2024"
 	hash := navAddItem(t, env.navSvc, env.projectID, title, "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	_, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "2024 EN"}))
 	if err == nil {
@@ -383,6 +387,7 @@ func TestNavTranslationWriteRejectsUntranslatable(t *testing.T) {
 func TestNavTranslationWriteRejectsDuplicateRows(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	_, err := navWrite(t, env.writer, env.projectID, navWriteLang,
 		navRows([2]string{hash, "Home"}, [2]string{hash, "Start"}))
@@ -398,6 +403,7 @@ func TestNavTranslationWriteRejectsDuplicateRows(t *testing.T) {
 func TestNavTranslationWriteSameManualValueWritesNothing(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	if _, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "Home"})); err != nil {
 		t.Fatalf("首次写入失败: %v", err)
@@ -421,9 +427,11 @@ func TestNavTranslationWriteSameManualValueWritesNothing(t *testing.T) {
 func TestNavTranslationWriteCrossKindSharedHash(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 	if other := navAddItem(t, env.navSvc, env.projectID, "首页", "footer"); other != hash {
 		t.Fatalf("夹具前提不成立：两个位置的同一文字应同 hash，得到 %s / %s", hash, other)
 	}
+	env.probe.reset() // 第二条建项也会派发失效：只断言译文写这一段
 
 	res, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "Home"}))
 	if err != nil {
@@ -448,6 +456,7 @@ func TestNavTranslationWriteRollsBackOnStaleFailure(t *testing.T) {
 		t.Run(string(rune('0'+failAt)), func(t *testing.T) {
 			env := newNavWriteEnv(t)
 			hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+			env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 			env.probe.failAt = failAt
 			env.probe.failMsg = "注入失败"
 
@@ -473,6 +482,7 @@ func TestNavTranslationWriteRollsBackOnStaleFailure(t *testing.T) {
 func TestNavTranslationWriteRejectsOtherProjectMenu(t *testing.T) {
 	env := newNavWriteEnv(t)
 	foreignHash := navAddItem(t, env.navSvc, env.otherID, "外部菜单", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	_, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{foreignHash, "Foreign"}))
 	if err == nil {
@@ -496,6 +506,7 @@ func TestNavTranslationWriteRejectsOtherProjectMenu(t *testing.T) {
 func TestNavMenuWriteSharesContentLockWithTranslationWriter(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	if _, err := navWrite(t, env.writer, env.projectID, navWriteLang, navRows([2]string{hash, "Home"})); err != nil {
 		t.Fatalf("先写 header 译文失败: %v", err)
@@ -557,6 +568,7 @@ func TestNavMenuWriteSharesContentLockWithTranslationWriter(t *testing.T) {
 func TestNavMenuUpdateRereadsKindUnderRealInterleaving(t *testing.T) {
 	env := newNavWriteEnv(t)
 	navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效：只断言后面 Update 这一段
 	rows, err := env.navSvc.List(context.Background(), &navigationdto.ListReq{ProjectID: env.projectID, Kind: "header"})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("夹具前提不成立: %v %d", err, len(rows))
@@ -948,6 +960,7 @@ func containsCall(calls []string, want string) bool {
 func TestNavTranslationWriteSerializesSameProject(t *testing.T) {
 	env := newNavWriteEnv(t)
 	hash := navAddItem(t, env.navSvc, env.projectID, "首页", "header")
+	env.probe.reset() // 建项自身会派发失效，只断言译文写的这一段
 
 	var wg sync.WaitGroup
 	errs := make([]error, 2)

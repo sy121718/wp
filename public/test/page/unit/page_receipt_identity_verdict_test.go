@@ -24,8 +24,28 @@ import (
 )
 
 // saveDraftReqOf 构造保守草稿保存请求（路径与文档都不变，只推进草稿代次）。
-func saveDraftReqOf(pageID, doc string) pagedto.SaveDraftReq {
-	return pagedto.SaveDraftReq{ID: pageID, DraftDocument: []byte(doc)}
+// saveDraftReqOf 只更换文档、不改路径：DraftPath 传该页**当前**草稿路径。
+//
+// DraftPath 是必填的保存目标路径（SaveDraft → validateDraft → normalizePagePath，
+// page_document.go:253 / :373-376）：留空会走 pipeline.NormalizeURL，被
+// pathkit.NormalizeRoutePath 的「路径必须以 / 开头」判成 ErrInvalidPath。
+// 传当前值同时保证「路径未变」—— 保存不会触发路由迁移，与其他断言的前提一致。
+func saveDraftReqOf(t *testing.T, db *gorm.DB, pageID, doc string) pagedto.SaveDraftReq {
+	t.Helper()
+	var row struct {
+		DraftPath    string
+		DraftVersion int64
+	}
+	if err := db.Raw(`SELECT draft_path, draft_version FROM pages WHERE id = ?`, pageID).Scan(&row).Error; err != nil {
+		t.Fatalf("读取页面草稿路径失败: %v", err)
+	}
+	if row.DraftPath == "" {
+		t.Fatalf("前置不成立：页面 %s 没有草稿路径", pageID)
+	}
+	// ExpectedVersion 必须带**当前**草稿代次：SaveDraft 用
+	// req.ExpectedVersion != page.DraftVersion 判乐观锁（page_document.go:249-268），
+	// 零值在已保存过草稿的页上必然撞 ErrDraftVersionConflict。
+	return pagedto.SaveDraftReq{ID: pageID, ExpectedVersion: row.DraftVersion, DraftPath: row.DraftPath, DraftDocument: []byte(doc)}
 }
 
 // formatInt64 十进制（回执 id 与 FromReceiptID 同口径）。
@@ -146,7 +166,7 @@ func TestPublishCapturesPreviousSuccessIdentity(t *testing.T) {
 	}
 
 	// 再发布一次：第二次 attempt 登记时捕获到的「出发身份」= 第一次的回执 id。
-	draftReq := saveDraftReqOf(page.ID, publishContextDoc)
+	draftReq := saveDraftReqOf(t, db, page.ID, publishContextDoc)
 	if _, err := svc.SaveDraft(ctx, &draftReq); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}

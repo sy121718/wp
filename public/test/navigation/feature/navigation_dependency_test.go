@@ -125,6 +125,18 @@ func navMenuDependencyCount(t *testing.T, db *gorm.DB, pageID, projectID, kind s
 	return n
 }
 
+// markPageActivated 把页面摆成「已成功激活过一次」的收敛状态（stale=false）。
+//
+// 为什么需要它：stale 只由**成功激活**清（pagemodel.MarkPublishedLangTx；page_tx.go 的
+// MarkStagedLangTx 注释写明「构建不等于发布」）。依赖失效用例要证明的是「输入变更后会
+// 被标 stale」，所以前置必须显式给成「已收敛」，不能指望 Build 顺手清掉 —— 那是旧口径。
+func markPageActivated(t *testing.T, db *gorm.DB, pageID string) {
+	t.Helper()
+	if err := db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
+		t.Fatalf("把页面 %s 摆成已收敛状态失败: %v", pageID, err)
+	}
+}
+
 // navPageStale 读取页面 stale 标记。
 func navPageStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	t.Helper()
@@ -168,6 +180,9 @@ func TestNavigationChangeMarksOnlyBoundPages(t *testing.T) {
 	buildNavPage(t, pages, bound)
 	buildNavPage(t, pages, plain)
 	for _, id := range []string{bound, plain} {
+		markPageActivated(t, db, id)
+	}
+	for _, id := range []string{bound, plain} {
 		if navPageStale(t, db, id) {
 			t.Fatalf("前置条件不成立：构建后页面 %s 仍为待重建", id)
 		}
@@ -202,6 +217,8 @@ func TestNavigationChangeIsolatedByProject(t *testing.T) {
 	boundB := createNavPage(t, pages, other.ID, "home", "/proj-b", navDocument)
 	buildNavPage(t, pages, boundA)
 	buildNavPage(t, pages, boundB)
+	markPageActivated(t, db, boundA)
+	markPageActivated(t, db, boundB)
 
 	// 两个工程都声明了 header 位置的导航，但键不同（menu:{pid}:header）。
 	if n := navMenuDependencyCount(t, db, boundA, projectA, "header"); n != 1 {
@@ -258,9 +275,9 @@ func TestNavigationRebuildReflectsMenuChange(t *testing.T) {
 	if strings.Contains(afterHTML, "/old-menu") {
 		t.Fatalf("重建后产物不应再含旧菜单链接 /old-menu: %s", afterHTML)
 	}
-	// 重建是干净的：构建会把 stale 清掉。
-	if navPageStale(t, db, pageID) {
-		t.Fatalf("重建后页面不应仍为待重建")
+	// 构建**不**清 stale（构建不等于发布）：重建后仍是待重建，直到真正激活成功。
+	if !navPageStale(t, db, pageID) {
+		t.Fatalf("构建后 stale 不应被清掉：清 stale 只发生在成功激活（MarkPublishedLangTx）")
 	}
 
 	// 发布路径同样反映新菜单：激活面读盘（默认语言无前缀，/nav-e2e → active/nav-e2e/index.html）。
@@ -270,6 +287,9 @@ func TestNavigationRebuildReflectsMenuChange(t *testing.T) {
 	activeBytes, aerr := os.ReadFile(filepath.Join(os.Getenv("GO_WP_ARTIFACT_ROOT"), "public", "active", "nav-e2e", "index.html"))
 	if aerr != nil {
 		t.Fatalf("读取激活产物失败: %v", aerr)
+	}
+	if navPageStale(t, db, pageID) {
+		t.Fatalf("激活成功后页面不应仍为待重建")
 	}
 	if !strings.Contains(string(activeBytes), "/new-menu") {
 		t.Fatalf("激活产物应含新菜单链接 /new-menu: %s", string(activeBytes))

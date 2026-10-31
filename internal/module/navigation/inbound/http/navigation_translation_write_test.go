@@ -15,7 +15,6 @@ package navigationhttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +30,7 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 )
 
 // translationWriteNavigationStub 只实现 Update / SwapMove（其余走嵌入的 nil 接口）。

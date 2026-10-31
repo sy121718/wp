@@ -348,11 +348,20 @@ func TestAdminPagesReadOnlyPageForbiddenWithoutPolicy(t *testing.T) {
 			recorder.Code, http.StatusForbidden, body)
 	}
 	t.Logf("无策略时 /admin/administrators 的 403 响应体: %s", body)
-	// 拒绝形态是**整页提示**（jump 形态），不是 JSON 报文 —— 直接输 URL 的人要看得懂
-	// 发生了什么、知道去找谁开权限（docs/02-Z §4.3）。所以判据不是「响应里没有 </html>」
-	//（那是旧的 JSON 403 形态），而是**列表页没有被渲染**：表格结构与管理员 PII 一个都不能出现。
-	if !strings.Contains(body, "</html>") {
-		t.Fatalf("403 应是完整提示页（缺 </html>，模板中途中断）: %s", body)
+	// 拒绝形态是 **JSON**，不是整页提示：CasbinDecide 的注释写明「API 与页面拒绝都使用
+	// JSON」（internal/middleware/builtin/casbin.go），拒绝出口统一走 response.ErrorWithMessage，
+	// 页面跳转由前端决定（与 SessionAuthMiddleware 的 401 JSON 同一契约）。
+	// 判据两件事：① 是标准响应信封且 code=403；② 列表页没有被渲染 —— 表格结构与
+	// 管理员 PII 一个都不能出现。
+	forbidden, perr := support.ParseStandardResponse(recorder)
+	if perr != nil {
+		t.Fatalf("403 应是 JSON 标准响应，解析失败: %v body=%s", perr, body)
+	}
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("403 响应的信封 code 应为 403，实际 %d body=%s", forbidden.Code, body)
+	}
+	if strings.Contains(body, "</html>") {
+		t.Fatalf("403 不应渲染整页 HTML（拒绝出口是 JSON）: %s", body)
 	}
 	for _, leaked := range []string{
 		adminPagesProbeAdminUsername, // 识别性用户名

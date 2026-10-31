@@ -170,13 +170,21 @@ func newMenuFenceProject(t *testing.T, f *menuFenceFixture) string {
 		t.Fatalf("创建邻工程导航项失败: %v", err)
 	}
 	// 模板按实体类型取默认：内容模板是工程内资源，这里用独立实体类型避免与主工程串用。
+	//
+	// ProjectID 必须显式给：contenttemplate.Service.resolveProjectID
+	//（contenttemplate_service.go:191-214）在缺省时要求「全库恰好一个工程」，否则
+	// ErrProjectRequired —— 本用例前面已经建了主工程，这里不传就会撞上。
 	if _, err := tplSvc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType: "article", Name: "邻工程模板", DraftDocument: []byte(menuFenceDoc),
+		ProjectID: project.ID, EntityType: "article", Name: "邻工程模板", DraftDocument: []byte(menuFenceDoc),
 	}); err != nil {
 		t.Fatalf("创建邻工程模板失败: %v", err)
 	}
+	// 内容实体**没有工程维度**（contentdto.CreateReq 只有 EntityType/Slug/Data，
+	// internal/module/content/dto/content_req.go:6-10；工程作用域由 ctx 承载，不是 dto 字段），
+	// 所以这里刻意不传 ProjectID —— 传了编译不过。工程维度只在模板/实例这一侧成立。
 	entity, err := contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "article", Slug: "other-fence", Data: map[string]any{"title": "邻工程实体"},
+		EntityType: "article", Slug: "other-fence",
+		Data: map[string]any{"title": "邻工程实体"},
 	})
 	if err != nil {
 		t.Fatalf("创建邻工程实体失败: %v", err)
@@ -279,16 +287,21 @@ func TestStaleCapturedVersionCannotActivateAfterMenuChange(t *testing.T) {
 	captured, _ := readInstanceFence(t, f.db, f.instance)
 	// 旧批次的产物在第一次发布时就已经落库（同一批字节命中 hash 复用），这里先记下它，
 	// 后面要证明的是「旧批次拿不到新版本」，而不是「它不许存在」。
-	// 默认语言取实例行的事实（不在此硬编码语言码）。
-	var defaultLang string
-	if err := f.db.Raw(`SELECT COALESCE(settings->>'defaultLang', settings->>'default_lang', '')
-		FROM projects WHERE id = ?`, f.projectID).Scan(&defaultLang).Error; err != nil {
-		t.Fatalf("读取工程默认语言失败: %v", err)
-	}
+	//
+	// **必须在这里读**：presentation_publications 是「每语言当前激活产物」的单行账本，
+	// 第 ③ 步的 Rebuild 会把 artifact_id 覆盖成新产物 —— 那时再读就只能拿到当前产物，
+	// 「旧 != 当前」的前置判据必然不成立。这两次读取属于捕获段的事实快照，与 captured
+	// 同一时刻取，才配得上后面「旧批次带着自己那一代回来」的叙事。
+	// 账本里「当前产物」取一条即可：本用例只关心"旧批次编译出的那份产物"，
+	// 与语言键无关。不要按 projects.settings 推默认语言 —— 工程行未必写 defaultLang，
+	// 推出空串会让 lang = '' 查不到任何行（账本的 lang 由站点语言清单决定）。
 	var oldArtifact string
-	if err := f.db.Raw(`SELECT COALESCE(artifact_id::text,'') FROM presentation_publications
-		WHERE presentation_id = ? AND lang = ?`, f.instance, defaultLang).Scan(&oldArtifact).Error; err != nil {
+	if err := f.db.Raw(`SELECT COALESCE(MAX(artifact_id::text),'') FROM presentation_publications
+		WHERE presentation_id = ?`, f.instance).Scan(&oldArtifact).Error; err != nil {
 		t.Fatalf("读取旧语言账本失败: %v", err)
+	}
+	if oldArtifact == "" {
+		t.Fatalf("前置不成立：首次发布后账本里应有当前产物 id")
 	}
 
 	// ② 冻结之后才发生菜单译文变更：这正是"旧产物晚到"的窗口。
@@ -316,13 +329,16 @@ func TestStaleCapturedVersionCannotActivateAfterMenuChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取实例失败: %v", err)
 	}
-	oldActive := ""
+	currentActive := ""
 	if locked.ActiveArtifactID != nil {
-		oldActive = *locked.ActiveArtifactID
+		currentActive = *locked.ActiveArtifactID
 	}
-	if oldArtifact == "" || oldActive == oldArtifact {
-		t.Fatalf("前置不成立：旧产物 %q 必须存在且已不是当前线上产物（当前 %q）", oldArtifact, oldActive)
+	if currentActive == "" {
+		t.Fatalf("前置不成立：重建后实例应有在线产物")
 	}
+	// 刻意不要求 currentActive != oldArtifact：产物是内容寻址的，重建若产出**同一份字节**
+	// 就会复用同一行（recordArtifactTx 按 hash 复用）。本用例要证明的是"旧**版本**的落库
+	// 被谓词拒绝"，与产物行是否换新无关 —— 把 id 不同当前置，遇到字节不变的重建就假红。
 	// 旧批次的快照 / 指针：它要落的是自己那一代，而不是刚成功的这一代。
 	locked.ActiveArtifactID = &oldArtifact
 	locked.StagedArtifactID = &oldArtifact
@@ -345,11 +361,11 @@ func TestStaleCapturedVersionCannotActivateAfterMenuChange(t *testing.T) {
 		Scan(&activeAfter).Error; err != nil {
 		t.Fatalf("读取 active 指针失败: %v", err)
 	}
-	if activeAfter == oldArtifact {
-		t.Fatalf("旧产物不得覆盖新版本指针：old=%q now=%q", oldArtifact, activeAfter)
-	}
-	if activeAfter != oldActive {
-		t.Fatalf("指针应停留在新版本产物：期望 %q 实际 %q", oldActive, activeAfter)
+	// 只钉"指针没被这次被拒的激活改动"（同一时刻读的 currentActive）：
+	// 字节复用下 oldArtifact == currentActive，"旧产物 != 指针"这类判据区分不了
+	// "旧批次写了指针"与"新旧产物本是同一行"，会把自己判红。
+	if activeAfter != currentActive {
+		t.Fatalf("指针应停留在新版本产物：期望 %q 实际 %q", currentActive, activeAfter)
 	}
 }
 

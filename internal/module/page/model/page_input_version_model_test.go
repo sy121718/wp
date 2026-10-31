@@ -77,6 +77,12 @@ func (f *versionFixture) readStale(t *testing.T, id string) bool {
 }
 
 // insertVersionArtifact 插一条产物行（只给 NOT NULL 列）。
+//
+// 三个 hash 都用**完整** artifactID 派生，不能截前 8 位：表上有
+// uk_page_artifacts_page_hash UNIQUE (page_id, artifact_hash)（迁移 691 ——
+// 产物身份按内容确定，同页不同内容必须换 hash）。截 8 位时同一页的多份产物
+// （artOld / artNewer / artMine）前缀相同 → 撞唯一键，夹具准备阶段就失败，
+// 被测的收敛语义一行都没跑到。用完整 id 既不撞键，又满足「不同产物不同 hash」。
 func (f *versionFixture) insertVersionArtifact(t *testing.T, artifactID, pageID string, version int) {
 	t.Helper()
 	if err := f.db.Exec(`
@@ -84,8 +90,8 @@ func (f *versionFixture) insertVersionArtifact(t *testing.T, artifactID, pageID 
 			source_hash, build_input_manifest, build_input_hash, artifact_provider, artifact_key,
 			artifact_hash, compiler_version, registry_version, manifest, created_by, create_time)
 		VALUES (?, ?, ?, '{}'::jsonb, 1, ?, '{}'::jsonb, ?, 'local', ?, ?, 'c1', 'r1', '{}'::jsonb, ?, NOW())`,
-		artifactID, pageID, version, "src-"+artifactID[:8], "bin-"+artifactID[:8],
-		"key-"+artifactID, "hash-"+artifactID[:8], uuid.NewString()).Error; err != nil {
+		artifactID, pageID, version, "src-"+artifactID, "bin-"+artifactID,
+		"key-"+artifactID, "hash-"+artifactID, uuid.NewString()).Error; err != nil {
 		t.Fatalf("准备产物行失败：%v", err)
 	}
 }
@@ -96,9 +102,21 @@ func TestSaveDraftAdvancesInputVersion(t *testing.T) {
 	pageID := "aaaaaaaa-0000-0000-0000-000000000001"
 	before := f.insertVersionPage(t, pageID, "/about")
 
+	// 修订体不能传裸 nil：SaveDraftWithRevisionTx 结尾无条件 tx.Create(revision)，
+	// nil 会落进 gorm 的 "invalid value, should be pointer..." —— 那是调用方少给了参数，
+	// 不是「同事务里修订可以不写」。这里给一条真实修订行（生产路径同样必写）。
+	revision := &pagemodel.RevisionEntity{
+		ID:            uuid.NewString(),
+		PageID:        pageID,
+		Version:       2,
+		DraftPath:     "/about",
+		DraftDocument: []byte(`{"root":[{"id":"n1"}]}`),
+		SourceHash:    "src-about-2",
+		CreatedAt:     time.Now().UTC(),
+	}
 	ctx := context.Background()
 	if err := f.m.SaveDraftWithRevision(ctx, versionProject, pageID, 1, "/about",
-		[]byte(`{"root":[{"id":"n1"}]}`), 2, time.Now().UTC(), nil); err != nil {
+		[]byte(`{"root":[{"id":"n1"}]}`), 2, time.Now().UTC(), revision); err != nil {
 		t.Fatalf("保存草稿失败：%v", err)
 	}
 
@@ -200,8 +218,13 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	if !f.readStale(t, pageID) {
 		t.Fatal("菜单标记后页面应为 stale")
 	}
+	// 回滚断言的目标值必须取**第一次标记提交之后**的代次：上面的 before 是标记前的
+	// 初始值，第一次标记已把代次推到 before+1。拿 before 当「回滚后应恢复到多少」，
+	// 写的是一条永远不成立的条件，回滚正确时照样报红（实测 before=1、回滚后 1）。
+	committed := f.readInputVersion(t, pageID)
+	committedStale := f.readStale(t, pageID)
 
-	// 回滚：外层事务失败时代次与 stale 一起回退。
+	// 回滚：外层事务失败时代次与 stale 一起回到事务开始前的状态。
 	wantErr := gorm.ErrInvalidTransaction
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		if _, err := f.m.MarkMenuStaleTx(ctx, tx, versionProject, "header", time.Now().UTC()); err != nil {
@@ -211,11 +234,15 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	}); err == nil {
 		t.Fatal("外层应返回注入的错误")
 	}
-	if got := f.readInputVersion(t, pageID); got != before {
-		t.Fatalf("回滚后代次必须回到 %d，实际 %d", before, got)
+	if got := f.readInputVersion(t, pageID); got != committed {
+		t.Fatalf("回滚后代次必须回到 %d，实际 %d", committed, got)
 	}
-	if f.readStale(t, pageID) {
-		t.Fatal("回滚后 stale 必须一起回退为 false")
+	// 回滚后 stale 必须回到**标记前**的值，而不是一律 false：
+	// 上面的第一次标记已提交、页面此刻就是 stale=true，若硬写 false 就是把
+	// 「已提交的标记」当成应该被撤销的东西 —— 回滚只该撤销本事务的写入。
+	// 用 committedStale 记住提交后的真实值，回滚后再比一次，两边都是事务边界两侧的事实。
+	if got := f.readStale(t, pageID); got != committedStale {
+		t.Fatalf("回滚后 stale 必须回到标记前（%v），实际 %v", committedStale, got)
 	}
 }
 
@@ -293,13 +320,16 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 	artMine := "bbbbbbbb-0000-0000-0000-0000000000b8"
 	artNewer := "bbbbbbbb-0000-0000-0000-0000000000c8"
 	v := f.insertVersionPage(t, pageID, "/about")
+	// page_artifacts 上有 UNIQUE (page_id, version)：三条产物必须三个不同版本号。
 	f.insertVersionArtifact(t, artOld, pageID, 1)
-	f.insertVersionArtifact(t, artMine, pageID, 2)
-	f.insertVersionArtifact(t, artNewer, pageID, 3)
+	f.insertVersionArtifact(t, artNewer, pageID, 2) // 准备：先到的"别的成功激活"
+	f.insertVersionArtifact(t, artMine, pageID, 3)  // 收敛要写的那份，版本更晚没问题
 
 	ctx := context.Background()
 	now := time.Now().UTC()
 	// 账本已经是别的成功激活的结果（artNewer）。
+	// 注意：激活本身不推进 input_version，但**标记 stale 的那一步会**；准备之后必须
+	// 重新读一次代次当收敛的期望值，否则收敛谓词按过期代次比较必然不命中。
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		written, err := f.m.WritePageActivationTx(ctx, tx, versionProject, pagemodel.PublicationRecord{
 			PageID: pageID, Lang: "zh-CN", ActivePath: "/about",
@@ -316,13 +346,15 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 		t.Fatalf("准备失败：%v", err)
 	}
 
+	expect := f.readInputVersion(t, pageID)
+
 	var written bool
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		var err error
 		written, err = f.m.WritePageForwardCompletionTx(ctx, tx, versionProject, pagemodel.PublicationRecord{
 			PageID: pageID, Lang: "zh-CN", ActivePath: "/about",
 			ArtifactID: artMine, ArtifactHash: "hash-mine", PublishedAt: now,
-		}, v, artOld)
+		}, expect, artOld)
 		return err
 	}); err != nil {
 		t.Fatalf("收敛写入不应报错：%v", err)
@@ -331,13 +363,24 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 		t.Fatal("账本已被替代时必须放弃前进（否则会覆盖更新的成功产物）")
 	}
 
-	var curID string
-	if err := f.db.Raw("SELECT artifact_id FROM page_publications WHERE page_id = ? AND lang = 'zh-CN'", pageID).
-		Scan(&curID).Error; err != nil {
+	// 账本必须**原样保持**新成功那一份：page_publications 的主键是 (page_id, lang)，
+	// 翻成 map 只取"页面上有几行账本、每行是不是 artNewer"—— 若拒绝路径曾写进别的
+	// artifact_id，这里会读到它；只比单行会漏掉"多写了一行别的语言"的形态。
+	var ledger []struct {
+		Lang       string
+		ArtifactID *string
+	}
+	if err := f.db.Raw("SELECT lang, artifact_id FROM page_publications WHERE page_id = ?", pageID).
+		Scan(&ledger).Error; err != nil {
 		t.Fatalf("读取账本失败：%v", err)
 	}
-	if curID != artNewer {
-		t.Fatalf("账本必须保持新成功的那份 %s，实际 %s", artNewer, curID)
+	if len(ledger) == 0 {
+		t.Fatal("账本应已有新成功激活写下的那一行")
+	}
+	for _, row := range ledger {
+		if row.ArtifactID == nil || *row.ArtifactID != artNewer {
+			t.Fatalf("账本必须保持新成功的那份 %s，实际 lang=%s artifact=%v", artNewer, row.Lang, row.ArtifactID)
+		}
 	}
 }
 
@@ -365,13 +408,16 @@ func TestForwardCompletionWritesWhenLedgerUnchanged(t *testing.T) {
 		t.Fatalf("准备失败：%v", err)
 	}
 
+	// 准备激活之后代次已被标记推进，收敛的期望代次取**当前值**（见上一条用例的说明）。
+	expect := f.readInputVersion(t, pageID)
+
 	var written bool
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		var err error
 		written, err = f.m.WritePageForwardCompletionTx(ctx, tx, versionProject, pagemodel.PublicationRecord{
 			PageID: pageID, Lang: "zh-CN", ActivePath: "/about",
 			ArtifactID: artMine, ArtifactHash: "hash-mine", PublishedAt: now,
-		}, v, artOld)
+		}, expect, artOld)
 		return err
 	}); err != nil {
 		t.Fatalf("收敛写入失败：%v", err)

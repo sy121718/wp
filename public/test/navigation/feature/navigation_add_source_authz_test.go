@@ -17,12 +17,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	navigationservice "go_wp/internal/module/navigation/service"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/public/test/support"
@@ -389,49 +389,46 @@ func TestNavigationAddSourceLegacyPagePostIsGone(t *testing.T) {
 // 为什么这条证据必须在**真实链路**里计数：本批把「来源批量加入」改成逐条调 svc.Create，
 // 若哪天有人图省事绕到 model.Create（或直接在 handler 里拼 SQL），「回执 added=N」依然绿，
 // 而菜单改动不再派发失效 —— 已发布页面会永远停在旧导航上，且没有任何报错。
-// contract 里这条端口被列为「装配期未注入即启动失败」的原因就在这：它的缺失是静默的。
+//
+// **计数点已经不在 dispatcher 上了**：菜单写的失效改成了与写同事务的三件事
+// （navigation_service.go 的 markMenuStaleInTx / markNavigationStaleInTx：Pages/Items 标 stale、
+// Instances/ItemInstances 推进 input_version、Queue 入队）。旧写法实现 MenuStaleDispatcher
+// 并挂到 SetMenuStaleDispatcher 上，于是永远收不到调用 —— 派发计数恒 0 是这么来的。
+//
+// 现在的做法是**包一层端口**：把同事务端口换成计数装饰器，键仍按 projectID|kind 与
+// projectID|navigationID 记，counts() 的 (menu, nav) 语义不变，用例断言不用改。
+// 其余三端口（Instances / ItemInstances / Queue）原样委派给真实实现 —— 计数只需两条键，
+// 而真实实现保证「标记真的落库、版本屏障真的前进」这一层仍然成立。
 type navStaleSpy struct {
-	mu    sync.Mutex
-	menus []string
-	items []string
-}
-
-func (s *navStaleSpy) InvalidateMenu(_ context.Context, projectID, kind string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.menus = append(s.menus, projectID+"|"+kind)
-	return nil
-}
-
-func (s *navStaleSpy) InvalidateNavigation(_ context.Context, projectID, navigationID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.items = append(s.items, projectID+"|"+navigationID)
-	return nil
+	c navStaleCounter
 }
 
 // counts 返回 (menu 派发数, navigation 派发数) 与两份键的快照。
 func (s *navStaleSpy) counts() (int, int, []string, []string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	menus := append([]string(nil), s.menus...)
-	items := append([]string(nil), s.items...)
-	return len(menus), len(items), menus, items
+	menu, nav := s.c.counts()
+	menus, items := s.c.snapshot()
+	return menu, nav, menus, items
 }
 
-// navStaleSpyAttach 把 spy 挂到真实 service 上。
+// navStaleSpyAttach 用计数装饰器重挂同事务写端口（**唯一**计数注入点）。
 //
-// 端口注入点（SetMenuStaleDispatcher）**不在** contract 里 —— 它只在装配期被调用一次，
-// 所以这里用匿名接口断言：注入点改名或挪走时这条用例会立刻红，而不是静默不计数。
+// 为什么不再挂 dispatcher：那套 MenuStaleDispatcher 已不参与菜单写（见 navStaleSpy 顶部注释），
+// 挂上去只会得到恒 0 的计数。端口整齐与否由 writePortsReady 把关，装饰器只替换 Pages/Items
+// 两条，Instances/ItemInstances/Queue 继续用环境里装好的真实实现 —— 端口仍然是「全齐」的。
 func navStaleSpyAttach(t *testing.T, env *navTranslationAuthzEnv, spy *navStaleSpy) {
 	t.Helper()
+	if env.Ports.Pages == nil || env.Ports.Items == nil {
+		t.Fatalf("env.Ports 未装配：计数装饰器需要真实端口做委派")
+	}
+	// 注入点在**具体服务**上（contract 只声明业务方法，装配期方法不进契约）——
+	// 与 navSwapAttachDispatcher 同一手法用匿名接口断言：注入点改名即红。
 	setter, ok := env.NavSvc.(interface {
-		SetMenuStaleDispatcher(navigationcontract.MenuStaleDispatcher)
+		SetWritePorts(navigationservice.NavigationWriteDeps)
 	})
 	if !ok {
-		t.Fatalf("NavSvc 未暴露 SetMenuStaleDispatcher：端口注入点变了，本用例失去计数能力")
+		t.Fatalf("NavSvc 未暴露 SetWritePorts：端口注入点变了，本用例失去计数能力")
 	}
-	setter.SetMenuStaleDispatcher(spy)
+	setter.SetWritePorts(navStaleCountDeps(env.Ports, &spy.c))
 }
 
 // navSourceErrStub 让「读候选」真报错（用于验证失败档零派发）。

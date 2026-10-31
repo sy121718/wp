@@ -23,12 +23,18 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 )
 
-// seedPartialPublish 造出一条 presentation 的 pending 回执：
-// 第二个语言（en-US）的路由登记失败 —— 该语言的访问面已切换、回执保持 pending。
+// seedPartialPublish 造出「访问面已切、DB 未承认」的收敛现场：
 //
-// 用真实的发布链而不是手插回执行：回执里的 from/to 产物、path、lang 都是主链写下的，
-// 收敛判定（符号链接指向哪个产物、路径是否仍是该语言的当前路径）才有真实依据。
-func seedPartialPublish(t *testing.T, f *presFixture, injector *routeFaultInjector, slug, logicalPath string) string {
+//  1. 两语言**正常发布**（产物行、账本、路由、链接都是主链写下的真实事实）；
+//  2. 删掉 en-US 的路由行与语言账本（模拟上一次收敛只做完了一半的残留）；
+//  3. 插一条指向 en-US 真实产物与真实路径的 pending switch_active 回执。
+//
+// 为什么不再用「故障注入的生产失败」造现场：多语言发布现在**整批一个事务**（产物行、
+// 逐语言账本/路由、指针同进同出），任一语言失败则整笔回滚 —— 产物行也一起没了，回执里的
+// to 指向不存在的产物，收敛只能判 rolled_back 并安排整批重建（那个语义另有
+// TestPresentationRouteRegisterFailureIsRecoverable 覆盖）。「补完成」这一类判定必须在
+// **产物还在**的现场才测得到。
+func seedPartialPublish(t *testing.T, f *presFixture, _ *routeFaultInjector, slug, logicalPath string) string {
 	t.Helper()
 	ctx := context.Background()
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
@@ -38,23 +44,30 @@ func seedPartialPublish(t *testing.T, f *presFixture, injector *routeFaultInject
 	if err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}
-	injector.setFailPath("/en" + logicalPath)
-	_, err = f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
 		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID, URLPath: logicalPath,
 	})
-	injector.setFailPath("")
-	if err == nil {
-		t.Fatal("注入路由登记故障后发布必须返回错误（访问面已切换、回执待收敛）")
+	if err != nil {
+		t.Fatalf("正常发布失败（收敛用例的前置是「发布成功过」）: %v", err)
 	}
-	var instID string
-	if err = f.db.Raw("SELECT id FROM presentation_instances WHERE project_id = ? AND entity_id = ?",
-		f.projectID, entity.ID).Scan(&instID).Error; err != nil || instID == "" {
-		t.Fatalf("实例应已建行（发布失败不等于实例不存在）: instID=%q err=%v", instID, err)
+	enPath := "/en" + logicalPath
+	var artifactID string
+	if err = f.db.Raw("SELECT artifact_id FROM presentation_publications WHERE presentation_id = ? AND lang = ?",
+		inst.ID, "en-US").Scan(&artifactID).Error; err != nil || artifactID == "" {
+		t.Fatalf("读取 en-US 账本产物失败: id=%q err=%v", artifactID, err)
 	}
-	if pending, _ := receiptStates(t, f, instID); pending != 1 {
-		t.Fatalf("故障注入后应恰好 1 条 pending 回执，实际 %d", pending)
+	// 拆掉 en-US 的库内事实，但访问面链接保持不动（正是收敛要按链接证据补齐的现场）。
+	if err = f.db.Exec("DELETE FROM page_routes WHERE presentation_id = ? AND path = ?", inst.ID, enPath).Error; err != nil {
+		t.Fatalf("删除 en-US 路由行失败: %v", err)
 	}
-	return instID
+	if err = f.db.Exec("DELETE FROM presentation_publications WHERE presentation_id = ? AND lang = ?", inst.ID, "en-US").Error; err != nil {
+		t.Fatalf("删除 en-US 账本行失败: %v", err)
+	}
+	insertSyntheticPresentationReceipt(t, f, inst.ID, f.projectID, enPath, "en-US", artifactID)
+	if pending, _ := receiptStates(t, f, inst.ID); pending != 1 {
+		t.Fatalf("现场应恰好一条 pending 回执，实际 %d", pending)
+	}
+	return inst.ID
 }
 
 // newConvergeFixture 建一个带路由故障注入的 fixture，并启用两种语言 + 模板。
@@ -89,7 +102,7 @@ func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.
 		t.Fatalf("收敛失败: %v", cerr)
 	}
 	if converged != 1 {
-		t.Fatalf("应收敛 1 条回执，实际 %d", converged)
+		t.Fatalf("应收敛 en-US 的 pending 回执，实际 %d", converged)
 	}
 	if pending, committed := receiptStates(t, f, instID); pending != 0 || committed < 1 {
 		t.Fatalf("收敛后回执不应再有 pending，实际 pending=%d committed=%d", pending, committed)

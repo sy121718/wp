@@ -37,10 +37,15 @@ type menuItemStaleCaller interface {
 }
 
 // seedMenuItemID 建一条菜单项并返回其 id（按项引用要的就是这个 id）。
-func seedMenuItemID(t *testing.T, svc navigationcontract.NavigationService, projectID, kind, title string) string {
+//
+// Path 必须给 ASCII：菜单项的链接进 core.nav 的 validateItems 白名单
+// （builder/components/nav/nav.go:190 → core.IsSafeURL → urlSafeRe 字符集
+// [A-Za-z0-9./:?=&%~#+_@-]，controls.go:395），非 ASCII 字面量（"/产品"）被判非法，
+// 构建期直接失败。标题用中文不影响用例意图（只关心依赖键是否命中）。
+func seedMenuItemID(t *testing.T, svc navigationcontract.NavigationService, projectID, kind, title, path string) string {
 	t.Helper()
 	created, err := svc.Create(context.Background(), &navigationdto.CreateReq{
-		ProjectID: projectID, Title: title, Path: "/" + title, Kind: kind,
+		ProjectID: projectID, Title: title, Path: path, Kind: kind,
 		SourceType: "custom", Target: "self",
 	})
 	if err != nil {
@@ -83,7 +88,7 @@ func TestNavigationStalePortHitsItemKey(t *testing.T) {
 	// （writePortsReady），裸 NewService 建出的实例只能读，用它建项会直接失败。
 	db, svc, navSvc, _, projectID := newPageServiceWithNavigationWrite(t)
 	ctx := context.Background()
-	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品")
+	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品", "/products")
 
 	page := createPage(t, svc, projectID, "/nav-item", navItemDocument(itemID)).ID
 	buildAndPublish(t, svc, page)
@@ -126,7 +131,7 @@ func TestNavigationStaleIsProjectScoped(t *testing.T) {
 	// （writePortsReady），裸 NewService 建出的实例只能读，用它建项会直接失败。
 	db, svc, navSvc, projects, projectID := newPageServiceWithNavigationWrite(t)
 	ctx := context.Background()
-	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品")
+	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品", "/products")
 	page := createPage(t, svc, projectID, "/nav-scoped", navItemDocument(itemID)).ID
 	buildAndPublish(t, svc, page)
 
@@ -136,7 +141,7 @@ func TestNavigationStaleIsProjectScoped(t *testing.T) {
 		t.Fatalf("创建第二个工程失败: %v", err)
 	}
 	// 同一 service 可服务任意工程（端口与工程无关）：换工程只换 projectID。
-	otherItemID := seedMenuItemID(t, navSvc, other.ID, menuKindHeader, "产品")
+	otherItemID := seedMenuItemID(t, navSvc, other.ID, menuKindHeader, "产品", "/products")
 	otherPage := createPage(t, svc, other.ID, "/nav-scoped", navItemDocument(otherItemID)).ID
 	buildAndPublish(t, svc, otherPage)
 
@@ -166,7 +171,7 @@ func TestNavigationStaleRollsBackWithTransaction(t *testing.T) {
 	// （writePortsReady），裸 NewService 建出的实例只能读，用它建项会直接失败。
 	db, svc, navSvc, _, projectID := newPageServiceWithNavigationWrite(t)
 	ctx := context.Background()
-	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品")
+	itemID := seedMenuItemID(t, navSvc, projectID, menuKindHeader, "产品", "/products")
 	page := createPage(t, svc, projectID, "/nav-rollback", navItemDocument(itemID)).ID
 	buildAndPublish(t, svc, page)
 

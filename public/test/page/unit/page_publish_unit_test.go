@@ -63,6 +63,18 @@ func activeKind(t *testing.T, path string) string {
 	return "page"
 }
 
+// activeLinkTarget 读激活路径符号链接的**目标字串**（比较「同一个链接」用它，
+// 而不是只看链在不在：处置把链接改指向别人时，存在性断言照样通过）。
+func activeLinkTarget(t *testing.T, path string) string {
+	t.Helper()
+	link := filepath.Join(activeDir(t), strings.TrimPrefix(path, "/"))
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("读取访问面链接失败: %v", err)
+	}
+	return target
+}
+
 // ---- 构建 ----
 
 // TestPageBuildSuccess 合法草稿构建：状态 ready、staged hash 非空、staged 指针回写。

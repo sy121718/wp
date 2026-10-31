@@ -43,6 +43,14 @@ const customNavDocument = `{"settings":{"layout":{"mode":"full"},"seo":{"title":
 // newNavigationEnv 自建导航 + 页面 schema，装配 navigation/page 服务。
 func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigationcontract.NavigationService, string) {
 	t.Helper()
+	db, pages, navSvc, projectID, _ := newNavigationEnvPorts(t)
+	return db, pages, navSvc, projectID
+}
+
+// newNavigationEnvPorts 与 newNavigationEnv 同构，额外返回装配好的真实写端口，
+// 供需要「用计数装饰器重挂端口」的用例委派（move_swap 的失效计数）。
+func newNavigationEnvPorts(t *testing.T) (*gorm.DB, pagecontract.PageService, navigationcontract.NavigationService, string, navWritePortFixture) {
+	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -56,13 +64,13 @@ func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigat
 	// 本夹具装配的是真实实现而不是探针 —— 库里真会出现 pages.stale=true、
 	// presentation input_version 前进、build_jobs 多出一条 menu_stale 任务，
 	// 于是「失效真的发生了」与「CRUD 真的成功了」分开断言（探针只能证明前者被调用过）。
-	attachNavWritePorts(t, navSvc, db, projects)
+	ports := attachNavWritePorts(t, navSvc, db, projects)
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	pages := pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil, navSvc, nil)
-	return db, pages, navSvc, project.ID
+	return db, pages, navSvc, project.ID, ports
 }
 
 // addNavItem 创建导航项并返回 ID。

@@ -351,7 +351,10 @@ func TestUpdateEnvelopeTranslationTopLevelWhitelistOnForm(t *testing.T) {
 
 // TestUpdateEnvelopeMoveRequest move 档提供已解析形状，不重读 Body。
 func TestUpdateEnvelopeMoveRequest(t *testing.T) {
-	env, err := jsonEnv(t, `{"action":"move","id":"n-1","dir":"up","projectId":"p-1","kind":"x"}`)
+	// 白名单外的键不能放在这条「正例」里：kind 是页面筛选上下文，updateMoveTopKeys
+	// 与 handler 的 navigationMoveKeys 都不含它，带 kind 的 move 必须被 400 拒掉
+	// （反例见 TestUpdateEnvelopeMoveKeepsLegacyContract 里 kind 那一条）。
+	env, err := jsonEnv(t, `{"action":"move","id":"n-1","dir":"up","projectId":"p-1"}`)
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -437,12 +440,16 @@ func TestUpdateEnvelopeDecodeLegacyOnForm(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeMoveKeepsLegacyContract move 判别不受 projectId / 额外键影响。
+// TestUpdateEnvelopeMoveKeepsLegacyContract move 判别不受 projectId 影响，白名单外的键一律拒。
+//
+// 「合法 move 形状」与「额外键」必须分开判：projectId / dir 是结构内字段，带上不影响分流；
+// kind / rows / lang 之类白名单外的键属于**形状错**（ErrUpdateEnvelopeShape），
+// 而不是「move 判别被影响」。把它们塞进同一条正例循环，等于用期望 200 的用例去要求
+// 服务端接受一个它明确要拒的形状。
 func TestUpdateEnvelopeMoveKeepsLegacyContract(t *testing.T) {
 	for _, body := range []string{
 		`{"action":"move","id":"n-1","dir":"up"}`,
 		`{"action":"move","id":"n-1","dir":"down","projectId":"p-1"}`,
-		`{"action":"move","id":"n-1","dir":"down","kind":"x"}`,
 	} {
 		env, err := jsonEnv(t, body)
 		if err != nil {
@@ -450,6 +457,15 @@ func TestUpdateEnvelopeMoveKeepsLegacyContract(t *testing.T) {
 		}
 		if got := env.Route(); got != navigationdto.RouteMove {
 			t.Fatalf("want move, got %v (body=%s)", got, body)
+		}
+	}
+	for _, body := range []string{
+		`{"action":"move","id":"n-1","dir":"down","kind":"x"}`,
+		`{"action":"move","id":"n-1","dir":"down","rows":[]}`,
+		`{"action":"move","id":"n-1","dir":"down","lang":"zh-CN"}`,
+	} {
+		if _, err := jsonEnv(t, body); !errors.Is(err, navigationdto.ErrUpdateEnvelopeShape) {
+			t.Fatalf("白名单外的键必须以 ErrUpdateEnvelopeShape 拒绝，实际 %v（body=%s）", err, body)
 		}
 	}
 }

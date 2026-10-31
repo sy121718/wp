@@ -102,16 +102,28 @@ func newNavWriteFixture(t *testing.T) *navWriteFixture {
 	// 其余依赖（产物/块/插件/内容/媒体）在这些标记路径上不参与，与 page 侧 unit 测试同形。
 	pageSvc := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 
+	// 五个写端口必须在任何 navSvc.Create / Update **之前**装配：
+	// writePortsReady 是 fail closed 的自检（navigation_service.go:196-208），缺任一端口
+	// 就返回 navigation.err.translation.unavailable —— 这是刻意的装配守卫，不是缺省降级。
+	// 建菜单项本身也是一次菜单写，所以端口不能等到各用例里再 Set。
+	fixture := &navWriteFixture{
+		db: db, projectID: project.ID, navSvc: navSvc, presSvc: presSvc, pageSvc: pageSvc,
+		tplSvc: tplSvc, contentSvc: contentSvc,
+	}
+	navSvc.SetWritePorts(navigationservice.NavigationWriteDeps{
+		Pages: fixture.pageSvc, Instances: fixture.presSvc,
+		Items: fixture.pageSvc, ItemInstances: fixture.presSvc,
+		Queue: fixture.buildSvcTx(),
+	})
+
 	created, err := navSvc.Create(ctx, &navigationdto.CreateReq{
 		ProjectID: project.ID, Title: "写端口菜单", Path: "/wp-menu", Kind: "header",
 	})
 	if err != nil {
 		t.Fatalf("创建导航项失败: %v", err)
 	}
-	return &navWriteFixture{
-		db: db, projectID: project.ID, navSvc: navSvc, presSvc: presSvc, pageSvc: pageSvc,
-		tplSvc: tplSvc, contentSvc: contentSvc, menuItemID: created.ID,
-	}
+	fixture.menuItemID = created.ID
+	return fixture
 }
 
 // buildSvcTx 用真实 build 服务做 Queue 端口（同一 db，不 noop）。
@@ -148,13 +160,18 @@ func TestNavigationWritePortsAreAllReal(t *testing.T) {
 	ctx := context.Background()
 
 	// 按位置引用的实例。
+	// 模板与实体都必须带 ProjectID：contenttemplate/contents 的 resolveProjectID 在缺省时
+	// 按「全库唯一工程」推断，而本夹具是多工程（fixture 自带一个 + 各用例可能再建），
+	// 缺省会报 ErrProjectRequired；实体落不到本工程时，按实体类型取模板就取不到，
+	// 后续 CreateInstance 直接 ErrInvalidParam。
 	if _, err := f.tplSvc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType: "article", Name: "位置模板", DraftDocument: []byte(menuFenceDoc),
+		ProjectID: f.projectID, EntityType: "article", Name: "位置模板", DraftDocument: []byte(menuFenceDoc),
 	}); err != nil {
 		t.Fatalf("创建位置模板失败: %v", err)
 	}
 	positionEntity, err := f.contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "article", Slug: "nav-wp-position", Data: map[string]any{"title": "位置实体"},
+		EntityType: "article", Slug: "nav-wp-position",
+		Data: map[string]any{"title": "位置实体"},
 	})
 	if err != nil {
 		t.Fatalf("创建位置实体失败: %v", err)
@@ -165,23 +182,27 @@ func TestNavigationWritePortsAreAllReal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建位置实例失败: %v", err)
 	}
-	// 按项引用的实例：模板按**实体类型**唯一，所以换一个实体类型（product）单独建一份
-	// 只含按项分支的模板。用它而不是"同类型第二份模板"，两条依赖键才能落在两个实例上，
-	// 断言也就真的分得开 —— 不需要 Skip 充数。
+	// 按项引用的实例：content 模块的实体类型白名单只有 article，建不出"另一种类型"，
+	// 所以两条依赖键落在**同一个实体类型的两份模板**上 —— 这是 CreateInstanceReq.TemplateID
+	// 存在的理由（issue #14：同类型可有多套命名模板），实例显式绑定第二份模板即可。
+	// 换实体类型（product）会被 contenttemplate 的实体类型校验拒绝（ErrInvalidParam）。
 	itemDoc := []byte(byItemDocWith(f.menuItemID))
-	if _, err := f.tplSvc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType: "product", Name: "按项模板", DraftDocument: itemDoc,
-	}); err != nil {
+	itemTpl, err := f.tplSvc.Create(ctx, &contenttemplatedto.CreateReq{
+		ProjectID: f.projectID, EntityType: "article", Name: "按项模板", DraftDocument: itemDoc,
+	})
+	if err != nil {
 		t.Fatalf("创建按项模板失败: %v", err)
 	}
 	itemEntity, err := f.contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "nav-wp-item", Data: map[string]any{"title": "按项实体"},
+		EntityType: "article", Slug: "nav-wp-item",
+		Data: map[string]any{"title": "按项实体"},
 	})
 	if err != nil {
 		t.Fatalf("创建按项实体失败: %v", err)
 	}
 	byItem, err := f.presSvc.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: itemEntity.ID, URLPath: "/nav-wp-item",
+		ProjectID: f.projectID, EntityType: "article", EntityID: itemEntity.ID,
+		URLPath: "/nav-wp-item", TemplateID: itemTpl.ID,
 	})
 	if err != nil {
 		t.Fatalf("创建按项实例失败: %v", err)
@@ -239,6 +260,11 @@ func TestNavigationWritePortsFailClosed(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
+	// 队列基线：fixture 建菜单项时就走真实装配的 Queue 端口，已经落了一条 header 的
+	// menu_stale（navigation.go:92 在 Create 里同样做按位置失效 + 可靠入队）。
+	// fail closed 要证明的是「本次拒绝**没有新增**」，不是「表里空无一行」——
+	// 拿绝对 0 当判据，测的其实是夹具的前置状态。
+	queuedBefore := f.menuStaleCount(t, "header")
 	f.navSvc.SetWritePorts(navigationservice.NavigationWriteDeps{
 		Pages:         f.pageSvc,
 		Instances:     f.presSvc,
@@ -257,8 +283,8 @@ func TestNavigationWritePortsFailClosed(t *testing.T) {
 	if path == newPath {
 		t.Fatalf("拒绝的写不能留下副作用（路径仍是 %s）", path)
 	}
-	if n := f.menuStaleCount(t, "header"); n != 0 {
-		t.Fatalf("拒绝的写不能入队，实际 %d 条", n)
+	if n := f.menuStaleCount(t, "header"); n != queuedBefore {
+		t.Fatalf("拒绝的写不能入队：before=%d after=%d", queuedBefore, n)
 	}
 }
 
@@ -273,12 +299,13 @@ func TestNavigationItemStaleDoesNotTouchUnrelatedInstances(t *testing.T) {
 	// 未声明任何导航依赖的实例（模板只放一个标题块）。
 	plainDoc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}}]}`
 	if _, err := f.tplSvc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType: "article", Name: "无导航模板", DraftDocument: []byte(plainDoc),
+		ProjectID: f.projectID, EntityType: "article", Name: "无导航模板", DraftDocument: []byte(plainDoc),
 	}); err != nil {
 		t.Fatalf("创建无导航模板失败: %v", err)
 	}
 	entity, err := f.contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "article", Slug: "nav-wp-plain", Data: map[string]any{"title": "无关实体"},
+		EntityType: "article", Slug: "nav-wp-plain",
+		Data: map[string]any{"title": "无关实体"},
 	})
 	if err != nil {
 		t.Fatalf("创建无关实体失败: %v", err)

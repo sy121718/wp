@@ -35,6 +35,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -428,38 +429,58 @@ func TestContentReadTxRejectsNonTxHandle(t *testing.T) {
 
 // TestContentReadTxEmptyInputIssuesNoSQL 空输入 → 空 map 且**零 SQL**。
 //
-// pg_stat_activity.query 在事务内读到的是本会话**最近一条**语句：空输入之后只要方法没发
-// 任何语句，它仍然是空输入之前那句标记 SELECT；被覆盖就说明方法在空输入路径上发了 SQL。
-// （不走 failConnPool：它不是真事务，会在 requireTx 就被挡掉，测不到空输入分支。）
+// 判据用 GORM 回调计数，不用 SELECT current_query()：后者在 PostgreSQL 18 上返回的是
+// **它自己这条语句**（"SELECT current_query()"），永远不含标记串，判据恒假红；而且
+// 在事务回调里 t.Fatalf 会让协程直接 Goexit，gorm 的事务既不提交也不回滚 —— 连接停在
+// "idle in transaction"，同包后续用例的 rtAssertNoLeak 全部连带失败（实测 4 例）。
+//
+// 回调挂在**共享** *gorm.DB 上，tx 由它派生，因此事务内的语句同样被计数；
+// 计数在标记语句之后清零，后续断言只看空输入是否发了 SQL。
 func TestContentReadTxEmptyInputIssuesNoSQL(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
 	ctx := t.Context()
 	const marker = "SELECT 'r1_no_sql_marker'"
 
+	var sqls atomic.Int64
+	count := func(*gorm.DB) { sqls.Add(1) }
+	// 四类 finisher 都要挂：Query/Row/Raw/Exec 分别对应 gorm 的不同回调链。
+	db.Callback().Query().After("gorm:query").Register("i18n_test:count_sql", count)
+	db.Callback().Row().After("gorm:row").Register("i18n_test:count_sql", count)
+	db.Callback().Raw().After("gorm:raw").Register("i18n_test:count_sql", count)
+	db.Callback().Create().After("gorm:create").Register("i18n_test:count_sql", count)
+	db.Callback().Update().After("gorm:update").Register("i18n_test:count_sql", count)
+	t.Cleanup(func() {
+		db.Callback().Query().Remove("i18n_test:count_sql")
+		db.Callback().Row().Remove("i18n_test:count_sql")
+		db.Callback().Raw().Remove("i18n_test:count_sql")
+		db.Callback().Create().Remove("i18n_test:count_sql")
+		db.Callback().Update().Remove("i18n_test:count_sql")
+	})
+
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(marker).Error; err != nil {
 			return err
 		}
-		if _, err := writer.LoadTargetsForProjectTx(ctx, tx, txTestProjectA, "", []string{"x"}); err != nil {
+		sqls.Store(0)
+		// 空 hashes / 空 targets：两条都必须零 SQL 返回空结果。
+		if got, err := writer.LoadTargetsForProjectTx(ctx, tx, txTestProjectA, "", []string{"x"}); err != nil {
 			return err
+		} else if len(got) != 0 {
+			return errors.New("空输入应返回空结果")
 		}
-		if _, err := writer.LoadDetailsForProjectTx(ctx, tx, txTestProjectA, txTestLang, []string{}); err != nil {
+		if details, err := writer.LoadDetailsForProjectTx(ctx, tx, txTestProjectA, txTestLang, []string{}); err != nil {
 			return err
-		}
-		var current string
-		if err := tx.Raw("SELECT current_query()").Scan(&current).Error; err != nil {
-			// current_query() 不可用（被 PostgreSQL 移除的版本）时退化为只验证返回值。
-			t.Logf("current_query() 不可用，本用例只验证返回值：%v", err)
-			return nil
-		}
-		if !strings.Contains(current, "r1_no_sql_marker") {
-			t.Fatalf("空输入后事务内最近语句被覆盖，说明方法发了 SQL：%q", current)
+		} else if len(details) != 0 {
+			return errors.New("空 hashes 应返回空 map")
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("空输入零 SQL 用例失败: %v", err)
+	}
+	if n := sqls.Load(); n != 0 {
+		t.Fatalf("空输入路径不得发 SQL，实际发了 %d 条", n)
 	}
 }
 

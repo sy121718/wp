@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 
+	"gorm.io/gorm"
+
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -35,14 +37,31 @@ type routeFaultInjector struct {
 
 func (r *routeFaultInjector) Activate(ctx context.Context,
 	req *pubcontract.ActivateReq) (*pubcontract.RouteResp, error) {
-	r.mu.Lock()
-	fail := r.failing || (r.failPath != "" && req != nil && strings.TrimSpace(req.Path) == r.failPath)
-	r.calls++
-	r.mu.Unlock()
-	if fail {
+	if r.shouldFail(req) {
 		return nil, errors.New("注入故障：路由登记唯一冲突")
 	}
 	return r.PublicationService.Activate(ctx, req)
+}
+
+// ActivateTx 是**发布路径真正走的登记入口**（与访问面切换同事务）。
+//
+// 只包 Activate 会得到「注入从未发生」的假绿：多语言发布/收敛用例注入故障后仍然成功。
+// 两个入口共用同一个判据与同一个计数器，注入点因此不依赖调用方用哪一条。
+func (r *routeFaultInjector) ActivateTx(ctx context.Context, tx *gorm.DB,
+	req *pubcontract.ActivateReq) (*pubcontract.RouteResp, error) {
+	if r.shouldFail(req) {
+		return nil, errors.New("注入故障：路由登记唯一冲突")
+	}
+	return r.PublicationService.ActivateTx(ctx, tx, req)
+}
+
+// shouldFail 记录一次调用并回答本次是否注入故障。
+func (r *routeFaultInjector) shouldFail(req *pubcontract.ActivateReq) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fail := r.failing || (r.failPath != "" && req != nil && strings.TrimSpace(req.Path) == r.failPath)
+	r.calls++
+	return fail
 }
 
 func (r *routeFaultInjector) setFailing(v bool) {
@@ -115,22 +134,29 @@ func TestPresentationRouteRegisterFailureIsRecoverable(t *testing.T) {
 		t.Fatalf("路由登记已失败，page_routes 不应有 active 行，实际 %d", n)
 	}
 	// 3) 留痕的是可恢复状态：回执 pending。
-	if pending, committed := receiptStates(t, f, instID); pending != 1 || committed != 0 {
-		t.Fatalf("应恰好一条 pending 回执，实际 pending=%d committed=%d", pending, committed)
+	// 计数口径：整批语言在**同一个事务**里落库，任一语言失败 → 整笔回滚 → 每个已登记
+	// 的语言回执都留在 pending（逐语言独立提交时代只有失败那条留 pending）。
+	if pending, committed := receiptStates(t, f, instID); pending != 2 || committed != 0 {
+		t.Fatalf("两种语言的回执都应保持 pending，实际 pending=%d committed=%d", pending, committed)
 	}
 	// 实例活跃指针不在本用例的断言范围：AR2-004 只管「路由登记失败不再被吞掉」，
 	// 「指针只在整批成功后才前进」是 AR2-003 的收口（见 presentation_i18n_partial_test.go）。
 
-	// 恢复：故障消除后启动恢复按访问面实际指向补齐路由登记。
-	recovered, rolledBack, rerr := f.pres.RecoverPendingPublications(ctx)
+	// 恢复：故障消除后启动恢复把这批收干净。
+	//
+	// 终态口径（整批一个事务带来的必然后果）：回执里的 to 指向的产物行随发布事务一起
+	// 回滚了，所以这次**没有**可补齐的账本 —— 两条回执被判 rolled_back（明确「本次未上线」），
+	// 随后由批次收敛触发整批重建（幂等重跑，产物行重新落库、账本与路由随之补齐）。
+	// 所以这里不绑 recovered/rolledBack 的具体分配，只钉**最终一致**。
+	_, _, rerr := f.pres.RecoverPendingPublications(ctx)
 	if rerr != nil {
 		t.Fatalf("发布回执恢复失败: %v", rerr)
 	}
-	if recovered != 1 || rolledBack != 0 {
-		t.Fatalf("应补齐 1 条回执，实际 recovered=%d rolledBack=%d", recovered, rolledBack)
-	}
 	if n := countActiveRoutes(t, f, logicalPath); n != 1 {
 		t.Fatalf("恢复后该路径应有且只有 1 条 active 路由行，实际 %d", n)
+	}
+	if rows := publicationRows(t, f, instID); len(rows) != 2 {
+		t.Fatalf("整批重建后两种语言都应有账本行，实际 %+v", rows)
 	}
 	// 恢复分两段：先按访问面证据补齐这条回执，再因为语言账本没铺满而重跑整批
 	// （AR2-003 的批次收敛），因此 committed 会多于 1 条 —— 关键是没有 pending 残留。
@@ -139,7 +165,7 @@ func TestPresentationRouteRegisterFailureIsRecoverable(t *testing.T) {
 	}
 
 	// 幂等：重复执行恢复不产生重复路由行，也不再有任何待处理回执。
-	recovered, rolledBack, rerr = f.pres.RecoverPendingPublications(ctx)
+	recovered, rolledBack, rerr := f.pres.RecoverPendingPublications(ctx)
 	if rerr != nil || recovered != 0 || rolledBack != 0 {
 		t.Fatalf("重复恢复应为空操作，实际 recovered=%d rolledBack=%d err=%v", recovered, rolledBack, rerr)
 	}

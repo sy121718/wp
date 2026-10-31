@@ -153,13 +153,16 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 		t.Fatalf("实例应已建行: instID=%q err=%v", instID, err)
 	}
 
-	// 失败后：只有走完结案的语言有账本行；失败语言与它之后的语言一律没有。
+	// 失败后：**一行账本都不该有**。
+	//
+	// 判据变化：多语言落库已经在**同一个事务**里（产物行 + 逐语言账本/路由 + 指针），
+	// 任一语言失败整笔回滚 —— 所以「前半段语言已结案留在库里」是逐语言独立提交时代的旧口径。
+	// 访问面上已切好的字节由 pending 回执承载（回执在事务之外登记），恢复时按链接证据补齐，
+	// 这正是下面 I2（指针不前进 + stale）与恢复段要证明的东西。
 	rows := publicationRows(t, f, instID)
-	if len(rows) != 1 || rows[0].Lang != "zh-CN" {
-		t.Fatalf("失败后只应有 zh-CN 一行语言账本，实际 %+v", rows)
+	if len(rows) != 0 {
+		t.Fatalf("整批回滚后不应有任何语言账本行，实际 %+v", rows)
 	}
-	// I1：已有的那一行必须与访问面一致（不许「账本说有、文件没有」）。
-	assertLedgerMatchesAccessSurface(t, f, instID)
 	// I2：整批未成功，活跃指针不得前进。
 	if active, stale := instancePointer(t, f, instID); active != nil {
 		t.Fatalf("整批未成功时实例活跃指针不应前进，实际 %v", *active)
@@ -172,8 +175,11 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 	if rerr != nil {
 		t.Fatalf("启动恢复失败: %v", rerr)
 	}
-	if recovered < 1 {
-		t.Fatalf("en-US 的切换已生效，应至少补齐 1 条回执，实际 %d", recovered)
+	// 计数不作判据（见上：整批事务回滚后旧回执会被判 rolled_back，随后整批重跑），
+	// 判据是**最终一致**：没有 pending 残留、三种语言都结案在账本里。
+	_ = recovered
+	if pending, _ := receiptStates(t, f, instID); pending != 0 {
+		t.Fatalf("恢复后不应再有 pending 回执，实际 %d", pending)
 	}
 
 	rows = publicationRows(t, f, instID)

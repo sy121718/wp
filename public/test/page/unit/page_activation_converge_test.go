@@ -125,8 +125,8 @@ func TestRecoveryDoesNotOverwriteNewerSuccess(t *testing.T) {
 	newerID := insertArtifactRow(t, db, page.ID, newerHash)
 
 	if err := db.Exec(`
-		INSERT INTO page_publications (page_id, lang, active_path, artifact_id, artifact_hash, published_at, create_time, update_time)
-		VALUES (?, 'zh-CN', '/superseded', ?, ?, NOW(), NOW(), NOW())`,
+		INSERT INTO page_publications (page_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time)
+		VALUES (?, 'zh-CN', '/superseded', ?, ?, NOW(), NOW())`,
 		page.ID, newerID, newerHash).Error; err != nil {
 		t.Fatalf("准备账本失败: %v", err)
 	}

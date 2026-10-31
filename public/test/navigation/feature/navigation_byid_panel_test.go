@@ -108,8 +108,9 @@ func TestNavigationByItemDependencyAndInvalidation(t *testing.T) {
 	if n := navDepCount(t, db, pageID, pipeline.DepKindMenu, "menu:"+projectID+":header"); n != 0 {
 		t.Fatalf("按项引用的页面不应登记位置键，实际 %d 条", n)
 	}
+	markPageActivated(t, db, pageID)
 	if navPageStale(t, db, pageID) {
-		t.Fatalf("前置条件不成立：构建后页面仍为待重建")
+		t.Fatalf("前置条件不成立：页面应为已收敛（stale=false）")
 	}
 
 	newTitle := "产品中心"

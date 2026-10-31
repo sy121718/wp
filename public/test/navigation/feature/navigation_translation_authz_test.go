@@ -66,6 +66,9 @@ type navTranslationAuthzEnv struct {
 	PlainID   int64
 	ProjectID string
 	NavSvc    navigationcontract.NavigationService
+	// Ports 是装配期装上的**真实**同事务写端口（attachNavWritePorts 的返回值）。
+	// 用例要计数时用它做委派基线（navStaleSpyAttach 重挂装饰器，五端口仍需全齐）。
+	Ports navWritePortFixture
 }
 
 // newNavTranslationAuthzEnv 装配与生产同构的真实链路，并落一条可翻译的导航项。
@@ -108,6 +111,8 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	// navHandle 是 SetupNavigationRoutes 返回的**真实句柄**：写服务注入到它上面，
 	// 与生产装配同一处。两者都由路由注册函数一并返回，测试不另造一份。
 	var navImpl *navigationservice.Service
+	// ports 是装配期装上的真实同事务写端口，随 env 交给用例做计数委派基线。
+	var ports navWritePortFixture
 	var navHandle *navigationhttp.Handle
 	var pages pagecontract.PageService
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
@@ -154,6 +159,14 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 			// 端口由测试库句柄真实构造 —— 本用例验收的是鉴权链，写分支必须真的能走完，
 			// 否则「无策略被 403 拦住」之前的 500 会让断言失去意义。
 			wireNavigationTranslationWriter(t, db, navHandle, navImpl, projects)
+			// 菜单 CRUD（Create / Update / Delete / SwapMove）的四端口与译文写服务是**两套**
+			// 依赖：前者装在服务实例上，后者装在路由句柄上。这里少装前者，任何走 /api/navigation
+			// 的写请求都会先撞 writePortsReady 的 fail closed，回 500 navigation.err.translation.unavailable
+			// —— 授权用例因此看不到本该看到的 403/200。
+			//
+			// 返回值（真实端口句柄）存进 env：需要计数的用例拿它做委派基线，
+			// 不必自己再构造一份（「两条写链各装一套」的口径漂移正是这么来的）。
+			ports = attachNavWritePorts(t, navImpl, db, projects)
 		},
 	})
 	if err != nil {
@@ -181,6 +194,7 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 		PlainID:   plainID,
 		ProjectID: project.ID,
 		NavSvc:    navSvc,
+		Ports:     ports,
 	}
 	// 一条可翻译的导航项：契约里 rows[].hash 由「菜单标签原文」算出，没有它就没有可写的行。
 	addNavItem(t, navSvc, env.ProjectID, "首页", "/", nil, "self")

@@ -33,6 +33,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	navigationservice "go_wp/internal/module/navigation/service"
 )
 
 // —— 计数用失效派发桩 ——
@@ -41,81 +42,56 @@ import (
 //
 // 为什么不用生产装配里的 pipeline.NewMenuStaleAdapter：那个把 stale 落进依赖表，
 // 读到的是「哪些键被标脏」，而本卡要断的是**失败时一次都没派发**，计数桩最直接。
-type countingNavDispatcher struct {
-	mu   sync.Mutex
-	menu []string
-	nav  []string
-}
-
-func (d *countingNavDispatcher) InvalidateMenu(_ context.Context, projectID, kind string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.menu = append(d.menu, projectID+":"+kind)
-	return nil
-}
-
-func (d *countingNavDispatcher) InvalidateNavigation(_ context.Context, projectID, navigationID string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.nav = append(d.nav, projectID+":"+navigationID)
-	return nil
-}
-
-func (d *countingNavDispatcher) counts() (menu, nav int) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return len(d.menu), len(d.nav)
-}
+// countingNavDispatcher 已退役：菜单写的失效改成同事务端口调用后 dispatcher 不再被调用，
+// 计数改由 navStaleCounter 包住 Pages/Items 两条真实端口（见 navigation_write_ports_fixture_test.go）。
 
 // navDispatchBase 一次「本步」派发的基线：建项（Create）自己也会派发，断言必须看增量，
 // 否则「零派发」会被建项阶段的次数蒙过去。
 type navDispatchBase struct{ menu, nav int }
 
 func dispatchBase(env *navSwapEnv) navDispatchBase {
-	menu, nav := env.Dispatcher.counts()
+	menu, nav := env.Counter.counts()
 	return navDispatchBase{menu: menu, nav: nav}
 }
 
 func assertDispatchDelta(t *testing.T, env *navSwapEnv, base navDispatchBase, wantMenu, wantNav int, step string) {
 	t.Helper()
-	menu, nav := env.Dispatcher.counts()
+	menu, nav := env.Counter.counts()
 	if menu-base.menu != wantMenu || nav-base.nav != wantNav {
 		t.Fatalf("%s：本步应派发 menu×%d + nav×%d，实际 menu×%d + nav×%d（累计 menu=%d nav=%d；建项等前置已派发 menu×%d nav×%d）",
 			step, wantMenu, wantNav, menu-base.menu, nav-base.nav, menu, nav, base.menu, base.nav)
 	}
 }
 
-// navSwapEnv 复用既有导航用例的装配（真实迁移建表 + 真实工程行），并接上计数派发桩。
+// navSwapEnv 复用既有导航用例的装配（真实迁移建表 + 真实工程行），并接上计数装饰器。
 type navSwapEnv struct {
-	DB         *gorm.DB
-	Nav        navigationcontract.NavigationService
-	ProjectID  string
-	Dispatcher *countingNavDispatcher
+	DB        *gorm.DB
+	Nav       navigationcontract.NavigationService
+	ProjectID string
+	Counter   *navStaleCounter
 }
 
 func newNavSwapEnv(t *testing.T) *navSwapEnv {
 	t.Helper()
-	db, _, navSvc, projectID := newNavigationEnv(t)
-	dispatcher := &countingNavDispatcher{}
-	navSwapAttachDispatcher(t, navSvc, dispatcher)
-	t.Cleanup(func() { navSwapAttachDispatcher(t, navSvc, nil) })
-	return &navSwapEnv{DB: db, Nav: navSvc, ProjectID: projectID, Dispatcher: dispatcher}
+	db, _, navSvc, projectID, ports := newNavigationEnvPorts(t)
+	counter := &navStaleCounter{}
+	navSwapAttachCounter(t, navSvc, ports, counter)
+	return &navSwapEnv{DB: db, Nav: navSvc, ProjectID: projectID, Counter: counter}
 }
 
-// navSwapAttachDispatcher 把计数桩挂到真实 service 上。
+// navSwapAttachCounter 用计数装饰器重挂同事务写端口（Pages/Items 计数，其余三端口用真实实现）。
 //
-// 端口注入点（SetMenuStaleDispatcher）**不在** contract 里 —— 它只在装配期被调用，
-// 所以这里用匿名接口断言（与同包 navStaleSpyAttach 同一手法）：注入点改名或挪走时
-// 会立刻红，而不是静默不计数。
-func navSwapAttachDispatcher(t *testing.T, svc navigationcontract.NavigationService, dispatcher navigationcontract.MenuStaleDispatcher) {
+// 注入点在具体服务上（contract 只有业务方法），所以用匿名接口断言：注入点改名即红。
+func navSwapAttachCounter(t *testing.T, svc navigationcontract.NavigationService,
+	ports navWritePortFixture, counter *navStaleCounter) {
 	t.Helper()
 	setter, ok := svc.(interface {
-		SetMenuStaleDispatcher(navigationcontract.MenuStaleDispatcher)
+		SetWritePorts(navigationservice.NavigationWriteDeps)
 	})
 	if !ok {
-		t.Fatalf("NavSvc 未暴露 SetMenuStaleDispatcher：端口注入点变了，本用例失去计数能力")
+		t.Fatalf("NavSvc 未暴露 SetWritePorts：端口注入点变了，本用例失去计数能力")
 	}
-	setter.SetMenuStaleDispatcher(dispatcher)
+	setter.SetWritePorts(navStaleCountDeps(ports, counter))
 }
 
 // navSwapRowState 一行的持久化状态（排序值 + 版本 token）。
@@ -664,10 +640,9 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	first := addNavItem(t, env.NavSvc, env.ProjectID, "边界甲", "/edge-first", nil, "self")
 	addNavItem(t, env.NavSvc, env.ProjectID, "边界乙", "/edge-second", nil, "self")
 
-	dispatcher := &countingNavDispatcher{}
-	navSwapAttachDispatcher(t, env.NavSvc, dispatcher)
-	t.Cleanup(func() { navSwapAttachDispatcher(t, env.NavSvc, nil) })
-	base := dispatchBase(&navSwapEnv{Dispatcher: dispatcher})
+	counter := &navStaleCounter{}
+	navSwapAttachCounter(t, env.NavSvc, env.Ports, counter)
+	base := dispatchBase(&navSwapEnv{Counter: counter})
 
 	// 同级首项 + dir=up 必然越界；同级次序由 (sort_order, id) 决定，故按实际次序取。
 	edge := edgeSiblingIDSvc(t, env.NavSvc, first, "up")
@@ -686,7 +661,7 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	if got := readNavSwapState(t, env.DB, edge); got != before {
 		t.Fatalf("边界移动不得写库：%+v → %+v", before, got)
 	}
-	assertDispatchDelta(t, &navSwapEnv{Dispatcher: dispatcher}, base, 0, 0, "边界移动")
+	assertDispatchDelta(t, &navSwapEnv{Counter: counter}, base, 0, 0, "边界移动")
 }
 
 // —— Y 窗口的 holder（独立连接 + 行锁 + 定点观测）——

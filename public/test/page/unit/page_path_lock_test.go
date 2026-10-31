@@ -2,13 +2,13 @@ package unit
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
+	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
 )
 
@@ -116,7 +116,8 @@ func TestPathLockConcurrentSamePathNeverOverlaps(t *testing.T) {
 
 // TestPageRedirectFailsClosedWithoutPathLock 锁被关掉时，删除重定向必须在碰 FS 之前失败。
 func TestPageRedirectFailsClosedWithoutPathLock(t *testing.T) {
-	_, svc, _, projectID := newPageServiceWithRoutes(t)
+	db, svc, _, projectID := newPageServiceWithRoutes(t)
+	ctx := context.Background()
 
 	concrete, ok := svc.(*pageservice.Service)
 	if !ok {
@@ -132,24 +133,54 @@ func TestPageRedirectFailsClosedWithoutPathLock(t *testing.T) {
 	if err == nil {
 		t.Fatal("路径锁关闭时删除重定向仍返回成功：存在无互斥的 FS 处置")
 	}
-	// 真正要证明的是「发布链上清旧路径的入口」在锁关闭时也拒绝：用**真实业务入口**
-	// （删页 → deactivatePathsOf）造夹具，不打任何测试专用导出口。
+	// 真正要证明的是「删页撤链」在锁关闭时也拒绝：用**真实业务入口**造夹具，不打任何
+	// 测试专用导出口。
+	//
+	// 走的是删页的唯一撤链入口 —— page_document.go Delete（有激活路径时）→ 登记下线
+	// 回执（独立短事务，不碰访问面）→ deleteWithDeactivation（业务事务：清路由 + 软删
+	// + 置 businessCommitted）→ 提交后 withdrawDeactivatedLinks：顾问锁 + 回执重读，
+	// 再在 withPaths 内复验归属并 publication.Deactivate。锁被关掉时 fail closed 发生在
+	// **withPaths 那一步**（pipeline.ErrPathLockerUnavailable）—— 此时业务事务已提交，
+	// 但链接一个字节都没动，回执留 pending。这里断言的是「链接还在」，不是「删除没发生」。
+	//
+	// 注意与旧路径处置链的区别：settleOldPathLocked → prepareOldPathSettle 在
+	// WithRedirect=false 时**根本不写 FS**（纯 Deactivate 前就返回 nil loc），那条分支下
+	// 「锁关闭仍成功」是正确行为，拿它当红线测不到任何东西，所以本用例打的是删页这一侧。
 	page := createPage(t, svc, projectID, "/lock/closed-page", publishContextDoc)
 	buildAndPublish(t, svc, page.ID)
 	if live := activeLinkExists(t, "/lock/closed-page"); !live {
 		t.Fatal("前置失败：页面应已上线")
 	}
 
-	derr := svc.Delete(context.Background(), &pagedto.DeleteReq{ID: page.ID})
-	if derr == nil {
-		t.Fatal("路径锁关闭时删页仍返回成功：存在无互斥的 FS 处置")
+	// fail closed 的表现是「保 pending」，**不是**把错误抛给调用方：删页已经提交，
+	// 报错会让调用方重试并撞上「页面不存在」。错误只在收敛侧可见（回执保持 pending，
+	// 下一轮再判），所以这里不要求 derr 非 nil。
+	if derr := svc.Delete(ctx, &pagedto.DeleteReq{ID: page.ID}); derr != nil {
+		t.Logf("删除返回错误（允许：撤链失败也会保 pending 交收敛）: %v", derr)
 	}
-	if !errors.Is(derr, pipeline.ErrPathLockerUnavailable) {
-		t.Fatalf("期望 fail closed（%v），实际 %v", pipeline.ErrPathLockerUnavailable, derr)
-	}
-	// 链接必须还在：fail closed 的语义是「什么都没动」，不是「动了一半」。
+	// 判据一：访问面一个字节都没动 —— 锁缺失时 Deactivate 根本没执行。
 	if !activeLinkExists(t, "/lock/closed-page") {
 		t.Fatal("fail closed 下访问面链接被删掉了：处置没有真正被拦住")
+	}
+	if kind := activeKind(t, "/lock/closed-page"); kind != "page" {
+		t.Fatalf("fail closed 下访问面应保持页面激活，实际 %q", kind)
+	}
+	// 判据二：回执保持 pending（这次处置没有结案，留待收敛重放）。
+	rec := deactivationReceiptOf(t, db, page.ID)
+	if rec.ReceiptState != pubmodel.ReceiptPending {
+		t.Fatalf("撤链被 fail closed 时回执必须保持 pending，实际 %q", rec.ReceiptState)
+	}
+	// 判据三：业务事务已提交（页面软删 + businessCommitted）—— 与「链接未撤」同时成立，
+	// 这正是收敛重放的前提。
+	if !pageservice.DeactivationBusinessCommittedFromData(rec.ReceiptData) {
+		t.Fatal("业务事务应已提交（businessCommitted=true），否则收敛永远不会撤链")
+	}
+	var deletedAt *time.Time
+	if qerr := db.Raw(`SELECT deleted_at FROM pages WHERE id = ?`, page.ID).Scan(&deletedAt).Error; qerr != nil {
+		t.Fatalf("读取页面失败: %v", qerr)
+	}
+	if deletedAt == nil {
+		t.Fatal("业务事务已提交，页面应已被软删")
 	}
 }
 

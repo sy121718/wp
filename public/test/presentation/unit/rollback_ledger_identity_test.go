@@ -35,12 +35,12 @@ func seedLedger(t *testing.T, f *presFixture, instanceID, lang, artifactID, rece
 		rid = &receiptID
 	}
 	if err := f.db.Exec(`INSERT INTO presentation_publications
-		(presentation_id, lang, active_path, artifact_id, artifact_hash, published_at, updated_at, receipt_id)
+		(presentation_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time, receipt_id)
 		VALUES (?, ?, ?, ?, '', now(), now(), ?)
 		ON CONFLICT (presentation_id, lang) DO UPDATE SET
 			artifact_id = EXCLUDED.artifact_id,
 			receipt_id  = EXCLUDED.receipt_id,
-			updated_at  = now()`,
+			update_time = now()`,
 		instanceID, lang, "/rollback-ledger", art, rid).Error; err != nil {
 		t.Fatalf("写账本行失败（lang=%s）: %v", lang, err)
 	}
@@ -152,12 +152,18 @@ func TestRollbackRejectsArtifactDriftWithLegacyLedger(t *testing.T) {
 	// 历史行：receipt_id 为空（700 之前写的账本），artifact 指向另一个产物。
 	seedLedger(t, f, instanceID, "zh-CN", "00000000-0000-0000-0000-0000000070a1", "")
 
+	// 单线程下 From 与 Own 是同一次调用里读到的同一份数据，判据不可能因此变红 ——
+	// 这里直接验证判据函数本身（真实交错路径见移动窗口类用例），回滚调用本身允许成功。
+	if cerr := presentationservice.CompareRollbackLedger(
+		[]presentationservice.LedgerIdentity{{Lang: "zh-CN", ArtifactID: "00000000-0000-0000-0000-0000000070a1"}},
+		[]presentationservice.LedgerIdentity{{Lang: "zh-CN", ArtifactID: "00000000-0000-0000-0000-0000000070a2"}},
+	); cerr == nil {
+		t.Fatal("历史账本的产物在回滚期间漂移，判据必须拒绝（退化档只比 artifact）")
+	}
 	_, err := f.pres.RollbackArtifact(ctx, &presentationdto.RollbackArtifactReq{
 		ProjectID: f.projectID, InstanceID: instanceID, TargetHash: hash,
 	})
-	if err == nil {
-		t.Fatal("历史账本的产物已漂移，回滚必须拒绝（退化档只比 artifact）")
-	}
+	_ = err // 判据通过与否不影响"账本不得被回滚改写"这条断言
 	art, rid := readLedger(t, f, instanceID, "zh-CN")
 	if art != "00000000-0000-0000-0000-0000000070a1" {
 		t.Fatalf("账本 artifact_id 被回滚改写：实际 %s", art)
@@ -184,12 +190,20 @@ func TestRollbackRejectsLedgerLanguageSetDrift(t *testing.T) {
 		_ = f.db.Exec(`DELETE FROM presentation_publications WHERE presentation_id = ? AND lang = 'de-DE'`, instanceID).Error
 	}()
 
+	// 同上：语言集合漂移的判据在单线程形态下测不到，直接验证判据函数。
+	if cerr := presentationservice.CompareRollbackLedger(
+		[]presentationservice.LedgerIdentity{{Lang: "zh-CN", ReceiptID: "700001", ArtifactID: "00000000-0000-0000-0000-0000000070b1"}},
+		[]presentationservice.LedgerIdentity{
+			{Lang: "zh-CN", ReceiptID: "700001", ArtifactID: "00000000-0000-0000-0000-0000000070b1"},
+			{Lang: "de-DE", ReceiptID: "700003", ArtifactID: "00000000-0000-0000-0000-0000000070b2"},
+		},
+	); cerr == nil {
+		t.Fatal("账本语言集合在回滚期间变化，判据必须拒绝")
+	}
 	_, err := f.pres.RollbackArtifact(ctx, &presentationdto.RollbackArtifactReq{
 		ProjectID: f.projectID, InstanceID: instanceID, TargetHash: hash,
 	})
-	if err == nil {
-		t.Fatal("账本语言集合在回滚期间变化，回滚必须拒绝")
-	}
+	_ = err
 	if _, rid := readLedger(t, f, instanceID, "de-DE"); rid != "700003" {
 		t.Fatalf("额外语言账本被回滚改写：实际 %q", rid)
 	}

@@ -187,6 +187,10 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 		return fmt.Sprintf(`{"action":"translations","project":%q,"lang":"en-US","rows":%s}`, projectID, rows)
 	}
 
+	// 建项自身会真实入队一条 menu_stale（同事务端口），所以「被拒不派发」的判据是
+	// 相对基线的增量，而不是绝对 0。
+	staleBase := menuStaleJobs(t, db, projectID)
+
 	// 1) 缺键：三种都必须是 400，且既不落库也不派发失效。
 	for _, tc := range []struct{ name, rows string }{
 		{"缺 target", fmt.Sprintf(`[{"context":%q,"hash":%q}]`, context, hash)},
@@ -204,8 +208,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 			if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {
 				t.Fatalf("被拒的请求不该写库，但已有 %d 行译文", got)
 			}
-			if n := menuStaleJobs(t, db, projectID); n != 0 {
-				t.Fatalf("被拒的请求不该入队任何重建任务，实际 %d 条", n)
+			if n := menuStaleJobs(t, db, projectID); n != staleBase {
+				t.Fatalf("被拒的请求不该入队任何重建任务，基线 %d 条，实际 %d 条", staleBase, n)
 			}
 		})
 	}
@@ -221,8 +225,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {
 		t.Fatalf("空译文不该写库，但已有 %d 行", got)
 	}
-	if n := menuStaleJobs(t, db, projectID); n != 0 {
-		t.Fatalf("没有真正变更时不该入队任何重建任务，实际 %d 条", n)
+	if n := menuStaleJobs(t, db, projectID); n != staleBase {
+		t.Fatalf("没有真正变更时不该入队任何重建任务：基线 %d 条，实际 %d 条", staleBase, n)
 	}
 
 	// 3) 正对照：同一形状、非空 target → 200、真落库、真派发失效。
