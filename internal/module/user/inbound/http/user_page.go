@@ -120,7 +120,7 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	} else {
 		view.Rows = []any{}
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, CustomerCohortPageTemplate, view)
 }
 
 // customer_handle.go — 后台客户管理页（GET /admin/customers 列表、GET /admin/customers/detail 详情）。
@@ -659,11 +659,11 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	// 分页条：handler 只交事实（pkg/pagination.Page），信息行与链接由
 	// admin/partials/pagination.html 用 sprintf / queryURL 现算；
 	// 单页 / 空集时 HasPagination 为假，片段自然不渲染。
-	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
+	view.Pagination = pagination.Page{
 		Total: customerTotal(list), Page: page, Limit: limit,
 		Base: reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter)),
-	})
-	pageview.Render(c, view)
+	}
+	pageview.RenderTemplate(c, CustomersListPageTemplate, view)
 }
 
 // CustomerDetailPage 客户详情（GET /admin/customers/detail?id=）。
@@ -680,7 +680,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	// 页面上的提示条只剩一个来源：本页自己的取数失败。
 
 	if h.users == nil {
-		pageview.Render(c, customerDetailPageData(
+		pageview.RenderTemplate(c, CustomerDetailPageTemplate, customerDetailPageData(
 			customerLabelText(c, customerDetailPageTitleLabel), c,
 			nil, nil, "", nil, false, false, customerUnavailableLabel.msg()))
 		return
@@ -747,7 +747,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		detail, projects, selected, summary, !projectsErr.Empty(), !summaryErr.Empty(),
 		customerMsgFirst(projectsErr, summaryErr))
 	applyCustomerMembership(memberData, h.membershipView(ctx, c, selected, id))
-	pageview.Render(c, memberData)
+	pageview.RenderTemplate(c, CustomerDetailPageTemplate, memberData)
 }
 
 // customerListBackKeys 列表写动作回跳要带回来的筛选上下文。
@@ -1251,7 +1251,7 @@ func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 		}
 	}
 
-	pageview.Render(c, customerOverviewPageData(customerLabelText(c, customerOverviewTitleLabel), rng, growth, errMsg))
+	pageview.RenderTemplate(c, CustomerOverviewPageTemplate, customerOverviewPageData(customerLabelText(c, customerOverviewTitleLabel), rng, growth, errMsg))
 }
 
 // customerRfmPath 页面路径（菜单 seed 与导航高亮都用它）。
@@ -1405,9 +1405,8 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 	if segment != "" {
 		rfnBase += "&segment=" + segment
 	}
-	_ = adminui.AttachPaginationView(view, "", nil,
-		pagination.Page{Total: total, Page: page, Limit: limit, Base: rfnBase})
-	pageview.Render(c, view)
+	view.Pagination = pagination.Page{Total: total, Page: page, Limit: limit, Base: rfnBase}
+	pageview.RenderTemplate(c, CustomerRfmPageTemplate, view)
 }
 
 // customerRfmRows 把 RFM 明细补上客户资料（姓名 / 邮箱 / 详情链接）。

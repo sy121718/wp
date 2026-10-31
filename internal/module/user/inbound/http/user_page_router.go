@@ -20,6 +20,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
+	pageview "go_wp/pkg/view"
 )
 
 // SetupCustomerPages 注册后台客户管理页（pages = /admin 后台页面组）。
@@ -70,27 +71,27 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetMembershipFilters(membershipAdmin, membershipTiers)
 	pages.GET("/customers",
 		adminui.PageAuthz("/api/customer/list"),
-		adminui.PageSlot(CustomersListPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomersPage)
 	// 客户概览：目录（客户）下的第一项。只读 —— 只读不等于不鉴权，菜单隐藏不是访问控制
 	//（AGENTS.md §4.3）。与列表页同源（同一张 users 表的两种看法），借同一个读权限点。
 	pages.GET("/customers/overview",
 		adminui.PageAuthz("/api/customer/list"),
-		adminui.PageSlot(CustomerOverviewPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerOverviewPage)
 	// RFM 分析：客户目录下的第三项。与列表页同源（同一张表的另一种看法），同一个读权限点。
 	pages.GET("/customers/rfm",
 		adminui.PageAuthz("/api/customer/list"),
-		adminui.PageSlot(CustomerRfmPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerRfmPage)
 	// 群组留存：客户目录下的第四项。同一批客户按时间的另一种看法，不是另一份数据。
 	pages.GET("/customers/cohort",
 		adminui.PageAuthz("/api/customer/list"),
-		adminui.PageSlot(CustomerCohortPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerCohortPage)
 	// 客户详情：二级页面（菜单表没有它），但它是整页导航目标 —— 直输 URL 必须同样被拦。
 	pages.GET("/customers/detail",
 		adminui.PageAuthz("/api/customer/list"),
-		adminui.PageSlot(CustomerDetailPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerDetailPage)
 }
