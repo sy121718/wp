@@ -34,10 +34,10 @@ func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
 	}
 	data, err := h.movementsData(c, query)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaMovements, err))
+		pageview.RenderTemplate(c, InventoryMovementsPageTemplate, inventoryPageErrorData(c, inventoryMetaMovements, err))
 		return
 	}
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, InventoryMovementsPageTemplate, data)
 }
 
 // movementsData 取齐流水页的数据并组成视图。

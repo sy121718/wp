@@ -33,10 +33,10 @@ func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
 	}
 	data, err := h.transfersData(c, query)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaTransfers, err))
+		pageview.RenderTemplate(c, InventoryTransfersPageTemplate, inventoryPageErrorData(c, inventoryMetaTransfers, err))
 		return
 	}
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, InventoryTransfersPageTemplate, data)
 }
 
 // transfersData 取齐调拨页的数据并组成视图（强类型，见 TransferListPageResp）。

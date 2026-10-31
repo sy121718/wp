@@ -39,7 +39,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		return
 	}
 	tr := shell.TranslateFor(c)
-	pageview.Render(c, &inventorydto.WarehousesPageResp{
+	pageview.RenderTemplate(c, InventoryWarehousesPageTemplate, &inventorydto.WarehousesPageResp{
 		Title:               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		Menu:                "inventory-warehouses",
 		Projects:            toAnySlice(projects),

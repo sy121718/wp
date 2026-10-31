@@ -40,10 +40,10 @@ func (h *inventoryPageHandle) InventoryStockSKUsPage(c *gin.Context) {
 	}
 	data, err := h.stockSKUsData(c, query)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaStockSKUs, err))
+		pageview.RenderTemplate(c, InventoryStockSKUsPageTemplate, inventoryPageErrorData(c, inventoryMetaStockSKUs, err))
 		return
 	}
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, InventoryStockSKUsPageTemplate, data)
 }
 
 // stockSKUsData 取齐台账页的数据并组成视图（强类型，见 StockSKUListPageResp）。

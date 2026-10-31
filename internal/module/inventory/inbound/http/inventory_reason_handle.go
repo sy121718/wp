@@ -42,7 +42,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	tr := shell.TranslateFor(c)
 	// 与库存 / 仓库两页共用同一个视图类型（InventoryPageResp 是三页键集的超集）：
 	// 多给的键不渲染，收益是「键集齐全」由类型保证而不是靠三份装配互相比对。
-	pageview.Render(c, &inventorydto.InventoryPageResp{
+	pageview.RenderTemplate(c, InventoryReasonsPageTemplate, &inventorydto.InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		Menu:            "inventory-reasons",
 		Projects:        projectOptions(projects),

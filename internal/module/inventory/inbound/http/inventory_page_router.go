@@ -18,33 +18,34 @@ import (
 	"go_wp/internal/middleware/builtin"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	pageview "go_wp/pkg/view"
 )
 
 // registerInventoryReadPages 库存域的只读整页（每一屏：路由 + 权限点 + 模板名）。
 //
-// 单独一个函数的理由与 product 同源：一屏一行、模板名就在路由旁边，
-// 而不是在 handler 里再写一遍模板串 —— 失败与成功渲染的必须是同一张模板。
+// 单独一个函数的理由与 product 同源：一屏一行、权限点就在路由旁边；
+// 模板名由 handler 的 pageview.RenderTemplate 声明（失败与成功渲染的必须是同一张模板）。
 func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) {
 	pages.GET("/inventory", adminui.PageAuthz("/api/inventory/warehouse/list"),
-		adminui.PageSlot(InventoryListPageTemplate), h.InventoryPage)
+		pageview.UseRenderer(adminui.RenderPage), h.InventoryPage)
 	// 拆页（2026-09 评审第三轮）：仓库与原因字典各自独立成页 —— 原先它们与
 	// 「手动改库存 / 看流水」挤在同一页靠 <details> 折叠，折叠不是解法。
 	pages.GET("/inventory/warehouses", adminui.PageAuthz("/api/inventory/warehouse/list"),
-		adminui.PageSlot(InventoryWarehousesPageTemplate), h.InventoryWarehousesPage)
+		pageview.UseRenderer(adminui.RenderPage), h.InventoryWarehousesPage)
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
-		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
+		pageview.UseRenderer(adminui.RenderPage), h.InventoryReasonsPage)
 	// 仓库商品 SKU 台账（迁移 642）：与「库存管理」同表不同维度 ——
 	// 库存管理按 SKU 横看各仓，本页按仓纵看一屏货行（含停用的、还没被商品引用的）。
 	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
-		adminui.PageSlot(InventoryStockSKUsPageTemplate), h.InventoryStockSKUsPage)
+		pageview.UseRenderer(adminui.RenderPage), h.InventoryStockSKUsPage)
 	// 库存流水独立页（B4）：库存管理页是「按 SKU 横看各仓」，本页是「跨 SKU 的时间轴」——
 	// 挤在一页时筛 SKU 会把流水一起绑住，想看全局流水就得清空 SKU，而那又同时清掉了
 	// 库存卡的上下文。两页共用一个流水行映射（movementRowResp），只有查询维度不同。
 	pages.GET("/inventory/movements", adminui.PageAuthz("/api/inventory/movement/list"),
-		adminui.PageSlot(InventoryMovementsPageTemplate), h.InventoryMovementsPage)
+		pageview.UseRenderer(adminui.RenderPage), h.InventoryMovementsPage)
 }
 
-// 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
+// 六个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
 const (
 	InventoryListPageTemplate       = "admin/inventory/inventory.html"
 	InventoryWarehousesPageTemplate = "admin/inventory/inventory_warehouses.html"
@@ -91,7 +92,7 @@ func registerInventoryTransferPage(pages *gin.RouterGroup, svc inventorycontract
 	project projectcontract.ProjectService, h *inventoryPageHandle) {
 	transferPages := NewInventoryTransferPageHandle(svc, project, h.listWarehouses)
 	pages.GET("/inventory/transfers", adminui.PageAuthz("/api/inventory/transfer/list"),
-		adminui.PageSlot(InventoryTransfersPageTemplate), transferPages.InventoryTransfersPage)
+		pageview.UseRenderer(adminui.RenderPage), transferPages.InventoryTransfersPage)
 }
 
 // SetupInventoryPages 注册库存域后台页面；pages 为 nil 时整体跳过。

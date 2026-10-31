@@ -209,7 +209,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		"timeTo":      filterTimeTo,
 	})
 	pageData.Pagination = pg
-	pageview.Render(c, pageData)
+	pageview.RenderTemplate(c, InventoryListPageTemplate, pageData)
 }
 
 // listMovements 库存流水列表（按 SKU / 仓库 / 方向 / 原因 / 时间过滤 + 分页）。
