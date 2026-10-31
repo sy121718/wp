@@ -40,7 +40,7 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	pageview.Render(c, redirectPageData(c, res, ""))
+	pageview.RenderTemplate(c, RedirectPageTemplate, redirectPageData(c, res, ""))
 }
 
 // RedirectCreate 新增重定向。
@@ -76,7 +76,7 @@ func (h *Handle) redirectCreateFailure(c *gin.Context, req *pagedto.RedirectCrea
 	view.CreateSource = req.SourcePath
 	view.CreateTarget = req.TargetPath
 	view.CreateFailed = true
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, RedirectPageTemplate, view)
 }
 
 // RedirectDelete 删除一条重定向。结论走整页提示（成功 1 秒后回本页）。

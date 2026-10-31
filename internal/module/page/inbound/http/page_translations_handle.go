@@ -276,7 +276,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		})
 		return
 	}
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, PageTranslationsTemplate, data)
 }
 
 // pageTranslationsFailure 失败页的两个事实档：参数非法（400）与主数据没读到（404 / 500）。
@@ -1184,7 +1184,7 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 		// 不再另造一份字段相同的渲染行 —— 两份必须逐字段等价的定义就是静默分叉的温床。
 		rows = append(rows, list...)
 	}
-	pageview.Render(c, h.translationMissPageData(c, projectID, rows, errFact))
+	pageview.RenderTemplate(c, PageTranslationMissesTemplate, h.translationMissPageData(c, projectID, rows, errFact))
 }
 
 // TranslationMissCancel 把某个（页面 × 语言）取消：调 ExcludePageLang（不另写下线逻辑）。

@@ -205,7 +205,7 @@ func (h *pagesAdminHandle) PagesList(c *gin.Context) {
 			// ReceiptKnown 留 false：这次没读到回执状态，模板不该报「收敛正常」。
 		}
 	}
-	pageview.Render(c, data)
+	pageview.RenderTemplate(c, PagesListPageTemplate, data)
 }
 
 // buildPagesData 组装列表页数据。
@@ -901,7 +901,7 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 			view.Revisions = views
 		}
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, PageHistoryListTemplate, view)
 }
 
 // HistoryRestore 恢复指定修订到草稿（覆盖保存为新修订，由客户端随后整页刷新）。

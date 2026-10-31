@@ -48,6 +48,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 // SetupPageRoutes 自装配 page 模块并注册全部路由。
@@ -138,7 +139,7 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 		return
 	}
 	pages.GET("/pages", adminui.PageAuthz("/api/page/list"),
-		adminui.PageSlot(PagesListPageTemplate), adminHandle.PagesList)
+		pageview.UseRenderer(adminui.RenderPage), adminHandle.PagesList)
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
 	// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
 	// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
@@ -155,7 +156,7 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 都能覆盖任意页面草稿。
 	if workbenchPages != nil {
 		workbenchPages.POST("/workbench/history",
-			adminui.BareSlot(PageHistoryListTemplate), adminHandle.HistoryPanel)
+			pageview.UseRenderer(adminui.RenderBare), adminHandle.HistoryPanel)
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
 	}
 
@@ -185,7 +186,7 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 鉴权：读复用「列出页面」，写复用「保存草稿」—— 保存会写 sys_translation（engine=manual）
 	// 并触发全站标记待重建，与保存草稿同一量级的影响面。
 	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"),
-		adminui.PageSlot(PageTranslationsTemplate), adminHandle.PageTranslations)
+		pageview.UseRenderer(adminui.RenderPage), adminHandle.PageTranslations)
 	pages.POST("/pages/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
 
 	// ══ 缺译报告（U2，只有页面面）══
@@ -199,7 +200,7 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	//
 	// 挂**后台页面组**（Session + CSRF 已具备），写操作显式复用「发布页面」权限点。
 	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
-		adminui.PageSlot(PageTranslationMissesTemplate), adminHandle.TranslationMissesPage)
+		pageview.UseRenderer(adminui.RenderPage), adminHandle.TranslationMissesPage)
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
 
 	// ══ 重定向管理（审计 SEO-025）══
@@ -214,7 +215,7 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 与"它是不是页面出口"无关。
 	g.GET("/redirect",
 		permission.PageRedirectView,
-		adminui.PageSlot(RedirectPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		handle.RedirectPage)
 	g.POST("/redirect/create", permission.PageRedirectCreate, handle.RedirectCreate)
 	g.POST("/redirect/delete", permission.PageRedirectDelete, handle.RedirectDelete)
