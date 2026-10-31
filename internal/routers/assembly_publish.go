@@ -250,6 +250,7 @@ func (a *assembly) buildPublishingModules() {
 	// product 的接口面早于本段装配（assembly.go 的 SetupProductRoutes），所以是后置绑定
 	// 而不是构造参数。漏接的表现是两个端点回 500（装配缺陷可见），不是静默成功。
 	a.productHandle.SetDetailTemplateModePort(a.presentationSvc)
+	marks.mark(portProductDetailTemplateMode)
 	a.pluginSvc = pluginSvc
 	a.collectionResolver = collectionResolver
 	a.pageService = pageService
@@ -820,6 +821,12 @@ func (a *assembly) mountAdminPages() {
 	marks.mark(portProductPageWarehouses)
 	marks.mark(portProductPageTemplates)
 	marks.mark(portProductPageDetailTemplate)
+	// 详情页模板的写侧四个契约在同一处后置转交（product_router.go 的
+	// SetDetailTemplateWriteDeps 调用点）：写动作拿不到它们就回 500，不会静默成功。
+	marks.mark(portProductDetailTemplateWriteDeps)
+	// 词条变更 → 站点待重建：后台词条页的页面失效端口就在下面这行 SetupAdminPages
+	// 内部注入（admin_pages_router.go 的 i18nPages.SetPageMarker），装配段记一笔。
+	marks.mark(portAdminI18nPageMarker)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
 
 	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。

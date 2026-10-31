@@ -13,7 +13,7 @@ import (
 func TestProductErrorDetailSeedPreservesTranslations(t *testing.T) {
 	var seed migrations.Seed
 	for _, item := range migrations.AllSeeds() {
-		if item.Version == "697-product-error-detail-keys" {
+		if item.Version == "697b-product-error-detail-keys" {
 			seed = item
 			break
 		}

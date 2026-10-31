@@ -159,7 +159,7 @@
                             <td>{{r.FieldLabel}} <span class="masterdata-meta">{{r.Field}}</span></td>
                             <td>{{r.OldValue}}</td>
                             <td>{{r.NewValue}}</td>
-                            <td><span class="badge badge-mute">{{r.Origin}}</span></td>
+                            <td>{{include "../partials/badge.html" map("tone", "mute", "label", r.Origin)}}</td>
                             <td>{{r.OperatorID}}</td>
                         </tr>
                         {{end}}

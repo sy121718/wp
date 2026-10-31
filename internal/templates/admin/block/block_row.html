@@ -36,7 +36,7 @@
 <tr data-filter-text="{{b.Name}} {{kind}} {{reuse}} {{ref}}">
     <td class="col-check"><input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}"></td>
     <td>{{b.Name}}</td>
-    <td><span class="badge badge-mute">{{kind}}</span></td>
+    <td>{{include "../partials/badge.html" map("tone", "mute", "label", kind)}}</td>
     <td>{{reuse}}</td>
     <td class="text-mute text-sm">{{dateTime(b.UpdatedAt)}}</td>
     <td class="text-mute text-sm">{{ref}}</td>

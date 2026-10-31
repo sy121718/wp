@@ -115,11 +115,11 @@
    不迁 `product.err.*`。它们是跨模块共享的错误词汇（pkg/facing 与多个模块共用同一批 key，
    迁移等于给每个模块复制一份同义词条，取词链变长、翻译与运营维护成本 × 模块数）。
 2. **商品域私有明细键**（`Detail*`）必须 `product.err.*`，带声明处中文兜底与占位符，
-   i18n 值由迁移复制历史 key 的全部语言（697），保留旧 key 一版。
+   i18n 值由迁移复制历史 key 的全部语言（697b），保留旧 key 一版。
 3. 两个域不得互相穿插：主 key 与明细 key 的兜底表必须不相交。
 
 **落地**：`enums/product_err_detail.go`（明细）、`enums/product_err_fallbacks.go`（主键）、
-`public/migrations/697_product_error_detail_keys.sql`。
+`public/migrations/697b_product_error_detail_keys.sql`。
 
 **验证**：`TestErrorDetailKeysStayInProductDomain`（Detail 常量域前缀 + 兜底一一对应）、
 `TestFallbackTablesAreDisjoint`（两表不相交）、`TestEveryErrorKeyHasFallback`。

@@ -59,12 +59,24 @@ var rawSQLAllowedList = []rawSQLEntry{
 	},
 	{
 		File: "internal/module/page/model/page_tx.go",
-		Max:  1,
-		Reason: "LockPageEntityAdvisoryTx 的 pg_advisory_xact_lock(hashtext(?))：" +
-			"无表、无 Entity 可映射的 PG 事务级顾问锁，GORM 没有对应表达能力。" +
+		Max:  2,
+		Reason: "两处 pg_advisory_xact_lock(hashtext(?))：LockPageEntityAdvisoryTx（键 \"page:\"）" +
+			"与 LockProjectEntityAdvisoryTx（键 \"project:\"）。无表、无 Entity 可映射的 PG 事务级" +
+			"顾问锁，GORM 没有对应表达能力。" +
 			"它补的是行锁取不到的那一段：页面被软删之后 LockPageForActivationTx 永远" +
-			"返回 ErrRecordNotFound，而删除/退役遗留链接的撤销仍必须与正在进行的那次删除互斥" +
+			"返回 ErrRecordNotFound，而删除/退役遗留链接的撤销仍必须与正在进行的那次删除互斥；" +
+			"工程级下线则根本没有实体行可锁（redirect 行的 page_id / presentation_id 都是 NULL）。" +
 			"（与 presentation / product 的同类调用同一先例，各自带类型前缀的键）",
+	},
+	{
+		File: "internal/module/presentation/model/presentation_model.go",
+		Max:  1,
+		Reason: "LockPresentationEntityAdvisoryTx 的 pg_advisory_xact_lock(hashtext(?))（键 \"presentation:\"）：" +
+			"无表、无 Entity 可映射的 PG 事务级顾问锁，GORM 没有对应表达能力（GORM 的 Locking 只能挂在" +
+			"表查询上，表达不了 SELECT 一个只返回 void 的函数）。锁随事务提交/回滚自动释放，" +
+			"所以不需要、也不能用 Unlock 配对。" +
+			"它补的是行锁取不到的那一段：实例行被 DeleteInstanceTx 物理删除后无行可锁，" +
+			"而撤销其遗留访问面链接仍必须与正在进行的那次删除互斥（与 page / product 同类调用同一先例）",
 	},
 	{
 		File: "internal/module/mail/model/mail_marketing_model.go",

@@ -81,9 +81,20 @@ const (
 	// 页面读模型的两条只读端口：注入发生在**模块自装配内部**（product.SetInventoryDeps /
 	// product.SetDetailTemplateDeps 收到依赖后转交给 service 的读模型），装配段只标记
 	// 「Setup 调用发生过」，与 portProductContentStore 同一手法。
-	portProductPageWarehouses      = "product.SetWarehouseOptionsPort"
-	portProductPageTemplates       = "product.SetEntityTemplatePort"
-	portProductPageDetailTemplate  = "product.SetDetailTemplatePort"
+	portProductPageWarehouses     = "product.SetWarehouseOptionsPort"
+	portProductPageTemplates      = "product.SetEntityTemplatePort"
+	portProductPageDetailTemplate = "product.SetDetailTemplatePort"
+	// 详情页模板的**写**依赖（SetupProductRoutes 阶段拿不到的四个契约：模板 / 实例 / 商品 /
+	// 工程），装配期在同一处后置转交给写处理器。它不经过页面读模型的转交方法，
+	// 所以单独一条——与上面三条读侧端口不是同一次注入。
+	portProductDetailTemplateWriteDeps = "product.SetDetailTemplateWriteDeps"
+	// 详情页模板的模式端口：接口面（/api/product 组）要用同一份 presentation 能力，
+	// 而 product 的接口面早于 presentation 装配，因此是后置绑定（assembly_publish.go）。
+	portProductDetailTemplateMode = "product.SetDetailTemplateModePort"
+	// 词条变更 → 站点待重建的页面失效端口（后台词条页 → page 模块）。consumer 侧定义
+	// 最小接口 adminI18nPageMarker（只有一个 MarkStaleForI18n），漏接的表现是
+	// 「改了词条站点不更新」且没有任何报错。
+	portAdminI18nPageMarker        = "admin.SetPageMarker"
 	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
 	portPageExternalArtifactOwners = "page.SetExternalArtifactOwners"
@@ -229,6 +240,12 @@ var wiringManifest = []wiringEntry{
 		"商品新建页的模板候选为空并给「模板能力未装配」提示（同上：与接线前逐字一致）"},
 	{portProductPageDetailTemplate, "contenttemplate + presentation（经 product.SetDetailTemplateDeps 转交）", "product 页面读模型（详情页模板页）", wiringOptionalDegraded,
 		"详情页模板页的模板清单读不到 = 整页 500（它是那一屏的主数据），不再退化成空清单 —— 这一档与接线前逐字一致（接线前同样把 List 失败算装载失败）"},
+	{portProductDetailTemplateWriteDeps, "contenttemplate + presentation + product（经 product.SetupProductRoutes 后置转交）", "product 详情页模板写动作（新建 / 首次发布 / 切换 / 改 URL）", wiringOptionalDegraded,
+		"四个写动作全部拿不到依赖 → 端点回 500（不发静默成功）；页面其余部分照常"},
+	{portProductDetailTemplateMode, "presentation（assembly_publish.go 后置绑定）", "product 详情页双轨写动作（迁移 282）", wiringRequiredPort,
+		"双轨写端点拿不到 presentation 能力 → 整条不可用（回 500）；product 的接口面早于 presentation 装配，所以这条只能是后置绑定"},
+	{portAdminI18nPageMarker, "page", "admin 词条页（词条变更 → 站点待重建）", wiringRequiredPort,
+		"改了词条站点不更新，且**没有任何报错** —— 与页 / 商品 / 导航译文、站点设置同一条失效链，故按必需端口接线（consumer 侧最小接口 adminI18nPageMarker）"},
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
 	// —— 发货 / 销售总览（迁移 624-633）——

@@ -46,7 +46,7 @@
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
             <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
-            {{if !create}}<button type="submit" formnovalidate class="btn" data-write="custom" data-write-url="/api/product/category/seo-score" data-write-handler="product.seo">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
+            {{if !create}}<button type="submit" formnovalidate class="btn" data-requires-js hidden data-write="custom" data-write-url="/api/product/category/seo-score" data-write-handler="product.seo">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
         </div>
         {{if !create}}{{include "product_seo_panel.html"}}{{end}}
     </form>

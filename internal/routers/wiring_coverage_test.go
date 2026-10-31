@@ -84,9 +84,8 @@ var moduleInternalSetters = map[string]string{
 	"SetMembershipDisplay": "user.SetupCustomerPages：形参 membership 转交（会员等级 / 权益只读展示）",
 	"SetMembershipFilters": "user.SetupCustomerPages：形参 membershipAdmin 转交（按等级筛选的两个只读端口）",
 	// —— product ——
-	"SetInventoryDeps":          "product.SetupProductPages：形参 inventories 转交；它在转交方法内注入真端口 product.SetWarehouseOptionsPort（已登记 manifest）",
-	"SetDetailTemplateDeps":     "product.SetupProductPages：形参 contentTemplates + instances 转交；它在转交方法内注入真端口 product.SetEntityTemplatePort / SetDetailTemplatePort（已登记 manifest）",
-	"SetDetailTemplateModePort": "product.SetupProductPages：形参 presentations 转交详情页模板模式端口",
+	"SetInventoryDeps":      "product.SetupProductPages：形参 inventories 转交；它在转交方法内注入真端口 product.SetWarehouseOptionsPort（已登记 manifest）",
+	"SetDetailTemplateDeps": "product.SetupProductPages：形参 contentTemplates + instances 转交；它在转交方法内注入真端口 product.SetEntityTemplatePort / SetDetailTemplatePort（已登记 manifest）",
 	// 发布记录页（B9）：与上面两条同形态 —— 形参 presentations（静态类型 PresentationService
 	// 已嵌入 presentation 的 PublishRecordPort，编译期成立）交进来，在转交方法内部包成
 	// outbound/publishrecord 再注入读模型。不需要运行期断言，也没有第二个真端口要 marks。

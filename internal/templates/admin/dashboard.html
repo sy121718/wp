@@ -12,6 +12,7 @@
        与回答抢地方）。「收起回答」按钮把这一页交还给数据。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 <div class="stack dash-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -352,7 +353,7 @@
                                 <td class="text-mute">{{it.Rank}}</td>
                                 <td class="cell-path">
                                     <div class="text-mono">{{it.Path}}</div>
-                                    {{if it.KindKey}}<span class="badge badge-mute">{{ .["t"](it.KindKey, it.Kind) }}</span>{{end}}
+                                    {{if it.KindKey}}{{kindLabel := tr(it.KindKey, it.Kind)}}{{include "partials/badge.html" map("tone", "mute", "label", kindLabel)}}{{end}}
                                 </td>
                                 <td class="col-num">{{it.Views}}</td>
                             </tr>

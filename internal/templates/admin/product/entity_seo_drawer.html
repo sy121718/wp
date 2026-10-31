@@ -7,7 +7,7 @@
         <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
         <input type="hidden" name="id" value="{{.Product.ID}}">
         <p class="form-hint" data-write-status role="status" hidden></p>
-        <div class="action-row"><button type="submit" class="btn">{{tr("admin.products.row.seoScore", "SEO 评分")}}</button></div>
+        <div class="action-row"><button type="submit" class="btn" data-requires-js hidden>{{tr("admin.products.row.seoScore", "SEO 评分")}}</button></div>
         {{include "product_seo_panel.html"}}
     </form>
     <div class="form-actions"><button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button></div>

@@ -135,7 +135,7 @@
                     <div class="cell-stack">
                     {{range _, l := r.Langs}}
                         <div>
-                            <span class="badge badge-mute">{{if l.Lang}}{{l.Lang}}{{else}}—{{end}}</span>
+                            {{include "../partials/badge.html" map("tone", "mute", "label", l.Lang != "" ? l.Lang : "—")}}
                             {{if l.Online}}
                                 {{if l.OnlinePath}}<a href="{{l.OnlinePath}}" target="_blank" rel="noopener noreferrer"><code>{{l.OnlinePath}}</code></a>{{else}}<span class="move-meta">{{tr("admin.products.publish.pathUnknown", "线上路径未登记")}}</span>{{end}}
                             {{else}}

@@ -96,11 +96,19 @@
 
     // ── 一条问题 ────────────────────────────────────────────────────────────
 
-    // 级别列用模板里成对写好的「名字 + 颜色类」；未收录的 level 走 data-seo-level-missing 兜底。
+    // 级别列：模板给「已取好词的级别名 + tone token」，未收录的 level 走
+    // data-seo-level-missing 兜底。
+    //
+    // 徽标形态只允许有一份（admin/partials/badge.html）。模板侧因此只交
+    // 「tone token + 已取好词的文案」，class 在这里拼成同一形态 —— 模板里再写一遍
+    // <span class="badge badge-…"> 就会让徽标退化成两份实现（门禁按字面量数处数）。
     function levelBadge(dict, level) {
         var tpl = dict ? dict.find('data-seo-level-item', level) : null;
         if (!tpl || !tpl.content) tpl = dict.find('data-seo-level-missing', '');
-        return cloneOf(tpl);
+        var node = cloneOf(tpl);
+        var host = node ? node.querySelector('[data-seo-badge-tone]') : null;
+        if (host) host.className = 'badge badge-' + (host.getAttribute('data-seo-badge-tone') || 'mute');
+        return node;
     }
 
     function detailInto(dict, host, name, value) {
