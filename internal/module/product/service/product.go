@@ -624,6 +624,10 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 			inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
 				masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
 		}
+		// DEC-04：同事务清理别处对本商品的 related_ids 引用（引用者行锁 + 留痕 + 失效）。
+		if cerr := s.cleanRelatedRefsTx(ctx, tx, e.ProjectID, []string{e.ID}, req.OperatorID); cerr != nil {
+			return cerr
+		}
 		if derr := s.m.DeleteTx(ctx, tx, req.ID); derr != nil {
 			return derr
 		}
@@ -637,6 +641,63 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 		return err
 	}
 
+	return nil
+}
+
+// cleanRelatedRefsTx 删除商品时，同事务清掉别处 related_ids 对它的引用（DEC-04 裁决：清理）。
+//
+// 三种策略里选清理的理由：
+//
+//	· 阻止删除（报「仍被引用」）会让「有人顺手在相关商品里挂了它」变成运营删不掉的硬墙，
+//	  而这类引用在后台不可见、也没有逐条摘除的入口 —— 用户只能改数据才能删商品；
+//	· 容忍并在读取剔除，会让 related_ids 里长期留着已删 id：编辑页打开时那个 id 还在，
+//	  构建产物里的相关商品卡会指向 404，且没有任何时刻会自愈；
+//	· 清理把「引用一个被删商品」的唯一正确结果（引用消失）写进同一个事务：删除失败就整体
+//	  回滚，不会出现「商品删了、引用还挂着」的中间态。
+//
+// 被动作废也要留痕：引用者各记一条 related_ids 的 before/after，运营能追到「我没动它，
+// 它的相关商品为什么少了」。
+func (s *Service) cleanRelatedRefsTx(ctx context.Context, tx *gorm.DB, projectID string, deletedIDs []string, operatorID string) error {
+	if len(deletedIDs) == 0 {
+		return nil
+	}
+	refs, err := s.m.ListRelatedReferrersTx(ctx, tx, projectID, deletedIDs)
+	if err != nil || len(refs) == 0 {
+		return err
+	}
+	drop := make(map[string]bool, len(deletedIDs))
+	for _, id := range deletedIDs {
+		drop[id] = true
+	}
+	for _, ref := range refs {
+		// 被删集合里的行不必清理（它自己马上就要消失）。
+		if ref == nil || drop[ref.ID] {
+			continue
+		}
+		before := decodeStrings(ref.RelatedIDs)
+		after := make([]string, 0, len(before))
+		for _, id := range before {
+			if !drop[id] {
+				after = append(after, id)
+			}
+		}
+		if len(after) == len(before) {
+			continue
+		}
+		if uerr := s.m.UpdateRelatedIDsTx(ctx, tx, projectID, ref.ID, orIDList(after)); uerr != nil {
+			return uerr
+		}
+		// 引用者也是「集合成员可能变化」的实体：相关商品卡少了一张，产物要重建。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, ref.ID); xerr != nil {
+			return xerr
+		}
+		input := productChangeInput(ref, masterdataenums.ActionUpdate, masterdataenums.OriginProduct, operatorID,
+			masterdatacontract.NewSnapshot("related_ids", strings.Join(before, ",")),
+			masterdatacontract.NewSnapshot("related_ids", strings.Join(after, ",")))
+		if rerr := s.recordChangesTx(ctx, tx, input); rerr != nil {
+			return rerr
+		}
+	}
 	return nil
 }
 

@@ -678,10 +678,10 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 	}
 	if len(variants) > 0 {
 		out["sku"] = variants[0].SKUCode
-		// 价格汇总走共享纯函数（product_variant_price.go）：这里仍是「全部变体都算」
-		// （onlyEnabled=false），与目录的「只看启用」不同 —— DEC-01 待定，本批不改口径。
-		// 改的只是同价决胜与遍历写法：决胜规则从此只有一份，两条公开路径不会分叉。
-		summary := summarizeVariantPrices(variants, false)
+		// 价格汇总走共享纯函数（product_variant_price.go）：启用范围与目录统一为
+		// 「只看启用变体」（DEC-01 裁决）—— 未启用规格的价格不该出现在公开字段里，
+		// 否则集合卡会把「下架的高价规格」算进价格区间，与详情页对不上。
+		summary := summarizeVariantPrices(variants, true)
 		if summary.HasAny {
 			out["price"] = formatPrice(summary.MinPrice)
 			out["minPrice"] = formatPrice(summary.MinPrice)
@@ -692,8 +692,9 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 				out["priceRange"] = formatPrice(summary.MinPrice) + " ~ " + formatPrice(summary.MaxPrice)
 			}
 		}
-		if summary.MaxCompare != nil {
-			out["comparePrice"] = formatPrice(*summary.MaxCompare)
+		// 划线价与售价同源（同一个最低价变体）：不再跨变体取最大值。
+		if compare := summary.ComparePrice(); compare != nil {
+			out["comparePrice"] = formatPrice(*compare)
 		}
 	}
 	// 评分（issue #30）：由评分明细投影算出（明细已 Preload），商品表上没有评分列。

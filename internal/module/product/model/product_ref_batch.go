@@ -17,8 +17,10 @@ package productmodel
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -263,6 +265,36 @@ func (m *Model) ProductRefsByRelatedIDs(ctx context.Context, productIDs, project
 		return nil, err
 	}
 	return hits, nil
+}
+
+// ListRelatedReferrersTx 同事务内**锁住**并把 ids 当相关商品引用的本工程商品（DEC-04 清理用）。
+//
+// 与上面的 ProductRefsByRelatedIDs 分工：那条是只读扫描（回答「谁引用了它」，给拒绝/诊断用），
+// 这条是写路径的同事务版本 —— 不只读，还按 id 升序 FOR UPDATE，清理期间别的写操作不能把
+// 引用重新塞回去。锁序按 id 升序，与批量删除的 LockProductsTx 一致；工程内的写操作此前都已
+// 先拿工程顾问锁，所以这里不会与另一条删除形成环。
+func (m *Model) ListRelatedReferrersTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) ([]*ProductEntity, error) {
+	rows := make([]*ProductEntity, 0)
+	if len(ids) == 0 || projectID == "" {
+		return rows, nil
+	}
+	err := tx.WithContext(ctx).Model(&ProductEntity{}).
+		Select("id, project_id, name, related_ids").
+		Where("project_id = ? AND jsonb_exists_any(related_ids, ?::text[])", projectID, textArrayParam(ids)).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&rows).Error
+	return rows, err
+}
+
+// UpdateRelatedIDsTx 写回清理后的 related_ids（只动这一列与 update_time）。
+//
+// 用显式工程谓词而不是只按主键：调用方拿到的行是锁内读的，但写语句本身也必须是
+// 「同工程」—— 否则一次工程解析错误就会改到别的工程的商品。
+func (m *Model) UpdateRelatedIDsTx(ctx context.Context, tx *gorm.DB, projectID, id string, related json.RawMessage) error {
+	return tx.WithContext(ctx).Model(&ProductEntity{}).
+		Where("id = ? AND project_id = ?", id, projectID).
+		Updates(map[string]any{"related_ids": related, "update_time": time.Now()}).Error
 }
 
 // ProductRefsByTagIDs 批量反查「这批标签各自被哪些商品引用」（tag_ids jsonb 数组）。

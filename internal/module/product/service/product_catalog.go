@@ -91,18 +91,25 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 	// 而是为了让**同样的输入产生同样的绑定参数**：map 遍历顺序随机，不排序的话每次请求的
 	// 数组字面量都不同，EXPLAIN 与预算对比就永远比不出差异（PRD-007/018 的测量前提）。
 	sort.Strings(f.IDs)
-	out.Total, err = s.m.CountForCollection(ctx, f)
+	// 总数与本页一次取回（DEC-06 裁决）：旧写法先 Count 再 List，两条语句之间有人
+	// 删/上架一条商品，徽章上的总数就会与本页能翻出来的行不是同一时刻的事实
+	// （实测 total=21、第 2 页 0 行）。COUNT(*) OVER() 让 total 与本页来自同一快照。
+	offset := (page - 1) * size
+	rows, total, err := s.m.ListForCollectionPageWithTotal(ctx, f, size, offset)
 	if err != nil {
 		return nil, err
 	}
-	// 页内无候选就不必再发一条带深 OFFSET 的取数（越界页与空结果集都走这里）：
-	// 计数已经把「这一页有没有东西」答完了 —— 省掉的正是深分页最贵的那一段。
-	if out.Total == 0 || int64((page-1)*size) >= out.Total {
+	out.Total = total
+	if len(rows) == 0 {
+		// 窗口计数只在有行时才有值：第 1 页空页 = 过滤后确实 0 条（total 就是 0，不必再数）；
+		// 越界页（page>1）才需要退回一次计数，把「共 N 条」补准给分页器。
+		// 代价只有越界页这一条，常规翻页从原来的「count + 本页」两条降到一条。
+		if page > 1 {
+			if out.Total, err = s.m.CountForCollection(ctx, f); err != nil {
+				return nil, err
+			}
+		}
 		return out, nil
-	}
-	rows, err := s.m.ListForCollection(ctx, f, size, (page-1)*size)
-	if err != nil {
-		return nil, err
 	}
 	ids := make([]string, 0, len(rows))
 	values := make([]map[string]string, 0, len(rows))

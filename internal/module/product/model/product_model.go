@@ -558,6 +558,20 @@ func whereJsonbAnyOrAll(q *gorm.DB, column string, ids []string, all bool) *gorm
 	return q.Where("("+strings.Join(conds, join)+")", args...)
 }
 
+// collectionSelectColumns 集合源投影列（List / Count / 分页同快照三条共用一份）。
+//
+// 之所以是常量而不是各处 Select：分页版要在同一份投影后追加 COUNT(*) OVER()，
+// 两处各写一份列清单，迟早出现「分页版少一列 → 那一列在第二页之后恒为空」。
+const collectionSelectColumns = "id, project_id, name, subtitle, description, slug, status, sort, unit, " +
+	"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
+	"default_image, create_time, update_time, " +
+	// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
+	// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
+	"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price, " +
+	// 评分聚合（issue #30 / PERF-004）：一次子查询取均值与条数，不 Preload 全量明细。
+	"(SELECT AVG(r.score) FROM product_ratings r WHERE r.product_id = products.id) AS rating_avg, " +
+	"(SELECT COUNT(*)::int FROM product_ratings r WHERE r.product_id = products.id) AS rating_count"
+
 // collectionQuery 集合源的查询构建：投影 + 全部过滤条件，List 与 Count 共用。
 //
 // 抽出来是为一件事：**分页的总量**（审计 PERF-019）必须按与取数完全一致的过滤条件去数。
@@ -576,16 +590,7 @@ func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFi
 	// tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
 	// 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷：
 	// 当时只取了列表展示需要的几列，白名单字段却已经放开了）。
-	q := tx.WithContext(ctx).Model(&ProductEntity{}).Select(
-		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
-			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
-			"default_image, create_time, update_time, " +
-			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
-			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
-			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price, " +
-			// 评分聚合（issue #30 / PERF-004）：一次子查询取均值与条数，不 Preload 全量明细。
-			"(SELECT AVG(r.score) FROM product_ratings r WHERE r.product_id = products.id) AS rating_avg, " +
-			"(SELECT COUNT(*)::int FROM product_ratings r WHERE r.product_id = products.id) AS rating_count")
+	q := tx.WithContext(ctx).Model(&ProductEntity{}).Select(collectionSelectColumns)
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
@@ -719,27 +724,73 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	// 都从 core.BuildProjectID(ctx) 拿 —— 缺工程时**显式报 ErrInvalidProjectID**，
 	// 不退化成「不限工程」（后者换非超级角色后静默 0 行，集合卡整块变空）。
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
-		q := m.collectionQuery(tx, ctx, f)
-		switch f.Order {
-		case "newest":
-			q = q.Order("create_time DESC, id ASC")
-		case "oldest":
-			q = q.Order("create_time ASC, id ASC")
-		case "priceAsc":
-			q = q.Order("min_price ASC NULLS LAST, id ASC")
-		case "priceDesc":
-			q = q.Order("min_price DESC NULLS LAST, id ASC")
-		case "ratingDesc":
-			q = q.Order("rating_avg DESC NULLS LAST, id ASC")
-		default:
-			q = q.Order("sort ASC, create_time ASC, id ASC")
-		}
+		q := orderCollectionQuery(m.collectionQuery(tx, ctx, f), f.Order)
 		if limit > 0 {
 			q = q.Limit(limit).Offset(offset)
 		}
 		return q.Find(&list).Error
 	})
 	return list, err
+}
+
+// ListForCollectionPageWithTotal 一页数据 + 同一条语句算出的总数（DEC-06）。
+//
+// 为什么不再「先 Count 再 List」：两条语句之间有人删/上架一条商品，徽章上的总数与
+// 本页能翻出来的行就不是同一时刻的事实 —— 实测出现过 total=21、第 2 页 0 行。
+// COUNT(*) OVER() 在 LIMIT/OFFSET 之前算完，total 与本页行来自同一快照、同一计划。
+//
+// 空页（越界 offset / 过滤后无行）时窗口函数没有任何行可返回，total 无从得知：
+// 这时调用方退回 CountForCollection 取一次 —— 只有越界页走那条路，常规翻页仍是单查询。
+// 这不是把同快照偷偷降级：常规路径的徽章与行已经不可能互相矛盾，越界页只为一个
+// 「共 N 条」的空页提示服务。
+func (m *Model) ListForCollectionPageWithTotal(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, total int64, err error) {
+	rows := make([]collectionPageRow, 0)
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := orderCollectionQuery(m.collectionQuery(tx, ctx, f), f.Order)
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		// 同一份投影后追加窗口计数：列清单只有 collectionSelectColumns 一处。
+		return q.Select(collectionSelectColumns + ", COUNT(*) OVER() AS total_count").Find(&rows).Error
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	list = make([]*ProductEntity, 0, len(rows))
+	for i := range rows {
+		list = append(list, &rows[i].ProductEntity)
+		if rows[i].TotalCount > total {
+			total = rows[i].TotalCount
+		}
+	}
+	return list, total, nil
+}
+
+// collectionPageRow 集合页行：实体字段 + 窗口计数列（不写进实体，不污染读模型）。
+type collectionPageRow struct {
+	ProductEntity
+	TotalCount int64 `gorm:"column:total_count"`
+}
+
+// orderCollectionQuery 集合源的确定性排序；List 与分页同快照版共用这一份。
+//
+// 每个分支都以 id ASC 收尾：排序键不唯一时 SQL 返回顺序取决于计划，同一份数据
+// 两次构建可能给出不同顺序 —— 直接违反「同输入同产物字节」（不变量 5）。
+func orderCollectionQuery(q *gorm.DB, order string) *gorm.DB {
+	switch order {
+	case "newest":
+		return q.Order("create_time DESC, id ASC")
+	case "oldest":
+		return q.Order("create_time ASC, id ASC")
+	case "priceAsc":
+		return q.Order("min_price ASC NULLS LAST, id ASC")
+	case "priceDesc":
+		return q.Order("min_price DESC NULLS LAST, id ASC")
+	case "ratingDesc":
+		return q.Order("rating_avg DESC NULLS LAST, id ASC")
+	default:
+		return q.Order("sort ASC, create_time ASC, id ASC")
+	}
 }
 
 // CountForCollection 满足同一组过滤条件的总条数（审计 PERF-019）：分页算总页数要用。

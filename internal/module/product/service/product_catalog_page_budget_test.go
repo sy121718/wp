@@ -9,8 +9,9 @@ package productservice_test
 //   计数已经把「这一页有没有东西」答完了，越界页与空结果集不该再发一条带深 OFFSET 的
 //   取数，也不该为一行都取不到的结果去读变体价与标签。
 //
-// 判据是**读 products 表的语句条数**（不是总语句数）：整页两次（count + 本页投影）是常态，
-// 空页一次（只有 count）。用条数而不是耗时：条数与机器无关，耗时不是。
+// 判据是**读 products 表的语句条数**（不是总语句数）：常规页一次（COUNT(*) OVER() 与
+// 本页同一语句，DEC-06 裁决）；越界页两次（本页查不到行 → 退回一次 count 补总数）；
+// 空候选一次都不读。用条数而不是耗时：条数与机器无关，耗时不是。
 
 import (
 	"context"
@@ -82,18 +83,19 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 		return out, probe.productTableReads()
 	}
 
-	t.Run("首页读两次商品表（count + 本页投影）", func(t *testing.T) {
+	t.Run("首页一条语句同时给总数与本页（DEC-06 同快照）", func(t *testing.T) {
 		s, _ := newCatalogService(paths)
 		out, reads := read(t, s, 1, 12)
 		if out.Total != total || len(out.Items) != 12 {
 			t.Fatalf("首页应是 %d 总数 / 12 条，实际 %d / %d", total, out.Total, len(out.Items))
 		}
-		if reads != 2 {
-			t.Fatalf("首页应恰读 2 次 products（count + 本页），实际 %d 次：\n%s", reads, probe.dumpProductTableReads())
+		if reads != 1 {
+			t.Fatalf("首页应恰读 1 次 products（COUNT(*) OVER() 与本页同一语句），实际 %d 次：\n%s",
+				reads, probe.dumpProductTableReads())
 		}
 	})
 
-	t.Run("越界页只读一次并返回空列表", func(t *testing.T) {
+	t.Run("越界页返回空列表且总数仍准确", func(t *testing.T) {
 		s, _ := newCatalogService(paths)
 		out, reads := read(t, s, 100, 12)
 		if len(out.Items) != 0 {
@@ -102,8 +104,10 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 		if out.Total != total || out.Page != 100 {
 			t.Fatalf("越界页的页号与总数应原样回：%+v", out)
 		}
-		if reads != 1 {
-			t.Fatalf("没有页内候选时不该再发取数，应恰读 1 次 products，实际 %d 次：\n%s",
+		// 越界页必然查不到行，窗口计数没有值：退回一次 count 只为了分页器上的「共 N 条」。
+		// 不夹到末页（不返回最后一页的行）——那会让同一个 URL 对应两份内容。
+		if reads != 2 {
+			t.Fatalf("越界页应是本页查询 + 一次 count，实际 %d 次：\n%s",
 				reads, probe.dumpProductTableReads())
 		}
 	})
@@ -131,7 +135,7 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 		}
 		s, _ := newCatalogService(junk)
 		out, reads := read(t, s, 1, 12)
-		if out.Total != total || len(out.Items) != 12 || reads != 2 {
+		if out.Total != total || len(out.Items) != 12 || reads != 1 {
 			t.Fatalf("坏键不应改变候选集合：total=%d items=%d reads=%d", out.Total, len(out.Items), reads)
 		}
 	})

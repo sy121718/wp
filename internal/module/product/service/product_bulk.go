@@ -180,6 +180,10 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 			inputs = append(inputs, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
 				masterdataenums.OriginVariant, "", variantChangeSnapshot(v, nil), nil))
 		}
+		// DEC-04：同事务清理别处对这批商品的 related_ids 引用（引用者行锁 + 留痕 + 失效）。
+		if cerr := s.cleanRelatedRefsTx(ctx, tx, projectID, locked, ""); cerr != nil {
+			return cerr
+		}
 		n, derr := s.m.DeleteProductsTx(ctx, tx, locked)
 		if derr != nil {
 			return derr

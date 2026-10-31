@@ -15,15 +15,14 @@ import productmodel "go_wp/internal/module/product/model"
 
 // variantPriceSummary 一组变体在**给定启用范围**下的价格事实。
 //
-// MinVariant 是「胜出的最低价变体」—— 目录要用它身上的划线价（现口径），
-// MaxCompare 是这组变体里最大的划线价 —— 集合源字段值用它（现口径）。
-// 两个都返回而不是让调用方二次遍历：二次遍历就是决胜规则扩散的开始。
+// MinVariant 是「胜出的最低价变体」。公开价格与划线价都读它身上的事实（DEC-01 裁决）：
+// 划线价必须与售价来自**同一个变体**，不能拿「最低价」配「另一个变体的最高划线价」——
+// 那会把「10 元卖、别人 99 元划线」拼成 89% 折扣，页面上是假的。
 type variantPriceSummary struct {
 	HasAny     bool
 	MinPrice   float64
 	MaxPrice   float64
 	MinVariant *productmodel.VariantEntity
-	MaxCompare *float64
 }
 
 // summarizeVariantPrices 按启用范围汇总价格；onlyEnabled=false 表示「全部变体都算」。
@@ -56,12 +55,19 @@ func summarizeVariantPrices(variants []*productmodel.VariantEntity, onlyEnabled 
 				out.MinPrice, out.MinVariant = v.Price, v
 			}
 		}
-		if v.ComparePrice != nil && (out.MaxCompare == nil || *v.ComparePrice > *out.MaxCompare) {
-			compare := *v.ComparePrice
-			out.MaxCompare = &compare
-		}
 	}
 	return out
+}
+
+// ComparePrice 胜出最低价变体的划线价（没有就是 nil）。
+//
+// 单列方法而不是让调用方再读 MinVariant.ComparePrice：调用点会退化成
+// 「先判 MinVariant 非空、再判字段非空」的三段式，多一处就多一次漏判的机会。
+func (s variantPriceSummary) ComparePrice() *float64 {
+	if s.MinVariant == nil {
+		return nil
+	}
+	return s.MinVariant.ComparePrice
 }
 
 // cheaperVariantWins 同价时是否由 challenger 胜出（id 更小者胜；id 相同则保持先到者）。
