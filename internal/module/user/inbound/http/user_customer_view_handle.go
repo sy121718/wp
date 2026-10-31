@@ -1,6 +1,6 @@
-package userdto
+package userhttp
 
-// user_customer_page_resp.go — 后台客户管理四页的渲染视图（页面 GET 的回执形状）。
+// user_customer_view_handle.go — 后台客户管理四页的渲染视图（页面 GET 的回执形状）。
 //
 // 与 user_resp.go 的分工：那一份是接口契约；这一份是页面视图。
 // **导出字段名就是模板契约**：internal/templates/admin/user/*.html 里的 `.Field`。
@@ -9,7 +9,10 @@ package userdto
 // 是运行时错误（整页 500，错误信息只有模板行号）。用 gin.H 时「少设一个键」是
 // 静默可编译的；用结构体时它至少是个零值（空切片/0），而改名是编译错误。
 
-import "go_wp/pkg/pagination"
+import (
+	userdto "go_wp/internal/module/user/dto"
+	"go_wp/pkg/pagination"
+)
 
 // CohortColumnResp 群组表的列头。
 //
@@ -193,7 +196,7 @@ type CustomersListPageResp struct {
 	Total    int64
 	Page     int
 	Limit    int
-	Counters CustomerCounters
+	Counters userdto.CustomerCounters
 
 	// CounterTabs 计数徽章（状态 / 邮箱 / 锁定三个维度的筛选控件，信息与操作合一）。
 	CounterTabs []CounterTabResp

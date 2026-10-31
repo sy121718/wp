@@ -103,11 +103,11 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	// 而 Jet 对缺席的键（nil）求 len 是运行时错误 —— 症状是整页 500，
 	// 而错误信息只有模板行号，看不出是「少了这个键」。colspan 同理，
 	// 在 Go 侧算好（Jet 的算术是浮点，`{{len(x) + 2}}` 会渲染成「2」这种怪值）。
-	cols := []userdto.CohortColumnResp{}
+	cols := []CohortColumnResp{}
 	rows := res
 	if rows != nil {
 		for k := 0; k < rows.Months; k++ {
-			cols = append(cols, userdto.CohortColumnResp{Index: k, Text: strconv.Itoa(k)})
+			cols = append(cols, CohortColumnResp{Index: k, Text: strconv.Itoa(k)})
 		}
 	}
 	view.Columns = cols
@@ -977,8 +977,8 @@ var membershipFilterUnavailableLabel = userLabel{
 //
 // 取不到时返回空切片（页面渲染成只有一个「不限等级」的选项），**不返回 nil** ——
 // 模板会 range 它，而 Jet 对 nil 求 range 是运行时错误（整页 500）。
-func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []userdto.MembershipTierOptionResp {
-	out := []userdto.MembershipTierOptionResp{}
+func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []MembershipTierOptionResp {
+	out := []MembershipTierOptionResp{}
 	if h.membershipTiers == nil || h.projects == nil {
 		return out
 	}
@@ -994,7 +994,7 @@ func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []userdt
 		// ID 也做成字符串：模板里要与 FilterTier（字符串）比较，
 		// 而 Jet 对 int64 与 string 的 `==` 不会隐式转换（比出来恒为 false，
 		// 表现是「选中态永远停在第一项」，页面不报错）。
-		out = append(out, userdto.MembershipTierOptionResp{ID: strconv.FormatInt(t.ID, 10), Name: t.Name})
+		out = append(out, MembershipTierOptionResp{ID: strconv.FormatInt(t.ID, 10), Name: t.Name})
 	}
 	return out
 }
@@ -1183,10 +1183,10 @@ func customerRangeQuery(rng customerOverviewRange) string {
 // 不再有 `Presets` 键：三页（概览 / 群组 / RFM）的时间筛选条已统一成
 // admin/partials/date_filter.html 组件，档位下拉由它自己渲染 —— 服务端拼胶囊链接的那套
 // 逻辑（customerOverviewPresetLinks）随之删除，留着就是第二份会漂移的真源。
-func customerOverviewPageData(title string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errMsg customerMsg) *userdto.CustomerCohortPageResp {
+func customerOverviewPageData(title string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errMsg customerMsg) *CustomerCohortPageResp {
 	// GrowthReady 与「有数据」是两件事：未接线时给一句人话，而不是一片 0
 	//（0 会被读成「这段时间一个客户都没来」）。同其它页面的降级口径。
-	view := &userdto.CustomerCohortPageResp{
+	view := &CustomerCohortPageResp{
 		Title:       title,
 		Path:        customerOverviewPath,
 		Range:       rng,
@@ -1285,8 +1285,8 @@ type customerRfmRow struct {
 // title 是已取词的成品、错误提示是事实（ErrKey / ErrFallback / HasErr），同概览页。
 func customerRfmPageData(title string, rng customerOverviewRange,
 	res *orderdto.CustomerRfmResp, rows []customerRfmRow,
-	segment string, page, limit int, total int64, errMsg customerMsg) *userdto.CustomerRfmPageResp {
-	view := &userdto.CustomerRfmPageResp{
+	segment string, page, limit int, total int64, errMsg customerMsg) *CustomerRfmPageResp {
+	view := &CustomerRfmPageResp{
 		Title:       title,
 		Path:        customerRfmPath,
 		Range:       rng,
@@ -1302,7 +1302,7 @@ func customerRfmPageData(title string, rng customerOverviewRange,
 		//（0 会被读成「这段时间一个客户都没有」）。同其它页面的降级口径。
 		RfmReady: res != nil,
 		// 空切片而不是 nil：模板会 len() 它。
-		SegmentTabs: []userdto.RfmSegmentTabResp{},
+		SegmentTabs: []RfmSegmentTabResp{},
 	}
 	if res == nil {
 		return view
@@ -1317,23 +1317,23 @@ func customerRfmPageData(title string, rng customerOverviewRange,
 
 // customerRfmSegmentTabs 分段筛选徽章（与客户列表的计数徽章同一条口径：
 // 一个徽章一个链接，URL 由服务端拼好，条件之间可叠加）。
-func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []userdto.RfmSegmentTabResp {
+func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []RfmSegmentTabResp {
 	if res == nil {
 		return nil
 	}
-	mk := func(key, labelKey, label string, count int64) userdto.RfmSegmentTabResp {
+	mk := func(key, labelKey, label string, count int64) RfmSegmentTabResp {
 		url := customerRfmPath + "?" + customerRangeQuery(rng)
 		if key != "" {
 			url += "&segment=" + key
 		}
 		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实：
 		// 分段键、计数、当前是否选中、URL（URL 带时间窗口与其他条件，拼串归服务端）。
-		return userdto.RfmSegmentTabResp{
+		return RfmSegmentTabResp{
 			Key: key, LabelKey: labelKey, Label: label,
 			Count: count, Active: key == active, URL: url,
 		}
 	}
-	return []userdto.RfmSegmentTabResp{
+	return []RfmSegmentTabResp{
 		mk("", userenums.KeyCustomerRfmTabAll, "全部", res.Customers),
 		mk("vip", userenums.KeyCustomerRfmSegmentVip, "高价值", res.Vip),
 		mk("potential", userenums.KeyCustomerRfmSegmentPotential, "潜力", res.Potential),
@@ -1474,8 +1474,8 @@ var customerRfmUnavailableLabel = userLabel{
 // title 是已取词的成品（layout.html 的槽位），pageErr 是**事实**（ErrKey / ErrFallback /
 // HasErr 三个键）—— 取词归模板。
 func customerListPageData(title string, list *userdto.CustomerListResp, filter customerFilter,
-	page, limit int, pageErr customerMsg, capabilityMissing bool) *userdto.CustomersListPageResp {
-	rows := make([]userdto.CustomerListRowResp, 0)
+	page, limit int, pageErr customerMsg, capabilityMissing bool) *CustomersListPageResp {
+	rows := make([]CustomerListRowResp, 0)
 	counters := userdto.CustomerCounters{}
 	if list != nil {
 		counters = list.Counters
@@ -1483,7 +1483,7 @@ func customerListPageData(title string, list *userdto.CustomerListResp, filter c
 			rows = append(rows, customerRow(item))
 		}
 	}
-	return &userdto.CustomersListPageResp{
+	return &CustomersListPageResp{
 		Title:    title,
 		Menu:     "customers",
 		Rows:     rows,
@@ -1509,7 +1509,7 @@ func customerListPageData(title string, list *userdto.CustomerListResp, filter c
 		FilterTier:        customerTierQueryValue(filter.TierID),
 		// TierOptions 给空切片兜底（handler 会覆盖成真实选项）：
 		// 渲染测试直接调本函数，而模板 `{{range .TierOptions}}` 对 nil 是运行时错误。
-		TierOptions: []userdto.MembershipTierOptionResp{},
+		TierOptions: []MembershipTierOptionResp{},
 		ErrKey:      pageErr.Key,
 		ErrFallback: pageErr.Fallback,
 		HasErr:      !pageErr.Empty(),
@@ -1527,8 +1527,8 @@ func customerListPageData(title string, list *userdto.CustomerListResp, filter c
 // （「返回列表」要保留筛选上下文），允许为 nil；pageErr 是事实（三键）。
 func customerDetailPageData(title string, c *gin.Context, detail *userdto.CustomerResp, projects []projectcontract.ProjectResp,
 	selected string, summary *ordercontract.CustomerOrderSummaryResp,
-	projectsFailed, summaryFailed bool, pageErr customerMsg) *userdto.CustomerDetailPageResp {
-	view := &userdto.CustomerDetailPageResp{
+	projectsFailed, summaryFailed bool, pageErr customerMsg) *CustomerDetailPageResp {
+	view := &CustomerDetailPageResp{
 		Title:           title,
 		Menu:            "customers",
 		ErrKey:          pageErr.Key,
@@ -1617,12 +1617,12 @@ func customerDetailPageData(title string, c *gin.Context, detail *userdto.Custom
 // 把表格切成一段段正文（02-J §2.1）。两者用的是**同一批词条**
 // （userenums.LabelKeyPendingHint / LockedHint / FailuresHint），所以两个页面上的解释不会漂移；
 // 列表模板读词条、详情页读这里的键 —— 同一句话，一处取词两处显示。
-func customerRow(item *userdto.CustomerResp) userdto.CustomerListRowResp {
+func customerRow(item *userdto.CustomerResp) CustomerListRowResp {
 	// 展示名一律「key + 中文兜底」两个键，且唯一的来源是 userenums ——
 	// 页面不再自造文案（此前这里给的是中文，模板直接渲染，英文界面恒中文）。
 	statusKey, statusFallback := userenums.StatusLabel(item.Status)
 	verifyKey, verifyFallback := userenums.EmailVerifiedLabel(item.EmailVerified)
-	row := userdto.CustomerListRowResp{
+	row := CustomerListRowResp{
 		ID:       item.ID,
 		Username: customerTextOrEmpty(item.Username),
 		Email:    customerTextOrEmpty(item.Email),
@@ -1695,7 +1695,7 @@ func customerStatusText(c *gin.Context, status int) string {
 // URL 一律在这里生成（模板不拼查询串）：只动自己那个维度的参数，其余条件原样保留；
 // 「全部」清掉状态 / 邮箱 / 锁定三个维度的取值，回到「不按维度筛」（关键词与时间仍在）。
 // 计数为 0 的徽章同样可点 —— 点进去看到空列表是合理预期，禁用反而像功能坏了。
-func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilter) []userdto.CounterTabResp {
+func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilter) []CounterTabResp {
 	setStatus := func(v int) func(url.Values) {
 		return func(q url.Values) {
 			if v == customerStatusAll {
@@ -1747,7 +1747,7 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 		{"unverified", unverifiedKey, unverifiedLabel, counters.Unverified,
 			filter.EmailVerified == userdto.EmailVerifiedNo, setVerified(userdto.EmailVerifiedNo)},
 	}
-	out := make([]userdto.CounterTabResp, 0, len(tabs))
+	out := make([]CounterTabResp, 0, len(tabs))
 	for _, t := range tabs {
 		q := url.Values{}
 		for k, val := range customerFilterValues(filter) {
@@ -1761,7 +1761,7 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 			target += "?" + q.Encode()
 		}
 		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实。
-		out = append(out, userdto.CounterTabResp{
+		out = append(out, CounterTabResp{
 			Key: t.Key, LabelKey: t.LabelKey, Label: t.Label,
 			Count: t.Count, Active: t.Active, URL: target,
 		})
@@ -2227,7 +2227,7 @@ func (h *customerPageHandle) membershipFacingMsg(c *gin.Context, err error) cust
 //
 // **渲染键恒设**（包括空值）是硬要求：Jet 的 `{{if .X}}` 遇到缺失的键会中断整页渲染
 // → 500 → htmx 不 swap（用户在浏览器里看不到任何反应）。
-func applyCustomerMembership(dst *userdto.CustomerDetailPageResp, view customerMembershipView) {
+func applyCustomerMembership(dst *CustomerDetailPageResp, view customerMembershipView) {
 	dst.MembershipNoticeKey = view.Notice.Key
 	dst.MembershipNoticeFallback = view.Notice.Fallback
 	dst.HasMembershipNotice = !view.Notice.Empty()
