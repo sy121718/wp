@@ -295,13 +295,13 @@ func triggerLabelOf(tr mailTr, value string) string {
 // 判据没变：只有三个已知状态能进文案，其余（含空串、任意提交值）回落「未知状态」。
 
 // triggerOptions 触发方式下拉的选项（带选中态）。
-func triggerOptions(tr mailTr, selected string) []maildto.OptionResp {
+func triggerOptions(tr mailTr, selected string) []OptionResp {
 	if selected == "" {
 		selected = "manual"
 	}
-	opts := make([]maildto.OptionResp, 0, len(mailenums.AutomationTriggers))
+	opts := make([]OptionResp, 0, len(mailenums.AutomationTriggers))
 	for _, o := range mailenums.AutomationTriggers {
-		opts = append(opts, maildto.OptionResp{Value: o.Value, Label: mailLabel(tr, o.Label), Selected: o.Value == selected})
+		opts = append(opts, OptionResp{Value: o.Value, Label: mailLabel(tr, o.Label), Selected: o.Value == selected})
 	}
 	return opts
 }

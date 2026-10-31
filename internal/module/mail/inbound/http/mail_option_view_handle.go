@@ -1,6 +1,6 @@
-package maildto
+package mailhttp
 
-// mail_option_resp.go — 邮件后台页的**下拉选项**形状。
+// mail_option_view_handle.go — 邮件后台页的**下拉选项**形状。
 //
 // 邮件的自动化画布有 9 处下拉（步骤类型、条件、目标、账号、模板…），形状完全相同：
 // Value + 已取好词的 Label + Selected。合成一个类型比 9 份 gin.H 更可靠 ——

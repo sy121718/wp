@@ -1,6 +1,6 @@
 package mailhttp
 
-// mail_page_resp.go — 邮件的活动列表页与报表页渲染视图（页面 GET 的回执形状）。
+// mail_view_handle.go — 邮件的活动列表页与报表页渲染视图（页面 GET 的回执形状）。
 //
 // **导出字段名就是模板契约**：internal/templates/admin/mail/*.html 里的 `.Field`。
 // 这个模块的几个页面都用 gin.H 拼，缺键的表现是「HTTP 200 + 正文整块消失」
@@ -9,11 +9,7 @@ package mailhttp
 // 零值可用是硬要求：失败档要渲染**同一张模板**（提示条 + 空列表），
 // 所以每个字段都必须有可渲染的零值（切片给空切片而不是 nil）。
 
-import (
-	maildto "go_wp/internal/module/mail/dto"
-
-	"go_wp/pkg/pagination"
-)
+import "go_wp/pkg/pagination"
 
 // CampaignsPageResp 邮件活动列表整页。
 type CampaignsPageResp struct {
@@ -85,16 +81,16 @@ type AutomationStepRowResp struct {
 	Key   string
 	Type  string
 	// 类型下拉与目标下拉（选中态按行数据判）。
-	TypeOptions      []maildto.OptionResp
+	TypeOptions      []OptionResp
 	Param            string
 	Tag              string
 	UnitValue        string
-	UnitOptions      []maildto.OptionResp
-	ConditionOptions []maildto.OptionResp
+	UnitOptions      []OptionResp
+	ConditionOptions []OptionResp
 	Yes              string
 	No               string
-	YesOptions       []maildto.OptionResp
-	NoOptions        []maildto.OptionResp
+	YesOptions       []OptionResp
+	NoOptions        []OptionResp
 	StepLabel        string
 	NextLabel        string
 
@@ -134,7 +130,7 @@ type AutomationEditPageResp struct {
 	FallbackRows []AutomationFallbackRowResp
 
 	Types      []any
-	Triggers   []maildto.OptionResp
+	Triggers   []OptionResp
 	CanAddStep bool
 	// Err 本页的表单校验文案（空串 = 无错误）；写动作结论走提示页。
 	Err       string
@@ -156,7 +152,7 @@ type AutomationCanvasPageResp struct {
 	// 画布顶栏的两个输入控件选项：触发方式下拉与节点类型 palette。
 	// 由 enums 与 palette 现算（每次一样、与实体无关），但模板要 range 它们，
 	// 所以必须进视图 —— 视图是模板唯一的数据来源。
-	Triggers  []maildto.OptionResp
+	Triggers  []OptionResp
 	NodeTypes []map[string]any
 	// 新建 vs 编辑：新建时名称与触发方式是空/默认值，模板据此给输入框初值。
 	IsNew bool
