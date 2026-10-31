@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// resolvePricingTargetsTx 依次锁自动标签、商品与变体；算价和写回共用锁后的快照。
 func (s *Service) resolvePricingTargetsTx(ctx context.Context, tx *gorm.DB, pr *pricingRequest) ([]*pricingTarget, error) {
 	projectID, err := s.resolveProjectID(ctx, pr.projectID)
 	if err != nil {
@@ -52,7 +51,7 @@ func (s *Service) resolvePricingTargetsTx(ctx context.Context, tx *gorm.DB, pr *
 	if len(blocked) > 0 {
 		return nil, bulkRejected(blocked)
 	}
-	// 等待商品锁期间条件可能变化，锁后复查完整变体集合；扩大或缩小都整批拒绝。
+
 	original := targets
 	targets, err = resolvePricingTargets(ctx, m, pr)
 	if err != nil {
@@ -91,7 +90,6 @@ func (s *Service) resolvePricingTargetsTx(ctx context.Context, tx *gorm.DB, pr *
 	return targets, nil
 }
 
-// pricingTargetChanges 返回锁前锁后范围的差集，不把已退出筛选的变体静默略过。
 func pricingTargetChanges(before, after []*pricingTarget) []facing.BlockedItem {
 	oldIDs := make(map[string]bool, len(before))
 	newIDs := make(map[string]bool, len(after))

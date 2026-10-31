@@ -1,4 +1,3 @@
-// Package unit builder 编译内核（docs/02-A 页面设置与容器规范）的单元测试。
 package unit
 
 import (
@@ -8,7 +7,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// validPageJSON 覆盖规范主要能力点的最小合法页面文档。
 const validPageJSON = `{
   "settings": {
     "layout": {
@@ -46,7 +44,6 @@ const validPageJSON = `{
   ]
 }`
 
-// parse 编析测试文档。
 func parse(t *testing.T, jsonStr string) *builder.Page {
 	t.Helper()
 	p, err := builder.ParsePage([]byte(jsonStr))
@@ -56,7 +53,6 @@ func parse(t *testing.T, jsonStr string) *builder.Page {
 	return p
 }
 
-// TestPageSettingsCompile 页面设置：版心/基底样式/SEO/body class 全部生效。
 func TestPageSettingsCompile(t *testing.T) {
 	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
@@ -67,7 +63,6 @@ func TestPageSettingsCompile(t *testing.T) {
 		t.Errorf("SEO 信息丢失: %q / %q", c.Title, c.MetaDescription)
 	}
 
-	// body class：基础 + 模式 + 自定义。
 	joined := strings.Join(c.BodyClasses, " ")
 	for _, want := range []string{"sky-page", "sky-boxed", "custom-theme"} {
 		if !strings.Contains(joined, want) {
@@ -75,22 +70,20 @@ func TestPageSettingsCompile(t *testing.T) {
 		}
 	}
 
-	// 版心约束与三端安全留白。
 	for _, want := range []string{
 		"max-width: 1200px",
 		"margin-left: auto",
-		"padding-left: 16px", // desktop
+		"padding-left: 16px",
 		"@media (max-width: 1024px)",
-		"padding-left: 12px", // tablet
+		"padding-left: 12px",
 		"@media (max-width: 767px)",
-		"padding-left: 8px", // mobile
+		"padding-left: 8px",
 	} {
 		if !strings.Contains(c.CSS, want) {
 			t.Errorf("CSS 缺少 %q", want)
 		}
 	}
 
-	// body 基底样式。
 	for _, want := range []string{"background-color: #ffffff", "background-image: url(/img/bg.jpg)", "background-attachment: fixed"} {
 		if !strings.Contains(c.CSS, want) {
 			t.Errorf("body 基底样式缺少 %q", want)
@@ -98,7 +91,6 @@ func TestPageSettingsCompile(t *testing.T) {
 	}
 }
 
-// TestContainerHTMLStructure 单层干净结构：语义标签直出，无内联样式、无多余 wrapper。
 func TestContainerHTMLStructure(t *testing.T) {
 	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
@@ -117,20 +109,19 @@ func TestContainerHTMLStructure(t *testing.T) {
 	}
 }
 
-// TestContainerFlexAndGrid 双排版引擎的关键属性编译。
 func TestContainerFlexAndGrid(t *testing.T) {
 	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
 	for _, want := range []string{
-		// grid：列数三端降级 + 间距。
+
 		"grid-template-columns: repeat(4, 1fr)",
-		"repeat(2, 1fr)", // tablet（媒体查询内）
-		"repeat(1, 1fr)", // mobile
+		"repeat(2, 1fr)",
+		"repeat(1, 1fr)",
 		"column-gap: 16px",
 		"row-gap: 8px",
-		// flex：方向/对齐/换行/间距。
+
 		"display: flex",
 		"flex-direction: row",
 		"justify-content: space-between",
@@ -144,31 +135,30 @@ func TestContainerFlexAndGrid(t *testing.T) {
 	}
 }
 
-// TestContainerBoxVisualInteraction 盒模型三端、视觉装饰与交互状态。
 func TestContainerBoxVisualInteraction(t *testing.T) {
 	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
 	for _, want := range []string{
-		// 盒模型三端独立。
+
 		"padding: 40px 24px",
 		"padding: 24px 16px",
 		"padding: 16px",
 		"min-height: 200px",
 		"overflow: hidden",
-		// 视觉装饰。
+
 		"background-image: linear-gradient(to right, #fff, #000)",
 		"border: 1px solid #ddd",
 		"border-radius: 8px",
 		"box-shadow: 0 4px 12px rgba(0,0,0,0.12)",
-		// 吸顶。
+
 		"position: sticky",
 		"top: 8px",
-		// 悬浮反馈。
+
 		"transition: transform 0.25s ease, box-shadow 0.25s ease",
 		"translateY(-6px)",
-		// 入场动效（含关键帧输出）。
+
 		"animation: sky-fade-in 0.6s ease backwards",
 		"@keyframes sky-fade-in",
 	} {
@@ -178,23 +168,18 @@ func TestContainerBoxVisualInteraction(t *testing.T) {
 	}
 }
 
-// TestEntranceDefaultOff 入场微动默认关闭：未配置时不输出动画与关键帧。
 func TestEntranceDefaultOff(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"s1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}`
 	c, err := compile(t, parse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 只看**动画规则本身**（animation: … / @keyframes …）：产物尾部无条件带一段
-	// prefers-reduced-motion 块，里面有 animation-duration / animation-iteration-count，
-	// 那是「降级到几乎不动」的兜底声明，不是入场动效。宽泛地匹配 "animation" 会把
-	// 它误判成「默认输出了动效」。
+
 	if strings.Contains(c.CSS, "animation: ") || strings.Contains(c.CSS, "@keyframes") {
 		t.Errorf("未配置入场动效却输出了动画:\n%s", c.CSS)
 	}
 }
 
-// TestDeterministicBuild 确定性构建：同一文档两次编译输出完全相同。
 func TestDeterministicBuild(t *testing.T) {
 	p1 := parse(t, validPageJSON)
 	p2 := parse(t, validPageJSON)
@@ -211,7 +196,6 @@ func TestDeterministicBuild(t *testing.T) {
 	}
 }
 
-// TestRenderDocument 完整文档组装：head 注入 SEO，body 注入 class 与组件树。
 func TestRenderDocument(t *testing.T) {
 	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
@@ -233,7 +217,6 @@ func TestRenderDocument(t *testing.T) {
 	}
 }
 
-// TestValidateErrors 校验失败场景：非法参数必须被拒绝。
 func TestValidateErrors(t *testing.T) {
 	cases := []struct {
 		name string
@@ -246,8 +229,7 @@ func TestValidateErrors(t *testing.T) {
 		{"非法排版引擎", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"table"}}}]}`, "无效的排版引擎"},
 		{"flex缺参数", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex"}}}]}`, "必须提供 flex 参数"},
 		{"栅格列数越界", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"grid","grid":{"columns":{"desktop":13}}}}}]}`, "1~12"},
-		// 容器 visual 边框不再要求三要素同时提供：缺失项由编译端兜底
-		//（1px / solid / currentColor，container.go 编译注释），故此处不再作为失败用例。
+
 		{"非法阴影级别", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"visual":{"shadow":"xxl"}}}]}`, "无效的阴影级别"},
 		{"非法入场动效", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"interaction":{"entrance":"spin"}}}]}`, "无效的入场动效"},
 		{"节点ID重复", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}},"children":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}]}`, "ID 重复"},
@@ -267,7 +249,6 @@ func TestValidateErrors(t *testing.T) {
 	}
 }
 
-// TestMaliciousCSSInjection 恶意输入：CSS 注入载体必须被白名单拦截。
 func TestMaliciousCSSInjection(t *testing.T) {
 	cases := []struct {
 		name string
@@ -288,7 +269,6 @@ func TestMaliciousCSSInjection(t *testing.T) {
 	}
 }
 
-// TestMarginAuto 盒模型 margin auto 居中支持。
 func TestMarginAuto(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"m1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"box":{"margin":{"desktop":"0 auto"}}}}]}`
 	c, err := compile(t, parse(t, doc))

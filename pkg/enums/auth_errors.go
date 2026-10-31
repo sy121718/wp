@@ -7,7 +7,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// AuthError 在认证事实声明处携带文案兜底和状态码，各响应出口不另做分档。
 func AuthError(key string) error {
 	var fallback string
 	var status int

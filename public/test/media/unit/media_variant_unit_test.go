@@ -1,9 +1,5 @@
 package unit
 
-// media_variant_unit_test.go — 图片变体生成 service 层单元测试：
-// 测试图片全部由测试内置代码现场生成（image/png 编码小图写入临时存储目录），
-// 不依赖真实上传链路；存储目录经 upload.local_dir 指向 t.TempDir()，测试自清理。
-
 import (
 	"bytes"
 	"encoding/binary"
@@ -22,8 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// initVariantUploadForTest 初始化上传组件并把 local 存储根指向临时目录
-// （upload.LocalDir() 由此返回临时目录，变体产物全部落盘在 tmp 下自清理）。
 func initVariantUploadForTest(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
@@ -38,7 +32,6 @@ func initVariantUploadForTest(t *testing.T) string {
 	return tmp
 }
 
-// makeTestPNG 在存储目录生成 w×h 渐变小图（png 编码），key 为存储相对路径。
 func makeTestPNG(t *testing.T, dir string, key string, w, h int) {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -56,8 +49,6 @@ func makeTestPNG(t *testing.T, dir string, key string, w, h int) {
 	}
 }
 
-// makeOversizePNG 构造 header 声明 7000x10 的 PNG（改写 IHDR 并重算 CRC），
-// 用于触发「边长 >6000px 跳过变体」的防御分支，无需真实分配大图内存。
 func makeOversizePNG(t *testing.T, dir string, key string) {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
@@ -74,7 +65,6 @@ func makeOversizePNG(t *testing.T, dir string, key string) {
 	}
 }
 
-// seedVariantAttachment 种子一张图片附件，返回附件 ID。
 func seedVariantAttachment(t *testing.T, db *gorm.DB, fileName string, storageKey string) uint64 {
 	t.Helper()
 	mime := "image/png"
@@ -94,7 +84,6 @@ func seedVariantAttachment(t *testing.T, db *gorm.DB, fileName string, storageKe
 	return e.ID
 }
 
-// listVariants 读取指定附件的全部变体记录（按 id 升序）。
 func listVariants(t *testing.T, db *gorm.DB, attachmentID uint64) []mediamodel.MediaVariantEntity {
 	t.Helper()
 	var list []mediamodel.MediaVariantEntity
@@ -104,7 +93,6 @@ func listVariants(t *testing.T, db *gorm.DB, attachmentID uint64) []mediamodel.M
 	return list
 }
 
-// variantMap 变体列表按类型建索引。
 func variantMap(list []mediamodel.MediaVariantEntity) map[string]mediamodel.MediaVariantEntity {
 	out := make(map[string]mediamodel.MediaVariantEntity, len(list))
 	for _, v := range list {
@@ -113,8 +101,6 @@ func variantMap(list []mediamodel.MediaVariantEntity) map[string]mediamodel.Medi
 	return out
 }
 
-// TestMediaVariantGenerateSuccess 生成成功：thumb/medium/webp 全部 ready，
-// 落盘文件存在（RIFF 头），尺寸回填正确（thumb ≤320、medium ≤1280、webp=原图）。
 func TestMediaVariantGenerateSuccess(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -125,8 +111,7 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生成变体失败: %v", err)
 	}
-	// 期望条数**由 VariantTypes() 派生**，不写死数字：增删档位时这里应当自动跟随，
-	// 写死会让「实现按设计加了档位」表现为测试失败而不是缺陷。
+
 	want := len(mediamodel.VariantTypes())
 	if len(variants) != want {
 		t.Fatalf("应生成 %d 个变体: got=%d", want, len(variants))
@@ -148,7 +133,7 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 		if rerr != nil {
 			t.Fatalf("%s 文件应存在: %v", vt, rerr)
 		}
-		// 变体统一有损 JPEG（体积比无损 webp 小 3~4 倍，是页面加载速度的关键）。
+
 		if len(data) < 3 || data[0] != 0xFF || data[1] != 0xD8 {
 			t.Fatalf("%s 应为 JPEG 文件（SOI 头 FFD8）", vt)
 		}
@@ -165,14 +150,13 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 	if medium.Width == nil || *medium.Width <= 0 || *medium.Width > 1280 || *medium.Height > 1280 {
 		t.Fatalf("medium 尺寸应 Fit 1280x1280: %dx%d", derefInt(medium.Width), derefInt(medium.Height))
 	}
-	// full 槽位 = 原尺寸重编码（该槽位原名 webp，名不副实：产物从来是 JPEG）。
+
 	full := records[mediamodel.VariantTypeFull]
 	if full.Width == nil || *full.Width != 640 || *full.Height != 480 {
 		t.Fatalf("full 变体应保持原图尺寸 640x480: %dx%d", derefInt(full.Width), derefInt(full.Height))
 	}
 }
 
-// TestMediaVariantDecodeFailureFailed 解码失败（伪 png 字节）：三条全部 failed，不返回 error（降级语义）。
 func TestMediaVariantDecodeFailureFailed(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -192,7 +176,6 @@ func TestMediaVariantDecodeFailureFailed(t *testing.T) {
 	}
 }
 
-// TestMediaVariantOversizeSkipped 边长 >6000px（伪造 header）：四条 failed，跳过生成。
 func TestMediaVariantOversizeSkipped(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -211,13 +194,12 @@ func TestMediaVariantOversizeSkipped(t *testing.T) {
 			t.Fatalf("超大图 %s 应为 failed: got=%s", v.VariantType, v.Status)
 		}
 	}
-	// 不应产生任何变体文件。
+
 	if _, serr := os.Stat(filepath.Join(tmp, "huge_thumb.jpg")); !os.IsNotExist(serr) {
 		t.Fatalf("超大图不应产出变体文件")
 	}
 }
 
-// TestMediaVariantRegenerateIdempotent 重复生成幂等：先清旧记录，重建后仍为 3 条 ready。
 func TestMediaVariantRegenerateIdempotent(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -241,14 +223,11 @@ func TestMediaVariantRegenerateIdempotent(t *testing.T) {
 	}
 }
 
-// TestMediaEnsureVariantRecords 上传切入点登记：正常图片 → 3 条 pending；
-// svg/gif → 不登记；探测失败 → 3 条 failed。
 func TestMediaEnsureVariantRecords(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
 	makeTestPNG(t, tmp, "up.png", 800, 600)
 
-	// 正常图片：3 条 pending。
 	idPNG := seedVariantAttachmentNamed(t, db, "up.png", "up.png", "image", "image/png")
 	svc.EnsureVariantRecords(t.Context(), mustAttachment(t, db, idPNG))
 	if got, want := len(listVariants(t, db, idPNG)), len(mediamodel.VariantTypes()); got != want {
@@ -260,21 +239,18 @@ func TestMediaEnsureVariantRecords(t *testing.T) {
 		}
 	}
 
-	// svg：不登记。
 	idSVG := seedVariantAttachmentNamed(t, db, "icon.svg", "icon.svg", "image", "image/svg+xml")
 	svc.EnsureVariantRecords(t.Context(), mustAttachment(t, db, idSVG))
 	if got := len(listVariants(t, db, idSVG)); got != 0 {
 		t.Fatalf("svg 不应登记变体记录: got=%d", got)
 	}
 
-	// gif：不登记。
 	idGIF := seedVariantAttachmentNamed(t, db, "anim.gif", "anim.gif", "image", "image/gif")
 	svc.EnsureVariantRecords(t.Context(), mustAttachment(t, db, idGIF))
 	if got := len(listVariants(t, db, idGIF)); got != 0 {
 		t.Fatalf("gif 不应登记变体记录: got=%d", got)
 	}
 
-	// 探测失败（坏字节）：3 条 failed。
 	if err := os.WriteFile(filepath.Join(tmp, "broken.png"), []byte("junk"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +267,6 @@ func TestMediaEnsureVariantRecords(t *testing.T) {
 	}
 }
 
-// TestMediaVariantNonImageRejected 非图片附件与缺失附件拒绝。
 func TestMediaVariantNonImageRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	initVariantUploadForTest(t)
@@ -313,8 +288,6 @@ func TestMediaVariantNonImageRejected(t *testing.T) {
 	}
 }
 
-// --- 小辅助 ---
-
 func derefInt(p *int) int {
 	if p == nil {
 		return -1
@@ -322,7 +295,6 @@ func derefInt(p *int) int {
 	return *p
 }
 
-// seedVariantAttachmentNamed 带类型/MIME 的附件种子（登记用例区分 svg/gif）。
 func seedVariantAttachmentNamed(t *testing.T, db *gorm.DB, fileName string, storageKey string, fileType string, mime string) uint64 {
 	t.Helper()
 	m := mime
@@ -337,7 +309,6 @@ func seedVariantAttachmentNamed(t *testing.T, db *gorm.DB, fileName string, stor
 	return e.ID
 }
 
-// mustAttachment 读取附件实体。
 func mustAttachment(t *testing.T, db *gorm.DB, id uint64) *mediamodel.AttachmentEntity {
 	t.Helper()
 	var e mediamodel.AttachmentEntity

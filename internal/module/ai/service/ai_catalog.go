@@ -1,60 +1,5 @@
 package aiservice
 
-// 三条口径：
-//
-//	· **内置清单是随版本发布的静态预设**（按 provider_key 索引，数据在 catalog_data*.go）：内置的是「这家供应商大致有哪些模型」，
-//	  不是权威清单 —— 所以「恢复默认模型」是显式动作，缺清单时明确报错而不是静默清空。
-//	· **目录形状由代码白名单约束**：只认 config_data.models（元素形状见 dto.ModelEntry），
-//	  解析失败一律回退（跳过坏行 / 回退空目录），写回时保留 config_data 的其它键。
-//	· **拉取走 SSRF 防护口径**（ai_service.go），地址每次出站都重新校验。
-
-// 页面上的「获取可用模型」是**两段动作**：先把候选拿出来给人看（本文件），
-// 人勾完再写库（inbound 侧组装 SaveModelsReq）。拆开的原因是可撤销性 ——
-// 旧行为是点一下就把整份 `/models` 并进目录，用户没有反悔的机会，
-// 也没有机会把「这个中转站塞进来的一百个无关模型」挡在门外。
-
-// 数据来源：dsh 内置的 pi-ai 供应商预置包
-//
-//	@earendil-works/pi-ai/dist/providers/data/*.json（.manifest.json schemaVersion 3，
-//	generatedAt 2026-09-22T19:31:44.346Z）：41 家供应商、1495 个模型。
-//
-// 本文件包含：供应商表（展示名、协议端点、模型清单引用）、中小型供应商与大目录供应商
-// （聚合平台 / 托管平台，30 个模型以上）的模型清单，以及读取与合并逻辑。
-//
-// 早先这几块拆在 catalog_data*.go / ai_model_catalog.go 几个文件里，后来合回本文件；
-// 注释曾按旧文件名描述分工，那些文件已不存在 —— 读代码时以本包实际文件为准。
-//
-// 模型 id / 展示名 / 上下文窗口 / 最大输出 token / 输入类型逐字段原样搬运，
-// **不做前缀加工**：openrouter 的 deepseek/deepseek-v4.1-flash 与 opencode 的 muse-spark-1.3-contributor
-// 都是各家服务端自己的形态，客户端既不添加也不剥离。「用的是哪一家」由 provider_key 这一维承担。
-//
-// 协议取值：dsh 用连字符串（openai-completions …），本模块用下划线枚举，经 aienums.DSHProtocolAlias
-// 翻译。未登记的 dsh 协议（bedrock-converse-stream / azure-openai-responses / google-vertex /
-// mistral-conversations / openai-codex-responses / pi-messages）在本模块没有实现 → Protocol 留空，
-// 由管理员在界面上自选（禁止静默回落成默认协议）。
-
-// 数据来源：dsh 内置的 pi-ai 供应商预置包
-//
-//	@earendil-works/pi-ai/dist/providers/data/*.json
-//	.manifest.json schemaVersion 3，generatedAt 2026-09-22T19:31:44.346Z
-//
-// 逐字段搬运：模型 id / 展示名 / 上下文窗口 / 最大输出 token / 输入类型原样保留，
-// **不做前缀加工** —— 前缀形态是各家服务端自己要求的（openrouter 的 deepseek/deepseek-v4.1-flash
-// 与 opencode 的裸 id 都是原样），客户端既不添加也不剥离。
-//
-// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_catalog.go 文件头）。
-
-// 数据来源：dsh 内置的 pi-ai 供应商预置包
-//
-//	@earendil-works/pi-ai/dist/providers/data/*.json
-//	.manifest.json schemaVersion 3，generatedAt 2026-09-22T19:31:44.346Z
-//
-// 逐字段搬运：模型 id / 展示名 / 上下文窗口 / 最大输出 token / 输入类型原样保留，
-// **不做前缀加工** —— 前缀形态是各家服务端自己要求的（openrouter 的 deepseek/deepseek-v4.1-flash
-// 与 opencode 的裸 id 都是原样），客户端既不添加也不剥离。
-//
-// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_catalog.go 文件头）。
-
 import (
 	"cmp"
 	"context"
@@ -71,19 +16,11 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// builtinProvider 代码内置的一家供应商：默认 API 地址 + 默认模型清单。
 type builtinProvider struct {
 	BaseURL string
 	Models  []aidto.ModelEntry
 }
 
-// builtinProviders 内置供应商表（恢复默认模型 / API 地址占位「提供商默认」的真源）。
-//
-// 目录数据不再硬编码在本文件：全部来自 catalog_data*.go（41 家供应商、1495 个模型，
-// 逐字段搬自 dsh 的 pi-ai 供应商预置包）。这里只把预设表压成「默认地址 + 默认模型清单」
-// 的索引视图；多协议供应商的默认地址与协议取 primaryEndpoint（见 ai_catalog.go），
-// 协议列未实现的家（amazon-bedrock / azure-openai-responses / google-vertex / mistral /
-// openai-codex / radius）地址为空，界面会要求用户自己填。
 var builtinProviders = buildBuiltinProviders()
 
 func buildBuiltinProviders() map[string]builtinProvider {
@@ -94,9 +31,6 @@ func buildBuiltinProviders() map[string]builtinProvider {
 	return out
 }
 
-// BuiltinModels 取一家供应商的内置默认模型清单；没有登记 / 清单为空时 ok=false。
-//
-// 返回**副本**：调用方（含页面渲染）拿到的是可以随便改的切片，改不动内置表。
 func BuiltinModels(providerKey string) (models []aidto.ModelEntry, ok bool) {
 	p, found := builtinProviders[strings.ToLower(strings.TrimSpace(providerKey))]
 	if !found || len(p.Models) == 0 {
@@ -117,7 +51,6 @@ func BuiltinModels(providerKey string) (models []aidto.ModelEntry, ok bool) {
 	return out, true
 }
 
-// BuiltinBaseURL 取一家供应商的内置默认 API 地址；未登记返回空串（页面据此提示「请填写」）。
 func BuiltinBaseURL(providerKey string) string {
 	p, ok := builtinProviders[strings.ToLower(strings.TrimSpace(providerKey))]
 	if !ok {
@@ -126,7 +59,6 @@ func BuiltinBaseURL(providerKey string) string {
 	return p.BaseURL
 }
 
-// BuiltinProviderKeys 内置供应商键的字典序列表（页面用来给「供应商标识」输入框做提示）。
 func BuiltinProviderKeys() []string {
 	keys := make([]string, 0, len(builtinProviders))
 	for k := range builtinProviders {
@@ -136,10 +68,6 @@ func BuiltinProviderKeys() []string {
 	return keys
 }
 
-// parseModels 从 config_data 解析模型目录。
-//
-// **解析失败一律回退**（返回空目录、跳过坏行），不报错：config_data 是「补充配置」，
-// 坏数据不该让整个供应商打不开 —— 管理员在页面上看到空目录即可，改对了就恢复。
 func parseModels(cfg aimodel.JSONMap) []aidto.ModelEntry {
 	if len(cfg) == 0 {
 		return nil
@@ -178,10 +106,6 @@ func parseModels(cfg aimodel.JSONMap) []aidto.ModelEntry {
 	return out
 }
 
-// modelsToConfig 把模型目录写回 config_data：只改 models 键，其余键**原样保留**。
-//
-// 保留其它键是前向兼容的取舍：将来往 config_data 里加 settings 之类的补充键时，
-// 旧版本代码不会把它们抹掉。往这些键里读什么，由代码白名单决定（当前只认 models）。
 func modelsToConfig(cfg aimodel.JSONMap, models []aidto.ModelEntry) aimodel.JSONMap {
 	out := make(aimodel.JSONMap, len(cfg)+1)
 	for k, v := range cfg {
@@ -201,10 +125,6 @@ func modelsToConfig(cfg aimodel.JSONMap, models []aidto.ModelEntry) aimodel.JSON
 	return out
 }
 
-// normalizeModels 归一模型目录：去空行、trim、ID 去重、输入类型白名单。
-//
-// 空行（用户点了「+ 添加模型」没填）**丢弃不算错**；两个行填了同一个 ID 才算错
-// （静默留一行会让用户以为两个都存上了）。全部为空 = 保存空目录，是合法操作。
 func normalizeModels(in []aidto.ModelEntry) ([]aidto.ModelEntry, error) {
 	out := make([]aidto.ModelEntry, 0, len(in))
 	seen := make(map[string]struct{}, len(in))
@@ -239,8 +159,6 @@ func normalizeModels(in []aidto.ModelEntry) ([]aidto.ModelEntry, error) {
 	return out, nil
 }
 
-// normalizeInputTypes 输入类型白名单归一：只认 text / image，去重并固定顺序（text 在前）；
-// 空集合回退 [text]（一个模型至少得能吃文本，否则它在目录里没有意义）。
 func normalizeInputTypes(in []string) []string {
 	hasText, hasImage := false, false
 	for _, t := range in {
@@ -264,10 +182,6 @@ func normalizeInputTypes(in []string) []string {
 	return out
 }
 
-// mergeCatalog 把拉取回来的模型 ID 合并进现有目录，返回新目录与本次新增的 ID。
-//
-// 已存在的行**原样保留**（管理员填的显示名 / 窗口 / 输入类型不能被一次拉取抹掉），
-// 新 ID 追加成裸行（显示名 = ID，元数据留空，等管理员补）。
 func mergeCatalog(existing []aidto.ModelEntry, fetched []string) (out []aidto.ModelEntry, added []string) {
 	out = make([]aidto.ModelEntry, 0, len(existing)+len(fetched))
 	seen := make(map[string]struct{}, len(existing)+len(fetched))
@@ -298,7 +212,6 @@ func mergeCatalog(existing []aidto.ModelEntry, fetched []string) (out []aidto.Mo
 	return out, added
 }
 
-// SaveModels 整组保存模型目录（乐观锁保护下的 config_data 写回）。
 func (s *Service) SaveModels(ctx context.Context, req *aidto.SaveModelsReq) (res *aidto.Provider, err error) {
 	if req == nil || req.ProviderID <= 0 {
 		return nil, aienums.Err(aienums.ErrInvalidParam)
@@ -321,10 +234,6 @@ func (s *Service) SaveModels(ctx context.Context, req *aidto.SaveModelsReq) (res
 	return s.GetProvider(ctx, req.ProviderID)
 }
 
-// RestoreDefaultModels 用代码内置清单整组替换模型目录。
-//
-// 没有内置清单时返回 ErrNoBuiltinModels 且**不写库**：静默清空会让管理员以为
-// 「这家供应商确实没有默认模型」，而真实原因是「代码里没登记」—— 两者要分开说。
 func (s *Service) RestoreDefaultModels(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.Provider, err error) {
 	if req == nil || req.ProviderID <= 0 {
 		return nil, aienums.Err(aienums.ErrInvalidParam)
@@ -347,16 +256,6 @@ func (s *Service) RestoreDefaultModels(ctx context.Context, req *aidto.ProviderA
 	return s.GetProvider(ctx, req.ProviderID)
 }
 
-// FetchAvailableModels 调 {base_url}/models 拉候选，合并进目录后落库。
-//
-// 行为边界：
-//
-//	· 地址取「供应商自己填的 base_url」，留空时回退到内置默认地址；两者都没有 → 报错
-//	  让用户先填地址（不猜）；
-//	· 有密钥就带 Authorization: Bearer（明文只在本次请求内存里）；没有就不带 ——
-//	  本地网关 / 内网兼容端点可能不需要密钥；
-//	· 拉取失败（网络 / 非 200 / 响应不是 OpenAI 兼容形状）统一回 ErrModelsFetchFailed，
-//	  **不落库**（半路失败不该把目录写成半份）；底层原因只进日志，不上页面。
 func (s *Service) FetchAvailableModels(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.FetchModelsResult, err error) {
 	if req == nil || req.ProviderID <= 0 {
 		return nil, aienums.Err(aienums.ErrInvalidParam)
@@ -384,11 +283,6 @@ func (s *Service) FetchAvailableModels(ctx context.Context, req *aidto.ProviderA
 	return &aidto.FetchModelsResult{Provider: provider, Added: added, Fetched: len(ids)}, nil
 }
 
-// probeModelIDs 解析出站地址、解密密钥并拉一次候选（**只读，不落库**）。
-//
-// FetchAvailableModels（拉完直接并库）与 FetchModelCandidates（只把候选交给弹窗）共用它：
-// 两条路径对「这家到底能不能拉」必须给出同一个答案，否则会出现「弹窗能拉、确认后失败」
-// 或反之 —— 差别只在调用方写不写库。
 func (s *Service) probeModelIDs(ctx context.Context, current *aimodel.AIProviderEntity) (ids []string, err error) {
 	baseURL := strings.TrimSpace(current.BaseURL)
 	if baseURL == "" {
@@ -408,13 +302,12 @@ func (s *Service) probeModelIDs(ctx context.Context, current *aimodel.AIProvider
 	return s.fetchModelIDs(ctx, endpoint, apiKey)
 }
 
-// fetchModelIDs 发一次出站请求并解析 OpenAI 兼容的模型列表。
 func (s *Service) fetchModelIDs(ctx context.Context, endpoint, apiKey string) (ids []string, err error) {
 	reqCtx, cancel := context.WithTimeout(ctx, ClientTimeout)
 	defer cancel()
 	req, rerr := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
 	if rerr != nil {
-		// 走到这里只可能是地址串本身不合法（前面已过 validateURL）。
+
 		return nil, ErrURLMalformed
 	}
 	req.Header.Set("Accept", "application/json")
@@ -455,7 +348,6 @@ func (s *Service) fetchModelIDs(ctx context.Context, endpoint, apiKey string) (i
 	return ids, nil
 }
 
-// jsonString 从 JSON 解码后的任意值里取字符串（非字符串回空串）。
 func jsonString(v any) string {
 	s, ok := v.(string)
 	if !ok {
@@ -464,7 +356,6 @@ func jsonString(v any) string {
 	return strings.TrimSpace(s)
 }
 
-// jsonInt64 从 JSON 解码后的任意值里取整数（float64 / json.Number 都能吃）。
 func jsonInt64(v any) int64 {
 	switch n := v.(type) {
 	case float64:
@@ -481,7 +372,6 @@ func jsonInt64(v any) int64 {
 	return 0
 }
 
-// jsonStringSlice 从 JSON 解码后的任意值里取字符串切片（逐项 trim、丢空项）。
 func jsonStringSlice(v any) []string {
 	items, ok := v.([]any)
 	if !ok {
@@ -496,11 +386,6 @@ func jsonStringSlice(v any) []string {
 	return out
 }
 
-// FetchModelCandidates 拉 {base_url}/models 的候选列表并原样交回，**不写库**。
-//
-// 与 FetchAvailableModels 的唯一差别是写不写库：地址解析（自己填的 → 内置默认）、
-// SSRF 校验、密钥解密、超时与错误归口都走同一个 probeModelIDs，
-// 两条路径必须给出同样的「这家能不能拉」的判断，否则会出现「弹窗拉得到、确定后失败」。
 func (s *Service) FetchModelCandidates(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.ModelCandidates, err error) {
 	if req == nil || req.ProviderID <= 0 {
 		return nil, aienums.Err(aienums.ErrInvalidParam)
@@ -532,37 +417,24 @@ func (s *Service) FetchModelCandidates(ctx context.Context, req *aidto.ProviderA
 	}, nil
 }
 
-// presetEndpoint 是一家供应商的一个协议端点：同一家的不同协议分组地址可能不同
-// （openrouter 的 anthropic-messages 是 https://openrouter.ai/api，openai-completions 是
-// https://openrouter.ai/api/v1），所以地址挂在端点上而不是供应商上。
 type presetEndpoint struct {
-	DSHAPI   string // dsh 的协议字符串原文
-	Protocol string // 本模块协议枚举；未登记协议为空串
-	BaseURL  string // 该协议分组的默认地址
+	DSHAPI   string
+	Protocol string
+	BaseURL  string
 }
 
-// presetProvider 是一家内置预设供应商。
 type presetProvider struct {
-	Key         string // provider_key（与 dsh 的文件名一致）
-	DisplayName string // 默认展示名（用户可改）
+	Key         string
+	DisplayName string
 	Endpoints   []presetEndpoint
 	Models      []aidto.ModelEntry
 }
 
-// 输入类型集合：模型行共享这两个只读切片，BuiltinModels 返回时逐条深拷贝。
 var (
 	inputTextOnly  = []string{aienums.InputTypeText}
 	inputTextImage = []string{aienums.InputTypeText, aienums.InputTypeImage}
 )
 
-// primaryEndpoint 返回默认端点：按本模块已实现协议的优先级
-// （openai_chat_completions > anthropic_messages > openai_responses > gemini_generate_content）
-// 取第一个可选中的协议分组。
-//
-// 一家都没有已映射协议时（amazon-bedrock / azure-openai-responses / google-vertex / mistral /
-// openai-codex / radius）回退到第一个端点、只取它的地址：**协议为空不等于没有地址** ——
-// 直接把默认地址一起丢掉，界面上会显示成「这家没有内置默认地址」，用户于是手填一个错地址，
-// 而真相只是「这家协议要自己选」。
 func (p presetProvider) primaryEndpoint() presetEndpoint {
 	for _, want := range []string{
 		aienums.ProtocolOpenAIChatCompletions,
@@ -582,16 +454,14 @@ func (p presetProvider) primaryEndpoint() presetEndpoint {
 	return presetEndpoint{}
 }
 
-// BuiltinPresetOption 是内置预设暴露给界面的元信息（不含任何密钥）。
 type BuiltinPresetOption struct {
 	Key         string
 	DisplayName string
-	BaseURL     string // 默认端点地址（dsh 侧没给地址的家为空，见下）
-	Protocol    string // 默认协议（未登记协议时为空，界面要求用户自选）
+	BaseURL     string
+	Protocol    string
 	ModelCount  int
 }
 
-// BuiltinPresets 返回全部内置预设（按 key 字典序），供「第三方模型提供商」下拉使用。
 func BuiltinPresets() []BuiltinPresetOption {
 	out := make([]BuiltinPresetOption, 0, len(presetProviders))
 	for _, p := range presetProviders {
@@ -608,11 +478,6 @@ func BuiltinPresets() []BuiltinPresetOption {
 	return out
 }
 
-// BuiltinPreset 按 provider_key 取一家内置预设（key 归一大小写与空白；未登记回 false）。
-//
-// 页面「第三方模型提供商」提交时用它兜底两处默认值：展示名留空 → 用预设展示名；
-// 协议留空 → 用预设协议。未登记协议的家（amazon-bedrock 等）预设协议本身为空，
-// 兜底后仍为空、由服务端校验拒绝 —— 不静默回落成默认协议。
 func BuiltinPreset(providerKey string) (opt BuiltinPresetOption, ok bool) {
 	key := strings.ToLower(strings.TrimSpace(providerKey))
 	for _, p := range presetProviders {
@@ -631,13 +496,12 @@ func BuiltinPreset(providerKey string) (opt BuiltinPresetOption, ok bool) {
 	return BuiltinPresetOption{}, false
 }
 
-// presetProviders 内置预设表：41 家供应商、1495 个模型（生成数据，勿手改）。
 var presetProviders = []presetProvider{
 	{
 		Key:         "amazon-bedrock",
 		DisplayName: "Amazon Bedrock",
 		Endpoints: []presetEndpoint{
-			// dsh 里同一协议按区域给了两个地址；默认只登记 us-east-1，其它区域由管理员在界面上改。
+
 			{DSHAPI: "bedrock-converse-stream", Protocol: "", BaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com"},
 		},
 		Models: presetModelsAmazonBedrock,
@@ -975,14 +839,12 @@ var presetProviders = []presetProvider{
 	},
 }
 
-// presetModelsAntLing —— ant-ling（3 个模型）。
 var presetModelsAntLing = []aidto.ModelEntry{
 	{ID: "Ling-2.6-1T", DisplayName: "Ling 2.6 1T", ContextWindow: 262144, MaxOutputTokens: 65536, InputTypes: inputTextOnly},
 	{ID: "Ling-2.6-flash", DisplayName: "Ling 2.6 Flash", ContextWindow: 262144, MaxOutputTokens: 65536, InputTypes: inputTextOnly},
 	{ID: "Ring-2.6-1T", DisplayName: "Ring 2.6 1T", ContextWindow: 262144, MaxOutputTokens: 65536, InputTypes: inputTextOnly},
 }
 
-// presetModelsAnthropic —— anthropic（15 个模型）。
 var presetModelsAnthropic = []aidto.ModelEntry{
 	{ID: "claude-fable-5", DisplayName: "Claude Fable 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 	{ID: "claude-fable-5-1", DisplayName: "Claude Fable 5.1", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -1001,7 +863,6 @@ var presetModelsAnthropic = []aidto.ModelEntry{
 	{ID: "claude-sonnet-5", DisplayName: "Claude Sonnet 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 }
 
-// presetModelsBaseten —— baseten（21 个模型）。
 var presetModelsBaseten = []aidto.ModelEntry{
 	{ID: "deepseek-ai/DeepSeek-V4-Flash-0731", DisplayName: "DeepSeek V4 Flash 0731", ContextWindow: 1048576, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
 	{ID: "deepseek-ai/DeepSeek-V4-Pro", DisplayName: "DeepSeek V4 Pro", ContextWindow: 1048576, MaxOutputTokens: 262144, InputTypes: inputTextOnly},
@@ -1026,13 +887,11 @@ var presetModelsBaseten = []aidto.ModelEntry{
 	{ID: "zai-org/GLM-5.3-Flash", DisplayName: "GLM 5.3 Flash", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsCerebras —— cerebras（2 个模型）。
 var presetModelsCerebras = []aidto.ModelEntry{
 	{ID: "gpt-oss-120b", DisplayName: "GPT OSS 120B", ContextWindow: 131072, MaxOutputTokens: 40960, InputTypes: inputTextOnly},
 	{ID: "qwen-3.8-27b", DisplayName: "Qwen3.8 27B", ContextWindow: 65536, MaxOutputTokens: 32768, InputTypes: inputTextImage},
 }
 
-// presetModelsCloudflareWorkersAi —— cloudflare-workers-ai（18 个模型）。
 var presetModelsCloudflareWorkersAi = []aidto.ModelEntry{
 	{ID: "@cf/deepseek-ai/deepseek-v4-flash-0731", DisplayName: "DeepSeek V4 Flash 0731", ContextWindow: 1310720, MaxOutputTokens: 1048576, InputTypes: inputTextOnly},
 	{ID: "@cf/deepseek-ai/deepseek-v4-pro-0813", DisplayName: "DeepSeek V4 Pro 0813", ContextWindow: 1048576, MaxOutputTokens: 1048576, InputTypes: inputTextOnly},
@@ -1054,13 +913,11 @@ var presetModelsCloudflareWorkersAi = []aidto.ModelEntry{
 	{ID: "@cf/zai-org/glm-5.3-flash", DisplayName: "Glm 5.3 Flash", ContextWindow: 1310720, MaxOutputTokens: 1048576, InputTypes: inputTextImage},
 }
 
-// presetModelsDeepseek —— deepseek（2 个模型）。
 var presetModelsDeepseek = []aidto.ModelEntry{
 	{ID: "deepseek-flash", DisplayName: "DeepSeek V4.1 Flash", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextImage},
 	{ID: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
 }
 
-// presetModelsGoogle —— google（22 个模型）。
 var presetModelsGoogle = []aidto.ModelEntry{
 	{ID: "deep-research-max-preview-04-2026", DisplayName: "Deep Research Max Preview (Apr-21-2026)", ContextWindow: 131072, MaxOutputTokens: 65536, InputTypes: inputTextImage},
 	{ID: "deep-research-preview-04-2026", DisplayName: "Deep Research Preview (Apr-21-2026)", ContextWindow: 131072, MaxOutputTokens: 65536, InputTypes: inputTextImage},
@@ -1086,7 +943,6 @@ var presetModelsGoogle = []aidto.ModelEntry{
 	{ID: "gemma-4-31b-it", DisplayName: "Gemma 4 31B IT", ContextWindow: 262144, MaxOutputTokens: 32768, InputTypes: inputTextImage},
 }
 
-// presetModelsGoogleVertex —— google-vertex（14 个模型）。
 var presetModelsGoogleVertex = []aidto.ModelEntry{
 	{ID: "gemini-2.5-flash", DisplayName: "Gemini 2.5 Flash", ContextWindow: 1048576, MaxOutputTokens: 65536, InputTypes: inputTextImage},
 	{ID: "gemini-2.5-flash-lite", DisplayName: "Gemini 2.5 Flash-Lite", ContextWindow: 1048576, MaxOutputTokens: 65536, InputTypes: inputTextImage},
@@ -1104,7 +960,6 @@ var presetModelsGoogleVertex = []aidto.ModelEntry{
 	{ID: "gemini-flash-lite-latest", DisplayName: "Gemini Flash-Lite Latest", ContextWindow: 1048576, MaxOutputTokens: 65536, InputTypes: inputTextImage},
 }
 
-// presetModelsGroq —— groq（7 个模型）。
 var presetModelsGroq = []aidto.ModelEntry{
 	{ID: "llama-3.1-8b-instant", DisplayName: "Llama 3.1 8B", ContextWindow: 131072, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "llama-3.3-70b-versatile", DisplayName: "Llama 3.3 70B", ContextWindow: 131072, MaxOutputTokens: 32768, InputTypes: inputTextOnly},
@@ -1115,7 +970,6 @@ var presetModelsGroq = []aidto.ModelEntry{
 	{ID: "qwen/qwen3.8-27b", DisplayName: "Qwen3.8 27B", ContextWindow: 131042, MaxOutputTokens: 16384, InputTypes: inputTextImage},
 }
 
-// presetModelsKimiCoding —— kimi-coding（4 个模型）。
 var presetModelsKimiCoding = []aidto.ModelEntry{
 	{ID: "k3", DisplayName: "Kimi K3", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "k3-256k", DisplayName: "Kimi K3-256K", ContextWindow: 262144, MaxOutputTokens: 131072, InputTypes: inputTextImage},
@@ -1123,7 +977,6 @@ var presetModelsKimiCoding = []aidto.ModelEntry{
 	{ID: "kimi-for-coding-highspeed", DisplayName: "Kimi For Coding HighSpeed", ContextWindow: 262144, MaxOutputTokens: 32768, InputTypes: inputTextImage},
 }
 
-// presetModelsMeta —— meta（5 个模型）。
 var presetModelsMeta = []aidto.ModelEntry{
 	{ID: "muse-spark-1.1", DisplayName: "Muse Spark 1.1", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "muse-spark-1.2", DisplayName: "Muse Spark 1.2", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
@@ -1132,21 +985,18 @@ var presetModelsMeta = []aidto.ModelEntry{
 	{ID: "muse-spark-1.3-contributor", DisplayName: "Muse Spark 1.3 Contributor", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsMinimax —— minimax（3 个模型）。
 var presetModelsMinimax = []aidto.ModelEntry{
 	{ID: "MiniMax-M2.7", DisplayName: "MiniMax-M2.7", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMax-M2.7-highspeed", DisplayName: "MiniMax-M2.7-highspeed", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMax-M3", DisplayName: "MiniMax-M3", ContextWindow: 1048576, MaxOutputTokens: 512000, InputTypes: inputTextImage},
 }
 
-// presetModelsMinimaxCn —— minimax-cn（3 个模型）。
 var presetModelsMinimaxCn = []aidto.ModelEntry{
 	{ID: "MiniMax-M2.7", DisplayName: "MiniMax-M2.7", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMax-M2.7-highspeed", DisplayName: "MiniMax-M2.7-highspeed", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMax-M3", DisplayName: "MiniMax-M3", ContextWindow: 1048576, MaxOutputTokens: 512000, InputTypes: inputTextImage},
 }
 
-// presetModelsMoonshotai —— moonshotai（4 个模型）。
 var presetModelsMoonshotai = []aidto.ModelEntry{
 	{ID: "kimi-k2.6", DisplayName: "Kimi K2.6", ContextWindow: 262144, MaxOutputTokens: 262144, InputTypes: inputTextImage},
 	{ID: "kimi-k2.7-code", DisplayName: "Kimi K2.7 Code", ContextWindow: 262144, MaxOutputTokens: 262144, InputTypes: inputTextImage},
@@ -1154,7 +1004,6 @@ var presetModelsMoonshotai = []aidto.ModelEntry{
 	{ID: "kimi-k3", DisplayName: "Kimi K3", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsMoonshotaiCn —— moonshotai-cn（4 个模型）。
 var presetModelsMoonshotaiCn = []aidto.ModelEntry{
 	{ID: "kimi-k2.6", DisplayName: "Kimi K2.6", ContextWindow: 262144, MaxOutputTokens: 262144, InputTypes: inputTextImage},
 	{ID: "kimi-k2.7-code", DisplayName: "Kimi K2.7 Code", ContextWindow: 262144, MaxOutputTokens: 262144, InputTypes: inputTextImage},
@@ -1162,7 +1011,6 @@ var presetModelsMoonshotaiCn = []aidto.ModelEntry{
 	{ID: "kimi-k3", DisplayName: "Kimi K3", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsNvidia —— nvidia（19 个模型）。
 var presetModelsNvidia = []aidto.ModelEntry{
 	{ID: "google/gemma-3-12b-it", DisplayName: "Gemma 3 12B IT", ContextWindow: 131072, MaxOutputTokens: 16384, InputTypes: inputTextImage},
 	{ID: "google/gemma-3-4b-it", DisplayName: "Gemma 3 4B IT", ContextWindow: 131072, MaxOutputTokens: 16384, InputTypes: inputTextImage},
@@ -1185,7 +1033,6 @@ var presetModelsNvidia = []aidto.ModelEntry{
 	{ID: "z-ai/glm-5.3-flash", DisplayName: "GLM-5.3-Flash", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsOpenaiCodex —— openai-codex（8 个模型）。
 var presetModelsOpenaiCodex = []aidto.ModelEntry{
 	{ID: "gpt-5.3-codex-spark", DisplayName: "GPT-5.3 Codex Spark", ContextWindow: 128000, MaxOutputTokens: 128000, InputTypes: inputTextOnly},
 	{ID: "gpt-5.5", DisplayName: "GPT-5.5", ContextWindow: 272000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -1197,7 +1044,6 @@ var presetModelsOpenaiCodex = []aidto.ModelEntry{
 	{ID: "gpt-6-sol", DisplayName: "GPT-6 Sol", ContextWindow: 272000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 }
 
-// presetModelsOpencodeGo —— opencode-go（30 个模型）。
 var presetModelsOpencodeGo = []aidto.ModelEntry{
 	{ID: "minimax-m3", DisplayName: "MiniMax-M3", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "qwen3.8-flash", DisplayName: "Qwen3.8 Flash", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
@@ -1231,7 +1077,6 @@ var presetModelsOpencodeGo = []aidto.ModelEntry{
 	{ID: "muse-spark-1.3-contributor", DisplayName: "Muse Spark 1.3 Contributor", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsQwenTokenPlan —— qwen-token-plan（20 个模型）。
 var presetModelsQwenTokenPlan = []aidto.ModelEntry{
 	{ID: "MiniMax-M2.5", DisplayName: "MiniMax-M2.5", ContextWindow: 196608, MaxOutputTokens: 32768, InputTypes: inputTextOnly},
 	{ID: "deepseek-v3.2", DisplayName: "DeepSeek V3.2", ContextWindow: 131072, MaxOutputTokens: 65536, InputTypes: inputTextOnly},
@@ -1255,7 +1100,6 @@ var presetModelsQwenTokenPlan = []aidto.ModelEntry{
 	{ID: "qwen3.8-max", DisplayName: "Qwen3.8 Max", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsQwenTokenPlanCn —— qwen-token-plan-cn（20 个模型）。
 var presetModelsQwenTokenPlanCn = []aidto.ModelEntry{
 	{ID: "MiniMax-M2.5", DisplayName: "MiniMax-M2.5", ContextWindow: 196608, MaxOutputTokens: 32768, InputTypes: inputTextOnly},
 	{ID: "deepseek-v3.2", DisplayName: "DeepSeek V3.2", ContextWindow: 131072, MaxOutputTokens: 65536, InputTypes: inputTextOnly},
@@ -1279,7 +1123,6 @@ var presetModelsQwenTokenPlanCn = []aidto.ModelEntry{
 	{ID: "qwen3.8-max", DisplayName: "Qwen3.8 Max", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsQwenTokenPlanIndividual —— qwen-token-plan-individual（9 个模型）。
 var presetModelsQwenTokenPlanIndividual = []aidto.ModelEntry{
 	{ID: "deepseek-v4-flash-0731", DisplayName: "DeepSeek V4 Flash 0731", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
 	{ID: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
@@ -1292,7 +1135,6 @@ var presetModelsQwenTokenPlanIndividual = []aidto.ModelEntry{
 	{ID: "qwen3.8-max", DisplayName: "Qwen3.8 Max", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsRadius —— radius（30 个模型）。
 var presetModelsRadius = []aidto.ModelEntry{
 	{ID: "balanced", DisplayName: "Balanced", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "cheap", DisplayName: "Cheap", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
@@ -1326,7 +1168,6 @@ var presetModelsRadius = []aidto.ModelEntry{
 	{ID: "precise", DisplayName: "Precise", ContextWindow: 272000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 }
 
-// presetModelsTogether —— together（22 个模型）。
 var presetModelsTogether = []aidto.ModelEntry{
 	{ID: "MiniMaxAI/MiniMax-M2.7", DisplayName: "MiniMax-M2.7", ContextWindow: 202752, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMaxAI/MiniMax-M3", DisplayName: "MiniMax-M3", ContextWindow: 524288, MaxOutputTokens: 250000, InputTypes: inputTextImage},
@@ -1352,7 +1193,6 @@ var presetModelsTogether = []aidto.ModelEntry{
 	{ID: "zai-org/GLM-5.3-Flash", DisplayName: "GLM-5.3-Flash", ContextWindow: 1048575, MaxOutputTokens: 400000, InputTypes: inputTextImage},
 }
 
-// presetModelsXai —— xai（4 个模型）。
 var presetModelsXai = []aidto.ModelEntry{
 	{ID: "grok-4.3", DisplayName: "Grok 4.3", ContextWindow: 1000000, MaxOutputTokens: 30000, InputTypes: inputTextImage},
 	{ID: "grok-4.5", DisplayName: "Grok 4.5", ContextWindow: 500000, MaxOutputTokens: 500000, InputTypes: inputTextImage},
@@ -1360,7 +1200,6 @@ var presetModelsXai = []aidto.ModelEntry{
 	{ID: "grok-4.7", DisplayName: "Grok 4.7", ContextWindow: 500000, MaxOutputTokens: 500000, InputTypes: inputTextImage},
 }
 
-// presetModelsXiaomi —— xiaomi（6 个模型）。
 var presetModelsXiaomi = []aidto.ModelEntry{
 	{ID: "mimo-v2.5", DisplayName: "MiMo-V2.5", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "mimo-v2.5-pro", DisplayName: "MiMo-V2.5-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1370,7 +1209,6 @@ var presetModelsXiaomi = []aidto.ModelEntry{
 	{ID: "mimo-v2.6-pro-ultraspeed", DisplayName: "MiMo-V2.6-Pro-UltraSpeed", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsXiaomiTokenPlanAms —— xiaomi-token-plan-ams（4 个模型）。
 var presetModelsXiaomiTokenPlanAms = []aidto.ModelEntry{
 	{ID: "mimo-v2.5", DisplayName: "MiMo-V2.5", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "mimo-v2.5-pro", DisplayName: "MiMo-V2.5-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1378,7 +1216,6 @@ var presetModelsXiaomiTokenPlanAms = []aidto.ModelEntry{
 	{ID: "mimo-v2.6-pro", DisplayName: "MiMo-V2.6-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsXiaomiTokenPlanCn —— xiaomi-token-plan-cn（4 个模型）。
 var presetModelsXiaomiTokenPlanCn = []aidto.ModelEntry{
 	{ID: "mimo-v2.5", DisplayName: "MiMo-V2.5", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "mimo-v2.5-pro", DisplayName: "MiMo-V2.5-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1386,7 +1223,6 @@ var presetModelsXiaomiTokenPlanCn = []aidto.ModelEntry{
 	{ID: "mimo-v2.6-pro", DisplayName: "MiMo-V2.6-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsXiaomiTokenPlanSgp —— xiaomi-token-plan-sgp（4 个模型）。
 var presetModelsXiaomiTokenPlanSgp = []aidto.ModelEntry{
 	{ID: "mimo-v2.5", DisplayName: "MiMo-V2.5", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 	{ID: "mimo-v2.5-pro", DisplayName: "MiMo-V2.5-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1394,7 +1230,6 @@ var presetModelsXiaomiTokenPlanSgp = []aidto.ModelEntry{
 	{ID: "mimo-v2.6-pro", DisplayName: "MiMo-V2.6-Pro", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsZai —— zai（7 个模型）。
 var presetModelsZai = []aidto.ModelEntry{
 	{ID: "glm-4.7", DisplayName: "GLM-4.7", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "glm-5-turbo", DisplayName: "GLM-5-Turbo", ContextWindow: 200000, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1405,7 +1240,6 @@ var presetModelsZai = []aidto.ModelEntry{
 	{ID: "glm-5.3-highspeed", DisplayName: "GLM-5.3 Highspeed", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 }
 
-// presetModelsZaiCodingCn —— zai-coding-cn（4 个模型）。
 var presetModelsZaiCodingCn = []aidto.ModelEntry{
 	{ID: "glm-4.6v", DisplayName: "GLM-4.6V", ContextWindow: 128000, MaxOutputTokens: 32768, InputTypes: inputTextImage},
 	{ID: "glm-5.3", DisplayName: "GLM-5.3", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1413,7 +1247,6 @@ var presetModelsZaiCodingCn = []aidto.ModelEntry{
 	{ID: "glm-5.3-highspeed", DisplayName: "GLM-5.3 Highspeed", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 }
 
-// presetModelsAmazonBedrock —— amazon-bedrock（165 个模型）。
 var presetModelsAmazonBedrock = []aidto.ModelEntry{
 	{ID: "amazon.nova-2-lite-v1:0", DisplayName: "Nova 2 Lite", ContextWindow: 1000000, MaxOutputTokens: 65535, InputTypes: inputTextImage},
 	{ID: "amazon.nova-lite-v1:0", DisplayName: "Nova Lite", ContextWindow: 300000, MaxOutputTokens: 10000, InputTypes: inputTextImage},
@@ -1582,7 +1415,6 @@ var presetModelsAmazonBedrock = []aidto.ModelEntry{
 	{ID: "zai.glm-5", DisplayName: "GLM-5", ContextWindow: 202752, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 }
 
-// presetModelsAzureOpenaiResponses —— azure-openai-responses（41 个模型）。
 var presetModelsAzureOpenaiResponses = []aidto.ModelEntry{
 	{ID: "gpt-4", DisplayName: "GPT-4", ContextWindow: 8192, MaxOutputTokens: 8192, InputTypes: inputTextOnly},
 	{ID: "gpt-4-turbo", DisplayName: "GPT-4 Turbo", ContextWindow: 128000, MaxOutputTokens: 4096, InputTypes: inputTextImage},
@@ -1627,7 +1459,6 @@ var presetModelsAzureOpenaiResponses = []aidto.ModelEntry{
 	{ID: "o4-mini", DisplayName: "o4-mini", ContextWindow: 200000, MaxOutputTokens: 100000, InputTypes: inputTextImage},
 }
 
-// presetModelsCloudflareAiGateway —— cloudflare-ai-gateway（51 个模型）。
 var presetModelsCloudflareAiGateway = []aidto.ModelEntry{
 	{ID: "claude-fable-5", DisplayName: "Claude Fable 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 	{ID: "claude-fable-5.1", DisplayName: "Claude Fable 5.1", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -1682,7 +1513,6 @@ var presetModelsCloudflareAiGateway = []aidto.ModelEntry{
 	{ID: "o4-mini", DisplayName: "o4-mini", ContextWindow: 200000, MaxOutputTokens: 100000, InputTypes: inputTextImage},
 }
 
-// presetModelsFireworks —— fireworks（33 个模型）。
 var presetModelsFireworks = []aidto.ModelEntry{
 	{ID: "accounts/fireworks/models/deepseek-v4-flash-0731", DisplayName: "DeepSeek V4 Flash 0731", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextOnly},
 	{ID: "accounts/fireworks/models/deepseek-v4-flash-vision-exp", DisplayName: "DeepSeek V4 Flash Vision Exp", ContextWindow: 1000000, MaxOutputTokens: 384000, InputTypes: inputTextImage},
@@ -1719,7 +1549,6 @@ var presetModelsFireworks = []aidto.ModelEntry{
 	{ID: "accounts/fireworks/routers/kimi-k3-fast", DisplayName: "Kimi K3 Fast", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsGithubCopilot —— github-copilot（32 个模型）。
 var presetModelsGithubCopilot = []aidto.ModelEntry{
 	{ID: "claude-fable-5", DisplayName: "Claude Fable 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 	{ID: "claude-fable-5.1", DisplayName: "Claude Fable 5.1", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -1755,7 +1584,6 @@ var presetModelsGithubCopilot = []aidto.ModelEntry{
 	{ID: "mai-code-1.1-flash", DisplayName: "MAI-Code-1.1-Flash", ContextWindow: 256000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 }
 
-// presetModelsHuggingface —— huggingface（76 个模型）。
 var presetModelsHuggingface = []aidto.ModelEntry{
 	{ID: "MiniMaxAI/MiniMax-M2", DisplayName: "MiniMax-M2", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 	{ID: "MiniMaxAI/MiniMax-M2.1", DisplayName: "MiniMax-M2.1", ContextWindow: 204800, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
@@ -1835,7 +1663,6 @@ var presetModelsHuggingface = []aidto.ModelEntry{
 	{ID: "zai-org/GLM-5.3-Flash", DisplayName: "GLM-5.3-Flash", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsMistral —— mistral（33 个模型）。
 var presetModelsMistral = []aidto.ModelEntry{
 	{ID: "codestral-latest", DisplayName: "Codestral (latest)", ContextWindow: 256000, MaxOutputTokens: 4096, InputTypes: inputTextOnly},
 	{ID: "devstral-2512", DisplayName: "Devstral 2", ContextWindow: 262144, MaxOutputTokens: 262144, InputTypes: inputTextOnly},
@@ -1872,7 +1699,6 @@ var presetModelsMistral = []aidto.ModelEntry{
 	{ID: "zai-glm-5-3", DisplayName: "GLM-5.3", ContextWindow: 1000000, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 }
 
-// presetModelsOpenai —— openai（41 个模型）。
 var presetModelsOpenai = []aidto.ModelEntry{
 	{ID: "gpt-4", DisplayName: "GPT-4", ContextWindow: 8192, MaxOutputTokens: 8192, InputTypes: inputTextOnly},
 	{ID: "gpt-4-turbo", DisplayName: "GPT-4 Turbo", ContextWindow: 128000, MaxOutputTokens: 4096, InputTypes: inputTextImage},
@@ -1917,7 +1743,6 @@ var presetModelsOpenai = []aidto.ModelEntry{
 	{ID: "o4-mini", DisplayName: "o4-mini", ContextWindow: 200000, MaxOutputTokens: 100000, InputTypes: inputTextImage},
 }
 
-// presetModelsOpencode —— opencode（73 个模型）。
 var presetModelsOpencode = []aidto.ModelEntry{
 	{ID: "claude-fable-5", DisplayName: "Claude Fable 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
 	{ID: "claude-fable-5-1", DisplayName: "Claude Fable 5.1", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -1994,7 +1819,6 @@ var presetModelsOpencode = []aidto.ModelEntry{
 	{ID: "muse-spark-1.3-contributor-free", DisplayName: "Muse Spark 1.3 Free", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextImage},
 }
 
-// presetModelsOpenrouter —— openrouter（386 个模型）。
 var presetModelsOpenrouter = []aidto.ModelEntry{
 	{ID: "anthropic/claude-3-haiku", DisplayName: "Anthropic: Claude 3 Haiku", ContextWindow: 200000, MaxOutputTokens: 4096, InputTypes: inputTextImage},
 	{ID: "anthropic/claude-fable-5", DisplayName: "Anthropic: Claude Fable 5", ContextWindow: 1000000, MaxOutputTokens: 128000, InputTypes: inputTextImage},
@@ -2384,7 +2208,6 @@ var presetModelsOpenrouter = []aidto.ModelEntry{
 	{ID: "~z-ai/glm-latest", DisplayName: "Z.ai: GLM Latest", ContextWindow: 1048576, MaxOutputTokens: 131072, InputTypes: inputTextOnly},
 }
 
-// presetModelsVercelAiGateway —— vercel-ai-gateway（246 个模型）。
 var presetModelsVercelAiGateway = []aidto.ModelEntry{
 	{ID: "alibaba/qwen-3-14b", DisplayName: "Qwen3-14B", ContextWindow: 40960, MaxOutputTokens: 16384, InputTypes: inputTextOnly},
 	{ID: "alibaba/qwen-3-235b", DisplayName: "Qwen3 235B A22B", ContextWindow: 262144, MaxOutputTokens: 16384, InputTypes: inputTextOnly},

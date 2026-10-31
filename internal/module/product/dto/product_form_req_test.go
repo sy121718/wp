@@ -1,19 +1,11 @@
 package productdto
 
-// product_form_req_test.go — 表单字段绑定语义的判据（每条都是「改了就变红」的语义锚）。
-//
-// 为什么值得单独一大张表：这批的验收要求是「空值 / 零值 / 非法数字必须有测试，且测试要能变红」。
-// 表单绑定最贵的失败模式是**静默改语义** —— 把「空串」当成「明确填了 0」、把非法数字
-// 吞成缺省、把 NaN 放进金额。三者都不报错、页面看起来也正常，只有运营有一天发现
-// 「价格莫名变成 0」时才会有人回头查。
-
 import (
 	"errors"
 	"math"
 	"testing"
 )
 
-// TestOptFloatSemantics 可选浮点字段的四档语义：未提交 / 0 / 负数 / 非法。
 func TestOptFloatSemantics(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -76,7 +68,6 @@ func TestOptFloatSemantics(t *testing.T) {
 	}
 }
 
-// TestOptIntSemantics 可选整数字段：0 有效、负数放行、小数**不截断**而是非法。
 func TestOptIntSemantics(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -117,7 +108,6 @@ func TestOptIntSemantics(t *testing.T) {
 	}
 }
 
-// TestFormIntSemantics 非可选整数：空串取默认值；非法取默认值**并**报错事实（由调用方决定报不报）。
 func TestFormIntSemantics(t *testing.T) {
 	if v, err := FormInt("minTotalQty", "", 1); v != 1 || err != nil {
 		t.Fatalf("空串应取默认值 1 且不报错，实际 v=%d err=%v", v, err)
@@ -135,7 +125,6 @@ func TestFormIntSemantics(t *testing.T) {
 	}
 }
 
-// TestFormTextTrims 文本字段：未提交与空串等价（都得到空串，由调用方按字段语义决定不改/清空）。
 func TestFormTextTrims(t *testing.T) {
 	if got := FormText(""); got != "" {
 		t.Fatalf("空串应得到空串，实际 %q", got)
@@ -148,7 +137,6 @@ func TestFormTextTrims(t *testing.T) {
 	}
 }
 
-// TestFieldValueErrorIsTypeFact 错误是**类型事实**：判据不靠比对原文（改措辞不该影响判定）。
 func TestFieldValueErrorIsTypeFact(t *testing.T) {
 	_, err := OptFloat("price", "abc")
 	var fe *FieldValueError
@@ -164,7 +152,6 @@ func TestFieldValueErrorIsTypeFact(t *testing.T) {
 	}
 }
 
-// TestNonFiniteRejected 归口判据：NaN / ±Inf 一律非法（防「后续所有比较都失效」）。
 func TestNonFiniteRejected(t *testing.T) {
 	for _, raw := range []string{"NaN", "Inf", "-Inf", "+Inf", "nan", "inf"} {
 		if _, err := OptFloat("weight", raw); err == nil {

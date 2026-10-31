@@ -1,18 +1,11 @@
 package presentationservice
 
-// presentation_stale_test.go — PERF-020 单测：失效重建入队路径（纯逻辑，不碰数据库）。
-//
-// 并发场景在这里覆盖到「多 goroutine 同时触发 RebuildStale」：入队端口由
-// fake 模拟队列侧的部分唯一索引去重，-race 下验证入队路径无数据竞争、
-// 同一实例不会被堆出多份任务。
-
 import (
 	"context"
 	"sync"
 	"testing"
 )
 
-// fakeBuildQueue 模拟构建队列的入队端口：记录请求 + 按 id 去重（模拟部分唯一索引）。
 type fakeBuildQueue struct {
 	mu       sync.Mutex
 	enqueued []string
@@ -26,7 +19,7 @@ func newFakeBuildQueue() *fakeBuildQueue {
 func (f *fakeBuildQueue) EnqueuePresentationBuild(_ context.Context, presentationID, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// 部分唯一索引语义：同一实例同时只有一条待办，重复入队是幂等的。
+
 	if f.seen[presentationID] {
 		return nil
 	}
@@ -41,8 +34,6 @@ func (f *fakeBuildQueue) snapshot() []string {
 	return append([]string(nil), f.enqueued...)
 }
 
-// TestRebuildStaleEnqueuesAllWhenQueueInjected 队列注入后 RebuildStale 全量入队，
-// 不做单次上限截断，也不再同步重建（不触碰 model 层）。
 func TestRebuildStaleEnqueuesAllWhenQueueInjected(t *testing.T) {
 	s := &Service{}
 	q := newFakeBuildQueue()
@@ -63,8 +54,6 @@ func TestRebuildStaleEnqueuesAllWhenQueueInjected(t *testing.T) {
 	}
 }
 
-// TestRebuildStaleConcurrentEnqueueStaysUnique 并发场景：多个 goroutine 同时触发
-// RebuildStale 同一批实例，队列侧唯一去重保证每个实例只落一条任务。
 func TestRebuildStaleConcurrentEnqueueStaysUnique(t *testing.T) {
 	s := &Service{}
 	q := newFakeBuildQueue()
@@ -90,7 +79,6 @@ func TestRebuildStaleConcurrentEnqueueStaysUnique(t *testing.T) {
 	}
 }
 
-// TestRebuildStaleEmptyIDsIsNoop 空列表直接返回，不触碰队列。
 func TestRebuildStaleEmptyIDsIsNoop(t *testing.T) {
 	s := &Service{}
 	q := newFakeBuildQueue()
@@ -103,7 +91,6 @@ func TestRebuildStaleEmptyIDsIsNoop(t *testing.T) {
 	}
 }
 
-// TestSetBuildQueueNilReceiverSafe SetBuildQueue 对 nil 接收者安全（与其它 setter 同口径）。
 func TestSetBuildQueueNilReceiverSafe(t *testing.T) {
 	var s *Service
 	s.SetBuildQueue(newFakeBuildQueue())

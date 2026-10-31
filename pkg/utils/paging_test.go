@@ -2,7 +2,6 @@ package utils
 
 import "testing"
 
-// TestPageOffset 表驱动：页码非正按 1 算、页大小非正给 0、乘积溢出饱和到 maxInt。
 func TestPageOffset(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
 	cases := []struct {

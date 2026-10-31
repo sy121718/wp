@@ -18,7 +18,7 @@ func TestAttributePagingUsesUniqueTailKey(t *testing.T) {
 	}
 	ctx := context.Background()
 	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	// 故意反序插入相同排序、相同时刻的行，分页不能依赖物理顺序。
+
 	for i := 6; i >= 1; i-- {
 		row := &productmodel.ProductAttributeEntity{ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i), ProjectID: f.projectID, Key: fmt.Sprintf("tie_%d", i), Name: fmt.Sprintf("同序属性%d", i), Values: []byte("[]"), Metadata: []byte("{}"), CreatedAt: at, UpdatedAt: at}
 		if err := rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error { return tx.Create(row).Error }); err != nil {

@@ -20,7 +20,6 @@ import (
 	"testing"
 )
 
-// productPageLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
 func productPageLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"
@@ -31,12 +30,11 @@ func productPageLayoutData(base gin.H) gin.H {
 	return base
 }
 
-// renderAdminTemplate 用真实 Jet 渲染器渲染一个后台模板并返回 HTML。
 func renderAdminTemplate(t *testing.T, name string, data gin.H) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 模板根目录相对包目录：internal/module/product/inbound/http → internal/templates。
+
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/page", func(c *gin.Context) { c.HTML(http.StatusOK, name, data) })
 	rec := httptest.NewRecorder()
@@ -47,11 +45,6 @@ func renderAdminTemplate(t *testing.T, name string, data gin.H) string {
 	return rec.Body.String()
 }
 
-// —— 整页 GET 失败出口：桩 ——
-
-// productPageProjectsStub 只实现被测路径用到的方法；其余方法因嵌入的接口为 nil 而 panic。
-//
-// 比「什么都返回零值」的桩安全：静默零值会让断言测到的是桩的行为，而不是页面的行为。
 type productPageProjectsStub struct {
 	projectcontract.ProjectService
 	rows []projectdto.ProjectResp
@@ -62,7 +55,6 @@ func (s productPageProjectsStub) List(context.Context) ([]projectdto.ProjectResp
 	return s.rows, s.err
 }
 
-// productPageReaderStub 只实现实际消费的业务查询，不复制生产页面聚合。
 type productPageReaderStub struct {
 	productcontract.ProductService
 	scope           *productcontract.CatalogScope
@@ -204,7 +196,6 @@ func (s *productPageReaderStub) QueryTags(_ context.Context, q *productdto.Catal
 	return &productdto.TaxonomyListResp[*productdto.TagResp]{Items: s.tags, Page: 1, Size: 20}, nil
 }
 
-// productPageRequest 挂上三个整页 GET（真 Jet + 真模板）并发一个 GET，返回 recorder。
 func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -218,11 +209,6 @@ func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	return rec
 }
 
-// productPageRequestWith 同 productPageRequest，但允许挂中间件。
-//
-// 「页面上有没有这个入口」取决于按钮码（模板写 {{if isset(.Buttons["product.update"])}}），
-// 而按钮码来自中间件注入的 adminctx.ButtonsKey —— 不挂就一律渲染成「无权限」，
-// 于是断言「抽屉在不在」的测试会永远看不到抽屉。
 func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, mw ...gin.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -237,15 +223,12 @@ func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, m
 	return rec
 }
 
-// productPageRequestFor 把**指定路径**挂到一条最小引擎上并发一个 GET（真 Jet 渲染器）。
-//
-// 与 productPageRequest 同一手法，区别只在注册的路径：属性页等已下沉的屏不在那三条固定路由里。
 func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	// 按路径分派到对应的整页 handler：调用点只给「这是哪一页」，不必再各自搭一个引擎。
+
 	switch route {
 	case "/admin/product-attributes":
 		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductAttributesPage)
@@ -263,11 +246,6 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 	return rec
 }
 
-// assertProductJSONFailure 页面 GET 失败的唯一形状：{code,message,data} + 真实状态码。
-//
-// 页面失败不再渲染「同一页 + 失败槽」——模板里没有失败分支，出口是 adminui.Page 的
-// JSON 分支（业务错误 400 / 其余 500）。判据三件：状态码、Content-Type、message 文案；
-// 另外钉住两件不该出现的：HTML 页壳与驱动原文。
 func assertProductJSONFailure(t *testing.T, step string, rec *httptest.ResponseRecorder, wantStatus int, wantText string) string {
 	t.Helper()
 	body := rec.Body.String()
@@ -298,7 +276,6 @@ func assertProductJSONFailure(t *testing.T, step string, rec *httptest.ResponseR
 	return body
 }
 
-// headOf 截一段 body 供失败信息阅读（整页 HTML 太长，整串打出来会淹掉断言原因）。
 func headOf(body string) string {
 	const n = 400
 	if len(body) > n {

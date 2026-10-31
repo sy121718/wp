@@ -17,7 +17,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 )
 
-// 首次预设创建后，同一共享来源的两个实例都必须展开真实业务内容。
 func TestBusinessPresetGlobalReferencesPreviewRealContents(t *testing.T) {
 	env := newRefEnv(t)
 	env.blocks.(interface {
@@ -34,7 +33,7 @@ func TestBusinessPresetGlobalReferencesPreviewRealContents(t *testing.T) {
 	if _, err := builder.ParsePage(loaded.Document); err != nil {
 		t.Fatalf("预设创建后文档不可解析: %v", err)
 	}
-	// 模拟修复前jsonx写出的持久化文档：非external默认false不能被严格联合读取。
+
 	legacy := regexp.MustCompile(`"kind"\s*:\s*"(instance|local)"`).ReplaceAllString(string(loaded.Document), `"kind":"$1","newTab":false`)
 	if legacy == string(loaded.Document) {
 		t.Fatal("夹具未形成历史错误形状")
@@ -49,7 +48,7 @@ func TestBusinessPresetGlobalReferencesPreviewRealContents(t *testing.T) {
 	if _, err := builder.ParsePage(stored.Document); err == nil {
 		t.Fatal("历史显式跨kind字段必须仍被拒绝")
 	}
-	// 已知来源与内容一致时，经原Update用读取版本修正，不另建块/覆盖最新版本。
+
 	repaired, err := env.blocks.Update(t.Context(), &blockdto.UpdateReq{ID: stored.ID, Name: stored.Name, Kind: stored.Kind, Category: stored.Category, ReuseMode: stored.ReuseMode, ExpectedVersion: uint64(stored.Version), Document: loaded.Document})
 	if err != nil || repaired.ID != block.ID || repaired.Version != loaded.Version+1 {
 		t.Fatalf("修正未沿原ID版本化保存: %+v %v", repaired, err)

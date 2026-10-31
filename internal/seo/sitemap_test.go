@@ -7,13 +7,12 @@ import (
 	"testing"
 )
 
-// TestBuildSitemap 排序 / 去重 / XML 转义。
 func TestBuildSitemap(t *testing.T) {
 	entries := []SitemapEntry{
 		{Loc: "https://e.com/b", ChangeFreq: "weekly", Priority: "0.7"},
 		{Loc: "https://e.com/a", LastMod: "2026-09-08"},
-		{Loc: "https://e.com/b"}, // 重复
-		{Loc: ""},                // 空
+		{Loc: "https://e.com/b"},
+		{Loc: ""},
 		{Loc: "https://e.com/x?a=1&b=2"},
 	}
 	out, err := BuildSitemap(entries)
@@ -26,11 +25,11 @@ func TestBuildSitemap(t *testing.T) {
 	if strings.Count(out, "<url>") != 3 {
 		t.Fatalf("应 3 条（b 去重 + 空路径跳过），实际 %d", strings.Count(out, "<url>"))
 	}
-	// 排序：/a 在 /b 之前。
+
 	if strings.Index(out, "https://e.com/a") > strings.Index(out, "https://e.com/b") {
 		t.Fatalf("条目未按 URL 升序")
 	}
-	// XML 转义：& 应转成 &amp;
+
 	if !strings.Contains(out, "&amp;") {
 		t.Fatalf("查询参数未转义: %s", out)
 	}
@@ -39,7 +38,6 @@ func TestBuildSitemap(t *testing.T) {
 	}
 }
 
-// TestBuildSitemapDeterministic 同输入两次字节一致。
 func TestBuildSitemapDeterministic(t *testing.T) {
 	in := []SitemapEntry{{Loc: "https://e.com/c"}, {Loc: "https://e.com/a"}, {Loc: "https://e.com/b"}}
 	a, _ := BuildSitemap(in)
@@ -49,7 +47,6 @@ func TestBuildSitemapDeterministic(t *testing.T) {
 	}
 }
 
-// TestBuildRobots robots.txt 含 sitemap 地址与后台屏蔽。
 func TestBuildRobots(t *testing.T) {
 	out := BuildRobots("https://e.com/", "/sitemap.xml")
 	if !strings.Contains(out, "Sitemap: https://e.com/sitemap.xml") {
@@ -61,13 +58,12 @@ func TestBuildRobots(t *testing.T) {
 	if !strings.Contains(out, "User-agent: *") {
 		t.Fatalf("缺少 User-agent")
 	}
-	// 无 baseURL 时不输出 Sitemap 行。
+
 	if strings.Contains(BuildRobots("", ""), "Sitemap:") {
 		t.Fatalf("无 baseURL 不应输出 Sitemap")
 	}
 }
 
-// TestEntriesFromPaths 根路径优先级最高。
 func TestEntriesFromPaths(t *testing.T) {
 	out := EntriesFromPaths("https://e.com", []string{"/", "/about", ""})
 	if len(out) != 2 {
@@ -84,7 +80,6 @@ func TestEntriesFromPaths(t *testing.T) {
 	}
 }
 
-// TestWriteSiteFiles 写入两个文件。
 func TestWriteSiteFiles(t *testing.T) {
 	dir := t.TempDir()
 	err := WriteSiteFiles(dir, "https://e.com", EntriesFromPaths("https://e.com", []string{"/", "/a"}))
@@ -102,7 +97,6 @@ func TestWriteSiteFiles(t *testing.T) {
 	}
 }
 
-// TestJoinURL 基础 URL 与路径拼接边界。
 func TestJoinURL(t *testing.T) {
 	cases := [][3]string{
 		{"https://e.com", "/a", "https://e.com/a"},

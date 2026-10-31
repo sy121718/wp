@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// artifactRootOf 读取测试装配的产物根（newPageService 中以 GO_WP_ARTIFACT_ROOT 注入）。
 func artifactRootOf(t *testing.T) string {
 	t.Helper()
 	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
@@ -43,7 +42,6 @@ func TestStaticFaceServesActiveArtifact(t *testing.T) {
 		t.Fatalf("发布失败: %v", err)
 	}
 
-	// 访问面根 = 产物根/public/active，与 routes.go setupStaticFace 一致。
 	root := artifactRootOf(t)
 	activeDir := filepath.Join(root, "public", "active")
 	entry := filepath.Join(activeDir, "smoke", "index.html")
@@ -57,7 +55,7 @@ func TestStaticFaceServesActiveArtifact(t *testing.T) {
 
 	router := gin.New()
 	router.StaticFS("/site", http.Dir(activeDir))
-	// http.FileServer 对 index.html 请求会 301 到 ./，按目录路径断言直出内容。
+
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/site/smoke/", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "你好") {

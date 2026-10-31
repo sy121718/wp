@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// baseManifest 构造测试用最小 manifest。
 func baseManifest() *pipeline.Manifest {
 	return &pipeline.Manifest{
 		ManifestSchemaVersion:     pipeline.ManifestSchemaVersion,
@@ -21,7 +20,6 @@ func baseManifest() *pipeline.Manifest {
 	}
 }
 
-// TestManifestDeterminism manifest 编码确定性：dependencies 乱序、files 乱序产出相同字节。
 func TestManifestDeterminism(t *testing.T) {
 	mk := func() *pipeline.Manifest {
 		m := baseManifest()
@@ -41,7 +39,6 @@ func TestManifestDeterminism(t *testing.T) {
 	}
 }
 
-// TestNewArtifactDeterminism 同输入产物内容哈希一致；不同输入哈希不同。
 func TestNewArtifactDeterminism(t *testing.T) {
 	html := []byte("<html><body>hello</body></html>")
 	a1, err := pipeline.NewArtifact(html, baseManifest())
@@ -67,7 +64,6 @@ func TestNewArtifactDeterminism(t *testing.T) {
 	}
 }
 
-// TestNewArtifactManifestIncomplete manifest 缺字段拒绝组装。
 func TestNewArtifactManifestIncomplete(t *testing.T) {
 	if _, err := pipeline.NewArtifact([]byte("x"), nil); err == nil {
 		t.Error("空 manifest 应被拒绝")
@@ -79,7 +75,6 @@ func TestNewArtifactManifestIncomplete(t *testing.T) {
 	}
 }
 
-// TestRedirectArtifact 重定向产物：301/302 合法，状态码与目标路径校验。
 func TestRedirectArtifact(t *testing.T) {
 	r, err := pipeline.NewRedirectArtifact("/new-url/", 301)
 	if err != nil {
@@ -103,7 +98,6 @@ func TestRedirectArtifact(t *testing.T) {
 	}
 }
 
-// TestParseRedirectEntry redirect.json 解析与缺失字段校验。
 func TestParseRedirectEntry(t *testing.T) {
 	d, err := pipeline.ParseRedirectEntry([]byte(`{"targetPath":"/b","statusCode":301}`))
 	if err != nil {

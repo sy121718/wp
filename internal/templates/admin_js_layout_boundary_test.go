@@ -1,17 +1,5 @@
 package templates
 
-// admin_js_layout_boundary_test.go — 后台 JS 的落点边界：根目录只减不增。
-//
-// 规则（AGENTS.md「交互方式（HTMX）」）：JS 只做 HTMX 覆盖不到的控件层，收敛在
-// static/js/ui/ 与 rich-editor/（媒体库选择器 media-lib.js、构建器 workbench/）。
-// 根目录下这几个文件是**存量散落**，每个都有明确的收敛方向；新写的业务 JS 必须落在
-// ui/ 下并接入 partials/ui_scripts.html 的公共入口（TestUIAssetEntry 钉住后者）。
-//
-// 为什么要有这条判据：散落 JS 的失败形态是「同一个交互有两份实现」（一份在 ui/、一份在
-// 页面根目录），改一处而另一处不改，症状是「某个入口正常、另一个入口按了没反应」——
-// 不报错、测试也不红。product 的捆绑配置页就踩过：150 行内联脚本与 ui/ 下的控件并存。
-//
-// 双向失败：根目录出现未登记的文件 → 失败；登记了却已不在 → 也失败（条目不得退化成注释）。
 import (
 	"os"
 	"sort"
@@ -19,7 +7,6 @@ import (
 	"testing"
 )
 
-// adminJSRootAllowance static/js 根目录下允许存在的脚本（相对 static/js 的文件名）与收敛方向。
 var adminJSRootAllowance = map[string]string{
 	"admin.js":               "后台侧边栏状态 + 上级菜单候选过滤；控件部分已迁 ui/，剩余随页面迁移逐步清零",
 	"media-lib.js":           "媒体库公共逻辑（/admin/media 与工作台弹窗共用），被 mediafield.js / media-gallery.js 依赖",

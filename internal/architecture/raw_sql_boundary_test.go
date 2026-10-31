@@ -1,20 +1,3 @@
-// raw_sql_boundary_test.go —— 裸 SQL 边界（AGENTS.md「数据库」节）。
-//
-// 判据：`internal/module/` 下的**生产代码**（不含 `_test.go`）不得出现手写整句 SQL，
-// 也就是 gorm 的 `Raw(` / `Exec(` 调用。列名与表名一旦写成字符串，改一列不会有编译错误 ——
-// 它只会在运行时静默读到空值，或报一个离拼串处很远的 PG syntax error；
-// `selectExpr` 这类参数守卫也只在链式路径上生效。
-//
-// 两处例外来源：
-//   - rawSQLAllowedList：设计上就不该 GORM 化的位置（PG 系统表、GORM 无对应能力的语句）；
-//   - rawSQLDebtList：待还存量。**登记的是此刻的处数**，整改完必须把条目删掉。
-//
-// 两个方向都会失败：处数变多（新写的裸 SQL），以及处数变少却没同步改表（漏删条目）——
-// 「只减不增」的账要能自己对平，否则登记表会退化成一句没人维护的注释。
-//
-// 不扫 `pkg/`（i18n 内容表、rls 的 set_config 等）：那是基础设施层的数据访问实现，
-// 其中 `set_config` 本身就是 RLS 机制的一部分，没有 Entity 可映射。本次整改的范围是
-// 业务模块（「不准写裸 SQL，必须走 gorm」）。
 package architecture
 
 import (
@@ -29,14 +12,12 @@ import (
 	"testing"
 )
 
-// rawSQLEntry 一条裸 SQL 登记：文件（仓库根相对路径，斜杠分隔）+ 允许的**累计处数** + 依据。
 type rawSQLEntry struct {
 	File   string
 	Max    int
 	Reason string
 }
 
-// rawSQLAllowedList 有理由**保留**手写 SQL 的位置（设计上就不该 GORM 化）。
 var rawSQLAllowedList = []rawSQLEntry{
 	{
 		File: "internal/module/plugin/model/plugin_model.go",
@@ -97,12 +78,8 @@ var rawSQLAllowedList = []rawSQLEntry{
 	},
 }
 
-// rawSQLDebtList 待还的存量：登记「此刻的处数」，改完必须把条目删掉（处数与登记不符即失败）。
-//
-// 这些不是「允许」，是**还没做**。整改顺序按模块推进；每改完一个文件就删掉它这一条。
 var rawSQLDebtList = []rawSQLEntry{}
 
-// TestNoNewRawSQL 守住 internal/module 下的裸 SQL 只减不增。
 func TestNoNewRawSQL(t *testing.T) {
 	root := repoRoot(t)
 	base := filepath.Join(root, "internal", "module")
@@ -174,19 +151,6 @@ func TestNoNewRawSQL(t *testing.T) {
 	}
 }
 
-// rawSQLLines 返回文件里 gorm 的 `Raw(` / `Exec(` 调用所在行号（1 起，按出现顺序）。
-//
-// 用 AST 而不是正则：`RawSQL` `Execute` 这类前缀相同的标识符不会被误判，
-// 注释与字符串里的同名字样也不会命中。
-//
-// 只认 **CallExpr**（真正的调用）：`r.Index.Raw` 这种「字段名恰好叫 Raw」的读法
-// 与调用无关，实测在 page/service/page_seo_patrol.go 里出现过，宽判据会把它算进去。
-//
-// 再排除「接收者最后一段是 `m` 的调用」：本仓的 model 会把 schema DDL 包装成
-// `func (m *Model) Exec(ctx, sql string) error`，service 侧写成 `s.m.Exec(ctx, dropSchemaSQL(id))`
-// —— 那是**本模块自己的方法**，不是 gorm 的 `Exec`。gorm 路径上的接收者要么是
-// 句柄变量（`tx.Exec(sql)`），要么是链式调用（`m.db.WithContext(ctx).Raw(sql)` 的接收者
-// 是 WithContext 的调用结果），都不会以 `.m` 结尾。
 func rawSQLLines(path string) ([]int, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, nil, 0)
@@ -215,7 +179,6 @@ func rawSQLLines(path string) ([]int, error) {
 	return lines, nil
 }
 
-// lastSelectorIs 报告 expr 的最外层是否为 `x.<name>` 形式的字段/方法访问。
 func lastSelectorIs(expr ast.Expr, name string) bool {
 	sel, ok := expr.(*ast.SelectorExpr)
 	return ok && sel.Sel.Name == name

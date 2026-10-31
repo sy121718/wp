@@ -1,9 +1,7 @@
-// Package socialbuttons 实现 core.social_buttons：社交图标组（对标 WD wd_social_buttons）。
-// 内联 SVG 品牌图标，支持品牌色/灰色/自定义色，圆角/尺寸控制。
 package socialbuttons
 
 import (
-	_ "embed" // socialbuttons.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -11,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.social_buttons"
 
 func init() {
@@ -19,17 +16,12 @@ func init() {
 	core.RegisterTemplate("socialbuttons", socialbuttonsTemplate)
 }
 
-// Component 社交按钮组件（原子）。
 type Component struct{}
 
-// Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
-// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
-// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
-// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
 func (c *Component) Palette() core.PaletteMeta {
 	return core.PaletteMeta{
 		Type:     Type,
@@ -58,15 +50,12 @@ func (c *Component) Palette() core.PaletteMeta {
 	}
 }
 
-// Item 单个社交按钮。
 type Item struct {
-	// Platform 平台标识（facebook/x/instagram/youtube/tiktok/telegram/whatsapp/pinterest/linkedin）。
 	Platform string `json:"platform,omitempty"`
-	// URL 跳转地址。
+
 	URL string `json:"url,omitempty"`
 }
 
-// ColorMode 配色：brand 品牌色 / mono 灰色 / custom 自定义。
 type ColorMode string
 
 const (
@@ -75,25 +64,22 @@ const (
 	ColorCustom ColorMode = "custom"
 )
 
-// Props 社交按钮属性。
 type Props struct {
-	// Items 按钮列表（repeater）。
 	Items []Item `json:"items,omitempty"`
-	// Color 配色模式：brand / mono / custom。
+
 	Color ColorMode `json:"color,omitempty" ct:"select,brand=品牌色,mono=灰色,custom=自定义,default=brand,sec=style,label=配色"`
-	// CustomColor 自定义图标颜色（color=custom 时）。
+
 	CustomColor string `json:"customColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
-	// Size 图标尺寸（px，默认 40）。
+
 	Size string `json:"size,omitempty" ct:"dimension,maxlen=20,sec=style,label=尺寸"`
-	// Shape 形状：circle 圆形 / rounded 圆角 / square 方形。
+
 	Shape string `json:"shape,omitempty" ct:"select,circle=圆形,rounded=圆角,square=方形,default=circle,sec=style,label=形状"`
-	// Align 对齐：left / center / right。
+
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=对齐"`
-	// Advanced 通用高级属性。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// brandColors 平台品牌色。
 var brandColors = map[string]string{
 	"facebook":   "#1877f2",
 	"x":          "#000000",
@@ -120,7 +106,6 @@ var brandColors = map[string]string{
 	"bluesky":    "#0a7aff",
 }
 
-// brandOrder 平台品牌色 CSS 输出的固定顺序（确定性构建，避免 map 遍历随机）。
 var brandOrder = []string{
 	"facebook", "x", "instagram", "youtube", "tiktok", "telegram",
 	"whatsapp", "pinterest", "linkedin", "threads", "vimeo", "flickr",
@@ -128,12 +113,6 @@ var brandOrder = []string{
 	"discord", "tumblr", "viber", "vk", "bluesky",
 }
 
-// 说明：这里的品牌 logo（Facebook / X / Instagram / YouTube / TikTok / Telegram /
-// WhatsApp / Pinterest 等）**不在基座图标库里** —— lucide 不含品牌标识，且品牌图形
-// 需要保持官方原形（描边风格化会失真）。这是全项目唯一保留手写 path 的地方，
-// 属明确例外；其它组件的箭头 / 勾叉 / 折叠等通用图标一律走 core 图标库。
-// platformIcons 平台图标内部元素（path 片段，不含 <svg> 包裹；fill=currentColor）。
-// 由 socialbuttons.jet 模板负责 <svg> 骨架（去 Go 拼字符串）。
 var platformIcons = map[string]string{
 	"facebook":  `<path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.24.2 2.24.2v2.47h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.45 2.9h-2.33V22c4.78-.75 8.44-4.9 8.44-9.94z"/>`,
 	"x":         `<path d="M18.9 2H22l-6.77 7.74L23.2 22h-6.23l-4.88-6.38L6.5 22H3.36l7.24-8.28L2.8 2h6.39l4.41 5.83L18.9 2zm-1.09 18.13h1.73L7.1 3.75H5.25l12.56 16.38z"/>`,
@@ -146,7 +125,6 @@ var platformIcons = map[string]string{
 	"linkedin":  `<path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 110-4.12 2.06 2.06 0 010 4.12zM7.12 20.45H3.56V9h3.56v11.45z"/>`,
 }
 
-// Validate 校验。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
@@ -182,15 +160,9 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// socialCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
-//
 //go:embed socialbuttons.css
 var socialCSS string
 
-// compileCSS 社交按钮样式。
-//
-// Go 侧只把形状与三选一的配色翻成变量：形状三档的差别只有一个圆角值，配色靠规则级 @if，
-// 品牌色的 23 条规则交给 @each 展开。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -225,7 +197,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		customColor = "#2563eb"
 	}
 
-	// 品牌色列表：按 brandOrder 的固定顺序取，缺色的平台跳过（确定性构建）。
 	brands := make([]map[string]string, 0, len(brandOrder))
 	for _, platform := range brandOrder {
 		color, ok := brandColors[platform]
@@ -250,8 +221,5 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// socialbuttonsTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed socialbuttons.jet
 var socialbuttonsTemplate string

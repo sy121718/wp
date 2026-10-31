@@ -1,12 +1,5 @@
 package migrations_test
 
-// 307_build_jobs_intent_test.go — 迁移 307 的判定、幂等与「新待办键」的行为回归。
-//
-// 为什么值得单独钉住：判定写错的后果不是报错，而是这条迁移**每次启动都重跑**；
-// 而索引写错的后果更隐蔽 —— 多语言任务被互相去重、人工构建被依赖重建吞掉，
-// 两种都只在业务层表现为「某些工作永远不做」。因此这里既验判定与幂等，
-// 也直接往表里插行验新键的接受 / 拒绝形状。
-
 import (
 	"testing"
 
@@ -15,10 +8,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 迁移 307 的版本号（与 register_build_intent.go 一致）。
 const buildJobsIntentVersion = "307-build-jobs-intent"
 
-// TestBuildJobsIntentMigrationCheckAndIdempotent 判定命中「已应用」，且整条 SQL 可重放。
 func TestBuildJobsIntentMigrationCheckAndIdempotent(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -48,7 +39,6 @@ func TestBuildJobsIntentMigrationCheckAndIdempotent(t *testing.T) {
 	}
 	assertApplied("首次")
 
-	// 幂等：整条 SQL 在已应用的库上原样重放不得报错（DROP + CREATE 的部分唯一索引也在这条里）。
 	for _, stmt := range migrations.SplitStatements(target.SQL) {
 		if stmt == "" {
 			continue
@@ -59,7 +49,6 @@ func TestBuildJobsIntentMigrationCheckAndIdempotent(t *testing.T) {
 	}
 	assertApplied("重放后")
 
-	// 形状抽查：新键必须正好是那五列（旧的四列键意味着多语言任务会被误去重）。
 	var cols []string
 	if err := db.Raw(`SELECT a.attname FROM pg_index x
 		JOIN pg_class c ON c.oid = x.indrelid
@@ -82,10 +71,6 @@ func TestBuildJobsIntentMigrationCheckAndIdempotent(t *testing.T) {
 	}
 }
 
-// TestBuildJobsPendingKeyAcceptsMultiLangAndIntent 新键按语言 / 意图分开待办，同键仍然去重。
-//
-// 这一条是**失败能力验证**的靶子：把索引改回 (source_type, source_id, build_input_hash)，
-// 第二个语言的插入立刻撞唯一键 —— 多语言站点在队列侧只会构建一种语言。
 func TestBuildJobsPendingKeyAcceptsMultiLangAndIntent(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -103,12 +88,11 @@ func TestBuildJobsPendingKeyAcceptsMultiLangAndIntent(t *testing.T) {
 		}
 	}
 	mustOK("首个语言", "zh-CN", "dependency")
-	// 同一来源同一输入、另一种语言：旧的四列键会把它当重复挡下。
+
 	mustOK("第二个语言", "en-US", "dependency")
-	// 同一来源同一输入同一语言、不同意图：旧键同样会挡下（人工构建被依赖重建吞掉）。
+
 	mustOK("手工构建", "zh-CN", "manual")
 
-	// 完全同键的重复待办仍必须被拒绝（幂等语义不变）。
 	err := db.Exec(insert, src, "h1", "zh-CN", "dependency").Error
 	if err == nil {
 		t.Fatal("同来源同输入同语言同意图的重复待办必须被 uq_build_jobs_pending 拒绝")

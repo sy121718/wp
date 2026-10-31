@@ -11,7 +11,6 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
-// TestRoleCreateSuccess 角色创建成功，并同步写入 Casbin g2 启用状态。
 func TestRoleCreateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -30,7 +29,7 @@ func TestRoleCreateSuccess(t *testing.T) {
 	if role.RoleName != "测试角色" || role.SortOrder != 2 || role.Status != adminmodel.RoleStatusEnabled {
 		t.Fatalf("角色字段不符: %+v", role)
 	}
-	// g2 已写入
+
 	ok, err := pkgcasbin.GetEnforcer().HasNamedGroupingPolicy("g2", code, "active")
 	wantErr(t, err, "")
 	if !ok {
@@ -38,7 +37,6 @@ func TestRoleCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleCreateStatusZeroDefaultsEnabled status 未传（nil）时默认启用。
 func TestRoleCreateStatusZeroDefaultsEnabled(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -56,8 +54,6 @@ func TestRoleCreateStatusZeroDefaultsEnabled(t *testing.T) {
 	}
 }
 
-// TestRoleCreateDisabledExplicit 显式传 status=0（禁用）时创建禁用角色，且不写入 Casbin g2 active。
-// 修复前：DTO Status 为 int，0 被强制改写为启用，无法创建禁用角色。
 func TestRoleCreateDisabledExplicit(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -76,7 +72,7 @@ func TestRoleCreateDisabledExplicit(t *testing.T) {
 	if role.Status != adminmodel.RoleStatusDisabled {
 		t.Fatalf("显式禁用应落库 status=0: got=%d", role.Status)
 	}
-	// g2 不应写入 active
+
 	ok, err := pkgcasbin.GetEnforcer().HasNamedGroupingPolicy("g2", code, "active")
 	wantErr(t, err, "")
 	if ok {
@@ -84,7 +80,6 @@ func TestRoleCreateDisabledExplicit(t *testing.T) {
 	}
 }
 
-// TestRoleCreateNumericCodeRejected 纯数字角色编码被拒绝（与 user_id subject 冲突）。
 func TestRoleCreateNumericCodeRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -93,7 +88,6 @@ func TestRoleCreateNumericCodeRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleCodeNumeric)
 }
 
-// TestRoleCreateDuplicateCode 重复角色编码被拒绝。
 func TestRoleCreateDuplicateCode(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -105,7 +99,6 @@ func TestRoleCreateDuplicateCode(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleCodeExists)
 }
 
-// TestRoleUpdateSuccess 更新角色元信息（名称/排序/备注）。
 func TestRoleUpdateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -127,9 +120,6 @@ func TestRoleUpdateSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleUpdateRefreshesUpdateTime 角色更新后 update_time 被刷新、update_by 保留原值。
-// 修复前 RoleModel.Update 的 Select 列缺 update_by/update_time：
-// BeforeUpdate hook 虽刷新实体字段但不写库，DB 中 update_time 保持旧值。
 func TestRoleUpdateRefreshesUpdateTime(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -137,7 +127,6 @@ func TestRoleUpdateRefreshesUpdateTime(t *testing.T) {
 	code := "role_ref_" + uniq("")
 	roleID := createRole(t, e, code, "刷新时间角色")
 
-	// 把 update_time 改成过去时间、update_by 改成历史操作人，模拟旧审计字段
 	past := time.Now().Add(-time.Hour)
 	if err := e.db.Model(&adminmodel.RoleEntity{}).Where("id = ?", roleID).
 		Updates(map[string]interface{}{"update_time": past, "update_by": 10086}).Error; err != nil {
@@ -164,7 +153,6 @@ func TestRoleUpdateRefreshesUpdateTime(t *testing.T) {
 	}
 }
 
-// TestRoleUpdateDisableSyncsCasbin 禁用角色同步删除 g2 active。
 func TestRoleUpdateDisableSyncsCasbin(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -183,7 +171,6 @@ func TestRoleUpdateDisableSyncsCasbin(t *testing.T) {
 	}
 }
 
-// TestRoleUpdateNotFound 更新不存在的角色报错。
 func TestRoleUpdateNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -192,14 +179,13 @@ func TestRoleUpdateNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleNotFound)
 }
 
-// TestRoleDeleteSuccess 删除普通角色：sys_role 行 + Casbin p/g/g2 全部清理。
 func TestRoleDeleteSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	code := "role_del_" + uniq("")
 	roleID := createRole(t, e, code, "待删除")
-	// 绑定用户与权限，验证一并清理
+
 	if err := pkgcasbin.ReplaceUserRoleBindings("1001", []string{code}); err != nil {
 		t.Fatalf("绑定用户失败: %v", err)
 	}
@@ -229,7 +215,6 @@ func TestRoleDeleteSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleDeleteSystemRoleRejected 系统内置角色不可删除。
 func TestRoleDeleteSystemRoleRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -243,7 +228,6 @@ func TestRoleDeleteSystemRoleRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleIsSystem)
 }
 
-// TestRoleDeleteNotFound 删除不存在的角色报错。
 func TestRoleDeleteNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -252,7 +236,6 @@ func TestRoleDeleteNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleNotFound)
 }
 
-// TestRoleDetailSuccess 角色详情查询。
 func TestRoleDetailSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -266,7 +249,6 @@ func TestRoleDetailSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleDetailNotFound 详情查询不存在的角色报错。
 func TestRoleDetailNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -275,7 +257,6 @@ func TestRoleDetailNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleNotFound)
 }
 
-// TestRoleListPagingAndKeyword 角色列表分页与关键字筛选。
 func TestRoleListPagingAndKeyword(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -301,7 +282,6 @@ func TestRoleListPagingAndKeyword(t *testing.T) {
 	}
 }
 
-// TestRoleMenuSaveSuccess 角色授权菜单：menu_ids → permission_codes → Casbin p 策略，并可反查。
 func TestRoleMenuSaveSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -309,8 +289,7 @@ func TestRoleMenuSaveSuccess(t *testing.T) {
 	code := "rolemenu_" + uniq("")
 	roleID := createRole(t, e, "rm_"+uniq(""), "菜单角色")
 	permID := createPerm(t, e, code, "/api/rolemenu")
-	// 预置一个无关权限点拉高「覆盖全部启用权限点」的门槛（>1）：
-	// 测试环境权限点全集过小，仅授单个菜单会被超管保护误判为超管等价。
+
 	createPerm(t, e, "bg_"+uniq(""), "/api/background")
 	menuID := createMenuWithPerm(t, e, permID, code)
 
@@ -330,7 +309,6 @@ func TestRoleMenuSaveSuccess(t *testing.T) {
 		t.Fatalf("角色权限策略不符: %v", perms)
 	}
 
-	// 反查
 	list, err := e.svc.RoleMenuList(ctx, &admindto.RoleMenuListReq{RoleID: roleID})
 	wantErr(t, err, "")
 	if len(list.MenuIDs) != 1 || list.MenuIDs[0] != menuID {
@@ -338,7 +316,6 @@ func TestRoleMenuSaveSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleMenuSaveRoleNotFound 给不存在的角色授权菜单报错。
 func TestRoleMenuSaveRoleNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -347,7 +324,6 @@ func TestRoleMenuSaveRoleNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleNotFound)
 }
 
-// TestRoleUserSaveAndList 绑定角色用户并可分页反查。
 func TestRoleUserSaveAndList(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -382,7 +358,6 @@ func TestRoleUserSaveAndList(t *testing.T) {
 	}
 }
 
-// TestRoleUserSaveNotFound 给不存在的角色绑定用户报错。
 func TestRoleUserSaveNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -391,7 +366,6 @@ func TestRoleUserSaveNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRoleNotFound)
 }
 
-// TestGetRoleCodesByUserIDFiltersDisabled 用户有效角色编码需过滤 DB 中禁用角色。
 func TestGetRoleCodesByUserIDFiltersDisabled(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -400,7 +374,7 @@ func TestGetRoleCodesByUserIDFiltersDisabled(t *testing.T) {
 	disabledCode := "gc_dis_1_" + uniq("")
 	createRole(t, e, enabledCode, "启用角色")
 	disID := createRole(t, e, disabledCode, "禁用角色")
-	// 直接落库禁用
+
 	if err := e.db.Model(&adminmodel.RoleEntity{}).Where("id = ?", disID).Update("status", adminmodel.RoleStatusDisabled).Error; err != nil {
 		t.Fatalf("禁用角色失败: %v", err)
 	}
@@ -417,15 +391,12 @@ func TestGetRoleCodesByUserIDFiltersDisabled(t *testing.T) {
 	}
 }
 
-// --- helpers ---
-
 func (e *env) dbGetRole(id uint64) (*adminmodel.RoleEntity, error) {
 	var role adminmodel.RoleEntity
 	err := e.db.First(&role, id).Error
 	return &role, err
 }
 
-// createMenuWithPerm 创建 type=2 菜单并绑定启用权限 code（组件格式 view.xxx）。
 func createMenuWithPerm(t *testing.T, e *env, _ uint64, code string) uint64 {
 	t.Helper()
 	err := e.svc.MenuCreate(context.Background(), &admindto.MenuCreateReq{

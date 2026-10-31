@@ -1,18 +1,10 @@
 package mailservice
 
-// mail_automation_graph_test.go — 图校验的单测（issue #38 P3）。
-//
-// 校验是纯函数，用单测覆盖边界最划算：这些错误在运行期表现为「某个人莫名卡住」，
-// 事后排查代价极高，而在保存时拒绝只要一行错误信息。
-//
-// 节点形状：key / type / next / yes / no 是**结构字段**，类型特定的参数放 **params** 里。
-
 import (
 	"strings"
 	"testing"
 )
 
-// node 造单出边节点。
 func node(key, typ string, params map[string]any, next string) map[string]any {
 	n := map[string]any{"key": key, "type": typ}
 	if params != nil {
@@ -24,7 +16,6 @@ func node(key, typ string, params map[string]any, next string) map[string]any {
 	return n
 }
 
-// branch 造条件分支节点（两条出边）。
 func branch(key string, conditions []any, yes, no string) map[string]any {
 	return map[string]any{
 		"key": key, "type": NodeTypeBranch,
@@ -69,7 +60,6 @@ func TestBranchWithTwoArmsPasses(t *testing.T) {
 	}
 }
 
-// TestDelayMinutesAsFloat 兼容 JSON 解出来的 float64。
 func TestDelayMinutesAsFloat(t *testing.T) {
 	err := parseFromNodes(t, "n1", []map[string]any{
 		node("n1", NodeTypeDelay, map[string]any{"minutes": float64(60)}, "n2"),
@@ -109,7 +99,6 @@ func TestDanglingEdgeRejected(t *testing.T) {
 	}
 }
 
-// TestCycleRejected 有环的图必须被拒 —— 运行期就是无限循环发邮件。
 func TestCycleRejected(t *testing.T) {
 	err := parseFromNodes(t, "n1", []map[string]any{
 		node("n1", NodeTypeTrigger, nil, "n2"),
@@ -121,7 +110,6 @@ func TestCycleRejected(t *testing.T) {
 	}
 }
 
-// TestSelfLoopRejected 自环是最短的环。
 func TestSelfLoopRejected(t *testing.T) {
 	err := parseFromNodes(t, "n1", []map[string]any{
 		node("n1", NodeTypeTrigger, nil, "n1"),
@@ -131,7 +119,6 @@ func TestSelfLoopRejected(t *testing.T) {
 	}
 }
 
-// TestUnreachableNodeRejected 走不到的节点是作者写错了，静默留着会让人以为配好了。
 func TestUnreachableNodeRejected(t *testing.T) {
 	err := parseFromNodes(t, "n1", []map[string]any{
 		node("n1", NodeTypeEnd, nil, ""),
@@ -142,7 +129,6 @@ func TestUnreachableNodeRejected(t *testing.T) {
 	}
 }
 
-// TestNodeShapeValidation 各类型的必需参数与出边形状。
 func TestNodeShapeValidation(t *testing.T) {
 	cases := []struct {
 		name  string

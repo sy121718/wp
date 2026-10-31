@@ -15,7 +15,6 @@ import (
 	productservice "go_wp/internal/module/product/service"
 )
 
-// 同批导入可拥有相同 sort/create_time，完整索引不能依赖数据库对并列项的偶然次序。
 func TestProductListAndSeoIndexKeepAllRowsWhenSortAndTimeTie(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -29,7 +28,7 @@ func TestProductListAndSeoIndexKeepAllRowsWhenSortAndTimeTie(t *testing.T) {
 	sort.Strings(ids)
 	createdAt := time.Date(2026, time.October, 29, 0, 0, 0, 0, time.UTC)
 	rows := make([]map[string]any, 0, count)
-	// 反向插入，使物理插入顺序与稳定分页应返回的 id 次序相反。
+
 	for i := len(ids) - 1; i >= 0; i-- {
 		rows = append(rows, map[string]any{
 			"id": ids[i], "project_id": f.projectID, "name": fmt.Sprintf("同批商品 %03d", i),

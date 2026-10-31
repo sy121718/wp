@@ -1,28 +1,5 @@
 package routers
 
-// wiring_coverage_test.go — 防复发：装配期 Set* 注入必须在 wiringManifest 里有条目
-// （FIX-25 的根因就是「注入了但没进盘点表」）。
-//
-// 判据不看注释、只看调用。扫描面是**两处**装配期注入现场：
-//
-//	① 本包 internal/routers 的非测试源码 —— 装配段直接把跨模块端口交给别的模块；
-//	② 各模块 internal/module/<mod>/inbound/http/*.go —— 模块自装配内部的转交
-//	   （product.SetInventoryDeps 里调 wiring.SetWarehouseOptionsPort 这类）。
-//
-// ② 是后补的：旧口径只看 ① ，于是「注入发生在模块内部」的端口在盘点上凭空消失 ——
-// manifest 有条目、启动自检也 marks 了，但扫描看不见它，漏接时同样既不 fail-fast
-// 也不进降级日志。两个已知的盲区端口就是这么漏的：
-// product.SetWarehouseOptionsPort（portProductPageWarehouses）与
-// product.SetDetailTemplatePort（portProductPageDetailTemplate）。
-//
-// ② 的判别口径：**只认不接收返回值的调用语句**（ast.ExprStmt）。装配期注入型 setter
-// 无返回值（注入的是依赖，不是结果）；而模块里以 Set 开头的**业务写方法**
-// （h.svc.SetBOM(ctx, req)、h.products.SetAttributeValues(ctx, req)）返回 error 且必须被
-// 检查 —— 实测这些调用全是「赋值/判断」形态、首参是 ctx 或 c.Request.Context()，
-// 被这条口径自然排除，不需要为它们写豁免条目。
-//
-// 未登记 = 这个注入点漏接时既不 fail-fast 也不进降级日志 —— 正是要消灭的空洞。
-
 import (
 	"fmt"
 	"go/ast"
@@ -34,40 +11,19 @@ import (
 	"testing"
 )
 
-// uninjectableSetters 本包（internal/routers）扫到、但不属于「装配期端口注入」的 Set* 调用 → 理由。
-//
-// 只列真正不适用清单（不是尚未登记的端口）：新增条目必须写明理由。
-// 条目一旦在扫描里不再出现（调用点被删 / 改名 / 已补进 manifest）即判失败，见
-// reportOutdatedExemptions —— 清单只减不增，不许退化成注释。
 var uninjectableSetters = map[string]string{
-	// 装配期内部状态写入（无「未注入」语义：调用恒发生且不跨模块）。
+
 	"SetStaleMarkers": "media 的多路注入由 media 自身在两处分别登记（portMediaStaleMarker*）",
-	// gin.Context.Set（请求上下文写值）不在此列：它的名字是 Set，长度 <= 3，
-	// 扫描口径直接跳过（见 scanSetterCalls），留一条永远不会被命中的条目只会让清单失真。
 }
 
-// moduleInternalSetters 模块 inbound/http 侧扫到、但**不是跨模块可空端口**的 Set* 调用 → 理由。
-//
-// 口径同 wiring.go 文件头第二条边界：这些调用的实参在编译期必给（模块 Setup 的形参、
-// 或本模块自己构造的对象），不存在「未注入 → 用户看到什么」这个状态，因此不进
-// wiringManifest。两条例外是**包级助手**（response.SetLangCookie / datarule.SetProvider），
-// 它们只是名字以 Set 开头，与端口无关。
-//
-// 每条都写明「谁在哪把什么交给谁」：下一个人要能分清它是端口还是噪声。
-// 条目一旦在扫描里不再出现即判失败（调用点被删 / 改名 / 已补进 manifest）。
 var moduleInternalSetters = map[string]string{
-	// —— content ——
+
 	"SetArticleLinkLocator": "content.SetupContentPages：形参 loc（文章链接定位）转交译文工作台 handle",
 	"SetContentWriter":      "content.SetupContentPages：模块内 i18n.NewContentWriterDefault() 构造后转交",
 	"SetCollectionSchemas":  "content.SetupContentRoutes：形参 collections 转交集合源注册",
-	// —— navigation ——
-	//
-	// SetMenuInvalidator / SetPageMarker 两条豁免已随译文写链下沉而删除：那两个端口
-	// 现在由装配层直接交给 service 的 TranslationWriter（见 wiring.go 的四条
-	// navigation.TranslationWriter* 端口与 assembly_publish.go 的注入点），页面句柄
-	// 不再转手它们 —— 豁免条目在扫描里已无对应调用，留着会被 reportOutdatedExemptions 判死。
+
 	"SetBlockPanelPort": "navigation.SetupNavigationPages：形参 blocks（BlockService）转交页面 handle",
-	// —— ai ——
+
 	"SetCallLogWriter":     "ai.SetupAIRoutes：模块内 aimodel.NewCallLogModel(db) 构造（调用流水写侧）",
 	"SetCallLogReader":     "ai.SetupAIRoutes：同一个 callLog 实例的读侧（同一个 model，无跨模块依赖）",
 	"SetChatPort":          "ai.SetupAIRoutes：模块内 aiservice 实例转交会话层",
@@ -76,42 +32,35 @@ var moduleInternalSetters = map[string]string{
 	"SetToolCallLogWriter": "ai.SetupAIRoutes：模块内 aimodel.NewToolCallLogModel(db) 构造",
 	"SetConfigReader":      "ai.SetupAIRoutes：形参 aiConfig（sysconfigcontract.Service）转交 MCP 端点",
 	"SetConfigService":     "ai.SetupAIPages：形参 aiConfig 转交 MCP 页面 handle",
-	// —— user（客户页：全部是 SetupCustomerPages 的形参转交）——
+
 	"SetCustomerCohort":    "user.SetupCustomerPages：形参 cohort（客户域聚合端口）转交",
 	"SetCustomerGrowth":    "user.SetupCustomerPages：形参 growth 转交",
 	"SetCustomerRfm":       "user.SetupCustomerPages：形参 rfm 转交",
 	"SetCustomerSegments":  "user.SetupCustomerPages：形参 segments 转交",
 	"SetMembershipDisplay": "user.SetupCustomerPages：形参 membership 转交（会员等级 / 权益只读展示）",
 	"SetMembershipFilters": "user.SetupCustomerPages：形参 membershipAdmin 转交（按等级筛选的两个只读端口）",
-	// —— product ——
+
 	"SetInventoryDeps":      "product.SetupProductPages：形参 inventories 转交；它在转交方法内注入真端口 product.SetWarehouseOptionsPort（已登记 manifest）",
 	"SetDetailTemplateDeps": "product.SetupProductPages：形参 contentTemplates + instances 转交；它在转交方法内注入真端口 product.SetEntityTemplatePort / SetDetailTemplatePort（已登记 manifest）",
-	// 发布记录页（B9）：与上面两条同形态 —— 形参 presentations（静态类型 PresentationService
-	// 已嵌入 presentation 的 PublishRecordPort，编译期成立）交进来，在转交方法内部包成
-	// outbound/publishrecord 再注入读模型。不需要运行期断言，也没有第二个真端口要 marks。
+
 	"SetPublishRecordDeps": "product.SetupProductPages：形参 instances 转交；它在转交方法内注入真端口 product.SetPublishRecordPort（本模块读模型字段）",
 	"SetPublishRecordPort": "product.SetPublishRecordPort：moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service 读模型，本行即那个真端口",
-	// 发布历史（迁移 673）：与上一条**同一次转交**交进同一份适配器 —— 该适配器同时实现
-	// 「当前发布状态」与「历次发布尝试」两个读口（迁移 673 新建 product_publish_attempts）。
-	// 不是第二个端口，所以不单独进 manifest、也不需要第二个 marks 标记点。
+
 	"SetPublishAttemptPort":   "product.SetPublishAttemptPort：发布历史读口，与 SetPublishRecordPort 同一份 outbound/publishrecord 适配器、同一次转交",
 	"SetSeoTitleSources":      "product.SetupProductPages：形参 pageSvc 转交 SEO 标题候选来源",
 	"SetI18nStaleMarker":      "product.NewProductTranslationHandle：构造参数 pages（失效标记）转交",
 	"SetTranslationInstances": "product.NewProductTranslationHandle：构造参数 instances 转交",
 	"SetTranslationStore":     "product.SetContentTranslationStore：形参 port（译文存储口）转交",
-	// —— admin ——
+
 	"SetDictReader": "admin.SetupAdminPages：形参 dict（sysconfigcontract.DictReader）转交 i18n 词条页",
 	"SetLangCookie": "admin.AdminLangSwitch：包级助手 response.SetLangCookie —— HTTP 出口写语言 cookie，不是端口",
 	"SetProvider":   "admin.bootstrapDataRule：包级函数 datarule.SetProvider —— 数据域注册入口（装配期必做），不是端口",
-	// —— 其余模块 ——
+
 	"SetCollectionResolver": "presentation.SetupPresentationRoutes：形参 collections 转交集合源解析",
 	"SetPlugins":            "workbench.New（router.go 构造期）：形参 plugins 转交编辑器平台服务",
 	"SetProjects":           "analytics.SetupAnalyticsRoutes：形参 projects 转交访问统计服务",
 }
 
-// scanSetterCalls 扫一组 Go 源文件里的 Set* 调用，返回 setter 名 → 首次出现的文件。
-//
-// stmtOnly 为真时只认**不接收返回值**的调用语句（模块装配期注入的形态，见文件头口径）。
 func scanSetterCalls(t *testing.T, files []string, stmtOnly bool) map[string]string {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -145,7 +94,7 @@ func scanSetterCalls(t *testing.T, files []string, stmtOnly bool) map[string]str
 				return true
 			}
 			name := sel.Sel.Name
-			// Setup* 是模块装配入口（不是端口注入）；Set 本身是 gin 的上下文写值。
+
 			if !strings.HasPrefix(name, "Set") || strings.HasPrefix(name, "Setup") || len(name) <= 3 {
 				return true
 			}
@@ -161,11 +110,6 @@ func scanSetterCalls(t *testing.T, files []string, stmtOnly bool) map[string]str
 	return found
 }
 
-// reportOutdatedExemptions 过期条目检查：豁免清单里的名字必须真的挡下了一个未登记调用。
-//
-// 两个方向都失败：条目还在、扫描已看不到（调用点删了 / 改名了 / 已补进 manifest）→
-// 清单退化成注释；条目从未命中（名字早就被 isKnown 短路）→ 更糟：它看上去在守一条边界，
-// 实际什么都没守。判据：used 集合由「走了豁免分支」的调用构成，不是「名字出现过」。
 func reportOutdatedExemptions(t *testing.T, side string, exempt map[string]string, used map[string]bool) {
 	t.Helper()
 	var outdated []string
@@ -184,9 +128,7 @@ func reportOutdatedExemptions(t *testing.T, side string, exempt map[string]strin
 }
 
 func TestEverySetterCallIsInWiringManifest(t *testing.T) {
-	// 判定用**子串包含**：manifest 里存在合并条目（如
-	// "presentation.SetNavigationService/SetMediaProbe/SetPluginService"、
-	// "pipeline.Fanout.SetRebuilder(page)"），它们用一条记录覆盖同一次注入的多个 setter。
+
 	known := make([]string, 0, len(wiringManifest))
 	for _, e := range wiringManifest {
 		known = append(known, e.Port)
@@ -209,8 +151,7 @@ func TestEverySetterCallIsInWiringManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("枚举模块 inbound/http 源文件失败: %v", err)
 	}
-	// 判据失效比判据不全更糟：glob 打空（换了工作目录 / 目录被搬走）时必须报错，
-	// 而不是「一个文件都没扫到 → 没有违规 → 绿」。
+
 	if len(moduleFiles) == 0 {
 		t.Fatalf("扫描面失效：%s 匹配不到任何文件（测试工作目录应为 internal/routers）", moduleGlob)
 	}

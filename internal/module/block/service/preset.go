@@ -9,7 +9,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// SetPresetResolver 装配受控业务预设；普通块创建不依赖该端口。
 func (s *Service) SetPresetResolver(resolver blockcontract.PresetResolver) {
 	s.presetResolver = resolver
 }

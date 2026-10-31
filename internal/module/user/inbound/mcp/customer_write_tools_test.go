@@ -1,13 +1,5 @@
 package usermcp
 
-// customer_write_tools_test.go — 客户账号状态变更的边界。
-//
-// 两条最要紧的断言：
-//   · status 不接受空串 / 未知值 —— 零值在这里的含义是「停用」，把没给的参数当 0
-//     处理会把一次手滑变成一次停用；
-//   · 解锁回执必须把 Unlocked 与 Cleared 分开说 —— 运营点了个不会变化的按钮时
-//     需要知道的是「它本来就没锁」，否则他下一次还会再来点一遍。
-
 import (
 	"context"
 	"errors"
@@ -128,7 +120,6 @@ func TestCustomerSetStatusMapsDisabled(t *testing.T) {
 	}
 }
 
-// 空串 / 未知状态必须当场拒：零值在落库侧是「停用」，透传等于手滑即停用。
 func TestCustomerSetStatusRejectsUnknownStatus(t *testing.T) {
 	for _, bad := range []string{"", "normal", "ban", "0"} {
 		stub := &stubCustomerWriter{}
@@ -152,8 +143,6 @@ func TestCustomerSetStatusRejectsZeroCustomerID(t *testing.T) {
 	}
 }
 
-// 停用的回执必须说清「他登不上」并给出恢复路径：
-// 用户按下按钮后最常见的下一个问题是「我是不是弄错了」。
 func TestCustomerSetStatusTextExplainsDisable(t *testing.T) {
 	stub := &stubCustomerWriter{statusRes: &userdto.CustomerStatusResp{CustomerID: 7, Status: userenums.StatusDisabled}}
 	text, err := callCustomerWrite(t, stub, "customer_set_status", map[string]any{
@@ -178,7 +167,6 @@ func TestCustomerSetStatusPropagatesError(t *testing.T) {
 	}
 }
 
-// Unlocked 与 Cleared 是两件事，回执必须分开说。
 func TestCustomerUnlockTextDistinguishesOutcomes(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -212,8 +200,6 @@ func TestCustomerUnlockRejectsZeroCustomerID(t *testing.T) {
 	}
 }
 
-// 描述里必须写明「先核对身份、再让用户确认」：这是这两个工具唯一的行为约束，
-// 而模型据描述决定怎么做。
 func TestCustomerSetStatusDescriptionRequiresConfirmation(t *testing.T) {
 	tool := mustCustomerWriteTools(t, &stubCustomerWriter{})["customer_set_status"]
 	desc := tool.Description()

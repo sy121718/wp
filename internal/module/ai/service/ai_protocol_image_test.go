@@ -1,11 +1,5 @@
 package aiservice
 
-// ai_protocol_image_test.go — 两族协议的图片分片形状。
-//
-// 两族的形状**不一样**，而且错法很隐蔽：把 url 写成对象（或写成字符串）
-// 都不会让请求失败 —— 上游按未知结构忽略掉那个分片，请求 200，模型只是
-// 「看不到图」。所以这里逐个字段钉住，而不是只断言「有个数组」。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"testing"
@@ -24,8 +18,6 @@ func decodeImageBody(t *testing.T, raw []byte) map[string]any {
 	return out
 }
 
-// 不带图时 content 必须是**字符串**：纯文本用数组是这条协议里较弱的形态，
-// 部分网关对它的处理是「模型收到的正文变成奇怪的东西」。
 func TestChatBodyKeepsPlainStringWithoutImages(t *testing.T) {
 	body, err := buildChatCompletionsBody("m", []aidto.ChatMessage{{Role: "user", Content: "你好"}}, nil, 0, false)
 	if err != nil {
@@ -38,7 +30,6 @@ func TestChatBodyKeepsPlainStringWithoutImages(t *testing.T) {
 	}
 }
 
-// 带图时 chat 的分片是 {"type":"image_url","image_url":{"url":...}}（**url 是对象**）。
 func TestChatBodySplitsImagesAsParts(t *testing.T) {
 	msgs := []aidto.ChatMessage{{Role: "user", Content: "这是什么", Images: []string{imgURI}}}
 	body, err := buildChatCompletionsBody("m", msgs, nil, 0, false)
@@ -62,7 +53,7 @@ func TestChatBodySplitsImagesAsParts(t *testing.T) {
 	if imgPart["type"] != "image_url" {
 		t.Fatalf("第二片应是图片，实得 %+v", imgPart)
 	}
-	// url 必须是**对象**：写成字符串这一片会被静默忽略。
+
 	urlObj, ok := imgPart["image_url"].(map[string]any)
 	if !ok {
 		t.Fatalf("image_url 应当是对象，实得 %T", imgPart["image_url"])
@@ -72,7 +63,6 @@ func TestChatBodySplitsImagesAsParts(t *testing.T) {
 	}
 }
 
-// 带图时 responses 的分片是 {"type":"input_image","image_url":"<字符串>"}（**url 是字符串**）。
 func TestResponsesBodySplitsImagesAsParts(t *testing.T) {
 	msgs := []aidto.ChatMessage{
 		{Role: roleSystem, Content: "规则"},
@@ -106,13 +96,12 @@ func TestResponsesBodySplitsImagesAsParts(t *testing.T) {
 	if imgPart["type"] != "input_image" {
 		t.Fatalf("第二片应是图片，实得 %+v", imgPart)
 	}
-	// url 必须是**字符串**（这一族与 chat 相反）：写成对象同样会被静默忽略。
+
 	if imgPart["image_url"] != imgURI {
 		t.Fatalf("image_url 应当是字符串形态，实得 %T：%+v", imgPart["image_url"], imgPart["image_url"])
 	}
 }
 
-// 带图的 user 消息不能退化成裸字符串（那会让图片被静默丢掉）。
 func TestResponsesPlainMessageExcludesImages(t *testing.T) {
 	plain := aidto.ChatMessage{Role: roleUser, Content: "你好"}
 	if !isPlainMessage(plain) {

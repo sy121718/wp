@@ -1,22 +1,5 @@
 package adminhttp
 
-// admin_jump_test.go — 写动作提示页的**写侧文案与回跳上下文**单测。
-//
-// 取代原先的 admin_page_err_text_test.go / admin_err_texts_test.go：那两份钉的是**读侧**
-// 受控出口（把 ?err= / ?done= 里读回来的任意串与白名单整体匹配，未命中落空串）。结论改由
-// shell.RenderJump 渲染整页提示之后，查询参数不再喂给页面，那套读侧判定已整批删除 ——
-// 它的覆盖目标（「手拼 URL 不能伪造系统提示」）改由 feature 层断言「?err= 不再渲染任何内容」，
-// 本文件则钉住**写侧**剩下的两件事：
-//
-//  1. 结论文案与成功 / 失败档位（adminBulkOutcome）—— 改传输通道不该改「成功说的是哪句话」；
-//  2. 回跳上下文的键白名单（adminListQuery）—— 表单 action 上带什么、BackPath 就读什么，
-//     两处必须是同一份键表，且**只透传调用点列出的键**。
-//
-// 结论文案现在是**事实**（adminui.Msg：key + 中文兜底 + %s 参数），所以断言前先在测试里
-// 渲染一次（adminui.MsgText）—— 这正好等价于提示页模板的 tf 在渲染期做的事。
-//
-// 提示页本身的 HTTP 形态（200 + data-jump-state）由 feature 层断言（需要真 Jet 渲染器）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// adminJumpCtx 组一个带 query 的 POST 上下文（归口助手与取词都从它取）。
 func adminJumpCtx(t *testing.T, rawQuery string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -41,11 +23,6 @@ func adminJumpCtx(t *testing.T, rawQuery string) *gin.Context {
 	return c
 }
 
-// TestAdminBulkOutcomeBranches 批量删除的三种结论：全成功（成功档）/ 有跳过（失败档）/
-// 一个可操作项都没有（失败档 + 参数错误文案）。
-//
-// 档位（ok）与文案一起断言：只断言文案会让「部分成功被报成成功」（绿勾）这种缺陷溜过，
-// 而运营看到绿色对勾就不会再去看剩下那些没删掉的。
 func TestAdminBulkOutcomeBranches(t *testing.T) {
 	c := newPageErrContext(t)
 	for _, noun := range adminBulkNouns {
@@ -77,10 +54,6 @@ func TestAdminBulkOutcomeBranches(t *testing.T) {
 	}
 }
 
-// TestAdminBulkOutcomeFollowsLanguage 结论文案按当前语言取词（与改造前的 adminBulkResultURL 同源）。
-//
-// 用 pkg/i18n.InjectForTest 直接往内存缓存塞 en-US 词条：不建库、不起装配，任何一处没按
-// 当前语言取词都会立刻暴露。测完用 t.Cleanup 注入空缓存还原。
 func TestAdminBulkOutcomeFollowsLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		adminenums.BulkDoneKey:    {"zh-CN": "已删除 %s 个%s", "en-US": "EN-DONE %s %s"},
@@ -108,10 +81,6 @@ func TestAdminBulkOutcomeFollowsLanguage(t *testing.T) {
 	}
 }
 
-// TestAdminListQueryOnlyWhitelistedKeys 表单 action 上只带调用点列出的筛选键。
-//
-// 白名单不是可选项：它决定 POST 回来时 shell.BackPath 能读回什么，也决定一个
-// 「让管理员点一个带几 KB query 的链接、回跳时再拼回去」的入口是否存在。
 func TestAdminListQueryOnlyWhitelistedKeys(t *testing.T) {
 	c := adminJumpCtx(t, "keyword=%E8%A7%92%E8%89%B2&page=2&evil=payload&limit=20")
 	got := adminListQuery(c, adminRolesBackKeys...)

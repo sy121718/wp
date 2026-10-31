@@ -1,7 +1,5 @@
 package feature
 
-// order_guest_account_test.go — 访客下单自动开号（BIZ-1 与 issue #36 的联动）。
-
 import (
 	"context"
 	"testing"
@@ -11,7 +9,6 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 )
 
-// fakeMail 记录被调用的邮件请求（只为断言「发了哪封信」）。
 type fakeMail struct {
 	calls []*mailcontract.SendInput
 }
@@ -21,7 +18,6 @@ func (f *fakeMail) SendTransactional(_ context.Context, in *mailcontract.SendInp
 	return &mailcontract.SendOutcome{Queued: true}, nil
 }
 
-// findTemplate 找某 key 的邮件。
 func (f *fakeMail) findTemplate(key string) *mailcontract.SendInput {
 	for _, c := range f.calls {
 		if c.TemplateKey == key {
@@ -31,7 +27,6 @@ func (f *fakeMail) findTemplate(key string) *mailcontract.SendInput {
 	return nil
 }
 
-// TestOrderCreateProvisionsGuestAccount：访客下单 → 自动开号 + 发初始密码 + 订单关联该账号。
 func TestOrderCreateProvisionsGuestAccount(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -52,7 +47,6 @@ func TestOrderCreateProvisionsGuestAccount(t *testing.T) {
 		t.Fatalf("访客下单应自动开号并关联 user_id，否则他无处可查自己的订单")
 	}
 
-	// 账号真的按邮箱建出来了，且与订单关联的是同一个。
 	var uid uint64
 	if err := f.db.Raw("SELECT id FROM users WHERE lower(email) = lower(?)", detail.Head.CustomerEmail).Scan(&uid).Error; err != nil {
 		t.Fatalf("按邮箱查账号失败: %v", err)
@@ -61,8 +55,6 @@ func TestOrderCreateProvisionsGuestAccount(t *testing.T) {
 		t.Fatalf("订单关联的账号与邮箱查到的不是同一个: %v vs %d", detail.Head.UserID, uid)
 	}
 
-	// 初始密码邮件：四个变量都必须是真值 —— 缺任何一个模板会静默渲染成空，
-	// 客户收到的就是「用户名：　密码：」这样的废邮件。
 	mail := f.mail.findTemplate("guest_account")
 	if mail == nil {
 		t.Fatalf("应发出 guest_account 邮件，实际发了 %d 封", len(f.mail.calls))
@@ -78,10 +70,6 @@ func TestOrderCreateProvisionsGuestAccount(t *testing.T) {
 	}
 }
 
-// TestOrderCreateNeverResetsExistingAccountPassword：安全边界。
-//
-// 邮箱已有账号时只关联、绝不动密码。若改成「顺手重置并发邮件」，任何人拿别人的邮箱
-// 下一单就能把对方密码换成自己知道的那一串，而且整条链路从外部看完全正常、不会报错。
 func TestOrderCreateNeverResetsExistingAccountPassword(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

@@ -1,13 +1,3 @@
-// Package feature product 模块 feature 测试 —— 后台属性管理页渲染链路（issue #7）。
-//
-// 覆盖验收 4「后台可管理属性组与属性值」的服务端部分：
-//
-//	· GET /admin/product-attributes 渲染完整页（属性组、值、参与变体标记都在 HTML 里）；
-//	· POST /api/product/attribute/set-values 消费浏览器整形后的 values JSON 数组。
-//	  增删、禁用、排序和清空通过同一请求保存。
-//
-// 用真实 Jet 模板渲染（与生产同一 template root），断言的是「页面里到底有没有
-// 那几样东西」，而不是「我们自己写下的配置」。
 package feature
 
 import (
@@ -36,7 +26,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newAttrPageEngine 装配一个只挂属性管理页的测试引擎（真实 Jet 模板 + 真实 service）。
 func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -45,8 +34,7 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 属性组行内操作与值编辑器抽屉按权限渲染（adminui.Prepare 读 PermSetKey）：
-	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在值编辑器」这类断言保持有效。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:attribute_create": true, "product:attribute_update": true, "product:attribute_delete": true,
@@ -63,13 +51,10 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	return engine, f
 }
 
-// attrTemplateRoot 模板根目录（测试进程工作目录在 public/test/product/feature）。
 func attrTemplateRoot() string {
 	return "../../../../internal/templates"
 }
 
-// TestProductAttributesPageRendersGroupsAndValues 页面渲染：
-// 属性组名、标识、参与变体标记、属性值、值编辑器容器 id 都必须在 HTML 里。
 func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
@@ -98,7 +83,7 @@ func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 			t.Fatalf("页面缺少 %q", want)
 		}
 	}
-	// 列表页标准骨架：勾选列 + 全选 + 批量删除栏 + 数据表格（属性组表已改成表格形态）。
+
 	for _, want := range []string{`class="data-table"`, `class="col-check"`, "data-check-all", `class="bulk-bar"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("属性组列表缺少标准表格骨架 %q", want)
@@ -106,7 +91,6 @@ func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 	}
 }
 
-// TestAttributeValuesFormWritesJSON 用浏览器写基座的 values JSON 字段保存增删与禁用。
 func TestAttributeValuesFormWritesJSON(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
@@ -138,10 +122,6 @@ func TestAttributeValuesFormWritesJSON(t *testing.T) {
 	}
 }
 
-// TestAttributePageCreateAndSetValues 建组 + 整体保存值（服务端归一与排序）。
-//
-// 页面写链路已迁到 ui/write-base.js（模板直调 /api/product/attribute/{create,set-values}），
-// 这里直接验用例：values 行数组由 product-attribute-values.test.cjs 与页面渲染测试分别钉住。
 func TestAttributePageCreateAndSetValues(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
@@ -162,7 +142,6 @@ func TestAttributePageCreateAndSetValues(t *testing.T) {
 		t.Fatalf("建组结果不符：%+v", list)
 	}
 
-	// 整体保存值：只提交一行 → 库里应只剩一行。
 	if _, err = f.svc.SetAttributeValues(t.Context(), &productdto.SetAttributeValuesReq{
 		ID: group.ID, Values: []productdto.AttributeValueReq{{Label: "原味"}},
 	}); err != nil {
@@ -177,7 +156,6 @@ func TestAttributePageCreateAndSetValues(t *testing.T) {
 	}
 }
 
-// postForm 发送 application/x-www-form-urlencoded 表单。
 func postForm(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -186,7 +164,6 @@ func postForm(engine *gin.Engine, path string, form url.Values) *httptest.Respon
 	return rec
 }
 
-// 编译期确保构造用的 service 类型一致（防装配签名漂移）。
 var (
 	_ = productservice.NewService
 	_ = productmodel.NewModel

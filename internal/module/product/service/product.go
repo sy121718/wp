@@ -1,43 +1,5 @@
 package productservice
 
-// 评分独立成表之后，维护入口与商品更新分离：商品更新只动商品自己的列，
-// 评分在这里增删。将来评论域落地时替换的只是「谁调用 AddRating」，接口形状不变。
-
-// 只读路径：片段端点（anonymous GET）→ SearchPort → model.SearchPublished → products 表。
-// 「已上架」直接落在 SQL 条件里，不在本层二次过滤 —— 少一层过滤就少一处
-// 「换了个入口就绕过了」的可能。
-
-// 规则：**商品评论必须买过**。
-//
-// 为什么实现在 product 而不是 comment：comment 模块不认识商品、也不认识订单 ——
-// 它只定义「能不能评」这个问题与实际存储。谁拥有这个实体，谁负责回答关于它自己的
-// 产品规则（同型先例：datarule 的域白名单由拥有该表的实体声明）。
-//
-// 依赖方向：product → order（经 productcontract.PurchaseChecker 只读端口）。
-// 反向不存在：order 不认识 comment，也不认识「评论」这件事。
-
-// 依赖方向：inventory → product。库存模块登记入库后（**库存变动已提交**）经本端口
-// 把采购单价 / 生产手工成本价写进 product_variants.cost_price。
-//
-// 商品模块只是这个业务列的**所有者**（表在自己这边，跨模块写只能走自己的入口）：
-// 入库登记不参与商品模块的任何状态判断，本方法也只动 cost_price 一列。
-//
-// issue #19 起这次回写也进主数据变更记录：成本价是定价工具的成本口径，属于主数据。
-// 留痕快照取事务锁后行，改后只替换 cost_price，不再读回更新结果；
-// operatorID 由调用方（入库登记）从会话带下来 —— 记的是「谁登记了这次入库」。
-
-// 翻译入口在商品列表行内「多语言」按钮（/admin/products/translations）：页面按
-// 「商品 + 该商品引用的分类/品牌/标签/属性」列出全部可翻译文本，译文写入
-// sys_translation（语境 "实体类型.字段名"，docs/06-D §7.5/§7.8）。
-//
-// 与构建期同源（唯一来源，不另写一份白名单）：
-//   - 哪些字段可翻译 → productcontract.TranslatableFields；
-//   - 语境界定       → productcontract.FieldContext；
-//   - 跳过规则       → i18n.ShouldTranslateContent（纯数字/纯符号/空白不进表）。
-//
-// 本文件只做「收集候选」，写入由调用方经 pkg/i18n.ContentWriter 完成（与页面翻译
-// 工作台共用同一写入路径与 hash 校验）。
-
 import (
 	"context"
 	"errors"
@@ -63,23 +25,11 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// 新建商品的 SKU 来源（docs/14 §1.1 的两条入口）。
-//
-//	custom    —— 自己创建：运营自己填编码（选了仓库则自动附加仓码前缀）；
-//	warehouse —— 从仓库选：选仓库 + 该仓的一条货，主体 = <仓短码>_<仓库 SKU>。
-//
-// 空串按 custom 归一（存量调用方与接口路径都不带这个字段）。捆绑商品不存在于仓库，
-// **不允许** warehouse（服务端硬拒，见 Create）。常量值不是 i18n key，只是请求里的取值，
-// 所以不需要词条；取值非法时的错误才是 key（inventoryenums.ErrSKUSourceInvalid）。
 const (
 	skuSourceCustom    = "custom"
 	skuSourceWarehouse = "warehouse"
 )
 
-// normalizeSKUSource 归一 SKU 来源：空串 = 自己创建，其余取值明确报错。
-//
-// 大小写不敏感：前端下拉给的是小写字面量，接口调用方可能写成 Warehouse。
-// 非法取值**不**静默退化成自己创建 —— 那会让「从仓库选」的意图消失得无声无息。
 func normalizeSKUSource(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", skuSourceCustom:
@@ -91,10 +41,6 @@ func normalizeSKUSource(raw string) (string, error) {
 	}
 }
 
-// firstNonEmpty 取第一个非空串（去首尾空白）。
-//
-// 本包的唯一实现（原 firstNonEmptyText / firstNonEmptyCode 是同逻辑的两份，已并到这里）：
-// 一处用于 SKU 取值回退，一处用于「实例路径 → 否则 slug 近似路径」。
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if code := strings.TrimSpace(v); code != "" {
@@ -104,10 +50,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// Create 新建商品，并在同一事务内生成它的第一个变体。
-//
-// 商品恒有至少一个变体（默认多变体模型，不做「简单/可变商品」二分）；
-// 单变体商品在前台按普通商品呈现，不显示规格选择器。
 func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *productdto.ProductResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, productenums.Err(productenums.ErrNameRequired)
@@ -130,13 +72,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		return nil, productenums.Err(productenums.ErrSlugTaken)
 	}
 
-	// 属性引用先校验再落库（同一工程内 + 必须存在，见 resolveAttributeIDs）。
 	attributeIDs, err := s.resolveAttributeIDs(ctx, projectID, req.AttributeIDs)
 	if err != nil {
 		return nil, err
 	}
-	// 分类与品牌（issue #10）：引用先校验再落库（同一工程内 + 必须存在），
-	// 「主分类必属于附属分类」的不变量由 applyCategoryRefs 维持。
+
 	categoryIDs, primaryCategoryID, err := s.applyCategoryRefs(ctx, projectID, req.CategoryIDs, nil, &req.PrimaryCategoryID, nil)
 	if err != nil {
 		return nil, err
@@ -145,24 +85,18 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
-	// 标签引用（issue #11）：手工标签才可手工挂载；自动标签由规则重算维护。
+
 	tagIDs, err := s.resolveTagIDs(ctx, projectID, req.TagIDs)
 	if err != nil {
 		return nil, err
 	}
-	// 相关商品引用（审计 DB-03 §1.2 / PROD-01）：related_ids 是同表自引用，此前是**唯一**
-	// 没有校验的一条引用面（分类 / 标签 / 属性都有「存在 + 同工程」），任意 uuid 都能写进去。
-	// 商品 id 先落定：自引用判定要用它（不能指向自己）。
+
 	productID := uuid.NewString()
 	relatedIDs, err := s.resolveRelatedIDs(ctx, projectID, productID, req.RelatedIDs)
 	if err != nil {
 		return nil, err
 	}
-	// 「跟踪数量」开关与数量框的同组绑定（原 dto.TrackedQuantity 的语义，页面迁到 JSON 写基座后
-	// 归一到 service）：勾了跟踪却还没填数量 = 明确 0（没货），与「压根不跟踪 = 无限」是两件事。
-	// JSON 里这两种都是 quantity 缺失，区别只在开关上 —— 前端不做业务归一，所以必须在这里补。
-	// 反过来，页面不再经过原生表单校验（fetch 提交），负数能越过 min="0" 发到端点上，
-	// 这里补一条拒绝，否则它会一路落到库存建行、最后由 PG 的 CHECK 报一句原始错误。
+
 	if req.TrackQuantity && req.Quantity == nil {
 		zero := 0
 		req.Quantity = &zero
@@ -170,16 +104,12 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if req.Quantity != nil && *req.Quantity < 0 {
 		return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 	}
-	// SKU 来源（docs/14 §1.1）：自己创建 / 从仓库选。空串按「自己创建」归一 ——
-	// 存量调用方与接口路径都不带这个字段。
+
 	skuSource, serr := normalizeSKUSource(req.SKUSource)
 	if serr != nil {
 		return nil, serr
 	}
-	// 容器主体 SKU 的正式输入通道（规则 A）：运营在新建抽屉里填的编码走
-	// CreateReq.SKUCode（json:"sku"）。留空即派生 —— 取商品 URL 段的 ASCII 段
-	// （选了仓再加仓码前缀），派生不出 ASCII 段时明确报错、不退回随机码。
-	// metadata 原样落库：主体编码只留一份真源，就在 products.sku_code。
+
 	customSKU := strings.TrimSpace(req.SKUCode)
 	metadata := orJSON(req.Metadata, "{}")
 	e := &productmodel.ProductEntity{
@@ -201,39 +131,29 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Metadata:     metadata,
 		CreatedAt:    now, UpdatedAt: now,
 	}
-	// 归属仓与多仓（issue #15 / 2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行。
-	// **前缀仓** = 显式指定的第一个仓（未指定则默认仓），只有它决定主体 SKU 的仓码前缀。
-	// 解析失败（如工程内没有默认仓 / 某个仓已停用）时整体失败 —— 先解析再落库，
-	// 不留「有商品没库存记录」的半截状态。
+
 	refs, werr := s.resolveWarehouseTargets(ctx, projectID, req.WarehouseIDs, req.WarehouseID)
 	if werr != nil {
 		return nil, werr
 	}
 	claim := prefixWarehouse(refs)
-	// 规则 A：容器主体 SKU 落到 products.sku_code（迁移 246），是商品的**身份编码**。
-	// ① 从仓库选：<前缀仓短码大写>_<仓库里那条 SKU 原样>；② 自己创建：编码原样 + 前缀仓仓码前缀。
-	// 没填则按商品 URL 段派生（确定性，不退回随机码）。
-	//
-	// 「从仓库选」的编码**不取前端提交的 sku**：前端提交的仓库编码只是线索，落库前一律在
-	// 该仓复核一遍（GetWarehouseSKU）—— 服务端不信任前端，见 docs/14 §9.3。
+
 	skuInput := customSKU
 	externalSKU := ""
 	if skuSource == skuSourceWarehouse {
-		// 复核发生在**前缀仓**：主体 SKU 的前缀、以及「那条货确实存在」的判定都取自它。
+
 		picked, perr := s.pickWarehouseSKU(ctx, projectID, claim, req.WarehouseSKU)
 		if perr != nil {
 			return nil, perr
 		}
 		skuInput = stripWarehousePrefix(picked.SKUCode, picked.WarehouseCode)
-		// 外部编码：显式填的优先；否则带入那条货登记的编码，再否则就是它自己的 SKU ——
-		// 「从仓库选」这条来路本身就是在建立「我们的商品 ↔ 那条货」的映射（docs/14 §9.3）。
+
 		externalSKU = firstNonEmpty(req.ExternalSKU, picked.ExternalSKU, skuInput)
 	} else {
-		// 自己创建 + 回填：只在运营显式填了外码时才写（§9.3 的另一条来路），
-		// 不替他猜一个 —— 空串是合法状态（该仓用我们自己的 SKU）。
+
 		externalSKU = strings.TrimSpace(req.ExternalSKU)
 	}
-	// 容器主体 SKU 的唯一入口：**前缀仓**的短码参与前缀。
+
 	if e.SKUCode, werr = buildProductContainerSKU(containerSKUInput{
 		Slug: slug, Custom: skuInput, WarehouseCode: refCode(claim),
 	}); werr != nil {
@@ -246,21 +166,16 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	} else if externalSKU, werr = s.invSvc.NormalizeExternalSKU(externalSKU); werr != nil {
 		return nil, werr
 	}
-	// 主体 SKU 唯一性**预检**（工程内唯一，迁移 246 的偏唯一索引 uq_products_project_sku_code）：
-	// 先给出可读的业务错误；落库侧仍有兜底映射（mapContainerSKUConflict），两处都不把
-	// 23505 的索引名铺到页面上（CQ-009 的实测缺陷：编辑路径曾把 uq_products_project_sku_code 吐出去）。
+
 	if werr = s.ensureContainerSKUFree(ctx, projectID, e.SKUCode, ""); werr != nil {
 		return nil, werr
 	}
-	// 首个变体：由商品级默认值填充（新增路径）—— 无规格变体就是容器主体本身，
-	// 因此它的 SKU 与 e.SKUCode 相同；后续组合生成的变体 SKU 都以该主体拼接
-	// （见 product_variant.go）。
+
 	v, verr := s.newVariantFromDefaults(ctx, e, nil, refCode(claim), nil)
 	if verr != nil {
 		return nil, verr
 	}
-	// 一次商品创建 = 一个事务：商品 + 首个变体 + 各仓库存行 + 变更记录。
-	// 任一步失败整体回滚 —— 「有商品没库存行」这种半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
@@ -273,17 +188,15 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, []*productmodel.VariantEntity{v}); xerr != nil {
 			return mapContainerSKUConflict(xerr)
 		}
-		// 创建即入库：勾选的每个仓各一行（裸码；该仓已有同裸码的行则复用不新建）。
-		// external_sku 写在**前缀仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
+
 		if xerr := s.createStockRowsTx(ctx, tx, refs, v, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
 			return xerr
 		}
-		// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
+
 		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
 			return xerr
 		}
-		// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
-		// 变体那条带上了前缀仓，这是该事实在商品侧唯一可留痕的地方。
+
 		if err := s.recordChangesTx(ctx, tx,
 			productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
 				nil, productChangeSnapshot(e)),
@@ -300,7 +213,6 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	return s.toResp(ctx, e)
 }
 
-// Update 修改商品（含 slug 改名；变体走独立接口）。
 func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -339,13 +251,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	if req.Status != nil {
 		newStatus := strings.TrimSpace(*req.Status)
-		// 枚举白名单校验：数据库有 CHECK (status IN ('draft','published','archived'))，
-		// 但服务端不拦的话，非法值会一路落到 PG 报 SQLSTATE 23514，
-		// 而 23514 不在 mapContainerSKUConflict 的映射表里 → 出口默认给 500。
-		// 参数错误应当是 400：错在请求里，不是服务端故障。
-		//
-		// 白名单写在这里而不是复用数据库约束：PG 的错误信息（"new row for relation
-		// products violates check constraint ..."）不该出现在接口响应里。
+
 		if !isProductStatus(newStatus) {
 			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
@@ -386,9 +292,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.PrimaryCategoryID = primaryID
 	}
 	if req.TagIDs != nil {
-		// 手工标签引用先校验再落库（同一工程内 + 必须存在 + 必须手工标签）。
-		// 自动标签的归属在同一写事务内重算，这里给的空数组
-		// 不会真的把它们摘掉。
+
 		ids, terr := s.resolveTagIDs(ctx, e.ProjectID, req.TagIDs)
 		if terr != nil {
 			return nil, terr
@@ -396,8 +300,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.TagIDs = orIDList(ids)
 	}
 	if req.RelatedIDs != nil {
-		// 相关商品引用（审计 DB-03 §1.2 / PROD-01）：整体替换语义与分类 / 标签 / 属性一致 ——
-		// 先校验（存在 + 同工程 + 不指向自己）再落库，非法引用一次列全（见 resolveRelatedIDs）。
+
 		ids, rerr := s.resolveRelatedIDs(ctx, e.ProjectID, e.ID, req.RelatedIDs)
 		if rerr != nil {
 			return nil, rerr
@@ -405,7 +308,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.RelatedIDs = orIDList(ids)
 	}
 	if req.BrandID != nil {
-		// 品牌引用同样先校验（空串 = 解绑，与分类的「整体替换」语义一致）。
+
 		brandID, berr := s.resolveBrandID(ctx, e.ProjectID, *req.BrandID)
 		if berr != nil {
 			return nil, berr
@@ -422,41 +325,25 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.Metadata = orJSON(req.Metadata, "{}")
 	}
 	if req.SKUCode != nil {
-		// 只有运营**显式**给了主体编码才动 products.sku_code；nil 表示本次不改 ——
-		// 存量商品的 SKU 一律不重写（新规则只约束新建商品与新生成的变体）。
-		// 给了空串即拒绝：静默忽略会让运营以为改成功了（页面上又看不出差别）。
+
 		custom := strings.TrimSpace(*req.SKUCode)
 		if custom == "" {
 			return nil, productenums.Err(productenums.ErrContainerSkuInvalid)
 		}
-		// 编辑路径不补仓码前缀：仓码前缀是创建时按归属仓确定的，UpdateReq 没有仓上下文，
-		// 不在这里猜（要换主体编码的仓前缀，走新建商品）。
+
 		e.SKUCode = custom
-		// 主体 SKU 唯一性**预检**（编辑路径同样要）：excludeID = 自身，
-		// 否则「保存一个没改编码的商品」会被自己撞下。落库侧仍有兜底映射
-		//（mapContainerSKUConflict）—— 这正是修 CQ-009 的那条：编辑路径曾把
-		// uq_products_project_sku_code 这样的索引名直接吐到页面上。
+
 		if err = s.ensureContainerSKUFree(ctx, e.ProjectID, e.SKUCode, e.ID); err != nil {
 			return nil, err
 		}
 	}
 	e.UpdatedAt = time.Now().UTC()
-	// 商品行与变更记录同事务：改成功了却没留痕（或反过来）都是错账。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, e.ProjectID); serr != nil {
 			return serr
 		}
-		// 并发保护的落点：进事务后**加锁重读**，把「本次请求没碰的字段」换成库里的现值。
-		//
-		// 为什么不在事务外读一次就够：`s.m.Get`（函数开头那次）没加锁，两个并发请求
-		// 会读到同一份旧值、各自只改自己的字段，而 UpdateTx 是**全列 Save** ——
-		// 后提交的整行覆盖前者，A 改的名字被 B 改副标题的那次写抹掉，两边都回 200。
-		// 加写事务本身不解决（事务只保证原子性，不保证读到的值是最新的），必须行锁。
-		//
-		// 为什么不「重放一次赋值」：上面的赋值依赖 resolveAttributeIDs / resolveTagIDs /
-		// applyCategoryRefs 这些**要查库**的校验，重放等于把整套校验再跑一遍，且容易漏。
-		// 反过来做更稳：事务外那份 e 已经带着「本次请求的全部效果」（含归一后的值），
-		// 只需把**请求没提的字段**用加锁读到的现值覆盖 —— 那些正是可能被别人改过的。
+
 		if xerr := s.m.LockPricingTagsTx(ctx, tx, e.ProjectID, productenums.TagKindRule); xerr != nil {
 			return xerr
 		}
@@ -477,19 +364,18 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		e.PublishedAt = locked.PublishedAt
 		e.UpdatedAt = time.Now().UTC()
-		// 状态迁移以锁后现值为准，重复上架和无关编辑保留原上架时刻。
+
 		if req.Status != nil && e.Status == productenums.StatusPublished && locked.Status != productenums.StatusPublished {
 			e.PublishedAt = &e.UpdatedAt
 		}
 		if xerr := s.m.UpdateTx(ctx, tx, e); xerr != nil {
 			return mapContainerSKUConflict(xerr)
 		}
-		// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
+
 		if xerr := s.enqueueProductInvalidationTx(ctx, tx, e.ProjectID, e.ID); xerr != nil {
 			return xerr
 		}
-		// issue #19：字段级变更留痕 —— 上下架状态 / 名称 / URL 段 / 商品级默认售价 / 品牌。
-		// 只写真正变化的字段：改一次备注不会在审计里留一串空记录。
+
 		if xerr := s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionUpdate,
 			masterdataenums.OriginProduct, req.OperatorID, before, productChangeSnapshot(e))); xerr != nil {
 			return xerr
@@ -503,7 +389,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	return s.toResp(ctx, e)
 }
 
-// Get 商品详情（含变体与价格区间）。
 func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *productdto.ProductResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -527,7 +412,6 @@ func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *product
 	return res, nil
 }
 
-// List 商品列表（不返回 metadata 与变体明细；价格区间由变体聚合算出）。
 func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*productdto.ProductResp, err error) {
 	paging := pageArgs(req)
 	rows, err := s.m.List(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status, paging.Size, paging.Offset)
@@ -538,9 +422,7 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	// 列表页只用变体算价格区间与变体数（applyPriceRange 只读 Price），所以取定价事实投影：
-	// 选项 JSON、图片、成本、仓库引用在这屏一个都不渲染。行集合与全行那条完全相同
-	// （同一个 WHERE），因此 VariantCount 与详情仍相等。
+
 	variants, err := s.m.ListVariantPriceFacts(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -549,7 +431,7 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	for _, v := range variants {
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
-	// 属性组按 id 全局去重后批量取一次：多个商品引用同一组时只查一次（复用语义）。
+
 	attrs, err := s.attributeRespByProduct(ctx, req.ProjectID, rows)
 	if err != nil {
 		return nil, err
@@ -561,17 +443,11 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 		applyPriceRange(resp, byProduct[r.ID])
 		list = append(list, resp)
 	}
-	// 库存聚合（列表「库存」列，docs/14 §1.4）：一次批量读回这些商品在各仓的库存行，
-	// 按三态归并（∞ / 求和 / 未入库）。放在循环外，避免逐商品一次往返。
+
 	s.fillProductStock(ctx, req.ProjectID, list)
 	return list, nil
 }
 
-// CountProducts 商品列表总数（后台列表页分页用）。
-//
-// 过滤条件与 List **逐字一致**（工程作用域 + 关键词 + 状态）：两处口径分叉会让
-// 「共 N 条」与列表实际能翻出来的条数对不上，而这种偏差只在跨页时才看得出来。
-// 关键词与状态在此归一（TrimSpace）—— handler 传来的原始查询串不是可信边界。
 func (s *Service) CountProducts(ctx context.Context, req *productdto.ListReq) (n int64, err error) {
 	if req == nil {
 		return 0, productenums.Err(productenums.ErrInvalidParam)
@@ -579,7 +455,6 @@ func (s *Service) CountProducts(ctx context.Context, req *productdto.ListReq) (n
 	return s.m.Count(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status)
 }
 
-// Delete 删除商品（变体连带删除）。
 func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
 		return productenums.Err(productenums.ErrInvalidParam)
@@ -588,29 +463,19 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	if gerr != nil {
 		return gerr
 	}
-	// 归属解析（窄读，只取 id + 工程）：拿到删除目标的工程，也保住「不存在 / 别的工程」
-	// 原来的 404 —— 作用域用的是解析出来的工程，与后续事务里的一致。
+
 	ref, gerr := s.m.GetRefFacts(ctx, req.ID, projectID)
 	if gerr != nil {
 		return mapNotFound(gerr)
 	}
-	// issue #19：删除是最需要留痕的一类动作 —— 快照必须是**锁后**的取值。
-	//
-	// 旧写法在事务外读商品与全部变体、先构造审计再进事务加锁：校验与加锁之间别人可以
-	// 改名 / 改价 / 回写成本价，于是审计记下的是旧值、实际删掉的是新值（与 UpdateVariantCost
-	// 修掉的是同一个旧快照窗口）。现在读快照放在锁之后：
-	//
-	//	工程 guard（productWriteScopeTx）→ 父商品 GetForUpdateTx（显式工程谓词）
-	//	→ 该商品的变体稳定锁后读取 → 组 before 快照 → 删除 / 失效 / 留痕。
-	//
-	// 锁序与其它商品写操作一致（工程 → 父商品 → 变体），且只锁本工程这一条商品。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, ref.ProjectID); serr != nil {
 			return serr
 		}
 		e, lerr := s.m.GetForUpdateTx(ctx, tx, req.ID, ref.ProjectID)
 		if lerr != nil {
-			// 锁后查不到（并发已删 / 工程在事务外被改走）保持原有的「不存在」语义。
+
 			return mapNotFound(lerr)
 		}
 		variants, verr := s.m.ListVariantsForUpdateTx(ctx, tx, e.ID)
@@ -624,15 +489,14 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 			inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
 				masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
 		}
-		// DEC-04：同事务清理别处对本商品的 related_ids 引用（引用者行锁 + 留痕 + 失效）。
+
 		if cerr := s.cleanRelatedRefsTx(ctx, tx, e.ProjectID, []string{e.ID}, req.OperatorID); cerr != nil {
 			return cerr
 		}
 		if derr := s.m.DeleteTx(ctx, tx, req.ID); derr != nil {
 			return derr
 		}
-		// 删除 = 集合成员变化，必须发集合键：新产物里已经没有这个实体，
-		// 只有集合键能让「列表页少一张卡」这件事被推导出来（审计 ARCH-01）。
+
 		if derr := s.enqueueProductInvalidationTx(ctx, tx, e.ProjectID, req.ID); derr != nil {
 			return derr
 		}
@@ -644,19 +508,6 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	return nil
 }
 
-// cleanRelatedRefsTx 删除商品时，同事务清掉别处 related_ids 对它的引用（DEC-04 裁决：清理）。
-//
-// 三种策略里选清理的理由：
-//
-//	· 阻止删除（报「仍被引用」）会让「有人顺手在相关商品里挂了它」变成运营删不掉的硬墙，
-//	  而这类引用在后台不可见、也没有逐条摘除的入口 —— 用户只能改数据才能删商品；
-//	· 容忍并在读取剔除，会让 related_ids 里长期留着已删 id：编辑页打开时那个 id 还在，
-//	  构建产物里的相关商品卡会指向 404，且没有任何时刻会自愈；
-//	· 清理把「引用一个被删商品」的唯一正确结果（引用消失）写进同一个事务：删除失败就整体
-//	  回滚，不会出现「商品删了、引用还挂着」的中间态。
-//
-// 被动作废也要留痕：引用者各记一条 related_ids 的 before/after，运营能追到「我没动它，
-// 它的相关商品为什么少了」。
 func (s *Service) cleanRelatedRefsTx(ctx context.Context, tx *gorm.DB, projectID string, deletedIDs []string, operatorID string) error {
 	if len(deletedIDs) == 0 {
 		return nil
@@ -670,7 +521,7 @@ func (s *Service) cleanRelatedRefsTx(ctx context.Context, tx *gorm.DB, projectID
 		drop[id] = true
 	}
 	for _, ref := range refs {
-		// 被删集合里的行不必清理（它自己马上就要消失）。
+
 		if ref == nil || drop[ref.ID] {
 			continue
 		}
@@ -687,7 +538,7 @@ func (s *Service) cleanRelatedRefsTx(ctx context.Context, tx *gorm.DB, projectID
 		if uerr := s.m.UpdateRelatedIDsTx(ctx, tx, projectID, ref.ID, orIDList(after)); uerr != nil {
 			return uerr
 		}
-		// 引用者也是「集合成员可能变化」的实体：相关商品卡少了一张，产物要重建。
+
 		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, ref.ID); xerr != nil {
 			return xerr
 		}
@@ -701,13 +552,6 @@ func (s *Service) cleanRelatedRefsTx(ctx context.Context, tx *gorm.DB, projectID
 	return nil
 }
 
-// —— 「从仓库选」的落点（docs/14 §9.3，迁移 251）——
-
-// pickWarehouseSKU 在**已解析的归属仓**里复核「那条货确实存在」，返回它。
-//
-// 宁可拒绝，也不静默退化成「拿前端给的字符串自造编码」—— 那正是「服务端不信任前端」
-// 要防的形态。未给编码 / 未接库存能力时给 ErrWarehouseSKURequired；
-// 该仓没有这条编码时给 ErrWarehouseSKUNotFound（由库存用例判定）。
 func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *productcontract.WarehouseRef, warehouseSKU string) (res *inventorycontract.WarehouseSKUResp, err error) {
 	code := strings.TrimSpace(warehouseSKU)
 	if code == "" || s.invSvc == nil || ref == nil {
@@ -718,17 +562,6 @@ func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *p
 	})
 }
 
-// —— 多仓建行与主体 SKU 唯一性（2026-09-19 口径）——
-
-// resolveWarehouseTargets 解析本次要写库存行的仓（保持调用方给的顺序、按仓 id 去重）。
-//
-// 取值优先级：WarehouseIDs（多仓勾选）> WarehouseID（单值兼容）> 空（默认仓）。
-// **顺序必须保持**：第一个非空项是前缀仓（决定主体 SKU 的仓码前缀），顺序一变，
-// 同一份表单就会生成不同的编码。去重按**解析后的仓 id** —— 「勾了默认仓 + 又显式勾了
-// 默认仓那一个」只该建一行（同一份选择产生两行是幂等性漏洞，不是用户意图）。
-//
-// 未装库存能力（纯商品单测路径）时 resolveWarehouseRef 返回 nil：结果是空列表，
-// 调用方据此走「不建库存行、SKU 不带前缀」的既有路径。
 func (s *Service) resolveWarehouseTargets(ctx context.Context, projectID string, ids []string, legacyID string) (refs []*productcontract.WarehouseRef, err error) {
 	targets := make([]string, 0, len(ids)+1)
 	for _, id := range ids {
@@ -754,10 +587,6 @@ func (s *Service) resolveWarehouseTargets(ctx context.Context, projectID string,
 	return refs, nil
 }
 
-// prefixWarehouse 前缀仓 = 解析出的第一个仓：只有它决定主体 SKU 的仓码前缀。
-//
-// 其余勾选的仓只各建一行（裸码），不参与命名 —— 「前缀标注哪条货行是它」，
-// 多仓共用同一个前缀是刻意的（SKU 是商品的对外身份，不该随勾选数量变化）。
 func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.WarehouseRef {
 	if len(refs) == 0 {
 		return nil
@@ -765,47 +594,29 @@ func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.Ware
 	return refs[0]
 }
 
-// createStockRowsTx 在勾选的各仓各建/复用一行库存（裸码），并把每行的 id 记进变体的引用清单。
-//
-// 三条口径（docs/14 §1.1 / §9.3，2026-09-19 用户拍板）：
-//
-//   - 仓库侧写**裸码** —— 剥掉仓码前缀的那一串（属性段保留）；剥前缀由 stripWarehousePrefix 统一做；
-//   - 该仓已有同裸码的行 → **复用**那一行、不新建（那一行就是这条货）——「从仓库选」这条来路
-//     正是靠它成立；复用的同时把它记进本变体的引用（迁移 637）；
-//   - 外码与数量只作用于本次**新建**的行：外码写在该仓那一次（外码是「这条货在该仓的名字」），
-//     数量按表单口径（nil = 不跟踪 = 无限；非 nil = 跟踪并写入）。
-//
-// 引用是**多对多**：同一行货能被多个变体同时引用（一对一正是 641 去掉的约束 ——
-// 同一批货得能供套装 / 组合 / 多站点同款一起卖）。
-//
-// 调用方必须已开事务（tx 已设工程作用域）：多仓逐行写入要么全成、要么全不成。
 func (s *Service) createStockRowsTx(ctx context.Context, tx *gorm.DB, refs []*productcontract.WarehouseRef,
 	v *productmodel.VariantEntity, productSKU, externalSKU string, quantity *int) (err error) {
 	if s.invSvc == nil {
 		return nil
 	}
-	// 裸码只剥**一次**，而且按**归属仓**的仓码剥：其余仓写的是同一条裸码
-	//（「同一商品多仓各一行同名裸码」）。各仓各自剥前缀反而是错的 —— 目标仓与归属仓不同，
-	// SZ_X 在上海仓（仓码 SH）剥不掉，于是上海仓凭空多出一个带 SZ_ 前缀的编码。
+
 	bare := stripWarehousePrefix(productSKU, refCode(prefixWarehouse(refs)))
 	for i, ref := range refs {
 		if ref == nil {
 			continue
 		}
-		// 外码与数量只作用于「本次新建」那一行；复用时两者都不动（覆盖走库存页的显式入口）。
+
 		ext := ""
 		if i == 0 {
 			ext = strings.TrimSpace(externalSKU)
-			// N:1 弱校验（迁移 251）：同一仓内同一外码必须指向同一个商品。
-			// 与库存页的绑定路径共用同一条规则，错误里带上冲突的商品 id。
+
 			if ext != "" {
 				if xerr := s.invSvc.CheckExternalSKUProductScope(ctx, ref.ProjectID, ref.ID, ext, v.ProductID); xerr != nil {
 					return xerr
 				}
 			}
 		}
-		// 建/复用库存行 + 登记引用，一步完成：库存侧知道这行是新建还是复用、id 是多少，
-		// 而「怎么定位一条货行」只有它知道（让调用方建完再反查一次就是两份口径）。
+
 		if _, xerr := s.attachWarehouseStockTx(ctx, tx, ref, v, bare, ext, quantity); xerr != nil {
 			return xerr
 		}
@@ -813,10 +624,6 @@ func (s *Service) createStockRowsTx(ctx context.Context, tx *gorm.DB, refs []*pr
 	return nil
 }
 
-// ensureContainerSKUFree 主体 SKU 的工程内唯一性**预检**（excludeID 是编辑时的自身）。
-//
-// 预检与唯一索引兜底（mapContainerSKUConflict）成对存在：预检负责给出可读文案，
-// 索引负责挡住预检与落库之间那个时间窗里的并发写入。少任何一个都会在页面上漏出原始 SQL 错误。
 func (s *Service) ensureContainerSKUFree(ctx context.Context, projectID, skuCode, excludeID string) (err error) {
 	taken, qerr := s.m.SKUCodeExists(ctx, projectID, skuCode, excludeID)
 	if qerr != nil {
@@ -828,11 +635,6 @@ func (s *Service) ensureContainerSKUFree(ctx context.Context, projectID, skuCode
 	return nil
 }
 
-// mapContainerSKUConflict 把落库时的唯一键冲突**归一**成业务错误（绝不回原始 SQL 错误）。
-//
-// 生产连接开了 gorm 的 TranslateError（pkg/database），拿到的是 gorm.ErrDuplicatedKey；
-// 未翻译的连接（部分测试 fixture）拿到的是原始 23505 文本 —— 两条都认，
-// 否则同一个缺陷会随连接配置不同而时隐时现。
 func mapContainerSKUConflict(err error) error {
 	if err == nil {
 		return nil
@@ -847,27 +649,6 @@ func mapContainerSKUConflict(err error) error {
 	return err
 }
 
-// resolveRelatedIDs 校验并归一商品引用的相关商品 id（products.related_ids）。
-//
-// 为什么补这一条（审计 DB-03 §1.2 / PROD-01）：category_ids / tag_ids / attribute_ids
-// 与 brand_id 都有「存在 + 同工程」的服务层校验，related_ids 此前是**唯一**原样落库的
-// 引用面 —— 可以写入任意 uuid（别的工程、已被删除、甚至自己）。它落在 JSONB 数组里，
-// 没有任何数据库级外键兜底，写脏了只能靠人工对账（DB-03 附录 A 的 Q6 / Q7）发现。
-//
-// 四条规则（与同表其它引用列同口径，外加一条自引用）：
-//  1. 去空白 + 去重（保留首次出现的顺序）——「同一次提交写出同一份数组」；
-//  2. 引用必须真实存在；
-//  3. 引用必须与商品同工程（跨工程引用等于把别人的商品挂到自己的「相关商品」里）；
-//  4. 不能指向自己（related_ids 是商品表的自引用，指向自己会让「相关商品」成环）。
-//
-// 三类问题**一次列全**（同一条错误的 tail 里分段给出 id 与数量）：逐个返回只会让运营
-// 「改一条、提交一次」，而这批引用本就来自同一次提交。跨工程的条目额外带上**对方工程 id**，
-// 让操作者知道该去找谁解除（PROD-01 的验收点）。
-//
-// 拒绝即整体拒绝：不静默丢弃非法 id、不自动过滤、不自动修正 —— 那些都会让运营以为
-// 「保存成功了」，而实际的相关商品集合与他提交的不是同一份。
-//
-// selfID 是本次写入的商品自身 id（新建路径先用生成的 id，编辑路径用行上的 id）。
 func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID string, ids []string) (out []string, err error) {
 	out = []string{}
 	if len(ids) == 0 {
@@ -886,9 +667,7 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 	if len(dedup) == 0 {
 		return out, nil
 	}
-	// 第一步一次批量取回**本工程**的（只读 id 与工程：这里不渲染商品内容，
-	// 整行读取会把描述与图集一并搬回）。本工程查不到的那批不在这里定性 ——
-	// 「不存在」与「属于别的工程」要看第二步的归属诊断（见下方 lookupRelatedOwners）。
+
 	rows, lerr := s.m.ListIDFactsByIDs(ctx, dedup, projectID)
 	if lerr != nil {
 		return nil, lerr
@@ -908,27 +687,18 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 		}
 		row, ok := byID[id]
 		if !ok {
-			// 本工程没查到 ≠ 不存在：上一行只认本工程（六个窄读的同一口径），
-			// 归属得另问一次。先攒起来，循环后再批量诊断（一次诊断，不按 id 一条）。
+
 			unresolved = append(unresolved, id)
 			continue
 		}
 		if projectID != "" && row.ProjectID != projectID {
-			// 带上对方工程 id：跨工程引用只能靠「两个工程的运营对账」解决，
-			// 光有商品 id 找不到人（PROD-01 要求拒绝信息可定位）。
-			//
-			// 形态是纯数据 `商品id@所属工程id`（原先的「id（属于工程 proj）」里的
-			// 「属于工程」是文案，会被整段塞进明细参数里无法翻译）；`@` 的含义写在
-			// 明细词条本身（见 productenums.DetailRelatedCrossProject）。
+
 			crossProject = append(crossProject, id+"@"+row.ProjectID)
 			continue
 		}
 		out = append(out, id)
 	}
-	// 归属诊断（专用、只读、逐工程作用域）：只问「本工程没查到且不是自引用」的那批 id。
-	//
-	// 空集不查库；工程清单拿不到 / 诊断本身出错一律 fail closed —— 归属查不清时宁可整笔
-	// 拒绝，也不把一条跨工程引用当成「不存在」写进 related_ids（那正是 PROD-01 要堵的）。
+
 	if len(unresolved) > 0 {
 		owners, oerr := s.lookupRelatedOwners(ctx, unresolved)
 		if oerr != nil {
@@ -945,8 +715,7 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 	if len(selfRefs)+len(missing)+len(crossProject) == 0 {
 		return out, nil
 	}
-	// 三段互相独立的补充说明（各自一条词条 + 具名参数）用 JoinErrorDetails 连成一条：
-	// 读侧逐段取词后用「；」拼回一整句，英文界面上三段都是英文。
+
 	parts := make([]string, 0, 3)
 	if len(selfRefs) > 0 {
 		parts = append(parts, i18n.ErrorDetail(productenums.DetailRelatedSelfReference,
@@ -963,25 +732,6 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 	return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrRelatedInvalid), i18n.JoinErrorDetails(parts...))
 }
 
-// lookupRelatedOwners 「本工程没查到」的那批 id 到底属于谁（key = 商品 id，值 = 工程 id）。
-//
-// 为什么单独一条路（PROD-01：跨工程条目要能定位到人）：
-//
-//   - ListIDFactsByIDs 按设计只认本工程，它读不到外工程的行 —— 拿它做跨工程判定，
-//     差集永远落进「不存在」，明细里那句「属于工程 X」永远说不出来；
-//   - 也不能把那条查询的工程谓词放宽：那等于给**写入口**开一条任意读别工程商品的路。
-//
-// 于是只对「本工程已确认不存在、且不是自引用」的那一小撮 id 走这条专用诊断：
-//
-//	· 只读 products 的两列（id / project_id），不返回任何商品内容；
-//	· 工程清单经 project 契约取（projects 表不带 project_id、不在迁移 215 名单里，
-//	  不需要 RLS 作用域就能列全）；**这不是「用户可见工程」的过滤**，它只是扫描范围；
-//	· 逐工程 rls.ScopeTx + 显式 project_id 谓词，与跨工程引用扫描同一范式，
-//	  结果不依赖连接是不是超级 / BYPASSRLS 角色；
-//	· 结果只喂给拒绝明细，**不进任何成功响应**：成功的读接口看不到别的工程的行。
-//
-// 失败一律 fail closed（原样返回错误）：归属查不清时不能把跨工程引用当成「不存在」放行。
-// 空 id 集不查库；ids 非空但清单为空直接报错，与 crossProjectRefScope 的既有口径一致。
 func (s *Service) lookupRelatedOwners(ctx context.Context, ids []string) (owners map[string]string, err error) {
 	if len(ids) == 0 {
 		return map[string]string{}, nil
@@ -993,13 +743,6 @@ func (s *Service) lookupRelatedOwners(ctx context.Context, ids []string) (owners
 	return s.m.LookupIDOwners(ctx, scope, ids)
 }
 
-// attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。
-//
-// products.attribute_ids 只存 id：多个商品可引用同一个属性组，定义只存一份。
-// 这里按 id 去重后一次性取回，再按商品拆分；引用已失效（组被删）时跳过，
-// 不让列表因为一条悬空引用整体失败。
-// projectID 由调用方给出：products 是某一个工程下取回来的行（读路径 / 列表装配），
-// 属性组同样走工程作用域（product_attributes 在迁移 215 名单里）。
 func (s *Service) attributeRespByProduct(ctx context.Context, projectID string, products []*productmodel.ProductEntity) (out map[string][]*productdto.AttributeResp, err error) {
 	out = map[string][]*productdto.AttributeResp{}
 	idSet := map[string]bool{}
@@ -1041,7 +784,6 @@ func (s *Service) attributeRespByProduct(ctx context.Context, projectID string, 
 	return out, nil
 }
 
-// toResp 组装商品详情（含变体与价格区间）。
 func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (res *productdto.ProductResp, err error) {
 	variants, err := s.m.ListVariants(ctx, e.ID)
 	if err != nil {
@@ -1067,8 +809,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		}
 	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
-	// 主体 SKU（products.sku_code，迁移 246）：详情页只读展示它的唯一性范围（本工程内唯一），
-	// 运营据此核对「新建时填过的编码」有没有落库。
+
 	resp.SKUCode = e.SKUCode
 	resp.DefaultPrice = e.DefaultPrice
 	resp.DefaultImage = mediaURL(e.DefaultImage)
@@ -1079,42 +820,26 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	for _, v := range variants {
 		resp.Variants = append(resp.Variants, toVariantResp(v))
 	}
-	// 仓库关联与库存总数使用同一次事实读取，失败向调用方返回。
+
 	if err := s.fillVariantListStocks(ctx, resp.ProjectID, resp.Variants); err != nil {
 		return nil, err
 	}
-	// 商品级库存聚合（列表「库存」列的三态，docs/14 §1.4）：详情接口同样带上，
-	// 后台列表页逐商品取详情时就不必再单独打一次库存接口。
+
 	s.fillProductStock(ctx, resp.ProjectID, []*productdto.ProductResp{resp})
-	// 引用到的属性组（组 + 值），供后台与详情页直接渲染规格选择器。
+
 	if groups, aerr := s.attributeRespByProduct(ctx, e.ProjectID, []*productmodel.ProductEntity{e}); aerr != nil {
 		return nil, aerr
 	} else {
 		resp.Attributes = groups[e.ID]
 	}
 	applyPriceRange(resp, variants)
-	// 挂载的分类 / 品牌 / 标签（issue #12）：翻译工作台要按分类名、品牌名、标签名
-	// 展示与取词，详情接口一并返回实体（后台翻译页不为每个 id 再打一次接口）。
+
 	if rerr := s.fillRelated(ctx, resp, e); rerr != nil {
 		return nil, rerr
 	}
 	return resp, nil
 }
 
-// fillProductStock 查询期聚合商品列表的「库存」列（docs/14 §1.4，2026-09-19 口径）。
-//
-// 真源是 inventory_stocks（商品侧不留任何副本，issue #32）——这里一次批量读回若干商品在
-// 各仓的库存行，按**三态**归并：
-//
-//	· 没有任何行 → none（未入库）；
-//	· 任一行不跟踪 → infinite（∞）——**混合状态绝不求和**：求和等于把无限当 0，
-//	               页面会显示成「有货」，而实际是「卖不完」；多规格商品里任一规格不跟踪同理；
-//	· 全部跟踪   → tracked，StockTotal = 各行数量之和（**0 就显示 0**，与「未入库」不同）。
-//
-// 失败不阻断商品读取：库存列是展示投影，读不到就把该行标成 StockUnknown（PRD-017 裁决：
-// **故障事实如实显示**）—— 页面（后台列表）显示「库存读取失败」、MCP 工具如实说「读取失败」，
-// 不拿零值冒充「未入库」。列表不因这个附属读取失败整体失败，其余列照常可读。
-// 未装库存用例（纯商品单测路径）时空转。可用量判断一律走库存真源的带行锁路径，绝不看这个投影。
 func (s *Service) fillProductStock(ctx context.Context, projectID string, resps []*productdto.ProductResp) {
 	if s.invSvc == nil || len(resps) == 0 || strings.TrimSpace(projectID) == "" {
 		return
@@ -1130,14 +855,10 @@ func (s *Service) fillProductStock(ctx context.Context, projectID string, resps 
 	}
 	rows, err := s.invSvc.WarehouseStocksByProducts(ctx, projectID, ids)
 	if err != nil {
-		// 读失败**不改**商品读取本身的成功/失败（库存列是展示投影，库存真源在别处），
-		// 但绝不能静默：从前这里直接 return，库房一侧一断，整屏商品的库存列一起退化成
-		// 「未入库」，而日志里一个字都没有 —— 现场看起来像「数据被人清空了」。
-		// 显示口径已裁决（PRD-017）：故障如实显示为「库存读取失败」，不再按「未入库」看。
+
 		logger.SceneCtx("product", ctx).With("project", projectID).With("products", len(ids)).
 			Error(err, "商品库存投影读取失败（库存列按空值显示；显示口径见 DEC-02）")
-		// 把「这次没查到」与「查出来是空」分开记在行上（PRD-017 的验收点）：
-		// 三态仍保持零值，下游（模板 / MCP）按这个标记显示故障而不是「未入库」。
+
 		for _, resp := range resps {
 			if resp != nil {
 				resp.StockUnknown = true
@@ -1167,10 +888,6 @@ func (s *Service) fillProductStock(ctx context.Context, projectID string, resps 
 	}
 }
 
-// aggregateStockState 一组库存行的三态结论：任一行不跟踪即「无限」，否则求和。
-//
-// 抽成函数而不是内联：商品级与「分仓」两处用的是**同一条**口径，
-// 各写一遍必然分叉（一处求和、一处显示 ∞，页面上两行数字对不上）。
 func aggregateStockState(rows []inventorycontract.ProductWarehouseStock) (state string, total int) {
 	if len(rows) == 0 {
 		return productenums.StockStateNone, 0
@@ -1184,11 +901,6 @@ func aggregateStockState(rows []inventorycontract.ProductWarehouseStock) (state 
 	return productenums.StockStateTracked, total
 }
 
-// warehouseStockRows 按仓归并分仓明细（保持服务端返回的顺序，不额外排序）。
-//
-// 一行一个仓：同一仓里多规格多行时，该仓的 State / Quantity 是**归并后的结论**
-// （同一条 aggregateStockState 口径）；SKUCode 与 CostPrice 取该仓第一条有值的
-// （SKU 串只用于展示与对账，身份恒为 variantId；成本是 (仓库, SKU) 维度的事实）。
 func warehouseStockRows(rows []inventorycontract.ProductWarehouseStock) []*productdto.ProductWarehouseStockResp {
 	order := make([]string, 0, len(rows))
 	grouped := make(map[string][]inventorycontract.ProductWarehouseStock, len(rows))
@@ -1223,7 +935,6 @@ func warehouseStockRows(rows []inventorycontract.ProductWarehouseStock) []*produ
 	return out
 }
 
-// fillRelated 把商品引用的分类 / 品牌 / 标签填入详情响应（失败不阻断详情读取）。
 func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp, e *productmodel.ProductEntity) (err error) {
 	ids := decodeStrings(e.CategoryIDs)
 	if len(ids) > 0 {
@@ -1265,16 +976,12 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 	return nil
 }
 
-// toListResp 组装列表项（不含 metadata / description）。
 func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductResp {
 	resp := &productdto.ProductResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
-		// SKUCode 必须在这里带出来：列表行是**逐字段拷贝**，少拷一个字段不会报错，
-		// 只会让响应里那一列恒为空 —— 而 product_find 的输出格式里写着「SKU=…」，
-		// 用户看到的是空值，模型也无从据此判断这条是不是他要找的商品。
+
 		SKUCode: e.SKUCode,
-		// DefaultPrice 同理必须带出来（商品级默认售价）：页面路径另有
-		// product_row.go 的补偿，API/MCP 出口没有，漏了这里接口那一列恒为空。
+
 		DefaultPrice: e.DefaultPrice, DefaultImage: e.DefaultImage,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts), AttributeIDs: decodeStrings(e.AttributeIDs),
@@ -1293,18 +1000,12 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 	return resp
 }
 
-// applyPriceRange 算出商品的价格区间（只读派生）。
-//
-// 区间由**变体**派生：商品主体不存价，区间是展示用的汇总。没有变体（或变体都没价）时
-// 不填区间，由模板显示「无价」—— 不当成 0 元。
 func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.VariantEntity) {
 	resp.VariantCount = len(variants)
 	if len(variants) == 0 {
 		return
 	}
-	// 走共享价格汇总（product_variant_price.go）：这是第三处「由变体算区间」的实现，
-	// 自己写一遍等于把「空指针怎么处理、同价怎么办」再分叉一次。口径不变 ——
-	// 后台列表一直算全部变体（含停用），onlyEnabled=false 与之逐字相同。
+
 	summary := summarizeVariantPrices(variants, false)
 	if !summary.HasAny {
 		return
@@ -1312,7 +1013,6 @@ func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.Vari
 	resp.PriceMin, resp.PriceMax = summary.MinPrice, summary.MaxPrice
 }
 
-// toVariantResp 变体实体 → 响应。
 func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 	return &productdto.VariantResp{
 		ID: v.ID, ProductID: v.ProductID, SKUCode: v.SKUCode, Barcode: v.Barcode,
@@ -1323,19 +1023,13 @@ func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 	}
 }
 
-// maxRatingScore 评分上限（数据库 CHECK 也是 0~5，这里提前给出明确文案）。
 const maxRatingScore = 5
 
-// AddRating 写入一条商品评分。
-//
-// 归属校验：商品必须存在，project_id 从商品带出（调用方不能自己指定工程 ——
-// 否则可以往别的工程的商品上写评分）。
 func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (res *productdto.RatingResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	// 0 分是合法评分，只有「没传」与越界才拒：dto 上 Score 是 *float64，
-	// 页面的 input[type=number][min=0][max=5] 是前一道（更早、也更具体）的拦截。
+
 	if req.Score == nil || *req.Score < 0 || *req.Score > maxRatingScore {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -1343,7 +1037,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if err != nil {
 		return nil, err
 	}
-	// 评分行只用到商品的身份与工程：走三列投影，不搬描述与元数据。
+
 	product, err := s.m.GetRefFacts(ctx, strings.TrimSpace(req.ProductID), projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
@@ -1361,9 +1055,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
-	// 评分写入与产物失效事件**同事务**（审计 ARCH-01 的同一条理由）：
-	// 已发布详情页读评分（product_source 的 rating 投影），只写表不发失效会让
-	// 「评分改了、前台不变」—— 而且没有任何自动发现路径（下次构建才生效）。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, product.ProjectID); serr != nil {
 			return serr
@@ -1378,7 +1070,6 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	return s.ratingRespOf(ctx, product.ProjectID, product.ID)
 }
 
-// ListRatings 取某商品的评分明细与投影值。
 func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsReq) (res *productdto.RatingResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -1387,14 +1078,13 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	if err != nil {
 		return nil, err
 	}
-	// 这里只要「商品存在」这一个事实：三列投影足够，不必读整行。
+
 	if _, err = s.m.GetRefFacts(ctx, strings.TrimSpace(req.ProductID), projectID); err != nil {
 		return nil, mapNotFound(err)
 	}
 	return s.ratingRespOf(ctx, projectID, strings.TrimSpace(req.ProductID))
 }
 
-// DeleteRating 删除一条评分（不存在即报找不到，不静默成功）。
 func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return productenums.Err(productenums.ErrInvalidParam)
@@ -1406,7 +1096,7 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID); err != nil {
 		return mapNotFound(err)
 	}
-	// 删除与失效事件同事务，理由同 AddRating。
+
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
@@ -1414,8 +1104,7 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 		if derr := s.m.DeleteRatingTx(ctx, tx, strings.TrimSpace(req.ID)); derr != nil {
 			return derr
 		}
-		// 失效目标是**商品**（详情页按商品聚合评分），而 req 只带评分 id ——
-		// 先按评分 id 反查商品，再发事件。
+
 		productID, perr := s.m.RatingProductIDTx(ctx, tx, strings.TrimSpace(req.ID))
 		if perr != nil {
 			return perr
@@ -1427,10 +1116,6 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	})
 }
 
-// ratingRespOf 组装某商品的评分明细与投影值。
-//
-// projectID 一路传到 model：product_ratings 在迁移 215 名单里，明细查询缺作用域会
-// 静默返回空 —— 明细空则 RatingSummary 的 ok=false，商品的评分标签跟着一起消失。
 func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string) (res *productdto.RatingResp, err error) {
 	rows, err := s.m.ListRatings(ctx, productID, projectID)
 	if err != nil {
@@ -1452,10 +1137,8 @@ func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string)
 	return res, nil
 }
 
-// 编译期断言：本 service 提供访问面检索需要的只读能力。
 var _ productcontract.SearchPort = (*Service)(nil)
 
-// SearchPublishedProducts 按关键词检索已上架商品（实现 productcontract.SearchPort）。
 func (s *Service) SearchPublishedProducts(ctx context.Context, projectID, keyword string, limit int) (hits []*productcontract.ProductSearchHit, err error) {
 	projectID = strings.TrimSpace(projectID)
 	keyword = strings.TrimSpace(keyword)
@@ -1479,39 +1162,23 @@ func (s *Service) SearchPublishedProducts(ctx context.Context, projectID, keywor
 	return hits, nil
 }
 
-// 编译期断言：本实现满足 comment 模块声明的差异化规则端口。
 var _ commentcontract.EntityPolicy = (*Service)(nil)
 
-// SetPurchaseChecker 注入购买事实只读端口（装配期调用；可缺）。
-//
-// 未注入时**放行**而不是拒绝，判据见 commentcontract.EntityPolicy 的注释：
-// 这是产品策略不是安全边界（评论提交的安全边界是「必须登录」，那条在 comment
-// service 里无条件执行），且未注入即拒绝会把「装配漏了一行」表现成
-// 「整站商品评论发不出去」—— 运营看到的现象与「这个站不让评论」完全一样，
-// 排查成本极高。装配层在未注入时留一条 Warn（见 routers 的装配段）。
 func (s *Service) SetPurchaseChecker(port productcontract.PurchaseChecker) {
 	s.purchases = port
 }
 
-// AllowComment 判定某访客能否对某实体发表评论（commentcontract.EntityPolicy）。
-//
-// 只对**商品**行使规则：其它实体类型（文章等）一律放行 —— 本模块不认识它们，
-// 也就不该替它们立规矩。将来文章要自己的规则，由 content 侧实现同一个端口。
 func (s *Service) AllowComment(ctx context.Context, req *commentcontract.PolicyReq) (denial *commentcontract.PolicyDenial, err error) {
 	if req == nil || strings.TrimSpace(req.EntityType) != productcontract.EntityTypeProduct {
 		return nil, nil
 	}
 	if s.purchases == nil {
-		// 未注入 = 规则未启用（放行）。见 SetPurchaseChecker 的注释。
+
 		return nil, nil
 	}
 	purchased, cerr := s.purchases.HasPurchasedProduct(ctx, req.ProjectID, req.UserID, req.EntityID)
 	if cerr != nil {
-		// 判定失败 **≠** 「没买过」。这里选择放行 + 记 Error 日志，而不是拒绝：
-		//   - 拒绝的失败模式是「一次数据库抖动让所有商品评论都发不出去」，且访客
-		//     看到的是一句误导性的「你没买过」—— 比放行更难查、更难解释；
-		//   - 放行仍有兜底：评论一律落 pending，审核队列把关内容
-		//    （这条规则本身的定位就是产品策略，不是安全边界）。
+
 		logger.Scene("product").Error(cerr, "商品评论的购买事实判定失败（本次放行，待审核队列把关）")
 		return nil, nil
 	}
@@ -1524,12 +1191,11 @@ func (s *Service) AllowComment(ctx context.Context, req *commentcontract.PolicyR
 	}, nil
 }
 
-// UpdateVariantCost 写变体成本价（只动 cost_price 一列）并留痕。
 func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID string, cost float64, operatorID string) (err error) {
 	if strings.TrimSpace(variantID) == "" {
 		return productenums.Err(productenums.ErrInvalidParam)
 	}
-	// 留痕端口未注入（纯商品单测路径）时不读库、不写记录，只做成本价回写本身。
+
 	var (
 		v        *productmodel.VariantEntity
 		resolved string
@@ -1538,22 +1204,22 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 		if v, err = s.m.GetVariant(ctx, variantID); err != nil {
 			return mapNotFound(err)
 		}
-		// 作用域用调用方（入库登记）给的工程：按变体反查所属商品要走 products 的 RLS。
+
 		if resolved, err = s.variantProjectID(ctx, v, projectID); err != nil {
 			return err
 		}
 	}
 	now := time.Now().UTC()
 	if s.changes == nil || v == nil {
-		// 留痕端口未注入（纯商品单测路径）：只做成本价回写本身。
+
 		return s.m.UpdateVariantCost(ctx, variantID, cost, now)
 	}
-	// 成本价回写与留痕同事务；快照必须取锁后值，避免把并发改价归入本次入库。
+
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, resolved); serr != nil {
 			return serr
 		}
-		// 与其它商品写操作保持商品 → 变体的锁序，并显式验证工程归属。
+
 		if _, lerr := s.m.GetForUpdateTx(ctx, tx, v.ProductID, resolved); lerr != nil {
 			return mapNotFound(lerr)
 		}
@@ -1573,12 +1239,6 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 	})
 }
 
-// ProductTranslationCandidates 单个商品及其引用实体的全部可翻译文本。
-//
-// 返回顺序：商品自身 → 分类（商品引用顺序）→ 品牌 → 标签 → 属性组。
-// 实体不存在 / 引用已失效 → 跳过该实体，不报错（与详情页读取口径一致）。
-//
-// 工程作用域由调用方显式给出，保证候选与原文都受同一工程权限约束。
 func (s *Service) ProductTranslationCandidates(ctx context.Context, projectID, productID string) (list []productcontract.TranslationCandidate, err error) {
 	e, gerr := s.m.Get(ctx, productID, projectID)
 	if gerr != nil {
@@ -1587,15 +1247,11 @@ func (s *Service) ProductTranslationCandidates(ctx context.Context, projectID, p
 	return s.translationCandidatesForProduct(ctx, e)
 }
 
-// ProjectTranslationCandidates 工程内全部商品域可翻译文本（按 (hash, context) 去重）。
-//
-// 用于「整个商品域都翻一遍」的场景；单商品入口用 ProductTranslationCandidates。
 func (s *Service) ProjectTranslationCandidates(ctx context.Context, projectID string) (list []productcontract.TranslationCandidate, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, nil
 	}
-	// 必须用**全列**查询：List 只 Select 列表需要的列，subtitle / description /
-	// image_alts 不在其中，用它会让这三类文本的候选恒为零值（审查 P1）。
+
 	rows, lerr := s.m.ListAllColumnsForTranslation(ctx, projectID)
 	if lerr != nil {
 		return nil, lerr
@@ -1608,7 +1264,7 @@ func (s *Service) ProjectTranslationCandidates(ctx context.Context, projectID st
 		}
 		list = appendUniqueCandidates(list, seen, cands)
 	}
-	// 未被任何商品引用的分类 / 品牌 / 标签 / 属性也要可翻译（先建后挂是常态）。
+
 	extra, eerr := s.orphanTranslationCandidates(ctx, projectID, seen)
 	if eerr != nil {
 		return nil, eerr
@@ -1616,7 +1272,6 @@ func (s *Service) ProjectTranslationCandidates(ctx context.Context, projectID st
 	return append(list, extra...), nil
 }
 
-// translationCandidatesForProduct 单个商品的候选（商品自身 + 引用实体）。
 func (s *Service) translationCandidatesForProduct(ctx context.Context, e *productmodel.ProductEntity) (list []productcontract.TranslationCandidate, err error) {
 	if e == nil {
 		return nil, nil
@@ -1655,7 +1310,6 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 	return list, nil
 }
 
-// orphanTranslationCandidates 工程内未被商品引用的分类 / 品牌 / 标签 / 属性的候选。
 func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID string, seen map[string]bool) (list []productcontract.TranslationCandidate, err error) {
 	categories, cerr := s.m.ListCategories(ctx, projectID, "")
 	if cerr != nil {
@@ -1665,7 +1319,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
-	// 全量取（0, 0）：译文候选要覆盖工程里所有品牌 / 标签，漏掉的会变成永远没有译文入口。
+
 	brands, berr := s.m.ListBrands(ctx, projectID, "", 0, 0)
 	if berr != nil {
 		return nil, berr
@@ -1692,7 +1346,6 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 	return list, nil
 }
 
-// appendUniqueCandidates 按 (hash, context) 去重追加。
 func appendUniqueCandidates(dst []productcontract.TranslationCandidate, seen map[string]bool, add []productcontract.TranslationCandidate) []productcontract.TranslationCandidate {
 	for _, c := range add {
 		key := i18n.ContentIndexKey(c.SourceHash, c.Context)
@@ -1705,8 +1358,6 @@ func appendUniqueCandidates(dst []productcontract.TranslationCandidate, seen map
 	return dst
 }
 
-// productTextCandidates 商品自身可翻译字段的候选（图集 alt 逐元素展开）。
-// 字段名称的显示与取词由前端负责，候选只保留白名单字段标识。
 func productTextCandidates(e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
 	values := map[string]string{
 		"name":        e.Name,
@@ -1730,10 +1381,6 @@ func productTextCandidates(e *productmodel.ProductEntity) []productcontract.Tran
 	return list
 }
 
-// entityTextCandidates 一个标量文本实体（分类 / 品牌 / 标签）的候选。
-//
-// values 是「字段名 → 原文」映射（原样传入，不做翻译）；
-// 字段集合仍取自 contract 的唯一来源，不在此另列。
 func entityTextCandidates(entityType, id, name string, values map[string]string) []productcontract.TranslationCandidate {
 	list := make([]productcontract.TranslationCandidate, 0, len(values))
 	for _, field := range productcontract.TranslatableFields(entityType) {
@@ -1744,7 +1391,6 @@ func entityTextCandidates(entityType, id, name string, values map[string]string)
 	return list
 }
 
-// attributeTextCandidates 属性组的候选：组名 + 属性值展示文本逐元素。
 func attributeTextCandidates(e *productmodel.ProductAttributeEntity) []productcontract.TranslationCandidate {
 	if e == nil {
 		return nil
@@ -1761,7 +1407,6 @@ func attributeTextCandidates(e *productmodel.ProductAttributeEntity) []productco
 	return list
 }
 
-// makeCandidate 组装一条候选（跳过规则命中 / 不在白名单内 → false）。
 func makeCandidate(entityType, id, name, field, source string) (productcontract.TranslationCandidate, bool) {
 	if !productcontract.IsTranslatableField(entityType, field) {
 		return productcontract.TranslationCandidate{}, false
@@ -1777,19 +1422,6 @@ func makeCandidate(entityType, id, name, field, source string) (productcontract.
 	}, true
 }
 
-// preserveUntouchedFields 把「本次请求没碰的字段」换成加锁读到的现值，避免全列覆盖丢更新。
-//
-// 背景：UpdateTx 是 `Save(e)`（写全列）。事务外那次 `s.m.Get` 没加锁，两个并发请求
-// 各自读到同一份旧值、各改自己的字段，后提交的整行会把前一个的改动覆盖回去 ——
-// 而两边都回 200，用户看到「保存成功」但数据丢了。
-//
-// 为什么走「保留未触碰字段」而不是「重放赋值」：Update 里的赋值依赖 resolveAttributeIDs /
-// resolveTagIDs / applyCategoryRefs 这些**要查库**的校验（还要判工程归属、存在性、
-// 手工标签），重放等于把整套校验再跑一遍，且漏一个就是新缺陷。
-// e 已经带着本次请求的全部效果（含归一后的值），只需要把没碰的字段对齐到现值。
-//
-// 本函数与 Update 里的字段清单**必须同步**：漏一个的后果是「那个字段的并发修改被覆盖」，
-// 而接口照旧回 200。改动 Update 的赋值时，这里要一起看。
 func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *productdto.UpdateReq) {
 	if e == nil || locked == nil || req == nil {
 		return
@@ -1833,8 +1465,7 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	if req.AttributeIDs == nil {
 		e.AttributeIDs = locked.AttributeIDs
 	}
-	// 分类与主分类是一组（applyCategoryRefs 会联动维护「主分类必须在附属里」），
-	// 任一被请求触碰时都保留本次结果。
+
 	if req.CategoryIDs == nil && req.PrimaryCategoryID == nil {
 		e.CategoryIDs = locked.CategoryIDs
 		e.PrimaryCategoryID = locked.PrimaryCategoryID
@@ -1859,10 +1490,6 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	}
 }
 
-// isProductStatus 商品状态白名单（与 081_product_tables.sql 的 CHECK 逐字一致）。
-//
-// 两处必须同步：数据库那一份是**最后防线**（挡绕过 service 的写入口），
-// 这里的这一份负责给出可读的 400 而不是让 PG 的约束错误变成 500。
 func isProductStatus(s string) bool {
 	switch s {
 	case productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived:

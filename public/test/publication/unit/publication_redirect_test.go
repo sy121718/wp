@@ -9,8 +9,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// TestPublicationRedirectNormal 正常重定向：active 行转为 redirect，
-// 绑定 artifact 并生成 committed 回执。
 func TestPublicationRedirectNormal(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/old", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
@@ -32,7 +30,6 @@ func TestPublicationRedirectNormal(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectMissing 不存在路径：幂等建立 redirect 行（非 404）。
 func TestPublicationRedirectMissing(t *testing.T) {
 	svc := newUnitService(t)
 	route, err := svc.Redirect(context.Background(), &pubdto.RedirectReq{
@@ -49,8 +46,6 @@ func TestPublicationRedirectMissing(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectConflict 目标路径被其他页面占用时重定向失败，
-// 错误归一为 ErrRouteOccupied 且原占用不变。
 func TestPublicationRedirectConflict(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/other", pubmodel.RouteActive, strPtr(otherPageID), strPtr(artifactUUID))
@@ -65,10 +60,6 @@ func TestPublicationRedirectConflict(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectNoArtifact 空 ArtifactID 是 DTO 文档化的合法输入
-// （「ArtifactID 允许为空（重定向产物不入库）」），但当前实现无条件
-// 修复语义：ArtifactID 允许为空（重定向产物不入库，DTO 契约），
-// 回执 ToArtifact 置 NULL 而非空串 uuid；Redirect 必须成功且路由转 redirect。
 func TestPublicationRedirectNoArtifact(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/noart", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
@@ -79,11 +70,11 @@ func TestPublicationRedirectNoArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("空 ArtifactID 重定向应成功（产物不入库），实际: %v", err)
 	}
-	// 路由已转 redirect。
+
 	if res.RouteKind != pubmodel.RouteRedirect {
 		t.Fatalf("路由应转 redirect: %+v", res)
 	}
-	// 回执已提交且 ToArtifact 为 NULL（不写空串 uuid）。
+
 	var receipt pubmodel.ReceiptEntity
 	if err := svc.Model().ReceiptDB(context.Background()).
 		Where("action = ?", "redirect").Order("create_time DESC").Limit(1).
@@ -95,9 +86,6 @@ func TestPublicationRedirectNoArtifact(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectMalformedArtifact 含非法字符（引号）的 ArtifactID：
-// 回执 ReceiptData 由字符串拼接生成非法 JSON，jsonb 插入失败导致整个事务回滚
-// （激活路径已改用 json.Marshal 安全序列化，此处为遗留不一致，见报告）。
 func TestPublicationRedirectMalformedArtifact(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/bad", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
@@ -109,7 +97,7 @@ func TestPublicationRedirectMalformedArtifact(t *testing.T) {
 		t.Fatal("含引号 ArtifactID 应导致失败（jsonb 非法 JSON）")
 	}
 	t.Logf("畸形 ArtifactID 错误类型: %v", err)
-	// 事务必须整体回滚：路由保持 active，无回执残留。
+
 	route := mustRoute(t, svc, "/bad")
 	if route.RouteKind != pubmodel.RouteActive {
 		t.Fatalf("事务应整体回滚，路由保持 active: %+v", route)
@@ -119,8 +107,6 @@ func TestPublicationRedirectMalformedArtifact(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectNilRequest 空请求返回 ErrInvalidParam（参数错误，
-// 与路径占用不存在语义无关）。
 func TestPublicationRedirectNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Redirect(context.Background(), nil)

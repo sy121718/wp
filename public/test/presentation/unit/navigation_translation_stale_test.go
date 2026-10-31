@@ -1,16 +1,5 @@
 package unit
 
-// navigation_translation_stale_test.go — 改公开站点导航的**译文**后，用了该导航的自动发布实例
-// 必须被标 stale。
-//
-// 缺口（与刚修好的 menu 依赖同源）：导航译文写的是 sys_translation，保存成功后只标了
-// 手工页面（i18n:content 全站标记）—— presentation 实例没有任何落点，会永远停在旧菜单
-// 标签上，而线上与库里都看不出异常。修复口径与「改导航项」完全一致：派发
-// menu:{projectID}:{kind}，由依赖扇出按依赖表反查受影响来源（键构造与扇出都在发布内核）。
-//
-// 两条断言成对：用了该导航位置的实例 stale=true；**没用**该位置的实例不受影响 ——
-// 只断言前者时，一个「把全站实例都标一遍」的实现也能通过。
-
 import (
 	"context"
 	"fmt"
@@ -44,10 +33,8 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// presPlainDocument 不引用任何导航位置的模板文档（对照组用）。
 const presPlainDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}}]}`
 
-// TestNavigationTranslationSaveMarksInstancesStale 保存导航译文 → 绑该位置的实例 stale。
 func TestNavigationTranslationSaveMarksInstancesStale(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -56,13 +43,11 @@ func TestNavigationTranslationSaveMarksInstancesStale(t *testing.T) {
 	navSvc := newNavDispatch(t, f)
 	createNavItem(t, f, navSvc, "首页", "header", "/")
 
-	// 两套模板：一套绑页眉导航（受影响），一套完全不碰导航（对照）。
 	navInst := createInstanceWithTemplate(t, f, "nav-tr-instance", "/nav-tr-instance",
 		createNavTemplate(t, f, "绑导航模板", "header"))
 	plainInst := createInstanceWithTemplate(t, f, "plain-tr-instance", "/plain-tr-instance",
 		createPlainTemplate(t, f, "无导航模板"))
 
-	// 前置：只有绑导航的实例登记了 menu:{pid}:header 依赖（对照实例一条都没有）。
 	menuKey := "menu:" + f.projectID + ":header"
 	if n := countMenuDependency(t, f, navInst, menuKey); n != 1 {
 		t.Fatalf("绑页眉导航的实例应登记 1 条 %s 依赖，实际 %d", menuKey, n)
@@ -74,10 +59,8 @@ func TestNavigationTranslationSaveMarksInstancesStale(t *testing.T) {
 		t.Fatal("保存译文之前实例不应是 stale（否则后面的断言证明不了任何事）")
 	}
 
-	// 动作：保存导航译文（真实 handler + 真实写入器 + 真实导航服务）。
 	saveNavTranslation(t, f, navSvc, "首页", "Home")
 
-	// 断言：绑该导航位置的实例被标 stale；没用的那个纹丝不动。
 	if _, stale := instancePointer(t, f, navInst); !stale {
 		t.Fatal("保存导航译文后，绑该导航位置的自动发布实例应被标记待重建")
 	}
@@ -86,18 +69,13 @@ func TestNavigationTranslationSaveMarksInstancesStale(t *testing.T) {
 	}
 }
 
-// TestNavigationTranslationSaveMarksAllPositionsUsingTheText 同一段菜单文字同时用在页眉与
-// 页脚时，**两个位置**的实例都要被标 stale。
-//
-// 工作台按原文去重（译文键是 (原文, 语境)，页眉页脚共用同一个键），所以提交的表单里只有
-// 一行 —— 只看这一行的位置会漏掉另一个位置，表现为「页脚实例的菜单标签没被重建」。
 func TestNavigationTranslationSaveMarksAllPositionsUsingTheText(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
 		return
 	}
 	navSvc := newNavDispatch(t, f)
-	// 页眉与页脚用同一段文字；先建页眉，保证列表里留下的那一行属于 header。
+
 	createNavItem(t, f, navSvc, "首页", "header", "/")
 	createNavItem(t, f, navSvc, "首页", "footer", "/home")
 
@@ -120,7 +98,6 @@ func TestNavigationTranslationSaveMarksAllPositionsUsingTheText(t *testing.T) {
 	}
 }
 
-// countMenuDependency 该实例登记的某条 menu 依赖条目数。
 func countMenuDependency(t *testing.T, f *presFixture, instanceID, key string) int64 {
 	t.Helper()
 	var n int64
@@ -132,22 +109,16 @@ func countMenuDependency(t *testing.T, f *presFixture, instanceID, key string) i
 	return n
 }
 
-// newNavDispatch 导航服务 + 同事务写端口（与真实装配同形），并把导航解析器注入实例侧。
 func newNavDispatch(t *testing.T, f *presFixture) *navigationservice.Service {
 	t.Helper()
-	// nil 工程契约（本用例只用事务内来源索引与译文写服务，不走工程校验）。
+
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db), nil)
-	// 写端口是导航写的**必需依赖**：未装配时 Create/Update 直接 fail closed
-	// （navigation.err.translation.unavailable），下面 createNavItem 会假红。
+
 	navSvc.SetWritePorts(navWriteDeps(t, f, navSvc))
 	f.pres.SetNavigationService(navSvc)
 	return navSvc
 }
 
-// navWriteDeps 本包可用的真实端口集（页/实例/按项/按项实例/入队）。
-//
-// 不复用 pipeline.Fanout + MenuStaleAdapter：那条是**异步派发**的旧路，
-// 菜单写的失效已改成同事务端口调用，挂 dispatcher 只会让断言看着像证明过了。
 func navWriteDeps(t *testing.T, f *presFixture, navSvc *navigationservice.Service) navigationservice.NavigationWriteDeps {
 	t.Helper()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
@@ -164,7 +135,6 @@ func navWriteDeps(t *testing.T, f *presFixture, navSvc *navigationservice.Servic
 	}
 }
 
-// createNavItem 建一个导航项（标题即菜单文字）。
 func createNavItem(t *testing.T, f *presFixture, svc navigationcontract.NavigationService, title, kind, path string) {
 	t.Helper()
 	if _, err := svc.Create(context.Background(), &navigationdto.CreateReq{
@@ -174,7 +144,6 @@ func createNavItem(t *testing.T, f *presFixture, svc navigationcontract.Navigati
 	}
 }
 
-// createNavTemplate 建一套绑定指定导航位置的模板，返回模板 id。
 func createNavTemplate(t *testing.T, f *presFixture, name, kind string) string {
 	t.Helper()
 	doc := fmt.Sprintf(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"nav1","type":"core.nav","props":{"menu":"%s"}}]}`, kind)
@@ -187,7 +156,6 @@ func createNavTemplate(t *testing.T, f *presFixture, name, kind string) string {
 	return tpl.ID
 }
 
-// createPlainTemplate 建一套完全不碰导航的模板，返回模板 id。
 func createPlainTemplate(t *testing.T, f *presFixture, name string) string {
 	t.Helper()
 	tpl, err := f.templates.Create(context.Background(), &contenttemplatedto.CreateReq{
@@ -199,7 +167,6 @@ func createPlainTemplate(t *testing.T, f *presFixture, name string) string {
 	return tpl.ID
 }
 
-// createInstanceWithTemplate 建内容实体 + 自动发布实例，返回实例 id。
 func createInstanceWithTemplate(t *testing.T, f *presFixture, slug, urlPath, templateID string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -219,19 +186,11 @@ func createInstanceWithTemplate(t *testing.T, f *presFixture, slug, urlPath, tem
 	return inst.ID
 }
 
-// saveNavTranslation 走真实 handler 保存一条导航标签译文（表单只有一行）。
-//
-// navSvc 要具体类型：失效端口（InvalidateMenuLabels）是模块 Service 上的能力，
-// 不在导航契约里 —— 与装配入口的断言同一口径。
 func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.Service,
 	sourceText, target string) {
 	t.Helper()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
-	// 译文保存是真实 JSON 写接口，写服务注入到**本用例自己的句柄**上：
-	// 旧的页面句柄 singleton 与 SetMenuInvalidator 已随译文 MVC 删除（见
-	// internal/module/navigation/inbound/http/navigation_translations_handle.go 文件头），
-	// 现在的失效派发在 TranslationWriter 事务内由三个同事务端口完成 —— 本用例要验的
-	// 正是「真实端口 × 真实依赖键」是否把实例标成了 stale。
+
 	handle := navigationhttp.NewHandle(navSvc)
 	wirePresentationTranslationWriter(t, f, handle, navSvc, projects)
 
@@ -249,8 +208,7 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("保存译文应 200（JSON 写接口），实际 %d，body=%s", recorder.Code, recorder.Body.String())
 	}
-	// 「200」本身证明不了写入：必须确认响应里的 written > 0，否则这条用例会在
-	// 「形状对了但什么都没写」的实现上静默通过，后面的 stale 断言也就失去意义。
+
 	var envelope struct {
 		Code int `json:"code"`
 		Data struct {

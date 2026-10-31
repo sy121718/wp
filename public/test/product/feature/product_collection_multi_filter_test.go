@@ -1,8 +1,3 @@
-// Package feature product 模块 feature 测试 —— 多值筛选维度（分类 / 品牌 / 标签同一套样板）。
-//
-// 三个维度的形状完全一致：逗号分隔的 id 串 + any（默认，并集）/ all（交集）语义，
-// 且与各自单值维度并存时**多值优先**。这里逐条钉住语义，因为它们错了不会报错，
-// 只会少出商品（「勾了两个品牌只出第一个的」）。
 package feature
 
 import (
@@ -13,7 +8,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// TestProductCollectionMultiCategoryAndBrand 多分类 / 多品牌筛选语义（并集 / 交集 / 多值优先）。
 func TestProductCollectionMultiCategoryAndBrand(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -27,7 +21,6 @@ func TestProductCollectionMultiCategoryAndBrand(t *testing.T) {
 	brandA := colBrand(t, f, "品牌甲", "multi-brand-a")
 	brandB := colBrand(t, f, "品牌乙", "multi-brand-b")
 
-	// 四个商品：A 类甲牌 / B 类乙牌 / 同时属两类（甲牌） / 两类都不是
 	onlyA := f.createProduct(t, "只要上衣", "mv-only-a", "", 10, 10)
 	onlyB := f.createProduct(t, "只要裤子", "mv-only-b", "", 10, 10)
 	bothCats := f.createProduct(t, "两者都算", "mv-both-cats", "", 10, 10)
@@ -67,25 +60,22 @@ func TestProductCollectionMultiCategoryAndBrand(t *testing.T) {
 		return true
 	}
 
-	// 多分类并集（any，默认）。
 	if got := names(map[string]string{"categoryIds": catA.ID + "," + catB.ID}); !has(got, "只要上衣", "只要裤子", "两者都算") {
 		t.Fatalf("多分类并集应命中三个，实际 %v", got)
 	}
-	// 多分类交集（all）。
+
 	if got := names(map[string]string{"categoryIds": catA.ID + "," + catB.ID, "categoryMode": "all"}); !has(got, "两者都算") {
 		t.Fatalf("多分类交集应只命中「两者都算」，实际 %v", got)
 	}
-	// 多品牌并集。
+
 	if got := names(map[string]string{"brandIds": brandA.ID + "," + brandB.ID}); !has(got, "只要上衣", "只要裤子", "两者都算") {
 		t.Fatalf("多品牌并集应命中三个，实际 %v", got)
 	}
-	// 多品牌交集：没有商品同时挂两个品牌。
+
 	if got := names(map[string]string{"brandIds": brandA.ID + "," + brandB.ID, "brandMode": "all"}); len(got) != 0 {
 		t.Fatalf("多品牌交集应为空，实际 %v", got)
 	}
 
-	// **多值优先于单值**：两者并存时按多值算，单值必须被忽略。
-	// 叠加成 AND 的话，用户把单选改成多选之后旧值会继续卡着结果。
 	if got := names(map[string]string{"categoryId": catB.ID, "categoryIds": catA.ID}); !has(got, "只要上衣", "两者都算") {
 		t.Fatalf("多值应压过单值（应出 A 类的两个），实际 %v", got)
 	}
@@ -93,7 +83,6 @@ func TestProductCollectionMultiCategoryAndBrand(t *testing.T) {
 		t.Fatalf("品牌多值应压过单值（应出甲牌的两个），实际 %v", got)
 	}
 
-	// 空值 = 该维度不参与过滤（留一个空键必须等价于不传，不能变成 0 条）。
 	if got := names(map[string]string{"categoryIds": ""}); has(got, "只要上衣", "只要裤子", "两者都算", "都不算") == false {
 		t.Fatalf("空 categoryIds 应等价于不筛选，实际 %v", got)
 	}

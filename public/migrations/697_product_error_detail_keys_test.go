@@ -25,7 +25,7 @@ func TestProductErrorDetailSeedPreservesTranslations(t *testing.T) {
 	if db == nil {
 		return
 	}
-	// 模板库只保证迁移结构；先建立真实旧版词条，再模拟运营修改。
+
 	for _, historical := range migrations.AllSeeds() {
 		if historical.Version != "449-i18n-product-inventory-go-texts" {
 			continue
@@ -36,7 +36,7 @@ func TestProductErrorDetailSeedPreservesTranslations(t *testing.T) {
 			}
 		}
 	}
-	// 上线前校验新 SQL 的解析及表列绑定，不执行 PREPARE 中的语句。
+
 	if err := db.Connection(func(conn *gorm.DB) error {
 		for _, stmt := range migrations.SplitStatements(seed.SQL) {
 			if err := conn.Exec("PREPARE product_detail_seed AS " + stmt).Error; err != nil {

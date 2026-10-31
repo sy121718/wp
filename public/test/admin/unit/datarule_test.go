@@ -10,7 +10,6 @@ import (
 	"go_wp/pkg/datarule"
 )
 
-// TestRuleCreateAndDetailRoundTrip 规则创建 → 详情查询，Config JSON 往返一致。
 func TestRuleCreateAndDetailRoundTrip(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -38,7 +37,6 @@ func TestRuleCreateAndDetailRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRuleDetailNotFound 查询不存在的规则报错。
 func TestRuleDetailNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -47,7 +45,6 @@ func TestRuleDetailNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRuleNotFound)
 }
 
-// TestRuleUpdateSuccess 更新规则名称/域/配置。
 func TestRuleUpdateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -66,7 +63,6 @@ func TestRuleUpdateSuccess(t *testing.T) {
 	}
 }
 
-// TestRuleUpdateNotFound 更新不存在的规则报错。
 func TestRuleUpdateNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -77,7 +73,6 @@ func TestRuleUpdateNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrRuleNotFound)
 }
 
-// TestRuleDeleteCleansAssignments 删除规则连带清理分配记录。
 func TestRuleDeleteCleansAssignments(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -106,7 +101,6 @@ func TestRuleDeleteCleansAssignments(t *testing.T) {
 	}
 }
 
-// TestRuleListFilters 规则列表按 domain/status 筛选。
 func TestRuleListFilters(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -126,28 +120,24 @@ func TestRuleListFilters(t *testing.T) {
 	}
 }
 
-// TestRuleAssignmentSaveInvalidTarget 非法分配目标被拒绝：TargetID=0、非法 TargetType、部门缺 scope。
 func TestRuleAssignmentSaveInvalidTarget(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	ruleID := ruleCreate(t, e, "规则", "ORDER", 1, admindto.RuleConfigDTO{})
 
-	// TargetID=0
 	err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID:      ruleID,
 		Assignments: []admindto.RuleAssignmentItem{{TargetType: adminmodel.AssignmentTargetTypeUser, TargetID: 0}},
 	})
 	wantErr(t, err, adminenums.ErrInvalidAssignment)
 
-	// 非法 TargetType
 	err = e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID:      ruleID,
 		Assignments: []admindto.RuleAssignmentItem{{TargetType: 99, TargetID: 1}},
 	})
 	wantErr(t, err, adminenums.ErrInvalidAssignment)
 
-	// 部门缺 scope
 	err = e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID:      ruleID,
 		Assignments: []admindto.RuleAssignmentItem{{TargetType: adminmodel.AssignmentTargetTypeDept, TargetID: 1}},
@@ -155,14 +145,12 @@ func TestRuleAssignmentSaveInvalidTarget(t *testing.T) {
 	wantErr(t, err, adminenums.ErrInvalidAssignment)
 }
 
-// TestRuleAssignmentSaveDedupAndReplace 同目标去重 + 全量替换语义。
 func TestRuleAssignmentSaveDedupAndReplace(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	ruleID := ruleCreate(t, e, "分配规则", "ORDER", 1, admindto.RuleConfigDTO{})
 
-	// 重复 target 只落一条
 	err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleID,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -177,7 +165,6 @@ func TestRuleAssignmentSaveDedupAndReplace(t *testing.T) {
 		t.Fatalf("重复目标应去重: %d", len(list.List))
 	}
 
-	// 全量替换为两个新目标
 	err = e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleID,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -193,7 +180,6 @@ func TestRuleAssignmentSaveDedupAndReplace(t *testing.T) {
 	}
 }
 
-// TestGetRulesByUser 按用户直接分配命中规则。
 func TestGetRulesByUser(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -216,7 +202,6 @@ func TestGetRulesByUser(t *testing.T) {
 		t.Fatalf("用户规则命中不符: %+v", rules)
 	}
 
-	// 非关联用户不命中
 	rules, err = e.svc.GetRules(ctx, &datarule.UserContext{UserID: 101, Roles: []string{}}, "ORDER")
 	wantErr(t, err, "")
 	if len(rules) != 0 {
@@ -224,7 +209,6 @@ func TestGetRulesByUser(t *testing.T) {
 	}
 }
 
-// TestGetRulesByRole 按用户角色分配命中规则。
 func TestGetRulesByRole(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -240,7 +224,6 @@ func TestGetRulesByRole(t *testing.T) {
 		t.Fatalf("分配失败: %v", err)
 	}
 
-	// 需要角色编码与 ID 对应（sys_role 有该角色）
 	rules, err := e.svc.GetRules(ctx, &datarule.UserContext{UserID: 100, Roles: []string{codeOfRole(t, e, roleID)}}, "ORDER")
 	wantErr(t, err, "")
 	if len(rules) != 1 {
@@ -248,7 +231,6 @@ func TestGetRulesByRole(t *testing.T) {
 	}
 }
 
-// TestGetRulesByDeptScope 部门规则按 scope 生效：SELF 只对本部门，SELF_AND_CHILDREN 覆盖子孙。
 func TestGetRulesByDeptScope(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -256,7 +238,6 @@ func TestGetRulesByDeptScope(t *testing.T) {
 	root := deptCreate(t, e, "总部", "DR_"+uniq(""))
 	child := deptCreate(t, e, "分部", "DC2_"+uniq(""), root)
 
-	// 规则A：scope=SELF 给总部 → 只对总部生效
 	ruleSelf := ruleCreate(t, e, "本部门规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleSelf,
@@ -267,7 +248,6 @@ func TestGetRulesByDeptScope(t *testing.T) {
 		t.Fatalf("分配失败: %v", err)
 	}
 
-	// 规则B：scope=SELF_AND_CHILDREN 给总部 → 覆盖子孙
 	ruleTree := ruleCreate(t, e, "树形规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleTree,
@@ -278,14 +258,12 @@ func TestGetRulesByDeptScope(t *testing.T) {
 		t.Fatalf("分配失败: %v", err)
 	}
 
-	// 总部自身：两条都命中
 	rules, err := e.svc.GetRules(ctx, &datarule.UserContext{UserID: 1, Roles: []string{}, DeptID: root}, "ORDER")
 	wantErr(t, err, "")
 	if len(rules) != 2 {
 		t.Fatalf("总部应命中 2 条规则: %+v", rules)
 	}
 
-	// 分部：只命中树形规则
 	rules, err = e.svc.GetRules(ctx, &datarule.UserContext{UserID: 1, Roles: []string{}, DeptID: child}, "ORDER")
 	wantErr(t, err, "")
 	if len(rules) != 1 {
@@ -293,7 +271,6 @@ func TestGetRulesByDeptScope(t *testing.T) {
 	}
 }
 
-// TestGetRulesNilUser nil 用户不命中任何规则。
 func TestGetRulesNilUser(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -305,14 +282,10 @@ func TestGetRulesNilUser(t *testing.T) {
 	}
 }
 
-// TestGetRulesInvalidConfig 规则 config 非法 JSON 时返回解析错误（fail 明确）。
 func TestGetRulesInvalidConfig(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 直接落库一条 config 无法解析的启用规则并分配给用户。
-	// 生产的 sys_rule.config 是 jsonb（非法 JSON 根本写不进去），这里用「JSON 合法但形状
-	// 不匹配」的值：数组无法反序列化为 RuleConfig，同样走解析失败分支。
 	rule := &adminmodel.SysRuleEntity{
 		RuleName: "坏配置", Domain: "ORDER", Config: "[]", Status: adminmodel.RuleStatusEnabled,
 	}
@@ -331,7 +304,6 @@ func TestGetRulesInvalidConfig(t *testing.T) {
 	}
 }
 
-// TestRuleSchemaListDetail 注册中心 domain 列表与字段白名单。
 func TestRuleSchemaListDetail(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -348,7 +320,6 @@ func TestRuleSchemaListDetail(t *testing.T) {
 		t.Fatalf("domain 详情应含字段白名单")
 	}
 
-	// 未注册 domain 返回 nil 而非错误
 	missing, err := e.svc.RuleSchemaDetail(ctx, &admindto.RuleSchemaDetailReq{Domain: "NOT_REGISTERED"})
 	wantErr(t, err, "")
 	if missing != nil {
@@ -356,8 +327,6 @@ func TestRuleSchemaListDetail(t *testing.T) {
 	}
 }
 
-// TestRuleCreateInvalidDomain 未注册 domain 被拒绝（ErrInvalidDomain）。
-// 修复前：RuleCreate 不校验 domain 注册，任意 domain 均可落库。
 func TestRuleCreateInvalidDomain(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -368,7 +337,6 @@ func TestRuleCreateInvalidDomain(t *testing.T) {
 	})
 	wantErr(t, err, adminenums.ErrInvalidDomain)
 
-	// 不应落库
 	var count int64
 	if err := e.db.Model(&adminmodel.SysRuleEntity{}).Where("domain = ?", "NOT_REGISTERED").Count(&count).Error; err != nil {
 		t.Fatalf("查询失败: %v", err)
@@ -378,7 +346,6 @@ func TestRuleCreateInvalidDomain(t *testing.T) {
 	}
 }
 
-// TestRuleUpdateInvalidDomain 更新为未注册 domain 被拒绝，且原规则不被改动。
 func TestRuleUpdateInvalidDomain(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -397,9 +364,6 @@ func TestRuleUpdateInvalidDomain(t *testing.T) {
 	}
 }
 
-// TestRuleCreateDisabledExplicit 显式传 status=0（禁用）创建数据规则，落库为禁用且不被 GetRules 命中。
-// 修复前：SysRuleEntity.Status 带 gorm default:1 tag，gorm 对零值字段（status=0）用 DB 默认值
-// 替换并回写 struct，显式禁用被改写成启用（1），"创建禁用数据规则"失效。
 func TestRuleCreateDisabledExplicit(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -414,7 +378,6 @@ func TestRuleCreateDisabledExplicit(t *testing.T) {
 		t.Fatalf("显式禁用应落库 status=0: got=%d", rule.Status)
 	}
 
-	// 分配给用户后，禁用规则仍不应被 GetRules 命中
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleID,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -430,9 +393,6 @@ func TestRuleCreateDisabledExplicit(t *testing.T) {
 	}
 }
 
-// TestRuleUpdateDisablePersists 启用规则显式更新为 status=0（禁用）落库为禁用。
-// 回归覆盖：RuleUpdate 显式赋值 status=0 + SysRuleModel.Update 显式 Select 含 status 列，
-// 禁用状态在更新路径同样不被跳过。
 func TestRuleUpdateDisablePersists(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -453,11 +413,6 @@ func TestRuleUpdateDisablePersists(t *testing.T) {
 	}
 }
 
-// TestRuleCreateRejectsConfigOutsideDomain 规则配置只能引用数据域声明过的字段与该字段的操作符。
-//
-// 修复前 service 只校验 domain 是否注册，配置原样落库；引擎侧只做「字符集合法性」（escapeField）
-// 与「全局操作符白名单」（validOp）两层过滤，于是字段名写错、用错操作符、Omit 一个不存在的列
-// 全都是静默无效 —— 规则看起来生效，实际一条都没拦（fail-open）。
 func TestRuleCreateRejectsConfigOutsideDomain(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -508,7 +463,6 @@ func TestRuleCreateRejectsConfigOutsideDomain(t *testing.T) {
 	}
 }
 
-// TestRuleUpdateRejectsConfigOutsideDomain 更新路径同样按域白名单把关，且失败时原规则不被改动。
 func TestRuleUpdateRejectsConfigOutsideDomain(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -537,7 +491,6 @@ func TestRuleUpdateRejectsConfigOutsideDomain(t *testing.T) {
 	}
 }
 
-// TestRuleCreateAcceptsDeclaredOperators 白名单内声明的操作符可用（EQ/IN/部门范围引用）。
 func TestRuleCreateAcceptsDeclaredOperators(t *testing.T) {
 	e := setupEnv(t)
 
@@ -552,8 +505,6 @@ func TestRuleCreateAcceptsDeclaredOperators(t *testing.T) {
 		},
 	})
 }
-
-// --- helpers ---
 
 func ruleCreate(t *testing.T, e *env, name, domain string, status int, config admindto.RuleConfigDTO) uint64 {
 	t.Helper()

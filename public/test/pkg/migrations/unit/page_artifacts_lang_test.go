@@ -1,11 +1,5 @@
 package unit
 
-// page_artifacts_lang_test.go — 迁移 061（page_artifacts 加 lang 维度）验证。
-//
-// 对应多语言上线第一阻塞项（AGENTS.md §15.5 第 1 条）：
-// UNIQUE(page_id, version) → UNIQUE(page_id, version, lang)，存量行回填站点默认语言。
-// 覆盖：存量行回填、旧唯一键移除、新唯一键生效（同页多语言并存）、重复执行幂等。
-
 import (
 	"testing"
 
@@ -17,8 +11,6 @@ import (
 
 const langMigrationVersion = "061-page-artifacts-lang"
 
-// oldSchemaPageArtifacts 复刻迁移前的 page_artifacts（002-init-builder-schema）：
-// 无 lang 列、UNIQUE(page_id, version)。
 const oldSchemaPageArtifacts = `CREATE TABLE page_artifacts (
     id uuid PRIMARY KEY,
     page_id uuid NOT NULL,
@@ -29,7 +21,6 @@ const oldSchemaPageArtifacts = `CREATE TABLE page_artifacts (
     UNIQUE (id, page_id)
 )`
 
-// newMigrationDB 打开隔离 schema 的 PG 测试库；不可用时跳过。
 func newMigrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -39,7 +30,6 @@ func newMigrationDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// langMigrationSQL 取出迁移 061 的 SQL 文本；未注册即失败。
 func langMigrationSQL(t *testing.T) string {
 	t.Helper()
 	for _, m := range migrations.All() {
@@ -51,8 +41,6 @@ func langMigrationSQL(t *testing.T) string {
 	return ""
 }
 
-// applyLangMigration 逐条执行迁移 061（与 migrations.apply 同一拆分语义：
-// SplitStatements 处理 DO $$ 块）。返回执行的语句数。
 func applyLangMigration(t *testing.T, db *gorm.DB) int {
 	t.Helper()
 	statements := migrations.SplitStatements(langMigrationSQL(t))
@@ -69,8 +57,6 @@ func applyLangMigration(t *testing.T, db *gorm.DB) int {
 	return n
 }
 
-// TestPageArtifactsLangMigrationBackfillsExistingRows 存量行迁移后 lang 为默认语言，
-// 且旧唯一键被移除、新唯一键允许同页多语言并存。
 func TestPageArtifactsLangMigrationBackfillsExistingRows(t *testing.T) {
 	db := newMigrationDB(t)
 
@@ -87,7 +73,6 @@ func TestPageArtifactsLangMigrationBackfillsExistingRows(t *testing.T) {
 		t.Fatal("迁移 061 未产生任何语句")
 	}
 
-	// 存量行全部回填默认语言。
 	var nullCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM page_artifacts WHERE lang IS NULL OR lang = ''`).Scan(&nullCount).Error; err != nil {
 		t.Fatalf("统计空 lang 失败: %v", err)
@@ -103,7 +88,6 @@ func TestPageArtifactsLangMigrationBackfillsExistingRows(t *testing.T) {
 		t.Fatalf("存量行应回填默认语言 zh-CN，实际 %v", langs)
 	}
 
-	// 列属性：NOT NULL + DEFAULT 'zh-CN'（空 lang 会让唯一键退化）。
 	var nullable, columnDefault string
 	if err := db.Raw(`SELECT is_nullable, COALESCE(column_default, '') FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'page_artifacts' AND column_name = 'lang'`).
@@ -114,7 +98,6 @@ func TestPageArtifactsLangMigrationBackfillsExistingRows(t *testing.T) {
 		t.Fatalf("lang 列应为 NOT NULL DEFAULT 'zh-CN'，实际 nullable=%s default=%s", nullable, columnDefault)
 	}
 
-	// 新唯一键存在。
 	var idxCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
 		AND tablename = 'page_artifacts' AND indexname = 'uk_page_artifacts_page_version_lang'`).Scan(&idxCount).Error; err != nil {
@@ -124,19 +107,17 @@ func TestPageArtifactsLangMigrationBackfillsExistingRows(t *testing.T) {
 		t.Fatalf("应存在唯一键 uk_page_artifacts_page_version_lang，实际 %d", idxCount)
 	}
 
-	// 旧唯一键已移除：同 (page_id, version) 的第二个语言可以并存。
 	if err := db.Exec(`INSERT INTO page_artifacts (id, page_id, version, artifact_key, created_at, lang)
 		VALUES ('aaaaaaaa-0000-0000-0000-000000000003','bbbbbbbb-0000-0000-0000-000000000001',1,'artifacts/h1-en', now(), 'en-US')`).Error; err != nil {
 		t.Fatalf("同页多语言并存失败（旧 UNIQUE(page_id, version) 未被移除）: %v", err)
 	}
-	// 新唯一键生效：同 (page_id, version, lang) 仍然只能一行。
+
 	if err := db.Exec(`INSERT INTO page_artifacts (id, page_id, version, artifact_key, created_at, lang)
 		VALUES ('aaaaaaaa-0000-0000-0000-000000000004','bbbbbbbb-0000-0000-0000-000000000001',1,'artifacts/h1-dup', now(), 'zh-CN')`).Error; err == nil {
 		t.Fatal("同 (page_id, version, lang) 的重复插入应被唯一键拒绝")
 	}
 }
 
-// TestPageArtifactsLangMigrationIdempotent 迁移重复执行不报错，且不破坏已有数据。
 func TestPageArtifactsLangMigrationIdempotent(t *testing.T) {
 	db := newMigrationDB(t)
 
@@ -149,7 +130,7 @@ func TestPageArtifactsLangMigrationIdempotent(t *testing.T) {
 	}
 
 	first := applyLangMigration(t, db)
-	// 第二次执行必须安全（ADD COLUMN IF NOT EXISTS / DROP IF EXISTS / CREATE INDEX IF NOT EXISTS）。
+
 	second := applyLangMigration(t, db)
 	if first == 0 || second == 0 {
 		t.Fatalf("迁移语句数异常: first=%d second=%d", first, second)
@@ -179,8 +160,6 @@ func TestPageArtifactsLangMigrationIdempotent(t *testing.T) {
 	}
 }
 
-// TestPageArtifactsLangMigrationUsesProjectDefaultLang 项目设置声明默认语言时，
-// 存量行按该语言回填（回填口径：项目设置 → 应用内置 zh-CN）。
 func TestPageArtifactsLangMigrationUsesProjectDefaultLang(t *testing.T) {
 	db := newMigrationDB(t)
 
@@ -212,7 +191,6 @@ func TestPageArtifactsLangMigrationUsesProjectDefaultLang(t *testing.T) {
 	}
 }
 
-// TestMigrationsRunTwiceIsIdempotent 全部迁移（含 061）在空 schema 上重复执行不报错。
 func TestMigrationsRunTwiceIsIdempotent(t *testing.T) {
 	db := newMigrationDB(t)
 
@@ -223,7 +201,6 @@ func TestMigrationsRunTwiceIsIdempotent(t *testing.T) {
 		t.Fatalf("重复执行全部迁移失败（幂等性被破坏）: %v", err)
 	}
 
-	// 691 将061的语言版本唯一键替换为内容唯一键；完整链重放必须保留最终形状。
 	var idxCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
 		AND tablename = 'page_artifacts' AND indexname = 'uk_page_artifacts_page_hash'`).Scan(&idxCount).Error; err != nil {

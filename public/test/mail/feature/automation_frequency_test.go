@@ -1,15 +1,5 @@
 package feature
 
-// automation_frequency_test.go — 触发频率与「回信即退出」（T7）。
-//
-// 两条判据都是「不报错但会出事」：
-//
-//  1. `once` 挡不住的话，同一个人会在每次打开邮件时重跑整条欢迎流程 —— 而
-//     `idx_mail_automation_runs_active` 只挡 running/waiting，跑完的实例不在里面，
-//     所以这条闸门必须由应用层「有过任何实例」来判断；
-//  2. `exit_on_reply` 停错对象的后果更直接：同一个联系人可能同时在多条流程里，
-//     停掉没配这个开关的那条就是「配了 A，B 跟着停了」。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -19,7 +9,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// seedFrequencyAutomation 建一条带频率配置的启用流程（触发 → 打标签 → 结束）。
 func seedFrequencyAutomation(t *testing.T, f *mailFixture, name, frequency string, exitOnReply bool) uint64 {
 	t.Helper()
 	ctx := context.Background()
@@ -46,7 +35,6 @@ func seedFrequencyAutomation(t *testing.T, f *mailFixture, name, frequency strin
 	return item.ID
 }
 
-// mustJSONTree 把一组节点包成 v2 定义。
 func mustJSONTree(t *testing.T, nodes []map[string]any) ([]byte, error) {
 	t.Helper()
 	list := make([]any, 0, len(nodes))
@@ -56,7 +44,6 @@ func mustJSONTree(t *testing.T, nodes []map[string]any) ([]byte, error) {
 	return json.Marshal(map[string]any{"schema": 2, "entry": "n1", "nodes": list})
 }
 
-// TestOnceFrequencyOnlyCreatesOneRun once：同一个人第二次触发不再建实例。
 func TestOnceFrequencyOnlyCreatesOneRun(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -73,7 +60,6 @@ func TestOnceFrequencyOnlyCreatesOneRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 第一次触发 → 建实例并跑完。
 	if ok, err := f.svc.StartRun(ctx, id, contact.ID, mailmodel.TriggerEmailOpened); err != nil || !ok {
 		t.Fatalf("首次触发应建实例: ok=%v err=%v", ok, err)
 	}
@@ -85,7 +71,6 @@ func TestOnceFrequencyOnlyCreatesOneRun(t *testing.T) {
 		t.Fatalf("推进失败: %v", err)
 	}
 
-	// 第二次触发 → **不**建实例（判据是「有过任何实例」，跑完的也算）。
 	ok, err := f.svc.StartRun(ctx, id, contact.ID, mailmodel.TriggerEmailOpened)
 	if err != nil {
 		t.Fatalf("第二次触发不该报错: %v", err)
@@ -102,7 +87,6 @@ func TestOnceFrequencyOnlyCreatesOneRun(t *testing.T) {
 	}
 }
 
-// TestEveryTimeFrequencyCreatesTwoRuns every_time：两次触发各建一个实例。
 func TestEveryTimeFrequencyCreatesTwoRuns(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -130,8 +114,6 @@ func TestEveryTimeFrequencyCreatesTwoRuns(t *testing.T) {
 		t.Fatalf("推进失败: %v", err)
 	}
 
-	// 第二个实例必须等第一个结束才能 running —— 那由部分唯一索引兜住
-	// （idx_mail_automation_runs_active）。这里第一个已经 completed，所以能建。
 	if ok, err := f.svc.StartRun(ctx, id, contact.ID, mailmodel.TriggerEmailOpened); err != nil || !ok {
 		t.Fatalf("every_time 应能建第二个实例: ok=%v err=%v", ok, err)
 	}
@@ -144,14 +126,13 @@ func TestEveryTimeFrequencyCreatesTwoRuns(t *testing.T) {
 	}
 }
 
-// TestExitOnReplyStopsOnlyConfiguredFlow 只停配了 exit_on_reply 的那条。
 func TestExitOnReplyStopsOnlyConfiguredFlow(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 两条启用流程，只有第二条配了 exit_on_reply。
+
 	exitFlow := seedFrequencyAutomation(t, f, "exit_flow", mailmodel.TriggerFrequencyEveryTime, true)
 	keepFlow := seedFrequencyAutomation(t, f, "keep_flow", mailmodel.TriggerFrequencyEveryTime, false)
 
@@ -164,7 +145,6 @@ func TestExitOnReplyStopsOnlyConfiguredFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 两条流程各建一个实例（都停在 running，不推进）。
 	for _, id := range []uint64{exitFlow, keepFlow} {
 		if ok, err := f.svc.StartRun(ctx, id, contact.ID, mailmodel.TriggerEmailOpened); err != nil || !ok {
 			t.Fatalf("建实例失败（flow=%d）: ok=%v err=%v", id, ok, err)
@@ -173,7 +153,6 @@ func TestExitOnReplyStopsOnlyConfiguredFlow(t *testing.T) {
 
 	f.svc.OnEmailReplied(ctx, contact.ID)
 
-	// 配了 exit_on_reply 的：stopped。
 	exitRun, err := m.GetRun(ctx, findRunID(t, m, exitFlow, contact.ID))
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +164,6 @@ func TestExitOnReplyStopsOnlyConfiguredFlow(t *testing.T) {
 		t.Fatal("停掉时该写下原因（排障要知道为什么退出）")
 	}
 
-	// 没配的：仍是 running（停错那条就是「配了 A，B 也跟着停了」）。
 	keepRun, err := m.GetRun(ctx, findRunID(t, m, keepFlow, contact.ID))
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +173,6 @@ func TestExitOnReplyStopsOnlyConfiguredFlow(t *testing.T) {
 	}
 }
 
-// TestExitOnReplyDoesNothingWhenDisabled 没配 exit_on_reply 时回信不影响实例。
 func TestExitOnReplyDoesNothingWhenDisabled(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -225,7 +202,6 @@ func TestExitOnReplyDoesNothingWhenDisabled(t *testing.T) {
 	}
 }
 
-// findRunID 取某联系人某流程的实例 id（先找进行中的，再找最新的）。
 func findRunID(t *testing.T, m *mailmodel.MailModel, automationID, contactID uint64) uint64 {
 	t.Helper()
 	ctx := context.Background()

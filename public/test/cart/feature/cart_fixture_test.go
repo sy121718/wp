@@ -1,14 +1,5 @@
 package feature
 
-// cart_fixture_test.go — 购物车与访客结算链路的测试装配。
-//
-// 装配方式与生产一致（internal/routers/routes.go 的那一段）：商品与库存真装配、
-// 订单域拿到可变体快照端口、购物车拿到订单服务 + 商品快照端口 + 可用量端口 + 支付通道。
-// 所以这些用例走的是真实跨模块链路，不是替身拼出来的假链路。
-//
-// 购物车 cookie 由**被测代码自己签发**（Add 返回的 Cookie 字段），测试不手工构造 ——
-// 手工造 cookie 等于绕开签名边界，那样测出来的「能下单」在生产里可能根本进不来。
-
 import (
 	"context"
 	"errors"
@@ -43,10 +34,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// cartTestSecret 测试用签名密钥（生产取 auth.SessionSecret()）。
 const cartTestSecret = "cart-feature-test-secret"
 
-// fakeMail 记录被调用的邮件请求（只为断言「发了哪封信」）。
 type fakeMail struct {
 	calls []*mailcontract.SendInput
 }
@@ -65,7 +54,6 @@ func (f *fakeMail) findTemplate(key string) *mailcontract.SendInput {
 	return nil
 }
 
-// failingGateway 永远扣款失败的通道（验证「订单保留在待付款」而不是被丢弃）。
 type failingGateway struct{}
 
 func (failingGateway) Method() string { return "paypal" }
@@ -75,12 +63,10 @@ func (failingGateway) Charge(_ context.Context, _ *cartcontract.PaymentChargeReq
 	return nil, errors.New("模拟通道不可用")
 }
 
-// VerifyCallback 失败通道同样不提供回调能力：它连扣款都失败，不可能有成功的通知。
 func (failingGateway) VerifyCallback(map[string]string, []byte) (*cartcontract.PaymentCallback, error) {
 	return nil, errors.New("模拟通道不可用")
 }
 
-// cartFixture 隔离 PG + 生产迁移与种子 + 真实跨模块 service。
 type cartFixture struct {
 	cart      *cartservice.Service
 	orders    *orderservice.Service
@@ -94,13 +80,11 @@ type cartFixture struct {
 	warehouse string
 }
 
-// newCartFixture 装配（支付通道 = 模拟 PayPal）。
 func newCartFixture(t *testing.T) *cartFixture {
 	t.Helper()
 	return newCartFixtureWithGateway(t, mockpaypal.New(cartTestSecret))
 }
 
-// newCartFixtureWithGateway 装配（指定支付通道，用于验证失败路径）。
 func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway) *cartFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -120,10 +104,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
-	// 可用量端口（inventory 实现、product 消费）。漏接这一步**不会报错**：
-	// product 的 VariantAvailabilities 只是返回空表，于是购物车的库存预检静默失效 ——
-	// 表现是「库存只有 3 件，却能加 5 件进购物车，到结算才被拒」。
-	// 生产装配（routers.SetupRoutes）里有这一段，测试必须与它一致，否则测出来的是假链路。
+
 	products.SetAvailabilityPort(inv)
 
 	wh, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
@@ -148,17 +129,14 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		products,
 		orderstock.New(inv),
 		users,
-		nil, // webhooks：本用例不接线外部集成通道
+		nil,
 	)
 	orders.SetProjects(projects)
-	// S1/S2：发货单仓储 + 发货仓解析端口（与生产装配同形）。结算建单走预占，
-	// 而预占必须有 warehouse_id —— 缺这两个端口时结算会静默跳过预占（不报错、只是没占货）。
+
 	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)
-	// 站点运费规则端口（本项目新增）：与生产装配（routers.assembly 的 wireRuntimeAccessFace）
-	// 逐字一致 —— 结算的基准运费来自 projects.settings，不再由调用方传入。
-	// 漏接这一行不会报错：运费恒 0，于是「站点配了运费却不收」这类回归在测试里看不出来。
+
 	if reader, ok := projectcontract.ProjectService(projects).(projectcontract.ShippingPolicyReader); ok {
 		cart.SetShippingPolicyReader(reader)
 	} else {
@@ -170,11 +148,6 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 	}
 }
 
-// setShippingPolicy 配置站点级运费规则（单位**分**，与库内同口径）。
-//
-// 为什么经 project 契约而不是直接改库：站点设置的真源是 projects.settings 这一列，
-// 而「它长什么样」由 project 的 dto 定义 —— 手拼 JSON 的测试会在键名变化时静默失效
-// （读出来恒为 0，运费变成「没配」），那正是本文件要防的那类静默回归。
 func (f *cartFixture) setShippingPolicy(t *testing.T, baseCents, thresholdCents int64) {
 	t.Helper()
 	ctx := context.Background()
@@ -196,7 +169,6 @@ func (f *cartFixture) setShippingPolicy(t *testing.T, baseCents, thresholdCents 
 	}
 }
 
-// addProduct 建商品 + 一个带价的变体，并把指定数量的货补进默认仓。
 func (f *cartFixture) addProduct(t *testing.T, name string, price float64, stock int) (productID, variantID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -226,7 +198,6 @@ func (f *cartFixture) addProduct(t *testing.T, name string, price float64, stock
 	return p.ID, v.ID
 }
 
-// stockOf 读某变体在默认仓的可用量。
 func (f *cartFixture) stockOf(t *testing.T, variantID string) int {
 	t.Helper()
 	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
@@ -238,7 +209,6 @@ func (f *cartFixture) stockOf(t *testing.T, variantID string) int {
 	return st.Quantity
 }
 
-// reservedOf 读某变体在默认仓的**预占**数量（迁移 624 起结算只预占、不扣减）。
 func (f *cartFixture) reservedOf(t *testing.T, variantID string) int {
 	t.Helper()
 	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
@@ -250,7 +220,6 @@ func (f *cartFixture) reservedOf(t *testing.T, variantID string) int {
 	return st.ReservedQuantity
 }
 
-// addToCart 加购（cookie 由被测代码签发）。
 func (f *cartFixture) addToCart(t *testing.T, variantID string, qty int, cookie string) *cartdto.CartSnapshot {
 	t.Helper()
 	snap, err := f.cart.Add(context.Background(), &cartdto.CartAddReq{
@@ -262,7 +231,6 @@ func (f *cartFixture) addToCart(t *testing.T, variantID string, qty int, cookie 
 	return snap
 }
 
-// checkoutReq 结算请求（字段齐备的最小集合）。
 func (f *cartFixture) checkoutReq(cookie string) *cartdto.CartCheckoutReq {
 	return &cartdto.CartCheckoutReq{
 		ProjectID: f.projectID,

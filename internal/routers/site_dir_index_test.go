@@ -1,18 +1,5 @@
 package routers
 
-// site_dir_index_test.go — 访问面「目录根请求」的映射（回归：首页与语言根整片 404）。
-//
-// 激活目录里每个页面的条目名就是它的 URL 路径，且是**无扩展名的目录符号链接**
-// （pipeline.relActivePath："/" → "index"、"/about" → "about"），index.html 在目录里面。
-// 而 http.FileServer 处理 "/site/" 这类目录根请求时找的是 <active>/index.html ——
-// 找不到就 404。实测过的现象：/site/shop/ 正常、/site/ 恒 404，而 index 别名规则
-// 又把 /site/index 301 到 "/"，正好落在同一条死链上。
-//
-// 这条用例钉三件事：
-//   ① 根路径与任意「目录根」都映射到 <条目>/index/index.html；
-//   ② 没有对应产物时**不能**变成 200（否则死链被搜索引擎当有效页收）；
-//   ③ 改写通道不接受 ".."，不能成为目录穿越的新入口。
-
 import (
 	"net/http"
 	"os"
@@ -25,7 +12,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// seedSitePage 在激活根下建一个页面条目：<active>/<rel> → 指向含 index.html 的产物目录。
 func seedSitePage(t *testing.T, active, rel, body string) {
 	t.Helper()
 	artifact := filepath.Join(filepath.Dir(active), "artifacts", strings.ReplaceAll(rel, "/", "_"))
@@ -88,7 +74,6 @@ func TestSiteFaceServesDirectoryRootIndex(t *testing.T) {
 	}
 }
 
-// TestSiteFaceDirectoryRootWithoutArtifactIs404 没有产物时必须是 404，不能软 404。
 func TestSiteFaceDirectoryRootWithoutArtifactIs404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -105,7 +90,6 @@ func TestSiteFaceDirectoryRootWithoutArtifactIs404(t *testing.T) {
 	}
 }
 
-// TestSiteFaceDirectoryRootRejectsTraversal 改写通道不接受 ".."。
 func TestSiteFaceDirectoryRootRejectsTraversal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
@@ -114,7 +98,7 @@ func TestSiteFaceDirectoryRootRejectsTraversal(t *testing.T) {
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
-	// 激活目录外面放一份不该被读到的文件。
+
 	secret := filepath.Join(root, "secret", "index", "index.html")
 	if err := os.MkdirAll(filepath.Dir(secret), 0o755); err != nil {
 		t.Fatalf("建越界文件失败: %v", err)

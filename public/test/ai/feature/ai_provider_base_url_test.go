@@ -1,11 +1,5 @@
 package feature
 
-// ai_provider_base_url_test.go — 「地址变更即作废旧密钥」的安全回归（评审 2）。
-//
-// 要钉住的行为：密钥是**发给某个地址**的凭据。地址被改掉之后，旧密钥不能继续跟着新地址出站 ——
-// 否则一个只有「改配置」权限的账号，就能把已存的明文密钥引到自己控制的主机上（fetch 会带
-// `Authorization: Bearer <明文>`）。最小修复是「改地址必须同时给新密钥」，这里从 service 层钉死它。
-
 import (
 	"context"
 	"errors"

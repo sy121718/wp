@@ -13,7 +13,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// activeDir 返回当前测试的 FS 激活根目录。
 func activeDir(t *testing.T) string {
 	t.Helper()
 	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
@@ -23,7 +22,6 @@ func activeDir(t *testing.T) string {
 	return filepath.Join(root, "public", "active")
 }
 
-// activeRedirectTarget 读取激活路径的 redirect 指令目标（无 redirect 时返回空）。
 func activeRedirectTarget(t *testing.T, path string) string {
 	t.Helper()
 	link := filepath.Join(activeDir(t), strings.TrimPrefix(path, "/"))
@@ -47,7 +45,6 @@ func activeRedirectTarget(t *testing.T, path string) string {
 	return d.TargetPath
 }
 
-// activeKind 读取激活路径状态（page/redirect/none）。
 func activeKind(t *testing.T, path string) string {
 	t.Helper()
 	link := filepath.Join(activeDir(t), strings.TrimPrefix(path, "/"))
@@ -63,8 +60,6 @@ func activeKind(t *testing.T, path string) string {
 	return "page"
 }
 
-// activeLinkTarget 读激活路径符号链接的**目标字串**（比较「同一个链接」用它，
-// 而不是只看链在不在：处置把链接改指向别人时，存在性断言照样通过）。
 func activeLinkTarget(t *testing.T, path string) string {
 	t.Helper()
 	link := filepath.Join(activeDir(t), strings.TrimPrefix(path, "/"))
@@ -75,9 +70,6 @@ func activeLinkTarget(t *testing.T, path string) string {
 	return target
 }
 
-// ---- 构建 ----
-
-// TestPageBuildSuccess 合法草稿构建：状态 ready、staged hash 非空、staged 指针回写。
 func TestPageBuildSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -97,7 +89,6 @@ func TestPageBuildSuccess(t *testing.T) {
 	}
 }
 
-// TestPageBuildNotFound 不存在的页面构建应返回页面不存在。
 func TestPageBuildNotFound(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	_, err := svc.Build(context.Background(), &pagedto.BuildReq{ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"})
@@ -106,7 +97,6 @@ func TestPageBuildNotFound(t *testing.T) {
 	}
 }
 
-// TestPageBuildNilRequest nil / 空 ID 构建请求属于参数错误。
 func TestPageBuildNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.Build(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -117,7 +107,6 @@ func TestPageBuildNilRequest(t *testing.T) {
 	}
 }
 
-// TestPageBuildVersionConflict 构建携带过期 ExpectedVersion 应被拒绝。
 func TestPageBuildVersionConflict(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -135,9 +124,6 @@ func TestPageBuildVersionConflict(t *testing.T) {
 	}
 }
 
-// ---- 发布 ----
-
-// TestPagePublishNoStagedArtifact 未构建直接发布应返回无暂存产物。
 func TestPagePublishNoStagedArtifact(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created := createPage(t, svc, projectID, "/no-staged", pageDocument)
@@ -147,7 +133,6 @@ func TestPagePublishNoStagedArtifact(t *testing.T) {
 	}
 }
 
-// TestPagePublishNotFound 不存在的页面发布应返回页面不存在。
 func TestPagePublishNotFound(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	_, err := svc.Publish(context.Background(), &pagedto.PublishReq{ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"})
@@ -156,7 +141,6 @@ func TestPagePublishNotFound(t *testing.T) {
 	}
 }
 
-// TestPagePublishNilRequest nil / 空 ID 发布请求属于参数错误。
 func TestPagePublishNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.Publish(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -167,7 +151,6 @@ func TestPagePublishNilRequest(t *testing.T) {
 	}
 }
 
-// TestPagePublishSuccess 发布后：active hash、路由 active、active_artifact_id 回写。
 func TestPagePublishSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -198,12 +181,6 @@ func TestPagePublishSuccess(t *testing.T) {
 	}
 }
 
-// TestPagePublishRebuildRequired BUG 复现：构建后再保存草稿（未重新构建）直接发布，
-// 预期 ErrRebuildRequired；实际发布成功且发布的是旧内容——
-// Publish 的二次构建校验用 stagedArt.SourceDocument（构建时冻结文档）重建内核，
-// DraftDocumentFor 优先返回冻结文档，恒与暂存 hash 一致，草稿变更永不触发
-// ErrRebuildRequired；发布回写把 stale 置 false，界面呈现「已发布且最新」，
-// 但线上内容停留在旧版本（数据一致性缺陷，见报告高严重度项）。
 func TestPagePublishRebuildRequired(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -211,7 +188,7 @@ func TestPagePublishRebuildRequired(t *testing.T) {
 	if _, err := svc.Build(ctx, &pagedto.BuildReq{ID: created.ID}); err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
-	// 构建后草稿变更（v2），不重新构建。
+
 	saved, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: created.ID, ExpectedVersion: created.DraftVersion,
 		DraftPath: "/rebuild", DraftDocument: json.RawMessage(headingDocument),
@@ -219,25 +196,24 @@ func TestPagePublishRebuildRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("保存失败: %v", err)
 	}
-	// 修复语义：草稿与暂存产物不一致，发布必须拒绝（ErrRebuildRequired），
-	// 不得静默发布旧内容后把 stale 置 false 掩盖不一致。
+
 	_, perr := svc.Publish(ctx, &pagedto.PublishReq{ID: created.ID})
 	if perr == nil || !strings.Contains(perr.Error(), pageenums.ErrRebuildRequired) {
 		t.Fatalf("草稿变更后发布应拒绝 ErrRebuildRequired，实际 %v", perr)
 	}
-	// 未发布旧内容：active_artifact_id 保持为空（创建后未发布过）。
+
 	var activeArtifact string
 	db.Raw(`SELECT active_artifact_id FROM pages WHERE id = ?`, created.ID).Scan(&activeArtifact)
 	if activeArtifact != "" {
 		t.Errorf("发布被拒后不应写入 active_artifact_id: %q", activeArtifact)
 	}
-	// 草稿版本保持 2，未被发布流程改动。
+
 	var draftVersion int64
 	db.Raw(`SELECT draft_version FROM pages WHERE id = ?`, created.ID).Scan(&draftVersion)
 	if draftVersion != saved.DraftVersion {
 		t.Errorf("草稿版本应保持 %d: %d", saved.DraftVersion, draftVersion)
 	}
-	// 补偿路径：重新构建后可正常发布。
+
 	if _, err = svc.Build(ctx, &pagedto.BuildReq{ID: created.ID}); err != nil {
 		t.Fatalf("重新构建失败: %v", err)
 	}
@@ -246,9 +222,6 @@ func TestPagePublishRebuildRequired(t *testing.T) {
 	}
 }
 
-// ---- 回滚 ----
-
-// TestPageRollbackTargetMiss 不存在的目标 hash 回滚应返回回滚目标缺失。
 func TestPageRollbackTargetMiss(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created := createPage(t, svc, projectID, "/rb-miss", pageDocument)
@@ -260,7 +233,6 @@ func TestPageRollbackTargetMiss(t *testing.T) {
 	}
 }
 
-// TestPageRollbackSuccess 两版本发布后可秒级回滚到 v1 产物。
 func TestPageRollbackSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -291,7 +263,6 @@ func TestPageRollbackSuccess(t *testing.T) {
 	}
 }
 
-// TestPageRollbackNilRequest nil / 空 ID / 空 hash 回滚请求属于参数错误。
 func TestPageRollbackNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.Rollback(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -305,9 +276,6 @@ func TestPageRollbackNilRequest(t *testing.T) {
 	}
 }
 
-// ---- URL 变更 ----
-
-// TestPageUpdateURLSuccess 改 URL（无重定向）：新路径激活、草稿/激活路径同步、旧路径取消激活。
 func TestPageUpdateURLSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -333,8 +301,6 @@ func TestPageUpdateURLSuccess(t *testing.T) {
 	}
 }
 
-// TestPageUpdateURLWithRedirect301 改 URL（带重定向）：FS 旧路径 301 指向新路径，
-// DB 旧路径行标记 redirect。
 func TestPageUpdateURLWithRedirect301(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -355,7 +321,6 @@ func TestPageUpdateURLWithRedirect301(t *testing.T) {
 	}
 }
 
-// TestPageUpdateURLNilRequest nil / 空 ID / 空路径请求属于参数错误。
 func TestPageUpdateURLNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.UpdateURL(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -366,8 +331,6 @@ func TestPageUpdateURLNilRequest(t *testing.T) {
 	}
 }
 
-// TestPageUpdateURLRejectsOccupiedPath 新路径被他人占用：改 URL 应在 FS 激活前失败，
-// 双方 DB 与 FS 状态均不变（H7）。
 func TestPageUpdateURLRejectsOccupiedPath(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -380,15 +343,15 @@ func TestPageUpdateURLRejectsOccupiedPath(t *testing.T) {
 		!strings.Contains(err.Error(), pageenums.ErrPathOccupied) {
 		t.Fatalf("占用路径应被拒绝: %v", err)
 	}
-	// FS 未被越权覆盖：/occ-b 仍直出 B。
+
 	if kind := activeKind(t, "/occ-b"); kind != "page" {
 		t.Errorf("占用者 FS 应保持: %s", kind)
 	}
-	// DB 归属未变。
+
 	if kind := routeKind(t, db, projectID, "/occ-b"); kind != pubmodel.RouteActive {
 		t.Errorf("占用者路由应保持 active: %s", kind)
 	}
-	// 失败方草稿路径未迁移。
+
 	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageA.ID})
 	if err != nil || detail.DraftPath != "/occ-a" {
 		t.Errorf("被拒绝方草稿路径不应迁移: %+v err=%v", detail, err)

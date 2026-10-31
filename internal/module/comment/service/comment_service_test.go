@@ -1,19 +1,5 @@
 package commentservice
 
-// comment_service_test.go — 模块内就近单测：状态机、形状校验、限流与归口文案。
-//
-// 为什么这些用例放在模块内（不走数据库、不走装配）：
-//
-//   - 它们判错时会**静默出错** ——「状态机的合法取值多了一个」（审核动作能把评论改回待审）、
-//     「实体 id 的形状放宽了」（注入类输入进得来）、「限流没生效」（脚本可以灌库），
-//     三者的共同点是：页面一切正常、日志干净、只有攻击者或运营在下一次才发现；
-//   - 它们几乎每次改动都会被碰到（新增一种状态、调整限流额度、改长度上限），
-//     扔进 public/test 就要先起库，于是最该被覆盖的改动反而最少被跑到。
-//
-// 用到的 model 一律不触库：这些用例刻意只走「校验在前、写库在后」的那几条路径
-// （Submit 的顺序是 登录 → 限流 → 目标 → 正文 → 回复 → 规则 → 落库），
-// 所以 NewModel(nil) 足够；真正走库的行为由 feature 链路测试覆盖。
-
 import (
 	"context"
 	"errors"
@@ -27,7 +13,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// testEntityTypes 两个已注册的实体类型（与装配层注册的 article / product 同形）。
 func testEntityTypes() []commentcontract.EntityType {
 	return []commentcontract.EntityType{
 		{Type: "article", Label: commentcontract.LabelPair{Key: "admin.article.list.heading", Fallback: "文章"}},
@@ -35,20 +20,17 @@ func testEntityTypes() []commentcontract.EntityType {
 	}
 }
 
-// newTestService 构造一个不触库的 service（每次调用都拿到全新的限流器）。
 func newTestService() *Service {
 	return NewService(commentmodel.NewModel(nil), testEntityTypes())
 }
 
 const testProjectID = "11111111-1111-4111-8111-111111111111"
 
-// —— 正文形状 ——
-
 func TestNormalizeBody(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
-		key  string // 期望的错误 key（空 = 期望成功）
+		key  string
 		want string
 	}{
 		{"空串", "", commentenums.ErrBodyRequired, ""},
@@ -56,7 +38,7 @@ func TestNormalizeBody(t *testing.T) {
 		{"正常文本被 trim", "  说点什么  ", "", "说点什么"},
 		{"超长（按字符数）", strings.Repeat("字", commentenums.MaxBodyLen+1), commentenums.ErrBodyTooLong, ""},
 		{"恰好上限通过", strings.Repeat("字", commentenums.MaxBodyLen), "", strings.Repeat("字", commentenums.MaxBodyLen)},
-		// 控制字符被清掉，但换行 / 制表符保留（多段评论是正常内容）。
+
 		{"控制字符清洗", "第一行\n第二行\x00\x07第三行", "", "第一行\n第二行第三行"},
 	}
 	for _, tc := range cases {
@@ -93,8 +75,6 @@ func TestIsSafeEntityID(t *testing.T) {
 	}
 }
 
-// —— 实体类型白名单（验收断言 ③ 的单测侧）——
-
 func TestEntityTypeWhitelistIsFailClosed(t *testing.T) {
 	svc := newTestService()
 	if !svc.IsRegisteredEntityType("article") || !svc.IsRegisteredEntityType("product") {
@@ -105,13 +85,11 @@ func TestEntityTypeWhitelistIsFailClosed(t *testing.T) {
 			t.Errorf("未注册的类型必须被拒（fail-closed）：%q", bad)
 		}
 	}
-	// 首尾空白是**刻意容忍**的：类型来自 URL / 表单参数，尾部多一个空格不该让
-	// 「这篇文章的评论」变成「类型未注册」——validateTarget 会先 TrimSpace 再判。
+
 	if !svc.IsRegisteredEntityType("article ") {
 		t.Error("首尾空白应当被容忍（TrimSpace 后判定）")
 	}
-	// 大小写敏感是刻意的：类型标识是**数据**（存进 comments.entity_type），
-	// 容忍大小写会让同一类实体在库里出现两种写法，列表按类型筛选立刻分叉。
+
 	if svc.IsRegisteredEntityType("Article") {
 		t.Error("类型标识必须大小写敏感")
 	}
@@ -141,8 +119,6 @@ func TestValidateTargetRejectsUnknownType(t *testing.T) {
 	}
 }
 
-// —— 提交的硬门槛与限流（验收断言 ④）——
-
 func TestSubmitRejectsAnonymous(t *testing.T) {
 	svc := newTestService()
 	_, err := svc.Submit(context.Background(), &commentdto.SubmitReq{
@@ -165,7 +141,7 @@ func TestSubmitRejectsUnregisteredEntityType(t *testing.T) {
 
 func TestSubmitRateLimitByIdentity(t *testing.T) {
 	svc := newTestService()
-	// 同一身份连续提交：前 submitPerIdentity 次通过校验，第 N+1 次被限流拦下。
+
 	for i := 0; i < submitPerIdentity; i++ {
 		err := svc.checkSubmitRate(9, "ip-hash-1")
 		if err != nil {
@@ -176,7 +152,7 @@ func TestSubmitRateLimitByIdentity(t *testing.T) {
 	if err == nil || err.Error() != commentenums.ErrRateLimited {
 		t.Fatalf("第 %d 次必须被身份限流拦下，实际 %v", submitPerIdentity+1, err)
 	}
-	// 另一个身份不受影响（限流按身份隔离，不是全站一个桶）。
+
 	if err := svc.checkSubmitRate(10, "ip-hash-1"); err != nil {
 		t.Fatalf("另一个身份不该被牵连：%v", err)
 	}
@@ -184,7 +160,7 @@ func TestSubmitRateLimitByIdentity(t *testing.T) {
 
 func TestSubmitRateLimitBySource(t *testing.T) {
 	svc := newTestService()
-	// 同一来源、不同身份：注册是免费的，换账号成本为零 —— 这正是来源维度存在的理由。
+
 	allowed := 0
 	for userID := uint64(1); userID <= uint64(submitPerSource)+3; userID++ {
 		err := svc.checkSubmitRate(userID, "same-ip")
@@ -199,14 +175,12 @@ func TestSubmitRateLimitBySource(t *testing.T) {
 	if allowed != submitPerSource {
 		t.Fatalf("同一来源在窗口内应恰好放行 %d 次，实际 %d", submitPerSource, allowed)
 	}
-	// 拿不到 IP 哈希时跳过来源维度（仍按身份判）—— 不因为一个取不到的字段把入口全开。
+
 	svc2 := newTestService()
 	if err := svc2.checkSubmitRate(1, ""); err != nil {
 		t.Fatalf("空 IP 哈希不该影响身份维度：%v", err)
 	}
 }
-
-// —— 审核动作的状态机 ——
 
 func TestReviewRejectsNonReviewableStatus(t *testing.T) {
 	svc := newTestService()
@@ -244,11 +218,6 @@ func TestReviewRejectsOversizedBatch(t *testing.T) {
 	}
 }
 
-// —— 归口文案（三件套的读侧）——
-
-// TestPolicyDeniedCarriesFacingFact 消费方给的拒绝文案是一条业务事实（key + 兜底 + 明细）。
-//
-// 取词已不在 service（0.2）：这里只断言事实形状，文案由响应出口按请求语言取一次。
 func TestPolicyDeniedCarriesFacingFact(t *testing.T) {
 	fact, ok := facing.FactOf(&PolicyDeniedError{
 		Key: "product.err.commentPurchaseRequired", Fallback: "购买过这件商品才能评论。",
@@ -259,13 +228,11 @@ func TestPolicyDeniedCarriesFacingFact(t *testing.T) {
 	if fact.Key != "product.err.commentPurchaseRequired" || fact.Fallback != "购买过这件商品才能评论。" {
 		t.Fatalf("事实应原样带出 key 与兜底，实际 %+v", fact)
 	}
-	// 内部错误不得被判成业务事实（否则库原文会被当文案透出）。
+
 	if _, ok := facing.FactOf(errors.New(`pq: relation "comments" does not exist`)); ok {
 		t.Fatal("内部错误不该给出业务事实")
 	}
 }
-
-// —— 实体类型展示名（由拥有者声明的 label）——
 
 func TestEntityTypeLabelsUseOwnerDeclaredLabel(t *testing.T) {
 	svc := newTestService()
@@ -282,7 +249,7 @@ func TestEntityTypeLabelsUseOwnerDeclaredLabel(t *testing.T) {
 	if labels[0].Type != "article" || labels[0].Label != "译文·文章" {
 		t.Fatalf("第一个类型应由拥有者的词条取词，实际 %+v", labels[0])
 	}
-	// tr 为 nil 时回落中文兜底（而不是裸 key）。
+
 	if got := svc.EntityTypeLabels(nil); got[0].Label != "文章" {
 		t.Fatalf("无取词函数时应回落兜底，实际 %+v", got[0])
 	}

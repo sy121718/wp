@@ -12,8 +12,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// TestPublicationActivateFirstTime 首次激活：无既有占用时幂等建立 active 行，
-// 回执流转为 committed。
 func TestPublicationActivateFirstTime(t *testing.T) {
 	t.Run("无预留直接激活建立占用", func(t *testing.T) {
 		svc := newUnitService(t)
@@ -48,15 +46,13 @@ func TestPublicationActivateFirstTime(t *testing.T) {
 		if route.RouteKind != pubmodel.RouteActive {
 			t.Fatalf("reserved 应升级为 active: %+v", route)
 		}
-		// 原行原地升级（主键 project_id+path 不变），不产生重复行。
+
 		if n := countRoutes(t, svc, "path = ?", "/draft"); n != 1 {
 			t.Fatalf("升级后应只有 1 行: %d", n)
 		}
 	})
 }
 
-// TestPublicationActivateOccupied 目标路径已被其他实体占用时必须拒绝：
-// 他人页面（page_id 不同）与展示实例（page_id 为空）两种情况。
 func TestPublicationActivateOccupied(t *testing.T) {
 	t.Run("其他页面占用", func(t *testing.T) {
 		svc := newUnitService(t)
@@ -65,7 +61,7 @@ func TestPublicationActivateOccupied(t *testing.T) {
 			ProjectID: projectID, Path: "/taken", PageID: pageID, ArtifactID: artifactUUID,
 		})
 		containsErr(t, err, pubenums.ErrRouteOccupied)
-		// 原占用保持不变。
+
 		route := mustRoute(t, svc, "/taken")
 		if route.PageID == nil || *route.PageID != otherPageID {
 			t.Fatalf("原占用被破坏: %+v", route)
@@ -73,7 +69,7 @@ func TestPublicationActivateOccupied(t *testing.T) {
 	})
 	t.Run("展示实例占用", func(t *testing.T) {
 		svc := newUnitService(t)
-		// presentation 占用：page_id 为空。
+
 		seedRoute(t, svc, "/instance", pubmodel.RouteActive, nil, strPtr(artifactUUID))
 		_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 			ProjectID: projectID, Path: "/instance", PageID: pageID, ArtifactID: artifactUUID,
@@ -95,7 +91,6 @@ func TestPublicationActivateOccupied(t *testing.T) {
 	})
 }
 
-// TestPublicationActivateRepeat 重复激活同一路径（同页面）幂等成功，每次生成 committed 回执。
 func TestPublicationActivateRepeat(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
@@ -118,9 +113,6 @@ func TestPublicationActivateRepeat(t *testing.T) {
 	}
 }
 
-// TestPublicationActivateMissingArtifact 激活不存在的 artifact：
-// 当前实现不校验 ArtifactID 是否存在（无 FK、无存在性检查），绑定任意值成功。
-// 固化当前行为；缺陷判定见报告（激活点缺少 artifact 存在性校验）。
 func TestPublicationActivateMissingArtifact(t *testing.T) {
 	svc := newUnitService(t)
 	missing := "99999999-9999-9999-9999-999999999999"
@@ -135,19 +127,12 @@ func TestPublicationActivateMissingArtifact(t *testing.T) {
 	}
 }
 
-// TestPublicationActivateNilRequest 空请求返回 ErrInvalidParam（参数错误，
-// 与路径占用不存在语义无关）。
 func TestPublicationActivateNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Activate(context.Background(), nil)
 	containsErr(t, err, pubenums.ErrInvalidParam)
 }
 
-// TestPublicationActivateConcurrentSamePage 同一页面并发重复激活（幂等语义）：
-// 归属者本人重复激活放行（DO UPDATE 命中自己占用的行），全部成功；
-// 最终仅 1 行路由，回执各自 committed。
-// 该用例固化原子化改造（INSERT ... ON CONFLICT DO UPDATE）后的行为，
-// 也是旧测试 pageID 拼接缺陷（goroutine 同归属）场景的回归防护。
 func TestPublicationActivateConcurrentSamePage(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
@@ -177,14 +162,6 @@ func TestPublicationActivateConcurrentSamePage(t *testing.T) {
 	}
 }
 
-// TestPublicationActivateConcurrentSamePath 多个不同页面并发激活同一路径：
-// 必须恰好一个成功；其余失败者拿到 ErrRouteOccupied（或唯一约束竞争时的
-// 原始 DB 错误，见下方日志统计）。
-//
-// 注意：所有 goroutine 必须使用互不相同的 pageID。旧实现里 goroutine 1 用
-// otherPageID[:len-2]+"01" 恰好拼回 pageID（……0001），与 goroutine 0 同归属，
-// 触发的是「同一页面幂等激活」（Activate 对同 page 重复激活放行，可全部成功），
-// 而非本测试要验证的「跨页面路径抢占」——因此断言会随机出现 2 成功。
 func TestPublicationActivateConcurrentSamePath(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
@@ -196,7 +173,7 @@ func TestPublicationActivateConcurrentSamePath(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// 每个 goroutine 用互不相同的 page（真实「不同页面抢占同一路径」竞争）。
+
 			pID := fmt.Sprintf("dddddddd-0000-0000-0000-0000000000%02d", idx+1)
 			_, err := svc.Activate(ctx, &pubdto.ActivateReq{
 				ProjectID: projectID, Path: "/race", PageID: pID, ArtifactID: artifactUUID,
@@ -218,11 +195,11 @@ func TestPublicationActivateConcurrentSamePath(t *testing.T) {
 	if successCount != 1 {
 		t.Fatalf("并发激活应恰好 1 个成功，实际 %d 个", successCount)
 	}
-	// 只有一个 active 行，且归属为成功者。
+
 	if n := countRoutes(t, svc, "path = ?", "/race"); n != 1 {
 		t.Fatalf("应恰好 1 行路由: %d", n)
 	}
-	// 记录失败错误是否为业务错误（报告素材）。
+
 	bizErr := 0
 	rawErr := 0
 	for i := 0; i < goroutines; i++ {

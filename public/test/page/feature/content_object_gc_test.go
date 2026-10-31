@@ -10,11 +10,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 )
 
-// TestContentObjectGCSurvivesRollback 审计 IDX-016 的第二条验收：内容对象清理不得伤到回滚。
-//
-// 判据不是「GC 跑过没报错」，而是：保留窗口内仍处 available 的历史版本产物，所引用的
-// 共享内容对象一个都不能少 —— 少一个，回滚出来的页面就指向不存在的内容对象。
-// 因此用例在真实发布链路上跑两趟保留期任务，再回滚。
 func TestContentObjectGCSurvivesRollback(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
@@ -34,12 +29,10 @@ func TestContentObjectGCSurvivesRollback(t *testing.T) {
 		t.Fatalf("发布 v1 失败: %v", err)
 	}
 
-	// 第一趟：v1 正在线上。保留期任务不该回收任何东西（指针与窗口双重保护）。
 	if _, perr := svc.PurgeRetention(ctx); perr != nil {
 		t.Fatalf("保留期清理失败: %v", perr)
 	}
 
-	// v2 发布，v1 转历史（产物行仍 available、仍在保留窗口内）。
 	if _, err = svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: created.ID, ExpectedVersion: created.DraftVersion,
 		DraftPath: "/gc-rollback", DraftDocument: json.RawMessage(docV2),
@@ -53,7 +46,6 @@ func TestContentObjectGCSurvivesRollback(t *testing.T) {
 		t.Fatalf("发布 v2 失败: %v", err)
 	}
 
-	// 第二趟：v1 已是历史版本，但它仍要能被回滚 —— 内容对象必须留着。
 	if _, perr := svc.PurgeRetention(ctx); perr != nil {
 		t.Fatalf("保留期清理失败: %v", perr)
 	}
@@ -72,7 +64,6 @@ func TestContentObjectGCSurvivesRollback(t *testing.T) {
 		}
 	}
 
-	// 最终判据：清理没有把回滚窗口削掉。
 	rolledBack, err := svc.Rollback(ctx, &pagedto.RollbackReq{ID: created.ID, TargetHash: built1.StagedHash})
 	if err != nil {
 		t.Fatalf("清理后回滚失败: %v", err)
@@ -82,7 +73,6 @@ func TestContentObjectGCSurvivesRollback(t *testing.T) {
 	}
 }
 
-// artifactIDByHash 按产物 hash 取产物行 ID（空串表示不存在）。
 func artifactIDByHash(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	t.Helper()
 	var id string
@@ -93,7 +83,6 @@ func artifactIDByHash(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	return id
 }
 
-// closureHashes 取某产物行的对象闭包 hash 列表。
 func closureHashes(t *testing.T, db *gorm.DB, artifactID string) []string {
 	t.Helper()
 	hashes := []string{}
@@ -104,7 +93,6 @@ func closureHashes(t *testing.T, db *gorm.DB, artifactID string) []string {
 	return hashes
 }
 
-// contentObjectRows 统计某个内容对象的行数。
 func contentObjectRows(t *testing.T, db *gorm.DB, hash string) int64 {
 	t.Helper()
 	var n int64

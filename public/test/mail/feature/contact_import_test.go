@@ -1,11 +1,3 @@
-// Package feature mail 模块 feature 测试（真实 PostgreSQL + 生产 DDL，issue #37）。
-//
-// 本文件盯四件事，其中第一件是**项目首次使用 PG 数组类型**，必须先证明它真的能用：
-//
-//  1. `[]string` ↔ `text[]` 往返，以及 `tags @> ?::text[]` 筛选（GORM 经 pgx 的数组映射）；
-//  2. 导入的逐行校验与**逐行报错**（一行坏数据不毁整批）；
-//  3. 批内去重与抑制名单拦截；
-//  4. 同意状态：没声明同意的一律 pending（不可发营销），声明了才 subscribed 并留痕。
 package feature
 
 import (
@@ -39,10 +31,6 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{svc: mailservice.NewService(m), m: m, db: db}
 }
 
-// TestContactTagsArrayRoundTrip 验证 text[] 在 GORM + pgx 下的读写与包含查询。
-//
-// 这是项目第一次用 PG 数组；若映射有问题（比如写成 NULL、或 @> 参数类型不匹配），
-// 后面所有按标签筛人群的功能都会静默失效，所以单独一条测试把它钉住。
 func TestContactTagsArrayRoundTrip(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -67,7 +55,6 @@ func TestContactTagsArrayRoundTrip(t *testing.T) {
 		t.Fatalf("标签往返不一致: %#v", got.Tags)
 	}
 
-	// 包含查询：同时含 vip 与 华南
 	list, _, err := f.m.ListContacts(ctx, mailmodel.ContactFilter{Tags: []string{"vip", "华南"}})
 	if err != nil {
 		t.Fatalf("按标签筛选失败: %v", err)
@@ -76,7 +63,6 @@ func TestContactTagsArrayRoundTrip(t *testing.T) {
 		t.Fatalf("@> 双标签应命中 1 条，实际 %d", len(list))
 	}
 
-	// 不存在的标签组合不应命中
 	list, _, err = f.m.ListContacts(ctx, mailmodel.ContactFilter{Tags: []string{"vip", "华北"}})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +71,6 @@ func TestContactTagsArrayRoundTrip(t *testing.T) {
 		t.Fatalf("不匹配的标签组合不该命中，实际 %d", len(list))
 	}
 
-	// 无标签的联系人（空数组）要能正常写入 —— 列是 NOT NULL DEFAULT '{}'，gorm 不能写 NULL
 	if err = f.m.CreateContact(ctx, &mailmodel.MailContactEntity{
 		Email:  "plain@example.com",
 		Source: mailmodel.ContactSourceManual,
@@ -96,7 +81,6 @@ func TestContactTagsArrayRoundTrip(t *testing.T) {
 	}
 }
 
-// TestImportPlainTextReportsBadRows 纯文本导入：坏行逐行报告，好行照常入库。
 func TestImportPlainTextReportsBadRows(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -109,7 +93,7 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导入失败: %v", err)
 	}
-	// 有效行：a@example.com / B@Example.COM（域名小写化）；b@example.com 与它批内去重。
+
 	if len(res.Errors) != 1 || res.Errors[0].Email != "not-an-email" {
 		t.Fatalf("应恰好报 1 行非法，实际 %+v", res.Errors)
 	}
@@ -120,7 +104,6 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 		t.Fatalf("应有 1 条批内重复被跳过，实际 %d", res.Skipped)
 	}
 
-	// 没声明同意 → 一律 pending（不可发营销）
 	got, err := f.m.GetContactByEmail(ctx, "a@example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +116,6 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 	}
 }
 
-// TestImportCSVWithHeaderAndConsent CSV 表头映射 + 同意声明留痕。
 func TestImportCSVWithHeaderAndConsent(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -171,7 +153,7 @@ func TestImportCSVWithHeaderAndConsent(t *testing.T) {
 	if c1.Name == nil || *c1.Name != "张三" {
 		t.Fatalf("姓名列没映射上: %v", c1.Name)
 	}
-	// 行内标签 + 默认标签合并
+
 	want := map[string]bool{"vip": true, "老客": true, "活动导入": true}
 	if len(c1.Tags) != 3 {
 		t.Fatalf("标签应为 3 个（行内 2 + 默认 1），实际 %#v", c1.Tags)
@@ -183,7 +165,6 @@ func TestImportCSVWithHeaderAndConsent(t *testing.T) {
 	}
 }
 
-// TestImportSkipsSuppressed 抑制名单里的地址不进联系人表。
 func TestImportSkipsSuppressed(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -210,7 +191,6 @@ func TestImportSkipsSuppressed(t *testing.T) {
 	}
 }
 
-// TestImportLargeListScaled 1000 行规模导入：验证批量 upsert 与数组映射在量级下正常。
 func TestImportLargeListScaled(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -221,7 +201,7 @@ func TestImportLargeListScaled(t *testing.T) {
 	var b strings.Builder
 	const n = 1000
 	for i := 0; i < n; i++ {
-		// 与用户给的测试名单同形：test{N}{2字母}@clker.cn
+
 		fmt.Fprintf(&b, "test%d%s@clker.cn\n", i, string(rune('a'+i%26))+string(rune('a'+(i/26)%26)))
 	}
 	b.WriteString("kf@clker.cn\nwork@clker.cn\ncs@vapechoiceau.com\n")
@@ -241,12 +221,11 @@ func TestImportLargeListScaled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 没声明同意 → 全部 pending → 可发营销的人数是 0（这正是安全默认值）
+
 	if total != 0 {
 		t.Fatalf("未声明同意时不该有人可发营销，实际 %d", total)
 	}
 
-	// 按标签筛：全部 1003 人都在「规模测试」标签下
 	list, _, err := f.m.ListContacts(ctx, mailmodel.ContactFilter{Tags: []string{"规模测试"}, Limit: 5})
 	if err != nil {
 		t.Fatal(err)

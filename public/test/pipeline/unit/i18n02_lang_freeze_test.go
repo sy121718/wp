@@ -1,20 +1,5 @@
 package unit
 
-// i18n02_lang_freeze_test.go — 发布冻结语言表（审计 I18N-02）。
-//
-// 缺陷现象：站点语言清单读取失败时，EnabledLangs 降级为「只有默认语言一种」。
-// 草稿 / 预览口径下这是可接受的（作者不该因为一次读库失败就打不开页面），
-// 发布口径下不可接受：产物照常产出、发布回执照常写成功，而线上其余语言停在旧字节，
-// 唯一的痕迹是一行会滚走的日志。
-//
-// 这里钉住三件事：
-//  1. 等级策略本身：Forbidden 在「读取失败 / 清单为空 / 无工程上下文」三种情况都失败，
-//     且失败原因可被 errors.Is 识别（调用方要能判断「重试有意义」）；
-//  2. 发布口径的判定：SiteCompileOptions 在发布口径下冻结语言表、读不到即失败；
-//     预览口径（不注入发布面查询）仍是可见告警回退 —— 两种口径的差别只有这一条判据；
-//  3. 冻结是**一次读取**：产物与 Manifest 不能各读一次语言表（两次读之间清单被改，
-//     产物与 Manifest 就会各说各话）。
-
 import (
 	"context"
 	"errors"
@@ -27,13 +12,11 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// stubLangProject 只回答语言相关两问的最小工程服务；调用次数用于验证「只读一次」。
 type stubLangProject struct {
 	projectcontract.ProjectService
 	langs []string
 	err   error
-	// calls 记录 EnabledLangs 被调用的次数（指针接收者之外用值接收者也可读，
-	// 调用方传 *stubLangProject 以便观察）。
+
 	calls *int
 }
 
@@ -48,11 +31,8 @@ func (s *stubLangProject) DefaultLocale(ctx context.Context, projectID string) (
 	return i18n.GetDefaultLang(), nil
 }
 
-// SiteLangURLMode 工程级语言 URL 方案覆盖。本用例不涉及该维度，返回空串 =
-// 「该工程未配置」→ 解析回退全局默认方案（与实测行为一致）。
 func (s *stubLangProject) SiteLangURLMode(context.Context, string) (string, error) { return "", nil }
 
-// TestResolveSiteLangsVisibleFallsBack 预览口径：读取失败降级为默认语言一种，不报错。
 func TestResolveSiteLangsVisibleFallsBack(t *testing.T) {
 	project := &stubLangProject{err: errors.New("数据库不可用")}
 	langs, err := pipeline.ResolveSiteLangs(context.Background(), project, "p1", pipeline.LangFallbackVisible)
@@ -62,13 +42,12 @@ func TestResolveSiteLangsVisibleFallsBack(t *testing.T) {
 	if len(langs) != 1 || langs[0] != i18n.GetDefaultLang() {
 		t.Fatalf("预览口径应降级为默认语言一种，实际 %v", langs)
 	}
-	// EnabledLangs 必须与 Visible 逐字等价（它是既有调用方的入口）。
+
 	if got := pipeline.EnabledLangs(context.Background(), project, "p1"); len(got) != 1 || got[0] != i18n.GetDefaultLang() {
 		t.Fatalf("EnabledLangs 应与 Visible 口径一致，实际 %v", got)
 	}
 }
 
-// TestResolveSiteLangsForbiddenFailsOnReadError 发布口径：读取失败即失败。
 func TestResolveSiteLangsForbiddenFailsOnReadError(t *testing.T) {
 	project := &stubLangProject{err: errors.New("连接被拒绝")}
 	langs, err := pipeline.ResolveSiteLangs(context.Background(), project, "p1", pipeline.LangFallbackForbidden)
@@ -83,21 +62,18 @@ func TestResolveSiteLangsForbiddenFailsOnReadError(t *testing.T) {
 	}
 }
 
-// TestResolveSiteLangsForbiddenFailsOnEmptyTable 空清单与读取失败同等级：
-// 空清单会让发布退化成单语言并覆盖线上其它语言，同样不能继续。
 func TestResolveSiteLangsForbiddenFailsOnEmptyTable(t *testing.T) {
 	project := &stubLangProject{langs: []string{}}
 	if _, err := pipeline.ResolveSiteLangs(context.Background(), project, "p1", pipeline.LangFallbackForbidden); !errors.Is(err, pipeline.ErrLangTableUnavailable) {
 		t.Fatalf("空清单在发布口径下应失败，实际 %v", err)
 	}
-	// 预览口径不变：空清单仍回退默认语言一种（作者页面照常打开）。
+
 	langs, err := pipeline.ResolveSiteLangs(context.Background(), project, "p1", pipeline.LangFallbackVisible)
 	if err != nil || len(langs) != 1 {
 		t.Fatalf("空清单在预览口径下应回退默认语言一种，实际 langs=%v err=%v", langs, err)
 	}
 }
 
-// TestResolveSiteLangsForbiddenWithoutProjectContext 缺工程上下文同样是「拿不到语言表」。
 func TestResolveSiteLangsForbiddenWithoutProjectContext(t *testing.T) {
 	if _, err := pipeline.ResolveSiteLangs(context.Background(), nil, "p1", pipeline.LangFallbackForbidden); !errors.Is(err, pipeline.ErrLangTableUnavailable) {
 		t.Fatalf("未注入工程服务时应失败，实际 %v", err)
@@ -108,10 +84,6 @@ func TestResolveSiteLangsForbiddenWithoutProjectContext(t *testing.T) {
 	}
 }
 
-// TestSiteCompileOptionsFreezeLangTableByScope 发布口径冻结语言表、预览口径允许回退。
-//
-// 判据是「注入了发布面查询 + 有逻辑路径 + 有工程」，而不是调用方名字：
-// 四个真实调用点在这个判据下的取值见 publishLangScope 注释。
 func TestSiteCompileOptionsFreezeLangTableByScope(t *testing.T) {
 	broken := &stubLangProject{err: errors.New("数据库不可用")}
 	published := func(string) bool { return true }
@@ -129,7 +101,7 @@ func TestSiteCompileOptionsFreezeLangTableByScope(t *testing.T) {
 
 	t.Run("预览口径：回退为默认语言一种且不报错", func(t *testing.T) {
 		_, err := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
-			Project: broken, // 不注入 RoutePublished = 预览（不看发布面）
+			Project: broken,
 		}, pipeline.SiteCompileParams{
 			Ctx: context.Background(), ProjectID: "p1", Lang: "zh-CN", LogicalPath: "/about",
 		})
@@ -165,8 +137,6 @@ func TestSiteCompileOptionsFreezeLangTableByScope(t *testing.T) {
 	})
 }
 
-// TestLocaleViewFrozenLangsDriveAlternates 冻结的语言表就是互指的唯一来源：
-// 传进来的 SiteLangs 直接决定产物里的互指，不再回读工程服务。
 func TestLocaleViewFrozenLangsDriveAlternates(t *testing.T) {
 
 	calls := 0
@@ -186,8 +156,6 @@ func TestLocaleViewFrozenLangsDriveAlternates(t *testing.T) {
 	}
 }
 
-// TestLocaleViewForbiddenPolicyEmitsNoAlternates 发布口径下语言表不可读且调用方漏了
-// 上游检查时：宁可**没有互指**，也不产出「只指默认语言」的假互指。
 func TestLocaleViewForbiddenPolicyEmitsNoAlternates(t *testing.T) {
 
 	project := &stubLangProject{err: errors.New("数据库不可用")}
@@ -202,8 +170,6 @@ func TestLocaleViewForbiddenPolicyEmitsNoAlternates(t *testing.T) {
 	}
 }
 
-// TestSiteCompileOptionsRecordFrozenLangsIntoUsage 冻结的语言表随 ctx 回到内核
-// （写进 Manifest 的那条链路，端到端见 publisher 用例）。
 func TestSiteCompileOptionsRecordFrozenLangsIntoUsage(t *testing.T) {
 	usage := &pipeline.CompileUsage{}
 	ctx := pipeline.WithCompileUsage(context.Background(), usage)
@@ -219,7 +185,7 @@ func TestSiteCompileOptionsRecordFrozenLangsIntoUsage(t *testing.T) {
 	if len(got) != 2 || got[0] != "zh-CN" || got[1] != "ar" {
 		t.Fatalf("冻结语言表应写进依赖线索收集器，实际 %v", got)
 	}
-	// 预览口径（不注入收集器）不应 panic：装配层拿不到收集器是正常路径。
+
 	if _, err := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
 		Project: project, RoutePublished: func(string) bool { return true },
 	}, pipeline.SiteCompileParams{
@@ -229,11 +195,9 @@ func TestSiteCompileOptionsRecordFrozenLangsIntoUsage(t *testing.T) {
 	}
 }
 
-// TestPublisherBuildFailsWhenPublishLangTableUnreadable 端到端：语言表读不到的发布
-// 构建必须失败（内核返回错误、不落任何产物），而不是产出「只有默认语言」的产物。
 func TestPublisherBuildFailsWhenPublishLangTableUnreadable(t *testing.T) {
 	p, _, _, root := newPublisherEnv(t, pipeline.WithCompile(func(ctx context.Context, in pipeline.BuildInput) ([]byte, error) {
-		// 复刻 page / presentation 的装配：发布口径注入发布面查询。
+
 		if _, err := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
 			Project:        &stubLangProject{err: errors.New("数据库不可用")},
 			RoutePublished: func(string) bool { return true },
@@ -258,7 +222,7 @@ func TestPublisherBuildFailsWhenPublishLangTableUnreadable(t *testing.T) {
 	if hash != "" {
 		t.Fatalf("失败时不应返回产物哈希，实际 %s", hash)
 	}
-	// 失败必须是「什么都没产出」：留下一个半截产物目录，回收/审计都会把它当成真产物。
+
 	if entries, rerr := os.ReadDir(filepath.Join(root, "artifacts")); rerr == nil && len(entries) > 0 {
 		t.Fatalf("构建失败时不应落盘产物，实际有 %d 个：%v", len(entries), entries)
 	}

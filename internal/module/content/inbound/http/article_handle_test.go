@@ -53,12 +53,6 @@ func articleUpdatePost(e *gin.Engine, form url.Values) *httptest.ResponseRecorde
 	return rec
 }
 
-// TestArticleUpdateFailureReturnsJSON 保存失败回 JSON 错误体，页面不动。
-//
-// 判据在 2026-10 改过：从前这里断言「失败页必须含 </html> 且回填本次提交的值」——
-// 那是**原生表单提交**时代的需求（浏览器跳到白屏，所以服务端得重渲一遍）。
-// 表单改 htmx 之后（hx-swap="none"）页面根本没离开过，用户写的内容还在框里：
-// 回填这个需求不存在，重渲这条路也就不该存在。
 func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 	old := &contentdto.ContentResp{ID: "a1", Slug: "original-slug", Revision: 7, UpdatedAt: "2026-09-19 12:30:45", Data: map[string]any{
 		"title": "数据库旧标题", "body": "<p>数据库旧正文</p>",
@@ -91,13 +85,13 @@ func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 			if !strings.Contains(body, tc.message) {
 				t.Errorf("响应应含归口文案 %q：%s", tc.message, body)
 			}
-			// 页壳缺席：这是「失败不重渲」的分水岭。
+
 			for _, banned := range []string{"</html>", `action="/admin/articles/update"`} {
 				if strings.Contains(body, banned) {
 					t.Errorf("失败响应不该含页壳片段 %q：%s", banned, body)
 				}
 			}
-			// 原文与裸 key 都不许出现。
+
 			for _, leaked := range []string{"secret_table", "admin.article.err."} {
 				if strings.Contains(body, leaked) {
 					t.Errorf("响应不应出现 %q：%s", leaked, body)
@@ -108,7 +102,7 @@ func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 }
 
 func TestArticleUpdateMissingIDReturnsJSON(t *testing.T) {
-	// 缺 id 属参数错误：400 + 归口文案，不重渲页面（同上一个用例的判据变化）。
+
 	s := &articleUpdateContentStub{}
 	form := url.Values{"id": {""}, "title": {"标题"}, "body": {"<p>正文</p>"}}
 	rec := articleUpdatePost(articleUpdateTestEngine(s), form)
@@ -124,12 +118,6 @@ func TestArticleUpdateMissingIDReturnsJSON(t *testing.T) {
 	}
 }
 
-// TestArticleUpdateSuccessReturnsJSON 成功只回 JSON，导航交给前端。
-//
-// 通道又变了一次：302+?ok= → 提示页（data-jump-state）→ **JSON**。
-// 最后这次的理由是 AGENTS.md 那条「成功写动作只回 JSON；导航由前端 data-write-nav 决定，
-// 后端不发 302 / HX-Redirect」—— 提示页是原生提交时代为了「让用户看到结论」而造的第二条通道，
-// 表单改 htmx 之后 toast 就够，页面留在原地。
 func TestArticleUpdateSuccessReturnsJSON(t *testing.T) {
 	s := &articleUpdateContentStub{item: &contentdto.ContentResp{ID: "a1"}}
 	rec := articleUpdatePost(articleUpdateTestEngine(s), url.Values{"id": {"a1"}, "title": {"更新"}})
@@ -143,13 +131,13 @@ func TestArticleUpdateSuccessReturnsJSON(t *testing.T) {
 		t.Errorf("成功应回 JSON，得到 %q", ct)
 	}
 	body := rec.Body.String()
-	// 归口文案 + 新实体 id（前端 data-write-nav 的 {id} 从这里取）。
+
 	for _, want := range []string{"已保存", `"id":"a1"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("成功响应缺少 %q：%s", want, body)
 		}
 	}
-	// 提示页那套标记不该再出现（它们是旧通道的产物）。
+
 	if strings.Contains(body, "data-jump-state") {
 		t.Errorf("成功响应不该再渲染提示页：%s", body)
 	}

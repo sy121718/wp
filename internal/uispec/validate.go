@@ -9,35 +9,24 @@ import (
 	"unicode/utf8"
 )
 
-// ErrRejected 是所有「这条 spec 不能渲染」的归口错误。
-//
-// 上层只判这一个：命中它就是**降级为纯文本回答 + 落一条诊断事件**，
-// 而不是白屏或 500（docs/17 P5 闸门）。
 var ErrRejected = errors.New("uispec: 拒绝渲染")
 
-// 拒绝原因标签（机器可读，写进诊断事件；不要用 Error() 的文案做判据）。
 const (
-	KindMalformed     = "malformed"      // JSON 本身不合法，或有多余内容
-	KindUnknownField  = "unknown_field"  // 出现了白名单之外的字段
-	KindUnknownType   = "unknown_type"   // 组件类型不在白名单
-	KindEmpty         = "empty"          // 既没有文字也没有组件
-	KindTooLarge      = "too_large"      // 超出规模上限
-	KindMissingSource = "missing_source" // 块没有数据源
-	KindBadValue      = "bad_value"      // 单个值不合规（超长、字符合法但不合约定）
+	KindMalformed     = "malformed"
+	KindUnknownField  = "unknown_field"
+	KindUnknownType   = "unknown_type"
+	KindEmpty         = "empty"
+	KindTooLarge      = "too_large"
+	KindMissingSource = "missing_source"
+	KindBadValue      = "bad_value"
 )
 
-// Reject 一次拒绝：原因标签 + 位置 + 人读的说明。
-//
-// 为什么不用「每种原因一个哨兵错误」：调用方需要的是**两个层次**的信息 ——
-// 「要不要降级」（一个 ✓）与「为什么」（多种，进日志与诊断）。用 Is 认 ErrRejected、
-// 用 As 取 Kind，比在调用点写一长串 errors.Is(err, A) || errors.Is(err, B) 更不容易漏。
 type Reject struct {
 	Kind  string
 	Where string
 	Msg   string
 }
 
-// Error 实现 error。
 func (e *Reject) Error() string {
 	if e.Where == "" {
 		return fmt.Sprintf("uispec: %s: %s", e.Kind, e.Msg)
@@ -45,33 +34,18 @@ func (e *Reject) Error() string {
 	return fmt.Sprintf("uispec: %s: %s: %s", e.Kind, e.Where, e.Msg)
 }
 
-// Is 让 errors.Is(err, ErrRejected) 命中（降级判断的唯一入口）。
 func (e *Reject) Is(target error) bool { return target == ErrRejected }
 
-// reject 构造一条拒绝。
 func reject(kind, where, format string, args ...any) *Reject {
 	return &Reject{Kind: kind, Where: where, Msg: fmt.Sprintf(format, args...)}
 }
 
-// Parse 把模型输出的 JSON 解析成 Spec 并校验。
-//
-// 三层一起做，缺一层都会漏：
-//
-//	① 语法（JSON 合法、没有两个对象拼在一起、没有尾随内容）；
-//	② 形状（字段名全在白名单里 —— RejectUnknownMembers，模型自创字段一律拒绝）；
-//	③ 界限（组件数 / 长度 / 行数上限）。
-//
-// 尾随内容不需要单独再 Decode 一趟：jsonx.Unmarshal 走 jsontext 语法层，要求输入是
-// **恰好一个 JSON 值**，`{"a":1}{"b":2}` 与 `{"a":1} trailing` 都直接报错（实测）。
 func Parse(raw []byte) (*Spec, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, reject(KindMalformed, "", "输入为空")
 	}
-	// 未知字段与语法错误共用同一个返回点，但它们是**两类**原因，上层要分开处置：
-	// 语法错多半是模型输出截断（可重试），未知字段是协议外的东西（要进诊断、看模型在
-	// 发明什么）。分流走**错误值**而不是文案 —— v1 与 v2 的错误文案不同，靠
-	// strings.Contains(err.Error(), "unknown field") 判定在切到 encoding/json/v2 后必然失效。
+
 	var s Spec
 	if err := json.Unmarshal(trimmed, &s, json.RejectUnknownMembers(true)); err != nil {
 		if errors.Is(err, json.ErrUnknownName) {
@@ -85,9 +59,6 @@ func Parse(raw []byte) (*Spec, error) {
 	return &s, nil
 }
 
-// Validate 只做语义校验（形状与界限），不做 JSON 解析。
-//
-// 与 Parse 分开是因为调用方可能已经持有一个 Spec（例如从事件里反序列化出来的历史 spec）。
 func Validate(s *Spec) error {
 	if s == nil {
 		return reject(KindEmpty, "", "spec 为空")
@@ -109,7 +80,6 @@ func Validate(s *Spec) error {
 	return nil
 }
 
-// validateBlock 校验单个块。
 func validateBlock(i int, b Block) error {
 	where := fmt.Sprintf("blocks[%d]", i)
 	if !knownType(b.Type) {
@@ -119,8 +89,7 @@ func validateBlock(i int, b Block) error {
 	if n := utf8.RuneCountInString(b.Title); n > MaxTitleRunes {
 		return reject(KindTooLarge, where+".title", "标题 %d 字超过上限 %d", n, MaxTitleRunes)
 	}
-	// 每个块都必须有数据源：块的内容全部来自服务端查询（决策 D5），
-	// 没有 source 的块没有任何可渲染的东西 —— 放过去只会渲染出一个空壳。
+
 	src := strings.TrimSpace(b.Source)
 	if src == "" {
 		return reject(KindMissingSource, where, "缺少 source（数据源 = 已注册工具名）")
@@ -149,7 +118,6 @@ func validateBlock(i int, b Block) error {
 	return nil
 }
 
-// knownType 组件类型是否在白名单。
 func knownType(t string) bool {
 	switch t {
 	case TypeStat, TypeTable, TypeList, TypeAccordion:
@@ -159,11 +127,6 @@ func knownType(t string) bool {
 	}
 }
 
-// validSourceName 数据源名是否合法。
-//
-// 与 MCP 工具名同一套约定（小写字母、数字、下划线）。限定字符集不是因为这里会产生注入 ——
-// 名字只用来查 map —— 而是因为这个名字会进日志、审计与诊断事件，混杂任意字符会让
-// 「按工具名统计调用」这类后续分析变得不可靠。
 func validSourceName(s string) bool {
 	if s == "" {
 		return false

@@ -1,16 +1,5 @@
 package analyticsmcp
 
-// analytics_tools_test.go — 访问统计工具的元信息、入参边界与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪组数，用户就问不出哪类问题。这里钉的是几件会直接决定回答对错的事：
-//   · PV / UV 必须逐字给出（模型复述数字时不能靠猜）；
-//   · 零访问必须与「数据取不到」区分开 —— 前者要提醒检查打点是否生效，
-//     否则站点刚上线会被汇报成「流量为零」；
-//   · 长窗口不能把 90 天逐日铺开（挤掉回答空间），但「哪天最高」必须答得出；
-//   · 空维度取值（没有来源 / UA 缺失）要渲染成占位文案，跳过会让「一半流量没有来源」
-//     看起来像数据缺失。
-
 import (
 	"context"
 	"errors"
@@ -82,8 +71,7 @@ func TestTrafficSummaryRequiresProject(t *testing.T) {
 	if !strings.Contains(err.Error(), "projectId") {
 		t.Fatalf("报错要指明缺的是 projectId：%v", err)
 	}
-	// 注意这条错误来自 schema 的 required（校验层），不是 handler 里的兜底 ——
-	// 所以它不会带上「去 site_projects 查」那句话。那句话在工具描述里。
+
 	if !strings.Contains(tool.Description(), "site_projects") {
 		t.Fatal("工具描述里要写明 projectId 从 site_projects 查（模型靠描述选工具）")
 	}
@@ -127,7 +115,7 @@ func TestDescribeTrafficGivesAllSixDimensions(t *testing.T) {
 			{Day: "2026-10-04", Views: 40, Visitors: 30},
 		},
 		Paths: []analyticsdto.PathCount{
-			{Path: "", Views: 412, Visitors: 200}, // 空 path 就是首页（统计侧存的就是空串）
+			{Path: "", Views: 412, Visitors: 200},
 			{Path: "/products/vit-c", Views: 88, Visitors: 70},
 		},
 		PathTotal: 12,
@@ -136,14 +124,14 @@ func TestDescribeTrafficGivesAllSixDimensions(t *testing.T) {
 		Langs:     []analyticsdto.RankCount{{Value: "zh-CN", Views: 900}},
 	})
 	for _, want := range []string{
-		"1234", "321", // PV / UV 必须逐字给出
-		"10-05:88", // 短窗口逐日
-		"/（首页）",    // 空 path 是首页，不能渲染成空
+		"1234", "321",
+		"10-05:88",
+		"/（首页）",
 		"/products/vit-c",
-		"共 12 个页面有访问",      // 总量
-		"google.com 300 次", // 来源域
-		"desktop 800 次",    // 设备
-		"zh-CN 900 次",      // 语言
+		"共 12 个页面有访问",
+		"google.com 300 次",
+		"desktop 800 次",
+		"zh-CN 900 次",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, text)
@@ -158,7 +146,7 @@ func TestDescribeTrafficZeroIsNotSilentSuccess(t *testing.T) {
 	if !strings.Contains(text, "没有任何访问记录") {
 		t.Fatalf("零访问要直说：%s", text)
 	}
-	// 必须给出「可能是打点没生效」这个替代解释：否则站点刚上线会被汇报成「流量为零」。
+
 	if !strings.Contains(text, "打点") {
 		t.Fatalf("零访问要提醒检查打点是否生效：%s", text)
 	}
@@ -207,7 +195,7 @@ func TestShortDayHandlesUnexpectedShape(t *testing.T) {
 	if got := shortDay("2026-10-05"); got != "10-05" {
 		t.Fatalf("正常日期应截成 月-日，实得 %q", got)
 	}
-	// 上游若回了非预期形状，原样返回比切片越界好（正文宁可难看也不能 panic）。
+
 	if got := shortDay("2026"); got != "2026" {
 		t.Fatalf("短串应原样返回，实得 %q", got)
 	}

@@ -1,38 +1,5 @@
 package productmcp
 
-// 属性组和标签是两回事，别混：标签是「运营打的标记」（热销 / 清仓），
-// 属性组是「商品本身的规格」（颜色 / 尺码 / 容量），它决定商品在前台怎么被筛选。
-// 其中一个开关尤其关键 —— IsVariation=true 的属性组是**变体的来源**：
-// 它的值会被拿去笛卡尔积出 SKU。改错了会让商品的变体结构对不上。
-
-// 与内容模块同构：一个读 + 三个写，写工具走 mcp.NewWrite（确认位 + 幂等键）。
-// 只覆盖**商品主体**（products 一行）。属性 / 品牌 / 分类 / 捆绑配置各自是独立的数据形态，
-// 混进同一批会让「商品」这个词在工具列表里指五样东西 —— 模型分不清该用哪个，
-// 而分不清的代价是它挑一个看起来最像的调下去。
-//
-// **依赖断言成收窄的端口**而不是整个 ProductService：后者同时握着
-// UpdateVariantCost / CreateAttribute，工具层握着它们时
-// 「顺手调个价」会从「显式加一个工具」退化成「随手就能做」。
-
-// 为什么单独一批：它们描述的是**商品怎么被归类**，不是「某个商品」。
-// 用户说「加个 Nike 品牌」「把烟具归到电子烟下面」时，改的是全站共用的字典，
-// 影响面比改一个商品大得多 —— 一个分类错了，挂在它下面的商品在前台都跟着错位。
-//
-// 两个容易吃亏的语义，都在描述里写死：
-// ① UpdateCategoryReq.ParentID 是**三态**：不传 = 不改层级；传空串 = 提升为顶级。
-//    这与「把父级设成某个值」是三件事，而它们看起来都像「设父级」。
-// ② 删除分类前必须没有子分类、删除品牌前该品牌下不能还挂着商品 ——
-//    服务端会拒，但让模型先知道，它才会去查一遍而不是撞上去。
-
-// 为什么和商品主体（product_tools.go）分开成一批：
-// products 一行是「这个东西是什么」，product_variants 一行是「它的哪个版本、卖多少钱、
-// 库存挂在哪」—— 定价、SKU、条码、库存归属都长在变体上。用户说「加个蓝色的」「改成 99 块」
-// 说的都是变体，而在此之前没有任何工具能碰它们。
-//
-// **金额单位是本批最容易搞错的地方**：product 模块一律用「元」（float64），
-// 而 order 模块用「分」（int64）。同一个仓库里两套口径，所以这里每个金额字段的描述
-// 都显式写了单位 —— 模型上一次当成「分」就会把 99 元的商品定成 0.99 元。
-
 import (
 	"context"
 	"errors"
@@ -46,12 +13,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// AttributeWriter 属性组的写能力（给 AI 工具的窄门）。
-//
-// 刻意**不含 SetAttributeValues**：它的语义是「全量替换」——
-// 请求里没有的值被删除，无 id 的新建。模型漏写一个值就等于删掉它，
-// 而它可能正被某批商品的变体引用着。改属性值请去后台「商品 → 属性」，
-// 那里能看到现有值、不会整批覆盖。
 type AttributeWriter interface {
 	CreateAttribute(ctx context.Context, req *productdto.CreateAttributeReq) (*productdto.AttributeResp, error)
 	UpdateAttribute(ctx context.Context, req *productdto.UpdateAttributeReq) (*productdto.AttributeResp, error)
@@ -59,7 +20,6 @@ type AttributeWriter interface {
 	ListAttributes(ctx context.Context, req *productdto.ListAttributeReq) ([]*productdto.AttributeResp, error)
 }
 
-// AttributeTools 返回属性组工具集（1 读 + 3 写）。
 func AttributeTools(w AttributeWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("productmcp: 属性写依赖缺失（装配期接线错误）")
@@ -149,9 +109,7 @@ func attributeCreate(w AttributeWriter) mcp.Tool {
 				b := *args.IsVariation
 				req.IsVariation = &b
 			}
-			// Sort 用**过滤后的相对序号**，不是原数组下标 ——
-			// 输入里夹了空串时，用下标会留下空洞（0、2），
-			// 而空洞会让后续的上下移动对不上位置。
+
 			for _, label := range args.Values {
 				if strings.TrimSpace(label) == "" {
 					continue
@@ -283,20 +241,17 @@ func attributeDelete(w AttributeWriter) mcp.Tool {
 		})
 }
 
-// ProductReader 读商品（单条 + 列表）。
 type ProductReader interface {
 	Get(ctx context.Context, req *productdto.GetReq) (*productdto.ProductResp, error)
 	List(ctx context.Context, req *productdto.ListReq) ([]*productdto.ProductResp, error)
 }
 
-// ProductWriter 商品主体上的三个写操作。
 type ProductWriter interface {
 	Create(ctx context.Context, req *productdto.CreateReq) (*productdto.ProductResp, error)
 	Update(ctx context.Context, req *productdto.UpdateReq) (*productdto.ProductResp, error)
 	Delete(ctx context.Context, req *productdto.DeleteReq) error
 }
 
-// Tools 返回商品模块的工具集。
 func Tools(r ProductReader, w ProductWriter, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if r == nil || w == nil {
 		return nil, errors.New("productmcp: 商品读写依赖缺失（装配期接线错误）")
@@ -310,33 +265,17 @@ func Tools(r ProductReader, w ProductWriter, store mcp.IdempotencyStore) ([]mcp.
 	}, nil
 }
 
-// projectIDArg 商品全部工具共用的作用域参数。
-//
-// 商品是**多站点隔离**的数据（project_id），所以每个工具都必须带上它 ——
-// 不带时 service 会去猜「唯一工程」，多站点下那个兜底会直接报错，
-// 而报错文案指向的是 service 内部，看不出是调用方漏了参数。
 func projectIDArg() mcp.Schema {
 	return mcp.String("站点工程 id（uuid）。商品按工程隔离，必填。")
 }
 
-// productFindArgs product_find 的入参。
 type productFindArgs struct {
 	ProjectID string `json:"projectId"`
 	Keyword   string `json:"keyword"`
-	// Status 可选状态过滤（空串 = 全部状态）。取值域与 schema 的 Enum 同源，
-	// 两处都从 productenums 取 —— 写死字面量时枚举一改，工具就静默接受一个
-	// 底层不认识的值，而 List 的 status 条件会把它当成「没有这个状态」查出 0 条。
+
 	Status string `json:"status"`
 }
 
-// productFind 按关键词找商品。
-//
-// **这个工具是必需的，不是锦上添花**：用户说的是「把那个商品的名字改一下」，
-// 他不会念 uuid —— 而 uuid 是其余工具的唯一入口。没有这一环时模型只有两条路：
-// 向用户索要 uuid（用户给不出），或者瞎猜一个（猜出来的 id 不存在，报错归到「商品不存在」，
-// 看起来像是数据问题而不是工具集缺了一环）。
-//
-// 实测正是如此：给它一个 uuid 它会正确要求补 projectId，但**没人会那样说话**。
 func productFind(r ProductReader) mcp.Tool {
 	return mcp.New("product_find", "搜索商品",
 		"按关键词搜索商品，返回匹配项的 id、名称、SKU、类型与状态。"+
@@ -378,13 +317,8 @@ func productFind(r ProductReader) mcp.Tool {
 	)
 }
 
-// productFindLimit 搜索返回的条数上限。
-//
-// 20 是「够用来挑」与「不把上下文撑满」之间的取值：商品列表项带名称与 SKU，
-// 再多就会挤掉后面对话需要的空间，而用户想找的那一个通常在前几条。
 const productFindLimit = 20
 
-// productGetArgs product_get 的入参。
 type productGetArgs struct {
 	ProjectID string `json:"projectId"`
 	ID        string `json:"id"`
@@ -409,13 +343,6 @@ func productGet(r ProductReader) mcp.Tool {
 	)
 }
 
-// productCreateArgs product_create 的业务入参。
-//
-// **刻意不收 SKU 编码与仓库参数**：那两条入口的规则（docs/14 §1.1）里，
-// 从仓库选要同时给 WarehouseID 与 WarehouseSKU、自己创建要处理仓码前缀、
-// 派生不出 ASCII 段时明确报错 —— 这套规则的输入是运营在表单上看着仓库列表做的决定，
-// 不是模型能凭一句话补全的。收进来只会让它猜，猜错的形态是建出一个编码别扭的商品
-// （而商品编码后面会被打印、被扫码，改起来比建错麻烦得多）。
 type productCreateArgs struct {
 	ProjectID string  `json:"projectId"`
 	Name      string  `json:"name"`
@@ -455,10 +382,6 @@ func productCreate(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// productUpdateArgs product_update 的业务入参。
-//
-// 指针类型与 service 的 UpdateReq 同形（nil = 本次不改）：这层多一次「空串 vs 缺省」
-// 的折算，把「清空副标题」与「不改副标题」混成一个值，是这一批最容易写错的地方。
 type productUpdateArgs struct {
 	ProjectID string  `json:"projectId"`
 	ID        string  `json:"id"`
@@ -497,7 +420,6 @@ func productUpdate(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// productDeleteArgs product_delete 的入参。
 type productDeleteArgs struct {
 	ProjectID string `json:"projectId"`
 	ID        string `json:"id"`
@@ -522,10 +444,6 @@ func productDelete(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// describeProduct 把商品摊成便于模型读的文本。
-//
-// 只列**可变且模型需要知道**的字段：状态、SKU、价格与库存这些是它做判断的依据，
-// 而 id / projectId 要带上，否则下一轮它无从引用这一行。
 func describeProduct(res *productdto.ProductResp) string {
 	if res == nil {
 		return "（没有读到商品）"
@@ -537,23 +455,14 @@ func describeProduct(res *productdto.ProductResp) string {
 	writeLine(&b, "URL 段", res.Slug)
 	writeLine(&b, "状态", res.Status)
 	writeLine(&b, "SKU 编码", res.SKUCode)
-	// 价格与库存是用户最常追问的两件事（「多少钱」「还有货吗」），而它们都已由
-	// toResp 填好 —— 之前只列了六个字段，模型答不了这两问只能让用户自己去后台看。
-	//
-	// 区间用「最低~最高」；只有一个价位时两侧相同，写成区间会让答案读起来啰嗦。
+
 	if res.PriceMin == res.PriceMax {
 		writeLine(&b, "价格", formatPrice(res.PriceMin))
 	} else {
 		writeLine(&b, "价格区间", formatPrice(res.PriceMin)+" ~ "+formatPrice(res.PriceMax))
 	}
 	b.WriteString("- 变体数: " + strconv.Itoa(res.VariantCount) + "\n")
-	// 库存是**查询期聚合**（真源在 inventory_stocks），三态必须原样交代：
-	//   infinite = 至少一个仓不跟踪库存（等价于「要多少有多少」）；
-	//   tracked  = 全部仓都跟踪，后面那个数才有意义；
-	//   none     = 任何仓都没有库存行，**不等于 0**（「没入库」与「入库了但没货」是两回事）。
-	//
-	// StockUnknown 必须先判（PRD-017）：那一行的三态是零值，照 default 说「未入库」就是
-	// 把「这次没查到」当成事实告诉用户 —— 后台列表同样按「库存读取失败」显示，两处口径一致。
+
 	if res.StockUnknown {
 		writeLine(&b, "库存", "读取失败（库存聚合这次没有查成功，数值未知；重试或到后台确认）")
 	} else {
@@ -566,25 +475,16 @@ func describeProduct(res *productdto.ProductResp) string {
 			writeLine(&b, "库存", "未入库（任何仓库都没有该商品的库存行）")
 		}
 	}
-	// 上架时间：用户会问「什么时候上的架」，而「新品」的判断也靠它。
+
 	writeLine(&b, "创建时间", res.CreatedAt.String())
 	writeLine(&b, "上架时间", res.PublishedAt.String())
 	return b.String()
 }
 
-// formatPrice 把概览用的金额格式化成便于阅读的形态。
-//
-// 不做货币符号也不做千分位：**这个工具不知道工程用哪种货币**（货币是站点/工程级配置，
-// 商品本身不存），凭空写个 ¥ 会在非人民币站点上给出错误答案。保留两位小数即可，
-// 需要符号时让模型去问用户或查站点配置。
 func formatPrice(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
-// writeLine 写一行「字段: 值」，空值也写（标出「本字段为空」）。
-//
-// 不能省略空值行：模型要靠「这个字段存在但为空」与「这个字段不存在」区分
-// 「清空它」和「别管它」—— 省略之后两者长得一样。
 func writeLine(b *strings.Builder, label, value string) {
 	if strings.TrimSpace(value) == "" {
 		b.WriteString("- " + label + ": （空）\n")
@@ -593,10 +493,6 @@ func writeLine(b *strings.Builder, label, value string) {
 	b.WriteString("- " + label + ": " + value + "\n")
 }
 
-// TaxonomyWriter 品牌 / 分类 / 标签的写能力（给 AI 工具的窄门）。
-//
-// 刻意不含 RecalcTags（按规则批量重算全站标签，是一次全局写）与
-// SetAttributeValues（属性值的写入挂在商品上，属于商品编辑的一部分）。
 type TaxonomyWriter interface {
 	CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (*productdto.BrandResp, error)
 	UpdateBrand(ctx context.Context, req *productdto.UpdateBrandReq) (*productdto.BrandResp, error)
@@ -611,7 +507,6 @@ type TaxonomyWriter interface {
 	DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) error
 }
 
-// TaxonomyWriteTools 返回品牌 / 分类 / 标签的写工具集。
 func TaxonomyWriteTools(w TaxonomyWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("productmcp: 分类维度写依赖缺失（装配期接线错误）")
@@ -1037,10 +932,6 @@ func tagDelete(w TaxonomyWriter) mcp.Tool {
 		})
 }
 
-// tagKindText 说清这个标签是怎么来的 —— 手工打的，还是规则自动命中的。
-//
-// 用户删/改标签时这个差别决定后果：规则标签会自己把商品重新挂回来，
-// 手工标签删了就真没了。
 func tagKindText(kind string) string {
 	if strings.TrimSpace(kind) == "rule" {
 		return "**规则标签**：商品归属由规则自动算出来，不是手工打的"
@@ -1048,19 +939,12 @@ func tagKindText(kind string) string {
 	return "手工标签"
 }
 
-// TaxonomyReader 列出三个分类维度的现有条目。
-//
-// 它存在是因为**写工具需要它**：category_create 要 parentId、
-// brand_delete / tag_delete 要先看有没有在用，而这些 id 只能从这里拿。
-// 「工具的输出里要带上下一步动作需要的参数」这条已经在 stock_find 漏 variantId、
-// stock_reasons 漏 id、建活动缺 accountId 上吃过三回 —— 这次在写工具之前就补上。
 type TaxonomyReader interface {
 	ListBrands(ctx context.Context, req *productdto.ListBrandReq) ([]*productdto.BrandResp, error)
 	ListCategories(ctx context.Context, req *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error)
 	ListTags(ctx context.Context, req *productdto.ListTagReq) ([]*productdto.TagResp, error)
 }
 
-// TaxonomyTools 返回三个维度清单的只读工具。
 func TaxonomyTools(r TaxonomyReader) ([]mcp.Tool, error) {
 	if r == nil {
 		return nil, errors.New("productmcp: 分类维度读依赖缺失（装配期接线错误）")
@@ -1174,18 +1058,12 @@ type taxonomyListArgs struct {
 	Keyword   string `json:"keyword"`
 }
 
-// VariantWriter 变体写能力（给 AI 工具的窄门）。
-//
-// 刻意不含 GenerateVariants（一次按属性笛卡尔积批量造变体 —— 它会覆盖既有 SKU 的
-// 价格与库存口径，是给「刚建完商品、配置规格」这一步用的批量动作，不是问答里的一次修改）
-// 与 UpdateVariantCost（改成本价会连锁影响毛利报表与定价规则）。
 type VariantWriter interface {
 	CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (*productdto.VariantResp, error)
 	UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (*productdto.VariantResp, error)
 	DeleteVariant(ctx context.Context, req *productdto.DeleteVariantReq) error
 }
 
-// VariantWriteTools 返回变体写工具集。
 func VariantWriteTools(w VariantWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("productmcp: 变体写依赖缺失（装配期接线错误）")
@@ -1273,11 +1151,6 @@ func variantCreatedText(res *productdto.VariantResp, qty *int) string {
 	return b.String()
 }
 
-// quantityLine 说清这个变体到底怎么管库存。
-//
-// create 的 quantity 是**可空**的：不给 = 不跟踪 = 无限售出，给 0 = 没货。
-// 这两种在数据库里是同一个 0（库存行数量），只有在「刚新增、且没显式给数量」时
-// 才能靠入参区分，所以这句提示只能在这里说 —— 事后再看库存页是看不出来的。
 func quantityLine(res *productdto.VariantResp, qty *int) string {
 	if qty == nil {
 		return "库存：**没有跟踪数量**，可以无限售出。要按实际库存卖，去库存页把它改成跟踪数量。"
@@ -1353,10 +1226,6 @@ func variantUpdate(w VariantWriter) mcp.Tool {
 		})
 }
 
-// variantUpdatedText 报「改完长什么样」而不是「改成功了」。
-//
-// 因为「只改传了的字段」这个语义下，用户最想知道的是**现在**的值：
-// 说「已修改价格」但不说改成多少，用户还得再去翻一遍。
 func variantUpdatedText(res *productdto.VariantResp) string {
 	if res == nil {
 		return "变体已修改。"
@@ -1410,16 +1279,10 @@ func variantDelete(w VariantWriter) mcp.Tool {
 		})
 }
 
-// money 构造一个「元」金额字段。
-//
-// 用 number 而不是 integer：商品价格本来就有 9.9 / 99.5 这种小数，
-// 用 integer 会在校验层直接拒掉它们（模型只能取整，等于悄悄改了用户报的价）。
 func money(desc string) mcp.Schema {
 	return mcp.Schema{Type: "number", Description: desc}
 }
 
-// 空值展示用短横线：JSON 里 "" 与「这个字段没有」在阅读上没区别，
-// 而在变体上「SKU 为空」往往是后端自动生成的，得让人看出「这里本来就没填」。
 func emptyAsDash(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return "-"

@@ -1,14 +1,3 @@
-// product_bulk_bucket_test.go — 批量删除 / 批量改价的「整批或零」判据。
-//
-// 语义（见 internal/module/CLAUDE.md「列表页批量操作」）：一批 = 一个事务，任何一条不能处理
-// 整批不生效，错误里列出可定位的条目（id + 名称 + 原因 key）。所以本文件钉的不是「哪几条被
-// 跳过」，而是两件事：
-//  1. 只要夹着一条不可处理的条目，**一行都不能动**（库里原样）；
-//  2. 拒绝时逐条给 reasonKey，让操作者能定位到具体对象 —— 没有这条，错误就只是「批量失败」。
-//
-// 五类输入（重复 id、不存在 id、跨工程 id、被引用的对象：主分类真列 / 品牌真列 / 属性 jsonb /
-// 标签跨工程、分类有子级）都在这里出现：批量引用扫描的谓词写错（例如 uuid 真列与 text 数组
-// 比较）时，本文件直接变红，而不是静默全删。
 package feature
 
 import (
@@ -24,7 +13,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// rowCount 某张表里 id 还在不在（1 / 0）。
 func rowCount(t *testing.T, db *gorm.DB, table, id string) int {
 	t.Helper()
 	var n int64
@@ -34,7 +22,6 @@ func rowCount(t *testing.T, db *gorm.DB, table, id string) int {
 	return int(n)
 }
 
-// jsonbList 读一行的 jsonb 字符串数组列（断言解绑之类的副作用时用）。
 func jsonbList(t *testing.T, db *gorm.DB, table, id, col string) []string {
 	t.Helper()
 	var raw string
@@ -62,10 +49,8 @@ func setUUIDCol(t *testing.T, db *gorm.DB, productID, col, value string) {
 	}
 }
 
-// missingUUID 一个格式合法、库里不存在的 id。
 const missingUUID = "11111111-1111-4111-8111-111111111111"
 
-// bulkRejected 取整批拒绝的条目；没有错误或不是整批拒绝都直接判失败。
 func bulkRejected(t *testing.T, err error) []facing.BlockedItem {
 	t.Helper()
 	if err == nil {
@@ -78,7 +63,6 @@ func bulkRejected(t *testing.T, err error) []facing.BlockedItem {
 	return rejected.Items
 }
 
-// reasonOf 取某条 id 的原因 key；不存在则判失败。
 func reasonOf(t *testing.T, items []facing.BlockedItem, id string) string {
 	t.Helper()
 	for _, it := range items {
@@ -102,7 +86,7 @@ func TestBulkDeleteAllOrNothing(t *testing.T) {
 	t.Run("商品：夹着不存在 / 跨工程的 id 时一条都不删", func(t *testing.T) {
 		ids := seedProductRows(t, f.db, projectA, make([]string, 3))
 		other := seedProductRows(t, f.db, projectB, make([]string, 1))
-		// p0 出现两次：归一去重后是 4 个 id，其中 2 个不能处理。
+
 		_, err := f.svc.BulkDeleteProducts(ctx, &productdto.BulkDeleteReq{
 			IDs:       []string{ids[0], ids[0], ids[1], missingUUID, other[0]},
 			ProjectID: projectA,
@@ -117,7 +101,7 @@ func TestBulkDeleteAllOrNothing(t *testing.T) {
 		if key := reasonOf(t, items, other[0]); key != productenums.ErrNotFound {
 			t.Errorf("跨工程 id 的原因 = %q，want %q", key, productenums.ErrNotFound)
 		}
-		// 关键是这两行：整批被拒 = 一个都没删。
+
 		for _, id := range ids {
 			if n := rowCount(t, f.db, "products", id); n != 1 {
 				t.Fatalf("整批被拒时 %s 不该被删，实际剩下 %d 行", id, n)
@@ -153,7 +137,7 @@ func TestBulkDeleteAllOrNothing(t *testing.T) {
 		}
 		refCate := seedTaxonomyRows(t, f.db, "product_categories", projectA, "被引用分类", 1)[0]
 		prod := seedProductRows(t, f.db, projectA, make([]string, 1))[0]
-		// 主分类走真列 primary_category_id：这条正是批量扫描里最容易写错的一路。
+
 		setUUIDCol(t, f.db, prod, "primary_category_id", refCate)
 
 		_, err := f.svc.BulkDeleteProductCategories(ctx, &productdto.BulkDeleteReq{
@@ -254,7 +238,6 @@ func TestBulkDeleteAllOrNothing(t *testing.T) {
 			t.Fatalf("别的工程的引用更不该被动到，实际 %v", tags)
 		}
 
-		// 只挑本工程那一个：删得掉，且引用先解绑。
 		res, err := f.svc.BulkDeleteProductTags(ctx, &productdto.BulkDeleteReq{IDs: []string{local}, ProjectID: projectA})
 		if err != nil {
 			t.Fatalf("只删本工程标签应成功：%v", err)
@@ -278,7 +261,7 @@ func TestBulkPricingAllOrNothing(t *testing.T) {
 
 	ids := seedProductRows(t, f.db, projectA, make([]string, 2))
 	seedVariantRows(t, f.db, ids, 100, 50)
-	// 第二个变体本来就等于「成本 × 1.5」，规则跑完没有变化 → 进 UnchangedProducts。
+
 	if err := f.db.Exec("UPDATE product_variants SET price = 75 WHERE product_id = ?", ids[1]).Error; err != nil {
 		t.Fatalf("造「已在目标价」失败：%v", err)
 	}

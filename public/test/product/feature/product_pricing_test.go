@@ -1,13 +1,3 @@
-// Package feature product 模块 feature 测试 —— 定价工具（issue #13）。
-//
-// 覆盖本票五条验收（真实 PostgreSQL + 生产迁移 + 真实 service）：
-//  1. 四种定价规则（成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价）+ 尾数处理：
-//     规则类型、参数键、尾数取值全部走内置白名单，非法一律拒绝（不接受自由表达式）；
-//  2. 三种作用范围：单个 SKU、单个商品的全部变体、筛选集（工程 + 状态 / 关键词 / 分类 / 品牌 / 标签）；
-//  3. 结果写库：算出的售价写回 product_variants.price，不是运行时计算；
-//  4. 应用前可预览（预览不落库、不留痕），应用有留痕（批次 + 逐变体「原价 → 新价」）；
-//  5. 不进构建管线：构建期（实体类型解析器）读到的就是落库后的确定值，
-//     且定价源码不依赖 builder / pipeline / artifact。
 package feature
 
 import (
@@ -40,7 +30,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// pricingFixture 隔离 PG schema + 生产迁移 + 真实工程行 + 商品 service + 实体类型注册表。
 type pricingFixture struct {
 	svc       *productservice.Service
 	db        *gorm.DB
@@ -49,7 +38,6 @@ type pricingFixture struct {
 	projectID string
 }
 
-// newPricingFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newPricingFixture(t *testing.T) *pricingFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -70,12 +58,6 @@ func newPricingFixture(t *testing.T) *pricingFixture {
 	return &pricingFixture{svc: svc, db: db, projects: projects, registry: registry, projectID: project.ID}
 }
 
-// —— 测试内的小工具 ——
-
-// pfCreateProduct 建商品并把它的首个变体设成指定的售价与成本价。
-//
-// 价格与成本只能落在变体上（商品主体不存价格，issue #5 已定语义），
-// 所以这里建完商品再修一次首个变体。
 func pfCreateProduct(t *testing.T, f *pricingFixture, name string, price, cost float64) *productdto.ProductResp {
 	t.Helper()
 	ctx := context.Background()
@@ -98,7 +80,6 @@ func pfCreateProduct(t *testing.T, f *pricingFixture, name string, price, cost f
 	return pfGetProduct(t, f, created.ID)
 }
 
-// pfAddVariant 给商品加一个变体（price / cost 传负数表示不设该字段）。
 func pfAddVariant(t *testing.T, f *pricingFixture, productID, sku string, price, cost float64) *productdto.VariantResp {
 	t.Helper()
 	req := &productdto.CreateVariantReq{ProductID: productID, SKUCode: sku}
@@ -115,7 +96,6 @@ func pfAddVariant(t *testing.T, f *pricingFixture, productID, sku string, price,
 	return v
 }
 
-// pfGetProduct 商品详情（含变体）。
 func pfGetProduct(t *testing.T, f *pricingFixture, productID string) *productdto.ProductResp {
 	t.Helper()
 	detail, err := f.svc.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
@@ -125,7 +105,6 @@ func pfGetProduct(t *testing.T, f *pricingFixture, productID string) *productdto
 	return detail
 }
 
-// pfVariantBySKU 按 SKU 取变体（找不到即失败）。
 func pfVariantBySKU(t *testing.T, p *productdto.ProductResp, sku string) *productdto.VariantResp {
 	t.Helper()
 	for _, v := range p.Variants {
@@ -137,7 +116,6 @@ func pfVariantBySKU(t *testing.T, p *productdto.ProductResp, sku string) *produc
 	return nil
 }
 
-// pfPriceOf SKU 的当前售价（直接读库，不经过任何派生逻辑）。
 func pfPriceOf(t *testing.T, f *pricingFixture, sku string) float64 {
 	t.Helper()
 	var price float64
@@ -147,7 +125,6 @@ func pfPriceOf(t *testing.T, f *pricingFixture, sku string) float64 {
 	return price
 }
 
-// pfCountAdjustments 调价批次数。
 func pfCountAdjustments(t *testing.T, f *pricingFixture) int64 {
 	t.Helper()
 	var n int64
@@ -157,7 +134,6 @@ func pfCountAdjustments(t *testing.T, f *pricingFixture) int64 {
 	return n
 }
 
-// pfReq 构造一条定价请求（三种范围共用）。
 func pfReq(f *pricingFixture, ruleType, params, rounding, scope, targetID string) productdto.PricingRuleReq {
 	req := productdto.PricingRuleReq{
 		ProjectID: f.projectID, RuleType: ruleType, Rounding: rounding, Scope: scope, TargetID: targetID,
@@ -167,8 +143,6 @@ func pfReq(f *pricingFixture, ruleType, params, rounding, scope, targetID string
 	}
 	return req
 }
-
-// —— 验收 1：四种规则 + 尾数处理，非法输入一律拒绝 ——
 
 func TestPricingRuleValidation(t *testing.T) {
 	f := newPricingFixture(t)
@@ -184,7 +158,7 @@ func TestPricingRuleValidation(t *testing.T) {
 		params string
 		round  string
 		scope  string
-		// noTarget 为 true 表示这一行故意不传目标 id（测「缺目标」的拦截）。
+
 		noTarget bool
 		want     string
 	}{
@@ -224,7 +198,6 @@ func TestPricingRuleValidation(t *testing.T) {
 		})
 	}
 
-	// 目标不存在（SKU / 商品两个范围）。
 	missing := "00000000-0000-0000-0000-000000000000"
 	for _, scope := range []string{productenums.PricingScopeSKU, productenums.PricingScopeProduct} {
 		_, err := f.svc.PreviewPricing(ctx, &productdto.PricingPreviewReq{
@@ -235,7 +208,6 @@ func TestPricingRuleValidation(t *testing.T) {
 		}
 	}
 
-	// 筛选集范围必须指定工程：没有工程条件的批量改价会跨工程改到别人的商品上。
 	_, err := f.svc.PreviewPricing(ctx, &productdto.PricingPreviewReq{
 		PricingRuleReq: productdto.PricingRuleReq{
 			RuleType: productenums.PricingRuleFixedPrice, RuleParams: json.RawMessage("{\"amount\":88}"),
@@ -246,7 +218,6 @@ func TestPricingRuleValidation(t *testing.T) {
 		t.Fatalf("筛选集缺工程应被拒绝，实际 %v", err)
 	}
 
-	// 内置清单只有一份：4 种规则 + 4 种尾数处理。
 	if rules := f.svc.ListPricingRuleTypes(ctx); len(rules) != 4 {
 		t.Fatalf("应有 4 种内置定价规则，实际 %d", len(rules))
 	}
@@ -261,7 +232,7 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	// 成本 10.28 → 乘 1.2 = 12.336，正好能把四种尾数处理区分开。
+
 	p := pfCreateProduct(t, f, "算价商品", 1, 10.28)
 
 	preview := func(ruleType, params, rounding string) *productdto.PricingPreviewResp {
@@ -313,7 +284,6 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 		})
 	}
 
-	// 尾数处理一律向上取（只抬不降）：已满足尾数的价格保持不变，差一点就进位。
 	if res := preview(productenums.PricingRuleFixedPrice, "{\"amount\":12.9}", productenums.PricingRoundingEnd9); res.Lines[0].NewPrice != 12.90 {
 		t.Fatalf("尾数 9 对已满足的价格应保持不变，实际 %v", res.Lines[0].NewPrice)
 	}
@@ -327,7 +297,6 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 		t.Fatalf("尾数 99 应向上进位到 13.99，实际 %v", res.Lines[0].NewPrice)
 	}
 
-	// 缺成本价的变体按成本类规则被跳过（其余变体照常），统一售价规则不受影响。
 	pfAddVariant(t, f, p.ID, "no-cost-sku", 500, -1)
 	skipped, err := f.svc.PreviewPricing(ctx, &productdto.PricingPreviewReq{
 		PricingRuleReq: pfReq(f, productenums.PricingRuleCostMultiple, "{\"multiplier\":2}", "", productenums.PricingScopeProduct, p.ID),
@@ -358,8 +327,6 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 	}
 }
 
-// —— 验收 2：三种作用范围 ——
-
 func TestPricingScopeSKUAndProduct(t *testing.T) {
 	f := newPricingFixture(t)
 	if f == nil {
@@ -375,7 +342,6 @@ func TestPricingScopeSKUAndProduct(t *testing.T) {
 	}
 	target := pfVariantBySKU(t, detail, "sku-b")
 
-	// ① 单个 SKU：只有它变。
 	res, err := f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: pfReq(f, productenums.PricingRuleFixedPrice, "{\"amount\":111}", "", productenums.PricingScopeSKU, target.ID),
 		Note:           "只改一个 SKU",
@@ -394,7 +360,6 @@ func TestPricingScopeSKUAndProduct(t *testing.T) {
 		t.Fatalf("非目标 SKU 不该被改动，实际 %v", got)
 	}
 
-	// ② 单个商品的全部变体：三个都变。
 	res, err = f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: pfReq(f, productenums.PricingRuleCostMultiple, "{\"multiplier\":2}", productenums.PricingRoundingEnd9, productenums.PricingScopeProduct, p.ID),
 	})
@@ -413,7 +378,7 @@ func TestPricingScopeSKUAndProduct(t *testing.T) {
 			t.Fatalf("%s 应改为 %v，实际 %v", want.sku, want.price, got)
 		}
 	}
-	// 成本价不参与改动。
+
 	if got := pfVariantBySKU(t, after, "sku-b"); got.CostPrice == nil || *got.CostPrice != 60 {
 		t.Fatalf("成本价不该被动，实际 %+v", got.CostPrice)
 	}
@@ -442,7 +407,7 @@ func TestPricingFilterScope(t *testing.T) {
 	}
 
 	zero := 0.0
-	// 命中全部筛选条件的商品。
+
 	hit, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "春季夹克", DefaultPrice: &zero,
 		CategoryIDs: []string{cat.ID}, BrandID: brand.ID, TagIDs: []string{tag.ID},
@@ -454,14 +419,12 @@ func TestPricingFilterScope(t *testing.T) {
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: hit.ID, Status: &published}); err != nil {
 		t.Fatalf("上架失败: %v", err)
 	}
-	// 不命中的商品（草稿 + 无分类 / 品牌 / 标签 + 名称不同）。
+
 	miss, err := f.svc.Create(ctx, &productdto.CreateReq{ProjectID: f.projectID, Name: "夏季短裤", DefaultPrice: &zero})
 	if err != nil {
 		t.Fatalf("建无关商品失败: %v", err)
 	}
 
-	// apply 用不同金额逐次应用：同一条规则应用到同一批商品上第二次会「无改动」，
-	// 而「无改动」在本票里是明确报错的（不写空台账），故每次换一个金额。
 	apply := func(amount string, mutate func(*productdto.PricingRuleReq)) *productdto.PricingApplyResp {
 		t.Helper()
 		req := productdto.PricingRuleReq{
@@ -478,7 +441,6 @@ func TestPricingFilterScope(t *testing.T) {
 		return res
 	}
 
-	// ① 状态筛选。
 	if res := apply("59", func(r *productdto.PricingRuleReq) { r.Status = productenums.StatusPublished }); res.ChangedCount != 1 {
 		t.Fatalf("状态筛选应命中 1 个商品，实际 %+v", res)
 	}
@@ -489,13 +451,12 @@ func TestPricingFilterScope(t *testing.T) {
 		t.Fatalf("未命中商品不该被改动，实际 %v", got)
 	}
 
-	// ② 只有工程、没有其它条件的筛选集：明确报错，不静默全表改价。
 	if _, err = f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: pfReq(f, productenums.PricingRuleFixedPrice, "{\"amount\":1}", "", productenums.PricingScopeFilter, ""),
 	}); err == nil || !strings.Contains(err.Error(), productenums.ErrPricingFilterEmpty) {
 		t.Fatalf("无条件的筛选集应返回 ErrPricingFilterEmpty，实际 %v", err)
 	}
-	// ②' 有筛选条件但一个都没命中：同样明确报错，不静默成功。
+
 	if _, err = f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: func() productdto.PricingRuleReq {
 			r := pfReq(f, productenums.PricingRuleFixedPrice, "{\"amount\":1}", "", productenums.PricingScopeFilter, "")
@@ -505,24 +466,23 @@ func TestPricingFilterScope(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), productenums.ErrPricingFilterEmpty) {
 		t.Fatalf("无命中的筛选集应返回 ErrPricingFilterEmpty，实际 %v", err)
 	}
-	// ③ 分类筛选。
+
 	if res := apply("61", func(r *productdto.PricingRuleReq) { r.CategoryID = cat.ID }); res.ChangedCount != 1 {
 		t.Fatalf("分类筛选应命中 1 个商品，实际 %+v", res)
 	}
-	// ④ 品牌筛选。
+
 	if res := apply("62", func(r *productdto.PricingRuleReq) { r.BrandID = brand.ID }); res.ChangedCount != 1 {
 		t.Fatalf("品牌筛选应命中 1 个商品，实际 %+v", res)
 	}
-	// ⑤ 标签筛选。
+
 	if res := apply("63", func(r *productdto.PricingRuleReq) { r.TagID = tag.ID }); res.ChangedCount != 1 {
 		t.Fatalf("标签筛选应命中 1 个商品，实际 %+v", res)
 	}
-	// ⑥ 关键词筛选。
+
 	if res := apply("64", func(r *productdto.PricingRuleReq) { r.Keyword = "春季" }); res.ChangedCount != 1 {
 		t.Fatalf("关键词筛选应命中 1 个商品，实际 %+v", res)
 	}
 
-	// ⑦ 跨工程隔离：别的工程里条件相同的商品不该被本工程的筛选集改到。
 	other, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "另一个工程"})
 	if err != nil {
 		t.Fatalf("建第二工程失败: %v", err)
@@ -543,8 +503,7 @@ func TestPricingFilterScope(t *testing.T) {
 	}); res.ChangedCount != 1 {
 		t.Fatalf("筛选集应只命中本工程商品，实际 %+v", res)
 	}
-	// 用**它自己的工程**读：Get 强制工程 scope，拿本工程 id 去查会被正确拒绝
-	//（ErrNotFound）—— 那本身也是一条越权防护的证据，但不是这里要断言的东西。
+
 	otherDetail, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: other.ID, ID: otherProduct.ID})
 	if err != nil {
 		t.Fatalf("读他工程商品失败: %v", err)
@@ -553,8 +512,6 @@ func TestPricingFilterScope(t *testing.T) {
 		t.Fatalf("跨工程商品不该被改动，实际 %v", got)
 	}
 }
-
-// —— 验收 3 + 4：预览不落库，应用落库并有留痕 ——
 
 func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 	f := newPricingFixture(t)
@@ -571,7 +528,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 
 	req := pfReq(f, productenums.PricingRuleCostMultiple, "{\"multiplier\":1.5}", productenums.PricingRoundingNone, productenums.PricingScopeProduct, p.ID)
 
-	// ① 预览：算得出来、看得见逐变体明细，但一个字都没落库。
 	preview, err := f.svc.PreviewPricing(ctx, &productdto.PricingPreviewReq{PricingRuleReq: req})
 	if err != nil {
 		t.Fatalf("预览失败: %v", err)
@@ -599,7 +555,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 		t.Fatalf("预览不该留痕，实际 %d 条", n)
 	}
 
-	// ② 应用：落库 + 留痕（规则 / 尾数 / 范围 / 操作人 / 备注 + 逐变体原价→新价）。
 	applied, err := f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: req, Note: "成本上涨，整店上调", OperatorID: "42",
 	})
@@ -631,7 +586,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 		t.Fatalf("留痕计数与目标不符：%+v", batch)
 	}
 
-	// 明细：逐变体「原价 → 新价」。
 	detailBatch, err := f.svc.GetPriceAdjustment(ctx, &productdto.GetPriceAdjustmentReq{ID: batch.ID})
 	if err != nil {
 		t.Fatalf("读留痕详情失败: %v", err)
@@ -650,7 +604,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 		t.Fatalf("明细应是原价→新价，实际 %+v", itemByOld)
 	}
 
-	// ③ 幂等：同一条规则再应用一次没有任何改动 → 明确报错，且不再新增留痕。
 	if _, err = f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{PricingRuleReq: req}); err == nil ||
 		!strings.Contains(err.Error(), productenums.ErrPricingNothingChanged) {
 		t.Fatalf("无改动时应返回 ErrPricingNothingChanged，实际 %v", err)
@@ -659,7 +612,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 		t.Fatalf("无改动的应用不该留痕，实际 %d 条", n)
 	}
 
-	// ④ 目标不存在时不留痕、不改价。
 	missing := "00000000-0000-0000-0000-000000000000"
 	if _, err = f.svc.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: pfReq(f, productenums.PricingRuleFixedPrice, "{\"amount\":1}", "", productenums.PricingScopeProduct, missing),
@@ -671,8 +623,6 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 	}
 }
 
-// —— 验收 5：不进构建管线，构建期读的是落库后的确定值 ——
-
 func TestPricingPersistsValueReadByBuildTime(t *testing.T) {
 	f := newPricingFixture(t)
 	if f == nil {
@@ -681,7 +631,6 @@ func TestPricingPersistsValueReadByBuildTime(t *testing.T) {
 	ctx := context.Background()
 	p := pfCreateProduct(t, f, "构建期读价商品", 500, 200)
 
-	// 构建期读价：实体类型解析器（与生产构建同一份实现）读 product.price（由变体派生）。
 	resolvePrice := func() string {
 		t.Helper()
 		buildCtx := core.WithBuildProjectID(ctx, f.projectID)
@@ -704,7 +653,7 @@ func TestPricingPersistsValueReadByBuildTime(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("应用调价失败: %v", err)
 	}
-	// 构建期读到的就是落库后的确定值（没有第二次计算，也没有运行时求值）。
+
 	if got := resolvePrice(); got != "649.99" {
 		t.Fatalf("改价后构建期应读到 649.99，实际 %q", got)
 	}
@@ -714,9 +663,7 @@ func TestPricingPersistsValueReadByBuildTime(t *testing.T) {
 }
 
 func TestPricingHasNoBuildPipelineDependency(t *testing.T) {
-	// 定价是「改价动作」：它只写 product_variants.price，不参与构建期计算。
-	// 这条断言把「不进构建管线」钉在源码依赖上 —— 一旦有人给定价源码加了
-	// builder / pipeline / artifact 的 import，测试立刻失败。
+
 	serviceDir := filepath.Join("..", "..", "..", "..", "internal", "module", "product", "service")
 	banned := []string{
 		"go_wp/internal/builder",
@@ -743,8 +690,6 @@ func TestPricingHasNoBuildPipelineDependency(t *testing.T) {
 		}
 	}
 }
-
-// —— 与自动标签的衔接：价格落库后按「变体写操作后」的时机重算归属 ——
 
 func TestPricingRecalculatesAutoTags(t *testing.T) {
 	f := newPricingFixture(t)
@@ -778,7 +723,6 @@ func TestPricingRecalculatesAutoTags(t *testing.T) {
 	}
 }
 
-// tagHitIDs 取某标签当前命中的商品 id。
 func tagHitIDs(t *testing.T, f *pricingFixture, tagID string) []string {
 	t.Helper()
 	hits, err := f.svc.ListTagProducts(context.Background(), &productdto.ListTagProductsReq{TagID: tagID})
@@ -791,8 +735,6 @@ func tagHitIDs(t *testing.T, f *pricingFixture, tagID string) []string {
 	}
 	return out
 }
-
-// —— 迁移：权限点与后台菜单已 seed ——
 
 func TestPricingPermissionsAndMenusSeeded(t *testing.T) {
 	f := newPricingFixture(t)
@@ -819,9 +761,6 @@ func TestPricingPermissionsAndMenusSeeded(t *testing.T) {
 	}
 }
 
-// —— 后台页（真实 Jet 模板 + 真实 service）——
-
-// newPricingPageEngine 装配只挂定价页的测试引擎。
 func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	t.Helper()
 	f := newPricingFixture(t)
@@ -834,7 +773,7 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), handle.ProductPricingPage)
 	engine.POST("/api/product/pricing/preview", producthttp.NewProductHandle(f.svc).PreviewPricing)
-	// 预览与应用都走 JSON API，页面只负责首次 GET。
+
 	engine.POST("/api/product/pricing/apply", producthttp.NewProductHandle(f.svc).ApplyPricing)
 	return engine, f
 }
@@ -846,7 +785,6 @@ func TestPricingAdminPages(t *testing.T) {
 	}
 	p := pfCreateProduct(t, f, "后台改价商品", 500, 200)
 
-	// 页面：规则参考表 + 表单 + 留痕区都要渲染出来。
 	rec := httptestGet(engine, "/admin/product-pricing?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("定价页应 200，实际 %d：%s", rec.Code, rec.Body.String())
@@ -862,7 +800,6 @@ func TestPricingAdminPages(t *testing.T) {
 		}
 	}
 
-	// 预览：200 JSON 明细（不落库），不返回 HTML。
 	form := url.Values{}
 	form.Set("projectId", f.projectID)
 	form.Set("ruleType", productenums.PricingRuleFixedPrice)
@@ -886,7 +823,6 @@ func TestPricingAdminPages(t *testing.T) {
 		t.Fatalf("页面试算不该改库，实际 %v", got)
 	}
 
-	// 非法参数：400 JSON；前端基座保持现有 DOM 输入。
 	bad := url.Values{}
 	bad.Set("projectId", f.projectID)
 	bad.Set("ruleType", productenums.PricingRuleCostMultiple)
@@ -900,7 +836,6 @@ func TestPricingAdminPages(t *testing.T) {
 		t.Fatalf("页面上不应出现 enums 裸 key，实际 %s", rec.Body.String())
 	}
 
-	// 应用：接口回执（含本次改动数），价格落库、留痕可见。
 	form.Set("note", "后台改价")
 	rec = postForm(engine, "/api/product/pricing/apply", form)
 	appliedEnv := decodeJSONEnvelope(t, rec)
@@ -925,7 +860,6 @@ func TestPricingAdminPages(t *testing.T) {
 		}
 	}
 
-	// 无改动时应用：失败回执（不写空台账）。
 	rec = postForm(engine, "/api/product/pricing/apply", form)
 	if got := decodeJSONEnvelope(t, rec); got.Code == http.StatusOK || strings.TrimSpace(got.Message) == "" {
 		t.Fatalf("无改动时应用应回失败 + 可读文案，实际 %d：%q", got.Code, got.Message)

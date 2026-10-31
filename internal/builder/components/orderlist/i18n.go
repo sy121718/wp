@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// 固定界面文案属于构建期前端，访客接口只提供状态与金额事实。
 var labelFallbacks = map[string]string{
 	"Loading":           "正在读取订单…",
 	"Unavailable":       "订单暂不可用，请稍后重试。",

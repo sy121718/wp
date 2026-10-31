@@ -1,7 +1,5 @@
 package articlelist
 
-// jet.go — Jet 渲染路径：集合解析 → 排序 → 截断 → 卡片视图。
-
 import (
 	"fmt"
 	"strings"
@@ -9,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// CardView 单张文章卡片的渲染数据。
 type CardView struct {
 	Image      string
 	Alt        string
@@ -21,7 +18,6 @@ type CardView struct {
 	HasHref    bool
 }
 
-// View 文章列表渲染视图。
 type View struct {
 	Layout       string
 	GridTemplate string
@@ -32,10 +28,6 @@ type View struct {
 	EmptyText    string
 }
 
-// BuildView 解析集合 → 排序 → 截断 → 映射成卡片视图。
-//
-// 顺序是刻意的：先排序再截断。反过来会变成「取最新 6 条」先按默认序截断、
-// 结果拿到的是最早那 6 条（典型的静默错序）。
 func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error) {
 	v := View{
 		Layout:   effectiveLayout(p),
@@ -48,14 +40,12 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		source = strings.TrimSpace(p.CollectionSource)
 	}
 	if source == "" {
-		// 未选择数据源：渲染空态，**不碰集合解析器** ——
-		// 刚拖出来还没挑源时不查库、也不该让整页编译失败。
+
 		v.Empty = true
 		v.EmptyText = effectiveEmptyText(p)
 		return v, nil
 	}
-	// 专用组件优先用**业务侧声明的受限数据源**（issue #35：只有读集合 / 元数据 /
-	// 可筛值，写方法不在接口上）；未注入时退回通用集合注册表（兼容单测与渐进切换）。
+
 	if ctx == nil {
 		return View{}, fmt.Errorf("节点 %s: 编译上下文为空", node.ID)
 	}
@@ -81,8 +71,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		v.EmptyText = effectiveEmptyText(p)
 		return v, nil
 	}
-	// 站内链接本地化（与 cardstack 同源）：LinkPrefix 是作者填的站内逻辑路径，
-	// 多语言前缀在构建期由本地化器加上。
+
 	prefix := effectiveLinkPrefix(p)
 	prefix = ctx.ResolveSiteLink(prefix)
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
@@ -105,7 +94,6 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	return v, nil
 }
 
-// itemText 取集合项里的字符串字段（缺失 / 非字符串 → 空串）。
 func itemText(item map[string]any, field string) string {
 	if item == nil {
 		return ""
@@ -120,10 +108,6 @@ func itemText(item map[string]any, field string) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// sortArticles 按 orderBy 排序（默认保持集合源的确定性序）。
-//
-// 集合源给的是「更新时间倒序」，所以 newest 是恒等、oldest 才需要反转 ——
-// 不在这里重新发明一套排序口径，避免与列表页的默认序分叉。
 func sortArticles(items []map[string]any, order string) {
 	switch order {
 	case "oldest":
@@ -131,13 +115,12 @@ func sortArticles(items []map[string]any, order string) {
 			items[i], items[j] = items[j], items[i]
 		}
 	case "newest", "":
-		// 集合源默认即「更新时间倒序」，恒等。
+
 	default:
-		// 未知取值：保持源序（不 panic —— 作者的旧配置不该让整页构建失败）。
+
 	}
 }
 
-// effectiveLabel 卡片链接文案。
 func effectiveLabel(p *Props) string {
 	if p != nil {
 		if t := strings.TrimSpace(p.Label); t != "" {
@@ -147,7 +130,6 @@ func effectiveLabel(p *Props) string {
 	return defaultLabel
 }
 
-// effectiveLinkPrefix 链接前缀（默认 "/"，与默认的 article 路径模式 "/{slug}" 一致）。
 func effectiveLinkPrefix(p *Props) string {
 	if p == nil {
 		return "/"
@@ -158,7 +140,6 @@ func effectiveLinkPrefix(p *Props) string {
 	return "/"
 }
 
-// effectiveEmptyText 空态文案。
 func effectiveEmptyText(p *Props) string {
 	if p != nil {
 		if t := strings.TrimSpace(p.EmptyText); t != "" {

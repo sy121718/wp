@@ -1,19 +1,10 @@
 package builder
 
-// fragment_base_test.go — 片段基座样式的注入判据与粒度（审计 UIK-003 第二层 / UIK-005）。
-//
-// 三条验收直接来自条目原文：
-//  ① 「不使用官方组件而直接写 hx-get 的页面，片段样式正常」—— 判据必须是页面特征，
-//     不是「页面上放了哪个组件」；
-//  ② 「只用购物车的页面不带订单片段样式」—— 按片段能力分族；
-//  ③ 片段样式在产物里只出现一次（迁移前靠 CSSBuckets 的规则去重，现在靠一次拼接）。
-
 import (
 	"strings"
 	"testing"
 )
 
-// fragmentCSSFor 走一遍真实的注入判定（无脚本源模式：本文件只关心 CSS）。
 func fragmentCSSFor(t *testing.T, html string) string {
 	t.Helper()
 	css, _, err := uiAssetsForScan(collectHTMLScan(html), "/* ui css */", nil)
@@ -23,8 +14,6 @@ func fragmentCSSFor(t *testing.T, html string) string {
 	return css
 }
 
-// TestFragmentBaseStyleInjectedByHxTargetOnly 判据是「页面指向 /_fragments/ 的 htmx 请求」，
-// 而不是「用了哪个组件」——UIK-005 的原始症状就是自定义入口拿不到样式。
 func TestFragmentBaseStyleInjectedByHxTargetOnly(t *testing.T) {
 	css := fragmentCSSFor(t, "<div data-site-cart>购物车</div>")
 	if !strings.Contains(css, ".sky-cart-item {") {
@@ -33,19 +22,18 @@ func TestFragmentBaseStyleInjectedByHxTargetOnly(t *testing.T) {
 	if strings.Contains(css, ".sky-orders-item {") {
 		t.Fatalf("页面没引用订单片段，不该带上订单片段样式（UIK-005 的按能力细分）；实际 CSS:\n%s", css)
 	}
-	// 片段样式与控件基座彼此独立：没有控件类时 ui.css 不该被带进来。
+
 	if strings.Contains(css, "/* ui css */") {
 		t.Fatalf("页面没有用任何控件类，控件基座样式不该被片段样式「顺带」注入；实际 CSS:\n%s", css)
 	}
 }
 
-// TestFragmentBaseStyleNotInjectedWithoutFragmentReference 指向别处的 htmx 请求不带片段样式。
 func TestFragmentBaseStyleNotInjectedWithoutFragmentReference(t *testing.T) {
 	for _, html := range []string{
 		"<div hx-get='/api/products?q=1'></div>",
 		"<form hx-post='/cart'></form>",
-		"<div data-fragments='/_fragments/ordersList'></div>", // 非 htmx 属性：不是消费入口
-		"<script>var s = '/_fragments/ordersList';</script>",  // 脚本里的字符串不算引用
+		"<div data-fragments='/_fragments/ordersList'></div>",
+		"<script>var s = '/_fragments/ordersList';</script>",
 	} {
 		css := fragmentCSSFor(t, html)
 		if strings.Contains(css, ".sky-cart-item {") {
@@ -54,7 +42,6 @@ func TestFragmentBaseStyleNotInjectedWithoutFragmentReference(t *testing.T) {
 	}
 }
 
-// TestFragmentBaseStyleInRealProductDocument 产物级：写了 hx-post 就拿到样式（不经组件登记）。
 func TestFragmentBaseStyleInRealProductDocument(t *testing.T) {
 	doc, err := RenderDocument(&CompiledPage{
 		HTML:     "<div data-site-cart></div>",
@@ -69,7 +56,6 @@ func TestFragmentBaseStyleInRealProductDocument(t *testing.T) {
 	}
 }
 
-// TestFragmentCapabilityTablesCoverEachOther 两张表（有样式族 / 无样式族）互相闭合。
 func TestFragmentCapabilityTablesCoverEachOther(t *testing.T) {
 	styled := FragmentStyleCapabilities()
 	unstyled := FragmentUnstyledCapabilities()

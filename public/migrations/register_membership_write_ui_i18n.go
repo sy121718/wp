@@ -1,6 +1,5 @@
 package migrations
 
-// Explicit pairs keep a missing language eligible for backfill.
 func init() {
 	registerSeed(Seed{
 		Version:      "606-membership-write-ui-i18n",

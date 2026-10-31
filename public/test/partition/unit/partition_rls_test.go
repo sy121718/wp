@@ -1,18 +1,5 @@
 package unit
 
-// partition_rls_test.go — 分区子表的工程隔离覆盖（审计 DB-02）的护栏。
-//
-// 缺陷形态：迁移 215 用**静态分区名数组**加策略，而迁移 173 / EnsureAhead 按部署时间
-// **动态**建分区 —— 部署月落在 215 名单之外的库，那些分区从来没有策略；
-// 而 PG 的 ENABLE / FORCE ROW LEVEL SECURITY 不递归到分区。
-//
-// 本文件盯四件事，每一件都有对应的失败方式：
-//   1. 巡检能**发现**缺口（否则「修好了」只能靠读代码相信）；
-//   2. 迁移 507 能**修**缺口，且**不假定策略名**（全库存在 4 个策略名，按名字过滤会误判）；
-//   3. EnsureAhead 重建 DEFAULT 分区时**不留下没有策略的兜底桶** —— 这是本批次发现的
-//      第二个缺口：建表走 CREATE TABLE IF NOT EXISTS，稳态不重建，所以缺口平时看不出来，
-//      但一旦该分区被手工删掉，重建出来的那个恰好是数据兜底落点。
-
 import (
 	"context"
 	"os"
@@ -24,13 +11,8 @@ import (
 	"go_wp/internal/partition"
 )
 
-// reconcileSQLPath 迁移 507 的磁盘原文（相对本测试包目录 = public/test/partition/unit）。
-//
-// 直接读**文件**而不是复用 Go 里的常量：迁移的真源就是那个 .sql，测试要验证的正是
-// 「这份文件能在真库上跑通且幂等」。写死 SQL 常量会让测试与迁移文件悄悄分叉。
 const reconcileSQLPath = "../../../migrations/507_partition_rls_reconcile.sql"
 
-// runSQLFile 读取并执行一个迁移 SQL 文件（整段交给 PG：注释 + 单条语句）。
 func runSQLFile(t *testing.T, db *gorm.DB, path string) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -42,7 +24,6 @@ func runSQLFile(t *testing.T, db *gorm.DB, path string) {
 	}
 }
 
-// rlsFlags 读一张表的 RLS 开关与「有没有策略」。
 func rlsFlags(t *testing.T, db *gorm.DB, table string) (enabled, forced, hasPolicy bool) {
 	t.Helper()
 	var n int64
@@ -68,7 +49,6 @@ func rlsFlags(t *testing.T, db *gorm.DB, table string) (enabled, forced, hasPoli
 	return enabled, forced, pol > 0
 }
 
-// gapTables 取巡检结果里的表名集合。
 func gapTables(gaps []partition.RLSGap) map[string]string {
 	out := make(map[string]string, len(gaps))
 	for _, g := range gaps {
@@ -77,16 +57,10 @@ func gapTables(gaps []partition.RLSGap) map[string]string {
 	return out
 }
 
-// TestAuditPartitionRLSCoverage 巡检能发现缺口、507 能修、重复执行幂等。
-//
-// 这是 DB-02 的主验收：迁移跑完的稳态应当无缺口 —— 若这里一开始就有缺口，
-// 说明 173 建出的分区没有被 215 / 507 覆盖（本仓当前的部署月恰好落在 215 名单内，
-// 所以这条断言在现有环境是绿的；换一个部署月的库就会红，那正是缺陷本身）。
 func TestAuditPartitionRLSCoverage(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
-	// ① 稳态：迁移（含 507）跑完后不应有缺口。
 	gaps, checked, err := partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
@@ -99,9 +73,6 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	}
 	t.Logf("稳态受检分区 %d 个，缺口 0 处", checked)
 
-	// ② 造一个「越界月分区」：215 的静态名单里没有它、EnsureAhead 也不会碰它
-	// （它只回补 [上月, +3]，永不回头补历史，也不会管更远的将来）——
-	// 这正是「部署月不在名单内」时 173 建出来的分区的等价物。
 	if err := db.Exec("CREATE TABLE IF NOT EXISTS page_views_2030_01 PARTITION OF page_views" +
 		" FOR VALUES FROM ('2030-01-01') TO ('2030-02-01')").Error; err != nil {
 		t.Fatalf("构造越界分区失败: %v", err)
@@ -119,7 +90,6 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 	}
 	t.Logf("构造缺口后巡检命中：page_views_2030_01 缺 [%s]", missing)
 
-	// ③ 跑迁移 507 的磁盘原文 → 缺口消失（绿）。
 	runSQLFile(t, db, reconcileSQLPath)
 	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
@@ -132,7 +102,6 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 		t.Fatalf("507 执行后 page_views_2030_01 的 RLS 仍不完整：enable=%v force=%v policy=%v", en, fo, pol)
 	}
 
-	// ④ 再跑一次 → 仍无缺口（幂等；507 的快速路径在这个状态下不应产生任何 DDL）。
 	runSQLFile(t, db, reconcileSQLPath)
 	gaps, _, err = partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
@@ -142,11 +111,9 @@ func TestAuditPartitionRLSCoverage(t *testing.T) {
 		t.Fatalf("507 重复执行后出现缺口（幂等性破坏）：%v", gaps)
 	}
 
-	// ⑤ 子表的策略表达式必须与父表**逐字相同**（否则「复制」退化成「另写一份」）。
 	assertPredicateEqualsParent(t, db, "page_views", "page_views_2030_01")
 }
 
-// assertPredicateEqualsParent 断言分区上的每条策略都与父表同名策略的谓词逐字一致。
 func assertPredicateEqualsParent(t *testing.T, db *gorm.DB, parent, child string) {
 	t.Helper()
 	type polRow struct {
@@ -195,16 +162,6 @@ func assertPredicateEqualsParent(t *testing.T, db *gorm.DB, parent, child string
 	}
 }
 
-// TestMigration507CopiesArbitraryPolicyShapes 507 不假定策略名，也不假定策略形态。
-//
-// 判据来源（实测真库）：全库有 4 个策略名 —— `project_isolation`（迁移 215 铺开的 40+ 张表）
-// 与 `p_comments_project` / `p_membership_tiers_project` / `p_membership_assignments_project`
-// （462/466 系列自建）。**按策略名过滤的判据会把后三张表整片判成「没有隔离」**。
-// 这里用一张临时分区表把三种形态一次性钉住：
-//
-//	· 策略名任意（不是 project_isolation）；
-//	· 多条策略（PERMISSIVE 之间是 OR，漏掉一条就是放宽隔离）；
-//	· `FOR INSERT` 的策略只有 WITH CHECK、没有 USING（PostgreSQL 会拒绝不匹配的子句）。
 func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
@@ -219,10 +176,10 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 			" PARTITION BY RANGE (created_at)",
 		"CREATE TABLE dbtest_part_1 PARTITION OF dbtest_part" +
 			" FOR VALUES FROM ('2026-01-01') TO ('2026-02-01')",
-		// 任意策略名 + ALL 形态。
+
 		"CREATE POLICY p_dbtest_a ON dbtest_part USING" +
 			" (project_id = NULLIF(current_setting('app.project_id', true), '')::uuid)",
-		// 同一张表上的第二条策略，只覆盖 INSERT（只有 WITH CHECK）。
+
 		"CREATE POLICY p_dbtest_b ON dbtest_part FOR INSERT WITH CHECK (project_id IS NOT NULL)",
 	}
 	for _, s := range steps {
@@ -241,11 +198,9 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 	if !enabled || !forced || !hasPolicy {
 		t.Fatalf("507 没有为临时分区补隔离：enable=%v force=%v policy=%v", enabled, forced, hasPolicy)
 	}
-	// 逐字比对谓词与形状（含 cmd / permissive / roles）。
+
 	assertPredicateEqualsParent(t, db, "dbtest_part", "dbtest_part_1")
 
-	// 两条策略都必须到位：少一条 PERMISSIVE 策略不是「少一点保护」，而是**放宽** ——
-	// PERMISSIVE 策略之间是 OR 关系。
 	var n int64
 	if err := db.Raw("SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid" +
 		" WHERE c.relname = 'dbtest_part_1'").Scan(&n).Error; err != nil {
@@ -255,7 +210,6 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 		t.Errorf("分区上的策略数 = %d，期望 2（父表两条都要复制）", n)
 	}
 
-	// 幂等：再跑一次不得报错、不得重复建策略。
 	runSQLFile(t, db, reconcileSQLPath)
 	var again int64
 	if err := db.Raw("SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid" +
@@ -268,20 +222,12 @@ func TestMigration507CopiesArbitraryPolicyShapes(t *testing.T) {
 	_ = ctx
 }
 
-// TestEnsureAheadRestoresDefaultPartitionRLS EnsureAhead 重建 DEFAULT 分区时必须补策略。
-//
-// 这是本批次发现的第二个缺口（不在指令书清单里）：EnsureAhead 建完月分区会调
-// ensurePartitionRLS，但建 DEFAULT 分区那一段**没有**调 —— 而 DEFAULT 分区是数据兜底
-// 落点（没有月分区可写的数据全部落进它）。稳态下它不重建，所以缺口平时看不出来；
-// 一旦被手工 DROP / 误清理，重建出来的就是一个没有策略的桶。
-//
-// 红绿：把 EnsureAhead 里那一句 ensurePartitionRLS 调用去掉，本测试立刻变红。
 func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
 	const def = "page_views_default"
-	// 迁移建出来的那份先确认是好的（否则后面的断言无意义）。
+
 	if en, fo, pol := rlsFlags(t, db, def); !en || !fo || !pol {
 		t.Fatalf("夹具不成立：迁移建出的 %s 隔离不完整（enable=%v force=%v policy=%v）", def, en, fo, pol)
 	}
@@ -304,7 +250,6 @@ func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 	}
 	assertPredicateEqualsParent(t, db, "page_views", def)
 
-	// 巡检也应当认它：重建后的分区不能成为新的缺口。
 	gaps, _, err := partition.AuditPartitionRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
@@ -314,18 +259,10 @@ func TestEnsureAheadRestoresDefaultPartitionRLS(t *testing.T) {
 	}
 }
 
-// TestAuditRLSCoverageWhitelist 全库巡检：豁免名单由调用方传入，且巡检不是恒空。
-//
-// 双向断言是刻意的：只断言「传了豁免就为空」会被一条恒返回空的巡检骗过，
-// 而恒空的门禁比没有门禁更糟（它给出已经检查过的错觉）。
-//
-// 豁免名单的**值**不在这里定义（那是工程判断，归口 AGENTS.md 与 pkg/rls）——
-// 测试里写出来的这两个名字是审计 DB-01 的口径，用于对账，不是第二份真源。
 func TestAuditRLSCoverageWhitelist(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
 
-	// ① 不带豁免：必须能看到那两张已知的「刻意不隔离」表 —— 证明巡检查得出东西。
 	raw, checked, err := partition.AuditRLSCoverage(ctx, db)
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
@@ -340,8 +277,6 @@ func TestAuditRLSCoverageWhitelist(t *testing.T) {
 		}
 	}
 
-	// ② 带豁免：除这两张外不应有别的缺口。将来若新增一张带 project_id 却没做 RLS 的表，
-	// 这条会红 —— 那正是它应该有的行为（提醒补策略或补豁免理由）。
 	gaps, _, err := partition.AuditRLSCoverage(ctx, db, "build_jobs", "product_outbox_events")
 	if err != nil {
 		t.Fatalf("巡检失败: %v", err)
@@ -352,20 +287,6 @@ func TestAuditRLSCoverageWhitelist(t *testing.T) {
 	t.Logf("受检 %d 张带 project_id 的基表，豁免 2 张后缺口 0 处", checked)
 }
 
-
-// TestEnsureAheadReconcilesArbitraryPolicyShapes EnsureAhead 用的判据必须与迁移 507 同一份。
-//
-// 背景（本批次收口的差异）：改造前 EnsureAhead 走的是自己拼的 ensurePartitionRLS ——
-// 它认死「策略名 project_isolation + ScopedPredicate」一种形态，而 507 是**通用复制**
-// （逐条复制父表的 polname / polpermissive / polcmd / polroles / qual / withcheck）。
-// 两份判据的差异不是学术问题：真库存在 4 个策略名，认死名字的那一份对别的形态
-// 会补出一条**父表没有的**策略，同时**漏掉父表真实的那条**。
-//
-// 改造后的判据只有一份：EnsureAhead 末尾调 ReconcileRLS，而 ReconcileRLS 执行的
-// 就是 migrations.ReconcilePartitionRLSSQL()（507 的 SQL 原文）。
-//
-// 红绿：把 ReconcileRLS 换回旧的「只补 project_isolation」逻辑，本测试立刻变红
-// （临时分区上既没有父表的 p_dbtest_other，又凭空多出一条 project_isolation）。
 func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
@@ -378,10 +299,10 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	steps := []string{
 		"CREATE TABLE dbtest_ahead (id bigint, project_id uuid NOT NULL, created_at timestamptz NOT NULL)" +
 			" PARTITION BY RANGE (created_at)",
-		// 分区在**建表时**就有了，但没有任何策略 —— 模拟「部署月落在 215 名单之外」的历史分区。
+
 		"CREATE TABLE dbtest_ahead_1 PARTITION OF dbtest_ahead" +
 			" FOR VALUES FROM ('2026-01-01') TO ('2026-02-01')",
-		// 策略名刻意不用 project_isolation（真库的 p_comments_project 等就是这个形态）。
+
 		"CREATE POLICY p_dbtest_other ON dbtest_ahead USING" +
 			" (project_id = NULLIF(current_setting('app.project_id', true), '')::uuid)",
 	}
@@ -394,7 +315,6 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 		t.Fatal("夹具不成立：临时分区本该没有策略")
 	}
 
-	// EnsureAhead 只处理 Tables 里的三张表，但它末尾要跑全库对账 —— 本用例验证的正是那一句。
 	if _, err := partition.EnsureAhead(ctx, db, 3); err != nil {
 		t.Fatalf("EnsureAhead 失败: %v", err)
 	}
@@ -406,8 +326,6 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	}
 	assertPredicateEqualsParent(t, db, "dbtest_ahead", "dbtest_ahead_1")
 
-	// 反向断言：不许凭空多出父表没有的策略。多出的那条如果是 PERMISSIVE，
-	// 就与父表的策略形成 OR —— 那不是「多一点保护」，是放宽。
 	var extra int64
 	if err := db.Raw("SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid" +
 		" WHERE c.relname = 'dbtest_ahead_1' AND p.polname NOT IN" +
@@ -420,15 +338,6 @@ func TestEnsureAheadReconcilesArbitraryPolicyShapes(t *testing.T) {
 	}
 }
 
-// TestTableTimeColumnsMatchPartitionKeys Table.TimeColumn 的语义是「分区键（时间列）」，
-// 所以判据不是「这个列存在」，而是「它就是库里真实的分区键」。
-//
-// 为什么要这样钉：该字段**当前不被任何生产代码消费**（EnsureAhead 只用 Name，
-// 分区键在 CREATE TABLE … PARTITION OF 时由父表继承）。一个不被消费、又没人核对的字段，
-// 迟早会写错 —— 而它一旦写错，第一个拿它拼「按时间列删/归档」SQL 的人会拿到运行期错误
-// 或者更糟：删错范围。本用例把它与库里的真值（pg_get_partkeydef）绑在一起。
-//
-// 红绿：把任一 TimeColumn 改成错值（例如 page_views 写成 created_at），本用例立刻变红。
 func TestTableTimeColumnsMatchPartitionKeys(t *testing.T) {
 	db := newPartitionFixture(t)
 
@@ -442,8 +351,7 @@ func TestTableTimeColumnsMatchPartitionKeys(t *testing.T) {
 		if partkey == "" {
 			t.Fatalf("%s 不是分区表（夹具不成立）", tb.Name)
 		}
-		// pg_get_partkeydef 形如 "RANGE (create_time)"；只断列名在里面，
-		// 不断整串 —— 未来换分区策略（LIST / HASH）不该让这条用例变红。
+
 		if !strings.Contains(partkey, "("+tb.TimeColumn+")") {
 			t.Errorf("%s.TimeColumn = %q，但库里真实的分区键是 %q ——"+
 				"声明的分区键与真值不符（该字段无消费方，不会在别处报错）",

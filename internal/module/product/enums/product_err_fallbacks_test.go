@@ -1,21 +1,5 @@
 package productenums
 
-// product_err_fallbacks_test.go — 兜底表的**覆盖面**守卫（task-158 §7.3）。
-//
-// 判据是**双向**的，两个方向都判失败：
-//   · 本包声明了一条 Err* 常量却没有登记兜底 → 失败（缺词条时页面会出现裸 key，
-//     而这正是「加业务错误」最容易漏的一步）；
-//   · 表里登记了一个不属于本包的 key（已改名的旧 key / 别模块的 key）→ 失败
-//     （登记表退化成注释就没人看它了，与 rawSQLDebtList / controller-i18n 白名单同一判据）。
-//
-// 为什么 VariantSkip* 反过来要求「不许登记」：它们是「这一行被跳过」的原因，
-// 不是错误消息 —— 取值过不了 pkg/facing.IsBusinessKey（判据只认 Err*/Msg* 与点分 key 两种形态），
-// 所以经 productErrFactOf 永远拿不到，登记了就是死条目。它们的兜底表是本目录的
-// VariantSkipFallbacks（product_skip_fallbacks.go），由同名 _test 守卫。
-//
-// 表本身不参与取词优先级（先查 sys_i18n 词条），所以「多登记」不影响行为 —— 能变红的只有
-// 「漏登记」与「登记了不存在 / 不该登记的 key」，这两件都不该靠人眼守。
-
 import (
 	"fmt"
 	"go/ast"
@@ -31,9 +15,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// errKeyConstants 扫本包全部非测试源码里的 key 类常量：取值 → 常量名。
-//
-// 用 AST 而不是正则：常量块里的对齐、注释、跨行拼接都不影响取值，改名重构也不会让守卫静默失效。
 func errKeyConstants(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -57,7 +38,6 @@ func isKeyConstant(name string) bool {
 	return false
 }
 
-// forEachStringConst 遍历本包非测试源文件里 `Name = "字面量"` 形态的常量。
 func forEachStringConst(t *testing.T, fn func(name, value string)) {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -103,7 +83,6 @@ func forEachStringConst(t *testing.T, fn func(name, value string)) {
 	}
 }
 
-// TestEveryErrorKeyHasFallback 每条业务错误 key 都要有展示兜底，且表里不许混进「不是错误」的 key。
 func TestEveryErrorKeyHasFallback(t *testing.T) {
 	consts := errKeyConstants(t)
 
@@ -147,10 +126,6 @@ func TestEveryErrorKeyHasFallback(t *testing.T) {
 	}
 }
 
-// TestErrorKeyPassesBusinessJudgement 错误 key 必须过**共享**的业务判据。
-//
-// 判据只有一份（pkg/facing.IsBusinessKey，pkg/response.IsBusinessError 转发它）：装一条过不了
-// 判据的错误 key，service 返回它时会被各路出口判成内部错误 —— 那种 key 要么改形态，要么去出口层放。
 func TestErrorKeyPassesBusinessJudgement(t *testing.T) {
 	consts := errKeyConstants(t)
 	for val, name := range consts {
@@ -164,10 +139,6 @@ func TestErrorKeyPassesBusinessJudgement(t *testing.T) {
 	}
 }
 
-// TestErrorKeyValuesAreUnique 同一个取值不能被两条常量共用。
-//
-// 兜底表按**取值**（= sys_i18n 的 item_key）索引：两条常量取值相同而文案不同时，map 会静默
-// 只留一条（Go 允许重复取值的常量）。
 func TestErrorKeyValuesAreUnique(t *testing.T) {
 	seen := map[string]string{}
 	forEachStringConst(t, func(name, val string) {
@@ -181,10 +152,6 @@ func TestErrorKeyValuesAreUnique(t *testing.T) {
 	})
 }
 
-// TestFallbackTablesAreDisjoint 三张展示兜底表不许有交集。
-//
-// 同一条 key 在两张表里注册两句话时，页面显示哪句由「哪张表先被查」决定 —— 那属于实现细节，
-// 不该由它决定文案。
 func TestFallbackTablesAreDisjoint(t *testing.T) {
 	tables := map[string]map[string]string{
 		"errFallbacks":            errorFallbackTexts(),
@@ -207,7 +174,6 @@ func TestFallbackTablesAreDisjoint(t *testing.T) {
 	}
 }
 
-// TestFallbackTextsAreReadable 兜底原文必须是一句可读的话，而不是裸 key 的副本。
 func TestFallbackTextsAreReadable(t *testing.T) {
 	for key, text := range errorFallbackTexts() {
 		if strings.TrimSpace(text) == "" {

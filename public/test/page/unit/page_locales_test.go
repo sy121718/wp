@@ -1,10 +1,5 @@
 package unit
 
-// page_locales_test.go — 站点语言清单驱动的路由登记（多语言 P3，docs/06-D §14 D10）。
-//
-// 消费点：建页/改草稿/改 URL 按「站点启用语言」逐语言登记与迁移 page_routes 占用行，
-// 使每种语言的访问路径都有独立占用；sitemap 与 hreflang 也以同一清单为真源。
-
 import (
 	"context"
 	"testing"
@@ -16,7 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// reservedPaths 读取页面全部 reserved 占用路径（升序）。
 func reservedPaths(t *testing.T, db *gorm.DB, projectID, pageID string) []string {
 	t.Helper()
 	var paths []string
@@ -28,8 +22,6 @@ func reservedPaths(t *testing.T, db *gorm.DB, projectID, pageID string) []string
 	return paths
 }
 
-// TestPageRoutesRegisteredPerLocale 启用 zh-CN + en-US 后，
-// 建页登记两行 reserved、改草稿/改 URL 两行一起迁移。
 func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -52,7 +44,6 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 		t.Fatalf("建页应为每语言登记一行 reserved: 期望 %v，实际 %v", want, got)
 	}
 
-	// 改草稿路径：两语言占用一起迁移。
 	if _, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: page.ID, ExpectedVersion: page.DraftVersion,
 		DraftPath: "/about-us", DraftDocument: []byte(headingDocument),
@@ -65,8 +56,6 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 		t.Fatalf("改草稿后应迁移全部语言占用: 期望 %v，实际 %v", want, got)
 	}
 
-	// 两语言各自构建 + 发布：各自 active 行。
-	// 构建返回值不必留存：激活的产物以 page_publications 为准（见下方断言）。
 	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatalf("zh 构建失败: %v", err)
@@ -87,7 +76,7 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 	if kind := routeKind(t, db, projectID, "/en/about-us"); kind != pubmodel.RouteActive {
 		t.Fatalf("/en/about-us 应 active，实际 %q", kind)
 	}
-	// 历史产物同语言可有多行；路由必须指向该语言当前激活账本的 hash。
+
 	for _, c := range []struct{ lang, path string }{
 		{"zh-CN", "/about-us"},
 		{"en-US", "/en/about-us"},
@@ -98,7 +87,6 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 		}
 	}
 
-	// 删除页面：全部语言占用释放。
 	if err = svc.Delete(ctx, &pagedto.DeleteReq{ID: page.ID}); err != nil {
 		t.Fatalf("删除页面失败: %v", err)
 	}

@@ -1,9 +1,6 @@
 package productenums
 
-// 商品错误明细声明。service 交付键与具名参数，响应出口取词并填充；
-// 缺词或占位符无效时使用声明处中文兜底。
 const (
-	// 定价规则参数。
 	DetailPricingParamsNotObject   = "product.err.pricingParamsNotObject"
 	DetailPricingParamRequired     = "product.err.pricingParamRequired"
 	DetailPricingParamNotNumber    = "product.err.pricingParamNotNumber"
@@ -14,7 +11,6 @@ const (
 	DetailPricingUnknownRuleType   = "product.err.pricingUnknownRuleType"
 	DetailPricingUnknownRounding   = "product.err.pricingUnknownRounding"
 
-	// 标签规则参数。
 	DetailTagParamsNotObject = "product.err.tagParamsNotObject"
 	DetailTagParamRequired   = "product.err.tagParamRequired"
 	DetailTagParamNotInteger = "product.err.tagParamNotInteger"
@@ -26,31 +22,23 @@ const (
 	DetailTagPriceOrderWrong = "product.err.tagPriceOrderWrong"
 	DetailTagUnknownRuleType = "product.err.tagUnknownRuleType"
 
-	// —— 变体组合（service/product_variant.go）——
 	DetailVariationCountExceed           = "product.err.variationCountExceed"
 	DetailVariationDimensionExceed       = "product.err.variationDimensionExceed"
 	DetailVariationAttributeUnreferenced = "product.err.variationAttributeUnreferenced"
 	DetailVariationAttributeNotInProduct = "product.err.variationAttributeNotInProduct"
 	DetailVariationValueNotEnabled       = "product.err.variationValueNotEnabled"
 
-	// —— 批量改价范围（service/product_pricing.go）——
 	DetailPricingFilterProjectRequired   = "product.err.pricingFilterProjectRequired"
 	DetailPricingFilterConditionRequired = "product.err.pricingFilterConditionRequired"
 	DetailPricingTargetTooMany           = "product.err.pricingTargetTooMany"
 
-	// 相关商品引用。
 	DetailRelatedSelfReference = "product.err.relatedSelfReference"
 	DetailRelatedMissing       = "product.err.relatedMissing"
 	DetailRelatedCrossProject  = "product.err.relatedCrossProject"
 
-	// —— 删除守卫的跨工程引用明细（service/product_ref_guard.go）——
 	DetailRefGuardBlocked = "product.err.refGuardBlocked"
 )
 
-// ErrDetailFallbacks 上面那组词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。
-//
-// 占位符与词条一一对应（{field} / {n} / {max} / {attribute} / {value} / {ids} / {keys} …）：
-// 读侧填不上某个占位符时判为坏词条、回落到这里的中文原文，而不是把 {field} 摆给运营看。
 var ErrDetailFallbacks = map[string]string{
 	DetailPricingParamsNotObject:   "参数必须是 JSON 对象",
 	DetailPricingParamRequired:     "{field} 必填",

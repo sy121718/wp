@@ -1,16 +1,3 @@
-// product_warehouse_multi_stock_test.go — 商品侧第一批（2026-09-19 用户拍板口径）的链路用例。
-//
-// 覆盖五组口径（AGENTS.md §1.1 / §1.4 / §9.3）：
-//
-//  1. **仓库侧裸码 / 商品侧带前缀**：同一商品多仓各一行，仓库里那行的 sku_code 是裸码；
-//  2. **多仓逐仓建行 + 前缀仓定前缀**：勾了哪些仓就在哪些仓各建一行，第一个仓决定主体 SKU 前缀；
-//  3. **认领 / 复用**：该仓已有同裸码的行 → 复用不新建（同仓同码两行是这批要消灭的东西）；
-//  4. **数量默认无限**：不传数量 = 不跟踪（track_quantity = false）；显式填数字 = 跟踪并写入
-//     （0 是合法值，与「没填」严格区分）；
-//  5. **主体 SKU 预检**（工程内唯一）与**列表库存三态聚合**（∞ / 求和 / 未入库，混合绝不求和），
-//     以及一次商品保存的**事务回滚**（留痕失败 → 三张表都不留痕）。
-//
-// 表结构一律来自生产迁移（support.NewMigratedPGTestDB），断言直查真源列。
 package feature
 
 import (
@@ -40,7 +27,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// wstockRow 库存真源的一行（断言用的最小投影）。
 type wstockRow struct {
 	WarehouseID   string `gorm:"column:warehouse_id"`
 	SKUCode       string `gorm:"column:sku_code"`
@@ -48,7 +34,6 @@ type wstockRow struct {
 	Quantity      int    `gorm:"column:quantity"`
 }
 
-// wstockRows 某商品在各仓的全部库存行。
 func (f *wpickFixture) wstockRows(t *testing.T, productID string) []wstockRow {
 	t.Helper()
 	var rows []wstockRow
@@ -59,9 +44,6 @@ func (f *wpickFixture) wstockRows(t *testing.T, productID string) []wstockRow {
 	return rows
 }
 
-// wdropStockRows 清掉某商品的全部库存行 —— 用来还原「未入库」这个真实形态
-// （历史/导入商品就是没有库存行的那一类；新建路径必然给默认仓落一行，
-// 见 dto.CreateReq.WarehouseID 的兜底语义，所以只能事后清）。
 func (f *wpickFixture) wdropStockRows(t *testing.T, productID string) {
 	t.Helper()
 	if err := f.db.Exec("DELETE FROM inventory_stocks WHERE product_id = ?", productID).Error; err != nil {
@@ -69,7 +51,6 @@ func (f *wpickFixture) wdropStockRows(t *testing.T, productID string) {
 	}
 }
 
-// wstockRowCount 该 (仓库, 裸码) 有几行 —— 「复用不新建」的判据就是它恒为 1。
 func (f *wpickFixture) wstockRowCount(t *testing.T, warehouseID, skuCode string) int {
 	t.Helper()
 	var n int
@@ -80,7 +61,6 @@ func (f *wpickFixture) wstockRowCount(t *testing.T, warehouseID, skuCode string)
 	return n
 }
 
-// wvariantCount 某商品的变体数。
 func (f *wpickFixture) wvariantCount(t *testing.T, productID string) int {
 	t.Helper()
 	var n int
@@ -90,7 +70,6 @@ func (f *wpickFixture) wvariantCount(t *testing.T, productID string) int {
 	return n
 }
 
-// assertNoTraceOfSKU 断言三张表里都没有这个商品的任何痕迹（事务整体回滚的判据）。
 func assertNoTraceOfSKU(t *testing.T, f *wpickFixture, containerSKU, bareCode string) {
 	t.Helper()
 	var products, variants, stocks int
@@ -110,10 +89,6 @@ func assertNoTraceOfSKU(t *testing.T, f *wpickFixture, containerSKU, bareCode st
 	}
 }
 
-// failingChangesPort 变更记录端口替身：永远返回错误（故障注入用）。
-//
-// 嵌入 MasterDataService 只为了满足接口的其余方法（本用例不会调用它们）；
-// 事务性由 RecordChangesTx 这一条被覆写的方法决定 —— 正是「商品保存的最后一步失败」。
 type failingChangesPort struct {
 	masterdatacontract.MasterDataService
 	err error
@@ -127,8 +102,6 @@ func (p *failingChangesPort) RecordChangesTx(ctx context.Context, tx *gorm.DB, i
 	return p.err
 }
 
-// TestProductCreateMultiWarehouseBareCodes 多仓逐仓建行：仓库侧是**同一条裸码**，
-// 商品侧（主体 + 首个变体）带前缀仓的仓码前缀。
 func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -138,7 +111,7 @@ func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	p, err := f.products.Create(context.Background(), &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "多仓商品", Slug: "multi-wh",
 		DefaultPrice: &price, SKUCode: "DRAWERSMOKE_001",
-		// 勾两个仓：苏州（默认仓）在前 = 前缀仓。
+
 		WarehouseIDs: []string{f.sz.ID, f.sh.ID},
 	})
 	if err != nil {
@@ -155,11 +128,11 @@ func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 		t.Fatalf("勾了两个仓应各建一行，实际 %d 行：%+v", len(rows), rows)
 	}
 	for _, row := range rows {
-		// 仓库侧永远是**裸码**：带上前缀就会出现「同一条货在仓里有两个名字」。
+
 		if row.SKUCode != "DRAWERSMOKE_001" {
 			t.Fatalf("仓库侧编码应是裸码 DRAWERSMOKE_001，实际 %q（仓 %s）", row.SKUCode, row.WarehouseID)
 		}
-		// 不传数量 = 不跟踪（无限）。
+
 		if row.TrackQuantity || row.Quantity != 0 {
 			t.Fatalf("不传数量应是不跟踪（无限），实际 track=%v qty=%d", row.TrackQuantity, row.Quantity)
 		}
@@ -172,7 +145,6 @@ func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	}
 }
 
-// TestProductCreateClaimWarehouseDecidesPrefix 前缀仓 = 显式列表的第一个仓（与勾选顺序一致）。
 func TestProductCreateClaimWarehouseDecidesPrefix(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -188,7 +160,7 @@ func TestProductCreateClaimWarehouseDecidesPrefix(t *testing.T) {
 	if got := f.wpickContainerSKU(t, p.ID); got != "SH_TEE-9001" {
 		t.Fatalf("前缀仓应是列表第一个仓（SH），实际主体 SKU %q", got)
 	}
-	// 单值兼容形态（warehouseId）依旧可用：等价于只勾一个仓。
+
 	p2, err := f.products.Create(context.Background(), &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "单值兼容", Slug: "claim-single",
 		SKUCode: "TEE-9002", WarehouseID: f.sh.ID,
@@ -204,10 +176,6 @@ func TestProductCreateClaimWarehouseDecidesPrefix(t *testing.T) {
 	}
 }
 
-// TestProductCreateReusesExistingWarehouseCode 认领 / 复用：该仓已有同裸码的行 → **不新建**。
-//
-// 「从仓库选」这条来路的全部语义就在这里 —— 旧实现会给新变体再建一行（仓库侧还带前缀），
-// 于是同一条货在同一个仓有两行、SKU 串两边对不上。
 func TestProductCreateReusesExistingWarehouseCode(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -219,7 +187,7 @@ func TestProductCreateReusesExistingWarehouseCode(t *testing.T) {
 
 	p, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "认领已有编码", Slug: "reuse-claim",
-		// 前缀仓是 SH（第一个）：那里已有 REUSE-1 这一行。
+
 		SKUCode: "REUSE-1", WarehouseIDs: []string{f.sh.ID},
 	})
 	if err != nil {
@@ -231,7 +199,7 @@ func TestProductCreateReusesExistingWarehouseCode(t *testing.T) {
 	if got := f.wstockRowCount(t, f.sh.ID, "REUSE-1"); got != 1 {
 		t.Fatalf("同仓同码必须只有一行（复用不新建），实际 %d 行", got)
 	}
-	// 复用不改写既有行：宿主那一行还在，且仍指向宿主的变体。
+
 	var owner string
 	if err := f.db.Raw("SELECT variant_id FROM inventory_stocks WHERE warehouse_id = ? AND sku_code = ?",
 		f.sh.ID, "REUSE-1").Scan(&owner).Error; err != nil {
@@ -245,8 +213,6 @@ func TestProductCreateReusesExistingWarehouseCode(t *testing.T) {
 	}
 }
 
-// TestProductCreateQuantityTracking 数量口径：不传 = 不跟踪（无限）；显式填 = 跟踪并写入
-// （0 是合法值，与「没填」严格区分 —— DDL 的 CHECK (track_quantity OR quantity = 0) 也是这条）。
 func TestProductCreateQuantityTracking(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -283,10 +249,6 @@ func TestProductCreateQuantityTracking(t *testing.T) {
 	}
 }
 
-// TestProductListStockAggregationThreeStates 列表「库存」列的三态聚合（AGENTS.md §1.4）。
-//
-// 混合状态**绝不求和**：任一仓不跟踪就整体显示「无限」—— 求和等于把无限当 0，
-// 页面会显示成「有货」，而实际是「卖不完」。这条是本文件里最值钱的断言。
 func TestProductListStockAggregationThreeStates(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -294,10 +256,6 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// ① 未入库：商品没有任何库存行（三态里的「未入库」）。
-	//
-	// 这条**不是**「不传仓就没有库存行」—— CreateReq 的 WarehouseID 为空时兜底默认仓，
-	// 新建路径一定会落一行。未入库是「历史 / 导入商品」那一类，所以先建再清行。
 	nonePrice := 99.0
 	none, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "未入库商品", Slug: "agg-none",
@@ -315,7 +273,6 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 		t.Fatalf("没有任何库存行应显示未入库，实际 state=%q total=%d", got.StockState, got.StockTotal)
 	}
 
-	// ② 全部跟踪：两仓各 5 → 求和 10。
 	five := 5
 	tracked, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "全部跟踪", Slug: "agg-tracked", SKUCode: "AGG-TRACKED",
@@ -335,7 +292,6 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 		t.Fatalf("分仓明细应有两行，实际 %+v", got.StockWarehouses)
 	}
 
-	// ③ 混合：SZ 不跟踪 + SH 跟踪 5 —— 商品级必须是 ∞，且**总数不得是 5**。
 	mixed, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "混合状态", Slug: "agg-mixed", SKUCode: "AGG-MIXED",
 		WarehouseIDs: []string{f.sz.ID},
@@ -372,11 +328,6 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	}
 }
 
-// TestProductCreateReuseInSecondWarehouse 多仓创建时第二个仓已有同裸码 → **复用**（不是错误）。
-//
-// 这一条刻意写清楚：AGENTS.md §1.1 的多仓口径是「该仓已有同裸码的行 → 复用那一行，不新建（幂等）」，
-// 所以「第 N 个仓已有该编码」是**正常路径**，不是冲突；真正的冲突只剩两处 ——
-// 主体 SKU 在工程内重复（预检 + 唯一索引兜底）与仓内外部编码指向了另一个商品（N:1 弱校验）。
 func TestProductCreateReuseInSecondWarehouse(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -393,7 +344,7 @@ func TestProductCreateReuseInSecondWarehouse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("一半新建一半复用应成功: %v", err)
 	}
-	// 默认仓（SZ）原本没有这条码 → 建一行；上海仓已有 → 复用，不新建。
+
 	if got := f.wstockRowCount(t, f.sz.ID, "SHARE-1"); got != 1 {
 		t.Fatalf("第一个仓应新建一行，实际 %d 行", got)
 	}
@@ -405,9 +356,6 @@ func TestProductCreateReuseInSecondWarehouse(t *testing.T) {
 	}
 }
 
-// TestProductCreateContainerSKUTakenIsBusinessError 撞别人的主体 SKU：
-// service 必须交回能归口的业务 key —— 中文文案、以及「绝不出现索引名 / SQLSTATE」的泄漏判据
-// 都在端点白名单那一层（product_err_fallback_tables_test.go），这里钉的是「拒得对」。
 func TestProductCreateContainerSKUTakenIsBusinessError(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -428,8 +376,6 @@ func TestProductCreateContainerSKUTakenIsBusinessError(t *testing.T) {
 	}
 }
 
-// TestProductUpdateSKUPrecheckRejectsDuplicate 编辑路径同样先预检（excludeID = 自身）：
-// 撞别人的主体编码 → 业务错误；改回自己的编码 → 放行。
 func TestProductUpdateSKUPrecheckRejectsDuplicate(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -455,7 +401,7 @@ func TestProductUpdateSKUPrecheckRejectsDuplicate(t *testing.T) {
 	if err == nil || err.Error() != productenums.ErrContainerSKUTaken {
 		t.Fatalf("撞别人的主体编码应返回 %s，实际 %v", productenums.ErrContainerSKUTaken, err)
 	}
-	// 自己那一份编码重存不该被自己撞下（excludeID 的作用域就是这一条）。
+
 	own := f.wpickContainerSKU(t, mine.ID)
 	if _, err = f.products.Update(ctx, &productdto.UpdateReq{
 		ID: mine.ID, ProjectID: f.projectID, SKUCode: &own,
@@ -467,8 +413,6 @@ func TestProductUpdateSKUPrecheckRejectsDuplicate(t *testing.T) {
 	}
 }
 
-// TestProductCreateRollsBackWhenChangeRecordFails 事务回滚（用例 A）：商品 + 首个变体 +
-// 各仓库存行都写进同一个事务，最后一步「变更记录」失败时**三张表都不留痕**。
 func TestProductCreateRollsBackWhenChangeRecordFails(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -492,8 +436,6 @@ func TestProductCreateRollsBackWhenChangeRecordFails(t *testing.T) {
 	assertNoTraceOfSKU(t, f, "SZ_ROLLBACK-1", "ROLLBACK-1")
 }
 
-// TestSaveVariantListRollsBackOnFailure 事务回滚（用例 C）：变体清单的「新增 + 清单外删除」
-// 是一个整体动作，留痕失败时**既没有新增也没有删除**。
 func TestSaveVariantListRollsBackOnFailure(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -524,7 +466,7 @@ func TestSaveVariantListRollsBackOnFailure(t *testing.T) {
 	_, err = f.products.SaveVariantList(ctx, &productdto.SaveVariantListReq{
 		ProductID: p.ID, ProjectID: f.projectID,
 		Rows: []productdto.VariantListResp{
-			// 清单里只有这个新组合：既要求新建它，也要求删掉清单外的无规格占位变体。
+
 			{SKUCode: "LIST-1_RED_V", OptionValues: json.RawMessage(`{"color":"red"}`)},
 		},
 	})
@@ -544,9 +486,6 @@ func TestSaveVariantListRollsBackOnFailure(t *testing.T) {
 	}
 }
 
-// TestProductPageCreateMultiWarehouseForm 页面表单的多仓勾选 + 数量开关直通 service：
-// 字段名一旦分叉（模板写 warehouseIds、handler 读 warehouseId），运营勾的仓与填的数量就会**静默丢失**
-// —— 商品建出来了，仓库里却没有对应的行。这条用例钉的就是这条链路。
 func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -559,13 +498,9 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
-	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
-	// 断言表单控件存在与否的用例要把这条路由注册上，否则请求 404、页面为空、断言全红。
+
 	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
 
-	// 新建整页里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
-	// 多仓勾选（同名多值）、数量开关与数量框、可搜索下拉的候选 datalist。
-	// 落点从列表页抽屉改为整页：那个 template 已退役（见 getProductsNewPage 的注释）。
 	pageRec := httptest.NewRecorder()
 	engine.ServeHTTP(pageRec, httptest.NewRequest(http.MethodGet, "/admin/products/new?project="+f.projectID, nil))
 	page := pageRec.Body.String()
@@ -581,7 +516,7 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	created, err := cfCreateWith(f.products, url.Values{
 		"projectId": {f.projectID}, "name": {"表单多仓"}, "slug": {"form-multi-wh"},
 		"type": {"variant"}, "sku": {"FORM-1"},
-		// 勾两个仓（同名多值）+ 显式跟踪数量 3。
+
 		"warehouseIds":  {f.sz.ID, f.sh.ID},
 		"trackQuantity": {"1"}, "quantity": {"3"},
 	})
@@ -600,10 +535,6 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	}
 }
 
-// TestProductPageCreateUntrackedQuantityNeverPrefilled 表单的「不跟踪」语义：
-// 勾了跟踪但数量框留空 → 写 0（明确没货）；不勾跟踪 → 不传数量（无限）。
-// 「无限时把数量框预填 0」是这条用例要挡住的那个错 —— 0 与无限在页面上看起来一样，
-// 在库里的含义却一个是「卖光」一个是「要多少有多少」。
 func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -629,13 +560,11 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		return id
 	}
 
-	// ① 不勾「跟踪数量」：数量字段不提交（模板里数量框此时是 disabled 的）。
 	post("不跟踪", "form-untracked", "FORM-U1", url.Values{"warehouseIds": {f.sz.ID}})
 	if rows := f.wstockRows(t, productIDOf("form-untracked")); len(rows) != 1 || rows[0].TrackQuantity || rows[0].Quantity != 0 {
 		t.Fatalf("不跟踪应是不传数量（无限），实际 %+v", rows)
 	}
 
-	// ② 勾了跟踪但数量框留空：写 0（跟踪 + 明确没货）。
 	post("跟踪零", "form-zero", "FORM-Z1", url.Values{
 		"warehouseIds": {f.sz.ID}, "trackQuantity": {"1"}, "quantity": {""},
 	})
@@ -643,8 +572,6 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		t.Fatalf("跟踪但留空应写 0（明确没货），实际 %+v", rows)
 	}
 
-	// ③ 负数直接拒绝（不落库）。页面改 fetch 之后不再有原生表单的 min="0" 兜底，
-	// 这条守卫落在 service 上（product.go 的 Create）。
 	if _, err := cfCreateWith(f.products, url.Values{
 		"projectId": {f.projectID}, "name": {"负数"}, "slug": {"form-neg"},
 		"type": {"variant"}, "sku": {"FORM-N1"}, "warehouseIds": {f.sz.ID},
@@ -657,9 +584,6 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 	}
 }
 
-// TestProductsPageStockColumnRendersThreeStates 列表「库存」列的三态**渲染**：
-// 服务端算出的三态必须在页面上真的长成 ∞ / 数字 / 未入库（模板分支写错、
-// i18n key 写错都会在这里暴露），并且每个商品一行详情（可展开的分仓明细）。
 func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -687,7 +611,7 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建未入库商品失败: %v", err)
 	}
-	// 未入库 = 没有库存行（新建必落默认仓，见上面 agg-none 那条的说明）。
+
 	f.wdropStockRows(t, colNone.ID)
 
 	gin.SetMode(gin.TestMode)
@@ -708,10 +632,10 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 		t.Fatalf("三个商品应各有一个库存单元格，实际 %d 个", got)
 	}
 	for _, want := range []string{
-		"∞ 无限",       // 不跟踪（无限）
-		"未入库",        // 没有任何库存行
-		"stock-rows", // 分仓明细（details 展开的内容）
-		"10",         // 两仓各 5 的求和
+		"∞ 无限",
+		"未入库",
+		"stock-rows",
+		"10",
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("库存列缺少 %q", want)
@@ -719,10 +643,6 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	}
 }
 
-// stockFailurePort 恒失败的库存端口：模拟「库存一侧读不通」的那次请求。
-//
-// 只替换一个方法：页面路径上的其余库存能力（仓库清单 / 认领）仍走真实实现，
-// 于是这里测到的是「聚合失败时的渲染」，不是一整套桩的行为。
 type stockFailurePort struct {
 	inventorycontract.ProductStockPort
 	err error
@@ -732,11 +652,6 @@ func (s stockFailurePort) WarehouseStocksByProducts(context.Context, string, []s
 	return nil, s.err
 }
 
-// TestProductsPageStockUnknownRendersFailure 库存聚合失败时列表**如实显示故障**（PRD-017）。
-//
-// 旧模板按 StockState 兜底成 "none"，于是读失败被渲染成「未入库」—— 与「真的没有库存行」
-// 长得一样。本用例钉两件事：① 显示「库存读取失败」；② 不展开分仓（那一屏的每个仓
-// 都会是伪造的「未入库」），同时列表整体仍然是 200、商品行照常出现。
 func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -753,13 +668,10 @@ func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	// 故障只注入 **service**：StockUnknown 是 fillProductStock 打的标记
-	// （internal/module/product/service/product.go 的 WarehouseStocksByProducts 失败分支），
-	// 而 handler 的 SetInventoryDeps 只换页面装配自己的仓库清单依赖，service 仍拿着真实
-	// inventory —— 那样库存查询会成功、该商品 0 行、照实渲染「未入库」，测到的就不是故障了。
+
 	f.products.SetInventoryService(stockFailurePort{ProductStockPort: f.inventory, err: errors.New("injected: 库存读失败")})
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
-	// handler 侧保持真实依赖：仓库清单要是也被桩替换，渲染路径就偏离被测事实。
+
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 
@@ -783,7 +695,6 @@ func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
 	}
 }
 
-// TestProductStockUnknownI18nSeeded 迁移 698 的词条必须真的进库（中 / 英各一条）。
 func TestProductStockUnknownI18nSeeded(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -803,10 +714,6 @@ func TestProductStockUnknownI18nSeeded(t *testing.T) {
 	}
 }
 
-// TestContainerSKUTakenI18nSeeded 迁移 264 的词条必须真的进库。
-//
-// enums 常量的值就是 i18n key：缺词条时页面会把 ErrContainerSKUTaken 这个裸 key
-// 原样显示给运营（「该主体 SKU 已被占用」这句可行动的话就丢了）。
 func TestContainerSKUTakenI18nSeeded(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {

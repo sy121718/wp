@@ -1,17 +1,11 @@
 package pubdto_test
 
-// seo_audit_req_test.go — 体检入参的请求形状：谁决定用哪个工程。
-//
-// 判据钉在 DTO 一处，控制器不再手读 c.Query。本文件只测请求；
-// 错误状态码的断言在 enums 的包内。
-
 import (
 	"testing"
 
 	pubdto "go_wp/internal/module/publication/dto"
 )
 
-// TestSeoAuditReqResolveProject body 优先、空白回落、双空。
 func TestSeoAuditReqResolveProject(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -40,10 +34,6 @@ func TestSeoAuditReqResolveProject(t *testing.T) {
 	}
 }
 
-// TestSeoAuditReqResolveProjectDoesNotMutate 解析只读：不改请求对象本身。
-//
-// 控制器绑定失败后要回显表单，入参被就近改写会让「回显的值」与「实际提交的值」
-// 不一致，而这种差异只在特定分支可见。
 func TestSeoAuditReqResolveProjectDoesNotMutate(t *testing.T) {
 	body := &pubdto.SeoAuditReq{Project: "  raw  "}
 	query := &pubdto.SeoAuditReq{Project: " q "}

@@ -10,7 +10,6 @@ import (
 	"strings"
 )
 
-// ListActionTargetReferences 合并本模块当前可编辑文档与实际产物依赖，读取失败不当作无引用。
 func (s *Service) ListActionTargetReferences(ctx context.Context, projectID, targetKind, targetID string) ([]source.ActionTargetReference, error) {
 	rows, err := s.m.ListInstances(ctx, projectID, "")
 	if err != nil {
@@ -54,7 +53,7 @@ func (s *Service) SetActionTargetInvalidator(invalidator source.ActionTargetInva
 
 func (s *Service) ensureActionTargetUnused(ctx context.Context, projectID, id string) error {
 	reader := s.actionTargetReferences
-	// 独立模块装配只含自己；生产装配强制注入四类源码与两类产物引用的联合读取。
+
 	if reader == nil {
 		reader = s
 	}

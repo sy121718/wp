@@ -1,10 +1,5 @@
 package builder
 
-// loader_jet_test.go — 加载器九形态的链路级验证（ParsePage → Compile → 产物 HTML/CSS）。
-// 单元级见 internal/builder/components/loader/loader_test.go；
-// 本文件的期望值独立于实现里的 shapes 形态表（硬编码产物结构），
-// 用来兜底「形状表自身写错」这种情况——模板分支与 CSS 却彼此自洽。
-
 import (
 	"fmt"
 	"strings"
@@ -13,7 +8,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// loaderVariants 九形态 → 期望的产物 DOM 片段与 CSS 选择器后缀。
 var loaderVariants = []struct {
 	variant string
 	html    string
@@ -30,7 +24,6 @@ var loaderVariants = []struct {
 	{"bounce", strings.Repeat(`<i class="sky-loader-bounce" aria-hidden="true"></i>`, 3), "bounce"},
 }
 
-// loaderDocJSON 拼装九形态文档（节点 id 依次 ld1..ld9）。
 func loaderDocJSON() string {
 	parts := make([]string, 0, len(loaderVariants))
 	for i, v := range loaderVariants {
@@ -40,7 +33,6 @@ func loaderDocJSON() string {
 		strings.Join(parts, ",") + `]}`
 }
 
-// compileLoaderDoc 编译九形态文档。
 func compileLoaderDoc(t *testing.T) *CompiledPage {
 	t.Helper()
 	p, err := ParsePage([]byte(loaderDocJSON()))
@@ -58,7 +50,6 @@ func compileLoaderDoc(t *testing.T) *CompiledPage {
 	return res
 }
 
-// TestCompileLoaderVariantsHTML 九形态都产出各自的结构（模板漏写形态 = 这里红）。
 func TestCompileLoaderVariantsHTML(t *testing.T) {
 	res := compileLoaderDoc(t)
 	for _, v := range loaderVariants {
@@ -68,7 +59,6 @@ func TestCompileLoaderVariantsHTML(t *testing.T) {
 	}
 }
 
-// TestCompileLoaderVariantsCSS 九形态的样式与关键帧都进产物，且选择器对得上模板输出的类名。
 func TestCompileLoaderVariantsCSS(t *testing.T) {
 	res := compileLoaderDoc(t)
 	for i, v := range loaderVariants {

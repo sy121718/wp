@@ -1,13 +1,5 @@
 package aiservice
 
-// ai_protocol_reasoning_test.go — 思考过程（reasoning）的解析。
-//
-// 为什么值得单独钉：**它失败时页面完全正常**。字段名认不出 → Reasoning 为空 →
-// 悬浮球不显示那一段，用户看到的是「这个功能不存在」；日志里只有一次成功的调用。
-// 而字段名在两族协议里本来就不一样（chat 用消息上的 reasoning_content / reasoning，
-// responses 用 output[] 里与 message 并列的 reasoning 条目），换一家供应商就会踩到，
-// 假上游的用例也不会替我们发现。
-
 import (
 	"testing"
 
@@ -40,8 +32,6 @@ func TestParseChatReplyReadsReasoningAlias(t *testing.T) {
 	}
 }
 
-// 只有思考过程、没有正文也没有工具调用 = 这一轮没产出，仍须判失败。
-// 反过来（把 Reasoning 也算作产出）会让外层拿一个空回答去写会话事件。
 func TestParseChatReplyReasoningAloneIsNotOutput(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"","reasoning_content":"我在想"}}]}`)
 	if _, err := parseProtocolReply(aienums.ProtocolOpenAIChatCompletions, body); err == nil {
@@ -49,7 +39,6 @@ func TestParseChatReplyReasoningAloneIsNotOutput(t *testing.T) {
 	}
 }
 
-// responses 的思维链是 output[] 里与 message 并列的一种条目，不在 message 上。
 func TestParseResponsesReplyReadsReasoningItem(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[
 		{"type":"reasoning","summary":[{"type":"summary_text","text":"先看订单表。"}]},
@@ -66,8 +55,6 @@ func TestParseResponsesReplyReadsReasoningItem(t *testing.T) {
 	}
 }
 
-// 顶层 output_text 那条捷径出口也必须带上思考过程：
-// 漏掉它时，同一次回答「走哪条取值路径」会决定思考过程显不显示。
 func TestParseResponsesReplyReasoningWithTopLevelText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"结论",
 		"output":[{"type":"reasoning","summary":[{"type":"summary_text","text":"推理"}]}]}`)
@@ -80,7 +67,6 @@ func TestParseResponsesReplyReasoningWithTopLevelText(t *testing.T) {
 	}
 }
 
-// 多段思考要拼起来：模型一次可能给出几段，只留最后一段会让人只看到结论前的半句。
 func TestParseResponsesReplyJoinsReasoningSegments(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[
 		{"type":"reasoning","summary":[{"type":"summary_text","text":"第一段"}]},
@@ -95,8 +81,6 @@ func TestParseResponsesReplyJoinsReasoningSegments(t *testing.T) {
 	}
 }
 
-// 上游return 空串/缺字段时 Reasoning 必须是空，而不是报错 ——
-// 「这家不返回思考过程」是常态，不是故障。
 func TestParseChatReplyWithoutReasoningIsEmpty(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"好"}}]}`)
 	reply, err := parseProtocolReply(aienums.ProtocolOpenAIChatCompletions, body)

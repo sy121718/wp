@@ -1,12 +1,5 @@
 package workbenchhttp
 
-// nav 组件有两种引用方式：按位置（Props.Menu，静态选项）与按**具体菜单项**
-//（Props.Navigation，需要列出本工程的菜单项）。后者是动态数据，走 entityref 机制：
-// 组件声明 ct:"entityref,navigation"，检查器按 refKind 找这里要选项。
-//
-// 未注入（测试装配 / 未接导航模块）时只返回「（不限）」，控件退化为空下拉而不是报错 ——
-// 与 entityref 其它来源（category/brand/tag）同一降级口径。
-
 import (
 	"context"
 	"go_wp/internal/middleware/builtin"
@@ -27,17 +20,11 @@ import (
 	"go_wp/pkg/response"
 )
 
-// NavigationPickerPort 导航菜单项能力（消费者侧最窄接口：列 + 建）。
-//
-// Create 供「检查器内就地新建菜单项」用：检查器此前只能从下拉里选已有项，想加一条就得
-// 离开编辑器去 /admin/navigations 建完再回来，上下文全丢。写回走 navigation 模块的契约
-// （不是直连它的 model），端口最小化仍按「检查器需要什么」判 —— 改 / 删 / 树都不进来。
 type NavigationPickerPort interface {
 	List(ctx context.Context, req *navigationdto.ListReq) (list []*navigationdto.NavigationResp, err error)
 	Create(ctx context.Context, req *navigationdto.CreateReq) (res *navigationdto.NavigationResp, err error)
 }
 
-// SetNavigationPicker 注入导航菜单项列表端口（装配期调用；未注入时下拉为空）。
 func (h *Handle) SetNavigationPicker(p NavigationPickerPort) {
 	if h == nil {
 		return
@@ -45,23 +32,9 @@ func (h *Handle) SetNavigationPicker(p NavigationPickerPort) {
 	h.svc.SetNavigationPicker(p)
 }
 
-// InspectorNavigationCreate POST /workbench/navigation/create
-//
-// 检查器里就地新建菜单项（nav 组件的「具体菜单项」字段）：返回新项的 id 与展示标签，
-// 客户端把它插入下拉并写回当前节点的 props —— 与手工选择走同一条提交流程。
-//
-// 边界：
-//
-//	· 写回走 navigation 契约的 Create，不直连它的 model；
-//	· 权限点沿用 /api/navigation/create（路由上挂 CasbinMiddlewareForPath）；
-//	· 只建**顶级**项（parentId 留空）：检查器没有层级上下文，随手挂到某一支下面
-//	  比建错位置更难发现；要做子项去菜单页。
-//	· 错误文案经 navigation 契约的 FacingText（命中白名单 → 可行动文案；未命中 → 归口
-//	  文案 + 日志），不直出 err.Error()。
 func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	if h == nil || h.svc == nil || h.svc.NavigationPicker() == nil {
-		// 归口译文：c.JSON 的 message 不经过模板取词层，直接写 MsgInternalError（裸 key）
-		// 会让前端弹出一串 "MsgInternalError"。
+
 		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.PageInternalText(c))
 		return
 	}
@@ -90,8 +63,6 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	})
 }
 
-// SEOScore 计算草稿文档的 SEO 评分。
-// POST /workbench/seo-score（form: draftDocument, url）→ 评分结果 JSON。
 func (h *Handle) SEOScore(c *gin.Context) {
 	req, ok := binding.Form[workbenchdto.SEOScoreReq](c)
 	if !ok {
@@ -110,7 +81,6 @@ func (h *Handle) SEOScore(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// requestScoreLang 评分使用的语言（后台 Cookie / Accept-Language，SEO-001）。
 func requestScoreLang(c *gin.Context) string {
 	return response.RequestLanguage(c)
 }

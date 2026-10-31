@@ -1,10 +1,5 @@
 package feature
 
-// history_restore_test.go — 修订历史「恢复」的服务端编排（HTMX 化，docs/09 §3）。
-//
-// 恢复 = 查修订 → 以当前 draftVersion 覆盖保存草稿（乐观锁）；
-// 客户端随后整页刷新重新注入文档。
-
 import (
 	"context"
 	"fmt"
@@ -22,7 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestHistoryRestoreOverwritesDraft 恢复到旧版本后草稿内容回到该版本。
 func TestHistoryRestoreOverwritesDraft(t *testing.T) {
 	_, svc, projectID := newPageService(t)
 	ctx := context.Background()
@@ -47,7 +41,7 @@ func TestHistoryRestoreOverwritesDraft(t *testing.T) {
 	if err != nil || len(revs) < 2 {
 		t.Fatalf("修订列表异常: %v（%d 条）", err, len(revs))
 	}
-	firstVersion := revs[len(revs)-1].Version // 列表按版本升序，最后一条为最早版本
+	firstVersion := revs[len(revs)-1].Version
 
 	gin.SetMode(gin.TestMode)
 	handle := pagehttp.NewPagesAdminHandle(svc, nil, nil, nil)

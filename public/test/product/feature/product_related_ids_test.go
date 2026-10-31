@@ -1,14 +1,3 @@
-// product_related_ids_test.go — related_ids 写路径的引用校验（审计 DB-03 §1.2 / PROD-01）。
-//
-// 缺陷形态：分类 / 标签 / 属性三条引用面都有「存在 + 同工程」的服务层校验，只有
-// related_ids（products 表的**同表自引用**）原样落库 —— 任意 uuid 都能写进 JSONB，
-// 而 JSON 数组成员没有任何数据库级外键兜底，写脏了只能靠人工对账发现。
-//
-// 本用例钉住四件事（缺任何一条都会让「相关商品」出现悬空 id 或环）：
-//  1. 引用不存在的商品 / 跨工程的商品 / 商品自己 → 拒绝；
-//  2. 拒绝时**一次列全**全部非法条目（id + 数量 + 跨工程条目的归属工程）；
-//  3. 拒绝是整体的：不许静默丢弃非法项后把剩下的写进去；
-//  4. 合法引用去重后落库（同一次提交写出同一份数组）。
 package feature
 
 import (
@@ -26,7 +15,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 )
 
-// secondProject 再建一个工程：跨工程引用场景需要「另一个工程的商品」。
 func (f *fixture) secondProject(t *testing.T) string {
 	t.Helper()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
@@ -37,7 +25,6 @@ func (f *fixture) secondProject(t *testing.T) string {
 	return p.ID
 }
 
-// mkRelatedProduct 建一个不带相关商品引用的商品（引用校验的「合法目标」）。
 func (f *fixture) mkRelatedProduct(t *testing.T, projectID, name, slug string) *productdto.ProductResp {
 	t.Helper()
 	res, err := f.svc.Create(context.Background(), &productdto.CreateReq{
@@ -49,7 +36,6 @@ func (f *fixture) mkRelatedProduct(t *testing.T, projectID, name, slug string) *
 	return res
 }
 
-// relatedIDsOf 读回商品的 related_ids（走真实读路径，不是内存里的实体）。
 func (f *fixture) relatedIDsOf(t *testing.T, projectID, id string) []string {
 	t.Helper()
 	res, err := f.svc.Get(context.Background(), &productdto.GetReq{ProjectID: projectID, ID: id})
@@ -59,7 +45,6 @@ func (f *fixture) relatedIDsOf(t *testing.T, projectID, id string) []string {
 	return res.RelatedIDs
 }
 
-// requireRelatedRejected 断言拒绝错误能定位到给定片段（并属于 ErrRelatedInvalid）。
 func requireRelatedRejected(t *testing.T, err error, wantFragments ...string) {
 	t.Helper()
 	if err == nil {
@@ -76,7 +61,6 @@ func requireRelatedRejected(t *testing.T, err error, wantFragments ...string) {
 	}
 }
 
-// TestCreateRelatedIDsRejectsMissingReference 新建时引用不存在的商品 → 拒绝且商品未创建。
 func TestCreateRelatedIDsRejectsMissingReference(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -99,7 +83,6 @@ func TestCreateRelatedIDsRejectsMissingReference(t *testing.T) {
 	}
 }
 
-// TestUpdateRelatedIDsRejectsMissingReference 更新时引用不存在的商品 → 拒绝且原引用不变。
 func TestUpdateRelatedIDsRejectsMissingReference(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -117,7 +100,6 @@ func TestUpdateRelatedIDsRejectsMissingReference(t *testing.T) {
 	}
 }
 
-// TestRelatedIDsRejectsCrossProjectReference 跨工程引用 → 拒绝，且错误里带上对方工程 id。
 func TestRelatedIDsRejectsCrossProjectReference(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -131,7 +113,7 @@ func TestRelatedIDsRejectsCrossProjectReference(t *testing.T) {
 	_, err := f.svc.Update(ctx, &productdto.UpdateReq{
 		ID: mine.ID, ProjectID: f.projectID, RelatedIDs: []string{theirs.ID},
 	})
-	// 跨工程条目必须带上对方工程 id：光有商品 id，运营找不到人解除。
+
 	requireRelatedRejected(t, err, theirs.ID, otherProject)
 
 	if got := f.relatedIDsOf(t, f.projectID, mine.ID); len(got) != 0 {
@@ -139,7 +121,6 @@ func TestRelatedIDsRejectsCrossProjectReference(t *testing.T) {
 	}
 }
 
-// TestRelatedIDsRejectsSelfReference 相关商品不能指向自己（自引用会让「相关商品」成环）。
 func TestRelatedIDsRejectsSelfReference(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -150,14 +131,10 @@ func TestRelatedIDsRejectsSelfReference(t *testing.T) {
 	_, err := f.svc.Update(ctx, &productdto.UpdateReq{
 		ID: p.ID, ProjectID: f.projectID, RelatedIDs: []string{p.ID},
 	})
-	// 明细是**编码产物**（词条 key + 具名参数）：service 层拿不到请求语言，中文由读侧
-	// productErrText 按语言还原（见 product_page_handle.go 的 productErrDetailText）。所以这里
-	// 断言的是 service 层的契约 —— 可定位的 key 与参数值，而不是最终中文；断言中文等于把
-	// 中间产物当输出，服务端一改成编码就会红，而它对不对根本不看这里。
+
 	requireRelatedRejected(t, err, p.ID, productenums.DetailRelatedSelfReference)
 }
 
-// TestRelatedIDsReportsAllInvalidAtOnce 三类问题一次列全，且整批拒绝（不部分写入）。
 func TestRelatedIDsReportsAllInvalidAtOnce(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -175,13 +152,11 @@ func TestRelatedIDsReportsAllInvalidAtOnce(t *testing.T) {
 	})
 	requireRelatedRejected(t, err, ghostA, ghostB, theirs.ID, mine.ID, otherProject)
 
-	// 「一次列全」另外一面：非法项一个都不许被静默丢弃后把其余的写进去。
 	if got := f.relatedIDsOf(t, f.projectID, mine.ID); len(got) != 0 {
 		t.Fatalf("整批拒绝后不该写入任何引用，实际 %v", got)
 	}
 }
 
-// TestRelatedIDsDedupAndPersist 合法引用去重后落库（保序），读回来与提交的顺序一致。
 func TestRelatedIDsDedupAndPersist(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -194,7 +169,7 @@ func TestRelatedIDsDedupAndPersist(t *testing.T) {
 
 	res, err := f.svc.Update(ctx, &productdto.UpdateReq{
 		ID: mine.ID, ProjectID: f.projectID,
-		// 重复 + 空白：去重后应只剩两个 id，且保持首次出现的顺序。
+
 		RelatedIDs: []string{first.ID, " ", first.ID, second.ID},
 	})
 	if err != nil {
@@ -209,7 +184,6 @@ func TestRelatedIDsDedupAndPersist(t *testing.T) {
 	}
 }
 
-// TestCreateRelatedIDsAcceptsSameProjectReferences 新建路径的合法引用照常落库（校验不放宽为拒绝一切）。
 func TestCreateRelatedIDsAcceptsSameProjectReferences(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -229,13 +203,6 @@ func TestCreateRelatedIDsAcceptsSameProjectReferences(t *testing.T) {
 	}
 }
 
-// TestRelatedOwnerLookupStaysScoped 归属诊断只回答「属于谁」，不把别工程的商品内容漏出来。
-//
-// 诊断是写入口的拒绝明细用的（本工程查不到 → 问一句归属）。这里直接对着 model 方法守边界：
-//   - 本工程的 id 照常回答归属；
-//   - 别工程的 id 也回答归属（这就是它的用途：明细里要报「属于工程 X」）；
-//   - 不存在的 id 不出现在结果里（调用方据此仍判「不存在」）；
-//   - 空白 / 空串 / 重复输入被归一，不给 uuid 列送脏值。
 func TestRelatedOwnerLookupStaysScoped(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -265,7 +232,6 @@ func TestRelatedOwnerLookupStaysScoped(t *testing.T) {
 	}
 }
 
-// TestRelatedOwnerLookupEmptyInputSkipsQuery 空输入不查库（也不能退化成「全部工程」）。
 func TestRelatedOwnerLookupEmptyInputSkipsQuery(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -280,11 +246,6 @@ func TestRelatedOwnerLookupEmptyInputSkipsQuery(t *testing.T) {
 	}
 }
 
-// TestRelatedIDsCrossProjectDetailNamesOwnerProject 跨工程引用的拒绝明细**必须点出对方工程**。
-//
-// 与上面的 TestRelatedIDsRejectsCrossProjectReference 的区别：那条守「整条被拒 + 明细能定位」，
-// 这条守「明细里那一段是**跨工程**那一段，不是不存在的」—— 两者判反了运营会去删一个
-// 根本不存在的商品。
 func TestRelatedIDsCrossProjectDetailNamesOwnerProject(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -298,7 +259,7 @@ func TestRelatedIDsCrossProjectDetailNamesOwnerProject(t *testing.T) {
 		ID: mine.ID, ProjectID: f.projectID, RelatedIDs: []string{theirs.ID},
 	})
 	requireRelatedRejected(t, err, theirs.ID+"@"+otherProject, productenums.DetailRelatedCrossProject)
-	// 不能反过来被判成「不存在」：两条明细词条是不同的事实。
+
 	if msg := err.Error(); strings.Contains(msg, productenums.DetailRelatedMissing) {
 		t.Fatalf("跨工程条目不该被判成不存在: %v", err)
 	}

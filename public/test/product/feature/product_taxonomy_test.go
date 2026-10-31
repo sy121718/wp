@@ -1,17 +1,3 @@
-// Package feature product 模块 feature 测试 —— 分类与品牌（issue #10）。
-//
-// 覆盖本票四条验收（真实 PostgreSQL + 生产 DDL + 真实 service）：
-//  1. 分类支持父子层级、排序、slug 与 SEO 字段（列表返回树，Depth 由服务端填好）；
-//  2. 品牌为独立实体，含 logo、描述、slug 与 SEO 字段；
-//  3. 商品可挂多个分类并指定主分类，可指定品牌（引用必须同工程且真实存在）；
-//  4. 后台可管理分类与品牌（页面 GET/POST 链路 + 真实 Jet 渲染）。
-//
-// 另覆盖三条容易踩的边界：
-//
-//	· 分类树不许成环（挂到自身 / 自己的后代下一律拒绝），也不许有子级时被删；
-//	· 被商品引用（附属或主分类、品牌）的实体不许删，否则商品侧会留下悬空引用；
-//	· 「主分类必属于附属分类」的不变量由服务端维持（显式指定则自动纳入，
-//	  附属列表被替换掉原主分类时自动解绑）。
 package feature
 
 import (
@@ -36,7 +22,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// TestCategoryTreeHierarchySortSlugSEO 验收 1：父子层级 + 排序 + slug + SEO 字段。
 func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -63,7 +48,7 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("建第二个顶级分类失败: %v", err)
 	}
-	// 中文名派生不出 slug 时由服务端兜底随机段，不能落空。
+
 	if child.Slug == "" || !strings.HasPrefix(child.Slug, "c-") {
 		t.Fatalf("中文名分类应派生兜底 slug，实际 %q", child.Slug)
 	}
@@ -75,7 +60,7 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	if len(tree) != 2 {
 		t.Fatalf("应有 2 个顶级分类，实际 %d", len(tree))
 	}
-	// 顶级按 sort 升序：女装(1) 在 男装(2) 之前。
+
 	if tree[0].Name != "女装" || tree[1].Name != "男装" {
 		t.Fatalf("顶级分类应按排序号升序，实际 %s / %s", tree[0].Name, tree[1].Name)
 	}
@@ -95,7 +80,6 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 		t.Fatalf("分类 SEO / 图 / 描述字段应按媒体地址规范回读: %+v", got)
 	}
 
-	// slug 在工程内唯一。
 	if _, err = f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{
 		ProjectID: f.projectID, Name: "男装副本", Slug: "men",
 	}); err == nil || err.Error() != productenums.ErrCategorySlugTaken {
@@ -103,10 +87,6 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	}
 }
 
-// TestCategoryBoundedPage 校验「按树根分页 + 搜索带路径 + 工程隔离」。
-//
-// 列表一次渲染整棵树：浏览态一页 = 一页顶级分类及其全部后代，
-// 搜索态一页 = 命中所属的根分类（按命中分页会让同一棵树跨页重复出现）。
 func TestCategoryBoundedPage(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -133,13 +113,11 @@ func TestCategoryBoundedPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 另一个工程里的同名分类：只是用来证明工程作用域把命中数压住（下面断言 MatchTotal == 1）。
+
 	if _, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: otherProject.ID, Name: "命中叶", Slug: "foreign"}); err != nil {
 		t.Fatal(err)
 	}
 
-	// 分页单位是**树根**：一页 = 一页的树，不是一层节点 ——
-	// 列表把整棵子树（含全部后代）一次渲染出来，所以首页带着 root 的两级后代。
 	first, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 1, Size: 1})
 	if err != nil || first.Total != 2 || len(first.Items) != 1 {
 		t.Fatalf("根级首页: %+v, %v", first, err)
@@ -166,7 +144,7 @@ func TestCategoryBoundedPage(t *testing.T) {
 		search.Items[0].Children[0].Children[0].ID != leaf.ID || !search.Items[0].Children[0].Children[0].Matched {
 		t.Fatalf("搜索祖先链应成树且只标命中项: %+v", search.Items[0])
 	}
-	// MatchTotal 只数命中项：另一个工程里的同名分类不参与（工程作用域收窄）。
+
 	if search.MatchTotal != 1 {
 		t.Fatalf("跨工程同名分类不应计入命中: %d", search.MatchTotal)
 	}
@@ -190,7 +168,6 @@ func TestCategoryBoundedPage(t *testing.T) {
 	}
 }
 
-// TestCategoryCrossProjectAndCycleGuards 换父级的三条硬约束：跨工程 / 自环 / 环。
 func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -218,7 +195,7 @@ func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 		err.Error() != productenums.ErrCategoryCycle {
 		t.Fatalf("挂到自身应返回 ErrCategoryCycle，实际 %v", err)
 	}
-	// 把「根」挂到自己的后代「子」下面 → 成环，必须拒绝。
+
 	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: root.ID, ParentID: &child.ID}); err == nil ||
 		err.Error() != productenums.ErrCategoryCycle {
 		t.Fatalf("挂到自己的后代应返回 ErrCategoryCycle，实际 %v", err)
@@ -233,7 +210,6 @@ func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 		t.Fatalf("跨工程父级应返回 ErrCategoryParentMismatch，实际 %v", err)
 	}
 
-	// 换父级成功路径：子 → 顶级（空串即提升）。
 	top := ""
 	upd, err := f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: child.ID, ParentID: &top})
 	if err != nil {
@@ -244,7 +220,6 @@ func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 	}
 }
 
-// TestCategoryDeleteGuards 有子级 / 被商品引用的分类不许删。
 func TestCategoryDeleteGuards(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -266,12 +241,10 @@ func TestCategoryDeleteGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	// 本批起守卫的拒绝带**可定位明细**（审计 DB-03 §5.1 第 2 条 / PROD-02）：业务 key 逐字不变，
-	// 后面接「引用面 / 工程 / 商品 id」。断言因此是「key 相等 + 明细在」，比原来只认整串更强。
+
 	err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: child.ID})
 	assertRefGuardError(t, err, productenums.ErrCategoryInUse, "products.category_ids")
 
-	// 解绑后即可删除。
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{}}); err != nil {
 		t.Fatalf("解绑分类失败: %v", err)
 	}
@@ -280,8 +253,6 @@ func TestCategoryDeleteGuards(t *testing.T) {
 	}
 }
 
-// TestBrandCRUDAndGuards 验收 2：品牌是独立实体（logo / 描述 / slug / SEO），
-// 且被商品引用时不许删。
 func TestBrandCRUDAndGuards(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -323,7 +294,7 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	if p.BrandID != brand.ID {
 		t.Fatalf("商品应挂上品牌，实际 %q", p.BrandID)
 	}
-	// 同上：品牌守卫的拒绝也带可定位明细（跨工程引用此前不可见 ⇒ 外键静默解绑）。
+
 	err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID})
 	assertRefGuardError(t, err, productenums.ErrBrandInUse, "products.brand_id")
 
@@ -336,8 +307,6 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	}
 }
 
-// TestProductCategoryRefsAndInvariant 验收 3：商品挂多个分类 + 指定主分类 + 指品牌，
-// 以及「主分类必属于附属分类」不变的维护规则。
 func TestProductCategoryRefsAndInvariant(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -353,7 +322,6 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 	catC, _ := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "C", Slug: "c"})
 	brand, _ := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: f.projectID, Name: "品牌X", Slug: "brandx"})
 
-	// 显式主分类不在附属列表里 → 自动纳入（不变量成立，不报错）。
 	p, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "多分类商品",
 		CategoryIDs: []string{catA.ID, catB.ID}, PrimaryCategoryID: catC.ID,
@@ -372,7 +340,6 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 		t.Fatalf("商品应挂上品牌，实际 %q", p.BrandID)
 	}
 
-	// 未显式改主分类，但附属列表被整体替换掉原主分类 → 主分类自动解绑。
 	onlyA := []string{catA.ID}
 	upd, err := f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: onlyA})
 	if err != nil {
@@ -385,7 +352,6 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 		t.Fatalf("附属列表里已无原主分类，主分类应自动解绑，实际 %q", upd.PrimaryCategoryID)
 	}
 
-	// 只改主分类（不给 CategoryIDs）时同样自动纳入。
 	upd, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, PrimaryCategoryID: &catB.ID})
 	if err != nil {
 		t.Fatalf("指定主分类失败: %v", err)
@@ -394,7 +360,6 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 		t.Fatalf("只改主分类应把它纳入附属列表: primary=%q ids=%v", upd.PrimaryCategoryID, upd.CategoryIDs)
 	}
 
-	// 不存在的分类 / 跨工程分类 / 不存在的品牌一律拒绝。
 	missing := "00000000-0000-0000-0000-000000000000"
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{missing}}); err == nil ||
 		err.Error() != productenums.ErrCategoryNotFound {
@@ -422,8 +387,6 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 	}
 }
 
-// TestTaxonomyPermissionsAndMenusSeeded 迁移 089/090：权限点与后台菜单已 seed
-// （未 seed 权限点时 Casbin Enforce 无策略匹配 → 含超管在内全员 403）。
 func TestTaxonomyPermissionsAndMenusSeeded(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -450,7 +413,6 @@ func TestTaxonomyPermissionsAndMenusSeeded(t *testing.T) {
 	}
 }
 
-// newTaxonomyPageEngine 装配只挂分类 / 品牌 / 商品页的测试引擎（真实 Jet 模板 + 真实 service）。
 func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -459,8 +421,7 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 页头主行动与行内编辑 / 删除按钮按权限渲染（adminui.Prepare 读 PermSetKey）：
-	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在写入口」这类断言保持有效。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
@@ -474,28 +435,25 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	// 分类的写动作没有页面 POST：模板用 ui/write-base.js 直调 /api/product/category/*，
-	// 页面组只剩 GET。用例里要建分类时直接调用例（下方），页面渲染照旧验证。
+
 	engine.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), handle.ProductCategoriesPage)
-	// 品牌同理：只有 GET 页，写动作走 /api/product/brand/*。
+
 	engine.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), handle.ProductBrandsPage)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
-	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
+
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
-	// 挂分类 / 品牌没有页面 POST：编辑页表单走 /api/product/update（ui/write-base.js）。
+
 	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
 
-// TestTaxonomyAdminPages 验收 4：后台可管理分类与品牌（真实模板渲染 + 表单写链路）。
 func TestTaxonomyAdminPages(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if engine == nil {
 		return
 	}
-	// 建分类：顶级 + 子级（子级的 parentId 取自表单下拉里的 id）。走用例而不是页面 POST ——
-	// 写动作已迁到 /api/product/category/create，页面那条路不存在了。
+
 	if _, cerr := f.svc.CreateCategory(t.Context(), &productdto.CreateCategoryReq{
 		ProjectID: f.projectID, Name: "男装", Slug: "men", Description: "描述",
 	}); cerr != nil {
@@ -516,15 +474,13 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("分类页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 行内按钮文案随改造按「动词 + 对象」收紧：行内不再重复实体名，
-	// 「删除分类」= 行内「删除」（「新建分类」是页头主行动的按钮文案，保留）。
+
 	for _, want := range []string{"商品分类", "男装", "men", "新建分类", ">删除</button>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("分类根页缺少 %q", want)
 		}
 	}
-	// 列表一次渲染整棵树：顶级行下面直接跟着子级（缩进 + 树枝前缀），
-	// 不再「点父级进入下一层」，也不预载成隐藏行等懒加载。
+
 	if !strings.Contains(body, "shirts</code>") || !strings.Contains(body, `<span class="tree-elbow"`) {
 		t.Fatal("分类页应把子级直接渲染在顶级下面（缩进成树）")
 	}
@@ -532,7 +488,6 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatal("逐层导航已退役：列表本身就是树，不该再出现「进入父级」的链接")
 	}
 
-	// 品牌：建品牌 → 页面能看到 logo / slug / 描述（建走用例，页面的写入口已迁到 JSON 端点）。
 	if _, cerr := f.svc.CreateBrand(t.Context(), &productdto.CreateBrandReq{
 		ProjectID: f.projectID, Name: "山野", Slug: "shanye", Logo: "/storage/img/logo.svg",
 	}); cerr != nil {
@@ -549,7 +504,6 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		}
 	}
 
-	// 商品页：勾选分类 + 选主分类 + 选品牌（表单链路）。
 	p, err := f.svc.Create(t.Context(), &productdto.CreateReq{ProjectID: f.projectID, Name: "衬衫 A"})
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
@@ -559,7 +513,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("品牌列表异常: %v %+v", err, brands)
 	}
 	childID := treeIDByName(t, f, "衬衫")
-	// 只勾父级，主分类却选子级 —— 服务端应把主分类自动纳入挂载列表。
+
 	rec = postJSON(t, engine, "/api/product/update", map[string]any{
 		"projectId":         f.projectID,
 		"id":                p.ID,
@@ -581,14 +535,12 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("主分类应被自动纳入挂载列表（父级 + 子级），实际 %v", got.CategoryIDs)
 	}
 
-	// 商品 HTML 里能看到分类名与品牌名（验证后台可读回）：表单在**编辑页**，
-	// 详情页只读展示（分类名 / 品牌名两处都能看到）。
 	rec = httptestGet(engine, "/admin/products/edit?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("商品编辑页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
-	// 编辑页是一个表单一次保存：分类与品牌随「保存」一起提交（没有分节按钮）。
+
 	for _, want := range []string{"分类与品牌", "山野", "衬衫", `name="primaryCategoryId"`, `name="brandId"`} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)
@@ -596,14 +548,12 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	}
 }
 
-// httptestGet 发一个 GET 请求（页面渲染断言用）。
 func httptestGet(engine *gin.Engine, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
 }
 
-// treeIDByName 在分类树里按名字找 id（测试内的小工具）。
 func treeIDByName(t *testing.T, f *attrFixture, name string) string {
 	t.Helper()
 	tree, err := f.svc.ListCategories(t.Context(), &productdto.ListCategoryReq{ProjectID: f.projectID})

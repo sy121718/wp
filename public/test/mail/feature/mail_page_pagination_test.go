@@ -1,13 +1,5 @@
 package feature
 
-// mail_page_pagination_test.go — 邮箱后台列表分页的端到端守卫。
-//
-// 邮箱设置页两表分别使用数据库分页与独立页码；营销页和活动页维持既有分页契约。
-//
-// 断言都是「用户可观察的行为」：第 51 条数据能不能翻到、翻页后筛选还在不在、
-// 页码越界时表格会不会被渲染成「还没有数据」的空态（后一条是这次改动最危险的回归：
-// 服务端分页不收敛，越界返回空列表 + 真实 total）。
-
 import (
 	"context"
 	"fmt"
@@ -21,19 +13,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/html"
 
+	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 )
 
-// newMailPaginationRouter 挂本批涉及的三条页面路由（不经三层鉴权链：断言的是渲染结果）。
 func newMailPaginationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// Jet 是流式渲染：出错时响应码仍是 200、正文可能整块截断 —— 打进日志才看得见。
+
 	engine.Use(func(c *gin.Context) {
 		c.Next()
 		for _, ge := range c.Errors {
@@ -53,7 +44,6 @@ func newMailPaginationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	return engine
 }
 
-// mailGet 发一个页面 GET 并回正文（页面路由只可能 200 / 302）。
 func mailGet(t *testing.T, engine *gin.Engine, path string) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -64,7 +54,6 @@ func mailGet(t *testing.T, engine *gin.Engine, path string) string {
 	return rec.Body.String()
 }
 
-// seedAccounts 造 n 个发信账号（名称与发件人唯一，避免撞唯一键）。
 func (f *mailFixture) seedAccounts(t *testing.T, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
@@ -79,14 +68,13 @@ func (f *mailFixture) seedAccounts(t *testing.T, n int) {
 	}
 }
 
-// TestMailPageAccountsPagination 发信账号表：超过一页时出现分页条，第 2 页能看到最后一条。
 func TestMailPageAccountsPagination(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
 	engine := newMailPaginationRouter(t, f)
-	f.seedAccounts(t, 21) // 每页 20 条 → 第 2 页只有 1 条
+	f.seedAccounts(t, 21)
 
 	first := mailGet(t, engine, "/admin/mail")
 	if !strings.Contains(first, `class="pagination"`) {
@@ -111,7 +99,6 @@ func TestMailPageAccountsPagination(t *testing.T) {
 	}
 }
 
-// TestMailPageIndependentPagination 拆页后账号页（account_page）与模板页（page）各自计数、互不带页码。
 func TestMailPageIndependentPagination(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -138,11 +125,10 @@ func TestMailPageIndependentPagination(t *testing.T) {
 	if !strings.Contains(tplBody, "list_tpl_40") {
 		t.Fatalf("模板页第 3 页应显示最后一个模板：%s", mailHead(tplBody))
 	}
-	// 拆页判据：两个列表各自翻页，任何一页的链接都不能带上另一个列表的页码参数，
-	// 否则用户在账号页翻页会把模板列表也一起翻走（这正是拆页前必须切断的耦合）。
+
 	assertNoQueryParam(t, accountBody, "template_page")
 	assertNoQueryParam(t, tplBody, "account_page")
-	// 越界页各自收敛到末页：服务端分页不收敛会渲染成空态 + 真实 total，用户以为数据没了。
+
 	if got := mailGet(t, engine, "/admin/mail?account_page=999"); !strings.Contains(got, "账号20") {
 		t.Fatal("账号页越界应收敛到末页")
 	}
@@ -151,7 +137,6 @@ func TestMailPageIndependentPagination(t *testing.T) {
 	}
 }
 
-// assertNoQueryParam 断言页面里任何 href 都不带指定 query 参数。
 func assertNoQueryParam(t *testing.T, body, param string) {
 	t.Helper()
 	for _, fragment := range strings.Split(body, `href="`)[1:] {
@@ -163,7 +148,6 @@ func assertNoQueryParam(t *testing.T, body, param string) {
 	}
 }
 
-// TestMailListDatabasePageFilters 计数与行查询共享筛选，空结果和越界页不回退为全量。
 func TestMailListDatabasePageFilters(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -201,7 +185,6 @@ func TestMailListDatabasePageFilters(t *testing.T) {
 	}
 }
 
-// TestMailMarketingContactsPaginationKeepsFilter 联系人表：翻页保留筛选，且页码越界不空表。
 func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -209,13 +192,13 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	}
 	engine := newMailPaginationRouter(t, f)
 	ctx := context.Background()
-	for i := 0; i < 51; i++ { // 每页 50 条 → 第 2 页只有 1 条
+	for i := 0; i < 51; i++ {
 		if err := f.seedContact(ctx, fmt.Sprintf("bulk%02d@example.com", i), fmt.Sprintf("批量%d", i),
 			mailmodel.ContactStatusSubscribed, "bulk"); err != nil {
 			t.Fatalf("造第 %d 个联系人失败：%v", i, err)
 		}
 	}
-	// 一个带筛选的账号：确认翻页链接会把它带上（关键词筛选命中 51 条中的一条）。
+
 	if err := f.seedContact(ctx, "vip@example.com", "VIP", mailmodel.ContactStatusSubscribed, "vip"); err != nil {
 		t.Fatalf("造 VIP 联系人失败：%v", err)
 	}
@@ -224,7 +207,7 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	if !strings.Contains(page1, `class="pagination"`) {
 		t.Fatal("51 个匹配联系人应出现分页条")
 	}
-	// Jet 会把 href 里的 & 转义成 &amp;，断言前先反转义（否则会把「转义」误判成「丢参数」）。
+
 	plain1 := htmlUnescape(page1)
 	if !strings.Contains(plain1, "keyword=bulk&") && !strings.Contains(plain1, "keyword=bulk&amp;") {
 		t.Errorf("翻页链接应保留关键词筛选：%s", plain1)
@@ -234,7 +217,7 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	}
 
 	page2 := mailGet(t, engine, "/admin/mail/contacts?keyword=bulk&page=2")
-	// 联系人按 id 倒序（最新在前）：第 1 页是 bulk50…bulk01，第 2 页只剩最早的那条 bulk00。
+
 	if !strings.Contains(page2, "bulk00@example.com") {
 		t.Errorf("第 2 页应显示第 51 个联系人（此前翻页控件不存在）：%s", mailHead(page2))
 	}
@@ -242,7 +225,6 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 		t.Error("第 2 页的分页链接应继续保留关键词")
 	}
 
-	// 页码越界：联系人页数少的那一侧被收敛，**不能**渲染成「没有匹配的联系人」的空态。
 	overshoot := mailGet(t, engine, "/admin/mail/contacts?keyword=bulk&page=9")
 	if strings.Contains(overshoot, "没有匹配的联系人") {
 		t.Errorf("页码越界时不应渲染空态（数据其实有 51 条）：%s", mailHead(overshoot))
@@ -252,7 +234,6 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	}
 }
 
-// TestMailCampaignRecipientsPagination 收件人明细：假分页（只有「第 N 页」文本）→ 真分页条。
 func TestMailCampaignRecipientsPagination(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -278,14 +259,12 @@ func TestMailCampaignRecipientsPagination(t *testing.T) {
 		t.Errorf("第 2 页只应有最后一条：%s", mailHead(page2))
 	}
 
-	// 页码越界同样不能渲染成空态（收件人明细为空 = 「还没有投递记录」，那句话是错的）。
 	overshoot := mailGet(t, engine, page1Path+"&page=9")
 	if strings.Contains(overshoot, "还没有投递记录") {
 		t.Errorf("页码越界时不应渲染空态（51 条投递记录确实存在）：%s", mailHead(overshoot))
 	}
 }
 
-// seedCampaignWithLogs 造一条活动并写入 n 条投递日志（收件人明细的行来源是 mail_logs）。
 func (f *mailFixture) seedCampaignWithLogs(t *testing.T, n int) uint64 {
 	t.Helper()
 	ctx := context.Background()
@@ -323,16 +302,10 @@ func (f *mailFixture) seedCampaignWithLogs(t *testing.T, n int) uint64 {
 	return campaign.ID
 }
 
-// htmlUnescape 反转义 HTML 实体（Jet 会把 href 里的 & 写成 &amp;）。
 func htmlUnescape(s string) string {
 	return strings.NewReplacer("&amp;", "&", "&#34;", `"`, "&quot;", `"`).Replace(s)
 }
 
-// mailPaginationNav 解析渲染结果里**真实的分页条**，返回 (文本, href) 列表。
-//
-// 为什么按 nav 解析而不是字符串包含：分页条的当前页渲染成 <span>（**没有 href**），
-// 只有 prev / next 与其它页码才是链接；直接 grep `page=2` 会永远落空。这里用真 HTML
-// 解析器定位 class 含 pagination 的 <nav>，再取其内部元素 —— 断言的是操作者看到的控件。
 func mailPaginationNav(t *testing.T, body string) []struct{ Text, Href string } {
 	t.Helper()
 	doc, err := html.Parse(strings.NewReader(body))
@@ -394,12 +367,6 @@ func mailPaginationNav(t *testing.T, body string) []struct{ Text, Href string } 
 	return out
 }
 
-// TestMailTemplatesPagePaginationLinksCarryPageParam task-105 的**追认修复**（lead 裁定 b）。
-//
-// 迁移前 mailListPagination 在 param=="page" 时先 q.Set("page", 自己) 再**无条件** q.Del("page")，
-// 模板页每条链接都退化成不带 ?page 的基址 —— 「下一页」永远回到第 1 页（翻页失效，且不报错）。
-// 改为事实层后链接由 partial 用 Base + PageParam 生成，必须带 ?page=N。
-// 当前页是 is-active 的 span（不生成 href），所以断言 prev / next 两条链接。
 func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -417,7 +384,6 @@ func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
 	body := mailGet(t, engine, "/admin/mail/templates?page=2")
 	nav := mailPaginationNav(t, body)
 
-	// 当前页：is-active 的 span，不该有 href。
 	var active *struct{ Text, Href string }
 	for i := range nav {
 		if nav[i].Text == "2" {
@@ -431,7 +397,6 @@ func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
 		t.Errorf("当前页不应是链接（会把用户送回同一页）：%q", active.Href)
 	}
 
-	// prev / next 必须带页码参数 —— 这就是修复点。
 	wants := map[string]string{"上一页": "page=1", "下一页": "page=3"}
 	for _, e := range nav {
 		want, ok := wants[e.Text]
@@ -449,7 +414,7 @@ func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
 		if got := u.Query().Get("page"); got != want[5:] {
 			t.Errorf("%q 应指向 %s，实际 %q", e.Text, want, e.Href)
 		}
-		// 模板页每页固定 20 条：链接不得带 limit（否则用户能改每页条数，而页面不支持）。
+
 		if u.Query().Has("limit") {
 			t.Errorf("%q 链接不应带 limit：%q", e.Text, e.Href)
 		}
@@ -459,18 +424,13 @@ func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
 	}
 }
 
-// TestMailPaginationLinksKeepPageFilters 联系人页（真 handler + 真模板）：分页链接必须带筛选参数。
-//
-// 迁移前这一条靠断言 handler 直接拼进链接的字节；迁移后 Base 由 handler 用
-// reqparams.FilterBaseURL 拼好、链接由 partial 生成 —— 分工变了，判据不变：
-// 用户点「下一页」时筛选不能丢（丢了会静默回到全量，而人以为自己还在筛选里）。
 func TestMailPaginationLinksKeepPageFilters(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
 	engine := newMailPaginationRouter(t, f)
-	// 120 条命中筛选，每页 50 → 3 页，保证有可点的非当前页链接。
+
 	for i := 0; i < 120; i++ {
 		if err := f.seedContact(context.Background(),
 			fmt.Sprintf("vip%03d@example.com", i), "常客", mailmodel.ContactStatusSubscribed, ""); err != nil {
@@ -498,6 +458,6 @@ func TestMailPaginationLinksKeepPageFilters(t *testing.T) {
 	if links < 2 {
 		t.Fatalf("应有多个可点分页链接（上一页/下一页/其它页码），实际 %d 条：%+v", links, nav)
 	}
-	// 拆页判据：这一页的链接不得带别的列表的页码参数。
+
 	assertNoQueryParam(t, body, "account_page")
 }

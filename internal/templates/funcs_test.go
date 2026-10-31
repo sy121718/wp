@@ -14,14 +14,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// funcs_test.go — 模板全局函数（funcs.go）的判据。
-//
-// 全部经**真实 Jet Set 渲染**断言，而不是直接调 Go 函数：注册漏了（injectGlobals 里少一行）、
-// Jet 对某种入参/返回形状的处理与直觉不符，都只有在渲染路径上才会暴露 ——
-// 本文件里「字面量是 float64」「error 返回值被丢弃」两条就是这么做出来的。
-// 复用 raw_pipe_test.go 的建 Set 方式，保证测的是同一个注入点。
-
-// renderGlobal 用注入过全局函数的 Set 渲染一小段模板。
 func renderGlobal(t *testing.T, src string, vars jet.VarMap) (string, error) {
 	t.Helper()
 	loader := jet.NewInMemLoader()
@@ -48,7 +40,6 @@ func mustRender(t *testing.T, src string, vars jet.VarMap) string {
 	return out
 }
 
-// TestJoinNonEmpty 多段可选字段的拼接：空段丢掉，不留双空格、不留空段。
 func TestJoinNonEmpty(t *testing.T) {
 	var nilPtr *string
 	vars := jet.VarMap{}
@@ -61,11 +52,9 @@ func TestJoinNonEmpty(t *testing.T) {
 		{`{{ joinNonEmpty(" ", "", "  ", "") }}`, ""},
 		{`{{ joinNonEmpty(" ", "中国") }}`, "中国"},
 		{`{{ joinNonEmpty(" · ", "顺丰", "SF123") }}`, "顺丰 · SF123"},
-		// 数字段（订单号 / 门牌号）也要能拼。
+
 		{`{{ joinNonEmpty("-", "A", 12) }}`, "A-12"},
-		// typed nil（dto 的可空字段）必须当空段：fmt.Sprint 会打出 "<nil>"，
-		// 页面上就是一行「<nil>」而不是空着。Jet 传不进裸 nil 字面量，所以真实场景
-		// 进来的永远是 typed nil —— 这条是必须的。
+
 		{`{{ joinNonEmpty(" ", nilPtr, "上海") }}`, "上海"},
 	}
 	for _, c := range cases {
@@ -77,7 +66,6 @@ func TestJoinNonEmpty(t *testing.T) {
 	}
 }
 
-// TestCurrencyPrefix 币种代码 → 金额前缀（与既有 orderMoneyLabel 的规则逐字一致）。
 func TestCurrencyPrefix(t *testing.T) {
 	cases := []struct {
 		expr   string
@@ -90,7 +78,7 @@ func TestCurrencyPrefix(t *testing.T) {
 		{`{{ currencyPrefix("USD") }}`, "USD "},
 		{`{{ currencyPrefix("usd") }}`, "USD "},
 		{`{{ currencyPrefix(" EUR ") }}`, "EUR "},
-		// 与 money 组合后是页面上真正显示的金额串。
+
 		{`{{ money(123450, currencyPrefix("USD")) }}`, "USD 1234.50"},
 		{`{{ money(123450, currencyPrefix("CNY")) }}`, "¥1234.50"},
 	}
@@ -103,8 +91,6 @@ func TestCurrencyPrefix(t *testing.T) {
 	}
 }
 
-// TestFormChecked 复选框回填：不勾选 = 不提交 = 缺键 → 回落初始值；
-// 提交了空串 / "0" / "false" 都算没勾（浏览器与手写表单两种形态）。
 func TestFormChecked(t *testing.T) {
 	vars := jet.VarMap{}
 	vars.Set("echo", url.Values{"sameBilling": {"1"}, "empty": {""}, "zero": {"0"}})
@@ -115,15 +101,15 @@ func TestFormChecked(t *testing.T) {
 		expr   string
 		expect string
 	}{
-		// 勾了：提交值非空 → true（初始值无关）
+
 		{`{{if formChecked(echo, "sameBilling", false)}}checked{{else}}no{{end}}`, "checked"},
-		// 没勾：缺键 → 回落初始值（true 时保持勾选）
+
 		{`{{if formChecked(echo, "absent", true)}}checked{{else}}no{{end}}`, "checked"},
 		{`{{if formChecked(echo, "absent", false)}}checked{{else}}no{{end}}`, "no"},
-		// 提交了但值为空 / "0" → 没勾（**不回落到初始值**：用户明确取消了这个勾选）
+
 		{`{{if formChecked(echo, "empty", true)}}checked{{else}}no{{end}}`, "no"},
 		{`{{if formChecked(echo, "zero", true)}}checked{{else}}no{{end}}`, "no"},
-		// 首屏（没有提交）：一律用初始值
+
 		{`{{if formChecked(nilEcho, "sameBilling", true)}}checked{{else}}no{{end}}`, "checked"},
 	}
 	for _, c := range cases {
@@ -135,10 +121,6 @@ func TestFormChecked(t *testing.T) {
 	}
 }
 
-// TestGlobalsRegistered 全部全局函数都必须注册且可调用。
-//
-// 判据是「真的调一次并拿到值」，不是「名字存在」：只断言 err != nil 的话，
-// 一个未注册的名字同样报错 —— 那样这条判据在删除注册后**照样是绿的**。
 func TestGlobalsRegistered(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -164,18 +146,12 @@ func TestGlobalsRegistered(t *testing.T) {
 	}
 }
 
-// TestUnregisteredGlobalFails 反面对照：没注册的名字调用必须失败
-// （防上一条退化成「什么名字都能渲染」）。
 func TestUnregisteredGlobalFails(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ noSuchFunc(1) }}`, nil); err == nil {
 		t.Fatal("未注册的函数不应可调用")
 	}
 }
 
-// TestNumericLiteralIsFloat64 钉住 Jet 的行为本身：模板里的数字字面量是 float64。
-//
-// 这条不是好奇 —— 它决定了入参收敛必须接受 float64；一旦 Jet 升级后改成 int64，
-// 这个判据会红，提醒改 toInt64 而不是让页面静默空串。
 func TestNumericLiteralIsFloat64(t *testing.T) {
 	loader := jet.NewInMemLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".jet"}))
@@ -194,7 +170,6 @@ func TestNumericLiteralIsFloat64(t *testing.T) {
 	}
 }
 
-// TestMoney 金额格式化：分 → 符号 + 两位小数。
 func TestMoney(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -219,26 +194,18 @@ func TestMoney(t *testing.T) {
 	}
 }
 
-// TestMoneyRejectsNonNumber 传错类型必须**当场报错**。
-//
-// Jet 会丢弃函数返回的 error（只取第一个返回值），所以「返回 (值, error)」这条路
-// 实测是静默空串 —— 本函数必须靠 panic 才能红。判据因此断言 err != nil。
 func TestMoneyRejectsNonNumber(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ money("abc", "¥") }}`, nil); err == nil {
 		t.Fatal("字符串入参应当渲染失败")
 	}
 }
 
-// TestMoneyRejectsFractionalCents 小数分是编程错误：把「元」当「分」传进来。
-// 它打印出来的数字（¥12.50）看起来完全合理，所以必须拒绝而不是四舍五入。
 func TestMoneyRejectsFractionalCents(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ money(12.5, "¥") }}`, nil); err == nil {
 		t.Fatal("小数分应当渲染失败（元/分传错）")
 	}
 }
 
-// TestMoneyMinInt64NotOverflow 单独钉住溢出这条：旧实现（-cents）会产出
-// 「--92233720368547758.08」。用常量而不是字面量，避免抄错数字让判据空转。
 func TestMoneyMinInt64NotOverflow(t *testing.T) {
 	vars := jet.VarMap{}
 	vars.Set("min", int64(math.MinInt64))
@@ -251,7 +218,6 @@ func TestMoneyMinInt64NotOverflow(t *testing.T) {
 	}
 }
 
-// TestThousands 千分位。
 func TestThousands(t *testing.T) {
 	cases := []struct {
 		expr   string
@@ -277,7 +243,6 @@ func TestThousands(t *testing.T) {
 	}
 }
 
-// TestPercent 百分比：不带符号（符号是调用点的显示决定），小数位收敛到 0..6。
 func TestPercent(t *testing.T) {
 	cases := []struct {
 		expr   string
@@ -300,7 +265,6 @@ func TestPercent(t *testing.T) {
 	}
 }
 
-// TestDateTimeAndDate 时间格式化：零值 / nil / 空指针给空串，由模板决定显示什么。
 func TestDateTimeAndDate(t *testing.T) {
 	at := time.Date(2026, 10, 7, 9, 5, 30, 0, time.Local)
 	vars := jet.VarMap{}
@@ -329,24 +293,17 @@ func TestDateTimeAndDate(t *testing.T) {
 	}
 }
 
-// TestDateTimeRejectsNonTime 时间函数同样要拒绝错误类型（字符串不是时间）。
 func TestDateTimeRejectsNonTime(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ dateTime("2026-10-07") }}`, nil); err == nil {
 		t.Fatal("字符串入参应当渲染失败")
 	}
 }
 
-// 站点时区与本地时区在这一批判据里被**强制分离**（本地=UTC、站点=Asia/Shanghai）：
-// 「按谁的时区渲染」只有在两个口径确实不同的时候才是可判的 —— 两者相同（真实部署里常见）时，
-// 实现被写成另一个口径也照样绿。
 const (
 	sitetzEnvKey   = "GO_WP_SITE_TIMEZONE"
 	sitetzShanghai = "Asia/Shanghai"
 )
 
-// useShanghaiSiteAndUTCLocal 强制「本地=UTC / 站点=Asia/Shanghai」，测试结束还原。
-//
-// 禁 t.Parallel()：这里改的是进程级状态（time.Local 与 sitetz 的 sync.Once 缓存）。
 func useShanghaiSiteAndUTCLocal(t *testing.T) {
 	t.Helper()
 	oldLocal := time.Local
@@ -354,7 +311,7 @@ func useShanghaiSiteAndUTCLocal(t *testing.T) {
 	t.Setenv(sitetzEnvKey, sitetzShanghai)
 	sitetz.ResetForTest()
 	t.Cleanup(func() {
-		sitetz.ResetForTest() // 还原（t.Setenv 自动恢复环境变量）
+		sitetz.ResetForTest()
 		time.Local = oldLocal
 	})
 	if got := sitetz.Name(); got != sitetzShanghai {
@@ -362,11 +319,6 @@ func useShanghaiSiteAndUTCLocal(t *testing.T) {
 	}
 }
 
-// TestSiteDateTimeUsesSiteTimezone siteDateTime 按**站点时区**（而非服务器本地时区）渲染到分钟。
-//
-// 判据的力量来自两个口径确实不同：同一绝对时刻在 UTC 下是 01:05、在 Asia/Shanghai 下是 09:05。
-// 实现被改回 .Local()、或站点时区解析失效回退本地，两种退化都会被这条抓住。
-// 入参覆盖页面交事实的真实形态：time.Time / JSONTime / JSONTime 指针。
 func TestSiteDateTimeUsesSiteTimezone(t *testing.T) {
 	useShanghaiSiteAndUTCLocal(t)
 
@@ -401,20 +353,15 @@ func TestSiteDateTimeUsesSiteTimezone(t *testing.T) {
 		})
 	}
 
-	// 对照：同一入参在 dateTime（本地）下是 UTC 的钟点 —— 上面那条不是恒真。
 	if got := mustRender(t, `{{ dateTime(at) }}`, vars); got != "2026-10-07 01:05" {
 		t.Fatalf("对照口径 dateTime 期望 %q，实际 %q（本地时区被改动？本组判据失去区分力）", "2026-10-07 01:05", got)
 	}
-	// 站点时区名不进模板：不存在按字面量指定时区的入口（口径只在一处声明）。
+
 	if _, err := renderGlobal(t, `{{ dateTimeIn("Asia/Shanghai", at) }}`, vars); err == nil {
 		t.Fatal("模板里不应存在按字面量指定时区的入口")
 	}
 }
 
-// TestDateTimeSecondKeepsSeconds 秒精度：截到分钟会让人对不上日志（这个函数存在的理由）。
-//
-// 同时钉住它用的是**本地**时区而不是站点时区：收秒的对象是「观测值」，与「面向人的时刻」
-// 不是同一个口径；混用会让状态条与日志对不上。
 func TestDateTimeSecondKeepsSeconds(t *testing.T) {
 	useShanghaiSiteAndUTCLocal(t)
 
@@ -440,7 +387,7 @@ func TestDateTimeSecondKeepsSeconds(t *testing.T) {
 		{`{{ dateTimeSecond(zero) }}`, ""},
 		{`{{ dateTimeSecond(nilPtr) }}`, ""},
 		{`{{ dateTimeSecond(nilJTPtr) }}`, ""},
-		// 对照：分钟精度会把秒吃掉，且用的是本地时区（09:05 而非站点时区的 17:05）。
+
 		{`{{ dateTime(at) }}`, "2026-10-07 09:05"},
 	}
 	for _, c := range cases {
@@ -452,10 +399,6 @@ func TestDateTimeSecondKeepsSeconds(t *testing.T) {
 	}
 }
 
-// TestDateTimeLocal datetime-local 控件的 value 形态：带 T、秒非 0 才到秒。
-//
-// 三条规则各对应一个真实故障：不带 T 会被控件清空（回填丢失）、秒被截断时控件按
-// stepMismatch 判非法（表单提交不了）、亚秒无法表达。
 func TestDateTimeLocal(t *testing.T) {
 	vars := jet.VarMap{}
 	vars.Set("whole", time.Date(2026, 10, 7, 9, 5, 0, 0, time.Local))
@@ -484,7 +427,6 @@ func TestDateTimeLocal(t *testing.T) {
 	}
 }
 
-// TestFill 命名占位符填充（词条里的 {value} 形态）。
 func TestFill(t *testing.T) {
 	cases := []struct {
 		expr   string
@@ -494,7 +436,7 @@ func TestFill(t *testing.T) {
 		{`{{ fill("减 {value} 元", "value", "20.00") }}`, "减 20.00 元"},
 		{`{{ fill("共 {count} 条，列出最近 {limit} 条。", "count", 37, "limit", 50) }}`, "共 37 条，列出最近 50 条。"},
 		{`{{ fill("没有占位符", "value", 1) }}`, "没有占位符"},
-		// 词条里的裸 % 不能被当格式化动词（这正是用命名占位符而不是 Sprintf 的理由）。
+
 		{`{{ fill("减 {value}%", "value", 20) }}`, "减 20%"},
 	}
 	for _, c := range cases {
@@ -506,8 +448,6 @@ func TestFill(t *testing.T) {
 	}
 }
 
-// TestFillLeavesUnknownPlaceholderVisible 参数名写错 / 词条被改坏时，
-// 残留占位符**原样露出**而不是被补成 0（补 0 会渲染出一句看起来像成功结论的错话）。
 func TestFillLeavesUnknownPlaceholderVisible(t *testing.T) {
 	got := mustRender(t, `{{ fill("减 {value}%", "valeu", 20) }}`, nil)
 	if got != "减 {value}%" {
@@ -515,18 +455,12 @@ func TestFillLeavesUnknownPlaceholderVisible(t *testing.T) {
 	}
 }
 
-// TestFillRejectsNonStringName 参数名必须是字符串（位置写错属于编程错误）。
 func TestFillRejectsNonStringName(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ fill("减 {value}%", 1, 20) }}`, nil); err == nil {
 		t.Fatal("非字符串占位符名应当渲染失败")
 	}
 }
 
-// TestFormValue 表单回填：**提交里有这个字段就用提交值**（哪怕提交的是空串），
-// 提交里没有才用初始值。
-//
-// 「用户刻意清空的字段回显成空」这条是核心：按「值是不是空」判断会把库里的旧值填回去，
-// 表现是「这个字段删不掉」，比丢输入更难发现。
 func TestFormValue(t *testing.T) {
 	vars := jet.VarMap{}
 	vars.Set("echo", url.Values{

@@ -1,12 +1,5 @@
 package nav
 
-// nav_jet_test.go — 导航模板的结构契约。
-//
-// 触屏子菜单靠 label + checkbox 驱动（见 nav.css 的 @hovernone 块），
-// 而 label 与控件之间只靠 for/id 绑定：id 写错、写重、或元素顺序颠倒，
-// 浏览器一律不报错，只是在触屏上「点了没反应」——那正是本条目要修的功能缺失。
-// 所以这层结构在这里钉死。
-
 import (
 	"bytes"
 	"strings"
@@ -17,14 +10,12 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// navTestData 模板渲染上下文（与 jetview 侧 navView 同形：Classes/NodeID/V）。
 type navTestData struct {
 	Classes string
 	NodeID  string
 	V       View
 }
 
-// renderNavHTML 用组件自带的模板源码渲染一次导航，返回产物 HTML。
 func renderNavHTML(t *testing.T, v View) string {
 	t.Helper()
 	src, ok := core.OwnedTemplate("nav")
@@ -45,8 +36,6 @@ func renderNavHTML(t *testing.T, v View) string {
 	return buf.String()
 }
 
-// TestNavJetSubmenuToggleBindsToParent 有子项的父项要渲染出成对的开关，
-// 且 id 与两个 label 的 for 完全一致。
 func TestNavJetSubmenuToggleBindsToParent(t *testing.T) {
 	v := BuildView(&core.Node{ID: "n1"}, &Props{Items: []Item{
 		{Label: "关于", URL: "/about", Children: []Item{
@@ -66,16 +55,12 @@ func TestNavJetSubmenuToggleBindsToParent(t *testing.T) {
 			t.Errorf("产物缺少 %q\nHTML=%s", want, html)
 		}
 	}
-	// 控件必须是 checkbox：radio 点不掉，展开后就再也收不回去。
+
 	if !strings.Contains(html, `<input type="checkbox" class="sky-nav-sub-toggle`) {
 		t.Errorf("触屏开关应是 checkbox（radio 无法取消选中）\nHTML=%s", html)
 	}
 }
 
-// TestNavJetSubmenuToggleOrder 开关必须排在父链接之后、子菜单之前。
-//
-// CSS 侧用兄弟选择器（~）驱动展开与覆盖层撤除，顺序错了选择器一律不命中，
-// 而且产物看起来完全正常 —— 只有触屏上点不动才发现。
 func TestNavJetSubmenuToggleOrder(t *testing.T) {
 	v := BuildView(&core.Node{ID: "n1"}, &Props{Items: []Item{
 		{Label: "关于", URL: "/about", Children: []Item{{Label: "团队", URL: "/team"}}},
@@ -86,8 +71,7 @@ func TestNavJetSubmenuToggleOrder(t *testing.T) {
 	toggle := strings.Index(html, `class="sky-nav-sub-toggle`)
 	cover := strings.Index(html, `class="sky-nav-sub-cover`)
 	chevron := strings.Index(html, `class="sky-nav-sub-chevron`)
-	// 子菜单本体：必须匹配到**完整类名**（`sky-nav-sub-toggle` 等前缀相同，
-	// 用不带引号的前缀会先命中开关，顺序断言随之失真）。
+
 	sub := strings.Index(html, `class="sky-nav-sub"`)
 
 	if link < 0 || toggle < 0 || cover < 0 || chevron < 0 || sub < 0 {
@@ -100,8 +84,6 @@ func TestNavJetSubmenuToggleOrder(t *testing.T) {
 	}
 }
 
-// TestNavJetSubmenuToggleOnlyOnParents 没有子项的菜单项不渲染开关：
-// 多余的控件既占键盘停靠点，也是一层无意义的点击覆盖。
 func TestNavJetSubmenuToggleOnlyOnParents(t *testing.T) {
 	v := BuildView(&core.Node{ID: "n1"}, &Props{Items: []Item{
 		{Label: "首页", URL: "/"},
@@ -121,8 +103,6 @@ func TestNavJetSubmenuToggleOnlyOnParents(t *testing.T) {
 	}
 }
 
-// TestNavJetSubmenuToggleIDsUnique 多个父项的 id 必须互不相同：
-// 重了会让所有 label 一起切同一个控件，点是分不清哪一项展开。
 func TestNavJetSubmenuToggleIDsUnique(t *testing.T) {
 	v := BuildView(&core.Node{ID: "n1"}, &Props{Items: []Item{
 		{Label: "产品", URL: "/p", Children: []Item{{Label: "甲", URL: "/p/a"}}},
@@ -135,15 +115,13 @@ func TestNavJetSubmenuToggleIDsUnique(t *testing.T) {
 		if !strings.Contains(html, `id="`+id+`"`) {
 			t.Errorf("缺少开关 id %q\nHTML=%s", id, html)
 		}
-		// 每条 id 都要被两个 label（覆盖层 + 箭头）引用。
+
 		if n := strings.Count(html, `for="`+id+`"`); n != 2 {
 			t.Errorf("id %q 应被覆盖层与箭头各引用一次，实际 %d 次\nHTML=%s", id, n, html)
 		}
 	}
 }
 
-// TestNavJetMobileCollapseUntouched 折叠开关（移动端汉堡菜单）不在本次改动范围内，
-// 顺带钉住它还在：两条开关机制共存，互不干扰。
 func TestNavJetMobileCollapseUntouched(t *testing.T) {
 	v := BuildView(&core.Node{ID: "n1"}, &Props{
 		MobileCollapse: true,

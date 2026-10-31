@@ -8,9 +8,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// 分类 / 品牌的 SEO 字段与名称、描述合并（2026-09-30）：读侧必须给出合并后的值 ——
-// 库里可能还留着编辑者过去写过的 seo_title，它一旦仍然是取值来源，
-// 「改了分类名、meta 标题没变」这类故障会重新出现，且页面上看不到原因。
 func TestCategoryAndBrandSEOFieldsFollowMergedSource(t *testing.T) {
 	s := &Service{}
 	ctx := context.Background()
@@ -23,8 +20,7 @@ func TestCategoryAndBrandSEOFieldsFollowMergedSource(t *testing.T) {
 	if values["seoTitle"] != "夏季" {
 		t.Errorf("分类 seoTitle 应等于分类名，实际 %q", values["seoTitle"])
 	}
-	// 描述原样透出富文本：去标签在 presentation 的 seoDescriptionText 一处做
-	//（两处各做一遍必然分叉）。
+
 	if values["seoDescription"] != "<p>透气亲肤</p>" {
 		t.Errorf("分类 seoDescription 应取分类描述，实际 %q", values["seoDescription"])
 	}
@@ -42,9 +38,6 @@ func TestCategoryAndBrandSEOFieldsFollowMergedSource(t *testing.T) {
 	}
 }
 
-// applySEOAliases 的判据（2026-09-30 字段合并）：别名取源字段的**当前值** ——
-// 调用点放在取词之后，所以这里用「源字段已被替换成译文」的输入模拟多语言构建，
-// 别名必须跟着变成译文（否则英文站点上 meta 标题与页面标题是两种语言）。
 func TestApplySEOAliases(t *testing.T) {
 	batches := []map[string]string{{
 		"name": "Summer Shirt", "description": "Breathable",
@@ -59,7 +52,6 @@ func TestApplySEOAliases(t *testing.T) {
 	}
 }
 
-// 商品的描述别名是 subtitle（不是 description —— 后者是富文本正文）。
 func TestApplySEOAliasesProductUsesSubtitle(t *testing.T) {
 	batches := []map[string]string{{
 		"name": "衬衫", "subtitle": "轻薄透气", "description": "<p>正文</p>",
@@ -73,7 +65,6 @@ func TestApplySEOAliasesProductUsesSubtitle(t *testing.T) {
 	}
 }
 
-// 源字段缺席时保持原值：旧模板可能只绑了别名，不该在这里被清成空串。
 func TestApplySEOAliasesKeepsValueWithoutSource(t *testing.T) {
 	batches := []map[string]string{{"seoTitle": "旧值"}}
 	applySEOAliases(productcontract.EntityTypeCategory, batches)
@@ -82,7 +73,6 @@ func TestApplySEOAliasesKeepsValueWithoutSource(t *testing.T) {
 	}
 }
 
-// 未登记别名的实体类型（标签 / 属性组）不受影响。
 func TestApplySEOAliasesIgnoresOtherTypes(t *testing.T) {
 	batches := []map[string]string{{"name": "标签", "seoTitle": "旧值"}}
 	applySEOAliases(productcontract.EntityTypeTag, batches)

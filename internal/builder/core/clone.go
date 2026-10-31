@@ -2,8 +2,6 @@ package core
 
 import json "go_wp/pkg/jsonx"
 
-// CloneNodes 先为整组节点分配ID，再重映射内部instance目标，保留组外显式引用。
-// 调用者决定复制用新ID、编译实例用确定性前缀；两者共享同一动作重映射判据。
 func CloneNodes(nodes []*Node, idOf func(string) string) []*Node {
 	ids := map[string]string{}
 	var copyNode func(*Node) *Node

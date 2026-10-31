@@ -79,7 +79,7 @@ func TestProductBindingSpecificProductAndVariant(t *testing.T) {
 	if !strings.Contains(compiled.HTML, `data-variant-id="`+bindingVariantID+`"`) || strings.Contains(compiled.HTML, "sky-incomplete") {
 		t.Fatalf("指定商品应冻结正确规格: %s", compiled.HTML)
 	}
-	// 数据错误与失效引用不能被预览容错吞掉。
+
 	cases := []struct {
 		name, props string
 		src         bindingProductSource

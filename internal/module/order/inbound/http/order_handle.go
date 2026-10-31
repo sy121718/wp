@@ -1,9 +1,5 @@
 package orderhttp
 
-// order_handle.go — 订单 HTTP 处理器（BIZ-1 销售侧）。
-//
-// handle 只做三件事：绑定参数、调 service、输出响应。业务规则一律不在这里。
-
 import (
 	"net/http"
 	"strconv"
@@ -20,20 +16,12 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle 订单 HTTP 处理器。
 type Handle struct {
 	svc ordercontract.OrderService
 }
 
-// NewHandle 构造。
 func NewHandle(svc ordercontract.OrderService) *Handle { return &Handle{svc: svc} }
 
-// operatorFromContext 取当前后台操作人（id + 用户名）。
-//
-// 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。
-//
-// 不走 builtin.CurrentUserID：这里要 id 与登录名一次取出（builtin.CurrentUserID 入口只给 id），
-// 且保留非 int64 原始值分支（含字符串 id 的解析），统一入口只认 int64。
 func operatorFromContext(c *gin.Context) (id uint64, name string) {
 	name = strings.TrimSpace(builtin.GetUsername(c))
 	if v, exists := c.Get("user_id"); exists {
@@ -53,19 +41,18 @@ func operatorFromContext(c *gin.Context) (id uint64, name string) {
 	return id, name
 }
 
-// CreateOrder 建单。
 func (h *Handle) CreateOrder(c *gin.Context) {
 	req, ok := binding.JSON[orderdto.CreateOrderReq](c)
 	if !ok {
 		return
 	}
-	// 来源与操作人由服务端写入。
+
 	req.IPAddress = c.ClientIP()
 	req.UserAgent = c.Request.UserAgent()
 	if id, name := operatorFromContext(c); id != 0 || name != "" {
 		req.CreateBy = id
 	}
-	// 来源由 API 专属入口确定，请求体里的 createdVia 不进入 DTO。
+
 	res, err := h.svc.CreateAPIOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
@@ -74,7 +61,6 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgCreateSuccess, res)
 }
 
-// GetOrder 订单详情。
 func (h *Handle) GetOrder(c *gin.Context) {
 	req, ok := binding.Query[orderdto.GetOrderReq](c)
 	if !ok {
@@ -92,7 +78,6 @@ func (h *Handle) GetOrder(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// ListOrders 订单列表。
 func (h *Handle) ListOrders(c *gin.Context) {
 	req, ok := binding.Query[orderdto.ListOrderReq](c)
 	if !ok {
@@ -106,11 +91,6 @@ func (h *Handle) ListOrders(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// ChangeStatus 状态流转（发货 / 完成）。
-//
-// 一个端点**两种形状**（task-98 S2）：体里有 `ids` → 批档（后台列表页的批量流转），否则单档
-// （既有调用方的语义逐字不变）。判别键是形状不是 action —— 不另开路径的理由见
-// order_bulk_write.go 头注释（sys_permission 每个权限点只有一列 api_path）。
 func (h *Handle) ChangeStatus(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -133,9 +113,6 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgStatusChanged, nil)
 }
 
-// CancelOrder 取消订单。
-//
-// 与 ChangeStatus 同形：体里有 `ids` → 批档（后台列表页的批量取消），否则单档。
 func (h *Handle) CancelOrder(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -156,12 +133,10 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
-	// 取消的结果只有「成功 / 失败」两种：归还库存与释放券核销都在同一个事务里，
-	// 失败即 err != nil 并整体回滚，没有「状态已取消、库存没回来」这种带警告的成功。
+
 	response.SuccessWithMessage(c, orderenums.MsgCancelled, resp)
 }
 
-// RefundOrder 退款。
 func (h *Handle) RefundOrder(c *gin.Context) {
 	req, ok := binding.JSON[orderdto.RefundOrderReq](c)
 	if !ok {
@@ -176,7 +151,6 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgRefunded, nil)
 }
 
-// ListItems 某单的订单项。
 func (h *Handle) ListItems(c *gin.Context) {
 	req, ok := binding.Query[orderdto.GetOrderReq](c)
 	if !ok {
@@ -194,7 +168,6 @@ func (h *Handle) ListItems(c *gin.Context) {
 	response.Success(c, res.Items)
 }
 
-// ListLogs 某单的状态流转流水。
 func (h *Handle) ListLogs(c *gin.Context) {
 	req, ok := binding.Query[orderdto.GetOrderReq](c)
 	if !ok {
@@ -212,14 +185,6 @@ func (h *Handle) ListLogs(c *gin.Context) {
 	response.Success(c, res.Logs)
 }
 
-// ---------------------------------------------------------------------------
-// 优惠码（BIZ-1）：后台管理 + 试算。
-//
-// 试算是 GET（纯读，不占次数）；核销**没有独立入口** —— 它发生在建单事务里。
-// 单独暴露一个「核销」接口，必然会被用出「券核销了但单没下成」这种状态。
-// ---------------------------------------------------------------------------
-
-// ListCoupons 优惠码列表。
 func (h *Handle) ListCoupons(c *gin.Context) {
 	req, ok := binding.Query[orderdto.CouponListReq](c)
 	if !ok {
@@ -233,7 +198,6 @@ func (h *Handle) ListCoupons(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// GetCoupon 优惠码详情。
 func (h *Handle) GetCoupon(c *gin.Context) {
 	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("couponId")), 10, 64)
 	if err != nil || id == 0 {
@@ -248,14 +212,12 @@ func (h *Handle) GetCoupon(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// CreateCoupon 新建优惠码。
 func (h *Handle) CreateCoupon(c *gin.Context) {
 	req, ok := binding.Form[orderdto.CouponSaveReq](c)
 	if !ok {
 		return
 	}
-	// 时间窗：控件形态（带 T）→ 服务端认的写法。浏览器的 datetime-local 只能给 T 形态，
-	// 归口必须在 handler（旧页面路径由已删的 couponFormTimeValue 做），见 couponTimeInputValue。
+
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
 	applyCouponOperator(c, req)
@@ -267,11 +229,6 @@ func (h *Handle) CreateCoupon(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgCouponCreated, res)
 }
 
-// UpdateCoupon 修改优惠码（券码不可改：改码等于换一张券）。
-//
-// 同时是**批量停用 / 启用**的唯一写入口（严格形状并集，见 coupon_write.go）：
-// body 里带 ids 就是批档（{ids, status, projectId?}），否则是单档的改动请求 ——
-// 单档行为逐字不变（仍旧走 c.ShouldBind，form 与 json 两种绑定语义都不动）。
 func (h *Handle) UpdateCoupon(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -289,8 +246,7 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 时间窗归口与新建同源（见 couponTimeInputValue）：编辑抽屉与行内启停表单都是
-	// datetime-local 控件形态，不归口就会在服务端被判「生效时间不合法」。
+
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
 	applyCouponOperator(c, req)
@@ -302,14 +258,6 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgCouponUpdated, res)
 }
 
-// DeleteCoupon 删除优惠码（有核销记录的一律拒绝，请改用停用）。
-//
-// 严格形状并集（见 coupon_write.go）：单档 {id} 删一张（列表行内删除）、批档 {ids} 批量删除。
-//
-// 形状修正记录：此前这里读的是 c.PostForm("couponId")，而本端点的调用方（前端基座
-// static/js/ui/write-base.js、脚本、将来的集成方）一律发 JSON body —— 于是它**对 JSON
-// 调用方事实上不可用**（必然 400），只有页面那条走 service 的专用路径能删券。
-// 本批改成严格 JSON 形状后，同一个权限锚点既服务单条也服务批量。
 func (h *Handle) DeleteCoupon(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -318,7 +266,7 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 	hasIDs := orderWriteHasKey(raw, "ids")
 	if hasIDs {
 		if orderWriteHasKey(raw, "id") || orderWriteHasKey(raw, "couponId") {
-			// 单档键与批档键混用：形状错，不替调用方选一个。
+
 			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 			return
 		}
@@ -335,7 +283,7 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 	}
 	idKey, ok := orderCouponDeleteIDKey(raw)
 	if !ok {
-		// 两个键都给或都不给：形状错。
+
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
@@ -351,7 +299,6 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgCouponDeleted, nil)
 }
 
-// ValidateCoupon 优惠码试算（纯读，不占次数）。
 func (h *Handle) ValidateCoupon(c *gin.Context) {
 	req, ok := binding.Query[orderdto.CouponValidateReq](c)
 	if !ok {
@@ -365,7 +312,6 @@ func (h *Handle) ValidateCoupon(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// ListCouponRedemptions 核销记录列表。
 func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 	req, ok := binding.Query[orderdto.CouponRedemptionListReq](c)
 	if !ok {
@@ -379,8 +325,6 @@ func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// AuditCouponCounts 券计数对账（DB-021）：used_count（投影）对核销明细（真源）。
-// 只读入口，供运维巡检；发现偏差时照常返回结果，由人判断怎么处理。
 func (h *Handle) AuditCouponCounts(c *gin.Context) {
 	req, ok := binding.Query[orderdto.CouponCountAuditReq](c)
 	if !ok {
@@ -394,19 +338,6 @@ func (h *Handle) AuditCouponCounts(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// ---------------------------------------------------------------------------
-// 退货入库（RMA）：后台侧的审核与收货。
-//
-// 客户侧的「提交申请 / 撤销 / 查自己的」不走这里 —— 它们是访问面的片段能力
-//（访客没有权限点，能做的只有「操作自己的订单」）。
-// ---------------------------------------------------------------------------
-
-// localizeReturnLabels 退货单的状态标签取词（原处：service 只给状态取值）。
-//
-// 为什么在 handler：service 拿不到请求语言，而 StatusLabel 是**直接给客户端看的文本**
-// （JSON 接口的响应字段 + 访客片段渲染）—— 在那里拼中文的表现是英文站点恒中文，
-// 且不会有任何报错。映射与页面侧共用 returnStatusText（同一份 orderenums.ReturnStatusLabel），
-// 于是同一个状态在列表页、详情页与接口里说同一句话。
 func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
 	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	for _, r := range resps {
@@ -417,7 +348,6 @@ func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
 	}
 }
 
-// ListReturns 退货申请列表 + 各状态计数。
 func (h *Handle) ListReturns(c *gin.Context) {
 	req, ok := binding.Query[orderdto.ReturnListReq](c)
 	if !ok {
@@ -434,7 +364,6 @@ func (h *Handle) ListReturns(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// GetReturn 退货申请详情（含订单摘要与逐行可退数量）。
 func (h *Handle) GetReturn(c *gin.Context) {
 	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("returnId")), 10, 64)
 	if err != nil || id == 0 {
@@ -443,8 +372,7 @@ func (h *Handle) GetReturn(c *gin.Context) {
 	}
 	res, gerr := h.svc.GetReturn(c.Request.Context(), id)
 	if gerr != nil {
-		// 不把 err.Error() 直接交给响应：基础设施错误的原文会带表名 / SQL 片段（审计 CQ-009）。
-		// 复用页面层同一份白名单：命中业务文案原样返回，其余落到统一提示。
+
 		if msg := orderFacingText(gerr.Error()); msg != "" {
 			response.ErrorWithMessage(c, http.StatusBadRequest, msg)
 		} else {
@@ -458,10 +386,6 @@ func (h *Handle) GetReturn(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// ApproveReturn 同意退货（autoReceive=true 时一步完成入库 + 退款）。
-// 一个端点**两种形状**（task-98 S3）：体里有 `ids` → 批档（退货页的批量同意），否则单档
-// （既有调用方的语义逐字不变）。判别键是形状不是 action —— 不另开路径的理由见
-// return_bulk_write.go 头注释（sys_permission 每个权限点只有一列 api_path）。
 func (h *Handle) ApproveReturn(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -485,9 +409,6 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgReturnApproved, res)
 }
 
-// RejectReturn 拒绝退货（必须给理由）。
-//
-// 与 ApproveReturn 同形：体里有 `ids` → 批档（退货页的批量拒绝，理由必填由批档判）。
 func (h *Handle) RejectReturn(c *gin.Context) {
 	raw, ok := orderWriteBody(c)
 	if !ok {
@@ -511,7 +432,6 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgReturnRejected, res)
 }
 
-// ReceiveReturn 确认收货：**先入库、后退款**。
 func (h *Handle) ReceiveReturn(c *gin.Context) {
 	req, ok := binding.Form[orderdto.ReturnReceiveReq](c)
 	if !ok {
@@ -530,7 +450,6 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
 }
 
-// UpdateOrderNote 改订单的后台备注（adminNote）。
 func (h *Handle) UpdateOrderNote(c *gin.Context) {
 	req, ok := binding.Form[orderdto.UpdateOrderNoteReq](c)
 	if !ok {
@@ -548,7 +467,6 @@ func (h *Handle) UpdateOrderNote(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgNoteUpdated, res)
 }
 
-// applyReturnOperator 把当前后台操作人写进审核请求。
 func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {
 	id, name := operatorFromContext(c)
 	req.OperatorType = "admin"
@@ -556,9 +474,6 @@ func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {
 	req.OperatorName = name
 }
 
-// applyCouponOperator 把当前后台操作人写进请求。
-//
-// 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。
 func applyCouponOperator(c *gin.Context, req *orderdto.CouponSaveReq) {
 	id, name := operatorFromContext(c)
 	req.OperatorID = id

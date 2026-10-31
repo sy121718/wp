@@ -2,18 +2,12 @@ package migrations
 
 import "sync"
 
-// register_ai_mcp_switch_i18n.go — 对外接入点开关的词条（549）。
-//
-// 判据按本批自己的对象逐条枚举（上界封闭）：挑状态徽标与开前置确认两个 key，
-// 各自的中英两条都必须在（8 键 × 2 语言 = 16 条元组，代表 key 语言齐全即认完成）。
 func registerAIMcpSwitchI18n() {
 	registerAIMcpSwitchI18nOnce.Do(registerAIMcpSwitchI18nSeed)
 }
 
-// registerAIMcpSwitchI18nOnce 让重复调用成为空操作。
 var registerAIMcpSwitchI18nOnce sync.Once
 
-// registerAIMcpSwitchI18nSeed 注册 549（真正干活的那一半）。
 func registerAIMcpSwitchI18nSeed() {
 	registerSeed(Seed{
 		Version:   "549-ai-mcp-switch-i18n",

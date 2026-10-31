@@ -10,7 +10,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 编译界面中真实提供的区块，校验响应式值、动效和基础节点结构。
 func TestStarterPresetsCompile(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

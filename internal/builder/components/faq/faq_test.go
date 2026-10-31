@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// manyItems 生成 n 条合法 FAQ 条目。
 func manyItems(n int) []FaqItem {
 	items := make([]FaqItem, n)
 	for i := range items {
@@ -16,7 +15,6 @@ func manyItems(n int) []FaqItem {
 	return items
 }
 
-// TestValidateExtra 常见问题校验：条目非空、数量上限、问题/答案非空与长度上限。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -43,7 +41,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 常见问题样式编译：条目与展开箭头。
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Items: []FaqItem{{Question: "问题", Answer: "答案"}}}, b)

@@ -1,14 +1,5 @@
 package feature
 
-// mail_bulk_limit_text_test.go — 邮箱后台批量删除的 id 超限路径（本批受控类型收口）。
-//
-// 背景：mailBulkIDsText 此前用 bulkids.MaxIDs **重新组织**了同一句话 —— 副作用是丢掉
-// 「当前 N 项」（去重后的条数只有 shell 知道，在模块里重算就是第二份真相）。现在它只转调
-// shell.BulkIDsFacingText，超限错误是带 sentinel 的类型（bulkids.ErrTooMany /
-// *bulkids.IDsError），两个数字都由类型给回。
-//
-// 用 nil service：超限在读到 service 之前就被 shell.BulkIDs 拒绝，这条路径不碰数据库。
-
 import (
 	"errors"
 	"net/http"
@@ -26,7 +17,6 @@ import (
 	bulkids "go_wp/pkg/bulkids"
 )
 
-// mailBulkOverLimitForm 造一份超过 bulkids.MaxIDs 的批量表单（发信账号批量删除）。
 func mailBulkOverLimitForm() url.Values {
 	form := url.Values{}
 	for i := 0; i < bulkids.MaxIDs+1; i++ {
@@ -35,8 +25,6 @@ func mailBulkOverLimitForm() url.Values {
 	return form
 }
 
-// TestMailAccountsBulkDeleteOverLimitUsesControlledText 超限时渲染失败提示页，
-// 且**「当前 M 项」确实回来了** —— 这条正是本批对 mail/order/user 的目的。
 func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -59,7 +47,6 @@ func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	// 超限整批拒绝 → 失败提示页（不再 302 回列表页带 ?err=）。
 	body := rec.Body.String()
 	mailAssertJump(t, rec, false, "一次最多操作")
 	over := strconv.Itoa(bulkids.MaxIDs + 1)

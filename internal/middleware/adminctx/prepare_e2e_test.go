@@ -1,5 +1,3 @@
-// 本文件是**外部测试包**（adminctx_test）：它 import 真实 internal/adminui 来跑端到端链，
-// 放包内会形成 adminctx → adminui 的测试依赖；外部测试包不参与生产依赖图，方向仍单向。
 package adminctx_test
 
 import (
@@ -16,7 +14,6 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 )
 
-// sidebarStub 支持成功与权限查询错误路径；细分失败守卫在 context_test.go。
 type sidebarStub struct {
 	tree          []admindto.MenuTreeNode
 	permissionErr error
@@ -43,11 +40,6 @@ func (s *sidebarStub) BuildAuthorizedTree(context.Context, []string) ([]admindto
 	return s.tree, nil
 }
 
-// TestMiddlewareTreeReachesAdminuiSidebar 钉住端到端链：中间件写入的授权树 → 真实
-// adminui.Prepare → 侧栏视图（NavGroups）+ PermSet / Buttons 三个产物。
-//
-// 这条链上任何一处键名分歧（中间件写 nav_tree、Prepare 读别的键）或树未注入，Jet 都不会
-// 报错 —— 侧栏只会静默少一块。三个断言合起来才封住这三种静默故障。
 func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	st := &sidebarStub{

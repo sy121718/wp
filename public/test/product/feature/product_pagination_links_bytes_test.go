@@ -1,11 +1,5 @@
 package feature
 
-// product_pagination_links_bytes_test.go — 真实目录数据的分页链接与导航契约。
-//
-// 为什么还要一层 feature 级：模板级差分证明「同数据 → 同字节」，handler 级桩证明「注入了事实键」，
-// 但只有真实 service + 真实迁移建出的表 + 真实 Jet 跑一遍，才能证明**基地址里带的筛选参数**
-// 与 CatalogTaxonomyReq 的 size 在翻页后仍生效；不能只看到 page=2 就判通过。
-
 import (
 	"fmt"
 	"html"
@@ -18,10 +12,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// linkWithPagination 独立复算「基地址 + page + size」在 HTML 属性里的字节。
-//
-// 页面里的 href 是 Jet 转义过的（`&` → `&amp;`）；这里从 url.Values.Encode() 出发，
-// 不复制产品代码的拼串逻辑 —— 少一个筛选参数或多一个参数都会在这里露出来。
 func linkWithPagination(path string, filters url.Values, page, size int) string {
 	base := path
 	if enc := filters.Encode(); enc != "" {
@@ -35,13 +25,12 @@ func linkWithPagination(path string, filters url.Values, page, size int) string 
 	return strings.ReplaceAll(raw, "&", "&amp;")
 }
 
-// TestProductBrandsPaginationLinkBytes 品牌页：链接保留关键词，并按 size 真正取下一页。
 func TestProductBrandsPaginationLinkBytes(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if f == nil {
 		return
 	}
-	const total = 25 // 每页 20 → 两页
+	const total = 25
 	for i := 1; i <= total; i++ {
 		if _, err := f.svc.CreateBrand(t.Context(), &productdto.CreateBrandReq{
 			ProjectID: f.projectID,
@@ -55,8 +44,7 @@ func TestProductBrandsPaginationLinkBytes(t *testing.T) {
 	if nav == "" {
 		t.Fatal("超过一页却没渲染分页条")
 	}
-	// 基地址来自请求串（移除分页参数后回带）：本请求没带 project，链接里也就没有 ——
-	// 不替用户补参数，缺省工程由服务端在取数时解析。
+
 	want := paginationElement("/admin/product-brands", url.Values{
 		"keyword": {"pg-links"},
 	}, 2, 20)
@@ -67,7 +55,7 @@ func TestProductBrandsPaginationLinkBytes(t *testing.T) {
 	if got := strings.Count(second, `name="ids"`); got != total-20 {
 		t.Fatalf("跟随品牌第2页链接应有%d行，实际%d行", total-20, got)
 	}
-	// 非默认 size 也必须被请求绑定；只检查默认20会漏掉服务端忽略 size 的回归。
+
 	custom := getWholePage(t, engine, "/admin/product-brands?keyword=pg-links&size=7")
 	if got := strings.Count(custom, `name="ids"`); got != 7 {
 		t.Fatalf("size=7应读取7行，实际%d行", got)
@@ -83,13 +71,12 @@ func TestProductBrandsPaginationLinkBytes(t *testing.T) {
 	}
 }
 
-// TestProductAttributesPaginationLinkBytes 属性页：翻页后保留工程、关键词、variation与size。
 func TestProductAttributesPaginationLinkBytes(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if f == nil {
 		return
 	}
-	const total = 21 // 每页 20 → 两页，第 2 页 1 行
+	const total = 21
 	for i := 1; i <= total; i++ {
 		if _, err := f.svc.CreateAttribute(t.Context(), &productdto.CreateAttributeReq{
 			ProjectID:   f.projectID,
@@ -124,7 +111,6 @@ func TestProductAttributesPaginationLinkBytes(t *testing.T) {
 	}
 }
 
-// TestProductTaxonomySinglePageHasNoPaginationBar 单页数据不渲染分页条（事实键不注入这一档）。
 func TestProductTaxonomySinglePageHasNoPaginationBar(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if f == nil {
@@ -142,16 +128,11 @@ func TestProductTaxonomySinglePageHasNoPaginationBar(t *testing.T) {
 	}
 }
 
-// paginationElement 页面里应当出现的**整段**分页链接元素（地址 + 类名 + 页码文字）。
-//
-// 断言整段元素而不是 `href="…"`：只比属性值会漏掉「类名变了」「页码文字写死」这类消融，
-// 而那些同样是用户看得见的变化。
 func paginationElement(path string, filters url.Values, page, size int) string {
 	return `<a class="pagination-btn" href="` + linkWithPagination(path, filters, page, size) + `">` +
 		strconv.Itoa(page) + `</a>`
 }
 
-// paginationTarget 读取实际渲染的链接作为下一次请求，不另造导航地址。
 func paginationTarget(t *testing.T, nav string, page int) string {
 	t.Helper()
 	for _, match := range regexp.MustCompile(`href="([^"]+)"`).FindAllStringSubmatch(nav, -1) {

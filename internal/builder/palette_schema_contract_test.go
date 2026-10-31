@@ -1,21 +1,3 @@
-// palette_schema_contract_test.go — 组件库清单与 Inspector schema 的一致性契约（审计 EDT-008）。
-//
-// 问题：组件库条目（internal/templates/static/js/workbench/palette.js 的 paletteItems）
-// 与 Inspector schema（builder.ComponentSchemas()）是两份**独立维护**的数据。
-// 二者一旦漂移，症状都是静默的：
-//
-//   - schema 有、palette 没有 —— 组件已注册且文档里能编译，但作者在面板上拖不出来；
-//   - palette 有、schema 没有 —— 拖进去能用，但检查器面板为空（字段无从编辑）。
-//
-// 既有的 TestPaletteGroupsCoverItems 只覆盖「分组 ↔ 条目」互相覆盖，管不到这里。
-//
-// 为什么用一致性测试而不是代码生成：paletteItems 里真正宝贵的是 label / hint / props
-// （中文标签与「插入即合法」的默认内容），这些在 schema 里**不存在**（schema 只有
-// key / kind / options / default 这类控件描述符），生成不出来；schema 能生成的只有
-// 「组件类型集合」这一项，而钉住集合的一致性用测试更直接 —— 无需构建步骤，
-// 本地与 CI 都能在漂移进入主干前拦住。
-//
-// 环境没有 node 时自动跳过（与 defaults_contract_test.go 同一套探针）。
 package builder
 
 import (
@@ -23,10 +5,6 @@ import (
 	"testing"
 )
 
-// 组件库豁免表（PaletteExemptTypes）已上移到生产代码 palette.go：
-// 覆盖断言（palette_contract_test.go）与 Inspector schema 一致性检查共用同一份声明。
-
-// TestPaletteItemsMatchComponentSchemas 组件库条目与 Inspector schema 必须一一对应。
 func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 	schemas, err := ComponentSchemas()
 	if err != nil {
@@ -51,7 +29,6 @@ func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 		t.Errorf("组件库里有重复条目（同一个组件会出现在面板上两次）: %v", duplicated)
 	}
 
-	// 方向一：有 schema 的组件必须能被拖出来。
 	missingInPalette := []string{}
 	for typ := range schemas {
 		if _, exempt := PaletteExemptTypes[typ]; exempt {
@@ -62,7 +39,6 @@ func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 		}
 	}
 
-	// 豁免名单不能变成僵尸：被豁免的组件必须真的有 schema（组件删除 / 改名后名单要跟着收）。
 	stale := []string{}
 	for typ := range PaletteExemptTypes {
 		if _, ok := schemas[typ]; !ok {
@@ -78,7 +54,6 @@ func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 		t.Errorf("以下组件已注册且有 Inspector schema，却不在组件库清单里（作者拖不出来）: %v", missingInPalette)
 	}
 
-	// 方向二：组件库条目必须有 schema，否则拖进去检查器是空面板。
 	missingInSchema := []string{}
 	for typ := range inPalette {
 		if _, ok := schemas[typ]; !ok {
@@ -93,11 +68,6 @@ func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 	t.Logf("组件库 %d 个条目 / Inspector schema %d 个组件，双向一致", len(inPalette), len(schemas))
 }
 
-// TestPaletteOutputMatchesGoSpec 前端派生条目必须与 Go 侧组件库输出一一对应（审计 REG-005）。
-//
-// palette.js 已不再手写条目：它由生成的 paletteSpec（组件 Go 声明）派生。
-// 本测试钉住派生结果不丢条目、不多条目 —— 并顺带证明「新增组件只改 Go」时，
-// 前端拿到的集合等于 Go 侧注册集合。
 func TestPaletteOutputMatchesGoSpec(t *testing.T) {
 	items, err := ComponentPalette()
 	if err != nil {

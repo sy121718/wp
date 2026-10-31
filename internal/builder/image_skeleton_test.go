@@ -1,6 +1,5 @@
 package builder
 
-// image_skeleton_test.go — 图片懒加载三态 + 主题骨架屏（docs/09 §3 图片优化）。
 import (
 	"strings"
 	"testing"
@@ -10,10 +9,9 @@ import (
 
 func TestImageSkeletonAndLoading(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
-	// 主题：懒加载开启 + 骨架开启
+
 	theme := &ThemeSettings{Images: ThemeImages{LazyLoad: "on", Skeleton: true}}
 
-	// 1) 组件未设置 → 继承主题：lazy + 骨架
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"/storage/a.jpg","alt":"A"}}]}`
 	page, _ := ParsePage([]byte(doc))
 	c, err := Compile(page, WithComponentSet(set), WithThemeSettings(theme))
@@ -30,7 +28,6 @@ func TestImageSkeletonAndLoading(t *testing.T) {
 		t.Errorf("应输出骨架 keyframes\n%s", c.CSS)
 	}
 
-	// 2) 组件 off 覆盖主题：eager 且无骨架
 	doc2 := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i2","type":"core.image","props":{"src":"/storage/b.jpg","alt":"B","loading":"off"}}]}`
 	page2, _ := ParsePage([]byte(doc2))
 	c2, err := Compile(page2, WithComponentSet(set), WithThemeSettings(theme))
@@ -44,7 +41,6 @@ func TestImageSkeletonAndLoading(t *testing.T) {
 		t.Errorf("立即加载不应有骨架\n%s", c2.HTML)
 	}
 
-	// 3) 主题关闭懒加载 → 默认即 eager
 	themeOff := &ThemeSettings{Images: ThemeImages{LazyLoad: "off"}}
 	c3, err := Compile(page, WithComponentSet(set), WithThemeSettings(themeOff))
 	if err != nil {

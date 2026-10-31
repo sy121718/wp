@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestListCSSBase 迁移到 list.css 后逐条核对基底规则。
 func TestListCSSBase(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -29,14 +28,13 @@ func TestListCSSBase(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 未配置可选项时，这些规则整体不产出。断言取「只可能来自可选项」的形态 ——
-	// 直接用 align-items / background 会误伤基底规则（列表项的 align-items、圆点的 background）。
+
 	for _, nw := range []string{
-		"width: 1.8em",                          // 仅图标圆形底
-		"font-size:",                            // 仅文本字号 / 图标字号
-		".sky-c-t .sky-list-marker {\n  color:", // 仅图标颜色
-		".sky-c-t .sky-list-text {\n  color:",   // 仅文本颜色
-		".sky-c-t a.sky-list-text {\n  color:",  // 仅链接颜色
+		"width: 1.8em",
+		"font-size:",
+		".sky-c-t .sky-list-marker {\n  color:",
+		".sky-c-t .sky-list-text {\n  color:",
+		".sky-c-t a.sky-list-text {\n  color:",
 	} {
 		if strings.Contains(out, nw) {
 			t.Errorf("默认配置不该产出 %q:\n%s", nw, out)
@@ -44,7 +42,6 @@ func TestListCSSBase(t *testing.T) {
 	}
 }
 
-// TestListCSSOptionals 每个可选属性各自是一条独立规则，未配置则整体缺席。
 func TestListCSSOptionals(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{

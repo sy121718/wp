@@ -1,4 +1,3 @@
-// 工作台契约生成器：在仓库根目录执行 go run ./cmd/workbench-contracts。
 package main
 
 import (

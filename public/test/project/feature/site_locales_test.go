@@ -1,16 +1,5 @@
 package feature
 
-// site_locales_test.go — 站点语言清单管理页（多语言 P3，docs/06-D §14 D10）。
-//
-// 走真实链路：gin 路由 → dashboard handler → project 契约（ListLocales / SaveLocales）
-// → 真实 PostgreSQL（project_locales 表）→ Jet 模板片段。
-//
-// 覆盖：
-//  1. 站点设置页「语言」分组渲染现有清单（默认/启用勾选态 + 禁用语言提示）；
-//  2. HTMX 行片段增/删一行（服务端渲染，未落库）；
-//  3. 全量保存成功（303 回跳 + 落库）；
-//  4. 校验失败不落库：空清单 / 默认语言未启用 / 语言码非法。
-
 import (
 	"context"
 	"net/http"
@@ -31,8 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// newSiteLocalesEnv 装配站点设置页测试环境（真实 PG + project 契约）。
-// 返回 router、project 服务、工程 ID、db。
 func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, string, *gorm.DB) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -51,7 +38,6 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	return router, projects, project.ID, db
 }
 
-// postForm 提交表单并返回响应。
 func postForm(t *testing.T, router *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
@@ -61,7 +47,6 @@ func postForm(t *testing.T, router *gin.Engine, path string, form url.Values) *h
 	return recorder
 }
 
-// localeLangs 读取工程语言清单（语言码 + 默认/启用态，按契约顺序）。
 func localeLangs(t *testing.T, svc *projectservice.Service, projectID string) []projectdto.LocaleResp {
 	t.Helper()
 	rows, err := svc.ListLocales(context.Background(), projectID)
@@ -71,7 +56,6 @@ func localeLangs(t *testing.T, svc *projectservice.Service, projectID string) []
 	return rows
 }
 
-// TestSiteSettingsRendersLocaleGroup 站点设置页渲染「语言」分组与禁用语言提示。
 func TestSiteSettingsRendersLocaleGroup(t *testing.T) {
 	router, projects, projectID, _ := newSiteLocalesEnv(t)
 	ctx := context.Background()
@@ -88,9 +72,7 @@ func TestSiteSettingsRendersLocaleGroup(t *testing.T) {
 		t.Fatalf("GET /admin/settings -> %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	// 「语言」分组已从 <h2> 改成可折叠区块的标题（<details class="section-fold"> 里的
-	// <span class="fold-title">）—— 站点设置是长页面，「站点语言清单」这类配置项折叠收纳，
-	// 标题层级因此从 h2 变成 .fold-title；分组还是同一个分组。
+
 	for _, want := range []string{
 		`<span class="fold-title">语言</span>`,
 		`action="/admin/settings/locales/save?project=`,
@@ -108,7 +90,6 @@ func TestSiteSettingsRendersLocaleGroup(t *testing.T) {
 	}
 }
 
-// TestLocaleRowsFragmentAddAndRemove HTMX 行片段：增一行 / 删一行（未落库）。
 func TestLocaleRowsFragmentAddAndRemove(t *testing.T) {
 	router, projects, projectID, _ := newSiteLocalesEnv(t)
 	ctx := context.Background()
@@ -119,7 +100,6 @@ func TestLocaleRowsFragmentAddAndRemove(t *testing.T) {
 		t.Fatalf("初始化语言清单失败: %v", err)
 	}
 
-	// 增：newLang=ja 追加为新行（默认不勾选默认语言）。
 	added := postForm(t, router, "/admin/settings/locales/rows", url.Values{
 		"projectId": {projectID}, "action": {"add"}, "newLang": {"ja"},
 		"langs": {"zh-CN", "en-US"}, "defaultIndex": {"0"}, "enabledIndex": {"0", "1"},
@@ -130,12 +110,11 @@ func TestLocaleRowsFragmentAddAndRemove(t *testing.T) {
 	if !strings.Contains(added.Body.String(), `name="langs" value="ja"`) {
 		t.Fatalf("增行后片段缺少新语言\n%s", added.Body.String())
 	}
-	// 未落库：数据库仍是两行。
+
 	if rows := localeLangs(t, projects, projectID); len(rows) != 2 {
 		t.Fatalf("行片段不应落库，实际 %d 行", len(rows))
 	}
 
-	// 删：删除默认语言行（index=0）后，默认标记顺延给仍启用的第一行。
 	removed := postForm(t, router, "/admin/settings/locales/rows", url.Values{
 		"projectId": {projectID}, "action": {"remove"}, "removeIndex": {"0"},
 		"langs": {"zh-CN", "en-US"}, "defaultIndex": {"0"}, "enabledIndex": {"0", "1"},
@@ -152,7 +131,6 @@ func TestLocaleRowsFragmentAddAndRemove(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesPersists 全量保存：整页成功提示 + 落库 + 回读一致。
 func TestSaveSiteLocalesPersists(t *testing.T) {
 	router, projects, projectID, _ := newSiteLocalesEnv(t)
 
@@ -160,7 +138,7 @@ func TestSaveSiteLocalesPersists(t *testing.T) {
 		"projectId":    {projectID},
 		"langs":        {"zh-CN", "en-US", "ja"},
 		"defaultIndex": {"0"},
-		"enabledIndex": {"0", "1"}, // ja 禁用
+		"enabledIndex": {"0", "1"},
 	})
 	if saved.Code != http.StatusOK {
 		t.Fatalf("保存成功应 200 渲染提示页，实际 %d：%s", saved.Code, saved.Body.String())
@@ -181,7 +159,6 @@ func TestSaveSiteLocalesPersists(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesValidation 校验失败不落库：空清单 / 默认语言未启用 / 语言码非法。
 func TestSaveSiteLocalesValidation(t *testing.T) {
 	router, projects, projectID, _ := newSiteLocalesEnv(t)
 	ctx := context.Background()
@@ -213,7 +190,7 @@ func TestSaveSiteLocalesValidation(t *testing.T) {
 			if !strings.Contains(recorder.Body.String(), "语言清单不合法") {
 				t.Fatalf("缺少校验失败提示\n%s", recorder.Body.String())
 			}
-			// 落库内容保持不变（仍是初始化的一种语言）。
+
 			rows := localeLangs(t, projects, projectID)
 			if len(rows) != 1 || rows[0].Lang != "zh-CN" {
 				t.Fatalf("校验失败不应落库，实际 %+v", rows)

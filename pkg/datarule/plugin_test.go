@@ -49,8 +49,6 @@ func TestBuildConditionBindsArguments(t *testing.T) {
 	}
 }
 
-// TestBuildConditionQuotesFieldByDialect 验证 H4：标识符引用符按方言选择，
-// postgres/sqlite 走标准双引号，mysql 保留反引号。
 func TestBuildConditionQuotesFieldByDialect(t *testing.T) {
 	t.Parallel()
 
@@ -73,8 +71,6 @@ func TestBuildConditionQuotesFieldByDialect(t *testing.T) {
 	}
 }
 
-// TestBuildConditionDeptScopeExactMatch 验证 H5：部门范围（SELF_AND_CHILDREN）
-// 对 ancestors 做整段精确匹配而非子串匹配，且方言分支分别使用 || 与 CONCAT 拼接。
 func TestBuildConditionDeptScopeExactMatch(t *testing.T) {
 	t.Parallel()
 
@@ -106,10 +102,6 @@ func TestBuildConditionDeptScopeExactMatch(t *testing.T) {
 	}
 }
 
-// TestDeptScopeAncestorsMatchSemantics 用真实 PostgreSQL 常量表达式验证整段匹配语义：
-// 部门 1 不误匹配 ancestors 含 14/41 的部门（旧子串匹配 '%1%' 会误判），并正确匹配
-// 直接子部门（ancestors "0,1"）与孙子部门（ancestors "0,1,14"）。
-// 仅执行常量 SELECT，不建表不写数据；本地 PostgreSQL 不可用时跳过。
 func TestDeptScopeAncestorsMatchSemantics(t *testing.T) {
 	t.Parallel()
 
@@ -215,16 +207,10 @@ type testRuleProvider struct {
 	err   error
 }
 
-// openTestDB 打开本地 PostgreSQL 测试连接（DryRun 即可，无需建表）。
-// 连接信息默认对齐 config.yaml（127.0.0.1:5432 root/root wp），可用
-// PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE 覆盖。本地 PostgreSQL 不可用时
-// 返回 error，由测试方决定 t.Skip —— 避免依赖环境导致的 CI 误报失败。
 func openTestDB() (*gorm.DB, error) {
 	return gorm.Open(postgres.Open(testDSN()), &gorm.Config{DryRun: true})
 }
 
-// openTestDBLive 打开可真实执行 SQL 的 PostgreSQL 连接（非 DryRun），
-// 仅供常量表达式语义验证使用，不依赖任何业务表。
 func openTestDBLive() (*gorm.DB, error) {
 	return gorm.Open(postgres.Open(testDSN()))
 }
@@ -285,8 +271,7 @@ func TestPluginInjectsSQLAndArguments(t *testing.T) {
 		t.Fatalf("生成查询失败：%v", result.Error)
 	}
 	query := result.Statement.SQL.String()
-	// postgres 方言把占位符渲染为 $1/$2…，IN 展开为 ($1,$2)；条件标识与注入逻辑不变。
-	// H4：字段按方言以双引号引用（postgres），不再使用 MySQL 反引号。
+
 	if !strings.Contains(query, `"status" IN ($1,$2)`) || !strings.Contains(query, `"username" LIKE $3`) {
 		t.Fatalf("数据规则未注入 SQL：%s", query)
 	}

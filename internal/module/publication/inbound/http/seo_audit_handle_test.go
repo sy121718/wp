@@ -1,10 +1,5 @@
 package pubhttp
 
-// seo_audit_handle_test.go — SEO 体检端点的 JSON 契约测试。
-//
-// 三条不变量：1) 任意 HX/Accept 组合都是 JSON 且无导航头；2) 失败按声明状态码
-// 出去、原文不泄漏；3) 工程 body 优先、空白回落 query（由 DTO 决定，这里只验行为）。
-
 import (
 	"context"
 	"errors"
@@ -23,11 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// rawLeak 一个既像 HTML 又像错误原文的载荷：进 JSON 时必须被当作普通字符串，
-// 不参与转义、不被剥掉、也不会被当成提示文案来源。
 const rawLeak = `<img src=x onerror=alert(1)> & "quote" 'tick' ` + "`backtick`" + ` private-path:/srv/artifacts/secret`
 
-// seoAuditEngine 起一条只挂 handler 的引擎（中间件与路由装配在 router 测试里验）。
 func seoAuditEngine(run func(context.Context, string) (pubservice.AuditResult, error)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -35,7 +27,6 @@ func seoAuditEngine(run func(context.Context, string) (pubservice.AuditResult, e
 	return r
 }
 
-// decodeEnvelope 解 {code,message,data} 并断言响应类型是 JSON 而不是 HTML。
 func decodeEnvelope(t *testing.T, w *httptest.ResponseRecorder) response.Response {
 	t.Helper()
 	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
@@ -48,7 +39,6 @@ func decodeEnvelope(t *testing.T, w *httptest.ResponseRecorder) response.Respons
 	return got
 }
 
-// assertNoRedirect 写动作只回 JSON：状态码不是 3xx，也没有导航头。
 func assertNoRedirect(t *testing.T, w *httptest.ResponseRecorder) {
 	t.Helper()
 	if w.Code >= 300 && w.Code < 400 {
@@ -65,7 +55,6 @@ func assertNoRedirect(t *testing.T, w *httptest.ResponseRecorder) {
 	}
 }
 
-// TestSEOAuditJSONContract 一次覆盖：三种传输、query 回落、非法 JSON、HX/非 HX、跳转禁止。
 func TestSEOAuditJSONContract(t *testing.T) {
 	issues := []pubservice.AuditIssue{
 		{Path: rawLeak, Item: pubservice.AuditTitleMissing, Level: pubservice.AuditLevelError},
@@ -84,7 +73,7 @@ func TestSEOAuditJSONContract(t *testing.T) {
 		runErr     error
 		wantStatus int
 		wantIssues bool
-		// wantNoCall 表示请求在绑定阶段就该结束：用调用次数证明，而不是靠参数为空。
+
 		wantNoCall bool
 	}{
 		{
@@ -112,14 +101,13 @@ func TestSEOAuditJSONContract(t *testing.T) {
 			wantProj: "p1", result: ok, wantStatus: http.StatusOK, wantIssues: true,
 		},
 		{
-			// 冻结的绑定语义：Content-Type: application/json + 空 body 走 ShouldBind(JSON)，
-			// 返回 EOF → ParamError 400。这是真实契约，不是可迁就的缺陷，按它断言。
+
 			name: "空 JSON 体绑定失败 400 且不进 service", contentTyp: "application/json",
 			target: "/api/publication/seo-audit?project=p3", wantNoCall: true,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			// query 回落走这条：JSON 对象合法但工程为空，才交给 ResolveProject 回落 query。
+
 			name: "空 JSON 对象回落 query", contentTyp: "application/json",
 			body: `{}`, target: "/api/publication/seo-audit?project=p3",
 			wantProj: "p3", result: ok, wantStatus: http.StatusOK, wantIssues: true,
@@ -226,7 +214,7 @@ func TestSEOAuditJSONContract(t *testing.T) {
 			if got.Code != tc.wantStatus {
 				t.Fatalf("envelope code = %d，want %d", got.Code, tc.wantStatus)
 			}
-			// 绑定阶段失败的请求一次都不该进 service：用调用次数直接证明。
+
 			wantCall := 0
 			if !tc.wantNoCall {
 				wantCall = 1
@@ -261,7 +249,7 @@ func TestSEOAuditJSONContract(t *testing.T) {
 			if !ok {
 				t.Fatalf("成功响应 data 形状改变：%+v", got.Data)
 			}
-			// 计数一律与列表长度对账：两处各算一次，迟早有一处忘了同步。
+
 			if data["scanned"] != float64(tc.result.Scanned) {
 				t.Fatalf("scanned = %v，want %d", data["scanned"], tc.result.Scanned)
 			}
@@ -279,7 +267,7 @@ func TestSEOAuditJSONContract(t *testing.T) {
 			if !ok {
 				t.Fatalf("issue 形状改变：%+v", rawIssues[0])
 			}
-			// 事实字段原样透出：路径就是被检查产物里的原值，不做任何清洗或转义。
+
 			if first["path"] != tc.result.Issues[0].Path || first["item"] != tc.result.Issues[0].Item ||
 				first["level"] != tc.result.Issues[0].Level {
 				t.Fatalf("issue 事实被改写：%+v", first)
@@ -299,14 +287,14 @@ func TestSEOAuditJSONContract(t *testing.T) {
 			if !ok {
 				t.Fatalf("重复标题的 params 必须是对象：%+v", second["params"])
 			}
-			// 重复标题不归属任何单页：path 留空，全部命中路径在 params.paths 里一个不少。
+
 			if second["path"] != "" {
 				t.Fatalf("重复标题的 path 必须为空，实际 %v", second["path"])
 			}
 			if paths, ok := secondParams["paths"].([]any); !ok || len(paths) != 2 || paths[0] != "/a" || paths[1] != "/b" {
 				t.Fatalf("重复标题的完整路径丢失：%+v", secondParams["paths"])
 			}
-			// 只带参数的检查项才出键：其余四项 omitempty，不能凭空长出空串。
+
 			if _, has := params["src"]; has {
 				t.Fatalf("无参数的结论不该带 src：%+v", params)
 			}
@@ -317,10 +305,6 @@ func TestSEOAuditJSONContract(t *testing.T) {
 	}
 }
 
-// TestSEOAuditEmptyIsArray 空态必须是 []，不是 null。
-//
-// 前端按 length 判「有没有问题」；null 会让同一段代码在两种空态下走出两条分支，
-// 而其中一条（null）永远没人测。
 func TestSEOAuditEmptyIsArray(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

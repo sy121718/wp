@@ -7,8 +7,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// DocumentDigest 忽略 JSONB 对象键序和空白，保留精确数字字面量。
-// 转换计划与事务锁内读取共用此口径，避免数据库格式化造成伪冲突。
 func DocumentDigest(raw []byte) (string, error) {
 	normal, err := orderedDocumentJSON(raw)
 	if err != nil {

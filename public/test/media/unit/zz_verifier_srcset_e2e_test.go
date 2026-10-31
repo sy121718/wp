@@ -1,14 +1,5 @@
 package unit
 
-// zz_verifier_srcset_e2e_test.go — 独立验证者（verifier）的端到端落盘验证。
-//
-// 复核对象：契约改动（ProbeImageVariants 从 []int 改为 []VariantRef）之后，
-// srcset 拼出的 URL 是否**真的指向磁盘上存在的文件**。
-//
-// 为什么这是最关键的一条：构建期只做字符串拼装，拼错了没有任何构建错误 ——
-// 浏览器只会静默回退到 src 原图，没有控制台报错、没有测试失败。
-// 所以判据必须是「URL → 存储键 → 磁盘文件存在 → 宽度与像素一致」的完整闭环。
-
 import (
 	"image"
 	_ "image/jpeg"
@@ -25,7 +16,6 @@ import (
 	"go_wp/pkg/upload"
 )
 
-// decodeRealWidth 读磁盘图片的真实像素宽度；读不到返回 -1。
 func decodeRealWidth(abs string) int {
 	f, err := os.Open(abs)
 	if err != nil {
@@ -39,7 +29,6 @@ func decodeRealWidth(abs string) int {
 	return cfg.Width
 }
 
-// TestVerifierSrcsetURLsResolveToRealFiles probe → 磁盘闭环（宽度描述符也校验）。
 func TestVerifierSrcsetURLsResolveToRealFiles(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -55,7 +44,6 @@ func TestVerifierSrcsetURLsResolveToRealFiles(t *testing.T) {
 		t.Fatalf("候选数 = %d（%+v），期望 3（thumb 320 + small 768 + medium 1280；full 与源图同尺寸不参与）", len(refs), refs)
 	}
 
-	// DB 里的 file_path 是「下载打包」与「探针 URL」的共同真源，必须完全一致。
 	dbKeys := map[string]bool{}
 	for _, v := range listVariants(t, db, id) {
 		dbKeys[v.FilePath] = true
@@ -87,8 +75,6 @@ func TestVerifierSrcsetURLsResolveToRealFiles(t *testing.T) {
 	}
 }
 
-// TestVerifierSrcsetEndToEndThroughBuilder 真端到端：
-// 真实 probe 注入真实编译内核，从产物 HTML 里抠出 srcset，再逐个落盘校验。
 func TestVerifierSrcsetEndToEndThroughBuilder(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -100,7 +86,7 @@ func TestVerifierSrcsetEndToEndThroughBuilder(t *testing.T) {
 	}
 
 	set, _ := templates.NewEmbeddedComponentSet()
-	// 真实装配路径的形态：pipeline 把 func(ctx,url) []VariantRef 包成 func(url) []VariantRef。
+
 	probe := func(url string) []mediacontract.VariantRef {
 		return svc.ProbeImageVariants(ctx, url)
 	}
@@ -151,9 +137,6 @@ func TestVerifierSrcsetEndToEndThroughBuilder(t *testing.T) {
 	}
 }
 
-// TestVerifierFingerprintTracksContent 换图后候选 URL 必须变化 ——
-// 这是 immutable 缓存安全的**唯一**前提：URL 与内容绑定。
-// 若内容变了 URL 不变，immutable 就等于「老访客永久看不到新图」。
 func TestVerifierFingerprintTracksContent(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -169,7 +152,6 @@ func TestVerifierFingerprintTracksContent(t *testing.T) {
 		t.Fatal("首次 probe 为空")
 	}
 
-	// 内容不变重跑：URL 必须完全一致（确定性构建的前提）。
 	if _, err := svc.GenerateVariants(ctx, id); err != nil {
 		t.Fatalf("重跑失败: %v", err)
 	}
@@ -183,7 +165,6 @@ func TestVerifierFingerprintTracksContent(t *testing.T) {
 		}
 	}
 
-	// 换图：改字节 + generation+1（复现 media_replace 的语义：文件名不变、字节变）。
 	makeTestPNG(t, tmp, "photo.png", 1200, 700)
 	if err := db.Exec("UPDATE sys_attachment SET generation = generation + 1 WHERE id = ?", id).Error; err != nil {
 		t.Fatalf("更新 generation 失败: %v", err)

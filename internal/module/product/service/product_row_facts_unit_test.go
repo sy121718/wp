@@ -1,7 +1,5 @@
 package productservice
 
-// 列表事实与价格派生的纯函数测试；数据库等式测试留在外部包，避免 support 导入环。
-
 import (
 	"reflect"
 	"testing"
@@ -9,7 +7,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// TestListProjectionKeepsPriceAndReferences 挂载事实来自列表投影，价格仍由变体派生。
 func TestListProjectionKeepsPriceAndReferences(t *testing.T) {
 	primary, brand := "category-a", "brand-a"
 	row := &productmodel.ProductEntity{
@@ -30,12 +27,6 @@ func TestListProjectionKeepsPriceAndReferences(t *testing.T) {
 	}
 }
 
-// TestRatingRespOfAggZeroValue 无评分商品的零值投影：不在 map ⇒ Count=0 ⇒ HasRating=false。
-//
-// 这条对应 dd.txt 3.5 的「无评分商品的零值表示」：与详情路径「确实没有评分」时的渲染一致
-// （HasRating=false、RatingCount=0、明细为空）。**读不到不走这条路**：两条路径都不吞错 ——
-// 批量侧是 productRowsFromList 返回 error，详情 / 编辑侧是 ratingsOf 返回 error
-// （service/product_row_rating_failure_test.go 用失败注入钉住这两档的区别）。
 func TestRatingRespOfAggZeroValue(t *testing.T) {
 	zero := ratingRespOfAgg(productmodel.RatingAgg{})
 	if zero == nil {

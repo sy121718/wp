@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 卡片校验：按钮链接协议白名单。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -31,7 +30,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 卡片样式编译：布局与子元素选择器。
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{}, b)

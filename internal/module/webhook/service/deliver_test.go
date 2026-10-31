@@ -1,7 +1,5 @@
 package webhookservice
 
-// deliver_test.go — 投递客户端测试：超时上限、请求体上限、签名头与固定头集。
-
 import (
 	"context"
 	"net"
@@ -13,8 +11,6 @@ import (
 	"time"
 )
 
-// withLooseValidate 临时放行 URL 校验：httptest 目标本就是 127.0.0.1，
-// 内网拒绝行为已由 ssrf_test.go 专测覆盖。
 func withLooseValidate(t *testing.T) {
 	t.Helper()
 	orig := validateURL
@@ -22,7 +18,6 @@ func withLooseValidate(t *testing.T) {
 	validateURL = func(string) error { return nil }
 }
 
-// 仅协议测试放行本地 httptest 连接；生产客户端仍使用受限拨号器。
 func localWebhookClient(t *testing.T) *http.Client {
 	t.Helper()
 	client := newWebhookClient()
@@ -31,7 +26,6 @@ func localWebhookClient(t *testing.T) *http.Client {
 	return client
 }
 
-// TestPostWebhook_Timeout 远端慢响应时受 ClientTimeout 约束并返回错误。
 func TestPostWebhook_Timeout(t *testing.T) {
 	withLooseValidate(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -52,7 +46,6 @@ func TestPostWebhook_Timeout(t *testing.T) {
 	}
 }
 
-// TestPostWebhook_PayloadTooLarge 请求体超上限直接拒绝，不发出请求。
 func TestPostWebhook_PayloadTooLarge(t *testing.T) {
 	withLooseValidate(t)
 	called := false
@@ -71,7 +64,6 @@ func TestPostWebhook_PayloadTooLarge(t *testing.T) {
 	}
 }
 
-// TestPostWebhook_SignatureAndFixedHeaders 头是固定集合：签名可验、无多余透传头。
 func TestPostWebhook_SignatureAndFixedHeaders(t *testing.T) {
 	withLooseValidate(t)
 	var got *http.Request
@@ -105,8 +97,6 @@ func TestPostWebhook_SignatureAndFixedHeaders(t *testing.T) {
 		t.Fatal("事件 / 投递 ID 头不正确")
 	}
 
-	// 固定头集：除 Content-Type + 四个 webhook 头之外不允许出现其它头
-	// （内部凭据没有透传通道 —— 安全模型第 6 条）。
 	allowed := map[string]bool{
 		"Content-Type": true, HeaderSignature: true, HeaderTimestamp: true,
 		HeaderEvent: true, "X-Webhook-Delivery-Id": true,
@@ -119,7 +109,6 @@ func TestPostWebhook_SignatureAndFixedHeaders(t *testing.T) {
 	}
 }
 
-// TestPostWebhook_RedirectNotAllowed 重定向到内网目标不跟随（302 视为非 2xx）。
 func TestPostWebhook_RedirectNotAllowed(t *testing.T) {
 	withLooseValidate(t)
 	loopback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -138,10 +127,8 @@ func TestPostWebhook_RedirectNotAllowed(t *testing.T) {
 	}
 }
 
-// TestDispatchEvent_PayloadLimit service 层入口同样执行负载上限。
 func TestDispatchEvent_PayloadLimit(t *testing.T) {
-	// 不依赖数据库：序列化超限应在查库前整体拒绝。
-	// 构造超限负载 —— model 为 nil 也不会被触达（先在 marshal 后的大小检查处返回）。
+
 	svc := &Service{}
 	big := strings.Repeat("a", MaxPayloadBytes+1)
 	if _, err := svc.DispatchEvent(context.Background(), "e", big); err == nil {

@@ -1,4 +1,3 @@
-// presentation_block_i18n_test.go — 内容模板 globalref 块内文案参与内容翻译（P5b + I18N-013）。
 package unit
 
 import (
@@ -58,7 +57,6 @@ func (f *presFixture) wireBlocks(t *testing.T) {
 		presentationmodel.NewModel(f.db), f.templates, registry, projects, blocks, f.routes)
 }
 
-// TestPresentationBlockContentTranslation globalref 块内文本随构建语言切换。
 func TestPresentationBlockContentTranslation(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {

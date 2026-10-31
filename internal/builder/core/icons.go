@@ -1,9 +1,3 @@
-// Package core — 共享内置图标集（内联 SVG，fill/stroke 走 currentColor）。
-// 组件（list/infobox 等）统一引用，避免各组件重复定义；
-// 前端检查器的图标选择器维护同款同名表（icons.js 由本表同步）。
-//
-// 图标数据经 go:embed 打包（icons/*.svg），构建期零 IO、确定性、可整包替换
-// 现成图标库（替换 SVG 文件即可），不再以 Go map 字符串字面量内联。
 package core
 
 import (
@@ -12,16 +6,11 @@ import (
 	"strings"
 )
 
-// iconsFS 图标资源 embed.FS（根为 core 包目录）。
-//
 //go:embed icons/*.svg
 var iconsFS embed.FS
 
-// builtinIconSet 内置图标集：viewBox 24，尺寸由外层 CSS（1em）控制。
-// 从 icons/*.svg 加载，键 = 文件名（去 .svg 后缀）。
 var builtinIconSet = loadBuiltinIcons()
 
-// loadBuiltinIcons 从 embed.FS 加载全部内置图标（进程启动时执行一次）。
 func loadBuiltinIcons() map[string]string {
 	set := make(map[string]string)
 	entries, err := iconsFS.ReadDir("icons")
@@ -36,23 +25,17 @@ func loadBuiltinIcons() map[string]string {
 		if err != nil {
 			continue
 		}
-		// TrimSpace：去除 SVG 文件尾部换行，保证与内联字面量字节一致（确定性构建）。
+
 		set[strings.TrimSuffix(e.Name(), ".svg")] = strings.TrimSpace(string(data))
 	}
 	return set
 }
 
-// IconSVG 返回内置图标的内联 SVG；未知名称返回 ok=false。
 func IconSVG(name string) (string, bool) {
 	svg, ok := builtinIconSet[name]
 	return svg, ok
 }
 
-// IconSVGClass 返回完整图标 SVG，并**注入调用方的 class 与 aria-hidden**。
-//
-// 组件需要用自己的类名挂钩尺寸（.gallery-arrow-icon { width: 18px } 这类），
-// 而 lucide 源文件不带 class —— 这里统一注入，避免每个组件各自拼一遍
-// <svg viewBox=... stroke-width=...>（抄漏一个属性，同一个箭头就会与别处不同形）。
 func IconSVGClass(name, class string) (string, bool) {
 	svg, ok := builtinIconSet[name]
 	if !ok {
@@ -61,19 +44,10 @@ func IconSVGClass(name, class string) (string, bool) {
 	if class == "" {
 		return svg, true
 	}
-	// 把开头的 <svg 换成带 class 与 aria-hidden 的版本，其余属性原样保留。
+
 	return `<svg class="` + class + `" aria-hidden="true"` + strings.TrimPrefix(svg, "<svg"), true
 }
 
-// IconInner 返回图标**内部元素**（path/circle/line，不含外层 <svg> 包裹）。
-//
-// 供需要自己控制 svg 属性（class / width / aria）的组件使用：它们不能用
-// IconSVG 的整段标签，但路径必须来自**同一份**图标库 —— 各组件事先手写一份
-// path 表的做法（button / icon 组件都曾如此）会让同一个箭头在不同组件里
-// 描边粗细与圆角都不一样。
-//
-// 剥壳按 lucide svg 的固定形状做（单层 <svg>，内部不再嵌套 svg）：
-// 取第一个 '>' 之后、最后一个 '</svg>' 之前的内容。
 func IconInner(name string) (string, bool) {
 	svg, ok := builtinIconSet[name]
 	if !ok {
@@ -87,7 +61,6 @@ func IconInner(name string) (string, bool) {
 	return strings.TrimSpace(svg[start+1 : end]), true
 }
 
-// IconNames 返回全部内置图标名（字典序）。
 func IconNames() []string {
 	names := make([]string, 0, len(builtinIconSet))
 	for name := range builtinIconSet {
@@ -97,16 +70,13 @@ func IconNames() []string {
 	return names
 }
 
-// IconMeta 图标元数据（分类 + 中文标签 + 搜索关键词 + 风格）。
 type IconMeta struct {
-	Category string   // 分类（见 IconCategories，共 18 类）
-	Label    string   // 中文标签
-	Keywords []string // 搜索关键词（英文名 + 中文同义）
-	Style    string   // 风格："outlined"（描边）或 "filled"（实心，-fill 后缀）
+	Category string
+	Label    string
+	Keywords []string
+	Style    string
 }
 
-// iconCatalog 图标目录：name → 元数据（与 icons/*.svg 一一对应）。
-// 分类与前端 icons.js 的 categories 保持同步。
 var iconCatalog = map[string]IconMeta{
 	"a-arrow-down":                        {Category: "editor", Label: "下箭头A", Keywords: []string{"a-arrow-down", "letter", "font size", "text", "下箭头A"}},
 	"a-arrow-up":                          {Category: "editor", Label: "上箭头A", Keywords: []string{"a-arrow-up", "letter", "font size", "text", "上箭头A"}},
@@ -1931,9 +1901,6 @@ var iconCatalog = map[string]IconMeta{
 	"zoom-out":                            {Category: "health", Label: "缩小", Keywords: []string{"zoom-out", "magnifying glass", "plus", "缩小"}},
 }
 
-// init 派生实心图标（-fill 后缀）元数据并统一填充风格。
-// 实心图标从对应描边图标派生 Category/Label/Keywords（分类保持不变），追加「实心/fill」关键词；
-// Style 按后缀填充：-fill → filled，其余 → outlined。
 func init() {
 	for name := range builtinIconSet {
 		if !strings.HasSuffix(name, "-fill") {
@@ -1959,7 +1926,6 @@ func init() {
 	}
 }
 
-// IconCategories 返回全部分类（按 iconCatalog 定义顺序去重）。
 func IconCategories() []string {
 	seen := map[string]bool{}
 	order := []string{"basic", "arrows", "communication", "social", "commerce", "media", "editor", "files", "weather", "security", "navigation", "development", "devices", "gaming", "layout", "food", "time", "health"}
@@ -1974,13 +1940,11 @@ func IconCategories() []string {
 	return out
 }
 
-// IconCategory 返回图标分类；未知图标返回 ok=false。
 func IconCategory(name string) (string, bool) {
 	meta, ok := iconCatalog[name]
 	return meta.Category, ok
 }
 
-// IconLabel 返回图标中文标签；未标注返回原名称。
 func IconLabel(name string) string {
 	if meta, ok := iconCatalog[name]; ok {
 		return meta.Label
@@ -1988,14 +1952,11 @@ func IconLabel(name string) string {
 	return name
 }
 
-// IconStyle 返回图标风格（"filled" 或 "outlined"）；未知图标返回 ok=false。
 func IconStyle(name string) (string, bool) {
 	meta, ok := iconCatalog[name]
 	return meta.Style, ok
 }
 
-// FilterIcons 按分类 + 风格 + 关键词筛选图标名。
-// category / style 为空时不过滤；keyword 匹配名称、标签或关键词（大小写不敏感）。
 func FilterIcons(category, style, keyword string) []string {
 	kw := strings.ToLower(strings.TrimSpace(keyword))
 	out := make([]string, 0, len(builtinIconSet))

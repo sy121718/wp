@@ -1,6 +1,5 @@
 package builder
 
-// image_loading_test.go — 所有输出 <img> 的组件共享同一套懒加载三态（docs/09 §3 图片优化）。
 import (
 	"strings"
 	"testing"
@@ -9,8 +8,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// TestImageLoadingAllComponents 组件级三态（空=继承主题 / on=强制懒加载 / off=强制立即加载）
-// 在 card、gallery、infobox 上与 core.image 行为一致。
 func TestImageLoadingAllComponents(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
 	theme := &ThemeSettings{Images: ThemeImages{LazyLoad: "on", Skeleton: true}}
@@ -68,12 +65,9 @@ func TestImageLoadingAllComponents(t *testing.T) {
 	}
 }
 
-// TestImageSrcsetFromAssetProbe 媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
 func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
-	// 伪候选故意用**与 media 模块真实命名同形**的名字
-	// （<stem>_<type>-<generation>-<hash8>.jpg）：用占位名会让「命名约定一变、
-	// 这里仍然绿」—— 断言就失去了守住约定的能力。
+
 	probe := func(url string) []mediacontract.VariantRef {
 		if url == "https://media.example.test/storage/a.jpg" {
 			return []mediacontract.VariantRef{
@@ -92,7 +86,7 @@ func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 候选按宽度升序输出，URL 原样取自 probe（组件层不再自行拼名）。
+
 	want := `srcset="https://media.example.test/storage/a_thumb-1-ab12cd34.jpg 320w, https://media.example.test/storage/a_medium-1-ab12cd34.jpg 1280w"`
 	if !strings.Contains(c.HTML, want) {
 		t.Errorf("缺少 srcset 候选 %q\n%s", want, c.HTML)
@@ -102,8 +96,6 @@ func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	}
 }
 
-// TestGalleryPerItemLoading 图集单图设置优先于组件级设置：轮播/网格里每张图可独立
-// 配置 loading 与 fetchPriority（空=继承组件级 → 主题默认）。
 func TestGalleryPerItemLoading(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
 	theme := &ThemeSettings{Images: ThemeImages{LazyLoad: "on", Skeleton: true}}
@@ -116,17 +108,16 @@ func TestGalleryPerItemLoading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 第一张：未设置 → 继承组件级 on → 懒加载 + 骨架
+
 	if !strings.Contains(c.HTML, `class="gi is-skeleton" src="https://media.example.test/storage/a.jpg" loading="lazy"`) {
 		t.Errorf("第一张应继承组件级懒加载与骨架\n%s", c.HTML)
 	}
-	// 第二张：单图 off 覆盖组件级 → 立即加载、无骨架，并带高优先级提示
+
 	if !strings.Contains(c.HTML, `class="gi" src="https://media.example.test/storage/b.jpg" loading="eager" fetchpriority="high"`) {
 		t.Errorf("第二张应按单图设置立即加载 + 高优先\n%s", c.HTML)
 	}
 }
 
-// TestCardFetchPriority 组件级 fetchPriority 输出到 <img>（空=auto 不输出属性）。
 func TestCardFetchPriority(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
 	theme := &ThemeSettings{Images: ThemeImages{LazyLoad: "on"}}
@@ -142,7 +133,7 @@ func TestCardFetchPriority(t *testing.T) {
 	if !strings.Contains(c.HTML, `loading="eager" fetchpriority="high"`) {
 		t.Errorf("应输出 fetchpriority=high\n%s", c.HTML)
 	}
-	// 未设置时不输出属性（默认 auto）
+
 	doc2 := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"c10","type":"core.card","props":{"title":"T","imageSrc":"https://media.example.test/storage/a.jpg"}}]}`
 	page2, _ := ParsePage([]byte(doc2))
 	c2, err := Compile(page2, WithComponentSet(set), WithThemeSettings(theme))
@@ -154,8 +145,6 @@ func TestCardFetchPriority(t *testing.T) {
 	}
 }
 
-// TestGalleryCarouselFirstEager 轮播首图优先加载默认开启（首图 eager + high），
-// 可在 carousel.firstEagerOff 关闭后回落到组件级/主题设置。
 func TestGalleryCarouselFirstEager(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
 	theme := &ThemeSettings{Images: ThemeImages{LazyLoad: "on"}}
@@ -175,7 +164,6 @@ func TestGalleryCarouselFirstEager(t *testing.T) {
 		t.Errorf("轮播非首图应懒加载 + 低优先\n%s", c.HTML)
 	}
 
-	// 关闭开关：首图回落主题懒加载
 	doc2 := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"gc2","type":"core.gallery","props":{"mode":"carousel","carousel":{"firstEagerOff":true},"items":[{"url":"https://media.example.test/storage/a.jpg","alt":"A"}]}}]}`
 	page2, _ := ParsePage([]byte(doc2))
 	c2, err := Compile(page2, WithComponentSet(set), WithThemeSettings(theme))

@@ -1,15 +1,5 @@
 package builder
 
-// structure_slots_test.go — 结构槽位展开（审计 VIS-001）。
-//
-// 这条改造把页眉页脚从「装配层拼字符串」搬进 Page AST。真正需要被钉住的不是
-// 「能展开」，而是四个容易在后续改动里悄悄坏掉的点：
-//   1. 没有绑定时不产生任何节点（既有产物逐字节不变，零影响）；
-//   2. 展开位置正确（页眉在主体之前、页脚在之后）；
-//   3. 文档里已写死的同槽位节点优先，不会出现两份页眉；
-//   4. main 地标把槽位节点留在外面（页眉被包进 main 就退化成普通元素，
-//      banner / contentinfo 地标随之消失 —— 这一点屏幕阅读器直接受影响）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -20,7 +10,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// stubBlocks 最小块解析器：按 ID 返回固定 root。
 type stubBlocks map[string]string
 
 func (s stubBlocks) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
@@ -35,13 +24,11 @@ func (s stubBlocks) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
 	return page.Root, nil
 }
 
-// node 构造一个最小的文本节点。
 func node(id, text string) *core.Node {
 	raw, _ := json.Marshal(map[string]any{"text": text})
 	return &core.Node{ID: id, Type: "core.text", Props: raw}
 }
 
-// layoutSlotNode 构造一个槽位节点（经编译期展开的同一构造函数）。
 func layoutSlotNode(t *testing.T, slot, blockID string) *core.Node {
 	t.Helper()
 	n := expandStructureSlots(nil, []StructureSlot{{Slot: slot, BlockID: blockID}})
@@ -51,14 +38,13 @@ func layoutSlotNode(t *testing.T, slot, blockID string) *core.Node {
 	return n[0]
 }
 
-// TestExpandStructureSlotsNoBindingsIsNoop 无绑定时不插入任何节点。
 func TestExpandStructureSlotsNoBindingsIsNoop(t *testing.T) {
 	root := []*core.Node{node("a", "A")}
 	got := expandStructureSlots(root, nil)
 	if len(got) != 1 || got[0].ID != "a" {
 		t.Fatalf("无绑定时应原样返回，实际 %d 个节点", len(got))
 	}
-	// 空 blockId 与未知槽位都不该产生节点：宁可不渲染，也不要渲染一个空槽位。
+
 	got = expandStructureSlots(root, []StructureSlot{
 		{Slot: SlotHeader, BlockID: "  "},
 		{Slot: "not-a-slot", BlockID: "b1"},
@@ -68,7 +54,6 @@ func TestExpandStructureSlotsNoBindingsIsNoop(t *testing.T) {
 	}
 }
 
-// TestExpandStructureSlotsOrder 页眉在主体之前、页脚在之后。
 func TestExpandStructureSlotsOrder(t *testing.T) {
 	root := []*core.Node{node("body1", "BODY")}
 	got := expandStructureSlots(root, []StructureSlot{
@@ -94,9 +79,6 @@ func TestExpandStructureSlotsOrder(t *testing.T) {
 	}
 }
 
-// TestExpandStructureSlotsDocumentWins 文档里已有的同槽位节点优先。
-//
-// 否则每次改主题都会在文档外再插一个页眉 —— 页面出现两份页眉，且两份的字节还不一样。
 func TestExpandStructureSlotsDocumentWins(t *testing.T) {
 	existing := layoutSlotNode(t, SlotHeader, "from-doc")
 	root := []*core.Node{existing, node("body1", "BODY")}
@@ -110,7 +92,6 @@ func TestExpandStructureSlotsDocumentWins(t *testing.T) {
 	}
 }
 
-// TestStructureSlotsRenderAroundBodyAndOutsideMain 展开后的渲染顺序与 main 地标。
 func TestStructureSlotsRenderAroundBodyAndOutsideMain(t *testing.T) {
 	set, serr := templates.NewComponentSet("../templates/components")
 	if serr != nil {
@@ -161,11 +142,6 @@ func TestStructureSlotsRenderAroundBodyAndOutsideMain(t *testing.T) {
 	}
 }
 
-// stripSlotFrame 删掉一个槽位标记层的起止标签、保留其内部内容。
-//
-// 用途是把「加了标记层」的产物还原成「没加标记层」的形态，用来断言
-// **标记层是两者唯一的差异** —— 只断言「含/不含某个属性」挡不住
-// 「顺手多输出了一层 wrapper 里的别的字节」这类漂移。
 func stripSlotFrame(html, slot string) string {
 	marker := `<div class="sky-slot-frame" data-sky-slot="` + slot + `"`
 	i := strings.Index(html, marker)
@@ -194,12 +170,6 @@ func stripSlotFrame(html, slot string) string {
 	return html
 }
 
-// TestStructureSlotsCanvasFramesOnlyForEditor 画布标记层只在编辑器画布出现，
-// 且它是「开/关」两版产物之间**唯一**的差异。
-//
-// 两条都不能省：少了前者，「发布路径零标记」这条不变量会被悄悄破坏（产物里多一层
-// 无样式 div，谁也不会注意到）；少了后者，标记层就可能顺手改了别的东西，
-// 而「槽位展开 ≡ 块内容直接写在页面里」正是靠字节相等来判定的（VIS-001）。
 func TestStructureSlotsCanvasFramesOnlyForEditor(t *testing.T) {
 	set, serr := templates.NewComponentSet("../templates/components")
 	if serr != nil {
@@ -244,7 +214,6 @@ func TestStructureSlotsCanvasFramesOnlyForEditor(t *testing.T) {
 		t.Fatalf("标记层应是开/关两版产物的唯一差异\n--- 去标记后 ---\n%s\n--- 关闭标记 ---\n%s", got, plain)
 	}
 
-	// 结构模板绑定：跳转目标是内容模板而不是块，画布要靠 refKind 分流。
 	tmpl := build(StructureTemplateRef("tp-1"), true)
 	if !strings.Contains(tmpl, `data-sky-slot-ref-kind="template"`) {
 		t.Fatalf("结构模板绑定的 refKind 应为 template，实际:\n%s", tmpl)

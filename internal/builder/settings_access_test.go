@@ -1,13 +1,5 @@
 package builder
 
-// settings_access_test.go — 页面访问权限设置的 JSON 往返与校验（PIPE-6）。
-//
-// 判据只有两条，但两条都容易在「加字段」时静默破掉：
-//  1. 公开页面（绝大多数存量文档）不得因为新增字段而改变序列化字节 ——
-//     Document 字节进产物 hash，字段多一个 null 就会让全站产物 hash 变化（不变量 5）；
-//  2. 「密码保护但没有哈希」必须被拒绝，而不是降级成公开 —— 降级等于把受限内容
-//     直接放给所有人，不可逆。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -16,7 +8,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TestPageSettingsAccessRoundTripStable 无 access 字段的文档往返后字节不变。
 func TestPageSettingsAccessRoundTripStable(t *testing.T) {
 	const raw = `{"layout":{"mode":"full"},"seo":{"title":"t"}}`
 	var s PageSettings
@@ -38,7 +29,6 @@ func TestPageSettingsAccessRoundTripStable(t *testing.T) {
 	}
 }
 
-// TestPageSettingsAccessRoundTripKeepsHash 带 access 的文档往返保留哈希与类型。
 func TestPageSettingsAccessRoundTripKeepsHash(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("s3cret"), bcrypt.MinCost)
 	if err != nil {
@@ -61,7 +51,6 @@ func TestPageSettingsAccessRoundTripKeepsHash(t *testing.T) {
 	}
 }
 
-// TestValidateAccessSettings 白名单与 fail closed 判据。
 func TestValidateAccessSettings(t *testing.T) {
 	validHash, err := bcrypt.GenerateFromPassword([]byte("s3cret"), bcrypt.MinCost)
 	if err != nil {
@@ -77,7 +66,7 @@ func TestValidateAccessSettings(t *testing.T) {
 		{"public", &AccessGuardSettings{Type: AccessPublic}, false},
 		{"members", &AccessGuardSettings{Type: AccessMembers}, false},
 		{"password ok", &AccessGuardSettings{Type: AccessPassword, PasswordHash: string(validHash)}, false},
-		// 关键：不能降级成公开。
+
 		{"password without hash", &AccessGuardSettings{Type: AccessPassword}, true},
 		{"password with plaintext", &AccessGuardSettings{Type: AccessPassword, PasswordHash: "s3cret"}, true},
 		{"password with sha256", &AccessGuardSettings{Type: AccessPassword, PasswordHash: strings.Repeat("a", 64)}, true},
@@ -97,12 +86,11 @@ func TestValidateAccessSettings(t *testing.T) {
 	}
 }
 
-// TestMaxAccessPasswordBytes 上限与 bcrypt 的 72 字节口径一致。
 func TestMaxAccessPasswordBytes(t *testing.T) {
 	if MaxAccessPasswordBytes != 72 {
 		t.Fatalf("bcrypt 只吃前 72 字节，上限必须与之一致，实际 %d", MaxAccessPasswordBytes)
 	}
-	// 边界值本身可被 bcrypt 接受（超长由入口拒绝，而不是让 bcrypt 静默截断）。
+
 	if _, err := bcrypt.GenerateFromPassword(make([]byte, MaxAccessPasswordBytes), bcrypt.MinCost); err != nil {
 		t.Fatalf("上限内的密码应可用: %v", err)
 	}

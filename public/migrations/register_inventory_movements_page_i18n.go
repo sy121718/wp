@@ -1,10 +1,5 @@
 package migrations
 
-// register_inventory_movements_page_i18n.go — 647 的注册项。
-//
-// 判据逐条枚举本批 12 个 key（中英成对共 24 行）：
-// 用前缀 LIKE 会被将来同前缀的新 key 带跑；用全库总量会被同期其它批次的行满足。
-
 import "sync"
 
 func init() { registerInventoryMovementsPageI18n() }

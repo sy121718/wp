@@ -1,11 +1,5 @@
 package navigationdto_test
 
-// navigation_update_req_test.go — UpdateEnvelope 的判别契约（包外测试：直接调用 dto 的解析入口）。
-//
-// 这一批用例钉住的是**形状语义**（哪一档、为什么），不涉及 binding 接线；
-// 真实 binding.JSONLimited 的接线与四种投放由 binding_contract_test.go 覆盖。
-// 包外（navigationdto_test）是为了不把 pkg/binding 拉进 dto 包本身的依赖图。
-
 import (
 	"errors"
 	"fmt"
@@ -18,7 +12,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// langOK 取语言表里的第一种可用语言：用例不写死语言码（换语言表时不该红）。
 func langOK() string {
 	langs := i18n.AvailableLangs()
 	if len(langs) == 0 {
@@ -27,7 +20,6 @@ func langOK() string {
 	return langs[0]
 }
 
-// jsonEnv 走 JSON 路的解析入口（binding 的 ShouldBind 在 JSON 体上调的就是它）。
 func jsonEnv(t *testing.T, body string) (*navigationdto.UpdateEnvelope, error) {
 	t.Helper()
 	env := &navigationdto.UpdateEnvelope{}
@@ -35,7 +27,6 @@ func jsonEnv(t *testing.T, body string) (*navigationdto.UpdateEnvelope, error) {
 	return env, err
 }
 
-// formEnv 走表单路的解析入口（binding.FormBinder 的 BindForm）。
 func formEnv(t *testing.T, values url.Values) (*navigationdto.UpdateEnvelope, error) {
 	t.Helper()
 	env := &navigationdto.UpdateEnvelope{}
@@ -43,17 +34,14 @@ func formEnv(t *testing.T, values url.Values) (*navigationdto.UpdateEnvelope, er
 	return env, err
 }
 
-// translationJSON 造一份译文提交体（rows 由调用方给）。
 func translationJSON(rows string) string {
 	return fmt.Sprintf(`{"action":"translations","project":"p-1","lang":%q,"rows":%s}`, langOK(), rows)
 }
 
-// translationForm 造同样内容的表单键值。
 func translationForm(rows string) url.Values {
 	return url.Values{"action": {"translations"}, "project": {"p-1"}, "lang": {langOK()}, "rows": {rows}}
 }
 
-// bigRows 造 n 行形状合法的译文行。
 func bigRows(n int) string {
 	rows := make([]string, 0, n)
 	for range n {
@@ -62,7 +50,6 @@ func bigRows(n int) string {
 	return "[" + strings.Join(rows, ",") + "]"
 }
 
-// TestUpdateEnvelopeRoute 判别：三分支 + 未知标签 + 空 / 坏 action。
 func TestUpdateEnvelopeRoute(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -92,7 +79,6 @@ func TestUpdateEnvelopeRoute(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeLegacyToleratesUnknownKeys 普通更新对未知键宽容（旧契约不变）。
 func TestUpdateEnvelopeLegacyToleratesUnknownKeys(t *testing.T) {
 	body := `{"id":"n-1","title":"home","unknownField":123,"another":{"deep":true}}`
 	env, err := jsonEnv(t, body)
@@ -111,7 +97,6 @@ func TestUpdateEnvelopeLegacyToleratesUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeMixedShapeRejected 缺 action 时专属键出现即拒（判据是键存在，不是值非空）。
 func TestUpdateEnvelopeMixedShapeRejected(t *testing.T) {
 	for _, key := range []string{"rows", "project", "lang", "dir", "projectId"} {
 		for _, value := range []string{`"x"`, `""`, `null`, `[]`, `{}`} {
@@ -128,7 +113,6 @@ func TestUpdateEnvelopeMixedShapeRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeFormKeysAreFacts 表单里「键在、值空」的键不能从事实里消失。
 func TestUpdateEnvelopeFormKeysAreFacts(t *testing.T) {
 	values, err := url.ParseQuery("id=n-1&rows")
 	if err != nil {
@@ -143,11 +127,6 @@ func TestUpdateEnvelopeFormKeysAreFacts(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeEmptyFormRejected 空表单体（空串 / 纯空白 / 只有空值键）判为不可用体。
-//
-// 末尾两种是**执行器实测形态**：gin 的 PostForm 读到 "title=" 得到 url.Values{"title": {""}}，
-// 读到 "a=&b=" 得到两个空值键。它们与 "" 对调用方是同一件事（没提交任何字段），
-// 因此判据必须一致 —— 只看 len(list) 会让这两种判成 200（「成功但什么都没发生」）。
 func TestUpdateEnvelopeEmptyFormRejected(t *testing.T) {
 	for _, raw := range []string{"", "   ", "title=", "title=&sortOrder=", "title=%20"} {
 		values, err := url.ParseQuery(raw)
@@ -161,7 +140,6 @@ func TestUpdateEnvelopeEmptyFormRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBodyRejected 空体 / 非对象 / 非法 JSON 判为不可用体。
 func TestUpdateEnvelopeBodyRejected(t *testing.T) {
 	for _, body := range []string{"", "   ", "{broken", "[1,2]", `"x"`, "null"} {
 		t.Run(body, func(t *testing.T) {
@@ -173,7 +151,6 @@ func TestUpdateEnvelopeBodyRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeDecodeTranslationSameAcrossForms 两条投放解出同一份业务入参。
 func TestUpdateEnvelopeDecodeTranslationSameAcrossForms(t *testing.T) {
 	rows := `[{"context":"nav.header","hash":"h1","target":"Home"},{"context":"nav.footer","hash":"h2","target":""}]`
 	j, err := jsonEnv(t, translationJSON(rows))
@@ -200,7 +177,6 @@ func TestUpdateEnvelopeDecodeTranslationSameAcrossForms(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeRowsPreserveEmptyTargetAndPosition 空 target 与空行保留原位。
 func TestUpdateEnvelopeRowsPreserveEmptyTargetAndPosition(t *testing.T) {
 	rows := `[{"context":"a","hash":"h1","target":"A"},{"context":"b","hash":"h2","target":""},{"context":"","hash":"","target":""},{"context":"c","hash":"h3","target":"C"}]`
 	env, err := jsonEnv(t, translationJSON(rows))
@@ -225,7 +201,6 @@ func TestUpdateEnvelopeRowsPreserveEmptyTargetAndPosition(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeTranslationShapeRejected 译文行的严格形状：缺键 / 多余键 / 非字符串 / null 全拒。
 func TestUpdateEnvelopeTranslationShapeRejected(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -253,7 +228,6 @@ func TestUpdateEnvelopeTranslationShapeRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeTranslationRowLimit 行数上限：恰好 1000 收下，1001 拒（不截断）。
 func TestUpdateEnvelopeTranslationRowLimit(t *testing.T) {
 	env, err := jsonEnv(t, translationJSON(bigRows(1000)))
 	if err != nil {
@@ -274,8 +248,6 @@ func TestUpdateEnvelopeTranslationRowLimit(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeTranslationTopLevelStrict project / lang / rows 的缺键、null、非字符串、
-// 空串、未知语言全拒；未知 hash 属业务（不在这里）。
 func TestUpdateEnvelopeTranslationTopLevelStrict(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -305,8 +277,6 @@ func TestUpdateEnvelopeTranslationTopLevelStrict(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeTranslationTopLevelWhitelist 译文分支顶层是严格白名单：未知键拒，
-// 公共 CSRF 表单字段放行（它不是业务键）。JSON 顶层同样不放宽其它键。
 func TestUpdateEnvelopeTranslationTopLevelWhitelist(t *testing.T) {
 	rows := `[{"context":"c","hash":"h","target":"t"}]`
 	for _, tc := range []struct {
@@ -334,7 +304,6 @@ func TestUpdateEnvelopeTranslationTopLevelWhitelist(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeTranslationTopLevelWhitelistOnForm 同一白名单在表单上同样生效。
 func TestUpdateEnvelopeTranslationTopLevelWhitelistOnForm(t *testing.T) {
 	rows := `[{"context":"c","hash":"h","target":"t"}]`
 	ok := translationForm(rows)
@@ -349,11 +318,8 @@ func TestUpdateEnvelopeTranslationTopLevelWhitelistOnForm(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeMoveRequest move 档提供已解析形状，不重读 Body。
 func TestUpdateEnvelopeMoveRequest(t *testing.T) {
-	// 白名单外的键不能放在这条「正例」里：kind 是页面筛选上下文，updateMoveTopKeys
-	// 与 handler 的 navigationMoveKeys 都不含它，带 kind 的 move 必须被 400 拒掉
-	// （反例见 TestUpdateEnvelopeMoveKeepsLegacyContract 里 kind 那一条）。
+
 	env, err := jsonEnv(t, `{"action":"move","id":"n-1","dir":"up","projectId":"p-1"}`)
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
@@ -385,7 +351,6 @@ func TestUpdateEnvelopeMoveRequest(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeDecodeLegacyKeepsRequired 普通更新在原处跑既有 required 校验。
 func TestUpdateEnvelopeDecodeLegacyKeepsRequired(t *testing.T) {
 	env, err := jsonEnv(t, `{"id":"n-1","title":"home","sortOrder":3}`)
 	if err != nil {
@@ -414,7 +379,6 @@ func TestUpdateEnvelopeDecodeLegacyKeepsRequired(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeDecodeLegacyOnForm 表单投放同样还原成旧 UpdateReq（URL 编码字节不进 JSON 绑定）。
 func TestUpdateEnvelopeDecodeLegacyOnForm(t *testing.T) {
 	env, err := formEnv(t, url.Values{"id": {"n-1"}, "title": {"home"}, "sortOrder": {"2"}, "pageId": {"ignored"}})
 	if err != nil {
@@ -440,12 +404,6 @@ func TestUpdateEnvelopeDecodeLegacyOnForm(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeMoveKeepsLegacyContract move 判别不受 projectId 影响，白名单外的键一律拒。
-//
-// 「合法 move 形状」与「额外键」必须分开判：projectId / dir 是结构内字段，带上不影响分流；
-// kind / rows / lang 之类白名单外的键属于**形状错**（ErrUpdateEnvelopeShape），
-// 而不是「move 判别被影响」。把它们塞进同一条正例循环，等于用期望 200 的用例去要求
-// 服务端接受一个它明确要拒的形状。
 func TestUpdateEnvelopeMoveKeepsLegacyContract(t *testing.T) {
 	for _, body := range []string{
 		`{"action":"move","id":"n-1","dir":"up"}`,
@@ -470,7 +428,6 @@ func TestUpdateEnvelopeMoveKeepsLegacyContract(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeRowsEmptyVsAbsent 区分「零行提交」与「不是译文分支」。
 func TestUpdateEnvelopeRowsEmptyVsAbsent(t *testing.T) {
 	legacy, err := jsonEnv(t, `{"id":"n-1","title":"home"}`)
 	if err != nil {
@@ -488,7 +445,6 @@ func TestUpdateEnvelopeRowsEmptyVsAbsent(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeIsForm 形态事实只来自解析入口。
 func TestUpdateEnvelopeIsForm(t *testing.T) {
 	j, _ := jsonEnv(t, translationJSON(`[]`))
 	if j.IsForm() {
@@ -500,7 +456,6 @@ func TestUpdateEnvelopeIsForm(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeRepeatedKeysFollowMapSemantics 重复键取最后一个（JSON 与表单一致）。
 func TestUpdateEnvelopeRepeatedKeysFollowMapSemantics(t *testing.T) {
 	env, err := jsonEnv(t, `{"action":"delete","action":"move","id":"n-1","dir":"up"}`)
 	if err != nil {
@@ -519,8 +474,6 @@ func TestUpdateEnvelopeRepeatedKeysFollowMapSemantics(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeJSONBytesNotFormEncoded 表单路的键值来自 url.Values，不是把 URL 编码
-// 字节再交给 JSON 解析 —— 一个含 & / = / % 的工程 id 必须原样到达业务字段。
 func TestUpdateEnvelopeJSONBytesNotFormEncoded(t *testing.T) {
 	tricky := "p&1=2%20x"
 	values := translationForm(`[]`)
@@ -538,7 +491,6 @@ func TestUpdateEnvelopeJSONBytesNotFormEncoded(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeFormScalars 表单字符串按 JSON 标量还原后交给旧绑定（只在 legacy 档）。
 func TestUpdateEnvelopeFormScalars(t *testing.T) {
 	env, err := formEnv(t, url.Values{"id": {"n-1"}, "parentId": {"null"}})
 	if err != nil {

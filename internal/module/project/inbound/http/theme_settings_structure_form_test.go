@@ -1,12 +1,5 @@
 package projecthttp
 
-// theme_settings_structure_form_test.go — 结构模板绑定的表单取值口径。
-//
-// 这条判据决定两件事同时成立：
-//   · 在别处配好的结构模板，不会因为「来这一页保存一次颜色」被清空；
-//   · 在下拉里选了「不绑定」时，必须真的解绑。
-// 两者靠表单里的哨兵域 structureTemplateFields 区分 —— 只做其中一半的实现看起来都正常。
-
 import (
 	"net/http"
 	"net/http/httptest"

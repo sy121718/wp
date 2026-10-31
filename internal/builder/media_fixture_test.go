@@ -14,7 +14,6 @@ import (
 	"go_wp/pkg/upload"
 )
 
-// 编译测试使用显式媒体部署配置，避免把未配置的相对URL当作可发布资源。
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "gowp-builder-media-")
 	if err != nil {
@@ -36,7 +35,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// 历史文档在组件数据入口归一，产物所有媒体完整且原始 AST 不受影响。
 func TestMediaFieldsUseConfiguredAbsoluteURLs(t *testing.T) {
 	raw := `{"settings":{"layout":{"mode":"full"}},"root":[
  {"id":"image","type":"core.image","props":{"src":"/storage/483.jpg"}},
@@ -73,7 +71,6 @@ func TestMediaFieldsUseConfiguredAbsoluteURLs(t *testing.T) {
 	}
 }
 
-// 清除/尚未选图只影响本节点；危险地址和非法样式不进入容错分支。
 func TestMediaImageDraftCanBeIncomplete(t *testing.T) {
 	set, err := templates.NewEmbeddedComponentSet()
 	if err != nil {
@@ -107,7 +104,6 @@ type richMediaResolver map[string]string
 
 func (r richMediaResolver) ResolveString(field string) (string, error) { return r[field], nil }
 
-// 富文本组件、CMS 正文和商品描述必须在最终发布链上遵守同一个媒体地址规则。
 func TestRichMediaFieldsCompileToAbsoluteURLs(t *testing.T) {
 	raw := `{"settings":{"layout":{"mode":"full"}},"root":[
  {"id":"text","type":"core.text","props":{"text":"<p>正文<img src='/storage/text.jpg'></p>"}},

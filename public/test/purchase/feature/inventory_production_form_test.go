@@ -1,15 +1,3 @@
-// Package feature 生产入库表单：渲染 → 解析 → 提交的闭环（本批把丢掉的页面入口补回）。
-//
-// 为什么必须从**渲染出的 HTML** 里解析字段再提交：原始缺陷就是模板与 handler 的字段名对不上
-// （handler 读一个模板里根本不存在的字段，空值静默通过了校验），而手写字段名的测试照样能绿 ——
-// 只有把页面真实渲染出来的 name / value 拿去提交，字段名错位才会当场失败。
-//
-// 本文件同时钉住三件事：
-//
-//	· 表单渲染出的控件名集合 == handler 读取的字段集合（少一个就是「表单与 handler 不一致」）；
-//	· 值口径（SKU 的「变体ID|商品ID|仓库侧裸码」三段值、来源只列内部货源）；
-//	· 提交后的落账口径（库存 +2、inventory_stocks.sku_code 是裸码、流水 = in / production_in /
-//	  production、单据类型 = production、重复提交被一次性幂等键挡住）。
 package feature
 
 import (
@@ -24,23 +12,13 @@ import (
 	purchaseenums "go_wp/internal/module/purchase/enums"
 )
 
-// productionFormAction 生产入库表单的提交地址（与页面里渲染出的 action 一致）。
 const productionFormAction = "/admin/inventory/purchases/production"
 
-// productionFormControls 生产入库表单的**期望控件名**（测试侧字面量）。
-//
-// 刻意不引用被测包的 purchaseLineSkuField 常量：从被测包取就等于自证 —— 改了字段名而漏改
-// 模板（或漏改 handler）时测试照样绿，而那正是原始缺陷的形态（handler 读 lineSKUCode、
-// 模板里根本没有这个字段）。这里的字面量必须与 handler 读的名字对得上，对不上就红。
 var productionFormControls = []string{
 	"csrf_token", "projectId", "requestId", "sourceId", "lineSku", "warehouseId",
 	"quantity", "unitCost", "remark",
 }
 
-// renderedFormBlock 取整页 HTML 里 action=<action> 的那个原生表单的原文。
-//
-// 只匹配到 action 前缀（不带结尾引号）：写表单的 action 现在带筛选上下文
-// （`?project=…`，见 shell.BackPath），带引号的整串匹配会找不到。
 func renderedFormBlock(t *testing.T, body, action string) string {
 	t.Helper()
 	marker := `action="` + action
@@ -59,10 +37,6 @@ func renderedFormBlock(t *testing.T, body, action string) string {
 	return body[start : start+end]
 }
 
-// parseRenderedForm 解析表单块里的控件：返回 name → 值，以及按文档顺序的控件名。
-//
-// 值同样来自渲染结果：隐藏域取它渲染出的 value，下拉取它渲染出的**第一个非空 option**。
-// 这样「页面给了什么」与「测试提交了什么」是同一份数据 —— 字段名或值形状两边不一致时立刻暴露。
 func parseRenderedForm(t *testing.T, block string) (url.Values, []string) {
 	t.Helper()
 	values := url.Values{}
@@ -96,7 +70,7 @@ func parseRenderedForm(t *testing.T, block string) (url.Values, []string) {
 			values.Set(name, tagAttr(tag, "value"))
 			continue
 		}
-		// 下拉：取第一个非空 option 的 value（页面按真实候选列表渲染）。
+
 		closeIdx := strings.Index(rest, "</select>")
 		if closeIdx < 0 {
 			t.Fatalf("下拉 %q 没有闭合标签", name)
@@ -123,7 +97,6 @@ func parseRenderedForm(t *testing.T, block string) (url.Values, []string) {
 	return values, names
 }
 
-// tagAttr 取标签里 attr="值" 的值（不存在返回空串）。
 func tagAttr(tag, attr string) string {
 	marker := attr + `="`
 	i := strings.Index(tag, marker)
@@ -138,7 +111,6 @@ func tagAttr(tag, attr string) string {
 	return rest[:j]
 }
 
-// renderProductionForm 重新渲染采购页并解析出生产入库表单的字段（每次渲染一个新的幂等键）。
 func renderProductionForm(t *testing.T, engine *gin.Engine, projectID string) (url.Values, string) {
 	t.Helper()
 	rec := httptestGet(engine, "/admin/inventory/purchases?project="+projectID)
@@ -158,7 +130,6 @@ func renderProductionForm(t *testing.T, engine *gin.Engine, projectID string) (u
 	return values, block
 }
 
-// copyForm 克隆一份表单（重复提交与缺字段提交各用一份，互不污染）。
 func copyForm(in url.Values) url.Values {
 	out := url.Values{}
 	for k, vs := range in {
@@ -167,7 +138,6 @@ func copyForm(in url.Values) url.Values {
 	return out
 }
 
-// receiptKindIn 按入库单号直读单据类型（断言生产入库走的是 production 单）。
 func receiptKindIn(t *testing.T, f *purchaseFixture, code string) string {
 	t.Helper()
 	var kind string
@@ -178,7 +148,6 @@ func receiptKindIn(t *testing.T, f *purchaseFixture, code string) string {
 	return kind
 }
 
-// productionReceiptCountIn 本工程的生产入库单数量（生产入库没有采购单，按 kind 统计）。
 func productionReceiptCountIn(t *testing.T, f *purchaseFixture) int {
 	t.Helper()
 	var n int
@@ -189,8 +158,6 @@ func productionReceiptCountIn(t *testing.T, f *purchaseFixture) int {
 	return n
 }
 
-// TestProductionInboundFormRenderedAndSubmitted 生产入库表单：从渲染结果解析字段并提交，
-// 库存行 / 流水 / 入库单三处都按「仓库侧裸码」口径落账。
 func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	engine, f := newPurchasePageEngine(t)
 	if engine == nil {
@@ -200,14 +167,14 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	bare := bareSKU(v.SKUCode, wh.Code)
 
 	fields, block := renderProductionForm(t, engine, f.projectID)
-	// 来源下拉只列内部货源（自家工厂 / 集团内关联公司）：外部供应商走采购单。
+
 	if got := fields.Get("sourceId"); got != factory.ID {
 		t.Fatalf("生产来源应落到唯一的内部货源 %s，实际 %q", factory.ID, got)
 	}
 	if strings.Contains(block, ext.ID) {
 		t.Fatalf("生产入库的来源下拉里出现了外部货源 %s（服务端会拒绝，页面不该给这个选项）", ext.ID)
 	}
-	// SKU 的三段值口径 = 变体ID|商品ID|仓库侧裸码（与新建采购单的采购行同源）。
+
 	if got, want := fields.Get("lineSku"), v.ID+"|"+p.ID+"|"+bare; got != want {
 		t.Fatalf("SKU 选项值应为 %q，实际 %q", want, got)
 	}
@@ -216,15 +183,13 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	}
 	firstRequestID := fields.Get("requestId")
 
-	// 只补用户要填的三个值，其余字段全部来自渲染结果；SKU 这一段故意送**商品侧的带前缀编码**，
-	// 入库入口负责幂等剥成裸码（inventory_stock.go 是唯一落点）。
 	form := copyForm(fields)
 	form.Set("lineSku", v.ID+"|"+p.ID+"|"+v.SKUCode)
 	form.Set("quantity", "2")
 	form.Set("unitCost", "3.5")
 	form.Set("remark", "自家工厂试产")
 	rec := postForm(engine, productionFormAction, form)
-	// 成功：提示页 1 秒后自动回列表（取代原先的 302 + ?ok=）。
+
 	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 2 {
 		t.Fatalf("生产入库 2 后真源应为 2，实际 %d", got)
@@ -237,7 +202,7 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	if storedSKU != bare {
 		t.Fatalf("inventory_stocks.sku_code 应为仓库侧裸码 %q，实际 %q", bare, storedSKU)
 	}
-	// 流水：方向 in、原因 production_in、来源引用 = 入库单号 —— 与采购收货不是同一条。
+
 	mv := latestMovement(t, f, v.ID)
 	if mv.Direction != purchaseenums.DirectionIn || mv.ReasonCode != "production_in" ||
 		mv.SourceType != purchaseenums.MovementSourceProduction || mv.SourceRef == "" {
@@ -250,7 +215,6 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 		t.Fatalf("一次生产入库只应产生一张入库单，实际 %d", n)
 	}
 
-	// ① 重复提交同一份表单（浏览器双击 / 回退重发）：幂等键挡住，库存只加一次。
 	rec = postForm(engine, productionFormAction, form)
 	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 2 {
@@ -260,21 +224,17 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 		t.Fatalf("重复提交不应产生第二张入库单，实际 %d", n)
 	}
 
-	// ② 每次渲染都必须换一个新的幂等键 —— 否则「先收采购货、再做生产入库」的第二跳
-	//    会被当成同一张单的重放而静默丢弃（幂等键在入库单上全局唯一）。
 	again, _ := renderProductionForm(t, engine, f.projectID)
 	if again.Get("requestId") == firstRequestID {
 		t.Fatalf("两次渲染的幂等键相同（%q）：第二次提交会被当成重放", firstRequestID)
 	}
 
-	// ③ 少了 SKU 字段（例如有人只改了模板）：服务端当场拒绝，库存与单据都不动，
-	//    而且文案是**可行动的中文**，不是裸 key、也不是「系统内部错误」。
 	noSku := copyForm(again)
 	noSku.Set("quantity", "1")
 	noSku.Set("unitCost", "1")
 	noSku.Del("lineSku")
 	rec = postForm(engine, productionFormAction, noSku)
-	// 失败：提示页（不自动跳转），文案是中文兜底、且不含裸 key。
+
 	assertInventoryJump(t, rec, "err", "生产入库必须给出 SKU 变体")
 	if strings.Contains(rec.Body.String(), purchaseenums.ErrProductionVariantRequired) {
 		t.Fatalf("提示页不该出现裸 key %q：%s", purchaseenums.ErrProductionVariantRequired, rec.Body.String())

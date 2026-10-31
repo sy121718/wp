@@ -1,18 +1,3 @@
-// 068 迁移（PG 特性优化第一批）的回归测试。
-//
-// 覆盖两件事：
-//
-//	① 等价性：JSONB 路径查询（jsonb_path_query_array + @>）替代旧写法
-//	   draft_document::text LIKE '%"blockId": "<id>"%' 后，各类文档形态上
-//	   结果集必须完全一致（含嵌套引用、structure 绑定、字符串字面量干扰、
-//	   数字型 blockId、软删页面）；
-//	② 索引有效：迁移 068 的三个索引被 planner 真实选中（BitmapOr），
-//	   守住「page_model.go 的表达式与 068 的索引表达式一致」这条约束 ——
-//	   任一侧改动而另一侧未同步时本测试失败（索引静默失效的护栏）。
-//
-// 表结构与 068 索引都由**生产迁移**建立（support.NewMigratedPGTestDB），不再手抄 DDL：
-// 迁移改了索引表达式，这里立刻能发现，而不是守着与生产无关的本地副本。
-// PG 不可用时 t.Skip。
 package unit
 
 import (
@@ -28,30 +13,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// blockRefProjectID 样本页面的归属工程（pages.project_id 有外键 → 先补真实工程行）。
-//
-// 提到包级是因为 DB-009 第三批起 page model 的跨工程入口（CountBlockReference /
-// MarkStaleForBlock）要求显式工程作用域 —— 调用方要把它传下去，不能再靠「不限工程」。
 const blockRefProjectID = "9f2c1d40-0000-4000-8000-000000000068"
 
-// oldBlockRefCond 旧写法（改前实现），仅用于等价性对照，不参与生产代码。
 const oldBlockRefCond = `draft_document::text LIKE '%"blockId": "' || ?::text || '"%'`
 
-// newBlockRefCond 新写法（与 page_model.go 的 blockRefMatchCond 相同）。
 const newBlockRefCond = `jsonb_path_query_array(draft_document, '$.**.blockId') @> jsonb_build_array(?::text)`
 
-// blockRefTailCond structure 页眉/页脚分支（新旧写法共用，语义不变）。
 const blockRefTailCond = ` OR draft_document->'settings'->'structure'->>'headerBlockId' = ?::text
 	OR draft_document->'settings'->'structure'->>'footerBlockId' = ?::text`
 
-// blockRefDocCase 一个页面文档样本。
 type blockRefDocCase struct {
 	name    string
 	doc     string
 	deleted bool
 }
 
-// blockRefDocCases 覆盖 blockId 可能出现的全部形态。
 func blockRefDocCases(target, other string) []blockRefDocCase {
 	return []blockRefDocCase{
 		{
@@ -102,16 +78,12 @@ func blockRefDocCases(target, other string) []blockRefDocCase {
 	}
 }
 
-// setupBlockRefPages 造数据：blockRefDocCases 样本与 2 万行无关页面
-// （让 planner 在真实规模下选索引）。pages 表与迁移 068 的三个索引都来自生产迁移，
-// 索引表达式与查询表达式漂移时 TestPageBlockReferenceIndexUsed 直接失败。
 func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel.Model) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	// pages.project_id 有外键 → projects(id)：先补一条真实工程行，样本页面共用。
+
 	support.SeedProjectRow(t, db, blockRefProjectID, "块引用回归站点")
 
-	// 2 万行无关页面：draft_document 结构同真实文档，blockId 为无关值。
 	if err := db.Exec(`INSERT INTO pages
 		(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time)
 		SELECT gen_random_uuid(), $1::uuid, 'home', 'none', '/p/' || i,
@@ -141,7 +113,6 @@ func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel
 	return db, *pagemodel.NewPageModel(db)
 }
 
-// queryIDs 执行「条件 + id 排序」查询，返回命中 id 集合。
 func queryIDs(t *testing.T, db *gorm.DB, cond string, args ...any) []string {
 	t.Helper()
 	var ids []string
@@ -153,7 +124,6 @@ func queryIDs(t *testing.T, db *gorm.DB, cond string, args ...any) []string {
 	return ids
 }
 
-// TestPageBlockReferenceJSONBEquivalence 新旧查询结果集必须逐一致。
 func TestPageBlockReferenceJSONBEquivalence(t *testing.T) {
 	const target, other = "blk-target-0001", "blk-other-0002"
 	db, m := setupBlockRefPages(t, target, other)
@@ -178,7 +148,6 @@ func TestPageBlockReferenceJSONBEquivalence(t *testing.T) {
 	}
 }
 
-// TestPageMarkStaleForBlockJSONBEquivalence 改写后的 UPDATE 命中集合必须与旧写法一致。
 func TestPageMarkStaleForBlockJSONBEquivalence(t *testing.T) {
 	const target, other = "blk-target-0001", "blk-other-0002"
 	db, m := setupBlockRefPages(t, target, other)
@@ -205,8 +174,6 @@ func TestPageMarkStaleForBlockJSONBEquivalence(t *testing.T) {
 	}
 }
 
-// TestPageBlockReferenceIndexUsed 三个索引必须被 planner 选中（BitmapOr）。
-// 索引表达式与查询表达式任一侧改动而未同步时，本测试失败。
 func TestPageBlockReferenceIndexUsed(t *testing.T) {
 	const target, other = "blk-target-0001", "blk-other-0002"
 	db, _ := setupBlockRefPages(t, target, other)
@@ -222,7 +189,6 @@ func TestPageBlockReferenceIndexUsed(t *testing.T) {
 	}
 	t.Logf("EXPLAIN（完整 OR 形态）: %s", plan)
 
-	// 反证：旧写法无法走块引用索引（LIKE 无索引可用）。
 	oldPlan := explainBlockRef(t, db, oldBlockRefCond+blockRefTailCond, target, target, target)
 	if strings.Contains(oldPlan, "idx_pages_blockref") {
 		t.Fatalf("旧 LIKE 写法不应命中块引用索引 | EXPLAIN: %s", oldPlan)
@@ -230,7 +196,6 @@ func TestPageBlockReferenceIndexUsed(t *testing.T) {
 	t.Logf("旧写法 EXPLAIN（无索引可用）: %s", oldPlan)
 }
 
-// explainBlockRef 取查询的执行计划（COSTS OFF 便于断言索引名）。
 func explainBlockRef(t *testing.T, db *gorm.DB, cond string, args ...any) string {
 	t.Helper()
 	var lines []string

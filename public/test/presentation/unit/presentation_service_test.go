@@ -1,10 +1,3 @@
-// Package unit presentation 模块 feature 测试（真实 PostgreSQL + 生产 DDL，0-A2）：
-// 内容实体 + ContentTemplate（真实 service）→ CreateInstance → 编译（binding 经
-// ResolverFor 解析）→ 发布 → 产物含实体字段字面量。
-//
-// 测试基建（本轮修复）：建表走 migrations.Run（真实迁移 SQL），不再用 AutoMigrate。
-// 修复前 AutoMigrate 会把 presentation_instances 缺的列（status / artifact_hash）
-// 自动补进测试 schema，使「model 与生产 DDL 不对齐」在测试里永远不可见。
 package unit
 
 import (
@@ -47,44 +40,33 @@ import (
 	"gorm.io/gorm"
 )
 
-// presFixture 一套真实装配（生产 DDL 建表 + 真实工程/模板/内容/presentation service）。
 type presFixture struct {
 	db        *gorm.DB
 	content   contentcontract.ContentService
 	templates contenttemplatecontract.ContentTemplateService
 	pres      *presentationservice.Service
-	// routes URL 占用登记（page_routes）：详情页的占用是否真的落库，只能从
-	// 这个契约的外部视角验证（不新增只为测试存在的读取接口）。
+
 	routes    pubcontract.PublicationService
 	projectID string
 }
 
-// newPresFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newPresFixture(t *testing.T) *presFixture {
 	t.Helper()
 	return newPresFixtureWith(t, nil, nil)
 }
 
-// newPresFixtureWithRoutes 同 newPresFixture，但允许在装配时包装路由契约（故障注入用：
-// 验证「路由登记失败时发布必须失败且可恢复」，审计 AR2-004）。
 func newPresFixtureWithRoutes(t *testing.T,
 	wrap func(pubcontract.PublicationService) pubcontract.PublicationService) *presFixture {
 	t.Helper()
 	return newPresFixtureWith(t, wrap, nil)
 }
 
-// newPresFixtureWithRegistry 同 newPresFixture，但允许在装配时包装实体类型注册表
-// （PERF-01 用：在**编译阶段**插一个会合闸门，证明发布会话的编译段不再整段持实例锁）。
-//
-// 只包装注入给 presentation service 的那一个注册表：模板服务继续用原注册表，
-// 于是闸门只在发布/预览的编译路径上生效。
 func newPresFixtureWithRegistry(t *testing.T,
 	wrap func(core.EntitySourceRegistry) core.EntitySourceRegistry) *presFixture {
 	t.Helper()
 	return newPresFixtureWith(t, nil, wrap)
 }
 
-// newPresFixtureWith 装配 fixture 的公共实现；PG 不可用时 t.Skip（返回 nil）。
 func newPresFixtureWith(t *testing.T,
 	wrap func(pubcontract.PublicationService) pubcontract.PublicationService,
 	wrapRegistry func(core.EntitySourceRegistry) core.EntitySourceRegistry) *presFixture {
@@ -105,8 +87,7 @@ func newPresFixtureWith(t *testing.T,
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	contentSvc := contentservice.NewService(contentmodel.NewModel(db))
-	// 实体类型注册表：与真实装配同款 —— 内容模块注册自己的类型，
-	// 模板与发布实例只依赖注册表（不再直接依赖内容模块）。
+
 	registry := core.NewEntitySourceRegistry()
 	if err := contentSvc.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册实体类型失败: %v", err)
@@ -128,15 +109,10 @@ func newPresFixtureWith(t *testing.T,
 	}
 }
 
-// buildService 真实 build 服务（导航写端口的 Queue 用同一 db，不 noop）。
 func (f *presFixture) buildService() *buildservice.Service {
 	return buildservice.NewService(buildmodel.NewModel(f.db))
 }
 
-// navWriteDeps 与 internal/routers 同形的真实五端口（page / presentation / build）。
-//
-// 未接齐时 navigation 的菜单写入口会 fail closed —— 裸 NewService 建 navSvc 再直接
-// Create/Update，是本轮之前"改导航、实例不重建"的成因。
 func (f *presFixture) navWriteDeps() navigationservice.NavigationWriteDeps {
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil,
 		projectservice.NewService(projectmodel.NewProjectModel(f.db)), nil, nil, nil, nil, nil)
@@ -146,7 +122,6 @@ func (f *presFixture) navWriteDeps() navigationservice.NavigationWriteDeps {
 	}
 }
 
-// newNavService 建一个已接真实五端口的导航服务（与实例共用同一 db）。
 func (f *presFixture) newNavService() *navigationservice.Service {
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db),
 		projectservice.NewService(projectmodel.NewProjectModel(f.db)))
@@ -154,7 +129,6 @@ func (f *presFixture) newNavService() *navigationservice.Service {
 	return navSvc
 }
 
-// createTemplate 用真实 contenttemplate service 建模板（article 类型，binding 到 title）。
 func (f *presFixture) createTemplate(t *testing.T) {
 	t.Helper()
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}}]}`
@@ -165,7 +139,6 @@ func (f *presFixture) createTemplate(t *testing.T) {
 	}
 }
 
-// activeHTML 读取访问面上某路径的已激活 index.html。
 func activeHTML(t *testing.T, urlPath string) string {
 	t.Helper()
 	rel := strings.TrimPrefix(urlPath, "/")
@@ -176,7 +149,6 @@ func activeHTML(t *testing.T, urlPath string) string {
 	return string(b)
 }
 
-// TestCreateInstanceEndToEnd 内容→模板→编译→发布 全链路（真实 DDL）。
 func TestCreateInstanceEndToEnd(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -185,7 +157,6 @@ func TestCreateInstanceEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	f.createTemplate(t)
 
-	// 建内容实体（article，title 字段）。
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
 		EntityType: "article", Slug: "summer-shirt",
 		Data: map[string]any{"title": "夏季衬衫", "excerpt": "夏季摘要"},
@@ -194,7 +165,6 @@ func TestCreateInstanceEndToEnd(t *testing.T) {
 		t.Fatalf("创建实体失败: %v", err)
 	}
 
-	// 创建自动发布实例（显式传工程；urlPath 由实体 slug 推导）。
 	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
 		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID,
 		URLPath: "/products/summer-shirt",
@@ -215,14 +185,12 @@ func TestCreateInstanceEndToEnd(t *testing.T) {
 		t.Fatalf("template_id 未落库（NOT NULL 外键）")
 	}
 
-	// 产物已发布到访问面，且 binding 已解析为实体字段字面量。
 	html := activeHTML(t, "/products/summer-shirt")
 	if !strings.Contains(html, "夏季衬衫") {
 		t.Fatalf("激活产物应含实体字段字面量，实际: %s", html)
 	}
 }
 
-// TestCreateInstanceIdempotent 同实体重复创建幂等（返回已有实例）。
 func TestCreateInstanceIdempotent(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -259,7 +227,6 @@ func TestCreateInstanceIdempotent(t *testing.T) {
 	}
 }
 
-// 模板中同时使用公共控件与组件增强，验证真实预览和激活文件都包含所需资源。
 func TestPresentationPreviewAndPublishedAssets(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -291,9 +258,7 @@ func TestPresentationPreviewAndPublishedAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	published := activeHTML(t, "/interactive-assets")
-	// 预览不激活 URL，发布产物带实例线上路径 —— canonical / og:url / 由 URL 生成面包屑
-	// 的 JSON-LD，以及明确的只读外壳/正式采集是有意差异。
-	// 去掉这些用途差异后，业务内容与增强脚本必须逐字节一致。
+
 	if !strings.Contains(preview.HTML, `name="site-preview-mode" content="readonly"`) || strings.Contains(published, `name="site-preview-mode"`) {
 		t.Fatal("预览必须声明只读，正式产物不能携带模拟上下文")
 	}

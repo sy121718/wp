@@ -1,15 +1,5 @@
 package productservice_test
 
-// product_catalog_bounds_test.go — 公开目录的分页边界（DEC-05 裁决）。
-//
-// 口径：
-//   · 上限：Page ≤ 100、PageSize ≤ 60 —— 访客请求不能变成「任意深 OFFSET」的放大器；
-//   · 越界页（page > 总页数）：返回**空列表 + 真实总数**，不夹到末页。
-//     夹页会让同一个 URL 在不同时刻对应两份内容（分页器与搜索引擎各记一份），
-//     而「空页 + 共 N 条」是唯一自洽的回答。
-//
-// 越界空列表本身由 product_catalog_page_budget_test.go 钉住，这里只测边界判定。
-
 import (
 	"context"
 	"strings"

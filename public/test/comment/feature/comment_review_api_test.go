@@ -36,7 +36,6 @@ func reviewViaAPI(t *testing.T, svc *commentservice.Service, id int64, status st
 	return receipt.Data
 }
 
-// Review 从生产 JSON handler 进入，核对实际写入与会话审核人。
 func TestCommentReviewAPIRecordsReviewerAndReceipt(t *testing.T) {
 	svc, db := setupCommentService(t)
 	submitted, err := svc.Submit(context.Background(), &commentdto.SubmitReq{
@@ -78,7 +77,6 @@ func TestCommentReviewAPIRecordsReviewerAndReceipt(t *testing.T) {
 	}
 }
 
-// 负向 API 校验在 model 调用之前结束，使用 nil DB 证明没有数据库依赖。
 func TestCommentReviewAPIRejectsEmptyAndOversizedBatches(t *testing.T) {
 	handler := commenthttp.NewHandle(commentservice.NewService(commentmodel.NewModel(nil), nil))
 	for _, body := range []string{`{"ids":[],"status":"approved"}`, `{"ids":[` + strings.Repeat("1,", 200) + `1],"status":"approved"}`} {

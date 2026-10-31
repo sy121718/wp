@@ -1,14 +1,5 @@
 package artifactservice
 
-// 背景：产物的内容寻址闭包（content_objects + page_artifact_objects）一直只有写入路径，
-// 迁移 068 的注释里就记着「content_objects 的 GC 待落地」。产物行被回收
-// （payload_state='deleted'）之后，它引用的共享内容对象往往已无人引用，却永远留在表里 ——
-// 表只增不减。本文件补上清除侧。
-//
-// 做法是最朴素的标记清除：标记 =「是否仍被现存产物行引用」，清除无标记的对象。
-// 安全默认与产物 GC 保持同一口径（DryRun 默认 true、保留期同一天数），
-// 这样两个 GC 在报表里可以放在一起读。
-
 import (
 	"context"
 	"errors"
@@ -29,9 +20,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// normalizeLang 归一化产物语言：空 → 全局默认语言（sys_config 的 i18n 组 default_lang，未初始化回退 zh-CN）。
-//
-// 调用方通常已显式传语言；本函数保证契约层直调也记录准确语言，禁止空语言元数据。
 func normalizeLang(lang string) string {
 	if l := strings.TrimSpace(lang); l != "" {
 		return l
@@ -39,8 +27,6 @@ func normalizeLang(lang string) string {
 	return i18n.GetDefaultLang()
 }
 
-// validateRecordReq 必填/格式校验（DTO binding 仅 HTTP 层生效，契约层直调必须自校验，
-// 否则空 ArtifactHash/PageID/Version=0 直接落库抛 PG 原始错误）。
 func validateRecordReq(req *artifactdto.RecordReq) error {
 	if req == nil {
 		return artifactenums.Err(artifactenums.ErrInvalidArtifact)
@@ -57,10 +43,6 @@ func validateRecordReq(req *artifactdto.RecordReq) error {
 	return nil
 }
 
-// Record 归档产物元数据与内容对象闭包（AGENTS.md §4）。
-// 产物字节由 pipeline.ArtifactStore 在构建期落盘，本方法只做数据库投影：
-// 元数据行 + manifest 内文件闭包写入 content_objects / page_artifact_objects，
-// 三者同一事务提交；hash 重复时按产物不可变语义幂等返回现有记录。
 func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
 	if err = validateRecordReq(req); err != nil {
 		return nil, err
@@ -68,27 +50,20 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	if existing, exists, existsErr := s.findByHash(ctx, req.PageID, req.ArtifactHash); existsErr != nil {
 		return nil, existsErr
 	} else if exists {
-		// 内容寻址保证同 hash 同内容：重复归档直接返回既有记录。
+
 		return toResp(existing), nil
 	}
 
 	var parsedManifest struct {
 		Files map[string]string `json:"files"`
 	}
-	// manifest.files 是内容闭包来源：空闭包没有意义，统一拒绝
-	// {"files":{}}、{"files":null} 与 {}（缺 files 键）三种形态
-	// （此前仅 nil 被拒，空对象会静默建出无闭包记录，行为不一致）。
+
 	if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
 		return nil, artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 
 	now := time.Now().UTC()
-	// req.Manifest 是 pipeline.Manifest —— **输出清单**（canonicalPath / files /
-	// dependencies / diagnostics），与产物目录里的 manifest.json 同一份字节，参与产物 hash。
-	// 只写 manifest 一列（审计 DB-02，迁移 305）：这里此前把同一个 req.Manifest 也写进
-	// build_input_manifest，两列同字节、而后者全仓零读取者；且「输入清单」这种产物并不存在
-	// （pipeline.BuildInput 是内存结构，从不序列化落库；输入侧事实由 source_document 与
-	// source_hash / build_input_hash 承载），所以两列同义 → 合并为 manifest 一个真源。
+
 	entity := &artifactmodel.PageArtifactEntity{
 		ID:                        req.ArtifactID,
 		PageID:                    req.PageID,
@@ -111,18 +86,14 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	}
 
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		// 唯一冲突的同内容幂等/不同内容身份冲突由 service 在事务回滚后区分。
+
 		if cerr := s.model.CreateArtifactTx(ctx, tx, entity); cerr != nil {
 			if database.IsUniqueViolation(cerr) {
 				return errArtifactIdentityConflict
 			}
 			return cerr
 		}
-		// 内容对象闭包：manifest.files 的每个文件哈希都是一条共享内容对象。
-		//
-		// 必须按哈希去重：同一份文件在页面里出现多次时 manifest.files 会带重复项，
-		// 第二条 (artifact_id, content_hash) 直接撞主键，导致整个归档事务失败
-		//（表现为「首次归档含同内容文件必失败」）。
+
 		seenHashes := make(map[string]struct{}, len(parsedManifest.Files))
 		for _, fileName := range sortedManifestFiles(parsedManifest.Files) {
 			fileHash := strings.TrimSpace(parsedManifest.Files[fileName])
@@ -147,7 +118,7 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	})
 	if err != nil {
 		if errors.Is(err, errArtifactIdentityConflict) {
-			// 并发同内容归档的另一事务已完成，复用其身份；不同内容复用 ID 则拒绝。
+
 			if existing, exists, readErr := s.findByHash(ctx, req.PageID, req.ArtifactHash); readErr != nil {
 				return nil, readErr
 			} else if exists {
@@ -162,9 +133,6 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 
 var errArtifactIdentityConflict = errors.New("artifact identity conflict")
 
-// Detail 按 (pageId, hash) 查询产物元数据。
-// nil/空参数属于请求不合法（ErrInvalidParam），与产物是否存在无关；
-// 只有参数合法但查询无结果才返回 ErrArtifactNotFound。
 func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.PageID) == "" || strings.TrimSpace(req.Hash) == "" {
 		return nil, artifactenums.Err(artifactenums.ErrInvalidParam)
@@ -179,8 +147,6 @@ func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *
 	return toResp(entity), nil
 }
 
-// DetailByID 按产物行 ID 查询产物元数据。
-// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无记录才返回 ErrArtifactNotFound。
 func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, artifactenums.Err(artifactenums.ErrInvalidParam)
@@ -195,16 +161,6 @@ func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq
 	return toResp(entity), nil
 }
 
-// ListStalePageIDs 在调用方给定的「当前产物」集合内挑出 registry_version 与 current
-// 不同的产物，返回它们所属的页面 ID。
-//
-// 集合由调用方（page 模块）从自己的语言账本（page_publications / page_stagings）里选出 ——
-// 「哪一行算当前产物」是 page 的领域事实，artifact 只回答「这一行是哪个版本产出的」。
-// 详见 model 侧同名方法的注释（旧实现扫全部 available 行会把未 GC 的历史产物算进来）。
-//
-// current 为空表示调用方无法确定当前版本（例如二进制无 VCS 信息）：此时返回空列表，
-// 宁可不标记也不误标记全站（避免每次启动都触发全量重建）。
-// artifactIDs 为空（该站没有任何 active/staged 产物）同样返回空列表。
 func (s *Service) ListStalePageIDs(ctx context.Context, current string, artifactIDs []string) (ids []string, err error) {
 	if strings.TrimSpace(current) == "" || len(artifactIDs) == 0 {
 		return nil, nil
@@ -223,16 +179,10 @@ func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artif
 	return e, true, nil
 }
 
-// EnsureRecord 与 Record 共用不可变归档入口：同页同 hash 复用身份，
-// 新 hash 新建产物与闭包。草稿版本不代表产物身份，重建不得改写已发布指针引用的旧行。
 func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (*artifactdto.ArtifactResp, error) {
 	return s.Record(ctx, req)
 }
 
-// sortedManifestFiles 按文件名（manifest.files 的 key）字典序返回文件名列表。
-//
-// map 的遍历顺序在 Go 里是随机的，而内容对象的 object_key 取「首个引用该 hash 的文件名」
-// （同一份内容出现在多个文件名下时），因此必须有序遍历才是确定性行为。
 func sortedManifestFiles(files map[string]string) []string {
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -242,13 +192,6 @@ func sortedManifestFiles(files map[string]string) []string {
 	return names
 }
 
-// artifactObjectKey 内容对象在存储里的位置 = 产物目录 + 文件名。
-//
-// **必须精确到文件**：content_objects 有 UNIQUE (provider, object_key)，而已发布的产物
-// 是「一个目录装多个文件」（artifacts/<hash>/index.html、…/manifest.json）。
-// 若沿用产物级 key（artifacts/<hash>）登记每条内容对象，第二条就撞唯一约束；
-// 配上 ON CONFLICT DO NOTHING 会静默吞掉它，紧接着闭包表的外键找不到 content_hash
-// 而整单回滚 —— 报出来的是外键违例，看起来像「库坏了」而不是「key 选错了」。
 func artifactObjectKey(artifactKey, fileName string) string {
 	base := strings.TrimSuffix(strings.TrimSpace(artifactKey), "/")
 	name := strings.TrimPrefix(strings.TrimSpace(fileName), "/")
@@ -257,10 +200,6 @@ func artifactObjectKey(artifactKey, fileName string) string {
 	}
 	return base + "/" + name
 }
-
-// 共享内容对象（content_objects）的幂等写入已下移到 model：见
-// artifactmodel.EnsureContentObjectTx —— ON CONFLICT (content_hash) DO NOTHING 与
-// first-writer-wins 的完整论证跟 SQL 放在一起，避免同一份判定分居两处。
 
 func defaultCreator(createdBy string) string {
 	if strings.TrimSpace(createdBy) == "" {
@@ -304,7 +243,6 @@ func toResp(e *artifactmodel.PageArtifactEntity) *artifactdto.ArtifactResp {
 	}
 }
 
-// ListGCCandidates 列出可回收候选（见 contract 说明）。
 func (s *Service) ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []artifactdto.GCCandidateResp, err error) {
 	rows, err := s.model.ListGCCandidates(ctx, before, excludeIDs)
 	if err != nil {
@@ -320,38 +258,22 @@ func (s *Service) ListGCCandidates(ctx context.Context, before time.Time, exclud
 	return list, nil
 }
 
-// CountOtherAvailableByHash 见 contract 说明。
 func (s *Service) CountOtherAvailableByHash(ctx context.Context, hash, excludeID string) (n int64, err error) {
 	return s.model.CountOtherAvailableByHash(ctx, hash, excludeID)
 }
 
-// MarkPayloadState 见 contract 说明。
 func (s *Service) MarkPayloadState(ctx context.Context, ids []string, state string) (n int64, err error) {
 	return s.model.MarkPayloadState(ctx, ids, state, time.Now().UTC())
 }
 
 const (
-	// defaultContentObjectRetentionDays 内容对象默认保留窗口，与产物 GC 同口径：
-	// 窗口内的对象一律不回收 —— 刚发布的内容对象可能只是还没被后续归档复用。
 	defaultContentObjectRetentionDays = 30
-	// contentObjectGCBatch 单批处理上限：分批的意义是不制造长事务与长锁等待。
+
 	contentObjectGCBatch = 2000
 )
 
-// ExternalContentRefs 由其他模块注入：指出入参 hash 中哪些仍被它引用。
-//
-// 存在的理由是「引用来源不止一处」：page_artifact_objects 是当前唯一的闭包投影，
-// 但 content_objects 是共享表，其它模块的产物将来同样会引用它。孤儿判定必须能问遍
-// 所有来源，而不是把「我不知道的引用」当成「没有引用」。
-//
-// 未注入 = 确认没有任何外部引用来源。当前即此状态：presentation 侧原本的孪生表
-// presentation_artifact_objects 零写入方，已按 CQ-015 删除（迁移 207）—— 那张表
-// 「有 DDL、无消费方」，留着只会让人读成「presentation 的闭包已经在跑」。
-// 等该侧归档真正落地时，按 page 侧的 peer 形态重建并在这里注入，判定无需再改。
-// 注入后查询失败一律放弃本轮回收。
 type ExternalContentRefs func(ctx context.Context, hashes []string) (referenced []string, err error)
 
-// SetExternalContentRefs 注入外部引用来源；装配期调用一次。
 func (s *Service) SetExternalContentRefs(fn ExternalContentRefs) {
 	if s == nil {
 		return
@@ -359,7 +281,6 @@ func (s *Service) SetExternalContentRefs(fn ExternalContentRefs) {
 	s.externalRefs = fn
 }
 
-// 单条候选的处理结论（与产物 GC 的 Action 取值同风格）。
 const (
 	objectActionWouldDelete   = "would_delete"
 	objectActionDeleted       = "deleted"
@@ -368,17 +289,6 @@ const (
 	objectActionDeleteFailed  = "delete_failed"
 )
 
-// GarbageCollectContentObjects 回收不再被任何产物行引用的共享内容对象。
-//
-// 顺序：先数（Orphans = 窗口外的孤儿总数）→ 取一批候选 → 问外部引用 → dryRun 只报告，
-// 真删走「语句内复查」的 DELETE（见 model.DeleteOrphanContentObjects）。
-//
-// 与产物 GC 的两点差异：
-//  1. 内容对象本身不在磁盘上（它们是指向产物目录内文件的 Locator 投影），删除只动 DB；
-//     产物目录的删除仍由产物 GC 负责，本函数不碰文件系统，因此两个 GC 可以任意顺序，
-//     但调用方应「先产物、后内容对象」—— 那样同一轮里刚变成孤儿的对象能立刻被收掉。
-//  2. 失败口径是「整轮放弃」而不是「逐条跳过」：问不到外部引用时一个都不删。
-//     误删共享对象的代价高于多留一轮垃圾。
 func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifactdto.ContentObjectGCReq) (res *artifactdto.ContentObjectGCResp, err error) {
 	retention, dryRun, limit := defaultContentObjectRetentionDays, true, contentObjectGCBatch
 	if req != nil {
@@ -464,12 +374,9 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 		return res, nil
 	}
 
-	// 删后复查：没进 RETURNING 的候选有两种成因 —— 「被并发归档重新引用」（正常赛跑）与
-	// 「删除语句没生效」（异常：行还在、且仍无引用）。只看差集分不出来，两者都落进去；
-	// 而默认按前者解释，异常就永远静默（外键挡删那次正是这样只增不减的）。
 	stillOrphan, rerr := s.stillOrphanAfterDelete(ctx, deletable, deletedSet, before)
 	if rerr != nil {
-		// 复查失败只影响归因精度：本轮删除已经执行完毕，不改变结果，也不能反过来报失败。
+
 		logger.Scene("artifact").With("undecided", len(deletable)-len(deletedSet)).
 			Error(rerr, "删除后复查失败：本轮无法区分并发认领与删除未生效")
 	}
@@ -484,20 +391,18 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 			item.Action = objectActionDeleted
 			res.Deleted++
 		case stillOrphan[row.ContentHash]:
-			// 删除没生效：行仍在，且复查确认它仍无任何引用。这不是赛跑，是异常。
+
 			item.Action, item.Reason = objectActionDeleteFailed, "删除未生效：复查确认该行仍存在且仍无引用"
 			res.Failed++
 		default:
-			// 候选与删除之间被并发归档重新引用：这是正常赛跑结果（语句内复查拦住了误删），
-			// 不计失败也不计跳过 —— 下一轮它若仍是孤儿自会再被选中。
+
 			item.Action, item.Reason = objectActionKeptReclaimed, "删除前已被新产物引用，本轮保留"
 		}
 		res.Items = append(res.Items, item)
 	}
 	res.FailedRate = failedRate(res.Failed, res.Scanned)
 	if res.Failed > 0 {
-		// 失败率告警：失败口径是「记统计 + 打日志」，调用方拿不到 error，
-		// 所以日志必须是 Error 级并带比率 —— 正常一轮 Failed 恒为 0，非零必是异常。
+
 		logger.Scene("artifact").With("orphans", res.Orphans).With("scanned", res.Scanned).
 			With("deleted", res.Deleted).With("skippedExternal", res.SkippedExtern).
 			With("failed", res.Failed).With("failedRate", res.FailedRate).
@@ -511,9 +416,6 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 	return res, nil
 }
 
-// stillOrphanAfterDelete 复查「候选里没被删掉的」哪些仍然是孤儿。
-//
-// 返回空集且 err 为 nil，表示每个没删掉的候选都已被重新引用 —— 这才是正常赛跑。
 func (s *Service) stillOrphanAfterDelete(ctx context.Context, deletable []string, deleted map[string]bool, before time.Time) (set map[string]bool, err error) {
 	set = map[string]bool{}
 	if len(deleted) >= len(deletable) {
@@ -538,7 +440,6 @@ func (s *Service) stillOrphanAfterDelete(ctx context.Context, deletable []string
 	return set, nil
 }
 
-// failedRate 失败率（Scanned 为 0 时返回 0，避免除零）。
 func failedRate(failed, scanned int) float64 {
 	if scanned <= 0 {
 		return 0
@@ -546,8 +447,6 @@ func failedRate(failed, scanned int) float64 {
 	return float64(failed) / float64(scanned)
 }
 
-// externalKept 询问外部引用来源，返回「必须保留」的 hash 集合。
-// 未注入守卫 = 没有外部来源，返回空集合；注入后失败即向上抛（调用方整轮放弃）。
 func (s *Service) externalKept(ctx context.Context, hashes []string) (kept map[string]bool, err error) {
 	kept = map[string]bool{}
 	if s.externalRefs == nil || len(hashes) == 0 {
@@ -563,7 +462,6 @@ func (s *Service) externalKept(ctx context.Context, hashes []string) (kept map[s
 	return kept, nil
 }
 
-// deleteOrphans 执行删除并把结果转成集合；空入参直接返回空集合（不发语句）。
 func (s *Service) deleteOrphans(ctx context.Context, hashes []string, before time.Time) (deleted map[string]bool, err error) {
 	deleted = map[string]bool{}
 	if len(hashes) == 0 {
@@ -579,7 +477,6 @@ func (s *Service) deleteOrphans(ctx context.Context, hashes []string, before tim
 	return deleted, nil
 }
 
-// orphanItem 把一条候选转成响应条目（Action 由调用方按结论填写）。
 func orphanItem(row artifactmodel.ContentObjectEntity) artifactdto.OrphanContentObjectResp {
 	return artifactdto.OrphanContentObjectResp{
 		ContentHash: row.ContentHash, Provider: row.Provider, ObjectKey: row.ObjectKey,

@@ -1,7 +1,5 @@
 package feature
 
-// mail_campaign_page_test.go — 活动报表页渲染（issue #38 P1）。
-
 import (
 	"context"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestMailCampaignPageRenders 报表页渲染：指标、「打开率是估算」的提示、链接排行都在。
 func TestMailCampaignPageRenders(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -37,7 +34,7 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	// 页面出口由 PageSlot 装配（handler 只交视图对象）。
+
 	router.GET("/admin/mail/campaign",
 		adminui.PageSlot(mailhttp.CampaignPageTemplate),
 		mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)

@@ -10,10 +10,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// casbinRuleTable 策略持久化表名，与 public/migrations/init_schema.sql 中 sys_casbin_rule DDL 对齐。
 const casbinRuleTable = "sys_casbin_rule"
 
-// CasbinRule 对应 sys_casbin_rule 表的行结构（casbin 标准策略表）。
 type CasbinRule struct {
 	ID    uint   `gorm:"primaryKey;autoIncrement"`
 	Ptype string `gorm:"size:100"`
@@ -25,14 +23,10 @@ type CasbinRule struct {
 	V5    string `gorm:"size:100"`
 }
 
-// TableName 指定使用的持久化表。
 func (CasbinRule) TableName() string {
 	return casbinRuleTable
 }
 
-// Adapter 是 casbin persist.Adapter 的自定义实现，
-// 复用项目已有的 *gorm.DB（postgres），把策略持久化到 sys_casbin_rule 表。
-// 替代 github.com/casbin/gorm-adapter/v3，避免其 blank import 多驱动带来的无用依赖链。
 type Adapter struct {
 	db *gorm.DB
 }
@@ -41,10 +35,6 @@ var (
 	_ persist.Adapter = (*Adapter)(nil)
 )
 
-// NewAdapter 基于已有的 *gorm.DB 创建策略适配器，表名为 sys_casbin_rule。
-// 若表不存在则按 CasbinRule 结构自动建表（含 ptype+v0..v5 唯一索引），
-// 与原有 gorm-adapter 的自动建表约定保持一致；生产 postgres 建表仍由迁移脚本
-// public/migrations/init_schema.sql 负责。
 func NewAdapter(db *gorm.DB) (*Adapter, error) {
 	a := &Adapter{db: db}
 	if err := a.createTable(); err != nil {
@@ -53,12 +43,6 @@ func NewAdapter(db *gorm.DB) (*Adapter, error) {
 	return a, nil
 }
 
-// createTable 确保策略表存在：表缺失才 AutoMigrate 建表，索引缺失才补建。
-//
-// 不做无条件 AutoMigrate：它对 information_schema 连做两次昂贵 join（实测单次约 400ms，
-// 且随库里表数增长 —— 该视图无法下推 schema / 表名谓词），而策略表在生产与测试里都由迁移
-// 建立，每次初始化都全扫一遍元数据纯属浪费（admin 单元测试 116 个用例各初始化一次 = 93s）。
-// 存在性检查改走 to_regclass、索引检查改走 pg_class，都是亚毫秒级。
 func (a *Adapter) createTable() error {
 	rule := &CasbinRule{}
 	var tableExists bool
@@ -88,8 +72,6 @@ func (a *Adapter) createTable() error {
 	)).Error
 }
 
-// ruleToPolicyArray 把一行策略转成 policy 数组，去掉尾部空字段。
-// 例如 p, sub, obj, act, code 长度为 5；g, user_id, role_code 长度为 3。
 func (a *Adapter) ruleToPolicyArray(line CasbinRule) []string {
 	p := []string{line.Ptype, line.V0, line.V1, line.V2, line.V3, line.V4, line.V5}
 	idx := len(p) - 1
@@ -99,7 +81,6 @@ func (a *Adapter) ruleToPolicyArray(line CasbinRule) []string {
 	return p[:idx+1]
 }
 
-// savePolicyLine 把 ptype + rule 组装成一行，缺失字段留空。
 func (a *Adapter) savePolicyLine(ptype string, rule []string) CasbinRule {
 	line := CasbinRule{Ptype: ptype}
 	for i, v := range rule {
@@ -121,14 +102,10 @@ func (a *Adapter) savePolicyLine(ptype string, rule []string) CasbinRule {
 	return line
 }
 
-// addRule 插入一行，冲突（ptype+v0..v5 重复）时忽略。
 func (a *Adapter) addRule(line CasbinRule) error {
 	return a.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&line).Error
 }
 
-// deleteRuleRaw 按非空字段构造 WHERE 删除。
-// 注意不能使用主键删除：多行可能完全一样（不启用过滤场景下几乎不会），
-// 且 casbin 删除语义按整行匹配。沿用 gorm-adapter 的做法，用 ptype+非空 v 字段精确过滤。
 func (a *Adapter) deleteRuleRaw(line CasbinRule) error {
 	queryStr := "ptype = ?"
 	queryArgs := []interface{}{line.Ptype}
@@ -159,8 +136,6 @@ func (a *Adapter) deleteRuleRaw(line CasbinRule) error {
 	return a.db.Delete(&CasbinRule{}, append([]interface{}{queryStr}, queryArgs...)...).Error
 }
 
-// LoadPolicy 读取全表，把每行转成 model 的 policy 并写入内存模型。
-// 顺序按 ID 保证与 gorm-adapter 一致（p/g/g2 的插入顺序稳定）。
 func (a *Adapter) LoadPolicy(model model.Model) error {
 	var lines []CasbinRule
 	if err := a.db.Order("id").Find(&lines).Error; err != nil {
@@ -174,15 +149,12 @@ func (a *Adapter) LoadPolicy(model model.Model) error {
 	return nil
 }
 
-// SavePolicy 清空表后把 model 中 p 和 g 的全部策略写入。
-// 与 gorm-adapter 语义对齐：truncate 后批量写，冲突忽略。
 func (a *Adapter) SavePolicy(model model.Model) error {
 	tx := a.db.Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
 
-	// postgres 使用 truncate（会重置 ID），与 gorm-adapter 的 truncateTable 对齐。
 	if err := tx.Exec(fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY", casbinRuleTable)).Error; err != nil {
 		tx.Rollback()
 		return err
@@ -210,18 +182,14 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 	return tx.Commit().Error
 }
 
-// AddPolicy 向表插入一条策略。
 func (a *Adapter) AddPolicy(sec string, ptype string, rule []string) error {
 	return a.addRule(a.savePolicyLine(ptype, rule))
 }
 
-// RemovePolicy 从表删除一条策略（按整行匹配）。
 func (a *Adapter) RemovePolicy(sec string, ptype string, rule []string) error {
 	return a.deleteRuleRaw(a.savePolicyLine(ptype, rule))
 }
 
-// RemoveFilteredPolicy 按 ptype + 过滤字段（fieldIndex 起）删除策略。
-// fieldIndex==-1 表示删除该 ptype 的全部策略；否则按 fieldValues 逐字段过滤。
 func (a *Adapter) RemoveFilteredPolicy(sec string, ptype string, fieldIndex int, fieldValues ...string) error {
 	line := CasbinRule{Ptype: ptype}
 

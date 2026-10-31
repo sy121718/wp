@@ -1,10 +1,5 @@
 package feature
 
-// automation_report_test.go — 运行实例的排障视图（issue #38 P3，目标 ⑥）。
-//
-// 排障视图的价值全在「一句话解释」上：光有 status 字段（running / waiting / failed）
-// 运营看不懂，也无法判断该不该管。所以测试重点钉 Explain。
-
 import (
 	"context"
 	"strings"
@@ -15,7 +10,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// TestRunDetailExplainsWaiting 等待态解释出「在等」与「何时继续」。
 func TestRunDetailExplainsWaiting(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -53,10 +47,7 @@ func TestRunDetailExplainsWaiting(t *testing.T) {
 	if detail.AutomationName != "解释流程" {
 		t.Fatalf("详情应带流程名，实际 %q", detail.AutomationName)
 	}
-	// Explain 是**运行文案编码**（词条 key + 具名参数）：service 层拿不到请求语言，出口用
-	// mailenums.FormatRunText 按语言还原（入站两处：JSON API 与后台排障页）。断言必须走还原，
-	// 否则测的是中间产物。取词用「只回兜底」的函数 —— 断言的是代码内兜底文案，不依赖测试库
-	// 里的词条质量（词条本身由 i18n 门禁单独守）。
+
 	explain := mailenums.FormatRunText(func(_, fallback string) string { return fallback }, detail.Explain)
 	if !strings.Contains(explain, "等待中") || !strings.Contains(explain, "继续") {
 		t.Fatalf("等待态解释应说明在等、何时继续，实际 %q", explain)
@@ -70,12 +61,11 @@ func TestRunDetailExplainsWaiting(t *testing.T) {
 	if len(detail.Timeline) != 2 {
 		t.Fatalf("时间线应有 2 条，实际 %d", len(detail.Timeline))
 	}
-	// 时间线按执行顺序（trigger 在前）。
+
 	if detail.Timeline[0].NodeType != "trigger" || detail.Timeline[1].NodeType != "delay" {
 		t.Fatalf("时间线顺序不对: %+v", detail.Timeline)
 	}
 
-	// 列表也应带邮箱（排障第一眼要看到「是谁」）。
 	list, err := f.svc.ListAutomationRuns(ctx, &maildto.AutomationRunListReq{AutomationID: id, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +78,6 @@ func TestRunDetailExplainsWaiting(t *testing.T) {
 	}
 }
 
-// TestRunDetailExplainsFailure 失败态解释出「失败在哪一步、为什么」。
 func TestRunDetailExplainsFailure(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -101,7 +90,7 @@ func TestRunDetailExplainsFailure(t *testing.T) {
 	if err := f.m.CreateContact(ctx, contact); err != nil {
 		t.Fatal(err)
 	}
-	// 条件写成不认识的值：图校验放行（字符串形状没问题），执行期会失败。
+
 	id := seedAutomation(t, f, "会失败的流程", "n1", []map[string]any{
 		newNode("n1", "trigger", nil, "n2"),
 		map[string]any{
@@ -131,7 +120,6 @@ func TestRunDetailExplainsFailure(t *testing.T) {
 	}
 }
 
-// TestRunDetailExplainsCompleted 完成态解释出已完成。
 func TestRunDetailExplainsCompleted(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -164,7 +152,6 @@ func TestRunDetailExplainsCompleted(t *testing.T) {
 	}
 }
 
-// TestRunDetailNotFound 不存在的实例给出明确错误。
 func TestRunDetailNotFound(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {

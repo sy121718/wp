@@ -1,20 +1,11 @@
 package pluginservice
 
-// plugin_patrol_test.go — 巡检分类的纯逻辑单测。
-//
-// 为什么必须有：**分类错了不报错**。最坏的一种是把正在使用的插件报成孤儿，
-// 然后有人照着报告去 DROP 它的 schema 或删它的目录。另一类错误是假告警 ——
-// 把 schema_version = 0 的纯组件插件报成「缺 schema」，会让真告警一起被忽略。
-// 两种都只在人的判断里体现，测试是唯一能提前拦住的地方。
-
 import (
 	"testing"
 
 	pluginmodel "go_wp/internal/module/plugin/model"
 )
 
-// existsByID 造一个「这些插件 ID 的目录在磁盘上」的判定函数
-// （把文件系统判据注入进来，测试不碰真实磁盘）。
 func existsByID(ids ...string) func(*pluginmodel.Entity) bool {
 	set := map[string]bool{}
 	for _, id := range ids {
@@ -68,8 +59,7 @@ func TestClassifyPatrol(t *testing.T) {
 	})
 
 	t.Run("schema_version=0 的插件不要求有 schema", func(t *testing.T) {
-		// 纯组件 / 纯模板插件按设计就没有 L1 schema。把它算成「缺 schema」
-		// 会制造一整片假告警 —— 假告警会让真告警一起被忽略。
+
 		res := classifyPatrol(nil, nil,
 			[]*pluginmodel.Entity{{PluginID: "pure", SchemaVersion: 0}},
 			existsByID("pure"))
@@ -101,16 +91,16 @@ func TestClassifyPatrol(t *testing.T) {
 		res := classifyPatrol(
 			[]pluginmodel.SchemaInfo{
 				{Name: "plugin_ok", TableCount: 1},
-				{Name: "plugin_nodir", TableCount: 2}, // 有 schema，只缺目录 —— 用来证明四类互不串味
+				{Name: "plugin_nodir", TableCount: 2},
 				{Name: "plugin_orphan", TableCount: 0},
 			},
 			[]string{"ok", "lost"},
 			[]*pluginmodel.Entity{
-				{PluginID: "ok", SchemaVersion: 1},     // schema 在 + 目录在 → 全部正常
-				{PluginID: "nosche", SchemaVersion: 1}, // 只缺 schema（没有目录需求，判据里给了目录）
-				{PluginID: "nodir", SchemaVersion: 1},  // 只缺目录（schema 在 → 不能同时报缺 schema）
+				{PluginID: "ok", SchemaVersion: 1},
+				{PluginID: "nosche", SchemaVersion: 1},
+				{PluginID: "nodir", SchemaVersion: 1},
 			},
-			existsByID("ok", "nosche"), // nosche 的目录在，所以它只该出现在「缺 schema」里
+			existsByID("ok", "nosche"),
 		)
 		if len(res.OrphanSchemas) != 1 || res.OrphanSchemas[0].Name != "plugin_orphan" {
 			t.Fatalf("孤儿 schema 应为 plugin_orphan，实际 %+v", res.OrphanSchemas)
@@ -127,8 +117,7 @@ func TestClassifyPatrol(t *testing.T) {
 	})
 
 	t.Run("nil 行被跳过且返回非 nil 空切片", func(t *testing.T) {
-		// 空切片而非 nil：JSON 里 nil 会变 null，前端要额外判空；
-		// 页面模板对 nil 调 len() 虽然安全，但统一形状少一个分支。
+
 		res := classifyPatrol(nil, nil, []*pluginmodel.Entity{nil}, existsByID())
 		if res.OrphanSchemas == nil || res.MissingSchemas == nil ||
 			res.OrphanStorage == nil || res.MissingStorage == nil {

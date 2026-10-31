@@ -1,14 +1,5 @@
 package navigationmcp
 
-// navigation_tools.go — 公开站点导航（页眉 / 页脚菜单）的读树与增改删。
-//
-// 菜单是**嵌套结构**：parentId 指向父项，服务端限制最大深度 64 层。
-// 所以每一步都要先知道「现在这棵树长什么样」—— navigation_tree 不是可选的便利工具，
-// 而是写路径的前置步骤（挂错父项会让一整块菜单跑到别人下面去）。
-//
-// kind 的白名单与 service 里的常量保持一致：header / header_mobile / footer / footer_mobile。
-// 页眉与页脚是两棵独立的树，kind 传错会在另一个位置凭空长出一项。
-
 import (
 	"context"
 	"errors"
@@ -20,8 +11,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// dirReader 导航的读能力。service 的方法集里 Get/List/Tree 都有，
-// 这里只收窄到工具真正要用的四个。
 type dirReader interface {
 	List(ctx context.Context, req *navigationdto.ListReq) ([]*navigationdto.NavigationResp, error)
 	Tree(ctx context.Context, projectID, kind string) ([]*navigationdto.NavigationNode, error)
@@ -33,7 +22,6 @@ type dirWriter interface {
 	Delete(ctx context.Context, req *navigationdto.DeleteReq) error
 }
 
-// Tools 返回导航工具集（1 读树 + 3 写）。
 func Tools(r dirReader, w dirWriter) ([]mcp.Tool, error) {
 	if r == nil || w == nil {
 		return nil, errors.New("navigationmcp: 导航读写依赖缺失（装配期接线错误）")
@@ -50,8 +38,6 @@ const (
 	navKindFooterMobile = "footer_mobile"
 )
 
-// navKind 校验位置。**不做兜底**：service 会把不认识的 kind 默认成 header，
-// 而「我以为加在页脚，结果长在页眉上」是静默的 —— 多出来的那一项看起来很正常。
 func navKind(raw string) (string, error) {
 	switch strings.TrimSpace(raw) {
 	case navKindHeader, navKindHeaderMobile, navKindFooter, navKindFooterMobile:
@@ -104,8 +90,6 @@ func navigationTree(r dirReader) mcp.Tool {
 		})
 }
 
-// navigationTreeText 用缩进表示层级 —— 位置关系是这棵树唯一重要的信息，
-// 平铺成一列 id 会让人（和模型）看不出谁在谁下面。
 func navigationTreeText(nodes []*navigationdto.NavigationNode, kind string) string {
 	if len(nodes) == 0 {
 		return fmt.Sprintf("%s还没有菜单项。用 navigation_create 加一项（不传 parentId 就是顶层项）。", navKindText(kind))

@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// contains 判断切片是否包含目标字符串。
 func contains(s []string, target string) bool {
 	for _, v := range s {
 		if v == target {
@@ -15,8 +14,6 @@ func contains(s []string, target string) bool {
 	return false
 }
 
-// TestFilterIconsByCategory 分类筛选：筛选结果必须全部属于该分类（不写死数量，
-// 避免图标数量变化导致断言失效）。
 func TestFilterIconsByCategory(t *testing.T) {
 	for _, cat := range IconCategories() {
 		got := FilterIcons(cat, "", "")
@@ -35,21 +32,20 @@ func TestFilterIconsByCategory(t *testing.T) {
 	}
 }
 
-// TestFilterIconsByKeyword 搜索：匹配名称 / 中文标签 / 关键词（大小写不敏感）。
 func TestFilterIconsByKeyword(t *testing.T) {
-	// 中文标签搜索。
+
 	if !contains(FilterIcons("", "", "邮件"), "mail") {
 		t.Fatalf("关键词「邮件」应包含 mail，got %v", FilterIcons("", "", "邮件"))
 	}
-	// 关键词同义搜索（定位 → map-pin）。
+
 	if !contains(FilterIcons("", "", "定位"), "map-pin") {
 		t.Fatalf("关键词「定位」应包含 map-pin，got %v", FilterIcons("", "", "定位"))
 	}
-	// 名称搜索（大小写不敏感）。
+
 	if !contains(FilterIcons("", "", "REFRESH"), "refresh-cw") {
 		t.Fatalf("关键词「REFRESH」应包含 refresh-cw，got %v", FilterIcons("", "", "REFRESH"))
 	}
-	// 分类 + 关键词组合：结果仍须全部属于该分类。
+
 	for _, name := range FilterIcons("media", "", "播放") {
 		if c, _ := IconCategory(name); c != "media" {
 			t.Fatalf("media+「播放」筛选结果 %q 不属于 media", name)
@@ -57,7 +53,6 @@ func TestFilterIconsByKeyword(t *testing.T) {
 	}
 }
 
-// TestFilterIconsEmpty 空过滤返回全部图标。
 func TestFilterIconsEmpty(t *testing.T) {
 	all := FilterIcons("", "", "")
 	if len(all) != len(IconNames()) {
@@ -65,7 +60,6 @@ func TestFilterIconsEmpty(t *testing.T) {
 	}
 }
 
-// TestIconMeta 分类 / 标签元数据。
 func TestIconMeta(t *testing.T) {
 	if c, ok := IconCategory("truck"); !ok || c != "commerce" {
 		t.Fatalf("truck 分类应为 commerce，got %q ok=%v", c, ok)
@@ -78,8 +72,6 @@ func TestIconMeta(t *testing.T) {
 	}
 }
 
-// TestIconCategories 分类数量与顺序（分类由 IconCategories 的 order 显式声明，
-// 数量稳定，不随图标数量变化）。
 func TestIconCategories(t *testing.T) {
 	expect := []string{"basic", "arrows", "communication", "social", "commerce",
 		"media", "editor", "files", "weather", "security", "navigation",
@@ -95,7 +87,6 @@ func TestIconCategories(t *testing.T) {
 	}
 }
 
-// TestIconCatalogComplete 每个内嵌 SVG 图标都应有分类元数据。
 func TestIconCatalogComplete(t *testing.T) {
 	names := IconNames()
 	if len(names) < 1800 {
@@ -108,9 +99,6 @@ func TestIconCatalogComplete(t *testing.T) {
 	}
 }
 
-// TestIconSVGFormat 图标 SVG 根开标签统一：描边 = fill=none + stroke-width=2，
-// 实心（-fill 后缀）= fill=currentColor；去 width/height，不含 xmlns/class。
-// 注意：仅校验根 <svg> 开标签，body 内 <rect>/<line> 等的 width/height 是合法图形属性。
 func TestIconSVGFormat(t *testing.T) {
 	const outlinedPrefix = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`
 	const filledPrefix = `<svg viewBox="0 0 24 24" fill="currentColor">`
@@ -137,7 +125,6 @@ func TestIconSVGFormat(t *testing.T) {
 	}
 }
 
-// TestIconStyle 风格元数据：实心（-fill 后缀）Style=filled，其余 outlined。
 func TestIconStyle(t *testing.T) {
 	for _, name := range IconNames() {
 		style, ok := IconStyle(name)
@@ -154,8 +141,6 @@ func TestIconStyle(t *testing.T) {
 	}
 }
 
-// TestFilterIconsByStyle 风格筛选：filled 只含实心图标，outlined 只含描边图标，
-// 两者并集覆盖全部图标。
 func TestFilterIconsByStyle(t *testing.T) {
 	filled := FilterIcons("", "filled", "")
 	if len(filled) == 0 {
@@ -175,7 +160,7 @@ func TestFilterIconsByStyle(t *testing.T) {
 	if len(filled)+len(outlined) != len(IconNames()) {
 		t.Fatalf("filled(%d)+outlined(%d) 应等于全部图标(%d)", len(filled), len(outlined), len(IconNames()))
 	}
-	// 组合：分类 + 风格。
+
 	for _, name := range FilterIcons("social", "filled", "") {
 		if c, _ := IconCategory(name); c != "social" {
 			t.Fatalf("social+filled 结果 %q 不属于 social", name)
@@ -184,7 +169,7 @@ func TestFilterIconsByStyle(t *testing.T) {
 			t.Fatalf("social+filled 结果 %q 应为实心", name)
 		}
 	}
-	// star-fill 与 star 同属 social 分类，但风格不同。
+
 	if c, ok := IconCategory("star-fill"); !ok || c != "social" {
 		t.Fatalf("star-fill 分类应为 social，got %q ok=%v", c, ok)
 	}

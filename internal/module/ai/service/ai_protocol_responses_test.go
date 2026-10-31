@@ -1,11 +1,5 @@
 package aiservice
 
-// ai_protocol_responses_test.go — 协议层纯逻辑单测：请求体字段、响应解析、分派、
-// 以及 config_data.headers 的自定义头注入（含 {{uuid}}）。
-//
-// 这些用例**不碰数据库、不起 HTTP 服务**：构造 / 解析是纯函数，出站装配用包级
-// validateURL / newHeaderUUID 两个注入点把外部依赖摘掉。
-
 import (
 	"context"
 	"fmt"
@@ -18,7 +12,6 @@ import (
 	aimodel "go_wp/internal/module/ai/model"
 )
 
-// userMsgs 构造「一条 user 消息」的入参：协议层用例里绝大多数都是它。
 func userMsgs(text string) []aidto.ChatMessage {
 	return []aidto.ChatMessage{{Role: roleUser, Content: text}}
 }
@@ -31,8 +24,6 @@ func decodeBody(t *testing.T, b []byte) map[string]any {
 	}
 	return m
 }
-
-// === responses 请求体 ===
 
 func TestBuildResponsesBody_Fields(t *testing.T) {
 	body, err := buildResponsesBody("muse-spark-1.3-contributor", userMsgs("ping"), nil, 16, false)
@@ -69,8 +60,6 @@ func TestBuildResponsesBody_RejectsEmptyModel(t *testing.T) {
 		t.Fatal("空 model 应报错")
 	}
 }
-
-// === responses 响应解析 ===
 
 func TestParseResponsesReply_FromOutputContent(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"pong"}]}]}`)
@@ -115,7 +104,6 @@ func TestParseResponsesReply_RejectsFailedStatus(t *testing.T) {
 	}
 }
 
-// TestParseResponsesReply_FailedStatusStillRejectedWithText 真失败不因「碰巧有正文」被放行。
 func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"failed","output_text":"partial","output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`)
 	if _, err := parseResponsesReply(body); err == nil {
@@ -123,8 +111,6 @@ func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 	}
 }
 
-// TestParseResponsesReply_IncompleteWithTextReturnsText 截断（max_output_tokens / content_filter）
-// 不是失败：正文已生成就要取回来 —— 把「用户给的上限太小」归口「服务器内部错误」是主 bug。
 func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"half an answer"}]}]}`)
 	rep, err := parseResponsesReply(body)
@@ -137,7 +123,6 @@ func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 	}
 }
 
-// TestParseResponsesReply_IncompleteWithoutTextRejected incomplete 且确实没有正文 → 仍归口错误。
 func TestParseResponsesReply_IncompleteWithoutTextRejected(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
 	if _, err := parseResponsesReply(body); err == nil {
@@ -159,11 +144,6 @@ func TestParseResponsesReply_RejectsNoText(t *testing.T) {
 	}
 }
 
-// === 用量（usage）解析 ===
-//
-// 这一段的判据是「没上报」与「真的是 0」必须分得开：调用流水（ai_call_log）里
-// 未上报的调用如果记成 0，看起来就像没消耗，统计会被静默带偏。
-
 func TestParseResponsesReply_ReadsUsage(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}`)
 	rep, err := parseResponsesReply(body)
@@ -176,7 +156,6 @@ func TestParseResponsesReply_ReadsUsage(t *testing.T) {
 	}
 }
 
-// TestParseResponsesReply_UsageMissingIsNotReported 没有 usage 对象 → Reported=false（不是 0 消耗）。
 func TestParseResponsesReply_UsageMissingIsNotReported(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong"}`)
 	rep, err := parseResponsesReply(body)
@@ -189,7 +168,6 @@ func TestParseResponsesReply_UsageMissingIsNotReported(t *testing.T) {
 	}
 }
 
-// TestParseResponsesReply_UsageTotalFilledFromParts 上游只报前两个数时 total 由本地补齐。
 func TestParseResponsesReply_UsageTotalFilledFromParts(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":3,"output_tokens":4}}`)
 	rep, err := parseResponsesReply(body)
@@ -202,7 +180,6 @@ func TestParseResponsesReply_UsageTotalFilledFromParts(t *testing.T) {
 	}
 }
 
-// TestParseChatCompletionsReply_ReadsUsage chat/completions 的字段名是 prompt/completion_tokens。
 func TestParseChatCompletionsReply_ReadsUsage(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"content":"pong"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`)
 	rep, err := parseChatCompletionsReply(body)
@@ -219,8 +196,6 @@ func TestParseChatCompletionsReply_ReadsUsage(t *testing.T) {
 	}
 }
 
-// TestParseChatCompletionsReply_KeepsUsageOnParseFailure 解析失败也要把已读到的 usage 带回去 ——
-// 上游返回了正文之外的坏形状时，用量仍然是有价值的观测数据（调用流水照记）。
 func TestParseChatCompletionsReply_KeepsUsageOnParseFailure(t *testing.T) {
 	body := []byte(`{"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":1}}`)
 	rep, err := parseChatCompletionsReply(body)
@@ -229,8 +204,6 @@ func TestParseChatCompletionsReply_KeepsUsageOnParseFailure(t *testing.T) {
 		t.Fatalf("err = %v, usage = %+v", err, usage)
 	}
 }
-
-// === 协议分派（禁止静默回落） ===
 
 func TestProtocolPath_Dispatch(t *testing.T) {
 	cases := map[string]string{
@@ -272,8 +245,6 @@ func TestBuildProtocolRequest_UnknownProtocolDoesNotFallBack(t *testing.T) {
 		t.Fatal("未实现协议不应被静默回落")
 	}
 }
-
-// === 自定义头与 {{uuid}} ===
 
 func TestApplyProviderHeaders_UUIDSharedWithinRequest(t *testing.T) {
 	orig := newHeaderUUID
@@ -335,8 +306,6 @@ func TestProviderHeaders_NilWhenAbsent(t *testing.T) {
 	}
 }
 
-// === 出站装配（含「头只来自服务端配置」的负例） ===
-
 func TestBuildProtocolRequest_AssemblesResponsesEndpoint(t *testing.T) {
 	origValidate := validateURL
 	validateURL = func(string) error { return nil }
@@ -372,8 +341,6 @@ func TestBuildProtocolRequest_AssemblesResponsesEndpoint(t *testing.T) {
 	}
 }
 
-// TestBuildProtocolRequest_HeadersOnlyFromProviderConfig 是「调用方不能注入头」的负例：
-// 没有配置头时，请求上除固定集合外不能出现任何额外头（调用方拿不到注入通道）。
 func TestBuildProtocolRequest_HeadersOnlyFromProviderConfig(t *testing.T) {
 	origValidate := validateURL
 	validateURL = func(string) error { return nil }

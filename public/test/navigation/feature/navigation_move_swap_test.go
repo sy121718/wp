@@ -1,20 +1,3 @@
-// navigation_move_swap_test.go — 同级上移/下移的原子交换（task-84）。
-//
-// 修复前的形态（历史 P1）：页面 handler 自己算同级邻位，然后连调两次 Update —— 各自一个
-// 事务。第二次失败时第一条已经提交：同级出现两个相同的 sort_order，而第一条的 stale 也
-// 已经派发出去，已发布页面按半交换的中间态重建。本文件从服务端链路（真实 PG）验四件事：
-//
-//   - 正常路径：一次调用两行交换 + 提交后**一次**派发（menu + 父项 + 两项）；
-//   - 首/末位 与 同级排序并列：零写零派发（后者回业务文案 ErrSortTied，不回「已完成」）；
-//   - 第二条冲突（Y 窗口）：整事务回滚、dispatcher **0 次** —— 这是本卡的主断言；
-//   - 并发（Z2）：终态只能是「交换前」或「交换后」，绝不出现半交换。
-//
-// 为什么锁窗用例值得这么写：要证伪「半交换」必须让第二条稳定地失败。拿「先用另一个连接
-// 改掉版本、再调 SwapMove」是不成立的 —— 服务端会先读树快照，读到的是**新版**，
-// 那样两条都会成功。所以窗口必须钉在「快照已读、第一条 UPDATE 已执行」之间：
-// holder 只锁住**会先被写的那一行**（model 按 id 升序执行），让 swap 阻塞在那里，
-// 再在 holder 的同一个事务里推走另一行的版本并提交。观测用 pg_blocking_pids 定点，
-// 不靠 sleep 撞运气。
 package feature
 
 import (
@@ -36,17 +19,6 @@ import (
 	navigationservice "go_wp/internal/module/navigation/service"
 )
 
-// —— 计数用失效派发桩 ——
-
-// countingNavDispatcher 记录失效派发次数（swap 在失败档必须零派发，成功档恰好一次）。
-//
-// 为什么不用生产装配里的 pipeline.NewMenuStaleAdapter：那个把 stale 落进依赖表，
-// 读到的是「哪些键被标脏」，而本卡要断的是**失败时一次都没派发**，计数桩最直接。
-// countingNavDispatcher 已退役：菜单写的失效改成同事务端口调用后 dispatcher 不再被调用，
-// 计数改由 navStaleCounter 包住 Pages/Items 两条真实端口（见 navigation_write_ports_fixture_test.go）。
-
-// navDispatchBase 一次「本步」派发的基线：建项（Create）自己也会派发，断言必须看增量，
-// 否则「零派发」会被建项阶段的次数蒙过去。
 type navDispatchBase struct{ menu, nav int }
 
 func dispatchBase(env *navSwapEnv) navDispatchBase {
@@ -63,7 +35,6 @@ func assertDispatchDelta(t *testing.T, env *navSwapEnv, base navDispatchBase, wa
 	}
 }
 
-// navSwapEnv 复用既有导航用例的装配（真实迁移建表 + 真实工程行），并接上计数装饰器。
 type navSwapEnv struct {
 	DB        *gorm.DB
 	Nav       navigationcontract.NavigationService
@@ -79,9 +50,6 @@ func newNavSwapEnv(t *testing.T) *navSwapEnv {
 	return &navSwapEnv{DB: db, Nav: navSvc, ProjectID: projectID, Counter: counter}
 }
 
-// navSwapAttachCounter 用计数装饰器重挂同事务写端口（Pages/Items 计数，其余三端口用真实实现）。
-//
-// 注入点在具体服务上（contract 只有业务方法），所以用匿名接口断言：注入点改名即红。
 func navSwapAttachCounter(t *testing.T, svc navigationcontract.NavigationService,
 	ports navWritePortFixture, counter *navStaleCounter) {
 	t.Helper()
@@ -94,13 +62,11 @@ func navSwapAttachCounter(t *testing.T, svc navigationcontract.NavigationService
 	setter.SetWritePorts(navStaleCountDeps(ports, counter))
 }
 
-// navSwapRowState 一行的持久化状态（排序值 + 版本 token）。
 type navSwapRowState struct {
 	sort    int
 	updated time.Time
 }
 
-// readNavSwapState 直接读库（不经过 service），基线比对用。
 func readNavSwapState(t *testing.T, db *gorm.DB, id string) navSwapRowState {
 	t.Helper()
 	var state navSwapRowState
@@ -111,7 +77,6 @@ func readNavSwapState(t *testing.T, db *gorm.DB, id string) navSwapRowState {
 	return state
 }
 
-// sortedIDs 把两个 id 按**字节序升序**摆好：model 的 SwapSortOrders 就是按这个顺序写。
 func sortedIDs(a, b string) (first, second string) {
 	if strings.Compare(a, b) < 0 {
 		return a, b
@@ -119,7 +84,6 @@ func sortedIDs(a, b string) (first, second string) {
 	return b, a
 }
 
-// swapPairIDs 取「上移/下移」那一对（与 handler 同算法：同级内的相邻两项）。
 func swapPairIDs(t *testing.T, env *navSwapEnv, id, dir string) (moved, neighbour string) {
 	t.Helper()
 	item := getNavItem(t, env, id)
@@ -148,7 +112,6 @@ func swapPairIDs(t *testing.T, env *navSwapEnv, id, dir string) (moved, neighbou
 	return siblings[idx].ID, siblings[next].ID
 }
 
-// flatSiblings 返回指定父级下的同级节点（父级为空即顶级）。
 func flatSiblings(nodes []*navigationdto.NavigationNode, parentID *string) []*navigationdto.NavigationNode {
 	if parentID == nil || *parentID == "" {
 		return nodes
@@ -164,7 +127,6 @@ func flatSiblings(nodes []*navigationdto.NavigationNode, parentID *string) []*na
 	return nil
 }
 
-// siblingsOfSvc 取某项的同级列表（同一份树快照口径）。
 func siblingsOfSvc(t *testing.T, svc navigationcontract.NavigationService, id string) []*navigationdto.NavigationNode {
 	t.Helper()
 	item, err := svc.Get(context.Background(), &navigationdto.GetReq{ID: id})
@@ -182,10 +144,6 @@ func siblingsOfSvc(t *testing.T, svc navigationcontract.NavigationService, id st
 	return siblings
 }
 
-// dirAwayFromEdgeSvc 取一个**不会**撞到边界的移动方向。
-//
-// 同级顺序由 (sort_order, id) 决定，而 id 是随机 UUID —— 写死 "down" 会有一半概率落在末项上
-// （那时调用走的是边界档 Moved=false），用例就成了掷骰子。方向必须先按实际次序算出来。
 func dirAwayFromEdgeSvc(t *testing.T, svc navigationcontract.NavigationService, id string) string {
 	t.Helper()
 	siblings := siblingsOfSvc(t, svc, id)
@@ -201,7 +159,6 @@ func dirAwayFromEdgeSvc(t *testing.T, svc navigationcontract.NavigationService, 
 	return ""
 }
 
-// edgeSiblingIDSvc 取同级首项（dir=up）或末项（dir=down），该方向的移动必然越界。
 func edgeSiblingIDSvc(t *testing.T, svc navigationcontract.NavigationService, id, dir string) string {
 	t.Helper()
 	siblings := siblingsOfSvc(t, svc, id)
@@ -221,7 +178,6 @@ func edgeSiblingID(t *testing.T, env *navSwapEnv, id, dir string) string {
 	return edgeSiblingIDSvc(t, env.Nav, id, dir)
 }
 
-// getNavItem 取一项的归属信息（工程 / 位置）。
 func getNavItem(t *testing.T, env *navSwapEnv, id string) *navigationdto.NavigationResp {
 	t.Helper()
 	item, err := env.Nav.Get(context.Background(), &navigationdto.GetReq{ID: id})
@@ -231,13 +187,10 @@ func getNavItem(t *testing.T, env *navSwapEnv, id string) *navigationdto.Navigat
 	return item
 }
 
-// moveReq 组一次交换请求（ProjectID 与页面表单同源）。
 func moveReq(env *navSwapEnv, id, dir string) *navigationdto.SwapMoveReq {
 	return &navigationdto.SwapMoveReq{ProjectID: env.ProjectID, ID: id, Dir: dir}
 }
 
-// TestNavigationSwapMoveSwapsNeighbourAndDispatchesOnce 正常路径：
-// 两行取值互换、两行版本都刷新，且失效只派发一次（menu×1 + 两项×2；顶级无父项）。
 func TestNavigationSwapMoveSwapsNeighbourAndDispatchesOnce(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -267,7 +220,6 @@ func TestNavigationSwapMoveSwapsNeighbourAndDispatchesOnce(t *testing.T) {
 	assertDispatchDelta(t, env, base, 1, 2, "交换成功")
 }
 
-// TestNavigationSwapMoveBoundaryWritesNothing 首/末位：报告未位移、零写、零派发。
 func TestNavigationSwapMoveBoundaryWritesNothing(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -276,7 +228,6 @@ func TestNavigationSwapMoveBoundaryWritesNothing(t *testing.T) {
 	baselineSecond := readNavSwapState(t, env.DB, second)
 	base := dispatchBase(env)
 
-	// 取同级首项（顺序由 (sort_order, id) 决定，不是「创建顺序」），上移必然越界。
 	edge := edgeSiblingID(t, env, first, "up")
 	res, err := env.Nav.SwapMove(context.Background(), moveReq(env, edge, "up"))
 	if err != nil {
@@ -294,13 +245,11 @@ func TestNavigationSwapMoveBoundaryWritesNothing(t *testing.T) {
 	assertDispatchDelta(t, env, base, 0, 0, "边界零写")
 }
 
-// TestNavigationSwapMoveTiedIsRefusedWithoutWrite 同级排序值并列：
-// 交换取值等于没换（并列由 id ASC 决胜），必须回业务文案 ErrSortTied、零写零派发。
 func TestNavigationSwapMoveTiedIsRefusedWithoutWrite(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
 	second := addNavItem(t, env.Nav, env.ProjectID, "新品", "/new", nil, "self")
-	// 造并列：外部脚本按 /api/navigation/update 裸置位就是这种形态。
+
 	if err := env.DB.Exec("UPDATE navigations SET sort_order = 7 WHERE id IN (?, ?)", first, second).Error; err != nil {
 		t.Fatalf("造并列排序值失败: %v", err)
 	}
@@ -324,7 +273,6 @@ func TestNavigationSwapMoveTiedIsRefusedWithoutWrite(t *testing.T) {
 	assertDispatchDelta(t, env, base, 0, 0, "并列拒绝")
 }
 
-// TestNavigationSwapMoveRejectsForeignProject 工程作用域比对：调用方给的工程不是该项归属即拒。
 func TestNavigationSwapMoveRejectsForeignProject(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -347,8 +295,6 @@ func TestNavigationSwapMoveRejectsForeignProject(t *testing.T) {
 	assertDispatchDelta(t, env, base, 0, 0, "跨工程被拒")
 }
 
-// TestNavigationSwapMoveNestedTouchesOnlyThatLevel 嵌套：
-// 交换某一级的子项只动该级，另一个父级（以及父项自身）逐字段不变。
 func TestNavigationSwapMoveNestedTouchesOnlyThatLevel(t *testing.T) {
 	env := newNavSwapEnv(t)
 	parentA := addNavItem(t, env.Nav, env.ProjectID, "产品", "/products", nil, "self")
@@ -380,12 +326,10 @@ func TestNavigationSwapMoveNestedTouchesOnlyThatLevel(t *testing.T) {
 			t.Fatalf("同级之外的行不得被触碰：%s %+v → %+v", id, want, got)
 		}
 	}
-	// 有父项时：menu×1 + 父项 + 两项 = 1 + 3。
+
 	assertDispatchDelta(t, env, base, 1, 3, "嵌套同级交换")
 }
 
-// TestNavigationSwapMoveRollsBackWhenSecondRowConflicts（Y 窗口 / S1）：
-// 第二条的版本在「快照已读、第一条已写」之后被推走 → 整事务回滚、dispatcher 0 次。
 func TestNavigationSwapMoveRollsBackWhenSecondRowConflicts(t *testing.T) {
 	env := newNavSwapEnv(t)
 	movedID := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -403,7 +347,7 @@ func TestNavigationSwapMoveRollsBackWhenSecondRowConflicts(t *testing.T) {
 	holder := newNavSwapHolder(t, env)
 	holder.pid = holder.backendPID(t)
 	holder.begin(t)
-	holder.lockRow(t, firstID) // 只锁会**先**被写的那一行（model 按 id 升序）
+	holder.lockRow(t, firstID)
 
 	base := dispatchBase(env)
 	done := make(chan error, 1)
@@ -414,7 +358,7 @@ func TestNavigationSwapMoveRollsBackWhenSecondRowConflicts(t *testing.T) {
 	waitForSwapGoroutineToFinish(t, holder, done)
 
 	waitForSwapBlockedByHolder(t, env, holder.pid)
-	// 基线 = 外部干预**提交之后**的状态。
+
 	bumped := holder.bumpRowVersion(t, secondID)
 	baselineFirst := readNavSwapState(t, env.DB, firstID)
 
@@ -439,9 +383,6 @@ func TestNavigationSwapMoveRollsBackWhenSecondRowConflicts(t *testing.T) {
 	assertDispatchDelta(t, env, base, 0, 0, "第二条冲突整事务回滚")
 }
 
-// TestNavigationSwapMoveWritesFirstRowThenWaitsForSecondLock（S2）：
-// 反向对照 —— holder 锁住**后写的那一行**时，swap 已经写完了先写的那一行（探测 X 拿 55P03），
-// holder 释放后整笔提交成功并派发。这条同时是「按 id 升序写」这条不变量在真实库上的观测。
 func TestNavigationSwapMoveWritesFirstRowThenWaitsForSecondLock(t *testing.T) {
 	env := newNavSwapEnv(t)
 	movedID := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -457,7 +398,7 @@ func TestNavigationSwapMoveWritesFirstRowThenWaitsForSecondLock(t *testing.T) {
 	holder := newNavSwapHolder(t, env)
 	holder.pid = holder.backendPID(t)
 	holder.begin(t)
-	holder.lockRow(t, secondID) // 锁后写的那行：swap 会先写 firstID，然后卡在这里
+	holder.lockRow(t, secondID)
 
 	base := dispatchBase(env)
 	done := make(chan error, 1)
@@ -468,7 +409,7 @@ func TestNavigationSwapMoveWritesFirstRowThenWaitsForSecondLock(t *testing.T) {
 	waitForSwapGoroutineToFinish(t, holder, done)
 
 	waitForSwapBlockedByHolder(t, env, holder.pid)
-	// 顺序证据：此刻 holder 只持 secondID，firstID 若被锁只可能来自 swap 的事务。
+
 	holder.assertRowLockedBySwap(t, firstID)
 	holder.rollback(t)
 
@@ -483,8 +424,6 @@ func TestNavigationSwapMoveWritesFirstRowThenWaitsForSecondLock(t *testing.T) {
 	assertDispatchDelta(t, env, base, 1, 2, "holder 释放后提交成功")
 }
 
-// TestNavigationSwapMoveConcurrentStaysWhole（Z2）：两笔并发（无 barrier）只做软断言 ——
-// 终态必须是「交换前」或「交换后」之一，绝不出现半交换；派发次数与成功笔数一致。
 func TestNavigationSwapMoveConcurrentStaysWhole(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -511,8 +450,7 @@ func TestNavigationSwapMoveConcurrentStaysWhole(t *testing.T) {
 	moved := 0
 	for i, err := range results {
 		if err == nil {
-			// 无错不等于真的换了位：第二笔可能读到交换后的树，于是「下移」已是末位，
-			// 走的是边界档（Moved=false）——所以下面按 Moved 计数，不按 err==nil 计数。
+
 			if movedFlags[i] {
 				moved++
 			}
@@ -537,8 +475,6 @@ func TestNavigationSwapMoveConcurrentStaysWhole(t *testing.T) {
 	assertDispatchDelta(t, env, base, moved, moved*2, "并发交换")
 }
 
-// TestNavigationUpdateStillUsesOptimisticLock 回归：普通单行更新（/api/navigation/update 的那条
-// 服务端路径）语义不变 —— 带对 token 成功、带旧 token 拒绝。
 func TestNavigationUpdateStillUsesOptimisticLock(t *testing.T) {
 	env := newNavSwapEnv(t)
 	first := addNavItem(t, env.Nav, env.ProjectID, "首页", "/", nil, "self")
@@ -561,7 +497,7 @@ func TestNavigationUpdateStillUsesOptimisticLock(t *testing.T) {
 	if got := readNavSwapState(t, env.DB, first).sort; got != newOrder {
 		t.Fatalf("单行更新应落库：期望 %d，实际 %d", newOrder, got)
 	}
-	// 同一个（现在已过期的）token 再来一次：必须拒绝，不能静默覆盖。
+
 	if _, err := env.Nav.Update(context.Background(), &navigationdto.UpdateReq{
 		ID: first, SortOrder: &newOrder, ExpectedUpdatedAt: &token,
 	}); err == nil {
@@ -571,7 +507,6 @@ func TestNavigationUpdateStillUsesOptimisticLock(t *testing.T) {
 	}
 }
 
-// tokenOf 在树里取某项的乐观锁 token（递归）。
 func tokenOf(nodes []*navigationdto.NavigationNode, id string) string {
 	for _, n := range nodes {
 		if n.ID == id {
@@ -584,15 +519,9 @@ func tokenOf(nodes []*navigationdto.NavigationNode, id string) string {
 	return ""
 }
 
-// TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain：写入口的用户契约
-// （Session → CSRF → Casbin(navigation:update) → handler → PG）。
-//
-// task-84 改了实现（两次 Update → 一次 SwapMove），task-91 又把它从页面 POST 搬到了
-// `POST /api/navigation/update`（action=move），但**授权锚点一字未动**：这条用生产同构的
-// 三层链证明无策略仍被 403 拦住、补上策略后真的能写穿到库里。
 func TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
-	// 该装配自己已经落了一条 "/" 的导航项，这里换独占路径，避免 (project,kind,path) 唯一索引冲突。
+
 	first := addNavItem(t, env.NavSvc, env.ProjectID, "交换甲", "/swap-first", nil, "self")
 	second := addNavItem(t, env.NavSvc, env.ProjectID, "交换乙", "/swap-second", nil, "self")
 	beforeFirst := readNavSwapState(t, env.DB, first)
@@ -612,7 +541,6 @@ func TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain(t *testing
 		t.Fatalf("被拦下的请求不得写入：%+v → %+v", beforeFirst, got)
 	}
 
-	// 补上策略后同一条请求应写穿（权限锚点仍是 /api/navigation/update —— 迁移不改授权面）。
 	navTranslationAuthzGrantPolicy(t, env)
 	allowed := navWriteAuthzPostLang(t, env, env.Plain, navTranslationWriteAPIPath, payload, "")
 	if allowed.Code != http.StatusOK {
@@ -629,12 +557,6 @@ func TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain(t *testing
 	}
 }
 
-// TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite 边界档走 HTTP 也是**成功**，且零写零派发。
-//
-// 迁移前页面侧把边界当成功（navJumpList 的「已完成」）；JSON 档必须同样是 200 ——
-// 边界若被报成错误，前端会弹「操作失败」，而用户其实只是把首项又点了一次上移。
-// 三条一起断言：状态 200 + moved:false、库里没动、stale 一次都没派发（早退在 service）。
-// 先补策略再发请求：否则 403 同样满足「零写零派发」，用例会变成假绿。
 func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	first := addNavItem(t, env.NavSvc, env.ProjectID, "边界甲", "/edge-first", nil, "self")
@@ -644,7 +566,6 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	navSwapAttachCounter(t, env.NavSvc, env.Ports, counter)
 	base := dispatchBase(&navSwapEnv{Counter: counter})
 
-	// 同级首项 + dir=up 必然越界；同级次序由 (sort_order, id) 决定，故按实际次序取。
 	edge := edgeSiblingIDSvc(t, env.NavSvc, first, "up")
 	before := readNavSwapState(t, env.DB, edge)
 
@@ -664,9 +585,6 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	assertDispatchDelta(t, &navSwapEnv{Counter: counter}, base, 0, 0, "边界移动")
 }
 
-// —— Y 窗口的 holder（独立连接 + 行锁 + 定点观测）——
-
-// navSwapHolder 一个持有行锁的独立连接（占用池里的一条物理连接）。
 type navSwapHolder struct {
 	env  *navSwapEnv
 	conn *sql.Conn
@@ -679,7 +597,7 @@ func newNavSwapHolder(t *testing.T, env *navSwapEnv) *navSwapHolder {
 	if err != nil {
 		t.Fatalf("取数据库句柄失败: %v", err)
 	}
-	// holder / 被阻塞的 swap / 监测 / 探测各占一条连接 —— 先把池子放大到够用。
+
 	sqlDB.SetMaxOpenConns(6)
 	conn, err := sqlDB.Conn(context.Background())
 	if err != nil {
@@ -687,19 +605,13 @@ func newNavSwapHolder(t *testing.T, env *navSwapEnv) *navSwapHolder {
 	}
 	holder := &navSwapHolder{env: env, conn: conn}
 	t.Cleanup(func() {
-		// 无条件收尾：先放锁（否则被阻塞的 swap 会一直等），再关连接。
+
 		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 		_ = conn.Close()
 	})
 	return holder
 }
 
-// waitForSwapGoroutineToFinish 在用例收尾时先放锁、再等交换 goroutine 真的结束。
-//
-// 为什么必须排在 holder 自己的清理之前：cleanup 是 LIFO，本函数在 goroutine 启动之后才注册，
-// 于是先于 holder 的「ROLLBACK + Close」执行。否则用例中途 Fatalf 退出时，交换还卡在 holder
-// 的行锁上，而 holder 连接已经被关 —— 库里留下一个等锁到超时的后端，日志里出现与结论无关的
-// 报错噪声，更糟的是它可能在本条测试结束之后才提交。
 func waitForSwapGoroutineToFinish(t *testing.T, holder *navSwapHolder, done <-chan error) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -727,7 +639,6 @@ func (h *navSwapHolder) begin(t *testing.T) {
 	}
 }
 
-// lockRow 只锁一行（WHERE 只写 id，不得圈到另一行）。
 func (h *navSwapHolder) lockRow(t *testing.T, id string) {
 	t.Helper()
 	if _, err := h.conn.ExecContext(context.Background(),
@@ -736,7 +647,6 @@ func (h *navSwapHolder) lockRow(t *testing.T, id string) {
 	}
 }
 
-// bumpRowVersion 在 holder 的**同一个事务**里推走另一行的版本并提交，返回其持久化状态。
 func (h *navSwapHolder) bumpRowVersion(t *testing.T, id string) navSwapRowState {
 	t.Helper()
 	var state navSwapRowState
@@ -758,8 +668,6 @@ func (h *navSwapHolder) rollback(t *testing.T) {
 	}
 }
 
-// assertRowLockedBySwap 顺序证据：holder 只持有另一行，因此这一行的行锁只可能来自 swap 的事务
-// —— `FOR UPDATE NOWAIT` 拿到 55P03（lock_not_available）即证明「swap 先写了这一行」。
 func (h *navSwapHolder) assertRowLockedBySwap(t *testing.T, id string) {
 	t.Helper()
 	sqlDB, err := h.env.DB.DB()
@@ -782,11 +690,6 @@ func (h *navSwapHolder) assertRowLockedBySwap(t *testing.T, id string) {
 	}
 }
 
-// waitForSwapBlockedByHolder 定点等待：找到被 holder 阻塞的那个 UPDATE 后端。
-//
-// 判据不能是「库里任意一个 Lock 等待」（并行用例、其它连接都可能出现），
-// 必须同时满足：本测试库、正在等锁、且 pg_blocking_pids(pid) 里含 holder 的 pid。
-// 超时即**失败**（不是跳过）：观测不到阻塞说明设计/实现的前提不成立。
 func waitForSwapBlockedByHolder(t *testing.T, env *navSwapEnv, holderPID int) {
 	t.Helper()
 	sqlDB, err := env.DB.DB()
@@ -824,7 +727,6 @@ func waitForSwapBlockedByHolder(t *testing.T, env *navSwapEnv, holderPID int) {
 	}
 }
 
-// navSwapActivityDump 观测失败时的诊断（超时要能自证，不能只回一句「没等到」）。
 func navSwapActivityDump(t *testing.T, conn *sql.Conn) string {
 	t.Helper()
 	rows, err := conn.QueryContext(context.Background(),

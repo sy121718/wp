@@ -1,11 +1,5 @@
 package unit
 
-// cardstack_gallery_test.go — 作品展示页（给外部看的成品页）的生成与回归。
-//
-// 素材：public/test/fixtures/cardstack/gallery.json —— 按真实用途组织的六个区块，
-// 与 showcase.json（能力覆盖/验证用）分工不同：那份是"每种模式都出现"，
-// 这份是"每种模式都用在一个像样的场景里"。
-
 import (
 	"context"
 	"os"
@@ -17,7 +11,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// galleryCollection 展示页用的假内容（商品 4 条 / 文章 3 条）。
 type galleryCollection struct{}
 
 func (galleryCollection) ResolveCollection(_ context.Context, source string, _ map[string]string) ([]map[string]any, error) {
@@ -46,8 +39,6 @@ func (galleryCollection) CollectionSchemas(_ context.Context) ([]core.Collection
 	}, nil
 }
 
-// TestCardstackGallery 生成展示页并做结构回归。
-// 产物写到 outDir（默认 /tmp，便于直接打开看）。
 func TestCardstackGallery(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "cardstack", "gallery.json"))
 	if err != nil {
@@ -71,7 +62,7 @@ func TestCardstackGallery(t *testing.T) {
 			t.Errorf("%s 标签不配平：开 %d / 闭 %d", pair.name, o, cl)
 		}
 	}
-	// 六个区块的形态特征都要在
+
 	for _, want := range []struct{ needle, desc string }{
 		{"rotate(-", "扇形展开的弧线变换"},
 		{"--sky-deck-off", "堆叠轮播的偏移变量"},
@@ -88,7 +79,6 @@ func TestCardstackGallery(t *testing.T) {
 		}
 	}
 
-	// 确定性 + 落盘
 	again, err := compile(t, p, builder.WithCollectionResolver(galleryCollection{}))
 	if err != nil {
 		t.Fatalf("二次编译失败: %v", err)

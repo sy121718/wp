@@ -1,15 +1,5 @@
 package feature
 
-// page_bulk_notice_e2e_test.go — 批量删除的结论文案（真库端到端）。
-//
-// 判据是**操作者能看到什么**：一次「成功 2 / 跳过 1」的批量删除，响应必须是整页提示
-// （HTTP 200 + data-jump-state="err"），且文案里两个计数都在 —— 只报「操作完成」会把
-// 部分成功静默成全部成功。
-//
-// 为什么在 feature 层而不是模块内：它要真库 + 装配出 page 与 project 两个模块，
-// 而模块内测试不允许跨模块 import service/model（internal/architecture 的
-// TestNoCrossModuleServiceModelImport 守着这条），feature 层没有这个限制。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +28,7 @@ func TestBulkDeleteNoticeCarriesCounts(t *testing.T) {
 	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, '批量回执用例', '{}'::jsonb, now(), now())", projectID).Error; err != nil {
 		t.Fatalf("准备工程失败：%v", err)
 	}
-	// 两个真实页面（会被删掉 → n=2）+ 一个不存在的 id（跳过 → m=1）。
+
 	var ids []string
 	for i := 0; i < 2; i++ {
 		id := uuid.NewString()
@@ -49,7 +39,7 @@ func TestBulkDeleteNoticeCarriesCounts(t *testing.T) {
 			t.Fatalf("准备页面失败：%v", err)
 		}
 	}
-	ids = append(ids, uuid.NewString()) // 不存在 → 跳过
+	ids = append(ids, uuid.NewString())
 
 	proj := projectservice.NewService(projectmodel.NewProjectModel(db))
 	svc := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, proj, nil, nil, nil, nil, nil)
@@ -69,7 +59,7 @@ func TestBulkDeleteNoticeCarriesCounts(t *testing.T) {
 		t.Fatalf("批量删除应渲染提示页（200），实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 有跳过 → 失败档（不自动跳，运营要看清剩下哪些没删掉）。
+
 	if !strings.Contains(body, `data-jump-state="err"`) {
 		t.Fatalf(`有跳过应走失败提示页（data-jump-state="err"）：%s`, body)
 	}

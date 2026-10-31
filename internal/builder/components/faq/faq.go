@@ -1,46 +1,34 @@
-// Package faq 实现 core.faq 常见问题组件（对标 GrapesJS FAQ/Accordion 组件生态）。
-// 基座 core.Atom 吸收公共样板；本文件为业务本体：
-// Items 数组驱动，原生 <details>/<summary> 展开收起，零客户端 JS。
 package faq
 
 import (
-	_ "embed" // faq.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.faq"
 
-// 常量上限。
 const (
-	maxFaqItems    = 50   // FAQ 条目上限
-	maxQuestionLen = 200  // 问题长度上限
-	maxAnswerLen   = 2000 // 答案长度上限
+	maxFaqItems    = 50
+	maxQuestionLen = 200
+	maxAnswerLen   = 2000
 )
 
-// FaqItem 单条常见问题。
 type FaqItem struct {
-	// Question 问题文本。
 	Question string `json:"question"`
-	// Answer 答案文本（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
-	// 数组元素不参与 schema 反射（Items 无 ct tag，不递归展开），
-	// 该 ct 标签用于声明控件契约：编辑器由前端 faqPanel 的 Trix 富文本承担。
+
 	Answer string `json:"answer" ct:"richtext,maxlen=2000,label=答案"`
-	// Open 默认展开。
+
 	Open bool `json:"open,omitempty"`
 }
 
-// Props core.faq 常见问题属性。
 type Props struct {
-	// Items 常见问题条目（数组字段，无 ct tag，边界由 validateExtra 校验）。
 	Items []FaqItem `json:"items,omitempty"`
-	// Advanced 通用高级属性（docs/02-C0）。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "常见问题",
@@ -61,13 +49,11 @@ var Widget = core.Atom[Props]{
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
-		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
+
 		Translatable: []string{"question", "answer"},
 	},
 }
 
-// validateExtra 关系性校验：条目非空、数量上限、问题/答案非空与长度上限。
 func validateExtra(p *Props, nodeID string) (err error) {
 	if len(p.Items) == 0 {
 		return fmt.Errorf("常见问题至少需要一条")
@@ -92,29 +78,21 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// faqCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
-// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
-//
 //go:embed faq.css
 var faqCSS string
 
-// compileCSS 常见问题样式：条目容器 + summary 展开箭头（纯静态，与 Props 无关）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	if err := core.ApplyComponentCSS(b, sel, faqCSS); err != nil {
-		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+
 		panic(fmt.Sprintf("faq 组件样式解析失败: %v", err))
 	}
 }
 
-// init 注册常见问题组件。
 func init() {
 	core.Register(Widget)
 	core.RegisterTemplate("faq", faqTemplate)
 }
 
-// faqTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed faq.jet
 var faqTemplate string

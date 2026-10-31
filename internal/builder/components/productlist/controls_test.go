@@ -1,11 +1,5 @@
 package productlist
 
-// controls_test.go — 筛选栏 / 工具条 / 分页的交互测试（issue #27）。
-//
-// 这里验证的是「构建期真的把可点的控件拼出来了」：每个控件都要同时给出降级 href、
-// 片段请求 URL（带实例配置）与推送 URL（只带语义参数）—— 三样缺一，
-// 对应的交互路径（无 JS / 局部刷新 / 地址栏同步）就断一条。
-
 import (
 	"context"
 	"go_wp/internal/templates"
@@ -16,19 +10,17 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// fakeOptionsCollection 既给集合项、也给筛选选项（模拟实现了能力探测的集合源）。
 type fakeOptionsCollection struct {
 	fakeCollection
 	options core.CollectionFilterOptions
 }
 
 func (f *fakeOptionsCollection) CollectionFilterOptions(_ context.Context, source, projectID string) (core.CollectionFilterOptions, error) {
-	// 直接持有提供方的桩：源标识与工程 ID 都不是它关心的（注册表已按源派发过）。
+
 	_, _ = source, projectID
 	return f.options, nil
 }
 
-// optionsFixture 一份典型的筛选项：两个分类（一父一子）、一个品牌、两个标签、一个属性组。
 func optionsFixture() core.CollectionFilterOptions {
 	return core.CollectionFilterOptions{
 		Categories: []core.CollectionFilterChoice{
@@ -47,9 +39,6 @@ func optionsFixture() core.CollectionFilterOptions {
 	}
 }
 
-// buildViewOf 用「已选集合源」的 props 渲染一次（未选源的节点会走空态分支，测不到控件）。
-//
-// pushQuery 模拟片段层灌进来的当前语义参数（构建期为空的默认态另有用例覆盖）。
 func buildViewOf(t *testing.T, coll core.CollectionResolver, kv map[string]any, pushQuery string) View {
 	t.Helper()
 	kv["collectionSource"] = "content:product"
@@ -66,17 +55,14 @@ func buildViewOf(t *testing.T, coll core.CollectionResolver, kv map[string]any, 
 	return view
 }
 
-// itemsColl 造一个「带筛选项能力 + 若干集合项」的集合源。
 func itemsColl(items ...map[string]any) *fakeOptionsCollection {
 	return &fakeOptionsCollection{fakeCollection: fakeCollection{items: items}, options: optionsFixture()}
 }
 
-// ctxWithOptions 带能力探测的渲染上下文。
 func ctxWithOptions(coll core.CollectionResolver) *core.RenderContext {
 	return &core.RenderContext{CSS: &core.CSSBuckets{}, Context: context.Background(), Collection: coll, ProjectID: "proj-1"}
 }
 
-// TestFilterSectionsFromOptions 筛选栏：勾选的维度渲染出来，未勾选的不渲染。
 func TestFilterSectionsFromOptions(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")),
 		map[string]any{"filters": "categories,brands,tags,attributes"}, "")
@@ -100,7 +86,6 @@ func TestFilterSectionsFromOptions(t *testing.T) {
 		}
 	}
 
-	// 只勾分类：其他三块不渲染。
 	view2 := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")),
 		map[string]any{"filters": "categories"}, "")
 	if len(view2.FilterSections) != 1 || view2.FilterSections[0].Kind != "categories" {
@@ -108,12 +93,6 @@ func TestFilterSectionsFromOptions(t *testing.T) {
 	}
 }
 
-// TestTemplateRendersInteractiveAttributes 模板必须把交互属性真的输出：
-// 容器带片段请求与冷启动补正，控件带 hx-get / hx-push-url / 降级 href。
-//
-// 缺任何一条，对应的交互路径就断一条：没有 hx-get → 点击整页刷新（能用但失去局部刷新）；
-// 没有 hx-push-url → 地址栏不同步（不可分享、刷新回默认）；
-// 没有 href → 无 JS 时控件不可点；没有 load 补正 → 带 query 打开时看到的是默认那一屏。
 func TestTemplateRendersInteractiveAttributes(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
 		"filters": "categories,brands,tags", "toolbar": "sort,pageSize,columns,onSale",
@@ -143,9 +122,9 @@ func TestTemplateRendersInteractiveAttributes(t *testing.T) {
 		`<template data-catalog-card>`,
 		"sky-product-list-filter-option",
 		"sky-product-list-tool-option",
-		"is-disabled", // 热度排序的禁用占位
-		"只看在售",        // 工具条上的在售开关（与 #11 的 on_sale 同判定）
-		"onSale=true", // 未选中时点它就是打开
+		"is-disabled",
+		"只看在售",
+		"onSale=true",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("产物缺少 %q", want)
@@ -153,9 +132,8 @@ func TestTemplateRendersInteractiveAttributes(t *testing.T) {
 	}
 }
 
-// TestTagFilterToggles 多标签是可切换的：点未选中的加入、点已选中的移除。
 func TestTagFilterToggles(t *testing.T) {
-	// 当前已选「新品」。
+
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")),
 		map[string]any{"filters": "tags", "filterTagIds": "tag-new"}, "tagIds=tag-new")
 	if len(view.FilterSections) != 1 {
@@ -173,21 +151,20 @@ func TestTagFilterToggles(t *testing.T) {
 	if !newer.Active {
 		t.Fatalf("已选标签应高亮: %+v", newer)
 	}
-	// 点「热卖」= 加入（两个都要）。
+
 	if !strings.Contains(hot.PushURL, "tagIds=") || !strings.Contains(hot.PushURL, "tag-hot") || !strings.Contains(hot.PushURL, "tag-new") {
 		t.Fatalf("点未选中标签应把它加进 tagIds: %s", hot.PushURL)
 	}
-	// 点「新品」= 从已选里移除。
+
 	if strings.Contains(newer.PushURL, "tag-new") {
 		t.Fatalf("再点一次应移除该标签: %s", newer.PushURL)
 	}
 }
 
-// TestSortOptionsHaveDisabledPlaceholder 排序：三项可点 + 热度是禁用占位（不假装能排）。
 func TestSortOptionsHaveDisabledPlaceholder(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")),
 		map[string]any{"toolbar": "sort,pageSize,columns"}, "")
-	// 默认 / 最新 / 最早 / 价格升 / 价格降 + 禁用占位（热度）。
+
 	if len(view.SortOptions) != 7 {
 		t.Fatalf("排序应有 6 个可点 + 1 个禁用占位，实际 %d", len(view.SortOptions))
 	}
@@ -203,7 +180,6 @@ func TestSortOptionsHaveDisabledPlaceholder(t *testing.T) {
 	}
 }
 
-// TestPagerLinksCarrySemanticParams 分页链接：换页保留当前筛选，且回第 1 页时清掉 page。
 func TestPagerLinksCarrySemanticParams(t *testing.T) {
 	items := make([]map[string]any, 0, 3)
 	for _, slug := range []string{"a", "b", "c"} {
@@ -220,21 +196,15 @@ func TestPagerLinksCarrySemanticParams(t *testing.T) {
 	if !strings.Contains(view.PrevLink.PushURL, "page=1") {
 		t.Fatalf("上一页链接应指向第 1 页: %s", view.PrevLink.PushURL)
 	}
-	// 换筛选必须清 page：否则筛选后条目变少会落在越界页，看到空列表。
+
 	if strings.Contains(view.SortOptions[1].PushURL, "page=") {
 		t.Fatalf("换排序时不应保留 page: %s", view.SortOptions[1].PushURL)
 	}
 }
 
-// TestCategorySingleSelectSemantics 分类树的单选 / 多选开关。
-//
-// 单选（categoryMulti=off）：不渲染勾选框，点未选中的**替换**成它（含其子树），
-// 点已选中的**清空**；多选（默认）：在已有集合上切换（级联加入 / 级联移除）。
-// 两套语义必须分开 —— 单选下用切换语义会让「点第二个分类」变成并集，那就不是单选了。
 func TestCategorySingleSelectSemantics(t *testing.T) {
 	coll := itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z"))
 
-	// 多选（默认）：section.Multi 为真。
 	multiView := buildViewOf(t, coll, map[string]any{"filters": "categories"}, "")
 	if len(multiView.FilterSections) != 1 {
 		t.Fatalf("应渲染分类块: %+v", multiView.FilterSections)
@@ -244,7 +214,6 @@ func TestCategorySingleSelectSemantics(t *testing.T) {
 		t.Fatalf("默认应为多选")
 	}
 
-	// 单选：点未选中项 = 替换（URL 只含该项子树）。
 	singleView := buildViewOf(t, coll, map[string]any{"filters": "categories", "categoryMulti": "off"}, "")
 	if len(singleView.FilterSections) != 1 {
 		t.Fatalf("应渲染分类块: %+v", singleView.FilterSections)
@@ -259,8 +228,6 @@ func TestCategorySingleSelectSemantics(t *testing.T) {
 		}
 	}
 
-	// 单选：已选中项再点 = 清空（取消）。
-	// 已选中态来自 **props**（片段期由 URL 还原成 props；第四参是 pushQuery，不是 props）。
 	cancelView := buildViewOf(t, coll, map[string]any{
 		"filters": "categories", "categoryMulti": "off", "filterCategoryIds": "cat-1",
 	}, "")

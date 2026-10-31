@@ -8,7 +8,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// ErrorStatus 的分档口径：声明处给过就用它，业务错误 400，其余 500。
 func TestErrorStatusUsesDeclaredStatus(t *testing.T) {
 	business := facing.New("inventory.err.invalidParam", "参数不合法")
 	notFound := facing.WithStatus(facing.New("inventory.err.warehouseNotFound", "仓库不存在"), http.StatusNotFound)

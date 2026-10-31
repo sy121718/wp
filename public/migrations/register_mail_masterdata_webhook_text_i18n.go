@@ -1,9 +1,5 @@
 package migrations
 
-// register_mail_masterdata_webhook_text_i18n.go — 迁移 450 的 seed 注册。
-//
-// 门槛：84 个 key × 2 语言 = 168 行**全部**在库时才跳过（ConditionSQL 返回 > 0 即跳过）；
-// 少一行就重跑 SQL —— SQL 自身 ON CONFLICT DO NOTHING，重跑不会覆盖已人工改过的译文。
 func init() {
 	registerSeed(Seed{
 		Version:   "450-i18n-mail-masterdata-webhook-text",

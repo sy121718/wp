@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Init 初始化 zap 日志运行时配置。
 func Init(v *viper.Viper) error {
 	next := runtimeConfig{
 		baseDir:          defaultBaseDir,
@@ -65,7 +64,6 @@ func Init(v *viper.Viper) error {
 	return nil
 }
 
-// Close 刷新并落盘所有场景 logger。
 func Close() error {
 	mu.Lock()
 	inited = false
@@ -138,7 +136,6 @@ func ensureInited() error {
 	return fmt.Errorf("logger 未初始化，请先调用 logger.Init()")
 }
 
-// Ready 检查 logger 组件是否已显式初始化。
 func Ready() error {
 	return ensureInited()
 }

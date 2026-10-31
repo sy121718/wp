@@ -7,13 +7,11 @@ import (
 	"go_wp/internal/builder"
 )
 
-// dividerDoc 构造 divider 节点文档。
 func dividerDoc(t *testing.T, props string) *builder.Page {
 	t.Helper()
 	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"d1","type":"core.divider","props":`+props+`}]}`)
 }
 
-// TestDividerPlain 纯线模式：单层 <hr> 直出 + 线型/宽度三端/对齐 CSS。
 func TestDividerPlain(t *testing.T) {
 	props := `{"style":"dashed","weight":"2px","color":"var(--color-border)","width":{"desktop":"80%","mobile":"100%"},"align":"center","advanced":{"margin":{"desktop":{"top":"24px","bottom":"24px"}}}}`
 	c, err := compile(t, dividerDoc(t, props))
@@ -29,7 +27,7 @@ func TestDividerPlain(t *testing.T) {
 		"margin-left: auto", "margin-right: auto",
 		"@media (max-width: 767px)",
 		"width: 100%",
-		"margin-top: 24px", "margin-bottom: 24px", // Advanced
+		"margin-top: 24px", "margin-bottom: 24px",
 	} {
 		if !strings.Contains(c.CSS, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, c.CSS)
@@ -37,7 +35,6 @@ func TestDividerPlain(t *testing.T) {
 	}
 }
 
-// TestDividerTextInset 嵌入文本：Flex 三段结构 + 文本样式。
 func TestDividerTextInset(t *testing.T) {
 	props := `{"inset":{"kind":"text","text":"或者","fontSize":"0.75rem","fontWeight":"500","color":"#9ca3af","spacing":"12px","position":"left"}}`
 	c, err := compile(t, dividerDoc(t, props))
@@ -48,7 +45,7 @@ func TestDividerTextInset(t *testing.T) {
 		`<span class="dt-line"></span>`,
 		`<span class="dt-inset dt-inset-text">或者</span>`,
 		"display: flex",
-		"flex: 0.5", // position left：左短右长
+		"flex: 0.5",
 		"flex: 1.5",
 		"padding: 0 12px",
 		"font-size: 0.75rem", "font-weight: 500", "color: #9ca3af",
@@ -59,7 +56,6 @@ func TestDividerTextInset(t *testing.T) {
 	}
 }
 
-// TestDividerIconInset 嵌入图标（内置白名单，svg 内联）。
 func TestDividerIconInset(t *testing.T) {
 	props := `{"inset":{"kind":"icon","iconName":"star"}}`
 	c, err := compile(t, dividerDoc(t, props))
@@ -74,7 +70,6 @@ func TestDividerIconInset(t *testing.T) {
 	}
 }
 
-// TestDividerValidate 校验拒绝。
 func TestDividerValidate(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"文本嵌入缺文案", `{"inset":{"kind":"text"}}`, "文本嵌入必须提供文案"},
@@ -92,7 +87,6 @@ func TestDividerValidate(t *testing.T) {
 	}
 }
 
-// TestDividerDeterministic 确定性构建。
 func TestDividerDeterministic(t *testing.T) {
 	props := `{"inset":{"kind":"text","text":"OR"},"width":{"desktop":"60%"}}`
 	c1, err := compile(t, dividerDoc(t, props))

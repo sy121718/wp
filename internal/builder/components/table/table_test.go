@@ -8,7 +8,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// repeatHeaders 生成 n 个表头（"列1"..."列n"）。
 func repeatHeaders(n int) []string {
 	hs := make([]string, n)
 	for i := range hs {
@@ -17,7 +16,6 @@ func repeatHeaders(n int) []string {
 	return hs
 }
 
-// repeatRows 生成 n 行、每行 cols 列的数据。
 func repeatRows(n, cols int) [][]string {
 	rows := make([][]string, n)
 	for i := range rows {
@@ -30,7 +28,6 @@ func repeatRows(n, cols int) [][]string {
 	return rows
 }
 
-// TestValidateExtra 表格校验：列/行上限、行列一致、单元格长度。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -57,7 +54,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 表格样式编译：基础布局、斑马纹、边框。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string

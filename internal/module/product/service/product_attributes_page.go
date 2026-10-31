@@ -6,7 +6,6 @@ import (
 	"go_wp/pkg/pagination"
 )
 
-// QueryAttributes 计数与读取使用同一筛选条件，先收敛页码再读取。
 func (s *Service) QueryAttributes(ctx context.Context, query *productdto.CatalogTaxonomyReq) (*productdto.TaxonomyListResp[*productdto.AttributeResp], error) {
 	q := normalizedTaxonomyQuery(query)
 	projectID := q.ProjectID

@@ -1,8 +1,3 @@
-// navigation_test.go — core.nav 菜单位置绑定的构建期解析测试。
-//
-// 覆盖 docs/09 §2 的内核契约：导航节点绑定 header/footer 时，构建期经
-// NavigationResolver 把导航记录展开为静态菜单项；未注入解析器/工程 ID 时
-// 编译期显式失败（不静默产出空菜单）；未绑定位置时手写 Items 不受影响。
 package builder
 
 import (
@@ -14,7 +9,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// navMenuDocJSON 绑定菜单位置的导航节点文档（无手写 items）。
 const navMenuDocJSON = `{
   "settings": {"layout": {"mode": "full"}, "base": {}, "seo": {"title": "导航测试"}},
   "root": [
@@ -22,7 +16,6 @@ const navMenuDocJSON = `{
   ]
 }`
 
-// navCustomDocJSON 手写菜单项的导航节点文档（menu 为空）。
 const navCustomDocJSON = `{
   "settings": {"layout": {"mode": "full"}, "base": {}, "seo": {"title": "导航测试"}},
   "root": [
@@ -30,7 +23,6 @@ const navCustomDocJSON = `{
   ]
 }`
 
-// fakeNavResolver 记录调用参数并返回固定菜单项树。
 type fakeNavResolver struct {
 	items   []core.NavigationItem
 	err     error
@@ -45,13 +37,10 @@ func (f *fakeNavResolver) ResolveMenu(projectID, kind string) ([]core.Navigation
 	return f.items, f.err
 }
 
-// ResolveNavigation 按项解析：本文件只覆盖「按位置取菜单」，按项路径由
-// public/test/navigation/feature 的 navigation_byid_panel_test.go 覆盖。
 func (f *fakeNavResolver) ResolveNavigation(projectID, navigationID string) ([]core.NavigationItem, error) {
 	return nil, nil
 }
 
-// compileNavDoc 编译导航文档（注入组件模板 Set）。
 func compileNavDoc(t *testing.T, doc string, opts ...CompileOption) (*CompiledPage, error) {
 	t.Helper()
 	page, err := ParsePage([]byte(doc))
@@ -65,7 +54,6 @@ func compileNavDoc(t *testing.T, doc string, opts ...CompileOption) (*CompiledPa
 	return Compile(page, append([]CompileOption{WithComponentSet(set)}, opts...)...)
 }
 
-// TestNavMenuBindingResolvesAtBuild 绑定菜单位置时用解析结果覆盖 Items。
 func TestNavMenuBindingResolvesAtBuild(t *testing.T) {
 	res := &fakeNavResolver{items: []core.NavigationItem{
 		{Label: "首页", URL: "/", Target: "self"},
@@ -87,7 +75,6 @@ func TestNavMenuBindingResolvesAtBuild(t *testing.T) {
 	}
 }
 
-// TestNavMenuBindingWithoutResolver 未注入解析器时编译期显式失败。
 func TestNavMenuBindingWithoutResolver(t *testing.T) {
 	_, err := compileNavDoc(t, navMenuDocJSON, WithProjectID("proj-1"))
 	if err == nil || !strings.Contains(err.Error(), "导航") {
@@ -95,7 +82,6 @@ func TestNavMenuBindingWithoutResolver(t *testing.T) {
 	}
 }
 
-// TestNavMenuBindingWithoutProjectID 缺少工程 ID 时编译期显式失败。
 func TestNavMenuBindingWithoutProjectID(t *testing.T) {
 	res := &fakeNavResolver{}
 	_, err := compileNavDoc(t, navMenuDocJSON, WithNavigationResolver(res))
@@ -107,7 +93,6 @@ func TestNavMenuBindingWithoutProjectID(t *testing.T) {
 	}
 }
 
-// TestNavMenuBindingResolverError 解析失败时编译失败（不产出坏产物）。
 func TestNavMenuBindingResolverError(t *testing.T) {
 	res := &fakeNavResolver{err: errors.New("导航数据不可用")}
 	_, err := compileNavDoc(t, navMenuDocJSON, WithNavigationResolver(res), WithProjectID("proj-1"))
@@ -116,7 +101,6 @@ func TestNavMenuBindingResolverError(t *testing.T) {
 	}
 }
 
-// TestNavCustomItemsNotResolved 未绑定位置时手写 Items 生效且不触发解析器。
 func TestNavCustomItemsNotResolved(t *testing.T) {
 	res := &fakeNavResolver{}
 	compiled, err := compileNavDoc(t, navCustomDocJSON, WithNavigationResolver(res), WithProjectID("proj-1"))

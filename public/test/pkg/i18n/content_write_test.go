@@ -1,17 +1,5 @@
 package i18n_test
 
-// content_write_test.go — sys_translation 写入端口（多语言 P5c，docs/06-D §7.8）在真实
-// PostgreSQL 上的链路验证。
-//
-// 覆盖：
-//  1. 写入 + 读回（LoadTargets 复用 P5a 读路径；LoadDetails 额外取 engine/update_time）；
-//  2. hash 一致性：sha256(source_text) != source_hash → 拒绝且不落库（066 只校验格式）；
-//  3. 幂等：同一条重复写入 → 仍一行（ON CONFLICT 更新），update_time 推进；
-//  4. 非法输入：空译文 / 非法 engine / 空语言 / 空语境 → 拒绝；
-//  5. 批量原子性：一批中任一条非法 → 整体不写（工作台不出现「部分成功」）。
-//
-// PG 不可用时 t.Skip（与其他功能测试一致）。
-
 import (
 	"testing"
 	"time"
@@ -22,14 +10,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// newContentWriteDB 建隔离 schema + 跑全量迁移（sys_translation 落库）。
 func newContentWriteDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	return db
 }
 
-// countTranslationRows 统计表内行数（断言「未落库」）。
 func countTranslationRows(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	var n int64
@@ -39,7 +25,6 @@ func countTranslationRows(t *testing.T, db *gorm.DB) int64 {
 	return n
 }
 
-// TestContentWriterUpsertAndLoad 写入后按 (hash, lang) 读回，engine 与译文一致。
 func TestContentWriterUpsertAndLoad(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -77,7 +62,7 @@ func TestContentWriterUpsertAndLoad(t *testing.T) {
 	if d := details[i18n.ContentIndexKey(i18n.ContentHash(srcB), "core.heading.text")]; d.Engine != i18n.ContentEngineAI {
 		t.Fatalf("显式 engine=ai 应保留，实际 %q", d.Engine)
 	}
-	// 不同语言互不影响。
+
 	other, err := writer.LoadTargets(t.Context(), "ja", []string{i18n.ContentHash(srcA)})
 	if err != nil {
 		t.Fatalf("读其它语言失败: %v", err)
@@ -87,7 +72,6 @@ func TestContentWriterUpsertAndLoad(t *testing.T) {
 	}
 }
 
-// TestContentWriterRejectsHashMismatch 原文与 source_hash 不一致 → 拒绝且不落库。
 func TestContentWriterRejectsHashMismatch(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -104,7 +88,6 @@ func TestContentWriterRejectsHashMismatch(t *testing.T) {
 	}
 }
 
-// TestContentWriterIdempotentUpsert 同一条重复写入 → 仍一行，内容更新，update_time 推进。
 func TestContentWriterIdempotentUpsert(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -143,7 +126,6 @@ func TestContentWriterIdempotentUpsert(t *testing.T) {
 	}
 }
 
-// TestContentWriterRejectsInvalid 非法输入拒绝（空译文 / 非法 engine / 空语言 / 空语境）。
 func TestContentWriterRejectsInvalid(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -168,7 +150,6 @@ func TestContentWriterRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestContentWriterBatchAllOrNothing 批量中任一条非法 → 整体不写。
 func TestContentWriterBatchAllOrNothing(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -186,7 +167,6 @@ func TestContentWriterBatchAllOrNothing(t *testing.T) {
 	}
 }
 
-// TestParseContentContext 语境拆解：按最后一个点切分，缺段返回 false。
 func TestParseContentContext(t *testing.T) {
 	typ, field, ok := i18n.ParseContentContext("core.button.text")
 	if !ok || typ != "core.button" || field != "text" {

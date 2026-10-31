@@ -2,7 +2,6 @@ package core
 
 import "fmt"
 
-// ActionResolver 由构建器注入，组件只能读取已按工程/语言/文档验证的动作结果。
 type ActionResolver func(node *Node, key string) (ResolvedAction, error)
 
 func (ctx *RenderContext) SetActionResolver(resolve ActionResolver) { ctx.actionResolver = resolve }
@@ -25,7 +24,6 @@ func (ctx *RenderContext) ResolveAction(node *Node, key string) (ResolvedAction,
 	return resolved, err
 }
 
-// ActionTargetUsageRecorder 是跨页动作消费的可选窄口，既有组件记录器无需伪造此能力。
 type ActionTargetUsageRecorder interface {
 	UseActionTarget(kind ActionKind, id string)
 }

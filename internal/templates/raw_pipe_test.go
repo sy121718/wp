@@ -7,7 +7,6 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// TestRawPipeSafeWriter raw 管道必须原样输出 HTML（不转义）。
 func TestRawPipeSafeWriter(t *testing.T) {
 	loader := jet.NewInMemLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".jet"}))

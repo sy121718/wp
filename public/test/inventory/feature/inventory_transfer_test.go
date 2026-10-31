@@ -1,19 +1,3 @@
-// inventory_transfer_test.go — W3（迁移 630）的验收：调拨单 + 明细 + 凭证附件。
-//
-// 覆盖任务书 §9.9 的会红断言：
-//
-//	1  建单源仓 = 目标仓 → 业务错误（DDL CHECK 兜底，应用层先给可读错）
-//	2  明细里塞一条别的仓的 stock_id → ErrItemNotInSourceWarehouse
-//	3  可售不足（quantity=10, reserved=8，调拨 5）→ ErrStockNotEnough
-//	4  无凭证不能出货：AttachmentIDs=[] → ErrAttachmentRequired，单据仍 pending、源仓 quantity 未变
-//	5  无凭证不能签收：同上，单据仍 in_transit
-//	6  凭证 id 不存在 → 业务错误，事务回滚（附件行 0 条）
-//	7  完整链路：建 5 件 → 出货（1 张凭证）→ 源仓 quantity -5、流水 1 条 transfer_out、
-//	   状态 in_transit → 签收（1 张凭证）→ 目标仓 quantity +5、流水 1 条 transfer_in、
-//	   状态 completed
-//	8  未认领行可调拨：源行 variant_id IS NULL → 目标仓建出同样 variant_id IS NULL 的行
-//	9  幂等：同一 request_id 建两次 → 一张单
-//	10 附件唯一约束：同 (transfer_id, attachment_id, usage_type) 插两次撞索引
 package feature
 
 import (
@@ -26,10 +10,6 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
-// stubAttachments 附件读口的替身：只认预置的若干 id（其余按「不存在」处理）。
-//
-// 用替身而不是真实 media：本用例测的是**调拨侧的凭证校验**（缺凭证拒绝、凭证不存在拒绝），
-// 而不是 media 的上传链路 —— 后者已有自己的 feature 测试。
 type stubAttachments struct{ known map[int64]bool }
 
 func (s *stubAttachments) ResolveAttachment(_ context.Context, _ string, id int64) (*inventorycontract.AttachmentBrief, error) {
@@ -52,10 +32,6 @@ func (s *stubAttachments) ResolveAttachments(ctx context.Context, projectID stri
 	return out, nil
 }
 
-// mustApproveTransfer 同意一张刚建的调拨申请（迁移 651 起建单落 requested，出货前必须先同意）。
-//
-// 单独一个 helper 而不是在每个用例里写三行：调拨的**被测行为**不是审批本身
-// （审批有自己的用例），其余用例只需要「这张单已经批过了」这个前置。
 func mustApproveTransfer(t *testing.T, f *invFixture, id string) {
 	t.Helper()
 	if _, err := f.inventory.ApproveTransfer(context.Background(), &inventorydto.TransferApproveReq{
@@ -65,7 +41,6 @@ func mustApproveTransfer(t *testing.T, f *invFixture, id string) {
 	}
 }
 
-// transferStockID 该变体在某仓的库存行 id（调拨明细要用它）。
 func (f *invFixture) transferStockID(t *testing.T, variantID, warehouseID string) string {
 	t.Helper()
 	var id string
@@ -79,7 +54,6 @@ func (f *invFixture) transferStockID(t *testing.T, variantID, warehouseID string
 	return id
 }
 
-// unclaimedStockID 某仓某编码的**未认领**库存行 id。
 func (f *invFixture) unclaimedStockID(t *testing.T, warehouseID, sku string) string {
 	t.Helper()
 	var id string
@@ -93,7 +67,6 @@ func (f *invFixture) unclaimedStockID(t *testing.T, warehouseID, sku string) str
 	return id
 }
 
-// attachmentsOf 某调拨单某用途的凭证条数。
 func (f *invFixture) attachmentsOf(t *testing.T, transferID, usage string) int64 {
 	t.Helper()
 	var n int64
@@ -104,21 +77,19 @@ func (f *invFixture) attachmentsOf(t *testing.T, transferID, usage string) int64
 	return n
 }
 
-// newTransferFixture 建两个仓 + 一个带库存的商品，返回 (源仓, 目标仓, 商品, 变体)。
 func newTransferFixture(t *testing.T) (*invFixture, *inventorydto.WarehouseResp, *inventorydto.WarehouseResp) {
 	t.Helper()
 	f := newInvFixture(t)
 	if f == nil {
 		return nil, nil, nil
 	}
-	// 默认仓单独建，源/目标各一个（都不设默认，避免「未指定仓」的兜底干扰断言）。
+
 	f.createWarehouse(t, "DF", "默认仓", true)
 	from := f.createWarehouse(t, "SZ", "苏州仓", false)
 	to := f.createWarehouse(t, "SH", "上海仓", false)
 	return f, from, to
 }
 
-// TestTransferSameWarehouseRejected 验收 1：源仓 = 目标仓被拒。
 func TestTransferSameWarehouseRejected(t *testing.T) {
 	f, from, _ := newTransferFixture(t)
 	if f == nil {
@@ -139,7 +110,6 @@ func TestTransferSameWarehouseRejected(t *testing.T) {
 	}
 }
 
-// TestTransferItemMustBelongToSourceWarehouse 验收 2：别的仓的 stock_id 被拒。
 func TestTransferItemMustBelongToSourceWarehouse(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -150,7 +120,7 @@ func TestTransferItemMustBelongToSourceWarehouse(t *testing.T) {
 	v := f.firstVariant(t, p.ID)
 	changeIn(t, f, p, v, from.ID, 5, "purchase_in")
 	changeIn(t, f, p, v, to.ID, 5, "purchase_in")
-	// 拿**目标仓**的库存行 id 当源仓的明细。
+
 	toStockID := f.transferStockID(t, v.ID, to.ID)
 
 	_, err := f.inventory.CreateTransfer(ctx, &inventorydto.CreateTransferReq{
@@ -162,7 +132,6 @@ func TestTransferItemMustBelongToSourceWarehouse(t *testing.T) {
 	}
 }
 
-// TestTransferRejectsInsufficientAvailable 验收 3：可售不足（预占留给订单）。
 func TestTransferRejectsInsufficientAvailable(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -172,7 +141,7 @@ func TestTransferRejectsInsufficientAvailable(t *testing.T) {
 	p := mustProduct(t, f, "调拨可售")
 	v := f.firstVariant(t, p.ID)
 	changeIn(t, f, p, v, from.ID, 10, "purchase_in")
-	// 预占 8（可售只剩 2）。
+
 	if _, err := f.inventory.ReserveStock(ctx, &inventorydto.ReserveStockReq{
 		ProjectID: f.projectID, SourceType: "order", SourceRef: "SO-transfer",
 		Lines: []inventorydto.ReserveStockLine{{VariantID: v.ID, Quantity: 8, WarehouseID: from.ID}},
@@ -190,8 +159,6 @@ func TestTransferRejectsInsufficientAvailable(t *testing.T) {
 	}
 }
 
-// TestTransferRequiresVoucherOnShipAndReceive 验收 4/5：
-// 无凭证不能出货、也不能签收（且状态与库存都不变）。
 func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -214,14 +181,13 @@ func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 		t.Fatalf("建单失败: %v", err)
 	}
 
-	// ④ 无凭证出货被拒。
 	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrAttachmentRequired)) {
 		t.Fatalf("无凭证出货应报 ErrAttachmentRequired，实际 %v", err)
 	}
-	// 单据仍 pending、源仓数量未变。
+
 	detail, gerr := f.inventory.GetTransfer(ctx, &inventorydto.GetTransferReq{ProjectID: f.projectID, ID: created.ID})
 	if gerr != nil {
 		t.Fatalf("读调拨单失败: %v", gerr)
@@ -233,7 +199,6 @@ func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 		t.Fatalf("被拒的出货不该动源仓数量，实际 %d", got)
 	}
 
-	// 带凭证出货成功。
 	shipped, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
 	})
@@ -244,7 +209,6 @@ func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 		t.Fatalf("出货后状态应为 in_transit，实际 %q", shipped.Status)
 	}
 
-	// ⑤ 无凭证签收被拒。
 	if _, err := f.inventory.ReceiveTransfer(ctx, &inventorydto.TransferReceiveReq{
 		ProjectID: f.projectID, ID: created.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrAttachmentRequired)) {
@@ -256,7 +220,6 @@ func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 	}
 }
 
-// TestTransferUnknownAttachmentRollsBack 验收 6：凭证 id 不存在 → 事务回滚（附件行 0 条）。
 func TestTransferUnknownAttachmentRollsBack(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -278,7 +241,6 @@ func TestTransferUnknownAttachmentRollsBack(t *testing.T) {
 		t.Fatalf("建单失败: %v", err)
 	}
 
-	// 一张合法 + 一张不存在：整体拒绝。
 	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1, 999},
@@ -293,7 +255,6 @@ func TestTransferUnknownAttachmentRollsBack(t *testing.T) {
 	}
 }
 
-// TestTransferFullChain 验收 7：建单 → 出货 → 签收的完整链路。
 func TestTransferFullChain(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -317,7 +278,6 @@ func TestTransferFullChain(t *testing.T) {
 		t.Fatalf("建单失败: %v", err)
 	}
 
-	// 出货：源仓 −5、流水 +1（transfer_out）、状态 in_transit。
 	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
@@ -340,7 +300,6 @@ func TestTransferFullChain(t *testing.T) {
 		t.Fatalf("出货流水的来源/原因不对：%q / %q", sourceType, reason)
 	}
 
-	// 签收：目标仓 +5、状态 completed。
 	received, err := f.inventory.ReceiveTransfer(ctx, &inventorydto.TransferReceiveReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{2},
 	})
@@ -358,7 +317,7 @@ func TestTransferFullChain(t *testing.T) {
 	if toQty != 5 {
 		t.Fatalf("签收后目标仓应有 5 件，实际 %d", toQty)
 	}
-	// 凭证按用途分开落库。
+
 	if got := f.attachmentsOf(t, created.ID, "ship"); got != 1 {
 		t.Fatalf("出货凭证应有 1 条，实际 %d", got)
 	}
@@ -367,7 +326,6 @@ func TestTransferFullChain(t *testing.T) {
 	}
 }
 
-// TestTransferUnclaimedStock 验收 8：未认领行可调拨，且目标仓建出的行同样是未认领。
 func TestTransferUnclaimedStock(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -377,7 +335,6 @@ func TestTransferUnclaimedStock(t *testing.T) {
 	atts := &stubAttachments{known: map[int64]bool{1: true, 2: true}}
 	f.inventory.SetAttachmentResolver(atts)
 
-	// 建一条未认领的货。
 	loose := createStock(t, f, from.ID, "TRANSFER_ORPHAN", 6, true)
 	created, err := f.inventory.CreateTransfer(ctx, &inventorydto.CreateTransferReq{
 		ProjectID: f.projectID, FromWarehouseID: from.ID, ToWarehouseID: to.ID,
@@ -397,7 +354,7 @@ func TestTransferUnclaimedStock(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("未认领行签收失败: %v", err)
 	}
-	// 目标仓应有一条同样 variant_id IS NULL、同编码的行，数量 4。
+
 	var variantID *string
 	var qty int
 	if qerr := f.db.Raw("SELECT variant_id, quantity FROM inventory_stocks "+
@@ -413,7 +370,6 @@ func TestTransferUnclaimedStock(t *testing.T) {
 	}
 }
 
-// TestTransferIdempotentByRequestID 验收 9：同一 request_id 只建一张单。
 func TestTransferIdempotentByRequestID(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -451,7 +407,6 @@ func TestTransferIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestTransferAttachmentUniqueIndex 验收 10：同 (transfer_id, attachment_id, usage_type) 插两次撞索引。
 func TestTransferAttachmentUniqueIndex(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -477,14 +432,13 @@ func TestTransferAttachmentUniqueIndex(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("出货失败: %v", err)
 	}
-	// 手动再插一条同样的 (transfer, attachment, usage)：必须撞唯一索引。
+
 	if err := f.db.Exec("INSERT INTO inventory_transfer_attachments (transfer_id, attachment_id, usage_type) "+
 		"VALUES (?, 1, 'ship')", created.ID).Error; err == nil {
 		t.Fatalf("同 (transfer_id, attachment_id, usage_type) 插第二次应撞唯一索引")
 	}
 }
 
-// TestTransferCancelOnlyPending 取消只允许 pending（in_transit 不行）。
 func TestTransferCancelOnlyPending(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -498,7 +452,6 @@ func TestTransferCancelOnlyPending(t *testing.T) {
 	changeIn(t, f, p, v, from.ID, 5, "purchase_in")
 	stockID := f.transferStockID(t, v.ID, from.ID)
 
-	// pending 可以取消。
 	pending, err := f.inventory.CreateTransfer(ctx, &inventorydto.CreateTransferReq{
 		ProjectID: f.projectID, FromWarehouseID: from.ID, ToWarehouseID: to.ID,
 		Lines: []inventorydto.TransferLineReq{{StockID: stockID, Quantity: 1}},
@@ -512,7 +465,6 @@ func TestTransferCancelOnlyPending(t *testing.T) {
 		t.Fatalf("pending 的单取消应成功: %v", err)
 	}
 
-	// in_transit 不能取消。
 	shipped, err := f.inventory.CreateTransfer(ctx, &inventorydto.CreateTransferReq{
 		ProjectID: f.projectID, FromWarehouseID: from.ID, ToWarehouseID: to.ID,
 		Lines: []inventorydto.TransferLineReq{{StockID: stockID, Quantity: 1}},

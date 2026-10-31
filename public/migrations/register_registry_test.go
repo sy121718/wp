@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// retainedSQLArchives记录两分支实际运行过的同义历史文件，不作为第二次执行登记。
-// 固定双方原文hash，任何改写或正式登记丢失都失败，不能放过任意未注册SQL。
 var retainedSQLArchives = map[string]struct {
 	canonical       string
 	archiveSHA256   string
@@ -28,8 +26,6 @@ var retainedSQLArchives = map[string]struct {
 	},
 }
 
-// TestEmbeddedSQLFilesAllRegistered保证每个SQL有唯一执行登记或精确历史归档。
-// 正式登记与历史归档分开计数，不伪造执行过679/680。
 func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {
 	entries, err := fs.ReadDir(migrationSQLFS, ".")
 	if err != nil {
@@ -80,10 +76,6 @@ func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {
 	}
 }
 
-// TestSeedVersionsUnique 保证种子版本号不重复。
-//
-// AllSeeds 按版本号排序决定执行顺序；版本号重复时顺序会退化成「取决于注册顺序」。
-// migrator.ValidateRegistry 只校验 allMigrations，种子的这一半由本测试兜住。
 func TestSeedVersionsUnique(t *testing.T) {
 	seen := make(map[string]string, len(allSeeds))
 	for _, s := range allSeeds {
@@ -95,25 +87,10 @@ func TestSeedVersionsUnique(t *testing.T) {
 	}
 }
 
-// migrationSlotWhitelist / seedSlotWhitelist 是「同主编号 + 同补丁位」的例外清单，
-// 逐条写理由（清单条目不再命中即失败，禁止只增不减）。
-//
-// 合法形态是**同号 + 不同补丁位**（086 / 086a / 086b）—— 那正是补丁位存在的用途；
-// 本测试拦的是「两个都是同号且都没补丁位」。
-//
-// **当前两项都是空的**：本仓库历史上攒下的三对同槽（155 的 presentation 双注册、
-// 199 的 rls/webhook、228 的两个 i18n seed）已分别补成 155b / 199b / 228b，
-// 排序逐项不变（见各注册处的注释）。从此新增同槽必须当场补位，而不是先挂进白名单。
 var migrationSlotWhitelist = map[string]string{}
 
 var seedSlotWhitelist = map[string]string{}
 
-// TestMigrationVersionSlotsUnique 保证注册迁移的「(数字主编号, 字母补丁位)」唯一。
-//
-// 为什么必须有这一条：migrator.ValidateRegistry 只拒**重复的版本字符串**，
-// 主编号撞车它一律放行。而 compareVersion 在同主编号、同后缀时会退到**整串字典序** ——
-// 顺序仍然确定，但「按编号定位迁移」会命中错文件，读代码的人也无法判断谁先谁后
-// （本仓库真的攒了这样的对：199 与 155）。
 func TestMigrationVersionSlotsUnique(t *testing.T) {
 	versions := make([]string, 0, len(allMigrations))
 	for _, m := range allMigrations {
@@ -122,7 +99,6 @@ func TestMigrationVersionSlotsUnique(t *testing.T) {
 	checkVersionSlots(t, "迁移", versions, migrationSlotWhitelist)
 }
 
-// TestSeedVersionSlotsUnique 同一条判据管种子那一半（AllSeeds 同样按版本号排序）。
 func TestSeedVersionSlotsUnique(t *testing.T) {
 	versions := make([]string, 0, len(allSeeds))
 	for _, s := range allSeeds {
@@ -131,8 +107,6 @@ func TestSeedVersionSlotsUnique(t *testing.T) {
 	checkVersionSlots(t, "种子", versions, seedSlotWhitelist)
 }
 
-// checkVersionSlots 按 parseVersionPrefix 的真实语义分组，而不是按字符串前缀切分
-// —— 判据必须与排序实现同源，否则测试绿而顺序照样退化。
 func checkVersionSlots(t *testing.T, kind string, versions []string, whitelist map[string]string) {
 	t.Helper()
 	type slot struct {

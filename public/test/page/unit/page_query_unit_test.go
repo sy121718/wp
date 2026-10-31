@@ -12,9 +12,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// ---- 详情 ----
-
-// TestPageDetailNotFound 不存在的页面详情应返回页面不存在。
 func TestPageDetailNotFound(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	_, err := svc.Detail(context.Background(), &pagedto.DetailReq{
@@ -26,7 +23,6 @@ func TestPageDetailNotFound(t *testing.T) {
 	}
 }
 
-// TestPageDetailEmptyID nil / 空 ID / 空白 ID 详情请求属于参数错误。
 func TestPageDetailEmptyID(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.Detail(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -40,7 +36,6 @@ func TestPageDetailEmptyID(t *testing.T) {
 	}
 }
 
-// TestPageDetailSuccess 详情返回当前草稿文档与版本。
 func TestPageDetailSuccess(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created := createPage(t, svc, projectID, "/detail", headingDocument)
@@ -57,7 +52,6 @@ func TestPageDetailSuccess(t *testing.T) {
 	}
 }
 
-// TestPageDetailCrossProject 跨工程 id 访问应表现为「页面不存在」。
 func TestPageDetailCrossProject(t *testing.T) {
 	_, svc, projects, projectA := newPageService(t)
 	ctx := context.Background()
@@ -73,9 +67,6 @@ func TestPageDetailCrossProject(t *testing.T) {
 	}
 }
 
-// ---- 列表 ----
-
-// TestPageListEmpty 空库返回空切片（非 nil）。
 func TestPageListEmpty(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	list, err := svc.List(context.Background(), &pagedto.ListReq{ProjectID: projectID})
@@ -87,13 +78,12 @@ func TestPageListEmpty(t *testing.T) {
 	}
 }
 
-// TestPageListAll 多条页面按 update_time 倒序返回。
 func TestPageListAll(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 	_ = createPage(t, svc, projectID, "/first", pageDocument)
 	second := createPage(t, svc, projectID, "/second", pageDocument)
-	// 触碰 second 的 update_time 使其最新。
+
 	if _, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: second.ID, ExpectedVersion: second.DraftVersion,
 		DraftPath: "/second", DraftDocument: json.RawMessage(pageDocument),
@@ -116,7 +106,6 @@ func TestPageListAll(t *testing.T) {
 	var _ = db
 }
 
-// TestPageListByTheme 按主题过滤列表；无主题页面不出现。
 func TestPageListByTheme(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -126,7 +115,7 @@ func TestPageListByTheme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建主题失败: %v", err)
 	}
-	// 通过 AttachThemeToUnassigned 回填。
+
 	if err := svc.AttachThemeToUnassigned(ctx, projectID, theme.ID); err != nil {
 		t.Fatalf("回填主题失败: %v", err)
 	}
@@ -140,9 +129,6 @@ func TestPageListByTheme(t *testing.T) {
 	}
 }
 
-// ---- 修订 ----
-
-// TestPageListRevisionsSuccess 修订按版本倒序（最新在前）。
 func TestPageListRevisionsSuccess(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -171,7 +157,6 @@ func TestPageListRevisionsSuccess(t *testing.T) {
 	}
 }
 
-// TestPageListRevisionsNotFound 页面不存在时修订查询应返回页面不存在。
 func TestPageListRevisionsNotFound(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	_, err := svc.ListRevisions(context.Background(), &pagedto.RevisionReq{
@@ -182,7 +167,6 @@ func TestPageListRevisionsNotFound(t *testing.T) {
 	}
 }
 
-// TestPageListRevisionsNilRequest nil / 空 PageID 属于参数错误。
 func TestPageListRevisionsNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.ListRevisions(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -193,13 +177,6 @@ func TestPageListRevisionsNilRequest(t *testing.T) {
 	}
 }
 
-// ---- 软删语义（查询侧行为；正式软删走 service.Delete，此处用 DB 直删模拟
-// 历史/外部软删，验证查询侧对软删行的防御）----
-
-// TestPageDetailAfterSoftDelete 软删后的页面：详情、列表、保存均不可见
-// （GetByID 与 ListAll 均过滤 deleted_at）。直接 SQL 软删绕过 service.Delete，
-// 故 reserved 路由行仍残留为 1（预期：路由清理只发生在 service.Delete 内，
-// 见 page_delete_unit_test.go 的 Delete 用例）。
 func TestPageDetailAfterSoftDelete(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -226,8 +203,7 @@ func TestPageDetailAfterSoftDelete(t *testing.T) {
 	}); err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Errorf("软删后保存应不可见: %v", err)
 	}
-	// 软删行本身保留（审计留痕）。直接 SQL 软删不走 service.Delete，
-	// 路由占用不清理属预期（清理能力见 page_delete_unit_test.go）。
+
 	var routeCount int64
 	db.Table("page_routes").Where("project_id = ? AND path = ?", projectID, "/gone").Count(&routeCount)
 	if routeCount != 1 {

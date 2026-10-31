@@ -1,7 +1,5 @@
 package mediamcp
 
-// media_tools_test.go — 媒体工具集的形状与三态断言。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -12,7 +10,6 @@ import (
 	mediadto "go_wp/internal/module/media/dto"
 )
 
-// fakeMedia 媒体的假实现。
 type fakeMedia struct {
 	detailReq *mediadto.DetailReq
 	listReq   *mediadto.ListReq
@@ -66,12 +63,6 @@ func call(t *testing.T, tool mcp.Tool, body string) mcp.Result {
 	return res
 }
 
-// TestMediaToolsHaveNoProjectArg 媒体工具**不得**收 projectId。
-//
-// sys_attachment 没有 project_id 列（媒体库站点级共享），这个参数既不参与查询
-// 也不参与过滤。service 里有一段注释专门记着它曾经被当必填的后果：唯一效果是让
-// 没带参数的调用方拿到一个 400，看起来像「附件不存在」。工具层重复这个错误更糟 ——
-// 模型会把它当成「需要向用户索要的信息」而停下来问，而用户根本不知道答案。
 func TestMediaToolsHaveNoProjectArg(t *testing.T) {
 	f := &fakeMedia{}
 	list, err := Tools(f, f, nil)
@@ -89,10 +80,6 @@ func TestMediaToolsHaveNoProjectArg(t *testing.T) {
 	}
 }
 
-// TestMediaGetFlattensExtraInfo alt / 标题 / 描述必须出现在读取结果里。
-//
-// 它们藏在 extra_info 这一列 JSON 里；不展平的话模型「确认现状」之后看不到它们，
-// 于是要么重写一遍同样的值，要么以为该清空。
 func TestMediaGetFlattensExtraInfo(t *testing.T) {
 	f := &fakeMedia{}
 	list, _ := Tools(f, f, nil)
@@ -102,7 +89,7 @@ func TestMediaGetFlattensExtraInfo(t *testing.T) {
 			t.Errorf("读取结果里缺少 %q：\n%s", want, res.Text)
 		}
 	}
-	// 同列里的别的键（refs）不该被当成可编辑字段平铺出来。
+
 	if strings.Contains(res.Text, "refs") {
 		t.Errorf("只该展平 alt/title/description，实得：\n%s", res.Text)
 	}
@@ -111,7 +98,6 @@ func TestMediaGetFlattensExtraInfo(t *testing.T) {
 	}
 }
 
-// TestMediaFindReturnsIDAndAlt 搜索结果要能直接用来引用（id + 名称）。
 func TestMediaFindReturnsIDAndAlt(t *testing.T) {
 	f := &fakeMedia{}
 	list, _ := Tools(f, f, nil)
@@ -126,16 +112,11 @@ func TestMediaFindReturnsIDAndAlt(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateTriState 分类字段是三态：不传 / 0（移入未分类）/ 某个 id。
-//
-// 折成字符串（"" / "0" / "12"）会把前两者混成一个 —— 而「移入未分类」是
-// 一个有意义的操作，混淆之后用户说「取消分类」会变成「不动分类」。
 func TestMediaUpdateTriState(t *testing.T) {
 	f := &fakeMedia{}
 	list, _ := Tools(f, f, nil)
 	tool := byName(t, list, "media_update")
 
-	// ① 只改 alt：另外两个必须是 nil。
 	call(t, tool, `{"id":7,"alt":"新 alt","confirm":true,"idempotencyKey":"k1"}`)
 	got := f.updated[0]
 	if got.Alt == nil || *got.Alt != "新 alt" {
@@ -148,7 +129,6 @@ func TestMediaUpdateTriState(t *testing.T) {
 		t.Error("没传的字段该保持 nil")
 	}
 
-	// ② 分类传 0：必须是「移入未分类」（非 nil 的 0），不是「不改」。
 	call(t, tool, `{"id":7,"categoryId":0,"confirm":true,"idempotencyKey":"k2"}`)
 	got2 := f.updated[1]
 	if got2.CategoryID == nil {
@@ -159,7 +139,6 @@ func TestMediaUpdateTriState(t *testing.T) {
 	}
 }
 
-// TestMediaDeleteNeedsConfirm 删除必须带确认位。
 func TestMediaDeleteNeedsConfirm(t *testing.T) {
 	f := &fakeMedia{}
 	list, _ := Tools(f, f, nil)
@@ -177,7 +156,6 @@ func TestMediaDeleteNeedsConfirm(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateSaysFileCannotChange 说明里必须写清「改不了文件本身」。
 func TestMediaUpdateSaysFileCannotChange(t *testing.T) {
 	f := &fakeMedia{}
 	list, _ := Tools(f, f, nil)
@@ -186,7 +164,6 @@ func TestMediaUpdateSaysFileCannotChange(t *testing.T) {
 	}
 }
 
-// TestMediaToolsRejectMissingDeps 依赖缺失是装配期错误。
 func TestMediaToolsRejectMissingDeps(t *testing.T) {
 	f := &fakeMedia{}
 	if _, err := Tools(nil, f, nil); err == nil {

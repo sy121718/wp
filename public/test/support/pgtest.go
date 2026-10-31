@@ -1,8 +1,3 @@
-// Package support 提供测试通用辅助。
-// pgtest 为 feature / functional 测试提供直连本地 PostgreSQL 的隔离连接：
-// 每次调用创建一个独立的 schema（search_path 隔离），测试结束后 DROP。
-// 连接信息默认对齐 config.yaml（127.0.0.1:5432 root/root wp_test），
-// 可用标准 libpq 环境变量覆盖：PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE。
 package support
 
 import (
@@ -23,26 +18,18 @@ import (
 	"go_wp/public/migrations"
 )
 
-// DefaultPGHost is the local postgres host used by tests; mirrors config.yaml database.host.
 const DefaultPGHost = "127.0.0.1"
 
-// DefaultPGPort is the local postgres port used by tests; mirrors config.yaml database.port.
 const DefaultPGPort = "5432"
 
-// DefaultPGUser is the local postgres user used by tests; mirrors config.yaml database.user.
 const DefaultPGUser = "root"
 
-// DefaultPGPassword is the local postgres password used by tests; mirrors config.yaml database.password.
 const DefaultPGPassword = "root"
 
-// DefaultPGDatabase is the dedicated test database created/used by tests.
 const DefaultPGDatabase = "wp_test"
 
-// ErrPGUnavailable 表示本地 PostgreSQL 不可达（无环境、或连接失败）。
-// 测试遇到该错误时应 t.Skip 而非 fail，避免在无 postgres 的 CI 环境误报。
 var ErrPGUnavailable = fmt.Errorf("本地 PostgreSQL 不可用")
 
-// pgEnv 读取单个环境变量，空则回退到默认值。
 func pgEnv(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -50,34 +37,14 @@ func pgEnv(key, fallback string) string {
 	return fallback
 }
 
-// pgDSN 拼装测试库的 DSN。
-//
-// **复用 dbdriver.PostgresDSN**，不另写一份关键字格式：那套 fmt.Sprintf 有已知缺陷 ——
-// 空密码时 `password= dbname=x` 会被 libpq 解析成 password="dbname=x"、database=""，
-// 于是连不上时报的是 `database "root" does not exist`，与真因无关（应用侧修过同型缺陷，
-// 见 pkg/database/driver/postgres.go 的注释）。
-//
-// 测试侧此前靠 POSTGRES_PASSWORD=root / DefaultPGPassword="root" 掩盖着没炸 ——
-// 默认值一旦变空（本地无密码的 PG 很常见）就会以最难查的方式失败。这与应用侧是
-// 同一个坑的两条分支，修一条不修另一条等于没修完。
 func pgDSN(host, port, user, password, dbname string) string {
 	dsn := tdbdriver.PostgresDSN(tdbdriver.Config{
 		Host: host, Port: mustAtoi(port), User: user, Password: password, DBName: dbname,
 	})
-	// synchronous_commit=off：测试数据全是用完即弃的，但每个用例都要建库、跑 DDL、灌种子，
-	// 提交路径的 WAL 刷盘是纯开销。实测全量 -p 16 从 227s 降到 181s（约 20%）。
-	// 只作用于测试连接，不碰生产库；崩库最多丢最后几个未落盘的事务，测试场景无所谓。
-	//
+
 	return pgAppendParams(dsn, [2]string{"synchronous_commit", "off"})
 }
 
-// pgAppendParams 按 DSN 自身形态（URL 或关键字）追加连接参数，是拼接的唯一入口。
-//
-// 为什么必须收口：pgDSN 返回 URL 形式（dbdriver.PostgresDSN 的产物），追加参数只能用
-// 查询串语法 `&k=v`；用关键字格式的 ` k=v`（空格分隔）拼上去，pgx 会报
-// `extra key/value separator "=" in URI query parameter`。2026-10-27 的严格模式回归
-// 就是 testenv.go 直接 `+ " connect_timeout=5"` 造成的 —— 连库之前就死，任何「严格模式
-// 通过/失败」的结论都不成立。把分隔符判断留给调用方，这个坑就一定会再踩一次。
 func pgAppendParams(dsn string, params ...[2]string) string {
 	isURL := strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://")
 	for _, kv := range params {
@@ -86,14 +53,11 @@ func pgAppendParams(dsn string, params ...[2]string) string {
 			if strings.Contains(dsn, "?") {
 				separator = "&"
 			}
-			// 空格必须编成 %20，不能用 QueryEscape 的 `+`：pgx 不解码 `+`，
-			// 值 "a b" 会原样读回 "a+b"。pkg/database/driver/postgres.go 的
-			// encodePostgresQuery 为同一条教训留了注释 —— 两条路径得一致。
-			// 下面这种写法就是 url.Values.Encode 的语义（它会用 `+`），再换回来。
+
 			dsn += separator + kv[0] + "=" + strings.ReplaceAll(url.QueryEscape(kv[1]), "+", "%20")
 			continue
 		}
-		// 关键字格式：含空格、引号或等号的值必须单引号包裹，否则会被解析成别的键。
+
 		value := kv[1]
 		if strings.ContainsAny(value, " '\\") {
 			value = "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
@@ -103,7 +67,6 @@ func pgAppendParams(dsn string, params ...[2]string) string {
 	return dsn
 }
 
-// mustAtoi 端口解析：port 在调用点恒为数字字符串，解析失败说明参数装配错了。
 func mustAtoi(s string) int {
 	n, err := strconv.Atoi(s)
 	if err != nil {
@@ -112,13 +75,11 @@ func mustAtoi(s string) int {
 	return n
 }
 
-// pgTestDB handles a per-test, isolated postgres schema.
 type pgTestDB struct {
 	host, port, user, password, dbname string
 	schema                             string
 }
 
-// PGEndpoint 一组 PG 连接参数（本地服务与 testcontainers 容器端点通用）。
 type PGEndpoint struct {
 	Host     string
 	Port     string
@@ -127,7 +88,6 @@ type PGEndpoint struct {
 	Database string
 }
 
-// localPGEndpoint 按现行约定读取本地 PG 连接参数（libpq 环境变量覆盖默认值）。
 func localPGEndpoint() PGEndpoint {
 	return PGEndpoint{
 		Host:     pgEnv("PGHOST", DefaultPGHost),
@@ -138,22 +98,14 @@ func localPGEndpoint() PGEndpoint {
 	}
 }
 
-// NewPGTestDB opens a dedicated, isolated postgres schema for one test.
-// It connects to PGDATABASE (default wp_test), creates a unique schema,
-// and returns a *gorm.DB whose search_path points at that schema so all
-// DDL / queries are fully isolated. t.Skip 应交给调用方在 err != nil 时执行。
-// Cleanup 通过 t.Cleanup 注册：DROP SCHEMA ... CASCADE 并回收连接。
 func NewPGTestDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
 	db, err := newTestDatabase(t, localPGEndpoint(), false, false)
-	// GOWP_REQUIRE_PG=1 时 PG 不可用直接判失败：调用方的 t.Skip 分支不会被走到，
-	// 「跳过」不再可能伪装成「通过」（审计 R-05）。
+
 	FailIfRequiredPG(t, err)
 	return db, err
 }
 
-// NewPGTestDBAt 与 NewPGTestDB 相同，但使用显式端点
-// （support/testenv.go 的容器回退路径复用；行为与原函数完全一致）。
 func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 	t.Helper()
 	db, err := newTestDatabase(t, ep, false, false)
@@ -161,13 +113,6 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 	return db, err
 }
 
-// newTestDatabase 建一个隔离的测试库并返回连接（每个测试独占一个库，Cleanup 时 DROP）。
-//
-// useTemplate=true：复制「跑完生产迁移的模板库」—— 表结构由生产迁移建成、与生产一致，
-// 且只要约 65ms（对比跑完整 209 条迁移约 1.1s）。给需要真实 schema 的链路测试用。
-// useTemplate=false：建**空库** —— 给那些自己建表（AutoMigrate、手抄 DDL）或故意构造
-// 旧 schema 的用例用；它们要的本来就是空环境，塞给它们完整生产结构反而会撞上外键约束
-// 与「约束名不符」这类 gorm 元数据对齐问题。
 func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bool) (*gorm.DB, error) {
 	t.Helper()
 
@@ -189,7 +134,7 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bo
 	name := "t_" + randomHex(10)
 	createSQL := "CREATE DATABASE " + name
 	if useTemplate {
-		// 跑完生产迁移的模板库：复制它，而不是每次重跑 209 条迁移。
+
 		tpl, err := ensureTemplateDB(ep)
 		if err != nil {
 			adminSQL.Close()
@@ -202,21 +147,17 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bo
 		return nil, fmt.Errorf("创建测试库失败: %w", err)
 	}
 
-	// 表结构全在 public（模板库由生产迁移建成）；search_path 带上 ext_shared 供 trgm
-	// 索引使用 —— 扩展随模板库一起复制过来，不需要再装。
-	// search_path 走查询串参数（pgDSN 返回 URL 形式；不能再用关键字格式的空格分隔）。
 	dsn := pgAppendParams(pgDSN(host, port, user, password, name), [2]string{"search_path", "public," + sharedExtSchema})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: translateError})
 	if err != nil {
-		// 连接失败时尽力清理，避免残留库堆积。
+
 		_ = adminDB.Exec("DROP DATABASE IF EXISTS " + name).Error
 		adminSQL.Close()
 		return nil, fmt.Errorf("打开测试连接失败: %w", err)
 	}
 
 	t.Cleanup(func() {
-		// 顺序：先关测试连接（DROP DATABASE 要求该库没有活动连接）→ 再 DROP → 最后关 admin 池。
-		// （旧实现 defer 提前关闭 adminSQL，Cleanup 里用已关闭的池必然失败，对象大量残留。）
+
 		if sqlDB, err := db.DB(); err == nil {
 			sqlDB.Close()
 		}
@@ -228,27 +169,12 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bo
 	return db, nil
 }
 
-// sharedExtSchema 承载 pg_trgm 的专用 schema。
-//
-// 扩展是**库级唯一**的，而 gin_trgm_ops 按 schema 解析。它固定装在这里（迁移 167/210），
-// 模板库因此自带它、复制出来的测试库也自带 —— 测试连接把它放进 search_path 就能用。
-// 刻意不借用 public：public 承载业务表，进 search_path 会让迁移里的 to_regclass 判定误判。
 const sharedExtSchema = "ext_shared"
 
-// templatePrefix 模板库名前缀，后面接迁移指纹。
 const templatePrefix = "wp_test_tpl_"
 
-// templateLockKey 建模板库的跨进程互斥键（多个测试进程会同时启动）。
-const templateLockKey int64 = 0x6770775f74657374 // "gwp_test"
+const templateLockKey int64 = 0x6770775f74657374
 
-// templateCleanupEnv 开启「清理其它指纹的模板库」的环境变量开关。
-//
-// 为什么默认关：清理**无法判断别的指纹的模板是否正被使用**。多个 worktree（各自一份迁移
-// 代码 = 各自一个指纹）并发跑测试时，A 刚建好自己的模板，B 建模板时「顺手清理」就把它
-// DROP 了 —— 表现是 A 的 CREATE DATABASE ... TEMPLATE 报 3D000「template database does
-// not exist」，且只在并行时出现、单跑必绿（2026-09-20 实测：main 与 4 个并行 worktree
-// 同时跑测试时复现）。残留的模板库只是一份库结构（几十 MB），比随机红的测试便宜得多；
-// 需要清理时显式 WP_TEST_TPL_CLEANUP=1 跑一次即可。
 const templateCleanupEnv = "WP_TEST_TPL_CLEANUP"
 
 var (
@@ -257,16 +183,6 @@ var (
 	templateErr  error
 )
 
-// ensureTemplateDB 保证「跑完生产迁移的模板库」存在，返回库名。
-//
-// 为什么值得这么做：测试的隔离单位过去是 schema，而 schema 没有复制原语 —— 每个用例都要
-// 建一个空 schema 再跑完整 209 条迁移（约 1.1s），这段耗时与「测什么业务」毫无关系
-// （admin 一个包 116 个用例就是 128s）。库有复制原语：CREATE DATABASE ... TEMPLATE 实测
-// 约 65ms（快 15 倍），复制出来的库还自带 ext_shared 与 pg_trgm，连扩展都不用再装。
-//
-// 模板名带迁移指纹（migrations.Fingerprint()）：迁移一改就换一个新名字重建，绝不去 DROP
-// 正在被别的测试进程使用的旧模板 —— 并发下那是必然冲突。旧模板库会残留（默认不清理：
-// 跨 worktree 的「顺手清理」会互删正在使用的模板，见 templateCleanupEnv 的注释）。
 func ensureTemplateDB(ep PGEndpoint) (string, error) {
 	templateOnce.Do(func() {
 		admin, err := gorm.Open(postgres.Open(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database)), &gorm.Config{})
@@ -286,7 +202,7 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 
 		name := templatePrefix + migrations.Fingerprint()
 		templateErr = admin.Connection(func(conn *gorm.DB) error {
-			// 多个测试进程会同时走到这里：用 advisory lock 串行化建模板。
+
 			if err := conn.Exec("SELECT pg_advisory_lock(?)", templateLockKey).Error; err != nil {
 				return err
 			}
@@ -300,7 +216,7 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 				if err := conn.Exec("CREATE DATABASE " + name).Error; err != nil {
 					return fmt.Errorf("创建模板库 %s 失败: %w", name, err)
 				}
-				// 结构由生产迁移建（与「测试建表走生产迁移」一致，不手抄 DDL）。
+
 				tpl, err := gorm.Open(postgres.Open(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, name)), &gorm.Config{})
 				if err != nil {
 					return fmt.Errorf("连接模板库失败: %w", err)
@@ -308,13 +224,12 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 				if err := migrations.Run(tpl); err != nil {
 					return fmt.Errorf("模板库执行生产迁移失败: %w", err)
 				}
-				// 复制前模板库必须没有活动连接。
+
 				if sdb, err := tpl.DB(); err == nil {
 					sdb.Close()
 				}
 			}
-			// 其它指纹的模板库默认不动（见 templateCleanupEnv 的注释：跨 worktree 并发时
-			// 「顺手清理」会把别的进程正在使用的模板删掉，表现为随机的 3D000）。
+
 			if os.Getenv(templateCleanupEnv) == "1" {
 				var stale []string
 				conn.Raw("SELECT datname FROM pg_database WHERE datname LIKE ? AND datname <> ?", templatePrefix+"%", name).Scan(&stale)

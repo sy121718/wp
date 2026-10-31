@@ -1,12 +1,5 @@
 package migrations_test
 
-// 295_build_jobs_lease_test.go — 迁移 295 的判定与幂等回归。
-//
-// 为什么值得单独钉住：AGENTS 记录的判定坑是「CheckSQL 里的 ? 是表名，其它值必须写进 SQL 字面量」——
-// 判定写错的后果不是报错，而是这条迁移**每次启动都重跑**（178 踩过，被 SQL 自带的幂等性掩盖）。
-// 另外这里也验证整条 SQL 可以在已应用的库上原样重放：迁移必须幂等，
-// 否则「判定一旦失效」就会演变成启动失败。
-
 import (
 	"testing"
 
@@ -14,10 +7,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 迁移 295 的版本号（与 register_build_lease.go 一致）。
 const buildJobsLeaseVersion = "295-build-jobs-lease"
 
-// TestBuildJobsLeaseMigrationCheckAndIdempotent 判定命中「已应用」，且整条 SQL 可重放。
 func TestBuildJobsLeaseMigrationCheckAndIdempotent(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -34,7 +25,6 @@ func TestBuildJobsLeaseMigrationCheckAndIdempotent(t *testing.T) {
 		t.Fatalf("迁移 %s 未注册", buildJobsLeaseVersion)
 	}
 
-	// 判定：迁移跑过之后必须返回 1（六列 + 来源互斥索引都在位）。
 	assertApplied := func(stage string) {
 		t.Helper()
 		var n int64
@@ -48,7 +38,6 @@ func TestBuildJobsLeaseMigrationCheckAndIdempotent(t *testing.T) {
 	}
 	assertApplied("首次")
 
-	// 幂等：整条 SQL 在已应用的库上原样重放不得报错。
 	for _, stmt := range migrations.SplitStatements(target.SQL) {
 		if stmt == "" {
 			continue
@@ -59,7 +48,6 @@ func TestBuildJobsLeaseMigrationCheckAndIdempotent(t *testing.T) {
 	}
 	assertApplied("重放后")
 
-	// 形状抽查：列与索引确实在位（判定之外再确认一次结果本身）。
 	var cols int64
 	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'build_jobs'

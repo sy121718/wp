@@ -1,16 +1,5 @@
 package workbenchhttp
 
-// workbench_block_return_url_test.go — 全局块编辑画布的 returnUrl（GET /workbench?block=ID&returnUrl=…）
-// 在**真实 HTTP 渲染输出**上的行为（task-80）。
-//
-// 工作台在这条链路上是**搬运方**：workbench_page.go 只在 safepath.LocalReturnPath 认下的值上
-// 把 returnUrl 写进 meta（`<script type="application/json" id="wb-meta">`），非法值与没传
-// 对用户是同一件事 —— meta 里没有这个键，保存后留在工作台。真正决定跳不跳的是消费侧
-// 前端api.js的returnAfterSave；服务端保存端点始终只返回JSON。
-//
-// 所以这里断言的是可观测输出：200 + wb-meta 槽里的 returnUrl 键在/不在（按 JSON 解析，
-// 不靠字符串猜测），并且被拒的值一个字符都不许出现在整页正文里。
-
 import (
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
@@ -27,8 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newWorkbenchBlockReturnURLRouter 装配与线上同一条渲染路径的测试路由（不依赖数据库）。
-// 只有块画布模式需要的能力被注入：BlockByID → blocks.Detail。
 func newWorkbenchBlockReturnURLRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -42,10 +29,6 @@ func newWorkbenchBlockReturnURLRouter(t *testing.T) *gin.Engine {
 	return router
 }
 
-// workbenchMetaSlot 取 wb-meta 槽（`<script type="application/json" id="wb-meta">`）里的 JSON。
-//
-// 按结构解析而不是扫字符串：meta 是 `utils.JsonSafe` 原样输出的 JSON，
-// 只有解析后才能区分「键存在且值正确」与「页面上某处碰巧出现过这个词」。
 func workbenchMetaSlot(t *testing.T, body string) map[string]any {
 	t.Helper()
 	const marker = `id="wb-meta">`
@@ -65,7 +48,6 @@ func workbenchMetaSlot(t *testing.T, body string) map[string]any {
 	return meta
 }
 
-// fetchWorkbenchBlock 用真实 GET 打块画布；returnURL 为 nil 表示整个查询参数缺席。
 func fetchWorkbenchBlock(t *testing.T, router *gin.Engine, returnURL *string) *httptest.ResponseRecorder {
 	t.Helper()
 	target := "/workbench?block=block-1&lang=zh-CN"
@@ -78,7 +60,6 @@ func fetchWorkbenchBlock(t *testing.T, router *gin.Engine, returnURL *string) *h
 	return rec
 }
 
-// TestWorkbenchBlockReturnURLWhitelist 白名单在块画布渲染输出上的真实表现。
 func TestWorkbenchBlockReturnURLWhitelist(t *testing.T) {
 	atLimit := "/" + strings.Repeat("a", safepath.MaxReturnPathBytes-1)
 	overLimit := "/" + strings.Repeat("a", safepath.MaxReturnPathBytes)
@@ -118,7 +99,7 @@ func TestWorkbenchBlockReturnURLWhitelist(t *testing.T) {
 				if got != *tc.returnURL {
 					t.Errorf("meta.returnUrl 应为 %q，实际 %v", *tc.returnURL, got)
 				}
-				// 白名单是「按值收敛」，不是「整键删掉」：其它搬运字段必须原样还在。
+
 				if meta["saveBase"] != "block" {
 					t.Errorf("保留 returnUrl 不该影响其它 meta 键：saveBase=%v", meta["saveBase"])
 				}
@@ -126,7 +107,7 @@ func TestWorkbenchBlockReturnURLWhitelist(t *testing.T) {
 				if ok {
 					t.Errorf("被拒/缺席的 returnUrl 不该进 meta，实际 %v", got)
 				}
-				// 被拒的值不许在整页任何位置出现（meta 只是最可能的一处）。
+
 				if strings.Contains(body, "evil") {
 					t.Errorf("被拒的 returnUrl 泄漏到页面：%s", body)
 				}
@@ -135,10 +116,6 @@ func TestWorkbenchBlockReturnURLWhitelist(t *testing.T) {
 	}
 }
 
-// TestWorkbenchBlockReturnURLRejectionIsNotEchoed 被拒值不许被回显到渲染输出。
-//
-// 方向相反的错法：把非法值照样拼进 meta（前端拿去跳转），或以提示语形式写进页面。
-// 这里用带 HTML/脚本注入形态的值，确认页面上连片段都没有。
 func TestWorkbenchBlockReturnURLRejectionIsNotEchoed(t *testing.T) {
 	const hostile = `//evil.example.com/"><script>alert(1)</script>`
 	rec := fetchWorkbenchBlock(t, newWorkbenchBlockReturnURLRouter(t), strPtr(hostile))

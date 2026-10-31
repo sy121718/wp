@@ -1,15 +1,5 @@
 package response
 
-// error_auto_coverage_ledger_test.go — ErrorAuto 消费者的状态码断言覆盖率账本。
-//
-// 背景：CQ-010 把 170 处错误出口换成 ErrorAuto 之后，判据在一类输入上漏档时**不会让任何既有
-// 测试变红** —— 那个模块的业务错误会静默变成「500 + 通用文案」。这个缺口能长期存活的原因很
-// 具体：大部分模块的测试根本没断言过错误响应的状态码（只有 masterdata 与 inventory 断言过）。
-//
-// 所以这里把覆盖率做成账本：基线是「已知没有状态码断言的模块」，只减不增。
-// 新增一个用 ErrorAuto 却不断言状态码的模块会直接变红；基线里已经补上断言的模块也必须从基线
-// 删掉（过期项会掩盖「其实已经修好了」这个事实）。
-
 import (
 	"os"
 	"path/filepath"
@@ -18,30 +8,17 @@ import (
 	"testing"
 )
 
-// stateAssertionGapBaseline 已知没有状态码断言的模块（只减不增）。
-//
-// 修法不是往这里加名字，而是给该模块补一条「业务错误 400 / 内部错误 500」的断言 ——
-// 参考 public/test/masterdata/feature 与 public/test/media/feature 的写法。
-//
-// mail 已按这条路补上并从基线删除：public/test/mail/feature/mail_error_auto_status_test.go
-// 用假 service 喂两档输入（enums key → 400 + 可展示文案；SQLSTATE 原文 → 500 + 通用文案且不泄漏），
-// 断言的正是这里要守的 ErrorAuto 出口。
-// content 已按同一条路补上并从基线删除（本分支的「业务错误统一走 enums.Err()」批做的）：
-// public/test/content/feature 里的错误断言覆盖了 ErrorAuto 出口的两档。
 var stateAssertionGapBaseline = map[string]bool{
 	"blueprint":    true,
 	"build":        true,
 	"presentation": true,
 }
 
-// statusAssertionMarkers 判定「测试断言过错误响应的状态码」的标记。
-// 兼容字面量写法（media 用的是 w.Code != 400）与 http 常量写法。
 var statusAssertionMarkers = []string{
 	"StatusBadRequest", "StatusInternalServerError",
 	"!= 400", "!= 500", "== 400", "== 500",
 }
 
-// TestErrorAutoConsumersHaveStatusCodeAssertions 用 ErrorAuto 的模块必须有状态码断言，缺口只减不增。
 func TestErrorAutoConsumersHaveStatusCodeAssertions(t *testing.T) {
 	const moduleRoot = "../../internal/module"
 	const testRoot = "../../public/test"
@@ -103,7 +80,6 @@ func TestErrorAutoConsumersHaveStatusCodeAssertions(t *testing.T) {
 	}
 }
 
-// dirHasStatusAssertion 目录下是否至少有一个测试文件断言过错误状态码。
 func dirHasStatusAssertion(dir string) bool {
 	found := false
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {

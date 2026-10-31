@@ -8,7 +8,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// TestLocalStorePutGetVerify 内容寻址写入/读取/校验闭环。
 func TestLocalStorePutGetVerify(t *testing.T) {
 	s := &pipeline.LocalStore{Root: t.TempDir()}
 	a, err := pipeline.NewArtifact([]byte("<html>v1</html>"), baseManifest())
@@ -32,7 +31,6 @@ func TestLocalStorePutGetVerify(t *testing.T) {
 	}
 }
 
-// TestLocalStorePutIdempotent 重复写入同 hash 幂等返回，不覆盖历史文件。
 func TestLocalStorePutIdempotent(t *testing.T) {
 	root := t.TempDir()
 	s := &pipeline.LocalStore{Root: root}
@@ -48,14 +46,13 @@ func TestLocalStorePutIdempotent(t *testing.T) {
 	if loc1 != loc2 {
 		t.Errorf("幂等写入应返回相同定位器: %+v vs %+v", loc1, loc2)
 	}
-	// 文件仍在且内容未变。
+
 	data, err := os.ReadFile(filepath.Join(root, loc1.Key, "index.html"))
 	if err != nil || string(data) != "<html>v1</html>" {
 		t.Errorf("历史文件应保持不变: %v %q", err, data)
 	}
 }
 
-// TestLocalStoreDeleteArtifact 删除保护：hash 不符拒绝，删除幂等。
 func TestLocalStoreDeleteArtifact(t *testing.T) {
 	s := &pipeline.LocalStore{Root: t.TempDir()}
 	a, _ := pipeline.NewArtifact([]byte("<html>v1</html>"), baseManifest())
@@ -72,7 +69,6 @@ func TestLocalStoreDeleteArtifact(t *testing.T) {
 	}
 }
 
-// TestLocalStoreRedirectRoundTrip 重定向产物写入/读取/删除。
 func TestLocalStoreRedirectRoundTrip(t *testing.T) {
 	s := &pipeline.LocalStore{Root: t.TempDir()}
 	r, _ := pipeline.NewRedirectArtifact("/new-url", 301)
@@ -95,7 +91,6 @@ func TestLocalStoreRedirectRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLocalStoreDeleteObject 单文件删除幂等。
 func TestLocalStoreDeleteObject(t *testing.T) {
 	s := &pipeline.LocalStore{Root: t.TempDir()}
 	a, _ := pipeline.NewArtifact([]byte("<html>x</html>"), baseManifest())
@@ -111,7 +106,6 @@ func TestLocalStoreDeleteObject(t *testing.T) {
 	}
 }
 
-// TestLocalStoreGetMissing 读取不存在产物返回错误。
 func TestLocalStoreGetMissing(t *testing.T) {
 	s := &pipeline.LocalStore{Root: t.TempDir()}
 	if _, err := s.GetArtifact(pipeline.Locator{Provider: "local", Key: "artifacts/none"}); err == nil {

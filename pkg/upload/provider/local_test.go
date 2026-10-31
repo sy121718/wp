@@ -2,7 +2,6 @@ package uploadprovider
 
 import "testing"
 
-// Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9，含带扩展名与大小写变体）应前缀转义。
 func TestSanitizeFilenameWindowsReservedNames(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"CON", "_CON"},
@@ -14,10 +13,10 @@ func TestSanitizeFilenameWindowsReservedNames(t *testing.T) {
 		{"AUX", "_AUX"},
 		{"PRN", "_PRN"},
 		{"CON.txt", "_CON.txt"},
-		// 非保留名：长度 5 的 COM10/LPT10 不是设备名，不应误伤。
+
 		{"COM10", "COM10"},
 		{"LPT10", "LPT10"},
-		// 普通文件名不受影响。
+
 		{"report.txt", "report.txt"},
 		{"report", "report"},
 	}
@@ -28,7 +27,6 @@ func TestSanitizeFilenameWindowsReservedNames(t *testing.T) {
 	}
 }
 
-// 尾随点/空格（Windows 与对象存储会静默裁剪，造成保留名命中或扩展名伪装）应去掉。
 func TestSanitizeFilenameTrailingDotsAndSpaces(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"report.txt. ", "report.txt"},
@@ -44,7 +42,6 @@ func TestSanitizeFilenameTrailingDotsAndSpaces(t *testing.T) {
 	}
 }
 
-// 路径分隔符与危险字符应替换为下划线；"."/".."/空串应返回空。
 func TestSanitizeFilenamePathCharsAndTraversal(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"/", "_"},

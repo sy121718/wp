@@ -1,26 +1,5 @@
 package mailhttp
 
-// mail_contact_write_test.go — 联系人 JSON 写端点（POST /api/mail/contact/{save,delete,tag}）的契约守卫。
-//
-// 这三条路径在本批之前是「有权限点、有策略、没有路由」的幽灵对象：页面 POST 借用它们当 obj，
-// 而 AI 工具的判权（permission.RoutesOf）查不到路由就 fail closed。现在它们是真实端点，
-// 于是必须像所有 JSON 端点一样被钉住三件事：
-//
-//	① **严格形状**：白名单外的字段、显式 null、类型不符一律 400。
-//	   （显式 null 必须单独判 —— encoding/json 把 null 解进 string / []string 都不报错，
-//	    落到零值就变成「一次空批量」或「把字段清空」，而请求看起来完全合法。）
-//	② **恰好一种形状**：删除端点的单条 {id} 与批量 {ids} 只能给一个 ——
-//	   这是权限模型的硬约束（一个 code 只有一列 api_path），不是省事。
-//	③ **逐条结果与口径**：删除回 {deleted,skipped,items}（成功条目 deleted=true，前端据此移除行）；
-//	   打标签回 {updated,skipped,items}（成功条目也在，且**不带 deleted 语义**）。
-//
-// 库侧（真实 PG + 角色授权链路）在 public/test/mail/feature 与 public/test/feature 里，
-// 本文件不连库：service 用桩，只验「handler 怎么收、怎么判、怎么回」。
-//
-// 端点注册与页面 POST 的下线同在本文件：前者扫 mail_router.go（真实注册写法），
-// 后者扫 mail_page_router.go 的**反向**断言（本批的交付物就是「页面 POST 消失」，
-// 与 task-13 刻意不写「必须不是真实路由」的方向相反 —— 那条断言当时会挡住新 API 上线）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -42,8 +21,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// —— 桩 service：只实现本文件用到的四个写方法，其余由嵌入接口兜住（被调用即 panic） ——
-
 type mailContactWriteStub struct {
 	mailcontract.MailService
 
@@ -53,9 +30,9 @@ type mailContactWriteStub struct {
 	tagged  []*maildto.TagContactsReq
 
 	deleteErr  error
-	deleteMiss bool // 模拟「这一条本来就不存在」：删 0 行且不报错
+	deleteMiss bool
 	tagErr     error
-	tagMiss    bool // 模拟「该 id 不存在」：changed=0 且无错
+	tagMiss    bool
 }
 
 func (s *mailContactWriteStub) CreateContact(_ context.Context, req *maildto.SaveContactReq) (uint64, error) {
@@ -99,8 +76,6 @@ func cloneSaveReq(req *maildto.SaveContactReq) *maildto.SaveContactReq {
 	return &out
 }
 
-// —— 装配与请求辅助 ——
-
 const mailContactWriteUserID = int64(987654401)
 
 func newMailContactWriteEngine(h *Handle) *gin.Engine {
@@ -117,7 +92,6 @@ func newMailContactWriteEngine(h *Handle) *gin.Engine {
 	return r
 }
 
-// postMailContactJSON 发一个 JSON 请求；lang 非空时用它协商响应语言（Accept-Language 首段）。
 func postMailContactJSON(t *testing.T, r *gin.Engine, path, body, lang string) (int, map[string]interface{}) {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -162,7 +136,6 @@ func mailContactItems(t *testing.T, data map[string]interface{}) []map[string]in
 	return out
 }
 
-// injectMailContactWriteEntries 注入合成词条，结束时还原（i18n 缓存是进程级单例）。
 func injectMailContactWriteEntries(t *testing.T, entries map[string]map[string]string) {
 	t.Helper()
 	previous := make(map[string]map[string]string, len(entries))
@@ -176,8 +149,6 @@ func injectMailContactWriteEntries(t *testing.T, entries map[string]map[string]s
 	i18n.InjectForTest(entries, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(previous, map[string]int{}) })
 }
-
-// —— ① 严格形状 ——
 
 func TestMailContactWriteRejectsMalformedShapes(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
@@ -226,8 +197,6 @@ func TestMailContactWriteRejectsMalformedShapes(t *testing.T) {
 	}
 }
 
-// —— ② 合法形状确实到 service，且操作人来自会话（不是请求体） ——
-
 func TestMailContactSaveCreateAndUpdate(t *testing.T) {
 	stub := &mailContactWriteStub{}
 	r := newMailContactWriteEngine(NewHandle(stub))
@@ -266,8 +235,6 @@ func TestMailContactSaveCreateAndUpdate(t *testing.T) {
 	}
 }
 
-// —— ③ 两种口径的逐条结果 ——
-
 func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
 		mailenums.ErrInvalidParam: {"zh-CN": "参数-非法", "en-US": "PARAM-INVALID-EN"},
@@ -284,7 +251,6 @@ func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 		t.Fatalf("单条删除应把 [7] 交给 service，实际 %#v", stub.deleted)
 	}
 
-	// 批量：去重保序（与 shell.BulkIDs / pkg/bulkids 同口径），非法 id 逐条跳过并给原因。
 	code, body = postMailContactJSON(t, r, "/api/mail/contact/delete", `{"ids":["1","2","2","x","0"]}`, "en-US")
 	if code != http.StatusOK {
 		t.Fatalf("批量删除应 200，实际 %d（%#v）", code, body)
@@ -320,11 +286,6 @@ func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 	}
 }
 
-// TestMailContactDeleteMissingRowIsNotReportedAsSuccess 删 0 行不能报成功。
-//
-// 这是逐条调用的代价换来的真问题：service 返回的是**真实删除行数**，忽略它就会把
-// 「本来就不存在的 id」算成成功（回执说「已删除 3 位」而实际删了 2 位），
-// 运营据此以为整批干净了，刷新才发现不对。
 func TestMailContactDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
 		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
@@ -351,11 +312,6 @@ func TestMailContactDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	}
 }
 
-// TestMailContactDeleteSingleMissingRowIsNotReportedAsSuccess 单条档删不存在的 id 也不能报成功。
-//
-// 批量档把 0 行计成「跳过 + 原因」；单条档没有「部分成功」这个 channel，所以整请求按
-// 「这一条不存在」失败（400 + 联系人不存在，与 UpdateContact 及本模块其它删除端点同一口径）。
-// 两条路说的是同一个事实：0 行不是删除成功，只是这一条本来就不在。
 func TestMailContactDeleteSingleMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
 		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
@@ -370,7 +326,6 @@ func TestMailContactDeleteSingleMissingRowIsNotReportedAsSuccess(t *testing.T) {
 		t.Fatalf("失败原因应是「联系人不存在」（按请求语言取词），实际 %q", msg)
 	}
 
-	// 对面必须仍然成立：真实删掉 1 行的单条删除照旧 200 成功。
 	ok := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{}))
 	code, body = postMailContactJSON(t, ok, "/api/mail/contact/delete", `{"id":9}`, "en-US")
 	if code != http.StatusOK {
@@ -433,7 +388,6 @@ func TestMailContactTagResultShape(t *testing.T) {
 		t.Fatalf("成功条目不得带 deleted 键（前端会据此删行）：%#v", items[0])
 	}
 
-	// 增与减都为空：既不是成功也不是失败，直接说清。
 	code, body = postMailContactJSON(t, r, "/api/mail/contact/tag", `{"ids":["1"],"add":"  ","remove":""}`, "en-US")
 	if code != http.StatusBadRequest {
 		t.Fatalf("空差量应 400，实际 %d（%#v）", code, body)
@@ -442,7 +396,6 @@ func TestMailContactTagResultShape(t *testing.T) {
 		t.Fatalf("空差量文案应按请求语言取词，实际 %q", msg)
 	}
 
-	// 该 id 不存在（service 既不报错也不改动）：逐条跳过 + 原因。
 	missing := &mailContactWriteStub{tagMiss: true}
 	code, body = postMailContactJSON(t, newMailContactWriteEngine(NewHandle(missing)),
 		"/api/mail/contact/tag", `{"ids":["9"],"add":"vip"}`, "en-US")
@@ -458,8 +411,6 @@ func TestMailContactTagResultShape(t *testing.T) {
 		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际 %q", msg)
 	}
 }
-
-// —— ④ 端点是真的（注册处），页面 POST 是真的没了 ——
 
 var (
 	mailAPIContactPostRe  = regexp.MustCompile(`g\.POST\("(/contact/[a-z]+)",\s*permission\.(MailContact[A-Za-z]+)`)
@@ -491,7 +442,6 @@ func TestMailContactWriteEndpointsAreRealRoutes(t *testing.T) {
 		}
 	}
 
-	// 判权只按 (路径, 方法) 匹配：同一个对象被两个权限点声明就会互相串权。
 	declareMailPageObjects()
 	for path, permName := range want {
 		var target permission.Perm
@@ -517,12 +467,6 @@ func TestMailContactWriteEndpointsAreRealRoutes(t *testing.T) {
 	}
 }
 
-// TestMailContactPageWritePostsAreGone 四条联系人页面 POST 必须真的下线。
-//
-// 与 task-13 刻意**不写**的「必须不是真实路由」方向相反：那条断言当时会挡住新 API 上线，
-// 而这里断言的是本批的交付物本身 —— 页面写操作已经由浏览器直调 JSON 端点，
-// 页面 POST 留着就是第二套通道（权限、审核、错误语义都会分叉）。
-// 仍留在页面 POST 的只有批量改状态（没有 JSON 端点）。
 func TestMailContactPageWritePostsAreGone(t *testing.T) {
 	raw, err := os.ReadFile("mail_page_router.go")
 	if err != nil {

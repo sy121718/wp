@@ -1,14 +1,5 @@
 package membershipservice
 
-// membership_logic_test.go — 分档、权益归一与文案出口的纯逻辑单测（BIZ-3）。
-//
-// 这些判断「错了会不会静默出错」的答案都是**会**：
-//   - 分档错 → 会员等级算错，页面上一切正常，只有钱不对；
-//   - 权益归一错 → 负折扣变加价、100 以上的折扣让应付为负；
-//   - 文案出口错 → 可行动的业务提示被压成通用提示（或反过来把库原文透出去）。
-//
-// 不碰数据库、不走装配：这些逻辑几乎每次改动都会碰到，就近跑一次不到一秒。
-
 import (
 	"errors"
 	"strings"
@@ -20,7 +11,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// tiersFixture 一份典型清单（model.ListTiers 的排序：sort_order 降序）。
 func tiersFixture() []*membershipmodel.TierEntity {
 	return []*membershipmodel.TierEntity{
 		{ID: 3, Name: "钻石", SortOrder: 3, ThresholdAmount: 500000},
@@ -29,7 +19,6 @@ func tiersFixture() []*membershipmodel.TierEntity {
 	}
 }
 
-// TestSelectTierBySpend 消费额定档：取第一个满足门槛的档（清单已按 sort_order 降序）。
 func TestSelectTierBySpend(t *testing.T) {
 	tiers := tiersFixture()
 	cases := []struct {
@@ -57,10 +46,6 @@ func TestSelectTierBySpend(t *testing.T) {
 	}
 }
 
-// TestSelectTierBySpendSortOrderBeatsThreshold 档位高低由 sort_order 决定，不是门槛数值。
-//
-// 运营完全可以把「钻石」排在「黄金」之上而门槛数值不单调（例如活动期间给老客户开一档
-// 低门槛的钻石）。此时若按门槛数值选档，会把钻石会员算成黄金 —— 而两行数据看起来都正常。
 func TestSelectTierBySpendSortOrderBeatsThreshold(t *testing.T) {
 	tiers := []*membershipmodel.TierEntity{
 		{ID: 9, Name: "钻石", SortOrder: 9, ThresholdAmount: 1000},
@@ -71,8 +56,6 @@ func TestSelectTierBySpendSortOrderBeatsThreshold(t *testing.T) {
 	}
 }
 
-// TestSelectTierBySpendReturnsNilWhenNothingMatches 一个档都达不到时返回 nil，
-// 由调用方回退默认等级 —— **不是**在这里偷偷退回清单最后一项。
 func TestSelectTierBySpendReturnsNilWhenNothingMatches(t *testing.T) {
 	tiers := []*membershipmodel.TierEntity{
 		{ID: 3, Name: "钻石", SortOrder: 3, ThresholdAmount: 500000},
@@ -83,7 +66,6 @@ func TestSelectTierBySpendReturnsNilWhenNothingMatches(t *testing.T) {
 	}
 }
 
-// TestResolveSpendTierFallsBackToDefault 「一个档都达不到」回退默认等级，而不是留在 nil。
 func TestResolveSpendTierFallsBackToDefault(t *testing.T) {
 	tiers := []*membershipmodel.TierEntity{
 		{ID: 3, Name: "钻石", SortOrder: 3, ThresholdAmount: 500000},
@@ -97,7 +79,6 @@ func TestResolveSpendTierFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestPickDefaultTier 默认等级要从清单里按 is_default 挑出来（不是挑第一个）。
 func TestPickDefaultTier(t *testing.T) {
 	if got := pickDefaultTier(tiersFixture()); got == nil || got.Name != "普通" {
 		t.Errorf("pickDefaultTier = %+v", got)
@@ -107,7 +88,6 @@ func TestPickDefaultTier(t *testing.T) {
 	}
 }
 
-// TestNormalizeEntitlements 权益归一的三种结局：合法、越界、未知 kind。
 func TestNormalizeEntitlements(t *testing.T) {
 	t.Run("合法并按 enums 顺序输出", func(t *testing.T) {
 		rows, err := normalizeEntitlements([]membershipdto.EntitlementReq{
@@ -168,7 +148,6 @@ func TestNormalizeEntitlements(t *testing.T) {
 	})
 }
 
-// TestParameterValidation 必填与长度的校验口径。
 func TestParameterValidation(t *testing.T) {
 	if err := requireProject("  "); err == nil || err.Error() != membershipenums.ErrProjectRequired {
 		t.Errorf("空工程应报 ErrProjectRequired，实际 %v", err)
@@ -195,7 +174,6 @@ func TestParameterValidation(t *testing.T) {
 	}
 }
 
-// TestNormalizePage 分页参数收敛（超过上限即截，而不是让请求方决定查询规模）。
 func TestNormalizePage(t *testing.T) {
 	cases := []struct {
 		page, size, wantPage, wantSize int
@@ -214,10 +192,6 @@ func TestNormalizePage(t *testing.T) {
 	}
 }
 
-// TestUniqueViolationOnDistinguishesIndexes 三条唯一索引都要能被分辨。
-//
-// 判据只看「是唯一冲突」的实现会让运营对着一个约束名猜自己撞了哪一条 ——
-// 而三条索引的处置方式完全不同（改名 / 改门槛 / 换默认等级）。
 func TestUniqueViolationOnDistinguishesIndexes(t *testing.T) {
 	nameErr := errors.New(`ERROR: duplicate key value violates unique constraint "uq_membership_tiers_name" (SQLSTATE 23505)`)
 	thresholdErr := errors.New(`ERROR: duplicate key value violates unique constraint "uq_membership_tiers_threshold" (SQLSTATE 23505)`)
@@ -235,13 +209,12 @@ func TestUniqueViolationOnDistinguishesIndexes(t *testing.T) {
 	if !uniqueViolationOn(defaultErr, indexTierDefault) {
 		t.Errorf("默认索引未命中")
 	}
-	// 非唯一冲突不命中（否则普通错误会被映射成业务提示）。
+
 	if uniqueViolationOn(errors.New("pq: relation does not exist"), indexTierName) {
 		t.Errorf("非唯一冲突不该命中")
 	}
 }
 
-// TestMapTierConflictMapsIndexNames 索引名 → 业务错误的映射（service 的兜底路径）。
 func TestMapTierConflictMapsIndexNames(t *testing.T) {
 	svc := &Service{}
 	cases := []struct {
@@ -258,7 +231,7 @@ func TestMapTierConflictMapsIndexNames(t *testing.T) {
 			t.Errorf("%s → %v，期望 %s", tc.raw, got, tc.want)
 		}
 	}
-	// 认不出的错误原样返回（由归口分支处理）。
+
 	raw := errors.New("pq: connection refused")
 	if got := svc.mapTierConflict(raw); got != raw {
 		t.Errorf("不可识别的错误应原样返回，实际 %v", got)
@@ -268,9 +241,6 @@ func TestMapTierConflictMapsIndexNames(t *testing.T) {
 	}
 }
 
-// TestErrorFactsAreDeclaredAtSource 错误事实在声明处成形：业务 / 明细 / 内部三档。
-//
-// 取词已不在 service（0.2）：这里只断言传给出口的事实。
 func TestErrorFactsAreDeclaredAtSource(t *testing.T) {
 	fact, ok := facing.FactOf(membershipenums.Err(membershipenums.ErrTierNameTaken))
 	if !ok || !fact.Business || fact.Fallback == "" {
@@ -285,7 +255,6 @@ func TestErrorFactsAreDeclaredAtSource(t *testing.T) {
 	}
 }
 
-// TestTierNotFoundCarriesTierID 不存在错误要带可定位的数据。
 func TestTierNotFoundCarriesTierID(t *testing.T) {
 	err := tierNotFound(42)
 	if err == nil || !strings.Contains(err.Error(), "42") {
@@ -293,7 +262,6 @@ func TestTierNotFoundCarriesTierID(t *testing.T) {
 	}
 }
 
-// TestRecalcReadyReflectsPort 端口未注入时 RecalcReady 为假（页面据此显示「尚未启用」）。
 func TestRecalcReadyReflectsPort(t *testing.T) {
 	svc := &Service{}
 	if svc.RecalcReady() {
@@ -305,8 +273,6 @@ func TestRecalcReadyReflectsPort(t *testing.T) {
 	}
 }
 
-// TestRecalcProjectWithoutPortFailsExplicitly 端口未注入时重算**显式失败**，
-// 而不是返回一个 Scanned = 0 的「成功」结果 —— 后者看起来像「大家都没消费」。
 func TestRecalcProjectWithoutPortFailsExplicitly(t *testing.T) {
 	svc := &Service{}
 	_, err := svc.RecalcProject(nil, &membershipdto.RecalcProjectReq{ProjectID: "p-1"})

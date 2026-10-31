@@ -15,7 +15,6 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 )
 
-// 仅替换构建器故障点，商品查询与工程作用域仍来自生产迁移和真实 PG。
 type failedProductPreview struct {
 	producthttp.ProductDetailTemplatePort
 	result *presentationcontract.PreviewInstanceResp

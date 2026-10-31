@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// TestCSRFMiddlewareRejectsMissingAndMismatchedToken 验证 CSRF 校验：
-// 缺失 token、token 不匹配、无 cookie 均拒绝（403），正确 token 放行。
 func TestCSRFMiddlewareRejectsMissingAndMismatchedToken(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("auth.session_secret", "csrf-test-secret")
@@ -26,7 +24,6 @@ func TestCSRFMiddlewareRejectsMissingAndMismatchedToken(t *testing.T) {
 		c.String(http.StatusOK, "ok")
 	})
 
-	// 先通过一个 GET 生成 CSRF token，并拿到 session cookie。
 	tokenEngine := gin.New()
 	tokenEngine.GET("/token", func(c *gin.Context) {
 		token, err := EnsureCSRFToken(c)

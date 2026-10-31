@@ -1,16 +1,6 @@
 package projectenums
 
-// theme_settings_label_keys.go — 主题设置页（含工作台全局设置面板）展示文案的词条 key。
-//
-// 这些 key 原先是 inbound/http/project_page.go 里 themeLabelKeys 表的字面量（89 处），
-// 本批按 internal/module/CLAUDE.md §enums 收进本包：key 的归属是 enums，控制器只引用常量 ——
-// 控制器里写死字面量的代价是词条改名/删除时**没有编译期保护**，只会静默失配（页面只剩中文兜底）。
-//
-// 分组与主题设置字段表逐条对齐（themeLabelKeys：中文原文 → key）；表里没有的文本 = 不翻译
-// （如 value 与 label 相同的 "20px"、"Inter, system-ui, sans-serif"），中文兜底留在调用点。
-// 所有 key 均已 seed（迁移 451，中英各一条），本批不新增词条。
 const (
-	// —— 分组标题（同时是字段 label 的按同一行取词）——
 	ThemeSettingsLabelColors            = "admin.theme_settings.label.colors"
 	ThemeSettingsLabelTypographyHeading = "admin.theme_settings.label.typographyHeading"
 	ThemeSettingsLabelTypographyBody    = "admin.theme_settings.label.typographyBody"
@@ -19,7 +9,7 @@ const (
 	ThemeSettingsLabelSurface           = "admin.theme_settings.label.surface"
 	ThemeSettingsLabelImages            = "admin.theme_settings.label.images"
 	ThemeSettingsLabelMotion            = "admin.theme_settings.label.motion"
-	// —— 字段 label ——
+
 	ThemeSettingsLabelPrimaryColor       = "admin.theme_settings.label.primaryColor"
 	ThemeSettingsLabelSecondaryColor     = "admin.theme_settings.label.secondaryColor"
 	ThemeSettingsLabelAccentColor        = "admin.theme_settings.label.accentColor"
@@ -56,7 +46,7 @@ const (
 	ThemeSettingsLabelTransitionDuration = "admin.theme_settings.label.transitionDuration"
 	ThemeSettingsLabelEasing             = "admin.theme_settings.label.easing"
 	ThemeSettingsLabelEntrance           = "admin.theme_settings.label.entrance"
-	// —— 下拉选项 label ——
+
 	ThemeSettingsLabelOptDefault                 = "admin.theme_settings.label.optDefault"
 	ThemeSettingsLabelOptNone                    = "admin.theme_settings.label.optNone"
 	ThemeSettingsLabelOptSmall                   = "admin.theme_settings.label.optSmall"

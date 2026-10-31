@@ -1,10 +1,3 @@
-// product_publish_record_render_test.go — 发布记录页（B9）真的渲染出三种状态与「重新发布」入口。
-//
-// 钉两件事：
-//  1. 视图形状与模板读的字段是同一份（Jet 在具名 map 上取不到键会渲染失败、在结构体上取不到
-//     字段直接编译不过 —— 后者才是我们要的档位，所以整页必须真渲染一遍）；
-//  2. 三种发布状态在 HTML 里可辨认（未建实例 / 已上线 / 有实例未上线 + 待重建），
-//     且「重新发布」只对已有实例的行出现（没有实例时按模板再发一次是无处可发的）。
 package producthttp
 
 import (
@@ -71,17 +64,17 @@ func TestProductPublishRecordPageRendersStates(t *testing.T) {
 	}
 	for _, want := range []string{
 		"已上线商品", "有实例没上线", "没建实例",
-		"/products/live",                     // 线上路径
-		"v7",                                 // 产物版本
-		"2026-10-20",                         // 发布时间（formatTime 口径）
-		"/api/product/detail-template/apply", // 重新发布的写入口
-		"待重建",                                // stale 徽标
+		"/products/live",
+		"v7",
+		"2026-10-20",
+		"/api/product/detail-template/apply",
+		"待重建",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q：%s", want, headOf(body))
 		}
 	}
-	// 没有实例的行不给「重新发布」：按模板再发一次无处可发。
+
 	if n := strings.Count(body, "/api/product/detail-template/apply"); n != 2 {
 		t.Fatalf("「重新发布」应只出现在两行有实例的记录上，实际 %d 处", n)
 	}
@@ -94,7 +87,6 @@ func TestProductPublishRecordPageRendersStates(t *testing.T) {
 	}
 }
 
-// 端口未装配：页面照常 200，给一句「还没接入」—— 不是「一个都没发布」，也不是 500。
 func TestProductPublishRecordPageNotWiredRendersHint(t *testing.T) {
 	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
 		v.Available = false
@@ -112,7 +104,6 @@ func TestProductPublishRecordPageNotWiredRendersHint(t *testing.T) {
 	}
 }
 
-// 读取失败：返回 JSON 500，不渲染空记录页面。
 func TestProductPublishRecordPageLoadFailureIsJSON500(t *testing.T) {
 	reader := &publicationReaderStub{publishErr: errors.New("驱动：读发布登记失败")}
 	h := &ProductPageHandle{reader: reader, products: reader}
@@ -121,7 +112,6 @@ func TestProductPublishRecordPageLoadFailureIsJSON500(t *testing.T) {
 	assertProductJSONFailure(t, "发布记录页主数据失败", rec, http.StatusInternalServerError, "内部错误")
 }
 
-// publicationReaderStub 只实现本域使用的查询能力，其他入口调用即失败。
 type publicationReaderStub struct {
 	productcontract.ProductService
 	productcontract.ProductPageReader

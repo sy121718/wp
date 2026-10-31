@@ -1,200 +1,143 @@
-// codes.go — 权限点代码常量（sys_permission.permission_code 的代码侧单一来源）。
-//
-// 每条常量都带中文名、所属模块与它绑定的路由（方法 + 绝对路径），供注册期登记、启动期
-// upsert 使用；生成规则：`模块:动作` → `模块动作`（下划线分段转驼峰，URL / ID / SKU / SEO 保持惯用写法）。
-//
-// **不要手工改常量字符串**：它必须与库中既有 permission_code 逐字一致，改名等于新建一个
-// 权限点（旧 code 上的角色 / 用户授权会失效）。新增权限点走「加一条常量 + 在路由注册处声明」，
-// 启动期自动 upsert 入库，不再需要写 seed 迁移。
 package permission
 
 const (
-	// —— admin（9）——
-	// 新建管理员（POST /api/admin/create）
 	AdminCreate Perm = "admin:create"
-	// 删除管理员（POST /api/admin/delete）
+
 	AdminDelete Perm = "admin:delete"
-	// 管理员详情（GET /api/admin/detail）
+
 	AdminDetail Perm = "admin:detail"
-	// 编辑管理员（POST /api/admin/edit）
+
 	AdminEdit Perm = "admin:edit"
-	// 管理员列表（GET /api/admin/list）
+
 	AdminList Perm = "admin:list"
-	// 管理员菜单查看（GET /api/admin/menu/list）
+
 	AdminMenuList Perm = "admin:menu_list"
-	// 管理员菜单分配（POST /api/admin/menu/save）
+
 	AdminMenuSave Perm = "admin:menu_save"
-	// 管理员角色查看（GET /api/admin/role/list）
+
 	AdminRoleList Perm = "admin:role_list"
-	// 管理员角色分配（POST /api/admin/role/save）
+
 	AdminRoleSave Perm = "admin:role_save"
 
-	// —— analytics（1）——
-	// 访问统计查看（GET /api/analytics/summary）
 	AnalyticsView Perm = "analytics:view"
 
-	// —— artifact（1）——
-	// 构建产物详情（GET /api/artifact/detail）
 	ArtifactDetail Perm = "artifact:detail"
 
-	// —— block（7）——
-	// 批量删除区块（POST /api/block/bulk-delete）。
-	//
-	// 为什么与 BlockDelete **分开**：sys_permission 每条权限点只有一列 api_path/api_method，
-	// 启动期 permission.SyncToDB 会按路由声明把这两列对齐 —— 同一个 code 挂在两条 API 路径上时
-	// 只能留下一条，另一条路径上的策略随之失效（超管 403、角色静默失权）。
-	// 「同一特权拆两条 code」的代价（角色授权面多一项）远小于「有一条路径必然失权」，
-	// 升级期的授权延续由迁移 594 复制既有 block:delete 主体兜住。
 	BlockBulkDelete Perm = "block:bulk_delete"
-	// 克隆区块（POST /api/block/clone）
+
 	BlockClone Perm = "block:clone"
-	// 新建区块（POST /api/block/create）
+
 	BlockCreate Perm = "block:create"
-	// 删除区块（POST /api/block/delete）
+
 	BlockDelete Perm = "block:delete"
-	// 区块详情（GET /api/block/detail）
+
 	BlockDetail Perm = "block:detail"
-	// 区块列表（GET /api/block/list）
+
 	BlockList Perm = "block:list"
-	// 更新区块（POST /api/block/update）
+
 	BlockUpdate Perm = "block:update"
 
-	// —— blueprint（7）——
-	// 模板创建（POST /api/blueprint/create）
 	BlueprintCreate Perm = "blueprint:create"
-	// 模板删除（POST /api/blueprint/delete）
+
 	BlueprintDelete Perm = "blueprint:delete"
-	// 模板详情（GET /api/blueprint/get）
+
 	BlueprintGet Perm = "blueprint:get"
-	// 初始化页面（GET /api/blueprint/init）
+
 	BlueprintInit Perm = "blueprint:init"
-	// 模板列表（GET /api/blueprint/list）
+
 	BlueprintList Perm = "blueprint:list"
-	// 模板发布（POST /api/blueprint/publish）
+
 	BlueprintPublish Perm = "blueprint:publish"
-	// 模板更新（POST /api/blueprint/update）
+
 	BlueprintUpdate Perm = "blueprint:update"
 
-	// —— build（3）——
-	// 构建任务列表（GET /api/build/jobs）
 	BuildJobs Perm = "build:jobs"
-	// 构建队列状态（GET /api/build/queue）
+
 	BuildQueue Perm = "build:queue"
-	// 重试构建（POST /api/build/retry）
+
 	BuildRetry Perm = "build:retry"
 
-	// —— comment（2）——
-	// 评论审核列表（GET /api/comment/list）。评论的后台页 /admin/comments 也以它为可见性依据
-	// （菜单 permission_code 指向它）：看不到这一页的人多半也在审别人的评论。
 	CommentList Perm = "comment:list"
-	// 评论批量通过 / 驳回（POST /api/comment/review）。后台批量按钮提交 JSON 到此接口，
-	// 直接使用 authorizedAPI 的鉴权链与本权限点。
+
 	CommentReview Perm = "comment:review"
 
-	// —— content（6）——
-	// 查看内容集合元数据（GET /api/content/collections）
 	ContentCollections Perm = "content:collections"
-	// 内容创建（POST /api/content/create）
+
 	ContentCreate Perm = "content:create"
-	// 内容删除（POST /api/content/delete）
+
 	ContentDelete Perm = "content:delete"
-	// 内容详情（GET /api/content/get）
+
 	ContentGet Perm = "content:get"
-	// 内容列表（GET /api/content/list）
+
 	ContentList Perm = "content:list"
-	// 内容更新（POST /api/content/update）
+
 	ContentUpdate Perm = "content:update"
 
-	// —— contenttemplate（5）——
-	// 模板创建（POST /api/contenttemplate/create）
 	ContenttemplateCreate Perm = "contenttemplate:create"
-	// 模板删除（POST /api/contenttemplate/delete）。后台列表页的批量删除也走这一条：
-	// 删除会连带清掉该模板的全部历史版本与组件版本锁定行，被自动发布实例引用的会被拒绝。
+
 	ContenttemplateDelete Perm = "contenttemplate:delete"
-	// 模板详情（GET /api/contenttemplate/get）
+
 	ContenttemplateGet Perm = "contenttemplate:get"
-	// 模板列表（GET /api/contenttemplate/list）
+
 	ContenttemplateList Perm = "contenttemplate:list"
-	// 模板更新（POST /api/contenttemplate/update）
+
 	ContenttemplateUpdate Perm = "contenttemplate:update"
-	// 模板切换生效（POST /api/contenttemplate/activate）；迁移 288 的 seed 与这条一一对应。
-	//
-	// 为什么单独一条：Casbin 中间件按**实际请求路径** enforce，复用 update 会让这个接口
-	// 没有任何策略匹配 → 含超管在内全员 403（AGENTS.md 记过 072/077/078/079/151 五次）。
+
 	ContenttemplateActivate Perm = "contenttemplate:activate"
 
-	// —— datarule（9）——
-	// 规则分配查看（GET /api/datarule/assignment/list）
 	DataruleAssignmentList Perm = "datarule:assignment_list"
-	// 规则分配保存（POST /api/datarule/assignment/save）
+
 	DataruleAssignmentSave Perm = "datarule:assignment_save"
-	// 新建数据规则（POST /api/datarule/create）
+
 	DataruleCreate Perm = "datarule:create"
-	// 删除数据规则（POST /api/datarule/delete）
+
 	DataruleDelete Perm = "datarule:delete"
-	// 数据规则详情（GET /api/datarule/detail）
+
 	DataruleDetail Perm = "datarule:detail"
-	// 数据规则列表（GET /api/datarule/list）
+
 	DataruleList Perm = "datarule:list"
-	// 数据域详情（GET /api/datarule/schema/detail）
+
 	DataruleSchemaDetail Perm = "datarule:schema_detail"
-	// 数据域清单（GET /api/datarule/schema/list）
+
 	DataruleSchemaList Perm = "datarule:schema_list"
-	// 更新数据规则（POST /api/datarule/update）
+
 	DataruleUpdate Perm = "datarule:update"
 
-	// —— dept（7）——
-	// 新建部门（POST /api/dept/create）
 	DeptCreate Perm = "dept:create"
-	// 删除部门（POST /api/dept/delete）
+
 	DeptDelete Perm = "dept:delete"
-	// 部门详情（GET /api/dept/detail）
+
 	DeptDetail Perm = "dept:detail"
-	// 部门树（GET /api/dept/tree）
+
 	DeptList Perm = "dept:list"
-	// 更新部门（POST /api/dept/update）
+
 	DeptUpdate Perm = "dept:update"
-	// 部门用户查看（GET /api/dept/user/list）
+
 	DeptUserList Perm = "dept:user_list"
-	// 部门用户分配（POST /api/dept/user/save）
+
 	DeptUserSave Perm = "dept:user_save"
 
-	// —— i18n（2）——
-	// 文案词条查看（GET /api/i18n/list）。**没有对应的 API 路由** —— 它是后台页
-	// /admin/i18n 的 Casbin 对象（页面经 CasbinMiddlewareForPath 借用），
-	// 因此必须在页面注册处显式 Declare，否则 permission.RoutesOf 查不到它、
-	// AI 工具按 fail closed 一律 forbidden（见 AGENTS.md §AI 工具）。
 	I18nView Perm = "i18n:view"
-	// 文案词条管理（POST /api/i18n/save）。同上：后台页的增删改与批量删除都借这一个对象。
+
 	I18nManage Perm = "i18n:manage"
 
-	// —— inventory（28）——
-	// 库存流水列表（GET /api/inventory/movement/list）
 	InventoryMovementList Perm = "inventory:movement_list"
-	// 新建采购单（POST /api/inventory/purchase/create）
+
 	InventoryPurchaseCreate Perm = "inventory:purchase_create"
-	// 采购单详情（GET /api/inventory/purchase/get）
+
 	InventoryPurchaseGet Perm = "inventory:purchase_get"
-	// 进货历史（GET /api/inventory/purchase/history）
+
 	InventoryPurchaseHistory Perm = "inventory:purchase_history"
-	// 采购单列表（GET /api/inventory/purchase/list）
+
 	InventoryPurchaseList Perm = "inventory:purchase_list"
-	// 生产入库（POST /api/inventory/purchase/production）
+
 	InventoryPurchaseProduction Perm = "inventory:purchase_production"
-	// 库存预警（GET /api/inventory/stock/alert，迁移 624 / 623，W4）。
-	//
-	// 单独一条而不是复用 stock/list：sys_permission 每条 API 路由要有**自己**的权限点
-	//（同一个码绑两条路由时，只有一条能生成超管策略，其余对所有人 403）。
+
 	InventoryStockAlert Perm = "inventory:stock_alert"
-	// 调拨单（迁移 630，W3）：六条独立权限点 —— 看列表 / 看详情 / 建单 / 出货 / 签收 / 取消。
-	//
-	// 为什么拆这么细：出货与签收是**两个不同的人**做的事（一个人发货、另一个人签收），
-	// 合成一条会让「只有发货权的人」也能把自己的货签成已到。
+
 	InventoryTransferList Perm = "inventory:transfer_list"
 	InventoryTransferGet  Perm = "inventory:transfer_get"
-	// InventoryTransferOptions 建单抽屉的候选货品（GET /api/inventory/transfer/stock-options）。
-	// 与 transfer_get 分开是因为「一条 API 路由一个独立权限点」：共用一个 code 时
-	// sys_permission.permission_code 只能记一条路径，另一条对所有人 403。
+
 	InventoryTransferOptions Perm = "inventory:transfer_options"
 	InventoryTransferCreate  Perm = "inventory:transfer_create"
 	InventoryTransferApprove Perm = "inventory:transfer_approve"
@@ -202,635 +145,559 @@ const (
 	InventoryTransferShip    Perm = "inventory:transfer_ship"
 	InventoryTransferReceive Perm = "inventory:transfer_receive"
 	InventoryTransferCancel  Perm = "inventory:transfer_cancel"
-	// 采购收货入库（POST /api/inventory/purchase/receipt）
+
 	InventoryPurchaseReceipt Perm = "inventory:purchase_receipt"
-	// 修改采购单（POST /api/inventory/purchase/update）
+
 	InventoryPurchaseUpdate Perm = "inventory:purchase_update"
-	// 新建变动原因（POST /api/inventory/reason/create）
+
 	InventoryReasonCreate Perm = "inventory:reason_create"
-	// 变动原因列表（GET /api/inventory/reason/list）
+
 	InventoryReasonList Perm = "inventory:reason_list"
-	// 修改变动原因（POST /api/inventory/reason/update）
+
 	InventoryReasonUpdate Perm = "inventory:reason_update"
-	// 新建货源（POST /api/inventory/source/create）
+
 	InventorySourceCreate Perm = "inventory:source_create"
-	// 删除货源（POST /api/inventory/source/delete）
+
 	InventorySourceDelete Perm = "inventory:source_delete"
-	// 货源详情（GET /api/inventory/source/get）
+
 	InventorySourceGet Perm = "inventory:source_get"
-	// 货源列表（GET /api/inventory/source/list）
+
 	InventorySourceList Perm = "inventory:source_list"
-	// 货源关联方统计（GET /api/inventory/source/summary）
+
 	InventorySourceSummary Perm = "inventory:source_summary"
-	// 修改货源（POST /api/inventory/source/update）
+
 	InventorySourceUpdate Perm = "inventory:source_update"
-	// 按 SKU 增减库存（POST /api/inventory/stock/change）
+
 	InventoryStockChange Perm = "inventory:stock_change"
-	// 按 SKU 扣减库存（POST /api/inventory/stock/deduct）
+
 	InventoryStockDeduct Perm = "inventory:stock_deduct"
-	// 库存记录生成（POST /api/inventory/stock/ensure）
+
 	InventoryStockEnsure Perm = "inventory:stock_ensure"
-	// 库存记录详情（GET /api/inventory/stock/get）
+
 	InventoryStockGet Perm = "inventory:stock_get"
-	// 库存记录列表（GET /api/inventory/stock/list）
+
 	InventoryStockList Perm = "inventory:stock_list"
-	// 某 SKU 各仓库存（GET /api/inventory/stock/sku）
+
 	InventoryStockSKU Perm = "inventory:stock_sku"
-	// 新建仓库（POST /api/inventory/warehouse/create）
+
 	InventoryWarehouseCreate Perm = "inventory:warehouse_create"
-	// 删除仓库（POST /api/inventory/warehouse/delete）
+
 	InventoryWarehouseDelete Perm = "inventory:warehouse_delete"
-	// 仓库详情（GET /api/inventory/warehouse/get）
+
 	InventoryWarehouseGet Perm = "inventory:warehouse_get"
-	// 仓库列表（GET /api/inventory/warehouse/list）
+
 	InventoryWarehouseList Perm = "inventory:warehouse_list"
-	// 修改仓库（POST /api/inventory/warehouse/update）
+
 	InventoryWarehouseUpdate Perm = "inventory:warehouse_update"
 
-	// —— mail（26）——
-	// 设默认发信账号（POST /api/mail/account/default）
 	MailAccountDefault Perm = "mail:account_default"
-	// 删除发信账号（POST /api/mail/account/delete）
+
 	MailAccountDelete Perm = "mail:account_delete"
-	// 发信账号列表（GET /api/mail/account/list）
+
 	MailAccountList Perm = "mail:account_list"
-	// 保存发信账号（POST /api/mail/account/save）
+
 	MailAccountSave Perm = "mail:account_save"
-	// 测试发送邮件（POST /api/mail/account/test）
+
 	MailAccountTest Perm = "mail:account_test"
-	// 删除自动化流程（POST /api/mail/automation/delete）
+
 	MailAutomationDelete Perm = "mail:automation_delete"
-	// 自动化流程详情（GET /api/mail/automation/get）
+
 	MailAutomationGet Perm = "mail:automation_get"
-	// 保存画布位置（POST /api/mail/automation/layout）
+
 	MailAutomationLayout Perm = "mail:automation_layout"
-	// 自动化流程列表（GET /api/mail/automation/list）
+
 	MailAutomationList Perm = "mail:automation_list"
-	// 自动化实例排障详情（GET /api/mail/automation/run/detail）
+
 	MailAutomationRunDetail Perm = "mail:automation_run_detail"
-	// 自动化实例列表（GET /api/mail/automation/run/list）
+
 	MailAutomationRunList Perm = "mail:automation_run_list"
-	// 保存自动化流程（POST /api/mail/automation/save）
+
 	MailAutomationSave Perm = "mail:automation_save"
-	// 把联系人加入流程（POST /api/mail/automation/start）
+
 	MailAutomationStart Perm = "mail:automation_start"
-	// 启停自动化流程（POST /api/mail/automation/status）
+
 	MailAutomationStatus Perm = "mail:automation_status"
-	// 补投延时实例（POST /api/mail/automation/tick）
+
 	MailAutomationTick Perm = "mail:automation_tick"
-	// 删除群发活动（POST /api/mail/campaign/delete）
+
 	MailCampaignDelete Perm = "mail:campaign_delete"
-	// 群发活动详情（GET /api/mail/campaign/get）
+
 	MailCampaignGet Perm = "mail:campaign_get"
-	// 群发活动列表（GET /api/mail/campaign/list）
+
 	MailCampaignList Perm = "mail:campaign_list"
-	// 保存群发活动（POST /api/mail/campaign/save）
+
 	MailCampaignSave Perm = "mail:campaign_save"
-	// 启动群发活动（POST /api/mail/campaign/start）
+
 	MailCampaignStart Perm = "mail:campaign_start"
-	// 删除联系人（POST /api/mail/contact/delete）
+
 	MailContactDelete Perm = "mail:contact_delete"
-	// 导入联系人（POST /api/mail/contact/import）
+
 	MailContactImport Perm = "mail:contact_import"
-	// 联系人列表（GET /api/mail/contact/list）
+
 	MailContactList Perm = "mail:contact_list"
-	// 保存联系人（POST /api/mail/contact/save）
+
 	MailContactSave Perm = "mail:contact_save"
-	// 修改联系人状态（POST /api/mail/contact/status）
+
 	MailContactStatus Perm = "mail:contact_status"
-	// 批量打标签（POST /api/mail/contact/tag）
+
 	MailContactTag Perm = "mail:contact_tag"
-	// 删除邮件模板（POST /api/mail/template/delete）
+
 	MailTemplateDelete Perm = "mail:template_delete"
-	// 邮件模板列表（GET /api/mail/template/list）
+
 	MailTemplateList Perm = "mail:template_list"
-	// 保存邮件模板（POST /api/mail/template/save）
+
 	MailTemplateSave Perm = "mail:template_save"
 
-	// —— masterdata（4）——
-	// 变更记录计数（GET /api/masterdata/change/count）
 	MasterdataChangeCount Perm = "masterdata:change_count"
-	// 实体变更历史清单（GET /api/masterdata/change/entities）
+
 	MasterdataChangeEntities Perm = "masterdata:change_entities"
-	// 单实体变更历史（GET /api/masterdata/change/entity）
+
 	MasterdataChangeEntity Perm = "masterdata:change_entity"
-	// 变更记录列表（GET /api/masterdata/change/list）
+
 	MasterdataChangeList Perm = "masterdata:change_list"
 
-	// —— media（14）——
-	// 新建媒体分类（POST /api/media/category/create）
 	MediaCategoryCreate Perm = "media:category_create"
-	// 删除媒体分类（POST /api/media/category/delete）
+
 	MediaCategoryDelete Perm = "media:category_delete"
-	// 媒体分类树（GET /api/media/category/tree）
+
 	MediaCategoryTree Perm = "media:category_tree"
-	// 更新媒体分类（POST /api/media/category/update）
+
 	MediaCategoryUpdate Perm = "media:category_update"
-	// 删除媒体（POST /api/media/delete）
+
 	MediaDelete Perm = "media:delete"
-	// 媒体详情（GET /api/media/detail）
+
 	MediaDetail Perm = "media:detail"
-	// 下载媒体资源包（GET /api/media/download）
+
 	MediaDownload Perm = "media:download"
-	// 批量下载媒体（GET /api/media/download/batch）
+
 	MediaDownloadBatch Perm = "media:download_batch"
-	// 媒体列表（GET /api/media/list）
+
 	MediaList Perm = "media:list"
-	// 媒体引用来源（GET /api/media/references）
+
 	MediaReferences Perm = "media:references"
-	// 媒体换图（POST /api/media/replace）
+
 	MediaReplace Perm = "media:replace"
-	// 更新媒体（POST /api/media/update）
+
 	MediaUpdate Perm = "media:update"
-	// 上传媒体（POST /api/media/upload）
+
 	MediaUpload Perm = "media:upload"
-	// 重新生成媒体变体（POST /api/media/variants/generate）
+
 	MediaVariantsGenerate Perm = "media:variants_generate"
 
-	// —— membership（11）——
-	// 会员归属列表（GET /api/membership/assign/list）
 	MembershipAssignList Perm = "membership:assign_list"
-	// 手工指定会员等级（POST /api/membership/assign/set）
+
 	MembershipAssignSet Perm = "membership:assign_set"
-	// 取消手工锁定（POST /api/membership/assign/unlock）
+
 	MembershipAssignUnlock Perm = "membership:assign_unlock"
-	// 保存等级权益（POST /api/membership/entitlement/save）
+
 	MembershipEntitlementSave Perm = "membership:entitlement_save"
-	// 重算会员归属（POST /api/membership/recalc）
+
 	MembershipRecalc Perm = "membership:recalc"
-	// 解析会员身份（GET /api/membership/resolve）
+
 	MembershipResolve Perm = "membership:resolve"
-	// 新建等级（POST /api/membership/tier/create）
+
 	MembershipTierCreate Perm = "membership:tier_create"
-	// 删除等级（POST /api/membership/tier/delete）
+
 	MembershipTierDelete Perm = "membership:tier_delete"
-	// 等级详情（GET /api/membership/tier/get）
+
 	MembershipTierGet Perm = "membership:tier_get"
-	// 等级列表（GET /api/membership/tier/list）
+
 	MembershipTierList Perm = "membership:tier_list"
-	// 更新等级（POST /api/membership/tier/update）
+
 	MembershipTierUpdate Perm = "membership:tier_update"
 
-	// —— menu（5）——
-	// 新建菜单（POST /api/menu/create）
 	MenuCreate Perm = "menu:create"
-	// 删除菜单（POST /api/menu/delete）
+
 	MenuDelete Perm = "menu:delete"
-	// 菜单详情（GET /api/menu/detail）
+
 	MenuDetail Perm = "menu:detail"
-	// 菜单树（GET /api/menu/tree）
+
 	MenuList Perm = "menu:list"
-	// 更新菜单（POST /api/menu/update）
+
 	MenuUpdate Perm = "menu:update"
 
-	// —— navigation（5）——
-	// 导航创建（POST /api/navigation/create）
 	NavigationCreate Perm = "navigation:create"
-	// 导航删除（POST /api/navigation/delete）
+
 	NavigationDelete Perm = "navigation:delete"
-	// 导航详情（GET /api/navigation/get）
+
 	NavigationGet Perm = "navigation:get"
-	// 导航列表（GET /api/navigation/list）
+
 	NavigationList Perm = "navigation:list"
-	// 导航更新（POST /api/navigation/update）
+
 	NavigationUpdate Perm = "navigation:update"
 
-	// —— order（22）——
-	// 取消订单（POST /api/order/cancel）
 	OrderCancel Perm = "order:cancel"
-	// 券计数对账（GET /api/order/coupon/count-audit）
+
 	OrderCouponCountAudit Perm = "order:coupon_count_audit"
-	// 新建优惠码（POST /api/order/coupon/create）
+
 	OrderCouponCreate Perm = "order:coupon_create"
-	// 删除优惠码（POST /api/order/coupon/delete）
+
 	OrderCouponDelete Perm = "order:coupon_delete"
-	// 优惠码详情（GET /api/order/coupon/get）
+
 	OrderCouponGet Perm = "order:coupon_get"
-	// 优惠码列表（GET /api/order/coupon/list）
+
 	OrderCouponList Perm = "order:coupon_list"
-	// 优惠码核销记录（GET /api/order/coupon/redemption/list）
+
 	OrderCouponRedemption Perm = "order:coupon_redemption"
-	// 修改优惠码（POST /api/order/coupon/update）
+
 	OrderCouponUpdate Perm = "order:coupon_update"
-	// 优惠码试算（GET /api/order/coupon/validate）
+
 	OrderCouponValidate Perm = "order:coupon_validate"
-	// 新建订单（POST /api/order/create）
+
 	OrderCreate Perm = "order:create"
-	// 订单详情（GET /api/order/get）
+
 	OrderGet Perm = "order:get"
-	// 订单项列表（GET /api/order/item/list）
+
 	OrderItemList Perm = "order:item_list"
-	// 订单列表（GET /api/order/list）
+
 	OrderList Perm = "order:list"
-	// 状态流转流水（GET /api/order/log/list）
+
 	OrderLogList Perm = "order:log_list"
-	// 订单备注（POST /api/order/note）
+
 	OrderNote Perm = "order:note"
-	// 销售概览（GET /admin/orders/overview，整页只读报表）
-	//
-	// **这一条不挂在 authorizedAPI 组上**：它是后台整页（/admin 组只走 Session + CSRF），
-	// 声明它不是为了拦访问，而是为了让「这个页面」成为可授权的对象：
-	//   · 菜单 sys_menus 的 permission_code 指向它 → 角色分权时按 menu_ids 收集得到它 → Casbin 策略有据可依；
-	//   · permission.RoutesOf(OrderOverview) 因此非空 —— 空集会被工具侧按 fail closed 处理（一律 forbidden）。
-	// 与 order:list 的关系是「看哪一屏」而不是「能不能看订单」：列表页管单条订单的处置，
-	// 概览页管口径聚合，两者授权可以分开。
+
 	OrderOverview Perm = "order:overview"
-	// 汇率读写（GET/POST /api/order/currency/rate，迁移 633 W5）。
-	//
-	// 读与写各自一条码（每条 API 路由要一个自己的码）。
+
 	OrderCurrencyRateGet Perm = "order:currency_rate_get"
 	OrderCurrencyRateSet Perm = "order:currency_rate_set"
-	// 订单退款（POST /api/order/refund）
+
 	OrderRefund Perm = "order:refund"
-	// 同意退货（POST /api/order/return/approve）
+
 	OrderReturnApprove Perm = "order:return_approve"
-	// 退货申请详情（GET /api/order/return/get）
+
 	OrderReturnGet Perm = "order:return_get"
-	// 退货申请列表（GET /api/order/return/list）
+
 	OrderReturnList Perm = "order:return_list"
-	// 退货入库（POST /api/order/return/receive）
+
 	OrderReturnReceive Perm = "order:return_receive"
-	// 拒绝退货（POST /api/order/return/reject）
+
 	OrderReturnReject Perm = "order:return_reject"
-	// 订单状态流转（POST /api/order/status）
+
 	OrderStatus Perm = "order:status"
-	// 订单发货（POST /api/order/shipment/create，GET /api/order/shipment/form）
-	//
-	// 与 order:status 分开：改状态不改库存，发货扣库存并产出一张可追溯的单据 ——
-	// 「谁能改状态」与「谁能把货发出去」是两个风险等级不同的授权。
+
 	OrderShip Perm = "order:ship"
-	// 发货表单的只读片段（GET /api/order/shipment/form）。
-	//
-	// 与 order:ship 分开：每条 API 路由要有自己的码。读表单与提交发货的信任级相同，
-	// 但路由是两条 —— 码也必须两条（否则一条路对所有人 403）。
+
 	OrderShipForm Perm = "order:ship_form"
-	// 发货单列表（GET /api/order/shipment/list）。
+
 	OrderShipmentList Perm = "order:shipment_list"
-	// 待发货页（GET /api/order/shipment/pending 与页面 /admin/orders/pending-ship）。
-	//
-	// 与 shipment_list 分开：每条 API 路由要有自己的码（同一个码绑两条路由时，
-	// 只有一条能生成超管策略）—— 而这两屏回答的问题也不同
-	//（「这一单发过几张」vs「还有哪些要发」）。
+
 	OrderPendingShip Perm = "order:pending_ship"
-	// 承运商新建（POST /api/order/carrier/create）。
+
 	OrderCarrierCreate Perm = "order:carrier_create"
-	// 承运商修改与停用（POST /api/order/carrier/update）。
-	//
-	// 三条写码分开的理由只有一条：**sys_permission 每条 API 路由要一个自己的码**
-	// （同一个码绑两条路由时，只有一条能生成超管策略，其余对所有人 403）。
+
 	OrderCarrierManage Perm = "order:carrier_manage"
-	// 承运商列表（GET /api/order/carrier/list）。
-	//
-	// 与 carrier_manage 分开：每条 API 路由要有自己的码。配置页与发货表单都要读它，
-	// 而写（新建 / 编辑 / 停用）是另一件事 —— 能看承运商不等于能改它。
+
 	OrderCarrierList Perm = "order:carrier_list"
 
-	// —— page（20）——
-	// 回收产物文件（POST /api/page/artifact/gc）
 	PageArtifactGc Perm = "page:artifact_gc"
-	// 重建产物文件（POST /api/page/artifact/rebuild）
+
 	PageArtifactRebuild Perm = "page:artifact_rebuild"
-	// 构建页面（POST /api/page/build）
+
 	PageBuild Perm = "page:build"
-	// 新建页面（POST /api/page/create）
+
 	PageCreate Perm = "page:create"
-	// 删除页面（POST /api/page/delete）
+
 	PageDelete Perm = "page:delete"
-	// 页面详情（GET /api/page/detail）
+
 	PageDetail Perm = "page:detail"
-	// 保存草稿（POST /api/page/draft/save）
+
 	PageDraftSave Perm = "page:draft_save"
-	// 页面列表（GET /api/page/list）
+
 	PageList Perm = "page:list"
-	// 发布面巡检（GET /api/page/publication/audit）
+
 	PagePublicationAudit Perm = "page:publication_audit"
-	// 发布页面（POST /api/page/publish）
+
 	PagePublish Perm = "page:publish"
-	// 新增重定向（POST /api/page/redirect/create）
+
 	PageRedirectCreate Perm = "page:redirect_create"
-	// 删除重定向（POST /api/page/redirect/delete）
+
 	PageRedirectDelete Perm = "page:redirect_delete"
-	// 合并重定向链（POST /api/page/redirect/merge）
+
 	PageRedirectMerge Perm = "page:redirect_merge"
-	// 重定向列表（GET /api/page/redirect）
+
 	PageRedirectView Perm = "page:redirect_view"
-	// 修订记录（GET /api/page/revision/list）
+
 	PageRevisionList Perm = "page:revision_list"
-	// 回滚页面（POST /api/page/rollback）
+
 	PageRollback Perm = "page:rollback"
-	// SEO 合规巡检（GET /api/page/seo/patrol）
+
 	PageSEOPatrol Perm = "page:seo_patrol"
-	// 更新页面URL（POST /api/page/url/update）
+
 	PageURLUpdate Perm = "page:url_update"
 
-	// —— permission（6）——
-	// 新建权限点（POST /api/permission/create）
 	PermissionCreate Perm = "permission:create"
-	// 删除权限点（POST /api/permission/delete）
+
 	PermissionDelete Perm = "permission:delete"
-	// 权限点详情（GET /api/permission/detail）
+
 	PermissionDetail Perm = "permission:detail"
-	// 权限点列表（GET /api/permission/list）
+
 	PermissionList Perm = "permission:list"
-	// 权限点选项（GET /api/permission/options）
+
 	PermissionOptions Perm = "permission:options"
-	// 更新权限点（POST /api/permission/update）
+
 	PermissionUpdate Perm = "permission:update"
 
-	// —— plugin（5）——
-	// 插件详情（GET /api/plugin/detail）
 	PluginDetail Perm = "plugin:detail"
-	// 插件安装（POST /api/plugin/install）
+
 	PluginInstall Perm = "plugin:install"
-	// 插件列表（GET /api/plugin/list）
+
 	PluginList Perm = "plugin:list"
-	// 插件启停（POST /api/plugin/toggle）
+
 	PluginToggle Perm = "plugin:toggle"
-	// 插件卸载（POST /api/plugin/uninstall）
+
 	PluginUninstall Perm = "plugin:uninstall"
 
-	// —— presentation（8）——
-	// 实例创建（POST /api/presentation/create）
 	PresentationCreate Perm = "presentation:create"
-	// 实例删除（POST /api/presentation/delete）
+
 	PresentationDelete Perm = "presentation:delete"
-	// 实例详情（GET /api/presentation/get）
+
 	PresentationGet Perm = "presentation:get"
-	// 实例按实体查询（GET /api/presentation/get-by-entity）
+
 	PresentationGetByEntity Perm = "presentation:get_by_entity"
-	// 实例列表（GET /api/presentation/list）
+
 	PresentationList Perm = "presentation:list"
-	// 实例预览（POST /api/presentation/preview）
+
 	PresentationPreview Perm = "presentation:preview"
-	// 实例重建（POST /api/presentation/rebuild）
+
 	PresentationRebuild Perm = "presentation:rebuild"
-	// 详情页改 URL（POST /api/presentation/update-url）
+
 	PresentationUpdateURL Perm = "presentation:update_url"
 
-	// —— product（59）——
-	// 属性组批量删除（POST /api/product/attribute/bulk-delete）
 	ProductAttributeBulkDelete Perm = "product:attribute_bulk_delete"
-	// 属性组创建（POST /api/product/attribute/create）
+
 	ProductAttributeCreate Perm = "product:attribute_create"
-	// 属性组删除（POST /api/product/attribute/delete）
+
 	ProductAttributeDelete Perm = "product:attribute_delete"
-	// 属性组详情（GET /api/product/attribute/get）
+
 	ProductAttributeGet Perm = "product:attribute_get"
-	// 属性组列表（GET /api/product/attribute/list）
+
 	ProductAttributeList Perm = "product:attribute_list"
-	// 属性值保存（POST /api/product/attribute/set-values）
+
 	ProductAttributeSetValues Perm = "product:attribute_set_values"
-	// 属性组更新（POST /api/product/attribute/update）
+
 	ProductAttributeUpdate Perm = "product:attribute_update"
-	// 商品品牌批量删除（POST /api/product/brand/bulk-delete）
+
 	ProductBrandBulkDelete Perm = "product:brand_bulk_delete"
-	// 商品品牌创建（POST /api/product/brand/create）
+
 	ProductBrandCreate Perm = "product:brand_create"
-	// 商品品牌删除（POST /api/product/brand/delete）
+
 	ProductBrandDelete Perm = "product:brand_delete"
-	// 商品品牌详情（GET /api/product/brand/get）
+
 	ProductBrandGet Perm = "product:brand_get"
-	// 商品品牌列表（GET /api/product/brand/list）
+
 	ProductBrandList Perm = "product:brand_list"
-	// 商品品牌更新（POST /api/product/brand/update）
+
 	ProductBrandUpdate Perm = "product:brand_update"
-	// 商品批量删除（POST /api/product/bulk-delete）
+
 	ProductBulkDelete Perm = "product:bulk_delete"
-	// 批量改价（POST /api/product/bulk-pricing）
+
 	ProductBulkPricing Perm = "product:bulk_pricing"
-	// 商品分类批量删除（POST /api/product/category/bulk-delete）
+
 	ProductCategoryBulkDelete Perm = "product:category_bulk_delete"
-	// 商品分类创建（POST /api/product/category/create）
+
 	ProductCategoryCreate Perm = "product:category_create"
-	// 商品分类删除（POST /api/product/category/delete）
+
 	ProductCategoryDelete Perm = "product:category_delete"
-	// 商品分类详情（GET /api/product/category/get）
+
 	ProductCategoryGet Perm = "product:category_get"
-	// 商品分类列表（GET /api/product/category/list）
+
 	ProductCategoryList Perm = "product:category_list"
-	// 商品分类更新（POST /api/product/category/update）
+
 	ProductCategoryUpdate Perm = "product:category_update"
-	// 商品创建（POST /api/product/create）
+
 	ProductCreate Perm = "product:create"
-	// 商品删除（POST /api/product/delete）
+
 	ProductDelete Perm = "product:delete"
-	// 商品译文保存（POST /api/product/translations/save）
+
 	ProductTranslationsSave Perm = "product:translations_save"
-	// 详情页模板新建（POST /api/product/detail-template/create）
+
 	ProductDetailTemplateCreate Perm = "product:detail_template_create"
-	// 详情页模板首次发布（POST /api/product/detail-template/publish）
+
 	ProductDetailTemplatePublish Perm = "product:detail_template_publish"
-	// 详情页模板切换并重建（POST /api/product/detail-template/apply）
+
 	ProductDetailTemplateApply Perm = "product:detail_template_apply"
-	// 详情页模板改 URL（POST /api/product/detail-template/update-url）
+
 	ProductDetailTemplateUpdateURL Perm = "product:detail_template_update_url"
-	// 详情页模板重新套用预设（POST /api/product/detail-template/reapply-preset）
+
 	ProductDetailTemplateReapply Perm = "product:detail_template_reapply"
-	// 详情页模板回滚到快照（POST /api/product/detail-template/rollback-document）
+
 	ProductDetailTemplateRollback Perm = "product:detail_template_rollback"
-	// 商品发布历史（GET /api/product/publish-attempts）
-	//
-	// 独立权限点而不是复用 product:get / product:list：这条读的是**谁在什么时候点了发布、
-	// 失败原因原文**（运维向的审计信息），与「能不能看商品」是两件事 —— 复用会让
-	// 只该看商品的人顺手看到全站发布失败堆栈。
+
 	ProductPublishAttempts Perm = "product:publish_attempts"
-	// 商品详情（GET /api/product/get）
+
 	ProductGet Perm = "product:get"
-	// 商品列表（GET /api/product/list）
+
 	ProductList Perm = "product:list"
-	// 定价留痕详情（GET /api/product/pricing/adjustment）
+
 	ProductPricingAdjustment Perm = "product:pricing_adjustment"
-	// 定价应用落库（POST /api/product/pricing/apply）
+
 	ProductPricingApply Perm = "product:pricing_apply"
-	// 定价留痕列表（GET /api/product/pricing/history）
+
 	ProductPricingHistory Perm = "product:pricing_history"
-	// 定价试算预览（POST /api/product/pricing/preview）
+
 	ProductPricingPreview Perm = "product:pricing_preview"
-	// 定价尾数处理（GET /api/product/pricing/roundings）
+
 	ProductPricingRoundings Perm = "product:pricing_roundings"
-	// 定价规则类型（GET /api/product/pricing/rules）
+
 	ProductPricingRules Perm = "product:pricing_rules"
-	// 商品评分新增（POST /api/product/rating/add）
+
 	ProductRatingAdd Perm = "product:rating_add"
-	// 商品评分删除（POST /api/product/rating/delete）
+
 	ProductRatingDelete Perm = "product:rating_delete"
-	// 商品标签批量删除（POST /api/product/tag/bulk-delete）
+
 	ProductTagBulkDelete Perm = "product:tag_bulk_delete"
-	// 商品标签创建（POST /api/product/tag/create）
+
 	ProductTagCreate Perm = "product:tag_create"
-	// 商品标签删除（POST /api/product/tag/delete）
+
 	ProductTagDelete Perm = "product:tag_delete"
-	// 商品标签详情（GET /api/product/tag/get）
+
 	ProductTagGet Perm = "product:tag_get"
-	// 商品标签列表（GET /api/product/tag/list）
+
 	ProductTagList Perm = "product:tag_list"
-	// 商品标签命中商品（GET /api/product/tag/products）
+
 	ProductTagProducts Perm = "product:tag_products"
-	// 商品标签重算（POST /api/product/tag/recalc）
+
 	ProductTagRecalc Perm = "product:tag_recalc"
-	// 商品标签规则类型（GET /api/product/tag/rule-types）
+
 	ProductTagRuleTypes Perm = "product:tag_rule_types"
-	// 商品标签更新（POST /api/product/tag/update）
+
 	ProductTagUpdate Perm = "product:tag_update"
-	// 商品更新（POST /api/product/update）
+
 	ProductUpdate Perm = "product:update"
-	// 变体创建（POST /api/product/variant/create）
+
 	ProductVariantCreate Perm = "product:variant_create"
-	// 变体删除（POST /api/product/variant/delete）
+
 	ProductVariantDelete Perm = "product:variant_delete"
-	// 变体组合生成（POST /api/product/variant/generate）
+
 	ProductVariantGenerate Perm = "product:variant_generate"
-	// 变体清单整表保存（POST /api/product/variant/save）
+
 	ProductVariantSave Perm = "product:variant_save"
-	// 变体更新（POST /api/product/variant/update）
+
 	ProductVariantUpdate Perm = "product:variant_update"
 
-	// 商品只读计算与候选查询仍逐条授权。
 	ProductSEOScore         Perm = "product:seo_score"
 	ProductCategorySEOScore Perm = "product:category_seo_score"
 	ProductBrandSEOScore    Perm = "product:brand_seo_score"
 	ProductCategoryParents  Perm = "product:category_parents"
 	ProductVariantPreview   Perm = "product:variant_preview"
 
-	// —— project（12）——
-	// 新建项目（POST /api/project/create）
 	ProjectCreate Perm = "project:create"
-	// 项目详情（GET /api/project/detail）
+
 	ProjectDetail Perm = "project:detail"
-	// 项目列表（GET /api/project/list）
+
 	ProjectList Perm = "project:list"
-	// 激活主题（POST /api/theme/activate）
+
 	ProjectThemeActivate Perm = "project:theme_activate"
-	// 当前主题（GET /api/theme/active）
+
 	ProjectThemeActive Perm = "project:theme_active"
-	// 新建主题（POST /api/theme/create）
+
 	ProjectThemeCreate Perm = "project:theme_create"
-	// 删除主题（POST /api/theme/delete）
+
 	ProjectThemeDelete Perm = "project:theme_delete"
-	// 导出主题包（GET /api/theme/export）
-	// 导入主题包（POST /api/theme/import）
-	// 主题列表（GET /api/theme/list）
+
 	ProjectThemeList Perm = "project:theme_list"
-	// 更新主题（POST /api/theme/update）
+
 	ProjectThemeUpdate Perm = "project:theme_update"
-	// 更新项目（POST /api/project/update）
+
 	ProjectUpdate Perm = "project:update"
 
-	// —— sysconfig（3）——
-	// 读取系统设置（GET /api/sysconfig/get）
 	SysConfigGet Perm = "sysconfig:get"
-	// 保存系统设置（POST /api/sysconfig/save）
+
 	SysConfigSave Perm = "sysconfig:save"
-	// 原子保存系统默认值两组配置（POST /api/sysconfig/system/save）。
+
 	SysConfigSystemSave Perm = "sysconfig:system_save"
 
-	// —— publication（2）——
-	// 待处理发布回执（GET /api/publication/receipts/pending）
 	PublicationReceiptsPending Perm = "publication:receipts_pending"
-	// SEO 审计（POST /api/publication/seo-audit）
+
 	PublicationSEOAudit Perm = "publication:seo_audit"
 
-	// —— role（9）——
-	// 新建角色（POST /api/role/create）
 	RoleCreate Perm = "role:create"
-	// 删除角色（POST /api/role/delete）
+
 	RoleDelete Perm = "role:delete"
-	// 角色详情（GET /api/role/detail）
+
 	RoleDetail Perm = "role:detail"
-	// 角色列表（GET /api/role/list）
+
 	RoleList Perm = "role:list"
-	// 角色菜单查看（GET /api/role/menu/list）
+
 	RoleMenuList Perm = "role:menu_list"
-	// 角色菜单分配（POST /api/role/menu/save）
+
 	RoleMenuSave Perm = "role:menu_save"
-	// 更新角色（POST /api/role/update）
+
 	RoleUpdate Perm = "role:update"
-	// 角色用户查看（GET /api/role/user/list）
+
 	RoleUserList Perm = "role:user_list"
-	// 角色用户分配（POST /api/role/user/save）
+
 	RoleUserSave Perm = "role:user_save"
 
-	// —— seo（1）——
-	// 产物 SEO 体检（POST /api/seo/audit）。**没有对应的 API 路由**：真实路由是
-	// /api/publication/seo-audit（声明 publication:seo_audit），本对象是它额外校验的
-	// 第二条既有策略（迁移 183 的 seo:audit）。在注册处显式 Declare，理由同 i18n。
 	SEOAudit Perm = "seo:audit"
 
-	// —— user（4）——
-	// 查看客户详情（GET /api/customer/get）
 	UserCustomerDetail Perm = "user:customer_detail"
-	// 查看客户列表（GET /api/customer/list）
+
 	UserCustomerList Perm = "user:customer_list"
-	// 停用/启用客户账号（POST /api/customer/status）
+
 	UserCustomerStatus Perm = "user:customer_status"
-	// 解除客户账号锁定（POST /api/customer/unlock）
+
 	UserCustomerUnlock     Perm = "user:customer_unlock"
 	UserCustomerBulkStatus Perm = "user:customer_bulk_status"
 	UserCustomerBulkUnlock Perm = "user:customer_bulk_unlock"
 
-	// —— webhook（6）——
-	// 投递日志（GET /api/webhook/delivery/list）
 	WebhookDeliveryList Perm = "webhook:delivery_list"
-	// 重投投递（POST /api/webhook/delivery/retry）
+
 	WebhookDeliveryRetry Perm = "webhook:delivery_retry"
-	// 删除集成端点（POST /api/webhook/endpoint/delete）
+
 	WebhookEndpointDelete Perm = "webhook:endpoint_delete"
-	// 集成端点列表（GET /api/webhook/endpoint/list）
+
 	WebhookEndpointList Perm = "webhook:endpoint_list"
-	// 保存集成端点（POST /api/webhook/endpoint/save）
+
 	WebhookEndpointSave Perm = "webhook:endpoint_save"
-	// 启停集成端点（POST /api/webhook/endpoint/status）
+
 	WebhookEndpointStatus Perm = "webhook:endpoint_status"
 
-	// —— ai（18）——
-	// AI 供应商列表（GET /api/ai/provider/list）
 	AIProviderList Perm = "ai:provider_list"
-	// AI 供应商详情（GET /api/ai/provider/get）
+
 	AIProviderGet Perm = "ai:provider_get"
-	// AI 供应商可用模型列表（GET /api/ai/provider/models/list）
+
 	AIProviderModelsList Perm = "ai:provider_models_list"
-	// 保存 AI 供应商（POST /api/ai/provider/save）
+
 	AIProviderSave Perm = "ai:provider_save"
-	// 删除 AI 供应商（POST /api/ai/provider/delete）
+
 	AIProviderDelete Perm = "ai:provider_delete"
-	// 启停 AI 供应商（POST /api/ai/provider/status）
+
 	AIProviderStatus Perm = "ai:provider_status"
-	// 保存 AI 供应商模型目录（POST /api/ai/provider/models/save）
+
 	AIProviderModelsSave Perm = "ai:provider_models_save"
-	// 恢复 AI 供应商默认模型（POST /api/ai/provider/models/restore）
+
 	AIProviderModelsRestore Perm = "ai:provider_models_restore"
-	// 拉取 AI 供应商可用模型（POST /api/ai/provider/models/fetch）
+
 	AIProviderModelsFetch Perm = "ai:provider_models_fetch"
-	// AI 会话列表（GET /api/ai/session/list）
+
 	AISessionList Perm = "ai:session_list"
-	// AI 会话详情（GET /api/ai/session/get）
+
 	AISessionGet Perm = "ai:session_get"
-	// AI 会话事件日志（GET /api/ai/session/events）
+
 	AISessionEvents Perm = "ai:session_events"
-	// AI 会话折叠建议（POST /api/ai/session/fold/plan）
+
 	AISessionFoldPlan Perm = "ai:session_fold_plan"
-	// 追加 AI 会话事件（POST /api/ai/session/append）
+
 	AISessionAppend Perm = "ai:session_append"
-	// 重命名 AI 会话（POST /api/ai/session/rename）
+
 	AISessionRename Perm = "ai:session_rename"
-	// 归档 / 恢复 AI 会话（POST /api/ai/session/archive）
+
 	AISessionArchive Perm = "ai:session_archive"
-	// 折叠 AI 会话上下文（POST /api/ai/session/fold）
+
 	AISessionFold Perm = "ai:session_fold"
-	// AI 对话入口（POST /api/ai/chat）
+
 	AIChat Perm = "ai:chat"
-	// 外部访问令牌列表（GET /api/ai/tokens）
+
 	AITokenList Perm = "ai:token_list"
-	// 签发外部访问令牌（POST /api/ai/tokens）
+
 	AITokenCreate Perm = "ai:token_create"
-	// 撤销外部访问令牌（POST /api/ai/tokens/revoke）
+
 	AITokenRevoke Perm = "ai:token_revoke"
 )
 
-// specs 权限点元数据：中文名与所属模块。启动期 upsert 时写进 sys_permission 的
-// permission_name / module（仅新建行；已存在的行不覆盖人工改过的名字）。
 var specs = map[Perm]spec{
-	// —— admin ——
+
 	AdminCreate:   {module: "admin", name: "新建管理员"},
 	AdminDelete:   {module: "admin", name: "删除管理员"},
 	AdminDetail:   {module: "admin", name: "管理员详情"},
@@ -841,13 +708,10 @@ var specs = map[Perm]spec{
 	AdminRoleList: {module: "admin", name: "管理员角色查看"},
 	AdminRoleSave: {module: "admin", name: "管理员角色分配"},
 
-	// —— analytics ——
 	AnalyticsView: {module: "analytics", name: "访问统计查看"},
 
-	// —— artifact ——
 	ArtifactDetail: {module: "artifact", name: "构建产物详情"},
 
-	// —— block ——
 	BlockBulkDelete: {module: "block", name: "批量删除区块"},
 	BlockClone:      {module: "block", name: "克隆区块"},
 	BlockCreate:     {module: "block", name: "新建区块"},
@@ -856,7 +720,6 @@ var specs = map[Perm]spec{
 	BlockList:       {module: "block", name: "区块列表"},
 	BlockUpdate:     {module: "block", name: "更新区块"},
 
-	// —— blueprint ——
 	BlueprintCreate:  {module: "blueprint", name: "模板创建"},
 	BlueprintDelete:  {module: "blueprint", name: "模板删除"},
 	BlueprintGet:     {module: "blueprint", name: "模板详情"},
@@ -865,16 +728,13 @@ var specs = map[Perm]spec{
 	BlueprintPublish: {module: "blueprint", name: "模板发布"},
 	BlueprintUpdate:  {module: "blueprint", name: "模板更新"},
 
-	// —— build ——
 	BuildJobs:  {module: "build", name: "构建任务列表"},
 	BuildQueue: {module: "build", name: "构建队列状态"},
 	BuildRetry: {module: "build", name: "重试构建"},
 
-	// —— comment ——
 	CommentList:   {module: "comment", name: "评论审核列表"},
 	CommentReview: {module: "comment", name: "评论批量审核"},
 
-	// —— content ——
 	ContentCollections: {module: "content", name: "查看内容集合元数据"},
 	ContentCreate:      {module: "content", name: "内容创建"},
 	ContentDelete:      {module: "content", name: "内容删除"},
@@ -882,7 +742,6 @@ var specs = map[Perm]spec{
 	ContentList:        {module: "content", name: "内容列表"},
 	ContentUpdate:      {module: "content", name: "内容更新"},
 
-	// —— contenttemplate ——
 	ContenttemplateCreate:   {module: "contenttemplate", name: "模板创建"},
 	ContenttemplateDelete:   {module: "contenttemplate", name: "模板删除"},
 	ContenttemplateGet:      {module: "contenttemplate", name: "模板详情"},
@@ -890,7 +749,6 @@ var specs = map[Perm]spec{
 	ContenttemplateUpdate:   {module: "contenttemplate", name: "模板更新"},
 	ContenttemplateActivate: {module: "contenttemplate", name: "模板切换生效"},
 
-	// —— datarule ——
 	DataruleAssignmentList: {module: "datarule", name: "规则分配查看"},
 	DataruleAssignmentSave: {module: "datarule", name: "规则分配保存"},
 	DataruleCreate:         {module: "datarule", name: "新建数据规则"},
@@ -901,7 +759,6 @@ var specs = map[Perm]spec{
 	DataruleSchemaList:     {module: "datarule", name: "数据域清单"},
 	DataruleUpdate:         {module: "datarule", name: "更新数据规则"},
 
-	// —— dept ——
 	DeptCreate:   {module: "dept", name: "新建部门"},
 	DeptDelete:   {module: "dept", name: "删除部门"},
 	DeptDetail:   {module: "dept", name: "部门详情"},
@@ -910,11 +767,9 @@ var specs = map[Perm]spec{
 	DeptUserList: {module: "dept", name: "部门用户查看"},
 	DeptUserSave: {module: "dept", name: "部门用户分配"},
 
-	// —— i18n ——
 	I18nView:   {module: "i18n", name: "文案词条查看"},
 	I18nManage: {module: "i18n", name: "文案词条管理"},
 
-	// —— inventory ——
 	InventoryMovementList:       {module: "inventory", name: "库存流水列表"},
 	InventoryPurchaseCreate:     {module: "inventory", name: "新建采购单"},
 	InventoryPurchaseGet:        {module: "inventory", name: "采购单详情"},
@@ -954,7 +809,6 @@ var specs = map[Perm]spec{
 	InventoryWarehouseList:      {module: "inventory", name: "仓库列表"},
 	InventoryWarehouseUpdate:    {module: "inventory", name: "修改仓库"},
 
-	// —— mail ——
 	MailAccountDefault:      {module: "mail", name: "设默认发信账号"},
 	MailAccountDelete:       {module: "mail", name: "删除发信账号"},
 	MailAccountList:         {module: "mail", name: "发信账号列表"},
@@ -985,13 +839,11 @@ var specs = map[Perm]spec{
 	MailTemplateList:        {module: "mail", name: "邮件模板列表"},
 	MailTemplateSave:        {module: "mail", name: "保存邮件模板"},
 
-	// —— masterdata ——
 	MasterdataChangeCount:    {module: "masterdata", name: "变更记录计数"},
 	MasterdataChangeEntities: {module: "masterdata", name: "实体变更历史清单"},
 	MasterdataChangeEntity:   {module: "masterdata", name: "单实体变更历史"},
 	MasterdataChangeList:     {module: "masterdata", name: "变更记录列表"},
 
-	// —— media ——
 	MediaCategoryCreate:   {module: "media", name: "新建媒体分类"},
 	MediaCategoryDelete:   {module: "media", name: "删除媒体分类"},
 	MediaCategoryTree:     {module: "media", name: "媒体分类树"},
@@ -1007,7 +859,6 @@ var specs = map[Perm]spec{
 	MediaUpload:           {module: "media", name: "上传媒体"},
 	MediaVariantsGenerate: {module: "media", name: "重新生成媒体变体"},
 
-	// —— membership ——
 	MembershipAssignList:      {module: "membership", name: "会员归属列表"},
 	MembershipAssignSet:       {module: "membership", name: "手工指定会员等级"},
 	MembershipAssignUnlock:    {module: "membership", name: "取消手工锁定"},
@@ -1020,21 +871,18 @@ var specs = map[Perm]spec{
 	MembershipTierList:        {module: "membership", name: "等级列表"},
 	MembershipTierUpdate:      {module: "membership", name: "更新等级"},
 
-	// —— menu ——
 	MenuCreate: {module: "menu", name: "新建菜单"},
 	MenuDelete: {module: "menu", name: "删除菜单"},
 	MenuDetail: {module: "menu", name: "菜单详情"},
 	MenuList:   {module: "menu", name: "菜单树"},
 	MenuUpdate: {module: "menu", name: "更新菜单"},
 
-	// —— navigation ——
 	NavigationCreate: {module: "navigation", name: "导航创建"},
 	NavigationDelete: {module: "navigation", name: "导航删除"},
 	NavigationGet:    {module: "navigation", name: "导航详情"},
 	NavigationList:   {module: "navigation", name: "导航列表"},
 	NavigationUpdate: {module: "navigation", name: "导航更新"},
 
-	// —— order ——
 	OrderCancel:           {module: "order", name: "取消订单"},
 	OrderCouponCountAudit: {module: "order", name: "券计数对账"},
 	OrderCouponCreate:     {module: "order", name: "新建优惠码"},
@@ -1068,7 +916,6 @@ var specs = map[Perm]spec{
 	OrderCarrierManage:    {module: "order", name: "承运商配置"},
 	OrderCarrierList:      {module: "order", name: "承运商列表"},
 
-	// —— page ——
 	PageArtifactGc:       {module: "page", name: "回收产物文件"},
 	PageArtifactRebuild:  {module: "page", name: "重建产物文件"},
 	PageBuild:            {module: "page", name: "构建页面"},
@@ -1088,7 +935,6 @@ var specs = map[Perm]spec{
 	PageSEOPatrol:        {module: "page", name: "SEO 合规巡检"},
 	PageURLUpdate:        {module: "page", name: "更新页面URL"},
 
-	// —— permission ——
 	PermissionCreate:  {module: "permission", name: "新建权限点"},
 	PermissionDelete:  {module: "permission", name: "删除权限点"},
 	PermissionDetail:  {module: "permission", name: "权限点详情"},
@@ -1096,14 +942,12 @@ var specs = map[Perm]spec{
 	PermissionOptions: {module: "permission", name: "权限点选项"},
 	PermissionUpdate:  {module: "permission", name: "更新权限点"},
 
-	// —— plugin ——
 	PluginDetail:    {module: "plugin", name: "插件详情"},
 	PluginInstall:   {module: "plugin", name: "插件安装"},
 	PluginList:      {module: "plugin", name: "插件列表"},
 	PluginToggle:    {module: "plugin", name: "插件启停"},
 	PluginUninstall: {module: "plugin", name: "插件卸载"},
 
-	// —— presentation ——
 	PresentationCreate:      {module: "presentation", name: "实例创建"},
 	PresentationDelete:      {module: "presentation", name: "实例删除"},
 	PresentationGet:         {module: "presentation", name: "实例详情"},
@@ -1113,7 +957,6 @@ var specs = map[Perm]spec{
 	PresentationRebuild:     {module: "presentation", name: "实例重建"},
 	PresentationUpdateURL:   {module: "presentation", name: "详情页改 URL"},
 
-	// —— product ——
 	ProductAttributeBulkDelete:     {module: "product", name: "属性组批量删除"},
 	ProductAttributeCreate:         {module: "product", name: "属性组创建"},
 	ProductAttributeDelete:         {module: "product", name: "属性组删除"},
@@ -1176,7 +1019,6 @@ var specs = map[Perm]spec{
 	ProductVariantSave:             {module: "product", name: "变体清单保存"},
 	ProductVariantUpdate:           {module: "product", name: "变体更新"},
 
-	// —— project ——
 	ProjectCreate:        {module: "project", name: "新建项目"},
 	ProjectDetail:        {module: "project", name: "项目详情"},
 	ProjectList:          {module: "project", name: "项目列表"},
@@ -1188,15 +1030,13 @@ var specs = map[Perm]spec{
 	ProjectThemeUpdate:   {module: "project", name: "更新主题"},
 	ProjectUpdate:        {module: "project", name: "更新项目"},
 
-	// —— sysconfig ——
 	SysConfigGet:        {module: "sysconfig", name: "读取系统设置"},
 	SysConfigSave:       {module: "sysconfig", name: "保存系统设置"},
 	SysConfigSystemSave: {module: "sysconfig", name: "原子保存系统默认设置"},
-	// —— publication ——
+
 	PublicationReceiptsPending: {module: "publication", name: "待处理发布回执"},
 	PublicationSEOAudit:        {module: "publication", name: "SEO 审计"},
 
-	// —— role ——
 	RoleCreate:   {module: "role", name: "新建角色"},
 	RoleDelete:   {module: "role", name: "删除角色"},
 	RoleDetail:   {module: "role", name: "角色详情"},
@@ -1207,10 +1047,8 @@ var specs = map[Perm]spec{
 	RoleUserList: {module: "role", name: "角色用户查看"},
 	RoleUserSave: {module: "role", name: "角色用户分配"},
 
-	// —— seo ——
 	SEOAudit: {module: "seo", name: "产物 SEO 体检"},
 
-	// —— user ——
 	UserCustomerDetail:     {module: "user", name: "查看客户详情"},
 	UserCustomerList:       {module: "user", name: "查看客户列表"},
 	UserCustomerStatus:     {module: "user", name: "停用/启用客户账号"},
@@ -1218,14 +1056,13 @@ var specs = map[Perm]spec{
 	UserCustomerBulkStatus: {module: "user", name: "批量停用/启用客户账号"},
 	UserCustomerBulkUnlock: {module: "user", name: "批量解除客户账号锁定"},
 
-	// —— webhook ——
 	WebhookDeliveryList:   {module: "webhook", name: "投递日志"},
 	WebhookDeliveryRetry:  {module: "webhook", name: "重投投递"},
 	WebhookEndpointDelete: {module: "webhook", name: "删除集成端点"},
 	WebhookEndpointList:   {module: "webhook", name: "集成端点列表"},
 	WebhookEndpointSave:   {module: "webhook", name: "保存集成端点"},
 	WebhookEndpointStatus: {module: "webhook", name: "启停集成端点"},
-	// —— ai ——
+
 	AIProviderList:          {module: "ai", name: "供应商列表"},
 	AIProviderGet:           {module: "ai", name: "供应商详情"},
 	AIProviderModelsList:    {module: "ai", name: "供应商可用模型列表"},

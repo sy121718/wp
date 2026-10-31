@@ -1,11 +1,5 @@
 package richdoc
 
-// export.go — 组件树 → 富文本 HTML（决策 5 的导出方向）。
-//
-// 与 import.go 对称：只处理**可逆子集**（heading / text / list / quote / image /
-// divider / table / accordion），其余组件输出占位文字并记 Lossless=false —— 富文本视图
-// 装不下组件树里的全部信息，这一点必须让调用方知道（有损的导出拿去覆盖原文就会真的丢东西）。
-
 import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
@@ -23,10 +17,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// NodesToHTML 把组件树导出成富文本 HTML。
-//
-// Lossless=false 表示这次导出有信息损失（不可逆组件、语义标签无等价物、列表图标样式等），
-// 每一处损失都在 Warnings 里有对应的条目 —— 调用方据此决定"只是展示"还是"可以回写原文"。
 func NodesToHTML(nodes []*core.Node) (*ExportResult, error) {
 	exp := &exporter{lossless: true}
 	var sb strings.Builder
@@ -40,7 +30,6 @@ func NodesToHTML(nodes []*core.Node) (*ExportResult, error) {
 	}, nil
 }
 
-// exporter 一次导出的上下文。
 type exporter struct {
 	lossless bool
 	warnings []Warning
@@ -53,7 +42,6 @@ func (exp *exporter) warn(tag string, action WarningAction, detail string) {
 	}
 }
 
-// writeNodes 写一组节点。
 func (exp *exporter) writeNodes(sb *strings.Builder, nodes []*core.Node) error {
 	for _, n := range nodes {
 		if n == nil {
@@ -66,7 +54,6 @@ func (exp *exporter) writeNodes(sb *strings.Builder, nodes []*core.Node) error {
 	return nil
 }
 
-// writeNode 写单个节点（按组件类型分派，与 import.go 的 switch 一一对应）。
 func (exp *exporter) writeNode(sb *strings.Builder, n *core.Node) error {
 	switch n.Type {
 	case headingpkg.Type:
@@ -90,15 +77,6 @@ func (exp *exporter) writeNode(sb *strings.Builder, n *core.Node) error {
 	return exp.writePlaceholder(sb, n)
 }
 
-// writeAccordion 手风琴：按 items ↔ children **一一对应**导出成
-// `<details><summary>摘要</summary>正文…</details>`（正文取该 item 对应的 children 渲染结果）。
-//
-// 与导入方向对称：导入把每个 <details> 整块落进 core.text 的富文本字段（结构与语义都留在
-// 富文本里），所以这里导出的每一个折叠块都能被再导入回来，内容一个字节都不丢。
-//
-// 结构对不上时不做"尽力而为"的映射：标题数与内容数不等时，无论怎么配都会把某一项的内容挂到
-// 别人的标题下面 —— 用户看到的是"内容串项了"，比直接失败难查得多。这种情况导成占位文字并记
-// Lossless=false：宁可诚实地告诉调用方这次导出有损，也不假装无损。
 func (exp *exporter) writeAccordion(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[accordionpkg.Props](n)
 	if err != nil {
@@ -114,8 +92,7 @@ func (exp *exporter) writeAccordion(sb *strings.Builder, n *core.Node) error {
 	for i, item := range props.Items {
 		title := strings.TrimSpace(item.Title)
 		if title == "" {
-			// 空 <summary> 不是"没法导出"（正文照常导出），是"这一项的标题丢了"：
-			// 导入方向对没有可见内容的折叠块整块判空，导回画布时这一项会消失。如实记损。
+
 			exp.warn(accordionpkg.Type, ActionTrim, fmt.Sprintf(
 				"第 %d 个折叠项没有标题，`<summary>` 为空，导回画布时这一项会被丢弃", i+1))
 		}
@@ -127,9 +104,7 @@ func (exp *exporter) writeAccordion(sb *strings.Builder, n *core.Node) error {
 		sb.WriteString(inner.String())
 		sb.WriteString("</details>")
 	}
-	// 组件状态在富文本里没有载体：details 的 open 属性与"同时只开一个"都不在白名单内
-	// （core/richtext.go 刻意剥掉 open —— 少一个属性就少一个注入面）。导出仍完整，
-	// 但这份 HTML 不是组件状态的等价物，必须让调用方知道。
+
 	if props.OneOpen {
 		exp.warn(accordionpkg.Type, ActionTrim,
 			"「同时只开一个」是组件行为，富文本里没有对应属性，导回画布后每个折叠块各自独立")
@@ -144,7 +119,6 @@ func (exp *exporter) writeAccordion(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writeHeading 标题：h1~h6 原样，其余语义标签（div/span）在富文本里没有等价物。
 func (exp *exporter) writeHeading(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[headingpkg.Props](n)
 	if err != nil {
@@ -152,8 +126,7 @@ func (exp *exporter) writeHeading(sb *strings.Builder, n *core.Node) error {
 	}
 	tag := strings.ToLower(strings.TrimSpace(props.Tag))
 	if !isHeadingTag(tag) {
-		// 标题组件用 div/span 当语义标签时，富文本里没有对应形态：
-		// 按段落导出（导回来会变成一个 text 组件），并说明这次降级。
+
 		exp.warn(headingpkg.Type, ActionTrim,
 			"标题组件的语义标签是 "+fallbackTag(tag)+"，富文本里没有等价物，已按普通段落导出（导回画布会变成正文组件）")
 		tag = "p"
@@ -166,7 +139,6 @@ func (exp *exporter) writeHeading(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writeText 正文：richtext 直出（内容已过白名单），plaintext 包一层 <p>。
 func (exp *exporter) writeText(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[textpkg.Props](n)
 	if err != nil {
@@ -176,13 +148,11 @@ func (exp *exporter) writeText(sb *strings.Builder, n *core.Node) error {
 		sb.WriteString("<p>" + stdhtml.EscapeString(props.Text) + "</p>")
 		return nil
 	}
-	// 再过一次白名单：组件树里的 richtext 可能来自旧数据或直接构造（不走导入器），
-	// 导出成 HTML 前必须保证它能安全地交给 Trix。
+
 	sb.WriteString(sanitizeText(props.Text))
 	return nil
 }
 
-// writeList 列表：序号样式 → ol，其余 → ul。
 func (exp *exporter) writeList(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[listpkg.Props](n)
 	if err != nil {
@@ -212,7 +182,6 @@ func (exp *exporter) writeList(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writeQuote 引用：作者写进 <cite>（导入方向会把直接子级 cite 取回 Author 字段，闭环）。
 func (exp *exporter) writeQuote(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[quotepkg.Props](n)
 	if err != nil {
@@ -227,7 +196,6 @@ func (exp *exporter) writeQuote(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writeImage 图片：有图注 → figure + figcaption，否则裸 <img>。
 func (exp *exporter) writeImage(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[imagepkg.Props](n)
 	if err != nil {
@@ -254,7 +222,6 @@ func (exp *exporter) writeImage(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writeTable 表格：表头进 thead，数据行进 tbody。
 func (exp *exporter) writeTable(sb *strings.Builder, n *core.Node) error {
 	props, err := decodeProps[tablepkg.Props](n)
 	if err != nil {
@@ -286,11 +253,6 @@ func (exp *exporter) writeTable(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// writePlaceholder 不可逆组件的占位。
-//
-// 占位是**给人在富文本里看的**，不是可还原标记：Trix 只保留自己认识的标签与属性，
-// 任何 data-* 还原标记在编辑器里过一手就没了。所以这里不假装无损，
-// 而是明确写出"这个位置原本是什么"，并让导出结果带 Lossless=false。
 func (exp *exporter) writePlaceholder(sb *strings.Builder, n *core.Node) error {
 	name := strings.TrimSpace(n.Type)
 	if name == "" {
@@ -302,10 +264,6 @@ func (exp *exporter) writePlaceholder(sb *strings.Builder, n *core.Node) error {
 	return nil
 }
 
-// placeholderHTML 占位块的可读文本（形如 <p>［组件：core.tabs｜该组件不能在富文本中编辑］</p>）。
-//
-// 占位是**给人在富文本里看的**，不是可还原标记 —— 多个分支（不可逆组件、结构对不上的手风琴）
-// 用的是同一段文字，抽出来只此一份。
 func placeholderHTML(name string) string {
 	if strings.TrimSpace(name) == "" {
 		name = "未知组件"
@@ -313,7 +271,6 @@ func placeholderHTML(name string) string {
 	return "<p>［组件：" + stdhtml.EscapeString(name) + "｜该组件不能在富文本中编辑］</p>"
 }
 
-// decodeProps 解出组件属性（props 为空时给零值：组件按缺省值渲染）。
 func decodeProps[T any](n *core.Node) (T, error) {
 	var props T
 	if n == nil || len(n.Props) == 0 {
@@ -325,7 +282,6 @@ func decodeProps[T any](n *core.Node) (T, error) {
 	return props, nil
 }
 
-// isHeadingTag 是否 h1~h6。
 func isHeadingTag(tag string) bool {
 	switch tag {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
@@ -334,7 +290,6 @@ func isHeadingTag(tag string) bool {
 	return false
 }
 
-// fallbackTag 空标签在提示里显示成"（默认）"，免得写出「语义标签是 ，富文本里…」这种句子。
 func fallbackTag(tag string) string {
 	if strings.TrimSpace(tag) == "" {
 		return "（默认 h2）"

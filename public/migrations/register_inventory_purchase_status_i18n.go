@@ -1,18 +1,5 @@
 package migrations
 
-// register_inventory_purchase_status_i18n.go — 670b：采购单七态的词条（配合 670）。
-//
-// 门槛逐条枚举本批的 23 个 key（中英共 46 行）。两条硬要求：
-//
-//   · **点名每个 key** —— 用 LIKE 或「全库总量」判，存量库里随便一批词条都能满足，
-//     缺的词永远补不上（AGENTS.md §数据库「seed 门槛必须逐条枚举」）；
-//   · **两种语言都数** —— ConditionSQL 返回 >0 即「已完成 → 跳过 SQL」，只数一种语言时
-//     另一种缺行仍为 1，于是永远跳过（recent_write_ui_seed_guard_test.go 的定则）。
-//
-// 本批是**改值 + 新增**混在一起（状态措辞换了），SQL 用 ON CONFLICT DO UPDATE：
-// 判据只判「这 46 个组合在不在」，运营改过值也满足 —— 已改的值不会被重新覆盖，
-// 只有缺行会被补齐。
-
 import "sync"
 
 var registerInventoryPurchaseStatusI18nOnce sync.Once

@@ -1,13 +1,5 @@
 package shell_test
 
-// nav_system_menu_test.go — 系统设置页的侧栏入口（Y1）。
-//
-// 菜单真源是 sys_menus 表（224 起侧栏由它驱动）。这条用例走**真库**读那一行，
-// 再经真实的 BuildNav 渲染成侧栏结构 —— 只查 SQL 不看渲染，会漏掉「行在、但
-// is_hidden=1 / type 不对 / 没有权限码所以过滤掉」这类「菜单存在却看不见」的情形。
-//
-// task-72 起 BuildNav 归 internal/adminui，本用例只改引用面，取数与断言不变。
-
 import (
 	"strings"
 	"testing"
@@ -25,7 +17,7 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 	if db == nil {
 		t.Skip("本地 PostgreSQL 不可用，跳过")
 	}
-	// 迁移建菜单行（498）；seed 台账与它同批，这里直接跑一次保证行在。
+
 	if err := runMigrations(t, db); err != nil {
 		t.Fatalf("执行迁移失败: %v", err)
 	}
@@ -70,13 +62,11 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 		strings.TrimSpace(rendered.String()), row.ID, row.ParentID, row.IsHidden)
 }
 
-// runMigrations 跑一次结构迁移（菜单行由迁移 498 建）。
 func runMigrations(t *testing.T, db *gorm.DB) error {
 	t.Helper()
 	if err := migrations.Run(db); err != nil {
 		return err
 	}
-	// 菜单行由 **seed** 建（498 走 registerSeed）：结构迁移与 seed 是两个台账，
-	// 只跑 Run 会得到「库里没有这一行」的假象。
+
 	return migrations.RunSeeds(db)
 }

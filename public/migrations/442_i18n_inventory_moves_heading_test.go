@@ -57,7 +57,7 @@ func TestInventoryMovesHeadingSeedIsIdempotent(t *testing.T) {
 				t.Errorf("第 %d 轮 %s = %v, 期望单条 %q", round, tc.lang, values, tc.want)
 			}
 		}
-		// The next pass must repair a missing language without overwriting the operator's value.
+
 		if round == 1 {
 			if err := db.Exec("DELETE FROM sys_i18n WHERE item_key = ? AND lang = ?", key, "en-US").Error; err != nil {
 				t.Fatal(err)

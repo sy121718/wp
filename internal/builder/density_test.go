@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// TestThemeDensity 主题密度档位：语义变量输出（compact/cozy），未设置时零输出。
 func TestThemeDensity(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"},"base":{}},"root":[{"id":"h","type":"core.heading","props":{"text":"标题"}}]}`
 	page, err := ParsePage([]byte(doc))
@@ -41,7 +40,7 @@ func TestThemeDensity(t *testing.T) {
 				return
 			}
 			for _, want := range tc.wants {
-				// 主题变量块（:root --sky-*）注入 <style> 顶部，与页面 CSS 分开承载。
+
 				if !strings.Contains(compiled.CSS+compiled.ThemeVarsCSS, want) {
 					t.Errorf("CSS 缺少 %q", want)
 				}

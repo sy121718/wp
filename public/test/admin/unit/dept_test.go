@@ -10,7 +10,6 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 )
 
-// TestDeptCreateSuccess 顶级部门创建，ancestors="0"。
 func TestDeptCreateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -29,7 +28,6 @@ func TestDeptCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestDeptCreateChildAncestors 子部门 ancestors = 父 ancestors + 父 ID。
 func TestDeptCreateChildAncestors(t *testing.T) {
 	e := setupEnv(t)
 
@@ -45,7 +43,6 @@ func TestDeptCreateChildAncestors(t *testing.T) {
 	}
 }
 
-// TestDeptCreateParentNotFound 父部门不存在报错。
 func TestDeptCreateParentNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -56,7 +53,6 @@ func TestDeptCreateParentNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptNotFound)
 }
 
-// TestDeptCreateDuplicateCode 部门编码重复被拒绝。
 func TestDeptCreateDuplicateCode(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -67,18 +63,15 @@ func TestDeptCreateDuplicateCode(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptCodeExists)
 }
 
-// TestDeptUpdateMoveAncestors 移动部门后自身与子孙 ancestors 正确更新。
 func TestDeptUpdateMoveAncestors(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 结构：A(顶级) → D(子) → E(孙)；B(顶级)
 	deptA := deptCreate(t, e, "A", "A_"+uniq(""))
 	deptB := deptCreate(t, e, "B", "B_"+uniq(""))
 	deptD := deptCreate(t, e, "D", "D_"+uniq(""), deptA)
 	deptE := deptCreate(t, e, "E", "E_"+uniq(""), deptD)
 
-	// 把 D（含 E）从 A 移到 B 下
 	err := e.svc.DeptUpdate(ctx, &admindto.DeptUpdateReq{
 		ID: deptD, ParentID: deptB, DeptName: "D", DeptCode: deptCode(t, e, deptD), Status: 1,
 	})
@@ -99,27 +92,21 @@ func TestDeptUpdateMoveAncestors(t *testing.T) {
 	}
 }
 
-// TestDeptUpdateMoveAncestorPrefixCollision 已知缺陷复现：
-// UpdateAncestors 用 LIKE '前缀%' + REPLACE 批量改写子孙 ancestors，
-// 部门 ID 前缀重叠（如 2 与 20）时会把无关部门的 ancestors 误改。
 func TestDeptUpdateMoveAncestorPrefixCollision(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 构造：部门 2（顶级，ancestors=0）将被移动；部门 20（顶级）及其子 21（ancestors=0,20）与 2 无血缘。
 	dept2 := deptCreateWithID(t, e, 2, "ID2", "ID2_"+uniq(""))
 	dept5 := deptCreateWithID(t, e, 5, "ID5", "ID5_"+uniq(""))
 	dept20 := deptCreateWithID(t, e, 20, "ID20", "ID20_"+uniq(""))
 	dept21 := deptCreateWithID(t, e, 21, "ID21", "ID21_"+uniq(""), dept20)
 	_ = dept21
 
-	// 移动部门 2 到部门 5 下：oldPrefix="0,2"，UpdateAncestors 会 LIKE '0,2%'
 	err := e.svc.DeptUpdate(ctx, &admindto.DeptUpdateReq{
 		ID: dept2, ParentID: dept5, DeptName: "ID2", DeptCode: deptCode(t, e, dept2), Status: 1,
 	})
 	wantErr(t, err, "")
 
-	// 部门 21 的祖先链应为 "0,20"（其父 20 是顶级，与 2 无血缘）
 	var dept21After adminmodel.DeptEntity
 	if err := e.db.First(&dept21After, dept21).Error; err != nil {
 		t.Fatalf("查询部门失败: %v", err)
@@ -129,7 +116,6 @@ func TestDeptUpdateMoveAncestorPrefixCollision(t *testing.T) {
 	}
 }
 
-// TestDeptUpdateCircleSelf 部门不能挂到自己下面。
 func TestDeptUpdateCircleSelf(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -141,7 +127,6 @@ func TestDeptUpdateCircleSelf(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptCircle)
 }
 
-// TestDeptUpdateCircleDescendant 部门不能挂到自己的子孙下面。
 func TestDeptUpdateCircleDescendant(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -155,7 +140,6 @@ func TestDeptUpdateCircleDescendant(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptCircle)
 }
 
-// TestDeptDeleteHasChildren 有子部门的部门不可删除。
 func TestDeptDeleteHasChildren(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -167,7 +151,6 @@ func TestDeptDeleteHasChildren(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptHasChildren)
 }
 
-// TestDeptDeleteHasUsers 部门下有用户不可删除。
 func TestDeptDeleteHasUsers(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -183,7 +166,6 @@ func TestDeptDeleteHasUsers(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptHasUsers)
 }
 
-// TestDeptDeleteSuccess 无子部门无用户的部门可删除。
 func TestDeptDeleteSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -201,7 +183,6 @@ func TestDeptDeleteSuccess(t *testing.T) {
 	}
 }
 
-// TestDeptTreeBuild 部门树组装（多根）。
 func TestDeptTreeBuild(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -222,7 +203,6 @@ func TestDeptTreeBuild(t *testing.T) {
 	}
 }
 
-// TestAncestorIDsParse AncestorIDs 解析祖先链并排除自身与 0。
 func TestAncestorIDsParse(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -237,12 +217,10 @@ func TestAncestorIDsParse(t *testing.T) {
 		t.Fatalf("祖先链不符: %v", ids)
 	}
 
-	// 不存在部门
 	_, err = e.svc.AncestorIDs(ctx, 888888)
 	wantErr(t, err, adminenums.ErrDeptNotFound)
 }
 
-// TestDeptUpdateNotFound 更新不存在的部门报错。
 func TestDeptUpdateNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -253,9 +231,6 @@ func TestDeptUpdateNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeptNotFound)
 }
 
-// --- helpers ---
-
-// deptCreate 创建部门（可带父），返回 ID。
 func deptCreate(t *testing.T, e *env, name, code string, parentIDs ...uint64) uint64 {
 	t.Helper()
 	req := &admindto.DeptCreateReq{DeptName: name, DeptCode: code, Status: 1}
@@ -267,7 +242,6 @@ func deptCreate(t *testing.T, e *env, name, code string, parentIDs ...uint64) ui
 	return deptIDByCode(t, e, code)
 }
 
-// deptCreateWithID 指定 ID 落库部门（构造 ID 前缀冲突场景）。
 func deptCreateWithID(t *testing.T, e *env, id uint64, name, code string, parentIDs ...uint64) uint64 {
 	t.Helper()
 	parentID := uint64(0)

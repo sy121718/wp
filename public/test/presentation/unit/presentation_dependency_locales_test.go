@@ -32,7 +32,7 @@ func TestPresentationDependencyIncludesOtherPublishedLocale(t *testing.T) {
 	if err != nil || len(pubs) != 2 {
 		t.Fatalf("语言账本: %+v %v", pubs, err)
 	}
-	// 镜像只指向第二种语言，第一种语言独有的依赖仍必须命中。
+
 	if err := f.db.Exec(`UPDATE presentation_instances SET active_artifact_id=?, staged_artifact_id=? WHERE id=?`, pubs[1].ArtifactID, pubs[1].ArtifactID, inst.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestPresentationDependencyIncludesOtherPublishedLocale(t *testing.T) {
 			t.Fatalf("其他语言依赖漏标(templateOnly=%v): %v %v", templateOnly, ids, err)
 		}
 	}
-	// 脱离正文模板不等于脱离页眉/页脚结构模板。
+
 	if err := f.db.Exec(`UPDATE presentation_instances SET render_mode='document' WHERE id=?`, inst.ID).Error; err != nil {
 		t.Fatal(err)
 	}

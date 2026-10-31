@@ -1,11 +1,7 @@
 package migrations
 
-// registerAnalyticsSeoAndPermissions 注册「统计、SEO 与权限点补全（147–175）」。
-//
-// 由 register.go 的 init() 按主题拆出：本文件只做注册，不含任何 SQL 文本，
-// 注册项引用的 SQL 一律经 mustSQL 从嵌入的 .sql 取。
 func registerAnalyticsSeoAndPermissions() {
-	// 148：访问统计权限点 + 超管策略（1 个只读权限点存在才算已 seed）。
+
 	registerSeed(Seed{
 		Version:      "148-analytics-permissions",
 		TableName:    "sys_permission",
@@ -13,7 +9,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("148_analytics_permissions.sql"),
 	})
 
-	// 149：访问统计后台菜单入口（幂等 seed）。
 	registerSeed(Seed{
 		Version:      "149-analytics-menu",
 		TableName:    "sys_menus",
@@ -21,8 +16,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("149_analytics_menu.sql"),
 	})
 
-	// 150：文章管理后台菜单入口（INF-1，幂等 seed）。
-	// 侧栏真源是代码配置（nav_menu.go 的「内容」组），本 seed 服务于后台「菜单管理」页 —— 见 SQL 顶部注释。
 	registerSeed(Seed{
 		Version:      "150-article-menu",
 		TableName:    "sys_menus",
@@ -30,10 +23,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("150_article_menu.sql"),
 	})
 
-	// 151：补齐「有路由、无权限点」的接口（删页面 / 区块克隆）。
-	//
-	// 跳过条件必须同时看**两张表**：权限点齐了但策略没齐时仍要执行 ——
-	// 只查权限点会让"权限点先落库、策略后补"的那一半永远补不上（051/079 踩过这个坑）。
 	registerSeed(Seed{
 		Version:   "151-missing-permission-points",
 		TableName: "sys_permission",
@@ -44,11 +33,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("151_missing_permission_points.sql"),
 	})
 
-	// 152：后台客户管理权限点（4 条）+ 超管策略。
-	//
-	// 跳过条件同时看两张表（与 151 同因）：4 条权限点齐了、且超管策略至少各有 1 行，
-	// 才算这条 seed 已完成 —— 只查权限点会留下「权限点有了、策略没补」的空窗，
-	// 而那种状态下超管点客户页的按钮就是 403。
 	registerSeed(Seed{
 		Version:   "152-customer-admin-permissions",
 		TableName: "sys_permission",
@@ -61,34 +45,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("152_customer_admin_permissions.sql"),
 	})
 
-	// 153：客户管理后台菜单入口 —— **已注销**（2026-10，P7 客户目录收口）。
-	//
-	// 注销的原因不是「不想要这个菜单」，而是它的**判据与对象在 P7 之后互相抵消**：
-	//   · 本 seed 的 ConditionSQL 是「表里有没有 title='客户管理' 的行」，
-	//     SQL 是「没有就插一行 path='/customers'」—— 两者合起来是「被删掉就重插」；
-	//   · 而 P7 的 555 把那套菜单整体重做了：把客户菜单改名「客户列表」（path 改成
-	//     '/admin/customers'）并挂进新建的一级分组「客户」。于是原来那行**永远不会再出现**，
-	//     本 seed 判据恒为 0 → **每次启动都插一行孤立的 path='/customers'**。
-	//
-	// 后果不是多一行垃圾菜单，而是三个**幂等性**测试全红：它们断言「重放种子后
-	// sys_menus 不变」，而每次启动都多一行。这类失败的形态特别隐蔽 ——
-	// 页面看起来完全正常（侧栏真源是 nav_menu.go，根本不读这一行），
-	// 只有断言「表没变」的测试会红，很容易被当成测试本身过时。
-	//
-	// 接手方是 555（`register_customer_catalog.go`）：它按 path 判定，判据与对象一致。
-	//
-	// SQL 文件 `153_customer_admin_menu.sql` 已**连文件一起注销**（2026-10）：
-	// register_registry_test.go 的 TestEmbeddedSQLFilesAllRegistered 要求磁盘上的每个 .sql
-	// 都挂在注册台账里（195 未注册导致一批测试在缺列上失败的教训）—— 留一个「不再执行、
-	// 但仍躺在磁盘上」的孤儿文件会让该测试恒红，而把它注册成空 seed 又会让「已注销」
-	// 看起来像「已注册」。同一手法在本仓用过（220 / 221 / 140 三个 seed 连注册带 SQL 注销），
-	// 本文件的内容可在 git 历史里查到（git log -- public/migrations/153_customer_admin_menu.sql）。
-
-	// 154：详情页改 URL 权限点（1 条）+ 超管策略。
-	//
-	// 跳过条件同时看两张表（与 151/152 同因）：权限点齐了但策略没齐时仍要执行 ——
-	// 只查权限点会留下「权限点有了、策略没补」的空窗，那种状态下超管点
-	// 「改 URL」就是 403。
 	registerSeed(Seed{
 		Version:   "154-presentation-update-url-permission",
 		TableName: "sys_permission",
@@ -99,19 +55,12 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("154_presentation_update_url_permission.sql"),
 	})
 
-	// 155b：presentation 多语言产物（I18N-013）。
-	//
-	// 补丁位 b 而不是裸 155：155 主编号被下面那条（同一个 SQL 的第二段，按列存在判定）
-	// 一起用，两条都是「155 + 无后缀」时 compareVersion 只能靠整串字典序兜底
-	// —— 顺序仍然确定，但按编号定位会命中错文件。补位后语义键变成 (155, "b")，
-	// 排序结果与改前**逐项一致**（artifacts 那条是 (155,"") 仍在前，与改前
-	// 「artifacts 的整串字典序更小」的结论相同），所以是纯可读性修正。
 	register(Migration{
 		Version:   "155b-presentation-i18n",
 		TableName: "presentation_publications",
 		SQL:       mustSQL("155_presentation_i18n.sql"),
 	})
-	// presentation_artifacts.lang 列（同批迁移，按列存在判定避免误跳过）。
+
 	register(Migration{
 		Version:   "155-presentation-artifacts-lang",
 		TableName: "presentation_artifacts",
@@ -131,7 +80,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("157_i18n_seed_fragments_user_orders.sql"),
 	})
 
-	// 159：默认文章详情内容模板（EDT-002）。
 	registerSeed(Seed{
 		Version:      "159-article-detail-template",
 		TableName:    "content_templates",
@@ -146,15 +94,10 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("160_presentation_entity_types.sql"),
 	})
 
-	// 313：修正 159 种下的文章详情模板里的非法控件值（plain/rich → plaintext/richtext、
-	// ratio → aspectRatio）。159 是种子且「已有模板即跳过」，存量库不会重跑，故这里补一次。
-	// 不修的直接后果：文章详情页一页都建不出来（模板文档过不了校验）。
 	register(Migration{
 		Version:   "313-article-detail-template-props",
 		TableName: "content_templates",
-		// 判据：表还不存在（159 尚未跑）→ 跳过；仍有非法文档 → 跑 DO 块；已修好 → 跳过。
-		// 模式串写 '%"mode": "plain"%'（jsonb 文本输出带空格）而不是 '%plain%'——
-		// 后者会匹配到修好之后的 "plaintext"，让这条迁移每次启动都空跑一遍。
+
 		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NULL THEN 1 " +
 			"WHEN EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'article' " +
 			"AND draft_document::text LIKE '%\"mode\": \"plain\"%') THEN 0 ELSE 1 END",
@@ -167,7 +110,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("161_data_retention.sql"),
 	})
 
-	// 162：库存流水按仓库 + 时间索引（IDX-007）。
 	register(Migration{
 		Version:   "162-inventory-movements-wh-time-index",
 		TableName: "inventory_stock_movements",
@@ -191,10 +133,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("164_content_template_is_default.sql"),
 	})
 
-	// 223：content_templates 默认模板的唯一性从「全库唯一」改成「工程内唯一」（DB-009 第四批）。
-	// 判定按**新索引**的存在：新旧索引的替换在同一个 DO 块里完成（先建新、再删旧），
-	// 所以「新索引在」即表示整条迁移已完成。占位符 ? 收到的是 TableName（必须是表名，
-	// 因为 CheckSQL 没有别的入参通道），索引名写死字面量。
 	register(Migration{
 		Version:   "223-content-template-default-per-project",
 		TableName: "content_templates",
@@ -207,11 +145,7 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "165-orders-status-check",
 		TableName: "orders",
-		// apply() 是「count > 0 → 跳过」，而本迁移 SQL 做的是「DROP + ADD 约束」，
-		// 所以判定必须表达「约束定义已是新版」：原写法 COUNT(=0)=0→1 把「约束不存在
-		// （正需要加）」判成已完成，orders.status 的 DDL CHECK 从未落地。
-		// 与 071 同因：pg_get_constraintdef 只对本迁移物化出的 OID 求值，避免与
-		// 并发 DROP SCHEMA 的其它测试包争用「打开关系」。
+
 		CheckSQL: "WITH target AS MATERIALIZED (" +
 			"SELECT oid FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'orders_status_check') " +
 			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
@@ -222,8 +156,7 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "166-blocks-kind-check",
 		TableName: "blocks",
-		// 只判「约束存在」区分不了 kind 集合扩展前后（旧集合同样存在），
-		// 故按定义里的新 kind 判定；物化 OID 的理由同 071。
+
 		CheckSQL: "WITH target AS MATERIALIZED (" +
 			"SELECT oid FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'blocks_kind_check') " +
 			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
@@ -231,13 +164,10 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("166_blocks_kind_check.sql"),
 	})
 
-	// 167 幂等判据取 orders 上的三条 trgm 索引：它们同时依赖 pg_trgm 扩展与这批建索引语句，
-	// 三缺一即视为未应用（迁移本身全部 IF NOT EXISTS / DROP IF EXISTS，重跑安全）。
 	register(Migration{
 		Version:   "167-index-foundation",
 		TableName: "orders",
-		// schemaname 必须限定：pg_indexes 是全库视图，并行测试时别的隔离 schema 里的同名
-		// 索引会被算进 COUNT，判定「已应用」后本条被静默跳过（该 schema 的 trgm 索引全缺）。
+
 		CheckSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname LIKE 'idx_orders_%_trgm'",
 		SQL:      mustSQL("167_index_foundation.sql"),
 	})
@@ -249,8 +179,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("168_mail_campaign_event_totals.sql"),
 	})
 
-	// 判定条件是「生成列已存在」而不是「列存在」：DB-024 的收益全在「写入无需改动」，
-	// 普通列做不到这一点，判定必须能把两者区分开。
 	register(Migration{
 		Version:   "169-contents-query-projection",
 		TableName: "contents",
@@ -261,8 +189,7 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "170-analytics-rollup",
 		TableName: "page_views_daily",
-		// 判定「已扩到汇总口径」而不是「表存在」：161 早就建了这张表且零消费，
-		// 只看表名会让本迁移被跳过，而 scope 列才是它能否承担汇总职责的关键。
+
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'scope'",
 		SQL:      mustSQL("170_analytics_rollup.sql"),
 	})
@@ -274,8 +201,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("171_build_jobs_queue.sql"),
 	})
 
-	// CheckSQL 的 ? 接表名（必须参数化）；判定条件是「全库已无 timestamp without time zone 列」——
-	// 逐表判定会被表名参数限制在一张表上，而这条迁移管的是全库。
 	register(Migration{
 		Version:   "172-time-columns-to-timestamptz",
 		TableName: "orders",
@@ -283,7 +208,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("172_time_columns_to_timestamptz.sql"),
 	})
 
-	// 判定「已是分区表」（relkind='p'）而不是「表存在」：迁移前这三张表本来就存在。
 	register(Migration{
 		Version:   "173-partition-append-only-tables",
 		TableName: "page_views",
@@ -291,7 +215,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("173_partition_append_only_tables.sql"),
 	})
 
-	// 174扩展或692显式目标后继约束均算已完成，禁止重启时退回旧枚举。
 	register(Migration{
 		Version:   "174-site-slot-dependency-kind",
 		TableName: "page_dependencies",
@@ -299,7 +222,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("174_site_slot_dependency_kind.sql"),
 	})
 
-	// 判定角色列是否已存在：只看表存在无法区分迁移前后。
 	register(Migration{
 		Version:   "175-archive-presentation-role",
 		TableName: "presentation_instances",
@@ -307,13 +229,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("175_archive_presentation_role.sql"),
 	})
 
-	// 199b：webhook 外部集成通道（OSS-006 + SEC-015）。
-	//
-	// 后缀 b 而不是裸 199：主编号 199 已经被 register_i18n_layer.go 的
-	// `199-rls-project-locales` 用掉，两个都是「199 + 无后缀」时 compareVersion 的
-	// 同号分支会退化成整串字典序 —— 顺序仍然确定，但读代码的人无法判断谁先谁后。
-	// 补上补丁位后语义键变成 (199, "b")，排序结果与改前**逐字一致**
-	// （`199-rls-project-locales` < `199b-webhook`），所以是纯可读性修正、零行为变化。
 	register(Migration{
 		Version:   "199b-webhook",
 		TableName: "webhook_endpoints",
@@ -321,24 +236,14 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("199_webhook.sql"),
 	})
 
-	// 201：DB-019/020 第一批（build_jobs 等五表 id→bigint identity + created_at→create_time）。
-	//
-	// 文件名曾写作 `199_db019_db020_batch1.sql`（版本是 201、文件是 199）：按编号定位迁移会
-	// 命中错文件。已重命名为 `201_db019_db020_batch1.sql`。
-	// **执行顺序不变**：compareVersion 排的是 Version 而不是文件名，改的只是名字。
-	// 幂等判据也没变（看的是 build_jobs.create_time 列是否已存在），所以已执行过的库不受影响
-	// —— 本仓库的迁移器不写版本台账（没有 sys_migrations 表），无法也无需「对台账改名」。
 	register(Migration{
 		Version:   "201-db019-db020-batch1",
 		TableName: "build_jobs",
-		// 必须按「目标列已存在」判定：build_jobs 由 init_builder_schema.sql 先建，
-		// 默认判据（表存在即跳过）会让整批 SQL 永不执行。
+
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'create_time'",
 		SQL:      mustSQL("201_db019_db020_batch1.sql"),
 	})
 
-	// 202：DB-015 残余第三处 —— inventory_warehouses.status 的 DDL CHECK。
-	// 判定按「约束定义已是新版」而不是「约束存在」，理由同 165（SQL 是 DROP + ADD）。
 	register(Migration{
 		Version:   "202-inventory-warehouse-status-check",
 		TableName: "inventory_warehouses",
@@ -349,8 +254,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("202_inventory_warehouse_status_check.sql"),
 	})
 
-	// 203：删除开发阶段用不上的 user 表（会话台账 + 三张预留给将来的空表）。
-	// 判据表达的是「四张表都不存在才算完成」—— apply() 是 count > 0 即跳过，故如此取反。
 	register(Migration{
 		Version:   "203-drop-unused-user-tables",
 		TableName: "user_sessions",
@@ -359,12 +262,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("203_drop_unused_user_tables.sql"),
 	})
 
-	// 204：内容对象闭包外键补 ON DELETE CASCADE（否则内容对象 GC 被外键挡下、静默泄漏）。
-	// 判定按约束定义，并用 MATERIALIZED CTE 先锁定 OID 再 deparse（理由同 071）。
-	//
-	// presentation 侧那一半用 to_regclass 而不是 'xxx'::regclass：迁移 207（CQ-015）
-	// 会把那张表删掉，而 '缺表名'::regclass 在下次启动求值判定时会直接报错（启动失败）。
-	// to_regclass 缺表返回 NULL，比较自然落空 —— 此时「表已不存在」本身就算这一半完成。
 	register(Migration{
 		Version:   "204-artifact-closure-fk-cascade",
 		TableName: "page_artifact_objects",
@@ -380,16 +277,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("204_artifact_closure_fk_cascade.sql"),
 	})
 
-	// 205：DB-019 全量收口 —— 剩余 46 张表的 created_at 与 33 张表的 updated_at
-	// 统一改名（201 只做了 5 张叶子表的 created_at，且漏了它们的 updated_at）。
-	// 判定按「全库不再存在 created_at / updated_at 列」而不是「表存在」：
-	// 用默认判定会让整段 SQL 永不执行（同 201 踩过的坑）。
-	// 判定里的旧列名**不能**跟着 Go 侧改名一起替换 —— 它检查的正是「旧名是否已消失」。
-	//
-	// TableName 取一个**哨兵名**而不是真实表：迁移器只给 CheckSQL 传一个参数（表名），
-	// 而这条判定管的是全库、不针对单表 —— 护栏又要求每个自定义判定都接收那个参数。
-	// 于是用 table_name <> ? 表达「除哨兵外全部」，哨兵不可能存在，条件等价于全库。
-	// 若改成排除某张真实表（如 pages），那张表万一漏改，判定就会误报完成、迁移从此跳过。
 	register(Migration{
 		Version:   "205-db019-time-columns-full",
 		TableName: "__db019_all_tables__",
@@ -400,14 +287,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("205_db019_time_columns_full.sql"),
 	})
 
-	// 206：DB-019 连带修复 —— 触发器函数体里的旧列名。
-	// RENAME COLUMN 只重写索引 / 视图 / 约束这类可解析对象，plpgsql 函数体是字符串，
-	// 改名后仍按旧名解析（实测：采购收货链路整片失败）。
-	// 判定按「函数定义里已无 updated_at」，而不是「函数是否存在」。
-	// 判定里的 ? 接表名（**这里是真的要用它**：护栏
-	// TestCustomMigrationChecksParameterConvention 只要求「含 ? 时恰好一个」）：
-	// 取该触发器真正操作的单头表，语义是「表在 且 函数已修好」——
-	// 表都没了就不该算完成（那说明库被人手改过，启动时应当停下来而不是静默跳过）。
 	register(Migration{
 		Version:   "206-inventory-status-sync-fn-time-column",
 		TableName: "inventory_purchase_orders",
@@ -418,9 +297,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("206_inventory_status_sync_fn_time_column.sql"),
 	})
 
-	// 207：CQ-015 —— 删除两张零消费方表（presentation_artifact_objects / publication_events）。
-	// 判定表达「两张都不存在才算完成」：apply() 是 count > 0 即跳过，故取反。
-	// 用 to_regclass 而不是 to_regclass(?) 单表判定 —— 这条迁移管的是两张表。
 	register(Migration{
 		Version:   "207-cq015-drop-unused-tables",
 		TableName: "presentation_artifact_objects",
@@ -429,9 +305,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("207_cq015_drop_unused_tables.sql"),
 	})
 
-	// 208：DB-020 软删除列名统一 —— sys_menus.deleted_time → deleted_at。
-	// 判定按「旧列已消失」（不是「表存在」）：这条迁移做的就是改名，默认判定会误跳过。
-	// 判定里的 'deleted_time' 字面量同样不能跟着 Go 侧 rename 一起替换。
 	register(Migration{
 		Version:   "208-db020-soft-delete-column",
 		TableName: "sys_menus",
@@ -440,12 +313,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("208_db020_soft_delete_column.sql"),
 	})
 
-	// 209：blocks.id 回到 uuid（主键选型判据：对外边界用不可枚举标识）。
-	// 201 按「主键统一 bigint」把 blocks 划到自增侧，但它两条判据都踩：对外有 /api/block/*，
-	// 且 props.blockId 写进 Page Document 并挂着 GIN 部分索引（idx_pages_blockref）。
-	// 同批的 build_jobs / page_site_slots / publication_receipts / inventory_change_reasons
-	// 是内部流水与字典，继续 bigint，不动。
-	// 判定按「blocks.id 已是 uuid」：默认判定（表存在）会让这条迁移永不执行。
 	register(Migration{
 		Version:   "209-blocks-id-uuid",
 		TableName: "blocks",
@@ -455,27 +322,16 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("209_blocks_id_uuid.sql"),
 	})
 
-	// 210：pg_trgm 固定到专用 schema ext_shared（多 schema / 并发测试的前提）。
-	// 扩展是**库级唯一**的，装进「当前 schema」会让并发的第二个 schema 静默跳过安装，
-	// 随后建 trgm 索引报 operator class "gin_trgm_ops" does not exist。
-	// 167/169/173 已带 WITH SCHEMA ext_shared（新库直接对），本迁移负责既有库：把扩展搬过来。
 	register(Migration{
 		Version:   "210-pg-trgm-shared-schema",
 		TableName: "ext_shared",
-		// 判定按「pg_trgm 装在 ext_shared」—— 用 nspname 文本比较，**不要**写成
-		// extnamespace = 'ext_shared'::regnamespace：那个强转在 ext_shared 还不存在的库上
-		// 直接抛 3F000（schema does not exist），而这条迁移要处理的正是那些库
-		// （wp 库的 pg_trgm 在 public、ext_shared 尚未建）。AND/EXISTS 不保证短路，
-		// 把强转塞进子查询同理。TableName 仍传 ext_shared，但 CheckSQL 里没有 ? 占位符。
+
 		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_extension e " +
 			"JOIN pg_namespace n ON n.oid = e.extnamespace " +
 			"WHERE e.extname = 'pg_trgm' AND n.nspname = ?) THEN 1 ELSE 0 END",
 		SQL: mustSQL("210_pg_trgm_shared_schema.sql"),
 	})
 
-	// 211：删除 209 遗留的区块 id 映射表。
-	// 209 的判定按「blocks.id 已是 uuid」，不读这张表 —— 删掉不会让 209 重跑。
-	// 判定按「表已不存在」：默认判定（表存在）会让这条迁移永不被视为完成。
 	register(Migration{
 		Version:   "211-drop-block-id-uuid-map",
 		TableName: "block_id_uuid_map",
@@ -483,22 +339,16 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("211_drop_block_id_uuid_map.sql"),
 	})
 
-	// 212：webhook 两张表的时间列 bigint → timestamptz（DB-019 尾账）。
-	// 205 只改列名不改类型，这两张表因此成为全库唯一的 bigint 时间列。
-	// 判定按「四列都已是 timestamptz」，且 SQL 内按列类型二次判定 —— 见文件注释。
 	register(Migration{
 		Version:   "212-webhook-time-columns",
 		TableName: "webhook_endpoints",
-		// 两张表各两列都要已是 timestamptz（表名参数是 webhook_endpoints，另一张写死）。
+
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM information_schema.columns " +
 			"WHERE table_schema = current_schema() AND table_name IN (?, 'webhook_deliveries') " +
 			"AND column_name IN ('create_time', 'update_time') AND data_type = 'timestamp with time zone'",
 		SQL: mustSQL("212_webhook_time_columns.sql"),
 	})
 
-	// 213：webhook 权限点与超管策略（模块接线）。
-	// 判定要求 6 个权限点全在 —— 用 LIKE 计数的写法在「只 seed 了一半」时
-	// 也会返回非零而被判完成，权限点缺一条就是 403。
 	registerSeed(Seed{
 		Version:      "213-webhook-permissions",
 		TableName:    "sys_permission",
@@ -506,8 +356,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("213_webhook_permissions.sql"),
 	})
 
-	// 214：补齐 check-permission-gaps.sh 审出的 5 条缺口（build / publication / order）。
-	// 缺权限点的接口对内**含超管**一律 403，属静默坏掉的后台功能。
 	registerSeed(Seed{
 		Version:      "214-missing-permission-points-2",
 		TableName:    "sys_permission",
@@ -515,10 +363,6 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:          mustSQL("214_missing_permission_points_2.sql"),
 	})
 
-	// 215：全库工程隔离 RLS（DB-009 主体，54 对象含分区子表）。
-	// 判定按哨兵表 orders 上的 policy 存在 —— 整个 DO 块是一条语句，要么全做要么整体回滚；
-	// 写死 'orders' 字面量而不带 ? 占位符：这里要判的是**另一张**表的状态，
-	// 传 TableName 会把参数塞进一个没有占位符的 SQL 而报错。
 	register(Migration{
 		Version:   "215-project-isolation-rls",
 		TableName: "orders",

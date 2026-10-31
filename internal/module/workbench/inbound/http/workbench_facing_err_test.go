@@ -1,19 +1,5 @@
 package workbenchhttp
 
-// workbench_facing_err_test.go — 422 可归因文案的分类与「三处一致」的守卫。
-//
-// 为什么这里要有一条纯逻辑单测：422 的文案来自**三个地方**，任何一处单独改动都不会让编译
-// 或其它测试失败 ——
-//
-//	① workbenchenums 的 key 常量（enums/workbench_enums.go）；
-//	② 枚举声明处的中文兜底（workbenchenums.FallbackFor）；
-//	③ 迁移 292 的中英词条（public/migrations/292_workbench_facing_i18n.sql）。
-//
-// 漏配的表现是「英文站点显示中文」或「页面上原样显示 workbench.err.xxx」，前者不会报错、
-// 后者要等用户看见，所以在这里按**全量**对账：key 集合相等、zh 兜底与词条逐字相同、
-// en 词条非空且不是中文复制。分类判据（错误链事实 / 哨兵 key）也一并钉住，避免将来有人
-// 把「结构模板带字段绑定」退回成一句泛化的「预览编译失败」。
-
 import (
 	"errors"
 	"fmt"
@@ -34,7 +20,6 @@ import (
 	workbenchservice "go_wp/internal/module/workbench/service"
 )
 
-// 结构文档夹具：settings 合法，只有 root 不同。
 const (
 	facingDocPrefix                   = `{"settings":{"layout":{"mode":"full"}},"root":`
 	facingStructureHeaderBinding      = facingDocPrefix + `[{"type":"core.heading","id":"h1","props":{"binding":{"field":"post.title"}}}]}`
@@ -44,7 +29,6 @@ const (
 	facingInvalidSettingsDoc          = `{"settings":{"layout":{"mode":"boxed"}},"root":[]}`
 )
 
-// workbenchFacingFallbacks 仅为历史迁移292的对账集合，生产出口统一取声明处兜底。
 var workbenchFacingFallbacks = map[string]string{
 	workbenchenums.ErrStructureTemplateFieldBinding:  workbenchenums.FallbackFor(workbenchenums.ErrStructureTemplateFieldBinding),
 	workbenchenums.ErrPreviewFieldBindingUnsupported: workbenchenums.FallbackFor(workbenchenums.ErrPreviewFieldBindingUnsupported),
@@ -56,7 +40,6 @@ var workbenchFacingFallbacks = map[string]string{
 	workbenchenums.ErrInstanceSaveRejected:           workbenchenums.FallbackFor(workbenchenums.ErrInstanceSaveRejected),
 }
 
-// TestPreviewCompileFacingKey 预览编译失败的分类（判据是错误链事实，不嗅探错误字符串）。
 func TestPreviewCompileFacingKey(t *testing.T) {
 	bindingErr := fmt.Errorf("节点字段解析: %w", core.ErrContentResolverRequired)
 	cases := []struct {
@@ -68,13 +51,13 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 		wantOK  bool
 	}{
 		{
-			// 本任务的核心场景：结构模板里带了字段绑定（画布拖入 heading 后填了绑定字段）。
+
 			name: "结构模板含 heading 字段绑定", doc: facingStructureHeaderBinding,
 			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
 		},
 		{
-			// 自报型组件同样以真实编译错误链为判据。
+
 			name: "结构模板含商品卡字段绑定（自报型组件）", doc: facingStructureProductCardBinding,
 			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
@@ -95,7 +78,7 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 			wantKey: workbenchenums.ErrPreviewDocumentInvalid, wantOK: true,
 		},
 		{
-			// 干净文档但编译失败 = 归不了因（装配缺失 / 组件模板加载失败），走归口文案。
+
 			name: "干净文档归口", doc: facingCleanDoc,
 			kind: workbenchservice.PreviewDocPage, wantKey: "", wantOK: false,
 		},
@@ -129,7 +112,6 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 	}
 }
 
-// TestTemplatePreviewFacingKey 模板预览失败的分类（判据是模块哨兵 key）。
 func TestTemplatePreviewFacingKey(t *testing.T) {
 	cases := []struct {
 		raw     string
@@ -141,7 +123,7 @@ func TestTemplatePreviewFacingKey(t *testing.T) {
 		{"ErrTemplateTypeMismatch", workbenchenums.ErrTemplateEntityTypeMismatch, true},
 		{"ErrProjectRequired", workbenchenums.ErrTemplateProjectScope, true},
 		{"ErrProjectNotFound", workbenchenums.ErrTemplateProjectScope, true},
-		// 内部错误（装配缺陷）不归因：调用方给归口文案 + 结构化日志。
+
 		{"ErrRegistryMissing", "", false},
 		{"实例构建失败: 模板片段解析失败", "", false},
 	}
@@ -153,7 +135,6 @@ func TestTemplatePreviewFacingKey(t *testing.T) {
 	}
 }
 
-// TestInstanceSaveFacingKey 实例保存失败的分类。
 func TestInstanceSaveFacingKey(t *testing.T) {
 	cases := []struct {
 		raw     string
@@ -172,13 +153,8 @@ func TestInstanceSaveFacingKey(t *testing.T) {
 	}
 }
 
-// facingRowRe 迁移 292 的词条行：('key', 'lang', '值', ...
-//
-// 值里刻意不含单引号（迁移 SQL 的语句边界由 SplitStatements 按字面量判定，未配对的引号
-// 会让扫描器错位 —— 上一批「多一个分号」整批迁移失败属于同一类事故），所以这个简单正则够用。
 var facingRowRe = regexp.MustCompile(`\('(workbench\.err\.[A-Za-z]+)', '(zh-CN|en-US)', '([^']*)',`)
 
-// TestWorkbenchFacingFallbacksMatchMigration292 兜底文案与迁移 292 的词条逐字对账。
 func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", "292_workbench_facing_i18n.sql")
 	raw, err := os.ReadFile(sqlPath)
@@ -187,7 +163,6 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 	}
 	text := string(raw)
 
-	// 纪律①：文件末尾不写分号（最后一条语句由 SplitStatements 收尾的 appendCurrent 落下）。
 	if !strings.HasSuffix(strings.TrimSpace(text), "DO NOTHING") {
 		t.Fatalf("迁移 292 应以 ON CONFLICT ... DO NOTHING 结尾且不带分号，实际结尾：%q",
 			tailOf(strings.TrimSpace(text), 40))
@@ -207,7 +182,6 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 		}
 	}
 
-	// 纪律②：key 集合三处相等 —— 既不能有兜底却没词条，也不能有词条却没兜底（死词条）。
 	if len(zh) != len(workbenchFacingFallbacks) {
 		t.Fatalf("迁移 292 的 zh-CN key 数 %d 与兜底表 %d 不等", len(zh), len(workbenchFacingFallbacks))
 	}
@@ -224,10 +198,6 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 	}
 }
 
-// TestWorkbenchFacingFallbacksCoverExpectedKeys 历史迁移292对应的声明必须保有兜底。
-//
-// 与 enums 的对账在 public/test/enums（那边按模块列文件，尚未纳入 workbench）；这里至少保证
-// 新增 key 时必须显式回来看一眼这张表，而不是把内部错误顺手放出去。
 func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
 	want := []string{
 		workbenchenums.ErrStructureTemplateFieldBinding,
@@ -250,16 +220,9 @@ func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
 	}
 }
 
-// TestWritePreviewCompileRejectedFacingText 422 出口的响应体：三级判据各走各的出口。
-//
-// 直接驱动 422 的写出口，断言 ① 状态码仍是 422、② 每一级给出预期的文案、
-// ③ **不该出现的文本不出现**（内部原文 / 裸 key）。
-// 三级分别对应：类型标记（作者可操作的组件校验提示）、错误链事实（字段绑定）、归口（内部错误）。
 func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 模拟 page/service 的包装形状：页面编译失败: <PreviewProblem>（见 page_document.go 的
-	// builder.Compile 失败分支），外层再由 CompilePreview 包上 ErrPreviewCompileFailed。
 	problem := pagecontract.NewPreviewProblem(
 		"节点 acc1: 手风琴至少需要一个折叠项（把组件拖入内部）", errors.New("页面编译失败"))
 	problemErr := fmt.Errorf("%w: %w", pagecontract.ErrPreviewCompileFailed,
@@ -275,7 +238,7 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 		kind     workbenchservice.PreviewDocKind
 		err      error
 		wantBody string
-		// notContains 该场景下**不得**出现的文本。
+
 		notContains []string
 	}{
 		{
@@ -337,7 +300,6 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	}
 }
 
-// tailOf 取字符串末尾 n 个字符（错误信息里展示结尾用）。
 func tailOf(s string, n int) string {
 	if len(s) <= n {
 		return s

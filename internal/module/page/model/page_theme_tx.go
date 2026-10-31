@@ -10,14 +10,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// page_theme_tx.go — 主题换皮链的事务变体（DB-009 第二批）。
-//
-// 这些方法都在**调用方已开启的事务**上工作（换皮四步必须原子），所以作用域用
-// rls.ScopeTx 设进那个事务，而不是另开一个：另开事务会让外层未提交的数据不可见，
-// 同表写入还可能自锁（原子性被悄悄破坏）。pages 带 FORCE 策略，不设 app.project_id
-// 时这些 UPDATE 在非超级角色下会匹配 0 行 —— 换主题看起来成功，页面快照与 stale
-// 标记却一个都没落。
-
 func (m *Model) ReattachProjectPagesToThemeTx(ctx context.Context, tx *gorm.DB, projectID, themeID string) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err

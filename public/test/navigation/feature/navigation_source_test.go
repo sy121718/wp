@@ -1,10 +1,5 @@
 package feature
 
-// navigation_source_test.go — 导航来源实体解析（page/article/product/category/block → 标题+URL）。
-//
-// 覆盖：page 来源解析（标题取 settings.seo.title、URL 取页面路径）、来源实体缺失时
-// 回退记录自身的 title/path、解析结果进入编译产物。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -16,10 +11,8 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 )
 
-// aboutDocument 带 SEO 标题的页面文档（标题由来源解析取用）。
 const aboutDocument = `{"settings":{"layout":{"mode":"full"},"seo":{"title":"关于我们"}},"root":[]}`
 
-// TestNavigationSourcePageResolved 页面来源解析为页面标题与路径，并进入产物。
 func TestNavigationSourcePageResolved(t *testing.T) {
 	_, pages, navSvc, projectID := newNavigationEnv(t)
 	ctx := context.Background()
@@ -54,7 +47,6 @@ func TestNavigationSourcePageResolved(t *testing.T) {
 		t.Errorf("链接未解析为页面路径: %q", nodes[0].Path)
 	}
 
-	// 端到端：解析结果经导航组件编译进产物，且当前页被标记高亮。
 	html, err := pages.CompilePreview(ctx, []byte(navDocument), projectID, "/about", "", false)
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
@@ -66,7 +58,6 @@ func TestNavigationSourcePageResolved(t *testing.T) {
 	}
 }
 
-// TestNavigationSourceFallbackWhenEntityMissing 来源实体查不到时回退记录自身标题/链接。
 func TestNavigationSourceFallbackWhenEntityMissing(t *testing.T) {
 	_, pages, navSvc, projectID := newNavigationEnv(t)
 	ctx := context.Background()

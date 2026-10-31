@@ -1,13 +1,5 @@
 package product
 
-// fragment_lang_test.go — 片段请求 URL 必须带语言（I18N-011）。
-//
-// 片段语言**只从 lang 参数来**：端点不读 Accept-Language、不读任何语言 cookie
-// （runtimefragment.resolveRequestLang）。不带 lang 的请求恒回落**工程默认语言** ——
-// 英文站的商品页刷新一次，实时价格 / 可用量位就换成中文词条，页面上看不出错。
-//
-// 语言为空（单语言站点 / 独立编译）时**不带**该参数：空值只让片段多做一次无用判断。
-
 import (
 	"strings"
 	"testing"
@@ -19,7 +11,6 @@ const (
 		`{"id":"var-2","sku":"a-2","price":"129","enabled":true,"options":{"color":"blue"}}]`
 )
 
-// TestBuildViewFragmentURLsCarryLang 两个片段位都带上构建语言。
 func TestBuildViewFragmentURLsCarryLang(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
@@ -41,7 +32,6 @@ func TestBuildViewFragmentURLsCarryLang(t *testing.T) {
 	}
 }
 
-// TestBuildViewFragmentURLsOmitEmptyLang 语言为空时不带该参数（单语言站点形态）。
 func TestBuildViewFragmentURLsOmitEmptyLang(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{

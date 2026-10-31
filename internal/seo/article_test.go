@@ -1,12 +1,5 @@
 package seo
 
-// article_test.go — 文章评分提取的口径测试（SEO-10）。
-//
-// 钉住三件容易悄悄错的事：
-//   - SEO 字段的回落顺序（seoTitle 优先于 title）；
-//   - 富文本标签不进字数（否则一篇 800 字的文章会被算成 3000 字，长度项虚假达标）；
-//   - 内链 / 外链 / 标题结构的提取口径（mailto 不算外链、h1..h6 全收）。
-
 import (
 	"strings"
 	"testing"
@@ -58,7 +51,7 @@ func TestArticleLinksCounts(t *testing.T) {
 	if external != 2 {
 		t.Errorf("外链应为 2，得到 %d", external)
 	}
-	// mailto / tel 不计入任何一类，但锚文本照收（它们是真实可点击文字）。
+
 	if len(anchors) != 6 {
 		t.Errorf("锚文本应为 6（含邮件与电话），得到 %d", len(anchors))
 	}
@@ -78,15 +71,13 @@ func TestArticleImages(t *testing.T) {
 	}
 }
 
-// TestScoreArticleTitleIsSeoTitle 钉住合并口径：文章的 SEO 标题就是标题（2026-09-30）。
-// data 里即使还留着历史 seoTitle / seoDescription，评分也不再读它们。
 func TestScoreArticleTitleIsSeoTitle(t *testing.T) {
 	base := map[string]any{
 		"title":        "一个长度合适、且把关键词放在前半段的标题文本",
 		"body":         "<p>" + strings.Repeat("正文内容 ", 200) + "</p>",
 		"excerpt":      "一段长度合适、带行动号召的描述文本，用于结果页点击率。",
 		"focusKeyword": "关键词",
-		// 遗留字段：值刻意写成不合格的短文本，被采纳就会露馅。
+
 		"seoTitle":       "很短",
 		"seoDescription": "短",
 	}
@@ -94,13 +85,12 @@ func TestScoreArticleTitleIsSeoTitle(t *testing.T) {
 	if res == nil {
 		t.Fatal("评分结果为空")
 	}
-	// 用文章标题时必须命中「标题含关键词且在前半段」这一项。
+
 	if !hasFullScore(res, "title_keyword_first_half") {
 		t.Errorf("文章标题未被当作 SEO 标题采纳（title_keyword_first_half 未满分）；分数 %d", res.Total)
 	}
 }
 
-// TestScoreArticleBodyTagsDoNotInflateWordCount 钉住「标签不算字数」。
 func TestScoreArticleBodyTagsDoNotInflateWordCount(t *testing.T) {
 	body := "<p>" + strings.Repeat("字", 1200) + "</p>"
 	withTags := map[string]any{"title": "标题", "body": body}
@@ -108,8 +98,7 @@ func TestScoreArticleBodyTagsDoNotInflateWordCount(t *testing.T) {
 	if res == nil {
 		t.Fatal("评分结果为空")
 	}
-	// 内容长度项在 1200 字时应达标；若标签被算进字数会虚高但仍然是满分，
-	// 所以这里反过来钉：把标签撑得极大，字数项不应因此被判「过长」。
+
 	padded := map[string]any{"title": "标题", "body": strings.Repeat("<div>", 400) + body}
 	res2 := ScoreArticle(padded, "/blog/x", "zh-CN")
 	if res2.Total != res.Total {
@@ -117,7 +106,6 @@ func TestScoreArticleBodyTagsDoNotInflateWordCount(t *testing.T) {
 	}
 }
 
-// TestScoreArticleEmptyData 空数据不 panic、给出可解释的低分。
 func TestScoreArticleEmptyData(t *testing.T) {
 	for name, data := range map[string]map[string]any{"nil": nil, "empty": {}} {
 		res := ScoreArticle(data, "", "zh-CN")
@@ -130,7 +118,6 @@ func TestScoreArticleEmptyData(t *testing.T) {
 	}
 }
 
-// TestScoreArticleKeywordLift 有主关键词的整体分数应高于没有的（其余字段相同）。
 func TestScoreArticleKeywordLift(t *testing.T) {
 	body := "<h2>长尾词布局</h2><p>" + strings.Repeat("长尾词布局是内容运营的基本功 ", 60) + "</p>"
 	without := map[string]any{"title": "长尾词布局", "body": body, "excerpt": "摘要"}
@@ -141,7 +128,6 @@ func TestScoreArticleKeywordLift(t *testing.T) {
 	}
 }
 
-// hasFullScore 指定检查项是否满分（按 Key 找，不按顺序）。
 func hasFullScore(res *scoring.Result, key string) bool {
 	for _, sec := range res.Sections {
 		for _, ck := range sec.Checks {

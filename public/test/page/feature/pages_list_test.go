@@ -12,8 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestPagesListTemplate 页面列表模板：行状态徽标与工作台链接渲染。
-// 数据形态与 dashboardhttp.pageRow 一致（私有类型，此处用同构 map）。
 func TestPagesListTemplate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Now()
@@ -21,14 +19,9 @@ func TestPagesListTemplate(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/pages", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/page/pages", map[string]any{
-			// 键名与生产 templateMap() 对齐：title/menu 小写(layout 取值)，
-			// Pages/Projects 大写(模板 range 取值)。
-			// t：模板已全面改走 t(key, 中文兜底) 取词（审计 I18N-001），生产入口由
-			// withCSRF→withI18n 注入；这里缺了它，渲染会在第一个 t() 调用处中断 ——
-			// 表现是 HTTP 200 但后半段整块消失，所以直接渲染模板的测试必须自己注入。
+
 			"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("en-US"),
-			// 两个新建入口改走抽屉后按权限显隐（adminui.Prepare 注入该用户拥有的权限码）；
-			// 这里直接渲染模板，测试数据给全集，否则抽屉 <template> 不渲染、断言缺内容。
+
 			"Buttons":  map[string]any{"project.create": true, "page.create": true},
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{

@@ -1,19 +1,12 @@
 package mailcontract
 
-// mail_service.go — 邮箱模块对外契约。
-//
-// 只放本模块对外暴露的能力，不定义外部依赖接口。
-// 账号的密码永不经过这里（响应里没有密码字段），所以契约本身不涉及明文。
-
 import (
 	"context"
 
 	maildto "go_wp/internal/module/mail/dto"
 )
 
-// MailService 邮箱域能力。
 type MailService interface {
-	// ---- 发信账号 ----
 	CreateAccount(ctx context.Context, req *maildto.SaveAccountReq) (*maildto.AccountItem, error)
 	UpdateAccount(ctx context.Context, req *maildto.SaveAccountReq) (*maildto.AccountItem, error)
 	ListAccounts(ctx context.Context, purpose string) ([]*maildto.AccountItem, error)
@@ -22,61 +15,54 @@ type MailService interface {
 	SetDefaultAccount(ctx context.Context, id uint64) error
 	TestSend(ctx context.Context, req *maildto.TestSendReq) (*maildto.TestSendResp, error)
 
-	// ---- 邮件模板 ----
 	UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (*maildto.TemplateItem, error)
-	// GetTemplate 取单个模板（key + locale）：可视化编辑器按它读块树。
+
 	GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error)
 	ListTemplates(ctx context.Context, key string) ([]*maildto.TemplateItem, error)
 	ListTemplatesPage(ctx context.Context, key string, page, limit int) ([]*maildto.TemplateItem, int64, int, error)
 	DeleteTemplate(ctx context.Context, key, locale string) error
 
-	// ---- 联系人 ----
 	ImportContacts(ctx context.Context, req *maildto.ImportContactsReq) (*maildto.ImportContactsResp, error)
 	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (*maildto.ContactListResp, error)
 	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) error
-	// CreateContact 新建联系人，返回新行 id（邮箱重复时返回可读错误，不静默成功）。
+
 	CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error)
-	// UpdateContact 编辑联系人（邮箱变更时按 service 注释处理抑制名单连带）。
+
 	UpdateContact(ctx context.Context, req *maildto.SaveContactReq) (err error)
-	// DeleteContacts 删除联系人：**只删 mail_contacts**，抑制名单原样保留。
+
 	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
-	// TagContacts 批量增 / 减标签，返回实际改动条数与跳过条数。
+
 	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
-	// ListContactTags 全库去重后的标签集合（筛选下拉候选）。
+
 	ListContactTags(ctx context.Context) (tags []string, err error)
 
-	// ---- 群发活动 ----
 	SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (*maildto.CampaignItem, error)
 	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (*maildto.CampaignListResp, error)
 	GetCampaign(ctx context.Context, id uint64) (*maildto.CampaignItem, error)
 	DeleteCampaign(ctx context.Context, id uint64) error
 	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (*maildto.StartCampaignResp, error)
 
-	// ---- 报表（#38 P1）----
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (*maildto.CampaignReport, error)
 
-	// ---- 自动化（#38 P3）----
 	SaveAutomation(ctx context.Context, req *maildto.SaveAutomationReq) (*maildto.AutomationItem, error)
 	ListAutomations(ctx context.Context, req *maildto.AutomationListReq) (*maildto.AutomationListResp, error)
 	GetAutomation(ctx context.Context, id uint64) (*maildto.AutomationItem, error)
 	SetAutomationStatus(ctx context.Context, req *maildto.SetAutomationStatusReq) error
-	// SaveAutomationLayout 保存画布位置（P4）。位置不是流程语义，**不推进版本号**。
+
 	SaveAutomationLayout(ctx context.Context, req *maildto.SaveAutomationLayoutReq) error
 	DeleteAutomation(ctx context.Context, id uint64) error
-	// StartRun 启动实例；返回是否新启动（false = 该联系人已在此流程中）。
+
 	StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (bool, error)
-	// RunAutomation 推进实例（由队列任务调用）。
+
 	RunAutomation(ctx context.Context, runID uint64) error
-	// ListAutomationRuns / AutomationRunDetail 排障视图（目标 ⑥）。
+
 	ListAutomationRuns(ctx context.Context, req *maildto.AutomationRunListReq) (*maildto.AutomationRunListResp, error)
 	AutomationRunDetail(ctx context.Context, runID uint64) (*maildto.AutomationRunDetailResp, error)
-	// EnqueueDueRuns 延时调度兜底：把到点的等待实例重新投递。
+
 	EnqueueDueRuns(ctx context.Context, limit int) (int, error)
 
-	// ---- 事务发送 ----
 	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
 
-	// ---- 追踪（#38 P1）----
 	SignTrackToken(p maildto.TrackPayload) (string, error)
 	ParseTrackToken(token string) (maildto.TrackPayload, error)
 	InjectTracking(html string, p maildto.TrackPayload) (string, error)
@@ -84,121 +70,58 @@ type MailService interface {
 	UnsubscribeByToken(ctx context.Context, token, ip, ua string) (string, error)
 }
 
-// MailQueryReader 营销数据的只读视图：给 AI 工具的窄门。
-//
-// 为什么不直接复用 MailService：那个接口有四十多个方法，其中大半是**写**
-// （发信、启停活动、改联系人状态、删模板、推进自动化实例）。工具由模型驱动 ——
-// 给它整个 MailService 就等于让「AI 顺手把某个活动启动起来」「把联系人退订了」
-// 在某次无关改动里变得可能，而这条路径上没有任何页面会问它为什么。
-// 越权防护靠接口形状，不靠调用方自觉（与本文件 TransactionalSender 同一手法）。
-//
-// 三个方法对应三类用户提问：
-//   - ListContacts：「某某邮箱订阅了吗」「这批标签里有多少人」；
-//   - ListCampaigns：「最近发过哪些邮件」「那次发了多少人」；
-//   - CampaignReport：「那封邮件的打开率怎么样」（打开 / 点击 / 退订 / 退信）。
 type MailQueryReader interface {
-	// ListContacts 联系人列表：关键词（email / name 模糊）+ 状态 + 标签。
 	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (res *maildto.ContactListResp, err error)
-	// ListCampaigns 营销活动列表：状态筛选 + 分页，含投递进度快照。
+
 	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (res *maildto.CampaignListResp, err error)
-	// CampaignReport 单个活动的效果报表（去重人数与百分比口径见类型说明）。
+
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error)
-	// ListTemplates 邮件模板：key 为空时列全部。**活动存的是 template_id 而不是 key**，
-	// 所以工具必须能把 id 给出来，否则模型建不了活动（只能停下来问用户要 id）。
+
 	ListTemplates(ctx context.Context, key string) (res []*maildto.TemplateItem, err error)
-	// ListAccounts 发信账号：purpose 为空时列全部。建活动要 accountId，同理必须带 id。
+
 	ListAccounts(ctx context.Context, purpose string) (res []*maildto.AccountItem, err error)
 }
 
-// CampaignWriter 群发活动的写能力（给 AI 工具的窄门）。
-//
-// StartCampaign 是**本仓唯一会向站外真实收件人批量发信的动作**，所以它单独成方法、
-// 单独一个权限点，描述里也写死了「必须先把收件规模念给用户确认」。
 type CampaignWriter interface {
-	// SaveCampaign 新建（ID=0）或编辑草稿（仅草稿可改）。
 	SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (res *maildto.CampaignItem, err error)
-	// StartCampaign 启动群发（真发信）。
+
 	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (res *maildto.StartCampaignResp, err error)
-	// DeleteCampaign 删除活动（正在发送中的删不掉）。
+
 	DeleteCampaign(ctx context.Context, id uint64) (err error)
 }
 
-// ContactWriter 营销联系人的写能力（给 AI 工具的窄门）。
-//
-// 刻意**不含** ImportContacts 与从系统用户拉人：那两个动作一次把成百上千人拉进名单，
-// 正确性取决于「谁同意接收」这条政策判断 —— 那是人做的决定。
-// 助手能做的是用户已经决定之后帮他改一个人、打一批标签。
 type ContactWriter interface {
-	// CreateContact 新建联系人，返回新 id。
-	//
-	// Status 为空时落 pending（**不可发**）：没有同意证据的人不进可发名单。
 	CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error)
-	// UpdateContact 编辑联系人（Tags 是**全量覆盖**，没列出的会被去掉）。
+
 	UpdateContact(ctx context.Context, req *maildto.SaveContactReq) (err error)
-	// UpdateContactStatus 改同意状态（置 subscribed 会触发订阅类自动化）。
+
 	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) (err error)
-	// DeleteContacts 批量删除（真删除；「不再发信」应当用退订而不是删）。
+
 	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
-	// TagContacts 批量增减标签（增与减同一次完成，避免半截状态）。
-	//
-	// 返回值与 MailService 的同名方法一致：changed 与 skipped 分开报。
-	// 签名必须逐字相同 —— Go 不允许一个类型有两个同名方法，签名对不上就
-	// 无法从同一个 service 实例断言出这个接口（编译期直接失败，不是运行时才炸）。
+
 	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
 }
 
-// TransactionalSender 事务邮件发送端口 —— 按模板 key + 语言发**一封**事务邮件。
-//
-// 单独一个接口而不是并进 MailService：事务链路的调用方（注册验证 / 密码重置 / 访客开号）
-// 一条发信账号、模板管理、群发、报表能力都用不上，拿到整个 MailService 只会扩大误用面。
-// 与 TrackingService 同一手法 —— 越权防护靠**接口形状**，不靠调用方自觉。
-//
-// 入参用本契约自有类型（SendInput / SendOutcome）而**不借用 dto**：
-// dto 服务 HTTP 层绑定，形状随绑定需求变；对外契约的形状只随语义变。
-// 事务语义写死在类型里 —— 恒用事务用途的默认账号，不带群发活动 / 联系人 / 操作人，
-// 那三个字段属于后台群发链路，事务调用方没有任何场景该填。
 type TransactionalSender interface {
-	// SendTransactional 按模板 key + 语言渲染并投递一封事务邮件。
-	//
-	// 模板不存在 / 变量缺失 / 收件人为空一律返回 error；
-	// 收件人在抑制名单内不算失败 —— 返回 SendOutcome{Suppressed: true} 且 err 为 nil。
 	SendTransactional(ctx context.Context, in *SendInput) (*SendOutcome, error)
 }
 
-// SendInput 事务邮件的发送请求（契约自有形状，非 dto 别名）。
-//
-// 刻意只有四个字段：事务链路需要的语义就是「哪套模板、什么语言、发给谁、变量是什么」。
-// AccountID / CampaignID / ContactID / OperatorID 一律不暴露 ——
-// 前者的缺省（事务默认账号）是模块内部决定，后三者属群发链路。
 type SendInput struct {
-	// TemplateKey 模板键。
 	TemplateKey string
-	// Locale 收件语言；为空时按模块既有的语言回退口径处理。
+
 	Locale string
-	// To 收件地址。
+
 	To string
-	// Vars 模板变量。
+
 	Vars map[string]any
 }
 
-// SendOutcome 事务邮件的投递结论 —— 只暴露调用方能判定的两件事。
-//
-// 不发日志主键：那是 mail 模块内部的排障标识，调用方凭它做不了任何决定，
-// 暴露出去只会诱使调用方把它当业务引用存下来（日志轮转后就失效了）。
 type SendOutcome struct {
-	// Queued 已受理入队。
 	Queued bool
-	// Suppressed 因退订 / 抑制名单未实际投递。
+
 	Suppressed bool
 }
 
-// TrackingService 追踪端点需要的最小能力。
-//
-// 单独一个接口而不并进 MailService：公开路由不该拿到账号 / 模板 / 群发这些后台能力，
-// 越权防护靠**接口形状**，而不是靠调用方自觉。
-//
-// 注意 UnsubscribeByToken 的语义：退订是反垃圾邮件法要求的能力，所以它不需要登录态与 csrf，
-// 安全性由「token 只能由我们签发」保证，且操作幂等。
 type TrackingService interface {
 	ParseTrackToken(token string) (maildto.TrackPayload, error)
 	InjectTracking(html string, p maildto.TrackPayload) (string, error)

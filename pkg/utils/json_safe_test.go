@@ -28,7 +28,6 @@ func TestJsonSafe(t *testing.T) {
 	}
 }
 
-// The legacy comment escape is intentionally preserved, including its decode error.
 func TestJsonSafeRawCommentDecodeError(t *testing.T) {
 	if err := json.Unmarshal([]byte(JsonSafe(`{"html":"<!--"}`)), new(any)); err == nil {
 		t.Fatal("raw comment escape must preserve the legacy JSON decode error")

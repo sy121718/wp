@@ -2,18 +2,12 @@ package migrations
 
 import "sync"
 
-// register_system_settings_page.go — 系统设置页：trade 组 + 本页词条（497）。
 func registerSystemSettingsPage() {
 	registerSystemSettingsPageOnce.Do(registerSystemSettingsPageSeed)
 }
 
-// registerSystemSettingsPageOnce 让重复调用成为空操作。
 var registerSystemSettingsPageOnce sync.Once
 
-// registerSystemSettingsPageSeed 注册 497（真正干活的那一半）。
-//
-// 判定按本批自己的对象逐条枚举（上界封闭）：组存在 + 四个页面键的 zh-CN 词条齐了才算完成。
-// ConditionSQL 由迁移器 db.Raw 直接执行、没有参数替换，值只能写进 SQL 字面量。
 func registerSystemSettingsPageSeed() {
 	registerSeed(Seed{
 		Version:   "497-system-settings-page",

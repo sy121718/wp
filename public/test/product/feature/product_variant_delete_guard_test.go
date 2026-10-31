@@ -1,14 +1,3 @@
-// product_variant_delete_guard_test.go — 变体删除守卫的两个引用面 + 容器 SKU 两处一致性。
-//
-// 两件事都是批次 C 的收口项：
-//
-//  1. 删除守卫 —— 变体删除前要拦住两个引用面：
-//     库存非零 / **有过任何库存流水**（被订单用过）。
-//     「保存变体清单」与单条删除**共用同一个守卫函数**
-//     （两处各写一份必然分叉，表现为「接口能删掉、抽屉保存删不掉」）。
-//
-//  2. 容器 SKU 获取函数合并（docs/14 §1.2）—— 商品新建 / 变体生成两处
-//     都经 buildProductContainerSKU 这一个入口。既有 SKU 一律不重算。
 package feature
 
 import (
@@ -36,13 +25,12 @@ import (
 	"go_wp/public/test/support"
 )
 
-// guardFixture 隔离 PG schema + 生产迁移/种子 + 真实工程、商品与库存三个 service。
 type guardFixture struct {
 	inventory *inventoryservice.Service
 	products  *productservice.Service
 	db        *gorm.DB
 	projectID string
-	// sz 是默认仓（商品创建时的首个变体落在这里）；sh 是第二个仓（仓库来源的用例都在它上面）。
+
 	sz *inventorydto.WarehouseResp
 	sh *inventorydto.WarehouseResp
 }
@@ -86,7 +74,6 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	}
 }
 
-// containerSKU 直读 products.sku_code（容器主体 SKU 的唯一落点，迁移 246）。
 func (f *guardFixture) containerSKU(t *testing.T, productID string) string {
 	t.Helper()
 	var code string
@@ -96,7 +83,6 @@ func (f *guardFixture) containerSKU(t *testing.T, productID string) string {
 	return code
 }
 
-// mkAttr 建一个「参与变体」的属性组（值与 key 一一对应）。
 func (f *guardFixture) mkAttr(t *testing.T, name, key string, valueKeys []string) *productdto.AttributeResp {
 	t.Helper()
 	values := make([]productdto.AttributeValueReq, 0, len(valueKeys))
@@ -112,7 +98,6 @@ func (f *guardFixture) mkAttr(t *testing.T, name, key string, valueKeys []string
 	return attr
 }
 
-// mkProduct 建一个变体商品（可引用属性组；首个无规格变体由创建路径自动生成）。
 func (f *guardFixture) mkProduct(t *testing.T, name, slug string, attributeIDs []string, price *float64) *productdto.ProductResp {
 	t.Helper()
 	res, err := f.products.Create(context.Background(), &productdto.CreateReq{
@@ -125,7 +110,6 @@ func (f *guardFixture) mkProduct(t *testing.T, name, slug string, attributeIDs [
 	return res
 }
 
-// variantsOf 读商品的全部变体。
 func (f *guardFixture) variantsOf(t *testing.T, productID string) []*productdto.VariantResp {
 	t.Helper()
 	detail, err := f.products.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
@@ -135,7 +119,6 @@ func (f *guardFixture) variantsOf(t *testing.T, productID string) []*productdto.
 	return detail.Variants
 }
 
-// generateAll 走「预览—保存」生成该商品的全部组合（与后台抽屉同一条路径）。
 func (f *guardFixture) generateAll(t *testing.T, productID string) []*productdto.VariantResp {
 	t.Helper()
 	ctx := context.Background()
@@ -158,7 +141,6 @@ func (f *guardFixture) generateAll(t *testing.T, productID string) []*productdto
 	return f.variantsOf(t, productID)
 }
 
-// seedWarehouseRow 在指定仓给某个变体登记一条仓库 SKU（inventory_stocks 的一行）。
 func (f *guardFixture) seedWarehouseRow(t *testing.T, warehouseID, skuCode string, v *productdto.VariantResp) {
 	t.Helper()
 	if _, err := f.inventory.EnsureStock(context.Background(), &inventorydto.EnsureStockReq{
@@ -169,7 +151,6 @@ func (f *guardFixture) seedWarehouseRow(t *testing.T, warehouseID, skuCode strin
 	}
 }
 
-// changeStock 走真实库存变动链路（in / out），用于造「有过流水」的变体。
 func (f *guardFixture) changeStock(t *testing.T, v *productdto.VariantResp, direction string, qty int) {
 	t.Helper()
 	reason := "purchase_in"
@@ -188,7 +169,6 @@ func (f *guardFixture) changeStock(t *testing.T, v *productdto.VariantResp, dire
 	}
 }
 
-// saveListRaw 以清单为准保存变体（返回结论，不改判失败）。
 func (f *guardFixture) saveListRaw(t *testing.T, productID string, rows []productdto.VariantListResp) (*productdto.SaveVariantListResp, error) {
 	t.Helper()
 	return f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
@@ -197,9 +177,6 @@ func (f *guardFixture) saveListRaw(t *testing.T, productID string, rows []produc
 	})
 }
 
-// TestVariantDeleteGuardTwoReasons 两个守卫各一条用例：
-// 库存非零 / 有过库存流水 —— 一条都不能删，且逐条回带原因；
-// 没有任何引用面的那个变体照常删除。
 func TestVariantDeleteGuardTwoReasons(t *testing.T) {
 	f := newGuardFixture(t)
 	if f == nil {
@@ -215,13 +192,11 @@ func TestVariantDeleteGuardTwoReasons(t *testing.T) {
 	}
 	withStock, movedOnly, unreferenced := variants[0], variants[1], variants[2]
 
-	// ① 库存非零。
 	f.changeStock(t, withStock, inventoryenums.DirectionIn, 3)
-	// ② 有过库存流水但库存已回零（买入又卖出）：非零库存守卫拦不住它，必须靠流水守卫。
+
 	f.changeStock(t, movedOnly, inventoryenums.DirectionIn, 2)
 	f.changeStock(t, movedOnly, inventoryenums.DirectionOut, 2)
 
-	// 清单中任一删除受阻，所有变体都应保留。
 	_, err := f.saveListRaw(t, p.ID, []productdto.VariantListResp{})
 	var rejected facing.BlockedError
 	if !errors.As(err, &rejected) {
@@ -250,7 +225,6 @@ func TestVariantDeleteGuardTwoReasons(t *testing.T) {
 		t.Fatal("无引用的行也不能被部分删除")
 	}
 
-	// 单条删除路径共用同一个守卫（同一批原因 key，不是另一套文案）。
 	single := []struct {
 		id     string
 		reason string
@@ -268,12 +242,6 @@ func TestVariantDeleteGuardTwoReasons(t *testing.T) {
 	}
 }
 
-// TestContainerSKUTwoPathsConsistent 容器 SKU 的两处取得路径行为一致（本批合并为一个入口）：
-//
-//	① 商品新建（自己创建 / 从仓库选）—— 入口是 buildProductContainerSKU；
-//	② 变体生成 —— 变体 SKU = <容器主体>_<属性值…>_V，主体段就是 products.sku_code。
-//
-// 两者共用同一个函数后，这两条断言就是「主体段只有一份」的可执行证明。
 func TestContainerSKUTwoPathsConsistent(t *testing.T) {
 	f := newGuardFixture(t)
 	if f == nil {
@@ -282,9 +250,8 @@ func TestContainerSKUTwoPathsConsistent(t *testing.T) {
 	ctx := context.Background()
 	price := 10.0
 
-	// ①a 自己创建 + 选了仓：编码原样 + 仓码前缀。
 	self := f.mkProduct(t, "自建商品", "sku-consist-self", nil, &price)
-	// mkProduct 不带 sku，这里再建一个显式填编码的：改走 Create 原始入参。
+
 	named := "自建编码商品"
 	made, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: named, Slug: "sku-consist-custom",
@@ -300,9 +267,6 @@ func TestContainerSKUTwoPathsConsistent(t *testing.T) {
 		t.Fatalf("首个变体应等于容器主体，实际 %+v", v)
 	}
 
-	// ①b 从仓库选：主体 = <仓短码>_<仓库那条 SKU>，前端提交的 sku 不作数。
-	// 用第二个仓（sh）登记一条独立的仓库 SKU：同一个仓里「我们自己的 SKU 仓内唯一」，
-	// 在默认仓里复用它自己的编码会直接撞 UNIQUE (warehouse_id, sku_code)。
 	host := f.mkProduct(t, "仓库货宿主", "sku-consist-host", nil, &price)
 	hostVariant := f.variantsOf(t, host.ID)[0]
 	f.seedWarehouseRow(t, f.sh.ID, "CONSIST-001", hostVariant)
@@ -322,7 +286,6 @@ func TestContainerSKUTwoPathsConsistent(t *testing.T) {
 		t.Fatalf("首个变体应等于容器主体，实际 %+v", v)
 	}
 
-	// ② 变体生成：新变体的 SKU 以容器主体为前缀、以 _V 结尾。
 	color := f.mkAttr(t, "颜色", "color", []string{"red", "blue"})
 	gen := f.mkProduct(t, "组合商品", "sku-consist-generate", []string{color.ID}, &price)
 	container := f.containerSKU(t, gen.ID)
@@ -339,7 +302,6 @@ func TestContainerSKUTwoPathsConsistent(t *testing.T) {
 		}
 	}
 
-	// 存量不重算：改 URL 段 / 再存一次都不会动已有主体编码与变体编码。
 	newSlug := "sku-consist-renamed"
 	if _, err = f.products.Update(ctx, &productdto.UpdateReq{
 		ID: made.ID, ProjectID: f.projectID, Slug: &newSlug,

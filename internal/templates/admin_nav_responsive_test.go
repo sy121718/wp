@@ -1,16 +1,5 @@
 package templates
 
-// admin_nav_responsive_test.go — 后台全局布局的窄屏断点契约（审计条目 UI-001）。
-//
-// 修复前：.rail（88px 图标栏）+ .subnav（224px 二级栏）在 .admin-layout 里固定并排，
-// 且这三个选择器没有任何 @media —— 375px 视口下导航吃掉 312px，内容区只剩几十像素。
-//
-// 本测试钉住三件事，防止后续改动把断点改回去或漏掉桌面端：
-//  1. theme.css 里 rail / subnav 的脱离文档流规则只允许出现在 1023px 媒体查询内，
-//     媒体查询外的基础规则仍是原来的 flex 并排（桌面端零改动）；
-//  2. 汉堡按钮与遮罩在媒体查询外默认 display: none（桌面端不出现、不占位）；
-//  3. 后台外壳渲染后带 navToggle / data-nav-scrim，且 admin.js 可解析（node --check）。
-
 import (
 	"os"
 	"os/exec"
@@ -20,12 +9,6 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// stripCSSComments 返回与 src 等长的副本，把注释内容替换成空格（保留换行）。
-// 下标与原文一一对应，供后续用同一偏移在原文上切片。
-//
-// 必须有这一步：注释里出现字面量 "@media"（例如「这三个选择器没有任何 @media 规则」
-// 这类说明）会让朴素的子串扫描把注释当成媒体查询开头，接下来的花括号配平一路错位，
-// 媒体查询外的基础规则被误判成块内 —— 本文件第一次跑就是这样误报的。
 func stripCSSComments(src string) string {
 	out := []byte(src)
 	for i := 0; i+1 < len(out); {
@@ -51,8 +34,6 @@ func stripCSSComments(src string) string {
 	return string(out)
 }
 
-// splitCSSMedia 把 CSS 切成「媒体查询外的基础区」与「各媒体查询块」。
-// 在去注释的掩码上定位、按花括号配平切分（theme.css 的规则体里没有字面量花括号）。
 func splitCSSMedia(src string) (string, []string) {
 	mask := stripCSSComments(src)
 	var base strings.Builder
@@ -78,7 +59,6 @@ func splitCSSMedia(src string) (string, []string) {
 	return base.String(), blocks
 }
 
-// matchBrace 返回与 src[open]（花括号）配对的收尾花括号下标；不配平时返回末字符下标。
 func matchBrace(src string, open int) int {
 	depth := 0
 	for i := open; i < len(src); i++ {
@@ -95,7 +75,6 @@ func matchBrace(src string, open int) int {
 	return len(src) - 1
 }
 
-// blockWith 返回以给定前缀开头的媒体查询块；没有则返回空串。
 func blockWith(blocks []string, prefix string) string {
 	for _, b := range blocks {
 		if strings.HasPrefix(strings.TrimSpace(b), prefix) {
@@ -105,7 +84,6 @@ func blockWith(blocks []string, prefix string) string {
 	return ""
 }
 
-// ruleBody 返回选择器规则体（选择器后第一对花括号之间的内容）；找不到返回空串。
 func ruleBody(src, selector string) string {
 	i := strings.Index(src, selector)
 	if i < 0 {
@@ -132,8 +110,6 @@ func readAdminThemeCSS(t *testing.T) string {
 	return string(css)
 }
 
-// TestAdminLayoutDesktopRulesStayOutsideMediaQuery 桌面端布局必须仍在媒体查询之外：
-// rail / subnav 的 fixed 与 transform 只许出现在断点块里，基础区保持原 flex 并排。
 func TestAdminLayoutDesktopRulesStayOutsideMediaQuery(t *testing.T) {
 	base, blocks := splitCSSMedia(readAdminThemeCSS(t))
 
@@ -149,7 +125,6 @@ func TestAdminLayoutDesktopRulesStayOutsideMediaQuery(t *testing.T) {
 		}
 	}
 
-	// 桌面基础布局必须原样保留：flex 并排 + 两栏固定宽度。
 	for _, want := range []string{
 		".admin-layout {",
 		"display: flex;",
@@ -166,8 +141,6 @@ func TestAdminLayoutDesktopRulesStayOutsideMediaQuery(t *testing.T) {
 	}
 }
 
-// TestAdminNavBreakpointRules 断点块必须把 rail / subnav 变成覆盖式抽屉，
-// 且关闭态位移要把「图标栏 + 二级栏」整体移出视口（只写 -100% 会在左侧露出 88px）。
 func TestAdminNavBreakpointRules(t *testing.T) {
 	_, blocks := splitCSSMedia(readAdminThemeCSS(t))
 	mobile := blockWith(blocks, "@media (max-width: 1023px)")
@@ -188,16 +161,6 @@ func TestAdminNavBreakpointRules(t *testing.T) {
 	}
 }
 
-// TestAdminNavBreakpointTakesOverCollapsedWidth 断点块必须把 sidebar-collapsed 的占位宽度
-// 也接管回来（实测故障：cookie sidebar_open=0 的用户把窗口拉窄后点开抽屉，二级栏只剩
-// 21px 宽 —— padding 20px + 边框 1px，内容整块看不见）。
-//
-// 为什么必须显式接管：基础区 `body.sidebar-collapsed .subnav { width: 0 }` 特异性 (0,2,1)，
-// 压得过断点块里低特异性的 `.subnav { width: min(...) }`；断点块原先只接管了
-// flex-basis / opacity / border-right，宽度就被桌面收起态赢走了。
-//
-// 断言取「含 body.sidebar-collapsed .subnav 的那条规则体」并要求其中自带 width，
-// 而不是在整块里做子串匹配 —— 整块匹配会被同块里别的规则或注释满足，退化成假绿。
 func TestAdminNavBreakpointTakesOverCollapsedWidth(t *testing.T) {
 	_, blocks := splitCSSMedia(readAdminThemeCSS(t))
 	mobile := blockWith(blocks, "@media (max-width: 1023px)")
@@ -216,13 +179,11 @@ func TestAdminNavBreakpointTakesOverCollapsedWidth(t *testing.T) {
 			"实际规则体：%s", want, strings.TrimSpace(body))
 	}
 
-	// 两处表达式必须逐字一致：各写一套值迟早漂移，抽屉宽度与桌面占位宽度就分成两个真源。
 	if subnavBody := ruleBody(mobile, ".subnav {"); !strings.Contains(subnavBody, "width: "+want) {
 		t.Errorf("断点块里 .subnav 的宽度表达式与接管条不一致（应同为 \"width: %s\"）", want)
 	}
 }
 
-// TestNavToggleHiddenOnDesktop 汉堡按钮与遮罩在桌面端必须默认不渲染不占位。
 func TestNavToggleHiddenOnDesktop(t *testing.T) {
 	base, blocks := splitCSSMedia(readAdminThemeCSS(t))
 	if !strings.Contains(base, ".nav-toggle, .nav-scrim { display: none; }") {
@@ -234,8 +195,6 @@ func TestNavToggleHiddenOnDesktop(t *testing.T) {
 	}
 }
 
-// TestAdminLayoutRendersNavToggle 真渲染后台外壳：汉堡按钮与遮罩必须真的在 HTML 里，
-// 且按钮带无障碍属性（aria-expanded / aria-controls 指向图标栏与二级栏）。
 func TestAdminLayoutRendersNavToggle(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -259,14 +218,12 @@ func TestAdminLayoutRendersNavToggle(t *testing.T) {
 			t.Errorf("后台外壳缺少 %q", want)
 		}
 	}
-	// 遮罩不加 hidden 属性：显隐完全交给媒体查询，避免属性与 display 打架。
+
 	if strings.Contains(html, `data-nav-scrim hidden`) {
 		t.Error("遮罩不应带 hidden 属性（与断点里的 display 冲突）")
 	}
 }
 
-// TestAdminNavDrawerScriptParses admin.js 必须能被 Node 当普通脚本解析，
-// 且窄屏断点值与 CSS 一致（1023px 两头写错会表现成「点了没反应」）。
 func TestAdminNavDrawerScriptParses(t *testing.T) {
 	src, err := os.ReadFile("static/js/admin.js")
 	if err != nil {

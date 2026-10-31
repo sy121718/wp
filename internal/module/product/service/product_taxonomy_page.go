@@ -15,7 +15,6 @@ func normalizedTaxonomyQuery(query *productdto.CatalogTaxonomyReq) productdto.Ca
 	return q
 }
 
-// FlattenCategoryTree 只展开实体顺序，不复制字段或生成展示行。
 func FlattenCategoryTree(nodes []*productdto.CategoryResp) []*productdto.CategoryResp {
 	out := make([]*productdto.CategoryResp, 0, len(nodes))
 	var walk func([]*productdto.CategoryResp)
@@ -31,7 +30,6 @@ func FlattenCategoryTree(nodes []*productdto.CategoryResp) []*productdto.Categor
 	return out
 }
 
-// CategoriesInProject 按实体所属工程限制候选范围，不依赖数据库角色是否已启用 RLS。
 func CategoriesInProject(nodes []*productdto.CategoryResp, projectID string) []*productdto.CategoryResp {
 	out := make([]*productdto.CategoryResp, 0, len(nodes))
 	for _, n := range nodes {
@@ -42,7 +40,6 @@ func CategoriesInProject(nodes []*productdto.CategoryResp, projectID string) []*
 	return out
 }
 
-// CategoryNodes 返回工程内全部分类原对象，供父级关系查询与引用选择复用。
 func (s *Service) CategoryNodes(ctx context.Context, projectID string) ([]*productdto.CategoryResp, error) {
 	if projectID == "" {
 		return []*productdto.CategoryResp{}, nil

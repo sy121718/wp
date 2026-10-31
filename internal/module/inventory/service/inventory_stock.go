@@ -1,58 +1,5 @@
 package inventoryservice
 
-// 死线（spec §库存）：一切影响可用量的判断只能读 inventory_stocks 这一张真源表，
-// 绝不读 product_variants.stock_total —— 那是后台列表展示用的冗余缓存，
-// 一旦被当成扣减依据，缓存滞后就会直接变成超卖。本文件的读取路径全部走真源。
-//
-// 「按 SKU 增减 + 写流水 + 行锁」是 issue #16 的内容；本票的写入路径只有
-// 「确保库存记录存在（初始 0）」这一条，因此 quantity 恒为 0，不做任何数值变更。
-
-// 口径（docs/14 §1.1 与迁移 262，2026-09-19 冻结）：
-//
-//	· **仓库里的 SKU 永远是裸码**（DRAWERSMOKE_001），不带仓码前缀；
-//	  仓码前缀只出现在**商品侧**（SZ_DRAWERSMOKE_001，标注归属 / 前缀仓）。
-//
-// 为什么入库侧必须自己剥一次前缀，而不是继续指望「商品侧负责剥前缀」：
-//
-//	商品侧那条路径（product_crud / product_variant → EnsureVariantStock）剥的是
-//	**商品自己那条 SKU**，它天然带着自己的前缀仓前缀，两者恒对齐。入库不是那条路径：
-//
-//	  · 页面表单是操作者从候选里手选的编码；
-//	  · 接口调用方（外部系统 / 脚本 / 运维）给的通常是商品侧的带前缀编码 —— docs/14
-//	    只规定了「商品侧建库存行时剥前缀」，而入库建库存行根本不经商品侧；
-//	  · 结果是**新建**的库存行可能落成空串或带前缀的编码，直接把不变量捅破：
-//	    空串还会在 UNIQUE (warehouse_id, sku_code)（迁移 244）上撞成一句没有上下文的 23505。
-//
-// 所以本文件是入库入口的唯一规则，**空串一律拒绝**（绝不再用空串建库存行）。
-// 归一实现与商品侧的 productservice.stripWarehousePrefix 逐字同口径（幂等 / 大小写不敏感 /
-// 只剥一次），也与迁移 262 的存量清理谓词一致 —— 三处必须同时改，
-// public/test/inventory/feature 里有一条把两边钉在一起的等价性断言。
-//
-// 为什么在同模块里再写一份而不直接调商品侧那个函数：本模块对商品模块的依赖**只允许经
-// product 契约**（AGENTS.md 的表隔离约定），而 stripWarehousePrefix / StripWarehousePrefix
-// 都不在契约上（它是商品的 service 层导出，给商品自己的 inbound 用的）。为这一处归一去
-// 扩商品契约，会让「仓码前缀怎么剥」这条库存域规则挂到商品模块的对外接口上。
-
-// 商品模块建变体时需要两件本模块才知道的事：
-//  1. 归属仓的短码 —— SKU 编码形如 {仓短码}_{商品码}_{序号}，未指定仓时用默认仓；
-//  2. 在归属仓生成一条初始 0 的库存记录。
-//
-// 商品模块只依赖本端口（端口定义在 product/contract），实现留在这里 ——
-// 商品模块不认识仓库模块，装配期由顶层把本服务注入。
-
-// 用户 2026-09-19 补充确认的三条口径，本文件是它们的唯一落点：
-//
-//  1. **属性属于商品**，仓库侧只回答「这条货在这个仓叫什么」—— 那件事落在
-//     inventory_stocks.external_sku 上（第三方仓 / 平台仓的编码我们改不了，只能映射）；
-//  2. 映射是 **N:1**：同一个商品的多个变体（十几个口味）在仓库侧可以共用同一个外码。
-//     因此 DDL 上**没有**唯一索引，只有一条弱校验 —— 同一仓内同一外码必须指向
-//     同一个 product_id（多口味共用合法，两个不同商品共用一个外码报
-//     ErrExternalSKUProductConflict）；
-//  3. 空串不是「缺失」而是一种合法状态：该仓用我们自己的 SKU（自营仓的常态）。
-//
-// 「仓库 SKU」不另建目录（docs/14 §4）：它就是库存真源上已有的 (warehouse_id, sku_code)。
-// 本文件提供商品侧「从仓库选」需要的三件事：列出候选、按仓库 + 编码定位、写外码。
-
 import (
 	"context"
 	"errors"
@@ -74,13 +21,11 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// EnsureStock 幂等地确保某 SKU 在某仓有一条库存记录（初始 0）。
 func (s *Service) EnsureStock(ctx context.Context, req *inventorydto.EnsureStockReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.VariantID) == "" {
 		return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
-	// quantity 传 nil：本条契约入口只说「确保这一行存在」这一步（新行 = 不跟踪 = 无限），
-	// 要落一个具体数量走变动契约（ChangeStock）或商品侧的 EnsureVariantStock。
+
 	e, err := s.ensureStockRow(ctx, req.ProjectID, req.WarehouseID,
 		strings.TrimSpace(req.ProductID), strings.TrimSpace(req.VariantID), strings.TrimSpace(req.SKUCode), nil)
 	if err != nil {
@@ -89,46 +34,18 @@ func (s *Service) EnsureStock(ctx context.Context, req *inventorydto.EnsureStock
 	return s.toStockResp(ctx, e), nil
 }
 
-// ensureStockRow 幂等生成库存行的内部实现（契约入口与商品端口共用同一条路径）。
-//
-// quantity 语义（迁移 261，2026-09-19 冻结）：
-//
-//	nil     → 新建行 track_quantity = false（**不跟踪 = 无限**，新建行的默认口径）；
-//	非 nil  → 新建行 track_quantity = true 并写入该数量。
-//	          0 是**合法且明确**的值（= 没货），与 nil 严格区分 —— 「没填数量」与
-//	          「填了 0」是两回事，这也是 DDL 侧 CHECK (track_quantity OR quantity = 0)
-//	          存在的意义：不跟踪的行不允许带数字。
-//
-// skuCode 是**仓库侧裸码**（如 DRAWERSMOKE_001）：仓库里的 SKU 永远不带仓码前缀，
-// 前缀只出现在商品侧（SZ_DRAWERSMOKE_001，标注归属 / 前缀仓）。**本层不剥前缀、
-// 也不加前缀** —— 剥前缀是商品侧的职责（另一批），本层只把调用方给的编码原样写下。
-// 唯一的例外是存量迁移 262：它会把**历史数据里**多余的仓码前缀剥掉一次，那是数据订正，
-// 不是这条写路径的行为。
 func (s *Service) ensureStockRow(ctx context.Context, projectID, warehouseID, productID, variantID, skuCode string, quantity *int) (e *inventorymodel.StockEntity, err error) {
 	return s.ensureStockRowWithExternalTx(ctx, nil, projectID, warehouseID, productID, variantID, skuCode, "", quantity)
 }
 
-// ensureStockRowTx 与 ensureStockRow 同义，但在**调用方的事务**里执行（tx 非 nil）。
 func (s *Service) ensureStockRowTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, productID, variantID, skuCode string, quantity *int) (e *inventorymodel.StockEntity, err error) {
 	return s.ensureStockRowWithExternalTx(ctx, tx, projectID, warehouseID, productID, variantID, skuCode, "", quantity)
 }
 
-// ensureStockRowWithExternal 同上，并带上该仓的外部编码（迁移 251）。
 func (s *Service) ensureStockRowWithExternal(ctx context.Context, projectID, warehouseID, productID, variantID, skuCode, externalSKU string, quantity *int) (e *inventorymodel.StockEntity, err error) {
 	return s.ensureStockRowWithExternalTx(ctx, nil, projectID, warehouseID, productID, variantID, skuCode, externalSKU, quantity)
 }
 
-// ensureStockRowWithExternalTx 同上，并接受**调用方的事务**（nil = 自己开事务）。
-//
-// externalSKU 与 quantity 都只作用于**新建**那一行：EnsureStock 幂等（已存在则返回既有行），
-// 既有的 external_sku / track_quantity / quantity 不会被这里覆盖 —— 覆盖式改外码走
-// BindExternalSKU、改跟踪开关与数量走 UpdateStockTracking 这两条显式入口，
-// 免得「再 ensure 一次」把运营登记过的对方编码或数量悄悄清掉。
-//
-// tx 非 nil 时**不再自己开事务**：幂等建行（model.EnsureStockTx）在传入的 tx 上设
-// 工程作用域（rls.ScopeTx），插入冲突走 ON CONFLICT DO NOTHING —— 它绝不报错，
-// 因为一句报错的 INSERT 会把调用方的整个事务标记为 aborted（商品 + 变体一起回滚）。
-// 归属仓解析（resolveWarehouse）是只读且自足事务的，不参与外层事务的原子性。
 func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, productID, variantID, skuCode, externalSKU string, quantity *int) (e *inventorymodel.StockEntity, err error) {
 	wh, err := s.resolveWarehouse(ctx, projectID, warehouseID)
 	if err != nil {
@@ -140,7 +57,7 @@ func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB,
 		ProductID: inventorymodel.StringPtr(productID), VariantID: inventorymodel.StringPtr(variantID),
 		SKUCode:     skuCode,
 		ExternalSKU: externalSKU,
-		// 默认 = 不跟踪（无限）：新建行「不填数量就是无限」与列默认 false 是同一个口径。
+
 		TrackQuantity: false,
 		Quantity:      0, Metadata: json.RawMessage("{}"),
 		CreatedAt: now, UpdatedAt: now,
@@ -149,18 +66,17 @@ func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB,
 		if *quantity < 0 {
 			return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 		}
-		// 给了一个具体数量 ⇒ 这行要跟踪（0 也一样：0 是「明确没货」，不是「没填」）。
+
 		row.TrackQuantity = true
 		row.Quantity = *quantity
 	}
 	if tx != nil {
-		// 调用方已在事务里：不再自己开事务，在其上设作用域并幂等建行（ON CONFLICT DO NOTHING）。
+
 		return s.m.EnsureStockTx(ctx, tx, row)
 	}
 	return s.m.EnsureStock(ctx, row)
 }
 
-// GetStock 单条库存记录（按 id，或按 变体 × 仓库）。
 func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (res *inventorydto.StockResp, err error) {
 	if req == nil {
 		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
@@ -184,10 +100,6 @@ func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (
 	return s.toStockResp(ctx, e), nil
 }
 
-// ListStocksBySKU 某 SKU 在各仓的库存（验收 3/4）。
-//
-// 返回的每一行都是 (SKU, 仓库) 一条真源记录：本期单仓时只有一行，
-// 多仓时同一个 SKU 会出现多行 —— 这正是「库存以 SKU × 仓库 为维度」的读取口径。
 func (s *Service) ListStocksBySKU(ctx context.Context, req *inventorydto.ListStockBySKUReq) (list []*inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.SKUCode) == "" {
 		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
@@ -205,17 +117,6 @@ func (s *Service) ListStocksBySKU(ctx context.Context, req *inventorydto.ListSto
 	return toStockRespList(rows), nil
 }
 
-// BareSKUsByVariant 工程内「变体 → 仓库侧裸码」的一次性映射（后台采购下拉用）。
-//
-// 查询次数与变体数无关：货行取一轮、归属反查一轮、事实取一轮（原先按商品逐个查库存行）。
-//
-// 归属走**变体的引用清单**（迁移 637），不再读 inventory_stocks.variant_id —— 641 之后
-// 那一列只是写入当时的线索，同一变体在同仓可以有多条货行、一条货行也可以被多个变体引用，
-// 按线索列过滤会漏掉「引用别人建的货行」的那些变体（采购下拉里它们的编码显示为空）。
-//
-// 取值规则**只在实现里写一份**：按 model 的固定顺序（默认仓优先 → 仓 sort → 仓短码 →
-// 裸码），同一个变体在多个仓各有一条不同裸码时取第一条非空。调用方不要自己再挑一遍 ——
-// 挑法两处各写一份，入库时就会按另一个仓的编码落库，而两边都不报错。
 func (s *Service) BareSKUsByVariant(ctx context.Context, projectID string) (map[string]string, error) {
 	pid, err := s.resolveProjectID(ctx, strings.TrimSpace(projectID))
 	if err != nil {
@@ -223,7 +124,7 @@ func (s *Service) BareSKUsByVariant(ctx context.Context, projectID string) (map[
 	}
 	out := make(map[string]string)
 	if s.refs == nil {
-		// 纯库存单测路径（没有商品域）：退回线索列口径，行为与 641 之前一致。
+
 		return s.bareSKUsByVariantColumn(ctx, pid)
 	}
 	stockIDs, err := s.m.ListAllStockIDs(ctx, pid)
@@ -255,7 +156,6 @@ func (s *Service) BareSKUsByVariant(ctx context.Context, projectID string) (map[
 	return out, nil
 }
 
-// bareSKUsByVariantColumn 按 inventory_stocks.variant_id 线索列取映射（refs 未注入时的退化形态）。
 func (s *Service) bareSKUsByVariantColumn(ctx context.Context, projectID string) (map[string]string, error) {
 	rows, err := s.m.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: projectID}, 0, 0)
 	if err != nil {
@@ -274,7 +174,6 @@ func (s *Service) bareSKUsByVariantColumn(ctx context.Context, projectID string)
 	return out, nil
 }
 
-// ListStocks 库存记录列表（按工程 / 仓 / 商品 / 变体 / SKU 过滤 + 分页）。
 func (s *Service) ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error) {
 	page, size := pageArgs(req)
 	filter := inventorymodel.StockFilter{
@@ -294,7 +193,6 @@ func (s *Service) ListStocks(ctx context.Context, req *inventorydto.ListStockReq
 	return toStockRespList(rows), nil
 }
 
-// toStockResp 库存实体 → 响应（补仓库展示信息，避免后台二次查询）。
 func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity) *inventorydto.StockResp {
 	if e == nil {
 		return nil
@@ -303,21 +201,17 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 		ID: e.ID, ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
 		ProductID: inventorymodel.PtrString(e.ProductID), VariantID: inventorymodel.PtrString(e.VariantID),
 		SKUCode: e.SKUCode,
-		// 外部编码随库存行一起出：它回答的是「这条货在这个仓叫什么」，
-		// 与成本一样是 (仓库, 变体) 维度的附加事实，后台不必再查一次。
+
 		ExternalSKU: e.ExternalSKU,
-		// 跟踪开关与数量**必须成对**出（迁移 261）：quantity = 0 有两义
-		//（跟踪且卖光 / 不跟踪无限），漏了开关就会把无限显示成「没货」。
+
 		TrackQuantity: e.TrackQuantity,
 		Quantity:      e.Quantity,
-		// 预占 / 可售（迁移 624）同源给出：可售的减法只在这一个地方做，
-		// 模板直接取字段（template_logic_test.go 禁止模板算数量）。
+
 		ReservedQuantity:  e.ReservedQuantity,
 		AvailableQuantity: availableOf(e.Quantity, e.ReservedQuantity),
-		// 成本随库存行一起出（(仓库, SKU) 一个当前值）：后台不必再为「这条货按多少
-		// 算成本」跑第二次查询，也保证「库存与成本同源」不会各查各的漂移。
+
 		CostPrice: e.CostPrice,
-		// 主档（迁移 642）随行一起出：后台列表要按名称认货、按状态区分启停。
+
 		Name: e.Name, ImageURL: e.ImageURL, Barcode: e.Barcode, Remark: e.Remark,
 		Status: e.Status, FreightPrice: e.FreightPrice,
 		CostCurrency: e.CostCurrency, CostBaseCurrency: e.CostBaseCurrency, CostFXRate: e.CostFXRate,
@@ -329,7 +223,6 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 	return resp
 }
 
-// toStockRespList 投影行 → 响应列表（join 已带仓库信息，无需逐行回查）。
 func toStockRespList(rows []*inventorymodel.StockRow) []*inventorydto.StockResp {
 	list := make([]*inventorydto.StockResp, 0, len(rows))
 	for _, r := range rows {
@@ -338,17 +231,15 @@ func toStockRespList(rows []*inventorymodel.StockRow) []*inventorydto.StockResp 
 			WarehouseCode: r.WarehouseCode, WarehouseName: r.WarehouseName,
 			ProductID: r.ProductID, VariantID: r.VariantID,
 			SKUCode: r.SKUCode,
-			// 外部编码同源（投影里带上 s.external_sku）：与单条 GetStock 给出同一个值。
+
 			ExternalSKU: r.ExternalSKU,
-			// 跟踪开关同源（投影里带上 s.track_quantity）：列表 / 按 SKU 各仓两条读路径
-			// 与单条 GetStock 给出同一个值，不会出现「详情是无限、列表是 0」。
+
 			TrackQuantity: r.TrackQuantity,
 			Quantity:      r.Quantity,
-			// 预占 / 可售同源（与 toStockResp 同一个算式，不各写一份）。
+
 			ReservedQuantity:  r.ReservedQuantity,
 			AvailableQuantity: availableOf(r.Quantity, r.ReservedQuantity),
-			// 成本同源（投影里带上 s.cost_price）：列表 / 按 SKU 各仓两条读路径
-			// 与单条 GetStock 给出同一个值，不会出现「详情有成本、列表没有」。
+
 			CostPrice: r.CostPrice,
 			Name:      r.Name, ImageURL: r.ImageURL, Barcode: r.Barcode, Remark: r.Remark,
 			Status: r.Status, FreightPrice: r.FreightPrice,
@@ -359,19 +250,6 @@ func toStockRespList(rows []*inventorymodel.StockRow) []*inventorydto.StockResp 
 	return list
 }
 
-// WarehouseStocksByProducts 一次取回若干商品在**各仓**的库存行（分仓聚合契约）。
-//
-// 641 之后这条路要倒过来走：货行上的 product_id/product_variant 只是写入当时的线索，
-// 真正可信的是「变体引用了哪些货行」（product_variants.warehouse_skus）。所以：
-//
-//  1. 取工程内全部货行（一次查询，条数是「仓库 × SKU」，有限）；
-//  2. 经引用读口反查每条货行被哪些变体引用，再问出这些变体的所属商品；
-//  3. 只把**有变体引用**的行投影出去 —— 没有引用 = 仓库里有货、还没有商品卖它，
-//     它不属于任何商品的「分仓库存」（这条形态在「先收货后建品」时是常态）。
-//
-// 仍是只读投影，不做业务判断：哪些仓要显示、无限怎么渲染留给调用方。
-// 冻结的四项字段（ProductID / WarehouseID / WarehouseCode / WarehouseName / SKUCode /
-// TrackQuantity / Quantity / CostPrice）逐项照旧，商品列表的「分仓库存」列直接吃这个形状。
 func (s *Service) WarehouseStocksByProducts(ctx context.Context, projectID string, productIDs []string) (out []inventorydto.ProductWarehouseStock, err error) {
 	if len(productIDs) == 0 || s.refs == nil {
 		return []inventorydto.ProductWarehouseStock{}, nil
@@ -431,10 +309,6 @@ func (s *Service) WarehouseStocksByProducts(ctx context.Context, projectID strin
 	return out, nil
 }
 
-// productOfStocks 货行 → 商品：经引用它的变体反查所属商品（每条货行取第一个变体的商品）。
-//
-// 引用读口只回答「哪些变体引用了它」，变体属于哪个商品是商品侧的事实，
-// 由 VariantProductIDs 一次批量问回（不逐个变体查）。
 func (s *Service) productOfStocks(ctx context.Context, projectID string, byStock map[string][]string) (map[string]string, error) {
 	out := make(map[string]string, len(byStock))
 	ids := make([]string, 0, len(byStock))
@@ -459,21 +333,6 @@ func (s *Service) productOfStocks(ctx context.Context, projectID string, byStock
 	return out, nil
 }
 
-// UpdateStockTracking 库存页行内编辑：切换某 (仓库, 变体) 库存行的**跟踪开关**并写入数量。
-//
-// 三条语义（迁移 261 的口径）：
-//
-//  1. 切成跟踪 + 数量：数量经**变动契约**（adjust，原因 = 手工调整）写 —— 数量的任何
-//     变化都要有流水，行内编辑不是例外；applyStockChanges 在同一事务里把该行切成跟踪。
-//     数量与开关都没变时什么都不做（不写流水、不写库）。
-//  2. 切成不跟踪（无限）：数量清零与关开关在**同一个变动事务**里完成（一次 UPDATE、
-//     一条流水）。分两次写会留下「清了一半」的中间态，而「先关开关再清数量」还会被
-//     CHECK (track_quantity OR quantity = 0) 直接拒绝（23514，没有上下文）。
-//  3. 不跟踪的行不接受非 0 数量：表单在无限态把数量框禁用并留空，这里再拦一道
-//     （直接构造请求绕过页面时给出可读的业务错误，而不是让 DDL 抛 23514）。
-//
-// 数量走变动契约而不是直接 UPDATE：库存真源的两条铁律（判定只读真源、
-// 有变动必有流水）不能在「页面上的一个开关」上开口子。
 func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.UpdateStockTrackingReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.VariantID) == "" {
 		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
@@ -482,7 +341,7 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 		return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 	}
 	if !req.TrackQuantity && req.Quantity != 0 {
-		// 不跟踪（无限）不允许带数字：数量与开关是同一件事的两种表达。
+
 		return nil, inventoryenums.Err(inventoryenums.ErrStockUntrackedQuantity)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -491,8 +350,7 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 	}
 	warehouseID := strings.TrimSpace(req.WarehouseID)
 	variantID := strings.TrimSpace(req.VariantID)
-	// 定位靠「仓库 × 仓库 SKU」（641：同一变体在同一仓可以有多条货行，变体不再是键）。
-	// 行内编辑表单同时提交 skuCode，所以这里直接按它定位，不必先按变体猜一条。
+
 	skuCode := stripWarehousePrefix(strings.TrimSpace(req.SKUCode), "")
 	row, err := s.locateStockRow(ctx, projectID, warehouseID, skuCode, variantID)
 	if err != nil {
@@ -500,8 +358,6 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 	}
 	skuCode = row.SKUCode
 
-	// adjustTo 把该行数量调成目标绝对量，并（可选）在同一事务里写回目标跟踪开关 ——
-	// 两者都经**变动契约**：加锁顺序、流水构造、成本写回全部沿用既有那一套。
 	adjustTo := func(target int, trackOverride map[stockKey]bool) error {
 		_, cerr := s.changeStockTracking(ctx, &inventorydto.ChangeStockReq{
 			ProjectID:   projectID,
@@ -522,7 +378,7 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 	}
 
 	if req.TrackQuantity {
-		// 数量或开关有变化才走变动契约；两者都没变就是一次空转（不写库、不写流水）。
+
 		if !row.TrackQuantity || row.Quantity != req.Quantity {
 			if err = adjustTo(req.Quantity, nil); err != nil {
 				return nil, err
@@ -531,8 +387,6 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 		return s.stockRespByID(ctx, projectID, row.ID)
 	}
 
-	// 切成不跟踪（无限）：数量清零 + 关开关，**同一个事务、同一条流水**。
-	// 行本来就无限且数量已经是 0 时才是空转。
 	if row.Quantity != 0 || row.TrackQuantity {
 		key := stockKey{skuCode: skuCode, warehouseID: warehouseID}
 		if err = adjustTo(0, map[stockKey]bool{key: false}); err != nil {
@@ -542,10 +396,6 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 	return s.stockRespByID(ctx, projectID, row.ID)
 }
 
-// locateStockRow 按「仓库 × 仓库 SKU」定位货行；skuCode 为空时退回「该仓下属于某变体的第一条」。
-//
-// 两个分支都是 641 之后的合法调用形态：行内编辑手里有编码（精确）；旧调用点只给了变体
-// （那时按 (变体, 仓) 唯一，现在按编码升序取第一条，行为可预测）。
 func (s *Service) locateStockRow(ctx context.Context, projectID, warehouseID, skuCode, variantID string) (e *inventorymodel.StockEntity, err error) {
 	if skuCode != "" {
 		return s.m.GetStockByWarehouseSKU(ctx, warehouseID, skuCode, projectID)
@@ -556,7 +406,6 @@ func (s *Service) locateStockRow(ctx context.Context, projectID, warehouseID, sk
 	return s.m.GetStockByVariantWarehouse(ctx, variantID, warehouseID, projectID)
 }
 
-// stockRespByID 按行 id 取回响应（写动作之后的回读：货行身份是 id，不是 (变体, 仓)）。
 func (s *Service) stockRespByID(ctx context.Context, projectID, id string) (*inventorydto.StockResp, error) {
 	e, err := s.m.GetStock(ctx, id, projectID)
 	if err != nil {
@@ -565,7 +414,6 @@ func (s *Service) stockRespByID(ctx context.Context, projectID, id string) (*inv
 	return s.toStockResp(ctx, e), nil
 }
 
-// mapStockNotFound 行不存在 → 业务错误，其余原样透出。
 func mapStockNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return inventoryenums.Err(inventoryenums.ErrStockNotFound)
@@ -573,23 +421,6 @@ func mapStockNotFound(err error) error {
 	return err
 }
 
-// —— 归属仓成本解析（成本快照口径收口，docs/14 §9.3）——
-
-// ResolveVariantWarehouseCosts 解析若干行的「归属仓 + 该 (仓库, SKU) 的当前成本」。
-//
-// 口径（2026-09-19 商品域评审已定，不自行改口径）：
-//
-//	· 归属仓 = 行上显式 WarehouseID；为空时按本模块既有的归属仓解析规则（默认仓）解析
-//	  —— 与扣减（buildChangeItems → resolveWarehouse）**同一个入口**，两条路径不会漂移；
-//	· 成本 = 解析出的那个仓里该变体库存行的 cost_price；**未核算（NULL）返回 nil**，
-//	  绝不用 0 冒充（0 是合法的显式成本：赠品 / 内部划拨）；
-//	· 该仓没有这条库存行同样是 nil（「没有这条货」= 没有成本），不是错误。
-//
-// 用途是订单行的成本快照（product/service 的 VariantSnapshots 直调本方法）：成本搬到
-// (仓库, SKU) 之后，变体级 product_variants.cost_price 不再是这条链路的来源。
-//
-// 显式仓非法（不存在 / 跨工程 / 停用）时沿用 resolveWarehouse 的业务错误 ——
-// 「指定的发货仓不可用」必须当场告诉调用方，不能退化成「成本未知」。
 func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID string, refs []inventorydto.VariantWarehouseCostRef) (out []inventorydto.VariantWarehouseCost, err error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -604,8 +435,7 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 			variantIDs = append(variantIDs, id)
 		}
 	}
-	// 成本按「变体 + 仓」取：先经引用清单拿到货行 id（641 起一行可以被多个变体引用，
-	// 一条货行也可能只是「仓库里有货、还没有商品卖它」）。
+
 	cost := make(map[string]*float64, len(refs))
 	if s.refs != nil {
 		byVariant, rerr := s.refs.WarehouseStockIDsByVariant(ctx, projectID, variantIDs)
@@ -624,7 +454,7 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 		for _, f := range facts {
 			byStock[f.StockID] = f
 		}
-		// key 用「变体 + 分隔符 + 仓」：uuid 不含 '|'，不会与另一个组合撞键。
+
 		for variantID, ids := range byVariant {
 			for _, id := range ids {
 				f := byStock[id]
@@ -635,9 +465,7 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 			}
 		}
 	}
-	// 归属仓解析在**同一批内复用**：留空的 ref 一律落到同一个默认仓、显式仓相同的也共用
-	// 一次解析结果 —— 否则十几行的订单要查十几次默认仓，而且并发下「默认仓刚好被切换」
-	// 会让同一批的行落在不同的仓上（同一次成本快照必须是同一个仓的口径）。
+
 	resolved := make(map[string]*inventorymodel.WarehouseEntity, len(refs))
 	out = make([]inventorydto.VariantWarehouseCost, 0, len(refs))
 	for _, r := range refs {
@@ -664,33 +492,12 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 	return out, nil
 }
 
-// VariantHasStockMovement 该变体是否**有过任何库存流水**（契约方法）。
-//
-// 用途：变体删除守卫（docs/14 §8.2 的保存守卫）—— 订单一旦建单就一定会产生扣减流水，
-// 所以「有流水」等价于「这个变体被订单用过」；历史单据（订单行 / 采购行 / 流水）
-// 都按 variant_id 追溯，硬删会让追溯断链，调用方据此拒绝硬删。
-//
-// 与「非零库存」互补：卖出后补货清零的变体库存为 0 却仍被订单用过，单看库存守卫
-// 会误放行 —— 两个守卫都要。本方法只做委派：表访问在 model 的具名方法里，
-// 「有流水 ⇒ 不许硬删」这条业务判定留在调用方。
 func (s *Service) VariantHasStockMovement(ctx context.Context, projectID, variantID string) (bool, error) {
 	return s.m.VariantHasStockMovement(ctx, projectID, variantID)
 }
 
-// skuSeparator 仓码与前缀后编码之间的分隔符（与商品侧同一个字面量）。
 const skuSeparator = "_"
 
-// stripWarehousePrefix 剥掉仓码前缀 —— 商品侧 attachWarehousePrefix 的逆操作。
-//
-// 三条性质（与商品侧逐条对称）：
-//
-//	· **幂等** —— 本来不带前缀时原样返回，剥两次与剥一次相同；
-//	· **大小写不敏感** —— 前缀按大写比对（仓短码在工程内已归一为大写，历史数据不一定）；
-//	· **只剥一次** —— SZ_SZ_X 剥成 SZ_X（不会一路剥到 X）。
-//
-// 仓码为空（未选仓 / 端口未注入）时原样返回：没有前缀就无所谓剥离。
-// 返回值可能为空串（调用方给的就是「SZ_」这种只有前缀的编码）—— 空值判定留给
-// normalizeStockSKU，阈值口径不在本函数里再散一份。
 func stripWarehousePrefix(code, warehouseCode string) string {
 	trimmed := strings.TrimSpace(code)
 	prefix := strings.ToUpper(strings.TrimSpace(warehouseCode))
@@ -703,16 +510,6 @@ func stripWarehousePrefix(code, warehouseCode string) string {
 	return trimmed
 }
 
-// normalizeStockSKU 把调用方给的 SKU 编码归一成**仓库侧裸码**，空串一律拒绝。
-//
-// 选这条口径（而不是「拒绝带前缀」）的理由：
-//
-//	· 入库是本模块接收 SKU 编码的**唯一入口**，编码来源不可控（页面手选 / 外部系统 /
-//	  运维脚本），而带前缀是它们的常态 —— 一律拒绝等于把「调用方没按我们的内部表示传参」
-//	  判成业务错误，运营拿到的会是「编码不合法」而不是货收进来了；
-//	· 幂等剥前缀是纯粹的口径**归一**（不改变编码语义），与商品侧建行的做法完全一致：
-//	  同一条编码在两边得到同一结果，不会出现「同一个 SKU 在商品侧是裸码、在库存侧带前缀」；
-//	· 归一之后仍为空（给了空串 / 只给了「SZ_」）→ **明确拒绝**，不再用空串建库存行。
 func normalizeStockSKU(code, warehouseCode string) (bare string, err error) {
 	bare = stripWarehousePrefix(code, warehouseCode)
 	if bare == "" {
@@ -723,7 +520,6 @@ func normalizeStockSKU(code, warehouseCode string) (bare string, err error) {
 
 var _ inventorycontract.ProductStockPort = (*Service)(nil)
 
-// StockFactsByStockIDs 按货行 id 批量取只读事实（商品侧按变体的引用清单来问）。
 func (s *Service) StockFactsByStockIDs(ctx context.Context, projectID string, stockIDs []string) (facts []*inventorycontract.StockFact, err error) {
 	pid, err := s.resolveProjectID(ctx, projectID)
 	if err != nil {
@@ -732,12 +528,10 @@ func (s *Service) StockFactsByStockIDs(ctx context.Context, projectID string, st
 	return s.m.StockFactsByStockIDs(ctx, pid, stockIDs)
 }
 
-// NormalizeExternalSKU applies the inventory domain's canonical validation.
 func (s *Service) NormalizeExternalSKU(raw string) (code string, err error) {
 	return NormalizeExternalSKU(raw)
 }
 
-// ResolveWarehouse 解析归属仓（warehouseID 为空 → 该工程的默认仓），返回只读引用。
 func (s *Service) ResolveWarehouse(ctx context.Context, projectID, warehouseID string) (ref *productcontract.WarehouseRef, err error) {
 	wh, err := s.resolveWarehouse(ctx, projectID, warehouseID)
 	if err != nil {
@@ -748,10 +542,6 @@ func (s *Service) ResolveWarehouse(ctx context.Context, projectID, warehouseID s
 	}, nil
 }
 
-// WarehouseStockIDBySKU 按 (仓, 裸码) 取货行 id（不存在返回空串）。
-//
-// 与 GetWarehouseSKU 的差别是「不存在」不是错误：调用方问的是「这一行在不在」，
-// 不在是正常分支（商品侧据此决定复用还是新建）。
 func (s *Service) WarehouseStockIDBySKU(ctx context.Context, projectID, warehouseID, skuCode string) (stockID string, err error) {
 	projectID, err = s.resolveProjectID(ctx, projectID)
 	if err != nil {
@@ -767,24 +557,8 @@ func (s *Service) WarehouseStockIDBySKU(ctx context.Context, projectID, warehous
 	return e.ID, nil
 }
 
-// EnsureVariantStock 在归属仓为该 SKU 生成库存记录（已存在则复用）。
-//
-// 签名与 quantity 语义（2026-09-19 商品侧冻结，照此实现）：
-//
-//	· quantity == nil → 新建行 track_quantity = false（**不跟踪 = 无限**，新建行默认口径）；
-//	· quantity != nil → 新建行 track_quantity = true 并写入该数量。0 是合法值
-//	（= 明确没货），与 nil 严格区分 —— 这正是 CHECK (track_quantity OR quantity = 0)
-//	要表达的事：不跟踪的行不允许带数字。
-//
-// skuCode 的语义是**仓库侧裸码**（如 DRAWERSMOKE_001）：仓库里的 SKU 永远不带仓码前缀，
-// 前缀只出现在商品侧（SZ_DRAWERSMOKE_001，标注归属 / 前缀仓）。**本层不剥前缀、也不加前缀**，
-// 剥前缀是商品侧的职责；唯一例外是存量迁移 262 会把历史数据里多余的仓码前缀剥掉一次。
-//
-// 幂等：已存在的那一行原样返回，quantity / track_quantity / external_sku 都不被覆盖
-// （覆盖式修改走 UpdateStockTracking / BindExternalSKU 这两条显式入口）。
 func (s *Service) EnsureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error) {
-	// 非 Tx 版本只负责**事务边界**：自己开一个事务并委托给 Tx 版本，
-	// 两者语义逐字一致（不会各写一份判定）。
+
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		var xerr error
 		stockID, xerr = s.EnsureVariantStockTx(ctx, tx, ref, productID, variantID, skuCode, quantity)
@@ -793,20 +567,6 @@ func (s *Service) EnsureVariantStock(ctx context.Context, ref *productcontract.W
 	return stockID, err
 }
 
-// EnsureVariantStockTx 在**调用方的事务**里为归属仓生成库存记录（幂等）。
-//
-// 为什么需要 Tx 变体（2026-09-19 商品域要求）：商品保存要把「商品 + 变体 + 各仓库存行
-// + 变更记录」放进同一个事务，任何一步失败整体回滚。非 Tx 版本每次自己开事务，
-// 商品回滚时库存行已经提交 —— 正是用户说的「很容易翻车」。
-//
-// 三条约束：
-//   - 本方法**不再自己开事务**（调用方已经开着）；
-//   - 工程作用域设在传入的 tx 上（rls.ScopeTx），**错误原样返回绝不吞掉**；
-//   - 幂等建行走 ON CONFLICT (warehouse_id, sku_code) DO NOTHING（641 的身份键）：并发命中唯一键时
-//     不报错，然后在同一事务内回读 —— 一句报错的 INSERT 会把整个事务标记为 aborted，
-//     调用方后续的写入会全部失败。
-//
-// quantity / skuCode 的语义与非 Tx 版本完全一致（见 EnsureVariantStock）。
 func (s *Service) EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error) {
 	if ref == nil || strings.TrimSpace(ref.ID) == "" {
 		return "", inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
@@ -822,17 +582,8 @@ func (s *Service) EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *pr
 	return e.ID, nil
 }
 
-// EnsureVariantStockWithExternal 在归属仓为该 SKU 生成库存行，并写上该仓的外部编码（迁移 251）。
-//
-// 「创建商品即入库并带上外码」走这一条（docs/14 §9.3 的两条来路都只改映射，不动属性真源）。
-// 三点语义：
-//
-//	· 外码只作用于**新建**那一行：已存在的库存行沿用既有值（覆盖式改外码走 BindExternalSKU
-//	  这条显式入口）—— 免得「再 ensure 一次」把运营登记过的对方编码悄悄清掉；
-//	· externalSKU 为空串是合法的：该仓用我们自己的 SKU（自营仓的常态）；
-//	· 归一 / 校验共用一个入口（NormalizeExternalSKU），与库存侧的写入口径只有一份规则。
 func (s *Service) EnsureVariantStockWithExternal(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (stockID string, err error) {
-	// 同 EnsureVariantStock：非 Tx 版本只负责开事务，判定与写入都在 Tx 版本里。
+
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		var xerr error
 		stockID, xerr = s.EnsureVariantStockWithExternalTx(ctx, tx, ref, productID, variantID, skuCode, externalSKU, quantity)
@@ -841,10 +592,6 @@ func (s *Service) EnsureVariantStockWithExternal(ctx context.Context, ref *produ
 	return stockID, err
 }
 
-// EnsureVariantStockWithExternalTx 在**调用方的事务**里建库存行并写上该仓的外部编码。
-//
-// 与非 Tx 版本的差别只有事务边界（见 EnsureVariantStockTx 的三条约束）；
-// 外码的归一与校验（NormalizeExternalSKU）在这里先做，失败时不碰数据库。
 func (s *Service) EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (stockID string, err error) {
 	if ref == nil || strings.TrimSpace(ref.ID) == "" {
 		return "", inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
@@ -864,13 +611,6 @@ func (s *Service) EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm
 	return e.ID, nil
 }
 
-// attachStockRef 建行之后把这条货行登记进变体的引用清单（迁移 637/641）。
-//
-// 「谁建行谁登记」：库存侧是建行的人，所以登记放在这里而不是等调用方补 —— 少一处
-// 就是少一次「货行建好了、商品侧统计不到」的静默失真（页面显示 0、成本算不出）。
-// 幂等（同一 stockId 重复登记只更新线索），商品侧建商品时的那次登记不会重复。
-//
-// 失败只记日志：货行本身已经建对了，引用是归属线索，缺了可事后补齐（见 ChangeStock 同一取舍）。
 func (s *Service) attachStockRef(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, variantID string, e *inventorymodel.StockEntity) {
 	if s.refs == nil || e == nil || strings.TrimSpace(variantID) == "" {
 		return
@@ -887,7 +627,6 @@ func (s *Service) attachStockRef(ctx context.Context, tx *gorm.DB, ref *productc
 	}
 }
 
-// refCodeOf 仓短码（nil 安全）。
 func refCodeOf(ref *productcontract.WarehouseRef) string {
 	if ref == nil {
 		return ""
@@ -895,15 +634,6 @@ func refCodeOf(ref *productcontract.WarehouseRef) string {
 	return ref.Code
 }
 
-// AvailableQuantities 批量读变体的可用量（product 契约的 VariantAvailabilityPort，issue #20）。
-//
-// 641 之后「某变体有哪些货」不再由 inventory_stocks.variant_id 回答（同一变体在同一仓
-// 可以有多条货行、一条货行也可以被多个变体引用），而是经商品侧的引用清单取货行 id，
-// 再按 id 求和 —— 全部引用均有跟踪事实时，可售 = Σ(quantity - reserved_quantity)。
-// 任一行不跟踪即没有有限上限；缺失事实与无引用也不能伪装成已确认缺货。
-//
-// 引用读口未注入（纯库存单测路径）时返回空结果：调用方按「未知」兜底，
-// 而真正的扣减判定仍在写路径的行锁里，不靠这个投影值。
 func (s *Service) AvailableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error) {
 	out = make(map[string]int, len(variantIDs))
 	if len(variantIDs) == 0 || s.refs == nil {
@@ -933,7 +663,6 @@ func (s *Service) AvailableQuantities(ctx context.Context, projectID string, var
 	return out, nil
 }
 
-// finiteStockAvailability 仅在全部引用具有有限库存时给出数量；0 仍是已确认缺货。
 func finiteStockAvailability(ids []string, byStock map[string]*inventorycontract.StockFact) (int, bool) {
 	if len(ids) == 0 {
 		return 0, false
@@ -950,20 +679,12 @@ func finiteStockAvailability(ids []string, byStock map[string]*inventorycontract
 }
 
 const (
-	// maxExternalSKULen 外部编码长度上限。
-	//
-	// 对方编码不受我们控制，但上限要挡住明显的脏写（整段 HTML / 备注粘进来）。
-	// 128 足够覆盖各平台的实际编码长度。
 	maxExternalSKULen = 128
-	// 仓库 SKU 候选列表的分页（抽屉里的快捷入口，默认给一屏）。
+
 	defaultWarehouseSKUSize = 50
 	maxWarehouseSKUSize     = 200
 )
 
-// NormalizeExternalSKU 归一 + 校验外部 / 第三方编码：去首尾空白、长度上限、拒绝控制字符。
-//
-// 空串是**合法值**（= 该仓用我们自己的 SKU），不报错。归一规则只有这一份：
-// 商品侧「创建即入库」与库存侧「绑定」都先过它，再把结果写库。
 func NormalizeExternalSKU(raw string) (string, error) {
 	code := strings.TrimSpace(raw)
 	if code == "" {
@@ -973,7 +694,7 @@ func NormalizeExternalSKU(raw string) (string, error) {
 		return "", inventoryenums.Err(inventoryenums.ErrExternalSKUInvalid)
 	}
 	for _, r := range code {
-		// 控制字符（含换行 / 制表 / DEL）：编码是给对方系统解析的标识，不是自由文本。
+
 		if r < 0x20 || r == 0x7f {
 			return "", inventoryenums.Err(inventoryenums.ErrExternalSKUInvalid)
 		}
@@ -981,11 +702,6 @@ func NormalizeExternalSKU(raw string) (string, error) {
 	return code, nil
 }
 
-// ListWarehouseSKUs 按工程 / 仓库列出可选的仓库 SKU（商品新建抽屉「从仓库选」的数据源）。
-//
-// 返回每行的 warehouse_id / sku_code / external_sku / has_variant（还要仓码与名称，
-// 免得调用方为展示再查一次仓库）。关键字同时命中我们自己的编码与外部编码 ——
-// 运营手上可能是其中任意一个。
 func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (list []*inventorydto.WarehouseSKUResp, err error) {
 	page, size := warehouseSKUPageArgs(req)
 	var projectID string
@@ -1008,9 +724,6 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 	return list, nil
 }
 
-// LocateStockRow 按 (变体, 仓) 取库存行 id；没有这一行返回空串 + nil（迁移 627 快照用）。
-//
-// 只读、无副作用：发货明细的 stock_id 只用于事后追溯，不作为任何判定依据。
 func (s *Service) LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {
 	e, err := s.m.GetStockByVariantWarehouse(ctx, variantID, warehouseID, projectID)
 	if err != nil {
@@ -1025,10 +738,6 @@ func (s *Service) LocateStockRow(ctx context.Context, projectID, variantID, ware
 	return e.ID, nil
 }
 
-// GetWarehouseSKU 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
-//
-// 不存在时明确报 ErrWarehouseSKUNotFound（不返回空行、也不静默当作「没选」）：
-// 商品侧据此拒绝创建，运营拿到的是「换个仓库或先建这条货」这种可行动的提示。
 func (s *Service) GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWarehouseSKUReq) (res *inventorydto.WarehouseSKUResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.SKUCode) == "" {
 		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKURequired)
@@ -1044,12 +753,6 @@ func (s *Service) GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWare
 	return s.toWarehouseSKURespFromEntity(ctx, e), nil
 }
 
-// BindExternalSKU 绑定 / 更新某 (仓库, 变体) 库存行的外部编码。
-//
-// 三条判定，顺序不能换：
-//  1. 归一编码（空串合法 = 清空，该仓改回用我们自己的 SKU）；
-//  2. 那一行必须真实存在 —— 否则 UPDATE 匹配 0 行却返回成功，「绑定成功」是假的；
-//  3. N:1 弱校验：同一仓内同一外码必须指向同一个商品（多口味共用合法，跨商品报错）。
 func (s *Service) BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.VariantID) == "" {
 		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
@@ -1076,18 +779,13 @@ func (s *Service) BindExternalSKU(ctx context.Context, req *inventorydto.BindExt
 		return nil, err
 	}
 	if affected == 0 {
-		// 行在读取与写入之间被删（或工程作用域不一致）：不谎报成功。
+
 		return nil, inventoryenums.Err(inventoryenums.ErrStockNotFound)
 	}
 	row.ExternalSKU = code
 	return s.toStockResp(ctx, row), nil
 }
 
-// CheckExternalSKUProductScope 商品侧「创建即入库」前的 N:1 弱校验（按目标商品判定）。
-//
-// 与 BindExternalSKU 内部那条校验是同一条规则（共用 assertExternalSKUProductScope）：
-// 新商品的库存行还没建，所以由调用方把**将要成为归属**的 product_id 传进来 ——
-// 该仓若已有别的商品占了同一个外码，这里就会拦住。
 func (s *Service) CheckExternalSKUProductScope(ctx context.Context, projectID, warehouseID, externalSKU, productID string) (err error) {
 	code, err := NormalizeExternalSKU(externalSKU)
 	if err != nil {
@@ -1096,10 +794,6 @@ func (s *Service) CheckExternalSKUProductScope(ctx context.Context, projectID, w
 	return s.assertExternalSKUProductScope(ctx, projectID, warehouseID, code, productID)
 }
 
-// CheckStockSKUCodeFree 仓内 sku_code 唯一预检（写库存行之前调用）。
-//
-// 判据与 DDL 上的 UNIQUE (warehouse_id, sku_code)（迁移 244）一致，只是提前到写入之前：
-// 直接撞约束只会拿到一个没有上下文的 23505，运营看不到「哪个仓、哪条编码」。
 func (s *Service) CheckStockSKUCodeFree(ctx context.Context, projectID, warehouseID, skuCode string) (err error) {
 	exists, err := s.m.StockSKUCodeExists(ctx, projectID, warehouseID, strings.TrimSpace(skuCode), "")
 	if err != nil {
@@ -1111,7 +805,6 @@ func (s *Service) CheckStockSKUCodeFree(ctx context.Context, projectID, warehous
 	return nil
 }
 
-// lookupWarehouseSKU 按 (仓库, 仓库 SKU) 定位那一行；不存在时给业务错误。
 func (s *Service) lookupWarehouseSKU(ctx context.Context, projectID, warehouseID, skuCode string) (e *inventorymodel.StockEntity, err error) {
 	e, err = s.m.FindStockByWarehouseSKU(ctx, projectID, warehouseID, skuCode)
 	if err != nil {
@@ -1123,10 +816,6 @@ func (s *Service) lookupWarehouseSKU(ctx context.Context, projectID, warehouseID
 	return e, nil
 }
 
-// assertExternalSKUProductScope N:1 弱校验：同一个 external_sku 在同一个仓库内必须指向
-// 同一个 product_id。空串（= 该仓用我们自己的 SKU）不参与校验。
-//
-// 错误里带上冲突的商品 id：只说「冲突了」等于让人去猜哪一条占了它。
 func (s *Service) assertExternalSKUProductScope(ctx context.Context, projectID, warehouseID, externalSKU, productID string) (err error) {
 	if externalSKU == "" {
 		return nil
@@ -1136,28 +825,24 @@ func (s *Service) assertExternalSKUProductScope(ctx context.Context, projectID, 
 		return err
 	}
 	if owner != "" {
-		// 分隔符必须是 **ASCII 冒号**：页面出口按它把「业务 key」与「明细段」切一刀，再对前段
-		// 做形态判定（adminui.BusinessErrFact 的判据是 pkg/response.IsBusinessError，正则锚定，
-		// 整串匹配不上）。写成全角「：」时切不开 —— 整条错误会被判成内部故障，用户拿到的
-		// 是「系统内部错误」，而明细里那句「被哪个商品占了」也一并丢掉。
+
 		return inventoryenums.ErrDetail(inventoryenums.ErrExternalSKUProductConflict,
 			i18n.ErrorDetail(inventoryenums.DetailExternalSKUOwner, "name", owner))
 	}
 	return nil
 }
 
-// toWarehouseSKUResp 投影行 → 响应。
 func toWarehouseSKUResp(r *inventorymodel.WarehouseSKURow) *inventorydto.WarehouseSKUResp {
 	return &inventorydto.WarehouseSKUResp{
 		WarehouseID: r.WarehouseID, WarehouseCode: r.WarehouseCode, WarehouseName: r.WarehouseName,
 		IsDefault: r.IsDefault, SKUCode: r.SKUCode, ExternalSKU: r.ExternalSKU,
 		ProductID: inventorymodel.PtrString(r.ProductID), VariantID: inventorymodel.PtrString(r.VariantID),
 		HasVariant: r.HasVariant,
-		// 三个数量同一个算式（与 toStockResp 一致）：可售的减法只在服务端做一次。
+
 		Quantity: r.Quantity, ReservedQuantity: r.ReservedQuantity,
 		AvailableQuantity: availableOf(r.Quantity, r.ReservedQuantity),
 		TrackQuantity:     r.TrackQuantity,
-		// 主档（迁移 642）：台账页与「从仓库选」都要按名称认货、按成本核价。
+
 		CostPrice: r.CostPrice, FreightPrice: r.FreightPrice,
 		CostCurrency: r.CostCurrency, CostBaseCurrency: r.CostBaseCurrency, CostFXRate: r.CostFXRate,
 		Name: r.Name, ImageURL: r.ImageURL, Barcode: r.Barcode, Remark: r.Remark, Status: r.Status,
@@ -1165,8 +850,6 @@ func toWarehouseSKUResp(r *inventorymodel.WarehouseSKURow) *inventorydto.Warehou
 	}
 }
 
-// toWarehouseSKURespFromEntity 库存实体 → 响应（补仓库展示信息；查不到仓库时留空，
-// 与 toStockResp 同一兜底：展示字段读不到不影响主结果）。
 func (s *Service) toWarehouseSKURespFromEntity(ctx context.Context, e *inventorymodel.StockEntity) *inventorydto.WarehouseSKUResp {
 	if e == nil {
 		return nil
@@ -1191,7 +874,6 @@ func (s *Service) toWarehouseSKURespFromEntity(ctx context.Context, e *inventory
 	return resp
 }
 
-// warehouseSKUPageArgs 归一化仓库 SKU 列表的分页参数。
 func warehouseSKUPageArgs(req *inventorydto.ListWarehouseSKUReq) (page, size int) {
 	inPage, inSize := 0, 0
 	if req != nil {
@@ -1201,9 +883,6 @@ func warehouseSKUPageArgs(req *inventorydto.ListWarehouseSKUReq) (page, size int
 	return paging.Page, paging.Size
 }
 
-// 下面三个小取值器只为「req 可能为 nil」这一件事存在，避免在方法体里散落三处判空。
-// 名字带 listWarehouseSKU 前缀：inventory_source.go 已有一组同用途的
-// projectIDOf / keywordOf（那个是货源列表的 req），同名会在包级直接撞车。
 func listWarehouseSKUProjectID(req *inventorydto.ListWarehouseSKUReq) string {
 	if req == nil {
 		return ""
@@ -1232,7 +911,6 @@ func listWarehouseSKUStatus(req *inventorydto.ListWarehouseSKUReq) string {
 	return req.Status
 }
 
-// VariantDeletionFactsTx 将商品清单事务传入库存守卫，不另开连接读取旧状态。
 func (s *Service) VariantDeletionFactsTx(ctx context.Context, tx *gorm.DB, projectID string, variantIDs, stockIDs []string) (*inventorycontract.VariantDeletionFacts, error) {
 	return s.m.VariantDeletionFactsTx(ctx, tx, projectID, variantIDs, stockIDs)
 }

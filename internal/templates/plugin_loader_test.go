@@ -1,15 +1,11 @@
 package templates
 
-// CompositeLoader 命名空间路由测试（docs/06 §7）：插件模板经
-// plugin/{pid}/{file} 路由到插件包 components/，内置不受影响，穿越拒绝。
-
 import (
 	"io"
 	"testing"
 	"testing/fstest"
 )
 
-// testPluginFS 单个插件包（components/card.jet + 一个上溯路径陷阱）。
 func testPluginFS() fstest.MapFS {
 	return fstest.MapFS{
 		"components/card.jet":   {Data: []byte("<div>{{ .V.title }}</div>")},
@@ -17,7 +13,6 @@ func testPluginFS() fstest.MapFS {
 	}
 }
 
-// TestCompositeLoaderRoutesPlugin 插件命名空间路由成功。
 func TestCompositeLoaderRoutesPlugin(t *testing.T) {
 	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
 
@@ -37,7 +32,6 @@ func TestCompositeLoaderRoutesPlugin(t *testing.T) {
 	}
 }
 
-// TestCompositeLoaderUnknownPlugin 未知插件 ID 回退内置 loader（此处不存在）。
 func TestCompositeLoaderUnknownPlugin(t *testing.T) {
 	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
 	if l.Exists("plugin/ghost/card.jet") {
@@ -45,21 +39,14 @@ func TestCompositeLoaderUnknownPlugin(t *testing.T) {
 	}
 }
 
-// TestCompositeLoaderPathTraversal 穿越路径拒绝（components/../ 上溯）。
 func TestCompositeLoaderPathTraversal(t *testing.T) {
 	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
-	// 规范化后 components 前缀被破坏 → route 返回 false → 回退 base（不存在）。
+
 	if l.Exists("plugin/marketing/../../secret.jet") {
 		t.Fatalf("穿越路径不应命中")
 	}
 }
 
-// TestCompositeLoaderBuiltinIntact 内置模板仍可经 base 加载（命名空间不相交）。
-//
-// 注意：组件模板已就近到 internal/builder/components/<name>/<name>.jet，由各组件包经
-// core.RegisterTemplate 注册，不再经过本 loader；这里负责的只剩 internal/templates/components/
-// 下残留的共享模板，所以断言用仍在目录里的 _placeholder.jet —— 验证的是 base 加载路径
-// 本身没被插件路由破坏，而不是「某个具体组件模板还在不在」。
 func TestCompositeLoaderBuiltinIntact(t *testing.T) {
 	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
 	if !l.Exists("_placeholder.jet") {
@@ -67,7 +54,6 @@ func TestCompositeLoaderBuiltinIntact(t *testing.T) {
 	}
 }
 
-// mustEmbedLoader 内置 embed loader。
 func mustEmbedLoader(t *testing.T) *embedLoader {
 	t.Helper()
 	l, err := newEmbeddedComponentLoader()

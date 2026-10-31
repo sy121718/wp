@@ -1,14 +1,5 @@
 package feature
 
-// order_membership_discount_test.go — 券与会员折扣在**真实建单链路**里各自入账（BIZ-3 消费侧接入）。
-//
-// 为什么这条必须在 feature 层而不只是纯函数测试：本批的核心交付是「折扣落进 orders.
-// membership_discount_total 这一列」。纯函数测试能证明算式，但证明不了
-//   · 折扣是在**开号之后**算的（新访客的身份正是这一单才建出来的账号）；
-//   · 券与会员折扣两列各自入账、总额三方平衡；
-//   · 会员折扣参与行分摊（退款按行实付算，少分摊一份就是退多）。
-// 这三条只有走真实的建单事务才看得见。
-
 import (
 	"context"
 	"testing"
@@ -18,10 +9,6 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 )
 
-// stubOrderMembership 会员身份读取端口的替身，记录被解析的访客 id。
-//
-// 记录 userID 是为了钉住「开号在会员折扣之前」这条顺序：折扣若算在开号之前，
-// 这里收到的永远是 0（新客户的第一单永远拿不到会员价，而且不报错）。
 type stubOrderMembership struct {
 	percent int64
 	asked   []uint64
@@ -37,12 +24,6 @@ func (s *stubOrderMembership) Resolve(_ context.Context, req *membershipdto.Reso
 
 var _ membershipcontract.Reader = (*stubOrderMembership)(nil)
 
-// TestOrderMembershipDiscountRecordedSeparately 券 20% + 会员 10% + 运费 800 分。
-//
-// 复算：小计 10000 − 券 2000 − 会员折扣 1000 + 运费 800 = 7800 分。
-// 两笔折扣**各自入账**（discount_total / membership_discount_total 两列），
-// 这是「相加扣减」口径在数据层的形状；并进 discount_total 会让 SEC-001
-// 「无优惠码时折扣恒为 0」那条判据出现常规例外。
 func TestOrderMembershipDiscountRecordedSeparately(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -65,7 +46,6 @@ func TestOrderMembershipDiscountRecordedSeparately(t *testing.T) {
 		t.Fatalf("总额应为 10000−2000−1000+800=7800 分，实际 %d", res.Total)
 	}
 
-	// 落库三列各自为证：券、会员折扣、运费。
 	var row struct {
 		Subtotal                int64 `gorm:"column:subtotal"`
 		DiscountTotal           int64 `gorm:"column:discount_total"`
@@ -89,7 +69,6 @@ func TestOrderMembershipDiscountRecordedSeparately(t *testing.T) {
 		t.Fatalf("三列与总额不平衡：%+v", row)
 	}
 
-	// 行分摊要含会员折扣：退款按行实付算，少分摊一份就会退多。
 	var line struct {
 		LineSubtotal int64 `gorm:"column:line_subtotal"`
 		LineDiscount int64 `gorm:"column:line_discount"`
@@ -105,7 +84,6 @@ func TestOrderMembershipDiscountRecordedSeparately(t *testing.T) {
 		t.Fatalf("行实付应为 7000，实际 %d", line.LineTotal)
 	}
 
-	// 会员身份必须按**这一单开出来的账号**解析（不是空 id）。
 	if len(member.asked) != 1 {
 		t.Fatalf("会员身份应被解析一次，实际 %d 次", len(member.asked))
 	}
@@ -114,10 +92,6 @@ func TestOrderMembershipDiscountRecordedSeparately(t *testing.T) {
 	}
 }
 
-// TestOrderWithoutMembershipPortKeepsDiscountZero 未注入会员端口时行为与接入前一致。
-//
-// 这是「可选降级」的判据：未接线 = 会员折扣功能未开启，金额逐字不变，
-// 而 SEC-001 那条判据（无券时 discount_total 恒为 0）也必须继续成立。
 func TestOrderWithoutMembershipPortKeepsDiscountZero(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

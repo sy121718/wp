@@ -1,24 +1,5 @@
 package feature
 
-// trade_empty_state_honesty_test.go — 交易域后台页的**空态诚实性**回归（AGENTS.md）
-// 与后台代客建单页（AGENTS.md）的渲染 / 回填判据。
-//
-// 判据（都是「错了会静默」的那类）：
-//
-//  1. 空态的主行动**按条件渲染**：无筛选时不给「重置」—— 那个链接指向本页自己
-//     （href == 当前 URL），点了 URL 与页面逐字不变，是死按钮（orders T2 / customers T1）；
-//     而**建单入口**（/admin/orders/new）是另一个 URL 的活按钮，永远该给（有权限时）；
-//  2. 文案与**路由表**一致：空态曾写「台前下单后（或后台代客建单）就会出现在这里」，
-//     而那时 /admin/orders 下没有任何建单端点 —— 运营读完去找入口，翻遍页头 / 列表 / 行操作
-//     都找不到（orders T1，P0）。建单页落地后这条判据**反转**：路由表里存在建单入口 ⇒
-//     页面必须真的给出指向它的入口（比原来那条更强：原来只防文案吹牛）；
-//  3. `?returnId=` 指向不存在的单时说**真实原因**（退货申请不存在），而不是归口文案
-//     「系统内部错误，请稍后重试」（returns T3）。
-//
-// 第 2 条的「路由表」判据取自 internal/routers/testdata/routes.snapshot（运行时路由表的快照）：
-// 断言的是「这一前缀下有没有建单类端点」，不是「某一行文案里没有某个词」——
-// 前者是事实，后者随时可以被改一个同义词蒙过去。
-
 import (
 	"context"
 	"go_wp/internal/adminui"
@@ -50,24 +31,19 @@ import (
 	"go_wp/public/test/support"
 )
 
-// tradePageEnv 订单 / 退货两个后台页的最小真实环境（真 service + 真模板 + 隔离库）。
 type tradePageEnv struct {
 	engine  *gin.Engine
 	db      *gorm.DB
 	project string
 }
 
-// newTradePageEnv 建一个隔离库、一个站点工程，并注册两个列表页的 GET 路由。
-//
-// 走真 service 而不是 fake：空态分支的判据由 handler 算（FilterActive / HasDetail），
-// 用 fake 就得把 handler 的判据再抄一份进测试，而抄错的那份不会报错。
 func newTradePageEnv(t *testing.T) *tradePageEnv {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
 		return nil
 	}
-	// 迁移把结构建好，种子把词条灌进去（本文件里的库值断言依赖它）。
+
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
@@ -90,9 +66,7 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 权限上下文：生产里由 adminctx.PermContextMiddleware 按当前用户的权限码注入。
-	// 本测试不装配 authz 组件，直接给一份「有 order:create」的集合 ——
-	// 页头与空态的建单入口都按它渲染（模板里 canCreate := isset(.PermSet["order:create"])）。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"order:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"order.create": true})
@@ -107,7 +81,6 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 	return &tradePageEnv{engine: engine, db: db, project: project.ID}
 }
 
-// get 请求一个页面并返回响应体（状态码必须是 200：Jet 缺键会 200 + 半截页）。
 func (e *tradePageEnv) get(t *testing.T, path string) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -122,10 +95,6 @@ func (e *tradePageEnv) get(t *testing.T, path string) string {
 	return body
 }
 
-// emptyActionHrefs 摘出响应体里所有空态主行动的 href（按出现顺序）。
-//
-// 每个 `.empty-actions` 块内的 href 都要收集：带筛选时**建单入口与「重置」同处一块**，
-// 只取块内第一个会让「重置」的第二条判据永远看不到东西（假绿）。
 func emptyActionHrefs(body string) []string {
 	var out []string
 	rest := body
@@ -144,7 +113,6 @@ func emptyActionHrefs(body string) []string {
 	}
 }
 
-// pageActionHrefs 摘出页头 `.page-actions` 块里的 href（页级主行动的判据）。
 func pageActionHrefs(body string) []string {
 	i := strings.Index(body, `class="page-actions"`)
 	if i < 0 {
@@ -158,7 +126,6 @@ func pageActionHrefs(body string) []string {
 	return hrefsIn(rest[:end])
 }
 
-// hrefsIn 取一段 HTML 里所有的 href 值（按出现顺序）。
 func hrefsIn(block string) []string {
 	var out []string
 	for {
@@ -176,7 +143,6 @@ func hrefsIn(block string) []string {
 	}
 }
 
-// containsHref 这段 href 列表里有没有指向某个路径的（前缀匹配即可，链接带查询串）。
 func containsHref(hrefs []string, path string) bool {
 	for _, h := range hrefs {
 		if strings.HasPrefix(h, path) {
@@ -186,7 +152,6 @@ func containsHref(hrefs []string, path string) bool {
 	return false
 }
 
-// emptyDescText 取空态描述那一句（用于「承诺式描述」的判据 —— 描述里不该再讲入口在哪）。
 func emptyDescText(body string) string {
 	i := strings.Index(body, `class="empty-desc"`)
 	if i < 0 {
@@ -200,11 +165,6 @@ func emptyDescText(body string) string {
 	return rest[:end]
 }
 
-// TestOrdersEmptyStateActionsFollowFilter orders 空态的主行动按条件给（02-O orders T2）。
-//
-// 无筛选时**不得给「重置」**（链接指向本页自己，点了没有任何变化），
-// 但**必须给建单入口**（/admin/orders/new 是另一个 URL 的活按钮）；
-// 带筛选时两个都给，顺序固定「建单 → 重置」。
 func TestOrdersEmptyStateActionsFollowFilter(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
@@ -240,11 +200,6 @@ func TestOrdersEmptyStateActionsFollowFilter(t *testing.T) {
 	}
 }
 
-// TestOrdersEmptyCopyMatchesRoutes 空态文案与路由表一致，且**入口必须真的存在**（02-O orders T1，P0）。
-//
-// 判据 ① 已按 AGENTS.md §6 反转：路由表里存在建单入口（GET /admin/orders/new）时，
-// 页面必须真的给出指向它的入口 —— 原判据只防「文案吹牛」（路由表里没有建单端点），
-// 现在入口是真的，判据升级成「**承诺了什么就必须给出什么**」，反面更强。
 func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
@@ -256,7 +211,6 @@ func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
 		t.Fatalf("读取路由快照失败: %v", err)
 	}
 
-	// ① 路由表：这一前缀下**有**建单页端点 ⇒ 页头与空态都必须给出入口。
 	hasCreateRoute := false
 	for _, line := range strings.Split(string(snapshot), "\n") {
 		if strings.TrimSpace(line) == "GET /admin/orders/new" {
@@ -274,8 +228,6 @@ func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
 		t.Errorf("路由表里有建单页，但页头没有给出入口（双入口缺一）")
 	}
 
-	// ② 文案：**空态描述**里不再出现「代客建单」这种承诺式说法 —— 入口已经是下面那个真按钮，
-	// 描述只说「订单从哪来」。（按钮文案「＋ 代客建单」是动作式措辞，不受本判据约束。）
 	if desc := emptyDescText(body); strings.Contains(desc, "代客建单") {
 		t.Errorf("空态描述里仍在描述「代客建单」：%q", desc)
 	}
@@ -283,23 +235,10 @@ func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
 		t.Error("订单空态应说明「台前下单后就会出现在这里」")
 	}
 
-	// ③ 库值（模板兜底不是真源）：sys_i18n 的值同样不得留旧承诺。
 	assertI18nValueNotContains(t, env.db, "admin.orders.list.empty_tail", "zh-CN", "代客建单")
 	assertI18nValueNotContains(t, env.db, "admin.orders.list.empty_tail", "en-US", "on their behalf")
 }
 
-// TestReturnsMissingDetailSaysNotFound `?returnId=` 指向不存在的单时说真实原因（02-O returns T3）。
-//
-// 原先 ErrReturnNotFound 不在本页白名单里 → 落归口文案「系统内部错误，请稍后重试」：
-// 有反馈，但把「单不存在」说成了「系统故障」，用户会去重试而不是回列表。
-//
-// 新契约：缺详情的原因进模板的 `.LoadErr`（一条 `role="alert"` 的 badge），页面**降级渲染
-// 完整页面 200** —— 不再有 `?err=` 回带，也不再由 `c.String(500, …)` 拿走整页。
-//
-// 词条在这里显式注入（pkg/i18n.InjectForTest）：本测试的引擎不建 i18n 组件，
-// 不注入的话取词会回落 fallback（key 本身），断言就只能停在「放行了 key」这一步。
-// 「库里真的有这条词条」由 TestTradePagesI18nValuesAreActuallyUpdated 查库覆盖 ——
-// 两条合起来才是完整的判据：**命中白名单 + 取当前语言译文**。
 func TestReturnsMissingDetailSaysNotFound(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
@@ -310,9 +249,6 @@ func TestReturnsMissingDetailSaysNotFound(t *testing.T) {
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	// 这里刻意**不用 env.get**：它的语义是「非 200 直接 Fatal」，会把「500」与「渲染中断」
-	// 混成一句话。缺详情的正确形态是 200 + 提示条 —— 若仍是 500，那是控制器/模板侧的生产
-	// 缺陷（本测试不改生产代码），断言要把这一点说清楚。
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/returns?project="+env.project+"&returnId=999999", nil))
@@ -331,17 +267,13 @@ func TestReturnsMissingDetailSaysNotFound(t *testing.T) {
 	if strings.Contains(alert, "系统内部错误") {
 		t.Errorf("缺详情被归口成了系统故障：%q", alert)
 	}
-	// 反面：非法 id（非数字）仍走本页自造的参数级文案，两者不能混。
+
 	invalid := orderPageAlert(env.get(t, "/admin/returns?project="+env.project+"&returnId=abc"))
 	if strings.Contains(invalid, "退货申请不存在") {
 		t.Errorf("非数字 id 应说「编号不合法」，实际 %q", invalid)
 	}
 }
 
-// TestTradePagesI18nValuesAreActuallyUpdated 库值断言：改的必须是 sys_i18n，不是模板兜底。
-//
-// 上一轮的教训：模板有兜底 ≠ 词条已登记/已更新（模板里的中文只是 t() 的 fallback，
-// 词条命中时显示的是库里的值）。所以这里**直接查库**。
 func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -351,19 +283,15 @@ func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
 
-	// customers 空态：标题不再自相矛盾，说明把「后台不能直接新建」还回来（02-O customers T2）。
 	assertI18nValueEquals(t, db, "admin.customers.list.empty_heading", "zh-CN", "还没有客户")
 	assertI18nValueContains(t, db, "admin.customers.list.empty_desc", "zh-CN", "后台不能直接新建")
 
-	// 注册时间两个 label 成对（02-O customers T5）。
 	assertI18nValueEquals(t, db, "admin.customers.field.registered_at", "zh-CN", "注册时间（起）")
 	assertI18nValueEquals(t, db, "admin.customers.field.registered_to", "zh-CN", "注册时间（止）")
 
-	// 状态按钮动词已 key 化（02-O customer_detail T1：否则英文界面「Disable这个账号」）。
 	assertI18nValueEquals(t, db, "admin.customers.action.disable", "zh-CN", "停用")
 	assertI18nValueEquals(t, db, "admin.customers.action.enable", "en-US", "Enable")
 
-	// 退货单状态说明已 key 化（02-O returns T2）。
 	for _, key := range []string{
 		"admin.returns.note.requested", "admin.returns.note.approved", "admin.returns.note.received",
 		"admin.returns.note.completed", "admin.returns.note.rejected", "admin.returns.note.cancelled",
@@ -375,11 +303,8 @@ func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 		}
 	}
 
-	// returns T3 的另一半：放行的是 key，而「退货申请不存在」这句译文必须真的在库里 ——
-	// 页面那条提示走的是 shell.TranslateFor，词条缺了就只剩裸 key。
 	assertI18nValueEquals(t, db, orderenums.ErrReturnNotFound, "zh-CN", "退货申请不存在")
 
-	// 孤儿词条已退役（02-O customers T3）：两语言行都不在了。
 	if got := i18nValue(db, "admin.customers.empty", "zh-CN"); got != "" {
 		t.Errorf("孤儿词条 admin.customers.empty 仍在库里（zh-CN=%q）—— 删能力要连 seed 与幂等条件一起收口", got)
 	}
@@ -388,20 +313,6 @@ func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 	}
 }
 
-// TestReturnsStatusNoteMovedIntoHelp 退货单的「当前状态说明」进 .help 悬浮，不再平铺在正文（returns T2）。
-//
-// 那段文案是操作指引（「这一单现在该做什么 / 为什么没有按钮」），不是数据：
-// 平铺在「操作」标题下方时，对已经会用的人是每次访问都付的噪声，也把真正的操作表单往下推；
-// 而且它此前是 Go 侧硬编码中文，英文界面整块露中文。
-//
-// 新契约：Go 侧不再给 key（`detail.NoteKey` 已删）—— 说明改为在**模板里按状态内联取词**
-// （六个分支 `tr("admin.returns.note.<status>", "…")`），整块收进「操作」标题的 `.help-pop`。
-// 所以判据从「Go 给了 NoteKey」变成「模板里有六条取词、且确实在 .help-pop 内」。
-//
-// 六条词条中英成对（查库那半在 TestTradePagesI18nValuesAreActuallyUpdated）。
-//
-// 路径：模板已按后端模块分目录（admin/order/returns.html），本用例原先读的是分目录前的
-// 旧落点 admin/returns.html —— 文件不存在，它不是断言失败而是直接 Fatal（读不到就无从判）。
 func TestReturnsStatusNoteMovedIntoHelp(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "internal", "templates", "admin", "order", "returns.html"))
 	if err != nil {
@@ -409,7 +320,6 @@ func TestReturnsStatusNoteMovedIntoHelp(t *testing.T) {
 	}
 	html := string(src)
 
-	// ① 六个状态各有一条取词（少一条 → 那个状态的说明整块消失，英文界面会露中文兜底）。
 	for _, key := range []string{
 		"admin.returns.note.requested", "admin.returns.note.approved", "admin.returns.note.received",
 		"admin.returns.note.completed", "admin.returns.note.rejected", "admin.returns.note.cancelled",
@@ -418,14 +328,14 @@ func TestReturnsStatusNoteMovedIntoHelp(t *testing.T) {
 			t.Errorf("模板缺少状态说明取词 %s —— 该状态的说明会整块消失", key)
 		}
 	}
-	// ② 旧形态必须消失：Go 侧不再给 NoteKey，正文里也不再有 detail.Note。
+
 	if strings.Contains(html, "NoteKey") {
 		t.Error("模板仍在取 NoteKey —— 状态说明没有改成模板内联取词")
 	}
 	if strings.Contains(html, "detail.Note") {
 		t.Error("模板仍在正文里渲染 detail.Note —— 状态说明应整块收进 .help 悬浮")
 	}
-	// ③ 取词确实在「操作」标题的 .help-pop 内（不是平铺回正文）。
+
 	i := strings.Index(html, "admin.returns.actions.heading")
 	if i < 0 {
 		t.Fatal("模板里找不到「操作」标题的取词 admin.returns.actions.heading")
@@ -438,13 +348,6 @@ func TestReturnsStatusNoteMovedIntoHelp(t *testing.T) {
 	}
 }
 
-// orderPageVisibleText 去掉语言切换表单里那条「原样回带当前 URL」的隐藏域。
-//
-// 它是 URL 回带、不是提示：布局里的语言切换会把**当前请求 URL**（含查询串）放进
-// `<input name="redirect">`，好让切语言后回到同一页。于是 `?err=…` 会作为 URL 的一部分
-// 出现在这个隐藏域里 —— 那是「保留上下文」，不是「把查询参数当提示渲染」。
-// 「伪造参数不得上页面」这条判据因此要在**可见正文**上判（提示面另有 alert 判据）：
-// 不剥掉它，判据会把 URL 原样回带误判成伪造文案上了页面。
 func orderPageVisibleText(body string) string {
 	const open = `<form class="lang-switch"`
 	i := strings.Index(body, open)
@@ -458,15 +361,6 @@ func orderPageVisibleText(body string) string {
 	return body[:i] + body[i+j+len("</form>"):]
 }
 
-// TestOrdersPageErrParamIsIgnored 页面不再读取 ?err=：裸 key、白名单 key 与伪造文案都上不了页面。
-//
-// 旧契约下这条守的是「?err= 命中白名单时显示译文、伪造的落归口文案」—— 它依赖页面**读取**
-// ?err= 并按白名单判定。新契约把「写动作结论经 URL 回带」这条通道整块删掉了（结论改由
-// shell.RenderJump 渲染提示页），页面根本不读 ?err=。于是判据升级为**更强**的一条：
-// 这个参数在**可见正文**里完全不可见（唯一可能残留的是语言切换隐藏域里的 URL 回带，
-// 见 orderPageVisibleText）—— 伪造面被整块删掉，而不是「靠白名单把它挡在归口文案上」。
-//
-// 词条仍显式注入：即便词条存在（旧契约下会被翻译出来），也不该出现在页面上。
 func TestOrdersPageErrParamIsIgnored(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
@@ -478,9 +372,9 @@ func TestOrdersPageErrParamIsIgnored(t *testing.T) {
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	for _, forged := range []string{
-		orderenums.ErrOrderNotFound,          // 白名单 key（旧契约会翻译成「订单不存在」）
-		url.QueryEscape("订单不存在"),             // 伪造的成品文案
-		url.QueryEscape(`relation "orders"`), // 伪造的内部细节指纹
+		orderenums.ErrOrderNotFound,
+		url.QueryEscape("订单不存在"),
+		url.QueryEscape(`relation "orders"`),
 	} {
 		body := env.get(t, "/admin/orders?project="+env.project+"&err="+forged)
 		visible := orderPageVisibleText(body)
@@ -494,7 +388,7 @@ func TestOrdersPageErrParamIsIgnored(t *testing.T) {
 		if strings.Contains(visible, `relation "orders"`) {
 			t.Errorf("?err=%s 的内部细节出现在了可见正文里", forged)
 		}
-		// 页面必须照常渲染完整页面（200 已由 env.get 断言），且不产生任何提示条。
+
 		if !strings.Contains(body, "</html>") {
 			t.Errorf("?err=%s 让渲染中断了（缺 </html>）", forged)
 		}
@@ -504,12 +398,6 @@ func TestOrdersPageErrParamIsIgnored(t *testing.T) {
 	}
 }
 
-// TestOrdersMissingDetailSaysNotFound `?orderId=` 指向不存在的单时说「订单不存在」。
-//
-// 与 returns T3 同形，但判据要自己重测：02-O 的实测用 UUID 形 URL 测这个参数，
-// 而 orders.id 是 uint64（handler 走 strconv.ParseUint）—— 那个 URL 恒解析为 0、
-// 恒不渲染详情，所以「没有提示」那条读数**无法区分「没注入提示」与「URL 根本走不通」**。
-// 这里用**数字 id**（解析得通、查不到）重测：页面应显示「订单不存在」。
 func TestOrdersMissingDetailSaysNotFound(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
@@ -529,19 +417,12 @@ func TestOrdersMissingDetailSaysNotFound(t *testing.T) {
 	}
 }
 
-// ——— 后台代客建单页（AGENTS.md）———
-
-// orderCreatePageEnv 建单页的最小真实环境：真 service + 真商品目录 + 真模板 + 隔离库。
 type orderCreatePageEnv struct {
 	engine  *gin.Engine
 	fixture *orderFixture
 	project string
 }
 
-// newOrderCreatePageEnv 装配一个可 GET / POST 的建单页。
-//
-// 商品目录传**真**的 productservice.Service：候选 SKU 走 ListVariantOptions，
-// 用替身就得把它的语义再抄一份进测试，而抄错的那份不会报错。
 func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	t.Helper()
 	f := newOrderFixture(t)
@@ -557,8 +438,7 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
-	// 系统字典传**真**的 sysconfig service（同一隔离库）：国家下拉的选项来自 sys_area 的 seed，
-	// 用替身就得把它的语义再抄一份进测试，而抄错的那份不会报错。
+
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
 	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
 	engine.GET("/admin/orders/new", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreatePage)
@@ -589,7 +469,6 @@ func (e *orderCreatePageEnv) post(t *testing.T, form url.Values) *httptest.Respo
 	return rec
 }
 
-// adminOrderCreateForm 一份「填好了」的表单（用例按需覆盖字段）。
 func adminOrderCreateForm(project, variantID, email, requestID string) url.Values {
 	return url.Values{
 		"project":            {project},
@@ -616,11 +495,6 @@ func adminOrderCreateForm(project, variantID, email, requestID string) url.Value
 	}
 }
 
-// TestAdminOrderCreatePageEchoesOnFailure 长表单失败后**就地重渲 200 + 回填**（AGENTS.md §6）。
-//
-// 判据是「用户刚打的字还在不在」：字段 20+ 的表单一旦走 303 + ?err=，303 之后是一次 GET，
-// 请求里没有 PostForm，几十个字段必然全丢（admin-ui-logic §9 第 7 条）。
-// 所以这里逐字段比对**提交值**与**渲染值**，而不是只看「页面里出现了某个词」。
 func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	env := newOrderCreatePageEnv(t)
 	if env == nil {
@@ -628,7 +502,6 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	}
 	_, variantID := env.fixture.addProduct(t, "回填商品", 12.5, 5)
 
-	// ① 整页渲染：Jet 缺键会 500 并丢弃半成品内容，</html> 是最稳的判据。
 	page := env.get(t, "/admin/orders/new?project="+env.project+"&keyword=回填商品&rows=3")
 	if !strings.Contains(page, `action="/admin/orders/create"`) {
 		t.Error("建单页缺少提交表单")
@@ -643,7 +516,6 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 		t.Error("候选 SKU 应带出商品名（真商品目录的 ListVariantOptions）")
 	}
 
-	// ② 提交**非法邮箱** → 200 + 整页 + 字段级标红 + 全部字段回填。
 	form := adminOrderCreateForm(env.project, variantID, "not-an-email", "req-echo-1")
 	form.Set("couponCode", "WELCOME")
 	form.Set("sameBilling", "1")
@@ -656,7 +528,6 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 		t.Fatal("失败重渲的输出不是一整页（缺 </html>）")
 	}
 
-	// 逐字段比对：提交值 == 渲染值（含多值明细行）。
 	for field, want := range map[string]string{
 		"customerEmail":      "not-an-email",
 		"customerName":       "张三",
@@ -680,42 +551,37 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	if !strings.Contains(out, ">尽快发货</textarea>") {
 		t.Error("客户备注没有回填（textarea 的值在标签之间）")
 	}
-	// 运费是数字输入框（name 与 value 之间隔着 min），单独比对 —— 单位是**分**。
+
 	if !strings.Contains(out, `name="shippingTotal" min="0" value="1500"`) {
 		t.Error("运费没有回填（单位是分）")
 	}
 	if !strings.Contains(out, ">电话单，客户要求顺丰</textarea>") {
 		t.Error("后台备注没有回填")
 	}
-	// 明细行：选中的变体与数量都要在（回填是整份行重渲，不是逐字段 echo）。
+
 	if !strings.Contains(out, `value="`+variantID+`" selected`) {
 		t.Error("明细行的变体选择没有回填")
 	}
 	if !strings.Contains(out, `name="quantity" min="1" max="100000" value="2"`) {
 		t.Error("明细行的数量没有回填")
 	}
-	// 复选框按「这次是否被提交」回填（勾了就是勾着）。
+
 	if !strings.Contains(out, `name="sameBilling" value="1" checked`) {
 		t.Error("「同收货地址」的勾选态没有回填")
 	}
-	// 出错字段标红 + 行内文案（字段级错误不能只提示在页顶）。
+
 	if !strings.Contains(out, `name="customerEmail" value="not-an-email" aria-invalid="true"`) {
 		t.Error("非法邮箱所在字段没有标红")
 	}
 	if !strings.Contains(out, `class="form-error"`) {
 		t.Error("缺少字段级错误文案")
 	}
-	// 幂等键原样带回：用户重试同一份表单只落一单。
+
 	if !strings.Contains(out, `name="requestId" value="req-echo-1"`) {
 		t.Error("幂等键没有回填 —— 重试会落两单")
 	}
 }
 
-// TestAdminOrderCreateDefaultsToNoGuestAccount 后台代客建单**默认不开号**（AGENTS.md §4）。
-//
-// 这是本项最关键的语义：默认档必须让 user_id 留空、且**一封信都不发**；
-// 只有显式勾选 opt-in 才开号 + 发初始密码。两个方向都要钉 —— 只测「勾了会开号」
-// 无法发现「不勾也开号」这个真正的风险。
 func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	env := newOrderCreatePageEnv(t)
 	if env == nil {
@@ -724,7 +590,6 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	f := env.fixture
 	_, variantID := f.addProduct(t, "开号开关商品", 20, 5)
 
-	// —— 默认档：不勾开号 ——
 	rec := env.post(t, adminOrderCreateForm(env.project, variantID, "off@example.com", "req-off-1"))
 	orderID := orderIDFromCreate(t, rec)
 	if orderID == 0 {
@@ -749,7 +614,6 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 		t.Errorf("默认档不该给客户建号，实际建了 %d 个", created)
 	}
 
-	// —— opt-in：显式勾选才开号 + 发信 ——
 	optIn := adminOrderCreateForm(env.project, variantID, "on@example.com", "req-on-1")
 	optIn.Set("provisionGuestAccount", "1")
 	rec = env.post(t, optIn)
@@ -764,7 +628,6 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 		t.Errorf("显式勾选后应把初始密码寄给该邮箱，实际 %+v", m)
 	}
 
-	// —— 订单本身的来源与状态也要对：created_via=admin、状态 pending、明细落库 ——
 	var head struct {
 		Via    string
 		Status string
@@ -780,18 +643,6 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	}
 }
 
-// orderIDFromCreate 从建单成功后的 303 回跳 `Location` 里取 orderId（列表页靠它展开新单）。
-//
-// 成功出口的契约是 **303 PRG**，与 block / ai / page 三个模块的既有先例同口径
-// （见 internal/module/block/inbound/http/block_page.go:246、internal/module/ai/inbound/http/ai_page.go:1038）：
-//
-//	· 303 + `Location=/admin/orders?project=…&orderId=…` —— 浏览器接着发 GET，列表页按
-//	  orderId 展开新单，**事实确认落在刷新后的页面上**；
-//	· 刻意不挂 htmx、不做「重定向后提示」：后台没有这个面（task-67 之后 ?err=/?ok= 族整批退役，
-//	  lead 裁定不为它新建会话 flash —— 已有 303 先例一律不带提示）。
-//
-// 失败仍是 200 + 就地重渲（字段级标红 + 全字段回填，见 TestAdminOrderCreatePageEchoesOnFailure），
-// 303 只属于成功。这条断言把「成功=303」钉住：改回 200 + 提示页会立刻红。
 func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 	t.Helper()
 	if rec.Code != http.StatusSeeOther {
@@ -818,8 +669,6 @@ func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 	}
 	return id
 }
-
-// —— 词条查询小工具（直接读 sys_i18n：模板兜底不能当判据）——
 
 func i18nValue(db *gorm.DB, key, lang string) string {
 	var value string

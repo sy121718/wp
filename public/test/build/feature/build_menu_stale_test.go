@@ -1,33 +1,5 @@
 package feature
 
-// build_menu_stale_test.go — menu_stale 的同事务可靠入队与 698 的队列侧形状。
-//
-// 断言的是**库里的行**与**pg_index / information_schema 的实际读数**，不是返回值、
-// 也不是 schema/CURRENT.sql 快照：版本号是否真的递增、任务与业务写入是否一起回滚、
-// source_id 放宽成 text 之后旧索引的键列与 predicate 有没有被顺手改掉，都只能在库里看见。
-//
-// 覆盖：
-//  1. 同 scope 下版本单调递增，且每次入队都落一条 pending；
-//  2. 两个位置各入队一次不撞唯一键，版本号各自从 1 开始；
-//  3. 同位置已有 pending / running 时，新版本仍然新增一条（旧任务不吞新意图）；
-//  4. A→B→A：三次真实变化各得一个号，三条任务都在；
-//  5. 第三个写入失败 → 业务写入、版本号、任务一起回滚；
-//  6. 无事务 / 非法 kind / 非法工程被拒且不留行；
-//  7. 四值 kind 都能入队；source_id 往返一致；context_key 与 source_id 同值落库；
-//  8. 旧来源（page / presentation）在改列型之后照常入队：source_id 文本等于传参、
-//     input_version / context_key 为 NULL，且仍由原来的 pending 去重键兜底；
-//  9. 四位置可同时 running（互斥粒度停在位置，不是停在工程）；
-// 10. 698 的 CHECK 真的在挡：形状不自洽的 menu_stale 行插不进去；
-// 11. 两条旧唯一索引的键列与 predicate 在 698 之后逐字不变（直读 pg_index）；
-// 12. 迁移 295 回填 project_id 的 JOIN 在改列型之后仍成立 —— 但**只**在两端显式 cast 的
-//     形态下：未 cast 的 source_id = p.id 在 text 列上必须报 operator does not exist
-//     （PG 没有 text = uuid 算子，也没有 uuid↔text 的隐式 / 赋值转换），cast 后照常填上；
-// 13. 生产迁移顺序（数字升序，699 → 698 → … → 295）下：两条迁移原样重放都成功、
-//     判定仍为 1、295 的 project_id 回填真的执行（TestLegacyMigration295ReplaysAfter698）；
-// 14. 旧来源 id 归一：大写 / 无连字符 / 花括号写法落到同一条 source_id，重复入队被去重；
-// 15. source_id 列型的两个阶段（uuid 阶段 / text 阶段）下算子可用性逐条钉住，
-//     证明「两端 ::text」是唯一在 698 前后都成立的写法。
-
 import (
 	"context"
 	"errors"
@@ -48,14 +20,12 @@ import (
 	"go_wp/public/test/support"
 )
 
-// menuFixture 一个已建工程的入队夹具。
 type menuFixture struct {
 	db        *gorm.DB
 	svc       *buildservice.Service
 	projectID string
 }
 
-// newMenuFixture 建库 + 建工程行；PG 不可用时跳过（support 已处理）。
 func newMenuFixture(t *testing.T) *menuFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -67,14 +37,11 @@ func newMenuFixture(t *testing.T) *menuFixture {
 	return &menuFixture{db: db, svc: buildservice.NewService(buildmodel.NewModel(db)), projectID: projectID}
 }
 
-// inScope 在带工程作用域的**真实事务**里执行 fn（与生产调用方的形态一致：
-// 先 rls.ScopeTx，再调 EnqueueMenuStaleTx）。
 func (f *menuFixture) inScope(t *testing.T, fn func(tx *gorm.DB) error) error {
 	t.Helper()
 	return rls.InProjectScope(context.Background(), f.db, f.projectID, fn)
 }
 
-// enqueue 在独立事务里入队一次（成功即提交），返回版本号。
 func (f *menuFixture) enqueue(t *testing.T, kind string) int64 {
 	t.Helper()
 	var version int64
@@ -89,7 +56,6 @@ func (f *menuFixture) enqueue(t *testing.T, kind string) int64 {
 	return version
 }
 
-// menuJobs 本工程某位置的 menu_stale 任务（按版本号升序）。
 func (f *menuFixture) menuJobs(t *testing.T, kind string) []menuJob {
 	t.Helper()
 	var rows []menuJob
@@ -106,7 +72,6 @@ func (f *menuFixture) menuJobs(t *testing.T, kind string) []menuJob {
 	return rows
 }
 
-// seqVersion 直接读号源表当前值（"未消耗" / "已分配" 只能从表上看）。
 func (f *menuFixture) seqVersion(t *testing.T, kind string) (int64, bool) {
 	t.Helper()
 	var rows []struct {
@@ -122,19 +87,13 @@ func (f *menuFixture) seqVersion(t *testing.T, kind string) (int64, bool) {
 	return rows[0].NextVersion, true
 }
 
-// seedSourceRow 建一行旧来源的真实实体（pages / presentation_instances），返回它的 id。
-//
-// 用 uq_build_jobs_pending 之外最省的一批 NOT NULL 列：这些列是真实迁移定义的，
-// 这里补的是"父行"，不是手抄表结构。
 func (f *menuFixture) seedSourceRow(t *testing.T, sourceType string) string {
 	t.Helper()
 	id := uuid.NewString()
 	var sql string
 	switch sourceType {
 	case buildmodel.SourceTypePage:
-		// 时间列是 create_time / update_time（205_db019_time_columns_full.sql 改的名），
-		// 写 created_at 会撞 SQLSTATE 42703。
-		// draft_path 是 NOT NULL（init_builder_schema.sql:88），由 id 派生一条合法路径。
+
 		sql = `INSERT INTO pages (id, project_id, kind, content_target_type, draft_path,
 			draft_document, create_time, update_time)
 			VALUES (?, ?, 'notFound', 'none', '/seed/' || ?, '{}'::jsonb, now(), now())`
@@ -156,8 +115,7 @@ func (f *menuFixture) seedSourceRow(t *testing.T, sourceType string) string {
 		}
 		if templateID == "" {
 			templateID = uuid.NewString()
-			// 列名以生产迁移为准（init_builder_schema.sql:56-66 + 205 改名）：
-			// entity_type / draft_document，不是 kind / definition。
+
 			if e := f.db.Exec(`INSERT INTO content_templates (id, project_id, name, entity_type, draft_document,
 				create_time, update_time)
 				VALUES (?, ?, 'menu_stale 测试模板', 'page', '{}'::jsonb, now(), now())`,
@@ -173,7 +131,6 @@ func (f *menuFixture) seedSourceRow(t *testing.T, sourceType string) string {
 	return id
 }
 
-// menuJob 断言用到的任务列。
 type menuJob struct {
 	ID             int64   `gorm:"column:id"`
 	Status         string  `gorm:"column:status"`
@@ -186,7 +143,6 @@ type menuJob struct {
 	ContextKey     *string `gorm:"column:context_key"`
 }
 
-// TestMenuStaleVersionIncrementsInSameScope 同一工程同一位置：每次入队一个新号、一条新任务。
 func TestMenuStaleVersionIncrementsInSameScope(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -206,7 +162,7 @@ func TestMenuStaleVersionIncrementsInSameScope(t *testing.T) {
 	if len(jobs) != 3 {
 		t.Fatalf("三次真实变化应留下三条任务，实际 %d 条", len(jobs))
 	}
-	// 断言等式：三条任务的版本号集合 == 三次返回的版本号集合。
+
 	for i, want := range []int64{v1, v2, v3} {
 		if jobs[i].InputVersion == nil || *jobs[i].InputVersion != want {
 			t.Fatalf("第 %d 条任务的版本号应为 %d，实际 %v", i+1, want, jobs[i].InputVersion)
@@ -214,7 +170,7 @@ func TestMenuStaleVersionIncrementsInSameScope(t *testing.T) {
 		if jobs[i].Status != buildmodel.StatusPending {
 			t.Fatalf("第 %d 条任务应为 pending，实际 %q", i+1, jobs[i].Status)
 		}
-		// lang 保留真实语言语义：menu_stale 这里没有语言维度，写空串而不是塞 kind。
+
 		if jobs[i].Lang != "" {
 			t.Fatalf("lang 不得夹带位置语义，实际 %q", jobs[i].Lang)
 		}
@@ -227,7 +183,6 @@ func TestMenuStaleVersionIncrementsInSameScope(t *testing.T) {
 	}
 }
 
-// TestMenuStaleTwoKindsDoNotCollide 两个位置各一次：互不共用号源、也不撞唯一索引。
 func TestMenuStaleTwoKindsDoNotCollide(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -243,10 +198,6 @@ func TestMenuStaleTwoKindsDoNotCollide(t *testing.T) {
 	}
 }
 
-// TestMenuStaleKeepsPendingAndRunningAtDifferentVersions 旧任务不吞新意图。
-//
-// 构造：v1 pending 未消费、v2 被认领成 running，再发生一次变化 → v3 仍然要新增一条。
-// 若实现把「已有 pending / running」当成「工作已在队列里」而去重，本用例立刻变红。
 func TestMenuStaleKeepsPendingAndRunningAtDifferentVersions(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -255,8 +206,6 @@ func TestMenuStaleKeepsPendingAndRunningAtDifferentVersions(t *testing.T) {
 	v1 := f.enqueue(t, "header_mobile")
 	v2 := f.enqueue(t, "header_mobile")
 
-	// 认领一次：claim 的候选条件是「本来源当前没有 running」——第二次认领会跳过同来源，
-	// 所以 v1 变成 running、v2 留在 pending，构成「running + pending 并存」。
 	if _, err := f.svc.Model().Claim(context.Background(), 15*time.Minute); err != nil {
 		t.Fatalf("认领失败: %v", err)
 	}
@@ -283,17 +232,13 @@ func TestMenuStaleKeepsPendingAndRunningAtDifferentVersions(t *testing.T) {
 	}
 }
 
-// TestMenuStaleABARetainsThreeTasks A→B→A：三次真实变化各成一条工作。
-//
-// hash 型输入键在 A→B→A 时会回到第一次的值，与遗留任务撞键被去重；
-// 版本号型输入键不会。本用例钉住「必须是后者」。
 func TestMenuStaleABARetainsThreeTasks(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
 		return
 	}
 	vA1 := f.enqueue(t, "footer_mobile")
-	_ = f.enqueue(t, "footer_mobile") // B
+	_ = f.enqueue(t, "footer_mobile")
 	vA2 := f.enqueue(t, "footer_mobile")
 	if !(vA2 > vA1) {
 		t.Fatalf("第三次（回到 A）必须拿到更大的号: %d vs %d", vA1, vA2)
@@ -311,10 +256,6 @@ func TestMenuStaleABARetainsThreeTasks(t *testing.T) {
 	}
 }
 
-// TestMenuStaleRollbackTakesVersionAndJob 第三个写入失败 → 业务行、版本号、任务一起回滚。
-//
-// 事务里顺序执行：① 入队（取号 v1）② 写一条业务行 ③ 再入队（取号 v2）④ 抛错。
-// 回滚后必须满足：业务行没了、两条任务都没了、号源回到事务前的状态（不消耗 v1/v2）。
 func TestMenuStaleRollbackTakesVersionAndJob(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -326,8 +267,7 @@ func TestMenuStaleRollbackTakesVersionAndJob(t *testing.T) {
 		if _, e := f.svc.EnqueueMenuStaleTx(context.Background(), tx, f.projectID, "header"); e != nil {
 			return e
 		}
-		// 第二处写入：真实业务行挂在工程行上，模拟「导航写入 + 入队」同事务。
-		// 用 projects.name 而不是号源表：号源表的写入会被 UPSERT 覆盖，看不出回滚。
+
 		if e := tx.Exec("UPDATE projects SET name = name || '·tx' WHERE id = ?", f.projectID).Error; e != nil {
 			return e
 		}
@@ -354,7 +294,6 @@ func TestMenuStaleRollbackTakesVersionAndJob(t *testing.T) {
 	}
 }
 
-// TestMenuStaleRejectsWithoutTransaction 无事务句柄被拒，且不留行。
 func TestMenuStaleRejectsWithoutTransaction(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -372,7 +311,6 @@ func TestMenuStaleRejectsWithoutTransaction(t *testing.T) {
 	}
 }
 
-// TestMenuStaleRejectsInvalidInputs 非法 kind / 工程 id 在事务内同样被拒且不留行。
 func TestMenuStaleRejectsInvalidInputs(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -404,10 +342,6 @@ func TestMenuStaleRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestMenuStaleAllFourKinds 四个位置都能入队，source_id 都能往返，context_key 与它同值落库。
-//
-// context_key 必须真的落库：uq_build_jobs_context_version 的键里含它，PG 的 UNIQUE 允许多个
-// NULL —— 一旦写路径漏了它，去重索引对 menu_stale 完全不生效且没有任何报错。
 func TestMenuStaleAllFourKinds(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -436,11 +370,6 @@ func TestMenuStaleAllFourKinds(t *testing.T) {
 	}
 }
 
-// TestMenuStaleLegacySourcesStillEnqueue 改列型之后，page / presentation 的入队路径没有变化。
-//
-// 这条用例是 698「source_id: uuid → text」的唯一验收面：旧来源仍走 Enqueue（ON CONFLICT
-// DO NOTHING）与 uq_build_jobs_pending，source_id 文本等于传参、input_version / context_key
-// 保持 NULL（历史来源不回填），重复入队仍被去重成一条。
 func TestMenuStaleLegacySourcesStillEnqueue(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -466,7 +395,7 @@ func TestMenuStaleLegacySourcesStillEnqueue(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("两个旧来源应各有一条任务，实际 %d 条", len(rows))
 	}
-	// 断言等式：库里两行 source_id 的集合 == 传进去的两个 id 的集合。
+
 	got := map[string]bool{rows[0].SourceID: true, rows[1].SourceID: true}
 	if !got[pageID] || !got[instanceID] {
 		t.Fatalf("source_id 必须逐字等于传参：期望 {%s,%s}，实际 {%s,%s}",
@@ -482,7 +411,6 @@ func TestMenuStaleLegacySourcesStillEnqueue(t *testing.T) {
 		}
 	}
 
-	// 重复入队仍被 uq_build_jobs_pending 去重成一条（旧索引的语义没有因为改列型而丢）。
 	if err := f.svc.EnqueuePageBuild(context.Background(), pageID, f.projectID, "zh-CN", buildmodel.IntentManual, 3, "hash-page"); err != nil {
 		t.Fatalf("重复入队应幂等返回，实际错误: %v", err)
 	}
@@ -496,11 +424,6 @@ func TestMenuStaleLegacySourcesStillEnqueue(t *testing.T) {
 	}
 }
 
-// TestMenuStaleFourKindsRunConcurrently 四个位置可以同时 running：互斥粒度是「位置」不是「工程」。
-//
-// 这是把 source_id 放宽成 text 的真正理由：若 menu_stale 的 source_id 只存裸工程 id，
-// 四个位置共用同一个来源，claim 的 NOT EXISTS 前置过滤与 uq_build_jobs_running_source
-// 会一起把后三个位置挡在队列里 —— 页眉在跑，页脚就永远领不到。
 func TestMenuStaleFourKindsRunConcurrently(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -539,11 +462,6 @@ func TestMenuStaleFourKindsRunConcurrently(t *testing.T) {
 	}
 }
 
-// TestMenuStaleShapeCheckRejectsInconsistentRows 698 的 CHECK 真的在挡形状不自洽的 menu_stale 行。
-//
-// 四段事实（工程 / 位置 / 版本 / 语境）缺一或互相矛盾就该插不进去：这类行一旦进库，
-// worker 要么读别人的工程、要么拿到空版本号。断言的是数据库拒绝（约束名可定位），
-// 不是 service 的入参校验。
 func TestMenuStaleShapeCheckRejectsInconsistentRows(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -563,8 +481,7 @@ func TestMenuStaleShapeCheckRejectsInconsistentRows(t *testing.T) {
 		{"缺少 input_version", goodSourceID, &f.projectID, nil, &goodSourceID},
 		{"缺少 context_key", goodSourceID, &f.projectID, ptrInt64(1), nil},
 		{"缺少 project_id", goodSourceID, nil, ptrInt64(1), &goodSourceID},
-		// 违规点是「位置不在四值内」：工程段必须是规范 UUID 文本（大写写法会让
-		// left(source_id,37) = project_id::text || ':' 先失败，用例就证不到位置那一项）。
+
 		{"位置不在四值内", f.projectID + ":sidebar", &f.projectID, ptrInt64(1), ptrStr(f.projectID + ":sidebar")},
 		{"工程段非规范写法", strings.ToUpper(f.projectID) + ":header", &f.projectID, ptrInt64(1), ptrStr(strings.ToUpper(f.projectID) + ":header")},
 		{"工程与 source_id 不一致", goodSourceID, &other, ptrInt64(1), &goodSourceID},
@@ -582,26 +499,19 @@ func TestMenuStaleShapeCheckRejectsInconsistentRows(t *testing.T) {
 			t.Fatalf("%s：拒绝原因应指向 build_jobs_menu_stale_shape_check，实际 %v", c.name, err)
 		}
 	}
-	// 正例：形状自洽的行插得进去（否则上面对照组没有意义）。
+
 	if err := f.db.Exec(`INSERT INTO build_jobs (source_type, source_id, project_id, lang, intent,
 		draft_version, build_input_hash, status, attempt, create_time, input_version, context_key)
 		VALUES ('menu_stale', ?, ?, '', 'dependency', 0, 'shape-check-ok', 'pending', 0, now(), 1, ?)`,
 		goodSourceID, f.projectID, goodSourceID).Error; err != nil {
 		t.Fatalf("形状自洽的 menu_stale 行应能插入，实际 %v", err)
 	}
-	// 清掉这条手工插入的正例行：它用的是 version=1，会与后续用例（同一工程、同一位置）
-	// 的 uq_build_jobs_context_version 撞键。本用例的断言已完成，清理是为了让夹具回到干净状态。
+
 	if err := f.db.Exec("DELETE FROM build_jobs WHERE build_input_hash = 'shape-check-ok'").Error; err != nil {
 		t.Fatalf("清理正例行失败: %v", err)
 	}
 }
 
-// TestMenuStaleLegacyIndexesKeepPredicates 两条旧唯一索引的键列与 predicate 在 698 之后不变。
-//
-// 判据直读 pg_index / pg_attribute / pg_get_expr（与 public/migrations/register_build_job_intent.go
-// 同一口径），不拿 schema/CURRENT.sql 或 indexdef 的文本形态断言 —— 文本随 PG 版本变。
-// 为什么必须钉：source_id 的列型从 uuid 改成 text 会触发这两条索引重建，任何"顺手重写"
-// 都会改变 page / presentation 的去重与互斥粒度，而它们的入队路径不会被 698 的 CHECK 兜住。
 func TestMenuStaleLegacyIndexesKeepPredicates(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -610,14 +520,12 @@ func TestMenuStaleLegacyIndexesKeepPredicates(t *testing.T) {
 	type indexFact struct {
 		KeyColumns string `gorm:"column:key_columns"`
 		Predicate  string `gorm:"column:predicate"`
-		// SourceIDType 键列 source_id 当前的列型（格式化的类型名，如 text / uuid）。
+
 		SourceIDType string `gorm:"column:source_id_type"`
 	}
 	read := func(name string) (indexFact, bool) {
 		var rows []indexFact
-		// 表达式索引的键列在 indkey 里是 0，join pg_attribute 会把它丢掉 —— 这里的两条目标
-		// 索引都是纯列索引，所以 JOIN 结果的行数就等于 indnatts（表达式索引会在下面的
-		// 键列比较里直接失败，而不是被静默判成"键列不全"）。
+
 		err := f.db.Raw(`SELECT string_agg(a.attname, ',' ORDER BY k.ord) AS key_columns,
 				pg_get_expr(x.indpred, x.indrelid) AS predicate,
 				(SELECT format_type(a2.atttypid, a2.atttypmod) FROM pg_attribute a2
@@ -654,7 +562,7 @@ func TestMenuStaleLegacyIndexesKeepPredicates(t *testing.T) {
 		if !strings.Contains(fact.Predicate, "status") {
 			t.Fatalf("索引 %q 的 predicate 必须是 status 维，实际 %q", c.name, fact.Predicate)
 		}
-		// 列型放宽成 text 之后，键列的类型跟着表走 —— 键列清单与 predicate 都没有变化。
+
 		if fact.SourceIDType != "text" {
 			t.Fatalf("build_jobs.source_id 应为 text（698 放宽），实际 %q", fact.SourceIDType)
 		}
@@ -672,30 +580,10 @@ func TestMenuStaleLegacyIndexesKeepPredicates(t *testing.T) {
 	}
 }
 
-// ptrStr 取字符串地址（构造指针列用）。
 func ptrStr(s string) *string { return &s }
 
-// ptrInt64 取 int64 地址（构造指针列用）。
 func ptrInt64(v int64) *int64 { return &v }
 
-// TestLegacyProjectBackfillJoinNeedsExplicitCast 迁移 295 的回填 JOIN 只有在**两端显式 cast**
-// 时才在 source_id 改型后成立。
-//
-// 295_build_jobs_lease.sql 的回填语句现在是
-//
-//	UPDATE build_jobs j SET project_id = p.project_id
-//	  FROM pages p WHERE j.project_id IS NULL AND j.source_type = 'page'
-//	    AND j.source_id::text = p.id::text
-//	（presentation 同理）
-//
-// 为什么两端都 cast 而不是「uuid 侧自动转 text」：PG 的 = 算子没有 (text,uuid)/(uuid,text)
-// 组合，pg_cast 里 uuid→text 连 assignment-only 都没有 —— character varying → text 的
-// binary-coercible 机制不适用于 uuid。所以：
-//   - 未 cast 的 j.source_id = p.id 在 text 列上必须报 operator does not exist；
-//   - 只把右侧写成 p.id::text 会在**698 之前**的 uuid 列上撞 uuid = text 的同一个错误；
-//   - 两端都 ::text 时两个列型阶段都成立（本用例下半段在真实列型上验证）。
-//
-// menu_stale 的「uuid:位置」文本与任何 pages.id 都不等 → 保持 NULL 才是对的。
 func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -703,7 +591,7 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	}
 	pageID := f.seedSourceRow(t, buildmodel.SourceTypePage)
 	instanceID := f.seedSourceRow(t, buildmodel.SourceTypePresentation)
-	// 三条任务必须真的存在（page / presentation / menu_stale），否则下面的回填没有可命中的行。
+
 	if err := f.svc.EnqueuePageBuild(context.Background(), pageID, f.projectID, "zh-CN",
 		buildmodel.IntentManual, 3, "hash-page"); err != nil {
 		t.Fatalf("page 入队失败: %v", err)
@@ -713,16 +601,10 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	}
 	f.enqueue(t, "header")
 
-	// 先清掉入队时写上的 project_id，模拟「迁移 295 之前入库的旧行」。
-	// 只清旧来源（page / presentation）：698 之后 menu_stale 行有 shape CHECK 要求 project_id 非空。
 	if err := f.db.Exec("UPDATE build_jobs SET project_id = NULL WHERE source_type <> 'menu_stale'").Error; err != nil {
 		t.Fatalf("清空 project_id 失败: %v", err)
 	}
 
-	// ① 未 cast 的回填语句必须被数据库拒绝：这条断言的期望值是「报错」，不是「能跑」。
-	//    它是「text = uuid 没有隐式转换」这条实测事实的回归锚点：有人把 295 的 ::text 去掉时，
-	//    迁移重放（TestLegacyMigration295ReplaysAfter698）会先红，这条用例让「为什么红」
-	//    指向正确的算子，而不是一句无法定位的 SQL 错误。
 	errNoCast := f.db.Exec(`UPDATE build_jobs j SET project_id = p.project_id
 		FROM pages p WHERE j.project_id IS NULL AND j.source_type = 'page'
 		  AND j.source_id = p.id`).Error
@@ -733,7 +615,7 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	if !strings.Contains(errNoCast.Error(), "operator does not exist") {
 		t.Fatalf("未 cast 的比较应撞 text = uuid 算子缺失，实际错误 %v", errNoCast)
 	}
-	// 记录当时列型，让上面那条错误有可复核的上下文（text 而不是 uuid）。
+
 	var sourceIDType string
 	if e := f.db.Raw(`SELECT data_type FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'build_jobs'
@@ -744,7 +626,6 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 		t.Fatalf("迁移模板库应当是 698 之后的形态（text），实际 %q", sourceIDType)
 	}
 
-	// ② 两端显式 cast 的回填（295 现在的写法，原文照抄）能跑通。
 	if err := f.db.Exec(`UPDATE build_jobs j SET project_id = p.project_id
 		FROM pages p WHERE j.project_id IS NULL AND j.source_type = 'page'
 		  AND j.source_id::text = p.id::text`).Error; err != nil {
@@ -776,8 +657,7 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 				t.Fatalf("%s 的 project_id 应被回填成本工程，实际 %v", r.SourceType, r.ProjectID)
 			}
 		case buildmodel.SourceTypeMenuStale:
-			// menu_stale 是 698 才有的来源类型，行本身带着自己的工程 id（shape CHECK 要求非空），
-			// 而 295 的回填只作用于 project_id IS NULL 的旧行 —— 所以这里它必须仍是入队时那个值。
+
 			if r.ProjectID == nil || *r.ProjectID != f.projectID {
 				t.Fatalf("menu_stale 行不该被 295 的回填改动，实际 project_id=%v", r.ProjectID)
 			}
@@ -785,7 +665,6 @@ func TestLegacyProjectBackfillJoinNeedsExplicitCast(t *testing.T) {
 	}
 }
 
-// checkVersion 断言某条迁移的 CheckSQL 对当前库判「已应用」（1）。
 func (f *menuFixture) checkVersion(t *testing.T, version, stage string) {
 	t.Helper()
 	var target migrations.Migration
@@ -799,8 +678,7 @@ func (f *menuFixture) checkVersion(t *testing.T, version, stage string) {
 		t.Fatalf("迁移 %s 未注册", version)
 	}
 	var n int64
-	// CheckSQL 不都带占位符：只有引用 $1 的版本才需要传表名，否则 PG 会报
-	// "expected 0 arguments, got 1"。
+
 	var checkArgs []any
 	if strings.Contains(target.CheckSQL, "$1") || strings.Contains(target.CheckSQL, "?") {
 		checkArgs = append(checkArgs, target.TableName)
@@ -813,7 +691,6 @@ func (f *menuFixture) checkVersion(t *testing.T, version, stage string) {
 	}
 }
 
-// migrationSQL 取某条迁移的 SQL 文本（原文，用于原样重放）。
 func migrationSQL(t *testing.T, version string) string {
 	t.Helper()
 	for _, m := range migrations.All() {
@@ -825,7 +702,6 @@ func migrationSQL(t *testing.T, version string) string {
 	return ""
 }
 
-// replay 原样重放一条迁移的全部语句（与迁移器共用 SplitStatements，切分口径一致）。
 func (f *menuFixture) replay(t *testing.T, version string) {
 	t.Helper()
 	for _, stmt := range migrations.SplitStatements(migrationSQL(t, version)) {
@@ -838,27 +714,13 @@ func (f *menuFixture) replay(t *testing.T, version string) {
 	}
 }
 
-// TestLegacyMigration295ReplaysAfter698 生产执行顺序（数字升序）下，295 在 698 之后重跑仍成立。
-//
-// 顺序的事实来自 migrator.go 的 All() → slices.SortStableFunc(compareVersionCmp)：按**数字**
-// 升序，699 → 698 → … → 307 → 295。698 之后 build_jobs.source_id 已是 text，而 295 的
-// CheckSQL（register_build_lease.go）只查六列 + 来源互斥索引、不认列型 —— 一个从未应用过
-// 295 的库必然在 698 之后重跑它；回填语句若还是裸的 source_id = p.id，就会撞
-// 「operator does not exist: text = uuid」并让整条 runAll 中断（进程起不来）。
-//
-// 四段断言：
-//
-//	① 模板库（生产迁移已全部跑完）里 698 与 295 的判定都是「已应用」；
-//	② source_id 列已是 text —— 下面两段才算真的在分叉后的列型上跑；
-//	③ 698 原样重放成功（含 forward 回填与改型守卫），295 原样重放成功（回填两端 ::text）；
-//	④ 重放后两条判定仍为 1（幂等，不会退化成每次启动都重跑）。
 func TestLegacyMigration295ReplaysAfter698(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
 		return
 	}
 	pageID := f.seedSourceRow(t, buildmodel.SourceTypePage)
-	// 一条「295 之前入库」的旧行：project_id 为空，等着被回填。
+
 	if err := f.db.Exec(`INSERT INTO build_jobs (source_type, source_id, project_id, lang, intent,
 		draft_version, build_input_hash, status, attempt, create_time)
 		VALUES ('page', ?, NULL, '', 'dependency', 0, 'replay-backfill', 'pending', 0, now())`,
@@ -895,20 +757,6 @@ func TestLegacyMigration295ReplaysAfter698(t *testing.T) {
 	}
 }
 
-// TestMenuStaleSourceIDColumnStages 两种列型阶段下 295 的回填等式都成立。
-//
-// 生产库里 source_id 在 698 之前是 uuid：那时两端 ::text 同样必须成立；只给一侧 cast
-// （j.source_id = p.id::text）则撞 uuid = text 的算子缺失，这正是「不要只改右侧」的依据。
-// 判据是**算子可用性**（PG 的 = 没有 (text,uuid)/(uuid,text) 组合、pg_cast 里 uuid→text
-// 连 assignment-only 都没有），与表里的行无关，所以在两张同形状临时表上直接比：
-//   - uuid vs uuid：裸比较成立（改型前的原语句）；
-//   - uuid vs text、text vs uuid：不成立；
-//   - 两端 ::text：两种阶段都成立（698 前后都安全的唯一形态）。
-//
-// 探针用**无人引用的 CTE** 而不是临时表：CREATE TEMP TABLE 是连接级会话状态，
-// 而连接池（以及 NewMigratedPGTestDB 起库时的 TEMPLATE 复制）让它不可靠 ——
-// 实测在本包直接报错（gorm 只回了空信息：&{<ptr> <nil> 0 0 <ptr> 0}）。
-// CTE 是单条语句级别的，用完即消失，判据（算子是否可用）完全相同。
 func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -925,7 +773,6 @@ func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 		}
 	}
 
-	// 两张同形状探针：uuid 型一列、text 型一列，行内容无关（判据是算子可用性）。
 	probeUUID := "probe_uuid(id)"
 	probeText := "probe_text(id)"
 	assertOperatorWorks := func(stage, query string) {
@@ -935,12 +782,11 @@ func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 		}
 	}
 
-	// 两端 ::text：两个阶段都成立。
 	assertOperatorWorks("uuid 阶段两端 ::text",
 		"WITH "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_uuid u WHERE u.id::text = u.id::text")
 	assertOperatorWorks("text 阶段两端 ::text",
 		"WITH "+probeText+" AS (SELECT ''::text AS id) SELECT 1 FROM probe_text u WHERE u.id::text = u.id::text")
-	// 裸比较只在 uuid = uuid 成立。
+
 	assertOperatorWorks("uuid 阶段的裸比较（改型前的原语句）",
 		"WITH "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_uuid a JOIN probe_uuid b ON a.id = b.id")
 	assertOperatorMissing("uuid 阶段只给右侧 cast",
@@ -949,14 +795,6 @@ func TestMenuStaleSourceIDColumnStages(t *testing.T) {
 		"WITH "+probeText+" AS (SELECT ''::text AS id), "+probeUUID+" AS (SELECT NULLIF('', '')::uuid AS id) SELECT 1 FROM probe_text a JOIN probe_uuid b ON a.id = b.id")
 }
 
-// TestLegacySourcesSourceIDCanonicalized 旧来源的 source_id 在入队时归一成规范 UUID 文本。
-//
-// source_id 放宽成 text 之后数据库不再替非规范写法归一（uuid 列会归一大写、无连字符、
-// 花括号）：同一实体的两种写法会各占一条 uq_build_jobs_running_source（互斥失效）与
-// 一条 uq_build_jobs_pending（去重失效），且都不报错。用例钉住三件事：
-//   - 大写 / 无连字符 / 花括号写法落库都是同一个规范文本；
-//   - 同一份工作换写法重复入队仍被去重成一条；
-//   - 非法 UUID 返回参数错误（400）且不留行 —— 不是写进库里等消费侧失败。
 func TestLegacySourcesSourceIDCanonicalized(t *testing.T) {
 	f := newMenuFixture(t)
 	if f == nil {
@@ -984,7 +822,6 @@ func TestLegacySourcesSourceIDCanonicalized(t *testing.T) {
 		t.Fatalf("source_id 应归一成规范文本 %q，实际 %q", canonical, rows[0].SourceID)
 	}
 
-	// 非法 UUID：受控拒绝，不留行。
 	if err := f.svc.EnqueuePageBuild(context.Background(), "page-1", f.projectID, "zh-CN",
 		buildmodel.IntentDependency, 1, "canon"); !errors.Is(err, buildenums.Err(buildenums.ErrInvalidParam)) {
 		t.Fatalf("非法来源 id 应报 ErrInvalidParam，实际 %v", err)
@@ -998,7 +835,6 @@ func TestLegacySourcesSourceIDCanonicalized(t *testing.T) {
 	}
 }
 
-// mustMenuSource 组装 menu_stale 的 source_id（失败即终止）。
 func mustMenuSource(t *testing.T, projectID, kind string) string {
 	t.Helper()
 	sid, ok := builddto.MenuStaleSourceID(projectID, kind)

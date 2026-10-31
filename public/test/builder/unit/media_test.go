@@ -1,5 +1,3 @@
-// Package unit 构建器单元测试：core.image 组件的编译闭环与属性校验。
-// 本文件同时提供 mustParse 共享解析辅助（被同包多数组件测试复用）。
 package unit
 
 import (
@@ -9,7 +7,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// TestImageCompilePipeline 数据流闭环：Page Document（仅 src URL）→ 编译 → <img> 直出。
 func TestImageCompilePipeline(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"/storage/hero.jpg","alt":"局部覆盖","title":"标题"}}]}`
 	c, err := compile(t, mustParse(t, doc))
@@ -30,7 +27,6 @@ func TestImageCompilePipeline(t *testing.T) {
 	}
 }
 
-// TestImageValidateProps 图片组件校验：非法地址/叶子约束。
 func TestImageValidateProps(t *testing.T) {
 	cases := []struct{ name, json, want string }{
 		{"非法地址", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"javascript:alert(1)"}}]}`, "必须提供完整 HTTP(S) 地址"},
@@ -46,7 +42,6 @@ func TestImageValidateProps(t *testing.T) {
 	}
 }
 
-// mustParse 解析页面文档（失败即 Fatal）。
 func mustParse(t *testing.T, jsonStr string) *builder.Page {
 	t.Helper()
 	p, err := builder.ParsePage([]byte(jsonStr))

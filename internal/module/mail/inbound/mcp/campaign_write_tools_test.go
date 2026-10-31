@@ -1,13 +1,5 @@
 package mailmcp
 
-// campaign_write_tools_test.go — 群发活动写工具的边界。
-//
-// 这一组里最要紧的两条不是参数校验，而是**回执要说人话**：
-// ① 没给 targetTags 时，回执必须把「会发给所有已订阅的人」说出来 ——
-//    漏填标签的后果是全站群发，而默认行为本身不报错；
-// ② campaign_start 的描述里必须留着「先确认收件规模」这条硬要求 ——
-//    它是这个工具唯一的人为刹车，被顺手改掉就没了。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -149,7 +141,7 @@ func TestCampaignSavePassesArgs(t *testing.T) {
 	if req.AccountID != 2 || req.TemplateID != 3 {
 		t.Errorf("账号 / 模板 id 传错: %+v", req)
 	}
-	// 标签要去空白、去空串（空标签会被当成「带空标签的人」，谁也匹配不上）。
+
 	if len(req.TargetTags) != 1 || req.TargetTags[0] != "vip" {
 		t.Errorf("标签清洗失败: %#v", req.TargetTags)
 	}
@@ -161,7 +153,6 @@ func TestCampaignSavePassesArgs(t *testing.T) {
 	}
 }
 
-// 没给标签 → 回执必须把后果说出来。这是本组最重要的一条。
 func TestCampaignSavedTextWarnsOnEmptyTags(t *testing.T) {
 	stub := &stubCampaignWriter{saveRes: &maildto.CampaignItem{ID: 7, Name: "十月新品通知"}}
 	text, err := invokeCampaign(t, campaignTool(t, "campaign_save", stub), map[string]any{
@@ -195,7 +186,6 @@ func TestCampaignSavedTextShowsTagScope(t *testing.T) {
 	}
 }
 
-// 变量 JSON 坏了要当场报错，不能静默当成「没有变量」。
 func TestCampaignSaveRejectsBadVariablesJSON(t *testing.T) {
 	stub := &stubCampaignWriter{}
 	_, err := invokeCampaign(t, campaignTool(t, "campaign_save", stub), map[string]any{
@@ -234,14 +224,12 @@ func TestCampaignStartedTextReportsRecipients(t *testing.T) {
 	if !strings.Contains(text, "128") {
 		t.Errorf("回执应报出收件人数，实得：%s", text)
 	}
-	// 用户会立刻去数收件箱，所以要说明是排队发。
+
 	if !strings.Contains(text, "逐批") {
 		t.Errorf("回执应说明是逐批发送，实得：%s", text)
 	}
 }
 
-// campaign_start 是本仓唯一会向站外真实收件人批量发信的动作，
-// 描述里那句「先确认收件规模」是它唯一的人为刹车 —— 钉住它，别被顺手改掉。
 func TestCampaignStartDescriptionKeepsConfirmRequirement(t *testing.T) {
 	tool := campaignTool(t, "campaign_start", &stubCampaignWriter{})
 	desc := tool.Description()
@@ -301,7 +289,7 @@ func TestTemplatesTextCarriesIDAndVariables(t *testing.T) {
 			text = res.Text
 		}
 	}
-	// id 必须出现：活动存的是 template_id，看不到它就建不了活动。
+
 	if !strings.Contains(text, "id=3") {
 		t.Errorf("模板清单必须带 id，实得：%s", text)
 	}

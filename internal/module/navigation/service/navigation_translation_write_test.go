@@ -1,13 +1,5 @@
 package navigationservice
 
-// navigation_translation_write_test.go — 译文整表写（TranslationWriter）的纯逻辑契约。
-//
-// 全部依赖都是桩（行端口 / 来源索引 / 工程清单 / 译文存储 / 三个跨模块端口 / 事务），
-// 因此这里钉的是**规则与顺序**；真实 PG 上的 RLS、锁、UPSERT 与回滚归 feature 测试。
-//
-// 每个用例的断言顺序都刻意是「先证夹具真的走到了目标分支，再断言结论」——
-// 一条「什么都没写」的实现同样能通过「没写错东西」的断言，所以必须先看到目标分支被触发。
-
 import (
 	"context"
 	"database/sql"
@@ -34,9 +26,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// —— 夹具 ——
-
-// navRowsTxStub 事务内行端口桩：按 (projectID, kind) 回放预置行。
 type navRowsTxStub struct {
 	byProject map[string]map[string][]*navigationmodel.NavigationEntity
 	failKinds map[string]error
@@ -51,12 +40,10 @@ func (s *navRowsTxStub) ListForKindTx(_ context.Context, _ *gorm.DB, projectID, 
 	return s.byProject[projectID][kind], nil
 }
 
-// navRowTx 造一行菜单项（kind 由外层分组决定）。
 func navRowTx(id, title string) *navigationmodel.NavigationEntity {
 	return &navigationmodel.NavigationEntity{ID: id, Title: title, Path: "/p/" + id}
 }
 
-// sourceIndexStub 来源索引桩：只有 Locate / Require 参与写路径，其余照 contract 返回空。
 type sourceIndexStub struct {
 	byHash   map[string]navigationcontract.TranslationSourceEntry
 	requireE error
@@ -79,7 +66,6 @@ func (s *sourceIndexStub) Kinds() []string                                { retu
 func (s *sourceIndexStub) KindErrors() []navigationcontract.KindReadError { return nil }
 func (s *sourceIndexStub) Require() error                                 { return s.requireE }
 
-// sourceIndexerStub 来源索引执行者桩：返回预置索引或错误，并记录被调次数。
 type sourceIndexerStub struct {
 	index  *sourceIndexStub
 	err    error
@@ -96,7 +82,6 @@ func (s *sourceIndexerStub) OpenSourceIndexTx(_ context.Context, tx *gorm.DB, _ 
 	return s.index, nil
 }
 
-// projectListerStub 工程清单桩。
 type projectListerStub struct {
 	ids  []string
 	err  error
@@ -115,11 +100,7 @@ func (s *projectListerStub) List(context.Context) ([]ProjectEntry, error) {
 	return out, nil
 }
 
-// contentStoreStub 译文存储桩：记录 UPSERT 入参与现值，可注入失败。
 type contentStoreStub struct {
-	// before 的键与 pkg/i18n 的真实返回一致：**ContentIndexKey(hash, context)** 复合键，
-	// 不是裸 hash。桩若按裸 hash 存，实现按复合键查就永远查不到，「同值不写」这类
-	// 判定会被静默跳过（用例假绿/假红都由此而来）。
 	before     map[string]i18n.ContentTargetInfo
 	loadErr    error
 	upsertErr  error
@@ -136,8 +117,7 @@ func (s *contentStoreStub) LoadDetailsForProjectTx(_ context.Context, _ *gorm.DB
 		return nil, s.loadErr
 	}
 	out := make(map[string]i18n.ContentTargetInfo, len(hashes))
-	// 真实现按 (hash, context) 复合键返回；桩没有 context 参数，按前缀匹配回放：
-	// 一条 hash 在夹具里最多有一条现值（见各用例的 before 写法）。
+
 	for _, h := range hashes {
 		for key, info := range s.before {
 			if strings.HasPrefix(key, h) {
@@ -157,18 +137,6 @@ func (s *contentStoreStub) UpsertTx(_ context.Context, _ *gorm.DB, items []i18n.
 	return len(items), nil
 }
 
-// txRunnerStub 事务桩：**直接执行 fn**，记录是否被调用，并统计「提交」次数。
-//
-// 直接执行而不是真开事务：本文件验的是「顺序与全成或全败的判定点」，真回滚是
-// PG 的行为（feature 测试负责）。fn 返回错误时把错误原样上抛，等价于回滚。
-//
-// **句柄形状**：rls.ScopeTx / pkg/i18n 的 requireTx 都按
-// `tx.Statement.ConnPool.(*sql.Tx)` 判「是不是真事务」—— 桩给的必须是这个形状，
-// 否则事务体在第一步就返回 ErrNotInTransaction，「业务判定」一行都测不到
-// （这正是先前 9 个用例假红的根因）。所以这里起一个真实 *sql.Tx 但**不驱动它**：
-// 所有业务端口（来源索引 / 现值读 / Upsert / 三处失效）都是桩，唯一会走到数据库的
-// 只有 scope 与锁两步 —— 用 database/sql 的 no-op driver 承接 SQL，行为等价于
-// 「scope 成功、锁成功」，不触库、不需要 PG。
 type txRunnerStub struct {
 	calls    int
 	commits  int
@@ -189,14 +157,9 @@ func (s *txRunnerStub) Transaction(ctx context.Context, fn func(tx *gorm.DB) err
 	return nil
 }
 
-// newScopeOnlyTx 造一个「形状为真事务、后端是空转 driver」的 *gorm.DB。
-//
-// 判据只认 ConnPool 是 *sql.Tx（见 pkg/rls.ScopeTx:75 与 pkg/i18n 的 requireTx），
-// 所以这里注册一个只会吞掉语句的 driver，sql.Open 后 Begin 出 *sql.Tx。
-// 任何真实 SQL 都写不进去也读不出来 —— 想验证 SQL 行为请写 feature 测试。
 func newScopeOnlyTx(t *testing.T) *gorm.DB {
 	t.Helper()
-	// 驱动名必须唯一：database/sql 按名字缓存驱动，重复注册 panic。
+
 	db, err := sql.Open(driverStubDriverName(t), "")
 	if err != nil {
 		t.Fatalf("打开空转连接失败: %v", err)
@@ -207,23 +170,12 @@ func newScopeOnlyTx(t *testing.T) *gorm.DB {
 		t.Fatalf("开启空转事务失败: %v", err)
 	}
 	t.Cleanup(func() { _ = tx.Rollback() })
-	// Config 必须给：gorm 的 Statement.DB / QuoteTo 都从 db.Config 取（缺了会在
-	// 拼 SQL 时空指针 panic，而不是返回错误）。
-	// 手工拼句柄时必须在 Initialize 里挂默认回调、并在之后把 ConnPool 换成 *sql.Tx：
-	// gorm.Open 的顺序是 callbacks=initializeCallbacks → Dialector.Initialize →
-	// Statement{ConnPool}（gorm.go:204-235）。跳过任一步，Exec 会在
-	// callbacks.Raw()（callbacks.go:52）拿到 nil 处理器。
-	// 必须走 gorm.Open（内部才 initializeCallbacks → 挂默认回调）；手工拼 &gorm.DB{}
-	// 会让 db.callbacks 为 nil，Exec 在 callbacks.go:52 空指针。
+
 	base, oerr := gorm.Open(driverStubDialector{}, &gorm.Config{SkipDefaultTransaction: true})
 	if oerr != nil {
 		t.Fatalf("构造空转 gorm 句柄失败: %v", oerr)
 	}
-	// 事务句柄：复制 gorm.Open 造好的 Statement，只把 ConnPool 换成真 *sql.Tx
-	// （判据同 pkg/rls.ScopeTx:75）。**不能新建 Statement**：gorm 的 Exec 路径还要
-	// 用 Clauses/Settings 等字段，空壳会在 database/sql 里空指针而非返回错误。
-	// 逐字段拷贝会触发 copylocks（Statement.Settings 里含 sync.Mutex）；析构旧值再赋值
-	// 则是同一对象换凭据，语义上正是「沿用 gorm.Open 造好的句柄，只换连接」。
+
 	conn := base.Session(&gorm.Session{})
 	conn.Statement.DB = conn
 	conn.Statement.ConnPool = tx
@@ -232,7 +184,6 @@ func newScopeOnlyTx(t *testing.T) *gorm.DB {
 
 var driverStubSeq atomic.Int64
 
-// driverStubDriverName 每次注册一个新的驱动名（同一名字二次注册会 panic）。
 func driverStubDriverName(t *testing.T) string {
 	t.Helper()
 	name := fmt.Sprintf("navigationtranslationwrite%d", driverStubSeq.Add(1))
@@ -240,18 +191,12 @@ func driverStubDriverName(t *testing.T) string {
 	return name
 }
 
-// driverStubConn / driverStubTx 空转 SQL 驱动：
-// 只让 `SELECT set_config(...)` 这类 scope 语句拿到 nil error，不解析、不存储。
 type driverStubDriver struct{}
 
-// driverStubDialector 空转方言：只满足 gorm 拼 SQL 时需要的占位符绑定与引用，
-// 不连库、不迁移、不解析字段类型。
 type driverStubDialector struct{}
 
 func (driverStubDialector) Name() string { return "navigationtranslationwritestub" }
 
-// Initialize 等价于真方言里「挂默认回调」那一步（gorm.Open 在 initializeCallbacks
-// 之后调用它）；缺了它 Exec 会在 callbacks.Raw() 拿到 nil 处理器。
 func (driverStubDialector) Initialize(db *gorm.DB) error {
 	callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{})
 	return nil
@@ -273,8 +218,6 @@ func (driverStubDriver) Open(string) (driver.Conn, error) { return driverStubCon
 
 type driverStubConn struct{}
 
-// driverStubTx 内嵌 *driverStubConn（指针）：database/sql 在 Tx 上仍会做
-// （driver.Conn）断言，值内嵌拿到的是空壳。
 type driverStubTx struct{ *driverStubConn }
 
 func (driverStubConn) Prepare(string) (driver.Stmt, error) { return driverStubStmt{}, nil }
@@ -302,7 +245,6 @@ func (driverStubRows) Columns() []string              { return []string{"set_con
 func (driverStubRows) Close() error                   { return nil }
 func (driverStubRows) Next(dest []driver.Value) error { return io.EOF }
 
-// stalePortStub 页 / 实例标记端口桩（记录 kind 顺序与调用次数）。
 type stalePortStub struct {
 	kinds []string
 	err   map[string]error
@@ -327,7 +269,6 @@ func (s *stalePortStub) MarkInstanceMenuStaleTx(_ context.Context, _ *gorm.DB, _
 	return 1, nil
 }
 
-// queueStub 可靠入队端口桩。
 type queueStub struct {
 	kinds []string
 	err   map[string]error
@@ -343,7 +284,6 @@ func (s *queueStub) EnqueueMenuStaleTx(_ context.Context, _ *gorm.DB, _, kind st
 	return int64(len(s.kinds)), nil
 }
 
-// writerFixture 一套完整桩 + 已构造的 TranslationWriter。
 type writerFixture struct {
 	writer    *TranslationWriter
 	rows      *navRowsTxStub
@@ -357,10 +297,6 @@ type writerFixture struct {
 	projectID string
 }
 
-// newWriterFixture 造一套「一条 header 菜单、可写入」的最小环境。
-//
-// titles 是 header 位置的菜单文字；extraKinds 允许把同一段文字也放进别的位置
-// （验「跨 kind 共享 hash」）。
 func newWriterFixture(t *testing.T, titles []string, extraKinds map[string][]string) *writerFixture {
 	t.Helper()
 	projectID := uuid.NewString()
@@ -409,17 +345,14 @@ func newWriterFixture(t *testing.T, titles []string, extraKinds map[string][]str
 	return f
 }
 
-// row 造一条提交行（语境固定为导航标签）。
 func row(hash, target string) navigationcontract.TranslationWriteRow {
 	return navigationcontract.TranslationWriteRow{Context: navigationLabelContext(), Hash: hash, Target: target}
 }
 
-// req 造一次提交。
 func req(projectID, lang string, rows ...navigationcontract.TranslationWriteRow) *navigationcontract.TranslationWriteReq {
 	return &navigationcontract.TranslationWriteReq{ProjectID: projectID, Lang: lang, Rows: rows}
 }
 
-// blockedOf 从错误里取明细（与出口同一判据：errors.As 到 facing.BlockedError）。
 func blockedOf(t *testing.T, err error) *TranslationRejectedError {
 	t.Helper()
 	var rejected *TranslationRejectedError
@@ -429,9 +362,6 @@ func blockedOf(t *testing.T, err error) *TranslationRejectedError {
 	return rejected
 }
 
-// —— 用例 ——
-
-// TestWriteTranslationsEmptyTargetsSkipEverything 空 target 只读忽略：不查来源、不开事务、零派发。
 func TestWriteTranslationsEmptyTargetsSkipEverything(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 
@@ -443,8 +373,7 @@ func TestWriteTranslationsEmptyTargetsSkipEverything(t *testing.T) {
 	if res.Written != 0 || len(res.ChangedKinds) != 0 {
 		t.Fatalf("空译文回执应为 written:0 且无位置，实际 %+v", res)
 	}
-	// 关键判据：这些入口**一次都不该被调用**（顺序错误时它们会被调用，然后因为
-	// 「不存在的hash」整批拒绝）。
+
 	if f.projects.call != 1 {
 		t.Fatalf("工程校验应执行 1 次（工程存在性先于一切），实际 %d", f.projects.call)
 	}
@@ -459,7 +388,6 @@ func TestWriteTranslationsEmptyTargetsSkipEverything(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRejectsUnknownHash 未知 hash：整批拒绝、零写入、明细回落到 hash。
 func TestWriteTranslationsRejectsUnknownHash(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	unknown := i18n.ContentHash("已删除的菜单")
@@ -486,7 +414,6 @@ func TestWriteTranslationsRejectsUnknownHash(t *testing.T) {
 	_ = fact
 }
 
-// TestWriteTranslationsRejectsUntranslatable 非空但不可翻译：整批拒绝，name 给服务端原文。
 func TestWriteTranslationsRejectsUntranslatable(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页", "42"}, nil)
 
@@ -512,7 +439,6 @@ func TestWriteTranslationsRejectsUntranslatable(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRejectsDuplicateRows 重复寻址：409 明细给出两行的差异。
 func TestWriteTranslationsRejectsDuplicateRows(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	hash := i18n.ContentHash("首页")
@@ -534,7 +460,6 @@ func TestWriteTranslationsRejectsDuplicateRows(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRejectsWrongContext 语境不是导航标签：400 逐条明细。
 func TestWriteTranslationsRejectsWrongContext(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 
@@ -549,12 +474,10 @@ func TestWriteTranslationsRejectsWrongContext(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsSameManualValueWritesNothing 同值且已是 manual：零写、零派发。
 func TestWriteTranslationsSameManualValueWritesNothing(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	hash := i18n.ContentHash("首页")
-	// 现值必须按「(hash, 语境)」复合键存：事务里读现值用的是 i18n.ContentIndexKey，
-	// 只按 hash 存会让比对永远落空（同值判定测不出来）。
+
 	f.content.before[i18n.ContentIndexKey(hash, navigationLabelContext())] =
 		i18n.ContentTargetInfo{TargetText: "Home", Engine: i18n.ContentEngineManual}
 
@@ -574,10 +497,6 @@ func TestWriteTranslationsSameManualValueWritesNothing(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsMachineToManualCountsAsChange 同值但引擎不是 manual：算真实变化。
-//
-// 这是「把机器译文确认为人工译文」的路径 —— 值没变但语义变了（后续机器翻译不再覆盖它），
-// 因此必须写、必须派发。
 func TestWriteTranslationsMachineToManualCountsAsChange(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	hash := i18n.ContentHash("首页")
@@ -599,10 +518,9 @@ func TestWriteTranslationsMachineToManualCountsAsChange(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsUpsertsCanonicalProject 写入项带规范工程 id 与提交语言。
 func TestWriteTranslationsUpsertsCanonicalProject(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
-	upper := strings.ToUpper(f.projectID) // 大小写变体：锁与写都必须落在规范形态
+	upper := strings.ToUpper(f.projectID)
 
 	res, err := f.writer.WriteTranslations(context.Background(), req(upper, "en-US", row(i18n.ContentHash("首页"), "Home")))
 	if err != nil {
@@ -611,8 +529,7 @@ func TestWriteTranslationsUpsertsCanonicalProject(t *testing.T) {
 	if res.Written != 1 {
 		t.Fatalf("应写入一条，实际 %+v", res)
 	}
-	// 内存桩拿不到 ProjectID 的落库效果（ContentWriteItem 由 pkg/i18n 用工程参数补），
-	// 这里断言的是「工程校验认大小写变体」：工程不存在时这一步会 400。
+
 	if f.projects.call != 1 {
 		t.Fatalf("工程校验应执行一次，实际 %d", f.projects.call)
 	}
@@ -621,9 +538,8 @@ func TestWriteTranslationsUpsertsCanonicalProject(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsMarksAllKindsOfSharedHash 跨 kind 共享同一段原文：两个位置都派发。
 func TestWriteTranslationsMarksAllKindsOfSharedHash(t *testing.T) {
-	// 同一段「首页」同时出现在 header 与 footer。
+
 	f := newWriterFixture(t, []string{"首页"}, map[string][]string{"footer": {"首页"}})
 	hash := i18n.ContentHash("首页")
 
@@ -637,7 +553,7 @@ func TestWriteTranslationsMarksAllKindsOfSharedHash(t *testing.T) {
 	if res.Written != 1 {
 		t.Fatalf("共享原文只算一条写入，实际 %d", res.Written)
 	}
-	// 每个位置各一次：页标记、实例标记、入队。
+
 	if f.pages.calls != 2 || f.instances.calls != 2 || f.queue.calls != 2 {
 		t.Fatalf("两个位置应各派发一次：pages=%d instances=%d queue=%d",
 			f.pages.calls, f.instances.calls, f.queue.calls)
@@ -647,7 +563,6 @@ func TestWriteTranslationsMarksAllKindsOfSharedHash(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRollsBackOnStaleFailure 三处失效任一失败：整笔回滚（错误上抛、零写入）。
 func TestWriteTranslationsRollsBackOnStaleFailure(t *testing.T) {
 	cases := []struct {
 		name string
@@ -667,14 +582,14 @@ func TestWriteTranslationsRollsBackOnStaleFailure(t *testing.T) {
 			if err == nil {
 				t.Fatal("失效派发失败必须让整笔失败，实际返回 nil")
 			}
-			// 内部错误归口成「译文保存失败」（不把原始错误文本透给调用方）。
+
 			if !errors.Is(err, navigationenums.Err(navigationenums.ErrTranslationWriteFailed)) {
 				t.Fatalf("非业务错误应归口成 ErrTranslationWriteFailed，实际 %v", err)
 			}
 			if strings.Contains(err.Error(), "boom") {
 				t.Fatalf("归口后不该透出原始错误文本，实际 %q", err.Error())
 			}
-			// 事务桩直接执行 fn：fn 返回错误即「回滚」，因此回执不该生成、后续位置不该被派发。
+
 			if f.queue.calls > 1 {
 				t.Fatalf("失败后不该继续派发后续位置，实际 queue 调用 %d 次", f.queue.calls)
 			}
@@ -682,7 +597,6 @@ func TestWriteTranslationsRollsBackOnStaleFailure(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsSourceReadFailureAborts 来源读取失败：整笔失败、零写入。
 func TestWriteTranslationsSourceReadFailureAborts(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	f.indexer.err = navigationenums.ErrSourceKindDetail("footer")
@@ -700,7 +614,6 @@ func TestWriteTranslationsSourceReadFailureAborts(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRequireFailureAborts Require 失败（部分位置读不到）：同样整体失败。
 func TestWriteTranslationsRequireFailureAborts(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	f.indexer.index.requireE = navigationenums.ErrSourceKindDetail("header_mobile, footer")
@@ -714,15 +627,13 @@ func TestWriteTranslationsRequireFailureAborts(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsProjectIsolation 工程隔离：别的工程的菜单不进来源索引。
 func TestWriteTranslationsProjectIsolation(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	other := uuid.NewString()
 	f.projects.ids = append(f.projects.ids, other)
-	// 另一个工程有「产品」这一项，当前工程没有。
+
 	f.rows.byProject[other] = map[string][]*navigationmodel.NavigationEntity{"header": {navRowTx("x1", "产品")}}
 
-	// 当前工程提交「产品」：不该被认成来源（索引按工程取行）。
 	_, err := f.writer.WriteTranslations(context.Background(), req(f.projectID, "en-US", row(i18n.ContentHash("产品"), "Products")))
 	if err == nil {
 		t.Fatal("别的工程的菜单文字不该被当前工程认作来源")
@@ -730,7 +641,7 @@ func TestWriteTranslationsProjectIsolation(t *testing.T) {
 	if !errors.Is(err, navigationenums.Err(navigationenums.ErrSourceChanged)) {
 		t.Fatalf("应报「原文已变化」，实际 %v", err)
 	}
-	// 反证：索引只按当前工程取行（桩会拒绝未知工程，这里断言调用里不带 other）。
+
 	for _, call := range f.rows.calls {
 		if strings.HasPrefix(call, other+"|") {
 			t.Fatalf("来源索引不该读别的工程的行，实际读了 %s", call)
@@ -741,7 +652,6 @@ func TestWriteTranslationsProjectIsolation(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRejectsMissingProject 工程不存在：400，且不开事务。
 func TestWriteTranslationsRejectsMissingProject(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	other := uuid.NewString()
@@ -755,7 +665,6 @@ func TestWriteTranslationsRejectsMissingProject(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsRejectsUnsupportedLang 语言不在白名单：400。
 func TestWriteTranslationsRejectsUnsupportedLang(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 
@@ -768,10 +677,9 @@ func TestWriteTranslationsRejectsUnsupportedLang(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsFailsClosedWithoutPorts 端口缺失：拒绝写入，绝不「静默成功」。
 func TestWriteTranslationsFailsClosedWithoutPorts(t *testing.T) {
 	projectID := uuid.NewString()
-	// 只注入一部分依赖：pages 缺失。
+
 	w := NewTranslationWriter(TranslationWriterDeps{
 		Rows: &navRowsTxStub{}, Sources: &sourceIndexerStub{index: &sourceIndexStub{}},
 		Projects: &projectListerStub{ids: []string{projectID}},
@@ -784,7 +692,6 @@ func TestWriteTranslationsFailsClosedWithoutPorts(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsNilRequest 空请求：参数错误而不是 panic。
 func TestWriteTranslationsNilRequest(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	if _, err := f.writer.WriteTranslations(context.Background(), nil); err == nil {
@@ -792,7 +699,6 @@ func TestWriteTranslationsNilRequest(t *testing.T) {
 	}
 }
 
-// TestWriteTranslationsPersistFailureClassified 存储失败：归口成「译文保存失败」，不透原始文本。
 func TestWriteTranslationsPersistFailureClassified(t *testing.T) {
 	f := newWriterFixture(t, []string{"首页"}, nil)
 	f.content.upsertErr = errors.New("SQLSTATE 42P01: relation \"sys_translation\" does not exist")

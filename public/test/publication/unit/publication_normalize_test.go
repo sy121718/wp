@@ -9,12 +9,6 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 )
 
-// normalizePath 是 service 包未导出函数，本包经公开方法（Activate/RenameReserved）
-// 间接验证其行为，覆盖：空、无前导斜杠、尾斜杠裁剪、根路径、非法字符、超长。
-
-// TestPublicationNormalizePathInvalid 空路径与无前导斜杠的路径必须被拒绝
-// （normalizePath 返回 ErrInvalidParam——参数格式错误，与资源占用语义区分——
-// 且不产生任何副作用）。
 func TestPublicationNormalizePathInvalid(t *testing.T) {
 	cases := []struct {
 		name string
@@ -43,7 +37,6 @@ func TestPublicationNormalizePathInvalid(t *testing.T) {
 	}
 }
 
-// TestPublicationNormalizePathTrailingSlash 尾斜杠被裁剪；根路径 "/" 保持原样。
 func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 	t.Run("尾斜杠裁剪", func(t *testing.T) {
 		svc := newUnitService(t)
@@ -62,9 +55,7 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 	})
 	t.Run("重复分隔符被拒绝", func(t *testing.T) {
 		svc := newUnitService(t)
-		// 路径归一化收敛到 pkg/pathkit 之后（审计 CQ-012），含重复分隔符的路径一律**拒绝**
-		// 而不是「裁剪后接受」：`/a//b` 与 `/a/b` 若能各占一行路由，路由占用判断会失真
-		// （同一个逻辑地址有两种登记形态，谁先占谁赢）。这与 pipeline 的口径一致。
+
 		if _, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 			ProjectID: projectID, Path: "/a/b//", PageID: pageID, ArtifactID: artifactUUID,
 		}); err == nil {
@@ -87,11 +78,8 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 	})
 }
 
-// TestPublicationNormalizePathRejected normalizePath 拒绝危险/非法路径：
-// 空格、URL 分隔符、穿越、引号、超长一律返回 ErrInvalidParam（参数格式错误）。
 func TestPublicationNormalizePathRejected(t *testing.T) {
-	// 修复语义：危险/非法路径一律拒绝（空格、URL 分隔符、穿越、引号、超长），
-	// 错误语义为 ErrInvalidParam（参数格式错误），而非 ErrRouteNotFound。
+
 	cases := []struct {
 		name string
 		path string
@@ -114,7 +102,6 @@ func TestPublicationNormalizePathRejected(t *testing.T) {
 	}
 }
 
-// TestPublicationNormalizePathChineseAccepted 中文路径保持合法（业务允许非 ASCII）。
 func TestPublicationNormalizePathChineseAccepted(t *testing.T) {
 	svc := newUnitService(t)
 	route, err := svc.Activate(context.Background(), &pubdto.ActivateReq{

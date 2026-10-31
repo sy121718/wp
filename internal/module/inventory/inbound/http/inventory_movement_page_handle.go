@@ -1,11 +1,3 @@
-// 库存流水独立页（B4）：/admin/inventory/movements。
-//
-// 为什么从 /admin/inventory 拆出来：那一屏是「按 SKU 横看各仓」的只读视图 + 盘点调整入口，
-// 流水只是它下面的第三块。而流水本身的读取维度是**跨 SKU 的时间轴**（谁在什么时候动了哪条货），
-// 与「选一个 SKU 看它的库存」是两种查询目的 —— 挤在一页的后果是筛 SKU 时流水被同一个 sku
-// 参数绑定，想看全局流水就得把 SKU 清空，而清空又同时清掉了库存卡的上下文。
-//
-// 本页只读：不提供任何写入口。入库 / 出库 / 盘点都在各自的单据页与调整入口里。
 package inventoryhttp
 
 import (
@@ -23,10 +15,8 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-// inventoryMovementsPath 流水页地址（分页基址与重置链接的唯一字面量处）。
 const inventoryMovementsPath = "/admin/inventory/movements"
 
-// InventoryMovementsPage 库存流水页（GET /admin/inventory/movements）。
 func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
 	query, ok := binding.Query[inventorydto.MovementPageReq](c)
 	if !ok {
@@ -40,12 +30,6 @@ func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
 	pageview.RenderTemplate(c, InventoryMovementsPageTemplate, data)
 }
 
-// movementsData 取齐流水页的数据并组成视图。
-//
-// 返回 InventoryPageResp（与其它库存页同一个视图类型）："键集齐全由类型保证" ——
-// 漏一个字段是零值、而不是模板取不到键导致整页中断。此前这里返回 gin.H，理由是
-// "失败页与正常页共用一套键"，但失败页早已是强类型 inventoryLoadFailedView，
-// 那条理由不成立，gin.H 只是没跟着迁完的残留。
 func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.MovementPageReq) (*InventoryPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
@@ -103,10 +87,6 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 	}, nil
 }
 
-// movementRowResp 一条流水的展示行。
-//
-// 与 listMovements 共用（库存管理页也调它）：两处各写一份映射时，日后新增一列只改一侧，
-// 表现是「同一个流水在两页显示不同的成本」—— 这类分叉只在对比时才看得出来。
 func movementRowResp(tr func(key, fallback string) string, m *inventorydto.MovementResp) MovementRowResp {
 	return MovementRowResp{
 		ID: m.ID, StockID: m.StockID, SKUCode: m.SKUCode,

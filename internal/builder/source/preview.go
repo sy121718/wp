@@ -2,7 +2,6 @@ package source
 
 import "context"
 
-// PreviewState 是临时预览请求的封闭展示状态，不进入Document或发布参数。
 type PreviewState string
 
 const (
@@ -32,7 +31,6 @@ func (state PreviewState) Valid() bool {
 
 type previewStateContextKey struct{}
 
-// WithPreviewState 只携带展示事实，不能授权访问真实私人数据或写业务。
 func WithPreviewState(ctx context.Context, state PreviewState) context.Context {
 	if ctx == nil {
 		ctx = context.Background()

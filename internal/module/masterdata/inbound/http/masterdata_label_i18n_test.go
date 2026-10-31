@@ -1,15 +1,5 @@
 package masterdatahttp
 
-// masterdata_label_i18n_test.go — 变更记录页的展示名必须**按当前语言取词**。
-//
-// 这一批改动的契约：dto 的 *Label 是 service 填的中文兜底（JSON API 契约不变），
-// 页面出口用行上的**原始值**（EntityType / Action / Field）重新取词。两个方向都要钉：
-//
-//   - 命中词条 → 出译文（英文界面上不该是中文）；
-//   - 缺词条 → 出中文兜底，**不是裸 key**（`admin.masterdata.field.product.slug` 摆到页面上，
-//     运营只会来报「页面坏了」）；
-//   - 未登记取值（空 key）→ 直接回显原值，不查表（不吞掉不认识的取值）。
-
 import (
 	"testing"
 
@@ -17,10 +7,8 @@ import (
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 )
 
-// fallbackTr 取词桩：不命中，恒给兜底（等价于「词条缺失」或「i18n 未初始化」）。
 func fallbackTr(_, fallback string) string { return fallback }
 
-// keyTr 取词桩：命中，回显 key（用来分辨「走了取词」与「直接用了兜底」）。
 func keyTr(key, _ string) string { return "T:" + key }
 
 func TestChangeRowLabelsFollowLanguage(t *testing.T) {
@@ -51,10 +39,10 @@ func TestChangeRowLabelsFollowLanguage(t *testing.T) {
 func TestChangeRowUnknownFieldKeepsRawName(t *testing.T) {
 	view := changeRow(keyTr, &masterdatadto.ChangeResp{
 		EntityType: masterdataenums.EntityProduct,
-		Action:     "archive", // 未登记的动作
+		Action:     "archive",
 		Field:      "not_registered",
 	})
-	// 未登记 → 空 key（不查表），原样回显。
+
 	if view.ActionLabel != "archive" {
 		t.Fatalf("未登记动作应原样回显，实际 %v", view.ActionLabel)
 	}
@@ -82,8 +70,7 @@ func TestMasterDataOptionsFollowLanguage(t *testing.T) {
 		t.Fatalf("实体类型下拉应有 3 项，实际 %d", len(types))
 	}
 	for _, o := range types {
-		// 强类型之后 Label 就是 string，不再需要类型断言 —— 断言本身反而会掩盖
-		// 「字段被改成 any」这种退化（any 会让模板侧的契约对账失效）。
+
 		if o.Label == "" || o.Label[:2] != "T:" {
 			t.Fatalf("下拉项没走取词：%v", o)
 		}

@@ -31,11 +31,11 @@ func TestArtifactRecordSuccess(t *testing.T) {
 	if res.PayloadState != "available" {
 		t.Fatalf("PayloadState 应为 available: %s", res.PayloadState)
 	}
-	// defaultCreator：CreatedBy 留空时应回填零 UUID。
+
 	if res.CreatedBy != zeroUUID {
 		t.Fatalf("CreatedBy 应回填零 UUID: %s", res.CreatedBy)
 	}
-	// toResp 从 manifest 提取 canonicalPath。
+
 	if res.CanonicalPath != "/index.html" {
 		t.Fatalf("CanonicalPath 提取失败: %s", res.CanonicalPath)
 	}
@@ -61,7 +61,7 @@ func TestArtifactRecordDedupByIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	first := mustRecord(t, svc, validReq())
-	// 同 page+hash 重复归档：内容寻址幂等，返回既有记录。
+
 	repeated, err := svc.Record(ctx, validReq())
 	if err != nil {
 		t.Fatalf("重复归档应幂等成功: %v", err)
@@ -72,11 +72,11 @@ func TestArtifactRecordDedupByIdempotent(t *testing.T) {
 	if !repeated.CreatedAt.Time().Truncate(time.Microsecond).Equal(first.CreatedAt.Time().Truncate(time.Microsecond)) {
 		t.Fatalf("重复归档 CreatedAt 不一致: %v vs %v", repeated.CreatedAt, first.CreatedAt)
 	}
-	// 数据库中只有一行。
+
 	if n := artifactRowCount(t, svc); n != 1 {
 		t.Fatalf("重复归档后行数应为 1: %d", n)
 	}
-	// 闭包也不应重复。
+
 	if n := closureCount(t, svc, first.ID); n != 2 {
 		t.Fatalf("闭包应为 2 条: %d", n)
 	}
@@ -86,7 +86,7 @@ func TestArtifactRecordClosures(t *testing.T) {
 	svc := newService(t)
 
 	recorded := mustRecord(t, svc, validReq())
-	// manifest.files 的两个文件哈希 → 两条闭包 + 两个共享内容对象。
+
 	if n := closureCount(t, svc, recorded.ID); n != 2 {
 		t.Fatalf("闭包应为 2 条: %d", n)
 	}
@@ -96,7 +96,7 @@ func TestArtifactRecordClosures(t *testing.T) {
 	if !contentObjectExists(t, svc, "hash-html") || !contentObjectExists(t, svc, "hash-manifest") {
 		t.Fatalf("content_objects 应包含 manifest 中的文件哈希")
 	}
-	// 共享内容对象：第二条记录复用同一批 hash 时不重复建对象。
+
 	mustRecord(t, svc, validReq())
 	if n := contentObjectCount(t, svc); n != 2 {
 		t.Fatalf("重复归档后 content_objects 应仍为 2 行: %d", n)
@@ -109,8 +109,6 @@ func TestArtifactRecordNilRequest(t *testing.T) {
 	requireErrMsg(t, err, artifactenums.ErrInvalidArtifact)
 }
 
-// TestArtifactRecordInvalidInputs 覆盖 service 层缺失参数校验时的行为。
-// 注：DTO 的 binding:"required" 只在 HTTP 绑定层生效，service 直接调用时不校验。
 func TestArtifactRecordInvalidInputs(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -137,24 +135,21 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("空对象Manifest被拒绝", func(t *testing.T) {
-		// 修复语义：{"files":{}} 与 {"files":null} / {} 统一拒绝 ——
-		// manifest.files 是内容闭包来源，空闭包无意义，不应静默建无闭包记录
-		// （此前空对象可通过校验并建无闭包记录，与 null 被拒不一致，见 bug 报告）。
+
 		req := validReq()
 		req.ArtifactID = testArtifactID2
 		req.ArtifactHash = "hash-empty-files"
 		req.Manifest = json.RawMessage(`{"files":{}}`)
 		_, err := svc.Record(ctx, req)
 		requireErrMsg(t, err, artifactenums.ErrInvalidArtifact)
-		// 拒绝后不留半条记录。
+
 		if n := artifactRowCount(t, svc); n != 0 {
 			t.Fatalf("空 files 被拒后不应留行: %d", n)
 		}
 	})
 
 	t.Run("空ArtifactHash拒绝", func(t *testing.T) {
-		// 修复语义：service 层校验 ArtifactHash 必填，拒绝空值入库
-		// （此前空 hash 可入库，破坏内容寻址语义）。
+
 		req := validReq()
 		req.ArtifactHash = ""
 		_, err := svc.Record(ctx, req)
@@ -164,8 +159,7 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("空ArtifactID报底层DB错误", func(t *testing.T) {
-		// 行为记录/bug：空 ID 走 uuid 列插入触发 PG 22P02，
-		// 修复语义：service 层参数校验归一化为 ErrInvalidArtifact，不泄漏 PG 22P02。
+
 		req := validReq()
 		req.ArtifactID = ""
 		_, err := svc.Record(ctx, req)
@@ -175,7 +169,7 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("空PageID拒绝", func(t *testing.T) {
-		// 修复语义：空 PageID 走参数校验（此前在 findByHash 查询 uuid 列报 22P02）。
+
 		req := validReq()
 		req.PageID = ""
 		_, err := svc.Record(ctx, req)
@@ -185,7 +179,7 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("零值Version拒绝", func(t *testing.T) {
-		// 修复语义：Version 必须 > 0（此前 0 可入库，DTO min=1 仅 HTTP 层生效）。
+
 		req := validReq()
 		req.ArtifactID = testArtifactID3
 		req.ArtifactHash = "hash-version-zero"
@@ -197,8 +191,7 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("nilSourceDocument报底层DB错误", func(t *testing.T) {
-		// 行为记录/bug：SourceDocument 为 nil 时 jsonb NOT NULL 约束报错，
-		// 错误未归一化为 ErrInvalidArtifact。
+
 		req := validReq()
 		req.SourceDocument = nil
 		_, err := svc.Record(ctx, req)
@@ -209,17 +202,13 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 	})
 }
 
-// TestArtifactRecordDuplicateFileHashInManifest 覆盖"manifest 内不同路径引用同一
-// 文件哈希"场景：去重后的闭包（artifact_id, content_hash 复合主键）会撞键失败。
 func TestArtifactRecordDuplicateFileHashInManifest(t *testing.T) {
 	svc := newService(t)
 	req := validReq()
 	req.Manifest = json.RawMessage(`{"canonicalPath":"/dup.html","files":{"index.html":"H","app.js":"H"}}`)
 
 	res, err := svc.Record(context.Background(), req)
-	// 回归用例（原为「行为记录/bug」）：manifest 内两个路径共享同一内容哈希是合法输入，
-	// 闭包必须按哈希去重后归档成功。原实现让第二条撞复合主键，整个归档事务回滚 ——
-	// 表现为「首次归档含同内容文件必失败」。
+
 	if err != nil {
 		t.Fatalf("重复文件哈希应归档成功: %v", err)
 	}
@@ -237,7 +226,7 @@ func TestArtifactRecordEmptyFileHashSkipped(t *testing.T) {
 	req.Manifest = json.RawMessage(`{"canonicalPath":"/e.html","files":{"a":"","b":"hash-b","c":"   "}}`)
 
 	res := mustRecord(t, svc, req)
-	// 空白 hash 条目被跳过：只有 hash-b 一条闭包。
+
 	if n := closureCount(t, svc, res.ID); n != 1 {
 		t.Fatalf("闭包应为 1 条（空白 hash 跳过）: %d", n)
 	}
@@ -263,7 +252,7 @@ func TestArtifactRecordOversizeHash(t *testing.T) {
 	svc := newService(t)
 	req := validReq()
 	req.ArtifactID = testArtifactID2
-	req.ArtifactHash = "big-" + strings.Repeat("a", 64*1024) // 64KB hash 字符串
+	req.ArtifactHash = "big-" + strings.Repeat("a", 64*1024)
 	req.Manifest = json.RawMessage(`{"canonicalPath":"/big.html","files":{"a":"` +
 		strings.Repeat("b", 64*1024) + `"}}`)
 
@@ -298,8 +287,6 @@ func TestArtifactRecordOversizeManifest(t *testing.T) {
 	}
 }
 
-// TestArtifactRecordNonUUIDInputs 覆盖非 UUID 格式输入：uuid 列直接报 22P02，
-// 错误未归一化为业务错误。
 func TestArtifactRecordNonUUIDInputs(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()

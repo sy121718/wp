@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestRatingCSSRules 迁移到 rating.css 后逐条核对关键规则仍在。
-//
-// 样式从 compileCSS 的 3 处 b.Add 迁成 CSS 文件，中间多了一层解析（作用域替换 / 桶划分）。
-// 解析器写错、选择器替换错 —— 任何一处出错都让产物「悄悄少了样式」，页面上只表现为「有点不对劲」。
 func TestRatingCSSRules(t *testing.T) {
 	var b core.CSSBuckets
 	if err := core.ApplyComponentCSS(&b, ".sky-c-t", ratingCSS); err != nil {
@@ -31,7 +27,7 @@ func TestRatingCSSRules(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 作用域必须生效：残留 & 说明替换没做。
+
 	if strings.Contains(out, "&") {
 		t.Errorf("产物里残留未替换的 &:\n%s", out)
 	}

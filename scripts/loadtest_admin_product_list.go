@@ -24,7 +24,6 @@ import (
 	"time"
 )
 
-// loadTestConfig 压测配置。
 type loadTestConfig struct {
 	baseURL          string
 	listPath         string
@@ -40,7 +39,6 @@ type loadTestConfig struct {
 	minSuccessRate   float64
 }
 
-// loginResponse 登录接口响应结构。
 type loginResponse struct {
 	Code int `json:"code"`
 	Data struct {
@@ -49,13 +47,11 @@ type loginResponse struct {
 	Msg string `json:"msg"`
 }
 
-// apiResponse 通用接口响应结构。
 type apiResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 }
 
-// stageResult 单个并发档位结果。
 type stageResult struct {
 	concurrency int
 	total       int64
@@ -71,7 +67,6 @@ type stageResult struct {
 	p99         time.Duration
 }
 
-// requestResult 单次请求结果。
 type requestResult struct {
 	ok      bool
 	latency time.Duration
@@ -139,7 +134,6 @@ func main() {
 		best.concurrency, best.successQPS, best.totalQPS, best.successRate*100, best.p95.Milliseconds(), best.p99.Milliseconds())
 }
 
-// parseFlags 解析命令行参数。
 func parseFlags() loadTestConfig {
 	baseURL := flag.String("base-url", "http://127.0.0.1:8081", "服务地址")
 	listPath := flag.String("path", "/api/admin/product/bench", "压测接口路径")
@@ -193,7 +187,6 @@ func parseFlags() loadTestConfig {
 	}
 }
 
-// parseConcurrencyList 解析并发档位参数。
 func parseConcurrencyList(csv string) ([]int, error) {
 	parts := strings.Split(csv, ",")
 	if len(parts) == 0 {
@@ -219,7 +212,6 @@ func parseConcurrencyList(csv string) ([]int, error) {
 	return list, nil
 }
 
-// loginAndGetToken 登录后台并获取 access_token。
 func loginAndGetToken(httpClient *http.Client, cfg loadTestConfig) (string, error) {
 	loginURL := cfg.baseURL + "/api/admin/login"
 	payload := map[string]string{
@@ -261,7 +253,6 @@ func loginAndGetToken(httpClient *http.Client, cfg loadTestConfig) (string, erro
 	return loginResp.Data.AccessToken, nil
 }
 
-// runStage 执行单个并发档位压测。
 func runStage(httpClient *http.Client, cfg loadTestConfig, token string, concurrency int) stageResult {
 	var total int64
 	var success int64
@@ -338,7 +329,6 @@ func runStage(httpClient *http.Client, cfg loadTestConfig, token string, concurr
 	}
 }
 
-// doListRequest 发起一次列表请求并返回结果。
 func doListRequest(httpClient *http.Client, cfg loadTestConfig, token string) requestResult {
 	begin := time.Now()
 	params := map[string]string{
@@ -381,7 +371,6 @@ func doListRequest(httpClient *http.Client, cfg loadTestConfig, token string) re
 	return requestResult{ok: ok, latency: time.Since(begin)}
 }
 
-// generateSign 生成签名字符串。
 func generateSign(params map[string]string, timestamp int64, nonce, secret string) string {
 	allParams := make(map[string]string, len(params)+2)
 	for key, value := range params {
@@ -411,7 +400,6 @@ func generateSign(params map[string]string, timestamp int64, nonce, secret strin
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// generateNonce 生成随机 nonce。
 func generateNonce(length int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	if length <= 0 {
@@ -431,7 +419,6 @@ func generateNonce(length int) string {
 	return string(buf)
 }
 
-// calcPercentiles 计算常用延迟分位值。
 func calcPercentiles(latencies []time.Duration) (p50, p90, p95, p99 time.Duration) {
 	if len(latencies) == 0 {
 		return 0, 0, 0, 0
@@ -446,7 +433,6 @@ func calcPercentiles(latencies []time.Duration) (p50, p90, p95, p99 time.Duratio
 	return
 }
 
-// percentile 从有序数组中取分位值。
 func percentile(sortedLatencies []time.Duration, ratio float64) time.Duration {
 	if len(sortedLatencies) == 0 {
 		return 0
@@ -468,7 +454,6 @@ func percentile(sortedLatencies []time.Duration, ratio float64) time.Duration {
 	return sortedLatencies[idx]
 }
 
-// pickBest 从满足成功率阈值的结果中选择最高成功QPS。
 func pickBest(results []stageResult, minSuccessRate float64) (stageResult, bool) {
 	var best stageResult
 	found := false
@@ -484,7 +469,6 @@ func pickBest(results []stageResult, minSuccessRate float64) (stageResult, bool)
 	return best, found
 }
 
-// pickBestAny 从所有结果中选择最高成功QPS。
 func pickBestAny(results []stageResult) stageResult {
 	if len(results) == 0 {
 		return stageResult{}
@@ -498,7 +482,6 @@ func pickBestAny(results []stageResult) stageResult {
 	return best
 }
 
-// getEnvOrDefault 获取环境变量，空则返回默认值。
 func getEnvOrDefault(envKey, defaultVal string) string {
 	value := strings.TrimSpace(os.Getenv(envKey))
 	if value == "" {

@@ -1,14 +1,5 @@
 package productservice
 
-// product_ref_guard_test.go — 跨工程引用明细文案的字节预算（审计 DB-03 §5.1 第 2 条，PROD-02）。
-//
-// 为什么值得单独钉住：错误经提示页（shell.RenderJump）整页呈现，正文太长会挤掉
-// 「立即前往」的链接与其它提示 —— 明细写得越长，反而越可能让可定位信息读不到。
-// 所以明细必须有硬上限，并且超预算时按「减商品示例 → 减工程清单」逐级收敛，而不是无脑拼长串。
-//
-// 这里用合成数据覆盖三种形态（单命中 / 多工程多命中且 SKU 很长 / 大量命中），
-// 强约束是「任何形态都 ≤ refDetailBudget 且含引用面与总数」。
-
 import (
 	"strconv"
 	"strings"
@@ -17,7 +8,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// longRefProduct 造一个 SKU 特别长的引用方商品（预算最坏情况）。
 func longRefProduct(projectID string, i int) productmodel.RefProduct {
 	return productmodel.RefProduct{
 		ProductID: "11111111-1111-4111-8111-11111111111" + string(rune('0'+i%10)),
@@ -91,7 +81,7 @@ func TestRefGuardDetailStaysWithinBudget(t *testing.T) {
 			t.Errorf("%s：明细必须含命中总数 %d：%s", tc.name, tc.ref.Total, detail)
 		}
 	}
-	// 单命中的形态还要能定位到具体商品（SKU 与 id 都在）。
+
 	one := cases[0].ref
 	detail := refGuardDetail(one)
 	for _, want := range []string{one.Products[0].ProductID, one.Products[0].SKUCode, one.ProjectIDs[0]} {
@@ -101,7 +91,6 @@ func TestRefGuardDetailStaysWithinBudget(t *testing.T) {
 	}
 }
 
-// 无引用时明细为空（调用方据此决定要不要拒绝）。
 func TestRefGuardDetailEmptyWhenNoReference(t *testing.T) {
 	if got := refGuardDetail(nil); got != "" {
 		t.Errorf("nil 结论的明细应为空，实际 %q", got)

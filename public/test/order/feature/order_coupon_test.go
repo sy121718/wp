@@ -1,15 +1,5 @@
 package feature
 
-// order_coupon_test.go — 优惠码的用例链路测试（BIZ-1）。
-//
-// 覆盖的是**不变量**而不是「方法能跑通」：
-//   · 折扣由服务端算，客户端传进来的金额一律忽略（能定价的接口等于把收银台交出去）；
-//   · 核销与建单同生共死：券用尽 → 订单也不该留下（不能出现「券用完了但单还在」）；
-//   · 幂等：同一 requestId 重复提交既不重复扣库存，也不重复记核销；
-//   · 试算是纯读：不占次数、不落核销；
-//   · 有核销记录的券不许删（删了那些记录就指向一张查不到的券）；
-//   · **取消订单把核销回退**（cancel 与 create 的 redeem 对称，见 TestOrderCancelReleasesCoupon）。
-
 import (
 	"context"
 	"strings"
@@ -20,10 +10,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// addCoupon 建一张券（工程 id 由夹具补上）。
-//
-// Status 必须显式传 1：零值是「停用」—— 这是刻意的（停用是危险方向，
-// 默认值不该让一张券悄悄生效），但调用方忘了传就会得到一张建好即停用的券。
 func (f *orderFixture) addCoupon(t *testing.T, req *orderdto.CouponSaveReq) *orderdto.CouponResp {
 	t.Helper()
 	if req.Status == 0 {
@@ -37,7 +23,6 @@ func (f *orderFixture) addCoupon(t *testing.T, req *orderdto.CouponSaveReq) *ord
 	return res
 }
 
-// redemptionCount 该券的核销记录条数。
 func (f *orderFixture) redemptionCount(t *testing.T, couponID uint64) int64 {
 	t.Helper()
 	res, err := f.orders.ListCouponRedemptions(context.Background(), &orderdto.CouponRedemptionListReq{
@@ -49,7 +34,6 @@ func (f *orderFixture) redemptionCount(t *testing.T, couponID uint64) int64 {
 	return res.Total
 }
 
-// orderCount 工程内订单总数（验证「拒绝时订单不该留下」）。
 func (f *orderFixture) orderCount(t *testing.T) int64 {
 	t.Helper()
 	res, err := f.orders.ListOrders(context.Background(), &orderdto.ListOrderReq{ProjectID: f.projectID})
@@ -59,7 +43,6 @@ func (f *orderFixture) orderCount(t *testing.T) int64 {
 	return res.Total
 }
 
-// TestOrderNoCouponIgnoresClientDiscount 无券时客户端 discountTotal 一律忽略（SEC-001）。
 func TestOrderNoCouponIgnoresClientDiscount(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -67,7 +50,7 @@ func TestOrderNoCouponIgnoresClientDiscount(t *testing.T) {
 	}
 	_, vid := f.addProduct(t, "笔记本", 100.00, 10)
 	req := f.createBaseReq(vid, 1)
-	req.DiscountTotal = 10000 // 企图做成 0 元单
+	req.DiscountTotal = 10000
 	res, err := f.orders.CreateOrder(context.Background(), req)
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
@@ -77,7 +60,6 @@ func TestOrderNoCouponIgnoresClientDiscount(t *testing.T) {
 	}
 }
 
-// TestOrderCouponAppliesServerSideDiscount 带券建单：折扣按服务端口径算，客户端的金额被忽略。
 func TestOrderCouponAppliesServerSideDiscount(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -90,13 +72,13 @@ func TestOrderCouponAppliesServerSideDiscount(t *testing.T) {
 
 	req := f.createBaseReq(vid, 1)
 	req.CouponCode = "save20"
-	// 客户端乱传一个更低的折扣：必须被忽略（服务端试算说了算）。
+
 	req.DiscountTotal = 9900
 	res, err := f.orders.CreateOrder(context.Background(), req)
 	if err != nil {
 		t.Fatalf("带券建单失败: %v", err)
 	}
-	// 10000 分 - 20% = 8000 分
+
 	if res.Total != 8000 {
 		t.Fatalf("总额应为 8000 分（服务端算的折扣），实际 %d", res.Total)
 	}
@@ -112,7 +94,6 @@ func TestOrderCouponAppliesServerSideDiscount(t *testing.T) {
 		t.Fatalf("已用次数应为 1，实际 %d", updated.UsedCount)
 	}
 
-	// 券码大小写不敏感（归一化只发生在服务层一处，客户端写小写也认）。
 	req2 := f.createBaseReq(vid, 1)
 	req2.CouponCode = "SAVE20"
 	res2, err := f.orders.CreateOrder(context.Background(), req2)
@@ -124,14 +105,13 @@ func TestOrderCouponAppliesServerSideDiscount(t *testing.T) {
 	}
 }
 
-// TestOrderCouponFixedTypeDiscountsExactAmount 固定金额券：直接减，且不会把总额减成负数。
 func TestOrderCouponFixedTypeDiscountsExactAmount(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
 	}
 	_, vid := f.addProduct(t, "贴纸", 30.00, 10)
-	// 券面额大于小计：折扣必须被夹到小计（负数总额没有意义）。
+
 	f.addCoupon(t, &orderdto.CouponSaveReq{Code: "big", DiscountType: "fixed", DiscountValue: 5000})
 	req := f.createBaseReq(vid, 1)
 	req.CouponCode = "big"
@@ -144,7 +124,6 @@ func TestOrderCouponFixedTypeDiscountsExactAmount(t *testing.T) {
 	}
 }
 
-// TestOrderCouponRedeemIsIdempotent 同一幂等键重复提交：不重复扣库存、不重复核销。
 func TestOrderCouponRedeemIsIdempotent(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -176,10 +155,6 @@ func TestOrderCouponRedeemIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestOrderCouponExhaustedRollsBackOrder 用尽后整体拒绝：**订单也不该留下**。
-//
-// 这是核销与建单同事务的核心价值：允许「先核销后建单」的实现会留下
-// 「券被扣了一次但单没下成」，而那种状态只能靠人工对账发现。
 func TestOrderCouponExhaustedRollsBackOrder(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -209,8 +184,7 @@ func TestOrderCouponExhaustedRollsBackOrder(t *testing.T) {
 	if after := f.orderCount(t); after != before {
 		t.Fatalf("券不可用时订单不该落库（%d → %d）", before, after)
 	}
-	// 预占也不该多占（两段式：建单只预占。券判定失败发生在写订单之前，
-	// 所以这里连单都没建，预占只该是第一单那一件）。
+
 	if got := f.reservedOf(t, vid); got != 1 {
 		t.Fatalf("券用完时不该多预占（应为第一单的 1 件），实际 %d", got)
 	}
@@ -219,7 +193,6 @@ func TestOrderCouponExhaustedRollsBackOrder(t *testing.T) {
 	}
 }
 
-// TestOrderCouponRespectsMinSubtotal 门槛：小计不够时拒绝，且不落库。
 func TestOrderCouponRespectsMinSubtotal(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -240,7 +213,6 @@ func TestOrderCouponRespectsMinSubtotal(t *testing.T) {
 	}
 }
 
-// TestOrderCouponRejectsUnknownDisabledAndExpired 券不可用的三种典型情形。
 func TestOrderCouponRejectsUnknownDisabledAndExpired(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -249,14 +221,12 @@ func TestOrderCouponRejectsUnknownDisabledAndExpired(t *testing.T) {
 	_, vid := f.addProduct(t, "笔", 10.00, 10)
 	ctx := context.Background()
 
-	// 不存在的券码：不能静默按无折扣建单 —— 客户会以为券用上了。
 	req := f.createBaseReq(vid, 1)
 	req.CouponCode = "nope"
 	if _, err := f.orders.CreateOrder(ctx, req); err == nil || !strings.Contains(err.Error(), orderenums.ErrCouponNotFound) {
 		t.Fatalf("未知券码应拒绝，实际: %v", err)
 	}
 
-	// 停用的券：Status 零值即停用（默认值是危险方向）。
 	f.orders.CreateCoupon(ctx, &orderdto.CouponSaveReq{
 		ProjectID: f.projectID, Code: "off", DiscountType: "fixed", DiscountValue: 100, Status: 0,
 	})
@@ -266,7 +236,6 @@ func TestOrderCouponRejectsUnknownDisabledAndExpired(t *testing.T) {
 		t.Fatalf("停用的券应拒绝，实际: %v", err)
 	}
 
-	// 已过期的券：时间窗是算出来的，不是存下来的状态列。
 	f.orders.CreateCoupon(ctx, &orderdto.CouponSaveReq{
 		ProjectID: f.projectID, Code: "old", DiscountType: "fixed", DiscountValue: 100,
 		Status: 1, StartsAt: "2020-01-01", EndsAt: "2020-12-31",
@@ -278,13 +247,12 @@ func TestOrderCouponRejectsUnknownDisabledAndExpired(t *testing.T) {
 	}
 }
 
-// TestOrderCouponValidateIsReadOnly 试算是纯读：不占次数、不落核销。
 func TestOrderCouponValidateIsReadOnly(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
 	}
-	// 带门槛：这样才能同时验「够门槛可用」与「不够门槛不可用」两种结论。
+
 	f.addCoupon(t, &orderdto.CouponSaveReq{
 		Code: "preview", DiscountType: "percent", DiscountValue: 10, MinSubtotal: 1000,
 	})
@@ -300,7 +268,6 @@ func TestOrderCouponValidateIsReadOnly(t *testing.T) {
 		t.Fatalf("试算结论不对: %+v", res)
 	}
 
-	// 反复试算不应改变任何东西。
 	for i := 0; i < 3; i++ {
 		if _, err := f.orders.ValidateCoupon(ctx, &orderdto.CouponValidateReq{
 			ProjectID: f.projectID, Code: "preview", Subtotal: 5000,
@@ -313,7 +280,6 @@ func TestOrderCouponValidateIsReadOnly(t *testing.T) {
 		t.Fatalf("试算不该占用次数: %+v", res2.List)
 	}
 
-	// 门槛不足：不报错，只给「不可用 + 原因」（试算是给页面用的，不该变成异常）。
 	short, err := f.orders.ValidateCoupon(ctx, &orderdto.CouponValidateReq{
 		ProjectID: f.projectID, Code: "preview", Subtotal: 100,
 	})
@@ -325,7 +291,6 @@ func TestOrderCouponValidateIsReadOnly(t *testing.T) {
 	}
 }
 
-// TestOrderCouponDeleteRejectedWhenRedeemed 有核销记录的券不能删，但可以停用。
 func TestOrderCouponDeleteRejectedWhenRedeemed(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -346,7 +311,6 @@ func TestOrderCouponDeleteRejectedWhenRedeemed(t *testing.T) {
 		t.Fatalf("有核销记录的券应拒绝删除，实际: %v", err)
 	}
 
-	// 停用是允许的（停用不删：历史核销记录还要读它）。
 	upd, err := f.orders.UpdateCoupon(ctx, &orderdto.CouponSaveReq{
 		ID: c.ID, Name: "双十一券", DiscountType: "fixed", DiscountValue: 500, Status: 0,
 	})
@@ -356,9 +320,7 @@ func TestOrderCouponDeleteRejectedWhenRedeemed(t *testing.T) {
 	if upd.Status != 0 || upd.StatusLabel != "已停用" {
 		t.Fatalf("停用状态不对: %+v", upd)
 	}
-	// 券码不可改：改码等于换一张券，历史核销记录会指向一个查不到的码。
-	// 返回的是**归一化后的大写**：大小写不敏感只发生在服务层一处，
-	// 返回归一化形式让调用方不必自己再转一次。
+
 	if !strings.EqualFold(upd.Code, "used") {
 		t.Fatalf("券码不该被修改，实际 %q", upd.Code)
 	}
@@ -367,7 +329,6 @@ func TestOrderCouponDeleteRejectedWhenRedeemed(t *testing.T) {
 	}
 }
 
-// TestOrderCouponCreateRejectsInvalidRule 建券的规则校验：逐条拒绝而不是静默纠正。
 func TestOrderCouponCreateRejectsInvalidRule(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -401,7 +362,6 @@ func TestOrderCouponCreateRejectsInvalidRule(t *testing.T) {
 		})
 	}
 
-	// 券码工程内唯一。
 	if _, err := f.orders.CreateCoupon(ctx, base()); err != nil {
 		t.Fatalf("首次建券应成功: %v", err)
 	}
@@ -410,15 +370,6 @@ func TestOrderCouponCreateRejectsInvalidRule(t *testing.T) {
 	}
 }
 
-// TestOrderCancelReleasesCoupon 取消订单把券核销**一并回退**（与建单 redeem 对称）。
-//
-// 建单用券做三件事：占一次 used_count、写一条核销明细、扣库存。取消必须把这三件都还回去，
-// 而且是在**同一个事务**里（状态 / 流转 / 库存 / 券，任一步失败整体回滚）——
-// 「订单取消了、券次数没还」是商家白吃亏，「券还了、订单没取消」是券被重复用。
-//
-// 断言分四层：券计数与明细（真源是明细，used_count 是并发守卫依赖的投影）、订单状态、
-// 库存归还，以及**券确实重新可用**（有人只把 used_count 改了、明细没删，或反过来，
-// 单看一个数都会漏 —— 这里两个都断言，最后再真用一次）。
 func TestOrderCancelReleasesCoupon(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -428,7 +379,6 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	c := f.addCoupon(t, &orderdto.CouponSaveReq{Code: "cancel10", DiscountType: "fixed", DiscountValue: 1000})
 	ctx := context.Background()
 
-	// 大小写不敏感地带上券码建单（2 件，100 元 × 2 = 20000 分，减 1000 分）。
 	req := f.createBaseReq(vid, 2)
 	req.CouponCode = "CANCEL10"
 	res, err := f.orders.CreateOrder(ctx, req)
@@ -438,14 +388,14 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	if res.Total != 19000 {
 		t.Fatalf("带券总额应为 19000 分，实际 %d", res.Total)
 	}
-	// 建单后：券占一次、明细一条、库存扣 2。
+
 	if got := f.couponUsedCount(t, c.ID); got != 1 {
 		t.Fatalf("建单后 used_count 应为 1，实际 %d", got)
 	}
 	if n := f.redemptionCount(t, c.ID); n != 1 {
 		t.Fatalf("建单后应有 1 条核销明细，实际 %d", n)
 	}
-	// 两段式：建单预占 2 件，在库不动。
+
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("建单后预占应为 2，实际 %d", got)
 	}
@@ -456,14 +406,13 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 		t.Fatalf("取消失败: %v", err)
 	}
 
-	// ① 券回退：used_count 与核销明细都要回到 0（投影与真源一起）。
 	if got := f.couponUsedCount(t, c.ID); got != 0 {
 		t.Fatalf("取消后 used_count 应回退为 0，实际 %d", got)
 	}
 	if n := f.redemptionCount(t, c.ID); n != 0 {
 		t.Fatalf("取消后核销明细应清空，实际 %d 条", n)
 	}
-	// ② 订单状态 cancelled。
+
 	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读订单详情失败: %v", err)
@@ -471,11 +420,11 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	if detail.Head == nil || detail.Head.Status != ordermodel.OrderStatusCancelled {
 		t.Fatalf("取消后状态应为 cancelled，实际 %+v", detail.Head)
 	}
-	// ③ 库存归还。
+
 	if got := f.stockOf(t, vid); got != 10 {
 		t.Fatalf("取消后库存应归还到 10，实际 %d", got)
 	}
-	// ④ 重复取消被拒，且**不会把已经回退的券再减一次**（否则 used_count 会变成负数）。
+
 	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "再来一次",
 	}); err == nil {
@@ -484,7 +433,7 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	if got := f.couponUsedCount(t, c.ID); got != 0 {
 		t.Fatalf("重复取消不应再动券计数，实际 %d", got)
 	}
-	// ⑤ 券确实重新可用：再建一单同码券仍能核销（次数真的还回去了，不是只改了其中一个数）。
+
 	req2 := f.createBaseReq(vid, 1)
 	req2.CouponCode = "cancel10"
 	if _, err := f.orders.CreateOrder(ctx, req2); err != nil {
@@ -498,7 +447,6 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	}
 }
 
-// couponUsedCount 读券的已用次数（used_count 是投影，真源是核销明细 —— 两者都要断言）。
 func (f *orderFixture) couponUsedCount(t *testing.T, couponID uint64) int {
 	t.Helper()
 	res, err := f.orders.GetCoupon(context.Background(), couponID)

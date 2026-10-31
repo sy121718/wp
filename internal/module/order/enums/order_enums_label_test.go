@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// 展示标签（枚举 → 展示名）的取值覆盖：key 与中文兜底都必须逐字稳定。
-//
-// 判据是「两样都给」：只给中文 → 英文界面恒中文；只给 key → 词条缺失时页面
-// 显示裸 key（admin.orders.status.paid）。任一项漂了，页面上都不会报错，
-// 只会静默显示成另一种东西 —— 所以这里逐字钉住。
 func TestOrderStatusLabelKeyAndFallback(t *testing.T) {
 	cases := []struct {
 		status, key, fallbackOut string
@@ -22,9 +17,9 @@ func TestOrderStatusLabelKeyAndFallback(t *testing.T) {
 		{"completed", "site.fragment.order.status.completed", "已完成"},
 		{"cancelled", "site.fragment.order.status.cancelled", "已取消"},
 		{"refunded", "site.fragment.order.status.refunded", "已退款"},
-		// 空状态不是「一个状态」，而是「没有最近一单」：不该被当状态去取词。
+
 		{"", "", "—"},
-		// 认不出的值原样回显：宁可显示生值，也不显示空白。
+
 		{"zzbogus", "", "zzbogus"},
 	}
 	for _, tc := range cases {
@@ -58,10 +53,6 @@ func TestReturnStatusLabelKeyAndFallback(t *testing.T) {
 	}
 }
 
-// TestFulfillmentLabelKeyAndFallback 履约状态文案（迁移 654 seed 的 12 条）。
-//
-// 与订单状态一样逐字钉：key 与中文兜底都必须稳定 —— 只给中文会让英文界面恒中文，
-// 只给 key 会让词条缺失时露出裸 key，两边都不报错。
 func TestFulfillmentLabelKeyAndFallback(t *testing.T) {
 	cases := []struct {
 		status, key, fallbackOut string
@@ -90,10 +81,6 @@ func TestFulfillmentLabelKeyAndFallback(t *testing.T) {
 	}
 }
 
-// TestFulfillmentStatusesMatchLabels 有序清单与文案表必须同集合。
-//
-// 清单在 enums、判据在 model 的常量、文案在 FulfillmentLabel —— 三处各写一份，
-// 少一个的症状是筛选行少一个徽章（不报错，只是那个状态永远筛不到）。
 func TestFulfillmentStatusesMatchLabels(t *testing.T) {
 	if len(FulfillmentStatuses) != 12 {
 		t.Fatalf("履约状态应有 12 个，实际 %d 个：%v", len(FulfillmentStatuses), FulfillmentStatuses)
@@ -110,7 +97,6 @@ func TestFulfillmentStatusesMatchLabels(t *testing.T) {
 	}
 }
 
-// TestCreatedViaLabelKeyAndFallback 来源三态（复用迁移 448 的词条）。
 func TestCreatedViaLabelKeyAndFallback(t *testing.T) {
 	cases := []struct {
 		via, key, fallbackOut string
@@ -151,8 +137,6 @@ func TestCouponStateLabelKeyAndFallback(t *testing.T) {
 	}
 }
 
-// TestLabelKeysAreDistinct 同一批标签里的 key 不能重复：重复即意味着两条语义
-// 共用一条词条，改文案时必然有一处被改错。
 func TestLabelKeysAreDistinct(t *testing.T) {
 	seen := map[string]string{}
 	record := func(label, key string) {
@@ -181,13 +165,6 @@ func TestLabelKeysAreDistinct(t *testing.T) {
 	}
 }
 
-// TestLabelKeysExistInSeeds 每个词条 key 都必须能在 seed 文本里找到。
-//
-// 判据不是「数据库里有没有」（那要起库），而是「seed 里有没有」：key 拼错时取词静默
-// 回落中文兜底、页面看不出异常，只有这条断言能拦下来。真源仍是 sys_i18n ——
-// 起库的 feature 测试另有存在性覆盖。
-//
-// 复用既有词条（site.fragment.order.status.*，迁移 157）与新增词条（本批迁移）都要能查到。
 func TestLabelKeysExistInSeeds(t *testing.T) {
 	seedDir := filepath.Join("..", "..", "..", "..", "public", "migrations")
 	files, err := filepath.Glob(filepath.Join(seedDir, "*"))

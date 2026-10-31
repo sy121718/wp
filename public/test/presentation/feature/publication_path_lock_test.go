@@ -1,16 +1,5 @@
 package feature
 
-// publication_path_lock_test.go — 访问面路径锁（pipeline.PublicationPathLocker）在
-// presentation 侧的真实接入行为。
-//
-// 断言的是"路径锁真的生效"，不是"调用了某个方法"：
-//  1. 默认实例来自进程共享单例 —— 换掉它之后，显式注入的锁必须被真的用到（可观测计数）；
-//  2. 注入 nil 时 fail closed：处置意图不执行、回执留 pending（无互斥就不动访问面）；
-//  3. 锁必须在**副作用之前**取到：锁内回调里读到的链接状态与回调外一致，
-//     且整批旧路径共用一次加锁（不是逐条各取一次）。
-//
-// 为什么在 feature 层：需要真实迁移、真实实例行锁、真实路由写与真实符号链接。
-
 import (
 	"context"
 	"strings"
@@ -23,10 +12,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// countingPathLocker 记录每次加锁的路径集合，然后转交进程默认实现。
-//
-// 用它才能区分"接了锁"与"接的是别的锁实例/根本没接"：只断言调用成功无法证明
-// 副作用被互斥保护过。
 type countingPathLocker struct {
 	mu    sync.Mutex
 	calls [][]string
@@ -46,7 +31,6 @@ func (c *countingPathLocker) snapshot() [][]string {
 	return append([][]string(nil), c.calls...)
 }
 
-// TestPresentationServiceUsesInjectedPathLocker 注入的锁必须被发布链真正用到。
 func TestPresentationServiceUsesInjectedPathLocker(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -65,7 +49,7 @@ func TestPresentationServiceUsesInjectedPathLocker(t *testing.T) {
 	if len(calls) == 0 {
 		t.Fatalf("发布链没有走注入的路径锁：访问面副作用在无互斥下执行了")
 	}
-	// 至少要覆盖两类路径：新路径（激活）与旧路径（处置）。
+
 	var sawNew, sawOld bool
 	for _, paths := range calls {
 		for _, p := range paths {
@@ -85,10 +69,6 @@ func TestPresentationServiceUsesInjectedPathLocker(t *testing.T) {
 	}
 }
 
-// TestNilPathLockerFailsClosedAndKeepsReceiptPending 显式注入 nil 时不得无锁执行。
-//
-// 判据：改 URL 的**输入意图**已持久化（url_path 已推进），访问面副作用一次都没发生，
-// 旧路径处置回执留在 pending 等收敛重放 —— 而不是"悄悄把链接删了"。
 func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -97,7 +77,6 @@ func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 	ctx := context.Background()
 	f.pres.SetPublicationPathLocker(nil)
 
-	// 编译与提交都会经过路径锁，因此必须整笔失败（不是静默跳过副作用）。
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{
 		ProjectID: f.projectID, ID: f.instance, NewPath: "/path-lock-closed",
 	}); err == nil {
@@ -112,7 +91,7 @@ func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 	if state != nil && state.Kind != pipeline.PublicationNone {
 		t.Fatalf("没有路径锁时不得改动访问面，实际 %v", state.Kind)
 	}
-	// 旧路径也不能被处置（它还在服务线上页面）。
+
 	oldState, oerr := store.Inspect("/menu-fence")
 	if oerr != nil {
 		t.Fatalf("检查旧路径失败: %v", oerr)
@@ -122,10 +101,6 @@ func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 	}
 }
 
-// TestOldPathDisposalLocksEveryPathInOneCall 多条旧路径在**一次**加锁里处置。
-//
-// 逐条各取一次锁会让"第 1 条已下线、第 2 条被别人抢走"变成半截状态；多条旧路径属于
-// 同一次改址意图，必须在同一锁期内完成。
 func TestOldPathDisposalLocksEveryPathInOneCall(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -141,7 +116,6 @@ func TestOldPathDisposalLocksEveryPathInOneCall(t *testing.T) {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
 
-	// 制造"两条旧路径"的现场：把回执的 oldPaths 扩成两条（与 TestMultiLang 同法）。
 	var receiptID int64
 	if err := f.db.Raw(`SELECT id FROM publication_receipts
 		WHERE source_type = ? AND action = ? AND source_id = ? ORDER BY id DESC LIMIT 1`,

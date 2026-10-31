@@ -1,13 +1,3 @@
-// Command multidevice-css-check 打印多端硬规则守卫（审计 UI-015）的全量违规清单。
-//
-// 用法（在仓库根执行）：
-//
-//	go run ./scripts/multidevice-css-check            # 默认 warn：照清单，退出码 0
-//	SKY_CSS_GUARD=error go run ./scripts/multidevice-css-check   # 硬门禁：有未豁免违规则退出码 1
-//
-// 退出码设计：CI 里这一步现在是常绿的「清单步骤」（本批不整改违规组件，见任务边界），
-// 整改完成后只需把 CI 的 SKY_CSS_GUARD 改成 error，同一个脚本立刻变成硬门禁 ——
-// 不需要改脚本本身，避免「验收标准写在两个地方」。
 package main
 
 import (
@@ -45,8 +35,7 @@ func main() {
 			len(report.Violations), builder.CSSGuardModeEnv)
 		os.Exit(1)
 	}
-	// 尾注必须跟着模式走：整改完成后（UI-015）error 已是常态，还印「只报告不拦截」
-	// 会让人以为这道门禁形同虚设 —— 报告文案与实际行为不符，比没有文案更糟。
+
 	if report.Mode == builder.CSSGuardModeError {
 		fmt.Printf("\n模式 %s：违规即失败（本步骤已是硬门禁）。豁免项须写明理由并被测试断言。\n",
 			report.Mode)
@@ -56,7 +45,6 @@ func main() {
 		report.Mode, builder.CSSGuardModeEnv)
 }
 
-// repoRoot 从当前目录向上找 go.mod（CI 与本地都在仓库内执行）。
 func repoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

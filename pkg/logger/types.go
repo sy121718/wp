@@ -24,7 +24,6 @@ type runtimeConfig struct {
 	maxAge           int
 }
 
-// Entry 场景日志入口。
 type Entry struct {
 	scene            string
 	autoSceneByLevel bool
@@ -36,6 +35,6 @@ var (
 	mu           sync.RWMutex
 	inited       bool
 	cfg          runtimeConfig
-	sceneLoggers sync.Map // key: scene, value: *zap.Logger
-	sceneClosers sync.Map // key: scene, value: io.Closer
+	sceneLoggers sync.Map
+	sceneClosers sync.Map
 )

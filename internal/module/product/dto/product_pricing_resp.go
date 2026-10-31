@@ -1,4 +1,3 @@
-// product_pricing_resp.go — 定价工具出参（issue #13）。
 package productdto
 
 import (
@@ -6,85 +5,74 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// PricingRuleTypeResp 内置定价规则类型（后台下拉、参数说明与规则描述的唯一定义来源）。
 type PricingRuleTypeResp struct {
 	Type string `json:"type"`
-	// 展示名与参数说明都是文案，按 Type 写在模板里（pricing_rule_fields.html）。
-	// RequiresCost 该规则是否依赖变体成本价（预览标记缺成本价的变体，应用整批拒绝）。
+
 	RequiresCost bool `json:"requiresCost"`
 }
 
-// PricingRoundingOptionResp 尾数处理选项（后台下拉的唯一来源）。
 type PricingRoundingOptionResp struct {
 	Value string `json:"value"`
 }
 
-// PricingLineResp 逐变体试算行（预览与留痕共用同一形状）。
 type PricingLineResp struct {
 	ProductID   string `json:"productId"`
 	ProductName string `json:"productName"`
 	ProductSlug string `json:"productSlug"`
 	VariantID   string `json:"variantId"`
 	SKUCode     string `json:"skuCode"`
-	// CostPrice 变体当前成本价（为 nil 表示未填；成本类规则无法算价）。
+
 	CostPrice *float64 `json:"costPrice"`
 	OldPrice  float64  `json:"oldPrice"`
-	// NewPrice 试算出的新售价（skipped 时等于 OldPrice，作为「不改动」的明确占位）。
+
 	NewPrice float64 `json:"newPrice"`
-	// Diff 差值由同一算价结果给出，前端只格式化。
+
 	Diff float64 `json:"diff"`
-	// Status changed / unchanged / skipped。
+
 	Status string `json:"status"`
-	// Reason 跳过原因（enums 键；非 skipped 为空串）。
+
 	Reason string `json:"reason"`
 }
 
-// PricingPreviewResp 试算结果（**不落库**：预览与应用共用同一份算价逻辑，
-// 区别只在于预览不写价格、不写留痕）。
 type PricingPreviewResp struct {
 	RuleType   string          `json:"ruleType"`
 	RuleParams json.RawMessage `json:"ruleParams"`
-	// RuleValues 规则参数的取值；规则的措辞在模板里。
+
 	RuleValues RuleValuesResp `json:"ruleValues"`
 	Rounding   string         `json:"rounding"`
 	Scope      string         `json:"scope"`
 	ProjectID  string         `json:"projectId"`
-	// TargetCount 参与试算的变体数（含跳过与未改动）。
+
 	TargetCount    int `json:"targetCount"`
 	ChangedCount   int `json:"changedCount"`
 	UnchangedCount int `json:"unchangedCount"`
 	SkippedCount   int `json:"skippedCount"`
-	// Lines 逐变体明细（顺序稳定：商品排序 → 变体排序）。
+
 	Lines []*PricingLineResp `json:"lines"`
 }
 
-// PricingApplyResp 应用结果（落库 + 留痕）。
 type PricingApplyResp struct {
-	// AdjustmentID 本次调价批次 id（留痕台账主键，可据此回看逐变体改动）。
 	AdjustmentID string          `json:"adjustmentId"`
 	RuleType     string          `json:"ruleType"`
 	RuleParams   json.RawMessage `json:"ruleParams"`
-	// RuleValues 规则参数的取值；规则的措辞在模板里。
+
 	RuleValues   RuleValuesResp `json:"ruleValues"`
 	Rounding     string         `json:"rounding"`
 	Scope        string         `json:"scope"`
 	ProjectID    string         `json:"projectId"`
 	TargetCount  int            `json:"targetCount"`
 	ChangedCount int            `json:"changedCount"`
-	// RecalculatedTags 本次落库后顺带重算的自动标签数（变体价格变 → 价格区间/促销规则可能变归属）。
+
 	RecalculatedTags int `json:"recalculatedTags"`
-	// Lines 仅含实际改动的变体；任何无法算价的变体都会拒绝整批。
+
 	Lines []*PricingLineResp `json:"lines"`
 }
 
-// PricingFilterPartResp 筛选条件的一项：键是固定枚举（status / keyword / categoryId /
-// brandId / tagId），值是数据。
 type PricingFilterPartResp struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
-// PriceAdjustmentItemResp 调价批次逐变体留痕明细。
 type PriceAdjustmentItemResp struct {
 	ID          string  `json:"id"`
 	ProductID   string  `json:"productId"`
@@ -93,30 +81,29 @@ type PriceAdjustmentItemResp struct {
 	SKUCode     string  `json:"skuCode"`
 	OldPrice    float64 `json:"oldPrice"`
 	NewPrice    float64 `json:"newPrice"`
-	// Diff 差值（新价 - 原价），正数为涨价。
+
 	Diff      float64        `json:"diff"`
 	CreatedAt utils.JSONTime `json:"createdAt"`
 }
 
-// PriceAdjustmentResp 调价批次（留痕台账，后台可回看「谁按哪条规则改了什么价」）。
 type PriceAdjustmentResp struct {
 	ID         string          `json:"id"`
 	ProjectID  string          `json:"projectId"`
 	RuleType   string          `json:"ruleType"`
 	RuleParams json.RawMessage `json:"ruleParams"`
-	// RuleValues 规则参数的取值；规则的措辞在模板里。
+
 	RuleValues RuleValuesResp  `json:"ruleValues"`
 	Rounding   string          `json:"rounding"`
 	Scope      string          `json:"scope"`
 	TargetID   string          `json:"targetId"`
 	Filter     json.RawMessage `json:"filter"`
-	// FilterParts 筛选条件的逐项取值（键 + 值）；条件名与标点在模板。
+
 	FilterParts  []PricingFilterPartResp `json:"filterParts"`
 	VariantCount int                     `json:"variantCount"`
 	ChangedCount int                     `json:"changedCount"`
 	Note         string                  `json:"note"`
 	OperatorID   string                  `json:"operatorId"`
 	CreatedAt    utils.JSONTime          `json:"createdAt"`
-	// Items 逐变体明细（详情接口或列表 IncludeItems 时填充）。
+
 	Items []*PriceAdjustmentItemResp `json:"items,omitempty"`
 }

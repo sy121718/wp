@@ -10,36 +10,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 近期五批「写表单 UI」词条的门槛判据必须是**完整双语集合**（task-48）。
-//
-// 判据语义（`public/migrations/migrator.go:39,293-315`）：ConditionSQL 返回 > 0 即「已完成」→
-// log 后直接 return，**该批 SQL 永不执行**。于是判据若只数一种语言，另一种语言缺行时判据仍为 1
-// → RunSeeds 跳过 → 缺词永远补不上，界面回退到组件包内的兜底文案（无异常、无日志）。
-// 定则：AGENTS.md §数据库「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
-//
-// 这五批的 SQL 都是**完整的 key × {zh-CN, en-US} 笛卡尔积**（无重复组合、无第三种语言），
-// 本测试钉住的是它们采用的**本测试约定的固定形态**：点名本批全部 key + `lang IN ('zh-CN','en-US')`
-// + 阈值取**精确组合数**（低于它缺词也能满足；高于它判据永不满足、每次启动重跑这批 SQL）。
-// 注意「固定形态」不等于「唯一正确解」：唯一约束 `uk_sys_i18n_key_lang` 让计数上界封闭，
-// 因此 `COUNT(*) = N`、`NOT EXISTS(该批某对缺失)`、`COUNT(DISTINCT (item_key, lang)) = N`
-// 同样正确；本测试断言 `>= N` 是为了钉住本批已采用的写法，不是为了排除等价写法。
-//
-// 分两层：
-//
-//	① 静态层（不连库）：SQL 组合必须恰好等于「key × 两语言」，判据的 key 集合、语言集合、阈值
-//	   必须与之一致（阈值必须**恰好**等于组合数，不允许更高）。
-//	② 真实 PG 层，每批三段，每段都以真实 RunSeeds 收尾：
-//	   · 段 1（英文缺一）：删一条 en-US + 补一条 ja-JP → 判据必须 0（第三语言不得把计数垫到阈值），
-//	     两轮补种后英文回到 seed 原值、ja-JP 行不动、行数 = 组合数 + 1；
-//	   · 段 2（中文缺一）：删一条 zh-CN → 判据必须 0，两轮补种后中文回来（镜像方向，专治
-//	     「只数 en-US」那类判据）；
-//	   · 段 3（运营改值）：把一条 zh-CN 改成运营值 → 判据必须仍为 1（集合完整）、两轮补种后
-//	     运营值**不得**被覆盖。
-//
-// 复用同包 598 用例里的工具：seedPairs / sortedKeys / guardValue / countPairs / valueOf / mustExec
-// （`register_mail_contact_write_ui_i18n_test.go`）。key 提取器**不复用**：那个正则写死了 `admin.mail.`
-// 前缀，对本批的 admin.theme.* / admin.navigations.* / admin.i18nWrite.* 一个都匹配不到 ——
-// 复用会得到空集合，把「判据漏了 key」误判成通过。
 func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 	const (
 		zhLang     = "zh-CN"
@@ -64,7 +34,6 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 			"admin.i18nWrite.bulkResult.partial", "admin.i18nWrite.refresh", "admin.i18nWrite.noJs"}},
 	}
 
-	// ① 静态层
 	type plan struct {
 		seed  migrations.Seed
 		keys  map[string]bool
@@ -117,7 +86,6 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 		plans = append(plans, plan{seed: seed, keys: keys, pairs: len(want)})
 	}
 
-	// ② 真实 PG 层
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
 		return
@@ -137,7 +105,6 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 			t.Fatalf("%s：首轮后应有 %d 行，实际 %d", version, p.pairs, got)
 		}
 
-		// 段 1：英文缺一 + 多一条第三语言
 		seedEnValue := valueOf(t, db, lastKey, enLang)
 		if seedEnValue == "" {
 			t.Fatalf("%s：%s/%s 在首轮后应有值", version, lastKey, enLang)
@@ -173,7 +140,6 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 		}
 		mustExec(t, db, "DELETE FROM sys_i18n WHERE item_key = ? AND lang = ?", lastKey, thirdLang)
 
-		// 段 2：中文缺一（镜像方向 —— 专治「只数 en-US」那类判据）
 		seedZhValue := valueOf(t, db, firstKey, zhLang)
 		if seedZhValue == "" {
 			t.Fatalf("%s：%s/%s 在首轮后应有值", version, firstKey, zhLang)
@@ -197,7 +163,6 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 			}
 		}
 
-		// 段 3：运营改值不得被补种覆盖（集合仍然完整 → 判据应当为 1，不再补种）
 		const operatorValue = "运营改过的中文（不得被 seed 覆盖）"
 		mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = ?",
 			operatorValue, firstKey, zhLang)
@@ -219,10 +184,8 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 	}
 }
 
-// seedCountGuardRe 抽「COUNT(*) >= n」里的比较符与阈值，用来断言阈值**恰好**等于组合数。
 var seedCountGuardRe = regexp.MustCompile(`COUNT\(\*\)\s*(>=|=)\s*(\d+)`)
 
-// seedGuardKeyRe 抽判据 SQL 里点名的词条 key（带点的标识符；语言字面量形如 'zh-CN' 无点，天然不匹配）。
 var seedGuardKeyRe = regexp.MustCompile(`'([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)'`)
 
 func guardSeedKeys(condSQL string) []string {

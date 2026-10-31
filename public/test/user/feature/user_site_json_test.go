@@ -127,7 +127,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 			t.Fatalf("回了展示或凭据字段%s", key)
 		}
 	}
-	// 同一账号的两个正常会话：设备句柄不能拿来撤销当前设备，也不接受另一访客任意标识。
+
 	devices := env.get(t, "/api/site/user/sessions", cookies)
 	items := siteData(t, devices, http.StatusOK)["data"].([]any)
 	var device map[string]any
@@ -147,7 +147,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	}
 	revoke := siteJSON(t, env, "/api/site/user/sessions/revoke", `{"id":"`+device["id"].(string)+`"}`, rotated, cookies)
 	siteData(t, revoke, http.StatusNotFound)
-	// 第二台真实设备产生独立会话；第一台只能用自己的不透明句柄撤销它。
+
 	secondGuest := env.get(t, "/api/site/user/session", nil)
 	secondCookies := siteCookies(nil, secondGuest)
 	secondLogin := siteJSON(t, env, "/api/site/user/login", `{"account":"siteuser","password":"password123"}`, secondGuest.Header().Get("X-CSRF-Token"), secondCookies, "SiteDeviceRevokeProbe")
@@ -174,7 +174,7 @@ func TestSiteUserJSONVisitorIsolationAndInputErrors(t *testing.T) {
 	if siteData(t, env.get(t, "/api/site/user/session", cookies), http.StatusOK)["data"].(map[string]any)["authenticated"] != true {
 		t.Fatal("撤销另一设备误伤当前会话")
 	}
-	// 将合法访客cookie伪装成后台cookie，不能跨身份域认成访客。
+
 	adminOnly := make([]*http.Cookie, 0)
 	for _, cookie := range cookies {
 		if cookie.Name != "gowp_user_session" {
@@ -216,7 +216,7 @@ func TestSiteUserJSONAndFormDataShareServiceAndTrustedIdentity(t *testing.T) {
 	if account["username"] != "profilejson" || account["nickname"] != "自己的昵称" || account["gender"] != float64(2) || account["profileLocale"] != "en-US" {
 		t.Fatalf("JSON资料写读链不一致: %+v", account)
 	}
-	// FormData与JSON走同一服务，复选框未提交代表false，不能保留上次true。
+
 	form := url.Values{"csrf_token": {csrf}, "pageSize": {"37"}, "profileVisibility": {"private"}, "timezone": {"Asia/Tokyo"}, "locale": {"zh-CN"}, "theme": {"dark"}, "emailNotify": {"1"}}
 	req := httptest.NewRequest(http.MethodPost, "/api/site/user/account/preference", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -269,7 +269,6 @@ func TestSiteUserAvatarUsesTrustedMediaOrigin(t *testing.T) {
 	readAvatar("javascript:alert(1)", "")
 }
 
-// TestSiteUserCodeFlowJSONAndFormData 完整验证码链只通过测试邮件端口接码，不触达 SMTP。
 func TestSiteUserCodeFlowJSONAndFormData(t *testing.T) {
 	for _, encoding := range []string{"json", "multipart"} {
 		t.Run(encoding, func(t *testing.T) {

@@ -6,14 +6,6 @@ import (
 	"testing"
 )
 
-// jsonld_test.go — 常见问题结构化数据（审计 SEO-006）。
-//
-// 断言三件事：
-//  1. mainEntity 与可见问答同源（同一条数、同一顺序、同一文本）；
-//  2. 注入形态可解析（JSON 合法、@type=FAQPage），且答案里的尖括号逃不出脚本块；
-//  3. 无有效问答时不输出（不产生空壳 FAQPage）。
-
-// parseFAQJSONLD 解析结构化数据片段（去掉 script 外壳后按 JSON 解析）。
 func parseFAQJSONLD(t *testing.T, out string) map[string]any {
 	t.Helper()
 	body := strings.TrimPrefix(out, faqJSONLDOpen)
@@ -25,7 +17,6 @@ func parseFAQJSONLD(t *testing.T, out string) map[string]any {
 	return doc
 }
 
-// answerTextOf 取第 i 条 mainEntity 的答案文本。
 func answerTextOf(t *testing.T, out string, i int) string {
 	t.Helper()
 	entity, _ := parseFAQJSONLD(t, out)["mainEntity"].([]any)
@@ -41,7 +32,6 @@ func answerTextOf(t *testing.T, out string, i int) string {
 	return text
 }
 
-// TestFAQPageJSONLDMatchesVisibleItems mainEntity 与可见问答逐条对齐。
 func TestFAQPageJSONLDMatchesVisibleItems(t *testing.T) {
 	p := &Props{Items: []FaqItem{
 		{Question: "问题一 & 特殊", Answer: "<p>答案 <strong>加粗</strong> 内容</p>", Open: true},
@@ -62,12 +52,12 @@ func TestFAQPageJSONLDMatchesVisibleItems(t *testing.T) {
 	if !ok || len(entity) != len(p.Items) {
 		t.Fatalf("mainEntity 条数应为 %d，实际 %#v", len(p.Items), doc["mainEntity"])
 	}
-	// 与可见项同源：问题文本一致（可见侧由 Jet 转义输出，源文本是同一份）。
+
 	first, _ := entity[0].(map[string]any)
 	if first["@type"] != "Question" || first["name"] != "问题一 & 特殊" {
 		t.Errorf("第 1 条 Question 不符：%#v", first)
 	}
-	// 答案是纯文本：标签被剥掉，实体解码回原字符。
+
 	if got := answerTextOf(t, out, 0); got != "答案 加粗 内容" {
 		t.Errorf("答案纯文本化结果不符：%q", got)
 	}
@@ -76,7 +66,6 @@ func TestFAQPageJSONLDMatchesVisibleItems(t *testing.T) {
 	}
 }
 
-// TestFAQPageJSONLDVisibleAndStructuredAgree 可见渲染与结构化数据来自同一份 Props。
 func TestFAQPageJSONLDVisibleAndStructuredAgree(t *testing.T) {
 	p := &Props{Items: []FaqItem{{Question: "唯一问题", Answer: "<p>唯一答案</p>"}}}
 	view := BuildView(p)
@@ -90,10 +79,6 @@ func TestFAQPageJSONLDVisibleAndStructuredAgree(t *testing.T) {
 	}
 }
 
-// TestFAQPageJSONLDScriptTagCannotEscape 答案里的尖括号逃不出脚本块。
-//
-// 两道防线：可见侧同一条富文本管线先把标签剥掉（script 标签根本进不来），
-// 剩下的 "<" 由 JSON 序列化转成 <（截不断 script 元素）。
 func TestFAQPageJSONLDScriptTagCannotEscape(t *testing.T) {
 	p := &Props{Items: []FaqItem{
 		{Question: "注入尝试", Answer: "危险 </script><script>alert(1)</script> 内容"},
@@ -117,7 +102,6 @@ func TestFAQPageJSONLDScriptTagCannotEscape(t *testing.T) {
 	}
 }
 
-// TestFAQPageJSONLDNoOutputWithoutItems 空/无效问答不产出结构化数据。
 func TestFAQPageJSONLDNoOutputWithoutItems(t *testing.T) {
 	cases := map[string]*Props{
 		"nil":   nil,

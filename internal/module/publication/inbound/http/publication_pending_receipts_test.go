@@ -1,10 +1,5 @@
 package pubhttp_test
 
-// publication_pending_receipts_test.go — 待处理回执端点（FIX-24）。
-//
-// 直调导出 handler（路由带 Session + Casbin）：证「服务层的 ListPendingReceipts 真的接到了
-// HTTP 出口」—— 此前它是个 501 占位 + 一句「尚未实现」的错注释。
-
 import (
 	"net/http"
 	"net/http/httptest"

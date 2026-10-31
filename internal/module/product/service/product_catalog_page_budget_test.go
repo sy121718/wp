@@ -1,18 +1,5 @@
 package productservice_test
 
-// product_catalog_page_budget_test.go — 公开目录的**深页预算**判据（PRD-007/008）。
-//
-// 目录的候选集合来自 presentation 的上线索引（跨模块契约，本模块不直查它的表），
-// 候选有多少就一次带多少进集合源过滤 —— 这是 PRD-007 明确待定的成本主体（DEC-06），
-// 本用例**不**声称它已被解决。这里钉住的是另一件现在就能成立的事：
-//
-//   计数已经把「这一页有没有东西」答完了，越界页与空结果集不该再发一条带深 OFFSET 的
-//   取数，也不该为一行都取不到的结果去读变体价与标签。
-//
-// 判据是**读 products 表的语句条数**（不是总语句数）：常规页一次（COUNT(*) OVER() 与
-// 本页同一语句，DEC-06 裁决）；越界页两次（本页查不到行 → 退回一次 count 补总数）；
-// 空候选一次都不读。用条数而不是耗时：条数与机器无关，耗时不是。
-
 import (
 	"context"
 	"fmt"
@@ -27,7 +14,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// catalogIndexStub 上线索引桩：返回给定的「实体 → 路径」全集。
 type catalogIndexStub struct {
 	paths map[string]string
 	err   error
@@ -49,7 +35,6 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 	const total = 30
 	seedListProductsBulk(t, db, projectID, 1, total)
 
-	// 上线索引只给本工程的这 30 个商品（真实形态是 presentation 的激活路径表）。
 	var ids []string
 	if err := db.Raw("SELECT id FROM products WHERE project_id = ? ORDER BY sort ASC, id ASC", projectID).
 		Scan(&ids).Error; err != nil {
@@ -104,8 +89,7 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 		if out.Total != total || out.Page != 100 {
 			t.Fatalf("越界页的页号与总数应原样回：%+v", out)
 		}
-		// 越界页必然查不到行，窗口计数没有值：退回一次 count 只为了分页器上的「共 N 条」。
-		// 不夹到末页（不返回最后一页的行）——那会让同一个 URL 对应两份内容。
+
 		if reads != 2 {
 			t.Fatalf("越界页应是本页查询 + 一次 count，实际 %d 次：\n%s",
 				reads, probe.dumpProductTableReads())
@@ -127,8 +111,7 @@ func TestPublicCatalogSkipsListQueryWhenPageIsEmpty(t *testing.T) {
 	})
 
 	t.Run("上线索引里的非 uuid 键不进候选", func(t *testing.T) {
-		// 索引值来自另一模块的路径表：坏键（早期脏数据 / 非实体的占位）不该被当成候选，
-		// 否则它会作为一个绑定参数进数组，让 planner 与计数都白跑一趟。
+
 		junk := map[string]string{"not-a-uuid": "/x", "": "/y"}
 		for id, p := range paths {
 			junk[id] = p

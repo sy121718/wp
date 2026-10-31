@@ -1,13 +1,3 @@
-// product_bulk_http_contract_test.go — 批量端点的对外契约（入口只做编排的证据）。
-//
-// 三条判据都落在**响应**上，而不是「控制器里有没有某行代码」：
-//
-//	① 超过上限 → 400，文案带「上限 / 本次条数」两个数字（归一在 service，且不静默截断）；
-//	② 没勾选 → 400（不是「删除 0 个」的成功回执）；
-//	③ 夹着不可处理的 id → 409，data.items 里带 id / name / reasonKey / message。
-//
-// 第 ③ 条的 message 由**出口**翻译（service 只交 key + 兜底）：断言它非空且不是裸 key ——
-// 这正是「控制器不再拼文案」之后最容易退化的地方。
 package feature
 
 import (
@@ -26,8 +16,7 @@ func TestProductBulkHTTPContract(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	// fixture 的 engine 只挂了 bulk-pricing（列表抽屉那条）；批量删除在这里补挂，
-	// 断言的是同一个 handler 与同一个出口。
+
 	engine.POST("/api/product/bulk-delete", producthttp.NewProductHandle(f.svc).BulkDelete)
 
 	t.Run("超过上限：400 且文案带两个数字", func(t *testing.T) {
@@ -43,7 +32,7 @@ func TestProductBulkHTTPContract(t *testing.T) {
 			t.Fatalf("超限应 400，实际 %d：%s", rec.Code, rec.Body.String())
 		}
 		env := decodeJSONEnvelope(t, rec)
-		// 两个数字缺一不可：只说「参数不合法」时操作者不知道该拆成几批。
+
 		if !strings.Contains(env.Message, "200") || !strings.Contains(env.Message, "201") {
 			t.Fatalf("文案应带上限与本次条数，实际 %q", env.Message)
 		}
@@ -93,7 +82,7 @@ func TestProductBulkHTTPContract(t *testing.T) {
 		if strings.TrimSpace(msg) == "" || strings.Contains(msg, "ErrNotFound") {
 			t.Fatalf("message 应是当前语言的文案而不是裸 key，实际 %q", msg)
 		}
-		// 整批被拒 = 可删的那个也没删。
+
 		if _, gerr := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID}); gerr != nil {
 			t.Fatalf("整批被拒时商品不该被删：%v", gerr)
 		}

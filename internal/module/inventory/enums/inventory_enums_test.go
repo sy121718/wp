@@ -1,16 +1,5 @@
 package inventoryenums
 
-// inventory_enums_test.go — 业务错误的**声明处兜底**与 enums 常量的逐条对账。
-//
-// 判据两条、方向相反：① 每个 Err* 常量都在 errFallbacks 里有非空中文兜底（否则页面出口只能
-// 把 ErrWarehouseNotFound 这种标识符摆给运营看）；② 兜底表里没有已删常量的死条目。
-// 纯 AST 解析，不依赖数据库与装配。
-//
-// 兜底为什么住在声明处：出口只调一次 pkg/facing.FactOf，它给不出兜底时，消费方只能各补一张
-// 补丁表 —— inventory 的页面出口原先就有这样一张（inventoryErrFallbacks，只登记「页面直接
-// 铺出来的那几条」），product 也有一张跨模块的（product_foreign_text.go，随本批删除）。
-// 两张表都在猜「哪些 key 会露到页面上」，漏登记的方向是静默显示裸 key。
-
 import (
 	"errors"
 	"go/ast"
@@ -24,7 +13,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// TestErrFallbacksCoverAllEnums 每个 Err* 常量都必须有中文兜底，兜底表里也不能有死条目。
 func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -81,11 +69,6 @@ func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	}
 }
 
-// TestErrFallbacksMatchSeededText 已 seed 的 key 在 Go 侧兜底必须与 zh-CN 词条一致。
-//
-// 两处写同一句话时最容易发生的漂移是「改了一边」，症状是同一条错误在中文站与降级路径上
-// 显示两句不同的话（不报错）。这里不读迁移文件（它在 public/migrations，本包不 embed），
-// 只钉住几条**页面直接铺出来**的 key 的原文；词条改名时这条测试会先变红。
 func TestErrFallbacksMatchSeededText(t *testing.T) {
 	cases := map[string]string{
 		ErrWarehouseNotFound:     "仓库不存在",
@@ -99,7 +82,6 @@ func TestErrFallbacksMatchSeededText(t *testing.T) {
 	}
 }
 
-// TestErrCarriesFallbackAndKey Err(key) 同时带 key 与中文兜底；ErrDetail 用半角冒号拼明细。
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrWarehouseNotFound)
 	if err.Error() != ErrWarehouseNotFound {

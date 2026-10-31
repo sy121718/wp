@@ -1,15 +1,5 @@
 package mailmcp
 
-// mail_tools_test.go — 营销三个只读工具的元信息、入参边界与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪个数，用户就看不到哪个数。这里钉的是几件会直接决定回答对错的事：
-//   · campaignId 必须出现在活动列表里 —— 它是接着调 campaign_stats 的唯一钥匙；
-//   · 投递进度（目标 / 已发 / 失败）要在列表里就给全，「发完了没」不该要再调一次；
-//   · bounced（投递失败）与 unsubscribed（主动退订）必须是两个说法 ——
-//     混起来会让运营去追问一个根本没点过退订的人；
-//   · 打开率是**估算**（图片预加载会抬高），正文里要带这句提醒。
-
 import (
 	"context"
 	"errors"
@@ -51,8 +41,6 @@ func (s *stubQuery) CampaignReport(_ context.Context, id uint64, _, pageSize int
 	return s.reportRes, s.err
 }
 
-// ListTemplates / ListAccounts 是为建活动铺路的发信配置清单（见 campaign_write_tools.go）。
-// 这里给最小实现 —— 本文件测的是查询与报表，不关心它们的内容。
 func (s *stubQuery) ListTemplates(_ context.Context, _ string) ([]*maildto.TemplateItem, error) {
 	return s.templates, nil
 }
@@ -159,8 +147,7 @@ func TestContactFindClampsPageSize(t *testing.T) {
 }
 
 func TestContactStatusTextDistinguishesBouncedFromUnsubscribed(t *testing.T) {
-	// 这两个状态对用户的含义完全不同：投递失败通常是邮箱不存在，
-	// 而主动退订是人不想收了。混起来会让运营去追问一个没点过退订的人。
+
 	bounced := contactStatusText("bounced")
 	unsub := contactStatusText("unsubscribed")
 	if bounced == unsub {
@@ -202,9 +189,9 @@ func TestCampaignListTextCarriesProgressAndID(t *testing.T) {
 		},
 	})
 	for _, want := range []string{
-		"id=5", "九月大促", "已发送", "目标 100 人、已发 98、失败 2", // 「发完了没」要靠这三个数
+		"id=5", "九月大促", "已发送", "目标 100 人、已发 98、失败 2",
 		"开始 2026-09-01 10:00", "结束 2026-09-01 10:30",
-		"id=6", "草稿", "创建 2026-10-01 09:00", // 没开始的活动回落到创建时间
+		"id=6", "草稿", "创建 2026-10-01 09:00",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, text)
@@ -267,8 +254,8 @@ func TestCampaignReportTextCarriesRatesAndEstimateCaveat(t *testing.T) {
 		"打开：60 人（90 次），打开率 61.2%",
 		"点击：12 人（15 次），点击率 12.2%",
 		"退订 3、投诉 1、投递失败 2",
-		"10 次点击、8 人", // 次数与人数都要（一人点 5 次 ≠ 5 人各 1 次）
-		"估算",         // 打开率是估算值，必须提醒
+		"10 次点击、8 人",
+		"估算",
 	} {
 		if !strings.Contains(out.Text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, out.Text)

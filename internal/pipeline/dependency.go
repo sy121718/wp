@@ -1,16 +1,5 @@
 package pipeline
 
-// dependency.go — 依赖 fan-out 内核（AGENTS.md §8.1/§8.2，PIPE-3）。
-//
-// 职责边界：
-//   - 本文件只做「依赖源键 → 受影响来源 ID」的分发与编排，不认识任何业务模块；
-//   - 具体反查（依赖表 JOIN 活跃/暂存指针）由各发布来源模块实现 DependencyTarget；
-//   - 自动重建由各来源模块实现 StaleRebuilder（策略属来源，不属内核）。
-//
-// 为什么需要它：PIPE-3 之前，依赖记录只写进 Manifest（内存态），DB 依赖表
-// 从未被写入，失效标记一律退化为「UPDATE pages SET stale = true」全站标记。
-// 现在依赖源变更 → 按 (kind,key) 反查具体产物 → 只标记真正受影响的页面/实例。
-
 import (
 	"context"
 	"sort"
@@ -19,164 +8,88 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// 依赖类型常量（与 page_dependencies / presentation_dependencies 的 CHECK 约束一致，
-// 见迁移 071 与 AGENTS.md §8.2）。
 const (
-	// DepKindDirectContent 单个 CMS 实体字段变化（product:{id}）。
 	DepKindDirectContent = "direct_content"
-	// DepKindContentCollection 集合成员变化（collection:content:{entityType}）。
+
 	DepKindContentCollection = "content_collection"
-	// DepKindContentTemplate ContentTemplate 版本变化。
+
 	DepKindContentTemplate = "content_template"
-	// DepKindNavigation 按**具体菜单项**引用的导航变化（core.nav 绑定 navigation id 时）。
-	//
-	// 与 DepKindMenu（按位置）并列：位置键带工程 ID（位置名只有四个、跨工程必然重名），
-	// 本键用菜单项 UUID（全局唯一，与 block:{id} 同一情形），故不带工程 ID。
+
 	DepKindNavigation = "navigation"
-	// DepKindMenu 公开站点导航变化（navigations 表：菜单项增删改、排序、位置调整）。
-	//
-	// 键的构造见 MenuKey：**带工程 ID**。导航与块不同 —— block 的 key 是全局唯一
-	// 的块 id（block:{id}），而导航的位置名只有 header/footer 两个，跨工程必然重名；
-	// 而依赖反查是逐工程各查一次 (kind,key)，不带工程 ID 时「A 工程改页眉导航」
-	// 会把 B 工程里同样绑了 header 的页面一并标 stale（跨工程误标）。
+
 	DepKindMenu = "menu"
-	// DepKindMedia 媒体内容变化。
+
 	DepKindMedia = "media"
-	// DepKindBlock 全局块内容变化（页眉/页脚内联进产物）。
+
 	DepKindBlock = "block"
-	// 显式动作依赖目标的公开路径与发布状态。
+
 	DepKindPageTarget         = "page_target"
 	DepKindPresentationTarget = "presentation_target"
-	// DepKindSiteSetting 站点/工程设置变化。
+
 	DepKindSiteSetting = "site_setting"
-	// DepKindI18N 界面词条或内容译文变化（构建期取词进产物字节）。
+
 	DepKindI18N = "i18n"
-	// DepKindRuntime 非构建依赖（仅运行时 Fragment 缓存键，不触发重建）。
-	//
-	// **决策：保留常量，不加构造函数**（FIX-22 复核结论）。
-	// 理由：它的语义是「不参与重建的运行时缓存键」，而运行时 Fragment 的缓存键当前由
-	// rfcache 各自拼（带版本号），不经过本文件的 DepKey；删掉常量只会让「哪些 kind 是
-	// 构建依赖」这件事少一档显式记录，不会消除任何重复实现。
-	// 反过来，给它补一个构造函数才是引入第二份真源（一个谁都不用的键构造）。
-	// 若将来运行时缓存也走 DepKey，先删这里的常量、再加唯一构造函数。
+
 	DepKindRuntime = "runtime"
 )
 
-// DepKey 依赖源标识（kind + key）。key 的构造规则见 AGENTS.md §8.1 表。
 type DepKey struct {
 	Kind string
 	Key  string
 }
 
-// DirectContentKey 单个内容实体依赖键，如 product:100。
 func DirectContentKey(entityType, entityID string) DepKey {
 	return DepKey{Kind: DepKindDirectContent, Key: entityType + ":" + entityID}
 }
 
-// ContentCollectionKey 内容集合依赖键，如 collection:content:product。
-//
-// 语义：该类型实体的**成员集合**变化（新增/删除/排序）会让所有渲染该集合的
-// 产物失效——即使旧产物里还没有新实体（AGENTS.md §8.2 典型 fan-out）。
 func ContentCollectionKey(entityType string) DepKey {
 	return DepKey{Kind: DepKindContentCollection, Key: "collection:content:" + entityType}
 }
 
-// ContentTemplateKey 内容模板依赖键，如 content_template:{templateID}。
-//
-// 语义：模板产生新版本（结构改动）会让所有引用它的产物失效 —— 自动发布实例
-// （presentation_instances.template_id）与把该模板绑成站点结构（页眉 / 页脚）的页面。
-// 键构造集中在这里，别在各模块里拼字符串（拼错只会表现为"改了模板站点不更新"）。
 func ContentTemplateKey(templateID string) DepKey {
 	return DepKey{Kind: DepKindContentTemplate, Key: "content_template:" + templateID}
 }
 
-// BlockKey 全局块依赖键，如 block:{blockID}。
 func BlockKey(blockID string) DepKey {
 	return DepKey{Kind: DepKindBlock, Key: "block:" + blockID}
 }
 
-// MenuKey 公开站点导航依赖键，如 menu:{projectID}:{kind}（kind = header / footer）。
-//
-// 为什么键里带工程 ID：导航是**工程级**资源（navigations.project_id），位置名却只有
-// header/footer 两个。反查是逐工程各一次 (kind,key) 匹配（RLS 的 FORCE 策略要求
-// UPDATE 落在具体工程作用域内），键里不带工程 ID 时每个工程都会命中同一个 key ——
-// 「A 工程改页眉导航」会把 B 工程里绑了 header 的页面全部标 stale。
-// key 由 page 与 presentation 两条构建路径用同一个构造函数产出，两侧必须一致。
 func MenuKey(projectID, kind string) DepKey {
 	return DepKey{Kind: DepKindMenu, Key: "menu:" + projectID + ":" + kind}
 }
 
-// SiteSettingKey 站点/工程设置依赖键，如 site_setting:{projectID}:{key}。
-//
-// **当前没有发射点**（FIX-22 的结论）：站点设置的读取方（builder 的 site_scripts /
-// document.jet / head meta / 404 页）都在构建期直接读工程设置，没有任何一处登记
-// 「我依赖了 site_setting:{project}:headScripts」—— 于是 SaveSiteSettings 无法按键精确反查，
-// 只能用站点级 stale 网（见 project 模块 markPagesStaleForSiteSettingsChange 的注释）。
-//
-// 为什么仍把构造函数放在这里：**它是消除重复实现的一半**（FIX-22 的核心是「一次收口」）——
-// 登记侧（构建期）与反查侧（保存侧）必须用同一个构造函数产出同一个键，否则两侧拼串
-// 一旦不一致，反查恒 0 行且**不报错**（表现是「标了 stale 但没重建」）。
-// 接线清单：构建期在 page / presentation 两条路径登记本键（与 page_dependency.go /
-// presentation_render.go 同形），保存侧改为按变化的键调 MarkStaleByDependency。
-// 该接线的落点在 page / presentation 的构建路径里，不在本批写作用域内（见报告）。
 func SiteSettingKey(projectID, key string) DepKey {
 	return DepKey{Kind: DepKindSiteSetting, Key: "site_setting:" + projectID + ":" + key}
 }
 
-// NavigationKey 按具体菜单项引用的依赖键，如 navigation:{itemID}。
-//
-// 语义：core.nav 绑定了某条菜单项作为菜单根（Props.Navigation）时，该菜单项及其子树的
-// 任何变化（改标题/换来源/换链、增删子项、排序）都会改变产物字节，必须让引用它的
-// 页面与实例失效。键用菜单项 UUID：它全局唯一，跨工程不会误命中（与位置键的情形相反）。
-//
-// 为什么不能只靠 MenuKey：按位置引用登记的是 menu:{project}:{kind}，而按项引用时
-// 位置可能压根没被消费（例如页面只引用了「产品」这一支），位置键既不会命中、也覆盖不到。
 func NavigationKey(navigationID string) DepKey {
 	return DepKey{Kind: DepKindNavigation, Key: "navigation:" + navigationID}
 }
 
-// DependencyTarget 依赖失效目标：一个可被依赖源变更标记的发布来源
-// （手工 Page / PresentationInstance 各自实现）。
-//
-// 来源类型（page / presentation）由注册方显式给出，不要求实现方额外暴露
-// SourceType()——发布来源模块的契约只需表达「按依赖精确标记」这一件事。
 type DependencyTarget interface {
-	// MarkStaleByDependency 按 (kind,key) 精确标记受影响产物为 stale，
-	// 返回受影响的来源 ID（页面 ID / 实例 ID）。实现必须只命中「当前活跃或
-	// 暂存产物确实声明了该依赖」的来源，禁止退化为全站标记。
 	MarkStaleByDependency(ctx context.Context, kind, key string) ([]string, error)
 }
 
-// targetEntry 已注册目标（来源类型 + 实现）。
 type targetEntry struct {
 	sourceType string
 	target     DependencyTarget
 }
 
-// StaleRebuilder 自动重建端口：把被标记的来源按各自策略重建。
-//
-// 是否自动发布由实现决定（AGENTS.md §8.3：自动重建默认只产生
-// staged Artifact；是否 publish 由内容类型的显式发布策略决定）。
 type StaleRebuilder interface {
 	RebuildStale(ctx context.Context, ids []string) error
 }
 
-// Fanout 依赖扇出编排：把依赖源变更分发给所有已注册目标，并可选触发自动重建。
-//
-// 线程安全：注册在装配期完成，失效调用可并发（内容 API 多请求并发）。
 type Fanout struct {
 	mu          sync.RWMutex
 	targets     []targetEntry
 	rebuilders  map[string]StaleRebuilder
-	syncRebuild bool // 测试专用：内联重建，避免 go func 与断言竞态
+	syncRebuild bool
 }
 
-// NewFanout 构造空扇出编排。
 func NewFanout() *Fanout {
 	return &Fanout{rebuilders: map[string]StaleRebuilder{}}
 }
 
-// Register 注册一个依赖失效目标（sourceType 为 page / presentation）。
 func (f *Fanout) Register(sourceType string, t DependencyTarget) {
 	if f == nil || t == nil || sourceType == "" {
 		return
@@ -186,13 +99,6 @@ func (f *Fanout) Register(sourceType string, t DependencyTarget) {
 	f.targets = append(f.targets, targetEntry{sourceType: sourceType, target: t})
 }
 
-// RegisteredSourceTypes 返回已注册的失效来源类型（按注册顺序）。
-//
-// 为什么需要它：**漏注册一个发布来源不会报错**。该来源既不参与失效标记、也不参与
-// 自动重建，表现是「内容更新了，但那一类页面永远停在旧版本」，日志里什么都没有 ——
-// 审计 AR2-001 的 presentation 就是这样漏掉的（它的 MarkStaleByDependency 与
-// RebuildStale 都写好了，只是没人把它注册进来）。装配期必须能断言「我期望的来源都在」，
-// 否则连「少接了一个」这件事本身都无从发现。
 func (f *Fanout) RegisteredSourceTypes() []string {
 	if f == nil {
 		return nil
@@ -206,7 +112,6 @@ func (f *Fanout) RegisteredSourceTypes() []string {
 	return out
 }
 
-// SetSyncRebuild 测试专用：为 true 时 RebuildStale 在当前 goroutine 执行（默认异步）。
 func (f *Fanout) SetSyncRebuild(v bool) {
 	if f == nil {
 		return
@@ -216,11 +121,6 @@ func (f *Fanout) SetSyncRebuild(v bool) {
 	f.syncRebuild = v
 }
 
-// SetRebuilder 为某来源类型绑定自动重建实现（未绑定时只标记不重建）。
-//
-// 注意 r 为 nil 时**静默返回**（审计 CQ-019 点名的静默降级窗口）：调用方以为接上了，
-// 实际表现是「内容变更照常标记 stale，但永远不自动重建」—— 线上内容停在旧版本
-// 且没有任何报错。装配方（routes.go）因此先断言提供方实现了 StaleRebuilder 再调用。
 func (f *Fanout) SetRebuilder(sourceType string, r StaleRebuilder) {
 	if f == nil || sourceType == "" || r == nil {
 		return
@@ -233,18 +133,10 @@ func (f *Fanout) SetRebuilder(sourceType string, r StaleRebuilder) {
 	f.rebuilders[sourceType] = r
 }
 
-// Invalidate 单个依赖源键失效（content 等来源模块的出端口，见 content/contract）。
-//
-// 永不返回错误：依赖扇出是内容写入的**后置副作用**，失败只记日志，
-// 不能因为「标记/重建失败」让已经成功的内容保存返回失败。
 func (f *Fanout) Invalidate(ctx context.Context, kind, key string) {
 	f.InvalidateKeys(ctx, DepKey{Kind: kind, Key: key})
 }
 
-// InvalidateKeys 批量失效并返回受影响来源 ID（sourceType → 去重排序后的 ID）。
-//
-// 顺序：先全部标记，再按来源类型触发一次自动重建（同一来源的多个依赖键
-// 合并为一次重建，避免同一页面被重复构建）。
 func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string][]string {
 	affected := map[string][]string{}
 	if f == nil {
@@ -262,7 +154,7 @@ func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string]
 	seen := map[string]map[string]bool{}
 	for _, key := range keys {
 		if key.Kind == "" || key.Key == "" || key.Kind == DepKindRuntime {
-			continue // runtime 依赖不触发重建（AGENTS.md §8.2）
+			continue
 		}
 		for _, entry := range targets {
 			ids, err := entry.target.MarkStaleByDependency(ctx, key.Kind, key.Key)
@@ -307,7 +199,7 @@ func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string]
 		if syncRebuild {
 			runRebuild()
 		} else {
-			// 异步重建：内容写入不应被整站 Build+Publish 拖住 HTTP 请求。
+
 			go runRebuild()
 		}
 	}

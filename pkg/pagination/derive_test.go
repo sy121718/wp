@@ -1,17 +1,10 @@
 package pagination
 
-// derive_test.go — 派生值的口径。
-//
-// 与 window_test.go 同一手法：把**迁移前的后台实现**逐字拷成 oracle，逐组合对照。
-// 派生值是「显示形状」，错一位用户看到的就是「共 120 条，第 21-40 条」里的数字对不上 ——
-// 那种错误不会报错、不会 500，只会让人算不清自己在看第几行。
-
 import (
 	"strings"
 	"testing"
 )
 
-// legacyDerive 迁移前 internal/templates/pager.go 的 PagerOf 原文。
 func legacyDerive(p Page) Derived {
 	limit := p.Limit
 	if limit < 1 {
@@ -43,10 +36,6 @@ func legacyDerive(p Page) Derived {
 	return d
 }
 
-// TestDeriveMatchesLegacyEveryCombination 扫 total × page × limit 的组合逐项对照。
-//
-// 含负值与 0：这些是「URL 被手改」与「查询没返回总数」的真实输入，
-// 旧实现靠夹紧处理，新代码必须同口径。
 func TestDeriveMatchesLegacyEveryCombination(t *testing.T) {
 	totals := []int64{-5, 0, 1, 19, 20, 21, 40, 100, 120, 999}
 	pages := []int{-3, 0, 1, 2, 3, 5, 6, 7, 50, 999}
@@ -65,7 +54,6 @@ func TestDeriveMatchesLegacyEveryCombination(t *testing.T) {
 	}
 }
 
-// TestDeriveClampsAndDefaults 单项断言（读起来比对照表直观）：夹紧与默认值。
 func TestDeriveClampsAndDefaults(t *testing.T) {
 	d := Derive(Page{Total: 120, Page: 99, Limit: 20})
 	if d.Page != 6 || d.Pages != 6 {
@@ -94,7 +82,6 @@ func TestDeriveClampsAndDefaults(t *testing.T) {
 	}
 }
 
-// TestDerivedItemsSlotShape 槽位：省略号无链接、当前页无链接、其余有链接。
 func TestDerivedItemsSlotShape(t *testing.T) {
 	d := Derive(Page{Total: 120, Page: 3, Limit: 20, Base: "/admin/x"})
 	items := d.Items()
@@ -119,9 +106,6 @@ func TestDerivedItemsSlotShape(t *testing.T) {
 	}
 }
 
-// TestDerivedItemsURLOrder 链接里 page 在前、limit 在后（按调用顺序，不是字典序）。
-//
-// 这是既有语义：迁移前的 link() 也是无条件按序追加，改顺序会改页面字节。
 func TestDerivedItemsURLOrder(t *testing.T) {
 	d := Derive(Page{Total: 120, Page: 3, Limit: 20, Base: "/admin/x?keyword=a"})
 	for _, it := range d.Items() {
@@ -138,7 +122,7 @@ func TestDerivedItemsURLOrder(t *testing.T) {
 			t.Fatalf("Go 侧不得预转义（渲染时才转一次），实际 %q", it.URL)
 		}
 	}
-	// DropLimit：链接不带 limit。
+
 	drop := Derive(Page{Total: 120, Page: 3, Limit: 20, Base: "/admin/x", DropLimit: true})
 	for _, it := range drop.Items() {
 		if it.Gap || it.Page == drop.Page {
@@ -150,7 +134,6 @@ func TestDerivedItemsURLOrder(t *testing.T) {
 	}
 }
 
-// TestDerivedPrevNextURL 上/下一页：可用时给链接，不可用时给空串。
 func TestDerivedPrevNextURL(t *testing.T) {
 	mid := Derive(Page{Total: 120, Page: 3, Limit: 20, Base: "/x"})
 	if mid.PrevURL() == "" || mid.NextURL() == "" {
@@ -171,7 +154,6 @@ func TestDerivedPrevNextURL(t *testing.T) {
 	}
 }
 
-// TestDerivedWithBase 换基址后所有链接跟着换（渲染层从请求串推基址时用）。
 func TestDerivedWithBase(t *testing.T) {
 	d := Derive(Page{Total: 120, Page: 3, Limit: 20}).WithBase("/admin/y?k=1")
 	for _, it := range d.Items() {
@@ -187,7 +169,6 @@ func TestDerivedWithBase(t *testing.T) {
 	}
 }
 
-// TestDerivedZeroValueIsInert 零值不该有任何可渲染行为（模板据此不渲染分页条）。
 func TestDerivedZeroValueIsInert(t *testing.T) {
 	var zero Derived
 	if zero.HasPagination() || zero.HasPrev() || zero.HasNext() {
@@ -198,13 +179,8 @@ func TestDerivedZeroValueIsInert(t *testing.T) {
 	}
 }
 
-// TestDerivedIsUsableWithoutRequestContext 本包不依赖请求上下文 —— 这是它能在
-// 可视化构建器（不经过 gin）复用的前提。
-//
-// 这条看似废话，但它挡住的是「顺手往这里加个 gin.Context 参数」：
-// 一旦加了，internal/builder 就再也用不了它，而后台侧不会有任何测试变红。
 func TestDerivedIsUsableWithoutRequestContext(t *testing.T) {
-	// 纯函数式调用：只要三件事实就能算出完整渲染数据。
+
 	items := Derive(Page{Total: 100, Page: 2, Limit: 20, Base: "/p"}).Items()
 	if len(items) == 0 {
 		t.Fatalf("纯事实输入应能算出槽位")

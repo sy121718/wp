@@ -1,16 +1,5 @@
 package feature
 
-// mail_contact_crud_test.go — 联系人 CRUD + 标签管理的接口链路（task-4 / task-18）。
-//
-// 从 handler 入口打进去，断言三件事：
-//   · **JSON 契约**（task-18 起）：写动作由浏览器直调 POST /api/mail/contact/{save,delete,tag}，
-//     回 {code,message,data}；成功 / 失败都在响应体里，不再有 PRG 提示页（页面 POST 已下线）；
-//   · 落库结果（邮箱归一化、标签精确匹配、状态终态）；
-//   · 对外文案受控 —— 重复邮箱这种可预期的失败不能把 23505 原文摆到运营面前。
-//
-// 另一条合规红线单独钉住：**删联系人绝不动 mail_suppressions**。
-// 顺手删掉抑制记录，下次导入就会把退订者复活（service.DeleteContacts 的注释）。
-
 import (
 	"bytes"
 	"context"
@@ -24,36 +13,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 )
 
-// mailCrudLeakTokens 回执里不该出现的东西：驱动名、SQL 状态码、表名、语句片段。
 var mailCrudLeakTokens = []string{
 	"23505", "duplicate key", "pgx", "mail_contacts", "mail_suppressions", "ERROR:", "SELECT ",
 }
 
 const mailCrudUserID = int64(987654311)
 
-// newMailContactCrudRouter 只挂联系人这一页 + 三条 JSON 写端点（与页面注册同源）。
-//
-// 写完之后的通道全部是 JSON：页面上的表单/按钮带 data-write-api，浏览器直接打这三条端点。
-// 页面 POST（/admin/mail/contact/{save,delete}、/admin/mail/contacts/bulk-{delete,tag}）已下线，
-// 所以这里挂不上它们 —— 想挂也没有 handler 了。
-//
-// 状态写是**两条通道都在**的例外：JSON 端点 /api/mail/contact/status 与页面 POST
-// /admin/mail/contact/status（抽屉表单仍走它，见 mail_page.go 的 MailContactStatus），
-// 两条都挂上，才能在同一个用例里比对同一件事的两种回执。
 func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[string]bool) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("user_id", mailCrudUserID) // builtin.GetUserID 的入口：操作人取自会话，不取自请求体
+		c.Set("user_id", mailCrudUserID)
 		c.Next()
 		for _, e := range c.Errors {
 			t.Logf("gin 渲染错误: %v", e.Err)
@@ -70,8 +49,7 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	page := mailhttp.NewMailPageHandle(svc)
 	router.GET("/admin/mail/contacts",
 		adminui.PageSlot(mailhttp.ContactsPageTemplate), page.MailContactsPage)
-	// JSON 写端点住在 *Handle 上（页面 handler 在 mailPageHandle 上，两者不是一个类型）——
-	// 与生产装配同形：页面在 /admin 组，写在 /api/mail 组。
+
 	api := router.Group("/api/mail")
 	write := mailhttp.NewHandle(svc)
 	api.POST("/contact/save", write.ContactSave)
@@ -79,13 +57,11 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	api.POST("/contact/tag", write.ContactTag)
 	api.POST("/contact/status", write.ContactStatus)
 	router.POST("/admin/mail/contact/status", page.MailContactStatus)
-	// 批量改状态同样没有 JSON 端点（它要同步写抑制名单，语义与单条抽屉一致），
-	// 页面表单调 /admin/mail/contacts/bulk-status —— 第三条通道挂上，才不会只有单条被测。
+
 	router.POST("/admin/mail/contacts/bulk-status", page.MailContactsBulkStatus)
 	return router
 }
 
-// mailCrudPagePost 发一个页面表单 POST（提示页通道：真模板 + 真 handler）。
 func mailCrudPagePost(t *testing.T, router *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
@@ -95,10 +71,6 @@ func mailCrudPagePost(t *testing.T, router *gin.Engine, path string, form url.Va
 	return rec
 }
 
-// mailCrudWrite 发一个 JSON 写请求，返回状态码与解析后的响应体。
-//
-// 顺带守一条：**回执里不得出现内部细节**（驱动名 / SQL 状态码 / 表名 / 语句片段）——
-// 这条以前是靠页面提示页的正文断言的，现在断言 JSON 正文（含 message）。
 func mailCrudWrite(t *testing.T, router *gin.Engine, path string, payload interface{}) (int, map[string]interface{}) {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -125,7 +97,6 @@ func mailCrudWrite(t *testing.T, router *gin.Engine, path string, payload interf
 	return rec.Code, body
 }
 
-// mailCrudGet 取页面（HTML 渲染路径：真模板 + 真 handler）。
 func mailCrudGet(t *testing.T, router *gin.Engine, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -135,7 +106,6 @@ func mailCrudGet(t *testing.T, router *gin.Engine, path string) *httptest.Respon
 	return rec
 }
 
-// mailCrudData 取成功回执的 data 对象。
 func mailCrudData(t *testing.T, body map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	data, ok := body["data"].(map[string]interface{})
@@ -145,8 +115,6 @@ func mailCrudData(t *testing.T, body map[string]interface{}) map[string]interfac
 	return data
 }
 
-// mailCrudMsg 取回执文案（i18n 未初始化时回的是 key，有词条时是译文 —— 判据用子串，
-// 两种环境下都成立，见 mailCrudFacingContains）。
 func mailCrudMsg(t *testing.T, body map[string]interface{}) string {
 	t.Helper()
 	msg, _ := body["message"].(string)
@@ -163,7 +131,6 @@ func mailCrudFacingContains(t *testing.T, text, label string, want ...string) {
 	t.Fatalf("%s：回执 %q 不含任何预期线索 %v", label, text, want)
 }
 
-// TestMailContactCrudSaveCreatesThenUpdates 新建（ID=0）与编辑（ID>0）走同一端点。
 func TestMailContactCrudSaveCreatesThenUpdates(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -202,7 +169,6 @@ func TestMailContactCrudSaveCreatesThenUpdates(t *testing.T) {
 		t.Fatalf("标签应切成 [vip 华南]，实际 %v", []string(row.Tags))
 	}
 
-	// 编辑：改邮箱 + 改标签 + 清空 name 以外的字段保持原值。
 	code, body = mailCrudWrite(t, router, "/api/mail/contact/save", map[string]interface{}{
 		"id": row.ID, "email": "qa.renamed@example.invalid",
 		"name": "改名", "tags": "vip", "status": "", "consent_source": "",
@@ -231,7 +197,6 @@ func TestMailContactCrudSaveCreatesThenUpdates(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudSaveDuplicateEmailIsReadable 重复邮箱是可预期失败：回可读文案、不落库、不 500。
 func TestMailContactCrudSaveDuplicateEmailIsReadable(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -261,9 +226,6 @@ func TestMailContactCrudSaveDuplicateEmailIsReadable(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudEmailChangeRespectsSuppression 改邮箱撞上抑制名单 → 落到名单原因对应的终态。
-//
-// 不搬抑制记录是刻意的（搬了等于让退订者换个地址继续收），所以旧地址的记录原样保留。
 func TestMailContactCrudEmailChangeRespectsSuppression(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -310,7 +272,6 @@ func TestMailContactCrudEmailChangeRespectsSuppression(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudDeleteKeepsSuppression 删联系人只删联系人行。
 func TestMailContactCrudDeleteKeepsSuppression(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -348,7 +309,6 @@ func TestMailContactCrudDeleteKeepsSuppression(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudDeleteWithoutIDIsReadable 单条删除缺 id / id=0 时给可读回执。
 func TestMailContactCrudDeleteWithoutIDIsReadable(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -356,8 +316,6 @@ func TestMailContactCrudDeleteWithoutIDIsReadable(t *testing.T) {
 	}
 	router := newMailContactCrudRouter(t, f.svc, nil)
 
-	// id=0 与「一个形状都不给」都必须是受控 400：这两种请求以前会走页面 POST 的
-	// 「回 ?err= 的提示页」，现在它们连 handler 的业务分支都不进。
 	for _, payload := range []map[string]interface{}{{"id": 0}, {}} {
 		code, body := mailCrudWrite(t, router, "/api/mail/contact/delete", payload)
 		if code != http.StatusBadRequest {
@@ -367,12 +325,6 @@ func TestMailContactCrudDeleteWithoutIDIsReadable(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess 单条删除一个不存在的 id：报「不存在」而不是成功。
-//
-// 真库才答得出来的一问：service 返回的是 RowsAffected，0 行意味着这一条本来就不在。
-// 若忽略它，回执就会说「删除成功」而实际什么都没删（运营据此以为列表已经干净了，
-// 而那一行只是别人先删掉了）。与批量档是同一个事实口径，差别只在载体：
-// 批量是逐条 skipped + 原因，单条没有「部分成功」这个 channel，所以整请求失败。
 func TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -382,7 +334,6 @@ func TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	m := mailmodel.NewMailModel(f.db)
 	router := newMailContactCrudRouter(t, f.svc, nil)
 
-	// 与批量用例同款：本包其它用例会往同一张表塞上千行，偏移量猜不得。
 	var maxID uint64
 	if err := f.db.Model(&mailmodel.MailContactEntity{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
 		t.Fatal(err)
@@ -394,7 +345,6 @@ func TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	}
 	mailCrudFacingContains(t, mailCrudMsg(t, body), "单条删除不存在", "contactNotFound", "联系人不存在")
 
-	// 对照面：同一个端点删真实存在的行仍 200，且行确实从库里消失。
 	if err := f.seedContact(ctx, "qa.single.delete@example.invalid", "单删", mailmodel.ContactStatusPending, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -411,17 +361,6 @@ func TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess 状态写对不存在的 id 必须报失败：
-// JSON 400（ErrContactNotFound）+ 页面 err 档（no-store、无 Location、不自动跳）+ 库里没有任何副作用。
-//
-// 为什么单列一条（2026-10-08）：路由层的回跳用例里那句注释一度写成「UpdateContactStatus 不查存在性，
-// 0 行也回成功」，与 service 实际行为相反 —— service 先 GetContact
-// （internal/module/mail/service/mail_contact.go:81-84），未命中回 ErrContactNotFound。
-// 错注释能存活是因为**状态写这条路径上「不存在的 id」没有任何测试**（删除 / 打标签两条路径有，
-// 见上面两条 DeleteMissingRow 用例）。这条把行为钉住，与同一批的注释修正配对。
-//
-// 两条通道都验：页面 POST 与 JSON 端点走的是同一个 service，但回执形态不同 —— 只验一条会漏掉
-// 「其中一条把失败吞成成功」这种偏差（历史上页面通道与 JSON 通道分头演进过）。
 func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -431,7 +370,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	m := mailmodel.NewMailModel(f.db)
 	router := newMailContactCrudRouter(t, f.svc, mailCrudPagePerms())
 
-	// 与批量用例同款：本包其它用例会往同一张表塞上千行，偏移量猜不得。
 	var maxID uint64
 	if err := f.db.Model(&mailmodel.MailContactEntity{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
 		t.Fatal(err)
@@ -447,7 +385,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	}
 	contactsBefore, supBefore := countOf("mail_contacts"), countOf("mail_suppressions")
 
-	// ① JSON 通道：400 + 可读文案（把「联系人不存在」翻不成也要能认出 key）。
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/status", map[string]interface{}{
 		"id": missing, "status": mailmodel.ContactStatusSubscribed,
 	})
@@ -456,7 +393,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	}
 	mailCrudFacingContains(t, mailCrudMsg(t, body), "状态写不存在", "contactNotFound", "联系人不存在")
 
-	// ② 页面通道：200 整页提示，但必须是 err 档、不自动跳、无 Location（与成功档的可观察差别）。
 	rec := mailCrudPagePost(t, router, "/admin/mail/contact/status", url.Values{
 		"id": {strconv.FormatUint(missing, 10)}, "status": {mailmodel.ContactStatusSubscribed},
 	})
@@ -477,8 +413,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 		t.Fatal("err 档不该自动跳走（运营要先看清原因再走）")
 	}
 
-	// ②′ 批量通道（页面 POST /admin/mail/contacts/bulk-status）：整批只有这个不存在的 id ——
-	// 它必须计成「跳过」而不是「更新」，整体走 err 档（只报成功数会让「选了 N 个」看起来全做完了）。
 	recBulk := mailCrudPagePost(t, router, "/admin/mail/contacts/bulk-status", url.Values{
 		"ids": {strconv.FormatUint(missing, 10)}, "status": {mailmodel.ContactStatusUnsubscribed},
 	})
@@ -493,7 +427,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 		t.Fatal("同一页面上不该同时出现成功档（说明计数把不存在的 id 算成了已更新）")
 	}
 
-	// ③ 数据不变：两条通道都没写库（状态列 / 抑制名单 / 凭空多行三样都查）。
 	if got := countOf("mail_contacts"); got != contactsBefore {
 		t.Fatalf("不存在的 id 不该动联系人表：%d → %d", contactsBefore, got)
 	}
@@ -508,8 +441,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 		t.Fatalf("不存在的 id 不该凭空出现一行：id=%d 行数=%d", missing, rows)
 	}
 
-	// ④ 正例自检（判据不是空转）：真实存在的 id 走同样两条通道 —— JSON 200、页面 ok 档，
-	// 且退订那一步**真的写了抑制名单**（证明 ③ 的「计数不变」是「没写」而不是判据失灵）。
 	if err := f.seedContact(ctx, "qa.status.missing@example.invalid", "状态探针",
 		mailmodel.ContactStatusSubscribed, ""); err != nil {
 		t.Fatal(err)
@@ -542,21 +473,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudTemplateShapedPayloads 页面上真实控件发出来的身体，端点必须收下。
-//
-// 为什么单独立一条（2026-10-08 的 P1）：模板里的隐藏 id 经 json_write 发出来是**字符串** "7"，
-// 而本端点的严格形状拒绝字符串数字 → 页面上的新增 / 编辑 / 单删全部 400。Node 通用用例当时
-// 全绿也发现不了它，因为那些用例的控件属性是人手写的。修法在模板侧：写表单显式声明
-// `name="id"`（值原样以字符串发出；服务端 DTO 按 int 绑定，formdata 的 "12" 直接绑得进）。
-//
-// 这条测试钉的是**契约两端**，两条一起才闭合：
-//
-//	· 前三条 = 真模板会发出来的身体（数字 id + 字符串字段）→ 必须 200 且真的落库；
-//	· 第四条 = 修复前那种身体（字符串 id）→ 必须 400：谁把模板上的声明删掉，这里立刻红。
-//
-// 模板侧「真实控件 → payload」由 internal/templates/static/js/ui/json_write.test.cjs 的
-// 「真模板 → payload」用例覆盖（它读的就是同一个 internal/templates/admin/mail/mail_contacts.html），
-// 两边用同一个形状。
 func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -566,7 +482,6 @@ func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 	m := mailmodel.NewMailModel(f.db)
 	router := newMailContactCrudRouter(t, f.svc, nil)
 
-	// ① 新建抽屉：id=0（数字）+ 表单具名字段（字符串）
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/save", map[string]interface{}{
 		"id": 0, "email": "qa.tplshape@example.invalid", "name": "模板形状",
 		"tags": "vip", "status": string(mailmodel.ContactStatusPending), "consent_source": "",
@@ -579,7 +494,6 @@ func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 		t.Fatalf("新建后查不到：%v", err)
 	}
 
-	// ② 编辑抽屉：id>0（数字）+ 同样的具名字段
 	code, body = mailCrudWrite(t, router, "/api/mail/contact/save", map[string]interface{}{
 		"id": row.ID, "email": "qa.tplshape@example.invalid", "name": "模板形状改名",
 		"tags": "vip, 华南", "status": "", "consent_source": "",
@@ -595,7 +509,6 @@ func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 		t.Fatalf("编辑没落到同一行或姓名未更新：id=%d name=%v", updated.ID, updated.Name)
 	}
 
-	// ③ 行内单删（single 档）：身体只有 {id: 数字}
 	code, body = mailCrudWrite(t, router, "/api/mail/contact/delete", map[string]interface{}{"id": row.ID})
 	if code != http.StatusOK {
 		t.Fatalf("模板形状的单删应 200（id 为数字），实际 %d（%#v）", code, body)
@@ -604,7 +517,6 @@ func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 		t.Fatal("单删后联系人应已删除")
 	}
 
-	// ④ 反向：修复前那种身体（字符串 id）必须被严格形状拒掉 —— 这是模板声明消失时的报警器。
 	if code, body := mailCrudWrite(t, router, "/api/mail/contact/save", map[string]interface{}{
 		"id": 0, "email": "qa.tplshape.keep@example.invalid", "name": "对照组",
 		"tags": "", "status": string(mailmodel.ContactStatusPending), "consent_source": "",
@@ -629,13 +541,12 @@ func TestMailContactCrudTemplateShapedPayloads(t *testing.T) {
 		}
 		mailCrudFacingContains(t, mailCrudMsg(t, body), tc.name, "invalidParam", "参数")
 	}
-	// 被拒的两次都没动数据：对照联系人还在。
+
 	if _, err := m.GetContactByEmail(ctx, "qa.tplshape.keep@example.invalid"); err != nil {
 		t.Fatalf("被拒的请求不该动数据，但对照联系人没了：%v", err)
 	}
 }
 
-// TestMailContactCrudBulkDelete 批量删除：不存在的 id / 非法 id 计入跳过，其余照删。
 func TestMailContactCrudBulkDelete(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -662,19 +573,17 @@ func TestMailContactCrudBulkDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 「不存在的 id」必须构造出来而不是猜：本包其它用例（导入批量）会往同一张表里塞上千行，
-	// keep.ID+1000 这种偏移量很可能真的存在（实测 1003 就存在）—— 那样断言会变成假绿/假红。
 	var maxID uint64
 	if err := f.db.Model(&mailmodel.MailContactEntity{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
 		t.Fatal(err)
 	}
-	missing := strconv.FormatUint(maxID+999999, 10) // 已不存在的 id：应计入跳过
+	missing := strconv.FormatUint(maxID+999999, 10)
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/delete", map[string]interface{}{
 		"ids": []string{
 			strconv.FormatUint(drop1.ID, 10),
 			strconv.FormatUint(drop2.ID, 10),
 			missing,
-			"qa-not-a-number", // 非法 id：也应计入跳过（形状先行，不需要库）
+			"qa-not-a-number",
 		},
 	})
 	if code != http.StatusOK {
@@ -702,7 +611,6 @@ func TestMailContactCrudBulkDelete(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudBulkTag 批量打标签：加减同一次请求，精确匹配（大小写敏感）。
 func TestMailContactCrudBulkTag(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -753,13 +661,12 @@ func TestMailContactCrudBulkTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// "VIP" 与 "vip" 不是同一个标签：精确匹配的口径下不能被去掉。
+
 	if len(got2.Tags) != 3 || got2.Tags[0] != "VIP" || got2.Tags[1] != "VIP2" || got2.Tags[2] != "华南" {
 		t.Fatalf("大小写不同的标签不该被去掉：%v", []string(got2.Tags))
 	}
 }
 
-// TestMailContactCrudBulkTagEmptyDeltaIsReadable 加与减都空 → 可读拒绝，不动库。
 func TestMailContactCrudBulkTagEmptyDeltaIsReadable(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -793,7 +700,6 @@ func TestMailContactCrudBulkTagEmptyDeltaIsReadable(t *testing.T) {
 	}
 }
 
-// mailCrudPagePerms 页面渲染用的权限集合（与 marketingPagePerms 同族，含本批三条新权限）。
 func mailCrudPagePerms() map[string]bool {
 	return map[string]bool{
 		"mail:contact_list":   true,
@@ -806,10 +712,6 @@ func mailCrudPagePerms() map[string]bool {
 	}
 }
 
-// TestMailContactCrudPageRendersEntryPoints 有权限时四个入口（新建 / 编辑 / 删除 / 批量打标签）都在页面上。
-//
-// task-18 起页面的写入口换成了 JSON 声明（data-write-api 落到**按钮**上，见 mail_contacts.html
-// 的批量条注释），所以这里断言的是：三个动作各自的端点声明都在、且旧页面 POST 通道真的消失。
 func TestMailContactCrudPageRendersEntryPoints(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -827,29 +729,29 @@ func TestMailContactCrudPageRendersEntryPoints(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`data-drawer-open="#tpl-contact-save"`,      // 页头「新建联系人」
-		`id="tpl-contact-save"`,                     // 新建抽屉本体
-		`id="tpl-contact-save-`,                     // 行内编辑抽屉
-		`data-write-url="/api/mail/contact/save"`,   // 新建 / 编辑抽屉：真端点
-		`data-write-url="/api/mail/contact/delete"`, // 行内删除 + 批量删除
-		`data-write="single"`,                  // 行内删除的形状
-		`data-write-url="/api/mail/contact/tag"`,    // 批量打标签
-		`data-write-outcome="update"`,               // 打标签不是破坏动作：不删行
-		`data-write-extra="add,remove"`,             // 标签参数按名带上
-		`data-write-status`,                         // 就地结果区
-		`/admin/mail/contacts/bulk-status`,          // 原有批量改状态仍在（它没有 JSON 端点）
-		`id="mk-tag-options"`,                       // 标签候选 datalist
+		`data-drawer-open="#tpl-contact-save"`,
+		`id="tpl-contact-save"`,
+		`id="tpl-contact-save-`,
+		`data-write-url="/api/mail/contact/save"`,
+		`data-write-url="/api/mail/contact/delete"`,
+		`data-write="single"`,
+		`data-write-url="/api/mail/contact/tag"`,
+		`data-write-outcome="update"`,
+		`data-write-extra="add,remove"`,
+		`data-write-status`,
+		`/admin/mail/contacts/bulk-status`,
+		`id="mk-tag-options"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q；正文长度 %d，前 600 字：\n%s", want, len(body), firstN(body, 600))
 		}
 	}
 	for _, gone := range []string{
-		"action=\"/admin/mail/contact/save\"",             // 页面 POST 通道：已下线
-		"action=\"/admin/mail/contact/delete\"",           // 同上
-		"formaction=\"/admin/mail/contacts/bulk-tag\"",    // 批量按钮不再走页面 POST
-		"formaction=\"/admin/mail/contacts/bulk-delete\"", // 同上
-		"hx-post", // 也不许换一条 HTMX 通道回来
+		"action=\"/admin/mail/contact/save\"",
+		"action=\"/admin/mail/contact/delete\"",
+		"formaction=\"/admin/mail/contacts/bulk-tag\"",
+		"formaction=\"/admin/mail/contacts/bulk-delete\"",
+		"hx-post",
 	} {
 		if strings.Contains(body, gone) {
 			t.Fatalf("页面仍有旧写通道 %q（本批的交付物就是把它删掉）", gone)
@@ -860,7 +762,6 @@ func TestMailContactCrudPageRendersEntryPoints(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudPageEmptyStateOffersBothEntries 空态要同时指出「新建」与「导入」两条路。
 func TestMailContactCrudPageEmptyStateOffersBothEntries(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -888,8 +789,6 @@ func TestMailContactCrudPageEmptyStateOffersBothEntries(t *testing.T) {
 	}
 }
 
-// buttonsOf 把「权限码集合」转成「按钮码集合」（按钮码 = 权限码的 slug 形式，见迁移 589）。
-// 测试直接给权限码更贴近业务语义；模板读的是按钮码，所以两条都注入。
 func buttonsOf(perms map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(perms))
 	for code := range perms {

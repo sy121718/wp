@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// Page handlers hand off data without reading or assembling the template panel.
 func TestProductPageHandlerDoesNotAssembleTemplatePanel(t *testing.T) {
 	for _, name := range []string{"product_subject_handle.go", "product_detail_template_handle.go"} {
 		fset := token.NewFileSet()

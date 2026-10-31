@@ -1,17 +1,5 @@
 package orderhttp
 
-// return_page_test.go — 退货页「状态标签 = 页面事实」的判据。
-//
-// 这一批把退货页的状态取词从 Go 闭包（shell.TranslateFor + 逐行调用）改成**事实层**：
-// Go 只给出「原始状态值 → 已解析的 (key, fallback)」，取词由 Jet 在渲染点用 tr 完成。
-// 于是有两条必须钉住的东西，而它们各自都有「看着绿其实没测到」的失败模式：
-//
-//  1. **事实必须逐字等于枚举真源**。若是页面自己抄一份中文表，改词条时页面上是旧说法、
-//     测试也照样绿 —— 所以断言里先取 orderenums 的返回值，再要求事实与它逐字相等。
-//  2. **Jet 必须真的按状态值索引到那张表**。只测 Go 侧构造出的 map，等于没验证模板：
-//     `returnLabels[r.Status]` 写错键（少了原始空白、或写成小写）在源码扫描里看不出来，
-//     症状是那一格变空白。所以下面用**真实 handler + 真实 Jet 渲染**跑出整页字节。
-
 import (
 	"context"
 	"net/http"
@@ -34,8 +22,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// returnLabelsService 只实现退货页真正调用的两个读方法（其余接口方法由嵌入的
-// nil 接口兜底，被调到即 panic —— 页面多读一次数据会在这里立刻暴露，而不是静默多查一遍库）。
 type returnLabelsService struct {
 	ordercontract.OrderService
 	list      *orderdto.ReturnListResp
@@ -45,8 +31,7 @@ type returnLabelsService struct {
 }
 
 func (s *returnLabelsService) ListReturns(_ context.Context, _ *orderdto.ReturnListReq) (*orderdto.ReturnListResp, error) {
-	// 真实的 service 永不返回 (nil, nil)：这里补一份空结果，免得用例漏给 list 时
-	// 在页面上炸出 nil 解引用（那是测试夹具失真，不是页面缺陷）。
+
 	if s.list == nil && s.listErr == nil {
 		return &orderdto.ReturnListResp{}, nil
 	}
@@ -57,11 +42,6 @@ func (s *returnLabelsService) GetReturn(_ context.Context, _ uint64) (*orderdto.
 	return s.detail, s.detailErr
 }
 
-// returnPageCapture 转交真实渲染器，同时把渲染错误抓回来。
-//
-// 为什么不能只断言响应体：整页渲染失败时 gin 会把它压成 500 + 一句归口短句，
-// 页面上看不出是哪个键 / 哪行模板坏了（生产里也只进结构化日志）。测试必须直接拿到
-// Render 的 error，否则「500」这个症状会一直被当成模板内容有问题来猜。
 type returnPageCapture struct {
 	delegate ginrender.HTMLRender
 	name     string
@@ -83,10 +63,6 @@ func (r *returnPageCapture) WriteContentType(w http.ResponseWriter) {
 	r.delegate.Instance(r.name, r.data).WriteContentType(w)
 }
 
-// adminTemplatesDir 定位 internal/templates（本文件在 internal/module/order/inbound/http/）。
-//
-// 用 runtime.Caller 回推而不是写死相对路径：go test 的 cwd 是包目录，写死的层数一旦
-// 因为文件挪目录而失配，报错会变成「模板找不到」这种看起来像环境问题的形状。
 func adminTemplatesDir(t *testing.T) string {
 	t.Helper()
 	_, self, _, ok := runtime.Caller(0)
@@ -100,13 +76,6 @@ func adminTemplatesDir(t *testing.T) string {
 	return dir
 }
 
-// renderReturnsPage 走真实的 ReturnsPage（含 adminui.Prepare 与整页 Jet 渲染），不接数据库。
-//
-// 渲染器用**磁盘**模板（dev 模式，根为 internal/templates）：整页外壳 admin/layout.html
-// 会 include../partials/ai_fab.html —— 那是**包目录顶层**的 partials/，
-// 而生产用的 embed loader 只登记了 admin/ 与 static/（见 templates/admin_embed.go 的
-// all:admin），于是 embed 模式下这句话取不到模板、整页 500。
-// 本批只搬状态标签，不去动那条既有差异；这里显式走磁盘，测的是模板字节本身。
 func renderReturnsPage(t *testing.T, query string, svc *returnLabelsService) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -127,7 +96,7 @@ func renderReturnsPage(t *testing.T, query string, svc *returnLabelsService) str
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// Jet 在某一行中断时 HTTP 仍是 200、后半截整块消失；这两种形状必须显式判掉。
+
 	if strings.Contains(body, "{{") {
 		t.Fatalf("输出残留模板语法字面量（渲染中途截断）")
 	}
@@ -145,7 +114,6 @@ func tailOf(s string, n int) string {
 	return trimmed[len(trimmed)-n:]
 }
 
-// returnStatusSampleDetail 一份详情：退货单与摘要订单的状态不同，用来证明两张事实表各自独立。
 func returnStatusSampleDetail(returnStatus, orderStatus string) *orderdto.ReturnDetailResp {
 	return &orderdto.ReturnDetailResp{
 		Return: &orderdto.ReturnResp{
@@ -159,7 +127,6 @@ func returnStatusSampleDetail(returnStatus, orderStatus string) *orderdto.Return
 	}
 }
 
-// TestReturnStatusFactsMirrorEnumsTruth 事实必须逐字来自枚举真源（不抄第二份中文表）。
 func TestReturnStatusFactsMirrorEnumsTruth(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -192,7 +159,6 @@ func TestReturnStatusFactsMirrorEnumsTruth(t *testing.T) {
 	}
 }
 
-// TestOrderStatusFactsMirrorEnumsTruth 摘要里的订单状态走另一份真源（订单状态枚举）。
 func TestOrderStatusFactsMirrorEnumsTruth(t *testing.T) {
 	for _, status := range []string{"pending", "paid", "shipped", "completed", "cancelled", "refunded", "", " \t ", "  shipped  ", " nope "} {
 		t.Run(status, func(t *testing.T) {
@@ -209,12 +175,9 @@ func TestOrderStatusFactsMirrorEnumsTruth(t *testing.T) {
 	}
 }
 
-// TestStatusPageFactsCollectEveryRenderedStatus 事实表要覆盖模板会索引的**每一个**值：
-// 状态取值白名单（含空串，用于筛选徽章）+ 列表每一行 + 详情退货单 / 摘要订单。
-// 漏一个的症状是那一格空白（不是报错），所以这里连同 nil 安全性一起判。
 func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 	returns := []*orderdto.ReturnResp{
-		nil, // 列表里可能有 nil 行（服务端投影退化）：不能 panic
+		nil,
 		{Status: "approved"},
 		{Status: "approved"},
 		{Status: "rejected"},
@@ -227,7 +190,7 @@ func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 			t.Fatalf("退货事实表缺少 %q，键表 = %v", want, keysOf(returnFacts))
 		}
 	}
-	// 空串在表里：筛选徽章那一格拿它索引（模板对空值走「全部」自己的词条，但索引必须命中）。
+
 	if got := returnFacts[""]; got.Key != "" || got.Fallback != "—" {
 		t.Fatalf("空状态事实 = %+v", got)
 	}
@@ -239,7 +202,6 @@ func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 		}
 	}
 
-	// 空列表 / 无详情 / 详情里半截也为空都不能 panic（装载失败与「还没选工程」都会走到）。
 	for _, tc := range []struct {
 		name   string
 		detail *orderdto.ReturnDetailResp
@@ -258,7 +220,6 @@ func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 	}
 }
 
-// TestStatusLabelFactHasNoFunctionField 事实是纯数据：带函数字段就等于把取词又搬回 Go。
 func TestStatusLabelFactHasNoFunctionField(t *testing.T) {
 	typ := reflect.TypeOf(StatusLabelFact{})
 	if typ.NumField() != 2 {
@@ -271,8 +232,6 @@ func TestStatusLabelFactHasNoFunctionField(t *testing.T) {
 	}
 }
 
-// TestReturnsPageRendersStatusLabelsFromFacts 真渲染：Jet 按**原始状态值**索引事实表，
-// 语言由请求协商（缺词条回落模板内中文原文）。
 func TestReturnsPageRendersStatusLabelsFromFacts(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		orderenums.ReturnStatusKeyRequested:      {"en-US": "Awaiting review", "zh-CN": "待审核"},
@@ -301,15 +260,14 @@ func TestReturnsPageRendersStatusLabelsFromFacts(t *testing.T) {
 		t.Run(tc.lang, func(t *testing.T) {
 			body := renderReturnsPage(t, "?project=p-1&returnId=7&lang="+tc.lang, svc())
 
-			// 详情头的退货状态（事实表 + tr）。
 			if !strings.Contains(body, `badge-info">`+tc.wantRequested+`</span>`) {
 				t.Fatalf("详情退货状态未按 %s 取词", tc.lang)
 			}
-			// 摘要订单状态（另一张事实表，与退货状态不能串表）。
+
 			if !strings.Contains(body, `badge-ok">`+tc.wantOrderPaid+`</span>`) {
 				t.Fatalf("摘要订单状态未按 %s 取词", tc.lang)
 			}
-			// 列表行的退货状态：approved 没有注入词条 → 两种语言下都是模板内中文兜底文本。
+
 			if !strings.Contains(body, `badge-mute">待收货</span>`) {
 				t.Fatalf("列表行状态未取自退货事实表（缺词条应回落兜底文本）")
 			}
@@ -317,8 +275,6 @@ func TestReturnsPageRendersStatusLabelsFromFacts(t *testing.T) {
 	}
 }
 
-// TestReturnsPageStatusLabelsHandleUnknownAndEmpty 未知 / 空 / 带空白的状态值：
-// 空显示「—」、未知原样显示且经 Jet 自动转义，空列表下筛选提示也要显示原始筛选值。
 func TestReturnsPageStatusLabelsHandleUnknownAndEmpty(t *testing.T) {
 	i18n.InjectForTest(nil, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })

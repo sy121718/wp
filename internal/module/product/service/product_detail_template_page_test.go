@@ -1,7 +1,5 @@
 package productservice
 
-// 模板业务查询仅转交端口事实；工程范围校验与页面渲染分别验证。
-
 import (
 	"context"
 	"errors"
@@ -12,7 +10,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// detailTemplatePortStub 记录各类模板事实的查询调用。
 type detailTemplatePortStub struct {
 	calls []string
 	err   error
@@ -38,7 +35,6 @@ func (p *detailTemplatePortStub) DetailTemplatePanel(context.Context, string, st
 	return productcontract.DetailTemplatePanelFacts{}, p.err
 }
 
-// newDetailTemplateReadModel 读模型：只接工程清单与模板端口。
 func newDetailTemplateReadModel(projects []projectdto.ProjectResp, projectErr error, port productcontract.DetailTemplatePort) (*Service, *productPageProjectStub) {
 	ps := productPageProjectStub{rows: projects, err: projectErr}
 	s, _, _ := newProductPageReadModel(ps)

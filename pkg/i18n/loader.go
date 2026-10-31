@@ -17,7 +17,6 @@ var (
 	refreshWG     sync.WaitGroup
 )
 
-// LoadCache 从数据库加载多语言数据到内存
 func LoadCache() error {
 	db, err := database.GetDB()
 	if err != nil {
@@ -62,7 +61,6 @@ func LoadCache() error {
 	return nil
 }
 
-// StartAutoRefresh 启动自动刷新
 func StartAutoRefresh(interval time.Duration) {
 	if interval <= 0 {
 		interval = 20 * time.Second
@@ -94,11 +92,7 @@ func StartAutoRefresh(interval time.Duration) {
 				if err := LoadCache(); err != nil {
 					logger.Error(err, "i18n 自动刷新失败")
 				}
-				// 同一个 tick 顺带刷新全局默认值（默认语言 / 站点语言 URL 方案 /
-				// 语言码覆盖，见 values.go）。为什么不另起一个 goroutine：两套定时
-				// 机制意味着两个「多久生效」的答案，而运维只记得住一个（配置面板上
-				// 写的就是 refresh_interval）。未注入配置源时静默跳过 —— 那不是故障，
-				// 每 tick 打一条只会把日志淹掉。
+
 				if err := refreshRuntimeValues(ctx); err != nil && !errors.Is(err, errNoValueLoader) {
 					logger.Error(err, "i18n 全局默认值刷新失败")
 				}
@@ -109,7 +103,6 @@ func StartAutoRefresh(interval time.Duration) {
 	logger.WithFields(map[string]any{"interval": interval.String()}).Info("i18n 自动刷新已启动")
 }
 
-// StopAutoRefresh 停止自动刷新
 func StopAutoRefresh() {
 	refreshMu.Lock()
 	cancel := refreshCancel
@@ -124,7 +117,6 @@ func StopAutoRefresh() {
 	refreshWG.Wait()
 }
 
-// ValidateReady 检查 i18n 是否已经完成初始化
 func ValidateReady() error {
 	if !IsInited() {
 		return fmt.Errorf("i18n 未初始化")
@@ -132,7 +124,6 @@ func ValidateReady() error {
 	return nil
 }
 
-// Ready 检查 i18n 组件是否可用。
 func Ready() error {
 	return ValidateReady()
 }

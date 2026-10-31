@@ -9,8 +9,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// TestPublicationReceiptFlow 激活回执状态完整流转：pending（写入）→ committed（路由事务内原子提交）。
-// 若路由事务失败则 pending → rolled_back（在 Activate 冲突用例中另行验证）。
 func TestPublicationReceiptFlow(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
@@ -27,7 +25,6 @@ func TestPublicationReceiptFlow(t *testing.T) {
 	}
 }
 
-// TestPublicationReceiptActionFallback 请求未传 Action 时回执 action 回退为 "activate"。
 func TestPublicationReceiptActionFallback(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
@@ -48,8 +45,6 @@ func TestPublicationReceiptActionFallback(t *testing.T) {
 	}
 }
 
-// TestPublicationReceiptDataValid 激活回执的 ReceiptData 必须是合法 JSON
-// 且携带目标 artifact（json.Marshal 安全序列化，特殊字符不会破坏 jsonb）。
 func TestPublicationReceiptDataValid(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
@@ -73,8 +68,6 @@ func TestPublicationReceiptDataValid(t *testing.T) {
 	}
 }
 
-// TestPublicationReceiptRedirectDataValid redirect 回执 ReceiptData 可解析为
-// {"redirect":"..."} 形状（仅限合法 ArtifactID 输入）。
 func TestPublicationReceiptRedirectDataValid(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Redirect(context.Background(), &pubdto.RedirectReq{

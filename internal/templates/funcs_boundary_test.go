@@ -1,30 +1,5 @@
 package templates
 
-// funcs_boundary_test.go — B6「未知枚举、非法 JSON 和 HTML 转义有测试」的判据。
-//
-// 覆盖 funcs.go 注册的全局函数（injectGlobals 的 AddGlobal 清单）在**三类边界**下的实际行为，
-// 一律走真实 Jet 渲染（内存 Set + 生产 injectGlobals）：本文件记录的不是「函数返回什么」，
-// 而是「页面上出现什么字节」——「Jet 拒绝裸 nil 字面量做实参」「插值默认转义一次」这类行为
-// 只在渲染路径上成立（同 jet_template_contract_probe_test.go 的立场）。
-//
-// 三类边界：
-//
-//	A) HTML 转义 —— {{ }} 与 {{|raw}} 的差异，map 与 struct 两种上下文；
-//	B) 未知枚举取值 —— 变化率方向、未知枚举传给数值函数；
-//	C) 非法 / 越界入参 —— 非法 JSON、null JSON、越界整数字面量。
-//
-// 姿态是**把当前实际行为钉住**，不是提出期望：与直觉不符的地方写在各用例注释里
-//（typed nil 指针直出会渲染成 <nil>、非法 JSON 渲染层不校验），报告里另列清单外发现。
-//
-// 与既有用例的分工（逐条核对过，不重复劳动）：
-//   - funcs_test.go —— 各函数的取值矩阵（含 currencyPrefix 各档、percent 小数位越界）；
-//   - funcs_pagination_test.go 与 admin_pagination_globals_p0plus_test.go —— queryURL / sprintf 的
-//     「恰好转义一次」与「坏格式串留 %! 痕迹」；
-//   - jet_template_contract_probe_test.go（task-155）—— isset/hasVal 矩阵与 t 注入通道。
-//
-// 本文件补的是上面都没覆盖的：raw 对照、struct 上下文、percentChange / percentChangeDir、
-// json.RawMessage 直出、typed nil 直出、越界字面量。
-
 import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
@@ -36,14 +11,11 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// bpRow 是 struct 上下文的形状（字段与 dto 里的可空列同形：string 与指针）。
 type bpRow struct {
 	Name   string
 	NilPtr *int
 }
 
-// bpSet 自带一份渲染通道，不复用 task-155 探针的 jcProbeSet / jcRender：那些 helper 属于探针
-// 文件，随迁移推进可能被删，而边界判据要能独立存活。
 func bpSet(t *testing.T, files map[string]string) *jet.Set {
 	t.Helper()
 	l := jet.NewInMemLoader()
@@ -55,8 +27,6 @@ func bpSet(t *testing.T, files map[string]string) *jet.Set {
 	return set
 }
 
-// bpRender 渲染一段模板，并把 panic 收敛成 error —— 边界用例要看的正是「失败长什么样」
-// （半截输出 + 可定位的错误，还是静默给一个看起来成立的值）。
 func bpRender(t *testing.T, set *jet.Set, name string, data map[string]any) (out string, err error) {
 	t.Helper()
 	tmpl, err := set.GetTemplate(name)
@@ -76,14 +46,8 @@ func bpRender(t *testing.T, set *jet.Set, name string, data map[string]any) (out
 	return buf.String(), nil
 }
 
-// ==========================================================================
-// A) HTML 转义：{{ }} 与 {{|raw}} 的差异，map 与 struct 两种上下文。
-// ==========================================================================
-
 func TestBoundaryEscapeMapAndStructContexts(t *testing.T) {
-	// map 取键与 struct 取字段在转义上**没有差别**（都走同一条插值路径），而 |raw 一律关掉转义。
-	// 双引号被转义成 &#34; 而不是 &quot; —— Jet 的转义表长这样，写死期望值是为了让升级 Jet
-	// 导致的字节变化在这里显形（属性位由浏览器两种都能解析，但字节会变，golden 会红）。
+
 	set := bpSet(t, map[string]string{
 		"esc.jet": `MAP=[{{ .["v"] }}] MAPRAW=[{{ .["v"]|raw }}] STRUCT=[{{ .Row.Name }}] STRUCTRAW=[{{ .Row.Name|raw }}]`,
 	})
@@ -99,9 +63,7 @@ func TestBoundaryEscapeMapAndStructContexts(t *testing.T) {
 }
 
 func TestBoundaryRawDisablesEscapingOnURLText(t *testing.T) {
-	// queryURL 的「函数侧不预转义」已由 funcs_pagination_test.go 与
-	// admin_pagination_globals_p0plus_test.go 钉住；这里补的是同一事实的 raw 对照：
-	// 默认形态给出合法 HTML 的 &amp;，raw 形态给出裸 &（只有调用点明确接受时才可用）。
+
 	set := bpSet(t, map[string]string{
 		"u.jet": `A=[{{ queryURL("/a?x=1", "k", "a b&c") }}] B=[{{ queryURL("/a?x=1", "k", "a b&c")|raw }}]`,
 	})
@@ -119,9 +81,7 @@ func TestBoundaryRawDisablesEscapingOnURLText(t *testing.T) {
 }
 
 func TestBoundaryTypedNilPointerRendersNilLiteral(t *testing.T) {
-	// **直出 typed nil 指针会渲染成 <nil>**（再被 HTML 转义成 &lt;nil&gt;）——页面上多出一行
-	// <nil>，不报错、也没人发现。经函数收敛（stringify 那条路）才是空串，这正是 stringify
-	// 存在的理由（funcs.go 的注释：dto 的可空列是 *time.Time / *uint64 / *int64）。
+
 	set := bpSet(t, map[string]string{
 		"n.jet": `DIRECT=[{{ .Row.NilPtr }}] VIA_FN=[{{ formValue(.Echo, "x", .Row.NilPtr) }}]`,
 	})
@@ -138,8 +98,7 @@ func TestBoundaryTypedNilPointerRendersNilLiteral(t *testing.T) {
 }
 
 func TestBoundaryNilLiteralIsNotAValidArgument(t *testing.T) {
-	// 裸 nil 字面量在 Jet 里不是「没有值」，而是**参数无效**：渲染当场失败（不是静默给空串）。
-	// 推论：模板里判空只能用 {{if .X}} 或数据里传 typed nil，不能靠给函数传 nil。
+
 	cases := []struct {
 		name string
 		tpl  string
@@ -153,7 +112,7 @@ func TestBoundaryNilLiteralIsNotAValidArgument(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var set *jet.Set
 			if tc.name == "dateTime(字符串时间)" {
-				// 字面量时间在模板里同样不可用：时间必须由数据传进来（time.Time / utils.JSONTime）。
+
 				set = bpSet(t, map[string]string{"c.jet": `T=[` + tc.tpl + `]`})
 				out, err := bpRender(t, set, "c.jet", nil)
 				if err == nil {
@@ -180,8 +139,7 @@ func TestBoundaryNilLiteralIsNotAValidArgument(t *testing.T) {
 }
 
 func TestBoundaryTypedNilArgumentIsFine(t *testing.T) {
-	// 对照：Go 侧传进来的 typed nil 是正常入参 —— dateTime 给空串、percentChange 给空串、
-	// formValue 回落到初始值。三者都是「没有值」的正确表达。
+
 	set := bpSet(t, map[string]string{
 		"t.jet": `TIME=[{{ dateTime(.T) }}] PCT=[{{ percentChange(.N, 1) }}] FORM=[{{ formValue(.Echo, "x", "fb") }}] IF=[{{ if .T }}has{{ else }}none{{ end }}]`,
 	})
@@ -199,14 +157,8 @@ func TestBoundaryTypedNilArgumentIsFine(t *testing.T) {
 	}
 }
 
-// ==========================================================================
-// B) 未知枚举取值：能落地的取值要精确，落不了地的取值要响亮失败。
-// ==========================================================================
-
 func TestBoundaryPercentChangeDirection(t *testing.T) {
-	// percentChangeDir 的四个取值是模板挂涨跌配色的判据。**恰好 0 是 flat 而不是 down**：
-	// 0.0% 画一个向下箭头是错的；无基期（typed nil）是 none 而不是 flat —— 「上期一单没卖」
-	// 和「持平」不是同一件事。
+
 	set := bpSet(t, map[string]string{
 		"d.jet": `UP=[{{ percentChangeDir(1.5) }}] DOWN=[{{ percentChangeDir(-1.5) }}] ZERO=[{{ percentChangeDir(0) }}] NOBASE=[{{ percentChangeDir(.N) }}]`,
 	})
@@ -222,8 +174,7 @@ func TestBoundaryPercentChangeDirection(t *testing.T) {
 }
 
 func TestBoundaryPercentChangeSign(t *testing.T) {
-	// 与 percent 的差异就是符号：变化率场景里「涨还是跌」本身是信息。
-	// 无基期回空串而不是 +0.0%（后者看起来像「持平」）。
+
 	set := bpSet(t, map[string]string{
 		"p.jet": `UP=[{{ percentChange(1.5, 1) }}] DOWN=[{{ percentChange(-3, 1) }}] ZERO=[{{ percentChange(0, 1) }}] NOBASE=[{{ percentChange(.N, 1) }}]`,
 	})
@@ -239,8 +190,7 @@ func TestBoundaryPercentChangeSign(t *testing.T) {
 }
 
 func TestBoundaryUnknownEnumPassedToNumericFnFailsLoudly(t *testing.T) {
-	// 本批最要紧的一格：把枚举串（例如 status）误传给数值函数时，**必须响亮失败**。
-	// 静默按 0 处理会渲染成 flat / 0.0%，而那看起来是一个成立的结论 —— 这类失效没人会去查。
+
 	set := bpSet(t, map[string]string{
 		"e.jet": `DIR=[{{ percentChangeDir("published") }}]`,
 	})
@@ -257,8 +207,7 @@ func TestBoundaryUnknownEnumPassedToNumericFnFailsLoudly(t *testing.T) {
 }
 
 func TestBoundaryCurrencyPrefixUnknownEnum(t *testing.T) {
-	// 币种前缀的过渡规则（真源是 sys_dict 的 symbol 列）：空 / CNY / RMB 给 ¥，其余给
-	// 「大写代码 + 空格」。这里只补既有 funcs_test.go 未覆盖的两格：**全空白**与**未知小写代码**。
+
 	set := bpSet(t, map[string]string{
 		"c.jet": `BLANK=[{{ currencyPrefix("   ") }}] UNKNOWN=[{{ currencyPrefix("jpy") }}]`,
 	})
@@ -272,22 +221,8 @@ func TestBoundaryCurrencyPrefixUnknownEnum(t *testing.T) {
 	}
 }
 
-// ==========================================================================
-// C) 非法 / 越界入参：渲染层不校验，责任在 Go 侧；越界的字面量在解析期就挡住。
-// ==========================================================================
-
 func TestBoundaryJSONRawMessageIsRenderedUnvalidated(t *testing.T) {
-	// json.RawMessage 对模板就是一个字符串：**渲染层不校验 JSON** —— 合法与非法都照样吐到
-	// 页面上（合法时引号被转义成 &#34;）。把「非法 JSON 静默降级」的责任放在 Go 侧是刻意的：
-	// product service 的 PageDraftTitle / EntityPlainText 各自把非法 JSON 收敛成空串
-	// （判据在 internal/module/product/service/product_seo_score_input_test.go）。
-	// 若哪天这里开始报错，就是渲染层多了一层没人要求的校验 —— 本用例会红。
-	//
-	// Go 1.27 起 RawMessage 就是 jsontext.Value 的别名（jsonx.RawMessage = jsontext.Value），该类型自带
-	// String()：Jet 原先按 []byte 直出的那条分支不再命中，改用 String() —— 于是 **nil 值从空串变成
-	// "null"**（1.26 与 GOEXPERIMENT=nojsonv2 下仍是空串，实测对照）。渲染层「不校验 JSON」的契约不变，
-	// 变的只是空值的文本形态；在 JSON 语境里 "null" 比空串更准确。生产模板不直接渲染这个类型
-	// （internal/templates 下 *.jet 零使用），所以这里只更新期望值。
+
 	set := bpSet(t, map[string]string{
 		"j.jet": `OK=[{{ .Doc }}] BAD=[{{ .Bad }}] NULL=[{{ .NilDoc }}] OKRAW=[{{ .Doc|raw }}] BADRAW=[{{ .Bad|raw }}]`,
 	})
@@ -307,8 +242,7 @@ func TestBoundaryJSONRawMessageIsRenderedUnvalidated(t *testing.T) {
 }
 
 func TestBoundaryOverflowingIntegerLiteralFailsBeforeRender(t *testing.T) {
-	// 超 int64 的整数字面量在**解析期**失败（不是运行时）：输出为空，错误里带模板名与行号。
-	// 判据的意义是「坏字面量不该渲染出一半页面」—— 页面上半截表格比 500 更难查。
+
 	set := bpSet(t, map[string]string{
 		"big.jet": `BIG=[{{ money(100000000000000000000, "Y") }}]`,
 	})
@@ -325,7 +259,7 @@ func TestBoundaryOverflowingIntegerLiteralFailsBeforeRender(t *testing.T) {
 }
 
 func TestBoundaryOverflowingFloatLiteralFailsAtRender(t *testing.T) {
-	// 浮点字面量（1e30）能过解析，栽在函数的范围检查上：错误信息带函数名与实际值。
+
 	set := bpSet(t, map[string]string{
 		"f.jet": `F=[{{ money(1e30, "Y") }}]`,
 	})

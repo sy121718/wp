@@ -1,14 +1,5 @@
 package builtin
 
-// request_id_test.go — 请求关联能力的契约。
-//
-// 为什么这条值得单独测：request id 的价值全在「能捞全」，而「捞不全」是一类**静默**
-// 缺陷 —— 少打一个字段日志照写，没有任何测试会因此变红，直到真出事那天才发现关联不上。
-// 所以这里断言三件缺一不可的事：
-//  1. 同一次请求内，响应头 / gin.Context / request context / 日志行**是同一个值**；
-//  2. 上游带来的合法 id 被沿用（网关已生成时不重复造）；
-//  3. 上游带来的非法 id 被丢弃并重新生成（否则等于让人往日志里注入任意值）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +44,7 @@ func TestRequestIDIsConsistentWithinOneRequest(t *testing.T) {
 	if respID == "" {
 		t.Fatal("响应里没有 X-Request-Id：用户报障时说不出是哪一次请求，日志无从捞起")
 	}
-	// 等式断言：四处必须是同一个值，否则「按 id 捞全」这件事在某个环节就断了。
+
 	if fromGin != respID {
 		t.Errorf("gin.Context 里的 id 与响应头不一致：%q vs %q", fromGin, respID)
 	}
@@ -87,11 +78,11 @@ func TestRequestIDRejectsMaliciousUpstreamValue(t *testing.T) {
 	r.GET("/probe", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 
 	for _, bad := range []string{
-		"has space",                 // 空格
-		"quote\"inject",             // 引号（可撕裂日志行）
-		"newline\nfake line",        // 换行（可伪造日志行）
-		"<script>alert(1)</script>", // 尖括号
-		strings.Repeat("a", 65),     // 超长
+		"has space",
+		"quote\"inject",
+		"newline\nfake line",
+		"<script>alert(1)</script>",
+		strings.Repeat("a", 65),
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 		req.Header.Set(HeaderRequestID, bad)
@@ -108,10 +99,6 @@ func TestRequestIDRejectsMaliciousUpstreamValue(t *testing.T) {
 	}
 }
 
-// TestRequestIDReachesLogLine 端到端：一次请求产生的日志行里必须带 request_id。
-//
-// 这条是「按 id 能捞全」的最终判据 —— 前面几条只证明 id 在链路里传递，只有这条证明
-// 它真的落到了**日志文件**里（logger 从 ctx 取的那一段）。
 func TestRequestIDReachesLogLine(t *testing.T) {
 	dir := t.TempDir()
 	v := viper.New()
@@ -131,7 +118,7 @@ func TestRequestIDReachesLogLine(t *testing.T) {
 	r.Use(RequestIDMiddleware())
 	r.Use(RequestLogCaptureMiddleware(true))
 	r.GET("/probe", func(c *gin.Context) {
-		// 模拟业务层：用 SceneCtx 打一条，应当自动带上同一个 request_id。
+
 		logger.SceneCtx("probe", c.Request.Context()).Info("业务日志")
 		c.Status(http.StatusOK)
 	})
@@ -145,7 +132,6 @@ func TestRequestIDReachesLogLine(t *testing.T) {
 		t.Fatalf("前置条件不成立：响应头 id = %q", got)
 	}
 
-	// 两个 scene 的日志文件里都要出现这个 id。
 	for _, scene := range []string{"http", "probe"} {
 		matches, err := filepath.Glob(filepath.Join(dir, scene, "*.log"))
 		if err != nil || len(matches) == 0 {

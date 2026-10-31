@@ -1,8 +1,5 @@
 package userforms
 
-// labels.go — 构建期访客账号表单文案（I18N-012，site.fragment.user.*）。
-
-// userCommonLabels 账号类片段共用文案。
 type userCommonLabels struct {
 	SessionNotReady string
 	GoLogin         string
@@ -15,7 +12,6 @@ func userCommonLabelsOf(text func(string, string) string) userCommonLabels {
 	}
 }
 
-// userLoginLabels 登录表单。
 type userLoginLabels struct {
 	userCommonLabels
 	Identity  string
@@ -40,7 +36,6 @@ func userLoginLabelsOf(text func(string, string) string) userLoginLabels {
 	}
 }
 
-// userRegisterLabels 注册表单。
 type userRegisterLabels struct {
 	userCommonLabels
 	Username     string
@@ -83,7 +78,6 @@ func userRegisterLabelsOf(text func(string, string) string) userRegisterLabels {
 	}
 }
 
-// userForgotLabels 忘记密码。
 type userForgotLabels struct {
 	userCommonLabels
 	Email     string
@@ -104,7 +98,6 @@ func userForgotLabelsOf(text func(string, string) string) userForgotLabels {
 	}
 }
 
-// userResetLabels 重置密码。
 type userResetLabels struct {
 	userCommonLabels
 	Email      string
@@ -125,7 +118,6 @@ func userResetLabelsOf(text func(string, string) string) userResetLabels {
 	}
 }
 
-// userAccountPanelLabels 账号面板。
 type userAccountPanelLabels struct {
 	userCommonLabels
 	LoggedIn      string
@@ -150,7 +142,6 @@ func userAccountPanelLabelsOf(text func(string, string) string) userAccountPanel
 	}
 }
 
-// userAccountProfileLabels 资料表单。
 type userAccountProfileLabels struct {
 	userCommonLabels
 	NeedLogin    string
@@ -213,7 +204,6 @@ func userAccountProfileLabelsOf(text func(string, string) string) userAccountPro
 	}
 }
 
-// userAccountPreferenceLabels 偏好表单。
 type userAccountPreferenceLabels struct {
 	userCommonLabels
 	NeedLogin         string
@@ -248,7 +238,6 @@ func userAccountPreferenceLabelsOf(text func(string, string) string) userAccount
 	}
 }
 
-// userAccountPasswordLabels 改密码。
 type userAccountPasswordLabels struct {
 	userCommonLabels
 	NeedLogin   string
@@ -269,7 +258,6 @@ func userAccountPasswordLabelsOf(text func(string, string) string) userAccountPa
 	}
 }
 
-// userAccountSessionsLabels 登录设备。
 type userAccountSessionsLabels struct {
 	userCommonLabels
 	Unavailable    string
@@ -300,7 +288,6 @@ func userAccountSessionsLabelsOf(text func(string, string) string) userAccountSe
 	}
 }
 
-// Labels 是静态模板使用的前端文案。
 type Labels struct {
 	Login      userLoginLabels
 	Register   userRegisterLabels

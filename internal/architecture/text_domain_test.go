@@ -1,20 +1,5 @@
 package architecture
 
-// text_domain_test.go — 文案域的两条门禁（见 AGENTS.md「响应与错误处理」）。
-//
-// 分域的理由：**响应文案**由 pkg/response 走 pkg/facing.FactOf 产出（{code,message,data}，
-// key 是模块错误事实），**界面文案**由 internal/text 在渲染期取词（t / tf，key 是 UI 词条）。
-// 两条链都读同一张 sys_i18n，混用的代价当下很轻（都能取到词或回落到兜底），但后果是把错误
-// 事实当成了界面词条 —— 换个措辞、改个 key、或让某个 key 改由别的模块提供时，页面上就静默
-// 换了一句话，没人报错。所以用会变红的判据把它们分开：
-//
-//  1. 模板里取词的 key 必须落在界面文案域：前缀 admin / shell / user / workbench / site，
-//     老命名空间的 msg_，或归口文案的 Msg*；不得写成错误常量的名字（"ErrInternal" 这种），
-//     也不得写模块错误 key（<module>.err.*，shell.err.* 除外 —— 那是壳自己的界面词条）。
-//  2. 控制器里构造 facing.Msg 时，Key 不得是 <pkg>enums.Err* 常量或 <module>.err.* 字面量。
-//
-// 第 2 条带登记清单（其余模块待迁），第 1 条已是零容忍。
-
 import (
 	"go/ast"
 	"go/parser"
@@ -27,23 +12,15 @@ import (
 	"testing"
 )
 
-// templateKeyCall 模板里取词的两种写法：
-//   - {{ .["t"]("key", "兜底") }} / {{ .["tf"](...) }}（map 根索引）
-//   - {{tr("key", "兜底")}} / {{gfTr(...)}} 等（先 let 成变量再调用）
 var templateKeyCall = regexp.MustCompile("(?:\\[\"tf?\"\\]|[A-Za-z]*[Tt]r)\\(\\s*\"([^\"]*)\"")
 
-// templateComment 注释里的示例不算代码：HTML 注释与 Jet 注释先整段抠掉。
 var templateComment = regexp.MustCompile("(?s)<!--.*?-->|\\{\\*.*?\\*\\}")
 
-// uiKeyPrefixes 界面文案的 key 前缀，每个都对应 sys_i18n 里真实存在的命名空间
-// （site.* 属于访问面片段的词条，msg_* 是老命名空间 pkg/enums/messages.go 的词条）。
 var uiKeyPrefixes = []string{"admin.", "shell.", "user.", "workbench.", "site.", "msg_"}
 
-// uiKeyAllowed 判一个取词 key 是否落在界面文案域。
 func uiKeyAllowed(key string) bool {
 	if strings.HasPrefix(key, "Msg") {
-		// 归口文案的 key（MsgInternalError 等）：它们是 sys_i18n 里 scope=ui 的界面词条，
-		// 只是沿用大写开头的老命名，不是错误事实。
+
 		return true
 	}
 	for _, prefix := range uiKeyPrefixes {
@@ -54,7 +31,6 @@ func uiKeyAllowed(key string) bool {
 	return false
 }
 
-// TestTemplateTranslateKeysStayInUIDomain 模板取词的 key 只能来自界面文案域。
 func TestTemplateTranslateKeysStayInUIDomain(t *testing.T) {
 	root := filepath.Join("..", "templates")
 
@@ -88,13 +64,8 @@ func TestTemplateTranslateKeysStayInUIDomain(t *testing.T) {
 	}
 }
 
-// errorConstantName 判一个标识符是不是错误常量（ErrInvalidParam 这种）。
 var errorConstantName = regexp.MustCompile("^Err[A-Z]")
 
-// pendingMsgTextDomain 存量：控制器文件 → 仍用错误 key 当界面文案的处数。
-//
-// 记处数而不是布尔量：删掉一处却没同步改数字会立刻变红 —— 否则「改了一点」与「一点没改」
-// 在清单上长得一样。product 已清零，其余模块按批迁。
 var pendingMsgTextDomain = map[string]int{
 	"internal/module/plugin/inbound/http/plugin_err.go":                  13,
 	"internal/module/ai/inbound/http/ai_page.go":                         3,
@@ -106,7 +77,6 @@ var pendingMsgTextDomain = map[string]int{
 	"internal/module/admin/inbound/http/admin_err.go":                    1,
 }
 
-// msgKeyIsErrorFact 判一个 Msg.Key 的取值表达式是不是错误事实。
 func msgKeyIsErrorFact(value ast.Expr) bool {
 	switch v := value.(type) {
 	case *ast.SelectorExpr:
@@ -124,7 +94,6 @@ func msgKeyIsErrorFact(value ast.Expr) bool {
 	return false
 }
 
-// TestMsgKeysStayInUIDomain 控制器构造界面提示时不得拿错误 key 当文案 key。
 func TestMsgKeysStayInUIDomain(t *testing.T) {
 	root := filepath.Join("..", "module")
 	remaining := map[string]int{}

@@ -1,10 +1,5 @@
 package unit
 
-// media_center_migration_test.go — 迁移 067（媒体中心在既有 sys_attachment 上落地）验证。
-//
-// 覆盖：JSON→JSONB 类型转换、NULL 与非法/空串兜底、generation 列与存量回填、
-// GIN 索引、@> 引用查询、重复执行幂等。
-
 import (
 	"testing"
 
@@ -15,7 +10,6 @@ import (
 
 const mediaCenterMigrationVersion = "067-media-center"
 
-// mediaCenterMigrationSQL 取出迁移 067 的 SQL 文本；未注册即失败。
 func mediaCenterMigrationSQL(t *testing.T) string {
 	t.Helper()
 	for _, m := range migrations.All() {
@@ -27,7 +21,6 @@ func mediaCenterMigrationSQL(t *testing.T) string {
 	return ""
 }
 
-// applyMediaCenterMigration 逐条执行迁移 067（与 migrations.apply 同一拆分语义）。
 func applyMediaCenterMigration(t *testing.T, db *gorm.DB) int {
 	t.Helper()
 	n := 0
@@ -43,7 +36,6 @@ func applyMediaCenterMigration(t *testing.T, db *gorm.DB) int {
 	return n
 }
 
-// oldSchemaAttachmentJSON 复刻迁移前的 sys_attachment 关键列（extra_info 为 json）。
 const oldSchemaAttachmentJSON = `CREATE TABLE sys_attachment (
     id BIGSERIAL PRIMARY KEY,
     file_path text NOT NULL,
@@ -53,7 +45,6 @@ const oldSchemaAttachmentJSON = `CREATE TABLE sys_attachment (
     status smallint NOT NULL DEFAULT 1
 )`
 
-// TestMediaCenterMigrationJSONToJSONB 类型转换 + 存量回填 + 索引 + @> 查询。
 func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 	db := newMigrationDB(t)
 
@@ -69,7 +60,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 
 	applyMediaCenterMigration(t, db)
 
-	// 列类型 jsonb
 	var dataType string
 	if err := db.Raw(`SELECT data_type FROM information_schema.columns
         WHERE table_schema = current_schema() AND table_name = 'sys_attachment' AND column_name = 'extra_info'`).
@@ -80,7 +70,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		t.Fatalf("extra_info 应为 jsonb，实际 %s", dataType)
 	}
 
-	// generation 列存在、NOT NULL、默认 1，存量行回填为 1
 	var genType, genNullable string
 	var genDefault *string
 	if err := db.Raw(`SELECT data_type, is_nullable, column_default FROM information_schema.columns
@@ -104,7 +93,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		}
 	}
 
-	// NULL 保持 NULL（不被写成 '{}'）
 	var nullCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM sys_attachment WHERE id = 2 AND extra_info IS NULL`).Scan(&nullCount).Error; err != nil {
 		t.Fatalf("查询 NULL 行失败: %v", err)
@@ -113,7 +101,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		t.Fatalf("extra_info NULL 应保持 NULL")
 	}
 
-	// 原对象内容可读（jsonb 化后键值不变）
 	var alt string
 	if err := db.Raw(`SELECT extra_info ->> 'alt' FROM sys_attachment WHERE id = 1`).Scan(&alt).Error; err != nil {
 		t.Fatalf("读取 alt 失败: %v", err)
@@ -122,7 +109,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		t.Fatalf("存量 JSON 内容丢失: alt=%q", alt)
 	}
 
-	// 索引存在
 	var idxCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
         AND tablename = 'sys_attachment' AND indexname IN ('idx_att_extra_info_gin','idx_att_md5_type')`).
@@ -133,7 +119,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		t.Fatalf("迁移应建 2 个索引，实际 %d", idxCount)
 	}
 
-	// @> 查询（GIN 索引的查询形态）
 	if err := db.Exec(`UPDATE sys_attachment SET extra_info = jsonb_set(coalesce(extra_info,'{}'::jsonb), '{refs}',
         '[{"kind":"page","id":"p-1","title":"首页"}]'::jsonb, true) WHERE id = 1`).Error; err != nil {
 		t.Fatalf("写入 refs 失败: %v", err)
@@ -147,7 +132,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 		t.Fatalf("@> 查询应命中 id=1，实际 %d", hitID)
 	}
 
-	// 重复执行幂等：不报错、数据不变
 	applyMediaCenterMigration(t, db)
 	applyMediaCenterMigration(t, db)
 	var rows, genSum int64
@@ -160,8 +144,6 @@ func TestMediaCenterMigrationJSONToJSONB(t *testing.T) {
 	}
 }
 
-// TestMediaCenterMigrationSanitizesDirtyTextColumn 兜底：文本列中的空串与非法 JSON
-// 在转换前置为 NULL，不阻塞迁移。
 func TestMediaCenterMigrationSanitizesDirtyTextColumn(t *testing.T) {
 	db := newMigrationDB(t)
 

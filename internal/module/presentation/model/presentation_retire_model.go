@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// RetireInstanceTx 只清当前发布状态；历史文档、产物和尝试记录仍归原实例保留。
 func (m *Model) RetireInstanceTx(ctx context.Context, tx *gorm.DB, projectID, id string, at time.Time) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err

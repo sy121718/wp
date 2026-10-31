@@ -1,19 +1,5 @@
 package productmodel
 
-// product_ref_batch.go — 批量引用扫描（task-156，dd.txt §5.4）。
-//
-// 单条版（scanProductRefs）一次检查一个实体：逐工程开作用域、每工程一条采样查询
-// （采样满额再补一条 COUNT 取总数）。批量删除要对 N 个实体做同样的检查，逐个调用就是
-// O(N × 工程数) 条查询。
-//
-// 批量版把「N 个实体」压成一条查询：每个工程一次，用 jsonb_exists_any(col, ?::text[])
-// （jsonb 数组列）或 col IN ?（真列）取出「引用了这批 id 里任意一个」的商品行，
-// 再在 Go 里把每行命中的 id 归到各自的桶 —— 于是查询数是 O(工程数)，与实体个数无关。
-//
-// 与单条版的**刻意差异**：单条版要给人看，会带回最多 3 个样例商品（refRow /
-// maxRefSamplePerProject）；批量版的调用方只需要「谁被引用了 / 被哪些工程引用」，
-// 因此只回工程集合，不带样例，也不引入第二份样例格式。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -25,18 +11,14 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// BatchRefHit 批量扫描里「某个实体被谁引用」的结论。
 type BatchRefHit struct {
-	// RefColumns 命中的引用列（写进拒绝理由，形如 products.category_ids）。
 	RefColumns []string
-	// ProjectIDs 引用它的工程 id（去重、升序 —— 与 normalizeProjectIDs 的顺序一致）。
+
 	ProjectIDs []string
 }
 
-// Referenced 是否被任何工程引用。
 func (h *BatchRefHit) Referenced() bool { return h != nil && len(h.ProjectIDs) > 0 }
 
-// addProject 记下一个引用工程（重复调用幂等；工程按升序枚举，故结果天然有序）。
 func (h *BatchRefHit) addProject(projectID string) {
 	if h == nil || projectID == "" {
 		return
@@ -49,7 +31,6 @@ func (h *BatchRefHit) addProject(projectID string) {
 	h.ProjectIDs = append(h.ProjectIDs, projectID)
 }
 
-// Outside 返回除 projectID 之外的引用工程（标签用：本工程内的引用可解绑，跨工程必须拒绝）。
 func (h *BatchRefHit) Outside(projectID string) []string {
 	if h == nil {
 		return nil
@@ -63,7 +44,6 @@ func (h *BatchRefHit) Outside(projectID string) []string {
 	return out
 }
 
-// refBatchRow 批量扫描的一行（只取判定需要的列，不加载整行）。
 type refBatchRow struct {
 	ID                string          `gorm:"column:id"`
 	ProjectID         string          `gorm:"column:project_id"`
@@ -76,7 +56,6 @@ type refBatchRow struct {
 	RelatedIDs        json.RawMessage `gorm:"column:related_ids"`
 }
 
-// newBatchRefHits 给每个候选 id 预先铺一个空桶 —— 调用方按 id 取值时不必判 nil。
 func newBatchRefHits(entityIDs []string, refColumns []string) map[string]*BatchRefHit {
 	out := make(map[string]*BatchRefHit, len(entityIDs))
 	for _, id := range entityIDs {
@@ -85,11 +64,6 @@ func newBatchRefHits(entityIDs []string, refColumns []string) map[string]*BatchR
 	return out
 }
 
-// matchCandidateIDs 从行的 jsonb id 数组里挑出落在候选集合里的 id。
-//
-// 解析失败返回 nil（不 panic）：列是 not null jsonb 且只由本模块写入，形状由写入侧保证；
-// 真出现坏值也不该让一次删除请求 500 —— 坏值对应的实体只是「查不出引用」，
-// 与「确实没有引用」在拒绝理由上的差别由 service 侧的行存在性检查兜住。
 func matchCandidateIDs(raw json.RawMessage, set map[string]bool) []string {
 	if len(raw) == 0 {
 		return nil
@@ -107,11 +81,6 @@ func matchCandidateIDs(raw json.RawMessage, set map[string]bool) []string {
 	return out
 }
 
-// eachRefScope 逐工程枚举作用域：每个工程设一次 RLS 作用域后跑 fn，全过程一个事务。
-//
-// 与单条版 scanProductRefs 的做法一致（一个事务里逐工程 rls.ScopeTx）：分开成每工程一个
-// 事务会让同一次扫描看到不同的快照。工程清单为空时不查任何东西（调用方拿到空清单属于
-// 「查不出引用」，service 侧必须先失败而不是静默放过）。
 func (m *Model) eachRefScope(ctx context.Context, projectIDs []string, fn func(tx *gorm.DB, projectID string) error) error {
 	scopes := normalizeProjectIDs(projectIDs)
 	if len(scopes) == 0 {
@@ -130,10 +99,6 @@ func (m *Model) eachRefScope(ctx context.Context, projectIDs []string, fn func(t
 	})
 }
 
-// ProductRefsByCategoryIDs 批量反查「这批分类各自被哪些商品引用」。
-//
-// 两个引用面都查（与单条版 ProductRefsByCategory 一致）：附属分类走 category_ids 的
-// jsonb_exists_any（GIN 索引 idx_products_category_ids），主分类走真列 primary_category_id。
 func (m *Model) ProductRefsByCategoryIDs(ctx context.Context, categoryIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
 	ids := normalizeProjectIDs(categoryIDs)
 	hits := newBatchRefHits(ids, []string{"products.category_ids", "products.primary_category_id"})
@@ -145,9 +110,6 @@ func (m *Model) ProductRefsByCategoryIDs(ctx context.Context, categoryIDs, proje
 		rows := make([]refBatchRow, 0)
 		if err := tx.WithContext(ctx).Model(&ProductEntity{}).
 			Select("id, project_id, sku_code, category_ids, primary_category_id").
-			// 真列的实参走 IN ?（与 id IN ? 同一条已被验证的路径）：写成 primary_category_id
-			// = ANY(?::text[]) 会让 PG 把参数定成 text[]，而 uuid = text 没有算子 ——
-			// 实测报 operator does not exist: uuid = text (SQLSTATE 42883)。
 			Where("project_id = ? AND (jsonb_exists_any(category_ids, ?::text[]) OR primary_category_id IN ?)",
 				pid, textArrayParam(ids), ids).
 			Find(&rows).Error; err != nil {
@@ -169,7 +131,6 @@ func (m *Model) ProductRefsByCategoryIDs(ctx context.Context, categoryIDs, proje
 	return hits, nil
 }
 
-// ProductRefsByBrandIDs 批量反查「这批品牌各自被哪些商品引用」（products.brand_id 真列）。
 func (m *Model) ProductRefsByBrandIDs(ctx context.Context, brandIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
 	ids := normalizeProjectIDs(brandIDs)
 	hits := newBatchRefHits(ids, []string{"products.brand_id"})
@@ -181,7 +142,6 @@ func (m *Model) ProductRefsByBrandIDs(ctx context.Context, brandIDs, projectIDs 
 		rows := make([]refBatchRow, 0)
 		if err := tx.WithContext(ctx).Model(&ProductEntity{}).
 			Select("id, project_id, sku_code, brand_id").
-			// 真列实参同 ProductRefsByCategoryIDs：IN ? 让驱动按列型推断参数类型。
 			Where("project_id = ? AND brand_id IN ?", pid, ids).
 			Find(&rows).Error; err != nil {
 			return err
@@ -199,7 +159,6 @@ func (m *Model) ProductRefsByBrandIDs(ctx context.Context, brandIDs, projectIDs 
 	return hits, nil
 }
 
-// ProductRefsByAttributeIDs 批量反查「这批属性组各自被哪些商品引用」（attribute_ids jsonb 数组）。
 func (m *Model) ProductRefsByAttributeIDs(ctx context.Context, attributeIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
 	ids := normalizeProjectIDs(attributeIDs)
 	hits := newBatchRefHits(ids, []string{"products.attribute_ids"})
@@ -228,17 +187,6 @@ func (m *Model) ProductRefsByAttributeIDs(ctx context.Context, attributeIDs, pro
 	return hits, nil
 }
 
-// ProductRefsByRelatedIDs 批量反查「这批商品各自被哪些商品当作相关商品引用」（related_ids jsonb 数组）。
-//
-// 为什么需要它（PRD-016）：related_ids 是商品表的**自引用**，落在 JSONB 数组里，没有外键
-// 兜底。删除商品时既不阻止、也不清理、读取侧也不剔除 —— 于是别人的 related_ids 里会留下
-// 一个指向已删商品的 id，编辑页打开时那个 id 仍在。
-//
-// **这条只是「看得见」的能力，不是策略**：DEC-04 还没定（阻止删除 / 同事务清理 / 明确
-// 容忍并在读取剔除）。三种策略都要先能回答「谁引用了它」，所以先把这条只读扫描补上，
-// 由口径决定后接进删除路径或读取路径 —— 在此之前不在删除里加任何隐藏行为。
-//
-// 与另外三条同形：每工程一条查询（jsonb_exists_any 走 GIN），不逐商品往返。
 func (m *Model) ProductRefsByRelatedIDs(ctx context.Context, productIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
 	ids := normalizeProjectIDs(productIDs)
 	hits := newBatchRefHits(ids, []string{"products.related_ids"})
@@ -267,12 +215,6 @@ func (m *Model) ProductRefsByRelatedIDs(ctx context.Context, productIDs, project
 	return hits, nil
 }
 
-// ListRelatedReferrersTx 同事务内**锁住**并把 ids 当相关商品引用的本工程商品（DEC-04 清理用）。
-//
-// 与上面的 ProductRefsByRelatedIDs 分工：那条是只读扫描（回答「谁引用了它」，给拒绝/诊断用），
-// 这条是写路径的同事务版本 —— 不只读，还按 id 升序 FOR UPDATE，清理期间别的写操作不能把
-// 引用重新塞回去。锁序按 id 升序，与批量删除的 LockProductsTx 一致；工程内的写操作此前都已
-// 先拿工程顾问锁，所以这里不会与另一条删除形成环。
 func (m *Model) ListRelatedReferrersTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) ([]*ProductEntity, error) {
 	rows := make([]*ProductEntity, 0)
 	if len(ids) == 0 || projectID == "" {
@@ -287,17 +229,12 @@ func (m *Model) ListRelatedReferrersTx(ctx context.Context, tx *gorm.DB, project
 	return rows, err
 }
 
-// UpdateRelatedIDsTx 写回清理后的 related_ids（只动这一列与 update_time）。
-//
-// 用显式工程谓词而不是只按主键：调用方拿到的行是锁内读的，但写语句本身也必须是
-// 「同工程」—— 否则一次工程解析错误就会改到别的工程的商品。
 func (m *Model) UpdateRelatedIDsTx(ctx context.Context, tx *gorm.DB, projectID, id string, related json.RawMessage) error {
 	return tx.WithContext(ctx).Model(&ProductEntity{}).
 		Where("id = ? AND project_id = ?", id, projectID).
 		Updates(map[string]any{"related_ids": related, "update_time": time.Now()}).Error
 }
 
-// ProductRefsByTagIDs 批量反查「这批标签各自被哪些商品引用」（tag_ids jsonb 数组）。
 func (m *Model) ProductRefsByTagIDs(ctx context.Context, tagIDs, projectIDs []string) (map[string]*BatchRefHit, error) {
 	ids := normalizeProjectIDs(tagIDs)
 	hits := newBatchRefHits(ids, []string{"products.tag_ids"})
@@ -326,7 +263,6 @@ func (m *Model) ProductRefsByTagIDs(ctx context.Context, tagIDs, projectIDs []st
 	return hits, nil
 }
 
-// idSet []string → 查找集合。
 func idSet(ids []string) map[string]bool {
 	set := make(map[string]bool, len(ids))
 	for _, id := range ids {

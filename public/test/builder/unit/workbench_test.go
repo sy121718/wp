@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestWorkbenchMetadata 编辑元数据：Name/Hidden/Locked 持久化且不进入编译产物。
 func TestWorkbenchMetadata(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[
 		{"id":"sec1","type":"core.container","name":"首屏 Banner 容器","hidden":true,"locked":true,
@@ -16,7 +15,7 @@ func TestWorkbenchMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 元数据不影响输出（HTML 中无 id/label 残留，仅 node class）。
+
 	if strings.Contains(c.HTML, "首屏") || strings.Contains(c.HTML, `id="`) {
 		t.Errorf("编辑元数据不应进入产物: %s", c.HTML)
 	}
@@ -25,7 +24,6 @@ func TestWorkbenchMetadata(t *testing.T) {
 	}
 }
 
-// TestWorkbenchPosition 定位系统：absolute 坐标 / sticky / drawer。
 func TestWorkbenchPosition(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"absolute", `{"tag":"section","layout":{"engine":"flex","flex":{}},"position":{"type":"absolute","top":"40px","left":"16px"}}`, "position: absolute"},
@@ -44,7 +42,7 @@ func TestWorkbenchPosition(t *testing.T) {
 			}
 		})
 	}
-	// drawer :target 显隐。
+
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"d1","type":"core.container","props":{"tag":"aside","layout":{"engine":"flex","flex":{}},"position":{"type":"drawer","drawerSide":"right","drawerTriggerId":"trig-1"}}}]}`
 	c, err := compile(t, mustParse(t, doc))
 	if err != nil {
@@ -55,7 +53,6 @@ func TestWorkbenchPosition(t *testing.T) {
 	}
 }
 
-// TestWorkbenchStyleEx 样式扩展：悬停背景/遮罩/形状分隔线/顺序/组父联动/属性。
 func TestWorkbenchStyleEx(t *testing.T) {
 	props := `{"tag":"section","layout":{"engine":"flex","flex":{}},"styleEx":{
 		"backgroundHover":"#111111",
@@ -72,14 +69,14 @@ func TestWorkbenchStyleEx(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		// 输出属性。
+
 		`data-sky-group="true"`,
 		`data-track="banner"`,
 		`aria-label="首屏"`,
-		// 形状分隔线内嵌 SVG（path 统一取自 core 素材库，viewBox 1440×120）。
+
 		`<span class="sky-shape sky-shape-bottom">`,
 		"<svg viewBox=\"0 0 1440 120\"",
-		// CSS。
+
 		".sky-c-sec1:hover", "background: #111111",
 		".sky-c-sec1::before", "rgba(0,0,0,0.4)",
 		"order: 2",
@@ -91,7 +88,6 @@ func TestWorkbenchStyleEx(t *testing.T) {
 	}
 }
 
-// TestWorkbenchValidate 03-A 校验拒绝。
 func TestWorkbenchValidate(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"绝对定位缺坐标", `{"tag":"div","layout":{"engine":"flex","flex":{}},"position":{"type":"absolute"}}`, "必须提供至少一个坐标"},
@@ -116,7 +112,6 @@ func TestWorkbenchValidate(t *testing.T) {
 	}
 }
 
-// TestWorkbenchNodeName 节点重命名元数据超长拒绝。
 func TestWorkbenchNodeName(t *testing.T) {
 	long := strings.Repeat("很", 101)
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sec1","type":"core.container","name":"` + long + `","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}`

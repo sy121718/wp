@@ -1,12 +1,5 @@
 package membershipmcp
 
-// membership_write_tools_test.go — 会员写工具的边界。
-//
-// 这一组里最要紧的三条都不是「参数校验」，而是**回执要说清后果**：
-//   · 手工设级 = 接管（之后不再自动升级），不写出来用户不会想到要问；
-//   · 取消锁定不立刻改级别（等日结），不写出来用户会以为按钮坏了；
-//   · 权益必须带上力度 —— 只写 kind 的话「折扣」这条完全看不出是八折还是两折。
-
 import (
 	"context"
 	"errors"
@@ -142,7 +135,6 @@ func TestMemberWriteToolsAreFive(t *testing.T) {
 	}
 }
 
-// 设级的回执必须说清「已接管」：不回执这句话，用户不会知道自动升级从此对这个人失效。
 func TestMemberAssignSetTextExplainsTakeover(t *testing.T) {
 	stub := &stubMembershipWriter{assignRes: &membershipdto.AssignmentResp{
 		UserID: 2, TierID: 3, TierName: "金卡", Source: "manual",
@@ -172,7 +164,6 @@ func TestMemberAssignSetMapsArgs(t *testing.T) {
 	}
 }
 
-// 解锁的回执必须说清「等级不会立刻变」：不说的话用户会以为操作没生效。
 func TestMemberAssignUnlockTextExplainsDelay(t *testing.T) {
 	stub := &stubMembershipWriter{}
 	text, err := callMemberWrite(t, stub, "member_assign_unlock", map[string]any{
@@ -186,13 +177,12 @@ func TestMemberAssignUnlockTextExplainsDelay(t *testing.T) {
 			t.Errorf("正文缺 %q：\n%s", want, text)
 		}
 	}
-	// 不能报「当前等级是 X」—— UnlockManual 故意不动 tier_id，我们其实没读到等级名。
+
 	if strings.Contains(text, "当前等级") {
 		t.Errorf("不该声称知道当前等级：\n%s", text)
 	}
 }
 
-// 门槛用「分」为单位直传，不做元→分换算：整数对整数，没有浮点误差的余地。
 func TestMemberTierCreatePassesCentsVerbatim(t *testing.T) {
 	stub := &stubMembershipWriter{createRes: &membershipdto.TierResp{ID: 3, Name: "金卡", SortOrder: 20, ThresholdAmount: 100000}}
 	if _, err := callMemberWrite(t, stub, "member_tier_create", map[string]any{
@@ -259,7 +249,6 @@ func TestMemberTierUpdateRejectsEmptyChange(t *testing.T) {
 	}
 }
 
-// 空字符串不能透传成「改成空」：指针字段只该在显式传值时才有值。
 func TestMemberTierUpdateOnlySendsProvidedFields(t *testing.T) {
 	stub := &stubMembershipWriter{updateRes: &membershipdto.TierResp{ID: 3, Name: "金卡", ThresholdAmount: 200000}}
 	if _, err := callMemberWrite(t, stub, "member_tier_update", map[string]any{
@@ -296,7 +285,6 @@ func TestMemberTierDeletePropagatesError(t *testing.T) {
 	}
 }
 
-// 权益正文必须带力度：只写 kind 的话「折扣」是八折还是两折看不出来。
 func TestEntitlementsTextCarriesStrength(t *testing.T) {
 	text := entitlementsText([]membershipdto.EntitlementResp{
 		{Kind: "free_shipping", ValueInt: 1},
@@ -305,8 +293,7 @@ func TestEntitlementsTextCarriesStrength(t *testing.T) {
 	if !strings.Contains(text, "免运费") {
 		t.Errorf("缺免运费：%s", text)
 	}
-	// 20 是扣减 20%（打 8 折），不是「20% 折扣」—— 两种说法都要出现，
-	// 只给百分比会被读反，只给折扣数在非整数档（如 0.5 折）上又说不准。
+
 	if !strings.Contains(text, "8 折") || !strings.Contains(text, "20%") {
 		t.Errorf("折扣力度说不清：%s", text)
 	}
@@ -318,8 +305,6 @@ func TestEntitlementsTextEmpty(t *testing.T) {
 	}
 }
 
-// 描述里必须写明「手工设级 = 接管」与门槛单位是分：
-// 这两件事都不是模型能自己推出来的。
 func TestMemberWriteDescriptionsStateKeySemantics(t *testing.T) {
 	tools := mustMemberWriteTools(t, &stubMembershipWriter{})
 	if desc := tools["member_assign_set"].Description(); !strings.Contains(desc, "接管") {

@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestSplitTextSegments 逐字/逐词切分：chars 按 rune、words 保留尾随空格、空值回退 nil。
 func TestSplitTextSegments(t *testing.T) {
 	tests := []struct {
 		name string
@@ -37,7 +36,6 @@ func TestSplitTextSegments(t *testing.T) {
 	}
 }
 
-// TestSplitTextSegmentsLimit 分段上限 maxTextSegments：恰好上限可用，超限回退 nil（模板整段输出）。
 func TestSplitTextSegmentsLimit(t *testing.T) {
 	atLimit := strings.Repeat("a", maxTextSegments)
 	if got := splitTextSegments(atLimit, "chars"); len(got) != maxTextSegments {
@@ -49,7 +47,6 @@ func TestSplitTextSegmentsLimit(t *testing.T) {
 	}
 }
 
-// TestBuildViewTextAnim 视图层拆分：chars/words 生效、高亮盒与关闭态不拆分。
 func TestBuildViewTextAnim(t *testing.T) {
 	t.Run("逐字", func(t *testing.T) {
 		v, err := BuildView(&Props{Text: "标题", TextAnim: "chars"}, nil)
@@ -95,7 +92,6 @@ func TestBuildViewTextAnim(t *testing.T) {
 	})
 }
 
-// TestCompileCSSTextAnim 文本动画 CSS：分段基础规则 + 递增延迟 + 第 21 段兜底档 + keyframes 激活。
 func TestCompileCSSTextAnim(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Text: "标题动画", TextAnim: "chars", TextAnimDelay: 40}, b)
@@ -112,7 +108,6 @@ func TestCompileCSSTextAnim(t *testing.T) {
 		}
 	}
 
-	// 逐段递增：第 1 段 0ms、第 3 段 2*delay、第 20 段 19*delay，第 21 段起统一兜底档。
 	for _, c := range []struct {
 		nth  string
 		decl string
@@ -136,16 +131,15 @@ func TestCompileCSSTextAnim(t *testing.T) {
 	}
 }
 
-// TestCompileCSSTextAnimDelay 字间延迟：未设或非法（<=0）回退默认 40ms；显式值按值递增。
 func TestCompileCSSTextAnimDelay(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		delay int
 		want  string
 	}{
-		{"未设回退 40ms", 0, "animation-delay: 120ms"},  // 第 4 段 = 3*40
-		{"负数回退 40ms", -5, "animation-delay: 120ms"}, // 第 4 段 = 3*40
-		{"显式 100ms", 100, "animation-delay: 300ms"}, // 第 4 段 = 3*100
+		{"未设回退 40ms", 0, "animation-delay: 120ms"},
+		{"负数回退 40ms", -5, "animation-delay: 120ms"},
+		{"显式 100ms", 100, "animation-delay: 300ms"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &core.CSSBuckets{}
@@ -158,7 +152,6 @@ func TestCompileCSSTextAnimDelay(t *testing.T) {
 	}
 }
 
-// TestCompileCSSTextAnimOff 未开启文本动画：不产出分段规则，也不激活关键帧。
 func TestCompileCSSTextAnimOff(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Text: "标题"}, b)

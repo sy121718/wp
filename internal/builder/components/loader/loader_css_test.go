@@ -13,7 +13,6 @@ func loaderCSSFor(p *Props) string {
 	return b.String()
 }
 
-// TestLoaderCSSVariantsIsolated 每个变体只产出自己的规则与关键帧。
 func TestLoaderCSSVariantsIsolated(t *testing.T) {
 	cases := []struct {
 		variant string
@@ -43,10 +42,6 @@ func TestLoaderCSSVariantsIsolated(t *testing.T) {
 	}
 }
 
-// TestLoaderCSSPhaseDelays 相位延迟按序号逐条展开，条数与序号都必须对。
-//
-// 这些规则由 @each 展开：少一条就是「某个点不掉队」—— 九宫格与波浪条全靠延迟错开，
-// 漏掉相位会让整个动画看起来是整体闪动而非流动。
 func TestLoaderCSSPhaseDelays(t *testing.T) {
 	cases := []struct {
 		variant string
@@ -67,7 +62,7 @@ func TestLoaderCSSPhaseDelays(t *testing.T) {
 			}
 		}
 	}
-	// 九宫格 9 条、波浪 5 条 —— 条数直接决定动画形态。
+
 	grid := loaderCSSFor(&Props{Variant: VariantGrid})
 	if strings.Count(grid, ".sky-loader-grid i:nth-child(") != 9 {
 		t.Errorf("九宫格应有 9 条相位延迟:\n%s", grid)
@@ -78,11 +73,6 @@ func TestLoaderCSSPhaseDelays(t *testing.T) {
 	}
 }
 
-// TestLoaderCSSNoInvalidDecl 颜色为空时不产出无效声明。
-//
-// 迁移前 Go 侧用的是 core.CSSDecl("color", p.Color)，空值只跳过参数、
-// 仍留下一条 `color: ` —— 浏览器会丢弃它，但产物字节里带着一条无效声明。
-// 样式源的语义是「变量为空即整条省略」，顺手把这个既有缺陷去掉了。
 func TestLoaderCSSNoInvalidDecl(t *testing.T) {
 	out := loaderCSSFor(&Props{})
 	if strings.Contains(out, "color: ;") || strings.Contains(out, ": ;") || strings.Contains(out, ":  ;") {
@@ -96,7 +86,6 @@ func TestLoaderCSSNoInvalidDecl(t *testing.T) {
 	}
 }
 
-// TestLoaderCSSLabel 文案是可选规则。
 func TestLoaderCSSLabel(t *testing.T) {
 	if strings.Contains(loaderCSSFor(&Props{}), ".sky-loader-label") {
 		t.Errorf("无文案时不该产出标签规则")

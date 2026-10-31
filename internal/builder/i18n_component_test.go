@@ -1,15 +1,5 @@
 package builder
 
-// i18n_component_test.go — 构建期组件文案多语言（多语言 P4）。
-//
-// 覆盖 docs/06-D §10「组件 UI 文案的构建期翻译」的三条契约：
-//  1. 文案确实经 sys_i18n key 取词：注入取词函数后，产物出现该函数返回的译文；
-//  2. 兜底链绝不失效：取词函数缺失 / 未命中 / 返回空串时，产物回退组件包内中文原文，
-//     绝不出现空属性、裸 key 或编译报错；
-//  3. 语言维度已预留：WithLanguage 决定 RenderContext.Lang，未指定时取默认语言。
-//
-// 本文件不依赖数据库：默认取词函数在 i18n 未初始化时按兜底链返回 fallback（原中文）。
-
 import (
 	"strings"
 	"testing"
@@ -21,9 +11,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// i18nComponentDocJSON 覆盖全部 7 处访客面固定文案所在组件：
-// nav（aria-label）/ gallery（轮播箭头）/ slider（箭头）/ video（iframe title）
-// / countdown（天时分秒）/ form（提交按钮）/ rating（无障碍描述）。
 const i18nComponentDocJSON = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "i18n", "description": "i18n"}},
   "root": [
@@ -37,7 +24,6 @@ const i18nComponentDocJSON = `{
   ]
 }`
 
-// i18nTestComponentSet 组件模板 Set（与既有测试共用同一加载方式）。
 func i18nTestComponentSet(t *testing.T) *jet.Set {
 	t.Helper()
 	set, err := templates.NewComponentSet("../templates/components")
@@ -47,7 +33,6 @@ func i18nTestComponentSet(t *testing.T) *jet.Set {
 	return set
 }
 
-// compileI18nDoc 编译 i18n 用例文档，返回产物 HTML。
 func compileI18nDoc(t *testing.T, opts ...CompileOption) string {
 	t.Helper()
 	p, err := ParsePage([]byte(i18nComponentDocJSON))
@@ -62,8 +47,6 @@ func compileI18nDoc(t *testing.T, opts ...CompileOption) string {
 	return res.HTML
 }
 
-// TestCompileComponentTextUsesI18nKey 文案确实经 key 取词：注入的取词函数按 key 返回译文，
-// 产物必须出现译文而不是组件包内中文原文。
 func TestCompileComponentTextUsesI18nKey(t *testing.T) {
 	var asked []string
 	html := compileI18nDoc(t, WithTranslator(func(key, fallback string) string {
@@ -91,14 +74,13 @@ func TestCompileComponentTextUsesI18nKey(t *testing.T) {
 		if !strings.Contains(joined, key) {
 			t.Fatalf("构建期未向取词函数请求 key %q（实际请求：%v）", key, asked)
 		}
-		// 模板经 Jet 默认转义输出，故断言转义后的形态。
+
 		escaped := strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace("<" + key + ">")
 		if !strings.Contains(html, escaped) {
 			t.Fatalf("产物未出现 key %q 的译文（转义后 %q）", key, escaped)
 		}
 	}
 
-	// 命中取词函数时不应再出现中文原文。
 	for _, zh := range []string{"站点导航", "上一张", "下一张", "视频", "提交"} {
 		if strings.Contains(html, zh) {
 			t.Fatalf("取词函数已命中，产物仍出现中文原文 %q", zh)
@@ -106,11 +88,8 @@ func TestCompileComponentTextUsesI18nKey(t *testing.T) {
 	}
 }
 
-// TestCompileComponentTextFallbackChain 兜底链：i18n 未初始化（缓存为空）时，
-// 缺词条必须回退组件包内中文原文，绝不输出空串、裸 key 或编译报错。
 func TestCompileComponentTextFallbackChain(t *testing.T) {
-	// 默认取词函数 = i18n.TranslateFunc(默认语言)；本测试进程未初始化 i18n 缓存，
-	// GetText 返回 key 本身 → Translate 回退 fallback（组件包内中文原文）。
+
 	html := compileI18nDoc(t)
 
 	for _, want := range []string{
@@ -120,7 +99,7 @@ func TestCompileComponentTextFallbackChain(t *testing.T) {
 		`title="视频"`,
 		`>天<`, `>时<`, `>分<`, `>秒<`,
 		`>提交<`,
-		`aria-label="第 1 张"`, // 圆点锚点已改构建期生成（序号在构建期替换）
+		`aria-label="第 1 张"`,
 		`aria-label="评分 4.5 / 5"`,
 	} {
 		if !strings.Contains(html, want) {
@@ -128,7 +107,6 @@ func TestCompileComponentTextFallbackChain(t *testing.T) {
 		}
 	}
 
-	// 绝不输出空属性 / 裸 key / 破损占位符。
 	for _, bad := range []string{`aria-label=""`, `title=""`, "site.component.", "%!s(MISSING)"} {
 		if strings.Contains(html, bad) {
 			t.Fatalf("产物出现非法输出 %q", bad)
@@ -136,8 +114,6 @@ func TestCompileComponentTextFallbackChain(t *testing.T) {
 	}
 }
 
-// TestCompileComponentTextEmptyTranslatorStillFallsBack 取词函数返回空串（或为 nil）时，
-// RenderContext.Text 必须继续回退中文原文——空串绝不能进入产物。
 func TestCompileComponentTextEmptyTranslatorStillFallsBack(t *testing.T) {
 	html := compileI18nDoc(t, WithTranslator(func(key, fallback string) string { return "" }))
 
@@ -149,10 +125,8 @@ func TestCompileComponentTextEmptyTranslatorStillFallsBack(t *testing.T) {
 	}
 }
 
-// TestResolveCompileI18nLang 语言维度预留：显式语言优先，未指定取默认语言，
-// 取词函数未注入时按语言构造（且绝不返回 nil）。
 func TestResolveCompileI18nLang(t *testing.T) {
-	// 未指定语言 → 默认语言（i18n 未初始化时为内置 zh-CN）。
+
 	lang, fn := resolveCompileI18n(&compileConfig{})
 	if lang != i18n.GetDefaultLang() {
 		t.Fatalf("未指定语言应取默认语言 %q，实际 %q", i18n.GetDefaultLang(), lang)
@@ -161,20 +135,17 @@ func TestResolveCompileI18nLang(t *testing.T) {
 		t.Fatal("取词函数不应为 nil")
 	}
 
-	// 显式语言优先（P2 接入 /{lang}/ 时装配层经此注入）。
 	lang, _ = resolveCompileI18n(&compileConfig{lang: " en-US "})
 	if lang != "en-US" {
 		t.Fatalf("显式语言应规范化并保留，实际 %q", lang)
 	}
 
-	// 注入的取词函数原样使用（不覆盖）。
 	custom := func(key, fallback string) string { return "custom" }
 	_, fn = resolveCompileI18n(&compileConfig{lang: "en-US", translate: custom})
 	if fn("x", "y") != "custom" {
 		t.Fatal("注入的取词函数应被原样使用")
 	}
 
-	// WithLanguage / WithTranslator 选项写入 compileConfig。
 	cfg := &compileConfig{}
 	WithLanguage(" en-US ")(cfg)
 	WithTranslator(custom)(cfg)
@@ -183,8 +154,6 @@ func TestResolveCompileI18nLang(t *testing.T) {
 	}
 }
 
-// TestRenderContextTextNilSafe RenderContext.Text 自身兜底：nil 接收者 / nil 取词函数
-// / 空 fallback 均不 panic 且不返回空串。
 func TestRenderContextTextNilSafe(t *testing.T) {
 	var nilCtx *core.RenderContext
 	if got := nilCtx.Text("k", "原中文"); got != "原中文" {
@@ -203,7 +172,6 @@ func TestRenderContextTextNilSafe(t *testing.T) {
 	}
 }
 
-// TestCompileComponentTextUserValueWins 用户显式填写的文案优先：只有内置缺省才参与翻译。
 func TestCompileComponentTextUserValueWins(t *testing.T) {
 	doc := `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "i18n", "description": "i18n"}},
@@ -229,8 +197,6 @@ func TestCompileComponentTextUserValueWins(t *testing.T) {
 	}
 }
 
-// TestCompileComponentTextBrokenPlaceholder rating 词条缺 %s 占位符时按纯文本输出，
-// 绝不产生 %!s(MISSING) 之类的破损文本。
 func TestCompileComponentTextBrokenPlaceholder(t *testing.T) {
 	doc := `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "i18n", "description": "i18n"}},
@@ -241,7 +207,7 @@ func TestCompileComponentTextBrokenPlaceholder(t *testing.T) {
 		t.Fatalf("ParsePage: %v", err)
 	}
 	res, err := Compile(p, WithComponentSet(i18nTestComponentSet(t)), WithTranslator(func(key, fallback string) string {
-		return "Rated" // 词条丢失占位符
+		return "Rated"
 	}))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)

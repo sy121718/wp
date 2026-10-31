@@ -15,7 +15,6 @@ func (s *Service) SiteSession(userID uint64) userdto.SiteSessionResp {
 	return userdto.SiteSessionResp{Authenticated: userID != 0}
 }
 
-// SiteDevices 复用设备台账，只把会话存储哈希替换成当前会话专用的设备句柄。
 func (s *Service) SiteDevices(ctx context.Context, userID uint64, token string) ([]userdto.SiteDevice, error) {
 	items, err := s.SessionsOf(ctx, userID, token)
 	if err != nil {
@@ -32,7 +31,6 @@ func (s *Service) SiteDevices(ctx context.Context, userID uint64, token string) 
 	return out, nil
 }
 
-// RevokeSiteDevice 仅在本人的设备集合中解析句柄，不接受客户端提供的存储哈希。
 func (s *Service) RevokeSiteDevice(ctx context.Context, userID uint64, token, id string) error {
 	items, err := s.SessionsOf(ctx, userID, token)
 	if err != nil {

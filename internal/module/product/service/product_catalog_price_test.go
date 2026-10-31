@@ -1,14 +1,5 @@
 package productservice_test
 
-// product_catalog_price_test.go — 公开目录的价格与划线价口径（DEC-01 已裁决）。
-//
-// 口径：只看**启用**变体；售价 = 最便宜启用变体（同价按 id 小者胜）；
-// 划线价 = 同一个变体自己的 compare_price，不跨变体取最大值。
-// 反例（旧行为）是「10 元卖 + 另一个变体 99 元划线」拼出 89% 折扣 —— 页面上是假的。
-//
-// 判据走真实读路径（PublicCatalog）而不是只测纯函数：口径若在目录里被第二次实现，
-// 纯函数测试仍然绿而页面数字仍然错。
-
 import (
 	"context"
 	"testing"
@@ -22,7 +13,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// seedCatalogVariants 给一个商品插入变体（一条 SQL，避免 N 次往返）。
 func seedCatalogVariants(t *testing.T, db *gorm.DB, productID string, rows []struct {
 	id, sku             string
 	price, compare      float64
@@ -42,7 +32,6 @@ func seedCatalogVariants(t *testing.T, db *gorm.DB, productID string, rows []str
 	}
 }
 
-// TestPublicCatalogPriceUsesEnabledCheapestVariant 目录价格只认启用变体，划线价同源。
 func TestPublicCatalogPriceUsesEnabledCheapestVariant(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
@@ -54,9 +43,7 @@ func TestPublicCatalogPriceUsesEnabledCheapestVariant(t *testing.T) {
 		productID, projectID).Error; err != nil {
 		t.Fatalf("插入商品失败：%v", err)
 	}
-	// a：启用、10 元、无划线价（胜出的最低价）
-	// b：启用、20 元、划线价 999（不得占 a 的折扣）
-	// c：停用、1 元、划线价 5000（不得进价格与区间）
+
 	seedCatalogVariants(t, db, productID, []struct {
 		id, sku             string
 		price, compare      float64

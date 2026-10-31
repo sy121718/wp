@@ -1,18 +1,10 @@
 package aiservice
 
-// ai_usage_metrics_test.go — docs/16 §3.1 的三个验收数字的数据侧断言。
-//
-// 这一批的风险不在「算错」，而在**把没数据算成 0**：
-// 上游没报缓存字段时，命中率是「无从判断」而不是「0%」；
-// 前者只是少一个观测，后者是一个严重的信号（前缀每轮都在变）。
-// 两者在页面上长得一样的话，最该被看见的那条信息就被抹掉了。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"testing"
 )
 
-// TestUsageFromJSONParsesCachedChatCompletions chat/completions 的缓存字段。
 func TestUsageFromJSONParsesCachedChatCompletions(t *testing.T) {
 	var root map[string]any
 	body := `{"usage":{"prompt_tokens":1000,"completion_tokens":50,"total_tokens":1050,
@@ -29,7 +21,6 @@ func TestUsageFromJSONParsesCachedChatCompletions(t *testing.T) {
 	}
 }
 
-// TestUsageFromJSONParsesCachedResponses responses 的字段名不同，同样要认。
 func TestUsageFromJSONParsesCachedResponses(t *testing.T) {
 	var root map[string]any
 	body := `{"usage":{"input_tokens":800,"output_tokens":40,
@@ -43,16 +34,11 @@ func TestUsageFromJSONParsesCachedResponses(t *testing.T) {
 	}
 }
 
-// TestUsageFromJSONDistinguishesZeroFromMissing 「报了 0」与「没报」必须分开。
-//
-// 这是本批最容易写错、也最难发现的一处：两者的 CachedTokens 都是 0，
-// 只有 CachedReported 能区分。写错时页面上的命中率会偏低，而这个症状会被
-// 归因到提示词上（去改规则、改顺序），没人会想到是上游没报。
 func TestUsageFromJSONDistinguishesZeroFromMissing(t *testing.T) {
 	cases := []struct {
 		name     string
 		body     string
-		wantZero bool // 是否「报了 0」
+		wantZero bool
 	}{
 		{"报 0", `{"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":0}}}`, true},
 		{"完全没有 details", `{"usage":{"prompt_tokens":100,"completion_tokens":5}}`, false},
@@ -76,10 +62,6 @@ func TestUsageFromJSONDistinguishesZeroFromMissing(t *testing.T) {
 	}
 }
 
-// TestPercentageGuardsZeroDenominator 分母为 0 时回 0 而不是 NaN。
-//
-// NaN 会渲染成「NaN%」且不报错、不进日志 —— 页面上出现一个谁也不认识的字符，
-// 而排查时从这条线索出发什么都查不到。
 func TestPercentageGuardsZeroDenominator(t *testing.T) {
 	if got := percentage(10, 0); got != 0 {
 		t.Errorf("分母为 0 应回 0，实得 %v", got)
@@ -92,7 +74,6 @@ func TestPercentageGuardsZeroDenominator(t *testing.T) {
 	}
 }
 
-// TestPercentTextSeparatesNoData 没数据与 0% 的展示必须不同。
 func TestPercentTextSeparatesNoData(t *testing.T) {
 	if got := percentText(0, false); got != "—" {
 		t.Errorf("没数据时应显示 —，实得 %q", got)

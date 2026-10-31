@@ -1,7 +1,5 @@
 package productservice_test
 
-// 同一迁移库、同一批库存桩逐字段比较列表与详情，并先断言夹具非空，防止两边都漏字段的假绿。
-
 import (
 	"context"
 	"reflect"
@@ -21,7 +19,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// parityWarehousePortStub 页面「归属仓」端口桩（库存列的分仓明细按工程仓库清单展开）。
 type parityWarehousePortStub struct {
 	productcontract.WarehouseOptionsPort
 	options []productdto.WarehouseOptionResp
@@ -31,12 +28,10 @@ func (s parityWarehousePortStub) WarehouseOptions(context.Context, string) ([]pr
 	return s.options, nil
 }
 
-// WarehouseSKUOptions 列表页还会取「从仓库选」的候选分组：桩给空（本用例的判据不是它）。
 func (s parityWarehousePortStub) WarehouseSKUOptions(context.Context, string, []productdto.WarehouseOptionResp) ([]productdto.WarehouseSKUGroupResp, error) {
 	return []productdto.WarehouseSKUGroupResp{}, nil
 }
 
-// parityStockPortStub 库存端口桩：给了批次一致的库存事实（fillProductStock 的输入）。
 type parityStockPortStub struct {
 	inventorycontract.ProductStockPort
 	rows []inventorydto.ProductWarehouseStock
@@ -48,13 +43,11 @@ func (s parityStockPortStub) WarehouseStocksByProducts(context.Context, string, 
 
 const parityWarehouseID = "11111111-1111-1111-1111-111111111111"
 
-// parityFixture 一套「挂满料」的夹具：多 SKU 商品 + 单品商品。
 type parityFixture struct {
 	variantProduct string
 	singleProduct  string
 }
 
-// seedParityFixture 造夹具（只补 NOT NULL 且无默认值的列，其余走表默认）。
 func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixture {
 	t.Helper()
 	f := parityFixture{variantProduct: uuid.NewString(), singleProduct: uuid.NewString()}
@@ -85,8 +78,7 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 		f.variantProduct, projectID,
 		"["+strconv.Quote(categoryA)+","+strconv.Quote(categoryB)+"]", categoryA, brand,
 		"["+strconv.Quote(manualTag)+","+strconv.Quote(ruleTag)+"]")
-	// 单品商品也挂分类 / 品牌 / 标签：夹具的每个待比字段都要有非零值，
-	// 否则「两边都空」的对账是假绿（详情行侧的 BrandName / TagLabel / CategoryCell）。
+
 	exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort,
 			default_price, category_ids, primary_category_id, brand_id, tag_ids, create_time, update_time)
 		VALUES (?, ?, '单品商品', 'p-single', 'SKU-S1', 'published', 2,
@@ -117,8 +109,6 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 	return f
 }
 
-// TestProductListRowSummaryMatchesDetailPath 同一库同桩下，列表行与详情页成品行逐字段一致。
-// amountText 数值金额的可比文本（对账只比「值」：展示格式已归模板）。
 func amountText(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 
 func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {

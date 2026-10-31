@@ -1,14 +1,3 @@
-// defaults_contract_test.go — 组件库「插入即合法」契约测试。
-//
-// 背景：从组件库拖入/点击插入的组件，如果只带 props 没有必需内容（子节点或数组项），
-// 预览会立刻编译失败（如 core.tabs 报「页签至少需要一个面板」）。修复方向是
-// 「插入时不留空壳」，而不是放宽校验。
-//
-// 默认内容只在 internal/templates/static/js/workbench/palette.js 声明一处，
-// 本测试用 node 求值该模块的 buildInsertNode（与浏览器点一下组件同源），
-// 再把真实产物交给 Go 侧 Validate / Compile —— 不存在手抄一份测试数据后
-// 与前端漂移的问题。环境没有 node 时自动跳过。
-
 package builder
 
 import (
@@ -25,20 +14,16 @@ import (
 	"go_wp/internal/templates"
 )
 
-// paletteJSRel palette.js 相对本包测试工作目录的路径。
 const paletteJSRel = "../templates/static/js/workbench/palette.js"
 
-// paletteProbe 前端组件库探针结果（node 求值 palette.js 的产物）。
 type paletteProbe struct {
-	// Nodes 每个组件库条目「插入后」的节点（buildInsertNode 输出）。
 	Nodes []*core.Node `json:"nodes"`
-	// ItemTypes paletteItems 的组件类型列表。
+
 	ItemTypes []string `json:"itemTypes"`
-	// GroupTypes paletteGroups 声明的组件类型列表（面板分组顺序）。
+
 	GroupTypes []string `json:"groupTypes"`
 }
 
-// runPaletteProbe 用 node 求值前端 palette.js，返回组件库的真实插入产物与清单。
 func runPaletteProbe(t *testing.T) (p paletteProbe) {
 	t.Helper()
 	abs, err := filepath.Abs(paletteJSRel)
@@ -52,7 +37,7 @@ func runPaletteProbe(t *testing.T) (p paletteProbe) {
 	if err != nil {
 		t.Skip("未找到 node，跳过前端组件库契约测试")
 	}
-	// node 的 ESM 入口用 file:// URL，避免相对路径歧义。
+
 	url := "file://" + filepath.ToSlash(abs)
 	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(paletteProbeScript, url)).CombinedOutput()
 	if err != nil {
@@ -67,14 +52,11 @@ func runPaletteProbe(t *testing.T) (p paletteProbe) {
 	return p
 }
 
-// paletteInsertNodes 组件库每个条目「插入后」的节点。
 func paletteInsertNodes(t *testing.T) []*core.Node {
 	t.Helper()
 	return runPaletteProbe(t).Nodes
 }
 
-// paletteProbeScript node 侧探针：构造插入节点并导出清单。
-// 与浏览器里的插入路径同源（同一个 buildInsertNode）。
 const paletteProbeScript = `
 import { paletteItems, paletteGroups, buildInsertNode } from %q;
 // 每次插入新建一个分配器（与浏览器里的 makeIdAllocator 同语义）。
@@ -91,7 +73,6 @@ console.log(JSON.stringify({
 }));
 `
 
-// structuralRequired A 类：Validate 要求至少一个子节点（空壳必然编译失败）。
 var structuralRequired = map[string]string{
 	"core.tabs":      "页签至少需要一个面板",
 	"core.accordion": "手风琴至少需要一个折叠项",
@@ -99,21 +80,16 @@ var structuralRequired = map[string]string{
 	"core.marquee":   "跑马灯至少需要一个内容",
 }
 
-// arrayPropsRequired B 类：Validate 要求 props 数组至少一项。
 var arrayPropsRequired = map[string]string{
 	"core.faq":     "常见问题至少需要一条",
 	"core.form":    "表单至少需要一个字段",
 	"core.gallery": "必须提供静态图集或 CMS 图集绑定",
 }
 
-// emptyNode 构造「空壳」节点：无 props、无 children。
 func emptyNode(typeName string) *core.Node {
 	return &core.Node{ID: "probe-1", Type: typeName, Props: json.RawMessage("{}")}
 }
 
-// TestPaletteGroupsCoverItems 组件库分组与条目必须互相覆盖：
-// 分组里声明的类型必须在条目里存在（否则组件库看不到它 —— 历史上 core.gallery
-// 就漏在 paletteItems 之外），每个条目也必须归入某个分组（否则拖不出来）。
 func TestPaletteGroupsCoverItems(t *testing.T) {
 	p := runPaletteProbe(t)
 	items := map[string]bool{}
@@ -134,7 +110,6 @@ func TestPaletteGroupsCoverItems(t *testing.T) {
 	}
 }
 
-// TestPaletteInsertNodesValidate 组件库每个条目插入后都必须通过节点校验。
 func TestPaletteInsertNodesValidate(t *testing.T) {
 	for _, n := range paletteInsertNodes(t) {
 		n := n
@@ -146,8 +121,6 @@ func TestPaletteInsertNodesValidate(t *testing.T) {
 	}
 }
 
-// TestPaletteInsertNodeIDsUnique 每个条目插入出的子树内节点 ID 必须唯一：
-// 默认子树里可能包含多个同类型子节点（未来扩展），同批分配器必须逐个记账。
 func TestPaletteInsertNodeIDsUnique(t *testing.T) {
 	for _, n := range paletteInsertNodes(t) {
 		seen := map[string]bool{}
@@ -166,8 +139,6 @@ func TestPaletteInsertNodeIDsUnique(t *testing.T) {
 	}
 }
 
-// TestPaletteInsertNodesFillRequiredContent 逐个受影响组件验证：
-// 空壳必须被拒绝（证明校验仍在），插入产物必须通过且内容可见可编辑。
 func TestPaletteInsertNodesFillRequiredContent(t *testing.T) {
 	byType := map[string]*core.Node{}
 	for _, n := range paletteInsertNodes(t) {
@@ -247,7 +218,7 @@ func TestPaletteInsertNodesFillRequiredContent(t *testing.T) {
 	})
 
 	t.Run("内容数组与子节点数量一致", func(t *testing.T) {
-		// tabs/accordion 的 props 数组必须与 children 一一对应，否则同样编译失败。
+
 		cases := map[string]string{"core.tabs": "tabs", "core.accordion": "items"}
 		for typ, key := range cases {
 			n := byType[typ]
@@ -269,18 +240,10 @@ func TestPaletteInsertNodesFillRequiredContent(t *testing.T) {
 	})
 }
 
-// paletteContentResolver 组件库编译用例的桩解析器：任何字段返回固定占位值。
-//
-// 为什么需要它：core.product（商品详情，issue #6）声明的槽位全是数据绑定，
-// 没有内容解析器就编译不出来 —— 而真实构建（发布实例路径）必注入解析器。
-// 这里只验证「组件库条目插入后编译得出来」，字段语义由 product 模块测试覆盖，
-// 故桩实现按「有值」返回，不校验白名单（白名单校验有独立用例）。
 type paletteContentResolver struct{}
 
-// ResolveString 实现 core.ContentResolver。
 func (paletteContentResolver) ResolveString(string) (string, error) { return "示例值", nil }
 
-// TestPaletteInsertNodesCompile 组件库每个条目插入后都必须能真正编译出产物。
 func TestPaletteInsertNodesCompile(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -288,9 +251,9 @@ func TestPaletteInsertNodesCompile(t *testing.T) {
 	}
 	for _, n := range paletteInsertNodes(t) {
 		n := n
-		// 每个组件一条「拖入即编译成功」用例（子测试名 = 组件类型）。
+
 		t.Run(n.Type, func(t *testing.T) {
-			// 页面设置需给出合法版心模式（与工作台默认文档一致），否则编译在校验前就报错。
+
 			doc, err := json.Marshal(map[string]any{
 				"settings": map[string]any{"layout": map[string]any{"mode": "full"}},
 				"root":     []*core.Node{n},
@@ -313,7 +276,6 @@ func TestPaletteInsertNodesCompile(t *testing.T) {
 	}
 }
 
-// keysOf 取 map 键（保证确定性顺序：按 key 排序后返回）。
 func keysOf(m map[string]string) (out []string) {
 	for k := range m {
 		out = append(out, k)

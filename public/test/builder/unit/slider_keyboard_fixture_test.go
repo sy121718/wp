@@ -1,12 +1,5 @@
 package unit
 
-// slider_keyboard_fixture_test.go — UI-008 的浏览器走查页：真实产物 + 真实增强脚本，
-// 写到 /tmp/slider-a11y.html 供 CDP 发真实按键验证键盘路径（先聚焦容器再按方向键，
-// 断言 scrollLeft 确实变化 —— AGENTS.md 明确要求只读属性名不算验证）。
-//
-// 与 a11y_page_fixture_test.go 同源：组件级断言只能证明标记结构对，
-// 证明不了键盘真的走得通。
-
 import (
 	"os"
 	"path/filepath"
@@ -27,7 +20,6 @@ const sliderFixtureJSON = `{
   ]
 }`
 
-// TestSliderKeyboardFixture 生成走查页并做结构性断言（键盘行为在浏览器里用真实按键验证）。
 func TestSliderKeyboardFixture(t *testing.T) {
 	page, err := builder.ParsePage([]byte(sliderFixtureJSON))
 	if err != nil {
@@ -42,11 +34,11 @@ func TestSliderKeyboardFixture(t *testing.T) {
 		t.Fatalf("组装文档失败: %v", err)
 	}
 	for _, want := range []string{
-		// 容器可聚焦（方向键路径的入口），且不能是正 tabindex（会打乱全局 Tab 顺序）。
+
 		`data-slider="sld1" tabindex="0"`,
 		"sky-slider-track",
 		`class="sky-slider-dot"`,
-		// 增强脚本内联进产物（键盘处理必须真的送到访客浏览器）。
+
 		"ArrowRight",
 		"ArrowLeft",
 	} {

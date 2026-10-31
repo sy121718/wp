@@ -1,13 +1,5 @@
 package feature
 
-// account_test.go — 发信账号的 feature 测试（issue #37）。
-//
-// 盯四件事，都是「出错会很难受」的地方：
-//  1. 密码**只以密文落库**（库里的字符串不能包含明文）；
-//  2. 响应**不回显密码**（只回答有没有设过）；
-//  3. 更新时密码留空表示不改（否则编辑一次就把 SMTP 密码清掉）；
-//  4. 未配置加密密钥时明确报错，而不是用弱密钥悄悄加密。
-
 import (
 	"context"
 	"strings"
@@ -32,7 +24,7 @@ func newAccountFixture(t *testing.T) *fixture {
 }
 
 func TestAccountRequiresCipherSecret(t *testing.T) {
-	f := newFixture(t) // 故意不设密钥
+	f := newFixture(t)
 	if f == nil {
 		return
 	}
@@ -68,7 +60,6 @@ func TestAccountPasswordStoredEncryptedNotEchoed(t *testing.T) {
 		t.Fatal("第一个 transactional 账号应自动成为默认")
 	}
 
-	// 库里存的必须是密文，且不能包含明文片段。
 	row, err := f.m.GetAccount(ctx, item.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +74,6 @@ func TestAccountPasswordStoredEncryptedNotEchoed(t *testing.T) {
 		t.Fatal("密文里出现了明文")
 	}
 
-	// 能正确解密回来（发信时要还原）。
 	back, err := crypto.Decrypt(*row.PasswordCipher, testSecret)
 	if err != nil {
 		t.Fatalf("解密失败: %v", err)
@@ -92,7 +82,6 @@ func TestAccountPasswordStoredEncryptedNotEchoed(t *testing.T) {
 		t.Fatalf("解密结果不对: %q", back)
 	}
 
-	// 列表响应不含任何密码字段。
 	list, err := f.svc.ListAccounts(ctx, "")
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +109,6 @@ func TestAccountUpdateKeepsPasswordWhenBlank(t *testing.T) {
 	orig, _ := f.m.GetAccount(ctx, created.ID)
 	origCipher := *orig.PasswordCipher
 
-	// 只改名字，密码留空
 	if _, err = f.svc.UpdateAccount(ctx, &maildto.SaveAccountReq{
 		ID: created.ID, Name: "改名后的账号", FromEmail: "a@b.com", Host: "smtp.example.com", Port: 587,
 	}); err != nil {
@@ -169,7 +157,7 @@ func TestSetDefaultAccountIsExclusivePerPurpose(t *testing.T) {
 	if err = f.svc.SetDefaultAccount(ctx, a2.ID); err != nil {
 		t.Fatalf("切换默认失败: %v", err)
 	}
-	// 同用途只有一个默认；另一个用途的默认不受影响。
+
 	svcDefault, err := f.svc.ListAccounts(ctx, mailmodel.AccountPurposeTransactional)
 	if err != nil {
 		t.Fatal(err)

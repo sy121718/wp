@@ -64,8 +64,6 @@ func TestArtifactDetailEmptyInputs(t *testing.T) {
 	})
 }
 
-// TestArtifactDetailInvalidUUID 覆盖非 UUID PageID：uuid 列查询报 22P02，
-// 错误未归一化为 ErrArtifactNotFound。
 func TestArtifactDetailInvalidUUID(t *testing.T) {
 	svc := newService(t)
 	_, err := svc.Detail(context.Background(), &artifactdto.DetailReq{PageID: "not-a-uuid", Hash: "h"})
@@ -94,7 +92,7 @@ func TestArtifactDetailByIDSuccess(t *testing.T) {
 
 func TestArtifactDetailByIDNotFound(t *testing.T) {
 	svc := newService(t)
-	// 合法 UUID 但不存在 → ErrRecordNotFound → ErrArtifactNotFound。
+
 	_, err := svc.DetailByID(context.Background(), &artifactdto.DetailByIDReq{ID: "ffffffff-0000-0000-0000-0000000000ff"})
 	requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
 }
@@ -119,8 +117,6 @@ func TestArtifactDetailByIDEmptyInputs(t *testing.T) {
 	})
 }
 
-// TestArtifactDetailByIDInvalidUUID 覆盖非 UUID ID：uuid 列查询报 22P02，
-// 错误未归一化为 ErrArtifactNotFound。
 func TestArtifactDetailByIDInvalidUUID(t *testing.T) {
 	svc := newService(t)
 	_, err := svc.DetailByID(context.Background(), &artifactdto.DetailByIDReq{ID: "not-a-uuid"})

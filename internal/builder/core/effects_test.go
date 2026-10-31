@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// TestCompileSurface 表面质感：glass/liquid 声明与白名单。
 func TestCompileSurface(t *testing.T) {
 	b := &CSSBuckets{}
 	CompileSurface(".t", SurfaceGlass, b)
@@ -26,7 +25,6 @@ func TestCompileSurface(t *testing.T) {
 		}
 	}
 
-	// 非法值由 ValidateAdvanced 白名单拦截（allowedSurface）。
 	if !allowedSurface[""] || !allowedSurface[SurfaceGlass] || !allowedSurface[SurfaceLiquid] {
 		t.Errorf("表面质感白名单不符")
 	}
@@ -35,19 +33,16 @@ func TestCompileSurface(t *testing.T) {
 	}
 }
 
-// TestBorderGradientFlow 渐变边框与流动（Advanced 管线集成行为经 CompileAdvanced，
-// 此处验证校验规则与 @property/keyframes 资源存在性）。
 func TestBorderGradientFlow(t *testing.T) {
 	if !strings.Contains(BorderFlowAngleProperty, "@property --sky-flow-angle") {
 		t.Errorf("@property 块不符")
 	}
-	// keyframes 通用表含边框流动帧。
+
 	if keyframeIndex["sky-border-flow"] == "" || keyframeIndex["sky-bg-flow"] == "" {
 		t.Errorf("sky-border-flow / sky-bg-flow 应在通用 keyframes 表中")
 	}
 }
 
-// TestFocusAndBackgroundFX 焦点光晕与背景流动声明（分类效果库出口函数）。
 func TestFocusAndBackgroundFX(t *testing.T) {
 	ring := FocusRingDecls()
 	joined := strings.Join(ring, "\n")
@@ -69,7 +64,6 @@ func TestFocusAndBackgroundFX(t *testing.T) {
 	}
 }
 
-// TestHoverImgZoom 图片悬停缩放：白名单放行 + 子 img 规则（基础 transition + hover scale）。
 func TestHoverImgZoom(t *testing.T) {
 	if err := ValidateInteraction(InteractionProps{HoverEffect: "img-zoom"}); err != nil {
 		t.Fatalf("img-zoom 应在悬浮效果白名单内: %v", err)
@@ -84,7 +78,6 @@ func TestHoverImgZoom(t *testing.T) {
 	}
 }
 
-// TestHoverImgGray 图片灰度→彩色：子 img filter 规则。
 func TestHoverImgGray(t *testing.T) {
 	if err := ValidateInteraction(InteractionProps{HoverEffect: "img-gray"}); err != nil {
 		t.Fatalf("img-gray 应在悬浮效果白名单内: %v", err)
@@ -99,7 +92,6 @@ func TestHoverImgGray(t *testing.T) {
 	}
 }
 
-// TestHoverShine 光泽扫过：裁剪上下文 + ::after 光斑 + hover 扫出。
 func TestHoverShine(t *testing.T) {
 	if err := ValidateInteraction(InteractionProps{HoverEffect: "shine"}); err != nil {
 		t.Fatalf("shine 应在悬浮效果白名单内: %v", err)
@@ -120,7 +112,6 @@ func TestHoverShine(t *testing.T) {
 	}
 }
 
-// TestNeonShadow 霓虹阴影预设存在且可编译。
 func TestNeonShadow(t *testing.T) {
 	neon, ok := ShadowPresets["neon"]
 	if !ok || !strings.Contains(neon, "rgba(59,130,246") {
@@ -134,7 +125,6 @@ func TestNeonShadow(t *testing.T) {
 	}
 }
 
-// TestBackgroundPatternDecls 图案背景出口：dots 默认 / grid 网格。
 func TestBackgroundPatternDecls(t *testing.T) {
 	dots := strings.Join(BackgroundPatternDecls("", ""), "\n")
 	if !strings.Contains(dots, "radial-gradient") {
@@ -150,21 +140,19 @@ func TestBackgroundPatternDecls(t *testing.T) {
 	}
 }
 
-// TestSpringEasing 弹簧缓动（默认）：标准弹簧覆盖声明 + 档位曲线 + classic 回退。
 func TestSpringEasing(t *testing.T) {
-	// 默认（空 = spring）：输出标准弹簧 timing 覆盖。
+
 	b := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{Entrance: "fade-in"}, b)
 	css := b.String()
 	if !strings.Contains(css, "animation-timing-function: "+SpringStandardCurve) {
 		t.Errorf("默认应输出标准弹簧曲线\n%s", css)
 	}
-	// 简写内 ease 仍保留（老浏览器回退路径）。
+
 	if !strings.Contains(css, "animation: sky-fade-in 0.6s ease backwards") {
 		t.Errorf("简写 ease 兜底缺失\n%s", css)
 	}
 
-	// soft/bouncy 档位各走各的曲线。
 	for _, tc := range []struct {
 		easing, curve string
 	}{{"soft", SpringSoftCurve}, {"bouncy", SpringBouncyCurve}} {
@@ -175,15 +163,12 @@ func TestSpringEasing(t *testing.T) {
 		}
 	}
 
-	// classic 显式回退：无 timing 覆盖声明。
 	b3 := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{Entrance: "fade-in", EntranceEasing: "classic"}, b3)
 	if strings.Contains(b3.String(), "animation-timing-function: linear(") {
 		t.Errorf("classic 不应输出弹簧曲线")
 	}
 
-	// 非法缓动拒绝。
-	// 经典 cubic-bezier 四条必须都是合法取值（它们与弹簧并存，见 effects.go）。
 	for _, easing := range []string{"circ-out", "circ-in-out", "back-out", "quint-in-out"} {
 		b4 := &CSSBuckets{}
 		CompileInteraction(".t", InteractionProps{Entrance: "fade-in", EntranceEasing: easing}, b4)
@@ -192,12 +177,11 @@ func TestSpringEasing(t *testing.T) {
 			t.Errorf("%s 应产出 cubic-bezier 覆盖声明，实际:\n%s", easing, out)
 		}
 	}
-	// 未知缓动仍然被拒。
+
 	if err := ValidateInteraction(InteractionProps{Entrance: "fade-in", EntranceEasing: "expo"}); err == nil {
 		t.Errorf("非法入场缓动应被拒绝")
 	}
 
-	// 与循环并存：timing 覆盖必须两值（否则弹簧曲线误伤循环节奏）。
 	b4 := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{Entrance: "fade-in", LoopEffect: "pulse"}, b4)
 	css4 := b4.String()
@@ -209,7 +193,6 @@ func TestSpringEasing(t *testing.T) {
 	}
 }
 
-// TestScrollStory 滚动叙事：白名单 + view() 进度绑定声明 + 与入场/循环互斥。
 func TestScrollStory(t *testing.T) {
 	for _, word := range []string{"zoom", "rise", "fade"} {
 		t.Run(word, func(t *testing.T) {
@@ -232,21 +215,19 @@ func TestScrollStory(t *testing.T) {
 		})
 	}
 
-	// 互斥：滚动叙事 + 入场。
 	if err := ValidateInteraction(InteractionProps{ScrollStory: "zoom", Entrance: "fade-in"}); err == nil {
 		t.Errorf("滚动叙事与入场动效应互斥")
 	}
-	// 互斥：滚动叙事 + 循环。
+
 	if err := ValidateInteraction(InteractionProps{ScrollStory: "zoom", LoopEffect: "pulse"}); err == nil {
 		t.Errorf("滚动叙事与循环动效应互斥")
 	}
-	// 非法叙事词拒绝。
+
 	if err := ValidateInteraction(InteractionProps{ScrollStory: "parallax"}); err == nil {
 		t.Errorf("非法滚动叙事应被拒绝")
 	}
 }
 
-// TestHoverTouchGovernance 触屏治理：悬浮规则包 @media (hover: hover)（H5 sticky hover）。
 func TestHoverTouchGovernance(t *testing.T) {
 	b := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{HoverEffect: "lift"}, b)
@@ -260,13 +241,12 @@ func TestHoverTouchGovernance(t *testing.T) {
 			t.Errorf("触屏治理 CSS 缺少 %q\n%s", want, css)
 		}
 	}
-	// 基础过渡声明仍在触屏无害（无 hover 即无变化）。
+
 	if !strings.Contains(css, "transition: transform 0.25s ease") {
 		t.Errorf("基础过渡声明缺失\n%s", css)
 	}
 }
 
-// TestSafeAreaDecls 安全区垫高出口：bottom 边 + env fallback。
 func TestSafeAreaDecls(t *testing.T) {
 	d := strings.Join(SafeAreaDecls("bottom"), "\n")
 	if !strings.Contains(d, "padding-bottom: env(safe-area-inset-bottom, 0px)") {
@@ -274,7 +254,6 @@ func TestSafeAreaDecls(t *testing.T) {
 	}
 }
 
-// TestStickyAutoZIndex 吸顶自动抬升层叠：未设 ZIndex 时补 10；用户显式设置以其为准。
 func TestStickyAutoZIndex(t *testing.T) {
 	b := &CSSBuckets{}
 	CompileAdvanced("n1", &AdvancedProps{Interaction: InteractionProps{Sticky: true}}, b)
@@ -293,7 +272,6 @@ func TestStickyAutoZIndex(t *testing.T) {
 	}
 }
 
-// TestHoverEffectAll 悬浮效果全量（20 词）：白名单放行 + 编译输出 + 触屏治理包裹。
 func TestHoverEffectAll(t *testing.T) {
 	all := []string{"lift", "scale", "glow", "shadow", "underline", "shine", "sink", "grow",
 		"border-glow", "text-glow", "skew", "img-zoom", "img-zoom-out", "img-gray", "img-blur",
@@ -311,20 +289,15 @@ func TestHoverEffectAll(t *testing.T) {
 			}
 		})
 	}
-	// 非法词拒绝。
+
 	if err := ValidateInteraction(InteractionProps{HoverEffect: "wiggle"}); err == nil {
 		t.Errorf("非法悬浮效果应被拒绝")
 	}
 }
 
-// TestHueRotate 色相偏移（Advanced.HueRotate）：编译输出 + 边界校验 + 零值不输出。
-//
-// 校验入口是 ValidateAdvanced(a, nodeID, ids)，编译入口是 CompileAdvanced(nodeID, a, b) ——
-// 两者分离：编译只负责产出声明，合法性由校验阶段拦截。
 func TestHueRotate(t *testing.T) {
 	valid := func(deg int) error { return ValidateAdvanced(&AdvancedProps{HueRotate: deg}, "t", map[string]bool{}) }
 
-	// 正常值：输出 filter: hue-rotate(Ndeg)。
 	b := &CSSBuckets{}
 	if err := valid(90); err != nil {
 		t.Fatalf("HueRotate=90 应通过校验: %v", err)
@@ -334,7 +307,6 @@ func TestHueRotate(t *testing.T) {
 		t.Errorf("缺少色相偏移声明\n%s", css)
 	}
 
-	// 负值与边界：-360 / -120 / 360 合法，且声明中的度数原样保留（含负号）。
 	for _, deg := range []int{-360, -120, 360} {
 		if err := valid(deg); err != nil {
 			t.Errorf("HueRotate=%d 应通过校验: %v", deg, err)
@@ -347,14 +319,12 @@ func TestHueRotate(t *testing.T) {
 		}
 	}
 
-	// 零值：不输出任何 filter（保持「未引用零字节输出」原则）。
 	z := &CSSBuckets{}
 	CompileAdvanced("t", &AdvancedProps{HueRotate: 0}, z)
 	if css := z.String(); strings.Contains(css, "hue-rotate") {
 		t.Errorf("HueRotate=0 不应输出 filter\n%s", css)
 	}
 
-	// 越界：|deg| > 360 拒绝。
 	for _, deg := range []int{-361, 361} {
 		if err := valid(deg); err == nil {
 			t.Errorf("HueRotate=%d 应被拒绝", deg)
@@ -362,7 +332,6 @@ func TestHueRotate(t *testing.T) {
 	}
 }
 
-// TestImgHueHover 色相流动（HoverEffect=img-hue）：作用于子元素 img，且包触屏治理。
 func TestImgHueHover(t *testing.T) {
 	b := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{HoverEffect: "img-hue"}, b)
@@ -375,10 +344,6 @@ func TestImgHueHover(t *testing.T) {
 	}
 }
 
-// TestActiveEffect 按压反馈（ActiveEffect）：白名单放行 + 编译输出 + 触屏不包裹。
-//
-// 关键约束：按压规则走 AddActive，**不包** @media (hover: hover) ——
-// :active 在触屏上同样触发，若包进 hover:hover 移动端将失去按下反馈。
 func TestActiveEffect(t *testing.T) {
 	all := []string{"press", "sink", "pop", "glow"}
 	for _, fx := range all {
@@ -401,12 +366,10 @@ func TestActiveEffect(t *testing.T) {
 		})
 	}
 
-	// 非法词拒绝。
 	if err := ValidateInteraction(InteractionProps{ActiveEffect: "wiggle"}); err == nil {
 		t.Errorf("非法按压效果应被拒绝")
 	}
 
-	// 与 hover 并存：两条规则都存在，且 :active 块在 :hover 块之后（按压胜出）。
 	b := &CSSBuckets{}
 	CompileInteraction(".t", InteractionProps{HoverEffect: "lift", ActiveEffect: "press"}, b)
 	css := b.String()

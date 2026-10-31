@@ -1,20 +1,5 @@
 package producthttp
 
-// product_attributes_page_render_test.go — 属性库整页的渲染出口（真 Jet + 真模板）。
-//
-// 属性页此前由 product_taxonomy_page_render_test.go 的 taxonomyPages 表覆盖（桩直调
-// CountAttributes / ListAttributes）。取数下沉之后那两条路径不再经过控制器，所以本文件
-// 接住同一族判据，改用**读模型桩**：
-//
-//	?project=<不存在的 id>    → 400 + no-store
-//	正常档                    → 200、完整页壳、行与抽屉表单真的渲染出来、参数转发到读模型
-//
-// 「读模型没接上 → 500」这一档已从运行期消失（读模型是构造实参，漏接=编译错误，
-// 判据见 product_reader_injection_test.go），所以下表里没有它。
-//
-// 反面判据与 taxonomy 那批同源：只断言「失败档是红色」挡不住「把取数整段跳过」——
-// 所以成功档必须断言**该取的数真的取了**（这里体现为读模型收到的入参）。
-
 import (
 	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
@@ -30,16 +15,12 @@ import (
 	"go_wp/internal/templates"
 )
 
-// attributesPageRequest 挂上属性页并 GET 一次（真 Jet 渲染器 + 真模板）。
 func attributesPageRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	// 三个操作按钮码：模板用 isset(.Buttons[...]) 决定是否渲染行内抽屉与页头新建入口
-	//（本用例要验的正是「行与抽屉真的渲染出来了」，所以权限位必须给全）。
-	// 键名是 internal/middleware/adminctx 的私有约定（button_set），该包不导出键常量
-	//（见 page/inbound/http/page_translations_failure_test.go 的同一写法）。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set("button_set", map[string]bool{
 			"product.attribute_create": true,

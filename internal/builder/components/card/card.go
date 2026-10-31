@@ -1,58 +1,43 @@
-// Package card 实现 core.card 卡片组件（对标 GrapesJS Card 组件生态）。
-// 基座 core.Atom 吸收公共样板；本文件为业务本体：
-// 标题 + 正文 + 可选图片 + 可选按钮（链接），编译期 CSS 生成卡片布局，零客户端 JS。
 package card
 
 import (
-	_ "embed" // card.css 经 //go:embed 打进二进制
-	json "go_wp/pkg/jsonx"
+	_ "embed"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.card"
 
-// Props core.card 卡片属性。
 type Props struct {
-	// Title 标题（非空输出标题标签）。
 	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
-	// TitleTag 标题标签层级：空 = h3。卡片出现在 h2 之前或更深层级时，写死 h3 会造成
-	// 标题跳级（h1 → h3），对 SEO 与读屏都是噪音，因此允许按页面结构选。
+
 	TitleTag string `json:"titleTag,omitempty" ct:"select,=默认（h3）,h2=二级标题,h3=三级标题,h4=四级标题,h5=五级标题,default=,sec=content,label=标题层级"`
-	// Text 正文（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
+
 	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=正文"`
-	// ImageSrc 顶部图片（媒体库选择回填 URL 或外部绝对 URL）。
+
 	ImageSrc string `json:"imageSrc,omitempty" ct:"media,maxlen=500,sec=content,label=图片"`
-	// Label 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
+
 	Label string `json:"label,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
-	// ButtonLink 按钮链接（href）。
+
 	ButtonLink string `json:"buttonLink,omitempty" ct:"text,maxlen=500,sec=content,label=按钮链接"`
-	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
+
 	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
-	// FetchPriority 资源提示优先级：空=auto（不输出属性）/ high=首屏优先 / low=次要。
+
 	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
-	// Advanced 通用高级属性（docs/02-C0）。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// cardLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
-//
-// buttonText → label：这一批把三个组件的按钮/链接文案统一成 label。
-// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
-// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
-// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
 var cardLegacyKeys = []core.LegacyKey{
 	{From: "buttonText", To: "label"},
 }
 
-// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
 func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
 	return core.ApplyLegacyKeysInto(raw, p, cardLegacyKeys)
 }
 
-// Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "卡片",
@@ -66,14 +51,11 @@ var Widget = core.Atom[Props]{
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
-		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
+
 		Translatable: []string{"title", "text", "label"},
 	},
 }
 
-// validateExtra 关系性校验：按钮链接协议白名单。
-// ButtonLink 使用 text 控件（编辑期自由输入），协议安全在此统一收紧。
 func validateExtra(p *Props, nodeID string) (err error) {
 	if p.ButtonLink != "" && !core.IsSafeURL(p.ButtonLink) {
 		return fmt.Errorf("按钮链接协议非法: %q", p.ButtonLink)
@@ -81,29 +63,21 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// cardCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
-// （有补全 / lint / 格式化），而作用域替换、容器查询分桶、确定性输出仍由构建期负责。
-//
 //go:embed card.css
 var cardCSS string
 
-// compileCSS 卡片样式：布局 + 图片 + 标题 + 正文 + 按钮（样式与 Props 无关）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	if err := core.ApplyComponentCSS(b, sel, cardCSS); err != nil {
-		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+
 		panic(fmt.Sprintf("card 组件样式解析失败: %v", err))
 	}
 }
 
-// init 注册卡片组件。
 func init() {
 	core.Register(Widget)
 	core.RegisterTemplate("card", cardTemplate)
 }
 
-// cardTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed card.jet
 var cardTemplate string

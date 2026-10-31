@@ -9,10 +9,6 @@ import (
 	"testing"
 )
 
-// gzipHeader 解析 gzip 流的固定 10 字节头（RFC 1952 §2.3.1）。
-//
-// 只解出确定性相关的那几个域：FLG / MTIME / OS。其余（XFL、deflate 流）不关心 ——
-// 本测试要钉的是「产物字节里不许有任何与构建时刻、构建机器有关的东西」。
 type gzipHeader struct {
 	flg   byte
 	mtime [4]byte
@@ -32,7 +28,6 @@ func parseGzipHeader(stream []byte) gzipHeader {
 	return h
 }
 
-// mustGunzip 解压（测试用；解不开直接失败）。
 func mustGunzip(t *testing.T, stream []byte) []byte {
 	t.Helper()
 	zr, err := gzip.NewReader(bytes.NewReader(stream))
@@ -47,19 +42,6 @@ func mustGunzip(t *testing.T, stream []byte) []byte {
 	return out
 }
 
-// TestGzipDeterministicHeaderIsFrozen 钉住 gzip header 里两个会破坏确定性的域。
-//
-// **这条测试的红绿判据是 MTIME 全零**：把 GzipDeterministic 里的
-// `zw.ModTime = time.Unix(0, 0)` 注释掉，MTIME 立刻变成
-// uint32(零值 time.Time 的 Unix 秒) = 0x8873…（一个 2042 年的假时间戳），
-// 本测试变红。
-//
-// 顺带说明一个与本仓注释常见说法相反的事实：**Go 的 compress/gzip 默认不把当前
-// 时间写进 header**（Header 的零值 ModTime 是 time.Time{}，不是 time.Now()），
-// 所以「不清零 ⇒ 两次构建字节不同」在 Go 上并不成立。清零真正解决的是**规范性**：
-// 零值 time.Time 的 Unix 秒是一个非零的 uint32，会被解压器读成一个荒唐的修改时间。
-// 判据因此写成「MTIME 必须恰好是 0」，而不是「两次构建字节相同」——后者即使不清零
-// 也会通过，是一条抓不到东西的断言。
 func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 	plain := bytes.Repeat([]byte("<p>确定性构建</p>\n"), 200)
 
@@ -82,7 +64,7 @@ func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 		t.Errorf("OS 字节 = %d（期望 %d = unknown）：不写死它，同一份文档在不同构建"+
 			"机器上会产出不同字节", h.os, gzipOSUnknown)
 	}
-	// FLG 的 FNAME(0x08) / FCOMMENT(0x10)：两者都会把文件名或任意字符串写进产物字节。
+
 	if h.flg&0x08 != 0 || h.flg&0x10 != 0 {
 		t.Errorf("FLG = 0x%02x：不允许往产物字节里写 FNAME / FCOMMENT", h.flg)
 	}
@@ -91,10 +73,6 @@ func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 	}
 }
 
-// TestGzipDeterministicByteIdentical 同一输入多次派生必须逐字节相同。
-//
-// 这是 AGENTS.md 不变量 5 在预压缩产物上的直接落点：派生的全部输入就是明文，
-// 因此派生的全部输出也必须只有一个可能值。
 func TestGzipDeterministicByteIdentical(t *testing.T) {
 	plain := []byte("<!doctype html>\n" + strings.Repeat("<p>正文 bytes</p>\n", 300))
 
@@ -117,7 +95,6 @@ func TestGzipDeterministicByteIdentical(t *testing.T) {
 	t.Log("5 次派生逐字节相同")
 }
 
-// TestPrecompressEntriesWhitelistAndThreshold 白名单与阈值：文本类且达到阈值才派生。
 func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 	big := bytes.Repeat([]byte("x"), PrecompressMinSize)
 
@@ -136,7 +113,7 @@ func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 		{"data.json", big, true},
 		{"robots.txt", big, true},
 		{"site.webmanifest", big, true},
-		// 已是压缩格式：再压一次是纯 CPU 浪费，产物往往比原文还大。
+
 		{"logo.png", big, false},
 		{"photo.jpg", big, false},
 		{"hero.webp", big, false},
@@ -144,9 +121,9 @@ func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 		{"font.woff2", big, false},
 		{"archive.zip", big, false},
 		{"bundle.js.br", big, false},
-		// 文本类但不到阈值。
+
 		{"tiny.html", big[:PrecompressMinSize-1], false},
-		// 恰好等于阈值：判据是 `< MinSize 才跳过`，边界必须包含在内。
+
 		{"exact.html", big, true},
 	}
 
@@ -166,15 +143,6 @@ func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 	}
 }
 
-// TestArtifactCarriesPrecompressedDerivative 产物组装时带上 <name>.gz，
-// 且这份派生**不进 Manifest.Files、不改产物 hash**。
-//
-// 三条断言各钉一个决定：
-//   - 派生字节必须在 Entries 里 —— 落盘由 Entries 驱动（LocalStore.PutArtifact），
-//     不进 Entries 就永远到不了磁盘，访问面也就永远探不到 .gz；
-//   - 派生字节不得进 Manifest.Files —— 进了就等于让产物 hash 依赖压缩库实现
-//     （Go 升版换了 flate 输出 ⇒ 全站 hash 变 ⇒ 全量重建）；
-//   - 两次构建的产物 hash 与 .gz 字节都必须相同（不变量 5）。
 func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 	html := []byte("<!doctype html>\n" + strings.Repeat("<p>页面正文</p>\n", 300))
 
@@ -218,11 +186,6 @@ func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 	}
 }
 
-// TestArtifactPrecompressedCoversGuardAndCompanionFiles 伴随文件（守卫页）同样被派生。
-//
-// 判据不是「guard.html 有没有 .gz」本身，而是「派生规则对 Entries 全体一视同仁」：
-// 若派生只写死在 index.html 上，将来新增的文本类伴随文件会自动漏掉，而表现是
-// 「只有一部分页面拿到了预压缩」——这种缺陷没有任何报错路径。
 func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 	html := []byte("<!doctype html>" + strings.Repeat("<!--p-->", 300))
 	guard := []byte("<!doctype html>" + strings.Repeat("<p>请输入密码</p>", 200))
@@ -242,8 +205,7 @@ func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 		if got := mustGunzip(t, gz); !bytes.Equal(got, plain) {
 			t.Errorf("%s 的派生字节与明文不一致", name)
 		}
-		// guard.html 的明文哈希必须在 Manifest.Files 里（PIPE-6 的既有语义），
-		// 但它的派生字节不在 —— 两条结论互不干扰。
+
 		if _, ok := a.Manifest.Files[name]; !ok {
 			t.Errorf("%s 的明文哈希不在 Manifest.Files 里", name)
 		}
@@ -253,17 +215,11 @@ func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 	}
 }
 
-// TestAssetContentTypeHtmlHasCharset 访问面直出 HTML 的类型必须带 charset。
-//
-// 单源函数（明文路径 routers.serveArtifactFile 与预压缩层共用）——
-// mime.TypeByExtension 对 .html 的返回取决于系统 mime.types，不保证带 charset。
 func TestAssetContentTypeHtmlHasCharset(t *testing.T) {
 	cases := map[string]string{
 		"index.html": "text/html; charset=utf-8",
 		"about.HTML": "text/html; charset=utf-8",
-		// .js 的具体串随系统 mime.types（本机给出 text/javascript; charset=utf-8，
-		// 旧表给 application/javascript）—— 这里只断「是 JS 类型」，
-		// 「能不能压缩」由 builtin 侧拿 isGzipType 对账（那才是真正要一致的那一条）。
+
 		"app.js":        "javascript",
 		"style.css":     "text/css",
 		"icon.svg":      "image/svg",
@@ -284,7 +240,6 @@ func TestAssetContentTypeHtmlHasCharset(t *testing.T) {
 	}
 }
 
-// mapKeys 取 map 的键（仅测试用，失败信息里列出实际键）。
 func mapKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

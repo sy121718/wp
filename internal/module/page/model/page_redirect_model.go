@@ -1,17 +1,5 @@
 package pagemodel
 
-// page_redirect_model.go — 重定向路由（page_routes 的 redirect 行）的最小读写面。
-//
-// 表所有权说明：page_routes 属 publication 模块（AGENTS.md §page_routes），
-// 「激活 / 取消激活 / 标记重定向 / 按实体批量删除」都经 pubcontract 走。
-// 本文件只补两个 contract 尚未提供、而 SEO-025 的重定向管理页必须用到的最小能力：
-//   · 列出本工程全部 redirect 行（回答「当前有哪些 301」）；
-//   · 删除单条 redirect 行并读取某路径的 active 行（回答「这条能不能删、目标是哪条」）。
-//
-// 为什么落在 page 模块：管理页挂在本模块的路由组下（authorizedAPI），而本批不允许改动
-// publication 模块。后续应收进 publication contract，本文件随之退化为纯调用方 ——
-// 见 SEO-025 的遗留问题记录。
-
 import (
 	"context"
 	"errors"
@@ -24,16 +12,12 @@ import (
 
 const tableNamePageRoutes = "page_routes"
 
-// page_routes.route_kind 的白名单值（与 publication 模块 model 常量同义，
-// 跨模块不 import 对方 model，此处按表定义独立声明）。
 const (
-	// RouteKindActive 已激活（该路径直出产物）。
 	RouteKindActive = "active"
-	// RouteKindRedirect 旧路径 301（该路径的激活产物是 redirect.json）。
+
 	RouteKindRedirect = "redirect"
 )
 
-// PageRouteEntity 对应 page_routes 行（只映射本模块用到的列）。
 type PageRouteEntity struct {
 	ProjectID      string    `gorm:"column:project_id;primaryKey"`
 	Path           string    `gorm:"column:path;primaryKey"`
@@ -46,7 +30,6 @@ type PageRouteEntity struct {
 
 func (PageRouteEntity) TableName() string { return tableNamePageRoutes }
 
-// ListRedirectRoutes 列出工程下全部重定向行（路径升序，确定性输出）。
 func (m *Model) ListRedirectRoutes(ctx context.Context, projectID string) (list []PageRouteEntity, err error) {
 	if projectID == "" {
 		return nil, nil
@@ -59,10 +42,6 @@ func (m *Model) ListRedirectRoutes(ctx context.Context, projectID string) (list 
 	return list, err
 }
 
-// ListActiveRoutesByProject 列出工程下全部已激活路径行（路径升序）。
-//
-// 重定向管理页要用它回答两件事：某条目标路径是否真实存在（route_kind=active），
-// 以及该目标归属哪个页面 / 展示实例（新增重定向时 page_routes 的归属列必须恰好一个非空）。
 func (m *Model) ListActiveRoutesByProject(ctx context.Context, projectID string) (list []PageRouteEntity, err error) {
 	if projectID == "" {
 		return nil, nil
@@ -75,8 +54,6 @@ func (m *Model) ListActiveRoutesByProject(ctx context.Context, projectID string)
 	return list, err
 }
 
-// GetActiveRouteByPath 按路径取已激活路由行（判断「目标路径是否真实存在」）；
-// 不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetActiveRouteByPath(ctx context.Context, projectID, path string) (e *PageRouteEntity, err error) {
 	e = &PageRouteEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
@@ -90,7 +67,6 @@ func (m *Model) GetActiveRouteByPath(ctx context.Context, projectID, path string
 	return e, nil
 }
 
-// GetRedirectRoute 按路径取重定向行；不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetRedirectRoute(ctx context.Context, projectID, path string) (e *PageRouteEntity, err error) {
 	e = &PageRouteEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
@@ -104,9 +80,6 @@ func (m *Model) GetRedirectRoute(ctx context.Context, projectID, path string) (e
 	return e, nil
 }
 
-// DeleteRedirectRoute 删除单条重定向行（只删 route_kind=redirect 的行，
-// 绝不触碰同路径上的其它行或目标实体的 active/reserved 行）。
-// 返回受影响行数（0 = 本来就没有）。
 func (m *Model) DeleteRedirectRoute(ctx context.Context, projectID, path string) (n int64, err error) {
 	var res *gorm.DB
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
@@ -121,12 +94,6 @@ func (m *Model) DeleteRedirectRoute(ctx context.Context, projectID, path string)
 	return res.RowsAffected, nil
 }
 
-// DeleteRedirectRouteTx 在**调用方事务**内删除单条重定向行，返回受影响行数。
-//
-// 与 DeleteRedirectRoute 的差别不只是事务句柄：它把"删到几行"交给调用方判断。
-// 下线回执要求 1 行（0 行说明锁内复验之后行已被别人处置，按归属冲突处理），
-// 而合并跳转链等幂等场景要的正是 0 行也算成功。两个语义不同的调用方不能共用
-// 一个"0 行也当成功"的原语。
 func (m *Model) DeleteRedirectRouteTx(ctx context.Context, tx *gorm.DB, projectID, path string) (n int64, err error) {
 	if tx == nil {
 		return 0, errors.New("page: 删除重定向行必须在调用方事务内")

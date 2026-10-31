@@ -1,15 +1,5 @@
 package builder
 
-// ui_script_baseclass_test.go — 基座注入的 class 判定（UIK-002）。
-//
-// 判定规则有三条边界，缺任何一条都会静默出问题：
-//   ① 文档 §10.2 的控件外观类，写了就要有样式（漏项 = 类在、样式不在，产物看着还是完整的）；
-//   ② 工具类不触发注入（工具类几乎每页都有，命中即注入整份 ui.css，产物字节整体膨胀）；
-//   ③ 清单里的类必须真在 ui.css 里（拼错或改名后清单还在，命中却拿不到样式）。
-//
-// 断言分两层：函数级（uiAssetsForScan 的返回）+ 产物级（RenderDocument 出的文档）——
-// 「判定放宽」最容易伤到的就是产物字节，只在函数级看不出这件事。
-
 import (
 	"os"
 	"regexp"
@@ -17,31 +7,26 @@ import (
 	"testing"
 )
 
-// documentedControlClasses 文档 §10.2「类名清单（唯一来源：static/css/ui.css）」里的控件外观类。
-// 这是**对照集**：它变了说明文档口径变了，基座清单要跟着动。
 var documentedControlClasses = []string{
-	// 表单
+
 	"form-input", "form-select", "form-textarea", "form-group", "form-label",
 	"form-hint", "form-error", "form-row", "checkbox",
-	// 按钮
+
 	"btn", "btn-primary", "btn-secondary", "btn-ghost", "btn-danger", "btn-sm", "btn-icon",
-	// 卡片
+
 	"card", "card-header", "card-title", "card-body",
-	// 表格
+
 	"data-table", "table-wrap",
-	// 徽标与状态点
+
 	"badge", "badge-success", "badge-warning", "badge-danger", "badge-mute",
 	"dot",
 }
 
-// utilityClasses 文档 §10.2 末尾单列的工具类：故意不进基座清单。
-// 它们必须真实存在于 ui.css —— 否则本测试是空转，证明不了「不收工具类」这个取舍。
 var utilityClasses = []string{
 	"text-sm", "text-xs", "text-mute", "flex",
 	"gap-sm", "mt-lg", "mb-lg", "col-actions", "sr-only",
 }
 
-// classSelectorRe 从 CSS 源码里取类选择器名（够用即可：目的是核对清单里的类确实被定义过）。
 var classSelectorRe = regexp.MustCompile("\\.([a-zA-Z][a-zA-Z0-9_-]*)")
 
 func uiBaseClassSet() map[string]bool {
@@ -52,8 +37,6 @@ func uiBaseClassSet() map[string]bool {
 	return set
 }
 
-// TestUIBaseClassDocumentedControlsInjectStyle 文档列出的控件外观类逐个命中注入，
-// 且只带样式不带脚本：class 说「要外观」，属性才说「要行为」，两者解耦。
 func TestUIBaseClassDocumentedControlsInjectStyle(t *testing.T) {
 	for _, cls := range documentedControlClasses {
 		t.Run(cls, func(t *testing.T) {
@@ -72,7 +55,6 @@ func TestUIBaseClassDocumentedControlsInjectStyle(t *testing.T) {
 	}
 }
 
-// TestUIBaseClassListCoversDocumentedControls 清单必须覆盖文档对照集，漏一个就是一处静默无样式。
 func TestUIBaseClassListCoversDocumentedControls(t *testing.T) {
 	inList := uiBaseClassSet()
 	for _, cls := range documentedControlClasses {
@@ -82,8 +64,6 @@ func TestUIBaseClassListCoversDocumentedControls(t *testing.T) {
 	}
 }
 
-// TestUIBaseClassUtilityClassesDoNotInject 工具类一个字节都不注入：
-// 它们散落在每一页的布局里，一旦命中就等于所有产物都带上整份 ui.css。
 func TestUIBaseClassUtilityClassesDoNotInject(t *testing.T) {
 	inList := uiBaseClassSet()
 	for _, cls := range utilityClasses {
@@ -101,8 +81,6 @@ func TestUIBaseClassUtilityClassesDoNotInject(t *testing.T) {
 	}
 }
 
-// TestUIBaseClassListMatchesUICSS 清单与 ui.css 对表。
-// 清单是硬编码的：ui.css 改名或删类之后它照样存在，症状是「类写了、注入也触发了、样式还是没有」。
 func TestUIBaseClassListMatchesUICSS(t *testing.T) {
 	src, err := os.ReadFile("../templates/static/css/ui.css")
 	if err != nil {
@@ -124,8 +102,6 @@ func TestUIBaseClassListMatchesUICSS(t *testing.T) {
 	}
 }
 
-// TestUIBaseClassOnlyPageInjectsStyleAtProductLevel 产物级对照：
-// 只写 class 的文档要拿到 ui.css；纯内容页一个字节都不多。
 func TestUIBaseClassOnlyPageInjectsStyleAtProductLevel(t *testing.T) {
 	sources, css := uiSrcForTest(), "/* ui css */"
 

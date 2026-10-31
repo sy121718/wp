@@ -1,18 +1,5 @@
 package feature
 
-// navigation_translation_leak_test.go — 导航译文保存的失败出口不得泄漏数据库原文，也不得出现格式化垃圾。
-//
-// 缺口原状：保存分支曾是 `data.Errors = []string{"保存失败：" + uerr.Error()}`—— 泄漏的是**页面正文**
-// 而不是 JSON 响应体，而 scripts/check-no-internal-error-leak.sh 的判据只看
-// response.ErrorWithMessage / c.String 的实参，所以这条一直绿着、泄漏一直在。
-//
-// 保存迁到真实 JSON 写接口（POST /api/navigation/update，action=translations）后，出口变成
-// response 的 message：判据不变 —— 任何内部细节（表名 / SQLSTATE / 约束名）都不许出现在
-// 客户端可见的文案里，且业务句必须按**请求语言**给成品。
-//
-// 本用例从真实失败形态出发：把 sys_translation 改名，让 Upsert 撞上 PG 的
-// `relation "sys_translation" does not exist (SQLSTATE 42P01)`—— 正是「表名 + SQLSTATE」那一类内部细节。
-
 import (
 	"context"
 	"fmt"
@@ -32,15 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// translationLeakTokens 响应体里的内部细节指纹。
-//
-// 与 navigation_error_leak_test.go 的 JSON 判据分开：那里能拿 "navigations" / "uuid" 当指纹，
-// 而这里的响应体本来就带 `navigation.label` 语境名，不能进这份清单。
 var translationLeakTokens = []string{
 	"SQLSTATE", "42P01", "sys_translation", `relation "`, "uq_", "pg_", "constraint",
 }
 
-// translationWriteRequest 造一次译文保存请求（真实 JSON 形状）。
 func translationWriteRequest(projectID, lang, sourceText, target string) *http.Request {
 	body := fmt.Sprintf(
 		`{"action":"translations","project":%q,"lang":%q,"rows":[{"context":%q,"hash":%q,"target":%q}]}`,
@@ -50,18 +32,14 @@ func translationWriteRequest(projectID, lang, sourceText, target string) *http.R
 	return req
 }
 
-// TestNavigationTranslationSaveHidesInternalError 写入失败：归口文案 + 无数据库原文，且按请求语言给成品。
 func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	db, _, navSvc, projectID := newNavigationEnv(t)
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
 
-	// 真实失败形态：目标表不存在。PG 的原文里同时带表名与 SQLSTATE 码。
 	if err := db.Exec("ALTER TABLE sys_translation RENAME TO sys_translation_leak_probe").Error; err != nil {
 		t.Fatalf("制造写入失败场景失败: %v", err)
 	}
 
-	// 反证：这条失败路径的**原始错误**确实带表名与 SQLSTATE。
-	// 少了这一步，「响应没泄漏」可能只是「错误里本来就没有内部细节」—— 断言等于没断言。
 	writer := i18n.NewContentWriter(db)
 	_, uerr := writer.Upsert(context.Background(), []i18n.ContentWriteItem{{
 		SourceHash: i18n.ContentHash("首页"), Context: i18n.ContentContext("navigation", "label"),
@@ -73,8 +51,7 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	t.Logf("原始错误（只应进日志）: %v", uerr)
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	// 真实写链：三个端口都真实现，事务边界与行读取走同一 navigation model。
-	// 不再有包级 singleton —— 写服务注入到本次用例自己的句柄上（见 ports 文件头）。
+
 	handle := navigationhttp.NewHandle(navSvc)
 	wireNavigationTranslationWriter(t, db, handle, navSvc.(*navigationservice.Service), projects)
 
@@ -89,10 +66,7 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 		t.Fatalf("写入失败应 500（归口），实际 %d，body=%s", recorder.Code, recorder.Body.String())
 	}
 	payload := recorder.Body.String()
-	// 先证明真的走到了失败分支：没有这句断言，一条「什么都没渲染」的空响应也能通过下面的检查。
-	// 本测试进程里 i18n 缓存是空的（没有从库里加载词条），所以落下来的就是词条的**中文兜底成品句**
-	// —— 「按请求语言取词」这件事由 internal/module/navigation/inbound/http 的
-	// navigation_translation_write_test.go 用注入词条的用例单独钉住。
+
 	if !strings.Contains(payload, "保存失败") {
 		t.Fatalf("失败分支应给出归口句，实际 body=%s", payload)
 	}
@@ -101,14 +75,12 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 			t.Errorf("响应泄漏内部细节 %q: %s", tok, payload)
 		}
 	}
-	// 词条的中英占位符写法不同（zh 用 %s、en 用 {detail}）：填错就会出现
-	// `Save failed: {detail}%!(EXTRA string=…)` —— 那串垃圾本身也是「对外文案不对」。
+
 	if strings.Contains(payload, "%!") || strings.Contains(payload, "{detail}") {
 		t.Errorf("归口句出现格式化垃圾（占位符没按语言填）: %s", payload)
 	}
 }
 
-// TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage 成功路径：成品句按请求语言给，占位符被填掉。
 func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *testing.T) {
 	db, _, navSvc, projectID := newNavigationEnv(t)
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
@@ -133,7 +105,7 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	if strings.Contains(payload, "%!") {
 		t.Errorf("成功句出现格式化垃圾（占位符没按语言填）: %s", payload)
 	}
-	// 真正落的库：译文行存在（否则「written:1」只是一句自述）。
+
 	var target string
 	row := db.Raw("SELECT target_text FROM sys_translation WHERE source_hash = ? AND lang = 'en-US'",
 		i18n.ContentHash("首页")).Scan(&target)
@@ -142,7 +114,6 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	}
 }
 
-// translationWriteRaw 直接发一段 JSON body —— 形状用例要自己造畸形体，不能走构造器。
 func translationWriteRaw(t *testing.T, router *gin.Engine, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
@@ -152,7 +123,6 @@ func translationWriteRaw(t *testing.T, router *gin.Engine, body string) *httptes
 	return recorder
 }
 
-// translationRowCount 某原文哈希在指定语言下的译文行数。
 func translationRowCount(t *testing.T, db *gorm.DB, sourceText, lang string) int64 {
 	t.Helper()
 	var count int64
@@ -163,12 +133,6 @@ func translationRowCount(t *testing.T, db *gorm.DB, sourceText, lang string) int
 	return count
 }
 
-// TestNavigationTranslationRowKeysAreRequired 行缺键必须 400，且**不写库、不派发失效**；
-// 显式空 target 才是契约里的「本次不改动这一行」。
-//
-// 为什么两条要挨着测：判据卡的是「键是否存在」，不是「值是否为空」。只测缺键，把判据写成
-// 「target 非空才算合法」也会绿 —— 那会让「清空某条译文」这种合法意图变成 400。
-// 只测空 target，缺键被静默吞成 200 + written:0 也不会红（这正是 Sol 查出的 P2）。
 func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	db, _, navSvc, projectID := newNavigationEnv(t)
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
@@ -187,11 +151,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 		return fmt.Sprintf(`{"action":"translations","project":%q,"lang":"en-US","rows":%s}`, projectID, rows)
 	}
 
-	// 建项自身会真实入队一条 menu_stale（同事务端口），所以「被拒不派发」的判据是
-	// 相对基线的增量，而不是绝对 0。
 	staleBase := menuStaleJobs(t, db, projectID)
 
-	// 1) 缺键：三种都必须是 400，且既不落库也不派发失效。
 	for _, tc := range []struct{ name, rows string }{
 		{"缺 target", fmt.Sprintf(`[{"context":%q,"hash":%q}]`, context, hash)},
 		{"缺 context", fmt.Sprintf(`[{"hash":%q,"target":"Home"}]`, hash)},
@@ -214,7 +175,6 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 		})
 	}
 
-	// 2) 显式空 target：合法形状（「本次不改动这一行」），200 且零写入、零派发。
 	empty := translationWriteRaw(t, router, wrap(fmt.Sprintf(`[{"context":%q,"hash":%q,"target":""}]`, context, hash)))
 	if empty.Code != http.StatusOK {
 		t.Fatalf("显式空 target 应被接受（本次不改动），实际 %d body=%s", empty.Code, empty.Body.String())
@@ -229,8 +189,6 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 		t.Fatalf("没有真正变更时不该入队任何重建任务：基线 %d 条，实际 %d 条", staleBase, n)
 	}
 
-	// 3) 正对照：同一形状、非空 target → 200、真落库、真派发失效。
-	// 没有这一条，上面两条「没写库、没派发」也可能只是整条链路坏了。
 	written := translationWriteRaw(t, router, wrap(fmt.Sprintf(`[{"context":%q,"hash":%q,"target":"Home"}]`, context, hash)))
 	if written.Code != http.StatusOK {
 		t.Fatalf("合法写入应 200，实际 %d body=%s", written.Code, written.Body.String())
@@ -238,9 +196,7 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 1 {
 		t.Fatalf("合法写入应落 1 行译文，实际 %d", got)
 	}
-	// 正对照的另一半：真正变更后必须真的入队（真实 build 队列，不是探针计数）。
-	// 判据用「至少一条 menu_stale 任务」，不绑数量：同一原文可能同时出现在多个位置，
-	// 逐位置各入一条才是对的，绑死数量会把正确实现判红。
+
 	if n := menuStaleJobs(t, db, projectID); n == 0 {
 		t.Fatal("真正变更后必须为受影响位置可靠入队 menu_stale 任务")
 	}

@@ -1,20 +1,5 @@
 package feature
 
-// page_translations_test.go — 翻译工作台（多语言 P5c，docs/06-D §7.8）真实链路验证。
-//
-// 链路：gin 路由 → dashboard handler（编排）→ builder 候选收集（与构建期同一函数）
-// → pkg/i18n.ContentWriter（真 sys_translation 表）→ page 契约 MarkStaleForI18n（真 pages 表）。
-//
-// 覆盖：
-//  1. 工作台渲染：分组行 / 原文 / 译文输入框 / 状态徽章 / engine 徽章 / 完成度 /
-//     一键 AI 按钮灰置 + tooltip「待接入」/ 跨页面复用提示；
-//  2. 保存：写入 sys_translation（engine=manual）+ 全站 stale 置位；
-//  3. 幂等：同一条译文原样再保存 → 不写库、不触发全站重建；
-//  4. 校验：白名单外字段 / 超长 / 富文本形态不符 / 指纹不符 / 未启用语言 → 拒绝且不落库；
-//  5. 空译文 → 本行不写入（清空输入框不删除已有译文）。
-//
-// PG 不可用时 t.Skip（与其他功能测试一致）。
-
 import (
 	"go_wp/internal/adminui"
 	"html"
@@ -43,14 +28,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// p5cPageDoc 工作台测试用页面文档：heading（纯文本字段）+ text（富文本）+ button。
 const p5cPageDoc = "{\"settings\":{\"layout\":{\"mode\":\"full\"},\"seo\":{\"title\":\"关于我们\",\"description\":\"P5c\"}},\"root\":[" +
 	"{\"id\":\"hd1\",\"type\":\"core.heading\",\"props\":{\"text\":\"关于我们\",\"subtitle\":\"了解更多\"}}," +
 	"{\"id\":\"tx1\",\"type\":\"core.text\",\"props\":{\"text\":\"<p>我们成立于 2010 年</p>\"}}," +
 	"{\"id\":\"bt1\",\"type\":\"core.button\",\"props\":{\"text\":\"联系我们\",\"link\":\"/contact\"}}]}"
 
-// newTranslationEnv 装配工作台测试环境：真 PG（隔离 schema，全量迁移）+ project/page 契约
-// + 隔离 schema 的内容译文写入器（SetContentTranslationStore）。
 func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *gorm.DB, string, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -85,7 +67,6 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 	return router, handle, db, project.ID, pageID
 }
 
-// insertTranslationPage 直接插入一条页面行（含草稿文档），绕开路由/主题依赖。
 func insertTranslationPage(t *testing.T, db *gorm.DB, id, projectID, path, doc string) {
 	t.Helper()
 	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time) "+
@@ -95,7 +76,6 @@ func insertTranslationPage(t *testing.T, db *gorm.DB, id, projectID, path, doc s
 	}
 }
 
-// translationRowCount 统计某语言的译文行数。
 func translationRowCount(t *testing.T, db *gorm.DB, lang string) int64 {
 	t.Helper()
 	var n int64
@@ -105,7 +85,6 @@ func translationRowCount(t *testing.T, db *gorm.DB, lang string) int64 {
 	return n
 }
 
-// translationTargetOf 读取一条译文的 (target_text, engine)。
 func translationTargetOf(t *testing.T, db *gorm.DB, source, contextName, lang string) (target, engine string) {
 	t.Helper()
 	row := struct {
@@ -119,7 +98,6 @@ func translationTargetOf(t *testing.T, db *gorm.DB, source, contextName, lang st
 	return row.TargetText, row.Engine
 }
 
-// pageStale 读取页面 stale 标记。
 func pageStale(t *testing.T, db *gorm.DB, id string) bool {
 	t.Helper()
 	var stale bool
@@ -129,18 +107,11 @@ func pageStale(t *testing.T, db *gorm.DB, id string) bool {
 	return stale
 }
 
-// getTranslationPage GET 工作台并返回页面 HTML。
 func getTranslationPage(t *testing.T, router *gin.Engine, pageID, lang string) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/pages/translations?pageId="+pageID+"&lang="+lang, nil)
-	// 界面语言显式钉成中文（Cookie 优先级最高，协商顺序见 pkg/response.requestLanguage）。
-	// 背景：本会话把后台模板全面 t() 化（admin.* 词条，迁移 192/195）之后，界面语言改按请求协商，
-	// 而本 URL 上的 lang=en-US 是**翻译目标语言**，会被协商一并当成界面语言 —— 词条缓存已加载时
-	// （整包跑，前面的测试初始化过 i18n）工作台整页渲染成英文，「本页完成度 0 / 3」这类中文断言即失败；
-	// 单独跑该测试时缓存未加载、t 退回模板内中文，断言反而是绿的。
-	// 钉住 Cookie 之后断言与词条缓存状态、测试执行顺序都无关；中文词条值（迁移 192）与模板 fallback
-	// 逐字一致（含「本页完成度 」的尾空格），断言文本因此无需改动。
+
 	req.AddCookie(&http.Cookie{Name: response.LangCookieName, Value: "zh-CN"})
 	router.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
@@ -149,18 +120,14 @@ func getTranslationPage(t *testing.T, router *gin.Engine, pageID, lang string) s
 	return recorder.Body.String()
 }
 
-// TestPageTranslationsWorkbenchRenders 工作台渲染：清单与构建期同源、状态/来源徽章、
-// 完成度、一键 AI 灰置、跨页面复用提示。
 func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	router, _, db, projectID, pageID := newTranslationEnv(t)
-	// 第二个页面复用同一句「了解更多」（跨页面复用提示）。
+
 	insertTranslationPage(t, db, "bbbbbbbb-0000-0000-0000-000000000002", projectID, "/contact",
 		"{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"hd2\",\"type\":\"core.heading\",\"props\":{\"text\":\"联系我们\",\"subtitle\":\"了解更多\"}}]}")
 
 	body := getTranslationPage(t, router, pageID, "en-US")
 
-	// 清单与构建期一致（机器证据）：工作台渲染的每一行 == builder.CollectContentCandidates
-	// 对同一份草稿文档的输出（同函数、同白名单），行数也必须相等。
 	parsed, err := builder.ParsePage([]byte(p5cPageDoc))
 	if err != nil {
 		t.Fatalf("解析页面文档失败: %v", err)
@@ -179,9 +146,7 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		// 组件分段：多段组表合并成**一张**表之后，组件名不再各自一个 <h2>，
-		// 而是表内合并整行的分组行（td[colspan=6]，样式见 theme.css §14）。
-		// 判据等价且更严：colspan 必须正好等于表头列数（6），组件名跟在分组行里。
+
 		`<td colspan="6">core.heading `, `<td colspan="6">core.text `, `<td colspan="6">core.button `,
 		"name=\"rowContext\" value=\"core.heading.text\"",
 		"name=\"rowContext\" value=\"core.text.text\"",
@@ -201,18 +166,15 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 			t.Fatalf("工作台缺少 %q\n%s", want, body)
 		}
 	}
-	// 多组件共用一张表：合并前是「一组一张表」（这份文档有 3 个组件 → 3 张表 3 个 thead）。
+
 	if n := strings.Count(body, `class="data-table data-table-wide tr-table"`); n != 1 {
 		t.Fatalf("多组件应共用一张编辑表，实际 %d 张", n)
 	}
-	// 每张表**恰好一个**表头：合并后页面上的表不止一张（产出范围 + 编辑表），
-	// 所以判据写成「表头数 == 数据表数」而不是钉死 1 —— 钉死会让「新增一张表」
-	// 与「漏了表头」两种情形混在同一个红里。
+
 	if tables, heads := strings.Count(body, "class=\"data-table"), strings.Count(body, "<thead>"); tables != heads {
 		t.Fatalf("每张数据表应当恰好一个表头，实际 %d 张表 / %d 个表头", tables, heads)
 	}
-	// 分组行带**本组**条数 —— 合并不丢「这一行属于哪个组件」的信息（原先是每组一个 <h2>）。
-	// span 属性用 [^>]* 通配，判据只认「组件名 + 该组条数」这个语义，不跟样式耦合。
+
 	for _, want := range []struct {
 		comp string
 		rows int
@@ -238,7 +200,6 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	}
 }
 
-// TestPagesListShowsTranslationsEntry 页面列表行内「多语言」入口指向本页工作台（决策 F10：不做独立菜单）。
 func TestPagesListShowsTranslationsEntry(t *testing.T) {
 	router, _, _, _, pageID := newTranslationEnv(t)
 	recorder := httptest.NewRecorder()
@@ -253,19 +214,12 @@ func TestPagesListShowsTranslationsEntry(t *testing.T) {
 	if !strings.Contains(body, ">多语言</a>") {
 		t.Fatalf("页面列表缺少「多语言」按钮文案\n%s", body)
 	}
-	// 「语言」那一格已并入工作台：列表操作列不该再出现产出范围入口
-	// （它与「多语言」并排时，运营要记哪个管哪件；而它本身是坏的 —— 面板吐裸 tr、
-	// data-when 拿布尔比字面量、行里没有 pageId）。
+
 	if strings.Contains(body, "/admin/page-langs/panel") {
 		t.Fatalf("页面列表仍有已删除的语言面板入口\n%s", body)
 	}
 }
 
-// TestPageTranslationsRendersLangScope 工作台里的「语言产出范围」区块：
-// 每门站点语言一行，未排除的给「排除」，默认语言不可排除；排除后改给「恢复」。
-//
-// 这条守的是**合并后的入口**：从前它在页面列表行内那块 HTMX 面板里（点了没反应），
-// 现在与译文表同屏 —— 数据来自同一份 PageLangStates，渲染在服务端完成。
 func TestPageTranslationsRendersLangScope(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 	body := getTranslationPage(t, router, pageID, "en-US")
@@ -282,7 +236,6 @@ func TestPageTranslationsRendersLangScope(t *testing.T) {
 		t.Fatalf("默认语言那一行应说明不可排除\n%s", body)
 	}
 
-	// 排除 en-US 之后：该行改出「恢复」，状态徽章改「已排除」。
 	if err := db.Exec("UPDATE pages SET excluded_langs = ARRAY['en-US']::text[] WHERE id = ?", pageID).Error; err != nil {
 		t.Fatalf("设置排除列失败: %v", err)
 	}
@@ -295,7 +248,6 @@ func TestPageTranslationsRendersLangScope(t *testing.T) {
 	}
 }
 
-// TestSavePageTranslationsWritesAndMarksStale 保存 → 落库（engine=manual）+ 全站 stale 置位。
 func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 	router, _, db, projectID, pageID := newTranslationEnv(t)
 	insertTranslationPage(t, db, "cccccccc-0000-0000-0000-000000000003", projectID, "/other",
@@ -308,9 +260,7 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 		"rowHash":    {i18n.ContentHash("联系我们"), i18n.ContentHash("<p>我们成立于 2010 年</p>")},
 		"rowTarget":  {"Contact us", "<p>Founded in 2010</p>"},
 	})
-	// 判据在 2026-10 改过：成功从「渲染提示页」改成「只回 JSON」。
-	// 表单改 htmx 之后页面留在原地，结论由 toast 给 + data-reload-on-ok 刷新，
-	// 提示页是原生提交时代为了「让用户看到结论」而造的第二条通道。
+
 	if saved.Code != http.StatusOK {
 		t.Fatalf("保存成功应回 200 JSON，实际 %d：%s", saved.Code, saved.Body.String())
 	}
@@ -341,7 +291,6 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 	}
 }
 
-// renderedTranslationRow 从渲染出来的工作台表单里解析出的一行（字段名与模板一致）。
 type renderedTranslationRow struct {
 	Context string
 	Source  string
@@ -354,11 +303,6 @@ var (
 	renderedHashRe    = regexp.MustCompile(`name="rowHash" value="([^"]*)"`)
 )
 
-// parseRenderedTranslationRows 按文档顺序解析渲染 HTML 里的数据行。
-//
-// 只认「同一个 <tr> 之内」的字段（分组行 / 复用行不含 rowTarget，自然跳过）—— 这正是保存端
-// 按下标配对的前提，也是这个 helper 存在的理由：它把模板渲染出来的东西当成真源，
-// 而不是让用例自己假定四个数组渲染对了。
 func parseRenderedTranslationRows(t *testing.T, body string) []renderedTranslationRow {
 	t.Helper()
 	var out []renderedTranslationRow
@@ -386,14 +330,6 @@ func parseRenderedTranslationRows(t *testing.T, body string) []renderedTranslati
 	return out
 }
 
-// TestSavePageTranslationsFromRenderedForm 把**渲染出来的表单**当真源：解析每一行的字段 →
-// 按文档顺序原样提交 → 断言「非空输入数 == 回执 saved 计数 == 落库行数」。
-//
-// 为什么单独立一条（其余保存用例都手写 url.Values）：手写表单等于假定模板把四类字段渲染成了
-// 逐行对齐的数组。保存端按**下标**配对（page_translations_handle.go：contexts/sources/hashes/targets
-// 四个数组长度必须全等，且 hashes[i] 必须等于 ContentHash(sources[i])），所以模板层面任何错位
-// （某行的 textarea 与它自己的 3 个 hidden 被拆开、少渲染一个 hidden、分组行把数据行包起来）
-// 都只会得到「提交数据不完整」或把译文写到另一行的语境外。这条用例把那个契约钉在渲染输出上。
 func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 	body := getTranslationPage(t, router, pageID, "en-US")
@@ -402,8 +338,7 @@ func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatal("渲染出来的表单里没有可提交的行")
 	}
-	// 四类字段一一对应（渲染 HTML 层面的计数断言）。rowTarget 的行数由解析结果给出，
-	// 所以这里比的是另外三类与它的数量关系。
+
 	for _, name := range []string{"rowContext", "rowSource", "rowHash"} {
 		if got := strings.Count(body, `name="`+name+`"`); got != len(rows) {
 			t.Fatalf("rowTarget 解析出 %d 行，而 %s 有 %d 个 —— 四个数组不等长会被整体拒绝",
@@ -415,7 +350,7 @@ func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 	nonEmpty := 0
 	for _, r := range rows {
 		target := ""
-		// 只填两个纯文本行：富文本行的形态校验与本用例无关，跳过以免噪声。
+
 		if r.Context == "core.heading.text" || r.Context == "core.button.text" {
 			target = "Target-" + r.Context
 			nonEmpty++
@@ -441,7 +376,6 @@ func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 	}
 }
 
-// TestSavePageTranslationsIdempotent 原样再保存 → 不写库、不触发全站重建。
 func TestSavePageTranslationsIdempotent(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 	form := url.Values{
@@ -482,7 +416,6 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 	}
 }
 
-// TestSavePageTranslationsRejectsInvalid 校验失败 → 不落库、不触发重建、页面回显错误。
 func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 
@@ -506,8 +439,7 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 			"rowContext": {tc.context}, "rowSource": {tc.source},
 			"rowHash": {tc.hash}, "rowTarget": {tc.target},
 		})
-		// 校验失败回 200 + **逐行错误片段**（htmx 就地替换 #page-translations-errors）。
-		// 不落库、不触发重建这两条判据没变。
+
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s：校验失败应回 200 片段，实际 %d", tc.name, recorder.Code)
 		}
@@ -523,7 +455,6 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestSavePageTranslationsEmptyTargetSkips 空译文 → 本行不写入（也不触发重建）。
 func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
@@ -545,7 +476,6 @@ func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 	}
 }
 
-// TestSavePageTranslationsLangNotEnabled 未启用的语言 → 拒绝写入。
 func TestSavePageTranslationsLangNotEnabled(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
 	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{

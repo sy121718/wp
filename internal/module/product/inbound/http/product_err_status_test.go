@@ -1,16 +1,5 @@
 package producthttp
 
-// product_err_status_test.go — 状态码在**错误声明处**给，出口只读它。
-//
-// 这一条以前是控制器按接口写死的：`Get` 固定传 404、写动作固定传 400。于是同一份错误
-// 换个接口就换了含义 —— 读库失败的内部错误被报成「商品不存在」（404），而「URL 段被占用」
-// 被报成 400，前端按状态码做的分支与监控分类都跟着错，且没有任何地方报错。
-//
-// 现在四档的判据各有一条（业务默认 400 / 声明 404 / 声明 409 / 非业务 500），
-// 断言的是**状态码 + 对外文案**，不是实现细节：
-//   · 400 与 404/409 的差别必须来自 enums 的声明（改文案不能改状态码）；
-//   · 内部错误一律 500，且 SQL 原文不能出现在响应体里。
-
 import (
 	"context"
 	"errors"
@@ -27,7 +16,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// errStatusSvc 只实现本组用例会调到的方法；其余由嵌入的接口兜底。
 type errStatusSvc struct {
 	productcontract.ProductService
 	err error
@@ -45,7 +33,6 @@ func (s errStatusSvc) Create(context.Context, *productdto.CreateReq) (*productdt
 	return nil, s.err
 }
 
-// productErrStatusRequest 发一次请求并返回 recorder（方法 / 路径 / body 由用例给）。
 func productErrStatusRequest(t *testing.T, err error, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -64,7 +51,6 @@ func productErrStatusRequest(t *testing.T, err error, method, path, body string)
 	return rec
 }
 
-// TestProductErrStatusComesFromDeclaration 四档状态码各一条。
 func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 	conflictWithDetail := fmt.Errorf("%w: %s", productenums.Err(productenums.ErrSlugTaken), "summer-sale")
 
@@ -76,8 +62,7 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 		body      string
 		wantCode  int
 		wantInMsg string
-		// wantNotInMsg 明细不进对外文案：Tail 来自「%w: 明细」，而明细常常是底层 err 原文
-		//（enums.ErrDetail(key, err.Error()) 这种写法就是），出口无条件透出等于开一个泄漏口。
+
 		wantNotInMsg string
 	}{
 		{
@@ -116,7 +101,6 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 	}
 }
 
-// TestProductInternalErrorIsFiveHundredAndOpaque 非业务错误：500 + 归口文案，原文只进日志。
 func TestProductInternalErrorIsFiveHundredAndOpaque(t *testing.T) {
 	rec := productErrStatusRequest(t,
 		errors.New(`pq: relation "products" does not exist`),

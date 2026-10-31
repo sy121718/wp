@@ -9,8 +9,7 @@ func registerAdminCommentWriteUII18n() {
 var registerAdminCommentWriteUII18nOnce sync.Once
 
 func registerAdminCommentWriteUII18nSeed() {
-	// The unique key bounds this guard to two keys times two languages.
-	// A third language cannot hide a missing pair; conflicts preserve operator edits.
+
 	registerSeed(Seed{
 		Version:   "607-admin-comment-write-ui-i18n",
 		TableName: "sys_i18n",

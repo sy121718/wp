@@ -1,6 +1,5 @@
 package crypto
 
-// cipher_test.go — 可逆加密的语义测试。
 import (
 	"strings"
 	"testing"
@@ -26,7 +25,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 }
 
 func TestEncryptUsesRandomNonce(t *testing.T) {
-	// 同一明文两次加密必须不同 —— 否则等于泄露「两条配置相同」。
+
 	a, _ := Encrypt("same", "k")
 	b, _ := Encrypt("same", "k")
 	if a == b {
@@ -39,7 +38,7 @@ func TestDecryptRejectsWrongKeyAndTamperedText(t *testing.T) {
 	if _, err := Decrypt(ct, "key-b"); err == nil {
 		t.Fatal("换个密钥应当解不开")
 	}
-	// 翻转密文里的一个字符（GCM 认证应当发现）。
+
 	tampered := []byte(ct)
 	if tampered[len(tampered)/2] == 'A' {
 		tampered[len(tampered)/2] = 'B'

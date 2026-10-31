@@ -1,39 +1,16 @@
-// variant_options.go — 「商品 → 变体」下拉的只读端口（后台选 SKU 用）。
-//
-// 为什么单列一个口而不是让消费方调 List + Get：后台下拉要的是**全工程的变体清单**，
-// 逐商品 Get 会让查询次数随商品数线性增长（100 个商品 = 101 次往返），
-// 而页面本身只是画一个 select。端口给的是「一次批量取完」，实现方（product）
-// 负责把查询压到与商品数无关的常数次。
-//
-// 只读：没有写方法。需要写变体的调用方用 ProductService（那是另一条边界）。
 package productcontract
 
 import "context"
 
-// VariantOption 下拉里的一项：变体归属的商品名与 SKU 编码。
-//
-// ProductName 是**展示**用的（select 里要能看出是哪件商品），
-// 但它同时是「这个变体属于哪个商品」的答案 —— 调用方不必再回查一次。
 type VariantOption struct {
 	VariantID   string
 	ProductID   string
 	SKUCode     string
 	ProductName string
-	// CostPrice 变体的成本价（nil = 尚未核算，不是 0）。
-	//
-	// 带在这里是因为采购下拉要显示「这一条货的成本」：让它再按 id 逐个回查一次
-	// 会把刚消掉的 N+1 原样加回来。
+
 	CostPrice *float64
 }
 
-// VariantOptionsReader 全工程变体清单（按商品 sort、变体 sort 排序）。
-//
-// projectID 必填：空串由实现方按参数错误拒绝（不返回「全部工程」——
-// 那会让一个工程的页面列出所有工程的 SKU）。
-//
-// 方法名与 ProductService.ListVariantOptions 刻意不同：后者按**关键词**收窄候选
-// （订单代客建单页用），这个要的是全量（库存页与采购页的下拉）。同名不同签名会让
-// 同一个实现类型两条都实现不了（装配期的类型断言直接编不过）。
 type VariantOptionsReader interface {
 	ListAllVariantOptions(ctx context.Context, projectID string) ([]VariantOption, error)
 }

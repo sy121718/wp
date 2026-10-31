@@ -22,7 +22,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 真实服务和生产迁移覆盖同一 API 的 JSON/FormData、cookie 隔离与结算失败事实。
 func TestCartPublicDataProtocol(t *testing.T) {
 	f := newCartFixtureWithGateway(t, failingGateway{})
 	if f == nil {
@@ -106,7 +105,7 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatalf("购物车cookie安全属性不正确:%+v", cartCookie)
 	}
 	request(http.MethodPost, "/api/site/cart/quantity", "application/json", `{"projectId":"`+f.projectID+`","variantId":"`+variant+`"}`, csrf, 400)
-	// 缺 quantity 不能静默当作 0，误删购物车。
+
 	unchanged := request(http.MethodGet, "/api/site/cart?projectId="+f.projectID, "", "", "", 200)
 	if err := json.Unmarshal(unchanged.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
@@ -115,8 +114,7 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatal("失败请求改变了购物车")
 	}
 	request(http.MethodPost, "/api/site/cart/add", "application/json", strings.Replace(addBody, f.projectID, uuid.NewString(), 1), csrf, 404)
-	// 未配置任何系统槽位或页面也可结算；页面只提供表单和显式流程目标。
-	// 地址缺失先拒绝，修改后沿用同一 requestId 重试，不留下订单或库存预占。
+
 	values := url.Values{"projectId": {f.projectID}, "email": {"json-buyer@example.com"}, "name": {"数据访客"}, "phone": {"13800000000"}, "address": {"测试地址"}, "country": {"CN"}, "requestId": {"public-data-checkout"}, "userId": {"987654321"}, "ipAddress": {"attacker"}, "cookie": {"attacker"}}
 	values.Del("address")
 	request(http.MethodPost, "/api/site/cart/checkout", "application/x-www-form-urlencoded", values.Encode(), csrf, 400)
@@ -125,7 +123,7 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatalf("校验失败不得建单或预占库存: orders=%+v err=%v", before, err)
 	}
 	values.Set("address", "测试地址")
-	// 表单形状走同一处理器，收货人缺省在 service 归一，客户端身份被屏蔽。
+
 	checked := request(http.MethodPost, "/api/site/cart/checkout", "application/x-www-form-urlencoded", values.Encode(), csrf, 200)
 	var checkout struct {
 		Data cartdto.CheckoutResp `json:"data"`
@@ -146,8 +144,7 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	if detail.Head.PaidAt != nil {
 		t.Fatal("支付失败不得写入付款时间")
 	}
-	// 模拟首个响应丢失：重发的是原签名购物车与原 requestId，不能信任请求体自报 cookie。
-	// JSON 与浏览器 FormData 必须命中同一订单，金额、状态和库存效果相等。
+
 	jsonBody := `{"projectId":"` + f.projectID + `","email":"json-buyer@example.com","name":"数据访客","phone":"13800000000","shipping":{"address":"测试地址","country":"CN"},"requestId":"public-data-checkout"}`
 	var multipartBody bytes.Buffer
 	writer := multipart.NewWriter(&multipartBody)

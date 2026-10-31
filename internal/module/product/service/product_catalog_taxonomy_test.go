@@ -3,7 +3,7 @@ package productservice
 import "testing"
 
 func TestCatalogTaxonomyEmptyProjectSkipsDataQueries(t *testing.T) {
-	// model 与工程契约均为 nil：任何查库或默认工程回退都会直接失败。
+
 	s := NewService(nil, nil)
 	brands, err := s.CatalogBrands(t.Context(), "")
 	if err != nil || brands == nil || len(brands) != 0 {

@@ -2,17 +2,12 @@ package migrations
 
 import "sync"
 
-// register_customer_segment_filter_i18n.go — 客户列表「消费分段」筛选的词条（558）。
-//
-// 判据：两个代表 key（一个标签 + 一个选项）的中英四条必须都在（8 键 × 2 语言 = 16 条元组）。
 func registerCustomerSegmentFilterI18n() {
 	registerCustomerSegmentFilterI18nOnce.Do(registerCustomerSegmentFilterI18nSeed)
 }
 
-// registerCustomerSegmentFilterI18nOnce 让重复调用成为空操作。
 var registerCustomerSegmentFilterI18nOnce sync.Once
 
-// registerCustomerSegmentFilterI18nSeed 注册 558（真正干活的那一半）。
 func registerCustomerSegmentFilterI18nSeed() {
 	registerSeed(Seed{
 		Version:   "558-customer-segment-filter-i18n",

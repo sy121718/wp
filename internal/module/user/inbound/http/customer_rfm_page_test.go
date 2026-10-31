@@ -1,12 +1,5 @@
 package userhttp
 
-// customer_rfm_page_test.go — RFM 分析页（P7-b4b）。
-//
-// 这一批要钉住的是三件「不报错但会说错话」的事：
-//  ① 端口缺席时**不渲染三格 0**（0 会被读成「这段时间一个客户都没有」）；
-//  ② 分段筛选的链接与分页链接都要带上当前区间与分段，否则点一下会静默换一个范围；
-//  ③ 认不出的分段名回落「全部」而不是让整页报错（URL 是用户可编辑的）。
-
 import (
 	"context"
 	"go_wp/internal/adminui"
@@ -18,22 +11,19 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 )
 
-// fakeRfmReader 记录收到的请求并按预设返回。
 type fakeRfmReader struct {
 	res *orderdto.CustomerRfmResp
 	err error
 	got *orderdto.CustomerRfmReq
-	// rejected 记录被拒的请求（认不出的分段名 —— 本页在调用前就回落成正整数，
-	// 所以这里正常情况下一次都不该收到非法值）。
+
 	call int
-	// segRes / segGot / segErr / segCall 供客户列表按 RFM 分段筛的用例使用。
+
 	segRes  *orderdto.CustomerRfmSegmentIDsResp
 	segGot  *orderdto.CustomerRfmSegmentIDsReq
 	segErr  error
 	segCall int
 }
 
-// CustomerRfmSegmentIDsByRange 客户列表按 RFM 分段筛时走这一条（同包的两个页面共用本 fake）。
 func (f *fakeRfmReader) CustomerRfmSegmentIDsByRange(_ context.Context, req *orderdto.CustomerRfmSegmentIDsReq) (*orderdto.CustomerRfmSegmentIDsResp, error) {
 	f.segCall++
 	f.segGot = req
@@ -55,7 +45,6 @@ func (f *fakeRfmReader) CustomerRfmByRange(_ context.Context, req *orderdto.Cust
 	return f.res, nil
 }
 
-// rfmSample 一份有代表性的 RFM 结果：两段各一人，其中一人没有客户资料。
 func rfmSample() *orderdto.CustomerRfmResp {
 	return &orderdto.CustomerRfmResp{
 		ProjectID: "p1", From: "2026-10-01", To: "2026-10-05",
@@ -65,8 +54,7 @@ func rfmSample() *orderdto.CustomerRfmResp {
 				UserID: 106, LastOrderAt: "2026-10-04", RecencyDays: 1,
 				Frequency: 5, MonetaryCents: 123450, MonetaryLabel: "CNY 1,234.50",
 				RScore: 5, FScore: 5, MScore: 4, TotalScore: 14,
-				// SegmentLabel 不设：分段展示名由模板按 Segment 取词，
-				// 设上它会让「模板又去读预制的展示串」照样通过。
+
 				Segment: "vip",
 			},
 			{
@@ -79,7 +67,6 @@ func rfmSample() *orderdto.CustomerRfmResp {
 	}
 }
 
-// TestCustomerRfmPageRendersRows 正常路径：明细进表格，分段徽章与区间都在。
 func TestCustomerRfmPageRendersRows(t *testing.T) {
 	rfm := &fakeRfmReader{res: rfmSample()}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
@@ -104,18 +91,12 @@ func TestCustomerRfmPageRendersRows(t *testing.T) {
 			t.Errorf("RFM 页缺少 %q", want)
 		}
 	}
-	// 表头 8 个（数标签要锚定列名，否则其它表的表头也会被数进来）。
+
 	if n := strings.Count(body, "<th>"); n != 8 {
 		t.Errorf("表头应为 8 列，实得 %d", n)
 	}
 }
 
-// TestCustomerRfmPageEmptySegmentKeepsTableShape 该分段筛出 0 人时：
-// 表格还在、空态行的 colspan 与列数一致。
-//
-// 为什么单列一例：上面的有数据用例**渲染不出空态行**（`{{if len(rows) == 0}}` 不成立），
-// 所以它数到 8 个 <th> 也证明不了 colspan 写对了 —— 一个 colspan 写少的空态行
-// 会让表格在空数据时塌成 1 列宽，而那只有「刚好筛出 0 个人」时才看得见。
 func TestCustomerRfmPageEmptySegmentKeepsTableShape(t *testing.T) {
 	empty := &orderdto.CustomerRfmResp{
 		ProjectID: "p1", From: "2026-10-01", To: "2026-10-05",
@@ -140,16 +121,12 @@ func TestCustomerRfmPageEmptySegmentKeepsTableShape(t *testing.T) {
 	if !strings.Contains(body, "这个分段在这段时间里没有客户") {
 		t.Error("空态文案缺失")
 	}
-	// 头部计数仍然是「这批人的全貌」，不随分段筛选收窄。
+
 	if !strings.Contains(body, ">2<") && !strings.Contains(body, "2 ") {
 		t.Log("头部计数渲染形式变了，检查客户数是否仍显示 2")
 	}
 }
 
-// TestCustomerRfmPageTabURLsKeepRange 分段徽章的链接必须带上当前区间。
-//
-// 不带的话点「高价值」会跳到默认档位（本月），而页面上刚刚看的是「本年」——
-// 用户会以为高价值客户突然变少了，且没有任何提示。
 func TestCustomerRfmPageTabURLsKeepRange(t *testing.T) {
 	rfm := &fakeRfmReader{res: rfmSample()}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
@@ -160,10 +137,7 @@ func TestCustomerRfmPageTabURLsKeepRange(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=year", nil))
 	body := rec.Body.String()
-	// 回带的是**显式区间**（from/to），不是档位名 —— 页面上的时间筛选条（date_filter.html）
-	// 总会把两个 date 填好再提交，所以 rng.Key 在正常路径上恒为 "custom"；
-	// 用 range=custom 回带等于什么都没带，翻页 / 切分段会静默变回默认区间。
-	// 不断具体日期：?range=year 这条兜底路径算出的窗口跟着「今天」走（本周期至今）。
+
 	for _, want := range []string{
 		`href="/admin/customers/rfm?from=`,
 		`&amp;segment=vip"`,
@@ -174,15 +148,12 @@ func TestCustomerRfmPageTabURLsKeepRange(t *testing.T) {
 			t.Errorf("分段徽章链接缺少 %q", want)
 		}
 	}
-	// 断 href 而不是全页的 "?range="：layout 里有一个 name="redirect" 的隐藏域，
-	// 它的 value 就是当前 URL（含 ?range=year），会假阳性。
+
 	if strings.Contains(body, `href="/admin/customers/rfm?range=`) {
 		t.Error("分段徽章链接不应回带档位名：?from=&to= 才是生效窗口的真源")
 	}
 }
 
-// TestCustomerRfmPagePassesSegmentAndWindow 分段与区间都要原样交给订单模块
-// （它是唯一的判定处；本页只做白名单回落）。
 func TestCustomerRfmPagePassesSegmentAndWindow(t *testing.T) {
 	rfm := &fakeRfmReader{res: rfmSample()}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
@@ -209,8 +180,6 @@ func TestCustomerRfmPagePassesSegmentAndWindow(t *testing.T) {
 	}
 }
 
-// TestCustomerRfmPageUnknownSegmentFallsBack 「认不出的分段」回落全部，
-// 而不是把非法值透传给订单模块（那边会拒，页面变成一片错误）。
 func TestCustomerRfmPageUnknownSegmentFallsBack(t *testing.T) {
 	rfm := &fakeRfmReader{res: rfmSample()}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
@@ -228,7 +197,6 @@ func TestCustomerRfmPageUnknownSegmentFallsBack(t *testing.T) {
 	}
 }
 
-// TestCustomerRfmPageWithoutPortShowsNotice 端口缺席时给一句人话，**不渲染三格 0**。
 func TestCustomerRfmPageWithoutPortShowsNotice(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	engine := newCustomerTestEngine(h)
@@ -243,9 +211,7 @@ func TestCustomerRfmPageWithoutPortShowsNotice(t *testing.T) {
 	if !strings.Contains(body, customerRfmUnavailableLabel.fallback) {
 		t.Error("端口缺席时应显示「暂时不可用」的说明")
 	}
-	// 表头**保留**（门禁 check-empty-state-table-head.sh 的口径：空态吃掉表头时，
-	// 用户看不到这一页有哪些列，也无从确认自己是不是筛错了）。区别在正文：
-	// 端口缺席给的是「数据没接上」，而不是「这段时间没有客户」。
+
 	if !strings.Contains(body, "<table") {
 		t.Error("端口缺席时表头仍应保留（空态吃掉表头会让用户看不到有哪些列）")
 	}
@@ -254,8 +220,6 @@ func TestCustomerRfmPageWithoutPortShowsNotice(t *testing.T) {
 	}
 }
 
-// TestCustomerRfmPageWithoutProjectsShowsEmpty 还没建站点工程时给空态，不是错误
-// （那是正常状态：没有订单可算）。
 func TestCustomerRfmPageWithoutProjectsShowsEmpty(t *testing.T) {
 	rfm := &fakeRfmReader{res: rfmSample()}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{})

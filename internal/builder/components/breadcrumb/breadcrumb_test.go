@@ -1,12 +1,5 @@
 package breadcrumb
 
-// breadcrumb_test.go — 面包屑组件逻辑单测（纯逻辑，不碰库）。
-//
-// 钉住三条契约：
-//  1. 层级推导与 head 的 JSON-LD 面包屑同规则（首页 + 路径段，链接取累积路径）；
-//  2. 首页自身 / 无路径 / 无手填层级时不渲染（宁可不显示，也不猜层级）；
-//  3. JSON-LD（开启时）与可见项逐项同源 —— 同一份 Items 序列化出来，两处不会分叉。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -15,7 +8,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// ldDocView 反序列化用的最小结构（字段与 jet.go 的 ldDoc 对应）。
 type ldDocView struct {
 	Context         string       `json:"@context"`
 	Type            string       `json:"@type"`
@@ -29,7 +21,6 @@ type ldItemView struct {
 	Item     string `json:"item,omitempty"`
 }
 
-// scriptJSONLD 去掉 <script> 外壳取出脚本体。
 func scriptJSONLD(t *testing.T, v View) string {
 	t.Helper()
 	const open = `<script type="application/ld+json">`
@@ -39,7 +30,6 @@ func scriptJSONLD(t *testing.T, v View) string {
 	return strings.TrimSuffix(strings.TrimPrefix(v.JSONLD, open), "</script>")
 }
 
-// TestDeriveItemsFollowsPath 层级推导：首页 + 各路径段，链接取累积路径。
 func TestDeriveItemsFollowsPath(t *testing.T) {
 	want := []Item{
 		{Label: "首页", URL: "/"},
@@ -56,12 +46,10 @@ func TestDeriveItemsFollowsPath(t *testing.T) {
 		}
 	}
 
-	// 尾斜杠不产生空段。
 	if trail := deriveItems("/about/", "首页"); len(trail) != 2 || trail[1].URL != "/about" {
 		t.Errorf("尾斜杠应被忽略，实际 %+v", trail)
 	}
 
-	// 空路径 = 不知道当前页：返回 nil（由调用方决定不渲染）。
 	for _, p := range []string{"", "   "} {
 		if got := deriveItems(p, "首页"); got != nil {
 			t.Errorf("路径 %q 应返回 nil，实际 %+v", p, got)
@@ -69,7 +57,6 @@ func TestDeriveItemsFollowsPath(t *testing.T) {
 	}
 }
 
-// TestBuildViewDerivesFromCurrentPath 未手填 items 时按当前访问路径派生，末项标记为当前页。
 func TestBuildViewDerivesFromCurrentPath(t *testing.T) {
 	v := BuildView(&Props{}, &core.RenderContext{CurrentPath: "/products/pods"})
 	if !v.Visible || len(v.Items) != 3 {
@@ -85,14 +72,12 @@ func TestBuildViewDerivesFromCurrentPath(t *testing.T) {
 		t.Errorf("只有末项应标记为当前页，实际 %+v", v.Items)
 	}
 
-	// 作者自定义分隔符。
 	v2 := BuildView(&Props{Separator: ">"}, &core.RenderContext{CurrentPath: "/a/b"})
 	if v2.Items[0].Separator != ">" {
 		t.Errorf("自定义分隔符未生效，实际 %+v", v2.Items[0])
 	}
 }
 
-// TestBuildViewHideHomeAndNoPath 首页自身 / 无路径不渲染；hideHome 去掉首项；手填层级优先。
 func TestBuildViewHideHomeAndNoPath(t *testing.T) {
 	if v := BuildView(&Props{}, &core.RenderContext{CurrentPath: "/"}); v.Visible {
 		t.Errorf("首页自身不应渲染面包屑，实际 %+v", v.Items)
@@ -115,7 +100,6 @@ func TestBuildViewHideHomeAndNoPath(t *testing.T) {
 	}
 }
 
-// TestApplyI18nFillsLabelAndHome 容器标签与缺省首页名走词条；作者填的首页名不被覆盖。
 func TestApplyI18nFillsLabelAndHome(t *testing.T) {
 	translate := func(key, fallback string) string {
 		switch key {
@@ -133,14 +117,12 @@ func TestApplyI18nFillsLabelAndHome(t *testing.T) {
 		t.Errorf("应取到词条，实际 label=%q 首项=%q", v.Label, v.Items[0].Label)
 	}
 
-	// 取词函数缺失 → 包内中文兜底（绝不空串）。
 	v2 := BuildView(&Props{}, &core.RenderContext{CurrentPath: "/about"})
 	v2.ApplyI18n(nil)
 	if v2.Label != "面包屑导航" || v2.Items[0].Label != "首页" {
 		t.Errorf("无取词函数应回退中文兜底，实际 label=%q 首项=%q", v2.Label, v2.Items[0].Label)
 	}
 
-	// 作者填了 homeLabel：属于用户内容，组件缺省文案不覆盖它。
 	v3 := BuildView(&Props{HomeLabel: "主页"}, &core.RenderContext{CurrentPath: "/about"})
 	v3.ApplyI18n(translate)
 	if v3.Items[0].Label != "主页" {
@@ -148,7 +130,6 @@ func TestApplyI18nFillsLabelAndHome(t *testing.T) {
 	}
 }
 
-// TestJSONLDMatchesVisibleItems 结构化数据与可见项同源（逐项一致），默认不输出。
 func TestJSONLDMatchesVisibleItems(t *testing.T) {
 	v := BuildView(&Props{JSONLD: true}, &core.RenderContext{CurrentPath: "/products/pods"})
 	v.ApplyI18n(nil)
@@ -166,14 +147,12 @@ func TestJSONLDMatchesVisibleItems(t *testing.T) {
 		}
 	}
 
-	// 默认（jsonLd 未开）不输出脚本：head 已有一份，重复会让结构化数据打架。
 	v2 := BuildView(&Props{}, &core.RenderContext{CurrentPath: "/products/pods"})
 	v2.ApplyI18n(nil)
 	if v2.JSONLD != "" {
 		t.Errorf("默认不应输出 JSON-LD，实际 %q", v2.JSONLD)
 	}
 
-	// 作者文案里的 </script> 不能逃逸出脚本标签。
 	v3 := BuildView(&Props{JSONLD: true, Items: []Item{{Label: "</script><script>alert(1)</script>", URL: "/x"}}}, nil)
 	v3.ApplyI18n(nil)
 	if got := strings.Count(v3.JSONLD, "</script>"); got != 1 {
@@ -184,7 +163,6 @@ func TestJSONLDMatchesVisibleItems(t *testing.T) {
 	}
 }
 
-// TestValidateExtraRejectsBadItems 关系性校验：空文案、非法链接、隐藏首页却无层级。
 func TestValidateExtraRejectsBadItems(t *testing.T) {
 	bad := []struct {
 		name  string

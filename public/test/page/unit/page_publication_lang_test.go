@@ -1,12 +1,5 @@
 package unit
 
-// page_publication_lang_test.go — 按语言删除发布指针（审计 I18N-017）。
-//
-// 这里钉住的是**误伤**：禁用一种语言时，另一种语言的发布指针必须原样留着。
-// 原有的 DeletePublications(pageID) 没有语言维度，会把仍在服务的语言一起清掉 ——
-// 那个语言的页面会立刻失去「已发布」状态，而访问面上产物还在服务，
-// 后台与访问面从此各说各话，且没有任何界面能看出是哪一步错的。
-
 import (
 	"context"
 	"testing"
@@ -23,8 +16,7 @@ func TestDeletePublicationsByLangKeepsOtherLanguages(t *testing.T) {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return
 	}
-	// pages 也在迁移范围内：发布表的 page_id 带外键，缺它时插入会报
-	// `relation "pages" does not exist`（而被误读成「模型写错了」）。
+
 	if err := db.AutoMigrate(&pagemodel.PageEntity{}, &pagemodel.PublicationEntity{}, &pagemodel.StagingEntity{}); err != nil {
 		t.Fatalf("AutoMigrate 失败: %v", err)
 	}

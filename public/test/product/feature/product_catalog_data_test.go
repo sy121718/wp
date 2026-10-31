@@ -17,7 +17,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 真实发布→单语言Publication索引→公开JSON，计数和数据都排除隐藏/跨工程/跨语言项。
 func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -147,9 +146,7 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	query.Set("projectId", f.projectID)
 	query.Set("pageSize", "61")
 	read(query, 400)
-	// 页码边界（PRD-008）：上限 100、余量 60、默认 12 是**明写**的契约（常量在
-	// product_catalog.go 顶部），越界一律 400 —— 不替调用方夹页，也不对数据库发起一次
-	// 深 OFFSET。DEC-05（100 页上限与越界是空页还是夹页）定下来时改的是那一组常量。
+
 	query.Set("pageSize", "12")
 	query.Set("page", "101")
 	read(query, 400)

@@ -10,8 +10,6 @@ import (
 
 var controllerTranslatePattern = regexp.MustCompile(`response\.MsgText\(|response\.ArgsText\(|text\.MsgText\(|text\.TranslateArgs\(|shell\.TranslateFor\(`)
 
-// TestControllerI18nBoundary 控制器只传文案事实，界面取词归模板、响应取词归 JSON 出口。
-// 商品控制器的取词存量已清零，不允许重新登记展示加工。
 func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{}
 
@@ -33,7 +31,6 @@ func TestControllerI18nBoundary(t *testing.T) {
 	}
 }
 
-// scanControllerTranslate 扫本目录下非测试文件的控制器取词（跳过注释行），返回 文件 → 行号列表。
 func scanControllerTranslate(t *testing.T) map[string][]string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -52,7 +49,7 @@ func scanControllerTranslate(t *testing.T) map[string][]string {
 		}
 		for i, line := range strings.Split(string(raw), "\n") {
 			trimmed := strings.TrimSpace(line)
-			// 注释里会**解释**这条例外（"曾经由控制器填 shell.TranslateFor(c)"），不是取词点。
+
 			if strings.HasPrefix(trimmed, "//") {
 				continue
 			}

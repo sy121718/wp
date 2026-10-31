@@ -25,7 +25,6 @@ func (s *Service) LockDraftTx(ctx context.Context, tx *gorm.DB, projectID, id st
 	return &contenttemplatecontract.LockedDraft{ID: e.ID, Version: e.DraftVersion, Document: e.DraftDocument}, nil
 }
 
-// SaveDraftDocumentTx 不另开事务、不变更路径或主题；沿用模板自己的绑定验证。
 func (s *Service) SaveDraftDocumentTx(ctx context.Context, tx *gorm.DB, projectID, id string, expectedVersion int64, raw json.RawMessage) error {
 	e, err := s.m.LockDraftTx(ctx, tx, projectID, id)
 	if err != nil {

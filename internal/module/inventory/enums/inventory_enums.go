@@ -1,7 +1,3 @@
-// Package inventoryenums inventory 模块响应消息（issue #15 / #16）。
-//
-// 与 product 模块同形：未接 i18n 前 ErrXxx / MsgXxx 是消息键常量，
-// handler 与 service 一律引用本包，不硬编码文案。
 package inventoryenums
 
 import (
@@ -12,7 +8,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// 响应消息。
 const (
 	MsgCreateSuccess = "MsgCreateSuccess"
 	MsgUpdateSuccess = "MsgUpdateSuccess"
@@ -20,272 +15,161 @@ const (
 	MsgListSuccess   = "MsgListSuccess"
 	MsgDetailSuccess = "MsgDetailSuccess"
 
-	// —— 库存变动与缓存（issue #16）——
-	MsgChangeSuccess    = "MsgChangeSuccess"    // 库存变动成功
-	MsgDeductSuccess    = "MsgDeductSuccess"    // 库存扣减成功
-	MsgSyncSuccess      = "MsgSyncSuccess"      // 缓存同步成功
-	MsgReconcileSuccess = "MsgReconcileSuccess" // 缓存对账完成
+	MsgChangeSuccess    = "MsgChangeSuccess"
+	MsgDeductSuccess    = "MsgDeductSuccess"
+	MsgSyncSuccess      = "MsgSyncSuccess"
+	MsgReconcileSuccess = "MsgReconcileSuccess"
 )
 
-// 错误消息。
 const (
-	ErrInvalidParam = "ErrInvalidParam" // 参数错误
+	ErrInvalidParam = "ErrInvalidParam"
 
-	// —— 仓库（issue #15 验收 1）——
-	ErrWarehouseNotFound        = "ErrWarehouseNotFound"        // 仓库不存在
-	ErrWarehouseNameRequired    = "ErrWarehouseNameRequired"    // 仓库名称必填
-	ErrWarehouseCodeRequired    = "ErrWarehouseCodeRequired"    // 仓库短码必填
-	ErrWarehouseCodeInvalid     = "ErrWarehouseCodeInvalid"     // 短码不是字母数字（SKU 编码前缀只允许 A-Z 0-9）
-	ErrWarehouseCodeTaken       = "ErrWarehouseCodeTaken"       // 同工程下短码已占用
-	ErrWarehouseStatusInvalid   = "ErrWarehouseStatusInvalid"   // 状态不是 active / disabled
-	ErrWarehouseIsDefault       = "ErrWarehouseIsDefault"       // 默认仓不能删除，也不能取消默认 / 停用
-	ErrWarehouseHasStock        = "ErrWarehouseHasStock"        // 仓内仍有非零库存，不能删除
-	ErrWarehouseDisabled        = "ErrWarehouseDisabled"        // 已停用的仓库不能作为归属仓
-	ErrWarehouseProjectMismatch = "ErrWarehouseProjectMismatch" // 仓库不属于该工程
-	// ErrWarehouseDefaultMissing 「未指定仓库」时工程内没有默认仓可兜底 ——
-	// 兜底铁律不是「随便挑一个仓」，缺默认仓即数据缺陷，必须显式暴露。
+	ErrWarehouseNotFound        = "ErrWarehouseNotFound"
+	ErrWarehouseNameRequired    = "ErrWarehouseNameRequired"
+	ErrWarehouseCodeRequired    = "ErrWarehouseCodeRequired"
+	ErrWarehouseCodeInvalid     = "ErrWarehouseCodeInvalid"
+	ErrWarehouseCodeTaken       = "ErrWarehouseCodeTaken"
+	ErrWarehouseStatusInvalid   = "ErrWarehouseStatusInvalid"
+	ErrWarehouseIsDefault       = "ErrWarehouseIsDefault"
+	ErrWarehouseHasStock        = "ErrWarehouseHasStock"
+	ErrWarehouseDisabled        = "ErrWarehouseDisabled"
+	ErrWarehouseProjectMismatch = "ErrWarehouseProjectMismatch"
+
 	ErrWarehouseDefaultMissing = "ErrWarehouseDefaultMissing"
 
-	// —— 仓库类型与第三方对接配置（迁移 240）——
-	//
-	// 仓库不再只有「默认虚拟仓」一种：类型（自营 / 第三方 / 虚拟）决定它在业务上的角色，
-	// 第三方仓各家的对接方式不同，配置存在 config jsonb 里（非敏感项 + 加密后的凭据）。
-	ErrWarehouseTypeInvalid = "ErrWarehouseTypeInvalid" // 类型不是 self / third_party / virtual
-	// ErrWarehouseConfigInvalid 对接配置必须是 JSON 对象（数组 / 标量都无法按字段取值）。
+	ErrWarehouseTypeInvalid = "ErrWarehouseTypeInvalid"
+
 	ErrWarehouseConfigInvalid = "ErrWarehouseConfigInvalid"
-	// ErrWarehouseCredentialInvalid 凭据内容不合法（过长或含控制字符）。
+
 	ErrWarehouseCredentialInvalid = "ErrWarehouseCredentialInvalid"
-	// ErrWarehouseCredentialKeyMissing 敏感配置加密密钥未配置（app.secret 为空）——
-	// 宁可直接报错，也不把凭据明文写进 config。
+
 	ErrWarehouseCredentialKeyMissing = "ErrWarehouseCredentialKeyMissing"
-	// ErrWarehouseTypeVirtualDefault 虚拟仓不能作为默认仓。
-	//
-	// 默认仓是「未指定仓库」时的兜底，兜底仓必须是能真正收发的实体仓；
-	// 把兜底落到虚拟仓上，库存会被记到一个永远不出货的仓里。
+
 	ErrWarehouseTypeVirtualDefault = "ErrWarehouseTypeVirtualDefault"
 
-	// —— 库存调整入口（盘点 / 报损，迁移 243 配套）——
-	//
-	// 库存管理页撤掉「入库 / 出库 / 调整」三向内联表单后，只留「库存调整（盘点 / 报损）」
-	// 这一个受权限约束的写入口：盘点（adjust，目标绝对量）与报损（out）都必须写清原因与备注。
-	ErrStockRemarkRequired = "ErrStockRemarkRequired" // 调整 / 报损必须填写备注
-	// ErrMovementTimeRangeInvalid 流水的时间筛选值不合法（或起始晚于结束）。
+	ErrStockRemarkRequired = "ErrStockRemarkRequired"
+
 	ErrMovementTimeRangeInvalid = "ErrMovementTimeRangeInvalid"
 
-	// —— 库存记录（issue #15 验收 2/3）——
-	ErrStockNotFound        = "ErrStockNotFound"        // 库存记录不存在
-	ErrStockVariantRequired = "ErrStockVariantRequired" // 生成库存记录必须给出变体
-	ErrStockWarehouseNeeded = "ErrStockWarehouseNeeded" // 生成库存记录必须给出仓库（或可兜底的默认仓）
-	// ErrStockCostInvalid 显式传入的成本价不合法（必须是 >= 0 的有限数）。
-	//
-	// 成本价**可空**：NULL = 尚未核算（迁移 244；本模块绝不用 0 冒充「未知成本」，
-	// 0 是合法的显式成本）。因此这条只拦「显式给了值却给错」的调用 ——
-	// 不传成本是合法状态（出库 / 盘点 / 报损默认不动成本），不报错。
+	ErrStockNotFound        = "ErrStockNotFound"
+	ErrStockVariantRequired = "ErrStockVariantRequired"
+	ErrStockWarehouseNeeded = "ErrStockWarehouseNeeded"
+
 	ErrStockCostInvalid = "ErrStockCostInvalid"
 
-	// —— 库存变动与流水（issue #16 验收 1/2/3）——
-	ErrStockLinesRequired    = "ErrStockLinesRequired"    // 变动清单不能为空
-	ErrStockLinesTooMany     = "ErrStockLinesTooMany"     // 变动清单行数超过单批上限
-	ErrStockDirectionInvalid = "ErrStockDirectionInvalid" // 方向不是 in / out / adjust
-	ErrStockQuantityInvalid  = "ErrStockQuantityInvalid"  // 数量不合法（in/out 必须为正，adjust 不得为负）
-	ErrStockProductRequired  = "ErrStockProductRequired"  // 变动必须能确定商品（行内 / 已有库存记录）
-	ErrStockReasonRequired   = "ErrStockReasonRequired"   // 变动原因必填
-	// ErrStockSKURequired 缺少**仓库侧 SKU 编码**（空串一律拒绝）。
-	//
-	// 为什么单列一条而不是复用「变体必填」：这两个是不同维度的事实 —— 变体回答「是哪件货」，
-	// 仓库侧 SKU 回答「这条货在仓库里叫什么」。仓库里的编码**永远是裸码**（不带仓码前缀，
-	// 前缀只属于商品侧），空串建不出可追溯的库存行：两条这样的行还会在
-	// UNIQUE (warehouse_id, sku_code)（迁移 244）上撞成 23505 —— 运营看到的是一句
-	// 没有上下文的数据库错误，而不是「你少给了编码」。文案因此要可行动：让调用方传裸码。
+	ErrStockLinesRequired    = "ErrStockLinesRequired"
+	ErrStockLinesTooMany     = "ErrStockLinesTooMany"
+	ErrStockDirectionInvalid = "ErrStockDirectionInvalid"
+	ErrStockQuantityInvalid  = "ErrStockQuantityInvalid"
+	ErrStockProductRequired  = "ErrStockProductRequired"
+	ErrStockReasonRequired   = "ErrStockReasonRequired"
+
 	ErrStockSKURequired = "ErrStockSKURequired"
-	// ErrStockInsufficient 可用量不足，扣减整体拒绝（一个事务内不留半截）。
-	// 判定只读真源 inventory_stocks（带行锁），绝不读 product_variants.stock_total 缓存。
+
 	ErrStockInsufficient = "ErrStockInsufficient"
-	// ErrStockCachePortMissing 商品侧库存缓存端口未注入（装配缺陷 / 纯库存单测路径）。
+
 	ErrStockCachePortMissing = "ErrStockCachePortMissing"
 
-	// —— 无限库存（跟踪开关，迁移 261）——
-	//
-	// 「无限」用显式开关表达（inventory_stocks.track_quantity = false），不用可空数量：
-	// 数量的 0 有两义（跟踪且卖光 / 不跟踪无限），区分它们的唯一依据就是这一列。
-	// 下面两条是行内编辑「跟踪开关 + 数量」的拒绝理由。
-	//
-	// ErrStockQuantityRequired 跟踪库存时必须显式给数量。0 是「卖光」这个**具体事实**，
-	// 必须由用户自己打出来 —— 留空不等于 0（否则「忘了填」会被静默记成「没货」）。
 	ErrStockQuantityRequired = "ErrStockQuantityRequired"
-	// ErrStockUntrackedQuantity 不跟踪（无限）的行不允许带数量：数量与开关是同一件事的
-	// 两种表达，同时存在就是自相矛盾的数据（DDL 侧 CHECK (track_quantity OR quantity = 0)
-	// 兜底，这里提前给一条可读的业务错误）。
+
 	ErrStockUntrackedQuantity = "ErrStockUntrackedQuantity"
 
-	// —— 变动原因字典（issue #16 验收 4）——
-	ErrReasonNotFound          = "ErrReasonNotFound"          // 原因不在字典里（不接受自由文本）
-	ErrReasonDirectionMismatch = "ErrReasonDirectionMismatch" // 原因方向与本次变动方向不符
-	ErrReasonCodeRequired      = "ErrReasonCodeRequired"      // 原因 code 必填
-	ErrReasonCodeInvalid       = "ErrReasonCodeInvalid"       // 原因 code 只允许小写字母 / 数字 / 下划线
-	ErrReasonCodeTaken         = "ErrReasonCodeTaken"         // 同工程（或内置）下 code 已占用
-	ErrReasonNameRequired      = "ErrReasonNameRequired"      // 原因名称必填
-	ErrReasonDirectionInvalid  = "ErrReasonDirectionInvalid"  // 原因方向必须是 in / out / adjust
-	ErrReasonBuiltin           = "ErrReasonBuiltin"           // 内置原因不可改（自定义原因才可维护）
-	ErrReasonStatusInvalid     = "ErrReasonStatusInvalid"     // 原因状态不是 active / disabled
+	ErrReasonNotFound          = "ErrReasonNotFound"
+	ErrReasonDirectionMismatch = "ErrReasonDirectionMismatch"
+	ErrReasonCodeRequired      = "ErrReasonCodeRequired"
+	ErrReasonCodeInvalid       = "ErrReasonCodeInvalid"
+	ErrReasonCodeTaken         = "ErrReasonCodeTaken"
+	ErrReasonNameRequired      = "ErrReasonNameRequired"
+	ErrReasonDirectionInvalid  = "ErrReasonDirectionInvalid"
+	ErrReasonBuiltin           = "ErrReasonBuiltin"
+	ErrReasonStatusInvalid     = "ErrReasonStatusInvalid"
 
-	// —— 调拨（迁移 630，W3）——
-	//
-	// 五条对应五类「这一步不该发生」：缺凭证（用户明确要求：出货与签收都必须有）、
-	// 明细不在源仓、可售不足、状态不允许、两仓相同。
 	ErrTransferNotFound         = "ErrTransferNotFound"
 	ErrTransferLinesRequired    = "ErrTransferLinesRequired"
 	ErrTransferSameWarehouse    = "ErrTransferSameWarehouse"
 	ErrItemNotInSourceWarehouse = "ErrItemNotInSourceWarehouse"
 	ErrTransferStatusInvalid    = "ErrTransferStatusInvalid"
-	// 审批（迁移 651）。
+
 	ErrTransferRejectReasonRequired = "ErrTransferRejectReasonRequired"
 	ErrTransferRejectReasonTooLong  = "ErrTransferRejectReasonTooLong"
-	// ErrAttachmentRequired 出货 / 签收必须带凭证附件（用户明确要求）。
+
 	ErrAttachmentRequired = "ErrAttachmentRequired"
-	// ErrAttachmentNotFound 凭证引用的附件不存在（或不属于本工程）。
+
 	ErrAttachmentNotFound = "ErrAttachmentNotFound"
-	// ErrStockNotEnough 可售不足（调拨不得占用被订单预占的那部分）。
+
 	ErrStockNotEnough = "ErrStockNotEnough"
 
-	// —— 仓库 SKU 外部编码（迁移 251 / docs/14 §9.3）——
-	//
-	// 属性属于**商品**（属性组 + 值 → 笛卡尔积 → variant.option_values），仓库侧只回答
-	// 「这条货在这个仓叫什么」：inventory_stocks.external_sku 就是那个「叫什么」。
-	// 映射是 **N:1**（同一个商品的十几个口味在仓库侧可能共用同一条 SKU / 同一个价格），
-	// 所以唯一性**不是** DDL 上的唯一索引，而是下面这几条弱校验 ——
-	// 把 N:1 写成 1:1 的约束会把合法数据判成冲突（迁移 251 的注释记了这件事）。
-	ErrSKUSourceInvalid = "ErrSKUSourceInvalid" // 新建商品的 SKU 来源取值不合法（只认自己创建 / 从仓库选）
-	// ErrWarehouseSKURequired 「从仓库选」必须同时给出仓库与仓库 SKU：
-	// 只有仓库不知道选哪条货，只有编码不知道在哪个仓（同一个编码可以在多个仓各有一条）。
+	ErrSKUSourceInvalid = "ErrSKUSourceInvalid"
+
 	ErrWarehouseSKURequired = "ErrWarehouseSKURequired"
-	// ErrWarehouseSKUNotFound 该仓库里没有这条仓库 SKU（含编码不在本仓 / 不属于该工程）。
+
 	ErrWarehouseSKUNotFound = "ErrWarehouseSKUNotFound"
-	// ErrWarehouseSKUCodeTaken 该仓已有同一条 sku_code 的库存行（我们自己的 SKU 仓内唯一，
-	// 迁移 244 的 UNIQUE (warehouse_id, sku_code)）；提前拦截是为了给出可读的错误，
-	// 而不是让运营对着一个 23505 猜是哪两行。
+
 	ErrWarehouseSKUCodeTaken = "ErrWarehouseSKUCodeTaken"
-	// ErrExternalSKUInvalid 外部编码不合法（超过长度上限或含控制字符）。
+
 	ErrExternalSKUInvalid = "ErrExternalSKUInvalid"
-	// ErrExternalSKUProductConflict N:1 弱校验的拒绝理由：同一仓内同一外码已挂在**另一个商品**上。
-	// 多个变体共用同一个外码是合法的（这正是 N:1 的意义），跨商品才是映射写错了。
+
 	ErrExternalSKUProductConflict = "ErrExternalSKUProductConflict"
 
-	// —— 仓库商品 SKU 主档（迁移 642 / B3）——
-
-	// ErrStockStatusInvalid 货行状态只接受 active / disabled（其余一律拒绝，不静默按启用处理）。
 	ErrStockStatusInvalid = "ErrStockStatusInvalid"
-	// ErrStockFreightInvalid 运费不合法（必须是 >= 0 的有限数；0 是合法的「免运费」）。
+
 	ErrStockFreightInvalid = "ErrStockFreightInvalid"
-	// ErrStockFXRateInvalid 成本换算汇率不合法（必须 > 0；未固化请留空，不要填 0）。
+
 	ErrStockFXRateInvalid = "ErrStockFXRateInvalid"
-	// ErrStockNameTooLong / ErrStockBarcodeTooLong / ErrStockRemarkTooLong / ErrStockImageTooLong
-	// 主档展示字段的长度上限：超长是排版问题（表格被撑破），不是数据完整性问题，
-	// 所以在服务层给可读的业务错误，而不是让 varchar 抛一个没有上下文的 22001。
+
 	ErrStockNameTooLong    = "ErrStockNameTooLong"
 	ErrStockBarcodeTooLong = "ErrStockBarcodeTooLong"
 	ErrStockRemarkTooLong  = "ErrStockRemarkTooLong"
 	ErrStockImageTooLong   = "ErrStockImageTooLong"
 
-	// —— 预占 / 释放（迁移 624）——
-
-	// ErrReserveUnderflow 释放的预占量超过已预占量（不静默夹到 0）。
-	//
-	// 夹到 0 会让「释放得比预占多」这种真错误变成一次静默的部分成功，
-	// 而差额会一直藏在账里，直到下一张订单预占时才发现可售数量凭空少了。
 	ErrReserveUnderflow = "ErrReserveUnderflow"
 )
 
-// 仓库状态取值（写入即校验，不接受自由文本）。
 const (
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
 )
 
-// 仓库类型取值（迁移 240 的 check 约束与之逐字一致）。
-//
-//	self        —— 自营仓：自有实体仓库，可收货、可发货，是「默认仓」的合法类型
-//	               （默认仓是「未指定仓库」时的兜底，兜底仓必须是能真正存发货的实体仓）；
-//	third_party —— 第三方仓：由外部服务商运营，对接方式各异（config 存对接方 / 外部仓代码 /
-//	               地址联系人 / 加密凭据 / 是否允许发货），实际收发货走对方系统；
-//	virtual     —— 虚拟仓：只用来分组或记账占位（在途 / 质检 / 报废待处理），
-//	               没有实体收发能力，不能作为默认仓。
 const (
 	WarehouseTypeSelf       = "self"
 	WarehouseTypeThirdParty = "third_party"
 	WarehouseTypeVirtual    = "virtual"
 )
 
-// 第三方仓配置的固定键名（config jsonb 里的键）。
-//
-// 键名是**对外协议**：模板回显、接口出参、将来别家的适配器都按这些字面量取值，
-// 因此收在 enums 里而不是散在 service / handler 各写一遍字符串。
 const (
-	// WarehouseConfigKeyProvider 对接方名称（如「菜鸟仓配」「顺丰云仓」）。
 	WarehouseConfigKeyProvider = "provider"
-	// WarehouseConfigKeyExternalCode 对方系统里的仓库代码。
+
 	WarehouseConfigKeyExternalCode = "externalCode"
-	// WarehouseConfigKeyAddress 仓库地址（人读，不参与任何路由）。
+
 	WarehouseConfigKeyAddress = "address"
-	// WarehouseConfigKeyContact 联系人 / 联系方式。
+
 	WarehouseConfigKeyContact = "contact"
-	// WarehouseConfigKeyAllowsShipping 该仓是否允许发货（第三方仓常见「只收不发」）。
+
 	WarehouseConfigKeyAllowsShipping = "allowsShipping"
-	// WarehouseConfigKeyAPICipher API 凭据的**密文**（AES-256-GCM，pkg/crypto 的 Encrypt 输出）。
-	//
-	// 只存密文：明文既不落库也不出接口。解密只发生在需要调用对方系统的路径上，
-	// 后台回显一律是掩码（见 inventoryservice.MaskCredential）。
+
 	WarehouseConfigKeyAPICipher = "apiKeyCipher"
-	// WarehouseConfigKeySecretRef 凭据的**引用名**（不落明文时的替代形态）。
-	//
-	// 与 APICipher 二选一：有对称加密且配置了 app.secret 时用前者；
-	// 否则只记「这份凭据在别处叫什么名字」（如 KMS 别名 / 环境变量名），
-	// 值由部署方在进程环境里配置，系统只存引用、不存值。
+
 	WarehouseConfigKeySecretRef = "secretRef"
 )
 
-// CredentialMask 凭据的掩码占位（接口与页面回显恒为它，绝不返回明文或密文）。
 const CredentialMask = "****"
 
-// 库存变动方向取值（写入即校验，不接受自由文本）。
-//
-//	in    —— 入库：quantity 是净增量；
-//	out   —— 出库：quantity 是净减量，可用量不足即整体拒绝；
-//	adjust—— 调整：quantity 是**目标绝对量**（盘点口径），实际增减由当前值算出。
 const (
 	DirectionIn     = "in"
 	DirectionOut    = "out"
 	DirectionAdjust = "adjust"
 )
 
-// 库存页行内编辑「跟踪开关 + 数量」（迁移 261）使用的变动原因与来源类型。
-//
-// 写成常量而不是在 service 里裸写字符串：原因 code 是字典表的数据、来源类型是流水的
-// 对外协议，两处都要能被检索到（改了字典却漏改调用点，表现是「找不到原因」的业务错误）。
 const (
-	// ReasonManualAdjust 内置变动原因「手工调整」（迁移 103 seed，方向 = adjust）。
-	// 行内编辑数量经变动契约走它 —— 有变动必有流水，行内编辑不是例外。
 	ReasonManualAdjust = "manual_adjust"
-	// MovementSourceInventoryPage 来源类型：库存页行内编辑。
+
 	MovementSourceInventoryPage = "inventory_page"
-	// MovementSourceOrderShipment 来源类型：订单发货出库（迁移 627 的发货单）。
-	//
-	// 预占引入（迁移 624）之后，订单侧出现两条库存写入：建单**预占**（不写流水）
-	// 与发货**扣减**（写 sale_out 流水）。流水上必须能分出后者 —— service 靠它判断
-	// 「这次出库要同时释放预占」（否则 reserved 会永远挂在账上）。
+
 	MovementSourceOrderShipment = "order_shipment"
-	// MovementSourceProductForm 来源类型：商品表单的仓库明细（B8）。
-	//
-	// 与库存页行内编辑同一条 adjust 口径（目标绝对量），但**来源不同**：
-	// 运营在商品页改的是「这批货应该是多少」，对账时要能和「在库存页盘点」区分开。
+
 	MovementSourceProductForm = "product_form"
 )
 
-// errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
-//
-// 兜底是**声明处**的话：词条缺失 / i18n 未初始化时，出口至少能给出这句中文，而不是把
-// ErrReceiptOrderDone 这种标识符摆给运营看。措辞优先取 sys_i18n 里已种下的 zh-CN 词条
-// （两边同一句话，避免同一错误有两个版本），没种过的按常量注释成文。
 var errFallbacks = map[string]string{
 	ErrInvalidParam:                  "请求参数无效",
 	ErrWarehouseNotFound:             "仓库不存在",
@@ -356,24 +240,13 @@ var errFallbacks = map[string]string{
 	ErrStockImageTooLong:             "图片地址过长：最多 512 个字符",
 }
 
-// errStatuses 业务错误对外的 HTTP 状态码（**只登记非 400 的档**）。
-//
-// 400 是业务错误的默认档（参数不合法、业务拒绝），所以这里只有两类：
-//
-//	404 —— 找不到：重试无用，调用方该换 id / 刷新列表；
-//	409 —— 冲突：唯一键占用、状态不允许、并发版本、超收 —— 处置是「刷新后重试」或换个值。
-//
-// 全部压成 400 的代价是前端与监控分不清「输错了」与「这条路现在不通」：
-// 后者要重试或换路径，前者只要改输入。判据在**声明处**，出口只读
-// facing.StatusOf（见 pkg/facing.Statused），绝不按错误文案猜。
 var errStatuses = map[string]int{
-	// —— 404 找不到 ——
+
 	ErrWarehouseNotFound:    http.StatusNotFound,
 	ErrWarehouseSKUNotFound: http.StatusNotFound,
 	ErrStockNotFound:        http.StatusNotFound,
 	ErrReasonNotFound:       http.StatusNotFound,
 
-	// —— 409 冲突 / 当前状态不允许 ——
 	ErrWarehouseCodeTaken:         http.StatusConflict,
 	ErrWarehouseSKUCodeTaken:      http.StatusConflict,
 	ErrWarehouseIsDefault:         http.StatusConflict,
@@ -393,15 +266,10 @@ var errStatuses = map[string]int{
 	ErrReserveUnderflow:           http.StatusConflict,
 }
 
-// Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
 func Err(key string) error {
 	return facing.WithStatus(facing.New(key, errFallbacks[key]), errStatuses[key])
 }
 
-// ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后。
-//
-// **必须半角**：pkg/facing.FactOf 只按 ": " 切明细段（inventory 的页面出口再按
-// i18n.ParseErrorDetails 解析明细词条），写全角「：」会让整条过不了判据，退化成内部错误。
 func ErrDetail(key, detail string) error {
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
@@ -410,43 +278,19 @@ func ErrDetail(key, detail string) error {
 	return fmt.Errorf("%w: %s", Err(key), detail)
 }
 
-// FallbackFor 取一个 key 的中文兜底（调用方只有 key、没有事实时用）。
 func FallbackFor(key string) string {
 	return errFallbacks[key]
 }
 
-// 业务错误**补充说明**的词条（key + 具名参数 + 中文兜底）。
-//
-// 背景与 product 模块同一套（见 pkg/i18n/errdetail.go）：service 用
-// fmt.Errorf("%s: %s", 业务 key, 补充说明) 把上下文跟在业务文案后，而读侧只翻前半截 key ——
-// 后半截中文在英文界面上永远是中文。改用 ErrorDetail 之后，读侧
-// （inventoryErrDetailText）取词并填 {name} 占位符，整句按当前语言渲染。
-//
-// **分隔符是 ASCII 冒号**：页面出口按它切「key / 明细」两段再判形态
-// （adminui.BusinessErrFact → pkg/response.IsBusinessError，正则锚定、整串匹配不上），
-// 写成全角「：」时切不开，整条错误会被判成内部故障并丢掉明细。
 const (
-	// DetailExternalSKUOwner 「该外部编码在本仓已属于商品 X」里的那个商品。
-	//
-	// 形态是「业务 key：明细」，明细自带商品名 —— 只说「冲突了」等于让人去猜哪一条占了它。
-	//
-	// 名字**不带 Err 前缀**：它不是可抛出的业务错误消息（不单独经 ErrorAuto 的形态判据），
-	// 而是「补充说明」的词条 key，由 i18n.ErrorDetail 编码进业务错误的 tail。
 	DetailExternalSKUOwner = "admin.inventory.err.externalSkuOwner"
 
-	// DetailStockNameLimit / DetailStockBarcodeLimit / DetailStockRemarkLimit /
-	// DetailStockImageLimit 长度上限的具名参数：上限数字只写一处（service 的常量），
-	// 词条里用 {max} 占位 —— 两处各写一个数字，改上限时必然有一处漏改。
 	DetailStockNameLimit    = "admin.inventory.err.stockNameLimit"
 	DetailStockBarcodeLimit = "admin.inventory.err.stockBarcodeLimit"
 	DetailStockRemarkLimit  = "admin.inventory.err.stockRemarkLimit"
 	DetailStockImageLimit   = "admin.inventory.err.stockImageLimit"
 )
 
-// ErrDetailFallbacks 上面那组明细词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。
-//
-// 占位符与词条一一对应（{name} / …）：读侧填不上某个占位符时判为坏词条、回落这里的中文，
-// 而不是把 {name} 摆给运营看。
 var ErrDetailFallbacks = map[string]string{
 	DetailExternalSKUOwner:  "该外部编码在本仓已属于商品 {name}",
 	DetailStockNameLimit:    "上限 {max} 个字符",

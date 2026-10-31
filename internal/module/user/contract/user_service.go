@@ -1,4 +1,3 @@
-// Package usercontract 用户模块对外契约（issue #36）。
 package usercontract
 
 import (
@@ -10,143 +9,61 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 )
 
-// VisitorContextKey 访客身份在 gin context 里的键。
-//
-// 放在契约包里：写入方是 user 模块的中间件，读取方在 runtimefragment ——
-// 两边各自写字面量，改一处漏一处的表现是「访客永远没登录」，
-// 而且这种失败在本地开发（cookie 刚设过）里常常复现不出来。
 const VisitorContextKey = "gowp_visitor_user_id"
 
-// VisitorCSRFContextKey 访客 CSRF token 在 gin context 里的键。
-//
-// 访客 JSON 链从独立签名会话获取 CSRF；首次读取的响应头下发给站点写基座，
-// 不写入静态产物，也不借用后台 meta。
-// 与 VisitorContextKey 同理：两边各写字面量，改一处漏一处的表现是「表单永远 403」。
 const VisitorCSRFContextKey = "gowp_visitor_csrf_token"
 
-// VisitorIdentityResolver 把访客会话令牌解成 user id。
-//
-// 只给这一条能力：访问面的片段层需要的是「这个请求是谁」，
-// 不是账号资料、更不是账号管理。依赖面越小，越不容易被顺手用出越权。
 type VisitorIdentityResolver interface {
-	// ResolveVisitorID 令牌有效且未过期时返回 userID 与 true。
-	// 令牌为空 / 无效 / 已过期一律返回 (0, false)：调用方只关心「认出来了没有」。
 	ResolveVisitorID(ctx context.Context, token string) (userID uint64, ok bool)
 }
 
-// UserService 用户模块对外能力。
-//
-// 目前只暴露注册链路 —— 它是**邮件模块的第一个真实消费者**（注册验证邮件），
-// 也是「模板写好了但没人用」与「真的被业务用上」之间的差别。
-// admin 侧 CRUD 与用户侧登录 / 账号中心属 #36 的后续部分，未在此接口内。
 type UserService interface {
-	// VisitorIdentityResolver 来访客会话令牌 → user id（片段层解析访客身份用）。
 	VisitorIdentityResolver
 
-	// GuestAccountProvisioner 来访客下单自动开号（单方法接口）。
-	// 嵌进来的理由同 product 的 VariantSnapshotPort：装配处拿到的 UserService
-	// 天然也能当开号端口传给订单模块，不必再做类型断言。
 	GuestAccountProvisioner
 
-	// Register 注册：写用户（待激活）并发送验证邮件。
-	//
-	// 邮件发送失败**不回滚注册** —— 用户已经建好了，验证邮件可以重发；
-	// 回滚会让「SMTP 临时故障」变成「用户注册不了」。返回值的 MailQueued 如实反映。
 	Register(ctx context.Context, req *userdto.RegisterReq) (*userdto.RegisterResp, error)
-	// ActivateEmail 用邮件里的凭据完成邮箱验证。
+
 	ActivateEmail(ctx context.Context, req *userdto.ActivateEmailReq) (*userdto.ActivateResp, error)
-	// ResendActivation 重发验证邮件（未激活的用户）。
+
 	ResendActivation(ctx context.Context, req *userdto.ResendActivationReq) error
-	// RequestPasswordReset 申请重置密码。
-	//
-	// **无论邮箱是否存在都返回 nil**：对存在与否给出不同回应会把这个接口变成账号枚举器。
+
 	RequestPasswordReset(ctx context.Context, req *userdto.PasswordResetReqRequest) error
-	// ResetPassword 用重置码改密。
+
 	ResetPassword(ctx context.Context, req *userdto.ResetPasswordReq) error
 }
 
-// GuestAccountProvisioner 供订单域为访客下单自动开号。
-//
-// 单独一个接口而不是并进 UserService：订单只需要这一条能力，而 UserService 是访客侧的
-// 完整契约（注册 / 激活 / 登录 / 重置 / 账号中心）。理由同下面的 MailSender ——
-// 依赖面越小，越不容易在不经意间用上不该用的能力。
 type GuestAccountProvisioner interface {
-	// EnsureGuestAccount 确保 email 对应账号存在。
-	//
-	// 不存在才建号（随机初始密码，经邮件发给客户）；**已存在则只返回既有账号，
-	// 绝不触碰它的密码** —— 否则任何人拿别人邮箱下一单就能把对方密码换掉。
 	EnsureGuestAccount(ctx context.Context, in *GuestAccountInput) (res *GuestAccountResult, err error)
 
-	// EnsureGuestAccountTx 与 EnsureGuestAccount 同语义，但**写入落在调用方的事务里**（BIZ-11）。
-	//
-	// 两条硬约定：
-	//
-	//  1. **不发初始密码邮件** —— 事务还没提交，此时发信会在回滚后留下一封指向
-	//     不存在账号的密码邮件。邮件载荷经结果的 PendingMail 带出，由调用方在
-	//     **事务提交之后**调 SendGuestAccountMail 发出（失败只记日志，不回滚账号）。
-	//  2. 未提供 tx（nil）时等同于用自己的事务执行一次「只建号、不发信」，便于调用方
-	//     在非事务路径上复用同一份实现。
 	EnsureGuestAccountTx(ctx context.Context, tx *gorm.DB, in *GuestAccountInput) (res *GuestAccountResult, err error)
 
-	// SendGuestAccountMail 把初始密码邮件发出去（BIZ-11：事务提交后调用）。
-	//
-	// 入参来自 EnsureGuestAccountTx 的 GuestAccountResult.PendingMail；
-	// mail 为 nil 或字段不全时不做任何事、不报错（账号已经建好了，
-	// 「没发出去」是运维问题，不该让调用方在这里失败）。
 	SendGuestAccountMail(ctx context.Context, mail *GuestAccountMail) error
 
-	// LookupGuestAccount 按邮箱**只读**查账号（不开号、不发信），查不到返回 (0, false, nil)。
-	//
-	// 为什么需要一条只读口（BIZ-11）：开号已经移进建单事务，事务前拿不到「这个邮箱
-	// 是不是已有账号」的结论，而**会员折扣**要按既有身份计算 —— 没有这条口，
-	// 未登录的老客户会从「有会员价」静默变成「没有会员价」。
 	LookupGuestAccount(ctx context.Context, email string) (userID uint64, found bool, err error)
 }
 
-// GuestAccountInput 为访客下单自动开号的入参 —— 契约自有形状，不是 dto 的别名。
-//
-// 只有四个字段，因为「替访客开号」这件事需要的信息就这四件：账号身份（邮箱）、
-// 展示名、模板语言、以及注册来源 IP（留痕用，由调用方从请求上下文取）。
-// 借 dto 的形状会让调用方（订单模块）认识用户模块的绑定层字段（审计 CQ-004）。
 type GuestAccountInput struct {
-	// Email 客户下单时填的邮箱（也是账号身份）。
 	Email string
-	// Name 客户名（用作昵称；为空时展示名退回用户名）。
+
 	Name string
-	// Locale 决定用哪套语言模板。
+
 	Locale string
-	// RegisterIP 由调用方从请求上下文取，客户端不可伪造。
+
 	RegisterIP string
 }
 
-// GuestAccountResult 开号结果。
-//
-// Created 与 PasswordMailed 是调用方**唯一**要判定的两件事：
-// 前者说明这次是不是真新建了账号，后者说明初始密码邮件有没有寄出去 ——
-// 两个都为真才该提示客户「去邮箱收密码」（已有账号时绝不发密码，
-// 那种情况下提示客户查收会让他在邮箱里白找一场）。
 type GuestAccountResult struct {
 	UserID   uint64
 	Username string
-	// Created 本次是否**新建**了账号；false 表示该邮箱已有账号，只做了关联。
+
 	Created bool
-	// PasswordMailed 初始密码邮件是否已受理（仅新建且发信成功时为真）。
+
 	PasswordMailed bool
-	// PendingMail 待发出的初始密码邮件（BIZ-11）：仅 EnsureGuestAccountTx 且**新建**账号时非空。
-	//
-	// 事务内的建号不能顺手发信（回滚后邮件收不回），于是把载荷带出来，
-	// 由调用方在**事务提交后**调 SendGuestAccountMail。
-	//
-	// **含明文初始密码**：调用方只允许把它直接交给 SendGuestAccountMail，
-	// 不得写日志、不得入库、不得放进任何可序列化的响应结构。
+
 	PendingMail *GuestAccountMail
 }
 
-// GuestAccountMail 初始密码邮件的载荷（BIZ-11，见 GuestAccountResult.PendingMail）。
-//
-// 明文密码从 user 模块经契约交给调用方、再交回 user 模块发送 —— 中间那一跳是
-// 「事务提交后才发信」的代价。调用方（订单模块）**只做搬运**：
-// 不落库、不记日志、不放进任何对外响应。
 type GuestAccountMail struct {
 	Email    string
 	Name     string
@@ -155,21 +72,6 @@ type GuestAccountMail struct {
 	Locale   string
 }
 
-// MailSender 用户模块需要的邮件能力 —— **只有发送事务邮件这一条**。
-//
-// 为什么不直接依赖 mailcontract.MailService：那个接口有二十来个方法（账号 / 模板 / 群发 / 报表），
-// 用户模块一条都用不上。接口隔离不只是美观问题：
-//
-//	· 依赖面越大，越容易在不经意间用上不该用的能力；
-//	· 测试要造替身时，二十个方法的空实现会把测试意图淹掉。
-//
-// 入参 / 返回类型取自 mailcontract 的**事务发送端口**（SendInput / SendOutcome），
-// 不是 mail 的 dto：dto 服务 HTTP 绑定，形状随绑定需求变；契约形状只随语义变。
-// 这里刻意保留本模块的具名接口（而不是直接写 mailcontract.TransactionalSender 别名）——
-// 用户模块要表达的是「我要发出一封事务邮件」这条**需求**，
-// 至于它由 mail 模块还是别的东西满足，是装配期的事。
-//
-// mail 的 Service 天然满足这个接口（它有 SendTransactional），装配时直接传即可。
 type MailSender interface {
 	SendTransactional(ctx context.Context, in *mailcontract.SendInput) (*mailcontract.SendOutcome, error)
 }

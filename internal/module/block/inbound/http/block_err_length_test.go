@@ -1,26 +1,5 @@
 package blockhttp
 
-// block_err_length_test.go — 引用明细整串的展示封顶（区块侧自持常量）。
-//
-// 背景（task-67）：整串「受控文案 + ：+ 引用明细」原先按壳层读侧回执协议的上限封顶
-// （`shell.NoticeMaxBytes-1`）。那族协议已整族下线，只留这一处活引用，于是把常量搬到
-// 使用方：`blockRefTextMaxBytes = 512`，调用点仍然 −1（= 511 内容字节），行为逐字节不变。
-//
-// 这里钉三件事，前两件失效时都是**静默**的：
-//
-//  1. `truncateRunes` 的边界 —— 按字节上限截断必须停在 UTF-8 字符边界上（切断一个多字节
-//     字符会产出非法 UTF-8，浏览器把它显示成替换符），且超长时以「…」收尾：截断要看得见，
-//     否则运营看到一条「完整」但其实被砍掉后半段的定位信息，会去错地方找引用。
-//  2. 上限常量与旧口径同值 —— 512 内容字节、用时 −1（旧的 `shell.NoticeMaxBytes-1` = 511），
-//     这样「换成局部常量」这件事在测试里是可判定的，而不只是 diff 里看着像。
-//  3. through-handler 的整串形状 —— 长引用明细走完真实出口后：前缀（受控文案）仍在、
-//     明细被截断且有截断标记、整串合法 UTF-8 且不超过 511 内容字节。
-//
-// 为什么通过端点而不是直接调 `blockRefErrText`：入参是 gin.Context（要 i18n 取词），
-// 而 `deleteResp` 已经把上下文与桩服务都组装好了（block_bulk_delete_test.go）。
-// 前缀不写死中文字面量：先跑一次短明细取出「：」前的部分，再拿它当下一次的期望 ——
-// 文案随词条演进时这条用例不会跟着变红，而它要守的是形状不是措辞。
-
 import (
 	"net/http"
 	"os"
@@ -31,8 +10,6 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 )
 
-// TestTruncateRunesBoundaries 截断函数的边界：非正值与未超限原样返回，
-// 超限时截到**字符边界**并补「…」。
 func TestTruncateRunesBoundaries(t *testing.T) {
 	cases := []struct {
 		name string
@@ -61,8 +38,6 @@ func TestTruncateRunesBoundaries(t *testing.T) {
 	}
 }
 
-// TestBlockRefTextCapMatchesFormerShellLimit 上限常量与旧 `shell.NoticeMaxBytes` 同值，
-// 且调用点的 −1 语义没变（内容 511 字节 + 截断标记）。
 func TestBlockRefTextCapMatchesFormerShellLimit(t *testing.T) {
 	const formerShellNoticeMaxBytes = 512
 	if blockRefTextMaxBytes != formerShellNoticeMaxBytes {
@@ -80,7 +55,6 @@ func TestBlockRefTextCapMatchesFormerShellLimit(t *testing.T) {
 	}
 }
 
-// TestBlockRefErrorCapsLongUsageDetail through-handler：长引用明细的整串形状。
 func TestBlockRefErrorCapsLongUsageDetail(t *testing.T) {
 	short := deleteRefMessage(t, "page-42")
 	prefix, _, ok := strings.Cut(short, "：")
@@ -109,13 +83,6 @@ func TestBlockRefErrorCapsLongUsageDetail(t *testing.T) {
 	}
 }
 
-// TestBlockRefTextCallSiteKeepsOffset 上限常量的**使用方式**也是协议的一部分。
-//
-// 为什么用形状判据而不是端到端：明细自己先被 `blockRefDetailMaxBytes`（420）封顶，
-// 端到端整串最长只有 439 字节（实测：前缀 12 字节 + ：+ 420 内容 + 「…」），够不到 511 ——
-// 把调用点的 `-1` 删掉，端到端断言照样全绿。而那个 `-1` 是「给截断标记留 1 字节」的语义：
-// 改掉它就等于悄悄换了展示上限。契约在这里是**源码里那一个表达式**，于是直接判它。
-// （同仓先例：internal/shell/shell_migration_test.go 用 AST 判导出形状而不是抄引用清单。）
 func TestBlockRefTextCallSiteKeepsOffset(t *testing.T) {
 	src, err := os.ReadFile("block_err.go")
 	if err != nil {
@@ -127,7 +94,6 @@ func TestBlockRefTextCallSiteKeepsOffset(t *testing.T) {
 	}
 }
 
-// deleteRefMessage 用一条「被引用拒绝」的错误跑一次单条删除端点，取回响应里的 message。
 func deleteRefMessage(t *testing.T, label string) string {
 	t.Helper()
 	svc := &bulkDeleteStubService{

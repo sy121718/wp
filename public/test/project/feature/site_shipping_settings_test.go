@@ -1,16 +1,5 @@
 package feature
 
-// site_shipping_settings_test.go — 站点级运费设置的**端到端**链路
-// （gin 路由 → 站点设置页 handler → project 契约 → 真实 PostgreSQL → Jet 模板 → 运费端口读回）。
-//
-// 为什么值得一条 feature：本批的失效模式几乎全部是「不报错的静默错」——
-//
-//	· 元/分换算方向写反 → 运费变成 100 倍或 1/100（页面照常）；
-//	· 保存与读取的键名 / 判据分叉 → 后台存了、结算按 0 走（两边各自的单测都绿）；
-//	· 模板字段名与 handler 读的表单名不一致 → 保存 200、那个字段永远是空。
-//
-// 这三种只有「保存 → 读库 → 读回 → 渲染」走一遍才暴露。
-
 import (
 	"context"
 	"go_wp/internal/adminui"
@@ -31,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newSiteShippingEnv 装配站点设置页的真实链路环境（真实 PG + project 契约 + Jet 模板）。
 func newSiteShippingEnv(t *testing.T) (*gin.Engine, *projectservice.Service, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -49,7 +37,6 @@ func newSiteShippingEnv(t *testing.T) (*gin.Engine, *projectservice.Service, str
 	return router, projects, project.ID
 }
 
-// submitShippingSettings 提交站点设置页表单。
 func submitShippingSettings(t *testing.T, router *gin.Engine, projectID string, extra map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{"projectId": {projectID}, "name": {"运费测试站点"}}
@@ -63,10 +50,6 @@ func submitShippingSettings(t *testing.T, router *gin.Engine, projectID string, 
 	return rec
 }
 
-// TestSiteSettingsShippingSaveAndReadBack 保存 → 读库 → 回显 → 运费端口读回，四步一致。
-//
-// 金额口径的完整闭环：表单填「8.00 元 / 100 元」→ 库内 800 / 10000 分 →
-// 运费端口读回 800 / 10000 分 → 页面回显 8.00 / 100.00 元。
 func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 	router, projects, projectID := newSiteShippingEnv(t)
 	ctx := context.Background()
@@ -82,7 +65,6 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", rec.Body.String())
 	}
 
-	// ① 库内是**分**（与 orders 同口径）。
 	detail, err := projects.Detail(ctx, &projectdto.DetailReq{ID: projectID})
 	if err != nil {
 		t.Fatalf("读工程失败: %v", err)
@@ -93,7 +75,6 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 			fields.ShippingBaseFee, fields.ShippingFreeThreshold)
 	}
 
-	// ② 运费端口（结算侧唯一的读取口）读出同一份规则。
 	if _, ok := projectcontract.ProjectService(projects).(projectcontract.ShippingPolicyReader); !ok {
 		t.Fatal("project service 未实现 ShippingPolicyReader：结算侧读不到任何运费规则")
 	}
@@ -105,7 +86,6 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 		t.Fatalf("运费端口应读回 800 / 10000 分，实际 %+v", policy)
 	}
 
-	// ③ 页面回显是**元**，且整页完整（渲染断言：缺 </html> 说明模板那一行断了）。
 	getRec := httptest.NewRecorder()
 	router.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/admin/settings?project="+projectID, nil))
 	if getRec.Code != http.StatusOK {
@@ -125,15 +105,10 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 	}
 }
 
-// TestSiteSettingsShippingRejectsInvalidWithoutWriting 非法金额**不落库**，且渲染失败提示页。
-//
-// 「不落库」是这条的核心断言：把非法值静默归零（或存成负数）都不报错，
-// 而前者让运营以为自己配的运费生效了（实际从没生效过），后者是倒贴钱。
 func TestSiteSettingsShippingRejectsInvalidWithoutWriting(t *testing.T) {
 	router, projects, projectID := newSiteShippingEnv(t)
 	ctx := context.Background()
 
-	// 先存一份合法配置，用来验证「被拒绝时库里的旧值原样不动」。
 	if rec := submitShippingSettings(t, router, projectID, map[string]string{
 		"shippingBaseFee": "8.00",
 	}); rec.Code != http.StatusOK {

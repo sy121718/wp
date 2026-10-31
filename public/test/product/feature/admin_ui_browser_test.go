@@ -21,7 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 真实业务服务、生产迁移与页面模板；数据只写隔离测试 schema。
 func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -59,8 +58,7 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		}
 		c.Next()
 	})
-	// 后台页面路由由 adminctx.PermContextMiddleware 注入权限码集合，主行动按钮与抽屉按权限渲染；
-	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在表单写入口」这类断言保持有效。
+
 	router.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
@@ -79,7 +77,7 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	router.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
 	router.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
 	router.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
-	// JSON读取与保存使用真实业务服务，供集中浏览器验收；不代替生产鉴权链路测试。
+
 	write := producthttp.NewProductHandle(f.svc)
 	router.GET("/api/product/category/parents", write.ProductCategoryParents)
 	router.GET("/api/product/tag/products", write.ListTagProducts)
@@ -107,12 +105,11 @@ func TestTaxonomyPagesUsePublicUI(t *testing.T) {
 			if strings.Contains(body, `class="pages-`) || strings.Contains(body, `class="attr-form`) {
 				t.Fatal("页面仍依赖旧类")
 			}
-			// 公共表单控件仍在（抽屉里的 .form-input）；说明文字已从折叠区块（.disclosure）
-			// 改为页头 ? 悬浮（.help-pop）—— 正文零说明文字，折叠只是把平铺换成叠起来。
+
 			if !strings.Contains(body, `class="form-input"`) || !strings.Contains(body, `class="help-pop"`) {
 				t.Fatal("页面未接公共表单控件与页头悬浮说明")
 			}
-			// 列表页标准骨架：勾选列 + 全选 + 批量操作栏 + 数据表格。
+
 			for _, want := range []string{`class="data-table"`, `class="col-check"`, "data-check-all", `class="bulk-bar"`} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("列表页缺少标准列表骨架 %q", want)
@@ -122,8 +119,6 @@ func TestTaxonomyPagesUsePublicUI(t *testing.T) {
 	}
 }
 
-// GOWP_ADMIN_UI_BROWSER=1 go test ./public/test/product/feature -run TestAdminUIBrowserFixture -v -timeout 25m
-// 仅用于本机浏览器验收，不包含生产认证链路，也不会访问开发数据库业务行。
 func TestAdminUIBrowserFixture(t *testing.T) {
 	if os.Getenv("GOWP_ADMIN_UI_BROWSER") != "1" {
 		t.Skip("按需启动后台浏览器夹具")

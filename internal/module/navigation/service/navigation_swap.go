@@ -1,16 +1,3 @@
-// navigation_swap.go — 同级排序的原子交换（SwapMove）。
-//
-// 背景（历史 P1）：页面 handler 曾自己算同级邻位，然后连调两次 Update —— 各自一个事务。
-// 第二次失败时第一条**已经提交**：同级出现两个相同的 sort_order，而第一条的失效也早已
-// 派发出去，已发布页面按「半交换」的中间态重建。调用方看到的是一次「失败」，既不会重试
-// 也不会回滚，只能靠人发现。
-//
-// 本文件把这些收进一次原子调用：读树快照 → 选邻位 → **一个事务**里两条条件 UPDATE
-// （model.SwapSortOrders）→ 提交成功后才派发失效。任何一步不成立都零写零失效：
-//
-//	· 已在首/末位 → Moved=false（与修复前的行为一致，页面照旧提示「已完成」）；
-//	· 同级 sort_order 并列 → ErrSortTied（交换取值等于没换，显式说「未产生位移」）；
-//	· 任一行版本已变 / 行没了 → 整事务回滚，冲突行按既有乐观锁文案打回给人。
 package navigationservice
 
 import (
@@ -27,28 +14,13 @@ import (
 	"go_wp/internal/module/navigation/model"
 )
 
-// 移动方向（页面 move 表单的两个取值，与前端按钮一一对应）。
 const (
 	dirUp   = "up"
 	dirDown = "down"
 )
 
-// swapReasonBoundary 未位移的原因：该项已在同级首/末位。
 const swapReasonBoundary = "boundary"
 
-// SwapMove 同级上移/下移：把该项与相邻项（同工程、同位置、同父级）的 sort_order 换过来。
-//
-// 流程与每步的理由：
-//  1. locateNavigation 逐工程定位归属（DB-009）：只带 id 的入口不按 id 直查，
-//     否则换非超级角色后是静默的 ErrRecordNotFound；
-//  2. **工程作用域比对**：调用方给的 ProjectID（页面表单里的那个）必须就是该项真实所属，
-//     不一致即拒 —— 移动是同一棵树内部的相对位置写入，跨工程没有语义；
-//  3. Tree 取该工程该位置的树 → 取同级（父级空即顶级）：邻位只能从同一份快照里选，
-//     不能按全局 sort_order 排序去猜（同级之外的行与本次写入无关）；
-//  4. 边界早退（零写）；并列早退（零写，ErrSortTied）；
-//  5. 两行的版本 token 取**本次快照**（节点上的 UpdatedAt，RFC3339Nano）→ 一次原子交换；
-//  6. 只有 model 返回成功（= 两条 UPDATE 都命中且已提交）才派发失效：
-//     menu:{projectID}:{kind} + 父项（顺序变了的是父项子树）+ 被交换的两项。
 func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) (res *navigationdto.SwapMoveResp, err error) {
 	if req == nil {
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
@@ -58,9 +30,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	if id == "" || (dir != dirUp && dir != dirDown) {
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
-	// 定位这一跳在锁**外**（locateNavigation 走 rls.InProjectScope，会自开事务、另取连接；
-	// 放进已开事务里会让外层未提交的数据不可见，也可能与同表写入自锁）。它只用来拿工程
-	// 归属与跨工程比对，真正的判定在锁内重做一遍（见 withMenuWriteTx 内）。
+
 	item, err := s.locateNavigation(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -69,7 +39,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 		return nil, err
 	}
 	if want := strings.TrimSpace(req.ProjectID); want != "" && want != item.ProjectID {
-		// 跨工程一律拒：调用方手上的工程与该项真实归属不一致时，改的不是它以为的那棵树。
+
 		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	var (
@@ -78,12 +48,9 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 		snapIDs []*navigationdto.NavigationNode
 	)
 	at := time.Now().UTC()
-	// 交换 + 三类失效在同一事务、同一把锁内：只交换不失效会留下「顺序已变、产物未变」，
-	// 只失效不交换则给一次不存在的改动发新代次 —— 两者都只能靠同事务消除。
-	// **邻位选择也在锁内**：锁外选邻位、锁内交换时，别人在两步之间插入/删除同级项，
-	// 交换的就是一对早已不是邻位的行（结果仍「成功」，顺序却更乱）。
+
 	err = s.withMenuWriteTx(ctx, item.ProjectID, func(tx *gorm.DB) error {
-		// 锁内重读实体：父级与位置可能已被并发改动（锁外读的那份只用于工程比对）。
+
 		rows, lerr := s.m.ListTx(ctx, tx, item.ProjectID, item.Kind)
 		if lerr != nil {
 			return lerr
@@ -103,7 +70,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 			}
 		}
 		if idx < 0 {
-			// 定位到了行、却不在它自己的同级列表里：父子关系或作用域已经不一致（异常数据）。
+
 			return navigationenums.Err(navigationenums.ErrNotFound)
 		}
 		next := idx - 1
@@ -111,13 +78,13 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 			next = idx + 1
 		}
 		if next < 0 || next >= len(siblings) {
-			// 已到边界（按钮在首/末项上本就是禁用态，这里兜手工请求）：列表顺序未改动。
+
 			moved = false
 			return nil
 		}
 		a, b := siblings[idx], siblings[next]
 		if a.SortOrder == b.SortOrder {
-			// 并列：交换取值不产生位移（并列由 id ASC 决胜）。零写，明确回业务文案。
+
 			return navigationenums.Err(navigationenums.ErrSortTied)
 		}
 		expA, terr := parseSnapshotToken(a.UpdatedAt)
@@ -141,8 +108,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 			return merr
 		}
 		if cur.ParentID != nil && strings.TrimSpace(*cur.ParentID) != "" {
-			// 顺序变了的是**父项**的子树：按项引用父项的页面/实例必须重建。
-			// 顶层没有父项 —— 那里由上面 menu 键覆盖。
+
 			if merr := s.markNavigationStaleInTx(ctx, tx, item.ProjectID, strings.TrimSpace(*cur.ParentID)); merr != nil {
 				return merr
 			}
@@ -170,25 +136,15 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	return &navigationdto.SwapMoveResp{Moved: true}, nil
 }
 
-// parseSnapshotToken 把树节点上的乐观锁 token 解析回时刻。
-//
-// token 由服务端自己写在节点上（buildNode 的 n.UpdatedAt.Format(time.RFC3339Nano)），
-// 所以解析失败不是「调用方参数错」，而是本模块内部不一致 —— 归口成 ErrInternal，
-// 不套用 parseExpectedUpdatedAt 的 ErrInvalidParam（那是给外部回带值用的口径）。
 func parseSnapshotToken(raw string) (time.Time, error) {
 	t, err := time.ParseInLocation(time.RFC3339Nano, strings.TrimSpace(raw), time.Local)
 	if err != nil {
-		// 内部不一致（服务端自己写下的 token 解析不回来）→ 归口成真内部错误：
-		// 不是业务文案，出口给 500 + 通用提示，原文进日志。
+
 		return time.Time{}, fmt.Errorf("导航树快照 token 解析失败: %w", err)
 	}
 	return t, nil
 }
 
-// navSiblingsOf 返回指定父级下的同级节点列表（父级为空即顶级）。
-//
-// 与页面侧原先的 navSiblings 同一读法；搬迁的理由：邻位选择是**业务规则**（本地表里
-// 只能在同一份树快照的同级内选），不该由页面 handler 各自实现一份。
 func navSiblingsOf(nodes []*navigationdto.NavigationNode, parentID *string) []*navigationdto.NavigationNode {
 	if parentID == nil || *parentID == "" {
 		return nodes
@@ -204,7 +160,6 @@ func navSiblingsOf(nodes []*navigationdto.NavigationNode, parentID *string) []*n
 	return nil
 }
 
-// findNavRow 在事务内读回的行集合里按 id 找实体（找不到返回 nil）。
 func findNavRow(rows []*navigationmodel.NavigationEntity, id string) *navigationmodel.NavigationEntity {
 	for _, r := range rows {
 		if r != nil && r.ID == id {
@@ -214,10 +169,6 @@ func findNavRow(rows []*navigationmodel.NavigationEntity, id string) *navigation
 	return nil
 }
 
-// snapshotTitle 在树里按 id 找节点标题（冲突提示的兜底定位信息）。
-//
-// 为什么要有兜底：staleTitle 优先取库内**当前**标题，但冲突行可能刚被删掉 ——
-// 那时只能用手上这份快照里的标题，总比给用户一句没有定位的「请刷新」强。
 func snapshotTitle(nodes []*navigationdto.NavigationNode, id string) string {
 	for _, n := range nodes {
 		if n.ID == id {

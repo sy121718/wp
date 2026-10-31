@@ -1,7 +1,5 @@
 package migrations
 
-// The old-value guard keeps operator-edited translations intact. Once no
-// historical value remains, the seed is complete even if a row was edited.
 func init() {
 	registerSeed(Seed{
 		Version:   "437-i18n-mail-empty-descriptions",

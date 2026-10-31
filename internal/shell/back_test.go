@@ -1,16 +1,5 @@
 package shell
 
-// back_test.go — 回跳地址构造（back.go）的判据。
-//
-// 守四件事，每一件出错时都是静默的：
-//
-//  1. **白名单只透传列出的键** —— 透传过宽时，攻击者能在表单 action 的 query 里塞任意参数，
-//     回跳 URL 就变成他可控的（只透传明确列出的筛选参数）；
-//  2. **路径必须是站内相对路径** —— `//evil.example.com` 这类协议相对地址会让管理员被送出站；
-//  3. **值要做形状收敛** —— 超长 / 含控制字符的值丢弃而不是原样拼进 Location；
-//  4. **产物稳定** —— 键有序，同一个上下文拼出的 URL 逐字相同（否则「拼岔了」这类
-//     diff 会淹没在参数顺序里）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +19,6 @@ func backCtx(t *testing.T, target string) *gin.Context {
 	return c
 }
 
-// TestBackPathOnlyWhitelistedKeys 只有列出的键会被透传。
 func TestBackPathOnlyWhitelistedKeys(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?project=p1&status=enabled&evil=1&keyword=k")
 	got := BackPath(c, "/admin/coupons", "project", "status")
@@ -43,7 +31,6 @@ func TestBackPathOnlyWhitelistedKeys(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsEmptyValues 空值不拼进 URL（避免产出 `?status=&page=` 这种噪音）。
 func TestBackPathDropsEmptyValues(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?project=p1&status=&keyword=%20%20")
 	got := BackPath(c, "/admin/coupons", "project", "status", "keyword")
@@ -52,7 +39,6 @@ func TestBackPathDropsEmptyValues(t *testing.T) {
 	}
 }
 
-// TestBackPathNoParams 没有任何参数时保持路径原样（不带问号）。
 func TestBackPathNoParams(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create")
 	if got := BackPath(c, "/admin/coupons", "project"); got != "/admin/coupons" {
@@ -60,7 +46,6 @@ func TestBackPathNoParams(t *testing.T) {
 	}
 }
 
-// TestBackPathEscapesValues 值里的分隔符必须转义（否则 `a&b=c` 会裂成两个参数）。
 func TestBackPathEscapesValues(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?keyword="+`a%26b%3Dc`)
 	got := BackPath(c, "/admin/coupons", "keyword")
@@ -69,15 +54,14 @@ func TestBackPathEscapesValues(t *testing.T) {
 	}
 }
 
-// TestBackPathRejectsUnsafePath 非站内相对路径一律回控制面首页（防开放重定向）。
 func TestBackPathRejectsUnsafePath(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?project=p1")
 	for _, bad := range []string{
 		"//evil.example.com/x",
 		"https://evil.example.com",
-		"admin/coupons",          // 不以 / 开头：浏览器会按当前路径拼接
-		"/admin/x\\..\\evil",     // 反斜杠
-		"/admin/x\nLocation: /y", // 控制字符
+		"admin/coupons",
+		"/admin/x\\..\\evil",
+		"/admin/x\nLocation: /y",
 		"/" + strings.Repeat("a", safepath.MaxReturnPathBytes+1),
 	} {
 		if got := BackPath(c, bad, "project"); got != adminHomePath {
@@ -86,7 +70,6 @@ func TestBackPathRejectsUnsafePath(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsOverlongValue 超长值丢弃（其余参数照常）。
 func TestBackPathDropsOverlongValue(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?project=p1&keyword="+strings.Repeat("k", backValueMaxBytes+1))
 	got := BackPath(c, "/admin/coupons", "project", "keyword")
@@ -95,7 +78,6 @@ func TestBackPathDropsOverlongValue(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsControlChars 含控制字符的值丢弃。
 func TestBackPathDropsControlChars(t *testing.T) {
 	c := backCtx(t, "/admin/coupons/create?keyword=a%0Ab&project=p1")
 	got := BackPath(c, "/admin/coupons", "project", "keyword")
@@ -104,7 +86,6 @@ func TestBackPathDropsControlChars(t *testing.T) {
 	}
 }
 
-// TestBackPathStableOrder 产物稳定：参数顺序不影响结果（url.Values.Encode 按键排序）。
 func TestBackPathStableOrder(t *testing.T) {
 	a := backCtx(t, "/admin/coupons/create?status=enabled&project=p1&page=2")
 	b := backCtx(t, "/admin/coupons/create?page=2&project=p1&status=enabled")

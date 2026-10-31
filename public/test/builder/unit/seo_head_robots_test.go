@@ -1,10 +1,5 @@
 package unit
 
-// seo_head_robots_test.go — robots 指令与 og:type 的输出规则。
-//
-// 两者都不改变默认产物字节：robots 两项均为默认（index/follow）时不输出 meta，
-// og:type 在 schemaType 为空 / website / faq 时仍是 website。
-
 import (
 	"strings"
 	"testing"
@@ -27,7 +22,6 @@ func TestBuildSEOHeadRobots(t *testing.T) {
 		t.Errorf("noindex,nofollow 未输出：%s", none)
 	}
 
-	// 只设一项时另一项补默认值：只写 noindex 不该丢掉 follow 语义。
 	partial := builder.BuildSEOHead(builder.SEO{RobotsIndex: "noindex"}, "https://x.test/a", "标题", "描述", "", nil)
 	if !strings.Contains(partial, "content=\"noindex,follow\"") {
 		t.Errorf("缺省项应补 follow：%s", partial)
@@ -41,7 +35,7 @@ func TestBuildSEOHeadOGTypeFollowsSchemaType(t *testing.T) {
 		{"faq", "website"},
 		{"article", "article"},
 		{"product", "product"},
-		{"Article", "article"}, // 大小写不敏感
+		{"Article", "article"},
 	} {
 		got := builder.BuildSEOHead(builder.SEO{SchemaType: tc.schema}, "https://x.test/a", "标题", "描述", "", nil)
 		if !strings.Contains(got, "og:type\" content=\""+tc.want+"\"") {

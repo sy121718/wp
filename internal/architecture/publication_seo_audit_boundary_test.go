@@ -1,26 +1,5 @@
 package architecture
 
-// publication_seo_audit_boundary_test.go — publication SEO 体检这一域在「MVC 职责分离」上的
-// 三条形状判据（AGENTS.md 分层表）。
-//
-// 与 controller_shape_test.go / text_domain_test.go 的分工：那两份是本批的**台账**
-// （存量清单、双向判定）；本文件只钉这一域**已经改对**的形状。台账回答「还剩多少」，
-// 这里回答「改完的样子长什么样」—— 不随台账增减移动，回退即红。
-//
-// 三条判据各自对应一次真实回退：
-//
-//  1. **成品句回到结论里**：AuditIssue 曾有 Message，装着「图片缺少 alt：xxx」这类
-//     中文成品句。它不是数据，是展示层产物 —— 放回 service 等于把「取词在出口」拆了。
-//  2. **页面出口在本审计路由上复活**：BareSlot + 片段模板曾让这条端点「HX 走片段、
-//     非 HX 走 JSON」。模板删掉后，只要有人把出口加回来就退回双形状，且编译能过。
-//  3. **结论事实字段缺失**：冻结契约是 {path,item,level,params}，少一个字段前端
-//     就拿不到那一维信息。
-//
-// 判据是形状不是字面量：第 1、3 条按**具名类型**定位字段（不扫全文件任意 struct），
-// 第 2 条只覆盖本审计的 handler 与路由装配点（publication 目录里其它页面槽合法，
-// 不得一并禁掉）。Count 恒等式不在本文件：service 的单元用例与 feature 的
-// count == len(issues) 已覆盖，此处再用 AST 锁私有 helper 名会把实现钉死。
-
 import (
 	"go/ast"
 	"go/parser"
@@ -32,17 +11,15 @@ import (
 )
 
 const (
-	// seoAuditResultFile 冻结的结论事实类型文件（service 层）。
 	seoAuditResultFile = "internal/module/publication/service/seo_audit_result.go"
-	// seoAuditHandleFile 体检 handler（binding → service → JSON 出口）。
+
 	seoAuditHandleFile = "internal/module/publication/inbound/http/seo_audit_handle.go"
-	// seoAuditRouterFile 路由装配点（声明式权限点 + 出口形态）。
+
 	seoAuditRouterFile = "internal/module/publication/inbound/http/publication_router.go"
-	// seoAuditRetiredTemplate 已退役的结果片段模板。
+
 	seoAuditRetiredTemplate = "internal/templates/admin/analytics/seo_audit_result.html"
 )
 
-// seoAuditBannedFacts 结论类型里不得出现的字段名 → 理由。
 var seoAuditBannedFacts = map[string]string{
 	"Message":     "成品句（曾装「图片缺少 alt：xxx」这类中文句子）",
 	"Text":        "展示文本",
@@ -55,11 +32,6 @@ var seoAuditBannedFacts = map[string]string{
 	"SummaryText": "汇总句（应由模板从 scanned/count 取词拼出）",
 }
 
-// TestSEOAuditResultTypesCarryFactsOnly 按具名类型定位字段：
-// AuditIssue / AuditIssueParams 只准有语言无关的事实字段。
-//
-// 只查这两个类型 —— 同包其它结构（请求 DTO、内部中间结构）不在本判据范围内，
-// 扫「文件里所有 struct」会把无关字段也算成违规。
 func TestSEOAuditResultTypesCarryFactsOnly(t *testing.T) {
 	root := repoRoot(t)
 	file := filepath.Join(root, seoAuditResultFile)
@@ -95,8 +67,6 @@ func TestSEOAuditResultTypesCarryFactsOnly(t *testing.T) {
 		}
 	}
 
-	// 反向判定：登记的四个事实字段必须仍在 AuditIssue 上。
-	// 字段被全删时上面那条会「全绿」，而端点其实已无结论可交 —— 那种绿是装置坏了。
 	want := []string{"Path", "Item", "Level", "Params"}
 	got := seoAuditFieldNames(targets["AuditIssue"])
 	for _, name := range want {
@@ -107,18 +77,9 @@ func TestSEOAuditResultTypesCarryFactsOnly(t *testing.T) {
 	}
 }
 
-// TestSEOAuditHasNoPageExit 本审计的 handler 与路由装配点不得有页面出口。
-//
-// 范围刻意收窄到这两个文件：publication 模块里其它路由挂 adminui 页面槽是合法的
-// （它们本来就是页面），只有「审计这条 API 又回片段」是违规。
-//
-// 三件事一起判，因为它们是一套装置的三个零件：
-//
-//	片段模板文件（渲染体）+ 路由上挂的槽（出口）+ handler 对页面包的 import（通路）
 func TestSEOAuditHasNoPageExit(t *testing.T) {
 	root := repoRoot(t)
 
-	// 1) 退役的片段模板不得复活。
 	retired := filepath.Join(root, seoAuditRetiredTemplate)
 	if _, err := os.Stat(retired); err == nil {
 		t.Errorf("%s 仍然存在 —— 审计只回事实 JSON，结果区由页面预置结构 + 专用 JS 填值；"+
@@ -127,7 +88,6 @@ func TestSEOAuditHasNoPageExit(t *testing.T) {
 		t.Errorf("检查 %s 失败（不是「不存在」而是别的错误，判据不可信）: %v", seoAuditRetiredTemplate, err)
 	}
 
-	// 2) handler 不得 import 页面渲染出口；且必须走 binding + response。
 	handler := mustParseFile(t, filepath.Join(root, seoAuditHandleFile), seoAuditHandleFile)
 	for _, spec := range handler.Imports {
 		switch spec.Path.Value {
@@ -147,7 +107,6 @@ func TestSEOAuditHasNoPageExit(t *testing.T) {
 		}
 	}
 
-	// 按路由参数定位完整调用，避免多行注册被文本截断；缺失注册同样报错。
 	router := mustParseFile(t, filepath.Join(root, seoAuditRouterFile), seoAuditRouterFile)
 	count, pageExit := seoAuditRouteShape(router)
 	if count != 1 {
@@ -216,7 +175,6 @@ func TestSEOAuditRouteShape(t *testing.T) {
 	}
 }
 
-// mustParseFile 解析单个 Go 文件，失败即终止。
 func mustParseFile(t *testing.T, absPath, relPath string) *ast.File {
 	t.Helper()
 
@@ -228,9 +186,6 @@ func mustParseFile(t *testing.T, absPath, relPath string) *ast.File {
 	return parsed
 }
 
-// seoAuditFieldNames 取结构体的字段名（跳过内嵌无名字段）。
-//
-// 不叫 fieldNames：model_gorm_tag_test.go 里已有同名不同签名的助手，同包会冲突。
 func seoAuditFieldNames(st *ast.StructType) []string {
 	var out []string
 	for _, f := range st.Fields.List {
@@ -241,7 +196,6 @@ func seoAuditFieldNames(st *ast.StructType) []string {
 	return out
 }
 
-// hasImport 文件是否 import 了给定路径（含引号的字面量形态）。
 func hasImport(file *ast.File, quotedPath string) bool {
 	for _, spec := range file.Imports {
 		if spec.Path != nil && spec.Path.Value == quotedPath {
@@ -251,7 +205,6 @@ func hasImport(file *ast.File, quotedPath string) bool {
 	return false
 }
 
-// containsString 字符串切片是否含给定值。
 func containsString(list []string, want string) bool {
 	for _, got := range list {
 		if got == want {

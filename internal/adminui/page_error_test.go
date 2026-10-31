@@ -1,15 +1,5 @@
 package adminui
 
-// page_error_test.go — 页面出口**错误事实**的判据守卫（不碰数据库）。
-//
-// 守的是「这个 error 能不能给用户看」这一条边界。它以前是各模块自己维护的白名单
-// （page_err.go / siteSlotFacingMessages / productErrControlledMessages …），
-// 每份都是第二真相：service 换措辞或某个 key 改由别的模块提供，判据就静默失配，
-// 而两种症状都不报错 —— 有时把内部错误当业务文案透出，有时把业务文案吞成归口。
-//
-// 现在判据只有一条（pkg/response.IsBusinessError 的形态正则），所以这里的用例直接钉形态：
-// `a.b.c` key、`Err*` / `Msg*` 常量名都算业务错误；其余一律归口。
-
 import (
 	"errors"
 	"fmt"
@@ -104,7 +94,7 @@ func TestTranslateArgsFillsOnlyStringPlaceholders(t *testing.T) {
 	})
 
 	t.Run("占位符与参数个数不符时按 Sprintf 语义暴露", func(t *testing.T) {
-		// 参数少一个 → %!s(MISSING)：宁可页面上出现明显的坏串，也不要静默显示一句完整的假话。
+
 		got := TranslateArgs(c, "page.bulk.pagePartial", "已删除 %s 个，%s 个未能删除。", []string{"2"})
 		if !strings.Contains(got, "%!s(MISSING)") {
 			t.Fatalf("参数不足应当场暴露（Sprintf 语义），实际 %q", got)

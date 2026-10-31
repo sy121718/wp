@@ -11,8 +11,6 @@ import (
 	blockmodel "go_wp/internal/module/block/model"
 )
 
-// TestBlockCategoryCreate 覆盖 Create 路径的分类归一化：空值默认 general、
-// 合法白名单值原样入库、非法值（大写/中文/空格/点/斜杠/超长）拒绝。
 func TestBlockCategoryCreate(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -58,7 +56,6 @@ func TestBlockCategoryCreate(t *testing.T) {
 	})
 }
 
-// TestBlockCategoryListFilter 覆盖 List 按分类筛选：命中/无命中/非法筛选拒绝。
 func TestBlockCategoryListFilter(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -109,7 +106,6 @@ func TestBlockCategoryListFilter(t *testing.T) {
 	})
 }
 
-// TestBlockCategoryUpdate 覆盖 Update 路径：改分类持久化、空值保留原值、非法值拒绝且数据不变。
 func TestBlockCategoryUpdate(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -124,7 +120,7 @@ func TestBlockCategoryUpdate(t *testing.T) {
 		if res.Category != "product" {
 			t.Fatalf("分类未更新: %q", res.Category)
 		}
-		// Detail 的 ProjectID 是必填（跨工程越权防护），漏传会得到「参数缺失」而不是「块不存在」。
+
 		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if err != nil {
 			t.Fatalf("读块详情失败: %v", err)

@@ -1,10 +1,5 @@
 package productselector
 
-// productselector_test.go — 规格选择器组件单元测试（issue #26）。
-//
-// 覆盖：配置期校验（数据源 / 字段路径 / 开关）、字段绑定自报、视图组装（有组合 / 单变体空态）、
-// 模板渲染（实时库存片段的变体 id 与兜底文案）。
-
 import (
 	"errors"
 	json "go_wp/pkg/jsonx"
@@ -15,7 +10,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// stubResolver 固定字段值映射的解析器（替代构建期的商品解析器）。
 type stubResolver struct {
 	values map[string]string
 	errOn  string
@@ -46,10 +40,8 @@ func decodePropsOf(t *testing.T, kv map[string]any) Props {
 	return p
 }
 
-// testProjectID 单测用的站点工程 id（理由同 product_test.go：片段地址必须带工程）。
 const testProjectID = "proj-1"
 
-// buildViewFor 补上构建期工程 id 的 BuildView 包装（用例只关心组件本身时用它）。
 func buildViewFor(p *Props, content core.ContentResolver) (View, error) {
 	return BuildView(p, content, testProjectID, "")
 }
@@ -60,7 +52,6 @@ const (
 		`{"id":"var-2","sku":"SKU-2","price":"109","enabled":true,"options":{"color":"blue"}}]`
 )
 
-// TestValidateRequiresProductSource 字段必须来自 product 数据源。
 func TestValidateRequiresProductSource(t *testing.T) {
 	cases := []struct {
 		name string
@@ -79,14 +70,13 @@ func TestValidateRequiresProductSource(t *testing.T) {
 			}
 		})
 	}
-	// 空配置取默认值：合法。
+
 	def := decodePropsOf(t, map[string]any{})
 	if err := validateExtra(&def, "n1"); err != nil {
 		t.Fatalf("默认配置应合法: %v", err)
 	}
 }
 
-// TestFieldBindings 自报两个商品字段绑定（保存期交注册表白名单校验）。
 func TestFieldBindings(t *testing.T) {
 	comp := &Component{}
 	node := &core.Node{ID: "n1", Type: Type, Props: propsOf(t, map[string]any{})}
@@ -105,8 +95,6 @@ func TestFieldBindings(t *testing.T) {
 	}
 }
 
-// TestBuildViewRendersOptionsAndStock 视图组装 + 模板渲染：
-// 维度值组、组合行（价格 / 划线价）、每档实时库存片段（变体 id + 兜底文案）。
 func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{})
 	view, err := buildViewFor(&p, stubResolver{values: map[string]string{
@@ -145,7 +133,7 @@ func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 		"sky-selector-group",
 		"sky-selector-radio",
 		"<label class=\"sky-selector-value\" for=\"sky-sel-s1-color-red\">红</label>",
-		// 工程 id 必须在地址里（片段侧当必填参数）；& 经 Jet 转义成 &amp;，htmx 读到的仍是 &。
+
 		"/api/site/product/variants?projectId=proj-1&amp;variantIds=var-1",
 		"data-site-poll=\"60\"",
 		`aria-live="polite"`,
@@ -157,7 +145,6 @@ func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 	}
 }
 
-// TestBuildViewSingleVariant 单变体（没有可切换的组合）→ 空态，不输出选择器。
 func TestBuildViewSingleVariant(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"emptyText": "该商品暂无可选规格"})
 	view, err := buildViewFor(&p, stubResolver{values: map[string]string{
@@ -175,7 +162,6 @@ func TestBuildViewSingleVariant(t *testing.T) {
 	}
 }
 
-// TestBuildViewErrors 缺解析器 / 字段越界都要上抛（不静默出空选择器）。
 func TestBuildViewErrors(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{})
 	if _, err := buildViewFor(&p, nil); err == nil {
@@ -186,7 +172,6 @@ func TestBuildViewErrors(t *testing.T) {
 	}
 }
 
-// TestShowStockOff 关闭实时可用量时不渲染片段容器（但兜底文案与组合行仍在）。
 func TestShowStockOff(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"stock": "off"})
 	if ShowStock(&p) {
@@ -204,11 +189,6 @@ func TestShowStockOff(t *testing.T) {
 	}
 }
 
-// TestBuildViewStockFragmentURLCarriesRenderProject 片段地址必须带**本次渲染所用**的工程 id。
-//
-// 与 product / orderlist 组件同一条不变量：productVariantAvailability 片段把 projectId 当必填
-// 参数（缺它无法定位库存真源），缺参时片段端回 500，而 htmx 换不动目标节点 —— 页面上看不出
-// 异常，库存位永远停在构建期兜底文案。断言「值等于本次渲染传入的工程」，而不是「有字样」。
 func TestBuildViewStockFragmentURLCarriesRenderProject(t *testing.T) {
 	const projectID = "proj-9"
 	p := decodePropsOf(t, map[string]any{})

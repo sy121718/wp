@@ -15,17 +15,14 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle project 模块 HTTP 处理器。
 type Handle struct {
 	svc projectcontract.ProjectService
 }
 
-// NewHandle 创建 project HTTP 处理器。
 func NewHandle(svc projectcontract.ProjectService) *Handle {
 	return &Handle{svc: svc}
 }
 
-// Create 创建站点工程。
 func (h *Handle) Create(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.CreateReq](c)
 	if !ok {
@@ -39,7 +36,6 @@ func (h *Handle) Create(c *gin.Context) {
 	response.SuccessWithMessage(c, projectenums.MsgProjectCreated, res)
 }
 
-// List 列出全部站点工程。
 func (h *Handle) List(c *gin.Context) {
 	res, err := h.svc.List(c.Request.Context())
 	if err != nil {
@@ -49,7 +45,6 @@ func (h *Handle) List(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Detail 查询站点工程。
 func (h *Handle) Detail(c *gin.Context) {
 	req, ok := binding.Query[projectdto.DetailReq](c)
 	if !ok {
@@ -63,7 +58,6 @@ func (h *Handle) Detail(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Update 更新站点工程与 SiteSettings。
 func (h *Handle) Update(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.UpdateReq](c)
 	if !ok {
@@ -77,9 +71,6 @@ func (h *Handle) Update(c *gin.Context) {
 	response.SuccessWithMessage(c, projectenums.MsgProjectUpdated, res)
 }
 
-// projectError 将工程业务错误映射为响应状态码与文案：
-// 业务哨兵 → 对应 enums 文案；其余（基础设施故障）→ 兜底文案 + 日志留原文，
-// 不向客户端泄漏内部错误细节。
 func projectError(c *gin.Context, err error) {
 	status, message := http.StatusInternalServerError, projectenums.ErrProjectInternal
 	switch {
@@ -95,20 +86,10 @@ func projectError(c *gin.Context, err error) {
 	response.ErrorWithMessage(c, status, message)
 }
 
-// ThemeHandle 主题 HTTP 处理器。
 type ThemeHandle struct {
 	svc *projectservice.Service
 }
 
-// themeError 将主题业务错误映射为响应状态码与文案（JSON 出口）。
-//
-// 判定表已抽到 project_err.go 的 projectErrStatusText —— 它同时是**页面出口**
-// （projectErrParam）的判定依据，两边共用一份：JSON 出口给机器读（状态码），
-// 页面出口给人读（整页提示的文案），分流口径必须一致，否则同一个错误在两个入口
-// 会给出不同说法（「激活主题不可删除」在接口是 400 业务文案、在页面上却变成系统故障）。
-//
-// 归口文案用 ErrThemeInternal：本入口只服务 /api/theme/*，把这类故障说成
-// 「工程服务内部错误」会让排障时找错日志场景。
 func themeError(c *gin.Context, err error) {
 	status, key := projectErrStatusText(err, projectenums.ErrThemeInternal)
 	if status == http.StatusInternalServerError {
@@ -117,7 +98,6 @@ func themeError(c *gin.Context, err error) {
 	response.ErrorWithMessage(c, status, key)
 }
 
-// List 列出工程主题。
 func (h *ThemeHandle) List(c *gin.Context) {
 	projectID := c.Query("projectId")
 	if projectID == "" {
@@ -132,7 +112,6 @@ func (h *ThemeHandle) List(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Create 新建主题。
 func (h *ThemeHandle) Create(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.ThemeCreateReq](c)
 	if !ok {
@@ -146,7 +125,6 @@ func (h *ThemeHandle) Create(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Update 更新主题(设置/名称)。
 func (h *ThemeHandle) Update(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.ThemeUpdateReq](c)
 	if !ok {
@@ -160,7 +138,6 @@ func (h *ThemeHandle) Update(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Activate 激活主题(整站前端切换)。
 func (h *ThemeHandle) Activate(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
 	if !ok {
@@ -173,7 +150,6 @@ func (h *ThemeHandle) Activate(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// Delete 删除主题。
 func (h *ThemeHandle) Delete(c *gin.Context) {
 	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
 	if !ok {
@@ -186,7 +162,6 @@ func (h *ThemeHandle) Delete(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// Active 取当前激活主题。
 func (h *ThemeHandle) Active(c *gin.Context) {
 	projectID := c.Query("projectId")
 	if projectID == "" {
@@ -201,19 +176,9 @@ func (h *ThemeHandle) Active(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// paramBindFail 请求绑定失败的统一出口（400 + 受控文案）。
-//
-// 不把绑定错误原文拼进响应：gin 的绑定错误会带上 Go 结构体与字段名
-// （如 `json: cannot unmarshal string into Go struct field ThemeCreateReq.name of type string`），
-// 那是实现细节 —— 对外只说「参数不合法」，原文进日志供排障。
-//
-// 原先这里是 `response.ParamError(c, err.Error())`。它一直待在门禁盲区里：形态 ① 只认
-// `*.ErrorWithMessage(` 与 `c.String(`，而 `ParamError` 是同一个包里的同族出口却不在判据里。
-// 2026-09 第三批把 ParamError 纳入判据后，本模块这几处立刻被扫出来 —— 判据是**形状**，
-// 不是字面量；同族出口漏一个就等于那一族都没管住。
 func paramBindFail(c *gin.Context, err error) {
 	if err != nil {
-		// 绑定失败是客户端输入问题，按 warn 记（不污染错误日志）。
+
 		logger.Scene("project").With("path", c.Request.URL.Path).
 			With("detail", err.Error()).Warn("theme 接口请求绑定失败")
 	}

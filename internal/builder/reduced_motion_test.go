@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestReducedMotionCSS 减弱动态效果：无条件输出 prefers-reduced-motion 块。
 func TestReducedMotionCSS(t *testing.T) {
 	off := &ThemeSettings{}
 	css := off.ReducedMotionCSS()

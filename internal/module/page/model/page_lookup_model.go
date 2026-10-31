@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-// FindPagesByIDs 为重定向目标按工程批量查询未删除页面。
 func (m *Model) FindPagesByIDs(ctx context.Context, projectID string, ids []string) (list []PageEntity, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired

@@ -1,19 +1,5 @@
 package navigationhttp
 
-// navigation_add_source_write_test.go — 来源批量加入菜单（POST /api/navigation/create 的
-// action=addSource 档）的严格形状与业务语义。
-//
-// 背景：导航列表页的「从已有内容添加」原来是页面 POST（/admin/navigations/add-source，
-// 借 /api/navigation/create 的权限对象），已迁到真实端点的 action 档
-// （见 navigation_add_source_handle.go）。它与普通创建共用一条路径，靠 action 判别：
-// **缺 action 就是普通创建，行为逐字不变**（那条契约的回归见本文件末尾的 Legacy 用例）。
-//
-// 全走无库路径（桩 service 记录调用），断言四件事：
-//   · 形状对 → 逐条核验候选并调用 service.Create，回执带 added/skipped/items[]；
-//   · 形状不对 → 400 且**一次都不调用 service.Create**（「没有猜」的可验证形态）；
-//   · 读候选失败 → 500 归口且零写入（与「候选为空」严格分开）；
-//   · 逐条原因必须是**本请求语言的成品句**，且不泄漏原始异常（走 pkg/facing 判据收口）。
-
 import (
 	"context"
 	"errors"
@@ -33,7 +19,6 @@ import (
 	"go_wp/pkg/bulkids"
 )
 
-// navigationAddSourceStub 记录每次 Create 的入参；groupsErr 让 SourceGroups 报错。
 type navigationAddSourceStub struct {
 	navigationcontract.NavigationService
 	groups    []navigationcontract.SourceGroup
@@ -62,8 +47,6 @@ func (s *navigationAddSourceStub) Create(_ context.Context, req *navigationdto.C
 	return &navigationdto.NavigationResp{ID: "new-" + req.Title}, nil
 }
 
-// newNavigationAddSourceRouter 只挂 create handler：用例关心的是 action 判别与业务语义，
-// 不涉会话 / 权限 / CSRF（那三层与真实库链路的因果在 public/test/navigation/feature 里）。
 func newNavigationAddSourceRouter(t *testing.T, svc navigationcontract.NavigationService) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -81,7 +64,6 @@ func postNavigationAddSource(t *testing.T, engine *gin.Engine, body string) *htt
 	return rec
 }
 
-// navigationAddSourceResponse 解出统一响应结构（data 段按来源批量回执解）。
 func navigationAddSourceResponse(t *testing.T, rec *httptest.ResponseRecorder) (int, string, navigationAddSourceResult) {
 	t.Helper()
 	var resp struct {
@@ -95,7 +77,6 @@ func navigationAddSourceResponse(t *testing.T, rec *httptest.ResponseRecorder) (
 	return resp.Code, resp.Message, resp.Data
 }
 
-// addSourceGroups 两组候选：page（一条有公开路径、一条没有）+ article（换类型就要落空）。
 func addSourceGroups() []navigationcontract.SourceGroup {
 	return []navigationcontract.SourceGroup{
 		{Type: "page", Title: "admin.navigations.source.page", Items: []navigationcontract.SourceCandidate{
@@ -117,10 +98,6 @@ func addSourceBody(ids ...string) string {
 		strings.Join(quoted, ",") + `]}`
 }
 
-// TestNavigationAddSourceBulkShape 主路径：按候选逐条判定，回执带计数与逐条结果。
-//
-// 四种落点各有一条：候选命中且有路径（成功）、候选命中但无路径（跳过）、
-// 不属于本来源类型（跳过）、id 根本不在候选里（跳过）。
 func TestNavigationAddSourceBulkShape(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
@@ -156,7 +133,6 @@ func TestNavigationAddSourceBulkShape(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceTitleFallsBackToLabel 候选没有解析出标题时用 Label（页面路径/slug）。
 func TestNavigationAddSourceTitleFallsBackToLabel(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: []navigationcontract.SourceGroup{
 		{Type: "page", Items: []navigationcontract.SourceCandidate{
@@ -174,8 +150,6 @@ func TestNavigationAddSourceTitleFallsBackToLabel(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceKindSemantics kind 缺省 / 空串都回落 header（页面版的同一条语义），
-// 显式 null 与非字符串则拒 —— 「这一格没填」与「填了个不是类型值的东西」是两件事。
 func TestNavigationAddSourceKindSemantics(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -220,8 +194,6 @@ func TestNavigationAddSourceKindSemantics(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceCreateFailureIsPerItem 某一条 Create 失败只计入 skipped 并带原因，
-// 整批不中断（与批量删除同一口径：整批回滚会让用户反复重试）。
 func TestNavigationAddSourceCreateFailureIsPerItem(t *testing.T) {
 	stub := &navigationAddSourceStub{
 		groups: []navigationcontract.SourceGroup{
@@ -250,7 +222,6 @@ func TestNavigationAddSourceCreateFailureIsPerItem(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceReasonsAreControlled 逐条原因必须是白名单成品句，不泄漏原始异常。
 func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 	rawErr := errors.New(`ERROR: duplicate key value violates unique constraint "uq_navigation_path" (SQLSTATE 23505)`)
 	stub := &navigationAddSourceStub{
@@ -277,7 +248,7 @@ func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 			t.Fatalf("回执泄漏了原始异常（%s）：%s", leak, rec.Body.String())
 		}
 	}
-	// 未命中判据 → 归口句的当前语言成品句；命中判据 → 该 key 的译文。
+
 	if got := data.Items[0].Message; got == "" || got == rawErr.Error() {
 		t.Fatalf("第 1 条原因应归口，实际 %q", got)
 	}
@@ -286,8 +257,6 @@ func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceReasonsFollowRequestLanguage 逐条原因按请求语言取词（合成词条：
-// 「响应里出现这句」等价于「key 真的到了取词层」）。
 func TestNavigationAddSourceReasonsFollowRequestLanguage(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
 		navigationenums.ErrNotFound:  {"zh-CN": "找不到该条目", "en-US": "No such item"},
@@ -329,7 +298,6 @@ func TestNavigationAddSourceReasonsFollowRequestLanguage(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceEmptyIDsIsNoop 空数组是合法形状：200 零计数，且**不读候选**。
 func TestNavigationAddSourceEmptyIDsIsNoop(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
@@ -347,8 +315,6 @@ func TestNavigationAddSourceEmptyIDsIsNoop(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceUnknownTypeSkipsAll 换一个库里没有的来源类型：候选为空（不是错误），
-// 每个请求 id 计 skipped 并带原因 —— 与「读候选失败」严格分开。
 func TestNavigationAddSourceUnknownTypeSkipsAll(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
@@ -367,8 +333,6 @@ func TestNavigationAddSourceUnknownTypeSkipsAll(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceGroupsFailureIs500 读候选失败 → 500 归口 + 零写入（与空候选分开：
-// 否则用户看到「已加入 0 项」，会以为是勾错了）。
 func TestNavigationAddSourceGroupsFailureIs500(t *testing.T) {
 	stub := &navigationAddSourceStub{groupsErr: errors.New(`relation "navigations" does not exist`)}
 	engine := newNavigationAddSourceRouter(t, stub)
@@ -389,7 +353,6 @@ func TestNavigationAddSourceGroupsFailureIs500(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceShapeRejections 形状错的请求一律 400，且一次都不落库。
 func TestNavigationAddSourceShapeRejections(t *testing.T) {
 	cases := []struct{ name, body string }{
 		{"未知 action", `{"action":"nope","projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
@@ -438,7 +401,6 @@ func TestNavigationAddSourceShapeRejections(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceLimits 上限与请求体上限：超限整批拒绝、超大体在解析前被拦。
 func TestNavigationAddSourceLimits(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
@@ -475,11 +437,6 @@ func TestNavigationAddSourceLimits(t *testing.T) {
 	}
 }
 
-// TestNavigationCreateLegacyShapeUnchanged 缺 action 的普通创建行为逐字不变：
-// required 校验照旧（缺 title 400）、未知字段仍被忽略（200）、指针字段语义不动。
-//
-// 这条是本次迁移的**回归护栏**：Create 从 ShouldBindJSON 改成「先读一次体、再按 action 分流」，
-// 分流之后仍要走回原来的 binding.JSON.BindBody —— 否则 required 校验会被静默跳过。
 func TestNavigationCreateLegacyShapeUnchanged(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -518,9 +475,6 @@ func TestNavigationCreateLegacyShapeUnchanged(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceTemplateContract 源码级契约：页面路由与 handler 已退役、
-// 模板只声明事实（端点 / 批量档 / outcome / extra / status 槽 / hidden action），
-// 且复选框 name 已由 sourceIds 改为 ids。
 func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	readFile := func(path string) string {
 		t.Helper()
@@ -548,14 +502,12 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 		`<input type="hidden" name="action" value="addSource">`,
 		`name="ids"`,
 		`data-write-status`,
-		// 批量结论只有一句 message（由后端 JSON body 给）：模板不再按「全成/全跳/部分」分档取词。
 	} {
 		if !strings.Contains(tpl, want) {
 			t.Fatalf("模板应含 %q", want)
 		}
 	}
-	// 注意：**只**断言来源抽屉这一段的旧痕迹消失。页面里其它写动作（update / move / panel）
-	// 这一批仍在页面侧，它们的 csrf 隐藏域与 action= 属性是切片 C 的事，不在这里判。
+
 	for _, forbidden := range []string{
 		`action="/admin/navigations/add-source`,
 		`name="sourceIds"`,
@@ -566,7 +518,6 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	}
 }
 
-// addSourceBodyOf 与 addSourceBody 同形，但来源类型可换（article 组用来验「换类型仍能拿候选」）。
 func addSourceBodyOf(sourceType string, ids ...string) string {
 	quoted := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -576,7 +527,6 @@ func addSourceBodyOf(sourceType string, ids ...string) string {
 		`","ids":[` + strings.Join(quoted, ",") + `]}`
 }
 
-// addSourceItemMessage 取来源批量回执里某条 id 的原因文案。
 func addSourceItemMessage(t *testing.T, res navigationAddSourceResult, id string) string {
 	t.Helper()
 	for _, item := range res.Items {
@@ -588,14 +538,6 @@ func addSourceItemMessage(t *testing.T, res navigationAddSourceResult, id string
 	return ""
 }
 
-// TestNavigationAddSourceReasonsFallBackWhenEntryMissing 词条缺席时逐条原因**不裸 key**。
-//
-// 本包默认没有词条（进程级缓存是空的），所以这些用例走的正是「缺词 → 受控中文兜底」那一支。
-// 五档各挡一种退化：
-//   - 业务文案（Create 失败）→ 不能回落裸 key；
-//   - 跳过类界面文案（候选暂无公开路径）→ 不能回落裸 key，也**不能**被说成「操作失败」；
-//   - 带定位 / 带参两种协议形态 → 兜底形态要与 JSON 出口一致（": " 拼接、参数丢弃）；
-//   - 未归口的内部错误 → 归口 ErrInternal + 只进日志，数据库原文不进响应。
 func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 	clearNavigationEntries(t)
 
@@ -626,7 +568,7 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			failFor: nil,
 			ids:     []string{"pg-2"},
 			want:    map[string]string{"pg-2": noPath},
-			// 既是界面文案 key，也不能是通用失败句：这是一条**正常跳过**的原因。
+
 			wantGone: []string{navigationAddSourceNoPathKey, navigationInternalFallback},
 		},
 		{

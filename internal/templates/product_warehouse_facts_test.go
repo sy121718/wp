@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// 仓库和 SKU 名称只从原始字段格式化，特殊字符在 HTML 属性与文本中都必须转义。
 func TestProductWarehouseFactsRenderWithoutDisplayFields(t *testing.T) {
 	data := productCatalogData(map[string]any{
 		"WarehouseOptions": []productdto.WarehouseOptionResp{{ID: "w1", Name: "仓<一>", Code: "SZ", IsDefault: true}},

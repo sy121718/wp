@@ -2,23 +2,19 @@ package i18n
 
 import "sync"
 
-// I18nResult 多语言查询结果
 type I18nResult struct {
-	Key      string            // 原始键
-	Value    string            // 文本内容
-	Lang     string            // 实际使用的语言
-	HttpCode int               // HTTP状态码
-	AllLangs map[string]string // 所有语言版本
+	Key      string
+	Value    string
+	Lang     string
+	HttpCode int
+	AllLangs map[string]string
 }
 
-// MemoryCache 内存缓存结构
 type MemoryCache struct {
 	mu sync.RWMutex
 
-	// 核心结构：key -> lang -> value
 	data map[string]map[string]string
 
-	// HTTP 响应码映射：key -> http_code
 	httpCodes map[string]int
 
 	version int64
@@ -29,26 +25,22 @@ var cache = &MemoryCache{
 	httpCodes: make(map[string]int),
 }
 
-// Get 获取多语言信息（一次性返回所有信息）
 func (c *MemoryCache) Get(key, lang string) *I18nResult {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	result := &I18nResult{
 		Key:      key,
-		HttpCode: 200, // 默认 200
+		HttpCode: 200,
 	}
 
-	// 获取 HTTP 状态码
 	if code, ok := c.httpCodes[key]; ok {
 		result.HttpCode = code
 	}
 
-	// 获取多语言数据
 	if m, ok := c.data[key]; ok {
 		result.AllLangs = cloneLangMap(m)
 
-		// 优先返回指定语言
 		if v, ok := m[lang]; ok {
 			result.Value = v
 			result.Lang = lang
@@ -62,7 +54,6 @@ func (c *MemoryCache) Get(key, lang string) *I18nResult {
 			return result
 		}
 
-		// 降级：遍历所有可用语言，返回第一个
 		for availLang, value := range m {
 			result.Value = value
 			result.Lang = availLang
@@ -70,13 +61,11 @@ func (c *MemoryCache) Get(key, lang string) *I18nResult {
 		}
 	}
 
-	// 找不到，返回 key 本身
 	result.Value = key
 	result.Lang = lang
 	return result
 }
 
-// Update 更新缓存
 func (c *MemoryCache) Update(newData map[string]map[string]string, newHttpCodes map[string]int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -86,21 +75,10 @@ func (c *MemoryCache) Update(newData map[string]map[string]string, newHttpCodes 
 	c.version++
 }
 
-// InjectForTest 直接写入内存缓存，供**包外**测试使用（包内测试直接调 cache.Update）。
-//
-// 为什么需要它：pkg/response 的 translate 用例要验证「key 命中时按语言出文案」，
-// 此前为了拿到这份数据，它建了一个 MySQL 临时库、AutoMigrate sys_i18n、写种子，
-// 再走 i18n.Init 加载 —— 而项目早已移除 MySQL 驱动，CI 里也没有 3306 实例，
-// 于是那组用例实际只在旧环境跑得起来（CI 第一次真正执行 pkg 测试时立刻红）。
-// 用例真正需要的是缓存里有词条，不是库里有表。
-//
-// 生产代码不要调用：运行时的数据来源是 sys_i18n 表（LoadCache / StartAutoRefresh）。
-// 命名对齐 config.ResetForTest —— 见到 ForTest 就知道这不是运行路径。
 func InjectForTest(data map[string]map[string]string, httpCodes map[string]int) {
 	cache.Update(data, httpCodes)
 }
 
-// GetVersion 获取缓存版本
 func (c *MemoryCache) GetVersion() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

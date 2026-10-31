@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// ResolveCatalogScope 解析商品查询的工程范围；显式无效工程不能降级成空清单。
 func (s *Service) ResolveCatalogScope(ctx context.Context, projectID string) (*productcontract.CatalogScope, error) {
 	projects, err := s.project.List(ctx)
 	if err != nil {

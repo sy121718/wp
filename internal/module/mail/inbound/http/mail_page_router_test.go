@@ -1,18 +1,5 @@
 package mailhttp
 
-// mail_page_router_test.go — 页面入口的鉴权对象必须进权限声明表。
-//
-// 这条测试钉的是一个**只在对 AI 工具调用时才显形**的缺陷：
-// 本模块页面写操作复用的是「对应 API 的路径」当 obj（部分 API 路由并不存在，
-// 策略表里也只有那条路径），而 permission 的声明表只由「带 permission.X 参数的路由注册」
-// 填充 —— 页面路由走 CasbinMiddlewareForPath，登记不了自己。
-//
-// 实测后果：内部工具调用一律 forbidden（AI 回答「没有权限执行该操作」），
-// 而页面本身完全正常，排查时会往「AI 权限没配」的方向找。
-//
-// 这里只断言**声明表非空**，不查 Casbin 策略：策略是运维数据（迁移 + 后台配置），
-// 测试环境里不保证存在；而「连声明都没有」是代码层面的确定性事实。
-
 import (
 	"testing"
 
@@ -55,7 +42,6 @@ func TestMailPageObjectsAreDeclared(t *testing.T) {
 	}
 }
 
-// 重复调用不能 panic（Declare 对同 key 同权限点是幂等的，装配可能被调用多次）。
 func TestDeclareMailPageObjectsIsIdempotent(t *testing.T) {
 	declareMailPageObjects()
 	declareMailPageObjects()

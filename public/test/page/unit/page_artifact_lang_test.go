@@ -1,14 +1,5 @@
 package unit
 
-// page_artifact_lang_test.go — 同页多语言产物行并存与路由绑定（多语言 P3 前置，
-// AGENTS.md §15.5 第 1 条）。
-//
-// 回归对象：page_artifacts 唯一键 (page_id, version) 曾让第二个语言的产物替换
-// 第一个语言的行，page_routes.artifact_id 于是指向错内容。本用例走完整装配链
-// （Build → Publish，开关 i18n.site_lang_prefix 开启）验证：
-//  1) 同一草稿版本下两个语言各登记一行、互不覆盖；
-//  2) 路由行的 artifact_id 指向「该语言」的产物行。
-
 import (
 	"context"
 	"testing"
@@ -18,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// activeRouteArtifactID 读取某激活路由指向的产物行 ID。
 func activeRouteArtifactID(t *testing.T, db *gorm.DB, projectID, path string) string {
 	t.Helper()
 	var id string
@@ -30,7 +20,6 @@ func activeRouteArtifactID(t *testing.T, db *gorm.DB, projectID, path string) st
 	return id
 }
 
-// artifactLangAndPath 读取产物行 manifest 中的语言与规范路径。
 func artifactLangAndPath(t *testing.T, db *gorm.DB, artifactID string) (lang, canonicalPath string) {
 	t.Helper()
 	var row struct {
@@ -45,7 +34,6 @@ func artifactLangAndPath(t *testing.T, db *gorm.DB, artifactID string) (lang, ca
 	return row.Lang, row.CanonicalPath
 }
 
-// TestPageArtifactLangCoexistAndRouteBinding 同页两个语言各登记一行，路由分别指向各自语言的产物。
 func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -53,7 +41,6 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 
 	created := createPage(t, svc, projectID, "/about", headingDocument)
 
-	// ---- 默认语言（zh-CN）：构建 + 发布 ----
 	builtZh, err := svc.Build(ctx, &pagedto.BuildReq{ID: created.ID})
 	if err != nil {
 		t.Fatalf("默认语言构建失败: %v", err)
@@ -69,7 +56,6 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 		t.Fatalf("zh-CN 路由应指向 zh-CN 产物，实际 lang=%q path=%q", lang, canonical)
 	}
 
-	// ---- 第二个语言（en-US）：同一草稿版本构建 + 发布 ----
 	builtEn, err := svc.Build(ctx, &pagedto.BuildReq{ID: created.ID, Lang: "en-US"})
 	if err != nil {
 		t.Fatalf("en-US 构建失败: %v", err)
@@ -81,7 +67,6 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 		t.Fatalf("en-US 发布失败: %v", err)
 	}
 
-	// ---- 同页两语言各一行、互不覆盖 ----
 	var rows []struct {
 		ID           string
 		Lang         string
@@ -120,7 +105,7 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 	if zhRow.ID == enRow.ID {
 		t.Fatal("两个语言的行 ID 不应相同（第二个语言覆盖了第一个语言的行）")
 	}
-	// 核心回归点：zh-CN 行仍是第一次构建的产物，未被 en-US 构建替换。
+
 	if zhRow.ArtifactHash != builtZh.StagedHash {
 		t.Fatalf("zh-CN 行产物被 en-US 构建覆盖: 期望 %s，实际 %s", builtZh.StagedHash, zhRow.ArtifactHash)
 	}
@@ -128,21 +113,17 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 		t.Fatalf("en-US 行产物错误: 期望 %s，实际 %s", builtEn.StagedHash, enRow.ArtifactHash)
 	}
 
-	// ---- 路由 artifact_id 指向各自语言的产物 ----
 	if got := activeRouteArtifactID(t, db, projectID, "/en/about"); got != enRow.ID {
 		t.Fatalf("/en/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
 	}
 	if lang, canonical := artifactLangAndPath(t, db, enRow.ID); lang != "en-US" || canonical != "/en/about" {
 		t.Fatalf("en-US 产物行内容错误: lang=%q path=%q", lang, canonical)
 	}
-	// zh-CN 产物行内容独立保留（即使其激活路由已被后续发布取消，见下方说明）。
+
 	if lang, canonical := artifactLangAndPath(t, db, zhRow.ID); lang != "zh-CN" || canonical != "/about" {
 		t.Fatalf("zh-CN 产物行内容错误: lang=%q path=%q", lang, canonical)
 	}
 
-	// ---- P3 核心回归点：Publish(en-US) 不得取消 /about 的激活路由 ----
-	// 修复前（pages.active_path 单值）：Publish(en-US) 把 pages.active_path（=/about）
-	// 当作本页旧路径 Deactivate，zh-CN 激活行被 DELETE，一页多语言无法同时在线。
 	var zhActive int64
 	if err := db.Table("page_routes").
 		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, "/about", "active").
@@ -152,14 +133,14 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 	if zhActive != 1 {
 		t.Fatalf("一页两语言应同时在线：/about 激活行=%d（期望 1）", zhActive)
 	}
-	// 两语言的激活行分别指向各自语言的产物行。
+
 	if got := activeRouteArtifactID(t, db, projectID, "/about"); got != zhRow.ID {
 		t.Fatalf("/about 路由应指向 zh-CN 产物行 %s，实际 %s", zhRow.ID, got)
 	}
 	if got := activeRouteArtifactID(t, db, projectID, "/en/about"); got != enRow.ID {
 		t.Fatalf("/en/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
 	}
-	// page_publications 每语言一行（多语言激活状态真源）。
+
 	var pubs []struct{ Lang, ActivePath string }
 	if err := db.Table("page_publications").
 		Select("lang, active_path").Where("page_id = ?", created.ID).Order("lang").Scan(&pubs).Error; err != nil {

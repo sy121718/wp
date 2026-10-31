@@ -1,8 +1,5 @@
 package pluginservice
 
-// zip 安全解包测试（docs/06 §11）：zip slip 路径穿越、扩展名白名单、
-// 大小限制、manifest 缺失。
-
 import (
 	"archive/zip"
 	"bytes"
@@ -10,7 +7,6 @@ import (
 	"testing"
 )
 
-// buildZip 内存构造 zip（map[路径]内容）。
 func buildZip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -30,7 +26,6 @@ func buildZip(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-// TestExtractZipSlip 路径穿越（../ 上溯）拒绝。
 func TestExtractZipSlip(t *testing.T) {
 	z := buildZip(t, map[string]string{
 		"../evil.txt":      "x",
@@ -43,7 +38,6 @@ func TestExtractZipSlip(t *testing.T) {
 	}
 }
 
-// TestExtractZipExtWhitelist 非白名单扩展名拒绝。
 func TestExtractZipExtWhitelist(t *testing.T) {
 	z := buildZip(t, map[string]string{
 		"components/a.jet": "ok",
@@ -56,7 +50,6 @@ func TestExtractZipExtWhitelist(t *testing.T) {
 	}
 }
 
-// TestExtractZipLegal 合法包解包成功。
 func TestExtractZipLegal(t *testing.T) {
 	z := buildZip(t, map[string]string{
 		"manifest.json":       `{"id":"mkt","name":"x","version":"1.0.0","components":[]}`,

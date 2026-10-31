@@ -1,4 +1,3 @@
-// Package queueprovider /*
 package queueprovider
 
 import (
@@ -351,7 +350,6 @@ func WithRetention(retention time.Duration) Option {
 	}
 }
 
-// NewAsynqProvider 创建 Asynq 实现
 func NewAsynqProvider() Provider {
 	return &asynqProvider{}
 }

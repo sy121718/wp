@@ -6,13 +6,11 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// ProductTranslationsReader 查询译文事实与执行保存，两个结果互相独立。
 type ProductTranslationsReader interface {
 	QueryProductTranslations(context.Context, *productdto.ProductTranslationsPageReq) (*ProductTranslations, error)
 	SaveProductTranslations(context.Context, *productdto.SaveProductTranslationsReq) (*TranslationSaveResult, error)
 }
 
-// ProductTranslations 商品域的原文与译文集合，不包含下拉选中态和界面标题。
 type ProductTranslations struct {
 	ProjectID  string
 	ProductID  string
@@ -24,7 +22,6 @@ type ProductTranslations struct {
 	Total      int
 }
 
-// TranslationEntity 同一实体的可翻译字段。
 type TranslationEntity struct {
 	EntityType string
 	EntityID   string
@@ -41,7 +38,6 @@ type TranslationValue struct {
 	Engine     string
 }
 
-// TranslationSaveResult 保存结论；不携带查询数据或页面回显。
 type TranslationSaveResult struct {
 	Saved           bool
 	Written         int

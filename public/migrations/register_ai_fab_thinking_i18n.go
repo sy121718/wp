@@ -2,7 +2,6 @@ package migrations
 
 import "sync"
 
-// register_ai_fab_thinking_i18n.go — 悬浮球的「思考中」与「思考过程」词条（570）。
 func registerAIFabThinkingI18n() {
 	registerAIFabThinkingI18nOnce.Do(registerAIFabThinkingI18nSeed)
 }

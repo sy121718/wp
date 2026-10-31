@@ -18,7 +18,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// ProductReadPort 商品域的最小只读面，评分用例没有写入能力。
 type ProductReadPort interface {
 	Get(context.Context, *productdto.GetReq) (*productdto.ProductResp, error)
 	List(context.Context, *productdto.ListReq) ([]*productdto.ProductResp, error)
@@ -28,28 +27,23 @@ type ProductReadPort interface {
 	ListBrands(context.Context, *productdto.ListBrandReq) ([]*productdto.BrandResp, error)
 }
 
-// SeoInstancePathReader 未注入表示尚未接入发布实例；已注入时读取错误必须传播。
 type SeoInstancePathReader interface {
 	GetByEntity(context.Context, *presentationcontract.GetByEntityReq) (*presentationcontract.InstanceResp, error)
 }
 
-// SeoTitleExtraSources 可选跨模块读契约；未覆盖来源随结果明示。
 type SeoTitleExtraSources struct {
 	Pages    pagecontract.PageService
 	Contents contentcontract.ContentService
 }
 
-// seoTitlePageSize 是逐页读取的批量大小，不是索引条数上限。
 const seoTitlePageSize = 100
 
-// SeoScoreInputResult 构造共享算法输入，所有失败都通过 Err 向上返回。
 type SeoScoreInputResult struct {
 	Input  *scoring.EntityPageInput
 	SelfID string
 	Err    error
 }
 
-// SeoScore 将读取、评分、同工程标题冲突检查组成一个用例，HTTP 不派生评分形状。
 func SeoScore(ctx context.Context, r ProductReadPort, insts SeoInstancePathReader, extra SeoTitleExtraSources,
 	kind scoring.PageKind, req *productdto.ScorePanelReq, lang string) (*productdto.SeoScoreResp, error) {
 	if req == nil {
@@ -90,7 +84,6 @@ func SeoScore(ctx context.Context, r ProductReadPort, insts SeoInstancePathReade
 	return out, nil
 }
 
-// SeoScoreInputOf 只从指定工程读取实体与素材，再交给共享评分算法。
 func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePathReader,
 	kind scoring.PageKind, id, projectID, lang string) SeoScoreInputResult {
 	id, projectID = strings.TrimSpace(id), strings.TrimSpace(projectID)
@@ -156,8 +149,6 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 	return SeoScoreInputResult{Input: in, SelfID: id}
 }
 
-// seoInstancePublicationOf 将预定路径与真实激活事实分开：建实例后发布失败仍会留下 URLPath。
-// 未绑定实例是正常事实，其它读取失败必须传播；激活依据契约的逐语言 Publications。
 func seoInstancePublicationOf(ctx context.Context, insts SeoInstancePathReader, projectID, entityType, entityID string) (string, bool, error) {
 	if insts == nil {
 		return "", false, nil
@@ -185,8 +176,6 @@ func seoInstancePublicationOf(ctx context.Context, insts SeoInstancePathReader, 
 	return strings.TrimSpace(inst.URLPath), published, nil
 }
 
-// SeoTitleIndex 完整翻页读取商品域，并按工程过滤可选页面源。
-// 文章契约未提供工程过滤，所以明确标注未覆盖，不把其它工程的标题混进结果。
 func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSources,
 	projectID string) ([]scoring.TitleEntry, productdto.SeoTitleCoverageResp, error) {
 	coverage := productdto.SeoTitleCoverageResp{Included: []string{"product", "category", "brand"}, Omitted: []productdto.SeoTitleOmissionResp{}}
@@ -255,10 +244,6 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 	return out, coverage, nil
 }
 
-// flatCategoriesOf 取某工程的分类树并摊平成 DFS 前序列表（工程为空时返回空列表）。
-//
-// 口径：同一个 ListCategories 契约 + 同一份 FlattenCategoryTree。**本函数是唯一实现** ——
-// 原先 inbound/http 的 flatCategories 是同一口径的第二份，已随迁移删除（task-163）。
 func flatCategoriesOf(ctx context.Context, r ProductReadPort, projectID string) (out []*productdto.CategoryResp, err error) {
 	out = []*productdto.CategoryResp{}
 	if projectID == "" {
@@ -271,7 +256,6 @@ func flatCategoriesOf(ctx context.Context, r ProductReadPort, projectID string) 
 	return FlattenCategoryTree(tree), nil
 }
 
-// PageDraftTitle 页面草稿的 SEO 标题（settings.seo.title）。
 func PageDraftTitle(doc json.RawMessage) string {
 	if len(doc) == 0 {
 		return ""
@@ -289,10 +273,6 @@ func PageDraftTitle(doc json.RawMessage) string {
 	return strings.TrimSpace(parsed.Settings.SEO.Title)
 }
 
-// EntityPlainText 商品描述（jsonb）→ 纯文本。
-//
-// 两种形态与构建期一致（{"html": "..."} 富文本 / JSON 字符串纯文本），
-// 去标签的理由与文章侧相同：把 <p> 当正文算进字数，一篇 300 字的描述会被算成 900。
 func EntityPlainText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -312,7 +292,6 @@ func EntityPlainText(raw json.RawMessage) string {
 
 var entityTagRe = regexp.MustCompile("<[^>]+>")
 
-// StripEntityTags 去 HTML 标签并压掉多余空白（只读展示与统计用，不承担清洗职责）。
 func StripEntityTags(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return ""
@@ -320,8 +299,6 @@ func StripEntityTags(s string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(entityTagRe.ReplaceAllString(s, " ")), " "))
 }
 
-// ProductPageImages 商品图集 → 评分图片项（首图按 hero、其余按 content，
-// alt 与 Images 逐位对应 —— 与构建期 imageAltsJSON 同一份数据）。
 func ProductPageImages(p *productdto.ProductResp) []scoring.Image {
 	if p == nil {
 		return nil
@@ -344,7 +321,6 @@ func ProductPageImages(p *productdto.ProductResp) []scoring.Image {
 	return out
 }
 
-// singleImage 单图实体（分类图 / 品牌 logo）→ 评分图片项。
 func singleImage(src, kind string) []scoring.Image {
 	if strings.TrimSpace(src) == "" {
 		return nil
@@ -352,7 +328,6 @@ func singleImage(src, kind string) []scoring.Image {
 	return []scoring.Image{{Src: strings.TrimSpace(src), Kind: kind}}
 }
 
-// VariationSpecNames 参与变体的属性组名（详情页把它们渲染成分组小标题）。
 func VariationSpecNames(p *productdto.ProductResp) []string {
 	if p == nil {
 		return nil
@@ -366,7 +341,6 @@ func VariationSpecNames(p *productdto.ProductResp) []string {
 	return out
 }
 
-// ProductCategoryNames 商品挂载的分类名（详情页的关联分区标题）。
 func ProductCategoryNames(p *productdto.ProductResp) []string {
 	if p == nil {
 		return nil
@@ -380,7 +354,6 @@ func ProductCategoryNames(p *productdto.ProductResp) []string {
 	return out
 }
 
-// CategoryChildNames 返回直接子分类名；读取失败不能变成缺少标题的评分事实。
 func CategoryChildNames(ctx context.Context, r ProductReadPort, projectID, id string) ([]string, error) {
 	cats, err := flatCategoriesOf(ctx, r, projectID)
 	if err != nil {
@@ -395,11 +368,6 @@ func CategoryChildNames(ctx context.Context, r ProductReadPort, projectID, id st
 	return out, nil
 }
 
-// slashSlug URL 段 → 路径形态（空 slug 返回空串）。
-//
-// 商品 / 分类 / 品牌详情页的路径由各自的 slug 构成，编辑期没有发布实例时用它做
-// URL 干净度判定的近似值：slug 本身就是要检查的对象（长度、大小写、参数），
-// 不是编出来的路径。**唯一实现**（原先 inbound/http 的同名函数已随迁移删除，task-163）。
 func slashSlug(slug string) string {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {

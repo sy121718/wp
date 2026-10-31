@@ -1,4 +1,3 @@
-// Package unit 覆盖 block 模块 service 层业务用例（公共测试支撑 + 真实 PG 隔离 schema）。
 package unit
 
 import (
@@ -21,7 +20,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// env 一次测试的隔离环境：专属 schema + 真实 project 服务（共享同一 db）。
 type env struct {
 	t         *testing.T
 	db        *gorm.DB
@@ -30,8 +28,6 @@ type env struct {
 	projectID string
 }
 
-// newEnv 创建独立 PG schema，迁移 block/project 表并装配真实服务。
-// PG 不可用时 t.Skip（正常行为，不算失败）。
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -44,9 +40,7 @@ func newEnv(t *testing.T) *env {
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	svc := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	// 引用检查器与 stale 传播器必须注入：未注入时 Delete / global→template 一律按
-	// 「仍被引用」拒绝（宁拒勿删），那是刻意的保守默认，不是测试想要的夹具状态。
-	// 这里注入一个「无引用」的检查器；引用检查本身的行为由专门的用例覆盖。
+
 	svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return false, nil })
 	svc.SetStalePropagator(func(context.Context, string) error { return nil })
 	pid, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "测试工程"})
@@ -56,7 +50,6 @@ func newEnv(t *testing.T) *env {
 	return &env{t: t, db: db, svc: svc, projects: projects, projectID: pid.ID}
 }
 
-// newProject 额外创建一个工程（用于跨工程隔离验证）。
 func (e *env) newProject(t *testing.T) string {
 	t.Helper()
 	p, err := e.projects.Create(context.Background(), &projectdto.CreateReq{Name: "另一工程"})
@@ -66,7 +59,6 @@ func (e *env) newProject(t *testing.T) string {
 	return p.ID
 }
 
-// createBlock 通过 service.Create 创建块（name/kind 走原始输入，文档为空）。
 func (e *env) createBlock(t *testing.T, name, kind string) *blockdto.BlockResp {
 	t.Helper()
 	res, err := e.svc.Create(context.Background(), &blockdto.CreateReq{
@@ -78,7 +70,6 @@ func (e *env) createBlock(t *testing.T, name, kind string) *blockdto.BlockResp {
 	return res
 }
 
-// errContains 断言错误非 nil 且消息包含子串。
 func errContains(t *testing.T, err error, want string) {
 	t.Helper()
 	if err == nil {
@@ -89,7 +80,6 @@ func errContains(t *testing.T, err error, want string) {
 	}
 }
 
-// docLayoutMode 提取规范化文档的 settings.layout.mode（语义断言，避免字节差异）。
 func docLayoutMode(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	if !json.Valid(raw) {
@@ -107,8 +97,6 @@ func docLayoutMode(t *testing.T, raw json.RawMessage) string {
 	}
 	return v.Settings.Layout.Mode
 }
-
-// ---- List ----
 
 func TestBlockListSuccess(t *testing.T) {
 	e := newEnv(t)
@@ -163,7 +151,7 @@ func TestBlockListSuccess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("全量列表应无错误: %v", err)
 		}
-		// 此时应含普通/页眉/页脚各一（前序子测试创建），按 kind ASC 排序：block < footer < header。
+
 		if len(res) != 3 {
 			t.Fatalf("应返回 3 个块: %#v", res)
 		}
@@ -177,8 +165,6 @@ func TestBlockListInvalidRequest(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
-	// 修复语义：nil/空 projectID 是参数错误（ErrBlockParamRequired），
-	// 与「工程下无块」（正常空列表）及资源不存在（ErrBlockNotFound）区分开。
 	t.Run("NilRequest", func(t *testing.T) {
 		_, err := e.svc.List(ctx, nil)
 		errContains(t, err, blockenums.ErrBlockParamRequired)
@@ -192,8 +178,6 @@ func TestBlockListInvalidRequest(t *testing.T) {
 		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 }
-
-// ---- Detail ----
 
 func TestBlockDetailSuccess(t *testing.T) {
 	e := newEnv(t)
@@ -216,8 +200,6 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
-	// 修复语义：nil/空 ID 是参数错误（ErrBlockParamRequired），
-	// 与「ID 对应块不存在」（ErrBlockNotFound，见 TestBlockDetailNotFound）区分开。
 	t.Run("NilRequest", func(t *testing.T) {
 		_, err := e.svc.Detail(ctx, nil)
 		errContains(t, err, blockenums.ErrBlockParamRequired)
@@ -232,12 +214,6 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 	})
 }
 
-// TestBlockDetailByIdOnly 只带 id 的详情入口（工作台块编辑 / 块预览 / /admin/blocks/save-content）。
-//
-// 这三条路径的请求里没有工程参数，Detail 若一律要求 ProjectID 就全部失败 → 调用方折叠成
-// 404「全局块不存在」→ 块在列表页看得见、点「编辑」或新建后的跳转却打不开编辑器。
-// 非超级角色下的护栏见 public/test/rls/rls_block_scope_test.go（本包跑在超级用户上，
-// 「不限工程直查」也能读到行，抓不住这个缺陷）。
 func TestBlockDetailByIdOnly(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -251,11 +227,9 @@ func TestBlockDetailByIdOnly(t *testing.T) {
 		t.Fatalf("详情字段不一致: %#v", res)
 	}
 
-	// 合法但不存在的 uuid → 仍然报「块不存在」，不是静默空响应。
 	_, err = e.svc.Detail(ctx, &blockdto.DetailReq{ID: uuid.NewString()})
 	errContains(t, err, blockenums.ErrBlockNotFound)
 
-	// 非法形状的 id 判「不存在」（与 Update / Delete 同口径，不落到 PG 报 22P02）。
 	_, err = e.svc.Detail(ctx, &blockdto.DetailReq{ID: "not-a-uuid"})
 	errContains(t, err, blockenums.ErrBlockNotFound)
 }
@@ -266,8 +240,6 @@ func TestBlockDetailNotFound(t *testing.T) {
 	_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: uuid.NewString()})
 	errContains(t, err, blockenums.ErrBlockNotFound)
 }
-
-// ---- Create ----
 
 func TestBlockCreateSuccess(t *testing.T) {
 	e := newEnv(t)
@@ -370,8 +342,6 @@ func TestBlockCreateDuplicateName(t *testing.T) {
 	})
 }
 
-// ---- Update ----
-
 func TestBlockUpdateSuccess(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -388,7 +358,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 		if res.Name != "新名" || res.Kind != blockmodel.KindFooter {
 			t.Fatalf("更新结果错误: %#v", res)
 		}
-		// 持久化验证：重新 Detail。
+
 		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if err != nil || got.Name != "新名" || got.Kind != blockmodel.KindFooter {
 			t.Fatalf("更新未持久化: %#v err=%v", got, err)
@@ -446,7 +416,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 			Document: json.RawMessage(`{"settings":{"layout":{"mode":"boxed"}},"root":[]}`),
 		})
 		errContains(t, err, blockenums.ErrBlockInvalidDoc)
-		// 失败后数据保持不变。
+
 		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if got.Name != "版心块" || docLayoutMode(t, got.Document) != "full" {
 			t.Fatalf("非法文档更新失败后数据不应变化: %#v", got)
@@ -492,8 +462,6 @@ func TestBlockUpdateInvalidRequest(t *testing.T) {
 	})
 }
 
-// ---- Delete ----
-
 func TestBlockDeleteSuccess(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -514,8 +482,7 @@ func TestBlockDeleteSuccess(t *testing.T) {
 func TestBlockDeleteNotExist(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	// 修复语义：删除不存在的块应报 ErrBlockNotFound（与 Detail/Update 一致，
-	// 此前 model.Delete RowsAffected=0 静默成功）。
+
 	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: uuid.NewString()}); err == nil {
 		t.Fatalf("删除不存在的块应报错")
 	}

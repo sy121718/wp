@@ -2,9 +2,6 @@ package i18n
 
 import "testing"
 
-// TestParseSiteLangURLMode 语言 URL 方案取值校验（站点设置页保存与启动恢复共用同一判据）：
-// 三枚举 + 空串回退默认方案 + 非法值拒绝。保存入口放行一个非法值，构建期才会以
-// 「访问路径莫名其妙」的形式暴露 —— 校验必须在这里钉死。
 func TestParseSiteLangURLMode(t *testing.T) {
 	cases := []struct {
 		raw    string
@@ -14,10 +11,10 @@ func TestParseSiteLangURLMode(t *testing.T) {
 		{raw: "off", want: SiteLangURLModeOff, wantOK: true},
 		{raw: "default_plain", want: SiteLangURLModeDefaultPlain, wantOK: true},
 		{raw: "all_prefix", want: SiteLangURLModeAllPrefix, wantOK: true},
-		// 空串 = 未配置，回退默认方案（不是错误：设置页不提交该字段是合法状态）。
+
 		{raw: "", want: SiteLangURLModeDefaultPlain, wantOK: true},
 		{raw: "   ", want: SiteLangURLModeDefaultPlain, wantOK: true},
-		// 非法值必须拒绝：大小写敏感（URL 方案是存储值不是展示文案）。
+
 		{raw: "OFF", wantOK: false},
 		{raw: "default", wantOK: false},
 		{raw: "prefix", wantOK: false},
@@ -40,12 +37,6 @@ func TestParseSiteLangURLMode(t *testing.T) {
 	}
 }
 
-// TestSiteLangURLModePurePredicates 方案判定是**纯函数**（入参决定结果，无全局可变状态）：
-// off 不分离路径、all_prefix 连默认语言也带前缀、default_plain 介于两者之间。
-//
-// 替代原先的「写入进程值后立即变化」round-trip 测试：那个 setter 已删除 ——
-// 方案是**工程级**的值（projects.settings.langURLMode），按工程解析（pipeline.SiteLangURLModeOf）；
-// 进程级可变值会让一个工程的设置决定另一个工程的判定，并被全局默认值的定时刷新周期打回。
 func TestSiteLangURLModePurePredicates(t *testing.T) {
 	cases := []struct {
 		mode              SiteLangURLMode

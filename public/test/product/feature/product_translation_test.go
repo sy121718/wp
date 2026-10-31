@@ -1,15 +1,3 @@
-// Package feature product 模块 feature 测试 —— 商品多语言（issue #12）。
-//
-// 覆盖本票验收（真实 PostgreSQL + 生产迁移 + 真实 service / 实体类型注册表 / 编译器）：
-//  1. 商品域文本可翻译，译文与原文分离存放（sys_translation：source_hash + context + lang
-//     + source_text + target_text）；改原文后旧译文按 hash 自动失效，工作台给出提示；
-//  2. 翻译入口在商品管理页行内「多语言」按钮（字段旁语言页签的浏览器点击流见报告说明）；
-//  3. 切换构建语言产物文本不同；无译文逐字节回退原文；
-//  4. slug / SKU 编码 / 条码 / 价格与数字不参与翻译（既不进候选，也不随语言变化）；
-//  5. 属性值只翻展示文本：值 key（筛选参数 / URL 段 / 规格组合）原样保留；
-//  6. 译文变更触发受影响页面重建（pages.stale 置位，与页面翻译工作台同一链路）。
-//
-// PG 不可用时 t.Skip（与其他 feature 测试一致）。
 package feature
 
 import (
@@ -43,7 +31,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// trProductDoc 商品详情页文档：全部命名槽位都声明，便于逐项核对产物文本。
 const trProductDoc = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd","type":"core.product","props":{` +
 	`"mediaField":"product.defaultImage","mediaAltField":"product.imageAlt",` +
 	`"galleryField":"product.images","galleryAltField":"product.imageAlts",` +
@@ -51,8 +38,6 @@ const trProductDoc = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd",
 	`"priceField":"product.priceRange","descriptionField":"product.description",` +
 	`"optionsField":"product.options","variantsField":"product.variants"}}]}`
 
-// trFixture 商品多语言测试环境：隔离 PG schema + 生产迁移 + 真实 project / product service
-// + 已注册五个商品域实体类型的实体类型注册表（与线上装配同形）。
 type trFixture struct {
 	db        *gorm.DB
 	products  *productservice.Service
@@ -61,7 +46,6 @@ type trFixture struct {
 	projectID string
 }
 
-// newTRFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newTRFixture(t *testing.T) *trFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -75,7 +59,7 @@ func newTRFixture(t *testing.T) *trFixture {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 站点语言清单：默认 zh-CN + 启用 en-US（构建语言取自工程默认语言 / 显式注入）。
+
 	enabled := true
 	if _, err := projects.SaveLocales(ctx, &projectdto.LocalesSaveReq{
 		ProjectID: project.ID,
@@ -95,7 +79,6 @@ func newTRFixture(t *testing.T) *trFixture {
 	return &trFixture{db: db, products: products, projects: projects, registry: registry, projectID: project.ID}
 }
 
-// putTranslation 写入一条内容译文（内容寻址：原文 hash + 语境 + 语言；原文与译文分列）。
 func (f *trFixture) putTranslation(t *testing.T, source, contextName, lang, target string) {
 	t.Helper()
 	if err := f.db.Exec(
@@ -106,9 +89,6 @@ func (f *trFixture) putTranslation(t *testing.T, source, contextName, lang, targ
 	}
 }
 
-// compileEntityPage 用生产同形链路（注册表 → 解析器 → 编译器）把页面文档编译成产物 HTML。
-//
-// 语言经 core.WithBuildLang 进上下文 —— 与 presentation 发布链路一致（语言不进 AST）。
 func (f *trFixture) compileEntityPage(t *testing.T, entityType, entityID, lang, doc string) string {
 	t.Helper()
 	page, err := builder.ParsePage([]byte(doc))
@@ -137,7 +117,6 @@ func (f *trFixture) compileEntityPage(t *testing.T, entityType, entityID, lang, 
 	return compiled.HTML
 }
 
-// trResolve 直接读某实体字段在某语言下的取值（绕过渲染，断言字段级行为）。
 func trResolve(t *testing.T, f *trFixture, entityType, entityID, lang, field string) string {
 	t.Helper()
 	buildCtx := core.WithBuildLang(core.WithBuildProjectID(context.Background(), f.projectID), lang)
@@ -152,12 +131,10 @@ func trResolve(t *testing.T, f *trFixture, entityType, entityID, lang, field str
 	return value
 }
 
-// trCandidates 候选按语境索引（同一语境可有多条：数组字段逐元素）。
 type trCandidates struct {
 	byContext map[string][]string
 }
 
-// trIndex 把候选列表转成语境索引。
 func trIndex(cands []productcontract.TranslationCandidate) trCandidates {
 	idx := trCandidates{byContext: map[string][]string{}}
 	for _, c := range cands {
@@ -166,7 +143,6 @@ func trIndex(cands []productcontract.TranslationCandidate) trCandidates {
 	return idx
 }
 
-// has 某语境下是否存在指定原文的候选。
 func (idx trCandidates) has(contextName, source string) bool {
 	for _, s := range idx.byContext[contextName] {
 		if s == source {
@@ -176,14 +152,11 @@ func (idx trCandidates) has(contextName, source string) bool {
 	return false
 }
 
-// hasContext 某语境是否出现在候选里。
 func (idx trCandidates) hasContext(contextName string) bool {
 	_, ok := idx.byContext[contextName]
 	return ok
 }
 
-// trWorkbench 装配商品域翻译工作台引擎（与线上装配同形：真候选收集 + 真 sys_translation
-// 写入 + 真 pages 表标记待重建；真实 Jet 模板渲染）。
 func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -193,12 +166,11 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
-	// 保存已改接口端点（页面走 ui/write-base.js），页面 POST 已下线。
+
 	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
 	return engine
 }
 
-// trWorkbenchGet 渲染商品域翻译工作台并返回 HTML。
 func trWorkbenchGet(t *testing.T, engine *gin.Engine, projectID, productID, lang string) string {
 	t.Helper()
 	target := "/admin/products/translations?project=" + projectID + "&lang=" + lang
@@ -213,7 +185,6 @@ func trWorkbenchGet(t *testing.T, engine *gin.Engine, projectID, productID, lang
 	return rec.Body.String()
 }
 
-// trInsertPage 直接插入一条页面行（用于观察「译文变更 → 页面待重建」标记）。
 func trInsertPage(t *testing.T, db *gorm.DB, id, projectID, path string) {
 	t.Helper()
 	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time) "+
@@ -223,7 +194,6 @@ func trInsertPage(t *testing.T, db *gorm.DB, id, projectID, path string) {
 	}
 }
 
-// trPageStale 读取页面 stale 标记。
 func trPageStale(t *testing.T, db *gorm.DB, id string) bool {
 	t.Helper()
 	var stale bool
@@ -233,7 +203,6 @@ func trPageStale(t *testing.T, db *gorm.DB, id string) bool {
 	return stale
 }
 
-// trInstanceStale 读取自动发布实例的 stale 标记。
 func trInstanceStale(t *testing.T, db *gorm.DB, id string) bool {
 	t.Helper()
 	var stale bool
@@ -243,7 +212,6 @@ func trInstanceStale(t *testing.T, db *gorm.DB, id string) bool {
 	return stale
 }
 
-// trTranslationCount 统计某语言的译文行数。
 func trTranslationCount(t *testing.T, db *gorm.DB, lang string) int64 {
 	t.Helper()
 	var n int64
@@ -253,7 +221,6 @@ func trTranslationCount(t *testing.T, db *gorm.DB, lang string) int64 {
 	return n
 }
 
-// trTranslationOf 读取一条译文的 (target_text, engine)。
 func trTranslationOf(t *testing.T, db *gorm.DB, source, contextName, lang string) (target, engineName string) {
 	t.Helper()
 	row := struct {
@@ -267,9 +234,6 @@ func trTranslationOf(t *testing.T, db *gorm.DB, source, contextName, lang string
 	return row.TargetText, row.Engine
 }
 
-// TestProductTranslationCandidatesScopeAndNonTranslatable 验收 1 / 4：
-// 候选 = 商品自身 + 引用的分类 / 品牌 / 标签 / 属性组的**可翻译白名单字段**；
-// slug / SKU / 条码 / 价格 / 图片 URL / 属性值 key / 纯数字一律不进候选。
 func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 	f := newTRFixture(t)
 	if f == nil {
@@ -347,9 +311,6 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		"product_tag.name":             {"当季"},
 		"product_attribute.name":       {"颜色"},
 		"product_attribute.values":     {"红色", "蓝色"},
-		// seoTitle / seoDescription 不在候选里（2026-09-30 字段合并）：它们是
-		// name / subtitle（分类与品牌是 name / description）的别名，译文直接取源字段的，
-		// 单列出来等于给翻译工作台加两个「填了也不生效」的输入框。
 	}
 	for contextName, sources := range want {
 		for _, src := range sources {
@@ -359,7 +320,6 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		}
 	}
 
-	// 验收 4：非翻译字段不进候选（标识 / 链接 / 数字 / 白名单外字段 / 已合并的 SEO 别名）。
 	for _, forbidden := range []string{
 		"product.slug", "product.sku", "product.unit", "product.images", "product.defaultImage",
 		"product.price", "product.comparePrice", "product.priceRange", "product.minPrice", "product.maxPrice",
@@ -375,13 +335,12 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 			t.Fatalf("非翻译字段 %s 不应进候选（实际 %q）", forbidden, idx.byContext[forbidden])
 		}
 	}
-	// 条码根本不在白名单里（也就不可能被翻译）。
+
 	if productcontract.IsValidField(productcontract.EntityTypeProduct, "barcode") ||
 		productcontract.IsTranslatableField(productcontract.EntityTypeProduct, "barcode") {
 		t.Fatal("条码不应在商品字段白名单 / 可翻译字段里")
 	}
 
-	// 候选自洽：语境 = 实体类型.字段名；source_hash 与原文一一对应（写入与校验共用）。
 	for _, c := range cands {
 		if c.Context != c.EntityType+"."+c.Field {
 			t.Fatalf("候选语境 %q 与实体类型 / 字段不符（%s / %s）", c.Context, c.EntityType, c.Field)
@@ -394,7 +353,6 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		}
 	}
 
-	// 跳过规则（决策 F7）：纯数字 / 纯符号文本不进候选。
 	numeric, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "编号商品", Subtitle: "2024", Slug: "numeric-product",
 		DefaultPrice: &price,
@@ -414,7 +372,6 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		t.Fatalf("商品名仍应是候选：%+v", numIdx.byContext)
 	}
 
-	// 工程级候选：未被商品引用的分类也要可翻译（先建后挂），且按 (hash, context) 去重。
 	projectCands, err := f.products.ProjectTranslationCandidates(ctx, f.projectID)
 	if err != nil {
 		t.Fatalf("收集工程级候选失败: %v", err)
@@ -433,9 +390,6 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 	}
 }
 
-// TestProductArtifactTranslatesFieldsWithByteFallback 验收 3 / 4 / 5：
-// 同一商品同一模板，英文构建用译文、无译文字段逐字节回退原文；
-// slug / SKU / 价格 / 图片 URL 两语言完全一致；规格选择器的值 key 原样保留。
 func TestProductArtifactTranslatesFieldsWithByteFallback(t *testing.T) {
 	f := newTRFixture(t)
 	if f == nil {
@@ -469,7 +423,7 @@ func TestProductArtifactTranslatesFieldsWithByteFallback(t *testing.T) {
 	if _, err := f.products.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: created.ID}); err != nil {
 		t.Fatalf("生成变体组合失败: %v", err)
 	}
-	// 只翻一部分：商品名 / 描述 / 首张图 alt / 属性组名 / 一个属性值。
+
 	f.putTranslation(t, "夏季衬衫", "product.name", "en-US", "Summer Shirt")
 	f.putTranslation(t, "<p>纯棉透气</p>", "product.description", "en-US", "<p>Breathable cotton</p>")
 	f.putTranslation(t, "正面图", "product.imageAlts", "en-US", "Front view")
@@ -490,15 +444,15 @@ func TestProductArtifactTranslatesFieldsWithByteFallback(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"Summer Shirt",      // product.name 有译文 → 用译文
-		"Breathable cotton", // product.description 有译文 → 用译文
-		`alt="Front view"`,  // product.imageAlts 首个元素有译文
-		"Color", "Red",      // 属性组名与属性值展示文本
-		"纯棉透气",         // product.subtitle 无译文 → 逐字节回退原文
-		`alt="背面图"`,    // 第二个 alt 无译文 → 逐字节回退原文
-		"蓝色",           // 第二个属性值无译文 → 回退原文
-		`value="blue"`, // 值 key（筛选参数 / URL 段）原样保留
-		"¥99",          // 价格是数字，不参与翻译
+		"Summer Shirt",
+		"Breathable cotton",
+		`alt="Front view"`,
+		"Color", "Red",
+		"纯棉透气",
+		`alt="背面图"`,
+		"蓝色",
+		`value="blue"`,
+		"¥99",
 	} {
 		if !strings.Contains(en, want) {
 			t.Fatalf("英文产物应含 %q：%s", want, en)
@@ -510,7 +464,6 @@ func TestProductArtifactTranslatesFieldsWithByteFallback(t *testing.T) {
 		}
 	}
 
-	// 验收 4：标识 / 价格 / 图片 URL 在两语言下逐字节相同。
 	for _, field := range []string{
 		"product.slug", "product.sku", "product.images", "product.defaultImage",
 		"product.price", "product.priceRange", "product.minPrice", "product.maxPrice",
@@ -527,9 +480,6 @@ func TestProductArtifactTranslatesFieldsWithByteFallback(t *testing.T) {
 	}
 }
 
-// TestCategoryBrandTagAttributeEntityTranslations 验收 1：
-// 分类名 / 分类描述、品牌名、标签名、属性组名都按构建语言取译文；
-// 属性值字段逐元素取译文且只含展示文本（key 不进数组）。
 func TestCategoryBrandTagAttributeEntityTranslations(t *testing.T) {
 	f := newTRFixture(t)
 	if f == nil {
@@ -594,7 +544,6 @@ func TestCategoryBrandTagAttributeEntityTranslations(t *testing.T) {
 		}
 	}
 
-	// 属性值：逐元素取译文、无译文回退原文；值 key 不入数组（验收 5）。
 	values := trResolve(t, f, "product_attribute", attr.ID, "en-US", "product_attribute.values")
 	if !strings.Contains(values, "Red") || !strings.Contains(values, "蓝色") {
 		t.Fatalf("属性值应逐元素取译文并回退原文，实际 %s", values)
@@ -602,7 +551,7 @@ func TestCategoryBrandTagAttributeEntityTranslations(t *testing.T) {
 	if strings.Contains(values, "red") {
 		t.Fatalf("属性值数组不应含值 key（它是筛选参数 / 规格组合的稳定标识），实际 %s", values)
 	}
-	// 值 key 与 slug 本身永不变。
+
 	if got := trResolve(t, f, "product_attribute", attr.ID, "en-US", "product_attribute.key"); got != "color" {
 		t.Fatalf("属性值 key 不应随语言变化：%q", got)
 	}
@@ -611,14 +560,10 @@ func TestCategoryBrandTagAttributeEntityTranslations(t *testing.T) {
 	}
 }
 
-// trHeadingDoc 单标题组件的页面文档（用于把某个实体字段渲染进产物）。
 func trHeadingDoc(field string) string {
 	return `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"` + field + `"}}}]}`
 }
 
-// TestProductTranslationInvalidatedAfterSourceChange 验收 1：
-// 译文按 (原文 hash, 语境, 语言) 寻址 —— 改原文后旧译文自动失效，
-// 产物回退新原文；工作台显示「缺失」并在旧指纹提交时明确提示。
 func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 	f := newTRFixture(t)
 	if f == nil {
@@ -637,7 +582,6 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 		t.Fatalf("改原文前英文构建应使用译文：%s", en)
 	}
 
-	// 改原文（商品名）→ 旧译文不再命中。
 	newName := "春季衬衫"
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: created.ID, Name: &newName}); err != nil {
 		t.Fatalf("改商品名失败: %v", err)
@@ -650,7 +594,6 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 		t.Fatalf("无译文字段应逐字节回退新原文：%s", en)
 	}
 
-	// 工作台：新原文是候选（新 hash），旧译文行不再命中 → 状态「缺失」。
 	engine := trWorkbench(t, f)
 	body := trWorkbenchGet(t, engine, f.projectID, created.ID, "en-US")
 	if !strings.Contains(body, `name="rowHash" value="`+i18n.ContentHash("春季衬衫")+`"`) {
@@ -663,13 +606,12 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 		t.Fatalf("旧译文失效后工作台应显示「缺失」 %s", body)
 	}
 
-	// 以旧指纹提交 → 明确提示「原文已变更」，且不写库。
 	rec := postJSON(t, engine, "/api/product/translations/save", map[string]any{
 		"projectId": f.projectID, "productId": created.ID, "lang": "en-US",
 		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
 		"rowTarget": []string{"Spring Shirt"},
 	})
-	// 失败不再是「重渲工作台」，而是 400 + 逐行结论拼成的一条 message（含字段语境与原因）。
+
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("指纹不符应回 400，实际 %d", rec.Code)
 	}
@@ -681,9 +623,6 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 	}
 }
 
-// TestProductTranslationWorkbenchSaveAndStaleMarking 验收 1 / 6：
-// 工作台保存 → 译文与原文分列落库（engine=manual）→ 受影响页面标记待重建 →
-// 英文构建读到新译文；原样重复保存幂等（零写入、不重复标记）。
 func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	f := newTRFixture(t)
 	if f == nil {
@@ -701,7 +640,6 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	trInsertPage(t, f.db, pageID, f.projectID, "/about")
 	engine := trWorkbench(t, f)
 
-	// 工作台渲染：候选与写入方（contract 白名单）同源，行内带语境与原文指纹。
 	body := trWorkbenchGet(t, engine, f.projectID, created.ID, "en-US")
 	for _, want := range []string{
 		`name="rowContext" value="product.name"`,
@@ -726,21 +664,20 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	if !strings.Contains(savedEnv.Message, "1 条译文") {
 		t.Fatalf("成功回执应含写入条数，实际 %q", savedEnv.Message)
 	}
-	// 原文与译文分列存放（验收 1）。
+
 	target, engineName := trTranslationOf(t, f.db, "夏季衬衫", "product.name", "en-US")
 	if target != "Summer Shirt" || engineName != i18n.ContentEngineManual {
 		t.Fatalf("译文 / 来源不符：%q / %q", target, engineName)
 	}
-	// 译文变更 → 受影响页面标记待重建（验收 6）。
+
 	if !trPageStale(t, f.db, pageID) {
 		t.Fatalf("译文变更应把受影响页面标记待重建")
 	}
-	// 端到端：工作台写下的译文在英文构建里生效。
+
 	if en := f.compileEntityPage(t, "product", created.ID, "en-US", trProductDoc); !strings.Contains(en, "Summer Shirt") {
 		t.Fatalf("工作台写下的译文应在英文产物里生效：%s", en)
 	}
 
-	// 幂等：复位 stale 后原样再保存 → 零写入、不重复标记。
 	if err := f.db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
@@ -760,16 +697,13 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	}
 }
 
-// TestProductTranslationStalesPresentationInstances 验收 6（商品产物侧）：
-// 商品页面是自动发布实例而不是手工 Page —— 译文变更除了标记 page，
-// 还要按 direct_content:{实体类型}:{实体id} 精确标记受影响实例待重建。
 func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 站点语言：en-US 为默认（实例按工程默认语言构建），zh-CN 一并启用。
+
 	enabled := true
 	if _, err := f.projects.SaveLocales(ctx, &projectdto.LocalesSaveReq{
 		ProjectID: f.projectID,
@@ -788,7 +722,6 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	const pageID = "aaaaaaaa-2222-0000-0000-000000000012"
 	trInsertPage(t, f.db, pageID, f.projectID, "/about")
 
-	// 工作台注入实例失效端口（presentation 契约实现，与线上装配同形）。
 	gin.SetMode(gin.TestMode)
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
 	handle := producthttp.NewProductTranslationHandle(f.products, pages, f.pres)
@@ -811,7 +744,7 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	if !trPageStale(t, f.db, pageID) {
 		t.Fatalf("译文变更应同时标记手工页面待重建（page 侧链路不变）")
 	}
-	// 端到端：重建实例后产物确实换成了译文。
+
 	if _, err := f.pres.Rebuild(ctx, &presentationdto.RebuildReq{EntityID: productID}); err != nil {
 		t.Fatalf("重建实例失败: %v", err)
 	}
@@ -820,9 +753,6 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	}
 }
 
-// TestProductsPageShowsTranslationEntry 验收 2（本批改版）：
-// 翻译入口随「编辑」进入 —— 列表操作列只留一个编辑入口（多语言不再单占一格），
-// 编辑页里给出指向商品域翻译工作台（按商品过滤）的多语言链接。
 func TestProductsPageShowsTranslationEntry(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
@@ -844,7 +774,7 @@ func TestProductsPageShowsTranslationEntry(t *testing.T) {
 	if strings.Contains(body, want) {
 		t.Fatalf("多语言不该再占列表操作列一格（已移入编辑页）：%s", body)
 	}
-	// 入口移走不等于丢掉：编辑页里必须有它，且仍按商品过滤。
+
 	editBody := getProductEditPage(engine, f.projectID, created.ID)
 	if !strings.Contains(editBody, want) {
 		t.Fatalf("编辑页缺少「多语言」入口（缺 %s） %s", want, editBody)

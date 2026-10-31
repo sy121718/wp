@@ -1,19 +1,5 @@
 package unit
 
-// page_stale_page_ids_test.go —— 「按依赖键重建」的候选来源端口（ListStalePageIDs）。
-//
-// 背景：菜单译文 / 按项菜单变更后，失效执行器要重建受影响页面。它原先只认草稿列表，
-// 而**已发布**的页面不在草稿列表里 —— 于是「线上正在服务的那一面」永远不重建，
-// 用户看到的还是旧菜单。这个端口就是那一批候选的唯一来源。
-//
-// 判据（三条，缺一不可）：
-//   - 只含本工程（工程隔离：别的工程的 stale 页面不得混进来）；
-//   - 只含 stale = true 且未软删（软删的页面不重建）；
-//   - 已发布与未发布**都要**（是否已发布由调用方自己的发布口径再筛）。
-//
-// 排序被单独钉住：update_time ASC, id ASC。不排序时超限工程会反复重建同一小撮，
-// 剩下的永远轮不到 —— 表现是「每次重建 20 个、线上一直不收敛」。
-
 import (
 	"context"
 	"strconv"
@@ -26,7 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// staleIDsOf 走生产实现读候选列表。
 func staleIDsOf(t *testing.T, db *gorm.DB, projectID string) []string {
 	t.Helper()
 	ids, err := pagemodel.NewPageModel(db).ListStalePageIDs(context.Background(), projectID)
@@ -36,7 +21,6 @@ func staleIDsOf(t *testing.T, db *gorm.DB, projectID string) []string {
 	return ids
 }
 
-// TestListStalePageIDsCoversPublishedAndUnpublished 已发布与未发布的 stale 页都要在候选里。
 func TestListStalePageIDsCoversPublishedAndUnpublished(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 
@@ -64,7 +48,6 @@ func TestListStalePageIDsCoversPublishedAndUnpublished(t *testing.T) {
 	}
 }
 
-// TestListStalePageIDsExcludesDeletedAndOtherProjects 软删与别的工程都不得混入。
 func TestListStalePageIDsExcludesDeletedAndOtherProjects(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	otherProject := createOtherProject(t, projects)
@@ -89,7 +72,6 @@ func TestListStalePageIDsExcludesDeletedAndOtherProjects(t *testing.T) {
 	}
 }
 
-// TestListStalePageIDsOrderedByMarkTime 排序：先标先返回（超限分批时保证重试单向前进）。
 func TestListStalePageIDsOrderedByMarkTime(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 
@@ -97,9 +79,6 @@ func TestListStalePageIDsOrderedByMarkTime(t *testing.T) {
 	second := createPage(t, svc, projectID, "/stale/second", publishContextDoc).ID
 	third := createPage(t, svc, projectID, "/stale/third", publishContextDoc).ID
 
-	// 故意让标记时间与 id 顺序相反：只按 id 排序时这里会通不过。
-	// 分钟数按 text 传：`? || ' minutes'` 里 ? 的推断类型是 text，传 int 会报
-	// unable to encode 30 into text format for text (OID 25)。
 	statement := "UPDATE pages SET stale = true, update_time = now() - (? || ' minutes')::interval WHERE id = ?"
 	for i, id := range []string{first, second, third} {
 		if err := db.Exec(statement, strconv.Itoa(30-i*10), id).Error; err != nil {
@@ -119,7 +98,6 @@ func TestListStalePageIDsOrderedByMarkTime(t *testing.T) {
 	}
 }
 
-// TestListStalePageIDsRejectsEmptyProject 空工程是受控错误（不是全库查询）。
 func TestListStalePageIDsRejectsEmptyProject(t *testing.T) {
 	db, _, _, _ := newPageService(t)
 	if _, err := pagemodel.NewPageModel(db).ListStalePageIDs(context.Background(), "  "); err == nil {
@@ -127,7 +105,6 @@ func TestListStalePageIDsRejectsEmptyProject(t *testing.T) {
 	}
 }
 
-// createOtherProject 建第二个工程（工程隔离判据的对照组）。
 func createOtherProject(t *testing.T, projects *projectservice.Service) string {
 	t.Helper()
 	p, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "另一个工程"})

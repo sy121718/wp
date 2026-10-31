@@ -79,7 +79,7 @@ func TestDTOFieldsExpandEmbeddedRequestsAcrossFiles(t *testing.T) {
 		t.Fatalf("匿名字段丢失：%+v", got["testdto.PreviewReq"])
 	}
 	base.Fields = append(base.Fields, fieldSchema{Name: "note", Required: true})
-	base.Fields[0].Required = false // 未声明必填的匿名指针允许整个组合缺省。
+	base.Fields[0].Required = false
 	if !reflect.DeepEqual(got["testdto.ApplyReq"], base) {
 		t.Fatalf("指针嵌入或直属字段丢失：%+v", got["testdto.ApplyReq"])
 	}
@@ -127,8 +127,7 @@ func TestDTOFieldsKeepJSONContainersHandledByFormBinder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// form:"-" 只禁止反射绑定；有 json 名的容器可由 BindForm 接收。
-	// 两个入口均标成 "-" 的服务端字段不得进入客户端契约。
+
 	want := dtoInfo{Fields: []fieldSchema{{Name: "ruleParams"}, {Name: "amount"}}}
 	if !reflect.DeepEqual(got["testdto.Params"], want) {
 		t.Fatalf("双入口字段语义发生变化：%+v", got["testdto.Params"])
@@ -149,9 +148,7 @@ func TestShipmentCreateResolvesToRealHandlerThroughAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/order/shipment/create"
-	// 常规拼名规则确实拼不出来：动词 create + 资源词 shipment 的候选都不存在。
-	// 这条断言是本用例的前提 —— 若将来 order 把 handler 改名成 CreateShipment，
-	// 别名就该删掉（常规规则能命中时别名是多余配置）。
+
 	for _, camel := range []string{"CreateShipment", "Create"} {
 		if _, ok := bindings["order:"+camel]; ok {
 			t.Fatalf("handler %s 已存在，别名 %s 应删除（常规规则可覆盖）", camel, path)
@@ -168,30 +165,24 @@ func TestShipmentCreateResolvesToRealHandlerThroughAlias(t *testing.T) {
 
 func TestAliasRejectedWhenModuleScopeOrBindingDiffers(t *testing.T) {
 	path := "/api/order/shipment/create"
-	// 判据是「别名不被采纳」，不是「函数返回空」：别名失配后仍允许常规规则接管
-	//（matchHandler 的定义就是「先试别名，再走常规候选」）。所以每条都用
-	// 「必须不等于 order:ShipOrder」来断言，而不是钉 ""。
+
 	const aliasKey = "order:ShipOrder"
 
-	// handler 不存在 → 别名不采纳。常规规则此时会命中 CreateShipment —— 那是
-	// **另一个**真实 handler、另一份 DTO；别名不得越过它把契约改指 ShipOrder。
 	if got := matchHandler(path, "order", map[string]string{
 		"order:CreateShipment": "orderdto.ShipmentCreateReq",
 		"order:ShipOrder":      "",
 	}); got == aliasKey {
 		t.Fatalf("别名不得指向未扫到的 handler: %q", got)
 	}
-	// 路由模块与源码模块不一致 → 别名不采纳（此处 handler 表里没有 order 前缀的条目，
-	// 常规规则同样取不到任何键，故期望空）；跨模块伪造一条 product:ShipOrder 也不能被采纳。
+
 	if got := matchHandler(path, "product", map[string]string{"product:ShipOrder": "productdto.ShipOrderReq"}); got == aliasKey {
 		t.Fatalf("别名不得跨模块生效: %q", got)
 	}
-	// 绑定到的不是本模块 dto 包类型 → 拒绝（防止 handler 搬走后指错 DTO）。
-	// 这条不会被常规规则掩盖：CamelCase 候选（CreateShipment/Create）在这张表里不存在。
+
 	if got := matchHandler(path, "order", map[string]string{"order:ShipOrder": "productdto.ShipOrderReq"}); got == aliasKey {
 		t.Fatalf("别名不得绑定他模块 DTO: %q", got)
 	}
-	// 三条都成立才采纳。
+
 	if got := matchHandler(path, "order", map[string]string{"order:ShipOrder": "orderdto.ShipOrderReq"}); got != aliasKey {
 		t.Fatalf("合法别名应命中: %q", got)
 	}

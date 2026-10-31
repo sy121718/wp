@@ -8,15 +8,13 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// UI-021/022 契约测试锁定工作台聚焦模式和独立登录页的窄屏可达性。
 func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	data := map[string]any{
 		"title": "页面管理", "pageId": "page-1", "isBlock": false, "isTemplate": false,
 		"document": "{}", "meta": "{}", "schemas": "{}", "jsVer": "test",
-		// t / lang 是工作台模板的**必需键**（模板顶层 tr := .["t"] 取词，缺它文案会静默变空，
-		// 与 admin 各页渲染测试同一口径）。生产路径统一由 adminui.Prepare 注入。
+
 		"t": TranslateFunc("zh-CN"), "lang": "zh-CN",
 	}
 	html, err := render(t, set, "workbench/layout", data)
@@ -52,8 +50,7 @@ func TestUI022AdminLoginResponsiveContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"width: min(100%, 416px)", "padding: 16px", "box-sizing: border-box", "max-height: calc(100vh - 32px)", `role="alert"`, `aria-live="polite"`, "msgEl.focus()", "max-width: 42%",
-		// 输入框视觉走基座（2026-10-01 基座清洗）：本页只留尺寸差异，
-		// 边框 / 圆角 / 焦点 / 禁用态由 ui.css 给 —— 契约跟着改成断言这两件引用。
+
 		"/static/css/ui.css", `class="form-input"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("登录页契约缺少 %q", want)

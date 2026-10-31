@@ -13,7 +13,6 @@ import (
 	"go_wp/pkg/sitehttps"
 )
 
-// CartPublicHandle 只适配访客输入与可信 cookie，不生成视图。
 type CartPublicHandle struct{ svc cartcontract.CartService }
 
 func NewCartPublicHandle(svc cartcontract.CartService) *CartPublicHandle {
@@ -92,17 +91,15 @@ func (h *CartPublicHandle) Checkout(c *gin.Context) {
 
 func requestCookie(c *gin.Context, name string) string { value, _ := c.Cookie(name); return value }
 
-// writeCartCookie 的安全属性只取部署配置，不信请求转发头。
 func writeCartCookie(c *gin.Context, value string) {
 	if strings.TrimSpace(value) == "" {
 		return
 	}
 	cookie := &http.Cookie{Name: cartcontract.CartCookieName, Value: value, Path: "/", MaxAge: cartcontract.CartCookieMaxAgeSeconds, HttpOnly: true, Secure: sitehttps.Enabled(), SameSite: http.SameSiteLaxMode}
-	// 追加响应头，保留同一次请求里访客会话写入的 cookie。
+
 	c.Writer.Header().Add("Set-Cookie", cookie.String())
 }
 
-// checkoutRequestMetadata 只读可信请求上下文，客户端同名字段被 DTO 屏蔽。
 func checkoutRequestMetadata(c *gin.Context, req *cartdto.CartCheckoutReq) {
 	req.Cookie = requestCookie(c, cartcontract.CartCookieName)
 	req.Tracking = cartdto.TrackCookies{Current: requestCookie(c, "gw_src"), First: requestCookie(c, "gw_first"), Session: requestCookie(c, "gw_sess"), Trail: requestCookie(c, "gw_trail"), Visitor: requestCookie(c, "gw_vis")}

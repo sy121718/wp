@@ -1,17 +1,11 @@
 package tree
 
-// tree_test.go — 树组装的判据。
-//
-// 重点是**边界语义**而不是「能建出树」：三份原实现在「父不在列表里」「环」「兄弟顺序」
-// 这三件事上的处理不一样，合并之后必须有测试把它们钉住，否则下次改动会悄悄退回其中一种。
-
 import (
 	"strings"
 	"testing"
 	"time"
 )
 
-// testNode 测试用节点（实现 Node[int] 约束）。
 type testNode struct {
 	ID       int
 	ParentID int
@@ -23,7 +17,6 @@ func (n testNode) TreeID() int                    { return n.ID }
 func (n testNode) TreeParentID() int              { return n.ParentID }
 func (n *testNode) SetTreeChildren(c []Node[int]) { n.Children = c }
 
-// shape 把树摊成 "根 .子 ..孙" 这样的层级串，用于断言形状。
 func shape(nodes []*testNode) string {
 	var parts []string
 	var walk func(ns []Node[int], depth int)
@@ -42,7 +35,6 @@ func shape(nodes []*testNode) string {
 	return strings.Join(parts, " ")
 }
 
-// countNodes 统计树里每个 ID 出现的次数（用来证明「不丢节点、不重复挂载」）。
 func countNodes(nodes []*testNode) map[int]int {
 	seen := map[int]int{}
 	var walk func(ns []Node[int])
@@ -61,7 +53,6 @@ func countNodes(nodes []*testNode) map[int]int {
 	return seen
 }
 
-// TestBuildBasicShape 多层、多根、兄弟顺序 = 输入顺序。
 func TestBuildBasicShape(t *testing.T) {
 	items := []*testNode{
 		{ID: 1, ParentID: 0, Name: "a"},
@@ -76,16 +67,12 @@ func TestBuildBasicShape(t *testing.T) {
 	}
 }
 
-// TestBuildOrphanBecomesRoot 父不在列表里 → 归入根，不丢节点。
-//
-// 部门树原实现：`else { roots = append(roots, node) }`；菜单树原实现把孤儿并入 childrenOf[0]。
-// 两种做法在这里统一成「归入根」。
 func TestBuildOrphanBecomesRoot(t *testing.T) {
 	items := []*testNode{
 		{ID: 1, ParentID: 0, Name: "root"},
-		{ID: 2, ParentID: 999, Name: "orphan"},    // 父不存在
-		{ID: 3, ParentID: 999, Name: "orphan2"},   // 同一个不存在的父
-		{ID: 4, ParentID: 2, Name: "orphanChild"}, // 孤儿的孩子跟着孤儿走
+		{ID: 2, ParentID: 999, Name: "orphan"},
+		{ID: 3, ParentID: 999, Name: "orphan2"},
+		{ID: 4, ParentID: 2, Name: "orphanChild"},
 	}
 	got := Build(items)
 	if len(countNodes(got)) != 4 {
@@ -96,7 +83,6 @@ func TestBuildOrphanBecomesRoot(t *testing.T) {
 	}
 }
 
-// TestBuildSelfParentIsRoot 自己指向自己：当根，不死循环。
 func TestBuildSelfParentIsRoot(t *testing.T) {
 	got := Build([]*testNode{{ID: 1, ParentID: 1, Name: "self"}})
 	if len(got) != 1 || got[0].Name != "self" {
@@ -104,11 +90,6 @@ func TestBuildSelfParentIsRoot(t *testing.T) {
 	}
 }
 
-// TestBuildCycleDoesNotHang 环形父引用必须终止，且每个节点恰好出现一次。
-//
-// 这是本包存在的**主要理由**：Jet 模板递归渲染环形数据会
-// `fatal error: stack overflow`（Go 的 fatal error，recover 抓不住，整个进程退出）。
-// 管理员写错父级完全可能，所以 Build 必须挡住 —— 宁可让环节点在顶层露出一次。
 func TestBuildCycleDoesNotHang(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -160,7 +141,6 @@ func TestBuildCycleDoesNotHang(t *testing.T) {
 	}
 }
 
-// TestDetectCycle 环检测能给出具体的链（供管理界面提示「A 和 B 互为父级」）。
 func TestDetectCycle(t *testing.T) {
 	cycle := DetectCycle([]*testNode{
 		{ID: 1, ParentID: 0, Name: "root"},
@@ -178,7 +158,6 @@ func TestDetectCycle(t *testing.T) {
 	}
 }
 
-// TestDetectCycleNone 没有环时返回空。
 func TestDetectCycleNone(t *testing.T) {
 	if c := DetectCycle([]*testNode{
 		{ID: 1, ParentID: 0, Name: "a"},
@@ -189,7 +168,6 @@ func TestDetectCycleNone(t *testing.T) {
 	}
 }
 
-// TestBuildEmpty 空输入返回 nil（不是空切片）：调用点据此判断「没有树」。
 func TestBuildEmpty(t *testing.T) {
 	if got := Build([]*testNode{}); got != nil {
 		t.Fatalf("空输入应回 nil，实际 %v", got)
@@ -199,10 +177,6 @@ func TestBuildEmpty(t *testing.T) {
 	}
 }
 
-// TestBuildSiblingOrderIsInputOrder 兄弟顺序 = 输入顺序，不做任何排序。
-//
-// 三个调用点的输入都已按 (sort_order, id) 排好；树若自己再排一遍，
-// 就会出现「查询改了排序、页面没变」的错觉。
 func TestBuildSiblingOrderIsInputOrder(t *testing.T) {
 	got := Build([]*testNode{
 		{ID: 10, ParentID: 1, Name: "z"},

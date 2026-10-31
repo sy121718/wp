@@ -1,8 +1,5 @@
 package plugincomp
 
-// plugincomp 单元测试：manifest 校验（合法/非法矩阵）、BuildSpecs 规格构建、
-// InspectorSchema 确定性。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -11,7 +8,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// 合法 manifest 基线。
 const legalManifest = `{
   "id": "marketing",
   "name": "营销组件",
@@ -37,7 +33,6 @@ func mustParse(t *testing.T, raw string) *Manifest {
 	return m
 }
 
-// TestParseLegal 合法 manifest 通过并构建规格。
 func TestParseLegal(t *testing.T) {
 	m := mustParse(t, legalManifest)
 	specs := BuildSpecs(m)
@@ -56,7 +51,6 @@ func TestParseLegal(t *testing.T) {
 	}
 }
 
-// TestValidateRejects 非法 manifest 矩阵拒绝。
 func TestValidateRejects(t *testing.T) {
 	cases := []struct {
 		name string
@@ -82,7 +76,6 @@ func TestValidateRejects(t *testing.T) {
 	}
 }
 
-// TestInspectorSchemaDeterministic 检查器 schema 生成确定（键排序）。
 func TestInspectorSchemaDeterministic(t *testing.T) {
 	m := mustParse(t, legalManifest)
 	a := InspectorSchema(m)
@@ -100,11 +93,11 @@ func TestInspectorSchemaDeterministic(t *testing.T) {
 	if len(controls) != 2 {
 		t.Fatalf("控件数错误: %d", len(controls))
 	}
-	// 键序：level < title（字典序）。
+
 	if controls[0]["key"] != "level" || controls[1]["key"] != "title" {
 		t.Fatalf("控件应按键字典序: %v", controls)
 	}
-	// section：color/unit 进 style，其余 content。
+
 	for _, c := range controls {
 		if c["section"] != "content" {
 			t.Fatalf("非样式控件应进 content: %v", c)
@@ -112,7 +105,6 @@ func TestInspectorSchemaDeterministic(t *testing.T) {
 	}
 }
 
-// TestSpecCompileStyles 闭包实际编译进 CSSBuckets（与 style 引擎联调）。
 func TestSpecCompileStyles(t *testing.T) {
 	m := mustParse(t, legalManifest)
 	spec := BuildSpecs(m)["plugin.marketing.campaign_card"]

@@ -1,13 +1,5 @@
 package artifactmodel_test
 
-// artifact_orphan_delete_gorm_test.go — DeleteOrphanContentObjects 从 Raw+RETURNING
-// 改成 GORM clause.Returning 之后，**返回的 hash 列表是否真的被写回**必须带库验一次。
-//
-// 为什么：GORM 不会为 `Delete(...)` 自动扫回 RETURNING 的结果 —— 需要
-// clause.Returning 与被 Delete 的 slice 同时在场才把列值填进去。少任何一半都不报错，
-// 只会让 deleted 恒为空；而调用方拿空列表去报「一个都没删」，比真删错了更难查
-//（磁盘上对象没了、日志说没删）。这里同时钉住「真被删除」与「没被引用的才删」。
-
 import (
 	"context"
 	"testing"
@@ -32,7 +24,7 @@ func TestDeleteOrphanContentObjectsReturnsDeletedHashes(t *testing.T) {
 		}
 	}
 	insert("orphan-old", old)
-	insert("recent", time.Now().UTC()) // 保留窗口内，不该被删
+	insert("recent", time.Now().UTC())
 
 	deleted, err := m.DeleteOrphanContentObjects(ctx, []string{"orphan-old", "recent"}, time.Now().UTC().Add(-time.Hour))
 	if err != nil {

@@ -1,9 +1,5 @@
 package builder
 
-// 插件组件集合绑定集成测试（docs/06 §9，不变量 4）：
-// 组件声明 collection → 构建期经 CollectionResolver 展开列表 → 模板 range 渲染，
-// 字段白名单裁剪（未声明字段不得进产物）。
-
 import (
 	"context"
 	"strings"
@@ -14,7 +10,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// 集合组件 manifest：product_list 绑定 content:product 集合，渲染 name/price。
 const collectionManifest = `{
   "id": "shop",
   "name": "商城组件",
@@ -27,12 +22,10 @@ const collectionManifest = `{
   }]
 }`
 
-// 集合模板：range 渲染 .V.items。
 const collectionTemplate = `<ul class="{{ .Classes }}">
   {{ range .V.items }}<li>{{ .name }} - {{ .price }}</li>{{ end }}
 </ul>`
 
-// fakeCollection 实现 core.CollectionResolver（返回固定列表 + 夹带字段）。
 type fakeCollection struct{}
 
 func (fakeCollection) ResolveCollection(_ context.Context, source string, filter map[string]string) ([]map[string]any, error) {
@@ -42,7 +35,6 @@ func (fakeCollection) ResolveCollection(_ context.Context, source string, filter
 	}, nil
 }
 
-// TestPluginCollectionRender 集合组件渲染 + 字段白名单裁剪。
 func TestPluginCollectionRender(t *testing.T) {
 	manifest, err := plugincomp.ParseManifest([]byte(collectionManifest))
 	if err != nil {
@@ -75,17 +67,15 @@ func TestPluginCollectionRender(t *testing.T) {
 		t.Fatalf("RenderDocument: %v", err)
 	}
 
-	// 列表展开：两条记录 + 字段值。
 	if !strings.Contains(html, "衬衫 - 99") || !strings.Contains(html, "裤子 - 199") {
 		t.Fatalf("列表未正确展开:\n%s", html)
 	}
-	// 字段白名单裁剪：secret 不得进产物。
+
 	if strings.Contains(html, "should-be-cropped") || strings.Contains(html, "secret") {
 		t.Fatalf("白名单外字段泄漏进产物:\n%s", html)
 	}
 }
 
-// TestPluginCollectionMissingResolver 无集合解析器时明确报错。
 func TestPluginCollectionMissingResolver(t *testing.T) {
 	manifest, _ := plugincomp.ParseManifest([]byte(collectionManifest))
 	specs := plugincomp.BuildSpecs(manifest)

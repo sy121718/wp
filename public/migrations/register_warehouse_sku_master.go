@@ -2,13 +2,6 @@ package migrations
 
 import "sync"
 
-// register_warehouse_sku_master.go — 642：仓库商品 SKU 主档补列（B3）。
-//
-// 完成判据枚举本批**每一个**对象：九列、三个 CHECK、一条索引。
-// 不写成「表存在即跳过」—— inventory_stocks 一直都在，那样会让存量库永久跳过本迁移。
-//
-// 判据只查 pg_attribute / pg_constraint / pg_indexes，**不引用目标列本身**：
-// 列还没建时 SQL 在解析阶段就失败（637 / 640 都踩过），那会让「尚未完成」变成一次真失败。
 func registerWarehouseSKUMaster() {
 	registerWarehouseSKUMasterOnce.Do(func() {
 		register(Migration{

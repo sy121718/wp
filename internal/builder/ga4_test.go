@@ -1,10 +1,5 @@
 package builder
 
-// ga4_test.go — 站点统计代码注入（BIZ-8）的字节级与安全边界断言。
-//
-// 三条不变量各有对应断言：空值零字节注入、形状不合法不注入（且绝不原样进 head）、
-// 同一构建输入产出同一字节（确定性）。
-
 import (
 	"strings"
 	"testing"
@@ -12,7 +7,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// TestGA4HeadEmptyAddsNoBytes 未配置测量 ID 时产物一个字节都不多。
 func TestGA4HeadEmptyAddsNoBytes(t *testing.T) {
 	if got := buildGA4Head(""); got != "" {
 		t.Fatalf("空测量 ID 应零字节注入，实际 %q", got)
@@ -30,7 +24,6 @@ func TestGA4HeadEmptyAddsNoBytes(t *testing.T) {
 	}
 }
 
-// TestGA4HeadInjectionIntoDocument 配置了合法测量 ID 时 head 里出现两段 gtag 脚本。
 func TestGA4HeadInjectionIntoDocument(t *testing.T) {
 	body := &CompiledPage{HTML: "<p>x</p>", GA4Head: buildGA4Head("G-ABC1234567")}
 	doc, err := RenderDocument(body)
@@ -48,13 +41,12 @@ func TestGA4HeadInjectionIntoDocument(t *testing.T) {
 	if !strings.Contains(head, "gtag('config','G-ABC1234567')") {
 		t.Fatalf("head 缺少 gtag config 调用:\n%s", head)
 	}
-	// 注入点在 head 内、且只出现一次（重复注入会把每次访问算成两次）。
+
 	if n := strings.Count(doc, "gtag/js?id="); n != 1 {
 		t.Fatalf("gtag 脚本应恰好出现 1 次，实际 %d 次", n)
 	}
 }
 
-// TestGA4MeasurementIDShape 形状校验：合法归一化、非法一律拒绝。
 func TestGA4MeasurementIDShape(t *testing.T) {
 	valid := []string{"G-ABC1234567", "g-abc1234567", "  G-ABCD  ", "G-1234"}
 	for _, in := range valid {
@@ -69,7 +61,7 @@ func TestGA4MeasurementIDShape(t *testing.T) {
 	}
 	invalid := []string{
 		"", "   ", "UA-123456-1", "GTM-ABCDEF", "G-", "G-abc 123",
-		// 注入形状：这些值一旦被拼进 head，就是脚本/属性逃逸。
+
 		`G-ABC"><script>alert(1)</script>`, "G-ABC'1234", "G-ABC<br>",
 	}
 	for _, in := range invalid {
@@ -82,7 +74,6 @@ func TestGA4MeasurementIDShape(t *testing.T) {
 	}
 }
 
-// TestCompileGA4Determinism 同一输入重复编译，GA4 片段与打点配置逐字节一致。
 func TestCompileGA4Determinism(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -122,7 +113,6 @@ func TestCompileGA4Determinism(t *testing.T) {
 	}
 }
 
-// TestCompileGA4AbsentZeroBytes 未注入测量 ID / 工程 ID 时，编译结果零字节。
 func TestCompileGA4AbsentZeroBytes(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {

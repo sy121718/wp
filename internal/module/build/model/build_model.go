@@ -1,8 +1,3 @@
-// Package buildmodel 构建任务队列的表访问单元（build_jobs，审计 DB-007 / DB-01）。
-//
-// 队列引擎选 PG 表而不是外部队列：构建任务需要**可见性**（后台能看队列深度与失败原因）
-// 与**可纠错**（失败任务能重试、僵尸任务能回收）。这两件事在内存队列或 asynq 里
-// 都要额外搭一套存储才能做到，而 build_jobs 这张表的形状本来就是为它设计的。
 package buildmodel
 
 import (
@@ -20,20 +15,13 @@ import (
 
 const tableNameBuildJobs = "build_jobs"
 
-// 允许的来源类型（与 DDL 的 build_jobs_source_type_check 逐字对应）。
-//
-// service 层也要有一份：数据库拒绝时的报错是约束名，到不了「看得懂的一句话」；
-// 更重要的是入队前拒绝才不会有半条任务留在表里。
 const (
 	SourceTypePage         = "page"
 	SourceTypePresentation = "presentation"
-	// SourceTypeMenuStale 导航菜单变化触发的重建（与迁移 698 的 CHECK 逐字对应）。
-	// 它的 source_id 不是裸 UUID 而是「工程 UUID:菜单位置」，见 builddto.SplitMenuStaleSourceID；
-	// 任务完成时取号的来源是 build_job_seq 的 (project_id, kind) 版本，由 inputVersion 携带。
+
 	SourceTypeMenuStale = "menu_stale"
 )
 
-// 任务状态（与 DDL 的 CHECK 逐字对应）。
 const (
 	StatusPending    = "pending"
 	StatusRunning    = "running"
@@ -42,32 +30,21 @@ const (
 	StatusSucceeded  = "succeeded"
 )
 
-// 构建意图（与迁移 295 的 build_jobs_intent_check 逐字对应）。
-//
-// 为什么要把它入库而不是从「谁调用入队」推断：ARCH-04 的异步重建要按意图分流
-// （人工构建走一次，依赖重建按语言与发布状态决定要不要回写线上），而这两种任务
-// 在表里长得一模一样 —— 没有这个字段，消费侧只能靠猜。
 const (
-	// IntentManual 人工发起（后台点「构建」这类由人驱动的工作）。
 	IntentManual = "manual"
-	// IntentDependency 依赖失效自动重建（内容 / 模板 / 译文变化扇出来的工作）。
+
 	IntentDependency = "dependency"
 )
 
-// ErrLeaseLost 租约已失效：任务被回收、合并或作废后，旧 worker 的完成结果不能再落库。
-//
-// 它是**预期内**的结果而不是故障：worker 执行期间超过租约时长是允许发生的
-// （回收先行、执行收尾），此时丢弃旧结果正是「完成归属」要保证的事。
 var ErrLeaseLost = fmt.Errorf("构建任务租约已失效（任务已被回收或合并）")
 
-// Entity build_jobs 表实体。
 type Entity struct {
 	ID         int64  `gorm:"column:id;primaryKey"`
 	SourceType string `gorm:"column:source_type;not null"`
 	SourceID   string `gorm:"column:source_id;not null"`
-	// ProjectID 任务所属站点工程（迁移 295）。可空：来源模块拿不到工程时留空而不是编一个。
+
 	ProjectID *string `gorm:"column:project_id"`
-	// Lang 构建语言；空串 = 默认语言（ARCH-04 之前的生产者一律为空串）。
+
 	Lang           string  `gorm:"column:lang;not null"`
 	Intent         string  `gorm:"column:intent;not null"`
 	DraftVersion   int64   `gorm:"column:draft_version;not null"`
@@ -75,59 +52,32 @@ type Entity struct {
 	Status         string  `gorm:"column:status;not null"`
 	ArtifactID     *string `gorm:"column:artifact_id"`
 	ErrorMessage   *string `gorm:"column:error_message"`
-	// Attempt 认领次数：回收后重新认领会累加，用于识别「反复被领取的任务」。
+
 	Attempt          int        `gorm:"column:attempt;not null"`
 	LeaseToken       *string    `gorm:"column:lease_token"`
 	LeaseExpiresTime *time.Time `gorm:"column:lease_expires_time"`
-	// InputVersion menu_stale 的输入版本（迁移 698）；其余来源为 NULL —— 历史来源没有
-	// 「按位置单调递增」的输入号，用 0 充数会和真实版本号混淆，所以列可空、不回溯填值。
+
 	InputVersion *int64 `gorm:"column:input_version"`
-	// ContextKey menu_stale 的去重语境「工程 UUID:菜单位置」（迁移 698），与
-	// uq_build_jobs_context_version 一起把「同一位置同一版本只排一次」写进数据库；
-	// 其余来源为 NULL（它们各自按 source_id 去重，不需要第二个语境键）。
-	// 列是实体的一部分而不是只在 SQL 里出现：写入路径（CreateTx）必须真的把它落库，
-	// 否则唯一索引在 NULL 上永远不生效（PG 的 UNIQUE 允许多个 NULL）。
+
 	ContextKey *string `gorm:"column:context_key"`
-	// CreateTime 入队时刻（claim 按它先入先出）。
+
 	CreateTime  time.Time  `gorm:"column:create_time;not null"`
 	StartedAt   *time.Time `gorm:"column:started_at"`
 	CompletedAt *time.Time `gorm:"column:completed_at"`
 }
 
-// ErrTxRequired 入队必须在调用方的事务里执行（CreateTx / NextMenuStaleVersionTx）。
-//
-// 它是一类**声明处事实**：本模块的可靠入队只接受调用方已经 scope 好的真实事务，
-// 自己绝不开事务、不提交、不回滚，也不替调用方设作用域 —— 那会把「和业务写入同事务」
-// 这条保证换成「两次独立提交」。
 var ErrTxRequired = fmt.Errorf("构建队列的事务内操作需要调用方已开启的真实事务句柄")
 
-// TableName 表名。
 func (Entity) TableName() string { return tableNameBuildJobs }
 
-// Model build_jobs 表访问。
 type Model struct{ db *gorm.DB }
 
-// NewModel 构造。
 func NewModel(db *gorm.DB) *Model { return &Model{db: db} }
 
-// DB 绑定本表的查询入口。
 func (m *Model) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&Entity{})
 }
 
-// Enqueue 入队（幂等）。
-//
-// ON CONFLICT DO NOTHING 对着迁移 307 的部分唯一索引
-// (source_type, source_id, build_input_hash, lang, intent) WHERE status='pending'：
-// 依赖失效扇出会在一批里反复标记同一个页面，没有这层幂等，队列会被同一份工作填满。
-// 返回 false 表示「同一份工作已经在队列里」。
-//
-// 去重键含 lang / intent（ARCH-04）：同一页面的多语言任务是**不同**的工作
-// （每种语言各自构建、各自决定要不要回写线上），人工构建与依赖重建更是两回事 ——
-// 键里少这两维，多语言任务会被互相去重、手工构建会被依赖重建吞掉。
-//
-// 注意它**不覆盖 running**：正在跑的那份工作与队列里的新待办是两回事
-// （内容在构建期间又变了就该再排一份），互斥由 claim 侧的同来源条件负责。
 func (m *Model) Enqueue(ctx context.Context, e *Entity) (created bool, err error) {
 	res := m.DB(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(e)
 	if res.Error != nil {
@@ -136,17 +86,6 @@ func (m *Model) Enqueue(ctx context.Context, e *Entity) (created bool, err error
 	return res.RowsAffected > 0, nil
 }
 
-// CreateTx 在调用方事务里插入一条任务行（menu_stale 的可靠入队入口）。
-//
-// 与 Enqueue 的三处差别，每一处都是刻意的：
-//   - 句柄是调用方给的 tx：入队必须与触发它的业务写入同事务提交，
-//     否则「写入成功、任务丢了」与「任务在、写入回滚」两种半成品都会出现；
-//   - **不用 ON CONFLICT DO NOTHING**：menu_stale 的去重键里带着 input_version，
-//     版本号在 tx 内取号时已递增，冲突意味着「同一个版本被入队了两次」= 调用方漏取号，
-//     这是缺陷而不是幂等命中。静默吞掉会表现为「菜单改了、队列没动」；
-//   - 不自开事务、不设作用域：scope 由调用方在 tx 上设好（build_jobs 无策略，见包注释）。
-//
-// 未提交的 tx 句柄是被拒绝的：`tx.Statement.ConnPool` 只可能是 *sql.Tx / *gorm.PreparedStmtTX。
 func (m *Model) CreateTx(tx *gorm.DB, e *Entity) error {
 	if err := requireTx(tx); err != nil {
 		return err
@@ -157,8 +96,7 @@ func (m *Model) CreateTx(tx *gorm.DB, e *Entity) error {
 	res := tx.Model(&Entity{}).Create(e)
 	if res.Error != nil {
 		if database.IsUniqueViolation(res.Error) {
-			// 唯一键冲突 = 调用了 CreateTx 却没有先取新版本号，或者同一版本重复入队。
-			// 把结论抬到 error 上：调用方据此回滚事务并修代码，而不是以为「工作已在队列里」。
+
 			return fmt.Errorf("构建任务唯一键冲突（同一来源与输入版本已在队列中）: %w", res.Error)
 		}
 		return res.Error
@@ -166,10 +104,6 @@ func (m *Model) CreateTx(tx *gorm.DB, e *Entity) error {
 	return nil
 }
 
-// requireTx 判定句柄是不是真的在事务里。
-//
-// 形状照抄 pkg/i18n 的 requireTx（content_write.go）：*gorm.PreparedStmtTX 内嵌的 Tx
-// 可能是 typed-nil，写路径上会直接 panic，所以两处都判 nil。
 func requireTx(tx *gorm.DB) error {
 	if tx == nil || tx.Statement == nil || tx.Statement.ConnPool == nil {
 		return ErrTxRequired
@@ -193,26 +127,6 @@ func requireTx(tx *gorm.DB) error {
 	}
 }
 
-// Claim 取一条待办任务、置为 running 并**原子发出租约令牌**。
-//
-// 五个要点，少一个都会出错（前三者是原实现，后两者是审计 DB-01 的整改）：
-//   - FOR UPDATE SKIP LOCKED：多个 worker 同时取任务时各拿各的，不排队、不重复；
-//   - ORDER BY create_time, id：先入先出，否则旧任务会被新任务无限插队；
-//   - 同一语句里 SELECT + UPDATE：取与置位之间没有窗口，
-//     否则两个 worker 可能都读到同一条 pending（看得到、抢不到的那种重复消费）；
-//   - **同来源互斥**：只挑「本来源当前没有 running」的待办。SKIP LOCKED 只锁住 job 行，
-//     锁不到「来源」这个概念 —— 把同来源的两条任务交给两个 worker，页面的两次构建
-//     会在同一个产物目录上互相覆盖。这里的 NOT EXISTS 是前置过滤，
-//     uq_build_jobs_running_source（迁移 295）是数据库层的最终保证；
-//   - lease_token / lease_expires_time / attempt 在同一条语句里产生：
-//     令牌由数据库生成，认领与发令牌之间没有应用层窗口；到期时间只看租约时长，
-//     与 jobTimeout 解耦（执行超时由 worker 侧的 context 负责）。
-//
-// claimCandidates 候选子查询：本来源当前没有 running 的最早一条待办。
-//
-// `FOR UPDATE SKIP LOCKED` 加在**候选子查询**上（原 SQL 的位置一致）：锁的是被挑中的
-// 那条候选行，而不是外层 UPDATE 要改的目标行 —— 多个 worker 同时进来时各拿各的，
-// 不排队、不重复。相关子查询里用**表名**引用外层行（这里没有别名）。
 func (m *Model) claimCandidates(ctx context.Context) *gorm.DB {
 	return m.DB(ctx).
 		Select("id").
@@ -223,18 +137,8 @@ func (m *Model) claimCandidates(ctx context.Context) *gorm.DB {
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 }
 
-// claimMaxRetries 认领撞上「同来源已有 running」时的重试次数。
-//
-// 为什么会有这个窗口：NOT EXISTS 读的是语句快照，另一个 worker 刚把同来源的任务
-// 置为 running 但还没提交时，双方都会通过前置过滤；先提交的那条占住唯一索引，
-// 后者拿到 23505。重跑一次就能看到已提交的 running 行并改挑别的来源 —— 重试是
-// 收敛的，不是「多试几次也许能过」。它依赖 autocommit：认领**不在**业务事务里
-// （事务里一条语句失败之后整个事务已中止，重试没有意义）。
 const claimMaxRetries = 3
 
-// Claim 取一条待办任务并发出租约；队列为空或所有待办都被同来源的 running 挡住时返回 (nil, nil)。
-//
-// leaseTTL 为本次租约时长（服务层按 leaseTTL 传入，默认 15 分钟）。
 func (m *Model) Claim(ctx context.Context, leaseTTL time.Duration) (e *Entity, err error) {
 	if leaseTTL <= 0 {
 		return nil, fmt.Errorf("构建任务租约时长必须为正数: %s", leaseTTL)
@@ -242,18 +146,16 @@ func (m *Model) Claim(ctx context.Context, leaseTTL time.Duration) (e *Entity, e
 	var lastErr error
 	for i := 0; i < claimMaxRetries; i++ {
 		var row Entity
-		// 候选子查询与外层 UPDATE 在同一条语句里：取与置位之间没有窗口
-		// （否则两个 worker 可能都读到同一条 pending —— 看得到、抢不到的那种重复消费）。
-		// Model(&row) 让 RETURNING * 的结果扫回 row；没有匹配行时 row 保持零值。
+
 		res := m.db.WithContext(ctx).Model(&row).
 			Where("id IN (?)", m.claimCandidates(ctx)).
 			Clauses(clause.Returning{}).
 			Updates(map[string]any{
 				"status":     StatusRunning,
 				"started_at": gorm.Expr("now()"),
-				// 令牌由数据库生成：认领与发令牌之间没有应用层窗口。
+
 				"lease_token": gorm.Expr("gen_random_uuid()"),
-				// 到期时间只看租约时长，与 jobTimeout 解耦（执行超时由 worker 侧的 context 负责）。
+
 				"lease_expires_time": gorm.Expr("now() + make_interval(secs => ?)", leaseTTL.Seconds()),
 				"attempt":            gorm.Expr("attempt + 1"),
 				"error_message":      nil,
@@ -273,11 +175,6 @@ func (m *Model) Claim(ctx context.Context, leaseTTL time.Duration) (e *Entity, e
 	return nil, lastErr
 }
 
-// leaseGuard 完成写入的公共守卫：任务必须仍是 running 且租约令牌一致。
-//
-// 只按 id 匹配是审计 DB-01 的第三个缺陷：旧 worker 在一次回收 + 重新认领之后
-// 仍然能把自己的结果写成这条任务的状态，把新 worker 正在做的活覆盖掉。
-// 令牌由 claim 每次生成，因此「谁认领的谁才能结案」这件事不需要额外的表。
 func (m *Model) leaseGuard(ctx context.Context, id int64, leaseToken string) (*gorm.DB, error) {
 	if strings.TrimSpace(leaseToken) == "" {
 		return nil, ErrLeaseLost
@@ -285,7 +182,6 @@ func (m *Model) leaseGuard(ctx context.Context, id int64, leaseToken string) (*g
 	return m.DB(ctx).Where("id = ? AND status = ? AND lease_token = ?", id, StatusRunning, leaseToken), nil
 }
 
-// MarkSucceeded 标记任务成功（记录产物行 id）；返回 ErrLeaseLost 表示租约已不在本 worker 手上。
 func (m *Model) MarkSucceeded(ctx context.Context, id int64, leaseToken, artifactID string, at time.Time) error {
 	q, err := m.leaseGuard(ctx, id, leaseToken)
 	if err != nil {
@@ -293,7 +189,7 @@ func (m *Model) MarkSucceeded(ctx context.Context, id int64, leaseToken, artifac
 	}
 	updates := map[string]any{
 		"status": StatusSucceeded, "completed_at": at, "error_message": nil,
-		// 结案即释放租约：保留令牌会让后台把「已完成的令牌」误读成「还占着来源」。
+
 		"lease_token": nil, "lease_expires_time": nil,
 	}
 	if artifactID != "" {
@@ -309,7 +205,6 @@ func (m *Model) MarkSucceeded(ctx context.Context, id int64, leaseToken, artifac
 	return nil
 }
 
-// MarkFailed 标记任务失败并记录原因（后台据此判断要不要重试）；租约不代表本 worker 时返回 ErrLeaseLost。
 func (m *Model) MarkFailed(ctx context.Context, id int64, leaseToken, message string, at time.Time) error {
 	q, err := m.leaseGuard(ctx, id, leaseToken)
 	if err != nil {
@@ -328,7 +223,6 @@ func (m *Model) MarkFailed(ctx context.Context, id int64, leaseToken, message st
 	return nil
 }
 
-// MarkSuperseded 标记任务作废（同一目标已有更新的构建输入，这份工作没有意义了）。
 func (m *Model) MarkSuperseded(ctx context.Context, id int64, leaseToken, reason string, at time.Time) error {
 	q, err := m.leaseGuard(ctx, id, leaseToken)
 	if err != nil {
@@ -351,23 +245,6 @@ func (m *Model) MarkSuperseded(ctx context.Context, id int64, leaseToken, reason
 	return nil
 }
 
-// reclaimStaleSQL 回收租约已到期的任务：能重做的退回 pending，重复的合并为 superseded。
-//
-// 旧实现只有前半句（无条件 status='pending'），于是撞上 171 的 uq_build_jobs_pending
-// 报 23505 —— 而且是**整条** UPDATE 失败：一条与队列里的 pending 同键的陈旧任务，
-// 会把同批其它本该被回收的任务一起拖在 running 上（审计 DB-01 的实测复现）。
-//
-// 两条分支合并在同一条语句里，避免「先查重复、再改状态」之间被并发入队插进来：
-//   - has_pending：同键已有待办 → 本行的工作已经排在队列里，标 superseded（合并，不丢工作）；
-//   - 其余：退回 pending 重新排队。
-//
-// 仍有极小窗口：并发入队在本语句快照之后提交同键 pending 行，会让 UPDATE 撞 23505。
-// 调用方对 23505 做有界重试，重试的那一次必然看得见那行 pending，改走 superseded 分支。
-// has_pending 的判据必须与 uq_build_jobs_pending（迁移 307）**同形**：同来源、同输入、
-// 同语言、同意图才算「本行的工作已经排在队列里」。
-// 少比 lang / intent 的后果不是报错，而是把两份**不同**的工作合并掉：一条租约到期的
-// 人工构建会看到同键的依赖重建待办，于是自己被标 superseded、人工那一次构建静默消失
-// （队列深度看着正常，页面就是不更新）—— 键改到哪几列，这里就比到哪几列。
 const reclaimStaleSQL = `WITH stale AS (
 	    SELECT b.id,
 	           EXISTS (
@@ -399,18 +276,12 @@ const reclaimStaleSQL = `WITH stale AS (
 	 WHERE j.id = s.id
 	RETURNING j.status`
 
-// ReclaimResult 一次回收的构成。
 type ReclaimResult struct {
-	// Reclaimed 退回 pending、可以重新被消费的行数。
 	Reclaimed int64
-	// Merged 与队列里的待办同键、被合并为 superseded 的行数。
+
 	Merged int64
 }
 
-// ReclaimStale 回收租约已到期的任务（at 之前到期）。
-//
-// 单条任务的状态异常不会阻断其余任务：归并判定写在同一条语句里，
-// 唯一的失败来源（并发入队造成的 23505）走有界重试。
 func (m *Model) ReclaimStale(ctx context.Context, at time.Time) (res ReclaimResult, err error) {
 	const maxAttempts = 3
 	var lastErr error
@@ -439,30 +310,11 @@ func (m *Model) ReclaimStale(ctx context.Context, at time.Time) (res ReclaimResu
 	return ReclaimResult{}, lastErr
 }
 
-// StatusCount 单个状态的行数。
 type StatusCount struct {
 	Status string `gorm:"column:status"`
 	Count  int64  `gorm:"column:count"`
 }
 
-// 本表无 RLS 策略（DB-009 切角色必读，见包注释）：有 project_id 却没有 ROW LEVEL SECURITY 的
-// 表全库有**两张** —— build_jobs 与 **product_outbox_events**（迁移 309；那张自己也不装策略，
-// 理由同本表）。build_jobs.project_id 由迁移 295 新增，215 的策略名单早于它。
-// 这两张表的豁免有共同理由：都是「按状态跨工程领取」的队列，装了策略 worker 就看不见
-// 别的工程的待办。可执行判据见 public/test/rls/rls_policy_coverage_test.go
-// （白名单之外的带 project_id 表必须有 ENABLE + FORCE）。
-//
-// 这条差异的后果与别的表**相反**：换到非超级业务角色后，本表的查询既不会被拦下，
-// 也不会被限制在本工程 —— 不是 fail closed（静默 0 行），而是**没有隔离**（跨工程可见）。
-// 因此：
-//   - **工程过滤必须显式写在 SQL 里**（用下面这些方法的 projectID 参数），不能指望策略兜底；
-//   - 面向用户的按工程读取（「某页面的构建任务列表」这类）一律要带 projectID；
-//   - Claim / ReclaimStale 按状态**跨工程**捞取是**有意**的队列语义（worker 服务全站队列），
-//     不受本条约束 —— 它们不面向用户、也不把结果返回给用户。
-
-// CountByStatus 按状态统计队列深度；projectID 非空时只统计该工程。
-//
-// 本表无策略，工程过滤只能靠这里的 WHERE（见上面的说明）。
 func (m *Model) CountByStatus(ctx context.Context, projectID string) (rows []StatusCount, err error) {
 	q := m.DB(ctx).Select("status, COUNT(*) AS count")
 	if pid := strings.TrimSpace(projectID); pid != "" {
@@ -472,9 +324,6 @@ func (m *Model) CountByStatus(ctx context.Context, projectID string) (rows []Sta
 	return rows, err
 }
 
-// ListRecent 按状态列出最近的任务（空状态 = 全部）；projectID 非空时只列该工程。
-//
-// 本表无策略，工程过滤只能靠这里的 WHERE（见上面的说明）。
 func (m *Model) ListRecent(ctx context.Context, projectID, status string, limit int) (list []*Entity, err error) {
 	q := m.DB(ctx).Order("create_time DESC")
 	if pid := strings.TrimSpace(projectID); pid != "" {
@@ -490,11 +339,6 @@ func (m *Model) ListRecent(ctx context.Context, projectID, status string, limit 
 	return list, err
 }
 
-// Get 按 id 查询任务。
-//
-// 注意：本表无策略，这里的查询不带工程过滤 —— 拿到别的工程的任务 id 就能读到它。
-// 这是队列自身的内部入口，**不要**直接接到面向用户的接口上：用户可见的按 id 读取
-// 必须同时给出 project_id 条件（本表没有策略替你挡）。
 func (m *Model) Get(ctx context.Context, id string) (e *Entity, err error) {
 	var row Entity
 	if err = m.DB(ctx).Where("id = ?", id).First(&row).Error; err != nil {
@@ -503,17 +347,6 @@ func (m *Model) Get(ctx context.Context, id string) (e *Entity, err error) {
 	return &row, nil
 }
 
-// RetryFailed 把失败任务退回队列（清空错误、完成时间与租约残留）。
-//
-// 与「重新入队一条新任务」不同：重试保留原来的 draft_version 与 build_input_hash，
-// 因此它仍然与部分唯一索引对齐 —— 若同一份工作已被重新排上，这次重试会被索引挡下，
-// 不会变成两份并行的工作。
-//
-// 守卫写在 WHERE 里（status='failed'）而不是先读后写：并发两次重试只有一次生效，
-// 第二次 RowsAffected=0，由 service 翻成「任务不存在或不是失败态」。
-//
-// projectID 非空时加进同一个 WHERE：本表无策略（见上面的说明），不带工程过滤的退回
-// 会把别的工程的失败任务一起改回 pending。
 func (m *Model) RetryFailed(ctx context.Context, id int64, projectID string) (ok bool, err error) {
 	q := m.DB(ctx).Where("id = ? AND status = ?", id, StatusFailed)
 	if pid := strings.TrimSpace(projectID); pid != "" {

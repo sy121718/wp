@@ -1,7 +1,3 @@
-// presentation_bilingual_test.go — 自动发布实例多语言同时在线（I18N-013）。
-//
-// 走完整装配链：语言清单 → CreateInstance → publishAllLangs → 访问面读取。
-// 方案 A'（default_plain）：默认语言无前缀，非默认语言短码前缀。
 package unit
 
 import (
@@ -15,7 +11,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// TestPresentationBilingualSiteOnline 同一详情页 zh-CN + en-US 同时在线。
 func TestPresentationBilingualSiteOnline(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -112,7 +107,6 @@ func TestPresentationBilingualSiteOnline(t *testing.T) {
 		t.Fatal("逻辑路径本身不应被其他实例占用")
 	}
 
-	// locator 按语言返回路径（I18N-013 + 搜索片段 lang 参数）。
 	paths, err := f.pres.PublishedEntityPaths(ctx, f.projectID, "article", "en-US", []string{entity.ID})
 	if err != nil {
 		t.Fatalf("PublishedEntityPaths 失败: %v", err)
@@ -129,17 +123,13 @@ func TestPresentationBilingualSiteOnline(t *testing.T) {
 	}
 }
 
-// withGlobalSiteLangURLMode 给**全局默认**方案打桩（工程未配置时的兜底），用例结束复位。
-//
-// 进程级 setter 已删除：全局默认方案由配置源（sys_config 的 i18n 组）注入，测试走同一入口
-// ValueLoader；工程级覆盖（projects.settings.langURLMode）由各用例的工程 settings 决定。
 func withGlobalSiteLangURLMode(t *testing.T, mode i18n.SiteLangURLMode) {
 	t.Helper()
 	i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) {
 		return i18n.RuntimeValues{SiteLangURLMode: string(mode)}, nil
 	})
 	t.Cleanup(func() {
-		// 复位到「未注入 = 代码内常量」：先注入零值把已生效的值打回常量，再摘掉 loader。
+
 		i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) { return i18n.RuntimeValues{}, nil })
 		i18n.SetValueLoader(nil)
 	})

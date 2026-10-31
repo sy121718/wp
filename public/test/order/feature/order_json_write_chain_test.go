@@ -1,29 +1,5 @@
 package feature
 
-// order_json_write_chain_test.go — 订单列表页「写动作迁 JSON」的**链式证据**（task-98 S2 / task-111）。
-//
-// 静态核验只能证明「属性写了字」；这条用例把整条链真跑一遍：
-//
-//	真渲染列表页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**按钮/表单的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js（含真 confirm.js 的确认协议）
-//	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
-//	→ 服务端记录实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
-//
-// 为什么非这样不可（S1 的 P1 就是这个形态）：属性看着齐全、静态检查也过，但少一个
-// data-write-number 或 data-write-extra 写错，基座发出去的体就与 handler 的期望差一层
-//（字符串 vs 数字、字段干脆不在），页面上只看到一句「操作失败」。这条链上任何一环松动，本用例都会红。
-//
-// 三个用例覆盖两种模式：
-//   · bulk-status：批量条的两个勾选 + 目标状态下拉 + 备注框 → /api/order/status 的**批档**；
-//   · bulk-cancel：同一个表单的另一个按钮（data-write-extra 只有 remark）→ /api/order/cancel；
-//   · detail-status：详情里的流转表单（create 模式）→ /api/order/status 的**单档**，
-//     关键在 orderId 必须是**数字**（模板漏写 data-write-number 就变字符串 → 绑定失败）。
-//
-// 驱动脚本沿用 S1 的 public/test/order/feature/testdata/coupon_json_write_chain_driver.cjs：
-// 它本身是**通用**的（fixture 只描述表单/按钮属性与字段），文件名里的 coupon 是历史产物。
-// DOM 桩手法抄自 internal/templates/static/js/ui/json_write.test.cjs（node:test + vm + 极简 DOM）。
-// 没有 node 时**跳过并说明**（不伪装成绿）：本用例要的就是真实基座，桩掉它等于测了个假东西。
-
 import (
 	"bytes"
 	"context"
@@ -50,7 +26,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// orderChainCapture 记录服务端**实际收到**的请求体与响应码（链的另一端）。
 type orderChainCapture struct {
 	mu     sync.Mutex
 	body   []string
@@ -66,10 +41,6 @@ func (cap *orderChainCapture) add(path, body string, status int) {
 	cap.path = append(cap.path, path)
 }
 
-// nth 第 n 个写请求（按服务端收到的先后）。
-//
-// 必须按序号取而不能「取最后一次」：三个用例在同一个驱动进程里按顺序跑，全部发完才轮到
-// Go 侧断言 —— 只取最后一次会让批量段读到详情段的请求体（S1 实测踩过这个坑）。
 func (cap *orderChainCapture) nth(t *testing.T, n int) (string, int) {
 	t.Helper()
 	cap.mu.Lock()
@@ -81,7 +52,6 @@ func (cap *orderChainCapture) nth(t *testing.T, n int) (string, int) {
 	return cap.body[n], cap.status[n]
 }
 
-// orderChainFormSlice 取「包含某条按钮声明的那张表单」的片段（含开闭标签）。
 func orderChainFormSlice(t *testing.T, html, marker string) string {
 	t.Helper()
 	i := strings.Index(html, marker)
@@ -99,10 +69,6 @@ func orderChainFormSlice(t *testing.T, html, marker string) string {
 	return html[open : i+end]
 }
 
-// orderChainButtonAttrs 取「端点 + 模式」都匹配的那个按钮的属性表。
-//
-// 同一个端点（/api/order/status）在页面上出现两次：批量条上 mode=bulk、详情里 mode=create。
-// 只看端点会把两者搞混，所以两级都匹配；找不到就直说缺失，不静默取到错的按钮。
 func orderChainButtonAttrs(t *testing.T, html, api, mode string) map[string]string {
 	t.Helper()
 	for _, tag := range couponButtonRe.FindAllString(html, -1) {
@@ -115,7 +81,6 @@ func orderChainButtonAttrs(t *testing.T, html, api, mode string) map[string]stri
 	return nil
 }
 
-// orderChainSelectOptions 取段内某个下拉的选项值（按渲染顺序）。
 func orderChainSelectOptions(t *testing.T, block, name string) []string {
 	t.Helper()
 	open := strings.Index(block, `name="`+name+`"`)
@@ -138,10 +103,8 @@ func orderChainSelectOptions(t *testing.T, block, name string) []string {
 	return out
 }
 
-// orderChainFields 按渲染出来的名字造字段，用于 driver 的 fixture。
 type orderChainFields []couponChainField
 
-// TestOrderJSONWriteChainTemplateToHandler 链式证据主用例。
 func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -154,8 +117,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
 
-	// 四个用例各用一张**独立**的订单：批量两单（流转）、批量一单（取消）、详情一单（流转）。
-	// 共用一单会让后一个用例改掉前一个用例的断言对象 —— S1 就是这么踩到的。
 	_, variantID := f.addProduct(t, "链式证据商品", 30, 50)
 	mkOrder := func(email string) uint64 {
 		req := f.createBaseReq(variantID, 1)
@@ -185,7 +146,7 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 				body, _ := io.ReadAll(c.Request.Body)
 				c.Request.Body = io.NopCloser(bytes.NewReader(body))
 				c.Next()
-				// 只记写请求的实际内容与响应码：这是「基座发出去的到底是什么类型」的权威来源。
+
 				if c.Request.Method == http.MethodPost {
 					cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 				}
@@ -203,7 +164,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	server := httptest.NewServer(engine)
 	defer server.Close()
 
-	// ① 真渲染列表页（详情块靠 orderId 参数展开，不新开路由）。
 	pageURL := fmt.Sprintf("%s/admin/orders?project=%s&orderId=%d", server.URL, f.projectID, detailD)
 	pageRes, err := http.Get(pageURL)
 	if err != nil {
@@ -216,7 +176,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 	html := string(pageHTMLRaw)
 
-	// ② 取原始属性：不手抄任何 data-*，模板少写一个属性本用例就必然跟着红。
 	bulkForm := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="bulk"`)
 	bulkFormAttrs := couponAttrsOf(bulkForm[:strings.Index(bulkForm, ">")+1])
 	bulkStatusSubmitter := orderChainButtonAttrs(t, html, "/api/order/status", "bulk")
@@ -224,8 +183,7 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 
 	detailForm := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="create"`)
 	detailFormAttrs := couponAttrsOf(detailForm[:strings.Index(detailForm, ">")+1])
-	// 详情表单的声明落在**表单**上（批量条才把端点放在按钮上，因为同一张表单有两个动作）——
-	// 所以这里取表单里第一个 submit 按钮的属性即可，base 的 attrFrom 是「按钮优先、表单兜底」。
+
 	detailSubmitter := map[string]string{}
 	for _, tag := range couponButtonRe.FindAllString(detailForm, -1) {
 		if couponAttrOf(tag, "type") == "submit" {
@@ -237,13 +195,12 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatal("详情流转表单里找不到提交按钮")
 	}
 
-	// 行的勾选框必须真的带着这四个 id 渲染出来（不然「勾选两单」这个动作本身是假的）。
 	for _, id := range []uint64{bulkA, bulkB, cancelC, detailD} {
 		if !strings.Contains(html, fmt.Sprintf(`name="ids" value="%d"`, id)) {
 			t.Fatalf("列表页里没有订单 %d 的行勾选框（name=ids value=%d）", id, id)
 		}
 	}
-	// 目标状态：批量下拉取渲染出来的第一个选项（pending → paid 是通用流转的第一条边）。
+
 	bulkStatusOptions := orderChainSelectOptions(t, bulkForm, "toStatus")
 	detailStatusOptions := orderChainSelectOptions(t, detailForm, "toStatus")
 	if bulkStatusOptions[0] != detailStatusOptions[0] {
@@ -251,7 +208,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 	targetStatus := bulkStatusOptions[0]
 
-	// ③ 跑真实基座：三个用例（批量流转 / 批量取消 / 详情流转）。
 	cases := []map[string]any{
 		{
 			"name":           "bulk-status",
@@ -326,12 +282,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// ④ 链的另一端：服务端真正收到的**请求体**。
-	//
-	// 批次 2 之后写基座统一发 formdata（multipart），所以这里按 multipart 解析。
-	// 值一律是字符串 —— 类型转换由服务端反射完成（实测 formdata 的 "3" 直接绑进 int、
-	// "1" 直接绑进 bool）。原先那套「必须是数字字面 / 字符串字面」的断言随
-	// data-write-number 一起下掉了：前端不再声明类型，就不存在「声明漏了变成字符串」这回事。
 	assertBodyKeys := func(t *testing.T, where, body string, want ...string) map[string]string {
 		t.Helper()
 		got, err := parseMultipartFormBody(body)
@@ -359,7 +309,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		assertField(t, where, name, got, strconv.FormatUint(want, 10))
 	}
 
-	// 批量流转：恰好 ids + toStatus + remark 三个字段，且 toStatus 是字符串。
 	bulkStatusBody, bulkStatus := cap.nth(t, 0)
 	if bulkStatus != http.StatusOK {
 		t.Fatalf("批量流转应 200，实际 %d：%s", bulkStatus, bulkStatusBody)
@@ -367,7 +316,7 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	bulkStatusJSON := assertBodyKeys(t, "批量流转", bulkStatusBody, "ids", "toStatus", "remark")
 	assertField(t, "批量流转", "toStatus", bulkStatusJSON["toStatus"], targetStatus)
 	assertField(t, "批量流转", "remark", bulkStatusJSON["remark"], "链式证据批量流转")
-	// formdata 里 ids 是**多个同名值**（浏览器把它们并成数组），不是 JSON 数组字面。
+
 	if got := bulkStatusJSON["ids"]; got != fmt.Sprintf("%d,%d", bulkA, bulkB) {
 		t.Errorf("批量流转的 ids 应是 [%d %d]，实际 %q", bulkA, bulkB, got)
 	}
@@ -377,8 +326,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// 批量取消：字段恰好 ids + remark（按钮的 data-write-extra 只声明了 remark）——
-	// 多出 toStatus 说明 extra 被表单上的声明污染了。
 	cancelBody, cancelStatus := cap.nth(t, 1)
 	if cancelStatus != http.StatusOK {
 		t.Fatalf("批量取消应 200，实际 %d：%s", cancelStatus, cancelBody)
@@ -392,12 +339,11 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("订单 %d 批量取消后应为 cancelled，实际 %s", cancelC, got)
 	}
 
-	// 详情流转（create 模式）：字段恰好 orderId + toStatus + remark，且 orderId 必须是数字。
 	detailBody, detailStatus := cap.nth(t, 2)
 	if detailStatus != http.StatusOK {
 		t.Fatalf("详情流转应 200（orderId 必须是数字，字符串会绑定失败），实际 %d：%s", detailStatus, detailBody)
 	}
-	// remark 留空 → 基座删掉该键（「没填」= 不改），所以字段是 orderId + toStatus 两项。
+
 	detailJSON := assertBodyKeys(t, "详情流转", detailBody, "orderId", "toStatus")
 	assertUintLiteral(t, "详情流转", "orderId", string(detailJSON["orderId"]), detailD)
 	assertField(t, "详情流转", "toStatus", detailJSON["toStatus"], targetStatus)
@@ -405,7 +351,6 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("订单 %d 详情流转后应为 %s，实际 %s", detailD, targetStatus, got)
 	}
 
-	// ⑤ JS 侧结论：三个用例都不该把后端那句话当成失败展示（受控文案不是「操作失败」）。
 	for _, r := range report.Results {
 		if strings.Contains(r.StatusText, "操作失败") {
 			t.Errorf("%s 不应显示失败文案，实际状态区：%q", r.Name, r.StatusText)

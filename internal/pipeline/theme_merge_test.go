@@ -57,7 +57,6 @@ func TestMergeStructureBindingsPageOverridePreserved(t *testing.T) {
 		t.Fatalf("页脚应保留页面绑定，实际 %q", got.FooterBlockID)
 	}
 
-	// 页面只覆盖一侧时，空侧回落主题默认。
 	partial := builder.StructureBindings{HeaderBlockID: "page-only-header"}
 	got = MergeStructureBindings(partial, theme)
 	if got.HeaderBlockID != "page-only-header" || got.FooterBlockID != "theme-footer" {

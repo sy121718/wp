@@ -1,8 +1,5 @@
 package scoring
 
-// linksuggest_test.go — 内链建议引擎的边界钉子：空候选 / 全排除 / 自身排除 /
-// 已链接排除 / 排序与并列 tie-break / 截断。
-
 import (
 	"fmt"
 	"reflect"
@@ -23,7 +20,7 @@ func TestInternalLinkSuggestionsEmptyCandidates(t *testing.T) {
 }
 
 func TestInternalLinkSuggestionsExcludesMissingURL(t *testing.T) {
-	// 全部候选都没有真实路径 → 全排除（死链防线）。
+
 	doc := &LinkDocument{SelfID: "self"}
 	cands := []LinkCandidate{
 		{ID: "a", Title: "无路径", URL: "   "},
@@ -37,8 +34,8 @@ func TestInternalLinkSuggestionsExcludesMissingURL(t *testing.T) {
 func TestInternalLinkSuggestionsExcludesSelf(t *testing.T) {
 	doc := &LinkDocument{SelfID: "self", SelfURL: "/self"}
 	cands := []LinkCandidate{
-		{ID: "self", Title: "自己", URL: "/other"},    // id 命中自身
-		{ID: "mirror", Title: "路径相同", URL: "/self"}, // URL 命中自身（id 不同的冗余闸）
+		{ID: "self", Title: "自己", URL: "/other"},
+		{ID: "mirror", Title: "路径相同", URL: "/self"},
 		{ID: "ok", Title: "正常", URL: "/ok"},
 	}
 	got := InternalLinkSuggestions(doc, cands, 0)
@@ -79,7 +76,7 @@ func TestInternalLinkSuggestionsRankByOverlap(t *testing.T) {
 			t.Fatalf("排序不符：位置 %d 期望 %s，got %s（%v）", i, want, got[i].ID, got)
 		}
 	}
-	// 得分钉住：关键词 3、标签 2、分类 1、无重叠 0。
+
 	wantScores := map[string]int{"kw": 3, "tag": 2, "cat": 1, "none": 0}
 	for _, s := range got {
 		if s.Score != wantScores[s.ID] {
@@ -89,7 +86,7 @@ func TestInternalLinkSuggestionsRankByOverlap(t *testing.T) {
 }
 
 func TestInternalLinkSuggestionsTagAndCategoryStack(t *testing.T) {
-	// 多个标签 / 分类交集累加：2 个标签（2*2）+ 1 个分类（1）= 5。
+
 	doc := &LinkDocument{SelfID: "self", Tags: []string{"a", "b"}, Categories: []string{"c"}}
 	cands := []LinkCandidate{
 		{ID: "x", Title: "多交集", URL: "/x", Tags: []string{"a", "b"}, Categories: []string{"c"}},
@@ -101,7 +98,7 @@ func TestInternalLinkSuggestionsTagAndCategoryStack(t *testing.T) {
 }
 
 func TestInternalLinkSuggestionsTieBreakByTitle(t *testing.T) {
-	// 并列分数按标题升序：同一输入两次调用结果一致（确定性）。
+
 	doc := &LinkDocument{SelfID: "self"}
 	cands := []LinkCandidate{
 		{ID: "3", Title: "丙", URL: "/3"},
@@ -113,7 +110,7 @@ func TestInternalLinkSuggestionsTieBreakByTitle(t *testing.T) {
 	for _, s := range got {
 		order = append(order, s.Title)
 	}
-	// Unicode 码位序：丙(U+4E19) < 乙(U+4E59) < 甲(U+7532)。
+
 	if !reflect.DeepEqual(order, []string{"丙", "乙", "甲"}) {
 		t.Fatalf("并列应按标题升序，got %v", order)
 	}

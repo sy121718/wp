@@ -7,14 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// tabs_a11y_test.go — UI-009：页签标签的可访问名。
-//
-// 零 JS 方案是 sr-only radio + label[for]，radio 的可访问名由关联 label 的文本提供。
-// 原模板给 label 加了 aria-hidden="true"，等于把控件名的来源藏起来（读屏只会念
-// 「单选按钮」而没有标签文本）。正解是不加 aria-hidden —— 关联 label 的文本本就
-// 作为控件名被引用，不会被读两遍。
-
-// TestTabsLabelProvidesAccessibleName 标签文本必须对无障碍树可见。
 func TestTabsLabelProvidesAccessibleName(t *testing.T) {
 	if strings.Contains(tabsTemplate, "aria-hidden") {
 		t.Errorf("标签模板里仍有 aria-hidden（radio 的可访问名来源被隐藏）：\n%s", tabsTemplate)
@@ -27,20 +19,18 @@ func TestTabsLabelProvidesAccessibleName(t *testing.T) {
 	}
 }
 
-// TestTabsRadioStaysFocusable 键盘可切换的前提：radio 用 sr-only 而不是 display:none。
 func TestTabsRadioStaysFocusable(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Tabs: []Tab{{Label: "一"}}}, &b)
 	out := b.String()
-	// 视觉隐藏在基座工具类里（模板给 radio 加了 sky-sr-only）；这里断言模板真的加了，
-	// 以及组件 CSS 没有改用 display:none 那种会把控件踢出键盘序列的写法。
+
 	if !strings.Contains(out, ".sky-c-t .sky-tabs-radio:focus-visible + .sky-tabs-tab {") {
 		t.Errorf("焦点环规则缺失（键盘用户看不到当前页签）：\n%s", out)
 	}
 	if strings.Contains(out, ".sky-tabs-radio {\n  display: none") {
 		t.Errorf("radio 被 display:none 隐藏（键盘无法切换页签）：\n%s", out)
 	}
-	// 聚焦可见：焦点环画在对应标签上。
+
 	if !strings.Contains(out, ".sky-tabs-radio:focus-visible + .sky-tabs-tab {") {
 		t.Errorf("标签缺少 focus-visible 焦点环：\n%s", out)
 	}

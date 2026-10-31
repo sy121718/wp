@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestAccountProfileJSONNeverNavigates 不接受next驱动后端跳转；前端具名结果处理决定视图。
 func TestAccountProfileJSONNeverNavigates(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "nextuser", "next@example.invalid", "password123")

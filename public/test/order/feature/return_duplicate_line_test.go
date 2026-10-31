@@ -1,8 +1,5 @@
 package feature
 
-// 同一订单项的重复明细不得放大退款；服务入口已按严格输入契约拒绝重复ID。
-// 保留原漏洞样本，并证明拒绝未写任何退货单、单行额度校验和合法申请均有效。
-
 import (
 	"context"
 	"strings"
@@ -47,7 +44,6 @@ func TestCreateReturnRejectsDuplicateLinesForSameItem(t *testing.T) {
 		t.Fatalf("重复行拒绝必须零写入: %d != %d", got, before)
 	}
 
-	// 独立核额度规则：合法明细ID的一行4件也不能越过可退2件。
 	req.Items = []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 4}}
 	_, err = f.orders.RequestReturn(ctx, req)
 	fact, ok = facing.FactOf(err)
@@ -58,7 +54,6 @@ func TestCreateReturnRejectsDuplicateLinesForSameItem(t *testing.T) {
 		t.Fatalf("超量拒绝必须零写入: %d != %d", got, before)
 	}
 
-	// 反证：同一个订单合法的一行2件仍能正常申请。
 	req.Items = []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 2}}
 	if _, err := f.orders.RequestReturn(ctx, req); err != nil {
 		t.Fatalf("合法申请应通过: %v", err)

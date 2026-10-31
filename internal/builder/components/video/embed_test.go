@@ -2,8 +2,6 @@ package video
 
 import "testing"
 
-// TestEmbedHostAllowed 嵌入域名白名单：白名单域及其子域放行，
-// 伪装后缀域（evilyoutube.com 等）拒绝（M 级修复回归）。
 func TestEmbedHostAllowed(t *testing.T) {
 	cases := []struct {
 		name string
@@ -18,7 +16,7 @@ func TestEmbedHostAllowed(t *testing.T) {
 		{"vimeo.com 主域", "vimeo.com", true},
 		{"vimeo.com 子域", "player.vimeo.com", true},
 		{"player.vimeo.com 精确", "player.vimeo.com", true},
-		// 绕过向量：裸 HasSuffix(host, "youtube.com") 会放行以下伪装域。
+
 		{"伪装前缀 evilyoutube.com", "evilyoutube.com", false},
 		{"伪装前缀 notvimeo.com", "notvimeo.com", false},
 		{"中缀 evil-youtu.be", "evil-youtu.be", false},
@@ -35,8 +33,6 @@ func TestEmbedHostAllowed(t *testing.T) {
 	}
 }
 
-// TestEmbedURL embedURL 端到端：直通分支仅放行精确白名单域，
-// 伪装后缀域在直通分支被拒绝（不被 youtubeRe/vimeoRe 匹配的 URL 形式）。
 func TestEmbedURL(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -1,9 +1,5 @@
 package builder
 
-// heading_textanim_test.go — 标题逐字/逐词入场动画的链路级验证（ParsePage → Compile → 产物）。
-// 单元级断言见 internal/builder/components/heading/textanim_test.go；
-// 本文件只证明用户配置确实落到产物 HTML 分段与 CSS 规则。
-
 import (
 	"strings"
 	"testing"
@@ -20,7 +16,6 @@ const headingTextAnimDocJSON = `{
   ]
 }`
 
-// compileHeadingTextAnimDoc 编译逐字动画用例文档，返回产物。
 func compileHeadingTextAnimDoc(t *testing.T) *CompiledPage {
 	t.Helper()
 	p, err := ParsePage([]byte(headingTextAnimDocJSON))
@@ -38,7 +33,6 @@ func compileHeadingTextAnimDoc(t *testing.T) *CompiledPage {
 	return res
 }
 
-// TestCompileHeadingTextAnimHTML 逐字分段落到产物 HTML：每字一个 span；高亮盒与关闭态整段输出。
 func TestCompileHeadingTextAnimHTML(t *testing.T) {
 	res := compileHeadingTextAnimDoc(t)
 	want := `<span class="sky-h-seg">标</span><span class="sky-h-seg">题</span><span class="sky-h-seg">动</span><span class="sky-h-seg">画</span>`
@@ -56,7 +50,6 @@ func TestCompileHeadingTextAnimHTML(t *testing.T) {
 	}
 }
 
-// TestCompileHeadingTextAnimCSS 逐字动画 CSS 落到产物：分段基础规则 + 递增延迟 + 兜底档 + 关键帧。
 func TestCompileHeadingTextAnimCSS(t *testing.T) {
 	res := compileHeadingTextAnimDoc(t)
 	css := res.CSS

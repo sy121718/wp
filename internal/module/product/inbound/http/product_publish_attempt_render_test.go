@@ -1,12 +1,3 @@
-// product_publish_attempt_render_test.go — 发布历史（B11）在页面上的形状。
-//
-// 这一屏的 DOM 全部来自页面里的 Jet <template>（后端只回 JSON），所以「模板与接口字段
-// 是否对齐」只能在渲染出的 HTML 上验 —— 字段名写错时 json-swap 只把空串填进去，
-// 页面上什么都不报。
-//
-// 钉两件事：
-//  1. 行模板的 data-field 与 dto 的 json 键逐一对应（少一个字段就是少一列静默空白）；
-//  2. 触发源七档都有 data-when 分支（671 的 CHECK 是七值，少一档那次尝试显示成空白）。
 package producthttp
 
 import (
@@ -26,7 +17,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// publishRecordBodyWithButtons 渲染发布记录页，并按需注入菜单按钮授权。
 func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string {
 	t.Helper()
 	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
@@ -59,14 +49,14 @@ func TestProductPublishRecordHistoryButtonAndTemplate(t *testing.T) {
 	body := publishRecordBodyWithButtons(t, map[string]bool{"product.publish_attempts": true})
 
 	for _, want := range []string{
-		// 触发按钮：打 JSON 接口 + json-swap 声明
+
 		"/api/product/publish-attempts?project=p1&amp;productId=prod-1",
 		`hx-ext="json-swap"`,
 		`data-json-template="#tpl-publish-attempt"`,
 		`data-json-rows="rows"`,
 		`data-json-key="id"`,
 		`data-json-more="page"`,
-		// 行模板的每一个 data-field 都在（少一个 = 一列静默空白）
+
 		`data-field="createdAt" data-field-format="datetime"`,
 		`data-field="operatorName"`,
 		`data-field="langs" data-field-format="list"`,
@@ -74,13 +64,13 @@ func TestProductPublishRecordHistoryButtonAndTemplate(t *testing.T) {
 		`data-field="durationMs" data-field-format="duration"`,
 		`data-field="attempts" data-field-min="2" data-field-suffix="x"`,
 		`class="ph-error" data-when="failed" data-when-field="outcome"`,
-		// 触发源七档（671 的 CHECK 是七值，少一档那次尝试显示成空白）
+
 		`data-when="create"`, `data-when="manual"`, `data-when="template_switch"`,
 		`data-when="update_url"`, `data-when="rollback"`, `data-when="override"`,
 		`data-when="auto_rebuild"`,
-		// 结果两档
+
 		`data-when="success"`, `data-when="failed"`,
-		// 加载更多：追加而不是整块重渲染
+
 		`data-json-patch="append"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -89,7 +79,6 @@ func TestProductPublishRecordHistoryButtonAndTemplate(t *testing.T) {
 	}
 }
 
-// 没有按钮授权时整块不渲染：没有触发按钮的行容器永远打不开。
 func TestProductPublishRecordHistoryHiddenWithoutButton(t *testing.T) {
 	body := publishRecordBodyWithButtons(t, map[string]bool{})
 	if strings.Contains(body, "/api/product/publish-attempts") {

@@ -1,13 +1,5 @@
 package builder
 
-// breadcrumb_contract_test.go — core.breadcrumb 构建期契约测试（审计 SEO-014）。
-//
-// 审计要点：页面此前只有 head 的 BreadcrumbList JSON-LD，没有可见面包屑；
-// 且可见项与结构化数据必须同源。本文件把三件事钉在构建产物上：
-//  1. 产物里真的出现可见面包屑 DOM（含当前页标记）；
-//  2. 可见项与 head 的 JSON-LD 面包屑逐项一致（同一套路径推导 + 同一条首页词条）；
-//  3. 组件在注册表与模板注册表里（组件库可见性依赖 core.Types()）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"regexp"
@@ -19,7 +11,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// breadcrumbDocJSON 只放一个面包屑节点：断言不会被其它组件的链接干扰。
 const breadcrumbDocJSON = `{
   "settings": {"layout": {"mode": "full"}, "base": {}, "seo": {"title": "面包屑", "canonical": "/products/pods"}},
   "root": [
@@ -27,19 +18,15 @@ const breadcrumbDocJSON = `{
   ]
 }`
 
-// crumbTextRe 取可见层级项文案（链接或纯文本项）。
 var crumbTextRe = regexp.MustCompile(`>([^<>]+)</(?:a|span)>`)
 
-// hrefRe 取可见层级的链接地址（纯文本项没有 href）。
 var hrefRe = regexp.MustCompile(`href="([^"]+)"`)
 
-// crumbLD head JSON-LD 里的面包屑条目（可见项要逐项对齐的字段）。
 type crumbLD struct {
 	Name string `json:"name"`
 	Item string `json:"item"`
 }
 
-// compileBreadcrumbDoc 编译面包屑文档（注入组件模板 Set）。
 func compileBreadcrumbDoc(t *testing.T, opts ...CompileOption) *CompiledPage {
 	t.Helper()
 	page, err := ParsePage([]byte(breadcrumbDocJSON))
@@ -57,7 +44,6 @@ func compileBreadcrumbDoc(t *testing.T, opts ...CompileOption) *CompiledPage {
 	return compiled
 }
 
-// crumbListSegment 截取可见面包屑列表片段（sky-breadcrumb-list 到 </ol>）。
 func crumbListSegment(t *testing.T, html string) string {
 	t.Helper()
 	const marker = `class="sky-breadcrumb-list"`
@@ -73,7 +59,6 @@ func crumbListSegment(t *testing.T, html string) string {
 	return rest[:end]
 }
 
-// visibleCrumbs 从产物里取出可见层级项文案。
 func visibleCrumbs(t *testing.T, html string) []string {
 	t.Helper()
 	var out []string
@@ -83,7 +68,6 @@ func visibleCrumbs(t *testing.T, html string) []string {
 	return out
 }
 
-// visibleCrumbHrefs 从产物里取出可见层级的链接序列（纯文本项没有 href）。
 func visibleCrumbHrefs(t *testing.T, html string) []string {
 	t.Helper()
 	var out []string
@@ -93,7 +77,6 @@ func visibleCrumbHrefs(t *testing.T, html string) []string {
 	return out
 }
 
-// headBreadcrumbList 解析 head 里的 JSON-LD 面包屑条目（name + item）。
 func headBreadcrumbList(t *testing.T, head string) []crumbLD {
 	t.Helper()
 	const open = `<script type="application/ld+json">`
@@ -121,7 +104,6 @@ func headBreadcrumbList(t *testing.T, head string) []crumbLD {
 	return doc.Breadcrumb.Items
 }
 
-// headBreadcrumbNames head JSON-LD 面包屑的 name 序列。
 func headBreadcrumbNames(t *testing.T, head string) []string {
 	t.Helper()
 	items := headBreadcrumbList(t, head)
@@ -132,7 +114,6 @@ func headBreadcrumbNames(t *testing.T, head string) []string {
 	return names
 }
 
-// headBreadcrumbItems head JSON-LD 面包屑的 item（层级链接）序列。
 func headBreadcrumbItems(t *testing.T, head string) []string {
 	t.Helper()
 	items := headBreadcrumbList(t, head)
@@ -143,10 +124,6 @@ func headBreadcrumbItems(t *testing.T, head string) []string {
 	return out
 }
 
-// TestBreadcrumbVisibleDomMatchesHeadJSONLD 可见面包屑存在，且与 head 的 JSON-LD 逐项一致。
-//
-// 按生产装配口径注入取词函数（pipeline.LocaleCompileOptions 会注入 i18n 词条快照）：
-// head 的面包屑首项与组件的首页项同取 site.breadcrumb.home 一条词条，故两处都显示该词条值。
 func TestBreadcrumbVisibleDomMatchesHeadJSONLD(t *testing.T) {
 	compiled := compileBreadcrumbDoc(t, WithCurrentPath("/products/pods"),
 		WithTranslator(func(key, fallback string) string {
@@ -162,7 +139,6 @@ func TestBreadcrumbVisibleDomMatchesHeadJSONLD(t *testing.T) {
 		t.Fatalf("可见面包屑层级不符：got=%v want=%v", got, want)
 	}
 
-	// 当前页标记与可点链接：前项可点，末项标 aria-current。
 	for _, needle := range []string{
 		`href="/products"`,
 		`aria-current="page"`,
@@ -173,7 +149,6 @@ func TestBreadcrumbVisibleDomMatchesHeadJSONLD(t *testing.T) {
 		}
 	}
 
-	// 无障碍硬规则：当前项只标一次；分隔符是装饰，不进无障碍树。
 	if n := strings.Count(compiled.HTML, `aria-current="page"`); n != 1 {
 		t.Errorf("aria-current 只应出现在当前项，实际出现 %d 次", n)
 	}
@@ -181,24 +156,21 @@ func TestBreadcrumbVisibleDomMatchesHeadJSONLD(t *testing.T) {
 		t.Errorf("分隔符应标 aria-hidden（否则读屏会念出分隔符）")
 	}
 
-	// 同源：head 的 JSON-LD 面包屑 name 序列必须与可见项一致（同一套推导规则）。
 	head := BuildSEOHead(SEO{Title: "面包屑"}, "/products/pods", "", "", "CRUMB-HOME", nil)
 	headNames := headBreadcrumbNames(t, head)
 	if strings.Join(headNames, "|") != strings.Join(got, "|") {
 		t.Fatalf("可见项与 JSON-LD 不同源：head=%v visible=%v", headNames, got)
 	}
-	// 产物自己的 SEO 头片段同样带这份 JSON-LD（端到端而非仅比对单个函数）：
-	// 可见项与产物 head 出自同一次编译，路径口径不会漂移。
+
 	if fileNames := headBreadcrumbNames(t, compiled.SEOHead); strings.Join(fileNames, "|") != strings.Join(got, "|") {
 		t.Fatalf("产物 head 的 JSON-LD 与可见项不同源：head=%v visible=%v", fileNames, got)
 	}
-	// 链接（item）序列也要一致：只比 name 会漏掉「层级名对、链接错」的情况。
+
 	if hrefs := visibleCrumbHrefs(t, compiled.HTML); strings.Join(hrefs, "|") != strings.Join(headBreadcrumbItems(t, compiled.SEOHead), "|") {
 		t.Fatalf("可见项链接与 JSON-LD item 不同源：ld=%v visible=%v", headBreadcrumbItems(t, compiled.SEOHead), hrefs)
 	}
 }
 
-// TestBreadcrumbI18nUsesKeys 容器标签与缺省首页名走词条；未命中时回退中文兜底。
 func TestBreadcrumbI18nUsesKeys(t *testing.T) {
 	asked := map[string]bool{}
 	compiled := compileBreadcrumbDoc(t, WithCurrentPath("/about"),
@@ -225,7 +197,6 @@ func TestBreadcrumbI18nUsesKeys(t *testing.T) {
 		t.Errorf("命中词条后仍出现中文兜底\nHTML=%s", compiled.HTML)
 	}
 
-	// 未注入取词函数（默认取词器在 i18n 未初始化时回退 fallback）→ 中文兜底，绝不空属性。
 	plain := compileBreadcrumbDoc(t, WithCurrentPath("/about"))
 	if !strings.Contains(plain.HTML, `aria-label="面包屑导航"`) {
 		t.Fatalf("缺词条时应回退中文兜底\nHTML=%s", plain.HTML)
@@ -235,7 +206,6 @@ func TestBreadcrumbI18nUsesKeys(t *testing.T) {
 	}
 }
 
-// TestBreadcrumbJSONLDOption 开启 jsonLd 后组件自带结构化数据，且与可见项同源。
 func TestBreadcrumbJSONLDOption(t *testing.T) {
 	doc := strings.Replace(breadcrumbDocJSON, `"props": {}`, `"props": {"jsonLd": true}`, 1)
 	page, err := ParsePage([]byte(doc))
@@ -290,8 +260,6 @@ func TestBreadcrumbJSONLDOption(t *testing.T) {
 	}
 }
 
-// TestBreadcrumbRegistered 组件注册面：类型注册与模板注册（目录数一致性由
-// components_manifest_test.go 兜底）。
 func TestBreadcrumbRegistered(t *testing.T) {
 	comp, err := core.Lookup(breadcrumbPkg.Type)
 	if err != nil || comp == nil {

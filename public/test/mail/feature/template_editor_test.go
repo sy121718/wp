@@ -1,14 +1,5 @@
 package feature
 
-// template_editor_test.go — 模板可视化编辑器的四栏链路（T6）。
-//
-// 三条判据：
-//
-//  1. **预览由后端编译驱动**：页面注入的 meta 带 compiledHtml（不是前端拼的）；
-//  2. **保存链路回带产物**：POST body_json → 响应里 bodyCompiledHtml 非空，
-//     前端只需替换 iframe srcdoc；
-//  3. **代码模式仍可达**：列表页的两个 textarea 没有被删（任务卡硬要求）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -19,15 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
 )
 
-// TestTemplateEditorRendersFourPanes 四栏容器与注入数据都在。
 func TestTemplateEditorRendersFourPanes(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -43,24 +33,23 @@ func TestTemplateEditorRendersFourPanes(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		// 四栏
+
 		`id="tplTree"`, `id="tplCanvas"`, `id="tplAttrs"`, `id="tplPreview"`,
-		// 顶栏控件与保存入口
+
 		`id="tplKey"`, `id="tplSubject"`, `id="tplSave"`,
-		// 脚本与样式
+
 		"/static/js/template/index.js", "/static/css/template_editor.css",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("编辑器缺少 %q；前 800 字：\n%s", want, firstN(body, 800))
 		}
 	}
-	// meta 里必须带空树（新建模板也要能画完再保存）。
+
 	if !strings.Contains(body, `"tree"`) || !strings.Contains(body, `"body"`) {
 		t.Fatalf("注入的 meta 缺块树；前 900 字：\n%s", firstN(body, 900))
 	}
 }
 
-// TestTemplateEditorShowsCompiledPreview 已存在的模板：meta 带编译产物。
 func TestTemplateEditorShowsCompiledPreview(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -91,7 +80,7 @@ func TestTemplateEditorShowsCompiledPreview(t *testing.T) {
 		t.Fatalf("状态码 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	// meta 里的 compiledHtml 必须来自后端编译器（含 PREVIEW_MARKER 与 table 结构）。
+
 	if !strings.Contains(body, "PREVIEW_MARKER") {
 		t.Fatalf("meta 里没有编译产物（预览只能靠前端拼，而那是第二份生成器）；前 900 字：\n%s", firstN(body, 900))
 	}
@@ -100,7 +89,6 @@ func TestTemplateEditorShowsCompiledPreview(t *testing.T) {
 	}
 }
 
-// TestTemplateEditorSaveReturnsCompiled 保存 body_json → 响应回带编译产物。
 func TestTemplateEditorSaveReturnsCompiled(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -153,10 +141,6 @@ func TestTemplateEditorSaveReturnsCompiled(t *testing.T) {
 	}
 }
 
-// TestTemplatesListKeepsCodeMode 列表页仍保留「代码模式」（两个 textarea）。
-//
-// 这是任务卡的硬要求：可视化是**新增**，不是替换掉源码编辑 —— 复杂排版要精修时
-// 只能靠它。
 func TestTemplatesListKeepsCodeMode(t *testing.T) {
 	body, err := os.ReadFile("../../../../internal/templates/admin/mail/mail_templates.html")
 	if err != nil {
@@ -170,7 +154,6 @@ func TestTemplatesListKeepsCodeMode(t *testing.T) {
 	}
 }
 
-// newTemplateEditorRouter 挂编辑器页与保存端点（保存走 JSON）。
 func newTemplateEditorRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -190,5 +173,4 @@ func newTemplateEditorRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	return router
 }
 
-// ensure io stays referenced（roundTripFunc 之类在别的文件里用）
 var _ = io.Discard

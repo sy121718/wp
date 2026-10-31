@@ -5,7 +5,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// ThemeResp 主题投影(含设置:colors/fontFamily/headerPageId/footerPageId)。
 type ThemeResp struct {
 	ID        string          `json:"id"`
 	ProjectID string          `json:"projectId"`

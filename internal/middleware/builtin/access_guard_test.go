@@ -1,14 +1,5 @@
 package builtin
 
-// access_guard_test.go — AccessGuard 访问面守卫的判定测试（PIPE-6）。
-//
-// 最该被钉死的一条是「条目内文件的显式文件名写法不得绕过守卫」：
-// 守卫按条目名判定受限，而访问面既能用 `/about` 取到产物、也能用
-// `/about/index.html` 取到同一份产物。两者归一不一致时，第二次请求就是一条
-// 一行就写完的绕过（守卫判 `/about` 受限、静态面把 `/about/index.html`
-// 当「产物内普通文件」原样直出）。TestAccessGuardBlocksEntryAndExplicitIndexPath
-// 就是这条断言。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -27,17 +18,14 @@ import (
 	"go_wp/pkg/auth"
 )
 
-// guardTestEntry 一个待发布的条目。
 type guardTestEntry struct {
-	// HTML 产物入口内容。
 	HTML string
-	// Access 访问设置（nil/公开 = 不带守卫产物）。
+
 	Access *builder.AccessGuardSettings
-	// Lang 守卫页语言。
+
 	Lang string
 }
 
-// addGuardTestEntry 发布一个条目（建产物目录 + 相对符号链接）。
 func addGuardTestEntry(t *testing.T, entry string, e guardTestEntry) {
 	t.Helper()
 	root := pipeline.DefaultArtifactRoot()
@@ -72,12 +60,6 @@ func addGuardTestEntry(t *testing.T, entry string, e guardTestEntry) {
 	}
 }
 
-// newGuardTestSite 构造最小激活站点布局（与生产同形）：
-//
-//	{root}/public/active/{条目} -> ../../artifacts/{hash}   （相对符号链接）
-//	{root}/artifacts/{hash}/{index.html,guard.html,guard.json}
-//
-// 调用前必须已 Setenv GO_WP_ARTIFACT_ROOT。
 func newGuardTestSite(t *testing.T, entries map[string]guardTestEntry) {
 	t.Helper()
 	for entry, e := range entries {
@@ -85,7 +67,6 @@ func newGuardTestSite(t *testing.T, entries map[string]guardTestEntry) {
 	}
 }
 
-// passwordGuard 生成一个 password 类型的访问设置（哈希来自明文）。
 func passwordGuard(t *testing.T, password string) *builder.AccessGuardSettings {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -95,8 +76,6 @@ func passwordGuard(t *testing.T, password string) *builder.AccessGuardSettings {
 	return &builder.AccessGuardSettings{Type: builder.AccessPassword, PasswordHash: string(hash)}
 }
 
-// newGuardTestRouter 装配一条「守卫 + 终点」的最小访问面：
-// 守卫放行时由终点返回 200 CONTENT（模拟静态面直出）。
 func newGuardTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -106,7 +85,6 @@ func newGuardTestRouter() *gin.Engine {
 	return r
 }
 
-// guardGet 发起一次 GET。
 func guardGet(r *gin.Engine, path string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	for _, ck := range cookies {
@@ -117,7 +95,6 @@ func guardGet(r *gin.Engine, path string, cookies ...*http.Cookie) *httptest.Res
 	return rec
 }
 
-// guardUnlock 发起一次解锁请求，返回响应与全部 Set-Cookie。
 func guardUnlock(r *gin.Engine, path, password string) (*httptest.ResponseRecorder, []*http.Cookie) {
 	form := url.Values{"path": {path}, "password": {password}}
 	req := httptest.NewRequest(http.MethodPost, AccessUnlockPath, strings.NewReader(form.Encode()))
@@ -127,8 +104,6 @@ func guardUnlock(r *gin.Engine, path, password string) (*httptest.ResponseRecord
 	return rec, rec.Result().Cookies()
 }
 
-// TestAccessGuardBlocksEntryAndExplicitIndexPath 守卫拦住条目本身**以及**它的
-// 显式文件名写法 —— 后者是静态面真正会直出的那条路径。
 func TestAccessGuardBlocksEntryAndExplicitIndexPath(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -149,12 +124,12 @@ func TestAccessGuardBlocksEntryAndExplicitIndexPath(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "SECRET-ABOUT") {
 			t.Fatalf("%s 泄漏了受限内容", path)
 		}
-		// 未解锁的响应绝不能是可缓存的公开响应。
+
 		if cc := rec.Header().Get("Cache-Control"); cc != "private, no-store" {
 			t.Errorf("%s 期望 Cache-Control=private, no-store，实际 %q", path, cc)
 		}
 	}
-	// 公开页面与受限页面下的公开子条目照常放行。
+
 	for _, path := range []string{"/blog", "/blog/index.html", "/inner"} {
 		rec := guardGet(r, path)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "CONTENT") {
@@ -163,7 +138,6 @@ func TestAccessGuardBlocksEntryAndExplicitIndexPath(t *testing.T) {
 	}
 }
 
-// TestAccessGuardHidesGuardMeta 产物目录里的守卫元数据（含 bcrypt 哈希）不得被直出。
 func TestAccessGuardHidesGuardMeta(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -184,7 +158,6 @@ func TestAccessGuardHidesGuardMeta(t *testing.T) {
 	}
 }
 
-// TestAccessGuardUnlockFlow 解锁成功 → 同一 cookie 放行；密码错误 → 403 且不下发 cookie。
 func TestAccessGuardUnlockFlow(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -195,7 +168,6 @@ func TestAccessGuardUnlockFlow(t *testing.T) {
 	})
 	r := newGuardTestRouter()
 
-	// 密码错误：403 + 不下发解锁 cookie。
 	badRec, badCookies := guardUnlock(r, "/about", "wrong-password")
 	if badRec.Code != http.StatusForbidden {
 		t.Fatalf("错误密码期望 403，实际 %d", badRec.Code)
@@ -206,7 +178,6 @@ func TestAccessGuardUnlockFlow(t *testing.T) {
 		}
 	}
 
-	// 正确密码：302 回跳 + 下发解锁 cookie。
 	okRec, cookies := guardUnlock(r, "/about", "s3cret")
 	if okRec.Code != http.StatusFound {
 		t.Fatalf("正确密码期望 302，实际 %d，体=%q", okRec.Code, okRec.Body.String())
@@ -223,19 +194,18 @@ func TestAccessGuardUnlockFlow(t *testing.T) {
 	if cookie == nil {
 		t.Fatal("未下发解锁 cookie")
 	}
-	// SameSite=Lax 是这条链路 CSRF 论证的前提（跨站 POST 不带 cookie）。
+
 	if cookie.SameSite != http.SameSiteLaxMode || !cookie.HttpOnly {
 		t.Errorf("解锁 cookie 属性不符：SameSite=%v HttpOnly=%v", cookie.SameSite, cookie.HttpOnly)
 	}
 
-	// 带 cookie：条目本身与显式文件名写法都要放行。
 	for _, path := range []string{"/about", "/about/index.html"} {
 		rec := guardGet(r, path, cookie)
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s 解锁后期望 200，实际 %d", path, rec.Code)
 		}
 	}
-	// 未解锁的**另一个**受限条目不受影响。
+
 	addGuardTestEntry(t, "shop", guardTestEntry{HTML: "<html><body>SECRET-SHOP</body></html>", Access: passwordGuard(t, "shop-pass")})
 	rec := guardGet(r, "/shop", cookie)
 	if rec.Code != http.StatusForbidden {
@@ -243,7 +213,6 @@ func TestAccessGuardUnlockFlow(t *testing.T) {
 	}
 }
 
-// TestAccessGuardFingerprintChangeInvalidatesCookie 改密码 → 旧解锁 cookie 立刻失效。
 func TestAccessGuardFingerprintChangeInvalidatesCookie(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", root)
@@ -268,8 +237,6 @@ func TestAccessGuardFingerprintChangeInvalidatesCookie(t *testing.T) {
 		t.Fatalf("解锁后期望 200，实际 %d", rec.Code)
 	}
 
-	// 换密码重建产物目录（新哈希 → 新指纹）。
-	// 清理旧激活链接，避免与新链接冲突。
 	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), "about")); err != nil {
 		t.Fatalf("移除旧激活链接失败: %v", err)
 	}
@@ -277,13 +244,12 @@ func TestAccessGuardFingerprintChangeInvalidatesCookie(t *testing.T) {
 	if rec := guardGet(r, "/about", cookie); rec.Code != http.StatusForbidden {
 		t.Fatalf("改密码后旧 cookie 应失效（403），实际 %d", rec.Code)
 	}
-	// 新密码可以解锁。
+
 	if rec, _ := guardUnlock(r, "/about", "new-pass"); rec.Code != http.StatusFound {
 		t.Fatalf("新密码应解锁成功，实际 %d", rec.Code)
 	}
 }
 
-// TestAccessGuardMembers 登录可见：探针未注入时 fail closed；注入为已登录时放行。
 func TestAccessGuardMembers(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -294,22 +260,21 @@ func TestAccessGuardMembers(t *testing.T) {
 	})
 	r := newGuardTestRouter()
 
-	// 探针未注入：fail closed（含未登录与「装配漏了」两种情况）。
 	SetAccessGuardLoginProbe(nil)
 	if rec := guardGet(r, "/member"); rec.Code != http.StatusForbidden {
 		t.Fatalf("探针未注入时期望 403，实际 %d", rec.Code)
 	}
-	// 注入「未登录」：
+
 	SetAccessGuardLoginProbe(func(*gin.Context) bool { return false })
 	if rec := guardGet(r, "/member"); rec.Code != http.StatusForbidden {
 		t.Fatalf("未登录期望 403，实际 %d", rec.Code)
 	}
-	// 注入「已登录」：
+
 	SetAccessGuardLoginProbe(func(*gin.Context) bool { return true })
 	if rec := guardGet(r, "/member"); rec.Code != http.StatusOK {
 		t.Fatalf("已登录期望 200，实际 %d", rec.Code)
 	}
-	// 探针 panic 不能把静态请求打成 500，也不能顺带放行。
+
 	SetAccessGuardLoginProbe(func(*gin.Context) bool { panic("probe boom") })
 	if rec := guardGet(r, "/member"); rec.Code != http.StatusForbidden {
 		t.Fatalf("探针 panic 时期望 403，实际 %d", rec.Code)
@@ -317,7 +282,6 @@ func TestAccessGuardMembers(t *testing.T) {
 	SetAccessGuardLoginProbe(nil)
 }
 
-// TestAccessGuardMetaCorruptedFailsClosed 守卫元数据损坏（存在但解析不了）必须 fail closed。
 func TestAccessGuardMetaCorruptedFailsClosed(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", root)
@@ -327,7 +291,7 @@ func TestAccessGuardMetaCorruptedFailsClosed(t *testing.T) {
 	newGuardTestSite(t, map[string]guardTestEntry{
 		"about": {HTML: "<html><body>SECRET-ABOUT</body></html>", Access: passwordGuard(t, "s3cret")},
 	})
-	// 写坏元数据（合法 JSON 但缺类型）。
+
 	target, err := os.Readlink(filepath.Join(pipeline.ActiveRoot(), "about"))
 	if err != nil {
 		t.Fatalf("读链接失败: %v", err)
@@ -346,7 +310,6 @@ func TestAccessGuardMetaCorruptedFailsClosed(t *testing.T) {
 	}
 }
 
-// TestAccessCookieTamperRejected 签名被篡改的解锁 cookie 判废（不放行）。
 func TestAccessCookieTamperRejected(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -367,12 +330,12 @@ func TestAccessCookieTamperRejected(t *testing.T) {
 		t.Fatal("未下发解锁 cookie")
 	}
 	forged := *cookie
-	// 换掉签名段（末 32 个字符）。
+
 	forged.Value = cookie.Value[:len(cookie.Value)-32] + strings.Repeat("0", 32)
 	if rec := guardGet(r, "/about", &forged); rec.Code != http.StatusForbidden {
 		t.Fatalf("篡改签名期望 403，实际 %d", rec.Code)
 	}
-	// 换掉载荷（后缀不变）：签名同样对不上。
+
 	forged2 := *cookie
 	if len(forged2.Value) > 40 {
 		forged2.Value = "A" + cookie.Value[1:]
@@ -382,7 +345,6 @@ func TestAccessCookieTamperRejected(t *testing.T) {
 	}
 }
 
-// TestAccessCookieExpiredRejected 过期载荷判废。
 func TestAccessCookieExpiredRejected(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -406,7 +368,6 @@ func TestAccessCookieExpiredRejected(t *testing.T) {
 	}
 }
 
-// TestAccessUnlockRejectsNonGuardedPath 解锁端点不能给「没有守卫的页面」发通行证。
 func TestAccessUnlockRejectsNonGuardedPath(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -427,7 +388,6 @@ func TestAccessUnlockRejectsNonGuardedPath(t *testing.T) {
 	}
 }
 
-// TestAccessUnlockRejectsOpenRedirect 回跳路径由归一结果重建，不原样回显表单输入。
 func TestAccessUnlockRejectsOpenRedirect(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -445,16 +405,6 @@ func TestAccessUnlockRejectsOpenRedirect(t *testing.T) {
 	}
 }
 
-// TestAccessGuardCoversContentVariants 守卫必须覆盖同一份产物的**所有访问变体**。
-//
-// 为什么单独一条：静态面不是只有 `/about` 一种命中方式。同一份受限产物还能通过
-//   · 预压缩字节（构建期生成的 `.gz`，由 PrecompressedAssetMiddleware 直出）
-//   · 显式文件名（`/about/index.html`，已在上一条覆盖）
-//   · 大小写与重复斜杠（静态面按路径归一后命中同一文件）
-// 到达浏览器。守卫只认「条目名」时，前一类会被 `ResolveActiveEntry` 判成
-// 「不是激活条目」而**直接放行** —— 因为它们不以 `/index.html` 结尾。
-//
-// 本用例的判据：任何变体都不许出现 200 + 受限内容。
 func TestAccessGuardCoversContentVariants(t *testing.T) {
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	if err := auth.Init(nil); err != nil {
@@ -465,17 +415,16 @@ func TestAccessGuardCoversContentVariants(t *testing.T) {
 	})
 	r := newGuardTestRouter()
 
-	// 受限产物的各种访问写法。每一项都必须被拦（403），且不能泄漏受限内容。
 	for _, path := range []string{
 		"/about",
 		"/about/",
 		"/about/index.html",
-		"/about/index.html.gz",  // 预压缩变体：静态面会直出它
-		"/about/index.html.br",  // brotli 变体（若将来生成）
-		"/About",                // 大小写变体
-		"/ABOUT/index.html",     // 目录大小写变体
-		"//about//index.html",   // 重复斜杠
-		"/about/index.html?x=1", // 带查询串
+		"/about/index.html.gz",
+		"/about/index.html.br",
+		"/About",
+		"/ABOUT/index.html",
+		"//about//index.html",
+		"/about/index.html?x=1",
 	} {
 		rec := guardGet(r, path)
 		if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "SECRET-ABOUT") {

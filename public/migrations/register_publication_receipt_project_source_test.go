@@ -1,19 +1,5 @@
 package migrations_test
 
-// register_publication_receipt_project_source_test.go —— 迁移 703（回执来源新增 project）的落地判据。
-//
-// 判据要说的是「source_type 的白名单**恰好**是 page / presentation / project」，
-// 而不是「定义里出现过这三个词」。差别在真实事故里是可见的：
-//   · 有人把约束放宽成四值（又加了 'site'）—— 包含判据照样命中三条 LIKE，
-//     于是这条迁移被判成「已应用」永久跳过，放宽的方向被静默接受；
-//   · 有人把约束改成任意文本 —— 回执归属失去封闭性，收敛例程会按来源误领别人的回执。
-// 所以这里既断言「完整落地 ⇒ 1」，也断言上面这些偏差「⇒ 0」，最后断言复原后重跑能回到 1
-// （判据可修、不是恒真也不是噪声）。
-//
-// 夹具的 DDL 一律写 public.<表> 限定名：测试库的 search_path 是 "public,ext_shared"，
-// CheckSQL 用的是 current_schema()（按 search_path 首项解析，恰好是 public）。
-// 显式限定名把这个隐式假设写死成事实 —— 判据被改成别的解析方式时用例会明确失败。
-
 import (
 	"strings"
 	"testing"
@@ -24,7 +10,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 703 的版本号（与 register_publication_receipt_project_source.go 一致）。
 const publicationReceiptSourceTypeProjectVersion = "703-publication-receipt-project-source"
 
 func publicationReceiptProjectSourceMigration(t *testing.T) migrations.Migration {
@@ -45,10 +30,6 @@ func publicationReceiptProjectSourceMigration(t *testing.T) migrations.Migration
 	return migrations.Migration{}
 }
 
-// receiptSourceTypeCheckReady 用迁移器同一约定执行 CheckSQL：
-// 只在 SQL 里真的出现 ? 时才传表名（migrator.go 的 apply 就是这样绑的）。
-// 703 的判据零占位符 —— 这里不传参正是「零占位」那条要求的可执行形式：
-// 若哪天有人在判据里塞了个 ?，这个用例会当场报参数个数不符。
 func receiptSourceTypeCheckReady(t *testing.T, db *gorm.DB, m migrations.Migration) int64 {
 	t.Helper()
 	if strings.Contains(m.CheckSQL, "?") {
@@ -61,7 +42,6 @@ func receiptSourceTypeCheckReady(t *testing.T, db *gorm.DB, m migrations.Migrati
 	return ready
 }
 
-// TestPublicationReceiptProjectSourceIsApplied 生产迁移库上判据必须认可「完整落地」，且整条 SQL 可重放。
 func TestPublicationReceiptProjectSourceIsApplied(t *testing.T) {
 	m := publicationReceiptProjectSourceMigration(t)
 	db := support.NewMigratedPGTestDB(t)
@@ -78,7 +58,6 @@ func TestPublicationReceiptProjectSourceIsApplied(t *testing.T) {
 	}
 }
 
-// TestPublicationReceiptProjectSourceAcceptsOnlyThreeExactValues 判据必读认得偏差（不是恒真、不是包含判据）。
 func TestPublicationReceiptProjectSourceAcceptsOnlyThreeExactValues(t *testing.T) {
 	m := publicationReceiptProjectSourceMigration(t)
 	db := support.NewMigratedPGTestDB(t)
@@ -95,7 +74,7 @@ func TestPublicationReceiptProjectSourceAcceptsOnlyThreeExactValues(t *testing.T
 		apply(t, setConstraint)
 		apply(t, "ALTER TABLE public.publication_receipts ADD CONSTRAINT publication_receipts_source_type_check CHECK ("+body+")")
 	}
-	// 复原 = 本迁移自己的 SQL（不是手抄一份「正确形状」）：判据必须由被测的那条迁移修回来。
+
 	revert := func(t *testing.T) {
 		t.Helper()
 		if err := db.Exec(m.SQL).Error; err != nil {
@@ -141,8 +120,7 @@ func TestPublicationReceiptProjectSourceAcceptsOnlyThreeExactValues(t *testing.T
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// 复原必须挂在 cleanup 上：下面判据失败时 Fatalf 会直接结束子用例，
-			// 不先复原就会把「已被改成偏差形状的约束」留给后续子用例，从第二个起全部误判。
+
 			t.Cleanup(func() { revert(t) })
 			replaceConstraint(t, c.body)
 			if got := receiptSourceTypeCheckReady(t, db, m); got != 0 {

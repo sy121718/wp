@@ -1,4 +1,3 @@
-// 公共下拉的事件与状态契约。DOM 适配器不验证布局，布局与真实输入由浏览器夹具覆盖。
 package templates
 
 import (
@@ -10,21 +9,19 @@ import (
 	"testing"
 )
 
-// dropdownProbe node 侧下拉交互探针结果。
 type dropdownProbe struct {
 	Opened        bool     `json:"opened"`
-	OpenAfterDoc  bool     `json:"openAfterDoc"`  // 点按钮后 document 监听是否被触发（true = 未被误关）
-	ItemValue     string   `json:"itemValue"`     // 点选后的值
-	ChangeCalls   []string `json:"changeCalls"`   // onChange 回调收到的值序列
-	ClosedAfter   bool     `json:"closedAfter"`   // 点选后是否收起
-	BtnText       string   `json:"btnText"`       // 点选后按钮文案
-	KeysBefore    []string `json:"keysBefore"`    // 重渲染前记录的展开 key
-	RestoredOpen  bool     `json:"restoredOpen"`  // 新节点（模拟 morph 重建）恢复后是否展开
-	RecreatedNode bool     `json:"recreatedNode"` // 恢复用的节点确实是新对象
-	ClosedByDoc   bool     `json:"closedByDoc"`   // 点击下拉外部后是否收起
+	OpenAfterDoc  bool     `json:"openAfterDoc"`
+	ItemValue     string   `json:"itemValue"`
+	ChangeCalls   []string `json:"changeCalls"`
+	ClosedAfter   bool     `json:"closedAfter"`
+	BtnText       string   `json:"btnText"`
+	KeysBefore    []string `json:"keysBefore"`
+	RestoredOpen  bool     `json:"restoredOpen"`
+	RecreatedNode bool     `json:"recreatedNode"`
+	ClosedByDoc   bool     `json:"closedByDoc"`
 }
 
-// runDropdownProbe 用 node 求值 ui/select.js 的 公共下拉 并跑完交互场景。
 func runDropdownProbe(t *testing.T) dropdownProbe {
 	t.Helper()
 	abs, err := filepath.Abs("static/js/ui")
@@ -53,7 +50,6 @@ func runDropdownProbe(t *testing.T) dropdownProbe {
 	return p
 }
 
-// TestDropdownInteractionContract 展开 / 选择 / 关闭 / 展开态跨重建恢复。
 func TestDropdownInteractionContract(t *testing.T) {
 	p := runDropdownProbe(t)
 
@@ -89,7 +85,6 @@ func TestDropdownInteractionContract(t *testing.T) {
 	}
 }
 
-// dropdownProbeScript node 侧探针：极简 DOM stub + 真实 ui/select.js 的 公共下拉。
 const dropdownProbeScript = `
 // ---- DOM 事件适配器：不承担浏览器布局验证 ----
 function parseSel(sel) {

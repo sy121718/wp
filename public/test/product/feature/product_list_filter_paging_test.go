@@ -1,18 +1,5 @@
 package feature
 
-// product_list_filter_paging_test.go — 商品域后台子列表（属性 / 分类 / 品牌 / 标签）的
-// 筛选入口与分页链路（审计 02-M 的 D12 / D13）。
-//
-// 三条断言都从**渲染出来的 HTML** 上取，而不是「我们写下的配置」：
-//
-//	① 筛选栏存在，且关键词回显在控件上（提交后看不出筛了什么 = 筛选栏白加）；
-//	② 数据超过一页时分页条出现，且翻页链接**保留筛选条件**（条件丢了用户会以为筛选失效）；
-//	③ 筛选无结果时空态仍保留 <table>/<thead>，并说清「是筛出来的空」而不是「还没有数据」。
-//
-// 用真实 Jet 模板 + 真实 service（与生产同一 template root、同一套迁移建的表结构）。
-// 四个页面各自复用同包已有的测试引擎：newTaxonomyPageEngine（分类 / 品牌）、
-// newTagPageEngine（标签）、newAttrPageEngine（属性）。
-
 import (
 	"fmt"
 	"net/http"
@@ -27,10 +14,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// getWholePage 取页面 HTML，并额外要求渲染完整（出现 </html>）。
-//
-// 为什么不直接用同包的 getPage：缺数据键时 Jet 在那一行中断渲染，**HTTP 仍是 200**，
-// 断言只看状态码就会把「后半页整块消失」当成通过。
 func getWholePage(t *testing.T, engine *gin.Engine, target string) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -42,7 +25,6 @@ func getWholePage(t *testing.T, engine *gin.Engine, target string) string {
 	return body
 }
 
-// clip 只用于失败信息，避免把整页 HTML 打进日志。
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -50,10 +32,6 @@ func clip(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// paginationSection 摘出分页条的 HTML 段（判「翻页链接里有没有保留筛选条件」用）。
-//
-// 不能在整个页面里搜 keyword=xxx：筛选栏的回显 value 与批量表单的隐藏域也含同样的字面量，
-// 那样即使分页链接丢了条件，断言照样通过。
 func paginationSection(body string) string {
 	i := strings.Index(body, `class="pagination"`)
 	if i < 0 {
@@ -66,7 +44,6 @@ func paginationSection(body string) string {
 	return rest
 }
 
-// TestProductListFilterBarKeywordEcho ① 四页都有筛选栏，关键词回显在输入框上。
 func TestProductListFilterBarKeywordEcho(t *testing.T) {
 	taxonomy, _ := newTaxonomyPageEngine(t)
 	if taxonomy == nil {
@@ -101,11 +78,11 @@ func TestProductListFilterBarKeywordEcho(t *testing.T) {
 				`class="filter-fields"`,
 				`name="keyword"`,
 				`id="` + p.id + `"`,
-				// 回显：提交后条件必须还留在控件上（这也是「分页链接会不会丢条件」的前置）。
+
 				`value="zzz"`,
 				`placeholder="` + p.placeholder + `"`,
 				`class="filter-actions"`,
-				// 筛选栏是 GET 表单：服务端渲染、无 JS 也能用，条件落在查询串上。
+
 				`method="get"`,
 			} {
 				if !strings.Contains(body, want) {
@@ -116,10 +93,6 @@ func TestProductListFilterBarKeywordEcho(t *testing.T) {
 	}
 }
 
-// TestProductAttributeVariationFilter 属性页的「参与变体」维度真的下推到查询。
-//
-// 单独一条是因为它多一维下拉：取值必须与 service 的 ListAttributeReq.Variation 同一套
-// （"" / "1" / "0"）—— 写错时页面不报错，只表现为「筛了等于没筛」。
 func TestProductAttributeVariationFilter(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
@@ -137,7 +110,6 @@ func TestProductAttributeVariationFilter(t *testing.T) {
 		t.Fatalf("创建不参与变体的属性组失败: %v", err)
 	}
 
-	// 控件回显：选中的必须是当前档位，而不是永远停在第一项。
 	all := getWholePage(t, engine, "/admin/product-attributes?project="+f.projectID)
 	for _, want := range []string{
 		`class="filter-actions"`,
@@ -162,7 +134,7 @@ func TestProductAttributeVariationFilter(t *testing.T) {
 	if !strings.Contains(withVar, "变体颜色") || strings.Contains(withVar, "普通规格") {
 		t.Fatal("variation=1 应只列出「参与变体」的属性组")
 	}
-	// 关键词维度：筛一个不存在的词 → 空态但表头仍在（③ 的同一条约定，属性页一并钉住）。
+
 	none := getWholePage(t, engine, "/admin/product-attributes?project="+f.projectID+"&keyword=zzznomatch")
 	if !strings.Contains(none, "<thead") || !strings.Contains(none, `class="data-table"`) {
 		t.Fatal("属性页筛选无结果时表头消失")
@@ -172,14 +144,13 @@ func TestProductAttributeVariationFilter(t *testing.T) {
 	}
 }
 
-// TestProductListPaginationKeepsFilter ② 超过一页时分页条出现，翻页链接保留筛选条件。
 func TestProductListPaginationKeepsFilter(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if engine == nil {
 		return
 	}
 	ctx := t.Context()
-	// 25 条同名前缀的品牌 → 每页 20 条，正好两页（第 2 页 5 条）。
+
 	const total = 25
 	for i := 1; i <= total; i++ {
 		if _, err := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{
@@ -219,14 +190,11 @@ func TestProductListPaginationKeepsFilter(t *testing.T) {
 		t.Fatal("第 2 页与第 1 页行数相同 —— 页码没有生效")
 	}
 
-	// 页码越界收敛到最后一页：不收敛会出现「表格为空、分页条显示第 999 页」。
 	overflow := getWholePage(t, engine, "/admin/product-brands?keyword=pg-brand&page=999")
 	if got := strings.Count(overflow, `name="ids"`); got != total-20 {
 		t.Fatalf("page=999 应收敛到最后一页（%d 行），实际 %d 行", total-20, got)
 	}
 
-	// 属性页同一口径：21 个属性组分两页，第 2 页必须真的有第 21 个 ——
-	// 这正是「Size:200 静默截断」修好之后才可能出现的形态。
 	attrEngine, af := newAttrPageEngine(t)
 	if attrEngine == nil {
 		return
@@ -253,15 +221,6 @@ func TestProductListPaginationKeepsFilter(t *testing.T) {
 	}
 }
 
-// TestProductListFilterI18nSeedIsIdempotent 迁移 411 的种子 SQL 能执行、幂等、门槛可命中。
-//
-// 为什么单独钉一条：迁移「注册了但幂等条件写错 ⇒ 每次启动重跑」或「写错语法但没人跑到」
-// 是本项目踩过的坑（178 的 `?` 被迁移器换成表名、104 与 122 的「删了又被 seed 插回」），
-// 而页面上看不出来 —— 没有 i18n 组件时模板走 fallback 文案，与词条值同形。
-//
-// 测试库只跑结构迁移、不跑 RunSeeds（seeds 属于启动路径，见 public/test/support 的组件配置），
-// 所以这里从 AllSeeds() 取出本批那条自己执行两遍：一遍验证 SQL 能过、一遍验证幂等；
-// 最后再验证 ConditionSQL 在词条落库后返回 > 0（否则那条迁移每次启动都会重跑）。
 func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 	_, f := newTaxonomyPageEngine(t)
 	if f == nil {
@@ -294,7 +253,7 @@ func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 		}
 		return n
 	}
-	want := int64(len(keys) * 2) // 12 个 key × 中英双语
+	want := int64(len(keys) * 2)
 	if err := f.db.Exec(target.SQL).Error; err != nil {
 		t.Fatalf("执行 411 的种子 SQL 失败: %v", err)
 	}
@@ -317,11 +276,6 @@ func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestCategoryKeywordFilterKeepsParentOptions 搜索把命中渲染成树（根 + 路径），父级下拉保留全部父项。
-//
-// 分类页的父级下拉是「编辑 / 新建抽屉」用的：如果只把筛选后（或当前这一页）的树喂给它，
-// 用户筛出一个子分类后打开编辑，它的父级会从选项里消失 —— 保存就会把层级静默拍平
-// （看起来只是「下拉里没有那一项」）。所以下拉恒取工程内全部分类。
 func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if engine == nil {
@@ -345,7 +299,7 @@ func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	if !strings.Contains(body, "冲锋衣") {
 		t.Fatal("关键词命中的子分类没有出现在表格里")
 	}
-	// 命中项连着它的上级路径一起渲染成树：两行（根 + 命中），根在前、命中缩进成子级。
+
 	if got := strings.Count(body, `name="ids"`); got != 2 {
 		t.Fatalf("按「冲锋衣」筛选后应展示命中与祖先共 2 行，实际 %d 行", got)
 	}
@@ -365,16 +319,12 @@ func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	}
 }
 
-// TestProductListEmptyStateKeepsTableHead ③ 空态两档：筛出来是空的 / 工程里本来就没有。
-//
-// 两档都必须保留 <table>/<thead>：表头是「这个列表有哪些列」的唯一说明，
-// 筛出 0 行就把它藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
 func TestProductListEmptyStateKeepsTableHead(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if engine == nil {
 		return
 	}
-	// 先放一条数据，确保页面走的是「有品牌」的正常分支，再做筛选。
+
 	if _, err := f.svc.CreateBrand(t.Context(), &productdto.CreateBrandReq{
 		ProjectID: f.projectID, Name: "山野品牌",
 	}); err != nil {
@@ -384,8 +334,7 @@ func TestProductListEmptyStateKeepsTableHead(t *testing.T) {
 	filtered := getWholePage(t, engine, "/admin/product-brands?keyword=zzznomatch")
 	for _, want := range []string{
 		`class="data-table"`, "<thead", `class="empty-state"`,
-		// colspan = 勾选列 + 品牌 / URL 段 / 排序 / 更新时间 + 操作（SEO 标题列已随
-		// 字段合并移除，2026-09-30）。
+
 		`colspan="6"`,
 		"没有匹配的品牌",
 	} {
@@ -396,17 +345,11 @@ func TestProductListEmptyStateKeepsTableHead(t *testing.T) {
 	if strings.Contains(filtered, "还没有品牌") {
 		t.Fatal("筛选无结果时不应给「还没有品牌」——分类存在，只是被筛掉了")
 	}
-	// 筛选无结果的空态要给出路（重置），否则用户只能自己去改地址栏。
+
 	if !strings.Contains(filtered, `href="/admin/product-brands?project=`) {
 		t.Fatal("筛选无结果的空态没有「重置」出口")
 	}
 
-	// 工程里真的没有品牌：空态换成「还没有品牌」并指向新建抽屉。
-	//
-	// 这里换一个**新建的隔离库**（fixture 每次新建库）而不是「同库里再建一个空工程」：
-	// product_brands 的查询只带 keyword，工程隔离靠 RLS 策略（app.project_id），
-	// 而当前测试连接的角色是超级用户、会绕过策略（AGENTS.md 的 DB-009 已知缺口）——
-	// 同库里别的工程的品牌会一起被读出来，那个空工程在页面上并不空。
 	emptyEngine, _ := newTaxonomyPageEngine(t)
 	if emptyEngine == nil {
 		return

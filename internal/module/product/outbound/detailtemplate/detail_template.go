@@ -11,28 +11,21 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// instanceReader 读取实体当前发布实例。
 type instanceReader interface {
 	GetByEntity(ctx context.Context, req *presentationcontract.GetByEntityReq) (res *presentationcontract.InstanceResp, err error)
 }
 
-// modeReader 提供文档快照与模板引用统计；未注入时只读取绑定事实。
 type modeReader interface {
 	ListSnapshots(ctx context.Context, req *presentationcontract.ListSnapshotsReq) ([]*presentationdto.SnapshotSummary, error)
 	CountByTemplate(ctx context.Context, req *presentationcontract.CountByTemplateReq) (*presentationdto.CountByTemplateResp, error)
 }
 
-// Port 实现 productcontract.DetailTemplatePort。
 type Port struct {
 	templates contenttemplatecontract.ContentTemplateService
 	instances instanceReader
 	mode      modeReader
 }
 
-// New 构造适配器。
-//
-// 任一上游为 nil 时对应能力降级（模板清单空 / 默认模板空串 / 没有绑定实例）——
-// 与「装配未完成」那一档一致，页面据此显示「还没配模板」而不是报 500。
 func New(templates contenttemplatecontract.ContentTemplateService, instances instanceReader, mode ...modeReader) *Port {
 	p := &Port{templates: templates, instances: instances}
 	if len(mode) > 0 {
@@ -43,10 +36,6 @@ func New(templates contenttemplatecontract.ContentTemplateService, instances ins
 
 var _ productcontract.DetailTemplatePort = (*Port)(nil)
 
-// DetailTemplateCandidates 本工程内该实体类型的模板清单。
-//
-// 工程显式透给下游：contenttemplate.List 在 req.ProjectID 为空时只认「唯一工程」，
-// 多工程部署下回 ErrProjectRequired（这一屏的主数据，读不到即整页失败）。
 func (p *Port) DetailTemplateCandidates(ctx context.Context, projectID, entityType string) (out []productcontract.DetailTemplateCandidateView, err error) {
 	out = []productcontract.DetailTemplateCandidateView{}
 	if p.templates == nil {
@@ -70,10 +59,6 @@ func (p *Port) DetailTemplateCandidates(ctx context.Context, projectID, entityTy
 	return out, nil
 }
 
-// DefaultDetailTemplate 本工程内该实体类型当前解析到的默认模板 id。
-//
-// 走 ResolveTemplateScoped（显式工程）而不是无工程的 ResolveTemplate：后者在多工程下回
-// ErrProjectRequired。这里已经有工程 id，不该退到「唯一工程」的兜底。
 func (p *Port) DefaultDetailTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error) {
 	if p.templates == nil {
 		return "", nil
@@ -91,7 +76,6 @@ func (p *Port) DefaultDetailTemplate(ctx context.Context, projectID, entityType 
 	return tpl.TemplateID, nil
 }
 
-// BoundDetailTemplate 区分“尚无实例”和“实例查询失败”。
 func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) (productcontract.BoundTemplateView, error) {
 	if p.instances == nil || entityID == "" {
 		return productcontract.BoundTemplateView{}, nil
@@ -115,7 +99,6 @@ func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, e
 	}, nil
 }
 
-// DetailTemplatePanel 读取发布关联事实；任何已装配查询失败都向上返回。
 func (p *Port) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) (productcontract.DetailTemplatePanelFacts, error) {
 	out := productcontract.DetailTemplatePanelFacts{}
 	if p.templates == nil || p.instances == nil || entityID == "" {

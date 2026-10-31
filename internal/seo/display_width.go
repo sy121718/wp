@@ -2,8 +2,6 @@ package seo
 
 import "unicode"
 
-// DisplayWidth 估算 SERP 展示宽度（ASCII 1 单位，CJK/全角 2 单位）。
-// 不测量真实字体，只用于标题/描述长度评分与预览截断。
 func DisplayWidth(s string) int {
 	w := 0
 	for _, r := range s {
@@ -24,7 +22,6 @@ func DisplayWidth(s string) int {
 	return w
 }
 
-// TruncateDisplayWidth 按展示宽度截断，append 省略号。
 func TruncateDisplayWidth(s string, max int) string {
 	if max <= 0 || DisplayWidth(s) <= max {
 		return s

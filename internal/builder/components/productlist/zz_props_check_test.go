@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestInspectorExposesTreeControls 检查器里能看到分类树的三个新开关。
 func TestInspectorExposesTreeControls(t *testing.T) {
 	props := (&Component{}).PropsSpec()
 	controls, err := core.ParseControls(props)

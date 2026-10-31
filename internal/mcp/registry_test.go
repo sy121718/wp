@@ -1,7 +1,5 @@
 package mcp
 
-// registry_test.go — 注册表行为：稳定顺序、重名拒绝、调用路径。
-
 import (
 	"context"
 	"errors"
@@ -11,7 +9,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// echoTool 一个最小工具：把入参里的 name 回显出来（用它验证调用确实走到了 handler）。
 func echoTool(name string) Tool {
 	return New(name, name, "测试用工具", permission.OrderList,
 		Object("回显参数", map[string]Schema{"name": String("要回显的名字")}, "name"),
@@ -23,8 +20,7 @@ func echoTool(name string) Tool {
 }
 
 func TestRegistryListIsNameSorted(t *testing.T) {
-	// 反序注册：列举顺序必须与注册顺序无关 —— 工具集一变，provider 侧前缀整段作废
-	//（docs/16 §3），而「每次列举顺序不同」会让缓存失效变成随机发生的。
+
 	r := NewRegistry()
 	if err := r.RegisterAll(echoTool("orders_summary"), echoTool("analytics_summary"), echoTool("pages_list")); err != nil {
 		t.Fatalf("注册失败: %v", err)
@@ -84,8 +80,7 @@ func TestRegistryInvoke(t *testing.T) {
 	})
 
 	t.Run("Invoke 也走参数校验", func(t *testing.T) {
-		// 校验必须挂在执行入口上，而不是「调用方记得先校验」——
-		// 后者一旦漏掉一处，模型就直接把参数塞进业务查询了。
+
 		_, err := r.Invoke(ctx, "orders_summary", json.RawMessage(`{"nope":1}`))
 		var argsErr *ArgsError
 		if !errors.As(err, &argsErr) {

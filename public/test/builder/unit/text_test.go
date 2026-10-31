@@ -7,13 +7,11 @@ import (
 	"go_wp/internal/builder"
 )
 
-// textDoc 构造 text 节点文档。
 func textDoc(t *testing.T, props string) *builder.Page {
 	t.Helper()
 	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"t1","type":"core.text","props":`+props+`}]}`)
 }
 
-// TestTextPlainMode 纯文本模式：单层 <p>/<span> 直出 + 转义。
 func TestTextPlainMode(t *testing.T) {
 	props := `{"mode":"plaintext","plainTag":"p","text":"这是一款兼顾便携与降噪的日常通勤耳机。","typography":{"desktop":{"fontSize":"0.875rem","textAlign":"center"}}}`
 	c, err := compile(t, textDoc(t, props))
@@ -29,7 +27,6 @@ func TestTextPlainMode(t *testing.T) {
 	}
 }
 
-// TestTextPlainSpan 纯文本 span 标签 + XSS 转义。
 func TestTextPlainSpan(t *testing.T) {
 	props := `{"mode":"plaintext","plainTag":"span","text":"<script>alert(1)</script>"}`
 	c, err := compile(t, textDoc(t, props))
@@ -44,7 +41,6 @@ func TestTextPlainSpan(t *testing.T) {
 	}
 }
 
-// TestTextRichMode 富文本模式：结构化片段 + 白名单清洗。
 func TestTextRichMode(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul><script>alert(1)</script><img src=javascript:alert(3) onerror=alert(2)>"}`
 	c, err := compile(t, textDoc(t, props))
@@ -59,7 +55,7 @@ func TestTextRichMode(t *testing.T) {
 			t.Errorf("HTML 缺少 %q: %s", want, c.HTML)
 		}
 	}
-	// img 属白名单标签：标签本身保留，但危险 src（javascript:）与 onerror 事件属性被剥离。
+
 	if !strings.Contains(c.HTML, "<img>") {
 		t.Errorf("合法 img 标签应保留（属性剥离后）: %s", c.HTML)
 	}
@@ -70,18 +66,17 @@ func TestTextRichMode(t *testing.T) {
 	}
 }
 
-// TestTextRichImg 富文本图片：合法 img 保留，javascript:/data: 协议 src 与事件属性剥离。
 func TestTextRichImg(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p><img src=\"https://example.com/a.jpg\" alt=\"说明\" width=\"300\" loading=\"lazy\"></p><p><img src=\"javascript:alert(1)\" onerror=\"alert(2)\"></p>"}`
 	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 合法 img 完整保留。
+
 	if !strings.Contains(c.HTML, `<img src="https://example.com/a.jpg" alt="说明" width="300" loading="lazy">`) {
 		t.Errorf("合法 img 未保留: %s", c.HTML)
 	}
-	// 危险协议与事件属性剥离。
+
 	for _, bad := range []string{"javascript:", "onerror="} {
 		if strings.Contains(c.HTML, bad) {
 			t.Errorf("危险内容未被清洗: %q in %s", bad, c.HTML)
@@ -89,7 +84,6 @@ func TestTextRichImg(t *testing.T) {
 	}
 }
 
-// TestTextRichLink 富文本链接：白名单协议 + target/rel。
 func TestTextRichLink(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>查看<a href=\"javascript:alert(1)\">坏链接</a>与<a href=\"https://example.com\" target=\"_blank\" rel=\"nofollow\">好链接</a></p>"}`
 	c, err := compile(t, textDoc(t, props))
@@ -107,7 +101,6 @@ func TestTextRichLink(t *testing.T) {
 	}
 }
 
-// TestTextBinding 绑定 + fallback：富文本绑定正文。
 func TestTextBinding(t *testing.T) {
 	resolver := mapResolver{"post.content": "<p>绑定正文内容</p>"}
 	props := `{"mode":"richtext","binding":{"field":"post.content","fallback":"<p>兜底</p>"}}`
@@ -119,7 +112,6 @@ func TestTextBinding(t *testing.T) {
 		t.Errorf("绑定内容未填入: %s", c.HTML)
 	}
 
-	// 空值回退 Fallback。
 	c2, err := compile(t, textDoc(t, props), builder.WithContentResolver(mapResolver{"post.content": ""}))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -129,7 +121,6 @@ func TestTextBinding(t *testing.T) {
 	}
 }
 
-// TestTextExcerpt 摘要模式：富文本绑定长文 strip 标签截前 N 字符。
 func TestTextExcerpt(t *testing.T) {
 	resolver := mapResolver{"product.description": "<p>第一段产品说明文字</p><p>第二段内容</p>"}
 	props := `{"mode":"richtext","binding":{"field":"product.description"},"excerpt":6}`
@@ -145,7 +136,6 @@ func TestTextExcerpt(t *testing.T) {
 	}
 }
 
-// TestTextLineClampSpacing 截断 + 段落间距。
 func TestTextLineClampSpacing(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>长文</p>","lineClamp":3,"paragraphSpacing":"0.75rem","color":"#444"}`
 	c, err := compile(t, textDoc(t, props))
@@ -163,7 +153,6 @@ func TestTextLineClampSpacing(t *testing.T) {
 	}
 }
 
-// TestTextValidateErrors 校验拒绝。
 func TestTextValidateErrors(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"无内容", `{"mode":"plaintext"}`, "必须提供内容"},
@@ -187,7 +176,6 @@ func TestTextValidateErrors(t *testing.T) {
 		})
 	}
 
-	// 带子节点：children 在节点层，叶子组件应拒绝。
 	t.Run("带子节点", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"t1","type":"core.text","props":{"mode":"plaintext","text":"x"},"children":[{"id":"c1","type":"core.text","props":{"mode":"plaintext","text":"y"}}]}]}`
 		_, err := compile(t, mustParse(t, doc))
@@ -197,7 +185,6 @@ func TestTextValidateErrors(t *testing.T) {
 	})
 }
 
-// TestTextRichTagStripping 非白名单标签剥壳保留文本（如自定义 block 标签）。
 func TestTextRichTagStripping(t *testing.T) {
 	props := `{"mode":"richtext","text":"<div><p>保留文本</p><em>斜体</em></div><div>尾段</div>"}`
 	c, err := compile(t, textDoc(t, props))

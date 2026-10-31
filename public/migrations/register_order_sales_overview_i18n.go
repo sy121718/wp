@@ -2,14 +2,6 @@ package migrations
 
 import "sync"
 
-// register_order_sales_overview_i18n.go — 销售概览页的词条（579）。
-//
-// 与 577 的区别：那一条是**改值**（ON CONFLICT DO UPDATE），这一条是**新增**
-// （ON CONFLICT DO NOTHING）。判据也因此不同 —— 新增看「本批自己的 key 是否都齐」，
-// 改值要看「值是不是新的」。
-//
-// 判据按 AGENTS.md「数据库」节的要求枚举本批自己的对象（上界封闭），
-// 不用 LIKE 前缀、也不用全库总量：前缀下已有别的批次的行会让计数虚高 → 本批被静默跳过。
 func registerOrderSalesOverviewI18n() {
 	registerOrderSalesOverviewI18nOnce.Do(registerOrderSalesOverviewI18nSeed)
 }
@@ -21,7 +13,7 @@ func registerOrderSalesOverviewI18nSeed() {
 		Version:   "579-order-sales-overview-i18n",
 		TableName: "sys_i18n",
 		SQL:       mustSQL("579_order_sales_overview_i18n.sql"),
-		// 36 个 key × 2 语言 = 72 行；判据取「齐不齐」而不是「够不够多」。
+
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 72 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE item_key IN (" +
 			"'admin.order.sales.title'," +

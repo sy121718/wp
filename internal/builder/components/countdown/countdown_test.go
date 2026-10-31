@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 倒计时校验：目标时间必填且可解析。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -32,13 +31,12 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestBuildViewTargetDate 倒计时视图：目标时间解析规范化 + 单元列表。
 func TestBuildViewTargetDate(t *testing.T) {
 	tests := []struct {
 		name       string
 		props      *Props
 		wantTarget string
-		wantFirst  string // 期望第一个单元标识
+		wantFirst  string
 		wantLen    int
 	}{
 		{"RFC3339 规范化", &Props{TargetDate: "2026-01-01T00:00:00+08:00", ShowDays: true}, "2025-12-31T16:00:00Z", "days", 4},
@@ -58,7 +56,7 @@ func TestBuildViewTargetDate(t *testing.T) {
 			if len(v.Units) > 0 && v.Units[0].Unit != tt.wantFirst {
 				t.Fatalf("Units[0].Unit=%q, want=%q", v.Units[0].Unit, tt.wantFirst)
 			}
-			// 最后一个单元不跟分隔符，其余均跟。
+
 			if len(v.Units) > 0 {
 				if v.Units[len(v.Units)-1].Sep {
 					t.Errorf("最后一个单元不应带分隔符")
@@ -71,7 +69,6 @@ func TestBuildViewTargetDate(t *testing.T) {
 	}
 }
 
-// TestBuildViewShowDays 倒计时 ShowDays 增强属性与 data-target 确定性。
 func TestBuildViewShowDays(t *testing.T) {
 	on := BuildView(&Props{TargetDate: "2026-01-01", ShowDays: true})
 	off := BuildView(&Props{TargetDate: "2026-01-01", ShowDays: false})
@@ -83,7 +80,6 @@ func TestBuildViewShowDays(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 倒计时样式编译：数字位/分隔符/标签关键声明。
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{TargetDate: "2026-01-01"}, b)

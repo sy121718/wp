@@ -1,20 +1,3 @@
-// action_value_contract_test.go — core.button「点击动作 → 动作值」联动契约测试。
-//
-// 背景（用户报障）：action 与 value 是两个独立字段，切换 action 时 value 不联动，
-// 「internal + /shop」切成 native 后预览直接编译失败
-// （「原生动作仅支持 tel:/mailto: 协议: "/"」）。修复方向是**联动**而不是放宽校验：
-// core.js 的 wbActionValue（无 DOM 纯函数）+ WB_FIELD_LINKS 声明式联动表，
-// 两条提交路径（inspector.js 的 HTMX 委托与 controls/base.js 的 commit）在写入
-// action 后把 value 归一为新动作的合法形态；无法从旧值推导时退化为合法前缀骨架 +
-// 面板提示（不伪造号码/邮箱）。
-//
-// 本测试用 node 求值 core.js 的同一份实现（与浏览器点面板同一份代码，不抄逻辑），
-// 把产物交给 Go 侧 core.ValidateNode（组件校验是唯一真源），断言：
-//   - 能推导出合法值 → 必须通过校验；
-//   - 推导不出（带 hint）→ 必须仍然不合法（提示不失真，不是「假合法」）。
-// 动作清单直接取自组件 schema 的 ct tag：新增动作若没接联动，本测试立刻失败。
-// 环境没有 node 时自动跳过。
-
 package builder
 
 import (
@@ -28,10 +11,8 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// coreJSRel 工作台前端内核（core.js）相对本包测试工作目录的路径。
 const coreJSRel = "../templates/static/js/workbench/core.js"
 
-// actionValueCase node 侧 wbActionValue 的一条产物。
 type actionValueCase struct {
 	Action string `json:"action"`
 	From   string `json:"from"`
@@ -39,22 +20,18 @@ type actionValueCase struct {
 	Hint   string `json:"hint"`
 }
 
-// actionValuePatch wbLinkedPatch 的单条联动结果。
 type actionValuePatch struct {
 	Path    string `json:"path"`
 	Value   string `json:"value"`
 	Changed bool   `json:"changed"`
 }
 
-// actionValueProbe node 侧探针结果。
 type actionValueProbe struct {
 	Cases    []actionValueCase  `json:"cases"`
 	Patch    []actionValuePatch `json:"patch"`
 	PatchNil bool               `json:"patchNil"`
 }
 
-// buttonActionOptions 从组件 schema（ct tag 反射产物）取 core.button 的 action 选项值。
-// 用它驱动探针，保证「新增动作 → 必须接联动」这条约束自动生效。
 func buttonActionOptions(t *testing.T) []string {
 	t.Helper()
 	schemas, err := ComponentSchemas()
@@ -89,7 +66,6 @@ func buttonActionOptions(t *testing.T) []string {
 	return nil
 }
 
-// runActionValueProbe 用 node 求值 core.js 的 wbActionValue / wbLinkedPatch。
 func runActionValueProbe(t *testing.T, actions []string) actionValueProbe {
 	t.Helper()
 	abs, err := filepath.Abs(coreJSRel)
@@ -120,7 +96,6 @@ func runActionValueProbe(t *testing.T, actions []string) actionValueProbe {
 	return p
 }
 
-// TestActionValueLinkKeepsButtonValid 切换动作后，value 必须要么直接合法、要么带提示。
 func TestActionValueLinkKeepsButtonValid(t *testing.T) {
 	actions := buttonActionOptions(t)
 	if len(actions) == 0 {
@@ -148,8 +123,7 @@ func TestActionValueLinkKeepsButtonValid(t *testing.T) {
 				}
 				return
 			}
-			// 带提示 = 还等用户补全（如 native 缺号码）：此时必须确实不合法，
-			// 否则提示就是假的，用户会以为已经修好。
+
 			if err == nil {
 				t.Errorf("带提示的值竟然通过校验（提示失真）: value=%q hint=%q", c.Value, c.Hint)
 			}
@@ -162,8 +136,6 @@ func TestActionValueLinkKeepsButtonValid(t *testing.T) {
 	}
 }
 
-// TestActionValueLinkDeclaredAndChanged 报障场景本身：
-// internal + /shop 切成 native → wbLinkedPatch 必须给出改写（value 归一为新动作形态）。
 func TestActionValueLinkDeclaredAndChanged(t *testing.T) {
 	p := runActionValueProbe(t, buttonActionOptions(t))
 	if p.PatchNil {
@@ -184,8 +156,6 @@ func TestActionValueLinkDeclaredAndChanged(t *testing.T) {
 	}
 }
 
-// actionValueProbeScript node 侧探针：真实 core.js 的 wbActionValue / wbLinkedPatch。
-// 首个 %q 为 core.js 的 file:// URL，第二个 %s 为动作清单 JSON。
 const actionValueProbeScript = `
 globalThis.document = { getElementById: () => null, addEventListener: () => {}, querySelectorAll: () => [] };
 const m = await import(%q);

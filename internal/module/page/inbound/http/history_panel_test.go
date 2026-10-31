@@ -1,7 +1,5 @@
 package pagehttp
 
-// history_panel_test.go — 修订历史列表片段的服务端渲染（HTMX 化，docs/09 §3）。
-
 import (
 	"go_wp/internal/adminui"
 	"net/http"
@@ -15,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestHistoryPanelEmptyState 无 page 契约/无修订时输出空态提示。
 func TestHistoryPanelEmptyState(t *testing.T) {
 	handle := NewPagesAdminHandle(nil, nil, nil, nil)
 	gin.SetMode(gin.TestMode)

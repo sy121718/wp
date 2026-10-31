@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// 按浏览器的 ES module 语法解析整个工作台，不能依赖 Node 对 .js 的模式猜测。
-// 只测 palette 纯函数或 Go 返回的 HTML，无法发现未加载模块里的语法错误。
 func TestWorkbenchModuleSyntax(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -42,7 +40,7 @@ func TestWorkbenchModuleSyntax(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 加载实际控件入口，额外拦截「语法合法，但 import/export 名称错位」。
+
 	entry, err := filepath.Abs("static/js/workbench/methods/controls/misc.js")
 	if err != nil {
 		t.Fatal(err)

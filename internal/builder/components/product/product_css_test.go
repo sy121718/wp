@@ -1,11 +1,5 @@
 package product
 
-// product_css_test.go -- product.css 的契约测试。
-//
-// 背景: 样式从 compileCSS 里的 28 处 b.Add 迁成同目录的 product.css, 中间多了一层解析。
-// 解析器写错、选择器替换错、@media 块归错桶 -- 任何一处出错都只会表现为「页面上有点不对劲」,
-// 不会让构建失败。所以这里把「容易被无声破坏的不变量」逐条钉住。
-
 import (
 	"os"
 	"strings"
@@ -14,14 +8,12 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// productCSSFor 渲染指定 Props 下的样式产物 (作用域固定为 .sky-c-t)。
 func productCSSFor(p *Props) string {
 	var b core.CSSBuckets
 	compileCSS("t", p, &b)
 	return b.String()
 }
 
-// cssRuleText 从产物里取出 header 起的一整块 (按花括号配平)。
 func cssRuleText(t *testing.T, css, header string) string {
 	t.Helper()
 	i := strings.Index(css, header)
@@ -44,7 +36,6 @@ func cssRuleText(t *testing.T, css, header string) string {
 	return ""
 }
 
-// TestProductCSSKeepsStaticRules 逐条核对静态规则还在 (选择器 + 只属于它的关键声明)。
 func TestProductCSSKeepsStaticRules(t *testing.T) {
 	out := productCSSFor(&Props{TitleField: "product.name"})
 	cases := []struct {
@@ -52,17 +43,17 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 		sel  string
 		want []string
 	}{
-		// 版式按源站（vapecentralau.com）实测对齐：图集略宽于摘要、间距 40px。
+
 		{"桌面两栏", ".sky-c-t {", []string{"display: grid", "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr)", "gap: 40px", "align-items: start"}},
 		{"主图", ".sky-c-t .sky-product-media img {", []string{"width: min(100%, 100%)", "height: auto", "border-radius: var(--sky-radius-xl, 12px)"}},
 		{"图集", ".sky-c-t .sky-product-gallery {", []string{"minmax(min(100%, 96px), 1fr)", "gap: var(--sky-space-4, 8px)"}},
 		{"图集图", ".sky-c-t .sky-product-gallery img {", []string{"aspect-ratio: 1 / 1", "object-fit: cover", "border-radius: var(--sky-radius-lg, 8px)"}},
 		{"信息栏", ".sky-c-t .sky-product-info {", []string{"flex-direction: column", "gap: var(--sky-space-5, 10px)", "min-width: 0"}},
-		// 标题 30px / 600：源站实测 h1 为 30px + font-weight 600 + 行高 1.4。
+
 		{"标题", ".sky-c-t .sky-product-title {", []string{"font-size: 30px", "font-weight: 600", "line-height: 1.4"}},
 		{"副标题", ".sky-c-t .sky-product-subtitle {", []string{"color: var(--sky-c-text-mute, #6b7280)", "line-height: 1.6"}},
 		{"价格行", ".sky-c-t .sky-product-price-row {", []string{"align-items: baseline", "flex-wrap: wrap"}},
-		// 价格用**黑色粗体**而不是品牌色：源站现价是黑色 17.5px/700，品牌色只留给折扣胶囊与链接。
+
 		{"价格", ".sky-c-t .sky-product-price {", []string{"font-weight: 700", "font-size: 17.5px", "color: var(--sky-c-heading, #000)"}},
 		{"划线价", ".sky-c-t .sky-product-compare {", []string{"text-decoration: line-through"}},
 		{"描述", ".sky-c-t .sky-product-description {", []string{"line-height: 1.7", "word-break: break-word"}},
@@ -88,14 +79,8 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 	}
 }
 
-// TestProductCSSRadioStaysKeyboardReachable 隐藏 radio 只能「视觉隐藏」, 不能离开键盘序列。
-//
-// display:none 会把整组控件从 Tab 序列里摘掉 -- 键盘用户从此选不了规格, 而页面上看不出任何异常。
 func TestProductCSSRadioStaysKeyboardReachable(t *testing.T) {
-	// 视觉隐藏已上收到基座工具类 .sky-sr-only（模板给 radio 加了该 class），
-	// 组件 CSS 不再自带那段声明。所以判据变成两件事：
-	//   1. 模板里 radio 带着 sky-sr-only（否则它可见，规格选择器会露出原生单选钮）；
-	//   2. 组件 CSS 自己不许写 display:none 隐藏它。
+
 	jet, err := os.ReadFile("../product/product.jet")
 	if err != nil {
 		t.Fatalf("读模板失败: %v", err)
@@ -104,7 +89,7 @@ func TestProductCSSRadioStaysKeyboardReachable(t *testing.T) {
 		t.Errorf("radio 模板缺少 sky-sr-only —— 要么它会显示成原生单选钮，要么被别的写法移出键盘序列")
 	}
 	out := productCSSFor(&Props{OptionsField: "product.options"})
-	// 视觉隐藏整块已上收，组件里不该再出现这块规则；也不许出现 display:none 的替身写法。
+
 	if strings.Contains(out, ".sky-c-t .sky-product-option-radio {\n  display: none") {
 		t.Errorf("radio 用 display:none 隐藏会让整组离开键盘序列:\n%s", out)
 	}
@@ -114,7 +99,6 @@ func TestProductCSSRadioStaysKeyboardReachable(t *testing.T) {
 	}
 }
 
-// TestProductCSSMobileStackAndTapTarget 窄视口两条规则必须落在 mobile 桶, 且各只有一份。
 func TestProductCSSMobileStackAndTapTarget(t *testing.T) {
 	out := productCSSFor(&Props{})
 	mobile := cssRuleText(t, out, "@media (max-width: 767px) {")
@@ -124,7 +108,7 @@ func TestProductCSSMobileStackAndTapTarget(t *testing.T) {
 	if !strings.Contains(mobile, ".sky-c-t .sky-product-option-value {") || !strings.Contains(mobile, "min-height: 44px") {
 		t.Errorf("窄视口按压目标 (44px) 不在 mobile 桶:\n%s", mobile)
 	}
-	// 44px 只能出现在 mobile: 桌面是 36px, 两处都在才算「覆盖」而不是「替换」。
+
 	if strings.Count(out, "min-height: 44px") != 1 {
 		t.Errorf("min-height: 44px 应只出现一次 (mobile 桶):\n%s", out)
 	}
@@ -133,7 +117,6 @@ func TestProductCSSMobileStackAndTapTarget(t *testing.T) {
 	}
 }
 
-// TestProductCSSTouchGovernance 悬浮走 (hover: hover), 按压反馈不包媒体查询 (触屏唯一可靠的反馈)。
 func TestProductCSSTouchGovernance(t *testing.T) {
 	out := productCSSFor(&Props{})
 	hover := cssRuleText(t, out, "@media (hover: hover) {")
@@ -143,7 +126,7 @@ func TestProductCSSTouchGovernance(t *testing.T) {
 	if strings.Contains(hover, "translateY") {
 		t.Errorf("按压位移混进了悬浮桶 (触屏会整段不输出, 等于没有按下反馈):\n%s", hover)
 	}
-	// 悬浮块之后就是 active 段 (String 的桶序: hover -> active)。
+
 	rest := out[strings.LastIndex(out, hover)+len(hover):]
 	if !strings.Contains(rest, "transform: translateY(1px);") {
 		t.Errorf("按压反馈缺失:\n%s", rest)
@@ -156,7 +139,6 @@ func TestProductCSSTouchGovernance(t *testing.T) {
 	}
 }
 
-// TestProductCSSScopeIsScoped 作用域替换必须生效, 且不能多拼一次前缀。
 func TestProductCSSScopeIsScoped(t *testing.T) {
 	out := productCSSFor(&Props{})
 	if strings.Contains(out, "&") {
@@ -175,7 +157,6 @@ func TestProductCSSScopeIsScoped(t *testing.T) {
 	}
 }
 
-// TestProductCSSIsPropsIndependent 样式源是静态的: 不同 Props 产物相同, 且样式源里没有未展开的占位。
 func TestProductCSSIsPropsIndependent(t *testing.T) {
 	base := productCSSFor(&Props{})
 	for _, p := range []*Props{

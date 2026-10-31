@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestBuildSEOHeadProductJSONLD 商品页 settings.seo.productOffer 应写入 JSON-LD offers。
 func TestBuildSEOHeadProductJSONLD(t *testing.T) {
 	head := BuildSEOHead(SEO{
 		SchemaType: "product",

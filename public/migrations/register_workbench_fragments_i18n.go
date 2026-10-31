@@ -1,24 +1,5 @@
 package migrations
 
-// 454 — 工作台 HTMX 片段与画布桥接脚本的文案词条（i18n 收口第二批）。
-//
-// 门槛判据（migrator 语义：ConditionSQL 返回 > 0 则跳过本 seed）：
-// 数「**本批自己的 key** 在 sys_i18n 里的 (key, lang) 行数」是否恰好 118（59 key × 2 语言）。
-//
-// 为什么逐条枚举而不是 LIKE 前缀：这是本仓的既有明文约定（见 AGENTS.md §「数据库」与 452 的
-// 注释）—— 前缀下已有别的批次的行会让计数虚高、本批被**静默跳过**（058 踩过）；前缀下将来
-// 新增同前缀的词条会让计数恒大于门槛、**每次启动重跑**（076 同源）。封闭 IN 列表两个方向都干净：
-//
-//	· 本批少一条 → 116 → 重跑（不冲突则插回）；
-//	· 本批已 seed → 118 → 跳过。
-//
-// 注意 `workbench.ui.settings.noTheme` **不在本批**（它由迁移 452 seeded，本批的
-// global_panel.html 与 workbench/layout.html 复用同一行词条）—— 把它算进来会让计数门槛
-// 永远差 2，本批每次启动重跑。这正是上一条「上界必须封闭」的反面教材。
-//
-// 这 59 个 key 与 454_i18n_workbench_fragments.sql 的 VALUES 行数（118）一一对应：
-// 增删词条时两处必须同批改，否则门槛失准 —— 失准的方向是「重跑」而不是「静默跳过」，
-// 这是刻意选的失败方向。
 func init() {
 	registerSeed(Seed{
 		Version:   "454-i18n-workbench-fragments",

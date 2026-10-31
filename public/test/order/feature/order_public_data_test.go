@@ -20,7 +20,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 生产迁移与真实访客会话证明订单JSON白名单、归属及申请重试的同一结果。
 func TestOrderPublicDataProtocol(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -201,7 +200,7 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 	if after := readAvailable(); before.ReturnableTotal-after.ReturnableTotal != first.Data.Items[0].Quantity {
 		t.Fatal("可退数量变化须等于唯一申请数量")
 	}
-	// 不可申请状态的只读事实与写规则来自同一服务口径。
+
 	if err := f.orderModel.UpdateFields(context.Background(), f.projectID, orderID, map[string]any{"status": "pending"}); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +208,7 @@ func TestOrderPublicDataProtocol(t *testing.T) {
 		t.Fatal("未付款不得显示可申请事实")
 	}
 	request("POST", "/api/site/orders/returns", "application/json", strings.Replace(body, requestID, uuid.NewString(), 1), csrf, 400)
-	// 换真实访客会话后，已知请求键也不提供别人的回执。
+
 	cookies = map[string]*http.Cookie{}
 	request("GET", "/api/site/user/session", "", "", "", 200)
 	login("order-json-other@example.com")

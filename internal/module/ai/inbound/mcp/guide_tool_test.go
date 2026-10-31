@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/mcp"
 )
 
-// invokeGuide 调一次 guide。
 func invokeGuide(t *testing.T, topic string) (mcp.Result, error) {
 	t.Helper()
 	tools := GuideTools()
@@ -27,7 +26,6 @@ func invokeGuide(t *testing.T, topic string) (mcp.Result, error) {
 	return tools[0].Invoke(context.Background(), raw)
 }
 
-// TestGuideReturnsManual 取得到的手册原样返回。
 func TestGuideReturnsManual(t *testing.T) {
 	res, err := invokeGuide(t, "sales")
 	if err != nil {
@@ -41,10 +39,6 @@ func TestGuideReturnsManual(t *testing.T) {
 	}
 }
 
-// TestGuideUnknownTopicIsArgsError 取不到的手册必须报错，且错误里带可用名字。
-//
-// 回空串是最坏的做法：模型会把它读成「这个领域没有口径」，转而按常识回答 ——
-// 而那正是 guide 存在的理由。错误里必须带上可用清单，模型才知道下一步该试什么。
 func TestGuideUnknownTopicIsArgsError(t *testing.T) {
 	_, err := invokeGuide(t, "nope")
 	if err == nil {
@@ -62,7 +56,6 @@ func TestGuideUnknownTopicIsArgsError(t *testing.T) {
 	}
 }
 
-// TestGuideRejectsPathLikeNames 形状不对的名字也不能取到东西。
 func TestGuideRejectsPathLikeNames(t *testing.T) {
 	for _, bad := range []string{"", "  ", "../site_rules", "manual/sales", "sales.md"} {
 		if _, err := invokeGuide(t, bad); err == nil {

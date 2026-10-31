@@ -11,7 +11,6 @@ import (
 
 const testMediaBaseURL = "https://media.example.test/storage"
 
-// initFixtureMedia 显式注入生产媒体单源，历史 /storage 输入必须编译成完整地址。
 func initFixtureMedia() error {
 	cfg := viper.New()
 	cfg.Set("upload.default_provider", "local")

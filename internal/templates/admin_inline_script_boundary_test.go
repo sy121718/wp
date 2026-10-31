@@ -1,17 +1,5 @@
 package templates
 
-// admin_inline_script_boundary_test.go — 后台模板不得新增内联业务脚本。
-//
-// 为什么需要它：内联 <script> 与模板同生共死 —— 不能单测、不能被打包/缓存策略统一处理、
-//  CSP 收紧时整页失效，而它的改动散在 HTML 里靠 review 看不见。product 的捆绑配置页
-//  曾经有 150 行成员解析内联脚本，迁到 static/js/ui/bundle_members.js 后才第一次有单测
-//  （同目录 bundle_members.test.cjs）。本测试把「不许再长回来」钉成判据：
-//
-//   · 白名单里登记的是**既有存量**，逐条写明为什么必须内联（主题防闪烁要在 CSS 之前跑、
-//     数据回显要读同页 JSON …），并登记该文件允许的处数；
-//   · 双向失败：出现未登记的内联脚本 → 失败；登记了却不再命中 → 也失败（条目不得退化成注释）。
-//
-// 判据只看「真脚本」：<script src=…> 是外部引用，type="application/json" 是数据块，都不算。
 import (
 	"os"
 	"path/filepath"
@@ -21,7 +9,6 @@ import (
 	"testing"
 )
 
-// inlineScriptAllowance 既有内联脚本的登记表：相对 internal/templates 的路径 → 处数与理由。
 var inlineScriptAllowance = map[string]struct {
 	Count  int
 	Reason string
@@ -39,7 +26,6 @@ var (
 	attrsRe      = regexp.MustCompile(`(?i)\b(src|type)\s*=\s*("[^"]*"|'[^']*')`)
 )
 
-// inlineScripts 返回一个模板文件里的内联业务脚本数（剥掉 Jet 注释后判定）。
 func inlineScripts(t *testing.T, path string) int {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -108,7 +94,6 @@ func TestAdminTemplatesHaveNoNewInlineScripts(t *testing.T) {
 			"确实必须内联时在 inlineScriptAllowance 里登记处数与理由", rel)
 	}
 
-	// 反向：登记了却不再命中（迁移已完成）时把条目删掉，别让登记表退化成注释。
 	var stale []string
 	for rel := range inlineScriptAllowance {
 		if seen[rel] == 0 {

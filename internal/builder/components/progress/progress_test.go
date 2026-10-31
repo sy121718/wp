@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 进度条校验：值/上限边界。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -33,7 +32,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestPercent 进度百分比计算。
 func TestPercent(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -55,7 +53,6 @@ func TestPercent(t *testing.T) {
 	}
 }
 
-// TestBuildView 进度条视图：aria 属性与标签。
 func TestBuildView(t *testing.T) {
 	v := BuildView(&Props{Value: 60, Max: 120, Label: "加载中"})
 	if v.ValueNow != "60" || v.ValueMax != "120" {
@@ -64,14 +61,13 @@ func TestBuildView(t *testing.T) {
 	if !v.HasLabel || v.Label != "加载中" {
 		t.Fatalf("标签错误: HasLabel=%v Label=%q", v.HasLabel, v.Label)
 	}
-	// 缺省 max=100。
+
 	v2 := BuildView(&Props{Value: 30})
 	if v2.ValueMax != "100" {
 		t.Fatalf("缺省 max 应为 100, got %q", v2.ValueMax)
 	}
 }
 
-// TestCompileCSS 进度条样式编译：轨道/填充宽度/颜色。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string

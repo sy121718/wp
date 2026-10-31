@@ -1,21 +1,5 @@
 package rlstest
 
-// rls_inventory_scope_test.go — product/inventory 批次的工程作用域护栏（DB-009 最后一批）。
-//
-// 这一批补的是 inventory 域**既不在前几批允许面里、也没被任何代理接手**的 4 处：
-// 流水列表 / 流水计数 / 库存列表 / 库存真源分页。
-// 两张表（inventory_stock_movements、inventory_stocks）都在迁移 215 名单里 ——
-// 流水还是分区表（策略装在父表、分区由 215 单独装，见 partition.EnsureAhead）。
-//
-// 失效形态**按危害排序，不能只看读路径**：
-//
-//  1. **流水计数静默归零**（CountMovements）：分页总量变成 0，列表页却仍是「暂无数据」，
-//     看不出是没数据还是读不到；
-//  2. 流水列表 / 库存列表静默空集：页面显示「暂无数据」而不是报错。
-//
-// 全程跑在**非超级角色**下（rlsFixture 保证，并用 rls.BypassedRole 自检），
-// 否则超级用户无条件绕过 RLS，断言全绿而无意义。
-
 import (
 	"context"
 	"testing"
@@ -32,7 +16,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// invScope 一套「非超级角色 + 两个工程 × (仓库 + 父/子变体 + 各自库存行)」的环境。
 type invScope struct {
 	db  *gorm.DB
 	im  *inventorymodel.Model
@@ -45,7 +28,6 @@ type invScope struct {
 	parentB, compB string
 }
 
-// newInvScope 造 fixture（两工程的仓库 / 变体 / 库存行分属各自工程，互不可见）。
 func newInvScope(t *testing.T) *invScope {
 	t.Helper()
 	db, _ := rlsFixture(t)
@@ -62,7 +44,6 @@ func newInvScope(t *testing.T) *invScope {
 	return f
 }
 
-// seedInvProject 在工程下落一行仓库 + 父/子两个变体（各自带一条 10 件的库存真源）。
 func seedInvProject(t *testing.T, db *gorm.DB, projectID, sfx string) (warehouseID, parentVariantID, componentVariantID string) {
 	t.Helper()
 	warehouseID = seedWarehouse(t, db, projectID, "WH"+sfx)
@@ -73,13 +54,10 @@ func seedInvProject(t *testing.T, db *gorm.DB, projectID, sfx string) (warehouse
 	return warehouseID, parentVariantID, componentVariantID
 }
 
-// seedStockQty 经 model 写入路径落一行指定数量的库存真源（inventory_stocks 带 FORCE 策略）。
 func seedStockQty(t *testing.T, db *gorm.DB, projectID, productID, variantID, warehouseID string, qty int) {
 	t.Helper()
 	now := time.Now()
-	// TrackQuantity 必须与数量一致：迁移 261 加的不变量是
-	// CHECK (track_quantity OR quantity = 0) ——「不跟踪（无限）却又带着数字」在库里非法。
-	// 本夹具要的就是「有具体数量的跟踪行」，所以显式置 true。
+
 	track := true
 	_, err := inventorymodel.NewModel(db).EnsureStock(context.Background(), &inventorymodel.StockEntity{
 		ID: uuid.NewString(), ProjectID: projectID, WarehouseID: warehouseID,
@@ -91,10 +69,6 @@ func seedStockQty(t *testing.T, db *gorm.DB, projectID, productID, variantID, wa
 	}
 }
 
-// seedBuiltinReason 经 model 写入路径落一条**内置**变动原因（project_id 为 NULL）。
-//
-// 215 对 inventory_change_reasons 用的是 global 谓词（放行 project_id IS NULL 的全局行），
-// 内置条目即使不设作用域也能写 —— 与迁移 103 的 seed 同形，这里只是把它补进只跑了迁移的库。
 func seedBuiltinReason(t *testing.T, db *gorm.DB, code, direction string) {
 	t.Helper()
 	err := inventorymodel.NewModel(db).CreateReason(context.Background(), &inventorymodel.ReasonEntity{
@@ -107,7 +81,6 @@ func seedBuiltinReason(t *testing.T, db *gorm.DB, code, direction string) {
 	}
 }
 
-// seedMovement 经生产写入路径（外层事务 + CreateMovementsTx 自带的 ScopeTx）落一条流水。
 func seedMovement(t *testing.T, db *gorm.DB, projectID, warehouseID, variantID, direction string) {
 	t.Helper()
 	im := inventorymodel.NewModel(db)
@@ -117,7 +90,7 @@ func seedMovement(t *testing.T, db *gorm.DB, projectID, warehouseID, variantID, 
 		return im.CreateMovementsTx(context.Background(), tx, []*inventorymodel.MovementEntity{{
 			ID: id, ProjectID: projectID, WarehouseID: warehouseID,
 			ProductID: inventorymodel.StringPtr(uuid.NewString()), VariantID: inventorymodel.StringPtr(variantID),
-			SKUCode: "SKU-" + variantID[:8],
+			SKUCode:   "SKU-" + variantID[:8],
 			Direction: direction, Quantity: 1, Delta: 1, QuantityBefore: 0, QuantityAfter: 1,
 			ReasonCode: "guard_in", SourceType: "guard", SourceRef: id,
 			BatchID: id, CreatedAt: now,
@@ -128,11 +101,6 @@ func seedMovement(t *testing.T, db *gorm.DB, projectID, warehouseID, variantID, 
 	}
 }
 
-// TestRLS_InventoryScope_MovementListAndCount 流水列表与计数都落在工程作用域内。
-//
-// 两条静默形态：ListMovementRows 少一条流水就是「流水页少一行」（看起来像数据没记），
-// CountMovements 少算就是分页总量归零。二者缺作用域时都**不报错**，
-// 所以断言必须同时钉住「本工程看得到」与「他工程看不到」。
 func TestRLS_InventoryScope_MovementListAndCount(t *testing.T) {
 	f := newInvScope(t)
 	ctx := context.Background()
@@ -152,7 +120,7 @@ func TestRLS_InventoryScope_MovementListAndCount(t *testing.T) {
 		if r.ProjectID != f.pA {
 			t.Errorf("工程 A 的列表串进了他工程的行: %+v", r)
 		}
-		// join 来的仓库信息也在作用域内：仓库表同样带策略，Scope 失效时 join 会把整行滤掉。
+
 		if r.WarehouseCode == "" || r.WarehouseName == "" {
 			t.Errorf("流水行应带仓库投影（join inventory_warehouses），实际 %+v", r)
 		}
@@ -182,7 +150,6 @@ func TestRLS_InventoryScope_MovementListAndCount(t *testing.T) {
 	}
 }
 
-// TestRLS_InventoryScope_StockRowsList 库存列表落在工程作用域内（含 join 的仓库表）。
 func TestRLS_InventoryScope_StockRowsList(t *testing.T) {
 	f := newInvScope(t)
 	ctx := context.Background()
@@ -216,7 +183,6 @@ func TestRLS_InventoryScope_StockRowsList(t *testing.T) {
 		}
 	}
 
-	// 按 SKU 收窄时同样受作用域约束（后台库存页走的就是这条）。
 	onlyA, err := f.im.ListStockRows(ctx, inventorymodel.StockFilter{
 		ProjectID: f.pA, VariantID: f.parentA,
 	}, 10, 0)
@@ -228,11 +194,6 @@ func TestRLS_InventoryScope_StockRowsList(t *testing.T) {
 	}
 }
 
-// TestRLS_InventoryScope_RejectsMissingProjectID 缺工程作用域时这批入口显式报错。
-//
-// 与「裸查 0 行」是两种失效形态，都要钉住：裸句柄是**静默** fail closed，而带
-// rls.InProjectScope 的入口缺工程时**当场报错**。后者才是想要的 —— 调用方一眼看出是
-// 调用点漏传工程，而不是在生产上排查「库存列表突然空了」。
 func TestRLS_InventoryScope_RejectsMissingProjectID(t *testing.T) {
 	f := newInvScope(t)
 	ctx := context.Background()
@@ -266,16 +227,11 @@ func TestRLS_InventoryScope_RejectsMissingProjectID(t *testing.T) {
 		}
 	}
 
-	// 对照：把作用域换成 A 自己，同一批调用全部成功 —— 上面的红只来自作用域，不来自数据。
 	if _, err := f.im.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: f.pA}, 10, 0); err != nil {
 		t.Fatalf("工程 A 读自己的库存列表应成功，实际 %v", err)
 	}
 }
 
-// TestRLS_InventoryScope_FailClosedWithoutScope 未设作用域时这两张表一行都读不到。
-//
-// 这条把「漏包 scope 的路径」在换角色后的真实表现钉住 —— 0 行且不报错。
-// 两张表各测一次：库存真源（读路径）、流水（分区表，父表策略）。
 func TestRLS_InventoryScope_FailClosedWithoutScope(t *testing.T) {
 	f := newInvScope(t)
 	ctx := context.Background()
@@ -307,12 +263,10 @@ func TestRLS_InventoryScope_FailClosedWithoutScope(t *testing.T) {
 		}
 	}
 
-	// 对照：同一批行经作用域路径读得到 —— 差别只在会话变量，不在 WHERE。
 	if rows, err := f.im.ListMovementRows(ctx, inventorymodel.MovementFilter{ProjectID: f.pA}, 0, 0); err != nil || len(rows) != 1 {
 		t.Fatalf("设了作用域应读得到流水，实际 n=%d err=%v", len(rows), err)
 	}
 
-	// 作用域事务结束后变量已还原：再次裸查仍 0 行（会话变量不许泄漏到池里的下一条语句）。
 	var raw int64
 	if err := f.db.Table("inventory_stocks").Count(&raw).Error; err != nil {
 		t.Fatalf("裸查失败: %v", err)

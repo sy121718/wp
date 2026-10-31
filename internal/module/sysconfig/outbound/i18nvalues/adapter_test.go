@@ -1,10 +1,5 @@
 package i18nvalues
 
-// adapter_test.go — i18n 组 JSON → pkg/i18n 运行期默认值的形状翻译（纯函数）。
-//
-// 这里钉的是「配置写错时进程看到什么」：类型不符 / 键名写错 / 空串都必须落到
-// 「按未配置处理」，并由 problems 留痕。判错不会报错，只会让默认语言静默变一个值。
-
 import (
 	"strings"
 	"testing"
@@ -42,7 +37,7 @@ func TestRuntimeValuesOfMissingKeysAreUnset(t *testing.T) {
 func TestRuntimeValuesOfTrimsAndDropsTypeMismatch(t *testing.T) {
 	vals, problems := RuntimeValuesOf(map[string]any{
 		sysconfigcontract.KeyDefaultLang:     "  en-US  ",
-		sysconfigcontract.KeySiteLangURLMode: 123, // 类型写错：按未配置处理并留痕
+		sysconfigcontract.KeySiteLangURLMode: 123,
 		sysconfigcontract.KeyLangURLCodes:    "en-AU: en",
 	})
 	if vals.DefaultLang != "en-US" {
@@ -68,8 +63,8 @@ func TestRuntimeValuesOfDropsOnlyBadURLCodes(t *testing.T) {
 	vals, problems := RuntimeValuesOf(map[string]any{
 		sysconfigcontract.KeyLangURLCodes: map[string]any{
 			"en-AU": "en",
-			"fr-CA": 42,   // 非法值：只丢这一项
-			"de-DE": "  ", // 空串：只丢这一项
+			"fr-CA": 42,
+			"de-DE": "  ",
 		},
 	})
 	if len(problems) != 2 {

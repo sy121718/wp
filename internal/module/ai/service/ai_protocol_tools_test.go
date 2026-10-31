@@ -1,12 +1,5 @@
 package aiservice
 
-// ai_protocol_tools_test.go — 工具往返的协议层用例。
-//
-// 这一层的判据是「两家的字段位置不同、但语义必须一致」：
-// chat/completions 把工具包在 tools[].function 里、调用塞在 message.tool_calls 里；
-// responses 的 tools 是扁平的、调用是 output[] 里的独立条目。
-// 写错位置不会报错，只会表现为「模型看得见工具却从不调用」—— 所以逐字段钉住。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"testing"
@@ -23,7 +16,6 @@ func toolSpec(name string) aidto.ToolSpec {
 	}
 }
 
-// toolRoundMessages 一轮完整的工具往返：用户提问 → 模型要求调用 → 工具结果。
 func toolRoundMessages() []aidto.ChatMessage {
 	return []aidto.ChatMessage{
 		{Role: roleUser, Content: "有多少单"},
@@ -34,7 +26,6 @@ func toolRoundMessages() []aidto.ChatMessage {
 	}
 }
 
-// at 取解码后对象的第 i 项（类型断言失败即 Fatal，避免用 .(map[string]any) 一路 panic）。
 func at(t *testing.T, list any, i int) map[string]any {
 	t.Helper()
 	items, ok := list.([]any)
@@ -50,8 +41,6 @@ func at(t *testing.T, list any, i int) map[string]any {
 	}
 	return obj
 }
-
-// === chat/completions ===
 
 func TestBuildChatCompletionsBody_WithTools(t *testing.T) {
 	body, err := buildChatCompletionsBody("m", userMsgs("有多少单"), []aidto.ToolSpec{toolSpec("orders_summary")}, 0, false)
@@ -79,10 +68,6 @@ func TestBuildChatCompletionsBody_WithTools(t *testing.T) {
 	}
 }
 
-// TestBuildChatCompletionsBody_WithoutToolsOmitsToolFields 不带工具时不能出现 tools / tool_choice。
-//
-// 多写这两个字段会让本来「只是问一句话」的调用也被模型当成可能调工具的轮次，
-// 而且给稳定前缀平白加了一段会随工具集变化的字节（docs/16 §3）。
 func TestBuildChatCompletionsBody_WithoutToolsOmitsToolFields(t *testing.T) {
 	body, err := buildChatCompletionsBody("m", userMsgs("你好"), nil, 0, false)
 	if err != nil {
@@ -108,7 +93,7 @@ func TestBuildChatCompletionsBody_ToolRoundTrip(t *testing.T) {
 	if second["role"] != roleAssistant {
 		t.Fatalf("messages[1].role = %v", second["role"])
 	}
-	// content 字段必须存在（哪怕空串）：部分网关要求它，省掉换来的是与语义无关的 400。
+
 	if _, ok := second["content"]; !ok {
 		t.Error("带 tool_calls 的 assistant 消息仍要写 content 字段")
 	}
@@ -130,8 +115,6 @@ func TestBuildChatCompletionsBody_ToolRoundTrip(t *testing.T) {
 	}
 }
 
-// TestBuildChatCompletionsBody_EmptyArgumentsBecomeObject 回灌时空 arguments 补成 "{}"：
-// 空串不是合法 JSON 对象，会被上游拒掉整轮。
 func TestBuildChatCompletionsBody_EmptyArgumentsBecomeObject(t *testing.T) {
 	msgs := []aidto.ChatMessage{
 		{Role: roleUser, Content: "x"},
@@ -170,16 +153,12 @@ func TestParseChatCompletionsReply_ToolCallOnlyIsSuccess(t *testing.T) {
 	}
 }
 
-// TestParseChatCompletionsReply_NamelessToolCallDoesNotRescueEmptyReply 没名字的调用跳过之后，
-// 这轮就真的是「既没说话也没做事」—— 仍要报错，否则上层会拿着空调用列表空转一圈。
 func TestParseChatCompletionsReply_NamelessToolCallDoesNotRescueEmptyReply(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","function":{"arguments":"{}"}}]}}]}`)
 	if _, err := parseChatCompletionsReply(body); err == nil {
 		t.Fatal("没有正文、也没有可执行的调用，应报错")
 	}
 }
-
-// === responses ===
 
 func TestBuildResponsesBody_ToolRoundTrip(t *testing.T) {
 	body, err := buildResponsesBody("m", toolRoundMessages(), []aidto.ToolSpec{toolSpec("orders_summary")}, 0, false)
@@ -207,14 +186,12 @@ func TestBuildResponsesBody_ToolRoundTrip(t *testing.T) {
 	if first["type"] != toolTypeFunction || first["name"] != "orders_summary" {
 		t.Errorf("tools[0] = %v", first)
 	}
-	// responses 的 tools 是扁平的：多包一层 function 会让服务端整段忽略这些工具。
+
 	if _, ok := first["function"]; ok {
 		t.Error("responses 的 tools 不应有 function 包装层")
 	}
 }
 
-// TestBuildResponsesBody_KeepsAssistantTextWithCalls assistant 同时有正文与调用时，
-// 正文必须单独成一条 message：function_call 条目没有 content 字段，硬塞会被当未知字段丢掉。
 func TestBuildResponsesBody_KeepsAssistantTextWithCalls(t *testing.T) {
 	msgs := []aidto.ChatMessage{
 		{Role: roleUser, Content: "x"},

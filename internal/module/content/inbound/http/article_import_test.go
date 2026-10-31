@@ -1,13 +1,5 @@
 package contenthttp
 
-// article_import_test.go — 文章导入画布的口径测试。
-//
-// 三层：
-//  1. 文档组装：文章的 SEO 字段是否真的落进页面设置（seoTitle 优先于 title）；
-//  2. **真编译**：组装出来的 Page 文档必须能被 builder.Compile 吃下去 ——
-//     settings 少一个必填项、节点树结构不对，都会在这里暴露（只渲染模板的测试看不见）；
-//  3. 页面与片段：导入区块按三种前置状态渲染不同内容，预览片段走 handler 能渲染出东西。
-
 import (
 	"context"
 	"errors"
@@ -30,7 +22,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// stubProjectService 只实现本页用到的 List（其余方法嵌入 nil 接口，测试不会走到）。
 type stubProjectService struct {
 	projectcontract.ProjectService
 	list []projectcontract.ProjectResp
@@ -40,13 +31,10 @@ func (s stubProjectService) List(context.Context) ([]projectcontract.ProjectResp
 	return s.list, nil
 }
 
-// stubPageService 让「导入能力可用」这一分支成立（本测试不触发写路径）。
 type stubPageService struct {
 	pagecontract.PageService
 }
 
-// failingContentService 读文章必失败（用于预览片段的错误分支 —— 不能给 nil 契约，
-// 那会让 handler 在调用方法时 panic，测不出任何东西）。
 type failingContentService struct {
 	contentcontract.ContentService
 }
@@ -61,7 +49,7 @@ func TestArticleImportDocumentCompiles(t *testing.T) {
 		"body":         `<h2>小节</h2><p>正文 <strong>加粗</strong></p><ul><li>列表项</li></ul><blockquote>引用</blockquote><hr><img src="https://assets.example.test/storage/image/a.webp" alt="图">`,
 		"excerpt":      "摘要",
 		"focusKeyword": "主关键词",
-		// 遗留的 SEO 字段（2026-09-30 已与标题 / 摘要合并）：必须被忽略。
+
 		"seoTitle":       "SEO 标题优先于文章标题",
 		"seoDescription": "SEO 描述",
 	}
@@ -110,7 +98,7 @@ func TestArticleImportDocumentCompiles(t *testing.T) {
 }
 
 func TestArticleImportDocumentFallsBackToArticleFields(t *testing.T) {
-	// 没填 SEO 字段时用文章自身的标题/摘要（与编辑期评分器的回落口径一致）。
+
 	data := map[string]any{"title": "标题", "body": "<p>正文</p>", "excerpt": "摘要"}
 	res, err := richdoc.HTMLToNodes(articleStr(data, "body"))
 	if err != nil {
@@ -133,7 +121,7 @@ func TestArticleImportDocumentFallsBackToArticleFields(t *testing.T) {
 }
 
 func TestArticleImportPreviewView(t *testing.T) {
-	// 两个标题 + 一个段落 + 一段会被剥壳的 div 内容。
+
 	res, err := richdoc.HTMLToNodes("<h2>一</h2><h2>二</h2><p>段落</p><div>壳里的字</div>")
 	if err != nil {
 		t.Fatalf("转换失败：%v", err)
@@ -142,7 +130,7 @@ func TestArticleImportPreviewView(t *testing.T) {
 	if !view.OK {
 		t.Fatal("预览视图应为可用状态")
 	}
-	// 4 个节点：两个标题 + 一个段落 + div 剥壳后剩下的那段文字（剥壳不等于丢弃，内容照样成节点）。
+
 	if view.NodeCount != 4 {
 		t.Errorf("节点数应为 4（两个标题 + 段落 + 剥壳后的文字），实际 %d", view.NodeCount)
 	}
@@ -158,7 +146,7 @@ func TestArticleImportPreviewView(t *testing.T) {
 	if len(view.Warnings) != 1 || view.Warnings[0].ActionFallback != "去壳保留内容" {
 		t.Errorf("降级动作应给出中文兜底（取词在模板里）：%+v", view.Warnings)
 	}
-	// 无损输入：不产生警告，Lossless 为真。
+
 	clean, err := richdoc.HTMLToNodes("<h2>标题</h2><p>段落</p>")
 	if err != nil {
 		t.Fatalf("转换失败：%v", err)
@@ -190,8 +178,6 @@ func TestArticleImportBlockViewStates(t *testing.T) {
 	}
 }
 
-// TestArticleImportPreviewFragmentRenders 直接打 handler，钉住"片段模板名对得上"
-// （响应 200 但 body 为空，正是这类错的表现）。
 func TestArticleImportPreviewFragmentRenders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

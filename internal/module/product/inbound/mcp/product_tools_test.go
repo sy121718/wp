@@ -1,11 +1,5 @@
 package productmcp
 
-// product_tools_test.go — 商品工具集的形状与指针语义断言。
-//
-// 写工具的行为（确认位 / 幂等）由 internal/mcp/write_test.go 覆盖；这里钉商品特有的三件事：
-// projectId 必填（多站点隔离）、update 的指针语义（nil = 不改 / 空串 = 清空）、
-// 以及 create **不收 SKU 编码**（那两条入口的规则是运营看着仓库列表做的决定）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -16,7 +10,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// fakeProduct 商品读写服务的假实现。
 type fakeProduct struct {
 	created  []*productdto.CreateReq
 	updated  []*productdto.UpdateReq
@@ -77,7 +70,6 @@ func call(t *testing.T, tool mcp.Tool, body string) mcp.Result {
 	return res
 }
 
-// TestProductToolsShape 四个工具都在，且 projectId 是每个工具的必填项。
 func TestProductToolsShape(t *testing.T) {
 	f := &fakeProduct{}
 	list, err := Tools(f, f, nil)
@@ -98,7 +90,6 @@ func TestProductToolsShape(t *testing.T) {
 	}
 }
 
-// TestProductGetPassesProjectScope 工程作用域必须真的传下去。
 func TestProductGetPassesProjectScope(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
@@ -112,11 +103,6 @@ func TestProductGetPassesProjectScope(t *testing.T) {
 	}
 }
 
-// TestProductUpdateKeepsOmittedFieldsNil 没传的字段必须是 nil（= 不改），不能变成空串。
-//
-// 这是这一层最容易写错的地方：`*string` 的 nil 与 "" 在 service 里是两个意思
-// （不改 / 清空），一旦在工具层把缺省折算成空串，用户说「改个名字」就会顺手把副标题清掉 ——
-// 而那次调用会成功返回。
 func TestProductUpdateKeepsOmittedFieldsNil(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
@@ -137,10 +123,6 @@ func TestProductUpdateKeepsOmittedFieldsNil(t *testing.T) {
 	}
 }
 
-// TestProductUpdateEmptyStringMeansClear 传空串才是清空。
-//
-// 这条与上一条是一对：把「不改」与「清空」分开是这次接口能成立的前提，
-// 只测一个方向的话，把两者合并成一种的实现照样能过。
 func TestProductUpdateEmptyStringMeansClear(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
@@ -155,7 +137,6 @@ func TestProductUpdateEmptyStringMeansClear(t *testing.T) {
 	}
 }
 
-// TestProductCreateHasNoSkuArg create 不接受 SKU 编码。
 func TestProductCreateHasNoSkuArg(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
@@ -165,13 +146,13 @@ func TestProductCreateHasNoSkuArg(t *testing.T) {
 			t.Errorf("create 不该接受 %q —— SKU 与仓库那套规则是运营在做决定，不是模型猜得出来的", k)
 		}
 	}
-	// 但 projectId 与 name 必须在。
+
 	for _, k := range []string{"projectId", "name"} {
 		if _, ok := props[k]; !ok {
 			t.Errorf("create 缺少 %q", k)
 		}
 	}
-	// 而且 SKUCode 要留空交给 service 派生。
+
 	call(t, byName(t, list, "product_create"),
 		`{"projectId":"p-1","name":"新品","confirm":true,"idempotencyKey":"k3"}`)
 	if f.created[0].SKUCode != "" {
@@ -179,12 +160,11 @@ func TestProductCreateHasNoSkuArg(t *testing.T) {
 	}
 }
 
-// TestProductDeleteCarriesScopeAndConfirm 删除要同时有工程与确认。
 func TestProductDeleteCarriesScopeAndConfirm(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
 	tool := byName(t, list, "product_delete")
-	// 没有确认位时不执行。
+
 	if _, err := tool.Invoke(context.Background(), json.RawMessage(
 		`{"projectId":"p-1","id":"p-9","idempotencyKey":"k4"}`)); err == nil {
 		t.Fatal("缺 confirm 应被拒")
@@ -198,7 +178,6 @@ func TestProductDeleteCarriesScopeAndConfirm(t *testing.T) {
 	}
 }
 
-// TestProductToolsRejectMissingDeps 依赖缺失是装配期错误。
 func TestProductToolsRejectMissingDeps(t *testing.T) {
 	f := &fakeProduct{}
 	if _, err := Tools(nil, f, nil); err == nil {
@@ -209,10 +188,6 @@ func TestProductToolsRejectMissingDeps(t *testing.T) {
 	}
 }
 
-// TestProductFindTurnsNameIntoID 搜索工具是「用户说商品名」这条路的唯一入口。
-//
-// 实测过它的缺位：给模型一个 uuid 它会正确要求补 projectId，
-// 但**没人会那样说话** —— 用户说的是「那个维生素 C」，模型得有办法把名字换成 id。
 func TestProductFindTurnsNameIntoID(t *testing.T) {
 	f := &fakeProduct{}
 	list, err := Tools(f, f, nil)
@@ -231,7 +206,6 @@ func TestProductFindTurnsNameIntoID(t *testing.T) {
 	}
 }
 
-// TestProductGetPointsAtFind get 的说明要把「先 find」写出来。
 func TestProductGetPointsAtFind(t *testing.T) {
 	f := &fakeProduct{}
 	list, _ := Tools(f, f, nil)
@@ -240,12 +214,6 @@ func TestProductGetPointsAtFind(t *testing.T) {
 	}
 }
 
-// TestDescribeProductReportsStockUnknown product_get 的文本必须把「库存读取失败」说出来
-// （PRD-017：故障如实显示）。
-//
-// 旧实现只 switch StockState：读失败时三态是零值，于是它落进 default 说「未入库（任何仓库
-// 都没有该商品的库存行）」—— 把「这次没查到」当成事实告诉用户，而后台列表已经是
-// 「库存读取失败」。两处口径必须一致。
 func TestDescribeProductReportsStockUnknown(t *testing.T) {
 	unknown := &productdto.ProductResp{
 		ID: "p-unknown", ProjectID: "proj-1", Name: "故障商品", StockUnknown: true,
@@ -261,17 +229,12 @@ func TestDescribeProductReportsStockUnknown(t *testing.T) {
 		t.Fatalf("故障时不得伪造三态结论，实际：%q", got)
 	}
 
-	// 反证：真的没有库存行（none）仍按原口径说「未入库」—— 这两句不能合并。
 	none := &productdto.ProductResp{ID: "p-none", ProjectID: "proj-1", Name: "未入库商品"}
 	if got := describeProduct(none); !strings.Contains(got, "未入库") {
 		t.Fatalf("没有任何库存行仍应说「未入库」，实际：%q", got)
 	}
 }
 
-// TestDescribeProductStockUnknownEnglishLang 英文语言下同样如实说「读取失败」。
-//
-// describeProduct 在 MCP 出口是**纯事实文本**（不走 tr 取词），所以两种语言下这一行一致；
-// 本用例守的是「别把故障那行写成一个只在中文下成立的措辞」：MCP 的接口面不被语言切换影响。
 func TestDescribeProductStockUnknownLanguageInvariant(t *testing.T) {
 	unknown := &productdto.ProductResp{ID: "p-unknown", ProjectID: "proj-1", Name: "Broken", StockUnknown: true}
 	first := describeProduct(unknown)

@@ -1,16 +1,3 @@
-// product_entity.go — 商品域实体类型与字段白名单（issue #6；issue #12 扩到分类/品牌/标签/属性）。
-//
-// 本模块是自身实体类型字段白名单的唯一来源（与 content 模块的 contract 白名单同构）：
-// 装配期把商品域实体类型注册进实体类型注册表（source.EntitySourceRegistry），内容模板与
-// 发布实例据此做类型与字段校验，构建期解析器据此拒绝白名单之外的绑定（不变量 4）。
-//
-// 白名单只放「可展示」的字段：价格全部由变体派生（商品主体不存价格，issue #5 已定
-// 语义），因此对外暴露的是派生值而不是原列。
-//
-// 多语言（issue #12）：可翻译字段的唯一来源是 translatableFields（下面五个类型集合），
-// 构建期按构建语言取 sys_translation 译文（语境 实体类型.字段名，docs/06-D §7.5）。
-// 标识类字段（slug / key / SKU / 价格 / 库存）永不参与翻译 —— 它们进筛选参数与 URL 段，
-// 一旦被翻译，链接与筛选条件立刻失效（issue #12 验收 4/5）。
 package productcontract
 
 import (
@@ -21,15 +8,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// ==========================================================================
-// 实体类型与字段白名单：商品域有哪几类实体、每类能绑定哪些字段
-// ==========================================================================
-
-// 商品域实体类型标识（实体类型注册表与内容模板 entityType 的取值）。
-//
-// product 之外的四个类型（issue #12）让分类名 / 品牌名 / 标签名 / 属性值展示文本
-// 拥有与其他实体同一套「取词 + 翻译」路径：它们的解析器由本模块提供，
-// 构建层只认注册表、不认识具体领域（与 product 同构）。
 const (
 	EntityTypeProduct   = "product"
 	EntityTypeCategory  = "product_category"
@@ -38,48 +16,24 @@ const (
 	EntityTypeAttribute = "product_attribute"
 )
 
-// fieldWhitelist 各实体类型可绑定字段白名单（顺序即工作台下拉顺序）。
-//
-// 语义：
-//   - product：name / subtitle / description —— 作者填写的文本，参与内容翻译；
-//     imageAlts —— 图集每张图的可选 alt 文本（JSON 数组，与 images 逐位对应）；
-//     slug / sku / unit —— 标识与单位，纯文本但不参与翻译；
-//     images / defaultImage —— 图集（JSON 数组）与主图（URL）；
-//     price / comparePrice / priceRange / minPrice / maxPrice —— 由变体派生的
-//     只读价格值，纯数字与符号，永不参与翻译；
-//     options / variants —— 由属性组与变体派生的规格数据（JSON），供 core.product
-//     渲染规格选择器（单变体商品在前台不输出选择器）；
-//     related —— 商品挂载的分类 / 品牌 / 标签 / 属性值的展示文本（JSON），
-//     这些文本的译文按各自实体类型取词后填入，键（key/slug）原样保留。
-//   - product_category / product_brand / product_tag：name 与描述 / SEO 文本；
-//     slug 永不翻译。
-//   - product_attribute：name（属性组名）与 values（属性值展示文本 JSON 数组）；
-//     key 永不翻译 —— 它是筛选参数与规格组合的稳定标识。
 var fieldWhitelist = map[string][]string{
 	EntityTypeProduct: {
 		"name", "subtitle", "description",
-		// SEO 字段（products.seo_title / seo_description，迁移 088 起就有列）：
-		// 既是模板可绑定的字段，也是自动发布实例构建期 SEO 头的来源
-		//（见 presentation/service/presentation_seo.go）—— 少登记一项，
-		// 商品详情页就会用商品名当 SEO 标题、用描述当前两者都取不到。
+
 		"seoTitle", "seoDescription",
 		"imageAlt", "imageAlts",
 		"slug", "sku", "unit",
-		// url 为已上线详情页路径（集合源构建期填入，与 presentation 路径真源同口径）。
+
 		"url",
 		"images", "defaultImage",
 		"price", "comparePrice", "priceRange", "minPrice", "maxPrice",
-		// 评分（issue #29）：rating 是 0~5 的数值，ratingCount 是评价数。
+
 		"rating", "ratingCount",
 		"options", "variants",
 		"related",
-		// tags 是标签展示名数组（issue #22：商品卡要显示标签）。
-		// 与 related 里的 tags 不是重复：related 给的是 {slug,name} 完整结构（要链到标签页），
-		// tags 只给名称数组（卡片上一行小标签），拿到的形状与用途都不同。
+
 		"tags",
-		// createdAt 是创建时间（RFC3339，issue #22：商品列表组件要按它排序）。
-		// 集合源返回的默认序是 (sort, create_time, id)，但组件拿不到排序号 —— 想让「最新上架」
-		// 成为可选项，就必须有一个能比较的时间值进集合项。
+
 		"createdAt",
 	},
 	EntityTypeCategory: {
@@ -98,25 +52,12 @@ var fieldWhitelist = map[string][]string{
 	},
 }
 
-// translatableFields 各实体类型参与内容翻译（sys_translation）的字段集合。
-//
-// 取词语境固定为 "{实体类型}.{字段名}"（docs/06-D §7.5；spec #2「商品字段的取值路径
-// 必须按 实体.字段名 的语境界定接入翻译」）。slug / SKU / key / 价格 / 库存不在此列。
-//
-// 数组类字段（product.imageAlts / product_attribute.values）逐元素取词：
-// 元素是独立文本，各自有独立译文（同一句文本在别处已翻译时可直接复用）。
 var translatableFields = map[string]map[string]bool{
 	EntityTypeProduct: {
 		"name":        true,
 		"subtitle":    true,
 		"description": true,
 		"imageAlts":   true,
-		// seoTitle / seoDescription 不在此列（2026-09-30 字段合并）：两者的值分别是
-		// name 与 subtitle 的别名（见 service/entity_source_fields.go），译文直接取那两个
-		// 字段的 —— 单列出来只会让翻译工作台多出两个「填了也不生效」的输入框，还会让
-		// meta 标题与页面标题在英文站点上取到两份彼此无关的译文。
-		// 分类（name / description）与品牌（name / description）同理，别名同步见
-		// service/entity_source_translate.go 的 seoAliasFields。
 	},
 	EntityTypeCategory: {
 		"name":        true,
@@ -135,18 +76,15 @@ var translatableFields = map[string]map[string]bool{
 	},
 }
 
-// EntityTypes 本模块注册的实体类型（装配期逐个注册，顺序稳定）。
 func EntityTypes() []string {
 	return []string{EntityTypeProduct, EntityTypeCategory, EntityTypeBrand, EntityTypeTag, EntityTypeAttribute}
 }
 
-// IsValidType 实体类型是否属于商品域。
 func IsValidType(t string) bool {
 	_, ok := fieldWhitelist[t]
 	return ok
 }
 
-// FieldWhitelist 返回字段白名单的只读拷贝（调用方不得篡改唯一来源）。
 func FieldWhitelist(entityType string) []string {
 	src, ok := fieldWhitelist[entityType]
 	if !ok {
@@ -157,14 +95,12 @@ func FieldWhitelist(entityType string) []string {
 	return out
 }
 
-// SortedFieldWhitelist 白名单的字典序拷贝（集合源元数据等需要确定性顺序的场景）。
 func SortedFieldWhitelist(entityType string) []string {
 	out := FieldWhitelist(entityType)
 	sort.Strings(out)
 	return out
 }
 
-// IsValidField 字段是否在该类型白名单内。
 func IsValidField(entityType, field string) bool {
 	for _, f := range fieldWhitelist[entityType] {
 		if f == field {
@@ -174,14 +110,10 @@ func IsValidField(entityType, field string) bool {
 	return false
 }
 
-// IsTranslatableField 字段是否参与内容翻译。
 func IsTranslatableField(entityType, field string) bool {
 	return translatableFields[entityType][field]
 }
 
-// TranslatableFields 返回某实体类型的可翻译字段集合（只读拷贝；未知类型返回 nil）。
-//
-// 工作台（后台翻译页）与构建期解析器共用本函数 —— 不另写第二份白名单。
 func TranslatableFields(entityType string) []string {
 	src := translatableFields[entityType]
 	if len(src) == 0 {
@@ -196,101 +128,48 @@ func TranslatableFields(entityType string) []string {
 	return out
 }
 
-// FieldContext 拼装内容译文的语境界定 "{实体类型}.{字段名}"（docs/06-D §7.5）。
-//
-// 与 core.ContentContext 同形，但它在这里由**具体实体类型 + 字段名**拼出，
-// 不经过注册表查找 —— 解析器与工作台在同一处拼装，避免两个来源各拼各的。
-// 任一段为空返回空串（空语境不参与取词，取词器直接回退原文）。
 func FieldContext(entityType, field string) string {
 	return source.ContentContextFor(entityType, field)
 }
 
-// ==========================================================================
-// 集合源：商品列表组件能取哪些数、能按哪些维度筛与排（issue #9）
-// ==========================================================================
-
-// CollectionSourceProduct 商品集合源标识（集合类组件 collectionSource 属性的取值）。
-//
-// 沿用既有集合源命名空间 "content:{entityType}"：内容类型收敛为 article 后
-// （issue #4），product 已不在 contents 表，该源由本模块实现 —— 集合源的标识
-// 是组件侧的契约面，不随实现模块迁移而改名（现有工作台选项与文档历史值都不变）。
 const CollectionSourceProduct = "content:product"
 
-// CollectionLabel 集合源展示名的中文兜底（取词未命中时用）。
-//
-// 与 content 模块的集合源共用同一条词条（CollectionLabelKey）：sys_i18n 是一张
-// 全局语言表，同一个语义（「商品列表」这个集合源）没有「哪个模块不能用哪个 key」。
 const CollectionLabel = "商品列表"
 
-// CollectionLabelKey 集合源展示名的 i18n key（取词在出口 handler，见 builder/source 的 CollectionSchema）。
 const CollectionLabelKey = "admin.collection.product"
 
-// 集合源过滤维度的键（issue #21）。
-//
-// 键名与集合项字段风格一致（驼峰）：工作台与文档里看到的是同一套名字。
 const (
-	// CollectionFilterStatus 上下架状态（枚举维度）。
 	CollectionFilterStatus = "status"
-	// CollectionFilterCategoryID 分类 id（商品挂载的分类中命中任意一个即算命中）。
+
 	CollectionFilterCategoryID = "categoryId"
-	// CollectionFilterBrandID 品牌 id。
+
 	CollectionFilterBrandID = "brandId"
-	// CollectionFilterTagID 标签 id（手工挂载与自动命中的都在 tag_ids 里）。
+
 	CollectionFilterTagID = "tagId"
 
-	// CollectionFilterOption 属性值维度的**前缀键**（issue #25）：真实维度写成
-	// `option.<属性组key>=<属性值key>`（如 option.color=red），多个属性彼此 AND。
-	//
-	// 值落在**变体**上（product_variants.option_values 的 JSONB），不是商品行上的列 ——
-	// 所以它不能像 categoryId 那样一个等值条件搞定，得逐属性下推 EXISTS 子查询。
 	CollectionFilterOption = "option"
 
-	// CollectionFilterOptionPrefix 前缀维度键的完整前缀（拼维度键用）。
 	CollectionFilterOptionPrefix = CollectionFilterOption + "."
 
-	// 多值维度（逗号分隔的 id 列表）：一个维度勾多项，取并集。
-	//
-	// CollectionFilterCategoryIDs / BrandIDs / TagIDs 是**同一套样板**（三条各自的
-	// any/all 语义走 CollectionFilterCategoryMode / BrandMode / TagMode）：
-	// 与各自单值维度并存，两者同时非空时**多值优先** —— 单值只是「只勾了一个」的
-	// 退化写法，让它们叠加成 AND 会让「我把单选改成了多选」看起来毫无效果。
 	CollectionFilterCategoryIDs = "categoryIds"
 	CollectionFilterBrandIDs    = "brandIds"
 	CollectionFilterTagIDs      = "tagIds"
-	// 匹配语义：any（默认，具备任一）/ all（同时具备全部）。
+
 	CollectionFilterCategoryMode = "categoryMode"
 	CollectionFilterBrandMode    = "brandMode"
 	CollectionFilterTagMode      = "tagMode"
-	// CollectionFilterMinPrice / MaxPrice 价格区间（issue #28）：筛「存在**启用**变体价格落在区间内」。
-	//
-	// 价格在变体上（products 不存价格），所以与属性值一样是 EXISTS 下推而不是列比较；
-	// 两个维度各自可选，只有下限时表示「≥ 下限」，只有上限时表示「≤ 上限」。
+
 	CollectionFilterMinPrice = "minPrice"
 	CollectionFilterMaxPrice = "maxPrice"
 
-	// CollectionFilterMinRating 最低评分（issue #29）：只出评分 >= 该值的商品。
-	//
-	// **无评分（rating IS NULL）的商品不出现在结果里** —— 「没有评分」不能被当成「评分 0」
-	// 参与比较，那会让新上架的商品永远沉底（与价格维度里「没有启用变体」的处理同源）。
 	CollectionFilterMinRating = "minRating"
 
-	// CollectionFilterOnSale 只看在售（issue #27）：存在启用变体「有划线价且划线价高于售价」。
-	// 判定与 #11 的 on_sale 自动标签规则同源 —— 同一件事只该有一份口径。
 	CollectionFilterOnSale = "onSale"
 
-	// CollectionTagModeAny / CollectionTagModeAll 多值维度匹配语义取值（issue #27）。
-	// 三个多值维度共用这两个取值（键不同、语义完全一致）。
 	CollectionTagModeAny = "any"
 	CollectionTagModeAll = "all"
 )
 
-// collectionFilters 集合源允许的过滤维度（顺序即工作台下拉顺序）。
-//
-// 全部是**等值**维度且彼此 AND：解析期逐个下推到 SQL，白名单外的维度直接报错
-// （不变量 4：不接受任意过滤表达式，只接受声明过的等值维度）。
-//
-// status 带 Enum（取值只有三个，工作台渲染成下拉）；三条 id 维度 Enum 为空
-// （取值是工程内任意的分类 / 品牌 / 标签 id），服务层逐个做 uuid 形状校验。
 var collectionFilters = []source.CollectionFilter{
 	{Key: CollectionFilterStatus, Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
 	{Key: CollectionFilterCategoryID},
@@ -301,28 +180,20 @@ var collectionFilters = []source.CollectionFilter{
 	{Key: CollectionFilterBrandMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterTagID},
 	{Key: CollectionFilterTagIDs},
-	// 匹配语义只在多值场景有意义，取值固定两个（工作台渲染成下拉）。
+
 	{Key: CollectionFilterTagMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterOnSale},
-	// 价格区间（issue #28）：两维都是任意数值，形状与取值范围在解析期校验。
+
 	{Key: CollectionFilterMinPrice},
 	{Key: CollectionFilterMaxPrice},
-	// 最低评分（issue #29）：取值 0~5，形状在解析期校验。
+
 	{Key: CollectionFilterMinRating},
-	// 属性值维度（issue #25）：前缀维度，真实键是 `option.<属性组key>=<属性值key>`。
-	// 属性组由用户自己建（数据驱动），维度键没法穷举，所以用前缀命名空间 + 服务端校验子键。
+
 	{Key: CollectionFilterOption, Prefix: true},
 }
 
-// collectionOrderKeys 集合源允许的排序键白名单（顺序即默认排序优先级）。
-//
-// 字段名用驼峰（集合项字段风格，与 slug / defaultImage 一致）：
-// sort（排序号）→ createdAt（创建时间），同值再按 id 兜底，保证产物确定性。
-// collectionOrderKeys 排序键白名单（issue #28 补价格升降：按**最低启用变体价**排，
-// 没有启用变体的商品排最后 —— 不按 0 元参与比较）。
 var collectionOrderKeys = []string{"sort", "createdAt", "priceAsc", "priceDesc", "ratingDesc"}
 
-// CollectionFilters 过滤维度白名单的只读拷贝（调用方不得篡改唯一来源）。
 func CollectionFilters() []source.CollectionFilter {
 	out := make([]source.CollectionFilter, 0, len(collectionFilters))
 	for _, f := range collectionFilters {
@@ -336,10 +207,6 @@ func CollectionFilters() []source.CollectionFilter {
 	return out
 }
 
-// IsCollectionFilterKey 过滤维度是否在集合源白名单内。
-//
-// 前缀维度按 "<Key>.<子键>" 判定（子键非空即形状合法）；子键的**语义**合法性
-// （属性组 key 是否属于该商品）由解析器与服务层各自负责，白名单只管形状。
 func IsCollectionFilterKey(key string) bool {
 	for _, f := range collectionFilters {
 		if f.Prefix {
@@ -355,7 +222,6 @@ func IsCollectionFilterKey(key string) bool {
 	return false
 }
 
-// CollectionOrderBy 排序键白名单的只读拷贝（顺序即默认排序优先级）。
 func CollectionOrderBy() []string {
 	out := make([]string, len(collectionOrderKeys))
 	copy(out, collectionOrderKeys)

@@ -1,24 +1,5 @@
 package unit
 
-// page_receipt_captured_version_test.go —— 回执「捕获输入代次」的消费侧（真实 PG）。
-//
-// 发布链在**捕获段**读到的 pages.input_version 必须原样进回执，收敛例程在实体锁内
-// 拿它和当前代次比对，从而区分：
-//
-//	版本相等          → 这次激活编译的就是最新一代输入 → 补完成（写账本、结案）；
-//	版本不等          → 线上跑的是过期字节 → 不入账，入队重建或保留 pending；
-//	未知（0，旧回执）  → 退回「链接身份 + 数据库归属」两判据，不当成有效。
-//
-// 下面钉住三件事：
-//	① 发布主链把捕获代次如实写进 receipt_data（不写当前版本冒充）；
-//	② publication 的读取投影把它如实交回给 page（两跳之间不许补值、不许归零）；
-//	③ 收端的分支判据：0 不否决，非 0 且不等才否决 —— 防止「拿 0 当有效版本」或
-//	   「拿 0 当不相等」两种反向错误。
-//
-// 本文件在 publication 契约补出 BeginPublishReceiptReq.CapturedInputVersion 与
-// PendingReceiptResp.CapturedInputVersion 之后才有可执行的前提；在此之前 ① 会因为
-// beginPublishReceipt 没有交字段而失败 —— 那个失败就是「缺参在哪一跳」的证据。
-
 import (
 	"context"
 	"testing"
@@ -30,7 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// capturedInputVersionOfPage 读页面当前输入代次（收敛要与它比对）。
 func capturedInputVersionOfPage(t *testing.T, db *gorm.DB, pageID string) int64 {
 	t.Helper()
 	var v int64
@@ -40,11 +20,9 @@ func capturedInputVersionOfPage(t *testing.T, db *gorm.DB, pageID string) int64 
 	return v
 }
 
-// beginReceiptDataOf 读该路径上最新一条 switch_active 回执的 receipt_data 原文。
 func beginReceiptDataOf(t *testing.T, db *gorm.DB, path string) []byte {
 	t.Helper()
-	// jsonb 列按 ::text 读：driver 交给 Scan 的是 []uint8，直接扫进 []byte 会逐元素赋值
-	//（converting driver.Value type []uint8 to a uint8）。同 publication 侧测试的读法。
+
 	var text string
 	statement := "SELECT receipt_data::text FROM publication_receipts WHERE path = ? AND action = 'switch_active' ORDER BY id DESC LIMIT 1"
 	if err := db.Raw(statement, path).Scan(&text).Error; err != nil {
@@ -56,7 +34,6 @@ func beginReceiptDataOf(t *testing.T, db *gorm.DB, path string) []byte {
 	return []byte(text)
 }
 
-// receiptCapturedVersion 从 receipt_data 里取捕获代次；缺键返回 0（未知）。
 func receiptCapturedVersion(t *testing.T, data []byte) int64 {
 	t.Helper()
 	var payload struct {
@@ -68,25 +45,14 @@ func receiptCapturedVersion(t *testing.T, data []byte) int64 {
 	return payload.CapturedInputVersion
 }
 
-// capturedVersionVerdict 收端判据的**唯一**定义（与 recoverSwitchActiveReceipt 的 G2 同口径）：
-// 返回 true 表示「这条回执的激活已过期」。
-//
-// 0 是未知哨兵而不是合法版本：实体版本从 1 起推进（迁移 699 的 DEFAULT 0 只用于历史行），
-// 0 永远不会等于一个真实代次 —— 拿 0 去比会得到「永远过期」，把旧回执全判死；
-// 把它当「与当前相同」又会让过期产物被补完成。两种都不对，只能「未知 = 不否决」。
 func capturedVersionVerdict(captured, current int64) bool {
 	return captured > 0 && current != captured
 }
 
-// TestPublishMainlineCarriesCapturedInputVersion ① 主链把捕获代次如实写进回执。
-//
-// 认领点：internal/module/page/service/page_publish.go 的 beginPublishReceipt 只交
-// ProjectID/Path/PageID/From/To/Lang/Action/OldPath/Redirect —— publishReceiptInput.CapturedInputVersion
-// 一路带到了这里，却没有交进 BeginPublishReceiptReq。这一跳缺了，收敛永远读到 0。
 func TestPublishMainlineCarriesCapturedInputVersion(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	page := createPage(t, svc, projectID, "/receipt-captured", emptyRevDoc)
-	// 输入代次推一代：捕获段读到的必须是**非 0** 的真实代次，否则本用例证不出搬运。
+
 	if err := db.Exec("UPDATE pages SET input_version = input_version + 3 WHERE id = ?", page.ID).Error; err != nil {
 		t.Fatalf("推进输入代次失败: %v", err)
 	}
@@ -102,9 +68,6 @@ func TestPublishMainlineCarriesCapturedInputVersion(t *testing.T) {
 	}
 }
 
-// TestCapturedVersionVerdictNeverTreatsUnknownAsValid ③ 收端分支判据的边界。
-//
-// 纯逻辑用例（不碰 DB）：钉住「0 不当有效、也不当不等」，以及「非 0 且不等 → 过期」。
 func TestCapturedVersionVerdictNeverTreatsUnknownAsValid(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -128,10 +91,6 @@ func TestCapturedVersionVerdictNeverTreatsUnknownAsValid(t *testing.T) {
 	}
 }
 
-// TestPublicationReceiptProjectsCapturedVersion ② 读取投影把它交回给消费者。
-//
-// 由真实 publication service 登记、真实 service 读回：证明 dto → receipt_data → dto
-// 全程不丢、不补值。缺口一旦回流（任一侧删掉字段），这里先失败。
 func TestPublicationReceiptProjectsCapturedVersion(t *testing.T) {
 	_, svc, routes, projectID := newPageServiceWithRoutes(t)
 	ctx := context.Background()

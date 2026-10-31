@@ -2,8 +2,6 @@ package pipeline
 
 import "fmt"
 
-// ActivePublishedPath 校验账本路径对应的真实访问面产物，不把缺文件或旧重定向当页面。
-// 未激活返回空路径；账本与访问面不一致、文件损坏则明确失败，由发布链保留原产物。
 func ActivePublishedPath(publication PublicationStore, artifacts Store, path, hash string) (string, error) {
 	if path == "" || hash == "" {
 		return "", nil

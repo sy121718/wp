@@ -8,21 +8,17 @@ import (
 	"time"
 )
 
-// dailyRotateWriter 按日期轮转的日志写入器。
-// 每天产生一个新文件，文件名格式：{prefix}-2006-01-02.log。
-// maxAge > 0 时自动清理过期文件。
 type dailyRotateWriter struct {
 	mu     sync.Mutex
 	dir    string
-	prefix string // 文件前缀，例如 "app"
-	maxAge int    // 最大保留天数，0 表示不清理
-	keep   int    // 最大保留文件数，0 表示不限制
+	prefix string
+	maxAge int
+	keep   int
 
 	file *os.File
-	date string // 当前文件对应的日期 "2006-01-02"
+	date string
 }
 
-// newDailyRotateWriter 创建按日期轮转的写入器。
 func newDailyRotateWriter(dir, prefix string, maxAge int) (*dailyRotateWriter, error) {
 	w := &dailyRotateWriter{
 		dir:    dir,
@@ -36,7 +32,6 @@ func newDailyRotateWriter(dir, prefix string, maxAge int) (*dailyRotateWriter, e
 	return w, nil
 }
 
-// Write 写入日志，跨天时自动切换文件。
 func (w *dailyRotateWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -53,14 +48,12 @@ func (w *dailyRotateWriter) Write(p []byte) (int, error) {
 	return w.file.Write(p)
 }
 
-// Close 关闭当前日志文件。
 func (w *dailyRotateWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.closeFile()
 }
 
-// rotate 关闭旧文件，按当天日期打开新文件。
 func (w *dailyRotateWriter) rotate() error {
 	if err := w.closeFile(); err != nil {
 		return err
@@ -78,7 +71,6 @@ func (w *dailyRotateWriter) rotate() error {
 	return nil
 }
 
-// closeFile 关闭当前打开的文件。
 func (w *dailyRotateWriter) closeFile() error {
 	if w.file == nil {
 		return nil
@@ -88,7 +80,6 @@ func (w *dailyRotateWriter) closeFile() error {
 	return err
 }
 
-// cleanup 清理超过 maxAge 天的旧日志文件。
 func (w *dailyRotateWriter) cleanup() {
 	if w.maxAge <= 0 {
 		return

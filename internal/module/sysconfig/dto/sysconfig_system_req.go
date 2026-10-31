@@ -1,7 +1,5 @@
 package sysconfigdto
 
-// SystemSaveReq saves the two system settings groups in one operation.
-// Versions belong to the submitted snapshot, never the latest read snapshot.
 type SystemSaveReq struct {
 	DefaultLang     string `json:"defaultLang" form:"defaultLang" binding:"required"`
 	SiteLangURLMode string `json:"siteLangURLMode" form:"siteLangURLMode" binding:"required"`

@@ -1,16 +1,5 @@
 package unit
 
-// media_replace_stale_test.go — 换图失效通知的端到端验证（真实 PostgreSQL + 真实文件）。
-//
-// 覆盖的是「换图之后访客看到什么」这条链的起点：
-//
-//	换图 → 变体产出**新文件名**（带 generation 与内容指纹）→ 旧文件按设计保留 →
-//	没有失效通知时，已发布产物里的 srcset 仍指向旧名，旧 URL 返回旧字节且带
-//	immutable 长缓存 —— 换图对访客等于没发生。
-//
-// 这里用真实的 page service 作为引用方实现（mediacontract.StaleMarker），
-// 断言 pages.stale 真的被置位，且**只有被引用的那一页**被置位。
-
 import (
 	"bytes"
 	"context"
@@ -35,7 +24,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// seedPageRow 在指定工程下落一行页面（stale=false），返回页面 id。
 func seedPageRow(t *testing.T, db *gorm.DB, projectID, path string) string {
 	t.Helper()
 	id := uuid.NewString()
@@ -51,7 +39,6 @@ func seedPageRow(t *testing.T, db *gorm.DB, projectID, path string) string {
 	return id
 }
 
-// pageIsStale 读 pages.stale。
 func pageIsStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	t.Helper()
 	var stale bool
@@ -61,7 +48,6 @@ func pageIsStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	return stale
 }
 
-// pngMultipartHeader 构造一份真实的 multipart 文件头（upload 链路做魔数嗅探，必须是真 PNG）。
 func pngMultipartHeader(t *testing.T, field, filename string, w, h int) *multipart.FileHeader {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -93,8 +79,6 @@ func pngMultipartHeader(t *testing.T, field, filename string, w, h int) *multipa
 	return form.File[field][0]
 }
 
-// TestReplaceMarksReferencingPageStale 验收①：换图后引用该图的页面被标记 stale，
-// 未引用它的页面不受影响（精确标记，不是全站标记）。
 func TestReplaceMarksReferencingPageStale(t *testing.T) {
 	storageDir := initVariantUploadForTest(t)
 	db := support.NewMigratedPGTestDB(t)
@@ -104,7 +88,6 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 	referencingPage := seedPageRow(t, db, projectID, "/p/referencing")
 	otherPage := seedPageRow(t, db, projectID, "/p/other")
 
-	// 原图落盘（Replace 以现有 key 为目标，扩展名必须一致）。
 	key := "replace_target.png"
 	makeTestPNG(t, storageDir, key, 40, 30)
 
@@ -124,15 +107,13 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// 构建期写入的引用事实：只有 referencingPage 的产物引用了这张图。
+
 	if _, err := am.AddRef(ctx, att.ID, mediamodel.AttachmentRef{
 		Kind: mediacontract.RefKindPage, ID: referencingPage, Title: "引用页",
 	}); err != nil {
 		t.Fatalf("写入媒体引用失败: %v", err)
 	}
 
-	// 装配口径：page 实现 media 索要的端口，注入 media；presentation 那一类这里用
-	// 最小实现占位（本用例只验证 page 侧真实标记；缺任一类都会被 SetStaleMarkers 拦下）。
 	pageSvc := pageservice.NewService(pagemodel.NewPageModel(db),
 		nil, nil, projectservice.NewService(projectmodel.NewProjectModel(db)), nil, nil, nil, nil, nil)
 	mediaSvc.SetStaleMarkers(pageSvc, stubStaleMarker{kind: mediacontract.RefKindPresentation})
@@ -145,7 +126,6 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 		t.Fatalf("换图失败: %v", err)
 	}
 
-	// 证据①：换图把引用方标记为待重建。
 	if !pageIsStale(t, db, referencingPage) {
 		t.Fatalf("换图后引用该图的页面未被标记 stale（页面 id=%s）", referencingPage)
 	}
@@ -153,7 +133,6 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 		t.Fatalf("未引用该图的页面被误标 stale（页面 id=%s）：标记必须是精确集合", otherPage)
 	}
 
-	// 变体确实重建出了新名字（新 URL），旧文件保留 —— 这正是「必须通知引用方」的前提。
 	var paths []string
 	if err := db.Raw("SELECT file_path FROM sys_media_variant WHERE attachment_id = ?", att.ID).
 		Scan(&paths).Error; err != nil {
@@ -165,8 +144,6 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 	t.Logf("换图后变体新名：%v", paths)
 }
 
-// TestSetStaleMarkersPanicsWhenKindMissing 验收②的一半：端口实现缺一类就当场失败，
-// 而不是静默运行（缺 presentation 的实现时，换图后详情页永远不会更新）。
 func TestSetStaleMarkersPanicsWhenKindMissing(t *testing.T) {
 	svc := mediaservice.NewService(mediamodel.NewAttachmentModel(nil), nil, nil)
 
@@ -190,7 +167,6 @@ func TestSetStaleMarkersPanicsWhenKindMissing(t *testing.T) {
 	svc.SetStaleMarkers(stubStaleMarker{kind: mediacontract.RefKindPage})
 }
 
-// stubStaleMarker 只实现一种引用方类型的最小实现（用于装配期校验的用例）。
 type stubStaleMarker struct{ kind string }
 
 func (m stubStaleMarker) RefKinds() []string { return []string{m.kind} }

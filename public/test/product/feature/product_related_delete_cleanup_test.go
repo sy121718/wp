@@ -1,17 +1,3 @@
-// product_related_delete_cleanup_test.go — DEC-04 裁决（同事务清理）的链路判据。
-//
-// related_ids 是 products 表的 JSONB 自引用，没有外键兜底：删掉 A 之后，
-// B.related_ids 里仍会留着 A。三种策略里选**同事务清理**：
-//
-//	· 阻止删除会把「后台看不见的引用」变成删不掉的硬墙；
-//	· 读取剔除会让脏 id 永远留在库里，产物里的相关商品卡指向 404；
-//	· 清理把「引用一个被删商品」的唯一正确结果写进同一事务，失败整体回滚。
-//
-// 判据：
-//  1. 单删后引用者的 related_ids 不再含被删 id，其余引用原样保留；
-//  2. 批删（整成全败的路径）同样清理；
-//  3. 被删集合内部的互相引用不报错（两边都消失，无需清理）；
-//  4. 引用者被清理时发产物失效事件（outbox 有该实体的键）。
 package feature
 
 import (
@@ -21,7 +7,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// createRelated 建商品并把 given 的 related_ids 写进去（走真实写路径的校验）。
 func (f *fixture) createRelated(t *testing.T, name, slug string, related ...string) *productdto.ProductResp {
 	t.Helper()
 	res := f.mkRelatedProduct(t, f.projectID, name, slug)
@@ -36,7 +21,6 @@ func (f *fixture) createRelated(t *testing.T, name, slug string, related ...stri
 	return res
 }
 
-// requireOutboxFor 断言引用者有一行产物失效事件（清理不能悄悄改数据）。
 func (f *fixture) requireOutboxFor(t *testing.T, productID string) {
 	t.Helper()
 	var n int64
@@ -50,7 +34,6 @@ func (f *fixture) requireOutboxFor(t *testing.T, productID string) {
 	}
 }
 
-// TestDeleteProductCleansRelatedRefs 单删：引用者只剩自己保留的那条。
 func TestDeleteProductCleansRelatedRefs(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -69,13 +52,12 @@ func TestDeleteProductCleansRelatedRefs(t *testing.T) {
 		t.Fatalf("删除后引用者应只剩 %s，实际 %v", keep.ID, got)
 	}
 	f.requireOutboxFor(t, c.ID)
-	// 引用者自身仍可读（清理不是把行改坏）。
+
 	if res, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: c.ID}); err != nil || res.ID != c.ID {
 		t.Fatalf("引用者应仍可读：res=%v err=%v", res, err)
 	}
 }
 
-// TestBulkDeleteProductsCleansRelatedRefs 批删：引用者里的两条都被摘掉。
 func TestBulkDeleteProductsCleansRelatedRefs(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -100,7 +82,6 @@ func TestBulkDeleteProductsCleansRelatedRefs(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteProductsToleratesMutualRelated 被删集合内部互引：整体成功。
 func TestBulkDeleteProductsToleratesMutualRelated(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {

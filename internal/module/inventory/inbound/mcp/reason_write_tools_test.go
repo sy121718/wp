@@ -1,14 +1,5 @@
 package inventorymcp
 
-// reason_write_tools_test.go — 变动原因字典的增改边界。
-//
-// 两条最要紧的：
-//   · 建原因的回执必须把 code **原样**写出来 —— 它是下一步 stock_change 要用的字符串，
-//     而服务端会归一它（转小写、去空白）。让模型复述自己传进去的写法，
-//     下一次调用就会因为大小写对不上而失败；
-//   · update 三项全空时当场拒 —— 一次什么都没改的写调用会污染 update_time，
-//     后来排查的人会以为这个原因刚被谁动过。
-
 import (
 	"context"
 	"errors"
@@ -116,7 +107,6 @@ func TestReasonCreateMapsArgs(t *testing.T) {
 	}
 }
 
-// 回执必须原样带出 code：下一步 stock_change 要用它，而服务端会归一（转小写）。
 func TestReasonCreateTextCarriesCodeVerbatim(t *testing.T) {
 	stub := &stubReasonWriter{createRes: &inventorydto.ReasonResp{Code: "store_pickup_out", Name: "门店自提出库", Direction: "out"}}
 	text, err := callReason(t, stub, "inventory_reason_create", map[string]any{
@@ -153,7 +143,6 @@ func TestReasonCreatePropagatesError(t *testing.T) {
 	}
 }
 
-// 三项全空时当场拒：一次什么都没改的写调用会污染 update_time。
 func TestReasonUpdateRejectsEmptyChange(t *testing.T) {
 	stub := &stubReasonWriter{}
 	if _, err := callReason(t, stub, "inventory_reason_update", map[string]any{"reasonId": "7"}); err == nil {
@@ -164,8 +153,6 @@ func TestReasonUpdateRejectsEmptyChange(t *testing.T) {
 	}
 }
 
-// 空 name / 空 status 不能透传成空串：那会让 service 把名字改成空，
-// 而不是「没改」—— 指针字段只该在显式传值时才有值。
 func TestReasonUpdateOnlySendsProvidedFields(t *testing.T) {
 	stub := &stubReasonWriter{updateRes: &inventorydto.ReasonResp{ID: "7", Name: "门店自提出库"}}
 	if _, err := callReason(t, stub, "inventory_reason_update", map[string]any{
@@ -181,8 +168,6 @@ func TestReasonUpdateOnlySendsProvidedFields(t *testing.T) {
 	}
 }
 
-// 停用要说清「不是删除」：历史流水仍然引用它的 code，
-// 说成「删掉了」会让用户以为旧记录也一起没了。
 func TestReasonUpdateTextExplainsDisable(t *testing.T) {
 	stub := &stubReasonWriter{updateRes: &inventorydto.ReasonResp{ID: "7", Name: "门店自提出库"}}
 	text, err := callReason(t, stub, "inventory_reason_update", map[string]any{
@@ -207,8 +192,6 @@ func TestReasonUpdatePropagatesError(t *testing.T) {
 	}
 }
 
-// 描述里必须写明「内置原因改不了名字」—— 那是 service 的硬约束，
-// 描述里不写，模型会反复试然后给用户一个含糊的失败。
 func TestReasonUpdateDescriptionWarnsBuiltin(t *testing.T) {
 	tool := mustReasonTools(t, &stubReasonWriter{})["inventory_reason_update"]
 	if !strings.Contains(tool.Description(), "内置") {
@@ -216,10 +199,6 @@ func TestReasonUpdateDescriptionWarnsBuiltin(t *testing.T) {
 	}
 }
 
-// 回执里不能出现裸 i18n key：自定义原因的 Name 在库里存的是
-// inventory.reason.custom.<工程>.<code> 这种路径（与内置同一形态），
-// 直接印出来用户看到的就是一串标识，认不出自己刚建了什么。
-// 这条是真机上实际踩到的 —— 第一次跑出来的回执写的是 key 本身。
 func TestReasonCreateTextNeverLeaksI18nKey(t *testing.T) {
 	stub := &stubReasonWriter{createRes: &inventorydto.ReasonResp{
 		Code:      "store_pickup_out",
@@ -238,13 +217,12 @@ func TestReasonCreateTextNeverLeaksI18nKey(t *testing.T) {
 	if strings.Contains(text, "inventory.reason.") {
 		t.Errorf("回执里漏了裸 i18n key：\n%s", text)
 	}
-	// 翻不出来时回落到 code，至少是个能对上的标识。
+
 	if !strings.Contains(text, "store_pickup_out") {
 		t.Errorf("正文缺 code：\n%s", text)
 	}
 }
 
-// 改名回执同理：服务端回的 Name 可能是 key，不该印给用户。
 func TestReasonUpdateTextNeverLeaksI18nKey(t *testing.T) {
 	stub := &stubReasonWriter{updateRes: &inventorydto.ReasonResp{
 		ID:   "10",

@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// langLabels 后台语言下拉自称（不随界面语言变化）；未知语言码回退为码本身。
 var langLabels = map[string]string{
 	"zh-CN": "简体中文",
 	"zh-TW": "繁體中文",
@@ -21,8 +20,6 @@ var langLabels = map[string]string{
 	"ar":    "العربية",
 }
 
-// AvailableLangs 返回 sys_i18n 中已有词条的语言集合（升序）。
-// 缓存未加载时回退 zh-CN / en-US，保证后台语言切换可用。
 func AvailableLangs() []string {
 	cache.mu.RLock()
 	seen := map[string]struct{}{}
@@ -46,7 +43,6 @@ func AvailableLangs() []string {
 	return out
 }
 
-// LangLabel 语言自称；未知码回退为语言码本身。
 func LangLabel(lang string) string {
 	lang = strings.TrimSpace(lang)
 	if v, ok := langLabels[lang]; ok {

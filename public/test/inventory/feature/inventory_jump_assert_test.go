@@ -1,14 +1,5 @@
 package feature
 
-// inventory_jump_assert_test.go — 写动作出口的共用断言。
-//
-// 历史：这里曾断言「整页提示」（data-jump-state + </html>）。提示页已删除 —— 结论不再占一页：
-//   · 成功 = 200 + JSON（{code:200,message,data}），**不跳转、不给 URL**：导航由前端按模板的
-//     data-write-nav 决定（无值 = 重载当前页）；
-//   · 失败 = 4xx / 5xx + JSON，htmx 对 4xx 不 swap，页面弹 toast。
-//
-// 所以本助手只认这两条形态，state 参数仍按 "ok" / "err" 传（调用点不改）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -16,10 +7,6 @@ import (
 	"testing"
 )
 
-// assertInventoryJump 断言一次写动作的响应形态。
-//
-//   - state = "ok"：200 + JSON，且不带 Location / HX-Redirect（后端不给跳转地址）；
-//   - state = "err"：4xx/5xx + JSON，wants 逐条匹配响应体（即 message 的文案）。
 func assertInventoryJump(t *testing.T, rec *httptest.ResponseRecorder, state string, wants ...string) {
 	t.Helper()
 	if state == "ok" {

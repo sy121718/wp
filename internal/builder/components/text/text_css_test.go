@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestTextCSSLinkColorIsSeparateRule 链接色必须落在 `& a` 上，不能与正文色同规则。
-//
-// 两条 color 声明写进同一个选择器时后者覆盖前者，结果是「配了链接色 → 正文颜色被改掉，
-// 而链接本身没变色」。这条不变量靠「两个选择器」维持，迁移到 CSS 文件后同样要钉住。
 func TestTextCSSLinkColorIsSeparateRule(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Color: "#123456", LinkColor: "#ff0000"}, &b)
@@ -23,12 +19,6 @@ func TestTextCSSLinkColorIsSeparateRule(t *testing.T) {
 	}
 }
 
-// TestTextCSSOptionalDecls 段间距与截断为可选：未配置则不产出对应规则。
-//
-// 注意「可选」的边界：全空实例**不**产出任何规则（含富文本排版基线）——
-// 基线的应用条件是 isRichText（模式非纯文本 + 有内容或绑定），见 text.go。
-// 下面第二个用例带 ParagraphSpacing + LineClamp，因此走的是「有配置」那一支。
-// 选择器里包含 ol：早先只写了 p / ul / blockquote，有序列表拿不到段间距。
 func TestTextCSSOptionalDecls(t *testing.T) {
 	var plain core.CSSBuckets
 	compileCSS("t", &Props{}, &plain)

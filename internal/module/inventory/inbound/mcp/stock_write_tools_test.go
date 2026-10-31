@@ -1,15 +1,5 @@
 package inventorymcp
 
-// stock_write_tools_test.go — 库存写工具的入参校验、错误教学与结果可读性。
-//
-// 写工具比读工具多一层要钉的东西：**它真的会改数据**。所以这里除了「正文里有没有
-// 那个数」，还钉住几件会直接造成错误写入或让模型反复重试的事：
-//   · in/out 的 quantity 必须是正数（负数会写成「入库 -5」，事后没人看得出它其实是出库）；
-//   · adjust 允许 0（清零是常见盘点结果）但拒绝负数；
-//   · reasonCode 被拒时错误里要带上该方向可用的 code —— 否则模型只会重猜一次，
-//     同一次入库连着失败两三次，而用户看到的是「AI 试了半天没做成」；
-//   · 结果必须写出变动前后的数量（只报增量的话用户还得再查一次才能回答「现在有多少」）。
-
 import (
 	"context"
 	"errors"
@@ -22,7 +12,6 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
-// stubStore 幂等台账的内存实现：只记成功结果，与真实实现同语义。
 type stubStore struct {
 	saved map[string]mcp.Result
 }
@@ -56,8 +45,6 @@ func (s *stubStock) ListReasons(_ context.Context, _ *inventorydto.ListReasonReq
 	return s.reasons, s.reasonsErr
 }
 
-// 写工具的 reader 参数是 StockReader（错误教学要用 ListReasons）——
-// 把另外两个方法补成空实现，让同一个 stub 同时满足读写两侧。
 func (s *stubStock) ListStocks(_ context.Context, _ *inventorydto.ListStockReq) ([]*inventorydto.StockResp, error) {
 	return nil, nil
 }
@@ -79,7 +66,6 @@ func mustWriteTools(t *testing.T, stub *stubStock) map[string]mcp.Tool {
 	return out
 }
 
-// callStockChange 发起一次 stock_change，自动补上框架要求的 confirm + idempotencyKey。
 func callStockChange(t *testing.T, stub *stubStock, args map[string]any) (string, error) {
 	t.Helper()
 	tool := mustWriteTools(t, stub)["stock_change"]
@@ -136,8 +122,7 @@ func TestStockChangeMapsArgs(t *testing.T) {
 	if len(stub.gotChange.Lines) != 1 || stub.gotChange.Lines[0].Quantity != 5 {
 		t.Errorf("行没传对: %+v", stub.gotChange.Lines)
 	}
-	// 行内的仓库要跟着请求上的仓库走：只传顶层仓库、行里留空时，
-	// service 会按行内的空值去找仓库 —— 那是一次「仓库不存在」的报错。
+
 	if stub.gotChange.Lines[0].WarehouseID != "w-1" {
 		t.Errorf("行内 warehouseId = %q，应当跟随顶层 warehouseId", stub.gotChange.Lines[0].WarehouseID)
 	}
@@ -203,7 +188,6 @@ func TestStockChangeRejectsLineWithoutVariant(t *testing.T) {
 	}
 }
 
-// reasonCode 被拒时要把该方向可用的 code 附在错误里 —— 这是本文件里最要紧的一条。
 func TestStockChangeTeachesAvailableReasons(t *testing.T) {
 	stub := &stubStock{
 		changeErr: errors.New("原因与方向不符"),
@@ -223,7 +207,6 @@ func TestStockChangeTeachesAvailableReasons(t *testing.T) {
 	}
 }
 
-// 与原因无关的错误不该被塞一份原因清单：那会让人以为是原因的问题。
 func TestStockChangeDoesNotTeachOnUnrelatedError(t *testing.T) {
 	stub := &stubStock{
 		changeErr: errors.New("库存不足，当前 2"),
@@ -260,8 +243,6 @@ func TestChangeResultTextShowsBeforeAndAfter(t *testing.T) {
 	}
 }
 
-// 缓存没同步上必须说出来：列表页的库存数会短暂与真实值不一致，
-// 用户拿列表页的数去对账会对不上。
 func TestChangeResultTextWarnsOnCacheMiss(t *testing.T) {
 	stub := &stubStock{changeRes: &inventorydto.StockChangeResp{
 		BatchID:       "b-1",
@@ -304,13 +285,12 @@ func TestReasonsTextSaysWhatToDoWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("不该报错: %v", err)
 	}
-	// 空结果必须给出下一步（去建一个），而不是让模型以为工具坏了。
+
 	if !strings.Contains(res.Text, "建") {
 		t.Errorf("空结果应告诉用户下一步：\n%s", res.Text)
 	}
 }
 
-// 幂等：同一个 key 第二次调用应当拿回第一次的结果，而不是再写一次库存。
 func TestStockChangeIsIdempotent(t *testing.T) {
 	stub := &stubStock{changeRes: &inventorydto.StockChangeResp{
 		BatchID:   "b-1",
@@ -339,11 +319,6 @@ func TestStockChangeIsIdempotent(t *testing.T) {
 	}
 }
 
-// 内置原因的 Name 是 i18n key，不能原样吐给用户。
-//
-// 实测踩到过：回答里出现「purchase_in — inventory.reason.purchase_in」。
-// 这里钉住「内置 key 绝不原样出现」—— 翻译命中（生产环境）出中文，
-// 未命中（单元测试里 i18n 缓存未加载）退回 code，两种都不该是点分 key。
 func TestReasonNameNeverLeaksI18nKey(t *testing.T) {
 	builtin := &inventorydto.ReasonResp{Code: "purchase_in", Name: "inventory.reason.purchase_in", IsBuiltin: true}
 	got := reasonName(builtin)
@@ -353,16 +328,13 @@ func TestReasonNameNeverLeaksI18nKey(t *testing.T) {
 	if got != "purchase_in" && got != "采购入库" {
 		t.Errorf("内置原因名应当是译文或 code，实得 %q", got)
 	}
-	// 自建原因的 Name 就是真名，必须原样保留。
+
 	custom := &inventorydto.ReasonResp{Code: "my_reason", Name: "供应商送样"}
 	if reasonName(custom) != "供应商送样" {
 		t.Errorf("自建原因名应当原样保留，实得 %q", reasonName(custom))
 	}
 }
 
-// 原因列表必须带出 id：inventory_reason_update 要的是 id 不是 code，
-// 不印出来模型下一步只能停下来问用户要。
-// 实测原话：「刚才 stock_reasons 返回里没给出它的 reasonId，我不能拿 code 代填」。
 func TestReasonsTextCarriesID(t *testing.T) {
 	list := []*inventorydto.ReasonResp{
 		{ID: "10", Code: "store_pickup_out", Name: "门店自提出库", Direction: "out"},

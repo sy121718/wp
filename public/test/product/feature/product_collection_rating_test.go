@@ -1,8 +1,3 @@
-// Package feature product 模块 feature 测试 —— 商品评分（issue #29）。
-//
-// 核心口径：**无评分（NULL）与 0 分严格区分**。
-// 「评分 ≥ 4」的筛选里新上架商品不该因为「还没人评过」而被当成 0 分筛掉；
-// 集合项也据此不给 ratingValue，让组件把它排在最后。
 package feature
 
 import (
@@ -14,8 +9,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// setRatings 给商品写若干条评分（issue #30：评分独立成表，走独立的评分接口 ——
-// 商品更新接口不再有 rating 字段，评分不是商品的列）。
 func setRatings(t *testing.T, f *detailFixture, productID string, scores ...float64) {
 	t.Helper()
 	for _, score := range scores {
@@ -27,7 +20,6 @@ func setRatings(t *testing.T, f *detailFixture, productID string, scores ...floa
 	}
 }
 
-// TestProductCollectionRatingFilter 最低评分筛选（issue #29）。
 func TestProductCollectionRatingFilter(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -39,9 +31,9 @@ func TestProductCollectionRatingFilter(t *testing.T) {
 	high := f.createProduct(t, "高分货", "high-rated", "", 99, 99)
 	low := f.createProduct(t, "低分货", "low-rated", "", 99, 99)
 	none := f.createProduct(t, "无评分货", "no-rating", "", 99, 99)
-	setRatings(t, f, high, 4.5, 5) // 平均 4.75
+	setRatings(t, f, high, 4.5, 5)
 	setRatings(t, f, low, 3)
-	_ = none // 不设评分：rating 保持 NULL
+	_ = none
 
 	names := func(filter map[string]string) map[string]bool {
 		t.Helper()
@@ -58,11 +50,10 @@ func TestProductCollectionRatingFilter(t *testing.T) {
 		return out
 	}
 
-	// 评分 ≥ 4：只有高分货（低分 3 分不够、无评分的不入选）。
 	if got := names(map[string]string{"minRating": "4"}); len(got) != 1 || !got["高分货"] {
 		t.Fatalf("minRating=4 应只命中高分货，实际 %v", got)
 	}
-	// 评分 ≥ 3：两个有评分的都命中 —— **无评分的仍然不出现**。
+
 	got := names(map[string]string{"minRating": "3"})
 	if len(got) != 2 || !got["高分货"] || !got["低分货"] {
 		t.Fatalf("minRating=3 应命中两个有评分的商品，实际 %v", got)
@@ -70,16 +61,15 @@ func TestProductCollectionRatingFilter(t *testing.T) {
 	if got["无评分货"] {
 		t.Fatalf("无评分商品不该出现在评分筛选结果里（NULL 不是 0 分）: %v", got)
 	}
-	// 评分 ≥ 0：仍然排除无评分的（0 是有效评分，但 NULL 不是）。
+
 	if got := names(map[string]string{"minRating": "0"}); len(got) != 2 {
 		t.Fatalf("minRating=0 仍应排除无评分商品，实际 %v", got)
 	}
-	// 与状态叠加：未发布商品不出现。
+
 	if got := names(map[string]string{"status": "published", "minRating": "0"}); len(got) != 0 {
 		t.Fatalf("未发布商品不该出现: %v", got)
 	}
 
-	// 非法输入：非数字 / 越界（>5、<0）。
 	for _, filter := range []map[string]string{
 		{"minRating": "abc"},
 		{"minRating": "6"},
@@ -91,8 +81,6 @@ func TestProductCollectionRatingFilter(t *testing.T) {
 	}
 }
 
-// TestProductCollectionItemCarriesRating 集合项：有评分给数值 ratingValue + 展示字符串；
-// 无评分时两个键都不给（组件据此排最后，而不是当 0 分比较）。
 func TestProductCollectionItemCarriesRating(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -102,7 +90,7 @@ func TestProductCollectionItemCarriesRating(t *testing.T) {
 	ctx := core.WithBuildProjectID(context.Background(), f.projectID)
 	rated := f.createProduct(t, "已评分", "rated-one", "", 99, 99)
 	f.createProduct(t, "未评分", "unrated-one", "", 99, 99)
-	setRatings(t, f, rated, 4, 4.5) // 平均 4.25
+	setRatings(t, f, rated, 4, 4.5)
 
 	items, err := reg.ResolveCollection(ctx, productcontract.CollectionSourceProduct, map[string]string{})
 	if err != nil {

@@ -10,14 +10,10 @@ import (
 	"testing"
 )
 
-// docsPointerBudget 是「指向已删除文档目录的存量引用」总数。
-// 双向判定：新增引用会让总数变大，清理后不同步下调会让总数变小 —— 两种都判失败。
 const docsPointerBudget = 0
 
 var docsPointerPattern = regexp.MustCompile("docs/[A-Za-z0-9._/\\-]+\\.(?:md|html|txt|sql)")
 
-// TestNoDanglingDocsPointers 守住「注释与脚本里不引用已不存在的文档」。
-// docs/ 目录已整体删除，任何指向它的路径都是死指针：读的人找不到，改的人不知道该信谁。
 func TestNoDanglingDocsPointers(t *testing.T) {
 	root := repoRoot(t)
 	exts := map[string]bool{".go": true, ".md": true, ".sh": true, ".html": true, ".js": true, ".css": true}

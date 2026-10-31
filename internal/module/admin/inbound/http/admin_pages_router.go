@@ -1,12 +1,5 @@
 package adminhttp
 
-// 两个独立入口，装配层按需调用（见 internal/routers/assembly.go）：
-//   - SetupAdminPages：/admin 前缀的认证页面组（Session + CSRF + 权限上下文由装配层挂好）；
-//   - SetupAdminShellPages：引擎根级注册（登录页，无认证）。
-//
-// 页面注册与 /api 路由分文件：鉴权扫描按「文件里有没有组级 Casbin」判断整份文件。
-// API 路由组挂了 CasbinMiddleware，页面组没有；合在一个文件里，不挂 Casbin 的页面写端点会被扫成已鉴权。
-
 import (
 	"net/http"
 
@@ -20,23 +13,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// SetupAdminPages 注册 admin 六领域管理页 + 文案词条页 + 语言切换。
-//
-// adminPages 是装配层创建的 /admin 路由组（Session 认证 + CSRF + 权限上下文）。
-// **页面 GET 与写动作都挂 Casbin**，一律复用对应业务 API 的读/写权限点：
-// 页面路径在权限点表里不存在，直接以页面路径 enforce 会让所有人（含超管）403，
-// 所以必须用 CasbinMiddlewareForPath 指定 API 路径，权限点路径与原 dashboard 版本逐字一致。
-//
-// 为什么只读页也要鉴权：菜单按权限渲染，但**菜单隐藏不是访问控制** —— 直接输入 URL
-// 就能绕过。此前 /admin/administrators 等只读页没有权限门，任何登录的后台账号
-// 都能拿到全部管理员的用户名 / 姓名 / 邮箱 / 手机号（handler 直接渲染 AdminList 结果）。
-// 权限点全部复用 050_admin_domains_permissions.sql 已有的 GET 权限点，不新增。
-// 六个契约由装配层以同一合并 Service 传入（admin 合并模块同包直调）。
-// 只用 GET/POST，无 RESTful 路径参数。
-// 后台页面与片段的模板名。
-//
-// **模板名归路由层**：控制器不持有模板名（controller_shape_test.go 的判据），
-// 页面出口由 adminui.PageSlot(<常量>) 带进上下文，控制器只交视图。
 const (
 	AdministratorsPageTemplate = "admin/system/administrators"
 	DepartmentsPageTemplate    = "admin/system/departments"
@@ -48,7 +24,6 @@ const (
 	I18nPageTemplate           = "admin/system/i18n"
 	LoginPageTemplate          = "admin/login"
 
-	// 片段出口（htmx 局部替换）：走 BareSlot，键集只有几个槽位。
 	AdminRoleDrawerTemplate         = "admin/system/admin_role_drawer.html"
 	AdminMenuDrawerTemplate         = "admin/system/admin_menu_drawer.html"
 	MenuEditFormTemplate            = "admin/system/menu_edit_form.html"
@@ -75,15 +50,9 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)
-	// 批量删除：逐条走上面的单条删除路径，单条失败不整批回滚（结果由提示页给出，见 admin_jump.go）。
-	// 权限点复用单条删除的业务 API，不新增权限点。
+
 	adminPages.POST("/administrators/bulk-delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsBulkDelete)
 
-	// 管理员的授权分配：角色（g 策略）+ 直接额外菜单（p 策略，sub=user_id）。
-	// 两件事都挂在管理员列表的行上 ——「这个人能做什么」是一个问题，拆到两个页面会让
-	// 「给他加个角色、再补一个菜单入口」变成两次往返。读侧与写侧同权对待：抽屉里就是
-	// 该账号的完整授权集合，不挂鉴权等于把它露给任何登录账号（菜单隐藏不是访问控制）。
-	// 权限点复用 050 就 seed 的 admin:role_list/save、admin:menu_list/save，不新增。
 	adminPages.GET("/administrators/roles/drawer", builtin.CasbinMiddlewareForPath("/api/admin/role/list"),
 		adminui.BareSlot(AdminRoleDrawerTemplate), handle.AdministratorRolesDrawer)
 	adminPages.POST("/administrators/roles/save", builtin.CasbinMiddlewareForPath("/api/admin/role/save"), handle.AdministratorRolesSave)
@@ -99,7 +68,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
 	adminPages.POST("/roles/bulk-delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesBulkDelete)
-	// 权限抽屉复用读取权限点；表单保存直连现有 /api/role/menu/save JSON 接口。
+
 	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"),
 		adminui.BareSlot(RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
 
@@ -142,54 +111,27 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
 	adminPages.POST("/datarules/bulk-delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesBulkDelete)
-	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
+
 	adminPages.POST("/datarules/config-editor",
 		adminui.BareSlot(DataruleConfigEditorTemplate), handle.DataruleConfigEditor)
 
-	// 文案词条页（审计 I18N-003）：读页面挂 i18n:view（迁移 294 新增的只读权限点）。
-	// 写动作**不再有页面 POST**：增 / 改 / 删 / 批删都走真实端点 POST /api/i18n/save
-	// （注册点在 admin_router.go，权限点 i18n:manage → 本路径逐字不变），前端 fetch 直调。
-	//
-	// 为什么读页面要一个**独立的**权限点、不能复用 i18n:manage：CasbinMiddlewareForPath
-	// 的 act 取自实际请求方法，页面是 GET 而 i18n:manage 的策略只有 POST ——
-	// 复用会让 enforce 匹配不到任何策略，**含超管在内全员 403**。
-	//
-	// 编辑抽屉的片段口仍按 i18n:manage 的**POST 策略**判定（CasbinMiddlewareForPathAs 强制 act）：
-	// 抽屉里就是该词条的全部可写字段，不挂鉴权等于把写面暴露给任何登录账号。
 	i18nPages := adminI18nHandle()
-	// 语言下拉的字典只读口（dict 可选：未注入时下拉只有「全部语言」）。
+
 	if dict != nil {
 		i18nPages.SetDictReader(dict)
 	}
-	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
-	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
-	// 写端点用的是**同一个 handle 实例**（adminI18nHandle），所以这个端口对它同样生效。
+
 	i18nPages.SetPageMarker(pages)
-	// /api/i18n/list 至今没有真实 API 路由（读侧只有这条页面路由在用），必须在**注册处显式声明**：
-	// 否则 permission.RoutesOf 查不到这条权限点，AI 工具按 fail closed 一律 forbidden，
-	// 而页面本身完全正常（AGENTS.md §AI 工具记过这一类）。样板：mail 的 declareMailPageObjects。
-	//
-	// /api/i18n/save 的声明已经不需要在这里补：它现在是**真实路由**（admin_router.go 的
-	// rg.Group("/i18n").POST("/save", …)），注册动作本身就是声明。
-	// 三件事仍必须同时成立，任何一件漂移都不报错、只静默：① sys_permission 行的
-	// api_path/api_method 与注册/enforce 的逐字一致（漂移 → 授权界面勾得上、请求照样 403）
-	// ② 方法一致（294 的教训：GET 复用 POST 策略 = 含超管全员 403）③ 注册点在 /api 组内
-	// （漏在外面 → Casbin 中间件不生效）。回归：admin_i18n_borrow_test.go；
-	// 运行时面见 public/test/admin/feature/admin_i18n_edit_drawer_test.go。
+
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
 	adminPages.GET("/i18n", adminui.PageAuthz("/api/i18n/list"),
 		adminui.PageSlot(I18nPageTemplate), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
 		adminui.BareSlot(I18nEditFormTemplate), i18nPages.I18nEntryEditFragment)
 
-	// 语言切换（多语言 P1）：GET 属安全方法，写语言 Cookie 后 302 回跳。
 	adminPages.GET("/lang", AdminLangSwitch)
 }
 
-// SetupAdminShellPages 注册引擎根级外壳页面：登录页（无认证）。
-//
-// 登录页本身不能挂 Session 中间件 —— 未登录请求被中间件 302 到这里，
-// 挂了就成循环跳转。debug 一键登录开关判断随页面一并迁移（AdminDevLoginEnabled）。
 func SetupAdminShellPages(router *gin.Engine) {
 	if router == nil {
 		return

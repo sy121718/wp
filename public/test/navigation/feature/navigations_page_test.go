@@ -1,9 +1,5 @@
 package feature
 
-// navigations_page_test.go — 导航菜单管理页渲染冒烟。
-// 页面是纯服务端渲染（Jet 模板 + HTMX 表单），此处只验证「能渲染出菜单结构」，
-// 写操作链路由 service 层用例覆盖。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -45,7 +41,6 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	return recorder.Body.String()
 }
 
-// TestNavigationsPageRenders 管理页渲染出菜单结构（含子项与操作入口）。
 func TestNavigationsPageRenders(t *testing.T) {
 	db, _, navSvc, projectID := newNavigationEnv(t)
 	parentID := addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
@@ -59,8 +54,7 @@ func TestNavigationsPageRenders(t *testing.T) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
-	// 上移 / 下移也迁到真实 JSON 端点（action=move）：页面只剩声明，旧页面 POST 退役。
-	// 放行标记挂在外层 span（基座放行 [data-requires-js] 时会摘 disabled，边界语义要留在按钮上）。
+
 	for _, want := range []string{
 		`data-write-url="/api/navigation/update"`,
 		`data-write="create"`,
@@ -77,7 +71,7 @@ func TestNavigationsPageRenders(t *testing.T) {
 	if strings.Contains(body, "/admin/navigations/move") {
 		t.Error("页面 POST /admin/navigations/move 应已退役")
 	}
-	// 新建与删除已迁到真实 JSON 端点（页面 POST 退役）：页面上只剩端点声明，请求由基座发出。
+
 	for _, want := range []string{
 		`data-write-url="/api/navigation/create"`,
 		`data-write-url="/api/navigation/delete"`,
@@ -88,7 +82,6 @@ func TestNavigationsPageRenders(t *testing.T) {
 	}
 }
 
-// TestNavigationsPageShowsSourceCandidates 管理页展示来源候选（按来源分组勾选添加）。
 func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	db, pages, navSvc, projectID := newNavigationEnv(t)
 	ctx := context.Background()
@@ -98,7 +91,7 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("创建页面失败: %v", err)
 	}
-	// 注入来源解析器（页面契约）：管理页据此列出候选。
+
 	navSvc.SetSourceResolver(navsource.New(pages, nil, nil, nil))
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -109,8 +102,7 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
-	// 来源批量加入已迁到真实 JSON 端点：抽屉表单只声明事实（端点 / 批量档 / outcome / 具名字段 /
-	// 分支判别键 / 结果区），请求由基座发出 —— 页面 POST 与它的 action=query 回跳链一起退役。
+
 	for _, want := range []string{
 		`data-write-url="/api/navigation/create"`,
 		`data-write="bulk"`,
@@ -142,8 +134,6 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	}
 }
 
-// buttonsOf 把「权限码集合」转成「按钮码集合」（按钮码 = 权限码的 slug 形式，见迁移 589）。
-// 测试直接给权限码更贴近业务语义；模板读的是按钮码，所以两条都注入。
 func buttonsOf(perms map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(perms))
 	for code := range perms {

@@ -1,10 +1,5 @@
 package sysconfigservice_test
 
-// sysconfig_dict_test.go — 字典只读口（Y3 的供数来源）：条数与「启用」判据。
-//
-// 判据是**与库对齐**：datalist / option 的条数必须等于「已收录且启用」的语言数 ——
-// 写死的清单会随字典演进静默过期（漏语言 / 显示已停用的语言）。
-
 import (
 	"context"
 	"testing"
@@ -46,8 +41,7 @@ func TestDictOptionsMatchEnabledRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读国家字典失败: %v", err)
 	}
-	// ui_available（界面译文是否已有）：目前只有 zh-CN / en-US 两行为 true，
-	// 供 i18n 词条页的「新建词条」下拉做标记用。
+
 	var uiCount int
 	for _, o := range langs {
 		if o.UIAvailable {
@@ -58,13 +52,6 @@ func TestDictOptionsMatchEnabledRows(t *testing.T) {
 		len(langs), enabledLangs, uiCount, len(currencies), len(countries))
 }
 
-// TestCountryLabelPicksLanguageAndFallsBack 国家代码 → 显示名。
-//
-// 四个判据都是「错了不会报错、只会显示成别的东西」的那类：
-//
-//	· 语言挑错列 → 英文界面显示中文名；
-//	· 大小写不归一 → 同一个码有时显示 CN、有时显示中国；
-//	· 缺行 / 空码不回落 → 地址里出现空段或占位符。
 func TestCountryLabelPicksLanguageAndFallsBack(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -99,8 +86,6 @@ func TestCountryLabelPicksLanguageAndFallsBack(t *testing.T) {
 		})
 	}
 
-	// 缓存命中后的行为必须与首读一致（第二次读走的是缓存里的码索引，
-	// 归一化与回落判据都要在缓存路径上同样成立）。
 	if got := svc.CountryLabel(ctx, "zh-CN", "cn"); got != "中国" {
 		t.Fatalf("缓存路径上的小写代码应同样能查到，实际 %q", got)
 	}
@@ -108,9 +93,6 @@ func TestCountryLabelPicksLanguageAndFallsBack(t *testing.T) {
 		t.Fatalf("缓存路径上未知代码应回落显示代码，实际 %q", got)
 	}
 
-	// 缓存生效的**正向证据**：把库里的名字改掉，TTL 未到时再读应仍拿到旧值
-	// （命中缓存、没有重新查库）。没有这条，「缓存真的在用」在本文件里就没有证据 ——
-	// 而那正是运营最在意的事：每次渲染都回查库扛不住。
 	if err := db.Exec("UPDATE sys_area SET name_zh = '被改掉的名字' WHERE code = 'CN'").Error; err != nil {
 		t.Fatalf("改字面失败: %v", err)
 	}

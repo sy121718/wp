@@ -12,13 +12,11 @@ import (
 )
 
 const (
-	// docV1 最小页面文档 v1。
 	docV1 = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
-	// docV2 标题文档（与 v1 内容不同，产物哈希不同）。
+
 	docV2 = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"你好"}}]}`
 )
 
-// newPublisherEnv 构造完整测试环境：临时产物根 + 本地存储/发布 + 发布服务。
 func newPublisherEnv(t *testing.T, opts ...pipeline.Option) (*pipeline.Publisher, *pipeline.LocalStore, *pipeline.LocalPublicationStore, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -28,7 +26,6 @@ func newPublisherEnv(t *testing.T, opts ...pipeline.Option) (*pipeline.Publisher
 	return p, store, pub, root
 }
 
-// activeHTML 读取激活路径下的入口文件。
 func activeHTML(t *testing.T, pub *pipeline.LocalPublicationStore, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(pub.ActiveRoot, strings.TrimPrefix(path, "/"), "index.html"))
@@ -38,7 +35,6 @@ func activeHTML(t *testing.T, pub *pipeline.LocalPublicationStore, path string) 
 	return string(data)
 }
 
-// TestPublisherLifecycle 0-A1 全链路：保存→构建→发布→激活文件就绪。
 func TestPublisherLifecycle(t *testing.T) {
 	p, _, pub, _ := newPublisherEnv(t)
 
@@ -74,8 +70,6 @@ func TestPublisherLifecycle(t *testing.T) {
 	}
 }
 
-// TestPublisherDeterminism 确定性构建：相同文档两次构建产生相同哈希；
-// 二次发布后旧版本转 Superseded。
 func TestPublisherDeterminism(t *testing.T) {
 	p, _, _, _ := newPublisherEnv(t)
 
@@ -90,7 +84,6 @@ func TestPublisherDeterminism(t *testing.T) {
 		t.Fatalf("首次发布失败: %v", err)
 	}
 
-	// 同一文档再次保存并构建：产物哈希必须完全相同。
 	if _, err = p.SaveDraft("page-1", 1, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("再次保存草稿失败: %v", err)
 	}
@@ -113,7 +106,6 @@ func TestPublisherDeterminism(t *testing.T) {
 	}
 }
 
-// TestPublisherVersionConflict 乐观锁：旧版本写入与构建均被拒绝。
 func TestPublisherVersionConflict(t *testing.T) {
 	p, _, _, _ := newPublisherEnv(t)
 
@@ -129,13 +121,12 @@ func TestPublisherVersionConflict(t *testing.T) {
 	if _, err := p.Build(context.Background(), "page-1", 1); !errors.Is(err, pipeline.ErrVersionConflict) {
 		t.Errorf("基于旧版本的构建应被拒绝: %v", err)
 	}
-	// 无产物暂存，不允许发布。
+
 	if _, err := p.Publish("page-1"); !errors.Is(err, pipeline.ErrNoStagedArtifact) {
 		t.Errorf("无暂存产物不允许发布: %v", err)
 	}
 }
 
-// TestPublisherBuildFailure 构建失败：状态 failed、线上版本保持不变、不允许发布。
 func TestPublisherBuildFailure(t *testing.T) {
 	boom := errors.New("编译器故障")
 	p, _, pub, _ := newPublisherEnv(t,
@@ -159,7 +150,6 @@ func TestPublisherBuildFailure(t *testing.T) {
 	}
 }
 
-// TestPublisherRollback 秒级回滚：历史产物重新激活，无需重新编译。
 func TestPublisherRollback(t *testing.T) {
 	p, _, pub, _ := newPublisherEnv(t)
 
@@ -171,7 +161,6 @@ func TestPublisherRollback(t *testing.T) {
 		t.Fatalf("首次发布失败: %v", err)
 	}
 
-	// 修改后再发布：V1 转 Superseded。
 	if _, err := p.SaveDraft("page-1", 1, "/about", []byte(docV2)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
@@ -185,7 +174,6 @@ func TestPublisherRollback(t *testing.T) {
 		t.Errorf("二次发布后激活的应为 V2:\n%s", html)
 	}
 
-	// 回滚到 V1：秒级指针切换。
 	if err := p.Rollback("page-1", h1); err != nil {
 		t.Fatalf("回滚失败: %v", err)
 	}
@@ -205,7 +193,6 @@ func TestPublisherRollback(t *testing.T) {
 	}
 }
 
-// TestPublisherRollbackPathMismatch URL 已变化的版本禁止直接回滚（§6.4）。
 func TestPublisherRollbackPathMismatch(t *testing.T) {
 	p, _, _, _ := newPublisherEnv(t)
 
@@ -224,7 +211,6 @@ func TestPublisherRollbackPathMismatch(t *testing.T) {
 	}
 }
 
-// TestPublisherUpdateURLWithRedirect 修改 Slug：新 URL 激活 + 旧 URL 301 重定向（0-A2 §1.1）。
 func TestPublisherUpdateURLWithRedirect(t *testing.T) {
 	p, _, pub, _ := newPublisherEnv(t)
 
@@ -250,7 +236,6 @@ func TestPublisherUpdateURLWithRedirect(t *testing.T) {
 		t.Errorf("URL 修改后状态错误: %+v", st)
 	}
 
-	// 新 URL 已激活；旧 URL 为重定向（301 指向新 URL）。
 	insp, err := pub.Inspect("/about-us")
 	if err != nil || insp.Kind != pipeline.PublicationPage {
 		t.Errorf("新 URL 应为激活页面: %+v %v", insp, err)
@@ -262,7 +247,6 @@ func TestPublisherUpdateURLWithRedirect(t *testing.T) {
 	}
 }
 
-// TestPublisherUpdateURLNoRedirect 不勾选 301 时旧 URL 直接取消激活。
 func TestPublisherUpdateURLNoRedirect(t *testing.T) {
 	p, _, pub, _ := newPublisherEnv(t)
 
@@ -288,7 +272,6 @@ func TestPublisherUpdateURLNoRedirect(t *testing.T) {
 	}
 }
 
-// TestPublisherUpdateURLGuards 非法输入与构建失败保护。
 func TestPublisherUpdateURLGuards(t *testing.T) {
 	p, _, _, _ := newPublisherEnv(t)
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
@@ -300,21 +283,20 @@ func TestPublisherUpdateURLGuards(t *testing.T) {
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
-	// 相同路径拒绝。
+
 	if _, err := p.UpdateURL(context.Background(), "page-1", "/about", true); err == nil {
 		t.Error("相同路径应被拒绝")
 	}
-	// 非法路径拒绝。
+
 	if _, err := p.UpdateURL(context.Background(), "page-1", "no-slash", true); err == nil {
 		t.Error("非法路径应被拒绝")
 	}
-	// 不存在的页面。
+
 	if _, err := p.UpdateURL(context.Background(), "missing", "/x", true); !errors.Is(err, pipeline.ErrPageNotFound) {
 		t.Errorf("不存在页面应报错: %v", err)
 	}
 }
 
-// TestPublisherUpdateURLBuildFailure 新 URL 构建失败：旧 URL 线上保持不变。
 func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 	compile := func(ctx context.Context, in pipeline.BuildInput) ([]byte, error) {
 		if strings.Contains(string(in.DocJSON), "boom") {
@@ -324,7 +306,6 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 	}
 	p, _, pub, _ := newPublisherEnv(t, pipeline.WithCompile(compile))
 
-	// 先正常发布旧 URL。
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
@@ -335,7 +316,6 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 		t.Fatalf("发布失败: %v", err)
 	}
 
-	// 保存含 boom 的新草稿（版本 2），再改 URL：构建失败，旧 URL 不受影响。
 	if _, err := p.SaveDraft("page-1", 1, "/about", []byte(docV2+"boom")); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
@@ -348,14 +328,13 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 	}
 }
 
-// TestPublisherSaveDraftSnapshot 草稿快照冻结：保存后修改输入字节不影响下次构建。
 func TestPublisherSaveDraftSnapshot(t *testing.T) {
 	p, _, _, _ := newPublisherEnv(t)
 	doc := []byte(docV1)
 	if _, err := p.SaveDraft("page-1", 0, "/about", doc); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	// 修改调用方缓冲区，快照不受影响。
+
 	copy(doc, `{"broken`)
 	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("快照应隔离调用方修改: %v", err)
@@ -385,16 +364,6 @@ func TestDefaultCompileIncludesOnlyUsedClientAssets(t *testing.T) {
 	}
 }
 
-// 即使生产装配提供全套资源，无交互页面也不应包含无关的控件脚本 / 样式。
-//
-// 2026-09 起有一处**明文例外**：流量采集脚本（track.js）每一页都要注入。
-// 归因是页面级的，采不到的那一页就是归因断点，而断点往往正好落在转化页上 ——
-// 「首页有脚本、结算页没有」这种省法，省掉的恰好是最该记下来的一段。
-// 代价是每页多 ~10KB 源码（gzip 后 ~4KB），换取的是产物**自包含**
-// （访问面可能只有静态文件，外链 /static 会在纯 CDN 部署下 404）。
-//
-// 因此断言从「不含任何 script」改成「除采集脚本外不含别的脚本」，并保留
-// 「不得输出空脚本」这条原本的意思。
 func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 	out, err := pipeline.DefaultCompile(context.Background(), pipeline.BuildInput{DocJSON: []byte(docV2)})
 	if err != nil {
@@ -404,20 +373,20 @@ func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 	if strings.Contains(body, "site-preview-mode") || strings.Contains(body, "sky-preview-notice") {
 		t.Fatal("默认发布编译不应携带模拟预览标识")
 	}
-	// 无关控件资源一个都不许有（这条不因采集脚本而放松）。
+
 	for _, unwanted := range []string{"WBUI", ".wbs-trigger"} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("纯内容产物不应包含 %s", unwanted)
 		}
 	}
-	// 采集脚本恰好一个，且得真的是采集脚本（防止有人把它换成别的而测试仍然通过）。
+
 	if got := strings.Count(body, "<script"); got != 1 {
 		t.Fatalf("纯内容产物应只含采集脚本这一个 <script>，实际 %d 个", got)
 	}
 	if !strings.Contains(body, "gw_src") || !strings.Contains(body, "gw_sess") {
 		t.Error("注入的脚本不是流量采集脚本")
 	}
-	// 空脚本仍然是缺陷：它会被下载、被解析，却什么都不做。
+
 	for _, empty := range []string{"<script></script>", "<script>\n</script>", "<script>\n\n</script>"} {
 		if strings.Contains(body, empty) {
 			t.Errorf("不应输出空脚本 %q", empty)
@@ -425,7 +394,6 @@ func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 	}
 }
 
-// 默认编译器属于正式发布链路，不能沿用预览的未完成节点容错。
 func TestDefaultCompileRejectsIncompleteNode(t *testing.T) {
 	doc := []byte(`{"root":[{"id":"unfinished","type":"core.text","props":{"mode":"plaintext"}}]}`)
 	if _, err := pipeline.DefaultCompile(context.Background(), pipeline.BuildInput{DocJSON: doc}); err == nil {

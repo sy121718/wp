@@ -12,8 +12,6 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-// stubDialector 只为方言名而存在：探针在非 PostgreSQL 上必须整体跳过，
-// 而「跳过」要能被断言 —— 用一个不连任何数据库的 Dialector 就能证明它没有去查 pg_roles。
 type stubDialector struct{ name string }
 
 func (d stubDialector) Name() string                                          { return d.name }
@@ -41,8 +39,6 @@ func TestIsPostgresDialector(t *testing.T) {
 	}
 }
 
-// TestCheckRLSIdentitySkipsNonPostgres 非 PG 驱动必须整体跳过，**包括 require=true**：
-// MySQL 是历史兼容驱动，不该被一个 PG 专属的门禁挡在启动之外。
 func TestCheckRLSIdentitySkipsNonPostgres(t *testing.T) {
 	db, err := gorm.Open(stubDialector{name: "mysql"}, &gorm.Config{})
 	if err != nil {
@@ -59,8 +55,6 @@ func TestCheckRLSIdentityNilDB(t *testing.T) {
 	}
 }
 
-// TestRLSRoleBypassErrorCarriesEvidence 启动失败的错误必须自带定位信息：
-// 哪个角色、哪个理由、下一步用什么命令 —— 否则运维看到的就是一句无从下手的「RLS 校验失败」。
 func TestRLSRoleBypassErrorCarriesEvidence(t *testing.T) {
 	err := rlsRoleBypassError(rls.Identity{SessionUser: "root", CurrentUser: "root", IsSuperuser: true})
 	msg := err.Error()

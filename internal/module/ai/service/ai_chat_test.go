@@ -1,25 +1,5 @@
 package aiservice_test
 
-// ai_chat_test.go — 对话入口的 service 链路（真上游换 httptest 假上游）。
-//
-// 外部测试包（aiservice_test）而不是 package aiservice：service 被 inbound/http 依赖，
-// 而 inbound/http 被 internal/routers 依赖，public/test/support 又依赖 routers ——
-// 内部测试包 import support 会成环（vet: import cycle not allowed in test）。
-//
-// 表结构来自生产迁移 + 种子（support.NewMigratedPGTestDB + migrations.RunSeeds），不手抄
-// CREATE TABLE。出站目标这件事用两层配合绕开 SSRF 门禁（service 的出站校验拒绝环回地址）：
-//   - BaseURL 用 TEST-NET-2 的全局单播字面量，只为通过 validateAIURL 的 IP 检查；
-//   - 出站客户端换成把拨号改写到假上游的自定义 Transport —— 不依赖任何 DNS/网络解析。
-// SSRF 防护本身由 service 内的 ssrf 相关用例钉住，这里不复测。
-//
-// 这一层钉住「Chat 把协议层正确串起来」：
-//   - 两种已实现协议各自把上游响应解析成 Output；
-//   - 上游非 2xx 归口业务错误，且上游报文原文（可能回显密钥）不进错误文本；
-//   - 未实现协议回 ErrProtocolUnsupported（不静默回落）；
-//   - 出站请求头来自服务端保存的供应商配置（Authorization 明文密钥 + config_data.headers）。
-//
-// PG 不可用时用例整体 t.Skip（support 的一致口径）。
-
 import (
 	"context"
 	"errors"
@@ -43,11 +23,10 @@ import (
 const (
 	chatTestCipherSecret = "test-ai-chat-cipher-secret"
 	chatTestPlainKey     = "sk-ai-chat-plain-0123456789abcdef"
-	// 全局单播的 documentation 网段字面量：只为通过 SSRF 门禁，真实连接被下面的 Transport 改写。
+
 	chatTestBaseURL = "http://198.51.100.7"
 )
 
-// newChatTestService 建一个跑过生产迁移与种子的库，并接好密钥口令。
 func newChatTestService(t *testing.T) (*aiservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -59,7 +38,6 @@ func newChatTestService(t *testing.T) (*aiservice.Service, *gorm.DB) {
 	return svc, db
 }
 
-// newChatProvider 建一个已启用的供应商（密钥走加密入库）。
 func newChatProvider(t *testing.T, svc *aiservice.Service, key, protocol string) *aidto.Provider {
 	t.Helper()
 	p, err := svc.SaveProvider(context.Background(), &aidto.SaveProviderReq{
@@ -75,7 +53,6 @@ func newChatProvider(t *testing.T, svc *aiservice.Service, key, protocol string)
 	return p
 }
 
-// upstreamHit 假上游收到的一次请求。
 type upstreamHit struct {
 	method  string
 	path    string
@@ -83,8 +60,6 @@ type upstreamHit struct {
 	session string
 }
 
-// fakeUpstream 起一个假上游：记录请求头，按给定状态码与正文应答，并把 service 的出站客户端
-// 接到它上面（忽略 URL host）。
 func fakeUpstream(t *testing.T, svc *aiservice.Service, status int, body string) <-chan upstreamHit {
 	t.Helper()
 	hits := make(chan upstreamHit, 1)
@@ -121,7 +96,6 @@ func awaitHit(t *testing.T, hits <-chan upstreamHit) upstreamHit {
 	}
 }
 
-// TestChatResponsesProtocolReturnsOutput openai_responses 协议 + 200 → Output 正确。
 func TestChatResponsesProtocolReturnsOutput(t *testing.T) {
 	svc, _ := newChatTestService(t)
 	hits := fakeUpstream(t, svc, http.StatusOK, `{"object":"response","output_text":"你好，世界"}`)
@@ -145,7 +119,6 @@ func TestChatResponsesProtocolReturnsOutput(t *testing.T) {
 	}
 }
 
-// TestChatCompletionsProtocolReturnsOutput openai_chat_completions 协议 + 200 → Output 正确。
 func TestChatCompletionsProtocolReturnsOutput(t *testing.T) {
 	svc, _ := newChatTestService(t)
 	hits := fakeUpstream(t, svc, http.StatusOK, `{"choices":[{"message":{"content":"hi there"}}]}`)
@@ -166,9 +139,6 @@ func TestChatCompletionsProtocolReturnsOutput(t *testing.T) {
 	}
 }
 
-// TestChatUpstream401ReturnsBusinessErrorWithoutSecret 上游 401 → 业务错误，且错误文本不含密钥。
-//
-// 假上游故意在正文里回显密钥：若实现把上游报文原文塞进用户可见错误，断言会红。
 func TestChatUpstream401ReturnsBusinessErrorWithoutSecret(t *testing.T) {
 	svc, _ := newChatTestService(t)
 	fakeUpstream(t, svc, http.StatusUnauthorized, `{"error":"invalid api key: `+chatTestPlainKey+`"}`)
@@ -188,7 +158,6 @@ func TestChatUpstream401ReturnsBusinessErrorWithoutSecret(t *testing.T) {
 	}
 }
 
-// TestChatUnsupportedProtocolRejected anthropic_messages 未实现 → ErrProtocolUnsupported。
 func TestChatUnsupportedProtocolRejected(t *testing.T) {
 	svc, _ := newChatTestService(t)
 	newChatProvider(t, svc, "claude", aienums.ProtocolAnthropicMessages)
@@ -201,7 +170,6 @@ func TestChatUnsupportedProtocolRejected(t *testing.T) {
 	}
 }
 
-// TestChatProviderNotFoundAndDisabled 不存在与停用同口径归口 ErrProviderNotFound。
 func TestChatProviderNotFoundAndDisabled(t *testing.T) {
 	svc, _ := newChatTestService(t)
 	ctx := context.Background()
@@ -224,8 +192,6 @@ func TestChatProviderNotFoundAndDisabled(t *testing.T) {
 	}
 }
 
-// TestChatSendsServerConfiguredHeaders 出站头来自服务端保存的供应商配置：
-// Authorization 是服务端解密的明文密钥，x-opencode-session 来自 config_data.headers。
 func TestChatSendsServerConfiguredHeaders(t *testing.T) {
 	svc, db := newChatTestService(t)
 	ctx := context.Background()

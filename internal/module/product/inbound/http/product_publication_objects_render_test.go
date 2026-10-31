@@ -120,7 +120,6 @@ func TestDetailTemplateRendersBindingFromOriginalObjects(t *testing.T) {
 	}
 }
 
-// 绑定与默认模板决定写动作的对象，读取失败不得伪装成“尚未发布”。
 func TestDetailTemplateReadFailuresAreJSON(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

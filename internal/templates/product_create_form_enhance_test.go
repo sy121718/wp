@@ -1,13 +1,5 @@
 package templates
 
-// product_create_form_enhance_test.go — 商品建表单增强脚本的入口与幂等守门。
-//
-// 提交迁到 JSON 写基座之后，表单一直在 /admin/products/new 这一页的文档里：片段不再被
-// swap 进换出、抽屉也已撤掉。于是触发点只剩 DOMContentLoaded —— 反过来，只要有人把
-// 抽屉 / htmx 监听加回来，就说明提交路径又被接回了旧机制（fetch 与 htmx 同时提交会建两个商品）。
-//
-// 文本断言只能证明「监听见了」，证明不了「增强真的跑了」，所以第二条用桩 DOM 跑一遍脚本。
-
 import (
 	"os"
 	"os/exec"
@@ -16,7 +8,6 @@ import (
 	"testing"
 )
 
-// 只有一个入口（DOMContentLoaded），且幂等标记落在内容节点上。
 func TestProductCreateFormEnhancesOnDOMReady(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("static/js/product-create-form.js"))
 	if err != nil {
@@ -26,16 +17,14 @@ func TestProductCreateFormEnhancesOnDOMReady(t *testing.T) {
 
 	for _, want := range []string{
 		"document.addEventListener('DOMContentLoaded'",
-		// 幂等判据落在**内容节点**上：form 节点可能被复用，内容却是新的。
+
 		"input.dataset.skuEnhanced === '1'",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("product-create-form.js 缺少 %q", want)
 		}
 	}
-	// 注意这里列的是**两个时代**的旧监听名：htmx:afterSwap 是 htmx 2 的驼峰名（v4 起
-	// 不再派发），htmx:after:swap 是当前正确名 —— 两者都不该出现在这个文件里，
-	// 因为它对应的提交机制已撤掉，任何一处监听都是在掩盖回归。
+
 	for _, gone := range []string{"wbui:drawer-open", "htmx:afterSwap", "htmx:after:swap"} {
 		if strings.Contains(js, gone) {
 			t.Errorf("product-create-form.js 仍监听 %q —— 该入口对应的提交机制已撤掉，监听留着只是在掩盖回归", gone)
@@ -43,7 +32,6 @@ func TestProductCreateFormEnhancesOnDOMReady(t *testing.T) {
 	}
 }
 
-// 桩 DOM 真跑一遍：DOMContentLoaded 之后按勾选的仓预览出主体 SKU，重复派发不叠加监听。
 func TestProductCreateFormEnhanceRunsOnLoad(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

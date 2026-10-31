@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// TestPriceSectionRendersRangesAndSlider 价格块（issue #28）：预设档位 + 可拖动滑块。
-//
-// 滑块挂在原生 range 上：它是触屏与键盘天然可用的控件（拖拽 / 方向键），
-// 所以这里的断言是「表单两条路都在」—— hx-get（局部刷新）与 action（无 JS 的原生 GET）。
 func TestPriceSectionRendersRangesAndSlider(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
 		"priceRanges": "0-199,200-399,799+",
@@ -22,7 +18,7 @@ func TestPriceSectionRendersRangesAndSlider(t *testing.T) {
 	if view.PriceBoundMin != "0" || view.PriceBoundMax != "1000" {
 		t.Fatalf("默认滑块边界应为 0~1000，实际 %s~%s", view.PriceBoundMin, view.PriceBoundMax)
 	}
-	// 未设价格时两个端点回落到边界（输入框里总得显示个确切值）。
+
 	if view.PriceFromValue != "0" || view.PriceToValue != "1000" {
 		t.Fatalf("未选价格时端点应回落到边界，实际 %s / %s", view.PriceFromValue, view.PriceToValue)
 	}
@@ -36,7 +32,6 @@ func TestPriceSectionRendersRangesAndSlider(t *testing.T) {
 	}
 }
 
-// TestPriceSectionActiveRange 当前生效的档位要高亮，再点一次 = 取消。
 func TestPriceSectionActiveRange(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
 		"priceRanges":    "0-199,200-399",
@@ -67,7 +62,6 @@ func TestPriceSectionActiveRange(t *testing.T) {
 	}
 }
 
-// TestPriceSectionSliderOff 关闭滑块后档位照旧（两件事互不牵连）。
 func TestPriceSectionSliderOff(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
 		"priceRanges": "0-199", "priceSlider": "off",
@@ -80,7 +74,6 @@ func TestPriceSectionSliderOff(t *testing.T) {
 	}
 }
 
-// TestPriceConfigRejected 价格配置写错即报错（静默忽略会让作者以为配上了）。
 func TestPriceConfigRejected(t *testing.T) {
 	cases := []struct{ name, key, value string }{
 		{"档位缺上限", "priceRanges", "200-399,bad"},
@@ -104,7 +97,6 @@ func TestPriceConfigRejected(t *testing.T) {
 	}
 }
 
-// TestRatingSection 评分块（issue #29）：每档一条「≥ N 星」，当前档高亮、再点取消。
 func TestRatingSection(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
 		"ratingOptions": "4.5,4,3", "filterMinRating": "4",
@@ -124,14 +116,13 @@ func TestRatingSection(t *testing.T) {
 	if strings.Contains(active.PushURL, "minRating=4") {
 		t.Fatalf("再点已选档位应清除评分条件: %s", active.PushURL)
 	}
-	// 未勾选评分时整块不渲染。
+
 	plain := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{}, "")
 	if plain.HasRatingSection {
 		t.Fatalf("没配 ratingOptions 时不该渲染评分块")
 	}
 }
 
-// TestRatingSortPutsUnratedLast 评分排序把**无评分**的商品排最后（不是当 0 分）。
 func TestRatingSortPutsUnratedLast(t *testing.T) {
 	rated := itemOf("rated", "已评分", "2026-01-01T00:00:00Z")
 	rated["ratingValue"] = 4.25
@@ -151,10 +142,6 @@ func TestRatingSortPutsUnratedLast(t *testing.T) {
 	}
 }
 
-// TestPriceSortOrdersByMinPrice 价格排序按最低启用变体价（含「无价排最后」）。
-//
-// 这条与评分排序是同一类断言：只看「选项渲染出来了」是不够的 ——
-// 排序键不在 effectiveOrder 白名单里时，选项照样显示，点下去却静默回落默认序。
 func TestPriceSortOrdersByMinPrice(t *testing.T) {
 	cheap := itemOf("cheap", "便宜", "2026-01-01T00:00:00Z")
 	cheap["minPrice"] = 50.0

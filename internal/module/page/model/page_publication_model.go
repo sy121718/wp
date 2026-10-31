@@ -1,14 +1,5 @@
 package pagemodel
 
-// page_publication_model.go — 页面「每语言激活状态」持久化
-// （多语言 P3，AGENTS.md §15.5 第 2 条）。
-//
-// 为什么单独成表：pages.active_path 单值只能记住一个语言的激活路径，
-// Publish(en-US) 于是把 /zh-CN/about 当成「本页旧路径」取消激活。
-// 激活状态按 (page_id, lang) 独立落表后，每语言各自 Publish / Rollback /
-// UpdateURL / Deactivate 互不干扰；pages 的单值列退化为「最近发布语言的镜像」，
-// 既有读取方（导航来源候选、列表投影）行为不变。
-
 import (
 	"context"
 	"errors"
@@ -23,7 +14,6 @@ import (
 
 const tableNamePagePublications = "page_publications"
 
-// PublicationEntity 对应 page_publications 表。
 type PublicationEntity struct {
 	PageID       string    `gorm:"column:page_id;primaryKey"`
 	Lang         string    `gorm:"column:lang;primaryKey"`
@@ -32,15 +22,12 @@ type PublicationEntity struct {
 	ArtifactHash string    `gorm:"column:artifact_hash;not null"`
 	PublishedAt  time.Time `gorm:"column:published_at;not null"`
 	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
-	// ReceiptID 成功激活这份产物的发布回执 id（迁移 701），即这次尝试的身份。
-	// NULL = 历史行或调用链路没有回执设施 —— 收敛据此退到「链接身份 + 账本归属」判据。
+
 	ReceiptID *int64 `gorm:"column:receipt_id"`
 }
 
 func (PublicationEntity) TableName() string { return tableNamePagePublications }
 
-// PublicationRecord 单语言激活状态写入参数（ActivePath 为实际访问路径，
-// 多语言开启前缀时带 /{lang}/ 前缀，与 page_routes.path 口径一致）。
 type PublicationRecord struct {
 	PageID       string
 	Lang         string
@@ -48,18 +35,10 @@ type PublicationRecord struct {
 	ArtifactID   string
 	ArtifactHash string
 	PublishedAt  time.Time
-	// ReceiptID 成功激活的回执 id（0 = 本条写入口没有回执身份，落 NULL）。
-	//
-	// 为什么必须随激活落库：同一代输入、同一份产物被判两次成功（主链 + 崩溃补完成）
-	// 在 (version, artifact) 上完全不可区分，收敛只能靠「这条回执是不是兑现者」区分。
-	// 0 → NULL 而不是写 0：0 不是回执，写进列里就成了一个假的成功身份。
+
 	ReceiptID int64
 }
 
-// receiptIDColumn 把记录里的回执身份转成要写进 receipt_id 列的值。
-//
-// 0 → NULL（而不是 0）：0 不是回执，写进去就成了一个假的成功身份，收敛会拿它去比
-// 「这条回执兑现了吗」并得到永远不相等的结果。NULL 才是「本次写入口没有回执设施」。
 func (r PublicationRecord) receiptIDColumn() *int64 {
 	if r.ReceiptID <= 0 {
 		return nil
@@ -68,28 +47,6 @@ func (r PublicationRecord) receiptIDColumn() *int64 {
 	return &id
 }
 
-// ListStalePageIDs 返回本工程内**被标记 stale 且未软删**的页面 id（含已发布与未发布）。
-//
-// 用途：依赖失效（菜单译文 / 按项菜单）之后，失效执行器要按完整依赖键重建「受影响的
-// 页面」，而不是只重建草稿列表里那批还没发布过的 —— 线上正在服务的页面同样是受影响面，
-// 且它才是用户看到的那一面。
-//
-// 判据只有两条，刻意不筛「是否已发布」：
-//   - pages.stale = true（被依赖失效标记过）；
-//   - pages.deleted_at IS NULL（软删的页面不重建）。
-//
-// 调用方如果需要「已发布」这一维，用自己的发布口径再筛 —— 在这里顺手 JOIN 一张账本表
-// 会把两条口径焊死在一条 SQL 里，改任一条都要动另一条。
-//
-// 排序（update_time ASC, id ASC）：失效执行器按批次领取，**必须先标先建**。不排序时
-// 每次领取顺序由执行计划决定，超过单批上限的工程会反复重建同一小撮页面，剩下的永远
-// 轮不到 —— 表现就是「每次都重建 20 个、线上一直没收敛」。按标记时间升序 + id 兜底
-// （同一批标记的 update_time 可能相同）才能保证重试是单调向前的。
-//
-// 不分页、不截断：截断是调用方批次预算的事（它知道自己的上限），这里返回全量候选 ——
-// 端口截断会让「谁被截掉」变成数据层的一个隐性决策，而上限值随时会调。
-//
-// projectID 必填（DB-009）：pages 带 FORCE 策略，仍显式带工程条件，会话变量与谓词双保险。
 func (m *Model) ListStalePageIDs(ctx context.Context, projectID string) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
@@ -105,12 +62,10 @@ func (m *Model) ListStalePageIDs(ctx context.Context, projectID string) (ids []s
 	return dedupeStrings(artifactIDsOf(rows)), nil
 }
 
-// PublicationDB 返回已绑定 page_publications 表的 GORM 实例。
 func (m *Model) PublicationDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&PublicationEntity{})
 }
 
-// GetPublication 按 (page_id, lang) 查询激活状态；不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetPublication(ctx context.Context, pageID, lang string) (e *PublicationEntity, err error) {
 	e = &PublicationEntity{}
 	if err = m.PublicationDB(ctx).Where("page_id = ? AND lang = ?", pageID, lang).First(e).Error; err != nil {
@@ -119,10 +74,6 @@ func (m *Model) GetPublication(ctx context.Context, pageID, lang string) (e *Pub
 	return e, nil
 }
 
-// ListPublicationsByPages 按页面 id 批量取激活状态；lang 非空时只取该语言。
-//
-// 槽位解析要一次问出「这批页面在当前语言下的线上路径」——逐页问会退化成 N 次查询，
-// 而它在每次构建与每次片段渲染里都会跑。
 func (m *Model) ListPublicationsByPages(ctx context.Context, pageIDs []string, lang string) (list []PublicationEntity, err error) {
 	if len(pageIDs) == 0 {
 		return nil, nil
@@ -135,18 +86,11 @@ func (m *Model) ListPublicationsByPages(ctx context.Context, pageIDs []string, l
 	return list, err
 }
 
-// ListPublications 列出页面全部语言的激活状态（语言升序，输出稳定）。
 func (m *Model) ListPublications(ctx context.Context, pageID string) (list []PublicationEntity, err error) {
 	err = m.PublicationDB(ctx).Where("page_id = ?", pageID).Order("lang ASC").Find(&list).Error
 	return list, err
 }
 
-// ListPublicationsInProject 在**工程作用域内**列出页面全部语言的激活状态（语言升序）。
-//
-// 与 ListPublications 的差别只有作用域：page_publications 没有 project_id 列，跨工程
-// 归属靠页面行（pages 带 FORCE 策略）。下线意图的登记发生在取实体锁之前，那里拿不到
-// 页面行来间接限定范围 —— 显式带 projectID 走 rls.ScopeTx，才不会在换了非超级角色
-// 之后读到别的工程的账本行（RLS 会直接把越界行挡掉，而不是静默返回空）。
 func (m *Model) ListPublicationsInProject(ctx context.Context, projectID, pageID string) (list []PublicationEntity, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
@@ -161,9 +105,6 @@ func (m *Model) ListPublicationsInProject(ctx context.Context, projectID, pageID
 	return list, err
 }
 
-// MarkPublishedLang 记录某语言激活状态：page_publications upsert 与 pages 单值镜像
-// 在同一事务提交（同聚合原子组合）。pages 的 active_path/active_artifact_id/published_at
-// 是「最近发布语言」的镜像，只为兼容既有单值读取方，不再作为多语言真源。
 func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (err error) {
 	if rec.PageID == "" || rec.Lang == "" || rec.ActivePath == "" {
 		return errors.New("激活记录缺少 page_id/lang/active_path")
@@ -197,8 +138,6 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 	})
 }
 
-// MovePublicationPath 改 URL 后同步某语言的激活路径与 pages 单值镜像（同一事务）。
-// 该语言尚无激活记录时只更新镜像（幂等，不新建行——未发布就没有激活状态）。
 func (m *Model) MovePublicationPath(ctx context.Context, pageID, lang, activePath string, at time.Time) (err error) {
 	if pageID == "" || lang == "" || activePath == "" {
 		return errors.New("迁移激活路径缺少 page_id/lang/active_path")
@@ -214,14 +153,12 @@ func (m *Model) MovePublicationPath(ctx context.Context, pageID, lang, activePat
 	})
 }
 
-// DeletePublications 清理页面的全部语言激活状态（软删页面时调用，幂等）。
 func (m *Model) DeletePublications(ctx context.Context, pageID string) (err error) {
 	return m.PublicationDB(ctx).Where("page_id = ?", pageID).Delete(&PublicationEntity{}).Error
 }
 
 const tableNamePageStagings = "page_stagings"
 
-// StagingEntity 对应 page_stagings 表：页面在某语言下已构建、待激活的产物指针。
 type StagingEntity struct {
 	PageID       string    `gorm:"column:page_id;primaryKey"`
 	Lang         string    `gorm:"column:lang;primaryKey"`
@@ -233,7 +170,6 @@ type StagingEntity struct {
 
 func (StagingEntity) TableName() string { return tableNamePageStagings }
 
-// GetStaging 按 (page_id, lang) 查询暂存指针；不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetStaging(ctx context.Context, pageID, lang string) (e *StagingEntity, err error) {
 	e = &StagingEntity{}
 	if err = m.db.WithContext(ctx).Model(&StagingEntity{}).
@@ -243,9 +179,6 @@ func (m *Model) GetStaging(ctx context.Context, pageID, lang string) (e *Staging
 	return e, nil
 }
 
-// MarkStagedLang 回写某语言的暂存产物指针（构建成功、尚未激活）：
-// page_stagings upsert 与 pages.staged_artifact_id 单值镜像同一事务提交。
-// pages 的列只是「最近构建语言」的镜像（列表/详情投影兼容），不再作为多语言真源。
 func (m *Model) MarkStagedLang(ctx context.Context, pageID, lang, artifactID, artifactHash string, draftVersion int64, at time.Time) (err error) {
 	if pageID == "" || lang == "" || artifactID == "" {
 		return errors.New("暂存记录缺少 page_id/lang/artifact_id")
@@ -263,23 +196,16 @@ func (m *Model) MarkStagedLang(ctx context.Context, pageID, lang, artifactID, ar
 		}).Create(row).Error; cerr != nil {
 			return cerr
 		}
-		// 不写 stale=false：构建不等于发布（详见 MarkStagedLangTx 的同名说明）。
+
 		return tx.Model(&PageEntity{}).Where("id = ? AND deleted_at IS NULL", pageID).
 			Updates(map[string]any{"staged_artifact_id": artifactID, "update_time": at}).Error
 	})
 }
 
-// DeleteStagings 清理页面全部语言的暂存指针（软删页面时调用，幂等）。
-// DeletePublicationsByLang 删除某页面某语言的发布指针（审计 I18N-017）。
-//
-// 与 DeletePublications 的区别是**只删一个语言**：禁用语言时其它语言的指针必须留着 ——
-// 无 lang 的整页删除会把仍在服务的语言一起清掉，那些语言的页面会立刻失去「已发布」状态，
-// 而访问面上产物还在（路径没被下线），于是后台与访问面开始各说各话。
 func (m *Model) DeletePublicationsByLang(ctx context.Context, pageID, lang string) (err error) {
 	return m.PublicationDB(ctx).Where("page_id = ? AND lang = ?", pageID, lang).Delete(&PublicationEntity{}).Error
 }
 
-// DeleteStagingsByLang 删除某页面某语言的暂存指针（同上，只删一个语言）。
 func (m *Model) DeleteStagingsByLang(ctx context.Context, pageID, lang string) (err error) {
 	return m.db.WithContext(ctx).Model(&StagingEntity{}).Where("page_id = ? AND lang = ?", pageID, lang).
 		Delete(&StagingEntity{}).Error
@@ -289,30 +215,8 @@ func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 		Delete(&StagingEntity{}).Error
 }
 
-// ListCurrentArtifactIDs 返回本模块语言账本里「当前」指向的产物行 ID（去重、输出稳定）。
-//
-// 「当前产物」= 各语言 active/staged 指针指向的行：
-//   - page_publications.artifact_id（每语言激活真源）
-//   - page_stagings.artifact_id（每语言暂存指针）
-//
-// 供组件升级后的待重建识别使用（见 Service.MarkStaleByRegistryVersion）：判据必须是
-// 「现在真正在服务的产物」，而不是 page_artifacts 里所有 payload_state='available' 的行 ——
-// 后者含未 GC 的历史回滚产物，拿它比对版本会让「已重建的页面」在每次重启时被重新标成
-// stale（报告 ARCH-03）。
-//
-// 刻意**不**并入 pages.active_artifact_id / staged_artifact_id：那两列是「最近发布/构建语言」
-// 的单值镜像（见 MarkPublishedLang / MarkStagedLang 的注释），并入只会把镜像滞后或残留的
-// 旧指针重新变成误标来源 —— 与本次收口的目的一致，语言账本才是真源。
-//
-// 存量覆盖：迁移 062 已把 pages.active_artifact_id 回填成 page_publications 行，激活侧无缺口；
-// 063 未回填 page_stagings，但暂存指针由每次 Build 重写，且「只有暂存、从未发布」的页面本来
-// 就不在线上服务 —— 这一小段存量不参与判定是安全的。
-//
-// UNION 自带去重；两张表都没有 project_id（不在迁移 215 的清单里），无需工程作用域。
 func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err error) {
-	// 原来是单条 SQL 的 UNION。GORM 没有 UNION 链式 API（v1.31.1 实测：整个包
-	// 没有 union 相关代码），而 UNION 在这里只承担**去重** —— 所以拆成两次查询 +
-	// Go 侧合并去重，语义等价（id 集合，顺序无关）。
+
 	var pubs, stagings []artifactIDRow
 	if err = m.db.WithContext(ctx).Table(tableNamePagePublications).
 		Select("artifact_id::text AS id").
@@ -328,18 +232,8 @@ func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err e
 	return dedupeStrings(artifactIDsOf(pubs, stagings)), nil
 }
 
-// ListProtectedArtifactIDs 返回「当前仍被引用、绝不可回收」的产物行 ID 集合。
-//
-// 集合来源（任一命中即保护）：
-//   - pages.active_artifact_id / pages.staged_artifact_id（单值镜像）
-//   - page_publications.artifact_id（每语言激活真源）
-//   - page_stagings.artifact_id（每语言暂存指针）
-//
-// 供产物 GC 使用：这些产物一旦丢了文件，线上立即 404 或下次发布直接失败。
-// 三张表都属本模块，单条 SQL UNION 完成，不跨模块。
 func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err error) {
-	// 四条来源各查一次再合并去重（原为单条 SQL 的四个 UNION 段）。GORM 无 UNION API，
-	// 而这里 UNION 的作用只是去重。四张表都属本模块。
+
 	var active, staged, pubs, stagings []artifactIDRow
 	if err = m.db.WithContext(ctx).Model(&PageEntity{}).
 		Select("active_artifact_id::text AS id").
@@ -367,7 +261,6 @@ func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err
 	return dedupeStrings(artifactIDsOf(active, staged, pubs, stagings)), nil
 }
 
-// artifactIDRow 只取一列 id 的临时行：多段查询合并去重时用（替代 UNION 的自带去重）。
 type artifactIDRow struct {
 	ID *string `gorm:"column:id"`
 }
@@ -384,7 +277,6 @@ func artifactIDsOf(lists ...[]artifactIDRow) []string {
 	return out
 }
 
-// dedupeStrings 保序去重（UNION 的去重语义；顺序不保证，调用方只当集合用）。
 func dedupeStrings(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))

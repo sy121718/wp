@@ -1,14 +1,5 @@
 package analyticsenums
 
-// analytics_enums_test.go — 错误兜底表（errFallbacks）与 enums 常量的逐条对账。
-//
-// 兜底跟着**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。为什么要这条测试：
-// 漏写一条兜底的后果是「该业务错误在页面上显示成裸 key 或一句通用提示」—— 功能不算坏，
-// 但没人会发现，而新增业务文案恰恰是每次改需求都会发生的事。
-//
-// 双向判失败：新增 Err* 却没给兜底要红；兜底表里留着已删除的 key（错别字 / 死条目）同样要红。
-// 纯 AST 解析，形态照 membership / comment / sysconfig / navigation 的同名测试。
-
 import (
 	"errors"
 	"go/ast"
@@ -22,13 +13,10 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// fallbackExclusions 不进兜底表的常量 → 理由（必须写明；这张表本身也要能被审计）。
 var fallbackExclusions = map[string]string{
 	"MsgCollectAccepted": "成功回执：永远不作为错误响应返回",
 }
 
-// TestErrFallbacksCoverAllEnums 本包每个 Err* 常量都必须在 errFallbacks 里有非空兜底
-// （或在 fallbackExclusions 里写明理由），且兜底表的每个 key 都对应一条真实常量。
 func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -97,7 +85,6 @@ func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	}
 }
 
-// TestErrCarriesFallbackAndKey Err 工厂把「key + 中文兜底」一起交给 pkg/facing 的判据。
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrInvalidRange)
 	if err.Error() != ErrInvalidRange {
@@ -115,7 +102,6 @@ func TestErrCarriesFallbackAndKey(t *testing.T) {
 	}
 }
 
-// TestErrIsMatchesByKey 同 key 的两条哨兵 errors.Is 互相匹配（service 既导出哨兵、又在深处重建）。
 func TestErrIsMatchesByKey(t *testing.T) {
 	sentinel := Err(ErrInvalidParam)
 	if !errors.Is(Err(ErrInvalidParam), sentinel) {
@@ -126,7 +112,6 @@ func TestErrIsMatchesByKey(t *testing.T) {
 	}
 }
 
-// TestErrDetailKeepsTail 定位信息留在 Tail 里，分隔符只能是 ASCII「: 」；内部原文不算业务错误。
 func TestErrDetailKeepsTail(t *testing.T) {
 	fact, ok := facing.FactOf(ErrDetail(ErrInvalidRange, "2026-01-01 ~ 2027-12-31"))
 	if !ok || !fact.Business || fact.Tail != "2026-01-01 ~ 2027-12-31" {

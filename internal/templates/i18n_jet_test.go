@@ -13,14 +13,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// i18n_jet_test.go — Jet 模板层取翻译路径的实测依据（多语言 P1 第二步）。
-//
-// 本文件把选型结论固化为可执行断言：
-//   - 采用：handler 注入 t 函数（数据 map 里的函数值 + {{ .["t"]("key","原文") }}）；
-//   - 不采用：预翻译 map（缺 key 渲染空串；map 整体缺失直接运行时错误）；
-//   - 不采用：Set 级 AddGlobal（Set 进程级共享，无按请求语言通道）。
-
-// memSet 构造内存模板 Set（与生产 NewJetHTMLRender 同配置）。
 func memSet(t *testing.T, files map[string]string) *jet.Set {
 	t.Helper()
 	l := jet.NewInMemLoader()
@@ -30,14 +22,6 @@ func memSet(t *testing.T, files map[string]string) *jet.Set {
 	return jet.NewSet(l, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 }
 
-// render 渲染模板并返回输出。
-// resolveAdminTemplateName 把 `admin/<短名>` 解析成模板分目录后的真实名字
-// （`admin/product/product_brands.html`）。已经是 `admin/<模块>/<名字>`，或非 admin/ 前缀的
-// （fragments/ site/）一律原样返回。
-//
-// 为什么放在 render 里而不是改一片调用点：调用点只该关心「哪个页面」，不该知道文件被搬去了
-// 哪个子目录 —— 否则每搬一次目录就是一片 `template not found` 的红，而那些红与断言无关，
-// 最容易被当成环境问题糊过去。
 func resolveAdminTemplateName(t *testing.T, name string) string {
 	t.Helper()
 	const p = "admin/"
@@ -49,8 +33,7 @@ func resolveAdminTemplateName(t *testing.T, name string) string {
 	if !strings.HasSuffix(base, ".html") {
 		base += ".html"
 	}
-	// 已经是 <模块>/<名字> 且那个文件真的在 → 原样返回；否则（含已经搬走的
-	// admin/partials/<名字>，片段随模块目录调整过）按 basename 递归找。
+
 	if strings.Contains(rel, "/") {
 		if _, err := os.Stat(filepath.Join("admin", filepath.FromSlash(rel))); err == nil {
 			return name
@@ -61,7 +44,7 @@ func resolveAdminTemplateName(t *testing.T, name string) string {
 			return p + filepath.ToSlash(f[len("admin/"):])
 		}
 	}
-	return name // 找不到就原样返回：让 set.GetTemplate 报它自己的错，不在这里吞掉
+	return name
 }
 
 func render(t *testing.T, set *jet.Set, name string, data any) (string, error) {
@@ -76,28 +59,26 @@ func render(t *testing.T, set *jet.Set, name string, data any) (string, error) {
 	return buf.String(), err
 }
 
-// TestTranslateFuncFallbackChain 验证翻译函数的四级兜底（i18n 未初始化时即走原文兜底，绝不报错）。
 func TestTranslateFuncFallbackChain(t *testing.T) {
-	// 未初始化 i18n 缓存（测试进程内不连库）：key 查不到 → 返回模板内中文原文
+
 	tf := TranslateFunc("en-US")
 	if got := tf("shell.brand", "管理后台"); got != "管理后台" {
 		t.Fatalf("缺 key 应回退原文，实际 %q", got)
 	}
-	// fallback 为空 → 返回 key 本身，保证不输出空串
+
 	if got := tf("shell.unknown.key", ""); got != "shell.unknown.key" {
 		t.Fatalf("fallback 为空应返回 key 本身，实际 %q", got)
 	}
-	// key 为空 → 返回 fallback（模板误传空 key 时不报错）
+
 	if got := tf("", "原文"); got != "原文" {
 		t.Fatalf("空 key 应返回 fallback，实际 %q", got)
 	}
-	// lang 为空 → pkg/i18n 用默认语言，仍未命中则回退原文
+
 	if got := TranslateFunc("")("shell.brand", "管理后台"); got != "管理后台" {
 		t.Fatalf("空 lang 应回退原文，实际 %q", got)
 	}
 }
 
-// TestLanguageOptions 验证语言下拉选项与当前语言标记。
 func TestLanguageOptions(t *testing.T) {
 	opts := LanguageOptions("en-US")
 	if len(opts) != 2 || opts[0].Code != "zh-CN" || opts[1].Code != "en-US" {
@@ -106,14 +87,13 @@ func TestLanguageOptions(t *testing.T) {
 	if opts[0].Active || !opts[1].Active {
 		t.Fatalf("当前语言应为 en-US，实际 %+v", opts)
 	}
-	// 未匹配（含非法语言）时选中第一项，不报错
+
 	opts = LanguageOptions("ja-JP")
 	if !opts[0].Active || opts[1].Active {
 		t.Fatalf("未匹配语言应选中第一项，实际 %+v", opts)
 	}
 }
 
-// TestJetTranslateFuncPath 验证选定路径：根模板、{{include}} 片段、{{import}}+{{yield}} 块内均可用。
 func TestJetTranslateFuncPath(t *testing.T) {
 	set := memSet(t, map[string]string{
 		"root.html": "{{import \"blk.html\"}}ROOT[{{ .[\"t\"](\"k\", \"兜底\") }}]" +
@@ -134,7 +114,6 @@ func TestJetTranslateFuncPath(t *testing.T) {
 		t.Fatalf("函数值路径输出 = %q，want %q", out, want)
 	}
 
-	// 未注入 t（例如 handler 漏调 withI18n）时渲染空串而非报错：绝不 500。
 	out, err = render(t, set, "root.html", map[string]any{"Nodes": []map[string]any{}})
 	if err != nil {
 		t.Fatalf("缺 t 时不应报错，实际 %v", err)
@@ -144,7 +123,6 @@ func TestJetTranslateFuncPath(t *testing.T) {
 	}
 }
 
-// TestJetPreTranslatedMapIsFragile 记录未采用「预翻译 map」的实测原因。
 func TestJetPreTranslatedMapIsFragile(t *testing.T) {
 	set := memSet(t, map[string]string{
 		"b.html": "B[{{ .[\"i18n\"][\"k\"] }}][{{ .[\"i18n\"][\"missing\"] }}]",
@@ -153,12 +131,11 @@ func TestJetPreTranslatedMapIsFragile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("map 路径渲染不应报错，实际 %v", err)
 	}
-	// 缺 key 渲染空串：无法回退原文（模板内拿不到中文原文）
+
 	if out != "B[已翻译][]" {
 		t.Fatalf("预翻译 map 缺 key 应为空串，实际 %q", out)
 	}
 
-	// i18n map 整体缺失 → Jet 运行时错误（漏注入即 500）
 	_, err = render(t, set, "b.html", map[string]any{})
 	if err == nil {
 		t.Fatal("i18n map 整体缺失时应为运行时错误（这是放弃该路径的原因）")
@@ -168,10 +145,6 @@ func TestJetPreTranslatedMapIsFragile(t *testing.T) {
 	}
 }
 
-// TestJetSetGlobalIsProcessShared 记录未采用「Set 级 AddGlobal」的实测原因。
-//
-// Set 由 NewJetHTMLRender 在启动时创建并被所有请求共享（进程级单例），
-// 全局函数没有请求上下文：按请求切语言只能改共享状态（-race 下报 DATA RACE）。
 func TestJetSetGlobalIsProcessShared(t *testing.T) {
 	set := memSet(t, map[string]string{
 		"c.html":   "C[{{ t(\"k\", \"兜底\") }}]",
@@ -187,7 +160,6 @@ func TestJetSetGlobalIsProcessShared(t *testing.T) {
 		t.Fatalf("AddGlobal 输出 = %q，want C[zh-CN]", out)
 	}
 
-	// 第二个「请求」切语言：改写的是同一个 Set 的全局值，所有渲染共享（无请求隔离）
 	set.AddGlobal("t", func(key, fallback string) string { return "en-US" })
 	out, err = render(t, set, "c.html", map[string]any{})
 	if err != nil {
@@ -200,8 +172,6 @@ func TestJetSetGlobalIsProcessShared(t *testing.T) {
 		t.Fatal("AddGlobal 写入的是 Set 全局表（进程级共享）")
 	}
 
-	// 全局函数唯一的按渲染通道是 Runtime.Context()（池化字段，且会被 include/exec 的
-	// 上下文参数覆盖），依赖它取请求语言过于脆弱，故不作为方案。
 	var seen any
 	set.AddGlobal("ctx", jet.Func(func(a jet.Arguments) reflect.Value {
 		seen = a.Runtime().Context().Interface()
@@ -215,9 +185,6 @@ func TestJetSetGlobalIsProcessShared(t *testing.T) {
 	}
 }
 
-// TestAdminShellTemplatesRender 用真实后台外壳模板验证接入形态：
-//  1. 无 i18n 数据时渲染中文原文（兜底不报错）；
-//  2. 注入英文翻译函数后，同一模板输出英文（证明文案确实随语言变化）。
 func TestAdminShellTemplatesRender(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -229,7 +196,6 @@ func TestAdminShellTemplatesRender(t *testing.T) {
 		"captcha_image": "data:image/png;base64,AAA",
 	}
 
-	// 1) 兜底：i18n 未初始化 → t 返回模板内中文原文
 	fallbackData := map[string]any{}
 	for k, v := range base {
 		fallbackData[k] = v
@@ -240,7 +206,7 @@ func TestAdminShellTemplatesRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("登录页渲染失败: %v", err)
 	}
-	// 当前语言（en-US）为不可点的高亮项，另一语言渲染为 ?lang= 链接（登录前切换方式）。
+
 	for _, want := range []string{"用户名", "密码", "登 录", "href=\"/admin/login?lang=zh-CN\""} {
 		if !strings.Contains(loginOut, want) {
 			t.Fatalf("登录页兜底渲染缺少 %q", want)
@@ -257,7 +223,6 @@ func TestAdminShellTemplatesRender(t *testing.T) {
 		}
 	}
 
-	// 2) 切换：注入英文翻译函数 → 文案变英文（等价于 lang=en-US 命中 en-US 词条）
 	enData := map[string]any{}
 	for k, v := range base {
 		enData[k] = v
@@ -304,7 +269,6 @@ func TestAdminShellTemplatesRender(t *testing.T) {
 	}
 }
 
-// testNavNode / testNavGroup 复刻 dashboard 包的导航渲染结构（字段名与模板访问一致）。
 type testNavNode struct {
 	Title    string
 	Path     string
@@ -313,8 +277,6 @@ type testNavNode struct {
 	Open     bool
 }
 
-// 菜单真源是 sys_menus：一级项用表里的 id 做前后端配对（data-group），
-// 图标取表里的 icon key；目录（Nodes 非空）与一级直接链接（Nodes 为空、有 Path）两种形态。
 type testNavGroup struct {
 	ID       uint64
 	Title    string
@@ -326,8 +288,6 @@ type testNavGroup struct {
 	FirstURL string
 }
 
-// TestShellSidebarPartialsRender 覆盖侧栏（固定态）与二级菜单展开按钮的文案：
-// 兜底中文原文 + 注入英文翻译后变英文（shell.sidebar.* / shell.nav.*）。
 func TestShellSidebarPartialsRender(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -351,7 +311,6 @@ func TestShellSidebarPartialsRender(t *testing.T) {
 		"lang":          "en-US",
 	}
 
-	// 兜底：i18n 未初始化 → 中文原文
 	zhData := map[string]any{}
 	for k, v := range base {
 		zhData[k] = v
@@ -371,7 +330,6 @@ func TestShellSidebarPartialsRender(t *testing.T) {
 		}
 	}
 
-	// 英文词条：shell.sidebar.* / shell.nav.*
 	en := map[string]string{
 		"shell.sidebar.pin_title":     "Keep the sidebar open after navigating",
 		"shell.sidebar.pinned":        "Pinned",
@@ -404,12 +362,6 @@ func TestShellSidebarPartialsRender(t *testing.T) {
 	}
 }
 
-// TestI18nEntriesPageRenders 词条页完整渲染（审计 I18N-003）。
-//
-// 渲染测试在这类页面上不是形式主义：Jet 的 if 遇到缺失的键会**中断渲染但状态码仍是 200**，
-// 现象是「表格后半截没了」—— 从页面上看像数据少了，实际是模板中间断掉。
-// 因此这里断言的是**表格尾部**（分页提示与保存表单）确实出现在输出里，
-// 并额外跑一次空分类，确认「下拉为空」不会把模板带断。
 type translationLangOption struct {
 	Code   string
 	Label  string
@@ -457,8 +409,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
-	// 断言覆盖新版式的要点：领域说明进 .help（不再铺在首屏）、筛选并入列表卡、
-	// 行内编辑按需 GET、以及**写动作的 JSON 声明**（页面 POST 已退役，见下）。
+
 	for _, want := range []string{
 		"文案词条", "page-head", "help-pop",
 		"filter-bar", "table-scroll", "data-table",
@@ -474,16 +425,13 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
 		}
 	}
-	// 反向：写动作不再回投页面路由、也不再自带表单 csrf 域（CSRF 走 X-CSRF-Token 头，
-	// 由 static/js/ui/write-base.js 从 meta/sessionStorage 取）。
+
 	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("词条页不应再出现 %q —— 写动作已收敛到 JSON 端点 POST /api/i18n/save", unwanted)
 		}
 	}
 
-	// 空分类 / 空列表：列表区退化为空状态，但新建抽屉模板必须仍在 ——
-	// 否则运营连第一条词条都建不出来。
 	empty := map[string]any{}
 	for k, v := range base {
 		empty[k] = v
@@ -500,8 +448,6 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		}
 	}
 
-	// 无 i18n:manage 权限：管理入口（编辑 / 新建）必须消失，但列表与筛选照常 ——
-	// 权限缺失要 fail closed，页面上不该留下点了会被拒的按钮。
 	readonly := map[string]any{}
 	for k, v := range base {
 		readonly[k] = v
@@ -519,11 +465,6 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	}
 }
 
-// TestArticleTranslationsPageRenders 文章翻译工作台完整渲染（审计 I18N-006）。
-//
-// 断言的是**表单尾部**（保存按钮）与三组同序字段（rowContext / rowHash / rowTarget）：
-// 保存端用 PostFormArray 按位置对齐三组值，模板少输出一个隐藏域就会整体错位 ——
-// 而错位的表现是「译文写到了别的字段上」，页面看起来完全正常。
 type navigationTranslationRow struct {
 	Context    string
 	NodeID     string
@@ -535,19 +476,11 @@ type navigationTranslationRow struct {
 	Translated bool
 }
 
-// navigationTranslationFact 模板里 {{tr(...)}} 的第二参数形态：取词函数要的是
-// 「key + 兜底」两个事实，不是一个成品句。
 type navigationTranslationFact struct {
 	Key      string
 	Fallback string
 }
 
-// navigationTranslationGroup 一个菜单位置在译文工作台里的现成数据。
-//
-// LoadFailed / LoadError 与 Rows 并列而不是塞进某一行：它们回答的是**这个位置**读没读到
-// 来源（逐位置降级），与「这一行有没有译文」不是一回事。模板按 g.LoadFailed 分流到错误
-// 出口，缺这两个字段时 Jet 直接报 "can't use LoadFailed as field name in struct type"，
-// 整页 500 —— 这正是渲染夹具必须与模板字段一一对齐的原因。
 type navigationTranslationGroup struct {
 	Kind       string
 	Title      string
@@ -586,11 +519,6 @@ func TestArticleTranslationsPageRenders(t *testing.T) {
 	}
 }
 
-// TestNavigationTranslationsPageRenders 导航译文工作台完整渲染（审计 I18N-007）。
-//
-// 与文章工作台同一类断言：保存端用 PostFormArray 按位置对齐 rowContext / rowHash / rowTarget，
-// 模板少输出一个隐藏域就会整体错位 —— 而错位的表现是「译文写到了别的菜单项上」，
-// 页面看起来完全正常。另外断言空位置分支（没有菜单项时不该整页消失）。
 func TestNavigationTranslationsPageRenders(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -600,7 +528,7 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 		"Langs": []translationLangOption{{Code: "en-US", Label: "en-US", Active: true}},
 		"Saved": true, "SavedNote": "已保存 1 条译文；已标记受影响页面待重建（下次构建生效）。",
 		"Errors": []string{}, "RowCount": 1, "Done": 0,
-		// 成功回跳地址由 Go 侧拼好并转义（data-write-nav）；模板不自己拼 query。
+
 		"SuccessURL": "/admin/navigations/translations?lang=en-US&project=p1",
 		"Groups": []navigationTranslationGroup{
 			{Kind: "header", Title: "页眉导航", Rows: []navigationTranslationRow{
@@ -614,8 +542,7 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导航译文页渲染失败: %v", err)
 	}
-	// 保存契约从「三个并行数组按下标对齐」换成「行容器 + 具名字段」：断言的目的是
-	// 「模板真的渲染出了可提交的形状」，所以钉住行容器与三个字段名，以及声明式写契约。
+
 	for _, want := range []string{
 		"保存译文", "class=\"field nav-tr-row\"",
 		"name=\"context\"", "name=\"hash\"", "name=\"target\"",

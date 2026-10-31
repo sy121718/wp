@@ -32,7 +32,6 @@ func (p *publicAvailability) AvailableQuantities(_ context.Context, project stri
 	return result, nil
 }
 
-// 同一条生产路由覆盖数据形状、草稿与跨工程隔离、实时改价和零库存。
 func TestPublicVariantData(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {

@@ -1,4 +1,3 @@
-// Package presentationcontract presentation 模块对外契约（0-A2）。
 package presentationcontract
 
 import (
@@ -11,122 +10,60 @@ import (
 	"go_wp/internal/module/presentation/dto"
 )
 
-// PresentationService 内容实体自动发布实例契约（AGENTS.md §3）。
-// 与手工 Page 共享 Publish Compiler + ArtifactStore + PublicationStore，
-// 但管理路径由 CMS 实体驱动（创建/编辑/删除，不经 Visual Builder）。
 type PresentationService interface {
-	// CreateInstance 为内容实体创建自动发布实例：解析模板 → 派生快照 →
-	// 编译 → 发布激活（urlPath 由实体 slug 推导）。
 	CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error)
-	// Rebuild 实体数据更新（revision 变化）后重建：重解析模板+实体 →
-	// 新快照 → 重新编译发布。
-	//
-	// req.TemplateID 非空 = 切换实例绑定的模板后重建（issue #14 验收 2/4：
-	// 发布时可指定用哪套模板，切换后产物随之变化）；为空 = 沿用实例当前绑定
-	// （**不**回落「同类型最新模板」，否则一次内容更新就会悄悄换掉模板）。
+
 	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
-	// GetByEntity 按内容实体查询实例（读当前绑定的模板与发布状态）。
+
 	GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error)
-	// PreviewInstance 发布前预览：按指定（或默认）模板渲染实体，返回渲染结果。
-	//
-	// 只读：不写快照/产物/指针、不激活 URL、不改动线上产物（issue #14 验收 3）。
+
 	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
-	// UpdateURL 修改已发布实例的线上路径（改 URL）。
-	//
-	// 新路径构建激活后，旧路径按 req.WithRedirect 登记 301 永久重定向或
-	// 直接取消激活（与手工页面 page.Service.UpdateURL 同一语义）。
-	// 详情页 URL 因此不再需要「删实例再重建」才能改。
+
 	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
-	// DetailTemplateModePort 双轨能力（迁移 281 / 282）：独立文档、重新套用预设、
-	// 两类回滚与影响面计数。六条动作的声明在 detail_template_mode.go —— 那里是同一条
-	// 收窄端口（后台商品详情页只拿得到这六条）。主服务嵌它，装配层持有的本接口值
-	//（静态类型 PresentationService）因此直接满足那条端口，注入无需运行期断言。
+
 	DetailTemplateModePort
-	// PublishRecordPort 发布记录只读口（B9）：按实体批量读「现在发布成什么样」。
-	// 与 DetailTemplateModePort 同一手法 —— 收窄端口声明在 publish_record.go，
-	// 主服务嵌它，装配层持有的本接口值因此直接满足那条端口，注入无需运行期断言。
+
 	PublishRecordPort
-	// PublishAttemptPort 发布历史只读口（迁移 673）：按实体分页读「都试过哪几次、谁点的、
-	// 为什么没成」。与 PublishRecordPort 同一手法 —— 收窄端口声明在 publish_attempt.go，
-	// 主服务嵌它，装配层持有的本接口值直接满足那条端口，注入无需运行期断言。
+
 	PublishAttemptPort
-	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
-	// 语义等同端口的 ReapplyPreset，保留它是因为既有调用点用这个名字。
+
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)
-	// MarkStaleByRegistryVersion 把「当前产物由旧组件产出」的自动发布实例标记为待重建，
-	// 返回本次真正命中的实例 id（RETURNING 回读，不是入参回显）。
-	//
-	// 与手工 Page 契约里的同名方法同义（对等入口）：组件是编译进二进制的，
-	// 部署后没有运行时事件能提示「已有产物过期」，只能由启动期拿产物元数据里的
-	// registry_version 指纹与当前 builder.RegistryVersion 比对。
-	// 判据是**语言账本**（presentation_publications）当前指向的产物，历史产物行不参与；
-	// current 为空（无 VCS 信息）时不标记，宁可不标也不全站误标。
+
 	MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error)
-	// MarkStaleForI18n 把各工程内的全部自动发布实例标记为待重建：文案词条（sys_i18n）
-	// 与内容译文（sys_translation）都由构建期取词注入 HTML 字节，一变就过期；
-	// 触发源是后台翻译页/运维脚本（它们没有工程上下文，故由 service 逐工程扇出）。
+
 	MarkStaleForI18n(ctx context.Context) error
-	// Get 按 ID 查询。
+
 	Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error)
-	// List 按类型列表。
+
 	List(ctx context.Context, req *presentationdto.ListReq) (list []*presentationdto.InstanceResp, err error)
-	// Delete 删除实例（级联删快照 + 反激活 URL）。
+
 	Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error)
-	// EnsureArchiveInstance 确保某实体的归档页存在（审计 EDT-004）：实体侧
-	// （分类 / 标签 / 品牌）增删改时调用。未配置归档模板时返回 Skipped 而不是错误 ——
-	// 「这个站点不要归档页」是正常状态，不该让新建分类变成一个会失败的操作。
+
 	EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error)
-	// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响实例待重建，返回命中实例 id。
-	//
-	// 依赖失效端口（与 page 契约同名方法同义，实现 pipeline.DependencyTarget）：
-	// 编排层在依赖源变化时把失效范围落到具体实例上，而不是全量重建。
-	// 键的构造用 pipeline.DirectContentKey / ContentCollectionKey（与构建期登记逐字一致）。
+
 	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
-	// ListBlockSourceRefs 列出文档树引用了该块的自动发布实例（审计 ARCH-02）。
-	//
-	// 覆盖实例级覆盖文档（独立文档模式）与全部文档快照：两者都是可编辑源码（或它的
-	// 派生输入），删块会让下一次重建缺一段。**不含** presentation_artifacts 里的
-	// 不可变产物 —— 那部分的保留由 GC 策略决定，不阻断源码删除。
+
 	ListBlockSourceRefs(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)
-	// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账的属主清单）。
-	// 只读且不含内容：对账只需要回答「这些磁盘目录是不是我们产出的」。
+
 	ListArtifactHashes(ctx context.Context) (hashes []string, err error)
 }
 
-// ArchiveInstanceEnsurer 归档页的按需创建（审计 EDT-004）。
-//
-// 消费者（实体模块：分类 / 标签 / 品牌）只拿得到这一条方法：归档页该不该建、
-// 路径怎么定、用哪套模板，全在 presentation 内部决定 —— 否则归档规则会散落到
-// 每个实体模块里各写一份，改一次规则要改好几处。
 type ArchiveInstanceEnsurer interface {
 	EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error)
 }
 
-// === 跨模块形状：调用方要传进来、要收回去的类型 ===
-
-// 跨模块调用方使用的**形状重导出**（与 order 契约同一手法）：调用方只依赖 contract，
-// 不直接 import presentation/dto。
-//
-// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
-// （建实例入参 / 实例视图就是它对外的语义），json/form 标签只影响 HTTP 绑定，不改变语义。
-// 另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」换成
-// 「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
-//
-// 边界：本模块内部（service / inbound）继续用 presentationdto 作为实现形状；重导出只服务于
-// 跨模块调用方（当前是 product 的详情页模板链路）。
 type (
-	// 建实例 / 重建 / 按实体查询（商品详情页的绑定与重建链路）。
 	CreateInstanceReq = presentationdto.CreateInstanceReq
 	InstanceResp      = presentationdto.InstanceResp
 	RebuildReq        = presentationdto.RebuildReq
 	GetByEntityReq    = presentationdto.GetByEntityReq
-	// 发布前预览（后台「详情页模板」页与商品保存前的预览）。
+
 	PreviewInstanceReq  = presentationdto.PreviewInstanceReq
 	PreviewInstanceResp = presentationdto.PreviewInstanceResp
-	// 改线上路径 / 确保归档页存在（分类、标签、品牌这类实体的归档页）。
+
 	UpdateURLReq     = presentationdto.UpdateURLReq
 	EnsureArchiveReq = presentationdto.EnsureArchiveReq
-	// 双轨能力（DetailTemplateModePort）：重新套用预设、两类回滚、快照清单与影响面计数。
+
 	ReapplyPresetReq    = presentationdto.ReapplyPresetReq
 	RollbackDocumentReq = presentationdto.RollbackDocumentReq
 	RollbackArtifactReq = presentationdto.RollbackArtifactReq
@@ -134,74 +71,21 @@ type (
 	CountByTemplateReq  = presentationdto.CountByTemplateReq
 )
 
-// 实例的文档来源模式（跟随共享模板 / 实例独立文档），真源在 presentationdto。
 const (
 	RenderModeTemplate = presentationdto.RenderModeTemplate
 	RenderModeDocument = presentationdto.RenderModeDocument
 )
 
-// PresentationStalePort 自动发布实例侧的「按菜单位置失效」最小端口。
-//
-// 为什么这个端口住在这里，而不是 navigation 只声明自己的：导航的译文整表写入要在
-// **同一个事务**里标记 page / presentation / 入队 build 三处（AGENTS.md 跨模块写必须
-// 同进同出），而导航不许 import presentation 的 service / model。于是消费者侧声明端口、
-// 装配层用真实服务实现 —— 与 navigationcontract 里的同名声明同形，这里是**实现侧**的
-// 显式承诺：presentation.Service 必须满足它，装配期一旦掉线就编译不过。
-//
-// 与 PresentationService 上已有的 MarkStaleByDependency 严格区分：
-//   - 那条按 (kind,key) 全键匹配，关心的是「哪个依赖变了」；
-//   - 这条只收 kind（菜单位置），键的构造留在 presentation 内部，导航不需要知道
-//     menu:{project}:{kind} 这种拼法。
 type PresentationStalePort interface {
-	// MarkInstanceMenuStaleTx 在调用方事务内，把「活跃或暂存产物声明了该菜单位置依赖」的
-	// 实例标记为待重建，返回真正命中的行数（RETURNING 回读，不是入参回显）。
-	//
-	// 版本语义与其它标记入口一致：stale=true 与实体 input_version 原子 +1（菜单译文烘进
-	// HTML，是该实例的编译输入）。导航侧的 build_jobs.input_version 是队列任务序列号，
-	// 与本列无关 —— 不读、不传、不赋值。
 	MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB, projectID, kind string, at time.Time) (n int64, err error)
 
-	// MarkInstanceNavigationStaleTx 在调用方事务内，把「活跃或暂存产物声明了**该具体
-	// 菜单项**依赖」（依赖键 navigation:{navigationID}）的实例标记为待重建，返回真实命中行数。
-	//
-	// 为什么与位置版并列：渲染期按两种粒度记录导航消费（builder/core/render.go 的
-	// UseMenu → menu:{project}:{kind}、UseNavigation → navigation:{itemID}），只标位置会让
-	// 按项引用的实例既不被标 stale、也没有版本屏障（旧输入编译的产物在激活谓词处照旧通过）。
-	//
-	// 键的构造留在 presentation 内部：导航只给 menu item id，不需要知道 navigation:{id} 拼法。
-	// 版本语义与位置版一致：stale=true 与实体 input_version 原子 +1；导航侧
-	// build_jobs.input_version 是任务序列号，不读、不传、不赋值。
 	MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB, projectID, navigationID string, at time.Time) (n int64, err error)
 }
 
-// StaleRebuildPort 待重建实例的**同步**重建端口（menu_stale 消费侧用）。
-//
-// 为什么必须单开一条：既有 RebuildStale 是「能入队就入队、入不了就逐条尽力重建」的
-// 尽力而为入口 —— 它在两处都会**吞掉单条失败**（enqueueStaleRebuilds 与逐条循环都只
-// 记日志后 continue，最后恒 return nil）。对 menu_stale 的消费者来说那正是最坏的结果：
-// 队列任务被标记为 succeeded，而实例一个都没重建，菜单标签永远停在旧字节，日志里
-// 只有一条 Warn。本端口因此把「逐条重建、任一失败即返回该错误」写成契约。
-//
-// 与 RebuildStale 的关系：不是替换，是并列。旧入口的调用方（周期收敛、启动期）需要的
-// 正是「尽力而为、不阻断」，它们继续用它；需要「要么全成、要么看见错误」的新调用方用本端口。
 type StaleRebuildPort interface {
-	// RebuildStaleSync 逐条同步重建本工程内 stale 的实例，返回成功条数；
-	// **任一条失败立即返回该错误**（已成功的保留，不补偿 —— 重建是幂等的，重试即可收敛）。
 	RebuildStaleSync(ctx context.Context, projectID string) (rebuilt int, err error)
 }
 
-// BuildQueueEnqueuer 自动重建任务的入队端口（PERF-020）。
-//
-// 由 build 模块实现、装配期注入（方向 presentation ← build，与 page 契约里的
-// 同名端口同模式）。自动重建改为入队而不是在触发进程里同步重建：进程内互斥锁
-// 在多实例部署下拦不住两个实例同时重建同一实例，队列消费侧的 SKIP LOCKED claim
-// 才是跨实例互斥的落点。
 type BuildQueueEnqueuer interface {
-	// EnqueuePresentationBuild 入队一条实例重建任务；同一实例同时只有一条待办
-	// （队列侧部分唯一索引去重，重复入队是幂等的）。
-	//
-	// projectID 是任务的工程作用域，由本模块显式带过来（审计 DB-01）：
-	// 逐工程扇出那条路径先按实例定位工程再传（列可空，定位不到就传空串），
-	// 队列侧不反查来源表。
 	EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error
 }

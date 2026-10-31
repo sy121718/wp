@@ -1,14 +1,5 @@
 package feature
 
-// cart_checkout_test.go — 访客购物车与结算的链路测试。
-//
-// 覆盖的是**不变量**而不是「方法能跑通」：
-//   · 结算必须落成一张已付款的订单，且订单项是商品事实的快照；
-//   · 归因 cookie 必须在下单那一刻定格进 orders.attribution（含 first-touch 与轨迹）；
-//   · 幂等键命中不得第二次扣库存；
-//   · 篡改过的购物车 cookie 一律当空车（签名是唯一的信任来源）；
-//   · 支付失败**不能把订单丢掉** —— 单号必须回到访客手里。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -21,7 +12,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// TestCartCheckoutCreatesPaidOrderAndDeductsStock 加购 → 结算 → 已付款订单 + 库存扣减 + 清空购物车。
 func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -37,7 +27,7 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 	if snap.ItemCount != 2 {
 		t.Fatalf("件数应为 2，实际 %d", snap.ItemCount)
 	}
-	// 30 元 × 2 = 6000 分。金额一律整数分，绝不出现浮点。
+
 	if snap.Total != 6000 {
 		t.Fatalf("小计应为 6000 分，实际 %d", snap.Total)
 	}
@@ -76,7 +66,6 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatal("访客结算应当自动开号并关联订单，否则客户无处查自己的订单")
 	}
 
-	// 订单项是快照：单价来自服务端商品事实，不是请求里的值。
 	if len(detail.Items) != 1 {
 		t.Fatalf("订单项应为 1 行，实际 %d", len(detail.Items))
 	}
@@ -84,8 +73,6 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatalf("订单项快照不对: %+v", detail.Items[0])
 	}
 
-	// 两段式（迁移 624）：结算建单只**预占** 2 件，在库仍是 10 ——
-	// 扣减发生在发货（S2 的发货用例），不在结算。
 	if got := f.reservedOf(t, variantID); got != 2 {
 		t.Fatalf("结算应预占 2 件，实际 %d", got)
 	}
@@ -93,7 +80,6 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatalf("结算不得扣减在库数量（两段式），期望 10，实际 %d", got)
 	}
 
-	// 结算返回的 cookie 必须是空车：东西已经变成订单，留着只会让人再点一次结账。
 	if res.Cookie == "" {
 		t.Fatal("结算成功后必须返回可回写的空购物车 cookie")
 	}
@@ -106,7 +92,6 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 	}
 }
 
-// TestCartCheckoutPersistsAttributionFromCookies 归因 cookie 在下单那一刻定格进订单。
 func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -116,7 +101,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 	_, variantID := f.addProduct(t, "归因商品", 15, 10)
 	snap := f.addToCart(t, variantID, 1, "")
 
-	// 轨迹 cookie 是 encodeURIComponent(JSON)，用 url.QueryEscape 生成同样的形状。
 	trailJSON, err := json.Marshal([][]any{
 		{"/p/1", "商品页", 1699999100},
 		{"/cart", "购物车", 1699999200},
@@ -147,7 +131,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 		t.Fatal("带归因 cookie 的下单必须把归因落进 orders.attribution")
 	}
 
-	// 本次触达（last-touch 口径）
 	if a.SourceType != "utm" || a.Referrer != "www.google.com" {
 		t.Fatalf("本次触达归因不对: type=%q referrer=%q", a.SourceType, a.Referrer)
 	}
@@ -161,8 +144,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 		t.Fatalf("广告点击 id 不对: %+v", a.Ad)
 	}
 
-	// 首次触达（first-touch 口径）必须与本次触达**分开**存：
-	// 「先被引荐链接带来、几天后点广告下单」这两个答案本来就不同。
 	if a.First.SourceType != "referral" || a.First.Referrer != "partner.example" {
 		t.Fatalf("首触归因不对: %+v", a.First)
 	}
@@ -179,7 +160,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 		t.Fatal("首触时间要落 RFC3339（否则分析里无法做获客周期）")
 	}
 
-	// 会话事实
 	if a.Session.Entry != "/home" || a.Session.Pages != 4 || a.Session.Count != 3 {
 		t.Fatalf("会话事实不对: %+v", a.Session)
 	}
@@ -187,7 +167,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 		t.Fatalf("会话时长应由开始时间推出来，实际 %d", a.Session.DurationSeconds)
 	}
 
-	// 设备：UA 由服务端填（请求真正带来的那个），类型与屏幕由脚本给。
 	if a.Device.Type != "mobile" || a.Device.Screen != "390x844" {
 		t.Fatalf("设备信息不对: %+v", a.Device)
 	}
@@ -195,7 +174,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 		t.Fatalf("UA 应取请求头，实际 %q", a.Device.UserAgent)
 	}
 
-	// 浏览轨迹：停留秒数由相邻两条的时间差推出。
 	if len(a.Trail) != 2 {
 		t.Fatalf("轨迹应有 2 条，实际 %d（%+v）", len(a.Trail), a.Trail)
 	}
@@ -207,7 +185,6 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 	}
 }
 
-// TestCartCheckoutIsIdempotentByRequestID 同一幂等键重复结算只落一单、只扣一次库存。
 func TestCartCheckoutIsIdempotentByRequestID(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -221,7 +198,7 @@ func TestCartCheckoutIsIdempotentByRequestID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("首次结算失败: %v", err)
 	}
-	// 第二次用**同一个 cookie 与同一个 requestId**（模拟访客连点两次 / 浏览器重发）。
+
 	second, err := f.cart.Checkout(ctx, f.checkoutReq(snap.Cookie))
 	if err != nil {
 		t.Fatalf("重复结算不该报错（幂等键命中应原样返回既有单）: %v", err)
@@ -238,7 +215,7 @@ func TestCartCheckoutIsIdempotentByRequestID(t *testing.T) {
 	if list.Total != 1 {
 		t.Fatalf("重复结算只应落一单，实际 %d 单", list.Total)
 	}
-	// 两段式：幂等生效时预占只该加一次（2）。
+
 	if got := f.reservedOf(t, variantID); got != 2 {
 		t.Fatalf("预占只该加一次（应为 2），实际 %d —— 幂等失效就是重复占货", got)
 	}
@@ -247,7 +224,6 @@ func TestCartCheckoutIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestCartTamperedCookieIsTreatedAsEmpty 篡改过的购物车 cookie 一律当空车。
 func TestCartTamperedCookieIsTreatedAsEmpty(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -259,7 +235,7 @@ func TestCartTamperedCookieIsTreatedAsEmpty(t *testing.T) {
 	if good.ItemCount != 5 {
 		t.Fatalf("前置条件：应有 5 件，实际 %d", good.ItemCount)
 	}
-	// 改掉签名段的最后一个字符（篡改者能改的就是 cookie 值本身）。
+
 	forged := good.Cookie[:len(good.Cookie)-1] + "0"
 	if forged == good.Cookie {
 		forged = good.Cookie[:len(good.Cookie)-1] + "1"
@@ -271,7 +247,6 @@ func TestCartTamperedCookieIsTreatedAsEmpty(t *testing.T) {
 	}
 }
 
-// TestCartCheckoutKeepsOrderWhenPaymentFails 支付失败时订单必须留下（停在待付款，带单号）。
 func TestCartCheckoutKeepsOrderWhenPaymentFails(t *testing.T) {
 	f := newCartFixtureWithGateway(t, failingGateway{})
 	if f == nil {
@@ -308,8 +283,7 @@ func TestCartCheckoutKeepsOrderWhenPaymentFails(t *testing.T) {
 	if detail.Head.PaidAt != nil {
 		t.Fatal("没收到钱的订单不该有 paid_at")
 	}
-	// 待付款的订单照样占着货：不占的话客户回头付款时货可能已经卖光。
-	// 两段式下「占着」的表现是 reserved_quantity（不是 quantity）。
+
 	if got := f.reservedOf(t, variantID); got != 1 {
 		t.Fatalf("待付款订单应预占 1 件，实际 %d", got)
 	}
@@ -318,7 +292,6 @@ func TestCartCheckoutKeepsOrderWhenPaymentFails(t *testing.T) {
 	}
 }
 
-// TestCartAddWithinLimitsRejected 加购的边界：超库存与不存在的变体。
 func TestCartAddWithinLimitsRejected(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -341,7 +314,6 @@ func TestCartAddWithinLimitsRejected(t *testing.T) {
 	}
 }
 
-// TestCartSetQuantityZeroRemovesLine 数量置 0 即移除该行。
 func TestCartSetQuantityZeroRemovesLine(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {

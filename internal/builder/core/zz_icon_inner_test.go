@@ -2,7 +2,6 @@ package core
 
 import "testing"
 
-// TestIconInnerStripsWrapper 内部元素必须剥掉外层 <svg> 包裹。
 func TestIconInnerStripsWrapper(t *testing.T) {
 	inner, ok := IconInner("chevron-right")
 	if !ok || inner == "" {

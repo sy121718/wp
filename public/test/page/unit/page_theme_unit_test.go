@@ -9,7 +9,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// docSettings 解析草稿文档的 settings 键。
 func docSettings(t *testing.T, doc []byte) map[string]json.RawMessage {
 	t.Helper()
 	var page struct {
@@ -21,7 +20,6 @@ func docSettings(t *testing.T, doc []byte) map[string]json.RawMessage {
 	return page.Settings
 }
 
-// themeDocSettings 断言 settings.theme 快照与期望一致。
 func assertThemeSnapshot(t *testing.T, doc []byte, wantPrimary, wantFont string) {
 	t.Helper()
 	settings := docSettings(t, doc)
@@ -59,7 +57,6 @@ func mergePageStructure(t *testing.T, base []byte, header, footer string) json.R
 	return out
 }
 
-// assertStructureSnapshot 断言 settings.structure 页眉/页脚绑定。
 func assertStructureSnapshot(t *testing.T, doc []byte, wantHeader, wantFooter string) {
 	t.Helper()
 	settings := docSettings(t, doc)
@@ -79,8 +76,6 @@ func assertStructureSnapshot(t *testing.T, doc []byte, wantHeader, wantFooter st
 	}
 }
 
-// TestPageCreateThemeMerge 有激活主题时创建页面：settings.theme/structure 快照合入，
-// 页面挂接主题 ID。
 func TestPageCreateThemeMerge(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -105,7 +100,6 @@ func TestPageCreateThemeMerge(t *testing.T) {
 	assertStructureSnapshot(t, created.DraftDocument, "hdr", "ftr")
 }
 
-// TestPageSaveDraftThemeMerge 保存草稿同样合入主题快照（保存时快照语义）。
 func TestPageSaveDraftThemeMerge(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -127,9 +121,6 @@ func TestPageSaveDraftThemeMerge(t *testing.T) {
 	assertStructureSnapshot(t, saved.DraftDocument, "h1", "")
 }
 
-// TestPageCreateNoTheme 无主题时页面不挂接主题；文档规范化后仍含空的
-// theme/structure 键（Go json.Marshal 对 struct 字段的 omitempty 不生效），
-// 但不得合入任何主题值。
 func TestPageCreateNoTheme(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created := createPage(t, svc, projectID, "/no-theme", headingDocument)
@@ -140,8 +131,6 @@ func TestPageCreateNoTheme(t *testing.T) {
 	assertStructureSnapshot(t, created.DraftDocument, "", "")
 }
 
-// TestPageCreateThemeBrokenSettings 主题 settings 为非法 JSON（数组）时：
-// 忽略合入，不阻塞页面保存。
 func TestPageCreateThemeBrokenSettings(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -157,12 +146,11 @@ func TestPageCreateThemeBrokenSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("主题设置非法不应阻塞页面创建: %v", err)
 	}
-	// 非法主题设置被忽略：不得合入任何主题值（空快照）。
+
 	assertThemeSnapshot(t, created.DraftDocument, "", "")
 	assertStructureSnapshot(t, created.DraftDocument, "", "")
 }
 
-// TestPageRefreshThemeForTheme 主题设置刷新批量合入挂接页面，draft_version 不变。
 func TestPageRefreshThemeForTheme(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -192,7 +180,6 @@ func TestPageRefreshThemeForTheme(t *testing.T) {
 	}
 }
 
-// TestPageRefreshStructureForTheme 页眉/页脚块绑定刷新批量合入挂接页面。
 func TestPageRefreshStructureForTheme(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -214,9 +201,6 @@ func TestPageRefreshStructureForTheme(t *testing.T) {
 	}
 	assertStructureSnapshot(t, detail.DraftDocument, "new-header", "")
 
-	// 页面已显式绑定 footer 时不应被主题刷新覆盖（VIS-003）。
-	// 参数顺序是 (header, footer)：这里要让**页脚**已显式绑定、页眉留空，
-	// 才能验证「主题刷新只补未绑定的槽、不动页面自己的绑定」（VIS-003）。
 	footerDoc := mergePageStructure(t, []byte(pageDocument), "", "keep-footer")
 	_, err = svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: page.ID, ExpectedVersion: detail.DraftVersion,
@@ -235,7 +219,6 @@ func TestPageRefreshStructureForTheme(t *testing.T) {
 	assertStructureSnapshot(t, detail2.DraftDocument, "new-header-2", "keep-footer")
 }
 
-// TestPageMarkStaleForTheme 主题块变更批量标记挂接页面为待重建。
 func TestPageMarkStaleForTheme(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -246,11 +229,9 @@ func TestPageMarkStaleForTheme(t *testing.T) {
 		t.Fatalf("创建主题失败: %v", err)
 	}
 	page := createPage(t, svc, projectID, "/stale", pageDocument)
-	// 手动清除 stale 模拟已构建。
+
 	db.Table("pages").Where("id = ?", page.ID).Update("stale", false)
 
-	// 返回值是本次命中的页面 id（调用方据此自动重建），这里顺带钉住它非空 ——
-	// 空集会让「标记成功、重建没东西可重建」这种静默退化溜过去。
 	marked, err := svc.MarkStaleForTheme(ctx, theme.ID)
 	if err != nil {
 		t.Fatalf("标记 stale 失败: %v", err)
@@ -265,22 +246,20 @@ func TestPageMarkStaleForTheme(t *testing.T) {
 	}
 }
 
-// TestPageAttachThemeToUnassigned 工程首个主题创建后回填未挂主题的页面，
-// 已挂主题的页面不受影响。
 func TestPageAttachThemeToUnassigned(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
-	// 先建页面（此时无主题，不挂接）。
+
 	pageA := createPage(t, svc, projectID, "/attach-a", pageDocument)
 	pageB := createPage(t, svc, projectID, "/attach-b", pageDocument)
-	// 首个主题自动激活。
+
 	theme, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
 		ProjectID: projectID, Name: "首主题", Settings: json.RawMessage(`{}`),
 	})
 	if err != nil {
 		t.Fatalf("创建主题失败: %v", err)
 	}
-	// 第二个主题（非激活）——页面不挂它。
+
 	theme2, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
 		ProjectID: projectID, Name: "次主题", Settings: json.RawMessage(`{}`),
 	})
@@ -290,21 +269,19 @@ func TestPageAttachThemeToUnassigned(t *testing.T) {
 	if err := svc.AttachThemeToUnassigned(ctx, projectID, theme2.ID); err != nil {
 		t.Fatalf("回填失败: %v", err)
 	}
-	// 回填到激活主题的页面仍应显示激活主题（AttachThemeToUnassigned
-	// 按调用方传入的 themeID 回填；此处验证列已从 NULL 变为非 NULL）。
+
 	for _, id := range []string{pageA.ID, pageB.ID} {
 		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: id})
 		if err != nil || detail.ThemeID == "" {
 			t.Errorf("页面 %s 应被回填主题: %+v err=%v", id, detail, err)
 		}
 	}
-	// 回填幂等：再次调用不报错。
+
 	if err := svc.AttachThemeToUnassigned(ctx, projectID, theme.ID); err != nil {
 		t.Errorf("重复回填应幂等: %v", err)
 	}
 }
 
-// themeSnapshotOf 取文档的 settings.theme 快照（已解析成 map，便于按路径断言）。
 func themeSnapshotOf(t *testing.T, doc []byte) map[string]any {
 	t.Helper()
 	raw, ok := docSettings(t, doc)["theme"]
@@ -318,7 +295,6 @@ func themeSnapshotOf(t *testing.T, doc []byte) map[string]any {
 	return m
 }
 
-// colorsOf 取快照里的 colors 子对象。
 func colorsOf(t *testing.T, snapshot map[string]any) map[string]any {
 	t.Helper()
 	colors, _ := snapshot["colors"].(map[string]any)
@@ -328,8 +304,6 @@ func colorsOf(t *testing.T, snapshot map[string]any) map[string]any {
 	return colors
 }
 
-// TestPageThemeOverrideMergesIntoSnapshot 页面级覆盖进快照：覆盖项生效、其余跟随主题，
-// 且覆盖本身保留在文档里（主题刷新时要靠它重算，不能与快照混成一个键）。
 func TestPageThemeOverrideMergesIntoSnapshot(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -355,8 +329,6 @@ func TestPageThemeOverrideMergesIntoSnapshot(t *testing.T) {
 	}
 }
 
-// TestPageRefreshThemeKeepsPageOverride 主题刷新：没被页面覆盖的项跟着新主题走，
-// 被覆盖的项保持不变（否则「页面覆盖」会在每次改主题时被冲掉）。
 func TestPageRefreshThemeKeepsPageOverride(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
@@ -371,7 +343,6 @@ func TestPageRefreshThemeKeepsPageOverride(t *testing.T) {
 	pageWithOverride := createPage(t, svc, projectID, "/refresh-override", string(overrideDoc))
 	pagePlain := createPage(t, svc, projectID, "/refresh-plain", pageDocument)
 
-	// 主题改主色与边框色后刷新。
 	newTheme := json.RawMessage(`{"colors":{"primary":"#222222","border":"#eeeeee"}}`)
 	if err := svc.RefreshThemeForTheme(ctx, theme.ID, newTheme); err != nil {
 		t.Fatalf("刷新主题失败: %v", err)

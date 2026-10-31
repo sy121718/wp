@@ -1,6 +1,5 @@
 package productservice_test
 
-// 批量含明细查询必须与逐批详情保持完整业务数据等价，而不是复制模板行再比较。
 import (
 	"context"
 	"reflect"
@@ -36,7 +35,7 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// 空批次允许 nil 与空切片同义；其余字段必须逐字段一致。
+
 		if len(row.Items) == 0 && len(want.Items) == 0 {
 			row.Items, want.Items = nil, nil
 		}

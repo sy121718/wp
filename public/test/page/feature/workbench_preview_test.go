@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestWorkbenchPreviewDraft 验证临时 AST 预览只编译响应，不修改已保存草稿。
 func TestWorkbenchPreviewDraft(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, svc, projectID := newPageService(t)
@@ -36,7 +35,6 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 		t.Fatalf("查询初始草稿失败: %v", err)
 	}
 
-	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract；本测试仅用 page 能力，补 nil。
 	handle := workbenchhttp.New(svc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.GET("/workbench/preview", handle.Preview)
@@ -75,7 +73,6 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 	}
 }
 
-// TestWorkbenchPreviewDraftRejectsStaleVersion 验证版本冲突不会编译临时草稿。
 func TestWorkbenchPreviewDraftRejectsStaleVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, svc, projectID := newPageService(t)
@@ -91,7 +88,6 @@ func TestWorkbenchPreviewDraftRejectsStaleVersion(t *testing.T) {
 		t.Fatalf("创建测试页面失败: %v", err)
 	}
 
-	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract；本测试仅用 page 能力，补 nil。
 	handle := workbenchhttp.New(svc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.POST("/workbench/preview", handle.PreviewDraft)

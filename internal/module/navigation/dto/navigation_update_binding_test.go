@@ -1,16 +1,5 @@
 package navigationdto_test
 
-// navigation_update_binding_test.go — UpdateEnvelope 经真实 binding.JSONLimited 的接线契约。
-//
-// 为什么不直接调 dto 方法：binding.JSONLimited → binding.JSON → gin.ShouldBind 才是生产入口。
-// 这条路径上，JSON 体走 UnmarshalJSON、表单体走 gin 反射绑定 + FormBinder.BindForm；
-// 只测 dto 方法会让「反射绑定先把 Rows 解坏」「multipart 从未被解析」这类接线缺口全部隐形。
-//
-// 覆盖：JSON / JSON 无 Content-Type / urlencoded / multipart 四种投放、1 MiB 边界（恰好 / 超 1 字节）、
-// legacy 必填与宽容未知键、译文顶层未知键、move 形状。
-//
-// 本文件不运行验证：由主审集中跑 go test。
-
 import (
 	"bytes"
 	"errors"
@@ -28,17 +17,14 @@ import (
 	"go_wp/pkg/binding"
 )
 
-// maxBody 与生产入口同值（handler 用 1<<20）。
 const maxBody int64 = 1 << 20
 
-// bound 一次真实绑定的结果。
 type bound struct {
 	env  *navigationdto.UpdateEnvelope
 	code int
 	body string
 }
 
-// bindThrough 用生产入口的同一行绑定请求，返回绑定结论与响应。
 func bindThrough(t *testing.T, req *http.Request) bound {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -47,11 +33,9 @@ func bindThrough(t *testing.T, req *http.Request) bound {
 	router.POST("/api/navigation/update", func(c *gin.Context) {
 		env, ok := binding.JSONLimited[navigationdto.UpdateEnvelope](c, maxBody)
 		if !ok {
-			return // binding 已写 400
+			return
 		}
-		// 与真实 handler（navigation_handle.go 的 Update）保持同一出口顺序：
-		// binding → Validate → 分流。生产代码里 Validate 在 handler，测试若省掉它，
-		// 断言的就不是「真实入口的行为」，而是「只跑到 binding 为止的行为」。
+
 		if err := env.Validate(); err != nil {
 			c.Status(http.StatusBadRequest)
 			return
@@ -68,7 +52,6 @@ func bindThrough(t *testing.T, req *http.Request) bound {
 	return got
 }
 
-// jsonRequest 造 JSON 投放（contentType 为空 = 不设 Content-Type）。
 func jsonRequest(t *testing.T, contentType, body string) *http.Request {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
@@ -78,7 +61,6 @@ func jsonRequest(t *testing.T, contentType, body string) *http.Request {
 	return req
 }
 
-// formRequest 造 urlencoded 投放。
 func formRequest(t *testing.T, values url.Values) *http.Request {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(values.Encode()))
@@ -86,7 +68,6 @@ func formRequest(t *testing.T, values url.Values) *http.Request {
 	return req
 }
 
-// multipartRequest 造 multipart 投放（写基座 fetch+FormData 的真实形态）。
 func multipartRequest(t *testing.T, fields [][2]string) *http.Request {
 	t.Helper()
 	var buf bytes.Buffer
@@ -104,12 +85,10 @@ func multipartRequest(t *testing.T, fields [][2]string) *http.Request {
 	return req
 }
 
-// translationFields 译文提交的字段集（JSON 串 rows 是写基座的一层 stringify）。
 func translationFields(rows string) [][2]string {
 	return [][2]string{{"action", "translations"}, {"project", "p-1"}, {"lang", langOK()}, {"rows", rows}}
 }
 
-// TestUpdateEnvelopeThroughRealBinding 四种投放经真实 binding 得到同一档与同一份入参。
 func TestUpdateEnvelopeThroughRealBinding(t *testing.T) {
 	rowsJSON := `[{"context":"nav.header","hash":"h1","target":"Home"},{"context":"nav.footer","hash":"h2","target":""}]`
 	cases := []struct {
@@ -149,7 +128,6 @@ func TestUpdateEnvelopeThroughRealBinding(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingLegacyThroughRealBinding legacy 档经真实 binding：必填在原处校验、未知键宽容。
 func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -184,7 +162,6 @@ func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 		})
 	}
 
-	// 缺 id：required 必须在 dto 内部被 gin binding 执行，binding 整体写 400。
 	missing := []struct {
 		name string
 		req  func() *http.Request
@@ -203,7 +180,6 @@ func TestUpdateEnvelopeBindingLegacyThroughRealBinding(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingMultipartMove move 档同样经 multipart 得到已解析形状。
 func TestUpdateEnvelopeBindingMultipartMove(t *testing.T) {
 	r := bindThrough(t, multipartRequest(t, [][2]string{{"action", "move"}, {"id", "n-1"}, {"dir", "up"}, {"projectId", "p-1"}}))
 	if r.code != http.StatusOK || r.env == nil {
@@ -221,7 +197,6 @@ func TestUpdateEnvelopeBindingMultipartMove(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingTranslationUnknownKey 译文顶层未知键经真实 binding 被拒（写 400）。
 func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 	rows := `[{"context":"c","hash":"h","target":"t"}]`
 	bad := translationForm(rows)
@@ -241,7 +216,7 @@ func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 			}
 		})
 	}
-	// 公共 CSRF 表单字段不是业务键：表单投放必须被接受。
+
 	ok := translationForm(rows)
 	ok.Set("csrf_token", "tok")
 	for _, tc := range []struct {
@@ -263,7 +238,6 @@ func TestUpdateEnvelopeBindingTranslationUnknownKey(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingBodyLimit 1 MiB 边界：恰好 1 MiB 通过，多 1 字节拒（不截断）。
 func TestUpdateEnvelopeBindingBodyLimit(t *testing.T) {
 	const head = `{"id":"n-1","title":"`
 	const tail = `"}`
@@ -289,7 +263,6 @@ func TestUpdateEnvelopeBindingBodyLimit(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingMultipartRowsStringIsUnwrapped 表单 rows 的一层字符串解包语义保留。
 func TestUpdateEnvelopeBindingMultipartRowsStringIsUnwrapped(t *testing.T) {
 	rows := `[{"context":"a","hash":"h1","target":"A"},{"context":"b","hash":"h2","target":""}]`
 	r := bindThrough(t, multipartRequest(t, translationFields(rows)))
@@ -305,7 +278,6 @@ func TestUpdateEnvelopeBindingMultipartRowsStringIsUnwrapped(t *testing.T) {
 	}
 }
 
-// TestUpdateEnvelopeBindingNonJSONBodyRejected 空体 / 非法 JSON 经真实 binding 直接 400。
 func TestUpdateEnvelopeBindingNonJSONBodyRejected(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -324,7 +296,6 @@ func TestUpdateEnvelopeBindingNonJSONBodyRejected(t *testing.T) {
 		})
 	}
 
-	// 错误值仍是 dto 的事实，供 handler 之外的调用点判定。
 	env := &navigationdto.UpdateEnvelope{}
 	if err := env.UnmarshalJSON([]byte("{broken")); !errors.Is(err, navigationdto.ErrUpdateEnvelopeBody) {
 		t.Fatalf("want ErrUpdateEnvelopeBody, got %v", err)

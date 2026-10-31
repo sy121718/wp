@@ -1,10 +1,3 @@
-// page_dependency_fanout_test.go — PIPE-3 依赖 fan-out 的单元回归（真实 PG + 真实产物盘）。
-//
-// 三条不变量：
-//  1. 构建成功后依赖记录落库（page_dependencies），内容与文档推导正确；
-//  2. 依赖源变更只标记「产物确实声明了该依赖」的页面——无关页面 stale 保持 false
-//     （这是「不再全站标记」的可验证证据）；
-//  3. 既有的 MarkStaleForI18n 等全站标记行为不变。
 package unit
 
 import (
@@ -23,11 +16,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// headerBlockDocument 页眉块文档：本用例关心的是「块依赖键」，
-// 但它必须先是一个**真实存在**的块（见 TestPageDependencyBlockAndI18nKeys 的说明）。
 const headerBlockDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"hdr-1","type":"core.text","props":{"mode":"plaintext","text":"页眉"}}]}`
 
-// contentBoundPage 创建绑定内容实体的页面（kind=article 才能带 content_target）。
 func contentBoundPage(t *testing.T, svc pagecontract.PageService, projectID, path, entityID string) string {
 	t.Helper()
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
@@ -40,7 +30,6 @@ func contentBoundPage(t *testing.T, svc pagecontract.PageService, projectID, pat
 	return created.ID
 }
 
-// TestPageDependencyPreciseFanout 改内容 A 只标记依赖 A 的页面，无关页面不受影响。
 func TestPageDependencyPreciseFanout(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -48,21 +37,19 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	entityA, entityB := uuid.NewString(), uuid.NewString()
 	pageA := contentBoundPage(t, svc, projectID, "/products/a", entityA)
 	pageB := contentBoundPage(t, svc, projectID, "/products/b", entityB)
-	// 无关页面：不绑定任何内容实体。
+
 	pageHome := createPage(t, svc, projectID, "/home", pageDocument).ID
 
 	for _, id := range []string{pageA, pageB, pageHome} {
 		buildAndPublish(t, svc, id)
 	}
 
-	// 1) 依赖记录落库：A 页声明 product:{A}，B 页声明 product:{B}，首页无内容依赖。
 	assertDependencyRow(t, db, pageA, pipeline.DepKindDirectContent, "article:"+entityA)
 	assertDependencyRow(t, db, pageB, pipeline.DepKindDirectContent, "article:"+entityB)
 	if n := countDependencyRows(t, db, pageHome, pipeline.DepKindDirectContent); n != 0 {
 		t.Fatalf("首页不应声明 direct_content 依赖，实际 %d 条", n)
 	}
 
-	// 2) 内容 A 变更 → 精确标记：只有 pageA。
 	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("MarkStaleByDependency 失败: %v", err)
@@ -79,7 +66,6 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 		}
 	}
 
-	// 3) 幂等：重复标记返回同一集合，不产生额外影响面。
 	again, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("重复标记失败: %v", err)
@@ -88,7 +74,6 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 		t.Fatalf("重复标记应仍只命中 %s，实际 %v", pageA, again)
 	}
 
-	// 4) 未声明的依赖键不命中任何页面（不会误伤）。
 	none, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("未命中查询失败: %v", err)
@@ -98,14 +83,10 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	}
 }
 
-// TestPageDependencyBlockAndI18nKeys 文档派生的块依赖与 i18n 依赖落库并可精确反查。
 func TestPageDependencyBlockAndI18nKeys(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
 
-	// 块必须是**真实存在**的那一个（审计 ARCH-05）：绑定一个不存在的块，发布期会直接
-	// 失败（「绑定了但拿不到」= 失败），本用例的构建也就无从谈起。这里补真实父行，
-	// 而不是让被测行为退回「静默降级」——后者正是本条整改要消灭的东西。
 	header, err := blockservice.NewService(blockmodel.NewBlockModel(db), projects).Create(ctx, &blockdto.CreateReq{
 		ProjectID: projectID, Name: "页眉块", Kind: "header",
 		Document: json.RawMessage(headerBlockDocument),
@@ -138,8 +119,6 @@ func TestPageDependencyBlockAndI18nKeys(t *testing.T) {
 	}
 }
 
-// TestFanoutPrecisionVersusWholeSiteMarking 「不再全站标记」的对比证据：
-// 同一组数据上，旧的全站标记命中全部页面，新的依赖反查只命中真正依赖的页面。
 func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -153,7 +132,6 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 		buildAndPublish(t, svc, id)
 	}
 
-	// 旧口径：全站标记（MarkStaleForI18n 仍用于「词条变更影响所有产物字节」）。
 	if err := svc.MarkStaleForI18n(ctx); err != nil {
 		t.Fatalf("MarkStaleForI18n 失败: %v", err)
 	}
@@ -167,7 +145,6 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 		t.Fatalf("全站标记应命中 3 个页面，实际 %d", wholeSite)
 	}
 
-	// 复位为「已重建」，再用新口径：内容 A 变更。
 	if err := db.Exec("UPDATE pages SET stale = false").Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
@@ -191,7 +168,6 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 		wholeSite, precise, pageB, pageHome)
 }
 
-// TestMarkStaleForI18nStillWholeSite 既有全站标记不退化（词条变更影响所有产物字节）。
 func TestMarkStaleForI18nStillWholeSite(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -214,9 +190,6 @@ func TestMarkStaleForI18nStillWholeSite(t *testing.T) {
 	}
 }
 
-// ---- 断言辅助 ----
-
-// assertDependencyRow 断言指定页面存在某条依赖记录。
 func assertDependencyRow(t *testing.T, db *gorm.DB, pageID, kind, key string) {
 	t.Helper()
 	if n := countDependencyRows(t, db, pageID, kind, key); n == 0 {
@@ -224,8 +197,6 @@ func assertDependencyRow(t *testing.T, db *gorm.DB, pageID, kind, key string) {
 	}
 }
 
-// countDependencyRows 统计依赖记录条数（key 为空时按 kind 统计），
-// 只统计「当前活跃或暂存产物」声明的依赖（与反查条件一致）。
 func countDependencyRows(t *testing.T, db *gorm.DB, pageID, kind string, key ...string) int64 {
 	t.Helper()
 	q := `SELECT COUNT(*) FROM page_dependencies d JOIN pages p ON p.id = d.page_id
@@ -243,7 +214,6 @@ func countDependencyRows(t *testing.T, db *gorm.DB, pageID, kind string, key ...
 	return n
 }
 
-// pageStale 读取页面 stale 标记。
 func pageStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	t.Helper()
 	var stale bool

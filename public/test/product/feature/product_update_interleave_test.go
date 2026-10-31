@@ -27,7 +27,6 @@ func (p *capturedProductChanges) RecordChangesTx(_ context.Context, _ *gorm.DB, 
 	return nil
 }
 
-// 在旧快照读完后提交另一笔写入，固定交错顺序，不靠 sleep 抢时序。
 func afterProductSnapshot(t *testing.T, db *gorm.DB, table string, inject func() error) *bool {
 	t.Helper()
 	fired := false

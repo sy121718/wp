@@ -1,10 +1,3 @@
-// pluginview.go — 插件组件的编译视图装配（AGENTS.md §5/§7）。
-//
-// plugin.{pluginID}.{name} 类型节点经 RenderContext.Plugin 解析规格：
-//   - props 按 spec 白名单解码校验（未知键拒绝、文本长度限幅、枚举比对）；
-//   - 样式经 spec.CompileStyles 闭包（style 引擎）编译进 CSSBuckets；
-//   - 视图走 nodeView 通用字段：Template 指向插件命名空间模板，V = props map
-//     （模板经 {{.V.field}} 访问，Jet 默认转义）。
 package builder
 
 import (
@@ -15,10 +8,8 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// pluginTypePrefix 插件组件类型前缀（与内置 core.* 命名空间隔离）。
 const pluginTypePrefix = "plugin."
 
-// pluginViewOf 插件节点 → 视图（含 props 白名单校验与样式编译）。
 func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	if ctx.Plugin == nil {
 		return nil, fmt.Errorf("节点 %s: 编译上下文缺少插件解析器（页面使用了插件组件 %q）", node.ID, node.Type)
@@ -35,13 +26,12 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	var classes []string
 	classes = append(classes, core.NodeClass(node.ID))
 
-	// 样式声明编译（style 引擎闭包，值白名单在闭包内二次校验）。
 	if spec.CompileStyles != nil {
 		if serr := spec.CompileStyles(node.ID, props, ctx.CSS); serr != nil {
 			return nil, fmt.Errorf("节点 %s: 样式编译失败: %w", node.ID, serr)
 		}
 	}
-	// 视图数据 V：默认 = props map（{{.V.field}}）；集合组件追加 .V.items 列表。
+
 	viewData := props
 	if spec.Collection != nil {
 		if ctx.Collection == nil {
@@ -51,7 +41,7 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		if cerr != nil {
 			return nil, fmt.Errorf("节点 %s: 集合 %q 解析失败: %w", node.ID, spec.Collection.Source, cerr)
 		}
-		// 字段白名单裁剪（不变量 4：模板只能渲染声明字段）。
+
 		viewData = map[string]any{
 			"items": cropFields(items, spec.Collection.Fields),
 			"props": props,
@@ -65,11 +55,10 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		Classes:  strings.Join(classes, " "),
 		TopLevel: topLevel,
 		Props:    props,
-		V:        viewData, // 模板经 {{.V.field}}（非集合）或 {{range .V.items}}（集合）
+		V:        viewData,
 	}, nil
 }
 
-// cropFields 按字段白名单裁剪列表项（不变量 4：拒绝声明外字段）。
 func cropFields(items []map[string]any, fields []string) []map[string]any {
 	allow := make(map[string]bool, len(fields))
 	for _, f := range fields {
@@ -88,8 +77,6 @@ func cropFields(items []map[string]any, fields []string) []map[string]any {
 	return out
 }
 
-// decodePluginProps 按 spec 白名单解码节点 props：未知键拒绝（防夹带），
-// 值类型与长度校验，select 枚举比对；缺省键回填 Default。
 func decodePluginProps(node *core.Node, spec *core.PluginComponentSpec) (map[string]any, error) {
 	raw := map[string]any{}
 	if len(node.Props) > 0 {
@@ -112,7 +99,7 @@ func decodePluginProps(node *core.Node, spec *core.PluginComponentSpec) (map[str
 		}
 		out[key] = val
 	}
-	// 未知键拒绝：props 只允许 schema 声明过的字段（防夹带未校验数据）。
+
 	for key := range raw {
 		if _, declared := spec.Props[key]; !declared {
 			return nil, fmt.Errorf("props 含未声明的键 %q（白名单拒绝）", key)
@@ -121,7 +108,6 @@ func decodePluginProps(node *core.Node, spec *core.PluginComponentSpec) (map[str
 	return out, nil
 }
 
-// validatePluginPropValue 单个插件 props 值校验（按控件类型）。
 func validatePluginPropValue(key string, v any, ctl core.PluginPropControl) (any, error) {
 	maxLen := ctl.MaxLen
 	if maxLen <= 0 {
@@ -174,7 +160,6 @@ func validatePluginPropValue(key string, v any, ctl core.PluginPropControl) (any
 	}
 }
 
-// isPluginColorValue 颜色值白名单：#hex / rgb()/rgba()/hsl() 函数值 / var(--token)。
 func isPluginColorValue(s string) bool {
 	if strings.HasPrefix(s, "#") {
 		return len(s) >= 4 && len(s) <= 9
@@ -187,7 +172,6 @@ func isPluginColorValue(s string) bool {
 	return strings.HasPrefix(s, "var(--") && strings.HasSuffix(s, ")")
 }
 
-// isPluginUnitValue 尺寸值白名单：数字+单位（px/%/em/rem/vw/vh，允许负数）或 auto。
 func isPluginUnitValue(s string) bool {
 	if s == "auto" {
 		return true

@@ -1,13 +1,5 @@
 package ordermcp
 
-// order_query_tools_test.go — 按线索查订单两个工具的元信息、入参透传与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪个数，用户就看不到哪个数。这里钉的是几件会直接决定回答对错的事：
-//   · 单号必须逐条出现在结果里 —— 它是接着调 order_get 的唯一钥匙；
-//   · 时间窗必须按**实际生效**的窗口回显，而不是把用户给的原串抄回来；
-//   · 金额带币种、且币种取自订单（凭空写 ¥ 会在别的站点上答对数字、答错单位）。
-
 import (
 	"context"
 	"errors"
@@ -21,7 +13,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// stubQuery 假 reader：记录入参、回放固定结果。
 type stubQuery struct {
 	gotFind *orderdto.FindOrderReq
 	gotGet  *orderdto.GetOrderByNoReq
@@ -92,7 +83,7 @@ func TestQueryToolsMetadata(t *testing.T) {
 			t.Errorf("%s 没有说明（模型靠它决定什么时候用这个工具）", name)
 		}
 	}
-	// 关键承诺：模型得知道「一条线索就够了」，不必先猜用户给的是单号还是姓名。
+
 	if !strings.Contains(tools["order_find"].Description(), "单号") ||
 		!strings.Contains(tools["order_find"].Description(), "客户姓名") {
 		t.Error("order_find 的说明应点明 keyword 同时匹配单号 / 邮箱 / 姓名")
@@ -101,8 +92,7 @@ func TestQueryToolsMetadata(t *testing.T) {
 
 func TestQueryToolsRejectMissingRequiredArgs(t *testing.T) {
 	tools := mustQueryTools(t, &stubQuery{})
-	// 声明期就该拦下缺参：让请求走到 service 再报错，模型看到的是一个
-	// 说不清原因的业务错误（「缺少工程」与「这单不存在」对它是一样的)。
+
 	for _, tc := range []struct{ name, args string }{
 		{"order_find", `{}`},
 		{"order_find", `{"projectId":"p1","status":"not-a-status"}`},
@@ -133,7 +123,7 @@ func TestFindOrdersTextListsOrderNoAndScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("调用失败: %v", err)
 	}
-	// 入参必须原样透传（少传一个字段的表现是「筛了却没筛」）。
+
 	if stub.gotFind == nil || stub.gotFind.Keyword != "张三" || stub.gotFind.From != "2026-10-01" {
 		t.Fatalf("入参没有透传：%+v", stub.gotFind)
 	}
@@ -154,8 +144,7 @@ func TestFindOrdersTextExplainsEmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("调用失败: %v", err)
 	}
-	// 空结果也要说清「按什么条件没找到」——只说「没有」时用户不知道是条件写错了
-	// 还是真的没有，而这两件事的下一步完全不同。
+
 	if !strings.Contains(res.Text, "没有符合条件的订单") || !strings.Contains(res.Text, "不限下单日期") {
 		t.Errorf("空结果应带上实际生效的条件：\n%s", res.Text)
 	}
@@ -192,7 +181,7 @@ func TestOrderDetailTextCarriesItemsAndLogs(t *testing.T) {
 	for _, want := range []string{
 		"20261005001", "已发货", "TEO-50", "香水 / 50ml",
 		"广东省深圳市", "微信支付",
-		// 流水是「到哪了」的答案本体：只有头部状态答不出时间与操作人。
+
 		"待付款 → 已付款", "张三", "已付款 → 已发货", "李四", "管理员", "2026-10-05 14:00",
 	} {
 		if !strings.Contains(res.Text, want) {

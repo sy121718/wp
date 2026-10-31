@@ -1,17 +1,5 @@
 package producthttp
 
-// product_reader_injection_test.go — 「页面读模型由装配期注入」这条契约的守门判据。
-//
-// 背景（本批之前）：控制器持有的是 ProductService，读模型不在它的能力面上，于是 12 处处理器
-// 各自写 reader, ok := h.products.(productcontract.ProductPageReader) 兜底 —— 漏接在编译期
-// 与门禁里都看不见，只有运营点开那一页才得到 500。现在读模型是**构造实参**
-//（ProductPageHandle.reader）与 SetupProductRoutes 的**第二个返回值**：漏接 = 编译错误。
-//
-// 本文件钉三件事：① 构造函数第 2 个形参就是读模型（删掉 / 挪位 / 换成 ProductService 都变红）；
-// ② 装配链两端（接口面产出 → 页面面收下）的类型一致；③ 控制器源码里不再出现运行期断言。
-//
-// 判据口径：不用计数当判据 —— 第 ③ 条断的是「这段源码文本不存在」，出现即说明兜底路径回来了。
-
 import (
 	"os"
 	"path/filepath"
@@ -22,12 +10,10 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// readerIfaceType 读模型接口的反射类型（下面三处共用同一份，避免各写一遍 T 参数）。
 func readerIfaceType() reflect.Type {
 	return reflect.TypeOf((*productcontract.ProductPageReader)(nil)).Elem()
 }
 
-// TestPageHandleReaderIsConstructorRequired 读模型是构造函数的第 2 个形参，类型必须是读模型接口。
 func TestPageHandleReaderIsConstructorRequired(t *testing.T) {
 	ctor := reflect.TypeOf(NewProductPageHandle)
 	if ctor.NumIn() != 2 {
@@ -41,7 +27,6 @@ func TestPageHandleReaderIsConstructorRequired(t *testing.T) {
 	}
 }
 
-// TestSetupProductRoutesReturnsReader 接口面装配产出读模型，页面面装配把它收下（同一类型）。
 func TestSetupProductRoutesReturnsReader(t *testing.T) {
 	routes := reflect.TypeOf(SetupProductRoutes)
 	if routes.NumOut() != 3 {
@@ -65,10 +50,6 @@ func TestSetupProductRoutesReturnsReader(t *testing.T) {
 	}
 }
 
-// TestNoRuntimeReaderAssertionInControllers 控制器里不许再出现读模型的运行期断言。
-//
-// 出现即说明「装配漏接 → 运行期 500 兜底」这条路径回来了：那种漏接不编译报错、门禁也不红，
-// 只会在运营点开某一页时暴露。处理器改读 h.reader 才是唯一形态。
 func TestNoRuntimeReaderAssertionInControllers(t *testing.T) {
 	const forbidden = ".(productcontract.ProductPageReader)"
 	entries, err := os.ReadDir(".")

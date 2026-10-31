@@ -1,7 +1,3 @@
-// Package scoring 实现 SEO 评分引擎（纯函数、无 IO、表驱动）。
-//
-// 规则源：AGENTS.md（本地 rubric + Yoast 公开方法论 + RankMath + Lighthouse 印证）。
-// 输入由调用方从 Page Document AST + settings.seo 提取，本包只做计算。
 package scoring
 
 import (
@@ -10,21 +6,18 @@ import (
 	"unicode"
 )
 
-// Heading 标题结构项。
 type Heading struct {
-	Level int // 1..6
+	Level int
 	Text  string
 }
 
-// Image 图片项。
 type Image struct {
 	Src    string
 	Alt    string
 	SizeKB int
-	Kind   string // hero / content / screenshot / icon / thumb（空按 content）
+	Kind   string
 }
 
-// Input 评分输入。
 type Input struct {
 	Title             string
 	MetaDescription   string
@@ -42,26 +35,20 @@ type Input struct {
 	HasCanonical      bool
 	HasSchema         bool
 	IsHTTPS           bool
-	Locale            string // zh / en，空按 zh
-	// HasComparisonTable 正文里是否存在**结构化对比表**（富文本表格 / 矩阵）。
-	//
-	// 判据来自 seo 工作区的文章生产门禁（content-writer/references/quality-gate.md，
-	// 2026-09-29 版）：比较型 / 购买型意图下，「唯一价值资产」必须包含一张对比表或矩阵
-	// （不是规格堆砌），否则那一档不给分。信息型 / 定义型不要求 —— 它们的问题不是「选哪个」。
+	Locale            string
+
 	HasComparisonTable bool
 }
 
-// CheckResult 单项检查结果。
 type CheckResult struct {
 	Key     string
 	Score   int
 	Max     int
-	Skipped bool   // true = 不适用，不计入维度分母
-	Actual  string // 实测值描述
-	Target  string // 改进位置（settings.seo.x / node:type），前端点击跳转
+	Skipped bool
+	Actual  string
+	Target  string
 }
 
-// SectionResult 维度结果（侧栏一个圆点）。
 type SectionResult struct {
 	Key     string
 	Score   int
@@ -72,20 +59,14 @@ type SectionResult struct {
 	Checks  []CheckResult
 }
 
-// Result 评分结果。
 type Result struct {
 	Total int
 	Grade string
-	// Profile 本次评分使用的页型权重档案（nil = 默认权重）。
-	//
-	// 回显是文档的硬要求（AGENTS.md §5「调权必须在结果里回显本页型权重及理由」）：
-	// 只算分不回显的话，编辑者看到同一份内容在商品页比文章页高几分时无从解释，
-	// 只能怀疑评分器不稳 —— 而理由（Reason）本来就在 Profile 上，不传出去等于白写。
+
 	Profile  *Profile
 	Sections []SectionResult
 }
 
-// Score 计算总分与逐项结果。profile 为 nil 时使用默认权重。
 func Score(in *Input, profile *Profile) *Result {
 	if in == nil {
 		in = &Input{}
@@ -96,8 +77,7 @@ func Score(in *Input, profile *Profile) *Result {
 			weights[k] = v
 		}
 	}
-	// 权重预归一：profile 覆盖后的权重和不一定等于 1（GuideProfile 覆盖后是 1.05），
-	// 直接累加会让满分变成 105 分。先求和再逐项归一，保证任何 profile 下满分都是 100。
+
 	weightSum := 0.0
 	for _, sec := range allSections() {
 		w, ok := weights[sec.Key]
@@ -158,7 +138,6 @@ func Score(in *Input, profile *Profile) *Result {
 	return res
 }
 
-// defaultWeights 默认维度权重（rubric 权重卡）。
 func defaultWeights() map[string]float64 {
 	return map[string]float64{
 		"title": 0.15, "meta": 0.05, "headings": 0.10, "content": 0.25,
@@ -166,46 +145,34 @@ func defaultWeights() map[string]float64 {
 	}
 }
 
-// Profile 页型调权（rubric Weight Adjustments 表）。
 type Profile struct {
-	Type    string             // home / article / product / landing / local
-	Weights map[string]float64 // 覆盖默认权重
-	Reason  string             // 调权理由（结果里回显）
+	Type    string
+	Weights map[string]float64
+	Reason  string
 }
 
-// ProductProfile 商品页：提图片/技术，降内容深度。
 func ProductProfile() *Profile {
 	return &Profile{Type: "product", Weights: map[string]float64{
 		"images": 0.15, "tech": 0.15, "content": 0.15,
 	}, Reason: "商品页：图片与技术权重上调，长文深度权重下调"}
 }
 
-// LandingProfile 落地页：提技术/标题/元描述。
-//
-// 文档的落地页调权是「提高 tech / title / **meta**，降低 content 深度」
-// （AGENTS.md §5）。meta 这一项此前漏了：落地页的点击来自 SERP 摘要，
-// 元描述该拿的权重比文章页高，不是简单沿用 5% 的默认值。
 func LandingProfile() *Profile {
 	return &Profile{Type: "landing", Weights: map[string]float64{
 		"tech": 0.15, "title": 0.20, "meta": 0.10, "content": 0.15,
 	}, Reason: "落地页：技术与标题/元描述权重上调，内容深度下调"}
 }
 
-// GuideProfile 长文指南：提内容/关键词/链接。
 func GuideProfile() *Profile {
 	return &Profile{Type: "guide", Weights: map[string]float64{
 		"content": 0.30, "keywords": 0.18, "links": 0.12, "images": 0.05,
 	}, Reason: "长文指南：内容/关键词/链接权重上调，图片权重下调"}
 }
 
-// ---------- 文本统计辅助（首版：CJK 按字符、英文按空格切词） ----------
-
-// isCJK 是否中文语境（影响句长/段长阈值）。
 func isCJK(locale string) bool {
 	return locale == "" || strings.HasPrefix(strings.ToLower(locale), "zh")
 }
 
-// countKeyword 统计关键词非重叠出现次数（大小写不敏感）。
 func countKeyword(text, kw string) int {
 	if kw == "" || text == "" {
 		return 0
@@ -225,7 +192,6 @@ func countKeyword(text, kw string) int {
 	return count
 }
 
-// keywordDensity 关键词密度（百分比）。CJK 以字符数、英文以词数近似统计总量。
 func keywordDensity(in *Input) float64 {
 	if in.FocusKeyword == "" {
 		return 0
@@ -250,10 +216,8 @@ func keywordDensity(in *Input) float64 {
 	return float64(hits*unit) / float64(total) * 100
 }
 
-// fmtPct 百分比格式化（一位小数）。
 func fmtPct(v float64) string { return fmt.Sprintf("%.1f%%", v) }
 
-// displayWidth 估算 SERP 展示宽度（与 seo.DisplayWidth 同口径，避免 scoring→seo 循环依赖）。
 func displayWidth(s string) int {
 	w := 0
 	for _, r := range s {
@@ -265,7 +229,7 @@ func displayWidth(s string) int {
 			w += 2
 			continue
 		}
-		// 其它非 ASCII 按宽字符估算（与 seo.DisplayWidth 近似）。
+
 		if r > 0x00FF {
 			w += 2
 			continue

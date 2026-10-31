@@ -1,28 +1,5 @@
 package orderservice
 
-// 客户能做的只有三件事：提交申请、撤销自己**还没被审核**的申请、查自己的申请。
-// 三件事都按 userID 收口：访客入口写入的 UserID 是身份的来源，这里**再核一次订单归属** ——
-// 调用方写错了、被绕过了，这一层仍然拦得住。（安全边界不靠某一层独守。）
-
-// 唯一的强顺序：**先入库、后退款**。反过来的失败模式是「钱退了、货没回来」，
-// 而这正是退货流程最容易被薅的地方 —— 所以收货把入库放在退款之前，
-// 且入库失败时直接返回，绝不进退款。
-//
-// 两段式（批次4-A 收口；跨模块库存变动走事务透传）：
-//   ① 门闩 + 入库 + 逐行登记入库数量，**一个事务**：approved → received 只有跨过这一步的
-//      那一次调用会执行入库（重复点击 / 网络重试 / 并发点两次都只有一个能通过 ——
-//      库存的 ChangeStock 没有幂等键，这道门闩是唯一的护栏）；库存句柄经 ChangeStockTx
-//      传进同一事务，任一步失败整体回滚 —— 状态不会停在 received 而货没入库，
-//      因此不再需要「失败把状态退回 approved」的补偿（rollbackReceive 已删）。
-//      前置还要校验**订单**状态（BIZ-04）：订单已取消 / 已退款时货早已归还过，这里拒绝收货。
-//   ② 退款 + 置 completed，**同一个事务**（BIZ-06）：原先两者各一个事务，退款成功而收尾
-//      失败时退货单永远停在 received（重试补退款必报「已退款」）。全额退货走 refundOrderTx
-//      把订单转 refunded；部分退货只记流水号，订单状态不动 —— 还有没退的货，
-//      把整单标成已退款会让财务对不上账。
-//
-// 「全额」的判据是**已实际收货入库**的数量（BIZ-01），不是「已申请」：
-// 在途申请还没回来，算进去会让只收到一件的订单提前整单退款。
-
 import (
 	"context"
 	"crypto/rand"
@@ -42,29 +19,17 @@ import (
 )
 
 const (
-	// maxReturnItems 单张申请单的明细行数上限（与订单项上限同量级）。
 	maxReturnItems = 100
-	// maxReturnQuantity 单行退货数量上限（与下单的数量上限同口径）。
+
 	maxReturnQuantity = 100000
 )
 
-// returnableOrderStatuses 允许申请退货的订单状态。
-//
-// pending（还没付款）不在其中：没付钱的单没有可退的钱；
-// cancelled 也不在：货还没出去，走「取消」即可（那条路径会直接归还库存）；
-// refunded 同理 —— 已经退过款的单不能再退第二次。
 var returnableOrderStatuses = map[string]bool{
 	ordermodel.OrderStatusPaid:      true,
 	ordermodel.OrderStatusShipped:   true,
 	ordermodel.OrderStatusCompleted: true,
 }
 
-// 退货状态 → 展示文案的映射**不在这里**。
-//
-// 后台展示使用 orderenums.ReturnStatusLabel；访客 JSON 保留原始状态，
-// 构建期静态外壳与前端负责显示，服务不把状态译文塞进事实 DTO。
-
-// RequestReturn 客户提交退货申请。
 func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.VisitorReturnResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -94,7 +59,6 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 
-	// 幂等：同一个 requestID 只落一张申请单（客户在网络不稳时点两次是常态）。
 	if reqID := strings.TrimSpace(req.RequestID); reqID != "" {
 		existing, gerr := s.returns.GetByRequestID(ctx, projectID, reqID)
 		if gerr != nil {
@@ -120,11 +84,10 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		return nil, oerr
 	}
 	if order == nil || order.ProjectID != projectID {
-		// 跨工程与不存在返回同一句话：区分开来就是一个订单 id 探测器。
+
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
-	// 归属：登录访客只能退自己的单。userID 为 0 表示没带可信访客身份，
-	// 一律拒绝 —— 「不传即放行」是这里最危险的默认值。
+
 	if order.UserID == nil || *order.UserID != req.UserID {
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
@@ -143,7 +106,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	for _, it := range orderItems {
 		byID[it.ID] = it
 	}
-	// 可退数量与退款额在事务内、订单行锁下重算，避免并发超退。
+
 	returnNo, nerr := s.newReturnNo(ctx, projectID)
 	if nerr != nil {
 		return nil, nerr
@@ -240,12 +203,11 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	return toVisitorReturnResp(head, items), nil
 }
 
-// CancelReturn 客户撤销自己尚未审核的申请。
 func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelReq) (err error) {
 	if req == nil || req.ReturnID == 0 || req.UserID == 0 {
 		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（DB-009 第四批）：访客撤销只给退货单 id（归属校验在下面用实体字段做）。
+
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
 	if perr != nil {
 		return perr
@@ -260,11 +222,11 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 			return lerr
 		}
 		if e == nil || e.UserID == nil || *e.UserID != req.UserID {
-			// 不属于自己的申请与不存在的申请返回同一句话。
+
 			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		if e.Status != ordermodel.ReturnStatusRequested {
-			// 已同意的申请不能自己撤：仓库可能已经在收货了。
+
 			return orderenums.Err(orderenums.ErrReturnNotCancellable)
 		}
 		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
@@ -275,7 +237,6 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 	})
 }
 
-// ListVisitorReturns 访客查自己的退货申请。
 func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.VisitorReturnListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -315,13 +276,6 @@ func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorR
 	return res, nil
 }
 
-// returnableByItem 各订单项**当前可退数量**（购买数量 − 已占用）。
-//
-// 「已占用」= 所有非终态申请（requested / approved / received / completed）里该订单项的数量之和。
-// 拒绝与撤销不占额度 —— 客户被拒之后当然可以改个理由重新申请。
-//
-// 算出来是**快照**：真正落库那一刻的并发竞争由「申请单落在同一张表、聚合随时可重算」兜住
-// （两笔并发申请最多各自通过一次校验，但累计值仍在可退范围内 —— 见 return_flow_test 的并发用例）。
 func (s *Service) returnableByItem(ctx context.Context, projectID string, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
 	ids, err := s.returns.IDsByOrder(ctx, projectID, orderID, ordermodel.ReturnActiveStatuses)
 	if err != nil {
@@ -338,7 +292,6 @@ func (s *Service) returnableByItem(ctx context.Context, projectID string, orderI
 	return returnableFromSums(items, sums), nil
 }
 
-// returnableByItemTx 事务内计算可退数量（与订单行锁配合）。
 func (s *Service) returnableByItemTx(ctx context.Context, tx *gorm.DB, projectID string, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
 	ids, err := s.returns.IDsByOrderTx(ctx, tx, projectID, orderID, ordermodel.ReturnActiveStatuses)
 	if err != nil {
@@ -367,7 +320,6 @@ func returnableFromSums(items []*ordermodel.OrderItemEntity, sums map[uint64]int
 	return out
 }
 
-// newReturnNo 生成退货单号：RTR + 日期 + 随机后缀（唯一约束兜底，撞了重试）。
 func (s *Service) newReturnNo(ctx context.Context, projectID string) (no string, err error) {
 	const attempts = 5
 	buf := make([]byte, 4)
@@ -388,7 +340,6 @@ func (s *Service) newReturnNo(ctx context.Context, projectID string) (no string,
 	return "", orderenums.Err(orderenums.ErrOrderNoTaken)
 }
 
-// idsOfReturns 取退货单 id 列表（批量取明细用）。
 func idsOfReturns(list []*ordermodel.ReturnEntity) []uint64 {
 	ids := make([]uint64, 0, len(list))
 	for _, e := range list {
@@ -397,7 +348,6 @@ func idsOfReturns(list []*ordermodel.ReturnEntity) []uint64 {
 	return ids
 }
 
-// groupReturnItems 明细按退货单分组（避免逐单查库）。
 func groupReturnItems(items []*ordermodel.ReturnItemEntity) map[uint64][]*ordermodel.ReturnItemEntity {
 	out := make(map[uint64][]*ordermodel.ReturnItemEntity)
 	for _, it := range items {
@@ -406,14 +356,6 @@ func groupReturnItems(items []*ordermodel.ReturnItemEntity) map[uint64][]*orderm
 	return out
 }
 
-// toReturnResp 实体 → 视图（金额与状态文案都在这里算好，模板零算术）。
-//
-// StatusLabel 是**留给出口填的**展示文案（状态词条 admin.returns.status.* 已中英成对，
-// 见本文件上方那段说明）。
-//
-// RefundLabel 仍由本层产出：金额单位（「元」）是另一条独立的收口线，牵涉优惠码折扣、
-// 订单金额等成组字段，不在状态标签这一批里 —— 与其在这里单独把它改成 key 让同一个
-// 结构体的两个字段形态不一致，不如让它跟那条线一起改。
 func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEntity, returnable map[uint64]int) *orderdto.ReturnResp {
 	if e == nil {
 		return nil
@@ -454,10 +396,7 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 		}
 		res.Items = append(res.Items, line)
 	}
-	// 待入库行数：还有几行没点收（received_quantity < quantity）。
-	//
-	// 仓库关心的是收货台上的待办条数，不是件数差额 —— 一件一批的到货会被拆成多次点收。
-	// 计数在这里算好，模板不做减法（template_logic_test.go）。
+
 	for _, it := range items {
 		if it.ReceivedQuantity < it.Quantity {
 			res.PendingInboundLines++
@@ -466,19 +405,6 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 	return res
 }
 
-// attachReturnWarehouses 给退货单补「原发货仓」这一列（仓库视角，B6-b）。
-//
-// 口径分两级，先查事实、再查计划：
-//
-//  1. 已发过货的行 → 发货明细上**实际从哪个仓发出去的**（order_shipment_items.warehouse_id）；
-//  2. 还没发过货的行 → 下单时固化的发货仓（order_items.warehouse_id，迁移 628）。
-//
-// 两级都不回答的（历史行 + 没发过货）留空串，页面显示「—」：那确实没有这个事实，
-// 编一个默认仓出来就是伪造历史。
-//
-// **一张退货单只给一个仓名**（取第一行有答案的）：退货单绝大多数来自同一个仓，
-// 跨仓退货是少数；真跨仓时这一列指向其中一行，逐仓拆分要看明细 ——
-// 把「等 N 个仓」这类分档塞进 service 只会让这一列既不准又难读。
 func (s *Service) attachReturnWarehouses(ctx context.Context, projectID string, resps []*orderdto.ReturnResp, itemsByReturn map[uint64][]*ordermodel.ReturnItemEntity) {
 	if len(resps) == 0 {
 		return
@@ -492,14 +418,14 @@ func (s *Service) attachReturnWarehouses(ctx context.Context, projectID string, 
 	if len(itemIDs) == 0 {
 		return
 	}
-	// ① 发货明细上的实际发货仓。
+
 	byShipment := map[uint64]string{}
 	if s.shipments != nil {
 		if got, err := s.shipments.WarehouseByOrderItem(ctx, itemIDs); err == nil {
 			byShipment = got
 		}
 	}
-	// ② 订单行上固化的发货仓（只补 ① 没答出来的那些，省一次全量读）。
+
 	missing := make([]uint64, 0, len(itemIDs))
 	for _, id := range itemIDs {
 		if byShipment[id] == "" {
@@ -528,17 +454,15 @@ func (s *Service) attachReturnWarehouses(ctx context.Context, projectID string, 
 	}
 }
 
-// yuanText 分 → 「x.xx 元」（与订单其它展示同口径）。
 func yuanText(cents int64) string {
 	return centsToYuanLabel(cents) + " 元"
 }
 
-// ReturnableOfOrder 该订单各订单项的当前可退数量（访客侧）。
 func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.ReturnableResp, err error) {
 	if req == nil || req.OrderID == 0 || req.UserID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 与访客查详情同一套归属校验：别人的单在这里也同样表现为「订单不存在」。
+
 	order, oerr := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
 	if oerr != nil {
 		return nil, oerr
@@ -566,7 +490,6 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 	return res, nil
 }
 
-// ListReturns 后台退货申请列表（含各状态计数）。
 func (s *Service) ListReturns(ctx context.Context, req *orderdto.ReturnListReq) (res *orderdto.ReturnListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -597,18 +520,16 @@ func (s *Service) ListReturns(ctx context.Context, req *orderdto.ReturnListReq) 
 	for _, e := range list {
 		res.List = append(res.List, toReturnResp(e, byReturn[e.ID], nil))
 	}
-	// 仓库视角的两列（B6-b）：原发货仓 + 待入库行数。前者要额外查两级仓事实，
-	// 后者在 toReturnResp 里已按明细算好。
+
 	s.attachReturnWarehouses(ctx, req.ProjectID, res.List, byReturn)
 	return res, nil
 }
 
-// GetReturn 退货单详情（含订单摘要与逐行可退数量）。
 func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto.ReturnDetailResp, err error) {
 	if returnID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（DB-009 第四批）：详情入口只给退货单 id，order_returns 带 FORCE 策略。
+
 	projectID, perr := s.locateReturnProject(ctx, returnID)
 	if perr != nil {
 		return nil, perr
@@ -641,20 +562,17 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 		}
 	}
 	head := toReturnResp(e, items, returnable)
-	// 详情页也显示这一列（审核时先要知道货回哪个仓）。行集合就是本单明细。
+
 	s.attachReturnWarehouses(ctx, e.ProjectID, []*orderdto.ReturnResp{head},
 		map[uint64][]*ordermodel.ReturnItemEntity{e.ID: items})
 	return &orderdto.ReturnDetailResp{Return: head, Order: orderResp}, nil
 }
 
-// ApproveReturn 同意退货申请（AutoReceive=true 时一步完成入库 + 退款）。
 func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（DB-009 第五批）：审核入口只给退货单 id。定位必须在事务**外** ——
-	// rls.InProjectScope 会另开事务、另取连接，放进已开的事务里既看不到未提交数据，
-	// 又可能自锁（见 pkg/rls.ScopeTx 的说明）。
+
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
 	if perr != nil {
 		return nil, perr
@@ -666,12 +584,11 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 	if err != nil {
 		return nil, err
 	}
-	// 单条入口的返回体与改造前一致：AutoReceive 时连入库一起做完。
+
 	if !req.AutoReceive {
 		return s.returnRespOf(ctx, req.ReturnID)
 	}
-	// 一步到底：现实里货往往早就到了（客户先联系客服、客服再走系统）。
-	// 这里不再开事务嵌套 —— ReceiveReturn 自带三段式与幂等。
+
 	return s.ReceiveReturn(ctx, &orderdto.ReturnReceiveReq{
 		ReturnID:      req.ReturnID,
 		WarehouseID:   req.WarehouseID,
@@ -683,7 +600,6 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 	})
 }
 
-// approveReturnTx 同意退货的事务体（供单条与批量共用，B06）。
 func (s *Service) approveReturnTx(ctx context.Context, tx *gorm.DB, projectID string,
 	req *orderdto.ReturnReviewReq, now time.Time) error {
 	{
@@ -711,13 +627,6 @@ func (s *Service) approveReturnTx(ctx context.Context, tx *gorm.DB, projectID st
 	}
 }
 
-// ApproveReturnBatch 批量同意退货：**整批同一事务**（B06）。
-//
-// 批量一律不自动入库（AutoReceive=false）：批档白名单里也没有那个键，
-// 两个入口的语义必须一致。
-//
-// 工程定位在**事务外**逐条做（与单条同因：rls.InProjectScope 会另开事务、
-// 另取连接，放进已开的事务里既看不到未提交数据，又可能自锁）。
 func (s *Service) ApproveReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error) {
 	type located struct {
 		projectID string
@@ -746,17 +655,16 @@ func (s *Service) ApproveReturnBatch(ctx context.Context, reqs []*orderdto.Retur
 	})
 }
 
-// RejectReturn 拒绝退货申请（必须给理由）。
 func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	remark := strings.TrimSpace(req.Remark)
 	if remark == "" {
-		// 没有理由的拒绝，客户只会再申请一次 —— 那对双方都是浪费。
+
 		return nil, orderenums.Err(orderenums.ErrReturnRejectReasonRequired)
 	}
-	// 定位跳（DB-009 第五批）：同 ApproveReturn —— 定位在事务外，作用域设在事务内。
+
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
 	if perr != nil {
 		return nil, perr
@@ -771,7 +679,6 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 	return s.returnRespOf(ctx, req.ReturnID)
 }
 
-// rejectReturnTx 拒绝退货的事务体（供单条与批量共用，B06）。
 func (s *Service) rejectReturnTx(ctx context.Context, tx *gorm.DB, projectID string,
 	req *orderdto.ReturnReviewReq, remark string, now time.Time) error {
 	{
@@ -799,7 +706,6 @@ func (s *Service) rejectReturnTx(ctx context.Context, tx *gorm.DB, projectID str
 	}
 }
 
-// RejectReturnBatch 批量拒绝退货：**整批同一事务**（B06）。
 func (s *Service) RejectReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error) {
 	type located struct {
 		projectID string
@@ -813,7 +719,7 @@ func (s *Service) RejectReturnBatch(ctx context.Context, reqs []*orderdto.Return
 		}
 		remark := strings.TrimSpace(req.Remark)
 		if remark == "" {
-			// 没有理由的拒绝，客户只会再申请一次 —— 那对双方都是浪费。
+
 			return orderenums.Err(orderenums.ErrReturnRejectReasonRequired)
 		}
 		projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
@@ -833,35 +739,25 @@ func (s *Service) RejectReturnBatch(ctx context.Context, reqs []*orderdto.Return
 	})
 }
 
-// ReceiveReturn 确认收货：入库 + 退款。
 func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceiveReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（DB-009 第四批）：入库裁决只给退货单 id；定位在事务**外** ——
-	// rls.InProjectScope 会另开事务、另取连接，放进已开的事务里既看不到未提交数据，
-	// 又可能自锁（见 pkg/rls.ScopeTx 的说明）。
+
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
 	if perr != nil {
 		return nil, perr
 	}
-	// ① 门闩 + 入库 + 明细登记：一个事务（失败整体回滚，不留半截收货状态）。
+
 	rt, admitted, aerr := s.admitReceive(ctx, projectID, req.ReturnID, req.WarehouseID, req.Remark)
 	if aerr != nil {
 		return nil, aerr
 	}
 	if !admitted && rt.Status == ordermodel.ReturnStatusCompleted {
-		// 已完成：幂等返回，不重复做任何事（重复点击与通道重发都会走到这里）。
+
 		return s.returnRespOf(ctx, rt.ID)
 	}
 
-	// ② 退款 + ④ 收尾：**同一个事务**（BIZ-06）。
-	//
-	// 原先两者各开一个事务：退款提交成功、置 completed 的写入失败（或进程中断）时，
-	// 退货单停在 received，而重试路径补退款必报「已退款」—— 单子永远收不了尾。
-	// 合成一个事务之后，失败就是整体回滚（退货单仍是 received、退款也没发生），
-	// 重试是一条干净路径；修复前中断留下的存量单（订单已 refunded、退货单 received）
-	// 由 refundReturnTx 的「退款已完成、只补收尾」分支接住。
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
 		e, lerr := s.returns.LockByIDTx(ctx, tx, rt.ProjectID, rt.ID)
@@ -891,12 +787,7 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 		if uerr := s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 			return uerr
 		}
-		// 履约轴（迁移 652）：退货单结案 = 退货完成。
-		//
-		// 退款刚在 refundReturnTx 里把履约写成 refunded（全额退款会推进订单状态），
-		// 这里覆盖成 return_done：退款只是钱的终态，退货单走完才算货这条线收尾。
-		// 部分退货同样落 return_done —— 它表示「这次退货处理完了」，
-		// 剩余未退数量在退货单明细里，不在订单的单个枚举里。
+
 		return s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.OrderID, map[string]any{
 			"fulfillment_status": ordermodel.FulfillmentReturnDone,
 		})
@@ -907,15 +798,6 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 	return s.returnRespOf(ctx, rt.ID)
 }
 
-// admitReceive 门闩 + 入库 + 明细登记（**一个事务**）：把 approved 推进到 received，
-// 并在同一事务里完成库存变动与逐行入库数量登记，回答「本次是否由我负责入库」。
-//
-// 返回的 admitted 为真表示**只有这次调用**会执行入库；already 状态（received / completed）
-// 返回 false，调用方据此跳过入库、只补退款。
-//
-// 三处写入必须同事务（状态 / 库存真源 / 退货明细的 received_quantity）：原先库存变动在
-// 事务之外，失败只能靠 rollbackReceive 把状态退回 approved 并留痕 —— 而补偿本身失败时，
-// 下一个操作员会以为货已经回来了（这是本次收口要消灭的半截状态）。
 func (s *Service) admitReceive(ctx context.Context, projectID string, returnID uint64, warehouseID, remark string) (
 	rt *ordermodel.ReturnEntity, admitted bool, err error) {
 	now := time.Now()
@@ -933,16 +815,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 		rt = e
 		switch e.Status {
 		case ordermodel.ReturnStatusApproved:
-			// 前置校验**订单**状态（BIZ-04）：门闩只看退货单是不够的。
-			//
-			// 订单在申请之后被取消（库存已全额归还）或被退款时，货其实已经在那边回来过了 ——
-			// 这里再入库就是同一批货归还两次；而紧接着的退款必然失败（订单已是终态），
-			// 退货单于是停在 received：货加了、钱没退、单子卡死，只能人工处理。
-			// 拒绝得早不如拒绝得准：这一次调用什么都不做，退货单留在 approved。
-			//
-			// 加锁读订单（不是普通读）：它与「取消订单」是两条会同时改库存的路径，
-			// 必须串行化。加锁顺序恒为**退货单 → 订单**（本函数先锁退货单，再锁订单；
-			// CancelOrder 只锁订单），不会形成环。
+
 			order, oerr := s.orders.LockByIDTx(ctx, tx, e.ProjectID, e.OrderID)
 			if oerr != nil {
 				return oerr
@@ -965,8 +838,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 			if uerr := s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 				return uerr
 			}
-			// 明细用 tx 读：非 Tx 读取走另一条连接，读到的是事务外的快照，
-			// 且缺工程作用域时在非超级角色下静默返回空集。
+
 			items, ierr := s.returns.ItemsByReturnIDTx(ctx, tx, e.ID)
 			if ierr != nil {
 				return ierr
@@ -974,23 +846,18 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 			if len(items) == 0 {
 				return orderenums.Err(orderenums.ErrReturnItemsRequired)
 			}
-			// 入库（同库跨模块，句柄透传）：失败 → 整个事务回滚，状态不会停在 received。
+
 			if serr := s.stockInReturnTx(ctx, tx, e, items, warehouseID); serr != nil {
 				return serr
 			}
-			// 逐行登记实际入库数量（首版一次收齐）：与库存变动同一事务，
-			// 不会出现「库存加了、退货明细没记」。
+
 			for _, it := range items {
 				if uerr := s.returns.UpdateItemReceivedTx(ctx, tx, it.ID, it.Quantity,
 					it.UnitPrice*int64(it.Quantity)); uerr != nil {
 					return uerr
 				}
 			}
-			// 履约轴（迁移 652）：货真的回到仓库了 —— 这是 status 表达不了的第二个事实
-			//（订单可能仍是 completed / shipped，钱还没退）。与入库同事务：
-			// 要么货和状态一起落，要么都不落。
-			//
-			// 不写 update_time：这是货的流水，不是订单内容的修改。
+
 			if uerr := s.orders.UpdateFieldsTx(ctx, tx, order.ProjectID, order.ID, map[string]any{
 				"fulfillment_status": ordermodel.FulfillmentReturned,
 			}); uerr != nil {
@@ -998,7 +865,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 			}
 			return nil
 		case ordermodel.ReturnStatusReceived, ordermodel.ReturnStatusCompleted:
-			// 已经越过门闩：这批货的入库已经授过权（发生过或正在进行），本次不重复入库。
+
 			return nil
 		default:
 			return orderenums.Err(orderenums.ErrReturnNotReceivable)
@@ -1010,10 +877,6 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 	return rt, admitted, nil
 }
 
-// stockInReturnTx 退货入库（走库存变动契约的**事务透传**版，原因字典 return_in）。
-//
-// 入库失败基本都是库存服务不可用（它不是「不足」——入库不会被库存挡住），统一映射成
-// ErrStockUnavailable；事务由调用方回滚，所以这里不需要任何补偿动作。
 func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermodel.ReturnEntity,
 	items []*ordermodel.ReturnItemEntity, warehouseID string) error {
 	wh := strings.TrimSpace(warehouseID)
@@ -1027,23 +890,13 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 			WarehouseID: wh,
 		})
 	}
-	// 两段式（迁移 624）下「退货入库」有两条不同的账，先判这一单发没发货：
-	//
-	//	· 已发货 → 货真的从仓库出去过，加回 quantity（**这条才是入库**），
-	//	  同时把那一批的预占释放掉（发货时已释放过一次，这里是幂等的 0 操作）；
-	//	· 未发货 → 货从来没出库，加回 quantity 会凭空多货（实测：10 件货退 2 件之后变成 12）。
-	//	  此时「退货」的实质是释放预占 —— 与取消同一条账。
-	//
-	// 判据是**发货单存在**而不是订单状态：部分发货的单状态可能还是 paid，
-	// 但已经有一部分货出去了，那部分要按「入库」处理。
+
 	shipped, serr := s.orderShippedTx(ctx, tx, rt.OrderID)
 	if serr != nil {
 		return serr
 	}
 	if !shipped {
-		// 释放按**订单行上固化的发货仓**，而不是退货单选的入库仓：
-		// 预占是 Occupation 在下单那一刻的仓，退货入到哪个仓是另一件事 ——
-		// 用退货仓去释放会锁到一行「没有预占」的库存行，释放静默失败。
+
 		if rerr := s.stock.ReleaseStockTx(ctx, tx, &ordercontract.StockReservation{
 			ProjectID:  rt.ProjectID,
 			SourceType: "order_return",
@@ -1051,8 +904,7 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 			Remark:     "未发货退货释放预占，订单 " + rt.OrderNo,
 			Lines:      s.returnReservationLinesTx(ctx, tx, rt.OrderID, items),
 		}); rerr != nil && !strings.Contains(rerr.Error(), "ErrStockNotFound") {
-			// 释放失败（那一行已无预占 / 已被取消释放）不是错误：退货这个事实更重要。
-			// 「行不存在」也不算错：无仓工程的订单从来没预占过。
+
 		}
 		return nil
 	}
@@ -1066,12 +918,7 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 	}); err != nil {
 		return orderenums.Err(orderenums.ErrStockUnavailable)
 	}
-	// 退货入库同时**释放这批货的预占**（迁移 624 的两段式）：货已经回到仓库，
-	// 就不该再为那张订单占着可售量 —— 不释放的话，取消 / 退款时再释放一次
-	// 就会把预占打到负数（库 DDL 的 CHECK 会拒），而那是一条没人看得懂的错误。
-	//
-	// 失败**不阻断入库**：这里的预占可能已经被上次取消释放过（幂等重放），
-	// 释放 0 件不是错误 —— 入库这个事实比账目微调重要得多。
+
 	_ = s.stock.ReleaseStockTx(ctx, tx, &ordercontract.StockReservation{
 		ProjectID:  rt.ProjectID,
 		SourceType: "order_return",
@@ -1082,12 +929,6 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 	return nil
 }
 
-// returnReservationLinesTx 这次退货要释放的预占行：**退货数量**、**订单行固化的发货仓**。
-//
-// 两个要点：
-//   - 数量取退货单的件数（不是整单数量）：部分退货只该释放退回来的那几件；
-//   - 仓取订单行的 warehouse_id（不是退货单选的入库仓）：预占是下单那一刻记在
-//     发货仓上的 —— 拿退货仓去释放会锁到一行「没有预占」的库存行，静默失败。
 func (s *Service) returnReservationLinesTx(ctx context.Context, tx *gorm.DB, orderID uint64,
 	returnItems []*ordermodel.ReturnItemEntity) []ordercontract.StockLine {
 	items, err := s.items.ListByOrderIDTx(ctx, tx, orderID)
@@ -1112,14 +953,9 @@ func (s *Service) returnReservationLinesTx(ctx context.Context, tx *gorm.DB, ord
 	return out
 }
 
-// orderShippedTx 该订单发过货没有（任意一张发货单存在即为真）。
-//
-// 与 hasShipment 同判据（发货单存在，不是订单状态）：部分发货的单状态可能仍是 paid，
-// 但货已经出去了一部分 —— 退货时那部分要按「入库」处理，未发的那部分按「释放预占」。
 func (s *Service) orderShippedTx(ctx context.Context, tx *gorm.DB, orderID uint64) (bool, error) {
 	if s.shipments == nil {
-		// 未装配发货单仓储（纯退货单测路径）：按「已发货」处理 ——
-		// 那是迁移 624 之前的唯一语义，也是退货入库最保守的那一支（真的把货加回去）。
+
 		return true, nil
 	}
 	list, err := s.shipments.ListByOrderTx(ctx, tx, orderID)
@@ -1129,13 +965,6 @@ func (s *Service) orderShippedTx(ctx context.Context, tx *gorm.DB, orderID uint6
 	return len(list) > 0, nil
 }
 
-// receivedByItemTx 该订单各订单项**已经实际收货入库**的数量 —— BIZ-01 / 02 / 04 / 07 共用的那本账。
-//
-// 传订单项而不是传 id 列表：调用点手上永远已经有 items（要么刚读过、要么正要归还它们），
-// 让调用方各自去拼 id 列表，就是在三个地方重复同一段 5 行代码。
-//
-// 必须用 tx 读：这份账决定「还要归还多少」「是不是全退」—— 挂在 ctx 上会走另一条连接、
-// 读到事务外的快照，并发收货时会把「还有没退的货」判成全退。
 func (s *Service) receivedByItemTx(ctx context.Context, tx *gorm.DB, projectID string, orderID uint64,
 	items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
 	itemIDs := make([]uint64, 0, len(items))
@@ -1145,12 +974,6 @@ func (s *Service) receivedByItemTx(ctx context.Context, tx *gorm.DB, projectID s
 	return s.returns.SumReceivedQuantityByOrderItemsTx(ctx, tx, projectID, orderID, itemIDs)
 }
 
-// restockLinesFor 把「还没归还的」订单项拼成库存归还行。
-//
-// 归还量 = 订购数量 − **已实际收货入库**的数量（BIZ-02）：部分退货已经把那部分货加回仓库了，
-// 取消（或未发货退款）再按原始数量归还一次就是凭空多出库存 —— 净多一件，且不报错。
-//
-// 零数量的行直接丢掉：库存变动不接受「归还 0 件」，而那样的调用本身也没有业务含义。
 func restockLinesFor(items []*ordermodel.OrderItemEntity, received map[uint64]int) []ordercontract.StockLine {
 	lines := make([]ordercontract.StockLine, 0, len(items))
 	for _, it := range items {
@@ -1168,17 +991,6 @@ func restockLinesFor(items []*ordermodel.OrderItemEntity, received map[uint64]in
 	return lines
 }
 
-// refundReturnTx 事务内退款（句柄由调用方给，BIZ-06）：全额 → 把订单推进到 refunded；
-// 部分 → 订单状态不动，只在流转链上记一条说明（还有没退的货）。
-//
-// 读取口径（审计中优先项）：明细与退货账一律**用本事务的 tx 读**（…Tx 方法）——
-// 原先这两个读挂在 ctx 上，走的是另一条连接、读事务外的快照，且缺工程作用域
-// （order_items / order_return_items 都带 FORCE 策略）。全额 / 部分的判定建立在这份
-// 快照上，并发退货时会把「还有没退的货」判成全退。
-//
-// 「全额」的判据是**已实际收货入库**的数量而不是「已申请」（BIZ-01）：把在途申请算成已退，
-// 会出现「只收到 A 就把整单判成已退款」，B 的申请之后收货时退款必报「已退款」、
-// 退货单永久停在 received。
 func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermodel.ReturnEntity,
 	transactionID, operatorType string, operatorID uint64, operatorName string) error {
 	order, lerr := s.orders.LockByIDTx(ctx, tx, rt.ProjectID, rt.OrderID)
@@ -1205,8 +1017,7 @@ func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermode
 	}
 
 	if !full {
-		// 部分退货：订单状态不动（还有没退的货），但流转链上要留一条 ——
-		// 财务对账看的是「这单退了多少钱」，而不是只看状态列。
+
 		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
 			OrderID:      order.ID,
 			FromStatus:   order.Status,
@@ -1220,12 +1031,10 @@ func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermode
 	}
 
 	if order.Status == ordermodel.OrderStatusRefunded {
-		// 退款已经完成、只差收尾 —— 修复前「退款成功但置 completed 失败」留下的存量单。
-		// 不重复退款、也不报「已退款」：调用方接着把 completed 补上就把这单救回来了。
+
 		return nil
 	}
-	// 全额：退款。restock=false —— 货已经由本单的入库步骤归还过（BIZ-07 的「未发货也归还」
-	// 是给后台直接退款那条路径的，退货这里再归一次就是把同一批货加两遍）。
+
 	return s.refundOrderTx(ctx, tx, rt.ProjectID, &orderdto.RefundOrderReq{
 		OrderID:       rt.OrderID,
 		Reason:        "退货入库后退款（" + rt.ReturnNo + "）",
@@ -1236,7 +1045,6 @@ func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermode
 	}, false)
 }
 
-// returnRespOf 取一张退货单的视图（含明细）。
 func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.ReturnResp, error) {
 	projectID, perr := s.locateReturnProject(ctx, returnID)
 	if perr != nil {
@@ -1256,7 +1064,6 @@ func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.
 	return toReturnResp(e, items, nil), nil
 }
 
-// checkVisitorReturnReplay 幂等回执仍须属于本访客与本订单，不能用请求键探测别人的申请。
 func checkVisitorReturnReplay(existing *ordermodel.ReturnEntity, req *orderdto.ReturnRequestReq) error {
 	if existing.UserID == nil || *existing.UserID != req.UserID || existing.OrderID != req.OrderID {
 		return orderenums.Err(orderenums.ErrOrderNotFound)

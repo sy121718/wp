@@ -1,10 +1,3 @@
-// masterdata_handle.go — 主数据变更记录 HTTP 入口（issue #19）。
-//
-// 与其它模块同形：GET + Query 参数（无 RESTful 路径参数）、pkg/response 出参、
-// 消息取模块 enums。本层只做绑定与转发，校验与查询在 service。
-//
-// 只读模块：没有任何写接口 —— 变更记录由业务模块在写操作里经契约追加，
-// 对外不提供「手工补一条记录」的口子（审计的入口越少越可信）。
 package masterdatahttp
 
 import (
@@ -19,15 +12,12 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle 变更记录 HTTP 处理器。
 type Handle struct {
 	svc masterdatacontract.MasterDataService
 }
 
-// NewHandle 构造。
 func NewHandle(svc masterdatacontract.MasterDataService) *Handle { return &Handle{svc: svc} }
 
-// ListChanges 按条件查字段级变更（实体类型 / 实体 id / 字段 / 动作 / 操作人 / 时间窗）。
 func (h *Handle) ListChanges(c *gin.Context) {
 	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
 	if !ok {
@@ -41,7 +31,6 @@ func (h *Handle) ListChanges(c *gin.Context) {
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, list)
 }
 
-// CountChanges 同条件的总条数（分页用）。
 func (h *Handle) CountChanges(c *gin.Context) {
 	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
 	if !ok {
@@ -55,7 +44,6 @@ func (h *Handle) CountChanges(c *gin.Context) {
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, gin.H{"total": total})
 }
 
-// ListEntities 按实体聚合的变更历史清单（验收 4 的入口）。
 func (h *Handle) ListEntities(c *gin.Context) {
 	req, ok := binding.Query[masterdatadto.ListEntityReq](c)
 	if !ok {
@@ -69,7 +57,6 @@ func (h *Handle) ListEntities(c *gin.Context) {
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, list)
 }
 
-// EntityTimeline 单个实体的完整变更历史（实体类型 + 实体 id）。
 func (h *Handle) EntityTimeline(c *gin.Context) {
 	req, ok := binding.Query[masterdatadto.EntityTimelineReq](c)
 	if !ok {

@@ -1,16 +1,5 @@
 package feature
 
-// ai_provider_test.go — AI 供应商 / 模型配置的 service 链路与接口错误映射。
-//
-// 表结构来自生产迁移（support.NewMigratedPGTestDB → 511_ai_provider.sql），不手抄 CREATE TABLE。
-//
-// 这一层钉住三件事：
-//   - **密钥口径**：明文只进不出 —— 落库是密文（可解密回原文），出库只有 HasAPIKey 布尔，
-//     接口响应体里不出现明文；
-//   - **乐观锁**：两个版本号并发的后提交者拿 ErrVersionConflict，不静默覆盖；
-//   - **错误映射**：业务错误经 pkg/response.ErrorAuto 变 400 / 404（enums 值必须是 i18n key
-//     形态，退回中文原文会整片变 500）。
-
 import (
 	"context"
 	"errors"
@@ -38,11 +27,6 @@ const (
 	testPlainKey     = "sk-ai-test-plain-0123456789abcdef"
 )
 
-// applyProductionSchema 在迁移模板库上跑生产种子（= 应用启动路径的 RunSeeds）。
-//
-// 本模块的建表语句走**种子通道**（511 与 484_sys_config.sql 同形：必须幂等、启动时无条件执行），
-// 所以 test 侧模板库（只跑 migrations.All()）里没有 ai_provider —— 必须自己补这一步，
-// 否则测试要么红、要么退化成手抄 CREATE TABLE（本仓库明令禁止）。
 func applyProductionSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := migrations.RunSeeds(db); err != nil {
@@ -50,7 +34,6 @@ func applyProductionSchema(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// newAIProviderService 建一个跑过生产迁移与种子的库 + 接好密钥口令的 service。
 func newAIProviderService(t *testing.T) (*aiservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -60,12 +43,10 @@ func newAIProviderService(t *testing.T) (*aiservice.Service, *gorm.DB) {
 	return svc, db
 }
 
-// TestAIProviderLifecycleKeepsSecretCipherOnly 全链路：新建 → 存密钥 → 加模型 → 恢复默认 → 删除。
 func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 	svc, db := newAIProviderService(t)
 	ctx := context.Background()
 
-	// ① 新建供应商：provider_key 归一为小写，密钥入库。
 	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{
 		ProviderKey: "DeepSeek",
 		DisplayName: "深度求索",
@@ -90,7 +71,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		t.Errorf("新建版本号应为 1，实际 %d", p.Version)
 	}
 
-	// ② 库里是密文：不等于明文、可解密回原文。
 	var cipherText string
 	if err := db.Raw("SELECT COALESCE(api_key_cipher, '') FROM ai_provider WHERE id = ?", p.ID).
 		Scan(&cipherText).Error; err != nil {
@@ -104,7 +84,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		t.Fatalf("密文解不回原文：plain=%q err=%v", plain, err)
 	}
 
-	// ③ 出库只有布尔：列表 / 单取的 JSON 里都不能出现明文。
 	list, err := svc.ListProviders(ctx)
 	if err != nil {
 		t.Fatalf("列表失败：%v", err)
@@ -117,7 +96,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		t.Fatalf("列表应含一个已配置密钥的供应商：%+v", list)
 	}
 
-	// ④ 加两个模型：一行带元数据、一行裸行（显示名回退 ID）。
 	upd, err := svc.SaveModels(ctx, &aidto.SaveModelsReq{
 		ProviderID: p.ID,
 		Version:    p.Version,
@@ -139,13 +117,11 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		t.Errorf("保存后版本号应 +1：%d → %d", p.Version, upd.Version)
 	}
 
-	// ⑤ 乐观锁：拿旧版本号再存一次 → 版本冲突（不是静默覆盖）。
 	_, err = svc.SaveModels(ctx, &aidto.SaveModelsReq{ProviderID: p.ID, Version: p.Version})
 	if !errors.Is(err, aiservice.ErrVersionConflict) {
 		t.Fatalf("旧版本号应报版本冲突，实际 %v", err)
 	}
 
-	// ⑥ 恢复默认模型：等于代码内置清单（deepseek 有内置清单）。
 	defaults, ok := aiservice.BuiltinModels("deepseek")
 	if !ok {
 		t.Fatal("deepseek 应有内置默认模型清单")
@@ -163,7 +139,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		}
 	}
 
-	// ⑦ 更新时不传密钥 → 已存密文保留（占位文案「输入新值可替换」的语义）。
 	kept, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{
 		ID: p.ID, DisplayName: "深度求索（改名）", Version: restored.Version,
 	})
@@ -179,7 +154,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		t.Error("空 apiKey 不应改写密文")
 	}
 
-	// ⑧ 删除后取不到。
 	if err := svc.DeleteProvider(ctx, p.ID); err != nil {
 		t.Fatalf("删除失败：%v", err)
 	}
@@ -193,7 +167,6 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 	}
 }
 
-// TestAIProviderKeyMustBeUnique provider_key 是「内置清单」的索引键，必须唯一。
 func TestAIProviderKeyMustBeUnique(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
@@ -207,7 +180,6 @@ func TestAIProviderKeyMustBeUnique(t *testing.T) {
 	}
 }
 
-// TestAIProviderRejectsMissingFields 参数类错误必须落在 enums key 上（接口层据此回 400）。
 func TestAIProviderRejectsMissingFields(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
@@ -228,7 +200,6 @@ func TestAIProviderRejectsMissingFields(t *testing.T) {
 		}
 	}
 
-	// 更新时缺版本号 → ErrVersionRequired（乐观锁必须显式带版本）。
 	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "openai", DisplayName: "OpenAI"})
 	if err != nil {
 		t.Fatalf("新建失败：%v", err)
@@ -238,7 +209,6 @@ func TestAIProviderRejectsMissingFields(t *testing.T) {
 	}
 }
 
-// TestAIProviderStatusToggleIdempotent 重复点启停不推进版本号（否则同时打开的编辑页会无谓冲突）。
 func TestAIProviderStatusToggleIdempotent(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
@@ -264,7 +234,6 @@ func TestAIProviderStatusToggleIdempotent(t *testing.T) {
 	}
 }
 
-// TestAIProviderStatusToleratesUnknownValue 只认 0 / 1，其余值按停用处理（fail-closed）。
 func TestAIProviderStatusToleratesUnknownValue(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
@@ -277,12 +246,10 @@ func TestAIProviderStatusToleratesUnknownValue(t *testing.T) {
 	}
 }
 
-// TestRestoreDefaultModelsWithoutBuiltinKeepsCatalog 没有内置清单时明确报错且**不清空**目录。
 func TestRestoreDefaultModelsWithoutBuiltinKeepsCatalog(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
 
-	// 用不在 41 家预设里的自定义端点：openrouter 随预设导入后**有**内置清单，不再是这个用例的样本。
 	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "acme-gateway", DisplayName: "Acme Gateway"})
 	if err != nil {
 		t.Fatalf("新建失败：%v", err)
@@ -311,9 +278,6 @@ func TestRestoreDefaultModelsWithoutBuiltinKeepsCatalog(t *testing.T) {
 	}
 }
 
-// TestFetchAvailableModelsRejectsUnsafeEndpoint 出站前重做 SSRF 校验：
-// 内网地址在拨号前就被拒（回 ErrURLDenied —— 比笼统的「拉取失败」可操作：
-// 用户能直接看出是自己填的地址不被允许），且失败不落库、不推进版本号。
 func TestFetchAvailableModelsRejectsUnsafeEndpoint(t *testing.T) {
 	svc, _ := newAIProviderService(t)
 	ctx := context.Background()
@@ -337,11 +301,10 @@ func TestFetchAvailableModelsRejectsUnsafeEndpoint(t *testing.T) {
 	}
 }
 
-// TestAIServiceRejectsMissingCipherSecret 装配没注入口令时，写密钥必须失败而不是静默存空。
 func TestAIServiceRejectsMissingCipherSecret(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	applyProductionSchema(t, db)
-	svc := aiservice.NewService(aimodel.NewAIModel(db)) // 刻意不 SetCipherSecret
+	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	_, err := svc.SaveProvider(context.Background(), &aidto.SaveProviderReq{
 		ProviderKey: "openai", DisplayName: "OpenAI", APIKey: testPlainKey,
 	})
@@ -350,7 +313,6 @@ func TestAIServiceRejectsMissingCipherSecret(t *testing.T) {
 	}
 }
 
-// newAIProviderEngine 只挂 ai 的 JSON 路由（不装配会话 / CSRF / Casbin：那三层由路由组负责）。
 func newAIProviderEngine(t *testing.T) (*gin.Engine, *aiservice.Service) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -373,7 +335,6 @@ func newAIProviderEngine(t *testing.T) (*gin.Engine, *aiservice.Service) {
 	return e, svc
 }
 
-// postAIJSON 发一个 JSON 请求。
 func postAIJSON(t *testing.T, e *gin.Engine, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -383,7 +344,6 @@ func postAIJSON(t *testing.T, e *gin.Engine, path, body string) *httptest.Respon
 	return w
 }
 
-// TestAIProviderAPIErrorMapping 业务错误 → 状态码：参数类 400、缺行 404。
 func TestAIProviderAPIErrorMapping(t *testing.T) {
 	e, svc := newAIProviderEngine(t)
 	ctx := context.Background()
@@ -393,7 +353,6 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 		t.Fatalf("准备供应商失败：%v", err)
 	}
 
-	// 自定义端点：内置清单只覆盖 41 家预设，它的 provider_key 不在表里 —— 取默认模型必须回错。
 	custom, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "acme-gateway", DisplayName: "Acme Gateway"})
 	if err != nil {
 		t.Fatalf("准备自定义供应商失败：%v", err)
@@ -410,7 +369,7 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 		{"非法 JSON", "/api/ai/provider/save", `{`, http.StatusBadRequest},
 		{"重复 provider_key", "/api/ai/provider/save", `{"providerKey":"openrouter","displayName":"重复"}`, http.StatusBadRequest},
 		{"启停缺 id", "/api/ai/provider/status", `{"status":1}`, http.StatusBadRequest},
-		// openrouter 随 41 家预设导入后**有**内置清单：恢复默认应成功（此前它会回 400）。
+
 		{"恢复内置清单的预设", "/api/ai/provider/models/restore", `{"providerId":` + itoa(p.ID) + `,"version":1}`, http.StatusOK},
 		{"恢复无内置清单的自定义端点", "/api/ai/provider/models/restore", `{"providerId":` + itoa(custom.ID) + `,"version":1}`, http.StatusBadRequest},
 		{"删除不存在", "/api/ai/provider/delete?id=999999", ``, http.StatusNotFound},
@@ -422,7 +381,6 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 		}
 	}
 
-	// 单取不存在的供应商 → 404。
 	req := httptest.NewRequest(http.MethodGet, "/api/ai/provider/get?id=999999", nil)
 	w := httptest.NewRecorder()
 	e.ServeHTTP(w, req)
@@ -430,7 +388,6 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 		t.Errorf("取不存在的供应商：期望 404，实际 %d", w.Code)
 	}
 
-	// 成功路径：列表 200 且响应里没有密钥明文。
 	req = httptest.NewRequest(http.MethodGet, "/api/ai/provider/list", nil)
 	w = httptest.NewRecorder()
 	e.ServeHTTP(w, req)
@@ -445,7 +402,6 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 	}
 }
 
-// TestAISaveProviderAPIKeepsSecretOutOfResponse 接口层保存密钥后，响应体只回「已配置」布尔。
 func TestAISaveProviderAPIKeepsSecretOutOfResponse(t *testing.T) {
 	e, _ := newAIProviderEngine(t)
 
@@ -463,10 +419,8 @@ func TestAISaveProviderAPIKeepsSecretOutOfResponse(t *testing.T) {
 	}
 }
 
-// intPtr 取一个有值的状态指针（测试里表达「调用方明确表态」）。
 func intPtr(v int) *int { return &v }
 
-// itoa 极简整数转换（避免为一个断言引入 strconv 的导入噪音）。
 func itoa(v int64) string {
 	if v == 0 {
 		return "0"

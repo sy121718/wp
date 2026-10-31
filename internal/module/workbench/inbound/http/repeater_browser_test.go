@@ -16,9 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 手工浏览器夹具，复用真实 Inspector handler/模板/JS/撤销逻辑/编译器，无数据库。
-// GOWP_REPEATER_BROWSER=1 go test ./internal/module/workbench/inbound/http -run TestRepeaterBrowserFixture -v -timeout 20m
-// 只监听回环地址；不是生产应用，也不提供持久化写入口。
 func TestRepeaterBrowserFixture(t *testing.T) {
 	if os.Getenv("GOWP_REPEATER_BROWSER") != "1" {
 		t.Skip("浏览器夹具按需启用，见文件头命令")
@@ -26,7 +23,7 @@ func TestRepeaterBrowserFixture(t *testing.T) {
 	router := newInspectorRouter(t)
 	router.Use(builtin.StaticCacheMiddleware())
 	router.Static("/static", "../../../../internal/templates/static")
-	// 与历史页面缓存隔离，验证时始终从本次工作区读取实际资产。
+
 	router.Static("/qa-static", "../../../../internal/templates/static")
 	fixture, err := os.ReadFile("../fixtures/repeater_browser.html")
 	if err != nil {
@@ -37,7 +34,7 @@ func TestRepeaterBrowserFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	router.GET("/", func(c *gin.Context) {
-		// 夹具升级前曾不带缓存头；版本参数避免浏览器复用旧控件脚本。
+
 		uiScripts := strings.ReplaceAll(assets.Body.String(), `/static/`, `/qa-static/`)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(strings.ReplaceAll(string(fixture), "<!-- UI_SCRIPTS -->", uiScripts)))
 	})

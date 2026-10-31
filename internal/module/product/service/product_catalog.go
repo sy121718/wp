@@ -19,24 +19,12 @@ func (s *Service) SetPublicCatalogIndex(index presentationcontract.PublishedEnti
 	s.publicCatalogIndex = index
 }
 
-// 公开目录的分页边界（PRD-008）。
-//
-// 这三个数字是**今天的契约**，不是「顺手写死」：页码超过上限、每页超过上限都回
-// 400（用户可以直接改 URL，越界不该由我们对数据库发起一次深 OFFSET）。
-//
-// 为什么抽成常量：它们出现在参数闸门里，而 DEC-05（公开 100 页上限、越界是空页还是
-// 夹到末页）**仍待定** —— 待定期间最危险的不是数字本身，是「同一个 100 在两个地方
-// 各写一遍、改口径时只改了其中一个」。口径一旦确定，改这里一处即可。
-//
-// 现状（未改口径，仅命名）：page 0 → 1（等于缺省），page > 100 → 400，page < 0 → 400；
-// 已上线实体不足时按上限夹页，超出的页码返回空 items（不报错）。
 const (
 	publicCatalogMaxPage         = 100
 	publicCatalogMaxPageSize     = 60
 	publicCatalogDefaultPageSize = 12
 )
 
-// PublicCatalog 先约束真实上线实体，再用同一过滤条件取数与计数，隐藏项不占分页位置。
 func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatalogReq) (*productdto.PublicCatalogResp, error) {
 	if req == nil || uuid.Validate(req.ProjectID) != nil || req.Page < 0 || req.Page > publicCatalogMaxPage || req.PageSize < 0 || req.PageSize > publicCatalogMaxPageSize {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -87,13 +75,9 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 	if len(f.IDs) == 0 {
 		return out, nil
 	}
-	// 排序不是为了结果顺序（候选只当 = ANY(数组) 的过滤集合用，取数顺序由 ORDER BY 决定），
-	// 而是为了让**同样的输入产生同样的绑定参数**：map 遍历顺序随机，不排序的话每次请求的
-	// 数组字面量都不同，EXPLAIN 与预算对比就永远比不出差异（PRD-007/018 的测量前提）。
+
 	sort.Strings(f.IDs)
-	// 总数与本页一次取回（DEC-06 裁决）：旧写法先 Count 再 List，两条语句之间有人
-	// 删/上架一条商品，徽章上的总数就会与本页能翻出来的行不是同一时刻的事实
-	// （实测 total=21、第 2 页 0 行）。COUNT(*) OVER() 让 total 与本页来自同一快照。
+
 	offset := (page - 1) * size
 	rows, total, err := s.m.ListForCollectionPageWithTotal(ctx, f, size, offset)
 	if err != nil {
@@ -101,9 +85,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 	}
 	out.Total = total
 	if len(rows) == 0 {
-		// 窗口计数只在有行时才有值：第 1 页空页 = 过滤后确实 0 条（total 就是 0，不必再数）；
-		// 越界页（page>1）才需要退回一次计数，把「共 N 条」补准给分页器。
-		// 代价只有越界页这一条，常规翻页从原来的「count + 本页」两条降到一条。
+
 		if page > 1 {
 			if out.Total, err = s.m.CountForCollection(ctx, f); err != nil {
 				return nil, err
@@ -118,8 +100,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		values = append(values, map[string]string{"name": row.Name, "subtitle": row.Subtitle})
 	}
 	s.translateFieldsBatch(ctx, req.Lang, productcontract.EntityTypeProduct, values)
-	// 只用定价事实（五列投影）：这里要的是最低价 / 最高价 / 划线价，
-	// 变体全行（选项、图片、元数据…）与本屏无关。口径不变，只少搬带宽。
+
 	variants, err := s.m.ListVariantPriceFacts(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -133,7 +114,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
 	for i, row := range rows {
-		// 显式工程与状态判定不依赖数据库连接角色是否绕过RLS。
+
 		if row.ProjectID != req.ProjectID || row.Status != productenums.StatusPublished || paths[row.ID] == "" {
 			continue
 		}
@@ -148,8 +129,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 				item.Tags = append(item.Tags, tag.Name)
 			}
 		}
-		// 价格汇总走共享纯函数（product_variant_price.go）：启用范围与同价决胜规则只有一份。
-		// 口径仍是「只看启用变体、划线价取胜出的最低价变体」（DEC-01 待定，未改）。
+
 		summary := summarizeVariantPrices(byProduct[row.ID], true)
 		if summary.MinVariant != nil {
 			price := yuanToCents(summary.MinPrice)

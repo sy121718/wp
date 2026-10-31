@@ -7,7 +7,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// groupDProductRow 使用业务 DTO，字段缺失由编译与真实模板执行共同校验。
 func groupDProductRow() *productdto.ProductResp {
 	price, weight := 10.0, 0.5
 	return &productdto.ProductResp{
@@ -25,7 +24,6 @@ func groupDProductRow() *productdto.ProductResp {
 	}
 }
 
-// productCatalogData 提供与控制器相同的独立原对象，测试只覆盖其关心的对象。
 func productCatalogData(extra map[string]any) map[string]any {
 	p := groupDProductRow()
 	data := groupDData(map[string]any{
@@ -41,7 +39,7 @@ func productCatalogData(extra map[string]any) map[string]any {
 	for k, v := range extra {
 		data[k] = v
 	}
-	// 旧测试只改输入对象后继续复用既有 HTML 断言。
+
 	if rows, ok := extra["Products"].([]*productdto.ProductResp); ok {
 		data["Result"] = &productdto.ProductListResp{Items: rows, Total: int64(len(rows)), Page: 1, Size: 20}
 	}

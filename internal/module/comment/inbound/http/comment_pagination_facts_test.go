@@ -1,13 +1,5 @@
 package commenthttp
 
-// comment_pagination_facts_test.go — task-116（P3-B3）：评论审核页的分页消费者迁到
-// pkg/pagination 事实层后的 handler 级判据。
-//
-// 判据是「渲染字节不变」：迁移前 handler 用 BuildPagination 预制成品（信息行句子 + 链接），
-// 迁移后只交事实（pagination.Page），句子与链接由 admin/partials/pagination.html 渲染。
-// 期望值用 url.Values **独立**拼出（不拿生产 helper 的结果当期望），基址必须带全部筛选条件
-// —— 翻页不丢条件（这是本页筛选栏最容易漏的一处）。
-
 import (
 	"html"
 	"net/url"
@@ -21,7 +13,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// cmPaginationNav 取页面里的分页条整块。
 func cmPaginationNav(t *testing.T, body string) string {
 	t.Helper()
 	i := strings.Index(body, `<nav class="pagination"`)
@@ -35,9 +26,6 @@ func cmPaginationNav(t *testing.T, body string) string {
 	return body[i : i+j+len("</nav>")]
 }
 
-// cmPaginationHrefs 分页条里全部 href（HTML 还原、去重、排序）。
-//
-// 去重的原因：「上一页」与页码 1 指向同一 URL；重数由整元素断言单独钉住。
 func cmPaginationHrefs(nav string) []string {
 	re := regexp.MustCompile(`href="([^"]*)"`)
 	seen := map[string]bool{}
@@ -54,7 +42,6 @@ func cmPaginationHrefs(nav string) []string {
 	return out
 }
 
-// TestCommentsPagePaginationIsFactsDriven 链接字节与基址筛选逐条一致。
 func TestCommentsPagePaginationIsFactsDriven(t *testing.T) {
 	svc := &stubCommentSvc{res: &commentdto.AdminListResp{Total: 45, Page: 2, PageSize: 20}}
 	projects := stubProjects{list: []projectdto.ProjectResp{{ID: "p-1", Name: "演示站"}}}
@@ -84,7 +71,6 @@ func TestCommentsPagePaginationIsFactsDriven(t *testing.T) {
 	}
 }
 
-// TestCommentsPageSinglePageRendersNoPagination 单页与空集都不渲染分页条。
 func TestCommentsPageSinglePageRendersNoPagination(t *testing.T) {
 	for _, total := range []int64{5, 0} {
 		svc := &stubCommentSvc{res: &commentdto.AdminListResp{Total: total, Page: 1, PageSize: 20}}

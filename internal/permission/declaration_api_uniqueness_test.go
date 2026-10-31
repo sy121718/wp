@@ -8,10 +8,6 @@ import (
 	"testing"
 )
 
-// snapshotReg 保存并恢复声明注册表。
-//
-// Declare 写的是包级全局状态，而真实装配会在同一进程里再跑一次 —— 测试留下的
-// 「__test__」路径若不清理，后面的用例会撞上「同一权限点绑定到多条 API 路由」。
 func snapshotReg(t *testing.T) {
 	t.Helper()
 	regMu.Lock()
@@ -36,10 +32,6 @@ func snapshotReg(t *testing.T) {
 	})
 }
 
-// TestDeclareRejectsSecondAPIPathForSamePerm 同一权限点不得绑定两条 API 路由。
-//
-// 判据来自生产故障形态：sys_permission 上 permission_code 唯一，超管策略由它逐行生成，
-// 而 Casbin 按实际请求路径 enforce —— 第二个路径永远拿不到策略，端点对所有人 403。
 func TestDeclareRejectsSecondAPIPathForSamePerm(t *testing.T) {
 	snapshotReg(t)
 	Declare("POST", "/api/__test__/perm-a", ProductUpdate)
@@ -61,9 +53,6 @@ func TestDeclareRejectsSecondAPIPathForSamePerm(t *testing.T) {
 	Declare("POST", "/api/__test__/perm-b", ProductUpdate)
 }
 
-// TestDeclareAllowsPageRouteReusingAPIPerm 页面路由复用同一权限点是合法的。
-//
-// 页面 GET 走 adminui 的 PageAuthz（RoutesOf 逐条 Enforce），不依赖 sys_permission 的单行路径。
 func TestDeclareAllowsPageRouteReusingAPIPerm(t *testing.T) {
 	snapshotReg(t)
 	Declare("POST", "/api/__test__/perm-c", ProductUpdate)
@@ -74,14 +63,12 @@ func TestDeclareAllowsPageRouteReusingAPIPerm(t *testing.T) {
 	}
 }
 
-// TestDeclareIdempotentForSameRoute 同一路由重复声明同一权限点是幂等的（装配多次是常态）。
 func TestDeclareIdempotentForSameRoute(t *testing.T) {
 	snapshotReg(t)
 	Declare("POST", "/api/__test__/perm-d", ProductUpdate)
 	Declare("POST", "/api/__test__/perm-d", ProductUpdate)
 }
 
-// 显式访客登记只增加审计事实，不能绕过原有会话、CSRF或归属中间件。
 func TestExemptRouteKeepsMiddlewareAndExactMethod(t *testing.T) {
 	snapshotReg(t)
 	gin.SetMode(gin.TestMode)

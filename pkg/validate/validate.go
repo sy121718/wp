@@ -7,7 +7,6 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// Msg 将校验错误转为中文提示
 func Msg(err error) string {
 	var ve validator.ValidationErrors
 	if errors.As(err, &ve) {

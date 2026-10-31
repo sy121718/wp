@@ -1,10 +1,5 @@
 package producthttp
 
-// 标签库：标签定义、规则重算、分页命中 JSON 与管理页。
-//
-// 标签归属是商品的属性（挂载表单在商品详情页），但它的定义、重算与命中查询是独立的一套 ——
-// 与分类 / 品牌（product_taxonomy_handle.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
-
 import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -14,11 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-// ==========================================================================
-// 标签的接口面：JSON 入参、pkg/response 出参、消息取 enums。
-// 本层只做绑定与转发：规则类型白名单、参数校验与重算时机一律在 service。
-// ==========================================================================
 
 func (h *ProductHandle) CreateTag(c *gin.Context) {
 	req, ok := binding.JSON[productdto.CreateTagReq](c)
@@ -33,7 +23,6 @@ func (h *ProductHandle) CreateTag(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
 }
 
-// UpdateTag 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
 func (h *ProductHandle) UpdateTag(c *gin.Context) {
 	req, ok := binding.JSON[productdto.UpdateTagReq](c)
 	if !ok {
@@ -47,7 +36,6 @@ func (h *ProductHandle) UpdateTag(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
 }
 
-// GetTag 标签详情（含命中商品列表）。
 func (h *ProductHandle) GetTag(c *gin.Context) {
 	req, ok := binding.Query[productdto.GetTagReq](c)
 	if !ok {
@@ -61,7 +49,6 @@ func (h *ProductHandle) GetTag(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
 }
 
-// ListTags 标签列表（工程内；每个标签带当前归属数量）。
 func (h *ProductHandle) ListTags(c *gin.Context) {
 	req, ok := binding.Query[productdto.ListTagReq](c)
 	if !ok {
@@ -75,7 +62,6 @@ func (h *ProductHandle) ListTags(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
 }
 
-// ListTagProducts 某标签命中的商品（验收 4）。
 func (h *ProductHandle) ListTagProducts(c *gin.Context) {
 	req, ok := binding.Query[productdto.ListTagProductsReq](c)
 	if !ok {
@@ -89,12 +75,10 @@ func (h *ProductHandle) ListTagProducts(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
 }
 
-// ListTagRuleTypes 内置规则类型清单（后台规则下拉的唯一来源）。
 func (h *ProductHandle) ListTagRuleTypes(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, h.svc.ListTagRuleTypes(c.Request.Context()))
 }
 
-// DeleteTag 删除标签（连同它在商品上的引用一起解绑）。
 func (h *ProductHandle) DeleteTag(c *gin.Context) {
 	req, ok := binding.JSON[productdto.DeleteTagReq](c)
 	if !ok {
@@ -107,7 +91,6 @@ func (h *ProductHandle) DeleteTag(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
 }
 
-// RecalcTags 手动触发重算（重算时机之一：可按标签或按工程整体重算）。
 func (h *ProductHandle) RecalcTags(c *gin.Context) {
 	req, ok := binding.JSON[productdto.RecalcTagsReq](c)
 	if !ok {
@@ -125,7 +108,6 @@ func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductTags)
 }
 
-// ProductTagsPage 只读取列表与规则事实，命中商品由 JSON API 按需查询。
 func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {

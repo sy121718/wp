@@ -1,21 +1,5 @@
 package permission_test
 
-// block_bulk_delete_test.go — 批删独立权限点的**真实库**回归：声明 → SyncToDB → Enforce。
-//
-// 为什么必须是真实库 + 真 Enforce：这条缺陷在纯字符串断言下完全隐形 ——
-// `sys_permission` 每个权限点只有**一列** api_path/api_method，两条 API 路由共用一个 code 时
-// （batch 删除曾经声明 block:delete），SyncToDB 只能把这两列对齐到其中一条，
-// 另一条路径上的策略随即失配：超管点批删 403、角色静默失权，而代码、快照、门禁全绿。
-//
-// 覆盖四件事：
-//  1. 一个权限点只绑一条 API 路径，且反复同步不会让两条路径互相顶；
-//  2. 超管在**两条路径**上 Enforce 都通过（声明与同步的真实顺序：先 seed 后 SyncToDB）；
-//  3. 迁移 597 把「原来持有 block:delete 的活主体」的授权**一次性**复制到批删权限点上
-//     （能力保持），且**只**复制这些主体 —— 只持有 block:list 的角色、被禁用的角色都拿不到；
-//  4. 复制的幂等性靠**执行标记**（sys_migration_marker 的行）而不是「目标行在不在」：
-//     带 v4/v5=NULL 的历史行（Postgres 唯一索引对 NULL 不判等）也只能收敛成一条。
-//     一次性语义（撤权不被授回、升级后新授单删不自动扩权）在 block_bulk_delete_upgrade_test.go。
-
 import (
 	"context"
 	"testing"
@@ -42,10 +26,6 @@ const (
 	nullRowLoanSubject = "biz_block_null_row_role"
 )
 
-// newBlockPermissionEnv 建一套「迁移 + seed + Casbin」的真实环境。
-//
-// 顺序刻意与生产一致：先建超管账号，再跑 seed（030/031/594 都按 is_admin=1 逐行授策略），
-// 最后初始化 Casbin（它从库里 LoadPolicy）。
 func newBlockPermissionEnv(t *testing.T) (*gorm.DB, *casbinlib.SyncedEnforcer) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -73,7 +53,6 @@ func newBlockPermissionEnv(t *testing.T) (*gorm.DB, *casbinlib.SyncedEnforcer) {
 	return db, enforcer
 }
 
-// blockBulkSeed 取注册表里的 594（长期定义：权限点行 + 超管策略补缺）。
 func blockBulkSeed(t *testing.T) migrations.Seed {
 	t.Helper()
 	for _, seed := range migrations.AllSeeds() {
@@ -85,7 +64,6 @@ func blockBulkSeed(t *testing.T) migrations.Seed {
 	return migrations.Seed{}
 }
 
-// runSeedSQL 按生产同款方式执行一条 seed 的全部语句。
 func runSeedSQL(t *testing.T, db *gorm.DB, seed migrations.Seed) {
 	t.Helper()
 	for _, stmt := range migrations.SplitStatements(seed.SQL) {
@@ -95,7 +73,6 @@ func runSeedSQL(t *testing.T, db *gorm.DB, seed migrations.Seed) {
 	}
 }
 
-// enforce 执行一次判定，出错即终止用例。
 func enforce(t *testing.T, e *casbinlib.SyncedEnforcer, sub, obj, act string) bool {
 	t.Helper()
 	ok, err := e.Enforce(sub, obj, act)
@@ -105,12 +82,10 @@ func enforce(t *testing.T, e *casbinlib.SyncedEnforcer, sub, obj, act string) bo
 	return ok
 }
 
-// TestBlockDeletePathsStaySeparateAfterSync 一个权限点只绑一条路径，反复同步也不互相顶。
 func TestBlockDeletePathsStaySeparateAfterSync(t *testing.T) {
 	db, e := newBlockPermissionEnv(t)
 	ctx := context.Background()
 
-	// 与 block_router.go 完全一致的声明（Reset 清掉其他包可能留下的声明）。
 	permission.Reset()
 	permission.Declare("POST", singleDeletePath, permission.BlockDelete)
 	permission.Declare("POST", bulkDeletePath, permission.BlockBulkDelete)
@@ -118,7 +93,7 @@ func TestBlockDeletePathsStaySeparateAfterSync(t *testing.T) {
 	if _, err := permission.SyncToDB(ctx, db); err != nil {
 		t.Fatalf("SyncToDB 失败: %v", err)
 	}
-	// 第二次同步必须无写入：若两条路径共用一个 code，这里会一直 PathFixed=1（来回顶）。
+
 	second, err := permission.SyncToDB(ctx, db)
 	if err != nil {
 		t.Fatalf("第二次 SyncToDB 失败: %v", err)
@@ -144,7 +119,6 @@ func TestBlockDeletePathsStaySeparateAfterSync(t *testing.T) {
 		}
 	}
 
-	// 超管：两条路径都要通过（这条断言就是缺陷本体 —— 共用一个 code 时必有一条 403）。
 	var superID string
 	if err := db.Raw(`SELECT CAST(id AS VARCHAR) FROM sys_admin WHERE is_admin = 1 AND status = 1 LIMIT 1`).
 		Scan(&superID).Error; err != nil {
@@ -160,32 +134,28 @@ func TestBlockDeletePathsStaySeparateAfterSync(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteGrantCopyKeepsCapabilityWithoutExpanding 594 只搬「原来就有单删权」的主体。
 func TestBulkDeleteGrantCopyKeepsCapabilityWithoutExpanding(t *testing.T) {
 	db, e := newBlockPermissionEnv(t)
 
-	// —— 三种主体，都先按「升级前」的状态摆好（批删行一律不存在）——
-	// 1) 启用且带 g2 的角色，原来只持有单条删除 → 必须拿到批删权（能力保持）
 	mustExec(t, db, `INSERT INTO sys_role (role_code, role_name, status) VALUES (?, ?, 1)
 		ON CONFLICT (role_code) DO UPDATE SET status = 1`, bulkRoleCode, "批删测试角色")
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
 		VALUES ('p', ?, ?, 'POST', ?)`, bulkRoleCode, singleDeletePath, singleDeleteCode)
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1)
 		VALUES ('g2', ?, 'active')`, bulkRoleCode)
-	// 2) 启用的角色，只持有列表读权限 → 不得多出批删权（不扩权）
+
 	mustExec(t, db, `INSERT INTO sys_role (role_code, role_name, status) VALUES (?, ?, 1)
 		ON CONFLICT (role_code) DO UPDATE SET status = 1`, onlyListRoleCode, "列表只读角色")
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
 		VALUES ('p', ?, '/api/block/list', 'GET', 'block:list')`, onlyListRoleCode)
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1)
 		VALUES ('g2', ?, 'active')`, onlyListRoleCode)
-	// 3) 被禁用的角色（status=0 且没有 g2 标记），历史上有单删授权 → 不搬
+
 	mustExec(t, db, `INSERT INTO sys_role (role_code, role_name, status) VALUES (?, ?, 0)
 		ON CONFLICT (role_code) DO UPDATE SET status = 0`, disabledRoleCode, "已禁用角色")
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
 		VALUES ('p', ?, ?, 'POST', ?)`, disabledRoleCode, singleDeletePath, singleDeleteCode)
-	// 4) 启用角色 + v4/v5 为 NULL 的历史授权行（唯一索引对 NULL 不判等 —— 幂等陷阱的样本）。
-	//    主体本身必须是「活着的」，否则它走不到复制这一步，测的就不是 NULL 陷阱。
+
 	mustExec(t, db, `INSERT INTO sys_role (role_code, role_name, status) VALUES (?, ?, 1)
 		ON CONFLICT (role_code) DO UPDATE SET status = 1`, nullRowLoanSubject, "NULL 行历史角色")
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1)
@@ -193,11 +163,9 @@ func TestBulkDeleteGrantCopyKeepsCapabilityWithoutExpanding(t *testing.T) {
 	mustExec(t, db, `INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3, v4, v5)
 		VALUES ('p', ?, ?, 'POST', ?, NULL, NULL)`, nullRowLoanSubject, singleDeletePath, singleDeleteCode)
 
-	// 升级那一刻：清掉执行标记（= 一次性动作尚未做过），再走生产同款路径执行 597。
 	resetGrantCopyMarker(t, db)
 	runGrantCopy(t, db)
-	// 再来一次：标记已在 → CheckSQL 命中、整条跳过。重复行的兜底不再承担幂等（它只管
-	// 「同一主体有多条源行」），一次性语义由标记承担。
+
 	runGrantCopy(t, db)
 
 	if got := countRule(t, db, bulkRoleCode); got != 1 {
@@ -213,7 +181,6 @@ func TestBulkDeleteGrantCopyKeepsCapabilityWithoutExpanding(t *testing.T) {
 		t.Errorf("v4/v5 为 NULL 的历史行应恰好被补 1 条，实际 %d 条", got)
 	}
 
-	// 判定层复核：角色成员「刚好能删单条 + 批删」，列表只读角色两条都拒。
 	if err := pkgcasbin.ReloadPolicy(); err != nil {
 		t.Fatalf("重载策略失败: %v", err)
 	}
@@ -233,13 +200,12 @@ func TestBulkDeleteGrantCopyKeepsCapabilityWithoutExpanding(t *testing.T) {
 			t.Errorf("只读角色成员在 %s 上不应通过（不得扩权）", path)
 		}
 	}
-	// 只读角色成员仍应能读列表 —— 反例不能靠「把人整个拒掉」蒙对。
+
 	if !enforce(t, e, viewer, "/api/block/list", "GET") {
 		t.Error("只读角色成员应仍能读列表")
 	}
 }
 
-// countRule 数某个主体名下的批删策略行。
 func countRule(t *testing.T, db *gorm.DB, subject string) int64 {
 	t.Helper()
 	var n int64
@@ -251,7 +217,6 @@ func countRule(t *testing.T, db *gorm.DB, subject string) int64 {
 	return n
 }
 
-// mustExec 执行一条语句，失败即终止用例。
 func mustExec(t *testing.T, db *gorm.DB, query string, args ...any) {
 	t.Helper()
 	if err := db.Exec(query, args...).Error; err != nil {

@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// newTempLocalProvider 返回一个根目录落在临时目录的 local provider。
 func newTempLocalProvider(t *testing.T) (Provider, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -33,9 +32,6 @@ func uploadBody(p Provider, key string, body string) (Result, error) {
 	}, Request{ObjectKey: key})
 }
 
-// 调用方显式指定键、磁盘上已有同名的上一代文件时：既不能覆盖，也不该让整次上传失败。
-// 场景来源：库表重置后 sys_attachment 主键从 1 重来，而 public/storage 目录长期累积，
-// 媒体库的 <id>.<ext> 与遗留文件撞名（实测 3495 个遗留文件里大量 id 复用）。
 func TestUploadExplicitKeyCollisionKeepsPreviousFile(t *testing.T) {
 	p, dir := newTempLocalProvider(t)
 
@@ -66,7 +62,6 @@ func TestUploadExplicitKeyCollisionKeepsPreviousFile(t *testing.T) {
 	}
 }
 
-// 无人指定键（PreserveName 同名）时语义不变：同名二次上传必须失败，否则用户以为覆盖了旧的。
 func TestUploadPreserveNameKeepsFailureOnDuplicate(t *testing.T) {
 	p, dir := newTempLocalProvider(t)
 
@@ -90,7 +85,6 @@ func TestUploadPreserveNameKeepsFailureOnDuplicate(t *testing.T) {
 	}
 }
 
-// 子目录里的键冲突：相邻键必须留在同一目录，不能掉到根目录。
 func TestCollisionKeyKeepsDirectory(t *testing.T) {
 	p, dir := newTempLocalProvider(t)
 
@@ -114,7 +108,6 @@ func TestCollisionKeyKeepsDirectory(t *testing.T) {
 	}
 }
 
-// 越界防护：随机后缀不改变路径归属，不允许因为换键跑到根目录之外。
 func TestCollisionKeyStaysInsideRoot(t *testing.T) {
 	root := t.TempDir()
 	key, target, err := collisionKey(root, "a/b.jpg")

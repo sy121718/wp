@@ -1,40 +1,16 @@
 package mailenums
 
-// mail_err_detail.go — mail 域业务错误的**补充说明**词条（key + 具名参数 + 中文兜底）。
-//
-// 背景（系统性通道，见 pkg/i18n/errdetail.go）：本模块的图校验错误此前是
-//
-//	errors.New(mailenums.ErrAutomationGraphInvalid + ": " + 图校验器的中文原文)
-//
-// 读侧（mail_err.go）按「key: 」前缀认出前半截业务 key 去取词，**后半截中文原样拼回** ——
-// 英文界面上永远是中文，而它恰好是作者照着改图的唯一线索（哪条边指向了不存在的节点、
-// 环的路径、哪些节点走不到）。它此前还会经 302 的 ?err= 进页面与浏览器历史
-// （现在结论走提示页响应体，见 inbound/http/mail_jump.go）。
-//
-// 本文件是那半句的真源：service 侧用 i18n.ErrorDetail(常量, name, value, …) 产出
-// 「key + 具名参数」，读侧取词并填 {name} 占位符。中文兜底留在这里（i18n 未初始化 /
-// 词条缺失时用）。词条的 zh-CN 值与图校验器的中文原文同义 —— 后者仍留在
-// mail_automation.go（它是日志与单测断言的文本），两处都必须改是这次的已知代价：
-// 文本进日志、词条进界面，判据不同所以不能只留一份。
-//
-// 名字**不带 Err 前缀**：它们不是可抛出的业务错误消息（不参与 response.ErrorAuto 的形态判据），
-// 而是「补充说明」的词条 key，由 i18n.ErrorDetail 编码进业务错误的 tail。
 const (
-	// —— 定义本身（ParseDefinition / 请求体）——
-	//
-	// DetailGraphEmptyDefinition 传进来的定义是空对象。
 	DetailGraphEmptyDefinition = "admin.mail.detail.graphEmpty"
-	// DetailGraphRequestNotJSON 请求体里的 definition 不是合法 JSON（{reason} 是解析器原文）。
+
 	DetailGraphRequestNotJSON = "admin.mail.detail.requestNotJSON"
-	// DetailGraphNotGraph 定义不是合法的图结构（{reason} 是 JSON 解码器原文）。
+
 	DetailGraphNotGraph = "admin.mail.detail.notGraph"
 
-	// —— 节点集合 ——
 	DetailGraphNoNode         = "admin.mail.detail.noNode"
 	DetailGraphNodeKeyMissing = "admin.mail.detail.nodeKeyMissing"
 	DetailGraphNodeKeyDup     = "admin.mail.detail.nodeKeyDuplicate"
 
-	// —— 节点形状（{node} 是节点 key）——
 	DetailGraphNeedMinutes    = "admin.mail.detail.needMinutes"
 	DetailGraphNeedTemplate   = "admin.mail.detail.needTemplate"
 	DetailGraphNeedTwoArms    = "admin.mail.detail.needTwoArms"
@@ -42,17 +18,9 @@ const (
 	DetailGraphNeedTagAction  = "admin.mail.detail.needTagAction"
 	DetailGraphUnknownNodeTyp = "admin.mail.detail.unknownNodeType"
 
-	// —— v2 出边与条件（出口名表见 service/automation_definition.go）——
-	//
-	// 出口名从「结构体字段」变成「数据」之后，「拼错一个出口名」从编译期问题
-	// 降级为运行期问题，必须由校验器给出可定位的错误。
-	//
-	// **声明一个 detail key 就同时要有生产者**（graphErr 调用点）与 seed；四个新节点的
-	// 参数校验词条（变体 / 权重 / 回调试 / 出口缺失）随它们的校验一起加。
 	DetailGraphUnknownOutlet = "admin.mail.detail.unknownOutlet"
 	DetailGraphBadCondition  = "admin.mail.detail.badCondition"
 
-	// —— 四个新节点的参数（v2 第四批：filter / list_status_branch / ab_test / webhook）——
 	DetailGraphOutletMissing    = "admin.mail.detail.outletMissing"
 	DetailGraphNeedVariants     = "admin.mail.detail.needVariants"
 	DetailGraphVariantDup       = "admin.mail.detail.variantDuplicate"
@@ -60,7 +28,6 @@ const (
 	DetailGraphNeedWebhookURL   = "admin.mail.detail.needWebhookURL"
 	DetailGraphWebhookDenied    = "admin.mail.detail.webhookDenied"
 
-	// —— 入口与边 ——
 	DetailGraphEntryMissing      = "admin.mail.detail.entryMissing"
 	DetailGraphEntryNotExist     = "admin.mail.detail.entryNotExist"
 	DetailGraphEdgeTargetMissing = "admin.mail.detail.edgeTargetMissing"
@@ -68,11 +35,6 @@ const (
 	DetailGraphUnreachable       = "admin.mail.detail.unreachable"
 )
 
-// DetailKeys 上面那组词条的**全量清单**（登记对账的唯一来源）。
-//
-// 读侧只认 ErrDetailFallbacks 里登记过的 key，而这份清单与兜底表由用例
-// （mail/inbound/http 的 mail_err_detail_test.go）双向对账：新增词条漏了任何一边都会变红。
-// 少登记的表现是「明细被静默丢弃」——不报错，只是页面上少一句话。
 var DetailKeys = []string{
 	DetailGraphEmptyDefinition,
 	DetailGraphRequestNotJSON,
@@ -101,10 +63,6 @@ var DetailKeys = []string{
 	DetailGraphUnreachable,
 }
 
-// ErrDetailFallbacks 上面那组词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。
-//
-// 占位符与词条一一对应（{node} / {from} / {to} / {type} / {path} / {nodes} / {reason}），
-// 且**值就是图校验器原先那句中文**：词条缺失时页面上显示的就是它，不丢可行动信息。
 var ErrDetailFallbacks = map[string]string{
 	DetailGraphEmptyDefinition: "流程定义不能为空",
 	DetailGraphRequestNotJSON:  "流程定义的 JSON 解析失败: {reason}",

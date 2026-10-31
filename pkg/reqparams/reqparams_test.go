@@ -30,12 +30,6 @@ func TestIsHXRequestHeaderMatrix(t *testing.T) {
 	}
 }
 
-// 这批用例是 task-96（自 internal/shell 迁入）的**等价性证据**：迁移只搬实现、不改语义，
-// 所以边界值逐条钉死 —— 每条都对应调用方已经依赖的一个口径，改它就是改所有页面的入参行为。
-//
-// 为什么这么细：「非法输入降级为零值」这类口径在页面上是**静默**的（解析失败不报错，
-// 只是筛选项变成默认值），一旦被「顺手修正」，没有任何页面会报错，只会有人发现筛选失灵。
-
 func reqCtx(t *testing.T, method, target, body string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -71,12 +65,10 @@ func TestParseUintDegradesToZero(t *testing.T) {
 		{"  ", 0},
 		{"42", 42},
 		{" 42 ", 42},
-		{"-1", 0},    // 负数不是非负整数
-		{"abc", 0},   // 非数字
-		{"12abc", 0}, // 尾部杂质
-		// 溢出**不是 0**：strconv.ParseUint 在 ErrRange 时返回被夹到 MaxUint64 的值，
-		// 而本函数忽略错误直接返回它 —— 这是原 shell 实现的口径，迁移逐字保留。
-		// 顺手「修」成 0 是行为变更（超长 id 从「查不到」变成「id=0」）。
+		{"-1", 0},
+		{"abc", 0},
+		{"12abc", 0},
+
 		{"18446744073709551616", 18446744073709551615},
 	}
 	for _, tc := range cases {
@@ -110,7 +102,7 @@ func TestParseStatusPtrDistinguishesMissingFromInvalid(t *testing.T) {
 	if got := ParseStatusPtr(" 2 "); got == nil || *got != 2 {
 		t.Errorf("带空白应 trim 后解析，got %v", got)
 	}
-	// 「传了但非法」沿用老口径：非 nil 的 0（不是 nil —— 那会被读成「未传，默认启用」）。
+
 	got := ParseStatusPtr("abc")
 	if got == nil {
 		t.Fatal("非法输入不能退化成 nil：调用方会把 nil 读成「未传」而默认启用")

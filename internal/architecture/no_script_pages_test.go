@@ -1,8 +1,5 @@
 package architecture
 
-// 工作台错误壳在编辑器脚本未加载时仍须独立显示。
-// 访客账号旧整页已退役，账号组件改走静态外壳与JSON数据，不再登记不存在的user模板。
-
 import (
 	"os"
 	"path/filepath"
@@ -11,11 +8,8 @@ import (
 	"testing"
 )
 
-// scriptTagRe 匹配模板里的 <script> 标签（含 src / 内联）。
 var scriptTagRe = regexp.MustCompile(`(?i)<script\b`)
 
-// noScriptPages 声明必须无脚本可用的现行模板及理由。
-// 每一登记都必须命中真实文件；模板删除时同步收口，不能保留失效glob。
 var noScriptPages = []struct {
 	glob   string
 	reason string
@@ -56,11 +50,6 @@ func TestNoScriptPagesStayScriptFree(t *testing.T) {
 	}
 }
 
-// TestNoScriptPagesDoNotUseHtmxAttributes 无脚本页不许挂 htmx 的 hx-* 指令。
-//
-// 与上一条分开是因为后果不同：`<script>` 是主动引入依赖，`hx-post` 是**悄悄失效**——
-// 没有 htmx 时浏览器会退回原生提交，页面看起来能用，但 hx-target / hx-swap 全部不生效，
-// 于是「失败只回片段」那种设计会渲染出一个裸片段。
 func TestNoScriptPagesDoNotUseHtmxAttributes(t *testing.T) {
 	root := repoRoot(t)
 	hxAttr := regexp.MustCompile(`(?i)\bhx-(get|post|put|patch|delete|target|swap|include|trigger)\s*=`)

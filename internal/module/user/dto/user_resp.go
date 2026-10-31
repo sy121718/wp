@@ -1,34 +1,23 @@
 package userdto
 
-// user_resp.go — 用户模块响应（issue #36）。
-
 import (
 	"go_wp/pkg/utils"
 )
 
-// RegisterResp 注册结果。
-//
-// **不返回激活码 / 激活链接**：那是用户邮箱里的东西。
-// 接口回传它等于让任何调用方都能直接激活，验证邮箱这一步就白做了。
 type RegisterResp struct {
 	UserID   uint64 `json:"userId"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Status   int    `json:"status"`
-	// MailQueued 表示验证邮件已受理；false 时前端应提示「可点重发」。
+
 	MailQueued bool `json:"mailQueued"`
 }
 
-// ActivateResp 邮箱验证结果。
 type ActivateResp struct {
 	UserID   uint64 `json:"userId"`
 	Username string `json:"username"`
 }
 
-// AccountResp 账号中心的一次性聚合视图（身份 + 资料 + 偏好）。
-//
-// 聚成一个结构体而不是三个接口：账号中心一屏就要这些，
-// 拆成三个请求只会让页面出现「上半截已经显示、下半截还在转」的中间态。
 type AccountResp struct {
 	UserID            uint64          `json:"userId"`
 	Username          string          `json:"username"`
@@ -43,7 +32,6 @@ type AccountResp struct {
 	LastLoginIP       string          `json:"lastLoginIp"`
 	LastLoginLocation string          `json:"lastLoginLocation"`
 
-	// 资料（user_profiles），未建行时为零值。
 	ProfileLocale   string `json:"profileLocale"`
 	ProfileTimezone string `json:"profileTimezone"`
 	FirstName       string `json:"firstName"`
@@ -60,7 +48,6 @@ type AccountResp struct {
 	Phone           string `json:"phone"`
 	Company         string `json:"company"`
 
-	// 偏好（user_preferences）。
 	Theme             string `json:"theme"`
 	Locale            string `json:"locale"`
 	Timezone          string `json:"timezone"`

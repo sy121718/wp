@@ -1,10 +1,5 @@
 package migrations
 
-// register_presentation_publish_attempt.go — 673：发布尝试明细（发布历史）。
-//
-// 判据只查系统目录，不引用目标列（637/640/642/651 都踩过「列还没建时 SQL 解析阶段就
-// 报 42703，把尚未完成误判成一次失败」）：表在 + 四条约束齐 + 两条索引在 + RLS 已开。
-
 import "sync"
 
 var registerPresentationPublishAttemptOnce sync.Once

@@ -1,12 +1,5 @@
 package pageservice
 
-// page_publish_helper_test.go — 发布路径上的纯函数就近单测（审计 CQ-020）。
-//
-// 这几个函数都不碰数据库，但都在**判断线上状态**：线上到底有没有内容、
-// 激活的是哪一份、底层错误该映射成哪句给运营看的话。判断错了不会崩，
-// 只会让后台显示的状态与线上事实不一致 —— 这类偏差最不容易在 feature 测试里被发现，
-// 所以就近钉住。
-
 import (
 	"errors"
 	"fmt"
@@ -15,7 +8,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// TestPageHasPublishedState 线上态判定：激活指针或历史里的已发布版本都算。
 func TestPageHasPublishedState(t *testing.T) {
 	cases := []struct {
 		name string
@@ -43,7 +35,6 @@ func TestPageHasPublishedState(t *testing.T) {
 	}
 }
 
-// TestActiveHashOf 激活 hash 只在指针上，不从历史里猜。
 func TestActiveHashOf(t *testing.T) {
 	if got := activeHashOf(nil); got != "" {
 		t.Errorf("nil 记录应返回空串，实际 %q", got)
@@ -59,7 +50,6 @@ func TestActiveHashOf(t *testing.T) {
 	}
 }
 
-// TestMapPublishError 内核错误 → 对外业务错误的映射。
 func TestMapPublishError(t *testing.T) {
 	cases := []struct {
 		name string
@@ -75,7 +65,7 @@ func TestMapPublishError(t *testing.T) {
 		if got := mapPublishError(c.in); !errors.Is(got, c.want) {
 			t.Errorf("%s: 期望 %v，实际 %v", c.name, c.want, got)
 		}
-		// 包裹一层后仍要能识别：内核常常用 %w 串上下文。
+
 		wrapped := fmt.Errorf("构建失败: %w", c.in)
 		if got := mapPublishError(wrapped); !errors.Is(got, c.want) {
 			t.Errorf("%s（包裹）: 期望 %v，实际 %v", c.name, c.want, got)
@@ -83,7 +73,6 @@ func TestMapPublishError(t *testing.T) {
 	}
 }
 
-// TestMapPublishErrorPassesUnknownThrough 不认识的错误原样返回，不被吞成通用文案。
 func TestMapPublishErrorPassesUnknownThrough(t *testing.T) {
 	inner := errors.New("磁盘写满了")
 	if got := mapPublishError(inner); !errors.Is(got, inner) {

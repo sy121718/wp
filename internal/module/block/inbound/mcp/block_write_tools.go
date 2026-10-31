@@ -1,17 +1,5 @@
 package blockmcp
 
-// block_write_tools.go — 全局块的建 / 改 / 删。
-//
-// 与 page 写工具同一条边界：**不碰块内的 AST**。块的内容由可视化编辑器维护
-// （块树、槽位绑定、引用关系），不是一段 JSON 参数能交代清楚的。
-// 所以这三个工具只处理块的**元数据**（名称、类型、分类、复用模式）；
-// 新建时给一个能被编辑器打开的空块，重命名与改分类走 update。
-//
-// global 块仍被引用时一律拒绝删除，并返回实际引用定位。
-//
-// UpdateReq 是**整树覆盖**（编辑器语义）：name / kind / document 必须给全，
-// category 与 reuseMode 留空表示保留原值。
-
 import (
 	"context"
 	"fmt"
@@ -24,17 +12,11 @@ import (
 	"go_wp/internal/permission"
 )
 
-// blockKinds 是创建时允许的类型。
-//
-// 与元数据工具无关的取舍：这里的 kind 决定块在编辑器里的分类，（docs/02-D §4）
-// 但**具体有哪些 kind 由 registry 决定**，硬编码一份会与组件清单漂移。
-// 所以默认值走服务端（留空 = block），工具只要求调用方说明用途时用 category 表达。
 const (
 	blockReuseGlobal   = "global"
 	blockReuseTemplate = "template"
 )
 
-// BlockListArgs 列块。
 type BlockListArgs struct {
 	ProjectID string `json:"projectId"`
 	Kind      string `json:"kind,omitempty"`
@@ -52,7 +34,6 @@ type BlockDeleteArgs struct {
 	BlockID   string `json:"blockId"`
 }
 
-// BlockCreateArgs 建块（只给元数据）。
 type BlockCreateArgs struct {
 	ProjectID string `json:"projectId"`
 	Name      string `json:"name"`
@@ -60,10 +41,6 @@ type BlockCreateArgs struct {
 	ReuseMode string `json:"reuseMode,omitempty"`
 }
 
-// BlockUpdateArgs 改块的元数据。
-//
-// 服务端的 UpdateReq 是整树覆盖：`name` 与 `kind` 必填。
-// 工具层先读现状再合并 —— 调用方只说「改个名字」时不该把 kind 抹掉。
 type BlockUpdateArgs struct {
 	ExpectedVersion uint64 `json:"expectedVersion"`
 	ProjectID       string `json:"projectId"`
@@ -79,7 +56,6 @@ type blockResult struct {
 	Name string
 }
 
-// QueryTools 只读工具。
 func QueryTools(reader blockcontract.BlockReader) ([]mcp.Tool, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("块读取器不能为空")
@@ -136,7 +112,6 @@ func QueryTools(reader blockcontract.BlockReader) ([]mcp.Tool, error) {
 	return []mcp.Tool{list, get}, nil
 }
 
-// WriteTools 写工具。
 func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, fmt.Errorf("块写入器不能为空")
@@ -263,10 +238,6 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 	return []mcp.Tool{create, update, del}, nil
 }
 
-// emptyBlockDocument 空块文档。
-//
-// 形状与页面文档同源（builder.Page）：`settings` 是对象、`root` 是数组。
-// 写成 `{"root":{...}}` 会在解析阶段失败，而工具侧只看得到「执行失败」四个字。
 var emptyBlockDocument = json.RawMessage(`{"settings":{},"root":[]}`)
 
 func blockListText(res []blockdto.BlockResp) string {
@@ -298,7 +269,6 @@ func blockDetailText(blk *blockdto.BlockResp) string {
 	return b.String()
 }
 
-// reuseModeText 复用模式的后果 —— 这两个词光看名字分不出区别。
 func reuseModeText(mode string) string {
 	switch strings.TrimSpace(mode) {
 	case blockReuseGlobal:

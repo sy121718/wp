@@ -9,16 +9,6 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// admin_htmx_feedback_test.go — 审计 UI-011：后台 HTMX 请求必须有统一的 loading 指示与失败提示。
-//
-// 判据分三层，缺任何一层都会退化回「点了没反应 / 失败了也静默」：
-//  ① 外壳里有全局指示元素与主题化样式（页面不需要逐个写 hx-indicator）；
-//  ② admin.js 在 document.body 上注册请求生命周期与三类失败监听（挂在具体元素上的
-//     监听覆盖不到全部 hx- 请求，而全后台的 hx- 请求是零散分布的）；
-//  ③ 所监听的事件名确实是 htmx 运行时会派发的 —— 名字写错不会报错，只会永远不触发。
-
-// adminShellData 渲染后台外壳（layout + 页面）所需的最小数据。
-// "t" 必须注入：后台模板已全面 t() 化，缺它渲染会在第一处取词处静默截断。
 func adminShellData() map[string]any {
 	return map[string]any{
 		"title": "仪表盘", "lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
@@ -27,14 +17,12 @@ func adminShellData() map[string]any {
 	}
 }
 
-// newAdminTestSet 建一个与运行期同构的模板集合（相对 admin/ 之外的目录，扩展名 .html）。
 func newAdminTestSet() *jet.Set {
 	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	injectGlobals(set)
 	return set
 }
 
-// 外壳必须带上全局进度条：元素 + 样式 + 三段失败文案（JS 兜底文案的 i18n 来源）。
 func TestAdminHtmxProgressIndicatorInShell(t *testing.T) {
 	out, err := render(t, newAdminTestSet(), "admin/dashboard", adminShellData())
 	if err != nil {
@@ -54,7 +42,6 @@ func TestAdminHtmxProgressIndicatorInShell(t *testing.T) {
 	}
 }
 
-// admin.js 必须在 document.body 上注册全局监听，且失败路径真的走到 error toast。
 func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("static/js/admin.js"))
 	if err != nil {
@@ -63,8 +50,7 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 	js := string(src)
 
 	for _, ev := range []string{
-		// htmx 4 的真实事件集：4xx/5xx 走 response:error，网络/超时/异常走 htmx:error。
-		// 不再有 sendError / timeout 这两个独立事件（v2 的它们已并入 htmx:error）。
+
 		"htmx:before:request", "htmx:after:request",
 		"htmx:response:error", "htmx:error",
 	} {
@@ -73,29 +59,19 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 		}
 	}
 
-	// htmx 默认只有 2xx 会替换目标节点，4xx/5xx 的响应被直接丢弃：
-	// 不弹提示就是「保存失败但界面毫无变化」，用户会认为已经保存成功。
 	if !strings.Contains(js, "WBUI.toast(") || !strings.Contains(js, "type: 'error'") {
 		t.Error("admin.js 的失败路径没有走到 error toast（失败会静默）")
 	}
 
-	// loading 与收尾必须成对：忙碌态 + 进度条显隐各有一条控制路径。
 	if !strings.Contains(js, "is-busy") || !strings.Contains(js, "setBar(") {
 		t.Error("admin.js 缺少忙碌态或进度条显隐控制")
 	}
 
-	// 触发元素在响应时已被移出文档的情况下，htmx 会对最近的存活祖先补派发一次
-	// after:request（同一个请求）；不去重会多减引用计数，进度条提前消失。
-	// htmx 4 用 fetch 而非 xhr，去重键是 ctx.request。
 	if !strings.Contains(js, "WeakSet") {
 		t.Error("admin.js 未对 after:request 做同一请求去重")
 	}
 }
 
-// 监听的事件名必须真的存在于 htmx 运行时：写错的事件名不会报错，只会永远不触发。
-//
-// 这条在 htmx 4 升级时救过一次：v4 把事件名改成冒号分段（beforeRequest → before:request），
-// 若监听器还写旧名，进度条与错误提示会**静默失效** —— 而所有 Go 侧测试照样绿。
 func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("static/js/ui/htmx.min.js"))
 	if err != nil {
@@ -103,8 +79,7 @@ func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
 	}
 	js := string(src)
 	for _, ev := range []string{
-		// htmx 4 的真实事件集：4xx/5xx 走 response:error，网络/超时/异常走 htmx:error。
-		// 不再有 sendError / timeout 这两个独立事件（v2 的它们已并入 htmx:error）。
+
 		"htmx:before:request", "htmx:after:request",
 		"htmx:response:error", "htmx:error",
 	} {

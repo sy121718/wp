@@ -1,11 +1,5 @@
 package migrations
 
-// register_page_list_lang_filter_i18n.go — 671：页面列表语言维度筛选的词条（批2）。
-//
-// 门槛逐条枚举本批的 5 个 key（中英共 10 行）：用 LIKE 或全库计数判，存量库随便一批词条
-// 都能满足，缺的词永远补不上（AGENTS.md §数据库「seed 门槛必须逐条枚举」，迁移 494 的坑）。
-// 两种语言都数：ConditionSQL 返回 >0 即「已完成 → 跳过」，只数一种语言时另一种缺行仍为 1。
-
 import "sync"
 
 var registerPageListLangFilterI18nOnce sync.Once

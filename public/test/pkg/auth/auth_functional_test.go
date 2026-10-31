@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// setupAuthWithMiniRedis 装配 auth + cache（miniredis）的独立测试环境。
 func setupAuthWithMiniRedis(t *testing.T) *miniredis.Miniredis {
 	t.Helper()
 	miniRedis, err := miniredis.Run()
@@ -39,8 +38,6 @@ func setupAuthWithMiniRedis(t *testing.T) *miniredis.Miniredis {
 	return miniRedis
 }
 
-// 回归：RevokeUserSession 传 time.Now() 时旧实现 time.Until() 为负（Redis invalid expire time），
-// 新实现用固定 7 天 TTL，key 必须以 ≈7 天的 TTL 存活。
 func TestAuthBlockUserUsesFixedTTL(t *testing.T) {
 	miniRedis := setupAuthWithMiniRedis(t)
 	ctx := context.Background()
@@ -55,7 +52,6 @@ func TestAuthBlockUserUsesFixedTTL(t *testing.T) {
 	}
 }
 
-// 封禁语义：blockedAt > sessionIssuedAt 的会话被拒；之后建立的会话不受影响；未封禁用户放行。
 func TestAuthIsBlockedSemantics(t *testing.T) {
 	_ = setupAuthWithMiniRedis(t)
 	ctx := context.Background()
@@ -81,7 +77,6 @@ func TestAuthIsBlockedSemantics(t *testing.T) {
 		t.Fatalf("封禁时间戳之后的会话不应被拒绝")
 	}
 
-	// 未封禁用户（redis.Nil）→ (false, nil)。
 	blocked, err = auth.IsBlocked(ctx, 99, now.Unix())
 	if err != nil {
 		t.Fatalf("未封禁用户不应返回错误: %v", err)
@@ -91,12 +86,10 @@ func TestAuthIsBlockedSemantics(t *testing.T) {
 	}
 }
 
-// fail-closed：Redis 故障时 IsBlocked 必须返回错误（由中间件转 503），不得吞错放行。
 func TestAuthIsBlockedFailClosedOnRedisError(t *testing.T) {
 	miniRedis := setupAuthWithMiniRedis(t)
 	ctx := context.Background()
 
-	// 模拟 Redis 故障：断开连接后读写必然报错。
 	miniRedis.Close()
 
 	if _, err := auth.IsBlocked(ctx, 1, 1); err == nil {

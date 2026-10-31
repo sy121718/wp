@@ -1,12 +1,5 @@
 package userhttp
 
-// customer_notice_test.go — 批量结论渲染进提示页（shell.RenderJump）的回归。
-//
-// 取代原先对 ?done= 读侧受控出口（customerPageDone / customerBulkNoticeCandidates）的回归：
-// 写结论不再经查询参数回带，手拼 ?done= 也无从注入 —— 这里钉住的是**写侧真实产出的每一种
-// 句子都被渲染进响应体**。此前那条通道最容易出的错就是「成功回执静默消失」
-// （写侧改了措辞、读侧再也认不出，不报错、日志里也没有），现在文案走响应体，这条风险随之消失。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +10,6 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 )
 
-// TestCustomerBulkJumpRendersEveryWriterShape 批量动作的每一种分支都渲染进提示页。
 func TestCustomerBulkJumpRendersEveryWriterShape(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

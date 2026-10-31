@@ -1,15 +1,5 @@
 package inventorymcp
 
-// inventory_tools_test.go — 库存两个只读工具的元信息、入参边界与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪个数，用户就看不到哪个数。这里钉的是几件会直接决定回答对错的事：
-//   · 「不跟踪数量」必须与「0 件」分开说 —— quantity = 0 有两义（跟踪且卖光 /
-//     不跟踪无限），只读数量会把「无限」在回答里写成「没货」，让人去做一次
-//     没必要的补货；
-//   · 空结果要给替代解释（线索写窄了 / 这个 SKU 没入库），而不是只回一个空；
-//   · limit 必须夹取（工具不是分页页面）。
-
 import (
 	"context"
 	"errors"
@@ -134,7 +124,6 @@ func TestStockFindClampsLimit(t *testing.T) {
 	}
 }
 
-// 这条是本文件最重要的一条：quantity = 0 有两义，正文必须把「不跟踪」说出来。
 func TestStockTextDistinguishesUntrackedFromSoldOut(t *testing.T) {
 	text := stockListText([]*inventorydto.StockResp{
 		{SKUCode: "VIT-C", WarehouseName: "主仓", TrackQuantity: false, Quantity: 0},
@@ -195,12 +184,6 @@ func TestWarehouseListTextEmpty(t *testing.T) {
 	}
 }
 
-// 库存行必须给出 variantId。
-//
-// 实测踩到过：模型用 product_find 找到商品、用 stock_find 找到库存行，
-// 但正文里只有 SKU 与数量 —— 它要调 stock_change（必填 variantId）时
-// 拿不到这个 id，只能停下来说「你给我一下变体 id」。
-// 「工具的输出要让下一步动作有可能完成」，在这一行上就是这句话的全部含义。
 func TestStockFindTextCarriesVariantID(t *testing.T) {
 	const variantID = "9a4583f1-5ea5-41d1-afe9-c75f445fed78"
 	stub := &stubReader{stockRes: []*inventorydto.StockResp{

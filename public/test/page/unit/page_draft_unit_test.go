@@ -10,10 +10,6 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 )
 
-// ---- 创建：正常路径 ----
-
-// TestPageCreateSuccess 合法请求创建页面：路径规范化、版本 1、stale、
-// 初始修订与 reserved 路由占用全部就位。
 func TestPageCreateSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -45,7 +41,6 @@ func TestPageCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestPageCreateBindingTarget kind=page 携带内容目标 ID 应创建成功。
 func TestPageCreateBindingTarget(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	targetID := "9f0d3a4e-5b6c-4d1e-8f2a-1b2c3d4e5f60"
@@ -61,7 +56,6 @@ func TestPageCreateBindingTarget(t *testing.T) {
 	}
 }
 
-// TestPageCreateKindMatrix kind/target 组合矩阵。
 func TestPageCreateKindMatrix(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -77,7 +71,7 @@ func TestPageCreateKindMatrix(t *testing.T) {
 		{"search", "none", nil, false},
 		{"notFound", "none", nil, false},
 		{"article", "article", &targetID, false},
-		// product / category 已随迁移 080 从内容类型摘除，不再是合法页面 kind。
+
 		{"tag", "tag", &targetID, false},
 		{"home", "page", &targetID, true},
 		{"page", "none", nil, true},
@@ -96,9 +90,6 @@ func TestPageCreateKindMatrix(t *testing.T) {
 	}
 }
 
-// ---- 创建：输入校验与恶意输入 ----
-
-// TestPageCreateNilRequest nil 请求应返回参数无效错误。
 func TestPageCreateNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.Create(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -106,7 +97,6 @@ func TestPageCreateNilRequest(t *testing.T) {
 	}
 }
 
-// TestPageCreateInvalidDocumentMalformedJSON 畸形 JSON 应被拒绝。
 func TestPageCreateInvalidDocumentMalformedJSON(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	_, err := svc.Create(context.Background(), &pagedto.CreateReq{
@@ -118,7 +108,6 @@ func TestPageCreateInvalidDocumentMalformedJSON(t *testing.T) {
 	}
 }
 
-// TestPageCreateEmptyDocument 空对象 / null 文档（缺 layout.mode）应被拒绝。
 func TestPageCreateEmptyDocument(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	for _, doc := range []string{`{}`, `null`, `{"root":[]}`} {
@@ -132,7 +121,6 @@ func TestPageCreateEmptyDocument(t *testing.T) {
 	}
 }
 
-// TestPageCreateEmptyRoot 空 root 节点列表是合法文档。
 func TestPageCreateEmptyRoot(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
@@ -144,8 +132,6 @@ func TestPageCreateEmptyRoot(t *testing.T) {
 	}
 }
 
-// TestPageCreateOversizeDocument 超长内容（SEO 标题 201 字符 / 描述 501 字符 /
-// 节点文本 501 字符 / 节点名 101 字符）应被拒绝。
 func TestPageCreateOversizeDocument(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -171,7 +157,6 @@ func TestPageCreateOversizeDocument(t *testing.T) {
 	}
 }
 
-// TestPageCreateUnknownProject 工程不存在返回工程不存在；空工程 ID 属于参数错误。
 func TestPageCreateUnknownProject(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	ctx := context.Background()
@@ -189,9 +174,6 @@ func TestPageCreateUnknownProject(t *testing.T) {
 	}
 }
 
-// TestPageCreateXSSDocument XSS 字符串作为结构化文本 props 合法保存（构建期转义，
-// service 层不得拒绝合法文档，也不得崩溃）。存储为规范化 JSON
-// （Go json.Marshal 默认 HTML 转义 < → \u003c，解析后文本语义不变）。
 func TestPageCreateXSSDocument(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	xssText := `<script>alert(1)</script><img src=x onerror=alert(2)>`
@@ -218,9 +200,6 @@ func TestPageCreateXSSDocument(t *testing.T) {
 	}
 }
 
-// ---- 创建：路径校验 ----
-
-// TestPageCreateInvalidPath 保留路径、路径穿越、空格、非法字符应被拒绝。
 func TestPageCreateInvalidPath(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -235,7 +214,6 @@ func TestPageCreateInvalidPath(t *testing.T) {
 	}
 }
 
-// TestPageCreateDuplicatePath 同工程重复路径应被拒绝（reserved 占用）。
 func TestPageCreateDuplicatePath(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -251,9 +229,6 @@ func TestPageCreateDuplicatePath(t *testing.T) {
 	}
 }
 
-// ---- 保存草稿 ----
-
-// TestPageSaveDraftSuccess 保存草稿：版本递增、修订追加、stale 置位、文档更新。
 func TestPageSaveDraftSuccess(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -277,7 +252,7 @@ func TestPageSaveDraftSuccess(t *testing.T) {
 	if revisionCount != 2 {
 		t.Errorf("修订应追加为 2 条: %d", revisionCount)
 	}
-	// 修订快照不可变：v1 保留旧文档。
+
 	var v1Doc string
 	db.Raw(`SELECT draft_document::text FROM page_revisions WHERE page_id = ? AND version = 1`, created.ID).Scan(&v1Doc)
 	if strings.Contains(v1Doc, "core.heading") {
@@ -285,7 +260,6 @@ func TestPageSaveDraftSuccess(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftVersionConflict 旧版本乐观锁冲突：拒绝且不写修订。
 func TestPageSaveDraftVersionConflict(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -304,7 +278,6 @@ func TestPageSaveDraftVersionConflict(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftNotFound 不存在的页面保存应返回页面不存在。
 func TestPageSaveDraftNotFound(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	_, err := svc.SaveDraft(context.Background(), &pagedto.SaveDraftReq{
@@ -316,7 +289,6 @@ func TestPageSaveDraftNotFound(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftNilRequest nil / 空 ID 请求属于参数错误。
 func TestPageSaveDraftNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	if _, err := svc.SaveDraft(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
@@ -329,7 +301,6 @@ func TestPageSaveDraftNilRequest(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftInvalidDocument 非法文档（缺 layout.mode）应被拒绝且不写修订。
 func TestPageSaveDraftInvalidDocument(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -348,7 +319,6 @@ func TestPageSaveDraftInvalidDocument(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftPathChange 改草稿路径后：旧 reserved 释放、新 reserved 建立。
 func TestPageSaveDraftPathChange(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -372,7 +342,6 @@ func TestPageSaveDraftPathChange(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftPathOccupied 草稿路径改为他人占用路径应被拒绝（事务回滚）。
 func TestPageSaveDraftPathOccupied(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -385,7 +354,7 @@ func TestPageSaveDraftPathOccupied(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), pageenums.ErrPathOccupied) {
 		t.Fatalf("改到他人路径应被拒绝: %v", err)
 	}
-	// 事务回滚：A 路径与版本均未变，B 占用完好。
+
 	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageA.ID})
 	if err != nil || detail.DraftPath != "/a" || detail.DraftVersion != pageA.DraftVersion {
 		t.Errorf("失败保存不应迁移路径或版本: %+v err=%v", detail, err)

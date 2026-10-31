@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-// title_unique_test.go — 编辑期 title 唯一性检查的单测（审计 SEO-018 轻量版）。
-//
-// 这一组的重点是**反例**：重复要被检出并列出全部冲突页面，不重复时一个都不许报。
-// 会误报的检查最后都会被当成噪音忽略掉（发布侧 SEO-019 的同组测试也是这个思路）。
-
-// TestDuplicateTitlesListsAllConflictingPages 重复被检出且列出全部命中页面。
 func TestDuplicateTitlesListsAllConflictingPages(t *testing.T) {
 	entries := []TitleEntry{
 		{Title: "纯棉 T 恤", Page: "/products/tee-a", ID: "a"},
@@ -33,7 +27,6 @@ func TestDuplicateTitlesListsAllConflictingPages(t *testing.T) {
 	}
 }
 
-// TestDuplicateTitlesNoFalsePositive 不重复 / 空标题 / 只有自身 都不报。
 func TestDuplicateTitlesNoFalsePositive(t *testing.T) {
 	entries := []TitleEntry{
 		{Title: "纯棉 T 恤", Page: "/products/tee-a", ID: "a"},
@@ -56,11 +49,6 @@ func TestDuplicateTitlesNoFalsePositive(t *testing.T) {
 	}
 }
 
-// TestDuplicateTitlesMatchesPublishSideWording 与发布侧同一句式的结论。
-//
-// 发布侧（publication/service/seo_audit.go）的句式是
-// 「重复的 title（X）出现在 N 个页面：/a、/b」；编辑期必须说同一句话，
-// 否则运营会把它当成两个问题。
 func TestDuplicateTitlesMatchesPublishSideWording(t *testing.T) {
 	dups := []TitleEntry{
 		{Title: "首页", Page: "/"},
@@ -73,7 +61,6 @@ func TestDuplicateTitlesMatchesPublishSideWording(t *testing.T) {
 	}
 }
 
-// TestDuplicateTitlesDedupesSamePage 同一页面在索引里出现两次时只列一次。
 func TestDuplicateTitlesDedupesSamePage(t *testing.T) {
 	entries := []TitleEntry{
 		{Title: "关于", Page: "/about", ID: "p1"},

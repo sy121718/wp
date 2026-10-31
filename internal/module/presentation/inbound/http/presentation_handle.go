@@ -1,4 +1,3 @@
-// Package presentationhttp presentation 模块 HTTP 入口（0-A2）。
 package presentationhttp
 
 import (
@@ -13,15 +12,12 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle presentation 接口处理器。
 type Handle struct {
 	svc presentationcontract.PresentationService
 }
 
-// NewHandle 构造。
 func NewHandle(svc presentationcontract.PresentationService) *Handle { return &Handle{svc: svc} }
 
-// CreateInstance 创建自动发布实例。
 func (h *Handle) CreateInstance(c *gin.Context) {
 	req, ok := binding.JSON[presentationdto.CreateInstanceReq](c)
 	if !ok {
@@ -35,7 +31,6 @@ func (h *Handle) CreateInstance(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgCreateSuccess, res)
 }
 
-// Rebuild 实体更新后重建。
 func (h *Handle) Rebuild(c *gin.Context) {
 	req, ok := binding.JSON[presentationdto.RebuildReq](c)
 	if !ok {
@@ -49,7 +44,6 @@ func (h *Handle) Rebuild(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgRebuildSuccess, res)
 }
 
-// GetByEntity 按内容实体查询实例（后台「详情页模板」页读当前绑定）。
 func (h *Handle) GetByEntity(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.GetByEntityReq](c)
 	if !ok {
@@ -63,7 +57,6 @@ func (h *Handle) GetByEntity(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgDetailSuccess, res)
 }
 
-// Preview 发布前预览模板渲染效果（issue #14 验收 3）：只读渲染，不落库不激活。
 func (h *Handle) Preview(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.PreviewInstanceReq](c)
 	if !ok {
@@ -77,11 +70,6 @@ func (h *Handle) Preview(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgPreviewSuccess, res)
 }
 
-// UpdateURL 修改已发布实例的线上路径（改 URL）：新路径构建激活后，
-// 旧路径按 WithRedirect 登记 301 或取消激活。
-//
-// 用 ShouldBind 而非 ShouldBindJSON：后台入口走表单 POST（dashboard 的
-// 详情页模板页 / 文章发布区块），JSON 与表单都要能绑。
 func (h *Handle) UpdateURL(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.UpdateURLReq](c)
 	if !ok {
@@ -95,7 +83,6 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgUpdateURLSuccess, res)
 }
 
-// Get 实例详情。
 func (h *Handle) Get(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.GetReq](c)
 	if !ok {
@@ -109,7 +96,6 @@ func (h *Handle) Get(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgDetailSuccess, res)
 }
 
-// List 实例列表。
 func (h *Handle) List(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.ListReq](c)
 	if !ok {
@@ -123,7 +109,6 @@ func (h *Handle) List(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgListSuccess, list)
 }
 
-// Delete 删除实例。
 func (h *Handle) Delete(c *gin.Context) {
 	req, ok := binding.Form[presentationdto.DeleteReq](c)
 	if !ok {

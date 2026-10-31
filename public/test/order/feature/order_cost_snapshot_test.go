@@ -1,16 +1,3 @@
-// Package feature order 模块 feature 测试 —— 订单行成本快照改取「归属仓当前成本」
-// （2026-09-19 商品域评审收口项，docs/14 §1.3 / §9.3）。
-//
-// 口径：
-//
-//	· 订单行成本 = 该变体在**该行归属仓**的当前成本。订单不指定仓库（出库由库存域按
-//	  归属仓解析：默认仓），所以这条链路走的就是默认仓那一条；
-//	· 未核算（inventory_stocks.cost_price IS NULL）时订单行成本**留空**——
-//	  绝不用 0 冒充（0 是合法的显式成本：赠品 / 内部划拨）；
-//	· 成本是下单那一刻的快照：之后改库存行成本不影响历史订单（与出库流水的
-//	  unit_cost 留痕同向）。
-//
-// 断言读订单详情（经 service 的对外形状），并直查订单项真源列佐证 NULL 与 0 的区别。
 package feature
 
 import (
@@ -24,7 +11,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// setOwningWarehouseCost 把某变体在默认仓的当前成本写成 cost（走真实入库路径的显式成本）。
 func setOwningWarehouseCost(t *testing.T, f *orderFixture, productID, variantID, skuCode string, cost float64) {
 	t.Helper()
 	if _, err := f.inventory.ChangeStock(context.Background(), &inventorydto.ChangeStockReq{
@@ -39,11 +25,6 @@ func setOwningWarehouseCost(t *testing.T, f *orderFixture, productID, variantID,
 	}
 }
 
-// addFlavour 建一个「口味」变体（同一商品、独立 SKU）并把成本与货写进默认仓。
-//
-// docs/14 §9.3 的常见形态是「一个商品十几个口味，仓库侧其实是一个价」——
-// 成本记录可以共用（十来行写同样的值），但**聚合键仍是 variant_id**：本 helper 让
-// 每个口味各有一行库存、各写同一个成本值。
 func addFlavour(t *testing.T, f *orderFixture, productID, sku string, price, cost float64, stock int) string {
 	t.Helper()
 	ctx := context.Background()
@@ -67,7 +48,6 @@ func addFlavour(t *testing.T, f *orderFixture, productID, sku string, price, cos
 	return v.ID
 }
 
-// rawItemCost 直读订单项真源列：NULL 与 0 必须能区分（这是本批口径的底线）。
 func rawItemCost(t *testing.T, f *orderFixture, orderID uint64) (*int64, int) {
 	t.Helper()
 	var cost sql.NullInt64
@@ -86,8 +66,6 @@ func rawItemCost(t *testing.T, f *orderFixture, orderID uint64) (*int64, int) {
 	return &value, n
 }
 
-// TestOrderItemCostFromOwningWarehouse 验收 ①②：有 (仓库, SKU) 成本时订单行成本等于它；
-// 改价之后历史订单行不漂移。
 func TestOrderItemCostFromOwningWarehouse(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -95,8 +73,7 @@ func TestOrderItemCostFromOwningWarehouse(t *testing.T) {
 	}
 	ctx := context.Background()
 	pid, vid := f.addProduct(t, "成本仓", 99.50, 5)
-	// 归属仓（默认仓）核算出 42.00 元：这时的变体级成本是 49.75，
-	// 订单行必须取**仓库侧**的 42.00 —— 两个来源的值刻意不同，取错即失败。
+
 	setOwningWarehouseCost(t, f, pid, vid, "SKU-成本仓", 42.00)
 
 	res, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
@@ -114,7 +91,6 @@ func TestOrderItemCostFromOwningWarehouse(t *testing.T) {
 		t.Fatalf("订单行成本应取默认仓的 4200 分，实际 %d", got)
 	}
 
-	// 改库存行成本 → 历史订单行是快照，必须原样不动。
 	setOwningWarehouseCost(t, f, pid, vid, "SKU-成本仓", 88.00)
 	after, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
@@ -125,14 +101,13 @@ func TestOrderItemCostFromOwningWarehouse(t *testing.T) {
 	}
 }
 
-// TestOrderItemCostNullWhenNotCosted 验收 ②：该仓未核算 → 订单行成本**留空**（不是 0）。
 func TestOrderItemCostNullWhenNotCosted(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// addProduct 只写变体级成本、入库不带显式成本 ⇒ 库存行 cost_price 为 NULL。
+
 	_, vid := f.addProduct(t, "未核算", 50.00, 3)
 
 	res, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 2))
@@ -146,15 +121,13 @@ func TestOrderItemCostNullWhenNotCosted(t *testing.T) {
 	if detail.Items[0].CostPrice != nil {
 		t.Fatalf("未核算时订单行成本应为 null，实际 %d", *detail.Items[0].CostPrice)
 	}
-	// 真源佐证：列里是 NULL 而不是 0（迁移 256 去掉了 NOT NULL DEFAULT 0）。
+
 	raw, n := rawItemCost(t, f, res.ID)
 	if n != 1 || raw != nil {
 		t.Fatalf("order_items.cost_price 应为 NULL，实际 %v（%d 行）", raw, n)
 	}
 }
 
-// TestOrderItemCostSharedByFlavours 验收 ④：十来个口味共用同一个成本值（多行同值）时，
-// 按变体汇总的利润口径正确。
 func TestOrderItemCostSharedByFlavours(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -165,7 +138,7 @@ func TestOrderItemCostSharedByFlavours(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	// 12 个口味：售价统一 35.00、仓库侧成本统一 12.00、各备 2 件。
+
 	const flavours = 12
 	const price, cost = 35.00, 12.00
 	variants := make([]string, 0, flavours)
@@ -189,8 +162,7 @@ func TestOrderItemCostSharedByFlavours(t *testing.T) {
 	if len(detail.Items) != flavours {
 		t.Fatalf("应有 %d 行订单项，实际 %d", flavours, len(detail.Items))
 	}
-	// 按 variantId 聚合的利润口径：每行成本都是 1200 分（多行同值），
-	// 毛利 = Σ(行实付) - Σ(成本 × 数量)。
+
 	var revenue, totalCost int64
 	for _, it := range detail.Items {
 		if it.CostPrice == nil {

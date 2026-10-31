@@ -7,7 +7,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// PublicVariantsReq 公开商品事实查询；不接受构建文档、展示参数或成本字段。
 type PublicVariantsReq struct {
 	ProjectID  string `form:"projectId" binding:"required,uuid"`
 	VariantIDs string `form:"variantIds" binding:"required,max=3699"`

@@ -1,15 +1,5 @@
 package migrations
 
-// register_comment_i18n.go — 迁移 466a 的 seed 注册（BIZ-5 的文案词条）。
-//
-// 门槛判据**枚举本批自己的 70 个 item_key**（上界封闭，70 × 2 语言 = 140 行）：
-// 用 LIKE 前缀会让「别批次已有同前缀行」把计数抬高、本批被静默跳过（058 的真实故障），
-// 也会在将来新增同前缀 key 时永远追不平、每次启动都重跑（076 的真实故障）。
-// （`site.fragment.comment.*` 与 `admin.comment.*` 两个前缀下本批是唯一写入者；
-// 将来若有人续写同前缀，重跑也会被 ON CONFLICT 挡住。）
-//
-// 注册方式：本文件自带 func init()（与 464 / 462a / 455 一致），不在 register.go 的 init()
-// 里再加一行。
 func init() {
 	registerSeed(Seed{
 		Version:   "466a-comment-i18n",

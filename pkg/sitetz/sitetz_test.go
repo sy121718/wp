@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// TestLocationFollowsEnvVar 环境变量指定的时区生效。
 func TestLocationFollowsEnvVar(t *testing.T) {
 	t.Setenv(envKey, "UTC")
 	ResetForTest()
@@ -23,7 +22,6 @@ func TestLocationFollowsEnvVar(t *testing.T) {
 	}
 }
 
-// TestLocationFallsBackOnBadName 时区名非法时回退本地时区而不是崩掉。
 func TestLocationFallsBackOnBadName(t *testing.T) {
 	t.Setenv(envKey, "Not/AZone")
 	ResetForTest()
@@ -37,7 +35,6 @@ func TestLocationFallsBackOnBadName(t *testing.T) {
 	}
 }
 
-// TestParseDayRejectsBadInput 非法输入照常报错（不静默当成今天）。
 func TestParseDayRejectsBadInput(t *testing.T) {
 	ResetForTest()
 	t.Cleanup(ResetForTest)
@@ -46,11 +43,6 @@ func TestParseDayRejectsBadInput(t *testing.T) {
 	}
 }
 
-// TestParseDateTimeUsesSiteTimezone 「日期 + 时刻」按站点时区解释（审计 TX-011 的口径）。
-//
-// 这是后台「日期 + 时刻」输入（如排期类表单）依赖的判据：同一条字面量「2026-09-30 10:00」在 Asia/Shanghai
-// 与 UTC 下必须是两个不同的绝对时刻 —— 若实现走 time.Local 或 UTC，部署固定时区之后
-// 到点时刻会整体偏移几个小时，而且不报任何错（排定看起来成功了）。
 func TestParseDateTimeUsesSiteTimezone(t *testing.T) {
 	t.Setenv(envKey, "Asia/Shanghai")
 	ResetForTest()
@@ -63,18 +55,17 @@ func TestParseDateTimeUsesSiteTimezone(t *testing.T) {
 	if hour := at.In(Location()).Hour(); hour != 10 {
 		t.Fatalf("应按站点时区解释 10:00，实际 %d 点", hour)
 	}
-	// 同一字面量在 UTC 下解释出的绝对时刻必须不同（差 8 小时）。
+
 	utc := time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC)
 	if at.Equal(utc) {
 		t.Fatal("站点时区下的 10:00 与 UTC 10:00 不该是同一时刻")
 	}
-	// 站点时区 10:00 的绝对时刻 = 同日 02:00 UTC，比「UTC 的 10:00」早 8 小时。
+
 	if delta := at.UTC().Sub(utc); delta != -8*time.Hour {
 		t.Fatalf("Asia/Shanghai 的 10:00 应比 UTC 的 10:00 早 8 小时（绝对时刻），实际差 %s", delta)
 	}
 }
 
-// TestParseDateTimeAcceptsFormAndAbsoluteForms 分隔符、秒可选，带偏移量的绝对时刻不被改写。
 func TestParseDateTimeAcceptsFormAndAbsoluteForms(t *testing.T) {
 	t.Setenv(envKey, "Asia/Shanghai")
 	ResetForTest()
@@ -91,11 +82,11 @@ func TestParseDateTimeAcceptsFormAndAbsoluteForms(t *testing.T) {
 			t.Fatalf("形态 %q 应解析成同一时刻: got=%v err=%v", form, got, perr)
 		}
 	}
-	// 纯日期 = 当日零点（与 ParseDay 同义）。
+
 	if day, derr := ParseDateTime("2026-09-30"); derr != nil || day.In(Location()).Hour() != 0 {
 		t.Fatalf("纯日期应解析成当日零点: %v err=%v", day, derr)
 	}
-	// 带偏移量的 RFC3339 是绝对时刻：不被站点时区改写。
+
 	if abs, aerr := ParseDateTime("2026-09-30T10:00:00+08:00"); aerr != nil || !abs.Equal(want) {
 		t.Fatalf("带偏移的绝对时刻应原样采用: %v err=%v", abs, aerr)
 	}
@@ -107,7 +98,6 @@ func TestParseDateTimeAcceptsFormAndAbsoluteForms(t *testing.T) {
 	}
 }
 
-// TestFormatDateTimeRoundTrip 读侧输出能被写侧原样解析回来（表单往返不丢时刻）。
 func TestFormatDateTimeRoundTrip(t *testing.T) {
 	t.Setenv(envKey, "Asia/Shanghai")
 	ResetForTest()

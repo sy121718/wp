@@ -53,7 +53,7 @@ func TestNavigationEditUsesPostUpdatePermission(t *testing.T) {
 	if _, err := casbin.GetEnforcer().AddPolicy("987654321", "/api/navigation/update", http.MethodPost, "navigation:update"); err != nil {
 		t.Fatal(err)
 	}
-	// A permitted request reaches Get and receives 404 for this missing fixture.
+
 	if status := request(); status != http.StatusNotFound || svc.getCalls != 1 {
 		t.Fatalf("真实 POST 更新权限应允许 GET 入口: status=%d get=%d", status, svc.getCalls)
 	}

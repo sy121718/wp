@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// 不依赖 Node：忘记重新生成时，普通 go test 也必须失败。
 func TestEditorContractsGeneratedFileIsCurrent(t *testing.T) {
 	want, err := EditorContractsJS()
 	if err != nil {

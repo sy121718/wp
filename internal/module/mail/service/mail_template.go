@@ -1,7 +1,5 @@
 package mailservice
 
-// mail_template.go — 邮件模板 CRUD、渲染与事务发送（issue #37）。
-
 import (
 	"bytes"
 	"context"
@@ -17,22 +15,13 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// 模板渲染选项。
-//
-// **missingkey=error 是刻意的**：Go 模板默认把缺失变量渲染成 "<no value>"，
-// 营销群发时一个变量拼错就会静默发出去几千封带着 `<no value>` 的邮件 ——
-// 那种事故没人会及时发现。宁可现在报错。
 const templateOption = "missingkey=error"
 
-// UpsertTemplate 新建或覆盖模板（key + locale 唯一）。
 func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (res *maildto.TemplateItem, err error) {
 	if req == nil || strings.TrimSpace(req.TemplateKey) == "" || strings.TrimSpace(req.Subject) == "" {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
-	// 可视化正文（块树）在场时：**先编译，成功才落库**。
-	//
-	// 编译失败返回带 NodeKey 的明细（哪个块、为什么），并且不写任何一列 —— 半成品
-	// （树是新的、产物是旧的）比存不下更糟：页面显示的是新树，发出去的是旧正文。
+
 	var (
 		bodyJSON     mailmodel.JSONMap
 		compiledHTML string
@@ -52,11 +41,7 @@ func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateR
 		}
 		compiledHTML, compiledText = html, text
 	}
-	// 保存前**先试渲染一次**（用空变量）：模板语法错、变量名写错当场暴露，
-	// 而不是等到真发信时才失败。
-	//
-	// 代码模式（BodyJSON 为空）校验 body_html；可视化模式校验**编译产物** ——
-	// 那才是真正会被发出去的正文（块树里的 text 允许带标记，拼错要到这一步才发现）。
+
 	checkHTML, checkText := req.BodyHTML, req.BodyText
 	if compiledHTML != "" {
 		checkHTML, checkText = compiledHTML, compiledText
@@ -85,7 +70,6 @@ func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateR
 	return templateItemOf(e), nil
 }
 
-// ListTemplates 列出模板。
 func (s *Service) ListTemplates(ctx context.Context, key string) (res []*maildto.TemplateItem, err error) {
 	list, err := s.m.ListTemplates(ctx, key)
 	if err != nil {
@@ -98,7 +82,6 @@ func (s *Service) ListTemplates(ctx context.Context, key string) (res []*maildto
 	return res, nil
 }
 
-// ListTemplatesPage 只对后台列表分页，其他调用方继续使用全量查询。
 func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit int) (res []*maildto.TemplateItem, total int64, current int, err error) {
 	list, total, current, err := s.m.ListTemplatesPage(ctx, key, page, limit)
 	if err != nil {
@@ -111,10 +94,6 @@ func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit
 	return res, total, current, nil
 }
 
-// GetTemplate 取单个模板（key + locale）。不存在返回可读的业务错误。
-//
-// 供可视化编辑器读树：它按 (template_key, locale) 精确定位，不接受「拿列表再筛」——
-// 那一份筛选逻辑会与 model 的唯一键口径分叉。
 func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error) {
 	if strings.TrimSpace(key) == "" {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
@@ -126,20 +105,10 @@ func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto
 	return templateItemOf(e), nil
 }
 
-// DeleteTemplate 删除模板（按 key + locale）。
 func (s *Service) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
 	return s.m.DeleteTemplate(ctx, key, locale)
 }
 
-// bodyOf 取模板**实际会被发出去**的正文。
-//
-// 两条路径的优先级只有这一处：
-//
-//	· body_json 非空（可视化编辑过）→ 用编译产物（body_compiled_*）；
-//	· 否则回落到 body_html / body_text（代码模式，与改造前逐字等价）。
-//
-// 为什么不用「编译产物非空就用它」：那样删掉 body_json 之后旧产物还会继续生效，
-// 而用户以为自己已经退回代码模式了。判据必须是**树的在场**。
 func bodyOf(tpl *mailmodel.MailTemplateEntity) (html, text string) {
 	if tpl == nil {
 		return "", ""
@@ -150,10 +119,6 @@ func bodyOf(tpl *mailmodel.MailTemplateEntity) (html, text string) {
 	return tpl.BodyHTML, tpl.BodyText
 }
 
-// RenderTemplate 渲染模板（导出以便单测直接验证渲染语义）。
-//
-// 三个串（主题 / HTML / 纯文本）共用同一份变量；纯文本为空时由 HTML 兜底不需要，
-// 发送时若只有其一也能发（multipart/alternative 的两种形态由 mailer 决定）。
 func RenderTemplate(subject, bodyHTML, bodyText string, vars map[string]any) (sSubject, sHTML, sText string, err error) {
 	if vars == nil {
 		vars = map[string]any{}
@@ -184,21 +149,12 @@ func RenderTemplate(subject, bodyHTML, bodyText string, vars map[string]any) (sS
 	return sSubject, sHTML, sText, nil
 }
 
-// SendTemplate 发送一封事务邮件：抑制检查 → 渲染 → 落日志 → 入队。
-//
-// **抑制检查与渲染都在入队前同步完成**：
-//
-//	· 抑制名单命中的直接落 suppressed 日志（留痕「为什么没发」），连队都不入；
-//	· 渲染失败当场返回错误（模板语法 / 变量缺失），不会入队后才在 worker 里炸。
-//
-// 真正的投递在 worker 里（mail:send 任务），失败按错误分类回写状态。
 func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (res *maildto.SendResult, err error) {
 	if req == nil || strings.TrimSpace(req.To) == "" || strings.TrimSpace(req.TemplateKey) == "" {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	to := strings.TrimSpace(req.To)
 
-	// 1. 抑制名单（批量接口，单个也走它，口径一致）
 	blocked, err := s.m.SuppressedEmails(ctx, []string{to})
 	if err != nil {
 		return nil, err
@@ -208,7 +164,6 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		return &maildto.SendResult{To: to, Suppressed: true}, nil
 	}
 
-	// 2. 取模板并按语言回退（指定语言没有就用空 locale 的通用模板）
 	tpl, err := s.m.GetTemplate(ctx, req.TemplateKey, req.Locale)
 	if err != nil && strings.TrimSpace(req.Locale) != "" {
 		tpl, err = s.m.GetTemplate(ctx, req.TemplateKey, "")
@@ -217,14 +172,12 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		return nil, mailenums.Err(mailenums.ErrTemplateNotFound)
 	}
 
-	// 3. 渲染（缺失变量在这里报错，而不是发出去 <no value>）
 	htmlSrc, textSrc := bodyOf(tpl)
 	subject, html, text, rerr := RenderTemplate(tpl.Subject, htmlSrc, textSrc, req.Vars)
 	if rerr != nil {
 		return nil, rerr
 	}
 
-	// 4. 选账号：显式指定优先，否则用该用途的默认账号
 	accountID := req.AccountID
 	if accountID == 0 {
 		acc, aerr := s.m.DefaultAccount(ctx, mailmodel.AccountPurposeTransactional)
@@ -234,7 +187,6 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		accountID = acc.ID
 	}
 
-	// 5. 落日志（pending）+ 入队
 	logID, err := s.writeLog(ctx, req, mailmodel.LogStatusPending, subject, &accountID)
 	if err != nil {
 		return nil, err
@@ -243,8 +195,7 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		LogID: logID, AccountID: accountID, To: to,
 		Subject: subject, HTML: html, Text: text,
 	}); err != nil {
-		// 队列未启用（开发 / 测试环境常见）：**降级为同步发送**，与 media / 群发一致。
-		// 生产应启用队列 —— 同步发送会占住调用方（注册接口会因此变慢）。
+
 		if serr := s.sendNow(ctx, logID, accountID, to, subject, html, text); serr != nil {
 			_ = s.m.UpdateLogResult(ctx, logID, map[string]any{"status": mailmodel.LogStatusFailed, "error_message": serr.Error()})
 			return nil, serr
@@ -253,13 +204,6 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 	return &maildto.SendResult{LogID: logID, To: to, Queued: true}, nil
 }
 
-// SendTransactional 实现 mailcontract.TransactionalSender（事务链路的收窄端口）。
-//
-// 与 SendTemplate 的关系：本方法是**契约形状到实现形状的转换层**，不是第二份发信逻辑 ——
-// 转换完立刻委派给 SendTemplate，落模板解析、抑制名单、账号选择、日志与入队全在同一条链路上。
-// 两个形状分开的理由：契约形状随语义走（事务邮件只有「模板 / 语言 / 收件人 / 变量」四件事），
-// dto 形状随 HTTP 绑定走（还要承载群发活动、联系人、操作人）。合成一个的代价是
-// 调用方必须认识绑定层字段，改一次绑定就牵动全部调用方。
 func (s *Service) SendTransactional(ctx context.Context, in *mailcontract.SendInput) (res *mailcontract.SendOutcome, err error) {
 	if in == nil {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
@@ -276,7 +220,6 @@ func (s *Service) SendTransactional(ctx context.Context, in *mailcontract.SendIn
 	return &mailcontract.SendOutcome{Queued: sent.Queued, Suppressed: sent.Suppressed}, nil
 }
 
-// writeLog 写一条发送日志，返回日志 id。
 func (s *Service) writeLog(ctx context.Context, req *maildto.SendTemplateReq, status, subject string, accountID *uint64) (id uint64, err error) {
 	e := &mailmodel.MailLogEntity{
 		ToEmail:     strings.TrimSpace(req.To),
@@ -295,8 +238,6 @@ func (s *Service) writeLog(ctx context.Context, req *maildto.SendTemplateReq, st
 	return e.ID, nil
 }
 
-// isMissingKeyErr 判断是不是「变量缺失」类错误（保存模板时的空变量试渲染会命中它，
-// 那不算语法错 —— 变量要到发送时才有值）。
 func isMissingKeyErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "map has no entry for key")
 }

@@ -9,11 +9,6 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
-// TestEffectivePermissionCodesMergesRoleAndDirect 有效权限码：角色继承 + 直接权限合并去重。
-//
-// 这条判据原先挂在已删除的 GET /api/admin/routes（Vue 时代的动态路由投影）上。
-// 那个端点的唯一真实用途是「算有效权限码」，而这件事现在由 EffectivePermissionCodes
-// 独立承担（侧栏菜单过滤与按钮显隐都读它）—— 判据随之搬到函数上，覆盖不减。
 func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -34,7 +29,6 @@ func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 
-	// 角色绑定菜单权限 + 用户绑定角色（继承侧）
 	roleCode := "eff_role_" + uniq("")
 	roleID := createRole(t, e, roleCode, "有效码角色")
 	if _, err := e.svc.RoleMenuSave(ctx, &admindto.RoleMenuSaveReq{RoleID: roleID, MenuIDs: []uint64{menu.ID}}); err != nil {
@@ -44,7 +38,7 @@ func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 	if err := pkgcasbin.ReplaceUserRoleBindings(idStr(userID), []string{roleCode}); err != nil {
 		t.Fatalf("绑定角色失败: %v", err)
 	}
-	// 用户直接权限（直接侧）
+
 	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{{"/api/eff_btn", "GET", btnCode}}); err != nil {
 		t.Fatalf("写入用户直接权限失败: %v", err)
 	}
@@ -61,7 +55,7 @@ func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 	if !got[btnCode] {
 		t.Fatalf("用户直接授权的码应出现在有效权限集里: %v", codes)
 	}
-	// 去重：两个来源都授权同一个码时只出现一次
+
 	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{
 		{"/api/eff_btn", "GET", btnCode}, {"/api/eff_menu", "GET", menuCode},
 	}); err != nil {
@@ -80,7 +74,6 @@ func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 	}
 }
 
-// TestAdminMenuListDirectAndEffective 用户菜单 ID：直接权限 + 角色继承去重。
 func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -90,7 +83,6 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	createPerm(t, e, codeA, "/api/am_a")
 	createPerm(t, e, codeB, "/api/am_b")
 
-	// 两个菜单（type=2）
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "AM菜单A", Type: adminmodel.MenuTypeMenu, Path: "/am/a",
 		PermissionCodes: []string{codeA}, Status: 1,
@@ -113,7 +105,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	}
 
 	userID := uint64(777)
-	// 角色继承 A
+
 	roleID := createRole(t, e, "am_role_"+uniq(""), "AM角色")
 	if _, err := e.svc.RoleMenuSave(ctx, &admindto.RoleMenuSaveReq{RoleID: roleID, MenuIDs: []uint64{menuA.ID}}); err != nil {
 		t.Fatalf("角色授权失败: %v", err)
@@ -121,7 +113,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	if err := pkgcasbin.ReplaceUserRoleBindings(idStr(userID), []string{codeOfRole(t, e, roleID)}); err != nil {
 		t.Fatalf("绑定角色失败: %v", err)
 	}
-	// 用户直接权限 B
+
 	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{{"/api/am_b", "GET", codeB}}); err != nil {
 		t.Fatalf("写入直接权限失败: %v", err)
 	}
@@ -136,7 +128,6 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	}
 }
 
-// TestAdminRoleSaveAndList 用户角色绑定保存与查询。
 func TestAdminRoleSaveAndList(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -155,9 +146,6 @@ func TestAdminRoleSaveAndList(t *testing.T) {
 	}
 }
 
-// TestBuildAuthorizedTree 授权树：仅授权/公开菜单可见，按钮/外链不进入树，祖先自动补齐。
-// 已知缺陷复现：内部同样走 buildMenuTree（值拷贝 roots），授权目录的子节点丢失
-// → 本测试预期「目录下应有授权菜单」会失败（与 TestMenuTreeBuild 同一缺陷）。
 func TestBuildAuthorizedTree(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -180,7 +168,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
-	// 未授权菜单绑定另一个权限（不在授权 codes 中）
+
 	otherCode := "tree_noauth_" + uniq("")
 	createPerm(t, e, otherCode, "/api/noauth")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
@@ -192,10 +180,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 
 	tree, err := e.svc.BuildAuthorizedTree(ctx, []string{code})
 	wantErr(t, err, "")
-	// 同样不断言「恰好一个根」：迁移会在库里 seed 目录（229 的「库存」，其下的
-	// 「仓库管理」「变动原因字典」标了 is_public=1，任何登录用户都能看见），
-	// 根的数量不是本测试的契约。本测试守的是「按授权过滤」这两件事：
-	// ① 授权目录在且结构正确；② 未授权的那条菜单不出现。
+
 	root := findMenuNodeByTitle(tree, "授权目录")
 	if root == nil {
 		t.Fatalf("授权目录应出现在授权树里: %+v", tree)
@@ -208,7 +193,6 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	}
 }
 
-// findMenuNodeByTitle 在菜单树里按标题定位节点（同上：不依赖「根只有一个」）。
 func findMenuNodeByTitle(nodes []admindto.MenuTreeNode, title string) *admindto.MenuTreeNode {
 	for i := range nodes {
 		if nodes[i].Title == title {
@@ -218,7 +202,6 @@ func findMenuNodeByTitle(nodes []admindto.MenuTreeNode, title string) *admindto.
 	return nil
 }
 
-// hasMenuNodeTitle 递归查找树里是否出现指定标题（断言「未授权节点不出现」用）。
 func hasMenuNodeTitle(nodes []admindto.MenuTreeNode, title string) bool {
 	for _, n := range nodes {
 		if n.Title == title || hasMenuNodeTitle(n.Children, title) {

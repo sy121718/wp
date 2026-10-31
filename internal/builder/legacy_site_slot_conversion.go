@@ -8,7 +8,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// LegacyDocumentChange 是一次离线转换的可定位回执，不参与生产寻址。
 type LegacyDocumentChange struct {
 	NodeID string `json:"nodeId"`
 	Kind   string `json:"kind"`
@@ -16,7 +15,6 @@ type LegacyDocumentChange struct {
 	PageID string `json:"pageId,omitempty"`
 }
 
-// LegacyDocumentConflict 标明不能唯一转换的旧节点；调用方必须整批拒绝。
 type LegacyDocumentConflict struct {
 	NodeID string `json:"nodeId"`
 	Slot   string `json:"slot,omitempty"`
@@ -29,14 +27,11 @@ type LegacyDocumentConversion struct {
 	Conflicts []LegacyDocumentConflict `json:"conflicts"`
 }
 
-// LegacyProductContext 仅由调用方已确认的详情实例或商品详情模板提供。
 type LegacyProductContext struct {
 	ProductID             string
 	ProductDetailTemplate bool
 }
 
-// ConvertLegacySiteSlots 只用于显式控制面迁移。页面目标由调用方验证工程与发布状态；
-// 商品上下文必须来自真实详情实体或模板。存在冲突时不交出任何半转换文档。
 func ConvertLegacySiteSlots(raw json.RawMessage, targets map[string]string, product LegacyProductContext) (result LegacyDocumentConversion, err error) {
 	page, err := ParsePage(raw)
 	if err != nil {

@@ -12,7 +12,6 @@ func inventoryListDOM(t *testing.T, name string, data map[string]any) *html.Node
 	return templateDOM(t, "admin/inventory/"+name, data)
 }
 
-// purchaseListDOM 渲染采购域页面（2026-10 随采购域迁入 admin/purchase/）。
 func purchaseListDOM(t *testing.T, name string, data map[string]any) *html.Node {
 	t.Helper()
 	return templateDOM(t, "admin/purchase/"+name, data)

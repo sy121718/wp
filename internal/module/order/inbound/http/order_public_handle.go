@@ -9,7 +9,6 @@ import (
 	"go_wp/pkg/response"
 )
 
-// PublicHandle 只绑定输入与可信访客身份，所有事实及规则都由订单服务提供。
 type PublicHandle struct {
 	svc ordercontract.VisitorOrderPort
 }

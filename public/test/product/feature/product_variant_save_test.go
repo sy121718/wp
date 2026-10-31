@@ -1,16 +1,3 @@
-// Package feature product 模块 feature 测试 —— 变体清单的「预览—保存」模型（docs/14 §8）。
-//
-// 用户口径：「变体 sku 也是一样系统生产 + 可编辑，生产只是显示，并不会存入数据库，
-// 必须保存才行，所以删除不是删除，是相当于清除前端显示，不存入数据库」。
-//
-// 本文件按验收逐条覆盖（真实 PostgreSQL + 生产迁移 + 真实 product / inventory service）：
-//
-//  1. 生成（预览）**不落库**：笛卡尔积只作为待追加的行返回，库里变体一个字节都不变；
-//  2. 重复生成不重复追加：库里已有的组合 / 清单已有的组合一律跳过；
-//  3. 删除（前端行为）不落库：预览只读，真正删除只发生在「保存」那一步；
-//  4. 保存 = 新增清单里库里没有的 + 更新被编辑过的 SKU + 删除清单外的既有变体；
-//  5. 清单外要删的既有变体若仍有非零库存或被 BOM 引用 → 跳过该行并逐条回带原因（不整批失败）；
-//  6. 服务端不信任前端：非法组合与空 SKU 被拒，SKU 由服务端按变体 SKU 规则重算。
 package feature
 
 import (
@@ -49,11 +36,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// variantListFixture 隔离 PG schema + 生产迁移/种子 + 真实工程与真实 inventory / product service。
-//
-// 与生产装配同形的两处接线：SetInventoryService（归属仓解析与库存记录生成）与
-// SetInventory（库存 model —— 删变体前的非零库存守卫读的就是它）。**两个都要接**：
-// 只接前者时库存守卫会因为读到 nil model 而直接放行，测试会「绿」在一个错的前提上。
 type variantListFixture struct {
 	inventory *inventoryservice.Service
 	products  *productservice.Service
@@ -69,7 +51,7 @@ func newVariantListFixture(t *testing.T) *variantListFixture {
 	if db == nil {
 		return nil
 	}
-	// 内置变动原因字典（迁移 103）必须就位：库存变动只认字典里的原因。
+
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
@@ -95,7 +77,6 @@ func newVariantListFixture(t *testing.T) *variantListFixture {
 	}
 }
 
-// mkAttr 建一个「参与变体」的属性组（值与 key 一一对应，便于断言组合）。
 func (f *variantListFixture) mkAttr(t *testing.T, name, key string, valueKeys []string) *productdto.AttributeResp {
 	t.Helper()
 	values := make([]productdto.AttributeValueReq, 0, len(valueKeys))
@@ -111,7 +92,6 @@ func (f *variantListFixture) mkAttr(t *testing.T, name, key string, valueKeys []
 	return attr
 }
 
-// mkProduct 建一个引用若干属性组的商品（同时生成它的首个无规格占位变体）。
 func (f *variantListFixture) mkProduct(t *testing.T, name, slug string, attributeIDs []string) *productdto.ProductResp {
 	t.Helper()
 	res, err := f.products.Create(context.Background(), &productdto.CreateReq{
@@ -123,7 +103,6 @@ func (f *variantListFixture) mkProduct(t *testing.T, name, slug string, attribut
 	return res
 }
 
-// variantsOf 读商品的变体（按 sort 顺序）。
 func (f *variantListFixture) variantsOf(t *testing.T, productID string) []*productdto.VariantResp {
 	t.Helper()
 	detail, err := f.products.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
@@ -133,7 +112,6 @@ func (f *variantListFixture) variantsOf(t *testing.T, productID string) []*produ
 	return detail.Variants
 }
 
-// addStock 走真实库存变动链路入库（原因 = 内置的采购入库，方向 in）。
 func (f *variantListFixture) addStock(t *testing.T, v *productdto.VariantResp, qty int) {
 	t.Helper()
 	_, err := f.inventory.ChangeStock(context.Background(), &inventorydto.ChangeStockReq{
@@ -149,7 +127,6 @@ func (f *variantListFixture) addStock(t *testing.T, v *productdto.VariantResp, q
 	}
 }
 
-// previewAll 不勾选任何值（= 全部参与变体的属性组 × 全部启用值）跑一次预览。
 func (f *variantListFixture) previewAll(t *testing.T, productID string, existing ...json.RawMessage) *productdto.PreviewVariantResp {
 	t.Helper()
 	res, err := f.products.PreviewVariantCombinations(context.Background(), &productdto.PreviewVariantReq{
@@ -162,7 +139,6 @@ func (f *variantListFixture) previewAll(t *testing.T, productID string, existing
 	return res
 }
 
-// save 以清单为准保存（失败即测试失败）。
 func (f *variantListFixture) save(t *testing.T, productID string, rows []productdto.VariantListResp) *productdto.SaveVariantListResp {
 	t.Helper()
 	res, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
@@ -175,7 +151,6 @@ func (f *variantListFixture) save(t *testing.T, productID string, rows []product
 	return res
 }
 
-// saveErr 以清单为准保存并返回错误文案（期望失败时用）。
 func (f *variantListFixture) saveErr(t *testing.T, productID string, rows []productdto.VariantListResp) string {
 	t.Helper()
 	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
@@ -188,7 +163,6 @@ func (f *variantListFixture) saveErr(t *testing.T, productID string, rows []prod
 	return err.Error()
 }
 
-// optionKeyOf 组合的规范化键（与 service 的 optionKey 同一口径：按键排序拼 k=v）。
 func optionKeyOf(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	m := map[string]string{}
@@ -207,7 +181,6 @@ func optionKeyOf(t *testing.T, raw json.RawMessage) string {
 	return strings.Join(parts, "&")
 }
 
-// variantByOption 按组合键找变体（找不到即测试失败）。
 func variantByOption(t *testing.T, f *variantListFixture, productID string, raw json.RawMessage) *productdto.VariantResp {
 	t.Helper()
 	want := optionKeyOf(t, raw)
@@ -220,10 +193,6 @@ func variantByOption(t *testing.T, f *variantListFixture, productID string, raw 
 	return nil
 }
 
-// —— 验收 1 / 2 / 3：生成只进清单（不落库）、重复生成不重复追加 ——
-
-// TestVariantPreviewDoesNotPersist 验收 1 + 3：
-// 预览把笛卡尔积算出来交给前端，但库里**一个变体都不写**。
 func TestVariantPreviewDoesNotPersist(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -255,7 +224,7 @@ func TestVariantPreviewDoesNotPersist(t *testing.T) {
 			t.Fatalf("预览行必须带组合键（前端据此去重）")
 		}
 	}
-	// 生成不落库：库里还是那一个占位变体，且它的 SKU 一字未改。
+
 	after := f.variantsOf(t, p.ID)
 	if len(after) != 1 {
 		t.Fatalf("预览不该写库：期望仍是 1 个变体，实际 %d", len(after))
@@ -265,8 +234,6 @@ func TestVariantPreviewDoesNotPersist(t *testing.T) {
 	}
 }
 
-// TestVariantPreviewSkipsExistingAndReappears 验收 2 + 3：
-// 库里已有的组合不会被再次追加；把某一行从清单里删掉（不落库）后再点生成，它才会回来。
 func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -289,7 +256,6 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 		t.Fatalf("保存后应有 4 个变体（无规格占位变体已随清单外删除），实际 %d", len(stored))
 	}
 
-	// 清单里已有这 4 行：再点生成不再追加（库里也没有第 5 个）。
 	existing := make([]json.RawMessage, 0, len(stored))
 	for _, v := range stored {
 		existing = append(existing, v.OptionValues)
@@ -298,12 +264,11 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 	if len(again.Rows) != 0 || again.Skipped != 4 {
 		t.Fatalf("重复生成不该追加：rows=%d skipped=%d", len(again.Rows), again.Skipped)
 	}
-	// 库里已有的组合同样跳过（即便前端没回传清单）。
+
 	if res := f.previewAll(t, p.ID); len(res.Rows) != 0 || res.Skipped != 4 {
 		t.Fatalf("库里已有的组合应跳过：rows=%d skipped=%d", len(res.Rows), res.Skipped)
 	}
 
-	// 把其中一行移出清单（= 前端删除）并保存：库里少一个组合。
 	dropped := stored[0]
 	keep := make([]productdto.VariantListResp, 0, len(stored)-1)
 	for _, v := range stored[1:] {
@@ -312,7 +277,7 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 	if res := f.save(t, p.ID, keep); res.Deleted != 1 {
 		t.Fatalf("清单外的那一行应被删除，实际 deleted=%d", res.Deleted)
 	}
-	// 再点生成：被删掉的组合回来了（说明「生成」是显式动作，不会自己冒出来）。
+
 	back := f.previewAll(t, p.ID)
 	if len(back.Rows) != 1 {
 		t.Fatalf("删掉的那一个组合应能被重新生成，实际 rows=%d", len(back.Rows))
@@ -322,9 +287,6 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 	}
 }
 
-// —— 验收 4：保存 = 新增 + 改 SKU + 删清单外 ——
-
-// TestVariantSaveAddsUpdatesAndDeletes 一次保存同时做完三件事。
 func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -335,7 +297,7 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	p := f.mkProduct(t, "卫衣", "hoodie-save", []string{color.ID, size.ID})
 
 	pv := f.previewAll(t, p.ID)
-	// 第一段：只保留前两个组合。
+
 	first := []productdto.VariantListResp{
 		{OptionValues: pv.Rows[0].OptionValues},
 		{OptionValues: pv.Rows[1].OptionValues},
@@ -344,7 +306,6 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 		t.Fatalf("首次保存应新增 2 个、删掉清单外的占位变体：created=%d deleted=%d", res.Created, res.Deleted)
 	}
 
-	// 第二段：保留第一行但改 SKU；丢弃第二行；补上另外两个组合。
 	v1 := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
 	custom := "SZ_CUSTOM_RED_S_V"
 	second := []productdto.VariantListResp{
@@ -368,7 +329,7 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	if kept.ID != v1.ID {
 		t.Fatalf("改 SKU 应改同一条变体（不是删旧建新），实际 id %s → %s", v1.ID, kept.ID)
 	}
-	// 丢弃的那一行确实没了。
+
 	for _, v := range after {
 		if optionKeyOf(t, v.OptionValues) == optionKeyOf(t, pv.Rows[1].OptionValues) {
 			t.Fatalf("清单外的那一行应被删除")
@@ -376,9 +337,6 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	}
 }
 
-// —— 验收 5：存在不可删除行时整批拒绝，所有修改保持原状 ——
-
-// TestVariantSaveRejectsStockRow 清单外存在非零库存时整批拒绝，既有行修改也不落库。
 func TestVariantSaveRejectsStockRow(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -399,7 +357,6 @@ func TestVariantSaveRejectsStockRow(t *testing.T) {
 	kept := variantByOption(t, f, p.ID, pv.Rows[3].OptionValues)
 	f.addStock(t, withStock, 3)
 
-	// 一行有库存时整个清单被拒，保留行的 SKU 更新也不能提交。
 	before := f.variantsOf(t, p.ID)
 	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{VariantID: kept.ID, SKUCode: kept.SKUCode + "_EDIT", OptionValues: kept.OptionValues}}})
 	var rejected facing.BlockedError
@@ -422,9 +379,6 @@ func TestVariantSaveRejectsStockRow(t *testing.T) {
 
 }
 
-// —— 验收 6：服务端不信任前端 ——
-
-// TestVariantSaveRejectsIllegalCombinationAndEmptySKU 非法组合与空 SKU 都被明确拒绝。
 func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -434,34 +388,31 @@ func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 	size := f.mkAttr(t, "尺寸", "size", []string{"s", "m"})
 	p := f.mkProduct(t, "长裤", "pants-guard", []string{color.ID, size.ID})
 
-	// 属性组不在该商品上（前端塞了一个别的组）。
 	msg := f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		OptionValues: json.RawMessage(`{"nope":"x"}`),
 	}})
 	if !strings.Contains(msg, productenums.ErrVariationAttributeInvalid) {
 		t.Fatalf("非法属性组应报 %s，实际 %q", productenums.ErrVariationAttributeInvalid, msg)
 	}
-	// 取值不在该属性组内（停用 / 不存在的值）。
+
 	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		OptionValues: json.RawMessage(`{"color":"purple","size":"s"}`),
 	}})
 	if !strings.Contains(msg, productenums.ErrVariationValueInvalid) {
 		t.Fatalf("非法取值应报 %s，实际 %q", productenums.ErrVariationValueInvalid, msg)
 	}
-	// 新增行没有规格组合：空组合不是「无规格变体」的入口（占位变体只由商品创建产生）。
+
 	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{OptionValues: json.RawMessage(`{}`)}})
 	if !strings.Contains(msg, productenums.ErrVariantOptionsInvalid) {
 		t.Fatalf("空组合应报 %s，实际 %q", productenums.ErrVariantOptionsInvalid, msg)
 	}
 
-	// 新增行没填 SKU：由系统按变体 SKU 规则生成（不是错误）。
 	pv := f.previewAll(t, p.ID)
 	saved := f.save(t, p.ID, []productdto.VariantListResp{{OptionValues: pv.Rows[0].OptionValues}})
 	if saved.Created != 1 {
 		t.Fatalf("新增行应落库 1 个变体，实际 %d", saved.Created)
 	}
 
-	// 既有行把 SKU 清空（含只填了空段）：明确报错，而不是静默补一个系统编码。
 	stored := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
 	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		VariantID: stored.ID, SKUCode: "   ", OptionValues: stored.OptionValues,
@@ -475,13 +426,13 @@ func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 	if !strings.Contains(msg, productenums.ErrVariantSKUEmpty) {
 		t.Fatalf("规范化后为空段应报 %s，实际 %q", productenums.ErrVariantSKUEmpty, msg)
 	}
-	// 新增行直接抄库里的 SKU：唯一性按 product_id + sku_code 判，明确拒绝（前端提交的值不作数）。
+
 	_, conflictErr := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{SKUCode: stored.SKUCode, OptionValues: pv.Rows[1].OptionValues}}})
 	var conflict facing.BlockedError
 	if !errors.As(conflictErr, &conflict) || len(conflict.BlockedItems()) != 1 || conflict.BlockedItems()[0].ID != "row:1" || conflict.BlockedItems()[0].ReasonKey != productenums.ErrSkuTaken {
 		t.Fatalf("抄用已占用的 SKU 应定位到提交行：%v", conflictErr)
 	}
-	// 重复行导致整批被拒，第一行的 SKU 更新也必须回滚。
+
 	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{ProjectID: f.projectID, ProductID: p.ID, WarehouseID: f.warehouse.ID, Rows: []productdto.VariantListResp{{VariantID: stored.ID, SKUCode: stored.SKUCode + "_EDIT"}, {VariantID: stored.ID, SKUCode: stored.SKUCode}}})
 	var rejected facing.BlockedError
 	if !errors.As(err, &rejected) || len(rejected.BlockedItems()) != 1 || rejected.BlockedItems()[0].ReasonKey != productenums.ErrVariantListDuplicated {
@@ -495,9 +446,6 @@ func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 
 }
 
-// —— 页面链路：预览与保存均返回统一 JSON ——
-
-// TestVariantListPagePreviewAndSaveFlow 后台页面的两个端点在真实链路里可用。
 func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -512,7 +460,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
-	// 保存由页面 data-write-url 声明的 JSON 端点处理。
+
 	engine.POST("/api/product/variant/save", producthttp.NewProductHandle(f.products).SaveVariantList)
 
 	rec := postForm(engine, "/admin/products/variant/preview", url.Values{
@@ -539,7 +487,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 			t.Fatalf("预览行必须带 SKU / 原始规格组合：%+v", row)
 		}
 	}
-	// 预览不落库（页面链路同样如此）。
+
 	if got := f.variantsOf(t, p.ID); len(got) != 1 {
 		t.Fatalf("预览不该写库：期望 1 个变体，实际 %d", len(got))
 	}
@@ -564,7 +512,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
 		t.Fatalf("保存响应不是合法 JSON: %v（%s）", err, rec.Body.String())
 	}
-	// 成功回执使用统一消息，写入计数只保留在 data。
+
 	if saved.Code != http.StatusOK || saved.Message == "" || saved.Data.Created != 2 {
 		t.Fatalf("回执应含新增计数与计数本身，实际 code=%d message=%q created=%d", saved.Code, saved.Message, saved.Data.Created)
 	}
@@ -573,7 +521,6 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	}
 }
 
-// postJSON 以 JSON 体打一个接口端点：基座接管的写路径都是 JSON，不再是表单。
 func postJSON(t *testing.T, engine *gin.Engine, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, err := json.Marshal(body)
@@ -587,12 +534,8 @@ func postJSON(t *testing.T, engine *gin.Engine, path string, body any) *httptest
 	return rec
 }
 
-// 保证 httptest 被使用（其余用例走 service 直调）。
 var _ = httptest.NewRecorder
 
-// TestVariantListSeedFromStoredVariants 验收 1：
-// 详情页清单的初始行 = 库里已有的变体（带 SKU 与 option_values），**不是**重算笛卡尔积 ——
-// 已预览但没保存的组合不会自己出现在清单里（这正是「删了又回来」的根因）。
 func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -606,7 +549,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	if len(pv.Rows) != 4 {
 		t.Fatalf("前置条件：2×2 应有 4 个组合，实际 %d", len(pv.Rows))
 	}
-	// 只保存前两个组合：后两个仍是「已预览、未保存」。
+
 	f.save(t, p.ID, []productdto.VariantListResp{
 		{OptionValues: pv.Rows[0].OptionValues},
 		{OptionValues: pv.Rows[1].OptionValues},
@@ -622,7 +565,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 	rec := httptest.NewRecorder()
-	// 变体清单在**编辑页**（详情页只读）：清单的初始行 / 保存入口都在那里。
+
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/products/edit?project="+f.projectID+"&product="+p.ID, nil))
 	if rec.Code != http.StatusOK {
@@ -637,7 +580,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 			t.Fatalf("清单初始行应带既有变体 id %q（保存时据此更新而不是新建）", v.ID)
 		}
 	}
-	// 未保存的两个组合：它们的系统建议 SKU 不该出现在清单里。
+
 	for _, row := range pv.Rows[2:] {
 		if strings.Contains(body, row.SKUCode) {
 			t.Fatalf("未保存的组合出现在清单里（说明清单重算了笛卡尔积）：%s", row.SKUCode)

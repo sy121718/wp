@@ -1,11 +1,5 @@
 package mailmcp
 
-// contact_write_tools_test.go — 联系人写工具的边界。
-//
-// 这一组的关键不在参数校验，而在**回执要把看不见的后果说出来**：
-// 置 subscribed 或加标签会触发自动化、当场发信。用户说「给他打个 vip 标签」时
-// 想的只是分类，信已经出去了。
-
 import (
 	"context"
 	"errors"
@@ -128,7 +122,6 @@ func TestContactWriteToolsAreFive(t *testing.T) {
 	}
 }
 
-// 操作人从 ctx 拿（与评论审核同一条口径）。
 func TestContactWriteCarriesOperatorFromContext(t *testing.T) {
 	stub := &stubContactWriter{createID: 7}
 	if _, err := callContactWrite(t, stub, "contact_create", map[string]any{"email": "a@b.c"}); err != nil {
@@ -139,7 +132,6 @@ func TestContactWriteCarriesOperatorFromContext(t *testing.T) {
 	}
 }
 
-// 不传 status 时不能替用户决定「能发信」—— 回执必须点明他收不到。
 func TestContactCreateTextExplainsPending(t *testing.T) {
 	stub := &stubContactWriter{createID: 7}
 	text, err := callContactWrite(t, stub, "contact_create", map[string]any{"email": "buyer@example.com"})
@@ -151,13 +143,12 @@ func TestContactCreateTextExplainsPending(t *testing.T) {
 			t.Errorf("正文缺 %q：\n%s", want, text)
 		}
 	}
-	// 空 status 要原样交给 service（由它落 pending），不能在工具层自己填死。
+
 	if stub.createReq.Status != "" {
 		t.Errorf("空 status 应原样传（service 落 pending），实得 %q", stub.createReq.Status)
 	}
 }
 
-// 置 subscribed 会触发订阅类自动化，回执必须提醒 —— 用户以为只是改了个字段。
 func TestContactCreateTextWarnsAutomation(t *testing.T) {
 	stub := &stubContactWriter{createID: 7}
 	text, err := callContactWrite(t, stub, "contact_create", map[string]any{
@@ -197,7 +188,6 @@ func TestContactStatusRejectsBadStatus(t *testing.T) {
 	}
 }
 
-// 删联系人必须去重：重复 id 会让「实际删除数」对不上请求数。
 func TestContactDeleteDedupesAndReports(t *testing.T) {
 	stub := &stubContactWriter{deleteN: 2}
 	text, err := callContactWrite(t, stub, "contact_delete", map[string]any{
@@ -223,7 +213,6 @@ func TestContactDeleteRejectsEmptyIDs(t *testing.T) {
 	}
 }
 
-// 打标签：add 与 remove 不能同时为空（一次什么都没改的写调用没有意义）。
 func TestContactTagRejectsEmptyChange(t *testing.T) {
 	stub := &stubContactWriter{}
 	if _, err := callContactWrite(t, stub, "contact_tag", map[string]any{"ids": []uint64{3}}); err == nil {
@@ -272,8 +261,6 @@ func TestContactWritePropagatesError(t *testing.T) {
 	}
 }
 
-// 描述里必须写明 tags 是覆盖（contact_update）还是增删（contact_tag），
-// 以及置 subscribed 会触发自动化 —— 三件事模型都推不出来。
 func TestContactWriteDescriptionsStateKeySemantics(t *testing.T) {
 	tools := mustContactWriteTools(t, &stubContactWriter{})
 	if desc := tools["contact_update"].Description(); !strings.Contains(desc, "覆盖") {

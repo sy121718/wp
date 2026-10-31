@@ -17,9 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ApplyDocumentConversions 是有限控制面转换入口。全部旧版本/hash 一致才写；
-// 全部恰好已到计划目标时安全重放，混合状态或任一冲突整笔回滚。
-// 不改路径、主题或任何活跃产物；发布重建仍使用现有 Page/Presentation 管线。
 func (s *Service) ApplyDocumentConversions(ctx context.Context, projectID string, input []pagecontract.DocumentConversion, templates contenttemplatecontract.DraftDocumentWriterTx) ([]pagecontract.DocumentConversionRecord, error) {
 	if _, err := uuid.Parse(projectID); err != nil || len(input) == 0 || len(input) > 32 {
 		return nil, ErrInvalidParam

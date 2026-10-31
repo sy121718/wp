@@ -1,10 +1,7 @@
-// Package marquee 实现 core.marquee：跑马灯组件（对标 WD wd_marquee）。
-// 容器型：children 即滚动内容（文本/Logo/卡片均可），渲染为无缝循环
-// 双份内容 + CSS keyframes 位移动画（零 JS）。
 package marquee
 
 import (
-	_ "embed" // marquee.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strconv"
@@ -12,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.marquee"
 
 func init() {
@@ -20,17 +16,12 @@ func init() {
 	core.RegisterTemplate("marquee", marqueeTemplate)
 }
 
-// Component 跑马灯组件（结构型）。
 type Component struct{}
 
-// Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
-// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
-// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
-// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
 func (c *Component) Palette() core.PaletteMeta {
 	return core.PaletteMeta{
 		Type:     Type,
@@ -45,7 +36,6 @@ func (c *Component) Palette() core.PaletteMeta {
 	}
 }
 
-// Direction 滚动方向。
 type Direction string
 
 const (
@@ -53,25 +43,22 @@ const (
 	DirRight Direction = "right"
 )
 
-// Props 跑马灯属性。
 type Props struct {
-	// Speed 滚动速度（秒，单份内容位移一个自身宽度的时间；默认 12s）。
 	Speed float64 `json:"speed,omitempty" ct:"number,sec=content,label=速度(s)"`
-	// Direction 滚动方向：left / right。
+
 	Direction Direction `json:"direction,omitempty" ct:"select,left=向左,right=向右,default=left,sec=style,label=滚动方向"`
-	// PauseOnHover 悬停暂停。
+
 	PauseOnHover bool `json:"pauseOnHover,omitempty" ct:"bool,sec=style,label=悬停暂停"`
-	// Gap 内容间距（px）。
+
 	Gap string `json:"gap,omitempty" ct:"dimension,maxlen=20,sec=content,label=间距"`
-	// Background 背景色。
+
 	Background string `json:"background,omitempty" ct:"color,maxlen=200,sec=style,label=背景色"`
-	// Padding 内边距。
+
 	Padding string `json:"padding,omitempty" ct:"margin,maxlen=30,sec=style,label=内边距"`
-	// Advanced 通用高级属性。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Validate 校验：至少一个内容节点。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
 	if err := c.ValidateSelf(node, ids); err != nil {
 		return err
@@ -79,7 +66,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
 	return core.ValidateChildren(node, ids)
 }
 
-// ValidateSelf 只检查自身；树遍历由 core 统一执行。
 func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
@@ -110,15 +96,9 @@ func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err erro
 	return nil
 }
 
-// marqueeCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组，
-// 而作用域替换、每实例帧名装配与确定性输出仍由构建期负责。
-//
 //go:embed marquee.css
 var marqueeCSS string
 
-// compileCSS 跑马灯样式（位移动画）。
-//
-// Go 侧只把方向翻译成帧的起止值、把属性翻译成变量；哪条规则存在由样式源的 @if 决定。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -134,7 +114,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if dir == DirRight {
 		from, to = "-50%", "0"
 	}
-	// 间距过白名单校验：非法值退回默认（样式源不承担安全性判断）。
+
 	gap := p.Gap
 	if gap == "" || !core.IsSafeCSSValue(gap) {
 		gap = "24px"
@@ -155,8 +135,5 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// marqueeTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed marquee.jet
 var marqueeTemplate string

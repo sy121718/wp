@@ -1,7 +1,3 @@
-// ai_token_service_test.go — 对外访问令牌（PAT）的签发 / 校验 / 撤销。
-//
-// 这是安全敏感件，用例的取向是**钉住「不许发生什么」**：
-// 明文不落库、无效令牌对外只有一种说法、scope 含未知权限点必须当场拒、撤销不删行。
 package aiservice_test
 
 import (
@@ -17,12 +13,10 @@ import (
 	"go_wp/pkg/crypto"
 )
 
-// tokenTestScopeOK 测试用的权限点白名单（真装配接 permission.Known，本用例不引那个包）。
 func tokenTestScopeOK(p string) bool {
 	return p == "order:list" || p == "ai:chat"
 }
 
-// newTokenService 造一个令牌服务 + 它背后的真库。
 func newTokenService(t *testing.T) (*aiservice.AccessTokenService, *aimodel.AccessTokenModel) {
 	t.Helper()
 	_, db := newChatTestService(t)
@@ -32,7 +26,6 @@ func newTokenService(t *testing.T) (*aiservice.AccessTokenService, *aimodel.Acce
 	return svc, m
 }
 
-// createToken 签发一把令牌（用例里重复出现的入参）。
 func createToken(t *testing.T, svc *aiservice.AccessTokenService, name string, scopes []string, expiresAt string) *aidto.TokenCreateResp {
 	t.Helper()
 	res, err := svc.Create(context.Background(), &aidto.TokenCreateReq{
@@ -47,9 +40,6 @@ func createToken(t *testing.T, svc *aiservice.AccessTokenService, name string, s
 	return res
 }
 
-// TestTokenCreateKeepsOnlyHashInDB 明文只在响应里，库里只有哈希与前缀。
-//
-// 这是整块功能最重要的一条：任何一个能读库的人（备份、只读账号、日志）都不该拿到可用令牌。
 func TestTokenCreateKeepsOnlyHashInDB(t *testing.T) {
 	svc, m := newTokenService(t)
 	res := createToken(t, svc, "外部看板", []string{"order:list"}, "")
@@ -68,7 +58,6 @@ func TestTokenCreateKeepsOnlyHashInDB(t *testing.T) {
 		t.Errorf("展示前缀应是明文的开头，实际 %q vs %q", res.Item.TokenPrefix, plain)
 	}
 
-	// 库里按哈希能查到；按明文查不到（库里没有明文）。
 	row, err := m.FindByHash(context.Background(), crypto.Sha256(plain))
 	if err != nil || row == nil {
 		t.Fatalf("按哈希应能查到这一行：row=%v err=%v", row, err)
@@ -81,7 +70,6 @@ func TestTokenCreateKeepsOnlyHashInDB(t *testing.T) {
 	}
 }
 
-// TestTokenCreateValidatesInput 三类输入必须当场拒：无用途、无 scope、含未知权限点。
 func TestTokenCreateValidatesInput(t *testing.T) {
 	svc, _ := newTokenService(t)
 	cases := []struct {
@@ -109,7 +97,6 @@ func TestTokenCreateValidatesInput(t *testing.T) {
 	}
 }
 
-// TestTokenCreateScopesDedupKeepsOrder scope 去重且保序（展示顺序跳动会让人以为内容变了）。
 func TestTokenCreateScopesDedupKeepsOrder(t *testing.T) {
 	svc, _ := newTokenService(t)
 	res := createToken(t, svc, "去重", []string{"ai:chat", "order:list", "ai:chat", " ai:chat "}, "")
@@ -124,11 +111,10 @@ func TestTokenCreateScopesDedupKeepsOrder(t *testing.T) {
 	}
 }
 
-// TestTokenCreateUnsetValidatorFailsClosed 没注入 scope 校验端口时也必须拒（不能放行未知权限点）。
 func TestTokenCreateUnsetValidatorFailsClosed(t *testing.T) {
 	_, db := newChatTestService(t)
 	svc := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
-	// 刻意不调 SetScopeValidator
+
 	_, err := svc.Create(context.Background(), &aidto.TokenCreateReq{
 		Name: "x", Scopes: []string{"order:list"}, UserID: testUserID,
 	})
@@ -137,7 +123,6 @@ func TestTokenCreateUnsetValidatorFailsClosed(t *testing.T) {
 	}
 }
 
-// TestTokenExpiryIsEndOfDay 过期日语义 = **该日结束**（次日零点失效）；已过去的日子直接拒。
 func TestTokenExpiryIsEndOfDay(t *testing.T) {
 	svc, _ := newTokenService(t)
 	tomorrow := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
@@ -152,7 +137,6 @@ func TestTokenExpiryIsEndOfDay(t *testing.T) {
 		t.Errorf("过期时刻应为 %v（该日结束），实际 %v", want, got)
 	}
 
-	// 昨天的日期 = 已经失效，建它没有意义。
 	_, err := svc.Create(context.Background(), &aidto.TokenCreateReq{
 		Name: "过期日已过", Scopes: []string{"order:list"}, ExpiresAt: "2020-01-01", UserID: testUserID,
 	})
@@ -160,7 +144,6 @@ func TestTokenExpiryIsEndOfDay(t *testing.T) {
 		t.Fatalf("过期日已过去应被拒，实际 %v", err)
 	}
 
-	// 格式不对按参数错误处理（不是静默按「不过期」放行）。
 	_, err = svc.Create(context.Background(), &aidto.TokenCreateReq{
 		Name: "格式错", Scopes: []string{"order:list"}, ExpiresAt: "2026/01/01", UserID: testUserID,
 	})
@@ -169,7 +152,6 @@ func TestTokenExpiryIsEndOfDay(t *testing.T) {
 	}
 }
 
-// TestTokenVerify 校验通过的路径：拿到身份（含 scope 与账号），并记 last_used_time。
 func TestTokenVerify(t *testing.T) {
 	svc, m := newTokenService(t)
 	created := createToken(t, svc, "校验用", []string{"order:list", "ai:chat"}, "")
@@ -191,7 +173,6 @@ func TestTokenVerify(t *testing.T) {
 		t.Error("空权限点不该通过")
 	}
 
-	// last_used_time 记上了（旁路观测）。
 	rows, err := m.List(context.Background(), testUserID, 10)
 	if err != nil || len(rows) == 0 {
 		t.Fatalf("列表应有记录：%v", err)
@@ -201,7 +182,6 @@ func TestTokenVerify(t *testing.T) {
 	}
 }
 
-// TestTokenVerifyFailsClosed 四种无效输入对外**只有一种说法**（不区分不存在 / 已撤销 / 已过期）。
 func TestTokenVerifyFailsClosed(t *testing.T) {
 	svc, _ := newTokenService(t)
 	bad := []struct {
@@ -222,7 +202,6 @@ func TestTokenVerifyFailsClosed(t *testing.T) {
 		})
 	}
 
-	// 撤销后立即失效，且说法与「不存在」一致。
 	created := createToken(t, svc, "待撤销", []string{"order:list"}, "")
 	if err := svc.Revoke(context.Background(), created.Item.ID); err != nil {
 		t.Fatalf("撤销失败：%v", err)
@@ -233,7 +212,6 @@ func TestTokenVerifyFailsClosed(t *testing.T) {
 	}
 }
 
-// TestTokenRevokeIsIdempotentByStatus 撤销不删行；重复撤销回「不存在」而不是改写撤销时刻。
 func TestTokenRevokeIsIdempotentByStatus(t *testing.T) {
 	svc, m := newTokenService(t)
 	created := createToken(t, svc, "撤销两次", []string{"order:list"}, "")
@@ -246,7 +224,6 @@ func TestTokenRevokeIsIdempotentByStatus(t *testing.T) {
 		t.Fatalf("重复撤销应为 %q（它已经不是启用的了），实际 %v", aienums.ErrTokenNotFound, err)
 	}
 
-	// 行还在（审计要能回答「什么时候撤的」）。
 	rows, err := m.List(context.Background(), testUserID, 50)
 	if err != nil {
 		t.Fatalf("列表失败：%v", err)
@@ -265,12 +242,10 @@ func TestTokenRevokeIsIdempotentByStatus(t *testing.T) {
 	}
 }
 
-// TestTokenListScope all=true 看全站，否则只看自己；两者的区分靠 user_id 过滤。
 func TestTokenListScope(t *testing.T) {
 	svc, m := newTokenService(t)
 	created := createToken(t, svc, "自己的", []string{"order:list"}, "")
 
-	// 造一把属于别人的令牌（直接写 model，绕开 UserID 由登录态决定的入口）。
 	other := &aimodel.AIAccessTokenEntity{
 		Name: "别人的", UserID: testUserID + 1000, TokenPrefix: "wp_other0000",
 		TokenHash: "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
@@ -307,7 +282,6 @@ func TestTokenListScope(t *testing.T) {
 		t.Errorf("all=true 应同时看到自己与别人的令牌（mine=%v other=%v）", sawMine, sawOther)
 	}
 
-	// 未指定账号又不带 all：拒（不能默默给全站）。
 	if _, err := svc.List(context.Background(), &aidto.TokenListReq{Limit: 10}); err == nil ||
 		err.Error() != aienums.ErrUserRequired {
 		t.Fatalf("缺账号且不带 all 应报 %q，实际 %v", aienums.ErrUserRequired, err)

@@ -1,11 +1,5 @@
 package unit
 
-// media_attachment_unit_test.go — media 模块附件 service 层单元测试。
-// 覆盖：上传记录创建（类型分类/大小校验/物理文件清理）、查询、软删除、分类归属更新、
-// ExtraInfo JSON 合并。
-// 标注 [BUG-xx] 的用例按「正确语义」断言（期望行为），当前生产代码未满足时会 FAIL，
-// 作为生产代码 bug 的复现证据；bug 明细见测试报告。
-
 import (
 	"bytes"
 	"context"
@@ -27,7 +21,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// initUploadForTest 初始化上传组件（local provider，默认 10MB 上限）。
 func initUploadForTest(t *testing.T) {
 	t.Helper()
 	cfg := viper.New()
@@ -39,18 +32,12 @@ func initUploadForTest(t *testing.T) {
 	t.Cleanup(func() { _ = upload.Close() })
 }
 
-// newMultipartFileHeader 构造带指定 Content-Type 的 multipart 文件头；
-// declaredSize>0 时覆盖声明大小（用于超限快速拒绝路径）。
-// fileFixtureBytes 按文件名 / 声明类型给出可被 http.DetectContentType 认出的最小字节串。
-//
-// 只覆盖用例真正用到的几类；不认识的一律回落到一段文本（与旧夹具逐字节相同，
-// 存量用例的行为不变）。
 func fileFixtureBytes(filename, contentType string) []byte {
 	ext := strings.ToLower(filepath.Ext(filename))
 	ct := strings.ToLower(strings.TrimSpace(contentType))
 	switch {
 	case ext == ".png" || ct == "image/png":
-		// PNG 魔数 + IHDR 头（够 DetectContentType 判出 image/png）。
+
 		return []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
 			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
@@ -77,9 +64,7 @@ func newMultipartFileHeader(t *testing.T, filename, contentType string, declared
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 写**真实**的文件头字节，而不是一句固定文本：上传校验改成内容嗅探优先之后，
-	// 声明的 Content-Type 已经不决定落库的 MIME（文本字节会被嗅成 text/plain，
-	// 断言 image/png 就再也不成立）。让夹具与真实上传一致，用例才在测实现而不是测夹具。
+
 	if _, err := part.Write(fileFixtureBytes(filename, contentType)); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +87,6 @@ func newMultipartFileHeader(t *testing.T, filename, contentType string, declared
 	return fh
 }
 
-// cleanupUploadedFile 注册清理：删除 local provider 写入的物理文件（相对测试包 cwd 的 public/storage）。
 func cleanupUploadedFile(t *testing.T, resp *mediadto.AttachmentResp) {
 	t.Helper()
 	if resp == nil || resp.URL == "" {
@@ -117,7 +101,6 @@ func cleanupUploadedFile(t *testing.T, resp *mediadto.AttachmentResp) {
 	})
 }
 
-// TestMediaUploadSuccess 上传成功：类型分类、元数据落库、可查询。
 func TestMediaUploadSuccess(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	initUploadForTest(t)
@@ -142,8 +125,7 @@ func TestMediaUploadSuccess(t *testing.T) {
 	if resp.URL == "" || !strings.HasPrefix(resp.URL, upload.BaseURL()+"/") {
 		t.Fatalf("URL 应指向存储: %q", resp.URL)
 	}
-	// 大小跟着夹具走，不再钉死一句字面量：夹具字节改了（比如为了让 MIME 嗅探成立
-	// 而换成真 PNG 头），这条断言不该跟着碎。
+
 	if want := int64(len(fileFixtureBytes("photo.png", "image/png"))); resp.FileSize != want {
 		t.Fatalf("文件大小不正确: got=%d want=%d", resp.FileSize, want)
 	}
@@ -161,7 +143,6 @@ func TestMediaUploadSuccess(t *testing.T) {
 	_ = db
 }
 
-// TestMediaUploadNilFileRejected nil 文件拒绝。
 func TestMediaUploadNilFileRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -172,9 +153,6 @@ func TestMediaUploadNilFileRejected(t *testing.T) {
 	}
 }
 
-// TestMediaUploadCategoryNotExistAccepted [BUG-05] 上传指定不存在的分类仍成功。
-// 期望：拒绝（目标分类不存在，与 UpdateAttachment 的校验保持一致）。
-// 实际：Upload 直接写 category_id，不校验分类存在 → FAIL。
 func TestMediaUploadCategoryNotExistAccepted(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	initUploadForTest(t)
@@ -191,7 +169,6 @@ func TestMediaUploadCategoryNotExistAccepted(t *testing.T) {
 	}
 }
 
-// TestMediaUploadOversizeRejected 声明大小超过上限（默认 10MB）拒绝。
 func TestMediaUploadOversizeRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	initUploadForTest(t)
@@ -207,7 +184,6 @@ func TestMediaUploadOversizeRejected(t *testing.T) {
 	}
 }
 
-// TestMediaUploadMimeFallbackClassify 未知扩展名按 MIME 兜底归类。
 func TestMediaUploadMimeFallbackClassify(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	initUploadForTest(t)
@@ -224,7 +200,6 @@ func TestMediaUploadMimeFallbackClassify(t *testing.T) {
 	}
 }
 
-// TestMediaListDefaultsAndPaging 分页默认值：Page<=0→1、Limit<=0 或 >100→20；显式分页透传。
 func TestMediaListDefaultsAndPaging(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -261,7 +236,6 @@ func TestMediaListDefaultsAndPaging(t *testing.T) {
 	})
 }
 
-// TestMediaListFilters 按分类/类型/搜索筛选命中数正确。
 func TestMediaListFilters(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -298,9 +272,6 @@ func TestMediaListFilters(t *testing.T) {
 	})
 }
 
-// TestMediaListSearchWildcardNotEscaped [BUG-08] 搜索词含 SQL LIKE 通配符（_ / %）未转义。
-// 期望：搜索 "img_100" 按字面匹配，只命中 1 条。
-// 实际：LIKE '%img_100%' 中 _ 匹配任意单字符，命中 img_100 / imgX100 / img100 共 3 条 → FAIL。
 func TestMediaListSearchWildcardNotEscaped(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -318,7 +289,6 @@ func TestMediaListSearchWildcardNotEscaped(t *testing.T) {
 	}
 }
 
-// TestMediaDetailSuccess 详情字段完整（MD5 空串、创建时间格式化）。
 func TestMediaDetailSuccess(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -339,7 +309,6 @@ func TestMediaDetailSuccess(t *testing.T) {
 	}
 }
 
-// TestMediaDetailNotExistRejected 不存在的附件返回"附件不存在"。
 func TestMediaDetailNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -350,7 +319,6 @@ func TestMediaDetailNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaDeleteInvisibleInList 删除后列表不可见（软删除 status=0）。
 func TestMediaDeleteInvisibleInList(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -372,7 +340,6 @@ func TestMediaDeleteInvisibleInList(t *testing.T) {
 	}
 }
 
-// TestMediaDeleteNotExistRejected 删除不存在的附件返回"附件不存在"。
 func TestMediaDeleteNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -383,9 +350,6 @@ func TestMediaDeleteNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaDetailAfterDeleteVisible [BUG-04] 附件软删除后 Detail 仍返回记录。
-// 期望：删除后详情应返回"附件不存在"（与 List 过滤 status=1 保持一致）。
-// 实际：GetByID 不过滤 status，删除后仍可读到 → FAIL。
 func TestMediaDetailAfterDeleteVisible(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -400,7 +364,6 @@ func TestMediaDetailAfterDeleteVisible(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateAttachmentMetaMerge 更新分类 + ExtraInfo 合并保留已有键。
 func TestMediaUpdateAttachmentMetaMerge(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -431,7 +394,6 @@ func TestMediaUpdateAttachmentMetaMerge(t *testing.T) {
 		t.Fatalf("ExtraInfo 合并不正确: %+v", extra)
 	}
 
-	// 移入未分类（CategoryID=0 → NULL）。
 	zero := uint64(0)
 	if err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: id, CategoryID: &zero}); err != nil {
 		t.Fatalf("移入未分类失败: %v", err)
@@ -442,14 +404,10 @@ func TestMediaUpdateAttachmentMetaMerge(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateAttachmentExtraInfoArrayOverwritten [BUG-06] 原 ExtraInfo 非 JSON 对象时更新丢数据。
-// 期望：更新 alt 不应丢失原有数据（或明确报错）。
-// 实际：json.Unmarshal 到 map 失败被忽略（_ =），extra 为空 map，写入仅含新字段的对象，原数据被覆盖 → FAIL。
 func TestMediaUpdateAttachmentExtraInfoArrayOverwritten(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
 
-	// 合法 JSON 但非对象（数组），模拟历史/外部写入的数据。
 	id := seedAttachment(t, db, nil, "a.png", "image", `[1,2]`)
 	alt := "新alt"
 	if err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: id, Alt: &alt}); err != nil {
@@ -466,20 +424,18 @@ func TestMediaUpdateAttachmentExtraInfoArrayOverwritten(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateAttachmentNotExistRejected 更新不存在的附件拒绝。
 func TestMediaUpdateAttachmentNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
 
 	name := "x"
 	err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: 99999, FileName: &name})
-	// 该路径的文案仍由 media service 硬编码（media_category.go:157），未走 enums key，故按原文断言。
+
 	if err == nil || !strings.Contains(err.Error(), "附件不存在") {
 		t.Fatalf("不存在的附件更新应被拒绝: %v", err)
 	}
 }
 
-// TestMediaUpdateAttachmentCategoryNotExistRejected 目标分类不存在拒绝。
 func TestMediaUpdateAttachmentCategoryNotExistRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -492,7 +448,6 @@ func TestMediaUpdateAttachmentCategoryNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaUpdateAttachmentEmptyFieldsIgnored 空白文件名不覆盖；空 alt 删除对应键。
 func TestMediaUpdateAttachmentEmptyFieldsIgnored(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()

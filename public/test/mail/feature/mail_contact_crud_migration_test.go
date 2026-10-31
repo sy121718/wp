@@ -1,21 +1,5 @@
 package feature
 
-// mail_contact_crud_migration_test.go — 525（联系人 CRUD / 标签的权限点与按钮）与
-// 526（联系人 CRUD / 标签的 i18n 词条）的落地结构、幂等性与判定门槛。
-//
-// 为什么落在 public/test/mail/feature：这两个迁移是邮件域「联系人 CRUD + 标签管理」的
-// 权限与文案落地，与同目录的页面 / 路由用例同属邮件域回归资产；迁移 SQL 本体在
-// public/migrations（本文件只读它、不修改）。
-//
-// 三条容易做错、这里逐条钉死：
-//  1. 判定门槛必须枚举**本批自己的对象**（三个权限点带 api_path/api_method、三个按钮、
-//     48 条 (key, lang) 词条对）。用全库计数当门槛的后果是：存量库永远满足，
-//     补词条的那条迁移永远不执行 —— 半成品永久停在半成品。
-//  2. SQL 本身要幂等：迁移器逐语句执行、不包事务，重跑是唯一恢复手段 ——
-//     绕过 ConditionSQL 直接重放整段 SQL，必须不重复插行、不刷新 update_time。
-//  3. 按钮必须挂在「联系人」菜单（/admin/mail/contacts）下：父菜单用 JOIN 取，
-//     父不存在时一行不插 —— 不留孤儿按钮，也不把按钮挂到别的模块菜单下。
-
 import (
 	"reflect"
 	"regexp"
@@ -28,16 +12,13 @@ import (
 )
 
 const (
-	// mailContactCrudPermissionSeedVersion 525 在注册表里的版本号。
 	mailContactCrudPermissionSeedVersion = "525-mail-contact-crud-permission"
-	// mailContactCrudI18nSeedVersion 526 在注册表里的版本号。
+
 	mailContactCrudI18nSeedVersion = "526-mail-contact-crud-i18n"
-	// mailContactCrudMenuPath 按钮挂载的父菜单路径（521 建的「联系人」菜单）。
+
 	mailContactCrudMenuPath = "/admin/mail/contacts"
 )
 
-// mailContactCrudPermissions 本批三个权限点的期望终态。
-// api_path 必须与页面写路由声明的 Casbin 路径同源 —— 差一个字符就是「有权限但被拦」。
 var mailContactCrudPermissions = []struct {
 	code   string
 	name   string
@@ -49,7 +30,6 @@ var mailContactCrudPermissions = []struct {
 	{"mail:contact_tag", "批量打标签", "/api/mail/contact/tag", "POST"},
 }
 
-// mailContactCrudButtons 本批三个 type=3 按钮：标题 / 权限码 / sort_order。
 var mailContactCrudButtons = []struct {
 	title string
 	code  string
@@ -60,14 +40,10 @@ var mailContactCrudButtons = []struct {
 	{"批量打标签", "mail:contact_tag", 70},
 }
 
-// mailContactCrudI18nPairRe 从 526 的 INSERT 元组里取 (item_key, lang) 对。
-// 用解析而不是手抄：手抄的清单会跟 SQL 漂移，而漂移后的测试只证明「我以为写了什么」。
 var mailContactCrudI18nPairRe = regexp.MustCompile(`\('([a-zA-Z0-9_.]+)',\s*'(zh-CN|en-US)',`)
 
-// mailContactCrudI18nMinPairs 526 至少落地的 (key, lang) 对数：22 个 admin 键 + 3 个错误键，各两语言。
 const mailContactCrudI18nMinPairs = 50
 
-// mailContactCrudSeed 取本批 seed；未注册即失败 —— 没注册的迁移根本不会被执行。
 func mailContactCrudSeed(t *testing.T, version string) migrations.Seed {
 	t.Helper()
 	for _, s := range migrations.AllSeeds() {
@@ -79,7 +55,6 @@ func mailContactCrudSeed(t *testing.T, version string) migrations.Seed {
 	return migrations.Seed{}
 }
 
-// mailContactCrudDB 真实迁移库 + 结构自检（拿不到表就当场失败，而不是让断言空转）。
 func mailContactCrudDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -105,7 +80,6 @@ func mailContactCrudApplySeeds(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// mailContactCrudReplay 绕过 ConditionSQL 直接重放本批 SQL（逐条执行，失败即定位到语句）。
 func mailContactCrudReplay(t *testing.T, db *gorm.DB, version string) {
 	t.Helper()
 	stmts := migrations.SplitStatements(mailContactCrudSeed(t, version).SQL)
@@ -128,7 +102,6 @@ func mailContactCrudDecision(t *testing.T, db *gorm.DB, version string) int64 {
 	return got
 }
 
-// mailContactCrudI18nPairs 解析 526 里所有 (item_key, lang) 对。
 func mailContactCrudI18nPairs(t *testing.T) [][2]string {
 	t.Helper()
 	seed := mailContactCrudSeed(t, mailContactCrudI18nSeedVersion)
@@ -144,7 +117,6 @@ func mailContactCrudI18nPairs(t *testing.T) [][2]string {
 	return pairs
 }
 
-// TestMailContactCrudPermissionSeedAppliesExpectedStructure 525 应用后的终态。
 func TestMailContactCrudPermissionSeedAppliesExpectedStructure(t *testing.T) {
 	db := mailContactCrudDB(t)
 	mailContactCrudApplySeeds(t, db)
@@ -211,7 +183,6 @@ func TestMailContactCrudPermissionSeedAppliesExpectedStructure(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudPermissionSeedIsIdempotent 跳过路径与重放路径都不产生变化。
 func TestMailContactCrudPermissionSeedIsIdempotent(t *testing.T) {
 	db := mailContactCrudDB(t)
 	mailContactCrudApplySeeds(t, db)
@@ -240,13 +211,11 @@ func TestMailContactCrudPermissionSeedIsIdempotent(t *testing.T) {
 		t.Fatal("种子执行后 sys_menus 为空：前置不成立")
 	}
 
-	// ① ConditionSQL 命中的跳过路径。
 	mailContactCrudApplySeeds(t, db)
 	if got := snapshot(); !reflect.DeepEqual(before, got) {
 		t.Errorf("再次执行种子后 sys_menus 发生变化（判定跳过失效）：\n before=%+v\n  after=%+v", before, got)
 	}
 
-	// ② 绕过判定直接重放 SQL：不重复插行、不反复顺延 sort_order。
 	mailContactCrudReplay(t, db, mailContactCrudPermissionSeedVersion)
 	after := snapshot()
 	if !reflect.DeepEqual(before, after) {
@@ -278,13 +247,10 @@ func TestMailContactCrudPermissionSeedIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudPermissionConditionRejectsPartialStates 判定门槛：半成品必须返回 0，
-// 且下一次 RunSeeds 必须把缺的行补回来（门槛失效 = 半成品永久停在半成品）。
 func TestMailContactCrudPermissionConditionRejectsPartialStates(t *testing.T) {
 	db := mailContactCrudDB(t)
 	mailContactCrudApplySeeds(t, db)
 
-	// 只删按钮、保留三个权限点：这是最像「插到一半」的状态。
 	if err := db.Exec(`DELETE FROM sys_menus WHERE permission_code = ? AND type = 3`,
 		"mail:contact_tag").Error; err != nil {
 		t.Fatalf("删除按钮失败: %v", err)
@@ -306,7 +272,6 @@ func TestMailContactCrudPermissionConditionRejectsPartialStates(t *testing.T) {
 		t.Errorf("补齐后判定应回到 1，实际 %d", got)
 	}
 
-	// 权限点缺失同样要判 0（另一条 AND 分支）。
 	if err := db.Exec(`DELETE FROM sys_permission WHERE permission_code = ?`,
 		"mail:contact_delete").Error; err != nil {
 		t.Fatalf("删除权限点失败: %v", err)
@@ -316,7 +281,6 @@ func TestMailContactCrudPermissionConditionRejectsPartialStates(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudI18nSeedAppliesExpectedStructure 526 落地的词条对与空态终值。
 func TestMailContactCrudI18nSeedAppliesExpectedStructure(t *testing.T) {
 	db := mailContactCrudDB(t)
 	mailContactCrudApplySeeds(t, db)
@@ -337,7 +301,6 @@ func TestMailContactCrudI18nSeedAppliesExpectedStructure(t *testing.T) {
 		}
 	}
 
-	// 空态描述的两条终值：模板兜底 / 迁移值 / i18n 守卫测试三处逐字一致。
 	for _, want := range []struct{ lang, value string }{
 		{"zh-CN", "新建一位联系人手工加一条，或用「导入联系人」批量导入 CSV —— 名单建立起来才能按标签圈人群群发。"},
 		{"en-US", "Add one contact by hand, or import a CSV in bulk — the list has to exist before you can target people by tag."},
@@ -358,9 +321,6 @@ func TestMailContactCrudI18nSeedAppliesExpectedStructure(t *testing.T) {
 	}
 }
 
-// TestMailContactCrudI18nSeedIsIdempotent 词条重放：不新增行、不刷新 update_time。
-//
-// 空态那段的 UPDATE 带旧值守卫 —— 少了它，每次启动都会重写一遍运营可能手改过的文案。
 func TestMailContactCrudI18nSeedIsIdempotent(t *testing.T) {
 	db := mailContactCrudDB(t)
 	mailContactCrudApplySeeds(t, db)

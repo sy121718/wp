@@ -8,7 +8,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// 普通页面无需系统槽位即可完整编译购物车、结算与本地订单结果。
 func TestCommercePresetCompilesWithoutSiteSlots(t *testing.T) {
 	raw, err := (BusinessPresetRegistry{}).ResolvePreset(context.Background(), "commerce.cart-checkout", 1)
 	if err != nil {

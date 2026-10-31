@@ -1,9 +1,5 @@
 package unit
 
-// 示例插件一致性验收（OSS-016）：examples/l0-demo 的安装相关文件与
-// scaffold.Files("l0demo") 产物逐字节一致 —— 保证「scaffold 生成即可安装」
-// 与「示例可安装」是同一条链路；README 属说明文档不参与比对。
-
 import (
 	"context"
 	"os"
@@ -14,7 +10,6 @@ import (
 	"go_wp/internal/module/plugin/scaffold"
 )
 
-// repoRoot 从测试文件位置回推仓库根（../../../.. 到 go_wp/）。
 func repoRoot(t *testing.T) string {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -24,11 +19,10 @@ func repoRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("filepath.Abs: %v", err)
 	}
-	// public/test/plugin/unit/example_parity_test.go → 仓库根
+
 	return filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(abs)))))
 }
 
-// TestExamplePluginParity 示例插件与 scaffold 产物一致（安装相关文件）。
 func TestExamplePluginParity(t *testing.T) {
 	want, err := scaffold.Files("l0demo")
 	if err != nil {
@@ -37,7 +31,7 @@ func TestExamplePluginParity(t *testing.T) {
 	exampleRoot := filepath.Join(repoRoot(t), "examples", "l0-demo")
 	for rel, wantContent := range want {
 		if rel == "README.md" {
-			// README 属人读说明（含能力缺口标注），不参与逐字节比对。
+
 			continue
 		}
 		got, err := os.ReadFile(filepath.Join(exampleRoot, filepath.FromSlash(rel)))
@@ -50,7 +44,6 @@ func TestExamplePluginParity(t *testing.T) {
 	}
 }
 
-// TestExamplePluginInstallable 示例插件走真实 Install → EnabledAssembly 全链。
 func TestExamplePluginInstallable(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {

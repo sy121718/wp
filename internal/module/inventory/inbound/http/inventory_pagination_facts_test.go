@@ -1,16 +1,5 @@
 package inventoryhttp
 
-// inventory_pagination_facts_test.go — task-117（P3-B3b）：inventory 模块三个整页分页
-// 站点的证据。
-//
-// 分两层：
-//   · 库存流水（/admin/inventory）走**真 HTTP**：从入口打到渲染字节，钉住分页条出现、
-//     链接带本次全部筛选 + limit、信息行页码窗口正确。
-//   · 采购单页与货源页的 handler 依赖一整套契约方法（列 + 计数 + 汇总 + 仓库/变体选项），
-//     本文件改为在**数据映射层**钉住（templateMap 把 pagination.Page 事实交给模板、
-//     旧键一个不留）—— 加上模板层逐字节差分与「三个模块零旧分页残留」的源码扫描，
-//     链路（handler → 数据结构 → 模板键 → partial）每一段都有独立证据。
-
 import (
 	"context"
 	"net/http"
@@ -24,7 +13,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// paginationNavOf 取出页面里的分页条片段（没渲染出来时返回空串）。
 func paginationNavOf(body string) string {
 	start := strings.Index(body, `<nav class="pagination"`)
 	if start < 0 {
@@ -38,8 +26,6 @@ func paginationNavOf(body string) string {
 	return rest[:end+len("</nav>")]
 }
 
-// b3bInventoryFactsStub 在渲染测试的桩上覆写计数：只把**总数**抬到多页，
-// 其余方法仍走父桩（未用到的契约方法继续由嵌入的 nil 接口兜底）。
 type b3bInventoryFactsStub struct {
 	*inventoryPageRenderStub
 	movementsTotal int64
@@ -49,14 +35,10 @@ func (s *b3bInventoryFactsStub) CountMovements(context.Context, *inventorydto.Li
 	return s.movementsTotal, nil
 }
 
-// TestInventoryMovementsPaginationFactsWiring 库存流水：total=45 ⇒ 三页；链接保留
-// project / sku 两个筛选维度，并带上 limit。
 func TestInventoryMovementsPaginationFactsWiring(t *testing.T) {
 	i18n.InjectForTest(nil, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	// 库存流水的默认每页条数是 inventoryMovementPageSize（50，不是 20）：
-	// 要造出多页必须让总数越过分页阈值，否则 Facts 判单页、片段不渲染。
 	stub := &b3bInventoryFactsStub{inventoryPageRenderStub: &inventoryPageRenderStub{}, movementsTotal: 120}
 	router := newInventoryPageTestRouter(t, stub, &inventoryPageRenderProjects{})
 
@@ -77,9 +59,9 @@ func TestInventoryMovementsPaginationFactsWiring(t *testing.T) {
 		t.Fatalf("三页数据却没渲染分页条（%s）—— handler 很可能没有把 pagination.Page 事实交给模板", slot)
 	}
 	for _, want := range []string{"project=project-1", "sku=SKU-1", "limit=50", "page=1", "page=3",
-		// 第 2 页是当前页：渲染成 is-active 的 span（无 href）。
+
 		`is-active">2</span>`,
-		// 信息行由 partial 用事实现算：total / start / end 都对才有这一句。
+
 		"共 120 条，第 51-100 条"} {
 		if !strings.Contains(nav, want) {
 			t.Errorf("分页条缺少 %q：\n%s", want, nav)
@@ -87,7 +69,6 @@ func TestInventoryMovementsPaginationFactsWiring(t *testing.T) {
 	}
 }
 
-// inventoryFactsMapper 造一个最小可用的 gin 上下文（templateMap 只读 query 与请求上下文）。
 func inventoryFactsMapper(t *testing.T, target string) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

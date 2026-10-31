@@ -1,11 +1,5 @@
 package workbenchhttp
 
-// dashboard_overview_test.go — 概览页跨模块取数的单元判据（stub 端口，不连库）。
-//
-// 这里钉的是「拼装」这一层：多工程累加、趋势按天合并与柱高归一、榜单合并与截断、
-// 文章浏览只算文章页、以及**单块失败不拖垮整页**。SQL 与口径的正确性由 order /
-// page / analytics 各自的测试负责，这里只保证它们被正确地问、正确地拼。
-
 import (
 	"context"
 	"errors"
@@ -27,11 +21,10 @@ type stubOrderPort struct {
 	growth   map[string]*orderdto.CustomerGrowthResp
 	failWith error
 	calls    int
-	// growthReq 记下最后一次收到的区间：概览页与客户概览页必须落在同一个窗口。
+
 	growthReq *orderdto.CustomerGrowthReq
 }
 
-// CustomerGrowthByRange 新客数（与客户概览页同一个聚合、同一个区间）。
 func (s *stubOrderPort) CustomerGrowthByRange(_ context.Context, req *orderdto.CustomerGrowthReq) (*orderdto.CustomerGrowthResp, error) {
 	s.growthReq = req
 	if s.failWith != nil {
@@ -74,8 +67,6 @@ func (s *stubOrderPort) DailySeries(_ context.Context, req *orderdto.OrderDailyS
 	return &orderdto.OrderDailySeriesResp{ProjectID: req.ProjectID}, nil
 }
 
-// HourlySeries 与 DailySeries 共用 daily 夹具：两者的差别只是桶宽，
-// 夹具里再分一份只会让「同一条数据在两种粒度下都必须出现」的断言写两遍。
 func (s *stubOrderPort) HourlySeries(_ context.Context, req *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error) {
 	return s.DailySeries(context.Background(), req)
 }
@@ -90,7 +81,6 @@ func (s *stubOrderPort) TopProducts(_ context.Context, req *orderdto.OrderTopPro
 	return &orderdto.OrderTopProductsResp{ProjectID: req.ProjectID}, nil
 }
 
-// SoldQuantityByRange 按工程回商品件数（缺省 0，与其它 stub 同形）。
 func (s *stubOrderPort) SoldQuantityByRange(_ context.Context, req *orderdto.OrderSoldQuantityReq) (*orderdto.OrderSoldQuantityResp, error) {
 	if s.failWith != nil {
 		return nil, s.failWith
@@ -160,9 +150,7 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 			"p2": {Quantity: 9},
 		},
 	}
-	// Total 是**全站** PV（含非文章页路径），Paths 只是前 N 条里文章页那部分。
-	// Daily 是两张图的日期轴来源之一：10-04 那天**只有浏览没有订单**，
-	// 用来钉「两侧都要落进同一根日期轴」（少了它，那天会被静默丢掉）。
+
 	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
 		"p1": {Total: 45, Daily: []analyticsdto.DailyCount{
 			{Day: "2026-09-29", Views: 40},
@@ -193,9 +181,7 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if snap.KPI.RangeSalesCents != 30050 {
 		t.Errorf("区间销售额 = %d 分，期望 30050", snap.KPI.RangeSalesCents)
 	}
-	// 符号取自后台数据字典；本用例没注入字典，回落的形态是「货币代码紧贴数字」
-	//（不带空格 —— 代码是口径标识，界面上不该出现「CNY 300.50」这种把标识当符号的写法）。
-	// 注入字典后这里会是 ¥300.50，见 TestOverviewSalesLabelUsesDictSymbol。
+
 	if snap.KPI.RangeSalesLabel != "CNY300.50" && snap.KPI.RangeSalesLabel != "300.50" {
 		t.Errorf("销售额展示串 = %q（货币由站点默认货币决定）", snap.KPI.RangeSalesLabel)
 	}
@@ -211,7 +197,7 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if snap.KPI.ArticleViews != 42 {
 		t.Errorf("其中文章页应只算 article 路径（30+12），实得 %d", snap.KPI.ArticleViews)
 	}
-	// 日期轴是**订单与浏览量的并集**：09-29 / 10-04 / 10-05（10-04 只有浏览）。
+
 	if len(snap.Trend) != 3 {
 		t.Fatalf("趋势点应合并成 3 天，实得 %d：%+v", len(snap.Trend), snap.Trend)
 	}
@@ -227,15 +213,14 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if got := byDay["2026-09-29"]; got.Orders != 3 || got.Views != 40 {
 		t.Errorf("09-29 应为 3 单 / 40 浏览，实得 %d / %d", got.Orders, got.Views)
 	}
-	// 只有浏览的那天：订单为 0，浏览照旧在轴上（少了它图会短一截且不报错）。
+
 	if got := byDay["2026-10-04"]; got.Orders != 0 || got.Views != 5 {
 		t.Errorf("10-04 应为 0 单 / 5 浏览（只有浏览没有订单的天不能被丢掉），实得 %d / %d", got.Orders, got.Views)
 	}
 	if got := byDay["2026-10-05"]; got.Orders != 4 || got.Views != 60 {
 		t.Errorf("10-05 应为 4 单 / 60 浏览，实得 %d / %d", got.Orders, got.Views)
 	}
-	// 两套柱高各自归一，互不影响：销售额最高的是 10-05，浏览量最高的也是 10-05，
-	// 所以拿 10-04（Sales=0 / Views=5）当判据 —— 它的浏览量柱高必须来自浏览量那一套。
+
 	if got := byDay["2026-10-05"]; got.SalesHeightPct != 100 || got.ViewsHeightPct != 100 {
 		t.Errorf("10-05 两套柱高都该是 100（各自的最大值），实得 %d / %d", got.SalesHeightPct, got.ViewsHeightPct)
 	}
@@ -249,7 +234,7 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if len(snap.Top) != 2 || snap.Top[0].ProductName != "B" || snap.Top[0].Rank != 1 {
 		t.Errorf("榜单应跨工程按销量合并并重排名次，实得 %+v", snap.Top)
 	}
-	// 页面排行：跨工程合并后按浏览量降序（/blog/a 30 > /blog/b 12 > /about 7）。
+
 	if len(snap.TopPages) != 3 {
 		t.Fatalf("页面排行应合并成 3 条，实得 %d：%+v", len(snap.TopPages), snap.TopPages)
 	}
@@ -276,26 +261,20 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestOverviewPageKindKeyCoversEveryKnownKind 页面类型 → 词条 key 的映射不漏项。
-//
-// 用 pageenums.PageKinds() 当输入：page 模块新增一种类型时这条会红，
-// 而不是「页面上那枚标签凭空消失」（认不出的类型回空串，展示层就不渲染它）。
 func TestOverviewPageKindKeyCoversEveryKnownKind(t *testing.T) {
 	for _, kind := range pageenums.PageKinds() {
 		if got := overviewPageKindKey(kind); got == "" {
 			t.Errorf("页面类型 %q 没有对应的词条 key —— 新增类型时忘了补 overviewPageKindKey", kind)
 		}
 	}
-	// 认不出的类型回空串（展示层据此不渲染标签，而不是渲染一个空 badge）。
+
 	if got := overviewPageKindKey("no-such-kind"); got != "" {
 		t.Errorf("未知类型应回空串，实得 %q", got)
 	}
 }
 
 func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
-	// 订单块整体失败：订单侧 KPI / 榜单为空（本例的 analytics 没给按天数据，
-	// 所以趋势也为空 —— 趋势轴是两侧的并集，有浏览量的那天照旧会出现在轴上），
-	// 且失败信息只记**模块名**（错误文本进日志、不进页面）。
+
 	orders := &stubOrderPort{failWith: errors.New("db down: password=secret")}
 	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
 		"p1": {Paths: []analyticsdto.PathCount{{Path: "/blog/a", Views: 11}}},
@@ -328,10 +307,6 @@ func TestCollectOverviewWithoutPortsIsNotReady(t *testing.T) {
 	}
 }
 
-// TestBuildTopCapsAtLimit 榜单截断：造得比上限多，验证截到上限且名次重排。
-//
-// 造数用 overviewTopLimit+3 而不是写死的 8：上限是常量（口径「热销商品前十」），
-// 写死条数会让这个用例在上限调整时以「实得 N」的形式红掉，而它想钉的其实是截断这件事。
 func TestBuildTopCapsAtLimit(t *testing.T) {
 	n := overviewTopLimit + 3
 	in := make([]overviewTopProduct, 0, n)
@@ -368,15 +343,10 @@ func TestFormatCents(t *testing.T) {
 	}
 }
 
-// testRange 用例用的固定区间：7 天窗口（与改动前的固定窗口同形，断言数字不必跟着变）。
 func testRange() overviewRange {
 	return newRange(rangeWeek, "2026-01-01", "2026-01-07", false)
 }
 
-// TestOverviewKPIIncludesNewCustomers 概览页第 6 张卡：区间新客。
-//
-// 数字必须与客户概览页同源（同一个方法、同一个区间）—— 所以这里除了断言被累加，
-// 还断言**传下去的区间就是页面的区间**：传错窗口不会报错，只会让两页显示两个新客数。
 func TestOverviewKPIIncludesNewCustomers(t *testing.T) {
 	orders := &stubOrderPort{growth: map[string]*orderdto.CustomerGrowthResp{
 		"p1": {ProjectID: "p1", NewCustomers: 4},
@@ -399,7 +369,6 @@ func TestOverviewKPIIncludesNewCustomers(t *testing.T) {
 	}
 }
 
-// stubCurrencyPort 只给 currency 字典供数。
 type stubCurrencyPort struct {
 	opts []sysconfigdto.DictOption
 	err  error
@@ -409,11 +378,6 @@ func (s *stubCurrencyPort) ListDictOptions(context.Context, string) ([]sysconfig
 	return s.opts, s.err
 }
 
-// 金额前缀用**字典里的符号**，不是货币代码。
-//
-// 判据：界面上写「CNY 300.50」是把口径标识当符号用 —— 人读的是 ¥。
-// 而符号的唯一来源是后台那张字典表（运营可增删货币），代码里另建一份映射必然漂移，
-// 漂移的表现是「后台加了港币、概览页仍显示三字母代码」，不报错也没人知道改哪。
 func TestOverviewSalesLabelUsesDictSymbol(t *testing.T) {
 	orders := &stubOrderPort{summary: map[string]*orderdto.OrderRangeSummaryResp{
 		"p1": {OrderCount: 1, NetSales: 12345, NetSalesLabel: "123.45"},
@@ -428,7 +392,6 @@ func TestOverviewSalesLabelUsesDictSymbol(t *testing.T) {
 	}
 }
 
-// 字典读不到时金额照常显示（只是没有符号）—— 不能因为查字典失败把整张卡打空。
 func TestOverviewSalesLabelSurvivesDictFailure(t *testing.T) {
 	orders := &stubOrderPort{summary: map[string]*orderdto.OrderRangeSummaryResp{
 		"p1": {OrderCount: 1, NetSales: 12345, NetSalesLabel: "123.45"},

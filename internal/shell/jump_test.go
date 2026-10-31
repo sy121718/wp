@@ -1,20 +1,5 @@
 package shell
 
-// jump_test.go — 提示页出口（jump.go）的判据。
-//
-// 本文件测的是**出口的行为**（状态码、渲染的模板、传下去的数据、htmx 分档），
-// 模板自身的渲染判据在 internal/templates/jump_page_test.go —— 两边分工的理由是
-// 模板要从 templates 目录解析，而这里只需要一个能截住渲染数据的假渲染器。
-//
-// 走真实的 gin 引擎 + 路由（而不是直接调 c.HTML）：HTMLRender 是引擎上的字段，
-// 从 *gin.Context 拿不到它（engine 字段未导出）—— 顺带也就覆盖了 c.HTML 这条真路径。
-//
-// 守四件事：
-//  1. htmx 请求**不能**把整页 HTML 塞回片段位置（换 HX-Redirect），这是分档的硬要求；
-//  2. 回跳地址非法时回控制面首页（提示页不能当开放重定向的跳板）；
-//  3. 空文案回落归口文案（页面不能显示空串）；
-//  4. 秒数负数收敛成 0（负数会拼出 content="-1;url=..." 这种坏 meta）。
-
 import (
 	"go_wp/internal/adminui"
 	"net/http"
@@ -28,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin/render"
 )
 
-// captureRenderer 截住 gin 的渲染调用（模板名 + 数据），不做真实渲染。
 type captureRenderer struct {
 	called bool
 	name   string
@@ -47,7 +31,6 @@ type discardRender struct{}
 func (discardRender) Render(w http.ResponseWriter) error     { return nil }
 func (discardRender) WriteContentType(_ http.ResponseWriter) {}
 
-// runJump 在真实 gin 引擎上跑一次 RenderJump，返回响应记录器与渲染捕获器。
 func runJump(t *testing.T, headers map[string]string, j Jump) (*httptest.ResponseRecorder, *captureRenderer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -65,7 +48,6 @@ func runJump(t *testing.T, headers map[string]string, j Jump) (*httptest.Respons
 	return rec, cap
 }
 
-// jumpData 取出渲染数据里的 Jump 视图。
 func jumpData(t *testing.T, cap *captureRenderer) map[string]any {
 	t.Helper()
 	m, ok := cap.data.(gin.H)
@@ -86,7 +68,6 @@ func jumpData(t *testing.T, cap *captureRenderer) map[string]any {
 	}
 }
 
-// TestRenderJumpSuccess 正常档：200 + 提示页模板 + 数据齐备。
 func TestRenderJumpSuccess(t *testing.T) {
 	rec, cap := runJump(t, nil, Jump{
 		OK: true, Msg: "已删除 2 张优惠码",
@@ -109,13 +90,12 @@ func TestRenderJumpSuccess(t *testing.T) {
 	if got["Back"] != "/admin/coupons?project=p1" || got["BackText"] != "返回优惠码列表" || got["Seconds"] != 1 {
 		t.Fatalf("回跳/秒数不对：%v", got)
 	}
-	// 标题用正文本身（不新增全站词条），且必须是成品文案而不是 key。
+
 	if got["title"] != "已删除 2 张优惠码" {
 		t.Fatalf("title 期望用正文，实际 %v", got["title"])
 	}
 }
 
-// TestRenderJumpHTMXUsesRedirect htmx 档：换 HX-Redirect，不渲染整页。
 func TestRenderJumpHTMXUsesRedirect(t *testing.T) {
 	rec, cap := runJump(t, map[string]string{"HX-Request": "true"},
 		Jump{OK: true, Msg: "已删除", Back: "/admin/coupons?project=p1", Seconds: 1})
@@ -131,7 +111,6 @@ func TestRenderJumpHTMXUsesRedirect(t *testing.T) {
 	}
 }
 
-// TestRenderJumpRejectsUnsafeBack 非法回跳地址回控制面首页。
 func TestRenderJumpRejectsUnsafeBack(t *testing.T) {
 	for _, bad := range []string{"", "//evil.example.com/x", "https://evil.example.com", "admin/x"} {
 		_, cap := runJump(t, nil, Jump{OK: true, Msg: "已删除", Back: bad})
@@ -142,15 +121,6 @@ func TestRenderJumpRejectsUnsafeBack(t *testing.T) {
 	}
 }
 
-// TestRenderJumpKeepsLongSameOriginBack 超过 512 字节但**同源**的回跳地址必须原样保留。
-//
-// 提示页的跳转目标由服务端自己给出，与语言切换隐藏域 / BackPath 的口径不同：那两处限
-// 512 字节，这里**不设长度上限**（判据函数 pkg/safepath.IsSameOriginPath 本身也不含长度，
-// 见 pkg/safepath 包注释与 TestMaxReturnPathBytesIsNotBakedIntoJudgement）。
-//
-// 这条用例钉的就是这次迁移最容易悄悄走形的地方：把 512 上限并进判据、或在 RenderJump 里
-// 顺手补一句长度检查，都会让「长但同源的跳转目标」被静默改成回 /admin —— 那是行为变更，
-// 不是重构。同时留一条**不安全的长路径**反例：放宽长度不等于放宽判据。
 func TestRenderJumpKeepsLongSameOriginBack(t *testing.T) {
 	longBack := "/admin/coupons?filter=" + strings.Repeat("a", safepath.MaxReturnPathBytes+50)
 	if len(longBack) <= safepath.MaxReturnPathBytes {
@@ -189,7 +159,6 @@ func TestRenderJumpKeepsLongSameOriginBack(t *testing.T) {
 	})
 }
 
-// TestRenderJumpEmptyMsgFallsBack 空文案回落归口文案（页面不能显示空串）。
 func TestRenderJumpEmptyMsgFallsBack(t *testing.T) {
 	_, cap := runJump(t, nil, Jump{OK: false, Msg: "   ", Back: "/admin/coupons"})
 	got := jumpData(t, cap)
@@ -199,7 +168,6 @@ func TestRenderJumpEmptyMsgFallsBack(t *testing.T) {
 	}
 }
 
-// TestRenderJumpNegativeSecondsClamped 负数秒数收敛成 0（否则拼出坏 meta）。
 func TestRenderJumpNegativeSecondsClamped(t *testing.T) {
 	_, cap := runJump(t, nil, Jump{OK: true, Msg: "已保存", Back: "/admin/coupons", Seconds: -3})
 	if got := jumpData(t, cap); got["Seconds"] != 0 {

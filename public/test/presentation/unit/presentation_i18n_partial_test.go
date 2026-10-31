@@ -1,15 +1,3 @@
-// presentation_i18n_partial_test.go — 多语言发布的「数据库不能声称未上线的语言已发布」（审计 AR2-003）。
-//
-// 缺陷原状：publishAllLangs 先在事务里提交全部语言的 publication 行与实例活跃指针，
-// 事务提交之后才逐个激活文件；第二种语言激活失败时，数据库显示三种语言都已发布，
-// 而线上只有第一种语言的文件 —— 后台、sitemap、语言切换器都会报出不可访问的 URL。
-//
-// 本用例断言的三条不变式：
-//
-//	I1 语言账本行（presentation_publications）存在的语言，其 active_path 在访问面上
-//	   确实指向该行记录的产物（DB 声称已发布 ⇒ 文件真的在线）；
-//	I2 实例活跃指针只在整批成功后才前进（指针落后于访问面是安全方向，反之不是）；
-//	I3 失败后实例 stale=true 给出「明确 partial」信号，启动恢复能把批次收敛回全成功。
 package unit
 
 import (
@@ -26,7 +14,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// enableLangs 写入语言清单（首个语言为默认语言），sort_order 按传入顺序。
 func enableLangs(t *testing.T, f *presFixture, langs ...string) {
 	t.Helper()
 	for i, lang := range langs {
@@ -38,14 +25,12 @@ func enableLangs(t *testing.T, f *presFixture, langs ...string) {
 	}
 }
 
-// pubLangRow 某语言的发布账本行。
 type pubLangRow struct {
 	Lang         string
 	ActivePath   string
 	ArtifactHash string
 }
 
-// publicationRows 读取实例的语言账本行。
 func publicationRows(t *testing.T, f *presFixture, instanceID string) []pubLangRow {
 	t.Helper()
 	var rows []pubLangRow
@@ -57,7 +42,6 @@ func publicationRows(t *testing.T, f *presFixture, instanceID string) []pubLangR
 	return rows
 }
 
-// samePublicationRows 两组账本行是否逐字相同。
 func samePublicationRows(a, b []pubLangRow) bool {
 	if len(a) != len(b) {
 		return false
@@ -70,7 +54,6 @@ func samePublicationRows(a, b []pubLangRow) bool {
 	return true
 }
 
-// instancePointer 读取实例活跃指针与 stale 标记。
 func instancePointer(t *testing.T, f *presFixture, instanceID string) (activeArtifact *string, stale bool) {
 	t.Helper()
 	var row struct {
@@ -85,7 +68,6 @@ func instancePointer(t *testing.T, f *presFixture, instanceID string) (activeArt
 	return row.Active, row.Stale
 }
 
-// activeHash 访问面上该路径当前指向的产物哈希（未激活为空串）。
 func activeHash(t *testing.T, path string) string {
 	t.Helper()
 	store := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
@@ -96,7 +78,6 @@ func activeHash(t *testing.T, path string) string {
 	return strings.TrimPrefix(state.Locator.Key, "artifacts/")
 }
 
-// assertLedgerMatchesAccessSurface I1：账本里每个语言都真的在访问面上指向记录的产物。
 func assertLedgerMatchesAccessSurface(t *testing.T, f *presFixture, instanceID string) {
 	t.Helper()
 	rows := publicationRows(t, f, instanceID)
@@ -111,8 +92,6 @@ func assertLedgerMatchesAccessSurface(t *testing.T, f *presFixture, instanceID s
 	}
 }
 
-// TestPresentationMultiLangPartialFailureNeverClaimsUnpublished 第二种语言发布失败后，
-// 数据库不得声称它（以及它之后的语言）已发布；启动恢复后批次收敛为全成功。
 func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T) {
 	injector := &routeFaultInjector{}
 	f := newPresFixtureWithRoutes(t, func(routes pubcontract.PublicationService) pubcontract.PublicationService {
@@ -136,8 +115,6 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 	logicalPath := "/products/i18n-partial-shirt"
 	enPath := "/en/products/i18n-partial-shirt"
 
-	// 故障注入：第二种语言（en-US）的路由登记失败 —— 与「该语言激活失败」同一后果：
-	// 它没有结案，它之后的语言也不会开始。
 	injector.setFailPath(enPath)
 	_, err = f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
 		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID, URLPath: logicalPath,
@@ -153,30 +130,22 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 		t.Fatalf("实例应已建行: instID=%q err=%v", instID, err)
 	}
 
-	// 失败后：**一行账本都不该有**。
-	//
-	// 判据变化：多语言落库已经在**同一个事务**里（产物行 + 逐语言账本/路由 + 指针），
-	// 任一语言失败整笔回滚 —— 所以「前半段语言已结案留在库里」是逐语言独立提交时代的旧口径。
-	// 访问面上已切好的字节由 pending 回执承载（回执在事务之外登记），恢复时按链接证据补齐，
-	// 这正是下面 I2（指针不前进 + stale）与恢复段要证明的东西。
 	rows := publicationRows(t, f, instID)
 	if len(rows) != 0 {
 		t.Fatalf("整批回滚后不应有任何语言账本行，实际 %+v", rows)
 	}
-	// I2：整批未成功，活跃指针不得前进。
+
 	if active, stale := instancePointer(t, f, instID); active != nil {
 		t.Fatalf("整批未成功时实例活跃指针不应前进，实际 %v", *active)
 	} else if !stale {
 		t.Fatal("批次未收敛时实例应标记 stale（给后台一个明确的 partial 信号）")
 	}
 
-	// 重启恢复：故障消除后，回执补齐已生效语言，未铺满的批次自动重跑一次。
 	recovered, _, rerr := f.pres.RecoverPendingPublications(ctx)
 	if rerr != nil {
 		t.Fatalf("启动恢复失败: %v", rerr)
 	}
-	// 计数不作判据（见上：整批事务回滚后旧回执会被判 rolled_back，随后整批重跑），
-	// 判据是**最终一致**：没有 pending 残留、三种语言都结案在账本里。
+
 	_ = recovered
 	if pending, _ := receiptStates(t, f, instID); pending != 0 {
 		t.Fatalf("恢复后不应再有 pending 回执，实际 %d", pending)
@@ -194,7 +163,7 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 	if stale {
 		t.Fatal("批次收敛后实例不应再标记 stale")
 	}
-	// 收敛后默认语言的账本行必须就是指针指向的产物（两者不能各说各话）。
+
 	var primaryArtifact string
 	for _, row := range rows {
 		if row.Lang == "zh-CN" {
@@ -205,7 +174,6 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 		t.Fatalf("默认语言账本 hash %s 与访问面 %q 不一致", primaryArtifact, got)
 	}
 
-	// 重复恢复是空操作（幂等）。
 	recovered, rolledBack, rerr := f.pres.RecoverPendingPublications(ctx)
 	if rerr != nil || recovered != 0 || rolledBack != 0 {
 		t.Fatalf("重复恢复应为空操作，实际 recovered=%d rolledBack=%d err=%v", recovered, rolledBack, rerr)
@@ -215,14 +183,12 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 	}
 }
 
-// artifactBatchRow 某语言账本行指向的产物批次标识（version + 快照）。
 type artifactBatchRow struct {
 	Lang       string
 	Version    int64
 	SnapshotID string
 }
 
-// ledgerBatch 各语言账本行指向的产物属于哪一批（version / snapshot 应完全一致）。
 func ledgerBatch(t *testing.T, f *presFixture, instanceID string) []artifactBatchRow {
 	t.Helper()
 	var rows []artifactBatchRow
@@ -235,7 +201,6 @@ func ledgerBatch(t *testing.T, f *presFixture, instanceID string) []artifactBatc
 	return rows
 }
 
-// hreflangPairs 提取产物里的 hreflang 互指（顺序即产物顺序，含 x-default）。
 func hreflangPairs(html string) [][2]string {
 	out := [][2]string{}
 	for _, line := range strings.Split(html, "\n") {
@@ -252,7 +217,6 @@ func hreflangPairs(html string) [][2]string {
 	return out
 }
 
-// between 取 s 中位于 open..close 之间的第一段（缺失返回空串）。
 func between(s, open, close string) string {
 	i := strings.Index(s, open)
 	if i < 0 {
@@ -266,7 +230,6 @@ func between(s, open, close string) string {
 	return rest[:j]
 }
 
-// artifactHTML 读取内容寻址目录里的产物字节（{root}/artifacts/{hash}/index.html）。
 func artifactHTML(t *testing.T, hash string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(pipeline.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
@@ -276,7 +239,6 @@ func artifactHTML(t *testing.T, hash string) string {
 	return string(b)
 }
 
-// assertHreflangComplete 产物应含本批次全部语言的互指 + x-default，且指向各自站点路径。
 func assertHreflangComplete(t *testing.T, label, html string, want [][2]string) {
 	t.Helper()
 	got := hreflangPairs(html)
@@ -291,12 +253,6 @@ func assertHreflangComplete(t *testing.T, label, html string, want [][2]string) 
 	}
 }
 
-// TestPresentationMultiLangRebuildIdempotent 重复重建与并发重建都不产生混合版本，
-// 且**首次发布的产物字节与紧随其后的重建产物逐字节相同**（审计 SEO-026）。
-//
-// 后一条是本用例的核心：曾经首发布产物缺 hreflang（互指按「是否已结案」过滤，
-// 而结案发生在构建之后），重建一次才补上 —— 同一个实例、同一套输入产出两种字节。
-// 判定依据改为「本批次准备上线哪些语言」之后，两次构建必须一致。
 func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -326,9 +282,6 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	}
 	assertLedgerMatchesAccessSurface(t, f, inst.ID)
 
-	// 回归判据（SEO-026）：首发布产物必须已经带齐 hreflang 互指 ——
-	// 三种语言各一条 + x-default 指向默认语言路径，一条不缺。
-	// 产物内顺序由 builder 固定为语言码升序、x-default 收尾（与当前构建语言无关）。
 	want := [][2]string{
 		{"en-US", "/en/products/i18n-idempotent-shirt"},
 		{"ja-JP", "/ja/products/i18n-idempotent-shirt"},
@@ -339,9 +292,6 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 		assertHreflangComplete(t, "首发布 "+row.Lang, artifactHTML(t, row.ArtifactHash), want)
 	}
 
-	// 回归判据（SEO-026）核心：同一实例首发布产物 hash == 紧随其后重建的产物 hash。
-	// 产物是内容寻址的（hash 由字节算出），hash 相同即字节相同 —— 两次构建的
-	// hreflang 判定不再依赖「构建之后才产生的状态」。
 	if rerr := f.pres.RebuildInstance(ctx, inst.ID); rerr != nil {
 		t.Fatalf("重建失败: %v", rerr)
 	}
@@ -354,7 +304,6 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 		t.Fatalf("收敛后应有三条批次行，实际 %+v", settledBatch)
 	}
 
-	// 重复重建：同内容复用产物行，账本行与批次都不变。
 	for i := 0; i < 2; i++ {
 		if rerr := f.pres.RebuildInstance(ctx, inst.ID); rerr != nil {
 			t.Fatalf("第 %d 次重复重建失败: %v", i+1, rerr)
@@ -374,9 +323,6 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	}
 	assertLedgerMatchesAccessSurface(t, f, inst.ID)
 
-	// 并发重建：编译段可以并行（PERF-01 起实例锁只覆盖冻结与提交），提交仍然互斥；
-	// 结束后不得出现「一部分语言指向旧批次、另一部分指向新批次」的混合版本 ——
-	// 提交时发现实例已被别的批次推进的那一次要重新冻结重试，而不是把请求判失败。
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	for i := 0; i < 2; i++ {

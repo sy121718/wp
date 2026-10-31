@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// 校验阶段解析成公网、连接阶段变成环回；必须在拨号前再次拒绝。
 func TestWebhookTransportRejectsDNSRebinding(t *testing.T) {
 	original := lookupIP
 	t.Cleanup(func() { lookupIP = original })

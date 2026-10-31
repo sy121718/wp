@@ -13,18 +13,12 @@ import (
 	artifactservice "go_wp/internal/module/artifact/service"
 )
 
-// 审计 IDX-016：content_objects 只写不删 —— 产物行被回收（payload_state='deleted'）之后，
-// 它闭包里引用的共享内容对象已无人引用，却永远留在表里。本文件的测试固化标记清除语义：
-// 「谁还在用」判定要认得出已回收的产物行（否则孤儿永远产生不了），同时绝不动仍在用的对象。
-
-// 保留窗口是 30 天，测试用 60 天前确保落在窗口之外。
 const gcAgeDays = 60
 
 func gcReq(dryRun bool) *artifactdto.ContentObjectGCReq {
 	return &artifactdto.ContentObjectGCReq{DryRun: &dryRun}
 }
 
-// ageContentObjects 把所有内容对象的创建时间挪到保留窗口之外（模拟长期积累）。
 func ageContentObjects(t *testing.T, svc *artifactservice.Service, days int) {
 	t.Helper()
 	cut := time.Now().UTC().AddDate(0, 0, -days)
@@ -34,7 +28,6 @@ func ageContentObjects(t *testing.T, svc *artifactservice.Service, days int) {
 	}
 }
 
-// setArtifactState 把产物行改成指定负载状态，并把它的创建时间挪旧。
 func setArtifactState(t *testing.T, svc *artifactservice.Service, id, state string, days int) {
 	t.Helper()
 	cut := time.Now().UTC().AddDate(0, 0, -days)
@@ -44,7 +37,6 @@ func setArtifactState(t *testing.T, svc *artifactservice.Service, id, state stri
 	}
 }
 
-// seedKeptArtifact 归档第二个产物（仍在用），闭包是另外两个内容对象。
 func seedKeptArtifact(t *testing.T, svc *artifactservice.Service) string {
 	t.Helper()
 	req := validReq()
@@ -57,8 +49,6 @@ func seedKeptArtifact(t *testing.T, svc *artifactservice.Service) string {
 	return kept.ID
 }
 
-// TestContentObjectGCDeletesOrphansKeepsReferenced 是本条审计的主用例：
-// 已回收产物引用的对象被清掉，仍在用产物引用的对象一个都不能动。
 func TestContentObjectGCDeletesOrphansKeepsReferenced(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -68,7 +58,6 @@ func TestContentObjectGCDeletesOrphansKeepsReferenced(t *testing.T) {
 	ageContentObjects(t, svc, gcAgeDays)
 	setArtifactState(t, svc, collected.ID, "deleted", gcAgeDays)
 
-	// 预演：只数不动表。首次上线前正是靠这一步看数量。
 	preview, err := svc.GarbageCollectContentObjects(ctx, gcReq(true))
 	if err != nil {
 		t.Fatalf("dryRun 预演失败: %v", err)
@@ -86,7 +75,6 @@ func TestContentObjectGCDeletesOrphansKeepsReferenced(t *testing.T) {
 		t.Fatalf("预演应列出 2 条候选: %d", len(preview.Items))
 	}
 
-	// 真删：只有已回收产物的那两个对象被清掉。
 	res, err := svc.GarbageCollectContentObjects(ctx, gcReq(false))
 	if err != nil {
 		t.Fatalf("回收失败: %v", err)
@@ -102,8 +90,6 @@ func TestContentObjectGCDeletesOrphansKeepsReferenced(t *testing.T) {
 	}
 }
 
-// TestContentObjectGCKeepsAvailableReferences 反向锚点：产物行只要还不是 deleted，
-// 它的闭包对象就不是孤儿 —— 判定不能退化成「被引用过就删」。
 func TestContentObjectGCKeepsAvailableReferences(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -123,10 +109,6 @@ func TestContentObjectGCKeepsAvailableReferences(t *testing.T) {
 	}
 }
 
-// TestContentObjectGCKeepsExternalReferences 覆盖「引用来源不止一处」：
-// 外部模块（presentation 侧归档落地后会注入的那一路）声明的引用必须被尊重。
-// 用 mock 注入而不是插真实行：presentation_artifact_objects 已按 CQ-015 删除（迁移 207），
-// 这里要钉住的是**机制**（问不到就少删一轮），与来源是哪张表无关。
 func TestContentObjectGCKeepsExternalReferences(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -159,8 +141,6 @@ func TestContentObjectGCKeepsExternalReferences(t *testing.T) {
 	}
 }
 
-// TestContentObjectGCFailsClosedOnExternalQueryError 固化失败口径：
-// 问不到外部引用就整轮不删 —— 误删共享对象的代价高于多留一轮垃圾。
 func TestContentObjectGCFailsClosedOnExternalQueryError(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -185,8 +165,6 @@ func TestContentObjectGCFailsClosedOnExternalQueryError(t *testing.T) {
 	}
 }
 
-// TestContentObjectGCRespectsRetentionWindow 固化保留窗口：
-// 产物可以是旧的，但对象刚写入就不回收（可能只是还没被后续归档复用）。
 func TestContentObjectGCRespectsRetentionWindow(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -206,8 +184,6 @@ func TestContentObjectGCRespectsRetentionWindow(t *testing.T) {
 	}
 }
 
-// TestContentObjectGCNilRequestUsesSafeDefaults 固化安全默认：
-// nil 请求 = dryRun（不删），与产物 GC 同口径 —— 不传参数不该顺手删数据。
 func TestContentObjectGCNilRequestUsesSafeDefaults(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()

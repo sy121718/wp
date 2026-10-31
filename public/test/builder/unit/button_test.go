@@ -7,13 +7,11 @@ import (
 	"go_wp/internal/builder"
 )
 
-// buttonDoc 构造 button 节点文档。
 func buttonDoc(t *testing.T, props string) *builder.Page {
 	t.Helper()
 	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"b1","type":"core.button","props":`+props+`}]}`)
 }
 
-// TestButtonExternal 外部链接：单层 <a> + target/rel + 图标（内置 SVG）+ 双态 CSS。
 func TestButtonExternal(t *testing.T) {
 	props := `{"text":"立即抢购","action":"external","value":"https://example.com/checkout","target":"blank","rel":"nofollow","size":"lg","variant":"solid","radius":"9999","normal":{"background":"#2563eb","color":"#fff","shadow":"sm"},"hover":{"background":"#1d4ed8","color":"#fff","shadow":"md"},"hoverLift":"-2px","icon":{"source":"builtin","name":"arrow-right","position":"suffix","spacing":"8px","hoverShift":"4px"}}`
 	c, err := compile(t, buttonDoc(t, props))
@@ -24,7 +22,7 @@ func TestButtonExternal(t *testing.T) {
 	for _, want := range []string{
 		`<a class="sky-c-b1" href="https://example.com/checkout" target="_blank" rel="noopener noreferrer nofollow">`,
 		`<span class="bt-text">立即抢购</span>`,
-		`<svg class="bt-icon bt-icon-shift"`, // 内置箭头图标
+		`<svg class="bt-icon bt-icon-shift"`,
 		"</a>",
 	} {
 		if !strings.Contains(c.HTML, want) {
@@ -32,7 +30,7 @@ func TestButtonExternal(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		// 按钮外观已变量化（跟随主题 --sky-btn-*，docs/09 §1.1）：不再输出字面圆角。
+
 		"border-radius: var(--sky-btn-radius",
 		"background: #2563eb", "color: #fff", "box-shadow: 0 1px 3px rgba(0,0,0,0.12)",
 		".sky-c-b1:hover, .sky-c-b1:focus", "transform: translate(0, -2px)",
@@ -44,7 +42,6 @@ func TestButtonExternal(t *testing.T) {
 	}
 }
 
-// TestButtonModal 弹窗触发：原生 <button> + data-modal-open，无 href。
 func TestButtonModal(t *testing.T) {
 	props := `{"text":"联系商务合作","action":"modal","value":"contact-modal"}`
 	c, err := compile(t, buttonDoc(t, props))
@@ -65,7 +62,6 @@ func TestButtonModal(t *testing.T) {
 	}
 }
 
-// TestButtonActions 其余动作：internal/anchor/native。
 func TestButtonActions(t *testing.T) {
 	cases := []struct{ name, props, wantHref string }{
 		{"internal", `{"text":"进入产品页","action":"internal","value":"/products/keyboard-pro"}`, `href="/products/keyboard-pro"`},
@@ -85,7 +81,6 @@ func TestButtonActions(t *testing.T) {
 	}
 }
 
-// TestButtonLinkBinding 动态链接绑定：ContentResolver 解析。
 func TestButtonLinkBinding(t *testing.T) {
 	resolver := mapResolver{"product.permalink": "/products/keyboard-pro"}
 	c, err := compile(t, buttonDoc(t, `{"text":"查看商品","action":"link","binding":{"field":"product.permalink"}}`),
@@ -98,7 +93,6 @@ func TestButtonLinkBinding(t *testing.T) {
 	}
 }
 
-// TestButtonMediaIcon 媒体库/外链图标：img 直引。
 func TestButtonMediaIcon(t *testing.T) {
 	c, err := compile(t, buttonDoc(t, `{"text":"确认","action":"external","value":"https://a.com/ok","icon":{"source":"media","url":"/storage/check.svg","position":"prefix"}}`))
 	if err != nil {
@@ -109,7 +103,6 @@ func TestButtonMediaIcon(t *testing.T) {
 	}
 }
 
-// TestButtonBlock 块级铺满三端。
 func TestButtonBlock(t *testing.T) {
 	c, err := compile(t, buttonDoc(t, `{"text":"加入购物车","action":"external","value":"https://a.com/cart","block":{"desktop":true,"mobile":true}}`))
 	if err != nil {
@@ -120,7 +113,6 @@ func TestButtonBlock(t *testing.T) {
 	}
 }
 
-// TestButtonValidate 校验拒绝。
 func TestButtonValidate(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"无文本无绑定", `{}`, "必须提供"},
@@ -142,7 +134,6 @@ func TestButtonValidate(t *testing.T) {
 	}
 }
 
-// TestButtonDeterministic 确定性构建。
 func TestButtonDeterministic(t *testing.T) {
 	props := `{"text":"确定","action":"external","value":"https://a.com/ok","icon":{"source":"builtin","name":"check"}}`
 	c1, err := compile(t, buttonDoc(t, props))

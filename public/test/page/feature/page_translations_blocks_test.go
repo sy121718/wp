@@ -1,18 +1,5 @@
 package feature
 
-// page_translations_blocks_test.go — 翻译工作台的块内文本（多语言 P5b 缺口补齐，docs/06-D §15.11/§15.12）。
-//
-// 判断：块内文本**应当**出现在页面翻译工作台里——它是本页产物的一部分，且工作台是
-// 唯一的译文录入入口；不列出则页眉/页脚/内联块文本永远无法翻译、完成度还会误报 100%。
-// 写入路径天然全局（sys_translation 主键 (hash, context, lang) + MarkStaleForI18n 全站
-// 标记），故按「来源徽章 + 复用提示」告知编辑者这是共享文本。
-//
-// 覆盖：
-//  1. 工作台列出页眉块 + core.globalref 内联块的文本，并标注来源（页眉块 / 全局块）；
-//  2. 块内文本计入本页完成度分母；
-//  3. 保存块内译文 → 落库（engine=manual）+ 全站标记待重建；
-//  4. 全站索引把块内文本归属到引用该块的页面（复用提示可见）。
-
 import (
 	"fmt"
 	"go_wp/internal/adminui"
@@ -44,8 +31,6 @@ const (
 	blockPromoDocForTr  = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pb1","type":"core.text","props":{"text":"促销正文"}}]}`
 )
 
-// newBlockTranslationEnv 装配「含块」的工作台环境：真 PG（全量迁移，含 blocks 表）+ 真 block 服务。
-// 返回：路由、db、工程 ID、页面 ID、页眉块 ID。
 func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -94,37 +79,35 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 	return router, db, project.ID, pageID, header.ID
 }
 
-// TestPageTranslationsListsBlockText 工作台列出块内文本并标注来源（页眉块 / 全局块）。
 func TestPageTranslationsListsBlockText(t *testing.T) {
 	router, db, projectID, pageID, headerID := newBlockTranslationEnv(t)
-	// 第二个页面引用同一个页眉块：块内文本的「出现在哪些页面」应含两页。
+
 	insertTranslationPage(t, db, "eeeeeeee-0000-0000-0000-00000000000e", projectID, "/other-block",
 		fmt.Sprintf(`{"settings":{"layout":{"mode":"full"},"structure":{"headerBlockId":"%s"}},"root":[]}`, headerID))
 
 	body := getTranslationPage(t, router, pageID, "en-US")
 
 	for _, want := range []string{
-		// 本页文本 + 块内文本（页眉块按钮 / 内联块正文）
+
 		`name="rowSource" value="本页标题"`,
 		`name="rowSource" value="页眉按钮"`,
 		`name="rowSource" value="促销正文"`,
-		// 来源徽章
+
 		`>页眉块<`,
 		`>全局块<`,
-		// 完成度分母含块内文本：本页标题 + 页眉按钮 + 促销正文 = 3
+
 		`本页完成度 0 / 3`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("工作台缺少 %q\n%s", want, body)
 		}
 	}
-	// 块内文本的复用提示：两个页面都引用该页眉块 → 「还用在另外 1 个页面」。
+
 	if !strings.Contains(body, "还用在另外 1 个页面") {
 		t.Fatalf("块内文本应带跨页面复用提示\n%s", body)
 	}
 }
 
-// TestSaveBlockTextTranslation 保存块内译文 → 落库 + 全站标记待重建。
 func TestSaveBlockTextTranslation(t *testing.T) {
 	router, db, _, pageID, _ := newBlockTranslationEnv(t)
 	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
@@ -156,8 +139,6 @@ func TestSaveBlockTextTranslation(t *testing.T) {
 	}
 }
 
-// postForm 提交表单并返回响应（原 site_locales_test.go 同款 helper；
-// 页面测试迁移后在本包各文件间复制，避免跨目录共享）。
 func postForm(t *testing.T, router *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()

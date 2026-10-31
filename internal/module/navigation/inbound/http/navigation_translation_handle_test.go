@@ -31,7 +31,7 @@ func TestNavigationTranslationsFilterPreservesCrossKindInvalidation(t *testing.T
 	if len(kinds) != 2 || kinds[0] != "header" || kinds[1] != "footer" {
 		t.Fatalf("过滤后共用译文仍需派发两个位置失效，got %v", kinds)
 	}
-	// 请求各自重新 build 完整树，不可在已裁剪的 Groups 上反复筛选。
+
 	data.Groups[0].Rows = []navigationTranslationRow{
 		{Source: "共用菜单", Path: "/shared", SourceHash: shared},
 		{Source: "另一菜单", Path: "/other", SourceHash: other},

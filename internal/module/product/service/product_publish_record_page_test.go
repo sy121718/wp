@@ -1,10 +1,5 @@
 package productservice
 
-// product_publish_record_page_test.go — 发布记录页的纯函数口径（B9）。
-//
-// 这一屏拼错的地方都不会报错：状态筛错只是少几行、聚合取错只是显示旧版本号。
-// 所以把三处判断钉住：状态筛的四档、跨语言聚合取哪个发布时间/版本号、页码收敛。
-
 import (
 	"testing"
 	"time"
@@ -35,7 +30,6 @@ func TestPublishRowMatchesStatus(t *testing.T) {
 	}
 }
 
-// 「待重建」不参与状态筛选：线上有旧产物的商品仍是已上线（否则想看线上内容的人看不到它）。
 func TestPublishRowMatchesStatusIgnoresStale(t *testing.T) {
 	row := productdto.PublishRecordRowResp{HasInstance: true, Online: true, Stale: true}
 	if !publishRowMatchesStatus(row, publishFilterActive) {
@@ -56,7 +50,6 @@ func TestMergePublishRowsAggregatesLangs(t *testing.T) {
 			{Lang: "zh-CN", Online: true, OnlinePath: "/products/one", PublishedAt: old, ArtifactVersion: 3, ArtifactHash: "h3"},
 			{Lang: "ja-JP", Online: true, OnlinePath: "/ja/products/one", PublishedAt: fresh, ArtifactVersion: 5, ArtifactHash: "h5"},
 		},
-		// p2 在库里没有发布登记：那一行必须仍出现（HasInstance=false，不参与聚合）。
 	}
 	rows := mergePublishRows(products, langs, "")
 	if len(rows) != 2 {
@@ -75,7 +68,7 @@ func TestMergePublishRowsAggregatesLangs(t *testing.T) {
 	if !first.Stale {
 		t.Fatal("任一条语言待重建，行级就应标记待重建")
 	}
-	// 已上线在前：zh-CN（旧）与 ja-JP（新）都在前，且新的更靠前。
+
 	if first.Langs[0].Lang != "ja-JP" || first.Langs[1].Lang != "zh-CN" || first.Langs[2].Lang != "en-US" {
 		t.Fatalf("语言排序不对（已上线在前、新的更前）：%+v", first.Langs)
 	}
@@ -104,7 +97,7 @@ func TestNormalizePublishStatus(t *testing.T) {
 		"  active ": publishFilterActive,
 		"draft":     publishFilterDraft,
 		"none":      publishFilterNone,
-		"bogus":     "", // 查询串不是可信边界：未知值退回「全部」
+		"bogus":     "",
 	}
 	for in, want := range cases {
 		if got := normalizePublishStatus(in); got != want {

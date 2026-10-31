@@ -1,29 +1,5 @@
 package orderservice
 
-// 写入口只有两个（建 / 改），删除只允许在**没有核销记录**时进行：
-// 有核销记录的券一旦删掉，那些记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。
-// 要停用请用 status=0（停用不删）。
-
-// 「能不能用」与「能减多少」两件事都收在这一个文件里：试算（结算页）与核销（下单事务）
-// 必须用同一份逻辑，否则会出现「结算页说能减 20、下单却只减 10」这种只能靠客诉发现的问题。
-
-// 核销的口径只有一条：**券的每一次使用都对应一张真实订单**。
-// 因此它没有独立入口，只能在建单事务里发生（见 CreateOrderReq.CouponCode）：
-//
-//   · 券用尽 → 整个事务回滚，订单也不会落库。访客看到的是「券用完了」，
-//     而不是「下单成功但优惠没生效」—— 后者要靠客诉才能发现；
-//   · 同一单重复核销 → 命中唯一键 (coupon_id, order_id)，幂等返回且**不重复计数**。
-//     重试与并发重放都会走到这条路径上，把重复当错误会让重试永远失败。
-
-// 为什么需要一个对账入口：coupons.used_count 是为并发守卫而存在的**投影**
-// （核销走「UPDATE ... WHERE used_count < max_uses」的原子守卫，不能改成每次 COUNT），
-// 真源是 coupon_redemptions 明细。两者没有数据库层约束，偏差会以两种方式显形：
-//   - 计数偏大：券提前用尽（用户看到「已抢完」而实际还有额度）
-//   - 计数偏小：可超出 max_uses 继续核销
-//
-// 两种都只能靠对账发现 —— 但**不自动修正**：偏差原因决定了该往哪边改，
-// 自动改可能把真源也改错，先查清原因再说。
-
 import (
 	"context"
 	"fmt"
@@ -40,7 +16,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// CreateCoupon 新建优惠码。
 func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error) {
 	if req == nil {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
@@ -83,8 +58,7 @@ func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		return nil, orderenums.Err(orderenums.ErrCouponCodeTaken)
 	}
 	if cerr := s.coupons.Create(ctx, e); cerr != nil {
-		// 并发下两个请求同时通过上面的存在性检查时，唯一索引会挡住第二个 ——
-		// 对外文案与显式检查一致，不把数据库错误原文抛给运营。
+
 		if database.IsUniqueViolation(cerr) {
 			return nil, orderenums.Err(orderenums.ErrCouponCodeTaken)
 		}
@@ -93,16 +67,11 @@ func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 	return toCouponResp(e, now), nil
 }
 
-// UpdateCoupon 修改优惠码。
-//
-// 券码**不可改**：改码等于换一张券，历史核销记录里的码会变成一个查不到的值。
-// 需要新码就新建一张券、把旧的停用。
 func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error) {
 	if req == nil || req.ID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（DB-009 第四批）：请求只给 id；coupons 带 FORCE 策略，不带作用域的读取
-	// 在非超级角色下返回 nil（表现为「优惠码不存在」）。归属由逐工程探测确定。
+
 	projectID, perr := s.locateCouponProject(ctx, req.ID)
 	if perr != nil {
 		return nil, perr
@@ -123,7 +92,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		return nil, eerr
 	}
 	now := time.Now()
-	// 在既有行上改字段后整体校验，保证「改完的券」本身自洽（而不是逐字段各校验一次）。
+
 	next := *existing
 	next.Name = strings.TrimSpace(req.Name)
 	next.DiscountType = strings.TrimSpace(req.DiscountType)
@@ -165,7 +134,6 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 	return toCouponResp(updated, now), nil
 }
 
-// GetCoupon 按 id 取券。
 func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto.CouponResp, err error) {
 	if couponID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
@@ -184,11 +152,6 @@ func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto
 	return toCouponResp(e, time.Now()), nil
 }
 
-// ListCoupons 优惠码列表。
-//
-// status 这个查询参数是**展示口径**（enabled / disabled / expired / exhausted），
-// 翻译成 model 认得的时间与次数条件后再下推 —— 让 model 认识「过期」这个词，
-// 等于把业务语义摊进查询层。
 func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (res *orderdto.CouponListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -225,7 +188,6 @@ func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) 
 	return res, nil
 }
 
-// DeleteCoupon 删除优惠码（有核销记录的一律拒绝）。
 func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error) {
 	if couponID == 0 {
 		return orderenums.Err(orderenums.ErrInvalidParam)
@@ -248,11 +210,10 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	if used > 0 {
 		return orderenums.Err(orderenums.ErrCouponInUse)
 	}
-	// 删除带工程作用域：越界删在换角色后会被策略拒绝，而不是删掉别的工程的券。
+
 	return s.coupons.Delete(ctx, e.ProjectID, couponID)
 }
 
-// ListCouponRedemptions 核销记录列表。
 func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -282,11 +243,6 @@ func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.Coupo
 	return res, nil
 }
 
-// ValidateCoupon 试算：纯读、不占次数。
-//
-// 不可用时**不返回 error**，而是在 res 里给 Usable=false + Message：
-// 「这张券用不了」是正常业务结论（客服要能照着这句话回答客户），
-// 只有参数本身不合法（缺工程、缺码）才是调用错误。
 func (s *Service) ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
@@ -336,15 +292,11 @@ func (s *Service) ValidateCoupon(ctx context.Context, req *orderdto.CouponValida
 	return res, nil
 }
 
-// toCouponResp 实体 → 视图（展示口径的字段在这里一次性算好）。
 func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponResp {
 	if e == nil {
 		return nil
 	}
-	// 时间窗的解释口径随券一起返回（审计 TX-011）：界面上必须能看出「填的是哪个时区」。
-	//
-	// 口径状态先算一次再进结构体：它同时是展示标签与徽标分档的输入 ——
-	// 算两次会在「跨过生效边界的那一瞬间」渲染出标签与颜色不一致的行。
+
 	state := couponState(e, now)
 	return &orderdto.CouponResp{
 		TimeZone: couponWindowLocation.String(),
@@ -370,48 +322,25 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 }
 
 const (
-	// maxCouponCodeLen 券码长度上限（与数据库列宽一致）。
 	maxCouponCodeLen = 64
-	// maxCouponNameLen 优惠码名称长度上限。
+
 	maxCouponNameLen = 120
-	// maxCouponRemarkLen 备注长度上限。
+
 	maxCouponRemarkLen = 255
 )
 
-// normalizeCouponCode 券码归一化：去首尾空白 + 转大写。
-//
-// 只在这一处发生。两处各转一次，迟早在某条路径上漏掉一次，
-// 表现是「客服抄给客户的码用不了」—— 而客户只会认为这张券是假的。
 func normalizeCouponCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))
 }
 
-// couponTimeLayouts 后台表单与接口可能送来的时间写法。
-//
-// 只接受不带时区的写法（见 couponWindowLocation 对「按哪个时区解释」的说明）：
-// 接受带时区的 RFC3339 会引出一个「按谁的时区算」的问题，
-// 而这个问题在跨境场景下没有正确答案。
 var couponTimeLayouts = []string{
 	"2006-01-02 15:04:05",
 	"2006-01-02 15:04",
 	"2006-01-02",
 }
 
-// couponWindowLocation 券时间窗的解释时区（审计 TX-011）。
-//
-// 刻意**不是 time.Local**：用服务器时区解释表单输入意味着「同一张券的生效时间
-// 取决于部署机器」，改一次服务器时区（或换一台机器）就会让所有券的生效时刻整体平移，
-// 而界面上看到的文本一个字都没变 —— 这种偏差没有任何地方会报错。
-//
-// 固定为 UTC：输入 10:00 就是 UTC 10:00，与部署环境无关。展示层按同一口径呈现
-// （响应里带 timeZone 字段），因此「设置的时间」与「实际生效的时间」始终是同一个。
-//
-// 若将来要支持「按站点运营时区」，改这里不够：站点时区必须来自**配置**
-// （projects.settings）而不是服务器环境，并且解析与展示要同时改 —— 只改一处会让
-// 界面与实际生效时间对不上。
 var couponWindowLocation = time.UTC
 
-// parseCouponTime 解析时间窗文本；空串 = 不限（nil）。
 func parseCouponTime(raw string) (*time.Time, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -419,8 +348,7 @@ func parseCouponTime(raw string) (*time.Time, error) {
 	}
 	for _, layout := range couponTimeLayouts {
 		if t, err := time.ParseInLocation(layout, s, couponWindowLocation); err == nil {
-			// 统一转 UTC 存储与比较：列已是 timestamptz（迁移 172），
-			// 时刻不变，但代码里从此只有一种时间口径。
+
 			u := t.UTC()
 			return &u, nil
 		}
@@ -428,10 +356,6 @@ func parseCouponTime(raw string) (*time.Time, error) {
 	return nil, orderenums.Err(orderenums.ErrCouponWindowInvalid)
 }
 
-// validateCouponRule 校验优惠码字段（新建与修改共用）。
-//
-// 逐条拒绝而不是静默纠正：把 percent=150 悄悄改成 100，运营看到的是「保存成功了」，
-// 而券的力度与他填的不是一回事。
 func validateCouponRule(e *ordermodel.CouponEntity) error {
 	if strings.TrimSpace(e.ProjectID) == "" {
 		return orderenums.Err(orderenums.ErrProjectRequired)
@@ -461,7 +385,7 @@ func validateCouponRule(e *ordermodel.CouponEntity) error {
 		return orderenums.Err(orderenums.ErrCouponValueInvalid)
 	}
 	if e.StartsAt != nil && e.EndsAt != nil && !e.EndsAt.After(*e.StartsAt) {
-		// 结束不晚于开始 = 这张券永远不可能生效，存进去等于把活动悄悄废掉。
+
 		return orderenums.Err(orderenums.ErrCouponWindowInvalid)
 	}
 	if e.Status != ordermodel.CouponStatusEnabled && e.Status != ordermodel.CouponStatusDisabled {
@@ -470,13 +394,6 @@ func validateCouponRule(e *ordermodel.CouponEntity) error {
 	return nil
 }
 
-// couponDiscount 折扣额（分）。纯函数：只依赖券口径与小计。
-//
-// percent 的语义是**折扣力度**（减去小计的百分之多少，100 = 全免），不是折后价：
-// 「打 8 折」与「减 80%」差着一个数量级，这类歧义必须在注释里钉死，
-// 否则下一个人照着字段名 discountValue 猜，就会猜出另一套算法。
-//
-// 百分比按分向下取整（不足 1 分不减免）：向上取整会让商家在每单上多让一点利。
 func couponDiscount(e *ordermodel.CouponEntity, subtotal int64) int64 {
 	if e == nil || subtotal <= 0 {
 		return 0
@@ -491,7 +408,7 @@ func couponDiscount(e *ordermodel.CouponEntity, subtotal int64) int64 {
 		return 0
 	}
 	if d > subtotal {
-		// 折扣不得超过小计：负数总额没有意义，而且会把账算乱。
+
 		d = subtotal
 	}
 	if d < 0 {
@@ -500,10 +417,6 @@ func couponDiscount(e *ordermodel.CouponEntity, subtotal int64) int64 {
 	return d
 }
 
-// couponRuleCheck 券自身状态的可用性检查，返回不可用原因（空串 = 通过）。
-//
-// 这里刻意**不含**每人限次：那条要查核销表，不是纯计算，
-// 混进来会让「试算」这个纯读函数偷偷变成一次数据库往返的隐式依赖。
 func couponRuleCheck(e *ordermodel.CouponEntity, subtotal int64, now time.Time) string {
 	if e == nil {
 		return orderenums.ErrCouponNotFound
@@ -523,7 +436,6 @@ func couponRuleCheck(e *ordermodel.CouponEntity, subtotal int64, now time.Time) 
 	return ""
 }
 
-// couponDiscountLabel 券口径的展示文案（如「减 20%」「减 20.00 元」）。
 func couponDiscountLabel(e *ordermodel.CouponEntity) string {
 	if e == nil {
 		return ""
@@ -534,14 +446,6 @@ func couponDiscountLabel(e *ordermodel.CouponEntity) string {
 	return fmt.Sprintf("减 %s 元", centsToYuanLabel(e.DiscountValue))
 }
 
-// couponState 券当前的**展示口径状态**（按时间与次数算出来，不看单一列）。
-//
-// 状态列只表达「运营有没有手动停用」；过期、未开始、用尽都是时间的函数，
-// 单独存一列必然与真实状态不同步（要靠定时任务去刷，而定时任务总有停的时候）。
-//
-// 返回值是枚举口径值（orderenums.CouponState*），**不是文案**：
-// 展示层拿它挑徽章样式并按词条渲染文案 —— 拿中文标签反查样式表的旧实现，
-// 运营在后台改一句词条就能让徽章静默失效。
 func couponState(e *ordermodel.CouponEntity, now time.Time) string {
 	if e == nil {
 		return ""
@@ -559,16 +463,11 @@ func couponState(e *ordermodel.CouponEntity, now time.Time) string {
 	return orderenums.CouponStateEnabled
 }
 
-// couponStatusLabel 券当前状态的展示文案（API 响应字段）。
-//
-// 中文取自 enums 的同一条真源（orderenums.CouponStateLabel 的兜底），
-// 后台页面不再用它 —— 页面按 State 取词，多语言界面才可能正确。
 func couponStatusLabel(e *ordermodel.CouponEntity, now time.Time) string {
 	_, fallback := orderenums.CouponStateLabel(couponState(e, now))
 	return fallback
 }
 
-// usageLabel 用次展示：「3 / 不限」「3 / 100」。
 func usageLabel(used, max int) string {
 	if max <= 0 {
 		return fmt.Sprintf("%d / 不限", used)
@@ -576,9 +475,6 @@ func usageLabel(used, max int) string {
 	return fmt.Sprintf("%d / %d", used, max)
 }
 
-// redeemCouponTx 事务内核销一次券。
-//
-// e 为 nil（这一单没用券）时直接返回，调用方不必在事务里写 if。
 func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel.CouponEntity, orderID uint64, orderNo string, discount int64, userID *uint64, now time.Time) (err error) {
 	if e == nil {
 		return nil
@@ -614,8 +510,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 		return ierr
 	}
 	if !inserted {
-		// 这一单此前已经核销过这张券：幂等命中。不递增计数 ——
-		// 否则重试一次就把可用次数多算掉一次，而次数是真金白银。
+
 		return nil
 	}
 	ok, uerr := s.coupons.IncrementUsedTx(ctx, tx, e.ID)
@@ -623,19 +518,12 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 		return uerr
 	}
 	if !ok {
-		// 守卫没通过 = 用尽（并发抢最后一次）。返回错误让**整个事务回滚**：
-		// 明细行与订单头一起消失，不留下「券记了一笔但单没下成」的半截状态。
+
 		return orderenums.Err(orderenums.ErrCouponExhausted)
 	}
 	return nil
 }
 
-// auditProjectIDs 对账要跑哪些工程：显式工程优先，留空则枚举全部工程逐工程对账。
-//
-// 为什么不保留「不限工程一次查完」（DB-009 第七批）：coupons 与 coupon_redemptions
-// 都带 FORCE 策略、谓词读会话变量 —— 没有作用域的查询恒返回空集、计数恒 0，
-// 对账于是输出一份「检查了 0 张券、0 个偏差」的**看起来正常的假报告**，
-// 而那正是对账要发现问题的场景。取不到工程清单时显式失败，不退化成「不限工程」。
 func (s *Service) auditProjectIDs(ctx context.Context, explicit string) ([]string, error) {
 	if pid := strings.TrimSpace(explicit); pid != "" {
 		return []string{pid}, nil
@@ -643,7 +531,6 @@ func (s *Service) auditProjectIDs(ctx context.Context, explicit string) ([]strin
 	return s.projectIDs(ctx)
 }
 
-// AuditCouponCounts 对账券的 used_count 与核销明细行数。
 func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCountAuditReq) (res *orderdto.CouponCountAuditResp, err error) {
 	if s == nil || s.coupons == nil {
 		return &orderdto.CouponCountAuditResp{Items: []orderdto.CouponCountMismatch{}}, nil
@@ -656,7 +543,7 @@ func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCou
 			limit = req.Limit
 		}
 	}
-	// 工程清单（DB-009 第七批）：显式工程优先，留空则逐工程独立作用域跑一遍再合并。
+
 	projects, perr := s.auditProjectIDs(ctx, projectID)
 	if perr != nil {
 		return nil, perr
@@ -670,9 +557,7 @@ func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCou
 		if cerr != nil {
 			return nil, cerr
 		}
-		// limit 是**每工程**的明细上限（全站口径下原来是全局 top-N）：会话变量是单值，
-		// 多个工程不可能并进一次查询。它只决定一次返回多少行明细，
-		// 不改变 Checked / Mismatched 的口径。
+
 		rows, lerr := s.coupons.ListCountMismatches(ctx, pid, limit)
 		if lerr != nil {
 			return nil, lerr
@@ -688,7 +573,7 @@ func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCou
 		}
 	}
 	if len(res.Items) > 0 {
-		// 记日志而不告警升级：偏差不一定影响可用性，但需要有人知道。
+
 		logger.Scene("order").With("mismatched", len(res.Items)).With("checked", res.Checked).
 			Warn("券计数与核销明细不一致（只报告，不自动修正）")
 	}

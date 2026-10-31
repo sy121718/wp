@@ -1,13 +1,5 @@
 package builder
 
-// perf_asset_bytes_quant_test.go — PERF-015 / PERF-016 的产物字节量化（先测量，后决策）。
-//
-// 两条审计条目都声称「产物白送字节」，但字节数必须实测才能判断优化空间：
-//   PERF-015：htmx.min.js 内联进每个含 hx- 属性的产物页面；
-//   PERF-016：同类型组件多实例各自一份 scoped 规则，CSS 随实例数线性增长。
-//
-// 本文件只做测量与判断，不改产物。
-
 import (
 	"bytes"
 	"compress/gzip"
@@ -19,7 +11,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// realUISources 取真实的控件资源源码（与 pipeline 装配层同一条读取路径）。
 func realUISources(t *testing.T) map[string]string {
 	t.Helper()
 	out := make(map[string]string, len(UIAssetFiles()))
@@ -45,7 +36,6 @@ func gzipLen(s string) int {
 	return buf.Len()
 }
 
-// perfCompile 用真实资源编译一个页面文档。
 func perfCompile(t *testing.T, docJSON string) *CompiledPage {
 	t.Helper()
 	set, err := templates.NewComponentSet("../templates/components")
@@ -67,7 +57,6 @@ func perfCompile(t *testing.T, docJSON string) *CompiledPage {
 	return res
 }
 
-// TestPerfQuantHtmxInlineBytes PERF-015 量化：htmx 源字节 vs 产物字节。
 func TestPerfQuantHtmxInlineBytes(t *testing.T) {
 	htmx, err := templates.StaticJS("ui/htmx.min.js")
 	if err != nil {
@@ -82,14 +71,8 @@ func TestPerfQuantHtmxInlineBytes(t *testing.T) {
 		"]")
 	res := perfCompile(t, doc)
 
-	// A：原样产物（无 hx- 特征）
 	base := renderOrFatal(t, res)
 
-	// B：把一行真实的 htmx 用法（等价 product.jet 的实时库存行）插进 HTML。
-	//
-	// Features 置 nil（审计 PERF-014）：这段 hx- 是**手工拼进 HTML** 的，编译期登记表里
-	// 当然没有它 —— 置 nil 让 RenderDocument 回退到扫描 HTML 那条路径，量化口径与实施
-	// 登记制之前完全一致（否则这里量的是「登记表里有没有」，不是「HTML 字节值多少」）。
 	withHx := *res
 	withHx.Features = nil
 	withHx.HTML = res.HTML + "<span class=\"sky-x-live\" hx-get=\"/_fragments/productVariantAvailability?variantIds=1\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></span>"
@@ -106,17 +89,12 @@ func TestPerfQuantHtmxInlineBytes(t *testing.T) {
 	t.Logf("[PERF-015] 整页 gzip: 无 hx- %d → 含 hx- %d（增量 %d 字节）",
 		gzipLen(base), gzipLen(hy), gzipLen(hy)-gzipLen(base))
 
-	// 防重复内联：同一份产物里 htmx 只应出现一次。
 	sig := htmx[:32]
 	if n := strings.Count(hy, sig); n != 1 {
 		t.Errorf("htmx 在同一产物中出现 %d 次（应恰好 1 次）", n)
 	}
 }
 
-// TestPerfQuantScopedCSSGrowth PERF-016 量化 + 回归护栏：同类型组件实例数 → CSS 字节。
-//
-// 合并前实测：N=1 827 → N=2 1327 → N=4 2327 → N=8 4327 → N=16 8327 字节
-// （每个实例约 +500 字节，严格线性）。合并后只随并列选择器本身的长度增长。
 func TestPerfQuantScopedCSSGrowth(t *testing.T) {
 	var first, last int
 	for _, n := range []int{1, 2, 4, 8, 16} {
@@ -134,18 +112,12 @@ func TestPerfQuantScopedCSSGrowth(t *testing.T) {
 		t.Logf("[PERF-016] N=%2d 实例: CSS=%6d 字节, 规则=%3d（其中带 .sky-c- 作用域 %3d）, 平均每实例 %6.0f 字节",
 			n, len(res.CSS), countRules(res.CSS), countScopedRules(res.CSS), float64(len(res.CSS))/float64(n))
 	}
-	// 16 个实例的 CSS 不得再随实例数线性膨胀：并列选择器本身只值几十字节，
-	// 给 4 倍余量（修复前这个差值是 7500 字节）。
+
 	if grew := last - first; grew > 400 {
 		t.Errorf("16 个同配置实例的 CSS 比单实例多出 %d 字节（预期 < 400）：同族规则没有被合并", grew)
 	}
 }
 
-// TestPerfQuantNoResidualMergeableRules PERF-016 回归护栏：产物里不应残留
-// 「相邻、只差作用域、声明相同」的规则组。
-//
-// 判据与生产实现一致（planScopeMerges 复刻了 core 的三条安全边界）。有残留就意味着
-// 某个桶没有接入合并（例如新增了一种包裹形态的外壳而没同步处理）。
 func TestPerfQuantNoResidualMergeableRules(t *testing.T) {
 	var nodes []string
 	const n = 8
@@ -178,7 +150,7 @@ func TestPerfQuantNoResidualMergeableRules(t *testing.T) {
 			dupBytes += len(rules[idxs[0]].text) * (len(idxs) - 1)
 		}
 	}
-	// 仅用于日志展示前 10 个最大的分组，排序稳定性无影响。
+
 	slices.Sort(sizes)
 	slices.Reverse(sizes)
 	shown := sizes
@@ -212,12 +184,9 @@ type cssRule struct {
 	sel    string
 	decls  string
 	text   string
-	bucket string // 所属外层块（@media / @layer …）串联标识：跨桶的规则不能合并
+	bucket string
 }
 
-// parseRules 把产物 CSS 切分成分层之前/之内的全部规则（行状态机）。
-// @media / @layer / @container 外壳行本身不产出规则，但会记入 bucket：
-// 合并只能发生在同一个桶内，跨桶合并会改变响应式语义。
 func parseRules(css string) []cssRule {
 	var out []cssRule
 	var stack []string
@@ -258,22 +227,13 @@ func parseRules(css string) []cssRule {
 	return out
 }
 
-// mergePlan 一个可合并组：同桶、同归一化选择器、同声明、且成员在桶内相邻。
 type mergePlan struct {
 	members []int
-	sel     string // 合并后的选择器（:is(...) 形态）
-	before  int    // 合并前这些规则的字节
-	after   int    // 合并后字节
+	sel     string
+	before  int
+	after   int
 }
 
-// planScopeMerges 按「保守但严格等价」的判据找出可合并组：
-//  1. 选择器折叠掉实例 scope 后完全相同；
-//  2. 声明完全相同；
-//  3. 同一外层桶（@media / @layer 不跨越）；
-//  4. 成员在输出序列里**相邻**（中间没有任何其它规则）——
-//     这条是安全边界：只要中间无规则，把成员折叠到首个成员的位置就不改变
-//     与任何其它规则的先后关系，因此优先级语义逐字节等价。
-//  5. 选择器里恰好一个 .sky-c- 占位（多占位需要实例间映射关系，不在此处理）。
 func planScopeMerges(css string) []mergePlan {
 	rules := parseRules(css)
 	groups := map[string][]int{}
@@ -322,7 +282,6 @@ func planScopeMerges(css string) []mergePlan {
 	return plans
 }
 
-// TestPerfQuantMultiComponentScenarios 多组件 / 多配置场景下的可提取比例。
 func TestPerfQuantMultiComponentScenarios(t *testing.T) {
 	sameBtn := func(n int) string {
 		var nodes []string
@@ -404,7 +363,6 @@ func countScopedRules(css string) int {
 	return n
 }
 
-// normalizeScope 把实例作用域类名折叠掉，用于判断「规则内容是否只差 scope」。
 func normalizeScope(sel string) string {
 	var sb strings.Builder
 	rest := sel

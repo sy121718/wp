@@ -1,17 +1,5 @@
 package adminservice
 
-// datarule_snapshot_test.go —— 数据权限快照的模块内单测（不碰数据库）。
-//
-// 覆盖四件「错了会静默出错」的事：
-//  1. 语义等价：内存匹配与改造前 SQL 的四条目标谓词（datarule_provider.go:61-79）给出相同规则集合；
-//  2. fail-closed：快照从未加载成功时 GetRules 必须返回错误，绝不返回空规则集合；
-//  3. 加载失败保留旧快照：重建失败不得用空快照覆盖已有的成功快照；
-//  4. 并发安全：并发读 + 并发重载（go test -race）；
-//  5. 写完立即生效：重载后新规则立刻出现在 GetRules 结果里。
-//
-// 快照与读路径都不依赖 DB，因此这里用 Service 的最小构造（只填 ruleSnapshot / ruleSnapshotLoader），
-// 真库路径（加载 SQL、写路径自动重载、查询期零 DB）由 public/test/admin/unit 的 DB 用例覆盖。
-
 import (
 	"context"
 	"errors"
@@ -24,15 +12,6 @@ import (
 	"go_wp/pkg/datarule"
 )
 
-// dataruleTestSnapshot 构造与测试 fixture 对应的一份快照。
-//
-// fixture（与 TestMatchAssignmentRuleIDsEquivalentToLegacySQL 的表逐行对应）：
-//
-//	ORDER 域规则：1 分配给用户 100；2 分配给角色 7（editor）；3 分配给部门 10 scope=SELF；
-//	             4 分配给部门 5 scope=SELF_AND_CHILDREN；5 分配给部门 10 scope=SELF_AND_CHILDREN
-//	ADMIN 域规则：6 分配给用户 100（用于验证域隔离）
-//	启用角色：editor=7、viewer=8
-//	部门：5 是根；10 的祖先链是 [5]；20 的祖先链是 [5,10]（10 的子部门）
 func dataruleTestSnapshot() *dataruleSnapshot {
 	return &dataruleSnapshot{
 		domains: map[string]*dataruleDomain{
@@ -65,7 +44,6 @@ func dataruleTestSnapshot() *dataruleSnapshot {
 	}
 }
 
-// newDataRuleTestService 构造只带快照的最小 Service（读路径不需要 model）。
 func newDataRuleTestService(snap *dataruleSnapshot) *Service {
 	svc := &Service{ruleSnapshot: &dataruleSnapshotStore{}}
 	if snap != nil {
@@ -74,15 +52,6 @@ func newDataRuleTestService(snap *dataruleSnapshot) *Service {
 	return svc
 }
 
-// TestMatchAssignmentRuleIDsEquivalentToLegacySQL 语义等价：内存匹配算法与改造前的 SQL 谓词
-// 给出相同规则集合。
-//
-// 期望值逐条由改造前 datarule_provider.go:61-79 的四条谓词手推（谓词之间是 OR）：
-//
-//	① target_type=USER AND target_id=user.UserID                      （:61-62，无条件）
-//	② target_type=ROLE AND target_id IN roleIDs（roleIDs 非空时才加）   （:63-66）
-//	③ target_type=DEPT AND target_id=user.DeptID（DeptID 非 0 时才加）  （:67-70）
-//	④ target_type=DEPT AND target_id IN 祖先 AND target_scope=SELF_AND_CHILDREN（祖先非空时才加）（:71-79）
 func TestMatchAssignmentRuleIDsEquivalentToLegacySQL(t *testing.T) {
 	t.Parallel()
 
@@ -150,8 +119,6 @@ func TestMatchAssignmentRuleIDsEquivalentToLegacySQL(t *testing.T) {
 	}
 }
 
-// TestGetRulesReadsSnapshotOnly 读路径端到端：GetRules 从快照组装 RuleConfig（按规则配置区分），
-// 且声明「无该域规则」「无命中」时不返回错误。
 func TestGetRulesReadsSnapshotOnly(t *testing.T) {
 	t.Parallel()
 
@@ -177,23 +144,17 @@ func TestGetRulesReadsSnapshotOnly(t *testing.T) {
 		}
 	}
 
-	// 未注册域：与快照语义一致地返回空，而不是错误。
 	rules, err = svc.GetRules(ctx, &datarule.UserContext{UserID: 100}, "NOT_REGISTERED")
 	if err != nil || len(rules) != 0 {
 		t.Fatalf("未注册域应返回空且无错误：rules=%v err=%v", rules, err)
 	}
 
-	// nil 用户不参与匹配（与改造前一致）。
 	rules, err = svc.GetRules(ctx, nil, "ORDER")
 	if err != nil || len(rules) != 0 {
 		t.Fatalf("nil 用户应返回空且无错误：rules=%v err=%v", rules, err)
 	}
 }
 
-// TestGetRulesFailClosedWithoutSnapshot 快照加载失败时必须返回错误，绝不返回空规则集合。
-//
-// 这是本改造的安全红线：返回空规则集合等价于「没有任何限制」，会把数据权限静默关掉；
-// 改造前 provider 出错走 db.AddError(err) 让查询失败，同样是 fail-closed，这里保持同一语义。
 func TestGetRulesFailClosedWithoutSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -208,16 +169,12 @@ func TestGetRulesFailClosedWithoutSnapshot(t *testing.T) {
 	if len(rules) != 0 {
 		t.Fatalf("失败时不应返回任何规则: %+v", rules)
 	}
-	// 失败后快照仍然为空：下一次命中请求会重试，而不是把「空」记下来当结果。
+
 	if snap := svc.currentDataRuleSnapshot(); snap != nil {
 		t.Fatalf("加载失败不应写入任何快照: %+v", snap)
 	}
 }
 
-// TestConcurrentFirstUseLoadsOnce 并发首次命中只触发一次加载（double-check 的实际效果）。
-//
-// 没有这层二次检查时，N 个并发首次请求会各自加载一遍（3N 次查询）。加载器里睡一小会儿，
-// 把竞态窗口拉开，断言计数恰好为 1。
 func TestConcurrentFirstUseLoadsOnce(t *testing.T) {
 	t.Parallel()
 
@@ -225,7 +182,7 @@ func TestConcurrentFirstUseLoadsOnce(t *testing.T) {
 	var loads atomic.Int64
 	svc.ruleSnapshotLoader = func(context.Context) (*dataruleSnapshot, error) {
 		loads.Add(1)
-		time.Sleep(20 * time.Millisecond) // 拉开竞态窗口：没有 double-check 时这里必然 > 1
+		time.Sleep(20 * time.Millisecond)
 		return dataruleTestSnapshot(), nil
 	}
 
@@ -256,10 +213,6 @@ func TestConcurrentFirstUseLoadsOnce(t *testing.T) {
 	}
 }
 
-// TestLoadSnapshotFailureKeepsPreviousSnapshot 加载失败不得清空已有快照。
-//
-// 场景：先成功加载一份快照（规则命中），随后重建失败（库抖动 / SQL 出错），
-// 读路径必须继续按**旧快照**拦截，而不是退化成「没有规则」。
 func TestLoadSnapshotFailureKeepsPreviousSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -271,7 +224,6 @@ func TestLoadSnapshotFailureKeepsPreviousSnapshot(t *testing.T) {
 		t.Fatalf("首次加载应成功: %v", err)
 	}
 
-	// 换成必然失败的加载器：重建失败，但旧快照必须保留。
 	svc.ruleSnapshotLoader = func(context.Context) (*dataruleSnapshot, error) {
 		return nil, errors.New("模拟数据库抖动")
 	}
@@ -288,7 +240,6 @@ func TestLoadSnapshotFailureKeepsPreviousSnapshot(t *testing.T) {
 	}
 }
 
-// TestReloadTakesEffectImmediately 重载后新规则立刻出现在 GetRules 结果里（不等定时刷新）。
 func TestReloadTakesEffectImmediately(t *testing.T) {
 	t.Parallel()
 
@@ -305,7 +256,6 @@ func TestReloadTakesEffectImmediately(t *testing.T) {
 		t.Fatalf("加载后应命中 1 条: rules=%+v err=%v", rules, err)
 	}
 
-	// 库侧变更完成（新规则 + 分配），写路径同步重载后读端立刻可见。
 	next := dataruleTestSnapshot()
 	next.domains["ORDER"].rules = append(next.domains["ORDER"].rules, dataruleRule{id: 9, config: `{"omit_fields":["f9"]}`})
 	next.domains["ORDER"].assignments = append(next.domains["ORDER"].assignments, dataruleAssignment{
@@ -325,10 +275,6 @@ func TestReloadTakesEffectImmediately(t *testing.T) {
 	}
 }
 
-// TestSnapshotConcurrentReadAndReload 并发读 + 并发重载必须无数据竞争（go test -race）。
-//
-// 读端只做 atomic.Pointer.Load（无锁），重建端由 store.mu 串行化并整体 Store 新快照；
-// 这个用例的作用是让 -race 真正跑到那条路径上。
 func TestSnapshotConcurrentReadAndReload(t *testing.T) {
 	t.Parallel()
 
@@ -336,7 +282,7 @@ func TestSnapshotConcurrentReadAndReload(t *testing.T) {
 	var loads atomic.Int64
 	svc.ruleSnapshotLoader = func(context.Context) (*dataruleSnapshot, error) {
 		loads.Add(1)
-		// 每次重建都返回一份内容相同但**新分配**的快照：强制走整体替换，而不是复用同一指针。
+
 		return dataruleTestSnapshot(), nil
 	}
 
@@ -390,7 +336,6 @@ func TestSnapshotConcurrentReadAndReload(t *testing.T) {
 	}
 }
 
-// sameIDSet 比较两个 id 列表是否为同一集合（顺序无关，忽略空值差异）。
 func sameIDSet(got, want []uint64) bool {
 	gotSet := make(map[uint64]struct{}, len(got))
 	for _, id := range got {

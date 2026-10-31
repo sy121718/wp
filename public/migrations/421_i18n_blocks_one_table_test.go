@@ -1,14 +1,5 @@
 package migrations_test
 
-// 421_i18n_blocks_one_table_test.go — 迁移 421 的落地结果与幂等。
-//
-// 为什么值得单独钉住：这条 seed 的门槛是**逐条枚举本批 3 个 key 计数**（挑的是 en-US 行），
-// 门槛写错有两种静默失败 —— 门槛太低（比如按 zh-CN 计数、而中文行与模板兜底同形，别处被顺手
-// 加上）会让判定在「本批还没跑」时就成立，整批词条被静默跳过；门槛太高（多算或写错一个 key）
-// 则让这条 seed 每次启动都重跑。两种都不会报错。
-//
-// 所以这里断言的是「跑完之后库里真的有什么」，而不是「迁移跑过了」。
-
 import (
 	"testing"
 
@@ -16,25 +7,14 @@ import (
 	"go_wp/public/test/support"
 )
 
-// blocksOneTableVersion 421 的版本号（与 register_blocks_one_table_i18n.go 一致）。
 const blocksOneTableVersion = "421-i18n-blocks-one-table"
 
-// blocksOneTableWants 421 之后库里应有的值（key → lang → 期望值）。
-//
-// 三条都是本批新增（blocks.html 合并成一张表 + 影响面降级）；
-// 被取代的旧词条（headers_empty / footers_empty / blocks_empty）**不在本批退役** ——
-// 它们由 192 seed，而 register_admin_i18n.go 的幂等条件逐条枚举这些 key，
-// 只删词条会被那条 seed 每次启动插回来（AGENTS.md「删能力时要连 seed 的 SQL 与幂等条件一起收口」）。
 var blocksOneTableWants = map[string]map[string]string{
 	"admin.blocks.impact.badgeTail": {
 		"zh-CN": " 个页面有更新未发布",
 		"en-US": " pages have unpublished changes",
 	},
-	// `admin.blocks.impact.help` 的期望值是 **473 覆盖之后**的文案：473 把行为从
-	// 「手动重建」改成「自动重建」（块/主题/组件版本三条 stale 来源都接上了自动重建），
-	// 文案随之改写 —— 原文案在教用户去找一个不存在的重建按钮。
-	// 这里跟的是 473 的最终值，不是 421 的初值：**覆盖迁移之后的真源是后者**，
-	// 谁下次看到不一致，先查这条 key 有没有更晚的覆盖迁移，别当成漂移改回去。
+
 	"admin.blocks.impact.help": {
 		"zh-CN": "块、内容、主题或导航改动过，产物的字节还停在旧版本。系统会在改动后自动重建这些页面；若长时间停在这里，说明重建失败或构建队列积压（原因已记入服务日志）。",
 		"en-US": "Blocks, content, themes or navigation changed, but the published bytes still carry the old version. These pages are rebuilt automatically; if they stay here for long, the rebuild failed or the build queue is backed up (see the service log).",
@@ -45,7 +25,6 @@ var blocksOneTableWants = map[string]map[string]string{
 	},
 }
 
-// TestBlocksOneTableI18nSeedApplied 421 的每一条词条都按期望值落库。
 func TestBlocksOneTableI18nSeedApplied(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -71,7 +50,6 @@ func TestBlocksOneTableI18nSeedApplied(t *testing.T) {
 	}
 }
 
-// TestBlocksOneTableI18nSeedIdempotent 判定命中「已应用」，且整条 SQL 可重放。
 func TestBlocksOneTableI18nSeedIdempotent(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -95,8 +73,7 @@ func TestBlocksOneTableI18nSeedIdempotent(t *testing.T) {
 	assertApplied := func(stage string) {
 		t.Helper()
 		var n int64
-		// 与迁移器同形（migrator.go 对种子判定就是 db.Raw(ConditionSQL)，不传参）：
-		// 判定的 key 必须写死在 SQL 里，写成 ? 永远查不到行 —— 判定恒为 0、每次启动重跑。
+
 		if err := db.Raw(target.ConditionSQL).Scan(&n).Error; err != nil {
 			t.Fatalf("%s：执行 ConditionSQL 失败: %v", stage, err)
 		}
@@ -123,7 +100,6 @@ func TestBlocksOneTableI18nSeedIdempotent(t *testing.T) {
 	}
 	before := countRows()
 
-	// 重放：判定命中即跳过；即使真的再跑一次，INSERT ... ON CONFLICT DO NOTHING 也不产生新行。
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("重放种子数据失败: %v", err)
 	}

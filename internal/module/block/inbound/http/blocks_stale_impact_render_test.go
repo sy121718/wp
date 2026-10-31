@@ -16,20 +16,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// blocks_stale_impact_render_test.go — 全局块管理页的渲染级契约（02-L P1-4 / P1-10）。
-//
-// 钉两件事，都是「改错了不会报错、只会静默变形」的那一类：
-//
-//	① **一张表**（P1-4）：合并前三段各渲染一张 <table>，[data-check-all] 的唯一性靠
-//	   「走在前面的段都为空」这组跨段条件保证 —— 加一类块、调一次顺序都要重推一遍，
-//	   推错就多出一个全选框，而 admin.js 的 refresh 只认 scope 里第一个。现在判据是
-//	   结构事实：整页只有一张表、一个全选框。
-//	② **影响面降级**（P1-10）：从常驻只读卡降为页头徽章 + 折叠清单，但**三档语义一个
-//	   都不能少** —— 尤其是 Available=false（契约未装配 / 读工程失败）这一档：它必须继续
-//	   输出 Hint 原文，绝不能与「没有待重建」合并成同一句话，否则故障被静默成「一切正常」。
-//
-// 这些断言都用**中文兜底**：测试进程不连库，pkg/i18n 缓存为空，t() 一律回落到模板内原文。
-
 func blocksLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"
@@ -41,7 +27,6 @@ func blocksLayoutData(base gin.H) gin.H {
 	return base
 }
 
-// blocksRow 一行列表数据（形状取自 handler 的 blockRow 投影）。
 func blocksRow(id, name, kind, reuseMode string) gin.H {
 	return gin.H{
 		"ID": id, "Name": name, "Kind": kind, "ReuseMode": reuseMode,
@@ -49,7 +34,6 @@ func blocksRow(id, name, kind, reuseMode string) gin.H {
 	}
 }
 
-// renderBlocksPage 用真实模板渲染 /admin/blocks，返回完整响应体。
 func renderBlocksPage(t *testing.T, data gin.H) string {
 	t.Helper()
 	v := viper.New()
@@ -67,14 +51,13 @@ func renderBlocksPage(t *testing.T, data gin.H) string {
 		t.Fatalf("admin/blocks 渲染失败，状态 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	// 渲染中途中断的形态是「HTTP 200 + 后半页整块消失」，只断言状态码抓不到它。
+
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("admin/blocks 未渲染到布局尾部（模板在某一行中断，列表可能整块消失）")
 	}
 	return body
 }
 
-// blocksBaseData 一套最小可用数据（一个工程、三类块各一行）。
 func blocksBaseData(rows bool) gin.H {
 	data := gin.H{
 		"title": "区块管理", "menu": "blocks",
@@ -92,7 +75,6 @@ func blocksBaseData(rows bool) gin.H {
 	return data
 }
 
-// TestBlocksListIsSingleTable 一页一张表、一个全选框（合并三段表后的核心结构断言）。
 func TestBlocksListIsSingleTable(t *testing.T) {
 	cases := []struct {
 		name string
@@ -112,8 +94,7 @@ func TestBlocksListIsSingleTable(t *testing.T) {
 			if n := strings.Count(body, "table-scroll"); n != 1 {
 				t.Errorf("table-scroll 数量 = %d，期望 1", n)
 			}
-			// 全选框只在有行时出现：判据是「有行 ⇒ 恰好一个」，不是「恒为一个」。
-			// 空表勾选没有意义；而**多于一个**才是原设计要防的那个缺陷（admin.js 只认第一个）。
+
 			wantCheckAll := 0
 			if tc.rows {
 				wantCheckAll = 1
@@ -121,11 +102,11 @@ func TestBlocksListIsSingleTable(t *testing.T) {
 			if n := strings.Count(body, "data-check-all"); n != wantCheckAll {
 				t.Errorf("data-check-all 数量 = %d，期望 %d（唯一性必须由结构保证，不再依赖跨段 if）", n, wantCheckAll)
 			}
-			// 表头始终在：空态也要能看见有哪些列（scripts/check-empty-state-table-head.sh 的判据）。
+
 			if !strings.Contains(body, "<thead") || !strings.Contains(body, "类型") {
 				t.Error("空态/有数据两种形态下表头都必须在，且含「类型」列")
 			}
-			// 空态行落在 <tbody> 的 <td colspan> 里（表头因此不会被空态吃掉）。
+
 			if !tc.rows && !strings.Contains(body, `colspan="7"`) {
 				t.Error("空态行的 colspan 应为 7（勾选/名称/类型/复用方式/更新时间/影响面/操作）")
 			}
@@ -136,13 +117,11 @@ func TestBlocksListIsSingleTable(t *testing.T) {
 	}
 }
 
-// TestBlocksListKeepsSelectionAndDeleteWiring 勾选与批量/删除链路在合并后仍然接通。
 func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
-		// 勾选框所在的批量表单：现在是「JSON 写表单」声明（前一版是页面 POST 的 action，
-		// 工程筛选不再进 action —— 批量只发 ids，结果由前端按当前 URL 刷新）。
+
 		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
 		`data-msg-none-selected`, `data-write-status`,
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
@@ -152,7 +131,7 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 			t.Errorf("合并表后缺少 %q：批量选择 / 筛选链路断了", want)
 		}
 	}
-	// 行内删除表单：每行一个，id 取自块 id（三类块同属 blocks 表，id 全局唯一）。
+
 	for _, id := range []string{"b1", "b2", "b3", "b4"} {
 		if !strings.Contains(body, `id="block-del-`+id+`"`) {
 			t.Errorf("缺少 id=block-del-%s 的行内删除表单（表格外的 form 关联不到按钮）", id)
@@ -166,11 +145,6 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	}
 }
 
-// TestBlocksStaleImpactTierStalePage 有 stale：页头只剩一行**可点徽章**，清单在抽屉里。
-//
-// 这一条钉的是「清单不再落在列表页上」：抽屉的内容由 /admin/blocks/stale/drawer 渲染
-// （片段形态见 templates 包的同名用例），页面本身只该给入口 —— 否则又回到
-// 「13 条清单把列表顶出首屏」的老毛病，只是换了个外壳。
 func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 	data := blocksBaseData(true)
 	data["StaleImpact"] = gin.H{
@@ -181,7 +155,7 @@ func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 	body := renderBlocksPage(t, data)
 
 	for _, want := range []string{
-		"1", "个页面有更新未发布", // 页头徽章的计数与后缀
+		"1", "个页面有更新未发布",
 		`class="badge badge-warning badge-btn"`,
 		`class="page-sub"`,
 		`data-drawer-url="/admin/blocks/stale/drawer"`,
@@ -190,11 +164,11 @@ func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 			t.Errorf("有 stale 时缺少 %q", want)
 		}
 	}
-	// 反向判据：页面本身不该再渲染清单 / 折叠卡 / 常驻卡。
+
 	for _, notWant := range []string{
-		"/blog/hello-world",                   // 清单条目
-		`<details class="section-fold card">`, // 折叠清单
-		`<section class="card">`,              // 常驻只读卡（最早的形态）
+		"/blog/hello-world",
+		`<details class="section-fold card">`,
+		`<section class="card">`,
 	} {
 		if strings.Contains(body, notWant) {
 			t.Errorf("列表页不该再渲染 %q —— 清单已移入抽屉", notWant)
@@ -202,7 +176,6 @@ func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 	}
 }
 
-// TestBlocksStaleImpactTierNone 无 stale：只说「当前没有待重建的页面」，页头不给徽章。
 func TestBlocksStaleImpactTierNone(t *testing.T) {
 	data := blocksBaseData(true)
 	data["StaleImpact"] = gin.H{
@@ -221,10 +194,6 @@ func TestBlocksStaleImpactTierNone(t *testing.T) {
 	}
 }
 
-// TestBlocksStaleImpactTierUnavailableKeepsHint 读失败 / 未装配：Hint 原文必须透出。
-//
-// 这是三档里最容易在改版中被「顺手合并掉」的一档：把读失败显示成「一切正常」，
-// 故障就再也没人看见了 —— 本用例就是防这一条。
 func TestBlocksStaleImpactTierUnavailableKeepsHint(t *testing.T) {
 	const hint = "读取站点工程失败，本次无法统计待重建影响面。"
 	data := blocksBaseData(true)
@@ -245,9 +214,8 @@ func TestBlocksStaleImpactTierUnavailableKeepsHint(t *testing.T) {
 	}
 }
 
-// TestBlocksStaleImpactMissingKeyStillRenders 缺可选键（直接渲染模板的单测形态）仍整页渲染。
 func TestBlocksStaleImpactMissingKeyStillRenders(t *testing.T) {
-	body := renderBlocksPage(t, blocksBaseData(true)) // 不带 StaleImpact 键
+	body := renderBlocksPage(t, blocksBaseData(true))
 	if strings.Contains(body, "待重建影响面") || strings.Contains(body, "个页面有更新未发布") {
 		t.Error("缺 StaleImpact 键时不该渲染任何影响面元素")
 	}
@@ -256,28 +224,19 @@ func TestBlocksStaleImpactMissingKeyStillRenders(t *testing.T) {
 	}
 }
 
-// TestBlocksWriteFormsAreJSONWired 三个写入口都改走 JSON API，且**不再**残留页面 POST。
-//
-// 为什么两件事都要断言：只断言「新属性在」会漏掉「旧 action 也还在」——那种半迁移状态
-// 下表单同时声明了两条路径，浏览器仍会按 action 提交（POST 到页面路由），
-// 于是新链路形同虚设、而 page 侧 handler 又必须继续维护两份语义。
-//
-// 三处写入口的失败出口也在这里钉住（它们是**看不到就没人知道**的那类缺陷）：
-// 新建 / 批量在表单内有结果区；行内删除的表单自身 display:none，结果区必须挂在
-// [data-write-host] 上（write-base.js 的 statusOf 会沿 closest 上溯找它）。
 func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
-		// 新建（抽屉表单）：成功直接进工作台编辑内容。
+
 		`data-write-url="/api/block/create"`, `data-write="create"`,
 		`data-write-nav="/workbench?block={id}"`,
-		// 单条删除 + 批量删除端点。
+
 		`data-write-url="/api/block/delete"`, `data-write="single"`,
 		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
-		// 结果区（三个写入口各一处）与行内删除的宿主元素。
+
 		`data-write-status`, `data-write-host`,
-		// 无 JS 状态：控件默认 hidden，由 write-base.js 的 [data-requires-js] 放出来。
+
 		`data-requires-js`,
 	} {
 		if !strings.Contains(body, want) {
@@ -285,7 +244,6 @@ func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
 		}
 	}
 
-	// 旧页面 POST：一条都不能剩（残留 = 表单仍会 POST 到页面路由）。
 	for _, stale := range []string{
 		`action="/admin/blocks/create`, `action="/admin/blocks/delete`,
 		`action="/admin/blocks/bulk-delete`,
@@ -295,11 +253,10 @@ func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
 		}
 	}
 
-	// 三个写入口的结果区数量：新建 1 + 批量 1 + 行内删除 1。
 	if n := strings.Count(body, `data-write-status`); n != 3 {
 		t.Errorf("结果区数量 = %d，期望 3（新建 / 批量 / 行内删除各一）", n)
 	}
-	// 无 JS 提示（禁用 JS 时写动作没有兜底端点，必须说清原因）。
+
 	if !strings.Contains(body, "需要 JavaScript") {
 		t.Error("缺少无 JS 提示：禁用 JS 时按钮不见了，用户会以为是权限问题")
 	}

@@ -1,6 +1,5 @@
 package templates
 
-// 定价试算与应用共用写基座；JSON 结果由前端渲染，GET 只读取业务对象。
 import (
 	"strings"
 	"testing"
@@ -17,7 +16,6 @@ func pricingPageData() map[string]any {
 	})
 }
 
-// renderPricingPage 渲染并把输出解析成 DOM。
 func renderPricingPage(t *testing.T) (*html.Node, string) {
 	t.Helper()
 	out, err := render(t, groupDSet(t), "admin/product/product_pricing", pricingPageData())
@@ -50,7 +48,6 @@ func TestPricingPreviewUsesJSONBase(t *testing.T) {
 	}
 }
 
-// TestPricingApplyUsesJSONBase 应用调价按钮单独挂基座（submitter 级覆盖）。
 func TestPricingApplyUsesJSONBase(t *testing.T) {
 	root, out := renderPricingPage(t)
 
@@ -78,7 +75,6 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 		t.Fatalf("应用调价会立刻写库，按钮必须带 data-write-confirm")
 	}
 
-	// 试算按钮继承 form 的预览端点，应用按钮覆盖为应用端点。
 	preview := firstNode(root, func(n *html.Node) bool {
 		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "data-write-url")
 	})
@@ -87,7 +83,6 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 	}
 }
 
-// TestPricingPageStatusAndFlashTargets 结论行与 flash 落点各一处，且结论行在表单内。
 func TestPricingPageStatusAndFlashTargets(t *testing.T) {
 	root, out := renderPricingPage(t)
 
@@ -97,14 +92,13 @@ func TestPricingPageStatusAndFlashTargets(t *testing.T) {
 	if form == nil {
 		t.Fatalf("找不到改价表单；输出片段：%s", snippet(out))
 	}
-	// 基座的 statusOf 只在 form 内（或 [data-write-host] 内）找结论行 —— 放外面等于没有。
+
 	if got := len(peAll(form, func(n *html.Node) bool { return peHasAttr(n, "data-write-status") })); got != 1 {
 		t.Fatalf("改价表单内应恰有 1 个 [data-write-status] 结论行，实际 %d", got)
 	}
-	// 结论跨刷新已改由 sessionStorage 承载（新基座），页面不再需要落点元素。
+
 }
 
-// firstNode 返回第一个满足条件的节点（找不到返回 nil）。
 func firstNode(root *html.Node, pred func(*html.Node) bool) *html.Node {
 	if got := peAll(root, pred); len(got) > 0 {
 		return got[0]
@@ -112,14 +106,12 @@ func firstNode(root *html.Node, pred func(*html.Node) bool) *html.Node {
 	return nil
 }
 
-// hasInputNamed 判断表单里有没有指定 name 的 input（值为空串也算存在）。
 func hasInputNamed(form *html.Node, name string) bool {
 	return firstNode(form, func(n *html.Node) bool {
 		return peEl(n, "input") && peAttr(n, "name") == name
 	}) != nil
 }
 
-// snippet 给失败信息一段可读的上下文（模板改坏时比「找不到节点」有用得多）。
 func snippet(out string) string {
 	s := strings.TrimSpace(out)
 	if len(s) > 600 {

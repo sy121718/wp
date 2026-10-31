@@ -1,19 +1,5 @@
 package presentationservice
 
-// presentation_publish_record.go — 发布记录页的读模型（B9）。
-//
-// 一屏一个方法：按实体批量回答「现在发布成什么样了」。数据来自三张表 ——
-//   presentation_instances    实例身份 + active 指针 + stale（带 FORCE 策略，必须工程作用域）
-//   presentation_publications 每语言的激活路径 / 产物 / 发布时间（唯一真源）
-//   presentation_artifacts    激活产物的版本号（账本只存 id 与 hash，版本号要单独取）
-//
-// 三张表的读法只在这一处：调用方（商品页）拿到的是拼好的行。让页面自己拿实例再逐行
-// 查产物，等于把「哪一列才算已发布」这条判据复制到别的模块。
-//
-// **兼容边界（报告里也写了）**：库里没有「每次发布尝试成功/失败」的历史明细表，
-// 回执 publication_receipts 只覆盖访问面切换那一段且完成后只留终态。所以这一屏回答的是
-// **当前**发布状态，不是发布历史；不为了「像 dy_erp」而伪造历史行。
-
 import (
 	"context"
 	"strings"
@@ -22,11 +8,6 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 )
 
-// PublishRecords 按实体批量读当前发布登记（见 presentationcontract.PublishRecordPort）。
-//
-// **从未发布过的实例也给一行**：Lang / ActivePath / PublishedAt 空、Status=draft。
-// 反过来（只回有语言账本的行）会让「建了详情页实例但从没发成功」的实体从页面消失，
-// 而那正是最需要被看见的一档。
 func (s *Service) PublishRecords(ctx context.Context, projectID, entityType string, entityIDs []string) ([]presentationcontract.PublishRecordRow, error) {
 	projectID, err := s.resolveProjectID(ctx, projectID)
 	if err != nil {
@@ -80,8 +61,7 @@ func (s *Service) PublishRecords(ctx context.Context, projectID, entityType stri
 			fact := presentationmodel.ArtifactVersionFact{}
 			if pub.ArtifactID != nil {
 				fact = versionOf[*pub.ArtifactID]
-				// 账本指向的产物行可能已被 GC 删掉：版本号留 0、hash 照账本给 ——
-				// 这是「记录还在、产物没了」的真实状态，不该被吞成「没发布」。
+
 				if fact.ArtifactHash == "" {
 					fact.ArtifactHash = pub.ArtifactHash
 				}
@@ -92,7 +72,6 @@ func (s *Service) PublishRecords(ctx context.Context, projectID, entityType stri
 	return rows, nil
 }
 
-// instanceRow 一条当前登记行。
 func instanceRow(inst *presentationmodel.InstanceEntity, pub presentationmodel.PublicationEntity,
 	fact presentationmodel.ArtifactVersionFact) presentationcontract.PublishRecordRow {
 	row := presentationcontract.PublishRecordRow{
@@ -112,17 +91,6 @@ func instanceRow(inst *presentationmodel.InstanceEntity, pub presentationmodel.P
 	return row
 }
 
-// currentInstances 取本次要拼装发布登记的实例集合。
-//
-// 两条读法的分界是「调用方有没有点名实体」：
-//
-//   - **给了实体 id**（发布记录页有状态档：它必须先知道全工程发布状态才能过滤，
-//     所以给的是全工程商品 id）：让 entity_id IN (...) 下推到数据库，只搬这些实体的
-//     实例行，不再把本工程该类型的全部实例读回来在内存里按 map 过滤；
-//   - **没给**（entityIDs 为空 = contract 里的「本工程该类型全部」）：仍然走
-//     ListInstances —— 那本来就是全量语义，换成 IN 也没有更少。
-//
-// 两条都已经在 model 层包了工程作用域；这里不再重复拼 project_id 条件。
 func (s *Service) currentInstances(ctx context.Context, projectID, entityType string,
 	entityIDs []string) ([]*presentationmodel.InstanceEntity, error) {
 	ids := normalizeEntityIDs(entityIDs)
@@ -132,8 +100,6 @@ func (s *Service) currentInstances(ctx context.Context, projectID, entityType st
 	return s.m.ListInstanceFactsByEntities(ctx, projectID, entityType, ids)
 }
 
-// normalizeEntityIDs 去掉空白与空串（保序去重）：空串进 IN 会让整条查询白跑一趟，
-// 而重复 id 只会让分批边界重复搬同一行。
 func normalizeEntityIDs(entityIDs []string) []string {
 	out := make([]string, 0, len(entityIDs))
 	seen := make(map[string]bool, len(entityIDs))

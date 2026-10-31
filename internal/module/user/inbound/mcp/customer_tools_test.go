@@ -1,19 +1,5 @@
 package usermcp
 
-// customer_tools_test.go — 客户工具两个的元信息、入参映射与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪个数，用户就看不到哪个数。这里钉的是几件会直接决定回答对错的事：
-//   · id 必须逐条出现在结果里 —— 它是接着调 customer_get 的唯一钥匙；
-//   · 「状态不过滤」必须映射成 dto 的 -1，**不能**是 0（0 是「已停用」，
-//     零值直接透传会让不传状态的提问只返回停用账号，而结果看起来完全正常）；
-//   · 注册结束日必须落在当日最后一秒（闭区间），传零点会整批漏掉「结束那天注册的人」；
-//   · 状态文案走 userenums 的真源，不自己写一份中文表。
-//
-// 注意测试传参用 map 而不是顾客结构体：结构体序列化会把零值写成 ""，
-// 而 mcp 的 Enum 白名单**拒绝空串**（validate.go 的 validateValue）——
-// 模型不传某个可选参数时 JSON 里根本没有那个键，两者不是一回事。
-
 import (
 	"context"
 	"errors"
@@ -26,7 +12,6 @@ import (
 	userenums "go_wp/internal/module/user/enums"
 )
 
-// stubQuery 假 reader：记录入参、回放固定结果。
 type stubQuery struct {
 	gotList *userdto.CustomerListReq
 	gotGet  uint64
@@ -83,7 +68,7 @@ func TestCustomerFindDeclaresFuzzyKeyword(t *testing.T) {
 	if !ok {
 		t.Fatal("缺少 customer_find")
 	}
-	// 描述必须把「关键词能匹配哪几列」说出来：模型靠描述决定用户给的昵称能不能直接用。
+
 	desc := find.Description()
 	for _, want := range []string{"邮箱", "用户名", "昵称", "展示名"} {
 		if !strings.Contains(desc, want) {
@@ -95,7 +80,7 @@ func TestCustomerFindDeclaresFuzzyKeyword(t *testing.T) {
 func TestCustomerFindDefaultFiltersAreNotDisabled(t *testing.T) {
 	stub := &stubQuery{listRes: &userdto.CustomerListResp{}}
 	tools := mustQueryTools(t, stub)
-	// 空参数（模型什么都没传）：状态与邮箱验证都必须落到「不过滤」，而不是零值 0。
+
 	if _, err := tools["customer_find"].Invoke(context.Background(), mustRaw(t, map[string]any{})); err != nil {
 		t.Fatalf("调用失败: %v", err)
 	}
@@ -143,7 +128,6 @@ func TestCustomerFindMapsStatusAndVerified(t *testing.T) {
 	}
 }
 
-// 白名单之外的取值必须在声明期被拦下（安全边界，不是便利设施）。
 func TestCustomerFindRejectsUnknownStatus(t *testing.T) {
 	tools := mustQueryTools(t, &stubQuery{listRes: &userdto.CustomerListResp{}})
 	_, err := tools["customer_find"].Invoke(context.Background(), mustRaw(t, map[string]any{"status": "ACTIVE"}))
@@ -232,12 +216,12 @@ func TestFindCustomersTextCarriesIDAndNeverLoggedIn(t *testing.T) {
 	}
 	text := findCustomersText(res)
 	for _, want := range []string{
-		"id=7", "id=8", // 接着调 customer_get 的钥匙
+		"id=7", "id=8",
 		"张三", "zhangsan", "z@example.com",
-		"（上海）",             // 最后登录带归属地
-		"从未登录",             // 待激活账号的常态，不能显示成空
-		"（已锁定）",            // 锁定必须一眼可见
-		"全部 120", "未验证 30", // 计数条回答的是「一共多少账号」
+		"（上海）",
+		"从未登录",
+		"（已锁定）",
+		"全部 120", "未验证 30",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, text)
@@ -287,7 +271,7 @@ func TestCustomerGetPassesIDAndDescribes(t *testing.T) {
 	}
 	for _, want := range []string{
 		"老王", "id=42", "已停用", "未验证", "登录失败次数：3",
-		"1.2.3.4", "北京", // 注册 IP 与归属地
+		"1.2.3.4", "北京",
 	} {
 		if !strings.Contains(out.Text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, out.Text)
@@ -296,7 +280,7 @@ func TestCustomerGetPassesIDAndDescribes(t *testing.T) {
 }
 
 func TestCustomerStatusOfFallsBackToEnumLabel(t *testing.T) {
-	// StatusLabel 由出口填；工具是出口，所以自己填。留空时必须落到 userenums 的真源。
+
 	c := &userdto.CustomerResp{Status: userenums.StatusDisabled}
 	if got := customerStatusOf(c); got == "" || got == "0" {
 		t.Fatalf("状态文案应落到 userenums 的中文兜底，实得 %q", got)

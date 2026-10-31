@@ -1,11 +1,5 @@
 package unit
 
-// ensure_record_lang_test.go — page_artifacts 的语言维度（多语言 P3 前置，
-// AGENTS.md §15.5 第 1 条）。
-//
-// 覆盖：同页两语言各登记一行互不覆盖、同语言同版本新内容保持独立身份、
-// 空语言兜底站点默认语言、按内容哈希精确取行、响应回带 lang。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -18,12 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// langManifest 构造带语言专属路径与文件闭包的 manifest。
 func langManifest(path, fileHash string) json.RawMessage {
 	return json.RawMessage(`{"canonicalPath":"` + path + `","files":{"index.html":"` + fileHash + `"}}`)
 }
 
-// langReq 在 validReq 基础上指定语言 / 版本 / 产物行 ID / hash / 产物 key。
 func langReq(lang string, version int64, artifactID, artifactHash, artifactKey, path string) *artifactdto.RecordReq {
 	req := validReq()
 	req.Lang = lang
@@ -35,7 +27,6 @@ func langReq(lang string, version int64, artifactID, artifactHash, artifactKey, 
 	return req
 }
 
-// rowsByLang 统计某页各语言的产物行（lang → 行数）。
 func rowsByLang(t *testing.T, svc *artifactservice.Service, pageID string) map[string]int64 {
 	t.Helper()
 	var rows []struct {
@@ -54,8 +45,6 @@ func rowsByLang(t *testing.T, svc *artifactservice.Service, pageID string) map[s
 	return out
 }
 
-// TestArtifactEnsureRecordSamePageTwoLangsCoexist 同一页面同一草稿版本下，
-// 两个语言各登记一行且互不覆盖（旧 UNIQUE(page_id, version) 下第二个语言会替换第一行）。
 func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -72,7 +61,6 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 		t.Fatalf("归档 en-US 产物失败: %v", err)
 	}
 
-	// 两行并存，行 ID 与产物指针互不相同。
 	if zhResp.ID == enResp.ID {
 		t.Fatalf("两个语言的行 ID 不应相同: %s", zhResp.ID)
 	}
@@ -83,7 +71,6 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 		t.Fatalf("同页两语言应各一行，实际 %v", got)
 	}
 
-	// 先登记的语言行未被后续语言覆盖（核心回归点）。
 	zhRow, err := svc.Model().GetByHash(ctx, testPageID, "hash-zh")
 	if err != nil {
 		t.Fatalf("按语言查询 zh-CN 行失败: %v", err)
@@ -102,14 +89,11 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 		t.Fatalf("en-US 行内容错误: id=%s hash=%s key=%s", enRow.ID, enRow.ArtifactHash, enRow.ArtifactKey)
 	}
 
-	// 响应回带语言：路由登记 artifact_id 时据此指向正确语言的产物。
 	if zhResp.Lang != "zh-CN" || enResp.Lang != "en-US" {
 		t.Fatalf("响应应回带语言: zh=%q en=%q", zhResp.Lang, enResp.Lang)
 	}
 }
 
-// TestArtifactEnsureRecordSameLangSameVersionAppends 同一语言同一版本重构建
-// 新内容新行，旧语言产物及其它语言产物均保持不变。
 func TestArtifactEnsureRecordSameLangSameVersionAppends(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -118,7 +102,7 @@ func TestArtifactEnsureRecordSameLangSameVersionAppends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("首次归档失败: %v", err)
 	}
-	// 先登记另一语言，后续重建不得影响它。
+
 	if _, err = svc.EnsureRecord(ctx, langReq("en-US", 1, testArtifactID3, "hash-en", "artifacts/hash-en", "/en-US/about")); err != nil {
 		t.Fatalf("归档 en-US 失败: %v", err)
 	}
@@ -136,7 +120,7 @@ func TestArtifactEnsureRecordSameLangSameVersionAppends(t *testing.T) {
 	if got := rowsByLang(t, svc, testPageID); got["zh-CN"] != 2 || got["en-US"] != 1 || len(got) != 2 {
 		t.Fatalf("新旧中文两行、英文一行必须并存，实际 %v", got)
 	}
-	// en-US 行保持原身份与内容。
+
 	enRow, err := svc.Model().GetByHash(ctx, testPageID, "hash-en")
 	if err != nil {
 		t.Fatalf("查询 en-US 行失败: %v", err)
@@ -146,8 +130,6 @@ func TestArtifactEnsureRecordSameLangSameVersionAppends(t *testing.T) {
 	}
 }
 
-// TestArtifactEnsureRecordEmptyLangFallsBackToDefault 空语言（存量调用方）落库为
-// 站点默认语言，绝不留空。
 func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -169,7 +151,6 @@ func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 		t.Fatalf("默认语言行错误: id=%s lang=%s", row.ID, row.Lang)
 	}
 
-	// 显式默认语言与空语言按同一语言记录，但内容不同仍须独立归档。
 	explicit, err := svc.EnsureRecord(ctx, langReq(defaultLang, 1, testArtifactID2, "hash-default-2", "artifacts/hash-default-2", "/about"))
 	if err != nil {
 		t.Fatalf("显式默认语言归档失败: %v", err)
@@ -182,8 +163,6 @@ func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestArtifactGetByHashPreservesLang 按语言取行：语言维度参与查询，
-// 不存在的内容返回 ErrRecordNotFound，不回退到其它语言产物。
 func TestArtifactGetByHashPreservesLang(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()

@@ -1,7 +1,5 @@
 package webhookservice
 
-// ssrf_test.go — SSRF 防护测试：内网 IP / 私有 DNS / 环回地址全部拒绝（SEC-015）。
-
 import (
 	"context"
 	"errors"
@@ -9,14 +7,12 @@ import (
 	"testing"
 )
 
-// fakeLookup 构造一个固定返回的 lookupIP 替身。
 func fakeLookup(ips []net.IPAddr, err error) func(*net.Resolver, context.Context, string) ([]net.IPAddr, error) {
 	return func(_ *net.Resolver, _ context.Context, _ string) ([]net.IPAddr, error) {
 		return ips, err
 	}
 }
 
-// TestValidateWebhookURL_RejectsForbiddenHostnames 环回与内网 hostname 直连一律拒绝。
 func TestValidateWebhookURL_RejectsForbiddenHostnames(t *testing.T) {
 	cases := []struct {
 		name string
@@ -43,7 +39,6 @@ func TestValidateWebhookURL_RejectsForbiddenHostnames(t *testing.T) {
 	}
 }
 
-// TestValidateWebhookURL_RejectsPrivateDNS 私有 DNS：公网域名解析到内网 IP 必须拒绝。
 func TestValidateWebhookURL_RejectsPrivateDNS(t *testing.T) {
 	orig := lookupIP
 	t.Cleanup(func() { lookupIP = orig })
@@ -53,7 +48,6 @@ func TestValidateWebhookURL_RejectsPrivateDNS(t *testing.T) {
 	}
 }
 
-// TestValidateWebhookURL_RejectsResolveFailure 解析失败（无记录 / DNS 错误）一律拒绝，不降级放行。
 func TestValidateWebhookURL_RejectsResolveFailure(t *testing.T) {
 	orig := lookupIP
 	t.Cleanup(func() { lookupIP = orig })
@@ -67,7 +61,6 @@ func TestValidateWebhookURL_RejectsResolveFailure(t *testing.T) {
 	}
 }
 
-// TestValidateWebhookURL_AcceptsPublicHost 公网 IP 正常放行。
 func TestValidateWebhookURL_AcceptsPublicHost(t *testing.T) {
 	orig := lookupIP
 	t.Cleanup(func() { lookupIP = orig })
@@ -77,7 +70,6 @@ func TestValidateWebhookURL_AcceptsPublicHost(t *testing.T) {
 	}
 }
 
-// TestValidateWebhookURL_RejectsBadInput 协议与格式防线。
 func TestValidateWebhookURL_RejectsBadInput(t *testing.T) {
 	for _, raw := range []string{"", "ftp://example.com", "file:///etc/passwd", "http:///nohost"} {
 		if err := validateWebhookURL(raw); err == nil {

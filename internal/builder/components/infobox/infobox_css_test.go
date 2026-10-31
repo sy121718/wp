@@ -13,7 +13,6 @@ func infoCSSFor(p *Props) string {
 	return b.String()
 }
 
-// TestInfoboxCSSAlign 对齐三档映射到 flex 与文本对齐两位。
 func TestInfoboxCSSAlign(t *testing.T) {
 	center := infoCSSFor(&Props{})
 	for _, want := range []string{"align-items: center;", "text-align: center;"} {
@@ -31,7 +30,6 @@ func TestInfoboxCSSAlign(t *testing.T) {
 	}
 }
 
-// TestInfoboxCSSOptionalColors 可选色各是独立规则，缺失即不产出。
 func TestInfoboxCSSOptionalColors(t *testing.T) {
 	plain := infoCSSFor(&Props{})
 	if strings.Count(plain, ".sky-c-t .sky-infobox-icon {") != 1 {
@@ -56,7 +54,6 @@ func TestInfoboxCSSOptionalColors(t *testing.T) {
 	}
 }
 
-// TestInfoboxCSSSwitches 副标题、圆角、按钮都是成组的开关。
 func TestInfoboxCSSSwitches(t *testing.T) {
 	plain := infoCSSFor(&Props{})
 	for _, notWant := range []string{"sky-infobox-subtitle", "overflow: hidden", "sky-infobox-btn"} {

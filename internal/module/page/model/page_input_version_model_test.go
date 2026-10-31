@@ -1,16 +1,5 @@
 package pagemodel_test
 
-// page_input_version_model_test.go — 实体输入代次（迁移 699）的真库行为。
-//
-// 为什么必须真库：这里的每一条都是 SQL 谓词与原子表达式，
-//   - input_version + 1 写成 gorm.Expr 才是原子的；写成读改写会丢版本，而丢失只在并发下现形；
-//   - 激活谓词 WHERE input_version = $expect 必须真的拦住「旧输入晚到」的写入；
-//   - 收敛谓词多一条「账本仍是从前那个」，漏掉它会把别的成功激活覆盖成陈旧产物。
-// 三者在纯函数测试里都看不见（SQL 不执行就等于没测）。
-//
-// 表结构来自生产迁移（support.NewMigratedPGTestDB 复制模板库），只补真实父行。
-// 连接用超级用户，RLS 不生效 —— 作用域断言属 public/test/rls 的范围。
-
 import (
 	"context"
 	"testing"
@@ -26,7 +15,6 @@ import (
 
 const versionProject = "11111111-2222-3333-4444-555555555555"
 
-// versionFixture 一个工程 + 一张页面。
 type versionFixture struct {
 	m  *pagemodel.Model
 	db *gorm.DB
@@ -39,7 +27,6 @@ func newVersionFixture(t *testing.T) *versionFixture {
 	return &versionFixture{m: pagemodel.NewPageModel(db), db: db}
 }
 
-// insertVersionPage 插一条真实 pages 行，返回其初始 input_version。
 func (f *versionFixture) insertVersionPage(t *testing.T, id, path string) int64 {
 	t.Helper()
 	if err := f.db.Exec(`
@@ -56,7 +43,6 @@ func (f *versionFixture) insertVersionPage(t *testing.T, id, path string) int64 
 	return v
 }
 
-// readInputVersion 读当前代次。
 func (f *versionFixture) readInputVersion(t *testing.T, id string) int64 {
 	t.Helper()
 	var v int64
@@ -66,7 +52,6 @@ func (f *versionFixture) readInputVersion(t *testing.T, id string) int64 {
 	return v
 }
 
-// readStale 读 stale 标记。
 func (f *versionFixture) readStale(t *testing.T, id string) bool {
 	t.Helper()
 	var stale bool
@@ -76,13 +61,6 @@ func (f *versionFixture) readStale(t *testing.T, id string) bool {
 	return stale
 }
 
-// insertVersionArtifact 插一条产物行（只给 NOT NULL 列）。
-//
-// 三个 hash 都用**完整** artifactID 派生，不能截前 8 位：表上有
-// uk_page_artifacts_page_hash UNIQUE (page_id, artifact_hash)（迁移 691 ——
-// 产物身份按内容确定，同页不同内容必须换 hash）。截 8 位时同一页的多份产物
-// （artOld / artNewer / artMine）前缀相同 → 撞唯一键，夹具准备阶段就失败，
-// 被测的收敛语义一行都没跑到。用完整 id 既不撞键，又满足「不同产物不同 hash」。
 func (f *versionFixture) insertVersionArtifact(t *testing.T, artifactID, pageID string, version int) {
 	t.Helper()
 	if err := f.db.Exec(`
@@ -96,15 +74,11 @@ func (f *versionFixture) insertVersionArtifact(t *testing.T, artifactID, pageID 
 	}
 }
 
-// TestSaveDraftAdvancesInputVersion 草稿保存推进代次并标 stale（同一事务）。
 func TestSaveDraftAdvancesInputVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000001"
 	before := f.insertVersionPage(t, pageID, "/about")
 
-	// 修订体不能传裸 nil：SaveDraftWithRevisionTx 结尾无条件 tx.Create(revision)，
-	// nil 会落进 gorm 的 "invalid value, should be pointer..." —— 那是调用方少给了参数，
-	// 不是「同事务里修订可以不写」。这里给一条真实修订行（生产路径同样必写）。
 	revision := &pagemodel.RevisionEntity{
 		ID:            uuid.NewString(),
 		PageID:        pageID,
@@ -128,7 +102,6 @@ func TestSaveDraftAdvancesInputVersion(t *testing.T) {
 	}
 }
 
-// TestMoveDraftPathAdvancesInputVersion 改 URL 改的是编译输入（canonical 地址），必须推进代次。
 func TestMoveDraftPathAdvancesInputVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000002"
@@ -142,7 +115,6 @@ func TestMoveDraftPathAdvancesInputVersion(t *testing.T) {
 	}
 }
 
-// TestExcludedLangsAdvancesInputVersion 语言排除决定产出范围，属输入变更。
 func TestExcludedLangsAdvancesInputVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000003"
@@ -156,7 +128,6 @@ func TestExcludedLangsAdvancesInputVersion(t *testing.T) {
 	}
 }
 
-// TestThemeSnapshotAdvancesInputVersion 主题快照写进 draft_document，属输入变更。
 func TestThemeSnapshotAdvancesInputVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000004"
@@ -179,8 +150,6 @@ func TestThemeSnapshotAdvancesInputVersion(t *testing.T) {
 	}
 }
 
-// TestMarkMenuStaleTxAdvancesAndRollsBack 菜单依赖标记：命中页面 stale + 代次 +1，
-// 且**外层事务回滚时代次一起回退**（同事务是这套闸门的前提）。
 func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000005"
@@ -190,9 +159,7 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	if err := f.db.Exec("UPDATE pages SET staged_artifact_id = ? WHERE id = ?", artifactID, pageID).Error; err != nil {
 		t.Fatalf("挂暂存产物失败：%v", err)
 	}
-	// 依赖行必须写**生产依赖键**：构建期登记的是 pipeline.MenuKey(projectID, kind)
-	// （"menu:{projectID}:{kind}"），不是裸位置名。用裸 "header" 自造夹具会把
-	// 「实现拿裸 kind 做精确等式」这个缺陷测成绿色 —— 真实站点上一条都命中不了。
+
 	depKey := pipeline.MenuKey(versionProject, "header")
 	if err := f.db.Exec(`
 		INSERT INTO page_dependencies (page_id, artifact_id, dependency_kind, dependency_key, last_checked)
@@ -218,13 +185,10 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	if !f.readStale(t, pageID) {
 		t.Fatal("菜单标记后页面应为 stale")
 	}
-	// 回滚断言的目标值必须取**第一次标记提交之后**的代次：上面的 before 是标记前的
-	// 初始值，第一次标记已把代次推到 before+1。拿 before 当「回滚后应恢复到多少」，
-	// 写的是一条永远不成立的条件，回滚正确时照样报红（实测 before=1、回滚后 1）。
+
 	committed := f.readInputVersion(t, pageID)
 	committedStale := f.readStale(t, pageID)
 
-	// 回滚：外层事务失败时代次与 stale 一起回到事务开始前的状态。
 	wantErr := gorm.ErrInvalidTransaction
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		if _, err := f.m.MarkMenuStaleTx(ctx, tx, versionProject, "header", time.Now().UTC()); err != nil {
@@ -237,16 +201,12 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 	if got := f.readInputVersion(t, pageID); got != committed {
 		t.Fatalf("回滚后代次必须回到 %d，实际 %d", committed, got)
 	}
-	// 回滚后 stale 必须回到**标记前**的值，而不是一律 false：
-	// 上面的第一次标记已提交、页面此刻就是 stale=true，若硬写 false 就是把
-	// 「已提交的标记」当成应该被撤销的东西 —— 回滚只该撤销本事务的写入。
-	// 用 committedStale 记住提交后的真实值，回滚后再比一次，两边都是事务边界两侧的事实。
+
 	if got := f.readStale(t, pageID); got != committedStale {
 		t.Fatalf("回滚后 stale 必须回到标记前（%v），实际 %v", committedStale, got)
 	}
 }
 
-// TestActivationDoesNotAdvanceInputVersion 激活只验证代次，不推进它。
 func TestActivationDoesNotAdvanceInputVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000006"
@@ -280,7 +240,6 @@ func TestActivationDoesNotAdvanceInputVersion(t *testing.T) {
 	}
 }
 
-// TestActivationPredicateRejectsStaleInput 「旧输入晚到」：代次推进后，用旧代次激活必须落空。
 func TestActivationPredicateRejectsStaleInput(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000007"
@@ -289,7 +248,7 @@ func TestActivationPredicateRejectsStaleInput(t *testing.T) {
 	f.insertVersionArtifact(t, artifactID, pageID, 1)
 
 	ctx := context.Background()
-	// 编译期间输入又变了。
+
 	if err := f.m.MoveDraftPath(ctx, versionProject, pageID, "/company", time.Now().UTC()); err != nil {
 		t.Fatalf("改 URL 失败：%v", err)
 	}
@@ -311,8 +270,6 @@ func TestActivationPredicateRejectsStaleInput(t *testing.T) {
 	}
 }
 
-// TestForwardCompletionRefusesWhenLedgerReplaced 收敛：账本已被别的成功激活写走时，
-// 不得把自己的陈旧产物写上去。这就是「恢复撞上新成功 attempt」的模型层事实。
 func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000008"
@@ -320,16 +277,14 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 	artMine := "bbbbbbbb-0000-0000-0000-0000000000b8"
 	artNewer := "bbbbbbbb-0000-0000-0000-0000000000c8"
 	v := f.insertVersionPage(t, pageID, "/about")
-	// page_artifacts 上有 UNIQUE (page_id, version)：三条产物必须三个不同版本号。
+
 	f.insertVersionArtifact(t, artOld, pageID, 1)
-	f.insertVersionArtifact(t, artNewer, pageID, 2) // 准备：先到的"别的成功激活"
-	f.insertVersionArtifact(t, artMine, pageID, 3)  // 收敛要写的那份，版本更晚没问题
+	f.insertVersionArtifact(t, artNewer, pageID, 2)
+	f.insertVersionArtifact(t, artMine, pageID, 3)
 
 	ctx := context.Background()
 	now := time.Now().UTC()
-	// 账本已经是别的成功激活的结果（artNewer）。
-	// 注意：激活本身不推进 input_version，但**标记 stale 的那一步会**；准备之后必须
-	// 重新读一次代次当收敛的期望值，否则收敛谓词按过期代次比较必然不命中。
+
 	if err := f.m.TransactionScoped(ctx, versionProject, func(tx *gorm.DB) error {
 		written, err := f.m.WritePageActivationTx(ctx, tx, versionProject, pagemodel.PublicationRecord{
 			PageID: pageID, Lang: "zh-CN", ActivePath: "/about",
@@ -363,9 +318,6 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 		t.Fatal("账本已被替代时必须放弃前进（否则会覆盖更新的成功产物）")
 	}
 
-	// 账本必须**原样保持**新成功那一份：page_publications 的主键是 (page_id, lang)，
-	// 翻成 map 只取"页面上有几行账本、每行是不是 artNewer"—— 若拒绝路径曾写进别的
-	// artifact_id，这里会读到它；只比单行会漏掉"多写了一行别的语言"的形态。
 	var ledger []struct {
 		Lang       string
 		ArtifactID *string
@@ -384,7 +336,6 @@ func TestForwardCompletionRefusesWhenLedgerReplaced(t *testing.T) {
 	}
 }
 
-// TestForwardCompletionWritesWhenLedgerUnchanged 账本仍是回执记录的前一份时，收敛正常前进。
 func TestForwardCompletionWritesWhenLedgerUnchanged(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-000000000009"
@@ -408,7 +359,6 @@ func TestForwardCompletionWritesWhenLedgerUnchanged(t *testing.T) {
 		t.Fatalf("准备失败：%v", err)
 	}
 
-	// 准备激活之后代次已被标记推进，收敛的期望代次取**当前值**（见上一条用例的说明）。
 	expect := f.readInputVersion(t, pageID)
 
 	var written bool
@@ -427,7 +377,6 @@ func TestForwardCompletionWritesWhenLedgerUnchanged(t *testing.T) {
 	}
 }
 
-// TestLockPageForActivationReadsVersion 锁读返回的代次与表内一致（编译期捕获的比对基准）。
 func TestLockPageForActivationReadsVersion(t *testing.T) {
 	f := newVersionFixture(t)
 	pageID := "aaaaaaaa-0000-0000-0000-00000000000a"

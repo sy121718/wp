@@ -55,7 +55,6 @@ func (s *Service) CatalogEntityTemplates(ctx context.Context, projectID string) 
 	return result, nil
 }
 
-// QueryDetailTemplatePanel 直接返回发布侧原始绑定事实，不复制成页面面板形状。
 func (s *Service) QueryDetailTemplatePanel(ctx context.Context, projectID, productID string) (productcontract.DetailTemplatePanelFacts, error) {
 	if s.pageDetailTemplates == nil {
 		return productcontract.DetailTemplatePanelFacts{}, nil

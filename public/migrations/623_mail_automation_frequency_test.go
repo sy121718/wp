@@ -1,7 +1,5 @@
 package migrations_test
 
-// 623_mail_automation_frequency_test.go — 频率两列 + 闸门索引的判定与幂等。
-
 import (
 	"testing"
 
@@ -11,7 +9,6 @@ import (
 
 const mailAutomationFrequencyVersion = "623-mail-automation-frequency"
 
-// TestMailAutomationFrequencyMigration 判定命中 + 两列默认值 + 索引存在 + 幂等。
 func TestMailAutomationFrequencyMigration(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -36,7 +33,6 @@ func TestMailAutomationFrequencyMigration(t *testing.T) {
 		t.Fatalf("迁移后判据应返回 1（两列 + 索引都在），实际 %d", applied)
 	}
 
-	// 默认值：frequency 必须 every_time（改造前的行为），exit_on_reply false。
 	rows, err := db.Raw(`SELECT column_name, coalesce(column_default, ''), is_nullable
 		FROM information_schema.columns
 		WHERE table_schema = current_schema() AND table_name = 'mail_automations'
@@ -73,7 +69,6 @@ func TestMailAutomationFrequencyMigration(t *testing.T) {
 		}
 	}
 
-	// 闸门索引。
 	var idx int64
 	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes
 		WHERE schemaname = current_schema() AND tablename = 'mail_automation_runs'
@@ -84,7 +79,6 @@ func TestMailAutomationFrequencyMigration(t *testing.T) {
 		t.Fatalf("频率闸门索引不存在（会退化成全表扫描）")
 	}
 
-	// 幂等：重放整条 SQL 不报错。
 	for _, stmt := range migrations.SplitStatements(target.SQL) {
 		if stmt == "" {
 			continue

@@ -28,7 +28,6 @@ type runtimeComponent struct {
 	Close    func() error
 }
 
-// runtimePreparers 组件初始化前的准备工作（当前无注册项；任务注册随 internal/task 示例移除）。
 var runtimePreparers = []func(){}
 
 var runtimeComponents = []runtimeComponent{
@@ -54,18 +53,7 @@ var runtimeComponents = []runtimeComponent{
 		Close:    database.Close,
 	},
 	{
-		// 迁移必须排在 database 之后、casbin / i18n 之前 —— 后两者初始化时就要读
-		// sys_casbin_rule / sys_i18n。
-		//
-		// 放在这里而不是 cmd/main.go，是为了让「空库首次启动」真的能走通：此前迁移在
-		// 组件初始化**之后**执行，在增量演化的开发库上看不出问题（表早就存在），
-		// 全新库必然失败 —— relation "sys_i18n" does not exist。
-		//
-		// Enabled 读 database.run_migrations（缺省 true = 既有行为）：切到非超级业务角色
-		// 之后必须置 false —— 那个角色在 public schema 上没有 CREATE 权限，连
-		// CREATE TABLE IF NOT EXISTS 都会被拒（permission denied for schema public），
-		// 启动会直接挂掉。迁移改由管理连接执行 cmd/main.go -migrate-only；
-		// 跳过时 RunMigrationsEnabled 会打一条 INFO（见 migrations_switch.go）。
+
 		Name:     "migrations",
 		Critical: true,
 		Enabled: func(cfg *viper.Viper) bool {
@@ -102,10 +90,7 @@ var runtimeComponents = []runtimeComponent{
 		Close: i18n.Close,
 	},
 	{
-		// H3：认证会话/封禁/心跳硬依赖 cache（Redis）。
-		// 升级为 Critical 并置于 auth 之前（InitComponents 按 slice 顺序初始化 Critical 组件）：
-		// redis.enabled=true 时先就绪 cache，auth 组件 Init 阶段的 RequireSessionStorage 才能通过；
-		// redis.enabled=false 时本组件跳过，由 auth 组件 Init 的 RequireSessionStorage fail-fast 终止启动。
+
 		Name:     "cache",
 		Critical: true,
 		Enabled: func(cfg *viper.Viper) bool {
@@ -122,7 +107,7 @@ var runtimeComponents = []runtimeComponent{
 			if err := auth.Init(cfg); err != nil {
 				return err
 			}
-			// H3 fail-fast：会话后端存储必须就绪，避免「启动正常、登录后全站 503」。
+
 			return auth.RequireSessionStorage()
 		},
 		Ready: auth.Ready,
@@ -163,7 +148,6 @@ var runtimeComponents = []runtimeComponent{
 	},
 }
 
-// initUpload 复用站点既有可信基址；显式媒体域名可覆盖站点域名。
 func initUpload(cfg *viper.Viper) error {
 	if strings.TrimSpace(cfg.GetString("upload.base_url")) == "" && seo.SiteBaseURL() != "" {
 		cfg.Set("upload.base_url", seo.SiteBaseURL())

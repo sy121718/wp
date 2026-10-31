@@ -1,12 +1,5 @@
 package core
 
-// scope_merge_test.go — 同族规则合并（PERF-016）的安全边界。
-//
-// 合并是「产物字节优化」里少见的**可以做到严格等价**的一类：作用域类只负责限定子树，
-// 多条规则的逗号并列就是 OR。但等价性依赖三条边界，缺哪条都会静默改变优先级语义：
-// 声明相同、外壳相同、成员相邻。本文件逐条把边界钉住 —— 这些是最容易被后续改动
-// 悄悄放宽的地方，而放宽的症状是「某个实例的样式忽然被另一个实例的规则覆盖」。
-
 import (
 	"strings"
 	"testing"
@@ -39,10 +32,6 @@ func TestMergeScopeSiblingsDeclarationDiffers(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsNotAdjacent 中间夹着别的规则时不合并。
-//
-// 这条是安全边界里最关键的一条：合并会把成员折叠到首个成员的位置，
-// 若中间存在同特异性的冲突规则，折叠会改变「谁覆盖谁」。
 func TestMergeScopeSiblingsNotAdjacent(t *testing.T) {
 	in := []string{
 		".sky-c-a .x {\n  color: red;\n}",
@@ -60,7 +49,6 @@ func TestMergeScopeSiblingsNotAdjacent(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsInterleaved 交错的两族规则各自成组，互不串组。
 func TestMergeScopeSiblingsInterleaved(t *testing.T) {
 	in := []string{
 		".sky-c-a .x {\n  color: red;\n}",
@@ -80,8 +68,6 @@ func TestMergeScopeSiblingsInterleaved(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsMultipleScopesPerSelector 一个选择器里出现多个作用域类时，
-// 并列仍然等价（每个成员选择器整体保留，只是 OR 起来）。
 func TestMergeScopeSiblingsMultipleScopesPerSelector(t *testing.T) {
 	in := []string{
 		".sky-c-a .inner .sky-c-a {\n  color: red;\n}",
@@ -115,7 +101,6 @@ func TestMergeScopeSiblingsWrappedSameShell(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsWrappedShellDiffers 外壳条件不同（hover vs none、不同容器条件）时不合并。
 func TestMergeScopeSiblingsWrappedShellDiffers(t *testing.T) {
 	body := " {\n  .sky-x {\n  color: red;\n\n}\n}"
 	in := []string{
@@ -128,8 +113,6 @@ func TestMergeScopeSiblingsWrappedShellDiffers(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsKeyframesUntouched 顶层注册规则（@keyframes / @property）不参与合并：
-// 把两条 @keyframes 并列起来是一份无效 CSS。
 func TestMergeScopeSiblingsKeyframesUntouched(t *testing.T) {
 	in := []string{
 		"@keyframes sky-a {\n  from { opacity: 0 }\n}",
@@ -148,9 +131,6 @@ func TestMergeScopeSiblingsKeyframesUntouched(t *testing.T) {
 	}
 }
 
-// TestMergeScopeSiblingsNonScopedRulesUntouched 只有「同族」才合并：
-// 选择器结构完全不同的规则即使相邻、声明相同也保持原样（避免产物里出现
-// 「看不出属于哪个实例」的混合规则）。
 func TestMergeScopeSiblingsNonScopedRulesUntouched(t *testing.T) {
 	in := []string{
 		".sky-c-a .x {\n  color: red;\n}",
@@ -179,16 +159,12 @@ func TestNormalizeNodeScope(t *testing.T) {
 			t.Errorf("normalizeNodeScope(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	// 后接空格与后接点号必须折叠成不同结果 —— 否则会把结构不同的规则误判成同族。
+
 	if normalizeNodeScope(".sky-c-a .x") == normalizeNodeScope(".sky-c-a.x") {
 		t.Error("折叠把「后代选择器」与「复合选择器」混为一谈")
 	}
 }
 
-// TestMergeScopeSiblingsPreservesRuleMapping 合并前后「选择器 → 声明」映射不变。
-//
-// 这是合并正确性的直接表达：合并只允许把多条选择器并列到同一声明块，
-// 不允许增删任何 (选择器, 声明) 对。
 func TestMergeScopeSiblingsPreservesRuleMapping(t *testing.T) {
 	in := []string{
 		".sky-c-a .x {\n  color: red;\n}",
@@ -211,7 +187,6 @@ func TestMergeScopeSiblingsPreservesRuleMapping(t *testing.T) {
 	}
 }
 
-// ruleMapping 把规则切片展开成「单条选择器 + 声明」的多重集（选择器统一折叠作用域）。
 func ruleMapping(rules []string) map[string]int {
 	out := map[string]int{}
 	for _, raw := range rules {

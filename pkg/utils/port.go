@@ -14,13 +14,11 @@ import (
 	"time"
 )
 
-// PortProcess 表示占用端口的进程信息。
 type PortProcess struct {
 	PID  int
 	Name string
 }
 
-// KillCommandByPID 返回当前系统下终止指定 PID 的命令示例。
 func KillCommandByPID(pid int) string {
 	switch runtime.GOOS {
 	case "windows":
@@ -30,12 +28,10 @@ func KillCommandByPID(pid int) string {
 	}
 }
 
-// FormatProcesses 将进程列表格式化为可读字符串。
 func FormatProcesses(processes []PortProcess) string {
 	return formatProcesses(processes)
 }
 
-// IsTCPPortInUse 检查 TCP 端口是否被占用。
 func IsTCPPortInUse(port int) (bool, error) {
 	if err := validatePort(port); err != nil {
 		return false, err
@@ -53,7 +49,6 @@ func IsTCPPortInUse(port int) (bool, error) {
 	return false, nil
 }
 
-// ListTCPListeningProcesses 查询指定 TCP 端口上的监听进程。
 func ListTCPListeningProcesses(port int) ([]PortProcess, error) {
 	if err := validatePort(port); err != nil {
 		return nil, err
@@ -67,10 +62,6 @@ func ListTCPListeningProcesses(port int) ([]PortProcess, error) {
 	}
 }
 
-// ReleaseTCPPortIfOccupied 释放已被占用的 TCP 端口。
-//
-// allowedProcessNames 为空表示允许结束任意占用进程；
-// 非空时仅结束白名单进程，其他进程会阻止释放并返回错误。
 func ReleaseTCPPortIfOccupied(port int, allowedProcessNames []string) error {
 	processes, err := ListTCPListeningProcesses(port)
 	if err != nil {
@@ -124,15 +115,10 @@ func ReleaseTCPPortIfOccupied(port int, allowedProcessNames []string) error {
 	return fmt.Errorf("端口 %d 释放失败，请手动检查占用进程", port)
 }
 
-// EnsurePortReady handles port occupancy strategy by server mode.
-//
-// debug/test: auto-release only allowlisted processes on the target port.
-// others: only report occupancy and provide manual kill commands.
 func EnsurePortReady(serverMode string, port int) error {
 	return EnsurePortReadyWithStrategy("", serverMode, port)
 }
 
-// EnsurePortReadyWithStrategy handles port occupancy strategy by explicit config or server mode fallback.
 func EnsurePortReadyWithStrategy(strategy string, serverMode string, port int) error {
 	strategy = resolvePortStrategy(strategy, serverMode)
 	mode := strings.ToLower(strings.TrimSpace(serverMode))

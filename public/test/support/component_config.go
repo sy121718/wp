@@ -10,8 +10,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// NewComponentTestConfig 给需要真实组件的测试生成独立配置。
-// 数据库由生产迁移模板复制，清理由 testing 生命周期承担；不读取开发 config.yaml。
 func NewComponentTestConfig(t *testing.T) string {
 	t.Helper()
 	env, err := AcquireTestEnv(t)
@@ -39,7 +37,7 @@ func NewComponentTestConfig(t *testing.T) string {
 	if err := cfg.ReadConfig(bytes.NewReader(example)); err != nil {
 		t.Fatal(err)
 	}
-	// 环境变量优先于 YAML，显式绑定到测试端点，防止 CI 或开发环境覆盖隔离库。
+
 	for key, value := range map[string]string{
 		"GOWP_DATABASE_HOST": env.PG.Host, "GOWP_DATABASE_PORT": env.PG.Port,
 		"GOWP_DATABASE_USER": env.PG.User, "GOWP_DATABASE_PASSWORD": env.PG.Password,

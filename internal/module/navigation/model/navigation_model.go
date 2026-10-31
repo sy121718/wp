@@ -1,5 +1,3 @@
-// Package navigationmodel 实现 navigation 模块 navigations 表持久化（0-C）。
-// navigations 为公开站点导航表，与后台权限菜单 sys_menus 严格隔离，不可复用同一张表。
 package navigationmodel
 
 import (
@@ -15,24 +13,20 @@ import (
 
 const tableNameNavigations = "navigations"
 
-// NavigationEntity 对应 navigations 表。
 type NavigationEntity struct {
 	ID        string `gorm:"column:id;primaryKey"`
 	ProjectID string `gorm:"column:project_id;not null"`
 	Title     string `gorm:"column:title;not null"`
 	Path      string `gorm:"column:path;not null"`
 	Kind      string `gorm:"column:kind;not null"`
-	// SourceType / SourceID 菜单项来源（custom/page/article/product/category/block）。
+
 	SourceType string  `gorm:"column:source_type;not null;default:custom"`
 	SourceID   *string `gorm:"column:source_id"`
-	// Target 打开方式：self / blank。
+
 	Target string `gorm:"column:target;not null;default:self"`
-	// PanelBlockID 悬浮面板引用的全局块（超级菜单；NULL = 无面板，迁移 285）。
-	//
-	// 与 SourceType='block' 是两件事：那个是"点这一项跳到哪"（链接来源），
-	// 这个是"悬停展开显示什么"（面板内容）。
+
 	PanelBlockID *string `gorm:"column:panel_block_id"`
-	// PanelWidth 面板展示宽度 auto / full（通栏）；移动端由样式强制全宽。
+
 	PanelWidth string    `gorm:"column:panel_width;not null;default:auto"`
 	ParentID   *string   `gorm:"column:parent_id"`
 	SortOrder  int       `gorm:"column:sort_order;not null"`
@@ -40,36 +34,24 @@ type NavigationEntity struct {
 	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
 }
 
-// TableName 表名。
 func (NavigationEntity) TableName() string { return tableNameNavigations }
 
-// Model navigations 表数据访问（Repository）。
 type Model struct {
 	db *gorm.DB
 }
 
-// NewModel 构造。
 func NewModel(db *gorm.DB) *Model { return &Model{db: db} }
 
-// DB 返回已绑定 navigations 表的 GORM 实例。
 func (m *Model) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&NavigationEntity{})
 }
 
-// Create 新增导航项。
-// RLS（迁移 215）：navigations 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) Create(ctx context.Context, e *NavigationEntity) error {
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
 		return tx.Model(&NavigationEntity{}).Create(e).Error
 	})
 }
 
-// Get 按 ID 查询导航项。
-//
-// projectID 非空时在工程作用域内查（RLS 变量 + 显式 project_id 条件）；为空沿用
-// 「不限工程」的历史调用形态 —— 不设 scope 时换非超级角色后该路径 fail closed
-// （0 行 → ErrRecordNotFound），不会读到别的工程，方向是安全的；要让它可用
-// 必须由调用方补 projectID（DB-009 剩余清单）。
 func (m *Model) Get(ctx context.Context, projectID, id string) (e *NavigationEntity, err error) {
 	var row NavigationEntity
 	if strings.TrimSpace(projectID) == "" {
@@ -87,7 +69,6 @@ func (m *Model) Get(ctx context.Context, projectID, id string) (e *NavigationEnt
 	return &row, nil
 }
 
-// List 按工程（可选 kind）列出导航项，sort_order 升序、同序按 id 升序。
 func (m *Model) List(ctx context.Context, projectID, kind string) (list []*NavigationEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.Model(&NavigationEntity{}).Where("project_id = ?", projectID)
@@ -99,8 +80,6 @@ func (m *Model) List(ctx context.Context, projectID, kind string) (list []*Navig
 	return list, err
 }
 
-// MaxSortOrder 返回同工程同 kind 同父级下的最大排序值（无记录返回 0）。
-// 供 service 在未显式指定排序时把新项追加到末尾。
 func (m *Model) MaxSortOrder(ctx context.Context, projectID, kind string, parentID *string) (maxOrder int, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.Model(&NavigationEntity{}).Where("project_id = ? AND kind = ?", projectID, kind)
@@ -114,8 +93,6 @@ func (m *Model) MaxSortOrder(ctx context.Context, projectID, kind string, parent
 	return maxOrder, err
 }
 
-// Save 按 ID 部分更新（Where("id = ?").Updates(map)）。
-// projectID 非空时在工程作用域内写（越界写会被 WITH CHECK 直接拒绝而不是静默改到别的工程）。
 func (m *Model) Save(ctx context.Context, projectID, id string, updates map[string]any) error {
 	if strings.TrimSpace(projectID) == "" {
 		return m.DB(ctx).Where("id = ?", id).Updates(updates).Error
@@ -126,15 +103,6 @@ func (m *Model) Save(ctx context.Context, projectID, id string, updates map[stri
 	})
 }
 
-// SaveWithExpected 按 ID 部分更新，并把「库内 update_time 仍是 expected」写进 WHERE 条件。
-//
-// 为什么是条件 UPDATE 而不是「事务里读出来比较、再写回去」：后者的两步之间没有锁，
-// 两个入口并发时后写的一方照样覆盖（AGENTS.md「读-改-写必须有行锁或原子 SQL」）。
-// 条件更新由数据库在同一条语句里完成「比较 + 写」：受影响行数为 0 即表示
-// 记录不存在 / 越界 / 版本已变，由 service 区分（实体已定位过，所以只可能是版本已变）。
-//
-// projectID 非空时在工程作用域内写（与 Save 同一条越权防护）；乐观锁路径总是从
-// 已定位的实体出发，因此实际调用都带作用域。
 func (m *Model) SaveWithExpected(ctx context.Context, projectID, id string,
 	updates map[string]any, expected time.Time) (rows int64, err error) {
 	build := func(db *gorm.DB) *gorm.DB {
@@ -157,44 +125,20 @@ func (m *Model) SaveWithExpected(ctx context.Context, projectID, id string,
 	return rows, err
 }
 
-// SwapRow 参与一次同级排序交换的一行：写回的目标排序值 + 调用方手上的版本 token。
 type SwapRow struct {
 	ID        string
 	SortOrder int
 	Expected  time.Time
 }
 
-// SwapConflictError 交换未成立：该行不存在 / 越出工程作用域 / 版本已变（条件 UPDATE 命中 0 行）。
-//
-// 为什么要有类型（而不是裸 errors.New）：① service 要拿 ID 去取「库内当前标题」当定位信息；
-// ② 它必须与真正的持久化错误（连接中断、约束冲突）区分开 —— 后者要原样上抛，
-// 不能被当成乐观锁冲突换成人话。
 type SwapConflictError struct {
 	ID string
 }
 
-// Error 只给日志用（对外文案由 service 按白名单归口）。
 func (e *SwapConflictError) Error() string {
 	return "navigation: swap conflict on row " + e.ID
 }
 
-// SwapSortOrders 在一个事务里交换两行的 sort_order（两条条件 UPDATE，任一失败整事务回滚）。
-//
-// 为什么必须是「一个事务里的两条语句」，而不是让调用方各调一次 Save：
-// 两次独立提交之间第二条一旦失败（并发改过 / 行已被删），第一条**已经落库** ——
-// 同级出现两个相同的 sort_order，而调用方收到的是一次「失败」，既不会重试也不会回滚
-// （历史 P1 的半交换）。这里两条语句同进同出，失败即整体回滚。
-//
-// 执行顺序按 id **升序**固定：两笔并发的交换最多共享一行，升序加锁不可能成环
-// （后一笔不会回头去锁更小的 id），所以不会互相死锁。id 是 uuid：PG 的 uuid 比较是
-// 16 字节 memcmp，与规范小写十六进制串的字典序一致，Go 侧的字符串 < 与之等价。
-//
-// 每条都必须恰好影响 1 行：RowsAffected != 1 即表示「这一行的版本已经不是调用方手上的那份」
-// （或行没了 / 越界），立即返回 SwapConflictError —— 闭包返回错误，外层事务把另一条已经
-// 成功的写入一起回滚掉，调用方看到的是「两行都没动」。
-//
-// 同时刷新两行的 update_time（同一个 now）：排序也是这份数据的一次写入，
-// 页面上的乐观锁 token 必须跟着失效，否则第二次点同一个按钮会拿旧 token 静默成功。
 func (m *Model) SwapSortOrders(ctx context.Context, projectID string, first, second SwapRow) error {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
@@ -221,8 +165,6 @@ func (m *Model) SwapSortOrders(ctx context.Context, projectID string, first, sec
 	})
 }
 
-// Delete 按 ID 删除导航项。
-// projectID 非空时在工程作用域内删（越界删在换角色后会被策略拒绝，而不是删掉别的工程）。
 func (m *Model) Delete(ctx context.Context, projectID, id string) error {
 	if strings.TrimSpace(projectID) == "" {
 		return m.DB(ctx).Where("id = ?", id).Delete(&NavigationEntity{}).Error
@@ -233,7 +175,6 @@ func (m *Model) Delete(ctx context.Context, projectID, id string) error {
 	})
 }
 
-// DeleteMany 批量删除导航项（同一聚合内：删菜单项及其全部子孙）。
 func (m *Model) DeleteMany(ctx context.Context, projectID string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -247,8 +188,6 @@ func (m *Model) DeleteMany(ctx context.Context, projectID string, ids []string) 
 	})
 }
 
-// ExistsPath 判断同工程同 kind 下 path 是否已被（其他）导航项占用。
-// excludeID 非空时排除自身，供更新场景复用。
 func (m *Model) ExistsPath(ctx context.Context, projectID, kind, path, excludeID string) (bool, error) {
 	var count int64
 	err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

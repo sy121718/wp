@@ -1,14 +1,5 @@
 package core
 
-// richtext_attrs_test.go — 富文本属性保真的第二批背书（链接协议 / 代码语言 / 图片 alt）。
-//
-// 三组缺口都来自同一个方向：**编辑器能产出，白名单却吃掉** ——
-//   · tel: / sms: 链接保存后 href 丢失，<a> 退化成纯文本；
-//   · Trix 代码块的 language 属性（<pre language="go">）被「pre 无属性」分支剥掉，语言丢失；
-//   · Trix 附件只渲染 <img src>，图注在 <figcaption> 里，正文图片于是没有 alt（SEO 扣分）。
-//
-// 每条放行都配一条「危险的仍被剥」的对照：放行集合是白名单，不是黑名单。
-
 import (
 	"strings"
 	"testing"
@@ -16,9 +7,6 @@ import (
 	xhtml "golang.org/x/net/html"
 )
 
-// TestRichTextHTMLLinkProtocols 链接协议与 Trix 的 URI 白名单取齐：
-// ftp/ftps/tel/callto/sms/cid/xmpp/matrix 保留；javascript:/data:/vbscript: 继续被剥，
-// 且大小写混合与前导空白/制表符绕过一律不接受。
 func TestRichTextHTMLLinkProtocols(t *testing.T) {
 	kept := []struct {
 		name string
@@ -85,8 +73,6 @@ func TestRichTextHTMLLinkProtocols(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLPreLanguage 代码块语言：Trix 的 language 属性与既有 class 归一为
-// class="language-<值>"；非法值整个属性丢弃；on* 事件属性照旧被剥。
 func TestRichTextHTMLPreLanguage(t *testing.T) {
 	cases := []struct {
 		name string
@@ -126,8 +112,6 @@ func TestRichTextHTMLPreLanguage(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLFigureAltBackfill 图片 alt 回填：figure 内的 img 缺 alt 时用同级
-// figcaption 的纯文本补齐；已有 alt 不动；恶意图注被转义且不产生脚本节点。
 func TestRichTextHTMLFigureAltBackfill(t *testing.T) {
 	cases := []struct {
 		name string
@@ -184,13 +168,12 @@ func TestRichTextHTMLFigureAltBackfill(t *testing.T) {
 			if again := SanitizeRichHTML(got); again != got {
 				t.Errorf("非幂等: %q -> %q", got, again)
 			}
-			// 回填是属性写入：输出必须可解析，且解析后不能多出脚本节点。
+
 			assertNoScriptNode(t, got)
 		})
 	}
 }
 
-// TestRichTextHTMLFigureAltTruncated 超长图注按字符截断到 200，不整段灌进 alt。
 func TestRichTextHTMLFigureAltTruncated(t *testing.T) {
 	long := strings.Repeat("图", 260)
 	src := `<figure><img src="/a.webp"><figcaption>` + long + `</figcaption></figure>`
@@ -207,7 +190,6 @@ func TestRichTextHTMLFigureAltTruncated(t *testing.T) {
 	}
 }
 
-// attrValue 取输出里第一个指定标签的属性值（解析后的真实值，不是转义文本）。
 func attrValue(t *testing.T, fragment, tag, attr string) string {
 	t.Helper()
 	doc, err := xhtml.Parse(strings.NewReader(fragment))
@@ -226,7 +208,6 @@ func attrValue(t *testing.T, fragment, tag, attr string) string {
 	return ""
 }
 
-// findTag 深度优先找第一个指定标签。
 func findTag(n *xhtml.Node, tag string) *xhtml.Node {
 	if n.Type == xhtml.ElementNode && n.Data == tag {
 		return n
@@ -239,7 +220,6 @@ func findTag(n *xhtml.Node, tag string) *xhtml.Node {
 	return nil
 }
 
-// assertNoScriptNode 解析输出，断言没有任何 script / iframe / 事件属性残留。
 func assertNoScriptNode(t *testing.T, fragment string) {
 	t.Helper()
 	doc, err := xhtml.Parse(strings.NewReader(fragment))

@@ -8,7 +8,6 @@ import (
 	"go_wp/pkg/upload"
 )
 
-// normalizeMediaProps 在组件数据入口归一声明为媒体的字段，不扫描或重写产物 HTML。
 func normalizeMediaProps(props any) error {
 	return normalizeMediaValue(reflect.ValueOf(props), "")
 }

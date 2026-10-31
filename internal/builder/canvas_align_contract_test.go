@@ -1,16 +1,3 @@
-// canvas_align_contract_test.go — 画布路径「子节点增删改 → props 数组同步」契约测试。
-//
-// 背景：tabs / accordion 的校验是「标签数 = 面板数」（tabs.go:66 / accordion.go:68），
-// 而画布上的删除面板、拖拽重排、拖入新面板、复制 / 粘贴面板都只改 node.children，
-// 过去不同步 props 数组 —— 删掉一个面板就立刻「标签数与面板数不一致」编译失败。
-// 修复把画布方向收敛到 palette.js 的 alignFromChildren（无 DOM 纯函数，与检查器方向的
-// alignMutation 对称），由 methods/canvas.js 与 methods/nodes.js 的画布入口调用。
-//
-// 本测试用 node 加载真实的 canvas.js / nodes.js（只桩掉渲染与持久化），直接调用画布上
-// 真正跑的 insertComponent / deleteSelected / moveNode / moveNodeOrder / pasteAfter /
-// duplicate，再把真实产物交给 Go 侧 Validate / Compile —— 不存在「测试里另抄一份画布
-// 逻辑」的漂移。环境没有 node 时自动跳过。
-
 package builder
 
 import (
@@ -26,27 +13,24 @@ import (
 	"go_wp/internal/templates"
 )
 
-// canvasJSRel / nodesJSRel 画布逻辑文件相对本包测试工作目录的路径。
 const (
 	canvasJSRel = "../templates/static/js/workbench/methods/canvas.js"
 	nodesJSRel  = "../templates/static/js/workbench/methods/nodes.js"
 )
 
-// canvasAlignCase 一个画布操作序列执行后的文档片段（node 侧探针的真实产物）。
 type canvasAlignCase struct {
-	// Name 场景名（子测试名）。
 	Name string `json:"name"`
-	// Type 结构型组件类型。
+
 	Type string `json:"type"`
-	// Key 内容数组的 props 键（tabs / items；非结构型为空）。
+
 	Key string `json:"key"`
-	// Node 操作序列执行后的节点。
+
 	Node *core.Node `json:"node"`
-	// Entries 脚本侧统计的内容数组长度。
+
 	Entries int `json:"entries"`
-	// ChildIDs 操作后的子节点 ID 顺序。
+
 	ChildIDs []string `json:"childIds"`
-	// Labels 操作后的标签 / 标题顺序。
+
 	Labels []string `json:"labels"`
 
 	ExpectedChildIDs []string `json:"expectedChildIDs"`
@@ -59,18 +43,14 @@ type canvasAlignCase struct {
 	IllegalAllNull   bool     `json:"illegalAllNull"`
 }
 
-// canvasAlignProbe node 侧探针结果。
 type canvasAlignProbe struct {
 	Cases []canvasAlignCase `json:"cases"`
 }
 
-// canvasAlignDirty 故意构造的「不同步」坏状态：数量本就不一致，必须被校验拒绝，
-// 且画布操作不得去猜位置改写 props。
 func canvasAlignDirty(name string) bool {
 	return strings.HasPrefix(name, "tabs-dirty-") || name == "canvas-delete-without-sync-dirty"
 }
 
-// runCanvasAlignProbe 用 node 加载真实画布模块并跑完所有操作场景。
 func runCanvasAlignProbe(t *testing.T) (p canvasAlignProbe) {
 	t.Helper()
 	urls := make([]string, 0, 3)
@@ -102,7 +82,6 @@ func runCanvasAlignProbe(t *testing.T) (p canvasAlignProbe) {
 	return p
 }
 
-// canvasAlignField 内容数组的文案字段（tabs→label，accordion→title）。
 func canvasAlignField(typ string) string {
 	if typ == "core.accordion" {
 		return "title"
@@ -110,8 +89,6 @@ func canvasAlignField(typ string) string {
 	return "label"
 }
 
-// canvasAlignProbeScript node 侧探针：加载真实 canvas.js / nodes.js（只桩掉渲染与持久化），
-// 驱动画布上的真实方法，逐个场景输出操作后的节点。
 const canvasAlignProbeScript = `
 // 画布路径（拖入 / 删除 / 重排子节点）→ props 数组同步的探针。
 // 与浏览器共用同一份实现：这里 import 的是真实的 canvas.js / nodes.js（只桩掉渲染与持久化），
@@ -320,8 +297,6 @@ cases.push({ name: 'illegal-ops-return-null', illegalAllNull: illegal.every(func
 
 console.log(JSON.stringify({ cases: cases }));`
 
-// TestCanvasChildOpsKeepAlignArrayInSync 核心不变量：画布上的拖入 / 删除 / 重排 /
-// 复制粘贴执行后，props 数组长度必须等于 children 数量，且节点仍可编译。
 func TestCanvasChildOpsKeepAlignArrayInSync(t *testing.T) {
 	for _, c := range runCanvasAlignProbe(t).Cases {
 		c := c
@@ -373,7 +348,7 @@ func TestCanvasChildOpsKeepAlignArrayInSync(t *testing.T) {
 			}
 
 			if canvasAlignDirty(c.Name) {
-				// 脏数据场景：数量必须仍然不一致，且校验必须拦下（护栏没有失效）。
+
 				if goEntries == len(c.Node.Children) {
 					t.Fatalf("脏数据场景竟然数量一致（%d），护栏用例失效", goEntries)
 				}
@@ -453,7 +428,6 @@ func TestCanvasChildOpsKeepAlignArrayInSync(t *testing.T) {
 	}
 }
 
-// TestCanvasChildOpsNodesCompile 每个画布操作序列的产物都必须能真正编译出 HTML。
 func TestCanvasChildOpsNodesCompile(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -462,7 +436,7 @@ func TestCanvasChildOpsNodesCompile(t *testing.T) {
 	for _, c := range runCanvasAlignProbe(t).Cases {
 		c := c
 		if c.Node == nil || canvasAlignDirty(c.Name) {
-			continue // 纯函数护栏用例无节点；脏数据场景编译必然失败
+			continue
 		}
 		t.Run(c.Name, func(t *testing.T) {
 			doc, err := json.Marshal(map[string]any{

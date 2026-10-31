@@ -8,7 +8,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 校验：形状白名单、多层/漂移组合约束、CSS 安全值。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -46,7 +45,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestBuildView 层视图：缺省单层、多层景深、漂移 class、确定性。
 func TestBuildView(t *testing.T) {
 	t.Run("缺省单层 currentColor", func(t *testing.T) {
 		v := BuildView(&Props{})
@@ -69,7 +67,7 @@ func TestBuildView(t *testing.T) {
 		if v.Layers[1].FillOpacity != "0.55" || v.Layers[2].FillOpacity != "0.3" {
 			t.Errorf("背景层透明度不符: %+v", v.Layers)
 		}
-		// 三层 path 互不相同（振幅变体）。
+
 		if v.Layers[0].D == v.Layers[1].D || v.Layers[1].D == v.Layers[2].D {
 			t.Errorf("层 path 应互不相同")
 		}
@@ -82,7 +80,7 @@ func TestBuildView(t *testing.T) {
 		if v.Layers[1].Class != "sd-l2" || v.Layers[2].Class != "sd-l3" {
 			t.Errorf("动画层 class 不符: %q %q", v.Layers[1].Class, v.Layers[2].Class)
 		}
-		// 漂移扩宽：起点 x=-720。
+
 		if !strings.HasPrefix(v.Layers[1].D, "M-720 ") {
 			t.Errorf("漂移波形应外扩起点: %q", v.Layers[1].D)
 		}
@@ -107,7 +105,6 @@ func TestBuildView(t *testing.T) {
 	})
 }
 
-// TestCompileCSS 样式编译：三端高度缺省/覆盖、镜像、漂移动画。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -167,8 +164,6 @@ func TestCompileCSS(t *testing.T) {
 	}
 }
 
-// TestWavePathDeterminism 波形生成确定性：同参数恒同输出（整数运算无浮点漂移）。
-// 生成实现已提升至 core 通用素材库（core.ShapePath），此处经组件委托入口验证。
 func TestWavePathDeterminism(t *testing.T) {
 	for _, variant := range []int{0, 1, 2} {
 		a := shapePath(ShapeWave, variant, false)

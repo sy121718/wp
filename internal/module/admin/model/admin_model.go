@@ -16,14 +16,13 @@ import (
 const tableNameSysAdmin = "sys_admin"
 
 const (
-	AdminStatusActive   = 1 // 启用
-	AdminStatusInactive = 2 // 禁用
-	AdminStatusBanned   = 3 // 封禁
+	AdminStatusActive   = 1
+	AdminStatusInactive = 2
+	AdminStatusBanned   = 3
 )
 
 const allowModifyIsAdminKey string = "allow_modify_is_admin"
 
-// JSONMap 可序列化的 JSON 扩展字段，实现 sql.Scanner 和 driver.Valuer。
 type JSONMap map[string]any
 
 func (j JSONMap) Value() (driver.Value, error) {
@@ -45,69 +44,50 @@ func (j *JSONMap) Scan(value any) error {
 	return json.Unmarshal(bytes, j)
 }
 
-// AdminEntity 对应 sys_admin 表字段。
-//
-// datarule tag 声明该字段可在数据权限规则中配置（pkg/datarule.DomainFromEntity 派生域白名单）：
-// 没有 tag 的字段不进白名单，规则也就无法引用它 —— 这是唯一的字段白名单来源，
-// 不要在别处再抄一份（抄错列名不会有人发现，直到行级过滤静默失效）。
 type AdminEntity struct {
-	ID                uint64     `gorm:"column:id;primaryKey"`                                                      // 用户ID（唯一）
-	DeptID            uint64     `gorm:"column:dept_id;default:0" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`       // 所属部门ID
-	Username          string     `gorm:"column:username;uniqueIndex" datarule:"label=用户名;ops=EQ,NEQ,LIKE,NOT_LIKE"` // 登录账号用户名
-	Password          string     `gorm:"column:password"`                                                           // 加密密码
-	Name              *string    `gorm:"column:name"`                                                               // 用户姓名
-	Avatar            *string    `gorm:"column:avatar"`                                                             // 头像URL
-	Email             *string    `gorm:"column:email;index" datarule:"label=邮箱;ops=EQ,NEQ,LIKE"`                    // 邮箱
-	Phone             *string    `gorm:"column:phone;index" datarule:"label=手机号;ops=EQ,NEQ"`                        // 手机号
-	Status            int        `gorm:"column:status;default:1;index" datarule:"label=状态;ops=EQ,NEQ,IN,NOT_IN"`    // 状态：1启用 2禁用 3封禁
-	IsAdmin           int        `gorm:"column:is_admin;default:0"`                                                 // 是否管理员：0否 1是
-	LoginFailureCount uint16     `gorm:"column:login_failure_count;default:0"`                                      // 连续登录失败次数
-	LockedUntilTime   *time.Time `gorm:"column:locked_until_time"`                                                  // 封禁至
-	Metadata          JSONMap    `gorm:"column:metadata;type:json"`                                                 // 扩展元数据
-	LastFailureTime   *time.Time `gorm:"column:last_failure_time"`                                                  // 最后一次登录失败时间
-	RegisterIP        *string    `gorm:"column:register_ip"`                                                        // 注册IP地址
-	RegisterLocation  *string    `gorm:"column:register_location"`                                                  // 注册地理位置
-	LastLoginIP       *string    `gorm:"column:last_login_ip"`                                                      // 最后登录IP
-	LastLoginLocation *string    `gorm:"column:last_login_location"`                                                // 最后登录地理位置
-	LastLoginISP      *string    `gorm:"column:last_login_isp"`                                                     // 最后登录网络运营商
-	LastLoginTime     *time.Time `gorm:"column:last_login_time"`                                                    // 最后登录时间
-	CreateBy          uint64     `gorm:"column:create_by"`                                                          // 创建人ID
-	CreateTime        *time.Time `gorm:"column:create_time"`                                                        // 创建时间
-	UpdateBy          uint64     `gorm:"column:update_by"`                                                          // 更新人ID
+	ID                uint64     `gorm:"column:id;primaryKey"`
+	DeptID            uint64     `gorm:"column:dept_id;default:0" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`
+	Username          string     `gorm:"column:username;uniqueIndex" datarule:"label=用户名;ops=EQ,NEQ,LIKE,NOT_LIKE"`
+	Password          string     `gorm:"column:password"`
+	Name              *string    `gorm:"column:name"`
+	Avatar            *string    `gorm:"column:avatar"`
+	Email             *string    `gorm:"column:email;index" datarule:"label=邮箱;ops=EQ,NEQ,LIKE"`
+	Phone             *string    `gorm:"column:phone;index" datarule:"label=手机号;ops=EQ,NEQ"`
+	Status            int        `gorm:"column:status;default:1;index" datarule:"label=状态;ops=EQ,NEQ,IN,NOT_IN"`
+	IsAdmin           int        `gorm:"column:is_admin;default:0"`
+	LoginFailureCount uint16     `gorm:"column:login_failure_count;default:0"`
+	LockedUntilTime   *time.Time `gorm:"column:locked_until_time"`
+	Metadata          JSONMap    `gorm:"column:metadata;type:json"`
+	LastFailureTime   *time.Time `gorm:"column:last_failure_time"`
+	RegisterIP        *string    `gorm:"column:register_ip"`
+	RegisterLocation  *string    `gorm:"column:register_location"`
+	LastLoginIP       *string    `gorm:"column:last_login_ip"`
+	LastLoginLocation *string    `gorm:"column:last_login_location"`
+	LastLoginISP      *string    `gorm:"column:last_login_isp"`
+	LastLoginTime     *time.Time `gorm:"column:last_login_time"`
+	CreateBy          uint64     `gorm:"column:create_by"`
+	CreateTime        *time.Time `gorm:"column:create_time"`
+	UpdateBy          uint64     `gorm:"column:update_by"`
 	UpdateTime        *time.Time `gorm:"column:update_time"`
-	Remark            *string    `gorm:"column:remark"` // 备注
+	Remark            *string    `gorm:"column:remark"`
 }
 
-// AdminModel 持有 gorm 连接，供 service 层调用。
 type AdminModel struct {
 	db *gorm.DB
 }
 
-// // NewAdminModel 从 database 组件获取 db 并创建 model。
-// func NewAdminModel() (*AdminModel, error) {
-// 	db, err := database.GetDB()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return &AdminModel{db: db}, nil
-// }
-
-// NewAdminModelDemo 外部传入 db
 func NewAdminModel(db *gorm.DB) *AdminModel {
 	return &AdminModel{db: db}
 }
 
-// DB 返回绑定当前实体的数据库入口，支持链式调用增删改查。
 func (m *AdminModel) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&AdminEntity{})
 }
 
-// DialectName 返回当前数据库方言名（如 mysql / postgres），用于 SQL 方言差异分支。
 func (m *AdminModel) DialectName() string {
 	return m.db.Dialector.Name()
 }
 
-// GetByID 根据 ID 查询管理员，不存在返回 nil。
 func (m *AdminModel) GetByID(ctx context.Context, id uint64) (*AdminEntity, error) {
 	var entity AdminEntity
 	err := m.DB(ctx).Where("id = ?", id).First(&entity).Error
@@ -120,23 +100,15 @@ func (m *AdminModel) GetByID(ctx context.Context, id uint64) (*AdminEntity, erro
 	return &entity, nil
 }
 
-// DeleteByIDs 批量删除管理员。
 func (m *AdminModel) DeleteByIDs(ctx context.Context, ids []uint64) (deleted int64, err error) {
 	result := m.DB(ctx).Where("id IN ?", ids).Delete(&AdminEntity{})
 	return result.RowsAffected, result.Error
 }
 
-// Transaction 透传事务：删管理员时「sys_admin 行 + 该账号的全部策略行」两处持久化写
-// 必须同事务，边界由 service 决定（见 AdminDelete 的注释）。
 func (m *AdminModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// LockByIDsTx 在调用方事务内按主键批量加行锁读取（SELECT ... FOR UPDATE）。
-//
-// 删管理员是读-改-写：先读实体判断「是不是自己 / 是不是超管」，再删行。不加锁的话，
-// 校验与删除之间该行可能已被改成超管（另一请求），于是删除绕过超管保护。
-// **按 id 升序加锁**：两个并发删除请求锁同一组 id 时，顺序不一致会互等成死锁。
 func (m *AdminModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]AdminEntity, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -150,17 +122,11 @@ func (m *AdminModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64)
 	return entities, nil
 }
 
-// DeleteByIDsTx 在调用方事务内批量删除管理员（语义与 DeleteByIDs 一致）。
 func (m *AdminModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
 	result := tx.WithContext(ctx).Model(&AdminEntity{}).Where("id IN ?", ids).Delete(&AdminEntity{})
 	return result.RowsAffected, result.Error
 }
 
-// IncrementLoginFailure 原子累加登录失败计数，连续达到阈值时锁定 30 分钟。
-//
-// 必须用单条原子 SQL（count = count + 1）而非读-改-写：并发失败请求
-// 读到相同计数会丢失计数，导致永远无法触发锁定，可被无限暴力破解。
-// 锁定只写 locked_until_time，绝不修改 status（见 service 层注释）。
 func (m *AdminModel) IncrementLoginFailure(ctx context.Context, id uint64, lockThreshold int, lockDuration time.Duration) error {
 	now := time.Now()
 	lockedUntil := now.Add(lockDuration)
@@ -173,7 +139,6 @@ func (m *AdminModel) IncrementLoginFailure(ctx context.Context, id uint64, lockT
 		}).Error
 }
 
-// ResetLoginFailure 原子清零登录失败状态（登录成功时调用）。
 func (m *AdminModel) ResetLoginFailure(ctx context.Context, id uint64) error {
 	return m.db.WithContext(ctx).Model(&AdminEntity{}).
 		Where("id = ?", id).
@@ -184,17 +149,14 @@ func (m *AdminModel) ResetLoginFailure(ctx context.Context, id uint64) error {
 		}).Error
 }
 
-// TableName 指定表名。
 func (AdminEntity) TableName() string {
 	return tableNameSysAdmin
 }
 
-// CanLogin 是否可以登录。
 func (a *AdminEntity) CanLogin() bool {
 	return a.Status == AdminStatusActive && !a.IsLocked()
 }
 
-// IsLocked 是否被锁定。
 func (a *AdminEntity) IsLocked() bool {
 	if a.LockedUntilTime == nil {
 		return false
@@ -202,17 +164,14 @@ func (a *AdminEntity) IsLocked() bool {
 	return time.Now().Before(*a.LockedUntilTime)
 }
 
-// IsActive 是否启用。
 func (a *AdminEntity) IsActive() bool {
 	return a.Status == AdminStatusActive
 }
 
-// IsSuperAdmin 是否超级管理员。
 func (a *AdminEntity) IsSuperAdmin() bool {
 	return a.IsAdmin == 1
 }
 
-// CanModifyField 是否允许修改字段（受保护字段默认不可外部修改）。
 func (a *AdminEntity) CanModifyField(field string) bool {
 	protectedFields := map[string]bool{
 		"IsAdmin": true,
@@ -220,7 +179,6 @@ func (a *AdminEntity) CanModifyField(field string) bool {
 	return !protectedFields[field]
 }
 
-// BeforeCreate 创建前 hook：补齐时间，并校验超级管理员唯一性。
 func (a *AdminEntity) BeforeCreate(tx *gorm.DB) error {
 	now := time.Now()
 	a.CreateTime = &now
@@ -238,7 +196,6 @@ func (a *AdminEntity) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// BeforeUpdate 更新前 hook：更新时间，并阻止外部直接改 IsAdmin。
 func (a *AdminEntity) BeforeUpdate(tx *gorm.DB) error {
 	now := time.Now()
 	a.UpdateTime = &now

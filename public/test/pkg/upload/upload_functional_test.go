@@ -143,7 +143,6 @@ func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 	}
 }
 
-// Size 谎报 0（未知大小）：不得绕过大小校验——流式读取实际 11B > 10B 应报错。
 func TestUploadRejectsUnknownSizeFileOverMaxSize(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.base_url", "https://media.example.test")
@@ -174,7 +173,6 @@ func TestUploadRejectsUnknownSizeFileOverMaxSize(t *testing.T) {
 	}
 }
 
-// Size 为 0 但实际未超限：流式限制不应误伤，上传成功且返回实际大小。
 func TestUploadAcceptsUnknownSizeFileWithinLimit(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.base_url", "https://media.example.test")

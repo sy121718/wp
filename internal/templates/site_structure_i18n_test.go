@@ -1,17 +1,5 @@
 package templates
 
-// site_structure_i18n_test.go — 站点结构类后台模板的取词与渲染回归（审计 I18N-001 组E）。
-//
-// 覆盖 8 个模板：theme / theme_settings / pages / page_translations /
-// blocks / navigations / navigation_translations / menus。
-//
-// 为什么必须真渲染：这些模板里有大量 range 内取词（{{tr := .["t"]}} 之后在 range 里
-// tr("key","兜底")）。Jet 的作用域与类型错误都不在解析期暴露，表现是
-// **HTTP 200 但 body 从某一行起整块消失**（列表、表单全没了）—— 从「少了一行数据」
-// 几乎定位不到模板中间那一行。所以把「能解析 + 能渲染 + 关键文案与字段在」固化成断言。
-//
-// 断言用中文兜底文案：测试进程不连库，pkg/i18n 缓存为空，t() 一律回落到模板内原文。
-
 import (
 	"os"
 	"path/filepath"
@@ -26,7 +14,6 @@ import (
 	"github.com/CloudyKit/jet/v6"
 )
 
-// siteStructureTemplates 本批模板名（不带 .html 扩展）。
 var siteStructureTemplates = []string{
 	"admin/project/theme",
 	"admin/project/theme_settings",
@@ -38,7 +25,6 @@ var siteStructureTemplates = []string{
 	"admin/system/menus",
 }
 
-// siteStructureData 外壳（layout.html）所需的最小数据。
 func siteStructureData() map[string]any {
 	return map[string]any{
 		"lang": "zh-CN", "title": "站点结构", "menu": "pages", "t": TranslateFunc("en-US"),
@@ -46,7 +32,6 @@ func siteStructureData() map[string]any {
 	}
 }
 
-// TestSiteStructureTemplatesParse 八个模板都必须能整份解析（extends layout.html 一起解析）。
 func TestSiteStructureTemplatesParse(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -58,7 +43,6 @@ func TestSiteStructureTemplatesParse(t *testing.T) {
 	}
 }
 
-// TestSiteStructureTemplatesRender 八个模板都必须能渲染到尾部，且关键文案/字段在输出里。
 func TestSiteStructureTemplatesRender(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -70,11 +54,9 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
-				// 新建走抽屉后按钮显隐依赖权限集合（adminui.Prepare 一定注入，测试数据补齐）。
+
 				"Buttons": map[string]any{"theme.create": true},
-				// Err 是「本页装载失败」的降级提示槽（写动作的结论不再回带本页）。
-				// handler 的 templateMap 一定给**事实**（key + 中文兜底，两项都空 = 无提示），
-				// 取词由模板的 tf 做 —— 测试数据补齐。
+
 				"Err": map[string]any{"Key": "", "Fallback": ""},
 				"Themes": []map[string]any{{
 					"ID": "t1", "ProjectID": "p1", "Name": "春季促销版", "IsActive": false,
@@ -88,8 +70,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"ThemeName": "春季促销版", "ProjectID": "p1", "ThemeID": "t1",
 				"ThemeSettings": "{}",
-				// 分组标题 / 字段 label / 选项 label 与块名收的是**事实**（*Key + *Fallback 两字段，
-				// key 为空时兜底即中文原文）—— 取词由模板的 tr 做，handler 不再提前翻成译文。
+
 				"Groups": []map[string]any{{
 					"TitleKey": "", "TitleFallback": "颜色",
 					"Fields": []map[string]any{
@@ -112,7 +93,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"Projects":   []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"Blueprints": []map[string]any{{"ID": "b1", "Name": "落地页"}},
-				// 一页两个创建入口 → 两个权限码都要给（缺一个按钮就不渲染，wants 会红）。
+
 				"Buttons": map[string]any{"project.create": true, "page.create": true},
 				"Pages": []map[string]any{{
 					"ID": "pg1", "DraftPath": "/about", "Kind": "page", "Active": true, "ActivePath": "/site/about/",
@@ -120,9 +101,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					"Stale":        true, "Staged": false, "Version": 3, "UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 0, 0, 0, 0, time.Local)),
 				}},
 			},
-			// 「预览」「线上」已合并成一个「打开页面」入口：已发布的直开线上真页面（此行的
-			// Active=true → href 是 /site/about/），未发布的才打开草稿渲染。并排两个按钮
-			// 让用户先猜哪个对应自己想看的那个，而「线上 / 草稿」状态列已经说了。
+
 			wants: []string{"新建站点工程", "创建工程", "新建页面", "创建页面", "页面列表", "已发布", "有更新未发布", "编辑", "打开页面", "多语言", `href="/site/about/"`},
 		},
 		{
@@ -153,10 +132,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"Buttons":         map[string]any{"block.create": true},
-				// 行数据是业务事实（Kind / ReuseMode / UpdatedAt / RefCount），标签与
-				// 「{count} 个页面引用」这类文案由 block_row.html 取词生成；
-				// UpdatedAt 是 utils.JSONTime（dateTime 只认 time.Time / *time.Time / JSONTime，
-				// 传字符串会在渲染期 panic），RefCount 为 -1 表示引用数未知。
+
 				"Headers": []map[string]any{{
 					"ID": "b1", "Name": "站点页眉", "Kind": "header", "ReuseMode": "global",
 					"UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 15, 4, 0, 0, time.Local)),
@@ -172,22 +148,13 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					"UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 15, 4, 0, 0, time.Local)),
 					"RefCount":  int64(-1),
 				}, {
-					// 引用模式 + 读不到引用数：必须显示「未知」，与「未被页面引用」分开
-					// （把读不到显示成 0 会让人以为这个块可以放心删）。
+
 					"ID": "b4", "Name": "公告条", "Kind": "announcement", "ReuseMode": "global",
 					"UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 15, 4, 0, 0, time.Local)),
 					"RefCount":  int64(-1),
 				}},
 			},
-			// 「区块 / 复用资产」原是三段表第三段的段标题（02-L P1-4 合并成一张表后，
-			// 段的区分改由「类型」列承担，分段标题不再存在）。断言的**语义**保持为
-			// 「这一页能表达块的不同类型」，改为断言承担该语义的新表头；
-			// 「页眉」「页脚」继续由新建抽屉的类型下拉兜底，断言原样保留。
-			//
-			// 另四条是 block_row.html 的取词契约（本页唯一一处把行数据翻译成 UI 文案的地方，
-			// 断言用整条 data-filter-text：名称 + 类型标签 + 复用标签 + 影响面文案一次比完）：
-			// 三种引用态各自成句、两种复用方式各自成词 —— 「读不到 / 零引用 / N 个页面引用」
-			// 与「引用 / 复制」显示成同一句话时，页面看起来仍然正常。
+
 			wants: []string{
 				"全局块", "新建并编辑", "页眉", "页脚", "类型", "复用方式", "说明", "确定删除块「",
 				"站点页眉 页眉 引用 1 个页面引用",
@@ -212,7 +179,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					"TargetLabel": "当前窗口", "Indent": "0px", "Depth": 0, "First": true, "Last": true,
 				}},
 			},
-			// 每行编辑表单按需 GET 加载，列表只保留编辑入口；保存按钮在独立片段中验证。
+
 			wants: []string{"导航菜单", "页眉导航", "添加菜单项", "当前窗口", "新标签页", "作为顶级项", "放到「", "从已有内容添加", "暂无公开路径", "加入菜单", "菜单结构", "菜单项", "打开方式", "编辑", "data-drawer-url", "确定删除「"},
 		},
 		{
@@ -234,8 +201,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 		{
 			name: "admin/system/menus",
 			data: map[string]any{
-				// 树状行：Depth / HasChildren / Hidden / Expanded / Matched 由 service 算好交给模板
-				// （浏览态 Depth=0 的顶级行 + 一个被折叠的子行；搜索态的空态另有一组测试）。
+
 				"Rows": []map[string]any{
 					{
 						"ID": "m1", "ParentID": "0", "Title": "内容管理", "Path": "/admin/pages",
@@ -253,7 +219,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Parents": []map[string]any{{"ID": "m0", "Title": "根", "Type": 1, "Indent": ""}},
 				"Buttons": map[string]any{"menu.create": true, "menu.update": true, "menu.delete": true},
 			},
-			// 编辑表单按需从 /admin/menus/edit 获取；列表只交付编辑入口和新建表单。
+
 			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "权限点", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url", "page:list"},
 		},
 	}
@@ -286,14 +252,6 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 	}
 }
 
-// TestPageTranslationsSingleTableMergedGroups 翻译工作台的「按组件分段的多张表」已合并成一张表，
-// 且「每行的 textarea 与它自己的 3 个 hidden 同处一个 tr、四类字段顺序一致」这个形状被钉住。
-//
-// 为什么必须钉形状（而不是只看渲染成功）：保存端 page_translations_handle.go 的
-// SavePageTranslations 按**四个数组的下标**配对（rowContext / rowSource / rowHash / rowTarget），
-// 任一行的控件被拆散（分组行把数据行包起来、hidden 掉到 tr 外、某个字段被条件包裹）都会让长度不等，
-// 于是**整批拒绝**并回带 MsgTranslationInvalid —— 模板层看不出任何异常，用户看到的是「提交数据不完整」。
-// 多张表合并成一张正是这个风险最集中的改动。
 func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 	newRow := func(field, source, contextName, hash string) map[string]any {
 		return map[string]any{
@@ -332,7 +290,6 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 		t.Fatalf("渲染失败: %v", err)
 	}
 
-	// 只在编辑表范围内断言：布局壳（侧栏）里也有表格，且筛选栏里还有一个嵌套的 GET 表单。
 	const tableMark = `class="data-table data-table-wide tr-table"`
 	if n := strings.Count(out, tableMark); n != 1 {
 		t.Fatalf("两个组件应共用一张编辑表，实际 %d 张", n)
@@ -352,14 +309,12 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 		t.Fatal("组件名应落在表内分组行，不应再有每组的 h2")
 	}
 
-	// 分组行 = 合并整行的 td[colspan]（theme.css §14 的 .data-table tbody tr > td[colspan] 就吃这个形状）。
 	for _, comp := range []string{"core.heading", "core.button"} {
 		if !strings.Contains(table, `<td colspan="6">`+comp+" ") {
 			t.Fatalf("缺少组件 %s 的合并整行分组行", comp)
 		}
 	}
 
-	// 四类字段数量相等（渲染 HTML 断言）。
 	counts := map[string]int{}
 	for _, name := range []string{"rowTarget", "rowContext", "rowSource", "rowHash"} {
 		counts[name] = strings.Count(table, `name="`+name+`"`)
@@ -374,15 +329,12 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 		}
 	}
 
-	// 表头列数与每一行的 td 数必须一致：数据行少一个 td 时浏览器把缺口补在**行尾**，
-	// 整表左移一列（字段值显示在「组件」列、状态值显示在「译文」列），而模板本身不会报错。
 	thead := table[strings.Index(table, "<thead>"):strings.Index(table, "</thead>")]
 	headCols := strings.Count(thead, "<th>")
 	if headCols != 6 {
 		t.Fatalf("表头应为 6 列（组件 / 字段 / 原文 / 译文 / 状态 / 来源），实际 %d 列", headCols)
 	}
 
-	// 每一行：textarea 与它自己的 3 个 hidden 同处一个 tr，且顺序固定。
 	rows := 0
 	for _, chunk := range strings.Split(table, "<tr>")[1:] {
 		tr := chunk
@@ -412,7 +364,6 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 		t.Fatalf("应渲染 3 个数据行（分组行 / 复用行不计），实际 %d", rows)
 	}
 
-	// 附加行（复用行）也要占满 6 列：1 个空 td + colspan=5。
 	reuse := table[strings.Index(table, `<tr class="tr-reuse">`):]
 	reuse = reuse[:strings.Index(reuse, "</tr>")]
 	if n := strings.Count(reuse, "<td"); n != 2 || !strings.Contains(reuse, `colspan="5"`) {
@@ -420,22 +371,8 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 	}
 }
 
-// —— 行标签搬进模板后的契约（admin/block/block_row.html） ——
-//
-// 本次改造把 kind / reuseMode / refCount 三张标签表从 Go 侧
-// （blockKindLabels / blockReuseModeLabels / blockRefCountText）搬进了模板片段
-// admin/block/block_row.html —— 行数据只留业务事实（Kind / ReuseMode / UpdatedAt / RefCount）。
-// 于是原来由 Go 表结构保证的三件事只剩模板里的**字面量**，必须换成可执行的判据：
-//
-//	① 行内 kind 的 key 集与新建抽屉的类型下拉**同一批**。这条原先写在 Go 表的注释上
-//	   （「两处同义，必须共用同一条词条」），表删了就没人守 —— 失守的唯一症状是
-//	   同一个 kind 在下拉里显示一个词、在列表里显示另一个词，不报错、也不会有别的测试变红。
-//	② 行标签用到的 key 在 sys_i18n 的 seed 迁移里中英成对。模板里的中文只是 t() 兜底：
-//	   缺 en-US 行时英文界面永远显示中文（admin_content_list_filter_test.go 同款判据）。
-//	③ 三种引用态各有自己的 key —— 已由 testBody 里的 key 集覆盖（unknown / none / pages）：
-//	   「读不到」与「没人用」显示成同一句话会让人以为这个块可以放心删。
 func TestBlockRowLabelsComeFromSeededKeys(t *testing.T) {
-	// 行内标签 key 与 kind key 两种半径：前者用于 seed 对账，后者用于与下拉比对。
+
 	anyKeyRe := regexp.MustCompile(`"(admin\.[a-zA-Z0-9_.]+)"`)
 	kindKeyRe := regexp.MustCompile(`"(admin\.blocks\.kind\.[a-z]+)"`)
 
@@ -443,8 +380,6 @@ func TestBlockRowLabelsComeFromSeededKeys(t *testing.T) {
 	rowKind := keySetOf(kindKeyRe, rowSrc)
 	dropKind := keySetOf(kindKeyRe, adminTemplateSource(t, "blocks.html"))
 
-	// 非空转自检：任一集合塌成 0（正则写坏 / 文件被搬走）时，下面的相等断言变成
-	// 「0 == 0 恒真」—— 门禁仍然绿，但不再守任何东西。
 	if len(rowKind) < 10 || len(dropKind) < 10 {
 		t.Fatalf("kind key 解析结果过少（行内 %d / 下拉 %d），判据已退化成空转", len(rowKind), len(dropKind))
 	}
@@ -472,7 +407,6 @@ func TestBlockRowLabelsComeFromSeededKeys(t *testing.T) {
 	}
 }
 
-// keySetOf 取 src 里匹配 re 的全部第一个捕获组，去重成集合。
 func keySetOf(re *regexp.Regexp, src string) map[string]bool {
 	set := map[string]bool{}
 	for _, m := range re.FindAllStringSubmatch(src, -1) {
@@ -481,7 +415,6 @@ func keySetOf(re *regexp.Regexp, src string) map[string]bool {
 	return set
 }
 
-// sortedKeys 集合 → 有序切片（断言消息与遍历顺序稳定）。
 func sortedKeys(set map[string]bool) []string {
 	out := make([]string, 0, len(set))
 	for k := range set {
@@ -491,7 +424,6 @@ func sortedKeys(set map[string]bool) []string {
 	return out
 }
 
-// missingIn 返回 want 有、have 没有的 key（有序）。
 func missingIn(want, have map[string]bool) []string {
 	var out []string
 	for k := range want {
@@ -503,16 +435,10 @@ func missingIn(want, have map[string]bool) []string {
 	return out
 }
 
-// equalKeySets 两个集合是否完全相等。
 func equalKeySets(a, b map[string]bool) bool {
 	return len(a) == len(b) && len(missingIn(a, b)) == 0
 }
 
-// seededI18nKeys 扫描 public/migrations 下全部 SQL，返回 key → 已落库语言集。
-//
-// 不写死文件名：词条散在 192（站点结构）/ 230（列表骨架）/ 451（Go 硬编码文案）等多份 seed 里，
-// 写死一份就会在「词条其实在另一份里」时给出假红，而漏掉新文件则给出假绿。
-// 全目录 5MB 量级，读一遍的代价远低于误判的代价（同 admin_empty_actions_test.go 的口径）。
 func seededI18nKeys(t *testing.T) map[string]map[string]bool {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join("..", "..", "public", "migrations", "*.sql"))

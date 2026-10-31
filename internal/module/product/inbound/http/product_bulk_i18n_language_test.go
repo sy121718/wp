@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// 同一保存成功事实在唯一 JSON 出口按请求语言取词。
 func TestProductVariantSaveNoticeFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{productenums.ProductsActionDone: {"zh-CN": "操作已完成", "en-US": "Done"}}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })

@@ -1,21 +1,13 @@
 package core
 
-// entity_source_test.go — 实体类型注册表契约测试。
-//
-// 覆盖：注册 / 查询 / 白名单 / 解析器透传 / 重复与非法注册拒绝。
-// 这张注册表是构建层「实体类型与字段白名单」的唯一运行时来源，
-// 内容模板与发布实例都依赖它，因此必须有直接契约测试。
-
 import (
 	"context"
 	"errors"
 	"testing"
 )
 
-// errStubResolver 来源返回的哨兵错误（验证 ResolverFor 透传）。
 var errStubResolver = errors.New("stub resolver error")
 
-// stubSource 测试桩实体来源。
 type stubSource struct {
 	entityType string
 	fields     []string

@@ -1,14 +1,5 @@
 package productservice_test
 
-// product_stock_failure_test.go — 库存列的四种事实必须彼此可辨（PRD-017 验收点）。
-//
-// 四种事实：全部仓跟踪（数量可为 0）／任一仓不跟踪（∞）／任何仓都没有行（未入库）／
-// **本次读取失败**。前三种是「查出来的结论」，第四种是「没查成」—— 从前它退化成
-// 未入库（三态零值 + 一个字都不记），现场看起来像「数据被清空了」。
-//
-// 本用例只钉住**事实可辨**：故障时 StockUnknown 为 true、三态保持零值；
-// 显示成什么文案属 DEC-02 待定，模板本批不改，故这里不断言任何可见文案。
-
 import (
 	"context"
 	"errors"
@@ -26,10 +17,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// errStockReadInjected 注入给库存端口的读失败。
 var errStockReadInjected = errors.New("injected: 库存读失败")
 
-// stockErrorPortStub 恒失败的库存端口（模拟库存侧故障）。
 type stockErrorPortStub struct {
 	inventorycontract.ProductStockPort
 	calls int

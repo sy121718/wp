@@ -2,15 +2,12 @@ package migrations
 
 import "sync"
 
-// register_system_settings_hint_currency.go — 系统设置页 hint 改准（499）。
 func registerSystemSettingsHintCurrency() {
 	registerSystemSettingsHintCurrencyOnce.Do(registerSystemSettingsHintCurrencySeed)
 }
 
-// registerSystemSettingsHintCurrencyOnce 让重复调用成为空操作。
 var registerSystemSettingsHintCurrencyOnce sync.Once
 
-// registerSystemSettingsHintCurrencySeed 注册 499（真正干活的那一半）。
 func registerSystemSettingsHintCurrencySeed() {
 	registerSeed(Seed{
 		Version:   "499-system-settings-hint-currency",

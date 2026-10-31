@@ -10,70 +10,38 @@ import (
 	"sync/atomic"
 )
 
-// activatingSeq 激活临时名的进程内唯一序列：pid + 原子递增计数。
-// 同内容并发激活（重试、双击、双 worker）不再生成同名临时链接互相干扰。
 var activatingSeq atomic.Uint64
 
-// 访问面激活状态类型。
 const (
-	// PublicationPage 激活的是普通 Page Artifact。
 	PublicationPage = "page"
-	// PublicationRedirect 激活的是重定向产物（redirect.json）。
+
 	PublicationRedirect = "redirect"
-	// PublicationNone 该路径未激活。
+
 	PublicationNone = "none"
 )
 
-// PublicationState 访问面路由状态（PublicationStore.inspect 返回值）。
 type PublicationState struct {
-	// Kind page / redirect / none。
 	Kind string
-	// Locator 当前激活的产物定位器（Kind 为 none 时为空）。
+
 	Locator *Locator
-	// Redirect 重定向指令（Kind 为 redirect 时非空）。
+
 	Redirect *RedirectDirective
-	// Guard 访问面守卫元数据（PIPE-6，Kind 为 page 且产物带守卫时非空）。
-	//
-	// 刻意做成 Kind 之外的**附加字段**而不是新的 PublicationKind 取值：
-	// Kind 被  与  按
-	// `Kind != PublicationPage` 判等，多一个取值会让那两条对账 / 恢复路径
-	// 把带守卫的页面误判成「不是页面」（编译期不报错，线上表现为对账漏项、
-	// 恢复流程跳过这一类页面）。守卫是页面产物上的一个属性，不是另一种路由状态。
+
 	Guard *GuardMeta
 }
 
-// PublicationStore 访问面 URL 激活契约（AGENTS.md §5）。
-// 只负责 URL → 文件系统状态的原子切换，不构建产物、不查询数据库。
-//
-// URI 边界：activate/deactivate/inspect 的 path 必须已规范化。
 type PublicationStore interface {
-	// Activate 原子切换路径到目标产物；新请求只见新 Artifact。
 	Activate(path string, loc Locator) error
-	// Deactivate 取消激活（幂等：未激活时返回 nil）。
+
 	Deactivate(path string) error
-	// Inspect 返回路径当前激活状态（readlink 确认目标）。
+
 	Inspect(path string) (*PublicationState, error)
 }
 
-// LocalPublicationStore 本地文件系统实现（AGENTS.md §5）：
-// 符号链接切换策略——activate(path, loc) 为临时 symlink + 原子 rename 覆盖。
-//
-// **单实例前提**（架构文档「部署形态」）：激活状态就是本机磁盘上的一组符号链接。
-// 两个实例各有自己的那组，同一 URL 会指向不同版本的产物 —— 且两边都认为自己是对的。
-// 原子 rename 保证的是**本机**切换的原子性，不是跨机器的。
-//
-// 改造方向：激活状态进 DB（带版号与 CAS），各实例读同一份；符号链接退化为本地缓存。
-//
-//	{activeRoot}/about/ → ../../artifacts/{hash}/   （单段路径，两段上溯到产物根）
-//
-// symlink target 为相对链接：上溯段数 = 路径层数 + ActiveRoot 相对产物根的层数（2），
-// 因此多级路径（/products/phone）自动生成 "../../../.." 深度，保证物理可达。
 type LocalPublicationStore struct {
-	// ActiveRoot 激活目录（如 public/active，位于产物根下两级）。
 	ActiveRoot string
 }
 
-// Activate 实现 PublicationStore 接口。
 func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 	p, err := NormalizeURL(path)
 	if err != nil {
@@ -84,9 +52,7 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 	}
 
 	rel := relActivePath(p)
-	// 父子前缀互斥防线（AGENTS.md §4.4 硬坑）：先确认祖先链上没有符号链接占位，
-	// 再 MkdirAll。否则 MkdirAll 会跟随祖先符号链接在不可变产物目录内部建目录，
-	// 随后落地的符号链接进入 artifacts/{hash}，污染产物且上溯层数错算成悬空链接。
+
 	if err = s.ensureAncestorsAreDirs(rel); err != nil {
 		return fmt.Errorf("激活 %s 失败: %w", p, err)
 	}
@@ -96,20 +62,16 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 		return err
 	}
 
-	// symlink target 为相对路径：上溯层数 = 链接父目录相对产物根的深度 = 相对段数 + 1
-	// （root 下：public/active/{path 段-1}，即 段数 + 1）。
 	up := strings.Split(relActivePath(p), "/")
 	target := strings.Repeat("../", len(up)+1) + loc.Key
-	// 临时名 = 内容 hash + 进程内唯一序列（pid + 递增计数），
-	// 保证同进程并发激活各自持有独立临时链接（H8）。
+
 	tmp := fmt.Sprintf("%s.activating-%d-%d-%s", link, os.Getpid(), activatingSeq.Add(1), locatorHash(loc))
 
 	if err = os.Symlink(target, tmp); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		// 同名残留仅可能是历史异常中断遗留：确认为链接/普通文件后
-		// 清理并重试一次；被目录占位时直接失败，不做递归清理。
+
 		if fi, serr := os.Lstat(tmp); serr == nil {
 			if fi.IsDir() {
 				return fmt.Errorf("激活 %s 失败: 临时名 %s 已被目录占用", p, tmp)
@@ -122,24 +84,15 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 			return err
 		}
 	}
-	// 原子覆盖：unix rename 直接替换已有 symlink/文件。
+
 	if err = os.Rename(tmp, link); err != nil {
 		_ = os.Remove(tmp)
-		// 父子路径互斥（如 /products 与 /products/phone 同时激活）属上游
-		// Normalize/占用检查职责：此处必须明确失败，禁止递归删除子路径
-		// 激活树（H9：不得 RemoveAll 静默破坏已激活子路径）。
+
 		return fmt.Errorf("激活 %s 失败: %w", p, err)
 	}
 	return nil
 }
 
-// ensureAncestorsAreDirs 检查激活链接的祖先链：任一已存在的祖先不是目录
-// （被符号链接或普通文件占位）即显式报错。
-//
-// 与「子路径先激活、父路径后激活」在 rename 阶段失败（H9）互补，本检查覆盖
-// 相反顺序——父路径已是符号链接时再激活子路径。多语言前缀（/{lang}/path）
-// 让这种冲突从「偶发」变成「必然」（语言根与同语言子路径），因此必须在
-// 内核层挡住，禁止把符号链接写进不可变产物目录。
 func (s *LocalPublicationStore) ensureAncestorsAreDirs(rel string) error {
 	segs := strings.Split(rel, "/")
 	cur := s.ActiveRoot
@@ -148,7 +101,7 @@ func (s *LocalPublicationStore) ensureAncestorsAreDirs(rel string) error {
 		fi, err := os.Lstat(cur)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil // 更深的祖先必然也不存在，交给 MkdirAll
+				return nil
 			}
 			return err
 		}
@@ -162,7 +115,6 @@ func (s *LocalPublicationStore) ensureAncestorsAreDirs(rel string) error {
 	return nil
 }
 
-// Deactivate 实现 PublicationStore 接口（幂等）。
 func (s *LocalPublicationStore) Deactivate(path string) error {
 	p, err := NormalizeURL(path)
 	if err != nil {
@@ -178,7 +130,6 @@ func (s *LocalPublicationStore) Deactivate(path string) error {
 	return os.Remove(link)
 }
 
-// Inspect 实现 PublicationStore 接口。
 func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) {
 	p, err := NormalizeURL(path)
 	if err != nil {
@@ -200,13 +151,11 @@ func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) 
 		return nil, err
 	}
 
-	// 解析物理目标：相对 symlink 所在目录。
 	resolved := filepath.Clean(filepath.Join(filepath.Dir(link), target))
 	if _, err = os.Stat(resolved); err != nil {
 		return nil, fmt.Errorf("路径 %s 的激活目标不可达: %w", p, err)
 	}
 
-	// 从相对 target 还原 locator key（形如 ../../../artifacts/{hash}，段数随路径深度变化）。
 	key := target
 	for strings.HasPrefix(key, "../") {
 		key = strings.TrimPrefix(key, "../")
@@ -214,7 +163,6 @@ func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) 
 	key = strings.ReplaceAll(key, string(filepath.Separator), "/")
 	loc := &Locator{Provider: "local", Key: key}
 
-	// redirect 判定：目标目录存在 redirect.json。
 	if _, err = os.Stat(filepath.Join(resolved, "redirect.json")); err == nil {
 		r, rerr := s.readRedirect(resolved)
 		if rerr != nil {
@@ -224,12 +172,7 @@ func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) 
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	// 守卫判定（PIPE-6）：目标目录存在 guard.json 即受限。只看文件系统
-	// （与 redirect 同一口径：不查库、不读路由表）。
-	//
-	// 元数据存在但解析失败 → 返回 error（与 readRedirect 一致）：那是一个需要
-	// 人看的异常状态。访问面不依赖这里的结论 —— 它在中间件里独立判定，
-	// 且解析失败时 fail closed（当受限处理），不会因为 Inspect 报错而放行内容。
+
 	g, gerr := ReadGuardMeta(resolved)
 	if gerr != nil {
 		return nil, gerr
@@ -237,7 +180,6 @@ func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) 
 	return &PublicationState{Kind: PublicationPage, Locator: loc, Guard: g}, nil
 }
 
-// readRedirect 读取目标目录中的 redirect.json。
 func (s *LocalPublicationStore) readRedirect(dir string) (*RedirectArtifact, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "redirect.json"))
 	if err != nil {
@@ -250,29 +192,21 @@ func (s *LocalPublicationStore) readRedirect(dir string) (*RedirectArtifact, err
 	return &RedirectArtifact{Hash: SHA256(data), Directive: *d, Entry: data}, nil
 }
 
-// ActiveLinkIssue 一条异常的激活链接。
 type ActiveLinkIssue struct {
-	// URLPath 站点路径（/about、/）：由 active 目录相对路径反推。
 	URLPath string `json:"urlPath"`
-	// Link 符号链接的绝对路径。
+
 	Link string `json:"link"`
-	// Reason 异常原因（目标不可达 / 非符号链接 / 遍历失败）。
+
 	Reason string `json:"reason"`
 }
 
-// AuditActiveLinks 遍历激活目录，返回所有异常链接与受检总数。
-//
-// 为什么需要它：/site 直接服务 active 目录的文件系统状态，产物文件被误删或磁盘
-// 损坏后 DB 侧毫无察觉 —— page_artifacts 行还在、payload_state 仍是 available、
-// pages.active_artifact_id 仍指着它，表现是「线上 404 但后台一切正常」。
-// 本方法是唯一能发现这种静默失联的手段（只读，不修改任何状态）。
 func (s *LocalPublicationStore) AuditActiveLinks() (issues []ActiveLinkIssue, checked int, err error) {
 	if s.ActiveRoot == "" {
 		return nil, 0, fmt.Errorf("激活目录未配置")
 	}
 	if _, serr := os.Stat(s.ActiveRoot); serr != nil {
 		if os.IsNotExist(serr) {
-			return nil, 0, nil // 从未发布过：空目录等价于零 issue
+			return nil, 0, nil
 		}
 		return nil, 0, serr
 	}
@@ -284,13 +218,11 @@ func (s *LocalPublicationStore) AuditActiveLinks() (issues []ActiveLinkIssue, ch
 		if d.IsDir() {
 			return nil
 		}
-		// 站点级真实文件（sitemap.xml / robots.txt / feed.xml / 404.html）不是异常：
-		// 它们由发布链写在激活目录根，没有对应的站点路径可挂，只能以真实文件落地
-		// （白名单与理由见 notfound.go）。只认根层，深层同名条目照旧受检。
+
 		if rel, rerr := filepath.Rel(s.ActiveRoot, path); rerr == nil && IsSiteRootFile(rel) {
 			return nil
 		}
-		// 其余一切映射都应是指向 artifacts/ 的符号链接。
+
 		if d.Type()&os.ModeSymlink == 0 {
 			issues = append(issues, ActiveLinkIssue{
 				URLPath: activeRelToURL(s.ActiveRoot, path),
@@ -315,7 +247,6 @@ func (s *LocalPublicationStore) AuditActiveLinks() (issues []ActiveLinkIssue, ch
 	return issues, checked, nil
 }
 
-// activeRelToURL active 目录相对路径 → 站点 URL（index → /）。
 func activeRelToURL(root, path string) string {
 	rel, rerr := filepath.Rel(root, path)
 	if rerr != nil {
@@ -328,7 +259,6 @@ func activeRelToURL(root, path string) string {
 	return "/" + rel
 }
 
-// relActivePath URL path → active 目录相对路径；根路径映射为 index（静态站点入口约定）。
 func relActivePath(p string) string {
 	rel := strings.TrimPrefix(p, "/")
 	if rel == "" {

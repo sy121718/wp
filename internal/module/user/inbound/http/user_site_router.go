@@ -9,7 +9,6 @@ import (
 	"go_wp/pkg/response"
 )
 
-// setupSiteUserRoutes 直接挂载访客 API，独立于后台 Session/CSRF/Casbin。
 func setupSiteUserRoutes(router *gin.Engine, h *Handle) {
 	api := permission.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()))
 	api.GET("/session", permission.Exempt, h.SiteSession)
@@ -49,7 +48,6 @@ func siteUserID(c *gin.Context) uint64 {
 	return 0
 }
 
-// saveSiteLogin 令牌只写访客cookie；CSRF轮换成功后才完成登录响应。
 func (h *Handle) saveSiteLogin(c *gin.Context, token string, remember bool) error {
 	if err := writeUserToken(c, token, remember); err != nil {
 		_ = h.svc.Logout(c.Request.Context(), token)
@@ -65,7 +63,6 @@ func (h *Handle) saveSiteLogin(c *gin.Context, token string, remember bool) erro
 	return nil
 }
 
-// changeSitePasswordSession 在服务完成改密和会话撤销后清除当前访客cookie。
 func (h *Handle) changeSitePasswordSession(c *gin.Context, req *userdto.ChangePasswordReq) error {
 	if err := h.svc.ChangePassword(c.Request.Context(), req); err != nil {
 		return err

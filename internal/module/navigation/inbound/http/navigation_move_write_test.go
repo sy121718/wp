@@ -1,15 +1,3 @@
-// navigation_move_write_test.go — move 档（同级上移 / 下移）的形状、状态映射与模板契约。
-//
-// 本卡（task-91）把页面的 POST /admin/navigations/move 并进 POST /api/navigation/update 的
-// action="move"：权限锚点仍是 navigation:update，作用域与并发语义仍全在 service.SwapMove。
-// 这里钉四件事：
-//   - 形状严格：白名单外的键（含页面旧表单发过的 kind）、null / 非字符串、缺键、未知 action、
-//     以及「没有 action 却带 move 专属键」的混形 → 一律 400 且不落 service；
-//   - 成功档：恰好一次 service 调用，请求字段逐字（projectId 只是 locator，move 不做客户端版本承诺）；
-//   - 错误档：ErrNotFound→404、ErrStaleVersion→409、ErrInvalidParam / ErrSortTied→400、未归口→500
-//     且原始错误不进响应体（服务器细节只进日志）；
-//   - 模板契约：行内 up / down 表单的**具名字段集合 == 服务端白名单**（多一个字段就会被严格白名单
-//     整条拒掉），并且页面里不再存在 /admin/navigations/move。
 package navigationhttp
 
 import (
@@ -33,11 +21,6 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// moveWriteNavigationStub 只实现 move 档需要的那一个 service 方法（其余方法由内嵌接口兜住）。
-//
-// Update 也实现：**旧分支**必须能被观测到。否则「缺 action 却带 move 键」这类混形若漏过守卫，
-// 请求会落到内嵌的 nil 接口上 panic —— panic 虽然也算红，但它只会告诉后来者「测试炸了」，
-// 而记下调用次数能让断言直接说出「这条形态不该走到 service.Update」。
 type moveWriteNavigationStub struct {
 	navigationcontract.NavigationService
 	calls       []*navigationdto.SwapMoveReq
@@ -62,9 +45,6 @@ func (s *moveWriteNavigationStub) SwapMove(_ context.Context, req *navigationdto
 	return &navigationdto.SwapMoveResp{Moved: true}, nil
 }
 
-// initMoveWriteLogger 初始化进程级 logger：未归口的内部错误那一档**会记日志**
-// （细节只进日志、不进响应），日志路径要按生产形态走一遍，否则那一档会打印
-// 「logger 未初始化」的噪声警告。
 func initMoveWriteLogger(t *testing.T) {
 	t.Helper()
 	conf := viper.New()
@@ -74,7 +54,6 @@ func initMoveWriteLogger(t *testing.T) {
 	}
 }
 
-// newMoveWriteRouter 只挂 Update（move 与普通更新同一个入口，正是本卡要证的事）。
 func newMoveWriteRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -82,7 +61,6 @@ func newMoveWriteRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	return router
 }
 
-// postMoveWrite 发一条 JSON 请求；lang 非空时带 Accept-Language。
 func postMoveWrite(t *testing.T, engine *gin.Engine, lang, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
@@ -95,7 +73,6 @@ func postMoveWrite(t *testing.T, engine *gin.Engine, lang, body string) *httptes
 	return rec
 }
 
-// navigationMoveResponse 解析回执信封。
 func navigationMoveResponse(t *testing.T, rec *httptest.ResponseRecorder) (int, string, json.RawMessage) {
 	t.Helper()
 	var resp struct {
@@ -109,7 +86,6 @@ func navigationMoveResponse(t *testing.T, rec *httptest.ResponseRecorder) (int, 
 	return resp.Code, resp.Message, resp.Data
 }
 
-// moveBody 组一条 move 请求体（字段拼装显式写出，避免用例里散落格式化字符串）。
 func moveBody(fields map[string]string) string {
 	keys := make([]string, 0, len(fields))
 	for k := range fields {
@@ -123,11 +99,6 @@ func moveBody(fields map[string]string) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// TestNavigationUpdateMoveShapeIsStrict 形状错一律 400，且**不落 service**。
-//
-// 每一条都对应一种「猜分支就会挪错位置」的形态。特别保留 kind：页面旧表单曾把筛选上下文
-// （kind）一起发给服务端，白名单外的键必须整条拒掉，否则服务端就会开始接受「调用方以为
-// 限定过的上下文」。
 func TestNavigationUpdateMoveShapeIsStrict(t *testing.T) {
 	cases := []struct {
 		name string
@@ -173,7 +144,6 @@ func TestNavigationUpdateMoveShapeIsStrict(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateMoveCallsSwapMoveOnce 成功档：一次调用、字段逐字、回执带 moved。
 func TestNavigationUpdateMoveCallsSwapMoveOnce(t *testing.T) {
 	stub := &moveWriteNavigationStub{resp: &navigationdto.SwapMoveResp{Moved: true}}
 	rec := postMoveWrite(t, newMoveWriteRouter(stub), "", moveBody(map[string]string{
@@ -193,7 +163,6 @@ func TestNavigationUpdateMoveCallsSwapMoveOnce(t *testing.T) {
 		t.Fatalf("回执 data 应带 moved:true，实际 %s", data)
 	}
 
-	// projectId 可缺省（= 不校验工程归属）；枚举值 up / down 的判据在 service，不在这里。
 	stub.calls = nil
 	rec = postMoveWrite(t, newMoveWriteRouter(stub), "", moveBody(map[string]string{"action": "move", "id": "nav-9", "dir": "up"}))
 	if rec.Code != http.StatusOK || len(stub.calls) != 1 || stub.calls[0].ProjectID != "" {
@@ -201,7 +170,6 @@ func TestNavigationUpdateMoveCallsSwapMoveOnce(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateMoveErrorStatus 业务错误 → HTTP 状态（tied 是业务拒绝，不是 500）。
 func TestNavigationUpdateMoveErrorStatus(t *testing.T) {
 	initMoveWriteLogger(t)
 	cases := []struct {
@@ -231,10 +199,6 @@ func TestNavigationUpdateMoveErrorStatus(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateMoveMessageFollowsRequestLanguage move 的错误文案走同一条取词链。
-//
-// 词条是合成值：「响应里出现这句」等价于「白名单 key 真的到了取词层」。同一请求换
-// Accept-Language 得到不同成品句 —— 语言由请求决定，不钉死在服务层。
 func TestNavigationUpdateMoveMessageFollowsRequestLanguage(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
 		navigationenums.ErrSortTied: {"zh-CN": "词条-同级排序并列", "en-US": "entry-sort-tied"},
@@ -254,17 +218,10 @@ func TestNavigationUpdateMoveMessageFollowsRequestLanguage(t *testing.T) {
 	}
 }
 
-// moveTemplateFormRe 匹配声明了本端点的表单块（模板里只有行内 up / down 两处）。
 var moveTemplateFormRe = regexp.MustCompile(`(?s)<form[^>]*data-write-url="/api/navigation/update".*?</form>`)
 
-// moveTemplateNameRe 取表单块里的具名字段。
 var moveTemplateNameRe = regexp.MustCompile(`name="([^"]+)"`)
 
-// TestNavigationUpdateMoveTemplateContract 源码级契约：页面侧路由 / handler 退役，
-// 模板 declaration 与具名字段集合必须与**服务端白名单逐字一致**。
-//
-// 这条是防「模板字段漂移 → 400」的钉子：基座 create 档会把这个表单里所有具名字段一起发出去，
-// 模板多写一个 name（历史上就有 kind）就会让整条请求被严格白名单拒掉，而且只在浏览器里才看得见。
 func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 	readFile := func(path string) string {
 		t.Helper()
@@ -291,7 +248,7 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,
 		`data-write-status`,
-		// 放行标记挂外层 span：基座放行时会摘 disabled，边界语义必须留在按钮上。
+
 		`<span data-requires-js hidden><button type="submit" form="nav-up-`,
 		`<span data-requires-js hidden><button type="submit" form="nav-down-`,
 	} {
@@ -309,10 +266,6 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 		}
 	}
 
-	// no-JS 缺口登记（task-91）：排序现在也要 JS，但页面级 noscript 复用的是既有词条
-	// admin.navigations.write.noJs，而那一条的文案只点名「新建与删除」。改词条要动
-	// public/migrations（不在本卡 scope），所以这里钉住现状 + 在模板注释里登记缺口：
-	// 谁改了 key 或改了词条口径，这条会红，提醒把登记一起更新。
 	if !strings.Contains(tpl, `admin.navigations.write.noJs`) {
 		t.Fatalf("页面级 noscript 应复用既有词条 admin.navigations.write.noJs（缺口已在模板注释登记）")
 	}

@@ -10,15 +10,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 )
 
-// 审计 PERF-008：集合源此前先取 100 行**整行**（contents.data 含正文全文）再在 Go 里
-// 过滤。改造后是「列投影 + 筛选下推」。本文件固化两件事：集合项里不再出现正文，
-// 以及筛选结果与改造前一致（下推不是换了语义）。
-
-// TestCollectionFieldWhitelistExcludesBody 集合白名单是数据源白名单的子集。
-//
-// 两个白名单必须同时存在且各自正确：详情页要渲染正文（单实体绑定用 FieldWhitelist），
-// 集合卡片不要正文（用 CollectionFieldWhitelist）。合成一个就会有一边出错 ——
-// 要么集合把正文读回来，要么详情页渲染不出正文。
 func TestCollectionFieldWhitelistExcludesBody(t *testing.T) {
 	full := contentcontract.FieldWhitelist("article")
 	coll := contentcontract.CollectionFieldWhitelist("article")
@@ -43,14 +34,12 @@ func TestCollectionFieldWhitelistExcludesBody(t *testing.T) {
 		t.Fatalf("集合白名单应恰为数据源白名单减去两个字段: full=%d coll=%d", len(full), len(coll))
 	}
 
-	// 白名单是拷贝：改返回值不能影响仓库里的定义。
 	coll[0] = "__mutated__"
 	if contentcontract.CollectionFieldWhitelist("article")[0] == "__mutated__" {
 		t.Fatal("集合白名单返回了内部切片，调用方可篡改定义")
 	}
 }
 
-// TestResolveCollectionOmitsBody 集合项里不出现正文与主关键词。
 func TestResolveCollectionOmitsBody(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {
@@ -85,9 +74,7 @@ func TestResolveCollectionOmitsBody(t *testing.T) {
 			t.Fatalf("集合项不应包含 %s: %+v", banned, item)
 		}
 	}
-	// featuredImage 期望的是**归一后的完整链接**：集合投影不经过 toResp，读出口的
-	// 媒体归一必须在这条路径上也发生一次，否则集合卡渲染出 /storage/... 相对地址，
-	// 而同一条数据的详情页是完整链接（同源数据两种形态）。
+
 	for k, want := range map[string]any{
 		"id": created.ID, "slug": "collection-projection",
 		"title": "投影测试", "excerpt": "摘要",
@@ -99,10 +86,6 @@ func TestResolveCollectionOmitsBody(t *testing.T) {
 	}
 }
 
-// TestResolveCollectionFilterPushdownMatchesMemorySemantics 下推后的筛选结果与语义一致。
-//
-// 用例刻意让「同 title 两篇」同时存在：只靠 title 过滤时两篇都要回来，
-// 加上 excerpt 维度才收敛到一篇 —— 条件之间是 AND。
 func TestResolveCollectionFilterPushdownMatchesMemorySemantics(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {
@@ -138,7 +121,6 @@ func TestResolveCollectionFilterPushdownMatchesMemorySemantics(t *testing.T) {
 		t.Fatalf("多条件应 AND 收敛到 pushdown-b: %+v", both)
 	}
 
-	// 未命中任何条目时返回空列表而不是报错（组件渲染空集合是正常场景）。
 	none, err := svc.ResolveCollection(ctx, "content:article", map[string]string{"title": "不存在"})
 	if err != nil {
 		t.Fatalf("空结果不应报错: %v", err)
@@ -148,7 +130,6 @@ func TestResolveCollectionFilterPushdownMatchesMemorySemantics(t *testing.T) {
 	}
 }
 
-// contains 字符串切片包含判断（用例内的最小助手，避免引额外依赖）。
 func contains(list []string, want string) bool {
 	for _, v := range list {
 		if v == want {

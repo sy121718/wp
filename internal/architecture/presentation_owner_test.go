@@ -1,12 +1,5 @@
 package architecture
 
-// presentation_owner_test.go — 展示归属的四道全仓门禁（PLAN 阶段 2）。
-//
-// 判据只有一句：**V 之外不出现「给用户看的字符串」与「字符串的形状」**。
-// 落到四个可判定的位置：dto 不带展示字段、模块不取词、整页模板自己取词、pkg 不长出页面助手。
-//
-// 四条都按双向台账判（assertBudget）：未登记的违规失败，登记了却不再命中同样失败 —— 存量只减不增。
-
 import (
 	"go/ast"
 	"go/parser"
@@ -18,14 +11,12 @@ import (
 	"testing"
 )
 
-// dtoPresentationFields 展示语义的字段名（形状或成品的字符串）。
 var dtoPresentationFields = map[string]struct{}{
 	"Tone": {}, "Class": {}, "StatusClass": {}, "StatusLabel": {},
 	"TypeLabel": {}, "KindLabel": {}, "LabelKey": {}, "LabelFallback": {},
 	"TextKey": {}, "LabelText": {}, "DisplayText": {}, "DisplayName": {},
 }
 
-// pendingDTOPresentation 存量：dto 文件 → 命中的字段/方法数。
 var pendingDTOPresentation = map[string]int{
 	"internal/module/ai/dto/ai_req.go":                1,
 	"internal/module/ai/dto/ai_resp.go":               2,
@@ -35,13 +26,9 @@ var pendingDTOPresentation = map[string]int{
 	"internal/module/order/dto/order_resp.go":         1,
 	"internal/module/order/dto/order_return_resp.go":  1,
 	"internal/module/user/dto/customer_admin_resp.go": 3,
-	// 会话事件行的 Tone 是**模板契约键名**（ai_session_detail.html 读 `.Tone` 拼徽标类），
-	// 值是语义档（"error"/"ok"）而不是成品类名 —— 但字段名落在禁名单上。
-	// 按存量登记：改名要同步改模板，而模板错是渲染期 500。
+
 	"internal/module/ai/dto/ai_page_resp.go": 2,
-	// PresetOption.DisplayName 是**模板契约键名**（provider_create.html 读 `.DisplayName`
-	// 填预设下拉），交的是 service 给的原始名而不是成品句 —— 但字段名落在禁名单上。
-	// 同 ai_page_resp.go 那条：改名要同步改模板，模板错是渲染期 500。
+
 	"internal/module/ai/dto/ai_session_page_resp.go": 1,
 	"internal/module/user/dto/user_resp.go":          1,
 }
@@ -84,12 +71,10 @@ func presentationFieldsIn(t *testing.T, path string) int {
 	return count
 }
 
-// moduleTextFuncs 模块内的取词调用：文案由响应出口按声明处取，页面由模板取，模块里两处都不该出现。
 var moduleTextFuncs = map[string]struct{}{
 	"Translate": {}, "TranslateFunc": {}, "FillTranslate": {}, "TranslateArgs": {},
 }
 
-// pendingModuleText 存量：模块相对路径 → 取词调用数。
 var pendingModuleText = map[string]int{
 	"internal/module/analytics/inbound/http/analytics_page.go":               2,
 	"internal/module/block/inbound/http/block_err.go":                        1,
@@ -117,7 +102,7 @@ var pendingModuleText = map[string]int{
 	"internal/module/user/inbound/http/customer_bulk_write.go":               3,
 	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
 	"internal/module/workbench/inbound/http/workbench_err.go":                3,
-	// 页面逻辑拆成 5 个文件后，两处取词跟着调用点走（都在预览编译的出口）。
+
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go": 1,
 }
@@ -162,15 +147,10 @@ func moduleTranslationsIn(t *testing.T, path string) int {
 	return count
 }
 
-// templateTranslateCall 模板取词（t / tf / tn 三种注入形态，以及 tr 别名）。
 var templateTranslateCall = regexp.MustCompile(`\["tf?"\]\(|\["tn"\]\(|\btr\(`)
 
-// templateNotWholePage 片段：数据由调用点给，文案由调用点取好 —— 不适用「页面自己取词」。
 var templateNotWholePage = regexp.MustCompile(`(^|/)(partials|fragments)/|_(form|drawer|options|fields|text|rows|panel|notice|hits|card|values|group)\.html$`)
 
-// pendingTemplateOwnText 存量：整页模板 → 取词调用数（记账的是 0 次的那几个）。
-//
-// ai/ui_blocks.html 是块编辑器的画布骨架：块名与占位文案都来自 JSON 数据，模板本身不取词。
 var pendingTemplateOwnText = map[string]int{
 	"internal/templates/admin/ai/ui_blocks.html": 0,
 }
@@ -188,7 +168,6 @@ func TestWholePageTemplatesOwnTheirText(t *testing.T) {
 	assertBudget(t, hits, pendingTemplateOwnText, "整页模板自己取词")
 }
 
-// allowedPkgDirs pkg/ 下允许存在的包：横切能力，不是页面助手。
 var allowedPkgDirs = map[string]struct{}{
 	"actor": {}, "auth": {}, "backpath": {}, "binding": {}, "bulkids": {}, "cache": {},
 	"captcha": {}, "casbin": {}, "crypto": {}, "database": {}, "datarule": {},
@@ -198,7 +177,6 @@ var allowedPkgDirs = map[string]struct{}{
 	"sitetz": {}, "ssrf": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {}, "view": {},
 }
 
-// pendingPkgDirs 存量：pkg 下的目录名 → 1。
 var pendingPkgDirs = map[string]int{}
 
 func TestPkgHasNoPageHelperPackages(t *testing.T) {

@@ -1,15 +1,5 @@
 package producthttp
 
-// product_pagination_facts_test.go — P3 B2 的 handler 级判据（task-109）。
-//
-// 模板级差分（internal/templates）证明「同一份 partial 用两种数据形态渲染出同样的字节」，
-// 这里补的是另一半：**handler 真的改成了事实键，且页面上出现的是可以独立复算的链接**。
-//
-// 期望值一律在测试里用 url.Values 独立拼（不复制产品代码的拼串逻辑）：链接里少一个筛选参数
-// 或少了 limit，页面上看不出来（照样能翻页），只有独立复算能发现。
-//
-// 页面成功由模板生成分页；任何读取失败由统一出口返回 JSON。
-
 import (
 	"context"
 	"errors"
@@ -28,19 +18,10 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// paginationElement 拼出页面里应当出现的**整段元素**（分页链接的字节）。
-//
-// 为什么断言整段元素而不是 `href="…"`：只盯属性值会漏掉「元素类名/内层文字变了」这类消融
-// （例如把 `<a class="pagination-btn">` 换成别的类、或把页码写死成 1），而那些同样是用户看得见的
-// 变化。整段元素的字节相等把「链接地址 + 类名 + 页码文字」一次钉住。
 func paginationElement(base string, page, limit int) string {
 	return `<a class="pagination-btn" href="` + paginationHref(base, page, limit) + `">` + strconv.Itoa(page) + `</a>`
 }
 
-// paginationHref 把「基地址 + page/limit」拼成页面里应当出现的属性字节。
-//
-// 页面里的 href 是 Jet 转义过的（`&` → `&amp;`，与旧 {{l.URL}} 插值同形），因此期望值也走
-// 同一条转义 —— 断言的是**实际字节**，不是浏览器解析后的值。
 func paginationHref(base string, page, limit int) string {
 	sep := "?"
 	if strings.Contains(base, "?") {
@@ -50,7 +31,6 @@ func paginationHref(base string, page, limit int) string {
 	return strings.ReplaceAll(raw, "&", "&amp;")
 }
 
-// 隐藏的标签命中面板拥有自己的分页；本断言只关注初始可见的主列表。
 func hasVisiblePagination(t *testing.T, body string) bool {
 	t.Helper()
 	doc, err := html.Parse(strings.NewReader(body))
@@ -115,7 +95,6 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 	}
 }
 
-// TestProductsPagePaginationFactsRenderLinks 商品列表页：三个筛选参数与 limit 都在链接里。
 func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 	h := &ProductPageHandle{products: &productPageReaderStub{result: &productdto.ProductListResp{Items: []*productdto.ProductResp{}, Total: 25, Page: 1, Size: 20}}}
 	rec := productPageRequest(t, h, "/admin/products?project=p1&keyword=abc&status=draft")
@@ -131,7 +110,6 @@ func TestProductsPageFailureAfterTotalIsJSON(t *testing.T) {
 	assertProductJSONFailure(t, "列表读取失败", productPageRequest(t, h, "/admin/products?project=p1"), 500, "内部错误")
 }
 
-// tagHitsStub 验证分页事实不被 HTTP 层加工成 HTML。
 type tagHitsStub struct {
 	productcontract.ProductService
 	resp *productdto.TagProductsListResp

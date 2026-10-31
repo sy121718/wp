@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// TestRichTextHTMLPlainText 存量纯文本兼容：无标签输入一律 HTML 转义 + 段落包装，
-// 绝不能当 HTML 原样输出（"1 < 2 & 更多" 会被浏览器解析成标签）。
 func TestRichTextHTMLPlainText(t *testing.T) {
 	cases := []struct {
 		name string
@@ -31,7 +29,6 @@ func TestRichTextHTMLPlainText(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLRichText 富文本输入走白名单清洗：合法结构保留、脚本剥壳、标题级别原样。
 func TestRichTextHTMLRichText(t *testing.T) {
 	cases := []struct {
 		name string
@@ -53,15 +50,6 @@ func TestRichTextHTMLRichText(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLBlockExtensions 富文本扩展（rich-editor）产出的块级标签必须过白名单：
-// 表格 / 折叠块 / 水平线 / h1~h5 保留，可执行标签与 on* 事件属性照旧剥掉。
-//
-// 这个用例对应验收里的两条：「合法标签保留」与「脚本被剥掉」——
-//
-//	· 保留 —— 编辑器点一次表格或折叠块，产出的标签必须能存下来（否则用户在编辑器里
-//	  做的事保存后消失，而且不会报任何错）；
-//	· 剥离 —— 白名单之外的标签（script/style/iframe）一律剥壳保留文本，文本节点重新转义，
-//	  属性白名单里没有任何 on* 事件属性。
 func TestRichTextHTMLBlockExtensions(t *testing.T) {
 	cases := []struct {
 		name string
@@ -101,7 +89,6 @@ func TestRichTextHTMLBlockExtensions(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLLengthLimit 超长输入（富文本与纯文本同口径）判空，防产物膨胀。
 func TestRichTextHTMLLengthLimit(t *testing.T) {
 	long := strings.Repeat("x", MaxRichLen+1)
 	if got := RichTextHTML(long); got != "" {
@@ -112,8 +99,6 @@ func TestRichTextHTMLLengthLimit(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLIdempotent 幂等：段落化/清洗结果再次处理必须稳定
-// （否则编辑器回填老数据会产生二次转义漂移）。
 func TestRichTextHTMLIdempotent(t *testing.T) {
 	srcs := []string{
 		"第一段\n\n第二段\n换行",
@@ -129,7 +114,6 @@ func TestRichTextHTMLIdempotent(t *testing.T) {
 	}
 }
 
-// TestHasRichMarkup 标签探测：只有真标签才算富文本。
 func TestHasRichMarkup(t *testing.T) {
 	cases := []struct {
 		src  string
@@ -149,10 +133,6 @@ func TestHasRichMarkup(t *testing.T) {
 	}
 }
 
-// TestRichTextHTMLDetailsFold 折叠块（details / summary）走统一入口 RichTextHTML 的完整链路：
-// 结构完整（summary 与正文在同一块里）、脚本剥壳、事件属性剥离、幂等；
-// 纯文本提取（StripRichTags）也必须同时拿到标题与正文 —— 少一样，meta 描述与 JSON-LD
-// 就会把「折叠块的标题」与「折叠块的正文」粘成一串，或者丢掉其中一半。
 func TestRichTextHTMLDetailsFold(t *testing.T) {
 	src := `<details open onclick="alert(1)"><summary onmouseover="x()">折叠标题</summary><p>折叠正文 <strong>加粗</strong></p><script>alert(1)</script></details>`
 	want := `<details><summary>折叠标题</summary><p>折叠正文 <strong>加粗</strong></p>alert(1)</details>`

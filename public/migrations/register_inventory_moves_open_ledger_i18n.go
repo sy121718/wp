@@ -1,11 +1,5 @@
 package migrations
 
-// register_inventory_moves_open_ledger_i18n.go — 650 的注册项。
-//
-// 判据判的是「三条词条的值都是本批写的那一句」而不是「行存在」：
-// 650 有两条是**改值**，只判行存在的话，值没被改回来的老库会被判成已完成 ——
-// 那是这条种子唯一会出错的方向。
-
 import "sync"
 
 func init() { registerInventoryMovesOpenLedgerI18n() }

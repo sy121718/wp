@@ -1,10 +1,5 @@
 package productlist
 
-// pagination_test.go — 集合源分页下推（审计 PERF-019）。
-//
-// 覆盖两件事：**第 2 页起**按页取数（offset 下推到集合源），**第 1 页保持原路径**
-// （构建期只走这一支，换取法会改发布产物字节）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -14,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// fakePager 支持按页取数的集合源，记录最近一次分页参数。
 type fakePager struct {
 	fakeCollection
 	GotOffset int
@@ -36,11 +30,6 @@ func (f *fakePager) ResolveCollectionPage(_ context.Context, _ string, q core.Co
 	return core.CollectionPage{Items: items, Total: f.Total}, nil
 }
 
-// TestBuildViewPushesPaginationToSQL 第 2 页起把 offset 交给集合源。
-//
-// 这条断言的就是审计 PERF-019 要修的行为：此前翻页只能在「一次取回的集合源上限条」里
-// 切内存，超出上限的数据永远翻不到（翻到第 N 页拿到的仍是前 100 条里那一段，再往后是空页，
-// 而分页控件还在）。
 func TestBuildViewPushesPaginationToSQL(t *testing.T) {
 	pager := &fakePager{Total: 50}
 	var p Props
@@ -65,10 +54,6 @@ func TestBuildViewPushesPaginationToSQL(t *testing.T) {
 	}
 }
 
-// TestBuildViewFirstPageKeepsBatchPath 第 1 页必须保持原路径。
-//
-// 构建期只走这一支（发布产物恒定 page=1）。首屏两种取法在**结果**上等价，
-// 但字节等价只有原路径能保证 —— 这条用例把它钉住，避免以后有人「顺手统一」。
 func TestBuildViewFirstPageKeepsBatchPath(t *testing.T) {
 	pager := &fakePager{Total: 50}
 	var p Props
@@ -83,9 +68,6 @@ func TestBuildViewFirstPageKeepsBatchPath(t *testing.T) {
 	}
 }
 
-// TestBuildViewDegradesWithoutPager 集合源没有分页能力时退回整批取回，不报错。
-//
-// 能力缺失只该让翻页退化成它本来的样子，不该让整块列表渲染不出来。
 func TestBuildViewDegradesWithoutPager(t *testing.T) {
 	coll := &fakeCollection{items: []map[string]any{{"id": "a", "title": "A"}}}
 	var p Props

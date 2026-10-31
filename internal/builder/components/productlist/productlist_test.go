@@ -1,14 +1,5 @@
 package productlist
 
-// productlist_test.go — 商品列表组件单元测试（issue #23）。
-//
-// 覆盖四类断言：
-//
-//	1. 配置期校验（字段槽位 / 集合源 / 布局 / 排序 / 取几条）；
-//	2. 字段绑定自报（item.* 与 product.* 都翻译成 product.*）；
-//	3. 取数链路（筛选维度按 props 下推、排序在截断之前发生、限额生效）；
-//	4. 空集合渲染空态；布局列声明符合多端规则。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -18,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// fakeCollection 固定集合项的解析器；记录最后一次调用的集合源与筛选维度。
 type fakeCollection struct {
 	items  []map[string]any
 	Source string
@@ -30,7 +20,6 @@ func (f *fakeCollection) ResolveCollection(_ context.Context, source string, fil
 	return f.items, nil
 }
 
-// propsOf 把 props 键值编码为节点 props JSON。
 func propsOf(t *testing.T, kv map[string]any) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(kv)
@@ -54,7 +43,6 @@ func nodeOf(t *testing.T, kv map[string]any) *core.Node {
 	return &core.Node{ID: "list1", Type: Type, Props: propsOf(t, kv)}
 }
 
-// itemOf 一条典型的商品集合项（字段形状与真实集合项一致：images 是数组、tags 是 JSON 文本）。
 func itemOf(slug, name, createdAt string) map[string]any {
 	return map[string]any{
 		"name":         name,
@@ -68,7 +56,6 @@ func itemOf(slug, name, createdAt string) map[string]any {
 	}
 }
 
-// cardFields 卡片字段槽位（测试里的最小组合）。
 func cardFields() map[string]any {
 	return map[string]any{
 		"imageField":        "item.images",
@@ -82,10 +69,6 @@ func cardFields() map[string]any {
 	}
 }
 
-// withFields 合并卡片字段与额外 props。
-//
-// 默认带上集合源：空源是「未选择数据源」的独立语义（渲染空态、不查库），
-// 需要它的用例自己把 collectionSource 覆盖成空串。
 func withFields(extra map[string]any) map[string]any {
 	out := cardFields()
 	out["collectionSource"] = collectionSourceProduct
@@ -95,7 +78,6 @@ func withFields(extra map[string]any) map[string]any {
 	return out
 }
 
-// TestValidateRejectsBadInput 配置期校验：空槽位 / 非法前缀 / 非法集合源与布局排序。
 func TestValidateRejectsBadInput(t *testing.T) {
 	cases := []struct {
 		name string
@@ -121,14 +103,12 @@ func TestValidateRejectsBadInput(t *testing.T) {
 		})
 	}
 
-	// 合法配置（含驼峰字段名）应当通过。
 	good := decodePropsOf(t, withFields(map[string]any{"priceField": "item.priceRange"}))
 	if err := validateExtra(&good, "n1"); err != nil {
 		t.Fatalf("合法配置不该被拒: %v", err)
 	}
 }
 
-// TestFieldBindingsTranslatePrefix 绑定自报：两种前缀都翻译成 product.<字段>。
 func TestFieldBindingsTranslatePrefix(t *testing.T) {
 	comp := &Component{}
 	node := nodeOf(t, map[string]any{
@@ -151,8 +131,6 @@ func TestFieldBindingsTranslatePrefix(t *testing.T) {
 	}
 }
 
-// TestBuildViewPushesFilterAndMapsCards 取数链路：
-// 筛选维度按 props 下推、卡片字段映射、限额截断。
 func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	coll := &fakeCollection{items: []map[string]any{
 		itemOf("shirt", "夏季衬衫", "2026-01-02T03:04:05Z"),
@@ -167,7 +145,7 @@ func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
 	}
-	// 筛选下推：维度键与集合源契约一致（#21）。
+
 	if coll.Source != collectionSourceProduct {
 		t.Fatalf("集合源应下推 %s，实际 %q", collectionSourceProduct, coll.Source)
 	}
@@ -177,7 +155,7 @@ func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	if _, ok := coll.Filter[filterKeyTagID]; ok {
 		t.Fatalf("未声明的维度不该下推: %+v", coll.Filter)
 	}
-	// 限额在排序之后生效。
+
 	if len(view.Cards) != 1 {
 		t.Fatalf("取几条=1 应只留一张卡，实际 %d", len(view.Cards))
 	}
@@ -188,11 +166,7 @@ func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	if !card.HasTitle || card.Title != "夏季衬衫" || card.TitleTag != defaultTitleTag {
 		t.Fatalf("标题映射不符: %+v", card)
 	}
-	// 价格按源站形态格式化（符号与金额之间一个空格、金额两位小数）。
-	//
-	// **区间价不格式化**（`¥99 ~ 199` 原样保留）：它是「99 ~ 199」整串，
-	// 不是单个数字，解析失败时 FormatPrice 原样返回 —— 硬凑成 "¥ 99.00 ~ 199.00"
-	// 需要先拆区间再分别格式化，那属于另一个需求，不该顺手改掉作者的表达。
+
 	if card.Price != "¥99 ~ 199" || card.ComparePrice != "¥ 259.00" || !card.HasComparePrice {
 		t.Fatalf("价格映射不符: %+v", card)
 	}
@@ -204,8 +178,6 @@ func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	}
 }
 
-// TestBuildViewSortsBeforeLimit 排序必须在截断之前：
-// 反过来「取最新 1 条」会先按默认序截断，拿到最早那条（典型的静默错序）。
 func TestBuildViewSortsBeforeLimit(t *testing.T) {
 	items := []map[string]any{
 		itemOf("old", "旧货", "2026-01-01T00:00:00Z"),
@@ -224,7 +196,6 @@ func TestBuildViewSortsBeforeLimit(t *testing.T) {
 		}
 	}
 
-	// 默认序不重排（集合源已给出确定性序）。
 	coll := &fakeCollection{items: append([]map[string]any(nil), items...)}
 	p := decodePropsOf(t, withFields(nil))
 	view, err := BuildView(nodeOf(t, nil), &p, &core.RenderContext{Collection: coll})
@@ -236,7 +207,6 @@ func TestBuildViewSortsBeforeLimit(t *testing.T) {
 	}
 }
 
-// TestBuildViewEmpty 空集合渲染空态（自定义文案生效）。
 func TestBuildViewEmpty(t *testing.T) {
 	coll := &fakeCollection{}
 	p := decodePropsOf(t, withFields(map[string]any{"emptyText": "该分类下还没有商品"}))
@@ -247,7 +217,7 @@ func TestBuildViewEmpty(t *testing.T) {
 	if !view.Empty || view.EmptyText != "该分类下还没有商品" || len(view.Cards) != 0 {
 		t.Fatalf("空集合应渲染自定义空态: %+v", view)
 	}
-	// 缺省文案。
+
 	p2 := decodePropsOf(t, withFields(nil))
 	view2, _ := BuildView(nodeOf(t, nil), &p2, &core.RenderContext{Collection: coll})
 	if view2.EmptyText != defaultEmptyText {
@@ -255,11 +225,9 @@ func TestBuildViewEmpty(t *testing.T) {
 	}
 }
 
-// TestBuildViewUnselectedSource 未选择数据源：渲染空态且**不碰集合解析器**
-// （工作台刚插入组件时就是这个状态：不查库、不编译失败）。
 func TestBuildViewUnselectedSource(t *testing.T) {
 	p := decodePropsOf(t, withFields(map[string]any{"collectionSource": ""}))
-	view, err := BuildView(nodeOf(t, nil), &p, &core.RenderContext{}) // 故意不给集合解析器
+	view, err := BuildView(nodeOf(t, nil), &p, &core.RenderContext{})
 	if err != nil {
 		t.Fatalf("未选数据源不该报错: %v", err)
 	}
@@ -268,8 +236,6 @@ func TestBuildViewUnselectedSource(t *testing.T) {
 	}
 }
 
-// TestBuildViewRequiresCollection 选了数据源却没有集合解析器（装配缺陷）时报错 ——
-// 区别于上一条：这里是真的要取数，静默渲染空列表会掩盖装配问题。
 func TestBuildViewRequiresCollection(t *testing.T) {
 	p := decodePropsOf(t, withFields(nil))
 	if _, err := BuildView(nodeOf(t, nil), &p, &core.RenderContext{}); err == nil {
@@ -277,7 +243,6 @@ func TestBuildViewRequiresCollection(t *testing.T) {
 	}
 }
 
-// TestColumnsDecl 列声明：自适应用 min(100%, …) 封顶，固定列用 minmax(0, 1fr)，列表恒单列。
 func TestColumnsDecl(t *testing.T) {
 	if got := columnsDecl(LayoutList, ColumnsAuto); got != "1fr" {
 		t.Fatalf("列表布局应单列，实际 %q", got)
@@ -291,9 +256,8 @@ func TestColumnsDecl(t *testing.T) {
 	}
 }
 
-// TestOptionFilterProps 属性筛选 props（issue #25）：成对下推、只填一半报错、形状校验。
 func TestOptionFilterProps(t *testing.T) {
-	// 成对配置：下推成 `option.<属性key>` 前缀维度。
+
 	p := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color", "filterOptionValue": "red"}))
 	if err := validateExtra(&p, "n1"); err != nil {
 		t.Fatalf("成对的属性筛选应通过校验: %v", err)
@@ -306,13 +270,11 @@ func TestOptionFilterProps(t *testing.T) {
 		t.Fatalf("属性维度应下推为 option.color，实际 %+v", coll.Filter)
 	}
 
-	// 只填一半 = 配置错误（比「筛出空列表」好排查）。
 	half := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color"}))
 	if err := validateExtra(&half, "n1"); err == nil {
 		t.Fatalf("只填属性 key 应被拒绝")
 	}
 
-	// 形状非法（带空格 / 中文）：属性 key 是标识不是展示文本。
 	bad := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color", "filterOptionValue": "红 色"}))
 	if err := validateExtra(&bad, "n1"); err == nil {
 		t.Fatalf("非法形状的属性值应被拒绝")

@@ -1,19 +1,5 @@
 package feature
 
-// navigation_error_leak_test.go — 导航 JSON 接口不直出内部错误（审计 CQ-009，迁移 269 的验收）。
-//
-// 此前 5 个接口都是 `response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())`，
-// 而 navigationErrorStatus 的 default 分支是 500 —— service 上抛的 PostgreSQL 原文会随 500
-// 原样直出（表名、唯一约束名、SQLSTATE）。现在统一走 navigation_error_handle.go 的归口助手，
-// 本文件是那条改造的回归门禁。
-//
-// 断言是**强**的：响应体里出现 SQLSTATE / uq_ / pg_ / uuid / 表名 / 约束名任一即失败。
-// 放宽成「只要出错就行」等于把这条回归重新交还给运气。
-//
-// navInternalKey 是归口词的 i18n key（navigation_error_handle.go 的 navigationInternalKey）：
-// 未归类失败一律 500 + 这句，数据库原文只进日志。这里按字面量写而不是 import
-// inbound/http 的常量 —— 它是内部符号，测试断言的是**对外协议**。
-
 import (
 	"bytes"
 	json "go_wp/pkg/jsonx"
@@ -28,19 +14,12 @@ import (
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 )
 
-// navInternalKey 归口失败的 i18n key（对外协议的一部分，与 navigation_error_handle.go 保持一致）。
 const navInternalKey = "navigation.err.internal"
 
-// internalLeakTokens 内部细节的指纹：出现任一即视为泄漏。
-//
-// 取的是「PG 原文与库结构里一定出现、而业务文案里一定不出现」的串：
-// uuid 语法错误的原文形如
-// `ERROR: invalid input syntax for type uuid: "not-a-uuid" (SQLSTATE 22P02)`。
 var internalLeakTokens = []string{
 	"SQLSTATE", "uq_", "pg_", "navigations", "constraint", "uuid", "invalid input syntax",
 }
 
-// assertNoInternalLeak 断言响应体不含任何内部细节指纹。
 func assertNoInternalLeak(t *testing.T, body string) {
 	t.Helper()
 	for _, tok := range internalLeakTokens {
@@ -50,7 +29,6 @@ func assertNoInternalLeak(t *testing.T, body string) {
 	}
 }
 
-// newNavErrContext 构造不经过三层鉴权链的 gin 上下文（handler 级测试：只验响应体）。
 func newNavErrContext(method, target string, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -63,10 +41,6 @@ func newNavErrContext(method, target string, body []byte) (*gin.Context, *httpte
 	return c, w
 }
 
-// TestNavigationListHidesInternalError List 收到非法工程 id：500 + 归口文案，无 PG 原文。
-//
-// project_id 是 uuid 列（迁移 046），非 uuid 会让 PG 报 22P02 —— 这正是
-// 「service 把数据库原文上抛」的真实路径，不是人为构造的错误字符串。
 func TestNavigationListHidesInternalError(t *testing.T) {
 	_, _, navSvc, _ := newNavigationEnv(t)
 	h := navigationhttp.NewHandle(navSvc)
@@ -83,7 +57,6 @@ func TestNavigationListHidesInternalError(t *testing.T) {
 	}
 }
 
-// TestNavigationCreateHidesInternalError Create 同样不直出数据库原文。
 func TestNavigationCreateHidesInternalError(t *testing.T) {
 	_, _, navSvc, _ := newNavigationEnv(t)
 	h := navigationhttp.NewHandle(navSvc)
@@ -97,22 +70,16 @@ func TestNavigationCreateHidesInternalError(t *testing.T) {
 	c, w := newNavErrContext(http.MethodPost, "/api/navigation/create", reqBody)
 	h.Create(c)
 
-	// 创建路径在进入持久化之前就复验工程 id（service 侧 uuid.Parse），
-	// 所以非法 id 是**参数错**（400 + 业务事实），而不是把 22P02 冒成内部错误。
-	// 判据仍是「不直出数据库原文」：状态码变了，泄漏口径不变。
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("非法工程 id 应在参数校验处被拒（400），实际 %d，body=%s", w.Code, w.Body.String())
 	}
 	assertNoInternalLeak(t, w.Body.String())
 }
 
-// TestNavigationBusinessErrorStillExposed 业务错误原样透出：
-// 归口助手不是「一律吞成通用文案」，否则前端再也无法提示「哪一项不合法」。
 func TestNavigationBusinessErrorStillExposed(t *testing.T) {
 	_, _, navSvc, _ := newNavigationEnv(t)
 	h := navigationhttp.NewHandle(navSvc)
 
-	// 合法 uuid 但不存在 → 命中白名单 ErrNotFound（404 语义不变）。
 	c, w := newNavErrContext(http.MethodGet, "/api/navigation/get?id=00000000-0000-0000-0000-000000000001", nil)
 	h.Get(c)
 

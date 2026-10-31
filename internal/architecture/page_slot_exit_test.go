@@ -1,30 +1,5 @@
 package architecture
 
-// page_slot_exit_test.go — 挂了 PageSlot 的路由，handler 必须走 pageview.Render。
-//
-// ## 判据
-//
-// `adminui.PageSlot(tpl)` 的语义是「这条路由的模板名与渲染实现由装配点提供」，
-// 于是 handler 里只剩 `pageview.Render(c, view)` 一件事。
-//
-// 如果一个 handler 既在 PageSlot 上，又自己写 `c.HTML(...)`，那有两种可能：
-//
-//  1. **半迁移**：路由改了、控制器没改（漏改）。症状是控制器还持有模板名，
-//     而 PageSlot 挂的那个模板永远是死的 —— 改动模板名只改一处不会生效。
-//  2. **写动作失败重渲**：这条路由同时承载成功（JSON）与失败（HTML 片段）。
-//     那种情况**不该挂 PageSlot**（写动作不需要页面出口装配），
-//     挂了会让 PageSlot 的语义变得不确定。
-//
-// 两种都该判失败。第 2 种如果确实需要，正确形态是 `adminui.BareSlot`（片段出口）
-// 或控制器显式 `c.HTML(路由常量, ...)` 且**不挂 PageSlot**。
-//
-// ## 为什么值得单独一条
-//
-// 我在这轮迁移里踩过一次：`ArticleNewPage` 的路由早已挂好 PageSlot，
-// 控制器却还在 `c.HTML("admin/content/article_new.html", ...)`。
-// 功能上没坏（c.HTML 自己就能渲染），所以测试全绿 —— 但 PageSlot 是死的，
-// 而「模板名归路由层」这个约定已经从中间裂开了。
-
 import (
 	"go/ast"
 	"go/parser"
@@ -34,10 +9,6 @@ import (
 	"testing"
 )
 
-// pageSlotWiredHandlers 取「挂了 PageSlot 的路由 → 它的 handler 方法名」。
-//
-// 只认形如 `x.GET("/path", ..., adminui.PageSlot(Tpl), handle.Method)` 的注册：
-// PageSlot 与 handler 在**同一次调用**里，且 PageSlot 在前。这是全仓的写法。
 func pageSlotWiredHandlers(t *testing.T, root string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -69,7 +40,7 @@ func pageSlotWiredHandlers(t *testing.T, root string) map[string]string {
 			for _, arg := range call.Args {
 				inner, ok := arg.(*ast.CallExpr)
 				if !ok {
-					// handler 一般是最后一个参数：`handle.Method` 或 `pkg.Handle.Method`
+
 					if s, ok := arg.(*ast.SelectorExpr); ok {
 						handler = s.Sel.Name
 					}
@@ -88,7 +59,6 @@ func pageSlotWiredHandlers(t *testing.T, root string) map[string]string {
 	return out
 }
 
-// controllerCallsCHTML 取一个 handler 方法体里是否出现 c.HTML 调用。
 func controllerCallsCHTML(t *testing.T, root, method string) []string {
 	t.Helper()
 	var hits []string
@@ -127,8 +97,7 @@ func controllerCallsCHTML(t *testing.T, root, method string) []string {
 func TestPageSlotHandlersUseRenderOnly(t *testing.T) {
 	root := repoRoot(t)
 	wired := pageSlotWiredHandlers(t, root)
-	// 下限守卫只防「扫描失效」，不是覆盖率预算：每迁完一个模块的页面出口就按实际值下调
-	// （order → mail → page → inventory → user → workbench → content 七轮迁移后 50 → 48 → 44 → 38 → 33 → 31 → 27），只减不增。
+
 	if len(wired) < 27 {
 		t.Fatalf("只找到 %d 个挂 PageSlot 的 handler：判据失效（路由写法变了？）", len(wired))
 	}

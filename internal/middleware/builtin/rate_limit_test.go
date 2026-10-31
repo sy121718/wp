@@ -12,14 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 同一 IP 超过窗口额度后返回 429，响应体为统一 Response JSON 结构。
 func TestRequestRateLimitBlocksOverLimit(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/api/demo", RequestRateLimitMiddleware(2, time.Minute), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 
-	// 前两次正常放行（窗口额度内）。
 	for i := 1; i <= 2; i++ {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/api/demo", nil)
@@ -29,7 +27,6 @@ func TestRequestRateLimitBlocksOverLimit(t *testing.T) {
 		}
 	}
 
-	// 第三次超限：429 + 统一 Response JSON + 中文提示。
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/demo", nil)
 	engine.ServeHTTP(recorder, request)
@@ -45,8 +42,6 @@ func TestRequestRateLimitBlocksOverLimit(t *testing.T) {
 	}
 }
 
-// 伪造 X-Forwarded-For 不影响限流计数：key 仅取 RemoteAddr，
-// 与 release 模式 TrustedProxies=nil 的 ClientIP 语义一致。
 func TestRequestRateLimitIgnoresForwardedFor(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/api/demo", RequestRateLimitMiddleware(1, time.Minute), func(c *gin.Context) {
@@ -59,7 +54,6 @@ func TestRequestRateLimitIgnoresForwardedFor(t *testing.T) {
 		t.Fatalf("首次请求应放行: got=%d want=%d", first.Code, http.StatusOK)
 	}
 
-	// 换一个伪造的 XFF 仍视为同一客户端，第二次请求应被限流。
 	forged := httptest.NewRequest(http.MethodGet, "/api/demo", nil)
 	forged.Header.Set("X-Forwarded-For", "203.0.113.7")
 	second := httptest.NewRecorder()
@@ -69,14 +63,12 @@ func TestRequestRateLimitIgnoresForwardedFor(t *testing.T) {
 	}
 }
 
-// 每次调用工厂函数创建独立限流器实例：实例之间计数互不影响。
 func TestRequestRateLimitInstancesAreIndependent(t *testing.T) {
 	first := gin.New()
 	first.GET("/a", RequestRateLimitMiddleware(1, time.Minute), func(c *gin.Context) { c.Status(http.StatusOK) })
 	second := gin.New()
 	second.GET("/b", RequestRateLimitMiddleware(1, time.Minute), func(c *gin.Context) { c.Status(http.StatusOK) })
 
-	// 实例 A 额度耗尽。
 	recorder := httptest.NewRecorder()
 	first.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/a", nil))
 	if recorder.Code != http.StatusOK {
@@ -88,7 +80,6 @@ func TestRequestRateLimitInstancesAreIndependent(t *testing.T) {
 		t.Fatalf("实例 A 第二次请求应被限流: got=%d want=%d", recorder.Code, http.StatusTooManyRequests)
 	}
 
-	// 实例 B 额度独立，首次请求不受 A 影响。
 	recorder = httptest.NewRecorder()
 	second.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/b", nil))
 	if recorder.Code != http.StatusOK {
@@ -96,7 +87,6 @@ func TestRequestRateLimitInstancesAreIndependent(t *testing.T) {
 	}
 }
 
-// 非法参数（limit/window 非正数）直接放行，不构造限流器。
 func TestRequestRateLimitSkipsInvalidParams(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/api/demo", RequestRateLimitMiddleware(0, time.Minute), func(c *gin.Context) {

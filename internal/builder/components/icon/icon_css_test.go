@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestIconCSSRules 尺寸与颜色的兜底值，以及自定义值对兜底的覆盖。
 func TestIconCSSRules(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{IconName: "star"}, &b)
@@ -26,7 +25,6 @@ func TestIconCSSRules(t *testing.T) {
 		}
 	}
 
-	// 自定义值必须整体替换兜底值 —— 两条 width / color 同时出现会让兜底值胜出（同规则内后者覆盖前者）。
 	var c core.CSSBuckets
 	compileCSS("t", &Props{Size: "24px", Color: "#f00"}, &c)
 	out2 := c.String()

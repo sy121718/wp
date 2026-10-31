@@ -1,14 +1,5 @@
 package richdoc
 
-// richdoc_test.go — 双轨转换的口径测试（docs/06-B 决策 5）。
-//
-// 分三层：
-//  1. 映射表：每种块级标签是否落到预期的组件与字段；
-//  2. 降级不静默：白名单外标签是否产生警告（且 unwrap 与 drop 分开）；
-//  3. 真实编译：把导入出来的节点树交给 builder.Compile 跑一遍 ——
-//     字段名写错、组件类型不存在这类问题，只有真编译才能暴露（自造的 props
-//     结构体与组件定义漂移时，前两层测试照样全绿）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -19,7 +10,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// propsOf 解出节点的 props（测试断言用）。
 func propsOf(t *testing.T, n *core.Node) map[string]any {
 	t.Helper()
 	out := map[string]any{}
@@ -69,17 +59,17 @@ func TestHTMLToNodesBlockMapping(t *testing.T) {
 	if p := propsOf(t, res.Nodes[3]); p["style"] != "number" {
 		t.Errorf("ol 应为序号样式：%v", p)
 	}
-	// 引用：作者进 Author 字段，正文里不该再出现一次作者名。
+
 	if p := propsOf(t, res.Nodes[4]); p["author"] != "某人" {
 		t.Errorf("引用作者未提取：%v", p)
 	} else if text, _ := p["text"].(string); strings.Contains(text, "某人") {
 		t.Errorf("作者名在正文里重复出现：%q", text)
 	}
-	// 图片：figure 的图注进 caption 字段。
+
 	if p := propsOf(t, res.Nodes[7]); p["caption"] != "图注" || p["src"] != "/b.webp" {
 		t.Errorf("图片映射错误：%v", p)
 	}
-	// 表格：表头与数据行分开。
+
 	if p := propsOf(t, res.Nodes[9]); p["caption"] != "表题" {
 		t.Errorf("表格标题错误：%v", p)
 	} else if hdrs, _ := p["headers"].([]any); len(hdrs) != 2 || hdrs[0] != "A" {
@@ -107,7 +97,7 @@ func TestHTMLToNodesKeepsInlineFormatInText(t *testing.T) {
 }
 
 func TestHTMLToNodesSplitsImageInsideParagraph(t *testing.T) {
-	// Trix 允许图片在段落里；我们的树里图片是一等组件，必须切开。
+
 	src := `<p>文字<img src="/x.webp" alt="x">尾巴</p>`
 	res, err := HTMLToNodes(src)
 	if err != nil {
@@ -127,7 +117,7 @@ func TestHTMLToNodesWarnsOnDegradation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("转换失败：%v", err)
 	}
-	// 内容保住了两个段落 + 一个未知标签的正文。
+
 	if len(res.Nodes) != 2 {
 		t.Fatalf("剥壳后应剩 2 个段落，实际 %d", len(res.Nodes))
 	}
@@ -174,9 +164,6 @@ func TestNodesToHTMLPlaceholderIsLossy(t *testing.T) {
 	}
 }
 
-// TestImportedTreeCompiles 把导入结果交给真实编译器。
-//
-// 这是本包最重要的一条测试：映射表与字段名是否正确，由编译器（而不是我的记忆）裁决。
 func TestImportedTreeCompiles(t *testing.T) {
 	src := `<h2>编译验证标题</h2>
 <p>段落正文 <strong>加粗</strong></p>
@@ -196,7 +183,7 @@ func TestImportedTreeCompiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("模板集加载失败：%v", err)
 	}
-	// 版心模式必须显式给：空串会被设置校验拒掉（这是页面的必填项，与转换无关）。
+
 	page := &builder.Page{
 		Settings: builder.PageSettings{Layout: builder.PageLayout{Mode: "full"}},
 		Root:     res.Nodes,

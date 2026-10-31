@@ -8,17 +8,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Handler 任务处理器签名
 type Handler func(context.Context, []byte) error
 
-// Option 任务入队选项
 type Option func(*providerOptionBag) error
 
 type providerOptionBag struct {
 	asynqOptions []asynq.Option
 }
 
-// Provider 任务队列实现接口
 type Provider interface {
 	Init(v *viper.Viper) error
 	IsInited() bool

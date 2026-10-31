@@ -4,7 +4,6 @@ import (
 	"testing"
 )
 
-// TestParseCollectionFilterMultiBrand 多品牌维度解析与「多值优先」。
 func TestParseCollectionFilterMultiBrand(t *testing.T) {
 	a := "11111111-1111-1111-1111-111111111111"
 	b := "22222222-2222-2222-2222-222222222222"

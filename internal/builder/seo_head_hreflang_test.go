@@ -1,12 +1,5 @@
 package builder
 
-// seo_head_hreflang_test.go — 构建期 hreflang 互指的包内回归（审计 docs/06-D §15.5 第 4 条）。
-//
-// 与 public/test/builder/unit/seo_head_alternates_test.go 同义，但落在包内：后者所在的
-// 测试包还依赖 page 模块，跨线编译故障会连坐跑不起来，而这三条（至少两种语言才输出、
-// 语言码升序、x-default 只取第一条且固定最后）是 BuildSEOHead 自身的契约，
-// 应当在本包内独立可验证。
-
 import (
 	"strings"
 	"testing"
@@ -14,7 +7,6 @@ import (
 
 func hreflangTestSEO() SEO { return SEO{Title: "关于我们", Description: "描述"} }
 
-// TestBuildSEOHeadHreflangLanguageGate 语言数量闸门：无互指与单语言都不输出。
 func TestBuildSEOHeadHreflangLanguageGate(t *testing.T) {
 	if out := BuildSEOHead(hreflangTestSEO(), "/about", "", "", "", nil); strings.Contains(out, "hreflang") {
 		t.Fatalf("无互指时不应输出 hreflang:\n%s", out)
@@ -25,7 +17,7 @@ func TestBuildSEOHeadHreflangLanguageGate(t *testing.T) {
 	if strings.Contains(one, "hreflang") {
 		t.Fatalf("单语言（哪怕标了 Default）不应输出 hreflang:\n%s", one)
 	}
-	// 空语言 / 空 href 一律忽略，不参与语言计数。
+
 	dirty := BuildSEOHead(hreflangTestSEO(), "/about", "", "", "", []Alternate{
 		{Lang: "", Href: "/x"}, {Lang: "en-US", Href: ""}, {Lang: "zh-CN", Href: "/about"},
 	})
@@ -34,7 +26,6 @@ func TestBuildSEOHeadHreflangLanguageGate(t *testing.T) {
 	}
 }
 
-// TestBuildSEOHeadHreflangOrderAndXDefault 多语言：语言码升序、x-default 固定最后、字节确定。
 func TestBuildSEOHeadHreflangOrderAndXDefault(t *testing.T) {
 	alts := []Alternate{
 		{Lang: "zh-CN", Href: "/zh-CN/about"},
@@ -62,13 +53,12 @@ func TestBuildSEOHeadHreflangOrderAndXDefault(t *testing.T) {
 	if n := strings.Count(out, "hreflang=\"x-default\""); n != 1 {
 		t.Fatalf("x-default 应恰好 1 条，实际 %d:\n%s", n, out)
 	}
-	// 确定性：同输入两次字节一致。
+
 	if again := BuildSEOHead(hreflangTestSEO(), "/about", "", "", "", alts); again != out {
 		t.Fatal("同输入两次输出不一致")
 	}
 }
 
-// TestBuildSEOHeadHreflangXDefaultFirstWins 多个 Default 时只认输入顺序的第一条（固定最后输出）。
 func TestBuildSEOHeadHreflangXDefaultFirstWins(t *testing.T) {
 	out := BuildSEOHead(hreflangTestSEO(), "/about", "", "", "", []Alternate{
 		{Lang: "zh-CN", Href: "/zh-CN/about", Default: true},

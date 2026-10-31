@@ -1,13 +1,5 @@
 package builder
 
-// ui_css_split_test.go — ui.css 按控件段切分的注入粒度（审计 UIK-013）。
-//
-// 三条验收直接来自条目原文：
-//  ① 「只用按钮的页面不注入表格与分页的 CSS」；
-//  ② 「产物 CSS 体积下降」；
-//  ③ 切分不改变语义 —— 全部段命中时与原文件逐字节相同，段标记出错时构建失败
-//     而不是静默丢样式。
-
 import (
 	"strings"
 	"testing"
@@ -15,7 +7,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// fullUICSS 真实的 ui.css 源（与生产装配同一条读取路径）。
 func fullUICSS(t *testing.T) string {
 	t.Helper()
 	css := templates.UICSS()
@@ -28,9 +19,6 @@ func fullUICSS(t *testing.T) string {
 	return css
 }
 
-// TestUICSSSplitReassemblesSource 全部段拼回去必须与原文件逐字节相同。
-//
-// 这是「切分没有改语义」的最硬证据：段之间是连续切片，任何一段被截断或重复都会现形。
 func TestUICSSSplitReassemblesSource(t *testing.T) {
 	src := fullUICSS(t)
 	chunks, ok, err := splitUICSS(src)
@@ -49,7 +37,6 @@ func TestUICSSSplitReassemblesSource(t *testing.T) {
 	}
 }
 
-// TestUICSSSplitSectionTableMatchesSource 段表与源文件一一对应（标题在、顺序对）。
 func TestUICSSSplitSectionTableMatchesSource(t *testing.T) {
 	src := fullUICSS(t)
 	for _, sec := range uiCSSSections() {
@@ -60,7 +47,7 @@ func TestUICSSSplitSectionTableMatchesSource(t *testing.T) {
 			t.Errorf("段 %s 的标题在 ui.css 里找不到：切分会报错（构建失败），请同步段表与源文件", sec.id)
 		}
 	}
-	// 每个段都要有内容：空段说明标题顺序写错了位置（段被下一个标题「吃掉」）。
+
 	chunks, _, err := splitUICSS(src)
 	if err != nil {
 		t.Fatal(err)
@@ -72,16 +59,6 @@ func TestUICSSSplitSectionTableMatchesSource(t *testing.T) {
 	}
 }
 
-// TestUICSSInjectionKeepsCommentsBalanced 任何命中组合注入出去都必须是注释配平的 CSS。
-//
-// 切点落在多行注释内部时，前一段末尾留下未闭合的 `/*`、后一段开头是个孤立的 `*/`。
-// 全部段拼回去是逐字节相同的（TestUICSSSplitReassemblesSource 绿），所以"源没问题"
-// 掩盖了"子集注入坏掉"：浏览器把未闭合注释之后的规则整块吞掉，且 CSS 不报错。
-// 实测症状：base-doc 段的锚写在文件头注释块中间 → tokens 段的 :root 整块失效 →
-// --ui-icon-chevron-size 读不到 → 自绘下拉的箭头宽高归零（看不见，但没有报错）。
-//
-// 断言的是**输出**而不是源文本结构：段表里公共段（head / tokens / 工具类）永远先带上，
-// 某些切点因此天然被后一段接续闭合——那种情况注入结果是对的，不该判失败。
 func TestUICSSInjectionKeepsCommentsBalanced(t *testing.T) {
 	src := fullUICSS(t)
 	cases := []struct {
@@ -112,7 +89,6 @@ func TestUICSSInjectionKeepsCommentsBalanced(t *testing.T) {
 	}
 }
 
-// countStrayCommentClose 统计不在任何注释内部的 "*/" 出现次数（注释被劈开的另一半）。
 func countStrayCommentClose(s string) int {
 	n, in := 0, false
 	for i := 0; i+1 < len(s); i++ {
@@ -129,10 +105,6 @@ func countStrayCommentClose(s string) int {
 	return n
 }
 
-// inCSSComment 判断 s 末尾是否停在一条未闭合的 CSS 注释里。
-//
-// 不能用 strings.Count 数 "/*" 与 "*/"：注释正文里会出现**文件名通配**（"js/ui/*.js"），
-// 那一对字符会被误算成注释开头，于是真实的注释边界全靠运气对上。
 func inCSSComment(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if !strings.HasPrefix(s[i:], "/*") {
@@ -147,7 +119,6 @@ func inCSSComment(s string) bool {
 	return false
 }
 
-// TestUICSSInjectsOnlyUsedSections 只用按钮的页面不注入表格与分页（UIK-013 验收第一条）。
 func TestUICSSInjectsOnlyUsedSections(t *testing.T) {
 	src := fullUICSS(t)
 	css, err := uiCSSFor(src, collectHTMLScan("<button class='btn btn-primary'>提交</button>"))
@@ -174,7 +145,6 @@ func TestUICSSInjectsOnlyUsedSections(t *testing.T) {
 		len(src), len(css), 100*float64(len(css))/float64(len(src)))
 }
 
-// TestUICSSSplitUtilityClassesFollowNotTrigger 工具类不触发注入，但跟随已命中的段一起带。
 func TestUICSSSplitUtilityClassesFollowNotTrigger(t *testing.T) {
 	src := fullUICSS(t)
 	onlyUtility, err := uiCSSFor(src, collectHTMLScan("<div class='flex items-center'>布局</div>"))
@@ -193,7 +163,6 @@ func TestUICSSSplitUtilityClassesFollowNotTrigger(t *testing.T) {
 	}
 }
 
-// TestUICSSSplitResourceTriggersSection 属性触发资源时带上对应段（class 无关）。
 func TestUICSSSplitResourceTriggersSection(t *testing.T) {
 	src := fullUICSS(t)
 	css, err := uiCSSFor(src, collectHTMLScan("<button data-modal-open='f1'>打开</button>"))
@@ -208,7 +177,6 @@ func TestUICSSSplitResourceTriggersSection(t *testing.T) {
 	}
 }
 
-// TestUICSSSplitResourcesCovered 每个控件资源要么映射到段，要么显式说明没有样式段。
 func TestUICSSSplitResourcesCovered(t *testing.T) {
 	byFile := map[string]bool{}
 	for _, sec := range uiCSSSections() {
@@ -236,11 +204,6 @@ func TestUICSSSplitResourcesCovered(t *testing.T) {
 	}
 }
 
-// TestUIBaseClassesMapToTriggerableSections 基座清单里的类必须落在可触发的段里。
-//
-// 清单（文档口径）与段表（注入粒度）是两套机制：清单说「这个类该有样式」，
-// 段表说「那份样式在哪一段」。类落在公共段（工具类那种）时，写法上「有样式」但
-// 永远不会被它触发 —— 症状是「作者按文档写类，却什么都没发生」。
 func TestUIBaseClassesMapToTriggerableSections(t *testing.T) {
 	src := fullUICSS(t)
 	chunks, _, err := splitUICSS(src)

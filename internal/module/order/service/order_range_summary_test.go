@@ -1,10 +1,5 @@
 package orderservice
 
-// order_range_summary_test.go — 区间窗口归一化（纯逻辑，不碰库）。
-//
-// 窗口规则是「概览页 KPI 到底算了哪一段」的全部依据，而它只靠日期串算，
-// 不需要数据库 —— 所以钉在这里，不放进 feature 链路。
-
 import (
 	"testing"
 	"time"
@@ -12,9 +7,6 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 )
 
-// TestNormalizeRangeWindow 窗口归一化：含当天、半开上界、未来收敛、非法拒绝。
-//
-// now 固定为 2026-10-04 15:30 UTC（否则「未来日期收敛到今天」这条只能等一天才能验）。
 func TestNormalizeRangeWindow(t *testing.T) {
 	now := time.Date(2026, 10, 4, 15, 30, 0, 0, time.UTC)
 	day := func(y int, m time.Month, d int) time.Time {
@@ -31,7 +23,7 @@ func TestNormalizeRangeWindow(t *testing.T) {
 	}{
 		{
 			name: "两端都合法：上界是次日的零点（半开）",
-			// 「含 10-04」= 上界取 10-05 的零点，这样 10-04 全天都在窗口内。
+
 			rawFrom: "2026-10-01", rawTo: "2026-10-04",
 			wantFrom: day(2026, 10, 1), wantTo: day(2026, 10, 5),
 		},
@@ -52,7 +44,7 @@ func TestNormalizeRangeWindow(t *testing.T) {
 		},
 		{
 			name: "上界就是今天：不收敛也不报错",
-			// to 的次日 = 今天+1，与收敛上界相等 —— 边界两侧行为要一致。
+
 			rawFrom: "2026-10-01", rawTo: "2026-10-04",
 			wantFrom: day(2026, 10, 1), wantTo: day(2026, 10, 5),
 		},
@@ -68,7 +60,7 @@ func TestNormalizeRangeWindow(t *testing.T) {
 		},
 		{
 			name: "跨度刚好等于上限：接受",
-			// 366 天 = maxRangeDays，边界应放行（否则「一年」这个常用区间会被拒）。
+
 			rawFrom: "2025-10-04", rawTo: "2026-10-04",
 			wantFrom: day(2025, 10, 4), wantTo: day(2026, 10, 5),
 		},

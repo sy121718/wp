@@ -9,10 +9,6 @@ import (
 	"go_wp/internal/text"
 )
 
-// TestInjectSeedsNestedIncludeData 渲染层给每一张嵌套 map 补取词键。
-//
-// include 会换掉 . 的指向，抽屉 / 行内片段里的 .["t"] 只能由渲染层给；形状由 service 出，
-// 取词函数由渲染层出 —— 少了这层，控制器就得为了一个取词函数去搬每一份片段数据。
 func TestInjectSeedsNestedIncludeData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -45,8 +41,7 @@ func TestInjectSeedsNestedIncludeData(t *testing.T) {
 	if lang, _ := inner["lang"].(string); lang == "" {
 		t.Fatal("嵌套 map 应带当前语言")
 	}
-	// 结构体行里的片段数据根同样要补：抽屉的 EditForm 就在这一层，漏了它 include 里
-	// 的 .["t"] 是零值，取词调用在渲染期 panic。
+
 	if _, ok := data["Structs"].([]row)[0].EditForm["t"]; !ok {
 		t.Fatal("结构体行里的 EditForm 没拿到 t")
 	}

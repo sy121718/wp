@@ -1,9 +1,5 @@
 package migrations
 
-// register_detail_preview_i18n.go — 476：详情页真实预览的界面文案。
-//
-// 注册方式：本文件自带 init()（与 475/473/471 同形）。
-// 门槛判据枚举本批自己的 key（上界封闭）：不数全库、不按前缀匹配。
 func init() {
 	registerSeed(Seed{
 		Version:   "476-detail-preview-i18n",

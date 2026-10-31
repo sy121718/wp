@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// sensitiveQueryKeys 日志中需打码的 query 参数名（小写比对）。
 var sensitiveQueryKeys = map[string]struct{}{
 	"token": {}, "code": {}, "key": {}, "password": {}, "secret": {},
 	"csrf_token": {}, "reset_token": {}, "activation_key": {},
@@ -33,21 +32,6 @@ func redactRawQuery(rawQuery string) string {
 	return vals.Encode()
 }
 
-// RequestLogCaptureMiddleware 结构化 HTTP 请求日志中间件。
-//
-// 功能：
-//   - 记录每次 HTTP 请求的方法、路径、状态码、客户端 IP、耗时
-//   - 按场景写入 logger（scene="http"），方便日志分类检索
-//   - 根据不同状态码级别选择 Error/Warn/Info 日志级别
-//
-// 日志级别规则：
-//   - 有 gin.Error → Error 级别（记录具体错误信息）
-//   - 状态码 >= 500 → Error 级别
-//   - 状态码 >= 400 → Warn 级别
-//   - 其他 → Info 级别
-//
-// 参数 enabled 控制是否启用，关闭时产生一个空中间件减少开销。
-// 适用位置：全局 engine.Use() 或只对 /api 路由组挂载。
 func RequestLogCaptureMiddleware(enabled bool) gin.HandlerFunc {
 	if !enabled {
 		return func(c *gin.Context) {
@@ -78,7 +62,6 @@ func RequestLogCaptureMiddleware(enabled bool) gin.HandlerFunc {
 			fields["query"] = redactRawQuery(rawQuery)
 		}
 
-		// SceneCtx 而不是 Scene：request_id 从 ctx 里来，中间件链与业务层打的是同一个值。
 		entry := logger.SceneCtx(scene, c.Request.Context()).WithFields(fields)
 		if len(c.Errors) > 0 {
 			errParts := make([]string, 0, len(c.Errors))

@@ -2,7 +2,6 @@ package migrations
 
 import "sync"
 
-// register_dashboard_ai_box_i18n.go — 概览页的 AI 提问区与「销售数据」卡词条（571）。
 func registerDashboardAIBoxI18n() {
 	registerDashboardAIBoxI18nOnce.Do(registerDashboardAIBoxI18nSeed)
 }

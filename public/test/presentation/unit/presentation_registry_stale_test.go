@@ -1,12 +1,5 @@
 package unit
 
-// presentation_registry_stale_test.go — 自动发布实例的组件升级收敛入口（报告 ARCH-03）。
-//
-// 报告指出：实例的产物行保存了 registry_version，但启动期没有任何比对入口 ——
-// 手工 Page 有 MarkStaleByRegistryVersion，自动实例没有，于是组件升级后商品详情页
-// 一直是旧组件渲染的字节且日志里什么都没有。本用例守住这条对等入口的判定口径：
-// 只看语言账本（presentation_publications）当前指向的产物，历史 available 行不参与。
-
 import (
 	"context"
 	"testing"
@@ -17,7 +10,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// instanceStale 实例当前的 stale 标记。
 func instanceStale(t *testing.T, f *presFixture, instanceID string) bool {
 	t.Helper()
 	var stale bool
@@ -27,7 +19,6 @@ func instanceStale(t *testing.T, f *presFixture, instanceID string) bool {
 	return stale
 }
 
-// publishedArtifactID 实例某语言语言账本指向的产物行 id。
 func publishedArtifactID(t *testing.T, f *presFixture, instanceID, lang string) string {
 	t.Helper()
 	var id string
@@ -41,7 +32,6 @@ func publishedArtifactID(t *testing.T, f *presFixture, instanceID, lang string) 
 	return id
 }
 
-// TestMarkStaleByRegistryVersionOnInstance 自动实例的启动收敛：只看账本当前产物。
 func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -72,7 +62,6 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 	zhArtifact := publishedArtifactID(t, f, inst.ID, "zh-CN")
 	enArtifact := publishedArtifactID(t, f, inst.ID, "en-US")
 
-	// 历史产物：上一轮组件产出、未被账本指向、仍 available（未 GC）。
 	if err := f.db.Exec(`INSERT INTO presentation_artifacts (
 		id, presentation_instance_id, snapshot_id, version, lang, source_hash,
 		build_input_hash, artifact_provider, artifact_key, artifact_hash,
@@ -84,7 +73,6 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 		t.Fatalf("插入历史产物失败: %v", err)
 	}
 
-	// ① 历史 available 行不参与判定：两语言账本都指向当前版本产物 → 不该命中。
 	ids, err := f.pres.MarkStaleByRegistryVersion(ctx, current)
 	if err != nil {
 		t.Fatalf("启动收敛失败: %v", err)
@@ -96,7 +84,6 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 		t.Fatal("实例被误标为 stale（历史产物行仍在 available，但账本已指向新产物）")
 	}
 
-	// ② 仅另一语言（en-US）的产物由旧组件产出 → 仍必须命中。
 	if err := f.db.Exec("UPDATE presentation_artifacts SET registry_version = ? WHERE id = ?", "old-registry-en", enArtifact).Error; err != nil {
 		t.Fatalf("改写产物版本失败: %v", err)
 	}
@@ -111,7 +98,6 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 		t.Fatal("实例应被标记为 stale")
 	}
 
-	// ③ 重建收敛：模拟 en-US 用新组件重建（新产物行 + 账本改指它），再跑一次不该标记。
 	if err := f.db.Exec("UPDATE presentation_instances SET stale = false WHERE id = ?", inst.ID).Error; err != nil {
 		t.Fatalf("清理 stale 失败: %v", err)
 	}

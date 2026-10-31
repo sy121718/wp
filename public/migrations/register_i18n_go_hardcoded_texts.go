@@ -4,9 +4,7 @@ func init() {
 	registerSeed(Seed{
 		Version:   "451-i18n-go-hardcoded-texts",
 		TableName: "sys_i18n",
-		// 门槛判据**逐条枚举本批自己的 item_key**（上界封闭）：条目恰好 488 条
-		//（244 个 key × zh-CN / en-US）。用 LIKE 前缀或全库总量都不行 ——
-		// 前者会被同前缀的其它批次顶高（058 的静默跳过），后者永远追不平（076 的每次重跑）。
+
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 428 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE item_key IN (" +
 			"'admin.article.err.missingID', 'admin.article.err.missingSlug', 'admin.article.err.missingTitle', 'admin.article.import.action.drop', 'admin.article.import.action.placeholder', 'admin.article.import.action.trim', " +

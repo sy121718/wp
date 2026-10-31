@@ -13,7 +13,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 拒绝必须在未配置 Jet 的请求链也能完成，HTML 渲染调用直接使测试失败。
 type rejectRenderer struct{ t *testing.T }
 
 func (r rejectRenderer) Instance(string, any) render.Render {

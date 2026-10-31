@@ -1,7 +1,5 @@
 package aihttp
 
-// ai_fab_handle_test.go — 悬浮球的纯逻辑断言（D9 的页面上下文 + 默认模型挑选）。
-
 import (
 	"context"
 	"strings"
@@ -13,7 +11,6 @@ import (
 	aienums "go_wp/internal/module/ai/enums"
 )
 
-// fabForm 造一个带指定表单字段的 gin.Context（只用到 PostForm）。
 func fabForm(fields map[string]string) *gin.Context {
 	c, _ := gin.CreateTestContext(nil)
 	req := httptestNewForm(fields)
@@ -21,7 +18,6 @@ func fabForm(fields map[string]string) *gin.Context {
 	return c
 }
 
-// TestComposeFabInputIncludesPageContext 页面上下文要进输入，且格式可辨认。
 func TestComposeFabInputIncludesPageContext(t *testing.T) {
 	got := composeFabInput(fabForm(map[string]string{
 		"input":    "这周卖得怎么样",
@@ -37,10 +33,6 @@ func TestComposeFabInputIncludesPageContext(t *testing.T) {
 	}
 }
 
-// TestComposeFabInputOmitsMissingContext 上下文缺失时**不写占位**。
-//
-// 写「（当前页面：（无））」会让模型以为自己在一个空页面上，
-// 而真相是「这次请求没带上下文」—— 前者会引出更多错误的猜测。
 func TestComposeFabInputOmitsMissingContext(t *testing.T) {
 	got := composeFabInput(fabForm(map[string]string{"input": "你好"}), "你好")
 	if got != "你好" {
@@ -51,7 +43,6 @@ func TestComposeFabInputOmitsMissingContext(t *testing.T) {
 	}
 }
 
-// TestComposeFabInputTruncatesLongQuery 超长 query 要截断并说明。
 func TestComposeFabInputTruncatesLongQuery(t *testing.T) {
 	long := "?" + strings.Repeat("a=1&", 200)
 	got := composeFabInput(fabForm(map[string]string{
@@ -60,13 +51,12 @@ func TestComposeFabInputTruncatesLongQuery(t *testing.T) {
 	if !strings.Contains(got, "（已截断）") {
 		t.Error("截断必须可见 —— 不说明的话模型会以为这就是全部筛选条件")
 	}
-	// 截断后整行仍要远短于原串（fabContextQueryLimit 是按 rune 计的）。
+
 	if len([]rune(got)) > fabContextQueryLimit+200 {
 		t.Errorf("截断没生效，长度 %d", len([]rune(got)))
 	}
 }
 
-// fakeProviders 供应商读取端口的假实现。
 type fakeProviders struct {
 	list []aidto.Provider
 	err  error
@@ -76,10 +66,6 @@ func (f fakeProviders) ListProviders(context.Context) ([]aidto.Provider, error) 
 	return f.list, f.err
 }
 
-// TestFabDefaultModelSkipsUnusable 默认模型要跳过停用 / 无密钥 / 无目录的供应商。
-//
-// 三条判据缺一不可：停用的选了会跑在不该跑的地方；没密钥的必然调不通，
-// 而错误会指向出站层；目录空的选不出模型名。
 func TestFabDefaultModelSkipsUnusable(t *testing.T) {
 	h := &SessionPageHandle{providers: fakeProviders{list: []aidto.Provider{
 		{ProviderKey: "disabled", Status: 0, HasAPIKey: true, Models: []aidto.ModelEntry{{ID: "a"}}},
@@ -93,24 +79,18 @@ func TestFabDefaultModelSkipsUnusable(t *testing.T) {
 	}
 }
 
-// TestFabDefaultModelNoneAvailable 一个可用的都没有时回 ok=false（不是回空串当成功）。
 func TestFabDefaultModelNoneAvailable(t *testing.T) {
 	h := &SessionPageHandle{providers: fakeProviders{}}
 	if _, _, ok := h.defaultModel(context.Background()); ok {
 		t.Fatal("没有可用供应商时应回 false —— 回空串会让请求走到出站层再失败")
 	}
-	// 端口缺席（未装配）同样 false。
+
 	empty := &SessionPageHandle{}
 	if _, _, ok := empty.defaultModel(context.Background()); ok {
 		t.Fatal("端口缺席时应回 false")
 	}
 }
 
-// TestFabTextResolvesKeysToMessages 文案查表必须命中，不能把 key 渲染给用户。
-//
-// 真跑一次才暴露的缺陷：原先 handler 里直接把 `aienums.MsgFabToolsPrefix` 这类
-// **key 常量**塞进模板，页面上就出现了 `ai.fab.tools2ai.fab.toolsUnit`。
-// 这条断言把它钉死 —— 它检查的是「拿到的不是 key」。
 func TestFabTextResolvesKeysToMessages(t *testing.T) {
 	for _, key := range []string{
 		aienums.MsgFabNoModel, aienums.MsgFabEmptyInput, aienums.MsgFabFailed,

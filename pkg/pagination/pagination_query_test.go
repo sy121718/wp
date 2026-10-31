@@ -1,13 +1,5 @@
 package pagination
 
-// pagination_query_test.go — 取址与页码收敛的纯逻辑判据（从 product 模块迁入）。
-//
-// 两件容易静默出错的事：
-//   - 页码收敛：page=999 / page=0 / 空列表时切出来的区间必须是「末页 / 第一页 / 空」，
-//     不能是「表格为空但分页条显示第 999 页」；
-//   - 分页基地址：筛选条件必须进基地址、page/limit 必须不进 —— 基地址里塞了 page 会出现
-//     两个 page 参数（浏览器取第一个），表现是「点了下一页没反应」，且不报错。
-
 import (
 	"net/url"
 	"strings"
@@ -33,7 +25,7 @@ func TestBaseURL(t *testing.T) {
 			if got != c.want {
 				t.Fatalf("基地址 = %q，期望 %q", got, c.want)
 			}
-			// page / limit 由链接构造自己追加：基地址里出现它们就会有两个同名参数。
+
 			if strings.Contains(got, "page=") || strings.Contains(got, "limit=") {
 				t.Fatalf("基地址不应含 page/limit：%q", got)
 			}

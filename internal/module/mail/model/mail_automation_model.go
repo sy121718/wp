@@ -1,12 +1,5 @@
 package model
 
-// mail_automation_model.go — 自动化流程的表访问单元（issue #38 P3）。
-//
-// 三张表的生命周期完全不同，方法也按各自的使用方式设计：
-//   · 定义：整体读写（编辑器一次保存整张图）；
-//   · 实例：并发争抢（同一人同流程只能有一个进行中的，靠部分唯一索引兜底）；
-//   · 日志：只写只读、量大。
-
 import (
 	"context"
 	"strings"
@@ -15,37 +8,31 @@ import (
 	"gorm.io/gorm"
 )
 
-// 流程状态。
 const (
 	AutomationStatusDraft  = "draft"
 	AutomationStatusActive = "active"
 	AutomationStatusPaused = "paused"
 )
 
-// 触发方式。
 const (
-	// TriggerManual 手工把联系人加进流程。
 	TriggerManual = "manual"
-	// TriggerContactCreated 新联系人产生（导入 / 拉系统用户 / 注册）。
+
 	TriggerContactCreated = "contact_created"
-	// TriggerContactSubscribed 联系人变为已订阅。
+
 	TriggerContactSubscribed = "contact_subscribed"
-	// TriggerEmailOpened / TriggerEmailClicked 营销邮件的打开 / 点击事件。
+
 	TriggerEmailOpened  = "email_opened"
 	TriggerEmailClicked = "email_clicked"
-	// TriggerTagAdded 联系人被打上某个标签。
+
 	TriggerTagAdded = "tag_added"
 )
 
-// 触发频率。
 const (
-	// TriggerFrequencyEveryTime 每次触发都建实例（默认，改造前的行为）。
 	TriggerFrequencyEveryTime = "every_time"
-	// TriggerFrequencyOnce 同一个人只跑一次（有过任何实例就不再建）。
+
 	TriggerFrequencyOnce = "once"
 )
 
-// 实例状态。
 const (
 	RunStatusRunning   = "running"
 	RunStatusWaiting   = "waiting"
@@ -54,7 +41,6 @@ const (
 	RunStatusStopped   = "stopped"
 )
 
-// 节点日志状态。
 const (
 	NodeStatusOK      = "ok"
 	NodeStatusSkipped = "skipped"
@@ -62,23 +48,17 @@ const (
 	NodeStatusFailed  = "failed"
 )
 
-// MailAutomationEntity 对应 mail_automations 表。
 type MailAutomationEntity struct {
 	ID            uint64  `gorm:"column:id;primaryKey"`
 	Name          string  `gorm:"column:name"`
 	Description   *string `gorm:"column:description"`
 	TriggerType   string  `gorm:"column:trigger_type"`
 	TriggerParams JSONMap `gorm:"column:trigger_params;type:jsonb"`
-	// TriggerFrequency 触发频率：every_time（每次触发都建实例）/ once（同一个人只跑一次）。
-	//
-	// 为什么需要它：`idx_mail_automation_runs_active` 只挡「同时有一个进行中的实例」，
-	// 而 completed / failed / stopped 不在那个部分索引里 —— 「打开邮件」这类可重复事件
-	// 会不断给人重跑同一条欢迎流程。
+
 	TriggerFrequency string `gorm:"column:trigger_frequency"`
-	// ExitOnReply 收到回信时停掉该联系人进行中的实例（true 才生效）。
+
 	ExitOnReply bool `gorm:"column:exit_on_reply"`
-	// Definition 图定义。用 JSONB 是正当的「自由形状」用法：节点形状各异，
-	// 且编辑器整体读写整张图，拆成关联表只会让读写更碎。
+
 	Definition JSONMap    `gorm:"column:definition;type:jsonb"`
 	Status     string     `gorm:"column:status"`
 	Version    int        `gorm:"column:version"`
@@ -87,10 +67,8 @@ type MailAutomationEntity struct {
 	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
-// TableName 表名。
 func (MailAutomationEntity) TableName() string { return "mail_automations" }
 
-// MailAutomationRunEntity 对应 mail_automation_runs 表。
 type MailAutomationRunEntity struct {
 	ID                uint64     `gorm:"column:id;primaryKey"`
 	AutomationID      uint64     `gorm:"column:automation_id"`
@@ -107,10 +85,8 @@ type MailAutomationRunEntity struct {
 	UpdateTime        *time.Time `gorm:"column:update_time"`
 }
 
-// TableName 表名。
 func (MailAutomationRunEntity) TableName() string { return "mail_automation_runs" }
 
-// MailAutomationNodeLogEntity 对应 mail_automation_node_logs 表。
 type MailAutomationNodeLogEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
 	RunID      uint64     `gorm:"column:run_id"`
@@ -121,24 +97,18 @@ type MailAutomationNodeLogEntity struct {
 	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
-// TableName 表名。
 func (MailAutomationNodeLogEntity) TableName() string { return "mail_automation_node_logs" }
 
-// ---- 定义 ----
-
-// CreateAutomation 新建流程。
 func (m *MailModel) CreateAutomation(ctx context.Context, e *MailAutomationEntity) (err error) {
 	return m.tx(ctx).Create(e).Error
 }
 
-// GetAutomation 按主键取流程。
 func (m *MailModel) GetAutomation(ctx context.Context, id uint64) (e *MailAutomationEntity, err error) {
 	e = &MailAutomationEntity{}
 	err = m.tx(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 
-// ListAutomations 列流程（状态可空）。
 func (m *MailModel) ListAutomations(ctx context.Context, status string, offset, limit int) (list []*MailAutomationEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailAutomationEntity{})
 	if s := strings.TrimSpace(status); s != "" {
@@ -154,13 +124,11 @@ func (m *MailModel) ListAutomations(ctx context.Context, status string, offset, 
 	return list, total, err
 }
 
-// ListActiveAutomations 取所有启用中的流程（事件触发时用来匹配）。
 func (m *MailModel) ListActiveAutomations(ctx context.Context) (list []*MailAutomationEntity, err error) {
 	err = m.tx(ctx).Where("status = ?", AutomationStatusActive).Order("id ASC").Find(&list).Error
 	return list, err
 }
 
-// UpdateAutomationFields 按主键更新指定列。
 func (m *MailModel) UpdateAutomationFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
@@ -168,37 +136,24 @@ func (m *MailModel) UpdateAutomationFields(ctx context.Context, id uint64, field
 	return m.tx(ctx).Model(&MailAutomationEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// DeleteAutomation 删除流程（进行中的实例由 service 先停止）。
 func (m *MailModel) DeleteAutomation(ctx context.Context, id uint64) (err error) {
 	return m.DeleteAutomationTx(ctx, nil, id)
 }
 
-// DeleteAutomationTx 与 DeleteAutomation 相同，但复用调用方事务。
-//
-// 「停实例 + 删流程」必须同事务：分开提交时第二步失败会留下「实例停了、流程还在」——
-// 运营以为删掉了，界面刷新后它又出现，而它的实例已经不会再推进。
 func (m *MailModel) DeleteAutomationTx(ctx context.Context, tx *gorm.DB, id uint64) (err error) {
 	return m.txOr(ctx, tx).Where("id = ?", id).Delete(&MailAutomationEntity{}).Error
 }
 
-// ---- 实例 ----
-
-// CreateRun 建实例。
-//
-// 同一人同流程只允许一个进行中的实例（部分唯一索引兜底）：反复触发（开一次邮件、点一次链接）
-// 若各自建实例，同一个人会收到多轮自动化邮件。冲突时返回 gorm.ErrDuplicatedKey 由 service 当作「已在流程中」。
 func (m *MailModel) CreateRun(ctx context.Context, e *MailAutomationRunEntity) (err error) {
 	return m.tx(ctx).Create(e).Error
 }
 
-// GetRun 按主键取实例。
 func (m *MailModel) GetRun(ctx context.Context, id uint64) (e *MailAutomationRunEntity, err error) {
 	e = &MailAutomationRunEntity{}
 	err = m.tx(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 
-// ActiveRun 取某人某流程的进行中实例（不存在返回 gorm.ErrRecordNotFound）。
 func (m *MailModel) ActiveRun(ctx context.Context, automationID, contactID uint64) (e *MailAutomationRunEntity, err error) {
 	e = &MailAutomationRunEntity{}
 	err = m.tx(ctx).
@@ -207,11 +162,6 @@ func (m *MailModel) ActiveRun(ctx context.Context, automationID, contactID uint6
 	return e, err
 }
 
-// HasAnyRun 该联系人在这条流程里**是否有过任何实例**（不限状态）。
-//
-// 这是「只跑一次」频率闸门的判据：不能复用 ActiveRun —— 那个只看 running/waiting，
-// 而一条跑完的实例正是不该再跑的理由。走 (automation_id, contact_id) 索引
-// （迁移 623 加的），limit 1 让它在命中之后立刻停。
 func (m *MailModel) HasAnyRun(ctx context.Context, automationID, contactID uint64) (exists bool, err error) {
 	var id uint64
 	res := m.tx(ctx).Model(&MailAutomationRunEntity{}).
@@ -224,10 +174,6 @@ func (m *MailModel) HasAnyRun(ctx context.Context, automationID, contactID uint6
 	return id != 0, nil
 }
 
-// ListActiveRunsOfContact 该联系人**进行中**的实例（running / waiting）。
-//
-// 回信退出要按流程配置逐条判断，所以返回的是行而不是计数 —— 调用方需要 automation_id
-// 去查那条流程有没有配 exit_on_reply。
 func (m *MailModel) ListActiveRunsOfContact(ctx context.Context, contactID uint64) (list []*MailAutomationRunEntity, err error) {
 	err = m.tx(ctx).
 		Where("contact_id = ? AND status IN ?", contactID,
@@ -236,7 +182,6 @@ func (m *MailModel) ListActiveRunsOfContact(ctx context.Context, contactID uint6
 	return list, err
 }
 
-// UpdateRunFields 按主键更新实例。
 func (m *MailModel) UpdateRunFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
@@ -244,7 +189,6 @@ func (m *MailModel) UpdateRunFields(ctx context.Context, id uint64, fields map[s
 	return m.tx(ctx).Model(&MailAutomationRunEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// ListRuns 列某流程的实例（状态可空）。
 func (m *MailModel) ListRuns(ctx context.Context, automationID uint64, status string, offset, limit int) (list []*MailAutomationRunEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailAutomationRunEntity{})
 	if automationID > 0 {
@@ -263,7 +207,6 @@ func (m *MailModel) ListRuns(ctx context.Context, automationID uint64, status st
 	return list, total, err
 }
 
-// DueRuns 取到点该唤醒的等待中实例（延时调度用）。
 func (m *MailModel) DueRuns(ctx context.Context, now time.Time, limit int) (list []*MailAutomationRunEntity, err error) {
 	if limit <= 0 {
 		limit = 200
@@ -274,7 +217,6 @@ func (m *MailModel) DueRuns(ctx context.Context, now time.Time, limit int) (list
 	return list, err
 }
 
-// CountRunsByStatus 按状态统计实例数（后台概览）。
 func (m *MailModel) CountRunsByStatus(ctx context.Context, automationID uint64) (counts map[string]int64, err error) {
 	type row struct {
 		Status string
@@ -295,23 +237,16 @@ func (m *MailModel) CountRunsByStatus(ctx context.Context, automationID uint64) 
 	return counts, nil
 }
 
-// StopRunsOfAutomation 停止某流程所有进行中的实例（删流程前调用，避免留下孤儿实例）。
 func (m *MailModel) StopRunsOfAutomation(ctx context.Context, automationID uint64, at time.Time) (err error) {
 	return m.StopRunsOfAutomationTx(ctx, nil, automationID, at)
 }
 
-// StopRunsOfAutomationTx 与 StopRunsOfAutomation 相同，但复用调用方事务
-// （与 DeleteAutomationTx 同批写，见 mail_automation.go#DeleteAutomation）。
 func (m *MailModel) StopRunsOfAutomationTx(ctx context.Context, tx *gorm.DB, automationID uint64, at time.Time) (err error) {
 	return m.txOr(ctx, tx).Model(&MailAutomationRunEntity{}).
 		Where("automation_id = ? AND status IN ?", automationID, []string{RunStatusRunning, RunStatusWaiting}).
 		Updates(map[string]any{"status": RunStatusStopped, "finished_at": at, "update_time": at}).Error
 }
 
-// RunRow 实例 + 联系人邮箱（排障列表用）。
-//
-// JOIN 本模块的 mail_contacts 取邮箱：列表里只显示 contact_id 对排障毫无帮助 ——
-// 「第 47 号实例失败了」跟「a@b.com 的实例失败了」是两种可用性。
 type RunRow struct {
 	MailAutomationRunEntity
 	Email          string  `gorm:"column:email"`
@@ -319,10 +254,8 @@ type RunRow struct {
 	AutomationName string  `gorm:"column:automation_name"`
 }
 
-// ListRunRows 列实例（带联系人邮箱与流程名）。
 func (m *MailModel) ListRunRows(ctx context.Context, automationID uint64, status string, offset, limit int) (list []RunRow, total int64, err error) {
-	// 条件只构造一次并复用到 count 与列表：两处各写一遍时，「列表带了筛选、计数没带」
-	// 会让分页显示的总数与实际列表对不上，而且这种错很难在页面上看出来。
+
 	applyFilter := func(q *gorm.DB) *gorm.DB {
 		if automationID > 0 {
 			q = q.Where("r.automation_id = ?", automationID)
@@ -346,7 +279,6 @@ func (m *MailModel) ListRunRows(ctx context.Context, automationID uint64, status
 	return list, total, err
 }
 
-// RunRowByID 取单个实例（带联系人邮箱与流程名）。
 func (m *MailModel) RunRowByID(ctx context.Context, runID uint64) (row RunRow, err error) {
 	err = m.tx(ctx).Table("mail_automation_runs AS r").
 		Select("r.*, c.email AS email, c.name AS contact_name, a.name AS automation_name").
@@ -356,7 +288,6 @@ func (m *MailModel) RunRowByID(ctx context.Context, runID uint64) (row RunRow, e
 	return row, err
 }
 
-// ListRunsOfContact 列某联系人的实例（联系人详情页的自动化历史）。
 func (m *MailModel) ListRunsOfContact(ctx context.Context, contactID uint64, limit int) (list []RunRow, err error) {
 	if limit <= 0 {
 		limit = 20
@@ -370,18 +301,10 @@ func (m *MailModel) ListRunsOfContact(ctx context.Context, contactID uint64, lim
 	return list, err
 }
 
-// ---- 节点日志 ----
-
-// CreateNodeLog 写一条节点日志。
 func (m *MailModel) CreateNodeLog(ctx context.Context, e *MailAutomationNodeLogEntity) (err error) {
 	return m.tx(ctx).Create(e).Error
 }
 
-// NodeLogExists 判断某实例的某节点是否已成功执行过（**幂等的基础**）。
-//
-// 队列重试、重复投递、人工重跑都会让同一个节点被再次执行。没有这条判断，
-// 重试就会变成「同一个人再收一封一模一样的自动化邮件」。
-// 只认 ok —— failed / waiting 的节点本来就该重试。
 func (m *MailModel) NodeLogExists(ctx context.Context, runID uint64, nodeKey string) (done bool, err error) {
 	var count int64
 	err = m.tx(ctx).Model(&MailAutomationNodeLogEntity{}).
@@ -390,7 +313,6 @@ func (m *MailModel) NodeLogExists(ctx context.Context, runID uint64, nodeKey str
 	return count > 0, err
 }
 
-// ContactHasEvent 判断某联系人是否产生过某类事件（条件分支求值用）。
 func (m *MailModel) ContactHasEvent(ctx context.Context, contactID uint64, eventType string) (has bool, err error) {
 	var count int64
 	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
@@ -399,14 +321,12 @@ func (m *MailModel) ContactHasEvent(ctx context.Context, contactID uint64, event
 	return count > 0, err
 }
 
-// GetContactTags 取联系人标签（条件与标签节点用）。
 func (m *MailModel) GetContactTags(ctx context.Context, contactID uint64) (tags StringArray, err error) {
 	var row struct{ Tags StringArray }
 	err = m.tx(ctx).Model(&MailContactEntity{}).Select("tags").Where("id = ?", contactID).Scan(&row).Error
 	return row.Tags, err
 }
 
-// ListNodeLogs 列某实例的节点日志（按执行顺序）。
 func (m *MailModel) ListNodeLogs(ctx context.Context, runID uint64, limit int) (list []*MailAutomationNodeLogEntity, err error) {
 	if limit <= 0 {
 		limit = 100

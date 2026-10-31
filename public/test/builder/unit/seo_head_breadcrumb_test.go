@@ -9,7 +9,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// 经公开构建入口解析真实 JSON-LD，防止 URL 字节合法但路径层级错误。
 func TestSEOHeadBreadcrumbURLs(t *testing.T) {
 	for _, tt := range []struct {
 		name, url    string

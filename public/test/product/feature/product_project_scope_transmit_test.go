@@ -1,5 +1,3 @@
-// 多工程下，商品查询与变体预览必须显式传递工程范围。
-// 预览交付原始组合值；页面交付同工程属性定义，规格名称由前端组合。
 package feature
 
 import (
@@ -20,24 +18,18 @@ import (
 	"go_wp/internal/templates"
 )
 
-// scopeTransmitFixture 双工程夹具：variantListFixture（工程 A + 生产迁移 + 真 inventory / product）
-// 之上再建第二个工程；本文件的商品一律建在工程 A，页面 / 端点显式带 project=f.projectID。
-//
-// 显式带工程而不是靠兜底解析：漏传作用域的那一跳**仍然**会失败（工程数 != 1），
-// 判据因此不依赖工程清单的顺序。
 type scopeTransmitFixture struct {
 	*variantListFixture
 	otherProject string
 }
 
-// newScopeTransmitEngine 装配两个入口（真实 Jet 模板 + 真实 service）。
 func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	t.Helper()
 	base := newVariantListFixture(t)
 	if base == nil {
 		return nil, nil
 	}
-	// 变体预览要读可用量（与生产装配同形）。
+
 	base.products.SetAvailabilityPort(base.inventory)
 	other, err := base.projects.Create(context.Background(), &projectdto.CreateReq{Name: "第二站点工程"})
 	if err != nil {
@@ -64,7 +56,6 @@ func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	return engine, f
 }
 
-// scopeTransmitProduct 建一个可用商品（bundleFixture.mkProduct 恒用工程 A，这里显式给属性组）。
 func (f *scopeTransmitFixture) scopeTransmitProduct(t *testing.T, name, slug string, attrIDs []string) *productdto.ProductResp {
 	t.Helper()
 	price := 88.0
@@ -78,8 +69,6 @@ func (f *scopeTransmitFixture) scopeTransmitProduct(t *testing.T, name, slug str
 	return res
 }
 
-// scopeTransmitAttr 建一个参与变体的属性组：值标签与 key 刻意不同字（「红」/ red），
-// 于是「用了标签」与「退化成 key」在规格文本里可区分。
 func (f *scopeTransmitFixture) scopeTransmitAttr(t *testing.T) *productdto.AttributeResp {
 	t.Helper()
 	attr, err := f.products.CreateAttribute(context.Background(), &productdto.CreateAttributeReq{
@@ -92,7 +81,6 @@ func (f *scopeTransmitFixture) scopeTransmitAttr(t *testing.T) *productdto.Attri
 	return attr
 }
 
-// scopeTransmitValueID 属性组内某个 key 的值 id（勾选表单用的是值 id）。
 func scopeTransmitValueID(t *testing.T, attr *productdto.AttributeResp, key string) string {
 	t.Helper()
 	for _, v := range attr.Values {
@@ -104,10 +92,6 @@ func scopeTransmitValueID(t *testing.T, attr *productdto.AttributeResp, key stri
 	return ""
 }
 
-// TestProductDetailPageTransmitsProjectScope 第 1 条：商品详情整页取商品那一跳带作用域。
-//
-// 漏传时的症状：多工程下 resolveProjectID 回 ErrInvalidParam，被读模型的 ErrInvalidParam
-// 分支判成 400 —— 整页打不开，而商品就在带上来的那个工程里。
 func TestProductDetailPageTransmitsProjectScope(t *testing.T) {
 	engine, f := newScopeTransmitEngine(t)
 	if engine == nil {
@@ -127,7 +111,6 @@ func TestProductDetailPageTransmitsProjectScope(t *testing.T) {
 	}
 }
 
-// TestVariantPreviewTransmitsProjectScope 预览与页面原对象都须保留多工程范围。
 func TestVariantPreviewTransmitsProjectScope(t *testing.T) {
 	engine, f := newScopeTransmitEngine(t)
 	if engine == nil {
@@ -173,7 +156,6 @@ func TestVariantPreviewTransmitsProjectScope(t *testing.T) {
 	}
 }
 
-// generateCombosFor 在商品上生成指定组合的变体（走「预览 → 保存」这条与后台抽屉同形的路径）。
 func (f *scopeTransmitFixture) generateCombosFor(t *testing.T, productID, attributeID, valueID string) {
 	t.Helper()
 	ctx := context.Background()

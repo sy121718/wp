@@ -1,15 +1,5 @@
 package feature
 
-// product_variant_stock_target_test.go — B8「仓库明细」的端到端判据（真实 PG + 真实 product /
-// inventory service）。
-//
-// 五条口径各钉一条，都是运营真会踩到的形状：
-//   1. 明细读得回来：编辑页按仓分组给出当前在库（含名称与图），StocksKnown=true；
-//   2. 数量是**目标值**：填 12 就校准成 12，不是 7+12；
-//   3. 关联照旧落在 product_variants.warehouse_skus（不新建关联表），删行保存后关联也消失；
-//   4. 同仓同 SKU 在同一个变体里重复出现 → 写前拒绝（一条都不写）；
-//   5. 不跟踪（无限）的行填了数字 → 改为跟踪并校准到该数（留空则一动不动）。
-
 import (
 	"context"
 	"testing"
@@ -20,7 +10,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// saveWithStocks 按商品表单的形状保存一行清单（带仓库明细；qty 是目标值）。
 func (f *variantListFixture) saveWithStocks(t *testing.T, p *productdto.ProductResp,
 	v *productdto.VariantResp, sku string, qty int) {
 	t.Helper()
@@ -32,7 +21,6 @@ func (f *variantListFixture) saveWithStocks(t *testing.T, p *productdto.ProductR
 	}})
 }
 
-// seedVariants 生成并保存笛卡尔积（返回第一个变体）。
 func (f *variantListFixture) seedVariants(t *testing.T, p *productdto.ProductResp,
 	pv *productdto.PreviewVariantResp) {
 	t.Helper()
@@ -43,7 +31,6 @@ func (f *variantListFixture) seedVariants(t *testing.T, p *productdto.ProductRes
 	f.save(t, p.ID, rows)
 }
 
-// editableRow 读回编辑页那一行（Get + fillVariantListStocks 的对外等价物）。
 func (f *variantListFixture) editableRow(t *testing.T, p *productdto.ProductResp,
 	optionValues []byte) *productdto.VariantResp {
 	t.Helper()
@@ -66,7 +53,6 @@ func (f *variantListFixture) editableRow(t *testing.T, p *productdto.ProductResp
 	return nil
 }
 
-// TestVariantStockRowsReadBack 明细读得回来：分组按仓、数量是当前在库、StocksKnown=true。
 func TestVariantStockRowsReadBack(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -104,7 +90,6 @@ func TestVariantStockRowsReadBack(t *testing.T) {
 	}
 }
 
-// TestVariantStockQuantityIsTargetNotDelta 数量是目标值：12 就是 12，不是 5+12。
 func TestVariantStockQuantityIsTargetNotDelta(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -127,7 +112,6 @@ func TestVariantStockQuantityIsTargetNotDelta(t *testing.T) {
 	}
 }
 
-// TestVariantStockRowsPruneOnRemoval 删掉明细行再保存 → 关联从引用清单里消失。
 func TestVariantStockRowsPruneOnRemoval(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -142,7 +126,7 @@ func TestVariantStockRowsPruneOnRemoval(t *testing.T) {
 	if row := f.editableRow(t, p, v.OptionValues); len(row.Stocks) != 1 {
 		t.Fatalf("前提：应已挂一条货行，实际 %+v", row.Stocks)
 	}
-	// 保存时空明细 = 这个变体不挂任何货行（表单是权威清单）。
+
 	f.save(t, p.ID, []productdto.VariantListResp{{
 		VariantID: v.ID, SKUCode: v.SKUCode, OptionValues: v.OptionValues,
 	}})
@@ -155,7 +139,6 @@ func TestVariantStockRowsPruneOnRemoval(t *testing.T) {
 	}
 }
 
-// TestVariantStockRowsRejectDuplicate 同仓同 SKU 在同一变体里重复 → 写前拒绝。
 func TestVariantStockRowsRejectDuplicate(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -184,7 +167,7 @@ func TestVariantStockRowsRejectDuplicate(t *testing.T) {
 	if !ok || fact.Key != productenums.ErrVariantStockDuplicated {
 		t.Fatalf("期望 %s，实际 %v", productenums.ErrVariantStockDuplicated, err)
 	}
-	// 写前拒绝：数量一个字节都不该动（库里那一行仍是新建时的不跟踪 0）。
+
 	row := f.editableRow(t, p, v.OptionValues)
 	for _, g := range row.Stocks {
 		for _, r := range g.Rows {
@@ -195,10 +178,6 @@ func TestVariantStockRowsRejectDuplicate(t *testing.T) {
 	}
 }
 
-// TestVariantStockUntrackedRowStartsTracking 不跟踪（无限）的行填了数字 → 改为跟踪并校准。
-//
-// 这是这条面板的**第一次入库**路径：SaveVariantList 建行时 quantity 传 nil ⇒ 新行
-// 天生不跟踪；运营在仓库明细里填的第一个数字就是它的第一次声明。留空则一动不动。
 func TestVariantStockUntrackedRowStartsTracking(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
@@ -210,7 +189,6 @@ func TestVariantStockUntrackedRowStartsTracking(t *testing.T) {
 	f.seedVariants(t, p, pv)
 	v := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
 
-	// 先只挂货行、不给数量（目标 0 且行不存在 ⇒ 建一条不跟踪行，不动库存）。
 	f.saveWithStocks(t, p, v, v.SKUCode, 0)
 	row := f.editableRow(t, p, v.OptionValues)
 	if len(row.Stocks) != 1 || len(row.Stocks[0].Rows) != 1 {
@@ -223,7 +201,6 @@ func TestVariantStockUntrackedRowStartsTracking(t *testing.T) {
 		t.Fatalf("前提：不跟踪行的当前值应为 0，实际 %d", row.Stocks[0].Rows[0].Quantity)
 	}
 
-	// 填 5 ⇒ 切成跟踪并校准到 5。
 	f.saveWithStocks(t, p, v, v.SKUCode, 5)
 	row = f.editableRow(t, p, v.OptionValues)
 	if len(row.Stocks) != 1 || len(row.Stocks[0].Rows) != 1 {

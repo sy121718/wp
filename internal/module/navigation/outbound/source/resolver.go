@@ -1,8 +1,3 @@
-// Package source 把 page/content/presentation/block 契约适配为 navigation 的
-// SourceResolver：菜单项来源非 custom 时，构建期与管理页按来源实体解析标题与 URL。
-//
-// 位置说明：跨模块适配属于 outbound（模块规范），navigation/service 只依赖
-// contract 定义的 SourceResolver 接口，装配由顶层 routes.go 在依赖模块就绪后注入。
 package source
 
 import (
@@ -20,7 +15,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 )
 
-// Resolver 来源实体解析器。
 type Resolver struct {
 	pages     pagecontract.PageService
 	contents  contentcontract.ContentService
@@ -28,16 +22,13 @@ type Resolver struct {
 	blocks    blockcontract.BlockService
 }
 
-// New 构造（各契约可为 nil：对应来源类型退化为「解析不到」）。
 func New(pages pagecontract.PageService, contents contentcontract.ContentService,
 	instances presentationcontract.PresentationService, blocks blockcontract.BlockService) *Resolver {
 	return &Resolver{pages: pages, contents: contents, instances: instances, blocks: blocks}
 }
 
-// 编译期断言。
 var _ navigationcontract.SourceResolver = (*Resolver)(nil)
 
-// ResolveSource 按来源类型 + 实体 ID 解析标题与 URL（解析不到返回空串，由调用方回退）。
 func (r *Resolver) ResolveSource(ctx context.Context, projectID, sourceType, sourceID string) (title, url string, err error) {
 	switch strings.TrimSpace(sourceType) {
 	case "page":
@@ -50,8 +41,6 @@ func (r *Resolver) ResolveSource(ctx context.Context, projectID, sourceType, sou
 	return "", "", nil
 }
 
-// Candidates 列出该工程可加入菜单的来源实体（页面/文章/产品/分类/全局块）。
-// 单个来源依赖不可用时该分组为空，不影响其余分组。
 func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []navigationcontract.SourceGroup, err error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
@@ -66,17 +55,10 @@ func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []n
 			out = append(out, g)
 		}
 	}
-	// 全局块不进候选：块是内容片段、没有公开 URL，加入菜单只会得到一个空链接。
-	// 来源类型 block 仍被 ResolveSource 支持（历史数据/API 直建），标题取块名。
+
 	return out, nil
 }
 
-// sourceGroupTitleKey 来源分组的 i18n key。
-//
-// 本包是 outbound 适配器，**不在这一层拼文案**：它没有请求语言，写出中文就等于把
-// 一种语言焊进契约数据。contract 的 SourceGroup.Title 因此只承载 key，
-// 由展示层取词 + 兜底：页面把 key 原样透传（inbound/http 的 navSourceGroup 的 Title），
-// 模板 admin/navigation/navigations.html 按类型取词并自带中文兜底。
 func sourceGroupTitleKey(entityType string) string {
 	switch strings.TrimSpace(entityType) {
 	case "page":
@@ -88,17 +70,11 @@ func sourceGroupTitleKey(entityType string) string {
 	case "category":
 		return navigationenums.SourceCategory
 	default:
-		// 未知来源类型：回显类型名（空标题更难查），它是枚举值、不含文案。
+
 		return strings.TrimSpace(entityType)
 	}
 }
 
-// pageCandidates 页面候选（按工程过滤；label 用页面路径、title 用文档 SEO 标题）。
-//
-// 取标题走 page 的**标题投影** ListPageTitles 而不是 List：List 为列表页服务，
-// 走 model.ListAll 并刻意 omit 掉 draft_document 大字段，这里再解析文档只会拿到空 JSON，
-// 标题静默回退成路径 —— 抽屉里 13 个候选全显示 /about、/blog，用户想挑「加哪个页面进菜单」
-// 却只能靠猜路径（2026-09 修复）。标题在 SQL 侧取出，整份 JSONB 不进 Go。
 func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigationcontract.SourceGroup {
 	group := navigationcontract.SourceGroup{Type: "page", Title: sourceGroupTitleKey("page")}
 	if r.pages == nil {
@@ -124,7 +100,6 @@ func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigat
 	return group
 }
 
-// contentCandidates 内容候选（文章/产品/分类；label 用 slug，URL 取自动发布实例路径）。
 func (r *Resolver) contentCandidates(ctx context.Context, entityType string) navigationcontract.SourceGroup {
 	group := navigationcontract.SourceGroup{Type: entityType, Title: sourceGroupTitleKey(entityType)}
 	if r.contents == nil {
@@ -153,14 +128,13 @@ func (r *Resolver) contentCandidates(ctx context.Context, entityType string) nav
 	return group
 }
 
-// resolvePage 页面来源：URL 取激活路径（未发布则草稿路径），标题取文档 settings.seo.title。
 func (r *Resolver) resolvePage(ctx context.Context, projectID, id string) (title, url string, err error) {
 	if r.pages == nil {
 		return "", "", nil
 	}
 	page, err := r.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: id})
 	if err != nil || page == nil {
-		return "", "", nil // 页面已删除/不可读：回退记录自身值
+		return "", "", nil
 	}
 	url = page.DraftPath
 	if page.ActivePath != nil && *page.ActivePath != "" {
@@ -169,7 +143,6 @@ func (r *Resolver) resolvePage(ctx context.Context, projectID, id string) (title
 	return pageDocTitle(page.DraftDocument), url, nil
 }
 
-// pageDocTitle 取页面文档 settings.seo.title（空 = 调用方回退）。
 func pageDocTitle(doc json.RawMessage) string {
 	if len(doc) == 0 {
 		return ""
@@ -187,7 +160,6 @@ func pageDocTitle(doc json.RawMessage) string {
 	return strings.TrimSpace(v.Settings.SEO.Title)
 }
 
-// resolveContent 内容来源（文章/产品/分类）：标题取实体字段，URL 取自动发布实例路径。
 func (r *Resolver) resolveContent(ctx context.Context, entityType, id string) (title, url string, err error) {
 	if r.contents == nil {
 		return "", "", nil
@@ -199,7 +171,6 @@ func (r *Resolver) resolveContent(ctx context.Context, entityType, id string) (t
 	return contentTitle(entity), r.contentURL(ctx, entityType, id), nil
 }
 
-// contentTitle 按内容类型取展示标题（article=title，product/category=name）。
 func contentTitle(c *contentdto.ContentResp) string {
 	for _, key := range []string{"title", "name"} {
 		if v, ok := c.Data[key]; ok {
@@ -211,8 +182,6 @@ func contentTitle(c *contentdto.ContentResp) string {
 	return ""
 }
 
-// contentURL 取内容实体的公开路径（presentation 自动发布实例 URLPath）。
-// 未建实例（尚未发布）时返回空串，调用方回退记录自身 path。
 func (r *Resolver) contentURL(ctx context.Context, entityType, id string) string {
 	if r.instances == nil {
 		return ""
@@ -229,7 +198,6 @@ func (r *Resolver) contentURL(ctx context.Context, entityType, id string) string
 	return ""
 }
 
-// resolveBlock 块来源：块是内容片段、没有公开 URL，只解析标题（链接沿用记录自身 path）。
 func (r *Resolver) resolveBlock(ctx context.Context, projectID, id string) (title, url string, err error) {
 	if r.blocks == nil {
 		return "", "", nil

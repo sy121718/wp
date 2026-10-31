@@ -1,15 +1,3 @@
-// page_redirect_deactivation_test.go — 重定向删除与"提交不明"的下线回执语义。
-//
-// 为什么这三条用例值得单开一个文件：
-//
-//  1. 重定向删除是唯一**没有实体归属**的下线入口（redirect 行的 page_id /
-//     presentation_id 都是 NULL），它用项目级来源登记回执。归属判据只剩
-//     "路由行仍是 redirect" + "访问面链接仍是登记时那一条"。
-//  2. 删除的失败分流里有一格既不是回滚也不是成功：事务回调跑完了、提交阶段报错。
-//     GORM 的 Transaction 会把 Commit 的错误一并返回，此时业务数据可能已落库。
-//     这一格必须保 pending（让重放按锁内重读的真实状态判定），不能 abort ——
-//     abort 会把一条其实已经生效的意图判死，链接永久残留。
-//  3. 反向：并发删除先拿走行时，本事务必须判冲突而不是当成功。
 package unit
 
 import (
@@ -25,7 +13,6 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 )
 
-// projectReceiptStateOf 读项目级下线回执的状态与 businessCommitted。
 func projectReceiptStateOf(t *testing.T, db *gorm.DB, projectID, path string) (state string, committed bool) {
 	t.Helper()
 	var row struct {
@@ -42,8 +29,6 @@ func projectReceiptStateOf(t *testing.T, db *gorm.DB, projectID, path string) (s
 	return row.ReceiptState, row.Committed
 }
 
-// TestDeleteRedirectRegistersProjectReceipt 删除重定向：回执归属是工程、业务标记同事务落下、
-// 提交后撤链并结案。
 func TestDeleteRedirectRegistersProjectReceipt(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -77,8 +62,6 @@ func TestDeleteRedirectRegistersProjectReceipt(t *testing.T) {
 	}
 }
 
-// TestDeleteRedirectRejectsTakenOverLink 锁内复验失败时不得删行、不得撤链：
-// 链接已被换成别的产物（同路径的另一条重定向重建），本次删除判冲突。
 func TestDeleteRedirectRejectsTakenOverLink(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -90,8 +73,7 @@ func TestDeleteRedirectRejectsTakenOverLink(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("新增重定向失败: %v", err)
 	}
-	// 把路由行的 route_kind 改成 active（模拟"这条路径刚被某页发布接管"）：
-	// 复验必须拒绝，否则会删掉别人正在用的路径占用。
+
 	if err := db.Exec("UPDATE page_routes SET route_kind = 'active' WHERE project_id = ? AND path = ?",
 		projectID, "/promo/winter").Error; err != nil {
 		t.Fatalf("改写路由行失败: %v", err)
@@ -107,10 +89,7 @@ func TestDeleteRedirectRejectsTakenOverLink(t *testing.T) {
 	if kind := activeKind(t, "/promo/winter"); kind != "redirect" {
 		t.Fatalf("复验失败不得撤链，访问面应保持 redirect: %s", kind)
 	}
-	// 本用例命中的是**登记之前**的前置判定：DeleteRedirect 先用 RouteOwnerTx 读一次归属
-	// （page_redirect.go 的前置存在性判定），route_kind 已不是 redirect → 直接返回
-	// ErrRedirectConflict，根本没走到 registerProjectDeactivationIntent，所以**不会有回执**。
-	// 这不是缺陷：没有意图登记就没有需要重放的撤链动作，路由行与链接也一个字节没动。
+
 	var receiptCount int64
 	if qerr := db.Raw(`SELECT count(*) FROM publication_receipts
 		WHERE source_type = 'project' AND source_id = ? AND path = ? AND action = 'deactivate'`,
@@ -122,8 +101,6 @@ func TestDeleteRedirectRejectsTakenOverLink(t *testing.T) {
 	}
 }
 
-// TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit 项目级回执在业务未提交时
-// 既不能撤链也不能结案 —— 预登记之后业务随时可能提交。
 func TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -135,7 +112,7 @@ func TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit(t *testing.T)
 	}); err != nil {
 		t.Fatalf("新增重定向失败: %v", err)
 	}
-	// 直接插一条项目级 pending 回执（businessCommitted=false），模拟"登记之后崩溃"。
+
 	receiptData := `{"projectId":"` + projectID + `","businessCommitted":false,"oldPaths":["/promo/spring"],` +
 		`"pathArtifacts":{"/promo/spring":{"locator":"file:/promo/spring"}}}`
 	if err := db.Exec(`INSERT INTO publication_receipts
@@ -157,10 +134,6 @@ func TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit(t *testing.T)
 	}
 }
 
-// TestRecoverProjectDeactivateWithdrawsAfterCommit 业务已提交 ⇔ 回执可撤链并结案。
-// redirectLocatorOf 读某路径当前访问面定位器（Provider:Key 形态，与回执登记值同口径）。
-//
-// 路径身份必须取真实链接：编一个前缀会让撤链前的复验永远失败，用例就成了自说自话。
 func redirectLocatorOf(t *testing.T, urlPath string) string {
 	t.Helper()
 	state, err := (&pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}).Inspect(urlPath)
@@ -184,10 +157,7 @@ func TestRecoverProjectDeactivateWithdrawsAfterCommit(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("新增重定向失败: %v", err)
 	}
-	// 业务侧已经删了路由行（等价于"删除事务已提交、撤链前崩溃"），回执置 businessCommitted。
-	//
-	// 路径身份必须用**真实的访问面定位器**：撤链前的复验要求"现在这条链接还是登记时的
-	// 那一条"，编一个前缀会让复验永远失败 —— 那样用例就成了自说自话。
+
 	locator := redirectLocatorOf(t, "/promo/summer")
 	if locator == "" {
 		t.Fatal("新增重定向后访问面应能读到定位器")

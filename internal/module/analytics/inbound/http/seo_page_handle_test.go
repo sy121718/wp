@@ -1,11 +1,5 @@
 package analyticshttp
 
-// seo_page_handle_test.go — SEO 控制台的模板与权限边界测试（SEO-020）。
-// 自 dashboard 的 seo_handle_test.go 迁回，随页面归入 analyticshttp 包：
-// 路由注册断言改为检查本包的页面注册段（setupAnalyticsPageRoutes）；
-// 侧栏授权树测试（TestNavigationFollowsAuthorizedMenuTree）属 dashboard 壳层
-// nav_menu.go 的行为，不随 SEO 页搬迁。
-
 import (
 	"context"
 	"net/http"
@@ -43,8 +37,7 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 		"t":             templates.TranslateFunc(lang),
 		"langs":         templates.LanguageOptions(lang),
 		"lang_redirect": "/admin/seo",
-		// 两个工程：单工程时页面不渲染工程下拉（唯一选项的下拉是纯占位），
-		// 只给一个工程就断言不到「工程选择」这条渲染路径。
+
 		"Projects": []projectcontract.ProjectResp{
 			{ID: "p-1", Name: "演示站"}, {ID: "p-2", Name: "备用站"},
 		},
@@ -104,7 +97,6 @@ func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 	}
 }
 
-// readPageRouterSources 读取本包页面注册段源码（analytics_page_router.go）。
 func readPageRouterSources(dir string) (string, error) {
 	chunk, err := os.ReadFile(filepath.Join(dir, "analytics_page_router.go"))
 	if err != nil {
@@ -114,8 +106,7 @@ func readPageRouterSources(dir string) (string, error) {
 }
 
 func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
-	// SEO 页由本包 setupAnalyticsPageRoutes 注册在装配层传入的 /admin 页面组上
-	//（该组已挂 Session + CSRF + 权限上下文），断言注册行存在。
+
 	body, err := readPageRouterSources(".")
 	if err != nil {
 		t.Fatalf("读取 analytics 页面路由失败：%v", err)
@@ -123,9 +114,7 @@ func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
 	if !strings.Contains(body, `pages.GET("/seo",`) {
 		t.Fatal("SEO 页面必须注册在已认证的 admin 页面组")
 	}
-	// 页面 GET 的鉴权（docs/02-Z §4.3）：只读不等于不鉴权，菜单隐藏不是访问控制。
-	// obj 取该页菜单绑的码 seo:audit 声明的路径，而它声明为 POST（存量口径不一致），
-	// 故用 As 变体显式指定 act。
+
 	if !strings.Contains(body, `adminui.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
 		t.Fatal("SEO 页面 GET 必须按菜单绑定的 seo:audit 鉴权")
 	}

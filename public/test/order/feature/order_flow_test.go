@@ -1,18 +1,5 @@
 package feature
 
-// order_flow_test.go — 订单模块的用例链路测试（BIZ-1 销售侧）。
-//
-// 装配与生产一致（routers.SetupRoutes）：inventory 的实现作为库存端口注入 product，
-// product 的实现作为「变体快照端口」传进 order —— 所以这里走的是真实跨模块链路，
-// 不是各自的替身。
-//
-// 覆盖的是**不变量**而不是「方法能跑通」：
-//   · 价格只信服务端；订单项是快照，改商品不该改历史订单；
-//   · 扣减不足必须整单失败（不能扣一半），且失败的订单要留痕；
-//   · 幂等键命中不得第二次扣库存；
-//   · 状态机只走合法边；
-//   · 取消归还库存，退款不归还（钱与货分开）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -42,7 +29,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// orderFixture 隔离 PG schema + 生产迁移与种子 + 真实跨模块 service。
 type orderFixture struct {
 	orders    *orderservice.Service
 	products  *productservice.Service
@@ -52,11 +38,9 @@ type orderFixture struct {
 	db        *gorm.DB
 	projectID string
 	warehouse string
-	// projects 工程契约（页面处理器要它列工程下拉）。
+
 	projects *projectservice.Service
 
-	// 底层 model 留一份引用：故障注入用例要用同一批 model 换掉库存端口重建 service
-	//（见 serviceWithStock），否则「建单要真实端口、取消要失败端口」在同一个夹具上做不了。
 	orderModel  *ordermodel.OrderModel
 	itemModel   *ordermodel.OrderItemModel
 	logModel    *ordermodel.OrderStatusLogModel
@@ -68,8 +52,6 @@ func newOrderFixture(t *testing.T) *orderFixture {
 	return newOrderFixtureWithStock(t, nil)
 }
 
-// newOrderFixtureWithStock 与 newOrderFixture 同装配，但允许换掉库存端口：
-// stock 为 nil 时用真实的 orderstock 适配器（真实跨模块链路，默认路径）。
 func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *orderFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -90,7 +72,6 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 
-	// 建单要扣库存，必须有默认仓 —— 商品建变体时会往归属仓生成一条 0 库存记录。
 	wh, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "深圳仓", IsDefault: true,
 	})
@@ -117,20 +98,17 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 		products,
 		stock,
 		users,
-		nil, // webhooks：本用例不接线外部集成通道
+		nil,
 	)
 	orders.SetProjects(projects)
-	// S1/S2：发货单 / 承运商仓储 + 发货仓解析端口（与生产装配同形：
-	// 解析实现在库存侧，通过 orderstock.WarehouseResolver 适配）。
+
 	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
-	// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
+
 	orders.SetStockRowLocator(orderstock.New(inv))
-	// 待发货页的「能不能发」投影（B6-a）：与生产装配同形 —— 库存侧读货行事实、
-	// 商品侧读变体引用的货行清单。漏了这一句，页面上所有单都会显示为「可发」，
-	// guard 的用例会假绿。
+
 	orders.SetShipStockProbe(orderstock.NewShipProbe(inv, products))
-	// 退货页的「原发货仓」要仓库 id → 名字（生产装配在 order_router 里做同一件事）。
+
 	orders.SetWarehouseSource(orderstock.NewWarehouseSource(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
@@ -140,14 +118,12 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	}
 }
 
-// serviceWithStock 用同一批 model 换一个库存端口重建 service（故障注入用）。
 func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orderservice.Service {
 	svc := orderservice.NewService(
 		f.orderModel, f.itemModel, f.logModel, f.couponModel, f.returnModel,
 		f.products, stock, f.users, nil,
 	)
-	// 与 newOrderFixture 同一份装配：故障注入只换库存端口，其余端口照旧 ——
-	// 否则「建单失败」可能是缺端口导致的，测的就不是库存那一条路径了。
+
 	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(f.db), ordermodel.NewOrderCarrierModel(f.db))
 	svc.SetWarehouseResolver(orderstock.NewWarehouseResolver(f.inventory))
 	svc.SetStockRowLocator(orderstock.New(f.inventory))
@@ -156,7 +132,6 @@ func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orde
 	return svc
 }
 
-// addProduct 建商品 + 一个带价的变体，并把指定数量的货补进默认仓。
 func (f *orderFixture) addProduct(t *testing.T, name string, price float64, stock int) (productID, variantID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -186,7 +161,6 @@ func (f *orderFixture) addProduct(t *testing.T, name string, price float64, stoc
 	return p.ID, v.ID
 }
 
-// stockOf 读某变体在默认仓的可用量（经 inventory service，不直读表）。
 func (f *orderFixture) stockOf(t *testing.T, variantID string) int {
 	t.Helper()
 	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
@@ -198,11 +172,6 @@ func (f *orderFixture) stockOf(t *testing.T, variantID string) int {
 	return st.Quantity
 }
 
-// reservedOf 读某变体在默认仓的**预占**数量（迁移 624 起下单只预占、不扣减）。
-//
-// 与 stockOf 分开两个函数：两段式的核心就是这个区别 ——
-// 「下单」改 reserved_quantity，「发货」才改 quantity。合成一个函数读两个数，
-// 断言就会写成「总数是 X」，那正好把两者混为一谈。
 func (f *orderFixture) reservedOf(t *testing.T, variantID string) int {
 	t.Helper()
 	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
@@ -214,7 +183,6 @@ func (f *orderFixture) reservedOf(t *testing.T, variantID string) int {
 	return st.ReservedQuantity
 }
 
-// createBaseReq 造一个最小可用建单请求。
 func (f *orderFixture) createBaseReq(variantID string, qty int) *orderdto.CreateOrderReq {
 	return &orderdto.CreateOrderReq{
 		ProjectID:     f.projectID,
@@ -225,10 +193,6 @@ func (f *orderFixture) createBaseReq(variantID string, qty int) *orderdto.Create
 	}
 }
 
-// TestOrderCreateDeductsStockAndSnapshotsPrice：建单成功 → 状态待付款、金额按服务端价格算、**库存预占**。
-//
-// 口径（迁移 624，S2）：下单只预占（reserved_quantity += n），发货才扣减 quantity。
-// 本用例断言的是「下单之后」这一半；发货那一半见 order_shipment_test.go。
 func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -243,11 +207,11 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if res.Status != ordermodel.OrderStatusPending {
 		t.Fatalf("新单应为 pending，实际 %s", res.Status)
 	}
-	// 99.50 元 × 2 = 19900 分（元→分的换算发生在商品域的边界上）
+
 	if res.Total != 19900 {
 		t.Fatalf("总额应为 19900 分，实际 %d", res.Total)
 	}
-	// 两段式（迁移 624）：**下单只预占**，quantity 一个字都不动。
+
 	if got := f.stockOf(t, vid); got != 10 {
 		t.Fatalf("下单不得扣减在库数量（两段式：下单只预占），期望 10，实际 %d", got)
 	}
@@ -269,15 +233,12 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if it.ProductName != "T恤" || it.UnitPrice != 9950 || it.LineSubtotal != 19900 {
 		t.Fatalf("订单项快照不对: %+v", it)
 	}
-	// 成本快照来自**该行归属仓的当前成本**（(仓库, SKU)，迁移 256）：
-	// 本用例只建了变体级成本、库存行尚未核算，所以这里必须是 null ——
-	// 用 0 冒充「未知成本」会让毛利凭空多出一笔（0 是合法的显式成本：赠品 / 内部划拨）。
+
 	if it.CostPrice != nil {
 		t.Fatalf("库存行未核算时订单行成本应为 null，实际 %d", *it.CostPrice)
 	}
 }
 
-// TestOrderAPIEntryPersistsSource 客户端 JSON 中的来源字段无法覆盖 API 审计来源。
 func TestOrderAPIEntryPersistsSource(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -301,7 +262,6 @@ func TestOrderAPIEntryPersistsSource(t *testing.T) {
 	}
 }
 
-// TestOrderItemSnapshotSurvivesProductRename：改商品名之后，历史订单仍显示下单时的名字。
 func TestOrderItemSnapshotSurvivesProductRename(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -326,7 +286,6 @@ func TestOrderItemSnapshotSurvivesProductRename(t *testing.T) {
 	}
 }
 
-// TestOrderCreateIsIdempotentByRequestID：同一幂等键重复提交只落一单、只扣一次库存。
 func TestOrderCreateIsIdempotentByRequestID(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -353,7 +312,7 @@ func TestOrderCreateIsIdempotentByRequestID(t *testing.T) {
 	if !second.Duplicated || second.ID != first.ID || second.OrderNo != first.OrderNo {
 		t.Fatalf("重复提交应命中同一单，实际 %+v vs %+v", second, first)
 	}
-	// 两段式：幂等生效时预占只该加一次（5 件货里占 2 件）。
+
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("幂等生效时预占只该加一次（2），实际 %d", got)
 	}
@@ -362,11 +321,6 @@ func TestOrderCreateIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestOrderCreateRejectsInsufficientStockAndRollsBack 库存不足 → **整单回滚**，不留半截状态。
-//
-// 口径变化（2026-09-19 事务收口）：扣减与订单落在同一个事务里，任一步失败整单不存在 ——
-// 不再有「订单先落库、再补偿成已取消」那条路径（补偿调用本身还是 `_ =` 吞错的形态，
-// 补偿再失败就留下「有单没扣库存」的僵尸单，事后无从分辨到底发没发货）。
 func TestOrderCreateRejectsInsufficientStockAndRollsBack(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -388,7 +342,7 @@ func TestOrderCreateRejectsInsufficientStockAndRollsBack(t *testing.T) {
 	if got := f.reservedOf(t, vid); got != 0 {
 		t.Fatalf("预占失败不该留下任何预占，实际 %d", got)
 	}
-	// 整单回滚：订单头 / 订单项 / 流转流水一条都不该留下（含「建单」与旧的「自动取消」）。
+
 	for _, table := range []string{"orders", "order_items", "order_status_logs"} {
 		if n := f.tableCount(t, table); n != 0 {
 			t.Fatalf("库存不足必须整单回滚，%s 里应 0 行，实际 %d", table, n)
@@ -396,7 +350,6 @@ func TestOrderCreateRejectsInsufficientStockAndRollsBack(t *testing.T) {
 	}
 }
 
-// tableCount 直读某张表的行数（表名是测试内的字面量，不来自输入）。
 func (f *orderFixture) tableCount(t *testing.T, table string) int64 {
 	t.Helper()
 	var n int64
@@ -406,7 +359,6 @@ func (f *orderFixture) tableCount(t *testing.T, table string) int64 {
 	return n
 }
 
-// TestOrderCreateRejectsUnknownVariant：离谱的规格 id 必须报错，而不是静默少一行。
 func TestOrderCreateRejectsUnknownVariant(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -422,7 +374,6 @@ func TestOrderCreateRejectsUnknownVariant(t *testing.T) {
 	}
 }
 
-// TestOrderStatusFlowFollowsAllowedEdges：状态机只放行合法边。
 func TestOrderStatusFlowFollowsAllowedEdges(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -434,13 +385,13 @@ func TestOrderStatusFlowFollowsAllowedEdges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// pending 直接跳到 shipped 是非法边（没付款就不能发货）。
+
 	if err := f.orders.ChangeStatus(ctx, &orderdto.ChangeStatusReq{
 		OrderID: res.ID, ToStatus: ordermodel.OrderStatusShipped,
 	}); err == nil {
 		t.Fatalf("pending → shipped 应被拒绝")
 	}
-	// 合法链：pending → paid → shipped → completed
+
 	for _, to := range []string{ordermodel.OrderStatusPaid, ordermodel.OrderStatusShipped, ordermodel.OrderStatusCompleted} {
 		if err := f.orders.ChangeStatus(ctx, &orderdto.ChangeStatusReq{
 			OrderID: res.ID, ToStatus: to, OperatorName: "tester",
@@ -448,13 +399,13 @@ func TestOrderStatusFlowFollowsAllowedEdges(t *testing.T) {
 			t.Fatalf("%s 流转应成功: %v", to, err)
 		}
 	}
-	// 终态不再流转。
+
 	if err := f.orders.ChangeStatus(ctx, &orderdto.ChangeStatusReq{
 		OrderID: res.ID, ToStatus: ordermodel.OrderStatusPaid,
 	}); err == nil {
 		t.Fatalf("completed 之后不该还能回到 paid")
 	}
-	// 流转链要留痕（4 条：建单 + 三次流转）。
+
 	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读详情失败: %v", err)
@@ -464,7 +415,6 @@ func TestOrderStatusFlowFollowsAllowedEdges(t *testing.T) {
 	}
 }
 
-// TestOrderCancelReturnsStock：取消订单归还库存。
 func TestOrderCancelReturnsStock(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -476,9 +426,7 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 两段式（迁移 624）：建单预占 4 件、在库仍 6 件；
-	// 取消**释放预占**（在库本来就没动，所以「回到 6」这个说法已不适用 ——
-	// 要断言的是预占归零）。
+
 	if got := f.reservedOf(t, vid); got != 4 {
 		t.Fatalf("建单后预占应为 4，实际 %d", got)
 	}
@@ -496,7 +444,7 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 6 {
 		t.Fatalf("取消不改变在库数量（货从来没出库），期望 6，实际 %d", got)
 	}
-	// 已取消的单不能再取消。
+
 	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "再来一次",
 	}); err == nil {
@@ -504,13 +452,6 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	}
 }
 
-// TestOrderRefundUnshippedReturnsStock：未发货订单的退款归还库存（口径变更，BIZ-07 方案 A）。
-//
-// 原先这条断言的是「退款一律不归还库存」—— 那与「取消」在同一状态上给出了相反的库存结果：
-// 同一张 paid 订单点「取消」货会回来、点「退款」货不回来，而页面上两个按钮看不出区别。
-// 现在未发货（paid）的退款按「订购数量 − 已实际退货入库数量」归还库存，与取消同一本账；
-// 已发货的退款仍然不归还（要经退货入库验收），那条在
-// order_return_account_test.go 的 TestUnshippedRefundRestocksStock 里钉着。
 func TestOrderRefundUnshippedReturnsStock(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -544,7 +485,6 @@ func TestOrderRefundUnshippedReturnsStock(t *testing.T) {
 	}
 }
 
-// TestOrderPersistsAttributionAndAdminNote：归因与轨迹、后台备注都要能落库并读回。
 func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -566,8 +506,7 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 			Entry: "/landing", Pages: 4, Count: 2, StartTime: "2026-09-12T10:00:00Z", DurationSeconds: 320,
 		},
 		Device: orderdto.DeviceInfo{Type: "mobile", UserAgent: "UA/1.0", Screen: "390x844"},
-		// 首次触点与本次会话来源**故意不同**：先点广告来、隔几天搜品牌词才下单，
-		// 两个口径必须各存各的，否则 first-touch 会被 last-touch 覆盖掉。
+
 		First: orderdto.FirstTouch{
 			SourceType: "referral",
 			Referrer:   "https://blog.example.com/post",
@@ -621,7 +560,6 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 	}
 }
 
-// TestOrderListFiltersByStatusAndKeyword：列表按状态与关键词过滤，计数是全局的。
 func TestOrderListFiltersByStatusAndKeyword(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

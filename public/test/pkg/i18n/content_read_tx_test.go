@@ -1,32 +1,5 @@
 package i18n_test
 
-// content_read_tx_test.go — 事务内读译文 / 工程译文写入锁（导航译文改造 R1）在真实
-// PostgreSQL 上的链路验证。
-//
-// 与同目录既有文件的边界：
-//   - content_write_test.go 测旧写入口（Upsert）与旧读入口（LoadTargets / LoadDetails）；
-//   - content_write_tx_test.go（T1）测 UpsertTx；
-//   - content_project_scope_test.go 测工程覆盖 / 全局回落；
-//   - 本文件只测 R1 新增的三个能力，并顺带回归两条旧读入口的行为不被改动波及：
-//       1. LoadTargetsForProjectTx / LoadDetailsForProjectTx 在**未提交**的事务里看得到
-//          本事务刚写的行，事务外的另一条连接看不到（「读现值必须进事务」D-9.0）；
-//       2. 工程覆盖 + 回落全局与旧入口逐条一致，且按 context 稳定（同一 hash 多语境各取各的）；
-//       3. 非事务句柄（nil / 连接池）→ ErrContentTxRequired，零 SQL（用 rtFailConnPool 观测）；
-//          输入校验先于空输入：空 lang/hashes + 非事务句柄仍被拒；
-//       4. 空 lang / 空 hashes → 空 map 且零 SQL；空 projectID 退化为全局形态（同旧 ForProject）；
-//       5. LockProjectContentWrite 跨事务同工程阻塞直到提交/回滚；不同工程不互相阻塞；
-//          uuid 大小写同锁；非事务句柄 → ErrContentTxRequired；空工程与非合法 uuid →
-//          统一 ErrContentProjectRequired；取消 ctx 正常退出并释放等待。
-//
-// 并发握手不用 sleep 冒充「锁已等待」：
-//   - A 取得锁后，用**同键** try-lock 当探针：返回 false 即「A 确实持锁」（可观测握手）；
-//   - B 拿到锁后再做一次同键 try-lock：仍为 false，即「锁此刻在 B 手上」；
-//   - 「确实在等待」以 pg_locks 里未授予的顾问锁为证据，不拿等待时间当证据；
-//   - 取消用例：B 的 ctx 取消 → 返回 context.Canceled 且未授予锁消失；随后 A 回滚、C 取锁成功，
-//     证明 B 没有把事务/锁留在半路。
-//
-// 表结构一律来自生产迁移（support.NewMigratedPGTestDB）；PG 不可用时 support 内部 Skip。
-
 import (
 	"context"
 	"database/sql"
@@ -46,26 +19,21 @@ import (
 )
 
 const (
-	// rtTestProbeTimeout 所有「等一个可观测状态」的上限：超时即失败（不无限等）。
 	rtTestProbeTimeout = 30 * time.Second
-	// rtTestProbeStep 探针轮询间隔（只用于 try-lock / Count 这类**可观测**状态，
-	// 不是用等待时间冒充「锁已阻塞」；真正的阻塞由数据库的锁等待本身提供）。
+
 	rtTestProbeStep = 10 * time.Millisecond
 )
 
-// rtSnapshot 测试收尾快照：任一 goroutine 仍在跑 / 有悬挂的锁等待 / 事务未结束，
-// 都说明有泄漏（事务不在收尾前提交或回滚，就会一直挂着锁）。
 type rtSnapshot struct {
 	goroutines   int
 	waitingLocks int64
 	openTx       int64
 }
 
-// rtTakeSnapshot 读收尾快照（同一连接上顺序取三个计数）。
 func rtTakeSnapshot(t *testing.T, db *gorm.DB) rtSnapshot {
 	t.Helper()
 	var snap rtSnapshot
-	// 运行时协程数（不引入第三方泄漏检测依赖；判据见 rtAssertNoLeak 的余量说明）。
+
 	snap.goroutines = runtime.NumGoroutine()
 	if err := db.Raw("SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").
 		Scan(&snap.waitingLocks).Error; err != nil {
@@ -79,11 +47,6 @@ func rtTakeSnapshot(t *testing.T, db *gorm.DB) rtSnapshot {
 	return snap
 }
 
-// rtAssertNoLeak 断言收尾时没有新增未结束事务、没有等待中的顾问锁、goroutine 回到基线。
-//
-// 三者的容量余量：基线在用例开始前取（同一个测试内可能还有别的事务在跑，例如
-// 上一段提交后的清理），因此只要求「不比基线多」。goroutine 的 2 个余量留给
-// runtime 的调度/GC 辅助协程。
 func rtAssertNoLeak(t *testing.T, db *gorm.DB, base rtSnapshot) {
 	t.Helper()
 	after := rtTakeSnapshot(t, db)
@@ -98,7 +61,6 @@ func rtAssertNoLeak(t *testing.T, db *gorm.DB, base rtSnapshot) {
 	}
 }
 
-// rtPGCount 在当前连接上执行一条计数 SQL（测试观测用，不是被测路径）。
 func rtPGCount(t *testing.T, db *gorm.DB, sqlText string) int64 {
 	t.Helper()
 	var n int64
@@ -108,9 +70,6 @@ func rtPGCount(t *testing.T, db *gorm.DB, sqlText string) int64 {
 	return n
 }
 
-// rtLockHeld 报告某个锁键此刻是否已被占用 —— 用**同键 try-lock** 当探针。
-//
-// 取到即立刻回滚：探针只回答「是否空闲」，不留下持锁事务。
 func rtLockHeld(t *testing.T, db *gorm.DB, lockKey string) bool {
 	held := false
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -127,7 +86,6 @@ func rtLockHeld(t *testing.T, db *gorm.DB, lockKey string) bool {
 	return held
 }
 
-// rtWaitLockHeld 等到锁键被占用（或超时失败）。
 func rtWaitLockHeld(t *testing.T, db *gorm.DB, lockKey string) {
 	t.Helper()
 	deadline := time.Now().Add(rtTestProbeTimeout)
@@ -139,7 +97,6 @@ func rtWaitLockHeld(t *testing.T, db *gorm.DB, lockKey string) {
 	}
 }
 
-// rtWaitLockFree 等到锁键被释放（或超时失败）。
 func rtWaitLockFree(t *testing.T, db *gorm.DB, lockKey string) {
 	t.Helper()
 	deadline := time.Now().Add(rtTestProbeTimeout)
@@ -151,7 +108,6 @@ func rtWaitLockFree(t *testing.T, db *gorm.DB, lockKey string) {
 	}
 }
 
-// rtWaitAnyLockWaiting 等到本连接上出现「等待中的顾问锁」（即真有会话在锁上阻塞）。
 func rtWaitAnyLockWaiting(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	deadline := time.Now().Add(rtTestProbeTimeout)
@@ -163,12 +119,6 @@ func rtWaitAnyLockWaiting(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// ── 事务内读 ───────────────────────────────────────────────────────────────
-
-// TestContentReadTxSeesUncommittedWrites 事务内读看得到本事务未提交的写入，事务外看不到。
-//
-// 这是 R1 要的那个性质：锁内先用 LoadDetailsForProjectTx 取现值，再决定是否变更；
-// 若走旧入口（自开事务、另取连接），读到的是锁外的旧快照。
 func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -184,8 +134,7 @@ func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 	keyB := i18n.ContentIndexKey(hashB, txTestContext)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// 本事务先取得本工程的写入锁（与生产调用顺序一致：锁 → 写 → 读回），
-		// 同时把 scope 设上（写工程行需要，UpsertTx 的调用约定）。
+
 		if lerr := i18n.LockProjectContentWrite(ctx, tx, project); lerr != nil {
 			return lerr
 		}
@@ -198,7 +147,6 @@ func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 			return werr
 		}
 
-		// 未提交：同事务的读必须看得到。
 		details, derr := writer.LoadDetailsForProjectTx(ctx, tx, project, txTestLang, []string{hashA})
 		if derr != nil {
 			return derr
@@ -214,13 +162,10 @@ func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 			t.Fatalf("事务内 LoadTargets 应看到未提交译文，实际 %q", got)
 		}
 
-		// 另一条连接（事务外）：看不到未提交的行（说明上面读到的确是「本事务」的视图，
-		// 而不是事务外也能读到的已提交数据）。
 		if n := txRowCount(t, db, project); n != 0 {
 			t.Fatalf("事务外不应看到未提交行，实际 %d", n)
 		}
 
-		// 空 hashes 的候选（本事务还没写的那条）：只验证另一条 hash 不会串进来。
 		targetsB, berr := writer.LoadTargetsForProjectTx(ctx, tx, project, txTestLang, []string{hashB})
 		if berr != nil {
 			return berr
@@ -234,7 +179,6 @@ func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 		t.Fatalf("事务执行失败: %v", err)
 	}
 
-	// 提交后：事务外读得到（旧入口也能读到，证明落库确实是这一笔）。
 	if n := txRowCount(t, db, project); n != 1 {
 		t.Fatalf("提交后应有 1 行，实际 %d", n)
 	}
@@ -248,10 +192,6 @@ func TestContentReadTxSeesUncommittedWrites(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// TestContentReadTxProjectOverridesGlobalByContext 工程覆盖 + 回落全局，且按 context 稳定。
-//
-// 同一 source_hash 在不同 context 下的译法互不影响（DISTINCT ON 的键包含 context）；
-// 工程 A 覆盖了一条，另一条回落全局；工程 B 两条都回落全局。
 func TestContentReadTxProjectOverridesGlobalByContext(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -267,14 +207,13 @@ func TestContentReadTxProjectOverridesGlobalByContext(t *testing.T) {
 	keyMain := i18n.ContentIndexKey(hash, ctxMain)
 	keyAside := i18n.ContentIndexKey(hash, ctxAside)
 
-	// 全局两条语境（无工程上下文：不需要 scope）。
 	if _, err := writer.Upsert(ctx, []i18n.ContentWriteItem{
 		{SourceHash: hash, Context: ctxMain, Lang: txTestLang, SourceText: src, TargetText: "Order now"},
 		{SourceHash: hash, Context: ctxAside, Lang: txTestLang, SourceText: src, TargetText: "Order"},
 	}); err != nil {
 		t.Fatalf("写全局译文失败: %v", err)
 	}
-	// 工程 A 只覆盖 ctxMain。
+
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectA); serr != nil {
 			return serr
@@ -323,7 +262,6 @@ func TestContentReadTxProjectOverridesGlobalByContext(t *testing.T) {
 	check(projectA, "Buy now", "Order")
 	check(projectB, "Order now", "Order")
 
-	// 旧入口回归：同一条 hash 上，旧 LoadDetailsForProject / LoadTargetsForProject 与事务版同解。
 	oldDetails, err := writer.LoadDetailsForProject(ctx, projectA, txTestLang, []string{hash})
 	if err != nil {
 		t.Fatalf("旧 LoadDetailsForProject 失败: %v", err)
@@ -341,7 +279,6 @@ func TestContentReadTxProjectOverridesGlobalByContext(t *testing.T) {
 			oldDetails[keyAside].TargetText, oldTargets[keyAside])
 	}
 
-	// 空 projectID：与旧 ForProject("") 一致 —— 无工程上下文退化为全局形态（全局行优先）。
 	err = db.Transaction(func(tx *gorm.DB) error {
 		targets, terr := writer.LoadTargetsForProjectTx(ctx, tx, "", txTestLang, []string{hash})
 		if terr != nil {
@@ -358,12 +295,6 @@ func TestContentReadTxProjectOverridesGlobalByContext(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// ── 入参判据与零 SQL ───────────────────────────────────────────────────────
-
-// TestContentReadTxRejectsNonTxHandle 非事务句柄 → ErrContentTxRequired，且**零 SQL**。
-//
-// failConnPool 的任何 Exec/Query 都返回错误：若方法在判定前发了任何语句，
-// 这里会拿到那个哨兵错误而不是 ErrContentTxRequired，用例即失败。
 func TestContentReadTxRejectsNonTxHandle(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -385,7 +316,7 @@ func TestContentReadTxRejectsNonTxHandle(t *testing.T) {
 			if _, err := writer.LoadDetailsForProjectTx(ctx, tc.tx, txTestProjectA, txTestLang, []string{hash}); !errors.Is(err, i18n.ErrContentTxRequired) {
 				t.Fatalf("LoadDetailsForProjectTx 应返回 ErrContentTxRequired，实际 %v", err)
 			}
-			// 判据顺序：事务判别先于空输入 —— 空 lang/hashes + 非事务句柄同样被拒。
+
 			if _, err := writer.LoadTargetsForProjectTx(ctx, tc.tx, txTestProjectA, "  ", nil); !errors.Is(err, i18n.ErrContentTxRequired) {
 				t.Fatalf("空输入 + 非事务句柄应仍返回 ErrContentTxRequired，实际 %v", err)
 			}
@@ -395,16 +326,13 @@ func TestContentReadTxRejectsNonTxHandle(t *testing.T) {
 			if err := i18n.LockProjectContentWrite(ctx, tc.tx, txTestProjectA); !errors.Is(err, i18n.ErrContentTxRequired) {
 				t.Fatalf("LockProjectContentWrite 应返回 ErrContentTxRequired，实际 %v", err)
 			}
-			// 锁的事务判别同样先于工程入参校验：空工程 + 连接池 → 事务错误。
+
 			if err := i18n.LockProjectContentWrite(ctx, tc.tx, " "); !errors.Is(err, i18n.ErrContentTxRequired) {
 				t.Fatalf("空工程 + 非事务句柄应返回 ErrContentTxRequired，实际 %v", err)
 			}
 		})
 	}
 
-	// 空输入在**真事务**上返回空 map，零 SQL：failConnPool 不行（它不是事务），
-	// 这里用「真事务 + 空输入」并把期望落在空 map 与不报错上；零 SQL 由
-	// 下面 TestContentReadTxEmptyInputIssuesNoSQL 用查询计数证明。
 	err := db.Transaction(func(tx *gorm.DB) error {
 		targets, terr := writer.LoadTargetsForProjectTx(ctx, tx, txTestProjectA, "   ", []string{hash})
 		if terr != nil {
@@ -427,15 +355,6 @@ func TestContentReadTxRejectsNonTxHandle(t *testing.T) {
 	}
 }
 
-// TestContentReadTxEmptyInputIssuesNoSQL 空输入 → 空 map 且**零 SQL**。
-//
-// 判据用 GORM 回调计数，不用 SELECT current_query()：后者在 PostgreSQL 18 上返回的是
-// **它自己这条语句**（"SELECT current_query()"），永远不含标记串，判据恒假红；而且
-// 在事务回调里 t.Fatalf 会让协程直接 Goexit，gorm 的事务既不提交也不回滚 —— 连接停在
-// "idle in transaction"，同包后续用例的 rtAssertNoLeak 全部连带失败（实测 4 例）。
-//
-// 回调挂在**共享** *gorm.DB 上，tx 由它派生，因此事务内的语句同样被计数；
-// 计数在标记语句之后清零，后续断言只看空输入是否发了 SQL。
 func TestContentReadTxEmptyInputIssuesNoSQL(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -444,7 +363,7 @@ func TestContentReadTxEmptyInputIssuesNoSQL(t *testing.T) {
 
 	var sqls atomic.Int64
 	count := func(*gorm.DB) { sqls.Add(1) }
-	// 四类 finisher 都要挂：Query/Row/Raw/Exec 分别对应 gorm 的不同回调链。
+
 	db.Callback().Query().After("gorm:query").Register("i18n_test:count_sql", count)
 	db.Callback().Row().After("gorm:row").Register("i18n_test:count_sql", count)
 	db.Callback().Raw().After("gorm:raw").Register("i18n_test:count_sql", count)
@@ -463,7 +382,7 @@ func TestContentReadTxEmptyInputIssuesNoSQL(t *testing.T) {
 			return err
 		}
 		sqls.Store(0)
-		// 空 hashes / 空 targets：两条都必须零 SQL 返回空结果。
+
 		if got, err := writer.LoadTargetsForProjectTx(ctx, tx, txTestProjectA, "", []string{"x"}); err != nil {
 			return err
 		} else if len(got) != 0 {
@@ -484,10 +403,6 @@ func TestContentReadTxEmptyInputIssuesNoSQL(t *testing.T) {
 	}
 }
 
-// ── 写入锁 ─────────────────────────────────────────────────────────────────
-
-// TestLockProjectContentWriteBlocksSameProjectUntilCommit 同工程跨事务阻塞，
-// 提交后放行；等待方拿到锁后反过来证明持有方的锁已释放（双向 try-lock 握手）。
 func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 	db := txTestDB(t)
 	ctx := context.Background()
@@ -495,7 +410,6 @@ func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 	project := txTestProjectA
 	key := "i18n.content:" + project
 
-	// 持有方：Begin 后取锁，用通道请求「释放」，再提交。
 	txA := db.Begin()
 	if txA.Error != nil {
 		t.Fatalf("开启事务 A 失败: %v", txA.Error)
@@ -512,8 +426,8 @@ func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 
 	release := make(chan string, 1)
 	releaseResp := make(chan error, 1)
-	acquired := make(chan error, 1) // B 取到锁后发 nil
-	probed := make(chan bool, 1)    // B 拿到锁后对 A 的锁做的反向探针结果
+	acquired := make(chan error, 1)
+	probed := make(chan bool, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -524,14 +438,14 @@ func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 				return lerr
 			}
 			acquired <- nil
-			// B 已持锁：同键 try-lock 必须为 false（锁在 B 手上），以此观测「B 确实拿到了锁」。
+
 			var got bool
 			if qerr := tx.Raw("SELECT pg_try_advisory_xact_lock(hashtextextended($1, $2))", key, 0).
 				Scan(&got).Error; qerr != nil {
 				return qerr
 			}
 			probed <- !got
-			// 收到主协程的释放请求后再结束事务：提交释放锁，回滚同样释放。
+
 			if action := <-release; action != "commit" {
 				return errR1Rollback
 			}
@@ -540,7 +454,6 @@ func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 		releaseResp <- err
 	}()
 
-	// 等待方确实处于「锁等待」：本连接上出现未授予的顾问锁（不是靠等待时间）。
 	rtWaitAnyLockWaiting(t, db)
 	select {
 	case err := <-acquired:
@@ -575,10 +488,8 @@ func TestLockProjectContentWriteBlocksSameProjectUntilCommit(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// errR1Rollback 等待方用「业务错误回滚」结束事务（锁随回滚释放）。
 var errR1Rollback = errors.New("r1: 用例要求回滚")
 
-// TestLockProjectContentWriteReleasedByRollback 持有方回滚 → 等待方放行。
 func TestLockProjectContentWriteReleasedByRollback(t *testing.T) {
 	db := txTestDB(t)
 	ctx := context.Background()
@@ -632,10 +543,6 @@ func TestLockProjectContentWriteReleasedByRollback(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// TestLockProjectContentWriteDifferentProjectsDoNotBlock 不同工程互不阻塞。
-//
-// 手上持有 A 的锁时，B 必须在**没有等待**的情况下立刻取到 B 的锁（try 语义可观测：
-// 取锁期间 pg_locks 里不应出现未授予的顾问锁）。
 func TestLockProjectContentWriteDifferentProjectsDoNotBlock(t *testing.T) {
 	db := txTestDB(t)
 	ctx := context.Background()
@@ -651,7 +558,7 @@ func TestLockProjectContentWriteDifferentProjectsDoNotBlock(t *testing.T) {
 	}
 	rtWaitLockHeld(t, db, "i18n.content:"+txTestProjectA)
 
-	var bErr error // 取锁结果：在测试协程里取回、在主协程断言（t.Fatalf 不能跨协程）
+	var bErr error
 	acquired := make(chan error, 1)
 	go func() {
 		acquired <- db.Transaction(func(tx *gorm.DB) error {
@@ -673,10 +580,6 @@ func TestLockProjectContentWriteDifferentProjectsDoNotBlock(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// TestLockProjectContentWriteUppercaseProjectSameLock uuid 大小写不同 → 同一把锁。
-//
-// 持有方用大写形式取锁；等待方用小写形式取同一工程，必须被阻塞 —— 若键按原始字符串
-// 拼，两边会算出两把不同的锁，等待方会立刻放行（本用例即失败）。
 func TestLockProjectContentWriteUppercaseProjectSameLock(t *testing.T) {
 	db := txTestDB(t)
 	ctx := context.Background()
@@ -696,7 +599,7 @@ func TestLockProjectContentWriteUppercaseProjectSameLock(t *testing.T) {
 	if err := i18n.LockProjectContentWrite(ctx, txA, upper); err != nil {
 		t.Fatalf("大写形式取锁失败: %v", err)
 	}
-	// 大小写规范化后应落在**同一个小写键**上（探针按小写键能观测到占用）。
+
 	rtWaitLockHeld(t, db, lowerKey)
 
 	acquired := make(chan error, 1)
@@ -734,8 +637,6 @@ func TestLockProjectContentWriteUppercaseProjectSameLock(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// TestLockProjectContentWriteProjectParamValidation 工程入参非法（空白 / 非合法 uuid）统一报
-// ErrContentProjectRequired；带首尾空白的合法 uuid 去空白后正常取锁。
 func TestLockProjectContentWriteProjectParamValidation(t *testing.T) {
 	db := txTestDB(t)
 	ctx := t.Context()
@@ -751,7 +652,7 @@ func TestLockProjectContentWriteProjectParamValidation(t *testing.T) {
 				errAssert("非法 uuid %q 应返回 ErrContentProjectRequired，实际 %v", bad, lerr)
 			}
 		}
-		// 合法（且带首尾空白）的工程 id 可通过：与 rls 的 Trim 口径一致。
+
 		if lerr := i18n.LockProjectContentWrite(ctx, tx, "  "+txTestProjectA+"  "); lerr != nil {
 			errAssert("合法工程（带空白）应取锁成功，实际 %v", lerr)
 		}
@@ -762,10 +663,6 @@ func TestLockProjectContentWriteProjectParamValidation(t *testing.T) {
 	}
 }
 
-// TestLockProjectContentWriteCanceledContextReleasesWait 取消 ctx → 等待方正常退出并释放等待。
-//
-// 三步：A 持锁 → B 同工程取锁并在 ctx 取消后返回错误 → 取消后 C 能拿到锁
-// （证明 B 没有把事务/锁留在半路），全程无 goroutine 泄漏。
 func TestLockProjectContentWriteCanceledContextReleasesWait(t *testing.T) {
 	db := txTestDB(t)
 	base := rtTakeSnapshot(t, db)
@@ -810,7 +707,6 @@ func TestLockProjectContentWriteCanceledContextReleasesWait(t *testing.T) {
 	}
 	<-done
 
-	// 取消后：A 的锁仍在（A 还开着事务），但**没有**任何未授予的锁等待残留。
 	deadline := time.Now().Add(rtTestProbeTimeout)
 	for rtPGCount(t, db, "SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted") != 0 {
 		if time.Now().After(deadline) {
@@ -818,7 +714,7 @@ func TestLockProjectContentWriteCanceledContextReleasesWait(t *testing.T) {
 		}
 		time.Sleep(rtTestProbeStep)
 	}
-	// C 在 A 回滚后立刻能拿到锁（B 没有把锁/事务留成半路状态）。
+
 	if err := txA.Rollback().Error; err != nil {
 		t.Fatalf("回滚事务 A 失败: %v", err)
 	}
@@ -831,10 +727,6 @@ func TestLockProjectContentWriteCanceledContextReleasesWait(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// TestLockProjectContentWriteReentrantForWriteWithinTx 同一事务内取锁后可正常写入并读回。
-//
-// 顾问锁是 xact 级、按（会话, 键）可重入：同一事务里先取锁、再设 scope、再写、
-// 再读回，不应自锁（写路径本身也要拿表级锁，若自锁这里会永远不返回）。
 func TestLockProjectContentWriteReentrantForWriteWithinTx(t *testing.T) {
 	db := txTestDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -850,7 +742,7 @@ func TestLockProjectContentWriteReentrantForWriteWithinTx(t *testing.T) {
 		if lerr := i18n.LockProjectContentWrite(ctx, tx, project); lerr != nil {
 			return lerr
 		}
-		// 同一事务内重复取锁（可重入）。
+
 		if lerr := i18n.LockProjectContentWrite(ctx, tx, project); lerr != nil {
 			return lerr
 		}
@@ -881,22 +773,12 @@ func TestLockProjectContentWriteReentrantForWriteWithinTx(t *testing.T) {
 	rtAssertNoLeak(t, db, base)
 }
 
-// ── 本地辅助 ───────────────────────────────────────────────────────────────
-
-// errAssert 断言失败的即时回报（在 **事务回调** 里代替 t.Fatalf 使用）。
-//
-// 事务回调里不能调 t.Fatalf：非测试协程上的 Fatal 只会 Goexit 掉那个协程、
-// 而外层 test 协程可能正阻塞在数据库调用上，测试会挂到超时。这里 panic 一个固定值，
-// 由 recoverErrAssert 在同一个协程里换回 error 交给事务回滚，再由主协程断言。
 func errAssert(format string, args ...any) { panic(rtErrAssert{msg: fmt.Sprintf(format, args...)}) }
 
-// rtErrAssert 事务回调里的断言失败（带格式化后的说明）。
 type rtErrAssert struct{ msg string }
 
-// Error 实现 error 接口（便于日志与 unwrap 输出）。
 func (e rtErrAssert) Error() string { return e.msg }
 
-// recoverErrAssert 把 errAssert 的 panic 转回 error；其它 panic 原样抛出。
 func recoverErrAssert(err *error) {
 	if r := recover(); r != nil {
 		if aerr, ok := r.(rtErrAssert); ok {
@@ -907,26 +789,20 @@ func recoverErrAssert(err *error) {
 	}
 }
 
-// rtFailConnPool 任何写/查都返回错误的连接池替身：
-// 用来证明「判定非事务句柄时零 SQL」（若发出语句，错误会变成 rtErrFailNoSQL）。
 type rtFailConnPool struct{}
 
 var rtErrFailNoSQL = errors.New("r1: 非事务句柄上不应发出任何 SQL")
 
-// ExecContext 记录「方法在本该零 SQL 的路径上发了语句」。
 func (rtFailConnPool) ExecContext(context.Context, string, ...any) (sql.Result, error) {
 	return nil, rtErrFailNoSQL
 }
 
-// PrepareContext 同上。
 func (rtFailConnPool) PrepareContext(context.Context, string) (*sql.Stmt, error) {
 	return nil, rtErrFailNoSQL
 }
 
-// QueryContext 同上（返回 *sql.Rows，与 gorm.ConnPool 签名一致）。
 func (rtFailConnPool) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
 	return nil, rtErrFailNoSQL
 }
 
-// QueryRowContext 同上。
 func (rtFailConnPool) QueryRowContext(context.Context, string, ...any) *sql.Row { return nil }

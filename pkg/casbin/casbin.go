@@ -15,47 +15,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// Casbin 权限管理组件
-// 使用 RBAC 模型，策略通过 GORM Adapter 持久化到数据库。
-//
-// 策略类型：
-//   - p, sub, obj, act, code  — 权限策略（sub 可以是 role_code 或 user_id）
-//   - g, user_id, role_code   — 用户角色关系
-//   - g2, role_code, active   — 角色启用状态（active=1 表示启用，缺失表示禁用）
-//
-// matcher 语义：
-//   - r.sub == p.sub          — 用户直接额外权限（p.sub 为 user_id 时直接命中）
-//   - g(r.sub, p.sub)         — 角色继承（p.sub 为 role_code 时通过 g 关系命中）
-//   - g2(p.sub, "active")     — 角色必须处于启用状态
-//
-// role_code 约定：
-//   - 禁止纯数字，避免与 user_id subject 冲突。
-//   - sys_role.role_code 建议使用字母前缀 + 可选数字，如 editor、viewer、role_01。
-
 var (
-	// enforcer 使用 SyncedEnforcer：Enforce 读与 AddPolicy/RemovePolicy/LoadPolicy
-	// 等写操作内部通过 RWMutex 同步，保证热路径读与管理写并发时的数据安全（审计 C1）。
-	// 多步策略写序列的原子性由 policyMu 统一保证（审计 H2），本锁只解决单条 API 级竞态。
 	enforcer *casbinlib.SyncedEnforcer
 	mu       sync.RWMutex
 	policyMu sync.Mutex
 
-	// urlCodeMap 内存映射：URL+Method → code
-	// 用于例外查询时快速找到请求 URL 对应的 code，避免每次 deny 都查数据库。
-	// 通过 atomic.Pointer 原子替换整体快照：rebuild 构建新 map 后 Store，
-	// 读端 Load 指针后查询，杜绝对 sync.Map 结构体值的整体赋值竞态（审计 H1）。
 	urlCodeMap atomic.Pointer[sync.Map]
 )
 
-// urlCodeKey 生成 URL+Method 的映射 key
 func urlCodeKey(url, method string) string {
 	return url + "||" + strings.ToUpper(method)
 }
 
-// rbacModel RBAC 权限模型定义。
-//
-// g  = 用户↔角色关系（user_id, role_code）
-// g2 = 角色启用状态（role_code, "active"），用于启停角色而不删除关联
 const rbacModel = `
 [request_definition]
 r = sub, obj, act
@@ -74,18 +45,12 @@ e = some(where (p.eft == allow))
 m = (r.sub == p.sub || (g(r.sub, p.sub) && g2(p.sub, "active"))) && r.obj == p.obj && r.act == p.act
 `
 
-// GetEnforcer 获取 Casbin Enforcer 实例。
-// 返回 *casbinlib.SyncedEnforcer，其方法签名与 *casbinlib.Enforcer 兼容，
-// 调用方（如鉴权中间件）可直接链式调用 Enforce 等方法，无需感知类型变化。
 func GetEnforcer() *casbinlib.SyncedEnforcer {
 	mu.RLock()
 	defer mu.RUnlock()
 	return enforcer
 }
 
-// GetCodeByURL 根据 URL+Method 查询对应的权限 code。
-// 从内存映射中查找，不涉及数据库查询。
-// 返回 code 和是否存在。用于例外查询场景：Casbin deny 后查此映射拿到 code，再查例外表。
 func GetCodeByURL(url, method string) (string, bool) {
 	m := urlCodeMap.Load()
 	if m == nil {
@@ -98,7 +63,6 @@ func GetCodeByURL(url, method string) (string, bool) {
 	return val.(string), true
 }
 
-// Init 初始化 Casbin 组件。
 func Init(_ *viper.Viper) error {
 	db, err := database.GetDB()
 	if err != nil {
@@ -107,7 +71,6 @@ func Init(_ *viper.Viper) error {
 	return InitCasbin(db)
 }
 
-// InitCasbin 初始化 Casbin（传入已有的 GORM DB 实例）
 func InitCasbin(db *gorm.DB) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -126,7 +89,6 @@ func InitCasbin(db *gorm.DB) error {
 	return nil
 }
 
-// Close 关闭 Casbin 组件并清理运行时状态。
 func Close() error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -135,7 +97,6 @@ func Close() error {
 	return nil
 }
 
-// Ready 检查 Casbin 组件是否已完成初始化。
 func Ready() error {
 	if GetEnforcer() == nil {
 		return fmt.Errorf("casbin 未初始化")
@@ -167,11 +128,6 @@ func initCasbin(db *gorm.DB) (*casbinlib.SyncedEnforcer, error) {
 	return instance, nil
 }
 
-// rebuildURLCodeMap 从 Casbin p 策略中重建 URL+Method → code 内存映射。
-// 遍历所有 p 规则，提取 v1（URL）、v2（Method）、v3（code）建立映射。
-// 先在独立的 sync.Map 上构建完整快照，再通过 urlCodeMap.Store 原子替换，
-// 读端始终看到一致的新旧映射之一，不会读到撕裂的中间态（审计 H1）。
-// 获取策略失败时保留旧映射不清空，避免 reload 失败导致例外查询全部落空。
 func rebuildURLCodeMap(e *casbinlib.SyncedEnforcer) {
 	nm := &sync.Map{}
 
@@ -183,13 +139,13 @@ func rebuildURLCodeMap(e *casbinlib.SyncedEnforcer) {
 
 	count := 0
 	for _, rule := range policies {
-		// p 规则格式：[sub, obj, act, code]
+
 		if len(rule) < 4 {
 			continue
 		}
-		url := rule[1]    // obj = URL
-		method := rule[2] // act = Method
-		code := rule[3]   // code
+		url := rule[1]
+		method := rule[2]
+		code := rule[3]
 		if code == "" {
 			continue
 		}
@@ -200,22 +156,12 @@ func rebuildURLCodeMap(e *casbinlib.SyncedEnforcer) {
 	logger.Scene("casbin").With("count", count).Info("Casbin URL→code 映射已加载")
 }
 
-// ============================
-// 集中式策略变更 facade
-// ============================
-
-// ReloadPolicy 重新加载内存策略并重建 URL→code 映射。
-// 任何 p/g/g2 写操作后必须调用，否则变更不生效。
-// 所有策略写入口共用同一把 policyMu，本函数作为独立入口时自行加锁；
-// 已持有 policyMu 的多步写序列内部请改调 reloadPolicyLocked，避免重入死锁。
 func ReloadPolicy() error {
 	policyMu.Lock()
 	defer policyMu.Unlock()
 	return reloadPolicyLocked()
 }
 
-// reloadPolicyLocked 是 ReloadPolicy 的无锁内部变体，
-// 约定：调用方必须已持有 policyMu。
 func reloadPolicyLocked() error {
 	e := GetEnforcer()
 	if e == nil {
@@ -228,7 +174,6 @@ func reloadPolicyLocked() error {
 	return nil
 }
 
-// HasPermissionPolicies 检查权限编码是否已分配给角色或用户。
 func HasPermissionPolicies(code string) (bool, error) {
 	e := GetEnforcer()
 	if e == nil {
@@ -245,20 +190,6 @@ func HasPermissionPolicies(code string) (bool, error) {
 	return len(rules) > 0, nil
 }
 
-// ReplacePermissionDefinition / ActivateRole / DeactivateRole 三个入口
-// 已迁到 policy_tx.go：策略行（sys_casbin_rule）改为**在事务内**用调用方的
-// *gorm.DB 直接读写，使「业务行 + 策略行」能落在同一个事务里，提交后再重建
-// Enforcer 的内存副本。见 policy_tx.go 文件头的完整论证与调用约定。
-
-// ReplaceRolePermissions 全量替换角色拥有的权限策略。
-// 删除该 role_code 在 p 中所有记录，然后按 codes 反查到的 path/method 重新写入。
-//
-// 参数：
-//   - roleCode：角色编码
-//   - policies：要写入的 [path, method, code] 三元组列表
-//
-// 调用方负责在事务中收集 codes 并转换为 policies。
-// 本函数内部不做事务编排，只负责 Casbin 层面的增删 + 刷新。
 func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -268,14 +199,9 @@ func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
-	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 先加后删：中途失败时权限是「旧 ∪ 新」的超集，该角色下用户不会突然失去
-	// 已有权限；反过来（先删后加）一旦 AddPolicy 失败，角色会停在「旧权限已删、
-	// 新权限没写完」的残缺态，其下全部用户立即被 deny —— 保存权限失败不该等于
-	// 生产环境集体掉权限。
 	want := make(map[string]struct{}, len(policies))
 	for _, p := range policies {
 		want[p[0]+"\x00"+p[1]+"\x00"+p[2]] = struct{}{}
@@ -304,12 +230,6 @@ func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 	return reloadPolicyLocked()
 }
 
-// ReplaceUserRoleBindings 全量替换某用户绑定的角色列表。
-// 删除该用户所有 g 记录，然后重新写入。
-//
-// 参数：
-//   - userID：用户 ID（字符串形式）
-//   - roleCodes：角色编码列表
 func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -319,12 +239,9 @@ func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 		return fmt.Errorf("用户 ID 不能为空")
 	}
 
-	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时用户是「旧 ∪ 新」的
-	// 超集，不会出现「旧绑定已清、新绑定没写完」导致的权限真空。
 	want := make(map[string]struct{}, len(roleCodes))
 	for _, code := range roleCodes {
 		if code == "" {
@@ -356,12 +273,6 @@ func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 	return reloadPolicyLocked()
 }
 
-// ReplaceRoleUsers 全量替换某角色下的用户列表。
-// 删除该角色所有 g 记录（按 obj=roleCode 过滤），然后重新写入。
-//
-// 参数：
-//   - roleCode：角色编码
-//   - userIDs：用户 ID 列表（字符串形式）
 func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -371,11 +282,9 @@ func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
-	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时绑定是「旧 ∪ 新」的超集。
 	want := make(map[string]struct{}, len(userIDs))
 	for _, uid := range userIDs {
 		if uid == "" {
@@ -407,12 +316,6 @@ func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 	return reloadPolicyLocked()
 }
 
-// ReplaceUserPermissions 全量替换用户的直接额外权限。
-// 只操作 p, user_id, ...（不碰角色 p），删除后重新写入。
-//
-// 参数：
-//   - userID：用户 ID（字符串形式）
-//   - policies：要写入的 [path, method, code] 三元组列表
 func ReplaceUserPermissions(userID string, policies [][3]string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -422,11 +325,9 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 		return fmt.Errorf("用户 ID 不能为空")
 	}
 
-	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时权限是「旧 ∪ 新」的超集。
 	want := make(map[string]struct{}, len(policies))
 	for _, p := range policies {
 		want[p[0]+"\x00"+p[1]+"\x00"+p[2]] = struct{}{}
@@ -455,13 +356,6 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 	return reloadPolicyLocked()
 }
 
-// DeleteRoleAllPolicies 删除角色关联的全部策略。
-// 在删除角色时调用，事务内清理：
-//   - 该角色的全部 p 策略（角色拥有的权限）
-//   - 所有用户与该角色的 g 关联（用户角色绑定）
-//   - 该角色的 g2 启用状态
-//
-// 调用方负责删除 sys_role 记录，本函数只处理 Casbin 层面。
 func DeleteRoleAllPolicies(roleCode string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -471,21 +365,17 @@ func DeleteRoleAllPolicies(roleCode string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
-	// 多步删除序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 删除该角色所有 p 策略
 	if _, err := e.RemoveFilteredPolicy(0, roleCode); err != nil {
 		return fmt.Errorf("删除角色权限策略失败: %w", err)
 	}
 
-	// 删除所有用户与该角色的 g 关联（按 obj=roleCode 过滤）
 	if _, err := e.RemoveFilteredGroupingPolicy(1, roleCode); err != nil {
 		return fmt.Errorf("删除角色用户关联失败: %w", err)
 	}
 
-	// 删除该角色的 g2 启用状态
 	if _, err := e.RemoveNamedGroupingPolicy("g2", roleCode, "active"); err != nil {
 		return fmt.Errorf("删除角色启用状态失败: %w", err)
 	}
@@ -493,7 +383,6 @@ func DeleteRoleAllPolicies(roleCode string) error {
 	return reloadPolicyLocked()
 }
 
-// DeleteUserAllPolicies 删除用户的直接权限和角色绑定。
 func DeleteUserAllPolicies(userID string) error {
 	e := GetEnforcer()
 	if e == nil {
@@ -515,7 +404,6 @@ func DeleteUserAllPolicies(userID string) error {
 	return reloadPolicyLocked()
 }
 
-// GetRoleCodesByUserID 查询用户绑定的角色编码列表。
 func GetRoleCodesByUserID(userID string) ([]string, error) {
 	e := GetEnforcer()
 	if e == nil {
@@ -524,7 +412,6 @@ func GetRoleCodesByUserID(userID string) ([]string, error) {
 	return e.GetRolesForUser(userID)
 }
 
-// GetUserIDsByRoleCode 查询角色下的用户 ID 列表。
 func GetUserIDsByRoleCode(roleCode string) ([]string, error) {
 	e := GetEnforcer()
 	if e == nil {
@@ -533,8 +420,6 @@ func GetUserIDsByRoleCode(roleCode string) ([]string, error) {
 	return e.GetUsersForRole(roleCode)
 }
 
-// GetRolePermissions 获取角色的权限列表。
-// 返回 [path, method, code] 三元组。
 func GetRolePermissions(roleCode string) ([][3]string, error) {
 	e := GetEnforcer()
 	if e == nil {
@@ -555,8 +440,6 @@ func GetRolePermissions(roleCode string) ([][3]string, error) {
 	return result, nil
 }
 
-// GetUserDirectPermissions 获取用户直接额外权限。
-// 返回 [path, method, code] 三元组。
 func GetUserDirectPermissions(userID string) ([][3]string, error) {
 	e := GetEnforcer()
 	if e == nil {

@@ -1,52 +1,5 @@
 package presentationservice
 
-// 详情页与归档页的区别不在模板语法，而在**页面身份**：详情页讲一个实体，
-// 归档页列这个实体下的内容。两者由同一个实体驱动，所以实例表需要角色维度
-//（迁移 175），模板侧也需要按角色取（contenttemplate 的 template_role）。
-//
-// 本文件只负责一件事：给定一个实体，确保它的归档页存在。
-// 没有归档模板时**静默跳过** —— 那是正常状态（不是每个站点都要归档页），
-// 报错会让「新建一个分类」变成一件会失败的事。
-
-// 双轨语义（AGENTS.md）：
-//   template（默认）：文档 = 绑定模板文档；模板更新可全局下发；
-//   document：文档 = override_document；模板更新不影响它（UI 上叫「独立文档」）。
-//
-// 分叉判据是**文档结构真的变了**，不是「保存了商品」：改名称/价格/描述属于实体数据，
-// 不改文档 → 不分叉；改了又改回去（归一化后与生效底稿相同）→ 同样不分叉。
-// 判定必须由服务端做（前端拿不到"生效底稿"的权威字节），因此未确认时返回
-// ErrDetachConfirmRequired，前端据此弹确认并带 confirmDetach 重试。
-
-// 与手工页面 page.Service.UpdateURL 同一语义，动作清单逐条对齐（顺序不可换）：
-//  1. 路径归一化 + 同路径短路；
-//  2. 占用预检（page_routes 与 presentation_instances 两个真源）；
-//  3. 按新路径重新构建产物（canonical / OG / JSON-LD 已烘进 HTML 字节，必须重编）；
-//  4. 落库：快照 + 产物行 + 指针 + url_path（同一事务）；
-//  5. 激活新路径（访问面符号链接 + page_routes 登记）；
-//  6. 旧路径处置：WithRedirect 落盘 301 产物并激活，否则取消旧路径激活。
-//
-// 与手工页面唯一的差别：presentation 没有草稿路径概念（实例创建即发布），
-// 因此没有「纯草稿只迁移路径」那条分支。
-//
-// 为什么改 URL 必须重建产物：静态站里路径不是元数据而是产物的一部分 ——
-// canonical / og:url / JSON-LD 的 url 在编译期就写死在 HTML 字节里，改路径而
-// 不重编会留下「页面仍宣称自己住在旧地址」的自相矛盾。动态站（WP）改 slug
-// 立刻生效，是因为它的 URL 每次请求现算；静态发布没有这个奢侈。
-
-// 内容模板是「完整文档层」，内部可以引用页眉/页脚/信任徽章等全局区块
-// （AGENTS.md §1.2：两者是包含关系，不是二选一）；构建期由本适配器把区块
-// 文档内联进同一次编译输出，访问面仍是纯静态（无运行时拼接）。
-//
-// 与手工 Page 路径（page/service/page_document.go）同口径：
-//   - 同一次编译内按块 ID 缓存（同一块被多次引用只查一次库）；
-//   - 失败结果同样缓存，避免重复查库；
-//   - reuse_mode=template 的块是「一次性复制」语义，不允许被引用展开，
-//     命中即报错暴露（正常流程下副本已在插入时并入文档）。
-
-// 回滚复用既有内核与既有表（不引入 page_revisions）：
-//   · 产物指针回滚：publication.Activate + 实例指针切换（秒级，不重编译）；
-//   · 快照级文档回滚：取 document_snapshots 的历史文档重发（重新编译，数据取最新）。
-
 import (
 	"bytes"
 	"context"
@@ -73,12 +26,11 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// CreateInstance 创建自动发布实例：解析模板 → 编译 → 发布 → 记快照/产物/依赖。
 func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" || req.URLPath == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
-	// 角色（审计 EDT-004）：空 = detail，既有调用方逐字不变。
+
 	role := strings.TrimSpace(req.InstanceRole)
 	if role == "" {
 		role = presentationmodel.InstanceRoleDetail
@@ -86,19 +38,12 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if !presentationmodel.IsValidInstanceRole(role) {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
-	// 工程作用域先解析（DB-009 第二批）：presentation_instances 带 FORCE 策略，
-	// 幂等查询也在工程内进行 —— 跨工程按实体查会把别人的实例当成自己的返回。
+
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 实例级互斥只覆盖「幂等检查 → 占用预检 → 建行」这一段（PERF-01）：它保护的是
-	//「同一实体不会被并发建出两行、同一条路径不会被并发占两次」。编译与产物落盘
-	// 由 publishAllLangs 的分段锁负责，不再占着这把锁（一份语言慢不该拖住创建路径）。
-	//
-	// 用内联函数而不是 defer：进发布前必须放锁 —— sync.Mutex 不可重入，而
-	// publishAllLangs 的冻结段会自己再取同一把锁。
 	var (
 		inst        *presentationmodel.InstanceEntity
 		existing    *presentationmodel.InstanceEntity
@@ -109,34 +54,28 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 		lock.Lock()
 		defer lock.Unlock()
 
-		// 同实体**同角色**已存在实例 → 视为幂等（返回已有）。
-		// 必须带角色：同一个分类既有详情页也可能有归档页，只按实体查会把先建的当成
-		// 「已存在」返回 —— 于是「给分类建归档页」静默变成「拿到详情页实例」。
 		if row, gerr := s.m.GetInstanceByEntityRole(ctx, projectID, req.EntityType, req.EntityID, role); gerr == nil {
 			existing = row
 			return nil
 		} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 			return gerr
 		}
-		// 解析模板版本 + 实体解析器。req.TemplateID 非空 = 发布时显式指定用哪套命名模板
-		// （issue #14 验收 2）；为空 = 按实体类型取默认模板（既有行为逐字不变）。
+
 		tpl, rerr := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
 		if rerr != nil {
 			return rerr
 		}
-		// 路径先归一化：产物 canonical、访问面符号链接与 page_routes 登记必须落在
-		// 同一个字符串上（FS 侧本来就归一化），否则 /shop/x/ 与 /shop/x 会被当成
-		// 两个路径，路由行指向的位置与实际内容不符。
+
 		path, perr := s.normalizeLogicalPath(ctx, projectID, req.URLPath)
 		if perr != nil {
 			return presentationenums.ErrDetail(presentationenums.ErrInvalidPath, perr.Error())
 		}
 		logicalPath = path
-		// 占用预检：逻辑路径下全部语言访问路径 + 逻辑路径本身。
+
 		if ferr := s.ensureLogicalPathFree(ctx, projectID, logicalPath, ""); ferr != nil {
 			return ferr
 		}
-		// 记实例（url_path 存逻辑路径；各语言访问路径在 publication 表）。
+
 		now := time.Now().UTC()
 		inst = &presentationmodel.InstanceEntity{
 			ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
@@ -151,10 +90,6 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 		return s.toResp(ctx, existing)
 	}
 
-	// mode=nil：创建实例不改渲染模式（默认 template，首次编辑才可能转独立）。
-	//
-	// 模板按刚写进 template_id 的**绑定**解析（而不是重新按实体类型取默认模板）：
-	// 创建与发布之间冒出一个新的类型默认模板时，实例不该被悄悄换到别的模板上。
 	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			return s.resolveBoundTemplate(ctx, fresh, req.TemplateID)
@@ -167,13 +102,11 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	return s.toResp(ctx, inst)
 }
 
-// GetByEntity 按内容实体查询实例（后台「详情页模板」页读当前绑定与发布状态）。
 func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
-	// 工程作用域（DB-009 第二批）：实例表的读必须带 app.project_id，
-	// 否则换非超级角色后静默 0 行 —— 表现为「详情页模板显示未绑定」。
+
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -188,7 +121,6 @@ func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEnt
 	return s.toResp(ctx, inst)
 }
 
-// Get 按 ID 查询。
 func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -207,7 +139,6 @@ func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *pr
 	return s.toResp(ctx, inst)
 }
 
-// List 按类型列表。
 func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list []*presentationdto.InstanceResp, err error) {
 	if req == nil {
 		req = &presentationdto.ListReq{}
@@ -249,7 +180,6 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 	return out, nil
 }
 
-// Delete 删除实例（级联删本模块从属行 + 反激活 URL）。
 func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
 		return presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -269,70 +199,33 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 		return err
 	}
 
-	// 反激活失败必须中止删除：否则实例行已删、URL 占用残留，后续同路径
-	// 发布/激活会被「已占用」拒绝且无实例可查（状态分裂）。
-	//
-	// 要覆盖**全部**已激活路径而不只是当前 url_path：改过 URL 的实例还有一条
-	// 旧路径的 301 链接，漏掉它 = 实例删了、线上旧路径仍 301 到一个死页面。
-	//
-	// 锁：先取**实例条带锁**（与发布/回滚共用同一把，挡住"删除与激活在同一实例上交错"），
-	// 再在锁内重读路径并整段 `withPaths` 包住全部反激活 —— 路径集合与副作用之间的间隔
-	// 因此不再有窗口。此前是锁外读路径、锁外 deactivate：读到路径之后，另一次发布可以
-	// 把这条路径换成别人的产物，我们随即把它删掉（删的是别人的线上链接）。
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
 	lock.Lock()
 	defer lock.Unlock()
 
 	paths := s.instanceActivePaths(ctx, inst)
-	// 下线意图必须在**动访问面之前**持久登记（pending）：进程在下面任何一个时刻被 kill，
-	// 都有"该撤哪些路径"的持久依据，收敛例程会把它做完。登记失败即中止删除 ——
-	// 没有依据的撤链等于不可重放的破坏。
+
 	intent, ierr := s.registerDeactivationIntent(ctx, inst, paths)
 	if ierr != nil {
 		return ierr
 	}
-	// 路由占用同步释放 + 实例行删除：两处都是持久化写入，且分属两个模块
-	// （page_routes 在 publication、实例行在 presentation），按 AGENTS.md
-	// 「写操作的事务与回滚」必须落进**同一个事务**（tx 透传，不做补偿）。
-	//
-	// 只删实例行会把 page_routes 里本实例的 active/redirect 行留成悬空引用
-	// （外键指向已删除的实例），同路径再发布永远被拒；反过来只删路由行则留下
-	// 「实例还在、路径已释放」的分裂状态。两种半截状态都由这个事务消除。
-	//
-	// 反激活（上面的循环）**刻意留在事务之前**：它删的是访问面目录里的符号链接 ——
-	// 文件系统不在数据库事务边界内，属 AGENTS.md 允许的「补偿只用于跨库/外部系统」
-	// 那一类，且 Deactivate 幂等、可重跑。顺序也是刻意的：先反激活再开事务，
-	// 事务回滚时链接已下线（线上 404，而不是把已删内容继续挂在旧路径上），
-	// 重跑一次 Delete 会再走一遍幂等反激活 + 事务即可收敛；把反激活放到提交之后，
-	// 失败就留下「实例没了、链接还在」的死路径，且再没有实例行可以据以定位它们。
-	//
-	// **但"先 FS 后 DB"必须带补偿**（主审退回点）：DB 事务失败时，上面那些链接已经
-	// 被删掉了，若不恢复就变成"实例还在、线上 404"的新半截状态。补偿用 preload 到的
-	// 原链接目标在**仍持条带锁**的同一段里回放；恢复本身失败时不再掩盖原错误，
-	// 由调用方看到"删除失败 + 恢复失败"两条事实（链接状态以回执/对账为准）。
+
 	var txErr error
 	var commitUncertain bool
 	if _, commitUncertain, txErr = s.m.InTransaction(ctx, func(tx *gorm.DB) error {
-		// 工程作用域由**调用方**设进这个事务：publication 的 …Tx 变体的契约就是
-		// 「调用方负责开启事务 + 设置作用域」（见 publication_route.go 文件头），
-		// 而 page_routes 带 FORCE 策略（迁移 215）—— 不设作用域时那条删行在非超级
-		// 角色下匹配 0 行且不报错（fail closed），随后删实例行会被外键拒绝。
+
 		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {
 			return serr
 		}
-		// 稳定锁 → 行锁 → 路径集合复验：恢复侧也会先取同一把 advisory，
-		// 所以"业务正在提交"与"恢复正在撤链"不会交错。行锁此外还挡住同实例的发布。
-		// 与恢复侧同一顺序与同一把键：稳定顾问锁**无条件先取**，行锁其次。
+
 		if lerr := s.lockPresentationEntityOrAdvisory(ctx, tx, inst.ProjectID, inst.ID); lerr != nil {
 			return lerr
 		}
-		// 行锁内重读当前路径集合：与登记时刻不等说明这次删除要撤的路径已经变了
-		// （另一次改址插进来），拒绝执行且**不动访问面**，让调用方重试。
+
 		if cerr := s.ensureDeactivationPathsUnchanged(ctx, inst, intent.Paths); cerr != nil {
 			return cerr
 		}
-		// 与业务删行**同事务**写下"业务变更已提交"事实：分开提交会制造
-		// "标记说已提交、业务其实回滚了"，随后恢复把一次没发生的删除当成该撤链接执行掉。
+
 		if merr := s.routes.MarkDeactivationCommittedTx(ctx, tx,
 			pubcontract.ReceiptOwner{SourceType: pubcontract.ReceiptSourcePresentation, SourceID: inst.ID},
 			inst.ProjectID, intent.ReceiptID, intent.PathArtifacts); merr != nil {
@@ -348,29 +241,18 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 		return s.m.DeleteInstanceTx(tx, projectID, req.ID)
 	}); txErr != nil {
 		if commitUncertain {
-			// 提交结果不明（回调已跑完但 COMMIT 报错）：业务行**可能已经删了**。
-			// 这里绝不能 Abort —— Abort 会把一条可能已生效的下线意图终态化，
-			// 撤链从此不再重放（实例已删、链接永久残留）。回执保持 pending，
-			// 由收敛在稳定锁下重读 businessCommitted 事实后自行判定。
+
 			s.NotifyPendingReceipt()
 			return txErr
 		}
-		// 明确回滚 → 业务删行没有发生。回执的 businessCommitted 也随之没有写进去，
-		// 于是收敛侧看到 false 会保留 pending、不动访问面。这里只把这次明确的回滚
-		// 结案（链接本来就没动过，Abort 是精确的）。
+
 		s.abortPublishReceipt(ctx, intent.ReceiptID, "删除事务回滚")
 		return txErr
 	}
-	// 提交成功之后才动访问面：先 FS 后 DB 会让"第 k 条撤链失败"留下半截（实例已删、
-	// 部分链接仍在），而链接的撤除不可回滚；先 DB 后 FS 则失败只表现为
-	// "回执仍 pending、链接多留一会儿"，收敛会重放。
+
 	return s.completeDeactivationIntent(ctx, inst, intent)
 }
 
-// instanceActivePaths 实例在访问面上已激活的全部路径（当前路径 + 历史 301 路径）。
-//
-// 查询失败时退化为当前 url_path：清理不完整优于因查询失败而删不掉实例 ——
-// 前者是可发现、可重试的残留，后者是卡死的资源。
 func (s *Service) instanceActivePaths(ctx context.Context, inst *presentationmodel.InstanceEntity) []string {
 	var paths []string
 	if pubs, perr := s.m.ListActivePathsForInstance(ctx, inst.ID); perr == nil && len(pubs) > 0 {
@@ -405,7 +287,6 @@ func dedupePaths(in []string) []string {
 	return out
 }
 
-// findByEntityID 在**本工程内**按内容实体 ID 反查实例。
 func (s *Service) findByEntityID(ctx context.Context, projectID, entityID string) (*presentationmodel.InstanceEntity, error) {
 	rows, err := s.m.ListInstances(ctx, projectID, "")
 	if err != nil {
@@ -419,10 +300,6 @@ func (s *Service) findByEntityID(ctx context.Context, projectID, entityID string
 	return nil, gorm.ErrRecordNotFound
 }
 
-// toResp 实体 → 响应。
-//
-// Status 不再是表列：由 active_artifact_id 指针推导（active / draft），
-// ArtifactHash 取活跃产物行的哈希。
 func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntity) (resp *presentationdto.InstanceResp, err error) {
 	resp = &presentationdto.InstanceResp{
 		InstanceRole: e.InstanceRole,
@@ -440,8 +317,7 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.ActiveArtifactID != nil {
 		resp.Status = presentationenums.StatusActive
 		resp.ArtifactID = *e.ActiveArtifactID
-		// 只要一个哈希：列表路径按实例行数放大，绝不能为它把产物整行（含 manifest
-		// 这个 JSONB）拽出来 —— 见 model.GetArtifactHash 的列白名单。
+
 		if h, herr := s.m.GetArtifactHash(ctx, *e.ActiveArtifactID); herr == nil {
 			resp.ArtifactHash = h
 		}
@@ -451,52 +327,32 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.CurrentSnapshotID != nil {
 		resp.SnapshotID = *e.CurrentSnapshotID
 	}
-	// 渲染模式（迁移 282）与可编辑底稿（AGENTS.md）：
-	//   document → 覆盖文档即该商品当前文档；
-	//   template → 取当前快照文档，供 workbench 以「当前生效布局」为起点编辑
-	//             （首次编辑即播种，避免空白画布），并用它判定「文档结构是否真的变了」。
+
 	resp.RenderMode = presentationmodel.NormalizeRenderMode(e.RenderMode)
 	if presentationmodel.IsDocumentMode(e.RenderMode) && len(e.OverrideDocument) > 0 {
 		resp.Document = e.OverrideDocument
 	} else if e.CurrentSnapshotID != nil {
 		if snap, serr := s.m.GetSnapshot(ctx, *e.CurrentSnapshotID); serr == nil {
 			resp.Document = snap.Document
-			// 「预设有新版本」的判定依据：document 模式不会自动跟随模板，
-			// 只能靠快照记录的模板版本与模板最新版比对来提示用户。
+
 			resp.SourceTemplateVersionID = snap.SourceTemplateVersionID
 		}
 	}
 	return resp, nil
 }
 
-// ArchivePathFor 归档页的访问路径。
-//
-// 规则：/{entityType}/{slug}，如 /product_category/electronics（实体类型用注册表口径）。
-// 用实体类型做前缀而不是可配置前缀：两个类型配成同一个前缀时，它们在访问面上
-// 无法区分，而冲突要到实际请求 404 或串页才会被发现。
-//
-// 为什么商品分类的归档前缀是 /product_category/ 而不是更顺眼的 /category/：
-// 后者是 siteurl.DefaultPatterns[product_category] 里**分类详情页**的路径模式 ——
-// 归档页若共用同一前缀，同一个分类的详情实例与归档实例会争抢同一个 URL，
-// 先建的那个占用、后建的被 ensureLogicalPathFree 拒绝（"归档页建不起来"再次出现，
-// 而且这次是路径冲突，不是类型错误）。开发库实测 presentation_instances 为空、
-// page_routes 无 /category/ 行，没有存量归档 URL 需要迁移，故直接采用注册表口径。
 func ArchivePathFor(entityType, slug string) string {
 	return "/" + strings.Trim(strings.TrimSpace(entityType), "/") + "/" +
 		strings.Trim(strings.TrimSpace(slug), "/")
 }
 
-// EnsureArchiveInstance 确保某实体的归档页存在（审计 EDT-004）。
-//
-// 调用方是实体侧（分类 / 标签 / 品牌的增删改）。幂等：已有归档实例时直接返回它。
 func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error) {
 	if req == nil || strings.TrimSpace(req.EntityType) == "" || strings.TrimSpace(req.EntityID) == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
-		// 没有 slug 就没有稳定的访问路径。跳过而不是编一个路径：
-		// 编出来的路径会在实体补上 slug 后变成一条永远 404 的死链。
+
 		return &presentationdto.EnsureArchiveResp{Skipped: "实体没有 slug，无法生成归档路径"}, nil
 	}
 	if s.templates == nil {
@@ -508,7 +364,7 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	}
 	tpl, terr := s.templates.ResolveTemplateByRoleScoped(ctx, projectID, req.EntityType, contenttemplatecontract.TemplateRoleArchive)
 	if terr != nil {
-		// 没有归档模板是最常见的情况，按「跳过」处理；其它错误照常上报。
+
 		if strings.Contains(terr.Error(), "not found") || strings.Contains(terr.Error(), "ErrNotFound") {
 			return &presentationdto.EnsureArchiveResp{Skipped: "该实体类型未配置归档模板"}, nil
 		}
@@ -524,9 +380,7 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	if cerr != nil {
 		return nil, cerr
 	}
-	// 路径自适应：实体改名（slug 变化）后归档页要跟着走，旧路径留 301。
-	// 不更新的话归档页会一直挂在旧 slug 上，而站点里没有任何链接指向它 ——
-	// 从后台看「归档页正常发布着」，从访问面看它已经是个孤儿。
+
 	if inst.URLPath != wantPath {
 		updated, uerr := s.UpdateURL(ctx, &presentationdto.UpdateURLReq{
 			ID: inst.ID, ProjectID: inst.ProjectID, NewPath: wantPath, WithRedirect: true,
@@ -539,10 +393,6 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	return &presentationdto.EnsureArchiveResp{InstanceID: inst.ID, Created: true}, nil
 }
 
-// SaveOverrideDocument 保存商品独立文档并重建发布。
-//
-// 模式与文档的落库发生在 publishAllLangs → persistMultiLangArtifacts 的同一个事务里
-// （与快照/产物/指针一体），不是先写一列再发布 —— 理由见 instanceModePending 注释。
 func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || len(req.Document) == 0 {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -558,24 +408,18 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 	if err != nil {
 		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
-	// 两个前置判定（幂等保存 / 转入独立的确认）是**只读**的，不再占实例锁（PERF-01）：
-	// 真正需要互斥的是随后的发布（它按自己的分段锁做版本分配与指针推进）。
-	// 判定用的是调用方这一次读到的实例行；并发期间模式被别的写路径改掉时，
-	// 以本次请求的显式意图（写入这份独立文档）为准。
+
 	tpl, err := s.resolveBoundTemplate(ctx, inst, "")
 	if err != nil {
 		return nil, err
 	}
-	// 生效底稿：document 模式 = 该商品文档；template 模式 = 模板文档。
+
 	effective := instanceDocumentFor(inst, tpl)
 
-	// 结构未变 = 不分叉、不重建（幂等保存：反复保存同一份不改动也算成功）。
 	if documentsEqual(json.RawMessage(req.Document), effective.Document) {
 		return s.toResp(ctx, inst)
 	}
 
-	// 从「跟随模板」转入「独立文档」必须显式确认：这是用户唯一会真的丢掉
-	// 「模板全局同步」能力的时刻，判据只有服务端算得准（见文件头注释）。
 	if !presentationmodel.IsDocumentMode(inst.RenderMode) && !req.ConfirmDetach {
 		return nil, presentationenums.Err(presentationenums.ErrDetachConfirmRequired)
 	}
@@ -584,8 +428,7 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 		renderMode: presentationmodel.RenderModeDocument,
 		document:   json.RawMessage(req.Document),
 	}
-	// 编译底稿 = 本次提交的文档；binding 照常解析，实体数据取最新（数据不丢）。
-	// 按**锁内重读**的实例行重新套用：冲突重试时它可能已经被别的批次改过。
+
 	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			bound, rerr := s.resolveBoundTemplate(ctx, fresh, "")
@@ -605,10 +448,6 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 	return s.toResp(ctx, inst)
 }
 
-// ReapplyPreset 重新套用预设：放弃该商品独立文档，回到跟随模板（可反悔的另一半）。
-//
-// 与「转入独立」对称：模式与文档的清除同样落在发布事务里，避免
-// 「模式已回 template、文档列还留着旧自定义」的矛盾行。
 func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.ReapplyPresetReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -621,14 +460,10 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 	if err != nil {
 		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
-	// switchTo 非空 = 同时换一套模板（换底稿）；模板身份切换由发布事务内的
-	// UpdateInstanceTemplateTx 落库，这里只负责给出意图。
-	//
-	// 实例锁由发布会话分段持有（PERF-01）：解析绑定与编译在锁外，版本分配与指针推进在锁内。
+
 	switchTo := strings.TrimSpace(req.TemplateID)
 	mode := &instanceModePending{renderMode: presentationmodel.RenderModeTemplate}
-	// 触发源：带 templateId 是「换模板」，不带是「放弃独立文档回到跟随模板」——
-	// 两者在发布历史上要能分开看（后者是撤销操作，前者是决策）。
+
 	trigger := presentationmodel.PublishTriggerSwitch
 	if switchTo == "" {
 		trigger = presentationmodel.PublishTriggerManual
@@ -645,10 +480,6 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 	return s.toResp(ctx, inst)
 }
 
-// ClearOverride 兼容旧契约：语义等同「重新套用预设」（放弃独立文档、回到跟随模板）。
-//
-// 保留它是因为商品详情页/模板面板既有调用点都用它；新代码请直接用 ReapplyPreset
-// （名字与双轨语义一致，避免「清覆盖」被读成「清空内容」）。
 func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -658,12 +489,11 @@ func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearO
 	})
 }
 
-// UpdateURL 修改已发布实例的线上路径（改 URL）。
 func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
-	// 工程作用域（DB-009 第二批）：实例表的定位、占用预检、锁内重读全部在本工程内进行。
+
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -682,9 +512,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, presentationenums.ErrDetail(presentationenums.ErrInvalidPath, err.Error())
 	}
-	// 实例级互斥只覆盖「锁内重读 → 同路径判定 → 占用预检」这一段（PERF-01）：
-	// 它保护的是「同一条新路径不会被两个并发改 URL 同时抢到」。编译与产物落盘交给
-	// publishAllLangs 的分段锁 —— 内联函数一返回就放锁，否则会和它自取的同一把锁自锁。
+
 	var (
 		oldPubs    []presentationmodel.PublicationEntity
 		oldLogical string
@@ -694,7 +522,6 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 		lock.Lock()
 		defer lock.Unlock()
 
-		// 锁内重读：等锁期间实例可能已被重建、改过 URL 或删除。
 		fresh, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 		if gerr != nil {
 			return presentationenums.Err(presentationenums.ErrNotFound)
@@ -705,21 +532,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 			return presentationenums.Err(presentationenums.ErrSamePath)
 		}
 		oldPubs, _ = s.m.ListPublications(ctx, inst.ID)
-		// 预检：新逻辑路径下全部语言访问路径均空闲。
+
 		return s.ensureLogicalPathFree(ctx, inst.ProjectID, newLogical, inst.ID)
 	}(); err != nil {
 		return nil, err
 	}
 
-	// 旧路径处置意图：**在发布之前**组装好（每语言一条），由发布会话在激活之前
-	// 登记成 update_url 回执 —— 激活不可回滚，而"旧路径该 301 还是下线"这份事实
-	// 只能在这里一次性交代清楚。旧语言清单同样取自锁内重读之后（oldPubs），
-	// 免得与刚被并发改掉的账本对不上。
-	//
-	// 只在**语言条目真的搬了**（旧路径 ≠ 新路径）时登记：同一路径不算改 URL 的旧路径，
-	// 否则会登记一条「把 /x 301 到 /x」的回执，恢复时又被自己判成事实错误而结案 ——
-	// 白白占一条 pending。这正是页面级 samePath 之外的必要过滤：实例级逻辑路径可能
-	// 早已等于目标（例如前一次提交改了绑定而账本行还停在旧值）。
 	plan := make([]oldPathIntent, 0, len(oldPubs))
 	for _, pub := range oldPubs {
 		if pub.ActivePath == "" || pub.ActivePath == newLogical {
@@ -734,16 +552,14 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 			fromArtifactID: from, redirect: req.WithRedirect,
 		})
 	}
-	// mode=nil：改 URL 不是改渲染模式。
+
 	_, err = s.publishAllLangs(ctx, inst, publishIntent{
-		// 模板沿用实例当前绑定（改 URL 不是换模板）：空显式 id = 绑定优先且不回落
-		//「同类型最新」，由发布会话按锁内重读的行解析。
+
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			return s.resolveBoundTemplate(ctx, fresh, "")
 		},
 		logicalPath: newLogical,
-		// 输入意图：冻结事务里把新路径与 input_version+1 一起落库（见
-		// PersistPublishInputURLTx）。这是"两个并发改 URL 谁赢"的唯一判定点。
+
 		inputPath: newLogical,
 		oldPaths:  plan,
 		trigger:   presentationmodel.PublishTriggerURL,
@@ -756,10 +572,6 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	return s.toResp(ctx, inst)
 }
 
-// locateInstance 按 ID 或 (实体类型, 实体 id) 定位实例。
-//
-// 两种入口都保留：后台「详情页模板」页只持有实体 id（列表行给的是商品/文章），
-// 而 API 调用方通常持有实例 id。
 func (s *Service) locateInstance(ctx context.Context, projectID string, req *presentationdto.UpdateURLReq) (*presentationmodel.InstanceEntity, error) {
 	if id := strings.TrimSpace(req.ID); id != "" {
 		inst, err := s.m.GetInstance(ctx, projectID, id)
@@ -785,15 +597,6 @@ func (s *Service) locateInstance(ctx context.Context, projectID string, req *pre
 	return inst, nil
 }
 
-// ensurePathFree 占用预检：目标路径不得被其他页面或展示实例占用。
-//
-// 两个真源都要查，缺一不可：
-//   - page_routes：手工页面与（本次起）已登记的展示实例的占用；
-//   - presentation_instances.url_path：本次之前创建的历史实例 —— 它们的占用
-//     从未进过路由表，只查路由表会放行「抢一个历史详情页的路径」，随后 FS
-//     激活直接覆盖对方线上内容。
-//
-// excludeInstanceID 为空的场景是创建实例（自己还不存在，无需排除）。
 func (s *Service) ensurePathFree(ctx context.Context, projectID, path, excludeInstanceID string) error {
 	if s.routes != nil {
 		occupied, err := s.routes.IsPathOccupied(ctx, &pubcontract.IsOccupiedReq{
@@ -822,18 +625,15 @@ func (s *Service) ensurePathFree(ctx context.Context, projectID, path, excludeIn
 	return nil
 }
 
-// blockResolverAdapter 把 block 契约适配为 builder 的 core.BlockResolver。
 type blockResolverAdapter struct {
 	blocks blockcontract.BlockService
 	ctx    context.Context
-	// projectID 是块查询的必填 scope（block.Detail 用它做跨工程越权防护）：
-	// 漏传只会得到「参数缺失」，而这里是降级路径 —— 构建照常完成、产物少一截。
+
 	projectID string
 	cache     map[string]*builder.Page
 	errs      map[string]error
 }
 
-// newBlockResolverAdapter 构造单次编译的块解析适配器（缓存随编译实例存活）。
 func newBlockResolverAdapter(blocks blockcontract.BlockService, ctx context.Context, projectID string) *blockResolverAdapter {
 	return &blockResolverAdapter{
 		blocks: blocks, ctx: ctx, projectID: projectID,
@@ -841,7 +641,6 @@ func newBlockResolverAdapter(blocks blockcontract.BlockService, ctx context.Cont
 	}
 }
 
-// ResolveBlockRoot 实现 core.BlockResolver：按块 ID 返回块文档 root 节点。
 func (a *blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
 	page, err := a.blockPage(blockID)
 	if err != nil {
@@ -850,7 +649,6 @@ func (a *blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, e
 	return page.Root, nil
 }
 
-// blockPage 解析块文档为 builder.Page（带缓存）。
 func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) {
 	if page, ok := a.cache[blockID]; ok {
 		return page, nil
@@ -880,16 +678,8 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 	return page, nil
 }
 
-// 编译期断言：适配器实现 core.BlockResolver。
 var _ core.BlockResolver = (*blockResolverAdapter)(nil)
 
-// ResolveStructureDocument 实现 pipeline.StructureTemplatePort：结构槽位（页眉 / 页脚）
-// 绑定的结构模板文档来源。
-//
-// 薄适配：版本解析与文档严格校验都在 contenttemplate 契约里
-// （ResolveTemplateByIDScoped 按模板类型校验，并拒绝结构模板里的字段绑定），
-// 这里只把「契约未装配 / 模板不存在 / 文档为空」统一成错误 —— 三者对构建期的含义
-// 是同一个：这套模板不可用，回退到该槽位的块绑定（见 pipeline.BuildStructureSlots）。
 func (s *Service) ResolveStructureDocument(ctx context.Context, projectID, templateID string) ([]byte, error) {
 	if s == nil || s.templates == nil {
 		return nil, fmt.Errorf("结构模板 %s 不可用（contenttemplate 契约未装配）", templateID)
@@ -904,20 +694,11 @@ func (s *Service) ResolveStructureDocument(ctx context.Context, projectID, templ
 	return tpl.Document, nil
 }
 
-// 编译期断言：本服务是结构模板解析端口（结构槽位的模板来源）。
 var _ pipeline.StructureTemplatePort = (*Service)(nil)
 
-// ListBlockSourceRefs 列出文档树引用了该块的自动发布实例（审计 ARCH-02）。
-//
-// 逐工程扇出（DB-009 第二批）：块 id 说不出工程，而 presentation_instances 带 FORCE 策略 ——
-// 漏作用域时这条查询静默返回空，删除保护会据此**放行**（正是本 finding 要拦住的形态）。
-//
-// Detail 区分 override_document 与 snapshot：两者的解除路径不同（改实例文档 vs
-// 改模板后重建），合并成一条会让操作者以为改完一处就够。
 func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out []blockcontract.BlockUsage, err error) {
 	if s == nil || s.project == nil {
-		// 没有工程契约就枚举不出工程，而 instances 带 FORCE 策略：宁可显式失败，
-		// 也不返回空集合 —— 空集合在删除保护里等于「没有引用」。
+
 		return nil, errors.New("project 契约未装配，无法逐工程反查自动发布实例的块引用")
 	}
 	projects, err := s.project.List(ctx)
@@ -954,22 +735,11 @@ func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out 
 	return out, nil
 }
 
-// instanceModePending 一次发布要落的模式变更（nil = 本次不改模式）。
-//
-// 为什么走参数而不是先单独写一列：模式与文档必须和快照/产物/指针同一事务
-// （persistMultiLangArtifacts 的那一个 tx），否则中间态「文档已换、模式没换」
-// 会被下一次模板更新按 template 模式重建回模板文档 —— 自定义凭空消失。
 type instanceModePending struct {
 	renderMode string
 	document   json.RawMessage
 }
 
-// instanceDocumentFor 按渲染模式取编译底稿。
-//
-// template：原样返回模板（每次构建参与，模板更新可全局下发）；
-// document：以覆盖文档为底稿（binding 照常解析 → 实体数据仍取最新）。
-// 这里复用 render.go 的 withInstanceDocument（只换文档、保留模板身份字段），
-// 不重复实现覆盖应用逻辑。
 func instanceDocumentFor(inst *presentationmodel.InstanceEntity,
 	tpl *contenttemplatecontract.ResolvedTemplate) *contenttemplatecontract.ResolvedTemplate {
 	if inst != nil && presentationmodel.IsDocumentMode(inst.RenderMode) {
@@ -978,11 +748,6 @@ func instanceDocumentFor(inst *presentationmodel.InstanceEntity,
 	return tpl
 }
 
-// documentsEqual 文档归一化后比较：判定「结构是否真的变了」。
-//
-// encoding/json 序列化 map 时按键排序，因此同一结构的不同书写顺序结论一致；
-// 解析失败按「不同」处理 —— 让后续编译给出明确的文档错误，而不是在这里静默放过
-// （静默放过会表现为「保存后什么都没发生」，是本项目最难查的一类问题）。
 func documentsEqual(a, b json.RawMessage) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return false
@@ -999,11 +764,6 @@ func documentsEqual(a, b json.RawMessage) bool {
 	return bytes.Equal(an, bn)
 }
 
-// RollbackArtifact 产物指针回滚：把实例的线上指针切回历史产物（秒级，不重新编译）。
-//
-// 与 page 侧 Rollback 同一语义（只切指针、不动暂存/文档指针）：presentation 的产物行
-// 在自家表里（presentation_artifacts），所以按 hash 找行 + 校验文件在位 + 重新激活 URL，
-// 最后在**一个事务**里落指针。
 func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.RollbackArtifactReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || strings.TrimSpace(req.TargetHash) == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -1016,8 +776,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	if err != nil {
 		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
-	// 产物指针回滚不重新编译，整段（查产物 → 校验文件在位 → 激活 → 切指针）都留在
-	// 实例锁内：它是纯粹的指针切换，与发布会话的两个锁内段共用同一把锁即可（PERF-01）。
+
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -1026,21 +785,17 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	if aerr != nil {
 		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
-	// 文件不在位（误删 / 磁盘损坏）不能切指针：切了就是「路由指向不存在的文件」，
-	// 比拒绝回滚严重得多（线上直接 404，且审计里看不出原因）。
+
 	loc := pipeline.ArtifactLocator(art.ArtifactHash)
 	if verr := s.store.VerifyArtifact(loc, art.ArtifactHash); verr != nil {
 		logger.Scene("build").With("presentation_id", inst.ID).With("hash", art.ArtifactHash).
 			Warn("产物回滚目标文件不在位，拒绝回滚")
 		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
-	// 锁序与发布/改址/下线同一套：条带锁（已持）→ 稳定业务锁 + 行锁 → 路径锁 →
-	// 归属与身份复验 → 副作用 → 指针提交。此前这里只有条带锁 + 路径锁，缺"锁内复验
-	// 这次切换是否仍然成立"：读完路径到动手之间，另一次发布会把这条路径换成新产物，
-	// 回滚随即用旧产物把它盖掉（线上内容倒退且账本不一致）。
+
 	now := time.Now().UTC()
 	artID := art.ID
-	// From：进入回滚之前的账本身份（锁外读，只作为"我基于哪一代做出这个请求"的陈述）。
+
 	fromLedger, ferr := s.ledgerIdentities(ctx, inst.ID)
 	if ferr != nil {
 		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, ferr.Error())
@@ -1050,8 +805,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {
 			return serr
 		}
-		// 与下线/恢复同一顺序（稳定顾问锁 → 行锁）：回滚也可能与"删除之后的撤链重放"
-		// 撞在同一条路径上，锁序不一致等于两把锁。
+
 		if lerr := s.lockPresentationEntityOrAdvisory(ctx, tx, inst.ProjectID, inst.ID); lerr != nil {
 			return lerr
 		}
@@ -1059,19 +813,12 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 		if lerr != nil {
 			return lerr
 		}
-		// 行锁内重读当前账本身份：路径相同不代表同一次发布（同版本可被多次激活），
-		// 所以除路径外还要比"此刻的账本由哪一次 attempt 成立"，再决定是否沿用旧产物。
+
 		lockedPaths := s.instanceActivePaths(ctx, locked)
 		if !containsPath(lockedPaths, inst.URLPath) {
 			return fmt.Errorf("%w: 回滚目标路径已不属于本实例", errOldPathFSTargetForeign)
 		}
-		// From（回滚前的账本身份）/ Own（行锁内回读的账本身份）逐个语言比对。
-		//
-		// 判据是 (receiptID, artifact) 这一**对**，不是单看 artifact：
-		//   · 两个 attempt 可以命中同一份产物（内容寻址 + 同版本重建），只比 artifact
-		//     就分不出"镜像里的账本是我写的"还是"是另一次成功发布写的"——后者必须拒绝；
-		//   · From 的身份为空是历史行（本列上线前），按已裁规则退化为 artifact 比较；
-		//   · 任何一条语言的 Own ≠ From（同 artifact 也算）→ 受控冲突，**不动访问面**。
+
 		lockedLedger, lerr = s.ledgerIdentitiesTx(ctx, tx, inst.ID)
 		if lerr != nil {
 			return lerr
@@ -1087,9 +834,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 		if uerr := s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst); uerr != nil {
 			return uerr
 		}
-		// 访问面切换与指针提交在同一段（路径锁在事务内层）：先写文件再提交，提交失败
-		// 时链接已被新产物覆盖，但指针没动 → 下次发布按账本重放即可（Activate 是对同一
-		// 路径的原子 rename，重跑收敛）。
+
 		return s.withPath(inst.URLPath, func() error {
 			return s.publication.Activate(inst.URLPath, loc)
 		})
@@ -1102,24 +847,16 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	return s.toResp(ctx, inst)
 }
 
-// LedgerIdentity 是 ledgerIdentity 的导出别名：判据只能有一份实现，
-// 跨包测试直接调用同一段代码，而不是在测试里抄一份比较逻辑（抄的那份永远不会先红）。
 type LedgerIdentity = ledgerIdentity
 
-// CompareRollbackLedger 供跨包测试调用同一判据（生产路径用的是下面的小写版本）。
 func CompareRollbackLedger(from, own []LedgerIdentity) error { return compareRollbackLedger(from, own) }
 
-// ledgerIdentity 一条语言账本在某一时刻的归属事实（回滚身份判据的原子单位）。
-//
-// 两个字段必须一起比：content addressing + 同版本重建会让两次不同的 attempt 命中
-// 同一份产物，只比 artifact 分不出是谁写的账本。
 type ledgerIdentity struct {
 	Lang       string
 	ReceiptID  string
 	ArtifactID string
 }
 
-// ledgerIdentities 锁外读账本身份（"我基于哪一代发起这次回滚"）。
 func (s *Service) ledgerIdentities(ctx context.Context, instanceID string) ([]ledgerIdentity, error) {
 	rows, err := s.m.ListPublicationsForInstance(ctx, instanceID)
 	if err != nil {
@@ -1128,7 +865,6 @@ func (s *Service) ledgerIdentities(ctx context.Context, instanceID string) ([]le
 	return ledgerIdentitiesOf(rows), nil
 }
 
-// ledgerIdentitiesTx 锁内读账本身份（Own）。
 func (s *Service) ledgerIdentitiesTx(ctx context.Context, tx *gorm.DB, instanceID string) ([]ledgerIdentity, error) {
 	rows, err := s.m.ListPublicationsTx(tx, instanceID)
 	if err != nil {
@@ -1137,8 +873,6 @@ func (s *Service) ledgerIdentitiesTx(ctx context.Context, tx *gorm.DB, instanceI
 	return ledgerIdentitiesOf(rows), nil
 }
 
-// receiptIDText 回执 id 列可空：NULL 是「这一行写入时没有回执事实」（历史行），
-// 读成空串，调用方据此退回别的判据，而不是当成 0 号回执。
 func receiptIDText(v *string) string {
 	if v == nil {
 		return ""
@@ -1163,14 +897,6 @@ func ledgerIdentitiesOf(rows []presentationmodel.PublicationEntity) []ledgerIden
 	return out
 }
 
-// compareRollbackLedger 锁内比较 From（发起时的账本）与 Own（行锁内回读的账本）。
-//
-// 判据按已裁规则：
-//   - 语言维度必须一致（期间新增/删掉语言 = 目标已漂移）；
-//   - Own 的 receiptID 非空时必须等于 From 的 receiptID —— **同一 artifact 也拒绝**，
-//     因为"另一次成功发布恰好复用了同一份产物"与"镜像里还是我那一代"是两件事；
-//   - From 的 receiptID 为空是历史行（700 之前），退化为 artifact 相等比较；
-//   - 任何不一致 → 受控冲突（errPublishStateMoved），调用方据此拒绝且**不动访问面**。
 func compareRollbackLedger(from, own []ledgerIdentity) error {
 	if len(from) != len(own) {
 		return fmt.Errorf("%w: 回滚期间账本语言集合发生变化", errPublishStateMoved)
@@ -1191,7 +917,7 @@ func compareRollbackLedger(from, own []ledgerIdentity) error {
 			}
 			continue
 		}
-		// 历史兼容档：任一侧缺回执身份时只能比产物。
+
 		if row.ArtifactID != f.ArtifactID {
 			return fmt.Errorf("%w: 语言 %s 的账本产物在回滚期间发生变化", errPublishStateMoved, row.Lang)
 		}
@@ -1199,7 +925,6 @@ func compareRollbackLedger(from, own []ledgerIdentity) error {
 	return nil
 }
 
-// containsPath 路径是否在集合里（精确比较，不做前缀/模糊匹配）。
 func containsPath(paths []string, want string) bool {
 	w := strings.TrimSpace(want)
 	if w == "" {
@@ -1213,11 +938,6 @@ func containsPath(paths []string, want string) bool {
 	return false
 }
 
-// RollbackDocument 快照级文档回滚：取历史快照的文档重发（重新编译，实体数据取最新）。
-//
-// 语义上等于「把这份历史文档作为该商品当前文档」→ 实例进入 document 模式
-// （模板更新不再覆盖它），这与「内容回到那一版」的直觉一致；想回到跟随模板走
-// ReapplyPreset（可反悔）。
 func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.RollbackDocumentReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || strings.TrimSpace(req.SnapshotID) == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -1230,14 +950,12 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 	if err != nil {
 		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
-	// 快照读取与归属校验是只读的，不需要实例锁（PERF-01）：需要互斥的是随后的发布，
-	// 它按自己的分段锁完成版本分配、落库与指针推进。
+
 	snap, serr := s.m.GetSnapshot(ctx, req.SnapshotID)
 	if serr != nil {
 		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
-	// 归属校验：快照表没有 project_id，拿错实例的快照必须显式拒绝
-	//（否则会把别的商品的内容发布到这个商品的 URL 上）。
+
 	if snap.PresentationInstanceID != inst.ID {
 		return nil, presentationenums.Err(presentationenums.ErrSnapshotMismatch)
 	}
@@ -1264,15 +982,6 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 	return s.toResp(ctx, inst)
 }
 
-// ListSnapshots 实例的历史快照清单（新→旧），供后台选择文档回滚目标。
-//
-// 先定位实例再查快照：快照表没有工程列，用实例的工程作用域兜住越权读。
-// CountByTemplate 按绑定模板统计实例数（template 模式 / document 模式各多少）。
-//
-// 给后台的「编辑模板（影响 N 个商品）」提供影响面数字：模板编辑是全局动作，
-// 按钮上不写清影响范围，用户只能凭猜 —— 猜错的代价是整站商品页一起变样。
-// 只数未删除的实例，且按模式分开：转独立后的商品**不**受模板更新影响，
-// 把它们的数量算进「影响面」会吓退用户（数字必须是真的）。
 func (s *Service) CountByTemplate(ctx context.Context, req *presentationdto.CountByTemplateReq) (
 	res *presentationdto.CountByTemplateResp, err error) {
 	if req == nil || strings.TrimSpace(req.TemplateID) == "" {

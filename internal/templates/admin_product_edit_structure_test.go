@@ -1,20 +1,5 @@
 package templates
 
-// admin_product_edit_structure_test.go — 商品编辑页的三条结构契约（审计 02-L P1-9）。
-//
-// 为什么这三条要用结构判据而不是「看了一眼没问题」：
-//  ① 列表卡标题写成裸 <strong>：能跑、看着也不丑，但 theme.css §13 专门为
-//     `.list-card .list-toolbar .card-title` 定的字号 / 字重落不到它身上 —— 与
-//     「.fold-title 被列表卡借用时是零样式」是同一类问题（写的时候顺手，样式悄悄丢掉）。
-//  ② 低频只读块不折叠：SEO 检查与详情页模板把「改字段」推到很后面（清单记的 2.88 屏）。
-//  ③ 保存按钮与表单脱钩：按钮在页头、表单在下面，靠 `form="product-edit-main"` 关联 ——
-//     id 打错一个字符，按钮照旧渲染、点下去什么都不发生（页面上完全看不出来）。
-//     所以「提交后落库字段与改造前一致」不能靠肉眼看表单，要把协议字段逐个钉死。
-//
-// 折叠不丢字段是**判据**不是印象：SEO 卡里没有可见输入字段（只有 hidden + 按钮 + 结果容器），
-// 详情页模板卡里唯一的真实字段是回滚的版本下拉 —— 它和它的按钮在同一个折叠区内，
-// 且折叠区不切开任何表单（区内的 `form=` 关联只能指向区内的表单）。
-
 import (
 	"strings"
 	"testing"
@@ -23,23 +8,15 @@ import (
 	"golang.org/x/net/html"
 )
 
-// productEditProtocolFields 编辑表单的协议字段（与 /api/product/update 的 UpdateReq
-// json 标签逐字对齐，见 product_req.go 的 UpdateReq）：改字段名等于改协议，
-// 也因此是「页头保存按钮提交的东西与改造前一致」的可复算判据。
 var productEditProtocolFields = []string{
-	// csrf_token 不在清单里：它从表单隐藏域改成请求头（基座发 X-CSRF-Token），
-	// 表单里若又出现它，端点会把它当未知字段整条拒掉。
+
 	"projectId", "id",
 	"name", "subtitle", "slug", "sku", "status", "defaultPrice", "unit", "weight",
-	// seoTitle / seoDescription 已合并进 name 与 subtitle（2026-09-30），表单不再提交它们 ——
-	// 清单挪掉这两项是跟着**行为**走，不是放宽判据：其余字段一个都没少。
+
 	"images", "imageAlts",
 	"attributeIds", "categoryIds", "primaryCategoryId", "brandId", "tagIds",
 }
 
-// productEditPageData 编辑页渲染数据。与 handler 的装配同形：
-// 商品存在 + 捆绑商品 + 详情页模板面板（document 模式、有历史版本）——
-// 这样 5 张内容卡与两个折叠区的最全形态都被渲染到，判据才有覆盖面。
 func productEditPageData() map[string]any {
 	return productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "", "Done": "",
@@ -51,7 +28,7 @@ func productEditPageData() map[string]any {
 		"ImagesInput":      "https://cdn.example.com/1.jpg",
 		"ImageAltsInput":   "图一",
 		"WeightInput":      "0.5", "DefaultPriceInput": "10.00",
-		// 捆绑商品：多渲染一张 .card（捆绑构成的编辑入口），卡片计数因此是 6。
+
 		"TplPanel": map[string]any{
 			"Available": true, "Bound": map[string]any{"InstanceID": "inst1", "TemplateID": "tpl1", "Status": "published", "RenderMode": "document", "SourceTemplateVersionID": "v1"}, "CurrentTemplateVersionID": "v2",
 			"HasAffectedTemplateCount": true, "AffectedTemplateCount": 3,
@@ -60,8 +37,6 @@ func productEditPageData() map[string]any {
 	})
 }
 
-// productEditRender 渲染编辑页并解析成 DOM 树（模板中断会让渲染直接报错，
-// 这正是本页最容易出的整页级事故）。
 func productEditRender(t *testing.T) (*html.Node, string) {
 	t.Helper()
 	out, err := render(t, groupDSet(t), "admin/product/product_edit", productEditPageData())
@@ -75,8 +50,6 @@ func productEditRender(t *testing.T) (*html.Node, string) {
 	return root, out
 }
 
-// productEditStack 定位模板根容器（.stack 且含 page-head 的那个）——
-// 判据都在这棵子树里做，避免命中 layout 外壳里的同名元素。
 func productEditStack(t *testing.T, root *html.Node) *html.Node {
 	t.Helper()
 	stacks := peAll(root, func(n *html.Node) bool {
@@ -93,18 +66,12 @@ func productEditStack(t *testing.T, root *html.Node) *html.Node {
 	return stacks[0]
 }
 
-// productEditFormByWriteAPI 定位JSON操作表单。
 func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
 		return peEl(n, "form") && peAttr(n, "data-write-url") == api
 	})
 }
 
-// TestProductEditListCardTitlesUseCardTitle ① 变体 / 评分两张列表卡的标题用 .card-title。
-//
-// 判据不只是「有 .card-title」，还要求它就在 .list-toolbar 的**直接子**里（theme.css 的选择器是
-// `.list-card .list-toolbar .card-title`，套一层 div 就落不到样式），并反向钉住 toolbar 里
-// 不再有裸 <strong>（写法漂移的形态本身），以及动作按钮仍在同一个 toolbar 内。
 func TestProductEditListCardTitlesUseCardTitle(t *testing.T) {
 	root, _ := productEditRender(t)
 	stack := productEditStack(t, root)
@@ -133,17 +100,13 @@ func TestProductEditListCardTitlesUseCardTitle(t *testing.T) {
 		if strongs := peAll(tb, func(n *html.Node) bool { return peEl(n, "strong") }); len(strongs) != 0 {
 			t.Fatalf("列表卡标题行不该再用裸 <strong>（.card-title 才是列表卡标题的形态），实际 %d 个", len(strongs))
 		}
-		// 动作按钮（新建变体 / 生成组合 / 添加评分）仍在同一个标题行里 —— 改标题不该把动作挤出去。
+
 		if btns := peAll(tb, func(n *html.Node) bool { return peEl(n, "button") }); len(btns) == 0 {
 			t.Fatalf("第 %d 个列表卡标题行丢了动作按钮", i+1)
 		}
 	}
 }
 
-// TestProductEditLowFrequencyBlocksFolded ② 低频只读块收进折叠区，且折叠不丢字段。
-//
-// 「低频只读块」现在只剩**详情页模板**一个：SEO 检查已移入抽屉（页头按钮是入口）——
-// 抽屉同样满足这条判据的本意（不常驻、不占版面），只是换了容器。
 func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	root, raw := productEditRender(t)
 	stack := productEditStack(t, root)
@@ -177,7 +140,6 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		}
 	}
 
-	// SEO 外壳放在本地 template 中，点击入口只打开它，数据另走 JSON。
 	if !strings.Contains(raw, `data-drawer-open="#tpl-product-seo"`) {
 		t.Fatal("商品编辑页缺少SEO本地抽屉入口")
 	}
@@ -196,15 +158,12 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		t.Fatal("SEO表单应处于未激活的本地模板，不能常驻编辑区")
 	}
 
-	// 详情页模板：两个 form-inline（重新套用预设 / 回滚文档）都在同一个折叠区内。
-	// 判据从 action 换成 data-write-url（写基座的端点声明）：两个动作已迁到 JSON 写基座，表单不再有页面端点。
 	reapply := productEditFormByWriteAPI(stack, "/api/product/detail-template/reapply-preset")
 	rollback := productEditFormByWriteAPI(stack, "/api/product/detail-template/rollback-document")
 	if len(reapply) != 1 || len(rollback) != 1 {
 		t.Fatalf("详情页模板应有「重新套用预设」与「回滚文档」两个表单，实际 %d / %d 个", len(reapply), len(rollback))
 	}
-	// 两份声明并存时浏览器会按原生表单提交，而那条页面端点在服务端已经删了 ——
-	// 用户看到的是 404，不是结果。
+
 	for _, fr := range append(append([]*html.Node{}, reapply...), rollback...) {
 		if a := peAttr(fr, "action"); a != "" {
 			t.Fatalf("详情页模板表单同时声明了 action=%q：原生提交会打到已删除的页面端点", a)
@@ -217,12 +176,11 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	if tplFold == nil {
 		t.Fatal("「重新套用预设」表单应在折叠区内")
 	}
-	// （原「两块低频内容不该塞进同一个 details」的判据随 SEO 检查移入抽屉而消失：
-	//  折叠区现在只剩这一个，不存在「两块挤在一起」的可能。）
+
 	if got := peUp(rollback[0], func(n *html.Node) bool { return peEl(n, "details") && peClass(n, "section-fold") }); got != tplFold {
 		t.Fatal("「回滚文档」表单应在详情页模板那一个折叠区内")
 	}
-	// 唯一的真实字段：回滚的版本下拉。它必须与它的按钮同处折叠区内（展开后可选、可提交）。
+
 	selects := peAll(rollback[0], func(n *html.Node) bool { return peEl(n, "select") && peAttr(n, "name") == "snapshotId" })
 	if len(selects) != 1 {
 		t.Fatalf("回滚表单应有且只有一个版本下拉 select[name=snapshotId]，实际 %d 个", len(selects))
@@ -233,8 +191,6 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	submitInFold(t, tplFold, "/api/product/detail-template/reapply-preset")
 	submitInFold(t, tplFold, "/api/product/detail-template/rollback-document")
 
-	// 折叠边界不得切开任何表单：折叠区内的 `form=` 关联只能指向**同一个折叠区内**的表单
-	// （指向区外的表单意味着字段与按钮分处折叠两侧：看得见按钮时填不了字段，反之亦然）。
 	for i, f := range folds {
 		for _, n := range peAll(f, func(n *html.Node) bool { return peAttr(n, "form") != "" }) {
 			id := peAttr(n, "form")
@@ -246,7 +202,6 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	}
 }
 
-// TestProductEditSaveButtonRelatedToOutsideForm ③ 主行动（保存）在页头，用 form= 关联表单外的那份表单。
 func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	root, _ := productEditRender(t)
 	stack := productEditStack(t, root)
@@ -258,21 +213,20 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 		t.Fatalf("编辑表单应带 id=product-edit-main（页头按钮的关联目标），实际命中 %d 个", len(forms))
 	}
 	form := forms[0]
-	// 提交走 JSON 写基座：端点与字段声明写在 data-write-* 上，模板不再有 action / method。
+
 	if got := peAttr(form, "data-write-url"); got != "/api/product/update" {
 		t.Fatalf("编辑表单 hx-post 应为 /api/product/update，实际 %q", got)
 	}
 	if got := peAttr(form, "data-write"); got == "" {
 		t.Fatalf("编辑表单缺少 data-write（写基座必填属性；hx-swap=none 已由基座内置）")
 	}
-	// csrf 走请求头：表单里再留隐藏域会变成一条未知字段（严格白名单整条拒掉）。
+
 	for _, ctl := range peAll(form, peIsFormControl) {
 		if peAttr(ctl, "name") == "csrf_token" {
 			t.Fatal("编辑表单不该再有 csrf_token 隐藏域（基座把 token 放请求头）")
 		}
 	}
 
-	// 字段留在表单里：协议字段逐个钉住（少一个 = 保存不再落那个字段）。
 	have := map[string]bool{}
 	for _, ctl := range peAll(form, peIsFormControl) {
 		if name := peAttr(ctl, "name"); name != "" {
@@ -285,7 +239,6 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 		}
 	}
 
-	// 页头按钮：恰好一个、type=submit、form 指向该表单，且它**不在**表单内。
 	btns := peAll(stack, func(n *html.Node) bool {
 		return peEl(n, "button") && peAttr(n, "form") == "product-edit-main"
 	})
@@ -306,7 +259,7 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	if actions == nil {
 		t.Fatal("保存按钮应在页头的 .page-actions 里（而不是散在页头其它位置）")
 	}
-	// 主行动唯一：同一个动作不该出现两个按钮。
+
 	if got := len(peAll(actions, func(n *html.Node) bool {
 		return peEl(n, "button") && strings.EqualFold(peAttr(n, "type"), "submit")
 	})); got != 1 {
@@ -319,19 +272,10 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	}
 }
 
-// TestProductEditEveryContentCardHasTitle 卡片标题全覆盖（清单记的「.card-title 数」判据）。
-//
-// 口径说明：本页 5 张内容卡的标题元素是 **3 个 .card-title + 2 个 .fold-title**。
-// 折叠区的标题按既有设计用 .fold-title —— theme.css 只在 `.section-fold > summary` 里
-// 给它样式，站内已有 5 个页面这么做；字面凑够 6 个 .card-title 只能把标题塞进不该塞的地方。
-// 所以这里钉的判据是「每张内容卡都有且只有一个标题元素」，它比数字更直接地表达意图。
 func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 	root, _ := productEditRender(t)
 	stack := productEditStack(t, root)
 
-	// 递归收集「顶层 card」（不再嵌在另一张 card 里）：两栏化之后表单卡与预览卡分别落在
-	// .product-edit-panes 与 .product-edit-aside 里，按 stack 的直接子级数会漏掉它们 ——
-	// 而漏掉的正是这次改动新增/搬走的东西，断言会静默失去意义。
 	var cards []*html.Node
 	var collectCards func(n *html.Node)
 	collectCards = func(n *html.Node) {
@@ -344,8 +288,7 @@ func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 		}
 	}
 	collectCards(stack)
-	// 基本信息表单 / 变体 / 评分 / 详情页模板 / 详情页预览（右栏）。
-	// SEO 检查改抽屉后不再自占一卡。
+
 	const wantCards = 5
 	if len(cards) != wantCards {
 		t.Fatalf("商品编辑页应有 %d 张内容卡，实际 %d 张", wantCards, len(cards))
@@ -377,7 +320,6 @@ func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 	}
 }
 
-// submitInFold 断言某个 action 的表单，与它的提交按钮同处一个折叠区里。
 func submitInFold(t *testing.T, fold *html.Node, api string) {
 	t.Helper()
 	forms := productEditFormByWriteAPI(fold, api)
@@ -390,8 +332,7 @@ func submitInFold(t *testing.T, fold *html.Node, api string) {
 	if len(btns) != 1 {
 		t.Fatalf("折叠区内的 data-write-url=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
 	}
-	// 无 JS 时按钮必须是 hidden + disabled：表单没有原生端点，按得动就等于「点了没反应」。
-	// 三个都是布尔属性（值为空串），存在性用 peHasAttr 判，不能拿 peAttr 的返回值当判据。
+
 	if !peHasAttr(btns[0], "data-requires-js") || !peHasAttr(btns[0], "disabled") || !peHasAttr(btns[0], "hidden") {
 		t.Fatalf("data-write-url=%s 的提交按钮缺少 data-requires-js/hidden/disabled", api)
 	}
@@ -400,20 +341,14 @@ func submitInFold(t *testing.T, fold *html.Node, api string) {
 	}
 }
 
-// peIsFormControl 表单控件（input / select / textarea）。
 func peIsFormControl(n *html.Node) bool {
 	return peEl(n, "input") || peEl(n, "select") || peEl(n, "textarea")
 }
 
-// ── 下面几个是本文件的 DOM 小工具（pe = product edit，避免与包内既有辅助重名）。 ──
-
-// peEl 判断元素节点且标签名匹配（小写标签名）。
 func peEl(n *html.Node, tag string) bool {
 	return n.Type == html.ElementNode && n.Data == tag
 }
 
-// peHasAttr 属性是否存在。布尔属性（data-requires-js / hidden / disabled）的值是空串，
-// 用 peAttr 的返回值判存在会把「有属性」读成「没有」。
 func peHasAttr(n *html.Node, key string) bool {
 	for _, a := range n.Attr {
 		if a.Key == key {
@@ -423,7 +358,6 @@ func peHasAttr(n *html.Node, key string) bool {
 	return false
 }
 
-// peAttr 取属性值，缺失给空串。
 func peAttr(n *html.Node, key string) string {
 	for _, a := range n.Attr {
 		if a.Key == key {
@@ -433,7 +367,6 @@ func peAttr(n *html.Node, key string) string {
 	return ""
 }
 
-// peClass 判断元素是否带某个 class（按空白切分的 token 比较，不做子串匹配）。
 func peClass(n *html.Node, cls string) bool {
 	for _, c := range strings.Fields(peAttr(n, "class")) {
 		if c == cls {
@@ -443,7 +376,6 @@ func peClass(n *html.Node, cls string) bool {
 	return false
 }
 
-// peKids 直接子元素（跳过文本 / 注释节点）。
 func peKids(n *html.Node) []*html.Node {
 	var out []*html.Node
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -454,7 +386,6 @@ func peKids(n *html.Node) []*html.Node {
 	return out
 }
 
-// peAll 前序收集子树里所有满足 pred 的节点（含 root 自身）。
 func peAll(root *html.Node, pred func(*html.Node) bool) []*html.Node {
 	var out []*html.Node
 	var walk func(*html.Node)
@@ -470,7 +401,6 @@ func peAll(root *html.Node, pred func(*html.Node) bool) []*html.Node {
 	return out
 }
 
-// peUp 最近的满足 pred 的祖先，没有给 nil。
 func peUp(n *html.Node, pred func(*html.Node) bool) *html.Node {
 	for p := n.Parent; p != nil; p = p.Parent {
 		if pred(p) {
@@ -480,7 +410,6 @@ func peUp(n *html.Node, pred func(*html.Node) bool) *html.Node {
 	return nil
 }
 
-// peText 递归拼接元素的文本（判标题文案用）。
 func peText(n *html.Node) string {
 	var b strings.Builder
 	var walk func(*html.Node)

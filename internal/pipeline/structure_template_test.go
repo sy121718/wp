@@ -1,11 +1,5 @@
 package pipeline
 
-// structure_template_test.go — 结构槽位解析的发布 / 预览分界（审计 ARCH-05）。
-//
-// 这里只测**纯决策**：不建库、不渲染。分界本身是纯函数（planStructureSlots），
-// 而渲染期的另一半（块引用不可用 → 发布失败 / 预览可归因占位）在
-// internal/builder 与 public/test/page/feature 各有用例钉住。
-
 import (
 	"context"
 	"errors"
@@ -16,7 +10,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// stubPort 结构模板端口桩：docs 命中返回文档，errs 命中返回错误，其余视为不存在。
 type stubPort struct {
 	docs map[string][]byte
 	errs map[string]error
@@ -32,7 +25,6 @@ func (p stubPort) ResolveStructureDocument(_ context.Context, _, templateID stri
 	return nil, errors.New("模板不存在")
 }
 
-// stubBlocks 块解析器桩：roots 命中返回节点，其余报错。
 type stubBlocks struct {
 	roots map[string][]*core.Node
 }
@@ -44,18 +36,14 @@ func (b stubBlocks) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
 	return nil, errors.New("块不可用")
 }
 
-// templateDoc 结构模板文档（一个文本节点，便于断言「模板确实被展开」）。
 func templateDoc(id, text string) []byte {
 	return []byte(`{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"` + id + `","props":{"text":"` + text + `"}}]}`)
 }
 
-// emptyTemplateDoc 空 root 的结构模板文档。
 func emptyTemplateDoc() []byte {
 	return []byte(`{"settings":{"layout":{"mode":"full"}},"root":[]}`)
 }
 
-// TestStructureSlotsPublishFailsOnUnavailableBoundTemplate 发布模式下，显式绑定却拿不到的
-// 结构模板必须让解析失败 —— 这是 ARCH-05 要落地的那条分界。
 func TestStructureSlotsPublishFailsOnUnavailableBoundTemplate(t *testing.T) {
 	in := StructureSlotInput{
 		Port:      stubPort{},
@@ -72,12 +60,9 @@ func TestStructureSlotsPublishFailsOnUnavailableBoundTemplate(t *testing.T) {
 	}
 }
 
-// TestStructureSlotsPreviewDegradesUnavailableTemplateWithAttribution 预览模式下同一条绑定
-// 不失败：有块回退时用块，没有时保留一个归因到模板的槽位占位，并记诊断。
 func TestStructureSlotsPreviewDegradesUnavailableTemplateWithAttribution(t *testing.T) {
 	ctx := context.Background()
 
-	// (a) 有块绑定：回退到块，依赖只登记块（不登记没被消费的模板）。
 	blocks := stubBlocks{roots: map[string][]*core.Node{"blk-1": nil}}
 	diags := builder.NewDegradeCollector()
 	res, err := BuildStructureSlots(ctx, StructureSlotInput{
@@ -104,7 +89,6 @@ func TestStructureSlotsPreviewDegradesUnavailableTemplateWithAttribution(t *test
 		}
 	}
 
-	// (b) 没有块可回退：仍产出槽位（供占位归因），解析该虚拟引用时带出模板归因码。
 	diags = builder.NewDegradeCollector()
 	res, err = BuildStructureSlots(ctx, StructureSlotInput{
 		Port: stubPort{}, ProjectID: "p1",
@@ -128,7 +112,6 @@ func TestStructureSlotsPreviewDegradesUnavailableTemplateWithAttribution(t *test
 	}
 }
 
-// TestStructureSlotsPublishUsesAvailableTemplate 模板可用：模板优先、依赖登记模板与模板内引用块。
 func TestStructureSlotsPublishUsesAvailableTemplate(t *testing.T) {
 	diags := builder.NewDegradeCollector()
 	res, err := BuildStructureSlots(context.Background(), StructureSlotInput{
@@ -159,8 +142,6 @@ func TestStructureSlotsPublishUsesAvailableTemplate(t *testing.T) {
 	}
 }
 
-// TestStructureSlotsEmptyTemplateFallsBackInPublish 模板存在但没有内容**不是**拿不到：
-// 发布照常，按显式设计回退到块绑定，并留一条诊断。
 func TestStructureSlotsEmptyTemplateFallsBackInPublish(t *testing.T) {
 	diags := builder.NewDegradeCollector()
 	res, err := BuildStructureSlots(context.Background(), StructureSlotInput{
@@ -185,8 +166,6 @@ func TestStructureSlotsEmptyTemplateFallsBackInPublish(t *testing.T) {
 	}
 }
 
-// TestStructureSlotDependenciesTolerantOnUnavailableTemplate 依赖推导（构建后落库的静态扫描）
-// 不承担把关职责：模板拿不到时不 panic、不登记没被消费的模板依赖。
 func TestStructureSlotDependenciesTolerantOnUnavailableTemplate(t *testing.T) {
 	deps := StructureSlotDependencies(context.Background(), stubPort{}, "p1",
 		builder.StructureBindings{HeaderTemplateID: "tpl-missing", HeaderBlockID: "blk-1"})

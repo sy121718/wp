@@ -1,15 +1,5 @@
 package presentationmodel
 
-// presentation_mode_model.go — 渲染模式（迁移 282，商品页双轨）与它带来的两个差异化查询。
-//
-// 两种模式（AGENTS.md）：
-//   template：文档 = 绑定模板的文档，每次构建参与；模板更新可全局下发（默认，零回归）；
-//   document：文档 = override_document（该商品自己的文档）；模板更新不影响它。
-//
-// 为什么模式要落列而不是靠「override_document 是否为空」推断：
-//   · 「改了又改回去」「重新套用预设后」这两种状态用空/非空推断会漂移；
-//   · 模板更新的 stale 传播必须能在 SQL 里分流（只重建 template 模式的实例）。
-
 import (
 	"context"
 	"errors"
@@ -24,22 +14,15 @@ import (
 )
 
 const (
-	// RenderModeTemplate 跟随绑定模板（默认）。
 	RenderModeTemplate = "template"
-	// RenderModeDocument 该商品独立文档（override_document）。
+
 	RenderModeDocument = "document"
 )
 
-// IsValidRenderMode 取值是否合法（空值不算合法：由调用方先归一化）。
 func IsValidRenderMode(mode string) bool {
 	return mode == RenderModeTemplate || mode == RenderModeDocument
 }
 
-// NormalizeRenderMode 归一化渲染模式：空值/未知值按 template 处理。
-//
-// 旧行（282 之前）在迁移里已回填，这里的兜底是为了「测试用 AutoMigrate 建表」与
-// 手工插入等不经过迁移的路径：那些行 render_mode 可能为空串，
-// 按 template 处理等于保持既有语义（比按 document 处理安全：不会误用空文档覆盖模板）。
 func NormalizeRenderMode(mode string) string {
 	if strings.TrimSpace(mode) == RenderModeDocument {
 		return RenderModeDocument
@@ -47,19 +30,10 @@ func NormalizeRenderMode(mode string) string {
 	return RenderModeTemplate
 }
 
-// IsDocumentMode 是否独立文档模式（空值/未知值按 template 处理，见 NormalizeRenderMode）。
 func IsDocumentMode(mode string) bool {
 	return NormalizeRenderMode(mode) == RenderModeDocument
 }
 
-// UpdateInstanceModeTx 事务内切换渲染模式并落独立文档。
-//
-// 与本次重建的快照/产物/指针同一事务（调用方在多语言发布链内传进来：presentation_publish.go 的 persistMultiLangArtifacts）：
-// 若只更新文档而不在同一事务里改模式，会出现「文档已是商品自己的、模式还写着跟随模板」
-// 的中间态，下一次模板更新就会按 template 模式把它重建回模板文档 —— 自定义凭空消失。
-//
-// document 必填（document 模式没有独立文档就无内容可编译）；回到 template 用
-// ClearInstanceModeTx（语义不同：那是「重新套用预设」，要清文档）。
 func (m *Model) UpdateInstanceModeTx(tx *gorm.DB, projectID, id, renderMode string,
 	document json.RawMessage, at time.Time) error {
 	if !IsValidRenderMode(renderMode) {
@@ -78,18 +52,13 @@ func (m *Model) UpdateInstanceModeTx(tx *gorm.DB, projectID, id, renderMode stri
 	if renderMode == RenderModeDocument {
 		updates["override_document"] = document
 	} else {
-		// 回到 template 模式必须同时清空独立文档：留下「template 模式 + 非空文档」
-		// 的行会让审计与 UI 都读到矛盾状态（看起来像还在自定义）。
+
 		updates["override_document"] = nil
 	}
 	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).
 		Updates(updates).Error
 }
 
-// ClearInstanceModeTx 事务内回到 template 模式并清除独立文档（「重新套用预设」）。
-//
-// 两列必须同事务改写：只清文档不改模式会留下「document 模式但文档为空」的行，
-// 下次构建回落到模板文档 —— 表现上像套用成功了，模式列却仍写着独立（审计与 UI 都会骗人）。
 func (m *Model) ClearInstanceModeTx(tx *gorm.DB, projectID, id string, at time.Time) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
@@ -102,9 +71,6 @@ func (m *Model) ClearInstanceModeTx(tx *gorm.DB, projectID, id string, at time.T
 		}).Error
 }
 
-// MarkStaleTemplateModeByDependency 标记仍消费指定模板的实例。
-// document 模式只脱离自身的正文模板；页眉/页脚等结构模板仍参与每次构建。
-// 依赖命中必须覆盖全部语言的已发布产物及当前暂存产物。
 func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID, kind, key string,
 	at time.Time) (ids []string, err error) {
 	if kind == "" || key == "" {
@@ -130,10 +96,6 @@ func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID
 	return ids, nil
 }
 
-// CountInstancesByTemplate 按绑定模板统计实例数（两个模式各多少）。
-//
-// 给 UI 用：「编辑模板（影响 N 个商品）」的影响面必须写在按钮上 —— 数字取错比没有数字
-// 更糟（用户会照着一个假的 N 判断风险）。只数未删除的实例。
 func (m *Model) CountInstancesByTemplate(ctx context.Context, projectID, templateID string) (
 	templateMode, documentMode int64, err error) {
 	if strings.TrimSpace(templateID) == "" {
@@ -149,9 +111,6 @@ func (m *Model) CountInstancesByTemplate(ctx context.Context, projectID, templat
 	return templateMode, documentMode, err
 }
 
-// ListSnapshots 读取实例的历史快照（新→旧），供「快照级文档回滚」选择目标版本。
-//
-// 按 create_time 倒序：快照是只增的历史，时间序即版本序（同秒并发建快照时用 id 兜底稳定排序）。
 func (m *Model) ListSnapshots(ctx context.Context, instanceID string, limit int) (list []SnapshotEntity, err error) {
 	if strings.TrimSpace(instanceID) == "" {
 		return nil, nil

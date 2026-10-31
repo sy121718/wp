@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestImageCSSBase image.css 迁移后逐条核对基底声明与三端分组。
 func TestImageCSSBase(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{
@@ -42,7 +41,6 @@ func TestImageCSSBase(t *testing.T) {
 	}
 }
 
-// TestImageCSSObjectFitCoverOmitted 缺省 cover 不产出 object-fit（浏览器默认即 cover 语义下的裁剪）。
 func TestImageCSSObjectFitCoverOmitted(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{ObjectFit: "cover"}, &b)
@@ -51,7 +49,6 @@ func TestImageCSSObjectFitCoverOmitted(t *testing.T) {
 	}
 }
 
-// TestImageCSSHoverPair 悬浮过渡与 :hover 形态成对出现，且形态进 hover 桶。
 func TestImageCSSHoverPair(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Hover: Hover{Scale: "1.05", RestoreColor: true, Duration: "200ms"}}, &b)
@@ -74,10 +71,6 @@ func TestImageCSSHoverPair(t *testing.T) {
 	}
 }
 
-// TestImageCSSLightboxIsGlobal 灯箱浮层用全局选择器，且同页多实例只产出一份。
-//
-// 浮层是跨实例共享的（多个图片共用一个 .sky-lightbox），所以不能用作用域选择器；
-// 重复登记由 CSSBuckets 去重 —— 若哪天去重失效，产物会随图片数量线性膨胀。
 func TestImageCSSLightboxIsGlobal(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -92,12 +85,11 @@ func TestImageCSSLightboxIsGlobal(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 全局规则不得被作用域前缀污染。
+
 	if strings.Contains(out, ".sky-c-t .sky-lightbox") {
 		t.Errorf("灯箱规则被错误地作用域化了:\n%s", out)
 	}
 
-	// 第二个实例再登记一次，浮层仍只有一份。
 	compileCSS("t2", &Props{}, &b)
 	if n := strings.Count(b.String(), ".sky-lightbox {\n  display: none;"); n != 1 {
 		t.Errorf("灯箱浮层应只产出一份，实际 %d 份", n)

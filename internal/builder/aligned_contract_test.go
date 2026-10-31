@@ -1,15 +1,3 @@
-// aligned_contract_test.go — tabs / accordion「标签数组 ↔ children」同步契约测试。
-//
-// 背景：Inspector 的 tabsPanel / accordionPanel 过去加/删标签只改 props 数组、
-// 不同步 children，于是「标签数与面板数不一致」立刻编译失败（tabs.go:58 /
-// accordion.go:60 的硬校验）。修复把三种操作收敛到 palette.js 的 alignMutation
-// （无 DOM 纯函数）：加标签 → 同步建默认面板；删标签 → 同步删面板；上移/下移 →
-// 子节点同步重排。
-//
-// 本测试用 node 求值 palette.js（与浏览器点按钮走同一份实现），按检查器的操作序列
-// 驱动 alignMutation，再把真实产物交给 Go 侧 Validate / Compile —— 不存在「测试里
-// 抄一份逻辑」的漂移。环境没有 node 时自动跳过。
-
 package builder
 
 import (
@@ -25,19 +13,17 @@ import (
 	"go_wp/internal/templates"
 )
 
-// alignedCase 一个操作序列跑完后的文档片段（node 求值 alignMutation 的产物）。
 type alignedCase struct {
-	// Name 场景名（子测试名）。
 	Name string `json:"name"`
-	// Type 结构型组件类型。
+
 	Type string `json:"type"`
-	// Key 内容数组的 props 键（tabs / items）。
+
 	Key string `json:"key"`
-	// Node 操作序列执行后的节点（真实产物）。
+
 	Node *core.Node `json:"node"`
-	// Entries 脚本侧统计的内容数组长度（与 Go 侧解析结果交叉校验）。
+
 	Entries int `json:"entries"`
-	// ChildIDs 操作后的子节点 ID 顺序。
+
 	ChildIDs []string `json:"childIds"`
 
 	AddedChildID     string   `json:"addedChildID"`
@@ -48,12 +34,10 @@ type alignedCase struct {
 	IllegalAllNull   bool     `json:"illegalAllNull"`
 }
 
-// alignedProbe node 侧探针结果。
 type alignedProbe struct {
 	Cases []alignedCase `json:"cases"`
 }
 
-// runAlignedProbe 用 node 求值 palette.js 并跑完所有操作场景。
 func runAlignedProbe(t *testing.T) alignedProbe {
 	t.Helper()
 	abs, err := filepath.Abs(paletteJSRel)
@@ -82,8 +66,6 @@ func runAlignedProbe(t *testing.T) alignedProbe {
 	return p
 }
 
-// alignedProbeScript node 侧探针：与浏览器检查器同一套调用（buildInsertNode +
-// alignMutation + makeIdAllocator 语义），逐个场景输出操作后的真实节点。
 const alignedProbeScript = `
 import { paletteItems, buildInsertNode, alignMutation, alignKeyOf } from %q;
 
@@ -212,7 +194,6 @@ cases.push(snapshot('labels-only-dirty', bad));
 console.log(JSON.stringify({ cases: cases }));
 `
 
-// alignedEntryCount 解析节点 props[key] 数组长度。
 func alignedEntryCount(t *testing.T, n *core.Node, key string) int {
 	t.Helper()
 	var raw map[string]json.RawMessage
@@ -226,7 +207,6 @@ func alignedEntryCount(t *testing.T, n *core.Node, key string) int {
 	return len(list)
 }
 
-// alignedLabels 解析 props[key] 数组里的文案字段（tabs→label，items→title）。
 func alignedLabels(t *testing.T, n *core.Node, key, field string) []string {
 	t.Helper()
 	var raw map[string]json.RawMessage
@@ -245,7 +225,6 @@ func alignedLabels(t *testing.T, n *core.Node, key, field string) []string {
 	return out
 }
 
-// alignedSubtreeIDs 收集子树（含根）的 ID，返回是否存在重复。
 func alignedSubtreeIDs(n *core.Node) (ids []string, dup string) {
 	seen := map[string]bool{}
 	var walk func(x *core.Node)
@@ -266,7 +245,6 @@ func alignedSubtreeIDs(n *core.Node) (ids []string, dup string) {
 	return ids, dup
 }
 
-// sameStrings 顺序敏感比较。
 func sameStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -279,8 +257,6 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
-// TestAlignedMutationKeepsLabelsAndChildrenInSync 核心不变量：
-// 检查器的加/删/调序操作后，props 数组长度必须等于 children 数量，且节点仍可编译。
 func TestAlignedMutationKeepsLabelsAndChildrenInSync(t *testing.T) {
 	probe := runAlignedProbe(t)
 	for _, c := range probe.Cases {
@@ -309,7 +285,7 @@ func TestAlignedMutationKeepsLabelsAndChildrenInSync(t *testing.T) {
 			if _, dup := alignedSubtreeIDs(c.Node); dup != "" {
 				t.Errorf("子树内 ID 重复: %s", dup)
 			}
-			// labels-only-dirty 是故意构造的坏状态，校验必须失败（见下方分支）。
+
 			if c.Name != "labels-only-dirty" {
 				if err := core.ValidateNode(c.Node, map[string]bool{}); err != nil {
 					t.Errorf("Validate 失败: %v", err)
@@ -360,7 +336,7 @@ func TestAlignedMutationKeepsLabelsAndChildrenInSync(t *testing.T) {
 					t.Error("非法操作（越界删除 / 原位移动 / 非结构型组件）没有返回 null")
 				}
 			case "labels-only-dirty":
-				// 修复前的坏状态：Go 校验必须拦下（证明校验没有被削弱）。
+
 				if goEntries == len(c.Node.Children) {
 					t.Fatalf("只加标签不同步面板竟然数量一致（%d），护栏用例失效", goEntries)
 				}
@@ -376,7 +352,6 @@ func TestAlignedMutationKeepsLabelsAndChildrenInSync(t *testing.T) {
 	}
 }
 
-// TestAlignedMutationNodesCompile 每个操作序列的产物都必须能真正编译出 HTML。
 func TestAlignedMutationNodesCompile(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -385,7 +360,7 @@ func TestAlignedMutationNodesCompile(t *testing.T) {
 	for _, c := range runAlignedProbe(t).Cases {
 		c := c
 		if c.Name == "labels-only-dirty" {
-			continue // 故意的坏状态，编译必然失败
+			continue
 		}
 		t.Run(c.Name, func(t *testing.T) {
 			doc, err := json.Marshal(map[string]any{

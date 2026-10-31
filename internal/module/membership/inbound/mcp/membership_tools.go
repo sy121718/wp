@@ -1,25 +1,5 @@
 package membershipmcp
 
-// 为什么补这一对：用户问「我们有几个会员等级」「金卡要花多少钱才能升」
-// 「这个等级里有多少人」时，答案在 membership_tiers / membership_assignments 里，
-// 而在此之前 AI 侧看不到任何会员数据 —— 它会说「我没有查会员的工具」。
-//
-// 只读：依赖收窄到 QueryReader（两个方法），手里没有 SaveTier、没有 Recalc ——
-// 「AI 顺手把升级门槛改了」不会在某次改动里变得可能，而门槛一改会牵动
-// 后续所有人的升降级。
-//
-// 门槛金额的单位是**分**（与订单金额同口径，见 TierResp 注释）：正文里换算成
-// 元再展示，并标明口径 —— 直接念「50000」会让运营以为门槛是五万。
-
-// 这一组里最需要说清的是**手工锁定的语义**：AssignManual 把归属的 source 写成 manual，
-// 之后日结的自动重算不再碰它 —— 也就是说「设成 VIP」不是设一次、而是**接管**这个会员，
-// 他会一直停在那一级，哪怕消费额早就够下一档。反向的 UnlockManual 也不立刻改级别，
-// 只把归属交还自动重算（等级要等下一次日结才变），所以解锁不会造成一次可见的跳变。
-//
-// 这两句话必须出现在工具描述里。它们不是实现细节：用户说「把他设成 VIP」时，
-// 心里想的通常是「给他个 VIP 待遇」，而这个动作的实际后果是「以后自动升级不再管他」。
-// 描述里不写，模型不会主动说，用户也不会想到要问。
-
 import (
 	"context"
 	"errors"
@@ -39,15 +19,12 @@ const (
 	memberMaxLimit     = 50
 )
 
-// Tools 返回会员模块的只读工具集。
 func Tools(reader membershipcontract.QueryReader) ([]mcp.Tool, error) {
 	if reader == nil {
 		return nil, errors.New("membershipmcp: 会员查询依赖缺失（装配期接线错误）")
 	}
 	return []mcp.Tool{tierList(reader), memberFind(reader)}, nil
 }
-
-// —— 等级 ——
 
 type tierListArgs struct {
 	ProjectID string `json:"projectId"`
@@ -90,11 +67,6 @@ func tierListText(list []*membershipdto.TierResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// thresholdText 把分换算成元。
-//
-// 门槛是**累计消费额**的门槛（库里的单位是分）：直接念原始数字会让运营
-// 把 50000 当成五万元。0 是合法门槛（默认等级的常见取值），所以按数值分支
-// 而不是按零值判空。
 func thresholdText(t *membershipdto.TierResp) string {
 	if t.ThresholdAmount <= 0 {
 		return "无门槛（默认等级）"
@@ -109,11 +81,6 @@ func defaultSuffix(isDefault bool) string {
 	return ""
 }
 
-// entitlementsText 权益清单（kind + 取值）。
-//
-// 必须带上取值：只写 kind 的话「折扣」这条权益完全看不出力度 ——
-// 20 是打八折、80 是打两折，两者在正文里长得一模一样，
-// 用户据它做判断就会错。
 func entitlementsText(list []membershipdto.EntitlementResp) string {
 	parts := make([]string, 0, len(list))
 	for _, e := range list {
@@ -121,10 +88,7 @@ func entitlementsText(list []membershipdto.EntitlementResp) string {
 		case membershipenums.KindFreeShipping:
 			parts = append(parts, "免运费")
 		case membershipenums.KindDiscount:
-			// value_int 是**扣减百分比**：20 = 打八折。直译成「折扣 20」会被读成 20% 折扣，
-			// 与实际相反，所以两种说法都给出来。
-			// 用 %g 而不是 %.0f：value_int=95 时是 0.5 折，取整会写成「打 1 折」——
-			// 一句比实际更优惠的话，而运营会拿它去答复用户。
+
 			parts = append(parts, fmt.Sprintf("打 %g 折（减免 %d%%）",
 				float64(100-e.ValueInt)/10, e.ValueInt))
 		default:
@@ -133,8 +97,6 @@ func entitlementsText(list []membershipdto.EntitlementResp) string {
 	}
 	return strings.Join(parts, "、")
 }
-
-// —— 归属 ——
 
 type memberFindArgs struct {
 	ProjectID string `json:"projectId"`
@@ -210,10 +172,6 @@ func describeScope(args memberFindArgs) string {
 	return strings.Join(parts, "、")
 }
 
-// sourceText 归属来源。
-//
-// auto（按累计消费自动升降）与 manual（后台手工设定）要分开说：运营看到
-// 「这个人怎么是金卡」时，下一步动作完全不同 —— 前者去看消费额，后者去问是谁设的。
 func sourceText(source string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "auto":
@@ -227,10 +185,6 @@ func sourceText(source string) string {
 	}
 }
 
-// timeText 归属生效时刻。
-//
-// 用 utils.JSONTime 的 String（它自己处理零值 → 空串）而不是 fmt %v 直接打：
-// 零值的时间戳在正文里会显示成 0001-01-01，读起来像一个真实日期。
 func timeText(t utils.JSONTime) string {
 	if t.IsZero() {
 		return "-"
@@ -255,7 +209,6 @@ func emptyAsDash(s string) string {
 	return s
 }
 
-// WriteTools 返回会员模块的写工具集。
 func WriteTools(w membershipcontract.Writer) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("membershipmcp: 会员写依赖缺失（装配期接线错误）")
@@ -268,8 +221,6 @@ func WriteTools(w membershipcontract.Writer) ([]mcp.Tool, error) {
 		memberTierDelete(w),
 	}, nil
 }
-
-// —— 归属 ——
 
 type memberAssignSetArgs struct {
 	ProjectID string `json:"projectId"`
@@ -307,10 +258,6 @@ func memberAssignSet(w membershipcontract.Writer) mcp.Tool {
 		})
 }
 
-// assignedText 手工设级的回执。
-//
-// 必须复述「已接管」这一后果：回执是用户唯一能看到实际发生了什么的地方，
-// 而界面上「客户 2 → 金卡」这行字与自动升级的结果长得一模一样。
 func assignedText(res *membershipdto.AssignmentResp) string {
 	if res == nil {
 		return "已手工指定会员等级。"
@@ -351,16 +298,10 @@ func memberAssignUnlock(w membershipcontract.Writer) mcp.Tool {
 		})
 }
 
-// unlockedText 解锁回执。
-//
-// UnlockManual 只回 error，不回等级名（它**故意不动 tier_id**，见契约注释）——
-// 所以这里不能报「当前等级是 X」，那会是一句我们其实没读到的话。
 func unlockedText(userID uint64) string {
 	return fmt.Sprintf("客户 %d 已交还自动管理。\n"+
 		"等级要等下一次日结按消费额重算才会调整 —— 现在没变是正常的，不是没生效。", userID)
 }
-
-// —— 等级 ——
 
 type tierEntitlementArg struct {
 	Kind     string `json:"kind"`
@@ -425,9 +366,6 @@ func memberTierCreate(w membershipcontract.Writer) mcp.Tool {
 		})
 }
 
-// toEntitlements 工具入参 → dto；顺带把取值范围的错话在这里说清。
-//
-// service 也会判这两条，但它的错是枚举 key（用户看不懂）。
 func toEntitlements(items []tierEntitlementArg) ([]membershipdto.EntitlementReq, error) {
 	out := make([]membershipdto.EntitlementReq, 0, len(items))
 	for _, it := range items {

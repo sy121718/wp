@@ -1,21 +1,5 @@
 package templates
 
-// admin_content_list_filter_test.go — 内容域列表页筛选栏的渲染级契约（审计 02-L §2 P1-12）。
-//
-// 两类筛选机制、两组判据，缺一不可：
-//
-//   - 服务端（pages / articles）：模板提交 query，handler 先筛后分页并回显。
-//     handler 的过滤条件由各模块测试钉住；本文件钉模板控件与空态。
-//   - 客户端（blocks / navigations）：admin.js 按 [data-filter-input] 过滤
-//     [data-filter-text] 行、显隐 [data-filter-empty] 提示。三处契约**必须同时存在** ——
-//     只给输入框不给行的匹配文本，就是一个「能输入、无反应、也不报错」的死控件
-//     （项目在筛选栏上已经踩过一次，见 02-L §0.3 M-3）。
-//
-// 另外钉住两条容易静默失效的东西：
-//   · 缺可选键（SelectedProject / FilteredProject）时整页仍要渲染完 —— Jet 拿缺失键直接参与
-//     if 判断会让**整页**在那一行中断（HTTP 仍 200，之后整块 HTML 消失）；
-//   · 新词条必须在 413 迁移里中英成对（模板里的中文只是 t() 兜底，词条命中时显示库里的值）。
-
 import (
 	"os"
 	"time"
@@ -27,7 +11,6 @@ import (
 	"testing"
 )
 
-// contentFilterTemplate 一个待检查的页面：模板名 + 渲染数据 + 期望的行数。
 type contentFilterTemplate struct {
 	name  string
 	data  map[string]any
@@ -35,7 +18,6 @@ type contentFilterTemplate struct {
 	label string
 }
 
-// contentFilterClientPages 客户端筛选页的渲染数据（形状取自各页 handler 的真实注入键）。
 func contentFilterClientPages() []contentFilterTemplate {
 	return []contentFilterTemplate{
 		{
@@ -73,10 +55,8 @@ func contentFilterClientPages() []contentFilterTemplate {
 	}
 }
 
-// filterTextAttr 抓渲染结果里的 data-filter-text 值。
 var filterTextAttr = regexp.MustCompile(`data-filter-text="([^"]*)"`)
 
-// TestContentListFilterBarIsWired 客户端筛选栏的三处契约必须同时在场。
 func TestContentListFilterBarIsWired(t *testing.T) {
 	for _, tc := range contentFilterClientPages() {
 		tc := tc
@@ -92,8 +72,7 @@ func TestContentListFilterBarIsWired(t *testing.T) {
 			if !strings.Contains(out, "data-filter-empty") {
 				t.Fatal("没有 [data-filter-empty]：「筛出来是空的」与「本来就没数据」在界面上分不开")
 			}
-			// 行侧契约：每一行都得给可匹配文本，否则筛选就是个死控件 ——
-			// 输入框能打字、也不报错，只是什么都没有发生。
+
 			matches := filterTextAttr.FindAllStringSubmatch(out, -1)
 			if len(matches) != tc.rows {
 				t.Fatalf("data-filter-text 行数 = %d，期望 %d（有行没给匹配文本：那几行永远筛不出来）",
@@ -108,10 +87,6 @@ func TestContentListFilterBarIsWired(t *testing.T) {
 	}
 }
 
-// TestContentListFilterBarSurvivesEmptyData 空数据时筛选栏照常在。
-//
-// 空态两档的分工是 —— 筛选栏告诉用户「你可以筛」，「本来就没数据」的空态告诉他去创建；
-// 筛选栏跟着数据一起消失，用户就只剩一个「没有数据」的结论（还以为是筛选条件的问题）。
 func TestArticlesListFilterBarServerSide(t *testing.T) {
 	data := map[string]any{
 		"Rows": []any{}, "Total": 0, "Empty": true, "BlogBase": "/blog",
@@ -161,13 +136,11 @@ func TestContentListFilterBarSurvivesEmptyData(t *testing.T) {
 	}
 }
 
-// TestPagesListFilterBarServerSide 服务端筛选栏：控件、回显、单工程不渲染。
 func TestPagesListFilterBarServerSide(t *testing.T) {
 	base := func(projects []any) map[string]any {
 		return map[string]any{
 			"Projects": projects, "Pages": []any{}, "Blueprints": []any{},
-			// Err / Done 是**事实**（key + 中文兜底 + %s 参数）：空 map = 无提示。
-			// 给空串会让模板的 .Err.Key 取得字符串字段而报错。
+
 			"Err": map[string]any{"Key": "", "Fallback": ""}, "Done": map[string]any{"Key": "", "Fallback": ""},
 		}
 	}
@@ -203,7 +176,7 @@ func TestPagesListFilterBarServerSide(t *testing.T) {
 	})
 
 	t.Run("缺可选键→整页仍渲染完（Jet 缺键会让整页中断）", func(t *testing.T) {
-		// 直接渲染模板的单测就是这个形态：handler 之外的调用方不会给这两个键。
+
 		data := base(twoProjects)
 		out := renderAdminEmptyProbe(t, "admin/page/pages", data)
 
@@ -216,7 +189,6 @@ func TestPagesListFilterBarServerSide(t *testing.T) {
 	})
 }
 
-// TestPagesListEmptyStateTwoTiers 空态两档由 FilteredProject 驱动（判据在 handler，模板只读）。
 func TestPagesListEmptyStateTwoTiers(t *testing.T) {
 	data := func(filtered bool) map[string]any {
 		return map[string]any{
@@ -244,10 +216,6 @@ func TestPagesListEmptyStateTwoTiers(t *testing.T) {
 	}
 }
 
-// TestClientFilterContractIsImplementedInAdminJS 模板侧契约必须有人消费。
-//
-// 判据是 JS 里那三处选择器都在：只有模板给出 [data-filter-input] 而 admin.js 不认它，
-// 就是「能输入、无反应、也不报错」的死控件 —— 这正是本批要防的那一类缺陷。
 func TestClientFilterContractIsImplementedInAdminJS(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("static", "js", "admin.js"))
 	if err != nil {
@@ -261,9 +229,6 @@ func TestClientFilterContractIsImplementedInAdminJS(t *testing.T) {
 	}
 }
 
-// TestContentListFilterI18nKeysSeeded 新增词条必须中英成对落进 413 迁移。
-//
-// 模板里的中文只是 t() 兜底：词条命中时显示的是库里的值，缺 en-US 行时英文界面永远显示中文。
 func TestContentListFilterI18nKeysSeeded(t *testing.T) {
 	wantKeys := []string{
 		"admin.article.list.filterLabel",
@@ -309,7 +274,6 @@ func TestContentListFilterI18nKeysSeeded(t *testing.T) {
 		}
 	}
 
-	// 反向：模板必须真的取用这些 key（写了词条却没人取，等于词条表里的一堆死行）。
 	for _, key := range wantKeys {
 		if !contentFilterTemplateUsesKey(t, key) {
 			t.Errorf("词条 %q 没有任何模板取用（词条与模板失去同步）", key)
@@ -317,11 +281,10 @@ func TestContentListFilterI18nKeysSeeded(t *testing.T) {
 	}
 }
 
-// contentFilterTemplateUsesKey 在四个相关模板里找这个 key 的取词点。
 func contentFilterTemplateUsesKey(t *testing.T, key string) bool {
 	t.Helper()
 	for _, name := range []string{"articles.html", "pages.html", "blocks.html", "navigations.html"} {
-		// 按 basename 递归找（模板已按后端模块分进子目录），别硬编码 admin/ 下的路径。
+
 		src := adminTemplateSource(t, name)
 		if strings.Contains(src, `"`+key+`"`) {
 			return true

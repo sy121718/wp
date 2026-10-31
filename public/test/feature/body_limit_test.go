@@ -126,8 +126,6 @@ func TestRequestRateLimitBlocksRepeatedRequests(t *testing.T) {
 	}
 }
 
-// chunked 传输（Content-Length = -1）超限：不得依赖不可信的 Content-Length 头，
-// MaxBytesReader 读取时强制截断，读取方收到 *http.MaxBytesError 应判定为 413。
 func TestRequestBodyLimitRejectsChunkedBodyOverLimit(t *testing.T) {
 	engine := gin.New()
 	engine.POST("/limited", builtin.RequestBodyLimitMiddleware(10, 100), func(c *gin.Context) {
@@ -140,7 +138,7 @@ func TestRequestBodyLimitRejectsChunkedBodyOverLimit(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 11)))
-	req.ContentLength = -1 // 模拟 chunked / 未知长度
+	req.ContentLength = -1
 
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
@@ -150,7 +148,6 @@ func TestRequestBodyLimitRejectsChunkedBodyOverLimit(t *testing.T) {
 	}
 }
 
-// chunked 传输未超限：应正常放行，读取内容完整。
 func TestRequestBodyLimitAcceptsChunkedBodyWithinLimit(t *testing.T) {
 	engine := gin.New()
 	engine.POST("/limited", builtin.RequestBodyLimitMiddleware(10, 100), func(c *gin.Context) {
@@ -163,7 +160,7 @@ func TestRequestBodyLimitAcceptsChunkedBodyWithinLimit(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 5)))
-	req.ContentLength = -1 // 模拟 chunked / 未知长度
+	req.ContentLength = -1
 
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)

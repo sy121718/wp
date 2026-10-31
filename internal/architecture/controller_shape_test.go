@@ -1,26 +1,3 @@
-// controller_shape_test.go — 控制器（inbound/http）的五条形状门禁。
-//
-// 口径（2026-10-18 用户拍板，「控制器瘦身是必然的」）：
-//
-//  1. **文件名**：控制器只有两种文件 —— `<模块>_router.go`（路由注册）与
-//     `<域>_handle.go`（方法）。`xxx_page.go` / `xxx_write.go` / `xxx_shared.go`
-//     / `xxx_err.go` / `xxx_jump.go` 这类名字要么是同一域被切碎，要么是错误出口
-//     —— 两者都要收掉。
-//  2. **绑定入口**：方法里不出现 c.ShouldBind* / c.PostForm / c.GetPostForm。
-//     入参一律走 pkg/binding 的 JSON / Form / Query（DTO 声明字段，失败统一 400 JSON）。
-//  3. **方法长度**：单个方法 ≤60 行。超长 = 装配、取数或逐行映射还留在控制器里。
-//  4. **渲染出口**：方法里不出现 c.HTML / adminui.RenderPage / adminui.RenderBare。
-//     控制器交「视图 + 错误」，渲染由 *_router.go 的 adminui.Page / adminui.Bare 装配
-//     —— 模板名归路由，失败一律 JSON，成功页才走 Jet。
-//  5. **UI 线依赖**：控制器不 import internal/adminui。取词走 internal/text、
-//     读请求上下文走 pkg/binding、响应走 pkg/response —— 三条线各归各的包。
-//  6. **不做计算**：控制器里不出现 bulkids.Normalize —— 归一（去重 / 上限）是 service 的事。
-//     控制器只是编排出口：绑请求 → 调用例 → 写响应。它不 trim、不去重、不数条数、不判业务
-//     （「没勾选算不算错误」这类判断在 service），也不替错误挑状态码（状态在声明处）。
-//     2026-10-18 用户拍板：「控制器自身不能有任何动作，这里只是个编排出口」。
-//
-// **pending 是必须缩小的清单**（双向判定：登记了却已消失同样变红）：
-// 五条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
 package architecture
 
 import (
@@ -34,10 +11,6 @@ import (
 	"testing"
 )
 
-// pendingControllerNormalize 还在控制器里做批量 id 归一的文件（判据见第 6 条）。
-//
-// 收一个删一条：文件里最后一次 bulkids.Normalize 调用搬进 service 后，这条登记要一起删，
-// 否则本测试反向判定会报「登记了却已无命中」。
 var pendingControllerNormalize = map[string]bool{
 	"internal/module/admin/inbound/http/admin_i18n_write.go":                  true,
 	"internal/module/block/inbound/http/block_handle.go":                      true,
@@ -52,7 +25,6 @@ var pendingControllerNormalize = map[string]bool{
 	"internal/module/order/inbound/http/order_write.go":                       true,
 }
 
-// pendingControllerFiles 还没按 <模块>_router.go / <域>_handle.go 命名的控制器文件。
 var pendingControllerFiles = map[string]bool{
 	"internal/module/admin/inbound/http/admin_err.go":                      true,
 	"internal/module/admin/inbound/http/admin_i18n_write.go":               true,
@@ -94,12 +66,10 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/user/inbound/http/customer_bulk_write.go":             true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
-	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
-	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+
 	"internal/module/workbench/inbound/http/workbench_page.go": true,
 }
 
-// pendingControllerBinding 还没换成 pkg/binding 的文件（c.ShouldBind* / c.PostForm）。
 var pendingControllerBinding = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                  true,
 	"internal/module/ai/inbound/http/ai_page.go":                        true,
@@ -111,11 +81,6 @@ var pendingControllerBinding = map[string]bool{
 	"internal/module/project/inbound/http/project_page.go":              true,
 }
 
-// pendingControllerQuery 还没换成 pkg/binding 的查询串读取（c.Query / c.DefaultQuery / c.Param）。
-//
-// 为什么与 pendingControllerBinding 分表：那三条（ShouldBind / PostForm）说的是「请求体」，
-// 这三条说的是「查询串」。商品模块两类都已清零，但存量模块的查询串读取量大（约 300 处），
-// 混在一张表里会让「已登记 = 这个文件可违反两类规则」的误读。
 var pendingControllerQuery = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_handle.go":                         true,
@@ -153,41 +118,32 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/webhook/inbound/http/webhook_handle.go":               true,
-	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
-	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+
 	"internal/module/workbench/inbound/http/workbench_page.go":        true,
 	"internal/module/workbench/inbound/http/canvas_handle.go":         true,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go": true,
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  true,
 }
 
-// pendingControllerMethods 超过 60 行的控制器方法（"文件:方法名"）。
 var pendingControllerMethods = map[string]bool{
 	"internal/module/admin/inbound/http/admin_i18n_write.go:adminI18nWriteReqOf":                true,
-	"internal/module/admin/inbound/http/admin_page.go:I18nEntriesPage":                          true,
 	"internal/module/admin/inbound/http/admin_page.go:dataruleConfigFromForm":                   true,
 	"internal/module/admin/inbound/http/admin_page.go:dataruleEditorContext":                    true,
 	"internal/module/admin/inbound/http/admin_pages_router.go:SetupAdminPages":                  true,
 	"internal/module/admin/inbound/http/admin_router.go:SetupAdminRoutes":                       true,
 	"internal/module/ai/inbound/http/ai_handle.go:FabAskStream":                                 true,
-	"internal/module/ai/inbound/http/ai_page.go:FabAsk":                                         true,
-	"internal/module/ai/inbound/http/ai_page.go:SessionsPage":                                   true,
 	"internal/module/ai/inbound/http/ai_router.go:SetupAIRoutes":                                true,
 	"internal/module/analytics/inbound/http/analytics_page.go:AnalyticsPage":                    true,
 	"internal/module/comment/inbound/http/comment_page.go:CommentsPage":                         true,
-	"internal/module/content/inbound/http/content_handle.go:ArticleLinkSuggestions":             true,
 	"internal/module/content/inbound/http/content_page.go:SaveArticleTranslations":              true,
 	"internal/module/content/inbound/http/content_page.go:build":                                true,
 	"internal/module/content/inbound/http/content_page_router.go:SetupContentPages":             true,
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go:ContentTemplatesPage": true,
 	"internal/module/inventory/inbound/http/inventory_page_handle.go:InventoryPage":             true,
-	// 采购域（2026-10 从 inventory 拆出）：两页的面数据装配还在 handler 里，
-	// 与搬迁前同一形态、同一预算；下沉到 service 读模型时同时删这两行。
+
 	"internal/module/mail/inbound/http/mail_contact_write.go:ContactDelete":                    true,
 	"internal/module/mail/inbound/http/mail_contact_write.go:ContactSave":                      true,
-	"internal/module/mail/inbound/http/mail_contact_write.go:ContactTag":                       true,
 	"internal/module/mail/inbound/http/mail_page_router.go:setupMailPageRoutes":                true,
-	"internal/module/mail/inbound/http/mail_router.go:SetupMailRoutes":                         true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go:MasterDataChangesPage":         true,
 	"internal/module/membership/inbound/http/membership_page.go:MembershipAssignmentsPage":     true,
 	"internal/module/navigation/inbound/http/navigation_add_source_handle.go:createFromSource": true,
@@ -203,27 +159,22 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/page/inbound/http/page_translations_handle.go:SavePageTranslations":       true,
 	"internal/module/page/inbound/http/page_translations_handle.go:buildPageTranslationsData":  true,
 	"internal/module/page/inbound/http/page_translations_handle.go:buildSiteContentIndex":      true,
-	"internal/module/page/inbound/http/pages_handle.go:buildPagesData":                         true,
 	"internal/module/project/inbound/http/project_page.go:SaveSiteLocales":                     true,
 	"internal/module/project/inbound/http/project_page.go:SaveSiteSettings":                    true,
 	"internal/module/project/inbound/http/project_page.go:SaveThemeSettings":                   true,
 	"internal/module/project/inbound/http/project_page.go:loadThemeSettings":                   true,
 	"internal/module/project/inbound/http/project_page.go:mergeSiteSettings":                   true,
-	"internal/module/user/inbound/http/user_page.go:CustomerCohortPage":                        true,
 	"internal/module/user/inbound/http/user_page.go:CustomerDetailPage":                        true,
 	"internal/module/user/inbound/http/user_page.go:CustomersPage":                             true,
 	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                       true,
 	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                    true,
-	"internal/module/workbench/inbound/http/workbench_router.go:SetupWorkbenchRoutes":          true,
 	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                        true,
 	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":            true,
-	"internal/module/workbench/inbound/http/workbench_page.go:layoutTrendBars":                 true,
 	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchBlock":                   true,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go:workbenchInstance":        true,
 	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchTemplate":                true,
 }
 
-// controllerMethodMaxLines 单个控制器方法的行数上限（AST 起止行之差）。
 const controllerMethodMaxLines = 60
 
 var (
@@ -233,8 +184,7 @@ var (
 		"ShouldBindUri": true, "ShouldBindHeader": true, "ShouldBindBodyWith": true,
 		"PostForm": true, "GetPostForm": true, "PostFormArray": true, "GetPostFormArray": true,
 	}
-	// controllerQueryMethods 是「读查询串」的三个入口，与请求体的四个分开判：查询串一律
-	// binding.Query[T]（键名与去空白在 DTO），跨路由共享的隐藏域才用 binding.Field。
+
 	controllerQueryMethods = map[string]bool{
 		"Query": true, "DefaultQuery": true, "Param": true,
 	}
@@ -322,11 +272,6 @@ func TestControllerBindingEntry(t *testing.T) {
 	}
 }
 
-// TestControllerQueryBinding 控制器不直读查询串。
-//
-// 判据只有一条：页面 / 接口的参数键名属于请求形状，声明在 dto 的 form tag 上；控制器里出现
-// c.Query / c.DefaultQuery / c.Param 就意味着键名散落在代码里（改一处必然漏一处）。
-// 与 TestControllerBindingEntry 同一台机器，只是读的方向不同。
 func TestControllerQueryBinding(t *testing.T) {
 	root := repoRoot(t)
 	seen := map[string]bool{}
@@ -351,9 +296,7 @@ func TestControllerQueryBinding(t *testing.T) {
 					if !ok || !controllerQueryMethods[sel.Sel.Name] {
 						return true
 					}
-					// 只认接收者是 gin.Context 的惯用变量 c：pagination.Query(...) 是拼查询串的
-					// 纯函数、c.Request.URL.Query() 是 net/url 的解析口，两者都不是「读参数」。
-					// 判据收在这里而不是名单里，否则门禁会因为同名方法误报，最后被调宽到没有意义。
+
 					if id, isIdent := sel.X.(*ast.Ident); !isIdent || id.Name != "c" {
 						return true
 					}
@@ -417,36 +360,19 @@ func TestControllerMethodSize(t *testing.T) {
 	}
 }
 
-// ── 渲染出口门禁 ──
-//
-// 控制器**不渲染**：它只交出视图（any）与错误，模板选择、页壳装配、状态码由 UI 线
-// （adminui.Page / adminui.Bare）在路由装配处决定。理由：渲染入口长在控制器里时
-// 「这一屏用什么模板」与「这一屏取什么数」耦在一个文件里，于是同一份视图既可能被
-// 当整页渲、又可能被当片段渲，而两种渲法的注入键（页壳 / 仅取词）与失败形态都不同 ——
-// 出错时表现为「片段拿整页壳」「错误被当 200 渲出去」，都不报错。
-//
-// 判据只看**调用点**（c.HTML / adminui.RenderPage / adminui.RenderBare），不看 import：
-// 文案注入（adminui.Prepare*）、取词（MsgText）、表单上下文（ListQuery）仍在控制器里，
-// 那是另一条线（文案线）的归属。router 文件是装配点，允许调用。
-
-// pendingControllerRenderExit 还没把渲染出口交出去的控制器文件。
-// **只减不增**：收一个删一条；登记了却已无渲染出口同样变红。
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":              true,
 	"internal/module/page/inbound/http/page_translations_handle.go": true,
-	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
-	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+
 	"internal/module/workbench/inbound/http/inspector_handle.go": true,
 }
 
-// controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
 var controllerRenderCalls = map[string]bool{
-	"HTML":       true, // c.HTML(status, tpl, data)
-	"RenderPage": true, // adminui.RenderPage
-	"RenderBare": true, // adminui.RenderBare
+	"HTML":       true,
+	"RenderPage": true,
+	"RenderBare": true,
 }
 
-// controllerIsRouter 路由装配文件（唯一允许调用渲染出口的地方）。
 func controllerIsRouter(name string) bool {
 	return name == "router.go" || strings.HasSuffix(name, "_router.go")
 }
@@ -495,25 +421,8 @@ func TestControllerRenderExit(t *testing.T) {
 	}
 }
 
-// ── UI 线依赖门禁 ──
-//
-// 控制器**不 import internal/adminui**。adminui 是 UI 线：页壳装配、渲染实现、拒绝出口、
-// 导航树、权限码注入。控制器只需要三样东西，各有各的归属：
-//
-//	取词          → internal/text   （文案线；与渲染无关）
-//	读请求上下文    → pkg/binding     （ListQuery / CSRFToken / JSON|Form|Query）
-//	响应出口       → pkg/response    （{code,message,data}）
-//
-// 让控制器 import adminui 的连带代价是它顺手就会拿到 c.HTML / RenderPage / Prepare 这些东西，
-// 于是「控制器不渲染」那条门禁只能靠自觉。本门禁管的是**依赖**，上一条管的是**调用点**。
-//
-// router 文件豁免：它是装配点，页壳与渲染就在那里接上。
-
-// pendingControllerUIImport 还在 import adminui 的控制器文件。**只减不增**。
 var pendingControllerUIImport = map[string]bool{
-	// 这两个文件不再**渲染**，但仍用 adminui.Msg（key + 中文兜底的事实类型）与
-	// adminui.MsgText（取词）—— 那是文案事实的共享定义处，不是 UI 线。
-	// 渲染出口本身已经交给 pageview.Render / 路由的 slot。
+
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
 	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/admin/inbound/http/admin_err.go":                      true,
@@ -539,19 +448,19 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":           true,
-	// 工作台画布逻辑拆成 5 个文件后，同一条存量豁免跟着拆（它们都还用 adminui 做页面渲染出口）。
+
 	"internal/module/workbench/inbound/http/inspector_handle.go":      true,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go": true,
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  true,
-	// 插件页仍在用 adminui.MsgText 把事实取成文本（那个槽位还没取词化，登记在批次报告里）。
+
 	"internal/module/plugin/inbound/http/plugin_page_handle.go": true,
-	// 访问统计页仍在用 adminui.AttachPaginationView 挂分页事实（那是 UI 线的现成对象）。
+
 	"internal/module/analytics/inbound/http/analytics_page.go": true,
-	// 全局块页仍用 adminui.MsgInternalError / PageErrorFactQuiet 做错误归口（UIK 线的工作）。
+
 	"internal/module/block/inbound/http/block_page.go": true,
-	// 导航页仍用 adminui.MsgText 把事实取成文本（NavEditError 槽位还没取词化）。
+
 	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
-	// 邮件页仍用 adminui.AttachPaginationView / MsgText（UI 线的现成对象与取词链）。
+
 	"internal/module/mail/inbound/http/mail_page.go": true,
 }
 
@@ -596,10 +505,6 @@ func TestControllerNoUILineImport(t *testing.T) {
 	}
 }
 
-// TestControllerNoNormalization 控制器不做归一（第 6 条）。
-//
-// 判据抓的是**调用**（bulkids.Normalize 的 CallExpr），不是 import：控制器引用
-// bulkids.MsgTooMany 之类只为了取词，那是文案，不在这里管。
 func TestControllerNoNormalization(t *testing.T) {
 	root := repoRoot(t)
 	seen := map[string]bool{}
@@ -649,15 +554,6 @@ func TestControllerNoNormalization(t *testing.T) {
 	}
 }
 
-// TestControllerPageExitSignature 页面出口只有一种形状（0.6 判据，零存量）：
-//
-//   - 处理器签名是 func(*gin.Context)，成功 pageview.Render(c, data)、失败 pageview.Fail(c, err)；
-//     不再有 `(any, error)` —— 那种形状让渲染时机由装配处决定，控制器永远说不清「我现在是交数据
-//     还是交错误」，也让「最后一句是封装调用」这条判据无法机械判定；
-//   - 模板名只在 *_router.go，且装配只认 adminui.PageSlot / BareSlot；
-//   - 非 router 控制器不出现 adminui.Page / adminui.Bare。
-//
-// 双向：这里没有 pending 清单 —— 迁移已完成，新写一个 (any, error) 处理器直接变红。
 func TestControllerPageExitSignature(t *testing.T) {
 	root := repoRoot(t)
 	mods, err := filepath.Glob(filepath.Join(root, "internal", "module", "*", "inbound", "http", "*.go"))
@@ -703,7 +599,6 @@ func TestControllerPageExitSignature(t *testing.T) {
 	}
 }
 
-// isAnyErrorResult 判断结果列表是不是「任意值 + error」这两个（老页面处理器形状）。
 func isAnyErrorResult(results *ast.FieldList) bool {
 	if results == nil || len(results.List) != 2 {
 		return false

@@ -1,20 +1,5 @@
 package rlstest
 
-// rls_policy_coverage_test.go — 「除白名单外，所有带 project_id 的基表都必须装 RLS」的**可执行判据**（审计 DB-01）。
-//
-// 为什么需要它：这句话以前只写在文档与代码注释里，而且写错过 —— `AGENTS.md 与
-// `build/model/build_model.go` 都说 `build_jobs` 是**唯一**的豁免表，实际有**两张**
-// （迁移 309 的 `product_outbox_events` 自己都写着「本表不装 RLS 策略（与 build_jobs 同一情形）」）。
-// 靠人记的断言一定会漂移，后果是评审按「唯一」只查一张表。
-//
-// 判据的形状刻意选成「**默认必须有策略，豁免要逐条登记**」：
-//   - 新增一张带 project_id 的表却忘了装策略 → 红（这正是 215 铺开之后新增表最容易漏的事）；
-//   - 有人在白名单外删掉某张表的 ENABLE / FORCE → 红；
-//   - 白名单条目已过期（表被删、或已经不缺策略了）→ 红（清单只减不增，防止无限期挂着豁免）。
-//
-// 表结构来自生产迁移（与 rls_scope_test.go 同源），不手抄 DDL —— 手抄的会在下一次迁移推进时
-// 与生产静默分叉。
-
 import (
 	"crypto/rand"
 	"encoding/hex"
@@ -27,22 +12,11 @@ import (
 	"go_wp/public/test/support"
 )
 
-// noRLSPolicyTables 允许「有 project_id 但不装 RLS」的表，逐条写理由。
-//
-// 共同理由：这两张都是**按状态跨工程领取**的队列 —— worker 一次领取所有工程的待办，
-// 装了策略它就只能看见某一个工程的待办，队列直接停掉。豁免的代价与别的表**相反**：
-// 切到非超级角色后，它们的查询既不报错也不被限制（不是 fail closed，而是没有隔离），
-// 所以工程过滤必须显式写在 SQL 里（见 internal/module/build/model 的包注释）。
 var noRLSPolicyTables = map[string]string{
 	"build_jobs":            "构建任务队列：Claim / ReclaimStale 按状态跨工程领取（worker 服务全站队列）",
 	"product_outbox_events": "商品事件发件箱队列：消费者按状态跨工程领取（迁移 309 的注释已声明不装策略）",
 }
 
-// TestProjectIDTablesHaveRLSPolicy 扫生产 schema：白名单之外的「带 project_id 的基表」
-// 必须同时有 ENABLE（relrowsecurity）与 FORCE（relforcerowsecurity）。
-//
-// FORCE 不是可选项：没有它，表属主（迁移常用的管理角色）会绕过策略，而生产里
-// 管理与业务连接的角色属性随时可能被 DBA 改回去 —— 那时「隔离生效」就只剩文档在说。
 func TestProjectIDTablesHaveRLSPolicy(t *testing.T) {
 	db := coverageFixture(t)
 
@@ -102,10 +76,6 @@ func TestProjectIDTablesHaveRLSPolicy(t *testing.T) {
 		len(rows), covered, len(noRLSPolicyTables), "build_jobs / product_outbox_events")
 }
 
-// coverageFixture 建一个独立临时库并把生产迁移跑进去，返回连上它的句柄。
-//
-// 只做「干净库 + 生产迁移」，不建角色也不 SET ROLE —— 本用例读的是 pg_class 元数据，
-// 与连接身份无关（而 rls_scope_test.go 那套必须跑在非超级角色下，两件事不要混在一套 fixture 里）。
 func coverageFixture(t *testing.T) *gorm.DB {
 	t.Helper()
 	admin, err := gorm.Open(postgres.Open(pgDSN(pgEnv("PGDATABASE", "wp_test"))), &gorm.Config{})

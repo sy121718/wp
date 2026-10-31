@@ -1,12 +1,5 @@
 package pageservice
 
-// page_path_contract_test.go — 页面路径归一化的行为契约（审计 CQ-012）。
-//
-// 本处（normalizePagePath）是六处里**最早收敛**的一处：它一直就是
-// pipeline.NormalizeURL 的薄包装（把错误映射成 ErrInvalidPath 给运营看）。
-// 这里把它钉住，证明「页面前台写入口径 == 发布管道口径」，其余调用点收敛后
-// 也必须与它逐条一致。
-
 import (
 	"strings"
 	"testing"

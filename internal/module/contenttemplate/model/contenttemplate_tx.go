@@ -10,7 +10,6 @@ import (
 
 var ErrDraftVersionConflict = errors.New("content template draft version conflict")
 
-// LockDraftTx 只锁定本工程内自己的模板行。
 func (m *Model) LockDraftTx(ctx context.Context, tx *gorm.DB, projectID, id string) (*TemplateEntity, error) {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return nil, err
@@ -21,7 +20,6 @@ func (m *Model) LockDraftTx(ctx context.Context, tx *gorm.DB, projectID, id stri
 	return &row, err
 }
 
-// SaveWithVersionTx 在调用方事务内保存草稿、不可变版本和当前版本指针。
 func (m *Model) SaveWithVersionTx(ctx context.Context, tx *gorm.DB, projectID string, expectedVersion int64, v *VersionEntity, e *TemplateEntity) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err

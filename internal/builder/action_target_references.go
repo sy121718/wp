@@ -5,8 +5,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// ReferencesActionTarget 仅提取既有五分支合同中的受控页面/实例引用。
-// 数据源模块不另行解释 AST，也不把任意 props 字符串当作引用。
 func ReferencesActionTarget(raw json.RawMessage, kind, id string) (bool, error) {
 	page, err := ParsePage(raw)
 	if err != nil {

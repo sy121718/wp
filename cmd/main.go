@@ -1,16 +1,3 @@
-// Package main Go MVC 项目的启动入口。
-//
-// 整体启动流程：
-//  1. config.Init("config.yaml")       — 读取 YAML 配置文件，初始化 Viper 实例
-//  2. config.InitComponents()           — 驱动所有 pkg 组件初始化（数据库、日志、缓存等）
-//  3. middleware.Setup(router)          — 挂载全局默认中间件链（Recovery、CORS、安全头等）
-//  4. routers.SetupRoutes(router, ...)  — 注册业务路由（/livez、/readyz、/api/*）
-//  5. srv.ListenAndServe()              — 启动 HTTP 服务
-//  6. 信号等待（SIGINT/SIGTERM）        — 优雅关闭：先关 HTTP，再关组件
-//
-// 组件生命周期由 config 包统一编排：
-//   - config.InitComponents()  按 critical 优先级依次初始化
-//   - config.CloseComponents() 按逆序关闭，释放连接、定时器、后台 goroutine
 package main
 
 import (
@@ -36,63 +23,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// main 是 Go 程序唯一入口，编译后直接运行。
-// 所有错误上报到 run() 后统一由此处 log.Fatalf 终止进程。
 func main() {
-	// -migrate-only：把库结构与业务 seed 迁到最新后立即退出，不启动 HTTP 服务。
-	//
-	// 单独留一个入口，是因为「把库迁好」与「启动服务」是两件事：CI 要在跑测试前
-	// 准备出结构完整的库，部署脚本要在切换流量前确认迁移成功。没有它就只能先起一个
-	// 实例再把它杀掉 —— 既慢，又要处理端口占用与信号，失败原因还混在启动日志里。
+
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库结构迁移与业务 seed，然后退出（不启动 HTTP 服务）")
 	flag.Parse()
 
-	// -migrate-only 是**显式的迁移命令**，不受 database.run_migrations 约束。
-	//
-	// 切角色之后配置文件里会写 run_migrations=false（业务角色没有 DDL 权限），而推荐流程
-	// 恰恰是「同一份配置 + 管理连接」跑 -migrate-only —— 若让该开关把显式命令也关掉，
-	// 迁移会一声不吭地什么都不做，退出码还是 0。必须在 config.InitComponents() 之前置位。
 	if *migrateOnly {
 		config.ForceMigrations()
-		// 显式迁移命令**只迁库**，不起任何后台消费者（PUB-07）。
-		//
-		// 与 ForceMigrations 同一位置（都在 InitComponents 之前）：队列 / 邮件自动化 /
-		// Webhook 重试这些组件在初始化时就可能起 goroutine，而迁移期间表正在被改，
-		// 消费者的读写语义没有保证；CI 里更常见的症状是进程跑完不退出。
+
 		config.SuppressWorkers()
 	}
 
 	if err := run(*migrateOnly); err != nil {
-		// **err 必须出现在最后那句输出里**。此前这里是 log.Fatal("服务启动失败")：
-		// logger 在初始化早期可能还没就绪（它自己就是被初始化的组件之一），于是 err 只
-		// 写进了一个不存在的地方，终端上只剩「服务启动失败」五个字。排查时只能改代码
-		// 加打印才知道真因（例如「解析 server.read_header_timeout 失败」）。
-		//
-		// 用标准库 log 而不是 logger：走到这里说明组件初始化失败，logger 很可能正是
-		// 失败的那一个 —— 兜底输出不能依赖正在被初始化的东西。
+
 		log.Fatalf("服务启动失败: %v", err)
 	}
 }
 
-// run 是实际的主流程函数。
-// 返回 error 即可让 main() 终止进程，组件自身不调用 os.Exit。
 func run(migrateOnly bool) error {
-	// 1) 加载配置 + 初始化组件（数据库、会话存储、日志、缓存、队列等）。
+
 	serverCfg, err := loadAndPrepareRuntime("config.yaml")
 	if err != nil {
 		return err
 	}
 
-	// 1.5) 结构迁移已由组件编排完成：config.runtimeComponents 里的 migrations 组件排在
-	//      database 之后、casbin / i18n 之前（后两者初始化时就要读表）。放在组件链里而不是
-	//      这里，是因为「迁移必须在读表的组件之前」—— 写在 main 里时它其实晚于组件初始化，
-	//      空库首次启动必然失败（relation "sys_i18n" does not exist）。
-
-	// 1.6) -migrate-only：迁移之后补上业务 seed 就返回，不装配路由、不监听端口。
-	//
-	// 这一处 RunSeeds 也受 database.run_migrations 约束（与 internal/routers/assembly.go
-	// 的启动 seed 同一判据）。实践中它恒为 true：上面的 ForceMigrations 已把显式迁移命令
-	// 强制打开 —— 保留判断是为了让「跳过 seed」只有一处语义来源，而不是靠「没人会这么配」。
 	if migrateOnly {
 		if config.RunMigrationsEnabled() {
 			if err := runSeeds(); err != nil {
@@ -109,14 +63,8 @@ func run(migrateOnly bool) error {
 		return nil
 	}
 
-	// 2) 构建 HTTP 路由引擎。
-	//    - middleware.Setup()  挂载 Recovery / CORS / 安全头等全局中间件
-	//    - routers.SetupRoutes() 注册业务路由
 	router := buildHTTPRouter(config.ValidateReady)
 
-	// 3) 端口抢占处理。
-	//    - debug / test 模式：自动释放被占用的端口（仅白名单进程）
-	//    - release 模式：只提示端口占用和 kill 命令，不自动结束进程
 	if err := utils.EnsurePortReadyWithStrategy(serverCfg.PortStrategy, serverCfg.Mode, serverCfg.Port); err != nil {
 		return err
 	}
@@ -124,22 +72,17 @@ func run(migrateOnly bool) error {
 	addr := listenAddr(serverCfg)
 	logger.Scene("init").With("addr", addr).Info("服务启动")
 
-	// 4) 创建 http.Server 实例，配置超时参数。
 	srv := buildHTTPServer(serverCfg, router)
 
-	// 5) 在独立 goroutine 中启动 HTTP 服务。
-	//    - 正常关闭时 ListenAndServe 返回 http.ErrServerClosed（不算错误）
-	//    - 启动失败（如端口冲突）通过 channel 传回主协程
 	serverErrCh := serveHTTPServer(srv)
 
-	// 6) 监听系统退出信号（Ctrl+C / kill），同时等待服务错误。
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(quit)
 
 	select {
 	case err := <-serverErrCh:
-		// 服务启动或运行期间发生非预期错误。
+
 		if err != nil {
 			if closeErr := config.CloseComponents(); closeErr != nil {
 				logger.Scene("init").Error(closeErr, "组件关闭失败")
@@ -151,7 +94,6 @@ func run(migrateOnly bool) error {
 		logger.Scene("init").Info("收到退出信号，开始关闭...")
 	}
 
-	// 7) 优雅关闭 HTTP 服务：给在途请求最多 5 秒完成。
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -159,7 +101,6 @@ func run(migrateOnly bool) error {
 		logger.Scene("init").Error(err, "HTTP Server 关闭失败")
 	}
 
-	// 8) 按逆序关闭所有已初始化的组件（数据库连接、Redis、队列、日志等）。
 	if err := config.CloseComponents(); err != nil {
 		logger.Scene("init").Error(err, "组件关闭失败")
 	}
@@ -168,15 +109,6 @@ func run(migrateOnly bool) error {
 	return nil
 }
 
-// runPartitionMaintenance 在管理连接上补齐时间序列表的未来分区（-migrate-only）。
-//
-// 为什么并进显式迁移命令：分区维护与结构迁移同属 **DDL**（CREATE TABLE / CREATE POLICY），
-// 而换到非超级业务角色后，应用连接在 public schema 上没有 CREATE 权限 —— 实测启动日志里
-// 每次都会刷出一批「创建月分区失败 … permission denied for schema public」（page_views /
-// master_data_changes / inventory_stock_movements × 未来若干个月，共 15 条）。
-// 它是 **fail soft**：服务照常启动、数据落到 DEFAULT 分区不会丢，但「按月分桶」这个收益
-// 悄悄没了（桶永远建不出来）。放到管理连接跑 -migrate-only 是最省事的闭环 —— 不需要给
-// 业务角色补 CREATE 权限（那会把 DDL 门禁一起拆掉）。幂等：建分区走 CREATE TABLE IF NOT EXISTS。
 func runPartitionMaintenance() error {
 	db, err := database.GetDB()
 	if err != nil {
@@ -192,12 +124,6 @@ func runPartitionMaintenance() error {
 	return nil
 }
 
-// runSeeds 执行幂等的业务 seed（权限点、菜单、默认超管策略）。
-//
-// 正常启动流程里 seed 由 routers.SetupRoutes 触发（装配路由时顺带执行，紧跟其后
-// 重载 Casbin 内存策略）；-migrate-only 不装配路由，所以在这里直接调用 ——
-// seed 本身幂等（ConditionSQL 判据已存在即跳过），语义与启动时一致。
-// 进程随即退出，不需要重载策略。
 func runSeeds() error {
 	db, err := database.GetDB()
 	if err != nil {
@@ -209,25 +135,19 @@ func runSeeds() error {
 	return nil
 }
 
-// loadAndPrepareRuntime 加载配置并初始化运行时组件。
-//
-// 执行顺序：
-//
-// 调用方需要确保 config.Init() 先于 config.InitComponents() 执行，
-// 因为 InitComponents() 内部依赖 Viper 读取各组件配置。
 func loadAndPrepareRuntime(configPath string) (config.ServerConfig, error) {
-	//  1. config.Init() — 读 config.yaml，创建全局 Viper 实例
+
 	if err := config.Init(configPath); err != nil {
 		return config.ServerConfig{}, fmt.Errorf("配置加载失败: %w", err)
 	}
-	//  2. config.GetServer()     — 解析 server 段配置（端口、模式、超时等）
+
 	serverCfg, err := config.GetServer()
 	if err != nil {
 		return config.ServerConfig{}, err
 	}
-	//  3. gin.SetMode()  — 设置 Gin 运行模式（debug/release/test）
+
 	gin.SetMode(serverCfg.Mode)
-	//  4. config.InitComponents()— 按 critical 优先顺序初始化所有 pkg 组件
+
 	if err := config.InitComponents(); err != nil {
 		return config.ServerConfig{}, fmt.Errorf("组件初始化失败: %w", err)
 	}
@@ -235,16 +155,6 @@ func loadAndPrepareRuntime(configPath string) (config.ServerConfig, error) {
 	return serverCfg, nil
 }
 
-// buildHTTPRouter 创建 Gin 引擎并完成路由装配。
-// ready 函数用于 /readyz 的健康检查，由 config.ValidateReady() 提供。
-//
-// TrustedProxies 说明（影响 ClientIP，进而影响限流 key 与登录审计 IP）：
-//   - release：SetTrustedProxies(nil) —— 直连部署，不信任任何代理，
-//     c.ClientIP() 恒等于连接对端 RemoteAddr，X-Forwarded-For 无法伪造。
-//     因此 rate_limit 的 ClientIP 维度与登录审计 IP 均为真实对端地址。
-//   - debug / test：保持 Gin 默认（信任所有代理，0.0.0.0/0），便于本地经
-//     反向代理调试；代价是 X-Forwarded-For 可被客户端伪造进而污染
-//     rate_limit 计数（绕过限流）与登录审计 IP，仅限开发环境。
 func buildHTTPRouter(
 	ready func() error,
 ) *gin.Engine {
@@ -258,31 +168,13 @@ func buildHTTPRouter(
 	} else {
 		logger.Scene("init").Info("debug/test 模式：保持 Gin 默认信任所有代理，X-Forwarded-For 可伪造 ClientIP，仅供本地调试")
 	}
-	//  1. middleware.Setup()     — 挂载全局中间件（Recovery → CORS → 安全头 → BodyLimit → RateLimit → LogCapture）
+
 	middleware.Setup(router)
-	//  2. routers.SetupRoutes() — 注册健康检查路由（/livez、/readyz）和业务路由（/api/*）
+
 	routers.SetupRoutes(router, ready)
 	return router
 }
 
-// listenAddr 决定 HTTP 服务的监听地址。
-//
-// release：绑定全部接口（:PORT）—— 生产由反向代理前置，绑定 0.0.0.0 是常态。
-// debug / test：默认收紧到 127.0.0.1:PORT，只有显式配置 server.debug_allow_public:
-// true 才绑定全部接口。
-//
-// 为什么收紧：debug 模式带着三处放宽 ——
-//
-//	① /admin/dev-login 一键登录（不校验凭据，只认 RemoteAddr 环回）；
-//	② CORS 未配白名单时反射任意 Origin 且带 Allow-Credentials: true；
-//	③ Gin 默认信任所有代理，c.ClientIP() 采信 X-Forwarded-For ——
-//	   基于 IP 的限流可被绕过、登录审计 IP 失真。
-//
-// ① 自身的环回锁用 RemoteAddr（不受 XFF 影响，改 XFF 绕不过去），单看 ②③ 也只是
-// 开发体验问题。但它们的共同前提是「这台机器只在本地被访问」：一旦 debug 实例
-// 落到公网可达的地址上，② 会让任意站点带着受害者浏览器里的凭据发起跨域请求，
-// ③ 会让 IP 维度的防护（限流、审计）整体失效。本地开发用不到「局域网可达」，
-// 要用手机 / 局域网设备连本地环境时再显式打开。
 func listenAddr(cfg config.ServerConfig) string {
 	if gin.Mode() == gin.ReleaseMode {
 		return fmt.Sprintf(":%d", cfg.Port)
@@ -300,15 +192,6 @@ func listenAddr(cfg config.ServerConfig) string {
 	return local
 }
 
-// buildHTTPServer 创建标准 http.Server 实例。
-//
-// 超时参数说明：
-//   - ReadHeaderTimeout：读取请求头的超时，防止慢连接攻击
-//   - ReadTimeout：读取完整请求体的超时
-//   - WriteTimeout：写入响应的超时
-//   - IdleTimeout：Keep-Alive 空闲超时，超过后关闭连接
-//
-// 这些超时从 config.yaml server 段读取，由 config.GetServer() 解析。
 func buildHTTPServer(serverCfg config.ServerConfig, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              listenAddr(serverCfg),
@@ -320,13 +203,6 @@ func buildHTTPServer(serverCfg config.ServerConfig, handler http.Handler) *http.
 	}
 }
 
-// serveHTTPServer 在独立 goroutine 中启动 HTTP 服务。
-//
-// 返回一个带缓冲的 error channel，调用方通过 select 等待：
-//   - 服务正常关闭（ListenAndServe 返回 nil 或 http.ErrServerClosed）→ channel 不会收到错误
-//   - 服务启动失败（如端口被占用）→ channel 收到非 nil 错误
-//
-// channel 在函数返回前被关闭，确保 select 不会永远阻塞。
 func serveHTTPServer(srv *http.Server) chan error {
 	serverErrCh := make(chan error, 1)
 	go func() {

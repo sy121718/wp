@@ -1,17 +1,5 @@
 package presentationservice
 
-// presentation_publish_plan_test.go — 发布会话的三条纯逻辑契约（PERF-01）。
-//
-// 覆盖面刻意窄：只钉住「锁收窄之后新增/改变的那些判定」——
-//   1) 输入解析失败（模板 / 覆盖文档）的对外错误形态：必须原样透出，否则各调用方的
-//      白名单映射会退化成一句笼统的「构建失败」，运营据此不知道该去建模板还是换模板；
-//   2) 实例状态指纹的判定依据：哪些列进指纹（并发提交必须被检出）、哪些列不进
-//      （update_time 不进 —— 依赖扇出重复标 stale 不该把提交判成冲突）；
-//   3) 分阶段耗时日志的字段集合：锁等待 / 冻结 / 编译 / 提交各一段 + 重试次数 + 结局，
-//      一个都不能少（缺了就没法回答「锁等待还剩多少、编译占多少」）。
-//
-// 端到端的并发语义在 public/test/presentation/unit（真实 PG + 真实装配）。
-
 import (
 	"errors"
 	"strings"
@@ -22,10 +10,6 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 )
 
-// TestPublishSessionFieldsCoverAllPhases 分阶段耗时日志必须写全「锁等待 / 编译 / 提交 + 重试」。
-//
-// 断言的是字段集合与取值来源（纯函数，输入是构造出来的耗时），**不**断言真实毫秒数 ——
-// 那是负载相关的量，断言它只会做出一个随机红的用例。
 func TestPublishSessionFieldsCoverAllPhases(t *testing.T) {
 	m := publishSessionMetrics{
 		startedAt: time.Now(), attempts: 2, langs: 3,
@@ -52,13 +36,13 @@ func TestPublishSessionFieldsCoverAllPhases(t *testing.T) {
 		"instanceId":       "inst-1",
 		"langs":            3,
 		"attempts":         2,
-		"retried":          true, // 冲突重试发生过 —— 这正是「被丢弃的那次编译」的代价
+		"retried":          true,
 		"lockWaitFreezeMs": int64(11),
 		"freezeMs":         int64(22),
 		"compileMs":        int64(333),
 		"lockWaitCommitMs": int64(44),
 		"commitMs":         int64(55),
-		"outcome":          publishOutcomeFailed, // 失败路径也要把已耗时发出来
+		"outcome":          publishOutcomeFailed,
 	}
 	for key, wantValue := range want {
 		got, ok := pairs[key]
@@ -69,14 +53,14 @@ func TestPublishSessionFieldsCoverAllPhases(t *testing.T) {
 			t.Fatalf("字段 %s = %v，期望 %v", key, got, wantValue)
 		}
 	}
-	// totalMs 只断言存在：它是 time.Since(startedAt) 的结果，取值随负载变化。
+
 	if _, ok := pairs["totalMs"]; !ok {
 		t.Fatal("缺少 totalMs：无法回答「这次发布总共花了多久」")
 	}
 	if len(pairs) != len(want)+1 {
 		t.Fatalf("字段集合与预期不符（多了未登记字段？）：%v", pairs)
 	}
-	// 没有重试时 retried 必须为 false（否则这个字段永远为真，等于没写）。
+
 	once := publishSessionFields("inst-1", publishSessionMetrics{startedAt: time.Now(), attempts: 1}, publishOutcomeOK)
 	if got := fieldValue(once, "retried"); got != false {
 		t.Fatalf("单次尝试的会话 retried 应为 false，实际 %v", got)
@@ -86,7 +70,6 @@ func TestPublishSessionFieldsCoverAllPhases(t *testing.T) {
 	}
 }
 
-// TestPublishOutcomeOf 结局只有两个取值，失败路径不会被吞成成功。
 func TestPublishOutcomeOf(t *testing.T) {
 	if got := publishOutcomeOf(nil); got != publishOutcomeOK {
 		t.Fatalf("无错误应为 %s，实际 %s", publishOutcomeOK, got)
@@ -96,7 +79,6 @@ func TestPublishOutcomeOf(t *testing.T) {
 	}
 }
 
-// fieldValue 取字段集合里的某个值（用例内部用）。
 func fieldValue(fields []any, key string) any {
 	for i := 0; i+1 < len(fields); i += 2 {
 		if k, _ := fields[i].(string); k == key {
@@ -106,7 +88,6 @@ func fieldValue(fields []any, key string) any {
 	return nil
 }
 
-// TestPublishFailedErrKeepsInputErrorRaw 输入解析失败原样透出，其余构建失败带 ErrBuildFailed。
 func TestPublishFailedErrKeepsInputErrorRaw(t *testing.T) {
 	inner := errors.New(presentationenums.ErrNoTemplate)
 	got := publishFailedErr(&publishInputError{err: inner})
@@ -121,7 +102,6 @@ func TestPublishFailedErrKeepsInputErrorRaw(t *testing.T) {
 	}
 }
 
-// TestInstanceStateFingerprintDetectsCommit 指纹只覆盖「提交会覆盖的列」。
 func TestInstanceStateFingerprintDetectsCommit(t *testing.T) {
 	artA, artB := "art-a", "art-b"
 	snapA, snapB := "snap-a", "snap-b"
@@ -143,7 +123,6 @@ func TestInstanceStateFingerprintDetectsCommit(t *testing.T) {
 		t.Fatal("同一个实例状态的指纹必须相等（否则每次提交都会把自己判成冲突）")
 	}
 
-	// 一次成功提交会换掉快照与指针 —— 必须检出（L4：旧构建不许覆盖新稿）。
 	published := row(func(e *presentationmodel.InstanceEntity) {
 		e.CurrentSnapshotID, e.StagedSnapshotID = &snapB, &snapB
 		e.StagedArtifactID, e.ActiveArtifactID = &artB, &artB
@@ -151,11 +130,11 @@ func TestInstanceStateFingerprintDetectsCommit(t *testing.T) {
 	if base.equal(published) {
 		t.Fatal("快照 / 指针推进必须被指纹检出")
 	}
-	// 清 stale 是提交的收尾动作，反方向（被置 true）同样要检出。
+
 	if base.equal(row(func(e *presentationmodel.InstanceEntity) { e.Stale = true })) {
 		t.Fatal("stale 变化必须被指纹检出")
 	}
-	// 模板绑定 / 路径 / 渲染模式 / 独立文档任一被并发改掉都要检出（本次提交会写这些列）。
+
 	for name, mut := range map[string]func(*presentationmodel.InstanceEntity){
 		"模板绑定": func(e *presentationmodel.InstanceEntity) { e.TemplateID = "tpl-2" },
 		"线上路径": func(e *presentationmodel.InstanceEntity) { e.URLPath = "/products/b" },
@@ -168,7 +147,7 @@ func TestInstanceStateFingerprintDetectsCommit(t *testing.T) {
 			t.Fatalf("%s 被并发改动必须被指纹检出（提交会覆盖这些列）", name)
 		}
 	}
-	// update_time 不进指纹：依赖扇出重复标 stale（本来就 stale）只刷这一列，不该触发重试。
+
 	now := time.Now().UTC()
 	touchedAt := row(func(e *presentationmodel.InstanceEntity) { e.Stale, e.UpdatedAt = true, now })
 	touchedLater := row(func(e *presentationmodel.InstanceEntity) {
@@ -177,7 +156,7 @@ func TestInstanceStateFingerprintDetectsCommit(t *testing.T) {
 	if !touchedAt.equal(touchedLater) {
 		t.Fatal("update_time 不进指纹：只刷它的 repeated MarkStale 不该把提交判成冲突")
 	}
-	// 发布时间是提交收尾写入的列，必须进指纹。
+
 	if base.equal(row(func(e *presentationmodel.InstanceEntity) { e.PublishedAt = &now })) {
 		t.Fatal("published_at 变化必须被指纹检出")
 	}

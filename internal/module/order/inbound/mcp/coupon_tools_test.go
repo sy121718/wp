@@ -1,8 +1,5 @@
 package ordermcp
 
-// coupon_tools_test.go / return_tools_test.go 的共同入口 —— 优惠券与退货两批
-// 都在同一份测试文件里，因为它们的 schema 形状相似、判据也互相参照。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -96,7 +93,6 @@ func TestCouponRejectsNilDeps(t *testing.T) {
 	}
 }
 
-// percent 是「减免的百分比」，不是「折扣力度」—— 差 10 倍，必须写在描述里。
 func TestCouponPercentDescriptionSaysMinusPercent(t *testing.T) {
 	desc := couponTool(t, "coupon_create", &stubCouponRW{}).Description()
 	if !strings.Contains(desc, "减") || !strings.Contains(desc, "%") {
@@ -107,7 +103,6 @@ func TestCouponPercentDescriptionSaysMinusPercent(t *testing.T) {
 	}
 }
 
-// 改券是整份覆盖 —— 描述必须强制先 get。
 func TestCouponUpdateDescriptionRequiresGetFirst(t *testing.T) {
 	desc := couponTool(t, "coupon_update", &stubCouponRW{}).Description()
 	if !strings.Contains(desc, "coupon_get") {
@@ -118,7 +113,6 @@ func TestCouponUpdateDescriptionRequiresGetFirst(t *testing.T) {
 	}
 }
 
-// 删券要先把人劝去停用 —— 停用可逆，删除不可逆。
 func TestCouponDeletePushesDisableFirst(t *testing.T) {
 	desc := couponTool(t, "coupon_delete", &stubCouponRW{}).Description()
 	if !strings.Contains(desc, "停用") {
@@ -139,7 +133,6 @@ func TestCouponValueTextSaysMinusNotDiscount(t *testing.T) {
 	}
 }
 
-// 券的「当前是否生效」由 State 决定，Status 只说明运营有没有手动停用。
 func TestCouponStateTextUsesState(t *testing.T) {
 	for state, want := range map[string]string{
 		"enabled": "生效中", "disabled": "已停用", "expired": "已过期",
@@ -176,9 +169,6 @@ func TestCouponDeleteRequiresID(t *testing.T) {
 		t.Error("参数不合法时不该调用 service")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// 退货
 
 type stubReturnRW struct {
 	approved *orderdto.ReturnReviewReq
@@ -232,7 +222,6 @@ func TestReturnRejectsNilDeps(t *testing.T) {
 	}
 }
 
-// autoReceive=true 是一步到底（入库 + 退款）—— 描述与回执都必须说清。
 func TestReturnApproveDescriptionExplainsAutoReceive(t *testing.T) {
 	desc := returnTool(t, "return_approve", &stubReturnRW{}).Description()
 	if !strings.Contains(desc, "autoReceive") {
@@ -266,7 +255,6 @@ func TestReturnApproveTextDiffersByAutoReceive(t *testing.T) {
 	}
 }
 
-// 驳回必须给理由 —— 客户会看到它。
 func TestReturnRejectRequiresRemark(t *testing.T) {
 	s := &stubReturnRW{resp: &orderdto.ReturnResp{ID: 5}}
 	if _, err := invoke(t, returnTool(t, "return_reject", s), map[string]any{"returnId": 5}, true); err == nil {
@@ -284,7 +272,6 @@ func TestReturnRejectRequiresRemark(t *testing.T) {
 	}
 }
 
-// 操作人从 ctx 注入，不从参数读。
 func TestReturnInjectsOperatorFromContext(t *testing.T) {
 	s := &stubReturnRW{resp: &orderdto.ReturnResp{ID: 5}}
 	if _, err := invoke(t, returnTool(t, "return_approve", s), map[string]any{"returnId": 5}, true); err != nil {
@@ -305,7 +292,6 @@ func TestReturnReceiveInjectsOperator(t *testing.T) {
 	}
 }
 
-// 状态兜底不能只回裸码 —— 「已同意」与「已收货」在下游是两件不同的事。
 func TestReturnStatusTextFallback(t *testing.T) {
 	if got := returnStatusText("approved", ""); !strings.Contains(got, "待收货") {
 		t.Errorf("approved 兜底应说明还没收货，实得 %q", got)
@@ -318,7 +304,6 @@ func TestReturnStatusTextFallback(t *testing.T) {
 	}
 }
 
-// 详情里的明细挂在 Return.Items 上（ReturnDetailResp 是 {Return, Order} 组合）。
 func TestReturnDetailReadsNestedItems(t *testing.T) {
 	d := &orderdto.ReturnDetailResp{
 		Return: &orderdto.ReturnResp{
@@ -336,7 +321,6 @@ func TestReturnDetailReadsNestedItems(t *testing.T) {
 	}
 }
 
-// timeText 区分「不限」与「某个时刻」。
 func TestCouponTimeTextNilMeansUnlimited(t *testing.T) {
 	if got := timeText(nil); got != "不限" {
 		t.Errorf("nil 应为「不限」，实得 %q", got)

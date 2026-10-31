@@ -5,83 +5,36 @@ import (
 	"reflect"
 )
 
-// AtomSpec 原子组件规格：组件作者只填这两项（对标 WP Widget 三件套）。
-//
-// 说明：HTML 渲染已迁移到 Jet 模板路径，Atom 基座不再负责 HTML 拼装，
-// 故移除了原 Render 字段（组件经 jet.go 的 BuildView + CompileCSS 提供新路径数据）。
 type AtomSpec[P any] struct {
-	// TypeName 组件类型标识（如 "core.spacer"）。
 	TypeName string
-	// ValidateExtra 关系性校验（可选）：互斥/依赖等字段级（ct tag）之外的规则。
+
 	ValidateExtra func(p *P, nodeID string) error
-	// CollectionProp 集合源 prop 名（如 "collectionSource"）：声明后本组件即
-	// 「消费某个集合源」，编译期与依赖登记共用 core.CollectionSourcesOf 这一份判定
-	// （审计 ARCH-01）。空串 = 不消费集合源。
-	//
-	// 为什么声明「字段名」而不是「集合源值」：集合源取值就在节点 Props 里，组件自己
-	// 再解一遍只会多一份可能与渲染分叉的读法 —— 这里是唯一的读法来源。
+
 	CollectionProp string
-	// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
-	// 只有列出的 JSON 字段名参与内容翻译（sys_translation），未声明字段永不翻译。
-	// 只放「作者填写的文本」字段（text/title/alt/caption 等），
-	// 链接（/shop）、色值（#FF0000）、宽度、枚举一律不放。
+
 	Translatable []string
 
-	// --- 组件库呈现元数据（审计 REG-005，见 palette.go）---
-	// 这四项是「组件怎么出现在编辑器组件库」的唯一声明，前端不再手写组件条目
-	// （只消费生成的 paletteSpec + 自动化不了的人工排序表）。
-	// 不声明（DisplayName 为空）即不进组件库 —— 只允许由专门路径产生的组件这么做
-	// （core.globalref / core.layoutSlot），且必须登记在 builder 的覆盖豁免表里。
-
-	// DisplayName 组件库显示名（中文）。
 	DisplayName string
-	// Hint 组件库一句话说明。
+
 	Hint string
-	// PaletteCategory 组件库分组键（见 PaletteCategory* 常量）。
+
 	PaletteCategory string
-	// DefaultProps 插入时的默认 Props（示例内容，保证「插入即合法」）。
-	// 键必须在 Props 的 JSON 字段集合内（注册期校验）。
+
 	DefaultProps map[string]any
-	// PaletteEntityContext 默认插入依赖当前实体；实体类型从默认字段绑定导出。
-	// 自带集合或支持显式选品的组件不声明，保留普通页面的合法配置入口。
+
 	PaletteEntityContext bool
 }
 
-// Atom 泛型原子组件基座，实现 Component 接口。
-//
-// 基座吸收全部公共样板：
-//   - 节点 ID 白名单与全文档查重（ValidateNodeID）
-//   - 叶子约束（原子组件不允许子节点）
-//   - props JSON 解码
-//   - 声明式字段校验（ct tag → ValidateSpec）
-//   - Advanced 通用层校验与 CSS 编译（ValidateAdvanced / CompileAdvanced）
-//   - class 合并与自定义 Element ID 织入
-//
-// 组件作者 = Props 结构体（ct tag）+ Render 函数 + 可选 ValidateExtra，
-// 与 WP 写一个 widget 的工作量对齐（docs/02-C5）。
 type Atom[P any] struct{ Spec AtomSpec[P] }
 
-// Type 实现组件接口。
 func (a Atom[P]) Type() string { return a.Spec.TypeName }
 
-// PropsSpec 实现 SpecProvider：返回 Props 零值实例供声明式 Controls
-// 生成 Inspector 面板 schema（docs/02-C3）。组件作者零配置。
 func (a Atom[P]) PropsSpec() any { var p P; return &p }
 
-// CollectionProp 实现 CollectionProvider：返回 Props 中承载集合源的字段名。
-//
-// 所有 Atom 基座组件自动具备本方法（未声明返回空串 = 不消费集合源）。
 func (a Atom[P]) CollectionProp() string { return a.Spec.CollectionProp }
 
-// Translatable 实现 TranslatableProvider：返回 Props 声明的可翻译字段白名单。
-//
-// 所有 Atom 基座组件自动具备本方法（未声明返回 nil = 无可翻译字段）。
 func (a Atom[P]) Translatable() []string { return a.Spec.Translatable }
 
-// Palette 实现 PaletteProvider：返回组件库呈现元数据（审计 REG-005）。
-//
-// 所有 Atom 基座组件自动具备本方法：元数据完整（DisplayName + PaletteCategory）
-// 即进组件库，未声明则视为不进库（core.PaletteOf 判定）。
 func (a Atom[P]) Palette() PaletteMeta {
 	return PaletteMeta{
 		Type:               a.Spec.TypeName,
@@ -93,7 +46,6 @@ func (a Atom[P]) Palette() PaletteMeta {
 	}
 }
 
-// Validate 实现组件接口：公共校验管线 + 声明式 + 组件关系性 + Advanced。
 func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if err = ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
@@ -101,8 +53,7 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if len(node.Children) > 0 {
 		return fmt.Errorf("节点 %s: 原子组件为叶子节点，不允许子节点", node.ID)
 	}
-	// 走 DecodeProps（不是裸 json.Unmarshal）：校验链也要看到旧 props 名归一后的值，
-	// 否则「检查器里显示空、编译时又用旧值」这种不一致会出现。
+
 	p, derr := DecodeProps[P](node.Props)
 	if derr != nil {
 		return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, derr)
@@ -110,7 +61,7 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if err = ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-	// 未完成状态不能绕过 Advanced 的安全校验与自定义 ID 查重。
+
 	if adv := AdvancedOf(&p); adv != nil {
 		if err = ValidateAdvanced(adv, node.ID, ids); err != nil {
 			return err
@@ -124,8 +75,6 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// AdvancedOf 反射读取 P 的 Advanced 字段（约定：类型为 core.AdvancedProps、
-// 字段名 Advanced）。原子组件 Props 必须内嵌该字段以获得通用层能力。
 func AdvancedOf[P any](p *P) *AdvancedProps {
 	v := reflect.ValueOf(p)
 	if v.Kind() == reflect.Ptr {
@@ -141,7 +90,6 @@ func AdvancedOf[P any](p *P) *AdvancedProps {
 	return f.Addr().Interface().(*AdvancedProps)
 }
 
-// ValidateNodeID 节点 ID 白名单与全文档唯一性，并顺带校验编辑元数据 Name（03-A）。
 func ValidateNodeID(id, name string, ids map[string]bool) (err error) {
 	if len(id) < 1 || len(id) > 64 {
 		return fmt.Errorf("无效的节点 ID: %q", id)
@@ -161,7 +109,6 @@ func ValidateNodeID(id, name string, ids map[string]bool) (err error) {
 	return nil
 }
 
-// ValidateNodeName 编辑元数据 Name 白名单（仅编辑器显示名，最长为 100 可见字符）。
 func ValidateNodeName(name string) (err error) {
 	if len([]rune(name)) > 100 {
 		return fmt.Errorf("节点名称过长（上限 100 字符）")

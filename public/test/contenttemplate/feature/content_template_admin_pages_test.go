@@ -1,12 +1,5 @@
 package feature
 
-// content_template_admin_pages_test.go — 内容模板列表页的后台改造（EDT-014 生效状态 + EDT-021 切换）。
-//
-// 覆盖三件在页面上才能看出对错的事：
-//   · 结构模板（页眉 / 页脚）与内容实体模板在列表里分得开（类型列 + 徽标）；
-//   · 「当前生效」徽标与「设为生效」按钮成对出现（同一（工程, 类型）只有一套生效）；
-//   · 引用反查未装配时显示「引用未知」，**不是**「无引用」—— 后者会让人以为可以放心删。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -32,7 +25,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// contentTemplateAdminDoc 结构模板的合法文档（无字段绑定：结构模板不接受绑定）。
 const contentTemplateAdminDoc = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"结构"}}]}`
 
 type contentTemplateAdminEnv struct {
@@ -105,20 +97,19 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 	second := env.create(t, "备用页眉", contenttemplatemodel.EntityTypeHeader)
 	env.create(t, "页脚", contenttemplatemodel.EntityTypeFooter)
 
-	// 先把「备用页眉」设为生效：同一（工程, 类型）只能有一套生效。
 	if _, err := env.templates.Activate(ctx, &contenttemplatedto.ActivateReq{ID: second.ID}); err != nil {
 		t.Fatalf("切换生效失败：%v", err)
 	}
 
 	body := env.getPage(t)
 	for _, want := range []string{
-		"当前生效",     // 生效徽标
-		"设为生效",     // 非生效那套的切换按钮
-		"页眉（结构模板）", // 结构模板与内容实体模板在类型列上分得开
+		"当前生效",
+		"设为生效",
+		"页眉（结构模板）",
 		"页脚（结构模板）",
-		"/api/contenttemplate/activate", // 切换按钮真的指向页面入口
-		"引用未知",                          // 端口未装配 → 不是「无引用」
-		"/workbench?entityType=header",  // 结构模板的可视化编辑入口（无样例实体模式）
+		"/api/contenttemplate/activate",
+		"引用未知",
+		"/workbench?entityType=header",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页缺少 %q", want)
@@ -127,8 +118,7 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 	if strings.Contains(body, "无引用") {
 		t.Error("引用能力未装配时不得显示「无引用」（那是「查不出来」而不是「没有引用」）")
 	}
-	// 结构模板不是内容实体，工作台以无实体模式打开：入口不得带 entityId，
-	// 也不该再显示「无可视化编辑入口」（那正是本批要打通的卡点）。
+
 	if strings.Contains(body, "无可视化编辑入口") {
 		t.Error("结构模板应已打通可视化编辑入口")
 	}
@@ -136,7 +126,6 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 		t.Error("结构模板的编辑入口不该带样例实体参数（无实体模式）")
 	}
 
-	// 切换：把第一套设为生效 → 提示页（HTTP 200，成功态），回跳链接保留工程筛选。
 	payload, err := json.Marshal(map[string]string{"id": first.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +144,6 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 		t.Fatal("expected JSON")
 	}
 
-	// 落库校验：生效的那套换了，旧的必须已经置 false（同一类型只有一套生效）。
 	gotFirst, err := env.templates.Get(ctx, &contenttemplatedto.GetReq{ID: first.ID})
 	if err != nil {
 		t.Fatalf("读取第一套模板失败：%v", err)

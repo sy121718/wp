@@ -17,7 +17,7 @@ import (
 
 func newProjectService(t *testing.T) *projectservice.Service {
 	t.Helper()
-	// 表结构走生产迁移（projects 为真实 uuid/jsonb DDL），不再手抄。
+
 	db := support.NewMigratedPGTestDB(t)
 	return projectservice.NewService(projectmodel.NewProjectModel(db))
 }
@@ -29,7 +29,7 @@ func TestProjectCreateUpdateAndExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建工程失败: %v", err)
 	}
-	// 生产的 projects.settings 是 jsonb：读写会规范化键序与空白，断言按 JSON 语义比较。
+
 	if created.Name != "官网工程" || !jsonEqual(t, created.Settings, `{"locale":"zh-CN"}`) {
 		t.Fatalf("工程字段未规范化: %+v", created)
 	}
@@ -46,7 +46,6 @@ func TestProjectCreateUpdateAndExists(t *testing.T) {
 	}
 }
 
-// jsonEqual 按 JSON 语义比较（jsonb 列存取会规范化空白与键序，字节比较会误报）。
 func jsonEqual(t *testing.T, got []byte, want string) bool {
 	t.Helper()
 	var g, w any

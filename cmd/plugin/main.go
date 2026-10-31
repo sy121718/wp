@@ -1,7 +1,3 @@
-// Package main 插件脚手架 CLI：`go run ./cmd/plugin init <name>`。
-//
-// 生成标准插件模板工程（AGENTS.md §5），与后台插件体系
-// 端到端配套：模板改内容 → zip 打包 → 上传安装 → 组件进工作台组件库。
 package main
 
 import (

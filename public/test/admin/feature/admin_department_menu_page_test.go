@@ -23,8 +23,7 @@ import (
 func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 	t.Helper()
 	svc := adminservice.NewService(db)
-	// perms 也要给：菜单页在渲染时取权限点候选（菜单绑定权限点的复选清单，迁移 470），
-	// 少传一个契约会让那一页在渲染期 panic（nil 接口调用）。
+
 	h := adminhttp.NewAdminPagesHandle(nil, nil, svc, svc, svc, nil)
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
@@ -167,11 +166,6 @@ func TestAdminDepartmentMenuPagePagination(t *testing.T) {
 	}
 }
 
-// assertMenuTreePagination 钉住菜单页的树状分页语义 —— 与部门页（平铺行分页）**不同**：
-// 分页单位是顶级节点，一页里渲染的是「若干棵完整的树」。
-// 本用例的 5 条菜单里只有「分页菜单00」是顶级，其余 4 条都是它的子，所以任何页码
-// 都会一次渲染整棵树（5 行），而标题里的总数报的是顶级数 1 —— 这是刻意的：
-// 若按行分页，第 2 页只会看到 4 个没有父级的孤儿行，用户无法判断它们属于谁。
 func assertMenuTreePagination(t *testing.T, engine *gin.Engine, path, prefix, parent string) {
 	t.Helper()
 	for _, page := range []string{"1", "2", "999"} {
@@ -193,7 +187,6 @@ func assertMenuTreePagination(t *testing.T, engine *gin.Engine, path, prefix, pa
 		}
 	}
 
-	// 搜索命中子级时要把它所属的祖先一并带出来，否则那一行没有上下文。
 	body := fetchDepartmentMenuPage(t, engine, path+"?keyword="+url.QueryEscape(prefix+"02"))
 	rows := pageTableBody(t, body)
 	if !strings.Contains(rows, `data-filter-text="`+prefix+"02") {

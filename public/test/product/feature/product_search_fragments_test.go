@@ -21,7 +21,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// seedArticle 造一篇文章（contents 表；标题与摘要在 data JSONB 里）。
 func seedArticle(t *testing.T, f *detailFixture, title, slug, excerpt string) string {
 	t.Helper()
 	raw, err := json.Marshal(map[string]string{"title": title, "excerpt": excerpt})
@@ -39,7 +38,6 @@ func seedArticle(t *testing.T, f *detailFixture, title, slug, excerpt string) st
 	return id
 }
 
-// searchJSON 走生产公开JSON路由；不用片段注册表或展示模板。
 func searchJSON(t *testing.T, f *detailFixture, q string) contentcontract.PublicSearchData {
 	t.Helper()
 	contents := contentservice.NewService(contentmodel.NewModel(f.db))

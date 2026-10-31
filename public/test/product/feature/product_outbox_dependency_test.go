@@ -1,24 +1,3 @@
-// product_outbox_dependency_test.go — 商品写路径的静态产物失效闭环（审计 ARCH-01）。
-//
-// 链路（改动后的形状）：
-//
-//	商品写事务内写 outbox 行（product_outbox_events：project / entity / revision / 依赖键）
-//	  → 消费者（product.Service.DispatchOutbox）领取
-//	  → 窄端口 productcontract.DependencyInvalidator（装配层注入 pipeline.Fanout）
-//	  → page / presentation 的 MarkStaleByDependency（按 page_dependencies /
-//	    presentation_dependencies 反查）
-//	  → RebuildStale（本用例内联执行）→ 全部语言的产物更新
-//
-// 三段验收对应：
-//  1. TestProductListPageRegistersCollectionDependency —— 列表页（内置 core.productList）
-//     的依赖表里必须**真有**集合键（collection:content:product）。改动前这里是空的
-//     （page 的 collectionSourcesOf 只认插件 manifest），集合扇出因此永远空转 ——
-//     这是本审计实测出来的第一条洞，也是「依赖键根本表达不了集合成员变化」的准确落点；
-//  2. TestArchiveInstanceRegistersCollectionDependency —— presentation 侧（归档页）同理；
-//  3. TestProductChangeRebuildsDetailListAndArchive —— 端到端：改商品名后详情页 /
-//     列表页 / 归档页在 zh-CN 与 en-US 两种语言上都重新发布；
-//  4. TestProductWriteRollbackLeavesNoEvent —— 事务回滚 → 不产生事件；
-//  5. TestProductOutboxDispatchIsIdempotent —— 消费者可重放且幂等（重放不产生新产物）。
 package feature
 
 import (
@@ -67,10 +46,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// productCollectionKey 商品集合依赖键（与 content_service.go 的发射端逐字一致）。
 const productCollectionKey = "collection:content:product"
 
-// productListDoc 含内置 core.productList 的文档（列表页与归档模板共用）。
 const productListDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}}," +
 	"\"root\":[{\"id\":\"pl1\",\"type\":\"core.productList\",\"props\":{" +
 	"\"collectionSource\":\"content:product\",\"collectionLimit\":12,\"layout\":\"grid\",\"columns\":\"auto\"," +
@@ -78,7 +55,6 @@ const productListDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth
 	"\"priceField\":\"item.priceRange\",\"comparePriceField\":\"item.comparePrice\",\"tagsField\":\"item.tags\"," +
 	"\"linkField\":\"item.url\",\"currency\":\"¥\",\"titleTag\":\"h3\",\"emptyText\":\"暂无商品\"}}]}"
 
-// outboxFixture 一套真实装配：商品 + 内容模板 + 自动发布 + 手工 Page + 依赖扇出。
 type outboxFixture struct {
 	db        *gorm.DB
 	products  *productservice.Service
@@ -89,7 +65,6 @@ type outboxFixture struct {
 	projectID string
 }
 
-// newOutboxFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newOutboxFixture(t *testing.T) *outboxFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -103,11 +78,11 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 默认商品详情模板来自种子（迁移 085），必须在工程创建之后跑。
+
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行数据种子失败: %v", err)
 	}
-	// 两种语言：验收要求「全部语言最终更新」。
+
 	if err := db.Exec(
 		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) "+
 			"VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
@@ -121,7 +96,7 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	if err := products.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品实体类型失败: %v", err)
 	}
-	// 集合源注册表（与线上装配同形）。
+
 	collections := core.NewCollectionRegistry()
 	if err := collections.Register(contentservice.NewService(contentmodel.NewModel(db))); err != nil {
 		t.Fatalf("注册内容集合源失败: %v", err)
@@ -138,7 +113,6 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	pages := pageservice.NewService(pagemodel.NewPageModel(db), artifacts, pub, projects, blocks, nil, collections, nil, nil)
 
-	// 依赖扇出：与线上同一份内核 + 内联重建（同步，便于断言）。
 	fanout := pipeline.NewFanout()
 	fanout.SetSyncRebuild(true)
 	fanout.Register(pipeline.SourceTypePage, pages)
@@ -153,7 +127,6 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	}
 }
 
-// createProduct 建商品并上架（列表页默认只出已上架商品）。
 func (f *outboxFixture) createProduct(t *testing.T, name, slug string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -172,7 +145,6 @@ func (f *outboxFixture) createProduct(t *testing.T, name, slug string) string {
 	return res.ID
 }
 
-// createCategory 建一个分类（归档页实例的实体）。
 func (f *outboxFixture) createCategory(t *testing.T, name, slug string) string {
 	t.Helper()
 	res, err := f.products.CreateCategory(context.Background(), &productdto.CreateCategoryReq{
@@ -184,13 +156,11 @@ func (f *outboxFixture) createCategory(t *testing.T, name, slug string) string {
 	return res.ID
 }
 
-// publishListPage 建一个用内置 core.productList 的列表页（默认文档）并逐语言构建 + 发布。
 func (f *outboxFixture) publishListPage(t *testing.T, path string) string {
 	t.Helper()
 	return f.publishListPageWithDoc(t, path, productListDoc)
 }
 
-// publishListPageWithDoc 同上，但用调用方给的页面文档。
 func (f *outboxFixture) publishListPageWithDoc(t *testing.T, path, doc string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -212,12 +182,6 @@ func (f *outboxFixture) publishListPageWithDoc(t *testing.T, path, doc string) s
 	return page.ID
 }
 
-// publishCollectionInstance 用一套「商品集合」模板建实例（presentation 侧的列表产物）。
-//
-// 它验的是「实例级集合键登记」这件事本身（与实体类型无关）；分类归档页那条更完整
-// 的链路（归档模板 + filterFromArchive + 集合键扇出）见 TestCategoryArchivePageListsCategoryProducts。
-// 历史上这里写的是「分类归档页做不到」的原因（builder.ValidateFieldRefs 拿模板实体类型
-// 判集合组件绑定），EDT-004 收口后该限制已解除，说明随之更新。
 func (f *outboxFixture) publishCollectionInstance(t *testing.T, productID, urlPath string) *presentationdto.InstanceResp {
 	t.Helper()
 	ctx := context.Background()
@@ -238,7 +202,6 @@ func (f *outboxFixture) publishCollectionInstance(t *testing.T, productID, urlPa
 	return inst
 }
 
-// publishDetailInstance 建商品详情实例（每种语言一个产物）。
 func (f *outboxFixture) publishDetailInstance(t *testing.T, productID, urlPath string) *presentationdto.InstanceResp {
 	t.Helper()
 	inst, err := f.pres.CreateInstance(context.Background(), &presentationdto.CreateInstanceReq{
@@ -250,7 +213,6 @@ func (f *outboxFixture) publishDetailInstance(t *testing.T, productID, urlPath s
 	return inst
 }
 
-// dispatch 消费一次 outbox（返回处理条数）。
 func (f *outboxFixture) dispatch(t *testing.T) int {
 	t.Helper()
 	n, err := f.products.DispatchOutbox(context.Background(), 0)
@@ -260,7 +222,6 @@ func (f *outboxFixture) dispatch(t *testing.T) int {
 	return n
 }
 
-// pagePublicationArtifact 读取页面某语言的激活产物 id。
 func pagePublicationArtifact(t *testing.T, db *gorm.DB, pageID, lang string) string {
 	t.Helper()
 	var id *string
@@ -274,7 +235,6 @@ func pagePublicationArtifact(t *testing.T, db *gorm.DB, pageID, lang string) str
 	return *id
 }
 
-// instancePublication 读取实例某语言的激活产物 id 与线上路径。
 func instancePublication(t *testing.T, db *gorm.DB, instanceID, lang string) (artifactID, activePath string) {
 	t.Helper()
 	var row struct {
@@ -291,7 +251,6 @@ func instancePublication(t *testing.T, db *gorm.DB, instanceID, lang string) (ar
 	return artifactID, row.ActivePath
 }
 
-// activeHTMLAt 读访问面上某路径的激活 index.html（访客面等价读法）。
 func activeHTMLAt(activePath string) string {
 	if strings.TrimSpace(activePath) == "" {
 		return ""
@@ -303,7 +262,6 @@ func activeHTMLAt(activePath string) string {
 	return string(b)
 }
 
-// pageDependencyKeys 读取列表页当前产物的依赖键集合（kind|key）。
 func pageDependencyKeys(t *testing.T, db *gorm.DB, pageID string) map[string]bool {
 	t.Helper()
 	var keys []string
@@ -321,7 +279,6 @@ func pageDependencyKeys(t *testing.T, db *gorm.DB, pageID string) map[string]boo
 	return out
 }
 
-// presentationDependencyKeys 读取实例产物的依赖键集合（kind|key）。
 func presentationDependencyKeys(t *testing.T, db *gorm.DB, instanceID string) map[string]bool {
 	t.Helper()
 	var keys []string
@@ -336,7 +293,6 @@ func presentationDependencyKeys(t *testing.T, db *gorm.DB, instanceID string) ma
 	return out
 }
 
-// mustArtifact 读取 presentation 侧某语言的激活产物 id（缺行即失败）。
 func mustArtifact(t *testing.T, db *gorm.DB, instanceID, lang string) string {
 	t.Helper()
 	id, _ := instancePublication(t, db, instanceID, lang)
@@ -346,7 +302,6 @@ func mustArtifact(t *testing.T, db *gorm.DB, instanceID, lang string) string {
 	return id
 }
 
-// firstLine 截取首部片段（失败信息用，避免把整页 HTML 铺进日志）。
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i > 0 {
 		s = s[:i]
@@ -357,8 +312,6 @@ func firstLine(s string) string {
 	return s
 }
 
-// TestProductListPageRegistersCollectionDependency 列表页（内置 core.productList）的
-// 产物必须登记 content_collection:collection:content:product —— 缺它时集合键扇出永远空转。
 func TestProductListPageRegistersCollectionDependency(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -374,8 +327,6 @@ func TestProductListPageRegistersCollectionDependency(t *testing.T) {
 	}
 }
 
-// TestPresentationCollectionInstanceRegistersCollectionDependency presentation 侧的列表产物
-// 同样要登记集合键：它的 direct_content 只认自己那个实体，集合里**别的**商品变更全都不命中。
 func TestPresentationCollectionInstanceRegistersCollectionDependency(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -391,16 +342,6 @@ func TestPresentationCollectionInstanceRegistersCollectionDependency(t *testing.
 	}
 }
 
-// TestProductChangeRebuildsDetailListAndCollectionPages 端到端。两阶段：
-//
-//	阶段一：改**另一个**商品 B 的名字 —— 商品 A 的详情页不该动（direct_content 不命中 A），
-//	        但列表页与 A 的集合页必须更新（集合键命中：列表渲染的是整个集合）。
-//	        这一段是「集合成员 / 成员可见字段变化」这条失效路径的**独立证据**。
-//	阶段二：改商品 A 自己 —— 详情页也跟上。
-//
-// 判据一律取**访客可见的字节**（访问面上各语言的激活 HTML）与 stale 收敛，
-// 不依赖产物行 id 的换代语义：列表页的重建路径会复用同一产物行（实测），
-// 用 id 当判据会把「字节已经更新」误判成「没重建」。
 func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -409,21 +350,18 @@ func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 	ctx := context.Background()
 	aID := f.createProduct(t, "商品甲原名", "item-a")
 	bID := f.createProduct(t, "商品乙原名", "item-b")
-	// 集合页实例绑定的实体必须与详情页实例不同：CreateInstance 对同一实体是**幂等**的
-	//（同一 (entity_type, entity_id) 只会有一个实例），拿同一个商品建两次实例会拿到同一个实例。
+
 	cID := f.createProduct(t, "商品丙原名", "item-c")
 
 	detailA := f.publishDetailInstance(t, aID, "/products/item-a")
 	pageID := f.publishListPage(t, "/shop")
 	collectionPage := f.publishCollectionInstance(t, cID, "/collections/item-c")
 
-	// 先把 fixture 装配过程产生的所有事件消费干净（建商品本身也会发集合键）。
 	f.dispatch(t)
 
 	nameA, nameB := "商品甲新名", "商品乙新名"
 	langs := []string{"zh-CN", "en-US"}
 
-	// 改动前：详情页与列表页的线上字节都是旧名字。
 	_, detailZH := instancePublication(t, f.db, detailA.ID, "zh-CN")
 	if html := activeHTMLAt(detailZH); !strings.Contains(html, "商品甲原名") {
 		t.Fatalf("改动前详情页应含旧名，实际：%s", firstLine(html))
@@ -440,7 +378,6 @@ func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 		collBefore[lang] = mustArtifact(t, f.db, collectionPage.ID, lang)
 	}
 
-	// —— 阶段一：改 B ——
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: bID, ProjectID: f.projectID, Name: &nameB}); err != nil {
 		t.Fatalf("改商品乙失败: %v", err)
 	}
@@ -448,24 +385,23 @@ func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 		t.Fatalf("改商品后 outbox 应有待消费事件，实际 0 条（静态产物不会更新）")
 	}
 	for _, lang := range langs {
-		// 列表页（手工 Page）：两条语言都必须换成新字节。
+
 		if html := pageActiveHTML(t, f.db, pageID, lang); !strings.Contains(html, nameB) {
 			t.Fatalf("阶段一：列表页 %s 的线上产物仍是旧字节（不含 %q）：%s", lang, nameB, firstLine(html))
 		}
-		// presentation 侧的集合页：产物换代（集合键命中，与它自己的 direct_content 无关）。
+
 		if got := mustArtifact(t, f.db, collectionPage.ID, lang); got == collBefore[lang] {
 			t.Fatalf("阶段一：商品乙变更后商品丙的集合页 %s 未换代（集合键没命中）", lang)
 		}
 		if html := instanceActiveHTML(t, f.db, collectionPage.ID, lang); !strings.Contains(html, nameB) {
 			t.Fatalf("阶段一：集合页 %s 的线上产物不含商品乙新名：%s", lang, firstLine(html))
 		}
-		// 商品甲的详情页不该被这次变更动到（direct_content 精确性）。
+
 		if got := mustArtifact(t, f.db, detailA.ID, lang); got != detailBefore[lang] {
 			t.Fatalf("阶段一：商品乙变更**不该**让商品甲的详情页 %s 换代（误标）", lang)
 		}
 	}
 
-	// —— 阶段二：改 A 自己 ——
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: aID, ProjectID: f.projectID, Name: &nameA}); err != nil {
 		t.Fatalf("改商品甲失败: %v", err)
 	}
@@ -483,7 +419,7 @@ func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 			t.Fatalf("列表页 %s 的线上产物仍是旧字节（不含 %q）：%s", lang, nameA, firstLine(html))
 		}
 	}
-	// 收尾：stale 已收敛（重建成功把标记清掉）。
+
 	var stalePages, staleInstances int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM pages WHERE stale = true").Scan(&stalePages).Error; err != nil {
 		t.Fatalf("统计待重建页面失败: %v", err)
@@ -496,7 +432,6 @@ func TestProductChangeRebuildsDetailListAndCollectionPages(t *testing.T) {
 	}
 }
 
-// pageActiveHTML 读页面某语言的线上字节。
 func pageActiveHTML(t *testing.T, db *gorm.DB, pageID, lang string) string {
 	t.Helper()
 	var path string
@@ -507,17 +442,12 @@ func pageActiveHTML(t *testing.T, db *gorm.DB, pageID, lang string) string {
 	return activeHTMLAt(path)
 }
 
-// instanceActiveHTML 读实例某语言的线上字节。
 func instanceActiveHTML(t *testing.T, db *gorm.DB, instanceID, lang string) string {
 	t.Helper()
 	_, path := instancePublication(t, db, instanceID, lang)
 	return activeHTMLAt(path)
 }
 
-// categoryArchiveDoc 分类归档模板文档：商品列表 + **按归档上下文筛选**。
-//
-// filterFromArchive 是关键的一行：归档模板是通用的（一份模板服务全部分类），
-// 「列哪个分类的商品」只能来自实例本身 —— 没有它，归档页会安静地列全站商品。
 const categoryArchiveDoc = `{"settings":{"layout":{"mode":"boxed","maxWidth":"1200px"}},"root":[` +
 	`{"id":"pl1","type":"core.productList","props":{"collectionSource":"content:product",` +
 	`"filterFromArchive":"on","collectionLimit":12,"layout":"grid","columns":"auto",` +
@@ -525,15 +455,9 @@ const categoryArchiveDoc = `{"settings":{"layout":{"mode":"boxed","maxWidth":"12
 	`"priceField":"item.priceRange","comparePriceField":"item.comparePrice","tagsField":"item.tags",` +
 	`"linkField":"item.url","currency":"¥","titleTag":"h3","emptyText":"暂无商品"}}]}`
 
-// categoryArchiveCardDoc 分类归档模板里放一个**非集合组件**（商品卡）绑商品字段：
-// 这是新旧行为的分界线 —— 只有集合组件才按集合源校验，别的组件绑跨源字段照样拒绝。
 const categoryArchiveCardDoc = `{"settings":{"layout":{"mode":"full"}},"root":[` +
 	`{"id":"pc1","type":"core.productCard","props":{"titleField":"product.images"}}]}`
 
-// archiveInstanceOfCategory 取工程内 product_category 的归档实例（没有即硬失败）。
-//
-// 「归档页同步失败」在生产上只留一行日志（不阻断分类保存），测试里必须把它变成失败 ——
-// 否则本票真正要修的那条链（分类 → 归档实例）断了也看不出来。
 func (f *outboxFixture) archiveInstanceOfCategory(t *testing.T) *presentationdto.InstanceResp {
 	t.Helper()
 	list, err := f.pres.List(context.Background(), &presentationdto.ListReq{
@@ -551,29 +475,15 @@ func (f *outboxFixture) archiveInstanceOfCategory(t *testing.T) *presentationdto
 	return nil
 }
 
-// TestCategoryArchivePageListsCategoryProducts 分类归档页的端到端验收（审计 EDT-004 收口）。
-//
-// 本用例取代了原先「记录一条今天做不到的验收」的 TestCategoryArchiveTemplateCannotBindProductFields：
-// 那条限制的根因是 builder.ValidateFieldRefs 拿**模板实体类型**去判集合组件的字段绑定
-// （集合源是商品，模板实体是 product_category），现已改为「集合组件按集合源实体类型校验」。
-//
-// 五段证据，缺一段都只是「校验放行了」而不是「归档页真的成了」：
-//  1. 含 core.productList 的归档模板能保存（绑定校验按集合源通过）；
-//  2. 新建分类 → 归档实例按需建出来，路径按注册表口径（/product_category/{slug}）；
-//  3. 归档产物登记集合键 collection:content:product（商品增删改靠它命中，direct_content 只认那个分类）；
-//  4. 上架商品并挂到该分类 → 消费 outbox → 归档页两种语言的线上字节都含该商品，
-//     且**不含**别的分类的商品（filterFromArchive 真的把筛选值落到了实例实体上）；
-//  5. 改商品名 → 同一条集合键链路把归档页更新到新字节（「改了商品归档页不动」的反面）。
 func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 归档页按需创建端口（与线上装配同形，见 internal/routers/assembly_publish.go）。
+
 	f.products.SetArchiveInstanceEnsurer(f.pres)
 
-	// 1) 归档模板必须先存在：没配归档模板时 EnsureArchiveInstance 按「跳过」处理（正常状态）。
 	if _, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
 		ProjectID: f.projectID, EntityType: productcontract.EntityTypeCategory,
 		Name: "分类归档页", TemplateRole: "archive", DraftDocument: json.RawMessage(categoryArchiveDoc),
@@ -581,21 +491,18 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 		t.Fatalf("分类归档模板（core.productList 绑 product.*）应能保存: %v", err)
 	}
 
-	// 2) 新建分类 → 归档实例。
 	catA := f.createCategory(t, "电子设备", "electronics")
 	inst := f.archiveInstanceOfCategory(t)
 	if inst.URLPath != "/product_category/electronics" {
 		t.Fatalf("归档路径应按实体类型派生（注册表口径），实际 %q", inst.URLPath)
 	}
 
-	// 3) 依赖登记：归档页的 direct_content 只认自己那个分类，商品集合变化必须靠集合键命中。
 	keys := presentationDependencyKeys(t, f.db, inst.ID)
 	wantKey := pipeline.DepKindContentCollection + "|" + productCollectionKey
 	if !keys[wantKey] {
 		t.Fatalf("分类归档产物未登记商品集合依赖 %q（商品增删改不会让它更新）——实际依赖：%v", wantKey, keys)
 	}
 
-	// 4) 分类 A 下一个商品、分类 B 下一个商品（B 用来证明筛选真的生效而不是「列出了全站商品」）。
 	itemA := f.createProduct(t, "归档商品甲", "archive-item-a")
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
 		ID: itemA, ProjectID: f.projectID, CategoryIDs: []string{catA},
@@ -609,7 +516,7 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("把商品乙挂到分类失败: %v", err)
 	}
-	// 消费 outbox：集合键扇出 → 归档实例待重建 → 同步重建（fixture 的 fanout 是同步的）。
+
 	if n := f.dispatch(t); n == 0 {
 		t.Fatalf("商品变更后 outbox 应有待消费事件，实际 0 条（归档页不会更新）")
 	}
@@ -625,7 +532,6 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 		}
 	}
 
-	// 访问面：归档页必须真的登记了路由（只建实例不登记路由的话 URL 打不开）。
 	var routes int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM page_routes WHERE presentation_id = ? AND route_kind = 'active'",
 		inst.ID).Scan(&routes).Error; err != nil {
@@ -635,8 +541,6 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 		t.Fatalf("归档页没有登记访问面路由（URL 打不开）")
 	}
 
-	// 5) 改商品名 → 走同一条集合键链路更新（归档页的 direct_content 只认那个分类，
-	// 商品自己的变更必须靠集合键命中，这条正是本票收口前「改了商品归档页不动」的那条链）。
 	renamed := "归档商品甲改名"
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
 		ID: itemA, ProjectID: f.projectID, Name: &renamed,
@@ -654,12 +558,6 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 	}
 }
 
-// TestCategoryArchiveTemplateRejectsNonCollectionCrossSourceBinding 负向分界（本票的核心防线）：
-// 归档模板里用**非集合组件**绑商品字段，仍然必须被拒绝。
-//
-// 这一条存在的原因是后来人最容易走的捷径：为了「让归档模板能保存」把
-// "属于哪个数据源" 这条判定整个删掉。删掉之后本用例红 —— 那时该做的是把
-// 组件声明成集合组件（CollectionProp），而不是放行。
 func TestCategoryArchiveTemplateRejectsNonCollectionCrossSourceBinding(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -678,8 +576,6 @@ func TestCategoryArchiveTemplateRejectsNonCollectionCrossSourceBinding(t *testin
 	}
 }
 
-// failingMasterData 留痕端口故障：用来在商品写事务的**后续步骤**制造失败，
-// 以证明「事务回滚 → 不产生事件」。
 type failingMasterData struct {
 	masterdatacontract.MasterDataService
 }
@@ -692,7 +588,6 @@ func (failingMasterData) RecordChangesTx(context.Context, *gorm.DB, []*masterdat
 	return errors.New("留痕端口故障（用例注入）")
 }
 
-// TestProductWriteRollbackLeavesNoEvent 事务回滚 → 不产生失效事件，也不留半截商品行。
 func TestProductWriteRollbackLeavesNoEvent(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -721,7 +616,6 @@ func TestProductWriteRollbackLeavesNoEvent(t *testing.T) {
 	}
 }
 
-// countArtifacts 统计页面产物行数（重放幂等的判据）。
 func countArtifacts(t *testing.T, db *gorm.DB, pageID string) int64 {
 	t.Helper()
 	var n int64
@@ -731,8 +625,6 @@ func countArtifacts(t *testing.T, db *gorm.DB, pageID string) int64 {
 	return n
 }
 
-// TestProductOutboxDispatchIsIdempotent 消费者崩溃可重放且幂等：
-// 已消费的事件不重复消费；重放（重置 processed/claimed）不产生新产物。
 func TestProductOutboxDispatchIsIdempotent(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -762,7 +654,6 @@ func TestProductOutboxDispatchIsIdempotent(t *testing.T) {
 		t.Fatalf("已消费的事件不应被再次领取，实际处理 %d 条", n)
 	}
 
-	// 崩溃重放：把最新一行恢复成待领取（模拟消费者在标记完成前崩溃）。
 	beforeArtifacts := countArtifacts(t, f.db, pageID)
 	var lastID int64
 	if err := f.db.Raw("SELECT MAX(id) FROM product_outbox_events").Scan(&lastID).Error; err != nil {
@@ -785,26 +676,10 @@ func TestProductOutboxDispatchIsIdempotent(t *testing.T) {
 	}
 }
 
-// —— 审计 ARCH-01 尾巴：后补的两个写入口 ——
-//
-// 1) 商品属性（product_attributes）的增改删；
-// 2) 自动标签归属重算里的**逐商品** direct_content。
-// 两条都用「摘掉该处入队 → 目标产物不更新（红）」的方式验过（见报告）。
-
-// attributeValuesDoc 只渲染属性组值文本的模板：core.heading 的字段绑定**不限定前缀**
-// （heading.go 的 ct:"bindingfield"），因此可以绑定 product_attribute.values。
-// 该实例只登记 direct_content:product_attribute:{id}（没有集合组件），
-// 于是「属性实体键是否发出」不会被商品集合键掩盖。
 const attributeValuesDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}}," +
 	"\"root\":[{\"id\":\"h1\",\"type\":\"core.heading\",\"props\":{" +
 	"\"binding\":{\"field\":\"product_attribute.values\"},\"tag\":\"h2\"}}]}"
 
-// TestAttributeChangeRebuildsBoundAttributePage 属性组变更 → 绑定该属性组的产物必须重建。
-// 失败能力的落点：SetAttributeValues 里的 enqueueAttributeInvalidation 摘掉即红。
-//
-// 已知边界（不在本票扩，见报告）：**引用该属性组的商品详情页**不在本用例覆盖内 ——
-// 商品详情页登记的是 direct_content:product:{id}，只发属性实体键命中不到它；
-// 要覆盖得按 products.attribute_ids 反查逐商品发键（与标签重算同一手法）。
 func TestAttributeChangeRebuildsBoundAttributePage(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
@@ -834,7 +709,6 @@ func TestAttributeChangeRebuildsBoundAttributePage(t *testing.T) {
 	}
 	f.dispatch(t)
 
-	// 基线：产物里是旧属性值标签（且装配期事件已消费干净）。
 	if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); !strings.Contains(html, "旧红") {
 		t.Fatalf("基线属性页应含属性值旧标签「旧红」：%s", firstLine(html))
 	}
@@ -856,23 +730,17 @@ func TestAttributeChangeRebuildsBoundAttributePage(t *testing.T) {
 	}
 }
 
-// productTagsDoc 只渲染「商品名 + 商品标签」的详情模板：**不含集合组件**，
-// 因此该实例只登记 direct_content:product:{id}，不登记商品集合键 ——
-// 这样「逐商品键是否发出」与「集合键是否发出」不会互相掩盖。
 const productTagsDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}}," +
 	"\"root\":[{\"id\":\"p1\",\"type\":\"core.product\",\"props\":{" +
 	"\"source\":\"product\",\"titleField\":\"product.name\",\"subtitleField\":\"product.tags\",\"titleTag\":\"h2\"}}]}"
 
-// TestTagRecalcRebuildsBoundProductDetailPage 自动标签归属重算 → 归属**变化过的商品**的
-// 详情页必须重建（详情页登记的是 direct_content:product:{id}，只有逐商品键能命中它）。
-// 失败能力的落点：recalcTagTx 里 membershipDiff 那段逐商品入队摘掉即红。
 func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	xID := f.createProduct(t, "标签商品", "tag-item") // 售价 88
+	xID := f.createProduct(t, "标签商品", "tag-item")
 	tpl, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
 		EntityType: productcontract.EntityTypeProduct, Name: "标签详情页", ProjectID: f.projectID,
 		DraftDocument: json.RawMessage(productTagsDoc),
@@ -887,7 +755,7 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建详情实例失败: %v", err)
 	}
-	// 规则标签：先设成「1000~2000」——售价 88 的商品不命中。
+
 	tagName := "高价精选"
 	tag, err := f.products.CreateTag(ctx, &productdto.CreateTagReq{
 		ProjectID: f.projectID, Name: tagName, Slug: "premium",
@@ -897,13 +765,12 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建规则标签失败: %v", err)
 	}
-	// 消费掉装配期事件，再取基线。
+
 	f.dispatch(t)
 	if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); strings.Contains(html, tagName) {
 		t.Fatalf("基线详情页不该含未命中的标签名：%s", firstLine(html))
 	}
 
-	// 改规则让它命中该商品（88 落在 50~150）→ 归属变化 → 详情页必须重建。
 	ruleType := productenums.TagRulePriceRange
 	if _, err = f.products.UpdateTag(ctx, &productdto.UpdateTagReq{
 		ID: tag.ID, ProjectID: f.projectID, RuleType: &ruleType,
@@ -914,7 +781,7 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	if n := f.dispatch(t); n == 0 {
 		t.Fatalf("规则变更后 outbox 应有待消费事件")
 	}
-	// 机制证据：事件表里必须有一条指向**该商品**的 direct_content 键。
+
 	rows, err := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, xID)
 	if err != nil {
 		t.Fatalf("读取 outbox 失败: %v", err)
@@ -928,7 +795,7 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	if !found {
 		t.Fatalf("归属重算应为命中变化过的商品写 direct_content:product:%s（否则详情页不更新）", xID)
 	}
-	// 字节证据：详情页的线上产物出现标签名。
+
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		html := instanceActiveHTML(t, f.db, inst.ID, lang)
 		if !strings.Contains(html, tagName) {
@@ -937,39 +804,24 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	}
 }
 
-// —— 审计 ARCH-01 收口票：实体改名 → 引用它的商品详情页 ——
-//
-// 四个改名入口（分类 / 品牌 / 标签 / 属性组的 Update）在提交事务内，除实体键外
-// **逐引用商品**发 direct_content:product:{id}。没有这一步时：商品详情页登记的是
-// product:{id}，改名只发实体键命中不到它 —— 站点上表现为「改了分类名，商品页还是旧名」，
-// 且日志里什么都没有。
-//
-// 用例的目标产物只登记 direct_content:product:{id}（模板里没有集合组件），
-// 因此这件事不会被商品集合键掩盖。
-
-// renameFieldDoc 只渲染「商品名 + 指定商品字段」的模板（无集合组件）。
 func renameFieldDoc(field string) string {
 	return "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}},\"root\":" +
 		"[{\"id\":\"p1\",\"type\":\"core.product\",\"props\":{\"source\":\"product\"," +
 		"\"titleField\":\"product.name\",\"subtitleField\":\"" + field + "\",\"titleTag\":\"h2\"}}]}"
 }
 
-// TestEntityRenameRebuildsReferencingProductPages 五个「定义变更」入口各一条：
-// 分类 / 品牌 / 标签 / 属性组**改名**，以及属性**值**变更。变更后引用该实体的商品详情页
-// 在 zh-CN / en-US 两种语言上都必须更新。
 func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 	type renameCase struct {
 		name       string
 		entityType string
-		// field 模板里绑定的商品字段：分类 / 品牌走 related（含名称），
-		// 标签走 tags（展示名数组），属性组走 options（规格维度含组名与值标签）。
+
 		field string
-		// oldText / newText 变更前后必须出现在商品页里的文本（组名或值标签）。
+
 		oldText string
 		newText string
-		// create 建实体并返回 id + 「把该实体挂到商品上」的装配函数。
+
 		create func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq))
-		// change 执行定义变更（只改定义，不动引用关系）；入参是变更后的文本。
+
 		change func(t *testing.T, f *outboxFixture, entityID, newText string)
 	}
 	cases := []renameCase{
@@ -1055,8 +907,7 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 			},
 		},
 		{
-			// 属性**值**变更（SetAttributeValues）：值标签同样进 products.options，
-			// 因此与改组名是同一类失效面 —— 之前这里只发实体键，商品页停在旧值。
+
 			name: "属性值", entityType: productcontract.EntityTypeAttribute, field: "product.options",
 			oldText: "规格一", newText: "规格二",
 			create: func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq)) {
@@ -1098,7 +949,7 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 				t.Fatalf("创建商品失败: %v", err)
 			}
 			if tc.entityType == productcontract.EntityTypeAttribute {
-				// 建商品只生成无规格占位变体；规格页须有真实组合才投影 options。
+
 				if len(product.Variants) != 1 || len(optionMap(t, product.Variants[0])) != 0 {
 					t.Fatalf("属性测试前置：首变体应为空规格占位，实际 %+v", product.Variants)
 				}
@@ -1126,11 +977,10 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 			}
 			f.dispatch(t)
 
-			// 基线：产物里是变更前的文本。
 			if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); !strings.Contains(html, tc.oldText) {
 				t.Fatalf("%s：基线详情页应含「%s」：%s", tc.name, tc.oldText, firstLine(html))
 			}
-			// 机制证据的基线：建商品本身也会写一条 product:{id}，这里数的是**本次变更新增**的那条。
+
 			key := "product:" + product.ID
 			rowsBefore, lerr := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, product.ID)
 			if lerr != nil {
@@ -1146,7 +996,7 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 			if n := f.dispatch(t); n == 0 {
 				t.Fatalf("%s 变更后 outbox 应有待消费事件", tc.name)
 			}
-			// 机制证据：本次变更必须为引用它的商品**新增**一条 direct_content。
+
 			rows, lerr := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, product.ID)
 			if lerr != nil {
 				t.Fatalf("读取 outbox 失败: %v", lerr)
@@ -1161,7 +1011,7 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 				t.Fatalf("%s 变更应为引用它的商品新增 direct_content:%s（变更前 %d 条，变更后 %d 条）",
 					tc.name, key, beforeHits, afterHits)
 			}
-			// 字节证据：详情页两种语言都换成新文本。
+
 			for _, lang := range []string{"zh-CN", "en-US"} {
 				html := instanceActiveHTML(t, f.db, inst.ID, lang)
 				if !strings.Contains(html, tc.newText) {

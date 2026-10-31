@@ -1,10 +1,5 @@
 package builder
 
-// userforms_render_test.go — 访客账号表单组件的**产物级**验证。
-//
-// 组件包的测试覆盖 BuildView；模板对不对只能在编译产物里看：
-// Jet 里一个写错的变量通常渲染成空串而不是报错。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -14,7 +9,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// userFormsDoc 含一个账号表单节点的最小文档。
 func userFormsDoc(t *testing.T, props map[string]any) *Page {
 	t.Helper()
 	doc, err := json.Marshal(map[string]any{
@@ -31,7 +25,6 @@ func userFormsDoc(t *testing.T, props map[string]any) *Page {
 	return page
 }
 
-// TestUserFormsCompilesStaticJSONForms 组件无工程也能发布，凭据不进入产物。
 func TestUserFormsCompilesStaticJSONForms(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {

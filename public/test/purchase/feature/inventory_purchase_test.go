@@ -1,19 +1,3 @@
-// Package feature inventory 模块 feature 测试 —— 采购单与入库（issue #18）。
-//
-// 覆盖本票六条验收（真实 PostgreSQL + 生产迁移与 seed + 真实 service + 真实商品模块）：
-//  1. 可建采购单与采购行（SKU、数量、单价），已入库数量可原子递增；
-//  2. 采购单状态由「已入库数量 与 采购数量」推导；
-//  3. 登记入库后对应 SKU 库存增加并写流水（原因为采购入库）；
-//  4. 入库时以采购单价更新 SKU 成本价；
-//  5. 自家工厂走生产入库，无采购单，成本价手工填写；
-//  6. 后台可查某 SKU 的进货历史。
-//
-// 另覆盖三组容易踩的边界：
-//
-//	· 幂等 / 可重放保护 —— 同一个 requestId 重复登记只产生一张入库单，库存只加一次；
-//	· 超收与并发 —— 守卫写在 UPDATE 的 WHERE 里（不是先读后写），并发两次收满只成功一次；
-//	· 死线 —— 入库走的是 #16 的 ChangeStock（真源行锁 + 流水 + 原因字典 + 来源引用），
-//	  入库后可用量仍是 inventory_stocks 的真值，断言一律直查真源与流水，不读展示缓存。
 package feature
 
 import (
@@ -28,9 +12,6 @@ import (
 	purchaseenums "go_wp/internal/module/purchase/enums"
 )
 
-// —— 小工具 ——
-
-// mustPurchaseSource 建一个货源（采购单的来源就是 #17 的货源）。
 func mustPurchaseSource(t *testing.T, f *purchaseFixture, code, name, sourceType string) *purchasedto.SourceResp {
 	t.Helper()
 	res, err := f.purchase.CreateSource(context.Background(), &purchasedto.CreateSourceReq{
@@ -42,7 +23,6 @@ func mustPurchaseSource(t *testing.T, f *purchaseFixture, code, name, sourceType
 	return res
 }
 
-// mustProductPriced 建一个带售价的商品（用于断言「成本价更新不动售价」）。
 func mustProductPriced(t *testing.T, f *purchaseFixture, name string, price float64) *productdto.ProductResp {
 	t.Helper()
 	slug := fmt.Sprintf("%s-%d", strings.ToLower(name), slugSeq.Add(1))
@@ -55,7 +35,6 @@ func mustProductPriced(t *testing.T, f *purchaseFixture, name string, price floa
 	return p
 }
 
-// purchaseLine 造一条采购行（SKU × 数量 × 单价）。
 func purchaseLine(p *productdto.ProductResp, v *productdto.VariantResp, quantity int, unitPrice float64) purchasedto.PurchaseLineReq {
 	return purchasedto.PurchaseLineReq{
 		VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode,
@@ -63,7 +42,6 @@ func purchaseLine(p *productdto.ProductResp, v *productdto.VariantResp, quantity
 	}
 }
 
-// mustPurchaseOrder 建采购单并要求成功。
 func mustPurchaseOrder(t *testing.T, f *purchaseFixture, code, sourceID, warehouseID string,
 	lines []purchasedto.PurchaseLineReq) *purchasedto.PurchaseOrderResp {
 	t.Helper()
@@ -76,7 +54,6 @@ func mustPurchaseOrder(t *testing.T, f *purchaseFixture, code, sourceID, warehou
 	return res
 }
 
-// getPurchaseOrder 读采购单详情（失败即 fail）。
 func getPurchaseOrder(t *testing.T, f *purchaseFixture, id string) *purchasedto.PurchaseOrderResp {
 	t.Helper()
 	res, err := f.purchase.GetPurchaseOrder(context.Background(), &purchasedto.GetPurchaseOrderReq{ID: id})
@@ -86,7 +63,6 @@ func getPurchaseOrder(t *testing.T, f *purchaseFixture, id string) *purchasedto.
 	return res
 }
 
-// receiveLine 登记一条采购行的收货（返回原始错误，供拒绝路径断言）。
 func receiveLine(t *testing.T, f *purchaseFixture, orderID, lineID string, quantity int, requestID string) (
 	*purchasedto.ReceiptResp, error) {
 	t.Helper()
@@ -96,7 +72,6 @@ func receiveLine(t *testing.T, f *purchaseFixture, orderID, lineID string, quant
 	})
 }
 
-// mustReceiveLine 登记收货并要求成功。
 func mustReceiveLine(t *testing.T, f *purchaseFixture, orderID, lineID string, quantity int,
 	requestID string) *purchasedto.ReceiptResp {
 	t.Helper()
@@ -107,7 +82,6 @@ func mustReceiveLine(t *testing.T, f *purchaseFixture, orderID, lineID string, q
 	return res
 }
 
-// purchaseErr 断言业务错误（service 层用 enums 消息键当错误文本）。
 func purchaseErr(t *testing.T, err error, want string) {
 	t.Helper()
 	if err == nil {
@@ -118,7 +92,6 @@ func purchaseErr(t *testing.T, err error, want string) {
 	}
 }
 
-// lineReceivedIn 直读采购行的已入库数量（列真值，不走 service 推导）。
 func lineReceivedIn(t *testing.T, f *purchaseFixture, lineID string) int {
 	t.Helper()
 	var qty int
@@ -129,7 +102,6 @@ func lineReceivedIn(t *testing.T, f *purchaseFixture, lineID string) int {
 	return qty
 }
 
-// purchaseStatusIn 直读采购单状态列。
 func purchaseStatusIn(t *testing.T, f *purchaseFixture, orderID string) string {
 	t.Helper()
 	var status string
@@ -140,7 +112,6 @@ func purchaseStatusIn(t *testing.T, f *purchaseFixture, orderID string) string {
 	return status
 }
 
-// orderReceiptCount 某采购单已开的入库单数。
 func orderReceiptCount(t *testing.T, f *purchaseFixture, orderID string) int {
 	t.Helper()
 	var n int
@@ -151,7 +122,6 @@ func orderReceiptCount(t *testing.T, f *purchaseFixture, orderID string) int {
 	return n
 }
 
-// purchaseOrderCount 本工程采购单总数。
 func purchaseOrderCount(t *testing.T, f *purchaseFixture) int {
 	t.Helper()
 	var n int
@@ -162,7 +132,6 @@ func purchaseOrderCount(t *testing.T, f *purchaseFixture) int {
 	return n
 }
 
-// variantCostIn 直读商品侧成本价（跨模块列，断言必须直查）。
 func variantCostIn(t *testing.T, f *purchaseFixture, variantID string) *float64 {
 	t.Helper()
 	var row struct {
@@ -175,7 +144,6 @@ func variantCostIn(t *testing.T, f *purchaseFixture, variantID string) *float64 
 	return row.Cost
 }
 
-// purchaseMovement 一条入库流水（只取本票关心的列）。
 type purchaseMovement struct {
 	Direction      string
 	ReasonCode     string
@@ -188,7 +156,6 @@ type purchaseMovement struct {
 	QuantityAfter  int
 }
 
-// latestMovement 某变体最近一条流水。
 func latestMovement(t *testing.T, f *purchaseFixture, variantID string) purchaseMovement {
 	t.Helper()
 	row := purchaseMovement{}
@@ -201,8 +168,6 @@ func latestMovement(t *testing.T, f *purchaseFixture, variantID string) purchase
 	return row
 }
 
-// TestPurchaseOrderCreateWithAtomicReceive 验收 1 + 验收 2：
-// 可建采购单与采购行，已入库数量原子递增；采购单状态由「已入库数量 与 采购数量」推导。
 func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -216,7 +181,6 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	p2 := mustProduct(t, f, "Mug")
 	v2 := f.firstVariant(t, p2.ID)
 
-	// 入参校验：空行 / 重复 SKU / 数量 / 单价 / 来源。
 	_, err := f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-EMPTY", SourceID: src.ID, Lines: nil,
 	})
@@ -243,7 +207,6 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	})
 	purchaseErr(t, err, purchaseenums.ErrPurchaseSourceRequired)
 
-	// 正常下单：单头 + 结构化行；行合计与状态（未入库）。
 	order := mustPurchaseOrder(t, f, "po-2026-001", src.ID, wh.ID, []purchasedto.PurchaseLineReq{
 		purchaseLine(p1, v1, 10, 12.5),
 		purchaseLine(p2, v2, 4, 3.25),
@@ -254,8 +217,7 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if order.Status != purchaseenums.PurchaseStatusOrdered {
 		t.Fatalf("新建采购单状态应为 ordered，实际 %q", order.Status)
 	}
-	// 未收货的单一律是「该收货的那一档」：进度 0%、未到量 = 订购量。
-	// 两个派生数字由 service 给（模板不做减法与除法），这里一并钉住。
+
 	if order.ProgressPercent != 0 || order.OutstandingQuantity != 14 {
 		t.Fatalf("未收货的单应为 0%% 且未到量 = 订购量，实际 %d%% / %d",
 			order.ProgressPercent, order.OutstandingQuantity)
@@ -269,13 +231,13 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if order.SourceName != "苏州通达电子" || order.WarehouseName != "苏州仓" {
 		t.Fatalf("采购单应带来源与收货仓展示信息：%+v", order)
 	}
-	// 单号工程内唯一（大小写不敏感）。
+
 	_, err = f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-2026-001", SourceID: src.ID,
 		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 1, 1)},
 	})
 	purchaseErr(t, err, purchaseenums.ErrPurchaseCodeTaken)
-	// 单号非法。
+
 	_, err = f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO 2026/001", SourceID: src.ID,
 		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 1, 1)},
@@ -283,7 +245,7 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	purchaseErr(t, err, purchaseenums.ErrPurchaseCodeInvalid)
 
 	line1, line2 := order.Lines[0], order.Lines[1]
-	// 同一请求里重复提交同一采购行必须拒绝，避免一张入库单出现重复行并让单价 / 数量语义不明确。
+
 	_, err = f.purchase.RegisterReceipt(ctx, &purchasedto.RegisterReceiptReq{
 		ProjectID: f.projectID, OrderID: order.ID, RequestID: "REQ-DUP-LINE",
 		Lines: []purchasedto.ReceiptLineReq{
@@ -292,7 +254,6 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	})
 	purchaseErr(t, err, purchaseenums.ErrReceiptLineDuplicate)
 
-	// 分批入库：先收 6（部分入库），已入库数量落库、状态跟着变。
 	mustReceiveLine(t, f, order.ID, line1.ID, 6, "REQ-A1")
 	if got := lineReceivedIn(t, f, line1.ID); got != 6 {
 		t.Fatalf("已入库数量应为 6（原子递增的结果），实际 %d", got)
@@ -308,7 +269,6 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 		t.Fatalf("单据汇总不正确：收到 %d / 合计 %d", got.ReceivedQuantity, got.TotalQuantity)
 	}
 
-	// 超收拒绝：余量只有 4，收 5 被拒（守卫在 UPDATE 的 WHERE 里），且记账与库存都不动。
 	beforeStock := f.stockQty(t, v1.ID, wh.ID)
 	_, err = receiveLine(t, f, order.ID, line1.ID, 5, "REQ-A2")
 	purchaseErr(t, err, purchaseenums.ErrReceiptOverReceive)
@@ -318,13 +278,12 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if got := f.stockQty(t, v1.ID, wh.ID); got != beforeStock {
 		t.Fatalf("超收被拒后库存不应变化，实际 %d（原 %d）", got, beforeStock)
 	}
-	// 同一次提交里行不存在 / 数量非法。
+
 	_, err = receiveLine(t, f, order.ID, "00000000-0000-0000-0000-000000000000", 1, "REQ-A3")
 	purchaseErr(t, err, purchaseenums.ErrPurchaseLineNotFound)
 	_, err = receiveLine(t, f, order.ID, line1.ID, 0, "REQ-A4")
 	purchaseErr(t, err, purchaseenums.ErrReceiptQuantityInvalid)
 
-	// 收满两张行 → 状态推导为 received。
 	mustReceiveLine(t, f, order.ID, line1.ID, 4, "REQ-A5")
 	if got := purchaseStatusIn(t, f, order.ID); got != purchaseenums.PurchaseStatusPartial {
 		t.Fatalf("还有一行没收满时状态应保持 partial，实际 %q", got)
@@ -333,11 +292,10 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if got := purchaseStatusIn(t, f, order.ID); got != purchaseenums.PurchaseStatusReceived {
 		t.Fatalf("全部收满后状态应为 received，实际 %q", got)
 	}
-	// 已收满的单不再受理。
+
 	_, err = receiveLine(t, f, order.ID, line2.ID, 1, "REQ-A7")
 	purchaseErr(t, err, purchaseenums.ErrReceiptOrderDone)
 
-	// 状态筛选维度可用。
 	list, lerr := f.purchase.ListPurchaseOrders(ctx, &purchasedto.ListPurchaseOrderReq{
 		ProjectID: f.projectID, Status: purchaseenums.PurchaseStatusReceived,
 	})
@@ -349,13 +307,11 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	})
 	purchaseErr(t, lerr, purchaseenums.ErrPurchaseStatusInvalid)
 
-	// 数据层兜底：已入库数量不可能超过采购数量（绕过 service 直写也写不进去）。
 	if werr := f.db.Exec("UPDATE inventory_purchase_order_lines SET received_quantity = quantity + 1 WHERE id = ?",
 		line1.ID).Error; werr == nil {
 		t.Fatalf("已入库数量超过采购数量的直写应被 CHECK 约束拒绝")
 	}
 
-	// 已入库的行不可再改（改了状态推导就不成立）；未入库的单可以整行替换。
 	_, err = f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
 		ID: order.ID, ReplaceLines: true,
 		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 20, 9)},
@@ -379,8 +335,6 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	}
 }
 
-// TestPurchaseReceiptIncreasesStockAndWritesMovement 验收 3：
-// 登记入库后对应 SKU 库存增加并写流水（原因为采购入库，来源引用 = 采购单号）。
 func TestPurchaseReceiptIncreasesStockAndWritesMovement(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -405,11 +359,10 @@ func TestPurchaseReceiptIncreasesStockAndWritesMovement(t *testing.T) {
 		t.Fatalf("正常入库后单据状态应为 posted，实际 %q", res.Status)
 	}
 
-	// 真源加上了（直查 inventory_stocks，不读展示缓存）。
 	if got := f.stockQty(t, v.ID, wh.ID); got != 5 {
 		t.Fatalf("入库 5 后真源应为 5，实际 %d", got)
 	}
-	// 流水：方向 in + 原因 purchase_in + 来源 purchase_order/采购单号 + 批次号一致。
+
 	if got := countMovements(t, f, v.ID); got != before+1 {
 		t.Fatalf("一次入库应写一条流水，实际 %d（原 %d）", got, before)
 	}
@@ -429,11 +382,11 @@ func TestPurchaseReceiptIncreasesStockAndWritesMovement(t *testing.T) {
 	if mv.BatchID != res.MovementBatchID {
 		t.Fatalf("流水批次号应与入库单一致：流水 %s / 单据 %s", mv.BatchID, res.MovementBatchID)
 	}
-	// 商品侧库存展示缓存（提交之后的独立同步）也跟上了。
+
 	if total := trueSourceTotal(t, f, v.ID); total != 5 {
 		t.Fatalf("商品侧展示缓存应被同步为 5，实际 %d", total)
 	}
-	// 第二批入库：同一行继续累加（已入库数量是累加值，不是覆盖值）。
+
 	mustReceiveLine(t, f, order.ID, order.Lines[0].ID, 3, "REQ-M2")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 8 {
 		t.Fatalf("第二批入库后真源应为 8，实际 %d", got)
@@ -446,8 +399,6 @@ func TestPurchaseReceiptIncreasesStockAndWritesMovement(t *testing.T) {
 	}
 }
 
-// TestPurchaseReceiptUpdatesVariantCost 验收 4：
-// 入库时以采购单价更新 SKU 成本价（本次到货价可覆盖采购价；售价不动）。
 func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -461,7 +412,6 @@ func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 	order := mustPurchaseOrder(t, f, "PO-COST-1", src.ID, wh.ID,
 		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 6, 7.5)})
 
-	// 采购单价写进成本价。
 	res := mustReceiveLine(t, f, order.ID, order.Lines[0].ID, 3, "REQ-C1")
 	if !res.CostUpdated || len(res.Items) != 1 || !res.Items[0].CostUpdated {
 		t.Fatalf("入库后成本价应已写回：%+v", res)
@@ -469,13 +419,12 @@ func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 	if cost := variantCostIn(t, f, v.ID); cost == nil || *cost != 7.5 {
 		t.Fatalf("成本价应为采购单价 7.5，实际 %v", cost)
 	}
-	// 售价不被动（成本口径与售价口径互不干扰）。
+
 	if detail, derr := f.products.Get(ctx, &productdto.GetReq{ID: p.ID}); derr != nil ||
 		detail.Variants[0].Price != 199 {
 		t.Fatalf("入库不应改动售价：%v %+v", derr, detail)
 	}
 
-	// 本批实际到货价覆盖采购单价（同一张单的第一行快照仍是原采购价）。
 	override := 8.25
 	res2, err := f.purchase.RegisterReceipt(ctx, &purchasedto.RegisterReceiptReq{
 		ProjectID: f.projectID, OrderID: order.ID, RequestID: "REQ-C2",
@@ -492,9 +441,7 @@ func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 	if cost := variantCostIn(t, f, v.ID); cost == nil || *cost != 8.25 {
 		t.Fatalf("成本价应被本次到货价覆盖为 8.25，实际 %v", cost)
 	}
-	// 进货历史里的单价是「当时快照」，两行不同价可分别回溯（验收 6 的数据基础）。
-	// 历史的 SKU 维度是**仓库侧裸码**：入库单行落库时就按目标仓归一了（带前缀的商品侧编码
-	// 不落仓库侧单据），所以这里必须用剥掉仓码前缀的那个编码去查。
+
 	history, herr := f.purchase.ListPurchaseHistory(ctx, &purchasedto.ListPurchaseHistoryReq{
 		ProjectID: f.projectID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 	})
@@ -503,8 +450,6 @@ func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 	}
 }
 
-// TestProductionInboundFromOwnFactory 验收 5：
-// 自家工厂走生产入库，无采购单，成本价手工填写。
 func TestProductionInboundFromOwnFactory(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -517,7 +462,6 @@ func TestProductionInboundFromOwnFactory(t *testing.T) {
 	p := mustProductPriced(t, f, "Chair", 599)
 	v := f.firstVariant(t, p.ID)
 
-	// 无采购单 ✓ / 成本价手工填写 ✓ / 来源必须是内部货源。
 	cost := 128.5
 	res, err := f.purchase.RegisterProductionInbound(ctx, &purchasedto.ProductionInboundReq{
 		ProjectID: f.projectID, SourceID: factory.ID, WarehouseID: wh.ID,
@@ -536,7 +480,7 @@ func TestProductionInboundFromOwnFactory(t *testing.T) {
 	if purchaseOrderCount(t, f) != 0 {
 		t.Fatalf("生产入库不应产生采购单")
 	}
-	// 库存 + 流水（原因 = 生产入库，来源引用 = 本入库单号）。
+
 	if got := f.stockQty(t, v.ID, wh.ID); got != 7 {
 		t.Fatalf("生产入库 7 后真源应为 7，实际 %d", got)
 	}
@@ -545,34 +489,31 @@ func TestProductionInboundFromOwnFactory(t *testing.T) {
 		mv.SourceType != purchaseenums.MovementSourceProduction || mv.SourceRef != res.Code {
 		t.Fatalf("生产入库流水不正确：%+v（单据 %s）", mv, res.Code)
 	}
-	// 成本价用手工填的那个数。
+
 	if got := variantCostIn(t, f, v.ID); got == nil || *got != 128.5 {
 		t.Fatalf("生产入库成本价应为手工填写的 128.5，实际 %v", got)
 	}
 
-	// 外部供应商不能走生产入库（它的路径是采购单）。
 	_, err = f.purchase.RegisterProductionInbound(ctx, &purchasedto.ProductionInboundReq{
 		ProjectID: f.projectID, SourceID: external.ID, VariantID: v.ID, Quantity: 1, UnitCost: &cost,
 	})
 	purchaseErr(t, err, purchaseenums.ErrProductionSourceNotInternal)
-	// 成本价必须手工填写（缺了就写不出成本口径）。
+
 	_, err = f.purchase.RegisterProductionInbound(ctx, &purchasedto.ProductionInboundReq{
 		ProjectID: f.projectID, SourceID: factory.ID, VariantID: v.ID, Quantity: 1,
 	})
 	purchaseErr(t, err, purchaseenums.ErrProductionCostInvalid)
-	// 变体必填。
+
 	_, err = f.purchase.RegisterProductionInbound(ctx, &purchasedto.ProductionInboundReq{
 		ProjectID: f.projectID, SourceID: factory.ID, Quantity: 1, UnitCost: &cost,
 	})
 	purchaseErr(t, err, purchaseenums.ErrProductionVariantRequired)
-	// 库存在失败路径上没有被加上去。
+
 	if got := f.stockQty(t, v.ID, wh.ID); got != 7 {
 		t.Fatalf("被拒绝的生产入库不应改动库存，实际 %d", got)
 	}
 }
 
-// TestPurchaseHistoryBySKU 验收 6：
-// 后台可查某 SKU 的进货历史（采购收货与生产入库都在同一张历史里）。
 func TestPurchaseHistoryBySKU(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -598,12 +539,11 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("生产入库失败: %v", err)
 	}
-	// 另一个 SKU 的进货不应混进来。
+
 	order2 := mustPurchaseOrder(t, f, "PO-HIS-2", src.ID, wh.ID,
 		[]purchasedto.PurchaseLineReq{purchaseLine(other, ov, 1, 2)})
 	mustReceiveLine(t, f, order2.ID, order2.Lines[0].ID, 1, "REQ-H2")
 
-	// 按 SKU 查历史的维度是**仓库侧裸码**（入库单行落的是裸码），商品侧 v.SKUCode 带前缀。
 	bare := bareSKU(v.SKUCode, wh.Code)
 	history, err := f.purchase.ListPurchaseHistory(ctx, &purchasedto.ListPurchaseHistoryReq{
 		ProjectID: f.projectID, SKUCode: bare,
@@ -635,7 +575,7 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 	if !prices[11.5] || !prices[3.25] {
 		t.Fatalf("进货历史应保留当时的单价快照：%+v", prices)
 	}
-	// 按变体 id 查等价；按货源收窄只留对应来源。
+
 	byVariant, err := f.purchase.ListPurchaseHistory(ctx, &purchasedto.ListPurchaseHistoryReq{
 		ProjectID: f.projectID, VariantID: v.ID,
 	})
@@ -648,7 +588,7 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 	if err != nil || len(bySource) != 1 || bySource[0].Kind != purchaseenums.ReceiptKindProduction {
 		t.Fatalf("按货源收窄进货历史失败：%v %+v", err, bySource)
 	}
-	// 另一个 SKU 的历史独立。
+
 	otherBare := bareSKU(ov.SKUCode, wh.Code)
 	otherHistory, err := f.purchase.ListPurchaseHistory(ctx, &purchasedto.ListPurchaseHistoryReq{
 		ProjectID: f.projectID, SKUCode: otherBare,
@@ -658,8 +598,6 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 	}
 }
 
-// TestPurchaseReceiptIdempotency 幂等 / 可重放保护：
-// 同一个幂等键重复登记只产生一张入库单，库存与已入库数量都只变一次。
 func TestPurchaseReceiptIdempotency(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -693,7 +631,6 @@ func TestPurchaseReceiptIdempotency(t *testing.T) {
 		t.Fatalf("重放不应产生第二条流水，实际 %d", got)
 	}
 
-	// 不给幂等键时每次都是一张新单（幂等保护不是「一刀切拒绝重复提交」）。
 	mustReceiveLine(t, f, order.ID, order.Lines[0].ID, 3, "")
 	mustReceiveLine(t, f, order.ID, order.Lines[0].ID, 3, "")
 	if got := orderReceiptCount(t, f, order.ID); got != 3 {
@@ -702,10 +639,10 @@ func TestPurchaseReceiptIdempotency(t *testing.T) {
 	if got := lineReceivedIn(t, f, order.Lines[0].ID); got != 10 {
 		t.Fatalf("三张单合计应收到 10，实际 %d", got)
 	}
-	// 幂等键非法直接拒绝。
+
 	_, err = receiveLine(t, f, order.ID, order.Lines[0].ID, 1, "bad key!")
 	purchaseErr(t, err, purchaseenums.ErrReceiptRequestInvalid)
-	// 生产入库同样受幂等键保护。
+
 	factory := mustPurchaseSource(t, f, "OWN_FACTORY", "自家杭州工厂", purchaseenums.SourceTypeInternal)
 	cost := 1.0
 	makeProd := func() (*purchasedto.ReceiptResp, error) {
@@ -728,9 +665,6 @@ func TestPurchaseReceiptIdempotency(t *testing.T) {
 	}
 }
 
-// TestPurchaseReceiptConcurrentNoDoubleReceive 并发的原子递增：
-// 两个请求同时把同一行收满，只能有一个成功 —— 守卫写在 UPDATE 的 WHERE 里，
-// 不是「先读余量再写」，因此不存在「都读到还有余量」的窗口。
 func TestPurchaseReceiptConcurrentNoDoubleReceive(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
@@ -770,7 +704,7 @@ func TestPurchaseReceiptConcurrentNoDoubleReceive(t *testing.T) {
 		t.Fatalf("并发收满应恰好成功一次，实际 %d 次（错误：%v）", success, errs)
 	}
 	for _, err := range errs {
-		// 输的那一方要么在锁内被超收守卫拒，要么在锁外看到单据已收满。
+
 		if err.Error() != purchaseenums.ErrReceiptOverReceive &&
 			err.Error() != purchaseenums.ErrReceiptOrderDone {
 			t.Fatalf("并发失败方的错误应为超收 / 已收满，实际 %v", err)
@@ -793,26 +727,13 @@ func TestPurchaseReceiptConcurrentNoDoubleReceive(t *testing.T) {
 	}
 }
 
-// TestFinishedAndCancelledPurchaseOrderAreNotEditable 终态采购单不可编辑（B05）。
-//
-// 缺陷形态：状态机 assertPurchaseTransition 只约束**流转**，不约束**编辑**。
-// 于是 finished / cancelled 的单仍能被 UpdatePurchaseOrder 改 —— 而
-// 「已入库的行不可再改」那条只挡 ReceivedQuantity > 0：
-//
-//   · cancelled 且从未入库：ReceivedQuantity 全是 0 → 整行替换放行 →
-//     一张已结案的取消单被改成可继续流转的形状，状态却还是 cancelled；
-//   · finished：结案意味着数量与金额已确认，改它就是改历史。
-//
-// 判据是"这张单还允不允许被编辑"，而不是"改的是哪个字段" ——
-// 按字段分档会出现"改备注可以、改数量不行"这种谁都记不住的半开边界。
 func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
 	f := newPurchaseFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 建仓要在建商品之前：商品变体要落到某条货行上，而没有默认仓时
-	// mustProduct 会以 ErrWarehouseDefaultMissing 失败。
+
 	wh := f.createWarehouse(t, "TW", "终态测试仓", true)
 	p1 := mustProduct(t, f, "终态采购商品")
 	v1 := f.firstVariant(t, p1.ID)
@@ -824,7 +745,6 @@ func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
 		t.Fatalf("取消采购单失败: %v", err)
 	}
 
-	// ① 已取消的单不能改行。
 	_, err := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
 		ID: cancelled.ID, ReplaceLines: true,
 		Lines: []purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 1, 10)},
@@ -834,7 +754,6 @@ func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
 	}
 	purchaseErr(t, err, purchaseenums.ErrPurchaseStatusInvalid)
 
-	// ② 也不能改非行字段。
 	note := "偷偷改一下"
 	if _, uerr := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{
 		ID: cancelled.ID, Remark: &note,
@@ -842,10 +761,9 @@ func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
 		t.Fatal("已取消的采购单不该还能改备注")
 	}
 
-	// ③ 已结案的单同样不可改：下单 → 收满 → 结案。
 	finished := mustPurchaseOrder(t, f, "PO-2026-FIN", src.ID, wh.ID,
 		[]purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 3, 10)})
-	// 建单默认就是 ordered（AsDraft 才停 draft），无需再下单。
+
 	for i, line := range finished.Lines {
 		mustReceiveLine(t, f, finished.ID, line.ID, line.Quantity, "FIN-REQ-"+string(rune('A'+i)))
 	}
@@ -858,7 +776,6 @@ func TestFinishedAndCancelledPurchaseOrderAreNotEditable(t *testing.T) {
 		t.Fatal("已结案的采购单不该还能改")
 	}
 
-	// ④ 反证：草稿单仍可改（证明不是"全都拒"）。
 	draft := mustPurchaseOrder(t, f, "PO-2026-DFT", src.ID, wh.ID,
 		[]purchasedto.PurchaseLineReq{purchaseLine(p1, v1, 2, 10)})
 	if _, derr := f.purchase.UpdatePurchaseOrder(ctx, &purchasedto.UpdatePurchaseOrderReq{

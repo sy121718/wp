@@ -8,14 +8,12 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// PublicVariants 按工程读取已发布商品的实时事实，不经过构建器，不读取成本。
 func (s *Service) PublicVariants(ctx context.Context, req *productdto.PublicVariantsReq) ([]productdto.PublicVariantResp, error) {
 	ids, err := req.IDs()
 	if err != nil {
 		return nil, err
 	}
-	// 访客侧只取四列（id / product_id / price / enabled）：这条路径上没有任何代码读
-	// 成本价、仓库引用或选项，全行读取只会把不该出现在访客进程里的列一起搬进来。
+
 	variants, err := s.m.ListVariantPublicFacts(ctx, ids, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -24,7 +22,7 @@ func (s *Service) PublicVariants(ctx context.Context, req *productdto.PublicVari
 	for _, v := range variants {
 		productIDs = append(productIDs, v.ProductID)
 	}
-	// 这一屏只判「商品是否已发布」，不需要商品行本身：走两列投影，不搬描述与元数据。
+
 	products, err := s.m.ListStatusFactsByIDs(ctx, dedupeNonEmpty(productIDs), req.ProjectID)
 	if err != nil {
 		return nil, err

@@ -2,10 +2,6 @@ package migrations
 
 import "sync"
 
-// register_mail_automation_frequency.go — 623：触发频率与「回信即退出」两列 + 频率闸门索引。
-//
-// 判据是「两列 + 索引都在」而不是「表存在」：mail_automations 从 131 起就在，
-// 只看表名会让这条迁移对既有库永久跳过。
 func registerMailAutomationFrequency() {
 	registerMailAutomationFrequencyOnce.Do(registerMailAutomationFrequencyMigration)
 }

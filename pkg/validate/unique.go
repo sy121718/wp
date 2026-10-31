@@ -11,8 +11,6 @@ import (
 
 var columnNamePattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-// IsUnique 检查字段值是否唯一（不存在）。
-// fieldMap 为字段白名单映射：业务字段 -> 数据库列名。
 func IsUnique(db *gorm.DB, model any, field string, value any, fieldMap map[string]string) (bool, error) {
 	column, err := resolveColumn(field, fieldMap)
 	if err != nil {
@@ -29,8 +27,6 @@ func IsUnique(db *gorm.DB, model any, field string, value any, fieldMap map[stri
 	return count == 0, nil
 }
 
-// IsExists 检查字段值是否存在。
-// fieldMap 为字段白名单映射：业务字段 -> 数据库列名。
 func IsExists(db *gorm.DB, model any, field string, value any, fieldMap map[string]string) (bool, error) {
 	column, err := resolveColumn(field, fieldMap)
 	if err != nil {
@@ -47,8 +43,6 @@ func IsExists(db *gorm.DB, model any, field string, value any, fieldMap map[stri
 	return count > 0, nil
 }
 
-// IsUniqueExclude 排除当前记录后检查唯一性（用于更新场景）。
-// fieldMap 为字段白名单映射：业务字段 -> 数据库列名。
 func IsUniqueExclude(db *gorm.DB, model any, field string, value any, excludeID uint, fieldMap map[string]string) (bool, error) {
 	column, err := resolveColumn(field, fieldMap)
 	if err != nil {
@@ -65,8 +59,6 @@ func IsUniqueExclude(db *gorm.DB, model any, field string, value any, excludeID 
 	return count == 0, nil
 }
 
-// IsUniqueExcludeField 排除指定字段后检查唯一性。
-// fieldMap 为字段白名单映射：业务字段 -> 数据库列名。
 func IsUniqueExcludeField(db *gorm.DB, model any, field string, value any, excludeField string, excludeValue any, fieldMap map[string]string) (bool, error) {
 	column, err := resolveColumn(field, fieldMap)
 	if err != nil {

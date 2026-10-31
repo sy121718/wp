@@ -1,22 +1,5 @@
 package aihttp
 
-// ai_sessions_page_render_test.go — AI 会话页整页失败出口的回归护栏。
-//
-// 被守的边界（AGENTS.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-// 规范样板 navigation_page_handle.go:290-317）：
-//
-//  1. 主数据（会话清单 ListSessionsFiltered）读不到时仍是**这一页**：500 + text/html +
-//     no-store + 完整页壳（此前走 shell.PageError → pkg/response 的 ErrorWithMessage，
-//     浏览器拿到的是一段 JSON，页壳、侧栏、标题全丢）；
-//  2. 失败优先空态：失败时不渲染标签区（指标卡 / 趋势 / 列表 / 供应商卡片）—— 那些块的
-//     数据本次一条都没读到，零值渲染出来与「真的是 0 用量」长得一样；
-//  3. 文案按请求语言归口（无词条 → 模块中文兜底），驱动原文只进日志，页面上不出原样与
-//     HTML 转义两种形态，也不出裸 key；
-//  4. 权限是事实不是渲染产物：失败页仍按真实权限集合计算 CanViewModels / CanViewSessions。
-//
-// 模板取自 templates/（与线上同一份），只有会话服务是替身 —— SessionPageHandle 的
-// sessionServicePort 收窄成窄接口，就是为了让失败 / 空态 / 有数据这三档能在不连库时真跑一遍。
-
 import (
 	"context"
 	"errors"
@@ -47,36 +30,20 @@ import (
 )
 
 const (
-	// 与 shell 的 context 键同值。这里写字符串常量而不引 shell 包标识符：
-	// check-shell-migration.sh 的 test 桶基线只许下降，测试里每多一个 shell.* 都是一处使用点。
 	aiSessionsRenderPermKey   = "perm_set"
 	aiSessionsRenderButtonKey = "button_set"
 
-	// 供应商卡片上的隐藏域借的是基座注入的 csrf_token，所以整页必须有**非空**的会话 CSRF：
-	// 会话名与 token 值都写死，断言里拿它跟页面基座（layout 的 hx-headers）逐字比对。
 	aiSessionsRenderSessionName = "ai-sessions-render-test"
 	aiSessionsRenderCSRF        = "render-test-csrf-token"
 )
 
-// aiSessionsPageTestLogDirs 记录每个用例自己的日志目录（t.TempDir() 下）。
-//
-// logger 是**包级全局**配置（pkg/logger/manager.go:57-64 的 cfg/inited + 场景 logger 缓存）：
-// 本包用例串行执行（全文件无 t.Parallel()），每次装配都把 logger.Init 指到本用例的目录，
-// 断言因此只看得见本次请求写下的行 —— 共享目录下躺着历史运行的行，
-// 「日志里找得到原文」这种断言在本次根本没写日志时也会通过。
 var aiSessionsPageTestLogDirs sync.Map
 
-// aiSessionsRenderStub 会话服务替身。
-//
-// 每个方法都写出来（而不是嵌入接口留 nil）：嵌入的 nil 接口一旦被调用就是 panic，
-// 失败信息会指向替身自己，掩盖被测行为。用例会走到的只有列表 / 看板 / 筛选三组。
 type aiSessionsRenderStub struct {
 	rows    []aidto.Session
 	total   int64
 	listErr error
 
-	// 读数据的调用计数：失败档要证明「成功路径的取数一行都没跑」—— 只看响应证明不了，
-	// 一个顺手渲染了空看板的失败页在断言里与短路版长得一样。
 	usageCalls   int
 	trendCalls   int
 	optionsCalls int
@@ -102,8 +69,6 @@ func (s *aiSessionsRenderStub) SessionUsageOf(context.Context, aidto.SessionQuer
 	return aidto.SessionUsage{}, nil
 }
 
-// Series / Providers / Models / Creators 都给**非 nil 空切片**：模板对这几块用 len()，
-// nil 会让渲染在那一行中断（现象是 HTTP 200 + 之后整块 HTML 消失，见 internal/templates/CLAUDE.md）。
 func (s *aiSessionsRenderStub) SessionTrend(context.Context, aidto.SessionQuery, int) (aidto.SessionTrend, error) {
 	s.trendCalls++
 	return aidto.SessionTrend{Series: []aidto.TrendSeries{}}, nil
@@ -150,34 +115,27 @@ func (s *aiSessionsRenderStub) RecentDialogue(context.Context, string, int, int6
 	return nil, errors.New("aiSessionsRenderStub: 用例不读最近对话")
 }
 
-// aiSessionsRenderProviders 供应商替身：空列表（模型标签渲染自己的空态，不碰库）。
 type aiSessionsRenderProviders struct{}
 
 func (aiSessionsRenderProviders) ListProviders(context.Context) ([]aidto.Provider, error) {
 	return []aidto.Provider{}, nil
 }
 
-// aiSessionsRenderProvidersWithCard 供应商替身：给一条记录 —— 整页就会 include
-// provider_card.html（卡片是「借基座键」的那一侧，必须能被单独构造出来）。
 type aiSessionsRenderProvidersWithCard struct{ p aidto.Provider }
 
 func (s aiSessionsRenderProvidersWithCard) ListProviders(context.Context) ([]aidto.Provider, error) {
 	return []aidto.Provider{s.p}, nil
 }
 
-// newAISessionsPageTestRouter 装配真实 Jet 渲染与真实页壳，只有会话服务是替身。
 func newAISessionsPageTestRouter(t *testing.T, svc sessionServicePort) *gin.Engine {
 	t.Helper()
 	return newAISessionsPageTestRouterWithProviders(t, svc, aiSessionsRenderProviders{})
 }
 
-// newAISessionsPageTestRouterWithProviders 同上，但可换供应商替身。
 func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePort, providers providerLister) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	// 本用例独有的日志目录：断言按 t.Name() 取回（见 aiSessionsTestLogDir），
-	// logger.Init 会清空场景 logger 缓存并按新配置重建，所以这里的目录确实生效。
 	logDir := filepath.Join(t.TempDir(), "logs")
 	aiSessionsPageTestLogDirs.Store(t.Name(), logDir)
 	logConf := viper.New()
@@ -185,8 +143,7 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 	if err := logger.Init(logConf); err != nil {
 		t.Fatal(err)
 	}
-	// 收尾把全局 logger 关掉：否则句柄留在已删除的临时目录上，下一个用例若忘了 Init
-	// 就会把行写进 gone 目录（读日志的断言于是变成「什么都没读到」）。
+
 	t.Cleanup(func() { _ = logger.Close() })
 	if err := auth.Init(nil); err != nil {
 		t.Fatal(err)
@@ -194,8 +151,7 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	// 会话 + 预置 CSRF：adminui.Prepare 的 csrf_token 来自会话（builtin.GetCSRFToken），
-	// 没有会话时它注入空串 —— 那样「卡片隐藏域非空」这条断言就永远测不到东西。
+
 	store := cookie.NewStore([]byte("ai-sessions-page-render-test-secret-32b"))
 	router.Use(sessions.Sessions(aiSessionsRenderSessionName, store))
 	router.Use(func(c *gin.Context) {
@@ -205,18 +161,16 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 				t.Fatal(err)
 			}
 		}
-		// 权限是事实：失败页也要按真实集合算 CanView*，这里给两个读权限。
+
 		c.Set(aiSessionsRenderPermKey, map[string]bool{"ai:session_list": true, "ai:provider_list": true})
-		// 按钮码给全：卡片的保存表单在 {{if canSave}} 里，按钮码为空时那张表单（连带它的
-		// csrf_token 隐藏域）根本不渲染 —— 断言会退化成「没东西可测」。
+
 		c.Set(aiSessionsRenderButtonKey, map[string]bool{
 			"ai.provider_save": true, "ai.provider_status": true, "ai.provider_delete": true,
 		})
 		c.Next()
 	})
 	handle := NewSessionPageHandle(svc, providers)
-	// PageSlot 是页面出口的装配点，不只是「模板名」：pageview.Render / pageview.Fail
-	// 都从上下文里取它（缺了就是「视图出口未装配」→ 500）。
+
 	router.GET("/admin/ai/sessions", adminui.PageSlot(SessionsPageTemplate), handle.SessionsPage)
 	return router
 }
@@ -226,8 +180,6 @@ func requestAISessionsPage(t *testing.T, svc sessionServicePort) *httptest.Respo
 	return requestAISessionsPageLang(t, svc, "")
 }
 
-// requestAISessionsPageLang 同上，但带 ?lang= 语言覆盖（pkg/response 的协商顺序：
-// cookie → query lang → Accept-Language，测试用 query 这一档最直接）。
 func requestAISessionsPageLang(t *testing.T, svc sessionServicePort, lang string) *httptest.ResponseRecorder {
 	t.Helper()
 	i18n.InjectForTest(nil, nil)
@@ -243,7 +195,6 @@ func requestAISessionsPageLang(t *testing.T, svc sessionServicePort, lang string
 	return rec
 }
 
-// requestAISessionsPageWithProviders 同上，但换一个供应商替身（整页会带上供应商卡片）。
 func requestAISessionsPageWithProviders(t *testing.T, svc sessionServicePort, providers providerLister) *httptest.ResponseRecorder {
 	t.Helper()
 	i18n.InjectForTest(nil, nil)
@@ -255,12 +206,6 @@ func requestAISessionsPageWithProviders(t *testing.T, svc sessionServicePort, pr
 	return rec
 }
 
-// TestAISessionsPageMainListFailureReturnsJSON 主数据读不到：JSON 错误体 + 500，
-// 且成功路径的取数一行都不跑（短路，而不是「渲染一个空的成功页」）。
-//
-// **失败不渲染页壳**（用户裁定：所有提示只需要一个提示）：从前这里渲染「同页完整 HTML + 500」，
-// 同一张模板要维护两套必需键，而失败时页壳给的信息（标签、看板、供应商卡片、分页）
-// 没有一条是这次失败需要的 —— 它们本来就是这次没读到的东西。
 func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 	const rawErrText = `pq: relation "ai_sessions" does not exist (SQLSTATE 42P01)`
 
@@ -274,7 +219,7 @@ func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
 		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	// 页壳缺席：这是「失败不渲染整页」的分水岭。
+
 	for _, banned := range []string{"</body>", "</html>", `id="adminRail"`, `class="tabs ai-tabs"`} {
 		if strings.Contains(body, banned) {
 			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
@@ -283,27 +228,21 @@ func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
 		t.Errorf("失败响应应带归口文案：%s", body)
 	}
-	// 原文（原样与转义两形态）与裸 key 都不许出现。
+
 	for _, forbidden := range []string{rawErrText, html.EscapeString(rawErrText), "ai.err.internal"} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("失败响应不应出现 %q", forbidden)
 		}
 	}
-	// 短路证据：看板 / 趋势 / 筛选候选一次都没查（这些块本次一条数据都没有）
+
 	if stub.usageCalls != 0 || stub.trendCalls != 0 || stub.optionsCalls != 0 {
 		t.Errorf("失败时不该再取看板/趋势/筛选候选，实际 usage=%d trend=%d options=%d",
 			stub.usageCalls, stub.trendCalls, stub.optionsCalls)
 	}
 }
 
-// TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent 词条在场时失败响应说英文：
-// 归口文案走的是「按请求语言取词」这条路，不是写死的中文。
-//
-// 失败出口改成 pageview.Fail → response.ErrorAuto 之后，归口文案**不再来自本模块**，
-// 而是 pkg/response 的 msgInternalError 常量。那串中文**本身就是 key**
-// （translate 先按 key 查、查不到原样返回），所以这里注的是它。
 func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T) {
-	// InjectForTest 的形状是 key → lang → 译文（与资源文件同构），不是 lang → key。
+
 	i18n.InjectForTest(map[string]map[string]string{
 		"服务器内部错误，请稍后重试": {"en-US": "Internal server error, please try again later"},
 	}, nil)
@@ -321,7 +260,7 @@ func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T
 	if !strings.Contains(body, "Internal server error, please try again later") {
 		t.Errorf("英文请求应出现词条译文：%s", body)
 	}
-	// 词条在场时不该再落中文兜底（兜底是缺失词条时的降级，不是常态）
+
 	for _, forbidden := range []string{"服务器内部错误，请稍后重试", rawErrText} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("英文请求不应出现 %q", forbidden)
@@ -329,15 +268,11 @@ func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T
 	}
 }
 
-// TestAISessionsPageMainListFailureFallsBackWhenTermMissing 缺词条（无 DB 的测试环境就是这个状态）：
-// 落模块中文兜底，而不是裸 key、也不是原样把驱动错误摆上去。
 func TestAISessionsPageMainListFailureFallsBackWhenTermMissing(t *testing.T) {
 	const rawErrText = `pq: relation "ai_sessions" does not exist (SQLSTATE 42P01)`
 	rec := requestAISessionsPageLang(t, &aiSessionsRenderStub{listErr: errors.New(rawErrText)}, "en-US")
 	body := rec.Body.String()
 
-	// 兜底就是 msgInternalError 那串中文（它同时是 key 与中文原文）：
-	// 词条缺失时 i18n.GetText 原样返回，于是响应正文就是这串。
 	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
 		t.Errorf("缺词条时应落中文兜底：%s", body)
 	}
@@ -348,7 +283,6 @@ func TestAISessionsPageMainListFailureFallsBackWhenTermMissing(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageSuccessEmptyRendersList 成功但为空：正常 200 页面 + 空态，不是失败页。
 func TestAISessionsPageSuccessEmptyRendersList(t *testing.T) {
 	rec := requestAISessionsPage(t, &aiSessionsRenderStub{})
 	body := rec.Body.String()
@@ -371,7 +305,6 @@ func TestAISessionsPageSuccessEmptyRendersList(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageSuccessWithRowRendersRow 成功且有数据：标题出现在列表里。
 func TestAISessionsPageSuccessWithRowRendersRow(t *testing.T) {
 	stub := &aiSessionsRenderStub{
 		rows: []aidto.Session{{
@@ -395,42 +328,26 @@ func TestAISessionsPageSuccessWithRowRendersRow(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageLoadFailureKeepsRawErrorInLog 「归口」不是「丢弃」的正面证据。
-//
-// 上面的失败用例只证明了「原文没进页面」（反面证据）。这一条查另一端：内部错误必须能在
-// **本次请求**写下的结构化日志里被完整找回 —— 否则 `aiErrKey` 注释许诺的「谁在哪个页面
-// 撞上了哪条 SQL」就永远没人能回答（迁移 407 与 shell 的错误出口口径都要求留下可诊断性）。
 func TestAISessionsPageLoadFailureKeepsRawErrorInLog(t *testing.T) {
 	rawErr := errors.New(`pq: relation "ai_sessions" does not exist (SQLSTATE 42P01)`)
 	rec := requestAISessionsPage(t, &aiSessionsRenderStub{listErr: rawErr})
 
-	// 页面这一端：原样与 HTML 转义两种形态都不许出现（Jet 把 `"` 渲染成 &#34;）。
 	body := rec.Body.String()
 	for _, leaked := range []string{rawErr.Error(), html.EscapeString(rawErr.Error())} {
 		if strings.Contains(body, leaked) {
 			t.Fatalf("归口失败：原文进了页面：%s", body)
 		}
 	}
-	// 日志这一端：ai scene 目录里必须有一条结构化记录的 error 字段**完整等于**原文。
+
 	if !aiSessionsTestLogHasRawError(t, rawErr) {
 		t.Errorf("日志里没有 error=%q 的结构化记录 —— 归口变成了丢弃", rawErr.Error())
 	}
-	// 自检：换一条本次没发生过的原文必须判为未命中 —— 否则「找得到」可能来自任何一行日志。
+
 	if aiSessionsTestLogHasRawError(t, errors.New(`pq: relation "never_happened_ai" does not exist`)) {
 		t.Errorf("自检失败：本次没发生过的原文也被判定为命中")
 	}
 }
 
-// TestAISessionsPageProviderCardBorrowsBaseKeys 供应商卡片借的是基座的键。
-//
-// provider_card.html 是 include 进来的独立作用域，它的取词函数 / csrf_token / PermSet 全部
-// 来自 cardData(base, …) 的 "t": base["t"] / "csrf_token": base["csrf_token"] /
-// "PermSet": base["PermSet"]（ai_page.go 的 cardData）。所以 Prepare 必须发生在
-// attachProviderCards **之前** —— 挪到末尾时卡片拿到三个 nil：取词当场渲染失败（整页 500，
-// 已被 feature 用例 TestAISessionSendPageShowsRecentCalls 抓住），而 csrf_token 为 nil 只会
-// 静默渲染成空隐藏域（页面 200、表单看着正常，提交时才被 CSRF 拒）。
-//
-// 判据因此不看状态码，只钉「卡片自己的隐藏域非空且等于页面基座值」。
 func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 	providers := aiSessionsRenderProvidersWithCard{p: aidto.Provider{
 		ID: 11, ProviderKey: "openai", DisplayName: "样例供应商", Protocol: "openai", Status: 1, Version: 3,
@@ -441,7 +358,7 @@ func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("有供应商应是 200，实际 %d：%s", rec.Code, body)
 	}
-	// 先证明卡片真的渲染了：否则下面的断言会因为「没有卡片」而空转通过。
+
 	const cardForm = `action="/admin/ai/providers/save"`
 	if !strings.Contains(body, "样例供应商") || !strings.Contains(body, cardForm) {
 		t.Fatalf("供应商卡片没渲染出来（缺 %q 或卡片的保存表单）：%s", "样例供应商", body)
@@ -462,21 +379,12 @@ func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 			t.Errorf("隐藏域 csrf_token=%q 与页面基座值 %q 不一致", v, base)
 		}
 	}
-	// 卡片自己的那一个：定位到卡片的保存表单之后取，证明它不是「恰好基座那一处」。
+
 	if got := aiSessionsRenderFirstCSRFValueAfter(body, cardForm); got != base {
 		t.Errorf("卡片保存表单里的 csrf_token=%q，期望等于基座值 %q", got, base)
 	}
 }
 
-// TestAISessionsPageFailureDoesNotRenderShell 失败档**不渲染页壳**，因此也不带 CSRF。
-//
-// 这条测试的形态变过一次，值得留个记录：从前它叫 FailurePageAlsoCarriesCSRF，
-// 守的是「失败页上仍有侧栏与页面级表单，它的 csrf_token 不该因为主数据没读出来而变空」。
-// 那是「失败也是这一页」时代的判据。现在失败一律回 JSON 错误体（用户裁定），
-// 页面上没有表单，自然没有 csrf_token —— 判据反过来了：**不该出现**。
-//
-// 保留它而不是删掉，是因为「失败分支里 PrepareView 有没有被调用」这件事仍然值得钉住：
-// 一旦有人把失败分支改回渲染页壳，这条会立刻变红（响应里出现 csrf_token 或 HTML）。
 func TestAISessionsPageFailureDoesNotRenderShell(t *testing.T) {
 	rec := requestAISessionsPage(t, &aiSessionsRenderStub{listErr: errors.New("boom")})
 	body := rec.Body.String()
@@ -494,7 +402,6 @@ func TestAISessionsPageFailureDoesNotRenderShell(t *testing.T) {
 	}
 }
 
-// aiSessionsRenderBaseCSRF 取页面基座（layout 的 hx-headers）里的 CSRF token。
 func aiSessionsRenderBaseCSRF(t *testing.T, body string) string {
 	t.Helper()
 	const marker = `"X-CSRF-Token":"`
@@ -510,7 +417,6 @@ func aiSessionsRenderBaseCSRF(t *testing.T, body string) string {
 	return rest[:j]
 }
 
-// aiSessionsRenderCSRFValues 取出全页 name="csrf_token" value="…" 的所有值。
 func aiSessionsRenderCSRFValues(body string) []string {
 	const marker = `name="csrf_token" value="`
 	var out []string
@@ -530,8 +436,6 @@ func aiSessionsRenderCSRFValues(body string) []string {
 	}
 }
 
-// aiSessionsRenderFirstCSRFValueAfter 在 s[from:] 里找第一个 csrf_token 隐藏域的值；
-// 找不到（或 from 不在 s 里）返回空串。
 func aiSessionsRenderFirstCSRFValueAfter(s, from string) string {
 	const marker = `name="csrf_token" value="`
 	start := 0
@@ -554,7 +458,6 @@ func aiSessionsRenderFirstCSRFValueAfter(s, from string) string {
 	return rest[:j]
 }
 
-// aiSessionsTestLogDir 取回本用例的日志目录；取不到说明断言落在没装配过路由的用例里。
 func aiSessionsTestLogDir(t *testing.T) string {
 	t.Helper()
 	value, ok := aiSessionsPageTestLogDirs.Load(t.Name())
@@ -564,16 +467,6 @@ func aiSessionsTestLogDir(t *testing.T) string {
 	return value.(string)
 }
 
-// aiSessionsTestLogHasRawError 在本用例专属日志目录里逐行解析结构化记录，判断有没有一条把原始
-// 错误**完整**留在 error 字段里。
-//
-// 三个刻意的选择：
-//
-//	· 解析 JSON 后比对 error 字段的完整值，而不是在整段文本里找子串 —— 子串会把「转义之后照样
-//	  看得见」（`\"` → `"`）也算命中，那是另一种形式的没写进去；
-//	· 目录来自 t.TempDir()（见 aiSessionsPageTestLogDirs），本用例之外的行进不来；
-//	· 只认 ai scene 子目录：这条错误是 AI 页写下的（生产侧 `logger.Scene("ai")`，见 ai_err.go:34），
-//	  落在别的 scene 里说明记录位置漂移了。
 func aiSessionsTestLogHasRawError(t *testing.T, rawErr error) bool {
 	t.Helper()
 	want := rawErr.Error()

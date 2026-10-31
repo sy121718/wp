@@ -1,19 +1,5 @@
 package aiservice_test
 
-// ai_session_chat_test.go — 会话页「发消息」的 service 链路（真上游换 httptest 假上游）。
-//
-// 外部测试包与 ai_chat_test.go 同口径（内部测试包 import support 会成环），
-// 复用它的 newChatTestService / newChatProvider / fakeUpstream / awaitHit。
-//
-// 这一层钉住「一次发消息落成什么样的状态」：
-//   - 只给会话键时自动建会话，并把用户输入与模型回复各自写成一条事件；
-//   - 发给上游的输入里带着当前上下文投影（不是只发本条消息）；
-//   - 上游失败时用户那条已经落库、assistant 那条不写（失败不留半截记录）；
-//   - 上游回空文本归口 ErrSessionChatEmptyReply；
-//   - 没注入对话端口时回 ErrSessionChatUnavailable（不 panic）。
-//
-// PG 不可用时用例整体 t.Skip（support 的一致口径）。
-
 import (
 	"context"
 	"errors"
@@ -33,7 +19,6 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 )
 
-// newSessionChatService 在同一个迁移库上建会话服务，并把配置面的 Service 当对话端口接上。
 func newSessionChatService(t *testing.T) (*aiservice.SessionService, *aiservice.Service) {
 	t.Helper()
 	svc, db := newChatTestService(t)
@@ -42,8 +27,6 @@ func newSessionChatService(t *testing.T) (*aiservice.SessionService, *aiservice.
 	return sess, svc
 }
 
-// sessionChatUpstream 起一个假上游：把请求正文回传出来（用于断言「投影参与了拼装」）。
-// 出站客户端同样走「改写拨号目标」的路子，不依赖 DNS。
 func sessionChatUpstream(t *testing.T, svc *aiservice.Service, reply string) <-chan string {
 	t.Helper()
 	bodies := make(chan string, 4)
@@ -52,8 +35,7 @@ func sessionChatUpstream(t *testing.T, svc *aiservice.Service, reply string) <-c
 		bodies <- string(raw)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// 同时给两种协议的正文位置：用例会按协议各取所需，
-		// 假上游只仿一种会让另一种协议的用例以「内部错误」失败（看不出是上游的锅）。
+
 		_, _ = w.Write([]byte(`{"object":"response","output_text":"` + reply + `",` +
 			`"choices":[{"message":{"role":"assistant","content":"` + reply + `"}}]}`))
 	}))
@@ -68,11 +50,8 @@ func sessionChatUpstream(t *testing.T, svc *aiservice.Service, reply string) <-c
 	return bodies
 }
 
-// testUserID 用例里的「已登录账号」：会话层的第一关卡要求 UserID > 0，
-// 每个请求字面量都要带上它（没有身份 = 不受理，这正是要钉住的行为）。
 const testUserID int64 = 1
 
-// waitBody 取假上游收到的请求正文（超时捏死，避免用例挂住）。
 func waitBody(t *testing.T, bodies <-chan string) string {
 	t.Helper()
 	select {
@@ -84,7 +63,6 @@ func waitBody(t *testing.T, bodies <-chan string) string {
 	}
 }
 
-// listSessionEvents 读回一条会话的事件日志（升序段取足够大）。
 func listSessionEvents(t *testing.T, sess *aiservice.SessionService, id int64) []aidto.SessionEventItem {
 	t.Helper()
 	events, _, err := sess.ListEvents(context.Background(), id, 1, 100)
@@ -94,7 +72,6 @@ func listSessionEvents(t *testing.T, sess *aiservice.SessionService, id int64) [
 	return events
 }
 
-// TestSessionChatSendCreatesSessionAndWritesBothEvents 只给会话键 → 自动建会话，落 user + assistant 两条事件。
 func TestSessionChatSendCreatesSessionAndWritesBothEvents(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	bodies := sessionChatUpstream(t, svc, "你好")
@@ -127,7 +104,6 @@ func TestSessionChatSendCreatesSessionAndWritesBothEvents(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendSendsProjectionToUpstream 历史事件以 <role>: <content> 形式进上游输入。
 func TestSessionChatSendSendsProjectionToUpstream(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	bodies := sessionChatUpstream(t, svc, "收到")
@@ -165,7 +141,6 @@ func TestSessionChatSendSendsProjectionToUpstream(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendKeepsUserEventWhenUpstreamFails 上游 5xx → 只留 user 事件，不写 assistant。
 func TestSessionChatSendKeepsUserEventWhenUpstreamFails(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	hits := fakeUpstream(t, svc, http.StatusInternalServerError, `{"error":"boom"}`)
@@ -199,11 +174,6 @@ func TestSessionChatSendKeepsUserEventWhenUpstreamFails(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendRejectsEmptyReply 上游回空文本 → 报错且不写 assistant 事件。
-//
-// 注意「谁先拒绝」有两道：已经落盘的 Chat 实现在解析阶段就把空响应归口成错误
-// （所以这里拿到的是它自己的 key）；SendMessage 里的 ErrSessionChatEmptyReply 是第二道，
-// 防的是「换一个 ChatPort 实现回来一段空字符串但不报错」。本用例只钉住外部可观察的结果。
 func TestSessionChatSendRejectsEmptyReply(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	_ = sessionChatUpstream(t, svc, "")
@@ -227,7 +197,6 @@ func TestSessionChatSendRejectsEmptyReply(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendWithoutChatPortFails 没注入对话端口 → 明确错误，不 panic。
 func TestSessionChatSendWithoutChatPortFails(t *testing.T) {
 	_, db := newChatTestService(t)
 	sess := aiservice.NewSessionService(aimodel.NewSessionModel(db))
@@ -244,7 +213,6 @@ func TestSessionChatSendWithoutChatPortFails(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendValidatesInput 空输入 / 缺供应商模型 → 各自的哨兵（不落到上游）。
 func TestSessionChatSendValidatesInput(t *testing.T) {
 	sess, _ := newSessionChatService(t)
 	ctx := context.Background()
@@ -257,10 +225,6 @@ func TestSessionChatSendValidatesInput(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendRequiresUser 没有身份 → 第一关卡直接拒，**连对话端口都不该被调用**。
-//
-// 这一条钉住「准入条件而不是事后记账」：把 UserID 判断挪到写事件之后、或挪到组装回复之后，
-// 都会让匿名请求先把消息写进别人的会话再失败 —— 那时本用例会看到事件表多了一行。
 func TestSessionChatSendRequiresUser(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	bodies := sessionChatUpstream(t, svc, "不该被调用")
@@ -281,16 +245,6 @@ func TestSessionChatSendRequiresUser(t *testing.T) {
 	}
 }
 
-// TestSessionChatSendsSystemPrefixFirst 上游收到的请求里，常驻规则真的被发出去了。
-//
-// 这是 docs/16 §3 的端到端那一半：静态断言只证明「拼装函数稳定」，这一条证明
-// 「稳定前缀真的到了上游」。分两层的原因很实在 —— 拼装函数写对了而调用点忘了用它
-// （或把它排在历史后面），静态断言依然全绿。
-//
-// **两种协议的位置不同，两条路径都要测**：chat/completions 把 system 放在 messages[0]；
-// responses 放在顶层 instructions（它的 input[] 只接受 user / assistant，
-// 塞 system 进去会被上游 400 拒掉）。只测一种协议时，另一种的第一次调用就会失败，
-// 而错误信息只会说「请求体不合法」。
 func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -327,16 +281,14 @@ func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 				t.Fatalf("请求正文不是 JSON：%v", err)
 			}
 			if tc.protocol == aienums.ProtocolOpenAIResponses {
-				// instructions 是**多段 system 用空行拼起来**的：规则在前、手册目录在后。
-				// 断言用前缀而不是相等 —— 相等会把「加第二段 system」变成假红，
-				// 而那恰恰是这个改动要支持的事。
+
 				if !strings.HasPrefix(payload.Instructions, aiprompt.SiteRules()) {
 					t.Errorf("responses 协议的常驻规则必须放在顶层 instructions 的开头，实得 %q", truncateForLog(payload.Instructions))
 				}
 				if catalog := aiprompt.ManualCatalog(); catalog != "" && !strings.Contains(payload.Instructions, catalog) {
 					t.Error("手册目录没有进 instructions")
 				}
-				// input 里不得残留 system 条目（会被上游 400 拒）。
+
 				if strings.Contains(body, `"role":"system"`) {
 					t.Error("responses 协议的 input[] 里出现了 system 条目 —— 上游不接受这个角色")
 				}
@@ -354,12 +306,12 @@ func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 			if payload.Messages[0].Content != aiprompt.SiteRules() {
 				t.Error("system 的内容必须就是常驻规则原文")
 			}
-			// 最后一条是「历史 + 本轮输入」：模型真正要回答的东西必须在里面。
+
 			last := payload.Messages[len(payload.Messages)-1]
 			if last.Role != "user" || !strings.Contains(last.Content, "这周卖得最好的是什么") {
 				t.Errorf("最后一条应是带本轮输入的 user 消息，实得 %q/%q", last.Role, truncateForLog(last.Content))
 			}
-			// 手册目录也要在（它是第二段 system）—— 与规则一样属于稳定前缀。
+
 			if catalog := aiprompt.ManualCatalog(); catalog != "" {
 				joined := ""
 				for _, m := range payload.Messages {
@@ -373,7 +325,6 @@ func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 	}
 }
 
-// truncateForLog 失败信息里截断长文本（规则全文几千字节，直接打出来会淹掉用例输出）。
 func truncateForLog(s string) string {
 	r := []rune(s)
 	if len(r) > 60 {

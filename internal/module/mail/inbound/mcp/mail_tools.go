@@ -1,45 +1,5 @@
 package mailmcp
 
-// 为什么顺带补 mail_accounts / mail_templates：SaveCampaign 必填 accountId 与
-// templateId（**不是 key**），而在此之前没有任何工具能给出这两个数字 ——
-// 模型只能停下来问用户要 id，用户则要去后台翻两页把数字念回来。
-// 「工具的输出里要带上下一步动作需要的参数」这条在 stock_find 漏 variantId、
-// stock_reasons 漏 id 上已经吃过两回，这是第三处。
-//
-// 这一组里 campaign_start 是本仓唯一会**向站外真实收件人批量发信**的动作：
-// 它不可撤销（信已经出去了），所以描述里把确认要求写到了最死。
-
-// 依赖收窄到 mailcontract.ContactWriter。刻意**不含** ImportContacts 与
-// 从系统用户拉人（PullSystemUsers）：那两个动作会一次性把成百上千人拉进名单，
-// 而它们的正确性取决于「谁同意接收」这条政策判断 —— 那是人做决定的事，
-// 助手能做的是在用户已经决定之后帮他改一个人、打一批标签。
-//
-// 这一组里两个「看不见的后果」必须写进描述与回执，否则用户不会知道发生过：
-//   · 状态置 subscribed 会**触发订阅类自动化**（下一条欢迎邮件可能当场发出去）；
-//   · 打标签会触发标签类自动化（同样当场发信）。
-// 两者都不是「只改了一行数据」，而用户说「给他打个 vip 标签」时想的只是分类。
-
-// 为什么补这一批：用户问「这个邮箱订阅过吗」「上次那封群发效果怎么样」「最近发过哪些邮件」
-// 时，答案全在 mail_contacts / mail_campaigns / mail_campaign_events 里，而在此之前
-// AI 侧看不到任何营销数据 —— 它会说「我看不到营销模块的数据」然后停下来。
-// 底层一直是齐的：ContactFilter 的关键词同时模糊匹配 email 与 name，
-// CampaignReport 连打开率与点击率都算好了。
-//
-// 只读：依赖收窄到 MailQueryReader（三个方法），手里没有 StartCampaign、
-// 没有 UpdateContactStatus —— 「AI 顺手把人退订了」不会在某次改动里悄悄变得可能。
-//
-// 为什么是三个而不是把活动与报表合成一个：列表回答「有哪些、发了多少」，
-// 报表回答「效果如何」，而报表需要上一句里拿到的 campaignId。合并的话每次问
-// 「有哪些」都会顺带拉一次没人要的完整报表（那是 mail_campaign_events 上的聚合，
-// 不便宜）。
-
-// 模板的身份是 **(templateKey, locale) 这一对**，不是 id —— 这是本组最容易搞错的地方：
-// 同一个 key 有中英两版，删错 locale 会删掉另一版。所以 delete 与 get 都要两个参数，
-// 而 template_save 是 **upsert**（同 key 同 locale 直接覆盖），不是「新建」。
-//
-// 本组**没有「用模板发一封」**：service 的 SendTemplate 没有 HTTP 路由，
-// 因此没有对应权限点，而工具权限是 fail closed 的。要发信走群发活动。
-
 import (
 	"context"
 	"errors"
@@ -54,7 +14,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// CampaignWriteTools 返回群发活动写工具集。
 func CampaignWriteTools(w mailcontract.CampaignWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("mailmcp: 群发写依赖缺失（装配期接线错误）")
@@ -62,10 +21,6 @@ func CampaignWriteTools(w mailcontract.CampaignWriter) ([]mcp.Tool, error) {
 	return []mcp.Tool{campaignSave(w), campaignStart(w), campaignDelete(w)}, nil
 }
 
-// MailSetupTools 返回「建活动之前要看的两个清单」。
-//
-// 它们读的是发信账号与邮件模板，不是联系人 —— 归在查询侧但只服务于写路径，
-// 所以放在本文件里、由装配处与写工具一起注册。
 func MailSetupTools(q mailcontract.MailQueryReader) ([]mcp.Tool, error) {
 	if q == nil {
 		return nil, errors.New("mailmcp: 发信配置查询依赖缺失（装配期接线错误）")
@@ -170,13 +125,6 @@ type campaignSaveArgs struct {
 	VariablesJSON string   `json:"variablesJson"`
 }
 
-// parseCampaignVariables 解析模板变量。
-//
-// 用 JSON 字符串而不是嵌套对象是刻意的：mcp.Schema 的 object 一律
-// AdditionalProperties=false（`internal/mcp/schema.go:26` 写明「多传的字段一律拒绝」），
-// 而模板变量是**任意键名**的自由对象 —— 嵌套 schema 表达不了它，
-// 硬写会在校验层把用户自定义的变量名全部拒掉。
-// 解析失败不静默忽略：变量错了会在启动发送时才暴露，那时活动已经建好了。
 func parseCampaignVariables(raw string) (map[string]any, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -278,10 +226,6 @@ func campaignStart(w mailcontract.CampaignWriter) mcp.Tool {
 		})
 }
 
-// campaignStartedText 启动回执。
-//
-// 必须说明「现在是排队发，不是已经发完了」：否则用户会立刻去数收件箱，
-// 发现只到了几封就以为出问题了。
 func campaignStartedText(id uint64, res *maildto.StartCampaignResp) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "活动 %d 已启动。", id)
@@ -316,7 +260,6 @@ func campaignDelete(w mailcontract.CampaignWriter) mcp.Tool {
 		})
 }
 
-// ContactWriteTools 返回联系人写工具集。
 func ContactWriteTools(w mailcontract.ContactWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("mailmcp: 联系人写依赖缺失（装配期接线错误）")
@@ -330,7 +273,6 @@ func ContactWriteTools(w mailcontract.ContactWriter) ([]mcp.Tool, error) {
 	}, nil
 }
 
-// contactStatusChoices 同意状态取值（与 mailmodel.ContactStatus* 一致）。
 func contactStatusChoices() []string {
 	return []string{
 		mailmodel.ContactStatusPending,
@@ -548,7 +490,7 @@ func contactTag(w mailcontract.ContactWriter) mcp.Tool {
 			var b strings.Builder
 			fmt.Fprintf(&b, "已修改 %d 个联系人的标签（请求 %d 个）", changed, len(ids))
 			if skipped > 0 {
-				// 跳过不等于失败：多半是这些人本来就有 / 本来就没有那个标签。
+
 				fmt.Fprintf(&b, "，跳过 %d 个（标签本来就是这个状态）", skipped)
 			}
 			if len(add) > 0 {
@@ -565,7 +507,6 @@ func contactTag(w mailcontract.ContactWriter) mcp.Tool {
 		})
 }
 
-// operatorID 操作人 id；拿不到就 0（service 用它写留痕，0 表示无操作人）。
 func operatorID(ctx context.Context) uint64 {
 	if id := mcp.UserIDFrom(ctx); id > 0 {
 		return uint64(id)
@@ -573,7 +514,6 @@ func operatorID(ctx context.Context) uint64 {
 	return 0
 }
 
-// cleanTags 去空白、去重、保序。
 func cleanTags(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
@@ -591,7 +531,6 @@ func cleanTags(in []string) []string {
 	return out
 }
 
-// dedupeUint64 去重保序（重复 id 会让「实际删除数」对不上请求数）。
 func dedupeUint64(in []uint64) []uint64 {
 	seen := make(map[uint64]struct{}, len(in))
 	out := make([]uint64, 0, len(in))
@@ -611,22 +550,16 @@ func dedupeUint64(in []uint64) []uint64 {
 const (
 	mailDefaultPageSize = 10
 	mailMaxPageSize     = 50
-	// mailReportLinkLimit 报表里取多少条链接明细。
-	//
-	// 用户问「哪个链接点得多」时前几条就答完了；把 200 条链接铺进上下文
-	// 只会挤掉回答本身。
+
 	mailReportLinkLimit = 10
 )
 
-// QueryTools 返回营销模块的只读工具集。
 func QueryTools(query mailcontract.MailQueryReader) ([]mcp.Tool, error) {
 	if query == nil {
 		return nil, errors.New("mailmcp: 营销查询依赖缺失（装配期接线错误）")
 	}
 	return []mcp.Tool{contactFind(query), campaignList(query), campaignStats(query)}, nil
 }
-
-// —— 联系人 ——
 
 type contactFindArgs struct {
 	Keyword  string   `json:"keyword"`
@@ -681,12 +614,6 @@ func contactListText(res *maildto.ContactListResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// contactStatusText 订阅状态的展示名。
-//
-// 不自己写一份中文表：取值是 model 里的四个常量（pending / subscribed /
-// unsubscribed / bounced），而四个状态对用户的含义**不一样** ——
-// 把 bounced（投递失败，通常是邮箱不存在）读成 unsubscribed（本人主动退订）
-// 会让运营去追问一个根本没点过退订的人。
 func contactStatusText(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "subscribed":
@@ -731,8 +658,6 @@ func sourceSuffix(c maildto.ContactItem) string {
 	}
 	return " · " + strings.Join(parts, " · ")
 }
-
-// —— 活动 ——
 
 type campaignListArgs struct {
 	Status   string `json:"status"`
@@ -818,8 +743,6 @@ func campaignTimeSuffix(c maildto.CampaignItem) string {
 	return " · " + strings.Join(parts, " · ")
 }
 
-// —— 单个活动的效果 ——
-
 type campaignStatsArgs struct {
 	CampaignID uint64 `json:"campaignId"`
 }
@@ -870,14 +793,11 @@ func campaignReportText(res *maildto.CampaignReport) string {
 func linkStatText(links []maildto.LinkStat) string {
 	var b strings.Builder
 	for i, l := range links {
-		// Total 是点击次数、Contacts 是去重人数 —— 两个数都写出来：
-		// 同一个人点 5 次与 5 个人各点 1 次，对「这条链接受欢迎吗」是两种答案。
+
 		fmt.Fprintf(&b, "  %d. %s — %d 次点击、%d 人\n", i+1, emptyAsDash(l.URL), l.Total, l.Contacts)
 	}
 	return b.String()
 }
-
-// —— 共用 ——
 
 func clampMailPageSize(n int) int {
 	if n <= 0 {
@@ -896,29 +816,15 @@ func emptyAsDash(s string) string {
 	return s
 }
 
-// TemplateWriter 邮件模板的写能力（给 AI 工具的窄门）。
-//
-// 刻意不含 SendTransactional（不带模板的一次性发信）与 automation 一整族
-// （自动化的正确性取决于触发条件与收件范围，属于「配一条链路」而不是「改一封信」）。
 type TemplateWriter interface {
 	UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (*maildto.TemplateItem, error)
 	DeleteTemplate(ctx context.Context, key, locale string) error
 }
 
-// TemplateReader 取模板全文（清单工具只回名称与变量，正文可能很长）。
-//
-// 复用 ListTemplates 而不是另开一个 GetTemplate：service 层没有单取的入口
-// （只有 model 层有），而模板总量是个位数，按 key 过滤一次就够了。
 type TemplateReader interface {
 	ListTemplates(ctx context.Context, key string) ([]*maildto.TemplateItem, error)
 }
 
-// TemplateTools 返回邮件模板工具集（2 写 + 1 读全文）。
-//
-// **刻意不含「用模板发一封」**：service 里确实有 SendTemplate，但它没有任何
-// HTTP 路由，因此也没有对应的权限点 —— 而工具权限是 fail closed 的，
-// 硬凑一个相近的权限点（如 MailTemplateSave）等于用「能改模板」去换「能发信」。
-// 需要发信请走群发活动（campaign_save + campaign_start），那条路有独立权限点。
 func TemplateTools(w TemplateWriter, r TemplateReader) ([]mcp.Tool, error) {
 	if w == nil || r == nil {
 		return nil, errors.New("mailmcp: 模板工具依赖缺失（装配期接线错误）")
@@ -954,7 +860,7 @@ func templateGet(r TemplateReader) mcp.Tool {
 					break
 				}
 				if hit == nil {
-					hit = it // 语言没对上时先记一个，下面会说明实际取到了哪一版
+					hit = it
 				}
 			}
 			return mcp.Result{Text: templateFullText(hit, key, loc)}, nil
@@ -966,7 +872,7 @@ func templateFullText(t *maildto.TemplateItem, wantKey, wantLocale string) strin
 		return fmt.Sprintf("没有找到模板 %s（%s）。用 mail_templates 看一下有哪些 key。", wantKey, wantLocale)
 	}
 	var b strings.Builder
-	// 语言没对上要说出来：不然模型会把英文版的内容当成中文版去改。
+
 	if t.Locale != wantLocale {
 		fmt.Fprintf(&b, "**注意：没有 %s 版本，下面是 %s 版的内容。**\n", wantLocale, t.Locale)
 	}
@@ -992,7 +898,6 @@ type templateKeyArgs struct {
 	Locale      string `json:"locale"`
 }
 
-// localeOf 空值落 zh-CN —— 与后台页面的默认语言一致。
 func localeOf(locale string) string {
 	locale = strings.TrimSpace(locale)
 	if locale == "" {

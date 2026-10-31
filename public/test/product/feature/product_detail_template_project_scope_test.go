@@ -1,26 +1,3 @@
-// product_detail_template_project_scope_test.go —— 「详情页模板」三个写入口的**工程作用域**（P167 / P168）。
-//
-// 被钉住的缺陷形态：internal/module/product/inbound/http/product_detail_template.go 的三个写入口
-// 读出了请求里的 projectId 却没往下传 —— UpdateURLReq.ProjectID / RebuildReq.ProjectID 收到空串，
-// presentation 侧只能走「工程唯一时取该工程」的兜底
-// （internal/module/presentation/service/presentation_render.go:503 的 resolveProjectID）。
-//
-// 为什么既有用例照不出它：既有 feature 用例都跑在**单工程**夹具上，兜底解析出的那个工程恰好
-// 就是唯一的那个，于是「传了」与「没传」行为等价，差异不可观测。本文件造**两个工程**：
-// 工程不唯一 -> resolveProjectID 直接回 ErrProjectRequired -> 漏传时写操作走不到实例定位，
-// 接口回失败态（归口文案 + 非 200 业务码）。
-//
-// 钉住的接线（变红实验就是把这几处实参改成 ""）：
-// 1) POST /api/product/detail-template/update-url -> UpdateDetailTemplateURL 的 projectID 实参
-// -> productservice.UpdateDetailTemplateURL -> UpdateURLReq.ProjectID -> Service.UpdateURL；
-// 2) POST /api/product/detail-template/apply -> ApplyDetailTemplate 的 projectID 实参
-// -> productservice.ApplyDetailTemplate -> RebuildReq.ProjectID -> Service.Rebuild；
-// 3) POST /api/product/detail-template/publish（**不传 urlPath**）-> PublishDetailTemplate 里
-// 「取商品拿 slug」那一跳的 GetReq.ProjectID -> product 侧 resolveProjectID
-// （工程不唯一即回 ErrInvalidParam）—— 它不落在 presentation，而在 product 自己这一跳。
-//
-// 每条用例都同时断言两件事：「A 站真的改了」与「B 站一个字节都没动」—— 只断言前者时，
-// 「写到了别的工程上」这种失败仍然是绿的。
 package feature
 
 import (
@@ -42,15 +19,12 @@ import (
 	"go_wp/internal/templates"
 )
 
-// 两个站点的详情页线上路径。互不相干是刻意的：任何一个落到对方身上都是可观测的差异。
 const (
 	scopePathA    = "/products/scope-shirt"
 	scopePathB    = "/products/scope-bag"
 	scopePathANew = "/products/scope-shirt-new"
 )
 
-// projectScopeFixture 双工程夹具：detailFixture（工程 A + 生产迁移 + 四个真实 service）之上
-// 再建**第二个工程**，并补上两站各自的商品 / 命名模板 / 已发布的详情页实例。
 type projectScopeFixture struct {
 	*detailFixture
 	projectB string
@@ -60,10 +34,6 @@ type projectScopeFixture struct {
 	instA, instB                string
 }
 
-// newProjectScopeEngine 装配双工程引擎：只挂「详情页模板」的三个写接口。
-//
-// 不挂鉴权中间件（与 product_detail_template_choice_test.go 的页面引擎同一取舍）：
-// 本文件验的是工程作用域，不是权限链。
 func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	t.Helper()
 	base := newDetailFixture(t)
@@ -81,7 +51,7 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	// 改 URL / 切换模板 / 首次发布三个写动作已从页面 POST 迁到 /api/product/detail-template/*。
+
 	api := producthttp.NewProductHandle(base.products)
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
@@ -92,9 +62,6 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	return engine, scope
 }
 
-// seedScopeSites 造「两个站点各自有商品 + 命名模板 + 已发布的详情页实例」。
-//
-// 三套模板的标记互不相同（A 站初版 / A 站切换版 / B 站版式）：产物里出现谁的标记可断言。
 func (f *projectScopeFixture) seedScopeSites(t *testing.T) {
 	t.Helper()
 	f.tplAFirst = f.scopeTemplate(t, f.projectID, "A站初版详情页", "A站初版")
@@ -106,7 +73,6 @@ func (f *projectScopeFixture) seedScopeSites(t *testing.T) {
 	f.instB = f.scopeInstance(t, f.projectB, f.productB, scopePathB, f.tplB).ID
 }
 
-// scopeTemplate 在指定工程下建一套命名商品详情模板。
 func (f *projectScopeFixture) scopeTemplate(t *testing.T, projectID, name, marker string) string {
 	t.Helper()
 	res, err := f.templates.Create(context.Background(), &contenttemplatedto.CreateReq{
@@ -119,7 +85,6 @@ func (f *projectScopeFixture) scopeTemplate(t *testing.T, projectID, name, marke
 	return res.ID
 }
 
-// scopeProduct 在指定工程下建一个可用商品（含一个变体，价格区间由变体派生）。
 func (f *projectScopeFixture) scopeProduct(t *testing.T, projectID, name, slug string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -137,7 +102,7 @@ func (f *projectScopeFixture) scopeProduct(t *testing.T, projectID, name, slug s
 	if err != nil {
 		t.Fatalf("在工程 %s 下建商品 %s 失败: %v", projectID, name, err)
 	}
-	// ProjectID 必须显式带上：本夹具里工程不唯一，product 侧的「唯一工程」兜底同样解析不出来。
+
 	if _, err := f.products.CreateVariant(ctx, &productdto.CreateVariantReq{
 		ProductID: res.ID, ProjectID: projectID, SKUCode: slug + "-L", Price: &price,
 	}); err != nil {
@@ -146,7 +111,6 @@ func (f *projectScopeFixture) scopeProduct(t *testing.T, projectID, name, slug s
 	return res.ID
 }
 
-// scopeInstance 为指定工程下的商品建立发布实例（显式模板，各自用自己工程的模板）。
 func (f *projectScopeFixture) scopeInstance(t *testing.T, projectID, productID, urlPath, templateID string) *presentationdto.InstanceResp {
 	t.Helper()
 	inst, err := f.pres.CreateInstance(context.Background(), &presentationdto.CreateInstanceReq{
@@ -159,8 +123,6 @@ func (f *projectScopeFixture) scopeInstance(t *testing.T, projectID, productID, 
 	return inst
 }
 
-// instanceOf 读实例（**显式带工程作用域**）：本文件的夹具里工程不唯一，不带作用域的读
-// 会先撞 ErrProjectRequired —— 那是另一条链路的事，不该混进本文件的断言。
 func (f *projectScopeFixture) instanceOf(t *testing.T, projectID, productID string) *presentationdto.InstanceResp {
 	t.Helper()
 	inst, err := f.pres.GetByEntity(context.Background(), &presentationdto.GetByEntityReq{
@@ -172,8 +134,6 @@ func (f *projectScopeFixture) instanceOf(t *testing.T, projectID, productID stri
 	return inst
 }
 
-// TestProductDetailTemplateUpdateURLKeepsProjectScope 「改 URL」写入口必须把表单里的工程作用域
-// 传给 presentation：A 站的实例路径真的改、A 站新路径上有产物，而 B 站的实例与产物逐字未动。
 func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 	engine, f := newProjectScopeEngine(t)
 	if engine == nil {
@@ -181,7 +141,6 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 	}
 	f.seedScopeSites(t)
 
-	// 写之前：两站各自的产物都在，且各带自己的标记。
 	if html := activeHTML(t, scopePathA); !strings.Contains(html, "A站初版") {
 		t.Fatalf("A 站初始产物应使用 A 站初版模板：%s", html)
 	}
@@ -193,13 +152,11 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 	rec := postJSON(t, engine, "/api/product/detail-template/update-url", map[string]any{
 		"projectId": f.projectID, "productId": f.productA, "newPath": scopePathANew,
 	})
-	// 漏传工程作用域时这里就是红的：工程不唯一 -> resolveProjectID 回 ErrProjectRequired
-	// -> 端点失败 + 归口文案，而不是成功。
+
 	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
 		t.Fatalf("改 URL 应成功，实际 %d：%s", env.Code, env.Message)
 	}
 
-	// A 站：实例路径真的改了，新路径上有产物。
 	if got := f.instanceOf(t, f.projectID, f.productA).URLPath; got != scopePathANew {
 		t.Fatalf("A 站实例路径应改为 %s，实际 %s", scopePathANew, got)
 	}
@@ -210,7 +167,6 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 		t.Fatalf("A 站新路径的产物仍应是该站自己的模板：%s", html)
 	}
 
-	// B 站：实例与产物一个字段都没动。
 	bInst := f.instanceOf(t, f.projectB, f.productB)
 	if bInst.URLPath != scopePathB {
 		t.Fatalf("B 站实例路径不得被改动，实际 %s", bInst.URLPath)
@@ -223,8 +179,6 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 	}
 }
 
-// TestProductDetailTemplateApplyKeepsProjectScope 「切换模板」写入口同理：A 站换了模板且产物
-// 随之变化，B 站的绑定与产物一个字节都没动。
 func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 	engine, f := newProjectScopeEngine(t)
 	if engine == nil {
@@ -240,12 +194,11 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 	rec := postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
 		"projectId": f.projectID, "productId": f.productA, "templateId": f.tplASwitch,
 	})
-	// 同 UpdateURL：漏传工程作用域时这一步红。
+
 	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
 		t.Fatalf("切换模板应成功，实际 %d：%s", env.Code, env.Message)
 	}
 
-	// A 站：绑定换成切换目标，产物随模板变化（旧标记消失）。
 	if got := instanceTemplateID(t, f.detailFixture, f.instA); got != f.tplASwitch {
 		t.Fatalf("A 站实例应绑定切换后的模板 %s，实际 %s", f.tplASwitch, got)
 	}
@@ -254,7 +207,6 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 		t.Fatalf("A 站产物应换成切换后的模板：%s", html)
 	}
 
-	// B 站：绑定 / 路径 / 产物都不许动。
 	bInst := f.instanceOf(t, f.projectB, f.productB)
 	if bInst.TemplateID != f.tplB {
 		t.Fatalf("B 站实例模板绑定不得被改动，实际 %s", bInst.TemplateID)
@@ -267,21 +219,13 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 	}
 }
 
-// TestProductDetailTemplatePublishKeepsProjectScope 「首次发布」的空 urlPath 分支：工程作用域必须
-// 一路带到**取商品拿 slug**那一跳（productservice.PublishDetailTemplate -> ProductReadPort.Get 的
-// GetReq.ProjectID）。少带这一段，product 侧 resolveProjectID 解析不出工程就回 ErrInvalidParam，
-// 发布在建实例之前就断了 —— 而这个商品的实例本该建得出来。
-//
-// 为什么既有 publish 用例照不出它：它们都跑在**单工程**夹具上，空作用域恰好解析出那唯一的工程，
-// 于是「带了」与「没带」行为等价。本夹具两个工程 -> 漏传时发布直接失败（失败态提示页），
-// 而不是「发布到了另一个工程」那种更隐蔽的错法。
 func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 	engine, f := newProjectScopeEngine(t)
 	if engine == nil {
 		return
 	}
 	f.seedScopeSites(t)
-	// 给「首次发布」单独一个 A 站商品：已建过实例的商品再发一次是另一条路径，混进来会掩盖本判据。
+
 	const pubSlug = "scope-cap"
 	pubA := f.scopeProduct(t, f.projectID, "A站发布用帽", pubSlug)
 
@@ -290,7 +234,6 @@ func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	// 刻意**不传 urlPath**：让服务端按站点 URL 规则派生（这正是漏传工程作用域的那条分支）。
 	rec := postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
 		"projectId": f.projectID, "productId": pubA, "templateId": f.tplAFirst,
 	})
@@ -298,8 +241,6 @@ func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 		t.Fatalf("首次发布应成功，实际 %d：%s", env.Code, env.Message)
 	}
 
-	// 期望值用 siteurl 同参数自己算一遍（不硬编码模式），并确认它确实在 A 站落成了产物 ——
-	// 只比 URLPath 的话，「派生对了但产物没激活」仍然是绿的。
 	want := siteurl.DetailPathForProject(context.Background(), f.projects, f.projectID,
 		siteurl.KindProduct, pubSlug, pubA)
 	if want == "" || !strings.Contains(want, pubSlug) {
@@ -312,7 +253,6 @@ func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 		t.Fatalf("A 站派生路径 %s 上没有激活产物", want)
 	}
 
-	// B 站：实例 / 绑定 / 产物一个字节都没动。
 	bInst := f.instanceOf(t, f.projectB, f.productB)
 	if bInst.URLPath != scopePathB {
 		t.Fatalf("B 站实例路径不得被改动，实际 %s", bInst.URLPath)

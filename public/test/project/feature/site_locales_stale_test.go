@@ -1,19 +1,5 @@
 package feature
 
-// site_locales_stale_test.go — 保存语言清单后自动标记全站待重建
-//（多语言 P3，docs/06-D §15.9 遗留第 1 条）。
-//
-// 背景：语言切换器链接与 hreflang 是构建期写进产物字节的，改清单不重建则前台无变化。
-// 本用例走真实链路：gin 路由 → dashboard handler（编排）→ project 契约 SaveLocales
-//（真 PG project_locales）+ page 契约 MarkStaleForI18n（真 page model，真
-// "UPDATE pages SET stale = true ..."），断言可观测状态。
-//
-// 覆盖：
-//  1. 清单内容变化（增语言）→ 未删除页面 stale 被置位，软删页面不受影响；
-//  2. 默认语言切换（构建可见内容变化的一种）→ 触发；
-//  3. 清单内容未变（原样再保存一次）→ 不触发（stale 与 update_time 均不变）；
-//  4. 校验失败 → 不落库也不触发。
-
 import (
 	"go_wp/internal/adminui"
 	"net/http"
@@ -35,12 +21,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// newLocaleStaleEnv 装配「语言清单保存 → 全站待重建」测试环境：
-// 真实 PG（隔离 schema，跑生产迁移建表）+ project 契约 + page 契约
-// （仅 model 参与，其余依赖传 nil）。
-//
-// pages 行只补 MarkStaleForI18n 与页面外键所需的真实列：本用例验证的是
-// 「保存成功后编排是否发生」，不涉及页面其余业务字段与构建链路。
 func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gorm.DB, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -60,11 +40,6 @@ func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gor
 	return router, projects, db, project.ID
 }
 
-// insertStalePage 插入一条页面行（stale 初始为 false；deleted 为 true 时置软删时间）。
-//
-// 真实 pages 表要求 project_id 外键、kind/content_target_type 满足
-// pages_content_contract_check（home + none）、draft_path/draft_document/draft_version
-// 非空，故按生产列结构补全。
 func insertStalePage(t *testing.T, db *gorm.DB, projectID, id string, deleted bool) {
 	t.Helper()
 	var deletedAt any
@@ -81,7 +56,6 @@ func insertStalePage(t *testing.T, db *gorm.DB, projectID, id string, deleted bo
 	}
 }
 
-// pageStaleRow 页面可观测状态：stale 与 update_time（用于断言是否被标记）。
 type pageStaleRow struct {
 	Stale     bool
 	UpdatedAt time.Time
@@ -96,7 +70,6 @@ func pageStaleOf(t *testing.T, db *gorm.DB, id string) pageStaleRow {
 	return row
 }
 
-// seedLocales 初始化语言清单（zh-CN 默认 + en-US）。
 func seedLocales(t *testing.T, svc *projectservice.Service, projectID string) {
 	t.Helper()
 	if _, err := svc.SaveLocales(t.Context(), &projectdto.LocalesSaveReq{
@@ -107,7 +80,6 @@ func seedLocales(t *testing.T, svc *projectservice.Service, projectID string) {
 	}
 }
 
-// TestSaveSiteLocalesMarksStaleOnChange 清单内容变化 → 未删除页面 stale 置位。
 func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
@@ -132,7 +104,6 @@ func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesMarksStaleOnDefaultChange 默认语言切换（构建可见内容变化）→ 触发。
 func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
@@ -141,7 +112,7 @@ func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 	saved := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},
 		"langs":        {"zh-CN", "en-US"},
-		"defaultIndex": {"1"}, // 默认语言改为 en-US
+		"defaultIndex": {"1"},
 		"enabledIndex": {"0", "1"},
 	})
 	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
@@ -152,7 +123,6 @@ func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesSkipsStaleWhenUnchanged 清单内容未变（原样再保存）→ 不触发。
 func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
@@ -161,7 +131,7 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 
 	saved := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},
-		"langs":        {"zh-CN", "en-US"}, // 与库中一致
+		"langs":        {"zh-CN", "en-US"},
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"},
 	})
@@ -177,7 +147,6 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesInvalidSkipsStale 校验失败 → 不落库也不触发。
 func TestSaveSiteLocalesInvalidSkipsStale(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
@@ -185,7 +154,7 @@ func TestSaveSiteLocalesInvalidSkipsStale(t *testing.T) {
 
 	recorder := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},
-		"langs":        {"zh CN"}, // 非法语言码
+		"langs":        {"zh CN"},
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0"},
 	})

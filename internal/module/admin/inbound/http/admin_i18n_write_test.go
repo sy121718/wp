@@ -1,21 +1,5 @@
 package adminhttp
 
-// admin_i18n_write_test.go — 词条写端点（POST /api/i18n/save）的**请求形状判据**。
-//
-// 端点与形状实现见 admin_i18n_write.go：请求体是严格 tagged union —— action=create / update /
-// delete 三档，外加「键集恰好 {ids}」的批量删除档；未知 action、动作与字段混用、未知字段、
-// 缺必需字段、字段类型不对一律 400。
-//
-// 本文件只钉形状与文案归属，**不连库**。写库行为（create upsert / update 缺席 404 / delete
-// 幂等 / 批量逐条结果）由真实链用例覆盖：
-// public/test/admin/feature/admin_i18n_edit_drawer_test.go（真实 gin + 真实 PG + CSRF + Casbin）。
-// 因此这里「接受形状」的用例只断言**不再是 400**（形状过了），不断言 200 —— 无库时落到
-// 基础设施错误档是预期行为，把 200 写死在这里等于把「本包不该连库」变成耦合。
-//
-// 语言归属：端点把 enums 的 key 交给 pkg/response，由它按请求语言取词（本模块不自己翻一遍）。
-// 用例用 i18n.InjectForTest 注入**合成词条**（哨兵值），于是「响应里出现哨兵」等价于
-// 「key 真的走到了取词层」，而不是「本模块把中文原文写进了响应」。
-
 import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
@@ -31,14 +15,12 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// adminI18nWriteResponse 端点响应体（pkg/response.Response）。
 type adminI18nWriteResponse struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
 }
 
-// adminI18nWriteBulkData 批量档的 data 体（write-base.js 直接读这几个字段）。
 type adminI18nWriteBulkData struct {
 	Deleted int `json:"deleted"`
 	Skipped int `json:"skipped"`
@@ -49,7 +31,6 @@ type adminI18nWriteBulkData struct {
 	} `json:"items"`
 }
 
-// adminI18nWriteCall 走**真实 handler**（不是形状助手），语言由 Accept-Language 决定。
 func adminI18nWriteCall(t *testing.T, body, accept string) (int, adminI18nWriteResponse) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -61,7 +42,7 @@ func adminI18nWriteCall(t *testing.T, body, accept string) (int, adminI18nWriteR
 		req.Header.Set("Accept-Language", accept)
 	}
 	c.Request = req
-	// 不注入 page marker：markI18nStale 对 nil 端口静默返回（见 admin_i18n_stale_test.go）。
+
 	NewAdminI18nEntryHandle().I18nEntryWrite(c)
 
 	var resp adminI18nWriteResponse
@@ -73,10 +54,6 @@ func adminI18nWriteCall(t *testing.T, body, accept string) (int, adminI18nWriteR
 	return rec.Code, resp
 }
 
-// injectAdminI18nWriteEntries 注入合成词条，结束时还原原值。
-//
-// 必须还原：i18n 缓存是进程级单例，同包其它用例（页面/抽屉/失效）都走它 ——
-// 注进去不管，别处的取词会拿到这里的哨兵值，以「与本次改动无关的失败」变红。
 func injectAdminI18nWriteEntries(t *testing.T, entries map[string]map[string]string) {
 	t.Helper()
 	previous := make(map[string]map[string]string, len(entries))
@@ -91,7 +68,6 @@ func injectAdminI18nWriteEntries(t *testing.T, entries map[string]map[string]str
 	t.Cleanup(func() { i18n.InjectForTest(previous, map[string]int{}) })
 }
 
-// TestAdminI18nWriteRejectsMalformedShapes 形状不合法的请求体一律 400（受控文案，不泄漏细节）。
 func TestAdminI18nWriteRejectsMalformedShapes(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		adminenums.MsgBadRequest: {"en-US": "BAD-SHAPE-EN", "zh-CN": "BAD-SHAPE-ZH"},
@@ -128,7 +104,6 @@ func TestAdminI18nWriteRejectsMalformedShapes(t *testing.T) {
 	}
 }
 
-// TestAdminI18nWriteMissingRequiredFields 缺必需字段回**具体**缺哪一项（不是笼统的「有必填项没填」）。
 func TestAdminI18nWriteMissingRequiredFields(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		adminenums.ErrI18nKeyEmpty:   {"en-US": "NEED-KEY"},
@@ -162,7 +137,6 @@ func TestAdminI18nWriteMissingRequiredFields(t *testing.T) {
 	}
 }
 
-// TestAdminI18nWriteAcceptsWellFormedShapes 合法形状不被抢在形状层拒绝。
 func TestAdminI18nWriteAcceptsWellFormedShapes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -187,7 +161,6 @@ func TestAdminI18nWriteAcceptsWellFormedShapes(t *testing.T) {
 	}
 }
 
-// bulkBody 造一个批量请求体：distinct 个不同 id，每个重复 repeat 次。
 func bulkBody(distinct, repeat int) string {
 	ids := make([]string, 0, distinct*repeat)
 	for i := 0; i < distinct; i++ {
@@ -202,10 +175,6 @@ func bulkBody(distinct, repeat int) string {
 	return `{"ids":[` + strings.Join(quoted, ",") + `]}`
 }
 
-// TestAdminI18nWriteBulkRejectsUnshapedIdPerItem 复合键不成形状的条目：跳过并逐条给原因，不猜。
-//
-// 判据是「key|lang」二元组（分隔符见 adminI18nEntryKeySeparator）：猜一条 id 的含义等于
-// 删错行，所以不成形状的条目整条计为跳过 —— 且这条路径在**没有库**时也成立（先判形状后落库）。
 func TestAdminI18nWriteBulkRejectsUnshapedIdPerItem(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		adminenums.ErrI18nKeyEmpty: {"zh-CN": "NEED-KEY"},
@@ -235,13 +204,11 @@ func TestAdminI18nWriteBulkRejectsUnshapedIdPerItem(t *testing.T) {
 	}
 }
 
-// TestAdminI18nWriteBulkTooManyRejectsWholeBatch 超限整批拒绝，且两个数字是「去重后的条数」。
 func TestAdminI18nWriteBulkTooManyRejectsWholeBatch(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		bulkids.MsgTooMany: {"zh-CN": "TOO-MANY-上限%s-本次%s"},
 	})
 
-	// 201 个不同 id → 超限；整批拒绝（不截断、不部分执行）。
 	code, resp := adminI18nWriteCall(t, bulkBody(bulkids.MaxIDs+1, 1), "zh-CN")
 	if code != http.StatusBadRequest {
 		t.Fatalf("超过 %d 条应整批拒绝（400），实际 %d", bulkids.MaxIDs, code)
@@ -251,14 +218,12 @@ func TestAdminI18nWriteBulkTooManyRejectsWholeBatch(t *testing.T) {
 		t.Fatalf("超限文案应带 (上限, 去重后条数) 两个参数，实际 %q，期望 %q", resp.Message, want)
 	}
 
-	// 同一个 200 条上限、但请求里有重复：去重后不超限，因此不该被拒。
 	code, resp = adminI18nWriteCall(t, bulkBody(bulkids.MaxIDs, 3), "zh-CN")
 	if code == http.StatusBadRequest {
 		t.Fatalf("超过上限的原始条数但去重后不超限时不该拒绝，实际 400（message=%q）", resp.Message)
 	}
 }
 
-// TestAdminI18nBulkTooManyMessage 超限消息的带参协议形态（key|max|count）。
 func TestAdminI18nBulkTooManyMessage(t *testing.T) {
 	_, err := bulkids.Normalize(func() []string {
 		ids := make([]string, 0, bulkids.MaxIDs+5)
@@ -274,9 +239,6 @@ func TestAdminI18nBulkTooManyMessage(t *testing.T) {
 	}
 }
 
-// TestAdminI18nWriteRejectsExplicitNull 「显式 null」是形状错：encoding/json 把 null 解进
-// string / []string 都不报错（落到零值 "" / nil），不判原文就会静默变成「空批量」或
-// 「把已有分类清空」—— 所以 null 必须与合法省略区分开，逐处 400。
 func TestAdminI18nWriteRejectsExplicitNull(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		adminenums.MsgBadRequest: {"en-US": "BAD-SHAPE-EN", "zh-CN": "BAD-SHAPE-ZH"},
@@ -315,9 +277,6 @@ func TestAdminI18nWriteRejectsExplicitNull(t *testing.T) {
 	}
 }
 
-// TestAdminI18nWriteOptionalFieldAbsentIsLegal 「省略」与「显式 null」是两回事：
-// 可选字段（category / remark）省略必须合法 —— 这条用例钉住的是区分本身，
-// 不是某一个取值（把可选字段一并禁 null 之外的另一种错法是连省略也拒）。
 func TestAdminI18nWriteOptionalFieldAbsentIsLegal(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{
 		adminenums.MsgBadRequest: {"zh-CN": "BAD-SHAPE-ZH"},

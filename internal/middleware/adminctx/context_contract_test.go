@@ -1,9 +1,5 @@
 package adminctx
 
-// context_contract_test.go — 导出请求上下文键的写入与字面值契约。
-// 自 shell 迁入写入方：用导出常量读取真实中间件写入的值，
-// 与 prepare_e2e_test.go 的中间件 → Prepare 链共同守住三键。
-
 import (
 	"context"
 	"net/http"
@@ -15,7 +11,6 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 )
 
-// contextKeyAuthzStub 只跑成功路径：三个键都得被写到。
 type contextKeyAuthzStub struct{}
 
 func (contextKeyAuthzStub) IsSuperAdmin(context.Context, uint64) (bool, error) { return false, nil }
@@ -82,7 +77,6 @@ func TestAdminctxMiddlewareWritesTheKeysThisPackageNames(t *testing.T) {
 	}
 }
 
-// TestContextKeyLiterals 钉住三个导出常量的线协议值。
 func TestContextKeyLiterals(t *testing.T) {
 	cases := []struct{ name, got, want string }{
 		{"PermSetKey", PermSetKey, "perm_set"},

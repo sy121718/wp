@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// Config 数据库驱动配置
 type Config struct {
 	Driver           string
 	Host             string
@@ -18,7 +17,6 @@ type Config struct {
 	StatementTimeout time.Duration
 }
 
-// NormalizeConfig 归一化数据库配置
 func NormalizeConfig(cfg Config) Config {
 	defaultCfg := Config{
 		Driver:       "postgres",

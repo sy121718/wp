@@ -1,24 +1,11 @@
 package datarule
 
-// dept_scope_subtree_test.go —— 部门范围（dept.scope:SELF_AND_CHILDREN）的两条路径。
-//
-// SQL 优化点：改造前 deptScopeCondition 一律生成子查询：
-//
-//	field IN (SELECT id FROM sys_dept WHERE (',' || ancestors || ',') LIKE ('%,' || ? || ',%') OR id = ?)
-//
-// 左边的 || 是**表达式**、匹配又在串中间，B-tree 索引用不上 —— 每一次带部门范围的查询都要
-// 把 sys_dept 整表扫一遍。UserContext.DeptSubtreeIDs 非空时改为直接展开 field IN (?,?,...)：
-// 走目标表 dept_id 上的索引，且完全没有子查询。
-//
-// 向后兼容是硬要求：DeptSubtreeIDs 为空（既有调用方都没设这个字段）时生成的 SQL 必须与
-// 改造前**逐字相同**（既有断言见 plugin_test.go 的 TestBuildConditionDeptScopeExactMatch）。
 import (
 	"reflect"
 	"strings"
 	"testing"
 )
 
-// TestDeptScopeConditionPrefersSubtreeIN 子树已知 → IN (?,?,...)，参数个数与顺序一致。
 func TestDeptScopeConditionPrefersSubtreeIN(t *testing.T) {
 	t.Parallel()
 
@@ -45,8 +32,6 @@ func TestDeptScopeConditionPrefersSubtreeIN(t *testing.T) {
 	}
 }
 
-// TestDeptScopeConditionSubtreeINPlaceholderCount 占位符个数必须与参数个数严格相等
-// （多一个少一个都是「参数错位」这类静默错误）。
 func TestDeptScopeConditionSubtreeINPlaceholderCount(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +54,6 @@ func TestDeptScopeConditionSubtreeINPlaceholderCount(t *testing.T) {
 	}
 }
 
-// TestDeptScopeConditionFallsBackToSubquery 子树未知（nil 或空切片）→ 回退既有子查询。
 func TestDeptScopeConditionFallsBackToSubquery(t *testing.T) {
 	t.Parallel()
 

@@ -1,12 +1,7 @@
-// Package nav 实现 core.nav：站点导航菜单组件（对标 WordPress 前台菜单）。
-//
-// 能力对齐 WP「外观 → 菜单」：多级菜单项（一级 + 二级）、每项独立链接与打开方式、
-// 水平/垂直排列、悬停与当前项样式、子菜单浮层；移动端可折叠为汉堡菜单（纯 CSS，零 JS）。
-// 静态构建：菜单项写在 props.items 里，构建期直接输出 <nav><ul>…
 package nav
 
 import (
-	_ "embed" // nav.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html/template"
@@ -15,7 +10,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.nav"
 
 func init() {
@@ -23,35 +17,14 @@ func init() {
 	core.RegisterTemplate("nav", navTemplate)
 }
 
-// Component 导航菜单组件（内容型，无 children 节点）。
 type Component struct{}
 
-// Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
-// Translatable 实现 core.TranslatableProvider：可翻译字段白名单（多语言 P5b）。
-//
-// **只对「自定义菜单」模式有效**：那种模式下 label 写在页面文档的 Props 里，
-// 作者在页面翻译工作台里逐条填译文。
-//
-// Menu 模式（header/footer）的 label 来自 navigation 模块的节点，**不在 Props 里** ——
-// 页面翻译工作台既看不到它，这个白名单对它也无效（审计 I18N-018 的冲突就在这：
-// 两种模式的 label 长得一样，维护位置却完全不同）。它的译文由构建期的导航解析器补：
-// pipeline.NavigationAdapter 用 sys_translation 的 navigation.label 语境回填，
-// 维护入口在导航管理页。
-//
-// 位置不同是刻意的：菜单的归属决定它归谁维护 —— 全局页眉导航改一处就该全站生效，
-// 绑进某一页的翻译里反而会出现「改了这页、那页没变」。
-//
-// 原注释：
-// docs/06-D §7.5 决策 F6）。只有这里列出的字段参与内容翻译，未声明字段永不翻译。
 func (c *Component) Translatable() []string { return []string{"label"} }
 
-// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema。
 func (c *Component) PropsSpec() any { return &Props{} }
 
-// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
-// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
 func (c *Component) Palette() core.PaletteMeta {
 	return core.PaletteMeta{
 		Type:     Type,
@@ -93,45 +66,32 @@ func (c *Component) Palette() core.PaletteMeta {
 	}
 }
 
-// Item 菜单项（支持一级子菜单，对齐 WP 菜单的父子层级）。
 type Item struct {
 	Label    string `json:"label,omitempty"`
 	URL      string `json:"url,omitempty"`
-	Target   string `json:"target,omitempty"` // self / blank
+	Target   string `json:"target,omitempty"`
 	Children []Item `json:"children,omitempty"`
-	// PanelBlockID 悬浮面板引用的全局块（超级菜单；来自导航项，不在文档里）。
+
 	PanelBlockID string `json:"panelBlockId,omitempty"`
-	// PanelWidth 面板宽度 auto / full。
+
 	PanelWidth string `json:"panelWidth,omitempty"`
-	// PanelHTML 面板内容（渲染期由 builder 展开块得到，不入文档）。
+
 	PanelHTML template.HTML `json:"-"`
-	// Current 是否当前页（构建期按页面路径标记，输出 is-current 类，不入文档）。
+
 	Current bool `json:"-"`
 }
 
-// Props 导航菜单属性。
 type Props struct {
-	// Menu 绑定导航位置：非空（header/footer）时构建期用该位置的导航菜单
-	// 覆盖 Items（navigation 模块数据，构建期解析，产物仍为静态）。
-	// 为空表示用下方 Items 手写菜单项。
 	Menu string `json:"menu,omitempty" ct:"select,=自定义菜单,header=页眉导航（桌面）,header_mobile=页眉导航（移动端）,footer=页脚导航（桌面）,footer_mobile=页脚导航（移动端）,sec=content,label=导航位置"`
 
-	// Navigation 按**具体菜单项 id** 取菜单（该菜单项及其子树作为菜单根）。
-	//
-	// 优先级高于 Menu：两者都填时以本字段为准。用途是「一个位置下只放某一支」——
-	// 例如页眉只要「产品」这一支，不必为它单独建一个位置。
-	// 检查器的 entityref,navigation 下拉由导航模块的菜单项列表填充。
 	Navigation string `json:"navigation,omitempty" ct:"entityref,navigation,label=具体菜单项"`
 
-	// Items 菜单项列表（一级；每项可带 Children 形成二级菜单）。
 	Items []Item `json:"items,omitempty"`
 
-	// --- 布局 ---
 	Orientation string `json:"orientation,omitempty" ct:"select,horizontal=水平,vertical=垂直,sec=style,label=排列方向"`
 	Gap         string `json:"gap,omitempty" ct:"dimension,maxlen=20,sec=style,label=项间距"`
 	Align       string `json:"align,omitempty" ct:"select,left=靠左,center=居中,right=靠右,sec=style,label=整体对齐"`
 
-	// --- 文字 ---
 	Color       string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=文字色"`
 	HoverColor  string `json:"hoverColor,omitempty" ct:"color,maxlen=200,sec=style,label=悬停文字色"`
 	ActiveColor string `json:"activeColor,omitempty" ct:"color,maxlen=200,sec=style,label=当前项颜色"`
@@ -139,19 +99,15 @@ type Props struct {
 	FontWeight  string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,sec=style,label=字重"`
 	ItemPadding string `json:"itemPadding,omitempty" ct:"dimension,maxlen=20,sec=style,label=项内距"`
 
-	// --- 子菜单 ---
 	SubmenuBg    string `json:"submenuBg,omitempty" ct:"color,maxlen=200,sec=style,label=子菜单底色"`
 	SubmenuWidth string `json:"submenuWidth,omitempty" ct:"dimension,maxlen=20,sec=style,label=子菜单最小宽度"`
 
-	// --- 移动端 ---
 	MobileCollapse bool   `json:"mobileCollapse,omitempty" ct:"bool,sec=style,label=移动端折叠为汉堡菜单"`
 	ToggleLabel    string `json:"toggleLabel,omitempty" ct:"safe,maxlen=20,sec=style,label=折叠按钮文字"`
 
-	// Advanced 通用高级属性（布局/边框/动效/响应式覆盖）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Validate 校验菜单节点。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	var p Props
 	if err = json.Unmarshal(node.Props, &p); err != nil {
@@ -166,7 +122,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return core.ValidateSpec(&p, node.ID)
 }
 
-// validateItems 递归校验菜单项（层级上限 2，链接白名单）。
 func validateItems(items []Item, nodeID string, depth int) (err error) {
 	if len(items) == 0 {
 		return nil
@@ -200,19 +155,12 @@ func validateItems(items []Item, nodeID string, depth int) (err error) {
 	return nil
 }
 
-// navCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
-//
 //go:embed nav.css
 var navCSS string
 
-// compileCSS 生成导航样式（三端）。
-//
-// Go 侧只做兜底与映射：子菜单底色未配时跟主题面、对齐档位翻成 flex 值、
-// 竖向与移动端折叠翻成布尔量。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	// 子菜单底色未配置时跟主题面（写死的话换主题它不动）。
 	submenuBg := p.SubmenuBg
 	if submenuBg == "" {
 		submenuBg = "var(--sky-c-surface, #fff)"
@@ -238,8 +186,5 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// navTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed nav.jet
 var navTemplate string

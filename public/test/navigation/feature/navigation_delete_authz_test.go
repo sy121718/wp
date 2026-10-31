@@ -1,16 +1,5 @@
 package feature
 
-// navigation_delete_authz_test.go — 导航「新建 / 单条删除 / 批量删除」迁到真实 JSON 端点后的用户契约。
-//
-// 契约链：Session（会话 Cookie）→ CSRF（X-CSRF-Token）→ Casbin（navigation:create / navigation:delete，
-// 迁移 036 落的权限点）→ handler → PG。本文件补的正是链路层：模块内用例**不带中间件**
-// （直接 POST 到 gin 路由），能证明形状与取词，却证明不了「无策略会被拦住」「缺令牌发不出去」
-// 「旧页面 POST 真的不在了」。装置与 internal/routers/assembly.go 同构地装配 /api 的三层链 ——
-// 装置与生产不同构时，断言的是另一个系统。
-//
-// 复用 navigation_translation_authz_test.go 的装置（同一份 /api 三层链 + 超管/普通管理员两条会话）：
-// 两个文件验的是同一个装配形态，各建一套装置只会让「同构」这句话有两个版本。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -27,7 +16,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 迁到 JSON 端点的两条写路径（权限点与 sys_permission.api_path 逐字一致，判权只看 (obj, act)）。
 const (
 	navCreateAPIPath = "/api/navigation/create"
 	navDeleteAPIPath = "/api/navigation/delete"
@@ -36,8 +24,6 @@ const (
 	navDeletePermission = "navigation:delete"
 )
 
-// navWriteAuthzPost 发 JSON 写请求；withCSRF=false 时**不发** X-CSRF-Token
-// （模拟「前端忘了带令牌」：会话有效、令牌缺失）。
 func navWriteAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *support.AdminSession,
 	path string, payload map[string]interface{}, withCSRF bool) *httptest.ResponseRecorder {
 	t.Helper()
@@ -61,8 +47,6 @@ func navWriteAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *support.
 	return recorder
 }
 
-// navWriteAuthzPostLang 与 navWriteAuthzPost 同形，另带 Accept-Language：
-// 逐条原因是**按请求语言**渲染的成品句，不带这一步只能测到默认语言那一支。
 func navWriteAuthzPostLang(t *testing.T, env *navTranslationAuthzEnv, sess *support.AdminSession,
 	path string, payload map[string]interface{}, lang string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -86,7 +70,6 @@ func navWriteAuthzPostLang(t *testing.T, env *navTranslationAuthzEnv, sess *supp
 	return recorder
 }
 
-// navSeedText 读 sys_i18n 里某条词条在某语言下的原文（seed 真源；期望值不写死在用例里）。
 func navSeedText(t *testing.T, env *navTranslationAuthzEnv, key, lang string) string {
 	t.Helper()
 	var value string
@@ -100,7 +83,6 @@ func navSeedText(t *testing.T, env *navTranslationAuthzEnv, key, lang string) st
 	return value
 }
 
-// navFindBulkItem 从批档回执的 items 里取出某条 id 的逐条结果。
 func navFindBulkItem(t *testing.T, items []interface{}, id string) map[string]interface{} {
 	t.Helper()
 	for _, raw := range items {
@@ -113,7 +95,6 @@ func navFindBulkItem(t *testing.T, items []interface{}, id string) map[string]in
 	return nil
 }
 
-// navAssertNoLeak 逐条原因既不得出现数据库/内部细节，也不得是内部归口 key。
 func navAssertNoLeak(t *testing.T, message string) {
 	t.Helper()
 	for _, tok := range []string{"SQLSTATE", "pg_", "constraint", "record not found", navInternalKey} {
@@ -123,7 +104,6 @@ func navAssertNoLeak(t *testing.T, message string) {
 	}
 }
 
-// navItemExists 用**契约**问一条导航项是否还在（不是直接查表：判据与生产读路径同一份）。
 func navItemExists(t *testing.T, env *navTranslationAuthzEnv, id string) bool {
 	t.Helper()
 	item, err := env.NavSvc.Get(context.Background(), &navigationdto.GetReq{ID: id})
@@ -133,7 +113,6 @@ func navItemExists(t *testing.T, env *navTranslationAuthzEnv, id string) bool {
 	return item.ID == id
 }
 
-// navWriteAuthzPolicyCount 普通管理员手上这条 (obj, code) 的策略条数。
 func navWriteAuthzPolicyCount(t *testing.T, env *navTranslationAuthzEnv, path, perm string) int64 {
 	t.Helper()
 	var count int64
@@ -145,7 +124,6 @@ func navWriteAuthzPolicyCount(t *testing.T, env *navTranslationAuthzEnv, path, p
 	return count
 }
 
-// navWriteAuthzSetPolicy 增删后重载策略：Casbin 是内存快照，只改库不会改变判权结果。
 func navWriteAuthzSetPolicy(t *testing.T, env *navTranslationAuthzEnv, path, perm string, grant bool) {
 	t.Helper()
 	var err error
@@ -167,12 +145,9 @@ func navWriteAuthzSetPolicy(t *testing.T, env *navTranslationAuthzEnv, path, per
 	}
 }
 
-// TestNavigationDeleteWriteAuthzChain 无策略 403、超管放行、补策略即放行 ——
-// 「403 由这条 Casbin 路径决定」用因果反证钉住（单档与批档是同一条路径，故一并验）。
 func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
-	// 前提：普通管理员没有任何 navigation:delete 策略（否则下面的 403 反例不成立）。
 	navWriteAuthzSetPolicy(t, env, navDeleteAPIPath, navDeletePermission, false)
 	if got := navWriteAuthzPolicyCount(t, env, navDeleteAPIPath, navDeletePermission); got != 0 {
 		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navDeletePermission)
@@ -180,18 +155,16 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 
 	victim := addNavItem(t, env.NavSvc, env.ProjectID, "待删项", "/victim", nil, "self")
 
-	// 1) 反例：无策略 —— 被 Casbin 拦在 handler 之前（不是形状错、不是 500）。
 	denied := navWriteAuthzPost(t, env, env.Plain, navDeleteAPIPath,
 		map[string]interface{}{"id": victim}, true)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("无策略的普通管理员应 403，实际 %d: %s", denied.Code, denied.Body.String())
 	}
-	// 被拦下的请求不能留下任何痕迹：403 只是「没进去」的旁证，行还在才是效果。
+
 	if !navItemExists(t, env, victim) {
 		t.Fatalf("403 的请求不该真删掉行（id=%s）", victim)
 	}
 
-	// 2) 超管对照：策略由 seed 通道按 is_admin=1 补全 —— 必须 200 且真删。
 	asAdmin := navWriteAuthzPost(t, env, env.Super, navDeleteAPIPath,
 		map[string]interface{}{"id": victim}, true)
 	if asAdmin.Code != http.StatusOK {
@@ -201,7 +174,6 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 		t.Fatalf("超管删除后行仍存在（id=%s）", victim)
 	}
 
-	// 3) 批档同一条路径：无策略同样 403 且两条都不删（批档不是另一条权限锚点）。
 	batchA := addNavItem(t, env.NavSvc, env.ProjectID, "批删 A", "/batch-a", nil, "self")
 	batchB := addNavItem(t, env.NavSvc, env.ProjectID, "批删 B", "/batch-b", nil, "self")
 	deniedBulk := navWriteAuthzPost(t, env, env.Plain, navDeleteAPIPath,
@@ -213,7 +185,6 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 		t.Fatal("403 的批量删除不该删掉任何一行")
 	}
 
-	// 4) 因果反证：补上策略后同一请求立刻放行，且逐条结果带计数。
 	navWriteAuthzSetPolicy(t, env, navDeleteAPIPath, navDeletePermission, true)
 	allowed := navWriteAuthzPost(t, env, env.Plain, navDeleteAPIPath,
 		map[string]interface{}{"ids": []string{batchA, batchB}}, true)
@@ -234,8 +205,6 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 	}
 }
 
-// TestNavigationCreateWriteAuthzChain 新建同样落在真实权限点上：无 navigation:create 被拦，
-// 超管放行且行真的落库（含抽屉提交的那组字段形态）。
 func TestNavigationCreateWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	navWriteAuthzSetPolicy(t, env, navCreateAPIPath, navCreatePermission, false)
@@ -276,7 +245,6 @@ func TestNavigationCreateWriteAuthzChain(t *testing.T) {
 	}
 }
 
-// navItemByTitle 按标题在 header 位置里找一条导航项（找不到返回空串）。
 func navItemByTitle(t *testing.T, env *navTranslationAuthzEnv, title string) string {
 	t.Helper()
 	items, err := env.NavSvc.List(context.Background(),
@@ -292,19 +260,13 @@ func navItemByTitle(t *testing.T, env *navTranslationAuthzEnv, title string) str
 	return ""
 }
 
-// TestNavigationWriteRequiresCSRF 会话有效但没带令牌：CSRF 层拒绝，且不落库。
-//
-// 这一档在模块内测不出来（那里的路由没有中间件）：CSRF 是**装配层**的中间件，
-// 少了它，「模板去掉 csrf 隐藏域」这类改动不会有任何测试变红 —— 而切片 A 恰好删掉了
-// 三个隐藏域（页面 POST 退役），必须有人在链路层守住。
 func TestNavigationWriteRequiresCSRF(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	victim := addNavItem(t, env.NavSvc, env.ProjectID, "CSRF 待删项", "/csrf-victim", nil, "self")
 
 	withoutToken := navWriteAuthzPost(t, env, env.Super, navDeleteAPIPath,
 		map[string]interface{}{"id": victim}, false)
-	// 缺令牌的契约状态码就是 403（builtin.CSRFMiddleware：缺失或不一致 → 403）；
-	// 只写「不等于 200」会把 400/500 也算通过 —— 那两种恰好是「请求进了 handler」的形态。
+
 	if withoutToken.Code != http.StatusForbidden {
 		t.Fatalf("缺少 X-CSRF-Token 的写请求应 403，实际 %d: %s", withoutToken.Code, withoutToken.Body.String())
 	}
@@ -322,18 +284,12 @@ func TestNavigationWriteRequiresCSRF(t *testing.T) {
 	}
 }
 
-// TestNavigationDeleteBulkResultFromRealRows 批档的业务结果（真实 PG + 真实链路）：
-// 成功的真删、失败的计入 skipped 并带上**业务原因**（不是数据库原文），未涉及的行业原样在。
-//
-// 模块内的批档用例用桩 service，只能证明「逐条调用 + 结果组装」；这里证明的是
-// 「结果与库里的真实变化一致」—— 两者都缺一不可。
 func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	goneA := addNavItem(t, env.NavSvc, env.ProjectID, "批删甲", "/bulk-gone-a", nil, "self")
 	goneB := addNavItem(t, env.NavSvc, env.ProjectID, "批删乙", "/bulk-gone-b", nil, "self")
 	kept := addNavItem(t, env.NavSvc, env.ProjectID, "不删项", "/bulk-keep", nil, "self")
 
-	// 一个不存在的 id 混在批里：它必须被计入 skipped（逐条失败不中断整批）。
 	const missing = "00000000-0000-0000-0000-0000000000ff"
 	recorder := navWriteAuthzPost(t, env, env.Super, navDeleteAPIPath,
 		map[string]interface{}{"ids": []string{goneA, missing, goneB}}, true)
@@ -356,11 +312,7 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("逐条结果应有 3 条（含失败那条），实际 %d 条: %s", len(items), recorder.Body.String())
 	}
-	// 失败那一条的原因必须是**成品句**（本模块归口的业务文案），既不是数据库原文、也不是裸 key。
-	//
-	// 本进程没有加载词条缓存（该包所有用例的默认状态：GetText 未命中即原样返回 key），
-	// 所以这里走的正是「词条缺席 → 本模块中文兜底」那一支；期望值从 sys_i18n 读 zh-CN 原文，
-	// 于是这条断言同时钉住两件事：兜底句与词条**逐字一致**、响应里出现的不是裸 key。
+
 	seedText := navSeedText(t, env, navigationenums.ErrNotFound, "zh-CN")
 	failed := navFindBulkItem(t, items, missing)
 	if failed["deleted"] != false {
@@ -372,7 +324,6 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	}
 	navAssertNoLeak(t, message)
 
-	// 库里的真实变化：两条真删、第三条原样在。
 	if navItemExists(t, env, goneA) || navItemExists(t, env, goneB) {
 		t.Fatal("成功那两条应真的从库里消失")
 	}
@@ -381,11 +332,6 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	}
 }
 
-// TestNavigationDeleteSingleRemovesDescendants 单删回归（真实 PG + 真实链路）：
-// 删父项必须把子项一并删掉 —— 导航树是一个聚合，留下孤儿节点会被渲染成顶级项。
-//
-// 这条语义由 service 决定（`navDescendantIDs`），JSON 迁移**没有**改它；本用例的作用是
-// 把「迁移后仍是整棵子树删除」钉住 —— 只断言 200 的话，退化成「只删自己」也不会红。
 func TestNavigationDeleteSingleRemovesDescendants(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	parent := addNavItem(t, env.NavSvc, env.ProjectID, "父项", "/tree-parent", nil, "self")
@@ -409,10 +355,6 @@ func TestNavigationDeleteSingleRemovesDescendants(t *testing.T) {
 	}
 }
 
-// TestNavigationLegacyPagePostsAreGone 三条旧页面写路由已下线，列表页仍在且写声明指向真实端点。
-//
-// 两件事必须一起钉：只断言旧路由 404，改坏页面装配（路由整体没挂上）也不会红；
-// 只断言页面 200，则旧路由复活（回到两套写入口）也不会红。
 func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
@@ -454,7 +396,7 @@ func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 		t.Fatalf("导航列表页应 200，实际 %d: %s", page.Code, page.Body.String())
 	}
 	body := page.Body.String()
-	// 页面上的写契约必须与真实端点一致：点一次新建 / 删除就该打到这两条 JSON 路径。
+
 	for _, want := range []string{
 		`data-write-url="` + navCreateAPIPath + `"`,
 		`data-write-url="` + navDeleteAPIPath + `"`,
@@ -468,15 +410,6 @@ func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 	}
 }
 
-// TestNavigationDeleteBulkReasonsFollowRequestLanguage 逐条原因按请求语言出成品句（真实链路）。
-//
-// 词条用**合成值**注入（process 级缓存，退出还原）：响应里出现这句只能来自「enums 的 key 真的
-// 走到了取词层」。两类失败各验一遍：
-//   - 业务失败：合法但不存在（或已被本批删掉）的 uuid → ErrNotFound；
-//   - 未归口的内部失败：非 uuid 的 id 会在库层报 22P02（uuid 解析失败）→ 归口 navigation.err.internal，
-//     数据库原文只进日志。
-//
-// 语言走 Accept-Language：同一条请求换语言必须换文案，否则「按请求语言渲染」只是一句声明。
 func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
@@ -486,9 +419,8 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 	}, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	// 非 uuid：库层解析 uuid 失败（22P02）→ service 原样上抛 → 归口到 navigation.err.internal。
 	const badID = "not-a-uuid"
-	// 合法但不存在：Absent → ErrNotFound。
+
 	const missing = "00000000-0000-0000-0000-0000000000fd"
 
 	for _, tc := range []struct{ name, lang, wantMissing, wantInternal string }{

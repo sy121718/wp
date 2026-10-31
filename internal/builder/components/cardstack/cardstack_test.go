@@ -12,8 +12,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// nodeOf 构造测试节点：props 为 nil 表示空 props；childN 为子节点数量
-// （用已注册的 cardstack 自身当子节点类型，避免依赖其它组件包）。
 func nodeOf(p *Props, childN int) *core.Node {
 	n := &core.Node{ID: "n1", Type: Type}
 	if p != nil {
@@ -30,15 +28,13 @@ func nodeOf(p *Props, childN int) *core.Node {
 	return n
 }
 
-// compiled 编译节点并返回 CSS。
 func compiled(t *testing.T, n *core.Node, p *Props) string {
 	t.Helper()
 	b := &core.CSSBuckets{}
-	CompileCSS(n, p, 0, b) // 0 = 按静态卡片数（子节点数 / 占位卡数量）生成
+	CompileCSS(n, p, 0, b)
 	return b.String()
 }
 
-// TestValidateProps 校验：尺寸类字段必须是 CSS 安全值，其余由 ct tag 兜底。
 func TestValidateProps(t *testing.T) {
 	c := &Component{}
 	cases := []struct {
@@ -62,19 +58,17 @@ func TestValidateProps(t *testing.T) {
 	}
 }
 
-// TestHoverFanCSS 悬停 + 扇形：rotate 在 translate 之前（位移走旋转坐标系 → 弧线），
-// 收敛式扣掉上抬量的旋转投影，且不再依赖容器查询。
 func TestHoverFanCSS(t *testing.T) {
-	s := compiled(t, nodeOf(nil, 0), &Props{}) // 默认 9 张数字卡
+	s := compiled(t, nodeOf(nil, 0), &Props{})
 
 	for _, want := range []string{
-		"rotate(-20deg) translate(-480px, -50px);", // 固定值兜底：第 1 张
-		"rotate(20deg) translate(480px, -50px)",    // 第 9 张（扇形对称）
+		"rotate(-20deg) translate(-480px, -50px);",
+		"rotate(20deg) translate(480px, -50px)",
 		"rotate(-20deg) translate(calc(-4 * clamp(0px, calc((50vw - 16px - 17.1010px - 0.9397 * 50% - 0.3420 * var(--sky-cardstack-h) / 2) / 3.7588), 120px)), -50px)",
 		"rotate(20deg) translate(calc(4 * clamp(0px,",
-		"filter: hue-rotate(-200deg)",           // 数字卡位置派生色相
-		"min-height: calc(320px + 100px)",       // 纵向预留上抬空间
-		"--sky-cardstack-h: calc(320px + 20px)", // 旋转外扩要用的卡高
+		"filter: hue-rotate(-200deg)",
+		"min-height: calc(320px + 100px)",
+		"--sky-cardstack-h: calc(320px + 20px)",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("扇形悬停缺少 %q", want)
@@ -83,7 +77,7 @@ func TestHoverFanCSS(t *testing.T) {
 	if strings.Contains(s, "container-type") {
 		t.Errorf("不应依赖容器查询（contain: layout 会困住 fixed 放大层）")
 	}
-	// 选择器形态：:hover 挂容器、经轨道到卡片；容器类名只能出现一次。
+
 	if !strings.Contains(s, ".sky-c-n1:hover .sky-cardstack-track .sky-cardstack-card:nth-child(1)") {
 		t.Errorf("悬停选择器应挂在容器上并经轨道下到卡片")
 	}
@@ -92,12 +86,6 @@ func TestHoverFanCSS(t *testing.T) {
 	}
 }
 
-// TestHoverGridStack 悬停展开用 grid 同格叠放：卡片天然重叠，且轨道被最高的那张卡撑开。
-//
-// 为什么不能用「flex 居中 + 卡片 absolute」：absolute 的卡片不参与父元素高度计算，
-// 轨道只能按参数值预留高度；而内容卡是 min-height，内容多了会自己长高 ——
-// 两者不一致时卡片上下溢出、压住相邻内容，且构建期不报错（实测：卡片 452px、
-// 轨道 368px，盖住了上方说明文字）。改 grid 后参数值退化成下限。
 func TestHoverGridStack(t *testing.T) {
 	p := &Props{Trigger: TriggerHover, Count: 3}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -113,7 +101,7 @@ func TestHoverGridStack(t *testing.T) {
 			t.Errorf("grid 同格叠放缺少 %q", want)
 		}
 	}
-	// 卡片规则里不该再有绝对定位（否则又变回「轨道按参数预留高度」的老问题）
+
 	for _, line := range strings.Split(s, "\n") {
 		if strings.Contains(line, "position: absolute") && strings.Contains(line, "sky-cardstack-card") {
 			t.Errorf("卡片仍在使用绝对定位：%s", strings.TrimSpace(line))
@@ -121,7 +109,6 @@ func TestHoverGridStack(t *testing.T) {
 	}
 }
 
-// TestHoverLineHorizontalCSS 横排：卡片不带任何角度，纯水平平移成一行。
 func TestHoverLineHorizontalCSS(t *testing.T) {
 	p := &Props{Shape: ShapeLine}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -130,9 +117,9 @@ func TestHoverLineHorizontalCSS(t *testing.T) {
 		t.Errorf("横排不该有任何旋转（「直接排开」的全部意义就在这里）")
 	}
 	for _, want := range []string{
-		"translate(-480px, 0px);", // 第 1 张固定值
+		"translate(-480px, 0px);",
 		"translate(calc(-4 * clamp(0px, calc((50vw - 16px - 50%) / 4), 120px)), 0px)",
-		"min-height: 320px", // 横排不需要纵向预留
+		"min-height: 320px",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("横排缺少 %q", want)
@@ -140,8 +127,6 @@ func TestHoverLineHorizontalCSS(t *testing.T) {
 	}
 }
 
-// TestHoverLineVerticalCSS 竖排：同样无角度，纯垂直平移成一列；收敛按视口高度，
-// 轨道按「卡高 + 2×最大步距×位移」预留纵向铺开空间。
 func TestHoverLineVerticalCSS(t *testing.T) {
 	p := &Props{Shape: ShapeLine, Direction: directionVertical}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -152,7 +137,7 @@ func TestHoverLineVerticalCSS(t *testing.T) {
 	for _, want := range []string{
 		"translate(0px, -480px);",
 		"translate(0px, calc(-4 * clamp(0px, calc((50vh - 16px - var(--sky-cardstack-h) / 2) / 4), 120px)))",
-		"min-height: calc(320px + 960px)", // 2 × 4 × 120
+		"min-height: calc(320px + 960px)",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("竖排缺少 %q", want)
@@ -160,12 +145,6 @@ func TestHoverLineVerticalCSS(t *testing.T) {
 	}
 }
 
-// TestHoverBookSpreadWithinViewport 摊开的书：展开位移必须按视口收敛。
-//
-// 为什么不能用 45vw 封顶：2×45vw + 卡宽恒大于 100vw，窄屏上六页摊开会把页面撑出
-// 横向滚动 —— 实测 440 视口溢出 37px、375 视口溢出 99px，移动端表现为「右侧一片空白、
-// 页面能左右拖」，而在 DevTools 里点一下元素触发的重排又会让它看起来恢复正常，
-// 是很难复现的假象。收敛式与 fan / line 保持一致（除以最大步距，最外侧那页贴住视口边）。
 func TestHoverBookSpreadWithinViewport(t *testing.T) {
 	p := &Props{Shape: ShapeBook}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -184,8 +163,6 @@ func TestHoverBookSpreadWithinViewport(t *testing.T) {
 	}
 }
 
-// TestScrollCSS 滚动堆叠：sticky 层叠是基础形态，scroll-driven 跟手收敛叠在同一条
-// 规则上 —— 老浏览器丢弃未知属性后动画停在终态，即静态缩放，自动降级。
 func TestScrollCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerScroll}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -195,8 +172,8 @@ func TestScrollCSS(t *testing.T) {
 		"top: 50%",
 		"translate: 0 -50%",
 		"margin: 0 auto 26vh",
-		"scale: 0.9400", // 第 1 张 = base
-		"scale: 1.1000", // 第 9 张 = 94% + 8*2%
+		"scale: 0.9400",
+		"scale: 1.1000",
 		"animation: sky-cs-n1-1 linear both",
 		"animation-timeline: view()",
 		"animation-range: entry 0% entry 60%",
@@ -208,8 +185,7 @@ func TestScrollCSS(t *testing.T) {
 			t.Errorf("滚动模式缺少 %q", want)
 		}
 	}
-	// absolute 只该出现在「隐藏单选」「放大触发层」这类辅助层里，卡片本身是 sticky 排布。
-	// 按规则块判断而不是全局计数：覆盖层的绝对定位是预期内的，卡片上的才是缺陷。
+
 	for _, block := range strings.Split(s, "}") {
 		if !strings.Contains(block, "sky-cardstack-card") || strings.Contains(block, "zoom-layer") {
 			continue
@@ -220,7 +196,6 @@ func TestScrollCSS(t *testing.T) {
 	}
 }
 
-// TestSlideCSS 全屏分页：原生滚动吸附，一屏一张。
 func TestSlideCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide, Count: 3}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -229,32 +204,24 @@ func TestSlideCSS(t *testing.T) {
 		"overflow-y: auto",
 		"scroll-snap-type: y mandatory",
 		"scroll-snap-align: start",
-		"scroll-snap-stop: always", // 一次手势只翻一屏
+		"scroll-snap-stop: always",
 		"width: 100%",
-		"height: 100dvh",     // 移动端地址栏收放时不跳
-		"height: 100vh",      // 老浏览器降级
-		"min-height: 100dvh", // 内容超一屏时卡片自己长高，不裁切
-		"border-radius: 0",   // 全屏卡片的圆角与投影会露出拼接感
+		"height: 100dvh",
+		"height: 100vh",
+		"min-height: 100dvh",
+		"border-radius: 0",
 		"box-shadow: none",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("全屏分页缺少 %q", want)
 		}
 	}
-	// 全屏下"放大到视口中央"等于原地不动，不该输出放大层。
+
 	if strings.Contains(s, "sky-cardstack-scrim") {
 		t.Errorf("全屏分页不该输出放大层")
 	}
 }
 
-// TestSlideHighlight 当前屏高亮：挂在脚本切换的 .is-current 类上（普通 animation）。
-//
-// 为什么不用 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，实测 view()
-// 在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动变化，但元素计算值恒定不变。
-// 这条断言同时守住「别再退回 view() 写法」。
-// TestSlideStackPageno 堆叠模式的页码显隐：卡片粘在同一位置、后面的卡更小，
-// 前面那张的页码会从边缘露出来叠成重影。用 :has 表达「一旦有当前屏就隐藏其余的」，
-// 而且脚本没跑时页码照旧可见（只是重影），比默认全隐藏稳妥。
 func TestSlideStackPageno(t *testing.T) {
 	sp := &Props{Trigger: TriggerSlide, Count: 3, SlideStack: true}
 	ss := compiled(t, nodeOf(sp, 0), sp)
@@ -267,7 +234,6 @@ func TestSlideStackPageno(t *testing.T) {
 		}
 	}
 
-	// 平铺模式卡片各自独立，页码本就该各自显示，不套这条规则。
 	plain := &Props{Trigger: TriggerSlide, Count: 3}
 	ps := compiled(t, nodeOf(plain, 0), plain)
 	if strings.Contains(ps, ":has(.sky-cardstack-card.is-current)") {
@@ -281,14 +247,13 @@ func TestSlideHighlight(t *testing.T) {
 	for _, want := range []string{
 		"animation: sky-loop-glow 2s ease-in-out infinite",
 		"@keyframes sky-loop-glow",
-		".sky-cardstack-card.is-current", // 由脚本按可见比例切换
+		".sky-cardstack-card.is-current",
 	} {
 		if !strings.Contains(hs, want) {
 			t.Errorf("当前屏高亮缺少 %q", want)
 		}
 	}
 
-	// 两者同时开：各挂各的类，互不覆盖。
 	bp := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: "flip", SlideHighlight: "glow"}
 	bs := compiled(t, nodeOf(bp, 0), bp)
 	for _, want := range []string{
@@ -302,20 +267,16 @@ func TestSlideHighlight(t *testing.T) {
 		}
 	}
 
-	// slide 不得再出现 view() 时间线（内嵌滚动容器下不驱动动画）。
 	if strings.Contains(bs, "animation-timeline") {
 		t.Errorf("slide 不该用 animation-timeline: view()：内嵌滚动容器下实测不驱动动画")
 	}
 
-	// 两个都不开时不输出动画规则。
 	plain := &Props{Trigger: TriggerSlide, Count: 2}
 	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "is-enter") {
 		t.Errorf("都不开时不该输出动画规则")
 	}
 }
 
-// TestLoopEffects 循环效果：悬停展开与 deck 主卡只走 filter/opacity 两条词汇 ——
-// 展开位移与卡片缩放已经占了 transform，swing/wobble/pulse 之类会把位移顶掉。
 func TestLoopEffects(t *testing.T) {
 	hp := &Props{Trigger: TriggerHover, Count: 3, HoverEffect: "glow"}
 	hs := compiled(t, nodeOf(hp, 0), hp)
@@ -340,14 +301,12 @@ func TestLoopEffects(t *testing.T) {
 		}
 	}
 
-	// 缺省不带任何循环动画。
 	plain := &Props{Trigger: TriggerHover, Count: 3}
 	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "sky-loop-") {
 		t.Errorf("缺省不该带循环动画")
 	}
 }
 
-// TestSlideEffect 切换动画：复用通用动效词汇，关键帧随组件一起注入产物；缺省无动画。
 func TestSlideEffect(t *testing.T) {
 	plain := &Props{Trigger: TriggerSlide, Count: 2}
 	ps := compiled(t, nodeOf(plain, 0), plain)
@@ -355,8 +314,6 @@ func TestSlideEffect(t *testing.T) {
 		t.Errorf("缺省不该带切换动画（只有位置变化）")
 	}
 
-	// 每个效果都映射到 core 那套词汇里的真实关键帧名，且关键帧被注入。
-	// 方向自适应：纵向走 *-up / -left 变体，横向走 *-right / -y 变体。
 	cases := map[string][2]string{
 		"fade":   {"sky-fade-in-bottom-left", "sky-fade-in-bottom-right"},
 		"zoom":   {"sky-zoom-in-up", "sky-zoom-in-right"},
@@ -379,7 +336,7 @@ func TestSlideEffect(t *testing.T) {
 			for _, want := range []string{
 				"animation: " + kf + " 800ms cubic-bezier(.22,.61,.36,1) both",
 				".sky-cardstack-card.is-enter",
-				"@keyframes " + kf, // 词汇从 core 统一注入，组件不自己造关键帧
+				"@keyframes " + kf,
 			} {
 				if !strings.Contains(s, want) {
 					t.Errorf("效果 %s（side=%d）缺少 %q", effect, side, want)
@@ -389,7 +346,6 @@ func TestSlideEffect(t *testing.T) {
 	}
 }
 
-// TestDeckTransition deck 切换曲线与时长可调（卡片在视口内，走过渡而非入场动画）。
 func TestDeckTransition(t *testing.T) {
 	def := &Props{Trigger: TriggerDeck, Count: 3}
 	ds := compiled(t, nodeOf(def, 0), def)
@@ -407,7 +363,6 @@ func TestDeckTransition(t *testing.T) {
 	}
 }
 
-// TestSlideScrollbarHidden 滚动条默认隐藏（三种写法覆盖 Firefox / 旧 Edge / WebKit）。
 func TestSlideScrollbarHidden(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide, Count: 3}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -426,7 +381,6 @@ func TestSlideScrollbarHidden(t *testing.T) {
 	}
 }
 
-// TestSlideHorizontal 横向滚动：整套换到 X 轴（含吸附与 sticky 轴）。
 func TestSlideHorizontal(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide, Count: 3, SlideDirection: slideDirectionHorizontal, SlideStack: true}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -435,7 +389,7 @@ func TestSlideHorizontal(t *testing.T) {
 		"overflow-x: auto",
 		"overflow-y: hidden",
 		"scroll-snap-type: x mandatory",
-		"left: 0", // sticky 换到 X 轴
+		"left: 0",
 		"position: sticky",
 	} {
 		if !strings.Contains(s, want) {
@@ -447,7 +401,6 @@ func TestSlideHorizontal(t *testing.T) {
 	}
 }
 
-// TestSlideStack 堆叠翻页：粘在同位 + 递增 z-index，后一张盖住前一张（零 JS）。
 func TestSlideStack(t *testing.T) {
 	plain := &Props{Trigger: TriggerSlide, Count: 3}
 	ps := compiled(t, nodeOf(plain, 0), plain)
@@ -461,7 +414,7 @@ func TestSlideStack(t *testing.T) {
 		"position: sticky",
 		"top: 0",
 		"z-index: 1",
-		"z-index: 3", // 第 3 张盖在最上面
+		"z-index: 3",
 	} {
 		if !strings.Contains(ss, want) {
 			t.Errorf("堆叠翻页缺少 %q", want)
@@ -469,7 +422,6 @@ func TestSlideStack(t *testing.T) {
 	}
 }
 
-// TestSlideFitViewport 铺满视口：容器脱离文档流，父容器内边距不再影响它。
 func TestSlideFitViewport(t *testing.T) {
 	inline := &Props{Trigger: TriggerSlide, Count: 3}
 	is := compiled(t, nodeOf(inline, 0), inline)
@@ -484,7 +436,7 @@ func TestSlideFitViewport(t *testing.T) {
 		"inset: 0",
 		"width: 100vw",
 		"height: 100dvh",
-		"height: 100vh", // 降级
+		"height: 100vh",
 	} {
 		if !strings.Contains(fs, want) {
 			t.Errorf("铺满视口缺少 %q", want)
@@ -492,7 +444,6 @@ func TestSlideFitViewport(t *testing.T) {
 	}
 }
 
-// TestSlideDefaults 全屏分页缺省值：3 屏、宽度占满、自动关闭放大。
 func TestSlideDefaults(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide}
 	if n := cardCount(nodeOf(p, 0), p); n != defaultSlideCount {
@@ -507,7 +458,7 @@ func TestSlideDefaults(t *testing.T) {
 	if zoomEnabled(&Props{Trigger: TriggerHover}) != true {
 		t.Errorf("其他模式仍应默认开启点击放大")
 	}
-	// 自定义每屏高度生效，且 dvh 会带一条 vh 降级。
+
 	custom := &Props{Trigger: TriggerSlide, SlideHeight: "80dvh"}
 	cs := compiled(t, nodeOf(custom, 0), custom)
 	if !strings.Contains(cs, "height: 80dvh") || !strings.Contains(cs, "height: 80vh") {
@@ -515,7 +466,6 @@ func TestSlideDefaults(t *testing.T) {
 	}
 }
 
-// TestDeckCSS 堆叠轮播：几何由每张卡的两个变量驱动，脚本只改写它们。
 func TestDeckCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerDeck}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -523,8 +473,8 @@ func TestDeckCSS(t *testing.T) {
 	for _, want := range []string{
 		"cursor: grab",
 		"touch-action: pan-y",
-		"grid-area: 1 / 1",   // 居中交给 grid 同格叠放
-		"--sky-deck-off: -4", // 第 1 张：静态降级值 = i - mid（9 张卡）
+		"grid-area: 1 / 1",
+		"--sky-deck-off: -4",
 		"--sky-deck-abs: 4",
 		"translateX(calc(var(--sky-deck-off, 0) * 54%))",
 		"rotate(calc(var(--sky-deck-off, 0) * 4deg))",
@@ -532,7 +482,7 @@ func TestDeckCSS(t *testing.T) {
 		"z-index: calc(50 - var(--sky-deck-abs, 0))",
 		".sky-c-n1 .sky-cardstack-card.is-active",
 		"transition: transform 450ms cubic-bezier(.22,.61,.36,1)",
-		// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明）。
+
 		"opacity: max(0, calc(1 - var(--sky-deck-abs, 0) * 0.28))",
 	} {
 		if !strings.Contains(s, want) {
@@ -544,7 +494,6 @@ func TestDeckCSS(t *testing.T) {
 	}
 }
 
-// TestDeckView 轮播模式在视图上打标，初始主卡取中间那张（两侧对称叠开）。
 func TestDeckView(t *testing.T) {
 	p := &Props{Trigger: TriggerDeck, Count: 5}
 	v, err := BuildView(nodeOf(p, 0), p, &core.RenderContext{})
@@ -563,7 +512,6 @@ func TestDeckView(t *testing.T) {
 		t.Errorf("悬停模式不该标记 Deck")
 	}
 
-	// 循环切换：模板据此输出 data-cardstack-loop，脚本用「最短方向」算偏移。
 	looped := &Props{Trigger: TriggerDeck, Count: 5, DeckLoop: true}
 	v3, err := BuildView(nodeOf(looped, 0), looped, &core.RenderContext{})
 	if err != nil {
@@ -574,11 +522,6 @@ func TestDeckView(t *testing.T) {
 	}
 }
 
-// TestDragCylinderSideRoomAccountsPerspective 圆柱环绕的单侧可用空间必须扣掉透视放大。
-//
-// 卡片在 translateZ(R) 处被 perspective 放大 k = d/(d−R) 倍，只按卡宽预留会漏掉这一份 ——
-// 实测桌面 900 视口溢出 68px、1024 视口溢出 7px（⑧ 环绕画廊）。z 的硬上限是 radius
-// （min(radius, side) 里的常量项），所以 k 的上界能在构建期算准。
 func TestDragCylinderSideRoomAccountsPerspective(t *testing.T) {
 	p := &Props{Trigger: TriggerDrag, DragMode: dragModeCylinder}
 	s := compiled(t, nodeOf(p, 0), p)
@@ -586,7 +529,7 @@ func TestDragCylinderSideRoomAccountsPerspective(t *testing.T) {
 	if !strings.Contains(s, "perspective: 1600px") {
 		t.Errorf("圆柱环绕缺少透视")
 	}
-	// 占位写成 calc(<卡宽> * <放大系数>) —— 系数 = 1600/(1600−R)，R 是 translateZ 的硬上限。
+
 	var sideLine string
 	for _, line := range strings.Split(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "--sky-cardstack-side") {
@@ -599,26 +542,25 @@ func TestDragCylinderSideRoomAccountsPerspective(t *testing.T) {
 	if !strings.Contains(s, "/ 2 - 20px)") {
 		t.Errorf("每侧留白应为 20px（含桌面滚动条 7.5px 的误差余量）")
 	}
-	// 平面环不涉及 translateZ，不该被乘系数。
+
 	flat := compiled(t, nodeOf(&Props{Trigger: TriggerDrag}, 0), &Props{Trigger: TriggerDrag})
 	if strings.Contains(flat, "calc((100vw - calc(") {
 		t.Errorf("平面环没有透视放大，不该乘系数")
 	}
 }
 
-// TestDragCSS 拖拽旋转：环形几何在构建期算好，增强脚本只改写一个 CSS 变量。
 func TestDragCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerDrag}
 	s := compiled(t, nodeOf(p, 0), p)
 
 	for _, want := range []string{
 		"cursor: grab",
-		"touch-action: pan-y", // 纵向留给页面滚动，横向才归旋转
+		"touch-action: pan-y",
 		"--sky-cardstack-rot: 0deg",
-		// 9 张卡、240px 宽 → 半径 240/(2·sin20°) ≈ 350.86 → 350px
-		"grid-area: 1 / 1", // 居中交给 grid 同格叠放（卡片不再 absolute）
+
+		"grid-area: 1 / 1",
 		"transform: rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(calc(-1 * min(350px, var(--sky-cardstack-side, 40vw))))",
-		"rotate(calc(-320deg - var(--sky-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
+		"rotate(calc(-320deg - var(--sky-cardstack-rot, 0deg)))",
 		"transition: transform .35s ease",
 		".sky-c-n1.is-dragging .sky-cardstack-card",
 	} {
@@ -626,14 +568,12 @@ func TestDragCSS(t *testing.T) {
 			t.Errorf("拖拽模式缺少 %q", want)
 		}
 	}
-	// 不该混入其他模式的几何。
+
 	if strings.Contains(s, "position: sticky") || strings.Contains(s, "rotate(-20deg)") {
 		t.Errorf("拖拽模式混入了其他模式的几何")
 	}
 }
 
-// TestStackModesUseGrid deck / drag 也用 grid 同格叠放：卡片不再绝对定位，
-// 轨道能被内容撑开（min-height 只作下限），与悬停模式保持一致。
 func TestStackModesUseGrid(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -661,7 +601,6 @@ func TestStackModesUseGrid(t *testing.T) {
 	}
 }
 
-// TestDragRadius 环形半径：默认按卡片宽度与数量自动（相邻不重叠），用户值优先。
 func TestDragRadius(t *testing.T) {
 	if got := dragRadius(&Props{}, 9, "240px", "320px"); math.Abs(got-350.86) > 0.5 {
 		t.Errorf("自动半径 = 卡宽/(2·sin(π/n)) ≈ 350.86，got %v", got)
@@ -672,13 +611,12 @@ func TestDragRadius(t *testing.T) {
 	if got := dragRadius(&Props{}, 1, "240px", "320px"); got != 160 {
 		t.Errorf("单张卡半径退化为卡高一半，got %v", got)
 	}
-	// 卡数多时半径自动放大（保证不重叠），不会小于下限。
+
 	if got := dragRadius(&Props{}, 16, "240px", "320px"); got < 600 {
 		t.Errorf("16 张卡的半径应显著变大，got %v", got)
 	}
 }
 
-// TestDragView 拖拽模式在视图上打标，模板据此输出 data-* 与键盘可达属性。
 func TestDragView(t *testing.T) {
 	v, err := BuildView(nodeOf(&Props{Trigger: TriggerDrag}, 0), &Props{Trigger: TriggerDrag}, &core.RenderContext{})
 	if err != nil {
@@ -694,16 +632,15 @@ func TestDragView(t *testing.T) {
 	}
 }
 
-// TestZoomCSS 点击放大：隐藏但可聚焦的单选 + 放大态 + 遮罩，全部零 JS。
 func TestZoomCSS(t *testing.T) {
 	s := compiled(t, nodeOf(nil, 0), &Props{})
 
 	for _, want := range []string{
 		".sky-cardstack-toggle",
-		"pointer-events: none", // 点击穿透到 label
+		"pointer-events: none",
 		":has(> .sky-cardstack-toggle:checked)",
 		"position: fixed",
-		"margin: auto", // inset:0 + margin:auto 居中，不抢 transform
+		"margin: auto",
 		"translate: none",
 		"scale: 1",
 		"z-index: 1001",
@@ -722,7 +659,6 @@ func TestZoomCSS(t *testing.T) {
 	}
 }
 
-// TestCardLayoutParams 卡内布局可配：卡片因此能当容器用（排列方向/间距/对齐）。
 func TestCardLayoutParams(t *testing.T) {
 	def := compiled(t, nodeOf(nil, 2), &Props{})
 	for _, want := range []string{
@@ -750,7 +686,6 @@ func TestCardLayoutParams(t *testing.T) {
 		}
 	}
 
-	// 枚举白名单：非法值退回缺省，绝不透传进 CSS（编译期自防御）。
 	bad := compiled(t, nodeOf(nil, 2), &Props{CardLayout: "grid; color: red", CardAlign: "evil"})
 	if strings.Contains(bad, "grid; color: red") || strings.Contains(bad, "align-items: evil") {
 		t.Errorf("非法枚举值被透传进 CSS")
@@ -760,9 +695,8 @@ func TestCardLayoutParams(t *testing.T) {
 	}
 }
 
-// TestContentCards 有子节点即内容卡：不套色相、裁剪溢出、高度按 min-height。
 func TestContentCards(t *testing.T) {
-	s := compiled(t, nodeOf(nil, 3), &Props{}) // 3 个子节点 → 3 张内容卡
+	s := compiled(t, nodeOf(nil, 3), &Props{})
 
 	if strings.Contains(s, "hue-rotate") {
 		t.Errorf("内容卡不该套色相滤镜")
@@ -778,7 +712,6 @@ func TestContentCards(t *testing.T) {
 	}
 }
 
-// fakeCollection 固定两条文章数据，用于验证集合模式展开与字段映射。
 type fakeCollection struct{}
 
 func (fakeCollection) ResolveCollection(_ context.Context, source string, _ map[string]string) ([]map[string]any, error) {
@@ -791,7 +724,6 @@ func (fakeCollection) ResolveCollection(_ context.Context, source string, _ map[
 	}, nil
 }
 
-// TestCollectionCards 内容集合：卡片数量与卡内字段都由内容决定。
 func TestCollectionCards(t *testing.T) {
 	p := &Props{
 		CollectionSource: "content:article",
@@ -823,7 +755,6 @@ func TestCollectionCards(t *testing.T) {
 		t.Errorf("无障碍描述应带标题：%q", c.AriaLabel)
 	}
 
-	// 取几条
 	p.CollectionLimit = 1
 	view2, err := BuildView(nodeOf(nil, 0), p, ctx)
 	if err != nil {
@@ -834,9 +765,8 @@ func TestCollectionCards(t *testing.T) {
 	}
 }
 
-// TestCollectionFieldError 字段名写错要在构建期报错并列出可用字段，而不是静默渲染空白。
 func TestCollectionFieldError(t *testing.T) {
-	p := &Props{CollectionSource: "content:article", CardTitleField: "tittle"} // 拼错
+	p := &Props{CollectionSource: "content:article", CardTitleField: "tittle"}
 	ctx := &core.RenderContext{Collection: fakeCollection{}}
 	_, err := BuildView(nodeOf(nil, 0), p, ctx)
 	if err == nil {
@@ -847,7 +777,6 @@ func TestCollectionFieldError(t *testing.T) {
 	}
 }
 
-// fakeSchemaCollection 在集合解析之外还提供元数据契约（content 模块的形态）。
 type fakeSchemaCollection struct{ fakeCollection }
 
 func (fakeSchemaCollection) CollectionSchemas(_ context.Context) ([]core.CollectionSchema, error) {
@@ -858,17 +787,14 @@ func (fakeSchemaCollection) CollectionSchemas(_ context.Context) ([]core.Collect
 	}}, nil
 }
 
-// TestCollectionSchemaWhitelist 有元数据契约时按白名单严格校验（不变量 4）。
 func TestCollectionSchemaWhitelist(t *testing.T) {
 	ctx := &core.RenderContext{Collection: fakeSchemaCollection{}}
 
-	// 白名单内 → 通过
 	ok := &Props{CollectionSource: "content:article", CardTitleField: "title", CardImageField: "featuredImage"}
 	if _, err := BuildView(nodeOf(nil, 0), ok, ctx); err != nil {
 		t.Fatalf("白名单内字段应通过：%v", err)
 	}
 
-	// 白名单外（body 不在 fake 白名单里）→ 报错并列出可用字段
 	bad := &Props{CollectionSource: "content:article", CardTextField: "body"}
 	_, err := BuildView(nodeOf(nil, 0), bad, ctx)
 	if err == nil {
@@ -878,13 +804,11 @@ func TestCollectionSchemaWhitelist(t *testing.T) {
 		t.Errorf("报错应说明白名单并列出可用字段：%v", err)
 	}
 
-	// 未知集合源 → 报错
 	_, err = BuildView(nodeOf(nil, 0), &Props{CollectionSource: "content:unknown"}, ctx)
 	if err == nil || !strings.Contains(err.Error(), "未知集合源") {
 		t.Errorf("未知集合源应报错：%v", err)
 	}
 
-	// 裁剪：模板只能渲染白名单字段（未声明字段被丢弃）
 	view, err := BuildView(nodeOf(nil, 0), ok, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -894,7 +818,6 @@ func TestCollectionSchemaWhitelist(t *testing.T) {
 	}
 }
 
-// TestCollectionMissingResolver 未注入集合解析器时给出明确提示。
 func TestCollectionMissingResolver(t *testing.T) {
 	p := &Props{CollectionSource: "content:article"}
 	if _, err := BuildView(nodeOf(nil, 0), p, &core.RenderContext{}); err == nil {
@@ -902,12 +825,11 @@ func TestCollectionMissingResolver(t *testing.T) {
 	}
 }
 
-// TestCollectionCSS 集合模式：既走内容卡样式，逐卡规则数量也与内容条数一致。
 func TestCollectionCSS(t *testing.T) {
 	p := &Props{CollectionSource: "content:article", CardTitleField: "title"}
 	n := nodeOf(nil, 0)
 	b := &core.CSSBuckets{}
-	CompileCSS(n, p, 2, b) // 解析出 2 条内容
+	CompileCSS(n, p, 2, b)
 	s := b.String()
 
 	if !strings.Contains(s, ":nth-child(2)") || strings.Contains(s, ":nth-child(3)") {
@@ -923,7 +845,6 @@ func TestCollectionCSS(t *testing.T) {
 	}
 }
 
-// emptyCollection 空集合（后台还没有内容时的真实形态）。
 type emptyCollection struct{}
 
 func (emptyCollection) ResolveCollection(_ context.Context, _ string, _ map[string]string) ([]map[string]any, error) {
@@ -934,7 +855,6 @@ func (emptyCollection) CollectionSchemas(_ context.Context) ([]core.CollectionSc
 	return []core.CollectionSchema{{Source: "content:article", Label: "文章列表", Fields: []string{"title"}}}, nil
 }
 
-// TestCollectionEmptyState 集合无内容：渲染占位或整体隐藏，而不是留一片空白。
 func TestCollectionEmptyState(t *testing.T) {
 	p := &Props{CollectionSource: "content:article", CardTitleField: "title"}
 	v, err := BuildView(nodeOf(nil, 0), p, &core.RenderContext{Collection: emptyCollection{}})
@@ -954,7 +874,6 @@ func TestCollectionEmptyState(t *testing.T) {
 		t.Errorf("空集合不该产出卡片，got %d", len(v.Cards))
 	}
 
-	// 也可以选择整体隐藏（列表页里"没有内容就什么都不显示"）。
 	hidden := &Props{CollectionSource: "content:article", CollectionEmpty: "hide"}
 	v2, _ := BuildView(nodeOf(nil, 0), hidden, &core.RenderContext{Collection: emptyCollection{}})
 	if !v2.HideEmpty {
@@ -962,7 +881,6 @@ func TestCollectionEmptyState(t *testing.T) {
 	}
 }
 
-// TestBuiltinTextOverridable 内置文案可配（多语言站点不必改代码）。
 func TestBuiltinTextOverridable(t *testing.T) {
 	p := &Props{CollectionSource: "content:article", CardTitleField: "title", CardLinkField: "slug",
 		CardLinkText: "阅读全文", CollectionEmptyText: "还没有内容"}
@@ -981,14 +899,12 @@ func TestBuiltinTextOverridable(t *testing.T) {
 		t.Errorf("卡片应带上自定义链接文案：%+v", v.Cards)
 	}
 
-	// 不配时用内置缺省。
 	def, _ := BuildView(nodeOf(nil, 0), &Props{CollectionSource: "content:article"}, ctx)
 	if def.LinkText != defaultCardLinkText {
 		t.Errorf("缺省链接文案应为 %q，got %q", defaultCardLinkText, def.LinkText)
 	}
 }
 
-// TestBuildView 渲染视图：卡片数量随内容来源与占位数量变化。
 func TestBuildView(t *testing.T) {
 	v, err := BuildView(nodeOf(nil, 0), &Props{}, &core.RenderContext{})
 	if err != nil {

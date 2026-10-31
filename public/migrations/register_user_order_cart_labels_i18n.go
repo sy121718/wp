@@ -4,9 +4,7 @@ func init() {
 	registerSeed(Seed{
 		Version:   "448-i18n-user-order-cart-labels",
 		TableName: "sys_i18n",
-		// 门槛判据**枚举本批自己的 key**（上界封闭，76 个 key × 2 语言 = 152 行）：
-		// 用 LIKE 前缀会让「别批次已有同前缀行」把计数抬高、本批被静默跳过（058 的故障），
-		// 也会在将来新增同前缀 key 时永远追不平、每次启动都重跑（076 的故障）。
+
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 152 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE item_key IN ('admin.orders.operator_type.admin', 'admin.orders.operator_type.system', " +
 			"'admin.orders.operator_type.customer', 'admin.orders.created_via.checkout', " +

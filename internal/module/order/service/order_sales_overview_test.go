@@ -1,22 +1,9 @@
 package orderservice
 
-// order_sales_overview_test.go — 销售概览 service 的纯函数判据（无库）。
-//
-// 这一批函数的共同点是「输入怎么错都不该把页面打空」：
-// 状态筛选写错 → 回落成「不筛」（而不是报错）、月数越界 → 回落默认、
-// 分母为 0 → 给 0（而不是 NaN/Inf）。它们在别处（handler 的 query 解析）之后，
-// 所以走到这里时输入已经是「用户随手打的字符串」。
-
 import (
 	"testing"
 )
 
-// 状态筛选：空 → **不筛**（空切片，由 model 层的 statusesText 落成默认白名单）；
-// 白名单内的原样；白名单外的被**丢掉**而不是报错。
-//
-// 期望「非法值 → 空切片」而不是「非法值 → 全部白名单」：service 只回答「用户要筛哪些」，
-// 「空 = 用默认白名单」是 model 层 statusesText 的职责 —— 把默认值在两层各写一遍，
-// 改了一处另一处就静默保持旧口径。
 func TestSalesStatusesFallsBackInsteadOfFailing(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -32,12 +19,11 @@ func TestSalesStatusesFallsBackInsteadOfFailing(t *testing.T) {
 		{"中文逗号分隔", "paid，completed", 2, "paid,completed", "paid"},
 		{"英文逗号分隔", "paid,completed", 2, "paid,completed", "paid"},
 		{"空格分隔", "paid completed", 2, "paid,completed", "paid"},
-		// 非法值**不报错**（报错会把整页换成归口文案，而用户只是把 URL 里的
-		// status 打错了一个字）：全非法 → 与「没传」同义（空切片 → 不筛）。
+
 		{"非法值不筛", "nope", 0, "", ""},
-		// 混入非法值：合法的留下、非法的丢掉 —— 比「整串作废」更接近用户意图。
+
 		{"混入非法值只留合法", "paid,nope", 1, "paid", "paid"},
-		// 取消/退款**不在白名单**：它们不是「消费」，混进来会把销售额算成负向。
+
 		{"取消不筛", "cancelled", 0, "", ""},
 		{"退款不筛", "refunded", 0, "", ""},
 	}
@@ -64,7 +50,6 @@ func TestSalesStatusesFallsBackInsteadOfFailing(t *testing.T) {
 	}
 }
 
-// 白名单里不能出现 cancelled / refunded —— 这条断言挡的是「有人往白名单里加值」。
 func TestSalesStatusWhitelistExcludesCancelledAndRefunded(t *testing.T) {
 	for _, st := range salesStatusWhitelist {
 		if st == "cancelled" || st == "refunded" {
@@ -73,7 +58,6 @@ func TestSalesStatusWhitelistExcludesCancelledAndRefunded(t *testing.T) {
 	}
 }
 
-// 趋势月数：0/负数/超限回落默认，合法值原样。
 func TestSalesMonthlyMonthsClamps(t *testing.T) {
 	cases := []struct {
 		in   int
@@ -94,7 +78,6 @@ func TestSalesMonthlyMonthsClamps(t *testing.T) {
 	}
 }
 
-// 比率：分母为 0 时给 0（不是 NaN / Inf —— 它们进了模板会渲染成 "NaN"）。
 func TestSalesRatiosGuardZeroDenominator(t *testing.T) {
 	if got := ratioCents(100, 0); got != 0 {
 		t.Errorf("ratioCents(100, 0) = %d，期望 0", got)
@@ -105,13 +88,12 @@ func TestSalesRatiosGuardZeroDenominator(t *testing.T) {
 	if got := ratioCents(1000, 4); got != 250 {
 		t.Errorf("ratioCents(1000, 4) = %d，期望 250", got)
 	}
-	// 四舍五入到两位：100/3 = 33.333… → 33.33
+
 	if got := ratioFloat(100, 3); got != 33.33 {
 		t.Errorf("ratioFloat(100, 3) = %v，期望 33.33", got)
 	}
 }
 
-// 变化率：上一期为 0 时给 nil（**不是 0%**）。
 func TestSalesChangePctNilWhenNoBase(t *testing.T) {
 	if got := changePct(0, 100); got != nil {
 		t.Errorf("上一期为 0 时应给 nil，得到 %v", *got)

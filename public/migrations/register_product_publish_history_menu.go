@@ -1,10 +1,5 @@
 package migrations
 
-// register_product_publish_history_menu.go — 673c 的注册项（B11 发布历史按钮）。
-//
-// 判据：sys_menus 里 title_key='product.publish_attempts' 的按钮行存在（COUNT >= 1）。
-// 不用「菜单存在即跳过」的默认形态：这条 seed 的职责就是「那一行在」，缺了就该重跑。
-
 import "sync"
 
 func init() { registerProductPublishHistoryMenu() }

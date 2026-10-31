@@ -1,20 +1,5 @@
 package builder
 
-// checkoutform_render_test.go — core.checkoutForm 的真实编译产物断言（含构建期数据注入）。
-//
-// 为什么必须是「真编译产物」而不是单测直调 BuildView：本组件的价值一半在于
-// **烘进静态产物**的那部分 —— 国家下拉的选项、隐藏字段、JSON API 地址、字段顺序。
-// 这些只有在 renderView → 模板 → HTML 这条完整链路上才成立（模板写错 / 特征漏登记 /
-// 注入没接上，BuildView 的单测都不会红）。
-//
-// 覆盖：
-//  1. 表单壳与提交语义（统一写基座指向 JSON API）；
-//  2. projectId / lang 作为隐藏字段（POST 只读表单体，URL query 到不了处理器）；
-//  3. 国家是原生 <select>、选项构建期烘焙、默认国家预选中、且**不带** data-ui-select（零 JS）；
-//  4. 字段顺序与分组（作者配置顺序 → 渲染顺序）；
-//  5. 账单地址开关；
-//  6. 构建期数据缺失时的行为（有国家字段却没注入清单 → 编译失败；缺工程 id → 提示而非失败）。
-
 import (
 	"strings"
 	"testing"
@@ -23,19 +8,16 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 )
 
-// checkoutDocument 含一个结算表单节点的页面文档（原子组件，字段走清单默认选择）。
 const checkoutDocument = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "结算", "description": "结算"}},
   "root": [{"id": "cf1", "type": "core.checkoutForm", "props": {"submitLabel": "提交订单"}}]
 }`
 
-// checkoutDocWithBilling 打开账单地址的文档。
 const checkoutDocWithBilling = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "结算", "description": "结算"}},
   "root": [{"id": "cf1", "type": "core.checkoutForm", "props": {"submitLabel": "提交订单", "collectBilling": true}}]
 }`
 
-// checkoutCountries 装配层注入的国家清单（与 sys_area 的形态同源：码 + 展示名，已按语言算好）。
 func checkoutCountries() []core.CheckoutCountry {
 	return []core.CheckoutCountry{
 		{Code: "CN", Label: "中国"},
@@ -44,7 +26,6 @@ func checkoutCountries() []core.CheckoutCountry {
 	}
 }
 
-// checkoutCompileOptions 结算表单用例的公共编译选项（工程 id + 语言 + 国家清单）。
 func checkoutCompileOptions(t *testing.T, extra ...CompileOption) []CompileOption {
 	t.Helper()
 	return append([]CompileOption{
@@ -55,7 +36,6 @@ func checkoutCompileOptions(t *testing.T, extra ...CompileOption) []CompileOptio
 	}, extra...)
 }
 
-// compileCheckoutDoc 编译用例文档并返回产物 HTML（编译失败即用例失败）。
 func compileCheckoutDoc(t *testing.T, doc string, opts ...CompileOption) string {
 	t.Helper()
 	p, err := ParsePage([]byte(doc))
@@ -69,19 +49,18 @@ func compileCheckoutDoc(t *testing.T, doc string, opts ...CompileOption) string 
 	return res.HTML
 }
 
-// TestCheckoutFormRendersNativeForm 表单壳、提交语义与隐藏字段。
 func TestCheckoutFormRendersNativeForm(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 
 	for _, want := range []string{
-		// 原生提交语义（无 JS 时整页提交照旧可用）。
+
 		`<div class="sky-c-cf1 sky-checkout" data-component-instance="cf1"`,
 		`<section data-component-part="checkout" tabindex="-1"><form class="sky-checkout-form" method="post" action="/api/site/cart/checkout"`,
 		`data-write-handler="commerce.checkout"`,
 		`data-component-part="result"`,
-		// 统一写基座提交数据，结果区域独立保留。
+
 		`data-write="custom" data-write-url="/api/site/cart/checkout"`,
-		// projectId / lang 在构建期烘进隐藏字段。
+
 		`<input type="hidden" name="projectId" value="p-1">`,
 		`<input type="hidden" name="lang" value="zh-CN">`,
 		`<button type="submit" class="sky-checkout-submit" data-requires-js hidden disabled>提交订单</button>`,
@@ -92,17 +71,12 @@ func TestCheckoutFormRendersNativeForm(t *testing.T) {
 			t.Fatalf("产物缺少 %q\nHTML=%s", want, html)
 		}
 	}
-	// 提交地址的 query 里不得再拼 projectId（POST 时到不了处理器，是「看着对」的坏写法）。
+
 	if strings.Contains(html, `action="/api/site/cart/checkout?`) {
 		t.Fatalf("projectId / lang 应走隐藏字段而不是 URL 查询\nHTML=%s", html)
 	}
 }
 
-// TestCheckoutFormRendersCouponField 结算表单固定渲染一行优惠码，字段名与 DTO 一致。
-//
-// 钉的是**两端接得上**：组件输出 name="couponCode"，而 DTO 的表单绑定
-// 就读 paramOf(r, "couponCode")。名字写错属于静默失效：表单照常渲染、提交时券被当成没填，
-// 页面上完全看不出异常 —— 与 projectId / lang 必须走隐藏字段（不能只挂 URL）是同一类判据。
 func TestCheckoutFormRendersCouponField(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 
@@ -115,14 +89,13 @@ func TestCheckoutFormRendersCouponField(t *testing.T) {
 			t.Fatalf("产物缺少 %q\nHTML=%s", want, html)
 		}
 	}
-	// 券码是普通文本输入：不是 country（没有选项）、不是 textarea（H5 里券码是短串）。
+
 	if strings.Contains(html, `<select id="sky-checkout-cf1-couponCode"`) ||
 		strings.Contains(html, `<textarea id="sky-checkout-cf1-couponCode"`) {
 		t.Fatalf("券码不该渲染成下拉或文本域\nHTML=%s", html)
 	}
 }
 
-// TestCheckoutFormCountrySelectBaked 国家字段：原生 select + 构建期烘焙选项 + 默认国家预选中。
 func TestCheckoutFormCountrySelectBaked(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 
@@ -138,11 +111,11 @@ func TestCheckoutFormCountrySelectBaked(t *testing.T) {
 			t.Fatalf("国家选项缺 %q\nHTML=%s", want, html)
 		}
 	}
-	// 零客户端 JS：不加控件基座的 data-ui-select（它是 JS 替身的触发特征）。
+
 	if strings.Contains(html, "data-ui-select") {
 		t.Fatalf("结算表单不得触发控件基座 JS（访问面零 JS）\nHTML=%s", html)
 	}
-	// 省 / 市 / 区保持文本输入（本批不做级联）。
+
 	for _, key := range []string{"province", "city", "district"} {
 		if !strings.Contains(html, `type="text" name="`+key+`"`) {
 			t.Fatalf("%s 应为文本输入\nHTML=%s", key, html)
@@ -150,11 +123,9 @@ func TestCheckoutFormCountrySelectBaked(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormFieldOrderFollowsProps 字段顺序 = 作者配置顺序（清单顺序只是默认值）。
 func TestCheckoutFormFieldOrderFollowsProps(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 
-	// 默认选择按清单顺序：email → name → phone → shipName … → address … → remark。
 	order := []string{"email", "name", "phone", "address", "remark"}
 	prev := -1
 	for _, key := range order {
@@ -167,7 +138,7 @@ func TestCheckoutFormFieldOrderFollowsProps(t *testing.T) {
 		}
 		prev = i
 	}
-	// 默认不勾收货人 / 收货电话（cart.go 的缺省就是联系人姓名与电话）。
+
 	for _, key := range []string{"shipName", "shipPhone"} {
 		if strings.Contains(html, `name="`+key+`"`) {
 			t.Fatalf("默认不该渲染 %q（缺省沿用联系人）\nHTML=%s", key, html)
@@ -175,7 +146,6 @@ func TestCheckoutFormFieldOrderFollowsProps(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormBillingSwitch 账单地址开关：关时整组不渲染、开时出现在收货组之后。
 func TestCheckoutFormBillingSwitch(t *testing.T) {
 	plain := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 	if strings.Contains(plain, `data-group="billing"`) {
@@ -194,7 +164,6 @@ func TestCheckoutFormBillingSwitch(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormRequiredFromCatalog 清单里的必填字段渲染 required 属性；可选字段没有。
 func TestCheckoutFormRequiredFromCatalog(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
 	for _, f := range ordercontract.CheckoutFormFields() {
@@ -211,7 +180,6 @@ func TestCheckoutFormRequiredFromCatalog(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormInvalidKeyRejected 非法 key 在**校验期**被拒（不静默跳过）。
 func TestCheckoutFormInvalidKeyRejected(t *testing.T) {
 	const doc = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "结算", "description": "结算"}},
@@ -230,7 +198,6 @@ func TestCheckoutFormInvalidKeyRejected(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormRequiredCannotBeDropped 清单必填字段被关掉 → 校验失败。
 func TestCheckoutFormRequiredCannotBeDropped(t *testing.T) {
 	const doc = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "结算", "description": "结算"}},
@@ -249,10 +216,6 @@ func TestCheckoutFormRequiredCannotBeDropped(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormMissingCountriesFailsBuild 构建期没注入国家清单、而表单里有国家字段 → 编译失败。
-//
-// 这是本组件「降级 vs 失败」的判据：静默降级会烘出一个只有默认国家的下拉，
-// 访客被锁死在一个国家，而产物看起来完全正常。
 func TestCheckoutFormMissingCountriesFailsBuild(t *testing.T) {
 	p, err := ParsePage([]byte(checkoutDocument))
 	if err != nil {
@@ -262,7 +225,6 @@ func TestCheckoutFormMissingCountriesFailsBuild(t *testing.T) {
 		WithComponentSet(i18nTestComponentSet(t)),
 		WithProjectID("p-1"),
 		WithLanguage("zh-CN"),
-		// 刻意不注入 WithCheckoutCountries
 	}
 	if _, err = Compile(p, opts...); err == nil {
 		t.Fatal("表单含国家字段、未注入国家清单时应编译失败")
@@ -271,10 +233,6 @@ func TestCheckoutFormMissingCountriesFailsBuild(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormWithoutProjectIDRendersNotice 缺工程 id → 提示视图，编译不失败。
-//
-// 判据：组件库「每个条目插入后都能编译」是既有契约（编辑器画布与组件库契约测试都没有
-// 工程上下文），这条路径与作者配置无关，不该让它红。
 func TestCheckoutFormWithoutProjectIDRendersNotice(t *testing.T) {
 	p, err := ParsePage([]byte(checkoutDocument))
 	if err != nil {

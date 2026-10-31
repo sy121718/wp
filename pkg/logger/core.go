@@ -35,7 +35,6 @@ func newSceneLogger(scene string) (*zap.Logger, io.Closer, error) {
 		return nil, nil, fmt.Errorf("创建日志目录失败, scene=%s, dir=%s: %w", scene, sceneDir, err)
 	}
 
-	// 按日期轮转，每天一个文件：app-2006-01-02.log
 	writer, err := newDailyRotateWriter(sceneDir, defaultLogFile, current.maxAge)
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建日志写入器失败, scene=%s: %w", scene, err)

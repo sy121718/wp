@@ -1,11 +1,5 @@
 package unit
 
-// main_landmark_test.go — 页面 `<main>` 地标（页面设置开关）。
-//
-// 语义：正文包进唯一的 <main>，屏幕阅读器可直接跳到内容；首尾连续的 header / footer
-// 顶层节点留在 main 之外 —— 被包进 main 后它们就不再构成 banner / contentinfo 地标。
-// 默认关闭：关闭时产物字节与没有这个开关时完全一致（确定性构建不变量）。
-
 import (
 	"strings"
 	"testing"

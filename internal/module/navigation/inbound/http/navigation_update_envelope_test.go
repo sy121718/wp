@@ -1,20 +1,5 @@
 package navigationhttp
 
-// navigation_update_envelope_test.go — POST /api/navigation/update 的**路由协议**契约
-// （UpdateEnvelope 接线之后）。
-//
-// 与既有三份写测试的分工：navigation_translation_write_test.go / navigation_move_write_test.go
-// 钉的是各分支的形状白名单与错误码映射，本文件钉的是**入口本身**——
-//   - 绑定只有一处（binding.JSONLimited[UpdateEnvelope]，1 MiB），且**请求体只读一次**：
-//     handler 里不再有 navigationWriteBody / json.Unmarshal 的第二段解析；
-//   - 判别在 dto 的 Route()：legacy / translations / move 三条正路，其余一律 400；
-//   - 两种投放（JSON 与 urlencoded/multipart 表单）走同一条入口：legacy 的宽容与
-//     binding:"required" 在两处都成立，translations 的行数组在表单里是 JSON 字符串；
-//   - 超过 1 MiB 在解析之前拒绝。
-//
-// 全部无库：形状判定必须发生在碰数据库与写入口之前；译文分支的「未注入句柄 = 500」
-// 正是「形状已放行」的观测点（与 navigation_translation_write_test.go 同一口径）。
-
 import (
 	"context"
 	"mime/multipart"
@@ -31,8 +16,6 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 )
 
-// envelopeNavigationStub 记录 Update / SwapMove 的调用（译文分支不落 service，
-// 走的是包级写句柄）。
 type envelopeNavigationStub struct {
 	navigationcontract.NavigationService
 	updateCalls []*navigationdto.UpdateReq
@@ -49,7 +32,6 @@ func (s *envelopeNavigationStub) SwapMove(_ context.Context, req *navigationdto.
 	return &navigationdto.SwapMoveResp{Moved: true}, nil
 }
 
-// newEnvelopeRouter 只挂 Update（三条分支共用这一个入口，正是本文件要证的事）。
 func newEnvelopeRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -57,7 +39,6 @@ func newEnvelopeRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	return router
 }
 
-// envelopeJSON 造 JSON 投放（contentType 为空 = 不设 Content-Type）。
 func envelopeJSON(t *testing.T, router *gin.Engine, contentType, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
@@ -69,7 +50,6 @@ func envelopeJSON(t *testing.T, router *gin.Engine, contentType, body string) *h
 	return rec
 }
 
-// envelopeForm 造 urlencoded 投放。
 func envelopeForm(t *testing.T, router *gin.Engine, values url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(values.Encode()))
@@ -79,7 +59,6 @@ func envelopeForm(t *testing.T, router *gin.Engine, values url.Values) *httptest
 	return rec
 }
 
-// envelopeMultipart 造 multipart 投放（字段顺序固定，便于复现）。
 func envelopeMultipart(t *testing.T, router *gin.Engine, order []string, values url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf strings.Builder
@@ -99,15 +78,10 @@ func envelopeMultipart(t *testing.T, router *gin.Engine, order []string, values 
 	return rec
 }
 
-// TestNavigationUpdateLegacyThroughJSONAndForm legacy 档在 JSON 与表单两条路上都保持迁移前语义。
-//
-// 宽容：未知字段仍被忽略（不借这次迁移收紧旧契约）；严格：binding:"required" 的 id
-// 仍在（DecodeLegacy 走的是 gin 的 binding，不是裸 json.Unmarshal）。
 func TestNavigationUpdateLegacyThroughJSONAndForm(t *testing.T) {
 	stub := &envelopeNavigationStub{}
 	router := newEnvelopeRouter(stub)
 
-	// JSON：未知字段 + 指针字段半填。
 	rec := envelopeJSON(t, router, "application/json", `{"id":"nav-1","title":"首页","unknownField":123}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("legacy JSON（含未知字段）应 200，实际 %d body=%s", rec.Code, rec.Body.String())
@@ -120,7 +94,6 @@ func TestNavigationUpdateLegacyThroughJSONAndForm(t *testing.T) {
 		t.Fatalf("legacy 绑定结果被改动：%+v", got)
 	}
 
-	// 表单：同一字段集，走 BindForm → DecodeLegacy 的同一次解析。
 	values := url.Values{"id": {"nav-2"}, "title": {"关于"}}
 	rec = envelopeForm(t, router, values)
 	if rec.Code != http.StatusOK {
@@ -133,7 +106,6 @@ func TestNavigationUpdateLegacyThroughJSONAndForm(t *testing.T) {
 		t.Fatalf("legacy 表单绑定结果不对：%+v", got)
 	}
 
-	// multipart：与 urlencoded 同一档。
 	multi := url.Values{"id": {"nav-3"}, "sortOrder": {"7"}}
 	rec = envelopeMultipart(t, router, []string{"id", "sortOrder"}, multi)
 	if rec.Code != http.StatusOK {
@@ -144,7 +116,6 @@ func TestNavigationUpdateLegacyThroughJSONAndForm(t *testing.T) {
 		t.Fatalf("legacy multipart 绑定结果不对（sortOrder 必须还原成数字）：%+v", last)
 	}
 
-	// required 在两条路上都成立。
 	for name, call := range map[string]func() *httptest.ResponseRecorder{
 		"JSON 缺 id": func() *httptest.ResponseRecorder {
 			return envelopeJSON(t, router, "application/json", `{"title":"没有 id"}`)
@@ -169,7 +140,6 @@ func TestNavigationUpdateLegacyThroughJSONAndForm(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateRejectedShapes 判别键写坏、未知标签、混形：一律 400 且不落任何分支。
 func TestNavigationUpdateRejectedShapes(t *testing.T) {
 	stub := &envelopeNavigationStub{}
 	router := newEnvelopeRouter(stub)
@@ -208,12 +178,6 @@ func TestNavigationUpdateRejectedShapes(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateTranslationsEnvelope 显式译文分支经入口后仍按原 helper 的判据走。
-//
-// 三档观测点：
-//   - 合法形状 + 句柄未注入 → 500（穿过形状层、被 fail closed 挡下）；
-//   - 形状错（顶层未知键 / 行缺 target）→ 400；
-//   - JSON 与表单（rows 是 JSON 字符串）走同一条路。
 func TestNavigationUpdateTranslationsEnvelope(t *testing.T) {
 	stub := &envelopeNavigationStub{}
 	router := newEnvelopeRouter(stub)
@@ -224,7 +188,6 @@ func TestNavigationUpdateTranslationsEnvelope(t *testing.T) {
 		t.Fatalf("合法形状 + 未注入句柄应 500（fail closed），实际 %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// 表单：写基座把 rows 整数组 JSON.stringify 成字符串，这一层由入口剥掉。
 	formValues := url.Values{
 		"action":  {"translations"},
 		"project": {"p-1"},
@@ -264,13 +227,11 @@ func TestNavigationUpdateTranslationsEnvelope(t *testing.T) {
 		})
 	}
 
-	// 译文分支的任何形态都不许落到 service.Update。
 	if len(stub.updateCalls) != 0 {
 		t.Fatalf("译文分支调用了 %d 次 service.Update", len(stub.updateCalls))
 	}
 }
 
-// TestNavigationUpdateMoveEnvelope 显式 move 分支：请求字段逐字到 SwapMove，形状错 400。
 func TestNavigationUpdateMoveEnvelope(t *testing.T) {
 	stub := &envelopeNavigationStub{}
 	router := newEnvelopeRouter(stub)
@@ -286,7 +247,6 @@ func TestNavigationUpdateMoveEnvelope(t *testing.T) {
 		t.Fatalf("move 字段没有逐字送达：%+v", got)
 	}
 
-	// 表单投放同一档。
 	if rec := envelopeForm(t, router, url.Values{"action": {"move"}, "id": {"nav-2"}, "dir": {"down"}}); rec.Code != http.StatusOK {
 		t.Fatalf("表单 move 应 200，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -318,7 +278,6 @@ func TestNavigationUpdateMoveEnvelope(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateBodyLimit 超过 1 MiB 在解析之前拒绝（任何分支都不落）。
 func TestNavigationUpdateBodyLimit(t *testing.T) {
 	stub := &envelopeNavigationStub{}
 	router := newEnvelopeRouter(stub)
@@ -333,7 +292,6 @@ func TestNavigationUpdateBodyLimit(t *testing.T) {
 	}
 }
 
-// TestNavigationUpdateRouterIsSingleEntrypoint 路由只有一条：POST /api/navigation/update。
 func TestNavigationUpdateRouterIsSingleEntrypoint(t *testing.T) {
 	raw, err := os.ReadFile("navigation_router.go")
 	if err != nil {

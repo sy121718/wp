@@ -1,32 +1,5 @@
 package productservice
 
-// 语义（本票四条验收的落点）：
-//  1. 手工标签（kind=manual）可建、可手工挂到商品（products.tag_ids，写入前校验
-//     同工程 + 必须存在 + 必须是手工标签）；
-//  2. 自动标签（kind=rule）只接受内置规则类型与参数（见 product_tag.go），
-//     规则类型未知、参数带未知键 / 类型不符 / 越界一律拒绝，**不接受自由表达式**；
-//  3. 自动标签归属的**重算时机**是明确的四条，别处不重算：
-//     · 商品写操作后（建商品 / 改商品 / 改状态到 published）；
-//     · 变体写操作后（价格与对比价参与规则判定：单个新增 / 修改 / 删除 / 组合生成）；
-//     · 标签自身定义变更后（新建即算一次；改规则类型或参数后立刻按新规则重算）；
-//     · 显式调用（接口 / 后台「重算」按钮，可按标签或按工程）。
-//     重算只替换**自己那一个 tag id** 的商品归属（model.ReplaceTagProductsTx 按元素
-//     摘挂），因此永远不会覆盖手工标签，也不会动其它自动标签；
-//  4. 后台可查看某标签命中哪些商品（GetTag / ListTagProducts 接口：
-//     首屏只给数量，展开某个标签才按页取，见 ListTagProducts）。
-//
-// 边界：标签只描述「商品有什么标记」，不生成 URL、不写产物；静态化在发布管线里。
-
-// 设计约束（本票验收 2）：自动标签**只接受内置规则类型与参数，不接受自由表达式**。
-// 因此这里是一张写死的注册表，每个规则类型自带三件事：
-//
-//	Normalize  严格校验参数（未知键 / 类型不符 / 越界一律拒绝）并归一为落库形态；
-//	Evaluate   按规则求值，返回命中的商品 id（只读本模块表，工程过滤由 service 兜底）。
-//
-// 规则的展示名与参数说明是**文案**，写在产品标签页模板里；这里只管语义。
-// 加规则 = 在这里加一条注册项（类型 + 参数白名单 + 求值），
-// 不需要新表、不需要改 DDL（091 的 CHECK 只兜底 kind/rule_type 的形状）。
-
 import (
 	"context"
 	"errors"
@@ -50,18 +23,15 @@ import (
 )
 
 const (
-	// defaultTagProducts 后台「某标签命中哪些商品」的默认展示条数（接口形态）。
 	defaultTagProducts = 100
-	// maxTagProducts 该列表的条数上限（防止一个标签挂了几千商品把页面拖死）。
+
 	maxTagProducts = 500
-	// tagProductsPageSize 后台展开区「命中商品」每页条数（审计 PERF-02）。
-	// 比接口默认值小：展开区是页面里的一小块，一页 50 行已经要滚动才能看完。
+
 	tagProductsPageSize = 50
-	// maxTagProductsPageSize 每页条数上限（调用方给得再大也只给这么多）。
+
 	maxTagProductsPageSize = 200
 )
 
-// CreateTag 新建标签（默认手工类型；规则型建好即按规则重算一次）。
 func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, productenums.Err(productenums.ErrTagNameRequired)
@@ -94,8 +64,7 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	// 标签行与它的首次归属重算**同事务**：规则型标签建好即算一次（避免「刚建出来一个都没命中」
-	// 的假象），而「有标签、没归属」或反过来的半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
@@ -113,7 +82,7 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 		if cerr := s.m.CreateTagTx(ctx, tx, e); cerr != nil {
 			return cerr
 		}
-		// 静态产物失效（审计 ARCH-01）：标签定义与归属变化会改列表页 / 详情页的字节。
+
 		if xerr := s.enqueueInvalidationTx(ctx, tx, projectID,
 			invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: e.ID}); xerr != nil {
 			return xerr
@@ -128,10 +97,6 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 	return s.tagDetail(ctx, e)
 }
 
-// UpdateTag 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
-//
-// 类型切换语义见 productdto.UpdateTagReq 注释：manual → rule 必须给出规则定义并立即重算；
-// rule → manual 清掉规则定义、保留当前命中为手工归属。
 func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -193,8 +158,7 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 		if uerr := s.m.UpdateTagTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		// 改名类写入口（审计 ARCH-01 收口票）：标签名进列表项的 tags 与商品详情页的标签区，
-		// 除实体键外**逐引用商品**发 direct_content（详情页只认商品键）。
+
 		refIDs, rerr := s.m.ProductIDsByTagTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
 		if rerr != nil {
 			return rerr
@@ -202,7 +166,7 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 		if xerr := s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeTag, e.ID, refIDs); xerr != nil {
 			return xerr
 		}
-		// 重算时机之一：规则定义变更后立刻按新规则重算（手工标签不动任何归属）。
+
 		if e.Kind != productenums.TagKindRule {
 			return nil
 		}
@@ -213,7 +177,6 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 	return s.tagDetail(ctx, e)
 }
 
-// applyTagShapeUpdate 计算类型切换后的 kind / ruleType / ruleParams（就地写入实体）。
 func applyTagShapeUpdate(e *productmodel.ProductTagEntity, req *productdto.UpdateTagReq) (err error) {
 	kind := e.Kind
 	if req.Kind != nil {
@@ -221,8 +184,7 @@ func applyTagShapeUpdate(e *productmodel.ProductTagEntity, req *productdto.Updat
 	}
 	switch kind {
 	case productenums.TagKindManual:
-		// rule → manual（或本来就是 manual 又提交了一次）：规则定义整体清掉。
-		// 当前命中结果保留下来作为手工归属 —— 自动维护到此为止，后续由人工调整。
+
 		e.Kind, e.RuleType, e.RuleParams, e.RecalcAt = productenums.TagKindManual, "", json.RawMessage("{}"), nil
 		return nil
 	case productenums.TagKindRule:
@@ -245,11 +207,10 @@ func applyTagShapeUpdate(e *productmodel.ProductTagEntity, req *productdto.Updat
 	}
 }
 
-// normalizeTagShapeOnCreate 新建时的形状校验（手工标签不允许带规则定义）。
 func normalizeTagShapeOnCreate(kind, ruleType string, params json.RawMessage) (outKind, outRuleType string, outParams json.RawMessage, err error) {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		// 缺省按手工标签：最保守的选择，不会因为一条规则自动改动商品归属。
+
 		kind = productenums.TagKindManual
 	}
 	switch kind {
@@ -269,13 +230,11 @@ func normalizeTagShapeOnCreate(kind, ruleType string, params json.RawMessage) (o
 	}
 }
 
-// hasRuleParams 参数是否给出了实质内容（空对象 / null / 空串都算没给）。
 func hasRuleParams(raw json.RawMessage) bool {
 	s := strings.TrimSpace(string(raw))
 	return s != "" && s != "{}" && s != "null"
 }
 
-// GetTag 标签详情（含命中商品列表 —— 验收 4）。
 func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -291,26 +250,14 @@ func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *p
 	return s.tagDetail(ctx, e)
 }
 
-// ListTags 标签列表（工程内；kind 为空表示手工 + 自动都返回）。
-//
-// 每个标签带当前归属数量：列表页要能一眼看出自动规则命中了多少商品。
-//
-// 命中数是**一次批量聚合**出来的（审计 PERF-02）：此前逐个标签发一条 Count，
-// 页面 SQL 条数随标签数线性增长 —— 「标签是个位数」只是当时的假设，协议没有使它成立。
-// 现在无论 1 个还是 1000 个标签，这里都只多一条 SQL。
 func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error) {
 	rawProjectID, kind, keyword := tagListFilter(req)
-	// 工程作用域必填（DB-009）：下面的批量计数反查的是 products，
-	// 没有作用域时每个标签的命中数会静默变成 0（fail closed 不报错）。
-	// 这与 Products.List 同一口径：不显式指定工程时取唯一工程，多于一个工程即报错，
-	// 不再有「projectID 为空 = 不限工程」这条在策略下必然退化成空结果的旧语义。
+
 	projectID, err := s.resolveProjectID(ctx, rawProjectID)
 	if err != nil {
 		return nil, err
 	}
-	// 分页下推到 model 的 LIMIT/OFFSET（审计 D13 收口）：Page/Size 只在**显式给出**时生效，
-	// 零值形态仍是全量（见 optionalPaging）—— 重算回执的标签清单、商品页的标签勾选项
-	// 都走那条形态，它们要的是全部标签。
+
 	inPage, inSize := 0, 0
 	if req != nil {
 		inPage, inSize = req.Page, req.Size
@@ -331,21 +278,13 @@ func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (lis
 	list = make([]*productdto.TagResp, 0, len(rows))
 	for _, r := range rows {
 		resp := toTagResp(r)
-		// 未命中的标签不在聚合结果里，缺省 0（不是「没查到」）。
+
 		resp.ProductCount = int(counts[r.ID])
 		list = append(list, resp)
 	}
 	return list, nil
 }
 
-// CountTags 标签总数（后台标签页的「共 N 条」与总页数）。
-//
-// **与 ListTags 共用同一个 tagListFilter 与同一个 resolveProjectID**：工程作用域的解析
-// （为空时取唯一工程、多工程报错）尤其不能各写一遍 —— 一侧退化成「不限工程」时，
-// 计数会把别的工程的标签也算进来，分页条凭空多出几页。
-//
-// 与命中计数无关：这一列是每个标签归属的商品数（CountProductsByTagIDs 批量聚合），
-// 不在本方法的职责里。
 func (s *Service) CountTags(ctx context.Context, req *productdto.ListTagReq) (n int64, err error) {
 	rawProjectID, kind, keyword := tagListFilter(req)
 	projectID, err := s.resolveProjectID(ctx, rawProjectID)
@@ -355,9 +294,6 @@ func (s *Service) CountTags(ctx context.Context, req *productdto.ListTagReq) (n 
 	return s.m.CountTags(ctx, projectID, kind, keyword)
 }
 
-// tagListFilter 归一标签列表的过滤条件（ListTags / CountTags 共用）。
-//
-// 第一项是**未解析**的工程 id（空串表示「取唯一工程」，由 service 的 resolveProjectID 判定）。
 func tagListFilter(req *productdto.ListTagReq) (rawProjectID, kind, keyword string) {
 	if req == nil {
 		return "", "", ""
@@ -365,8 +301,6 @@ func tagListFilter(req *productdto.ListTagReq) (rawProjectID, kind, keyword stri
 	return req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
 }
 
-// ListTagProducts 返回工程内标签命中的一页商品和同口径总数。
-// 空页码归一为第一页，越界页码收敛至最后一页；首屏无需逐标签读取商品。
 func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (res *productdto.TagProductsListResp, err error) {
 	if req == nil || req.TagID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -394,9 +328,7 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 	if cerr != nil {
 		return nil, cerr
 	}
-	// 页码收敛复用分页薄工具（pkg/pagination.ClampPage）：越界夹到末页、0 页归 1，
-	// 与属性页 / 商品列表同一规则。收敛在取数之前，所以 page=999 不会先发一条深 OFFSET
-	// 再丢掉；同时 (page-1)*size 不会溢出 int。
+
 	page = pagination.ClampPage(page, size, total)
 	rows, lerr := s.m.ListProductsByTagPage(ctx, tag.ID, projectID, (page-1)*size, size)
 	if lerr != nil {
@@ -409,16 +341,6 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 	}, nil
 }
 
-// DeleteTag 删除标签：先把引用从商品上解绑，再删标签行（同一事务）。
-//
-// 不拒绝「**本工程**已被商品引用」的删除：标签是标记不是外键，解绑即可；反过来说，
-// 留下悬空引用才是坏数据，所以两步必须原子。
-//
-// 但**别的工程**的引用一律打回给人（审计 DB-03 §2.4 记的正是这个缺口）：
-// RemoveTagFromProductsTx 的作用域是 tag.ProjectID，只解绑标签自己工程下的商品 ——
-// 别的工程仍引用着它时，删除会成功并在那些商品上留下永久悬空 tag id。
-// 这里不跨工程解绑：跨工程写既会被策略的 WITH CHECK 拒绝（换非超级角色后），
-// 也不该由本工程的删除动作替别的工程改数据（AGENTS.md「一律打回给人」）。
 func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error) {
 	if req == nil || req.ID == "" {
 		return productenums.Err(productenums.ErrInvalidParam)
@@ -442,9 +364,7 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 	}
 	now := time.Now().UTC()
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		// project_tags 在迁移 215 的 RLS 名单里且是 FORCE ROW LEVEL SECURITY：
-		// 不设作用域时，非超级角色的事务里 `DELETE ... WHERE id = ?` 匹配 0 行而**不报错**，
-		// 接口回 200 —— 一次假删除（同文件其它事务 109/184/644 都设了 scope，这里漏了）。
+
 		if serr := s.productWriteScopeTx(ctx, tx, tag.ProjectID); serr != nil {
 			return serr
 		}
@@ -459,15 +379,10 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 	})
 }
 
-// ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
 func (s *Service) ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp) {
 	return tagRuleTypeOptions()
 }
 
-// RecalcTags 手动触发重算（重算时机之一）。
-//
-// TagID 为空时重算该工程全部自动标签；TagID 非空时只重算它（工程按标签自己的取）。
-// 手工标签不参与重算（命中数为 0，也不计进 Recalculated）。
 func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq) (res *productdto.RecalcTagsResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -476,7 +391,7 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 	projectID := strings.TrimSpace(req.ProjectID)
 	var tags []*productmodel.ProductTagEntity
 	if id := strings.TrimSpace(req.TagID); id != "" {
-		// 作用域：显式 projectId 优先，否则取标签自身的工程（这里先按请求工程读标签本身）。
+
 		scopeID, serr := s.resolveProjectID(ctx, projectID)
 		if serr != nil {
 			return nil, serr
@@ -544,10 +459,6 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 	return res, nil
 }
 
-// resolveTagIDs 校验并归一商品引用的标签 id（去重 + 保序 + 同工程 + 必须存在 + 必须是手工标签）。
-//
-// 「必须是手工标签」是刻意的：自动标签的归属由重算维护，允许手工挂载会立刻被下一次
-// 重算抹掉，调用方却以为挂上了 —— 直接拒绝比静默丢失诚实。
 func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []string) (out []string, err error) {
 	out = []string{}
 	if len(in) == 0 {
@@ -590,16 +501,12 @@ func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []stri
 	return out, nil
 }
 
-// recalcTagTx 在调用方事务里「整体替换该标签的商品归属 + 记重算时间」——两处写必须原子。
-//
-// 原先这两步分属两个事务：归属已经替换、UpdateTag 失败时 recalc_at 还是上一次的值，
-// 后台按它核对「重算时机」会得出错误结论（看起来最近没重算过，实际归属已经变了）。
 func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmodel.ProductTagEntity,
 	ids []string, now time.Time) (err error) {
 	if serr := s.productWriteScopeTx(ctx, tx, tag.ProjectID); serr != nil {
 		return serr
 	}
-	// 替换前先取旧成员：只有「归属真的变了」的商品才需要重建（见下面的差异扇出）。
+
 	oldIDs, oerr := s.m.ListProductIDsByTagTx(tx, tag.ID, tag.ProjectID)
 	if oerr != nil {
 		return oerr
@@ -607,14 +514,7 @@ func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmode
 	if rerr := s.m.ReplaceTagProductsTx(tx, tag.ID, tag.ProjectID, ids, now); rerr != nil {
 		return rerr
 	}
-	// 静态产物失效（审计 ARCH-01 / 尾巴）：自动标签的归属重算改了商品的 tag_ids，
-	// 列表页的项目标签与**商品详情页的标签区**随之变化。三类失效目标：
-	//   · 标签实体键 —— 绑定该标签实体的产物；
-	//   · 商品集合键 —— 列表页（enqueueInvalidationTx 内部按批补）；
-	//   · 归属**变化过的每个商品**的 direct_content:product:{id} —— 详情页只认自己那条
-	//     商品键，不发它就只能等下一次商品写操作才更新（站点上标签凭空少一个/多一个）。
-	// 只发变化的商品（对称差）：没变的商品详情页字节并没有变，整集合发事件会让一个
-	// 万件商品的规则标签每次重算都轰出上万条事件。
+
 	changed := membershipDiff(oldIDs, ids)
 	targets := make([]invalidationTarget, 0, len(changed)+1)
 	targets = append(targets, invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: tag.ID})
@@ -624,14 +524,12 @@ func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmode
 	if xerr := s.enqueueInvalidationTx(ctx, tx, tag.ProjectID, targets...); xerr != nil {
 		return xerr
 	}
-	// 记录重算时间（后台可见，用来核对「重算时机」是否真的发生过）。
+
 	tag.RecalcAt = &now
 	tag.UpdatedAt = now
 	return s.m.UpdateTagTx(ctx, tx, tag)
 }
 
-// recalcAutoTagsTx 复用调用方事务重算归属，失败与业务写入一起回滚。
-// 调用方须在任何行锁前取得工程协调锁，再修改业务事实。
 func (s *Service) recalcAutoTagsTx(ctx context.Context, tx *gorm.DB, projectID string) (int, error) {
 	scoped := *s
 	scoped.m = productmodel.NewModel(tx)
@@ -652,7 +550,6 @@ func (s *Service) recalcAutoTagsTx(ctx context.Context, tx *gorm.DB, projectID s
 	return len(tags), nil
 }
 
-// ruleHitProductIDs 单条规则的命中商品 id（已过滤到本工程、顺序确定）。
 func (s *Service) ruleHitProductIDs(ctx context.Context, projectID, ruleType string, params json.RawMessage) (ids []string, err error) {
 	rule := lookupTagRule(ruleType)
 	if rule == nil {
@@ -665,10 +562,6 @@ func (s *Service) ruleHitProductIDs(ctx context.Context, projectID, ruleType str
 	return s.filterProjectProductIDs(ctx, projectID, ids)
 }
 
-// filterProjectProductIDs 只保留本工程的商品 id 并排序。
-//
-// 变体维度的规则（价格区间 / 促销）取数时没有工程条件（product_variants 没有 project_id），
-// 这里统一兜底过滤 —— 归属绝不能落到别的工程。排序保证同一份数据每次写出同样的顺序。
 func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string, ids []string) (out []string, err error) {
 	out = []string{}
 	if len(ids) == 0 {
@@ -691,13 +584,8 @@ func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string,
 	return out, nil
 }
 
-// tagDetail 实体 → 详情响应（含命中商品列表）。
-//
-// ProductCount 取**真实命中数**，不是 len(Products)：Products 有 maxTagProducts 上限
-// 截断，此前两者混用会让「命中 800 个」的标签在详情里显示 500（与列表接口的数字对不上）。
 func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntity) (res *productdto.TagResp, err error) {
-	// 工程作用域取标签自身的工程：tagDetail 的入参就是标签实体（ProjectID 非空列），
-	// 不必再由调用方多传一个参数。
+
 	rows, lerr := s.m.ListProductsByTag(ctx, e.ID, e.ProjectID, maxTagProducts)
 	if lerr != nil {
 		return nil, lerr
@@ -712,7 +600,6 @@ func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntit
 	return resp, nil
 }
 
-// toTagResp 实体 → 响应（只给规则类型与参数原样，规则的措辞在模板）。
 func toTagResp(e *productmodel.ProductTagEntity) *productdto.TagResp {
 	resp := &productdto.TagResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
@@ -731,7 +618,6 @@ func toTagResp(e *productmodel.ProductTagEntity) *productdto.TagResp {
 	return resp
 }
 
-// toTagProductResps 商品行 → 标签命中商品响应。
 func toTagProductResps(rows []*productmodel.ProductEntity) []*productdto.TagProductResp {
 	out := make([]*productdto.TagProductResp, 0, len(rows))
 	for _, p := range rows {
@@ -745,7 +631,6 @@ func toTagProductResps(rows []*productmodel.ProductEntity) []*productdto.TagProd
 	return out
 }
 
-// mapTagNotFound 把 gorm 的 not found 归一为标签不存在。
 func mapTagNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return productenums.Err(productenums.ErrTagNotFound)
@@ -753,27 +638,22 @@ func mapTagNotFound(err error) error {
 	return err
 }
 
-// 规则参数取值范围（越界即拒绝，不做静默裁剪）。
 const (
 	tagRuleDaysMin  = 1
 	tagRuleDaysMax  = 365
 	tagRulePriceMax = 1e9
 )
 
-// tagRule 一个内置规则类型。
 type tagRule struct {
-	// Type 落库的 rule_type。
 	Type string
-	// ParamKeys 本规则接受的参数键：后台表单按它组装 ruleParams（见 dto.TagRuleTypeResp）。
-	// 与 Normalize 里的白名单**必须一致** —— 这里多写一个键，表单就会发一个必被拒的字段。
+
 	ParamKeys []string
-	// Normalize 校验并归一参数（nil / 空对象按各规则自己的必需性判定）。
+
 	Normalize func(params json.RawMessage) (json.RawMessage, error)
-	// Evaluate 求值：返回命中的商品 id（可能含其它工程，由 service 过滤到本工程）。
+
 	Evaluate func(ctx context.Context, m *productmodel.Model, projectID string, params json.RawMessage) ([]string, error)
 }
 
-// tagRules 内置规则表（顺序即后台展示顺序）。新增规则只在这里追加。
 var tagRules = []*tagRule{
 	{
 		Type:      productenums.TagRuleNewArrival,
@@ -854,7 +734,7 @@ var tagRules = []*tagRule{
 			if minV != nil && maxV != nil && *minV > *maxV {
 				return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagPriceOrderWrong))
 			}
-			// 归一形态：只保留给了的键，键序固定（落库可读、可比对）。
+
 			parts := make([]string, 0, 2)
 			if minV != nil {
 				parts = append(parts, fmt.Sprintf("%q:%s", "minPrice", formatRulePrice(*minV)))
@@ -889,7 +769,7 @@ var tagRules = []*tagRule{
 	},
 	{
 		Type: productenums.TagRuleOnSale,
-		// 无参规则：ParamKeys 留空 —— 表单据此发 {} 而不是编造一个键。
+
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			m, err := decodeRuleParams(params)
 			if err != nil {
@@ -906,7 +786,6 @@ var tagRules = []*tagRule{
 	},
 }
 
-// lookupTagRule 按类型取内置规则（未知类型返回 nil —— 调用方转成业务错误）。
 func lookupTagRule(ruleType string) *tagRule {
 	ruleType = strings.TrimSpace(ruleType)
 	for _, r := range tagRules {
@@ -917,9 +796,6 @@ func lookupTagRule(ruleType string) *tagRule {
 	return nil
 }
 
-// tagRuleTypeOptions 内置规则类型清单（后台下拉与接口的唯一来源）。
-//
-// 只给类型与它接受的参数键：展示名与参数说明按 Type 写在模板里。
 func tagRuleTypeOptions() (out []*productdto.TagRuleTypeResp) {
 	out = make([]*productdto.TagRuleTypeResp, 0, len(tagRules))
 	for _, r := range tagRules {
@@ -928,7 +804,6 @@ func tagRuleTypeOptions() (out []*productdto.TagRuleTypeResp) {
 	return out
 }
 
-// normalizeTagRuleParams 校验并归一规则参数（未知规则类型即拒绝）。
 func normalizeTagRuleParams(ruleType string, params json.RawMessage) (out json.RawMessage, err error) {
 	r := lookupTagRule(ruleType)
 	if r == nil {
@@ -941,10 +816,6 @@ func normalizeTagRuleParams(ruleType string, params json.RawMessage) (out json.R
 	return norm, nil
 }
 
-// tagRuleValues 规则参数的取值（数字与「有没有」），措辞由模板按 RuleType 拼。
-//
-// 解码失败（外部改库改坏 / 旧版本遗留）给零值：模板见到 Has* 全假时显示
-// 「参数不合法」，后台列表不会因为一条坏数据整页打不开。
 func tagRuleValues(params json.RawMessage) productdto.RuleValuesResp {
 	m, err := decodeRuleParams(params)
 	if err != nil {
@@ -969,7 +840,6 @@ func tagRuleValues(params json.RawMessage) productdto.RuleValuesResp {
 	return out
 }
 
-// decodeRuleParams 规则参数必须是 JSON 对象（空 / null 按空对象处理）。
 func decodeRuleParams(raw json.RawMessage) (m map[string]json.RawMessage, err error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
@@ -981,7 +851,6 @@ func decodeRuleParams(raw json.RawMessage) (m map[string]json.RawMessage, err er
 	return m, nil
 }
 
-// rejectUnknownRuleKeys 拒绝白名单以外的键（自动标签只接受内置参数，不接受自由表达式）。
 func rejectUnknownRuleKeys(m map[string]json.RawMessage, allowed ...string) (err error) {
 	allow := make(map[string]bool, len(allowed))
 	for _, k := range allowed {
@@ -1001,7 +870,6 @@ func rejectUnknownRuleKeys(m map[string]json.RawMessage, allowed ...string) (err
 		"keys", strings.Join(unknown, ", ")))
 }
 
-// ruleInt 取整型参数（JSON 数字且必须是整数；字符串形式的数字也拒绝 —— 类型不符即错）。
 func ruleInt(raw json.RawMessage, key string) (v int, err error) {
 	f, ferr := ruleFloat(raw, key)
 	if ferr != nil {
@@ -1013,7 +881,6 @@ func ruleInt(raw json.RawMessage, key string) (v int, err error) {
 	return int(f), nil
 }
 
-// ruleFloat 取数字参数（JSON 数字）。
 func ruleFloat(raw json.RawMessage, key string) (v float64, err error) {
 	s := strings.TrimSpace(string(raw))
 	if s == "" {
@@ -1026,15 +893,12 @@ func ruleFloat(raw json.RawMessage, key string) (v float64, err error) {
 	return f, nil
 }
 
-// formatRulePrice 金额的规范文本（整数不带小数尾巴）。
 func formatRulePrice(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 
-// ruleParamsErr 参数错误的统一包装（消息带具体原因，便于后台直接显示）。
 func ruleParamsErr(detail string) error {
 	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrTagRuleParamsInvalid), detail)
 }
 
-// ruleTypeErr 规则类型错误的统一包装。
 func ruleTypeErr(ruleType string) error {
 	if strings.TrimSpace(ruleType) == "" {
 		return productenums.Err(productenums.ErrTagRuleTypeInvalid)

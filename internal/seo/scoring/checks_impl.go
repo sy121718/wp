@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-// checks_impl.go — 各检查项的纯函数实现（与 checks.go 的 Check 表一一对应）。
-
-// ---------- title ----------
-
 func chkTitlePresent(in *Input) (int, string) {
 	n := len([]rune(strings.TrimSpace(in.Title)))
 	if n == 0 {
@@ -54,8 +50,6 @@ func chkTitleKeywordFirstHalf(in *Input) (int, string) {
 	return 2, fmtInt(pos, "字符处命中（后半段）")
 }
 
-// ---------- meta ----------
-
 func chkMetaLength(in *Input) (int, string) {
 	n := len([]rune(strings.TrimSpace(in.MetaDescription)))
 	switch {
@@ -81,8 +75,6 @@ func chkMetaCTA(in *Input) (int, string) {
 	}
 	return 0, "缺少行动号召"
 }
-
-// ---------- headings ----------
 
 func h1s(in *Input) []string {
 	var out []string
@@ -142,8 +134,6 @@ func chkHierarchy(in *Input) (int, string) {
 	}
 	return 1, fmtInt(jumps, "处跳级")
 }
-
-// ---------- content ----------
 
 func chkContentLength(in *Input) (int, string) {
 	b, ok := contentLengthBenchmarks[in.Intent]
@@ -216,8 +206,6 @@ func chkSentenceLength(in *Input) (int, string) {
 		return 1, fmtInt(pct, "% 长句（偏高）")
 	}
 }
-
-// ---------- keywords ----------
 
 func chkKeywordDensity(in *Input) (int, string) {
 	if in.FocusKeyword == "" {
@@ -302,8 +290,6 @@ func chkSecondaryKeywords(in *Input) (int, string) {
 	}
 }
 
-// ---------- links ----------
-
 func chkInternalLinks(in *Input) (int, string) {
 	n := in.WordCount
 	if n <= 0 {
@@ -358,8 +344,6 @@ func chkAnchors(in *Input) (int, string) {
 	return 0, fmtInt(bad, " 处模糊锚文本")
 }
 
-// ---------- images ----------
-
 func contentImages(in *Input) []Image {
 	var out []Image
 	for _, img := range in.Images {
@@ -412,8 +396,7 @@ func chkImageWeight(in *Input) (int, string) {
 			over++
 		}
 	}
-	// 一张图都没有体积数据时不判满分：原来直接落到「体积达标」，等于给所有页面
-	// 无条件送一个满分项（该项永远不构成区分度）。
+
 	if measured == 0 {
 		return -1, "未纳入评分（缺少图片体积数据）"
 	}
@@ -448,8 +431,6 @@ func chkImageFormat(in *Input) (int, string) {
 		return 0, fmtInt(pct, "% 现代格式（偏低）")
 	}
 }
-
-// ---------- tech ----------
 
 var urlBadRe = regexp.MustCompile("[A-Z?=&]")
 
@@ -490,12 +471,9 @@ func chkHTTPS(in *Input) (int, string) {
 	return 0, "非 HTTPS"
 }
 
-// noContent 输入完全没有内容（用于区分"不适用"与"缺失"）。
 func noContent(in *Input) bool {
 	return strings.TrimSpace(in.Title) == "" && strings.TrimSpace(in.BodyText) == "" && len(in.Headings) == 0
 }
-
-// ---------- 文本工具 ----------
 
 func fmtInt(n int, suffix string) string { return itoa(n) + suffix }
 
@@ -521,11 +499,6 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// splitParagraphs 切分正文段落。
-//
-// 按单换行切分并过滤空段：这样同时兼容「双换行分段」与「单换行分段」两种来源。
-// 原实现只按双换行切，而富文本提取器产出的是单换行 —— 整篇正文被当成一段，
-// 段落长度检查恒判「偏长」（1/5 分空转，与内容质量无关）。
 func splitParagraphs(text string) []string {
 	var out []string
 	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
@@ -548,7 +521,6 @@ func splitSentences(text string) []string {
 	return out
 }
 
-// textUnitLen 文本长度单位：CJK 按字符，英文按词数。
 func textUnitLen(text, locale string) int {
 	if isCJK(locale) {
 		return len([]rune(text))
@@ -556,7 +528,6 @@ func textUnitLen(text, locale string) int {
 	return len(strings.Fields(text))
 }
 
-// firstWords 取正文前 n 个单位（CJK 按字符，英文按词）。
 func firstWords(text string, n int, locale string) string {
 	if isCJK(locale) {
 		r := []rune(text)
@@ -572,24 +543,10 @@ func firstWords(text string, n int, locale string) string {
 	return strings.Join(f, " ")
 }
 
-// needsComparisonTable 该意图是否要求结构化对比表。
-//
-// 只有比较型与购买型要求：它们的问题是「选哪个」，一张逐项对照的表是决策资产；
-// 信息型/定义型的问题是「这是什么」，强制要表只会逼出规格堆砌 —— 那正是新规则里
-// 明确排除的（"not a spec repeat"）。本地型同理不要求（它要的是门店/服务信息）。
 func needsComparisonTable(intent QueryIntent) bool {
 	return intent == IntentCommercial || intent == IntentTransactional
 }
 
-// chkComparisonTable 比较型 / 购买型意图下，正文是否给了结构化对比表。
-//
-// 返回负数 = 不适用（引擎据此跳过该项、不计入维度分母）：信息型 / 定义型 / 本地型，
-// 以及**意图未知**（空）都不要求 —— 意图是从页面/商品元数据推断的，推不出来时
-// 扣分是拿编辑者无法控制的东西罚他。
-//
-// 只判「有没有表」而不判「表好不好」：判定后者需要读懂表里在比什么（列是不是决策维度、
-// 值能不能对照），那是人/模型的判断，不是纯函数能给的。规则原文的 "not a spec repeat"
-// 因此留在提示文案里由人把关，评分只保证「有这个结构」。
 func chkComparisonTable(in *Input) (int, string) {
 	if !needsComparisonTable(in.Intent) {
 		return -1, "不适用（该意图不要求对比表）"

@@ -1,7 +1,3 @@
-// Package feature product 模块 feature 测试 —— 价格区间筛选与价格排序（issue #28）。
-//
-// 价格在**变体**上（products 不存价格），所以区间筛选是 EXISTS 下推、排序按最低启用变体价：
-// 这里在真实库上验证区间边界、非法输入拒绝、区间语义，以及集合项真的带出可排序的数值价格。
 package feature
 
 import (
@@ -12,7 +8,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// TestProductCollectionPriceRange 价格区间筛选（issue #28）。
 func TestProductCollectionPriceRange(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -43,28 +38,26 @@ func TestProductCollectionPriceRange(t *testing.T) {
 		return out
 	}
 
-	// 只有下限：≥ 100 → 中档与贵货。
 	if got := ids(map[string]string{"minPrice": "100"}); len(got) != 2 || !got["中档货"] || !got["贵货"] {
 		t.Fatalf("minPrice=100 应命中中档与贵货，实际 %v", got)
 	}
-	// 只有上限：≤ 100 → 只有便宜货。
+
 	if got := ids(map[string]string{"maxPrice": "100"}); len(got) != 1 || !got["便宜货"] {
 		t.Fatalf("maxPrice=100 应只命中便宜货，实际 %v", got)
 	}
-	// 闭区间且**含端**：100~150 → 只有中档（便宜货 50 在下限外）。
+
 	if got := ids(map[string]string{"minPrice": "150", "maxPrice": "150"}); len(got) != 1 || !got["中档货"] {
 		t.Fatalf("150~150 应只命中中档货（边界含端），实际 %v", got)
 	}
-	// 区间之外 → 空集合（不是报错）。
+
 	if got := ids(map[string]string{"minPrice": "1000"}); len(got) != 0 {
 		t.Fatalf("1000 以上应无命中，实际 %v", got)
 	}
-	// 与状态叠加：草稿商品不该被区间筛出来（先发布一个再看）。
+
 	if got := ids(map[string]string{"status": "published", "minPrice": "0"}); len(got) != 0 {
 		t.Fatalf("未发布商品不该出现在 published 筛选里，实际 %v", got)
 	}
 
-	// 非法输入一律报错：非数字 / 负数 / 下限大于上限。
 	bad := []map[string]string{
 		{"minPrice": "abc"},
 		{"maxPrice": "-1"},
@@ -77,9 +70,6 @@ func TestProductCollectionPriceRange(t *testing.T) {
 	}
 }
 
-// TestProductCollectionItemCarriesPrice 集合项必须带**数值**价格（issue #28）。
-//
-// priceRange 是给人看的字符串（"99 ~ 199"），拿它排序会得到字典序；组件价格排序依赖 minPrice。
 func TestProductCollectionItemCarriesPrice(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {

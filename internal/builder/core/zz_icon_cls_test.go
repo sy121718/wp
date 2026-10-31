@@ -2,7 +2,6 @@ package core
 
 import "testing"
 
-// TestIconSVGClassInjectsClass class 与 aria-hidden 必须注入，viewBox 等原属性保留。
 func TestIconSVGClassInjectsClass(t *testing.T) {
 	svg, ok := IconSVGClass("chevron-right", "my-arrow")
 	if !ok {

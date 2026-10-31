@@ -1,15 +1,5 @@
 package migrations
 
-// 616 — SEO 评分片段展示文案的词条化（89 个 key / 178 行）。
-//
-// 门槛判据逐条枚举本批自己的 item_key（上界封闭），不用 LIKE 前缀、也不用全库总量 ——
-// 依据 AGENTS.md 数据库·迁移 与 058 / 076 两次真实故障：前缀判据在「已有同前缀行」时
-// 计数虚高，本批被静默跳过；全库总量判据在将来新增同前缀 key 时永远追不平，每轮重跑。
-//
-// 行数 = key 数 x 2（中英各一行）：89 x 2 = 178。
-//
-// 模板侧对应文件：internal/templates/fragments/seo_section_name.html / seo_issue_line.html /
-// seo_dup_kind.html / seo_score.html —— 那里的字面 key 与中文兜底与本文件逐字一致。
 func init() {
 	registerSeed(Seed{
 		Version:      "616-seo-score-labels-i18n",

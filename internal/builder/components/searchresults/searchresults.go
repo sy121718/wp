@@ -1,8 +1,3 @@
-// Package searchresults 实现 core.searchResults 站内搜索组件（BIZ-2 / BIZ-6）。
-//
-// 产物只输出搜索框 + 结果挂载点；命中列表由 /api/site/search 现拉。
-// 构建期把 projectId / lang / limit 烘进片段 URL —— 与 cartIcon / orderList 同口径，
-// 多语言站点必须带 lang，否则 locator 只能回落默认语言路径。
 package searchresults
 
 import (
@@ -22,14 +17,12 @@ const (
 	defaultPlaceholder = "搜索站内内容"
 )
 
-// Props 站内搜索属性。
 type Props struct {
 	Placeholder string             `json:"placeholder,omitempty" ct:"text,maxlen=40,sec=content,label=占位提示"`
 	Limit       int                `json:"limit,omitempty" ct:"int,min=1,max=20,default=8,sec=content,label=每类结果条数"`
 	Advanced    core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "站内搜索",

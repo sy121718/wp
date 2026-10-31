@@ -101,7 +101,7 @@ func TestBusinessPresetConcurrentNamesRejectWithConflict(t *testing.T) {
 	const workers = 4
 	var arrived atomic.Int32
 	barrier := make(chan struct{})
-	// 让所有调用都先通过ExistsByName，确实覆盖唯一索引的冲突分支。
+
 	callback := "test:preset-create-name-barrier"
 	if err := env.db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
 		if tx.Statement.Table != "blocks" {

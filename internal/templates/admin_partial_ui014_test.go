@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-// admin_partial_ui014_test.go — 审计 UI-014：高频模式抽 partial 并被多处复用。
-//
-// 本批抽出的是「列表页筛选栏右侧的新建入口」：抽之前这一段在 6 个列表页里各抄一遍，
-// 给按钮加一个属性或换一次类名要改 6 个文件（审计说的「改一个模式要改 30 多个文件」）。
-//
-// 两条判据：① 引用方 ≥2 个（否则算不上模式）；② 行为不变 —— 按钮的可见性与属性
-// 完全由权限集合与抽屉选择器决定，与逐页手写时一致。
-
-// ui014AdminRow 复刻 administrators 列表行的字段（与模板访问方式一致）。
 type ui014AdminRow struct {
 	ID       int
 	Username string
@@ -25,11 +16,8 @@ type ui014AdminRow struct {
 	Status   int
 }
 
-// 引用路径随「页面所在目录」不同：根下页面写 partials/x.html，子目录页面写 ../partials/x.html。
-// 判据只锚到 partials 段，避免每搬一次目录就要改一次这个常量。
 const toolbarCreateRef = "partials/toolbar_create.html"
 
-// 至少 2 个页面引用同一个 partial。
 func TestToolbarCreatePartialIsReused(t *testing.T) {
 	paths := adminTemplateFiles(t)
 	var users []string
@@ -48,8 +36,6 @@ func TestToolbarCreatePartialIsReused(t *testing.T) {
 	t.Logf("partial 被 %d 个列表页复用: %v", len(users), users)
 }
 
-// 行为不变：有权限时按钮照常渲染（含抽屉选择器与文案、以及布局用的 toolbar-spacer），
-// 无权限时整块不渲染 —— 这与逐页手写时的可见性判据完全相同。
 func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	rows := []ui014AdminRow{
 		{ID: 1, Username: "admin", Name: "甲", Email: "a@example.com", Phone: "138", Status: 1},
@@ -86,17 +72,12 @@ func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	if strings.Contains(out, "#tpl-admin-create") {
 		t.Error("无权限时不应渲染新建按钮")
 	}
-	// 权限不足时 spacer 仍在（它是布局占位，与权限无关）。
+
 	if !strings.Contains(out, "toolbar-spacer") {
 		t.Error("无权限时工具栏占位应保留")
 	}
 }
 
-// 本批迁移涉及的全部模板必须能被 Jet 解析。
-//
-// 解析失败是整页级故障，而且现象很有欺骗性：HTTP 仍可能是 200，中断点之后的 HTML
-// 整块消失（列表、表格全没了），从页面表象几乎定位不到模板里的语法问题。
-// menus.html 不在 admin_group_f_i18n_test.go 的解析清单里，单独在这里兜住。
 func TestToolbarCreateMigrationTemplatesParse(t *testing.T) {
 	set := newAdminTestSet()
 	for _, name := range []string{

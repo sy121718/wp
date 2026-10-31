@@ -33,7 +33,6 @@ func TestBuildViewMissingProjectNotice(t *testing.T) {
 	}
 }
 
-// 冷启动沿用片段入口合并地址栏查询的能力，模板不执行 CSP 禁止的 JS 表达式。
 func TestSearchWidgetRendersWithoutEvaluatedAttributes(t *testing.T) {
 	set, err := templates.NewEmbeddedComponentSet()
 	if err != nil {

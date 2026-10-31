@@ -1,10 +1,5 @@
 package feature
 
-// report_test.go — 活动报表的口径测试（issue #38 P1）。
-//
-// 报表最容易出的错是**口径混用**：把「事件次数」当成「人数」用，
-// 于是打开率能算出 300%。这条测试专门钉住这个区分。
-
 import (
 	"context"
 	"testing"
@@ -13,7 +8,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// TestCampaignReportDistinguishesPeopleAndEvents 去重人数与事件次数必须分开。
 func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -21,7 +15,6 @@ func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 两个订阅者 + 一个活动（直接造数据，不走群发链路）。
 	var contacts []*mailmodel.MailContactEntity
 	for _, e := range []string{"r1@example.com", "r2@example.com"} {
 		c := &mailmodel.MailContactEntity{Email: e, Source: mailmodel.ContactSourceImport, Status: mailmodel.ContactStatusSubscribed}
@@ -55,7 +48,6 @@ func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 事件：r1 打开两次 + 点击一次，r2 打开一次。
 	seeds := []struct {
 		contact uint64
 		event   string
@@ -81,7 +73,7 @@ func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 打开人数 = 2（r1 / r2 各一人），打开次数 = 3（r1 开了两次）。
+
 	if report.Opened != 2 {
 		t.Fatalf("打开人数应为 2（去重），实际 %d", report.Opened)
 	}
@@ -91,7 +83,7 @@ func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 	if report.Clicked != 1 || report.ClickEvents != 1 {
 		t.Fatalf("点击人数 / 次数应为 1/1，实际 %d/%d", report.Clicked, report.ClickEvents)
 	}
-	// 打开率 = 2 / 2 = 100%（不是 150%）。
+
 	if report.OpenRate != 100 {
 		t.Fatalf("打开率应为 100%%，实际 %v", report.OpenRate)
 	}
@@ -99,9 +91,6 @@ func TestCampaignReportDistinguishesPeopleAndEvents(t *testing.T) {
 		t.Fatalf("链接排行应有一条且点击人数为 1，实际 %+v", report.Links)
 	}
 
-	// 失败人数参与分母：失败 1 人时，送达 1 人、打开 2 人 → 率会被算成 >100%，
-	// 这提示的是数据本身有问题（失败的日志不该产生事件），不是口径问题。这里只验证
-	// 分母用的是「送达人数」而不是「目标人数」。
 	if err = f.m.UpdateCampaignFields(ctx, cp.ID, map[string]any{"sent_count": 1, "failed_count": 1}); err != nil {
 		t.Fatal(err)
 	}

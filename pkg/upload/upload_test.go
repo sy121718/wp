@@ -32,7 +32,7 @@ func TestDetectDangerousContentAllowsPNG(t *testing.T) {
 }
 
 func TestDetectDangerousContentRejectsSVGExtensionBypass(t *testing.T) {
-	// 扩展名伪装成 .png 时，魔数仍应拦截 SVG 内容。
+
 	head := bytes.TrimSpace([]byte("\n\n<svg><rect/></svg>"))
 	got := detectDangerousContent(head)
 	if got == "" {
@@ -40,7 +40,6 @@ func TestDetectDangerousContentRejectsSVGExtensionBypass(t *testing.T) {
 	}
 }
 
-// webpHead RIFF....WEBPVP：Go 的 http.DetectContentType 认得它。
 var webpHead = []byte{'R', 'I', 'F', 'F', 0x1a, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' '}
 
 func TestEffectiveMIMEPrefersSniffedContent(t *testing.T) {
@@ -50,8 +49,7 @@ func TestEffectiveMIMEPrefersSniffedContent(t *testing.T) {
 		head     []byte
 		want     string
 	}{
-		// 回归：curl 上传 .webp 时声明的是 application/octet-stream，只信声明值会让
-		// 合法图片整批被拒（实测 449 张图里 178 张 webp 全部失败）。
+
 		{"webp 被声明为 octet-stream", "application/octet-stream", webpHead, "image/webp"},
 		{"webp 声明正确", "image/webp", webpHead, "image/webp"},
 		{"png 头优先于错误声明", "text/plain", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, "image/png"},
@@ -82,7 +80,6 @@ func TestValidateFileAcceptsWebpDeclaredAsOctetStream(t *testing.T) {
 	}
 }
 
-// 本地存储键可重拼；任意外链即使带 storage 段也不能改成本站域名。
 func TestStorageURL(t *testing.T) {
 	old := mediaBaseURL
 	mediaBaseURL = "https://www.example.com/storage"
@@ -132,7 +129,6 @@ func TestValidateFileRejectsMismatchedContent(t *testing.T) {
 	}
 	t.Cleanup(func() { uploadRules = old })
 
-	// 声明成 webp、内容却是 PNG —— 判据是内容，应被拒。
 	png := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	err := validateFile(File{Filename: "a.webp", ContentType: "image/webp"}, png)
 	if err == nil {

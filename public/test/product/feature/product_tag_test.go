@@ -1,16 +1,3 @@
-// Package feature product 模块 feature 测试 —— 标签与自动规则（issue #11）。
-//
-// 覆盖本票四条验收（真实 PostgreSQL + 生产 DDL + 真实 service）：
-//  1. 可建标签并手工挂到商品（引用校验：同工程 + 必须存在 + 必须手工标签）；
-//  2. 自动标签只接受内置规则类型与白名单参数，非法规则被拒绝（自由表达式一律不受理）；
-//  3. 自动标签按定义的重算时机更新商品归属（商品写、变体写、标签定义变更、显式重算），
-//     且重算只动自己那一个 tag id —— 不覆盖手工标签；
-//  4. 后台可查看某标签命中哪些商品（页面 + 接口）。
-//
-// 另覆盖两条容易踩的边界：
-//
-//	· 「新品」以 products.published_at 判定，不是 create_time（建了草稿很久才上架的商品不算新品）；
-//	· 变体维度的规则（价格区间 / 促销）在变体表上没有工程列，命中集合必须按工程兜底过滤。
 package feature
 
 import (
@@ -37,7 +24,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// TestTagManualAttachAndGuards 验收 1：手工标签可建、可手工挂到商品，引用面有明确拦截。
 func TestTagManualAttachAndGuards(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -55,7 +41,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建手工标签失败: %v", err)
 	}
-	// 类型留空默认手工（最保守：不会因为一条规则自动改归属）。
+
 	if manual.Kind != productenums.TagKindManual || manual.RuleType != "" {
 		t.Fatalf("缺省类型应为手工标签，实际 kind=%q ruleType=%q", manual.Kind, manual.RuleType)
 	}
@@ -65,7 +51,6 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 		t.Fatalf("slug 重复应返回 ErrTagSlugTaken，实际 %v", err)
 	}
 
-	// 建商品时直接挂手工标签。
 	p, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "清仓商品", TagIDs: []string{manual.ID},
 	})
@@ -75,8 +60,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if len(p.TagIDs) != 1 || p.TagIDs[0] != manual.ID {
 		t.Fatalf("商品应挂上手工标签，实际 %v", p.TagIDs)
 	}
-	// 验收 4：按标签反查命中商品。
-	// DB-009：库里有多个工程时按 id 单查必须显式给工程（唯一工程兜底不成立）。
+
 	detail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: manual.ID})
 	if err != nil {
 		t.Fatalf("标签详情失败: %v", err)
@@ -84,13 +68,12 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if detail.ProductCount != 1 || len(detail.Products) != 1 || detail.Products[0].ID != p.ID {
 		t.Fatalf("标签应命中 1 个商品，实际 %+v", detail.Products)
 	}
-	// 验收 4 的接口形态：ListTagProducts。
+
 	hits, err := f.svc.ListTagProducts(ctx, &productdto.ListTagProductsReq{ProjectID: f.projectID, TagID: manual.ID})
 	if err != nil || len(hits.Items) != 1 || hits.Items[0].Name != "清仓商品" {
 		t.Fatalf("ListTagProducts 应返回命中商品，实际 %v %+v", err, hits)
 	}
 
-	// 手工解绑（整体替换语义）。
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{}}); err != nil {
 		t.Fatalf("解绑标签失败: %v", err)
 	}
@@ -99,7 +82,6 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 		t.Fatalf("解绑后不应带标签，实际 %v", got.TagIDs)
 	}
 
-	// 三条引用拦截：不存在 / 跨工程 / 自动标签。
 	missing := "00000000-0000-0000-0000-000000000000"
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{missing}}); err == nil ||
 		err.Error() != productenums.ErrTagNotFound {
@@ -126,7 +108,6 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	}
 }
 
-// TestTagRuleValidation 验收 2：只接受内置规则类型与白名单参数，非法规则被拒绝。
 func TestTagRuleValidation(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -141,7 +122,6 @@ func TestTagRuleValidation(t *testing.T) {
 		return f.svc.CreateTag(ctx, req)
 	}
 
-	// 合法：三个内置规则类型。
 	if _, err := create("新品30", productenums.TagKindRule, productenums.TagRuleNewArrival, `{"days":30}`); err != nil {
 		t.Fatalf("新品规则应被接受: %v", err)
 	}
@@ -159,7 +139,6 @@ func TestTagRuleValidation(t *testing.T) {
 		t.Fatalf("无参数规则应被接受: %v", err)
 	}
 
-	// 非法规则类型 / 形状。
 	cases := []struct {
 		name     string
 		kind     string
@@ -196,7 +175,6 @@ func TestTagRuleValidation(t *testing.T) {
 		})
 	}
 
-	// 更新路径同样严格：换规则类型 + 给对应参数；改参数为非法值被拒且不落库。
 	upd := `{"days":7}`
 	kind := productenums.TagRuleNewArrival
 	updated, err := f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{
@@ -217,19 +195,17 @@ func TestTagRuleValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读标签失败: %v", err)
 	}
-	// jsonb 回读会规范化键序与空格，比较语义而不是字节。
+
 	if !jsonEqual(string(again.RuleParams), `{"days":7}`) {
 		t.Fatalf("被拒的更新不应改库，实际 %s", again.RuleParams)
 	}
-	// 规则类型清单来自注册表（后台下拉的唯一来源）。
+
 	types := f.svc.ListTagRuleTypes(ctx)
 	if len(types) != 3 {
 		t.Fatalf("应有 3 个内置规则类型，实际 %d", len(types))
 	}
 }
 
-// TestTagAutoRecalcMembership 验收 3：自动标签按定义的重算时机更新归属，
-// 且只动自己那一个 tag id（不覆盖手工标签）。
 func TestTagAutoRecalcMembership(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -263,7 +239,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("建手工标签失败: %v", err)
 	}
 
-	// ① 商品写操作后重算：草稿商品不算「已上架」，新品规则不命中。
 	price := 150.0
 	p, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "百元商品", DefaultPrice: &price, TagIDs: []string{manual.ID},
@@ -271,7 +246,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	// 价格区间规则在商品创建时就该命中（变体已随商品建出）。
+
 	hits := tagProductIDs(t, f, priceRange.ID)
 	if !containsString(hits, p.ID) {
 		t.Fatalf("价格区间规则应在商品创建时命中，实际 %v", hits)
@@ -280,7 +255,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("草稿商品不应命中新品规则")
 	}
 
-	// ② 状态转 published → 上架时间落库、新品规则命中。
 	published := productenums.StatusPublished
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, Status: &published}); err != nil {
 		t.Fatalf("上架失败: %v", err)
@@ -295,7 +269,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if !containsString(tagProductIDs(t, f, newArrival.ID), p.ID) {
 		t.Fatalf("上架后应命中新品规则")
 	}
-	// 手工标签没有被重算抹掉（重算只替换自己那一个 tag id）。
+
 	if !containsString(got.TagIDs, manual.ID) {
 		t.Fatalf("重算不应覆盖手工标签，实际 %v", got.TagIDs)
 	}
@@ -303,7 +277,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("自动标签应同时挂在商品上，实际 %v", got.TagIDs)
 	}
 
-	// ③ 「新品」以 published_at 判定，不是 create_time：把上架时间改成 40 天前后再重算，应脱钩。
 	old := time.Now().UTC().AddDate(0, 0, -40)
 	if err = f.db.Exec("UPDATE products SET published_at = ? WHERE id = ?", old, p.ID).Error; err != nil {
 		t.Fatalf("回填上架时间失败: %v", err)
@@ -315,7 +288,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("上架超过 30 天的商品应脱离新品标签")
 	}
 
-	// ④ 变体写操作后重算：单个变体新增（带划线价）让促销规则命中。
 	sale := 90.0
 	compare := 120.0
 	if _, err = f.svc.CreateVariant(ctx, &productdto.CreateVariantReq{
@@ -326,7 +298,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if !containsString(tagProductIDs(t, f, onSale.ID), p.ID) {
 		t.Fatalf("有划线价的商品应命中促销规则")
 	}
-	// 改回价格区间外 → 价格区间标签脱钩（变体写操作触发的重算）。
+
 	out := 999.0
 	variants, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil || len(variants.Variants) == 0 {
@@ -344,7 +316,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("价格全部移出区间后应脱离价格区间标签")
 	}
 
-	// ⑤ 标签规则变更后立刻重算：把价格区间放宽到 1000，商品重新命中。
 	wide := `{"minPrice":100,"maxPrice":1000}`
 	if _, err = f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{ProjectID: f.projectID, ID: priceRange.ID, RuleParams: json.RawMessage(wide)}); err != nil {
 		t.Fatalf("放宽价格区间失败: %v", err)
@@ -353,7 +324,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("规则放宽后应重新命中")
 	}
 
-	// ⑥ 显式重算：整工程重算只统计自动标签，手工标签不参与。
 	res, err := f.svc.RecalcTags(ctx, &productdto.RecalcTagsReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("整工程重算失败: %v", err)
@@ -371,12 +341,12 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if manualDetail.ProductCount != 1 {
 		t.Fatalf("手工标签归属不应被重算改动，实际命中 %d", manualDetail.ProductCount)
 	}
-	// 重算时间已记录（后台可见的重算证据）。
+
 	autoDetail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: newArrival.ID})
 	if err != nil {
 		t.Fatalf("读自动标签失败: %v", err)
 	}
-	// 规则的措辞在模板（tag_rule_text.html），接口只回类型与取值。
+
 	if autoDetail.RecalcAt.IsZero() || autoDetail.RuleType != productenums.TagRuleNewArrival {
 		t.Fatalf("自动标签应带重算时间与规则类型，实际 %+v", autoDetail)
 	}
@@ -384,7 +354,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("自动标签应带回规则取值（days=30），实际 %+v", autoDetail.RuleValues)
 	}
 
-	// ⑦ 跨工程隔离：别的工程里同价格的商品不该被本工程标签命中。
 	other, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "另一个工程"})
 	if err != nil {
 		t.Fatalf("建第二工程失败: %v", err)
@@ -401,7 +370,6 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	}
 }
 
-// TestTagDeleteUnbindsProducts 删除标签要连同商品上的引用一起解绑（不留悬空引用）。
 func TestTagDeleteUnbindsProducts(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -434,8 +402,6 @@ func TestTagDeleteUnbindsProducts(t *testing.T) {
 	}
 }
 
-// TestTagPermissionsAndMenusSeeded 迁移 092/093：权限点与后台菜单已 seed
-// （未 seed 权限点时 Casbin Enforce 无策略匹配 → 含超管在内全员 403）。
 func TestTagPermissionsAndMenusSeeded(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -461,7 +427,6 @@ func TestTagPermissionsAndMenusSeeded(t *testing.T) {
 	}
 }
 
-// newTagPageEngine 装配只挂标签页 / 商品页的测试引擎（真实 Jet 模板 + 真实 service）。
 func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -470,8 +435,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 标签页的行内按钮与抽屉按权限渲染（adminui.Prepare 读 PermSetKey）：这条链路不挂鉴权中间件，
-	// 注入一份权限，让「页面里存在写入口」这类断言保持有效。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
@@ -486,26 +450,23 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), handle.ProductTagsPage)
-	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
+
 	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(f.svc).ListTagProducts)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
-	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
+
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
-	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/write-base.js）。
+
 	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
 
-// TestTagAdminPages 验收 4：后台可看标签与命中商品，页面写链路可用（真实模板渲染）。
 func TestTagAdminPages(t *testing.T) {
 	engine, f := newTagPageEngine(t)
 	if engine == nil {
 		return
 	}
-	// 建手工标签 + 自动标签。标签的 create/update 页面出口已随写动作迁到 JSON 基座删除
-	// （模板直调 /api/product/tag/{create,update}），所以这里直调 service —— 本用例验的是
-	// 「标签能建、规则参数受白名单约束、页面能读」，不是那条已被删除的转发链路。
+
 	if _, err := f.svc.CreateTag(context.Background(), &productdto.CreateTagReq{
 		ProjectID: f.projectID, Name: "清仓", Slug: "clearance", Kind: productenums.TagKindManual,
 	}); err != nil {
@@ -523,7 +484,6 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("应建成 2 个标签，实际 %v %+v", err, tags)
 	}
 
-	// 非法规则参数（days 超上界）→ 拒绝，且不落库。
 	if _, err := f.svc.CreateTag(context.Background(), &productdto.CreateTagReq{
 		ProjectID: f.projectID, Name: "错误规则", Kind: productenums.TagKindRule,
 		RuleType: productenums.TagRuleNewArrival, RuleParams: json.RawMessage(`{"days":999}`),
@@ -535,7 +495,6 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("被拒的标签不应落库，实际 %d 个", len(tags))
 	}
 
-	// 建一个上架商品让新品规则命中，再用表单给它挂手工标签。
 	p, err := f.svc.Create(context.Background(), &productdto.CreateReq{ProjectID: f.projectID, Name: "上架商品"})
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
@@ -552,27 +511,23 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("挂手工标签应成功，实际 %d：%s", got.Code, got.Message)
 	}
 
-	// 标签页：标签名、类型、规则描述、重算时间都要渲染出来；命中商品**不在首屏**
-	// （审计 PERF-02）：首屏只给数量与展开入口，商品行由片段端点按需给。
 	rec = httptestGet(engine, "/admin/product-tags?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("标签页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 行内按钮文案随改造按「动词 + 对象」收紧：标签页里行内按钮不再重复实体名，
-	// 「立即重算这个标签」= 行内「重算」、「删除标签」= 行内「删除」。
+
 	for _, want := range []string{
 		"商品标签", "清仓", "新品", "手工", "自动", "上架 30 天内",
 		"命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
-		// 命中商品的展开入口（片段端点 + 落点容器）：列表里那个「N 个商品」是按钮。
+
 		`data-product-tag-hits="`, `id="tag-hits-panel"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("标签页缺少 %q", want)
 		}
 	}
-	// 首屏**不得**内联命中商品：这条是本次整改的核心形状（首屏 SQL 与页面体积都不再
-	// 随命中数据增长）。商品名只允许出现在片段响应里 —— 紧随其后验证片段确实给了它。
+
 	if strings.Contains(body, "上架商品") {
 		t.Fatal("标签页首屏不应内联命中商品（PERF-02：命中商品改为展开时按页取）")
 	}
@@ -584,14 +539,13 @@ func TestTagAdminPages(t *testing.T) {
 	if hitsData.Total != 1 || hitsData.TagName != "清仓" || len(hitsData.Items) != 1 || hitsData.Items[0].Name != "上架商品" {
 		t.Fatalf("命中事实缺失：%+v", hitsData)
 	}
-	// 标签挂载：手工标签勾选框与「保存手工标签」在**编辑页**（详情页只读展示标签）。
+
 	rec = httptestGet(engine, "/admin/products/edit?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("商品编辑页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
-	// 编辑页是**一个表单一次保存**：手工标签与基本字段 / 分类品牌一起提交，
-	// 所以按钮只有统一的「保存」，没有分节的「保存手工标签」。
+
 	for _, want := range []string{
 		"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`,
 		"自动标签（按规则重算维护，不能手工改动）",
@@ -602,14 +556,12 @@ func TestTagAdminPages(t *testing.T) {
 		}
 	}
 
-	// 页面「重算」按钮已改模板直调 /api/product/tag/recalc —— 这里直接验用例本身。
 	if _, err = f.svc.RecalcTags(context.Background(), &productdto.RecalcTagsReq{
 		ProjectID: f.projectID, TagID: tagIDByName(t, f, "新品"),
 	}); err != nil {
 		t.Fatalf("重算标签失败: %v", err)
 	}
 
-	// 删除标签（模板直调 /api/product/tag/delete）：连同引用一起解绑。
 	if err = f.svc.DeleteTag(context.Background(), &productdto.DeleteTagReq{ProjectID: f.projectID, ID: manualID}); err != nil {
 		t.Fatalf("删除标签失败: %v", err)
 	}
@@ -618,7 +570,6 @@ func TestTagAdminPages(t *testing.T) {
 	}
 }
 
-// tagProductIDs 取某标签当前命中的商品 id（测试内的小工具）。
 func tagProductIDs(t *testing.T, f *attrFixture, tagID string) []string {
 	t.Helper()
 	hits, err := f.svc.ListTagProducts(t.Context(), &productdto.ListTagProductsReq{ProjectID: f.projectID, TagID: tagID})
@@ -632,7 +583,6 @@ func tagProductIDs(t *testing.T, f *attrFixture, tagID string) []string {
 	return out
 }
 
-// tagIDByName 按名称取标签 id（测试内的小工具）。
 func tagIDByName(t *testing.T, f *attrFixture, name string) string {
 	t.Helper()
 	tags, err := f.svc.ListTags(t.Context(), &productdto.ListTagReq{ProjectID: f.projectID})
@@ -648,7 +598,6 @@ func tagIDByName(t *testing.T, f *attrFixture, name string) string {
 	return ""
 }
 
-// jsonEqual 比较两段 JSON 是否语义相同（jsonb 回读会规范化空格与键序）。
 func jsonEqual(a, b string) bool {
 	var av, bv any
 	if err := json.Unmarshal([]byte(a), &av); err != nil {
@@ -660,7 +609,6 @@ func jsonEqual(a, b string) bool {
 	return reflect.DeepEqual(av, bv)
 }
 
-// containsString id 是否在切片里。
 func containsString(ids []string, id string) bool {
 	for _, v := range ids {
 		if v == id {

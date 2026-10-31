@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestMarqueeCSSPerInstanceKeyframes 每个实例一份帧名，且名字与动画引用一致。
-//
-// 这不是装饰：帧名带实例 id 才让同页多个跑马灯各有各的速度与方向。
-// 名字里的 {{id}} 若没展开，产物里会多出一个谁都不引用的关键帧 —— 动画直接不动。
 func TestMarqueeCSSPerInstanceKeyframes(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("abc", &Props{Speed: 6}, &b)
@@ -26,7 +22,6 @@ func TestMarqueeCSSPerInstanceKeyframes(t *testing.T) {
 	}
 }
 
-// TestMarqueeCSSDirection 方向决定帧的起止值（左移 0 → -50%，右移反之）。
 func TestMarqueeCSSDirection(t *testing.T) {
 	var left core.CSSBuckets
 	compileCSS("t", &Props{}, &left)
@@ -42,7 +37,6 @@ func TestMarqueeCSSDirection(t *testing.T) {
 	}
 }
 
-// TestMarqueeCSSOptionalRules 悬停暂停 / 背景 / 内边距都是可选规则，缺失即不产出。
 func TestMarqueeCSSOptionalRules(t *testing.T) {
 	var plain core.CSSBuckets
 	compileCSS("t", &Props{}, &plain)
@@ -56,7 +50,7 @@ func TestMarqueeCSSOptionalRules(t *testing.T) {
 	if strings.Contains(out, "padding-top") {
 		t.Errorf("未设内边距时不该产出该规则:\n%s", out)
 	}
-	// 间距兜底 24px（宽度决定的两倍，接缝才看不出）。
+
 	if !strings.Contains(out, "gap: 24px;") || !strings.Contains(out, "padding-right: 24px;") {
 		t.Errorf("间距未兜底 24px:\n%s", out)
 	}

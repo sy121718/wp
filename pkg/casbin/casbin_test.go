@@ -1,9 +1,5 @@
 package casbin
 
-// 纯函数单元测试：策略行 ↔ 策略数组转换 + URL/Method 映射 key。
-// 覆盖自研 Adapter 的核心转换逻辑（不依赖数据库/enforcer），
-// 锁死「尾部空字段裁剪」与「缺失字段留空」的往返语义，防止策略持久化漂移。
-
 import "testing"
 
 func TestURLCoderKeyNormalizesMethod(t *testing.T) {
@@ -47,7 +43,7 @@ func TestSavePolicyLineFillsMissingEmpty(t *testing.T) {
 	if got.V4 != "" || got.V5 != "" {
 		t.Fatalf("savePolicyLine 缺失字段应留空: %+v", got)
 	}
-	// 往返：savePolicyLine → ruleToPolicyArray 应还原。
+
 	round := a.ruleToPolicyArray(got)
 	want := []string{"p", "u1", "/api/x", "GET", "code"}
 	if len(round) != len(want) {

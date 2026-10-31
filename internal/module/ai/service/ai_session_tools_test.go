@@ -1,16 +1,5 @@
 package aiservice_test
 
-// ai_session_tools_test.go — 会话页「发消息」的工具往返（agent loop）。
-//
-// 这一层钉住的是**一次请求内部的来回**：
-//   - 模型要求调工具时，工具被真的执行（入参原样透传）；
-//   - 「调用 / 结果」成对落进事件日志，并把结果回灌给模型的下一轮请求；
-//   - 模型给不出正文、一直要调工具时，轮次上限会兜住（不把额度烧光）；
-//   - 工具执行失败**不中断对话**：模型拿到一句失败文案，仍要给出回答；
-//   - 没接工具时出站请求不带 tools 字段（一问一答的老路径一字不变）。
-//
-// PG 不可用时用例整体 t.Skip（support 的一致口径）。
-
 import (
 	"cmp"
 	"context"
@@ -29,9 +18,6 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 )
 
-// stubToolProvider 假工具端口：记录调用、回固定文本。
-//
-// status 留空表示用例不关心分类（服务层会把空值当失败记，但本文件不查审计）。
 type stubToolProvider struct {
 	specs  []aidto.ToolSpec
 	text   string
@@ -50,7 +36,6 @@ func (s *stubToolProvider) Run(_ context.Context, _ int64, name, arguments strin
 	return aiservice.ToolRunResult{Text: s.text, Status: s.status}, nil
 }
 
-// ordersSummarySpec 一条工具声明（内容与真实 tools 无关，用例只验证「传下去了」）。
 func ordersSummarySpec() aidto.ToolSpec {
 	return aidto.ToolSpec{
 		Name:        "orders_summary",
@@ -59,22 +44,16 @@ func ordersSummarySpec() aidto.ToolSpec {
 	}
 }
 
-// responsesFunctionCall 一份「只要求调工具、没有正文」的 responses 响应。
-//
-// 这份载荷本身就是本批要钉住的既有缺陷：正文为空在过去被判成 ErrInternal，
-// 而模型要调工具时正文本来就是空的。
 func responsesFunctionCall(callID, tool, args string) string {
 	return `{"object":"response","status":"completed","output":[{"type":"function_call","call_id":"` +
 		callID + `","name":"` + tool + `","arguments":` + jsonString(args) + `}]}`
 }
 
-// responsesAssistantText 一份「只给正文、不要求调工具」的 responses 响应。
 func responsesAssistantText(text string) string {
 	return `{"object":"response","status":"completed","output":[{"type":"message","role":"assistant",` +
 		`"content":[{"type":"output_text","text":` + jsonString(text) + `}]}]}`
 }
 
-// jsonString 把一段文本编成 JSON 字符串字面量（避免在用例里手写转义）。
 func jsonString(s string) string {
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -83,7 +62,6 @@ func jsonString(s string) string {
 	return string(b)
 }
 
-// sessionChatUpstreamSeq 起一个按**请求次序**回不同载荷的假上游；用完后重复最后一个。
 func sessionChatUpstreamSeq(t *testing.T, svc *aiservice.Service, payloads ...string) <-chan string {
 	t.Helper()
 	bodies := make(chan string, 16)
@@ -111,7 +89,6 @@ func sessionChatUpstreamSeq(t *testing.T, svc *aiservice.Service, payloads ...st
 	return bodies
 }
 
-// sendWithTools 发一条消息（用例里重复出现的入参）。
 func sendWithTools(t *testing.T, sess *aiservice.SessionService, key string) *aidto.SendMessageResult {
 	t.Helper()
 	res, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
@@ -127,7 +104,6 @@ func sendWithTools(t *testing.T, sess *aiservice.SessionService, key string) *ai
 	return res
 }
 
-// TestSessionChatToolRoundTrip 一轮工具往返：执行 → 成对落库 → 回灌 → 模型作答。
 func TestSessionChatToolRoundTrip(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
@@ -141,7 +117,6 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 
 	res := sendWithTools(t, sess, "tools-key-1")
 
-	// ① 工具被真的执行，且入参原样透传。
 	if len(tools.runs) != 1 {
 		t.Fatalf("工具应被调用 1 次，实际 %v", tools.runs)
 	}
@@ -149,7 +124,6 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 		t.Fatalf("工具入参被改动：%q", tools.runs[0])
 	}
 
-	// ② 两次出站：第二次必须带着「调用 + 结果」两条原生消息（缺一条上游会拒）。
 	first := waitBody(t, bodies)
 	if !strings.Contains(first, `"tools"`) || !strings.Contains(first, "orders_summary") {
 		t.Fatalf("第一次请求应带工具声明：%s", first)
@@ -161,8 +135,6 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 		}
 	}
 
-	// ③ 事件成对落库：user → tool(call) → tool(result) → assistant。
-	// ListEvents 按 seq **倒序**回（列表页要从新到旧），这里排序后再断言时序关系。
 	events := listSessionEvents(t, sess, res.Session.ID)
 	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
 	got := make([]string, 0, len(events))
@@ -180,22 +152,17 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 		t.Fatalf("结果事件正文 = %q", events[2].Content)
 	}
 
-	// ④ 返回里带上工具事件（页面要逐条显示，不能只回最终答复）。
 	if len(res.ToolEvents) != 2 || res.ToolEvents[0].Kind != "tool" {
 		t.Fatalf("ToolEvents = %+v", res.ToolEvents)
 	}
 }
 
-// TestSessionChatToolRoundsCapped 模型一直要调工具 → 撞上轮次上限，但事件全部保留，
-// 且**末轮必须收回工具**：到上限时若还让它调，用户拿到的是一句失败，
-// 而它前面几轮已经改动过真实数据（见 maxToolRounds 的注释）。
 func TestSessionChatToolRoundsCapped(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
 	tools := &stubToolProvider{specs: []aidto.ToolSpec{ordersSummarySpec()}, text: "又一轮"}
 	sess.SetToolProvider(tools)
 
-	// 假上游永远只回「要调工具」——这正是需要上限兜住的形态。
 	bodies := sessionChatUpstreamSeq(t, svc, responsesFunctionCall("call_x", "orders_summary", `{}`))
 
 	_, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
@@ -209,8 +176,6 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 		t.Fatalf("应回轮次超限，实得 %v", err)
 	}
 
-	// 上限是 10 轮（与 maxToolRounds 同步）：每轮一次调用 + 一次结果，事件必须都在
-	//（审计要看到它试了什么、改了什么）。
 	events := listSessionEvents(t, sess, 1)
 	toolEvents := 0
 	for _, e := range events {
@@ -221,14 +186,13 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 	if toolEvents != 20 {
 		t.Fatalf("工具事件应为 10 轮 × 2 = 20 条，实际 %d 条（事件：%d）", toolEvents, len(events))
 	}
-	// 没有 assistant 事件：这一轮没有答案。
+
 	for _, e := range events {
 		if e.Kind == "assistant" {
 			t.Fatal("超限时不该写入 assistant 事件")
 		}
 	}
 
-	// 末轮请求里不能带工具：这是「宁可答案含糊也不要让已落库的改动以失败收场」的那一半。
 	var last string
 	for {
 		select {
@@ -247,18 +211,12 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 	}
 }
 
-// TestSessionChatManyToolsStillAnswers 回归：上游一次只调一个工具时，
-// 一个 5 步任务（找商品 → 看详情 → 查库存 → 建单 → 作答）必须能走到作答。
-//
-// 真机上的症状是「工具全部成功、订单已经建好，界面却报提问失败」——
-// 旧上限 4 轮恰好卡在第 5 次调用之前，用户以为没成功，其实数据已经改了。
 func TestSessionChatManyToolsStillAnswers(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
 	tools := &stubToolProvider{specs: []aidto.ToolSpec{ordersSummarySpec()}, text: "查到了"}
 	sess.SetToolProvider(tools)
 
-	// 前 5 次都要求调工具，第 6 次给正文。
 	payloads := make([]string, 0, 6)
 	for i := 0; i < 5; i++ {
 		payloads = append(payloads, responsesFunctionCall("call_x", "orders_summary", `{}`))
@@ -284,8 +242,6 @@ func TestSessionChatManyToolsStillAnswers(t *testing.T) {
 	}
 }
 
-// TestSessionChatToolFailureKeepsConversation 工具执行失败不中断对话：
-// 模型拿到失败文案，仍要给出回答。
 func TestSessionChatToolFailureKeepsConversation(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
@@ -302,9 +258,9 @@ func TestSessionChatToolFailureKeepsConversation(t *testing.T) {
 
 	res := sendWithTools(t, sess, "tools-key-fail")
 
-	_ = waitBody(t, bodies)       // 第一轮：只发历史 + 工具声明
-	second := waitBody(t, bodies) // 第二轮：带「调用 + 失败结果」
-	// 失败原文**不能**进上下文：它可能带连接串、表名，而它会经模型的嘴出现在页面上。
+	_ = waitBody(t, bodies)
+	second := waitBody(t, bodies)
+
 	if strings.Contains(second, "db down") || strings.Contains(second, "password") {
 		t.Fatalf("工具失败原文不该回灌给模型：%s", second)
 	}
@@ -319,7 +275,6 @@ func TestSessionChatToolFailureKeepsConversation(t *testing.T) {
 	}
 }
 
-// TestSessionChatWithoutToolsOmitsToolsField 没接工具时按一问一答走：请求里不能出现 tools。
 func TestSessionChatWithoutToolsOmitsToolsField(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)

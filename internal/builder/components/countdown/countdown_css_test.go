@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestCountdownCSSRules 纯静态样式：迁移后关键规则逐条核对，且产物不含未展开的占位。
 func TestCountdownCSSRules(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)

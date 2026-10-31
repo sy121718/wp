@@ -90,7 +90,7 @@ func TestReferenceSnapshotFreezesRecursiveRepeatedAndMultilingualReads(t *testin
 	if rows.calls != 1 {
 		t.Fatalf("编译不能再次查块源: %d", rows.calls)
 	}
-	// 调用方修改副本和原源值都不得改变被冻结文档。
+
 	plan := PublicationPlan{SiteLangs: []string{"zh-CN"}, DefaultLang: "zh-CN", References: snapshot}
 	copyPlan := plan.Normalize()
 	copyPlan.References.Blocks["inner"] = FrozenBlock{Version: 99}

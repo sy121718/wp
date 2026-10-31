@@ -1,25 +1,19 @@
 package scoring
 
-// checks.go — 检查项定义（docs/02-E1 §4 的 24 个检查项）。
-// 每个 Check.Score 是纯函数：只读 Input，返回得分与实测值描述。
-
 type checkFunc func(*Input) (int, string)
 
-// Check 单个检查项。
 type Check struct {
 	Key   string
 	Score checkFunc
 	Max   int
 }
 
-// Section 评分维度。
 type Section struct {
 	Key    string
 	Weight float64
 	Checks []Check
 }
 
-// allSections 全部维度与检查项（顺序即侧栏展示顺序）。
 func allSections() []Section {
 	return []Section{
 		{Key: "title", Weight: 0.15, Checks: []Check{
@@ -37,9 +31,7 @@ func allSections() []Section {
 			{Key: "heading_hierarchy", Max: 3, Score: chkHierarchy},
 		}},
 		{Key: "content", Weight: 0.25, Checks: []Check{
-			// 维度内 25 分的分配自 2026-09-29 起是 12/4/4/5（原来是 15/5/5）：
-			// 对比表是新增的硬要求，分数从长度与可读性两项里让出来 —— 维度总分不变，
-			// 但「写得很长」不再自动等于「内容质量高」。
+
 			{Key: "content_length", Max: 12, Score: chkContentLength},
 			{Key: "paragraph_length", Max: 4, Score: chkParagraphLength},
 			{Key: "sentence_length", Max: 4, Score: chkSentenceLength},

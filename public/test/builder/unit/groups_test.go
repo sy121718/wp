@@ -8,15 +8,13 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// groupSample 分组与新增控件测试模板。
 type groupSample struct {
-	Content string `json:"content" ct:"text,maxlen=100"`                       // 默认 content 组
-	Level   string `json:"level" ct:"select,a,b,sec=style"`                    // style 组
-	Opacity int    `json:"opacity" ct:"slider,min=0,max=100,step=5,sec=style"` // slider
-	Link    string `json:"link" ct:"url,sec=content"`                          // url 协议白名单
+	Content string `json:"content" ct:"text,maxlen=100"`
+	Level   string `json:"level" ct:"select,a,b,sec=style"`
+	Opacity int    `json:"opacity" ct:"slider,min=0,max=100,step=5,sec=style"`
+	Link    string `json:"link" ct:"url,sec=content"`
 }
 
-// TestGroupSectionParse 分组解析：默认 content，sec=style 归入样式组。
 func TestGroupSectionParse(t *testing.T) {
 	controls, err := core.ParseControls(&groupSample{})
 	if err != nil {
@@ -26,7 +24,7 @@ func TestGroupSectionParse(t *testing.T) {
 	for _, c := range controls {
 		byKey[c.Key] = c
 	}
-	// Key 语义：优先 json tag（与前端 Page Document props 键一致），无 json tag 退回 Go 字段名。
+
 	if byKey["content"].Section != "content" {
 		t.Errorf("默认分组异常: %+v", byKey["content"])
 	}
@@ -38,7 +36,6 @@ func TestGroupSectionParse(t *testing.T) {
 	}
 }
 
-// TestGroupSectionSchema schema 分组输出：content 在前 style 在后。
 func TestGroupSectionSchema(t *testing.T) {
 	data, err := core.SchemaJSON(&groupSample{})
 	if err != nil {
@@ -51,14 +48,14 @@ func TestGroupSectionSchema(t *testing.T) {
 	if len(items) != 4 {
 		t.Fatalf("项数异常: %d", len(items))
 	}
-	// 分组顺序：content（Content/Link）在前，style（Level/Opacity）在后。
+
 	if items[0]["section"] != "content" || items[1]["section"] != "content" {
 		t.Errorf("content 组未在前: %v", items)
 	}
 	if items[2]["section"] != "style" || items[3]["section"] != "style" {
 		t.Errorf("style 组未在后: %v", items)
 	}
-	// step 透出。
+
 	for _, it := range items {
 		if it["key"] == "opacity" && it["step"] != float64(5) {
 			t.Errorf("step 未输出: %v", it)
@@ -66,11 +63,10 @@ func TestGroupSectionSchema(t *testing.T) {
 	}
 }
 
-// TestURLControl url 控件协议白名单。
 func TestURLControl(t *testing.T) {
 	cases := []struct {
 		val  string
-		want string // 空=通过
+		want string
 	}{
 		{"https://example.com", ""},
 		{"/internal-page", ""},
@@ -78,7 +74,7 @@ func TestURLControl(t *testing.T) {
 		{"mailto:a@b.com", ""},
 		{"javascript:alert(1)", "协议非法"},
 		{"data:text/html,<x>", "协议非法"},
-		{"", ""}, // 空放行
+		{"", ""},
 	}
 	for _, tc := range cases {
 		p := groupSample{Link: tc.val}
@@ -93,7 +89,6 @@ func TestURLControl(t *testing.T) {
 	}
 }
 
-// TestSliderValue slider 值域（与 int 同语义）。
 func TestSliderValue(t *testing.T) {
 	p := groupSample{Opacity: 120}
 	if err := core.ValidateSpec(&p, "node"); err == nil || !strings.Contains(err.Error(), "超出上限") {
@@ -105,7 +100,6 @@ func TestSliderValue(t *testing.T) {
 	}
 }
 
-// TestTextStyleGroup 共享排版组：校验与断点声明。
 func TestTextStyleGroup(t *testing.T) {
 	ts := core.TextStyle{
 		Desktop: core.TextStyleValue{FontSize: "2rem", LineHeight: "1.2", TextAlign: "center"},
@@ -114,12 +108,12 @@ func TestTextStyleGroup(t *testing.T) {
 	if err := core.ValidateTextStyle("node", &ts); err != nil {
 		t.Fatalf("合法排版被拒: %v", err)
 	}
-	// 非法字号。
+
 	bad := core.TextStyle{Desktop: core.TextStyleValue{FontSize: "2url"}}
 	if err := core.ValidateTextStyle("node", &bad); err == nil || !strings.Contains(err.Error(), "字号") {
 		t.Errorf("非法字号未拦截: %v", err)
 	}
-	// 断点声明。
+
 	d := ts.BreakpointDecls(core.BreakpointDesktop)
 	if len(d) != 3 || d[0] != "font-size: 2rem" {
 		t.Errorf("桌面断点声明异常: %v", d)

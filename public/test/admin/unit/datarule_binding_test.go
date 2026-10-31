@@ -1,8 +1,3 @@
-// 数据规则配置的请求形状校验（dto 的 binding tag）。
-//
-// 这里直接驱动 gin 的 JSON 绑定器 —— 不建路由、不碰 DB：断言的是「声明本身有效」。
-// tag 写错（oneof 漏项、dive 漏写）不会有编译错误，只会在收到脏配置时静默放行，
-// 所以单独钉一遍；本包其余用例走的是 service 层的域白名单判定。
 package unit
 
 import (
@@ -15,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin/binding"
 )
 
-// TestRuleConfigBinding 合法配置通过、结构非法配置在进入 service 之前被拒。
 func TestRuleConfigBinding(t *testing.T) {
 	accept := []struct{ name, body string }{
 		{"空配置", `{"rule_name":"r","domain":"ADMIN","config":{},"status":1}`},
@@ -46,7 +40,6 @@ func TestRuleConfigBinding(t *testing.T) {
 	}
 }
 
-// bindRuleCreate 用 gin 的 JSON 绑定器解析并校验一次 RuleCreateReq。
 func bindRuleCreate(body string) error {
 	req := httptest.NewRequest("POST", "/api/admin/datarule/create", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

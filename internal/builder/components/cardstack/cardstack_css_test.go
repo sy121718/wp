@@ -8,16 +8,12 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// cssOf 编译给定 props 的实例并返回完整 CSS（含 hover / active / 容器查询出口）。
 func cssOf(p *Props, childN, cardN int) string {
 	b := &core.CSSBuckets{}
 	CompileCSS(nodeOf(p, childN), p, cardN, b)
 	return b.String()
 }
 
-// mediaBlocks 提取产物中每个完整媒体查询块（按花括号配平），用于逐块断言：
-// hover 与 hovernone 的规则在同一条产物流里交替出现，取「从 marker 起到文末」会把
-// 两种媒体查询混在一起，断言就会命中隔壁块的内容。
 func mediaBlocks(out, marker string) []string {
 	var blocks []string
 	rest := out
@@ -47,7 +43,6 @@ func mediaBlocks(out, marker string) []string {
 	}
 }
 
-// fromMarker 取产物中从 marker 起的片段（marker 不存在时返回空串）。
 func fromMarker(out, marker string) string {
 	i := strings.Index(out, marker)
 	if i < 0 {
@@ -56,9 +51,6 @@ func fromMarker(out, marker string) string {
 	return out[i:]
 }
 
-// TestCardstackCSSHoverNoneMirror 触屏没有悬停：@hover 的每一条展开规则都必须给出
-// (hover: none) 等价形态，且等价形态的选择器里不能带 :hover —— 带上去在触屏上依然不匹配，
-// 等于没写（手机端卡片会一直叠着，文字互相透出来）。
 func TestCardstackCSSHoverNoneMirror(t *testing.T) {
 	out := cssOf(&Props{}, 0, 0)
 	if !strings.Contains(out, "@media (hover: hover) {") {
@@ -88,8 +80,6 @@ func TestCardstackCSSHoverNoneMirror(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSHoverScopeOnce :hover 挂在容器上、经轨道下到卡片；选择器里作用域前缀
-// 只能出现一次 —— 写成「容器:hover 容器 轨道 …」是永不匹配的选择器，整块样式静默失效。
 func TestCardstackCSSHoverScopeOnce(t *testing.T) {
 	hover := fromMarker(cssOf(&Props{}, 0, 0), "@media (hover: hover) {")
 	if hover == "" {
@@ -113,8 +103,6 @@ func TestCardstackCSSHoverScopeOnce(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSZoomSwitch 点击放大整块随 Zoom 存废；slide 模式恒不产出
-// （卡片本来就占满一屏，再放大等于原地不动）。
 func TestCardstackCSSZoomSwitch(t *testing.T) {
 	on := cssOf(&Props{}, 0, 0)
 	for _, want := range []string{".sky-cardstack-toggle", ".sky-cardstack-scrim", ".sky-cardstack-close-btn"} {
@@ -123,8 +111,7 @@ func TestCardstackCSSZoomSwitch(t *testing.T) {
 		}
 	}
 	off := cssOf(&Props{Zoom: "off"}, 0, 0)
-	// 卡片选择器里的 :not(:has(> .sky-cardstack-toggle:checked)) 是悬停展开自带的，
-	// 不算放大层；这里按「整条规则」匹配（选择器后跟 {）。
+
 	for _, notWant := range []string{
 		".sky-c-n1 .sky-cardstack-toggle {",
 		".sky-c-n1 .sky-cardstack-close {",
@@ -151,8 +138,6 @@ func TestCardstackCSSZoomSwitch(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSCardRulesFollowCount 逐卡循环的展开条数必须等于卡片数：
-// 多了是列表填错，少了是 @each 块被提前截断（后半段规则凭空消失）。
 func TestCardstackCSSCardRulesFollowCount(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -180,8 +165,6 @@ func TestCardstackCSSCardRulesFollowCount(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSEmptyOptionalLeavesNothing 可选项为空时整条声明省略：
-// 不留 "animation: ;" 这类无效声明，也不登记用不到的关键帧。
 func TestCardstackCSSEmptyOptionalLeavesNothing(t *testing.T) {
 	plain := cssOf(&Props{}, 0, 0)
 	if strings.Contains(plain, "animation:") {
@@ -205,8 +188,6 @@ func TestCardstackCSSEmptyOptionalLeavesNothing(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSTriggerBranchesIsolated 一种触发方式不得产出另一种的专属规则：
-// 未命中分支的输出进临时桶被丢弃，漏了就会「同一个组件同时长出两套形态」。
 func TestCardstackCSSTriggerBranchesIsolated(t *testing.T) {
 	scroll := cssOf(&Props{Trigger: TriggerScroll}, 0, 0)
 	slide := cssOf(&Props{Trigger: TriggerSlide}, 0, 0)
@@ -223,20 +204,19 @@ func TestCardstackCSSTriggerBranchesIsolated(t *testing.T) {
 			t.Errorf("%s：不该出现 %q", tc.name, tc.notWant)
 		}
 	}
-	// 拖拽与堆叠轮播的容器可聚焦（键盘 Tab 可达），焦点环是这两个模式的专属。
+
 	if !strings.Contains(deck, ":focus-visible") {
 		t.Errorf("deck 模式缺少容器焦点环（键盘够不到）")
 	}
 	if strings.Contains(scroll, ":focus-visible") {
 		t.Errorf("scroll 模式不该产出容器焦点环")
 	}
-	// 页码的计数复位与自增只属于 slide。
+
 	if !strings.Contains(slide, "counter-reset: sky-page;") || !strings.Contains(slide, "counter-increment: sky-page;") {
 		t.Errorf("slide 缺少 CSS counter 页码:\n%s", slide)
 	}
 }
 
-// TestCardstackCSSCollectionBlocks 集合相关规则整块随 collectionSource 存废。
 func TestCardstackCSSCollectionBlocks(t *testing.T) {
 	plain := cssOf(&Props{}, 0, 0)
 	for _, notWant := range []string{".sky-cardstack-empty", ".is-empty-hidden", ".sky-cardstack-title"} {
@@ -260,8 +240,6 @@ func TestCardstackCSSCollectionBlocks(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSSlideHeightFallback dvh 的降级链必须「旧值在前、新值在后」：
-// 反过来 dvh 会被 vh 永久盖掉，等于白写（移动端地址栏收放时仍会跳）。
 func TestCardstackCSSSlideHeightFallback(t *testing.T) {
 	out := cssOf(&Props{Trigger: TriggerSlide, SlideHeight: "100dvh"}, 0, 0)
 	i := strings.Index(out, "height: 100vh;")
@@ -281,8 +259,6 @@ func TestCardstackCSSSlideHeightFallback(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSDeckTouchActionFollowsAxis 切换方向的轴归脚本，另一个轴让给页面滚动，
-// 否则触摸手势被浏览器拿去滚页面，滑动切换在触屏上完全失效。
 func TestCardstackCSSDeckTouchActionFollowsAxis(t *testing.T) {
 	if h := cssOf(&Props{Trigger: TriggerDeck}, 0, 0); !strings.Contains(h, "touch-action: pan-y;") {
 		t.Errorf("横向切换应把纵向留给页面（pan-y）:\n%s", h)
@@ -292,8 +268,6 @@ func TestCardstackCSSDeckTouchActionFollowsAxis(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSCardSource 内容卡与数字卡是两套外观：数字卡巨字号居中 + 位置派生色相，
-// 内容卡要读得下正文（内边距 / 圆角兜底），两者不得互相串味。
 func TestCardstackCSSCardSource(t *testing.T) {
 	num := cssOf(&Props{}, 0, 0)
 	if !strings.Contains(num, "font-size: 8em;") || !strings.Contains(num, "filter: hue-rotate(") {
@@ -311,8 +285,6 @@ func TestCardstackCSSCardSource(t *testing.T) {
 	}
 }
 
-// TestCardstackCSSScrollKeyframesPerCard 滚动堆叠每张卡一份独立关键帧，名字含 node id
-// （共用一份会让所有卡停在同一个缩放上，跟手收敛就没了；两个实例也会互相串帧）。
 func TestCardstackCSSScrollKeyframesPerCard(t *testing.T) {
 	out := cssOf(&Props{Trigger: TriggerScroll}, 0, 3)
 	if got := strings.Count(out, "@keyframes sky-cs-n1-"); got != 3 {

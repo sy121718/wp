@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// 接通门禁，真实运行保存时序与样式粘贴的行为测试。
 func TestWorkbenchExperienceBehavior(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

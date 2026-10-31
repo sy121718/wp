@@ -1,16 +1,5 @@
 package presentationservice
 
-//（mediacontract.StaleMarker，见 media/contract/media_service.go 的「索要的端口」）。
-//
-// 详情页产物同样引用媒体（商品图经构建期 srcset 烘进字节），而变体文件名带内容指纹：
-// 换图产出新名、旧文件按设计保留，所以「谁引用了我」必须有人通知。
-// presentation 侧的引用登记（refs 的 kind = presentation）当前**尚未接入**构建链
-//（本模块的发布路径没有调用 media.SyncReferencesFromHTML，见报告「与描述不符的事实」），
-// 因此本实现目前不会被触发；先把端口与实现接上，是为了让那条边一旦有引用集就自动生效，
-// 而不是到时候再补一次接线（漏接的表现同样是「换图后详情页永远停在旧图」）。
-//
-// 放在 service 同包的理由与 page 侧一致：用的是本模块自己的 model，没有形状翻译。
-
 import (
 	"context"
 	"errors"
@@ -34,12 +23,6 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// MarkStaleByDependency 实现 pipeline.DependencyTarget：按依赖源精确标记。
-//
-// 为什么逐个工程遍历（DB-009 第二批）：扇出触发的调用方（pipeline.Fanout）只带
-// (kind,key)，不带工程；而 presentation_instances 带 FORCE 策略，不设 app.project_id
-// 的 UPDATE 会静默匹配 0 行 —— 表现是「内容改了但详情页不再自动重建」，日志里没有异常。
-// 工程数量级很小（站点工程），逐个设作用域比在 data 层引入 BYPASSRLS 连接便宜得多。
 func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error) {
 	if strings.TrimSpace(kind) == "" || strings.TrimSpace(key) == "" {
 		return nil, nil
@@ -52,9 +35,7 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 		return nil, err
 	}
 	at := time.Now().UTC()
-	// 模板换代的分流：document 模式只脱离绑定的正文模板，
-	// 页眉/页脚结构模板仍参与构建，不能一并豁免。其余依赖源（导航 / 全局块 / 译文）对两种模式都有效，
-	// 绝不能分流：漏掉 document 模式会表现为「改了导航但商品页不更新」且无任何报错。
+
 	templateKind := kind == pipeline.DepKindContentTemplate
 	seen := make(map[string]bool)
 	for _, p := range projects {
@@ -82,23 +63,6 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 	return ids, nil
 }
 
-// MarkStaleByRegistryVersion 把「**当前产物**由旧组件产出」的自动发布实例标记为待重建。
-//
-// 这是手工 Page 侧 MarkStaleByRegistryVersion 的对等入口（报告 ARCH-03）：实例的产物行
-// 同样保存 registry_version（presentation_publish.go 写的是 builder.RegistryVersion()），
-// 但此前没有任何启动期收敛 —— 组件升级后详情页一直是旧组件渲染的字节，
-// 后台看不到 stale、日志里也没有任何提示（因为保存版本号本身不会触发任何比对）。
-//
-// 判据与 page 侧逐字一致：先由本模块从**语言账本**（presentation_publications 里
-// active 指向的行，见 model.ListCurrentArtifactIDs）选出各语言当前产物，再按版本比对；
-// 历史产物行不参与判定。
-//
-// 只标记、不重建（与 page 侧同一取舍）：启动时全量重建会拖住启动链。重建由运维经
-// RebuildStale 触发，或由后续的 Rebuild/依赖失效自然覆盖 —— 那两条路径都按 stale 收敛。
-//
-// current 为空（二进制无 VCS 信息等）时不做任何标记；没有任何账本行时同样直接返回。
-// 逐工程扇出（DB-009 第二批）：presentation_instances 带 FORCE 策略，无作用域的 UPDATE
-// 在换非超级角色后静默 0 行 —— 「标了」与「没标」在日志上会一模一样。
 func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
 	if strings.TrimSpace(current) == "" {
 		return nil, nil
@@ -127,8 +91,7 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 		if ctx.Err() != nil {
 			break
 		}
-		// 每个工程只提交本工程的 id：实例 id 全局唯一，但本工程之外的 id 会被
-		// project_id 条件与策略双重拦下（与 page 侧同一扇出手法）。
+
 		hit, merr := s.m.MarkStaleByIDs(ctx, p.ID, stale, at)
 		if merr != nil {
 			return nil, merr
@@ -147,13 +110,8 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	return ids, nil
 }
 
-// registryImpactSampleLimit 影响面日志里最多列出的实例 id 数。
-//
-// 与 page 侧影响面样本同一取舍：组件一换往往是一批实例一起过期，只报条数时运维无法
-// 判断「是不是我关心的那个商品详情页」，全列出来又会把日志撑爆 —— 取前 K 个可定位的 id。
 const registryImpactSampleLimit = 10
 
-// sampleInstanceIDs 取影响面样本（不超过 registryImpactSampleLimit 个）。
 func sampleInstanceIDs(ids []string) []string {
 	if len(ids) <= registryImpactSampleLimit {
 		return ids
@@ -161,12 +119,6 @@ func sampleInstanceIDs(ids []string) []string {
 	return ids[:registryImpactSampleLimit]
 }
 
-// SetBuildQueue 注入自动重建入队端口（装配期调用；PERF-020）。
-//
-// 注入后 RebuildStale 改为全量入队：重建由构建队列的消费 worker 执行
-// （FOR UPDATE SKIP LOCKED claim 保证多实例部署下同一实例不会被两个 worker 同时重建），
-// 触发进程不再在请求路径上持实例锁串行重建。未注入时回退原同步重建行为
-// （单实例部署 / 既有测试不受影响）。
 func (s *Service) SetBuildQueue(q presentationcontract.BuildQueueEnqueuer) {
 	if s == nil {
 		return
@@ -174,15 +126,6 @@ func (s *Service) SetBuildQueue(q presentationcontract.BuildQueueEnqueuer) {
 	s.buildQueue = q
 }
 
-// RebuildStale 实现 pipeline.StaleRebuilder：重建受影响实例并重新发布。
-//
-// 策略（§8.3）：presentation 实例的语义就是「内容驱动的自动发布页面」，
-// 创建即上线，因此重建成功后直接回写线上（与 page 侧「仅已发布语言自动回写」
-// 的口径在结果上一致——presentation 不存在「从未发布」的实例）。
-//
-// 队列已接入时（PERF-020）：全部实例入队后立即返回，重建由队列消费侧执行；
-// 单条入队失败只记日志（该实例保持 stale，由下次触发兜底）。
-// 未接入时回退同步重建：单个实例失败不阻断其余（记日志后继续），返回 nil 由 stale 标记兜底。
 func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -213,23 +156,6 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	return nil
 }
 
-// RebuildStaleSync 逐条同步重建本工程内 stale 的实例（实现 StaleRebuildPort）。
-//
-// 与 RebuildStale 的差别是**错误语义**，不是策略：
-//   - RebuildStale 是「能入队就入队、入不了就尽力重建」，两处失败都只记日志、最后恒返回
-//     nil —— 对 menu_stale 的消费者那是最坏结果：队列任务被判 succeeded，而实例一个都
-//     没重建，菜单标签永远停在旧字节；
-//   - 本方法把「任一条失败」原样返回给调用方，让任务失败而不是假装成功。**绝不再次入队
-//     算成功**：入队等于把这份工作重新交给自己（本方法正是那条队列的消费侧），任务号会
-//     被标成功，而重建实际没发生 —— 那是把「没做成」写成「做成了」。
-//
-// 顺序与补偿：已成功的实例保留（重建是内容寻址 + 幂等的，重试只会复用同一行产物，
-// 不堆版本）；失败的实例保持 stale，由下一次触发或队列重试收敛。这里不做任何 FS 回滚
-// （规划草案 §2.5：失败不补偿，回滚 rename 会覆盖并发成功者）。
-//
-// 作用域：只重建**本工程**内 stale 的实例。projectID 必填 —— presentation_instances 带
-// FORCE 策略，无作用域的全表扫描在非超级角色下返回空集（fail closed），表现是
-// 「任务成功了、一个实例都没重建」，且日志里什么都没有。
 func (s *Service) RebuildStaleSync(ctx context.Context, projectID string) (rebuilt int, err error) {
 	pid := strings.TrimSpace(projectID)
 	if pid == "" {
@@ -240,7 +166,7 @@ func (s *Service) RebuildStaleSync(ctx context.Context, projectID string) (rebui
 		return 0, lerr
 	}
 	if len(ids) == 0 {
-		// 没有待重建的实例是**正常收敛态**（例如菜单改动只影响手工页面），不是错误。
+
 		return 0, nil
 	}
 	for _, id := range ids {
@@ -259,17 +185,6 @@ func (s *Service) RebuildStaleSync(ctx context.Context, projectID string) (rebui
 	return rebuilt, nil
 }
 
-// MarkInstanceMenuStaleTx 实现 presentationcontract.PresentationStalePort：在**调用方事务**内
-// 按菜单位置标记受影响实例，返回真实命中行数。
-//
-// 为什么这层转发必须存在：contract 声明了接口，model 有同名实现，但装配层用
-// presentation.Service 去断言该端口（routers/assembly_publish.go:719 的 panic 分支、
-// assembly_navigation_translation.go:93 的类型断言）。缺这一层转发不是"少一个便捷方法"，
-// 而是**装配期直接 panic / 菜单译文写入 fail closed** —— 前者让整个进程起不来。
-//
-// 校验放在这层：工程与种类属于调用方输入，未知种类必须报**同包错误事实**
-// （presentationenums），而不是把 model 的裸 error 漏到响应里（AGENTS.md 文案两条链）。
-// 事务与作用域语义完全交给 model（tx 由调用方给，model 用 rls.ScopeTx 设作用域）。
 func (s *Service) MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB,
 	projectID, kind string, at time.Time) (n int64, err error) {
 	if tx == nil {
@@ -288,14 +203,6 @@ func (s *Service) MarkInstanceMenuStaleTx(ctx context.Context, tx *gorm.DB,
 	return s.m.MarkInstanceMenuStaleTx(ctx, tx, pid, kind, at)
 }
 
-// MarkInstanceNavigationStaleTx 实现 presentationcontract.PresentationStalePort：在**调用方事务**内
-// 按**具体菜单项**（navigation:{itemID}）标记受影响实例，返回真实命中行数。
-//
-// 与位置版并列而不是替代：渲染期两种消费各记各的键（按位置 menu:{project}:{kind}、
-// 按项 navigation:{itemID}），只标位置会让按项引用的实例既不 stale 也越过版本屏障。
-//
-// 校验同位置版：工程与 menu item id 是调用方输入，缺一个直接报本包错误事实，
-// 不让"空 id 匹配 0 行"变成静默不标记。事务与作用域交给 model（rls.ScopeTx）。
 func (s *Service) MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB,
 	projectID, navigationID string, at time.Time) (n int64, err error) {
 	if tx == nil {
@@ -315,14 +222,8 @@ func (s *Service) MarkInstanceNavigationStaleTx(ctx context.Context, tx *gorm.DB
 	return s.m.MarkInstanceNavigationStaleTx(ctx, tx, pid, nid, at)
 }
 
-// 编译期证明本服务满足装配层断言的端口（缺方法时这里先红，而不是运行期 panic）。
 var _ presentationcontract.PresentationStalePort = (*Service)(nil)
 
-// enqueueStaleRebuilds 把受影响实例全部交给构建队列（PERF-020）。
-//
-// 入队是幂等的：队列侧部分唯一索引保证同一实例同时只有一条待办，扇出反复标记
-// 同一实例不会堆出多份任务。整批入队是轻量操作，因此不再有单次上限截断——
-// 截断过的实例若「下次触发」不来就永远停在 stale。
 func (s *Service) enqueueStaleRebuilds(ctx context.Context, ids []string) error {
 	queued := 0
 	for _, id := range ids {
@@ -341,40 +242,27 @@ func (s *Service) enqueueStaleRebuilds(ctx context.Context, ids []string) error 
 	return nil
 }
 
-// RebuildInstance 按实例 id 重建（构建队列 executor 的执行体；PERF-020）。
-//
-// 用实例**绑定**的模板重建（issue #14）：依赖失效是内容变更触发的自动重建，
-// 不应改变「这个商品用哪套详情模板」——按类型重解析会把切换过的模板悄悄换回去。
 func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error {
 	inst, err := s.findOneInstanceAnyProject(ctx, instanceID)
 	if err != nil {
 		return presentationenums.ErrDetail(presentationenums.ErrNotFound, err.Error())
 	}
-	// 模板解析放在发布会话的锁内冻结阶段（PERF-01）：绑定与实例行必须同源。
+
 	_, err = s.rebuildInstance(ctx, inst, publishIntent{
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			tpl, rerr := s.resolveBoundTemplate(ctx, fresh, "")
 			if rerr != nil {
 				return nil, rerr
 			}
-			// 依赖失效是内容变更触发的自动重建：实例带覆盖文档时沿用（docs/04-C），
-			// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
+
 			return instanceDocumentFor(fresh, tpl), nil
 		},
-		// 本方法只有两个驱动源（依赖失效与构建队列 executor），都是自动重建：
-		// 没有用户身份，操作人记成系统（actor 零值）。
+
 		trigger: presentationmodel.PublishTriggerAuto,
 	})
 	return err
 }
 
-// projectOfInstance 解析实例所属工程，供自动重建入队时填显式的工程作用域（审计 DB-01）。
-//
-// 为什么要在这里多查一次：工程 id 只存在于来源模块，队列不反查来源表（跨模块表访问），
-// 而 RebuildStale 的入参是跨工程去重后的 id 列表，调用点没有工程上下文。
-// 复用消费侧同一个「逐工程定位」实现 —— 非超级连接角色下，未设 app.project_id 的按 id 直查
-// 会被 RLS 静默挡成 0 行，那是本模块唯一可靠的读法。
-// 解析不到（实例已删除 / 工程契约未注入）不阻断入队：工程列可空，执行侧仍会自己定位。
 func (s *Service) projectOfInstance(ctx context.Context, instanceID string) string {
 	inst, err := s.findOneInstanceAnyProject(ctx, instanceID)
 	if err != nil {
@@ -383,13 +271,6 @@ func (s *Service) projectOfInstance(ctx context.Context, instanceID string) stri
 	return inst.ProjectID
 }
 
-// findOneInstanceAnyProject 在各工程作用域内逐个按实例 id 定位（DB-009 第二批）。
-//
-// 为什么需要它：构建队列的消费侧只拿得到实例 id（契约是 EnqueuePresentationBuild
-// 一个 id），而 presentation_instances 带 FORCE 策略 —— 没有 app.project_id 的
-// 「按 id 直查」在非超级角色下会 0 行，自动重建再也跑不起来。
-// 工程数量级很小（站点工程），逐个设作用域查询比给队列协议加工程字段便宜，
-// 也比在数据层专门养一条 BYPASSRLS 连接安全（后者等于把隔离关掉）。
 func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID string) (*presentationmodel.InstanceEntity, error) {
 	if ids := strings.TrimSpace(instanceID); ids == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
@@ -432,8 +313,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 		if len(effective.DraftDocument) == 0 {
 			return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 		}
-		// 实例预览以已取得的当前文档或未保存草稿为底稿，不能先校验另一份最新模板。
-		// 当前实体和来源元数据仍只取工程内的实例事实；最终字段及组件校验由预览编译完成。
+
 		tpl = &contenttemplatecontract.ResolvedTemplate{
 			TemplateID: instance.TemplateID, VersionID: instance.SourceTemplateVersionID,
 			EntityType: instance.EntityType, TemplateRole: instance.InstanceRole, Document: effective.DraftDocument,
@@ -461,14 +341,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 		override.Document = req.DraftDocument
 		tpl = &override
 	}
-	// urlPath 传空：预览不激活 URL，canonical 由模板 settings.seo 决定（通常为空）。
-	// 这是预览与发布在字节上的唯一有意差异（见 presentation_render.go 取舍 2）。
-	// targetLangs 传 nil：预览没有批次概念，语言切换器按线上访问面现状输出；而且
-	// urlPath 为空时 logicalPath 也是空，alternates 分支本来就不会走（SEO-026）。
-	// usage 传 nil：预览不落依赖表，收集编译期消费线索没有写入点。
-	// 模式为预览（审计 ARCH-05）：绑定的结构模板 / 块拿不到时**不失败**（编辑期配置
-	// 不完整是常态），降级为带归因的占位；发布路径传 CompileModePublish，那里是硬失败。
-	// diags 传 nil 同上：预览不产出 Manifest，归因在占位上。
+
 	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl, nil,
 		builder.CompileModePreview, nil)
 	if err != nil {
@@ -483,16 +356,8 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 
 var _ mediacontract.StaleMarker = (*Service)(nil)
 
-// RefKinds 本实现认领的引用方类型：媒体引用集里 kind = presentation 的那些。
 func (s *Service) RefKinds() []string { return []string{mediacontract.RefKindPresentation} }
 
-// MarkStaleByMediaRefs 把「产物里引用了这张图」的自动发布实例标记为待重建。
-//
-// 逐工程独立作用域执行（DB-009 第二批，与 MarkStaleByRegistryVersion 同一手法）：
-// presentation_instances 带 FORCE 策略，未设 app.project_id 的 UPDATE 在非超级角色下
-// 静默 0 行 —— 表现是「换图后详情页不更新」且日志里没有任何异常，与端口未接入同形。
-//
-// 返回 RETURNING id 回读集合（真正命中的实例），不是入参回显；失败即失败，不吞。
 func (s *Service) MarkStaleByMediaRefs(ctx context.Context, refs []mediacontract.MediaRef) (marked []string, err error) {
 	if s == nil || s.m == nil {
 		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)

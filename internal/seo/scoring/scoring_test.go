@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// idealInput 构造一份"应当接近满分"的输入（信息型长文）。
 func idealInput() *Input {
 	title := "Disposable Vape Buying Guide 2026: Puff Count, Battery & Value"
 	body := "disposable vape 是目前最受欢迎的一次性电子烟形态。" + strings.Repeat("这一段用于凑足正文字数并保持句子简短。", 60)
@@ -38,7 +37,6 @@ func idealInput() *Input {
 	}
 }
 
-// TestScoreIdeal 理想输入应达到 A 级以上。
 func TestScoreIdeal(t *testing.T) {
 	res := Score(idealInput(), nil)
 	if res.Total < 85 {
@@ -57,7 +55,6 @@ func TestScoreIdeal(t *testing.T) {
 	}
 }
 
-// TestScoreEmpty 空输入应得 0 分（F 级），且缺失类检查项为阻塞红。
 func TestScoreEmpty(t *testing.T) {
 	res := Score(&Input{}, nil)
 	if res.Total != 0 {
@@ -73,7 +70,6 @@ func TestScoreEmpty(t *testing.T) {
 	}
 }
 
-// TestTitleLengthBoundaries 标题展示宽度边界（40-60 满分，>65 归零，SEO-017）。
 func TestTitleLengthBoundaries(t *testing.T) {
 	cases := []struct {
 		title string
@@ -86,7 +82,7 @@ func TestTitleLengthBoundaries(t *testing.T) {
 		{strings.Repeat("a", 60), 5},
 		{strings.Repeat("a", 62), 3},
 		{strings.Repeat("a", 70), 0},
-		// 中文按 2 宽度单位：30 字 = 60 单位，应满分；35 字 = 70 单位，应归零。
+
 		{strings.Repeat("测", 30), 5},
 		{strings.Repeat("测", 35), 0},
 	}
@@ -98,19 +94,18 @@ func TestTitleLengthBoundaries(t *testing.T) {
 	}
 }
 
-// TestKeywordDensityBoundaries 密度区间（0.5-2.0 满分，>3 堆砌归零）。
 func TestKeywordDensityBoundaries(t *testing.T) {
-	// 中文语境：关键词 4 字，正文 1000 字 → 每出现 1 次 ≈ 0.4%
+
 	cases := []struct {
 		hits     int
 		wantZero bool
 	}{
-		{0, true},  // 未出现
-		{2, false}, // 0.8%
-		{12, true}, // 3.2% 堆砌
+		{0, true},
+		{2, false},
+		{12, true},
 	}
 	for _, c := range cases {
-		body := strings.Repeat("填充正文占位内容", 250) // 1500 字
+		body := strings.Repeat("填充正文占位内容", 250)
 		in := &Input{FocusKeyword: "测试文本", BodyText: body + strings.Repeat("测试文本", c.hits), WordCount: 1500, Locale: "zh"}
 		got, actual := chkKeywordDensity(in)
 		if c.wantZero && got != 0 {
@@ -122,7 +117,6 @@ func TestKeywordDensityBoundaries(t *testing.T) {
 	}
 }
 
-// TestHeadingsChecks H1 数量与层级。
 func TestHeadingsChecks(t *testing.T) {
 	one := &Input{Headings: []Heading{{1, "a"}, {2, "b"}, {3, "c"}}}
 	if s, _ := chkSingleH1(one); s != 4 {
@@ -141,17 +135,16 @@ func TestHeadingsChecks(t *testing.T) {
 	}
 }
 
-// TestInternalLinksBoundaries 内链数量按篇幅分档。
 func TestInternalLinksBoundaries(t *testing.T) {
 	cases := []struct {
 		words, links, want int
 	}{
 		{300, 0, 0},
-		{300, 3, 6},  // <500 理想 2-4
-		{300, 10, 2}, // 过多
-		{2000, 8, 6}, // 理想 8-15
-		{2000, 6, 4}, // 达标
-		{2000, 1, 2}, // 偏少
+		{300, 3, 6},
+		{300, 10, 2},
+		{2000, 8, 6},
+		{2000, 6, 4},
+		{2000, 1, 2},
 	}
 	for _, c := range cases {
 		in := &Input{WordCount: c.words, InternalLinks: c.links}
@@ -162,7 +155,6 @@ func TestInternalLinksBoundaries(t *testing.T) {
 	}
 }
 
-// TestImagesChecks alt 覆盖与格式。
 func TestImagesChecks(t *testing.T) {
 	in := &Input{Images: []Image{
 		{Src: "/a.webp", Alt: "a", SizeKB: 10, Kind: "content"},
@@ -176,7 +168,6 @@ func TestImagesChecks(t *testing.T) {
 	}
 }
 
-// TestProfiles 页型调权改变维度权重。
 func TestProfiles(t *testing.T) {
 	in := idealInput()
 	def := Score(in, nil)
@@ -186,7 +177,6 @@ func TestProfiles(t *testing.T) {
 	}
 }
 
-// TestScoreDeterministic 同一输入两次结果一致（确定性）。
 func TestScoreDeterministic(t *testing.T) {
 	a := Score(idealInput(), nil)
 	b := Score(idealInput(), nil)
@@ -200,13 +190,6 @@ func TestScoreDeterministic(t *testing.T) {
 	}
 }
 
-// TestComparisonTableCheck 对比表检查项的三档：要求意图下有/无表，以及不要求意图下跳过。
-//
-// 判据来自 seo 工作区的文章生产门禁（content-writer/references/quality-gate.md 2026-09-29 版）：
-// 比较型 / 购买型意图的「唯一价值资产」必须含一张结构化对比表 —— 所以它进了「内容质量」维度。
-//
-// 第三档（跳过）是本用例最容易被改坏的一条：把「不要求」写成 0 分，
-// 会让一篇信息型长文因为「没写对比表」丢 5 分，而写对比表对它毫无意义。
 func TestComparisonTableCheck(t *testing.T) {
 	scoreOf := func(in *Input) (score, max int, skipped bool) {
 		res := Score(in, nil)

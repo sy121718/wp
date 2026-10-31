@@ -8,7 +8,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// 两个工程时不能靠 service 的单工程回退；表单读到的 projectId 必须贯穿写入契约。
 func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -18,9 +17,7 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if _, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "另一个工程"}); err != nil {
 		t.Fatal(err)
 	}
-	// 分类 / 品牌 / 标签的页面 POST 都已随写动作迁移删除（模板直调
-	// /api/product/{category,brand,tag}/*，projectId 由 data-write-extra 声明带出）——
-	// 本用例改直调 service：它验的是**工程作用域**（写入落在本工程），不是那条转发链路。
+
 	brand, err := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: f.projectID, Name: "品牌", Slug: "scope-brand"})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +42,7 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if err := f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: f.projectID, ID: tag.ID}); err != nil {
 		t.Fatalf("删标签失败: %v", err)
 	}
-	// 分类的删除改调用例：页面那条路已不存在。
+
 	if err := f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: category.ID}); err != nil {
 		t.Fatalf("删分类失败: %v", err)
 	}

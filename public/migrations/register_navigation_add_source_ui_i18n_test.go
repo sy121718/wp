@@ -8,23 +8,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 601 的门槛判据必须覆盖「中文在、英文缺」的状态（与 598/599/600 同一条守卫形态）。
-//
-// 缺陷形态（review-sol 在 task-33 对 598 抓到的 P2）：判据若只数 lang='zh-CN' 的 3 行 →
-// 运营库里任意一条 en-US 缺失（历史库缺行、有人手工删过英文、或本批 SQL 曾半途失败）时，
-// 中文计数已经满足，判据返回 1 → RunSeeds 直接跳过 → 缺的英文**永远补不上**，
-// 英文界面回退到模板里的中文兜底（错得安静：没有异常、没有日志）。
-// AGENTS.md §数据库 的定则是「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
-//
-// 修法（601 已是这个形态）：判据枚举本批 3 个 key × 2 种语言 = 6 个 (item_key, lang) 组合，
-// 缺任意一项即为 0；SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、
-// 不覆盖运营改过的值。
-//
-// 四个用例分别钉住：判据与 SQL 的组合集合一致（静态）、六项齐时必须跳过且不再写库、
-// 中文齐英文缺一必须重跑并补回、补种只补缺行不覆盖运营值也不动第三语言。
-
-// TestNavigationAddSourceSeedGuardCoversBothLanguages 静态核对：判据点名的 key / 语言 / 上界
-// 与 SQL 真正落下的组合完全一致。
 func TestNavigationAddSourceSeedGuardCoversBothLanguages(t *testing.T) {
 	seed := findSeedByVersion(t, "601-navigation-add-source-ui-i18n")
 
@@ -62,9 +45,6 @@ func TestNavigationAddSourceSeedGuardCoversBothLanguages(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceSeedSkipsWhenAllSixPairsPresent 六项齐时的语义：判据为 1 → 迁移器跳过 SQL。
-// 用运营值扰动证明「这一轮确实没写库」（support.NewMigratedPGTestDB 给的是没跑过 seed 的新库，
-// 第一次 RunSeeds 就是 601 的 SQL 第一回真执行）。
 func TestNavigationAddSourceSeedSkipsWhenAllSixPairsPresent(t *testing.T) {
 	seed := findSeedByVersion(t, "601-navigation-add-source-ui-i18n")
 	keys := map[string]bool{}
@@ -106,8 +86,6 @@ func TestNavigationAddSourceSeedSkipsWhenAllSixPairsPresent(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceSeedRunsWhenOneEnglishIsMissing 中文齐、英文缺一 —— 缺这条守卫前
-// 判据会是 1（跳过、英文永远补不上）。现在是判据 0，重跑 SQL 只补缺的那一行。
 func TestNavigationAddSourceSeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 	seed := findSeedByVersion(t, "601-navigation-add-source-ui-i18n")
 	keys := map[string]bool{}
@@ -150,8 +128,6 @@ func TestNavigationAddSourceSeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 	}
 }
 
-// TestNavigationAddSourceSeedBackfillPreservesOperatorValues 补种只补缺行：运营改过的中文保持、
-// 运营自行加的第三语言行原样不动（DO NOTHING 的运营值保护）。
 func TestNavigationAddSourceSeedBackfillPreservesOperatorValues(t *testing.T) {
 	seed := findSeedByVersion(t, "601-navigation-add-source-ui-i18n")
 	keys := map[string]bool{}
@@ -194,7 +170,7 @@ func TestNavigationAddSourceSeedBackfillPreservesOperatorValues(t *testing.T) {
 		if got := valueOf(t, db, "admin.navigations.addSource.result.partial", "ja-JP"); got != operatorJA {
 			t.Errorf("第 %d 轮后第三语言行被动了：实际 %q", round, got)
 		}
-		// 6 行（3 key × 中英）+ 运营自加的 ja-JP 1 行。
+
 		if got := countPairs(t, db, keys, ""); got != 7 {
 			t.Errorf("第 %d 轮后本批应有 7 行（6 + 第三语言 1），实际 %d 行", round, got)
 		}

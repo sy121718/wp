@@ -1,8 +1,3 @@
-// Package architecture 存放**跨模块边界**的架构测试。
-//
-// 这些测试不验证行为，只验证依赖方向：一条越界的 import 不会让任何用例变红，
-// 却会让两个模块从此分不开 —— 而分不开的代价，要到下一次「只想改 A 却必须动 B」
-// 的时候才显现。审计 CQ-003 / CQ-004 / CQ-005 / CQ-006 修的就是这一类问题。
 package architecture
 
 import (
@@ -16,17 +11,10 @@ import (
 	"testing"
 )
 
-// forbiddenCrossModuleDTO 已确立的跨模块 dto 边界：左侧模块的生产代码不得 import
-// 右侧的 dto 包 —— 跨模块只经对方的 contract。
-//
-// 为什么逐条列出，而不是「一律禁止跨模块 dto」：仓库里还有若干**不在本次审计范围内**
-// 的既有跨模块 dto 引用（product → presentation/dto、navigation → content/dto 等）。
-// 一刀切会让本测试从第一天起就是红的，而一条长期红的红线等于没有红线。
-// 清单只增不减：新增跨模块交互时，先决定要不要把它加进来。
 var forbiddenCrossModuleDTO = []struct {
-	from  string // 调用方模块目录（internal/module 下的一级目录）
-	deny  string // 被禁的 import 前缀
-	audit string // 依据
+	from  string
+	deny  string
+	audit string
 }{
 	{
 		from:  "cart",
@@ -60,13 +48,6 @@ var forbiddenCrossModuleDTO = []struct {
 	},
 }
 
-// knownCrossModuleServiceModelDebt 通用规则的**已知存量偏差**（不是允许，是待还的债）。
-//
-// 这条规则（不得 import 其他模块的 service / model）是 AGENTS.md 的明文规定，
-// 但在本次审计范围之外仍有存量违规。架构测试会把它们点出来，却不能把红线长期挂成红的 ——
-// 一条长期失败的红线等于没有红线。因此逐条登记位置与依据，
-// 让下一次改到那片代码的人顺手还掉；只增不减：新增偏差必须写进这张表才可能通过，
-// 而写进这张表就意味着它会被读到。
 var knownCrossModuleServiceModelDebt = []struct {
 	from string
 	deny string
@@ -79,7 +60,6 @@ var knownCrossModuleServiceModelDebt = []struct {
 	},
 }
 
-// knownDebt 判断某条 import 是否落在已知偏差表内。
 func knownDebt(owner, importPath string) bool {
 	for _, d := range knownCrossModuleServiceModelDebt {
 		if d.from == owner && (importPath == d.deny || strings.HasPrefix(importPath, d.deny+"/")) {
@@ -89,7 +69,6 @@ func knownDebt(owner, importPath string) bool {
 	return false
 }
 
-// TestNoCrossModuleDTOImport 逐条断言上面那份边界清单。
 func TestNoCrossModuleDTOImport(t *testing.T) {
 	root := repoRoot(t)
 	for _, rule := range forbiddenCrossModuleDTO {
@@ -112,12 +91,6 @@ func TestNoCrossModuleDTOImport(t *testing.T) {
 	}
 }
 
-// TestNoCrossModuleServiceModelImport 通用边界（AGENTS.md「命名约束」与
-// internal/module/CLAUDE.md「表隔离约定」）：任何模块都不得 import 其他模块的
-// service / model 包。
-//
-// inventory 已提升为独立模块：product 与 inventory 的生产 service 仅通过
-// inventory/contract 及不可变 dto 交互；跨模块 model / service 导入仍由此测试禁止。
 func TestNoCrossModuleServiceModelImport(t *testing.T) {
 	root := repoRoot(t)
 	base := filepath.Join(root, "internal", "module")
@@ -151,8 +124,6 @@ func TestNoCrossModuleServiceModelImport(t *testing.T) {
 	}
 }
 
-// splitModuleImport 把 go_wp/internal/module/<x>/.../<pkg> 拆成（顶层模块, 末段包名）。
-// 不在 internal/module 下的 import 返回 ok=false。
 func splitModuleImport(importPath string) (module string, lastSeg string, ok bool) {
 	const prefix = "go_wp/internal/module/"
 	if !strings.HasPrefix(importPath, prefix) {
@@ -166,7 +137,6 @@ func splitModuleImport(importPath string) (module string, lastSeg string, ok boo
 	return segs[0], segs[len(segs)-1], true
 }
 
-// scanImports 遍历 dir 下所有 .go 文件（含 _test.go），返回命中的「文件 → import」。
 func scanImports(dir string, match func(importPath string) bool) (hits []string, err error) {
 	root := repoRootFrom(dir)
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, werr error) error {
@@ -196,7 +166,6 @@ func scanImports(dir string, match func(importPath string) bool) (hits []string,
 	return hits, err
 }
 
-// parseImports 只解析 import 段（不解析函数体，代价可控）。
 func parseImports(path string) ([]string, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
@@ -214,12 +183,6 @@ func parseImports(path string) ([]string, error) {
 	return out, nil
 }
 
-// skipArchScanDir 架构门禁不扫描的目录名。
-//
-// .worktrees 是**嵌套 worktree**：另一个分支的完整副本，自带 go.mod 与全套 inbound/http。
-// 它住在仓库目录里，却既不属于当前工作区、也不由当前提交负责 —— 扫进来会把同一份代码
-// 按分支数重复计数，基线（pendingControllerStatements 之类）随之无声漂移，
-// 表现为"我没改那批文件，门禁却红了一片"。
 func skipArchScanDir(name string) bool {
 	switch name {
 	case ".git", "node_modules", "vendor", ".worktrees":
@@ -228,7 +191,6 @@ func skipArchScanDir(name string) bool {
 	return false
 }
 
-// repoRoot 从当前工作目录向上找 go.mod。
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -242,7 +204,6 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-// repoRootFrom 从 dir 向上找含 go.mod 的目录；找不到返回空串。
 func repoRootFrom(dir string) string {
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {

@@ -55,7 +55,7 @@ func TestIncompletePreviewKeepsSiblingsAndDocument(t *testing.T) {
 	if err != nil || again.HTML != preview.HTML || again.CSS != preview.CSS {
 		t.Fatalf("同一草稿重复编译必须确定: %v", err)
 	}
-	// 发布用途在 option 解析后决定，不能沿用预览的容错策略。
+
 	if _, err = Compile(page, WithComponentSet(set), WithCompileMode(CompileModePublish)); !errors.Is(err, core.ErrIncompleteNode) {
 		t.Fatalf("发布必须拒绝未完成文本: %v", err)
 	}

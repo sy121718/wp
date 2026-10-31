@@ -1,18 +1,5 @@
 package feature
 
-// url_intent_and_receipt_identity_test.go —— 改 URL 的输入意图线性化 + 成功 attempt 身份。
-//
-// 本批要证明的五件事（全部是行为断言，不查 SQL 字符串）：
-//  1. 改 URL 在冻结段就持久化输入意图：url_path 变成新路径、input_version +1；
-//  2. 编译/激活失败时意图不回滚，旧产物仍在线上（指针不动）——"输入已变、产物待追"；
-//  3. 后到批次用旧代次提交必须被拒（并发交错的正确结论是冲突，不是覆盖），且不改任何列；
-//  4. 成功激活的账本行带 receipt_id（= 该语言 switch_active 回执 id）且该回执已结案；
-//  5. 改 URL 的旧路径处置：Path=新路径 / OldPath=旧路径 的回执被登记、执行、结案，
-//     且收敛例程能重放它（失败不吞、留 pending 可重放）。
-//
-// 为什么必须在 feature 层：这些判据依赖真实 DDL（迁移 699 input_version、700 receipt_id）、
-// 真实发布链（冻结/编译/提交三段）与真实回执表；model 单测只能钉形态。
-
 import (
 	"context"
 	"errors"
@@ -31,7 +18,6 @@ import (
 	"go_wp/pkg/jsonx"
 )
 
-// readInstancePathVersion 读实例的路径与输入代次（权威事实，直接来自行）。
 func readInstancePathVersion(t *testing.T, db *gorm.DB, id string) (path string, version int64) {
 	t.Helper()
 	var row struct {
@@ -45,7 +31,6 @@ func readInstancePathVersion(t *testing.T, db *gorm.DB, id string) (path string,
 	return row.URLPath, row.InputVersion
 }
 
-// readActiveArtifact 读实例当前 active 指针（空串 = 无）。
 func readActiveArtifact(t *testing.T, db *gorm.DB, id string) string {
 	t.Helper()
 	var out string
@@ -56,8 +41,6 @@ func readActiveArtifact(t *testing.T, db *gorm.DB, id string) string {
 	return out
 }
 
-// TestUpdateURLPersistsInputIntentBeforeCompile 改 URL 的输入意图在冻结段落库：
-// url_path 立即是新路径、input_version +1。
 func TestUpdateURLPersistsInputIntentBeforeCompile(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -76,14 +59,12 @@ func TestUpdateURLPersistsInputIntentBeforeCompile(t *testing.T) {
 	if afterPath != "/menu-fence-moved" {
 		t.Fatalf("改 URL 后控制面 url_path 必须是新路径：%q", afterPath)
 	}
-	// 只推进一次：提交段的 RecordBatchURLTx 不推进版本，所以净值必须正好 +1。
+
 	if afterVersion != versionBefore+1 {
 		t.Fatalf("改 URL 是输入变化且只推进一次：before=%d after=%d", versionBefore, afterVersion)
 	}
 }
 
-// TestUpdateURLInputIntentSurvivesCompileFailure 编译失败时意图不回滚：
-// url_path 仍是新值、版本已推进、旧产物仍在线（指针不动）。
 func TestUpdateURLInputIntentSurvivesCompileFailure(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -96,14 +77,6 @@ func TestUpdateURLInputIntentSurvivesCompileFailure(t *testing.T) {
 	}
 	_, versionBefore := readInstancePathVersion(t, f.db, f.instance)
 
-	// 让编译必然失败：把绑定模板的文档改成语义非法（缺 blockId 的区块数组）。
-	//
-	// 不能写 `'{'` 这种非法 JSON：draft_document 是 jsonb 列，PG 在写入时就拒绝
-	//（invalid input syntax for type json，22P02），失败点跑到夹具的 UPDATE 上，
-	// 被测代码根本没被执行。要的是「合法 jsonb + 领域层判不出区块」，让失败落在编译段。
-	// 破坏**编译实际读的那一列**：构建链走 ResolveTemplateByIDScoped → LatestVersion，
-	// 读的是 content_template_versions.document，不是 content_templates.draft_document。
-	// 改错列等于什么都没改，改 URL 自然成功（本用例曾因此假红）。
 	const brokenDocument = `{"settings":{"structure":{"blocks":[{"type":"hero"}]}}}`
 	if err := f.db.Exec(`UPDATE content_template_versions v SET document = ?::jsonb
 		FROM content_templates t
@@ -130,8 +103,6 @@ func TestUpdateURLInputIntentSurvivesCompileFailure(t *testing.T) {
 	}
 }
 
-// TestUpdateURLStaleVersionSubmissionIsRejected 并发交错的判据：
-// 带旧版本代次的提交在行锁内被拒，且不改任何列；重新冻结后能成功。
 func TestUpdateURLStaleVersionSubmissionIsRejected(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -173,7 +144,6 @@ func TestUpdateURLStaleVersionSubmissionIsRejected(t *testing.T) {
 			pathAfter, versionAfter, afterFirst)
 	}
 
-	// 拒绝的是旧代次，不是永远拒绝：按最新输入再改一次必须成功。
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{
 		ProjectID: f.projectID, ID: f.instance, NewPath: "/menu-fence-third",
 	}); err != nil {
@@ -184,8 +154,6 @@ func TestUpdateURLStaleVersionSubmissionIsRejected(t *testing.T) {
 	}
 }
 
-// TestPublishedLedgerCarriesReceiptID 成功激活的账本行必须带 switch_active 回执 id，
-// 且那条回执已结案 —— 这是"成功 attempt 身份"落库的唯一证据。
 func TestPublishedLedgerCarriesReceiptID(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -220,8 +188,6 @@ func TestPublishedLedgerCarriesReceiptID(t *testing.T) {
 	}
 }
 
-// TestUpdateURLRegistersOldPathReceiptAndExecutes 旧路径处置持久化并执行：
-// 回执 Path=新路径、OldPath=旧路径，激活成功后执行并结案（不是只 Warn）。
 func TestUpdateURLRegistersOldPathReceiptAndExecutes(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -265,7 +231,7 @@ func TestUpdateURLRegistersOldPathReceiptAndExecutes(t *testing.T) {
 		pubcontract.ReceiptActionUpdateURL, f.instance).Scan(&rows).Error; err != nil {
 		t.Fatalf("读取 update_url 回执失败: %v", err)
 	}
-	// 一次改址 = **一条**回执（page 侧既有形态），而不是每条语言一条。
+
 	if len(rows) != 1 {
 		t.Fatalf("一次改址应只登记一条 update_url 回执，实际 %d 条", len(rows))
 	}
@@ -280,7 +246,7 @@ func TestUpdateURLRegistersOldPathReceiptAndExecutes(t *testing.T) {
 	if row.Path == "" || row.Path == row.OldPath {
 		t.Fatalf("回执 Path 必须是新路径且不同于旧路径：path=%q old=%q", row.Path, row.OldPath)
 	}
-	// 关联事实必须真实落库：恢复侧靠它判定「本次激活成功了没有」，不看时间也不看 URL。
+
 	if !strings.Contains(row.Links, ":") {
 		t.Fatalf("回执必须持久化关联的成功回执（语言 → switch_active 回执 id），实际 %q", row.Links)
 	}
@@ -289,7 +255,6 @@ func TestUpdateURLRegistersOldPathReceiptAndExecutes(t *testing.T) {
 	}
 }
 
-// TestUpdateURLOldPathReceiptIsReplayable 回执 pending 时收敛例程真的重放并结案。
 func TestUpdateURLOldPathReceiptIsReplayable(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -302,7 +267,7 @@ func TestUpdateURLOldPathReceiptIsReplayable(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 现场：把该实例的 update_url 回执重置回 pending（模拟"执行前崩溃"）。
+
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND action = ? AND source_id = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
@@ -329,8 +294,6 @@ func TestUpdateURLOldPathReceiptIsReplayable(t *testing.T) {
 	}
 }
 
-// TestMarkInstanceMenuStalePortIsWired Service 必须真的实现 PresentationStalePort
-// （装配层用类型断言，缺方法会 panic），且未知种类报错而不是静默全站标记。
 func TestMarkInstanceMenuStalePortIsWired(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -351,12 +314,6 @@ func TestMarkInstanceMenuStalePortIsWired(t *testing.T) {
 	}
 }
 
-// TestOldPathReceiptNotExecutedWhenActivationFailed 编译失败后收敛**不得**处置旧路径：
-// 现场与"激活成功但处置未执行"逐字相同（url_path 已是新值、实例在线旧产物、
-// update_url 回执 pending），唯一区别是关联的 switch_active 回执未 committed。
-//
-// 这一条针对的正是"实例存在 + 逻辑路径相等"那个错误判据：它在失败现场同样为真，
-// 会把仍在服务的旧路径 301 走或下线。正确判据只认持久化的成功身份。
 func TestOldPathReceiptNotExecutedWhenActivationFailed(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -364,15 +321,12 @@ func TestOldPathReceiptNotExecutedWhenActivationFailed(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// ① 先造一次真实的改 URL（回执正常结案、旧路径已被处置）。
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{
 		ProjectID: f.projectID, ID: f.instance, NewPath: "/menu-fence-guard",
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
 
-	// ② 把该实例的**全部**回执打回 pending，并让关联的 switch_active 变成 rolled_back：
-	//    这正是"冻结段已持久新 URL、编译/激活失败"在库里的样子。
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND source_id = ? AND action = ?`,
 		pubmodel.ReceiptRolledBack, pubcontract.ReceiptSourcePresentation,
@@ -386,7 +340,6 @@ func TestOldPathReceiptNotExecutedWhenActivationFailed(t *testing.T) {
 		t.Fatalf("改写 update_url 状态失败: %v", err)
 	}
 
-	// ③ 收敛：判据应为"激活未成功 → 不处置旧路径"，且必须把这条回执结案（不留永久 pending）。
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
 		t.Fatalf("收敛失败: %v", cerr)
 	}
@@ -405,11 +358,6 @@ func TestOldPathReceiptNotExecutedWhenActivationFailed(t *testing.T) {
 	}
 }
 
-// TestRepeatedActivationSameURLIsDistinguishedByReceiptID 同一路径连续两次 attempt：
-// URL 完全相等，只有回执 id 能说明"哪一次成功了"。
-//
-// 形态：第一次 attempt 的回执被回滚，第二次成功 —— 库里的 URL、artifact 都可以相同，
-// 因此任何形如"路径相等 / 时间更晚"的判据都会给出任意结论。
 func TestRepeatedActivationSameURLIsDistinguishedByReceiptID(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -417,7 +365,6 @@ func TestRepeatedActivationSameURLIsDistinguishedByReceiptID(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 再发布一次到**同一路径**：真实链路上这是一次新的 attempt（新回执、新账本身份）。
 	if _, err := f.pres.Rebuild(ctx, &presentationdto.RebuildReq{
 		ProjectID: f.projectID, EntityID: f.entity,
 	}); err != nil {
@@ -439,7 +386,7 @@ func TestRepeatedActivationSameURLIsDistinguishedByReceiptID(t *testing.T) {
 		if row.ReceiptID == nil || *row.ReceiptID == "" {
 			t.Fatalf("语言 %s 的账本必须记录成功 attempt 身份（不能只靠 artifact 判归属）", row.Lang)
 		}
-		// 身份必须指向一条**已结案**的 switch_active 回执：否则"成功身份"是假的。
+
 		var state string
 		if err := f.db.Raw(`SELECT receipt_state FROM publication_receipts WHERE id = ?::bigint`,
 			*row.ReceiptID).Scan(&state).Error; err != nil {
@@ -451,12 +398,6 @@ func TestRepeatedActivationSameURLIsDistinguishedByReceiptID(t *testing.T) {
 	}
 }
 
-// TestOldPathDisposalHoldsEntityLockAcrossSideEffects 判定与副作用必须在同一个实体锁内：
-// 用"锁内另开连接去读实例行"的方式证明——若判定与处置之间存在解锁窗口，
-// 那条读会拿到锁（说明锁已释放）；本批实现必须让它阻塞到事务结束。
-//
-// 这里用真实的另一个连接发 SELECT ... FOR UPDATE NOWAIT：拿到锁 = 旧实现（锁已释放），
-// 报"锁被占用"= 现行实现（判定与副作用同锁）。不依赖时序、不 sleep 等竞态。
 func TestOldPathDisposalHoldsEntityLockAcrossSideEffects(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -469,7 +410,7 @@ func TestOldPathDisposalHoldsEntityLockAcrossSideEffects(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 把 update_url 回执打回 pending，并保持关联 switch_active committed（真实成功现场）。
+
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND action = ? AND source_id = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
@@ -477,7 +418,6 @@ func TestOldPathDisposalHoldsEntityLockAcrossSideEffects(t *testing.T) {
 		t.Fatalf("重置回执失败: %v", err)
 	}
 
-	// 在收敛进行中，另一个连接尝试 NOWAIT 锁实例行：必须失败（锁被收敛事务持有）。
 	var lockBlocked bool
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -508,11 +448,6 @@ func TestOldPathDisposalHoldsEntityLockAcrossSideEffects(t *testing.T) {
 	}
 }
 
-// TestMultiLangOldPathDisposalReplaysEveryPath 多语言改址：回执里持久化的**全部**
-// 旧路径都要被处置，不能只做 OldPath 那一条。
-//
-// 造法：先手工把账本与回执的 oldPaths 置成两条（模拟多语言站），再走真实收敛，
-// 断言两条旧路径都不再是 active 路由占用的 active 行（即被 redirect/下线过）。
 func TestMultiLangOldPathDisposalReplaysEveryPath(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -525,7 +460,7 @@ func TestMultiLangOldPathDisposalReplaysEveryPath(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 追加一条额外旧路径（模拟第二个语言的历史访问路径），并让回执回到 pending。
+
 	extra := "/menu-fence-lang2"
 	if err := f.db.Exec(`UPDATE publication_receipts
 		SET receipt_data = jsonb_set(receipt_data, '{oldPaths}',
@@ -550,7 +485,7 @@ func TestMultiLangOldPathDisposalReplaysEveryPath(t *testing.T) {
 	if state != pubmodel.ReceiptCommitted {
 		t.Fatalf("多语言旧路径全部处置成功后才可结案，实际 %q", state)
 	}
-	// 两条旧路径都必须留下路由痕迹（redirect 或已无 active 行）。
+
 	var oldPathCount int
 	if err := f.db.Raw(`SELECT COUNT(*) FROM page_routes
 		WHERE project_id = ? AND presentation_id = ? AND path IN ('menu-fence-multi', ?) AND route_kind = 'active'`,
@@ -562,18 +497,6 @@ func TestMultiLangOldPathDisposalReplaysEveryPath(t *testing.T) {
 	}
 }
 
-// TestNewerReceiptIdentityBlocksOlderAttemptDisposal 同一产物、同一路径的两次 attempt：
-// 后来的 attempt 成功之后，先前那条 attempt 的旧路径处置**必须被拒**。
-//
-// 造法：
-//  1. 真实改 URL 一次 → 得到一条已结案的 update_url 回执 A（旧路径处置已完成）；
-//  2. 新建一条回执 B，刻意声明与 A 完全相同的 Path/OldPath/ToArtifactID/successfulReceipts
-//     —— 即"同产物、同路径的另一次 attempt"，但它的 fromReceiptId 是 **0**（确认没有更早的
-//     成功身份）；
-//  3. 把账本成功身份改成 A 的 id（模拟 A 才是真正落账的那一次）。
-//
-// 此时 B 的身份事实是"我以为我没接替任何人"，而账本上是 A —— 一个**新的**成功身份。
-// 任何只看 path / artifact 的判据在此给出"可以执行"，正确判据必须判 superseded 并结案不执行。
 func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -586,7 +509,7 @@ func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// A：本次改址的真实回执（已结案）。
+
 	var aRow struct {
 		ID           string
 		Path         string
@@ -608,8 +531,7 @@ func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 	if aRow.ID == "" || aRow.Links == "" {
 		t.Fatalf("前置不成立：应有一条带关联事实的已结案 update_url 回执")
 	}
-	// 账本上真实的成功身份是**激活回执 id**（不是 update_url 回执自己的 id）：
-	// 口径见 MarkPublishedLangTx 的 ReceiptID 参数与 receiptIdentityVerdictTx 的注释。
+
 	var aLinks map[string]string
 	if uerr := jsonx.Unmarshal([]byte(aRow.Links), &aLinks); uerr != nil {
 		t.Fatalf("解析 A 的关联事实失败: %v", uerr)
@@ -626,9 +548,7 @@ func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 		WHERE presentation_id = ?`, ledgerReceipt, f.instance).Error; err != nil {
 		t.Fatalf("写账本身份失败: %v", err)
 	}
-	// B：同形路径的另一条 attempt，但它的关联事实是**另一批更晚的激活回执**。
-	// 只有这样才能表达"账本上是一个新的成功身份"：如果 B 复用 A 的关联回执，
-	// 那它就是同一次激活的重放（账本认它就是它自己）。
+
 	var newerID string
 	if err := f.db.Raw(`INSERT INTO publication_receipts
 			(source_type, source_id, action, path, to_artifact_id, receipt_state, receipt_data, create_time)
@@ -671,8 +591,6 @@ func TestNewerReceiptIdentityBlocksOlderAttemptDisposal(t *testing.T) {
 	}
 }
 
-// TestOwnReceiptIdentityIsIdempotentlyReplayed 账本成功身份就是这条回执自己时，
-// 重放必须幂等成功（再执行一次旧路径处置无害），不能因为"已有身份"被判成 superseded。
 func TestOwnReceiptIdentityIsIdempotentlyReplayed(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -685,9 +603,7 @@ func TestOwnReceiptIdentityIsIdempotentlyReplayed(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 账本上的成功身份保持**真实形状**（语言 → 激活回执 id，由 MarkPublishedLangTx 在
-	// 切换时写入），只把 update_url 回执打回 pending：这就是"我已落过账、只是回执没结案"
-	// 的幂等重放现场，重放必须补处置并结案，不能因"账本已有身份"判成被取代。
+
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND action = ? AND source_id = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
@@ -710,11 +626,6 @@ func TestOwnReceiptIdentityIsIdempotentlyReplayed(t *testing.T) {
 	}
 }
 
-// TestOldPathDisposalRefusesForeignFSTarget 旧路径的访问面链接已被**别的产物**占据时，
-// 下线必须拒绝（保留 pending），不得替别人下架线上页面。
-//
-// DB 侧条件写只能证明"路由占用归我"，不能证明"这条符号链接是我激活的"：跨实体没有
-// 共享路径锁，因此处置前必须在 FS 侧复核目标。本测试直接制造"链接指向别的产物"的现场。
 func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -740,8 +651,7 @@ func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 	if row.OldPath == "" {
 		t.Fatalf("前置不成立：回执应带旧路径")
 	}
-	// 现场：旧路径上放一个指向**别的**产物的链接（等价于另一实体接管了该路径），
-	// 同时把回执打回 pending，让收敛必须重新处置这条旧路径。
+
 	if err := f.db.Exec(`UPDATE publication_receipts SET receipt_state = ?, completed_at = NULL
 		WHERE source_type = ? AND action = ? AND source_id = ?`,
 		pubmodel.ReceiptPending, pubcontract.ReceiptSourcePresentation,
@@ -753,14 +663,14 @@ func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 		LIMIT 1`, f.instance).Scan(&otherArtifact).Error; err != nil || otherArtifact == "" {
 		t.Skip("环境里没有第二个实体可用的产物（跳过外来链接场景）")
 	}
-	// 用真实 store 激活旧路径到别人的产物：这正是"另一个实体接管了这条路径"的现场。
+
 	store := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	if err := store.Activate(row.OldPath, pipeline.Locator{Provider: "local", Key: "artifacts/" + otherArtifact}); err != nil {
 		t.Skipf("无法构造外来链接现场（跳过）：%v", err)
 	}
 
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
-		// 收敛本身上报错误是可接受的（可重试），此处只断言"没有被删掉 / 没有结案成已执行"。
+
 		t.Logf("收敛返回可见错误（可重试形态）: %v", cerr)
 	}
 	if st, ierr := store.Inspect(row.OldPath); ierr != nil {
@@ -770,10 +680,6 @@ func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 	}
 }
 
-// TestPendingLinkedReceiptKeepsOldPathIntentRetryable 关联回执仍是 pending 时，
-// 旧路径处置回执必须**保留 pending**（可重试），不能被判死成 rolled_back。
-//
-// 这是"证据稍后才落库"的现场：关联回执的结案发生在写路径快通道里，收敛可能先看到它。
 func TestPendingLinkedReceiptKeepsOldPathIntentRetryable(t *testing.T) {
 	f := newMenuFenceFixture(t)
 	if f == nil {
@@ -786,12 +692,7 @@ func TestPendingLinkedReceiptKeepsOldPathIntentRetryable(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 应成功: %v", err)
 	}
-	// 「证据未到」的现场：update_url 回执的关联成功回执**还没落库**（id 指向一行不存在），
-	// 同时把回执本身打回 pending。
-	//
-	// 为什么不用"把 switch_active 重置成 pending"来造：收敛会先领到那条 switch_active 并把它
-	// 重放补齐（补切换是它的正常职责），等轮到 update_url 时证据已经到齐 —— 现场在收敛过程中
-	// 自己消失了，用例就测不到"证据未到"这条分支（实测：committed）。
+
 	if err := f.db.Exec(`UPDATE publication_receipts
 		SET receipt_data = jsonb_set(receipt_data, '{successfulReceipts}',
 			jsonb_build_object('zh-CN', '999999999'::text), true),
@@ -802,8 +703,6 @@ func TestPendingLinkedReceiptKeepsOldPathIntentRetryable(t *testing.T) {
 		t.Fatalf("改写关联事实失败: %v", err)
 	}
 
-	// 证据未到是**可重试**形态：收敛如实上报这一条（不能被当成"已处理"），
-	// 回执本身必须留在 pending 等下一轮。所以这里只容忍错误，不把它当失败。
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
 		t.Logf("收敛返回可见错误（可重试形态）: %v", cerr)
 	}

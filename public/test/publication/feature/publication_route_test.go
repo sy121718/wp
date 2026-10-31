@@ -13,14 +13,12 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 表结构来自生产迁移（page_routes / publication_receipts 由 init_builder_schema.sql 建立，
-// 再经 DB-019/DB-020 批量迁移改名换类型），用例值一律使用合法 uuid。
 const (
 	projectID = "cccccccc-0000-0000-0000-000000000001"
 	pageID    = "dddddddd-0000-0000-0000-000000000001"
-	// otherPageID 其他页面的占用归属（占用冲突用例）。
+
 	otherPageID = "dddddddd-0000-0000-0000-000000000002"
-	// missingPageID 从未建立占用的页面。
+
 	missingPageID = "ffffffff-0000-0000-0000-000000000009"
 
 	artifactUUID         = "11111111-1111-1111-1111-111111111101"
@@ -30,9 +28,9 @@ const (
 
 func newPublicationService(t *testing.T) *pubservice.Service {
 	t.Helper()
-	// 表结构来自生产迁移建成的模板库（不手抄 DDL：手抄版本会在迁移改名 / 换类型后静默失配）。
+
 	db := support.NewMigratedPGTestDB(t)
-	// page_routes.project_id 有 FK → projects(id)，必须先落一条工程行。
+
 	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
 		t.Fatalf("准备工程失败: %v", err)
 	}
@@ -79,9 +77,6 @@ func TestPublicationActivateAndDeactivate(t *testing.T) {
 	}
 }
 
-// TestPublicationActivateRejectsForeignRoute 目标路径已被其他页面占用时，
-// Activate 必须拒绝（ErrRouteOccupied），pending 回执补偿为 rolled_back，
-// 且原占用行保持不变（H2/H7 的 DB 层兜底 + H6 两段回执）。
 func TestPublicationActivateRejectsForeignRoute(t *testing.T) {
 	svc := newPublicationService(t)
 	ctx := context.Background()
@@ -103,16 +98,13 @@ func TestPublicationActivateRejectsForeignRoute(t *testing.T) {
 	if pending != 0 {
 		t.Fatalf("不应残留 pending 回执: %d", pending)
 	}
-	// 原占用行保持不变。
+
 	route, gerr := svc.Model().GetRoute(ctx, projectID, "/taken")
 	if gerr != nil || route.RouteKind != pubmodel.RouteReserved || route.PageID == nil || *route.PageID != otherPageID {
 		t.Fatalf("原占用应保持不变: %+v err=%v", route, gerr)
 	}
 }
 
-// TestPublicationRenameReservedConflict 新路径已被其他页面占用时
-// RenameReserved 必须返回 ErrRouteOccupied 并保持原占用不变
-// （M8：改名失败上游中止流程）。
 func TestPublicationRenameReservedConflict(t *testing.T) {
 	svc := newPublicationService(t)
 	ctx := context.Background()
@@ -156,7 +148,7 @@ func TestPublicationPendingReceiptRollback(t *testing.T) {
 	svc := newPublicationService(t)
 	ctx := context.Background()
 	seedReservedRoute(t, svc, "/pending", pageID)
-	// 制造 pending 回执：直接插入（模拟进程中断后遗留）。
+
 	if err := svc.Model().ReceiptDB(ctx).Create(&pubmodel.ReceiptEntity{
 		SourceType: "page", SourceID: pageID,
 		Action: "activate", Path: "/pending", ToArtifact: strPtr(pendingArtifactUUID),

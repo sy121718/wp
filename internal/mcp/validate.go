@@ -1,11 +1,5 @@
 package mcp
 
-// validate.go — 参数校验（**安全边界**，不是便利设施）。
-//
-// 工具参数是模型能直接控制的输入。这里守住三件事：只认声明过的字段、
-// 必填必须有、类型必须对。守不住任何一条，模型就能通过参数把任意表达式带进业务查询
-//（不变量 4「Binding 不是 Query DSL」的同源判据）。
-
 import (
 	"bytes"
 	"errors"
@@ -15,28 +9,18 @@ import (
 	"strings"
 )
 
-// ArgsError 参数不合规：缺必填 / 未知字段 / 类型不符 / 取值不在白名单。
-//
-// 它被单独塑造成一个类型，是因为**这类错误是能回给模型的**：模型据此改正参数重试是正常流程。
-// 与之相对的是「查库失败」那类系统错误 —— 回给模型只会让它重复同样的调用。
-// agent loop 用 errors.As 区分两者，决定「让它重试」还是「直接报错」。
 type ArgsError struct {
 	Msg string
 }
 
 func (e *ArgsError) Error() string { return e.Msg }
 
-// UnknownToolError 工具名不存在（同样是可回给模型的错误：多半是拼错了）。
 type UnknownToolError struct{ Name string }
 
 func (e *UnknownToolError) Error() string {
 	return fmt.Sprintf("工具 %q 不存在", e.Name)
 }
 
-// validate 按 schema 校验原始参数（必须是 JSON 对象）。
-//
-// 空参数视作 `{}`：零参数工具合法，调用方传 nil 与传 `{}` 应当等价
-// （把 nil 判成错误会让每个零参数工具都要在 schema 里写一个假必填项）。
 func validate(schema Schema, raw json.RawMessage) error {
 	if schema.Type != "object" {
 		return &ArgsError{Msg: fmt.Sprintf("工具参数 schema 必须是 object，实为 %q", schema.Type)}
@@ -45,23 +29,18 @@ func validate(schema Schema, raw json.RawMessage) error {
 	if len(body) == 0 {
 		body = []byte("{}")
 	}
-	// 值是 jsonx.RawMessage（= jsontext.Value）：**原始字节**，数字字面量原样保留，
-	// 所以不需要 v1 那套 UseNumber（那是给 map[string]any 用的；目标是 RawMessage
-	// 时本就冗余 —— v1 下也是）。
+
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(body, &fields); err != nil {
 		return &ArgsError{Msg: "参数必须是 JSON 对象: " + err.Error()}
 	}
 
-	// 1) 未知字段：一律拒绝，而不是忽略。
-	// 忽略的失败模式是「模型以为按某维度筛过了、实际没筛」，页面上的数字看起来完全正常。
 	for name := range fields {
 		if _, ok := schema.Properties[name]; !ok {
 			return &ArgsError{Msg: fmt.Sprintf("未知参数 %q（本工具接受：%s）", name, strings.Join(sortedNames(schema.Properties), "、"))}
 		}
 	}
 
-	// 2) 必填：显式传 null 等同于没传（JSON 里 null 是「没有值」的常见写法）。
 	for _, name := range schema.Required {
 		val, ok := fields[name]
 		if !ok || isJSONNull(val) {
@@ -69,7 +48,6 @@ func validate(schema Schema, raw json.RawMessage) error {
 		}
 	}
 
-	// 3) 类型与取值白名单。
 	for name, val := range fields {
 		if isJSONNull(val) {
 			continue
@@ -82,7 +60,6 @@ func validate(schema Schema, raw json.RawMessage) error {
 	return nil
 }
 
-// validateValue 校验单个值。
 func validateValue(schema Schema, raw json.RawMessage) error {
 	switch schema.Type {
 	case "string":
@@ -112,8 +89,7 @@ func validateValue(schema Schema, raw json.RawMessage) error {
 		}
 		return nil
 	case "number":
-		// 这里不需要 isJSONNumberLiteral 守卫：目标是 float64，jsonx（v2 语义）自己
-		// 就会拒掉字符串（只有 json.Number 那个 string-kind 的类型会被字符串骗过去）。
+
 		var f float64
 		if err := json.Unmarshal(raw, &f); err != nil {
 			return errors.New("必须是数字")
@@ -146,17 +122,10 @@ func validateValue(schema Schema, raw json.RawMessage) error {
 	}
 }
 
-// isJSONNull 判断原始值是不是 JSON null。
 func isJSONNull(raw json.RawMessage) bool {
 	return string(bytes.TrimSpace(raw)) == "null"
 }
 
-// isJSONNumberLiteral 判断原始值是不是 JSON 数字字面量。
-//
-// 必须看原始字节，不能靠「unmarshal 到数字类型会不会报错」：json.Number 的底层
-// Kind 是 string，`json.Unmarshal([]byte("\"10\""), &n)` 会把**带引号的字符串**
-// 当作合法数字装进去 —— 边界在这里漏一个口子，模型就能拿字符串冒充整数。
-// 而 service 侧对「字符串 10」与「数字 10」的处理并不相同（前者可能是它自己解析的时间或 id）。
 func isJSONNumberLiteral(raw json.RawMessage) bool {
 	body := bytes.TrimSpace(raw)
 	if len(body) == 0 {
@@ -166,8 +135,6 @@ func isJSONNumberLiteral(raw json.RawMessage) bool {
 	return c == '-' || (c >= '0' && c <= '9')
 }
 
-// sortedNames 取字段名并排序（错误文案稳定：同一份错误每次输出同一个顺序，
-// 日志与测试断言才有意义）。
 func sortedNames(props map[string]Schema) []string {
 	names := make([]string, 0, len(props))
 	for name := range props {

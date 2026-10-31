@@ -1,49 +1,5 @@
 package pageservice
 
-// 语言是构建环境维度：构建、预览、发布都必须显式携带目标语言，访问路径
-// 单点经 pipeline.LangURLRule.Path 计算（禁止各处手拼 "/" + code + path）。
-//
-// 方案（docs/06-D §5 方案 A'，取值来自 sys_config 的 i18n 组 site_lang_url_mode）：
-//   - default_plain（默认）：默认语言无前缀 /about、/index；非默认语言短码 /en/about；
-//   - all_prefix：全语言带短码前缀 /zh/about、/en/about；
-//   - off：全语言共用逻辑路径（单语言兼容）。
-// 内部逻辑（BuildContext.lang / 数据库 lang 列）始终是完整语言码，
-// 只有 URL 段用短码（pipeline.LangURLRule.URLCode）。
-
-// 语义：被排除的语言**本页不产出**，也不进语言切换器 / hreflang / sitemap；空 = 全部站点语言都产出。
-// 同一工程里「法务页只做中文、首页做全语言」是**单页**的产出范围，不是站点语言清单的子集 ——
-// 所以它是页面级列，而不是又一份工程级语言清单（那会与 project_locales 形成两个真源）。
-//
-// 与 language 退役（page_lang.go 的 RetireLocale，按 project + lang 整站退役）的分工：
-// 那个是「站点不再有这种语言」，本文件是「站点有、这一页不产出」。两者都**必须真的下线产物** ——
-// 只写列不让访问面改变，等于后台说「已排除」而线上还在服务那一份字节。
-
-// 语言从清单里移除后，该语言的已激活路由就成了**无人认领**的状态：访问面还在服务
-// /en/…，而后台没有任何入口能改它或下掉它，只能人工登机器删符号链接。
-//
-// 本文件实现 project 模块声明的 LocaleRetirePort，由装配期注入 —— 方向是
-// project → 端口 → page。不能反过来（page 依赖 project，反向成环）。
-//
-// 语言**直接查库**（page_publications.lang），不从路径前缀反推：路径前缀是展示规则、
-// 语言是事实，用规则反推会在改过前缀配置的站点上删错语言（前缀改成 /eng 之后，
-// 按 /en 反推的代码要么删不到、要么删到别的语言）。
-//
-// 不做 301：把旧路径指向默认语言的同名路径需要**生成一份重定向产物**
-//（publication 的 Redirect 只接受 ArtifactID / PageID，没有「指向任意路径」的形态），
-// 那是另一个量级的工作。审计里这条本就是可选项，默认走下线。
-
-// 与站点级准入（U1，project.SaveLocales 的词条门槛）的分工，两边是不同粒度的事：
-//
-//   - **U1 拦的是「这个语言整体没准备好」**：一个界面词条都没有的语言不该被启用，
-//     否则整站固定文案逐字段回退原文（运营看到「已启用」、访客看到原始语言）；
-//   - **U2 处理的是「语言准备好了，但某些页面的内容没译」**：界面词条齐了（所以语言
-//     合法），而某个页面的内容译文缺 —— 那是**逐页面**的决策：要么补译文，要么把这一页
-//     从这个语言撤下来（`ExcludePageLang`，本报告的操作列就是它）。
-//
-// 两个动作的终点一致（该语言不该出现在这一页上），但起点与代价不同：U1 拒绝保存（拦住
-// 整站），U2 精准下线一个页面的一种语言。混在一起会让「一种语言整站不可用」与「一页缺译」
-// 用同一个开关表达。
-
 import (
 	"cmp"
 	"context"
@@ -68,7 +24,6 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// buildLang 解析本次构建语言：请求显式指定优先，否则全局默认语言（sys_config 的 i18n 组 default_lang）。
 func buildLang(requested string) string {
 	lang := strings.TrimSpace(requested)
 	if lang == "" {
@@ -77,28 +32,14 @@ func buildLang(requested string) string {
 	return lang
 }
 
-// langURLRuleOf 构造站点语言 URL 规则（唯一映射点的规则载体）。
-//
-// 方案取自全局配置（sys_config 的 i18n 组 site_lang_url_mode；旧的兼容键 site_lang_prefix
-// 已随本批删除），默认语言取自站点清单（project_locales.is_default，缺失回退全局默认语言）——
-// 「默认语言无前缀」必须按站点判定，不能只看全局默认语言。
 func (s *Service) langURLRuleOf(ctx context.Context, projectID string) pipeline.LangURLRule {
 	return pipeline.LangURLRuleForProject(ctx, s.project, projectID)
 }
 
-// sitePath 逻辑访问路径 → 实际访问路径（本模块唯一入口；实现在 pipeline.LangURLRule.Path）。
-// off：规范化逻辑路径；default_plain：默认语言无前缀、其余 /{短码}/path；
-// all_prefix：全语言 /{短码}/path（语言根与首页映射为 /index）。
 func sitePath(rule pipeline.LangURLRule, lang, logical string) (string, error) {
 	return rule.Path(lang, logical)
 }
 
-// siteRoutePaths 建页/改草稿阶段的路径占用路径：按站点启用语言（project_locales）
-// 各一行，默认语言在前（多语言 P3，docs/06-D §14 D10）。
-//
-// 关闭语言前缀时多语言映射到同一逻辑路径，这里按路径去重（page_routes 主键是
-// (project_id, path)，重复插入必然撞唯一键）；语言清单不可读时回退默认语言一种，
-// 与 P3 之前的单语言行为完全一致。
 func (s *Service) siteRoutePaths(ctx context.Context, projectID, logical string) ([]string, error) {
 	entries, err := s.siteRouteEntries(ctx, projectID, logical)
 	if err != nil {
@@ -111,36 +52,17 @@ func (s *Service) siteRoutePaths(ctx context.Context, projectID, logical string)
 	return out, nil
 }
 
-// siteRouteEntry 语言 → 该语言下的站点访问路径。
 type siteRouteEntry struct {
 	Lang string
 	Path string
 }
 
-// siteRouteEntries 按启用语言（project_locales）计算逻辑路径的各语言站点路径，
-// 默认语言在前；关闭前缀时多语言映射到同一路径，按路径去重。
-//
-// 这是**软口径**（enabledLangsOf：清单不可读回退默认语言一种），唯一调用方是
-// siteRoutePaths（建页 / 保存草稿时占位 page_routes），口径理由见 enabledLangsOf。
-// 会写发布事实 / 会改访问面的路径显式解析语言集合后走 siteRouteEntriesForLangs。
 func (s *Service) siteRouteEntries(ctx context.Context, projectID, logical string) ([]siteRouteEntry, error) {
 	return s.siteRouteEntriesForLangs(ctx, projectID, logical, s.enabledLangsOf(ctx, projectID))
 }
 
-// siteRouteEntriesForLangs 按**给定**语言集合推导逻辑路径的各语言站点路径（默认语言在前）。
-//
-// 语言集合为什么由调用方给出：调用点既有「事务外」（建页占位）也有「事务内」
-// （renameReservedAllLangsTx 迁移保留路由）。事务内的那一次必须用**进入事务之前**
-// 解析好的集合 —— 在事务内再读一次语言表（审计 I18N-02 的成因）读失败时，只会迁移
-// 默认语言的保留路由，其余语言的 reserved 行停在旧路径，而事务照常提交、调用方拿到成功。
-//
-// 判据与内核的 pipeline.siteRouteEntriesForLangs 同源（两边都以同一个 LangURLRule 为
-// 唯一映射点，不构成第二份语义）：rule.Validate（多语言短码互斥）→ 逐语言 rule.Path
-// → 按 Path 去重（关闭语言前缀时多语言映射到同一路径，而 page_routes 主键是
-// (project_id, path)，重复插入必然撞唯一键）。
 func (s *Service) siteRouteEntriesForLangs(ctx context.Context, projectID, logical string, langs []string) ([]siteRouteEntry, error) {
-	// 空集合不是「没什么要迁移」，而是「调用方没解析出语言集合」：静默返回空会让保留
-	// 路由一条都不迁移，而调用方以为迁移已完成 —— 半迁移比失败更难发现。
+
 	if len(langs) == 0 {
 		return nil, ErrInvalidPath
 	}
@@ -164,39 +86,18 @@ func (s *Service) siteRouteEntriesForLangs(ctx context.Context, projectID, logic
 	return out, nil
 }
 
-// renameReservedInput 保留路由逐语言迁移的入参。
-//
-// 聚成结构体而不是继续加位置参数：这里有四个相邻的字符串（pageID / oldLogical /
-// newLogical / targetLang）加一个语言切片，位置参数写错顺序编译器不会报错，
-// 而错的是「哪个语言允许迁移 active 行」与「按哪份语言集合迁移」两件后果很重的事。
 type renameReservedInput struct {
 	ProjectID string
 	PageID    string
-	// OldLogical / NewLogical 改路径前后的**逻辑**路径（不带语言前缀）。
+
 	OldLogical string
 	NewLogical string
-	// TargetLang 非空（改某语言 URL）时：只允许该语言迁移本页 active 行
-	//（发布时 reserved 被原地升级为 active，改 URL 的 DB 同步依赖这一迁移），
-	// 其他语言**只迁移 reserved 行**——否则会把别的语言的激活行改到新路径，线上路由丢失。
-	// 为空（改草稿路径）时所有语言同等对待。
+
 	TargetLang string
-	// Langs 调用方在**事务之前 / 访问面切换之前**解析好的站点语言集合（默认语言在前）。
-	// 必填：事务内不再读一次语言表（审计 I18N-02，读失败会只迁移默认语言）。
+
 	Langs []string
 }
 
-// renameReservedAllLangsTx 在**调用方的事务**内按给定语言集合逐语言迁移路径占用。
-//
-// **语言集合必须由调用方传进来**（审计 I18N-02 收尾）：改 URL 的调用点落在「内核已把
-// 访问面切到新路径」之后，此时若在事务内再读一次语言表，读失败就会只迁移默认语言的
-// 保留路由 —— 其余语言的 reserved 行停在旧路径，而事务照常提交。调用方的做法是：
-// 在**切访问面之前**用发布口径解析语言集合（读不到就让整次操作失败、访问面不动），
-// 再把同一份集合作参数传下来。
-//
-// 这里不做「失败逐个迁回」的补偿 ——
-// 外层事务回滚会把已迁移的行一并撤销，补偿反而会在回滚后写出撤销不掉的残留
-// （且补偿本身失败时只能记日志，留下一半旧路径一半新路径的路由表）。
-// 判据与语义（targetLang 的作用、OnlyReserved 的取舍、Langs 的来源）见 renameReservedInput。
 func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in renameReservedInput) error {
 	if s.routes == nil {
 		return nil
@@ -210,7 +111,7 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in 
 		return ErrInvalidPath
 	}
 	if len(oldEntries) != len(newEntries) {
-		// 语言清单在迁移中途变化（极罕见）：不做半途改名，交由调用方重试。
+
 		return ErrInvalidPath
 	}
 	for i := range oldEntries {
@@ -229,76 +130,22 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in 
 	return nil
 }
 
-// publishLangsOf 发布 / 重建口径的站点启用语言：语言清单读不到即返回错误（审计 I18N-02）。
-//
-// 用在「这次动作会改动访问面」的路径上：RebuildStale 的语言遍历、RefreshSiteFiles 的
-// sitemap 分组，以及改 URL 的保留路由迁移（UpdateURL / 恢复路径 —— 在那里它还必须
-// 早于内核切访问面，见 page_publish.go 与 page_publish.go）。判据不是「谁调用」，
-// 而是「降级的后果可不可见」：这些路径降级成默认语言一种之后，站点少更新几种语言、
-// 只迁移一种语言的保留路由、sitemap 少几组 URL，而调用方拿到的都是成功。
 func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]string, error) {
 	return pipeline.ResolveSiteLangs(ctx, s.project, projectID, pipeline.LangFallbackForbidden)
 }
 
-// enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
-//
-// **调用点只有两个，都是作者可操作的写入口**：siteRoutePaths（建页 / 保存草稿时按启用
-// 语言占位 page_routes）与 SaveDraft 的保留路由迁移（page_document.go，语言集合在事务之外
-// 解析一次）。据此定口径为「允许回退」，理由有三条：
-//
-//  1. 它是**作者可操作的后台写入口**：一次读库抖动不该让作者存不了草稿 —— 那是把
-//     基础设施的瞬时故障直接暴露成「你的编辑保存失败」；
-//  2. 降级在这里的后果是**可修复且可见的**：只占位 / 只迁移了默认语言的访问路径。
-//     下一次保存或发布时 siteRoutePaths / 保留路由迁移会按当时的完整清单重算并补齐；
-//     就算窗口期内别的页面抢注了未占位的语言路径，发布时路由冲突会当场报错，不会
-//     静默产出错 URL；
-//  3. 它**不产出任何面向访客的字节**：草稿路由占位与产物、sitemap、发布回执都无关。
-//
-// 与发布口径的分界就写在这里：会改访问面 / 会写发布事实的路径一律用 publishLangsOf。
-// 发布路径另有编译期冻结（pipeline.SiteCompileOptions 发布口径读不到语言表即失败）。
 func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
 	return pipeline.EnabledLangs(ctx, s.project, projectID)
 }
 
-// defaultLocaleOf 站点默认语言（清单 is_default，缺失回退全局默认语言）。
 func (s *Service) defaultLocaleOf(ctx context.Context, projectID string) string {
 	return pipeline.DefaultLocale(ctx, s.project, projectID)
 }
 
-// localizeMenuURL 导航项 URL 本地化：站内绝对路径（以 / 开头）按本语言方案映射，
-// 外链（http/https///mailto/tel/#）与相对路径原样保留。
-//
-// 必要性：导航 URL 来自 navigation 表；多语言下产物里的菜单链接必须指向
-// 「本语言的访问路径」（默认语言无前缀、非默认语言短码前缀），否则访客点菜单 404。
-//
-// 幂等：导航来源可能存的是某语言的访问路径（如页面 active_path 已带 /en 前缀），
-// 先用同一规则反查为逻辑路径再加本语言前缀，避免 /en/en/about。
 func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw string) string {
 	return pipeline.LocalizeMenuURL(ctx, s.project, projectID, lang, raw)
 }
 
-// MarkStaleByRegistryVersion 把「**当前产物**由旧组件产出」的页面标记为待重建。
-//
-// 触发时机：服务启动时。组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后
-// 没有任何运行时事件能通知内核「已有产物过期」—— 只能靠产物元数据里的
-// registry_version 指纹（builder.RegistryVersion）与本进程当前值比对。
-//
-// 判据（报告 ARCH-03 的整改核心）：先由本模块从**语言账本**（page_publications /
-// page_stagings 里 active/staged 指向的行，即 ListCurrentArtifactIDs）选出各语言当前产物，
-// 再经 artifact 契约按版本比对。历史回滚产物不参与判定 —— 旧实现直接把「全部
-// payload_state='available' 的行」交给 artifact 比对，未 GC 的旧产物因此每次重启都会
-// 把已经重建过的页面重新标成 stale（失败包不同、却永远收敛不了）。
-//
-// 只标记、不重建：重建交给运维经 RebuildStale 触发，或由后续的编辑/发布自然覆盖。
-// 启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外副作用。
-//
-// current 为空（二进制无 VCS 信息等）时不做任何标记 —— 宁可不标记也不全站误标。
-//
-// 标记粒度是**页面级**而非语言级，这是有意的保守选择：只要该页任一语言的产物由旧组件
-// 产出，整页标记。重建走 RebuildStale，它按站点启用语言逐个构建 —— 内容没变的语言会因
-// 产物内容寻址（同 hash 的 PutArtifact 是 no-op）而零写入，代价只是重复编译的 CPU 时间。
-// 反过来做语言级精确标记需要新增「待重建语言」状态存储（现有 stale 是 pages 表的布尔列，
-// 没有语言维度），且一旦漏标就是「线上继续跑旧组件产物且无人察觉」—— 风险收益不成正比。
 func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
 	if strings.TrimSpace(current) == "" || s.artifacts == nil {
 		return nil, nil
@@ -314,9 +161,7 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	// 逐工程扇出（DB-009 第三批）：待标记的页面 id 来自产物元数据，可能横跨多个工程，
-	// 而 pages 带 FORCE 策略。每个工程各自一次独立作用域的事务，本工程之外的行由
-	// project_id 条件与策略双重拦下 —— 不把多工程的 id 并进同一次作用域查询。
+
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return nil, err
@@ -336,66 +181,21 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	out := marked.list()
 	logger.Scene("page").With("count", len(out)).With("registryVersion", current).
 		Info("组件注册表版本变化：相关页面已标记待重建")
-	// 影响面回执：组件一变往往是一批页面一起过期，只有这里同时握着「哪个组件版本」
-	// 与「哪几页」两件事 —— 过了这里两者就再也对不上。
+
 	s.logStaleImpact(ctx, "registry:"+current, out)
 	return out, nil
 }
 
-// I18nStalePeer 文案词条 / 内容译文变更时的**其它发布来源**失效端口（消费者侧最窄接口）。
-//
-// 由 page 的 MarkStaleForI18n 统一扇出：i18n 的保存路径（商品翻译 / 页面翻译 /
-// 站点设置 / 导航翻译）历来只调 page.MarkStaleForI18n，新增发布来源时若要求每处
-// 都记得补一次调用，漏接面就是 N 处；集中到 1 处后漏接只可能是「装配没接」。
-// 未注入 = 只标页面（既有行为不变）。
 type I18nStalePeer interface {
-	// MarkStaleForI18n 是该来源的自足入口（自己枚举工程、各自提交）。
-	//
-	// 保留在这里与 …Tx 配对，和 publication 契约「非 Tx + Tx 同列」的形态一致：
-	// 没有外层事务的调用方（运维脚本之类）用它即可。
 	MarkStaleForI18n(ctx context.Context) error
-	// MarkStaleForI18nTx 在**调用方的事务**内标记该工程的其它发布来源。
-	//
-	// 本模块的扇出只走这一条：pages 的标记与 peer 的标记是同一批失效判定
-	//（同一批词条 / 译文变更的两个后果），各自提交必然留下「页面已标、实例未标」的
-	// 半截状态 —— 而实例那一侧**没有任何自动补的入口**（要等下一次词条保存才会收敛），
-	// 现象是「改了译文，商品详情页仍是旧字节」且日志里什么都没有。Tx 变体让两侧落进
-	// 同一个事务：要么都标上，要么一起回滚、由调用方重试（标记幂等，重跑无副作用）。
-	// 工程由调用方给定（它自己逐工程扇出），作用域由实现方在传入的 tx 上设置。
+
 	MarkStaleForI18nTx(ctx context.Context, tx *gorm.DB, projectID string) error
 }
 
-// SetI18nStalePeer 注入其它发布来源的译文失效端口（装配期调用；可空 = 只标页面）。
 func (s *Service) SetI18nStalePeer(peer I18nStalePeer) {
 	s.i18nPeer = peer
 }
 
-// MarkStaleForI18n 把全部页面与**其它发布来源**标记为待重建（文案词条变更后调用）。
-//
-// 与 Manifest 的 i18n 依赖条目（DependencyKind=i18n）配套：
-// 依赖条目负责「产物字节与词条 revision 的对应关系」，本方法负责「变更后重新排队」。
-// 调用方：后台 i18n CRUD（docs/06-D §14 D7）或运维脚本 —— 它们都没有工程上下文。
-//
-// 逐工程扇出（DB-009 第三批）：这是本模块最典型的「跨工程扇出」入口。pages 带 FORCE
-// 策略时，「整站标记」只能由每个工程各自一次作用域内的 UPDATE 拼出来；不设作用域的
-// 全表 UPDATE 在换非超级角色后匹配 0 行且不报错 —— 文案改了，站点却一直是旧的。
-//
-// 其余发布来源（自动发布实例等）集中在**这一个入口**扇出：它们同样在构建期取词注入字节，
-// 词条 / 译文一变同样过期。为什么不让四条保存路径各自记得调一次（商品翻译 / 页面翻译 /
-// 站点设置 / 导航翻译）—— 漏一处的表现是「改了译文，那一类页面仍是旧字节」且日志里
-// 什么都没有（本项目反复吃过的静默失效）。
-//
-// **每个工程一个事务，页面侧与 peer 同进同出**（2026-09 收口）：此前 peer 的标记排在
-// 页面侧扇出之后各自提交，pages 已标、peer 未标时本方法直接返回错误 —— 而 peer 那一侧
-// 没有任何自动补的入口，自动发布实例会一直渲染旧字节，直到下一次词条保存才偶然收敛。
-// 同库跨模块的写按 AGENTS.md 用 tx 透传（peer 的 …Tx 变体，接口见 I18nStalePeer，
-// 装配接线见 routers/assembly_publish.go）：任一步失败整个工程一起回滚 —— 要么两边都标上，
-// 要么两边都没标，由调用方重试（幂等）。这也是为什么日志只在事务提交后记：回滚的工程
-// 什么都没发生，不该出现在「本次影响面」里。
-//
-// 单个工程失败不中断其余工程：多工程之间本来就是各自独立的事务（RLS 作用域是单值
-// 会话变量，不能合并成一次查询），一个工程的数据库错误不该让别的工程停在旧字节。
-// 全部工程处理完后用 errors.Join 汇总返回 —— 不吞错，也不谎报成功。
 func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
@@ -421,13 +221,13 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 			return nil
 		})
 		if terr != nil {
-			// 该工程两侧都已随事务回滚（什么都没标），记下是哪个工程并继续处理其余工程。
+
 			failed = append(failed, fmt.Errorf("工程 %s 的译文失效标记失败: %w", projectID, terr))
 			continue
 		}
 		hit.add(ids)
 	}
-	// 影响面回执：只记**已提交**的命中集合 —— 回滚的工程不在其中，两份记录不会互相撒谎。
+
 	s.logStaleImpact(ctx, "i18n", hit.list())
 	if len(failed) > 0 {
 		return errors.Join(failed...)
@@ -435,26 +235,8 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 	return nil
 }
 
-// buildDependencies 构建期依赖（pipeline.DependencyProvider 实现）。
-//
-// 两条依赖（Kind 同为 i18n，Key 区分资源）：
-//   - i18n:site —— 组件固定文案（sys_i18n 开发者词条，P4）：改文案 → revision 变化
-//     → 依赖比对不等 → 触发重建（docs/06-D §10.4）；
-//   - i18n:content —— 内容译文（sys_translation，P5b）：**只在本次构建确实走内容翻译
-//     时登记**。这是 §9 的关键约束：缺译文时构建期回退原文，若依赖里没有这条记录，
-//     补齐译文后 revision 未变 → 不触发重建 → 站点长期停留在回退内容。
-//
-// 为什么「有候选即登记」而非「有缺失才登记」：命中译文的字段同样依赖 sys_translation，
-// 改译文/补齐译文都会改变产物字节，两者都必须触发重建。
-//
-// PIPE-3 起追加「可精确表达」的依赖源（pageDependencyKeys）：块引用、页面绑定的
-// 内容实体、文档内集合源。它们写入 Manifest 后由构建路径落库（page_dependencies），
-// 依赖源变更时即可按 (kind,key) 反查受影响页面——不再退化为全站标记。
-// 页面查询失败只降级为「不登记这些依赖」，不阻断构建（i18n 两条仍登记）。
 func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []pipeline.Dependency {
-	// 逐工程定位一次（DB-009 第四批/第五批）：构建输入不带工程，而 pages 带 FORCE 策略。
-	// 定位结果同时供「内容译文 revision 的工程作用域」与「页面依赖源登记」使用 ——
-	// 两次都依赖它，且第二次原本就在做同一件事。
+
 	page, pageErr := s.locatePageInProjects(ctx, in.PageID)
 	projectID := ""
 	if page != nil {
@@ -463,43 +245,27 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
 	deps = append(deps, pipeline.ActionTargetDependencies(in.Usage)...)
 	if s.pageUsesContentTranslation(ctx, in) {
-		// 内容译文的 revision 必须**带工程作用域**（DB-009 第五批）：sys_translation 的策略
-		// 放行「本工程行 + 全局行」，不带作用域时本工程译文的写入不会推进 revision，
-		// 于是补齐译文后依赖比对仍相等 → 不触发重建 → 站点长期停留在回退原文。
-		// 这条正是上面注释点名要防的失效，只是触发者是 RLS 而不是代码笔误。
+
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
-	// 公开站点导航（审计遗留缺口）：只登记**本次编译真实消费过**
-	// 的菜单位置（core.nav 绑定 menu=header/footer，渲染期经 RenderContext.UseMenu 记录）。
-	//
-	// 为什么用编译期记录而不是静态扫文档：绑定可能藏在页眉/页脚块里（块文档不参与
-	// 本页文档的静态扫描），也可能来自 presentation 的模板文档 —— 记录下来的才是
-	// 「产物字节里确实烘了这份菜单」的事实。
-	//
-	// 键带工程 ID（pipeline.MenuKey）：导航是工程级资源，位置名只有 header/footer，
-	// 不带工程 ID 时反查会跨工程误标。projectID 读不到（页面定位失败）时不登记，
-	// 与上面 pageDependencyKeys 的降级口径一致。
+
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		for _, kind := range in.Usage.MenuList() {
 			k := pipeline.MenuKey(pid, kind)
 			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
 		}
-		// 按**具体菜单项**引用（core.nav 的 Props.Navigation）：键 navigation:{itemID}。
-		// 菜单项 UUID 全局唯一，故不像位置键那样需要工程分量。
+
 		for _, navID := range in.Usage.NavigationList() {
 			k := pipeline.NavigationKey(navID)
 			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
 		}
-		// 渲染期展开的块（菜单项的悬浮面板，超级菜单）：块 id 在 navigations 行上，
-		// **不在页面文档里** —— 静态扫描看不到，只有渲染期的 UseBlock 能提供。
-		// 漏登记的表现是「改了面板块，带该面板的页面不重建」，面板通常挂在页眉，全站可见。
+
 		for _, blockID := range in.Usage.BlockList() {
 			k := pipeline.BlockKey(blockID)
 			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 	}
-	// 页面依赖源（PIPE-3）：用开头那次定位的结果；读不到页面时降级为不登记这些依赖
-	// （依赖失效时该页不再自动重建），但不阻断构建。
+
 	if pageErr == nil {
 		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
 	} else {
@@ -509,27 +275,13 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	return deps
 }
 
-// pageUsesContentTranslation 判定本次构建是否用到内容翻译（依赖登记的判据）。
-//
-// 判据与 compileDocument 的接入条件**同源**（语言维度 + 可翻译输入），保证
-// 「登记了依赖」与「产物确实可能随译文变化」一致：
-//   - 语言为空（单语言站点）/ 等于站点默认语言 → 否（产物即原文，决策 F1）；
-//   - 文档解析失败 → 否（构建主链会自行报错，依赖登记不额外阻断）。
-//
-// 块内文本补齐后，判据必须同时覆盖「本页引用了块」（页眉/页脚绑定或 core.globalref）：
-// 这类页面的本页 AST 可能一个候选都没有，但块内文本会进产物——漏登记会让补齐译文后
-// 不触发重建（§9 关键约束）。此处按**保守超集**判定：只要引用了块就登记，不为此额外
-// 解析块文档（精确集合由 compileDocument 在编译期算出；多登记一条依赖只在 sys_translation
-// revision 变化时才会失效，而该 revision 是全局 max(update_time)，故不增加重建噪音）。
 func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.BuildInput) bool {
 	lang := strings.TrimSpace(in.Lang)
 	if lang == "" {
 		return false
 	}
 	projectID, _ := s.pageContextOf(ctx, in.PageID, lang)
-	// 默认语言取**冻结计划**里的那一份（审计 I18N-01）：判据必须与 compileDocument 的
-	// 接入条件同源，否则会出现「没登记 i18n:content 依赖，而产物确实按译文渲染」——
-	// 补齐译文后不触发重建，站点长期停在回退内容（§9 那条约束的另一半）。
+
 	defaultLang := s.defaultLocaleOf(ctx, projectID)
 	if in.Plan != nil && strings.TrimSpace(in.Plan.DefaultLang) != "" {
 		defaultLang = strings.TrimSpace(in.Plan.DefaultLang)
@@ -544,11 +296,6 @@ func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.Bu
 	return pageMayUseContentTranslation(page)
 }
 
-// pageMayUseContentTranslation 页面「可能」用到内容翻译：本页有候选，或引用了块。
-//
-// 与 compileDocument 的接入条件同源（后者进一步解析块文档得到精确候选集合）：
-// 引用块（settings.structure 页眉/页脚绑定 / core.globalref 节点）意味着产物里
-// 可能含块内文本，必须登记 i18n:content 依赖。
 func pageMayUseContentTranslation(page *builder.Page) bool {
 	if page == nil {
 		return false
@@ -556,23 +303,17 @@ func pageMayUseContentTranslation(page *builder.Page) bool {
 	if len(builder.CollectContentCandidates(page)) > 0 {
 		return true
 	}
-	// 任何槽位绑定都可能带可翻译文本（页眉 / 页脚 / 公告条…），不逐字段判。
+
 	if !page.Settings.Structure.IsEmpty() {
 		return true
 	}
 	return len(builder.ReferencedBlockIDs(page.Root)) > 0
 }
 
-// contentTranslationEnabled 判定本次编译是否接入内容翻译（与 pageUsesContentTranslation
-// 的语言维度同源；文档已在装配层解析，故此处只看语言）。
 func (s *Service) contentTranslationEnabled(ctx context.Context, projectID, lang string) bool {
 	return pipeline.ContentTranslationEnabled(ctx, s.project, projectID, lang)
 }
 
-// reportContentMisses 记录构建期内容译文缺失（L3 埋点，决策 F14 第三层）。
-//
-// 只记日志、不阻断构建：缺译文已在取词器内回退原文（§7.7），告警用于提醒
-// 「上线前有字段仍是原文」；补齐译文后依赖条目（i18n:content）会触发重建。
 func reportContentMisses(lang string, candidates int, misses int64) {
 	if misses <= 0 {
 		return
@@ -584,31 +325,17 @@ func reportContentMisses(lang string, candidates int, misses int64) {
 		Warn("构建期内容译文缺失，已回退原文（补齐译文后需重建，docs/06-D §9）")
 }
 
-// 页面级语言排除的业务错误。
-//
-// 对外文案（key + 中文兜底）**绑在错误声明处**（pkg/facing）：兜底原先写在
-// inbound/http 的 pageLangErrMsg switch 里，于是加一个错误要改两个包，而 http 层在
-// service 里看不见 —— 二开的人加完 sentinel，页面上显示的是裸 key，还不知道该去哪补。
-// 绑过来之后出口只调一次 pageErrMsg(c, err)，每个错误自带它那句话。
 var (
-	// ErrPageLangExcluded 该语言已被本页排除：发布 / 构建入口据此跳过。
-	//
-	// 这是**正常的业务状态**（作者主动排除），不是故障：批量发布把它记成 skipped，
-	// 单语言入口把它报成可读错误，都不当成失败。
 	ErrPageLangExcluded = facing.New(pageenums.ErrPageLangExcluded, "该语言已被本页排除")
-	// ErrCannotExcludeDefaultLang 不允许排除默认语言。
-	//
-	// 默认语言是站点的基准：它的产物承载 x-default，且 default_plain 方案下「默认语言无前缀」
-	// 是路径映射的锚点。排除它会让所有互指指向一条不存在的路径 —— 拒绝比事后解释便宜。
+
 	ErrCannotExcludeDefaultLang = facing.New(pageenums.ErrCannotExcludeDefaultLang,
 		"不能排除站点默认语言：它的产物承载 x-default，且「默认语言无前缀」的路径映射以它为锚点")
-	// ErrLangAlreadyExcluded 该语言此前已被排除（幂等入口不重复下线）。
+
 	ErrLangAlreadyExcluded = facing.New(pageenums.ErrLangAlreadyExcluded, "该语言已被本页排除，无需重复操作")
-	// ErrLangNotExcluded 该语言不在本页的排除集合里（无从恢复）。
+
 	ErrLangNotExcluded = facing.New(pageenums.ErrLangNotExcluded, "该语言未被本页排除，无从恢复")
 )
 
-// pageExcludesLang 本页是否排除了该语言（大小写敏感：语言码是存储值，不是展示文案）。
 func pageExcludesLang(page *pagemodel.PageEntity, lang string) bool {
 	if page == nil {
 		return false
@@ -625,10 +352,6 @@ func pageExcludesLang(page *pagemodel.PageEntity, lang string) bool {
 	return false
 }
 
-// PageLangStates 该页各**启用**语言的排除与发布状态（默认语言在前，供后台面板渲染）。
-//
-// 只列站点启用语言：排除一个不在清单里的语言没有意义（它本来就不产出），
-// 而展示它会让面板看起来像「还差一件事没做」。
 func (s *Service) PageLangStates(ctx context.Context, pageID string) (rows []pagedto.PageLangStateResp, err error) {
 	page, err := s.getExistingPage(ctx, pageID)
 	if err != nil {
@@ -656,20 +379,6 @@ func (s *Service) PageLangStates(ctx context.Context, pageID string) (rows []pag
 	return rows, nil
 }
 
-// ExcludePageLang 排除某语言：**下线它的产物**并清掉该语言的全部发布态，再写排除列。
-//
-// 三段顺序与 RetireLocale 逐字同源（理由一样，见那里的论证）：
-//
-//  1. 校验放在最前（页面存在、语言启用、不是默认语言、此前未排除）—— 校验失败时
-//     一点都不该动，包括访问面；
-//  2. **先清访问面符号链接**（跨系统动作，不能进数据库事务：事务回滚撤不掉已删的链接；
-//     反过来「链接已删、事务失败」是可重跑收敛的，因为指针还在、下次仍能算出该删哪些）；
-//  3. **再在一个事务里做全部数据库写入**：排除列 + 该语言的发布/暂存指针 + 该语言的
-//     page_routes 占用 + 该语言的发布计划行。此前这几处各自提交会留下
-//     「列改了但产物还在线上」或「产物删了但列没改」的半截状态 —— 前者是前台 404 与
-//     后台显示不一致，后者是「排除没生效但页面说排除了」。
-//
-// 返回下线掉的路径数（0 表示该语言本来就没发布过，仍是成功的排除）。
 func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (retired int, err error) {
 	page, err := s.getExistingPage(ctx, pageID)
 	if err != nil {
@@ -695,7 +404,6 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 		return 0, ErrInvalidParam
 	}
 
-	// 该语言当前的激活路径（可能为空：排除一个还没发布过的语言是正常操作）。
 	pub, perr := s.model.GetPublication(ctx, page.ID, l)
 	if perr != nil && !errors.Is(perr, gorm.ErrRecordNotFound) {
 		return 0, perr
@@ -704,8 +412,7 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	if pub != nil {
 		activePath = strings.TrimSpace(pub.ActivePath)
 	}
-	// 排除集合：已有排除项（去空白、去掉本次语言）+ 本次语言。存储值是语言码本身，
-	// 不做大小写归一 —— 与 pageExcludesLang 的判定口径一致。
+
 	excluded := make([]string, 0, len(page.ExcludedLangs)+1)
 	for _, raw := range page.ExcludedLangs {
 		if v := strings.TrimSpace(raw); v != "" && v != l {
@@ -715,16 +422,7 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	excluded = append(excluded, l)
 
 	if activePath != "" {
-		// 有激活路径 ⇒ 走下线回执（与删页同一框架）。顺序：
-		//
-		//	登记下线意图（pending 回执，记下这条路径此刻的归属事实）
-		//	  → 反查清单在锁内复验（登记之后页面又发布过就拒绝）
-		//	    → 顾问锁 → 实体行锁 → 业务事务（排除 + 清账本/暂存/计划 + 置 businessCommitted）
-		//	      → 提交后：路径锁内复验归属 → 撤链 → 结案
-		//
-		// 为什么不再"先撤链再改 DB"：撤链不可逆，而"这条链接原本归谁、指向哪份产物"
-		// 只在 page_publications 行还在时查得到（下面这几步正好把它删掉）。中间崩溃
-		// 就留下无主链接，且没有任何地方记着它 —— 回执把这份事实挪到改库之前登记。
+
 		intent, rerr := s.registerDeactivationIntent(ctx, page.ProjectID, page.ID, activePath, []string{activePath})
 		if rerr != nil {
 			return 0, rerr
@@ -749,8 +447,7 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 		if serr := s.model.DeleteStagingsByLangTx(ctx, tx, page.ProjectID, page.ID, l); serr != nil {
 			return serr
 		}
-		// 发布计划行同删：它冻结的是「这次发布依据哪几种语言」，被排除语言的计划没有任何
-		// 重建入口会再读到；留着只会在解除排除后被误当成「仍然有效的冻结输入」复用。
+
 		if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, page.ProjectID, page.ID, l); plerr != nil {
 			return plerr
 		}
@@ -764,31 +461,19 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	return retired, nil
 }
 
-// excludeLangWithDeactivation 执行「有激活路径的排除该语言」：业务事务 + 收尾撤链。
-//
-// 与 deleteWithDeactivation 同形，差别只在业务写入的内容（改排除集合、清本语言的
-// 账本/暂存/计划，而不是软删页面），因此收尾与失败分流逐条对齐：
-//
-//  1. 业务事务（顾问锁 + 行锁下）：路径集合复验 → 排除集合 + 三个本语言清理 +
-//     置 businessCommitted，同进同出。
-//  2. 提交之后：同一把顾问锁 → 路径锁内复验归属 → 撤链 → 结案。
-//  3. 明确失败 → 撤链从未发生 → 结案 rolled_back；提交成功但撤链失败 → 保 pending，
-//     绝不返回失败（排除已生效，报错只会让调用方重试，而重试会命中"已被排除"）。
 func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemodel.PageEntity, lang, activePath string,
 	excluded []string, hasPub bool, in *deactivationIntent) error {
-	// callbackCompleted 记「回调跑到了最后一步」，不等于已提交：Transaction 会把
-	// Commit 的错误一并返回，标记为真且 txErr 非空正是"提交不明"。
+
 	callbackCompleted := false
 	txErr := s.model.TransactionScoped(ctx, in.ProjectID, func(tx *gorm.DB) error {
-		// 稳定顾问锁先于行锁（与删页/收敛同一把键），再取实体行锁与 publish/改址互斥。
+
 		if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, in.PageID); aerr != nil {
 			return aerr
 		}
 		if _, lerr := s.model.LockPageForActivationTx(ctx, tx, in.ProjectID, in.PageID); lerr != nil {
 			return lerr
 		}
-		// 锁内复验：登记之后这一页可能又发布过该语言（激活路径变了 / 多出别的路径），
-		// 那时按登记清单撤链会撤掉刚上线的链接。
+
 		current, cerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
 			ProjectID: in.ProjectID, PageID: in.PageID,
 		})
@@ -796,8 +481,7 @@ func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemod
 			return cerr
 		}
 		got := normalizeOldPaths(current)
-		// 该语言的那条路径必须仍在本页的激活集合里：不在了说明登记之后它已被下线/改址，
-		// 本次意图的撤链对象不复存在，按失败处理（回执留 pending 由收敛按登记身份重判）。
+
 		if !containsPath(got, activePath) {
 			return fmt.Errorf("%w: 路径 %s 已不在本页的激活集合内", errOldPathTaken, activePath)
 		}
@@ -815,8 +499,7 @@ func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemod
 		if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, in.ProjectID, in.PageID, lang); plerr != nil {
 			return plerr
 		}
-		// 路由行：带归属者（少传 PageID 时 deactivateRouteScope 会退化成 page_id IS NOT NULL，
-		// 可能删到别人刚上线的 active 行）。
+
 		if rerr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
 			ProjectID: in.ProjectID, Path: activePath, PageID: in.PageID,
 		}); rerr != nil {
@@ -835,8 +518,7 @@ func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemod
 		return mapPersistenceError(txErr)
 	}
 	if txErr != nil {
-		// 走到末尾标记后仍报错 = 只有提交阶段可能出错，业务数据可能已经生效。
-		// 保留 pending，由重放时的锁内重读判定（businessCommitted 已随业务同事务落下）。
+
 		s.keepPublishReceiptPending(in.ReceiptID, "排除语言业务事务提交结果不明")
 		logger.Scene("publication").With("pageId", in.PageID).With("lang", lang).
 			Error(txErr, "排除语言提交结果不明（回执保持 pending 交收敛重判）")
@@ -858,13 +540,6 @@ func (s *Service) excludeLangWithDeactivation(ctx context.Context, page *pagemod
 	return nil
 }
 
-// RestorePageLang 解除排除（只解除，**不自动重新发布**）。
-//
-// 为什么不做自动重发：重新发布是一次产出上线动作（会改访问面、写激活路径、触发站点文件
-// 与互指刷新），不该由「后台勾选框」隐式触发 —— 作者解除排除后按常规发布入口发布即可，
-// 那一步有完整的回执、依赖失效与回滚语义。这里只把产出范围恢复成「该语言也产出」。
-//
-// 单处写入（一列），因此不开事务（AGENTS 的事务判据以「两处及以上持久化写入」为准）。
 func (s *Service) RestorePageLang(ctx context.Context, pageID, lang string) (err error) {
 	page, err := s.getExistingPage(ctx, pageID)
 	if err != nil {
@@ -892,7 +567,6 @@ func (s *Service) RestorePageLang(ctx context.Context, pageID, lang string) (err
 	return nil
 }
 
-// appendExcludedLang 追加一个语言（保序去重；语言码是存储值，比较前只 trim 不折叠大小写）。
 func appendExcludedLang(existing []string, lang string) []string {
 	out := make([]string, 0, len(existing)+1)
 	for _, raw := range existing {
@@ -906,11 +580,6 @@ func appendExcludedLang(existing []string, lang string) []string {
 	return out
 }
 
-// langEnabled 该语言是否在站点启用清单里。
-//
-// 走**发布口径**（publishLangsOf，清单读不到即报错 → 这里按「不在清单里」处理并拒绝写）：
-// 排除动作会真的下线产物，判断依据不能是「降级成默认语言一种」的那份清单 ——
-// 那会让一次读库抖动把合法语言判成「不在清单里」而拒绝，或更糟地放行不该放行的语言。
 func langEnabled(ctx context.Context, s *Service, projectID, lang string) bool {
 	langs, err := s.publishLangsOf(ctx, projectID)
 	if err != nil {
@@ -924,15 +593,6 @@ func langEnabled(ctx context.Context, s *Service, projectID, lang string) bool {
 	return false
 }
 
-// dropExcludedLangs 从站点语言输入里扣掉本页排除的语言。
-//
-// 调用点只有一处（发布计划冻结），但它是「排除在**冻结时**生效」这条取舍的落点：
-// 被排除语言不是本次发布的输入（不产出产物），留在计划里会让 Manifest.SiteLangs 与
-// 计划本身声称「发布了该语言」—— 而产物根本不存在，属冻结事实说谎。
-//
-// 默认语言被排除是**不该发生**的（ExcludePageLang 拒绝）：存量数据里若真有，
-// 这里按「默认语言在前」的既定顺序取剩余集合的首项，绝不产出空默认语言
-// （空默认语言会让所有互指都不是 x-default，见 SiteLangInputsOfPlan 的同款处理）。
 func dropExcludedLangs(inputs pipeline.SiteLangInputs, excluded []string) pipeline.SiteLangInputs {
 	if len(excluded) == 0 || len(inputs.SiteLangs) == 0 {
 		return inputs
@@ -951,8 +611,7 @@ func dropExcludedLangs(inputs pipeline.SiteLangInputs, excluded []string) pipeli
 		out = append(out, lang)
 	}
 	if len(out) == 0 {
-		// 全被排除（含默认语言）—— 保留原集合，让上游的「空语言表」判据去处理，
-		// 而不是在这里造一份空输入把失败点推远。
+
 		return inputs
 	}
 	inputs.SiteLangs = out
@@ -962,7 +621,6 @@ func dropExcludedLangs(inputs pipeline.SiteLangInputs, excluded []string) pipeli
 	return inputs
 }
 
-// planHasExcludedLang 计划里是否含有本页当前排除的语言（有则整份计划失效重冻）。
 func planHasExcludedLang(plan pipeline.PublicationPlan, excluded []string) bool {
 	if len(excluded) == 0 {
 		return false
@@ -981,19 +639,13 @@ func planHasExcludedLang(plan pipeline.PublicationPlan, excluded []string) bool 
 	return false
 }
 
-// langPublishSkipped 批量发布结果里「被排除而跳过」的状态值。
-//
-// 与 "failed" 分开是刻意的：跳过的成因是作者主动排除（业务决策），失败是系统没做到。
-// 合成一个值会让回执看起来「这次发布出错了」，而运维的第一反应是重试。
 const langPublishSkipped = "skipped"
 
-// localeActiveRoute 该语言的一条已激活路由。
 type localeActiveRoute struct {
 	PageID string
 	Path   string
 }
 
-// LocaleRetireImpact 该语言当前的已激活路径数（审计 I18N-017，确认前给运营看代价）。
 func (s *Service) LocaleRetireImpact(ctx context.Context, projectID, lang string) (affected int, err error) {
 	routes, err := s.localeActiveRoutes(ctx, projectID, lang)
 	if err != nil {
@@ -1002,25 +654,6 @@ func (s *Service) LocaleRetireImpact(ctx context.Context, projectID, lang string
 	return len(routes), nil
 }
 
-// RetireLocale 下线该语言在**各页**的已激活路径，并清理对应的发布 / 暂存指针。
-//
-// 形态（2026-10 收口，与删页/排除语言同一框架）：
-//
-//  1. 按 page 分组各预登记一条 page/deactivate 回执（记下每页那几条路径此刻的归属事实）；
-//  2. **一个事务**里做完全部业务变更：按 pageID 升序逐页取稳定顾问锁 + 实体行锁
-//     （固定顺序，避免两路退役互相把对方锁死）、在该锁下复验该页路径集合、
-//     解除路由占用、删本语言的发布/暂存/计划指针，并在**同一事务**里置各回执的
-//     businessCommitted。「原语言的清理全成全败」保持不变 —— 不按页分组提交业务；
-//  3. 提交之后逐条回执撤链；任意一条 FS 撤链失败，只有那一条回执保 pending，
-//     其余照常结案，收敛例程按回执里捕获的身份重放。
-//
-// 为什么不再"先删符号链接再改库"：撤链不可逆，而待撤的路径是从 page_publications
-// 反查出来的（localeActiveRoutes），指针一旦删掉就再没有入口能算出该清哪些链接 ——
-// 中间崩溃留下的是无主残留，且无人认领。回执把这份事实挪到改库之前登记。
-//
-// 为什么按页分组的回执而不是一条工程级回执：回执的归属是 (source_type, source_id)，
-// 而 source_id 必须是真实实体 id（uuid 列）；一条工程级回执要么伪造一个 page id，
-// 要么让恢复侧无从取实体级锁。退役天然跨多页，因此每页一条、共用一个业务事务。
 func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (retired int, err error) {
 	routes, err := s.localeActiveRoutes(ctx, projectID, lang)
 	if err != nil {
@@ -1030,9 +663,9 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 		return 0, nil
 	}
 	if s.routes == nil {
-		return 0, nil // 降级装配（单测 / 精简部署）：没有路由契约就没有可下线的路径
+		return 0, nil
 	}
-	// 按页分组（路径去重、页按 id 升序）：顺序固定，锁序才固定。
+
 	pathsByPage := make(map[string][]string, len(routes))
 	pageOrder := make([]string, 0, len(routes))
 	for _, r := range routes {
@@ -1052,7 +685,7 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 	sort.Strings(pageOrder)
 	intents := make([]*deactivationIntent, 0, len(pageOrder))
 	cleanup := func() {
-		// 登记失败就一条都不留：没有回执的意图不该留在库里等收敛去猜。
+
 		for _, in := range intents {
 			s.abortPublishReceipt(ctx, in.ReceiptID, "语言退役未开始，回执作废")
 		}
@@ -1072,24 +705,18 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 	if len(intents) == 0 {
 		return 0, nil
 	}
-	// 作用域由 TransactionScoped 设（不要在这里再调 rls.InProjectScope：它自带事务边界，
-	// 会在事务里另开一个 —— 见 pkg/rls.ScopeTx 的论证）。
-	// callbackCompleted 记「回调跑到了最后一步」，不等于已提交：Transaction 会把
-	// Commit 的错误一并返回，标记为真且 txErr 非空正是"提交不明"。
+
 	callbackCompleted := false
 	txErr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
 		for _, in := range intents {
-			// 锁序固定（pageID 升序）＋ 稳定顾问锁先于行锁：两路退役/删页同时进行时
-			// 取锁顺序一致，不会互相等成环。页可能刚被删掉 —— 行锁取不到即整批失败，
-			// 由调用方重试（此时那一页已经不在 routes 里了）。
+
 			if aerr := s.model.LockPageEntityAdvisoryTx(ctx, tx, in.PageID); aerr != nil {
 				return aerr
 			}
 			if _, lerr := s.model.LockPageForActivationTx(ctx, tx, in.ProjectID, in.PageID); lerr != nil {
 				return lerr
 			}
-			// 锁内复验：登记之后这一页可能又发布了该语言（路径集合变了），
-			// 那时按登记清单撤链会撤掉刚上线的链接。
+
 			current, cerr := s.routes.ListActivePaths(ctx, &pubcontract.ListActivePathsReq{
 				ProjectID: in.ProjectID, PageID: in.PageID,
 			})
@@ -1103,28 +730,25 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 				}
 			}
 			for _, p := range in.Paths {
-				// 归属者必须显式带上，否则 deactivateRouteScope 退化成 page_id IS NOT NULL。
+
 				if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
 					ProjectID: projectID, Path: p, PageID: in.PageID,
 				}); derr != nil {
 					return derr
 				}
 			}
-			// 发布 / 暂存指针：**只删该语言** —— 另一语言还在服务，整页删会让它失去已发布状态。
+
 			if perr := s.model.DeletePublicationsByLangTx(ctx, tx, projectID, in.PageID, lang); perr != nil {
 				return perr
 			}
 			if serr := s.model.DeleteStagingsByLangTx(ctx, tx, projectID, in.PageID, lang); serr != nil {
 				return serr
 			}
-			// 发布计划同样只删该语言（审计 I18N-01）：语言都退役了，它的冻结输入
-			// 没有任何重建入口会再读到；留着只会在语言被重新启用时被误当成「仍然有效」，
-			// 于是一批按旧配置冻结的输入重新生效。
+
 			if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, projectID, in.PageID, lang); plerr != nil {
 				return plerr
 			}
-			// businessCommitted 与业务写入同一个 tx：分开两笔时中间崩溃会留下
-			// "业务已提交、回执仍说未提交"，恢复便永远不敢撤那些链接。
+
 			if merr := s.markDeactivationCommitted(ctx, tx, in); merr != nil {
 				return merr
 			}
@@ -1133,15 +757,14 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 		return nil
 	})
 	if txErr != nil && !callbackCompleted {
-		// 回调未走到末尾 ⇒ 事务一定回滚 ⇒ 一条路由都没退役：计数不按数到一半报出去。
+
 		for _, in := range intents {
 			s.abortPublishReceipt(ctx, in.ReceiptID, "语言退役的业务事务未提交，访问面保持原样")
 		}
 		return 0, txErr
 	}
 	if txErr != nil {
-		// 走到末尾标记后仍报错 = 提交阶段出错，业务数据可能已落。全部保 pending，
-		// 让重放按锁内重读的 businessCommitted 逐条判定，而不是在这里猜哪个成了。
+
 		for _, in := range intents {
 			s.keepPublishReceiptPending(in.ReceiptID, "语言退役业务事务提交结果不明")
 		}
@@ -1155,7 +778,7 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 		}
 		return 0, nil
 	}
-	// 提交后逐条撤链：某页撤链失败只让那一条保 pending，其余照常结案。
+
 	for _, in := range intents {
 		if werr := s.withdrawDeactivatedLinks(ctx, projectID, in.PageID, in.ReceiptID); werr != nil {
 			s.keepPublishReceiptPending(in.ReceiptID, "语言退役已提交，撤链失败")
@@ -1170,7 +793,6 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 	return len(routes), nil
 }
 
-// localeActiveRoutes 该语言在本工程的全部已激活路由。
 func (s *Service) localeActiveRoutes(ctx context.Context, projectID, lang string) (out []localeActiveRoute, err error) {
 	if s.routes == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(lang) == "" {
 		return nil, nil
@@ -1199,22 +821,14 @@ func (s *Service) localeActiveRoutes(ctx context.Context, projectID, lang string
 	return out, nil
 }
 
-// 编译期断言：page 模块实现 project 声明语言下线端口。
 var _ projectcontract.LocaleRetirePort = (*Service)(nil)
 
-// UntranslatedPageLangs 列出该工程缺译的（页面 × 语言），只含 misses > 0。
-//
-// 已排除该语言的页面**不出现在报告里**：排除之后这一页不再产出该语言，
-// 也就不存在「缺译」——继续列出来会让运营以为「点了取消但它还在」，
-// 于是反复点（而第二次会得到「已被排除」的提示）。
 func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (rows []pagedto.TranslationMissResp, err error) {
 	pid := strings.TrimSpace(projectID)
 	if pid == "" {
 		return nil, ErrInvalidParam
 	}
-	// 两步取数：先用自己的 pages 表算出「本工程有哪些页面」，把 page_id 清单交给
-	// artifact 契约去问 page_artifacts（那张表属它）。合在一条 SQL 里时会 JOIN 到别人的表上，
-	// 而「哪些页面属于本工程」本来就是本模块最清楚的事。
+
 	titles, err := s.model.ListPageTitles(ctx, pid)
 	if err != nil {
 		return nil, err
@@ -1247,8 +861,7 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 			Misses: r.Misses, Candidates: r.Candidates,
 		})
 	}
-	// 排序口径与原 SQL 一致（misses 降序，再 draft_path / lang 升序）——契约只保证
-	// 「每页每语言一行」，顺序由调用方按展示需要定，那里才有 draft_path。
+
 	slices.SortStableFunc(rows, func(a, b pagedto.TranslationMissResp) int {
 		return cmp.Or(
 			cmp.Compare(b.Misses, a.Misses),
@@ -1259,10 +872,6 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 	return rows, nil
 }
 
-// excludedLangsOfProject 该工程各页面已排除的语言集合（page_id → lang → true）。
-//
-// 一次查询而不是逐页问：报告最长会列出全部页面 × 语言，逐页查会退化成 N 次往返，
-// 而它在每次打开报告页时都要跑一遍。
 func (s *Service) excludedLangsOfProject(ctx context.Context, projectID string) (map[string]map[string]bool, error) {
 	pages, err := s.model.ListAll(ctx, projectID, "")
 	if err != nil {
@@ -1284,7 +893,4 @@ func (s *Service) excludedLangsOfProject(ctx context.Context, projectID string) 
 	return out, nil
 }
 
-// 编译期用途说明：本文件只用 model 的具名查询方法（ListPageTitles / ListAll），
-// 不碰裸句柄 —— service 层的数据访问边界由 scripts/check-service-db-boundary.sh 守门。
-// 缺译计数本身经 artifact 契约取（page_artifacts 属 artifact 模块）。
 var _ = pagemodel.PageTitleRow{}

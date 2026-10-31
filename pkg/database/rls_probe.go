@@ -11,26 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 本文件是启动期的 RLS 连接身份探针（审计 DB-04）。
-//
-// 它回答一个配置与文档都答不了的问题：**这条连接到底会不会绕过 RLS**。
-// 迁移 199 试点、215 铺开（此后仍有迁移继续追加），把策略铺到了带 project_id 的对象上，
-// 但 PostgreSQL 的超级用户无条件绕过 RLS，
-// FORCE 只约束表属主 —— 于是「策略铺好了」与「隔离生效」之间差着一个角色属性。
-// 探针每次启动都读 pg_roles.rolsuper / rolbypassrls 并打日志，结论只有两种：
-//
-//   - 不绕过：策略生效（内容见 rls.Identity.Verdict）；
-//   - 绕过：INFO 打结论 + WARN 说明当前隔离不生效；
-//     若 database.require_rls_role=true，直接返回 error 让启动失败。
-//
-// 默认 require_rls_role=false 是刻意的：迁移与运维脚本用管理连接（超级用户）执行 DDL，
-// 而它们走的是同一个 database 组件；一旦默认 fail fast，正常运维会被自己的门禁拦住。
-// 切换成应用角色之后，把该项置 true 才算真正闭环。
-
-// isPostgresDialector 判断 gorm 方言名是不是 PostgreSQL。
-//
-// 探针要读 pg_roles / pg_class，MySQL 上没有这些视图 —— 非 PG 必须整体跳过而不是
-// 报错（MySQL 是历史兼容驱动，不该因为一个 PG 专属的检查而无法启动）。
 func isPostgresDialector(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "postgres", "postgresql", "pgx":
@@ -40,11 +20,6 @@ func isPostgresDialector(name string) bool {
 	}
 }
 
-// rlsRoleBypassError 在 require_rls_role=true 且连接角色会绕过 RLS 时的启动失败错误。
-//
-// 错误里带上实际角色名与 session_user：DBA 要能一眼看出「配置里写的是谁、连上去的又是谁」，
-// 否则最常见的那种情况（改了 database.user 但环境变量 GOWP_DATABASE_USER 还指着旧值）
-// 只能靠猜。
 func rlsRoleBypassError(identity rls.Identity) error {
 	reason := "超级用户"
 	if identity.BypassRLS && !identity.IsSuperuser {
@@ -56,16 +31,6 @@ func rlsRoleBypassError(identity rls.Identity) error {
 		identity.CurrentUser, identity.SessionUser, reason)
 }
 
-// CheckRLSIdentity 执行启动期 RLS 连接身份探针。
-//
-// 行为（每一步都有明确理由，改动前先读上面的说明）：
-//  1. 非 PostgreSQL 方言 → INFO 说明跳过，返回 nil；
-//  2. 探针查询本身失败 → require=true 时返回 error（无法证明隔离生效，不能假装通过），
-//     否则 WARN 后继续；
-//  3. 无论结论如何，先以 INFO 打印完整结论（角色名 + rolsuper + rolbypassrls + 策略覆盖数）；
-//  4. 连接角色会绕过 RLS → require=true 返回 error（启动失败），否则 WARN。
-//
-// 返回 error 时不修改任何全局状态：由 Init 负责关连接并把错误往上抛。
 func CheckRLSIdentity(ctx context.Context, db *gorm.DB, requireRLSRole bool) error {
 	if db == nil {
 		return nil

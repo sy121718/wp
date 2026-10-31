@@ -14,21 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 删除留痕的**锁后快照**：单删与批删各一组。
-//
-// 这一组钉住的是「审计说删的是 A、实际删掉的是 B」那个旧快照窗口：
-// 旧写法在事务外读商品与变体、先构造 before 快照，然后才进事务加锁 ——
-// 校验与加锁之间别人改名 / 改价 / 回写成本价，快照记的是改之前的值，
-// 而行被删掉时已经是新值。现在读快照排在锁之后。
-//
-// 交错一律用 afterProductSnapshot 插桩（gorm after_query 回调触发一次即可），
-// 不靠 sleep 抢时序：B 的写入在 A 的第一次快照读之后、加锁之前提交，
-// 于是「锁后读」必须看到 B，「锁前读」必然看不到 —— 结果确定。
-
-// TestDeleteAuditUsesLockedSnapshot 单删：B 先提交，A 的删除留痕必须反映 B。
-//
-// 断言落在**变更记录里的实际字段值**（before 快照），不是「记录条数 > 0」：
-// 条数在旧实现下同样成立，只有字段值能区分锁前 / 锁后。
 func TestDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -43,7 +28,6 @@ func TestDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	changes := &capturedProductChanges{}
 	f.svc.SetMasterDataChanges(changes)
 
-	// B：把商品名称、副标题、默认价与变体成本价一起改掉，全部在 A 的快照读之后提交。
 	const (
 		bName  = "锁后名字"
 		bSub   = "锁后副标题"
@@ -81,7 +65,7 @@ func TestDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	if variantChange.Before["cost_price"] != "47.50" {
 		t.Fatalf("删除留痕用了锁前旧成本价: before=%v", variantChange.Before["cost_price"])
 	}
-	// 行真的没了，且没有留痕之外的副作用。
+
 	var left int64
 	if err = rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error {
 		return tx.Model(&productmodel.ProductEntity{}).Where("id = ?", p.ID).Count(&left).Error
@@ -93,10 +77,6 @@ func TestDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	}
 }
 
-// TestDeleteAuditRollsBackOnFailure 审计端口故障 → 删除整体回滚。
-//
-// 顺序改成「锁后读 → 删 → 留痕」之后，留痕失败必须把删除一起回滚：
-// 否则「删掉了但没人知道删的是什么」，比锁前快照更糟。
 func TestDeleteAuditRollsBackOnFailure(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -112,7 +92,7 @@ func TestDeleteAuditRollsBackOnFailure(t *testing.T) {
 	if err = f.svc.Delete(ctx, &productdto.DeleteReq{ID: p.ID, ProjectID: f.projectID}); !errors.Is(err, injected) {
 		t.Fatalf("审计错误未返回: %v", err)
 	}
-	// 商品与变体都还在：删除与留痕同一事务。
+
 	var products, variants int64
 	if err = rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error {
 		return tx.Model(&productmodel.ProductEntity{}).Where("id = ?", p.ID).Count(&products).Error
@@ -129,10 +109,6 @@ func TestDeleteAuditRollsBackOnFailure(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteAuditUsesLockedSnapshot 批删：同一窗口，逐商品都要是锁后值。
-//
-// 批删的旧写法更隐蔽：LockProductsTx 只 Pluck 出 id（够做「这批还在不在」的集合校验），
-// 行本身与变体都是锁前读的。这里两件商品各被并发改名，锁后读必须两条都看到新名。
 func TestBulkDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -150,7 +126,6 @@ func TestBulkDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	changes := &capturedProductChanges{}
 	f.svc.SetMasterDataChanges(changes)
 
-	// 只改**后创建**的那一条：旧实现里两条都是锁前读，若只有一条错就够红。
 	fired := afterProductSnapshot(t, f.db, "products", func() error {
 		return rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error {
 			return tx.Model(&productmodel.ProductEntity{}).Where("id = ?", second.ID).
@@ -183,7 +158,6 @@ func TestBulkDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteAuditRollsBackOnFailure 批删留痕失败 → 两条都还在。
 func TestBulkDeleteAuditRollsBackOnFailure(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -217,9 +191,6 @@ func TestBulkDeleteAuditRollsBackOnFailure(t *testing.T) {
 	}
 }
 
-// findChange 在留痕输入里按「实体类型 + 实体 id」找那一条。
-//
-// 不用下标取：批删一条请求产出多条留痕，下标顺序是实现的内部细节。
 func findChange(t *testing.T, inputs []*masterdatacontract.ChangeInput, origin, entityID string) *masterdatacontract.ChangeInput {
 	t.Helper()
 	for _, in := range inputs {

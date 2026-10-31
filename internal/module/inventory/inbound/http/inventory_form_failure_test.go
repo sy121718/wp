@@ -1,13 +1,5 @@
 package inventoryhttp
 
-// 抽屉表单的失败出口：**4xx + JSON**，不重渲片段。
-//
-// 判据（改造前后各一条，都在这里）：
-//   1. 状态码分档 —— 声明处给过 404/409 就用它，业务错误默认 400，其余 500
-//      （pkg/response.ErrorStatus；判据与文案同一个事实来源 facing.FactOf）；
-//   2. 不渲染任何模板 —— htmx 对 4xx 不 swap，抽屉与用户输入原样保留，所以响应体里
-//      只有一句话，没有一个 HTML 字节（重渲那套回填通道已整体删除）。
-
 import (
 	"errors"
 	"net/http"
@@ -24,7 +16,6 @@ import (
 	"go_wp/pkg/response"
 )
 
-// inventoryCaptureRender 记录「渲染了哪个模板」：本测试的正面判据是**一次都没渲染**。
 type inventoryCaptureRender struct {
 	name string
 	data any
@@ -58,22 +49,22 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 		status int
 		want   string
 	}{
-		// 400：参数不合法 / 业务拒绝（业务错误的默认档）。
+
 		{"reason edit business", (&inventoryPageHandle{}).reasonEditFormFail,
 			inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest,
 			inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
-		// 404：找不到 —— 由声明处给（facing.WithStatus），出口只读。
+
 		{"warehouse not found", (&inventoryPageHandle{}).warehouseFormFail,
 			inventoryenums.Err(inventoryenums.ErrWarehouseNotFound), http.StatusNotFound,
 			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseNotFound)},
-		// 409：唯一键冲突 / 状态不允许 —— 处置是刷新后重试或换个值，不是改输入格式。
+
 		{"warehouse code taken", (&inventoryPageHandle{}).warehouseFormFail,
 			inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken), http.StatusConflict,
 			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
 		{"reason code taken", (&inventoryPageHandle{}).reasonFormFail,
 			inventoryenums.Err(inventoryenums.ErrReasonCodeTaken), http.StatusConflict,
 			inventoryenums.FallbackFor(inventoryenums.ErrReasonCodeTaken)},
-		// 带明细的冲突：复合错误（%w + 半角冒号）同样要分到 409，不能退化成 500。
+
 		{"conflict with detail", (&inventoryPageHandle{}).warehouseFormFail,
 			inventoryenums.ErrDetail(inventoryenums.ErrWarehouseCodeTaken, "WH1"), http.StatusConflict,
 			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
@@ -117,10 +108,6 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 	}
 }
 
-// TestInventoryWriteSuccessIsJSON 写动作成功 = {code:200,...}，两种请求形态都一样。
-//
-// 后端不给 URL：导航是前端的事（模板 data-write-nav，无值 = 重载当前页）。
-// 服务端算「回哪个 URL」等于把筛选与页码再实现一遍，而那两份状态本来就在地址栏里。
 func TestInventoryWriteSuccessIsJSON(t *testing.T) {
 	for _, hx := range []bool{true, false} {
 		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
@@ -153,7 +140,6 @@ func TestInventoryWriteSuccessIsJSON(t *testing.T) {
 	}
 }
 
-// TestInventoryNativeWriteFailureIsJSON 原生分支的失败也是 JSON（不再有整页提示页）。
 func TestInventoryNativeWriteFailureIsJSON(t *testing.T) {
 	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
 	(&inventoryPageHandle{}).warehouseFormFail(c, errors.New(inventoryenums.ErrWarehouseCodeTaken))

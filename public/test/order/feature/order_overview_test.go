@@ -1,15 +1,5 @@
 package feature
 
-// order_overview_test.go — 概览页三块只读聚合（按天趋势 / 热销榜 / 状态计数）。
-//
-// 钉住四件事：
-//
-//	1. 按天趋势是**逐日连续**的（没有订单的那天补 0），且日期升序；
-//	2. 逐日相加必须等于同区间的汇总（DailySeries 与 SummaryByRange 共用一个口径 ——
-//	   两处一旦分叉，柱图加起来对不上 KPI，而两边都不报错）；
-//	3. 榜单只算「钱进来的单」，排序与名次由同一条 ORDER BY 决定，未付款/取消的商品不上榜；
-//	4. 「待处理 / 待发货」的口径由 service 解释一次（页面与 AI 不各自拼状态名）。
-
 import (
 	"context"
 	"testing"
@@ -20,10 +10,6 @@ import (
 	orderservice "go_wp/internal/module/order/service"
 )
 
-// mkOverviewOrder 落一单并返回它的自增 id（mkSummaryOrder 不回 id，而订单项要挂上去）。
-//
-// 不改 mkSummaryOrder 的签名去加返回值：它已被区间摘要与客户摘要两处调用，
-// 改签名会波及那些测试文件（同包私有函数的签名变更从来不是「只改一个文件」）。
 func mkOverviewOrder(t *testing.T, m *ordermodel.OrderModel, projectID, orderNo, status string, total int64, createdAt time.Time) uint64 {
 	t.Helper()
 	uid := uint64(9001)
@@ -44,7 +30,6 @@ func mkOverviewOrder(t *testing.T, m *ordermodel.OrderModel, projectID, orderNo,
 	return e.ID
 }
 
-// mkOverviewItem 落一条订单项（商品名与 SKU 是下单时刻的快照，与生产写入一致）。
 func mkOverviewItem(t *testing.T, im *ordermodel.OrderItemModel, orderID uint64, productID, name, sku string, qty int, lineTotal int64) {
 	t.Helper()
 	items := []*ordermodel.OrderItemEntity{{
@@ -65,18 +50,17 @@ func mkOverviewItem(t *testing.T, im *ordermodel.OrderItemModel, orderID uint64,
 	}
 }
 
-// TestOrderDailySeriesFillsMissingDays 逐日连续 + 补零 + 工程作用域。
 func TestOrderDailySeriesFillsMissingDays(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
 		return
 	}
 	const otherProject = "22222222-2222-2222-2222-222222222222"
-	// 9-02 两单（一单已付款、一单取消），9-04 一单已发货；9-01 / 9-03 / 9-05 没有订单。
+
 	mkSummaryOrder(t, m, summaryProjectA, "D-PAID", ordermodel.OrderStatusPaid, 9101, 1000, rangeTime(2))
 	mkSummaryOrder(t, m, summaryProjectA, "D-CANCEL", ordermodel.OrderStatusCancelled, 9102, 500, rangeTime(2))
 	mkSummaryOrder(t, m, summaryProjectA, "D-SHIP", ordermodel.OrderStatusShipped, 9103, 2000, rangeTime(4))
-	// 干扰项：别的工程同期的单。
+
 	mkSummaryOrder(t, m, otherProject, "D-OTHER", ordermodel.OrderStatusPaid, 9104, 9999, rangeTime(3))
 
 	res, err := svc.DailySeries(context.Background(), &orderdto.OrderDailySeriesReq{
@@ -112,7 +96,6 @@ func TestOrderDailySeriesFillsMissingDays(t *testing.T) {
 	}
 }
 
-// TestOrderDailySeriesSumsToOneRangeSummary 逐日相加 == 区间汇总（两个接口同口径）。
 func TestOrderDailySeriesSumsToOneRangeSummary(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -121,7 +104,7 @@ func TestOrderDailySeriesSumsToOneRangeSummary(t *testing.T) {
 	mkSummaryOrder(t, m, summaryProjectA, "S-PAID", ordermodel.OrderStatusPaid, 9201, 3000, rangeTime(2))
 	mkSummaryOrder(t, m, summaryProjectA, "S-COMPLETED", ordermodel.OrderStatusCompleted, 9202, 4000, rangeTime(3))
 	mkSummaryOrder(t, m, summaryProjectA, "S-REFUNDED", ordermodel.OrderStatusRefunded, 9203, 5000, rangeTime(4))
-	// 同一时刻的分界外干扰项：结束日次日。
+
 	mkSummaryOrder(t, m, summaryProjectA, "S-AFTER", ordermodel.OrderStatusPaid, 9204, 8888, rangeTime(6))
 
 	ctx := context.Background()
@@ -149,7 +132,6 @@ func TestOrderDailySeriesSumsToOneRangeSummary(t *testing.T) {
 	}
 }
 
-// TestOrderTopProductsRanksAndIgnoresUnpaidOrders 排序、名次、只算付款单、limit。
 func TestOrderTopProductsRanksAndIgnoresUnpaidOrders(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -161,7 +143,6 @@ func TestOrderTopProductsRanksAndIgnoresUnpaidOrders(t *testing.T) {
 	const productC = "33333333-3333-3333-3333-333333333333"
 	const productD = "44444444-4444-4444-4444-444444444444"
 
-	// A：两单共 5 件；B：一单 3 件；C：取消单 10 件（不该上榜）；D：待付款 20 件（不该上榜）。
 	o1 := mkOverviewOrder(t, m, summaryProjectA, "T-A1", ordermodel.OrderStatusPaid, 3000, rangeTime(2))
 	mkOverviewItem(t, im, o1, productA, "TEO 香水 50ml", "TEO-50-01", 3, 24000)
 	o2 := mkOverviewOrder(t, m, summaryProjectA, "T-A2", ordermodel.OrderStatusCompleted, 4000, rangeTime(3))
@@ -193,7 +174,6 @@ func TestOrderTopProductsRanksAndIgnoresUnpaidOrders(t *testing.T) {
 		t.Errorf("商品名与 SKU 应取订单行上的快照，实得 %q / %q", first.ProductName, first.SKU)
 	}
 
-	// limit 生效：只要 1 条时只回第一名，且名次仍是 1。
 	limited, err := svc.TopProducts(context.Background(), &orderdto.OrderTopProductsReq{
 		ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05", Limit: 1,
 	})
@@ -205,7 +185,6 @@ func TestOrderTopProductsRanksAndIgnoresUnpaidOrders(t *testing.T) {
 	}
 }
 
-// TestOrderStatusCountsExplainsPendingAndShipPending 状态计数与「待处理 / 待发货」口径。
 func TestOrderStatusCountsExplainsPendingAndShipPending(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -235,7 +214,6 @@ func TestOrderStatusCountsExplainsPendingAndShipPending(t *testing.T) {
 	}
 }
 
-// TestOrderOverviewRejectsBadRequest 三个只读聚合的参数校验（缺工程 / 缺区间）。
 func TestOrderOverviewRejectsBadRequest(t *testing.T) {
 	db, _, svc := newRangeFixture(t)
 	if db == nil {
@@ -293,11 +271,6 @@ func TestOrderOverviewRejectsBadRequest(t *testing.T) {
 	}
 }
 
-// TestOrderSoldQuantitySharesScopeWithTopProducts 商品销售总量与热销榜**同口径**。
-//
-// 这一条是这一批的核心判据：件数（KPI 卡）与榜单（排行榜）摆在同一个页面上，
-// 两张卡的数字必须自洽 —— 榜单里几个商品的销量加起来就该是总量。两条 SQL 各写一份
-// WHERE 的失败模式是「榜单排除了取消单、总量忘了排除」，两个数字互相矛盾而每一处单独看都对。
 func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -309,8 +282,6 @@ func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
 	const productC = "33333333-3333-3333-3333-333333333333"
 	const productD = "44444444-4444-4444-4444-444444444444"
 
-	// 与热销榜用例同一组数据：A 两单共 5 件、B 一单 3 件，
-	// C 取消单 10 件、D 待付款 20 件（两者都不该计入）。
 	o1 := mkOverviewOrder(t, m, summaryProjectA, "Q-A1", ordermodel.OrderStatusPaid, 3100, rangeTime(2))
 	mkOverviewItem(t, im, o1, productA, "TEO 香水 50ml", "TEO-50-01", 3, 24000)
 	o2 := mkOverviewOrder(t, m, summaryProjectA, "Q-A2", ordermodel.OrderStatusCompleted, 3200, rangeTime(3))
@@ -321,7 +292,7 @@ func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
 	mkOverviewItem(t, im, o4, productC, "取消的商品", "CAN-01", 10, 100000)
 	o5 := mkOverviewOrder(t, m, summaryProjectA, "Q-D1", ordermodel.OrderStatusPending, 3500, rangeTime(4))
 	mkOverviewItem(t, im, o5, productD, "还没付款的商品", "PEN-01", 20, 200000)
-	// 干扰项：同工程但区间之外（次日）的单；别的工程的单。
+
 	o6 := mkOverviewOrder(t, m, summaryProjectA, "Q-AFTER", ordermodel.OrderStatusPaid, 3600, rangeTime(6))
 	mkOverviewItem(t, im, o6, productA, "TEO 香水 50ml", "TEO-50-01", 7, 56000)
 	const otherProject = "22222222-2222-2222-2222-222222222222"
@@ -340,12 +311,11 @@ func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
 	if res.OrderCount != 3 {
 		t.Errorf("贡献订单数 = %d，期望 3（A 两单 + B 一单）", res.OrderCount)
 	}
-	// 回显生效窗口：页面标题要写「哪一段」，写请求值可能在收敛后变成一句错的说明。
+
 	if res.From != "2026-09-01" || res.To != "2026-09-05" {
 		t.Errorf("窗口回显 = %s ~ %s，期望 2026-09-01 ~ 2026-09-05", res.From, res.To)
 	}
 
-	// **自洽**：榜单里各商品的销量之和 == 总量。
 	top, err := svc.TopProducts(context.Background(), &orderdto.OrderTopProductsReq{
 		ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05", Limit: 50,
 	})
@@ -361,7 +331,6 @@ func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
 	}
 }
 
-// 编译期断言：service 仍满足 contract 的两个只读聚合接口（装配处靠它接线）。
 var (
 	_ interface {
 		DailySeries(context.Context, *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error)

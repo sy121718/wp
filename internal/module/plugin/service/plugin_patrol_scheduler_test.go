@@ -1,12 +1,5 @@
 package pluginservice
 
-// plugin_patrol_scheduler_test.go — 调度循环的驱动语义（不连库、不碰真实存储目录）。
-//
-// 为什么测这里：目标方法 PatrolArtifacts 要数据库与文件系统（分类判据本身已有
-// plugin_patrol_test.go 覆盖 classifyPatrol）；本次新增的是**调度语义** ——
-// 首跑等不等间隔、注入的间隔有没有被用上、单轮 panic 会不会把进程带走。
-// 三件事错了的表现都是「看起来在跑、残片一直没人发现」。
-
 import (
 	"context"
 	"sync/atomic"
@@ -14,7 +7,6 @@ import (
 	"time"
 )
 
-// TestPluginPatrolLoopFirstRunImmediately 首跑不等间隔（样板语义：先跑一次再等 ticker）。
 func TestPluginPatrolLoopFirstRunImmediately(t *testing.T) {
 	calls := make(chan struct{}, 8)
 	stop := runPluginPatrolLoop(func() { calls <- struct{}{} }, time.Hour)
@@ -32,7 +24,6 @@ func TestPluginPatrolLoopFirstRunImmediately(t *testing.T) {
 	}
 }
 
-// TestPluginPatrolLoopIntervalDrives 可注入间隔真的生效。
 func TestPluginPatrolLoopIntervalDrives(t *testing.T) {
 	var calls atomic.Int32
 	stop := runPluginPatrolLoop(func() { calls.Add(1) }, 10*time.Millisecond)
@@ -44,14 +35,12 @@ func TestPluginPatrolLoopIntervalDrives(t *testing.T) {
 	}
 }
 
-// TestPluginPatrolLoopPanicDoesNotKillLoop 单轮动作 panic 不能带走进程，也不能让循环停下。
 func TestPluginPatrolLoopPanicDoesNotKillLoop(t *testing.T) {
 	var calls atomic.Int32
 	var panicked atomic.Bool
 	stop := runPluginPatrolLoop(func() {
 		calls.Add(1)
-		// 只让**首跑** panic：后续轮次必须照常执行 —— 这证明的是「recover 之后循环还活着」，
-		// 而不是「每一轮都在 panic、每一轮都被接住」（后者会让断言退化成只测了 recover 本身）。
+
 		if panicked.CompareAndSwap(false, true) {
 			panic("模拟目标方法内部 panic")
 		}
@@ -64,7 +53,6 @@ func TestPluginPatrolLoopPanicDoesNotKillLoop(t *testing.T) {
 	}
 }
 
-// TestPluginPatrolRoundSurvivesNilDeps 依赖缺失（nil model）时一轮巡检不 panic，而是记为失败。
 func TestPluginPatrolRoundSurvivesNilDeps(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -77,7 +65,6 @@ func TestPluginPatrolRoundSurvivesNilDeps(t *testing.T) {
 	}
 }
 
-// TestPluginPatrolRoundInconsistent 四类计数的汇总口径：只有真的存在不一致才 > 0。
 func TestPluginPatrolRoundInconsistent(t *testing.T) {
 	if n := (pluginPatrolRoundResult{}).inconsistent(); n != 0 {
 		t.Fatalf("空结果的不一致数应为 0，实际 %d（会让每一轮都报「有不一致」）", n)
@@ -88,7 +75,6 @@ func TestPluginPatrolRoundInconsistent(t *testing.T) {
 	}
 }
 
-// TestPluginPatrolSchedulerNilService 入口在 nil service 上直接返回（不起 goroutine、不 panic）。
 func TestPluginPatrolSchedulerNilService(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -1,13 +1,5 @@
 package migrations
 
-// register_product_publish_history_i18n.go — 673b 的注册项（B11 发布历史）。
-//
-// 判据逐条枚举本批 15 个 key 的 en-US 行（门槛 COUNT >= 15）。挑 en-US 而不是 zh-CN：
-// 中文行与模板里的 fallback 同形，容易被别处顺手加上，按 zh-CN 计数会让门槛在「本批还没跑」
-// 时就成立、整批词条被静默跳过（432 / 643 / 660 / 661 的同一理由）。
-//
-// 不用前缀 LIKE：将来任何新增的 admin.products.publish.history.* 都会把这条门槛提前满足。
-
 import "sync"
 
 func init() { registerProductPublishHistoryI18n() }

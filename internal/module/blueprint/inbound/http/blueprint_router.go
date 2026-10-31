@@ -1,8 +1,5 @@
 package blueprinthttp
 
-// blueprint_router.go — blueprint 模块路由自装配（0-B）。
-// 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
-
 import (
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	blueprintmodel "go_wp/internal/module/blueprint/model"
@@ -12,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// SetupBlueprintRoutes 装配 blueprint 模块路由，返回模块契约。
 func SetupBlueprintRoutes(rg *permission.RouteGroup, db *gorm.DB) blueprintcontract.BlueprintService {
 	svc := blueprintservice.NewService(blueprintmodel.NewModel(db))
 	handle := NewHandle(svc)

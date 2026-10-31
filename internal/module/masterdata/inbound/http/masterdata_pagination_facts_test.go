@@ -1,13 +1,5 @@
 package masterdatahttp
 
-// masterdata_pagination_facts_test.go — task-116（P3-B3）：变更记录页的分页消费者迁到
-// pkg/pagination 事实层后的 handler 级判据。
-//
-// 判据是「渲染字节不变」：迁移前 handler 用 BuildPagination 预制成品（信息行句子 + 链接），
-// 迁移后只交事实（pagination.Page），句子与链接由 admin/partials/pagination.html 渲染。
-// 期望值用 url.Values **独立**拼出（不拿生产 helper 的结果当期望），基址必须带筛选条件 ——
-// 翻页不丢条件（本页的筛选栏字段最多，最容易漏）。
-
 import (
 	"context"
 	"html"
@@ -30,7 +22,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// mdPagChanges 变更记录契约桩：只实现页面会调用的四个读方法（其余打到嵌入的 nil 接口上 panic）。
 type mdPagChanges struct {
 	masterdatacontract.MasterDataService
 	total int64
@@ -52,7 +43,6 @@ func (s *mdPagChanges) CountEntities(context.Context, *masterdatadto.ListEntityR
 	return 0, nil
 }
 
-// mdPagProjects 工程契约桩：只实现 List。
 type mdPagProjects struct {
 	projectcontract.ProjectService
 }
@@ -61,15 +51,14 @@ func (mdPagProjects) List(context.Context) ([]projectcontract.ProjectResp, error
 	return []projectcontract.ProjectResp{{ID: "p-1", Name: "演示站"}}, nil
 }
 
-// mdPagRender 用真实渲染器跑一次变更记录页（handler → 模板），返回响应体。
 func mdPagRender(t *testing.T, changes *mdPagChanges, query string) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	handle := NewMasterDataChangePageHandle(changes, mdPagProjects{})
 	engine := gin.New()
-	// 模板根相对包目录：internal/module/masterdata/inbound/http → internal/templates。
+
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	// 不注入权限上下文：本测试只钉分页事实与链接字节。
+
 	engine.GET("/admin/masterdata/changes",
 		adminui.PageSlot(MasterDataChangesTemplate),
 		handle.MasterDataChangesPage)
@@ -85,7 +74,6 @@ func mdPagRender(t *testing.T, changes *mdPagChanges, query string) string {
 	return body
 }
 
-// mdPagNav 取页面里的分页条整块。
 func mdPagNav(t *testing.T, body string) string {
 	t.Helper()
 	i := strings.Index(body, `<nav class="pagination"`)
@@ -99,7 +87,6 @@ func mdPagNav(t *testing.T, body string) string {
 	return body[i : i+j+len("</nav>")]
 }
 
-// mdPagHrefs 分页条里全部 href（HTML 还原、去重、排序）。
 func mdPagHrefs(nav string) []string {
 	re := regexp.MustCompile(`href="([^"]*)"`)
 	seen := map[string]bool{}
@@ -116,12 +103,10 @@ func mdPagHrefs(nav string) []string {
 	return out
 }
 
-// TestMasterDataChangesPaginationIsFactsDriven 链接字节与基址筛选逐条一致。
 func TestMasterDataChangesPaginationIsFactsDriven(t *testing.T) {
 	body := mdPagRender(t, &mdPagChanges{total: 45}, "?project=p-1&keyword=价格&page=2&limit=20")
 	nav := mdPagNav(t, body)
 
-	// FilterBaseURL 只带非空筛选：project 恒在，keyword 非空 ⇒ 两条都进基址（url.Values 字典序）。
 	base := "/admin/masterdata/changes?" + url.Values{
 		"project": {"p-1"}, "keyword": {"价格"},
 	}.Encode()
@@ -147,7 +132,6 @@ func TestMasterDataChangesPaginationIsFactsDriven(t *testing.T) {
 	}
 }
 
-// TestMasterDataChangesSinglePageRendersNoPagination 单页不渲染分页条。
 func TestMasterDataChangesSinglePageRendersNoPagination(t *testing.T) {
 	body := mdPagRender(t, &mdPagChanges{total: 5}, "?project=p-1&page=1&limit=20")
 	if strings.Contains(body, `<nav class="pagination"`) {

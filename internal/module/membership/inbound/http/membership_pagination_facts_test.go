@@ -1,16 +1,5 @@
 package membershiphttp
 
-// membership_pagination_facts_test.go — task-116（P3-B3）：会员归属页的分页消费者迁到
-// pkg/pagination 事实层后的 handler 级判据。
-//
-// 判据是「数据与链接字节不变」：迁移前 handler 预制成品（信息行句子 + 链接），
-// 迁移后只交事实（pagination.Page），句子与链接由 admin/partials/pagination.html 渲染。
-// 期望值用 url.Values **独立**拼出（不拿生产 helper 的结果当期望）。
-//
-// 本页独有的两处口径：
-//   - 基址带工程与筛选（tierId / source / userId），翻页不丢条件；
-//   - 装载失败那一档仍然渲染完整页面，但**不注入**分页事实（零值 Page ⇒ 不渲染分页条）。
-
 import (
 	"context"
 	"go_wp/internal/adminui"
@@ -33,8 +22,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// mbPagSvc 归属页只用四个服务方法（其余方法打到嵌入的 nil 接口上 panic —— 那正是
-// 「不该被调用」这条断言想要的表现）。
 type mbPagSvc struct {
 	membershipcontract.MembershipService
 	tiers  []*membershipdto.TierResp
@@ -56,7 +43,6 @@ func (s *mbPagSvc) ListAssignments(context.Context, *membershipdto.ListAssignmen
 	return s.rows, nil
 }
 
-// mbPagProjects 工程契约桩：只实现 List（归属页不查工程详情）。
 type mbPagProjects struct {
 	projectcontract.ProjectService
 	items []projectcontract.ProjectResp
@@ -66,7 +52,6 @@ func (s mbPagProjects) List(context.Context) ([]projectcontract.ProjectResp, err
 	return s.items, nil
 }
 
-// mbPagRender 用真实渲染器跑一次归属页（handler → 模板），返回响应体。
 func mbPagRender(t *testing.T, svc *mbPagSvc, query string) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -74,10 +59,10 @@ func mbPagRender(t *testing.T, svc *mbPagSvc, query string) string {
 		{ID: "p-1", Name: "演示站"},
 	}})
 	engine := gin.New()
-	// 模板根相对包目录：internal/module/membership/inbound/http → internal/templates。
+
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/membership/assignments", adminui.PageSlot(MembershipAssignmentsPageTemplate), func(c *gin.Context) {
-		// 不注入权限上下文：本测试只钉分页事实与链接字节，按钮的可见性由模块既有渲染测试覆盖。
+
 		handle.MembershipAssignmentsPage(c)
 	})
 	rec := httptest.NewRecorder()
@@ -92,7 +77,6 @@ func mbPagRender(t *testing.T, svc *mbPagSvc, query string) string {
 	return body
 }
 
-// mbPagNav 取页面里的分页条整块。
 func mbPagNav(t *testing.T, body string) string {
 	t.Helper()
 	i := strings.Index(body, `<nav class="pagination"`)
@@ -106,7 +90,6 @@ func mbPagNav(t *testing.T, body string) string {
 	return body[i : i+j+len("</nav>")]
 }
 
-// mbPagHrefs 分页条里全部 href（HTML 还原、去重、排序）。
 func mbPagHrefs(nav string) []string {
 	re := regexp.MustCompile(`href="([^"]*)"`)
 	seen := map[string]bool{}
@@ -123,10 +106,6 @@ func mbPagHrefs(nav string) []string {
 	return out
 }
 
-// TestMembershipAssignmentsPaginationIsFactsDriven 链接字节与基址筛选逐条一致。
-//
-// 两种筛选形态都测：值为 0 / 空的筛选**不进基址**（itoa64/itoaU64 把 0 变空串，
-// FilterBaseURL 再丢空值），非空筛选逐条进基址 —— 翻页不丢条件。
 func TestMembershipAssignmentsPaginationIsFactsDriven(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -176,7 +155,6 @@ func TestMembershipAssignmentsPaginationIsFactsDriven(t *testing.T) {
 	}
 }
 
-// TestMembershipAssignmentsSinglePageRendersNoPagination 单页不渲染分页条。
 func TestMembershipAssignmentsSinglePageRendersNoPagination(t *testing.T) {
 	svc := &mbPagSvc{total: 5}
 	body := mbPagRender(t, svc, "?project=p-1&page=1&limit=20")
@@ -185,7 +163,6 @@ func TestMembershipAssignmentsSinglePageRendersNoPagination(t *testing.T) {
 	}
 }
 
-// TestMembershipAssignmentsLoadFailureInjectsNoPagination 装载失败档：页面完整，但没有分页条。
 func TestMembershipAssignmentsLoadFailureInjectsNoPagination(t *testing.T) {
 	svc := &mbPagSvc{total: 45}
 	gin.SetMode(gin.TestMode)

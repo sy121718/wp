@@ -1,14 +1,5 @@
 package unit
 
-// partition_test.go — 时间序列表分区（审计 DB-004）的护栏。
-//
-// 迁移 173 把三张只增表改成按月 RANGE 分区；本文件盯的是「分区真的在工作」，
-// 而不是「迁移跑过了」：数据要落到对应月份的分区、时间窗查询要走分区裁剪、
-// 过期分区能整块摘下来归档、append-only 触发器在分区上依然拦得住。
-//
-// 另两条容易忽略的边界也固化：DEFAULT 分区兜底（缺窗口不丢数据）、
-// EnsureAhead 幂等（重复执行不报错也不产生重复分区）。
-
 import (
 	"context"
 	"strings"
@@ -22,7 +13,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newPartitionFixture 隔离 PG schema + 生产迁移（含 173 的分区改造）。
 func newPartitionFixture(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -36,7 +26,6 @@ func newPartitionFixture(t *testing.T) *gorm.DB {
 	return db
 }
 
-// relkind 查询一张关系的类型（p = 分区父表，r = 普通表）。
 func relkind(t *testing.T, db *gorm.DB, name string) string {
 	t.Helper()
 	var kind string
@@ -47,7 +36,6 @@ func relkind(t *testing.T, db *gorm.DB, name string) string {
 	return kind
 }
 
-// TestThreeTablesArePartitioned 三张只增表都是分区父表。
 func TestThreeTablesArePartitioned(t *testing.T) {
 	db := newPartitionFixture(t)
 	for _, tb := range partition.Tables {
@@ -60,7 +48,6 @@ func TestThreeTablesArePartitioned(t *testing.T) {
 	}
 }
 
-// TestEnsureAheadCreatesPartitions 分区自动创建（审计验收第一条）。
 func TestEnsureAheadCreatesPartitions(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
@@ -95,7 +82,6 @@ func TestEnsureAheadCreatesPartitions(t *testing.T) {
 	}
 }
 
-// TestInsertRoutesToMonthPartition 数据按时间落到对应月份的分区。
 func TestInsertRoutesToMonthPartition(t *testing.T) {
 	db := newPartitionFixture(t)
 	target := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
@@ -115,7 +101,6 @@ func TestInsertRoutesToMonthPartition(t *testing.T) {
 	}
 }
 
-// TestPartitionPruning 时间窗查询走分区裁剪（审计验收第二条）。
 func TestPartitionPruning(t *testing.T) {
 	db := newPartitionFixture(t)
 	for _, stmt := range []string{
@@ -140,7 +125,6 @@ func TestPartitionPruning(t *testing.T) {
 	}
 }
 
-// TestDetachBeforeKeepsData 过期分区可整块摘下归档（审计验收第三条）。
 func TestDetachBeforeKeepsData(t *testing.T) {
 	db := newPartitionFixture(t)
 	ctx := context.Background()
@@ -176,7 +160,6 @@ func TestDetachBeforeKeepsData(t *testing.T) {
 	_ = db.Exec("DROP TABLE IF EXISTS page_views_2025_01").Error
 }
 
-// TestAppendOnlyTriggerAppliesToPartitions append-only 触发器在分区上依然拦得住。
 func TestAppendOnlyTriggerAppliesToPartitions(t *testing.T) {
 	db := newPartitionFixture(t)
 	if err := db.Exec("INSERT INTO master_data_changes (project_id, entity_type, entity_id, action, field, new_value)" +
@@ -191,7 +174,6 @@ func TestAppendOnlyTriggerAppliesToPartitions(t *testing.T) {
 	}
 }
 
-// TestDefaultPartitionCatchesMissingWindow 缺窗口时落 DEFAULT 分区而不是写失败。
 func TestDefaultPartitionCatchesMissingWindow(t *testing.T) {
 	db := newPartitionFixture(t)
 	far := time.Date(2099, 7, 15, 10, 0, 0, 0, time.UTC)
@@ -207,12 +189,6 @@ func TestDefaultPartitionCatchesMissingWindow(t *testing.T) {
 	}
 }
 
-// TestMigrationMigratesLegacyData 既有数据完整迁移（审计验收第四条）。
-//
-// 用例先把一张「改造前形状」的 page_views（无分区、主键只有 id）造出来并塞入数据，
-// 再执行迁移 173 的 SQL，然后断言：数据一行不少地出现在新表里、且落在正确的月分区。
-// 这条不能只靠「迁移跑通了」代替 —— 迁移里唯一有数据风险的动作就是那一步 INSERT ... SELECT，
-// 而它在生产上跑的时候，出错的方式是「少了几行」而不是报错。
 func TestMigrationMigratesLegacyData(t *testing.T) {
 	db := newPartitionFixture(t)
 	var sqlText string
@@ -225,7 +201,6 @@ func TestMigrationMigratesLegacyData(t *testing.T) {
 		t.Fatal("迁移 173 未注册")
 	}
 
-	// 退回改造前的形状：删掉分区表（含分区），建一张普通表并写数据。
 	if err := db.Exec("DROP TABLE IF EXISTS page_views_default").Error; err != nil {
 		t.Fatalf("删除 DEFAULT 分区失败: %v", err)
 	}
@@ -256,9 +231,6 @@ func TestMigrationMigratesLegacyData(t *testing.T) {
 		}
 	}
 
-	// 173 写于 205（DB-019 时间列改名）**之前**，它的分区改造语句引用 created_at；
-	// 本用例的库由全量迁移建出（列名已是 create_time），所以要重放这份历史 SQL 得先做
-	// 一次等价替换。生产里 173 在迁移序列中总是早于 205，不存在这层替换。
 	sqlText = strings.ReplaceAll(sqlText, "created_at", "create_time")
 	if err := db.Exec(sqlText).Error; err != nil {
 		t.Fatalf("执行迁移 173 失败: %v", err)
@@ -271,11 +243,7 @@ func TestMigrationMigratesLegacyData(t *testing.T) {
 	if total != 3 {
 		t.Fatalf("既有数据应完整迁移（3 行），实际 %d 行", total)
 	}
-	// 落点：分区键是 viewed_at，而 173 建分区的月份范围取自**搬数据之前的新表**（那一刻它是空的），
-	// 于是范围以 now() 所在月为起点向后铺 —— 数据所在的 2026-09 不会被预建，那三行落进
-	// DEFAULT 分区。这是迁移的历史行为（生产同此，数据一行不丢），所以这里断言「数据落进了
-	// 某个 partition」，而不是「落在某个具体月分区」：后者会随跑测试的日历月份变化
-	// （9 月绿、10 月红），把一条与代码无关的时钟依赖钉进回归。
+
 	var landed int64
 	if err := db.Raw("SELECT COUNT(*) FROM page_views_default WHERE path LIKE '/legacy-%'").Scan(&landed).Error; err != nil {
 		t.Fatalf("统计分区数据失败: %v", err)
@@ -283,7 +251,7 @@ func TestMigrationMigratesLegacyData(t *testing.T) {
 	if landed != 3 {
 		t.Fatalf("既有数据应完整落进一个 partition，实际 %d 行", landed)
 	}
-	// 旧表已清理，不留同名残留。
+
 	if kind := relkind(t, db, "page_views_legacy"); kind != "" {
 		t.Fatalf("旧表应已删除，实际仍存在（relkind=%q）", kind)
 	}

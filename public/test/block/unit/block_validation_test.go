@@ -14,8 +14,6 @@ import (
 	blockmodel "go_wp/internal/module/block/model"
 )
 
-// TestBlockKindNormalization 通过 Create 落库 kind 间接覆盖私有 normalizeKind：
-// 空值默认 block；header/footer 精确识别（TrimSpace 后）；非法 kind 一律拒绝而非静默回退。
 func TestBlockKindNormalization(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -46,8 +44,6 @@ func TestBlockKindNormalization(t *testing.T) {
 		})
 	}
 
-	// 观察点：normalizeKind 大小写敏感（只 TrimSpace，不做 EqualFold）。
-	// 未知值与大写/混合大小写不再静默回退 block，而是拒绝（ErrInvalidKind）。
 	rejectCases := []struct {
 		name string
 		raw  string
@@ -71,8 +67,6 @@ func TestBlockKindNormalization(t *testing.T) {
 	}
 }
 
-// TestBlockDocumentValidation 通过 Create 间接覆盖私有 validateDocument：
-// 合法文档规范化入库（默认文档、显式文档）；非法/恶意 JSON 一律拒绝。
 func TestBlockDocumentValidation(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -135,7 +129,6 @@ func TestBlockDocumentValidation(t *testing.T) {
 	})
 }
 
-// TestBlockDocumentValidationOnUpdate Update 路径的文档校验：非法文档拒绝且数据不变。
 func TestBlockDocumentValidationOnUpdate(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -167,14 +160,12 @@ func TestBlockDocumentValidationOnUpdate(t *testing.T) {
 	}
 }
 
-// TestBlockEdgeInputs 边界与恶意输入：超长名称/文档、注入字符、Unicode。
 func TestBlockEdgeInputs(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
 	t.Run("VeryLongNameAccepted", func(t *testing.T) {
-		// 观察点：service 层不校验名称长度（DTO binding max=100 只作用 HTTP 层），
-		// 超长名称可直接入库。
+
 		long := strings.Repeat("名", 2000)
 		res, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: e.projectID, Name: long})
 		if err != nil {
@@ -196,7 +187,7 @@ func TestBlockEdgeInputs(t *testing.T) {
 	})
 
 	t.Run("NameWithInjectionCharactersAccepted", func(t *testing.T) {
-		// 观察点：名称不做字符过滤（存储层职责之外），注入字符按原文保存。
+
 		res, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: e.projectID, Name: "<script>alert(1)</script>"})
 		if err != nil {
 			t.Fatalf("含注入字符名称创建: %v", err)
@@ -228,8 +219,7 @@ func TestBlockEdgeInputs(t *testing.T) {
 	})
 
 	t.Run("NodeNameWithScriptAccepted", func(t *testing.T) {
-		// 节点编辑元数据 name 不做脚本过滤（仅长度校验），语义上原文保存；
-		// 注意 validateDocument 经 json.Marshal 规范化会把 < 转义为 \u003c，需按语义断言。
+
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"n1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}},"name":"<script>alert(1)</script>"}]}`
 		res, err := e.svc.Create(ctx, &blockdto.CreateReq{
 			ProjectID: e.projectID, Name: "脚本节点", Document: json.RawMessage(doc),
@@ -251,7 +241,7 @@ func TestBlockEdgeInputs(t *testing.T) {
 	})
 
 	t.Run("WhitespaceKindEquivalentToNoFilter", func(t *testing.T) {
-		// 空白 kind 经 TrimSpace 变空串，语义等价于不传 kind（无过滤）。
+
 		all, err := e.svc.List(ctx, &blockdto.ListReq{ProjectID: e.projectID})
 		if err != nil {
 			t.Fatalf("全量列表应无错误: %v", err)

@@ -1,9 +1,3 @@
-// Package scaffold 插件脚手架：`plugin init <name>` 生成标准插件模板工程
-// （AGENTS.md §5，对标 strapi generate / GrapesJS 插件模板）。
-//
-// 生成即合法：manifest 可过 plugincomp.ParseManifest，模板文件命名符合
-// components/{template}.jet 约定，migrations 示例含 CREATE SCHEMA + 建表。
-// 开发者拿到模板改内容 → 打包 zip → 上传安装 → 组件进工作台。
 package scaffold
 
 import (
@@ -14,12 +8,8 @@ import (
 	"strings"
 )
 
-// idRe 插件 ID 白名单（与 plugincomp.idRe 同规则：小写字母开头）。
 var idRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{1,60}$`)
 
-// Files 生成模板文件集合（相对插件根目录的路径 → 内容，不含 name 前缀；
-// Write 负责拼 name/ 落盘）。
-// name 为插件 ID（小写字母开头，如 "marketing"）。
 func Files(name string) (map[string]string, error) {
 	if !idRe.MatchString(name) {
 		return nil, fmt.Errorf("插件名 %q 非法（小写字母开头，2~61 位，仅字母数字下划线连字符）", name)
@@ -35,7 +25,6 @@ func Files(name string) (map[string]string, error) {
 	}, nil
 }
 
-// Write 落盘到当前目录（生成 name/ 目录；已存在则报错不覆盖）。
 func Write(name string) error {
 	files, err := Files(name)
 	if err != nil {
@@ -56,7 +45,6 @@ func Write(name string) error {
 	return nil
 }
 
-// manifestJSON 生成 manifest（1 个示例组件 + 1 个示例预设 + migrations 骨架）。
 func manifestJSON(name, label, comp string) string {
 	return fmt.Sprintf(`{
   "id": %q,
@@ -99,7 +87,6 @@ func manifestJSON(name, label, comp string) string {
 `, name, label, comp, label, comp+".jet", name+"-hero", label+" Hero")
 }
 
-// componentTemplate 示例组件 Jet 模板（{{.V.title}} 走 nodeView.V，默认转义）。
 func componentTemplate(label string) string {
 	return fmt.Sprintf(`<article class="{{ .Classes }}">
   <h3>{{ .V.title }}</h3>
@@ -108,7 +95,6 @@ func componentTemplate(label string) string {
 `)
 }
 
-// migrationSQL 示例迁移（CREATE SCHEMA + 建表，AGENTS.md §8 约定）。
 func migrationSQL(name string) string {
 	return fmt.Sprintf(`-- 001_init.sql — %s 插件 L1 数据层初始化
 CREATE SCHEMA IF NOT EXISTS plugin_%s;
@@ -121,7 +107,6 @@ CREATE TABLE IF NOT EXISTS plugin_%s.demo_records (
 `, name, name, name)
 }
 
-// readme 打包上传说明。
 func readme(name string) string {
 	return fmt.Sprintf(`# %s 插件
 
@@ -140,7 +125,6 @@ func readme(name string) string {
 `, title(name), name, name, name)
 }
 
-// title 插件显示名：连字符/下划线分词首字母大写（缺省回退原名）。
 func title(name string) string {
 	words := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' })
 	for i, w := range words {

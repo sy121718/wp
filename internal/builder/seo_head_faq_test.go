@@ -5,13 +5,6 @@ import (
 	"testing"
 )
 
-// seo_head_faq_test.go — FAQ 结构化数据的 head 侧行为（审计 SEO-006）。
-//
-// FAQPage 的数据来自 core.faq 组件（同源问答，见 components/faq/jsonld.go）。
-// head 侧只需要做一件事：不要在 schemaType=faq 时再输出一个没有 mainEntity 的空壳 ——
-// 两个同类型节点里的那个空壳，在 Search Console 里是「无效结构化数据」。
-
-// TestSEOHeadFAQSchemaTypeHasNoEmptyShell schemaType=faq 时不输出 FAQPage 空壳。
 func TestSEOHeadFAQSchemaTypeHasNoEmptyShell(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test")
 
@@ -24,7 +17,6 @@ func TestSEOHeadFAQSchemaTypeHasNoEmptyShell(t *testing.T) {
 	}
 }
 
-// TestSEOHeadFAQSchemaTypeNotHomeStillPageLevel schemaType=faq 的首页也不因此产出站点级 FAQ 断言。
 func TestSEOHeadFAQSchemaTypeNotHomeStillPageLevel(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test")
 

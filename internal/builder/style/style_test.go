@@ -1,8 +1,5 @@
 package style
 
-// style 引擎测试：表驱动编译语义 + 确定性（同一输入两次编译字节相同）+
-// 注入防护（选择器/属性名/值三面）+ fuzz（随机 props 不 panic 且确定）。
-
 import (
 	"strings"
 	"testing"
@@ -10,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// compileOnce 便捷封装：编译并返回 CSS 字符串。
 func compileOnce(t *testing.T, nodeID string, props map[string]any, s *Schema) string {
 	t.Helper()
 	b := &core.CSSBuckets{}
@@ -20,7 +16,6 @@ func compileOnce(t *testing.T, nodeID string, props map[string]any, s *Schema) s
 	return b.String()
 }
 
-// TestCompileBasicBindings 属性绑定与静态声明：选择器、声明拼接、跳空值。
 func TestCompileBasicBindings(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Decls: [][2]string{
@@ -30,7 +25,7 @@ func TestCompileBasicBindings(t *testing.T) {
 		Bindings: []Binding{
 			{Prop: "background", From: "bgColor"},
 			{Prop: "border-radius", From: "radius"},
-			{Prop: "color", From: "unset"}, // 控件未设置：跳过
+			{Prop: "color", From: "unset"},
 		},
 	}}}
 	got := compileOnce(t, "card-1", map[string]any{"bgColor": "#fff", "radius": "12px"}, s)
@@ -45,26 +40,24 @@ func TestCompileBasicBindings(t *testing.T) {
 	}
 }
 
-// TestCompileVariantWhen 条件变体：命中/不命中/值不匹配。
 func TestCompileVariantWhen(t *testing.T) {
 	s := &Schema{Rules: []Rule{
 		{When: "style=raised", Decls: [][2]string{{"box-shadow", "0 8px 24px rgba(0,0,0,.12)"}}},
 	}}
-	// 命中。
+
 	if got := compileOnce(t, "c-1", map[string]any{"style": "raised"}, s); !strings.Contains(got, "box-shadow") {
 		t.Fatalf("条件命中应输出声明: %s", got)
 	}
-	// 不命中：无输出。
+
 	if got := compileOnce(t, "c-1", map[string]any{"style": "flat"}, s); got != "" {
 		t.Fatalf("条件不命中不应有输出: %s", got)
 	}
-	// 键缺失：不命中。
+
 	if got := compileOnce(t, "c-1", map[string]any{}, s); got != "" {
 		t.Fatalf("键缺失应视为不命中: %s", got)
 	}
 }
 
-// TestCompilePseudoAndTarget 伪类与子元素选择器（受控拼装）。
 func TestCompilePseudoAndTarget(t *testing.T) {
 	s := &Schema{Rules: []Rule{
 		{Pseudo: "hover", Bindings: []Binding{{Prop: "transform", From: "lift", Prefix: "translateY(", Suffix: ")"}}},
@@ -82,7 +75,6 @@ func TestCompilePseudoAndTarget(t *testing.T) {
 	}
 }
 
-// TestCompileResponsive 断点覆盖：tablet/mobile 进对应媒体查询。
 func TestCompileResponsive(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Bindings: []Binding{{Prop: "padding", From: "pad"}},
@@ -103,7 +95,6 @@ func TestCompileResponsive(t *testing.T) {
 	}
 }
 
-// TestCompilePropValueNormalization props 值归一：number → 字符串（16 而非 16.0）。
 func TestCompilePropValueNormalization(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Bindings: []Binding{{Prop: "gap", From: "n"}, {Prop: "opacity", From: "f"}},
@@ -114,7 +105,6 @@ func TestCompilePropValueNormalization(t *testing.T) {
 	}
 }
 
-// TestCompileDeterministic 确定性：同一 schema + props 两次编译字节相同。
 func TestCompileDeterministic(t *testing.T) {
 	s := &Schema{Rules: []Rule{
 		{Decls: [][2]string{{"display", "grid"}}, Bindings: []Binding{{Prop: "gap", From: "gap"}}},
@@ -129,15 +119,14 @@ func TestCompileDeterministic(t *testing.T) {
 	}
 }
 
-// TestCompileUnsafeBindingValue 防御深度：绑定值注入（分号/外联 url）返回错误。
 func TestCompileUnsafeBindingValue(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Bindings: []Binding{{Prop: "background", From: "color"}},
 	}}}
 	for _, evil := range []string{
-		"red;background:url(https://evil.com/x)", // 分号 + 外联
-		"url(//evil.com/a.gif)",                  // 协议相对外联
-		"} .sky-c-other { display:none",          // 花括号逃逸
+		"red;background:url(https://evil.com/x)",
+		"url(//evil.com/a.gif)",
+		"} .sky-c-other { display:none",
 	} {
 		b := &core.CSSBuckets{}
 		if err := Compile("x-1", map[string]any{"color": evil}, s, b); err == nil {
@@ -146,7 +135,6 @@ func TestCompileUnsafeBindingValue(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsBadSchema schema 校验拒绝：属性名/选择器/伪类/断点/静态值。
 func TestValidateRejectsBadSchema(t *testing.T) {
 	cases := []struct {
 		name string
@@ -170,7 +158,6 @@ func TestValidateRejectsBadSchema(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsLegalSchema 合法 schema 通过校验。
 func TestValidateAcceptsLegalSchema(t *testing.T) {
 	s := &Schema{Rules: []Rule{
 		{
@@ -179,8 +166,7 @@ func TestValidateAcceptsLegalSchema(t *testing.T) {
 			Bindings: []Binding{{Prop: "transform", From: "lift", Prefix: "translateY(", Suffix: ")"}},
 		},
 		{
-			// 断点覆盖挂在普通规则上：hover / hover-none / active 走专用桶，没有断点维度
-			// （同时声明会被 Validate 拒绝，见 style_rules_test.go）。
+
 			Decls: [][2]string{{"font-size", "14px"}},
 			Breakpoints: map[string][][2]string{
 				core.BreakpointMobile: {{"font-size", "12px"}},
@@ -192,7 +178,6 @@ func TestValidateAcceptsLegalSchema(t *testing.T) {
 	}
 }
 
-// TestIsSafeProp 属性白名单边界。
 func TestIsSafeProp(t *testing.T) {
 	for _, p := range []string{"display", "border-radius", "transform", "grid-template-columns"} {
 		if !IsSafeProp(p) {
@@ -206,7 +191,6 @@ func TestIsSafeProp(t *testing.T) {
 	}
 }
 
-// FuzzCompile 随机 props 不 panic、输出确定、恶意模式不进产物。
 func FuzzCompile(f *testing.F) {
 	f.Add("n-1", "red", "style", "raised")
 	f.Add("n-1", "url(//x.com/a)", "a", "b")
@@ -219,15 +203,14 @@ func FuzzCompile(f *testing.F) {
 		props := map[string]any{key: val, enum: enum}
 		b1 := &core.CSSBuckets{}
 		if err := Compile(nodeID, props, s, b1); err != nil {
-			return // 校验拒绝是合法路径
+			return
 		}
 		out := b1.String()
-		// 产物每条声明行形如 "  prop: value;"——值部分（冒号后、终结分号前）
-		// 不得含分号/花括号/外联 url（注入特征）。声明终结分号是合法格式化。
+
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
 			if !strings.Contains(line, ":") || strings.HasSuffix(line, "{") || line == "}" {
-				continue // 选择器行/媒体查询行/空行
+				continue
 			}
 			value := line[strings.Index(line, ":")+1:]
 			value = strings.TrimSuffix(strings.TrimSpace(value), ";")
@@ -235,7 +218,7 @@ func FuzzCompile(f *testing.F) {
 				t.Fatalf("声明值含注入特征 %q:\n%s", value, out)
 			}
 		}
-		// 确定性。
+
 		b2 := &core.CSSBuckets{}
 		if err := Compile(nodeID, props, s, b2); err != nil {
 			t.Fatalf("第二次编译意外失败: %v", err)

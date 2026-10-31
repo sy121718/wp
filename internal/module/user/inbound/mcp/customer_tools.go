@@ -1,26 +1,5 @@
 package usermcp
 
-// 为什么补这一对：用户问「张三是不是老客户」「谁这周注册的」「有多少人邮箱还没验证」
-// 时，答案全在 users 表里，而在此之前 AI 侧看不到任何客户数据 —— 它会说
-// 「我没有查客户的工具」或者干脆编一个名字。底层一直是齐的：service 的
-// ListCustomers 关键词同时匹配 邮箱 / 用户名 / 昵称 / 展示名，还带状态、
-// 邮箱验证、注册时间窗与「只看已锁定」四个筛选。
-//
-// 只读：依赖收窄到 CustomerQueryReader（两个方法），手里没有 SetCustomerStatus ——
-// 「AI 顺手把这人停用了」不会在某次改动里悄悄变得可能。
-//
-// 客户事实与订单事实**不在这里 join**：用户模块不解释「订单状态怎么算消费」，
-// 要订单就用 order_find（它本来就能按客户名 / 邮箱反查），两边各自给全场。
-
-// 依赖收窄到 usercontract.CustomerWriter（两个方法），拿不到改邮箱 / 改密码 /
-// 改角色的能力 —— 那些确实不该由模型代劳。
-//
-// 边界写在工具说明里而不是靠自觉：
-//   · 停用是不可逆地影响**这个人当下能不能登录**，描述里要求先 customer_get 核对身份、
-//     再把「谁、现在什么状态、要改成什么」念给用户确认；
-//   · 停用是可恢复的（再启用即可）且不删数据，所以给它留了通道；
-//     真删账号这类动作没有对应工具。
-
 import (
 	"context"
 	"errors"
@@ -36,16 +15,11 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// customerFindDefaultLimit 一次最多给模型看几条客户。
-//
-// 工具不是分页页面：模型看到 10 条的摘要就能回答，看到 100 条只会把上下文塞满
-// 然后挑错重点。上限 50 与 order_find 对齐。
 const (
 	customerFindDefaultLimit = 10
 	customerFindMaxLimit     = 50
 )
 
-// QueryTools 返回客户模块的「按线索查客户」工具集。
 func QueryTools(query usercontract.CustomerQueryReader) ([]mcp.Tool, error) {
 	if query == nil {
 		return nil, errors.New("usermcp: 客户查询依赖缺失（装配期接线错误）")
@@ -53,7 +27,6 @@ func QueryTools(query usercontract.CustomerQueryReader) ([]mcp.Tool, error) {
 	return []mcp.Tool{customerFind(query), customerGet(query)}, nil
 }
 
-// customerFindArgs customer_find 的入参。
 type customerFindArgs struct {
 	Keyword        string `json:"keyword"`
 	Status         string `json:"status"`
@@ -108,7 +81,6 @@ func customerFind(query usercontract.CustomerQueryReader) mcp.Tool {
 		})
 }
 
-// customerGetArgs customer_get 的入参。
 type customerGetArgs struct {
 	CustomerID uint64 `json:"customerId"`
 }
@@ -133,10 +105,6 @@ func customerGet(query usercontract.CustomerQueryReader) mcp.Tool {
 		})
 }
 
-// customerStatusValue 工具入参的字符串 → dto 的取值。
-//
-// 空串与 "all" 都给「不过滤」：模型经常会为了显式而不传、或者传一个字面量 all，
-// 两种都不该被当成「状态 = 已停用」（dto 的 0 恰好是那个意思，直接透传就会犯这个错）。
 func customerStatusValue(v string) int {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "active":
@@ -150,7 +118,6 @@ func customerStatusValue(v string) int {
 	}
 }
 
-// emailVerifiedValue 同上：dto 的零值就是「不过滤」，所以只能靠显式分支表达三态。
 func emailVerifiedValue(v string) int {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "yes":
@@ -172,7 +139,6 @@ func clampCustomerLimit(n int) int {
 	return n
 }
 
-// parseDayStart 「YYYY-MM-DD」→ 当日零点。空串给 nil（= 该端不限）。
 func parseDayStart(s string) (*utils.JSONTime, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -186,10 +152,6 @@ func parseDayStart(s string) (*utils.JSONTime, error) {
 	return &jt, nil
 }
 
-// parseDayEnd 「YYYY-MM-DD」→ 当日最后一秒。
-//
-// 不能直接用当日零点当上界：RegisteredTo 在 service 与 model 里都是**闭区间**（<=），
-// 传零点会把「结束那天注册的人」整批漏掉，而结果看起来完全正常。
 func parseDayEnd(s string) (*utils.JSONTime, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -203,10 +165,6 @@ func parseDayEnd(s string) (*utils.JSONTime, error) {
 	return &jt, nil
 }
 
-// findCustomersText 把客户列表写成模型能直接引用的几句。
-//
-// 每行都给 **id**：它是接着调 customer_get 的唯一钥匙，只给昵称时模型要么再猜一次，
-// 要么反问用户「你说是哪一位」—— 而用户刚给的线索就在这句话里。
 func findCustomersText(res *userdto.CustomerListResp) string {
 	if res == nil {
 		return "没有查到客户。"
@@ -226,7 +184,6 @@ func findCustomersText(res *userdto.CustomerListResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// describeCustomer 单个客户的完整资料。
 func describeCustomer(c *userdto.CustomerResp) string {
 	if c == nil {
 		return "没有这位客户。"
@@ -246,10 +203,6 @@ func describeCustomer(c *userdto.CustomerResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// countersText 账号分布计数。
-//
-// 不受本次筛选影响 —— 它回答的是「这个站一共多少账号、各是什么状态」，
-// 而模型最常问的正是这一类（「有多少人还没验证邮箱」），只给列表是答不出来的。
 func countersText(c userdto.CustomerCounters) string {
 	if c.Total == 0 {
 		return ""
@@ -258,12 +211,10 @@ func countersText(c userdto.CustomerCounters) string {
 		c.Total, c.Active, c.Pending, c.Disabled, c.Locked, c.Verified, c.Unverified)
 }
 
-// customerName 优先展示名，退回昵称、再退回用户名 —— 展示名是空的账号很常见。
 func customerName(c *userdto.CustomerResp) string {
 	return firstNonEmpty(c.DisplayName, c.Nickname, c.Username, c.Email)
 }
 
-// customerAccount 账号标识：用户名 + 邮箱，两者相同就只写一个。
 func customerAccount(c *userdto.CustomerResp) string {
 	if c.Username == "" {
 		return c.Email
@@ -274,11 +225,6 @@ func customerAccount(c *userdto.CustomerResp) string {
 	return c.Username + " / " + c.Email
 }
 
-// customerStatusOf 状态的展示名。
-//
-// 走 userenums 的映射而不是自己写一份中文表：那张表是状态文案的唯一真源
-// （后台页与 /api/customer/* 都从它取），各写一份的结果是改一处、另一处静默留在旧说法上。
-// 这里取中文兜底：工具结果最终要进模型上下文，而模型接的是中文提问。
 func customerStatusOf(c *userdto.CustomerResp) string {
 	if c.StatusLabel != "" {
 		return c.StatusLabel
@@ -296,8 +242,7 @@ func verifiedText(verified bool) string {
 
 func lastLoginText(c *userdto.CustomerResp) string {
 	if strings.TrimSpace(c.LastLoginTimeText) == "" {
-		// 「从没登录过」与「登录时间字段没取到」是两件事：前者是待激活账号的常态，
-		// 显示成空或「-」会让模型以为数据缺失并去猜。
+
 		return "从未登录"
 	}
 	return c.LastLoginTimeText + locationSuffix(c.LastLoginLocation)
@@ -340,7 +285,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// WriteTools 返回客户模块的写工具集。
 func WriteTools(w usercontract.CustomerWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("usermcp: 客户写依赖缺失（装配期接线错误）")
@@ -348,7 +292,6 @@ func WriteTools(w usercontract.CustomerWriter) ([]mcp.Tool, error) {
 	return []mcp.Tool{customerSetStatus(w), customerUnlock(w)}, nil
 }
 
-// 状态取值：与 enums 的常量一一对应，不另造一套说法。
 const (
 	customerStatusActiveArg   = "active"
 	customerStatusDisabledArg = "disabled"
@@ -392,10 +335,6 @@ func customerSetStatus(w usercontract.CustomerWriter) mcp.Tool {
 		})
 }
 
-// customerStatusValueOf 工具层的说法 → 落库取值。
-//
-// 不用「空串当默认」：这里的默认值含义截然不同（0 是**停用**），
-// 把没给的参数当 0 处理会把一次手滑变成一次停用。
 func customerStatusValueOf(v string) (int, bool) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case customerStatusActiveArg:
@@ -407,10 +346,6 @@ func customerStatusValueOf(v string) (int, bool) {
 	}
 }
 
-// statusChangeText 状态变更回执。
-//
-// 停用要说清「他立刻登不上」，并给出恢复办法 —— 用户按下这个按钮之后最常见的
-// 下一个问题是「我刚才是不是弄错了」，回答里没有恢复路径他就得自己找。
 func statusChangeText(res *userdto.CustomerStatusResp) string {
 	label := res.StatusLabel
 	if strings.TrimSpace(label) == "" {
@@ -457,10 +392,6 @@ func customerUnlock(w usercontract.CustomerWriter) mcp.Tool {
 		})
 }
 
-// unlockText 解锁回执。
-//
-// Unlocked 与 Cleared 是两件事，分开说：运营点了个不会变化的按钮时需要知道的
-// 是「它本来就没锁」，而不是又一次看到「已解除」然后下次再来点一遍。
 func unlockText(res *userdto.CustomerUnlockResp) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "客户 %d：", res.CustomerID)

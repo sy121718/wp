@@ -1,13 +1,5 @@
 package model
 
-// mail_marketing_model.go — 联系人 / 群发活动 / 事件（issue #37 营销域）。
-//
-// 并发友好的点（用户要求把 Go 的并发优势用上）：
-//   · BatchInsertContacts / BatchUpdateContactImportFields —— 导入的新增与更新各走集合式写入
-//     （一条语句一批，而不是逐行 insert / update）；
-//   · IncrCampaignCounts —— 计数用原子递增，多个投递 worker 同时回写不会互相覆盖；
-//   · ListSubscribedByTags —— 投递目标分批取（游标式），大名单不必一次读进内存。
-
 import (
 	"context"
 	"database/sql/driver"
@@ -20,7 +12,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 联系人来源。
 const (
 	ContactSourceSystemUser = "system_user"
 	ContactSourceImport     = "import"
@@ -28,7 +19,6 @@ const (
 	ContactSourceSubscribe  = "subscribe"
 )
 
-// 联系人同意状态 —— **只有 subscribed 允许发营销**。
 const (
 	ContactStatusPending      = "pending"
 	ContactStatusSubscribed   = "subscribed"
@@ -37,7 +27,6 @@ const (
 	ContactStatusComplained   = "complained"
 )
 
-// 活动状态。
 const (
 	CampaignStatusDraft     = "draft"
 	CampaignStatusScheduled = "scheduled"
@@ -47,35 +36,18 @@ const (
 	CampaignStatusCanceled  = "canceled"
 )
 
-// 事件类型。
 const (
 	EventTypeOpen        = "open"
 	EventTypeClick       = "click"
 	EventTypeBounce      = "bounce"
 	EventTypeUnsubscribe = "unsubscribe"
 	EventTypeComplaint   = "complaint"
-	// EventTypeReply 收件人回信。
-	//
-	// 本仓**没有**回信渠道（不接 IMAP / 不解析 inbox），所以这个事件目前没有生产者：
-	// 它是流程配置 exit_on_reply 的接入点（OnEmailReplied 由未来的收信 worker 调用）。
-	// 留着而不是删掉的理由：`exit_on_reply` 是用户可配的行为，配了却没有任何代码路径
-	// 能触发它，比留一个空接入点更糟 —— 后者至少把「差什么」写在代码里。
+
 	EventTypeReply = "reply"
 )
 
-// StringArray 是 PG text[] 的 Go 映射，自己实现 driver.Valuer / sql.Scanner。
-//
-// 为什么不用现成方案（两种都**实测**失败了）：
-//
-//	· 裸 []string：GORM 经 pgx 编码成元组字面量 ('a','b')，PG 报 malformed array literal (22P02)；
-//	· pgtype.FlatArray[string]：在 pgx **原生**路径下可用，但 GORM 走 database/sql 路径，
-//	  它不被识别、仍编码成 record，PG 报 "column tags is of type text[] but expression is of
-//	  type record" (42804)。
-//
-// 所以本类型直接产出 / 解析 PG 数组字面量，不依赖 driver 的编码约定。
 type StringArray []string
 
-// Value 实现 driver.Valuer：nil 与空切片都写 '{}'（列是 NOT NULL DEFAULT '{}'）。
 func (a StringArray) Value() (driver.Value, error) {
 	if a == nil {
 		return "{}", nil
@@ -83,7 +55,6 @@ func (a StringArray) Value() (driver.Value, error) {
 	return encodePGTextArray(a), nil
 }
 
-// Scan 实现 sql.Scanner：接受 PG 返回的数组字面量文本。
 func (a *StringArray) Scan(src any) error {
 	if src == nil {
 		*a = StringArray{}
@@ -106,9 +77,6 @@ func (a *StringArray) Scan(src any) error {
 	return nil
 }
 
-// encodePGTextArray 编码成 PG 数组字面量 {"a","b"}。
-//
-// 元素一律加引号并转义反斜杠与双引号 —— 标签里出现逗号、空格、引号都不会破坏结构。
 func encodePGTextArray(values []string) string {
 	if len(values) == 0 {
 		return "{}"
@@ -122,7 +90,6 @@ func encodePGTextArray(values []string) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// decodePGTextArray 解析 PG 数组字面量（处理引号、反斜杠转义、空数组）。
 func decodePGTextArray(raw string) (StringArray, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" || s == "{}" {
@@ -163,7 +130,6 @@ func decodePGTextArray(raw string) (StringArray, error) {
 	return out, nil
 }
 
-// MailContactEntity 对应 mail_contacts 表。
 type MailContactEntity struct {
 	ID            uint64     `gorm:"column:id;primaryKey"`
 	Email         string     `gorm:"column:email"`
@@ -173,9 +139,7 @@ type MailContactEntity struct {
 	Status        string     `gorm:"column:status"`
 	SubscribedAt  *time.Time `gorm:"column:subscribed_at"`
 	ConsentSource *string    `gorm:"column:consent_source"`
-	// Tags PG 原生 text[]，用 StringArray 映射（裸 []string 会被 pgx 编码成元组字面量，
-	// 实测报 22P02；见 StringArray 的注释）。零值需注意：列是 NOT NULL DEFAULT '{}'，
-	// nil 会写成 NULL 触发约束错误，所以写入前统一兜底成空数组。
+
 	Tags           StringArray `gorm:"column:tags;type:text[]"`
 	Attributes     JSONMap     `gorm:"column:attributes;type:jsonb"`
 	LastActivityAt *time.Time  `gorm:"column:last_activity_at"`
@@ -183,10 +147,8 @@ type MailContactEntity struct {
 	UpdateTime     *time.Time  `gorm:"column:update_time"`
 }
 
-// TableName 表名。
 func (MailContactEntity) TableName() string { return "mail_contacts" }
 
-// MailCampaignEntity 对应 mail_campaigns 表。
 type MailCampaignEntity struct {
 	ID          uint64      `gorm:"column:id;primaryKey"`
 	Name        string      `gorm:"column:name"`
@@ -207,10 +169,8 @@ type MailCampaignEntity struct {
 	UpdateTime  *time.Time  `gorm:"column:update_time"`
 }
 
-// TableName 表名。
 func (MailCampaignEntity) TableName() string { return "mail_campaigns" }
 
-// MailCampaignEventEntity 对应 mail_campaign_events 表。
 type MailCampaignEventEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
 	CampaignID uint64     `gorm:"column:campaign_id"`
@@ -222,25 +182,18 @@ type MailCampaignEventEntity struct {
 	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
-// TableName 表名。
 func (MailCampaignEventEntity) TableName() string { return "mail_campaign_events" }
 
-// ContactFilter 联系人筛选。
 type ContactFilter struct {
 	Keyword string
-	// Status 空表示不过滤；营销投递固定用 ContactStatusSubscribed。
+
 	Status string
-	// Tags 同时包含（AND 语义）：用于「vip 且 华南」这种交叉筛选。
+
 	Tags   []string
 	Offset int
 	Limit  int
 }
 
-// arrayLiteral 把字符串切片转成 PG 数组字面量 `{"a","b"}`。
-//
-// 为什么手写字面量而不引 pq.Array：本项目尚未依赖 lib/pq，而 pgx 对带 cast 的
-// 字面量参数处理得最直白（`tags @> ?::text[]`），少一个依赖、行为可预期。
-// 元素里的引号与反斜杠按 PG 规则转义，避免注入。
 func arrayLiteral(values []string) string {
 	if len(values) == 0 {
 		return "{}"
@@ -254,9 +207,6 @@ func arrayLiteral(values []string) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// ---- 联系人 ----
-
-// CreateContact 新建联系人。
 func (m *MailModel) CreateContact(ctx context.Context, e *MailContactEntity) (err error) {
 	if e.Tags == nil {
 		e.Tags = StringArray{}
@@ -264,14 +214,12 @@ func (m *MailModel) CreateContact(ctx context.Context, e *MailContactEntity) (er
 	return m.tx(ctx).Create(e).Error
 }
 
-// GetContact 按主键取联系人。
 func (m *MailModel) GetContact(ctx context.Context, id uint64) (e *MailContactEntity, err error) {
 	e = &MailContactEntity{}
 	err = m.tx(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 
-// GetContactByEmail 按邮箱取（大小写不敏感）；找不到返回 gorm.ErrRecordNotFound。
 func (m *MailModel) GetContactByEmail(ctx context.Context, email string) (e *MailContactEntity, err error) {
 	addr := strings.TrimSpace(email)
 	if addr == "" {
@@ -282,11 +230,6 @@ func (m *MailModel) GetContactByEmail(ctx context.Context, email string) (e *Mai
 	return e, err
 }
 
-// ExistingContactIDs **批量**查已存在联系人的 id（导入时先查一次，避免 ON CONFLICT）。
-//
-// 为什么不用 ON CONFLICT：mail_contacts 的唯一索引是**表达式索引** lower(email)，
-// 而 ON CONFLICT (email) 匹配不到它，PG 直接报 42P10（实测）。
-// 先查后分两批写还有个额外好处：**能准确区分新增与更新**，导入报告不再是估算。
 func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (ids map[string]uint64, err error) {
 	ids = map[string]uint64{}
 	if len(emails) == 0 {
@@ -318,26 +261,8 @@ func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (id
 	return ids, nil
 }
 
-// contactTagsChunkSize 单条 IN 最多带多少个 id。
-//
-// PostgreSQL 的绑定参数上限是 65535，这里取 2000 留足余量：单条语句的元素越多，
-// planner 为它构造的表达式与内存占用增长越快，而分块只是把一条语句变几条同类语句。
 const contactTagsChunkSize = 2000
 
-// TagsByContactIDs **批量**取联系人的标签（一次 WHERE id IN (...)，按块切）。
-//
-// 用途：导入路径要算「本次真正新增的标签」差集，而差集需要旧值 —— 逐条取旧标签就是
-// N+1（每个带标签的待更新联系人一次主键读）。调用方一次预算好，差集在内存里算。
-//
-// 只读本模块表、条件以参数传入（model 是表访问单元）：不做标签归一化 / 去空白，
-// 也不判断「这个标签意味着什么」，那些属于 service。
-//
-// 两个边界刻意写在这里：
-//   - ids 为空**不发查询** —— 空 IN () 在 PG 上是语法错误，而不是「返回空集」；
-//   - 超大集合分批（见 contactTagsChunkSize），避免撞上绑定参数上限。
-//
-// 返回的 map 只含查到的行：调用方要用「缺失即无标签」的语义（新建的联系人本来就不在
-// 这张表里，不应该为它编一个空切片）。
 func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags map[uint64][]string, err error) {
 	tags = make(map[uint64][]string, len(ids))
 	if len(ids) == 0 {
@@ -377,7 +302,6 @@ func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags ma
 	return tags, nil
 }
 
-// BatchInsertContacts 批量新增联系人（导入的新增那一批）。
 func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContactEntity, batchSize int) (err error) {
 	if len(list) == 0 {
 		return nil
@@ -393,31 +317,12 @@ func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContact
 	return m.tx(ctx).CreateInBatches(list, batchSize).Error
 }
 
-// ContactImportUpdate 导入时对「已存在联系人」要写入的非同意字段。
-//
-// Name / Tags 为 nil 或空表示「本次没有提供该值」—— 对应列保持库中原样，
-// 与逐条路径里「只把非空字段放进 fields」的语义一致。
 type ContactImportUpdate struct {
 	Email string   `json:"email"`
 	Name  *string  `json:"name,omitempty"`
 	Tags  []string `json:"tags,omitempty"`
 }
 
-// BatchUpdateContactImportFields 一条语句更新导入命中的全部已存在联系人，返回实际命中的邮箱（小写）。
-//
-// 语义与逐条 UpdateContactFields 逐条对齐：
-//   - name / tags 仅在本行提供了非空值时覆盖（COALESCE），空值保留库中原样；
-//   - source 与 update_time 恒更新；
-//   - **不碰 status / subscribed_at / consent_source** —— 同意状态不能被一次导入改写，
-//     否则退订过的人会被导入悄悄变回订阅（等于自己造投诉）；
-//   - 命中集合经 RETURNING 返回，调用方据此逐行报告「未命中」（并发删除）而不是静默少算。
-//
-// 为什么不再逐条：一批已存在的联系人逐条 UPDATE 是 N 次往返（审计 DB-006），
-// 而「同一份名单反复导入」是常态，这部分比 INSERT 更贵。
-// 为什么不用 COPY：COPY 遇到唯一约束冲突会**整批失败**，而本导入对外的承诺是
-// 「逐行校验 + 逐行报错 + 新增/更新/跳过精确计数」（见 ImportContactsResp）；
-// 集合式 UPDATE 天然保留逐行可解释性，且不绕过任何校验。
-// 两侧 lower(email) 与唯一索引 lower(email) 同口径（大小写不敏感命中）。
 func (m *MailModel) BatchUpdateContactImportFields(ctx context.Context, rows []ContactImportUpdate, source string, at time.Time) (emails []string, err error) {
 	if len(rows) == 0 {
 		return nil, nil
@@ -449,10 +354,6 @@ RETURNING lower(c.email)`
 	return emails, nil
 }
 
-// UpdateContactsByEmails 按邮箱批量更新若干列（导入的已存在那一批）。
-//
-// **不碰 status / subscribed_at / consent_source**：同意状态不能被一次导入悄悄改写
-// （原来退订的人，导入不该把他变回订阅）。
 func (m *MailModel) UpdateContactsByEmails(ctx context.Context, emails []string, fields map[string]any, at time.Time) (err error) {
 	if len(emails) == 0 || len(fields) == 0 {
 		return nil
@@ -470,7 +371,6 @@ func (m *MailModel) UpdateContactsByEmails(ctx context.Context, emails []string,
 	return m.tx(ctx).Model(&MailContactEntity{}).Where("lower(email) IN ?", lowered).Updates(fields).Error
 }
 
-// ListContacts 按筛选分页取联系人。
 func (m *MailModel) ListContacts(ctx context.Context, f ContactFilter) (list []*MailContactEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailContactEntity{})
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
@@ -494,10 +394,6 @@ func (m *MailModel) ListContacts(ctx context.Context, f ContactFilter) (list []*
 	return list, total, err
 }
 
-// ListSubscribedByTags **投递目标**：只取已订阅、且命中标签的人。
-//
-// 用 id 游标分批（afterID）而不是 OFFSET：群发时一边取一边发、
-// 期间可能有新联系人进来，OFFSET 会漏人或重复；游标严格按主键推进，天然稳定。
 func (m *MailModel) ListSubscribedByTags(ctx context.Context, tags []string, afterID uint64, limit int) (list []*MailContactEntity, err error) {
 	q := m.tx(ctx).Where("status = ?", ContactStatusSubscribed)
 	if len(tags) > 0 {
@@ -513,7 +409,6 @@ func (m *MailModel) ListSubscribedByTags(ctx context.Context, tags []string, aft
 	return list, err
 }
 
-// CountSubscribedByTags 统计投递目标人数（活动开始前算 total_count）。
 func (m *MailModel) CountSubscribedByTags(ctx context.Context, tags []string) (count int64, err error) {
 	q := m.tx(ctx).Model(&MailContactEntity{}).Where("status = ?", ContactStatusSubscribed)
 	if len(tags) > 0 {
@@ -523,13 +418,10 @@ func (m *MailModel) CountSubscribedByTags(ctx context.Context, tags []string) (c
 	return count, err
 }
 
-// UpdateContactFields 按主键更新指定列。
 func (m *MailModel) UpdateContactFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
 	return m.UpdateContactFieldsTx(ctx, nil, id, fields)
 }
 
-// UpdateContactFieldsTx 与 UpdateContactFields 相同，但复用调用方事务
-// （联系人状态 + 抑制名单必须同事务，见 mail_contact.go / mail_tracking.go）。
 func (m *MailModel) UpdateContactFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
@@ -537,13 +429,10 @@ func (m *MailModel) UpdateContactFieldsTx(ctx context.Context, tx *gorm.DB, id u
 	return m.txOr(ctx, tx).Model(&MailContactEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// UpdateContactStatusByEmail 按邮箱改状态（退订 / 退信回写用，幂等）。
 func (m *MailModel) UpdateContactStatusByEmail(ctx context.Context, email, status string, at time.Time) (err error) {
 	return m.UpdateContactStatusByEmailTx(ctx, nil, email, status, at)
 }
 
-// UpdateContactStatusByEmailTx 与 UpdateContactStatusByEmail 相同，但复用调用方事务
-// （SMTP 硬退信的回写是一组：日志失败 + 抑制名单 + 联系人标 bounced）。
 func (m *MailModel) UpdateContactStatusByEmailTx(ctx context.Context, tx *gorm.DB, email, status string, at time.Time) (err error) {
 	fields := map[string]any{"status": status, "update_time": at}
 	if status == ContactStatusSubscribed {
@@ -552,13 +441,6 @@ func (m *MailModel) UpdateContactStatusByEmailTx(ctx context.Context, tx *gorm.D
 	return m.txOr(ctx, tx).Model(&MailContactEntity{}).Where("lower(email) = lower(?)", strings.TrimSpace(email)).Updates(fields).Error
 }
 
-// LockContactTagsTx 在事务里**加行锁**读出联系人的标签（自动化标签节点的读-改-写前置）。
-//
-// 标签节点的语义是「读出当前标签 → 增减 → 写回」，必须先 SELECT … FOR UPDATE 锁住该行：
-// 两个节点（或标签节点与手工改标签）并发时，不加锁的后写者会拿旧快照覆盖掉前者的结果。
-// 行锁按主键取单行，不存在多行加锁顺序问题（不涉及死锁）。
-//
-// 行不存在时返回 gorm.ErrRecordNotFound，由 service 决定如何处理。
 func (m *MailModel) LockContactTagsTx(ctx context.Context, tx *gorm.DB, contactID uint64) (tags StringArray, err error) {
 	var row struct{ Tags StringArray }
 	err = m.txOr(ctx, tx).Model(&MailContactEntity{}).
@@ -571,19 +453,10 @@ func (m *MailModel) LockContactTagsTx(ctx context.Context, tx *gorm.DB, contactI
 	return row.Tags, nil
 }
 
-// DeleteContact 删除联系人。
 func (m *MailModel) DeleteContact(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailContactEntity{}).Error
 }
 
-// DeleteContactsByIDsTx 按 id 批量删除联系人（复用调用方事务）。
-//
-// 批删走**一条语句**（WHERE id IN (...)），不是循环调用 DeleteContact：
-// 循环会让「删了 3 个、第 4 个报错」留下半截状态，而调用方看到的是一个错误 ——
-// 它只能把整批当成失败，于是重试时前 3 条已经不存在了。
-//
-// 刻意只有 Tx 变体：删除联系人的语义包含「不动抑制名单」这条边界（由 service 负责写清），
-// 调用方必须自带事务边界；单条删除用 DeleteContact。
 func (m *MailModel) DeleteContactsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
 	uniq := make([]uint64, 0, len(ids))
 	seen := make(map[uint64]struct{}, len(ids))
@@ -604,15 +477,8 @@ func (m *MailModel) DeleteContactsByIDsTx(ctx context.Context, tx *gorm.DB, ids 
 	return res.RowsAffected, res.Error
 }
 
-// ListContactTags 全库去重后的标签集合（筛选区 datalist 候选）。
-//
-// 标签存在 text[] 数组列里，去重要先 unnest 摊平成行再 DISTINCT。
-// btrim + WHERE <> ” 清掉历史数据里「标签前后带空格」「空标签」这类脏值 ——
-// 与 service 侧 splitTags / mergeTags 的去空白口径一致，否则候选里会出现一个
-// 点了筛不出任何人的标签（因为筛选走 tags @> 精确匹配）。
 func (m *MailModel) ListContactTags(ctx context.Context) (tags []string, err error) {
-	// 集合函数展开写在 FROM 位置（`mail_contacts, unnest(tags) AS t`），
-	// 表别名与函数别名一起作为 Table 的字面量。
+
 	err = m.tx(ctx).
 		Table(MailContactEntity{}.TableName() + ", unnest(tags) AS t").
 		Select("DISTINCT btrim(t) AS tag").
@@ -622,9 +488,6 @@ func (m *MailModel) ListContactTags(ctx context.Context) (tags []string, err err
 	return tags, err
 }
 
-// ---- 活动 ----
-
-// CreateCampaign 新建活动。
 func (m *MailModel) CreateCampaign(ctx context.Context, e *MailCampaignEntity) (err error) {
 	if e.TargetTags == nil {
 		e.TargetTags = StringArray{}
@@ -632,19 +495,16 @@ func (m *MailModel) CreateCampaign(ctx context.Context, e *MailCampaignEntity) (
 	return m.tx(ctx).Create(e).Error
 }
 
-// GetCampaign 按主键取活动。
 func (m *MailModel) GetCampaign(ctx context.Context, id uint64) (e *MailCampaignEntity, err error) {
 	e = &MailCampaignEntity{}
 	err = m.tx(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 
-// DeleteCampaign 删除活动。
 func (m *MailModel) DeleteCampaign(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailCampaignEntity{}).Error
 }
 
-// ListCampaigns 列活动（状态可空）。
 func (m *MailModel) ListCampaigns(ctx context.Context, status string, offset, limit int) (list []*MailCampaignEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailCampaignEntity{})
 	if s := strings.TrimSpace(status); s != "" {
@@ -660,7 +520,6 @@ func (m *MailModel) ListCampaigns(ctx context.Context, status string, offset, li
 	return list, total, err
 }
 
-// UpdateCampaignFields 按主键更新指定列。
 func (m *MailModel) UpdateCampaignFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
@@ -668,18 +527,10 @@ func (m *MailModel) UpdateCampaignFields(ctx context.Context, id uint64, fields 
 	return m.tx(ctx).Model(&MailCampaignEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// IncrCampaignCounts **原子**递增活动的送达 / 失败计数。
-//
-// 并发投递时多个 worker 会同时回写同一个活动行：读-改-写在并发下必然丢计数，
-// 所以计数在 SQL 里做（sent_count = sent_count + n），不经过 Go 侧。
 func (m *MailModel) IncrCampaignCounts(ctx context.Context, id uint64, sent, failed int) (err error) {
 	return m.IncrCampaignCountsTx(ctx, nil, id, sent, failed)
 }
 
-// IncrCampaignCountsTx 与 IncrCampaignCounts 相同，但复用调用方事务。
-//
-// 计数与日志状态是同一批回写（「这封信送到了」= 日志 sent + 活动 sent_count +1）：
-// 分开提交时计数会与日志明细对不上，而报表正是拿这两者算送达率。
 func (m *MailModel) IncrCampaignCountsTx(ctx context.Context, tx *gorm.DB, id uint64, sent, failed int) (err error) {
 	if sent == 0 && failed == 0 {
 		return nil
@@ -691,23 +542,14 @@ func (m *MailModel) IncrCampaignCountsTx(ctx context.Context, tx *gorm.DB, id ui
 		}).Error
 }
 
-// ---- 事件 ----
-
-// CreateEvent 写一条事件。
 func (m *MailModel) CreateEvent(ctx context.Context, e *MailCampaignEventEntity) (err error) {
 	return m.CreateEventTx(ctx, nil, e)
 }
 
-// CreateEventTx 与 CreateEvent 相同，但复用调用方事务
-// （事件行 + 联系人「最近活跃」是同一批写，见 mail_marketing_model.go）。
 func (m *MailModel) CreateEventTx(ctx context.Context, tx *gorm.DB, e *MailCampaignEventEntity) (err error) {
 	return m.txOr(ctx, tx).Create(e).Error
 }
 
-// ListCampaignsWithExpiredEvents 列出「全部事件都已过期」的活动 id（IDX-012）。
-//
-// 「全部过期」是固化的触发条件：这些活动的明细马上要被删掉，此刻统计出来的是终值。
-// 只统计部分过期的活动会把「进行中」的数当成终值写死。
 func (m *MailModel) ListCampaignsWithExpiredEvents(ctx context.Context, cutoff time.Time, limit int) (ids []uint64, err error) {
 	if limit < 1 {
 		return nil, nil
@@ -722,25 +564,17 @@ func (m *MailModel) ListCampaignsWithExpiredEvents(ctx context.Context, cutoff t
 	return ids, err
 }
 
-// SetCampaignEventTotalsIfUnset 固化活动的事件汇总（仅在尚未固化时写入）。
-//
-// 「已固化」用两列均为 0 判定：固化只发生在明细即将被清理时，此刻若已有非零值说明
-// 是上一轮写过的终值，不能被本轮的重新统计覆盖（明细删过一部分就统计不出原值了）。
 func (m *MailModel) SetCampaignEventTotalsIfUnset(ctx context.Context, campaignID uint64, openCount, clickCount int64) (int64, error) {
 	if campaignID == 0 {
 		return 0, nil
 	}
-	// 守卫写在 WHERE（「两列都为 0 才固化」），受影响 0 行即「已固化过」—— 不做读-改-写。
+
 	res := m.tx(ctx).Model(&MailCampaignEntity{}).
 		Where("id = ? AND open_count = 0 AND click_count = 0", campaignID).
 		UpdateColumns(map[string]any{"open_count": openCount, "click_count": clickCount})
 	return res.RowsAffected, res.Error
 }
 
-// DeleteEventsBefore 分批删除早于分界的事件明细（IDX-012）。
-//
-// 事件行是一次打开/点击一行，大群发会立刻把表撑起来；报表需要的汇总数在活动结束后
-// 固化到 campaign 记录（见 service 侧 EnsureCampaignTotals），明细才是可清理的那部分。
 func (m *MailModel) DeleteEventsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
 	if limit < 1 {
 		return 0, nil
@@ -752,7 +586,6 @@ func (m *MailModel) DeleteEventsBefore(ctx context.Context, cutoff time.Time, li
 	return res.RowsAffected, res.Error
 }
 
-// BatchCreateEvents 批量写事件（追踪端点批量落事件用，减少往返）。
 func (m *MailModel) BatchCreateEvents(ctx context.Context, list []*MailCampaignEventEntity, batchSize int) (err error) {
 	if len(list) == 0 {
 		return nil
@@ -763,7 +596,6 @@ func (m *MailModel) BatchCreateEvents(ctx context.Context, list []*MailCampaignE
 	return m.tx(ctx).CreateInBatches(list, batchSize).Error
 }
 
-// CountEventsByType 统计某活动各类事件数（报表用）。
 func (m *MailModel) CountEventsByType(ctx context.Context, campaignID uint64) (counts map[string]int64, err error) {
 	type row struct {
 		EventType string
@@ -784,14 +616,6 @@ func (m *MailModel) CountEventsByType(ctx context.Context, campaignID uint64) (c
 	return counts, nil
 }
 
-// ---- 报表（issue #38 P1 的可视部分）----
-
-// CountDistinctContactsByEvent 统计某活动某类事件的**去重人数**。
-//
-// 与 CountEventsByType 的区别很关键：那个统计的是**次数**，这个统计的是**人数**。
-// 报表上的「打开率 / 点击率」是「有多少人打开过」，同一个人开三次只算一个 ——
-// 用次数当分子会算出超过 100% 的打开率。两个数都有用（人均打开次数 = 次数 / 人数），
-// 但必须分清是哪一个。
 func (m *MailModel) CountDistinctContactsByEvent(ctx context.Context, campaignID uint64, eventType string) (count int64, err error) {
 	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
 		Where("campaign_id = ? AND event_type = ?", campaignID, eventType).
@@ -799,18 +623,13 @@ func (m *MailModel) CountDistinctContactsByEvent(ctx context.Context, campaignID
 	return count, err
 }
 
-// ClickStat 链接点击统计。
 type ClickStat struct {
 	URL   string
 	Total int64
-	// Contacts 去重人数（同一人点多次算一次）。
+
 	Contacts int64
 }
 
-// ClickRanking 链接点击排行（按去重人数降序）。
-//
-// 按人数而不是次数排序：一个人把同一个链接点十次不该让这个链接排到第一，
-// 排行应该反映「有多少人感兴趣」。
 func (m *MailModel) ClickRanking(ctx context.Context, campaignID uint64, limit int) (list []ClickStat, err error) {
 	if limit <= 0 {
 		limit = 20
@@ -822,7 +641,6 @@ func (m *MailModel) ClickRanking(ctx context.Context, campaignID uint64, limit i
 	return list, err
 }
 
-// RecipientRow 收件人投递明细（收件人 × 该活动的投递与互动状态）。
 type RecipientRow struct {
 	ContactID uint64
 	Email     string
@@ -834,10 +652,6 @@ type RecipientRow struct {
 	Clicked   int64
 }
 
-// ListRecipients 列某活动的收件人投递明细（按日志聚合）。
-//
-// 用左连接把「投递投得怎么样」和「打开 / 点击了多少次」并到一行，
-// 一次查询拿到运营关心的全部信息，避免每行再查两次。
 func (m *MailModel) ListRecipients(ctx context.Context, campaignID uint64, offset, limit int) (list []RecipientRow, total int64, err error) {
 	base := m.tx(ctx).Table("mail_logs AS l").Where("l.campaign_id = ?", campaignID)
 	if err = base.Count(&total).Error; err != nil {

@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestIsSafeCSSValue CSS 注入防护白名单。
 func TestIsSafeCSSValue(t *testing.T) {
 	valid := []string{
 		"#2563eb",
@@ -15,11 +14,9 @@ func TestIsSafeCSSValue(t *testing.T) {
 		"50%",
 		"1.5rem",
 		"calc(100% - 20px)",
-		"url(/img/a.jpg)", // 站内相对路径
-		"",                // 空值视为合法（未设置）
-		// 以下四项靠字符集里的 `:` 活着：它们是本函数**必须不能**误伤的取值。
-		// 响应式声明的通行形式（parseResponsiveDecls 传进来的就是整条声明）、
-		// 过渡简写、渐变函数、悬停位移。
+		"url(/img/a.jpg)",
+		"",
+
 		"color: red",
 		"transition: all 0.5s linear 0.1s",
 		"linear-gradient(90deg, #111, #999)",
@@ -32,28 +29,25 @@ func TestIsSafeCSSValue(t *testing.T) {
 	}
 
 	invalid := []string{
-		"red;background:url(https://evil.com/x)", // 分号注入
-		"url(https://evil.com/x)",                // 外联 http
-		"url(//evil.com/x)",                      // 外联协议相对
-		`url("https://evil.com/x")`,              // 引号包裹外联
+		"red;background:url(https://evil.com/x)",
+		"url(https://evil.com/x)",
+		"url(//evil.com/x)",
+		`url("https://evil.com/x")`,
 		`url('//evil.com/x')`,
-		"url('/img/a.jpg')",      // 引号形式一律拒绝（' 不在字符集）
-		strings.Repeat("a", 501), // 超长
+		"url('/img/a.jpg')",
+		strings.Repeat("a", 501),
 
-		// 协议类执行载体。修复前这些**全部返回 true**（字符集里保留着 `:`），
-		// 每条都注明它靠什么作恶。
 		"javascript:alert(1)",
-		"JavaScript:alert(1)",                      // 大小写不敏感
-		"  javascript:alert(1)",                    // 前导空白（浏览器解析 URL 时忽略）
-		"java\tscript:alert(1)",                    // 制表符拆开关键字
-		"vbscript:msgbox(1)",                       // 老 IE
-		"livescript:x",                             // 历史执行器
-		"background: url(javascript:alert(1))",     // 藏进 url() 里
-		"blob:https://evil/x",                      // 能载入脚本
-		"data:text/html,<script>alert(1)</script>", // 能载入脚本
-		"file:///etc/passwd",                       // 本地内容
+		"JavaScript:alert(1)",
+		"  javascript:alert(1)",
+		"java\tscript:alert(1)",
+		"vbscript:msgbox(1)",
+		"livescript:x",
+		"background: url(javascript:alert(1))",
+		"blob:https://evil/x",
+		"data:text/html,<script>alert(1)</script>",
+		"file:///etc/passwd",
 
-		// 老执行载体（函数 / 属性形式，不是 scheme）。
 		"expression(alert(1))",
 		"width: expression(alert(1))",
 		"-moz-binding:url(x)",
@@ -66,7 +60,6 @@ func TestIsSafeCSSValue(t *testing.T) {
 	}
 }
 
-// TestCSSDecl 声明拼接：跳过空值。
 func TestCSSDecl(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -95,7 +88,6 @@ func TestCSSDecl(t *testing.T) {
 	}
 }
 
-// TestCSSBucketsOrder 输出顺序确定性：关键帧 → 桌面 → 平板 → 手机。
 func TestCSSBucketsOrder(t *testing.T) {
 	b := &CSSBuckets{}
 	b.Add(BreakpointMobile, ".m", []string{"color: blue"})
@@ -113,7 +105,6 @@ func TestCSSBucketsOrder(t *testing.T) {
 	}
 }
 
-// TestCSSBucketsSkipEmpty 空声明忽略：不产生无效规则。
 func TestCSSBucketsSkipEmpty(t *testing.T) {
 	b := &CSSBuckets{}
 	b.Add(BreakpointDesktop, ".x", []string{"", " ", "color: red"})
@@ -127,7 +118,6 @@ func TestCSSBucketsSkipEmpty(t *testing.T) {
 	}
 }
 
-// TestValidateNodeID ID 白名单、长度、唯一性、Name 长度。
 func TestValidateNodeID(t *testing.T) {
 	ids := map[string]bool{}
 	t.Run("合法 ID", func(t *testing.T) {
@@ -159,14 +149,13 @@ func TestValidateNodeID(t *testing.T) {
 	})
 }
 
-// TestValidateTextStyle 排版校验：字号/行高/clamp/对齐白名单。
 func TestValidateTextStyle(t *testing.T) {
 	valid := []TextStyle{
 		{},
 		{Desktop: TextStyleValue{FontSize: "16px", LineHeight: "1.5", TextAlign: "center"}},
 		{Tablet: TextStyleValue{FontSize: "clamp(12px, 2vw, 20px)"}},
 		{Mobile: TextStyleValue{FontSize: "1.2rem"}},
-		{Desktop: TextStyleValue{FontSize: "16"}}, // 无单位数字在字符集内（设计允许）
+		{Desktop: TextStyleValue{FontSize: "16"}},
 	}
 	for _, ts := range valid {
 		if err := ValidateTextStyle("n1", &ts); err != nil {
@@ -175,11 +164,11 @@ func TestValidateTextStyle(t *testing.T) {
 	}
 
 	invalid := []TextStyle{
-		{Desktop: TextStyleValue{FontSize: "bold"}},                  // 非长度
-		{Desktop: TextStyleValue{LineHeight: "calc(100%)"}},          // 行高不支持 calc
-		{Desktop: TextStyleValue{TextAlign: "middle"}},               // 非法对齐
-		{Desktop: TextStyleValue{FontSize: strings.Repeat("1", 41)}}, // 超 40 上限
-		{Desktop: TextStyleValue{FontSize: "16px;color:red"}},        // 注入
+		{Desktop: TextStyleValue{FontSize: "bold"}},
+		{Desktop: TextStyleValue{LineHeight: "calc(100%)"}},
+		{Desktop: TextStyleValue{TextAlign: "middle"}},
+		{Desktop: TextStyleValue{FontSize: strings.Repeat("1", 41)}},
+		{Desktop: TextStyleValue{FontSize: "16px;color:red"}},
 	}
 	for _, ts := range invalid {
 		if err := ValidateTextStyle("n1", &ts); err == nil {
@@ -188,7 +177,6 @@ func TestValidateTextStyle(t *testing.T) {
 	}
 }
 
-// TestTextStyleDecls 排版声明生成。
 func TestTextStyleDecls(t *testing.T) {
 	v := TextStyleValue{FontSize: "16px", LineHeight: "1.5", TextAlign: "right"}
 	got := strings.Join(v.Decls(), "|")
@@ -201,15 +189,13 @@ func TestTextStyleDecls(t *testing.T) {
 	}
 }
 
-// fakeComponent 测试用最小组件。
 type fakeComponent struct{ t string }
 
 func (f fakeComponent) Type() string                              { return f.t }
 func (f fakeComponent) Validate(_ *Node, _ map[string]bool) error { return nil }
 
-// TestRegisterLookup 组件注册表：注册/查询/类型排序确定性。
 func TestRegisterLookup(t *testing.T) {
-	// 独立注册测试组件（core 单测不依赖其他包的 init）。
+
 	Register(fakeComponent{t: "core.test_fake"})
 	defer func() {
 		delete(registry, "core.test_fake")

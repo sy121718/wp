@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-// QueryProducts 按同一筛选条件先计数再收敛页码，整页补充挂载关系与评分汇总。
-// 查询次数与页内商品数无关；读取失败不降级成无评分或缺失商品。
 func (s *Service) QueryProducts(ctx context.Context, req *productdto.ListReq) (*productdto.ProductListResp, error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)

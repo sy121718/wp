@@ -11,7 +11,6 @@ type PublicProductOptionResp struct {
 	Values []PublicProductOptionValueResp `json:"values"`
 }
 
-// PublicProductVariantOptionResp 不含成本、条码、内部库存与后台备注；金额为整数分。
 type PublicProductVariantOptionResp struct {
 	ID           string            `json:"id"`
 	SKU          string            `json:"sku"`

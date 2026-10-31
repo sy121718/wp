@@ -1,18 +1,5 @@
 package builtin
 
-// SiteRedirectMiddleware 让静态访问面认识「重定向产物」（改 URL 后的旧路径 301）。
-//
-// 为什么需要它：改 URL 时旧路径会落一份 redirect.json 并激活（pipeline.NewRedirectArtifact
-// + LocalPublicationStore.Activate），但访问面是 http.FileServer —— 它只读文件、
-// 不认识 redirect.json。缺这个中间件时，勾了「保留旧链接」的旧路径表现是 **404**：
-// 用户在界面上选择了一个系统并不执行的承诺。
-//
-// 介入代价：非重定向请求多一次 readlink（微秒级）；命中重定向才额外读 redirect.json。
-// 判定只看「符号链接指向的目录里有没有 redirect.json」，不查库、不读路由表 ——
-// 访问面「零查库零模板」的不变量不被破坏。
-//
-// 与 StaticGzipMiddleware 同组挂载，顺序在先：301 响应没有 body，压缩无从谈起。
-
 import (
 	"net/http"
 	"os"
@@ -25,10 +12,6 @@ import (
 	"go_wp/internal/seo"
 )
 
-// siteFaceRel 把请求路径归一到「访问面内相对路径」。
-//
-// 前缀为空（站点独占域名根）时全部路径都在访问面内；非空时要求
-// 「等于前缀」或「前缀 + / 开头」—— 避免把 /siteadmin 这类路径误当访问面。
 func SiteFaceRel(prefix, fullPath string) (rel string, ok bool) {
 	if prefix == "" {
 		return strings.TrimPrefix(fullPath, "/"), true
@@ -42,11 +25,6 @@ func SiteFaceRel(prefix, fullPath string) (rel string, ok bool) {
 	return strings.TrimPrefix(fullPath, prefix), true
 }
 
-// SiteRedirectMiddleware 见文件头注释。
-//
-// prefix 是访问面挂载前缀：站点独占域名根时为空串，控制台内的兼容入口为 "/site"。
-// 传参而不是读包级常量 —— 同一份中间件要挂两个挂载点，写死前缀会让根挂载点上的
-// 重定向产物与 /index 别名**全部失效**（表现为改过 URL 的旧路径 404）。
 func SiteRedirectMiddleware(prefix string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if target, ok := indexAliasRedirectOf(prefix, c.Request.URL.Path); ok {
@@ -64,7 +42,6 @@ func SiteRedirectMiddleware(prefix string) gin.HandlerFunc {
 	}
 }
 
-// indexAliasRedirectOf /index 语言根别名 301 到规范路径（I18N-022）。
 func indexAliasRedirectOf(prefix, fullPath string) (target string, ok bool) {
 	rel, ok := SiteFaceRel(prefix, fullPath)
 	if !ok {
@@ -84,29 +61,19 @@ func indexAliasRedirectOf(prefix, fullPath string) (target string, ok bool) {
 	return seo.CanonicalPublicPath(sitePath), true
 }
 
-// redirectTargetOf 判断访问面路径是否指向重定向产物，返回目标路径与状态码。
-//
-// 三条否定条件都返回 ok=false 交给静态面处理，中间件不改变任何其他请求的行为：
-// 不在访问面前缀内、路径越界、链接目标不是重定向产物。
 func redirectTargetOf(prefix, fullPath string) (target string, code int, ok bool) {
 	rel, inFace := SiteFaceRel(prefix, fullPath)
 	if !inFace {
 		return "", 0, false
 	}
-	// 先连前缀斜杠一起去掉再 Clean：filepath.Clean("/old-path") 仍是绝对路径
-	//（前导斜杠保留），直接 Join 会忽略激活根目录、指向文件系统根。
-	// 带尾斜杠的目录访问形式在这里一并归一（Clean 会去掉尾斜杠）。
-	//
-	// clean 而不是原样拼接：rel 可能带 ".."（/site/../../etc/passwd），
-	// 直接 Join 会逃出激活目录。静态面（http.Dir）自己有同类防护，但本中间件
-	// 要自己读盘，必须自己挡。绝对路径、"." 与 ".." 前缀一并拒绝。
+
 	rel = filepath.Clean(strings.TrimPrefix(rel, "/"))
 	if rel == "." || rel == "" || filepath.IsAbs(rel) ||
 		rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", 0, false
 	}
 	link := filepath.Join(pipeline.ActiveRoot(), rel)
-	// 只看符号链接：真目录与普通文件都不是激活产物（激活一律是 symlink）。
+
 	linkTarget, err := os.Readlink(link)
 	if err != nil {
 		return "", 0, false
@@ -122,7 +89,7 @@ func redirectTargetOf(prefix, fullPath string) (target string, code int, ok bool
 	}
 	code = directive.StatusCode
 	if code != http.StatusMovedPermanently && code != http.StatusFound {
-		// 产物只可能带 301/302（NewRedirectArtifact 卡住），兜底按永久处理。
+
 		code = http.StatusMovedPermanently
 	}
 	return directive.TargetPath, code, true

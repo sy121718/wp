@@ -7,11 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestGalleryCSSGridColumns 三端列数：桌面兜底 4，两端未设时**整段不产出**。
-//
-// 这条是迁移时最容易静默走样的地方：样式源里 display: grid 与 grid-template-columns
-// 写在同一条规则里，若只让列数那一条随变量省略，媒体查询块会只剩一个 display: grid ——
-// 产物依旧是合法 CSS，只是窄屏上多了一条无意义规则。
 func TestGalleryCSSGridColumns(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Mode: LayoutGrid}, &b)
@@ -41,7 +36,6 @@ func TestGalleryCSSGridColumns(t *testing.T) {
 	}
 }
 
-// TestGalleryCSSCarouselSlides 单屏宽度按 slidesPerView 三端换算，且缺省端不产出。
 func TestGalleryCSSCarouselSlides(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Mode: LayoutCarousel, Carousel: Carousel{SlidesPerView: SlidesPerView{Desktop: 3, Tablet: 2, Mobile: 1}}}, &b)
@@ -56,7 +50,6 @@ func TestGalleryCSSCarouselSlides(t *testing.T) {
 		}
 	}
 
-	// 只设桌面：桌面兜底为「单屏一张」，两端不产出。
 	var solo core.CSSBuckets
 	compileCSS("t", &Props{Mode: LayoutCarousel}, &solo)
 	soloOut := solo.String()
@@ -68,10 +61,6 @@ func TestGalleryCSSCarouselSlides(t *testing.T) {
 	}
 }
 
-// TestGalleryCSSHoverBranches 悬浮三态各自独立：只开遮罩时不该产出 .gi:hover 缩放规则。
-//
-// 迁移前由 len(hoverDecls) > 0 守卫；迁到样式源后这个守卫变成了「两条声明都随变量省略、
-// 整块声明列表为空即不产出规则」—— 语义相同但依赖解析器的空声明早退，值得钉住。
 func TestGalleryCSSHoverBranches(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Hover: Hover{Overlay: "dark"}}, &b)
@@ -86,7 +75,6 @@ func TestGalleryCSSHoverBranches(t *testing.T) {
 		t.Errorf("未开缩放与阴影加深时不该产出 .gi:hover 规则:\n%s", out)
 	}
 
-	// 只开缩放：产出 hover 规则但不产出遮罩层。
 	var scaleOnly core.CSSBuckets
 	compileCSS("t", &Props{Hover: Hover{Scale: "1.05", Duration: "200ms"}}, &scaleOnly)
 	scaleOut := scaleOnly.String()
@@ -98,7 +86,6 @@ func TestGalleryCSSHoverBranches(t *testing.T) {
 	}
 }
 
-// TestGalleryCSSContainerQuery 窄容器降为单列走容器查询，不与三端媒体查询混在同一处。
 func TestGalleryCSSContainerQuery(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Mode: LayoutGrid}, &b)

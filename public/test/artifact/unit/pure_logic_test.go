@@ -8,8 +8,6 @@ import (
 	artifactenums "go_wp/internal/module/artifact/enums"
 )
 
-// TestArtifactDefaultCreator 经 Record 间接覆盖 defaultCreator：
-// 空白 CreatedBy → 零 UUID；非空 → 原样保留。
 func TestArtifactDefaultCreator(t *testing.T) {
 	svc := newService(t)
 
@@ -48,9 +46,6 @@ func TestArtifactDefaultCreator(t *testing.T) {
 	})
 }
 
-// TestArtifactMapPersistenceError 间接覆盖 mapPersistenceError：
-// gorm.ErrDuplicatedKey（manifest 内重复文件 hash 撞闭包复合主键、或
-// 生产唯一约束冲突）→ ErrArtifactMismatch；其余错误原样透传。
 func TestArtifactMapPersistenceError(t *testing.T) {
 	t.Run("闭包去重：manifest 重复哈希不再触发主键冲突", func(t *testing.T) {
 		svc := newService(t)
@@ -58,8 +53,7 @@ func TestArtifactMapPersistenceError(t *testing.T) {
 		req.ArtifactID = testArtifactID2
 		req.ArtifactHash = "hash-dup-closure"
 		req.Manifest = []byte(`{"canonicalPath":"/x.html","files":{"a.js":"HX","b.js":"HX"}}`)
-		// 修复后：两个路径共享同一内容哈希是合法输入，闭包按哈希去重后归档成功。
-		// 原实现会让第二条撞闭包复合主键 → 整次归档失败（见 record_test 的回归用例）。
+
 		res := mustRecord(t, svc, req)
 		if n := closureCount(t, svc, res.ID); n != 1 {
 			t.Fatalf("重复文件哈希应去重为 1 条闭包: %d", n)
@@ -76,8 +70,6 @@ func TestArtifactMapPersistenceError(t *testing.T) {
 	})
 }
 
-// TestArtifactFindByHash 经 Detail / Record 幂等间接覆盖 findByHash：
-// 命中返回 exists=true；未命中 exists=false（转为 ErrArtifactNotFound）。
 func TestArtifactFindByHash(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -99,15 +91,10 @@ func TestArtifactFindByHash(t *testing.T) {
 	})
 }
 
-// TestArtifactToRespManifestUnparseable 覆盖 toResp 对非法 manifest 的容错：
-// 数据库中存在非法 manifest 时 Detail 仍返回记录，CanonicalPath 为空，
-// 解析失败仅告警不报错（不回读校验失败）。
 func TestArtifactToRespManifestUnparseable(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
-	// 直接写一条 manifest 为合法 JSON 但 canonicalPath 类型不匹配的记录，
-	// 绕过 service 校验，模拟历史脏数据（Unmarshal 到 struct 会失败）。
 	raw := validReq()
 	res, err := svc.Record(ctx, raw)
 	if err != nil {

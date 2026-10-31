@@ -1,11 +1,5 @@
 package navigationservice
 
-// navigation_translation_source_test.go — 共享来源索引（OpenSourceIndex）的纯逻辑契约。
-//
-// 用行端口桩 + 来源解析桩，不碰 PG：本文件钉的是**规则** —— 四 kind 全收集、hash 唯一、
-// 错误分档（读降级 vs 写整体失败）、严格来源解析、结果确定、工程隔离；SQL 与真实链路归 feature 测试。
-// 本批不跑 test/build/vet（已停写），统一由主审集中验收。
-
 import (
 	"context"
 	"errors"
@@ -19,17 +13,12 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// sourceRowsStub 行端口桩：按 (projectID, kind) 回放预置行，可注入读失败。
-//
-// 「工程隔离」的验法就是这张表：不同工程给不同菜单，桩按入参 projectID 选表 ——
-// 服务把错的工程传下去时，桩返回另一套菜单，断言立刻失败。
 type sourceRowsStub struct {
 	byProject map[string]map[string][]*navigationmodel.NavigationEntity
 	failKinds map[string]error
 	calls     []string
 }
 
-// ListForKind 实现 sourceRows。
 func (s *sourceRowsStub) ListForKind(_ context.Context, projectID, kind string) ([]*navigationmodel.NavigationEntity, error) {
 	s.calls = append(s.calls, projectID+"|"+kind)
 	if err, ok := s.failKinds[kind]; ok {
@@ -38,7 +27,6 @@ func (s *sourceRowsStub) ListForKind(_ context.Context, projectID, kind string) 
 	return s.byProject[projectID][kind], nil
 }
 
-// sourceResolverStub 来源解析桩：按 sourceID 回放 (title,url)，可注入错误。
 type sourceResolverStub struct {
 	navigationcontract.SourceResolver
 	titles map[string]string
@@ -46,7 +34,6 @@ type sourceResolverStub struct {
 	calls  []string
 }
 
-// ResolveSource 实现 navigationcontract.SourceResolver。
 func (s *sourceResolverStub) ResolveSource(_ context.Context, _, _, sourceID string) (string, string, error) {
 	s.calls = append(s.calls, sourceID)
 	if err, ok := s.fail[sourceID]; ok {
@@ -58,9 +45,6 @@ func (s *sourceResolverStub) ResolveSource(_ context.Context, _, _, sourceID str
 	return "", "", nil
 }
 
-// navRow 构造一条菜单行（列表顺序 = sort_order 顺序）。
-//
-// id 形如 "src:page:pg1" 表示带来源实体（sourceType / sourceID），用于验解析口径。
 func navRow(id, title, parentID string) *navigationmodel.NavigationEntity {
 	row := &navigationmodel.NavigationEntity{ID: id, Title: title, Path: "/p/" + id}
 	if parentID != "" {
@@ -76,15 +60,12 @@ func navRow(id, title, parentID string) *navigationmodel.NavigationEntity {
 	return row
 }
 
-// newSourceIndexService 组装最小 Service（model 为 nil：行端口由测试直填）。
 func newSourceIndexService(rows sourceRows, resolver navigationcontract.SourceResolver) *Service {
 	return &Service{m: nil, sources: resolver, sourceRowsPort: rows}
 }
 
-// sourceHash 与索引同一份指纹算法（pkg/i18n，不另算）。
 func sourceHash(text string) string { return i18n.ContentHash(text) }
 
-// entryHashes 条目 → hash 列表。
 func entryHashes(entries []navigationcontract.TranslationSourceEntry) []string {
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -93,7 +74,6 @@ func entryHashes(entries []navigationcontract.TranslationSourceEntry) []string {
 	return out
 }
 
-// failedKinds KindErrors → kind 列表（断言失败位置集合）。
 func failedKinds(index navigationcontract.SourceIndex) []string {
 	out := make([]string, 0)
 	for _, f := range index.KindErrors() {
@@ -102,7 +82,6 @@ func failedKinds(index navigationcontract.SourceIndex) []string {
 	return out
 }
 
-// TestOpenSourceIndexCollectsAllFourKinds 四 kind 全收集：同一段文字跨 header / footer 共享一条。
 func TestOpenSourceIndexCollectsAllFourKinds(t *testing.T) {
 	shared := "关于我们"
 	rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
@@ -146,7 +125,7 @@ func TestOpenSourceIndexCollectsAllFourKinds(t *testing.T) {
 	if err := index.Require(); err != nil {
 		t.Errorf("全部位置成功时 Require 应为 nil，实际 %v", err)
 	}
-	// 工程隔离：数据只来自入参工程（桩只认 p1）。
+
 	for _, call := range rows.calls {
 		if !strings.HasPrefix(call, "p1|") {
 			t.Errorf("行端口被以错误工程调用：%q", call)
@@ -154,7 +133,6 @@ func TestOpenSourceIndexCollectsAllFourKinds(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexStrictReadErrors 位置读失败：读侧降级、写侧整体失败、错误不外泄。
 func TestOpenSourceIndexStrictReadErrors(t *testing.T) {
 	readErr := errors.New(`ERROR: relation "navigations" (SQLSTATE 42P01)`)
 	rows := &sourceRowsStub{
@@ -175,11 +153,11 @@ func TestOpenSourceIndexStrictReadErrors(t *testing.T) {
 	if got, want := index.Kinds(), []string{"header", "header_mobile", "footer"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Kinds() = %v，应为读成的三个位置（失败位置不在其中）%v", got, want)
 	}
-	// 读降级：成功的位置照常可用。
+
 	if _, ok := index.Locate(sourceHash("首页")); !ok {
 		t.Error("失败位置之外的原文仍应可定位（读侧局部展示）")
 	}
-	// 写严格：Require 失败，且对外错误不含内部原文。
+
 	requireErr := index.Require()
 	if requireErr == nil {
 		t.Fatal("有位置读失败时 Require 必须失败（写侧整体不写）")
@@ -192,10 +170,6 @@ func TestOpenSourceIndexStrictReadErrors(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexResolverFailureDropsWholeKind 严格来源解析：单实体解析失败 = 该 kind 整体失败。
-//
-// 这是本批的核心判据：构建期「回退记录自身标题」的宽容**不得**搬进控制面写完整性 ——
-// 否则写侧会拿一段回退标题去对 hash，Require 仍然成功，用户以为保存的是新来源文本。
 func TestOpenSourceIndexResolverFailureDropsWholeKind(t *testing.T) {
 	resolverErr := errors.New("内容模块不可用 (SQLSTATE 08006)")
 	resolver := &sourceResolverStub{
@@ -219,7 +193,7 @@ func TestOpenSourceIndexResolverFailureDropsWholeKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("单个位置失败不应让整体打开失败: %v", err)
 	}
-	// 失败整个 kind 丢弃：该位置的**任何**条目都不算成功来源（含解析成功的那条与无来源节点）。
+
 	for _, gone := range []string{"解析后的页面标题", "旧记录标题", "回退标题", "自定义项"} {
 		if entry, ok := index.Locate(sourceHash(gone)); ok {
 			t.Errorf("header 解析失败时该位置不应贡献条目，却定位到 %q：%+v", gone, entry)
@@ -240,14 +214,13 @@ func TestOpenSourceIndexResolverFailureDropsWholeKind(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexWithoutSourceNodesNeedsNoResolution 无来源节点与未装解析器：不捏造错误。
 func TestOpenSourceIndexWithoutSourceNodesNeedsNoResolution(t *testing.T) {
 	t.Run("解析器已装但只有 custom 项", func(t *testing.T) {
 		resolver := &sourceResolverStub{}
 		rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
 			"p1": {"header": {
 				navRow("c1", "首页", ""),
-				// SourceType 非 custom 但没带来源实体：不需要解析。
+
 				&navigationmodel.NavigationEntity{ID: "c2", Title: "博客", Path: "/blog", SourceType: "page"},
 			}},
 		}}
@@ -285,7 +258,6 @@ func TestOpenSourceIndexWithoutSourceNodesNeedsNoResolution(t *testing.T) {
 	})
 }
 
-// TestOpenSourceIndexAllKindsFailed 四个位置全失败 = 整体打不开（不是「没有菜单」）。
 func TestOpenSourceIndexAllKindsFailed(t *testing.T) {
 	boom := errors.New("db down")
 	rows := &sourceRowsStub{failKinds: map[string]error{
@@ -309,7 +281,6 @@ func TestOpenSourceIndexAllKindsFailed(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexAllKindsResolverFailed 四 kind 的解析全失败：每位置一条事实，整体失败。
 func TestOpenSourceIndexAllKindsResolverFailed(t *testing.T) {
 	resolver := &sourceResolverStub{fail: map[string]error{
 		"pg1": errors.New("page 不可用"), "ar1": errors.New("content 不可用"),
@@ -337,7 +308,6 @@ func TestOpenSourceIndexAllKindsResolverFailed(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexRejectsEmptyProject 空工程：参数错误（不落到「空索引」）。
 func TestOpenSourceIndexRejectsEmptyProject(t *testing.T) {
 	svc := newSourceIndexService(&sourceRowsStub{}, nil)
 	if _, err := svc.OpenSourceIndex(context.Background(), "   "); !errors.Is(err, navigationenums.Err(navigationenums.ErrInvalidParam)) {
@@ -345,7 +315,6 @@ func TestOpenSourceIndexRejectsEmptyProject(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexPropagatesCancel ctx 取消：原样返回 ctx 错误，不当成位置失败。
 func TestOpenSourceIndexPropagatesCancel(t *testing.T) {
 	rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
 		"p1": {"header": {navRow("n1", "首页", "")}},
@@ -365,7 +334,6 @@ func TestOpenSourceIndexPropagatesCancel(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexMergesDuplicates 重复合并：同原文多个菜单项只产生一条，Kinds 去重。
 func TestOpenSourceIndexMergesDuplicates(t *testing.T) {
 	title := "产品中心"
 	rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
@@ -388,10 +356,6 @@ func TestOpenSourceIndexMergesDuplicates(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexKeepsUntranslatableRows 不可翻译行不被提前丢弃。
-//
-// 读消费者（工作台页面）自己用 i18n.ShouldTranslateContent 过滤展示；索引若提前丢掉它们，
-// 写侧就只剩「原文已变化（409）」，把「这段本来就不翻译」的原因指错。
 func TestOpenSourceIndexKeepsUntranslatableRows(t *testing.T) {
 	rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
 		"p1": {"header": {navRow("n1", "  ", ""), navRow("n2", "—", ""), navRow("n3", "2024", "")}},
@@ -413,7 +377,6 @@ func TestOpenSourceIndexKeepsUntranslatableRows(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexIsDeterministic 确定性：两次调用字节级相同（与 map 遍历顺序无关）。
 func TestOpenSourceIndexIsDeterministic(t *testing.T) {
 	titles := []string{"首页", "产品", "关于", "联系", "博客", "帮助", "服务", "案例", "团队", "招聘", "新闻", "条款"}
 	headerRows := make([]*navigationmodel.NavigationEntity, 0, len(titles))
@@ -448,7 +411,6 @@ func TestOpenSourceIndexIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestOpenSourceIndexIsImmutable 结果不可变：调用方改返回的切片不影响索引内部。
 func TestOpenSourceIndexIsImmutable(t *testing.T) {
 	rows := &sourceRowsStub{byProject: map[string]map[string][]*navigationmodel.NavigationEntity{
 		"p1": {"header": {navRow("n1", "首页", "")}, "footer": {navRow("n2", "首页", "")}},
@@ -484,10 +446,6 @@ func TestOpenSourceIndexIsImmutable(t *testing.T) {
 	}
 }
 
-// TestSourceIndexMergeHashConflict 同 hash 不同原文：绝不随机覆盖，冲突整体失败。
-//
-// 不构造真实 sha256 碰撞：merge 的输入是 contract 的 entry 值，包内测试直接给两条同 hash、
-// 不同 Source 的条目即可覆盖冲突分支（无需为测试另抽生产纯函数）。
 func TestSourceIndexMergeHashConflict(t *testing.T) {
 	hash := sourceHash("原始文案")
 	index := &sourceIndex{byHash: map[string]int{}, kinds: []string{}, failures: []navigationcontract.KindReadError{}}
@@ -511,7 +469,6 @@ func TestSourceIndexMergeHashConflict(t *testing.T) {
 	}
 }
 
-// TestSourceIndexMergeSameTextAcrossKinds 同 hash 同原文跨 kind：合并 Kinds，不记失败。
 func TestSourceIndexMergeSameTextAcrossKinds(t *testing.T) {
 	title := "服务"
 	hash := sourceHash(title)
@@ -528,7 +485,6 @@ func TestSourceIndexMergeSameTextAcrossKinds(t *testing.T) {
 	}
 }
 
-// TestSourceIndexConflictIsDeterministic 冲突结果与写入顺序无关（反向驱动一次）。
 func TestSourceIndexConflictIsDeterministic(t *testing.T) {
 	hash := sourceHash("x")
 	forward := &sourceIndex{byHash: map[string]int{}, kinds: []string{}, failures: []navigationcontract.KindReadError{}}
@@ -552,7 +508,6 @@ func TestSourceIndexConflictIsDeterministic(t *testing.T) {
 	}
 }
 
-// sortedCopy 便于比较与顺序无关的集合。
 func sortedCopy(in []string) []string {
 	out := append([]string{}, in...)
 	for i := 1; i < len(out); i++ {
@@ -563,7 +518,6 @@ func sortedCopy(in []string) []string {
 	return out
 }
 
-// TestOpenSourceIndexWithoutModelFailsClosed 未装配行端口：显式失败，不给空索引。
 func TestOpenSourceIndexWithoutModelFailsClosed(t *testing.T) {
 	svc := &Service{}
 	index, err := svc.OpenSourceIndex(context.Background(), "p1")
@@ -575,6 +529,5 @@ func TestOpenSourceIndexWithoutModelFailsClosed(t *testing.T) {
 	}
 }
 
-// 编译期护栏：桩实现端口。
 var _ sourceRows = (*sourceRowsStub)(nil)
 var _ navigationcontract.SourceResolver = (*sourceResolverStub)(nil)

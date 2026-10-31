@@ -1,16 +1,5 @@
 package workbenchhttp
 
-// inspector_repeater_panel_test.go — 重复项面板的服务端渲染（折叠项 / 页签）。
-//
-// 链路：节点 props → Go 骨架生成器（inspector_repeater.go）→ Jet 模板
-// {{f.HTML | unsafe}} → 客户端绑定函数（repeater.js 的 bindRepeaterPanel）认得的属性。
-//
-// 单元测试钉的是生成器的输出；这里钉的是「它确实进了模板，并且按原样输出」——
-// 少了 | unsafe 的话 HTML 会被转义成文本，页面上看得见一串标签、客户端一个属性都读不到，
-// 而生成器自身的单测照样全绿。
-//
-// 复用 inspector_panel_test.go 的 newInspectorRouter（只装这一个端点，不依赖数据库）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +8,6 @@ import (
 	"testing"
 )
 
-// postInspector 提交一次面板请求并返回响应体。
 func postInspector(t *testing.T, doc, nodeID, tab string) string {
 	t.Helper()
 	router := newInspectorRouter(t)
@@ -38,7 +26,6 @@ const accordionDoc = `{"settings":{},"root":[{"id":"acc1","type":"core.accordion
 	`"props":{"items":[{"title":"第一项","open":true},{"title":"第二项"}]},` +
 	`"children":[{"id":"c1","type":"core.text","props":{}},{"id":"c2","type":"core.text","props":{}}]}]}`
 
-// TestInspectorPanelRendersAccordionRepeater 折叠项面板的骨架出现在片段里，且未被转义。
 func TestInspectorPanelRendersAccordionRepeater(t *testing.T) {
 	body := postInspector(t, accordionDoc, "acc1", "content")
 	for _, want := range []string{
@@ -57,15 +44,12 @@ func TestInspectorPanelRendersAccordionRepeater(t *testing.T) {
 			t.Errorf("面板缺少 %q\n%s", want, body)
 		}
 	}
-	// 原样输出：转义了的话页面上会显示一串标签，而生成器的单测仍然全绿。
+
 	if strings.Contains(body, "&lt;div class=") || strings.Contains(body, "data-wb-rep=&quot;") {
 		t.Errorf("骨架被转义了 —— 模板分支少了 | unsafe：\n%s", body)
 	}
 }
 
-// TestInspectorPanelRepeaterCountMismatch 条目数与画布面板数不一致时给红色提示。
-//
-// 不一致是真实会发生的（历史脏数据、或直接在画布上增删面板）：用户要在保存前就看到。
 func TestInspectorPanelRepeaterCountMismatch(t *testing.T) {
 	doc := `{"settings":{},"root":[{"id":"acc1","type":"core.accordion",` +
 		`"props":{"items":[{"title":"唯一一项"}]},` +
@@ -79,7 +63,6 @@ func TestInspectorPanelRepeaterCountMismatch(t *testing.T) {
 	}
 }
 
-// TestInspectorPanelRepeaterTabs 页签面板走同一套服务端骨架（共用生成器与绑定函数）。
 func TestInspectorPanelRepeaterTabs(t *testing.T) {
 	doc := `{"settings":{},"root":[{"id":"t1","type":"core.tabs",` +
 		`"props":{"tabs":[{"label":"概览"},{"label":"参数"}]},` +
@@ -96,13 +79,12 @@ func TestInspectorPanelRepeaterTabs(t *testing.T) {
 			t.Errorf("页签面板缺少 %q\n%s", want, body)
 		}
 	}
-	// 页签没有额外字段（折叠项的「默认展开」是它独有的）。
+
 	if strings.Contains(body, "data-wb-rep-extra") {
 		t.Error("页签面板不该有额外字段控件")
 	}
 }
 
-// TestInspectorPanelRepeaterHiddenOnStyleTab 样式页签不挂重复项面板（它属于内容）。
 func TestInspectorPanelRepeaterHiddenOnStyleTab(t *testing.T) {
 	if body := postInspector(t, accordionDoc, "acc1", "style"); strings.Contains(body, "data-wb-rep=") {
 		t.Errorf("样式页签不该出现重复项面板：\n%s", body)

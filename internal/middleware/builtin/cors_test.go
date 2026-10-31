@@ -31,7 +31,6 @@ func serveCORS(middleware gin.HandlerFunc, req *http.Request) *httptest.Response
 	return recorder
 }
 
-// 白名单模式：命中白名单的 Origin 回显并允许携带 Cookie。
 func TestCORSAllowlistMatchesOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	middleware := CORS(CORSConfig{AllowedOrigins: []string{"https://admin.example.com"}})
@@ -45,7 +44,6 @@ func TestCORSAllowlistMatchesOrigin(t *testing.T) {
 	}
 }
 
-// 白名单模式：未命中的 Origin 不反射、不下发任何 CORS 头（与 credentials 永不冲突）。
 func TestCORSAllowlistRejectsOtherOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	middleware := CORS(CORSConfig{AllowedOrigins: []string{"https://admin.example.com"}})
@@ -62,7 +60,6 @@ func TestCORSAllowlistRejectsOtherOrigin(t *testing.T) {
 	}
 }
 
-// 预检：命中返回 204 + CORS 头；未命中返回 204 但不附加 CORS 头（浏览器侧拒绝）。
 func TestCORSPreflightWithAllowlist(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	middleware := CORS(CORSConfig{AllowedOrigins: []string{"https://admin.example.com"}})
@@ -84,12 +81,11 @@ func TestCORSPreflightWithAllowlist(t *testing.T) {
 	}
 }
 
-// 无白名单 + release：拒绝跨域（不反射 Origin），业务仍执行。
 func TestCORSReleaseRefusesWithoutAllowlist(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	defer gin.SetMode(gin.TestMode)
 
-	middleware := CORS() // 无白名单（测试环境 config 未初始化）
+	middleware := CORS()
 
 	recorder := serveCORS(middleware, newCORSRequest(http.MethodGet, "/data", "https://evil.example.com"))
 	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
@@ -103,12 +99,11 @@ func TestCORSReleaseRefusesWithoutAllowlist(t *testing.T) {
 	}
 }
 
-// 无白名单 + debug：回退反射 Origin 并允许 credentials（仅限开发环境）。
 func TestCORDebugReflectsWithoutAllowlist(t *testing.T) {
 	gin.SetMode(gin.DebugMode)
 	defer gin.SetMode(gin.TestMode)
 
-	middleware := CORS() // 无白名单 → debug 回退反射
+	middleware := CORS()
 
 	recorder := serveCORS(middleware, newCORSRequest(http.MethodGet, "/data", "https://dev.example.com"))
 	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "https://dev.example.com" {
@@ -119,7 +114,6 @@ func TestCORDebugReflectsWithoutAllowlist(t *testing.T) {
 	}
 }
 
-// 无 Origin（同源/curl）请求直接放行，不附加 CORS 头。
 func TestCORSNoOriginPassesThrough(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	defer gin.SetMode(gin.TestMode)
@@ -142,10 +136,10 @@ func TestOriginAllowed(t *testing.T) {
 		want   bool
 	}{
 		{"https://a.example.com", true},
-		{"https://A.EXAMPLE.COM", true}, // 大小写不敏感
+		{"https://A.EXAMPLE.COM", true},
 		{"https://b.example.com", true},
 		{"https://evil.example.com", false},
-		{"https://a.example.com.evil.com", false}, // 前缀/子串不匹配
+		{"https://a.example.com.evil.com", false},
 	}
 	for _, tc := range cases {
 		if got := originAllowed(tc.origin, allowlist); got != tc.want {

@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestShapedividerCSSDefaults 三端高度的缺省值与自定义覆盖。
 func TestShapedividerCSSDefaults(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -35,7 +34,6 @@ func TestShapedividerCSSDefaults(t *testing.T) {
 	}
 }
 
-// TestShapedividerCSSFlip 镜像的四种组合（含不镜像时整条 transform 不产出）。
 func TestShapedividerCSSFlip(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -66,10 +64,6 @@ func TestShapedividerCSSFlip(t *testing.T) {
 	}
 }
 
-// TestShapedividerCSSDrift 漂移动画与关键帧必须成对出现。
-//
-// 只产出 animation 不产出 @keyframes → 动画静默不执行；只产出关键帧不产出 animation →
-// 白背一段没人引用的字节。两者由同一个 drift 变量控制，这条测试保证它们不脱节。
 func TestShapedividerCSSDrift(t *testing.T) {
 	var off core.CSSBuckets
 	compileCSS("t", &Props{}, &off)

@@ -1,14 +1,5 @@
 package migrations_test
 
-// 634 的护栏：库存目录只能有一条、库存子页各一条且按 229 的设计顺序、会员两项挂在「客户」下。
-//
-// 三层判据：
-//  1. 静态：229 的 CheckSQL 不得再以「/admin/inventory/warehouses 那一行」为门槛，
-//     224 的权限码映射必须给仓库页留例外 —— 这两处是「插出第二套菜单」的根因，
-//     只修数据不修它们，下次 224 重跑还会把仓库页改回 /admin/inventory。
-//  2. 真实 PG：跑完迁移 + seed 之后，菜单树是唯一的一套。
-//  3. 幂等：再跑一轮 seed，菜单快照逐字不变（否则每次启动都会继续漂）。
-
 import (
 	"strings"
 	"testing"
@@ -41,7 +32,6 @@ func Test_634_MenuDedupAndMembershipPlacement(t *testing.T) {
 	}
 }
 
-// assertMenuDuplicationRootCauseFixed 钉住「重复插一套」的两个根因。
 func assertMenuDuplicationRootCauseFixed(t *testing.T) {
 	t.Helper()
 
@@ -85,7 +75,6 @@ type menuRow struct {
 	ParentID  uint64
 }
 
-// assertInventoryMenuUnique 断言「库存」目录唯一、五个子页各一条、标题与顺序符合 229 的设计。
 func assertInventoryMenuUnique(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
@@ -142,7 +131,6 @@ func assertInventoryMenuUnique(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// assertMembershipUnderCustomer 断言两项会员菜单挂在「客户」目录下、顺序接在群组留存之后。
 func assertMembershipUnderCustomer(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
@@ -181,7 +169,6 @@ func assertMembershipUnderCustomer(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// menuSnapshot 返回可比较的菜单快照（未软删的目录与菜单行，按 id 排序）。
 func menuSnapshot(t *testing.T, db *gorm.DB) string {
 	t.Helper()
 	var s string

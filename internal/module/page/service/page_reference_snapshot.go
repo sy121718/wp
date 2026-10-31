@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// freezeReferences 只固定公开构建配置，多语言批次复用同一份闭包。
 func (s *Service) freezeReferences(ctx context.Context, projectID string, doc []byte) (*pipeline.ReferenceSnapshot, error) {
 	if frozen := pipeline.ReferenceSnapshotFromContext(ctx, projectID); frozen != nil {
 		return frozen, nil

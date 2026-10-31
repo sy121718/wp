@@ -12,21 +12,12 @@ import (
 	"go_wp/internal/seo"
 )
 
-// seo_head.go — 构建期 SEO 头输出（canonical / OG / Twitter / JSON-LD）。
-//
-// 三级默认回落（docs/06-A §2.1）：页面 settings.seo → 站点默认 → 省略。
-// 全部内容参与确定性构建：同一输入产生相同字节。
-
-// Alternate 该页面的另一种语言版本（多语言 P3，docs/06-D §5）。
-// Href 为可直接引用的 URL（配置了站点基址时为绝对 URL，否则为站点内路径）；
-// Default=true 的那条同时输出 hreflang="x-default"。
 type Alternate struct {
 	Lang    string
 	Href    string
 	Default bool
 }
 
-// robots 指令取值（页面设置的 robotsIndex / robotsFollow 白名单）。
 const (
 	robotIndex    = "index"
 	robotNoIndex  = "noindex"
@@ -34,8 +25,6 @@ const (
 	robotNoFollow = "nofollow"
 )
 
-// robotsContent 组装 robots 指令：两项都取默认（index/follow）时返回空串 ——
-// 默认页面的产物字节因此与「没有这个功能」时完全一致（确定性构建不变量）。
 func robotsContent(index, follow string) string {
 	idx := strings.ToLower(strings.TrimSpace(index))
 	fol := strings.ToLower(strings.TrimSpace(follow))
@@ -51,8 +40,6 @@ func robotsContent(index, follow string) string {
 	return idx + "," + fol
 }
 
-// ogType Open Graph 类型：跟随结构化数据类型 —— 社交平台据此判断内容形态，
-// 固定输出 website 会让文章/商品在分享卡片里丢掉类型信息。
 func ogType(schemaType string) string {
 	switch strings.ToLower(strings.TrimSpace(schemaType)) {
 	case "article":
@@ -63,11 +50,6 @@ func ogType(schemaType string) string {
 	return "website"
 }
 
-// BuildSEOHead 生成注入 <head> 的 SEO 片段（canonical / OG / Twitter / JSON-LD / hreflang）。
-// pageURL 为页面最终 URL（空则省略 URL 相关标签）。
-// breadcrumbHome 为 JSON-LD 面包屑首项文案（空则回退 "Home"）。
-// alternates 为同页其他语言版本（空 = 单语言站点，输出与 P3 之前逐字节一致）；
-// 至少两种语言时才输出 hreflang（自指单条无意义）。
 func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, alternates []Alternate) string {
 	if title == "" {
 		title = seo.Title
@@ -78,12 +60,6 @@ func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, a
 	var sb strings.Builder
 	esc := html.EscapeString
 
-	// canonical / og:url / og:image 一律补成**绝对地址**。
-	//
-	// 为什么不能是站内路径：Canonical 的官方规范要求绝对 URL —— 跨协议、镜像站、
-	// 分域分发抓取时，相对路径会让权重归集失效（搜索引擎各按各的域拼）；
-	// og:image 相对地址则被多数社交抓取器直接忽略，分享卡片没有图。
-	// 站点基址真源与 sitemap / hreflang 同一个环境变量（WP_SITE_BASE_URL，可带路径前缀）。
 	canonical := absoluteURL(canonicalPublicPath(strings.TrimSpace(seo.Canonical)))
 	if canonical == "" {
 		canonical = absoluteURL(canonicalPublicPath(strings.TrimSpace(pageURL)))
@@ -126,11 +102,6 @@ func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, a
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// siteBasePath 站点基址里的路径前缀（无前缀返回空串，形如 "/site"）。
-//
-// 单独抽出来是因为「基址带前缀」这件事在四处都要用：绝对地址拼接、首页判定、
-// 面包屑前缀剥离、面包屑首页项。各写一次 parse 迟早漏一处 —— 漏掉的表现是
-// 某处悄悄指向域名根，而页面上完全看不出来。
 func siteBasePath() string {
 	base := strings.TrimSpace(os.Getenv(siteBaseURLEnv))
 	if base == "" {
@@ -143,11 +114,6 @@ func siteBasePath() string {
 	return strings.TrimRight(u.Path, "/")
 }
 
-// absoluteURL 把站内路径补成对外绝对地址；已是绝对地址或未配置基址时原样返回。
-//
-// 基址来自 WP_SITE_BASE_URL（与 sitemap / robots / hreflang / 结构化数据同源），
-// **允许带路径前缀**（开发环境就是 http://127.0.0.1:8080/site），因此用 JoinURL
-// 而不是自己拼 host —— 前缀丢了会让所有 canonical 指向站点根。
 func absoluteURL(raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" {
@@ -159,7 +125,7 @@ func absoluteURL(raw string) string {
 	}
 	base := strings.TrimSpace(os.Getenv(siteBaseURLEnv))
 	if base == "" {
-		return u // 未配置基址：保持站内路径（既有行为，不猜域名）
+		return u
 	}
 	return seo.JoinURL(base, u)
 }
@@ -201,8 +167,6 @@ func normalizeAlternates(alternates []Alternate) []Alternate {
 	return out
 }
 
-// alternateLinks 生成 hreflang 互指标签（语言码升序，x-default 固定最后）。
-// 少于两种有效语言时返回空串——单语言站点产物字节保持不变（确定性构建不变量）。
 func alternateLinks(alternates []Alternate) string {
 	valid := make([]Alternate, 0, len(alternates))
 	for _, a := range alternates {
@@ -214,7 +178,7 @@ func alternateLinks(alternates []Alternate) string {
 	if len(valid) < 2 {
 		return ""
 	}
-	// 稳定排序：语言码升序（插入排序，避免引入 sort 依赖差异）。
+
 	main := make([]Alternate, 0, len(valid))
 	xdefault := ""
 	for _, a := range valid {
@@ -239,32 +203,12 @@ func alternateLinks(alternates []Alternate) string {
 	return sb.String()
 }
 
-// schemaOrgContext 结构化数据的统一 @context（页面级与站点级共用）。
-//
-// 写成常量而不是到处重复字面量：同一个字符串拼错一处，那一份 JSON-LD 就整份失效，
-// 而且失败是静默的（页面看着正常）。
 const schemaOrgContext = "https://schema.org"
 
-// siteBaseURLEnv 站点公开根地址的环境变量名。
-//
-// 与 sitemap / robots.txt（internal/module/page/service/page_publish.go）、
-// 语言切换链接（internal/pipeline/site_lang.go）读的是同一个变量：结构化数据里的
-// 站点 url 必须与 sitemap 的 <loc> 指向同一域名，否则站点对外宣称了两个实体。
-// 变量可带路径前缀（开发环境就是 http://127.0.0.1:8080/site），这里保留前缀。
 const siteBaseURLEnv = "WP_SITE_BASE_URL"
 
-// siteSearchQueryParam 站内搜索的关键词参数名。
-//
-// 与 core.searchResults 组件的搜索表单同源（search_widget.jet 的 <input name="q">，
-// 表单 GET 提交到所在页面）：SearchAction 的 urlTemplate 必须用同一个参数名，
-// 否则 Google 搜索结果里的站内搜索框点开是个参数被忽略的页面。
 const siteSearchQueryParam = "q"
 
-// siteRoot 站点根 URL（无尾斜杠）；无法确定时返回空串。
-//
-// 两级来源：部署环境变量优先（与 sitemap 同源、含路径前缀）；否则从页面的绝对
-// canonical 里取 origin —— 只配了站内相对路径的站点推不出域名，此时不输出站点级
-// 结构化数据（宁可不输出，也不要宣称一个错的站点地址）。
 func siteRoot(canonical string) string {
 	if base := strings.TrimSpace(os.Getenv(siteBaseURLEnv)); base != "" {
 		if u, err := url.Parse(base); err == nil && u.Scheme != "" && u.Host != "" {
@@ -278,12 +222,6 @@ func siteRoot(canonical string) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// isHomeCanonical 判断 canonical 是否站点首页（路径为空或 "/"）。
-//
-// 判据要先剥掉**站点基址的路径前缀**：站点部署在子路径时（开发环境就是 /site），
-// 首页的绝对 URL 形如 https://host/site/ —— 直接看 url.Path 是 "/site/"，会被误判成
-// 非首页，首页的 Organization / WebSite 结构化数据整块不输出（实测：加绝对地址那轮
-// 把这条打掉了，TestSiteLevelJSONLDOnHomePage 变红）。
 func isHomeCanonical(canonical string) bool {
 	c := strings.TrimSpace(canonical)
 	if c == "" {
@@ -310,10 +248,6 @@ func isHomeCanonical(canonical string) bool {
 	return u.Path == "" || u.Path == "/"
 }
 
-// homeSiteRoot 首页的站点根（含尾斜杠）；非首页、站点名缺失或站点根未知时返回空串。
-//
-// 站点名是 Organization 的必需属性，站点根是 WebSite 的必需属性 —— 任一缺失都不输出，
-// 因为「不完整的结构化数据」在 Search Console 里是报错，而不是降级。
 func homeSiteRoot(canonical, name string) string {
 	if strings.TrimSpace(name) == "" || !isHomeCanonical(canonical) {
 		return ""
@@ -325,7 +259,6 @@ func homeSiteRoot(canonical, name string) string {
 	return root + "/"
 }
 
-// organizationNode 品牌实体（Organization）：Google 知识面板的输入。
 func organizationNode(home, name, logo string) map[string]any {
 	node := map[string]any{
 		"@type": "Organization",
@@ -339,10 +272,6 @@ func organizationNode(home, name, logo string) map[string]any {
 	return node
 }
 
-// websiteNode 站点实体（WebSite + 站内搜索动作）。
-//
-// potentialAction 是 Google 在搜索结果里展示站内搜索框的依据；target 用
-// EntryPoint/urlTemplate 形态，关键词占位符必须与站内搜索组件的参数名一致。
 func websiteNode(home, name string) map[string]any {
 	return map[string]any{
 		"@type": "WebSite",
@@ -360,18 +289,10 @@ func websiteNode(home, name string) map[string]any {
 	}
 }
 
-// schemaTypeMap 结构化数据类型映射（空 = WebPage）。
-//
-// 刻意没有 "faq" → FAQPage 这一项：FAQPage 的产出责任在 core.faq 组件
-// （internal/builder/components/faq/jsonld.go 输出带 mainEntity 的那份，与可见问答同源）。
-// 页面设置里选了 faq 时这里再输出一次，页面上就会有两个 FAQPage 节点 —— 其中一个是没内容的
-// 空壳，属于 Search Console 里的「无效结构化数据」，对整站数据质量是负收益（审计 SEO-006）。
-// 因此 schemaType=faq 的页面仍按默认的 WebPage 输出页面级主实体。
 var schemaTypeMap = map[string]string{
 	"website": "WebSite", "article": "Article", "product": "Product",
 }
 
-// buildJSONLD 生成结构化数据（JSON-LD）：按页面类型输出主实体 + 面包屑。
 func buildJSONLD(url, title, description, image, schemaType string, offer *ProductOfferLD, breadcrumbHome string) string {
 	if title == "" && description == "" {
 		return ""
@@ -405,9 +326,7 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 			doc["offers"] = map[string]any{
 				"@type": "Offer",
 				"price": offer.Price,
-				// 兜底值同样取全局默认币种（进程内缓存值）：结构化数据与页面 props
-				// 之前一个写码、一个写符号（¥），两处自相矛盾；接上同一个来源后
-				// 「声称 CNY、页面显示 $」这个裂口不会再出现。
+
 				"priceCurrency": seoDefaultString(offer.PriceCurrency, i18n.GetDefaultCurrency()),
 				"availability":  "https://schema.org/" + seoDefaultString(offer.Availability, "InStock"),
 				"url":           url,
@@ -427,18 +346,12 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 			"itemListElement": crumbs,
 		}
 	}
-	// 站点级结构化数据（审计 SEO-007）：首页追加 Organization 与 WebSite（含站内搜索）。
-	//
-	// 只在首页输出：品牌与站内搜索入口是站点级事实，每页重复只是噪声。
-	// 站点级节点与页面级主实体放进同一个 @graph、而不是另起一个 <script>：
-	// 页面上多份 JSON-LD 各自是独立断言，同类型节点重复时搜索引擎只能猜哪份是真的。
-	// 站点根或站点名缺失时不输出：Organization 缺 name 属无效结构化数据。
+
 	if home := homeSiteRoot(url, title); home != "" {
 		graph := make([]any, 0, 3)
 		graph = append(graph, organizationNode(home, title, image))
 		if typeName == "WebSite" {
-			// 页面主实体本身就是 WebSite（首页显式设了 schemaType=website）：
-			// 站点级字段合并进它，而不是再追加一个同类型节点（两份互相竞争的站点断言）。
+
 			for k, v := range websiteNode(home, title) {
 				doc[k] = v
 			}
@@ -455,7 +368,6 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 	return "<script type=\"application/ld+json\">" + string(b) + "</script>"
 }
 
-// breadcrumbList 由 URL 路径生成面包屑（/a/b → 首页 + a + b）。
 func breadcrumbList(rawURL, homeName string) []map[string]any {
 	homeName = strings.TrimSpace(homeName)
 	if homeName == "" {
@@ -469,8 +381,7 @@ func breadcrumbList(rawURL, homeName string) []map[string]any {
 	if err != nil || u.Opaque != "" {
 		return nil
 	}
-	// 路径不是基址；查询和锚点也不参与层级。保留编码后的路径段，
-	// 否则 a%2Fb 会被错误拆成两级，只有展示名称才进行解码。
+
 	base := ""
 	if u.Host != "" {
 		base = "//" + u.Host
@@ -478,9 +389,7 @@ func breadcrumbList(rawURL, homeName string) []map[string]any {
 			base = u.Scheme + ":" + base
 		}
 	}
-	// 剥掉**站点基址的路径前缀**：站点部署在子路径时（开发环境就是 /site），
-	// 前缀本身不是面包屑的一级 —— 不剥它，JSON-LD 里会多出一条名为 "site" 的假层级
-	// （实测 AbsoluteURL 那轮把这条引入了：面包屑变成 首页 > site > 文章）。
+
 	escapedPath := u.EscapedPath()
 	if base := strings.TrimSpace(os.Getenv(siteBaseURLEnv)); base != "" {
 		if bu, berr := url.Parse(base); berr == nil {
@@ -491,19 +400,16 @@ func breadcrumbList(rawURL, homeName string) []map[string]any {
 		}
 	}
 	parts := strings.Split(strings.TrimPrefix(escapedPath, "/"), "/")
-	// 首页项要带上**站点基址的路径前缀**：站点部署在子路径时站点首页是 <prefix>/，
-	// 写成 scheme://host/ 会指到域名根（那里可能是控制面或另一个站点）。
+
 	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": homeName, "item": base + siteBasePath() + "/"}}
-	// 层级 URL 从**站点基址**起算（不是域名根）：少了前缀，每一级的 item 都会指向
-	// 域名根下的同名路径 —— 那是另一个位置（控制面 / 别的站点），页面看不出来但结构化
-	// 数据是错的。
+
 	cur := base + siteBasePath()
 	for _, p := range parts {
 		cur += "/" + p
 		if p == "" {
 			continue
 		}
-		name, _ := url.PathUnescape(p) // EscapedPath 已保证转义合法。
+		name, _ := url.PathUnescape(p)
 		out = append(out, map[string]any{
 			"@type": "ListItem", "position": len(out) + 1, "name": name, "item": cur,
 		})

@@ -1,9 +1,5 @@
 package builder
 
-// 插件组件编译集成测试（AGENTS.md §7）：
-// plugin.* 节点经 RenderContext.Plugin 取规格 → 模板渲染 + 样式编译，
-// 产物与内置组件同一确定性管线。
-
 import (
 	"strings"
 	"testing"
@@ -16,7 +12,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// testPluginManifest 最小营销插件（一个组件 + 一段样式）。
 const testPluginManifest = `{
   "id": "marketing",
   "name": "营销组件",
@@ -37,13 +32,11 @@ const testPluginManifest = `{
   }]
 }`
 
-// testPluginTemplate 插件组件模板（{{.V.title}} 走 nodeView.V）。
 const testPluginTemplate = `<article class="sky-campaign-card {{ .Classes }}">
   <h3>{{ .V.title }}</h3>
   <span class="level">{{ .V.level }}</span>
 </article>`
 
-// mapResolverSpecs 手工构建 PluginResolver（内存 spec，不经 plugin 模块）。
 func mapResolverSpecs(specs map[string]*core.PluginComponentSpec) core.PluginResolver {
 	return testResolver(specs)
 }
@@ -55,7 +48,6 @@ func (m testResolver) LookupPluginComponent(t string) (*core.PluginComponentSpec
 	return s, ok
 }
 
-// TestPluginComponentCompile 插件组件端到端编译：HTML 模板 + CSS 样式。
 func TestPluginComponentCompile(t *testing.T) {
 	manifest, err := plugincomp.ParseManifest([]byte(testPluginManifest))
 	if err != nil {
@@ -63,7 +55,6 @@ func TestPluginComponentCompile(t *testing.T) {
 	}
 	specs := plugincomp.BuildSpecs(manifest)
 
-	// 插件模板命名空间 FS：components/campaign_card.jet。
 	pluginFS := fstest.MapFS{
 		"components/campaign_card.jet": {Data: []byte(testPluginTemplate)},
 	}
@@ -72,7 +63,6 @@ func TestPluginComponentCompile(t *testing.T) {
 		t.Fatalf("CompositeSet 构建失败: %v", err)
 	}
 
-	// 构造含插件节点的页面（props 含 title/bgColor，缺 level 走 default）。
 	page, err := ParsePage([]byte(`{
 	  "settings": {"layout": {"mode": "full"}},
 	  "root": [{
@@ -96,21 +86,19 @@ func TestPluginComponentCompile(t *testing.T) {
 		t.Fatalf("RenderDocument: %v", err)
 	}
 
-	// HTML：模板渲染，title 用 props 值，level 用 default。
 	if !strings.Contains(html, "会员日") || !strings.Contains(html, "gold") {
 		t.Fatalf("模板渲染缺失:\n%s", html)
 	}
-	// CSS：静态声明 + 绑定（bgColor → background）。
+
 	if !strings.Contains(compiled.CSS, "border-radius: 12px") || !strings.Contains(compiled.CSS, "background: #ff0") {
 		t.Fatalf("样式编译缺失:\n%s", compiled.CSS)
 	}
-	// 节点类（sky-c-{id}）进产物（编辑器桥接依赖）。
+
 	if !strings.Contains(html, "sky-c-card-1") {
 		t.Fatalf("节点类缺失:\n%s", html)
 	}
 }
 
-// TestPluginComponentUnknownProps 未声明 props 键拒绝（白名单夹带防线）。
 func TestPluginComponentUnknownProps(t *testing.T) {
 	manifest, _ := plugincomp.ParseManifest([]byte(testPluginManifest))
 	specs := plugincomp.BuildSpecs(manifest)
@@ -125,7 +113,6 @@ func TestPluginComponentUnknownProps(t *testing.T) {
 	}
 }
 
-// TestPluginComponentMissingResolver 无插件 resolver 时明确报错（非静默）。
 func TestPluginComponentMissingResolver(t *testing.T) {
 	page, _ := ParsePage([]byte(`{
 	  "settings": {"layout": {"mode": "full"}},
@@ -137,7 +124,6 @@ func TestPluginComponentMissingResolver(t *testing.T) {
 	}
 }
 
-// TestPluginStyleRejectsInjection 绑定值注入被 style 引擎拒绝（防御深度）。
 func TestPluginComponentStyleInjection(t *testing.T) {
 	manifest, _ := plugincomp.ParseManifest([]byte(testPluginManifest))
 	specs := plugincomp.BuildSpecs(manifest)
@@ -152,7 +138,6 @@ func TestPluginComponentStyleInjection(t *testing.T) {
 	}
 }
 
-// mustSet 内置 embed Set（插件集成测试仅需模板 Set 存在）。
 func mustSet(t *testing.T) *jet.Set {
 	t.Helper()
 	set, err := templates.NewEmbeddedComponentSet()

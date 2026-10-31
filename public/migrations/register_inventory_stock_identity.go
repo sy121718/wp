@@ -2,10 +2,6 @@ package migrations
 
 import "sync"
 
-// register_inventory_stock_identity.go — 641：货行身份改成「仓 × 仓库 SKU」。
-//
-// 完成判据枚举本批两个对象：那条唯一约束不在、那条索引不在。
-// 不写成「表存在即跳过」—— inventory_stocks 一直都在。
 func registerInventoryStockIdentity() {
 	registerInventoryStockIdentityOnce.Do(func() {
 		register(Migration{

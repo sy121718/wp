@@ -1,6 +1,5 @@
 package commentfeature
 
-// 旧运行时HTML能力删除后，评论业务规则仍由真实服务和后台审核API的PG链路守护。
 import (
 	"context"
 	"testing"
@@ -24,7 +23,6 @@ func commentTypes() []commentcontract.EntityType {
 	}
 }
 
-// setupCommentService 同时供后台审核API测试复用，表结构只来自生产迁移。
 func setupCommentService(t *testing.T) (*commentservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)

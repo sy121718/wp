@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 引用校验：内容非空、出处链接协议。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -31,7 +30,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 引用样式编译：左边框 + 对齐 + cite。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string

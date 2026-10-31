@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestLanguagesCSSCurrentMirrorsLink 当前语言与语言链接的排版必须逐条一致。
-//
-// 两者在同一行里并排显示，排版有任何差别都会让切换器「跳一下」；差异只允许在
-// cursor（不可点）与颜色覆盖上。迁移前 Go 侧是靠复用同一个声明切片维持这条一致的。
 func TestLanguagesCSSCurrentMirrorsLink(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Color: "#333", FontSize: "14px", FontWeight: "600", ItemPadding: "4px 8px"}, &b)
@@ -33,7 +29,6 @@ func TestLanguagesCSSCurrentMirrorsLink(t *testing.T) {
 	}
 }
 
-// TestLanguagesCSSOptionals 纵向 / 间距 / 悬停色 / 当前色均为可选。
 func TestLanguagesCSSOptionals(t *testing.T) {
 	var plain core.CSSBuckets
 	compileCSS("t", &Props{}, &plain)
@@ -54,7 +49,6 @@ func TestLanguagesCSSOptionals(t *testing.T) {
 	}
 }
 
-// blockOf 取出形如 "sel {" 开头的那一段规则（到下一个空行为止），用于比对两条规则的声明。
 func blockOf(out, header string) string {
 	i := strings.Index(out, header)
 	if i < 0 {

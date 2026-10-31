@@ -1,15 +1,5 @@
 package builtin
 
-// storage_cache_test.go — /storage 缓存头的**状态码维度**用例（实现者侧）。
-//
-// 补的正是原先那个盲区：全部既有 404 用例的形状都不命中指纹正则
-//（大写 hash / 7 位 hash / 无 generation / nope.png / 目录），于是「形状合法但
-// 文件不存在」这条路径从来没人跑过 —— 而它在改造前会拿到 immutable + 404
-//（浏览器把 404 钉一年），是最贵的一种错。
-//
-// 判据是两段：形状决定「能不能长缓存」，状态码决定「这一条算不算命中不变的字节」。
-// 本文件每个用例都把两者一起断言。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -20,8 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 与 verifier 的用例同名的常量刻意不复用（那是另一份文件），这里独立声明，
-// 避免「改一处、两处断言一起变绿」。
 const (
 	okImmutable  = "public, max-age=31536000, immutable"
 	okRevalidate = "public, max-age=0, must-revalidate"
@@ -42,11 +30,9 @@ func newCacheProbeRouter(t *testing.T, root string) *gin.Engine {
 	return router
 }
 
-// TestStorageCacheShapeValidButMissing 本条的验收核心：
-// 形状合法（完整指纹）但文件不存在 → 404 且**不能**是 immutable。
 func TestStorageCacheShapeValidButMissing(t *testing.T) {
 	root := t.TempDir()
-	// 只落盘一个真实变体，用来对照；下面请求的名字形状与它完全一致，只是文件不在。
+
 	if err := os.WriteFile(filepath.Join(root, "123_thumb-1-ab12cd34.jpg"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("落盘失败: %v", err)
 	}
@@ -76,8 +62,6 @@ func TestStorageCacheShapeValidButMissing(t *testing.T) {
 	}
 }
 
-// TestStorageCacheShapeAndStatusBothMatter 形状 × 状态码的四格对照：
-// 只有「形状命中 + 2xx」才 immutable，其余三格一律 revalidate。
 func TestStorageCacheShapeAndStatusBothMatter(t *testing.T) {
 	root := t.TempDir()
 	for _, f := range []string{"123_thumb-1-ab12cd34.jpg", "123_thumb.jpg", "123.png"} {

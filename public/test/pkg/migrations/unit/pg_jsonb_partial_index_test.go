@@ -1,8 +1,3 @@
-// 068（PG 特性优化第一批）的迁移级回归。
-//
-// pages 表由 002-init-builder-schema 创建，068 必须靠「索引名」判定是否执行
-// （默认的「表存在即跳过」会误跳过，索引永远建不出来）；同时保证四个索引
-// 都是部分索引（仅存活行），表达式与 page_model.go 的查询条件一致。
 package unit
 
 import (
@@ -14,14 +9,12 @@ import (
 
 const pgIdxMigrationVersion = "068-pg-jsonb-partial-index"
 
-// pgIdxRow pg_index 投影。
 type pgIdxRow struct {
 	IndexName string
 	IndexDef  string
 	Predicate *string
 }
 
-// pgIdxOf 读取 pages 表上全部 idx_pages_* 索引（含定义与部分索引谓词）。
 func pgIdxOf(t *testing.T) map[string]pgIdxRow {
 	t.Helper()
 	db := newMigrationDB(t)
@@ -43,8 +36,6 @@ func pgIdxOf(t *testing.T) map[string]pgIdxRow {
 	return out
 }
 
-// TestPgJSONBPartialIndexMigrationBuildsPartialIndexes 全量迁移后四个索引齐备，
-// 且全部带 deleted_at IS NULL 谓词（软删除表的部分索引）。
 func TestPgJSONBPartialIndexMigrationBuildsPartialIndexes(t *testing.T) {
 	idx := pgIdxOf(t)
 
@@ -64,7 +55,6 @@ func TestPgJSONBPartialIndexMigrationBuildsPartialIndexes(t *testing.T) {
 		}
 	}
 
-	// 块引用必须是 GIN 表达式索引，且表达式取自 jsonpath 递归收集。
 	blockDef := idx["idx_pages_blockref"].IndexDef
 	if !strings.Contains(blockDef, "USING gin") || !strings.Contains(blockDef, "jsonb_path_query_array") {
 		t.Fatalf("idx_pages_blockref 定义不符（应为 GIN(jsonb_path_query_array(...))）: %s", blockDef)
@@ -78,16 +68,13 @@ func TestPgJSONBPartialIndexMigrationBuildsPartialIndexes(t *testing.T) {
 	if !strings.Contains(idx["idx_pages_structure_footer"].IndexDef, "footerBlockId") {
 		t.Fatalf("idx_pages_structure_footer 定义不符: %s", idx["idx_pages_structure_footer"].IndexDef)
 	}
-	// 排序列在 068 建索引时叫 updated_at，205（DB-019）把它改名为 update_time ——
-	// RENAME COLUMN 会同步重写索引定义，所以这里断言的是**改名后**的列名。
+
 	themeDef := idx["idx_pages_theme_alive"].IndexDef
 	if !strings.Contains(themeDef, "theme_id") || !strings.Contains(themeDef, "update_time DESC") {
 		t.Fatalf("idx_pages_theme_alive 定义不符: %s", themeDef)
 	}
 }
 
-// TestPgJSONBPartialIndexMigrationCheckSQL pages 表已存在时 CheckSQL 仍按索引名判定：
-// 索引不存在返回 0（执行迁移），已存在返回 >0（跳过）。
 func TestPgJSONBPartialIndexMigrationCheckSQL(t *testing.T) {
 	var target *migrations.Migration
 	for i := range migrations.All() {
@@ -115,7 +102,7 @@ func TestPgJSONBPartialIndexMigrationCheckSQL(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("pages 存在但索引不存在时 CheckSQL 应为 0（触发执行），实际 %d", count)
 	}
-	// 手工建出同名索引后，CheckSQL 应返回 >0（跳过）。
+
 	if err := db.Exec(`CREATE INDEX idx_pages_blockref ON pages USING GIN ((jsonb_path_query_array(draft_document, '$.**.blockId'))) WHERE deleted_at IS NULL`).Error; err != nil {
 		t.Fatalf("建索引失败: %v", err)
 	}
@@ -127,7 +114,6 @@ func TestPgJSONBPartialIndexMigrationCheckSQL(t *testing.T) {
 	}
 }
 
-// keysOf 便于失败信息可读。
 func keysOf(m map[string]pgIdxRow) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

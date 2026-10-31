@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 只统计业务读取，不把工程作用域设置误算成实体查询。
 func productQueryCounts(t *testing.T, db *gorm.DB, run func()) map[string]int {
 	t.Helper()
 	counts := map[string]int{}

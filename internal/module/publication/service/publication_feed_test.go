@@ -1,11 +1,5 @@
 package pubservice
 
-// publication_feed_test.go — 站点级 feed 的条目收集（审计 SEO-012）。
-//
-// 纯逻辑：不碰数据库、不起装配，产物用临时目录造。钉住的是四条容易静默出错的判断：
-// 手工页面不得进 feed、非文章详情页（商品）不得进 feed、多语言站点只收默认语言版本、
-// 条目链接必须与 sitemap 同源（JoinURL(baseURL, path)，不做第二套路径规则）。
-
 import (
 	"os"
 	"path/filepath"
@@ -17,8 +11,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// feedTestArticleHTML 造一份「文章详情页产物」：带 title / description / JSON-LD Article。
-// 结构照抄 presenter 侧 applyEntitySEO → builder.BuildSEOHead 的真实产出形状。
 func feedTestArticleHTML(title, desc string) string {
 	return "<html><head><title>" + title + "</title>" +
 		"<meta name=\"description\" content=\"" + desc + "\">" +
@@ -27,14 +19,12 @@ func feedTestArticleHTML(title, desc string) string {
 		title + "\"}</script></head><body></body></html>"
 }
 
-// feedTestProductHTML 造一份商品详情页产物（同样是实例归属，但不属于「内容」）。
 func feedTestProductHTML(title string) string {
 	return "<html><head><title>" + title + "</title>" +
 		"<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Product\",\"name\":\"" +
 		title + "\"}</script></head><body></body></html>"
 }
 
-// writeActiveArtifact 在激活目录里放一份产物（普通目录，非符号链接）。
 func writeActiveArtifact(t *testing.T, dir, path, body string) {
 	t.Helper()
 	rel := strings.Trim(strings.TrimSpace(path), "/")
@@ -50,7 +40,6 @@ func writeActiveArtifact(t *testing.T, dir, path, body string) {
 	}
 }
 
-// feedTestRoute 造一条已激活路由行。
 func feedTestRoute(path string, presentation bool, updated time.Time) pubmodel.RouteEntity {
 	rt := pubmodel.RouteEntity{
 		ProjectID: "p-1", Path: path, RouteKind: pubmodel.RouteActive, UpdatedAt: updated,
@@ -62,7 +51,6 @@ func feedTestRoute(path string, presentation bool, updated time.Time) pubmodel.R
 	return rt
 }
 
-// TestFeedItemsCollectsArticleInstancesOnly 只收「实例归属 + 文章结构化数据」的已激活路径。
 func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 
 	dir := t.TempDir()
@@ -77,7 +65,7 @@ func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 		feedTestRoute("/blog/old", true, old),
 		feedTestRoute("/blog/new", true, fresh),
 		feedTestRoute("/products/p1", true, fresh),
-		feedTestRoute("/about", false, fresh), // 手工页面：presentation_id 为空
+		feedTestRoute("/about", false, fresh),
 	}
 	items := feedItems(dir, "https://e.com", routes, nil, "", string(i18n.SiteLangURLModeOff))
 	if len(items) != 2 {
@@ -94,7 +82,6 @@ func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 	}
 }
 
-// TestFeedItemsSkipsMissingArtifact 路径已激活但产物读不到时跳过（不产出死链条目）。
 func TestFeedItemsSkipsMissingArtifact(t *testing.T) {
 
 	dir := t.TempDir()
@@ -109,7 +96,6 @@ func TestFeedItemsSkipsMissingArtifact(t *testing.T) {
 	}
 }
 
-// TestFeedItemsMultiLangKeepsDefaultOnly 多语言站点只收默认语言版本（站点级 feed 一份）。
 func TestFeedItemsMultiLangKeepsDefaultOnly(t *testing.T) {
 
 	dir := t.TempDir()
@@ -130,7 +116,6 @@ func TestFeedItemsMultiLangKeepsDefaultOnly(t *testing.T) {
 	}
 }
 
-// TestFeedItemsKeepsAllWhenDefaultLangUnknown 默认语言未知时不做语言筛选（宁可多收不可收空）。
 func TestFeedItemsKeepsAllWhenDefaultLangUnknown(t *testing.T) {
 
 	dir := t.TempDir()
@@ -147,7 +132,6 @@ func TestFeedItemsKeepsAllWhenDefaultLangUnknown(t *testing.T) {
 	}
 }
 
-// TestFeedChannelFromHomeArtifact 站点级元信息取默认语言首页产物；缺失时回退 host。
 func TestFeedChannelFromHomeArtifact(t *testing.T) {
 
 	dir := t.TempDir()
@@ -162,7 +146,6 @@ func TestFeedChannelFromHomeArtifact(t *testing.T) {
 		t.Fatalf("channel link 应为站点根，实际 %q", ch.Link)
 	}
 
-	// 空目录：标题回退 host（空 title 的 feed 在阅读器里没有名字）。
 	empty := t.TempDir()
 	fallback := feedChannel(empty, "https://e.com", nil, nil, "", string(i18n.SiteLangURLModeOff))
 	if fallback.Title != "e.com" {
@@ -170,16 +153,10 @@ func TestFeedChannelFromHomeArtifact(t *testing.T) {
 	}
 }
 
-// TestActiveHTMLFileFollowsSymlinkedDir 激活目录的两种落点都能读到产物。
-//
-// 真实激活布局是「路径段 → 指向 artifacts/{hash} 的符号链接」（pipeline 的
-// relActivePath：/about → about，"/" → index），产物在那个目录里面 —— 遍历目录
-// （filepath.Walk 不跟随目录符号链接）读不到它，按路径直读才行。
 func TestActiveHTMLFileFollowsSymlinkedDir(t *testing.T) {
 	active := t.TempDir()
 	artifacts := t.TempDir()
 
-	// 造一个产物目录，再在激活目录里用符号链接指向它（根路径段为 index）。
 	for _, c := range []struct{ seg, body string }{
 		{"about", feedTestArticleHTML("关于", "d")},
 		{"index", feedTestArticleHTML("首页", "d")},
@@ -216,7 +193,6 @@ func TestActiveHTMLFileFollowsSymlinkedDir(t *testing.T) {
 	}
 }
 
-// TestParseFeedDocTypes JSON-LD @type 的三种形态（字符串 / 数组 / @graph）都要认出来。
 func TestParseFeedDocTypes(t *testing.T) {
 	cases := []struct {
 		name   string

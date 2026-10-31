@@ -1,18 +1,11 @@
 package core
 
-// collection_registry_test.go — 集合源注册表契约测试（issue #9）。
-//
-// 覆盖：注册 / 源分发 / 元数据聚合（确定性顺序）/ 重复与非法注册拒绝 /
-// 未知源报错 / 构建上下文的工程与语言透传。
-// 这张注册表是「集合类组件按白名单取集合数据」的唯一入口，必须直接测。
-
 import (
 	"context"
 	"strings"
 	"testing"
 )
 
-// stubCollection 测试桩集合源：一个源 + 固定条目 + 可注入的元数据错误。
 type stubCollection struct {
 	sources []CollectionSchema
 	items   map[string][]map[string]any
@@ -33,7 +26,6 @@ func (s stubCollection) CollectionSchemas(context.Context) ([]CollectionSchema, 
 	return s.sources, nil
 }
 
-// TestCollectionRegistryResolveBySource 按源分发到对应提供方。
 func TestCollectionRegistryResolveBySource(t *testing.T) {
 	reg := NewCollectionRegistry()
 	content := stubCollection{
@@ -66,7 +58,6 @@ func TestCollectionRegistryResolveBySource(t *testing.T) {
 	}
 }
 
-// TestCollectionRegistryUnknownSource 未知集合源报错并列出可用源。
 func TestCollectionRegistryUnknownSource(t *testing.T) {
 	reg := NewCollectionRegistry()
 	if err := reg.Register(stubCollection{sources: []CollectionSchema{
@@ -85,7 +76,6 @@ func TestCollectionRegistryUnknownSource(t *testing.T) {
 	}
 }
 
-// stubOptionsCollection 在上述桩之上**额外**实现筛选选项能力（可选能力的提供方）。
 type stubOptionsCollection struct {
 	stubCollection
 	options CollectionFilterOptions
@@ -97,10 +87,6 @@ func (s *stubOptionsCollection) CollectionFilterOptions(_ context.Context, sourc
 	return s.options, nil
 }
 
-// TestCollectionRegistryFilterOptionsBySource 筛选选项按**注册时的集合源**转发（ARCH-01）。
-//
-// 这是这次修复的核心契约：能力断言打在注册表自己身上必然失败（注册表不拥有业务能力），
-// 于是筛选栏四维全空且不报错；正确路径是「按源找到注册时的提供方 → 再问它有没有这项能力」。
 func TestCollectionRegistryFilterOptionsBySource(t *testing.T) {
 	reg := NewCollectionRegistry()
 	plain := stubCollection{sources: []CollectionSchema{{Source: "content:article"}}}
@@ -115,7 +101,6 @@ func TestCollectionRegistryFilterOptionsBySource(t *testing.T) {
 		t.Fatalf("注册商品集合源失败: %v", err)
 	}
 
-	// 有能力的源：拿到选项，且转发时带上的是**查询的源**与工程 ID。
 	ctx := context.Background()
 	opts, err := reg.CollectionFilterOptions(ctx, "content:product", "proj-1")
 	if err != nil {
@@ -128,21 +113,19 @@ func TestCollectionRegistryFilterOptionsBySource(t *testing.T) {
 		t.Fatalf("转发应带上查询的源与工程 ID: %v", withOptions.seen)
 	}
 
-	// 没有该能力的源（content:article）：空选项 + 不报错（筛选栏是可选装饰）。
 	if opts, err := reg.CollectionFilterOptions(ctx, "content:article", "proj-1"); err != nil || len(opts.Brands)+len(opts.Tags)+len(opts.Categories)+len(opts.Attributes) != 0 {
 		t.Fatalf("无能力的源应返回空选项且不报错: %+v / %v", opts, err)
 	}
-	// 未注册的源同理（构造错误不该让整页构建失败）。
+
 	if opts, err := reg.CollectionFilterOptions(ctx, "content:order", "proj-1"); err != nil || len(opts.Brands) != 0 {
 		t.Fatalf("未注册的源应返回空选项且不报错: %+v / %v", opts, err)
 	}
-	// 空源同理。
+
 	if _, err := reg.CollectionFilterOptions(ctx, "   ", "proj-1"); err != nil {
 		t.Fatalf("空源应返回空选项且不报错: %v", err)
 	}
 }
 
-// TestCollectionRegistrySchemasDeterministic 元数据按源标识字典序聚合，与注册顺序无关。
 func TestCollectionRegistrySchemasDeterministic(t *testing.T) {
 	first := NewCollectionRegistry()
 	if err := first.Register(stubCollection{sources: []CollectionSchema{{Source: "content:product"}}}); err != nil {
@@ -181,7 +164,6 @@ func TestCollectionRegistrySchemasDeterministic(t *testing.T) {
 	}
 }
 
-// TestCollectionRegistryRejectsBadRegistration 非法注册被拒绝（装配期 fail-fast）。
 func TestCollectionRegistryRejectsBadRegistration(t *testing.T) {
 	t.Run("nil 提供方", func(t *testing.T) {
 		if err := NewCollectionRegistry().Register(nil); err == nil {
@@ -217,7 +199,6 @@ func TestCollectionRegistryRejectsBadRegistration(t *testing.T) {
 	})
 }
 
-// TestCollectionRegistryProviderSources 一个提供方可以声明多个源（全部可解析）。
 func TestCollectionRegistryProviderSources(t *testing.T) {
 	reg := NewCollectionRegistry()
 	multi := stubCollection{
@@ -237,7 +218,6 @@ func TestCollectionRegistryProviderSources(t *testing.T) {
 	}
 }
 
-// TestBuildContextProjectAndLang 构建上下文的工程 ID 与语言读写（集合解析器只拿得到 ctx）。
 func TestBuildContextProjectAndLang(t *testing.T) {
 	ctx := WithBuildProjectID(WithBuildLang(context.Background(), "en-US"), " proj-1 ")
 	if got := BuildProjectID(ctx); got != "proj-1" {
@@ -246,7 +226,7 @@ func TestBuildContextProjectAndLang(t *testing.T) {
 	if got := BuildLang(ctx); got != "en-US" {
 		t.Fatalf("语言应可读回: %q", got)
 	}
-	// 空上下文必须安全：nil ctx 不 panic，返回零值。
+
 	if got := BuildProjectID(nil); got != "" {
 		t.Fatalf("nil ctx 应返回空工程 ID: %q", got)
 	}

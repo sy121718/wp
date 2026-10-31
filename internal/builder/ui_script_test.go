@@ -1,17 +1,11 @@
 package builder
 
-// ui_script_test.go — 原始控件基座的按需拼装。
-//
-// 守住两条边界：① 没用到控件时一个字节都不注入；② 用到时基座助手与入口必须随行
-// （否则控件脚本会因 WBUI 未定义而报错，或扫描逻辑缺席导致控件不生效）。
-
 import (
 	"reflect"
 	"strings"
 	"testing"
 )
 
-// uiSrcForTest 构造件名 → 源码，模拟装配层从 embed 读出的结果。
 func uiSrcForTest() map[string]string {
 	return map[string]string{
 		"_util.js":         "/* util */ window.WBUI=window.WBUI||{};",
@@ -32,7 +26,6 @@ func uiSrcForTest() map[string]string {
 	}
 }
 
-// TestUIScriptSkippedWithoutFeature 纯内容页：不注入任何控件脚本。
 func TestUIScriptSkippedWithoutFeature(t *testing.T) {
 	got := uiScriptForTest(t, `<section><h1>纯内容</h1></section>`, uiSrcForTest())
 	if got != "" {
@@ -40,7 +33,6 @@ func TestUIScriptSkippedWithoutFeature(t *testing.T) {
 	}
 }
 
-// TestUIScriptInjectsSelectWithBase 用到下拉：控件 + 基座助手 + 入口都要在。
 func TestUIScriptInjectsSelectWithBase(t *testing.T) {
 	got := uiScriptForTest(t, `<select data-ui-select name="city"></select>`, uiSrcForTest())
 	for _, want := range []string{"/* util */", "/* select */", "/* index */"} {
@@ -48,11 +40,11 @@ func TestUIScriptInjectsSelectWithBase(t *testing.T) {
 			t.Errorf("拼装结果缺少 %q\n%s", want, got)
 		}
 	}
-	// 不带 <script>：document.jet 已在外层套了，重复套会让整段脚本失效。
+
 	if strings.Contains(got, "<script") || strings.Contains(got, "</script>") {
 		t.Errorf("拼装结果不应包含 script 标签（外层模板已提供）:\n%s", got)
 	}
-	// 顺序：助手在前，入口在后（入口负责扫描，必须在控件定义之后）。
+
 	if strings.Index(got, "/* util */") > strings.Index(got, "/* select */") {
 		t.Errorf("基座助手应在控件之前")
 	}
@@ -61,8 +53,6 @@ func TestUIScriptInjectsSelectWithBase(t *testing.T) {
 	}
 }
 
-// TestUIScriptInjectsModalOnTrigger 精确匹配弹窗能力属性：
-// 触发点（data-modal-open）与声明（data-modal）任一出现都要带上控件本体。
 func TestUIScriptInjectsModalOnTrigger(t *testing.T) {
 	for _, html := range []string{
 		`<button data-modal-open="f1">打开</button>`,
@@ -75,7 +65,6 @@ func TestUIScriptInjectsModalOnTrigger(t *testing.T) {
 	}
 }
 
-// TestUIStyleFromClassOnly 只写基座 class 应注入 CSS、不注入 JS（UIK-002）。
 func TestUIStyleFromClassOnly(t *testing.T) {
 	css, script, err := uiAssetsForScan(collectHTMLScan(`<button class="btn btn-primary">提交</button>`), "/* css */", uiSrcForTest())
 	if err != nil {
@@ -89,7 +78,6 @@ func TestUIStyleFromClassOnly(t *testing.T) {
 	}
 }
 
-// TestUIStyleClassWithoutSources 无脚本源时 class 仍应带出样式。
 func TestUIStyleClassWithoutSources(t *testing.T) {
 	css, script, err := uiAssetsForScan(collectHTMLScan(`<input class="form-input" />`), "/* css */", nil)
 	if err != nil || css != "/* css */" || script != "" {
@@ -97,7 +85,6 @@ func TestUIStyleClassWithoutSources(t *testing.T) {
 	}
 }
 
-// CSS/JS 在同一次能力选择中产生；无控件不输出额外样式。
 func TestUIStyleFollowsControls(t *testing.T) {
 	for _, tt := range []struct{ html, want string }{
 		{`<button data-modal-open="f1">打开</button>`, "/* css */"},
@@ -110,8 +97,6 @@ func TestUIStyleFollowsControls(t *testing.T) {
 	}
 }
 
-// TestUIScriptIgnoresSelfReference 特征扫描必须剥掉 script 块：
-// 否则内联过的产物再次编译时，脚本源码里的 data-ui-select 字样会把自己"检测"出来。
 func TestUIScriptIgnoresSelfReference(t *testing.T) {
 	html := `<h1>纯内容</h1><script>var s = "data-ui-select";</script>`
 	if got := uiScriptForTest(t, html, uiSrcForTest()); got != "" {
@@ -145,7 +130,7 @@ func TestUIAssetRegistryAndSelection(t *testing.T) {
 	if strings.Count(script, "/* select */") != 1 || strings.Count(script, "/* modal */") != 1 || strings.Index(script, "/* select */") > strings.Index(script, "/* modal */") {
 		t.Fatal("控件必须去重且按注册顺序输出")
 	}
-	// 不相关资源缺失不会阻断；不用到的控件不进产物。
+
 	sources := uiSrcForTest()
 	delete(sources, "modal.js")
 	_, script, err = uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "/* css */", sources)
@@ -169,8 +154,6 @@ func TestUIAssetsExplicitNoScriptMode(t *testing.T) {
 	}
 }
 
-// TestHtmxInjectedOnlyWhenUsed 访问面此前从不携带 htmx，组件写下的 hx-* 全是哑属性。
-// 判据：出现任一 hx-* 属性即注入，一个都没有就不注入。
 func TestHtmxInjectedOnlyWhenUsed(t *testing.T) {
 	for _, html := range []string{
 		`<div hx-get="/_fragments/ordersList" hx-trigger="load"></div>`,
@@ -193,8 +176,6 @@ func TestHtmxInjectedOnlyWhenUsed(t *testing.T) {
 	}
 }
 
-// TestHtmxDoesNotDragControlBase 只用 htmx 的页面不该带上控件基座：
-// htmx 是行为库，_util.js / index.js / ui.css 服务的是控件外观与扫描入口。
 func TestHtmxDoesNotDragControlBase(t *testing.T) {
 	got := uiScriptForTest(t, `<div hx-get="/x" hx-trigger="load"></div>`, uiSrcForTest())
 	for _, unwanted := range []string{"/* util */", "/* index */", "/* select */"} {
@@ -202,7 +183,7 @@ func TestHtmxDoesNotDragControlBase(t *testing.T) {
 			t.Errorf("纯 htmx 页面不该注入 %q\n%s", unwanted, got)
 		}
 	}
-	// 与控件混用时基座助手仍最前，htmx 在扫描入口之前。
+
 	mixed := uiScriptForTest(t, `<div hx-get="/x" hx-trigger="load"></div><select data-ui-select></select>`, uiSrcForTest())
 	for _, want := range []string{"/* util */", "/* htmx */", "/* select */", "/* index */"} {
 		if !strings.Contains(mixed, want) {
@@ -214,7 +195,6 @@ func TestHtmxDoesNotDragControlBase(t *testing.T) {
 	}
 }
 
-// TestHtmxOnlyPageNeedsNoUIStyle 只用到 htmx 时 ui.css 缺失不该阻断构建。
 func TestHtmxOnlyPageNeedsNoUIStyle(t *testing.T) {
 	css, script, err := uiAssetsFor(collectHTMLFeatures(`<div hx-get="/x"></div>`), "", uiSrcForTest())
 	if err != nil {
@@ -223,7 +203,7 @@ func TestHtmxOnlyPageNeedsNoUIStyle(t *testing.T) {
 	if css != "" || !strings.Contains(script, "/* htmx */") {
 		t.Fatalf("css=%q script=%q", css, script)
 	}
-	// 控件页面仍然必须带样式（回归保护）。
+
 	if _, _, err := uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "", uiSrcForTest()); err == nil {
 		t.Fatal("控件页面缺 ui.css 必须报错")
 	}

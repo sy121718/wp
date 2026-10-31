@@ -1,14 +1,5 @@
 package migrations
 
-// register_product_publish_records_i18n.go — 661 的注册项（B9 发布记录页）。
-//
-// 判据逐条枚举本批 28 个 key 的 en-US 行（门槛 COUNT >= 28）。挑 en-US 而不是 zh-CN：
-// 中文行与模板里的 fallback 同形，容易被别处顺手加上，按 zh-CN 计数会让门槛在「本批还没跑」
-// 时就成立、整批词条被静默跳过（432 / 643 / 660 的同一理由）。
-//
-// 不用前缀 LIKE：将来任何新增的 admin.products.publish.* 都会把这条门槛提前满足 ——
-// 而这条 seed 的职责恰好是「这一屏现在要用的 28 个 key 一个都不少」。
-
 import "sync"
 
 func init() { registerProductPublishRecordsI18n() }

@@ -11,18 +11,11 @@ import (
 	"go_wp/internal/permission"
 )
 
-// 登录接口按 IP 限流参数：与验证码限流 + 失败计数原子锁定构成三层防线，
-// 防止匿名脚本并发爆破登录。正常用户 60s 内登录尝试不会超过 10 次。
 const (
 	loginRateLimit  = 10
 	loginRateWindow = time.Minute
 )
 
-// SetupAdminRoutes 装配 admin 模块（管理员/角色/权限点/菜单/部门/数据权限）并注册全部路由。
-//
-// 合并后模块内部同包直调，无跨模块契约，不对外暴露接口。
-// 返回 AuthzContextService：对外只读权限上下文查询能力，供外部模块/插件消费
-// （管理面写操作仍由 handle 层经 AdminService 等走 Casbin 鉴权，不在此返回）。
 func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.AuthzContextService {
 	if rg == nil {
 		return nil
@@ -31,13 +24,10 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 	svc := adminservice.NewService(db)
 	handle := NewHandle(svc)
 
-	// 数据权限装配（域注册 + RuleProvider + GORM 插件）在路由注册之前完成：
-	// 域没注册上的表不会被任何规则拦住，晚一步就是一段静默不设防的窗口。
 	bootstrapDataRule(svc, db)
 
-	// --- 管理员 ---
 	admin := rg.Group("/admin")
-	// 登录接口匿名可达，无条件挂按 IP 限流（不依赖全局 rate_limit 开关）。
+
 	admin.POST("/login", permission.Exempt,
 		builtin.RequestRateLimitMiddleware(loginRateLimit, loginRateWindow),
 		handle.AdminLogin)
@@ -70,7 +60,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		authorized.POST("/menu/save", permission.AdminMenuSave, handle.AdminMenuSave)
 	}
 
-	// --- 角色 ---
 	role := rg.Group("/role").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -88,7 +77,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		role.POST("/user/save", permission.RoleUserSave, handle.RoleUserSave)
 	}
 
-	// --- 权限点 ---
 	perm := rg.Group("/permission").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -103,7 +91,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		perm.POST("/delete", permission.PermissionDelete, handle.PermDelete)
 	}
 
-	// --- 菜单 ---
 	menu := rg.Group("/menu").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -117,7 +104,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		menu.POST("/delete", permission.MenuDelete, handle.MenuDelete)
 	}
 
-	// --- 部门 ---
 	dept := rg.Group("/dept").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -133,7 +119,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		dept.POST("/user/save", permission.DeptUserSave, handle.DeptUserSave)
 	}
 
-	// --- 数据权限规则 ---
 	datarule := rg.Group("/datarule").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -151,16 +136,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		datarule.POST("/assignment/save", permission.DataruleAssignmentSave, handle.RuleAssignmentSave)
 	}
 
-	// --- 文案词条写端点（JSON）---
-	//
-	// 这里是 /api/i18n/save 的**唯一注册点**：词条页原先那四条页面 POST
-	// （/admin/i18n/update|save|delete|bulk-delete）迁到「前端直调本端点」后删除。
-	// 权限点沿用迁移 178 的 i18n:manage → 本路径 POST（sys_permission 那一行逐字不变），
-	// 所以既有的超管与角色策略一行都不用改；注册即声明，页面注册处原先那条
-	// permission.Declare(POST /api/i18n/save) 随之退休。
-	//
-	// handle 用与页面**同一个实例**（adminI18nHandle，见 admin_i18n_write.go）：
-	// 写成功要标记站点待重建，而那个端口（page 服务）只到页面装配那一层。
 	i18nAPI := rg.Group("/i18n").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),

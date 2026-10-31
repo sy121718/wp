@@ -33,65 +33,35 @@ type ServerConfig struct {
 	RateLimitLimit    int
 	RateLimitWindow   time.Duration
 	PortStrategy      string
-	// DebugAllowPublic 是否允许 debug/test 模式绑定非环回地址（server.debug_allow_public）。
-	//
-	// 默认 false：debug/test 只监听 127.0.0.1。理由见 cmd/main.go 的 listenAddr ——
-	// debug 模式的放宽项（一键登录、CORS 反射任意 Origin、信任所有代理因而采信
-	// X-Forwarded-For）任意一条落在公网可达的地址上都是完整的入侵路径。
-	// 要用手机 / 局域网设备访问本地开发环境时才显式打开。
+
 	DebugAllowPublic bool
 }
 
-// envBindableKeys 允许用环境变量覆盖的配置键。
-//
-// 环境变量名由 SetEnvPrefix("GOWP") + SetEnvKeyReplacer(".", "_") 从键名推导：
-// database.password → GOWP_DATABASE_PASSWORD。
-//
-// 只列这些键，是因为它们都有「换个环境就得换值」或「不该落盘明文」的性质 ——
-// 部署时注入密码与密钥、CI 里把连接指向服务容器，都靠它们。其余配置是部署资产，
-// 留在配置文件里更清楚，也更不容易被一次 export 意外改掉。
 var envBindableKeys = []string{
-	// 运行模式：部署时用环境变量切 debug/release 是常规做法（CI 也靠它），
-	// 而 release 会改变静态资源与模板的来源 —— 悄悄不生效的代价不只是「模式没切」，
-	// 而是「按 release 部署却按 debug 跑」。
+
 	"server.mode",
-	// 「这条连接会不会绕过 RLS」的开关（pkg/database/rls_probe.go）：
-	// 生产服务要 true（fail fast，见 AGENTS.md 的 RLS 一节），
-	// 而**本地/CI 跑迁移要 false** —— 迁移走管理连接（超级用户）执行 DDL，探针在这个
-	// 场景没有意义，一旦默认 fail fast，正常运维会被自己的门禁拦住。
-	// 它属于「换个环境就得换值」这一类：同一个部署资产在服务与迁移两个场景下要两个值。
+
 	"database.require_rls_role",
-	// 数据库连接
+
 	"database.host",
 	"database.port",
 	"database.user",
 	"database.password",
 	"database.dbname",
-	// 会话存储
+
 	"redis.host",
 	"redis.port",
 	"redis.password",
 	"redis.db",
-	// 密钥（配置文件里留空、由部署注入是推荐做法）
+
 	"auth.session_secret",
 	"app.secret",
 	"analytics.pepper",
-	// 按用途分离的签名密钥（P1）：各自独立、互相不可推导，轮换时互不影响。
-	// 留空则回退到 auth.session_secret（行为与分离前一致），装配期记一条告警。
+
 	"cart.cookie_secret",
 	"cart.payment_callback_secret",
 }
 
-// applyEnvOverrides 把已设置的环境变量并入所属顶层段，再整段写回 Viper。
-//
-// 为什么不能只靠 AutomaticEnv（哪怕配合 BindEnv）：AutomaticEnv 作用于 Get* 系列，
-// 而本项目的配置读取走 UnmarshalKey，它内部是 decode(Get(段名)) —— 返回的是配置文件
-// 里的那棵子树，逐个子键绑定不会出现在子树中。结果是环境变量被静默忽略：没有报错、
-// 退出码 0，只是配置没换。实测反例：GOWP_DATABASE_DBNAME 指向一个不存在的库，
-// -migrate-only 照旧迁移 config.yaml 里写的那个库并成功返回。
-//
-// 合并成段级 map 再 Set 回去，Get("database") 命中 override 里的整段，
-// UnmarshalKey 才读得到。
 func applyEnvOverrides(cfg *viper.Viper) error {
 	merged := make(map[string]map[string]any)
 
@@ -99,8 +69,7 @@ func applyEnvOverrides(cfg *viper.Viper) error {
 		envName := "GOWP_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
 
 		raw, ok := os.LookupEnv(envName)
-		// 空值按未设置处理：VAR= 在 shell 与 CI 里太容易意外出现，
-		// 真要用空值覆盖的场景（清空 redis 密码之类）由配置文件表达更明确。
+
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
 		}
@@ -111,8 +80,7 @@ func applyEnvOverrides(cfg *viper.Viper) error {
 		}
 
 		if merged[section] == nil {
-			// 必须复制：GetStringMap 对 map[string]any 直接返回内部引用，
-			// 就地修改会污染 Viper 里的配置树。
+
 			src := cfg.GetStringMap(section)
 			dst := make(map[string]any, len(src)+1)
 			for k, val := range src {
@@ -144,18 +112,10 @@ func Init(configPath string) error {
 		return fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
-	// OSS-014：环境变量覆盖 YAML（GOWP_DATABASE_PASSWORD → database.password）。
 	cfg.SetEnvPrefix("GOWP")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	cfg.AutomaticEnv()
 
-	// 只开 AutomaticEnv 是不够的：它只作用于 Get* 系列，而配置读取走 UnmarshalKey
-	// （server / database / auth / app …），Unmarshal 遍历的是 AllKeys ——
-	// 配置文件键 + 默认值 + **显式绑定**，不含纯环境变量键。
-	// 实测过这个缺口：GOWP_DATABASE_DBNAME 指向不存在的库，迁移照旧落在 config.yaml
-	// 写的那个库上，退出码 0 —— 环境变量被静默忽略，看上去一切正常。
-	// 显式 BindEnv 后这些键进入 AllKeys，Unmarshal 才读得到（env 优先级高于配置文件，
-	// 语义正是「覆盖」）；键在配置文件里不存在也无妨，绑定本身就是让它存在。
 	for _, key := range envBindableKeys {
 		if err := cfg.BindEnv(key); err != nil {
 			return fmt.Errorf("绑定环境变量覆盖键 %s 失败: %w", key, err)
@@ -166,8 +126,7 @@ func Init(configPath string) error {
 	}
 
 	v = cfg
-	// 站点协议判定（cookie 的 Secure 属性）由 pkg/sitehttps 承担：它不反向 import
-	// 本包（config → pkg/auth → 这里会成环），所以在这里单向注入配置实例。
+
 	sitehttps.Init(cfg)
 	logger.Scene("init").With("path", configPath).Info("配置加载成功")
 	return nil

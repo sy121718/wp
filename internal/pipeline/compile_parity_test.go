@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// TestDocumentCompileSharedLayers 契约：page 与 presentation 共用的装配层均可调用（EDT-003 / EDT-015）。
-// 差异项仅限 ContentResolver 与预览时 canonical 为空，不在此枚举。
 func TestDocumentCompileSharedLayers(t *testing.T) {
 	ctx := context.Background()
 	lang := "zh-CN"

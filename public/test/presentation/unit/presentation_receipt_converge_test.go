@@ -1,17 +1,5 @@
 package unit
 
-// presentation_receipt_converge_test.go —— 多语言发布回执的定时收敛（与 page 侧对称）。
-//
-// 背景：page 侧已交付 ConvergePendingReceipts（分批领取 + SKIP LOCKED + 写路径快通道 +
-// 可观测），而 presentation 实例的访问面切换回执**只有进程启动时恢复**——
-// 长时间不重启就一直 pending，线上与库长期不一致，且没有任何可见性。
-// 本文件把新入口钉住，四条用例对应四条要求：
-//
-//	① pending 回执被收敛（补完成 + 结案），重复收敛零变化（幂等）；
-//	② 重放仍失败时**保留 pending**、错误可见、不 panic（失败的行下一轮还能重放）；
-//	③ 快通道能在定时器之外收敛（间隔取到用例时长之外，未推信号就不动）；
-//	④ 领取口径不串台：presentation 的收敛领不走 page 口径的切换回执，反之亦然。
-
 import (
 	"context"
 	"testing"
@@ -23,17 +11,6 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 )
 
-// seedPartialPublish 造出「访问面已切、DB 未承认」的收敛现场：
-//
-//  1. 两语言**正常发布**（产物行、账本、路由、链接都是主链写下的真实事实）；
-//  2. 删掉 en-US 的路由行与语言账本（模拟上一次收敛只做完了一半的残留）；
-//  3. 插一条指向 en-US 真实产物与真实路径的 pending switch_active 回执。
-//
-// 为什么不再用「故障注入的生产失败」造现场：多语言发布现在**整批一个事务**（产物行、
-// 逐语言账本/路由、指针同进同出），任一语言失败则整笔回滚 —— 产物行也一起没了，回执里的
-// to 指向不存在的产物，收敛只能判 rolled_back 并安排整批重建（那个语义另有
-// TestPresentationRouteRegisterFailureIsRecoverable 覆盖）。「补完成」这一类判定必须在
-// **产物还在**的现场才测得到。
 func seedPartialPublish(t *testing.T, f *presFixture, _ *routeFaultInjector, slug, logicalPath string) string {
 	t.Helper()
 	ctx := context.Background()
@@ -56,7 +33,7 @@ func seedPartialPublish(t *testing.T, f *presFixture, _ *routeFaultInjector, slu
 		inst.ID, "en-US").Scan(&artifactID).Error; err != nil || artifactID == "" {
 		t.Fatalf("读取 en-US 账本产物失败: id=%q err=%v", artifactID, err)
 	}
-	// 拆掉 en-US 的库内事实，但访问面链接保持不动（正是收敛要按链接证据补齐的现场）。
+
 	if err = f.db.Exec("DELETE FROM page_routes WHERE presentation_id = ? AND path = ?", inst.ID, enPath).Error; err != nil {
 		t.Fatalf("删除 en-US 路由行失败: %v", err)
 	}
@@ -70,7 +47,6 @@ func seedPartialPublish(t *testing.T, f *presFixture, _ *routeFaultInjector, slu
 	return inst.ID
 }
 
-// newConvergeFixture 建一个带路由故障注入的 fixture，并启用两种语言 + 模板。
 func newConvergeFixture(t *testing.T, injector *routeFaultInjector) *presFixture {
 	t.Helper()
 	f := newPresFixtureWithRoutes(t, func(routes pubcontract.PublicationService) pubcontract.PublicationService {
@@ -85,8 +61,6 @@ func newConvergeFixture(t *testing.T, injector *routeFaultInjector) *presFixture
 	return f
 }
 
-// TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent
-// ① pending 回执被收敛（补完成 + 结案），且重复收敛零变化。
 func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.T) {
 	injector := &routeFaultInjector{}
 	f := newConvergeFixture(t, injector)
@@ -96,7 +70,6 @@ func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.
 	ctx := context.Background()
 	instID := seedPartialPublish(t, f, injector, "converge-shirt", "/products/converge-shirt")
 
-	// 故障已消除：收敛按访问面证据补齐路由登记与语言账本，回执结案。
 	converged, cerr := f.pres.ConvergePendingReceipts(ctx)
 	if cerr != nil {
 		t.Fatalf("收敛失败: %v", cerr)
@@ -111,7 +84,6 @@ func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.
 		t.Fatalf("收敛应补齐 en-US 的路由登记（恰好 1 条 active），实际 %d", n)
 	}
 
-	// 可观测：pending 归零 + 最近一次收敛时刻已记录。
 	pending, lastConvergeAt, serr := f.pres.PendingReceiptStatus(ctx)
 	if serr != nil {
 		t.Fatalf("读取回执收敛状态失败: %v", serr)
@@ -123,7 +95,6 @@ func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.
 		t.Fatal("收敛后应记录最近一次收敛时刻")
 	}
 
-	// 幂等：再跑一次不该有任何变化。
 	again, aerr := f.pres.ConvergePendingReceipts(ctx)
 	if aerr != nil {
 		t.Fatalf("重复收敛失败: %v", aerr)
@@ -139,7 +110,6 @@ func TestPresentationConvergePendingReceiptsCompletesAndIsIdempotent(t *testing.
 	}
 }
 
-// TestPresentationConvergeKeepsPendingWhenReplayFails ② 重放仍失败：保留 pending、错误可见、不 panic。
 func TestPresentationConvergeKeepsPendingWhenReplayFails(t *testing.T) {
 	injector := &routeFaultInjector{}
 	f := newConvergeFixture(t, injector)
@@ -149,7 +119,6 @@ func TestPresentationConvergeKeepsPendingWhenReplayFails(t *testing.T) {
 	ctx := context.Background()
 	instID := seedPartialPublish(t, f, injector, "converge-fail-shirt", "/products/converge-fail-shirt")
 
-	// 故障注入：重放同样会失败（路由登记这一步就是重放要补的那一步）。
 	injector.setFailing(true)
 
 	converged, cerr := f.pres.ConvergePendingReceipts(ctx)
@@ -159,12 +128,11 @@ func TestPresentationConvergeKeepsPendingWhenReplayFails(t *testing.T) {
 	if converged != 0 {
 		t.Fatalf("重放失败不应计入已收敛，实际 %d", converged)
 	}
-	// 关键：失败的 pending 绝不能被标死 —— 标成 rolled_back 等于把「状态未知」
-	// 换成「确定没生效」，比不收敛更糟。
+
 	if pending, _ := receiptStates(t, f, instID); pending != 1 {
 		t.Fatalf("重放失败的回执必须保留 pending，实际 %d", pending)
 	}
-	// 失败的 pending 仍在待办里可见（可观测口径与领取口径一致）。
+
 	pending, _, serr := f.pres.PendingReceiptStatus(ctx)
 	if serr != nil {
 		t.Fatalf("读取回执收敛状态失败: %v", serr)
@@ -173,7 +141,6 @@ func TestPresentationConvergeKeepsPendingWhenReplayFails(t *testing.T) {
 		t.Fatalf("失败的 pending 应计入待办数，实际 %d", pending)
 	}
 
-	// 清掉注入点（等价于重启后的干净状态）后能收敛 —— 证明上面保留的 pending 是可重放的。
 	injector.setFailing(false)
 	recovered, rerr := f.pres.ConvergePendingReceipts(ctx)
 	if rerr != nil {
@@ -187,14 +154,6 @@ func TestPresentationConvergeKeepsPendingWhenReplayFails(t *testing.T) {
 	}
 }
 
-// TestPresentationConvergeFastPathWithoutTicker ③ 写路径的快通道能在定时器之外收敛。
-//
-// 判定方式：调度器间隔取 1 小时（用例时长内定时器不可能触发），并在**启动首跑结束之后**
-// 才插入一条 pending 回执 —— 此刻能被收敛就只可能来自快通道（NotifyPendingReceipt）。
-//
-// 为什么手插回执而不是走「故障注入的生产失败」：生产失败路径自己会推快通道
-// （presentation_i18n.go 的主链收口），那样就分不清收敛是信号驱动的还是定时器趁机做的。
-// 手插的行指向一个真实实例的既有活跃产物，重放要补的正是「路由登记 + 语言账本」这两步。
 func TestPresentationConvergeFastPathWithoutTicker(t *testing.T) {
 	injector := &routeFaultInjector{}
 	f := newConvergeFixture(t, injector)
@@ -205,11 +164,9 @@ func TestPresentationConvergeFastPathWithoutTicker(t *testing.T) {
 
 	presentationServiceStarting(t, f)
 
-	// 等启动首跑结束：首跑无论有没有待办都会写「最近一次收敛时刻」。
 	waitForStatus(t, f, 10*time.Second, func(last time.Time) bool { return !last.IsZero() },
 		"收敛调度没有在预期时间内完成启动首跑")
 
-	// 一次**正常**发布（不注入故障）：它的回执全部当场结案，不产生 pending。
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
 		EntityType: "article", Slug: "converge-wake-shirt",
 		Data: map[string]any{"title": "快通道衬衫", "excerpt": "摘要"},
@@ -230,10 +187,8 @@ func TestPresentationConvergeFastPathWithoutTicker(t *testing.T) {
 		t.Fatalf("读取默认语言账本失败: artifactID=%q err=%v", artifactID, err)
 	}
 
-	// 首跑之后才造 pending：这一条只可能被快通道收掉。
 	insertSyntheticPresentationReceipt(t, f, inst.ID, f.projectID, logicalPath, "zh-CN", artifactID)
 
-	// 先确认「没推信号就不会收敛」：否则这条用例证明不了快通道真的被走到。
 	time.Sleep(300 * time.Millisecond)
 	if pending, _ := receiptStates(t, f, inst.ID); pending != 1 {
 		t.Fatalf("定时器间隔 1 小时，未推快通道前不应被收敛，实际 pending=%d", pending)
@@ -250,11 +205,6 @@ func TestPresentationConvergeFastPathWithoutTicker(t *testing.T) {
 	t.Fatal("推快通道后回执没有被收敛（信号未驱动收敛）")
 }
 
-// TestPresentationConvergeDoesNotClaimForeignReceipts ④ 领取口径不串台。
-//
-// 同一张 publication_receipts 上叠着多套恢复职责：page 的三种访问面切换动作与
-// presentation 的（唯一）switch_active。领取口径一旦分叉或放宽，要么领到不属于自己的行
-// 反复重放、要么自己的残留永远没人收。这里同时从「领取端」与「收敛端」两侧断言。
 func TestPresentationConvergeDoesNotClaimForeignReceipts(t *testing.T) {
 	injector := &routeFaultInjector{}
 	f := newConvergeFixture(t, injector)
@@ -264,12 +214,9 @@ func TestPresentationConvergeDoesNotClaimForeignReceipts(t *testing.T) {
 	ctx := context.Background()
 	instID := seedPartialPublish(t, f, injector, "converge-scope-shirt", "/products/converge-scope-shirt")
 
-	// 合成一条**手工页面口径**的 pending 回执（source_type = page）：有自己的收敛例程，
-	// 不该被 presentation 的收敛领走。path 用只在本用例出现的串，便于断言它没被动过。
 	const pagePath = "/converge-scope-page"
 	insertRawPendingReceipt(t, f, "page", "00000000-0000-0000-0000-0000000000aa", pagePath)
 
-	// 领取端：presentation 口径只领到 presentation 的那一行。
 	items, err := f.routes.ClaimPendingReceipts(ctx, &pubcontract.ReceiptsQueryReq{
 		SourceType: pubcontract.ReceiptSourcePresentation,
 		Actions:    []string{pubcontract.ReceiptActionSwitchActive},
@@ -281,7 +228,7 @@ func TestPresentationConvergeDoesNotClaimForeignReceipts(t *testing.T) {
 	if len(items) != 1 || items[0].SourceType != pubcontract.ReceiptSourcePresentation || items[0].SourceID != instID {
 		t.Fatalf("presentation 口径应只领到实例 %s 的那 1 条回执，实际 %+v", instID, items)
 	}
-	// 反之亦然：page 口径（本模块的唯一动作词表 + page 归属）只领到 page 的那一行。
+
 	pageItems, perr := f.routes.ClaimPendingReceipts(ctx, &pubcontract.ReceiptsQueryReq{
 		SourceType: pubcontract.ReceiptSourcePage,
 		Actions:    []string{pubcontract.ReceiptActionSwitchActive},
@@ -294,7 +241,6 @@ func TestPresentationConvergeDoesNotClaimForeignReceipts(t *testing.T) {
 		t.Fatalf("page 口径应只领到 %s 的那 1 条回执，实际 %+v", pagePath, pageItems)
 	}
 
-	// 收敛端：presentation 的收敛只收自己那一批，page 的切换回执原地不动。
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
 		t.Fatalf("收敛失败: %v", cerr)
 	}
@@ -306,13 +252,11 @@ func TestPresentationConvergeDoesNotClaimForeignReceipts(t *testing.T) {
 	}
 }
 
-// presentationServiceStarting 以 1 小时的定时器间隔启动收敛调度（定时器在用例时长内不会触发）。
 func presentationServiceStarting(t *testing.T, f *presFixture) {
 	t.Helper()
 	presentationservice.StartPendingReceiptConvergenceSchedulerWithInterval(f.pres, time.Hour)
 }
 
-// waitForStatus 轮询等待「最近一次收敛时刻」满足条件（在测试 goroutine 内轮询，超时即 Fatal）。
 func waitForStatus(t *testing.T, f *presFixture, timeout time.Duration,
 	cond func(time.Time) bool, msg string) {
 	t.Helper()
@@ -326,7 +270,6 @@ func waitForStatus(t *testing.T, f *presFixture, timeout time.Duration,
 	t.Fatal(msg)
 }
 
-// receiptStatesQuiet 与 receiptStates 同口径，但查询失败不 Fatal（轮询等待用）。
 func receiptStatesQuiet(t *testing.T, f *presFixture, instanceID string) (pending, committed int) {
 	t.Helper()
 	var rows []string
@@ -346,7 +289,6 @@ func receiptStatesQuiet(t *testing.T, f *presFixture, instanceID string) (pendin
 	return pending, committed
 }
 
-// insertRawPendingReceipt 直插一条 pending 回执（source_id 用固定 uuid，本表无外键）。
 func insertRawPendingReceipt(t *testing.T, f *presFixture, sourceType, sourceID, path string) {
 	t.Helper()
 	if err := f.db.Exec(
@@ -356,10 +298,6 @@ func insertRawPendingReceipt(t *testing.T, f *presFixture, sourceType, sourceID,
 	}
 }
 
-// insertSyntheticPresentationReceipt 直插一条**指向真实实例与真实活跃产物**的 pending 回执。
-//
-// receipt_data 必须带 projectId 与 lang：恢复例程用它们定位实例（RLS 作用域）与判定
-// 「路径是否仍是该语言的当前访问路径」，缺了就只能走保守分支。
 func insertSyntheticPresentationReceipt(t *testing.T, f *presFixture, instanceID, projectID, path, lang, artifactID string) {
 	t.Helper()
 	data := `{"projectId":"` + projectID + `","lang":"` + lang + `"}`
@@ -370,7 +308,6 @@ func insertSyntheticPresentationReceipt(t *testing.T, f *presFixture, instanceID
 	}
 }
 
-// receiptStateByPath 按路径取回执状态（口径不串台用例用）。
 func receiptStateByPath(t *testing.T, f *presFixture, path string) string {
 	t.Helper()
 	var state string

@@ -10,13 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 写路径单元测试（DryRun + 纯函数；真库用例见 public/test/admin/unit/datarule_write_db_test.go）。
-//
-// 这里覆盖的是「插件生成了什么 SQL / 给出了什么判定」，不覆盖「库里真的变了没有」——
-// 后者只有真库能证明。
-
-// writeProbeRecord 写路径测试用实体。表名与 plugin_test.go 的 protectedRecord 区分开：
-// 域按表名匹配，两个测试文件不能抢同一个表名。
 type writeProbeRecord struct {
 	ID       uint64
 	Status   int
@@ -26,10 +19,8 @@ type writeProbeRecord struct {
 
 func (writeProbeRecord) TableName() string { return "protected_record_write" }
 
-// writeProbeDomain 写路径测试域标识。
 const writeProbeDomain = "TEST_WRITE"
 
-// newWriteProbeDB 注册写路径测试域并返回挂了插件的 DryRun DB。
 func newWriteProbeDB(t *testing.T, provider testRuleProvider) *gorm.DB {
 	t.Helper()
 	if err := RegisterDomain(DomainConfig{Domain: writeProbeDomain, TableName: "protected_record_write"}); err != nil {
@@ -45,14 +36,11 @@ func newWriteProbeDB(t *testing.T, provider testRuleProvider) *gorm.DB {
 	return db
 }
 
-// writeProbeCtx 构造测试用用户上下文：本部门 7，子树 [7,8]（**向下**的可见范围）。
 func writeProbeCtx() context.Context {
 	return context.WithValue(context.Background(), UserContextKey{},
 		&UserContext{UserID: 9, DeptID: 7, DeptSubtreeIDs: []uint64{7, 8}})
 }
 
-// whereFragment 截出 DryRun 生成 SQL 的 WHERE 之后部分，并把 pg 的 $1/$2 占位符
-// 归一化为 ?，用于比较「三条路径注入的是不是同一份条件构造」。
 func whereFragment(sql string) string {
 	index := strings.Index(sql, " WHERE ")
 	if index < 0 {
@@ -65,7 +53,6 @@ func whereFragment(sql string) string {
 	return regexp.MustCompile(`\$\d+`).ReplaceAllString(strings.TrimSpace(fragment), "?")
 }
 
-// writeProbeConditions 一组同时含 AND 组合与多类型操作符的行条件。
 func writeProbeConditions() []RuleConfig {
 	return []RuleConfig{{
 		ConditionGroups: []ConditionGroup{{
@@ -78,10 +65,6 @@ func writeProbeConditions() []RuleConfig {
 	}}
 }
 
-// TestUpdateAndDeleteReuseQueryRowConditions 写路径复用 Query 那一枪：
-// 同一个域、同一个用户，SELECT / UPDATE / DELETE 三条语句注入的 WHERE **结构逐字相同**
-// （占位符序号归一化后比较）。另写一套条件构造会让三条语句慢慢漂移，
-// 表现为「列表里看不到、直接调接口却能改」。
 func TestUpdateAndDeleteReuseQueryRowConditions(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: writeProbeConditions()})
 	ctx := writeProbeCtx()
@@ -113,7 +96,6 @@ func TestUpdateAndDeleteReuseQueryRowConditions(t *testing.T) {
 		t.Fatalf("注入的 WHERE 结构不符：%s", base)
 	}
 
-	// 三条语句绑定的规则参数也必须一致（UPDATE 的 SET 值排在前面，所以只检查规则参数是否都在）。
 	results := map[string]*gorm.DB{"SELECT": selectRes, "UPDATE": updateRes, "DELETE": deleteRes}
 	for name, res := range results {
 		for _, want := range []any{"1", "2", "%admin%"} {
@@ -131,10 +113,6 @@ func TestUpdateAndDeleteReuseQueryRowConditions(t *testing.T) {
 	}
 }
 
-// TestUpdateAndDeleteWithoutWhereAreNotRejected 确认 gorm 的 ErrMissingWhereClause 检查
-// 发生在 gorm:update / gorm:delete **主回调内部**、在插件的 Before **之后**：
-// 条件注入完成后，不带 WHERE 的写语句不会被误判为「无条件全表写」；
-// 而插件不介入（没有 UserContext）时 gorm 的原判定照旧 —— 反证挡住误判的就是注入的条件。
 func TestUpdateAndDeleteWithoutWhereAreNotRejected(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: []RuleConfig{{
 		ConditionGroups: []ConditionGroup{{
@@ -159,7 +137,6 @@ func TestUpdateAndDeleteWithoutWhereAreNotRejected(t *testing.T) {
 		t.Fatalf("Delete 语句里应当有注入的条件：%s", deleteRes.Statement.SQL.String())
 	}
 
-	// 反证：插件不介入时 gorm 的原判定照旧。
 	plain := db.Model(&writeProbeRecord{}).Updates(map[string]any{"status": 2})
 	if !errors.Is(plain.Error, gorm.ErrMissingWhereClause) {
 		t.Fatalf("无 UserContext 时应当由 gorm 判定缺少 WHERE，实际：%v", plain.Error)
@@ -170,8 +147,6 @@ func TestUpdateAndDeleteWithoutWhereAreNotRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateOmitFieldsRemovedFromSetClause 字段级写保护：被屏蔽的列在 SET 子句里根本不出现；
-// 同一份 OmitFields 在 SELECT 语义下仍然是「不查该列」。
 func TestUpdateOmitFieldsRemovedFromSetClause(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: []RuleConfig{{OmitFields: []string{"username"}}}})
 	ctx := writeProbeCtx()
@@ -198,8 +173,6 @@ func TestUpdateOmitFieldsRemovedFromSetClause(t *testing.T) {
 	}
 }
 
-// TestCreateValidatesDestValues Create 值校验：命中放行、越界拒绝、批量逐元素校验、
-// 取值失败 fail-closed、无 UserContext 时不介入。
 func TestCreateValidatesDestValues(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: []RuleConfig{{
 		ConditionGroups: []ConditionGroup{{
@@ -207,7 +180,7 @@ func TestCreateValidatesDestValues(t *testing.T) {
 			Conditions: []Condition{{Field: "dept_id", Op: "EQ", Value: "dept.scope:SELF_AND_CHILDREN"}},
 		}},
 	}}})
-	ctx := writeProbeCtx() // DeptID=7，子树 [7,8]
+	ctx := writeProbeCtx()
 
 	if err := db.WithContext(ctx).Create(&writeProbeRecord{DeptID: 7}).Error; err != nil {
 		t.Fatalf("本部门应当放行：%v", err)
@@ -225,19 +198,16 @@ func TestCreateValidatesDestValues(t *testing.T) {
 		t.Fatalf("批量创建应逐元素校验并指出越界的那一条，实际：%v", batchErr)
 	}
 
-	// fail-closed：条件字段在 Dest 上取不到值（map 里没有 dept_id）。
 	mapErr := db.WithContext(ctx).Model(&writeProbeRecord{}).Create(map[string]any{"username": "x"}).Error
 	if mapErr == nil || !strings.Contains(mapErr.Error(), "dept_id") {
 		t.Fatalf("条件字段取不到时必须 fail-closed 拒绝，实际：%v", mapErr)
 	}
 
-	// 无 UserContext：插件完全不介入（既有语义）。
 	if err := db.Create(&writeProbeRecord{DeptID: 9}).Error; err != nil {
 		t.Fatalf("无 UserContext 时 Create 不应被数据权限拦截：%v", err)
 	}
 }
 
-// TestCreateDeptScopeSelfUsesOwnDeptOnly dept.scope:SELF 只看**本部门**（不是子树）。
 func TestCreateDeptScopeSelfUsesOwnDeptOnly(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: []RuleConfig{{
 		ConditionGroups: []ConditionGroup{{
@@ -255,7 +225,6 @@ func TestCreateDeptScopeSelfUsesOwnDeptOnly(t *testing.T) {
 	}
 }
 
-// TestCreateWithNoConditionGroupsPasses 规则只有字段屏蔽、没有行级条件时，Create 无需取值。
 func TestCreateWithNoConditionGroupsPasses(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: []RuleConfig{{OmitFields: []string{"username"}}}})
 	if err := db.WithContext(writeProbeCtx()).Create(&writeProbeRecord{DeptID: 999}).Error; err != nil {
@@ -263,7 +232,6 @@ func TestCreateWithNoConditionGroupsPasses(t *testing.T) {
 	}
 }
 
-// TestCreateRecordsRejectsUnsupportedShapes Dest 形状不认识时必须报错（fail-closed）。
 func TestCreateRecordsRejectsUnsupportedShapes(t *testing.T) {
 	for name, dest := range map[string]any{
 		"nil":           nil,
@@ -298,9 +266,6 @@ func TestCreateRecordsRejectsUnsupportedShapes(t *testing.T) {
 	}
 }
 
-// TestEvalConditionMirrorsBuildCondition 值求值与 SQL 条件构造必须同进同退：
-// buildCondition 认为「这条条件不产生任何约束」时，evalCondition 也必须判它不可执行。
-// 两条路一旦分叉，就会出现「一条不限制读的规则却挡住了写」这种两套语义。
 func TestEvalConditionMirrorsBuildCondition(t *testing.T) {
 	uc := &UserContext{DeptID: 7, DeptSubtreeIDs: []uint64{7, 8}}
 	record := recordValues{"status": int(1), "username": "admin", "dept_id": uint64(7)}
@@ -337,13 +302,11 @@ func TestEvalConditionMirrorsBuildCondition(t *testing.T) {
 		}
 	}
 
-	// 取值失败是**预期内的分歧**：SQL 路只认列名合法，值求值路要求 Dest 上真的能取到该列。
 	if _, enforceable, err := evalCondition(recordValues{}, Condition{Field: "status", Op: "EQ", Value: "1"}, uc); !enforceable || err == nil {
 		t.Fatalf("字段取不到时必须 fail-closed（enforceable=true 且 err!=nil），实际 enforceable=%v err=%v", enforceable, err)
 	}
 }
 
-// TestEvalGroupLogic 组内 AND/OR 与「组内无可执行条件时不产生约束」。
 func TestEvalGroupLogic(t *testing.T) {
 	uc := &UserContext{DeptID: 7}
 	record := recordValues{"status": int(5), "username": "admin"}
@@ -381,7 +344,6 @@ func TestEvalGroupLogic(t *testing.T) {
 	}
 }
 
-// TestLikeMatch SQL LIKE 的通配语义（% 任意长度、_ 单字符，其余按字面）。
 func TestLikeMatch(t *testing.T) {
 	cases := []struct {
 		subject string
@@ -409,7 +371,6 @@ func TestLikeMatch(t *testing.T) {
 	}
 }
 
-// TestToScalar 标量归一化：nil/指针解引用/数值/字符串，以及不认识类型的 fail-closed。
 func TestToScalar(t *testing.T) {
 	if got, err := toScalar(nil); err != nil || got.kind != scalarNull {
 		t.Fatalf("nil 应归一化为 null：%+v err=%v", got, err)
@@ -436,9 +397,6 @@ func TestToScalar(t *testing.T) {
 	}
 }
 
-// TestScopeAppliedOnlyWhenRulesResolved 只有真的解析出规则时才标记「插件已接管」；
-// 未注册域 / 无规则 / 没有 UserContext / provider 报错都不标记，
-// After 阶段据此不做 0 行判定（避免把与权限无关的空结果改写成权限错误）。
 func TestScopeAppliedOnlyWhenRulesResolved(t *testing.T) {
 	db := newWriteProbeDB(t, testRuleProvider{rules: writeProbeConditions()})
 

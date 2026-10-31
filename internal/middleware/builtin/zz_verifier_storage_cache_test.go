@@ -1,11 +1,5 @@
 package builtin
 
-// zz_verifier_storage_cache_test.go — 独立验证者（verifier）对 /storage 缓存头
-// 三分支的构造真实请求验证。不入实现者改动；用真实 gin 引擎 + 真实静态文件服务。
-//
-// 复现装配形态（internal/routers/assembly.go）：
-//   router.Group("/storage", nosniff中间件, StorageCacheMiddleware()).StaticFS("/", gin.Dir(root, false))
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -44,12 +38,9 @@ func doGet(t *testing.T, router *gin.Engine, target string) *httptest.ResponseRe
 	return w
 }
 
-// TestVerifierStorageCacheBranches 三分支 + 边界：缓存语义必须与
-// 「URL 是否与内容绑定」一致。真实文件走真实静态服务（状态码也一并断言）。
 func TestVerifierStorageCacheBranches(t *testing.T) {
 	root := t.TempDir()
 
-	// 真实落盘的文件：新格式变体、旧格式变体、原图、语义化 stem 变体、存量随机名 stem 变体。
 	files := []string{
 		"123_thumb-1-ab12cd34.jpg",
 		"123_thumb.jpg",
@@ -71,25 +62,21 @@ func TestVerifierStorageCacheBranches(t *testing.T) {
 		want     string
 		wantCode int
 	}{
-		// —— 分支 1：新格式变体（带完整指纹形状）→ immutable ——
+
 		{"新格式变体 thumb", "/storage/123_thumb-1-ab12cd34.jpg", wantImmutable, http.StatusOK},
 		{"新格式变体 full", "/storage/123_full-1-ab12cd34.jpg", wantImmutable, http.StatusOK},
 		{"语义化 stem 变体", "/storage/photo_thumb-1-92ca61da.jpg", wantImmutable, http.StatusOK},
 		{"存量随机名 stem 变体", "/storage/1700000000000000000_ab12cd_thumb-1-deadbeef.jpg", wantImmutable, http.StatusOK},
 		{"带查询串", "/storage/123_thumb-1-ab12cd34.jpg?v=2", wantImmutable, http.StatusOK},
 
-		// —— 分支 2：原图 → must-revalidate（换图原地覆盖，URL 与内容解耦）——
 		{"原图", "/storage/123.png", wantRevalidate, http.StatusOK},
 
-		// —— 分支 3：旧格式变体（无指纹）→ must-revalidate ——
 		{"旧格式变体", "/storage/123_thumb.jpg", wantRevalidate, http.StatusOK},
 
-		// —— 边界：指纹形状不完整一律 revalidate ——
 		{"大写 hash", "/storage/123_thumb-1-AB12CD34.jpg", wantRevalidate, http.StatusNotFound},
 		{"7 位 hash", "/storage/123_thumb-1-ab12cd3.jpg", wantRevalidate, http.StatusNotFound},
 		{"无 generation", "/storage/123_thumb-ab12cd34.jpg", wantRevalidate, http.StatusNotFound},
 
-		// —— 404 与目录请求也落 revalidate（不为未知路径预先放宽）——
 		{"不存在的路径", "/storage/nope.png", wantRevalidate, http.StatusNotFound},
 		{"目录请求（gin.Dir 禁列表）", "/storage/", wantRevalidate, http.StatusNotFound},
 	}
@@ -111,9 +98,6 @@ func TestVerifierStorageCacheBranches(t *testing.T) {
 	}
 }
 
-// TestVerifierStorageCacheCounterexample 把 Lead 指定的反例显式钉住：
-// 「用户原名恰好命中指纹形状的原图」在当前正则下会被判 immutable。
-// 这个测试**记录事实**而不是断言对错 —— 可达性由上传路径决定（见验证报告）。
 func TestVerifierStorageCacheCounterexample(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "x_thumb-1-abcd1234.jpg"), []byte("x"), 0o644); err != nil {
@@ -127,11 +111,6 @@ func TestVerifierStorageCacheCounterexample(t *testing.T) {
 	}
 }
 
-// TestVerifierStorageCacheTraversal 畸形路径的安全边界：
-// 判据取 URL basename，含 "../" 的畸形路径若 basename 命中指纹形状也会拿到 immutable 头；
-// 但 Go 标准库 http.FileServer 会先 path.Clean 再交给 http.Dir.Open，
-// 所以 Clean 后仍在 root 内解析 —— 真正的判据是「能否读到 root 之外的文件」，
-// 而不是「畸形路径是否返回 200」。
 func TestVerifierStorageCacheTraversal(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "storage")
@@ -141,7 +120,7 @@ func TestVerifierStorageCacheTraversal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "123_thumb-1-ab12cd34.jpg"), []byte("IN-ROOT"), 0o644); err != nil {
 		t.Fatalf("落盘失败: %v", err)
 	}
-	// root 之外的文件：穿越若得逞会读到它
+
 	if err := os.WriteFile(filepath.Join(base, "secret.jpg"), []byte("OUTSIDE-SECRET"), 0o644); err != nil {
 		t.Fatalf("落盘失败: %v", err)
 	}

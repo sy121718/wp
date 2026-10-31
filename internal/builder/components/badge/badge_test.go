@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 徽章校验：必须有文字。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -27,7 +26,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestBuildView 徽章视图透传文字。
 func TestBuildView(t *testing.T) {
 	v := BuildView(&Props{Text: "限时"})
 	if v.Text != "限时" {
@@ -35,7 +33,6 @@ func TestBuildView(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 徽章样式编译：三种变体 + 缺省/自定义主色。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -9,17 +9,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 )
 
-// product_variant_options.go — 后台选品下拉的候选变体（跨商品）。
-//
-// 消费者是订单代客建单页的候选区（internal/module/order/inbound/http/order_create_page.go）：
-// 运营输入商品名缩小范围，从结果里挑一行入单。与「商品 → 变体」那条读路径的分工：
-// 这里要的是**跨商品平铺**的列表，所以先按关键词取商品、再批量取这些商品的变体，
-// 一次 SQL 拿全（不按商品逐个查，避免 N+1）。
-
-// ListVariantOptions 可选的变体清单（只列启用中的变体）。
-//
-// 为什么只列启用中的：停用的 SKU 挂进订单会变成「选得了又发不出」的死行 ——
-// 要卖先回商品页把它启用。这条口径与前台可售集合一致，不另立一套。
 func (s *Service) ListVariantOptions(ctx context.Context, req *productdto.ListVariantOptionReq) (list []*productdto.VariantOptionResp, err error) {
 	if req == nil {
 		req = &productdto.ListVariantOptionReq{}
@@ -41,9 +30,7 @@ func (s *Service) ListVariantOptions(ctx context.Context, req *productdto.ListVa
 		ids = append(ids, p.ID)
 		nameOf[p.ID] = p.Name
 	}
-	// 窄投影（id / product_id / sku_code / price / cost_price / enabled / sort）：
-	// 下拉只画这几项，选项 JSON 与图片一起搬回来纯属带宽。口径不变，停用变体仍在结果里，
-	// 由下面的 Enabled 判断过滤（那是业务规则，不放进 SQL）。
+
 	variants, verr := s.m.ListVariantOptionFacts(ctx, ids)
 	if verr != nil {
 		return nil, verr
@@ -61,12 +48,8 @@ func (s *Service) ListVariantOptions(ctx context.Context, req *productdto.ListVa
 	return list, nil
 }
 
-// ListAllVariantOptions 全工程启用中的变体清单（库存 / 采购下拉的数据源）。
-//
-// 与 ListVariantOptions 的分工只在**筛选**：那条按关键词收窄（订单代客建单页），
-// 这条要全量（下拉里漏掉的 SKU 等于不存在）。取数与装配共用同一套批量读法。
 func (s *Service) ListAllVariantOptions(ctx context.Context, projectID string) ([]productcontract.VariantOption, error) {
-	// 空工程**不解释成「全部工程」**：那会让一个工程的页面列出所有工程的 SKU。
+
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)

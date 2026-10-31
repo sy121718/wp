@@ -1,13 +1,3 @@
-// jetview_test.go — 组件渲染迁移的字节等价测试（Phase 3 切换验收）。
-//
-// 切换 Compile 到 Jet 路径后，「旧 Go render 路径」与「新 Jet 路径」不再是两条
-// 并行的生产路径，因此原「旧 Compile vs 新 nodeViewOf+renderView」对比不再成立。
-// 本文件改为 golden 对比：
-//
-//   - testdata/golden/ 下的 golden 文件由切换前的旧 render 路径（core.RenderNode）
-//     一次性生成并固化，作为「切换前产物」的字节基准；
-//   - TestJetViewByteEquivalent 断言新 Compile 产物与 golden 字节一致，
-//     证明「Compile 切换到 Jet 路径后，产物与切换前完全一致」。
 package builder
 
 import (
@@ -22,8 +12,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// jetDocJSON 覆盖：顶级 Section（sky-section）、三端 CSS、入场动效关键帧、
-// 形状分隔线（top/bottom）、button 外链/内链/图标前后缀/自定义 class 与 ID/特殊字符转义。
 const jetDocJSON = `{
   "settings": {
     "layout": {"mode": "full"},
@@ -90,12 +78,10 @@ const jetDocJSON = `{
   ]
 }`
 
-// rootDoc 把 root JSON 包装为完整页面文档。
 func rootDoc(rootJSON string) string {
 	return `{"settings": {"layout": {"mode": "full"}, "seo": {"title": "等价测试"}}, "root": ` + rootJSON + `}`
 }
 
-// mockBlockResolver 测试用全局块解析器：块 ID → 块文档 root 节点。
 type mockBlockResolver struct {
 	roots map[string][]*core.Node
 }
@@ -108,14 +94,12 @@ func (m *mockBlockResolver) ResolveBlockRoot(blockID string) ([]*core.Node, erro
 	return roots, nil
 }
 
-// goldenCase 单个字节等价用例（name 唯一，对应 golden 文件名）。
 type goldenCase struct {
 	name  string
 	doc   string
 	block core.BlockResolver
 }
 
-// goldenCases 全部字节等价用例（主用例 + 18 组件 + globalref 展开）。
 var goldenCases = []goldenCase{
 	{name: "main", doc: jetDocJSON},
 	{name: "heading", doc: rootDoc(`[
@@ -223,15 +207,10 @@ var goldenCases = []goldenCase{
 	}}},
 }
 
-// goldenDir golden 文件目录。
 const goldenDir = "testdata/golden"
 
-// updateJetGolden 重新固化 golden：编译产物发生「有意变更」后用它更新基准。
-// 用法：go test ./internal/builder -run TestJetViewByteEquivalent -update-jet-golden
 var updateJetGolden = flag.Bool("update-jet-golden", false, "更新 Jet 字节等价 golden 文件")
 
-// readGolden 读取 golden 文件内容（不存在时给出明确错误）。
-// golden 由切换前旧 render 路径生成并固化，作为「切换前产物」基准。
 func readGolden(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(goldenDir, name))
@@ -241,7 +220,6 @@ func readGolden(t *testing.T, name string) string {
 	return string(b)
 }
 
-// TestJetViewByteEquivalent 断言新 Compile（Jet 路径）产物与 golden（切换前旧产物）字节一致。
 func TestJetViewByteEquivalent(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {

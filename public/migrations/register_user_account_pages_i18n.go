@@ -1,15 +1,5 @@
 package migrations
 
-// register_user_account_pages_i18n.go — 迁移 455 的 seed 注册。
-//
-// 门槛判据**枚举本批自己的 91 个 key**（上界封闭，91 × 2 语言 = 182 行）：
-// 用 LIKE 前缀会让「别批次已有同前缀行」把计数抬高、本批被静默跳过（058 的故障），
-// 也会在将来新增同前缀 key 时永远追不平、每次启动都重跑（076 的故障）。
-//
-// 少一行就重跑 SQL —— SQL 自身 ON CONFLICT (item_key, lang) DO NOTHING，
-// 重跑不会覆盖已人工改过的译文。
-//
-// 注册方式：本文件自带 func init()（与 448 / 453 一致），不必在 register.go 的 init() 里显式调用。
 func init() {
 	registerSeed(Seed{
 		Version:   "455-i18n-user-account-pages",

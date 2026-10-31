@@ -11,17 +11,6 @@ import (
 	"go_wp/pkg/binding"
 )
 
-// product_write_formdata_test.go — 商品写端点必须能绑定 **formdata**。
-//
-// 为什么需要它：htmx 的写表单发的是 application/x-www-form-urlencoded，而其余测试
-// （handler 级、feature 级）几乎都用 JSON body。于是「DTO 缺 form tag」这类缺陷
-// 在测试里完全不可见 —— 实测过：无 form tag 时 camelCase 键名一个都绑不上，
-// 有 required 的直接 400，没 required 的静默收零值（后者更危险：保存成功但什么都没改）。
-//
-// 判据用**模板实际会发的键名**（与 json tag 一致的小驼峰），不是 Go 字段名 ——
-// 后者才是 gin 在没有 form tag 时的匹配依据，用它测等于把缺陷测没了。
-//
-// 新增商品写端点时，把它的 DTO 与最小 body 加进 cases。
 func TestProductWriteDTOsBindFormdata(t *testing.T) {
 	cases := []struct {
 		name string
@@ -34,9 +23,7 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 		{"DeleteAttributeReq", "id=a1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.DeleteAttributeReq](c); return ok }},
 		{"BulkDeleteReq", "projectId=p1&ids=x&ids=y", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.BulkDeleteReq](c); return ok }},
 		{"AddRatingReq", "productId=p1&score=4.5", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.AddRatingReq](c); return ok }},
-		// **slice-of-struct 必须带内容**：审查指出只发 projectId/name/key 覆盖不到
-		// Values 字段，于是「整体数组字符串绑不上」这个 P0 与全绿并存。
-		// 统一写基座把各行序列化为一个 JSON 数组，控件基础类型保持字符串。
+
 		{"CreateAttributeReq（带 values）", "projectId=p1&name=n&key=k" +
 			"&values=" + `[{"id":"v1","key":"k1","label":"甲"},{"id":"v2","key":"k2","label":"乙"}]`,
 			func(c *gin.Context) bool {
@@ -75,7 +62,6 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 	}
 }
 
-// TestSliceOfStructRejectsWholeArrayString 验证 DTO FormBinder 的必要性：gin 默认逐元素绑定不接受整数组。
 func TestSliceOfStructRejectsWholeArrayString(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

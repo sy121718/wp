@@ -1,136 +1,84 @@
-// Package masterdataenums 主数据变更记录模块的统一文案与枚举取值（issue #19）。
-//
-// 「主数据变更记录」记的是**字段级配置变更**：谁在什么时候把哪条主数据的哪个字段
-// 从什么改成了什么。它与库存流水（inventory_stock_movements，记「库存数量怎么变的」）
-// 是两件事，各记一处：
-//
-//	· 本表（master_data_changes）  —— 商品 / 变体 / 货源的结构化字段被改动的历史；
-//	· 库存流水                     —— 数量增减（入库 / 出库 / 盘点）的历史。
-//
-// 因此改价格、改 SKU 编码、上下架、改货源资料一律只进本表；
-// 收货入库改变库存数量只进库存流水（数量列不进本表，那是流水的职责）。
 package masterdataenums
 
 import "go_wp/pkg/facing"
 
-// 实体类型白名单（master_data_changes.entity_type）。
-//
-// 只收「关键主数据」：商品、商品变体、货源。未知类型在写入入口被拒绝 ——
-// 变更记录的价值在于「按实体能查全」，放进无主语的行只会稀释这张表。
 const (
-	// EntityProduct 商品主体（product.products）。
 	EntityProduct = "product"
-	// EntityProductVariant 商品变体（product.product_variants，一行一个 SKU）。
+
 	EntityProductVariant = "product_variant"
-	// EntityInventorySource 货源（inventory.inventory_sources，供应商 / 关联公司 / 自家工厂）。
+
 	EntityInventorySource = "inventory_source"
 )
 
-// Actions 变更动作白名单。
 const (
-	// ActionCreate 新增（字段行的 old 为空、new 为该字段创建时的值）。
 	ActionCreate = "create"
-	// ActionUpdate 修改（只写真正变化的字段，逐字段一行）。
+
 	ActionUpdate = "update"
-	// ActionDelete 删除（字段行的 new 为空、old 为删除前的值）。
+
 	ActionDelete = "delete"
 )
 
-// 变更来源（origin 列）：这条记录是**哪条写入路径**产生的。
-//
-// 同一个字段可能被多条路径改动（价格既能在变体编辑里改，也能被定价工具批量改，
-// 还能被采购入库的成本价回写改），来源列让「这个值是怎么来的」可追。
 const (
-	// OriginProduct 商品接口 / 后台商品表单的商品级写操作。
 	OriginProduct = "product"
-	// OriginVariant 变体接口 / 后台商品表单的变体级写操作。
+
 	OriginVariant = "variant"
-	// OriginVariantGenerate 变体组合生成（勾选属性值 → 笛卡尔积）。
+
 	OriginVariantGenerate = "variant_generate"
-	// OriginPricing 定价工具批量改价（issue #13）。
+
 	OriginPricing = "pricing"
-	// OriginReceipt 采购收货 / 生产入库的成本价回写（issue #18）。
+
 	OriginReceipt = "receipt"
-	// OriginSource 货源接口 / 后台货源表单的写操作（issue #17）。
+
 	OriginSource = "source"
 )
 
-// 实体类型展示名：i18n key（词条见迁移 450，中英成对）。
 const (
 	LabelKeyProduct         = "admin.masterdata.entity.product"
 	LabelKeyProductVariant  = "admin.masterdata.entity.product_variant"
 	LabelKeyInventorySource = "admin.masterdata.entity.inventory_source"
 )
 
-// 实体类型展示名的**中文兜底**（与库内 zh-CN 值逐字一致）。
-//
-// 为什么兜底留在代码里：词条缺失时展示的是中文原文，而不是裸 key
-// （`admin.masterdata.entity.product` 摆到页面上，运营只会来报「页面坏了」）。
 const (
 	LabelProduct         = "商品"
 	LabelProductVariant  = "商品变体"
 	LabelInventorySource = "货源"
 )
 
-// 动作展示名：i18n key（词条见迁移 450）。
 const (
 	LabelKeyActionCreate = "admin.masterdata.action.create"
 	LabelKeyActionUpdate = "admin.masterdata.action.update"
 	LabelKeyActionDelete = "admin.masterdata.action.delete"
 )
 
-// 动作展示名的中文兜底（同实体类型）。
 const (
 	LabelActionCreate = "新增"
 	LabelActionUpdate = "修改"
 	LabelActionDelete = "删除"
 )
 
-// LabelPair 一组展示名取值：i18n key + 中文兜底。
-//
-// 形态是**两个值一起给**，不是单个文案：只给中文 → 英文界面恒中文（拿不到词条）；
-// 只给 key → 词条缺失时页面显示裸 key；两个一起给，调用点 `tr(key, fallback)`
-// 命中出译文、未命中出中文兜底。enums 零依赖，页面层与 service 层都能 import。
-// 同一形态的先例见 user/enums 的 `LabelKeyStatusActive` + `LabelStatusActive`。
 type LabelPair struct {
 	Key      string
 	Fallback string
 }
 
-// 错误消息（handle / service 不硬编码文案，统一取这里）。
-//
-// 值是 i18n key（形态 `模块.类别.语义`），文案落在 sys_i18n（迁移 198）：响应层的
-// pkg/response.translate 按请求语言查表，未命中时**原样返回 key**（可见的降级，不是空白）。
-//
-// 为什么必须是 key 形态：错误出口已统一到 response.ErrorAuto，而它的判据 IsBusinessError
-// 只认两种**形态确定**的模式 —— key 形态与 enums 常量名形态（`ErrXxx`）。本模块的值曾经是
-// 中文原文（`"参数不合法"`），两种都不匹配，于是全部业务错误被判成内部错误、对外统一 500
-// （审计 CQ-010 的收尾缺口：既不是 key 也不是常量名，判据无法用形态区分它与内部 sentinel）。
 const (
-	// ErrInvalidParam 参数不合法。
 	ErrInvalidParam = "masterdata.err.invalidParam"
-	// ErrEntityTypeInvalid 实体类型不在变更记录的白名单内。
+
 	ErrEntityTypeInvalid = "masterdata.err.entityTypeInvalid"
-	// ErrActionInvalid 变更动作不合法。
+
 	ErrActionInvalid = "masterdata.err.actionInvalid"
-	// ErrEntityIDRequired 实体 id 必填。
+
 	ErrEntityIDRequired = "masterdata.err.entityIDRequired"
-	// ErrProjectRequired 未指定工程且无法解析出唯一工程。
+
 	ErrProjectRequired = "masterdata.err.projectRequired"
-	// ErrTimeRangeInvalid 时间范围不合法（起始晚于结束）。
+
 	ErrTimeRangeInvalid = "masterdata.err.timeRangeInvalid"
 )
 
-// 成功消息（同样是 i18n key，词条见迁移 198）。
 const (
-	// MsgListSuccess 查询成功。
 	MsgListSuccess = "masterdata.msg.listSuccess"
 )
 
-// EntityTypeLabel 实体类型 → (i18n key, 中文兜底)。
-//
-// 未知类型返回空 key + 原值：展示层拿到空 key 时直接显示兜底（原样回显枚举值，
-// 不吞掉数据）—— 这与「已登记类型」的差别只是没有词条可查。
 func EntityTypeLabel(entityType string) LabelPair {
 	switch entityType {
 	case EntityProduct:
@@ -144,7 +92,6 @@ func EntityTypeLabel(entityType string) LabelPair {
 	}
 }
 
-// ActionLabel 动作 → (i18n key, 中文兜底)；未知动作返回空 key + 原值。
 func ActionLabel(action string) LabelPair {
 	switch action {
 	case ActionCreate:
@@ -158,17 +105,14 @@ func ActionLabel(action string) LabelPair {
 	}
 }
 
-// EntityTypes 实体类型白名单（接口与页面的下拉项直接用这个顺序）。
 func EntityTypes() []string {
 	return []string{EntityProduct, EntityProductVariant, EntityInventorySource}
 }
 
-// Actions 动作白名单（页面下拉项顺序：新增 / 修改 / 删除）。
 func Actions() []string {
 	return []string{ActionCreate, ActionUpdate, ActionDelete}
 }
 
-// IsValidEntityType 实体类型是否在白名单内。
 func IsValidEntityType(entityType string) bool {
 	switch entityType {
 	case EntityProduct, EntityProductVariant, EntityInventorySource:
@@ -178,7 +122,6 @@ func IsValidEntityType(entityType string) bool {
 	}
 }
 
-// IsValidAction 动作是否在白名单内。
 func IsValidAction(action string) bool {
 	switch action {
 	case ActionCreate, ActionUpdate, ActionDelete:
@@ -188,13 +131,6 @@ func IsValidAction(action string) bool {
 	}
 }
 
-// fieldLabelPairs 字段展示名表：键是「实体类型.字段名」，值是 (i18n key, 中文兜底)。
-//
-// 字段名本身是主数据模块自己定的白名单键（见各模块的快照函数），这里只负责展示文案；
-// 未登记的字段原样回显字段名 —— 显示一个陌生的英文键，好过把一条记录藏起来。
-//
-// key 与中文兜底写在**同一张表**里（不是两张并行的 map）：两份表一旦漏同步，
-// 表现是「这个词条查不到 → 静默回落到字段名」，没有任何报错。
 var fieldLabelPairs = map[string]LabelPair{
 	EntityProduct + ".name":          {"admin.masterdata.field.product.name", "商品名"},
 	EntityProduct + ".slug":          {"admin.masterdata.field.product.slug", "URL 段"},
@@ -222,20 +158,10 @@ var fieldLabelPairs = map[string]LabelPair{
 	EntityInventorySource + ".sort":          {"admin.masterdata.field.inventory_source.sort", "排序"},
 }
 
-// MsgMasterDataChangesTitle 变更记录页标题（i18n key）。
-//
-// 与 dashboard/enums 里的历史同名常量同值：i18n key 是字符串协议，页面搬回本模块后
-// 在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
 const MsgMasterDataChangesTitle = "MsgMasterDataChangesTitle"
 
-// PageTitleChanges 变更记录页标题（key + 中文兜底）。
-//
-// handler 先取词再把成品文案交给 adminui.Prepare —— Prepare 内部是 `t(title, title)`，
-// 兜底就是 key 本身，词条缺失时页面标题会显示 `MsgMasterDataChangesTitle` 这样的裸 key。
-// 词条沿用历史行（sys_i18n 的 MsgMasterDataChangesTitle，zh/en 成对）。
 var PageTitleChanges = LabelPair{MsgMasterDataChangesTitle, "变更记录"}
 
-// FieldLabel 字段展示名 → (i18n key, 中文兜底)；未登记时返回空 key + 字段名本身。
 func FieldLabel(entityType, field string) LabelPair {
 	if pair, ok := fieldLabelPairs[entityType+"."+field]; ok {
 		return pair
@@ -243,12 +169,6 @@ func FieldLabel(entityType, field string) LabelPair {
 	return LabelPair{"", field}
 }
 
-// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
-//
-// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
-// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `masterdata.err.invalidParam` 这样的裸 key。
-//
-// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 var errFallbacks = map[string]string{
 	ErrInvalidParam:      "参数不合法",
 	ErrEntityTypeInvalid: "实体类型不在变更记录的白名单内",
@@ -258,9 +178,6 @@ var errFallbacks = map[string]string{
 	ErrTimeRangeInvalid:  "时间范围不合法",
 }
 
-// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
 func Err(key string) error { return facing.New(key, errFallbacks[key]) }
 
-// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
-// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
 func FallbackFor(key string) string { return errFallbacks[key] }

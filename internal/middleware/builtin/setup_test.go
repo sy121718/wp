@@ -14,7 +14,7 @@ import (
 
 func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
 	engine := gin.New()
-	// 直接测试 Setup 通过 handler 挂载中间件的能力
+
 	engine.Use(Recovery())
 	engine.Use(SecurityHeadersMiddleware())
 	engine.Use(RequestBodyLimitMiddleware(10, 100))

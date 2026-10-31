@@ -11,7 +11,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// 使用真实候选与生产表结构，仅在译文存储端口注入故障。
 type translationStorageFailure struct {
 	*i18n.ContentWriter
 	readErr, writeErr error

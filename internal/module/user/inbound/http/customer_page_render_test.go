@@ -1,15 +1,5 @@
 package userhttp
 
-// customer_page_render_test.go — 客户管理列表页的渲染与 handler 冒烟（后台客户管理）。
-//
-// 钉住三件事：
-//   - admin/customers.html 的 Jet 语法与 layout 数据契约成立（模板错了只会在运营点开时 500）；
-//   - 服务端给的字段真的渲染出来了（不是「handler 对了、页面空白」）；
-//   - **直接打 handler**（而不是绕过它去渲染模板）—— 模板名与文件对不上时响应是
-//     「200 + 空 body」，只测模板本身的测试看不见它（文章页那次真实缺陷就是这么漏的）。
-//
-// 详情页的用例在 customer_detail_page_render_test.go。
-
 import (
 	"context"
 	"errors"
@@ -37,22 +27,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// customerTestLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
-// customerTestPageTitle / customerTestDetailTitle 组装函数的 title 参数。
-//
-// 真实路径由 handler 按请求语言取词后传进来（layout.html 的 {{.title}} 是 layout 的槽位，
-// 那个模板不在本模块写权限内）；渲染测试直调组装函数，给中文兜底即可 ——
-// 断言的就是中文渲染结果，与 handler 传进来的成品同形。
 const (
 	customerTestPageTitle   = "客户管理"
 	customerTestDetailTitle = "客户详情"
 )
 
-// customerTestLayoutData 给页面数据补上页壳键（t / lang / csrf_token …）。
-//
-// 收 any 而不是 gin.H：视图换强类型之后，这里要能把结构体摊平成 map 再补键 ——
-// 手工补壳键这件事本身是**测试装置**的简化（生产走 adminui.Prepare），
-// 所以它跟着视图形状走，而不是要求视图保持 map。
 func customerTestLayoutData(anyView any) gin.H {
 	lang := "zh-CN"
 	base := adminui.ViewMap(anyView)
@@ -64,12 +43,11 @@ func customerTestLayoutData(anyView any) gin.H {
 	return base
 }
 
-// renderCustomerAdminTemplate 用真实 Jet 渲染器渲染一个后台模板并返回 HTML。
 func renderCustomerAdminTemplate(t *testing.T, name string, data gin.H) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 模板根目录相对包目录：internal/module/user/inbound/http → internal/templates。
+
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/page", func(c *gin.Context) { c.HTML(http.StatusOK, name, data) })
 	rec := httptest.NewRecorder()
@@ -80,18 +58,16 @@ func renderCustomerAdminTemplate(t *testing.T, name string, data gin.H) string {
 	return rec.Body.String()
 }
 
-// —— 替身：后台客户契约（四条方法）与订单聚合（一条方法）——
-
 type fakeCustomerAdmin struct {
 	list   *userdto.CustomerListResp
 	detail *userdto.CustomerResp
 	err    error
-	// failIDs 这些 id 的单条写入失败（批量用例靠它构造「一条失败、其余照常」）。
+
 	failIDs map[uint64]bool
-	// unlockByID 按 id 指定解锁结果（不设则用 unlockRes / 默认「刚解锁」）。
+
 	unlockByID map[uint64]*userdto.CustomerUnlockResp
 	statusReq  *userdto.CustomerStatusReq
-	// statusIDs 依次收到的 id：钉住「批量确实逐条走了单条路径」。
+
 	statusIDs  []uint64
 	unlockRes  *userdto.CustomerUnlockResp
 	lastListRe *userdto.CustomerListReq
@@ -153,8 +129,6 @@ func (f fakeOrderSummaryReader) CustomerOrderSummaryOf(_ context.Context, _ *ord
 
 var _ ordercontract.CustomerOrderSummaryReader = fakeOrderSummaryReader{}
 
-// fakeProjects 只实现 List：嵌入接口即可满足 ProjectService 的其余方法
-// （测试不会调用它们，也不必为此写二十个空实现把测试意图淹掉）。
 type fakeProjects struct {
 	projectcontract.ProjectService
 	items []projectcontract.ProjectResp
@@ -164,11 +138,6 @@ func (f fakeProjects) List(_ context.Context) ([]projectcontract.ProjectResp, er
 	return f.items, nil
 }
 
-// customerSample 一个客户样本（「已验证 + 未锁定」的常规形态）。
-//
-// StatusLabel / RegisteredAtText / LastLoginTimeText 这些 dto 上的预制展示串一律**不设**：
-// 页面的展示名与时间现在分别来自 userenums 的 (key, 兜底) 与模板的 dateTime()，
-// 设上它们会让「模板又回头去读预制的展示串」这种情况在测试里照样通过。
 func customerSample() *userdto.CustomerResp {
 	registered := time.Date(2026, 9, 1, 10, 30, 0, 0, time.Local)
 	lastLogin := time.Date(2026, 9, 20, 8, 5, 0, 0, time.Local)
@@ -191,7 +160,6 @@ func customerListSample() *userdto.CustomerListResp {
 	}
 }
 
-// newCustomerTestEngine 只挂客户页的四条 handler（不经中间件：这里测的是页面本身）。
 func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -239,8 +207,6 @@ func customerJSONForm(t *testing.T, form url.Values) string {
 	return string(raw)
 }
 
-// —— 列表页模板 ——
-
 func TestCustomersListTemplateRenders(t *testing.T) {
 	data := customerListPageData(customerTestPageTitle, customerListSample(), customerFilter{
 		Keyword: "alice", Status: customerStatusAll,
@@ -252,7 +218,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		"2026-09-01 10:30", "2026-09-20 08:05", "中国 北京",
 		"/admin/customers/detail?id=42", "/api/customer/status",
 		"邮箱已验证 1", "user:customer_status",
-		// 首列勾选 + 批量条 + 两个批量端点（缺一整套批量都是摆设）
+
 		`data-write-url="/api/customer/bulk-status`, "/api/customer/bulk-unlock",
 		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
@@ -261,9 +227,6 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		}
 	}
 
-	// 结构顺序：批量 form 包住表格，行内写操作表单必须在它**外面**。
-	// HTML 不允许 form 嵌套 —— 嵌套时解析器会丢掉内层 form 标签，
-	// 表现是「行内的停用 / 解除锁定按钮点了没反应」，且只有真实浏览器才暴露。
 	bulkForm := strings.Index(body, `data-write-url="/api/customer/bulk-status`)
 	table := strings.Index(body, `customers-page-table`)
 	rowForm := strings.Index(body, `id="customer-status-42"`)
@@ -272,10 +235,6 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 	}
 }
 
-// TestCustomersListTemplateHidesStatusActionForPending 待激活账号不给「停用」按钮。
-//
-// 这类账号本来就登不上去（未完成邮箱验证），停用只会让客户点验证链接时得到
-// 「链接无效」—— 一个必然把客户引到「为什么我的链接坏了」的动作，不该出现在页面上。
 func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	item := customerSample()
 	item.Status = 2
@@ -290,9 +249,7 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	if strings.Contains(body, "/api/customer/status") {
 		t.Errorf("待激活账号不应渲染停用按钮")
 	}
-	// 状态说明在**表头**的 .help 里（一次渲染、不随行重复），不再逐行插整行 colspan 说明行。
-	// 判据：表头段含这句说明；tbody 段里没有任何跨列行（有数据时 tbody 的每一行都是 7 个 td
-	// 的数据行）。原来这里断言 `colspan="7"` 存在 —— 那是「逐行说明行」的形态，已撤掉。
+
 	head := body[:strings.Index(body, "<tbody")]
 	if !strings.Contains(head, "客户还没完成邮箱验证") {
 		t.Errorf("状态列的解释应挂在表头 .help 里")
@@ -303,7 +260,6 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	}
 }
 
-// TestCustomersListTemplateRendersUnlockForLocked 锁定账号给「解除锁定」。
 func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 	item := customerSample()
 	item.Locked = true
@@ -323,11 +279,6 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 	}
 }
 
-// TestCustomersListTemplateEmptyState 没有数据时给明确说法，而不是空表格。
-//
-// 两种空要分开说（这是「徽章即筛选」的直接后果）：点「已停用 0」进来看到的是
-// 「该筛选条件下暂时没有账号」，而站点一个客户都没有时是「还没有客户」——
-// 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
 	plain := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(customerTestPageTitle, nil, customerFilter{Status: customerStatusAll}, 1, 20, customerMsg{}, false)))
@@ -342,7 +293,6 @@ func TestCustomersListTemplateEmptyState(t *testing.T) {
 	}
 }
 
-// TestCustomersListTemplateCapabilityMissing 能力未装配时给说明，不渲染必然失败的按钮。
 func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(customerTestPageTitle, nil, customerFilter{Status: customerStatusAll}, 1, 20,
@@ -353,8 +303,6 @@ func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
 		}
 	}
 }
-
-// —— 直接打 handler（钉住模板名与参数解析）——
 
 func TestCustomersPageHandlerRendersList(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()},
@@ -376,8 +324,6 @@ func TestCustomersPageHandlerRendersList(t *testing.T) {
 	}
 }
 
-// TestCustomersPageIgnoresForgedNoticeQuery 写结论不再经查询参数回显：手拼 ?err= / ?ok= /
-// ?done= 一律不出现在页面上（读侧判定已随「结论走 shell.RenderJump」整批删除）。
 func TestCustomersPageIgnoresForgedNoticeQuery(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()},
 		fakeOrderSummaryReader{}, fakeProjects{})
@@ -400,8 +346,6 @@ func TestCustomersPageIgnoresForgedNoticeQuery(t *testing.T) {
 	}
 }
 
-// TestCustomersPageHandlerFiltersAreParsed 筛选参数真的进了请求：
-// 空 status 必须是「全部」而不是「只看已停用」；结束日期必须覆盖当天。
 func TestCustomersPageHandlerFiltersAreParsed(t *testing.T) {
 	fake := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -428,10 +372,6 @@ func TestCustomersPageHandlerFiltersAreParsed(t *testing.T) {
 	}
 }
 
-// —— 状态写（POST）——
-
-// TestCustomersStatusSaveRendersJumpAndKeepsFilters 目标状态取自 toStatus；成功走整页提示
-// （HTTP 200 + data-jump-state="ok"），回跳地址从表单 action 的 query 读回筛选上下文。
 func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -463,9 +403,6 @@ func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 	}
 }
 
-// TestCustomerStatusSaveFromDetailReturnsToDetail 详情页表单（action 的 query 带 id）的
-// 提示页回跳目标是详情页 —— 运营是在那个客户页面上点的按钮，把他弹回列表第一页
-// 等于让他重新找一遍那个客户。
 func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -490,13 +427,11 @@ func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 	}
 }
 
-// TestCustomerStatusSaveRejectsUnknownTarget 非法目标状态一律拒绝，且根本不调 service。
 func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	// 2 = 待激活：它是注册流程的中间态，不是后台能设置的目标状态。
 	form := url.Values{"customerId": {"42"}, "toStatus": {"2"}}
 	req := httptest.NewRequest(http.MethodPost, "/api/customer/status", strings.NewReader(customerJSONForm(t, form)))
 	req.Header.Set("Content-Type", "application/json")
@@ -515,13 +450,11 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
-// TestCustomerUnlockDistinguishesOutcomes 三种解锁结果各有各的说法：
-// 「刚解锁」「没锁但清了失败计数」「本来就没事」—— 合成一句会让运营以为按钮坏了。
 func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 	cases := []struct {
 		name string
 		res  *userdto.CustomerUnlockResp
-		// want 是词条缺失时回落的中文兜底（单测不起库，取词函数据 fallback 原样返回）。
+
 		want string
 	}{
 		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, "账号已解除锁定"},
@@ -553,8 +486,6 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 	}
 }
 
-// TestCustomersBulkStatusRejectsUnknownTarget 与单条动作同口径：
-// 非法目标状态（待激活是注册流程的中间态）一律拒绝，且一条都不写。
 func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -578,7 +509,6 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
-// TestCustomersBulkNothingSelected 一条都没勾就提交：不当成功处理（表单是客户端可控的）。
 func TestCustomersBulkNothingSelected(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -602,8 +532,6 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 	}
 }
 
-// TestCustomersBulkUnlockDistinguishesNoop 「本来就没事」的账号不计入「已解除锁定」：
-// 混进成功是谎报，混进失败会让运营点第二次（而第二次结果一模一样）。
 func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	fake := &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
 		42: {CustomerID: 42, Unlocked: true},
@@ -632,10 +560,6 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	}
 }
 
-// —— 计数徽章即筛选（同一维度只给一种控件）——
-
-// TestCustomersCounterTabsAreClickableFilters 徽章是链接，URL 由服务端生成：
-// 只动自己那个维度，其他条件保留；当前生效的那个带 aria-current 与图标。
 func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 	data := customerListPageData(customerTestPageTitle, customerListSample(),
 		customerFilter{Status: customerStatusActive}, 1, 20, customerMsg{}, false)
@@ -646,8 +570,7 @@ func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 			t.Errorf("徽章缺少选中态标记 %q", want)
 		}
 	}
-	// 链接按解析后的形态比对：Jet 会把属性值里的 & 转义（&amp; / &#38;），
-	// 断言原文会把「转义正确」这件事误判成「链接错了」。
+
 	hrefs := map[string]bool{}
 	for _, m := range regexp.MustCompile(`href="(/admin/customers[^"]*)"`).FindAllStringSubmatch(body, -1) {
 		raw := strings.ReplaceAll(m[1], "&amp;", "&")
@@ -655,16 +578,16 @@ func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 		hrefs[raw] = true
 	}
 	for _, want := range []string{
-		"/admin/customers",                          // 全部：不带任何维度取值
-		"/admin/customers?status=0",                 // 已停用：只改状态维度
-		"/admin/customers?locked=1&status=1",        // 已锁定：独立维度，状态保留
-		"/admin/customers?emailVerified=2&status=1", // 邮箱未验证：状态保留
+		"/admin/customers",
+		"/admin/customers?status=0",
+		"/admin/customers?locked=1&status=1",
+		"/admin/customers?emailVerified=2&status=1",
 	} {
 		if !hrefs[want] {
 			t.Errorf("徽章链接缺少 %q，实际 %v", want, hrefs)
 		}
 	}
-	// 同一维度不能同时存在徽章与下拉：两套控件表达一个维度时，用户无法判断它们是否等价。
+
 	for _, gone := range []string{
 		`id="customers-filter-status"`,
 		`id="customers-filter-verified"`,
@@ -675,8 +598,6 @@ func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 	}
 }
 
-// TestCustomersPageHandlerParsesLockedFilter 「已锁定」是独立维度，必须真的进查询
-// （锁定只写 locked_until_time，账号状态仍是「正常」，拿状态筛选表达不了）。
 func TestCustomersPageHandlerParsesLockedFilter(t *testing.T) {
 	fake := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -690,13 +611,6 @@ func TestCustomersPageHandlerParsesLockedFilter(t *testing.T) {
 	}
 }
 
-// —— 批量动作（POST /api/customer/bulk-status、/api/customer/bulk-unlock）——
-
-// TestCustomersBulkStatusKeepsGoingAfterOneFailure 单条失败不中断整批。
-//
-// 整批回滚是这里最要命的错误实现：运营看到「一条都没做」会反复重试，
-// 而每次重试都会把已经成功的那些再做一遍（重复写库、update_time 反复变化）。
-// 结论渲染进提示页（HTTP 200），回跳地址从表单 action 的 query 读回筛选上下文。
 func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	fake := &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
@@ -729,16 +643,6 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	}
 }
 
-// —— 状态 / 邮箱验证 / 订单状态标签的取词（本次重构的主验收点）——
-
-// TestCustomersLabelsGoThroughI18n 标签必须经取词渲染，而不是直接渲染服务端给的中文。
-//
-// 为什么用**假取词函数**而不是真 i18n：模块内单测不起库，TranslateFunc 会走中文兜底 ——
-// 那正好与「模板硬编码中文」的表现一模一样，压根分不出对错。假函数按 key 返回可辨认的
-// 英文，一旦模板改回直接渲染中文字段（不走 tr），页面里就不会出现这些英文，当场红。
-//
-// 顺带钉住「计数徽章与行内状态标签共用同一份 key 来源」：同一个 key 在列表页出现两次
-// （徽章一次、行一次），只改其中一处（比如徽章自己留一份 key）会让计数变成 1。
 func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 	fakeTr := func(key, fallback string) string {
 		switch key {
@@ -777,10 +681,6 @@ func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 	}
 }
 
-// TestCustomerTemplatesRenderNoRawLabels 模板不得再直接渲染未取词的标签字段。
-//
-// 断言模板**源文本**（而不是渲染结果）：渲染结果在中文下与被禁止的写法长得一样，
-// 只有源文本能区分「走了取词但兜底是中文」与「压根没走取词」。
 func TestCustomerTemplatesRenderNoRawLabels(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "..", "templates", "admin", "user")
 	for _, name := range []string{"customers.html", "customer_detail.html"} {

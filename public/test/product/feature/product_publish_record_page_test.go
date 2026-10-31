@@ -1,15 +1,5 @@
 package feature
 
-// product_publish_record_page_test.go — 发布记录页（B9）的整页链路（真实 PG + 真迁移 + 真发布）。
-//
-// 这一屏最容易错的地方是「把没发布的商品当成已发布」或反过来 —— 两种都只在真实数据上
-// 才看得见（假 reader 里我写什么就回什么）。所以这里走真实链路：建商品 → 建发布实例
-//（真编译、真激活）→ 经 presentation 的 PublishRecordPort + outbound 适配器 → 商品读模型。
-//
-// 三档状态里的「有实例未上线」不在这里造：presentation 没有对外的「只建实例不发」入口
-//（CreateInstance 直接激活），造它要绕过 service 直接改表 —— 那验的就不是链路了。
-// 那一档由渲染用例（inbound/http/product_publish_record_render_test.go）的形状断言覆盖。
-
 import (
 	"context"
 	"fmt"
@@ -20,13 +10,10 @@ import (
 	publishrecordoutbound "go_wp/internal/module/product/outbound/publishrecord"
 )
 
-// withPublishRecordPort 给 fixture 的商品 service 接上发布记录端口
-// （与装配同形：presentation service 已嵌入 PublishRecordPort，outbound 适配器翻成商品侧形状）。
 func (f *detailFixture) withPublishRecordPort() {
 	f.products.SetPublishRecordPort(publishrecordoutbound.New(f.pres))
 }
 
-// TestPublishRecordPageShowsCurrentState 已上线与未建实例两种真实状态，以及它们的状态筛选。
 func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -80,7 +67,6 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 		t.Fatalf("没有实例的商品应是空档：%+v", plain)
 	}
 
-	// 状态筛选按「当前发布状态」而不是商品 status 列：两档各自只留自己的那一行。
 	active, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Status: "active"})
 	if err != nil {
 		t.Fatalf("active 筛选失败: %v", err)
@@ -96,7 +82,6 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 		t.Fatalf("none 只应留下没有实例的那一行：total=%d %+v", none.Total, none.Records)
 	}
 
-	// 关键词筛选走商品表：命中 slug 也命中名称之外的字段（真实 SQL 才验得到）。
 	kw, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID, Keyword: "素商品"})
 	if err != nil {
 		t.Fatalf("关键词筛选失败: %v", err)
@@ -184,7 +169,6 @@ func TestPublishRecordPageClampsToActualLastPage(t *testing.T) {
 	}
 }
 
-// 端口没接：Ready=false 且不报错（装配缺陷 ≠ 数据读不到），列表为空不伪造行。
 func TestPublishRecordPageNotWired(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -204,7 +188,6 @@ func TestPublishRecordPageNotWired(t *testing.T) {
 	}
 }
 
-// 不存在的工程：400 档（ErrInvalidParam），不是空列表 —— 空列表会被当成「这个站点没商品」。
 func TestPublishRecordPageUnknownProject(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {

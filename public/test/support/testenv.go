@@ -1,18 +1,3 @@
-// testenv.go — feature 测试的 PG/Redis 环境接入 helper（三级回退）：
-//
-//  1. 优先复用本地服务：PG 沿用 pgtest.go 的连接配置（config.yaml 对齐值 +
-//     PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE 环境变量覆盖），Redis 沿用
-//     admin_session.go 的 TEST_REDIS_ADDR / DefaultTestRedisAddr；
-//  2. 本地不可用且 Docker 可用时，用 testcontainers-go 自动拉起 postgres:16 /
-//     redis:7 容器并等待就绪；容器在同一测试二进制内共享（sync.Once 缓存），
-//     由 ShutdownSharedTestEnv 统一终止；
-//  3. 两级都失败才返回包装 ErrEnvUnavailable 的错误，调用方 t.Skip
-//     （Skip 消息写明本地与容器两级的具体失败原因）。
-//
-// 容器清理顺序契约（配合 goleak.go）：接入 TestMain 的包由
-// RunTestMainWithLeakCheck 在 m.Run() 返回后、泄漏检测前调用
-// ShutdownSharedTestEnv，保证容器后台 goroutine 不参与 leak check；
-// 未接 TestMain 的包由 testcontainers ryuk 在进程退出时兜底回收。
 package support
 
 import (
@@ -34,27 +19,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// 容器镜像：来自 versions.go 的单一真源（与生产主库/会话存储大版本对齐）。
-// 不要在别处硬编码版本号 —— 一旦两处各写各的，CI 会悄悄测一个生产上不存在的版本。
 var (
 	testPGImage    = TestPostgresImage()
 	testRedisImage = TestRedisImage()
 )
 
-// ErrEnvUnavailable 表示本地与容器两级环境均不可用，测试应 t.Skip 而非 fail。
 var ErrEnvUnavailable = errors.New("测试环境不可用")
 
-// TestEnv 一份已就绪的 PG + Redis 测试环境端点（本地或容器）。
 type TestEnv struct {
-	PG          PGEndpoint // PG 连接参数
-	PGSource    string     // PG 来源：local | container
-	RedisAddr   string     // Redis 地址 host:port
-	RedisSource string     // Redis 来源：local | container
+	PG          PGEndpoint
+	PGSource    string
+	RedisAddr   string
+	RedisSource string
 }
 
-// AcquireTestEnv 获取 PG + Redis 双资源测试环境（feature 链路测试常用组合）。
-// 每级资源独立三级回退；任一资源两级都失败即返回包装 ErrEnvUnavailable 的
-// 错误（消息含本地与容器具体原因），调用方据此 t.Skip。
 func AcquireTestEnv(t *testing.T) (*TestEnv, error) {
 	t.Helper()
 
@@ -75,8 +53,6 @@ func AcquireTestEnv(t *testing.T) (*TestEnv, error) {
 	return env, nil
 }
 
-// AcquirePG 仅获取 PG 测试环境（只依赖 PG 的测试用）。
-// 返回端点、来源（local/container）；两级失败时返回包装 ErrEnvUnavailable 的错误。
 func AcquirePG(t *testing.T) (PGEndpoint, string, error) {
 	t.Helper()
 	ep, source, err := acquirePG(t)
@@ -84,8 +60,6 @@ func AcquirePG(t *testing.T) (PGEndpoint, string, error) {
 	return ep, source, err
 }
 
-// AcquireRedis 仅获取 Redis 测试环境（只依赖 Redis 的测试用）。
-// 返回地址、来源（local/container）；两级失败时返回包装 ErrEnvUnavailable 的错误。
 func AcquireRedis(t *testing.T) (string, string, error) {
 	t.Helper()
 	addr, source, err := acquireRedis(t)
@@ -128,7 +102,6 @@ func acquireRedis(t *testing.T) (string, string, error) {
 	return addr, "container", nil
 }
 
-// pingPG 探测 PG 端点连通性（connect_timeout=5s，避免不可达地址长时间挂起）。
 func pingPG(ep PGEndpoint) error {
 	dsn := pgAppendParams(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database), [2]string{"connect_timeout", "5"})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -145,7 +118,6 @@ func pingPG(ep PGEndpoint) error {
 	return sqlDB.PingContext(ctx)
 }
 
-// pingRedis 探测 Redis 端点连通性（3s 超时）。
 func pingRedis(addr string) error {
 	client := redis.NewClient(&redis.Options{
 		Addr:         addr,
@@ -183,7 +155,6 @@ func sharedRedisContainerAddr() (string, error) {
 	return sharedRedisAddr, sharedRedisErr
 }
 
-// probeDocker 探测 Docker 环境：NewDockerProvider 成功即视为可用（结果缓存）。
 func probeDocker() error {
 	dockerProbeOnce.Do(func() {
 		p, err := testcontainers.NewDockerProvider()
@@ -228,8 +199,6 @@ func startPGContainer() (PGEndpoint, error) {
 	}
 	ep.Port = port.Port()
 
-	// BasicWaitStrategies 已含 wait.ForSQL 就绪等待；此处再 ping 一次，
-	// 统一「返回的端点即已就绪」语义（与本地路径一致）。
 	if err := pingPG(ep); err != nil {
 		return PGEndpoint{}, fmt.Errorf("容器端点连通性验证失败: %w", err)
 	}
@@ -270,11 +239,6 @@ func registerSharedContainer(c testcontainers.Container) {
 	sharedContainers = append(sharedContainers, c)
 }
 
-// ShutdownSharedTestEnv 终止所有共享测试容器（幂等）。
-// 必须在 goleak 泄漏检测之前调用：容器后台 goroutine（ryuk reaper、
-// docker client 等）会被 leak check 误判为泄漏。TestMain 模式由
-// RunTestMainWithLeakCheck 自动在 m.Run() 之后调用；未接 TestMain 的包
-// 由 ryuk 在进程退出时兜底回收。
 func ShutdownSharedTestEnv() {
 	envMu.Lock()
 	defer envMu.Unlock()

@@ -1,18 +1,3 @@
-// dto_naming_test.go — dto 目录的形状门禁：文件成对、类型名带后缀。
-//
-// 口径（2026-10-18 用户拍板，原话「dto那边只有req和resp这两个结尾的，分别是接手和返回，
-// 然后的话，只能有这里两个文件，你写这么多干嘛」）：
-//
-//  1. 目录里**只能有** `<域>_req.go` / `<域>_resp.go` 两种非测试文件 —— 一个域最多两份，
-//     入参进 req、回执进 resp。原先的 product_view.go / product_bulk.go / product_row_view.go /
-//     product_variant_save.go / product_variant.go 都是同一份域被拆成了别的名字，读的人要先
-//     「这个文件是进还是出」才能定位，所以一并按这条规则收口。
-//  2. **导出类型一律以 Req / Resp 结尾**，除了下面 allowlist 里的三类值对象 —— 它们既不是
-//     入参也不是回执，而是**两个方向共用的形状**（持久化形状、表单回填值、绑定原语），
-//     硬加后缀会让「这是存进库里的东西」这个事实丢失。
-//
-// allowlist 是**双向**的：登记了却不再存在同样判失败（防止它退化成注释），
-// 新增值对象必须显式登记并在此写明理由。
 package productdto
 
 import (
@@ -26,7 +11,6 @@ import (
 	"testing"
 )
 
-// dtoValueObjects 允许不带 Req / Resp 后缀的导出类型（既进请求也进回执的共用形状）。
 var dtoValueObjects = map[string]string{
 	"FieldKind":         "绑定原语的类型事实（product_form_req.go）",
 	"FieldValueError":   "绑定原语的错误类型（product_form_req.go）",

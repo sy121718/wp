@@ -1,21 +1,5 @@
 package feature
 
-// mail_automation_edit_i18n_migration_test.go — 524 迁移专项（拆页后自动化编辑器新增词条）。
-//
-// 背景：自动化编辑器步骤化重做后，模板（internal/templates/admin/mail/mail_automation_edit.html）
-// 与 internal/module/mail/enums/mail_ui_labels.go 里新增了 admin.mail.automation_edit.* 词条。
-// 键一旦不在 sys_i18n 里，取词链（当前语言 → 默认语言 → fallback → key）就落回模板兜底，
-// 英文界面于是显示中文；反过来，模板兜底改了、库里值没跟，已安装库上永远显示旧文案。
-// 524 把 51 个键 × 2 语言写进 sys_i18n，本文件钉死四件事：
-//  1. 落库齐备：SQL 里能解析出的每个 (键, 语言) 元组都必须在库里、值逐字一致、不接受空串或英文列写中文；
-//  2. 判定门槛：缺任意一条即为未完成（ConditionSQL 必须报 0），且 RunSeeds 能自愈补回；
-//  3. 幂等：连跑两次 RunSeeds、以及绕过判定逐条重放，都不得改动任何一行（含 update_time）；
-//  4. 文案一致：模板兜底与 LabelPair 的中文必须与 524 的中文逐字相同 —— 只改一边就是假翻译。
-//
-// 断言口径的分工（禁止另建第三套）：键是否「被用但没种」由 mail_i18n_key_guard_test.go 与
-// scripts/check-i18n-keys-seeded.sh 负责；190 等更早迁移负责的旧键文案归各自的迁移用例，
-// 本文件只判 524 这 51 个键的落地、幂等与文案一致性，对旧键只查「库里确有中文值」。
-
 import (
 	"cmp"
 	"os"
@@ -33,43 +17,37 @@ import (
 )
 
 const (
-	// mailAEI18nSeedVersion 524 在注册表里的版本号。
 	mailAEI18nSeedVersion = "524-mail-automation-edit-i18n"
-	// mailAEI18nKeyPrefix 本迁移负责的键前缀。
+
 	mailAEI18nKeyPrefix = "admin.mail.automation_edit."
-	// mailAEI18nEnumsPath 步骤/节点/单位文案的 LabelPair 来源。
+
 	mailAEI18nEnumsPath = "../../../../internal/module/mail/enums/mail_ui_labels.go"
 
 	mailAEI18nLangZh = "zh-CN"
 	mailAEI18nLangEn = "en-US"
 
-	// mailAEI18nMinKeys 解析下限：低于它说明解析口径与文件形态失配，用例会静默空转。
 	mailAEI18nMinKeys = 40
 )
 
 var (
 	mailAEI18nEscapedPrefix = strings.ReplaceAll(mailAEI18nKeyPrefix, ".", `\.`)
 
-	// 524 SQL 的数据元组形态：('admin.mail.automation_edit.x', 'zh-CN', '文案', …
 	mailAEI18nSQLValueRe = regexp.MustCompile(`\(\s*'(` + mailAEI18nEscapedPrefix +
 		`[A-Za-z0-9_.]+)'\s*,\s*'(zh-CN|en-US)'\s*,\s*'((?:[^']|'')*)'`)
-	// 模板与枚举的取词形态：("admin.mail.automation_edit.x", "中文兜底")
+
 	mailAEI18nFallbackRe = regexp.MustCompile(`"(` + mailAEI18nEscapedPrefix + `[A-Za-z0-9_.]+)"\s*,\s*"([^"]*)"`)
-	// 任意位置的键字面量（查「用了但库里没有」）。
+
 	mailAEI18nKeyLiteralRe = regexp.MustCompile(`"(` + mailAEI18nEscapedPrefix + `[A-Za-z0-9_.]+)"`)
-	// 覆盖式赋值：UPDATE sys_i18n SET item_value = '新值' … WHERE … item_key = '键' …（525 修正 524 的形态）。
+
 	mailAEI18nUpdateStmtRe = regexp.MustCompile(`(?is)UPDATE\s+sys_i18n\s+SET[^;]*?item_value\s*=\s*'((?:[^']|'')*)'` +
 		`[^;]*?WHERE[^;]*?item_key\s*=\s*'(` + mailAEI18nEscapedPrefix + `[A-Za-z0-9_.]+)'([^;]*)(?:;|$)`)
 	mailAEI18nUpdateLangRe = regexp.MustCompile(`lang\s*=\s*'(zh-CN|en-US)'`)
-	// 英文文案里不该出现汉字/假名。刻意不含全角标点区（U+FF00-FFEF）：
-	// `＋ Add a step` 里的全角加号是与中文版对齐的排版符号，不是「英文列写了中文」。
+
 	mailAEI18nCJKRe = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}]`)
 )
 
-// mailAEI18nCompose 拼合「键 + 语言」查表键。
 func mailAEI18nCompose(key, lang string) string { return key + "\x00" + lang }
 
-// mailAEI18nSQLValues 解析迁移 SQL 里的「键 + 语言 → 文案」（SQL 里 ” 是单引号转义）。
 func mailAEI18nSQLValues(sqlText string) map[string]string {
 	values := make(map[string]string)
 	for _, m := range mailAEI18nSQLValueRe.FindAllStringSubmatch(sqlText, -1) {
@@ -78,7 +56,6 @@ func mailAEI18nSQLValues(sqlText string) map[string]string {
 	return values
 }
 
-// mailAEI18nSQLPairs 把 524 的 SQL 解析成「键 + 语言 + 文案」期望表（old 为空：本迁移全是补种）。
 func mailAEI18nSQLPairs(t *testing.T) []mailI18nExpectation {
 	t.Helper()
 
@@ -98,7 +75,6 @@ func mailAEI18nSQLPairs(t *testing.T) []mailI18nExpectation {
 	return pairs
 }
 
-// mailAEI18nSQLZh 524 的中文文案（键 → 文案）。
 func mailAEI18nSQLZh(t *testing.T) map[string]string {
 	t.Helper()
 
@@ -115,7 +91,6 @@ func mailAEI18nSQLZh(t *testing.T) map[string]string {
 	return zh
 }
 
-// mailAEI18nGroup 取某前缀下的全部期望（用于「整组缺失」反例）。
 func mailAEI18nGroup(pairs []mailI18nExpectation, prefix string) []mailI18nExpectation {
 	var group []mailI18nExpectation
 	for _, exp := range pairs {
@@ -126,7 +101,6 @@ func mailAEI18nGroup(pairs []mailI18nExpectation, prefix string) []mailI18nExpec
 	return group
 }
 
-// mailAEI18nSource 读一个来源文件（模板或 Go 源码）。
 func mailAEI18nSource(t *testing.T, path string) string {
 	t.Helper()
 
@@ -137,7 +111,6 @@ func mailAEI18nSource(t *testing.T, path string) string {
 	return string(buf)
 }
 
-// mailAEI18nFallbacks 提取「键 + 中文兜底」；同一文件里同键两种兜底即缺陷。
 func mailAEI18nFallbacks(t *testing.T, where, src string) map[string]string {
 	t.Helper()
 
@@ -152,7 +125,6 @@ func mailAEI18nFallbacks(t *testing.T, where, src string) map[string]string {
 	return pairs
 }
 
-// mailAEI18nLiterals 提取文本里出现的全部键字面量。
 func mailAEI18nLiterals(src string) map[string]bool {
 	keys := make(map[string]bool)
 	for _, m := range mailAEI18nKeyLiteralRe.FindAllStringSubmatch(src, -1) {
@@ -161,7 +133,6 @@ func mailAEI18nLiterals(src string) map[string]bool {
 	return keys
 }
 
-// mailAEI18nSortedKeys 排序后的键列表（让失败输出稳定可读）。
 func mailAEI18nSortedKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
@@ -171,7 +142,6 @@ func mailAEI18nSortedKeys(m map[string]string) []string {
 	return keys
 }
 
-// mailAEI18nSortedSet 排序后的键集合。
 func mailAEI18nSortedSet(m map[string]bool) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
@@ -181,7 +151,6 @@ func mailAEI18nSortedSet(m map[string]bool) []string {
 	return keys
 }
 
-// mailAEI18nDBZh 库里该前缀的中文词条（键 → 文案）：含 190 等更早迁移种下的旧键。
 func mailAEI18nDBZh(t *testing.T, db *gorm.DB) map[string]string {
 	t.Helper()
 
@@ -207,9 +176,6 @@ func mailAEI18nDBZh(t *testing.T, db *gorm.DB) map[string]string {
 	return values
 }
 
-// mailAEI18nAssignments 从一段迁移 SQL 里提取「键 + 语言 → 文案」的全部赋值证据：
-// INSERT VALUES 元组，以及 UPDATE … SET item_value = … WHERE item_key = … AND lang = …
-// （后者是同批「修正前一个迁移写下的值」的形态：新增键走新 Version，改值也在新 Version 里改）。
 func mailAEI18nAssignments(sqlText string) map[string]string {
 	values := mailAEI18nSQLValues(sqlText)
 	for _, m := range mailAEI18nUpdateStmtRe.FindAllStringSubmatch(sqlText, -1) {
@@ -218,7 +184,7 @@ func mailAEI18nAssignments(sqlText string) map[string]string {
 			lang = lm[1]
 		}
 		if lang == "" {
-			// 语言条件没写在这条语句里：保守跳过，不猜。
+
 			continue
 		}
 		values[mailAEI18nCompose(m[2], lang)] = strings.ReplaceAll(m[1], "''", "'")
@@ -226,8 +192,6 @@ func mailAEI18nAssignments(sqlText string) map[string]string {
 	return values
 }
 
-// mailAEI18nExpectedZh 该前缀在整条迁移链上的中文终态（seed 已按 Version 稳定升序，后者覆盖前者）。
-// 只判文件与文件之间的一致性，不读库 —— 运营在后台改库值不该让本守卫变红。
 func mailAEI18nExpectedZh(t *testing.T) map[string]string {
 	t.Helper()
 
@@ -247,7 +211,6 @@ func mailAEI18nExpectedZh(t *testing.T) map[string]string {
 	return zh
 }
 
-// mailAEI18nExec 执行一条 SQL（args 为占位参数），失败即终止。
 func mailAEI18nExec(t *testing.T, db *gorm.DB, sqlText string, args ...any) {
 	t.Helper()
 
@@ -256,7 +219,6 @@ func mailAEI18nExec(t *testing.T, db *gorm.DB, sqlText string, args ...any) {
 	}
 }
 
-// TestMailAutomationEditI18nMigrationSeedsEveryKey 524 的每个键语言都落库、值逐字一致。
 func TestMailAutomationEditI18nMigrationSeedsEveryKey(t *testing.T) {
 	db := mailSplitDB(t)
 	mailSplitApplySeeds(t, db)
@@ -296,7 +258,6 @@ func TestMailAutomationEditI18nMigrationSeedsEveryKey(t *testing.T) {
 		}
 	}
 
-	// 英文列不许是中文照抄。
 	for _, exp := range pairs {
 		if exp.lang != mailAEI18nLangEn {
 			continue
@@ -311,7 +272,6 @@ func TestMailAutomationEditI18nMigrationSeedsEveryKey(t *testing.T) {
 	}
 }
 
-// TestMailAutomationEditI18nConditionRejectsPartialState 判定门槛：缺任意一条即未完成，且 RunSeeds 能自愈。
 func TestMailAutomationEditI18nConditionRejectsPartialState(t *testing.T) {
 	db := mailSplitDB(t)
 	mailSplitApplySeeds(t, db)
@@ -373,8 +333,7 @@ func TestMailAutomationEditI18nConditionRejectsPartialState(t *testing.T) {
 	})
 
 	t.Run("列表外的键不参与判定", func(t *testing.T) {
-		// 反证门槛不是「全库行数」：先删掉 524 的一整组键，再插入等量（行数守恒）的
-		// 列表外键 —— 全库计数口径会判成已完成（漏判），IN 列表口径必须判 0。
+
 		group := mailAEI18nGroup(pairs, mailAEI18nKeyPrefix+"err.")
 		if len(group) == 0 {
 			t.Fatal("没有解析到 err.* 组的键：解析口径异常")
@@ -422,7 +381,6 @@ func TestMailAutomationEditI18nConditionRejectsPartialState(t *testing.T) {
 	}
 }
 
-// TestMailAutomationEditI18nMigrationIsIdempotent 524 连跑两次、以及逐条重放都不得写入任何一行。
 func TestMailAutomationEditI18nMigrationIsIdempotent(t *testing.T) {
 	db := mailSplitDB(t)
 	mailSplitApplySeeds(t, db)
@@ -443,25 +401,15 @@ func TestMailAutomationEditI18nMigrationIsIdempotent(t *testing.T) {
 		t.Errorf("第二次 RunSeeds 改动了 sys_i18n（含 update_time）：\n前 %+v\n后 %+v", before, after)
 	}
 
-	// 绕过判定逐条重放：补种必须带 ON CONFLICT DO NOTHING，否则会刷新 update_time。
 	mailI18nAssertReplayAffectsNoRows(t, db, seed, pairs)
 }
 
-// TestMailAutomationEditI18nTextMatchesEnums 524 的中文必须与 LabelPair 逐字一致。
-//
-// 为什么只剩下枚举这一侧：表单编辑页（mail_automation_edit.html）已随
-// 「画布是唯一编辑器」删除，模板里那批 admin.mail.automation_edit.{col,param,guide}.*
-// 兜底不复存在（它们变成**未使用的词条** —— 允许，但不能再拿它们当判据）。仍在用的
-// 是 enums 里的节点 / 触发方式 / 条件 / 单位取值，它们经 meta 注入画布的 palette。
-//
-// 判据留着的那一半仍然是真判据：模板改了、库里没跟（437 → 522 → 523）是反复出现的
-// 缺陷形态，而这是唯一自动化挡住它的地方。
 func TestMailAutomationEditI18nTextMatchesEnums(t *testing.T) {
 	db := mailSplitDB(t)
 	mailSplitApplySeeds(t, db)
 
-	seedZh := mailAEI18nSQLZh(t)  // 524 负责的键 → 中文
-	dbZh := mailAEI18nDBZh(t, db) // 库里该前缀的全部中文（含 190 等更早迁移）
+	seedZh := mailAEI18nSQLZh(t)
+	dbZh := mailAEI18nDBZh(t, db)
 
 	enumSrc := mailAEI18nSource(t, mailAEI18nEnumsPath)
 	enum := mailAEI18nFallbacks(t, "枚举 "+mailAEI18nEnumsPath, enumSrc)
@@ -477,7 +425,7 @@ func TestMailAutomationEditI18nTextMatchesEnums(t *testing.T) {
 		}
 		want, owned := seedZh[key]
 		if !owned {
-			// 190 等更早迁移负责的旧键：只判「库里确有中文值」，文案归各自的迁移用例。
+
 			continue
 		}
 		if value != want {
@@ -490,7 +438,6 @@ func TestMailAutomationEditI18nTextMatchesEnums(t *testing.T) {
 		}
 	}
 
-	// 枚举里出现却没带兜底的键：链式取词缺词条时静默输出空串。
 	for _, key := range mailAEI18nSortedSet(mailAEI18nLiterals(enumSrc)) {
 		if _, ok := enum[key]; !ok {
 			t.Errorf("枚举里的键 %s 没有中文兜底：缺词条时会静默输出空串，既不 500 也无日志", key)
@@ -498,7 +445,6 @@ func TestMailAutomationEditI18nTextMatchesEnums(t *testing.T) {
 	}
 }
 
-// TestMailAutomationEditI18nGuardIsNotVacuous 守卫自检：解析器对坏样本必须报出问题。
 func TestMailAutomationEditI18nGuardIsNotVacuous(t *testing.T) {
 	t.Run("SQL 元组解析含转义单引号", func(t *testing.T) {
 		sample := `INSERT INTO sys_i18n (item_key, lang, item_value) VALUES
@@ -534,7 +480,7 @@ func TestMailAutomationEditI18nGuardIsNotVacuous(t *testing.T) {
 		if mailAEI18nCJKRe.MatchString("Add step, e.g. 2 hours") {
 			t.Error("中文检测器误报：纯英文被当成中文")
 		}
-		// 全角符号是刻意对齐的排版，不算「英文列写了中文」（524 的 add_step 就是 `＋ Add a step`）。
+
 		if mailAEI18nCJKRe.MatchString("＋ Add a step") {
 			t.Error("中文检测器误报：全角加号被当成了汉字")
 		}

@@ -10,20 +10,12 @@ import (
 	"go_wp/internal/templates"
 )
 
-// testProjectID 单测用的站点工程 id。
-//
-// 组件单测本身不关心工程上下文，但两个片段位（实时价格核对 / 实时可用量）的地址里
-// **必须**带工程 id —— 片段侧把它当必填参数，缺它直接回 500 而页面上看不出异常。
-// 收敛成一个常量：每条用例各写一个字面量，改口径时必然漏改一处。
 const testProjectID = "proj-1"
 
-// buildViewFor 补上构建期工程 id 的 BuildView 包装（用例只关心组件本身时用它）；
-// 专门断言片段地址的用例直接调 BuildView 并显式给出工程 id。
 func buildViewFor(p *Props, content core.ContentResolver) (View, error) {
 	return BuildView(p, content, testProjectID, "", nil)
 }
 
-// propsOf 把 props 键值编码为节点 props JSON（避免测试里手写 JSON 字符串）。
 func propsOf(t *testing.T, kv map[string]any) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(kv)
@@ -33,13 +25,11 @@ func propsOf(t *testing.T, kv map[string]any) json.RawMessage {
 	return b
 }
 
-// nodeOf 构造商品组件节点。
 func nodeOf(t *testing.T, kv map[string]any) *core.Node {
 	t.Helper()
 	return &core.Node{ID: "p1", Type: Type, Props: propsOf(t, kv)}
 }
 
-// decodePropsOf 解码 props 为组件 Props。
 func decodePropsOf(t *testing.T, kv map[string]any) Props {
 	t.Helper()
 	var p Props
@@ -49,13 +39,11 @@ func decodePropsOf(t *testing.T, kv map[string]any) Props {
 	return p
 }
 
-// stubResolver 固定字段值映射的解析器（替代构建期的商品解析器）。
 type stubResolver struct {
 	values map[string]string
 	errOn  string
 }
 
-// ResolveString 实现 core.ContentResolver。
 func (s stubResolver) ResolveString(field string) (string, error) {
 	if field == s.errOn {
 		return "", errors.New("越界字段")
@@ -63,7 +51,6 @@ func (s stubResolver) ResolveString(field string) (string, error) {
 	return s.values[field], nil
 }
 
-// TestValidateRequiresField 未声明任何商品字段（全空槽位）必须被拒绝。
 func TestValidateRequiresField(t *testing.T) {
 	err := Widget.Validate(nodeOf(t, map[string]any{}), map[string]bool{})
 	if err == nil || !strings.Contains(err.Error(), "至少需要声明一个商品字段") {
@@ -71,7 +58,6 @@ func TestValidateRequiresField(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsForeignSource 声明其它数据源的字段必须被拒绝。
 func TestValidateRejectsForeignSource(t *testing.T) {
 	err := Widget.Validate(nodeOf(t, map[string]any{"titleField": "article.title"}), map[string]bool{})
 	if err == nil || !strings.Contains(err.Error(), "不属于数据源") {
@@ -79,7 +65,6 @@ func TestValidateRejectsForeignSource(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsBadPath 非法字段路径必须被拒绝。
 func TestValidateRejectsBadPath(t *testing.T) {
 	err := Widget.Validate(nodeOf(t, map[string]any{"titleField": "product."}), map[string]bool{})
 	if err == nil || !strings.Contains(err.Error(), "无效的字段路径") {
@@ -87,7 +72,6 @@ func TestValidateRejectsBadPath(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsDeclaredFields 合法声明通过校验（槽位留空 = 不需要该字段）。
 func TestValidateAcceptsDeclaredFields(t *testing.T) {
 	node := nodeOf(t, map[string]any{
 		"titleField":   "product.name",
@@ -99,7 +83,6 @@ func TestValidateAcceptsDeclaredFields(t *testing.T) {
 	}
 }
 
-// TestFieldBindingsReportsDeclared 组件自报声明的字段绑定（供注册表白名单校验）。
 func TestFieldBindingsReportsDeclared(t *testing.T) {
 	node := nodeOf(t, map[string]any{
 		"titleField":       "product.name",
@@ -119,8 +102,6 @@ func TestFieldBindingsReportsDeclared(t *testing.T) {
 	}
 }
 
-// TestBuildViewRendersDeclaredFields 声明字段经解析器静态填入视图：价格带货币符号、
-// 图集解析 JSON 数组、描述走富文本清洗。
 func TestBuildViewRendersDeclaredFields(t *testing.T) {
 	images, err := json.Marshal([]string{"/storage/a.jpg", "/storage/b.jpg"})
 	if err != nil {
@@ -162,7 +143,6 @@ func TestBuildViewRendersDeclaredFields(t *testing.T) {
 	}
 }
 
-// TestBuildViewRequiresResolver 声明了字段却没有解析器时必须报错（不静默出空块）。
 func TestBuildViewRequiresResolver(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"titleField": "product.name"})
 	if _, err := buildViewFor(&p, nil); err == nil {
@@ -170,7 +150,6 @@ func TestBuildViewRequiresResolver(t *testing.T) {
 	}
 }
 
-// optionProps 声明规格槽位的 props（规格选择器相关用例共用）。
 func optionProps(t *testing.T) Props {
 	t.Helper()
 	return decodePropsOf(t, map[string]any{
@@ -180,7 +159,6 @@ func optionProps(t *testing.T) Props {
 	})
 }
 
-// TestValidateAcceptsOptionSlots 规格槽位与其它槽位同规则：路径合法即通过校验。
 func TestValidateAcceptsOptionSlots(t *testing.T) {
 	node := nodeOf(t, map[string]any{
 		"titleField":    "product.name",
@@ -199,8 +177,6 @@ func TestValidateAcceptsOptionSlots(t *testing.T) {
 	}
 }
 
-// TestBuildViewOptionsOnlyForMultipleCombinations 验收（issue #8）：
-// 规格选择器只在「有规格维度且可展示组合 ≥2」时输出 —— 单变体商品不输出。
 func TestBuildViewOptionsOnlyForMultipleCombinations(t *testing.T) {
 	const options = `[{"key":"color","name":"颜色","values":[{"key":"red","label":"红色"},{"key":"blue","label":"蓝色"}]}]`
 	const oneCombo = `[{"sku":"a-1","price":"99","enabled":true,"options":{"color":"red"}}]`
@@ -247,7 +223,7 @@ func TestBuildViewOptionsOnlyForMultipleCombinations(t *testing.T) {
 	})
 
 	t.Run("无规格变体不进组合清单", func(t *testing.T) {
-		// 两个变体但都没有规格（商品占位 / 手工新增）→ 没有可选择的组合，不输出选择器。
+
 		p := optionProps(t)
 		view, err := buildViewFor(&p, stubResolver{values: map[string]string{
 			"product.options": options,
@@ -305,7 +281,6 @@ func TestBuildViewOptionsOnlyForMultipleCombinations(t *testing.T) {
 	})
 }
 
-// TestBuildViewPropagatesResolveError 解析器报错（越界字段）必须上抛终止构建。
 func TestBuildViewPropagatesResolveError(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"titleField": "product.bogus"})
 	_, err := buildViewFor(&p, stubResolver{errOn: "product.bogus"})
@@ -314,7 +289,6 @@ func TestBuildViewPropagatesResolveError(t *testing.T) {
 	}
 }
 
-// productRenderCtx 模板渲染上下文（与装配层的 nodeView 字段同名，本包测试自带一份）。
 type productRenderCtx struct {
 	Classes  string
 	CustomID string
@@ -322,11 +296,6 @@ type productRenderCtx struct {
 	V        View
 }
 
-// TestProductTemplateRendersVariantStockFragment 验收（issue #24）：
-// 规格组合行携带「实时可用量片段」的请求参数（变体 id）与构建期兜底文案。
-//
-// 库存是运行期真源，构建期只能把变体 id 烘进产物（可用量每次请求现取）；
-// 无 JS / HTMX 不可用时页面留下的是兜底文案，选择器本身仍是原生 radio（键盘可达）。
 func TestProductTemplateRendersVariantStockFragment(t *testing.T) {
 	p := &Props{
 		TitleField:    "product.name",
@@ -369,12 +338,11 @@ func TestProductTemplateRendersVariantStockFragment(t *testing.T) {
 	}
 	html := buf.String()
 	for _, want := range []string{
-		// 工程 id 必须在地址里（片段侧当必填参数）：Jet 把属性值里的 & 转义成 &amp;，
-		// htmx 读到的仍是 & —— 断言按产物字节写，才能同时钉住「参数没被丢掉」。
+
 		"/api/site/product/variants?projectId=proj-1&amp;variantIds=var-1",
 		"data-site-poll=\"60\"",
 		`aria-live="polite"`,
-		"以结算时库存为准", // 无脚本时的兜底文案（降级策略）
+		"以结算时库存为准",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("产物缺少 %q\n%s", want, html)
@@ -382,15 +350,6 @@ func TestProductTemplateRendersVariantStockFragment(t *testing.T) {
 	}
 }
 
-// TestBuildViewFragmentURLsCarryRenderProject 两个片段位的地址都必须带**本次渲染所用**的工程 id。
-//
-// 与 orderlist 组件同一条不变量：runtimefragment 的 productVariantAvailability / productLivePrice
-// 都把 projectId 当**必填**参数（缺它无法定位变体所属工程），而 runtimefragment.Request 里
-// 没有工程字段 —— 工程只能由构建期烘进 URL。缺它时片段端报「缺少参数」回 500，
-// htmx 换不动目标节点：页面上看不出任何异常，库存位永远停在构建期兜底文案、价格核对位永远空白。
-//
-// 断言两件事：地址里有工程参数，且**值等于本次渲染传入的工程**。只断言「有 projectId 字样」
-// 是不够的 —— 把工程写死成一个常量也能过，而那样每张页面都会去核对别的工程的价。
 func TestBuildViewFragmentURLsCarryRenderProject(t *testing.T) {
 	const (
 		projectID = "proj-9"
@@ -429,19 +388,12 @@ func TestBuildViewFragmentURLsCarryRenderProject(t *testing.T) {
 	if err := tpl.Execute(&buf, nil, productRenderCtx{Classes: "sky-c-p1", NodeID: "p1", V: view}); err != nil {
 		t.Fatalf("渲染 product 模板失败: %v", err)
 	}
-	// 产物里是 HTML 转义后的 &amp;（Jet 默认转义属性值，htmx 读到的仍是 &）。
+
 	if !strings.Contains(buf.String(), `data-site-read="/api/site/product/variants?projectId=proj-9&amp;variantIds=var-1"`) {
 		t.Fatalf("产物里的可用量片段地址没带工程:\n%s", buf.String())
 	}
 }
 
-// TestBuildViewWithoutProjectOmitsFragmentURLs 缺工程 id 时不烘片段地址。
-//
-// pipeline.DefaultCompile 这类「不解析站点级资源」的编译路径拿不到工程。此时若照旧拼 URL，
-// 片段端会判「缺少参数」回 500，每次页面加载都是一个失败请求 —— 所以两个片段位都退化为空 URL
-// （模板不输出 hx-get），库存位只剩构建期兜底文案。
-//
-// 同时钉住登记：没有 hx-get 就不该声明 hx-* 属性，否则产物会白白多注入一份 htmx 脚本。
 func TestBuildViewWithoutProjectOmitsFragmentURLs(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{

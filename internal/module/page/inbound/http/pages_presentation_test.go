@@ -20,7 +20,6 @@ func TestPageRowUpdatedAtCarriesTimeFact(t *testing.T) {
 	}
 }
 
-// Scan the real source: adding an unused presentation helper is also a regression.
 func TestPagePresentationHasNoBackendUIHelpers(t *testing.T) {
 	f, err := parser.ParseFile(token.NewFileSet(), "pages_handle.go", nil, 0)
 	if err != nil {

@@ -8,26 +8,10 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 603 的门槛判据必须覆盖「中文在、英文缺」的状态。
-//
-// 缺陷形态（与 598 同源，见 register_mail_contact_write_ui_i18n_test.go 的论证）：判据只数
-// lang='zh-CN' 的 10 行 → 运营库里任意一条 en-US 缺失（历史库缺行、有人手工删过英文、或本批
-// SQL 曾半途失败）时中文计数已经满足，判据返回 1 → RunSeeds 直接跳过 → 缺的英文**永远补不上**，
-// 英文界面回退到组件包内的中文兜底（错得安静：没有异常、没有日志）。这与 AGENTS.md §数据库
-// 的定则相悖：「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
-//
-// 修法：判据枚举本批 10 个 key × 2 种语言 = 20 个 (item_key, lang) 组合，缺任意一项即为 0；
-// SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、不覆盖运营改过的值。
-//
-// 本批的 10 个 key 是优惠码页写动作迁 JSON 之后**页面自己带下去**的文案（两套批量摘要 +
-// 没勾选 + 刷新入口 + 启停确认 + 无 JS 提示），所以它们必须恰好能被模板与基座消费到 ——
-// 多一个（没人用的孤儿词条）或少一个（页面上出现裸 key）都要在 review 时看得见。
 func TestAdminCouponsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 	const version = "603-admin-coupons-write-ui-i18n"
 	seed := findSeedByVersion(t, version)
 
-	// ① 判据与 SQL 的组合集合必须一致：判据点名 10 个 key、SQL 落 20 个 (key, lang) 组合，
-	//    语言恰好是判据里写死的那两种。任一侧单改（加了 key、加了语言）这里立刻红。
 	pairs := seedPairs(t, seed.SQL)
 	if len(pairs) != 20 {
 		t.Fatalf("603 的 SQL 应有 20 个 (key, lang) 组合，实际 %d 个：%v", len(pairs), pairs)
@@ -44,10 +28,7 @@ func TestAdminCouponsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 	if len(keys) != 10 {
 		t.Fatalf("603 的 SQL 应覆盖 10 个 key，实际 %d 个", len(keys))
 	}
-	// 判据点名的 key 用**通用**提取器（recent_write_ui_seed_guard_test.go 的 guardSeedKeys）：
-	// 同包那个 keysMentionedIn 的正则写死了 `admin.mail.` 前缀（它服务于 598），对本批的
-	// admin.coupons.* 一个都匹配不到 —— 复用会得到**空集合**，把「判据漏了 key」误判成通过
-	//（这正是 recent_write_ui_seed_guard_test.go 文件头点名的坑）。
+
 	guardKeys := guardSeedKeys(seed.ConditionSQL)
 	if strings.Join(guardKeys, "|") != strings.Join(sortedKeys(keys), "|") {
 		t.Fatalf("判据点名的 key 与 SQL 不一致：\n判据 %v\nSQL  %v", guardKeys, sortedKeys(keys))
@@ -66,7 +47,6 @@ func TestAdminCouponsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		return
 	}
 
-	// ② 第一次 RunSeeds：新库里 603 的 SQL 真被执行，20 行齐全、判据翻成 1。
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("首轮 RunSeeds（603 的 SQL 会在这里真执行）：%v", err)
 	}
@@ -81,7 +61,6 @@ func TestAdminCouponsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		t.Fatal("首轮后 bulk.refresh/en-US 应有值")
 	}
 
-	// ③ 把库改造成缺陷形态：中文齐全（其中一条是运营改过值）+ 少一条英文 + 多一条第三语言。
 	const operatorValue = "运营改过的中文（不得被 seed 覆盖）"
 	mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = 'zh-CN'",
 		operatorValue, "admin.coupons.bulk.noneSelected")
@@ -91,12 +70,10 @@ func TestAdminCouponsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		VALUES (?, 'ja-JP', '運営が入れた日本語', 200, 'admin', 'operator', 1, now(), now())`,
 		"admin.coupons.bulkToggleConfirm")
 
-	// 缺陷判据（修复前这里是 1 → 静默跳过 → 英文永远补不上）
 	if applied := guardValue(t, db, seed); applied != 0 {
 		t.Fatalf("中文齐全、英文缺一条时判据必须为 0（否则会静默跳过、缺的英文补不上），实际 %d", applied)
 	}
 
-	// ④ 补种：缺的英文回到 seed 原值，运营改过的中文保持，第三语言行原样不动，不产生新语言行。
 	for round := 1; round <= 2; round++ {
 		if err := migrations.RunSeeds(db); err != nil {
 			t.Fatalf("第 %d 轮补种 RunSeeds：%v", round, err)

@@ -1,12 +1,3 @@
-// Package feature product 模块 feature 测试 —— 商品详情组件与详情模板（issue #6）。
-//
-// 覆盖本票验收（真实 PostgreSQL + 生产 DDL + 真实 service 装配）：
-//  1. core.product 声明所需商品字段，字段绑定受注册表白名单约束（越界 / 跨数据源被拒绝）；
-//  2. 默认商品详情模板作为内容模板（完整文档层）落地，发布实例按实体类型自动取用；
-//  3. 同一套模板复用于任意商品 —— 换商品只换数据，不改模板；
-//  4. 模板内部引用的全局区块构建期内联展开（走既有的 core.globalref 机制）；
-//  5. 建立发布实例 → 编译 → 激活，访问面直读静态文件（请求期零查库）；
-//  6. 商品可翻译字段随构建语言切换（语境 product.<字段名>）。
 package feature
 
 import (
@@ -48,8 +39,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// detailFixture 一套真实装配：隔离 PG schema + 生产迁移 + 数据种子 +
-// 商品 / 内容模板 / 全局块 / 自动发布实例四个真实 service（与线上装配同形）。
 type detailFixture struct {
 	db        *gorm.DB
 	products  *productservice.Service
@@ -60,7 +49,6 @@ type detailFixture struct {
 	projectID string
 }
 
-// newDetailFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newDetailFixture(t *testing.T) *detailFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -74,12 +62,11 @@ func newDetailFixture(t *testing.T) *detailFixture {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 数据种子：默认商品详情模板（迁移 085）需要一个已存在的工程，故在工程创建之后跑。
+
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行数据种子失败: %v", err)
 	}
-	// 实体类型注册表：与线上装配同款 —— 商品模块注册自己的实体类型，
-	// 内容模板与发布实例只依赖注册表（不认识具体领域）。
+
 	registry := core.NewEntitySourceRegistry()
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetContentStore(i18n.NewDBContentStore(db))
@@ -96,7 +83,6 @@ func newDetailFixture(t *testing.T) *detailFixture {
 	}
 }
 
-// createProduct 建一个可用商品（名称 / 卖点 / 图集 / 主图 / 描述 / 两个变体）。
 func (f *detailFixture) createProduct(t *testing.T, name, slug, desc string, price, highPrice float64) string {
 	t.Helper()
 	ctx := context.Background()
@@ -115,7 +101,7 @@ func (f *detailFixture) createProduct(t *testing.T, name, slug, desc string, pri
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
 	}
-	// 第二个变体：让价格区间有跨度（商品主体不存价格，区间由变体派生）。
+
 	if _, err := f.products.CreateVariant(ctx, &productdto.CreateVariantReq{
 		ProductID: res.ID, SKUCode: slug + "-L", Price: &highPrice,
 	}); err != nil {
@@ -124,7 +110,6 @@ func (f *detailFixture) createProduct(t *testing.T, name, slug, desc string, pri
 	return res.ID
 }
 
-// publish 为商品建立发布实例（URL 由 slug 派生）。
 func (f *detailFixture) publish(t *testing.T, productID, urlPath string) *presentationdto.InstanceResp {
 	t.Helper()
 	inst, err := f.pres.CreateInstance(context.Background(), &presentationdto.CreateInstanceReq{
@@ -136,7 +121,6 @@ func (f *detailFixture) publish(t *testing.T, productID, urlPath string) *presen
 	return inst
 }
 
-// activeHTML 读取访问面上某路径的已激活 index.html（访客面等价读法）。
 func activeHTML(t *testing.T, urlPath string) string {
 	t.Helper()
 	rel := strings.TrimPrefix(urlPath, "/")
@@ -147,8 +131,6 @@ func activeHTML(t *testing.T, urlPath string) string {
 	return string(b)
 }
 
-// TestProductDetailTemplateSeeded 默认商品详情模板作为内容模板落地（完整文档层），
-// 发布实例按实体类型即可解析到 —— 新建商品无需手工拼装模板。
 func TestProductDetailTemplateSeeded(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -170,7 +152,6 @@ func TestProductDetailTemplateSeeded(t *testing.T) {
 	}
 }
 
-// TestProductDetailPublishEndToEnd 商品 → 模板 → 编译 → 激活 → 访问面直读。
 func TestProductDetailPublishEndToEnd(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -184,25 +165,23 @@ func TestProductDetailPublishEndToEnd(t *testing.T) {
 
 	html := activeHTML(t, "/products/summer-shirt")
 	for _, want := range []string{
-		"夏季衬衫",      // product.name → 标题
-		"夏季衬衫卖点",    // product.subtitle
-		"¥99 ~ 199", // product.priceRange（多变体区间）
-		testMediaBaseURL + "/summer-shirt-cover.jpg", // product.defaultImage
-		testMediaBaseURL + "/summer-shirt-1.jpg",     // product.images（图集）
-		"纯棉透气",                                       // product.description（富文本清洗后输出）
+		"夏季衬衫",
+		"夏季衬衫卖点",
+		"¥99 ~ 199",
+		testMediaBaseURL + "/summer-shirt-cover.jpg",
+		testMediaBaseURL + "/summer-shirt-1.jpg",
+		"纯棉透气",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("激活产物应含 %q，实际: %s", want, html)
 		}
 	}
-	// 商品字段是构建期静态填入：产物里不应残留绑定字段名与组件类型名。
+
 	if strings.Contains(html, "product.") || strings.Contains(html, "core.product") {
 		t.Fatalf("产物不应残留绑定字段名: %s", html)
 	}
 }
 
-// TestProductDetailTemplateReusedForAnyProduct 同一套模板复用于任意商品：
-// 换商品只换数据，不改模板。
 func TestProductDetailTemplateReusedForAnyProduct(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -227,7 +206,6 @@ func TestProductDetailTemplateReusedForAnyProduct(t *testing.T) {
 		t.Fatalf("第二个产物应只含自己的数据: %s", secondHTML)
 	}
 
-	// 模板未被改动（版本与文档与发布前一致）。
 	tplAfter, err := f.templates.ResolveTemplate(context.Background(), "product")
 	if err != nil {
 		t.Fatalf("再次解析模板失败: %v", err)
@@ -237,7 +215,6 @@ func TestProductDetailTemplateReusedForAnyProduct(t *testing.T) {
 	}
 }
 
-// TestProductDetailTemplateInlinesBlockRef 模板内部引用全局区块（页眉），构建期内联展开。
 func TestProductDetailTemplateInlinesBlockRef(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -253,7 +230,6 @@ func TestProductDetailTemplateInlinesBlockRef(t *testing.T) {
 		t.Fatalf("创建页眉区块失败: %v", err)
 	}
 
-	// 商品模板：页眉区块引用 + 商品详情组件（内容模板可以引用区块，docs/02-D §1.2）。
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"g1","type":"core.globalref","props":{"blockId":"` + block.ID + `"}},{"id":"pd","type":"core.product","props":{"titleField":"product.name","priceField":"product.priceRange"}}]}`
 	if _, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
 		EntityType: "product", Name: "带页眉的商品模板", DraftDocument: json.RawMessage(doc),
@@ -272,8 +248,6 @@ func TestProductDetailTemplateInlinesBlockRef(t *testing.T) {
 	}
 }
 
-// TestProductTemplateRejectsForeignFieldBinding 字段绑定受白名单约束：
-// 商品数据源之外的绑定（article.*）与白名单外字段（product.bogus）在模板保存时即被拒绝。
 func TestProductTemplateRejectsForeignFieldBinding(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -284,9 +258,9 @@ func TestProductTemplateRejectsForeignFieldBinding(t *testing.T) {
 		doc  string
 		want string
 	}{
-		// 跨数据源绑定：组件自身的字段路径校验先拒绝（数据源不符）。
+
 		"跨数据源绑定": {`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd","type":"core.product","props":{"titleField":"article.title"}}]}`, contenttemplateenums.ErrDataInvalid},
-		// 白名单外字段：路径合法 → 由注册表白名单校验拒绝。
+
 		"白名单外字段": {`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd","type":"core.product","props":{"titleField":"product.bogus"}}]}`, contenttemplateenums.ErrFieldBindingInvalid},
 	}
 	for name, c := range cases {
@@ -304,15 +278,13 @@ func TestProductTemplateRejectsForeignFieldBinding(t *testing.T) {
 	}
 }
 
-// TestProductPublishRejectsForeignFieldBinding 构建期兜底：绕过模板保存校验写入的越界绑定，
-// 在建立发布实例时同样被拒绝（白名单校验不只有保存一道）。
 func TestProductPublishRejectsForeignFieldBinding(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 直写模板表（绕过 service 的保存校验），模拟「旧模板 / 绕过接口写入」的存量数据。
+
 	doc := json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd","type":"core.product","props":{"titleField":"product.bogus"}}]}`)
 	now := time.Now().UTC()
 	m := contenttemplatemodel.NewModel(f.db)
@@ -338,9 +310,6 @@ func TestProductPublishRejectsForeignFieldBinding(t *testing.T) {
 	}
 }
 
-// TestProductDetailRendersSpecSelectorForMultiVariant 验收（issue #8）：
-// 多变体商品的前台产物输出规格选择器（规格维度 + 每个组合的价格），
-// 且完全由构建期静态输出（访客请求期零查库零脚本）。
 func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -371,15 +340,14 @@ func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
 	f.publish(t, created.ID, "/products/summer-shirt")
 
 	html := activeHTML(t, "/products/summer-shirt")
-	// 断言的是**页面标记**而不是 CSS：编译期样式无论是否输出选择器都会进产物，
-	// 只按类名断言会在「选择器根本没渲染」时误判通过。
+
 	for _, want := range []string{
-		`<div class="sky-product-options">`,                                // 规格选择器容器
-		`<input type="radio" class="sky-product-option-radio sky-sr-only"`, // 可选值（键盘 / 触屏 / 鼠标都可用）
+		`<div class="sky-product-options">`,
+		`<input type="radio" class="sky-product-option-radio sky-sr-only"`,
 		`<label class="sky-product-option-value"`,
-		`<div class="sky-product-variant">`, // 规格组合行
-		"颜色", "红色", "蓝色",                    // 维度名与值显示名
-		"¥99", // 组合价格
+		`<div class="sky-product-variant">`,
+		"颜色", "红色", "蓝色",
+		"¥99",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("激活产物应含 %q，实际: %s", want, html)
@@ -390,8 +358,6 @@ func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
 	}
 }
 
-// TestProductDetailHidesSpecSelectorForSingleVariant 验收（issue #8）：
-// 单变体商品在前台不输出规格选择器。
 func TestProductDetailHidesSpecSelectorForSingleVariant(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -410,7 +376,7 @@ func TestProductDetailHidesSpecSelectorForSingleVariant(t *testing.T) {
 	f.publish(t, created.ID, "/products/solo-shirt")
 
 	html := activeHTML(t, "/products/solo-shirt")
-	// 同上：按标记判定（样式类名在 CSS 里恒存在，不能作为「已渲染」的证据）。
+
 	for _, unwanted := range []string{
 		`<div class="sky-product-options">`,
 		`<input type="radio"`,
@@ -424,15 +390,13 @@ func TestProductDetailHidesSpecSelectorForSingleVariant(t *testing.T) {
 	}
 }
 
-// TestProductTranslatableFieldsFollowLanguage 商品可翻译字段随构建语言切换：
-// 同一商品 + 同一模板，工程默认语言切到 en-US 后产物文本随之变化（语境 product.<字段名>）。
 func TestProductTranslatableFieldsFollowLanguage(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 写入一条商品名译文（内容寻址：原文哈希 + 语境 + 语言）。
+
 	if err := f.db.Exec(
 		"INSERT INTO sys_translation (source_hash, context, lang, source_text, target_text, engine) VALUES (?,?,?,?,?,'manual')",
 		i18n.ContentHash("夏季衬衫"), "product.name", "en-US", "夏季衬衫", "Summer Shirt",
@@ -445,7 +409,6 @@ func TestProductTranslatableFieldsFollowLanguage(t *testing.T) {
 		t.Fatalf("默认语言产物应为原文: %s", html)
 	}
 
-	// 切换站点默认语言到 en-US → 重建 → 产物文本随之切换。
 	enabled := true
 	if _, err := f.projects.SaveLocales(ctx, &projectdto.LocalesSaveReq{
 		ProjectID: f.projectID,
@@ -463,7 +426,7 @@ func TestProductTranslatableFieldsFollowLanguage(t *testing.T) {
 	if !strings.Contains(html, "Summer Shirt") {
 		t.Fatalf("英文构建应使用译文: %s", html)
 	}
-	// 无译文的字段逐字回退原文（副标题没有 en-US 译文）。
+
 	if !strings.Contains(html, "夏季衬衫卖点") {
 		t.Fatalf("无译文字段应回退原文: %s", html)
 	}

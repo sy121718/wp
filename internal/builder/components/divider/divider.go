@@ -1,21 +1,14 @@
-// Package divider 实现 core.divider 分割线组件（规范《02-C6 分割线组件规范》）。
-//
-// 极轻量装饰性原子组件：区块/列表/表单内水平视觉分隔，支持嵌入微型文本或图标
-// （"或者"、OR、品牌小标志）。纯线输出单层原生 <hr>；嵌入场景输出紧凑 Flex 结构
-// （两侧线 + 中间元素），零客户端 JS。基础盒模型与通用样式继承自 02-C0。
 package divider
 
 import (
-	_ "embed" // divider.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.divider"
 
-// 线条类型。
 const (
 	LineSolid  = "solid"
 	LineDashed = "dashed"
@@ -23,74 +16,62 @@ const (
 	LineDouble = "double"
 )
 
-// 嵌入类型。
 const (
 	InsetNone = "none"
 	InsetText = "text"
 	InsetIcon = "icon"
 )
 
-// 嵌入位置（元素在线条上的落点）。
 const (
 	PosCenter = "center"
 	PosLeft   = "left"
 	PosRight  = "right"
 )
 
-// insetIconNames 嵌入图标白名单：可选名 → 基座图标库（core，lucide）名。
-//
-// 以前这里手写了一份 path 表 —— 第二份图标库；现在只声明可选名字，
-// 路径一律 core.IconInner 取，与其它组件的箭头/图标同一套描边。
 var insetIconNames = map[string]string{
 	"star":    "star",
 	"diamond": "diamond",
 	"dot":     "circle",
 }
 
-// Width 三端总宽度。
 type Width struct {
 	Desktop string `json:"desktop,omitempty"`
 	Tablet  string `json:"tablet,omitempty"`
 	Mobile  string `json:"mobile,omitempty"`
 }
 
-// Inset 嵌入元素配置。
 type Inset struct {
-	// Kind 嵌入类型：none / text / icon（默认 none）。
 	Kind string `json:"kind,omitempty" ct:"select,none=纯线,text=嵌入文本,icon=嵌入图标,default=none,sec=content,label=样式"`
-	// Text 嵌入文本。
+
 	Text string `json:"text,omitempty" ct:"text,maxlen=50,sec=content"`
-	// FontSize / FontWeight / Color 嵌入文本样式。
+
 	FontSize   string `json:"fontSize,omitempty" ct:"dimension,maxlen=30,sec=style"`
 	FontWeight string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,sec=style,label=字重"`
 	Color      string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
-	// IconName 内置图标（kind=icon）。
+
 	IconName string `json:"iconName,omitempty" ct:"select,star=星形,diamond=菱形,dot=圆点,sec=content,label=图标样式"`
-	// Position 嵌入位置：center / left / right（默认 center）。
+
 	Position string `json:"position,omitempty" ct:"select,center=居中,left=靠左,right=靠右,default=center,sec=content,label=位置"`
-	// Spacing 元素与两侧线条的留白。
+
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 }
 
-// Props divider 属性。
 type Props struct {
-	// Style 线条类型：solid / dashed / dotted / double（默认 solid）。
 	Style string `json:"style,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,default=solid,sec=style,label=线型"`
-	// Weight 线粗（height），如 "1px" / "2px"。
+
 	Weight string `json:"weight,omitempty" ct:"dimension,maxlen=20,sec=style"`
-	// Width 总宽度三端（百分比或固定像素；空=100%）。
+
 	Width Width `json:"width,omitempty"`
-	// Align 对齐（宽度非 100% 时）：left / center / right（默认 center）。
+
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
-	// Color 线条颜色或主题 Token。
+
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
-	// Inset 嵌入元素。
+
 	Inset Inset `json:"inset,omitempty"`
-	// Advanced 通用高级属性（docs/02-C0）。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "分隔线",
@@ -102,13 +83,11 @@ var Widget = core.Atom[Props]{
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
-		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
+
 		Translatable: []string{"text"},
 	},
 }
 
-// validateExtra 关系性校验：嵌入配置与样式取值。
 func validateExtra(p *Props, nodeID string) (err error) {
 	if p.Weight != "" && !core.IsSafeCSSValue(p.Weight) {
 		return fmt.Errorf("无效的线粗: %q", p.Weight)
@@ -141,22 +120,14 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// dividerCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
-// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
-//
 //go:embed divider.css
 var dividerCSS string
 
-// compileCSS 线条/嵌入/对齐/宽度三端样式。
-//
-// 无嵌入与有嵌入是两套结构（纯 <hr> vs 两段线夹元素），在样式源里用 no_inset / has_inset
-// 两个条件段分工；「宽度某端为空则该端不产出」「留白/字号/字重/颜色可选」由空值省略声明承担。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
 	hasInset := !(p.Inset.Kind == InsetNone || p.Inset.Kind == "")
 
-	// 线段 flex 比例由嵌入位置决定：center 等分，left 左短右长，right 反之。
 	leftFlex, rightFlex := "1", "1"
 	switch p.Inset.Position {
 	case PosLeft:
@@ -176,7 +147,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"inset_font_weight": p.Inset.FontWeight,
 		"inset_color":       p.Inset.Color,
 	}
-	// 三端宽度 + 对齐（宽度为空则该端的 width 与两条 margin 一起省略）。
+
 	setWidth := func(suffix, w string) {
 		vars["width_"+suffix] = w
 		if w == "" {
@@ -188,7 +159,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			vars["ml_"+suffix], vars["mr_"+suffix] = "0", "auto"
 		case "right":
 			vars["ml_"+suffix], vars["mr_"+suffix] = "auto", "0"
-		default: // center
+		default:
 			vars["ml_"+suffix], vars["mr_"+suffix] = "auto", "auto"
 		}
 	}
@@ -197,12 +168,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	setWidth("mobile", p.Width.Mobile)
 
 	if err := core.ApplyComponentCSSTmpl(b, sel, dividerCSS, vars); err != nil {
-		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+
 		panic(fmt.Sprintf("divider 组件样式解析失败: %v", err))
 	}
 }
 
-// lineDecl 统一线声明（border-top；double 缺省权重提升到 3px 保证最小辨识度）。
 func lineDecl(p *Props) string {
 	style := p.Style
 	if style == "" {
@@ -218,7 +188,6 @@ func lineDecl(p *Props) string {
 	return core.CSSDecl("border-top", weight, style, lineColor(p))
 }
 
-// lineColor 线条颜色（主题 Token 或自定义）。
 func lineColor(p *Props) string {
 	if p.Color == "" {
 		return "currentColor"
@@ -226,14 +195,10 @@ func lineColor(p *Props) string {
 	return p.Color
 }
 
-// init 注册分割线组件。
 func init() {
 	core.Register(Widget)
 	core.RegisterTemplate("divider", dividerTemplate)
 }
 
-// dividerTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed divider.jet
 var dividerTemplate string

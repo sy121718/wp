@@ -36,7 +36,6 @@ type customerBulkResult struct {
 	Items    []customerBulkItem `json:"items"`
 }
 
-// customerBulkBody 绑定固定请求形状；请求归一和校验由 DTO 完成。
 func customerBulkBody[T interface{ CustomerBulkValues() ([]uint64, int, error) }](c *gin.Context) ([]uint64, int, bool) {
 	req, err := binding.ParseJSON[T](c)
 	if err != nil {
@@ -51,7 +50,6 @@ func customerBulkBody[T interface{ CustomerBulkValues() ([]uint64, int, error) }
 	return ids, status, true
 }
 
-// customerBulkRequestError 统一输出既有请求错误；数量与上限来自 DTO 返回的错误事实。
 func customerBulkRequestError(c *gin.Context, err error) {
 	var limit *bulkids.IDsError
 	if errors.As(err, &limit) {
@@ -65,14 +63,6 @@ func customerBulkRequestError(c *gin.Context, err error) {
 	response.ErrorWithMessage(c, 400, key)
 }
 
-// customerAPIErrorText 逐条写操作的错误文案（JSON 出口，必须交成品文本）。
-//
-// 判定 / 归口 / 失败日志三件事走共享的 adminui（判据是 pkg/response.IsBusinessError
-// 的**形态**）：本模块原先自留的白名单 customerFacingText 已删除 —— 它是第二份真相。
-// 场景名用下划线形态的 "user_customer_write"，保住「这是哪条写路径」的日志粒度：
-// 点分形态（如 "user.customer.write"）会被 check-controller-i18n-literals.sh 的**形态**
-// 判据当成词条 key 字面量统计，而它不是词条 key —— 撞的是门禁正则的假阳性，
-// 不是场景名本身有问题，所以只换分隔符、不并成一个更粗的名字。
 func customerAPIErrorText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
@@ -80,7 +70,6 @@ func customerAPIErrorText(c *gin.Context, err error) string {
 	return adminui.PageErrorText(c, "user_customer_write", err)
 }
 
-// customerAPIWriteError 把一条写错误落成 JSON 响应（业务错误 400，其余 500）。
 func customerAPIWriteError(c *gin.Context, err error) {
 	code := http.StatusBadRequest
 	if !response.IsBusinessError(err) {
@@ -99,7 +88,6 @@ func customerUnlockMessage(res *userdto.CustomerUnlockResp) string {
 	return userenums.MsgCustomerNotLocked
 }
 
-// BulkCustomerStatus preserves the single-customer service boundary per item.
 func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 	ids, status, ok := customerBulkBody[userdto.CustomerBulkStatusReq](c)
 	if !ok {
@@ -125,7 +113,6 @@ func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 	response.Success(c, result)
 }
 
-// BulkCustomerUnlock reports no-op separately from changed login state and failures.
 func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
 	ids, _, ok := customerBulkBody[userdto.CustomerBulkUnlockReq](c)
 	if !ok {

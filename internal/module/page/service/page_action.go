@@ -18,7 +18,6 @@ func (s *Service) SetPublishedInstanceLocator(locator presentationcontract.Publi
 	s.actionInstances = locator
 }
 
-// PublishedPagePath 按本工程和精确语言的Publication取访问路径，不读draft_path或单值镜像。
 func (s *Service) PublishedPagePath(ctx context.Context, projectID, pageID, lang string) (string, error) {
 	if uuid.Validate(projectID) != nil || uuid.Validate(pageID) != nil || strings.TrimSpace(lang) == "" {
 		return "", ErrInvalidParam
@@ -46,8 +45,6 @@ func (s *Service) publishedActionOptions(ctx context.Context, projectID, lang st
 	return s.buildActionOptions(ctx, projectID, lang, "", "")
 }
 
-// buildActionOptions 只允许本次构建自身使用冻结路径，首次发布不依赖尚未存在的自身Publication。
-// 其它页面和语言仍必须通过真实激活状态；不提供通用未发布目标回退。
 func (s *Service) buildActionOptions(ctx context.Context, projectID, lang, pageID, frozenPath string) builder.CompileOption {
 	return builder.WithPublishedActionPaths(func(id string) (string, error) {
 		if pageID != "" && id == pageID {

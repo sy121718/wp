@@ -7,13 +7,11 @@ import (
 	"go_wp/internal/builder"
 )
 
-// advancedImageDoc 构造带 Advanced 配置的图片文档。
 func advancedImageDoc(t *testing.T, src, advanced string) *builder.Page {
 	t.Helper()
 	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"`+src+`","advanced":`+advanced+`}}]}`)
 }
 
-// TestAdvancedSpacingCompile 四向间距 + 三端响应式 + 负边距编译。
 func TestAdvancedSpacingCompile(t *testing.T) {
 	advanced := `{"margin":{"desktop":{"top":"-12px","right":"0","bottom":"24px","left":"auto"},"tablet":{"top":"8px"},"mobile":{"left":"16px"}},"padding":{"desktop":{"top":"8px","right":"16px","bottom":"8px","left":"16px"}}}`
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", advanced))
@@ -24,7 +22,7 @@ func TestAdvancedSpacingCompile(t *testing.T) {
 		"margin: -12px 0 24px auto",
 		"padding: 8px 16px 8px 16px",
 		"@media (max-width: 1024px)",
-		"margin-top: 8px", // tablet 部分设置输出长属性
+		"margin-top: 8px",
 		"@media (max-width: 767px)",
 	} {
 		if !strings.Contains(c.CSS, want) {
@@ -33,7 +31,6 @@ func TestAdvancedSpacingCompile(t *testing.T) {
 	}
 }
 
-// TestAdvancedWidthAlignShadowOpacity 宽度/对齐/阴影/透明度/层级。
 func TestAdvancedWidthAlignShadowOpacity(t *testing.T) {
 	advanced := `{"widthMode":"fixed","widthValue":"320px","alignSelf":"center","shadow":"lg","opacity":60,"zIndex":10}`
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", advanced))
@@ -53,7 +50,6 @@ func TestAdvancedWidthAlignShadowOpacity(t *testing.T) {
 	}
 }
 
-// TestAdvancedFullWidth 铺满父容器。
 func TestAdvancedFullWidth(t *testing.T) {
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", `{"widthMode":"full"}`))
 	if err != nil {
@@ -64,7 +60,6 @@ func TestAdvancedFullWidth(t *testing.T) {
 	}
 }
 
-// TestAdvancedBorderRadius 四向边框 + 四角独立圆角。
 func TestAdvancedBorderRadius(t *testing.T) {
 	advanced := `{"border":{"width":"1px","style":"dashed","color":"#999"},"radius":{"topLeft":"16px","topRight":"16px","bottomRight":"0","bottomLeft":"0"}}`
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", advanced))
@@ -81,13 +76,12 @@ func TestAdvancedBorderRadius(t *testing.T) {
 	}
 }
 
-// TestAdvancedVisibility 三端显隐：桌面直出，平板/手机进媒体查询。
 func TestAdvancedVisibility(t *testing.T) {
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", `{"hideOn":{"tablet":true,"mobile":true}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	// 平板媒体查询块内应含 display:none。
+
 	tabletBlock := extractMediaBlock(c.CSS, "@media (max-width: 1024px)")
 	if !strings.Contains(tabletBlock, "display: none") {
 		t.Errorf("平板隐藏缺失:\n%s", c.CSS)
@@ -96,13 +90,12 @@ func TestAdvancedVisibility(t *testing.T) {
 	if !strings.Contains(mobileBlock, "display: none") {
 		t.Errorf("手机隐藏缺失:\n%s", c.CSS)
 	}
-	// 桌面未开隐藏，默认样式不应含 display:none。
+
 	if strings.Contains(c.CSS, "display: none }") && !strings.Contains(tabletBlock, "") {
 		t.Errorf("桌面不应隐藏:\n%s", c.CSS)
 	}
 }
 
-// TestAdvancedAllHidden 三端全隐藏：编译器照常输出（哑与确定性）。
 func TestAdvancedAllHidden(t *testing.T) {
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", `{"hideOn":{"desktop":true,"tablet":true,"mobile":true}}`))
 	if err != nil {
@@ -113,7 +106,6 @@ func TestAdvancedAllHidden(t *testing.T) {
 	}
 }
 
-// TestAdvancedCustomAttributes 自定义 class 织入与自定义 ID 注入。
 func TestAdvancedCustomAttributes(t *testing.T) {
 	advanced := `{"customClasses":["promo-hero","dark"],"customId":"hero-anchor"}`
 	c, err := compile(t, advancedImageDoc(t, "/storage/adv.jpg", advanced))
@@ -128,7 +120,6 @@ func TestAdvancedCustomAttributes(t *testing.T) {
 	}
 }
 
-// TestAdvancedLinkWithID 自定义 ID + 包裹链接：ID 落在 <a> 上。
 func TestAdvancedLinkWithID(t *testing.T) {
 	doc := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"/storage/adv.jpg","link":"https://example.com","advanced":{"customId":"go-link"}}}]}`)
 	c, err := compile(t, doc)
@@ -140,14 +131,12 @@ func TestAdvancedLinkWithID(t *testing.T) {
 	}
 }
 
-// TestAdvancedValidateErrors Advanced 层校验拒绝。
 func TestAdvancedValidateErrors(t *testing.T) {
 	cases := []struct{ name, advanced, want string }{
 		{"负内边距", `{"padding":{"desktop":{"top":"-8px"}}}`, "不允许负值"},
 		{"外边距超下限", `{"margin":{"desktop":{"top":"-500px"}}}`, "负值超出下限"},
 		{"间距注入", `{"margin":{"desktop":{"top":"1px}body{x:1}"}}}`, "无效的"},
-		// 枚举类非法值由声明式 ct 校验（select 选项）先拦，文案为通用「不在选项内」；
-		// 数值越界同理报「超出上限」。组件自定义文案仅在声明式校验放行后才可能触发。
+
 		{"非法宽度模式", `{"widthMode":"diagonal"}`, "不在选项内"},
 		{"fixed缺宽度", `{"widthMode":"fixed"}`, "必须提供有效宽度值"},
 		{"非法对齐", `{"alignSelf":"middle"}`, "不在选项内"},
@@ -169,7 +158,6 @@ func TestAdvancedValidateErrors(t *testing.T) {
 	}
 }
 
-// TestAdvancedCustomIDDuplicate 自定义 ID 全文档唯一。
 func TestAdvancedCustomIDDuplicate(t *testing.T) {
 	doc := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[`+
 		`{"id":"p1","type":"core.image","props":{"src":"/storage/adv.jpg","advanced":{"customId":"same"}}},`+
@@ -180,7 +168,6 @@ func TestAdvancedCustomIDDuplicate(t *testing.T) {
 	}
 }
 
-// extractMediaBlock 提取指定媒体查询块内容（粗提取，测试用）。
 func extractMediaBlock(css, query string) string {
 	idx := strings.Index(css, query)
 	if idx < 0 {

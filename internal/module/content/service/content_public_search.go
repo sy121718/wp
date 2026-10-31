@@ -15,7 +15,6 @@ import (
 	"go_wp/internal/seo"
 )
 
-// PublicSearchService 聚合收窄检索契约；不参与模板渲染，也不猜实体路径。
 type PublicSearchService struct {
 	articles     contentcontract.SearchPort
 	products     productcontract.SearchPort

@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// 筛选字段由模板消费原请求；分页链接由 TestTaxonomyPagesPaginationFactsRenderLinks 验证。
 func TestTaxonomyFiltersRetainQuery(t *testing.T) {
 	for _, page := range taxonomyPages {
 		t.Run(page.name, func(t *testing.T) {

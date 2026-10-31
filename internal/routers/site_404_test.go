@@ -1,15 +1,5 @@
 package routers
 
-// site_404_test.go — 访问面未知路径的 404 响应（审计 SEO-013 的 verification）。
-//
-// 两条断言直接对应审计条目的验收口径：
-//  1. 配置了自定义 404 页时，未知路径返回那份页面**且状态码仍是 404**；
-//  2. 未配置时行为不变（既有的统一 JSON 404）。
-//
-// 为什么必须在这一层测：gin 的静态文件 handler 在 fs.Open 失败时会把 handler 链
-// 换成 NoRoute（v1.12 createStaticHandler），也就是说「访问面 404」的真实出口是
-// notFoundHandler —— 只测 pipeline 的文件读写测不到这条链。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -23,14 +13,12 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// doGet 发起一次真实请求（走完整 handler 链）。
 func doGet(router *gin.Engine, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
 }
 
-// newSiteFaceRouter 按生产形状装配访问面与未匹配路由处理器。
 func newSiteFaceRouter() *gin.Engine {
 	router := gin.New()
 	setupStaticFace(router)
@@ -38,7 +26,6 @@ func newSiteFaceRouter() *gin.Engine {
 	return router
 }
 
-// TestSiteFaceUnknownPathServesCustomNotFound 未知路径返回自定义 404 页，状态码 404。
 func TestSiteFaceUnknownPathServesCustomNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -54,8 +41,7 @@ func TestSiteFaceUnknownPathServesCustomNotFound(t *testing.T) {
 	router := newSiteFaceRouter()
 	for _, path := range []string{"/site/ghost", "/site/a/b/c", "/site/blog/不存在的文章"} {
 		rec := doGet(router, path)
-		// 状态码必须是 404：返回 200 是软 404，搜索引擎会把死链当有效页面收录 ——
-		// 那正是本条审计要避免的一半问题。
+
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s 状态码期望 404，实际 %d", path, rec.Code)
 		}
@@ -68,7 +54,6 @@ func TestSiteFaceUnknownPathServesCustomNotFound(t *testing.T) {
 	}
 }
 
-// TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior 未配置时行为不变。
 func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -88,7 +73,7 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "<html") {
 		t.Errorf("未配置时不应输出 HTML 页面，实际 body %q", rec.Body.String())
 	}
-	// 配置后清空 = 回到既有行为（激活目录直接对外服务，旧页面不能继续顶着）。
+
 	if err := pipeline.SyncNotFoundPage(active, "<h1>旧页</h1>"); err != nil {
 		t.Fatalf("写入 404 页失败: %v", err)
 	}
@@ -101,15 +86,6 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 	}
 }
 
-// TestSiteFaceCustomNotFoundScopedToSiteFace 自定义 404 只作用于访问面。
-//
-// 控制面（/api、/admin 等）的未匹配路径必须保持统一 JSON —— 后台/接口
-// 拿到一段 HTML 会让前端解析出错。
-//
-// 边界判据随挂载点变化：站点**独占域名根**之后，「访问面」不再是「/site 前缀」
-// 而是「控制面前缀之外的一切」。所以 /siteadmin/ghost 现在是**站点路径**
-// （一个名叫 siteadmin 的页面），应当拿到站点 404 页 —— 早先这条用例把它当控制面，
-// 那是 /site 子路径挂载时代的判据。
 func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -122,7 +98,7 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	}
 
 	router := newSiteFaceRouter()
-	// 控制面路径：必须保持 JSON。
+
 	for _, path := range []string{"/api/ghost", "/admin/ghost", "/storage/ghost"} {
 		rec := doGet(router, path)
 		if rec.Code != http.StatusNotFound {
@@ -132,7 +108,7 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 			t.Errorf("%s 不应命中站点 404 页，实际 Content-Type %q body %q", path, ct, rec.Body.String())
 		}
 	}
-	// 站点路径（含形如 /siteadmin 的前缀相似路径）：走站点 404 页。
+
 	for _, path := range []string{"/siteadmin/ghost", "/ghost", "/a/b/c", "/_fragments/ghost"} {
 		rec := doGet(router, path)
 		if rec.Code != http.StatusNotFound {
@@ -144,7 +120,6 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	}
 }
 
-// TestSiteFaceActiveArtifactStillServed 回归：自定义 404 不影响已激活产物的正常输出。
 func TestSiteFaceActiveArtifactStillServed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -159,7 +134,7 @@ func TestSiteFaceActiveArtifactStillServed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(art, "index.html"), []byte("<h1>home</h1>"), 0o644); err != nil {
 		t.Fatalf("写产物失败: %v", err)
 	}
-	// 激活链接形状与 LocalPublicationStore.Activate 一致（相对目标，上溯层数 = 路径段数 + 1）。
+
 	if err := os.Symlink("../../artifacts/hash1", filepath.Join(active, "about")); err != nil {
 		t.Fatalf("建激活链接失败: %v", err)
 	}
@@ -168,8 +143,7 @@ func TestSiteFaceActiveArtifactStillServed(t *testing.T) {
 	}
 
 	router := newSiteFaceRouter()
-	// 刻意不用 /site/index：index 别名规则把它 301 到 "/"（I18N-022，既有行为），
-	// 拿它做断言测到的是那条中间件，而不是静态面本身。
+
 	rec := doGet(router, "/site/about/")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("已激活路径期望 200，实际 %d body %q", rec.Code, rec.Body.String())

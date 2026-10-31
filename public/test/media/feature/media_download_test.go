@@ -1,10 +1,5 @@
 package feature
 
-// media_download_test.go — 媒体资源包下载接口 feature 链路：
-// 造附件 + 变体记录 + 本地物理文件 → GET /api/media/download(/batch) →
-// 断言 200、zip 头（PK）、zip 内四目录结构与 README 占位。
-// 存储目录经 upload.local_dir 指向 t.TempDir()；PG 不可用时 Skip。
-
 import (
 	"archive/zip"
 	"bytes"
@@ -29,7 +24,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// initDownloadEnv 初始化上传组件并把 local 存储根指向临时目录（测试自清理）。
 func initDownloadEnv(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
@@ -44,10 +38,6 @@ func initDownloadEnv(t *testing.T) string {
 	return tmp
 }
 
-// newDownloadRouter 复用 newMediaService（建隔离 PG + 三表 DDL），并按
-// SetupMediaRoutes 同款装配（model→service→handle→路由）挂载下载接口。
-// 仅豁免 SessionAuth 中间件：完整会话链路依赖 Redis 与管理员登录（已由
-// admin/auth feature 测试覆盖），此处聚焦下载的 handler→service→model→zip 链路。
 func newDownloadRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	t.Helper()
 	db, _ := newMediaService(t)
@@ -67,7 +57,6 @@ func newDownloadRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	return router, db
 }
 
-// makeStoragePNG 在存储目录写一张真实 png（zip original/ 内容字节断言用）。
 func makeStoragePNG(t *testing.T, dir string, key string, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -83,7 +72,6 @@ func makeStoragePNG(t *testing.T, dir string, key string, w, h int) []byte {
 	return buf.Bytes()
 }
 
-// makeVariantFile 写一个假 webp 变体文件（RIFF 头字节，zip 只校验条目存在与可读）。
 func makeVariantFile(t *testing.T, dir string, key string) {
 	t.Helper()
 	payload := append([]byte("RIFF"), bytes.Repeat([]byte{0}, 64)...)
@@ -93,7 +81,6 @@ func makeVariantFile(t *testing.T, dir string, key string) {
 	}
 }
 
-// seedDownloadAttachment 种子一张图片附件（物理文件需另行写入存储目录），返回 ID。
 func seedDownloadAttachment(t *testing.T, db *gorm.DB, name string) uint64 {
 	t.Helper()
 	mime := "image/png"
@@ -114,7 +101,6 @@ func seedDownloadAttachment(t *testing.T, db *gorm.DB, name string) uint64 {
 	return e.ID
 }
 
-// seedReadyVariant 种子一条 ready 变体记录（物理文件需另行写入）。
 func seedReadyVariant(t *testing.T, db *gorm.DB, attachmentID uint64, variantType string, key string) {
 	t.Helper()
 	w, h := 100, 80
@@ -135,7 +121,6 @@ func seedReadyVariant(t *testing.T, db *gorm.DB, attachmentID uint64, variantTyp
 	}
 }
 
-// readZipEntries 解析响应字节为 zip 条目名 → 内容映射。
 func readZipEntries(t *testing.T, body []byte) map[string][]byte {
 	t.Helper()
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
@@ -158,8 +143,6 @@ func readZipEntries(t *testing.T, body []byte) map[string][]byte {
 	return out
 }
 
-// TestMediaDownloadSingleZip 单图下载：original/ 恒有；ready 变体打文件；
-// 未 ready 的目录留 README.txt；Content-Disposition attachment。
 func TestMediaDownloadSingleZip(t *testing.T) {
 	tmp := initDownloadEnv(t)
 	router, db := newDownloadRouter(t)
@@ -168,7 +151,7 @@ func TestMediaDownloadSingleZip(t *testing.T) {
 	id := seedDownloadAttachment(t, db, "dl.png")
 	makeVariantFile(t, tmp, "test/dl_thumb.webp")
 	seedReadyVariant(t, db, id, mediamodel.VariantTypeThumb, "test/dl_thumb.webp")
-	// medium 记录 pending（无文件）、webp 无记录 → 两个目录都应出现 README.txt。
+
 	var pendingRow = &mediamodel.MediaVariantEntity{
 		AttachmentID: id,
 		VariantType:  mediamodel.VariantTypeMedium,
@@ -212,7 +195,6 @@ func TestMediaDownloadSingleZip(t *testing.T) {
 	}
 }
 
-// TestMediaDownloadBatchZip 批量下载：每图一个 <stem>_<id>/ 子文件夹，内同四目录。
 func TestMediaDownloadBatchZip(t *testing.T) {
 	tmp := initDownloadEnv(t)
 	router, db := newDownloadRouter(t)
@@ -246,7 +228,6 @@ func TestMediaDownloadBatchZip(t *testing.T) {
 	}
 }
 
-// TestMediaDownloadErrors 不存在附件 400；ids 为空 400。
 func TestMediaDownloadErrors(t *testing.T) {
 	initDownloadEnv(t)
 	router, _ := newDownloadRouter(t)
@@ -265,8 +246,6 @@ func TestMediaDownloadErrors(t *testing.T) {
 		t.Fatalf("空 ids 应 400: got=%d", w2.Code)
 	}
 }
-
-// --- 小辅助 ---
 
 func uint64ToString(v uint64) string {
 	return strings.TrimSpace(strconv.FormatUint(v, 10))

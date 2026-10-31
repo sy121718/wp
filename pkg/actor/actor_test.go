@@ -9,7 +9,7 @@ func TestFromWithoutActorIsSystem(t *testing.T) {
 	if a := From(context.Background()); !a.System() {
 		t.Fatalf("未注入时应是系统身份，得到 %+v", a)
 	}
-	// nil ctx 同样按系统身份处理：调用链里可能有 Background() 被漏掉的地方。
+
 	if a := From(nil); !a.System() {
 		t.Fatalf("nil ctx 应是系统身份，得到 %+v", a)
 	}
@@ -35,7 +35,7 @@ func TestWithActorOverridesEarlier(t *testing.T) {
 }
 
 func TestWithActorNilContext(t *testing.T) {
-	// 显式传 nil 也不该 panic：装配期错误不该变成请求期的空指针。
+
 	ctx := WithActor(nil, Actor{ID: 7, Name: "sys"})
 	if got := From(ctx); got.ID != 7 {
 		t.Fatalf("nil ctx 注入后应能取回，得到 %+v", got)

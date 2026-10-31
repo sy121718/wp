@@ -2,7 +2,6 @@ package productdto
 
 import "go_wp/pkg/utils"
 
-// PublishAttemptListResp 商品的发布尝试查询结果；页面自行格式化时刻、耗时与语言。
 type PublishAttemptListResp struct {
 	Ready   bool                    `json:"ready"`
 	Rows    []PublishAttemptRowResp `json:"rows"`
@@ -12,7 +11,6 @@ type PublishAttemptListResp struct {
 	HasMore bool                    `json:"hasMore"`
 }
 
-// PublishAttemptRowResp 一次发布尝试的业务事实。
 type PublishAttemptRowResp struct {
 	ID              int64          `json:"id"`
 	CreatedAt       utils.JSONTime `json:"createdAt"`
@@ -26,7 +24,6 @@ type PublishAttemptRowResp struct {
 	DurationMs      int64          `json:"durationMs"`
 }
 
-// PublishAttemptListReq 商品发布历史的查询条件。
 type PublishAttemptListReq struct {
 	ProjectID string `form:"project"`
 	ProductID string `form:"productId"`

@@ -1,11 +1,5 @@
 package commentmcp
 
-// comment_review_tools_test.go — 审核写工具的边界。
-//
-// 最要紧的一项是「拿不到操作人身份就拒绝执行」：审核留痕的全部价值在于
-// 「谁在什么时刻放行了哪条评论」，一条 ReviewerID=0 的流水谁也追溯不了 ——
-// 它比没有流水更糟（看起来审过了，实际无从追责）。
-
 import (
 	"context"
 	"errors"
@@ -52,7 +46,6 @@ func mustReviewTool(t *testing.T, stub *stubReview) mcp.Tool {
 	return tools[0]
 }
 
-// callReview 以某个登录身份调用审核工具（userID=0 表示没有身份）。
 func callReview(t *testing.T, stub *stubReview, userID int64, args map[string]any) (string, error) {
 	t.Helper()
 	tool := mustReviewTool(t, stub)
@@ -85,7 +78,6 @@ func TestCommentReviewRejectsNilDependency(t *testing.T) {
 	}
 }
 
-// 没有登录身份时不得执行：否则会写出一条追溯不了的审核流水。
 func TestCommentReviewRequiresReviewerIdentity(t *testing.T) {
 	stub := &stubReview{res: &commentdto.ReviewResp{Affected: 2}}
 	if _, err := callReview(t, stub, 0, baseReviewArgs()); err == nil {
@@ -106,7 +98,6 @@ func TestCommentReviewPassesReviewerFromContext(t *testing.T) {
 	}
 }
 
-// 参数里不能有 reviewerId：让模型能填操作人，等于把留痕变成可伪造的字段。
 func TestCommentReviewSchemaHasNoReviewerField(t *testing.T) {
 	tool := mustReviewTool(t, &stubReview{})
 	raw, err := tool.SchemaJSON()
@@ -151,7 +142,7 @@ func TestCommentReviewRejectsTooManyIDs(t *testing.T) {
 }
 
 func TestCommentReviewRejectsBadStatus(t *testing.T) {
-	// pending 不是可审核的目标状态（把一条评论「改回待审」不是判断结果）。
+
 	stub := &stubReview{}
 	if _, err := callReview(t, stub, 42, map[string]any{
 		"projectId": "p-1", "ids": []int64{1}, "status": "pending",
@@ -160,8 +151,6 @@ func TestCommentReviewRejectsBadStatus(t *testing.T) {
 	}
 }
 
-// 重复 id 要去掉：不然 service 回的「影响条数」对不上请求条数，
-// 而那个数字是回答里唯一能证明「到底改了几条」的东西。
 func TestCommentReviewDedupesIDs(t *testing.T) {
 	stub := &stubReview{res: &commentdto.ReviewResp{Affected: 2, Status: "approved"}}
 	if _, err := callReview(t, stub, 42, map[string]any{
@@ -174,8 +163,6 @@ func TestCommentReviewDedupesIDs(t *testing.T) {
 	}
 }
 
-// 实际改动数少于请求数时必须说出来：用户才知道有一部分已经不在待审状态，
-// 而不是以为全处理完了。
 func TestCommentReviewTextExplainsShortfall(t *testing.T) {
 	stub := &stubReview{res: &commentdto.ReviewResp{Affected: 1, Status: "approved"}}
 	text, err := callReview(t, stub, 42, baseReviewArgs())
@@ -189,7 +176,6 @@ func TestCommentReviewTextExplainsShortfall(t *testing.T) {
 	}
 }
 
-// 驳回要说清「只是不公开、没删」：不说的话用户会以为评论被删了。
 func TestCommentReviewTextDistinguishesReject(t *testing.T) {
 	stub := &stubReview{res: &commentdto.ReviewResp{Affected: 2, Status: "rejected"}}
 	text, err := callReview(t, stub, 42, map[string]any{

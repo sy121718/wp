@@ -1,17 +1,5 @@
 package templates
 
-// admin_product_translations_structure_test.go — 商品译文工作台的保存走 JSON 写基座（批次 C）。
-//
-// 这一页的保存有两个容易写错、且错了不会报错的点，用结构判据钉住：
-//
-//  1. 三组 row* 字段必须按行对齐（data-write-array 同时点名三个）且**保留空译文行占位**：
-//     基座按控件 name 收集数组，漏点一个 name 就变成标量，服务端长度对齐直接判失败；
-//     把空行剔掉则让后面所有行错位一格，症状只是「这一行译文对不上」。
-//  2. 隐藏域的 name 必须与接口 JSON 字段一致（projectId / productId）：基座按 name 组请求体，
-//     写成 project / product 会被严格白名单整条拒掉。
-//
-// 另两条与 B 批同形：表单里不再有 csrf_token 隐藏域（基座发 X-CSRF-Token 头）、
-// 提交按钮带 data-requires-js hidden disabled（无 JS 时不可点）。
 import (
 	"strings"
 	"testing"
@@ -19,7 +7,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// translationPageData 工作台的渲染数据：两组、三行（其中一行译文为空 —— 空行占位是本页的契约）。
 func translationPageData() map[string]any {
 	return groupDData(map[string]any{
 		"Scope": map[string]any{"ProjectID": "pr1", "Projects": groupDProjects()},
@@ -32,7 +19,6 @@ func translationPageData() map[string]any {
 	})
 }
 
-// TestProductTranslationsSaveUsesJSONBase 保存表单挂基座、三组数组点名齐全、无 csrf 域。
 func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	out, err := render(t, groupDSet(t), "admin/product/product_translations", translationPageData())
 	if err != nil {
@@ -56,10 +42,7 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	if !peHasAttr(form, "data-write-reload") {
 		t.Fatal("写表单缺 data-write-reload —— 成功后结论不会跨刷新显示")
 	}
-	// 三组并行数组（rowTarget / rowContext / rowHash）都是 []string，靠**同名多值**
-	// 直接发 —— 实测 formdata 的 `a&a=b` 服务端绑成 []string，不需要任何声明。
-	// 旧基座的 data-write-array 已删。这里改守「三组控件都真的在表单里」：
-	// 少一组服务端就长度对不齐，整表被判失败。
+
 	for _, name := range []string{"rowTarget", "rowContext", "rowHash"} {
 		if n := len(peAll(form, func(m *html.Node) bool {
 			return peHasAttr(m, "name") && peAttr(m, "name") == name
@@ -68,7 +51,6 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 		}
 	}
 
-	// 控件 name 与接口 JSON 字段同名（基座按 name 组请求体）。
 	for _, name := range []string{"projectId", "productId", "lang"} {
 		if n := len(peAll(form, func(m *html.Node) bool {
 			return peEl(m, "input") && peAttr(m, "name") == name && peAttr(m, "type") == "hidden"
@@ -82,7 +64,6 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 		t.Fatalf("保存表单仍有 csrf_token 隐藏域（基座发 X-CSRF-Token 头），实际 %d", n)
 	}
 
-	// 三行译文输入与三个语境 / 指纹隐藏域一一对应 —— 空译文行不能被剔掉。
 	if n := len(peAll(form, func(m *html.Node) bool {
 		return peEl(m, "textarea") && peAttr(m, "name") == "rowTarget"
 	})); n != 2 {
@@ -94,7 +75,6 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 		t.Fatalf("rowContext 控件数应与行数一致（2），实际 %d", n)
 	}
 
-	// 按钮门槛与结论行。
 	btn := peAll(form, func(m *html.Node) bool { return peEl(m, "button") && peAttr(m, "type") == "submit" })
 	if len(btn) != 1 {
 		t.Fatalf("保存表单应有 1 个提交按钮，实际 %d", len(btn))
@@ -107,8 +87,7 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	})); n != 1 {
 		t.Fatalf("保存表单应有 1 个 data-write-status 结论行，实际 %d", n)
 	}
-	// 结论跨刷新已改由 sessionStorage 承载（新基座），页面不再需要落点元素。
-	// 旧页面 POST 已下线：页面上不该再有这条 action。
+
 	if strings.Contains(out, `action="/admin/products/translations/save"`) {
 		t.Fatal("页面仍在提交已下线的页面 POST /admin/products/translations/save")
 	}

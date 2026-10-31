@@ -1,19 +1,5 @@
 package unit
 
-// datarule_write_db_test.go —— 数据权限**写路径**的真库用例。
-//
-// 单元用例（pkg/datarule/write_path_test.go）只能证明「插件生成了什么 SQL」；
-// 这里证明「库里真的没被改 / 只改了可见行」—— 这个结论只有真库能给。
-//
-// 覆盖：
-//  1. Update / Delete 的行级写保护：越界行报错，且**数据一行都没动**；
-//  2. 有规则时**不带 WHERE** 的 Update 被允许，且只影响可见行（gorm 的
-//     ErrMissingWhereClause 检查在 gorm:update / gorm:delete 主回调内部、在插件 Before 之后）；
-//  3. Update 的字段级写保护：被屏蔽的列改完读回原值未变；
-//  4. Create 的行级校验：命中放行、越界拒绝、批量整批拒绝；
-//  5. Create 的 fail-closed：条件字段在 Dest 上取不到时拒绝；
-//  6. 插件没参与时不做 0 行判定（与权限无关的空结果不会被改写成权限错误）。
-
 import (
 	"context"
 	"errors"
@@ -27,15 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// writeCaseEnv 写路径真库用例环境：规则已分配、插件已挂、两行部门不同的探针数据已就绪。
 type writeCaseEnv struct {
 	env       *env
 	userCtx   context.Context
-	visible   uint64 // dept_id = 1，落在规则可见范围内
-	invisible uint64 // dept_id = 2，不在可见范围内
+	visible   uint64
+	invisible uint64
 }
 
-// deptOneRuleConfig 只允许部门 1 的行可见的规则配置。
 func deptOneRuleConfig() admindto.RuleConfigDTO {
 	return admindto.RuleConfigDTO{
 		ConditionGroups: []admindto.RuleConditionGroupDTO{{
@@ -45,16 +29,11 @@ func deptOneRuleConfig() admindto.RuleConfigDTO {
 	}
 }
 
-// setupWriteCase 用默认规则（部门 1 可见）与默认用户上下文（UserID=100）装配环境。
 func setupWriteCase(t *testing.T) *writeCaseEnv {
 	t.Helper()
 	return setupWriteCaseWith(t, deptOneRuleConfig(), &datarule.UserContext{UserID: 100})
 }
 
-// setupWriteCaseWith 装配写路径真库环境。
-//
-// 顺序很关键：规则创建 / 分配、以及两行探针数据都必须**在挂插件之前**完成 ——
-// 挂上插件后 Create 也会被校验，dept.scope:SELF 这类规则会把准备数据的那一步自己拦掉。
 func setupWriteCaseWith(t *testing.T, config admindto.RuleConfigDTO, uc *datarule.UserContext) *writeCaseEnv {
 	t.Helper()
 	e := setupEnv(t)
@@ -81,7 +60,6 @@ func setupWriteCaseWith(t *testing.T, config admindto.RuleConfigDTO, uc *datarul
 	}
 }
 
-// createWriteProbeAdmin 直接落库一个指定部门的管理员（绕过 service，避免受权限影响）。
 func createWriteProbeAdmin(t *testing.T, e *env, deptID uint64, username string) uint64 {
 	t.Helper()
 	email := username + "@example.com"
@@ -98,7 +76,6 @@ func createWriteProbeAdmin(t *testing.T, e *env, deptID uint64, username string)
 	return row.ID
 }
 
-// adminStatus 读取某行当前状态（用不带 UserContext 的句柄，绕过数据权限读屏蔽）。
 func adminStatus(t *testing.T, e *env, id uint64) int {
 	t.Helper()
 	var row adminmodel.AdminEntity
@@ -108,7 +85,6 @@ func adminStatus(t *testing.T, e *env, id uint64) int {
 	return row.Status
 }
 
-// adminPhone 读取某行电话。
 func adminPhone(t *testing.T, e *env, id uint64) string {
 	t.Helper()
 	var row adminmodel.AdminEntity
@@ -121,7 +97,6 @@ func adminPhone(t *testing.T, e *env, id uint64) string {
 	return *row.Phone
 }
 
-// adminExists 判断某行是否还在（不带 UserContext）。
 func adminExists(t *testing.T, e *env, id uint64) bool {
 	t.Helper()
 	var count int64
@@ -131,7 +106,6 @@ func adminExists(t *testing.T, e *env, id uint64) bool {
 	return count > 0
 }
 
-// TestDataRuleUpdateRejectsInvisibleRow Update：越界行被拒绝且一行没改；可见行照常。
 func TestDataRuleUpdateRejectsInvisibleRow(t *testing.T) {
 	c := setupWriteCase(t)
 
@@ -153,8 +127,6 @@ func TestDataRuleUpdateRejectsInvisibleRow(t *testing.T) {
 	}
 }
 
-// TestDataRuleUpdateZeroRowsTellsCaller 插件参与且 0 行时如实报错（可能是越界，也可能是不存在）；
-// 插件**没参与**（没有 UserContext）时同样的 0 行结果不报权限错误。
 func TestDataRuleUpdateZeroRowsTellsCaller(t *testing.T) {
 	c := setupWriteCase(t)
 
@@ -174,7 +146,6 @@ func TestDataRuleUpdateZeroRowsTellsCaller(t *testing.T) {
 	}
 }
 
-// TestDataRuleDeleteRejectsInvisibleRow Delete 同样受行级写保护。
 func TestDataRuleDeleteRejectsInvisibleRow(t *testing.T) {
 	c := setupWriteCase(t)
 
@@ -196,8 +167,6 @@ func TestDataRuleDeleteRejectsInvisibleRow(t *testing.T) {
 	}
 }
 
-// TestDataRuleUpdateWithoutWhereTouchesOnlyVisibleRows 有规则时，**不带 WHERE** 的 Update：
-// 既不会被 gorm 判成无条件全表更新，也只影响可见行。
 func TestDataRuleUpdateWithoutWhereTouchesOnlyVisibleRows(t *testing.T) {
 	c := setupWriteCase(t)
 
@@ -216,14 +185,12 @@ func TestDataRuleUpdateWithoutWhereTouchesOnlyVisibleRows(t *testing.T) {
 		t.Fatalf("不可见行不应被这条语句改动，status=%d", got)
 	}
 
-	// 反证：插件不介入时，gorm 的原判定照旧生效。
 	plain := c.env.db.Model(&adminmodel.AdminEntity{}).Updates(map[string]any{"status": 8})
 	if !errors.Is(plain.Error, gorm.ErrMissingWhereClause) {
 		t.Fatalf("无 UserContext 时应当由 gorm 判定缺少 WHERE，实际：%v", plain.Error)
 	}
 }
 
-// TestDataRuleUpdateOmitsProtectedColumn 字段级写保护：被屏蔽的列改完读回原值未变。
 func TestDataRuleUpdateOmitsProtectedColumn(t *testing.T) {
 	config := deptOneRuleConfig()
 	config.OmitFields = []string{"phone"}
@@ -249,7 +216,6 @@ func TestDataRuleUpdateOmitsProtectedColumn(t *testing.T) {
 	}
 }
 
-// TestDataRuleCreateValidatesValues Create 的行级值校验（含批量与 fail-closed）。
 func TestDataRuleCreateValidatesValues(t *testing.T) {
 	config := admindto.RuleConfigDTO{
 		ConditionGroups: []admindto.RuleConditionGroupDTO{{
@@ -271,7 +237,6 @@ func TestDataRuleCreateValidatesValues(t *testing.T) {
 		}
 	}
 
-	// 命中本部门：放行。
 	okRow := newAdmin(1)
 	if err := c.env.db.WithContext(c.userCtx).Create(okRow).Error; err != nil {
 		t.Fatalf("本部门的新行应当可以创建：%v", err)
@@ -280,7 +245,6 @@ func TestDataRuleCreateValidatesValues(t *testing.T) {
 		t.Fatal("放行的行应当真的落库")
 	}
 
-	// 越界：拒绝，且不落库。
 	badRow := newAdmin(2)
 	err := c.env.db.WithContext(c.userCtx).Create(badRow).Error
 	if err == nil || !strings.Contains(err.Error(), "数据权限拒绝") {
@@ -290,7 +254,6 @@ func TestDataRuleCreateValidatesValues(t *testing.T) {
 		t.Fatal("被拒绝的行不应落库")
 	}
 
-	// 批量：任何一条越界都拒绝整批（第一行也不该被写进去）。
 	first, second := newAdmin(1), newAdmin(2)
 	err = c.env.db.WithContext(c.userCtx).Create(&[]*adminmodel.AdminEntity{first, second}).Error
 	if err == nil || !strings.Contains(err.Error(), "第 2 条") {
@@ -300,7 +263,6 @@ func TestDataRuleCreateValidatesValues(t *testing.T) {
 		t.Fatal("批量创建被拒绝时整批都不应落库")
 	}
 
-	// fail-closed：条件字段在 Dest 上取不到值（map 里没有 dept_id）。
 	mapErr := c.env.db.WithContext(c.userCtx).Model(&adminmodel.AdminEntity{}).
 		Create(map[string]any{"username": uniq("mapcreate")}).Error
 	if mapErr == nil || !strings.Contains(mapErr.Error(), "数据权限拒绝") || !strings.Contains(mapErr.Error(), "dept_id") {

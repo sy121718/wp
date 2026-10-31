@@ -27,8 +27,7 @@ type localProvider struct {
 	mu      sync.RWMutex
 	rootDir string
 	baseURL string
-	// maxSize 上传大小上限（字节），0 表示不限制。
-	// 从 upload.max_size 读取，用于流式限制与超限自清理（不信任调用方声明的 Size）。
+
 	maxSize int64
 	inited  bool
 }
@@ -56,12 +55,11 @@ func (p *localProvider) Init(v *viper.Viper) error {
 	p.rootDir = filepath.Clean(defaultLocalDir)
 	p.baseURL = baseURL
 	if v != nil {
-		// upload.local_dir 可覆盖存储根目录（默认 public/storage），
-		// 测试环境用它指向临时目录，避免污染仓库目录。
+
 		if dir := strings.TrimSpace(v.GetString("upload.local_dir")); dir != "" {
 			p.rootDir = filepath.Clean(dir)
 		}
-		// 大小上限：GetSizeInBytes 支持 "10MB"/"1GB" 等可读格式；解析失败返回 0（不限制）。
+
 		p.maxSize = int64(v.GetSizeInBytes("upload.max_size"))
 	}
 	p.inited = true
@@ -108,18 +106,9 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 		return Result{}, fmt.Errorf("创建上传目录失败: %w", err)
 	}
 
-	// O_EXCL 防覆盖（PreserveName 同名二次上传直接失败而非截断覆盖），
-	// O_NOFOLLOW 防 symlink 覆盖（攻击者预置软链指向受害文件时 open 失败）。
-	// 注意：O_NOFOLLOW 只保护最终路径分量，中间目录仍跟随 symlink——
-	// 能写入 storage 下中间目录的攻击者已具备更高权限，超出本层防御范围。
 	fd, err := openExclusive(targetPath)
 	if err != nil && errors.Is(err, os.ErrExist) && strings.TrimSpace(req.ObjectKey) != "" {
-		// 调用方指定了键却被占用：系统分配的键（如媒体库的 <id>.<ext>）用完了
-		// 「自己分配的空间」，磁盘上那份是别的世代的遗留文件——库表重置而
-		// storage 目录长期累积，两套命名空间会撞在一起。此时既不能覆盖
-		// （O_EXCL 的初衷），也不该让整次上传失败：改写成相邻的带随机后缀键，
-		// 把实际落盘键与 URL 返回给调用方。PreserveName 路径不吃这条分支，
-		// 「同名二次上传失败」的语义原样保留。
+
 		objectKey, targetPath, err = collisionKey(rootDir, objectKey)
 		if err != nil {
 			return Result{}, err
@@ -134,8 +123,6 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 	}
 	defer fd.Close()
 
-	// 流式大小限制：不信任 file.Size（调用方可能谎报 0），最多写入 maxSize+1 字节，
-	// 写入后按实际字节数判定超限并删除残留文件。
 	reader := io.Reader(file.Reader)
 	if maxSize > 0 {
 		reader = io.LimitReader(file.Reader, maxSize+1)
@@ -158,16 +145,10 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 	}, nil
 }
 
-// openExclusive 以「不覆盖、不跟随软链」的方式打开目标文件。
 func openExclusive(target string) (*os.File, error) {
 	return os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o644)
 }
 
-// collisionKey 在目标键已被磁盘占用时，为同一目录生成一个带随机后缀的相邻键。
-//
-// 只给「调用方显式指定键」的路径用：那种键由程序分配（媒体库 <id>.<ext>），
-// 撞上遗留文件意味着两套主键世代错位，换一个即可；而 PreserveName 的同名语义
-// 必须保持「失败」，否则用户会拿到一份被改名的新文件却以为覆盖了旧的。
 func collisionKey(rootDir, objectKey string) (string, string, error) {
 	dir := path.Dir(objectKey)
 	ext := path.Ext(objectKey)
@@ -295,19 +276,15 @@ func sanitizeFilename(raw string) string {
 		"|", "_",
 	)
 	name := replacer.Replace(raw)
-	// 尾随点/空格：Windows 与多数对象存储会静默裁剪，造成保留名命中或
-	// 扩展名伪装（如 "shell.txt. " 落盘为 "shell.txt"），统一去掉。
+
 	name = strings.TrimRight(name, ". ")
-	// Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9，含带扩展名形式）：
-	// 在 Windows 落盘或同步到对象存储时会被系统拦截或语义错乱，前缀下划线转义。
+
 	if isWindowsReservedName(name) {
 		name = "_" + name
 	}
 	return name
 }
 
-// isWindowsReservedName 判断文件名基名（去掉扩展名后）是否为 Windows 保留设备名。
-// 判定按扩展名前的基名进行，覆盖 "CON.txt"、"COM1.log" 等变体。
 func isWindowsReservedName(name string) bool {
 	base := name
 	if idx := strings.IndexByte(base, '.'); idx >= 0 {

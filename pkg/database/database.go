@@ -1,4 +1,3 @@
-// Package database 提供数据库初始化、连接获取与生命周期管理。
 package database
 
 import (
@@ -30,7 +29,6 @@ const (
 	defaultDatabaseStatementTimeout = 30 * time.Second
 )
 
-// Config 数据库配置。
 type Config struct {
 	Driver                 string `mapstructure:"driver"`
 	Host                   string `mapstructure:"host"`
@@ -47,21 +45,11 @@ type Config struct {
 	PrepareStmt            bool   `mapstructure:"prepare_stmt"`
 	SkipDefaultTransaction bool   `mapstructure:"skip_default_transaction"`
 	SlowThreshold          string `mapstructure:"slow_threshold"`
-	// RequireRLSRole 要求连接角色不能绕过 RLS（默认 false）。
-	//
-	// true 时启动期探针发现连接角色是超级用户或带 BYPASSRLS 会直接返回 error，
-	// 让启动失败；false 时只打 WARN 说明工程隔离当前不生效。
-	// 默认 false 是因为迁移与运维脚本复用同一个 database 组件、走管理连接（超级用户）：
-	// 默认 fail fast 会把正常运维挡在门外。切到应用角色之后再置 true（DB-009 第二步）。
+
 	RequireRLSRole bool           `mapstructure:"require_rls_role"`
 	Resolver       ResolverConfig `mapstructure:"resolver"`
 }
 
-// ResolverConfig 预留数据库读写分离配置结构。
-//
-// 当前阶段：
-// - 仅保留配置结构，不启用真正的读写分离逻辑
-// -TODO 目的是先把配置边界稳定下来，避免未来再改配置结构
 type ResolverConfig struct {
 	Enabled  bool     `mapstructure:"enabled"`
 	Policy   string   `mapstructure:"policy"`
@@ -81,7 +69,6 @@ var (
 	inited bool
 )
 
-// GetDB 获取数据库实例；未初始化时返回错误。
 func GetDB() (*gorm.DB, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -92,7 +79,6 @@ func GetDB() (*gorm.DB, error) {
 	return db, nil
 }
 
-// Init 初始化数据库。
 func Init(v *viper.Viper) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -110,12 +96,9 @@ func Init(v *viper.Viper) error {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 
-	// 连接身份探针（DB-04）：始终以 INFO 打印 session_user / current_user /
-	// rolsuper / rolbypassrls / 策略覆盖数；require_rls_role=true 且角色会绕过 RLS 时
-	// 返回 error 让启动失败。非 PG 驱动在探针内部整体跳过。
 	requireRLSRole := v != nil && v.GetBool("database.require_rls_role")
 	if err := CheckRLSIdentity(context.Background(), instance, requireRLSRole); err != nil {
-		// 探针失败时不留下半初始化的全局句柄：关掉刚建立的连接池再往上报。
+
 		if sqlDB, dbErr := instance.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
@@ -127,14 +110,12 @@ func Init(v *viper.Viper) error {
 	return nil
 }
 
-// IsInited 检查是否已初始化。
 func IsInited() bool {
 	mu.RLock()
 	defer mu.RUnlock()
 	return inited && db != nil
 }
 
-// Ready 检查数据库组件是否处于可用状态。
 func Ready() error {
 	instance, err := GetDB()
 	if err != nil {
@@ -277,7 +258,7 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 	gormBaseLogger := gormlogger.Default.LogMode(resolveLogLevel(serverMode, cfg.LogLevel))
 	gormDB, err := gorm.Open(dialector, &gorm.Config{
 		Logger: newSceneGormLogger(gormBaseLogger, sqlScene, runtimeCfg.slowThreshold),
-		// 启用方言错误翻译，便于通过 gorm.ErrDuplicatedKey / gorm.ErrForeignKeyViolated 统一判断。
+
 		TranslateError:         true,
 		PrepareStmt:            runtimeCfg.prepareStmt,
 		SkipDefaultTransaction: runtimeCfg.skipDefaultTransaction,
@@ -342,9 +323,6 @@ func parseRuntimeOptions(v *viper.Viper) (runtimeOptions, error) {
 	return options, nil
 }
 
-// ValidateConfig 校验数据库配置。
-//
-// strict=true 时，会拒绝危险默认值和空关键配置。
 func ValidateConfig(v *viper.Viper, strict bool) error {
 	cfg := getDefaultConfig()
 	if v != nil {
@@ -369,7 +347,6 @@ func ValidateConfig(v *viper.Viper, strict bool) error {
 	return nil
 }
 
-// Close 关闭数据库连接。
 func Close() error {
 	mu.Lock()
 	defer mu.Unlock()

@@ -1,15 +1,5 @@
 package feature
 
-// analytics_collect_test.go — 访问統計（BIZ-8）的接口链路测试。
-//
-// 覆盖点：
-//   - 公开打点端点 POST /analytics/collect：合法请求 204 且真实落库（真实 PG）；
-//   - 落库内容是**匿名化后**的：IP / 会话 / 访客标识都只有哈希，不出现明文；
-//   - 静默失败：伪造工程 id、非法路径、超长报文一律 204 且不写库；
-//   - 后台只读聚合 GET /api/analytics/summary：总数 / 按天 / 按路径与时间范围校验。
-//
-// 依赖 PostgreSQL（support.AcquireTestEnv 三级回退，均不可用时整体 Skip）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -37,11 +27,10 @@ const (
 	collectPath = "/analytics/collect"
 	summaryPath = "/api/analytics/summary"
 	testPepper  = "analytics-test-pepper"
-	// 真实一点的桌面 UA（服务端分类据此判定 desktop）。
+
 	testUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 )
 
-// analyticsFixture 隔离 PG schema + 生产迁移与 seed + 真实工程行 + 真实路由装配。
 type analyticsFixture struct {
 	engine    *gin.Engine
 	svc       analyticscontract.AnalyticsService
@@ -49,8 +38,6 @@ type analyticsFixture struct {
 	projectID string
 }
 
-// newAnalyticsFixture 建隔离 schema 并装配统计模块（接线方式与 routers.SetupRoutes 一致：
-// 公开打点直挂引擎，后台只读接口挂 /api 组）。
 func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -67,14 +54,11 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	engine := gin.New()
-	// 测试里不挂三层链（鉴权链路由 auth feature 覆盖），只验证参数绑定、service 与 SQL。
-	// 声明式权限路由组（与 routes.go 同款包装）；本测试不挂三层链，声明只作登记、不写库。
-	// pages 传 nil：本测试只打点与只读 API，后台页面路由不在此覆盖（会跳过注册）。
+
 	svc := analyticshttp.SetupAnalyticsRoutes(permission.NewRouteGroup(engine.Group("/api")), engine, db, testPepper, nil, projects)
 	return &analyticsFixture{engine: engine, svc: svc, db: db, projectID: project.ID}
 }
 
-// postCollect 以表单编码发一次打点请求（与 track.js 的 sendBeacon 同一形状）。
 func (f *analyticsFixture) postCollect(t *testing.T, form url.Values, ua string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, collectPath, strings.NewReader(form.Encode()))
@@ -87,7 +71,6 @@ func (f *analyticsFixture) postCollect(t *testing.T, form url.Values, ua string)
 	return rec
 }
 
-// viewRow page_views 的一行（断言落库内容用）。
 type viewRow struct {
 	Path         string
 	Lang         string
@@ -98,7 +81,6 @@ type viewRow struct {
 	IPHash       string
 }
 
-// rows 读取本工程的全部浏览记录（按插入顺序）。
 func (f *analyticsFixture) rows(t *testing.T) []viewRow {
 	t.Helper()
 	var out []viewRow
@@ -109,7 +91,6 @@ func (f *analyticsFixture) rows(t *testing.T) []viewRow {
 	return out
 }
 
-// TestAnalyticsCollectStoresAnonymizedView 合法打点 204 落库，且库里没有明文标识。
 func TestAnalyticsCollectStoresAnonymizedView(t *testing.T) {
 	f := newAnalyticsFixture(t)
 	rec := f.postCollect(t, url.Values{
@@ -150,22 +131,21 @@ func TestAnalyticsCollectStoresAnonymizedView(t *testing.T) {
 	}
 }
 
-// TestAnalyticsCollectSilentlyDropsBadInput 伪造输入静默丢弃：一律 204、不写库。
 func TestAnalyticsCollectSilentlyDropsBadInput(t *testing.T) {
 	f := newAnalyticsFixture(t)
 	bad := []url.Values{
-		// 非法工程 id（不是 uuid）。
+
 		{"projectId": {"not-a-uuid"}, "path": {"/a"}},
-		// 工程 id 缺失。
+
 		{"path": {"/a"}},
-		// 路径不是站内绝对路径。
+
 		{"projectId": {f.projectID}, "path": {"about"}},
-		// 路径为空。
+
 		{"projectId": {f.projectID}, "path": {""}},
 	}
 	for i, form := range bad {
 		rec := f.postCollect(t, form, testUA)
-		// 返回差异会向外部暴露「这个工程存在吗 / 这个形状会被接受吗」，所以一律 204。
+
 		if rec.Code != http.StatusNoContent {
 			t.Errorf("第 %d 个坏请求应回 204，实际 %d", i, rec.Code)
 		}
@@ -174,13 +154,11 @@ func TestAnalyticsCollectSilentlyDropsBadInput(t *testing.T) {
 		t.Fatalf("坏请求不该写库，实际写了 %d 行: %+v", len(rows), rows)
 	}
 
-	// 超长报文：body 被上限切断，仍然回 204 且不 panic。
 	huge := url.Values{"projectId": {f.projectID}, "path": {"/" + strings.Repeat("x", 200<<10)}}
 	if rec := f.postCollect(t, huge, testUA); rec.Code != http.StatusNoContent {
 		t.Errorf("超长报文应回 204，实际 %d", rec.Code)
 	}
 
-	// 非表单编码的乱码 body：解析失败同样静默。
 	req := httptest.NewRequest(http.MethodPost, collectPath, strings.NewReader("%zz%%%"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -190,7 +168,6 @@ func TestAnalyticsCollectSilentlyDropsBadInput(t *testing.T) {
 	}
 }
 
-// TestAnalyticsSummaryAggregates 后台只读聚合：总数 / 按天 / 按路径 / 时间范围校验。
 func TestAnalyticsSummaryAggregates(t *testing.T) {
 	f := newAnalyticsFixture(t)
 	collect := func(path, visitor string) {
@@ -206,7 +183,6 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 	collect("/", "v2")
 	collect("/about", "v1")
 
-	// —— 直接调契约（后台页也走这一条）——
 	res, err := f.svc.Summary(context.Background(), &analyticscontract.SummaryReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("Summary 失败: %v", err)
@@ -227,7 +203,6 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 		t.Errorf("路径总数应为 2，实际 %d", res.PathTotal)
 	}
 
-	// —— 走 HTTP 只读接口 ——
 	rec := httptest.NewRecorder()
 	f.engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, summaryPath+"?projectId="+f.projectID, nil))
 	if rec.Code != http.StatusOK {
@@ -246,7 +221,6 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 		t.Errorf("接口返回的总浏览数应为 3，实际 %d", body.Data.Total)
 	}
 
-	// 缺工程 → 400；起止颠倒 → 400 且文案来自 enums。
 	rec = httptest.NewRecorder()
 	f.engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, summaryPath, nil))
 	if rec.Code != http.StatusBadRequest {
@@ -262,7 +236,6 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 		t.Errorf("起止颠倒的错误文案应来自 analytics enums，实际 %s", rec.Body.String())
 	}
 
-	// 别的工程查不到本工程的数据（工程维度隔离）。
 	other, err := f.svc.Summary(context.Background(), &analyticscontract.SummaryReq{
 		ProjectID: "2f1a4c0e-0000-4000-8000-0000000000ff",
 	})

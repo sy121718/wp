@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// TestRunTaskDrainsInBatches 批次跑满则继续，未跑满即认为删空并停止。
 func TestRunTaskDrainsInBatches(t *testing.T) {
 	remaining := int64(12)
 	var calls int
@@ -35,7 +34,6 @@ func TestRunTaskDrainsInBatches(t *testing.T) {
 	}
 }
 
-// TestRunTaskStopsImmediatelyWhenNothingToDelete 无过期行时只调用一次就结束（不做无谓轮询）。
 func TestRunTaskStopsImmediatelyWhenNothingToDelete(t *testing.T) {
 	calls := 0
 	task := Task{
@@ -51,7 +49,6 @@ func TestRunTaskStopsImmediatelyWhenNothingToDelete(t *testing.T) {
 	}
 }
 
-// TestRunTaskUsesCutoffFromRetain 传给 Sweep 的分界必须等于 now - Retain。
 func TestRunTaskUsesCutoffFromRetain(t *testing.T) {
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 	var got time.Time
@@ -71,7 +68,6 @@ func TestRunTaskUsesCutoffFromRetain(t *testing.T) {
 	}
 }
 
-// TestRunTaskPropagatesError 单批失败立即返回，不继续删。
 func TestRunTaskPropagatesError(t *testing.T) {
 	boom := errors.New("boom")
 	calls := 0
@@ -90,12 +86,11 @@ func TestRunTaskPropagatesError(t *testing.T) {
 	}
 }
 
-// TestRunAllIsolatesFailures 一条任务失败不影响其它任务：保留期是逐表承诺，不是批量承诺。
 func TestRunAllIsolatesFailures(t *testing.T) {
 	boom := errors.New("boom")
 	tasks := []Task{
 		{Name: "a", BatchSize: 1, Sweep: func(context.Context, time.Time, int) (int64, error) { return 0, boom }},
-		// Sweep 必须遵守 limit：这里返回 3 行而批次是 5，因此一批即结束。
+
 		{Name: "b", BatchSize: 5, Sweep: func(context.Context, time.Time, int) (int64, error) { return 3, nil }},
 	}
 	outcomes := RunAll(context.Background(), tasks, time.Now())
@@ -111,14 +106,12 @@ func TestRunAllIsolatesFailures(t *testing.T) {
 	}
 }
 
-// TestRunTaskRequiresSweep 没有 Sweep 的任务是声明错误，必须显式报错而不是静默跳过。
 func TestRunTaskRequiresSweep(t *testing.T) {
 	if _, _, err := RunTask(context.Background(), Task{Name: "empty"}, time.Now()); err == nil {
 		t.Fatal("缺少 Sweep 应报错")
 	}
 }
 
-// TestRunTaskHonoursContextCancellation 取消后立即停止（后台任务不该无视退出信号）。
 func TestRunTaskHonoursContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

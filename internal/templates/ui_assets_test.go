@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// 公共入口迁移必须经过整页渲染；仅片段测试看不到编辑器外壳丢失。
 func TestWorkbenchShellLoadsSharedUI(t *testing.T) {
 	renderer := NewJetHTMLRender(".", true)
 	for _, tc := range []struct {
@@ -42,7 +41,6 @@ func TestWorkbenchShellLoadsSharedUI(t *testing.T) {
 	}
 }
 
-// 公共入口中的资产必须存在且顺序正确，所有控件都按普通脚本解析。
 func TestUIAssetEntry(t *testing.T) {
 	for _, path := range []string{"admin/layout.html", "workbench/layout.html"} {
 		shell, err := os.ReadFile(path)
@@ -57,14 +55,12 @@ func TestUIAssetEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 名字里允许点与数字：htmx.min.js 这类**前置库**同样是入口的一部分
-	//（原先从 CDN 引它，CDN 不可达时后台的局部刷新会静默退化成整页刷新）。
+
 	matches := regexp.MustCompile(`/static/js/(ui/[a-z0-9_.-]*\.js)`).FindAllStringSubmatch(string(entry), -1)
 	if len(matches) < 3 || matches[len(matches)-1][1] != "ui/index.js" {
 		t.Fatal("控件入口必须按助手、控件、扫描入口的顺序加载（扫描入口放最后）")
 	}
-	// 断言的是**顺序的性质**而不是固定清单：_util.js 必须在 index.js 之前，
-	// 前置库（htmx）必须在 _util.js 之前 —— 控件入口监听 htmx:after:swap，反了就静默失效。
+
 	idx := func(name string) int {
 		for i, m := range matches {
 			if m[1] == name {
@@ -83,7 +79,7 @@ func TestUIAssetEntry(t *testing.T) {
 	if htmxIdx := idx("ui/htmx.min.js"); htmxIdx >= 0 && htmxIdx > utilIdx {
 		t.Fatal("前置库（htmx）必须排在控件助手之前")
 	}
-	// 商品的JSON消费者必须在写协议基座之后、统一扫描入口之前装配。
+
 	writeIdx := idx("ui/write-base.js")
 	for _, name := range []string{"ui/product-seo.js", "ui/product-tag-hits.js", "ui/product-preview.js", "ui/product-category-tree.js"} {
 		position := idx(name)
@@ -160,8 +156,6 @@ assert.equal(ui.transitionTime({}),0);
 	}
 }
 
-// TestProductCategoryTreeSelectionSync 分类树脚本只剩勾选态与父级搜索：
-// 树由服务端一次渲染完（没有展开 / 折叠），勾选态仍要正确汇总到批量条。
 func TestProductCategoryTreeSelectionSync(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

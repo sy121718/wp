@@ -1,8 +1,5 @@
 package productenums
 
-// 错误 key、中文兜底和状态码均在 enums 声明。响应出口负责取词与 JSON 协议，
-// HTTP 层不再维护另一份错误名单或状态映射；内部诊断不进入对外文案。
-
 import (
 	"fmt"
 	"net/http"
@@ -12,7 +9,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// errorDefinition 将每项错误的兜底与可选状态码放在同一声明，避免两张表漂移。
 type errorDefinition struct {
 	fallback string
 	status   int
@@ -91,31 +87,20 @@ var errFallbacks = map[string]errorDefinition{
 	ErrVariationValueInvalid:      {fallback: "勾选的属性值不属于该属性组或已停用"},
 	ErrVariationSelectionEmpty:    {fallback: "未勾选任何属性值：请至少勾选一个属性值，或改用「生成全部组合」"},
 
-	ErrAttrValueLabelMissing:   {fallback: "属性值名称必填"},                            // 迁移 430_i18n_enums_missing_keys.sql
-	ErrMissingProjectContext:   {fallback: "构建期拿不到工程上下文，无法读取实体字段（属装配缺陷，请联系管理员）"}, // 迁移 430
-	ErrCommentPurchaseRequired: {fallback: "购买过该商品才能发表评论"},                       // 迁移 468_product_comment_policy_i18n.sql
+	ErrAttrValueLabelMissing:   {fallback: "属性值名称必填"},
+	ErrMissingProjectContext:   {fallback: "构建期拿不到工程上下文，无法读取实体字段（属装配缺陷，请联系管理员）"},
+	ErrCommentPurchaseRequired: {fallback: "购买过该商品才能发表评论"},
 }
 
-// FallbackFor 返回声明处的中文兜底；未知 key 返回空串。
 func FallbackFor(key string) string {
 	return errFallbacks[key].fallback
 }
 
-// Err 构造包含 key、兜底与可选状态码的业务错误。
 func Err(key string) error {
 	definition := errFallbacks[key]
 	return facing.WithStatus(facing.New(key, definition.fallback), definition.status)
 }
 
-// ErrIDsTooMany 批量 id 超过上限（service 归一时产生）。
-//
-// 为什么不用 Err(key)：这条提示带两个数字（上限与本次条数），而这两个只有 *bulkids.IDsError
-// 知道（Count 是**去重后**的条数，拿上限重算会算错）。key 走参数化协议
-// `shell.err.bulkIdsTooMany|上限|条数`，出口按请求语言把 %s 填进去。
-//
-// 兜底是**填好数字的中文成品句**，不是模板：出口的 businessText 先取译文（词条见迁移 277，
-// 中英各一行），只有译文拿不到时才用兜底 —— 于是「i18n 未初始化 / 缺词条」的环境里显示的
-// 仍是可行动的一句话，而不是 key 原文。
 func ErrIDsTooMany(err *bulkids.IDsError) error {
 	if err == nil {
 		return Err(ErrInvalidParam)
@@ -127,7 +112,6 @@ func ErrIDsTooMany(err *bulkids.IDsError) error {
 		http.StatusBadRequest)
 }
 
-// 业务错误 key；取词、兜底与状态码均由本文件声明。
 const (
 	ErrInvalidParam              = "ErrInvalidParam"
 	ErrBulkRejected              = "ErrBulkRejected"

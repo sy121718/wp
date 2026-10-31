@@ -10,9 +10,6 @@ import (
 	purchasedto "go_wp/internal/module/purchase/dto"
 )
 
-// —— 采购域小工具（2026-10 采购拆成独立模块后，库存用例经采购 service 造入库）——
-
-// mustPurchaseSource 建一个货源并返回（失败即 fail）。
 func mustPurchaseSource(t *testing.T, f *invFixture, code, name, sourceType string) *purchasedto.SourceResp {
 	t.Helper()
 	res, err := f.purchase.CreateSource(context.Background(), &purchasedto.CreateSourceReq{
@@ -24,7 +21,6 @@ func mustPurchaseSource(t *testing.T, f *invFixture, code, name, sourceType stri
 	return res
 }
 
-// purchaseLine 造一条采购行（SKU × 数量 × 单价）。
 func purchaseLine(p *productdto.ProductResp, v *productdto.VariantResp, quantity int, unitPrice float64) purchasedto.PurchaseLineReq {
 	return purchasedto.PurchaseLineReq{
 		VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode,
@@ -32,7 +28,6 @@ func purchaseLine(p *productdto.ProductResp, v *productdto.VariantResp, quantity
 	}
 }
 
-// mustPurchaseOrder 建采购单并要求成功。
 func mustPurchaseOrder(t *testing.T, f *invFixture, code, sourceID, warehouseID string,
 	lines []purchasedto.PurchaseLineReq) *purchasedto.PurchaseOrderResp {
 	t.Helper()
@@ -45,7 +40,6 @@ func mustPurchaseOrder(t *testing.T, f *invFixture, code, sourceID, warehouseID 
 	return res
 }
 
-// mustProductPriced 建一个带默认售价的商品（用于断言「成本价更新不动售价」）。
 func mustProductPriced(t *testing.T, f *invFixture, name string, price float64) *productdto.ProductResp {
 	t.Helper()
 	slug := fmt.Sprintf("%s-%d", strings.ToLower(name), slugSeq.Add(1))
@@ -58,7 +52,6 @@ func mustProductPriced(t *testing.T, f *invFixture, name string, price float64) 
 	return p
 }
 
-// mustReceiveLine 登记一条采购行收货并要求成功。
 func mustReceiveLine(t *testing.T, f *invFixture, orderID, lineID string, quantity int,
 	requestID string) *purchasedto.ReceiptResp {
 	t.Helper()
@@ -72,7 +65,6 @@ func mustReceiveLine(t *testing.T, f *invFixture, orderID, lineID string, quanti
 	return res
 }
 
-// variantCostIn 直读商品侧成本价（跨模块列，断言必须直查）。
 func variantCostIn(t *testing.T, f *invFixture, variantID string) *float64 {
 	t.Helper()
 	var row struct {

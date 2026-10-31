@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// MediaBaseURL 解析可信配置中的媒体基址。上传与附件读取共用同一条规则。
-// 生产必须显式提供完整地址；本地开发只按配置端口使用环回地址，不采信请求 Host。
 func MediaBaseURL(v *viper.Viper) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("媒体地址配置为空")

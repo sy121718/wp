@@ -1,19 +1,5 @@
 package rlstest
 
-// rls_order_scope_test.go — order 超时取消扫描的工程作用域护栏（DB-009 第三批）。
-//
-// ListPendingCreatedBefore 原是「全表扫描」：orders 带 FORCE 策略，换非超级角色后它
-// **静默返回空集** —— 定时任务照每 15 分钟跑一次，一单都不会被取消，库存被一直占住，
-// 而日志里没有任何异常。现在它是「按工程扫描」，工程清单由 model 从 projects 表取
-// （工程表是隔离主体、没有 project_id 列、不在迁移 215 的清单里）。
-//
-// 断言要点：
-//   - 每个工程的超时待付款单都能被扫到（各自作用域）；
-//   - 别的工程的行不会串进来；
-//   - 不带作用域的裸查是 fail closed（这就是改造动机本身）；
-//   - 缺工程参数时显式报错，不退化成「不限工程」；
-//   - 单工程部署下行为不变。
-
 import (
 	"context"
 	"errors"
@@ -31,7 +17,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// seedOrder 落一行订单（经工程作用域写入：orders 带 FORCE 策略，缺变量的写入会被拒绝）。
 func seedOrder(t *testing.T, db *gorm.DB, projectID, orderNo, status string, age time.Duration) uint64 {
 	t.Helper()
 	var id uint64
@@ -47,7 +32,6 @@ func seedOrder(t *testing.T, db *gorm.DB, projectID, orderNo, status string, age
 	return id
 }
 
-// orderFixture 造「非超级角色 + 两个工程 + order model」。
 func orderFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, string, string) {
 	t.Helper()
 	db, role := rlsFixture(t)
@@ -58,7 +42,6 @@ func orderFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, string, strin
 	return db, ordermodel.NewOrderModel(db), pA, pB
 }
 
-// TestRLS_OrderScope_PendingScanAcrossProjects 每个工程的超时待付款单都要能被扫到。
 func TestRLS_OrderScope_PendingScanAcrossProjects(t *testing.T) {
 	db, m, pA, pB := orderFixture(t)
 	ctx := context.Background()
@@ -83,8 +66,6 @@ func TestRLS_OrderScope_PendingScanAcrossProjects(t *testing.T) {
 		t.Fatalf("工程 B 应只扫到 1 单 B-OLD，实际 %+v", listB)
 	}
 
-	// 不带作用域的裸查 = 改造前那条「全表扫描」路径：非超级角色下静默 0 行。
-	// 这就是本批要消除的退化 —— 排障时它看起来完全正常，只是「没有超时订单」。
 	var raw int64
 	if err := db.Table("orders").Where("status = ? AND create_time < ?",
 		ordermodel.OrderStatusPending, cutoff).Count(&raw).Error; err != nil {
@@ -95,7 +76,6 @@ func TestRLS_OrderScope_PendingScanAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_MissingProjectRejected 缺工程参数时显式报错。
 func TestRLS_OrderScope_MissingProjectRejected(t *testing.T) {
 	_, m, _, _ := orderFixture(t)
 	if _, err := m.ListPendingCreatedBefore(context.Background(), "  ", time.Now(), 10); !errors.Is(err, ordermodel.ErrProjectRequired) {
@@ -103,11 +83,6 @@ func TestRLS_OrderScope_MissingProjectRejected(t *testing.T) {
 	}
 }
 
-// TestRLS_ProjectScope_FanoutListCoversProjects 扇出清单能列出全部工程。
-//
-// 清单的真源是 project 契约（`ProjectService.List`）：order / page / block / navigation 的
-// model 都已不再读 projects 表，所以这条断言落在契约本身上 —— 它同时也是「契约能列出全部
-// 工程」这个前提的守卫，扇出与逐工程定位都建在它之上。
 func TestRLS_ProjectScope_FanoutListCoversProjects(t *testing.T) {
 	db, _, pA, pB := orderFixture(t)
 	list, err := projectservice.NewService(projectmodel.NewProjectModel(db)).List(context.Background())
@@ -127,7 +102,6 @@ func TestRLS_ProjectScope_FanoutListCoversProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_SingleProjectUnchanged 单工程部署下扫描行为不变。
 func TestRLS_OrderScope_SingleProjectUnchanged(t *testing.T) {
 	db, role := rlsFixture(t)
 	resetProjects(t, db, role)
@@ -146,21 +120,15 @@ func TestRLS_OrderScope_SingleProjectUnchanged(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_LocateByIdAcrossProjects 只带订单 id 的定位跳（后台订单操作）。
-//
-// orders 带 FORCE 策略：不带作用域的按 id 读取在非超级角色下返回 nil（表现为「订单不存在」），
-// 这正是「只给 id 的后台入口」必须逐工程探测出归属的原因。
 func TestRLS_OrderScope_LocateByIdAcrossProjects(t *testing.T) {
 	db, m, pA, pB := orderFixture(t)
 	ctx := context.Background()
 	idB := seedOrder(t, db, pB, "LOC-B", ordermodel.OrderStatusPending, time.Hour)
 
-	// 改造前的形态是「无作用域直查 ⇒ 静默读不到 (nil, nil)」；第五批把它改成**显式失败**：
-	// 缺工程不再伪装成「订单不存在」。
 	if e, err := m.GetByID(ctx, idB, ""); !errors.Is(err, ordermodel.ErrProjectRequired) || e != nil {
 		t.Fatalf("缺工程时应显式 ErrProjectRequired，实际 e=%v err=%v", e, err)
 	}
-	// 逐工程探测：拿 B 的作用域能读到，拿 A 的读不到。
+
 	e, err := m.GetByID(ctx, idB, pB)
 	if err != nil || e == nil {
 		t.Fatalf("拿工程 B 的作用域应读到订单，实际 %v err=%v", e, err)
@@ -170,11 +138,6 @@ func TestRLS_OrderScope_LocateByIdAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_SubTableQueriesRequireProject 子表查询的工程门（DB-009 第五批）。
-//
-// order_returns / coupon_redemptions 都在迁移 215 名单里：不带作用域时它们在非超级角色下
-// 静默返回空集 —— 前者的失败形态是「已占用退货额度恒为 0 ⇒ 可退数量被高估 ⇒ 超退」，
-// 后者的失败形态是「核销数恒为 0 ⇒ 有核销记录的券可删、每人限领失效」。
 func TestRLS_OrderScope_SubTableQueriesRequireProject(t *testing.T) {
 	db, _, _, _ := orderFixture(t)
 	ctx := context.Background()
@@ -192,8 +155,6 @@ func TestRLS_OrderScope_SubTableQueriesRequireProject(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_ChangeStatusLocatesProject service 层的定位跳：
-// 后台改状态只带订单 id，链路是「事务外逐工程探测 → 事务内 ScopeTx + 加锁读」。
 func TestRLS_OrderScope_ChangeStatusLocatesProject(t *testing.T) {
 	db, _, pA, pB := orderFixture(t)
 	ctx := context.Background()

@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestDividerCSSNoInset 无嵌入：纯线 + margin 归零，不产出任何嵌入相关规则。
 func TestDividerCSSNoInset(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Style: "solid", Weight: "2px", Color: "#ccc"}, &b)
@@ -24,7 +23,6 @@ func TestDividerCSSNoInset(t *testing.T) {
 	}
 }
 
-// TestDividerCSSWithInset 有嵌入：flex 容器 + 两段线 + 嵌入元素，位置决定线比例。
 func TestDividerCSSWithInset(t *testing.T) {
 	cases := []struct {
 		name                string
@@ -58,7 +56,7 @@ func TestDividerCSSWithInset(t *testing.T) {
 					t.Errorf("产物缺少 %q\n%s", want, out)
 				}
 			}
-			// 有嵌入时不产出纯线形态。
+
 			if strings.Contains(out, "margin: 0") {
 				t.Errorf("有嵌入时不该产出纯线的 margin: 0\n%s", out)
 			}
@@ -66,7 +64,6 @@ func TestDividerCSSWithInset(t *testing.T) {
 	}
 }
 
-// TestDividerCSSWidthAndAlign 宽度三端与对齐：宽度为空则该端整组（width + margin）不产出。
 func TestDividerCSSWidthAndAlign(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Align: "left", Width: Width{Desktop: "60%", Mobile: "100%"}}, &b)
@@ -76,12 +73,11 @@ func TestDividerCSSWidthAndAlign(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 平板端未设宽度：产物里只应有两处 width（桌面 + 手机）。
+
 	if n := strings.Count(out, "width: 6"); n != 1 {
 		t.Errorf("桌面宽度应只出现一次，实际 %d 次:\n%s", n, out)
 	}
 
-	// 宽度全空 → 不产出宽度规则（但纯线规则仍在）。
 	var b2 core.CSSBuckets
 	compileCSS("t", &Props{Align: "right"}, &b2)
 	out2 := b2.String()

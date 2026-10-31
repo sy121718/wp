@@ -6,7 +6,6 @@ import (
 	"sort"
 )
 
-// ValidateNodeActions 校验组件声明与封闭动作形状；未完成动作不掩盖同节点的非法动作。
 func ValidateNodeActions(node *Node, comp Component) error {
 	provider, supported := comp.(ActionsProvider)
 	if !supported {

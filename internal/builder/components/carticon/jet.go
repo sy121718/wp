@@ -1,11 +1,5 @@
 package carticon
 
-// Package carticon — Jet 渲染路径（视图组装）。
-//
-// 图标 SVG 取 core 内置图标库；数据地址按「工程 + 语言」编好交给模板 ——
-// 让模板自己拼 URL 就等于把「JSON API长什么样」散到模板里，
-// 将来端点改名要满世界找。
-
 import (
 	"net/url"
 	"strings"
@@ -13,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// View 购物车图标渲染视图。
 type CartLabels struct{ Empty, Qty, Update, Total, Checkout, Clear, Remove, OffShelf, Out, Low, In, Unknown string }
 
 type View struct {
@@ -23,43 +16,31 @@ type View struct {
 	CartLabels        CartLabels
 	Inline            bool
 
-	// Mode 展示形态。
 	Mode string
-	// IconSVG 内置图标的内联 SVG（完整 <svg>，模板原样输出）。
+
 	IconSVG string
-	// Label 标签文字（同时是无障碍标签）。
+
 	Label string
-	// LoadingText 浮层里购物车数据拉回来之前的占位文案（构建期按当前语言填充）。
-	//
-	// 此前硬编码在模板里：它是访客在数据返回前唯一看得到的东西，
-	// 英文站点上多出这一句中文会显得整个浮层没接多语言。
+
 	LoadingText string
-	// ShowLabel 图标旁是否显示文字。
+
 	ShowLabel bool
-	// ShowCount 是否显示件数角标。
+
 	ShowCount bool
-	// UseDetails 外壳用 <details>（dropdown / drawer / modal）；hover 由独立开关控制。
-	//
-	// <details> 是原生可展开元素：无 JS 也能开合、键盘可达、触屏可用 ——
-	// 不自己实现开合状态，那是这几类浮层最容易写错的地方（焦点陷阱、点外部不关）。
+
 	UseDetails bool
-	// CartViewURL 购物车内容数据地址（打开浮层时现拉）。
+
 	CartViewURL string
-	// SummaryURL 件数角标数据地址。
+
 	SummaryURL string
-	// Notice 无法渲染时的提示（缺站点工程 id）。空表示正常。
+
 	Notice string
 }
 
-// CompileCSS 导出样式编译。
 func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	compileCSS(id, p, b)
 }
 
-// BuildView 生成购物车图标视图。
-//
-// projectID 来自构建上下文（数据地址要带它），lang 决定要不要带语言参数，
-// 动作目标由 ResolveActions 单独消费编译器的受控结果。
 func BuildView(p *Props, projectID, lang string) View {
 	mode := effectiveMode(p)
 	view := View{
@@ -75,14 +56,13 @@ func BuildView(p *Props, projectID, lang string) View {
 		Inline:      mode == ModeInline,
 	}
 	if strings.TrimSpace(projectID) == "" {
-		// 没有工程 id 就取不到购物车（JSON API按工程定位）。留一句可见提示，
-		// 而不是渲染一个点开永远空着的图标 —— 那种「看起来正常但不工作」最难查。
+
 		view.Notice = noticeNoProject
 		return view
 	}
 	q := url.Values{}
 	q.Set("projectId", strings.TrimSpace(projectID))
-	// 语言只在非空时带上：单语言站点带上一个空 lang 参数会让请求多做一次无用判断。
+
 	if l := strings.TrimSpace(lang); l != "" {
 		q.Set("lang", l)
 	}
@@ -104,41 +84,33 @@ func (v *View) ResolveActions(node *core.Node, ctx *core.RenderContext) error {
 	return nil
 }
 
-// 界面文案键（多语言 P5b）。
 const (
 	TextKeyLabel = "site.component.cartIcon.label"
-	// TextKeyLoading 浮层里购物车数据拉回来之前的占位文案（模板里此前硬编码）。
+
 	TextKeyLoading = "site.component.cartIcon.loading"
-	// TextKeyNotice 缺站点工程时的降级提示。
+
 	TextKeyNotice = "site.component.cartIcon.notice"
 )
 
-// 中文兜底：取词函数为 nil（未接入 i18n）时用这些值，产物与接入前逐字一致。
 const (
-	// textFallbackLabel 标签文字的中文兜底。
 	textFallbackLabel = defaultLabel
-	// textFallbackLoading 浮层占位文案的中文兜底。
+
 	textFallbackLoading = "正在加载购物车…"
-	// noticeNoProject 缺站点工程时的提示：BuildView 把它写进 View.Notice 作为初值。
+
 	noticeNoProject = "购物车暂不可用（未取到站点工程）"
 )
 
-// ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
-//
-// 三段**各自独立**判定，不能整函数早退：标签文字「作者是否自定义」与占位文案
-// 「有没有译文」是两件事 —— 早退会让作者一填自定义标签，浮层占位与降级提示
-// 就永远是中文（占位文案只在数据回来之前闪现，截图往往抓不到）。
 func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
 		return
 	}
 	if text == nil {
-		// BuildView 已落中文兜底；这里补上零值构造（测试直连 View）的情况。
+
 		v.Label = textFallbackLabel
 		v.LoadingText = textFallbackLoading
 		return
 	}
-	// 标签文字：作者填过的那条走内容翻译（Translatable 白名单），这里只管缺省值。
+
 	if v.Label == textFallbackLabel {
 		v.Label = text(TextKeyLabel, textFallbackLabel)
 	}
@@ -155,19 +127,16 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	v.CartLabels.In = text("site.fragment.stock.in", v.CartLabels.In)
 	v.CartLabels.Unknown = text("site.fragment.stock.checkout", v.CartLabels.Unknown)
 	v.LoadingText = text(TextKeyLoading, textFallbackLoading)
-	// 提示语只在「缺站点工程」这条降级路径上有值：空值时不填，
-	// 否则正常渲染的图标会凭空多出一行提示（与 orderlist 同一规则）。
+
 	if v.Notice != "" {
 		v.Notice = text(TextKeyNotice, noticeNoProject)
 	}
 }
 
-// DeclareFeatures 登记 JSON 读写基座及浮层增强。
-// 原生 details 形态额外启用点外部和 Esc 关闭；悬停形态的开合由 CSS 接管。
 func (v View) DeclareFeatures() (attrs, classes []string) {
 	attrs = append(attrs, "data-cart-icon", "data-component-instance")
 	if v.Notice != "" {
-		// 提示分支只有一句话，没有浮层，也就没有读写基座与面板属性。
+
 		return attrs, nil
 	}
 	attrs = append(attrs, "data-site-read", "data-site-cart", "data-write", "data-requires-js", "data-component-part")

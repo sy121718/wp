@@ -1,13 +1,3 @@
-// Package feature product 模块 feature 测试 —— 详情页模板可选与预览（issue #14）。
-//
-// 逐条覆盖验收（真实 PostgreSQL + 生产迁移 + 真实 service 装配，与既有
-// product_detail_publish_test.go 共用 detailFixture 装配）：
-//  1. 同一商品类型可建多套命名模板并各自版本化；
-//  2. 发布时能指定使用某套模板；
-//  3. 发布前可预览模板渲染效果（只读：不落库、不落盘、不激活）；
-//  4. 切换模板重新发布后产物随之变化（且内容更新触发的重建不会把模板换回默认）；
-//  5. 不影响既有「按类型取默认模板」的行为；
-//  6. 后台页链路：GET 详情模板页 → 新建命名模板 → 预览 → 发布 → 切换重新发布。
 package feature
 
 import (
@@ -44,17 +34,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// detailDocWithMarker 一套合法商品详情文档：一个版式标记标题 + 商品详情组件。
-//
-// 标记（marker）是「这套模板渲染出来长什么样」的可断言特征 —— 切换模板时产物里
-// 应当出现新标记、旧标记消失。
 func detailDocWithMarker(marker string) string {
 	return "{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[" +
 		"{\"id\":\"mark\",\"type\":\"core.heading\",\"props\":{\"text\":\"" + marker + "\",\"tag\":\"h2\"}}," +
 		"{\"id\":\"pd\",\"type\":\"core.product\",\"props\":{\"titleField\":\"product.name\",\"priceField\":\"product.priceRange\",\"descriptionField\":\"product.description\"}}]}"
 }
 
-// createNamedTemplate 建一套命名模板（同一实体类型下的多套模板之一）。
 func createNamedTemplate(t *testing.T, f *detailFixture, name, marker string) *contenttemplatedto.TemplateResp {
 	t.Helper()
 	res, err := f.templates.Create(context.Background(), &contenttemplatedto.CreateReq{
@@ -67,7 +52,6 @@ func createNamedTemplate(t *testing.T, f *detailFixture, name, marker string) *c
 	return res
 }
 
-// publishWithTemplate 为商品建立发布实例，并显式指定使用的模板。
 func (f *detailFixture) publishWithTemplate(t *testing.T, productID, urlPath, templateID string) *presentationdto.InstanceResp {
 	t.Helper()
 	inst, err := f.pres.CreateInstance(context.Background(), &presentationdto.CreateInstanceReq{
@@ -80,7 +64,6 @@ func (f *detailFixture) publishWithTemplate(t *testing.T, productID, urlPath, te
 	return inst
 }
 
-// canonicalOf 取产物里的 canonical href（不存在返回空串）。
 func canonicalOf(html string) string {
 	const prefix = "<link rel=\"canonical\" href=\""
 	i := strings.Index(html, prefix)
@@ -95,18 +78,12 @@ func canonicalOf(html string) string {
 	return rest[:j]
 }
 
-// urlSEOFragments 只在有 URL 时输出的 SEO 片段前缀：canonical、og:url，
-// 以及由 URL 生成面包屑的结构化数据块（JSON-LD 单行输出）。
-//
-// 预览不激活 URL（urlPath 传空），发布产物带实例线上路径 —— 这是预览与发布在字节上
-// 唯一的差异来源（见 internal/module/presentation/service/presentation_seo.go 取舍 2）。
 var urlSEOFragments = []string{
 	"<link rel=\"canonical\"",
 	"<meta property=\"og:url\"",
 	"<script type=\"application/ld+json\">",
 }
 
-// stripURLTags 去掉产物里 URL 相关的 SEO 片段（比较「预览与发布除 URL 外逐字节一致」用）。
 func stripURLTags(html string) string {
 	lines := strings.Split(html, "\n")
 	out := make([]string, 0, len(lines))
@@ -126,7 +103,6 @@ func stripURLTags(html string) string {
 	return strings.Join(out, "\n")
 }
 
-// countRows 统计某表的行数（where 可空）。
 func countRows(t *testing.T, db *gorm.DB, table, where string, args ...any) int {
 	t.Helper()
 	var n int64
@@ -140,13 +116,11 @@ func countRows(t *testing.T, db *gorm.DB, table, where string, args ...any) int 
 	return int(n)
 }
 
-// activeFileExists 访问面上某路径的激活产物是否存在。
 func activeFileExists(urlPath string) bool {
 	_, err := os.Stat(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(urlPath, "/"), "index.html"))
 	return err == nil
 }
 
-// instanceTemplateID 直读实例绑定的模板 ID。
 func instanceTemplateID(t *testing.T, f *detailFixture, instanceID string) string {
 	t.Helper()
 	var id string
@@ -156,15 +130,13 @@ func instanceTemplateID(t *testing.T, f *detailFixture, instanceID string) strin
 	return id
 }
 
-// TestProductDetailMultiNamedTemplatesVersioned 验收 1：同一商品类型可建多套命名模板，
-// 每套各自版本化 —— 改一套只推进它自己的版本号。
 func TestProductDetailMultiNamedTemplatesVersioned(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 迁移 085 已种下类型默认模板（「商品详情页」），本票再建两套命名模板。
+
 	activity := createNamedTemplate(t, f, "夏季活动详情页", "活动版式")
 	minimal := createNamedTemplate(t, f, "极简详情页", "极简版式")
 
@@ -185,7 +157,6 @@ func TestProductDetailMultiNamedTemplatesVersioned(t *testing.T) {
 		}
 	}
 
-	// 各自版本化：改一套 → 只有它递增到 v2，另一套仍 v1。
 	if _, err = f.templates.Update(ctx, &contenttemplatedto.UpdateReq{
 		ID: activity.ID, DraftDocument: json.RawMessage(detailDocWithMarker("活动版式 v2")),
 	}); err != nil {
@@ -206,7 +177,6 @@ func TestProductDetailMultiNamedTemplatesVersioned(t *testing.T) {
 		t.Fatalf("未被修改的模板应保持 v1，实际 v%d", untouched.DraftVersion)
 	}
 
-	// 按 ID 解析取各自当前版本（不是「同类型最新」）。
 	got, err := f.templates.ResolveTemplateByID(ctx, minimal.ID)
 	if err != nil {
 		t.Fatalf("ResolveTemplateByID 失败: %v", err)
@@ -217,7 +187,7 @@ func TestProductDetailMultiNamedTemplatesVersioned(t *testing.T) {
 	if !strings.Contains(string(got.Document), "极简版式") {
 		t.Fatalf("按 ID 解析应取该模板自己的文档: %s", got.Document)
 	}
-	// 不存在的模板 ID 明确报「不存在」，不静默回落到类型默认模板。
+
 	if _, err = f.templates.ResolveTemplateByID(ctx, uuid.NewString()); err == nil {
 		t.Fatalf("不存在的模板 ID 应报错")
 	} else if !strings.Contains(err.Error(), contenttemplateenums.ErrNotFound) {
@@ -225,7 +195,6 @@ func TestProductDetailMultiNamedTemplatesVersioned(t *testing.T) {
 	}
 }
 
-// TestProductPublishWithChosenTemplate 验收 2：发布时能指定使用某套模板。
 func TestProductPublishWithChosenTemplate(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -250,8 +219,6 @@ func TestProductPublishWithChosenTemplate(t *testing.T) {
 	}
 }
 
-// TestProductPreviewBeforePublish 验收 3：发布前可预览模板渲染效果，
-// 且预览全程只读 —— 不写实例/产物/指针、不激活 URL。
 func TestProductPreviewBeforePublish(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -275,7 +242,7 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 			t.Fatalf("预览 HTML 应含 %q: %s", want, res.HTML)
 		}
 	}
-	// 只读：库表与访问面都不因预览而改变。
+
 	if n := countRows(t, f.db, "presentation_instances", "entity_id = ?", productID); n != 0 {
 		t.Fatalf("预览不应创建实例，实际 %d 条", n)
 	}
@@ -289,9 +256,6 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 		t.Fatalf("预览不应激活访问面产物")
 	}
 
-	// 预览与正式产物共享业务内容及增强脚本；明确的模拟外壳、正式采集和
-	// URL 相关 SEO 不参与公共字节比较。预览不激活线上路径
-	// （见 internal/module/presentation/service/presentation_seo.go 的取舍 2）。
 	f.publishWithTemplate(t, productID, "/products/summer-shirt", chosen.ID)
 	published := activeHTML(t, "/products/summer-shirt")
 	if !strings.Contains(res.HTML, `name="site-preview-mode" content="readonly"`) || strings.Contains(published, `name="site-preview-mode"`) {
@@ -313,7 +277,6 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 		t.Fatal("预览仍应输出结构化数据（只是不含 URL）")
 	}
 
-	// 不指定模板 → 预览走类型默认模板（既有行为）。
 	def, err := f.templates.ResolveTemplate(ctx, "product")
 	if err != nil {
 		t.Fatalf("解析类型默认模板失败: %v", err)
@@ -329,15 +292,13 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 	}
 }
 
-// TestProductPreviewRejectsForeignTemplateType 预览/发布都不接受跨实体类型的模板：
-// 拿文章模板渲染商品会在构建期产出错误数据，必须在入口拒绝。
 func TestProductPreviewRejectsForeignTemplateType(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 直写一张 article 模板（绕过注册表校验，模拟存量/绕过接口写入的数据）。
+
 	doc := json.RawMessage(detailDocWithMarker("文章版式"))
 	now := time.Now().UTC()
 	m := contenttemplatemodel.NewModel(f.db)
@@ -371,8 +332,6 @@ func TestProductPreviewRejectsForeignTemplateType(t *testing.T) {
 	}
 }
 
-// TestProductSwitchTemplateChangesArtifact 验收 4：切换模板重新发布后产物随之变化；
-// 且随后「内容更新触发的重建」沿用实例绑定的模板，不会退回类型默认模板。
 func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -388,7 +347,6 @@ func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 		t.Fatalf("首个产物应使用第一套模板: %s", html)
 	}
 
-	// 切换到第二套并重新发布。
 	switched, err := f.pres.Rebuild(ctx, &presentationdto.RebuildReq{EntityID: productID, TemplateID: second.ID})
 	if err != nil {
 		t.Fatalf("切换模板重新发布失败: %v", err)
@@ -407,7 +365,6 @@ func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 		t.Fatalf("切换后产物不应残留第一套模板的版式: %s", html)
 	}
 
-	// 随后不带 templateId 的重建（内容更新触发的自动重建走同一路径）必须沿用绑定模板。
 	if _, err = f.pres.Rebuild(ctx, &presentationdto.RebuildReq{EntityID: productID}); err != nil {
 		t.Fatalf("内容更新重建失败: %v", err)
 	}
@@ -415,7 +372,7 @@ func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 	if !strings.Contains(html, "极简版式") || strings.Contains(html, "活动版式") {
 		t.Fatalf("未显式切换模板的重建应沿用实例绑定模板: %s", html)
 	}
-	// 依赖失效触发的自动重建（RebuildStale）同样沿用绑定模板。
+
 	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+productID)
 	if err != nil {
 		t.Fatalf("标记依赖失效失败: %v", err)
@@ -431,10 +388,6 @@ func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 	}
 }
 
-// TestProductPublishFallsBackToTypeDefault 验收 5：不影响既有「按类型取默认模板」的行为。
-//
-// 不指定模板创建实例时仍按实体类型解析默认模板；「类型默认」的口径也未改变
-// （该类型最近更新的一套），新建命名模板不会让既有调用方拿到空模板。
 func TestProductPublishFallsBackToTypeDefault(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -447,7 +400,6 @@ func TestProductPublishFallsBackToTypeDefault(t *testing.T) {
 	}
 	productID := f.createProduct(t, "夏季衬衫", "summer-shirt", "纯棉", 99, 99)
 
-	// 既有调用形态：CreateInstance 不带 templateId。
 	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
 		ProjectID: f.projectID, EntityType: "product", EntityID: productID,
 		URLPath: "/products/summer-shirt",
@@ -461,13 +413,12 @@ func TestProductPublishFallsBackToTypeDefault(t *testing.T) {
 	if !strings.Contains(activeHTML(t, "/products/summer-shirt"), "夏季衬衫") {
 		t.Fatalf("默认模板产物应含商品数据")
 	}
-	// 默认解析口径未变：仍取该类型最近更新的一套。
+
 	if now, rerr := f.templates.ResolveTemplate(ctx, "product"); rerr != nil || now.TemplateID != seeded.TemplateID {
 		t.Fatalf("未新增模板时默认解析应保持同一套: %v / %+v", rerr, now)
 	}
 }
 
-// newDetailTemplatePageEngine 装配一个只挂详情模板页的测试引擎（真实 Jet 模板 + 真实 service）。
 func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	t.Helper()
 	f := newDetailFixture(t)
@@ -477,17 +428,14 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	// 页面的「新建命名模板」入口按权限显隐（adminui.Prepare 读 PermSetKey），而这条链路
-	// 不走鉴权中间件：注入一份全权限，让用例聚焦页面本身的行为。
+
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"contenttemplate.create": true})
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
-	// 新建 / 首次发布 / 切换三个写动作已从页面 POST 迁到 /api/product/detail-template/*：
-	// 页面表单走 ui/write-base.js 直调接口，页面只剩下整页 GET 与只读预览。
-	// 写动作的依赖在装配层后置注入（SetupProductPages 里那一次），这里照同一形状注入一遍。
+
 	api := producthttp.NewProductHandle(f.products)
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
@@ -501,8 +449,6 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	return engine, f
 }
 
-// TestProductDetailTemplatePageFlow 验收 6：后台页链路 ——
-// 页面列出多套命名模板并可新建、可预览（新标签页渲染结果）、可发布、可切换重新发布。
 func TestProductDetailTemplatePageFlow(t *testing.T) {
 	engine, f := newDetailTemplatePageEngine(t)
 	if engine == nil {
@@ -513,7 +459,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	second := createNamedTemplate(t, f, "极简详情页", "极简版式")
 	productID := f.createProduct(t, "夏季衬衫", "summer-shirt", "纯棉", 99, 99)
 
-	// 1) 页面渲染：多套命名模板（含版本号）与「新建命名模板」表单都在。
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
@@ -533,7 +478,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		}
 	}
 
-	// 2) 页面预览：返回渲染好的整页 HTML（新标签页里看到的就是产物字节），且不落库。
 	rec = postForm(engine, "/admin/products/template/preview", url.Values{
 		"projectId": {f.projectID}, "productId": {productID}, "templateId": {second.ID},
 	})
@@ -550,7 +494,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		t.Fatalf("页面预览不应创建实例，实际 %d 条", n)
 	}
 
-	// 3) 页面新建命名模板：类型下多出一套，页面立刻能选到它。
 	rec = postJSON(t, engine, "/api/product/detail-template/create", map[string]any{
 		"projectId": f.projectID, "productId": productID,
 		"name": "节庆详情页", "copyFrom": first.ID,
@@ -566,7 +509,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		t.Fatalf("新建后应有 4 套命名模板，实际 %d", len(list))
 	}
 
-	// 4) 页面发布：不带 urlPath 时按商品 slug 派生，产物进访问面。
 	rec = postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
 		"projectId": f.projectID, "productId": productID, "templateId": first.ID,
 	})
@@ -583,7 +525,7 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	if inst.TemplateID != first.ID {
 		t.Fatalf("实例应绑定第一套模板，实际 %s", inst.TemplateID)
 	}
-	// 页面改为展示「切换模板并重新发布」（实例已存在）。
+
 	rec = httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
@@ -591,7 +533,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		t.Fatalf("实例已存在时应展示切换入口")
 	}
 
-	// 5) 页面切换模板并重新发布：产物随之变化。
 	rec = postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
 		"projectId": f.projectID, "productId": productID, "templateId": second.ID,
 	})
@@ -604,11 +545,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	}
 }
 
-// detailTemplateFailingPort 一个「清单读不到」的详情模板端口桩。
-//
-// 用来钉住两件事：主数据（模板清单）读不到 = 整页装载失败；且失败之后
-// **默认模板与绑定实例两条派生查询都不发**（它们是清单派生的事实，清单没到之前
-// 发出去只会在主错误之外再叠两层，排障日志从一段变三段而页面说的是同一句话）。
 type detailTemplateFailingPort struct {
 	candidates int
 	derived    int
@@ -634,11 +570,6 @@ func (p *detailTemplateFailingPort) DetailTemplatePanel(context.Context, string,
 	return productcontract.DetailTemplatePanelFacts{}, nil
 }
 
-// TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries 主数据读不到：
-// 500 JSON，且派生查询一条都不发。
-//
-// 反面判据：把「清单失败」写成静默空清单，页面会显示成「这个商品还没有任何模板」——
-// 用户以为要去新建一套，而真实原因是没读到；这条判据同时挡住「失败后继续查默认模板」。
 func TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries(t *testing.T) {
 	engine, f := newDetailTemplatePageEngine(t)
 	if engine == nil {
@@ -672,7 +603,6 @@ func TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries(t *test
 	}
 }
 
-// TestProductDetailTemplatePageEmptyFactsStillRenderPage 未配置默认模板且未创建实例是正常空态。
 func TestProductDetailTemplatePageEmptyFactsStillRenderPage(t *testing.T) {
 	engine, f := newDetailTemplatePageEngine(t)
 	if engine == nil {
@@ -694,14 +624,12 @@ func TestProductDetailTemplatePageEmptyFactsStillRenderPage(t *testing.T) {
 	if strings.HasPrefix(strings.TrimSpace(body), "{") {
 		t.Fatal("空事实仍应是页面，不是 JSON 报文")
 	}
-	// 没有实例 = 还没发布过：页面要据此提示「还没发布」，而不是留空让人猜。
+
 	if !strings.Contains(body, "未发布") {
 		t.Fatalf("没有实例时应提示未发布，body=%s", headOfBody(body))
 	}
 }
 
-// detailTemplateEmptyPort 「读到了、什么都没有」的端口（与「读不到」区分：
-// 前者是空清单 + 没有实例，页面照常可用）。
 type detailTemplateEmptyPort struct{}
 
 func (p *detailTemplateEmptyPort) DetailTemplateCandidates(context.Context, string, string) ([]productcontract.DetailTemplateCandidateView, error) {
@@ -720,7 +648,6 @@ func (p *detailTemplateEmptyPort) DetailTemplatePanel(context.Context, string, s
 	return productcontract.DetailTemplatePanelFacts{}, nil
 }
 
-// headOfBody 失败诊断里的 body 前缀（失败时整页可能很长，只留开头足够定位）。
 func headOfBody(s string) string {
 	if len(s) > 600 {
 		return s[:600]

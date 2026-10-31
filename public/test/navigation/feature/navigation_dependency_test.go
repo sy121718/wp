@@ -1,21 +1,5 @@
 package feature
 
-// navigation_dependency_test.go — 导航变更的失效传播（审计遗留缺口，AGENTS.md §8）。
-//
-// 缺口：pipeline.DepKindMenu 常量早已定义、依赖表的 CHECK 也早已放行 'menu'（迁移 174），
-// 但**全仓没有任何发射点、构建期也没登记这条依赖** —— 改公开站点导航（navigations 表）后，
-// 把该菜单位置烘进产物的页面与自动发布实例永远停在旧字节。导航在页眉/页脚，全站可见，
-// 所以这一条的失效面是整站，比块/内容那一类更严重。
-//
-// 四个用例覆盖两半闭环：
-//   ① 构建期登记：用了 header 导航的页面声明 menu:{projectID}:header，没用到的没有；
-//   ② 触发与精确范围：改导航只标记声明过该键的页面，手写菜单的页面不受影响；
-//   ③ 工程隔离：键带工程 ID，改 A 工程导航不影响 B 工程绑了同一位置的页面；
-//   ④ 端到端：改导航 → 重建 → 产物里的链接确实变了（不只是 stale 字段）。
-//
-// 反查侧的 presentation 来源与 page 共用同一段 SQL 形状（presentation_dependencies），
-// 其依赖行同样由构建期登记（presentation_render.go 的 presentationDependencies）。
-
 import (
 	"context"
 	"os"
@@ -48,11 +32,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// newNavDependencyEnv 装配 navigation + page 两个真实服务，并把导航失效派发接到依赖扇出上
-// （与生产装配同形：routes 里 navigation.SetMenuStaleDispatcher ← pipeline.NewMenuStaleAdapter）。
-//
-// 不绑 StaleRebuilder：本用例断言的是「标记」与「重建后的字节」，自动重建在测试里由用例
-// 自己显式调用 Build（生产由构建队列的 worker 消费）。
 func newNavDependencyEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageService,
 	navSvc navigationcontract.NavigationService, projects projectcontract.ProjectService, projectID string) {
 	t.Helper()
@@ -64,9 +43,7 @@ func newNavDependencyEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageServ
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	nav := navigationservice.NewService(navigationmodel.NewModel(db), projects)
-	// 写端口（标页面 / 标实例 / 入队）是 Create / Update / Delete 的必需依赖：
-	// 缺任一即 fail closed。本用例断言「改导航 → 收藏该位置的页面被标 stale」，
-	// 用的是真实端口（pages.stale / build_jobs 都是可观测结果，不是探针调用次数）。
+
 	attachNavWritePorts(t, nav, db, projects)
 	navSvc = nav
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
@@ -80,7 +57,6 @@ func newNavDependencyEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageServ
 	return db, pages, navSvc, projects, project.ID
 }
 
-// createNavPage 创建指定路径与文档的页面，返回页面 ID。
 func createNavPage(t *testing.T, svc pagecontract.PageService, projectID, kind, path, doc string) string {
 	t.Helper()
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
@@ -93,7 +69,6 @@ func createNavPage(t *testing.T, svc pagecontract.PageService, projectID, kind, 
 	return created.ID
 }
 
-// buildNavPage 构建页面（依赖记录随构建落库），返回暂存产物 hash。
 func buildNavPage(t *testing.T, svc pagecontract.PageService, pageID string) string {
 	t.Helper()
 	built, err := svc.Build(context.Background(), &pagedto.BuildReq{ID: pageID})
@@ -103,7 +78,6 @@ func buildNavPage(t *testing.T, svc pagecontract.PageService, pageID string) str
 	return built.StagedHash
 }
 
-// readStagedHTML 读取暂存产物字节（产物根由 GO_WP_ARTIFACT_ROOT 注入，与生产线一致）。
 func readStagedHTML(t *testing.T, hash string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(os.Getenv("GO_WP_ARTIFACT_ROOT"), "artifacts", hash, "index.html"))
@@ -113,7 +87,6 @@ func readStagedHTML(t *testing.T, hash string) string {
 	return string(b)
 }
 
-// navMenuDependencyCount 统计页面声明的导航依赖条数（键为 menu:{projectID}:{kind}）。
 func navMenuDependencyCount(t *testing.T, db *gorm.DB, pageID, projectID, kind string) int64 {
 	t.Helper()
 	var n int64
@@ -125,11 +98,6 @@ func navMenuDependencyCount(t *testing.T, db *gorm.DB, pageID, projectID, kind s
 	return n
 }
 
-// markPageActivated 把页面摆成「已成功激活过一次」的收敛状态（stale=false）。
-//
-// 为什么需要它：stale 只由**成功激活**清（pagemodel.MarkPublishedLangTx；page_tx.go 的
-// MarkStagedLangTx 注释写明「构建不等于发布」）。依赖失效用例要证明的是「输入变更后会
-// 被标 stale」，所以前置必须显式给成「已收敛」，不能指望 Build 顺手清掉 —— 那是旧口径。
 func markPageActivated(t *testing.T, db *gorm.DB, pageID string) {
 	t.Helper()
 	if err := db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
@@ -137,7 +105,6 @@ func markPageActivated(t *testing.T, db *gorm.DB, pageID string) {
 	}
 }
 
-// navPageStale 读取页面 stale 标记。
 func navPageStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	t.Helper()
 	var stale bool
@@ -147,7 +114,6 @@ func navPageStale(t *testing.T, db *gorm.DB, pageID string) bool {
 	return stale
 }
 
-// TestNavigationMenuDependencyRegistered 构建期登记：只有真用了该导航的页面才有 menu 依赖。
 func TestNavigationMenuDependencyRegistered(t *testing.T) {
 	db, pages, navSvc, _, projectID := newNavDependencyEnv(t)
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
@@ -160,17 +126,16 @@ func TestNavigationMenuDependencyRegistered(t *testing.T) {
 	if n := navMenuDependencyCount(t, db, bound, projectID, "header"); n != 1 {
 		t.Fatalf("绑定页眉导航的页面应声明恰好 1 条 menu:{pid}:header 依赖，实际 %d 条", n)
 	}
-	// 未绑定位置（手写 items）的页面不得登记：这是「不全站无脑登记」的可验证证据。
+
 	if n := navMenuDependencyCount(t, db, plain, projectID, "header"); n != 0 {
 		t.Fatalf("手写菜单的页面不应声明导航依赖，实际 %d 条", n)
 	}
-	// 只声明了 header：footer 位置没有被这次编译消费。
+
 	if n := navMenuDependencyCount(t, db, bound, projectID, "footer"); n != 0 {
 		t.Fatalf("未绑定的 footer 位置不应被登记，实际 %d 条", n)
 	}
 }
 
-// TestNavigationChangeMarksOnlyBoundPages 改导航项只标记声明过该键的页面。
 func TestNavigationChangeMarksOnlyBoundPages(t *testing.T) {
 	db, pages, navSvc, _, projectID := newNavDependencyEnv(t)
 	itemID := addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
@@ -201,7 +166,6 @@ func TestNavigationChangeMarksOnlyBoundPages(t *testing.T) {
 	}
 }
 
-// TestNavigationChangeIsolatedByProject 键带工程 ID：改一个工程的导航不误伤别的工程。
 func TestNavigationChangeIsolatedByProject(t *testing.T) {
 	db, pages, navSvc, projects, projectA := newNavDependencyEnv(t)
 	ctx := context.Background()
@@ -220,7 +184,6 @@ func TestNavigationChangeIsolatedByProject(t *testing.T) {
 	markPageActivated(t, db, boundA)
 	markPageActivated(t, db, boundB)
 
-	// 两个工程都声明了 header 位置的导航，但键不同（menu:{pid}:header）。
 	if n := navMenuDependencyCount(t, db, boundA, projectA, "header"); n != 1 {
 		t.Fatalf("A 工程页面应声明本工程的导航依赖，实际 %d 条", n)
 	}
@@ -241,7 +204,6 @@ func TestNavigationChangeIsolatedByProject(t *testing.T) {
 	}
 }
 
-// TestNavigationRebuildReflectsMenuChange 端到端：改导航 → 重建 → 产物链接确实变了。
 func TestNavigationRebuildReflectsMenuChange(t *testing.T) {
 	db, pages, navSvc, _, projectID := newNavDependencyEnv(t)
 	ctx := context.Background()
@@ -259,7 +221,7 @@ func TestNavigationRebuildReflectsMenuChange(t *testing.T) {
 	if _, err := navSvc.Update(ctx, &navigationdto.UpdateReq{ID: itemID, Path: &newPath}); err != nil {
 		t.Fatalf("更新导航项失败: %v", err)
 	}
-	// 前置：失效传播确实发生了（否则后面的「重建」只是碰巧成立）。
+
 	if !navPageStale(t, db, pageID) {
 		t.Fatalf("改导航后页面应被标记待重建")
 	}
@@ -275,12 +237,11 @@ func TestNavigationRebuildReflectsMenuChange(t *testing.T) {
 	if strings.Contains(afterHTML, "/old-menu") {
 		t.Fatalf("重建后产物不应再含旧菜单链接 /old-menu: %s", afterHTML)
 	}
-	// 构建**不**清 stale（构建不等于发布）：重建后仍是待重建，直到真正激活成功。
+
 	if !navPageStale(t, db, pageID) {
 		t.Fatalf("构建后 stale 不应被清掉：清 stale 只发生在成功激活（MarkPublishedLangTx）")
 	}
 
-	// 发布路径同样反映新菜单：激活面读盘（默认语言无前缀，/nav-e2e → active/nav-e2e/index.html）。
 	if _, err := pages.Publish(ctx, &pagedto.PublishReq{ID: pageID}); err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}

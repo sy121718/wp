@@ -1,15 +1,5 @@
 package sysconfighttp_test
 
-// sysconfig_admin_pages_test.go — 系统设置页的**真实渲染 + 保存**链路（真库 + 真 Jet 引擎）。
-//
-// 这条链上最容易静默出错的三件事，各自钉在一条断言上：
-//  1. 整组替换冲掉未暴露的键（i18n 组的 lang_url_codes）—— 保存后回读；
-//  2. 乐观锁形同虚设（用旧 version 也能写进去）—— 用旧 version 提交必须被拒；
-//  3. 下拉没有真的接到字典表（选项写死在模板里）—— 断言选项来自 sys_dict / sys_area。
-//
-// 走**直挂 handler** 而不是通过 SetupSysConfigRoutes：后者页面路由带 Casbin 中间件，
-// 需要一套完整策略环境才跑得起来；本用例关心的是模板与数据（鉴权由 permission 包的既有测试覆盖）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -30,7 +20,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newSystemPageEnv 装配系统设置页的真实链路（真 PG + 真 Jet）。
 func newSystemPageEnv(t *testing.T) (*sysconfighttp.AdminHandle, *sysconfigservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -44,7 +33,6 @@ func newSystemPageEnv(t *testing.T) (*sysconfighttp.AdminHandle, *sysconfigservi
 	return sysconfighttp.NewAdminHandle(svc), svc, db
 }
 
-// serve 把请求交给系统设置页 handler（真实 Jet 引擎）。
 func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -61,13 +49,6 @@ func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body
 	return rec
 }
 
-// TestSystemSettingsPageRenders 真实渲染：四个字段 + 字典下拉 + version + 完整整页。
-//
-// 这里用**同一模板 + 与 handler 同形的数据**直渲，而不是经 HTTP 走 SetPage：
-// 后台整页继承 layout.html，而 layout 的侧栏来自 adminctx.PermContextMiddleware 注入的
-// 权限导航树（需要登录会话 + 权限服务）——测试环境不具备，走 HTTP 只会得到一个
-// 「页面暂时无法显示」。数据源与 handler 一致（同样的 svc 调用与同样的键名），
-// 因此模板与数据键对不上、下拉没接字典这类问题仍会被这条断言抓住。
 func TestSystemSettingsPageRenders(t *testing.T) {
 	_, svc, db := newSystemPageEnv(t)
 	ctx := context.Background()
@@ -111,24 +92,23 @@ func TestSystemSettingsPageRenders(t *testing.T) {
 		`name="defaultCountry"`, `name="defaultCurrency"`,
 		`name="i18nVersion"`, `name="tradeVersion"`,
 		`data-write-url="/api/sysconfig/system/save"`,
-		`value="zh-CN"`, // 语言下拉来自 sys_dict（type=language）
-		`value="CNY"`,   // 货币下拉来自 sys_dict（type=currency）
-		`value="CN"`,    // 国家下拉来自 sys_area（kind=country）
+		`value="zh-CN"`,
+		`value="CNY"`,
+		`value="CN"`,
 		"系统设置",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("系统设置页缺少 %q", want)
 		}
 	}
-	// 多端：四个字段排在 .form-grid 里（窄屏单列、宽屏两列，见 theme.css），
-	// 且本页不写任何固定像素宽度 —— 容器宽度由外层 .stack/.card-body 决定。
+
 	if !strings.Contains(body, `class="form-grid"`) {
 		t.Fatalf("四个字段应放在 .form-grid 里（响应式两列/单列）")
 	}
 	if strings.Contains(body, "px;width:") || strings.Contains(body, `style="width:`) {
 		t.Fatalf("页面不该出现内联固定宽度（会撑破窄屏）")
 	}
-	// 停用的字典项不该出现。
+
 	var disabled string
 	if err := db.Raw("SELECT code FROM sys_dict WHERE type='language' AND enabled = false LIMIT 1").Scan(&disabled).Error; err == nil && disabled != "" {
 		if strings.Contains(body, `value="`+disabled+`"`) {
@@ -139,7 +119,6 @@ func TestSystemSettingsPageRenders(t *testing.T) {
 		len(body), len(langs), len(currencies), len(countries))
 }
 
-// TestSystemSettingsSavePreservesUnexposedKeys 那个陷阱：整组替换不能冲掉 lang_url_codes。
 func TestSystemSettingsSavePreservesUnexposedKeys(t *testing.T) {
 	handle, svc, _ := newSystemPageEnv(t)
 	ctx := context.Background()
@@ -177,7 +156,6 @@ func TestSystemSettingsSavePreservesUnexposedKeys(t *testing.T) {
 	t.Logf("保存后 lang_url_codes = %v（保留），default_lang = %v（已改）", got, after.Data["default_lang"])
 }
 
-// TestSystemSettingsSaveRejectsStaleVersion 乐观锁：旧 version 提交必须被拒且有可读提示。
 func TestSystemSettingsSaveRejectsStaleVersion(t *testing.T) {
 	handle, svc, _ := newSystemPageEnv(t)
 	ctx := context.Background()

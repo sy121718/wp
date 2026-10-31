@@ -1,53 +1,3 @@
-// wiring.go — 装配期端口清单与启动自检（审计 CQ-019）。
-//
-// 背景：跨模块能力经「装配期注入的可空端口」连接（SetXxx + 调用方 nil 判断）。
-// 端口未注入时，一部分实现是**合理的可见降级**（片段读不到库存 → 页面上显示
-// 「以结算时库存为准」，访客看得见）；另一部分是不可接受的**静默降级**
-// （主数据变更记录端口未注入 → 审计静默缺失 —— 一切看起来都正常，排查时
-// 几乎不会想到装配问题）。两类端口用的是同一种注入写法（setter + nil 判断），
-// 照抄错的那种只需要一次复制粘贴。
-//
-// 本文件把「分类判断」变成可核对、可执行的资产：
-//
-//	wiringManifest      全部装配期端口的分类表（端口 / 提供方 / 消费方 / 类别 / 未注入后果）；
-//	wiringMarks         装配期采集「本端口已接入」的事实（routes.go 逐条标记）；
-//	CheckWiring         纯函数自检：必需端口缺失即报出端口名与后果；
-//	mustAllPortsWired   装配末尾 fail-fast 入口（一次报出全部缺失项，不炸在第一个）；
-//	logDegradedOptional 可选端口未接入写进启动日志 —— 降级必须是**可见的**
-//	                    （用户能看到 / 日志有记录），而不是只在注释里写一句。
-//
-// 分类口径（判据可复算，不靠印象）：
-//
-//	required-contract  消费方要求提供方实现某条**收窄契约**。未实现 = 装配缺陷。
-//	required-port      端口实现在本进程内恒定可得（装配顺序确定、由本仓模块提供），
-//	                   且未注入的后果是**功能性静默缺失或错误数据** —— 用户看到的是
-//	                   「永远是 0」「永远暂不可用」「审计缺记录」，而不是一句降级提示。
-//	optional-degraded  未注入有明确可见表现（面向用户的人话 / 明确错误 / 日志告警），
-//	                   或未注入时的行为与接入前**逐字一致**（等价于功能开关关闭）。
-//
-// 反向判据同样成立：一个端口只要能说清「未注入 → 用户看到什么」，它就该是
-// optional-degraded；说不清（只能说出「功能没了」）的就是 required-port。
-// 新增端口时按这条判据填表，不要凭「感觉它不重要」写进 optional。
-//
-// 这张表**不登记**什么（两条边界，省得把它当成「全部装配期依赖」的清单）：
-//
-//	构造参数注入的契约依赖不登记。像
-//	  SetupProductRoutes(rg, db, project projectcontract.ProjectService)
-//	  这类把收窄契约直接当构造参数传的依赖，没有「未注入」这个状态：装配点必须显式
-//	  交出一个实现，传 nil 是编译得过、一调用就炸的假装配。它的后果不呈现为「用户看到
-//	  什么」，而呈现为「装配点有没有写对」——与 optional/required 不是同一个维度，
-//	  硬塞进来只会让 Consequence 一栏写成假话。
-//	Consequence 故意保持自然语言，不要改成枚举。它是这张表的唯一价值所在（见
-//	  wiringEntry 的注释）：写不出一句「未注入 → 看到什么」的人话，就说明这个端口不该
-//	  存在，或者不该留在 optional。枚举能让人勾一个 other 绕过去，人话绕不过去。
-//
-// 刻意**不做** fail-fast 的两处（评估过，判定保持现状，理由写在这里免得反复讨论）：
-//
-//	默认主题补齐失败（routes.go）：幂等补齐动作，不影响已有工程，新建工程仍即时
-//	  获得默认主题 —— 失败阻断启动的代价（整个站起不来）远大于收益；
-//	组件注册表版本比对失败：只影响「标记待重建」这条提示，重建本来也可由运维触发。
-//
-// 两者都记 Error 级日志，属可见降级，不满足 required-port 的判据。
 package routers
 
 import (
@@ -57,8 +7,6 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// 端口名常量：与 wiringManifest 的 Port 字段一一对应。routes.go 只经这些常量标记，
-// 手写字符串一旦拼错，自检就会「永远通过」——那比没有自检更糟。
 const (
 	portContentCollectionSource   = "content.CollectionSourceProvider"
 	portProductCollectionSource   = "product.CollectionSourceProvider"
@@ -78,22 +26,15 @@ const (
 	portProductPublishedLocator   = "product.SetPublishedEntityLocator"
 	portProductPurchaseChecker    = "product.SetPurchaseChecker"
 	portProductPublicIndex        = "product.SetPublicCatalogIndex"
-	// 页面读模型的两条只读端口：注入发生在**模块自装配内部**（product.SetInventoryDeps /
-	// product.SetDetailTemplateDeps 收到依赖后转交给 service 的读模型），装配段只标记
-	// 「Setup 调用发生过」，与 portProductContentStore 同一手法。
+
 	portProductPageWarehouses     = "product.SetWarehouseOptionsPort"
 	portProductPageTemplates      = "product.SetEntityTemplatePort"
 	portProductPageDetailTemplate = "product.SetDetailTemplatePort"
-	// 详情页模板的**写**依赖（SetupProductRoutes 阶段拿不到的四个契约：模板 / 实例 / 商品 /
-	// 工程），装配期在同一处后置转交给写处理器。它不经过页面读模型的转交方法，
-	// 所以单独一条——与上面三条读侧端口不是同一次注入。
+
 	portProductDetailTemplateWriteDeps = "product.SetDetailTemplateWriteDeps"
-	// 详情页模板的模式端口：接口面（/api/product 组）要用同一份 presentation 能力，
-	// 而 product 的接口面早于 presentation 装配，因此是后置绑定（assembly_publish.go）。
+
 	portProductDetailTemplateMode = "product.SetDetailTemplateModePort"
-	// 词条变更 → 站点待重建的页面失效端口（后台词条页 → page 模块）。consumer 侧定义
-	// 最小接口 adminI18nPageMarker（只有一个 MarkStaleForI18n），漏接的表现是
-	// 「改了词条站点不更新」且没有任何报错。
+
 	portAdminI18nPageMarker        = "admin.SetPageMarker"
 	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
@@ -105,11 +46,7 @@ const (
 	portPageCheckoutCountries      = "page.SetCheckoutCountries"
 	portPageI18nStalePeer          = "page.SetI18nStalePeer"
 	portPageStructureTemplates     = "page.SetStructureTemplatePort"
-	// 发货 / 销售总览的装配端口（迁移 624-633，S1-S3 / W4）：
-	//   · SetShipmentModels  订单模块收发货单/明细的 model 句柄（自装配内部）；
-	//   · SetShipmentCounter 销售总览的「待发货」计数来源（订单 svc 自实现）；
-	//   · SetSalesStockAlerts 库存预警（装配层后置注入，订单不 import 库存 dto）；
-	//   · SetAttachmentResolver 发货凭证附件的解析器（媒体契约，可空降级）。
+
 	portOrderShipmentModels     = "order.SetShipmentModels"
 	portOrderShipmentCounter    = "order.SetShipmentCounter"
 	portOrderStockAlerts        = "inventory.SetStockAlerts"
@@ -117,23 +54,17 @@ const (
 	portOrderAttachmentResolver = "order.SetAttachmentResolver"
 	portOrderStockRowLocator    = "inventory.SetStockRowLocator"
 	portOrderWarehouseResolver  = "inventory.SetWarehouseResolver"
-	// portOrderShipStockProbe 发货可发性投影（B6-a）：待发货页用它在行上给「能不能发」，
-	// 口径与发货用例的真实校验同源（库存行 quantity > 0、不跟踪行恒可发）。
+
 	portOrderShipStockProbe = "order.SetShipStockProbe"
-	// portOrderReturnWarehouseSource 工程仓库清单（B6-b）：退货页「原发货仓」把仓库 id
-	// 换成名字（同一个端口同时喂页面的入库仓下拉）。
+
 	portOrderReturnWarehouseSource = "order.SetWarehouseSource"
-	// portOrderCurrencyLister 启用币种清单（迁移 633 的补口）：建单校验 req.Currency、
-	// 建单页给币种下拉供数。实现在 order/outbound/currencydict，包住 sysconfig 的 DictReader。
+
 	portOrderCurrencyLister = "order.SetCurrencyLister"
-	// —— block ↔ page 的装配期接线（FIX-05）——
-	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
-	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
+
 	portBlockPresetResolver        = "block.SetPresetResolver"
 	portBlockStalePropagator       = "block.SetStalePropagator"
 	portBlockReferenceUsageChecker = "block.SetReferenceUsageChecker"
-	// —— FIX-25：此前「已注入但未进盘点表」的 11 处（自检覆盖空洞）——
-	// 判据仍是文件头那条：说不清「未注入 → 用户看到什么」的就是 required-port。
+
 	portI18nValueLoader               = "i18n.SetValueLoader"
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
@@ -142,9 +73,7 @@ const (
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
 	portProjectStructureTemplates     = "project.SetStructureTemplateOptionsPort"
-	// —— 换图失效通知（媒体变体的缓存与失效）——
-	// media 索要的端口（契约见 mediacontract.StaleMarker），由 page / presentation
-	// 各自实现一条收窄实现后经 media.SetStaleMarkers 注入。
+
 	portMediaStaleMarkerPage             = "media.SetStaleMarker(page)"
 	portMediaStaleMarkerPresentation     = "media.SetStaleMarker(presentation)"
 	portPresentationBuildQueue           = "presentation.SetBuildQueue"
@@ -161,77 +90,60 @@ const (
 	portContentTemplateInvalidator       = "contenttemplate.SetInvalidator"
 	portNavigationSourceResolver         = "navigation.SetSourceResolver"
 	portNavigationMenuDispatcher         = "navigation.SetMenuStaleDispatcher"
-	// —— 导航译文 MVC 写链（menu_stale 同事务派发 + 严格同步重建消费）——
-	// 一次写入依赖**三个别的模块的同事务端口**，三个分开登记而不是合成一条：
-	// 合成后装配自检只能报「译文写没接上」，说不出「合成写了、实例没标」这种半边状态。
-	// 后端执行器（RegisterExecutor）不登记在这里：它是构造参数式注册（不是可空端口），
-	// 与 portPageBuildQueue 同一取舍，由 registerMenuStaleExecutor 的装配期断言守。
+
 	portNavigationTranslationWriter = "navigation.SetTranslationWriteService"
 	portNavigationPageStalePort     = "navigation.TranslationWriter(page)"
 	portNavigationInstanceStalePort = "navigation.TranslationWriter(presentation)"
 	portNavigationMenuStaleEnqueue  = "navigation.TranslationWriter(build)"
-	// 菜单 CRUD 的同事务失效端口（page 位置 / page 项 / build 入队）：与译文写路径同一份。
+
 	portNavigationMenuWritePorts = "navigation.SetWritePorts"
 	portDashboardBlueprints      = "dashboard.SetBlueprints"
-	// 概览页的跨模块只读数据（订单聚合 / 访问统计 / 路径→页面类型）。
-	// 三条依赖都由 setter 注入：概览页是唯一同时需要它们的页面，其余页面不受影响。
+
 	portDashboardOverview   = "dashboard.SetOverviewPorts(frontend)"
 	portPublicSearchContent = "content.PublicSearchService.articles"
 	portPublicSearchProduct = "content.PublicSearchService.products"
 	portPublicSearchIndex   = "content.PublicSearchService.publications"
-	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
+
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
-	// —— BIZ-3 会员体系的消费侧接线（本批）——
+
 	portOrderMembershipReader    = "order.SetMembershipReader"
 	portMembershipPurchaseSource = "membership.SetPurchaseSource"
 	portCartMembershipReader     = "cart.SetMembershipReader"
-	// —— 站点级基础运费（BIZ-3 的后续小批）——
+
 	portCartShippingPolicy = "cart.SetShippingPolicyReader"
-	// —— 评论（BIZ-5）——
+
 	portCommentEntityPolicy = "comment.SetEntityPolicy"
 )
 
-// wiringKind 端口类别。
 type wiringKind string
 
 const (
-	// wiringRequiredContract 消费方要求提供方实现某条收窄契约，未实现即装配缺陷。
 	wiringRequiredContract wiringKind = "required-contract"
-	// wiringRequiredPort 本进程内恒定可得、未注入即功能性静默缺失的端口。
+
 	wiringRequiredPort wiringKind = "required-port"
-	// wiringOptionalDegraded 未注入有可见表现或等价于功能未开启的端口。
+
 	wiringOptionalDegraded wiringKind = "optional-degraded"
 )
 
-// wiringEntry 一条端口盘点记录。
-//
-// Consequence 是这张表的**唯一价值所在**：它必须写清「未注入 → 用户/运维看到什么」。
-// required 的条目写不出可见表现（这正是它被判为 required 的理由），
-// optional 的条目必须能写出可见表现（写不出就说明分类错了）。
 type wiringEntry struct {
-	// Port 端口名（与端口名常量逐字一致）。
 	Port string
-	// Provider 实现该端口的模块。
+
 	Provider string
-	// Consumer 消费该端口的模块。
+
 	Consumer string
-	// Kind 类别（见 wiringKind 的三个判据）。
+
 	Kind wiringKind
-	// Consequence 未注入时的后果。
+
 	Consequence string
 }
 
-// wiringManifest 全部装配期端口的分类表（审计 CQ-019 的盘点结论）。
-//
-// 顺序按 routes.go 的装配顺序排列，便于对照阅读。
 var wiringManifest = []wiringEntry{
-	// —— 装配期契约断言（提供方必须实现收窄契约）——
+
 	{portContentCollectionSource, "content", "集合源注册表", wiringRequiredContract,
 		"集合绑定在构建期解析不到内容数据源（core.cardstack 等集合组件产出空列表）"},
 	{portProductCollectionSource, "product", "集合源注册表", wiringRequiredContract,
 		"core.productList 解析不到商品集合"},
 
-	// —— 模块自装配内部的注入（routes.go 只记录「Setup 调用发生」）——
 	{portProductContentStore, "product（自装配，db）", "product / 构建期", wiringOptionalDegraded,
 		"商品可翻译字段逐字节回退原文（产物与接入译文前一致）"},
 	{portProductPageWarehouses, "inventory（经 product.SetInventoryDeps 转交）", "product 页面读模型（新建页 / 列表页）", wiringOptionalDegraded,
@@ -248,7 +160,7 @@ var wiringManifest = []wiringEntry{
 		"改了词条站点不更新，且**没有任何报错** —— 与页 / 商品 / 导航译文、站点设置同一条失效链，故按必需端口接线（consumer 侧最小接口 adminI18nPageMarker）"},
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
-	// —— 发货 / 销售总览（迁移 624-633）——
+
 	{portOrderShipmentModels, "order（自装配，db）", "order / 发货单读写", wiringRequiredPort,
 		"发货单的建单与查询拿不到 model 句柄 → 发货入口整条不可用（页面能开，点发货 500）"},
 	{portOrderShipmentCounter, "order（svc 自实现）", "order 销售总览 / 待发货块", wiringOptionalDegraded,
@@ -278,7 +190,6 @@ var wiringManifest = []wiringEntry{
 	{portWebhookDispatcher, "webhook", "order", wiringRequiredPort,
 		"订单支付落账不再对外派发任何事件（订阅端点在支付后收不到投递，投递日志恒空且无告警）"},
 
-	// —— 商品 / 库存域 ——
 	{portProductInventoryService, "inventory", "product", wiringRequiredPort,
 		"建变体不生成库存记录、SKU 编码缺仓短码前缀（库存真源缺行）"},
 	{portProductInventoryModel, "inventory ProductStockReader", "product", wiringRequiredPort,
@@ -302,7 +213,6 @@ var wiringManifest = []wiringEntry{
 	{portProductPurchaseChecker, "order", "product", wiringOptionalDegraded,
 		"「商品评论必须买过」不生效：任何登录访客都能提交商品评论（提交仍进审核队列）"},
 
-	// —— 工程 / 页面 / 发布域 ——
 	{portProjectLocaleRetire, "page", "project", wiringRequiredPort,
 		"禁用语言只记日志不下路由，该语言的站点仍在线上可访问"},
 	{portPageI18nStalePeer, "presentation", "page", wiringRequiredPort,
@@ -337,9 +247,7 @@ var wiringManifest = []wiringEntry{
 		"删除保护整体失效或只覆盖一部分：块被删掉后，引用它的页面到下一次构建才暴露（且不报错）"},
 	{portPageStructureTemplates, "contenttemplate", "page", wiringRequiredPort,
 		"页眉 / 页脚绑定的结构模板静默失效：构建期回退到旧块绑定，站点上仍是旧页眉（或没有页眉），且没有任何报错"},
-	// 换图失效通知：变体文件名带内容指纹（immutable 长缓存的前提），换图产出新文件名，
-	// 旧文件按设计保留 —— 引用方不重建，旧 URL 就永远返回旧字节。所以「未注入」的后果
-	// 不是一句降级提示，而是「换图对访客等于没发生」，且日志里什么都没有。
+
 	{portMediaStaleMarkerPage, "page", "media", wiringRequiredPort,
 		"换图后已发布页面永不更新：产物 srcset 指向旧变体名，旧文件按设计保留且 immutable 长缓存，访客一直看到旧图"},
 	{portMediaStaleMarkerPresentation, "presentation", "media", wiringRequiredPort,
@@ -378,14 +286,7 @@ var wiringManifest = []wiringEntry{
 		"来源菜单项退化为记录自身的 title/path（不解析目标实体）"},
 	{portNavigationMenuDispatcher, "pipeline.Fanout", "navigation", wiringRequiredPort,
 		"改公开站点导航不派发任何失效：已发布页面的页眉/页脚永远停在旧菜单（全站可见且无报错）"},
-	// —— 导航译文写链（menu_stale）——
-	//
-	// 四条都是「写成功、派发丢了」的静默失配：译文整表提交是一条事务化流转
-	// （navigationservice.TranslationWriter），它把「写译文 + 标页面 + 标实例 + 入队」
-	// 放进同一个事务。三个端口缺任何一条，事务就整体 fail closed（译文一条都写不进去，
-	// 回执是 500）—— 这正是它们必须是 required-port 的理由：不存在「部分生效」的可见降级。
-	// 第一条（SetTranslationWriteService）缺的是**注入点本身**：未注入时译文分支
-	// fail closed 成 500（导航译文工作台的保存按钮永远报「存储不可用」）。
+
 	{portNavigationTranslationWriter, "navigation（TranslationWriter 构造于装配层）", "navigation.inbound/http", wiringRequiredPort,
 		"译文保存回退到旧的三次独立提交路径或整体不可用：写成功而 stale/入队丢失，站点停在旧菜单标签且无报错"},
 	{portNavigationPageStalePort, "page", "navigation.TranslationWriter", wiringRequiredPort,
@@ -394,8 +295,7 @@ var wiringManifest = []wiringEntry{
 		"译文写成功但自动发布实例不标 stale：详情页/商品页停在旧菜单文字，线上与库里都看不出异常"},
 	{portNavigationMenuStaleEnqueue, "build", "navigation.TranslationWriter", wiringRequiredPort,
 		"译文写成功但重建任务不入队：既无页面级重建也无实例级重建，只能等下一次人工触发"},
-	// 菜单 CRUD 的同事务失效端口（位置键 / 项键 / 入队）：与译文写路径是同一份适配器。
-	// 缺它时 CRUD 写入口 fail closed —— 与「只写数据、不派发失效」相比，500 是可见且可诊断的。
+
 	{portNavigationMenuWritePorts, "page/build", "navigation（菜单 CRUD）", wiringRequiredPort,
 		"菜单增删改排序只写数据不派发失效：已发布页面/实例停在旧菜单上且无报错"},
 	{portDashboardBlueprints, "blueprint", "dashboard", wiringOptionalDegraded,
@@ -403,25 +303,16 @@ var wiringManifest = []wiringEntry{
 	{portDashboardOverview, "order/analytics/page", "dashboard", wiringOptionalDegraded,
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
-	// —— 公开站内搜索数据——
 	{portPublicSearchContent, "content", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有内容结果"},
 	{portPublicSearchProduct, "product", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有商品结果"},
 	{portPublicSearchIndex, "presentation", "content.PublicSearchService", wiringRequiredContract,
 		"搜索结果永远不给链接（路径解析缺失，宁可不给链接也不输出死链）"},
-	// AccessGuard 的登录态探针刻意是 **optional-degraded**：未注入时守卫对
-	// 「登录用户可见」恒判未登录，表现为已登录访客也只看到守卫页（可见、可诊断），
-	// 而不是放行未授权访客。判据（文件头那两条）成立：能说清用户看到什么，
-	// 且失效方向是收紧而不是放开。
+
 	{portAccessGuardLoginProbe, "user", "访问面守卫（builtin.AccessGuardMiddleware）", wiringOptionalDegraded,
 		"「登录用户可见」的页面把所有人挡在守卫页外（含已登录访客）；密码保护的页面不受影响"},
 
-	// —— BIZ-3 会员体系的消费侧接线 ——
-	//
-	// 这一组端口的分类判据按文件头那两条走（「说得清未注入时用户看到什么」= optional）：
-	// 折扣与免运费未接线时的表现是**金额与接入前逐字一致**（等价于功能开关关闭），
-	// 而消费额端口未接线会让归属重算整体不可用 —— 会员等级永远停在手工状态。
 	{portOrderMembershipReader, "membership", "order", wiringOptionalDegraded,
 		"会员折扣恒为 0：订单金额与本端口接入前逐字一致（会员等级照样显示，只是不参与算钱）"},
 	{portMembershipPurchaseSource, "order", "membership", wiringRequiredPort,
@@ -431,35 +322,16 @@ var wiringManifest = []wiringEntry{
 	{portCartShippingPolicy, "project", "cart", wiringOptionalDegraded,
 		"站点级基础运费与满额免运费都不生效：结算运费恒为 0（与接入前逐字一致，故无回归，但后台配了运费会看起来没生效）"},
 
-	// —— 评论（BIZ-5）——
-	//
-	// 差异化规则端口按 optional-degraded 登记：未注入时规则未启用，装配期留一条 Warn。
-	//
-	//	· 差异化规则端口未注入 → 规则未启用（提交照常进审核队列，等价于功能开关关闭），
-	//	  且装配期会留一条 Warn。它与「买过才能评」之间的差别是**产品策略**而不是安全边界，
-	//	  所以刻意不采用「未注入即拒绝」那种 fail-closed（那会把装配漏行放大成整站不可评论）。
 	{portCommentEntityPolicy, "product（或其它拥有实体的模块）", "comment", wiringOptionalDegraded,
 		"差异化评论规则（如「商品评论必须买过」）未启用：所有提交一律进审核队列，启动日志有 Warn"},
 }
 
-// wiringMarks 装配期已接入端口的集合（端口名 → true）。
 type wiringMarks map[string]bool
 
-// newWiringMarks 创建空的标记集合。
 func newWiringMarks() wiringMarks { return wiringMarks{} }
 
-// mark 记录一个端口已接入（routes.go 在每次注入后立即调用）。
 func (m wiringMarks) mark(port string) { m[port] = true }
 
-// CheckWiring 对「已接入端口集合」做自检（纯函数：不依赖装配过程、数据库与网络）。
-//
-// 返回两个切片：
-//
-//	missing —— 必需端口（required-contract / required-port）缺失的描述，
-//	           形如「端口名（提供方 → 消费方）：未注入后果」；
-//	unknown —— 出现在集合里、却不在清单里的端口名（清单漂移，同样要修）。
-//
-// 两者都按端口名排序，保证报错文案稳定可比对。
 func CheckWiring(marks wiringMarks) (missing, unknown []string) {
 	known := make(map[string]bool, len(wiringManifest))
 	for _, e := range wiringManifest {
@@ -467,7 +339,7 @@ func CheckWiring(marks wiringMarks) (missing, unknown []string) {
 		if marks[e.Port] {
 			continue
 		}
-		// 判据见文件头：必需的两类缺失即报，可选的不报（只在日志里留痕）。
+
 		if e.Kind == wiringRequiredContract || e.Kind == wiringRequiredPort {
 			missing = append(missing, describeWiring(e))
 		}
@@ -482,15 +354,10 @@ func CheckWiring(marks wiringMarks) (missing, unknown []string) {
 	return missing, unknown
 }
 
-// describeWiring 把一条端口记录渲染成可读的一行（报错与日志共用同一份文案）。
 func describeWiring(e wiringEntry) string {
 	return e.Port + "（" + e.Provider + " → " + e.Consumer + "）：" + e.Consequence
 }
 
-// mustAllPortsWired 装配末尾调用：必需端口缺失即 fail-fast。
-//
-// 一次报出**全部**缺失项而不是炸在第一个：一次装配就能拿到完整清单，
-// 省掉「补一个、再跑一次、再炸下一个」的往返。
 func mustAllPortsWired(marks wiringMarks) {
 	missing, unknown := CheckWiring(marks)
 	if len(missing) == 0 && len(unknown) == 0 {
@@ -508,10 +375,6 @@ func mustAllPortsWired(marks wiringMarks) {
 	panic(b.String())
 }
 
-// logDegradedOptional 把未接入的**可选**端口写进启动日志。
-//
-// 审计口径：可选降级必须可见。只写一句代码注释不算 —— 运维看日志时得能查到
-// 「这台机器上哪些能力是关着的、各自会让用户看到什么」。
 func logDegradedOptional(marks wiringMarks) {
 	for _, e := range wiringManifest {
 		if e.Kind != wiringOptionalDegraded || marks[e.Port] {
@@ -522,10 +385,6 @@ func logDegradedOptional(marks wiringMarks) {
 	}
 }
 
-// RequireWiringPort 必需的装配期端口确认（供 routes.go 内联断言使用）。
-//
-// 与 CheckWiring 的分工：这里管「提供方必须实现该契约」（拿到 ok 的当场炸掉，
-// 后面的代码不必再带着 invalid 值跑）；CheckWiring 管「清单里的端口有没有人接」。
 func RequireWiringPort(port string, ok bool) {
 	if ok {
 		return

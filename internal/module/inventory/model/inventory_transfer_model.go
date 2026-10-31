@@ -1,23 +1,5 @@
 package inventorymodel
 
-// inventory_transfer_model.go — 调拨单 / 明细 / 凭证附件（迁移 630，W3）。
-//
-// 三张表的分工（写在这里而不是散在 service 各处）：
-//
-//	inventory_transfers           单据头：单号 / 两仓 / 状态 / 操作人与时刻 / 幂等键
-//	inventory_transfer_items      明细：搬哪条**源仓库存行**多少件（+ 变体与编码快照）
-//	inventory_transfer_attachments 凭证：附件的「用途」（request / ship / receive）与排序
-//
-// 三条不变量：
-//
-//  1. 明细指向**库存行**（stock_id）而不是变体：调拨搬的是源仓里那一批具体的货，
-//     这样才能表达「无归属的货也能调拨」；
-//  2. 出货与签收**各需至少一张凭证**（service 强制，本层只负责落库）——
-//     一张没有凭证的移库事后无法证明「货是谁交出去的、谁签收的」；
-//  3. 状态单向：requested → pending → in_transit → completed，
-//     另有 requested → rejected（驳回）与 requested/pending → cancelled。
-//     in_transit 不能直接取消（货在路上），要走反向调拨或先签收。
-
 import (
 	"context"
 	"time"
@@ -29,7 +11,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// TransferEntity 调拨单头（迁移 630；审批链路见 651）。
 type TransferEntity struct {
 	ID              string     `gorm:"column:id;primaryKey"`
 	ProjectID       string     `gorm:"column:project_id;not null"`
@@ -43,33 +24,26 @@ type TransferEntity struct {
 	ReceivedBy      int64      `gorm:"column:received_by;not null"`
 	ShippedAt       *time.Time `gorm:"column:shipped_at"`
 	ReceivedAt      *time.Time `gorm:"column:received_at"`
-	// 审批链路（迁移 651）：申请 → 同意 / 驳回。三个时刻各自为政：
-	// 一张被驳回的单没有 approved_at，一张还在待审批的单两个都没有。
+
 	RequestedBy int64      `gorm:"column:requested_by;not null"`
 	RequestedAt *time.Time `gorm:"column:requested_at"`
 	ApprovedBy  int64      `gorm:"column:approved_by;not null"`
 	ApprovedAt  *time.Time `gorm:"column:approved_at"`
-	// ApprovedName / RejectedName 审批人姓名**快照**（对齐 order_shipments.operator_name）：
-	// 后台账号被删或改名后，单据仍要能回答「当时是谁批的」—— 那是一次追责事实。
+
 	ApprovedName string     `gorm:"column:approved_name;not null"`
 	RejectedBy   int64      `gorm:"column:rejected_by;not null"`
 	RejectedAt   *time.Time `gorm:"column:rejected_at"`
 	RejectedName string     `gorm:"column:rejected_name;not null"`
-	// RejectedReason 驳回原因（纯文本，运营写给申请人看）：只有 rejected 态有值。
+
 	RejectedReason string `gorm:"column:rejected_reason;not null"`
-	// RequestID 幂等键：空串 = 没有幂等键（合法状态），非空时同工程唯一。
+
 	RequestID  string    `gorm:"column:request_id;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
 	UpdateTime time.Time `gorm:"column:update_time;not null"`
 }
 
-// TableName 实现 gorm 表名。
 func (TransferEntity) TableName() string { return "inventory_transfers" }
 
-// TransferItemEntity 调拨明细（迁移 630）：一条**源仓库存行**搬多少件。
-//
-// VariantID 可空：无归属行（迁移 624 引入的 variant_id IS NULL）也允许调拨 ——
-// 「仓库里已有的货」正是最需要调拨的那批（清关到仓、客户寄卖的货）。
 type TransferItemEntity struct {
 	ID         int64   `gorm:"column:id;primaryKey"`
 	TransferID string  `gorm:"column:transfer_id;not null"`
@@ -79,10 +53,8 @@ type TransferItemEntity struct {
 	Quantity   int     `gorm:"column:quantity;not null"`
 }
 
-// TableName 实现 gorm 表名。
 func (TransferItemEntity) TableName() string { return "inventory_transfer_items" }
 
-// TransferAttachmentEntity 调拨凭证（迁移 630）：附件的用途与排序。
 type TransferAttachmentEntity struct {
 	ID           int64     `gorm:"column:id;primaryKey"`
 	TransferID   string    `gorm:"column:transfer_id;not null"`
@@ -92,12 +64,8 @@ type TransferAttachmentEntity struct {
 	CreateTime   time.Time `gorm:"column:create_time;not null"`
 }
 
-// TableName 实现 gorm 表名。
 func (TransferAttachmentEntity) TableName() string { return "inventory_transfer_attachments" }
 
-// —— 调拨单 ——
-
-// CreateTransferTx 事务内建调拨单 + 明细（单据与明细同事务：只留单据没有明细就是「搬 0 件」）。
 func (m *Model) CreateTransferTx(ctx context.Context, tx *gorm.DB, e *TransferEntity,
 	items []*TransferItemEntity, attachments []*TransferAttachmentEntity) (err error) {
 	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
@@ -123,7 +91,6 @@ func (m *Model) CreateTransferTx(ctx context.Context, tx *gorm.DB, e *TransferEn
 	return nil
 }
 
-// GetTransferTx 事务内按 id 取调拨单（不存在返回 gorm.ErrRecordNotFound）。
 func (m *Model) GetTransferTx(ctx context.Context, tx *gorm.DB, projectID, id string) (e *TransferEntity, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
 		return nil, serr
@@ -133,7 +100,6 @@ func (m *Model) GetTransferTx(ctx context.Context, tx *gorm.DB, projectID, id st
 	return e, err
 }
 
-// LockTransferTx 事务内对调拨单取 FOR UPDATE 行锁（出货 / 签收 / 取消都必须串行）。
 func (m *Model) LockTransferTx(ctx context.Context, tx *gorm.DB, projectID, id string) (e *TransferEntity, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
 		return nil, serr
@@ -144,7 +110,6 @@ func (m *Model) LockTransferTx(ctx context.Context, tx *gorm.DB, projectID, id s
 	return e, err
 }
 
-// UpdateTransferTx 事务内写回调拨单（状态 / 操作人与时刻）。
 func (m *Model) UpdateTransferTx(ctx context.Context, tx *gorm.DB, e *TransferEntity) (err error) {
 	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
 		return serr
@@ -152,7 +117,6 @@ func (m *Model) UpdateTransferTx(ctx context.Context, tx *gorm.DB, e *TransferEn
 	return tx.WithContext(ctx).Model(&TransferEntity{}).Where("id = ?", e.ID).Save(e).Error
 }
 
-// ListTransferItemsTx 事务内取某调拨单的明细（按 id 升序：与创建顺序一致）。
 func (m *Model) ListTransferItemsTx(ctx context.Context, tx *gorm.DB, projectID, transferID string) (list []*TransferItemEntity, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
 		return nil, serr
@@ -162,7 +126,6 @@ func (m *Model) ListTransferItemsTx(ctx context.Context, tx *gorm.DB, projectID,
 	return list, err
 }
 
-// CreateTransferAttachmentsTx 事务内写凭证行（出货 / 签收各自的 usage_type）。
 func (m *Model) CreateTransferAttachmentsTx(ctx context.Context, tx *gorm.DB, projectID string,
 	rows []*TransferAttachmentEntity) (err error) {
 	if len(rows) == 0 {
@@ -174,7 +137,6 @@ func (m *Model) CreateTransferAttachmentsTx(ctx context.Context, tx *gorm.DB, pr
 	return tx.WithContext(ctx).Create(&rows).Error
 }
 
-// ListTransferAttachmentsTx 事务内取某调拨单的凭证（按用途分组由调用方做）。
 func (m *Model) ListTransferAttachmentsTx(ctx context.Context, tx *gorm.DB, projectID, transferID string) (
 	list []*TransferAttachmentEntity, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -185,7 +147,6 @@ func (m *Model) ListTransferAttachmentsTx(ctx context.Context, tx *gorm.DB, proj
 	return list, err
 }
 
-// FindTransferByRequestID 幂等命中检查：命中返回既有调拨单，未命中返回 (nil, nil)。
 func (m *Model) FindTransferByRequestID(ctx context.Context, projectID, requestID string) (e *TransferEntity, err error) {
 	if requestID == "" {
 		return nil, nil
@@ -208,7 +169,6 @@ func (m *Model) FindTransferByRequestID(ctx context.Context, projectID, requestI
 	return e, nil
 }
 
-// CountTransfersOnDayTx 事务内数某工程当日的调拨单张数（单号序号的来源）。
 func (m *Model) CountTransfersOnDayTx(ctx context.Context, tx *gorm.DB, projectID string,
 	dayStart, dayEnd time.Time) (n int64, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -220,18 +180,13 @@ func (m *Model) CountTransfersOnDayTx(ctx context.Context, tx *gorm.DB, projectI
 	return n, err
 }
 
-// TransferListFilter 调拨单列表的查询条件（条件以参数传入）。
 type TransferListFilter struct {
 	ProjectID string
-	// Status 空串 = 不过滤。
+
 	Status  string
 	Keyword string
 }
 
-// TransferListRow 调拨单列表的一行（含两个仓的展示信息与品类数 / 总数量）。
-//
-// 两个汇总由 SQL 算好（不是模板算）：模板算数量会与 service 口径分叉
-// （template_logic_test.go 的判据针对的正是这类「看起来无害」的聚合）。
 type TransferListRow struct {
 	ID              string    `gorm:"column:id"`
 	TransferNo      string    `gorm:"column:transfer_no"`
@@ -246,11 +201,10 @@ type TransferListRow struct {
 	ItemCount       int       `gorm:"column:item_count"`
 	TotalQuantity   int       `gorm:"column:total_quantity"`
 	CreateTime      time.Time `gorm:"column:create_time"`
-	// ShippedAt / ReceivedAt 可空：还没到那一步。
+
 	ShippedAt  *time.Time `gorm:"column:shipped_at"`
 	ReceivedAt *time.Time `gorm:"column:received_at"`
-	// 审批链路（迁移 651）：申请人 / 审批人姓名在 service 侧经 admin 契约补齐，
-	// model 只给 id 与时刻（不跨模块 JOIN 别人的表）。
+
 	RequestedBy    int64      `gorm:"column:requested_by"`
 	RequestedAt    *time.Time `gorm:"column:requested_at"`
 	ApprovedBy     int64      `gorm:"column:approved_by"`
@@ -261,7 +215,6 @@ type TransferListRow struct {
 	RejectedReason string     `gorm:"column:rejected_reason"`
 }
 
-// ListTransfers 调拨单列表（按工程 / 状态 / 关键词过滤 + 分页；limit <= 0 表示不限）。
 func (m *Model) ListTransfers(ctx context.Context, f TransferListFilter, limit, offset int) (list []*TransferListRow, err error) {
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Table("inventory_transfers AS t").
@@ -293,7 +246,6 @@ func (m *Model) ListTransfers(ctx context.Context, f TransferListFilter, limit, 
 	return list, err
 }
 
-// CountTransfers 调拨单总数（与 ListTransfers 同一份过滤条件）。
 func (m *Model) CountTransfers(ctx context.Context, f TransferListFilter) (n int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&TransferEntity{}).Where("project_id = ?", f.ProjectID)
@@ -309,7 +261,6 @@ func (m *Model) CountTransfers(ctx context.Context, f TransferListFilter) (n int
 	return n, err
 }
 
-// GetTransfer 按 id 取调拨单（非事务版）。
 func (m *Model) GetTransfer(ctx context.Context, id, projectID string) (e *TransferEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		e = &TransferEntity{}
@@ -321,7 +272,6 @@ func (m *Model) GetTransfer(ctx context.Context, id, projectID string) (e *Trans
 	return e, nil
 }
 
-// ListTransferItems 某调拨单的明细（非事务版）。
 func (m *Model) ListTransferItems(ctx context.Context, projectID, transferID string) (list []*TransferItemEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&TransferItemEntity{}).
@@ -330,7 +280,6 @@ func (m *Model) ListTransferItems(ctx context.Context, projectID, transferID str
 	return list, err
 }
 
-// ListTransferAttachments 某调拨单的凭证（非事务版）。
 func (m *Model) ListTransferAttachments(ctx context.Context, projectID, transferID string) (
 	list []*TransferAttachmentEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
@@ -340,11 +289,6 @@ func (m *Model) ListTransferAttachments(ctx context.Context, projectID, transfer
 	return list, err
 }
 
-// DeductUnclaimedStockTx 无归属行出库（按库存行 id）：quantity -= n，守卫在 WHERE 里。
-//
-// 为什么不走 applyStockChangesTx：那条路径按 (variant, warehouse) 加锁与写流水，
-// 而无归属行没有变体 —— 补一个空串会让流水落一条无法归属的记录。
-// 这里只改数量（守卫 quantity >= n 在 SQL 里，并发下只有一句能匹配上行）。
 func (m *Model) DeductUnclaimedStockTx(ctx context.Context, tx *gorm.DB, projectID, stockID string,
 	quantity int, at time.Time) (affected int64, err error) {
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -359,11 +303,6 @@ func (m *Model) DeductUnclaimedStockTx(ctx context.Context, tx *gorm.DB, project
 	return res.RowsAffected, res.Error
 }
 
-// IncreaseStockQuantityTx 目标仓入库（quantity += n，并按需翻跟踪开关）。
-//
-// 与入库走不同的路径：调拨签收是**必有单据**的入库，数量已经由源仓那一行确定，
-// 不需要走变动契约的「原因字典 / 流水」那套（单据本身就是凭据）。
-// 但仍要把 track_quantity 翻成 true —— 有数量却不跟踪会撞迁移 261 的 CHECK。
 func (m *Model) IncreaseStockQuantityTx(ctx context.Context, tx *gorm.DB, stockID string,
 	quantity int, at time.Time) (err error) {
 	return tx.WithContext(ctx).Model(&StockEntity{}).Where("id = ?", stockID).

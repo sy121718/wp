@@ -13,7 +13,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 产物测试的父行 ID（生产外键要求 projects / pages 行真实存在）。
 const (
 	artifactTestProjectID = "aaaaaaaa-0000-0000-0000-0000000000ff"
 	artifactTestPageID    = "bbbbbbbb-0000-0000-0000-000000000001"
@@ -24,8 +23,7 @@ const recordManifest = `{"files":{"index.html":"hash-html","manifest.json":"hash
 func newArtifactService(t *testing.T) *artifactservice.Service {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
-	// page_artifacts.page_id → pages(id)、pages.project_id → projects(id) 都是真实外键，
-	// 归档前必须补出真实父行。
+
 	support.SeedProjectRow(t, db, artifactTestProjectID, "产物测试站点")
 	if err := db.Exec(
 		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time)
@@ -67,7 +65,6 @@ func TestArtifactRecordAndDetail(t *testing.T) {
 		t.Fatalf("产物记录字段错误: %+v", first)
 	}
 
-	// 同 hash 重复归档：内容寻址幂等，返回同一条记录。
 	repeated, err := svc.Record(ctx, validRecordReq())
 	if err != nil {
 		t.Fatalf("重复归档应幂等: %v", err)
@@ -92,7 +89,7 @@ func TestArtifactRecordClosures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("归档产物失败: %v", err)
 	}
-	// 闭包表必须包含 manifest.files 的两个文件哈希。
+
 	var closureCount int64
 	if err := svc.Model().DB(ctx).Table("page_artifact_objects").
 		Where("artifact_id = ?", recorded.ID).
@@ -107,8 +104,7 @@ func TestArtifactRecordClosures(t *testing.T) {
 
 func TestArtifactNotFoundMessage(t *testing.T) {
 	svc := newArtifactService(t)
-	// 生产 page_artifacts.page_id 是 uuid 类型：用合法但不存在于库中的 uuid 表达
-	//「缺失产物」（非法字符串会先在类型转换处报错，测不到本意）。
+
 	_, err := svc.Detail(context.Background(), &artifactdto.DetailReq{PageID: "cccccccc-0000-0000-0000-0000000000ff", Hash: "missing"})
 	if err == nil || err.Error() != artifactenums.ErrArtifactNotFound {
 		t.Fatalf("缺失产物应返回明确错误: %v", err)

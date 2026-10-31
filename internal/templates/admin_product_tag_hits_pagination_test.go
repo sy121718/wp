@@ -6,7 +6,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// 分页行为由 product-read-controls.test.cjs 验证；模板只提供控件结构与本地化文案。
 func TestProductTagHitsPaginationHasLocalControls(t *testing.T) {
 	root, _ := tagHitsPageDOM(t, tagHitsPageData())
 	panel := tagHitsPanel(t, root)

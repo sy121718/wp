@@ -5,21 +5,6 @@ import (
 	"testing"
 )
 
-// admin_locale_rows_empty_test.go — locale_rows 片段空态的回归（2026-09 修复的钉子）。
-//
-// 缺陷：旧写法直接对 .Locales 求真值判断分支，Jet 会把「非 nil 空切片」当真 ——
-// 片段端点（LocaleRowsFragment）在用户把语言行删光后回渲染的是 len 0 非 nil 切片，
-// 旧写法走进 range 渲染 0 行，空态分支永远不可达；nil 切片（localeRowsOf 读失败 /
-// parseLocaleRows 空表单）倒是会走 else，所以缺陷只在「删光行」这一条路径上暴露。
-//
-// 修复：isset(.Locales) + len(.Locales) > 0 双判。本文件钉三条路径：
-//  ① 非 nil 空切片 → 空态文案出现、0 个 .locale-row（核心回归，旧写法必红）；
-//  ② nil 切片 → 空态（行为保持：修复前后都走空态）；
-//  ③ 有行 → 行渲染、无空态（行为保持）。
-//
-// 渲染基建与 i18n_jet_test.go 同源（memSet + adminTemplateSource 读真实模板源）；
-// t 取兜底文案即可 —— 空态断言盯的是兜底字面量「还没有语言清单」，与词条库无关。
-
 func renderLocaleRows(t *testing.T, locales any) string {
 	t.Helper()
 	set := memSet(t, map[string]string{
@@ -37,7 +22,6 @@ func renderLocaleRows(t *testing.T, locales any) string {
 
 const localeRowsEmptyText = "还没有语言清单"
 
-// ① 核心：非 nil 空切片必须出空态 —— 旧写法 {{if .Locales}} 把它当真，渲染 0 行。
 func TestLocaleRowsEmptySliceRendersEmptyState(t *testing.T) {
 	out := renderLocaleRows(t, []map[string]any{})
 	if !strings.Contains(out, localeRowsEmptyText) {
@@ -48,7 +32,6 @@ func TestLocaleRowsEmptySliceRendersEmptyState(t *testing.T) {
 	}
 }
 
-// ② 行为保持：nil 切片（键存在、值为 nil）修复前后都走空态。
 func TestLocaleRowsNilSliceRendersEmptyState(t *testing.T) {
 	out := renderLocaleRows(t, []map[string]any(nil))
 	if !strings.Contains(out, localeRowsEmptyText) {
@@ -59,7 +42,6 @@ func TestLocaleRowsNilSliceRendersEmptyState(t *testing.T) {
 	}
 }
 
-// ③ 行为保持：有行时渲染行、不出空态。
 func TestLocaleRowsRowsRenderWithoutEmptyState(t *testing.T) {
 	out := renderLocaleRows(t, []map[string]any{
 		{"Lang": "zh-CN", "IsDefault": true, "Enabled": true},

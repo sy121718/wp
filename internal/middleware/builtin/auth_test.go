@@ -18,8 +18,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// TestSessionBecomesInvalidAfterLogout 验证：登录写 cookie session 后可访问受保护路由，
-// 登出（删除 Redis 会话）后旧 cookie 应被拒绝（401）。
 func TestSessionBecomesInvalidAfterLogout(t *testing.T) {
 	redisServer := miniredis.RunT(t)
 	cfg := viper.New()
@@ -48,7 +46,6 @@ func TestSessionBecomesInvalidAfterLogout(t *testing.T) {
 		t.Fatalf("保存测试会话失败：%v", err)
 	}
 
-	// 通过一个“登录”请求把 cookie session 写出来（模拟登录响应 Set-Cookie）。
 	engine := gin.New()
 	engine.GET("/login", func(c *gin.Context) {
 		_ = auth.SaveCookieSession(c, &auth.CookieSession{

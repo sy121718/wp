@@ -8,72 +8,46 @@ import (
 	"strings"
 )
 
-// Locator 产物定位器（AGENTS.md §4.3）：不保存 endpoint、凭据或临时签名。
 type Locator struct {
 	Provider string `json:"provider"`
-	// Key 存储键；本地实现为 artifacts/{hash} 或 artifacts/redirects/{hash}。
+
 	Key string `json:"key"`
 }
 
-// ArtifactLocator 构造产物定位器：provider/key 由存储实现统一派生，
-// 调用方不硬编码 "local"/"artifacts/" 前缀（换对象存储时无需逐处修改）。
 func ArtifactLocator(hash string) Locator {
 	return Locator{Provider: "local", Key: "artifacts/" + hash}
 }
 
-// Store ArtifactStore 契约（AGENTS.md §4.3）。
-// 删除接口只接受持久的 Locator 与期望 hash，必须幂等；Store 自身不判断业务引用，
-// 引用检查由生命周期服务（Phase 0-A1 publication 模块）负责。
 type Store interface {
-	// PutArtifact 写入不可变 Page Artifact；已存在同 hash 直接返回（幂等，禁止覆盖）。
 	PutArtifact(a *Artifact) (Locator, error)
-	// GetArtifact 按 locator 读取 Artifact 并重新校验内容哈希。
+
 	GetArtifact(loc Locator) (*Artifact, error)
-	// VerifyArtifact 校验 locator 指向产物的内容哈希与期望一致。
+
 	VerifyArtifact(loc Locator, expectedHash string) error
-	// DeleteArtifact 幂等删除：仅当现有内容哈希与 expectedHash 一致时执行。
+
 	DeleteArtifact(loc Locator, expectedHash string) error
-	// DeleteArtifactObject 幂等删除 Artifact 内的单个文件（内容对象）。
+
 	DeleteArtifactObject(loc Locator, relPath string) error
 
-	// PutRedirect 写入重定向产物（AGENTS.md §4.4）。
 	PutRedirect(r *RedirectArtifact) (Locator, error)
-	// GetRedirect 按 locator 读取重定向产物并重新校验内容哈希。
+
 	GetRedirect(loc Locator) (*RedirectArtifact, error)
-	// DeleteRedirect 幂等删除重定向产物。
+
 	DeleteRedirect(loc Locator, expectedHash string) error
 }
 
-// LocalStore 本地文件系统 ArtifactStore：内容寻址目录，永不覆盖历史文件。
-//
-// 布局（AGENTS.md §4.1/§4.4）：
-//
-//	{root}/artifacts/{hash}/index.html
-//	{root}/artifacts/{hash}/manifest.json
-//	{root}/artifacts/redirects/{hash}/redirect.json
-//
-// **单实例前提**（架构文档「部署形态」）：产物写在本机磁盘上，实例 A 写的东西实例 B 看不见。
-// 因此本实现**只支持单进程部署** —— 多实例时命中另一台的访客会拿到 404，而且不会报错
-// （404 是合法的「没发布过」形态，无法与「发布在别的机器上」区分）。
-//
-// 换对象存储是这一步的改造方向，也是 ArtifactStore 做成接口的全部理由：store 的调用方
-// 只认 Locator，不认 "local" 前缀（见 ArtifactLocator 的注释）。改这里之前先改那份文档。
 type LocalStore struct {
-	// Root 存储根目录（生产为配置的 artifacts 根，测试用临时目录）。
 	Root string
 }
 
-// artifactDir 计算 Artifact 目录。
 func (s *LocalStore) artifactDir(hash string) string {
 	return filepath.Join(s.Root, "artifacts", hash)
 }
 
-// redirectDir 计算重定向产物目录。
 func (s *LocalStore) redirectDir(hash string) string {
 	return filepath.Join(s.Root, "artifacts", "redirects", hash)
 }
 
-// PutArtifact 实现 Store 接口。
 func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 	if a == nil || a.Hash == "" {
 		return Locator{}, fmt.Errorf("产物为空或缺少内容哈希")
@@ -82,7 +56,7 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 	loc := ArtifactLocator(a.Hash)
 
 	if _, err := os.Stat(dir); err == nil {
-		// 已存在：验证一致后幂等返回（禁止覆盖历史文件）。
+
 		if verr := s.VerifyArtifact(loc, a.Hash); verr != nil {
 			return Locator{}, fmt.Errorf("产物目录已存在但内容不一致（禁止覆盖）: %w", verr)
 		}
@@ -91,8 +65,6 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 		return Locator{}, err
 	}
 
-	// 原子写入：先写临时目录再 rename 到目标，避免进程在两次 WriteFile 之间
-	// 崩溃留下半成品目录——该 hash 后续 Stat 命中 → Verify 失败 → 永久「砖死」。
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Locator{}, err
 	}
@@ -100,12 +72,8 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 	if err != nil {
 		return Locator{}, err
 	}
-	defer os.RemoveAll(tmp) // rename 成功后临时目录已不存在，RemoveAll 为 no-op
-	// 落盘内容**由 Artifact.Entries 决定**，不再硬编码两个文件名（PIPE-6）：
-	// 硬编码的文件列表会让伴随文件（guard.html / guard.json）永远写不进产物目录 ——
-	// 编译通过、单测不覆盖就发现不了，线上表现是「守卫页 404 → 访问面只能一直走兜底页」。
-	// 路径先过 filepath.IsLocal：Entries 由内核构造（理论可信），但产物落盘是
-	// 不可逆的磁盘写入，越界路径在这里必须fail closed 而不是靠上游自觉。
+	defer os.RemoveAll(tmp)
+
 	for path, data := range a.Entries {
 		if !filepath.IsLocal(path) {
 			return Locator{}, fmt.Errorf("产物包含非法相对路径: %q", path)
@@ -114,21 +82,19 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 			return Locator{}, err
 		}
 	}
-	// Entries 必须自带入口与清单：GetArtifact 只认这两个文件，缺了它这个 hash
-	// 目录就会「写进去但读不出来」（Verify 每次都失败 → 永久砖死）。
+
 	for _, required := range []string{"manifest.json", "index.html"} {
 		if _, ok := a.Entries[required]; !ok {
 			return Locator{}, fmt.Errorf("产物缺少必需文件: %q", required)
 		}
 	}
-	// 目录项本身也要 fsync：只落盘文件内容时，rename 之后掉电仍可能让整个目录项
-	// 消失，而该 hash 已被数据库引用（同名产物不重建）→ 访问面永久 404。
+
 	if f, oerr := os.Open(tmp); oerr == nil {
 		_ = f.Sync()
 		_ = f.Close()
 	}
 	if err = os.Rename(tmp, dir); err != nil {
-		// 并发同 hash 写入：对方已 rename 成功，走幂等分支。
+
 		if _, serr := os.Stat(dir); serr == nil {
 			if verr := s.VerifyArtifact(loc, a.Hash); verr != nil {
 				return Locator{}, fmt.Errorf("产物目录已存在但内容不一致（禁止覆盖）: %w", verr)
@@ -140,20 +106,6 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 	return loc, nil
 }
 
-// GetArtifact 实现 Store 接口：读取并重算哈希校验。
-//
-// 内存量级（PERF-011，2026-09 实测后维持整份读）：index.html 与 manifest.json
-// 都整份进 []byte。实测产物根（public/runtime/artifacts）共 84 KB、单份 index.html
-// 最大 17 KB、manifest 655 B；本函数只在构建/发布路径被调用（访客面由
-// http.FileServer 流式直出，不进这里），所以当前尺寸下整份读不构成内存问题 ——
-// 不为「看起来更省内存」把调用方一起改掉。
-//
-// 改造触发条件（届时再动手）：出现 MB 级单页产物，或重建并发被放开到几十路以上。
-// 难点不在算哈希：artifactPayloadHash 的输入是 manifestJSON 加换行再加 html，
-// 可以边写 hash 边 io.Copy 文件，不必拼出整页。难点在 Entries 要不要保留 html 字节 ——
-// 本函数返回的 Entries["index.html"] 当前没有任何读取方（唯一读 Entries 的地方是
-// PutArtifact 写盘，而它的输入来自 NewArtifact），所以流式化必须同时确认调用方
-// 只读 Manifest / CanonicalPath，否则会把「读到的产物」静默变成空对象。
 func (s *LocalStore) GetArtifact(loc Locator) (*Artifact, error) {
 	hash := locatorHash(loc)
 	if hash == "" {
@@ -187,7 +139,6 @@ func (s *LocalStore) GetArtifact(loc Locator) (*Artifact, error) {
 	}, nil
 }
 
-// VerifyArtifact 实现 Store 接口。
 func (s *LocalStore) VerifyArtifact(loc Locator, expectedHash string) error {
 	if _, err := os.Stat(s.artifactDir(locatorHash(loc))); err != nil {
 		if os.IsNotExist(err) {
@@ -205,13 +156,12 @@ func (s *LocalStore) VerifyArtifact(loc Locator, expectedHash string) error {
 	return nil
 }
 
-// DeleteArtifact 实现 Store 接口（幂等；hash 不符拒绝删除）。
 func (s *LocalStore) DeleteArtifact(loc Locator, expectedHash string) error {
 	hash := locatorHash(loc)
 	dir := s.artifactDir(hash)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
-			return nil // 幂等：已删除
+			return nil
 		}
 		return err
 	}
@@ -221,7 +171,6 @@ func (s *LocalStore) DeleteArtifact(loc Locator, expectedHash string) error {
 	return os.RemoveAll(dir)
 }
 
-// DeleteArtifactObject 实现 Store 接口（幂等；单文件删除）。
 func (s *LocalStore) DeleteArtifactObject(loc Locator, relPath string) error {
 	if relPath == "" || strings.Contains(relPath, "..") || strings.HasPrefix(relPath, "/") {
 		return fmt.Errorf("非法文件路径: %q", relPath)
@@ -229,14 +178,13 @@ func (s *LocalStore) DeleteArtifactObject(loc Locator, relPath string) error {
 	p := filepath.Join(s.artifactDir(locatorHash(loc)), relPath)
 	if _, err := os.Stat(p); err != nil {
 		if os.IsNotExist(err) {
-			return nil // 幂等：已删除
+			return nil
 		}
 		return err
 	}
 	return os.Remove(p)
 }
 
-// PutRedirect 实现 Store 接口。
 func (s *LocalStore) PutRedirect(r *RedirectArtifact) (Locator, error) {
 	if r == nil || r.Hash == "" {
 		return Locator{}, fmt.Errorf("重定向产物为空或缺少内容哈希")
@@ -245,7 +193,7 @@ func (s *LocalStore) PutRedirect(r *RedirectArtifact) (Locator, error) {
 	loc := Locator{Provider: "local", Key: "artifacts/redirects/" + r.Hash}
 
 	if _, err := os.Stat(dir); err == nil {
-		// 幂等：验证一致直接返回。
+
 		got, gerr := s.GetRedirect(loc)
 		if gerr != nil || got.Hash != r.Hash {
 			return Locator{}, fmt.Errorf("重定向产物目录已存在但内容不一致（禁止覆盖）")
@@ -255,7 +203,6 @@ func (s *LocalStore) PutRedirect(r *RedirectArtifact) (Locator, error) {
 		return Locator{}, err
 	}
 
-	// 原子写入：临时目录 + rename（同 PutArtifact，防半成品目录砖死）。
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Locator{}, err
 	}
@@ -280,7 +227,6 @@ func (s *LocalStore) PutRedirect(r *RedirectArtifact) (Locator, error) {
 	return loc, nil
 }
 
-// GetRedirect 实现 Store 接口。
 func (s *LocalStore) GetRedirect(loc Locator) (*RedirectArtifact, error) {
 	hash := locatorHash(loc)
 	entry, err := os.ReadFile(filepath.Join(s.redirectDir(hash), "redirect.json"))
@@ -297,7 +243,6 @@ func (s *LocalStore) GetRedirect(loc Locator) (*RedirectArtifact, error) {
 	return &RedirectArtifact{Hash: hash, Directive: *d, Entry: entry}, nil
 }
 
-// DeleteRedirect 实现 Store 接口（幂等；hash 不符拒绝删除）。
 func (s *LocalStore) DeleteRedirect(loc Locator, expectedHash string) error {
 	hash := locatorHash(loc)
 	dir := s.redirectDir(hash)
@@ -317,7 +262,6 @@ func (s *LocalStore) DeleteRedirect(loc Locator, expectedHash string) error {
 	return os.RemoveAll(dir)
 }
 
-// locatorHash 从 Locator.Key 提取末尾内容哈希。
 func locatorHash(loc Locator) string {
 	key := strings.TrimSuffix(loc.Key, "/")
 	if idx := strings.LastIndex(key, "/"); idx >= 0 {
@@ -326,10 +270,6 @@ func locatorHash(loc Locator) string {
 	return key
 }
 
-// writeFileSync 写文件并 fsync 后才返回。
-//
-// 产物是不可变归档：掉电后若目录里出现「长度已分配但内容未落盘」的零字节文件，
-// 该 hash 目录会永久砖死 —— 数据库已引用它、同名产物不会重建，Verify 每次必失败。
 func writeFileSync(path string, data []byte) error {
 	f, err := os.Create(path)
 	if err != nil {

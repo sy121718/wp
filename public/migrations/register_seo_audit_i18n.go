@@ -1,11 +1,5 @@
 package migrations
 
-// 697：产物 SEO 体检结果区的 21 个词条（见 697_seo_audit_i18n.sql）。
-//
-// 门槛逐条枚举本批的 42 行（21 个 key × 2 语言），不写 LIKE、也不比全库总量：
-// 「表里有多少行」与「本批这几条在不在」是两件事，后者才是这条 seed 的语义。
-// 21 这个数来自 seo.html 实际使用的 admin.seo.audit.* key 与 217 已 seed 的差集，
-// 不是估计值 —— 页面加 key 就要在这里同步加一条。
 func init() {
 	registerSeed(Seed{
 		Version:   "697-seo-audit-i18n",

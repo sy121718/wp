@@ -1,13 +1,7 @@
-// Package globalref 实现 core.globalref 组件：页面文档中的全局块引用节点
-// （021_blocks.sql 方案 C，对应 WP 的 synced pattern）。
-//
-// 节点只保存块 ID 引用；构建期经 RenderContext.Block 展开块内容
-// （深拷贝块 root 节点并重写节点 ID 前缀，避免与页面节点 ID 冲突），
-// 渲染进同一次编译输出。未注入解析器（预览/校验）时降级为可选中占位。
 package globalref
 
 import (
-	_ "embed" // globalref.jet 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -15,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.globalref"
 
 func init() {
@@ -23,18 +16,13 @@ func init() {
 	core.RegisterTemplate("globalref", globalrefTemplate)
 }
 
-// Component 全局块引用组件。
 type Component struct{}
 
-// Type 组件类型标识。
 func (c *Component) Type() string { return Type }
 
-// PropsSpec 实现 SpecProvider：暴露 globalrefProps 生成检查器 schema（blockId 引用）。
 func (c *Component) PropsSpec() any { return &globalrefProps{} }
 
-// globalrefProps 节点 props。
 type globalrefProps struct {
-	// BlockID 全局块 ID（检查器可编辑；留空即无效引用，Validate 会拒绝）。
 	BlockID string `json:"blockId" ct:"string,maxlen=64,sec=content,label=全局块 ID"`
 }
 
@@ -50,7 +38,6 @@ func decode(node *core.Node) (p globalrefProps, err error) {
 	return p, nil
 }
 
-// BlockIDOf 读取 globalref 节点引用的块 ID（渲染层防环检查用）。
 func BlockIDOf(node *core.Node) (string, error) {
 	p, err := decode(node)
 	if err != nil {
@@ -59,7 +46,6 @@ func BlockIDOf(node *core.Node) (string, error) {
 	return p.BlockID, nil
 }
 
-// Validate 校验节点：blockId 非空、叶子节点、ID 参与文档级查重。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
@@ -73,8 +59,5 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// globalrefTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed globalref.jet
 var globalrefTemplate string

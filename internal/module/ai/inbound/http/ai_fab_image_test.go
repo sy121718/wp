@@ -1,12 +1,5 @@
 package aihttp
 
-// ai_fab_image_test.go — 图片附件的入口校验。
-//
-// 这一层的每个拒绝分支都对应一种「不拦就会出事」的形态：
-//   · 非 data URI → 服务端替用户去取一个任意地址（SSRF）；
-//   · 超张数 / 超体积 → 一次提问把上下文推到上游上限，报错来自上游、用户看不懂；
-//   · 标识与图数量对不上 → 界面把 A 图的名字画在 B 图下面（比没有名字更难发现）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -42,7 +35,6 @@ func TestParseFabImagesAcceptsDataURI(t *testing.T) {
 	}
 }
 
-// 空输入与「没带图」必须是同一件事：调用方不该再判一次空数组。
 func TestParseFabImagesEmptyInput(t *testing.T) {
 	empty := mustJSONList(t, []string{"", "   "})
 	for _, raw := range []string{"", "   ", "[]", empty} {
@@ -53,11 +45,6 @@ func TestParseFabImagesEmptyInput(t *testing.T) {
 	}
 }
 
-// 只接受 data URI。
-//
-// 收下 http(s) 地址等于把「服务端替用户取任意地址」这条链路打开
-// （内网、云元数据 169.254.169.254 都在可达范围内），而这条链路
-// （浏览器 → 本服务 → 上游模型）根本不需要服务端去取图。
 func TestParseFabImagesRejectsRemoteURL(t *testing.T) {
 	for _, bad := range []string{
 		"https://example.com/a.png",
@@ -94,12 +81,8 @@ func TestParseFabImagesRejectsTooLarge(t *testing.T) {
 	}
 }
 
-// 标识与图**一图对一图**：数量对不上时补齐，不能错位。
-//
-// 错位的表现是「把 A 图的名字画在 B 图下面」——它看起来完全正常，
-// 只有用户自己知道发出去的是哪张。
 func TestParseFabImagesAlignsLabels(t *testing.T) {
-	// 标识缺少 → 用占位补齐
+
 	_, labels, ferr := parseFabImages(mustJSONList(t, []string{testPNG, testPNG}), mustJSONList(t, []string{"one.png"}))
 	if ferr != nil {
 		t.Fatalf("标识少于图片不该报错（只影响那行小字）：%+v", ferr)
@@ -107,7 +90,7 @@ func TestParseFabImagesAlignsLabels(t *testing.T) {
 	if len(labels) != 2 || labels[0] != "one.png" || labels[1] != fabImageFallbackLabel {
 		t.Fatalf("标识应按序补齐，实得 %+v", labels)
 	}
-	// 标识多 → 截断到与图同长
+
 	_, labels, ferr = parseFabImages(mustJSONList(t, []string{testPNG}), mustJSONList(t, []string{"a.png", "b.png"}))
 	if ferr != nil {
 		t.Fatalf("标识多于图片不该报错：%+v", ferr)
@@ -117,7 +100,6 @@ func TestParseFabImagesAlignsLabels(t *testing.T) {
 	}
 }
 
-// 标识解不出来不算错误：它只影响界面上那行小字，图本身照发。
 func TestParseFabImagesBadLabelsAreNotFatal(t *testing.T) {
 	images, labels, ferr := parseFabImages(mustJSONList(t, []string{testPNG}), "not-json")
 	if ferr != nil {

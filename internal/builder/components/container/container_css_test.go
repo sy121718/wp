@@ -7,25 +7,18 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// containerCSSFor 编译单个容器的样式产物（id 固定 t，作用域 .sky-c-t）。
 func containerCSSFor(p *Props) string {
 	var b core.CSSBuckets
 	compileCSS("t", p, &b)
 	return b.String()
 }
 
-// TestContainerCSSEmptyPropsProduceNothing 空 Props 不得产出任何规则：
-// 布局、盒模型、视觉、定位、样式扩展的条件都不成立，产物必须是空串。
-// 多出来的一条规则就是多一份无用字节（迁移前 Go 侧逐条 if 的结果）。
 func TestContainerCSSEmptyPropsProduceNothing(t *testing.T) {
 	if out := containerCSSFor(&Props{Tag: "div"}); out != "" {
 		t.Errorf("空容器不该产出 CSS，got:\n%s", out)
 	}
 }
 
-// TestContainerCSSSlidesKeyframesFollowCount 轮播的关键帧名、帧内百分比、总时长、
-// 逐张延迟条数全部随张数走。任一处写死，多张轮播就会「总时长不对」或
-// 「后几张根本不显示」—— 而产物仍是一份合法 CSS，浏览器不报任何错。
 func TestContainerCSSSlidesKeyframesFollowCount(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Visual.BgSlides = []string{"a.png", "b.png", "c.png"}
@@ -37,7 +30,7 @@ func TestContainerCSSSlidesKeyframesFollowCount(t *testing.T) {
 		"  33% { opacity: 0 }",
 		"animation: sky-bg-fade-3 18s ease-in-out infinite;",
 		".sky-c-t .sky-bg-slide:nth-child(3) {\n  animation-delay: 12s;\n}",
-		// 背景层是绝对定位的：容器不建立定位上下文、不裁剪溢出就会铺满整页。
+
 		".sky-c-t {\n  position: relative;\n  overflow: hidden;\n}",
 	} {
 		if !strings.Contains(out, want) {
@@ -52,8 +45,6 @@ func TestContainerCSSSlidesKeyframesFollowCount(t *testing.T) {
 	}
 }
 
-// TestContainerCSSSlideIntervalFallback 轮播间隔兜底：空 / 非法 / 越界（>60）
-// 一律回退 6 秒，总时长 = 张数 x 间隔。
 func TestContainerCSSSlideIntervalFallback(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{
 		{"", "12s"}, {"abc", "12s"}, {"0", "12s"}, {"120", "12s"},
@@ -69,9 +60,6 @@ func TestContainerCSSSlideIntervalFallback(t *testing.T) {
 	}
 }
 
-// TestContainerCSSGradientFlowNeedsKeyframe 渐变流动的两半必须同在：
-// 声明组来自 Go 的效果基本库，关键帧登记写在样式源里。漏掉登记时动画照旧挂着，
-// 但关键帧区没有这一帧 —— 页面上只表现为「渐变不动」，产物却完全合法。
 func TestContainerCSSGradientFlowNeedsKeyframe(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Visual.BgGradient = "linear-gradient(90deg, #111, #999)"
@@ -91,8 +79,6 @@ func TestContainerCSSGradientFlowNeedsKeyframe(t *testing.T) {
 	}
 }
 
-// TestContainerCSSBackgroundSourceExclusive 渐变 / 背景图 / 图案三者同写
-// background-image，只能有一个生效（校验层拦截同时配置，编译端按优先级兜底）。
 func TestContainerCSSBackgroundSourceExclusive(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Visual.Pattern = "dots"
@@ -109,7 +95,6 @@ func TestContainerCSSBackgroundSourceExclusive(t *testing.T) {
 		t.Errorf("渐变生效时不该再产出背景图或图案:\n%s", out)
 	}
 
-	// 背景图的显示控制只随背景图产出；自定义值缺失时不得留下无效声明。
 	p = &Props{Tag: "div"}
 	p.Visual.BgImage = "https://cdn.example.com/a.png"
 	p.Visual.BgPosition = "custom"
@@ -124,9 +109,6 @@ func TestContainerCSSBackgroundSourceExclusive(t *testing.T) {
 	}
 }
 
-// TestContainerCSSBorderRadiusShadowFallbacks 三条缺省链：边框缺项兜底
-// （1px solid currentColor）、四角优先并用统一值兜底、阴影自定义四参兜底；
-// 且圆角与阴影各自只能有一条声明（两条会互相覆盖）。
 func TestContainerCSSBorderRadiusShadowFallbacks(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Visual.BorderStyle = "dashed"
@@ -162,9 +144,6 @@ func TestContainerCSSBorderRadiusShadowFallbacks(t *testing.T) {
 	}
 }
 
-// TestContainerCSSScopePrefixOnce 作用域前缀只拼一次：伪类与后代选择器都挂在
-// 同一个 .sky-c-t 上，多拼一次（.sky-c-t .sky-c-t…）的规则永不匹配，
-// 而产物仍是合法 CSS。
 func TestContainerCSSScopePrefixOnce(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Position.Type = "drawer"
@@ -187,8 +166,6 @@ func TestContainerCSSScopePrefixOnce(t *testing.T) {
 	}
 }
 
-// TestContainerCSSShapeDividerPosition 位置关键字同时进选择器与属性名（默认 bottom），
-// 颜色跟随容器背景色，缺省 currentColor。
 func TestContainerCSSShapeDividerPosition(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.StyleEx.ShapeDivider = "wave"
@@ -214,8 +191,6 @@ func TestContainerCSSShapeDividerPosition(t *testing.T) {
 	}
 }
 
-// TestContainerCSSInteractionSitsBetweenMainAndPosition 交互/动效规则必须落在
-// 主规则之后、定位与样式扩展之前 —— 产物字节包含顺序，挪了位置就等于换了样式表。
 func TestContainerCSSInteractionSitsBetweenMainAndPosition(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Layout.Engine = EngineFlex
@@ -237,8 +212,6 @@ func TestContainerCSSInteractionSitsBetweenMainAndPosition(t *testing.T) {
 	}
 }
 
-// TestContainerCSSGridBreakpoints 栅格三端：桌面列数进主规则，平板 / 手机进各自媒体
-// 查询；该端没设列数时整条不产出（漏了会让窄屏栅格塌成一列）。
 func TestContainerCSSGridBreakpoints(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.Layout.Engine = EngineGrid
@@ -255,7 +228,6 @@ func TestContainerCSSGridBreakpoints(t *testing.T) {
 	}
 }
 
-// TestContainerCSSSwitchesStaySilent 各开关关掉时对应规则一条都不产出。
 func TestContainerCSSSwitchesStaySilent(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Tag: "div"}, &b)
@@ -270,8 +242,6 @@ func TestContainerCSSSwitchesStaySilent(t *testing.T) {
 	}
 }
 
-// TestContainerCSSContainerQueryContext 容器查询上下文必须同时给 type 与 name：
-// 只给 type 时内部组件的 style() 查询找不到锚点（静默失效）。
 func TestContainerCSSContainerQueryContext(t *testing.T) {
 	p := &Props{Tag: "div"}
 	p.StyleEx.ContainerQuery = true

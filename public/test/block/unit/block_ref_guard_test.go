@@ -1,15 +1,5 @@
 package unit
 
-// block_ref_guard_test.go — 块删除保护的引用明细（审计 ARCH-02）。
-//
-// ARCH-02 之前这里只有「有没有引用」这一个布尔：拒绝时用户拿到的是
-// ErrBlockInUse 一句通用文案，而块引用散在页面文档 / 模板 / 实例快照的 JSONB 任意深度 ——
-// 操作者没有任何线索去解除它。本文件钉住三件事：
-//
-//  1. 明细必须随拒绝一起返回（errors.As 取得到 *BlockInUseError，且带上类别与实体）；
-//  2. 拒绝后实体原文与版本保持不变；
-//  3. 检查器缺失 / 报错时仍然拒绝（宁拒勿删，不把失败伪装成「没有引用」）。
-
 import (
 	"context"
 	"errors"
@@ -22,7 +12,6 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 )
 
-// TestBlockDeleteReportsReferenceDetail 被引用拒绝时错误必须带「哪一类引用、哪些实体」。
 func TestBlockDeleteReportsReferenceDetail(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -68,7 +57,6 @@ func TestBlockDeleteReportsReferenceDetail(t *testing.T) {
 
 }
 
-// TestBlockDeleteCheckFailureStillRefuses 明细检查器报错时按「被引用」处理（宁拒勿删）。
 func TestBlockDeleteCheckFailureStillRefuses(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -82,14 +70,10 @@ func TestBlockDeleteCheckFailureStillRefuses(t *testing.T) {
 	}
 }
 
-// TestBlockDeleteWithoutCheckerStillRefuses 检查器未注入时同样按被引用处理。
-//
-// 这条是「宁拒勿删」的兜底：删除不可逆，宁可让装配缺陷表现为「删不掉」，
-// 也不能表现为「安静地删掉了还有引用的块」。
 func TestBlockDeleteWithoutCheckerStillRefuses(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	e.svc.SetReferenceChecker(nil) // newEnv 默认注入了「无引用」的检查器，这里显式撤掉
+	e.svc.SetReferenceChecker(nil)
 	b := e.createBlock(t, "未装配检查器的块", "block")
 	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: b.ID}); !errors.Is(err, blockcontract.ErrBlockInUse) {
 		t.Fatalf("检查器缺失时必须拒绝删除，实际 %v", err)

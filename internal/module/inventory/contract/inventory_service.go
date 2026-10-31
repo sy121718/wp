@@ -1,4 +1,3 @@
-// Package inventorycontract inventory 模块对外契约（issue #15）。
 package inventorycontract
 
 import (
@@ -9,333 +8,129 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 )
 
-// InventoryService 仓库与库存管理契约。
-//
-// 边界：本模块只管**库存真源**（inventory_stocks）、仓库实体（inventory_warehouses）
-// 与围绕真源的变动能力（流水 / 变动原因字典 / 物料清单 / 缓存同步与对账）。
-//
-//	· 商品模块只保留 product_variants.stock_total 这个**列表展示用冗余缓存**；
-//	· 一切影响可用量的判断（扣减、超卖校验、可售数量）只能读本模块真源并加行锁，
-//	  绝不读那个缓存 —— 缓存滞后会直接变成超卖；
-//	· 缓存只被「同步 / 对账」，同步发生在库存事务提交之后（跨模块写不进同一事务）；
-//	· 采购 / 订单 / 客户各由自己的模块负责，本模块不反向依赖它们。
-//
-// 依赖方向：inventory → product（本模块实现 product 契约定义的变体库存端口，
-// 由顶层装配注入商品模块），商品模块不认识仓库模块的实现。
 type InventoryService interface {
-	// TransferService 调拨单（迁移 630，W3）：仓库间移库，出货与签收各需凭证附件。
 	TransferService
-	// —— 仓库（验收 1：可建仓库并设置一个默认仓）——
-	// CreateWarehouse 建仓；工程内第一个仓自动成为默认仓（「必须有一个默认仓」），
-	// 显式 IsDefault 则切换默认仓（同工程唯一）。
+
 	CreateWarehouse(ctx context.Context, req *inventorydto.CreateWarehouseReq) (res *inventorydto.WarehouseResp, err error)
-	// UpdateWarehouse 改仓（改名 / 改短码 / 排序 / 状态 / 切换默认仓）。
-	// 默认仓不能停用，也不能取消默认（先指定另一个默认仓）。
+
 	UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateWarehouseReq) (res *inventorydto.WarehouseResp, err error)
 	GetWarehouse(ctx context.Context, req *inventorydto.GetWarehouseReq) (res *inventorydto.WarehouseResp, err error)
-	// ListWarehouses 某工程的仓库列表（默认仓在最前）。
+
 	ListWarehouses(ctx context.Context, req *inventorydto.ListWarehouseReq) (list []*inventorydto.WarehouseResp, err error)
-	// DeleteWarehouse 删仓：默认仓、仓内仍有非零库存时一律拒绝。
+
 	DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteWarehouseReq) (err error)
 
-	// —— 库存记录（验收 2/3：SKU × 仓库 一行，新建变体自动生成初始 0 的记录）——
-	// EnsureStock 幂等地确保某 SKU 在某仓有一条库存记录（初始 0）；
-	// WarehouseID 为空时兜底到该工程的默认仓（未指定仓库时的兜底）。
 	EnsureStock(ctx context.Context, req *inventorydto.EnsureStockReq) (res *inventorydto.StockResp, err error)
-	// GetStock 单条库存记录（按 id，或按 变体 × 仓库）。
-	//
-	// 库存读模型自带**仓库侧成本**（StockResp.CostPrice，(仓库, SKU) 的当前值，
-	// 迁移 244）：NULL = 尚未核算，0 是合法的显式成本 —— 后台读成本不必另开入口，
-	// 也就不会出现「详情与列表各查一份、两份对不上」。
+
 	GetStock(ctx context.Context, req *inventorydto.GetStockReq) (res *inventorydto.StockResp, err error)
-	// ListStocksBySKU 某 SKU 在各仓的库存（验收 3/4：同一 SKU 可在多个仓各有一行）。
-	// 每行各带**该仓**的成本 —— 多仓同 SKU 的成本本来就是各自独立的（(仓库, SKU) 维度）。
+
 	ListStocksBySKU(ctx context.Context, req *inventorydto.ListStockBySKUReq) (list []*inventorydto.StockResp, err error)
-	// ListStocks 库存记录列表（后台核对用，按工程 / 仓 / 商品 / 变体 / SKU / 外部编码过滤 + 分页）。
+
 	ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error)
-	// BareSKUsByVariant 工程内「变体 → 仓库侧裸码」的一次性映射（后台采购下拉用）。
-	//
-	// 与 ListStocks 的区别是**用途**而不是形状：这里只回答「这条货在仓库里叫什么」，
-	// 一次拿全工程（查询次数与变体数无关）。取值规则（多仓不同码时取哪条）由实现方定义一处，
-	// 调用方不要自己再挑。
+
 	BareSKUsByVariant(ctx context.Context, projectID string) (map[string]string, error)
 
-	// —— 无限库存与分仓聚合（迁移 261，库存域第一批）——
-
-	// WarehouseStocksByProducts 一次取回若干商品在**各仓**的库存行。
-	//
-	// **冻结签名（2026-09-19，商品侧依赖；字段名与类型不再变）**：
-	//
-	//	入参：ctx / projectID（工程作用域，必填）/ productIDs
-	//	返回：[]inventorydto.ProductWarehouseStock，元素为
-	//	      ProductID, WarehouseID, WarehouseCode, WarehouseName,
-	//	      SKUCode, TrackQuantity, Quantity, CostPrice(*float64)
-	//
-	// 语义：一行 = 一个 (product_id, warehouse_id, sku_code)，**不做聚合** ——
-	// 「跨仓求和」与「按归属仓取一条」各调用方口径不同，聚合留在调用方。
-	// TrackQuantity 必须与 Quantity 一起读：quantity = 0 有两义（跟踪且卖光 /
-	// 不跟踪无限），只看数量会把无限看成没货。一次查询覆盖全部商品的全部仓，
-	// 调用方不得逐商品循环调用（那会把一次批量读放大成 N 次往返）。
-	//
-	// 只读、无副作用；缺工程时由 rls 直接报错，绝不退化成「不限工程」
-	//（后者在非超级角色下是静默空集）。
 	WarehouseStocksByProducts(ctx context.Context, projectID string, productIDs []string) (out []inventorydto.ProductWarehouseStock, err error)
 
-	// UpdateStockTracking 库存页行内编辑：切换某 (仓库, 变体) 库存行的跟踪开关并写入数量。
-	//
-	// quantity 只走**变动契约**（adjust，原因 = 手工调整）：数量的任何变化都留下流水；
-	// 不跟踪（无限）的行不允许带非 0 数量（ErrStockUntrackedQuantity）；
-	// 切成不跟踪会先把数量清成 0 再关开关（顺序不能反，DDL 的 CHECK 不允许
-	// 「不跟踪却带数字」）。数量与开关都没变时是空转，不写库也不写流水。
 	UpdateStockTracking(ctx context.Context, req *inventorydto.UpdateStockTrackingReq) (res *inventorydto.StockResp, err error)
 
-	// —— 仓库 SKU 与外部编码映射（迁移 251 / docs/14 §9.3）——
-	//
-	// 属性属于**商品**，仓库侧只回答「这条货在这个仓叫什么」。映射是 **N:1**
-	//（同一商品的多个变体可共用同一个外码），所以唯一性是 service 弱校验而不是唯一索引：
-	// 同一仓内同一外码必须指向同一个 product_id（多口味共用合法，跨商品报
-	// ErrExternalSKUProductConflict）。
-	//
-	// ListWarehouseSKUs 按仓库列出可选的仓库 SKU（分页 + 关键字，命中我们的编码或外部编码）；
-	// 新建商品抽屉的「从仓库选」用它列候选，但服务端**不信任**前端提交的编码 ——
-	// 落库前一律经 GetWarehouseSKU 在该仓复核一遍。
 	ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (list []*inventorydto.WarehouseSKUResp, err error)
-	// GetWarehouseSKU 「从仓库选」的最小查询：给定仓库 + 仓库 SKU → 那一行
-	//（不存在即 ErrWarehouseSKUNotFound，不返回空行）。
+
 	GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWarehouseSKUReq) (res *inventorydto.WarehouseSKUResp, err error)
 
-	// —— 仓库商品 SKU 主档（迁移 642 / B3）——
-	//
-	// 主档回答的是「这条货在这个仓叫什么、长什么样、按多少运费、什么状态」，
-	// 与商品侧的 products / product_variants 不是同一份事实（同一款货在不同仓可以不同）。
-	//
-	// 三个方法都**不碰数量**：数量只能经变动契约改（有变动必有流水）。
-	// 编码与所在仓也不可变 —— 它们一起构成本行的身份（244 的 UNIQUE (warehouse_id, sku_code)），
-	// 改它们等于换一条货，历史流水与变体引用都会指空。
-
-	// CreateStock 在某个仓建一条货行（仓库 + 裸码 + 数量 + 成本 + 主档）。
 	CreateStock(ctx context.Context, req *inventorydto.CreateStockReq) (res *inventorydto.StockResp, err error)
-	// UpdateStock 修改一条货行的主档（名称 / 图 / 条码 / 备注 / 状态 / 成本四件套）。
+
 	UpdateStock(ctx context.Context, req *inventorydto.UpdateStockReq) (res *inventorydto.StockResp, err error)
-	// UpdateStockStatus 货行启停（停用不等于删除：引用与流水照旧可读）。
+
 	UpdateStockStatus(ctx context.Context, req *inventorydto.UpdateStockStatusReq) (res *inventorydto.StockResp, err error)
-	// CountWarehouseSKUsByFilter 与 ListWarehouseSKUs 同口径的行数（台账页分页用）。
+
 	CountWarehouseSKUsByFilter(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (total int64, err error)
-	// ListStockSKURows 台账页一屏：货行 → 展示行（金额 / 币种 / 数量 / 变体引用已在 service 成型）。
-	//
-	// 为什么不复用 ListWarehouseSKUs：那是接口出口（带 metadata / projectId 这类调用方字段），
-	// 而台账页要的是「屏幕上那一行」—— 金额要格式化、币对要拼、汇率未固化要能表达，
-	// 这些口径放 handler 会与库存页各写一份。
+
 	ListStockSKURows(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (rows []inventorydto.StockSKURowResp, err error)
-	// BindExternalSKU 绑定 / 更新某 (仓库, 变体) 库存行的外部编码（空串 = 清空，
-	// 该仓改回用我们自己的 SKU；非空时做 N:1 弱校验）。
+
 	BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error)
 
-	// —— 预占 / 释放（迁移 624）——
-	//
-	// 库存行带 reserved_quantity，为订单的「下单预占 → 发货扣减」两段式提供真源字段。
-	//
-	// 三量恒等式（照抄 ERP product_inventory_reserve.go 文件头）：
-	//
-	//	on_hand = quantity；reserved = reserved_quantity；available = quantity - reserved_quantity
-	//
-	// 预占 / 释放**只改 reserved_quantity**，不改 quantity、不写流水 —— 流水只记录真实出入库。
-
-	// ReserveStock 下单预占（只改 reserved_quantity，不写流水）。
-	//
-	// 可售不足**整单拒绝**（不做部分预占）：部分预占会让订单拿到「一半的货」
-	// 却依然成功，发货时才发现缺口。
 	ReserveStock(ctx context.Context, req *inventorydto.ReserveStockReq) (res *inventorydto.StockReserveResp, err error)
-	// ReleaseStock 取消 / 退款 / 超时释放预占（只改 reserved_quantity，不写流水）。
+
 	ReleaseStock(ctx context.Context, req *inventorydto.ReserveStockReq) (res *inventorydto.StockReserveResp, err error)
 
-	// ReserveStockTx / ReleaseStockTx —— **事务透传版**（订单建单 / 取消必须与自己那个事务同生共死）。
-	// 约定同 ChangeStockTx：不自己开事务，错误原样返回。
 	ReserveStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
 	ReleaseStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
-	// StockAlert 库存预警四卡（迁移 624 / 623，W4）：只统计跟踪数量的行。
-	//
-	// Alert = OutOfStock + LowStock 在 service 里算一次 —— 两个数字相加是展示口径，
-	// 让模板与报表各自再算一遍就会各算各的。
+
 	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
-	// —— 库存变动与流水（issue #16）——
-	// ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：真源行锁内判定可用量，
-	// 多行按 (变体, 仓库) 标识升序加锁（无死锁），每次变动写带原因与来源引用的流水。
+
 	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
-	// DeductStock 按 SKU 扣减（验收 1/5）：不足即整体拒绝。
+
 	DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error)
-	// ChangeStockTx / DeductStockTx —— **事务透传版**：与 ChangeStock / DeductStock 逐字
-	// 同一条路径（同一套加锁顺序、同一份流水构造），但在**调用方的事务**里执行。
-	//
-	// 专供同库跨模块的调用方（订单建单扣减 / 取消归还库存 / 退货入库）把库存变动纳入
-	// 自己那个事务：一次用户可感知的写操作里有多处持久化写入时必须同事务，任一步失败
-	// 整体回滚 —— 而不是「先提交 A、再动库存、失败再补偿」（补偿只留给跨库 / 外部系统，
-	// 见 AGENTS.md「写操作的事务与回滚」）。
-	//
-	// 两条硬约定：
-	//   · Tx 版本**不自己开事务** —— tx 非 nil，由调用方负责提交 / 回滚；
-	//   · 错误**原样返回**（不吞、不映射、不降级），调用方据此回滚整个事务。
-	//
-	// 非 Tx 版本自己开一个事务并委托给它们，行为不变。
+
 	ChangeStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq) (err error)
 	DeductStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.DeductStockReq) (err error)
-	// ListMovements 库存流水列表（方向 / 数量 / 原因 / 来源引用都可过滤）。
+
 	ListMovements(ctx context.Context, req *inventorydto.ListMovementReq) (list []*inventorydto.MovementResp, err error)
-	// CountMovements 流水总条数：与 ListMovements **逐字同一份过滤条件**
-	//（同一个 model 过滤函数，见 inventorymodel.applyMovementFilter），
-	// 供后台列表页的服务端分页算总页数。
-	//
-	// req 里的 Page / Size 对计数无意义（被忽略）：总数与「当前在第几页」无关，
-	// 与 CountProducts 同一形状 —— 复用同一个请求类型，两处口径才不会分叉。
+
 	CountMovements(ctx context.Context, req *inventorydto.ListMovementReq) (n int64, err error)
 
-	// —— 变动原因字典（验收 4）——
 	ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error)
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
 
-	// —— 货源与采购单（2026-10 迁往 purchase 模块）——
-	// 进货来源（inventory_sources）与采购单据（inventory_purchase_* 四张表）已独立成
-	// internal/module/purchase：货源 / 采购单 / 入库是**一个业务域**（谁供货、下了多少、
-	// 到货多少），与「库存真源怎么变」是两件事。本模块只保留库存真源，采购要动库存时
-	// 经 purchasecontract.StockPort 反向调用（适配器在 inventory/outbound/purchasestock）。
-
-	// —— 商品侧缓存同步与对账（验收 6/7）——
-	// SyncStockCache 显式同步（真源汇总 → 商品侧展示缓存，带时间戳）。
-	// ReconcileStockCache 真源与缓存逐变体对账；Repair 为真时按真源修复。
-
-	// —— 成本快照口径收口（2026-09-19 商品域评审，docs/14 §1.3 / §4.2 / §4.3 / §9.3）——
-	//
-	// ResolveVariantWarehouseCosts 解析若干行的「归属仓 + 该 (仓库, SKU) 的当前成本」：
-	// 归属仓 = 行上显式 WarehouseID，为空按本模块既有的归属仓解析规则（默认仓）解析
-	//（与扣减同一个入口）；成本未核算（NULL）时 CostPrice 为 nil —— 绝不用 0 冒充。
-	// 订单行的成本快照经它取数（变体级 product_variants.cost_price 不再是这条链路的来源）。
 	ResolveVariantWarehouseCosts(ctx context.Context, projectID string, refs []inventorydto.VariantWarehouseCostRef) (out []inventorydto.VariantWarehouseCost, err error)
 
-	// VariantHasStockMovement 该变体是否**有过任何库存流水**（变体删除守卫，docs/14 §8.2）。
-	//
-	// 订单一旦建单就一定会产生扣减流水，所以「有流水」等价于「被订单用过」；
-	// 历史单据按 variant_id 追溯，有流水即**不允许硬删**。与「非零库存」互补：
-	// 卖出后补货清零的变体库存为 0 却仍被用过，两个守卫都要。
-	// projectID 必填：流水表带工程策略，缺作用域时计数恒 0（守卫静默失效）。
 	VariantHasStockMovement(ctx context.Context, projectID, variantID string) (exists bool, err error)
 }
 
-// === 跨模块形状：调用方要传进来、要收回去的类型 ===
-
-// 跨模块调用方使用的**形状重导出**（与 order 契约同一手法）：调用方只依赖 contract，
-// 不直接 import inventory/dto。
-//
-// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
-// （仓库 / 仓库 SKU 的查询入参与库存投影就是它对外的语义），form 标签只影响 HTTP 绑定，
-// 不改变语义。另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」
-// 换成「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
-//
-// 边界：本模块内部（service / inbound）继续用 inventorydto 作为实现形状；重导出只服务于
-// 跨模块调用方（当前是 product：商品列表的库存投影、新建商品的「从仓库选」、变体成本快照）。
 type (
-	// 商品列表的库存投影（一行一个仓，跨仓求和在调用方做）。
 	ProductWarehouseStock = inventorydto.ProductWarehouseStock
-	// 成本快照的一行入参：哪个变体、在哪个仓（空 = 按归属仓解析）。
+
 	VariantWarehouseCostRef = inventorydto.VariantWarehouseCostRef
-	// 「从仓库选」：候选项查询入参与该行的只读投影。
+
 	ListWarehouseSKUReq = inventorydto.ListWarehouseSKUReq
 	GetWarehouseSKUReq  = inventorydto.GetWarehouseSKUReq
 	WarehouseSKUResp    = inventorydto.WarehouseSKUResp
-	// 仓库列表（工程维度）。
+
 	ListWarehouseReq = inventorydto.ListWarehouseReq
 )
 
-// StockReader 库存的只读视图：给 AI 工具的窄门。
-//
-// 为什么不直接复用 InventoryService：那个接口上有 AdjustStock / 采购单写入 /
-// 仓库增删 —— 工具由模型驱动，给它写入能力意味着「AI 顺手调一次库存」在某次
-// 无关改动里变得可能，而库存调整会直接改可卖量。越权防护靠接口形状。
-//
-// 两个方法对应两类用户提问：
-//   - ListStocks：「VIT-C 还有多少货」「哪个仓缺货」；
-//   - ListWarehouses：「有几个仓库」「默认仓是哪个」—— 库存行的仓库名已经带了，
-//     但用户会直接问仓库本身（还没建任何库存时也有答案）。
 type StockReader interface {
-	// ListStocks 按工程 / 仓库 / 商品 / SKU 查库存行（一行 = 一个仓的一个 SKU）。
 	ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error)
-	// ListWarehouses 按工程列仓库。
+
 	ListWarehouses(ctx context.Context, req *inventorydto.ListWarehouseReq) (list []*inventorydto.WarehouseResp, err error)
-	// ListReasons 变动原因字典（工程自定义 + 全部内置）。
-	//
-	// 放在读口而不是写口：入库/出库必须给一个**方向匹配的** reasonCode，
-	// 而 code 有哪些只有服务端知道（内置 + 各工程自建）。模型要先能读到它，
-	// 否则只能猜 —— 猜错的表现是「原因与方向不符」这类看不出所以然的拒绝。
+
 	ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error)
 }
 
-// StockWriter 库存变动（AI 工具用）。
-//
-// 只有 ChangeStock 一个方法，且**刻意不含 RestockStock**：后者的语义是「归还」
-// （走 stockPolicyRestore，订单取消/退货入库那条路），拿它当通用入库用会让流水里
-// 的原因与方向对不上 —— 而流水是审计依据。入库就是 direction=in 的 ChangeStock。
-//
-// 也不含 SetStockTracking：那是库存页的行内编辑（数量清零 + 关跟踪开关两处
-// 持久化写入必须同事务），模型没有「在表格里改一格」这个语境。
 type StockWriter interface {
-	// ChangeStock 一次库存变动（in / out / adjust 三个方向，批量多行同事务）。
 	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
 }
 
-// ReasonWriter 自定义变动原因的增改（给 AI 工具的写侧窄门）。
-//
-// 与 StockWriter 分开：两者不是同一件事 —— 改库存是**动账**，建原因是**动字典**。
-// 合成一个接口会让「只想调库存」的地方顺手拿到改字典的能力，而字典的改动会影响
-// 之后每一次变动的解释（方向一经确定不可改），风险性质不同。
-//
-// 没有 DeleteReason：原因被历史流水引用，删掉会让旧记录的 reasonCode 变成悬空字符串。
-// 停用（UpdateReason 的 status）已经覆盖了「不想再看到它」这个真实诉求。
 type ReasonWriter interface {
-	// CreateReason 新建自定义变动原因（code 工程内唯一，方向一经确定不可改）。
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
-	// UpdateReason 改名 / 启停 / 排序（内置原因只允许启停与排序）。
+
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
 }
 
-// —— 调拨（迁移 630，W3）——
-
-// TransferService 调拨单：仓库间移库，出货与签收**各需凭证附件**。
-//
-// 状态机（单向）：
-//
-//	pending ──Ship(需出货凭证)──→ in_transit ──Receive(需签收凭证)──→ completed
-//	   │
-//	   └──Cancel──→ cancelled
-//
-// 与 ERP 的一处刻意差异：建单就要求两个仓（ERP 的目标仓到 Receive 才给）——
-// 本地是单仓管理员操作，建单时不知道发往哪里等于留一张半截单据。
 type TransferService interface {
-	// CreateTransfer 建调拨申请（落 requested；两仓必须存在、active、不同；明细按 stock_id 校验属于源仓）。
 	CreateTransfer(ctx context.Context, req *inventorydto.CreateTransferReq) (res *inventorydto.TransferResp, err error)
-	// ApproveTransfer 同意（仅 requested → pending）：审批时重校源仓可售，可顺带改目标仓。
+
 	ApproveTransfer(ctx context.Context, req *inventorydto.TransferApproveReq) (res *inventorydto.TransferResp, err error)
-	// RejectTransfer 驳回（仅 requested → rejected）：理由必填，不动库存。
+
 	RejectTransfer(ctx context.Context, req *inventorydto.TransferRejectReq) (res *inventorydto.TransferResp, err error)
-	// ShipTransfer 出货（仅 pending）：AttachmentIDs 为空即拒绝（ErrAttachmentRequired），逐行出库写 transfer_out 流水。
+
 	ShipTransfer(ctx context.Context, req *inventorydto.TransferShipReq) (res *inventorydto.TransferResp, err error)
-	// ReceiveTransfer 签收：同样要求签收凭证，逐行在目标仓入库（同变体同码则累加、否则建行）。
+
 	ReceiveTransfer(ctx context.Context, req *inventorydto.TransferReceiveReq) (res *inventorydto.TransferResp, err error)
-	// CancelTransfer 取消（requested / pending；in_transit 要先签收或走反向调拨）。
+
 	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (res *inventorydto.TransferResp, err error)
-	// ListTransferStockOptions 建单抽屉的候选：某仓里可售 > 0 的库存行（按可售降序）。
+
 	ListTransferStockOptions(ctx context.Context, req *inventorydto.TransferStockOptionReq) (list []*inventorydto.TransferStockOptionResp, err error)
-	// ListTransfers 列表（状态 / 关键词过滤 + 分页）。
+
 	ListTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (list []*inventorydto.TransferRowResp, err error)
-	// CountTransfers 总数（与 ListTransfers 同一份过滤条件）。
+
 	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (n int64, err error)
-	// GetTransfer 详情（明细 + 三类凭证）。
+
 	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (res *inventorydto.TransferDetailResp, err error)
 }
 
-// StockAlertReader 库存预警的窄读口（销售总览的待办块用，迁移 624 / 623，W4）。
-//
-// 单独一个接口而不是让调用方拿 InventoryService：销售总览只要一个数字
-// （Alert = OutOfStock + LowStock），而宽接口会让它顺手拿到改库存的能力。
 type StockAlertReader interface {
 	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
 }

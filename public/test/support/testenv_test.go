@@ -11,17 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// TestPGAppendParamsFormats 钉住「拼接唯一入口」的两条分支。
-//
-// 回归对象：testenv.go 曾用 `pgDSN(...) + " connect_timeout=5"` 拼接，而 pgDSN 返回 URL
-// 形式，pgx 因此在连库之前就报 extra key/value separator —— 严格模式（GOWP_REQUIRE_PG=1）
-// 全部用例死在解析阶段，看起来像「环境不可用」，实际是一行 DSN 拼错。
 func TestPGAppendParamsFormats(t *testing.T) {
 	cases := []struct {
 		name string
 		dsn  string
 	}{
-		// pgDSN 的真实产物：URL 且已带查询串。
+
 		{"pgDSN 产物", pgDSN("127.0.0.1", "5432", "probe", "a b@x", "probe")},
 		{"URL 无查询串", "postgres://probe:pass@127.0.0.1:5432/probe"},
 		{"URL 有查询串", "postgresql://probe:pass@127.0.0.1:5432/probe?application_name=probe"},
@@ -45,7 +40,6 @@ func TestPGAppendParamsFormats(t *testing.T) {
 	}
 }
 
-// TestPGAppendParamsPreservesExisting 追加不得覆盖或丢失原参数、也不得改变连接身份。
 func TestPGAppendParamsPreservesExisting(t *testing.T) {
 	dsn := pgDSN("127.0.0.1", "5432", "probe", "a b@x", "probe")
 	before, err := pgconn.ParseConfig(dsn)
@@ -65,10 +59,6 @@ func TestPGAppendParamsPreservesExisting(t *testing.T) {
 	assertSameConnIdentity(t, before, after)
 }
 
-// TestPGAppendParamsEscapesSpacesAsPercent20 URL 分支的空格必须是 %20，不能是 `+`。
-//
-// pgx 不解码 `+`：值 "a b" 会原样读回 "a+b"。这条与 pkg/database/driver/postgres.go
-// 的 encodePostgresQuery 是同一条教训（那边为它留了注释），两条路径行为必须一致。
 func TestPGAppendParamsEscapesSpacesAsPercent20(t *testing.T) {
 	for _, dsn := range []string{
 		"postgres://probe:pass@127.0.0.1:5432/probe",
@@ -84,7 +74,6 @@ func TestPGAppendParamsEscapesSpacesAsPercent20(t *testing.T) {
 	}
 }
 
-// TestPGAppendParamsIgnoresUnrelatedKeys 关键字格式下，带空格/引号的值必须被正确转义。
 func TestPGAppendParamsIgnoresUnrelatedKeys(t *testing.T) {
 	dsn := pgAppendParams("host=127.0.0.1 port=5432 user=probe dbname=probe",
 		[2]string{"application_name", "a b'c"})
@@ -105,7 +94,6 @@ func assertSameConnIdentity(t *testing.T, before, after *pgconn.Config) {
 	}
 }
 
-// 子进程隔离 Fatalf，确保依赖失败后的 Skipf 在严格模式不会执行。
 func TestRequiredDependencyFailure(t *testing.T) {
 	if dep := os.Getenv("GOWP_TEST_REQUIRED_CHILD"); dep != "" {
 		err := errors.New("dependency-probe")
@@ -134,7 +122,6 @@ func TestRequiredDependencyFailure(t *testing.T) {
 	}
 }
 
-// 用子进程隔离共享容器缓存；预置已就绪端点，只验证回退编排，不启动容器。
 func TestRequiredTestEnvAcceptsContainerFallback(t *testing.T) {
 	if os.Getenv("GOWP_TEST_CONTAINER_FALLBACK_CHILD") == "1" {
 		t.Setenv("GOWP_REQUIRE_PG", "1")
@@ -178,12 +165,6 @@ func TestRequiredTestEnv(t *testing.T) {
 	}
 }
 
-// TestPingPGReachesConnectionAttempt 钉住**调用点**真的走了 pgAppendParams。
-//
-// 只测 pgAppendParams 本身不够：pingPG 若被改回 `pgDSN(...) + " connect_timeout=5"`，
-// 单元测试照样全绿，而严格模式会在连库之前就死在 DSN 解析上 —— 那个缺陷正是这一批要
-// 根除的，所以必须在调用点上也留一条判据。判据是「进入了连接阶段」：关闭端口应报连接
-// 被拒，而不是 failed to parse / extra key/value separator。
 func TestPingPGReachesConnectionAttempt(t *testing.T) {
 	err := pingPG(PGEndpoint{Host: "127.0.0.1", Port: "1", User: "probe", Database: "probe"})
 	if err == nil {

@@ -12,7 +12,6 @@ import (
 	"go_wp/pkg/response"
 )
 
-// BlockPreviewDraft 预览尚未保存的块文档，沿原授权与版本规则读取目标，不写块或发布产物。
 func (h *Handle) BlockPreviewDraft(c *gin.Context) {
 	req, err := binding.ParseForm[workbenchdto.BlockPreviewDraftReq](c)
 	if err != nil {

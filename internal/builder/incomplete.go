@@ -2,8 +2,6 @@ package builder
 
 import "go_wp/internal/builder/core"
 
-// incompleteViewOf 保留真实节点类名，让未完成控件在画布上仍能选中继续编辑。
-// 只由通过容错校验的预览调用；发布不会生成此视图。
 func incompleteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) *nodeView {
 	classes := core.NodeClass(node.ID) + " sky-incomplete"
 	if topLevel {

@@ -1,18 +1,5 @@
 package i18n_test
 
-// site_lang_url_mode_test.go — 站点访问路径的语言方案（多语言 P2/P3，docs/06-D §5 方案 A'）。
-//
-// **本文件在本批被改写**（原先覆盖的对象已不存在）：
-//   - 旧口径：方案从 config.yaml / viper 读（键 i18n.site_lang_url_mode 与更早的兼容键
-//     i18n.site_lang_prefix），非法值让 Init fail-fast；进程里有一个可被站点设置页热更新的
-//     全局值（SetSiteLangURLMode）。
-//   - 新口径：**工程级**的值在 projects.settings.langURLMode（按工程解析，唯一入口
-//     pipeline.SiteLangURLModeOf），**全局默认**在 sys_config 的 i18n 组（由装配层的
-//     ValueLoader 注入）；进程级 setter 已删除（它会让一个工程的设置决定另一个工程的判定）。
-//
-// 因此这里只保留「无配置时的默认值」与「配置源注入后生效」两件事；「旧键兼容映射」
-// 「config.yaml 里必须有该键」两类用例随口径一起删除（兼容层与那个键都不存在了）。
-
 import (
 	"context"
 	"testing"
@@ -24,8 +11,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// ensureI18nDB 保证 i18n.Init 首次调用时缓存可加载（本测试独立于包内其他用例的
-// 初始化顺序；PG 不可用才跳过）。
 func ensureI18nDB(t *testing.T) {
 	t.Helper()
 	cfg := viper.New()
@@ -49,17 +34,15 @@ func ensureI18nDB(t *testing.T) {
 	}
 }
 
-// resetGlobalSiteLangURLMode 复位全局默认方案到「未注入 loader」的状态（代码内常量）。
 func resetGlobalSiteLangURLMode(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		// 先注入零值把已生效的值打回常量，再摘掉 loader（没有 setter，只能走这条正式入口）。
+
 		i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) { return i18n.RuntimeValues{}, nil })
 		i18n.SetValueLoader(nil)
 	})
 }
 
-// TestSiteLangURLModeDefaults 未接入配置源时全局默认方案是 default_plain（默认语言无前缀）。
 func TestSiteLangURLModeDefaults(t *testing.T) {
 	resetGlobalSiteLangURLMode(t)
 	ensureI18nDB(t)
@@ -77,9 +60,6 @@ func TestSiteLangURLModeDefaults(t *testing.T) {
 	}
 }
 
-// TestSiteLangURLModeFromValueLoader 配置源（sys_config 的 i18n 组）注入后立即生效。
-//
-// 走的是装配层注入用的同一入口（SetValueLoader）：三值都验一遍，并确认判定是纯函数。
 func TestSiteLangURLModeFromValueLoader(t *testing.T) {
 	resetGlobalSiteLangURLMode(t)
 	ensureI18nDB(t)
@@ -113,10 +93,6 @@ func TestSiteLangURLModeFromValueLoader(t *testing.T) {
 	}
 }
 
-// TestSiteLangURLModeInvalidFallsBack 配置值非法时回退默认方案并继续（**不再 fail-fast**）。
-//
-// 口径变化的理由：这个值现在是运行期可改的配置（后台保存即生效），一个写错的值不该让
-// 整个站点起不来；回退是**可见的**（applyRuntimeValues 记一条 Warn，日志里写明原值与回退值）。
 func TestSiteLangURLModeInvalidFallsBack(t *testing.T) {
 	resetGlobalSiteLangURLMode(t)
 	ensureI18nDB(t)

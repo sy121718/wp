@@ -1,12 +1,5 @@
 package analyticshttp
 
-// analytics_breakdown_hint_test.go — 「维度分布不可用」提示的判据与渲染。
-//
-// 场景：保留期清理只删访问明细（page_views），按天汇总（page_views_daily）保留 ——
-// 于是已被清理的历史窗口会出现「总数与路径榜有数、三个维度榜全空」。
-// 运营看到那种页面只会以为统计坏了，所以判据成立时页面必须给一句解释；
-// 而真的没有流量时（总数也是 0）不该提示，否则提示会变成噪音。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +17,6 @@ import (
 	"go_wp/pkg/pagination"
 )
 
-// TestBreakdownUnavailableJudgement 判据：只有「总数有数 + 三个维度榜全空」才提示。
 func TestBreakdownUnavailableJudgement(t *testing.T) {
 	rank := func(v string) []analyticscontract.RankCount {
 		return []analyticscontract.RankCount{{Value: v, Views: 1, Visitors: 1}}
@@ -76,7 +68,6 @@ func TestBreakdownUnavailableJudgement(t *testing.T) {
 	}
 }
 
-// TestAnalyticsPageRendersBreakdownHint 提示只在判据成立时渲染；键缺失时页面不整页中断。
 func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	lang := "zh-CN"
@@ -99,7 +90,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 			"UAClasses": []analyticscontract.RankCount{},
 			"Langs":     []analyticscontract.RankCount{},
 			"RankLimit": 20,
-			// 分页事实：零值＝没有分页（空数据）。
+
 			"Pagination": pagination.Page{},
 			"Err":        "",
 		}
@@ -128,8 +119,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 	if strings.Contains(withoutHint, hintText) {
 		t.Error("判据不成立时不该出现保留期提示")
 	}
-	// 键缺失（别的渲染路径漏传）时，模板必须靠 isset 兜住而不是整页中断 ——
-	// 那种中断的表现是 200 + 后半页静默消失，几乎无法从表象定位。
+
 	missing := renderPage(t, func(d gin.H) { delete(d, "BreakdownUnavailable") })
 	if !strings.Contains(missing, "来源域") || !strings.Contains(missing, "设备分类") || !strings.Contains(missing, "语言") {
 		t.Error("缺少 BreakdownUnavailable 键时，页面后半部分被整块截断了")

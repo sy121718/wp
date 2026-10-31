@@ -19,7 +19,6 @@ func TestStatusOfReadsDeclaredStatus(t *testing.T) {
 		t.Fatalf("StatusOf = (%d, %v)，want (404, true)", status, ok)
 	}
 
-	// 包装之后原来的语义要全在：文案、哨兵、事实判据。
 	if with.Error() != base.Error() {
 		t.Fatalf("Error() = %q，want %q", with.Error(), base.Error())
 	}
@@ -40,7 +39,6 @@ func TestStatusOfWalksWrappedErrors(t *testing.T) {
 		t.Fatalf("复合错误的 StatusOf = (%d, %v)，want (409, true)", status, ok)
 	}
 
-	// 明细形态（半角冒号）同样穿透：ErrDetail 就是 fmt.Errorf("%w: %s") 的产物。
 	detailed := fmt.Errorf("%w: sku-1", base)
 	if s, ok := StatusOf(detailed); !ok || s != 409 {
 		t.Fatalf("带明细的复合错误 StatusOf = (%d, %v)", s, ok)

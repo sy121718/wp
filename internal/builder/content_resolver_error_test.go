@@ -9,7 +9,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 通过真实编译链验证组件缺少实体解析器时仍拒绝构建，并保留可识别的事实。
 func TestCompilePreservesContentResolverRequired(t *testing.T) {
 	set, err := templates.NewEmbeddedComponentSet()
 	if err != nil {

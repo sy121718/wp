@@ -1,17 +1,5 @@
 package unit
 
-// i18n_component_test.go — 构建期组件文案的语言切换端到端验证（多语言 P4）。
-//
-// 与 internal/builder 的纯单测互补：这里在真实 PostgreSQL 上跑全量迁移 + 词条 seed
-// （含 060 site.component.*），再经 pkg/i18n 缓存编译同一页面文档两次：
-//   - zh-CN 产物出现中文文案；
-//   - en-US 产物出现英文文案，且两者字节不同（同一文档、不同语言的产物可区分）。
-//
-// 另验证兜底链的最后一环：词条被删除（模拟缺翻译）后重新加载缓存，产物回退中文原文，
-// 且绝不出现空属性或裸 key。
-//
-// PG 不可用时 t.Skip（与项目其他功能测试一致）。
-
 import (
 	"crypto/rand"
 	"encoding/hex"
@@ -30,7 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// i18nComponentDoc 覆盖 7 处访客面固定文案（与 internal/builder 单测同一份文档）。
 const i18nComponentDoc = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "i18n", "description": "i18n"}},
   "root": [
@@ -44,13 +31,11 @@ const i18nComponentDoc = `{
   ]
 }`
 
-// i18nUnitTestDSN 拼装 libpq DSN（与 support.pgDSN 同构）。
 func i18nUnitTestDSN(dbname string) string {
 	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai",
 		support.DefaultPGHost, support.DefaultPGUser, support.DefaultPGPassword, dbname, support.DefaultPGPort)
 }
 
-// setupI18nUnitEnv 建临时库 + 全量迁移 + 词条 seed + 加载 i18n 缓存，返回库句柄。
 func setupI18nUnitEnv(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -110,8 +95,6 @@ func setupI18nUnitEnv(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestCompileComponentTextZhVsEn 同一文档按 zh-CN / en-US 各编译一次：
-// 文案随语言变化、产物字节不同、同语言重复编译字节相同（确定性不受影响）。
 func TestCompileComponentTextZhVsEn(t *testing.T) {
 	setupI18nUnitEnv(t)
 
@@ -131,7 +114,7 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 
 	zhWants := []string{`aria-label="站点导航"`, `aria-label="上一张"`, `aria-label="下一张"`, `title="视频"`,
 		`>天<`, `>时<`, `>分<`, `>秒<`, `>提交<`, `aria-label="评分 4.5 / 5"`,
-		`aria-label="第 1 张"`} // 圆点锚点已改构建期生成（序号在构建期替换）
+		`aria-label="第 1 张"`}
 	for _, want := range zhWants {
 		if !strings.Contains(zh.HTML, want) {
 			t.Fatalf("zh-CN 产物缺少 %q\nHTML=%s", want, zh.HTML)
@@ -151,7 +134,6 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 		t.Fatal("同一文档在 zh-CN / en-US 下产物应不同（文案已走 i18n）")
 	}
 
-	// 同语言重复编译必须字节相同（构建确定性不受 i18n 影响）。
 	zh2, err := compile(t, p, builder.WithLanguage("zh-CN"))
 	if err != nil {
 		t.Fatalf("zh-CN 二次编译失败: %v", err)
@@ -160,7 +142,6 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 		t.Fatal("同语言重复编译产物不一致（破坏确定性）")
 	}
 
-	// 不支持的语言回退默认语言（zh-CN），不得出现空属性或裸 key。
 	fallback, err := compile(t, p, builder.WithLanguage("ja-JP"))
 	if err != nil {
 		t.Fatalf("未知语言编译失败: %v", err)
@@ -175,8 +156,6 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 	}
 }
 
-// TestCompileComponentTextMissingKeyFallback 词条缺失（模拟未翻译 / 被删除）时，
-// 产物回退组件包内中文原文，绝不输出空串或裸 key。
 func TestCompileComponentTextMissingKeyFallback(t *testing.T) {
 	db := setupI18nUnitEnv(t)
 
@@ -202,7 +181,7 @@ func TestCompileComponentTextMissingKeyFallback(t *testing.T) {
 	if strings.Contains(res.HTML, `title=""`) || strings.Contains(res.HTML, "site.component.video.title") {
 		t.Fatalf("缺词条时产物出现空属性或裸 key\nHTML=%s", res.HTML)
 	}
-	// 其他词条仍有 en-US 翻译：证明是「逐条兜底」而不是整段退化。
+
 	if !strings.Contains(res.HTML, `aria-label="Site navigation"`) {
 		t.Fatalf("其余词条应仍按 en-US 输出\nHTML=%s", res.HTML)
 	}

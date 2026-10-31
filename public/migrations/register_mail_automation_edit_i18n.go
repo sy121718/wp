@@ -1,18 +1,5 @@
 package migrations
 
-// 524 · 自动化流程编辑页（步骤化重做）新增文案的词条补齐。
-//
-// 判定写成本批自己的自洽门槛，而不是全库计数：只有当这 52 个 key 的双语
-// (item_key, lang) 元组一个不缺时才算完成。这样中途失败（比如只插了一半）
-// 不会被误判成已完成而永不重跑，也不会因为别的批次往 sys_i18n 里加了行
-// 就被判为「已完成」（存量库永远满足的计数条件等于永久跳过）。
-//
-// 52 个 key 里 25 个来自模板 mail_automation_edit.html、27 个来自
-// enums/mail_ui_labels.go；不做「已 seed 键数」的模糊判定，是因为
-// scripts/check-i18n-keys-seeded.sh 只认 INSERT 的 VALUES 元组 ——
-// 把 key 列在这里（注释或 IN 列表）都不算已 seed。
-//
-// ConditionSQL 由 db.Raw 直接执行、没有参数替换，所以整段写成 SQL 字面量。
 func init() {
 	registerSeed(Seed{
 		Version:   "524-mail-automation-edit-i18n",

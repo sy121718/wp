@@ -1,6 +1,5 @@
 package productdto
 
-// SeoScoreResp 共享评分算法产生的数值事实；文案、等级、颜色与交互位置由前端决定。
 type SeoScoreResp struct {
 	EntityType  string                  `json:"entityType"`
 	EntityID    string                  `json:"entityId"`
@@ -38,7 +37,6 @@ type SeoTitleDuplicateResp struct {
 	Path  string `json:"path"`
 }
 
-// SeoTitleCoverageResp 明示检查覆盖的实体域，未覆盖不能表述为“全站无重复”。
 type SeoTitleCoverageResp struct {
 	Included []string               `json:"included"`
 	Omitted  []SeoTitleOmissionResp `json:"omitted"`

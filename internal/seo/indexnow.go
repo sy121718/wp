@@ -13,8 +13,6 @@ import (
 
 const indexNowEndpoint = "https://api.indexnow.org/indexnow"
 
-// NotifyIndexNowAsync 异步 ping IndexNow；key 或 baseURL 为空时不做任何事。
-// 失败只记日志，不影响发布主链。
 func NotifyIndexNowAsync(baseURL, key string, paths []string) {
 	key = strings.TrimSpace(key)
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")

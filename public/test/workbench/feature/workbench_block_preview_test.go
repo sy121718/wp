@@ -25,7 +25,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 原路由、真实PG与真实编译一起验证：预览只是读，不借用Page草稿或保存块。
 func TestBlockDraftPreviewReadonlyScopedAndVersioned(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {

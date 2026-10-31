@@ -1,55 +1,5 @@
 package ordermcp
 
-// 两张口径必须在工具描述里说清，否则模型一定会填错：
-//  1. percent 的 DiscountValue 是**减免的百分比**（1..100，100 = 全免），不是「打几折」；
-//     90 是「减 90%」而不是「打九折」。service 生成的 DiscountLabel 就是这个口径。
-//  2. fixed 的 DiscountValue 单位是**分**（与订单金额同口径），门槛 MinSubtotal 也是分。
-//
-// 另外 update 走的是 CouponSaveReq（**整份覆盖**），不是「只改传进来的字段」——
-// 想改一个名字也必须把其余字段原样带回来，所以描述里强制要求先 coupon_get。
-
-// 与 order_tools.go 分开成两个文件与两个装配函数：它们的依赖接口不同
-//（OrderRangeSummaryReader vs OrderOverviewReader），而工具层的依赖必须收窄到
-// 「它真正需要的那几条只读方法」—— 合成一个函数会让只想给趋势的模块也被迫拿到榜单。
-
-// 为什么补这一对：模块此前只有四个聚合（orders_summary / daily / top_products /
-// status_counts），它们回答的都是「一共/每天/谁最好/各状态多少」；而用户最常问的
-// 「订单 20261005001 到哪了」「张三那单发了没」——**一个线索指向一单**——没有任何入口。
-// 底层一直是齐的（model 的 List 支持单号 / 客户名 / 邮箱关键词与时间窗，service 的
-// GetOrderDetailByNo 连商品行与状态流水都取好了），缺的只是工具层的门。
-//
-// 两个工具都是只读：依赖收窄到 OrderQueryReader（两个方法），手里没有 ChangeStatus ——
-// 「AI 顺手把订单改成已发货」不会在某次改动里悄悄变得可能。
-
-// 这三个动作都只吃 orderId：工程作用域由 service 自己探测（`locateOrderProject` /
-// `resolveOrderProject` 会逐工程找订单归属），**不要**让调用方传 projectId ——
-// 传错工程时 orders 表的 FORCE 策略会让加锁读静默匹配 0 行，
-// 症状是「订单不存在」，而订单明明在。
-//
-// 操作人身份从 ctx 注入（`mcp.UserIDFrom`），不从参数读：
-// 模型会照用户口述的名字填，而状态流转日志是审计材料。
-
-// 与 inbound/http 同构：一个模块的「对外能力」按消费者分目录，http 服务后台页面与
-// 浏览器接口，mcp 服务 AI（进程内助手与外部 /mcp 两类消费者，见 docs/17 D2）。
-// 装配期由上层汇总成一个注册表，运行期只读。
-
-// 只开这一条写路径，理由见 contract/order_write.go：建单与后台手工建单页是同一件事，
-// 而发货 / 退款 / 改单是对既有订单的不可逆或涉资金动作，留在人手里。
-//
-// 与库存的 stock_change 相比，这个工具多一层「金额不由调用方决定」的约束：
-// dto 里 Subtotal / Total 是服务端算的，DiscountTotal 在无券时被忽略，
-// 有券时以服务端试算为准。工具层因此**给不出价格** —— 用户说「按 99 元卖给他」
-// 时，正确做法是先用 product_update 改价（或直接告诉用户改价在商品页），
-// 而不是在这里塞一个金额。这一点写进了工具说明，否则模型会试着填 DiscountTotal
-// 去凑数 —— 那在有券时被忽略、无券时也被忽略，用户看到的却是「已经按 99 元下单了」。
-
-// 这条链路的每一步都有**不可逆的钱货后果**，描述里逐条写明：
-//   - approve 带 autoReceive 时是「同意 + 当场入库 + 当场退款」一步到底；
-//   - receive 是「货已到、入库 + 退款」；
-//   - reject 是终态（客户的申请被驳回），remark 是给客户看的理由。
-//
-// 操作人身份从 ctx 注入（mcp.UserIDFrom），不从参数读 —— 审阅人是审计材料。
-
 import (
 	"context"
 	"errors"
@@ -71,10 +21,6 @@ const (
 	couponMaxLimit     = 50
 )
 
-// CouponWriteReq 优惠券的建/改入参。
-//
-// 除 ProjectID 外全部必填 —— 与 service 的覆盖语义一致：
-// 漏一个字段不是「不改它」，而是「把它清成零值」（门槛变 0、次数变不限）。
 type CouponWriteReq struct {
 	ProjectID     string `json:"projectId"`
 	Name          string `json:"name"`
@@ -89,14 +35,11 @@ type CouponWriteReq struct {
 	Remark        string `json:"remark,omitempty"`
 }
 
-// CouponUpdateReq 改动已有券：多一个 couponId，且券码不可改。
 type CouponUpdateReq struct {
 	CouponID uint64 `json:"couponId"`
 	CouponWriteReq
 }
 
-// CouponUpdateRaw 把更新入参展平。mcp 的 schema 反射读不到内嵌结构体上的 json 标签，
-// 展平后入参才和 schema 对得上。
 type CouponUpdateRaw struct {
 	CouponID      uint64 `json:"couponId"`
 	ProjectID     string `json:"projectId"`
@@ -120,15 +63,10 @@ type CouponListArgs struct {
 	Offset    int    `json:"offset,omitempty"`
 }
 
-// CouponDeleteArgs 删券只吃 id。
 type CouponDeleteArgs struct {
 	CouponID uint64 `json:"couponId"`
 }
 
-// CouponReader / CouponWriter 是本模块对优惠券的窄接口。
-//
-// 刻意不把 CouponValidate（试算）与 ListRedemptions（核销记录）放进来：
-// 试算是下单链路的一部分，核销记录是审计材料，都不是「改券」这件事的一部分。
 type CouponReader interface {
 	GetCoupon(ctx context.Context, couponID uint64) (*orderdto.CouponResp, error)
 	ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (*orderdto.CouponListResp, error)
@@ -140,7 +78,6 @@ type CouponWriter interface {
 	DeleteCoupon(ctx context.Context, couponID uint64) error
 }
 
-// CouponTools 装配优惠券工具。
 func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if r == nil {
 		return nil, fmt.Errorf("优惠券读取器不能为空")
@@ -172,7 +109,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			if projectID == "" {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "projectId 不能为空"}
 			}
-			// 分页归一化只有一处（pkg/utils）：这里不再另留一份 clamp，避免两套口径。
+
 			limit, offset := utils.NormalizeLimitOffset(args.PageSize, args.Offset,
 				couponDefaultLimit, couponMaxLimit)
 			req := &orderdto.CouponListReq{
@@ -345,10 +282,6 @@ func couponDetailText(c *orderdto.CouponResp) string {
 	return b.String()
 }
 
-// couponValueText 是 DiscountLabel 缺席时的兜底。
-//
-// 口径与 service 的 couponDiscountLabel 一致：percent 是**减免的百分比**。
-// 这里必须说「减 90%」而不是「打九折」—— 两者差 10 倍。
 func couponValueText(c *orderdto.CouponResp) string {
 	if c.DiscountType == "percent" {
 		return fmt.Sprintf("减 %d%%", c.DiscountValue)
@@ -356,8 +289,6 @@ func couponValueText(c *orderdto.CouponResp) string {
 	return fmt.Sprintf("减 %s", centsLabel(c.DiscountValue))
 }
 
-// timeText 时间窗的文本。nil 表示「不限」，与空串不是一回事 ——
-// 券的「生效到什么时候」和「随时可用」对外表现完全不同。
 func timeText(t *utils.JSONTime) string {
 	if t == nil || t.IsZero() {
 		return "不限"
@@ -376,10 +307,6 @@ func usesText(n int) string {
 	return fmt.Sprintf("%d 次", n)
 }
 
-// couponStateText 把展示口径状态翻成中文。
-//
-// 用 State 而不是 Status：status=1 只说明「运营没手动停用」，
-// 一张已经过期或用尽的券看 status 是看不出问题的。
 func couponStateText(state string) string {
 	switch strings.TrimSpace(state) {
 	case "enabled":
@@ -396,13 +323,8 @@ func couponStateText(state string) string {
 	return emptyAsDash(state)
 }
 
-// dailyDetailDays 按天趋势在正文里逐日列出的上限（天）。
-//
-// 超过就不列了：366 天的明细会把上下文吃光，而模型真正要的信息（总单数、峰值日）
-// 已经在汇总句里。需要逐日明细的消费者读 Data（结构化数据不受这条限制）。
 const dailyDetailDays = 14
 
-// OverviewTools 返回订单模块的概览聚合工具集（趋势 / 热销榜 / 状态计数）。
 func OverviewTools(overview ordercontract.OrderOverviewReader) ([]mcp.Tool, error) {
 	if overview == nil {
 		return nil, errors.New("ordermcp: 订单概览聚合依赖缺失（装配期接线错误）")
@@ -414,7 +336,6 @@ func OverviewTools(overview ordercontract.OrderOverviewReader) ([]mcp.Tool, erro
 	}, nil
 }
 
-// ordersDailyArgs orders_daily 的入参。
 type ordersDailyArgs struct {
 	ProjectID string `json:"projectId"`
 	From      string `json:"from"`
@@ -443,7 +364,6 @@ func ordersDaily(overview ordercontract.OrderOverviewReader) mcp.Tool {
 		})
 }
 
-// dailyText 把逐日数据写成模型能直接引用的几句（汇总 + 峰值 + 有条件展开的明细）。
 func dailyText(res *orderdto.OrderDailySeriesResp) string {
 	var orders, paid, net int64
 	peakDay, peakOrders := "", int64(-1)
@@ -473,7 +393,6 @@ func dailyText(res *orderdto.OrderDailySeriesResp) string {
 	return b.String()
 }
 
-// ordersTopProductsArgs orders_top_products 的入参。
 type ordersTopProductsArgs struct {
 	ProjectID string `json:"projectId"`
 	From      string `json:"from"`
@@ -487,8 +406,7 @@ func ordersTopProducts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 			"已取消与待付款的不上榜。商品名与 SKU 是下单当时的快照；金额为该商品的行实付合计（整数分），"+
 			"**不含退款分摊**（订单级退款摊不到商品级）。",
 		permission.OrderList,
-		// limit 上限与 service 的 MaxTopProductLimit 一致（50）：模型填更大值会被截到上限，
-		// 而不是把一次对话变成一次全表排序。
+
 		mcp.Object("热销商品榜参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"from":      mcp.String("起始日，格式 YYYY-MM-DD，含当天"),
@@ -515,9 +433,7 @@ func topProductsText(res *orderdto.OrderTopProductsResp) string {
 	}
 	parts := make([]string, 0, len(res.Items))
 	for _, it := range res.Items {
-		// productId 必须带上：榜单是模型最常接着追问的对象（「第一名那个商品的详情」），
-		// 而商品类工具的唯一入口是 id。只给名字时它只能再调一次 product_find 去猜，
-		// 名字有重名或含特殊字符时还会猜错。
+
 		parts = append(parts, fmt.Sprintf("%d) %s（SKU %s，productId=%s）%d 件 / %s",
 			it.Rank, it.ProductName, it.SKU, it.ProductID, it.Quantity, it.AmountLabel))
 	}
@@ -525,15 +441,10 @@ func topProductsText(res *orderdto.OrderTopProductsResp) string {
 	return b.String()
 }
 
-// ordersStatusCountsArgs orders_status_counts 的入参（只有工程，没有时间窗）。
 type ordersStatusCountsArgs struct {
 	ProjectID string `json:"projectId"`
 }
 
-// statusLabelText 状态名 → 中文短标签（「已完成」而不是 "completed"）。
-//
-// 用 order 模块自己的映射而不是在工具里再写一份：那份映射是词条 key 的唯一来源，
-// 两处各写一份时，加一个状态只改一边，另一边就会把英文枚举值直接甩给用户。
 func statusLabelText(status string) string {
 	_, fallback := orderenums.OrderStatusLabel(status)
 	return fallback
@@ -552,16 +463,12 @@ func ordersStatusCounts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 			if err != nil {
 				return mcp.Result{}, err
 			}
-			// 逐状态列全：`Counts` 之前只进了 Data，而 **Data 不会回灌给模型**
-			//（ai_session.go 只取 Result.Text）。于是模型只看得见三个数，
-			// 用户问「已完成多少单」「这个月取消几单」时它答不出来 —— 而这几个数
-			// 明明就在它手上的结构体里。工具名承诺的是「统计当前各状态」。
+
 			lines := make([]string, 0, len(res.Counts))
 			for status, n := range res.Counts {
 				lines = append(lines, statusLabelText(status)+" "+strconv.FormatInt(n, 10))
 			}
-			// 状态顺序由地图迭代决定，必须先排序：同一份数据两次调用给出不同顺序，
-			// 模型会把「顺序变了」读成「情况变了」。
+
 			sort.Strings(lines)
 			head := fmt.Sprintf("当前订单共 %d 笔。待付款 %d 笔、待发货 %d 笔。",
 				res.TotalCount, res.PendingCount, res.ShipPendingCount)
@@ -575,7 +482,6 @@ func ordersStatusCounts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 		})
 }
 
-// QueryTools 返回订单模块的「按线索查订单」工具集。
 func QueryTools(query ordercontract.OrderQueryReader) ([]mcp.Tool, error) {
 	if query == nil {
 		return nil, errors.New("ordermcp: 订单查询依赖缺失（装配期接线错误）")
@@ -583,7 +489,6 @@ func QueryTools(query ordercontract.OrderQueryReader) ([]mcp.Tool, error) {
 	return []mcp.Tool{orderFind(query), orderGet(query)}, nil
 }
 
-// orderFindArgs order_find 的入参。
 type orderFindArgs struct {
 	ProjectID string `json:"projectId"`
 	Keyword   string `json:"keyword"`
@@ -625,10 +530,6 @@ func orderFind(query ordercontract.OrderQueryReader) mcp.Tool {
 		})
 }
 
-// findOrdersText 把订单列表写成模型能直接引用的几句。
-//
-// 每行都给**单号**：它是接着调 order_get 的唯一钥匙，只给客户名与金额时
-// 模型只能再猜一次或干脆反问用户（而用户刚给的就是单号）。
 func findOrdersText(res *orderdto.FindOrderResp) string {
 	if res == nil {
 		return "没有查到订单。"
@@ -648,8 +549,6 @@ func findOrdersText(res *orderdto.FindOrderResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// describeFindScope 说清这次筛了什么 —— 模型要照这句话回答用户，
-// 它必须是**实际生效**的条件而不是用户给的原串。
 func describeFindScope(res *orderdto.FindOrderResp) string {
 	parts := make([]string, 0, 3)
 	if res.From != "" || res.To != "" {
@@ -663,7 +562,6 @@ func describeFindScope(res *orderdto.FindOrderResp) string {
 	return strings.Join(parts, "，")
 }
 
-// orderGetArgs order_get 的入参。
 type orderGetArgs struct {
 	ProjectID string `json:"projectId"`
 	OrderNo   string `json:"orderNo"`
@@ -692,7 +590,6 @@ func orderGet(query ordercontract.OrderQueryReader) mcp.Tool {
 		})
 }
 
-// orderDetailText 把订单详情写成模型能直接引用的几句。
 func orderDetailText(res *orderdto.OrderDetailResp) string {
 	if res == nil || res.Head == nil {
 		return "没有查到这单。"
@@ -744,9 +641,6 @@ func orderDetailText(res *orderdto.OrderDetailResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// —— 文本小工具 ——
-
-// orderStatusText 状态的中文说法；取不到就回原值（原值至少能让模型知道有个状态）。
 func orderStatusText(status string) string {
 	status = strings.TrimSpace(status)
 	if status == "" {
@@ -759,7 +653,6 @@ func orderStatusText(status string) string {
 	return fallback
 }
 
-// operatorTypeText 操作人类型的中文说法（空值不写）。
 func operatorTypeText(t string) string {
 	switch strings.TrimSpace(t) {
 	case "admin":
@@ -773,7 +666,6 @@ func operatorTypeText(t string) string {
 	}
 }
 
-// customerText 客户标识：姓名与邮箱哪些有就写哪些，都没有写「游客」。
 func customerText(o *orderdto.OrderResp) string {
 	name := strings.TrimSpace(o.CustomerName)
 	email := strings.TrimSpace(o.CustomerEmail)
@@ -789,7 +681,6 @@ func customerText(o *orderdto.OrderResp) string {
 	}
 }
 
-// shipAddressText 收货地址拼接（省市区 + 详址），全空回空串。
 func shipAddressText(o *orderdto.OrderResp) string {
 	parts := make([]string, 0, 4)
 	for _, p := range []string{o.ShipProvince, o.ShipCity, o.ShipDistrict, o.ShipAddress} {
@@ -800,11 +691,6 @@ func shipAddressText(o *orderdto.OrderResp) string {
 	return strings.Join(parts, "")
 }
 
-// moneyText 金额输出：分转元 + 币种。
-//
-// **币种从订单上取**（o.Currency），不写死人民币：工具不知道站点用哪种货币，
-// 凭空写 ¥ 会在别的站点上给出错误答案，而用户无法察觉（数字是对的）。
-// 币种为空时只给数字与单位「分」。
 func moneyText(cents int64, currency string) string {
 	yuan := fmt.Sprintf("%.2f", float64(cents)/100)
 	if c := strings.TrimSpace(currency); c != "" {
@@ -842,7 +728,6 @@ type statusWriter interface {
 	UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrderNoteReq) (*orderdto.OrderResp, error)
 }
 
-// StatusWriteTools 返回订单状态工具的写工具集（3 个）。
 func StatusWriteTools(w statusWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("ordermcp: 订单状态写依赖缺失（装配期接线错误）")
@@ -850,7 +735,6 @@ func StatusWriteTools(w statusWriter) ([]mcp.Tool, error) {
 	return []mcp.Tool{orderStatus(w), orderCancel(w), orderNote(w)}, nil
 }
 
-// orderStatusArgs 只留 orderId / toStatus / remark —— 操作人由 ctx 注入。
 type orderStatusArgs struct {
 	OrderID  uint64 `json:"orderId"`
 	ToStatus string `json:"toStatus"`
@@ -976,12 +860,6 @@ func orderNote(w statusWriter) mcp.Tool {
 		})
 }
 
-// Tools 返回订单模块的工具集。
-//
-// 依赖收窄到 OrderRangeSummaryReader（一条只读方法）而不是整个 OrderService：
-// 工具层手里握着 ChangeStatus / RefundOrder 时，「AI 顺手改个订单状态」会从
-// 「需要显式加一个工具」退化成「随手就能写」—— 能力边界该由接口形状决定，
-// 而不是靠下次写代码时记得住。
 func Tools(summary ordercontract.OrderRangeSummaryReader) ([]mcp.Tool, error) {
 	if summary == nil {
 		return nil, errors.New("ordermcp: 订单区间摘要依赖缺失（装配期接线错误）")
@@ -989,10 +867,6 @@ func Tools(summary ordercontract.OrderRangeSummaryReader) ([]mcp.Tool, error) {
 	return []mcp.Tool{ordersSummary(summary)}, nil
 }
 
-// ordersSummaryArgs orders_summary 的入参，字段名与 schema 一一对应。
-//
-// 用结构体而不是 map：字段名拼错是编译错误，而 map 是运行期「少取一个字段」——
-// 后者表现为一路零值算出来的、看起来正常的数字。
 type ordersSummaryArgs struct {
 	ProjectID string `json:"projectId"`
 	From      string `json:"from"`
@@ -1004,8 +878,7 @@ func ordersSummary(summary ordercontract.OrderRangeSummaryReader) mcp.Tool {
 		"按站点工程与日期区间统计订单：区间内创建的订单数、计入消费的订单数、净销售额"+
 			"（净销售额 = 计入消费的订单金额 − 已实际收货的退款额；返回值为整数分，另有展示文案字段）。"+
 			"时间区间为含当天的闭区间，跨度上限 366 天。",
-		// 复用订单列表的权限点：工具的可见性必须与「这个人本来就看不看得到订单」一致，
-		// 另造一个「order:ai_read」只会让同一份数据出现第二种授权口径。
+
 		permission.OrderList,
 		mcp.Object("订单区间摘要参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
@@ -1021,8 +894,7 @@ func ordersSummary(summary ordercontract.OrderRangeSummaryReader) mcp.Tool {
 			if err != nil {
 				return mcp.Result{}, err
 			}
-			// 正文给模型读，Data 给渲染层用：模型不该去解析自己的表格，
-			// 而渲染层也不该去正则匹配一句中文。
+
 			return mcp.Result{
 				Text: fmt.Sprintf("订单区间摘要（%s ~ %s，含当天）：订单 %d 单，其中计入消费 %d 单；净销售额 %s（%d 分）。",
 					res.From, res.To, res.OrderCount, res.PaidOrderCount, res.NetSalesLabel, res.NetSales),
@@ -1032,14 +904,9 @@ func ordersSummary(summary ordercontract.OrderRangeSummaryReader) mcp.Tool {
 }
 
 const (
-	// orderCreateMaxItems 与 service 的 maxOrderItems 同量级。
-	//
-	// 工具层先拦一道不是为了替代 service 的校验：是为了在**调用之前**给出
-	// 「分几次做」这种可执行的建议，而 service 的报错只有一句「商品项超限」。
 	orderCreateMaxItems = 100
 )
 
-// WriteTools 订单模块的写工具集。
 func WriteTools(w ordercontract.OrderWriter, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("ordermcp: 订单写工具依赖缺失（装配期接线错误）")
@@ -1047,7 +914,6 @@ func WriteTools(w ordercontract.OrderWriter, store mcp.IdempotencyStore) ([]mcp.
 	return []mcp.Tool{orderCreate(w, store)}, nil
 }
 
-// orderCreateArgs order_create 的业务入参。
 type orderCreateArgs struct {
 	ProjectID             string            `json:"projectId"`
 	CustomerEmail         string            `json:"customerEmail"`
@@ -1164,10 +1030,7 @@ func orderCreate(w ordercontract.OrderWriter, store mcp.IdempotencyStore) mcp.To
 					Country:  args.Shipping.Country,
 				}
 			}
-			// 开号是**显式**动作：三态里只接受 true / false，不让 nil 漏进 service。
-			// nil 的语义是「调用方没表态，保持既有前台行为（下单即开户）」——
-			// 那是前台 checkout 链路的语义，工具这里是后台代客建单，
-			// 沿用 nil 会让每次代客建单都顺手替客户开一个账号。
+
 			provision := false
 			if args.ProvisionGuestAccount != nil {
 				provision = *args.ProvisionGuestAccount
@@ -1183,11 +1046,6 @@ func orderCreate(w ordercontract.OrderWriter, store mcp.IdempotencyStore) mcp.To
 	)
 }
 
-// orderCreateText 把建单结果写成模型能直接引用的几句。
-//
-// 必须给**订单号**：用户拿到它才能去后台找到这一单（内部 id 在界面上不出现）。
-// Duplicated 为真时要说清「这单不是新落的」—— 否则用户会以为重复下单了，
-// 而实际情况多半是他自己点了两次、系统正确地去重了。
 func orderCreateText(res *orderdto.CreateOrderResp) string {
 	if res == nil {
 		return "建单请求已提交，但没有返回订单信息 —— 请调 order_find 按邮箱或订单号确认。"
@@ -1201,8 +1059,7 @@ func orderCreateText(res *orderdto.CreateOrderResp) string {
 	fmt.Fprintf(&b, "- 订单号 %s（内部 id %d）\n", res.OrderNo, res.ID)
 	fmt.Fprintf(&b, "- 状态 %s，金额 %s\n", res.Status, moneyText(res.Total, res.Currency))
 	if res.AccountMailed {
-		// 开号成功必须说：不提示的话，客户不知道自己已经有了账号，
-		// 下次回来还会去走一遍注册。
+
 		b.WriteString("- 已为该邮箱新建客户账号，并把初始密码寄到了订单邮箱（请告诉用户去收信，包括垃圾箱）\n")
 	}
 	if !res.Duplicated {
@@ -1216,7 +1073,6 @@ const (
 	returnMaxLimit     = 50
 )
 
-// ReturnListArgs 退货列表筛选。
 type ReturnListArgs struct {
 	ProjectID string `json:"projectId"`
 	Keyword   string `json:"keyword,omitempty"`
@@ -1226,22 +1082,19 @@ type ReturnListArgs struct {
 	Offset    int    `json:"offset,omitempty"`
 }
 
-// ReturnGetArgs 看单条退货申请。
 type ReturnGetArgs struct {
 	ReturnID uint64 `json:"returnId"`
 }
 
-// ReturnReviewArgs 审阅（同意 / 驳回）。
 type ReturnReviewArgs struct {
 	ReturnID uint64 `json:"returnId"`
 	Remark   string `json:"remark,omitempty"`
-	// AutoReceive 同意后立刻完成「入库 + 退款」。见工具描述：这是一步到底，不是加速确认。
+
 	AutoReceive   bool   `json:"autoReceive,omitempty"`
 	WarehouseID   string `json:"warehouseId,omitempty"`
 	TransactionID string `json:"transactionId,omitempty"`
 }
 
-// ReturnReceiveArgs 确认收货（入库 + 退款）。
 type ReturnReceiveArgs struct {
 	ReturnID      uint64 `json:"returnId"`
 	WarehouseID   string `json:"warehouseId,omitempty"`
@@ -1249,12 +1102,6 @@ type ReturnReceiveArgs struct {
 	Remark        string `json:"remark,omitempty"`
 }
 
-// ReturnReader / ReturnWriter 是本模块对退货的窄接口。
-//
-// 刻意不含 ReturnableOfOrder（那是前台「这单还能不能退」的判断）与
-// CancelReturn（撤销是**客户**的动作，后台代客户撤销要另想清楚身份问题）。
-// 也不含 RefundReturn 之类的内部步骤：入库与退款由 receive 一次性编排，
-// 单独暴露它们等于允许「只退款不收货」这种账实不符的状态。
 type ReturnReader interface {
 	ListReturns(ctx context.Context, req *orderdto.ReturnListReq) (*orderdto.ReturnListResp, error)
 	GetReturn(ctx context.Context, returnID uint64) (*orderdto.ReturnDetailResp, error)
@@ -1266,7 +1113,6 @@ type ReturnWriter interface {
 	ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceiveReq) (*orderdto.ReturnResp, error)
 }
 
-// ReturnTools 装配退货工具。
 func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if r == nil {
 		return nil, fmt.Errorf("退货读取器不能为空")
@@ -1425,9 +1271,6 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 	return []mcp.Tool{list, get, approve, reject, receive}, nil
 }
 
-// fillReturnOperator 把操作人从 ctx 注入。
-//
-// 不从参数读：审阅人是审计材料，模型会照用户口述的名字填，而那个名字未必是登录身份。
 func fillReturnOperator(ctx context.Context, req *orderdto.ReturnReviewReq) {
 	if uid := mcp.UserIDFrom(ctx); uid > 0 {
 		req.OperatorType = "admin"
@@ -1442,7 +1285,6 @@ func fillReturnReceiveOperator(ctx context.Context, req *orderdto.ReturnReceiveR
 	}
 }
 
-// returnRespText 写操作回执用的简版：只有退货单本身，没有订单快照与明细。
 func returnRespText(r *orderdto.ReturnResp) string {
 	if r == nil {
 		return "（服务端没有回传退货单）"
@@ -1472,8 +1314,6 @@ func returnListText(res *orderdto.ReturnListResp) string {
 	return b.String()
 }
 
-// returnDetailText 详情视图：ReturnDetailResp 是 {Return *ReturnResp, Order *OrderResp} 的组合，
-// 明细挂在 Return.Items 上（不是外层）。
 func returnDetailText(d *orderdto.ReturnDetailResp) string {
 	if d == nil || d.Return == nil {
 		return "没有这条退货申请。"
@@ -1511,10 +1351,6 @@ func returnDetailText(d *orderdto.ReturnDetailResp) string {
 	return b.String()
 }
 
-// returnStatusText 状态的中文说法。
-//
-// 优先用 service 给的口径标签；它缺席时兜底 —— 但**不能只回裸状态码**：
-// 「已同意」与「已收货」在下游是两件不同的事（一个还没退钱，一个钱已退）。
 func returnStatusText(status, label string) string {
 	if s := strings.TrimSpace(label); s != "" {
 		return s

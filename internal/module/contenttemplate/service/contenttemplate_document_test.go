@@ -1,10 +1,5 @@
 package contenttemplateservice
 
-// contenttemplate_document_test.go — 模板文档校验与哈希的就近单测（审计 CQ-020）。
-//
-// 模板文档是构建的直接输入，校验松一格，坏文档就会一路走到构建期；
-// hashDocument 决定「改原文后旧译文/旧快照是否失效」，算错等于静默沿用旧内容。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"testing"
@@ -12,7 +7,6 @@ import (
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 )
 
-// TestValidEntityTypeRejectsNilRegistry 注册表缺失一律不合法（fail-closed）。
 func TestValidEntityTypeRejectsNilRegistry(t *testing.T) {
 	svc := &Service{}
 	if svc.validEntityType("product") {
@@ -23,7 +17,6 @@ func TestValidEntityTypeRejectsNilRegistry(t *testing.T) {
 	}
 }
 
-// TestValidateDocumentRejectsMalformed 非法文档在校验期被拒，不进入存储。
 func TestValidateDocumentRejectsMalformed(t *testing.T) {
 	svc := &Service{}
 	for name, raw := range map[string]string{
@@ -42,7 +35,6 @@ func TestValidateDocumentRejectsMalformed(t *testing.T) {
 	}
 }
 
-// TestHashDocumentStableAndDistinct 文档哈希稳定且对内容敏感。
 func TestHashDocumentStableAndDistinct(t *testing.T) {
 	a := hashDocument([]byte("{\"root\":[]}"))
 	if len(a) != 64 {

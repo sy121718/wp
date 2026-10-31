@@ -1,17 +1,5 @@
 package feature
 
-// inventory_receipt_rollback_test.go — 故障注入：库存变动在**事务中途**失败时，
-// 收货这一次写操作必须整体回滚。
-//
-// 要证明的是本次收口的核心命题：记账（采购行已入库数量 / 入库单 / 入库行 / 采购单状态）
-// 与库存变动（数量写回 / 流水 / 成本）在同一条事务里，任一步失败都不留半截状态。
-// 收口之前它们是两段：记账事务先提交，随后另开事务动库存，失败靠
-// `s.compensateReceipt(...)` 补偿（而调用处是 `_ =` 吞错）——
-// 补偿再失败就是「记了账没动库存」，错误还被丢掉。
-//
-// 注入点刻意选在库存事务的**最后一步**（写流水）：故障发生时库存数量已经 UPDATE 过，
-// 因此回滚必须把数量一起退回去 —— 只断言「单据没了」是不够的。
-
 import (
 	"testing"
 
@@ -33,8 +21,6 @@ func TestReceiptRollsBackAccountingWhenStockChangeFails(t *testing.T) {
 		Quantity: 3, UnitPrice: 4.5,
 	}})
 
-	// 故障注入：让库存流水的 INSERT 直接抛异常。触发器只存在于本用例的隔离 schema 里，
-	// 不碰任何生产迁移；换成「库存服务不可用」这类外部故障时，前几步同样已经写过了。
 	if err := f.db.Exec("CREATE OR REPLACE FUNCTION test_block_movement() RETURNS trigger AS $$ " +
 		"BEGIN RAISE EXCEPTION '故障注入：库存流水写入失败'; END $$ LANGUAGE plpgsql").Error; err != nil {
 		t.Fatalf("创建故障注入函数失败: %v", err)
@@ -48,7 +34,6 @@ func TestReceiptRollsBackAccountingWhenStockChangeFails(t *testing.T) {
 		t.Fatalf("库存变动失败时登记收货必须整体失败")
 	}
 
-	// 逐项断言「一条都不该留下」。
 	if got := lineReceivedIn(t, f, order.Lines[0].ID); got != 0 {
 		t.Fatalf("采购行的已入库数量必须回滚到 0，实际 %d", got)
 	}
@@ -66,8 +51,7 @@ func TestReceiptRollsBackAccountingWhenStockChangeFails(t *testing.T) {
 	if got := purchaseStatusIn(t, f, order.ID); got != purchaseenums.PurchaseStatusOrdered {
 		t.Fatalf("采购单状态应仍是 ordered，实际 %q", got)
 	}
-	// 库存：行还在（商品建变体时生成的那一行），但数量与流水都要退回去 ——
-	// 故障发生在数量写回之后，这里最能说明「同一条事务」。
+
 	if got := f.stockQty(t, v.ID, wh.ID); got != 0 {
 		t.Fatalf("库存数量必须回滚到 0（故障发生在写回之后），实际 %d", got)
 	}

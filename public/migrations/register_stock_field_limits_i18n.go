@@ -1,10 +1,5 @@
 package migrations
 
-// register_stock_field_limits_i18n.go — 645 的注册项。
-//
-// 判据逐条枚举本批四个 key（中英成对共 8 行），不用全库总量也不用前缀 LIKE：
-// 前者会被同期其它批次的行满足而静默跳过，后者会被将来新增的同前缀 key 带跑。
-
 import "sync"
 
 func init() { registerStockFieldLimitsI18n() }

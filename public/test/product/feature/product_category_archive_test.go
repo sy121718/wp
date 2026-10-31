@@ -1,15 +1,5 @@
 package feature
 
-// product_category_archive_test.go — 分类变更触发归档页同步（审计 EDT-004 实体侧联动）。
-//
-// 闭环的最后一段：分类是「谁」，归档页是「它的列表页」。分类侧只负责**通知**，
-// 归档页该不该建、路径怎么定，全在 presentation 内部决定（端口只给一条方法）。
-//
-// 两条断言看似平凡，但都是刻意的设计选择：
-//  1. 新建分类会带上分类 id 与 slug 去同步；
-//  2. **同步失败不阻断分类保存** —— 归档页是派生视图，不是分类的一部分。
-//     反过来会让一个次要问题挡住主流程，而且分类此时已经写进库里了。
-
 import (
 	"context"
 	"errors"
@@ -20,7 +10,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// stubArchiveEnsurer 记录归档同步调用；err 非空时模拟同步失败。
 type stubArchiveEnsurer struct {
 	calls []presentationdto.EnsureArchiveReq
 	err   error
@@ -55,13 +44,11 @@ func TestCategoryCreateEnsuresArchivePage(t *testing.T) {
 		t.Fatalf("新建分类应触发一次归档页同步，实际 %d 次", len(stub.calls))
 	}
 	call := stub.calls[0]
-	// 实体类型用**注册表口径** product_category（审计 EDT-004 收口）：presentation 按实体类型
-	// 取归档模板，短名 "category" 不在注册表里，归档实例必然建不出来。
+
 	if call.EntityType != productcontract.EntityTypeCategory || call.EntityID != cat.ID || call.Slug != "electronics" {
 		t.Fatalf("同步入参应带上分类身份（注册表口径的实体类型）与 slug，实际 %+v", call)
 	}
 
-	// 改名：slug 变化同样要同步（presentation 内部比对路径后决定是否重建）。
 	newSlug := "electronics-pro"
 	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{
 		ID: cat.ID, Slug: &newSlug,
@@ -76,7 +63,6 @@ func TestCategoryCreateEnsuresArchivePage(t *testing.T) {
 	}
 }
 
-// TestCategoryCreateSurvivesArchiveFailure 归档页同步失败不阻断分类保存。
 func TestCategoryCreateSurvivesArchiveFailure(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {

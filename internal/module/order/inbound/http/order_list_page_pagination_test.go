@@ -60,14 +60,9 @@ func (s orderPaginationProjects) List(context.Context) ([]projectcontract.Projec
 	return []projectcontract.ProjectResp{{ID: "p-1", Name: "Demo"}}, s.err
 }
 
-// Capture the actual handler data and render the production partial from it.
 type orderPaginationRender struct {
 	delegate ginrender.HTMLRender
-	// data 是渲染出口**最后交给模板的那一层**。视图换强类型之后它可能不是 gin.H
-	// （pageview.Render 走 PrepareView 摊平成 map），所以用 any 接住，需要键时再断言。
-	//
-	// 这个测试验的是「分页 partial 拿到的事实」，与视图是什么 Go 类型无关 ——
-	// 强行要求 gin.H 会把「换了视图形状」当成「分页错了」。
+
 	data any
 	name string
 }
@@ -86,8 +81,7 @@ func orderPaginationPage(t *testing.T, kind, query string, svc *orderPaginationS
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/"+kind+query, nil)
 	switch kind {
 	case "orders":
-		// 页面出口需要 PageSlot（模板名由装配点带进上下文）。
-		// 直接调 c.Set 会绕过 view.Slot 的键名约定，所以走真实中间件。
+
 		adminui.PageSlot(OrderListPageTemplate)(c)
 		NewOrderPageHandle(svc, projects, nil).OrdersPage(c)
 	case "coupons":
@@ -118,7 +112,7 @@ func TestOrderListPagesPaginationBaseline(t *testing.T) {
 				query = strings.ReplaceAll(query, "&orderId=42", "")
 			}
 			renderer, body := orderPaginationPage(t, kind, query, svc, orderPaginationProjects{})
-			// 渲染出口交给模板的是 PrepareView 摊平后的 map（键名 = 视图字段名）。
+
 			fields, _ := renderer.data.(gin.H)
 			if fields == nil {
 				t.Fatalf("渲染数据不是 map：%T", renderer.data)
@@ -192,7 +186,7 @@ func TestOrderListPagesPaginationWindowAndEmpty(t *testing.T) {
 				if strings.Contains(body, "<nav") {
 					t.Fatalf("unexpected pagination: %s", body)
 				}
-				// 渲染出口交给模板的是 PrepareView 摊平后的 map（键名 = 视图字段名）。
+
 				fields, _ := renderer.data.(gin.H)
 				if fields == nil {
 					t.Fatalf("渲染数据不是 map：%T", renderer.data)

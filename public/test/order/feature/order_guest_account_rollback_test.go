@@ -1,12 +1,3 @@
-// order_guest_account_rollback_test.go — 访客开号必须与建单同事务（BIZ-11）。
-//
-// 缺陷：开号（建号 + 发初始密码邮件）发生在**建单事务之外**（buildOrderDraft 阶段）。
-// 触发序列：新邮箱下单一件库存不足的量大商品 → 建号 + 发信**成功** → 整单**回滚**
-// → 留下一个**孤儿账号**（能登录、没有任何订单，且客户收到的密码指向一个"凭空出现"的账号）。
-//
-// 判据：
-//  1. 建单失败（库存不足）后，`users` 里不得留下该邮箱的账号，也不得发出初始密码邮件；
-//  2. 建单成功时账号照常建立、订单关联到它、初始密码邮件照发（正常路径不回退）。
 package feature
 
 import (
@@ -18,7 +9,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// userIDByEmail 直查字节真源：该邮箱在 users 表里的 id（0 = 不存在）。
 func userIDByEmail(t *testing.T, f *orderFixture, email string) uint64 {
 	t.Helper()
 	var id uint64
@@ -29,7 +19,6 @@ func userIDByEmail(t *testing.T, f *orderFixture, email string) uint64 {
 	return id
 }
 
-// guestMailSent 是否发出过初始密码邮件（模板 key 见 user 模块的 guestAccountTemplate）。
 func guestMailSent(f *orderFixture) bool {
 	for _, c := range f.mail.calls {
 		if c != nil && c.TemplateKey == "guest_account" {
@@ -39,7 +28,6 @@ func guestMailSent(f *orderFixture) bool {
 	return false
 }
 
-// TestOrderGuestAccountRollsBackWithOrder 建单失败不得留下孤儿账号，也不得发信。
 func TestOrderGuestAccountRollsBackWithOrder(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -48,7 +36,6 @@ func TestOrderGuestAccountRollsBackWithOrder(t *testing.T) {
 	ctx := context.Background()
 	const email = "orphan-check@example.com"
 
-	// 只备 1 件货，却下单 5 件 → 库存不足，整单回滚。
 	_, vid := f.addProduct(t, "库存不足商品", 30, 1)
 	req := f.createBaseReq(vid, 5)
 	req.CustomerEmail = email
@@ -68,7 +55,6 @@ func TestOrderGuestAccountRollsBackWithOrder(t *testing.T) {
 	}
 }
 
-// TestOrderGuestAccountCommitsWithOrder 正常路径不回退：账号随订单一起提交、订单关联到它、邮件照发。
 func TestOrderGuestAccountCommitsWithOrder(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -109,9 +95,6 @@ func TestOrderGuestAccountCommitsWithOrder(t *testing.T) {
 	}
 }
 
-// TestOrderGuestAccountExplicitOffSkipsProvision 显式不开号（后台代客建单档）不得建号、不得发信。
-//
-// 这条是既有三态语义的防回退：把开号挪进事务不能把「显式开关」这一层判断丢掉。
 func TestOrderGuestAccountExplicitOffSkipsProvision(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

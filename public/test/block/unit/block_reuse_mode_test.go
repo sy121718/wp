@@ -1,5 +1,3 @@
-// Package unit 覆盖 reuse_mode 复用方式核心规则（docs/02-D §5/§9/§12）：
-// 归一化校验、stale 传播分支、删除引用拦截、CloneAST 独立性。
 package unit
 
 import (
@@ -12,7 +10,6 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 )
 
-// TestBlockReuseModeDefaultsAndValidation 创建链路的 reuse_mode 归一化。
 func TestBlockReuseModeDefaultsAndValidation(t *testing.T) {
 	e := newEnv(t)
 
@@ -54,7 +51,6 @@ func TestBlockReuseModeDefaultsAndValidation(t *testing.T) {
 	})
 }
 
-// TestBlockListFilterReuseMode 列表按 reuseMode 过滤。
 func TestBlockListFilterReuseMode(t *testing.T) {
 	e := newEnv(t)
 	e.createBlock(t, "引用块", "block")
@@ -78,7 +74,6 @@ func TestBlockListFilterReuseMode(t *testing.T) {
 	}
 }
 
-// TestBlockStalePropagationBranch stale 传播分支（docs/02-D §9）。
 func TestBlockStalePropagationBranch(t *testing.T) {
 	e := newEnv(t)
 	calls := 0
@@ -106,7 +101,6 @@ func TestBlockStalePropagationBranch(t *testing.T) {
 	}
 }
 
-// TestBlockDeleteReferenceGuard 删除引用拦截（docs/02-D §9）。
 func TestBlockDeleteReferenceGuard(t *testing.T) {
 	e := newEnv(t)
 	e.svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return true, nil })
@@ -123,13 +117,12 @@ func TestBlockDeleteReferenceGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 template 块失败: %v", err)
 	}
-	// 检查器恒报被引用：template 块仍应直接可删（页面持有副本，删除无副作用）。
+
 	if err := e.svc.Delete(context.Background(), &blockdto.DeleteReq{ID: tpl.ID}); err != nil {
 		t.Fatalf("template 块删除不应被拦截: %v", err)
 	}
 }
 
-// TestBlockUpdateSwitchGlobalToTemplateGuard global→template 切换防御。
 func TestBlockUpdateSwitchGlobalToTemplateGuard(t *testing.T) {
 	e := newEnv(t)
 	e.svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return true, nil })
@@ -140,7 +133,6 @@ func TestBlockUpdateSwitchGlobalToTemplateGuard(t *testing.T) {
 		t.Fatalf("期望 ErrBlockInUse，实际 %v", err)
 	}
 
-	// 无引用时可切换。
 	e.svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return false, nil })
 	res, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: b.ID, ExpectedVersion: uint64(b.Version), Name: "引用块", ReuseMode: "template"})
 	if err != nil || res.ReuseMode != "template" {
@@ -148,7 +140,6 @@ func TestBlockUpdateSwitchGlobalToTemplateGuard(t *testing.T) {
 	}
 }
 
-// collectNodeIDs 递归收集文档 root 树的全部节点 ID。
 func collectNodeIDs(doc json.RawMessage) []string {
 	var parsed struct {
 		Root []map[string]any `json:"root"`
@@ -178,8 +169,6 @@ func collectNodeIDs(doc json.RawMessage) []string {
 	return ids
 }
 
-// TestBlockCloneASTIndependence CloneAST 独立性（docs/02-D §5.2）：
-// 副本节点数量与源一致但全部节点 ID 重生成。
 func TestBlockCloneASTIndependence(t *testing.T) {
 	e := newEnv(t)
 	src := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"n1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}},"children":[{"id":"n2","type":"core.text","props":{"text":"b"}}]}]}`

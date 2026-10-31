@@ -1,19 +1,5 @@
 package feature
 
-// block_version_conflict_test.go — 全局块保存的乐观并发（B2 迁移 676 / B1 契约 §3）。
-//
-// 守的缺陷形态：`UpdateDocument` 原本是**覆盖式整树保存**。两个管理员同时编辑同一个
-// 全局块时，后保存的静默覆盖前一个 —— 而全局块被多个页面引用、可能正跑在线上。
-// 这类丢失不报错、不留痕，只表现为「我改的东西又回去了」，且下一次构建才在产物里现形。
-//
-// 判据分三层，缺一层就挡不住真问题：
-//
-//	1  过期版本被拒（409），且**错误里带当前版本号** —— 只说"已被修改"时前端只能让用户
-//	   刷新整页；带上版本才能提示"当前第 N 版"。
-//	2  正确版本能保存，且保存后 version 自增 —— 不自增等于"第一次之后永远冲突"。
-//	3  **真实并发**：N 个 goroutine 拿同一个快照同时保存，必须只有一个成功。
-//	   串行断言过了不代表并发对（这正是 -race 之外还需要真实并发的原因）。
-
 import (
 	"context"
 	"errors"
@@ -34,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newVersionBlock 建一个全局块并返回它（version 应为 1）。
 func newVersionBlock(t *testing.T, env *refEnv, name string) *blockdto.BlockResp {
 	t.Helper()
 	got, err := env.blocks.Create(context.Background(), &blockdto.CreateReq{
@@ -49,7 +34,6 @@ func newVersionBlock(t *testing.T, env *refEnv, name string) *blockdto.BlockResp
 	return got
 }
 
-// TestBlockSaveRejectsStaleVersion 过期版本被拒，错误里带当前版本号与 409。
 func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
@@ -58,7 +42,6 @@ func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 	block := newVersionBlock(t, env, "版本冲突块")
 	ctx := context.Background()
 
-	// 第一次用当前版本保存：成功，version 1 → 2。
 	saved, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
 		ID: block.ID, Document: []byte(docWithMarker("v2")),
 		ExpectedVersion: uint64(block.Version),
@@ -70,7 +53,6 @@ func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 		t.Fatalf("保存后 version 应自增到 2，实际 %d", saved.Version)
 	}
 
-	// 再用**旧**版本（1）保存：必须 409，且不覆盖已保存的内容。
 	_, err = env.blocks.Update(ctx, &blockdto.UpdateReq{
 		ID: block.ID, Document: []byte(docWithMarker("999")),
 		ExpectedVersion: uint64(block.Version),
@@ -85,11 +67,7 @@ func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 	if !ok || status != http.StatusConflict {
 		t.Errorf("版本冲突应声明 409，实际 %d（ok=%v）", status, ok)
 	}
-	// 错误要能交出版本号，出口据此提示「当前第 N 版」。
-	//
-	// 断言的是 Version() 而不是 err.Error()：错误串是**内部标识**（key），
-	// 对用户说的话由出口用 key + Args 取词生成（词条里是 %s）。
-	// 让 Error() 直接带中文，就等于把一句成品句塞进错误值 —— 换语言时它不会跟着变。
+
 	var withVersion interface{ Version() string }
 	if !errors.As(err, &withVersion) {
 		t.Fatalf("冲突错误应实现 Version() 供出口填充占位符，实际 %T", err)
@@ -98,7 +76,6 @@ func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 		t.Errorf("冲突错误应带当前版本 2，实际 %q", withVersion.Version())
 	}
 
-	// 内容没被覆盖。
 	cur, err := env.blocks.Detail(ctx, &blockcontract.DetailReq{ProjectID: env.projectID, ID: block.ID})
 	if err != nil {
 		t.Fatalf("读块失败: %v", err)
@@ -108,10 +85,6 @@ func TestBlockSaveRejectsStaleVersion(t *testing.T) {
 	}
 }
 
-// TestBlockSaveConcurrentOnlyOneWins 真实并发：N 个请求持同一快照，只能有一个成功。
-//
-// 为什么必须真并发：串行的「先读后写」断言在覆盖式保存下**也会通过**
-// （每次都是最新版本），只有同时读同一版本才能暴露丢更新。
 func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
@@ -121,7 +94,7 @@ func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 	ctx := context.Background()
 
 	const racers = 8
-	snapshot := uint64(block.Version) // 所有 racer 拿到同一个版本
+	snapshot := uint64(block.Version)
 
 	var wg sync.WaitGroup
 	results := make([]error, racers)
@@ -130,10 +103,10 @@ func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			<-start // 尽量让它们同时进入
+			<-start
 			_, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
 				ID: block.ID,
-				// 每个 racer 写不同内容，方便判断谁赢了。
+
 				Document:        []byte(docWithMarker(strconv.Itoa(idx))),
 				ExpectedVersion: snapshot,
 			})
@@ -162,7 +135,6 @@ func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 		t.Errorf("其余 %d 个都应报版本冲突，实际冲突 %d", racers-1, conflictCount)
 	}
 
-	// 版本只涨 1（不是涨 N —— 那说明有 racer 在"冲突"之后仍然写了）。
 	cur, err := env.blocks.Detail(ctx, &blockcontract.DetailReq{ProjectID: env.projectID, ID: block.ID})
 	if err != nil {
 		t.Fatalf("读块失败: %v", err)
@@ -172,7 +144,6 @@ func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 	}
 }
 
-// 缺失版本不得获得覆盖通道，拒绝后文档和版本都保持原值。
 func TestBlockSaveWithoutExpectedVersionRejects(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
@@ -197,29 +168,14 @@ func TestBlockSaveWithoutExpectedVersionRejects(t *testing.T) {
 	}
 }
 
-// docWithMarker 一份**合法**的块文档，正文里带一个标记串。
-//
-// 为什么不能写空 root：service 的 validateDocument 会解析并校验整棵 AST，
-// 形状不对直接 ErrBlockInvalidDoc。这里刻意复用合法形状（与 block_source_ref_guard_test.go
-// 的 emptyDoc 同源），让断言聚焦在版本语义上，不被文档校验失败掩盖。
 func docWithMarker(marker string) string {
 	return `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"txt","type":"core.text","props":{"text":"` + marker + `"}}]}`
 }
 
-// containsVersion 判断文本里是否出现某个版本号（用于「带当前版本号」这类断言）。
 func containsVersion(s string, v int64) bool {
 	return strings.Contains(s, strconv.FormatInt(v, 10))
 }
 
-// TestVersionConflictMapsTo409AndCarriesVersion 版本冲突的**对外形态**（状态码 + 文案 + 明细）。
-//
-// 这条是 pkg/response 的门禁要求的：用了 response.ErrorAuto 的模块必须在
-// public/test 里有状态码断言，否则"业务错误被判成内部错误"时不会有测试变红。
-//
-// 三件事一起断，缺一条都会让上面的缺陷静默回来：
-//  1. 409 而不是 500（它是可重试的用户动作，不是基础设施故障）；
-//  2. 文案带当前版本号（唯一可行动的信息：用户据此知道"别人改到第几版了"）；
-//  3. 不透出裸 key（未取词时 translate 会原样返回 `key: 明细`，那对用户不可读）。
 func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
@@ -227,7 +183,6 @@ func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 注入这条 key 的词条（测试进程的 i18n 缓存默认是空的）。
 	i18n.InjectForTest(map[string]map[string]string{
 		blockenums.ErrBlockVersionConflict: {"zh-CN": "该全局块已被其他人修改（当前第 %s 版），请刷新后重试"},
 	}, nil)
@@ -241,10 +196,9 @@ func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 		t.Fatalf("第一次保存应成功: %v", err)
 	}
 
-	// 用过期的版本再存：拿到的错误必须声明 409。
 	_, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
 		ID: block.ID, Document: []byte(docWithMarker("stale")),
-		ExpectedVersion: uint64(block.Version), // 已过期
+		ExpectedVersion: uint64(block.Version),
 	})
 	if err == nil {
 		t.Fatal("过期版本保存必须失败")
@@ -254,7 +208,7 @@ func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 		t.Fatalf("版本冲突应声明 409（业务错误），实际 %d（ok=%v）—— "+
 			"退成 500 会让用户以为出了 bug，不会想到刷新重试", status, ok)
 	}
-	// 业务判据必须命中（否则出口按内部错误处理，文案变成「系统内部错误」）。
+
 	fact, bok := facing.FactOf(err)
 	if !bok || !fact.Business {
 		t.Fatalf("版本冲突应命中业务判据，实际 ok=%v business=%v（err=%v）", bok, fact.Business, err)
@@ -262,19 +216,13 @@ func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 	if fact.Key != blockenums.ErrBlockVersionConflict {
 		t.Errorf("key 应为 %s，实际 %q", blockenums.ErrBlockVersionConflict, fact.Key)
 	}
-	// 版本是参数事实，不能把英文尾串拼入中文成品句。
+
 	var versioned interface{ Version() string }
 	if !errors.As(err, &versioned) || versioned.Version() != "2" {
 		t.Fatalf("错误应携带当前版本2: %v", err)
 	}
 }
 
-// TestSaveContentVersionConflictReturns409 走真实控制器的状态码断言。
-//
-// 前一条断的是 service 层的错误声明（facing.StatusOf），这一条断的是**HTTP 出口**：
-// handler 用 response.ErrorAuto 把业务错误映射成真实状态码。两者缺一，
-// "业务错误被判成内部错误"都不会有测试变红 ——
-// 而那正是 pkg/response 门禁要求的断言面（它认 HTTP 状态码字面量）。
 func TestSaveContentVersionConflictReturns409(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
@@ -288,7 +236,7 @@ func TestSaveContentVersionConflictReturns409(t *testing.T) {
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	block := newVersionBlock(t, env, "HTTP 409 断言块")
-	// 先正常保存一次（version 1 → 2），让后续用旧版本必然冲突。
+
 	if _, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
 		ID: block.ID, Document: []byte(docWithMarker("v2")),
 		ExpectedVersion: uint64(block.Version),
@@ -298,7 +246,7 @@ func TestSaveContentVersionConflictReturns409(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 只需要 blocks 契约；页面与工程契约走 nil（SaveBlockContent 不碰它们）。
+
 	engine.POST("/admin/blocks/save-content",
 		blockhttp.NewBlockPageHandle(env.blocks, nil).SaveBlockContent)
 
@@ -312,7 +260,7 @@ func TestSaveContentVersionConflictReturns409(t *testing.T) {
 		t.Fatalf("版本冲突的 HTTP 状态码应为 409，实际 %d（体=%s）—— "+
 			"退成 500 会把它误报成基础设施故障", rec.Code, rec.Body.String())
 	}
-	// 反证另一端：绑定失败必须是 400，不能被当成 500。
+
 	rec2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodPost, "/admin/blocks/save-content",
 		strings.NewReader(`{"id":`))

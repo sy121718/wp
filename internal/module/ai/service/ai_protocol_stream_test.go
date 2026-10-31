@@ -1,11 +1,5 @@
 package aiservice
 
-// ai_protocol_stream_test.go — 流式碎片拼装。
-//
-// 这里每一个用例对应的都是「拼错了不报错、只是结果不对」的形态：
-// 正文少几个字、工具参数粘在一起、用量永远显示未上报。它们在真机上
-// 表现为「回答有点怪」，而看日志只有一次成功的调用。
-
 import (
 	"strings"
 	"testing"
@@ -55,10 +49,6 @@ func TestStreamChatAccumulatesReasoningSeparately(t *testing.T) {
 	}
 }
 
-// 工具调用按 index 归位：一个 delta 里可能同时出现 index 0 的 name 与
-// index 1 的 arguments。不按 index 归位会让两段参数首尾相连，
-// 拼出来的 JSON 解析失败，报的是「工具参数不是合法 JSON」——
-// 从错误信息看不出是拼装的问题。
 func TestStreamChatMergesToolCallsByIndex(t *testing.T) {
 	acc := newStreamAccumulator()
 	feedChat(t, acc,
@@ -83,7 +73,6 @@ func TestStreamChatMergesToolCallsByIndex(t *testing.T) {
 	}
 }
 
-// 没有工具名的碎片直接丢弃（与非流式 parseChatToolCalls 同一条规矩）。
 func TestStreamChatDropsNamelessCall(t *testing.T) {
 	acc := newStreamAccumulator()
 	feedChat(t, acc,
@@ -95,7 +84,6 @@ func TestStreamChatDropsNamelessCall(t *testing.T) {
 	}
 }
 
-// usage 只在尾片出现：中间片没有它属正常，不能据此推断「这家不上报」。
 func TestStreamChatReadsUsageFromTailChunk(t *testing.T) {
 	acc := newStreamAccumulator()
 	feedChat(t, acc,
@@ -115,8 +103,6 @@ func TestStreamChatReadsUsageFromTailChunk(t *testing.T) {
 	}
 }
 
-// 坏片跳过而不是中断：流到一半出现一行解析不了的负载（网关自己加的行）时，
-// 已经产出的部分不该被丢掉。
 func TestStreamChatSkipsBadChunk(t *testing.T) {
 	acc := newStreamAccumulator()
 	feedChat(t, acc,
@@ -130,7 +116,6 @@ func TestStreamChatSkipsBadChunk(t *testing.T) {
 	}
 }
 
-// 只有思考过程、没有正文也没有工具调用 = 这轮没产出（与非流式同一条规矩）。
 func TestStreamChatReasoningAloneIsNotOutput(t *testing.T) {
 	acc := newStreamAccumulator()
 	feedChat(t, acc, `{"choices":[{"delta":{"reasoning_content":"我在想"}}]}`)
@@ -140,14 +125,13 @@ func TestStreamChatReasoningAloneIsNotOutput(t *testing.T) {
 	}
 }
 
-// responses 族：事件名决定这一片是什么，只看 data 会把 completed 当成普通增量。
 func TestStreamResponsesEvents(t *testing.T) {
 	acc := newStreamAccumulator()
 	feed := func(event, data string) StreamDelta {
 		d, _ := feedResponsesEvent(event, []byte(data), acc)
 		return d
 	}
-	feed("response.created", `{"type":"response.created"}`) // 无关事件不该影响累积
+	feed("response.created", `{"type":"response.created"}`)
 	if d := feed(responsesEventReasoningDelta, `{"delta":"先看订单。"}`); d.Reasoning != "先看订单。" {
 		t.Fatalf("思考过程增量没读到：%+v", d)
 	}
@@ -168,12 +152,6 @@ func TestStreamResponsesEvents(t *testing.T) {
 	}
 }
 
-// TestStreamResponsesCollectsToolCalls 钉住一处**静默**缺陷：responses 族的工具调用
-// 在 response.completed 的 response.output[] 里，不在顶层。
-//
-// 只在顶层找 output 的症状是：模型说一句「正在为你定位本店工程，查到后立即跟进」
-// 然后就没有下文 —— 会话层看到的这一轮「没有任何工具调用」，于是直接收尾。
-// 不报错、日志干净、界面正常，唯一的现象是它从来不真的查数。
 func TestStreamResponsesCollectsToolCalls(t *testing.T) {
 	acc := newStreamAccumulator()
 	feed := func(event, data string) {
@@ -181,7 +159,7 @@ func TestStreamResponsesCollectsToolCalls(t *testing.T) {
 	}
 	feed("response.output_item.added", `{"type":"response.output_item.added","item":{"type":"function_call","name":"site_projects","call_id":"c1"}}`)
 	feed(responsesEventTextDelta, `{"type":"response.output_text.delta","delta":"正在查…"}`)
-	// 真实负载的形状：数据在 response 子对象里，usage 也在那里（不在顶层）。
+
 	feed(responsesEventCompleted, `{"type":"response.completed","response":{`+
 		`"output":[`+
 		`{"type":"function_call","name":"order_find","call_id":"c1","arguments":"{\"projectId\":\"p1\"}"},`+
@@ -205,7 +183,7 @@ func TestStreamResponsesCollectsToolCalls(t *testing.T) {
 	if reply.Content != "正在查…" {
 		t.Errorf("正文应当照常累加，实得 %q", reply.Content)
 	}
-	// 用量同样在 response 子对象里：只读顶层会让「用量」这一列永远空着。
+
 	if !reply.Usage.Reported || reply.Usage.TotalTokens != 15 {
 		t.Errorf("用量应从 response.usage 读出，实得 %+v", reply.Usage)
 	}
@@ -214,12 +192,6 @@ func TestStreamResponsesCollectsToolCalls(t *testing.T) {
 	}
 }
 
-// 只有 response.completed、没有 output_text.delta 的流式响应。
-//
-// 实测遇到过一次：模型返回了 221 个输出 token，正文全在 completed 的 output[] 里，
-// 一个 delta 事件都没发。只认增量累积器的实现拿到空回答，用户看到
-// 「这次没能拿到回答，请稍后再试」—— 模型明明答了。
-// 判据：completed 到达时累积器是空的，就用 output[] 那一份填上。
 func TestStreamResponsesBackfillsTextFromCompleted(t *testing.T) {
 	acc := newStreamAccumulator()
 	delta, done := feedResponsesEvent(responsesEventCompleted, []byte(`{"type":"response.completed","response":{`+
@@ -239,7 +211,7 @@ func TestStreamResponsesBackfillsTextFromCompleted(t *testing.T) {
 	if !strings.Contains(reply.Reasoning, "先看看能做什么") {
 		t.Fatalf("思考过程也应回填，实得 %q", reply.Reasoning)
 	}
-	// 回填的那份要一并推给界面，否则前端直到结束都没显示过它。
+
 	if !strings.Contains(delta.Text, "我可以查订单") {
 		t.Errorf("回填的正文应随事件推出去，实得 %q", delta.Text)
 	}
@@ -248,7 +220,6 @@ func TestStreamResponsesBackfillsTextFromCompleted(t *testing.T) {
 	}
 }
 
-// 有 delta 时不能重复回填 —— 否则正文会出现两遍。
 func TestStreamResponsesDoesNotDuplicateWhenDeltaPresent(t *testing.T) {
 	acc := newStreamAccumulator()
 	feed := func(event, data string) { feedResponsesEvent(event, []byte(data), acc) }
@@ -262,7 +233,6 @@ func TestStreamResponsesDoesNotDuplicateWhenDeltaPresent(t *testing.T) {
 	}
 }
 
-// parseResponsesOutputText 抽取规则：只认 message 里的 output_text 段。
 func TestParseResponsesOutputTextSkipsOtherParts(t *testing.T) {
 	output := []any{
 		map[string]any{"type": "reasoning", "summary": []any{map[string]any{"text": "想"}}},

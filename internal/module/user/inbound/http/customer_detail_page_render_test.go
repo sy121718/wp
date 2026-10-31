@@ -1,12 +1,5 @@
 package userhttp
 
-// customer_detail_page_render_test.go — 客户详情页的渲染与 handler 冒烟。
-//
-// 详情页有一块**跨模块拼装**的内容：客户资料来自 user 模块，订单摘要来自 order 模块
-//（只读聚合）。这块最容易出现「看起来正常其实不可用」的状态 ——
-// 没有工程 / 订单能力没装配 / 摘要查询失败，三种都要有自己的说法，
-// 而不是渲染一片空白让人以为「这个客户没下过单」。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -19,10 +12,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// detailSummary 一个正常的订单摘要（已付款 2 单、累计 198 元、最近一单 SO20260920001）。
-//
-// 只给**时刻**（LastOrderTime）不给预制串（LastOrderTimeText）：页面上的时间由模板的
-// dateTime() 格式化，设置那个串会让「模板又去读预制展示串」照样通过。
 func detailSummary() *ordercontract.CustomerOrderSummaryResp {
 	lastOrder := time.Date(2026, 9, 20, 8, 5, 0, 0, time.Local)
 	return &ordercontract.CustomerOrderSummaryResp{
@@ -45,11 +34,9 @@ func TestCustomerDetailTemplateRenders(t *testing.T) {
 	for _, want := range []string{
 		"客户详情", "艾丽丝", "alice@example.com", "203.0.113.7", "203.0.113.9",
 		"官网", "订单数 3", "¥198.00", "SO20260920001",
-		// 时间由模板的 dateTime() 格式化（服务端给的是时刻）：这一条同时钉住
-		// 「注册时间 / 最近登录 / 最近一单时间」三处都真的渲染出了东西。
+
 		"2026-09-01 10:30", "2026-09-20 08:05",
-		// 只断言参数本身：url.Values.Encode 会按字母序重排，且 Jet 会把 & 转义成 &amp;，
-		// 断言整串等于把实现细节抄进测试（改一次排序就要改一次测试）。
+
 		"orderId=900", "/admin/orders?",
 		"/api/customer/status", "累计消费只统计",
 	} {
@@ -59,7 +46,6 @@ func TestCustomerDetailTemplateRenders(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailTemplateNoOrders 没下过单是正常状态，不是错误。
 func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 	summary := &ordercontract.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
 	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(), "p1", summary,
@@ -74,7 +60,6 @@ func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailTemplateNoProjects 没有站点工程时给说明，而不是渲染一个没用的工程下拉。
 func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), nil, "", nil, false, false, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
@@ -87,7 +72,6 @@ func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailTemplateSummaryFailed 摘要读不出来时给说明，客户资料照常显示。
 func TestCustomerDetailTemplateSummaryFailed(t *testing.T) {
 	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(), "p1", nil,
 		false, true, customerMsg{})
@@ -101,7 +85,6 @@ func TestCustomerDetailTemplateSummaryFailed(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailTemplatePendingHasNoStatusAction 待激活客户的详情页不给停用按钮。
 func TestCustomerDetailTemplatePendingHasNoStatusAction(t *testing.T) {
 	item := customerSample()
 	item.Status = 2
@@ -117,7 +100,6 @@ func TestCustomerDetailTemplatePendingHasNoStatusAction(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailPageHandlerRendersOrderSummary 直接打 handler（钉住模板名）。
 func TestCustomerDetailPageHandlerRendersOrderSummary(t *testing.T) {
 	h := NewCustomerPageHandle(
 		&fakeCustomerAdmin{detail: customerSample()},
@@ -142,8 +124,6 @@ func TestCustomerDetailPageHandlerRendersOrderSummary(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailPageMissingRendersJump 客户不存在时渲染提示页（HTTP 200 +
-// data-jump-state="err"），而不是空详情页 —— 详情页的每个动作都要求一个存在的客户。
 func TestCustomerDetailPageMissingRendersJump(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: nil}, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
@@ -163,7 +143,6 @@ func TestCustomerDetailPageMissingRendersJump(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailPageWithoutIDRendersJump 没带 id 一律渲染提示页（不渲染一个「空客户」）。
 func TestCustomerDetailPageWithoutIDRendersJump(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)

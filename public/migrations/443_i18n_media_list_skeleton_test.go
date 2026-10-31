@@ -7,8 +7,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// TestMediaListSkeletonSeedIsIdempotent 三轮判定：首放补齐、再放跳过、
-// 缺 en-US 行时只补缺失语言、绝不覆盖运营手改的 zh-CN 值。
 func TestMediaListSkeletonSeedIsIdempotent(t *testing.T) {
 	const version = "443-i18n-media-list-skeleton"
 	keys := []string{

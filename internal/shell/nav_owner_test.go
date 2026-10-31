@@ -1,21 +1,5 @@
 package shell_test
 
-// nav_owner_test.go — 侧栏高亮的「归属」判据（原 navPathAlias 的替代）。
-//
-// 背景：高亮过去是「菜单路径 == 当前路径」精确匹配 + 一张手写的 `navPathAlias`
-// （11 条子页面 → 父菜单）。那张表被删掉了，改成「当前路径按**路径段**最长前缀
-// 归属到某个菜单项」（navOwnerPath）。这条判据错了不会报错 —— 表现只是「打开某页
-// 时侧栏没有高亮」或「高亮了隔壁那一项」，所以必须有会变红的用例。
-//
-// 三条最容易写错的边界，各一条断言：
-//   1. 子页面归属到父菜单（/admin/orders/new → /admin/orders）；
-//   2. **按段比而不是按字符比**（/admin/mail/campaign 是 /admin/mail/campaigns 的
-//      字符串前缀，按字符比会让 campaigns 页高亮到 campaign）；
-//   3. 取最长（两个菜单都是前缀时，高亮最具体的那个）。
-//
-// task-72 起实现（BuildNav / NavNode / NavGroup）归 internal/adminui —— 本用例留在原处
-// 只改包的引用面：判据、夹具与断言一字未改。
-
 import (
 	"testing"
 
@@ -35,12 +19,11 @@ func navTestTree() []admindto.MenuTreeNode {
 			},
 		},
 		{ID: 6, Title: "页面管理", Path: "/admin/pages", Type: 2},
-		// 隐藏项不参与归属（不进侧栏，认了它就会出现「高亮指向看不见的菜单」）。
+
 		{ID: 7, Title: "项目管理", Path: "/project", Type: 2, IsHidden: 1},
 	}
 }
 
-// activePaths 返回本次渲染里被标记为高亮的路径集合。
 func activePaths(t *testing.T, current string) map[string]bool {
 	t.Helper()
 	groups := adminui.BuildNav(navTestTree(), current, func(key, fallback string) string { return fallback })

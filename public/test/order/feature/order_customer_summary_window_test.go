@@ -1,18 +1,5 @@
 package feature
 
-// order_customer_summary_window_test.go — 客户订单摘要的单条查询（审计 DB-010）。
-//
-// 审计原文：报表类查询未用窗口函数，客户订单摘要靠多次查询。核对现状**属实**：
-// CustomerOrderSummaryOf 一次调用发三条 SQL —— AggregateByUser 的聚合一条、
-// List 里的分页计数一条（摘要页根本不要 total，白扫一遍全量行）、List 取最近一单一条。
-//
-// 改动把它收敛成 model.SummaryByUser 的一条窗口函数查询。本文件钉住两件事：
-//
-//	1. 改完之后这个摘要只发 1 条取 orders 的 SQL（计数 logger，先例见
-//	   public/test/pkg/i18n/content_translation_test.go）；
-//	2. 结果与旧口径逐字段一致 —— 对照值用**独立 SQL 现算**，不复用被测代码，
-//	   否则「实现改了、断言跟着改」会把错的一起放过。
-
 import (
 	"context"
 	"strings"
@@ -30,7 +17,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// summaryQueryCounter 只数「从 orders 取数」的语句（摘要该发的库交互）。
 type summaryQueryCounter struct {
 	mu    sync.Mutex
 	query int
@@ -44,7 +30,7 @@ func (l *summaryQueryCounter) Error(context.Context, string, ...interface{})    
 func (l *summaryQueryCounter) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
 	sql, _ := fc()
 	low := strings.ToLower(sql)
-	// gorm 生成的语句表名带双引号（FROM "orders"），Raw 手写的没有 —— 两种都要认。
+
 	if strings.Contains(low, "from orders") || strings.Contains(low, "from \"orders\"") {
 		l.mu.Lock()
 		l.query++
@@ -64,8 +50,6 @@ func (l *summaryQueryCounter) reset() {
 	l.mu.Unlock()
 }
 
-// newCountedSummaryFixture 与 newSummaryFixture 同一装配，只把 model 换成挂了计数
-// logger 的会话（计数 logger 只观察不改语义）。
 func newCountedSummaryFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *orderservice.Service, *summaryQueryCounter) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -86,7 +70,6 @@ func newCountedSummaryFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *
 	return db, m, svc, cl
 }
 
-// TestCustomerOrderSummarySingleQuery 摘要只发 1 条 SQL，且与旧口径结果逐字段一致。
 func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 	db, m, svc, cl := newCountedSummaryFixture(t)
 	if db == nil {
@@ -96,7 +79,7 @@ func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 	mkSummaryOrder(t, m, summaryProjectA, "W-PAID", ordermodel.OrderStatusPaid, userA, 10000, summaryTime(1))
 	mkSummaryOrder(t, m, summaryProjectA, "W-CANCELLED", ordermodel.OrderStatusCancelled, userA, 20000, summaryTime(5))
 	mkSummaryOrder(t, m, summaryProjectA, "W-REFUNDED", ordermodel.OrderStatusRefunded, userA, 30000, summaryTime(10))
-	// 干扰项：同工程别的客户、别的工程里的同一个客户。
+
 	mkSummaryOrder(t, m, summaryProjectA, "W-B-PAID", ordermodel.OrderStatusPaid, userB, 5000, summaryTime(3))
 	mkSummaryOrder(t, m, summaryProjectB, "W-A-OTHER", ordermodel.OrderStatusPaid, userA, 70000, summaryTime(8))
 
@@ -111,7 +94,6 @@ func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 		t.Errorf("摘要应只发 1 条 orders 查询，实际 %d 条（多条 = 摘要各值之间可能落在不同快照上）", got)
 	}
 
-	// 对照：旧口径的三条 SQL 各自现算（聚合 + 计数 + 最近一单），逐字段比对。
 	ctx := context.Background()
 	var want struct {
 		OrderCount      int64     `gorm:"column:order_count"`
@@ -130,8 +112,7 @@ func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 		summaryProjectA, userA).Scan(&want).Error; err != nil {
 		t.Fatalf("对照聚合失败: %v", err)
 	}
-	// 最近一单的对照要单独一个结构体：Scan 会把这次没返回的列按零值落回目标，
-	// 复用同一个结构体会把上面的聚合结果抹掉（对照值全 0 会伪装成「新实现不一致」）。
+
 	var wantLast struct {
 		LastOrderID     uint64    `gorm:"column:last_order_id"`
 		LastOrderNo     string    `gorm:"column:last_order_no"`
@@ -175,9 +156,6 @@ func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 	}
 }
 
-// TestCustomerOrderSummaryNoOrdersKeepsOneRow 零订单客户：窗口聚合不产生行，
-// 靠单行哨兵仍返回一行零值 —— 「一单没下」与「查不到这个客户」必须分得开，
-// 而页面正是靠 HasOrders 分支的。
 func TestCustomerOrderSummaryNoOrdersKeepsOneRow(t *testing.T) {
 	db, _, svc, cl := newCountedSummaryFixture(t)
 	if db == nil {
@@ -201,9 +179,6 @@ func TestCustomerOrderSummaryNoOrdersKeepsOneRow(t *testing.T) {
 	}
 }
 
-// TestOrderListIssuesCountAndFind 量出旧摘要路径里 List 那一半的开销：
-// List 固定发 2 条（分页计数 + 取数），加上聚合那条，旧摘要一次调用共 3 条。
-// 这条测试是 DB-010「多次查询」的事实依据，也钉住 List 的行为不被顺手改掉。
 func TestOrderListIssuesCountAndFind(t *testing.T) {
 	db, m, _, cl := newCountedSummaryFixture(t)
 	if db == nil {

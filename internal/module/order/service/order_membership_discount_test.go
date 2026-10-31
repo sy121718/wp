@@ -1,16 +1,5 @@
 package orderservice
 
-// order_membership_discount_test.go — 会员折扣的金额口径（BIZ-3 消费侧接入）。
-//
-// 为什么这组用例必须存在：会员折扣改变了「顾客付多少钱」这条链路，而它接在一处
-// 资损缺陷的历史现场旁边（SEC-001：无券时折扣恒为 0）。口径写错的两种形态都不会报错：
-//   · 会员折扣并进 discount_total → SEC-001 那条判据出现常规例外；
-//   · 折扣合计超过小计 → total 变负数，一路传到支付金额上。
-//
-// 用例里的算式是**真实函数**的组合（membershipDiscountAmount / allocateLineDiscounts），
-// 只有「先券、后会员折扣、再分摊」这个顺序在测试里显式写出 —— 它同时是 buildOrderDraft
-// 的顺序（见该函数的文件头注释）。
-
 import (
 	"context"
 	"errors"
@@ -22,7 +11,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// TestMembershipDiscountAmount 折扣额的取值域与上界。
 func TestMembershipDiscountAmount(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -50,15 +38,11 @@ func TestMembershipDiscountAmount(t *testing.T) {
 	}
 }
 
-// TestOrderTotalRecalcWithCouponAndMembership 复算证据：券与会员折扣各自入账，总额三方平衡。
-//
-// 算式：total = 小计 − 券 − 会员折扣 + 运费；
-// 同时把分摊后的行实付也复算一遍 —— 退款按行实付算，分摊少一份就是退多一份。
 func TestOrderTotalRecalcWithCouponAndMembership(t *testing.T) {
 	const (
 		subtotal      = int64(10000)
-		couponPercent = int64(20) // 券：减 2000
-		memberPercent = int64(10) // 会员：减 1000
+		couponPercent = int64(20)
+		memberPercent = int64(10)
 		shipping      = int64(800)
 	)
 	couponDiscount := subtotal * couponPercent / 100
@@ -80,7 +64,7 @@ func TestOrderTotalRecalcWithCouponAndMembership(t *testing.T) {
 	if total != 7800 {
 		t.Fatalf("总额应为 10000−2000−1000+800=7800，实际 %d", total)
 	}
-	// 各自入账：两列分别存券与会员折扣，相加才是总扣减。
+
 	if got := couponDiscount + membershipDiscount; got != subtotal-total+shipping {
 		t.Fatalf("总扣减应为 %d，实际 %d", subtotal-total+shipping, got)
 	}
@@ -97,15 +81,10 @@ func TestOrderTotalRecalcWithCouponAndMembership(t *testing.T) {
 	}
 }
 
-// TestOrderTotalNeverNegativeWithBothDiscounts 券 100% + 会员折扣并存时总额不为负。
-//
-// 这是「相加扣减」最容易踩的一格：两道折扣各自对小计算，合计会超过小计。
-// 负数总额不报错，它会顺着 total 传到支付金额上 —— 让通道按负数扣款（或直接拒单）。
 func TestOrderTotalNeverNegativeWithBothDiscounts(t *testing.T) {
 	const subtotal = int64(10000)
 	items := []*ordermodel.OrderItemEntity{{LineSubtotal: subtotal, Quantity: 1}}
 
-	// 券 100%（满额券）：折扣夹到小计。
 	couponDiscount := subtotal
 	membershipDiscount := membershipDiscountAmount(subtotal, subtotal-couponDiscount, 50)
 	allocateLineDiscounts(items, subtotal, couponDiscount+membershipDiscount)
@@ -122,11 +101,10 @@ func TestOrderTotalNeverNegativeWithBothDiscounts(t *testing.T) {
 	}
 }
 
-// stubMembershipReader 会员身份读取端口的替身（只实现契约里的一条只读方法）。
 type stubMembershipReader struct {
 	res *membershipdto.MembershipResp
 	err error
-	// calls 记录被调用次数：用于断言「未登录时不查库」这条取舍。
+
 	calls int
 }
 
@@ -135,13 +113,8 @@ func (s *stubMembershipReader) Resolve(_ context.Context, _ *membershipdto.Resol
 	return s.res, s.err
 }
 
-// 编译期断言：替身确实实现了消费侧收窄契约（少一个方法要在编译期就炸）。
 var _ membershipcontract.Reader = (*stubMembershipReader)(nil)
 
-// TestResolveMembershipDiscountSkipsQueryWithoutUser 没有账号时不查库。
-//
-// 访客还没开号就没有会员身份（AGENTS.md 不变量 1 的取舍：不为一个必然没有结论的问题
-// 花一次数据库往返）。
 func TestResolveMembershipDiscountSkipsQueryWithoutUser(t *testing.T) {
 	reader := &stubMembershipReader{res: &membershipdto.MembershipResp{DiscountPercent: 50}}
 	svc := &Service{membership: reader}
@@ -158,9 +131,6 @@ func TestResolveMembershipDiscountSkipsQueryWithoutUser(t *testing.T) {
 	}
 }
 
-// TestResolveMembershipDiscountDegradesOnError 解析失败降级为「不打折」而不是免单。
-//
-// 判据是失效方向：一次数据库抖动若被解释成「免运费/免折扣」，受影响的是全站订单金额。
 func TestResolveMembershipDiscountDegradesOnError(t *testing.T) {
 	reader := &stubMembershipReader{err: errors.New("db down")}
 	svc := &Service{membership: reader}
@@ -174,7 +144,6 @@ func TestResolveMembershipDiscountDegradesOnError(t *testing.T) {
 	}
 }
 
-// TestResolveMembershipDiscountWithoutPortIsZero 端口未注入 = 折扣功能未开启。
 func TestResolveMembershipDiscountWithoutPortIsZero(t *testing.T) {
 	svc := &Service{}
 	uid := uint64(7)
@@ -183,7 +152,6 @@ func TestResolveMembershipDiscountWithoutPortIsZero(t *testing.T) {
 	}
 }
 
-// TestResolveMembershipDiscountAppliesBenefit 有折扣权益时按小计计算并夹在余额内。
 func TestResolveMembershipDiscountAppliesBenefit(t *testing.T) {
 	uid := uint64(7)
 	svc := &Service{membership: &stubMembershipReader{res: &membershipdto.MembershipResp{
@@ -192,16 +160,12 @@ func TestResolveMembershipDiscountAppliesBenefit(t *testing.T) {
 	if got := svc.resolveMembershipDiscount(context.Background(), "p-1", &uid, 10000, 0); got != 2000 {
 		t.Fatalf("20%% 折扣应为 2000，实际 %d", got)
 	}
-	// 券已扣 9000 时余额只剩 1000，会员折扣不得把它放大成 2000。
+
 	if got := svc.resolveMembershipDiscount(context.Background(), "p-1", &uid, 10000, 9000); got != 1000 {
 		t.Fatalf("受券后余额约束应为 1000，实际 %d", got)
 	}
 }
 
-// TestSpentTotalsByUserRejectsEmptyProject 批量端口缺工程即参数错误。
-//
-// 不返回空 map：「没给工程」与「这个工程一分钱消费都没有」在排障时方向完全相反，
-// 而 membership 侧正是靠 Scanned 计数分辨这一类静默故障的。
 func TestSpentTotalsByUserRejectsEmptyProject(t *testing.T) {
 	svc := &Service{}
 	if _, err := svc.SpentTotalsByUser(context.Background(), "   "); err == nil || err.Error() != orderenums.ErrProjectRequired {

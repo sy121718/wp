@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// TestKeyframeCSSByName 后台按需内联动效的取用逻辑。
-//
-// 后台没有 props 管线，但也不该常驻加载 63 条营销动效 ——
-// 页面声明几个就内联几个。这里钉住「空声明零字节」与「未知名字不炸」。
 func TestKeyframeCSSByName(t *testing.T) {
 	if got := KeyframeCSS(nil); got != "" {
 		t.Errorf("空声明应当零字节，得到 %q", got)
@@ -21,18 +17,16 @@ func TestKeyframeCSSByName(t *testing.T) {
 	if !strings.Contains(one, "@keyframes sky-fade-in-up") {
 		t.Errorf("未包含请求的动效: %q", one)
 	}
-	// 只该有请求的那一条 —— 这正是「按需」的含义。
+
 	if strings.Count(one, "@keyframes ") != 1 {
 		t.Errorf("应只内联 1 条，得到 %d 条", strings.Count(one, "@keyframes "))
 	}
 
-	// 去重：同一名字写两遍只出现一次。
 	dup := KeyframeCSS([]string{"sky-fade-in-up", "sky-fade-in-up"})
 	if strings.Count(dup, "@keyframes ") != 1 {
 		t.Errorf("重复声明应只内联一次，得到 %d 条", strings.Count(dup, "@keyframes "))
 	}
 
-	// 未知名字跳过并留痕，不能影响已知的那些（后台页面是开发者写的，写错属笔误）。
 	mixed := KeyframeCSS([]string{"sky-fade-in-up", "sky-not-a-real-name", "sky-fade-in-top-left"})
 	if !strings.Contains(mixed, "@keyframes sky-fade-in-up") || !strings.Contains(mixed, "@keyframes sky-fade-in-top-left") {
 		t.Errorf("已知动效被未知名字连累: %q", mixed)
@@ -45,7 +39,6 @@ func TestKeyframeCSSByName(t *testing.T) {
 	}
 }
 
-// TestKeyframeNamesAvailable 词汇表非空且与 catalog 同源。
 func TestKeyframeNamesAvailable(t *testing.T) {
 	names := KeyframeNames()
 	if len(names) != len(keyframesCatalog) {

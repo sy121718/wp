@@ -1,8 +1,3 @@
-// 调拨单的 API 出口与后台页（迁移 630，W3）。
-//
-// 六条 API（列表 / 详情 / 建单 / 出货 / 签收 / 取消）+ 一个整页。
-// 全部是「绑定 → 调用例 → JSON」：业务判定（凭证必填、可售、状态机）都在 service，
-// 控制器不重复判一遍 —— 那样两处判据迟早会分叉（页面放行、服务端拒绝）。
 package inventoryhttp
 
 import (
@@ -22,10 +17,8 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-// inventoryTransfersPath 调拨页地址（分页基址的唯一字面量处）。
 const inventoryTransfersPath = "/admin/inventory/transfers"
 
-// InventoryTransfersPage 调拨单列表页（GET /admin/inventory/transfers）。
 func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
 	query, ok := binding.Query[inventorydto.ListTransferReq](c)
 	if !ok {
@@ -39,7 +32,6 @@ func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
 	pageview.RenderTemplate(c, InventoryTransfersPageTemplate, data)
 }
 
-// transfersData 取齐调拨页的数据并组成视图（强类型，见 TransferListPageResp）。
 func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	query *inventorydto.ListTransferReq) (*TransferListPageResp, error) {
 	ctx := c.Request.Context()
@@ -68,7 +60,7 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	pg.Base = reqparams.FilterBaseURL(inventoryTransfersPath, map[string]string{
 		"project": selected, "status": query.Status, "keyword": query.Keyword,
 	})
-	// 源仓 / 目标仓下拉（建单抽屉用）：与库存页同一份仓库列表。
+
 	warehouses, werr := h.warehouses(c, selected)
 	if werr != nil {
 		return nil, werr
@@ -88,7 +80,6 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	}, nil
 }
 
-// InventoryTransferDetail 调拨单详情（GET /api/inventory/transfer/get，含三类凭证与候选库存行）。
 func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
 	req, ok := binding.Query[inventorydto.GetTransferReq](c)
 	if !ok {
@@ -102,7 +93,6 @@ func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferCreate 建调拨单（POST /api/inventory/transfer/create）。
 func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.CreateTransferReq](c)
 	if !ok {
@@ -116,7 +106,6 @@ func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferShip 出货（POST /api/inventory/transfer/ship）：必须带出货凭证。
 func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferShipReq](c)
 	if !ok {
@@ -130,7 +119,6 @@ func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferReceive 签收（POST /api/inventory/transfer/receive）：必须带签收凭证。
 func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferReceiveReq](c)
 	if !ok {
@@ -144,7 +132,6 @@ func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferStockOptions 建单抽屉的候选（GET /api/inventory/transfer/stock-options）。
 func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
 	req, ok := binding.Query[inventorydto.TransferStockOptionReq](c)
 	if !ok {
@@ -158,13 +145,12 @@ func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Conte
 	response.Success(c, list)
 }
 
-// InventoryTransferApprove 同意调拨（POST /api/inventory/transfer/approve，仅 requested）。
 func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferApproveReq](c)
 	if !ok {
 		return
 	}
-	// 审计字段从会话无条件覆盖：客户端传什么都不看（对齐 order_shipment 的同一条约定）。
+
 	req.OperatorID = int64(builtin.CurrentUserID(c))
 	req.OperatorName = builtin.OperatorName(c)
 	res, err := h.transfers.ApproveTransfer(c.Request.Context(), req)
@@ -175,7 +161,6 @@ func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferReject 驳回调拨（POST /api/inventory/transfer/reject，仅 requested）。
 func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferRejectReq](c)
 	if !ok {
@@ -191,7 +176,6 @@ func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferCancel 取消（POST /api/inventory/transfer/cancel，requested / pending）。
 func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferCancelReq](c)
 	if !ok {
@@ -205,26 +189,19 @@ func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// inventoryTransferPageHandle 调拨页的处理器。
 type inventoryTransferPageHandle struct {
 	transfers inventoryTransferContract
 	projects  projectcontract.ProjectService
-	// warehouses 仓库下拉（与库存页同一份仓库列表）：注入 listWarehouses 而不是
-	// 再持一个 InventoryService —— 那一屏只要「列仓库」一条能力。
+
 	warehouses func(c *gin.Context, projectID string) ([]WarehouseRowResp, error)
 }
 
-// NewInventoryTransferPageHandle 构造。
-//
-// warehouseLister 由调用方传（库存页句柄的方法）：仓库下拉的口径与库存页共用一份，
-// 两边各查一次会让「默认仓徽标」这类展示在同一份数据上出现两种说法。
 func NewInventoryTransferPageHandle(transfers inventoryTransferContract,
 	projects projectcontract.ProjectService,
 	warehouseLister func(c *gin.Context, projectID string) ([]WarehouseRowResp, error)) *inventoryTransferPageHandle {
 	return &inventoryTransferPageHandle{transfers: transfers, projects: projects, warehouses: warehouseLister}
 }
 
-// transferStatusOptions 调拨单状态筛选（六态；requested / rejected 见迁移 651）。
 func transferStatusOptions(tr func(key, fallback string) string) []OptionResp {
 	return []OptionResp{
 		{Value: "", Label: tr(inventoryenums.InventoryFilterAll, "（全部）")},
@@ -237,7 +214,6 @@ func transferStatusOptions(tr func(key, fallback string) string) []OptionResp {
 	}
 }
 
-// transferPageArgsOf 分页参数归一（与 service 的 transferPageArgs 同口径）。
 func transferPageArgsOf(page, size int) (int, int) {
 	outPage, outSize := 1, 50
 	if page > 0 {
@@ -252,10 +228,6 @@ func transferPageArgsOf(page, size int) (int, int) {
 	return outPage, outSize
 }
 
-// inventoryTransferContract 调拨页需要的契约能力（比整个 InventoryService 窄）。
-//
-// 单独声明而不是在 handler 里持 InventoryService：这一屏只要「列表 / 总数 / 详情 /
-// 四个写口」，拿全量契约会让读代码的人看不出它的边界。
 type inventoryTransferContract interface {
 	ListTransfers(ctx context.Context, req *inventorydto.ListTransferReq) ([]*inventorydto.TransferRowResp, error)
 	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (int64, error)
@@ -269,10 +241,6 @@ type inventoryTransferContract interface {
 	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (*inventorydto.TransferResp, error)
 }
 
-// InventoryTransferListJSON 调拨单列表（GET /api/inventory/transfer/list，JSON 形状）。
-//
-// 与页面视图分开：页面出口要「工程下拉 + 分页条 + 取词」，JSON 出口只给数据行 ——
-// 两个出口共用同一个 service 调用，形状不同不构成第二份实现。
 func (h *inventoryTransferPageHandle) InventoryTransferListJSON(c *gin.Context) {
 	req, ok := binding.Query[inventorydto.ListTransferReq](c)
 	if !ok {

@@ -1,7 +1,5 @@
 package mcp
 
-// runner_test.go — 执行器的判据：越权**不执行**、系统故障不放行、参数错误可回给模型。
-
 import (
 	"context"
 	"errors"
@@ -11,7 +9,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// countingRegistry 一个记录调用次数的工具集，用来验证「被拒时执行体没被碰过」。
 func countingRegistry(t *testing.T, calls *int) *Registry {
 	t.Helper()
 	reg := NewRegistry()
@@ -57,8 +54,7 @@ func TestRunnerRun(t *testing.T) {
 		if !errors.As(err, &permErr) {
 			t.Fatalf("应是 *PermissionError，实得 %T（%v）", err, err)
 		}
-		// 顺序判据：先判权限再执行。反过来（执行完再判）在这里表现为 calls == 1 ——
-		// 数据已经出库，对审计来说那次越权读取已经发生了。
+
 		if calls != 0 {
 			t.Fatalf("越权时执行体不该被调用，实际调用了 %d 次", calls)
 		}

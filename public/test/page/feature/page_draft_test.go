@@ -28,11 +28,6 @@ import (
 
 const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
-// newPageService 装配 page service 及其真实依赖。
-//
-// 库由**生产迁移**建（support.NewMigratedPGTestDB 跑 migrations.Run 建全部 106 张表），
-// 测试只补必要的父行 —— 此前这里手抄 13 张建表语句，与生产 DDL 静默分叉
-// （jsonb 写成 JSON、version 写成 INTEGER、缺 CHECK/外键），迁移一改列就整片变红。
 func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -42,8 +37,7 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 建站会自带一套默认主题（生产语义：先有主题再有页面）；这批用例测的是
-	// 「完全没有主题时怎么办」与「自己建的主题怎么走」，前提需要干净，所以先清掉。
+
 	if err := db.Exec(`DELETE FROM themes WHERE project_id = ?`, project.ID).Error; err != nil {
 		t.Fatalf("清理默认主题失败: %v", err)
 	}

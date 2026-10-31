@@ -1,13 +1,5 @@
 package mediamodel_test
 
-// media_replace_meta_gorm_test.go — ReplaceContentMeta 从 Raw+RETURNING 改成
-// GORM clause.Returning 之后，**返回值是否真的被写回**必须带库验一次。
-//
-// 为什么：GORM 不会为 `Updates(...)` 自动扫回 RETURNING 的结果到 model ——
-// 它需要 clause.Returning 与 Model(&x) 同时在场才把列值填进 x 的字段。
-// 少任何一半都不会报错，只会让 gen 恒为 0；而 0 会被当成「代数没变」，
-// 之后依赖重建判定全部失真（换图后依赖它的产物不会重建，页面继续用旧图）。
-
 import (
 	"context"
 	"testing"
@@ -38,7 +30,6 @@ func TestReplaceContentMetaReturnsIncrementedGeneration(t *testing.T) {
 		t.Fatalf("返回的 generation = %d，期望 2（RETURNING 没写回就是 0）", gen)
 	}
 
-	// 再验一次落库值：返回对了但没写进去同样会让后续幂等判定失真。
 	var row struct {
 		Generation int
 		FileSize   int64

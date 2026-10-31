@@ -1,27 +1,7 @@
-// Package productlist 实现 core.productList 商品列表组件（issue #23）。
-//
-// 定位：把一个商品的集合**渲染成网格或列表**。它只做三件事 ——
-//
-//  1. 取数：按 props 声明的筛选维度从集合源（默认 content:product）取一批商品；
-//  2. 排序：按 props 声明的时间序重排（默认保持集合源的确定性序）；
-//  3. 铺开：把每项映射成一张卡（字段槽位与 core.productCard 同口径）。
-//
-// 三条刻意的边界：
-//
-//	· **筛选是构建期下推的**：props 里的 status / categoryId / brandId / tagId 交给集合源的
-//	  过滤维度机制（issue #21），组件自己不遍历数据 —— 越过白名单的维度由解析器拒绝；
-//	· **不分页**：集合源单次上限 100，本组件用 collectionLimit 截断。真正的翻页需要
-//	  「数据驱动页面」（一页一个 URL 产物）的能力，不塞进组件里做半套；
-//	· **字段渲染口径与 core.productCard 一致**：图片取首元素、标签解析、链接前缀拼接都
-//	  直接复用 productcard 的导出函数，避免两套口径各自漂移。
-//
-// 为什么不在组件里复刻集合维度常量：builder 是底层包，商品域依赖它、它不依赖商品域
-// （依赖方向）；因此维度键（"status"/"categoryId"/"brandId"/"tagId"）与集合源标识
-// （"content:product"）在这里是字面量 —— 契约改键名时这里要同步（cardstack 同样是既有做法）。
 package productlist
 
 import (
-	_ "embed" // productlist.css 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"regexp"
@@ -31,13 +11,10 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.productList"
 
-// 集合源标识（与 product contract 的 CollectionSourceProduct 一致）。
 const collectionSourceProduct = "content:product"
 
-// 集合过滤维度的键（与集合源契约的维度白名单一致，issue #21）。
 const (
 	filterKeyStatus       = "status"
 	filterKeyCategoryID   = "categoryId"
@@ -54,28 +31,20 @@ const (
 	filterKeyMinPrice     = "minPrice"
 	filterKeyMaxPrice     = "maxPrice"
 
-	// optionFilterPrefix 属性值维度的前缀（与集合源契约的 `option.<属性key>` 一致，issue #25）。
 	optionFilterPrefix = "option."
 )
 
-// 筛选栏维度与工具条项的白名单（写错即报错，不静默忽略）。
 var filterBlockNames = map[string]bool{
 	"categories": true, "brands": true, "tags": true, "attributes": true,
 }
 
-// toolbarItemNames 工具条项白名单（onSale = 参考站那个「只看在售」开关）。
 var toolbarItemNames = map[string]bool{"sort": true, "pageSize": true, "columns": true, "onSale": true}
 
-// PriceRange 一个预设价格档位（下限为 0 表示「不限下限」，上限为 nil 表示「不限上限」）。
 type PriceRange struct {
 	Min float64
 	Max *float64
 }
 
-// ParsePriceRange 解析一个档位字面量：`200-399`（闭区间）/ `799+`（该值以上）。
-//
-// 负数与非法形状一律报错：价格档位写错会让整块筛选消失或筛出莫名其妙的结果，
-// 而这类错误在页面上很难看出来（少一块筛选栏没人会注意）。
 func ParsePriceRange(raw string) (out PriceRange, label string, err error) {
 	token := strings.TrimSpace(raw)
 	if token == "" {
@@ -100,10 +69,6 @@ func ParsePriceRange(raw string) (out PriceRange, label string, err error) {
 	return PriceRange{Min: min, Max: &max}, token, nil
 }
 
-// EffectivePriceBounds 滑块边界（默认 0~1000；非法即报错）。
-//
-// 边界是**作者配置的展示范围**，不是数据范围：滑块的可拖区间必须是个确定的数，
-// 不能每次渲染去问数据库「最贵的商品多少钱」—— 那样同一个页面在不同时刻会长得不一样。
 func EffectivePriceBounds(p *Props) (min, max float64, err error) {
 	min, max = 0, 1000
 	if p == nil || strings.TrimSpace(p.PriceBounds) == "" {
@@ -121,12 +86,10 @@ func EffectivePriceBounds(p *Props) (min, max float64, err error) {
 	return parsedMin, parsedMax, nil
 }
 
-// PriceSliderEnabled 是否渲染价格滑块（空 = 开启）。
 func PriceSliderEnabled(p *Props) bool {
 	return p == nil || p.PriceSlider != "off"
 }
 
-// splitList 逗号分隔 → 去空去重列表（顺序保持首次出现）。
 func splitList(raw string) []string {
 	out := make([]string, 0, 4)
 	seen := map[string]bool{}
@@ -141,13 +104,8 @@ func splitList(raw string) []string {
 	return out
 }
 
-// optionKeyRe 属性 key / 值的形状（与商品域属性组 key 的字符集一致）。
-//
-// 组件侧只做形状校验（挡住空键、超长、带空格这类明显写错的配置）；
-// 属性到底存不存在由集合源解析器与 SQL 决定 —— 组件不持有商品域的数据。
 var optionKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// 布局与排序取值。
 const (
 	LayoutGrid = "grid"
 	LayoutList = "list"
@@ -155,8 +113,7 @@ const (
 	OrderDefault = "default"
 	OrderNewest  = "newest"
 	OrderOldest  = "oldest"
-	// 价格排序（issue #28）：按最低启用变体价升 / 降；键名与集合源白名单一致。
-	// 评分排序（issue #29）：按评分降序；无评分的排最后。
+
 	OrderRatingDesc = "ratingDesc"
 	OrderPriceAsc   = "priceAsc"
 	OrderPriceDesc  = "priceDesc"
@@ -164,7 +121,6 @@ const (
 	ColumnsAuto = "auto"
 )
 
-// 缺省值。
 const (
 	defaultLimit     = 12
 	maxLimit         = 100
@@ -172,137 +128,76 @@ const (
 	defaultTitleTag  = "h3"
 	defaultEmptyText = "暂无商品"
 
-	// MaxPageSize / MaxPage 分页边界（审计 PERF-019）：**导出给片段端复用** ——
-	// 请求参数在片段层过滤，两处各写一份数字迟早分叉（一边放宽一边收紧，
-	// 症状是某个页在片段里永远渲染不出来）。
 	MaxPageSize = 60
 	MaxPage     = 100
 )
 
-// fieldPathRe 字段槽位形状（与 core.productCard 同口径：item./product. + 驼峰字段名）。
 var fieldPathRe = regexp.MustCompile(`^(item|product)\.[a-z][a-zA-Z0-9_]*$`)
 
-// Props core.productList 属性。
 type Props struct {
-	// —— 取数 ——
-	// CollectionSource 集合源（当前只开放商品集合源；留空按商品处理）。
-	// 空值 = 未选择数据源：此时组件渲染空态而**不查库**（工作台刚插入、还没挑源时就是这个状态）。
 	CollectionSource string `json:"collectionSource,omitempty" ct:"select,=未选择,content:product=商品列表,default=content:product,sec=collection,label=数据源"`
-	// CollectionLimit 取前几条（1~100，缺省 12）。
+
 	CollectionLimit int `json:"collectionLimit,omitempty" ct:"slider,min=1,max=100,step=1,sec=collection,label=取几条"`
 
-	// —— 筛选（构建期下推到集合源，issue #21 的四个维度）——
-	// FilterStatus 集合的状态过滤。
-	//
-	// **默认已发布**：控件的空选项仍是「全部」（作者显式要就能要），但插入默认值
-	// 与实际渲染兜底都取已发布 —— 前台列表默认不该出现草稿。
-	// 这条与片段层同源（runtimefragment 渲染列表时**强制** status=published）：
-	// 两处不一致的表现是「首次渲染有草稿商品、刷新一次就没了」，
-	// 而且没有报错，只有对着屏幕比对才看得出来。
 	FilterStatus string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=published,sec=collection,label=状态"`
-	// FilterFromArchive 筛选来源（审计 EDT-004）：开启后列表用**当前归档实例的实体**
-	// 作为筛选值（分类页 → 该分类、标签页 → 该标签、品牌页 → 该品牌），上面几个
-	// 静态筛选字段被忽略。空 = 关闭（手工页面与详情页的既有行为一个字节不变）。
-	//
-	// 为什么需要它：没有这个开关时「每个分类一个列表页」只能靠复制页面 + 手改筛选，
-	// 新增分类必然漏配 —— 而漏配的表现是「页面打得开、列的是全站商品」。
+
 	FilterFromArchive string `json:"filterFromArchive,omitempty" ct:"select,=关闭,on=按归档上下文,default=,sec=collection,label=筛选来源"`
 	FilterCategoryID  string `json:"filterCategoryId,omitempty" ct:"entityref,category,label=分类"`
-	// FilterCategoryIDs 多分类筛选：逗号分隔的分类 id 列表（勾多个分类取并集）。
-	// 与单值 FilterCategoryID 并存，两者都填时**多值优先**（单值是「只勾了一个」的退化写法）。
+
 	FilterCategoryIDs  string `json:"filterCategoryIds,omitempty" ct:"multientityref,category,maxlen=500,sec=collection,label=分类 id 列表"`
 	FilterCategoryMode string `json:"filterCategoryMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多分类语义"`
 	FilterBrandID      string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
-	// FilterBrandIDs 多品牌筛选：形状与语义同多分类。
+
 	FilterBrandIDs  string `json:"filterBrandIds,omitempty" ct:"multientityref,brand,maxlen=500,sec=collection,label=品牌 id 列表"`
 	FilterBrandMode string `json:"filterBrandMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多品牌语义"`
 	FilterTagID     string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
-	// FilterTagIDs 多标签筛选（issue #27）：逗号分隔的标签 id 列表（「热卖」「新品」这类用标签表达）。
+
 	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"multientityref,tag,maxlen=500,sec=collection,label=标签 id 列表"`
-	// FilterTagMode 多标签语义：any（默认，具备任一）/ all（同时具备全部）。
+
 	FilterTagMode string `json:"filterTagMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多标签语义"`
-	// OnlyOnSale 只看在售（存在启用变体有划线价且高于售价，与 on_sale 自动标签同源）。
+
 	OnlyOnSale string `json:"onlyOnSale,omitempty" ct:"select,=不限,on=只看在售,default=,sec=collection,label=在售"`
-	// FilterOptionKey / FilterOptionValue 属性筛选（issue #25）：按「属性组 key = 属性值 key」
-	// 固定筛一个属性值（如 color + red）。访客可交互的多属性筛选走 #27 的筛选条。
-	//
-	// 为什么拆成两个 props 而不是一个 "color:red"：控件层一句话写错就整块失效，
-	// 拆开能分别给出「只填了 key 没填 value」这种明确的配置错误。
+
 	FilterOptionKey   string `json:"filterOptionKey,omitempty" ct:"text,maxlen=64,sec=collection,label=属性 key"`
 	FilterOptionValue string `json:"filterOptionValue,omitempty" ct:"text,maxlen=64,sec=collection,label=属性值 key"`
-	// PageSize 每页条数（issue #27）：0 = 不分页（整块按 collectionLimit 截断）。
-	//
-	// 分页**不再受集合源单次上限（100 条）约束**（审计 PERF-019）：第 2 页起把 offset
-	// 交给集合源（SQL 侧 LIMIT/OFFSET）；第 1 页仍走原来的整批取回 —— 构建期只渲染第 1 页，
-	// 换路径会改发布产物字节。详见 BuildView 与 resolveProductsPage。
+
 	PageSize int `json:"pageSize,omitempty" ct:"slider,min=0,max=60,step=1,sec=collection,label=每页条数"`
-	// Page 当前页（1 起；由片段参数或 URL 传入，构建期默认 1）。
+
 	Page int `json:"page,omitempty" ct:"number,min=1,max=100,sec=collection,label=页码"`
-	// Filters 筛选栏维度（issue #27）：逗号分隔，取 categories / brands / tags / attributes。
-	// 空 = 不渲染筛选栏（纯列表）。真正渲染得出来还要集合源实现了筛选选项能力，
-	// 否则该块自动不显示（契约缺失不阻断构建）。
+
 	Filters string `json:"filters,omitempty" ct:"text,maxlen=120,sec=collection,label=筛选栏维度"`
-	// CategoryMulti 分类树是否开启多选（空 = 多选；off = 单选）。
-	// 单选下不渲染勾选框（基础样式更干净，对齐源站的纯链接树），点击即替换。
+
 	CategoryMulti string `json:"categoryMulti,omitempty" ct:"select,=多选,off=单选,default=,sec=collection,label=分类多选"`
 
-	// CaretIcon 分类树折叠图标（基座图标库白名单，默认 chevron-right）。
 	CaretIcon string `json:"caretIcon,omitempty" ct:"select,chevron-right=默认箭头,dot=圆点,square=方块,none=无图标,default=chevron-right,sec=collection,label=折叠图标"`
 
-	// PriceRanges 预设价格档位（issue #28）：`0-199,200-399,799+` 逗号分隔。
-	// 空 = 不渲染价格块。每档渲染成一条筛选链接（与其它筛选同构：无 JS 可点、URL 干净）。
 	PriceRanges string `json:"priceRanges,omitempty" ct:"rangelist,maxlen=200,sec=collection,label=预设价格档位"`
-	// PriceSlider 可拖动价格滑块：`off` = 不渲染；空 = 渲染（双端点 range）。
-	//
-	// 滑块是**渐进增强**：没有 JS 时它是原生 range + 表单提交（整页跳转到 `?minPrice=..&maxPrice=..`，
-	// 冷启动补正会把它变成筛过的列表）；有 HTMX 时同一表单走片段局部刷新。
+
 	PriceSlider string `json:"priceSlider,omitempty" ct:"select,=开启,off=关闭,default=,sec=collection,label=价格滑块"`
-	// PriceBounds 滑块边界：`min,max`（如 `0,1000`），默认 0,1000。
+
 	PriceBounds string `json:"priceBounds,omitempty" ct:"text,maxlen=32,sec=collection,label=滑块边界"`
 
-	// Toolbar 工具条项：逗号分隔，取 sort / pageSize / columns。空 = 不渲染工具条。
 	Toolbar string `json:"toolbar,omitempty" ct:"text,maxlen=120,sec=collection,label=工具条"`
-	// PushQuery 当前语义参数（片段层渲染前灌入，如 `categoryId=x&page=2`）。
-	//
-	// 为什么是渲染期输入：交互控件要「切下一页 / 换排序时带上现有筛选」，而构建期不知道
-	// 访客当前选了哪些维度 —— 只有片段层见过原始请求参数。故不作为可编辑字段
-	// （ct:"-" 不进工作台面板；json 可序列化只是为了让片段层灌得进来 —— 它原先写着
-	// json:"-"，于是没有任何非测试代码能给它赋值，「切下一页时带上现有筛选」一直是空的）。
-	//
-	// **片段层必须按白名单重新合成，不得原样回传 URL 查询串**：组件的链接拼装会把它并进
-	// 片段请求参数并**覆盖实例配置**，原样回传等于让访客用 query 换掉自己请求的 nodeId / projectId。
+
 	PushQuery string `json:"pushQuery,omitempty" ct:"-"`
 
-	// FilterMinPrice / FilterMaxPrice 价格区间（issue #28）：下推给集合源。
-	// 各自由片段参数 `minPrice` / `maxPrice` 灌入（见 PushQuery 的说明）。
 	FilterMinPrice string `json:"filterMinPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最低价"`
 	FilterMaxPrice string `json:"filterMaxPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最高价"`
 
-	// RatingOptions 评分档位（issue #29）：4.5,4,3 逗号分隔，每档表示「≥ N 星」。
-	// 空 = 不渲染评分块。取值 0~5，形状在配置期校验。
 	RatingOptions string `json:"ratingOptions,omitempty" ct:"text,maxlen=64,sec=collection,label=评分档位"`
-	// FilterMinRating 最低评分（issue #29）：由片段参数 minRating 灌入，下推给集合源。
+
 	FilterMinRating string `json:"filterMinRating,omitempty" ct:"text,maxlen=8,sec=collection,label=最低评分"`
 
-	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
-	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
 	FilterOptions string `json:"filterOptions,omitempty" ct:"text,maxlen=500,sec=collection,label=多属性筛选"`
 
-	// —— 排序 ——
-	// OrderBy 排序口径：默认 = 集合源的确定性序（排序号 → 创建时间 → id）。
-	// orderBy 的空值即「默认序」：选项里第一项必须是空 key —— `default=` 是 ct 的保留键
-	//（表示控件默认值），把「默认」写成 `default=默认（排序号）` 会被解析成默认值指令而不是选项，
-	// 白名单里就只剩后面两个值，工作台插入的默认配置会被自己的控件校验拒掉。
 	OrderBy string `json:"orderBy,omitempty" ct:"select,=默认（排序号）,newest=最新创建,oldest=最早创建,priceAsc=价格从低到高,priceDesc=价格从高到低,ratingDesc=评分最高,default=,sec=collection,label=排序"`
 
-	// —— 布局 ——
 	Layout string `json:"layout,omitempty" ct:"select,grid=网格,list=列表,default=grid,sec=style,label=布局"`
-	// Columns 网格列数（auto = 按容器宽度自适应）。窄屏一律单列，列数只在宽视口生效。
+
 	Columns string `json:"columns,omitempty" ct:"select,auto=自适应,2=两列,3=三列,4=四列,default=auto,sec=style,label=列数"`
-	// EmptyText 无商品时的提示文案（留空用默认）。
+
 	EmptyText string `json:"emptyText,omitempty" ct:"text,maxlen=50,sec=content,label=空态文案"`
 
-	// —— 卡片字段（与 core.productCard 同一套槽位口径）——
 	ImageField        string `json:"imageField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图字段"`
 	ImageAltField     string `json:"imageAltField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图 alt 字段"`
 	TitleField        string `json:"titleField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标题字段"`
@@ -311,18 +206,14 @@ type Props struct {
 	TagsField         string `json:"tagsField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标签字段"`
 	LinkField         string `json:"linkField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=链接字段"`
 	LinkPrefix        string `json:"linkPrefix,omitempty" ct:"text,maxlen=200,sec=content,label=链接前缀"`
-	// ListPageLink 列表页链接文案（留空用「全部商品」）。
-	//
-	// 目标由节点的 list 动作显式引用，未设置时不显示入口。
+
 	ListPageLink string `json:"listPageLink,omitempty" ct:"text,maxlen=30,sec=content,label=列表页链接文案"`
 	Currency     string `json:"currency,omitempty" ct:"string,maxlen=8,sec=content,label=货币符号"`
 	TitleTag     string `json:"titleTag,omitempty" ct:"select,h2=二级标题,h3=三级标题,h4=四级标题,default=h3,sec=content,label=标题层级"`
 
-	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Component 商品列表组件。
 type Component struct {
 	core.Atom[Props]
 }
@@ -332,14 +223,11 @@ func (*Component) Actions() []core.ActionSpec {
 }
 func (*Component) RequiredActions() []string { return nil }
 
-// Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		// 集合源声明（审计 ARCH-01）：本组件渲染的集合是「商品」——
-		// 依赖登记（page / presentation）据此把 collection:content:product 记进依赖表，
-		// 缺它时「新增 / 删除商品」不会让任何列表页失效。
+
 		CollectionProp:  "collectionSource",
 		PaletteCategory: core.PaletteCategoryBasic,
 		DisplayName:     "商品列表",
@@ -363,7 +251,6 @@ var Widget = &Component{Atom: core.Atom[Props]{
 	},
 }}
 
-// slotFields 卡片槽位（顺序即渲染顺序）。
 type slotField struct {
 	Slot  string
 	Field string
@@ -394,10 +281,6 @@ func (p *Props) slotFields() []slotField {
 	}
 }
 
-// validateExtra 关系性校验：槽位路径形状、标题层级、筛选 id 形状、集合源白名单。
-//
-// 至少声明一个展示字段（空列表渲染出来是空白块）；筛选 id 只做**形状**校验（非空即可），
-// 具体 uuid 合法性由集合源解析器判定 —— 组件不持有商品域的校验规则。
 func validateExtra(p *Props, _ string) (err error) {
 	switch effectiveSource(p) {
 	case "", collectionSourceProduct:
@@ -422,8 +305,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	default:
 		return fmt.Errorf("无效的标题层级 %q", p.TitleTag)
 	}
-	// 校验必须看**原始输入**：effective* 系列会把非法值归一成默认值，
-	// 拿归一化后的值做 switch 永远通过（这类错误会让非法配置静默生效）。
+
 	switch p.Layout {
 	case "", LayoutGrid, LayoutList:
 	default:
@@ -437,7 +319,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	if p.CollectionLimit < 0 || p.CollectionLimit > maxLimit {
 		return fmt.Errorf("取几条必须在 0~%d 之间（0 = 用默认值 %d）", maxLimit, defaultLimit)
 	}
-	// 三个多值维度共用一套语义取值（键不同、含义一致），逐个校验。
+
 	for _, mode := range [][2]string{
 		{p.FilterCategoryMode, "多分类"},
 		{p.FilterBrandMode, "多品牌"},
@@ -454,7 +336,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	default:
 		return fmt.Errorf("无效的在售开关 %q（空 = 不限 / on = 只看在售）", p.OnlyOnSale)
 	}
-	// 属性筛选必须成对：只填一半是配置错误，早点报比「筛出空列表」好排查。
+
 	keySet := strings.TrimSpace(p.FilterOptionKey) != ""
 	valueSet := strings.TrimSpace(p.FilterOptionValue) != ""
 	if keySet != valueSet {
@@ -466,7 +348,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	if p.Page < 0 || p.Page > MaxPage {
 		return fmt.Errorf("页码必须在 0~%d 之间（0 = 第 1 页）", MaxPage)
 	}
-	// 筛选栏与工具条：只接受列出的维度 / 项，写错即报错（静默忽略会让作者以为配上了）。
+
 	for _, name := range splitList(p.Filters) {
 		if !filterBlockNames[name] {
 			return fmt.Errorf("未知的筛选栏维度 %q（可选：categories / brands / tags / attributes）", name)
@@ -482,13 +364,13 @@ func validateExtra(p *Props, _ string) (err error) {
 	default:
 		return fmt.Errorf("无效的价格滑块开关 %q（空 = 开启 / off = 关闭）", p.PriceSlider)
 	}
-	// 预设档位形状：`下限-上限` 或 `下限+`（正数），写错即报错（静默忽略会让作者以为配上了）。
+
 	for _, raw := range splitList(p.PriceRanges) {
 		if _, _, err := ParsePriceRange(raw); err != nil {
 			return err
 		}
 	}
-	// 评分档位：0~5 的数值，写错即报错。
+
 	for _, raw := range splitList(p.RatingOptions) {
 		score, rerr := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 		if rerr != nil || score < 0 || score > 5 {
@@ -501,8 +383,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
 	}
-	// 多属性：每对必须是 `key:v1[,v2...]`，键与每个值都要形状合法
-	//（缺冒号 / 空键 / 空值都是配置错误 —— 空值会让整个属性组被静默丢掉）。
+
 	for _, pair := range strings.Split(p.FilterOptions, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
@@ -522,21 +403,12 @@ func validateExtra(p *Props, _ string) (err error) {
 	return nil
 }
 
-// singleToMultiKey 单值维度 → 它对应的多值维度键（只有分类 / 品牌 / 标签三对）。
-//
-// 用于「多值优先」：多值维度一旦下推，同名维度的单值就必须让位，
-// 否则两个键会一起进 SQL 并 AND 起来，多值那一半被单值卡死。
 var singleToMultiKey = map[string]string{
 	filterKeyCategoryID: filterKeyCategoryIDs,
 	filterKeyBrandID:    filterKeyBrandIDs,
 	filterKeyTagID:      filterKeyTagIDs,
 }
 
-// mergeOptionValues 合并同一属性组的两个逗号值串（保持首次出现顺序、去重）。
-//
-// 空串表示「该组还没有值」：直接返回另一个，不产生前导逗号 ——
-// 前导逗号会被集合源的 splitCSV 去空吃掉（结果没错），但写进 URL 之后很难看，
-// 而且「空值必须移除键」这条规则正是靠这里保证的。
 func mergeOptionValues(existing, extra string) string {
 	out := make([]string, 0, 4)
 	seen := map[string]bool{}
@@ -553,10 +425,6 @@ func mergeOptionValues(existing, extra string) string {
 	return strings.Join(out, ",")
 }
 
-// FieldBindings 实现 core.FieldBindingProvider：卡片槽位声明的商品字段绑定。
-//
-// 与 core.productCard 同一翻译规则：item.<字段> 与 product.<字段> 都报成 product.<字段>，
-// 保管存期按实体类型注册表校验（白名单只有 product contract 一份）。
 func (c *Component) FieldBindings(node *core.Node) (refs []core.FieldRef, err error) {
 	if node == nil {
 		return nil, nil
@@ -583,26 +451,13 @@ func (c *Component) FieldBindings(node *core.Node) (refs []core.FieldRef, err er
 	return refs, nil
 }
 
-// —— 取值归一 ——
-
-// effectiveSource 有效集合源：**空串表示未选择数据源**（不是「默认商品列表」）。
-//
-// 默认值语义留给控件（`default=content:product`，工作台表单的初始选中项）；
-// 组件把空源当「没有数据源」处理 —— 刚拖出来还没挑源时渲染空态、不查库。
-// effectiveFilterStatus 集合的状态过滤（缺省已发布）。
-//
-// 空值取已发布而不是「全部」：前台商品列表默认不该出现草稿与归档，
-// 而图省事把空值当「全部」是**静默**漏出 —— 页面上看不出哪件是草稿，
-// 只有商品数量对不上时才会被注意到。作者想要全部仍可显式选「全部」。
 func effectiveFilterStatus(p *Props) string {
 	if p != nil {
 		if v := strings.TrimSpace(p.FilterStatus); v != "" {
 			return v
 		}
 	}
-	// 用字面量而不是 productenums.StatusPublished：builder 是底层包，
-	// 商品域依赖它、它不依赖商品域（依赖方向，见包注释）。
-	// 「published」与 statusSearch / 维度键同一处口径，契约改值时同步。
+
 	return "published"
 }
 
@@ -646,9 +501,7 @@ func effectiveOrder(p *Props) string {
 		return OrderDefault
 	}
 	switch p.OrderBy {
-	// 白名单必须与控件选项、集合源排序键**三处一致** ——
-	// 少列一个的后果是「排序选项看得到、点了没反应」（静默回落默认序），
-	// 这种缺陷在只看配置的测试里发现不了，只有断言渲染顺序才抓得住。
+
 	case OrderNewest, OrderOldest, OrderPriceAsc, OrderPriceDesc, OrderRatingDesc:
 		return p.OrderBy
 	default:
@@ -675,7 +528,6 @@ func effectiveTitleTag(p *Props) string {
 	}
 }
 
-// EffectivePageSize 每页条数（0 = 不分页）。
 func EffectivePageSize(p *Props) int {
 	if p == nil || p.PageSize <= 0 {
 		return 0
@@ -686,7 +538,6 @@ func EffectivePageSize(p *Props) int {
 	return p.PageSize
 }
 
-// EffectivePage 当前页（1 起；非法值归一到 1）。
 func EffectivePage(p *Props) int {
 	if p == nil || p.Page <= 1 {
 		return 1
@@ -694,10 +545,8 @@ func EffectivePage(p *Props) int {
 	return p.Page
 }
 
-// defaultListPageLinkText 列表页链接的缺省文案。
 const defaultListPageLinkText = "全部商品"
 
-// effectiveListPageLinkText 列表页链接文案（留空用缺省）。
 func effectiveListPageLinkText(p *Props) string {
 	if p == nil || strings.TrimSpace(p.ListPageLink) == "" {
 		return defaultListPageLinkText
@@ -712,14 +561,12 @@ func effectiveEmptyText(p *Props) string {
 	return strings.TrimSpace(p.EmptyText)
 }
 
-// collectionFilter props 声明的筛选维度 → 集合源的过滤参数（只放有值的维度）。
 func collectionFilter(p *Props) map[string]string {
 	if p == nil {
 		return nil
 	}
 	f := map[string]string{}
-	// 属性维度（issue #25）：键是 `option.<属性key>`——前缀维度，服务端校验子键形状。
-	// 多属性（issue #27）：`属性key:属性值key` 对，逐项 AND。
+
 	for _, pair := range strings.Split(p.FilterOptions, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
@@ -727,14 +574,13 @@ func collectionFilter(p *Props) map[string]string {
 		}
 		key, values, ok := strings.Cut(pair, ":")
 		if !ok {
-			continue // 形状由 validateExtra 拦（这里静默跳过，不制造半个维度）
+			continue
 		}
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		// 组内多值原样下推（集合源那一侧按逗号解析成「组内并集」）；
-		// 同一个 key 出现在多个 pair 里就并集去重 —— 后者覆盖前者会让先写的值静默消失。
+
 		if merged := mergeOptionValues(f[optionFilterPrefix+key], strings.TrimSpace(values)); merged != "" {
 			f[optionFilterPrefix+key] = merged
 		}
@@ -742,32 +588,18 @@ func collectionFilter(p *Props) map[string]string {
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
 	}
-	// 最低评分（issue #29）：与集合源维度同名下推；形状由集合源解析期校验。
+
 	if v := strings.TrimSpace(p.FilterMinRating); v != "" {
 		f[filterKeyMinRating] = v
 	}
-	// 价格区间（issue #28）：与集合源维度同名下推（minPrice / maxPrice）。
-	//
-	// 数值形状由集合源解析期校验（非数字 / 负数直接报错），组件这里只做非空传递 ——
-	// 白名单与形状校验只有一份，不在这里再判一次（两处判断迟早会不一致）。
+
 	if v := strings.TrimSpace(p.FilterMinPrice); v != "" {
 		f[filterKeyMinPrice] = v
 	}
 	if v := strings.TrimSpace(p.FilterMaxPrice); v != "" {
 		f[filterKeyMaxPrice] = v
 	}
-	// 多值维度（分类 / 品牌 / 标签，同一套样板）：值与语义分两个键下推
-	//（语义只在有多值时才有意义）。
-	//
-	// 多值一旦存在就把对应的**单值键从 map 里删掉**：集合源那侧也是「多值优先」，
-	// 但组件这里留一个单值键会让产物里的查询串同时带 categoryId 与 categoryIds ——
-	// 片段重渲染（pushQuery 回灌）时那个单值键会一直挂在 URL 上，用户「取消勾选」
-	// 之后单值还在，列表看起来没变。（两边都做，因为这是两条独立的数据通路：
-	// 构建期直接读 props，片段期读 URL。）
-	// 语义键必须**显式写出**，不能从多值键名推导（"brandIds" 去掉尾字母得 "brandId"，
-	// 拼出来是 "brandIdMode"，而契约里的键是 "brandMode"）。这个错不会在编译期或校验期
-	// 暴露：契约的白名单只认 "brandMode"，于是那个拼错的键被当作未知维度**静默丢弃**，
-	// 表现为「all 语义点了没反应，出来还是并集」——所以它必须是常量对常量。
+
 	for _, multi := range [][4]string{
 		{p.FilterCategoryIDs, filterKeyCategoryIDs, filterKeyCategoryMode, p.FilterCategoryMode},
 		{p.FilterBrandIDs, filterKeyBrandIDs, filterKeyBrandMode, p.FilterBrandMode},
@@ -795,12 +627,7 @@ func collectionFilter(p *Props) map[string]string {
 		if v == "" {
 			continue
 		}
-		// 对应的多值维度已经下推时**跳过单值**（多值优先）。
-		//
-		// 这条判断必须写在这里，而不是像早先那样先 `delete(f, 单值键)` 再赋值：
-		// 单值键是在下面这个循环里**重新写进去**的，删在前等于白删 ——
-		// 实测表现为「品牌多选只出第一个品牌的商品」（单值 brandId 与多值 brandIds
-		// 一起进了 SQL，两者 AND，多值那一半被单值卡死）。
+
 		if multiKey, ok := singleToMultiKey[kv[0]]; ok && f[multiKey] != "" {
 			continue
 		}
@@ -812,18 +639,9 @@ func collectionFilter(p *Props) map[string]string {
 	return f
 }
 
-// productListCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
-//
 //go:embed productlist.css
 var productListCSS string
 
-// compileCSS 商品列表样式：网格 / 列表两种布局 + 窄屏恒单列。
-//
-// 多端硬规则：列数与间距都在宽视口生效，窄视口一律单列（列数再多也不能横向溢出）；
-// 宽度一律 min(100%, ...)，不写死像素。
-//
-// Go 侧只保留业务判定：布局归一与列声明计算。网格列数是「值变量」{{cols}}，
-// 列表布局独有的两条规则走规则级 @if isList（整块随布局存废）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	layout := effectiveLayout(p)
@@ -836,7 +654,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// columnsDecl 网格列声明（窄视口由 BreakpointMobile 覆盖为单列）。
 func columnsDecl(layout, cols string) string {
 	if layout == LayoutList {
 		return "1fr"
@@ -849,8 +666,7 @@ func columnsDecl(layout, cols string) string {
 	case "4":
 		return "repeat(4, minmax(0, 1fr))"
 	default:
-		// 自适应：按容器宽度尽量多列，单列最小宽度也用 min(100%, …) 封顶，
-		// 大卡片 + 窄屏的极端组合下不会溢出。
+
 		return "repeat(auto-fill, minmax(min(100%, 15rem), 1fr))"
 	}
 }
@@ -860,8 +676,5 @@ func init() {
 	core.RegisterTemplate("product_list", productlistTemplate)
 }
 
-// productlistTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed product_list.jet
 var productlistTemplate string

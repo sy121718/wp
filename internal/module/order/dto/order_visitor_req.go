@@ -1,6 +1,5 @@
 package orderdto
 
-// VisitorOrderListReq 的身份仅由访客会话注入，分页与状态由 service 收口。
 type VisitorOrderListReq struct {
 	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`
 	Status    string `json:"status" form:"status"`
@@ -9,7 +8,6 @@ type VisitorOrderListReq struct {
 	UserID    uint64 `json:"-" form:"-"`
 }
 
-// VisitorOrderDetailReq 只能定位自己的订单。
 type VisitorOrderDetailReq struct {
 	OrderID   uint64 `json:"orderId" form:"orderId" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`

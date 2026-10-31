@@ -1,10 +1,3 @@
-// module.go 业务模块骨架生成器：`plugin module <name>` 生成新业务模块目录骨架。
-//
-// OSS-017：新增业务模块此前要手工铺设 contract / service / model / enums /
-// inbound / http 六层目录与样板代码。本生成器产出与既有模块（参照 mail /
-// product 的分层）一致的骨架：生成的包相互引用闭合、只依赖标准库 + gin +
-// gorm（go.mod 既有依赖），拷进 internal/module/ 后直接 go build 通过。
-// README 里列出装配期仍需人工接入的触点（路由挂载、迁移注册、菜单与权限点）。
 package scaffold
 
 import (
@@ -14,9 +7,6 @@ import (
 	"strings"
 )
 
-// ModuleFiles 生成业务模块骨架文件集合（相对模块根目录的路径 → 内容，
-// 不含 name 前缀；WriteModule 负责拼 name/ 落盘）。
-// name 为模块目录名（小写字母开头，如 "member"）。
 func ModuleFiles(name string) (map[string]string, error) {
 	if !idRe.MatchString(name) {
 		return nil, fmt.Errorf("模块名 %q 非法（小写字母开头，2~61 位，仅字母数字下划线连字符）", name)
@@ -35,7 +25,6 @@ func ModuleFiles(name string) (map[string]string, error) {
 	}, nil
 }
 
-// WriteModule 落盘到当前目录（生成 name/ 目录；已存在则报错不覆盖）。
 func WriteModule(name string) error {
 	files, err := ModuleFiles(name)
 	if err != nil {
@@ -56,7 +45,6 @@ func WriteModule(name string) error {
 	return nil
 }
 
-// pascal 模块名转 PascalCase（连字符/下划线分词，"member_card" → "MemberCard"）。
 func pascal(name string) string {
 	words := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' })
 	for i, w := range words {
@@ -68,7 +56,6 @@ func pascal(name string) string {
 	return strings.Join(words, "")
 }
 
-// moduleContract 对外契约（参照 mailcontract：只放对外能力，不定义外部依赖）。
 func moduleContract(name, pascal string) string {
 	return fmt.Sprintf(`package %scontract
 
@@ -91,10 +78,8 @@ type %sService interface {
 `, name, name, name, name, name, pascal, name, pascal, name, name)
 }
 
-// q struct tag 里的反引号（模板 raw string 内无法直接书写，用常量拼接）。
 const q = "\x60"
 
-// moduleDTOReq 请求 DTO。
 func moduleDTOReq(name string) string {
 	return fmt.Sprintf(`package %sdto
 
@@ -107,7 +92,6 @@ type DemoReq struct {
 `, name, name, name)
 }
 
-// moduleDTOResp 响应 DTO。
 func moduleDTOResp(name string) string {
 	return fmt.Sprintf(`package %sdto
 
@@ -121,7 +105,6 @@ type DemoResp struct {
 `, name, name, name)
 }
 
-// moduleEnums 模块内统一出口常量（参照 mailenums）。
 func moduleEnums(name string) string {
 	return fmt.Sprintf(`package %senums
 
@@ -135,7 +118,6 @@ const (
 `, name, name, name, name, name, name)
 }
 
-// moduleModel 数据访问层（Repository 定位：只暴露具名方法，不暴露 DB 句柄）。
 func moduleModel(name string) string {
 	return fmt.Sprintf(`package %smodel
 
@@ -186,7 +168,6 @@ func (m *DemoModel) GetByID(ctx context.Context, id uint64) (demoName string, er
 `, name, name, name, name, name)
 }
 
-// moduleService 业务服务（实现契约；装配层注入 model）。
 func moduleService(name, pascal string) string {
 	return fmt.Sprintf(`package %sservice
 
@@ -224,7 +205,6 @@ func (s *Service) GetDemo(ctx context.Context, req *%sdto.DemoReq) (res *%sdto.D
 `, name, name, name, name, pascal, name, name, name, name, name, name, name, name, name, name, pascal, name, name, name)
 }
 
-// moduleRouter 路由自装配（参照 mail_router.go：Setup 返回契约）。
 func moduleRouter(name, pascal string) string {
 	return fmt.Sprintf(`package %shttp
 
@@ -254,7 +234,6 @@ func Setup%sRoutes(rg *gin.RouterGroup, db *gorm.DB) %scontract.%sService {
 `, name, name, name, pascal, name, name, name, name, name, name, pascal, name, pascal, name, pascal, name, name, name)
 }
 
-// moduleHandle HTTP handler（绑定请求 → 调契约 → 统一响应，走 pkg/response）。
 func moduleHandle(name, pascal string) string {
 	return fmt.Sprintf(`package %shttp
 
@@ -298,7 +277,6 @@ func (h *Handle) GetDemo(c *gin.Context) {
 `, name, name, name, name, name, name, name, name, name, name, name, pascal, name, pascal, name, name, name, name, name)
 }
 
-// moduleReadme 模块 README（列出仍需人工接入的装配触点）。
 func moduleReadme(name, pascal string) string {
 	return fmt.Sprintf(`# %s 模块骨架
 

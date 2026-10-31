@@ -1,12 +1,5 @@
 package userhttp
 
-// customer_segment_filter_test.go — 客户列表的「消费分段」筛选（P7-b3b）。
-//
-// 这一批最容易错的地方不是「筛得对不对」，而是**筛不出来时显示什么**：
-// 分段取回来的是 nil（没筛）还是空切片（筛了，没人），在页面上是
-// 「全部客户」与「零个客户」两种结果 —— 而前者看起来完全正常。
-// 下面的用例把这条边界逐条钉住。
-
 import (
 	"context"
 	"net/http"
@@ -19,7 +12,6 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 )
 
-// fakeSegmentReader 记录收到的请求并按预设返回。
 type fakeSegmentReader struct {
 	ids   []int64
 	total int64
@@ -71,17 +63,13 @@ func TestCustomersPageSegmentFiltersByIDList(t *testing.T) {
 	if len(users.lastListRe.UserIDs) != 2 || users.lastListRe.UserIDs[0] != 9201 {
 		t.Errorf("列表收到的 id = %v，期望 [9201 9203]", users.lastListRe.UserIDs)
 	}
-	// 分页链接必须带上分段，否则翻页会静默变成「全部客户」。
+
 	body := rec.Body.String()
 	if !strings.Contains(body, "segment=new") {
 		t.Error("翻页 / 计数链接里丢了 segment —— 翻到第二页会变回全部客户")
 	}
 }
 
-// TestCustomersPageSegmentZeroResultStaysEmpty 分段筛出 0 个人时，列表必须是**空**的。
-//
-// 这是整批里最容易写错的一条：`if len(ids) > 0` 之类的一步折算会把空切片变成 nil，
-// 于是「这个分段一个人都没有」显示成「全部客户」—— 用户看到一整页人，会以为筛成功了。
 func TestCustomersPageSegmentZeroResultStaysEmpty(t *testing.T) {
 	users := &fakeCustomerAdmin{list: customerListSample()}
 	seg := &fakeSegmentReader{ids: []int64{}, total: 0}
@@ -105,10 +93,6 @@ func TestCustomersPageSegmentZeroResultStaysEmpty(t *testing.T) {
 	}
 }
 
-// TestCustomersPageSegmentFailureDoesNotFallBackToListAll 取分段失败时**不查列表**。
-//
-// 回落成「不筛」的后果是：筛不出来时显示全部客户，而那正是用户最可能相信的结果
-// （人数变多了，看起来像筛对了）。
 func TestCustomersPageSegmentFailureDoesNotFallBackToListAll(t *testing.T) {
 	users := &fakeCustomerAdmin{list: customerListSample()}
 	seg := &fakeSegmentReader{err: context.DeadlineExceeded}
@@ -129,7 +113,6 @@ func TestCustomersPageSegmentFailureDoesNotFallBackToListAll(t *testing.T) {
 	}
 }
 
-// TestCustomersPageSegmentWithoutPortShowsNotice 端口没接线时同理：明确说筛不了。
 func TestCustomersPageSegmentWithoutPortShowsNotice(t *testing.T) {
 	users := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(users, nil, fakeProjects{items: detailProjects()})
@@ -148,8 +131,6 @@ func TestCustomersPageSegmentWithoutPortShowsNotice(t *testing.T) {
 	}
 }
 
-// TestCustomersPageSegmentDefaultsToThisMonth 只选分段不选时间时，窗口回落本月
-// （与客户概览页的默认档一致）：不回落就会变成「不限时间」，那是全站累计的新客。
 func TestCustomersPageSegmentDefaultsToThisMonth(t *testing.T) {
 	users := &fakeCustomerAdmin{list: customerListSample()}
 	seg := &fakeSegmentReader{ids: []int64{1}, total: 1}
@@ -173,8 +154,6 @@ func TestCustomersPageSegmentDefaultsToThisMonth(t *testing.T) {
 	}
 }
 
-// TestCustomersPageWithoutSegmentDoesNotQuerySegment 不选分段时一次都不该问订单模块
-// （列表页的常态是「看全部客户」，多一次跨模块查询只是白花）。
 func TestCustomersPageWithoutSegmentDoesNotQuerySegment(t *testing.T) {
 	users := &fakeCustomerAdmin{list: customerListSample()}
 	seg := &fakeSegmentReader{}
@@ -195,10 +174,6 @@ func TestCustomersPageWithoutSegmentDoesNotQuerySegment(t *testing.T) {
 	}
 }
 
-// TestCustomersPageMinOrdersFiltersByIDList 只给次数（没给分段）也要能筛。
-//
-// 「下过 ≥5 单的客户」本身就是完整的一句话，不选分段也该成立；订单模块收到的是
-// 空 segment + 次数，由它按「复购」处理（同一段代码，见 CustomerSegmentIDsByRange）。
 func TestCustomersPageMinOrdersFiltersByIDList(t *testing.T) {
 	seg := &fakeSegmentReader{ids: []int64{41, 42}}
 	admin := &fakeCustomerAdmin{list: customerListSample()}
@@ -223,15 +198,12 @@ func TestCustomersPageMinOrdersFiltersByIDList(t *testing.T) {
 	if admin.lastListRe == nil || len(admin.lastListRe.UserIDs) != 2 {
 		t.Errorf("id 列表应原样传给客户列表，实得 %+v", admin.lastListRe)
 	}
-	// 翻页链接必须带上次数，否则翻第二页会静默变回全部客户。
+
 	if !strings.Contains(rec.Body.String(), "minOrders=5") {
 		t.Error("翻页/计数链接应保留 minOrders")
 	}
 }
 
-// TestCustomersPageMinOrdersUnknownFallsBack URL 是用户可编辑的：
-// 不在这几个档位里的一律回落「不限次数」，且**不该**回落到默认门槛 2
-// （回落成 2 会让 URL 上写着 7 的筛选实际跑的是 2，结果看起来正常却少了一半人）。
 func TestCustomersPageMinOrdersUnknownFallsBack(t *testing.T) {
 	seg := &fakeSegmentReader{ids: []int64{41}}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
@@ -251,7 +223,6 @@ func TestCustomersPageMinOrdersUnknownFallsBack(t *testing.T) {
 	}
 }
 
-// TestCustomersPageRfmSegmentFiltersByIDList 按 RFM 分段筛：id 列表要传给客户列表。
 func TestCustomersPageRfmSegmentFiltersByIDList(t *testing.T) {
 	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{
 		Segment: "vip", UserIDs: []int64{301, 302, 303},
@@ -280,10 +251,6 @@ func TestCustomersPageRfmSegmentFiltersByIDList(t *testing.T) {
 	}
 }
 
-// TestCustomersPageRfmIntersectsWithSpendSegment 两个分段同时选：**取交集**。
-//
-// 取并集或「后一个覆盖前一个」都会让页面显示比筛选条件更宽的集合 ——
-// 用户看到的人数变多，看起来像筛对了。
 func TestCustomersPageRfmIntersectsWithSpendSegment(t *testing.T) {
 	seg := &fakeSegmentReader{ids: []int64{301, 999}}
 	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{
@@ -309,10 +276,8 @@ func TestCustomersPageRfmIntersectsWithSpendSegment(t *testing.T) {
 	}
 }
 
-// TestCustomersPageRfmIntersectionWithEmptyIsEmpty 任一维筛出零个人时交集为空，
-// 而**不能**退化成「不筛」—— 那会把「一个都没有」显示成「全部客户」。
 func TestCustomersPageRfmIntersectionWithEmptyIsEmpty(t *testing.T) {
-	seg := &fakeSegmentReader{ids: []int64{}} // 有这一维，但一个人都没有
+	seg := &fakeSegmentReader{ids: []int64{}}
 	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{UserIDs: []int64{301}}}
 	admin := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
@@ -336,15 +301,12 @@ func TestCustomersPageRfmIntersectionWithEmptyIsEmpty(t *testing.T) {
 	}
 }
 
-// TestCustomersPageRfmUnknownFallsBack 手改出来的未知分段回落「不限分段」。
 func TestCustomersPageRfmUnknownFallsBack(t *testing.T) {
 	rfm := &fakeRfmReader{}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
 
-	// 注意 "vip "（带尾空白）不在这一批：TrimSpace 之后它就是合法值，
-	// 接受它是对的（URL 里带空白是编码层面的问题，不该让筛选失效）。
 	for _, bad := range []string{"gold", "VIP", "0", "vip_x"} {
 		rfm.segCall = 0
 		rec := httptest.NewRecorder()
@@ -358,7 +320,6 @@ func TestCustomersPageRfmUnknownFallsBack(t *testing.T) {
 	}
 }
 
-// TestCustomersPageRfmWithoutPortShowsNotice 端口缺席时明说「筛不了」，而不是当作没筛。
 func TestCustomersPageRfmWithoutPortShowsNotice(t *testing.T) {
 	admin := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
@@ -377,7 +338,6 @@ func TestCustomersPageRfmWithoutPortShowsNotice(t *testing.T) {
 	}
 }
 
-// fakeAssignments 会员归属列表（只实现客户列表用得上的两个方法所在的接口）。
 type fakeAssignments struct {
 	rows  []*membershipdto.AssignmentResp
 	err   error
@@ -398,7 +358,6 @@ func (f *fakeAssignments) CountAssignments(_ context.Context, _ *membershipdto.C
 	return int64(len(f.rows)), nil
 }
 
-// TestCustomersPageTierFiltersByIDList 按会员等级筛：把该等级的访客 id 交给客户列表。
 func TestCustomersPageTierFiltersByIDList(t *testing.T) {
 	assignments := &fakeAssignments{rows: []*membershipdto.AssignmentResp{
 		{UserID: 501}, {UserID: 502},
@@ -422,7 +381,7 @@ func TestCustomersPageTierFiltersByIDList(t *testing.T) {
 	if admin.lastListRe == nil || len(admin.lastListRe.UserIDs) != 2 {
 		t.Errorf("id 列表应原样传给客户列表，实得 %+v", admin.lastListRe)
 	}
-	// 一页装得下时不该多翻（翻页次数直接关系到每次打开列表的查询量）。
+
 	if assignments.calls != 1 {
 		t.Errorf("未满一页时应只查一次，实得 %d 次", assignments.calls)
 	}
@@ -431,8 +390,6 @@ func TestCustomersPageTierFiltersByIDList(t *testing.T) {
 	}
 }
 
-// TestCustomersPageTierPageSizeReachesModuleLimit 每页 200 是会员模块自己的单页上限：
-// 传更大的值会被它夹回 200，于是「翻页判满」的判据永远不成立（死循环取同一页）。
 func TestCustomersPageTierPageSizeReachesModuleLimit(t *testing.T) {
 	assignments := &fakeAssignments{}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
@@ -449,8 +406,6 @@ func TestCustomersPageTierPageSizeReachesModuleLimit(t *testing.T) {
 	}
 }
 
-// TestCustomersPageTierOverflowIsNotSilentlyPartial 超过翻页上限时整维失败，
-// **不能**只交出一部分 id —— 那会显示一个看起来正常、只是少了一批人的列表。
 func TestCustomersPageTierOverflowIsNotSilentlyPartial(t *testing.T) {
 	rows := make([]*membershipdto.AssignmentResp, 200)
 	for i := range rows {
@@ -478,7 +433,6 @@ func TestCustomersPageTierOverflowIsNotSilentlyPartial(t *testing.T) {
 	}
 }
 
-// TestCustomersPageTierWithoutPortShowsNotice 会员模块没接上时明说「筛不了」。
 func TestCustomersPageTierWithoutPortShowsNotice(t *testing.T) {
 	admin := &fakeCustomerAdmin{list: customerListSample()}
 	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
@@ -497,7 +451,6 @@ func TestCustomersPageTierWithoutPortShowsNotice(t *testing.T) {
 	}
 }
 
-// TestCustomersPageTierUnknownValueIgnored 手改出来的非法等级值回落「不限等级」。
 func TestCustomersPageTierUnknownValueIgnored(t *testing.T) {
 	assignments := &fakeAssignments{}
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})

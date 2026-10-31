@@ -13,10 +13,6 @@ func socialCSSFor(p *Props) string {
 	return b.String()
 }
 
-// TestSocialCSSBrandOrder 品牌色规则按 brandOrder 的固定顺序展开。
-//
-// 顺序进产物字节，所以不能吃 map 遍历顺序 —— 那会让同一份文档每次构建产出不同 CSS，
-// 直接破坏确定性构建这条不变量。
 func TestSocialCSSBrandOrder(t *testing.T) {
 	out := socialCSSFor(&Props{})
 	prev := -1
@@ -41,7 +37,6 @@ func TestSocialCSSBrandOrder(t *testing.T) {
 	}
 }
 
-// TestSocialCSSCSColorModes 三种配色互斥：只命中一个分支。
 func TestSocialCSSCSColorModes(t *testing.T) {
 	brand := socialCSSFor(&Props{})
 	if strings.Contains(brand, "var(--sky-c-text-mute, #6b7280)") {
@@ -69,7 +64,6 @@ func TestSocialCSSCSColorModes(t *testing.T) {
 	}
 }
 
-// TestSocialCSSShapeAndSize 形状三档只差一个圆角值，尺寸贯穿宽高与字号。
 func TestSocialCSSShapeAndSize(t *testing.T) {
 	if !strings.Contains(socialCSSFor(&Props{}), "border-radius: 999px;") {
 		t.Errorf("默认形状应为全圆")
@@ -88,17 +82,12 @@ func TestSocialCSSShapeAndSize(t *testing.T) {
 	}
 }
 
-// TestSocialCSSHoverInHoverBucket 悬停抬升进 (hover: hover) 桶。
-//
-// 迁移后与按钮同形态：只有支持真悬浮的指针设备才吃到 :hover，否则手机上点一下
-// 会卡在抬升态（粘滞 hover）。这条断言此前写的是「不包媒体查询」，那是迁移前的
-// 旧形态，已随 UI-004 收进 hover 桶。
 func TestSocialCSSHoverInHoverBucket(t *testing.T) {
 	out := socialCSSFor(&Props{})
 	if !strings.Contains(out, "@media (hover: hover) {\n  .sky-c-t .sky-social-btn:hover {\n  transform: translateY(-2px);") {
 		t.Errorf("悬停抬升应进 (hover: hover) 桶:\n%s", out)
 	}
-	// 触屏等价形态必须有：按压回弹走 @active，不受 hover 媒体查询约束。
+
 	if !strings.Contains(out, ".sky-c-t .sky-social-btn:active {") {
 		t.Errorf("按压态缺失（触屏唯一的反馈通道）:\n%s", out)
 	}

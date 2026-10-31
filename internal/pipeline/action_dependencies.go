@@ -28,7 +28,6 @@ func (u *CompileUsage) UseActionTarget(kind core.ActionKind, id string) {
 	u.ActionTargets[kind][id] = true
 }
 
-// ActionTargetDependencies 仅投影真实消费成功的目标，Page/Presentation共用此唯一形状。
 func ActionTargetDependencies(u *CompileUsage) []Dependency {
 	if u == nil {
 		return nil

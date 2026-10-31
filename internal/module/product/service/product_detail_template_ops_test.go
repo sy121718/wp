@@ -1,24 +1,5 @@
 package productservice_test
 
-// product_detail_template_ops_test.go — 「详情页模板」写动作与预览编排的 service 层直接判据
-// 断言模板复制作用域、发布编排、迁址参数与预览读取边界。
-//
-// 此前这条门槛只由端点级 feature 测试（public/test/product/...）覆盖：那里的断言落在
-// 「页面渲染出什么」上，而这一层真正的可判定面是**编排顺序**与**传到端口的参数** ——
-//   · CreateDetailTemplate 先取文档、再建模板（反了会在取文档失败时留下一套没有内容的模板）；
-//   · PublishDetailTemplate 只在 urlPath 为空时才查商品（非空时查商品是多一次无用取数）；
-//   · 各依赖失败原样传播，错误事实由声明处携带。
-// 这三条全反了页面照样 200、feature 测试全绿 —— 所以这里要 service 层的直接判据。
-//
-// 四个端口全部 fake，不连数据库：Templates（contenttemplate 契约）、Instances（本文件被测的
-// 窄端口 DetailTemplateInstancePort）、Products（ProductReadPort）、Projects（siteurl 的
-// ProjectDetailReader）。断言只落在「端口收到了什么参数」与「谁被调用 / 谁没被调用」上，
-// 不碰被测函数的私有实现。
-//
-// fake 的未设定端口一律**调用即失败**（t.Fatalf，或嵌入接口的 nil 调用 panic）：
-// 这样注入缺陷时变红的是「不该发生的那次调用」本身，而不是某个字段的值 ——
-// 例如把 if req.URLPath == "" 改成恒真，报的是「Products.Get 被调用」，一眼看出违反的是顺序契约。
-
 import (
 	"context"
 	"errors"
@@ -41,7 +22,6 @@ const (
 	detailTemplateTestTemplateID = "tpl-dt-1"
 )
 
-// 注入用的哨兵错误：每一个代表「某一步失败」的独立原因，用例靠 errors.Is 认出它确实冒了泡。
 var (
 	errDetailTemplateResolve     = errors.New("injected: 取默认模板失败")
 	errDetailTemplateDocRead     = errors.New("injected: 读模板文档失败")
@@ -53,8 +33,6 @@ var (
 	errDetailTemplatePreview     = errors.New("injected: 预览渲染失败")
 )
 
-// detailTemplateJSON 构造用例用的 JSON。写成 helper 而不是原始字符串字面量：
-// 本文件的断言是「文档原样透传」，需要的是一个能被 json.Marshal 稳定复现的值。
 func detailTemplateJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(value)
@@ -64,27 +42,16 @@ func detailTemplateJSON(t *testing.T, value any) json.RawMessage {
 	return b
 }
 
-// detailTemplateCopySourceDoc 复制来源模板的文档（形状与编辑器建的空文档一致）。
 func detailTemplateCopySourceDoc(t *testing.T) json.RawMessage {
 	t.Helper()
 	return detailTemplateJSON(t, map[string]any{"settings": map[string]any{}, "root": []any{}})
 }
 
-// ---- 端口 fake ----
-
-// fakeDetailTemplates 实现 contenttemplatecontract.ContentTemplateService。
-//
-// 只覆盖本文件用到的四个方法（ResolveTemplateScoped / ResolveTemplate / Get / Create）；
-// ResolveTemplate 一并留着是**判据的一部分**：它是无工程的入口，多工程部署下解析不出工程，
-// 被测编排一次都不该走它 —— 走了就是本批修掉的那个老缺陷，记录字段供断言钉住。
-// 其余十四个方法靠**嵌入接口**兜底：
-// 一旦被走到就是 nil 接口方法调用 panic —— 「编排落到别的模板方法上」是缺陷，用 panic 保证它不静默通过。
 type fakeDetailTemplates struct {
 	contenttemplatecontract.ContentTemplateService
 
 	resolveEntityTypes []string
 
-	// 带作用域入口收到的工程 id 与实体类型（顺序一一对应）。
 	resolveScopedProjects    []string
 	resolveScopedEntityTypes []string
 
@@ -95,7 +62,7 @@ type fakeDetailTemplates struct {
 	getIDs      []string
 	getErr      error
 	getDoc      json.RawMessage
-	getNilResp  bool // 模拟契约违约：Get 成功但返回 (nil, nil)
+	getNilResp  bool
 
 	createReqs []*contenttemplatecontract.CreateReq
 	createErr  error
@@ -109,7 +76,6 @@ func (f *fakeDetailTemplates) ResolveTemplate(_ context.Context, entityType stri
 	return &contenttemplatecontract.ResolvedTemplate{TemplateID: f.resolveTemplateID, EntityType: entityType}, nil
 }
 
-// ResolveTemplateScoped 带作用域的入口：记录收到的工程 id 与实体类型，返回与 ResolveTemplate 同形的结果。
 func (f *fakeDetailTemplates) ResolveTemplateScoped(_ context.Context, projectID, entityType string) (*contenttemplatecontract.ResolvedTemplate, error) {
 	f.resolveScopedProjects = append(f.resolveScopedProjects, projectID)
 	f.resolveScopedEntityTypes = append(f.resolveScopedEntityTypes, entityType)
@@ -139,7 +105,6 @@ func (f *fakeDetailTemplates) Create(_ context.Context, req *contenttemplatecont
 	return &contenttemplatecontract.TemplateResp{ID: "tpl-created"}, nil
 }
 
-// fakeDetailInstances 实现 productservice.DetailTemplateInstancePort（四个方法各记一次入参）。
 type fakeDetailInstances struct {
 	previewReqs []*presentationcontract.PreviewInstanceReq
 	previewResp *presentationcontract.PreviewInstanceResp
@@ -184,10 +149,6 @@ func (f *fakeDetailInstances) UpdateURL(_ context.Context, req *presentationcont
 	return &presentationcontract.InstanceResp{ID: "inst-updated"}, nil
 }
 
-// fakeDetailProducts 实现 productservice.ProductReadPort。
-//
-// Get 之外的五个读口本文件一次都不该走到，用 t.Fatalf 断言「不该发生」——
-// 拿一个什么都返回的万能 stub，编排走错分支（比如从分类读口取商品）反而测不出来。
 type fakeDetailProducts struct {
 	t   *testing.T
 	get func(*productdto.GetReq) (*productdto.ProductResp, error)
@@ -195,7 +156,6 @@ type fakeDetailProducts struct {
 	getReqs []*productdto.GetReq
 }
 
-// Get 未设定 get 即调用失败：urlPath 非空的用例里，「查了商品」本身就是要检出的缺陷。
 func (p *fakeDetailProducts) Get(_ context.Context, req *productdto.GetReq) (*productdto.ProductResp, error) {
 	if p.get == nil {
 		p.t.Fatalf("Products.Get 被调用（id=%s）：本用例的 urlPath 非空，编排不该查商品", req.ID)
@@ -233,7 +193,6 @@ func (p *fakeDetailProducts) ListBrands(context.Context, *productdto.ListBrandRe
 	return nil, nil
 }
 
-// fakeDetailProjects 实现 siteurl.ProjectDetailReader —— 默认路径规则的唯一来源。
 type fakeDetailProjects struct {
 	settings json.RawMessage
 	err      error
@@ -249,7 +208,6 @@ func (p *fakeDetailProjects) Detail(_ context.Context, req *projectcontract.Deta
 	return &projectcontract.ProjectResp{ID: req.ID, Settings: p.settings}, nil
 }
 
-// detailTemplateDeps 组装依赖（四项都可空，与被测函数的契约一致）。
 func detailTemplateDeps(templates contenttemplatecontract.ContentTemplateService,
 	instances productservice.DetailTemplateInstancePort,
 	products productservice.ProductReadPort,
@@ -262,9 +220,6 @@ func detailTemplateDeps(templates contenttemplatecontract.ContentTemplateService
 	}
 }
 
-// ---- 1. DetailTemplateDocument：默认模板回落与 Get ----
-
-// 空 templateID（这里是纯空白）→ 先 ResolveTemplate 取 product 的默认模板，再用那个 id 去 Get。
 func TestDetailTemplateDocumentBlankIDResolvesDefaultTemplate(t *testing.T) {
 	ctx := context.Background()
 	doc := detailTemplateCopySourceDoc(t)
@@ -277,12 +232,12 @@ func TestDetailTemplateDocumentBlankIDResolvesDefaultTemplate(t *testing.T) {
 	if string(got) != string(doc) {
 		t.Fatalf("文档 = %s，want %s（DraftDocument 应原样返回）", got, doc)
 	}
-	// 判据 1：走的是带作用域的入口（无工程的 ResolveTemplate 一次都不该被调用）。
+
 	if len(templates.resolveEntityTypes) != 0 {
 		t.Fatalf("无工程的 ResolveTemplate 被调用 %v：多工程部署下它解析不出工程（ErrProjectRequired），"+
 			"缺省来源必须走 ResolveTemplateScoped", templates.resolveEntityTypes)
 	}
-	// 判据 2：作用域原样传到 contenttemplate —— 传空串等价于没传，多工程下同样失败。
+
 	if len(templates.resolveScopedProjects) != 1 || templates.resolveScopedProjects[0] != detailTemplateTestProjectID {
 		t.Fatalf("ResolveTemplateScoped 收到的工程 id = %v，want [%s]", templates.resolveScopedProjects, detailTemplateTestProjectID)
 	}
@@ -294,7 +249,6 @@ func TestDetailTemplateDocumentBlankIDResolvesDefaultTemplate(t *testing.T) {
 	}
 }
 
-// 非空 templateID：TrimSpace 后直接 Get，不查默认模板（多查一次会在「类型无默认模板」时误报失败）。
 func TestDetailTemplateDocumentExplicitIDTrimsAndSkipsResolve(t *testing.T) {
 	ctx := context.Background()
 	templates := &fakeDetailTemplates{getDoc: detailTemplateCopySourceDoc(t)}
@@ -316,7 +270,6 @@ func TestDetailTemplateDocumentExplicitIDTrimsAndSkipsResolve(t *testing.T) {
 	}
 }
 
-// 取默认模板失败：原样冒泡，且不继续 Get。
 func TestDetailTemplateDocumentResolveFailureBubbles(t *testing.T) {
 	templates := &fakeDetailTemplates{resolveErr: errDetailTemplateResolve}
 
@@ -332,7 +285,6 @@ func TestDetailTemplateDocumentResolveFailureBubbles(t *testing.T) {
 	}
 }
 
-// Get 失败：原样冒泡（不许吞成空文档 —— 那会变成「复制了一套空模板」）。
 func TestDetailTemplateDocumentGetFailureBubbles(t *testing.T) {
 	templates := &fakeDetailTemplates{getErr: errDetailTemplateDocRead}
 
@@ -345,9 +297,6 @@ func TestDetailTemplateDocumentGetFailureBubbles(t *testing.T) {
 	}
 }
 
-// 契约违约（Get 返回 nil, nil）：必须回一个明确错误，而不是 panic。
-//
-// 去掉护栏后这一条会 panic（nil 解引用），测试进程直接崩 —— 拦不住就必然变红。
 func TestDetailTemplateDocumentNilGetResultFailsInsteadOfPanicking(t *testing.T) {
 	templates := &fakeDetailTemplates{getNilResp: true}
 
@@ -363,12 +312,6 @@ func TestDetailTemplateDocumentNilGetResultFailsInsteadOfPanicking(t *testing.T)
 	}
 }
 
-// ---- 2. CreateDetailTemplate：顺序契约 ----
-
-// **顺序契约**：取文档失败时 Templates.Create 一次都不许被调用。
-//
-// 反过来（先建空模板再补文档）的症状最难恢复：库里多出一套没有内容的模板，
-// 而用户当时看到的是一个失败提示 —— 他会以为什么都没发生。
 func TestCreateDetailTemplateReadsDocumentBeforeCreatingTemplate(t *testing.T) {
 	ctx := context.Background()
 	templates := &fakeDetailTemplates{getErr: errDetailTemplateDocRead}
@@ -385,7 +328,6 @@ func TestCreateDetailTemplateReadsDocumentBeforeCreatingTemplate(t *testing.T) {
 	}
 }
 
-// 成功路径：Create 收到的四个字段逐字段透传（EntityType 必须是 product）。
 func TestCreateDetailTemplatePassesDraftDocumentIntoCreate(t *testing.T) {
 	ctx := context.Background()
 	doc := detailTemplateCopySourceDoc(t)
@@ -415,7 +357,6 @@ func TestCreateDetailTemplatePassesDraftDocumentIntoCreate(t *testing.T) {
 	}
 }
 
-// 建模板失败：原样冒泡。
 func TestCreateDetailTemplatePropagatesCreateFailure(t *testing.T) {
 	templates := &fakeDetailTemplates{getDoc: detailTemplateCopySourceDoc(t), createErr: errDetailTemplateCreateTpl}
 
@@ -427,11 +368,6 @@ func TestCreateDetailTemplatePropagatesCreateFailure(t *testing.T) {
 	}
 }
 
-// 坏数据护栏：复制来源的文档为空（空串 / 纯空白 / JSON null）时必须报错，且**不建模板**。
-//
-// 去掉护栏后 Create 会被调用，库里多出一套没有内容的模板 —— 编辑器打开是一片空白，
-// 而用户当时看到的是成功提示。四种「空」的写法都要覆盖：空串与 JSON null 是两种不同的
-// 入库结果（前者落空 jsonb、后者落 JSON 字面量 null），只测其中一种会漏掉另一种。
 func TestCreateDetailTemplateRejectsEmptyDocument(t *testing.T) {
 	cases := []struct {
 		name string
@@ -462,13 +398,10 @@ func TestCreateDetailTemplateRejectsEmptyDocument(t *testing.T) {
 	}
 }
 
-// ---- 3. PublishDetailTemplate：URLPath 规则与错误分流 ----
-
-// urlPath 非空：直接用调用方给的路径建实例，**一次都不许查商品**（Products.Get 未设定即失败）。
 func TestPublishDetailTemplateExplicitURLPathSkipsProductLookup(t *testing.T) {
 	ctx := context.Background()
 	instances := &fakeDetailInstances{}
-	products := &fakeDetailProducts{t: t} // 未设定 get：被调用即红
+	products := &fakeDetailProducts{t: t}
 	projects := &fakeDetailProjects{}
 	const urlPath = "/custom/tee-path"
 
@@ -501,7 +434,6 @@ func TestPublishDetailTemplateExplicitURLPathSkipsProductLookup(t *testing.T) {
 	}
 }
 
-// 商品查询失败原样返回，统一响应出口沿错误声明处取状态和文案。
 func TestPublishDetailTemplateProductLookupFailureIsDistinguishable(t *testing.T) {
 	ctx := context.Background()
 	instances := &fakeDetailInstances{}
@@ -526,8 +458,6 @@ func TestPublishDetailTemplateProductLookupFailureIsDistinguishable(t *testing.T
 	}
 }
 
-// urlPath 为空 + 取商品成功：CreateInstance 收到的 URLPath 必须等于
-// siteurl.DetailPathForProject 同参数的结果（不是写死的默认模式，也不是拼出来的近似值）。
 func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 	ctx := context.Background()
 	const slug = "  tee-shirt  "
@@ -538,11 +468,9 @@ func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 		return &productdto.ProductResp{ID: detailTemplateTestProductID, Slug: slug}, nil
 	}}
 
-	// 期望值用同样的入参自己算一遍（不硬编码字符串）。
 	want := siteurl.DetailPathForProject(ctx, projects, detailTemplateTestProjectID,
 		siteurl.KindProduct, slug, detailTemplateTestProductID)
-	// 判据有效性自证：工程规则与默认模式必须**不同形**，否则「读了工程规则」与「写死默认模式」
-	// 在断言上无法区分（settings 写错 / 未被解析时会静默退化成假的绿）。
+
 	defaultPath := siteurl.DetailPath(siteurl.KindProduct, slug, detailTemplateTestProductID, nil)
 	if want == defaultPath {
 		t.Fatalf("判据无效：工程规则（/shop/{slug}-{id}）派生出的路径与默认模式同形（%q）", want)
@@ -562,9 +490,7 @@ func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 		t.Fatalf("CreateInstanceReq.URLPath = %q，want %q（DetailPathForProject 同参数的结果；硬编码默认模式会得到 %q）",
 			got, want, defaultPath)
 	}
-	// 取商品这一跳同样必须在工程作用域内：product 侧 Get 经 resolveProjectID 解析工程，
-	// 不带作用域时多工程部署直接回 ErrInvalidParam —— 单工程夹具里它恰好解析出唯一的那个工程，
-	// 于是「带了」与「没带」在既有端点上行为等价、差异不可观测（本文件这条断言是它的直接判据）。
+
 	if len(products.getReqs) != 1 {
 		t.Fatalf("Products.Get 被调用 %d 次，want 1（派生路径必须先取商品拿 slug）", len(products.getReqs))
 	}
@@ -577,7 +503,6 @@ func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 	}
 }
 
-// 建实例失败原样传播，不更换错误事实。
 func TestPublishDetailTemplateCreateInstanceFailureIsNotProductLookup(t *testing.T) {
 	ctx := context.Background()
 	instances := &fakeDetailInstances{createErr: errDetailTemplateCreateInst}
@@ -593,13 +518,6 @@ func TestPublishDetailTemplateCreateInstanceFailureIsNotProductLookup(t *testing
 	}
 }
 
-// ---- 4. UpdateDetailTemplateURL：参数透传 ----
-
-// 五个字段逐字段透传。WithRedirect 写错（true → false）不会报错，只会让旧链接被直接取消激活
-// 而不是登记 301 —— 用户看不见区别，直到外链全断。
-//
-// ProjectID 漏传（原先的缺陷）同样不报错：presentation 会按「工程唯一时取该工程」兜底，
-// 单工程站点上一切正常，多工程站点改的是**另一个工程**的线上路径。
 func TestUpdateDetailTemplateURLPassesFieldsThrough(t *testing.T) {
 	instances := &fakeDetailInstances{}
 	const newPath = "/shop/tee-shirt"
@@ -630,7 +548,6 @@ func TestUpdateDetailTemplateURLPassesFieldsThrough(t *testing.T) {
 	}
 }
 
-// 改 URL 失败：原样冒泡。
 func TestUpdateDetailTemplateURLPropagatesFailure(t *testing.T) {
 	instances := &fakeDetailInstances{updateURLErr: errDetailTemplateUpdateURL}
 
@@ -644,10 +561,6 @@ func TestUpdateDetailTemplateURLPropagatesFailure(t *testing.T) {
 	}
 }
 
-// 空串也原样透传：service 不替调用方挑工程。
-//
-// 判据能变红：若在这里加一层「空则取唯一工程 / 默认工程」的兜底，收到的就不是空串；
-// 而那一兜底正是多工程站点改错站点的根因，必须留在 presentation 的显式解析里。
 func TestUpdateDetailTemplateURLPassesEmptyProjectIDThrough(t *testing.T) {
 	instances := &fakeDetailInstances{}
 
@@ -663,10 +576,6 @@ func TestUpdateDetailTemplateURLPassesEmptyProjectIDThrough(t *testing.T) {
 	}
 }
 
-// ---- 5. ApplyDetailTemplate：参数透传 ----
-
-// ProjectID / EntityID / TemplateID 逐字段透传（TemplateID 漏传 → 沿用实例当前绑定，切换模板
-// 看起来「没生效」；ProjectID 漏传 → 多工程站点上重建的是另一个工程的实例，同样是「看起来没生效」）。
 func TestApplyDetailTemplatePassesEntityAndTemplate(t *testing.T) {
 	instances := &fakeDetailInstances{}
 
@@ -690,7 +599,6 @@ func TestApplyDetailTemplatePassesEntityAndTemplate(t *testing.T) {
 	}
 }
 
-// 重建失败：原样冒泡。
 func TestApplyDetailTemplatePropagatesFailure(t *testing.T) {
 	instances := &fakeDetailInstances{rebuildErr: errDetailTemplateRebuild}
 
@@ -701,7 +609,6 @@ func TestApplyDetailTemplatePropagatesFailure(t *testing.T) {
 	}
 }
 
-// 空串同样原样透传（与 UpdateDetailTemplateURL 同一判据）。
 func TestApplyDetailTemplatePassesEmptyProjectIDThrough(t *testing.T) {
 	instances := &fakeDetailInstances{}
 
@@ -717,10 +624,6 @@ func TestApplyDetailTemplatePassesEmptyProjectIDThrough(t *testing.T) {
 	}
 }
 
-// ---- 6. PreviewDetailTemplate：参数透传 / 返回原指针 ----
-
-// ProjectID / EntityType / EntityID / TemplateID 逐字段透传。
-// ProjectID 漏传会让集合源落到「唯一工程」兜底上 —— 多工程部署时预览取错站点的数据。
 func TestPreviewDetailTemplatePassesFieldsThrough(t *testing.T) {
 	instances := &fakeDetailInstances{previewResp: &presentationcontract.PreviewInstanceResp{HTML: "<p>preview</p>"}}
 
@@ -746,7 +649,6 @@ func TestPreviewDetailTemplatePassesFieldsThrough(t *testing.T) {
 	}
 }
 
-// 预览失败：原样冒泡。
 func TestPreviewDetailTemplatePropagatesFailure(t *testing.T) {
 	instances := &fakeDetailInstances{previewErr: errDetailTemplatePreview}
 
@@ -760,8 +662,6 @@ func TestPreviewDetailTemplatePropagatesFailure(t *testing.T) {
 	}
 }
 
-// 返回值必须是 fake 给的那个指针本身（不是复制）—— 调用方据此在响应头上标注「预览的是哪一套」，
-// 复制一份会让「模板名 / 版本」与真正渲染用的那套脱钩。
 func TestPreviewDetailTemplateReturnsFakeRespPointer(t *testing.T) {
 	want := &presentationcontract.PreviewInstanceResp{
 		HTML:              "<p>preview</p>",

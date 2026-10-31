@@ -1,22 +1,5 @@
 package feature
 
-// order_coupon_json_write_chain_test.go — task-98 S1 的**链式证据**（Sol 报的 P1 就是这条链断的）。
-//
-// 静态核验只能证明「属性写了字」；这条用例把整条链真跑一遍：
-//
-//	真渲染列表页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**按钮/表单的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js（含真 confirm.js 的确认协议）
-//	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
-//	→ 服务端记录下来实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
-//
-// 为什么非这样不可（P1 的真实形态）：批量启停按钮少写一个 data-write-number=status 时，
-// 属性看着齐全、静态检查也过，但基座把 <select> 的值按字符串发出去，服务端只认字面 0/1 →
-// 整批 400，而页面上只看到一句「操作失败」。这条链上任何一环松动，本用例都会红。
-//
-// 驱动脚本 public/test/order/feature/testdata/coupon_json_write_chain_driver.cjs 的 DOM 桩
-// 手法抄自同目录 json_write.test.cjs（node:test + vm + 极简 DOM，无浏览器、无依赖）。
-// 没有 node 时**跳过并说明**（不伪装成绿）：本用例要的就是真实基座，桩掉它等于测了个假东西。
-
 import (
 	"bytes"
 	"context"
@@ -46,7 +29,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// couponChainCapture 记录服务端**实际收到**的请求体与响应码（链的另一端）。
 type couponChainCapture struct {
 	mu      sync.Mutex
 	body    []string
@@ -62,11 +44,6 @@ func (cap *couponChainCapture) add(path, body string, status int) {
 	cap.patched = append(cap.patched, path)
 }
 
-// nth 第 n 个写请求（path 前缀匹配 /api/order/coupon/，按服务端收到的先后）。
-//
-// 必须按序号取而不能「取最后一次」：三个用例在同一个驱动进程里按顺序跑，全部发完
-// 才轮到 Go 侧断言 —— 只取最后一次会让批量用例读到行内删除的请求体（实测踩过：
-// 批量段的 status/ids/projectId 全都"缺失"，看着像模板漏声明，其实是判据取错了对象）。
 func (cap *couponChainCapture) nth(t *testing.T, n int) (string, int) {
 	t.Helper()
 	cap.mu.Lock()
@@ -85,7 +62,6 @@ func (cap *couponChainCapture) nth(t *testing.T, n int) (string, int) {
 	return "", 0
 }
 
-// couponChainFixture 渲染真列表页，并抽出三个用例的原始属性。
 type couponChainFixture struct {
 	bulkFormAttrs  map[string]string
 	bulkSubmitter  map[string]string
@@ -115,7 +91,6 @@ var (
 	couponSelectedRe = regexp.MustCompile(`\bselected\b`)
 )
 
-// couponAttrsOf 把一个标签的属性抽成表（模板里的属性值一律双引号）。
 func couponAttrsOf(tag string) map[string]string {
 	out := map[string]string{}
 	for _, m := range couponAttrRe.FindAllStringSubmatch(tag, -1) {
@@ -124,7 +99,6 @@ func couponAttrsOf(tag string) map[string]string {
 	return out
 }
 
-// couponFieldsOf 段内所有具名输入控件（按出现顺序），值取渲染出来的 value。
 func couponFieldsOf(t *testing.T, block string) []couponChainField {
 	t.Helper()
 	var out []couponChainField
@@ -138,8 +112,6 @@ func couponFieldsOf(t *testing.T, block string) []couponChainField {
 	return out
 }
 
-// buildCouponChainFixture 从真渲染的 HTML 里取属性：不手抄任何 data-*，
-// 模板少写一个属性本用例就必然跟着红。
 func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID string) *couponChainFixture {
 	t.Helper()
 	fx := &couponChainFixture{}
@@ -150,7 +122,6 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 	}
 	fx.bulkFormAttrs = couponAttrsOf(bulkForm)
 
-	// 批量启停按钮：本页两个批量按钮里带 update 端点的那个。
 	var toggleButton string
 	for _, tag := range couponButtonRe.FindAllString(html, -1) {
 		if strings.Contains(tag, `data-write-url="/api/order/coupon/update"`) {
@@ -163,7 +134,6 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 	}
 	fx.bulkSubmitter = couponAttrsOf(toggleButton)
 
-	// 目标状态下拉：取「与当前状态相反」的那个选项（真页面由人挑，这里挑另一个）。
 	var target string
 	for _, tag := range couponOptionRe.FindAllString(html, -1) {
 		value := couponAttrOf(tag, "value")
@@ -190,7 +160,6 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 		{Name: "ids", Value: toggleID, Checked: true, Type: "checkbox"},
 	}
 
-	// 行内启停（create 模式）：字段就是表单自己的隐藏域，提交者是行里那个 form="<id>" 的按钮。
 	rowBlock, ok := couponFormBlockExact(html, "coupon-toggle-"+toggleID)
 	if !ok {
 		t.Fatal("列表页里找不到行内启停表单（coupon-toggle-）")
@@ -215,7 +184,6 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 		t.Fatal("找不到与行内启停表单关联的提交按钮（form=\"coupon-toggle-<id>\"）")
 	}
 
-	// 行内删除（single 模式）。
 	delBlock, ok := couponFormBlockExact(html, "coupon-del-"+deleteID)
 	if !ok {
 		t.Fatal("列表页里找不到行内删除表单（coupon-del-）")
@@ -234,7 +202,6 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 	return fx
 }
 
-// TestOrderCouponJSONWriteChainTemplateToHandler 链式证据主用例。
 func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -246,9 +213,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
 
-	// 三个用例各用一张券：批量启停 / 行内启停 / 行内删除。同一张券会被前后两个用例各改一次
-	// 状态，而 Go 侧是在三个用例**都跑完**之后才读库断言 —— 共用一张券时「批量那段」读到的是
-	// 行内那段写下的状态（实测踩过：批量断言拿到 0，看着像基座发错，其实是断言对象被后一个用例改过）。
 	bulkKeep := f.addCoupon(t, &orderdto.CouponSaveReq{
 		Code: "CHAIN-1", Name: "链式证据券", DiscountType: "fixed", DiscountValue: 2000,
 		MinSubtotal: 9900, MaxUses: 100, PerUserLimit: 2, Remark: "链式证据",
@@ -277,7 +241,7 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 				body, _ := io.ReadAll(c.Request.Body)
 				c.Request.Body = io.NopCloser(bytes.NewReader(body))
 				c.Next()
-				// 只记写请求的实际内容与响应码：这是「基座发出去的到底是什么类型」的权威来源。
+
 				cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 			})
 			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), couponsPage.CouponsPage)
@@ -293,7 +257,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	server := httptest.NewServer(engine)
 	defer server.Close()
 
-	// ① 真渲染列表页并取原始属性。
 	pageReq, _ := http.NewRequest(http.MethodGet, server.URL+"/admin/coupons?project="+f.projectID, nil)
 	pageRes, err := http.DefaultClient.Do(pageReq)
 	if err != nil {
@@ -307,7 +270,7 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	fx := buildCouponChainFixture(t, string(pageHTML),
 		strconv.FormatUint(keep.ID, 10), strconv.FormatUint(remove.ID, 10), f.projectID)
 	fx.bulkFields[2] = couponChainField{Name: "ids", Value: strconv.FormatUint(bulkKeep.ID, 10), Checked: true, Type: "checkbox"}
-	// 批量那段必须**换一个状态**才算验证了写通：拿当前状态当目标时「状态没变」既可能是写成功也可能是没写。
+
 	bulkBefore, berr := f.orders.GetCoupon(context.Background(), bulkKeep.ID)
 	if berr != nil || bulkBefore == nil {
 		t.Fatalf("重读批量用例的券失败: %v", berr)
@@ -318,7 +281,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 	fx.bulkFields[0] = couponChainField{Name: "status", Value: fx.bulkTarget, Tag: "select"}
 
-	// ② 跑真实基座：三个用例（批量启停 / 行内启停 / 行内删除）。
 	fixture := map[string]any{
 		"uiDir": filepath.Join("..", "..", "..", "..", "internal", "templates", "static", "js", "ui"),
 		"base":  server.URL,
@@ -380,16 +342,11 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("应跑三个用例，实际 %d：%s", len(report.Results), string(out))
 	}
 
-	// ③ 链的另一端：服务端真正收到的**请求体**。
-	//
-	// 批次 2 之后写基座统一走 formdata（不再发 JSON），所以这里按 formdata 解析。
-	// 判据仍然是「值真的到了服务端」，只是传输编码换了：类型转换由服务端反射完成
-	//（实测 formdata 的 "3" 直接绑进 int、"a&a=b" 直接绑成 []string）。
 	bulkBody, bulkStatus := cap.nth(t, 0)
 	if bulkStatus != http.StatusOK {
 		t.Fatalf("批量启停应 200，实际 %d：body=%q", bulkStatus, bulkBody)
 	}
-	// FormData 走 fetch 时是 multipart/form-data（不是 urlencoded），要按 multipart 解析。
+
 	bulkForm, ferr := parseMultipartFormBody(bulkBody)
 	if ferr != nil {
 		t.Fatalf("批量请求体解析失败: %v（body=%s）", ferr, bulkBody)
@@ -404,7 +361,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量 projectId 应保持原值，实际 %q", got)
 	}
 
-	// JS 侧看到的结论：受控文案不是失败文案。
 	var bulkReport string
 	for _, r := range report.Results {
 		if r.Name == "bulk-toggle" {
@@ -418,7 +374,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量启停不应显示失败文案，实际状态区：%q", bulkReport)
 	}
 
-	// 数据库：状态改成目标值，其余字段一个都不许回退。
 	after, gerr := f.orders.GetCoupon(context.Background(), bulkKeep.ID)
 	if gerr != nil || after == nil {
 		t.Fatalf("重读券失败: %v", gerr)
@@ -430,14 +385,11 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("整体更新漏字段：%+v", after)
 	}
 
-	// ④ 行内启停（create 模式）：数值字段必须逐个是数字。
 	rowBody, rowStatus := cap.nth(t, 1)
 	if rowStatus != http.StatusOK {
 		t.Fatalf("行内启停应 200，实际 %d：%s", rowStatus, rowBody)
 	}
-	// 批次 2 之后写基座统一发 formdata，所以按 multipart 解析。
-	// 数字字段的判据从「是数字字面」改为「值非空」—— 类型转换由服务端反射完成
-	//（实测 formdata 的 "3" 直接绑进 int），前端不再声明 data-write-number。
+
 	rowForm, rerr := parseMultipartFormBody(rowBody)
 	if rerr != nil {
 		t.Fatalf("行内启停请求体解析失败: %v（body=%s）", rerr, rowBody)
@@ -455,7 +407,6 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("行内启停应把状态翻转成 %s，实际 %+v", fx.rowStatusValue, afterRow)
 	}
 
-	// ⑤ 行内删除（single 模式）：只发 {id}，且 id 是数字。
 	delBody, delStatus := cap.nth(t, 2)
 	if delStatus != http.StatusOK {
 		t.Fatalf("行内删除应 200，实际 %d：%s", delStatus, delBody)
@@ -464,7 +415,7 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("行内删除请求体解析失败: %v（body=%s）", derr, delBody)
 	}
-	// single 模式只该发 id 一项（其它字段发出去会让端点收到两种互不认识的身体）。
+
 	if len(delForm) != 1 {
 		t.Errorf("single 模式只应发 {id}，实际字段：%v（body=%s）", keysOf(delForm), delBody)
 	}
@@ -476,13 +427,9 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 }
 
-// parseMultipartFormBody 从原始 multipart 请求体里取出字段（首个值）。
-//
-// 为什么不直接用 url.ParseQuery：FormData 经 fetch 发出去时是
-// multipart/form-data，分隔符形如 ------formdata-undici-xxx。
 func parseMultipartFormBody(body string) (map[string]string, error) {
 	out := map[string]string{}
-	// 从 body 里推 boundary（第一行的 "--<boundary>"）。
+
 	first := strings.SplitN(body, "\r\n", 2)
 	if len(first) < 2 {
 		return nil, fmt.Errorf("缺少 multipart 分隔行")
@@ -495,14 +442,13 @@ func parseMultipartFormBody(body string) (map[string]string, error) {
 	}
 	for k, v := range form.Value {
 		if len(v) > 0 {
-			// 同名多值用逗号拼起来：调用方按 "1,2" 断言 ids 这类多值字段。
+
 			out[k] = strings.Join(v, ",")
 		}
 	}
 	return out, nil
 }
 
-// keysOf 取 map 的键（测试断言的报错文案用）。
 func keysOf(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

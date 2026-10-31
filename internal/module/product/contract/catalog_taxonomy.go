@@ -5,7 +5,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// CatalogTaxonomyQueries 提供目录查询事实，页面与 API 可复用同一数据对象。
 type CatalogTaxonomyQueries interface {
 	QueryAttributes(context.Context, *productdto.CatalogTaxonomyReq) (*productdto.TaxonomyListResp[*productdto.AttributeResp], error)
 	QueryBrands(context.Context, *productdto.CatalogTaxonomyReq) (*productdto.TaxonomyListResp[*productdto.BrandResp], error)

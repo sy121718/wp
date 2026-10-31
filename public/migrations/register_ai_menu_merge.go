@@ -2,21 +2,12 @@ package migrations
 
 import "sync"
 
-// register_ai_menu_merge.go — AI 两个菜单入口合并 + 词条（532）。
-//
-// 判据按本批自己的对象逐条枚举（上界封闭）：① 只剩一条指向 /admin/ai/sessions 的活菜单、
-// 且它已改名；② 旧的「AI 会话」条目不再有活行；③ 两个 key 的中英都在。
-// 三件事都要成立才跳过 —— 只判其中一件时，另外两件漏做也永远补不上。
-//
-// ConditionSQL 由迁移器 db.Raw 直接执行、没有参数替换，值只能写进 SQL 字面量。
 func registerAIMenuMerge() {
 	registerAIMenuMergeOnce.Do(registerAIMenuMergeSeed)
 }
 
-// registerAIMenuMergeOnce 让重复调用成为空操作。
 var registerAIMenuMergeOnce sync.Once
 
-// registerAIMenuMergeSeed 注册 532（真正干活的那一半）。
 func registerAIMenuMergeSeed() {
 	registerSeed(Seed{
 		Version:   "532-ai-menu-merge",

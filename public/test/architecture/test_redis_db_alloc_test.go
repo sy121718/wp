@@ -15,8 +15,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// TestRedisFixtureConnectsToAllocatedDB 钉住「分配表 → 实际连接的 DB」这条链：
-// 分配表算对了号但没传进 cfg（或 redis.db 键名写错）时，隔离静默失效 —— 本测试会红。
 func TestRedisFixtureConnectsToAllocatedDB(t *testing.T) {
 	if err := support.SetupRedisForTest(t); err != nil {
 		t.Skipf("Redis 不可用，跳过: %v", err)
@@ -43,16 +41,6 @@ func firstLineWith(s, needle string) string {
 	return "(未找到 db= 字段)"
 }
 
-// TestTestRedisDBAllocationMatchesCallers 对账「测试包 → Redis DB 号」分配表与真实调用点。
-//
-// 背景：会话 key 是 user:session:<userID>（pkg/auth/session.go:66），各 feature 测试包的管理员
-// 在各自独立的 PG 测试库里 userID 恒为 1 —— 共用 Redis DB 时一个包的登出会删掉另一个包的会话，
-// 表现为并发全量偶发 302 /admin/login 的假红（与 Go 版本无关，见 public/test/support/admin_session.go）。
-//
-// 三个方向都判失败：
-//  1. 有调用点但未登记（新包会静默退回 DB 0，缺陷复发）
-//  2. 登记了但已无调用点（陈旧条目，登记表退化成注释）
-//  3. 号重复或占用 DB 0（隔离失效）
 func TestTestRedisDBAllocationMatchesCallers(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	allocFile := filepath.Join(root, "public", "test", "support", "admin_session.go")
@@ -83,7 +71,6 @@ func TestTestRedisDBAllocationMatchesCallers(t *testing.T) {
 	}
 }
 
-// parseRedisDBAlloc 用 AST 读 testRedisDBByDir 的字面量，避免与实现漂移。
 func parseRedisDBAlloc(t *testing.T, path string) map[string]int {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -139,7 +126,6 @@ func parseRedisDBAlloc(t *testing.T, path string) map[string]int {
 	return out
 }
 
-// scanRedisFixtureCallers 扫出所有以 support.SetupRedisForTest* 调用发起方的仓库相对目录。
 func scanRedisFixtureCallers(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
@@ -148,8 +134,7 @@ func scanRedisFixtureCallers(t *testing.T, root string) map[string]bool {
 			return nil
 		}
 		if d.IsDir() {
-			// .worktrees 是嵌套 worktree（另一个分支的完整副本）：扫进来会把同一批调用点
-			// 按分支数重复登记，基线永久漂移。
+
 			if d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor" || d.Name() == ".worktrees" {
 				return filepath.SkipDir
 			}
@@ -196,7 +181,6 @@ func scanRedisFixtureCallers(t *testing.T, root string) map[string]bool {
 	return out
 }
 
-// supportImportAlias 返回本文件里 go_wp/public/test/support 的本地引用名（无则空串）。
 func supportImportAlias(f *ast.File) string {
 	for _, imp := range f.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)
@@ -214,7 +198,6 @@ func supportImportAlias(f *ast.File) string {
 	return ""
 }
 
-// repoRelDir 把绝对目录折成相对仓库根的斜杠路径。
 func repoRelDir(root, dir string) string {
 	rel, err := filepath.Rel(root, dir)
 	if err != nil {

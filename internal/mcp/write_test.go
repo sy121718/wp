@@ -1,12 +1,5 @@
 package mcp
 
-// write_test.go — 写工具地基的断言（docs/17 D8：确认 + 幂等）。
-//
-// 这一批要挡的两类故障都不报错：
-//   · 没有确认位时，模型自己觉得该写就写了 —— 调用流水里看不出「有没有人要这个改动」；
-//   · 没有幂等键时，一次重试落两条 —— 两条都合法。
-// 所以判据必须落在「handler 被调用了几次」「store 里记了什么」上，而不是「返回值对不对」。
-
 import (
 	"context"
 	"errors"
@@ -17,7 +10,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// memStore 幂等台账的内存实现（只给测试用）。
 type memStore struct {
 	saved map[string]Result
 	calls int
@@ -36,7 +28,6 @@ func (m *memStore) Save(_ context.Context, tool, key string, res Result) error {
 	return nil
 }
 
-// writeProbe 造一个写工具：handler 记调用次数，并按 needErr 决定成功还是失败。
 func writeProbe(store IdempotencyStore, calls *int, needErr bool) Tool {
 	return NewWrite("probe_create", "探针", "只用于测试的写工具",
 		permission.ContentCreate,
@@ -54,16 +45,11 @@ func writeProbe(store IdempotencyStore, calls *int, needErr bool) Tool {
 	)
 }
 
-// invoke 走工具自己的 Invoke（与运行期同一条路径）。
 func invoke(t *testing.T, tool Tool, body string) (Result, error) {
 	t.Helper()
 	return tool.Invoke(context.Background(), json.RawMessage(body))
 }
 
-// TestWriteSchemaInjectsConfirmAndKey 地基必须把两个字段塞进 schema 与 required。
-//
-// 判据落在这里而不是「文档说了要写」：让工具作者在自己的结构体里声明，漏声明的
-// 失败模式是「这个工具没有确认位」，而它在接口列表里与别人长得一模一样。
 func TestWriteSchemaInjectsConfirmAndKey(t *testing.T) {
 	tool := writeProbe(newMemStore(), new(int), false)
 	if tool.Name() != "probe_create" {
@@ -82,13 +68,12 @@ func TestWriteSchemaInjectsConfirmAndKey(t *testing.T) {
 			t.Errorf("%q 必须在 required 里（否则模型不会主动给）", k)
 		}
 	}
-	// 业务字段是**追加**在作者给的 required 之后的，不能被顶掉。
+
 	if !strings.Contains(required, "name") {
 		t.Errorf("作者声明的 required 被覆盖了：%v", schema.Required)
 	}
 }
 
-// TestWriteRejectsWithoutConfirm confirm 缺失或 false 时**不执行 handler**。
 func TestWriteRejectsWithoutConfirm(t *testing.T) {
 	calls := 0
 	tool := writeProbe(newMemStore(), &calls, false)
@@ -110,7 +95,6 @@ func TestWriteRejectsWithoutConfirm(t *testing.T) {
 	}
 }
 
-// TestWriteRejectsWithoutKey 缺幂等键时同样不执行。
 func TestWriteRejectsWithoutKey(t *testing.T) {
 	calls := 0
 	tool := writeProbe(newMemStore(), &calls, false)
@@ -124,7 +108,6 @@ func TestWriteRejectsWithoutKey(t *testing.T) {
 	}
 }
 
-// TestWriteIdempotentReplay 同键第二次直接回上次结果，**不碰业务代码**。
 func TestWriteIdempotentReplay(t *testing.T) {
 	calls := 0
 	store := newMemStore()
@@ -144,13 +127,12 @@ func TestWriteIdempotentReplay(t *testing.T) {
 	if !strings.HasPrefix(second.Text, first.Text) {
 		t.Errorf("回放要返回上次结果，实得 %q", second.Text)
 	}
-	// 必须告诉模型「这次没真的再写一遍」，否则它会向用户汇报两次改动。
+
 	if !strings.Contains(second.Text, "没有重复写入") {
 		t.Errorf("回放结果要说明本次没有重复写入，实得 %q", second.Text)
 	}
 }
 
-// TestWriteFailureIsNotRemembered 失败不落幂等，重试能真的重试。
 func TestWriteFailureIsNotRemembered(t *testing.T) {
 	calls := 0
 	store := newMemStore()
@@ -169,7 +151,6 @@ func TestWriteFailureIsNotRemembered(t *testing.T) {
 	}
 }
 
-// TestWriteStoreAbsentStillWorks 台账缺失时不阻断写操作（有意的降级）。
 func TestWriteStoreAbsentStillWorks(t *testing.T) {
 	calls := 0
 	tool := writeProbe(nil, &calls, false)

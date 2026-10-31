@@ -6,11 +6,8 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// ErrPublishedActionUnavailable 标记已发布动作引用当前不可解析，内部原因只保留在错误链。
 var ErrPublishedActionUnavailable = errors.New("已发布动作目标当前不可用")
 
-// WithPublishedActionPaths 只把两种已发布事实查询适配为编译器动作解析。
-// 工程与语言由装配闭包固定，业务模块不接收节点或解释动作协议。
 func WithPublishedActionPaths(pagePath, instancePath func(string) (string, error)) CompileOption {
 	return WithActionResolver(func(node *core.Node, key string) (core.ResolvedAction, error) {
 		target := node.Actions[key]

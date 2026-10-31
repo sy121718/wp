@@ -85,7 +85,7 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 	if manifest.References == nil || len(manifest.References.Blocks) != 2 || manifest.References.Blocks[inner.ID].Version != inner.Version || !reflect.DeepEqual(sourceDoc, frozenDoc) {
 		t.Fatalf("产物必须记录准确的id/version/document: %+v", manifest.References)
 	}
-	// 后续构建不能改写 Publication 正在使用的产物身份、清单和文件字节。
+
 	type artifactRow struct {
 		ID, ArtifactHash, ArtifactKey string
 		Manifest, SourceDocument      json.RawMessage
@@ -95,7 +95,7 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldHTML := []byte(html)
-	// 新构建属于新的发布决策，不能永久固定旧块；语言计划仍按原合同沿用。
+
 	rebuilt, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatal(err)

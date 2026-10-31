@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// JSON 与表单必须得到相同的组合选择，JSON不能被FormBinder的空表单覆盖。
 func TestVariantPreviewBindsJSONAndFormSelections(t *testing.T) {
 	for _, tc := range []struct{ kind, body string }{
 		{"application/json", `{"productId":"p1","projectId":"pr1","selections":[{"attributeId":"a1","valueIds":["v1"]}]}`},

@@ -1,29 +1,5 @@
 package productservice
 
-// product_bulk.go — 五个批量删除用例的 service 入口（task-156，dd.txt §5.1/§5.3/§5.4）。
-//
-// 为什么要有这一批用例：控制器此前把「循环 + 累加计数 + 挑文案」都放在 handler 里，
-// 于是每个批量操作实际上就是 N 次单条 service 调用，SQL 次数是
-// N ×（逐条校验 + 删除 + 失效入队）。这里把 N 压成一个用例：
-//   · 校验阶段批量化（一次查回整批：存在性 / 子级 / 引用面）；
-//   · 删除阶段一条 DELETE ... WHERE id IN (...)，在**同一个事务**里连同失效事件提交；
-//   · 结果用 productdto.BulkResultResp 回给控制器（控制器不再累加任何计数）。
-//
-// 语义（2026-10-18 用户拍板）：**整批 = 一个事务，要么全成、要么全败**。
-//
-//   · 校验阶段批量化（一次查回整批：存在性 / 子级 / 引用面）；
-//   · 任何一条不能处理就整批退回，错误里列出可定位条目（id / 名称 / 原因 key → BulkRejectedError）；
-//   · 全部可处理时，同一个事务删完全部（连同失效事件与留痕），任一步失败整体回滚。
-//
-// 为什么不留「成功 N / 跳过 M」：那个回执既说不出哪一条没成，也没法只重试那一条（重试会把
-// 成功过的再走一遍），而库里已经是他看不懂的中间态 —— 一个表改了一个表没改，这种账没人能对。
-//
-// 归一只在这里做（normalizeBulkIDs → pkg/bulkids）：入口不 trim、不去重、不数条数。
-// 批量读取 / 守卫扫描本身失败一律**返回 error**，不混进任何计数。
-//
-// 事务边界与作用域：每个用例一个事务；分类 / 品牌 / 属性 / 标签都带工程隔离
-// （rls.ScopeTx 逐工程设置），标签那条按「标签自己的工程」分组切换（见 DeleteTag 注释）。
-
 import (
 	"context"
 	"errors"
@@ -45,21 +21,10 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// normalizeBulkIDs 归一批量 id 清单：去空白、去空、去重（保序）+ 上限。
-//
-// 这里是**全链唯一**的归一：入口只把请求体交给 service，不 trim、不去重、也不数条数 ——
-// 控制器是编排出口，不做计算（那条判据见 internal/module/CLAUDE.md）。
-//
-// 超限返回 *bulkids.IDsError（带 Max / Count 两个数字），由 bulkIDsErr 转成业务错误：
-// **整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」，而实际只处理了前 200 条。
 func normalizeBulkIDs(ids []string) ([]string, error) {
 	return bulkids.Normalize(ids)
 }
 
-// bulkIDsErr 归一的失败 → 业务错误：超限带上「上限 / 本次条数」，其余按参数不合法。
-//
-// 判据是**类型**（*bulkids.IDsError），不是文案比对：提示里的两个数字只有这个类型知道，
-// 拿上限重算会算成「上限 / 上限」。
 func bulkIDsErr(err error) error {
 	var tooMany *bulkids.IDsError
 	if errors.As(err, &tooMany) {
@@ -68,19 +33,6 @@ func bulkIDsErr(err error) error {
 	return productenums.Err(productenums.ErrInvalidParam)
 }
 
-// BulkDeleteProducts 批量删除商品（连同其全部变体、各仓库存行 —— 由外键级联）。
-//
-// 事务语义（改造前 → 改造后）：
-//
-//	· 改造前：每条商品一个独立事务（product.go Delete：删除 + 失效 + 留痕），
-//	  一条失败不影响其它条（控制器把失败算进「跳过」）；
-//	· 改造后：校验批量化，**要删的商品在同一个事务里删**（删除 + 逐商品失效 + 整批留痕），
-//	  任一步失败整批回滚并报错。「逐项跳过」的语义不变（不存在的项不进删除集合）。
-//
-// 行锁与留痕快照：LockProductsTx 按 id 升序 FOR UPDATE 锁住删除集合，锁到的行就是本次
-// 要删的行；锁之后行数对不上（被并发删掉）即整批回滚。**留痕快照在锁后读**：
-// ListProductsByIDsForUpdateTx / ListVariantsByProductsForUpdateTx 拿同一事务里的锁后整行。
-// 事务前那次读只取商品名称（整批拒绝时报出是哪几条），不进任何快照。
 func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -90,7 +42,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		return nil, bulkIDsErr(nerr)
 	}
 	res = &productdto.BulkResultResp{}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
+
 	if len(ids) == 0 {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -98,11 +50,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	if err != nil {
 		return nil, err
 	}
-	// 事务前只取**名称**，用途限于「整批拒绝时报出是哪几条」—— 它不进任何留痕快照。
-	//
-	// 旧写法在这里整行读商品与全部变体、再拿它们当留痕快照，那是**锁前**的读：
-	// 校验与删除之间别人可以改掉名称 / 价格 / 变体成本，快照里记的却是改之前的值，
-	// 于是「审计说删的是 A，实际删掉的是 B」。快照改在锁后读（见下面事务内）。
+
 	named, err := s.m.ListProductsByIDs(ctx, ids, projectID)
 	if err != nil {
 		return nil, err
@@ -120,9 +68,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		if lerr != nil {
 			return lerr
 		}
-		// 锁不到的 = 不存在 / 不属于本工程 / 已被并发删掉：**整批不删**。
-		// 逐条提交时这一条会被算进「跳过」，用户拿到的是「成功 49 / 跳过 1」——
-		// 他既不知道是哪一条，也没法只重试那一条。
+
 		if len(locked) != len(ids) {
 			lockedSet := make(map[string]bool, len(locked))
 			for _, id := range locked {
@@ -140,13 +86,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		for _, id := range locked {
 			lockedSet[id] = true
 		}
-		// 留痕快照必须在**锁后**取：LockProductsTx 只锁了这批商品行（而且只 Pluck id），
-		// 变体行此前一行都没锁，于是旧写法（锁前读的 rows / variants）会把并发提交的
-		// 改名、改价、成本价回写记成「删除前的旧值」—— 审计与真正删掉的行对不上。
-		//
-		// 顺序：工程锁（已在上面）→ 商品（LockProductsTx 已按 id 升序锁住，这里按同一
-		// 顺序逐条拿锁后整行）→ 变体（同一顺序逐个锁定读取）。locked 是升序的，
-		// 所以与 LockProductsTx 的加锁顺序一致，不引入新的死锁面。
+
 		lockedProducts := make([]*productmodel.ProductEntity, 0, len(locked))
 		for _, id := range locked {
 			e, perr := s.m.GetForUpdateTx(ctx, tx, id, projectID)
@@ -163,8 +103,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 			}
 			lockedVariants = append(lockedVariants, rows...)
 		}
-		// 留痕按**锁定到的**商品组装（并发删掉的那些不写留痕 —— 它们不是本次删的；
-		// 上面的读已按锁定集合逐条走，这里的判断是防御性的）。
+
 		inputs := make([]*masterdatacontract.ChangeInput, 0, len(lockedProducts)+len(lockedVariants))
 		for _, e := range lockedProducts {
 			if !lockedSet[e.ID] {
@@ -180,7 +119,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 			inputs = append(inputs, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
 				masterdataenums.OriginVariant, "", variantChangeSnapshot(v, nil), nil))
 		}
-		// DEC-04：同事务清理别处对这批商品的 related_ids 引用（引用者行锁 + 留痕 + 失效）。
+
 		if cerr := s.cleanRelatedRefsTx(ctx, tx, projectID, locked, ""); cerr != nil {
 			return cerr
 		}
@@ -192,7 +131,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 			return fmt.Errorf("product: 批量删除商品的行数对不上：锁定 %d，删除 %d", len(locked), n)
 		}
 		deleted = len(locked)
-		// 删除 = 集合成员变化，逐商品各发一条（enqueueInvalidationTx 内部按实体去重）。
+
 		targets := make([]invalidationTarget, 0, len(locked))
 		for _, id := range locked {
 			targets = append(targets, productInvalidationTarget(id))
@@ -205,15 +144,10 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		return nil, err
 	}
 
-	// Done 取真正删掉的行数（锁定集合大小，且已校验 == len(ids)）。
 	res.Done = deleted
 	return res, nil
 }
 
-// bulkRejected 把「哪几条不能处理」包成整批拒绝的错误。
-//
-// 状态码 409（冲突）在**声明处**给：一条也不能处理是「当前数据状态不允许这次操作」，
-// 不是参数错（400），也不是内部故障（500）。出口照常读 pkg/facing.StatusOf，不认识这个类型。
 func bulkRejected(items []facing.BlockedItem) error {
 	return &productdto.BulkRejectedError{
 		Err:   productenums.Err(productenums.ErrBulkRejected),
@@ -221,16 +155,14 @@ func bulkRejected(items []facing.BlockedItem) error {
 	}
 }
 
-// bulkBlocked 一条可定位的拒绝原因。名称拿不到时退 id（uuid 至少能让人去搜）。
 func bulkBlocked(id, name, reasonKey string) facing.BlockedItem {
 	return facing.BlockedItem{
 		ID: id, Name: strings.TrimSpace(name), ReasonKey: reasonKey,
-		// 兜底跟声明处走：出口有语言（它翻 key），但它不该替声明方猜「词条缺了显示什么」。
+
 		Fallback: productenums.FallbackFor(reasonKey),
 	}
 }
 
-// bulkBlockedNames 整批 id 的「名称表」（拿不到名称的条目留空）。
 func bulkBlockedNames(ids []string, named map[string]string) map[string]string {
 	out := make(map[string]string, len(ids))
 	for _, id := range ids {
@@ -239,13 +171,6 @@ func bulkBlockedNames(ids []string, named map[string]string) map[string]string {
 	return out
 }
 
-// BulkDeleteProductCategories 批量删除分类。
-//
-// 三条前置规则与单条版（DeleteCategory）逐条一致，只是改成一次算完整批：
-//
-//	① 不存在 → Skipped；
-//	② 仍有子级 → Skipped（外键是 SET NULL，会把子级静默提升为顶级，层级信息就丢了）；
-//	③ 仍被**任何工程**的商品引用（附属 category_ids 或主分类 primary_category_id）→ Skipped。
 func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -255,7 +180,7 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 		return nil, bulkIDsErr(nerr)
 	}
 	res = &productdto.BulkResultResp{}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
+
 	if len(ids) == 0 {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -304,7 +229,7 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 			}
 		}
 		if len(blocked) > 0 {
-			// 任何一条不能删 → **一条都不删**（判据见 internal/module/CLAUDE.md「列表页批量操作」）。
+
 			return bulkRejected(blocked)
 		}
 		if err := rls.ScopeTx(tx, projectID); err != nil {
@@ -331,10 +256,6 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 	return res, nil
 }
 
-// BulkDeleteProductBrands 批量删除品牌。
-//
-// 与单条版（DeleteBrand）一致：被**任何工程**的商品引用即拒绝（外键 ON DELETE SET NULL
-// 会静默解绑别的工程那个商品的品牌 —— 没有任何信号，这正是品牌守卫存在的理由）。
 func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -344,7 +265,7 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 		return nil, bulkIDsErr(nerr)
 	}
 	res = &productdto.BulkResultResp{}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
+
 	if len(ids) == 0 {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -405,10 +326,6 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 	return res, nil
 }
 
-// BulkDeleteProductAttributes 批量删除属性组（属性值由外键级联）。
-//
-// 与单条版（DeleteAttribute）一致：被任何工程的商品引用即拒绝 —— attribute_ids 是 JSON
-// 数组、没有数据库级外键兜底，删掉就会留下悬空引用。
 func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -418,7 +335,7 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 		return nil, bulkIDsErr(nerr)
 	}
 	res = &productdto.BulkResultResp{}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
+
 	if len(ids) == 0 {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -477,15 +394,6 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 	return res, nil
 }
 
-// BulkDeleteProductTags 批量删除标签（手工 / 自动一视同仁）。
-//
-// 与单条版（DeleteTag）的两条语义逐条一致：
-//
-//	· **本工程**内的引用不拒绝 —— 解绑即可（标签是标记不是外键），但「解绑 + 删行」必须原子；
-//	· **别的工程**的引用一律打回给人（Skipped）：不替别的工程改数据，也不留下永久悬空 id。
-//
-// 写作用域是**标签自己的工程**（与单条版一致）：分组后逐工程切换 rls 作用域，
-// 每组建一次解绑 + 失效入队 + 删行，全部在同一事务里。
 func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
@@ -495,7 +403,7 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 		return nil, bulkIDsErr(nerr)
 	}
 	res = &productdto.BulkResultResp{}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
+
 	if len(ids) == 0 {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -577,10 +485,6 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 	return res, nil
 }
 
-// batchRefHits 跨工程引用扫描的批量入口：工程清单取一次，交给扫描函数算整批。
-//
-// 清单拿不到时**报错**（crossProjectRefScope 的既有约定）：空清单会让结论变成
-// 「没有任何引用」—— 那正是要消灭的静默放过形态。
 func (s *Service) batchRefHits(ctx context.Context, entityIDs []string,
 	scan func(projectIDs []string) (map[string]*productmodel.BatchRefHit, error)) (map[string]*productmodel.BatchRefHit, error) {
 	scope, err := s.crossProjectRefScope(ctx)

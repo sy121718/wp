@@ -5,17 +5,10 @@ import (
 	"testing"
 )
 
-// entity_page_test.go — 商品 / 分类 / 品牌页评分接线的单测（审计 SEO-016）。
-//
-// 这一组测试盯的是**接线**而不是权重数字本身：Profile 早就写好了、也早就被单测
-// 覆盖过，缺的是「生产入口根本没有传 Profile」。所以这里断言的是
-// 「按页型调用时，确实走到了对应档案，且页型差异真的体现在分数上」。
-
-// TestProfileForWiring 页型 → 档案的映射（生产入口唯一的选择处）。
 func TestProfileForWiring(t *testing.T) {
 	cases := []struct {
 		kind PageKind
-		want string // 期望档案 Type；空 = 期望 nil（用默认权重）
+		want string
 	}{
 		{KindProduct, "product"},
 		{KindCategory, "landing"},
@@ -44,7 +37,6 @@ func TestProfileForWiring(t *testing.T) {
 	}
 }
 
-// TestScoreEntityPageEchoesProfile 调权必须在结果里回显（docs/02-E1 §5）。
 func TestScoreEntityPageEchoesProfile(t *testing.T) {
 	res := ScoreEntityPage(&EntityPageInput{Kind: KindProduct, Name: "纯棉 T 恤"})
 	if res.Profile == nil {
@@ -56,7 +48,7 @@ func TestScoreEntityPageEchoesProfile(t *testing.T) {
 	if res.Profile.Reason == "" {
 		t.Fatalf("回显的档案缺少调权理由")
 	}
-	// 归一化后 8 维权重之和应为 1（任何 profile 下满分都是 100）。
+
 	sum := 0.0
 	for _, sec := range res.Sections {
 		sum += sec.Weight
@@ -66,7 +58,6 @@ func TestScoreEntityPageEchoesProfile(t *testing.T) {
 	}
 }
 
-// TestProductProfileWeightsMatchDoc 商品页权重与文档一致（images/tech 上调、content 下调）。
 func TestProductProfileWeightsMatchDoc(t *testing.T) {
 	res := ScoreEntityPage(&EntityPageInput{Kind: KindProduct, Name: "纯棉 T 恤"})
 	def := Score(&Input{}, nil)
@@ -88,25 +79,20 @@ func TestProductProfileWeightsMatchDoc(t *testing.T) {
 	}
 }
 
-// TestEntityPageContentLengthLowerThanArticle 商品页的内容长度基准应低于文章口径。
-//
-// 这是 SEO-016 verification 的第二条（「商品页的内容长度要求低于指南页」）：
-// 同一段 600 字描述，按交易型意图（满分 500）应拿满，按信息型（满分 1500）只能拿部分分。
 func TestEntityPageContentLengthLowerThanArticle(t *testing.T) {
-	body := strings.Repeat("夏季纯棉短袖，透气亲肤，适合日常通勤。", 40) // ≈600 字
+	body := strings.Repeat("夏季纯棉短袖，透气亲肤，适合日常通勤。", 40)
 	prod := ScoreEntityPage(&EntityPageInput{Kind: KindProduct, Name: "纯棉 T 恤", Description: body})
 	article := Score(&Input{Title: "纯棉 T 恤", BodyText: body, WordCount: len([]rune(body))}, nil)
 	if contentScore(prod) <= contentScore(article) {
 		t.Fatalf("商品页内容长度得分应高于信息型口径，实际 %d vs %d", contentScore(prod), contentScore(article))
 	}
-	// 分类页是商业型（1200 字满分），也比信息型宽松，但仍严于交易型。
+
 	cat := ScoreEntityPage(&EntityPageInput{Kind: KindCategory, Name: "T 恤", Description: body})
 	if contentScore(cat) >= contentScore(prod) {
 		t.Fatalf("分类页内容长度要求应高于商品页，实际 %d vs %d", contentScore(cat), contentScore(prod))
 	}
 }
 
-// contentScore 取「内容质量」维度的得分（不存在返回 -1）。
 func contentScore(r *Result) int {
 	for _, sec := range r.Sections {
 		if sec.Key == "content" {
@@ -116,7 +102,6 @@ func contentScore(r *Result) int {
 	return -1
 }
 
-// TestEntityPageTitleFallback SEO 字段优先、实体名回落（与文章侧同口径）。
 func TestEntityPageTitleFallback(t *testing.T) {
 	fallback := ScoreEntityPage(&EntityPageInput{Kind: KindProduct, Name: "纯棉 T 恤"})
 	if !hasCheckWithActual(fallback, "title_present", "字符") {
@@ -129,7 +114,6 @@ func TestEntityPageTitleFallback(t *testing.T) {
 	}
 }
 
-// TestEntityPageHeadings 实体页有且只有一个 H1（实体名），规格维度为 H2。
 func TestEntityPageHeadings(t *testing.T) {
 	in := entityInputOf(&EntityPageInput{
 		Kind: KindProduct, Name: "纯棉 T 恤",
@@ -143,7 +127,6 @@ func TestEntityPageHeadings(t *testing.T) {
 	}
 }
 
-// TestEntityPageIntentByKind 内容长度基准随页型走（交易型 / 商业型）。
 func TestEntityPageIntentByKind(t *testing.T) {
 	if got := intentOf(&EntityPageInput{Kind: KindProduct}); got != IntentTransactional {
 		t.Errorf("商品页应为交易型意图，实际 %q", got)
@@ -156,7 +139,6 @@ func TestEntityPageIntentByKind(t *testing.T) {
 	}
 }
 
-// checkOf 取某项检查结果（不存在返回零值）。
 func checkOf(r *Result, key string) CheckResult {
 	for _, sec := range r.Sections {
 		for _, ck := range sec.Checks {
@@ -168,7 +150,6 @@ func checkOf(r *Result, key string) CheckResult {
 	return CheckResult{}
 }
 
-// hasCheckWithActual 某项检查的实测值描述是否包含子串。
 func hasCheckWithActual(r *Result, key, substr string) bool {
 	return strings.Contains(checkOf(r, key).Actual, substr)
 }

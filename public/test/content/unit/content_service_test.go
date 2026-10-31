@@ -1,8 +1,3 @@
-// Package unit content 模块 feature 测试（真实 PostgreSQL，0-A2）：
-// 内容 CRUD + revision 单调递增 + Resolver 字段白名单解析。
-//
-// 迁移 080（issue #4）后内容实体只保留 article：商品与分类改由领域模块自己的表承载，
-// 本包的用例统一用 article 作为内容类型。
 package unit
 
 import (
@@ -19,7 +14,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newService 隔离 PG schema + AutoMigrate contents + 装配 service。
 func newService(t *testing.T) *contentservice.Service {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -33,7 +27,6 @@ func newService(t *testing.T) *contentservice.Service {
 	return contentservice.NewService(contentmodel.NewModel(db))
 }
 
-// TestContentCRUD 内容 CRUD + revision 单调递增。
 func TestContentCRUD(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {
@@ -41,7 +34,6 @@ func TestContentCRUD(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 创建。
 	res, err := svc.Create(ctx, &contentdto.CreateReq{
 		EntityType: "article", Slug: "summer-story",
 		Data: map[string]any{"title": "夏季故事", "excerpt": "摘要"},
@@ -54,7 +46,6 @@ func TestContentCRUD(t *testing.T) {
 	}
 	id := res.ID
 
-	// 更新 → revision 递增。
 	res2, err := svc.Update(ctx, &contentdto.UpdateReq{
 		ID: id, Data: map[string]any{"title": "夏季故事改", "excerpt": "摘要 v2"},
 	})
@@ -65,7 +56,6 @@ func TestContentCRUD(t *testing.T) {
 		t.Fatalf("revision 应递增为 2: %d", res2.Revision)
 	}
 
-	// 删除。
 	if err := svc.Delete(ctx, &contentdto.DeleteReq{ID: id}); err != nil {
 		t.Fatalf("删除失败: %v", err)
 	}
@@ -74,7 +64,6 @@ func TestContentCRUD(t *testing.T) {
 	}
 }
 
-// TestContentRejectsForeignField 白名单外字段拒绝（不变量 4）。
 func TestContentRejectsForeignField(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {
@@ -90,7 +79,6 @@ func TestContentRejectsForeignField(t *testing.T) {
 	}
 }
 
-// TestContentResolverFieldWhitelist Resolver 按白名单解析字段值。
 func TestContentResolverFieldWhitelist(t *testing.T) {
 	svc := newService(t)
 	if svc == nil {
@@ -108,30 +96,29 @@ func TestContentResolverFieldWhitelist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolverFor: %v", err)
 	}
-	// 字符串字段。
+
 	if v, _ := r.ResolveString("article.title"); v != "测试文章" {
 		t.Fatalf("title 解析错误: %q", v)
 	}
-	// 数组字段取首元素（featuredImage 声明为单值，这里用 body 富文本回归纯字符串）。
+
 	if v, _ := r.ResolveString("article.excerpt"); v != "摘要" {
 		t.Fatalf("excerpt 解析错误: %q", v)
 	}
-	// 未设置字段 → 空串。
+
 	if v, _ := r.ResolveString("article.body"); v != "" {
 		t.Fatalf("未设置字段应空串: %q", v)
 	}
-	// 白名单外字段 → 错误。
+
 	if _, err := r.ResolveString("article.evil"); err == nil {
 		t.Fatalf("白名单外字段应拒绝")
 	}
 }
 
-// TestFieldWhitelistContract 字段白名单契约：内容类型收敛为 article（迁移 080 / issue #4）。
 func TestFieldWhitelistContract(t *testing.T) {
 	if !contentcontract.IsValidType("article") {
 		t.Fatalf("article 应为合法内容类型")
 	}
-	// 商品与分类已摘除（改由领域模块自己的表承载），不得再被内容白名单接受。
+
 	for _, gone := range []string{"product", "category", "tag"} {
 		if contentcontract.IsValidType(gone) {
 			t.Fatalf("类型 %q 已摘除，不应再合法", gone)

@@ -1,16 +1,5 @@
 package pagemodel
 
-// page_dependency_model.go — page_dependencies 表访问（依赖记录投影，AGENTS.md §8.2）。
-//
-// 定位：Artifact Manifest 是历史事实，本表是按 Artifact 可重建的**查询投影**。
-// 构建成功后写入，失效查询按 (dependency_kind, dependency_key) 反查受影响的页面。
-//
-// 反查为什么用「active OR staged」而不是仅 active：
-// AGENTS.md §8.2 只连 pages.active_artifact_id。但未发布的页面
-// （只有 staged 产物）在内容变更后不会被标记，其暂存产物会静默过期，
-// 一旦发布就上线旧内容。本实现把「当前活跃产物」与「当前暂存产物」两个指针
-// 都纳入——两者都只指向一个产物，不含历史噪音，仍是精确集合。
-
 import (
 	"context"
 	"strings"
@@ -22,10 +11,8 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// tableNamePageDependencies page_dependencies 表名。
 const tableNamePageDependencies = "page_dependencies"
 
-// DependencyEntity page_dependencies 行（产物声明的构建期依赖）。
 type DependencyEntity struct {
 	PageID         string    `gorm:"column:page_id;primaryKey"`
 	ArtifactID     string    `gorm:"column:artifact_id;primaryKey"`
@@ -35,24 +22,12 @@ type DependencyEntity struct {
 	LastChecked    time.Time `gorm:"column:last_checked;not null"`
 }
 
-// TableName 表名。
 func (DependencyEntity) TableName() string { return tableNamePageDependencies }
 
-// DependencyDB 绑定依赖表。
 func (m *Model) DependencyDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&DependencyEntity{})
 }
 
-// ReplaceDependencies 全量替换某产物的依赖记录（同一事务内 delete + insert）。
-//
-// 同一产物重复构建（同 hash 原地替换，见 artifact 模块）时依赖集合可能变化，
-// 必须整体替换而非累加，否则会残留「旧文档声明过、新产物已不再依赖」的假依赖，
-// 造成内容变更时的过度标记。
-//
-// projectID / pageID 必填（DB-009 第四批）：page_dependencies **没有 project_id 列**（不受
-// 策略约束），归属因此分两半校验 ——「产物行挂在哪张页面」由 service 经 artifact 契约问
-// （page_artifacts 属 artifact 模块），「那张页面属不属于本工程」在本层事务内判定。
-// 缺任一半时，一次越界的 artifactID 就能改写别的工程的依赖投影 —— 而它不报任何错。
 func (m *Model) ReplaceDependencies(ctx context.Context, projectID, pageID, artifactID string, rows []DependencyEntity) (err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return ErrProjectRequired
@@ -71,8 +46,6 @@ func (m *Model) ReplaceDependencies(ctx context.Context, projectID, pageID, arti
 	})
 }
 
-// ListDependencies 读取某产物的全部依赖记录（测试与诊断用，按 kind,key 排序）。
-// projectID / pageID 必填（DB-009 第四批）：依赖表不受策略约束，归属分两半判定（见 ReplaceDependencies）。
 func (m *Model) ListDependencies(ctx context.Context, projectID, pageID, artifactID string) (list []DependencyEntity, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
@@ -87,20 +60,6 @@ func (m *Model) ListDependencies(ctx context.Context, projectID, pageID, artifac
 	return list, err
 }
 
-// MarkStaleByDependency 在**指定工程作用域内**按依赖源 (kind,key) 精确标记受影响页面
-// 待重建，返回受影响的页面 ID。
-//
-// 命中条件：该页面的**活跃或暂存**产物在依赖表里声明了这条依赖。
-// 语义与旧的全站标记（MarkStaleFor*）严格区分：无关页面不会被触碰，
-// 这是 PIPE-3「精确 fan-out」的核心——调用方可用返回的 ID 集合直接断言影响面。
-//
-// 幂等：已经 stale 的页面重复标记只更新 update_time，返回值仍是完整受影响集合
-// （自动重建需要「谁受影响」而不是「谁刚变成 stale」）。
-//
-// projectID 必填（DB-009 第三批）：页面的可见性由会话变量决定（pages 带 FORCE 策略），
-// 而依赖源 key 是跨工程的实体 id（如 article:<uuid>）。调用方（pipeline.Fanout）只带
-// (kind,key)，所以「跨工程」这件事由 service 层逐工程各设一次作用域完成；
-// 下面的 RETURNING 只回本工程命中的行，两个方向都不会越界。
 func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key string, at time.Time) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
@@ -109,9 +68,7 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 		return nil, nil
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		// 影响面摘要不走这条语句：标题 / 路径的取数口径在 service 的 StaleImpactOfIDs
-		// （按返回的 ids 反查），让「标 stale」与「读摘要」各自保持单一职责 ——
-		// 在这里 JOIN 标题会把两条口径焊死在一条 SQL 里，改任何一个都得动另一个。
+
 		ids, err = markStaleByDependencyIn(ctx, tx, projectID, kind, key, at)
 		return err
 	})
@@ -121,15 +78,6 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 	return ids, nil
 }
 
-// markStaleByDependencyIn 影响面标记的语句本体：MarkStaleByDependency（自带事务）与
-// MarkStaleByDependencyTx（在调用方事务内，见 page_tx.go）两条入口共用 —— 两处各写一遍
-// 时，改动漏一处会让「自带事务」与「透传事务」两条路径对同一批页面产生不同的标记结果，
-// 而两者在调用方眼里是同一个语义。
-//
-// 原为 `WITH affected AS (…) UPDATE … RETURNING id`。GORM 没有 CTE API（v1.31.1 实测：
-// clause.With 是空结构体，且在 gorm 内部零使用），而行内子查询是等价替代（affected 只被
-// 引用一次）；`IN (SELECT a … UNION SELECT b …)` 展开成两个 `IN` 用 OR 连接，
-// UNION 在 IN 里只承担去重，两处都不改变语义。
 func markStaleByDependencyIn(ctx context.Context, tx *gorm.DB, projectID, kind, key string, at time.Time) (ids []string, err error) {
 	affected := tx.WithContext(ctx).
 		Table(tableNamePageDependencies+" AS d").
@@ -150,8 +98,6 @@ func markStaleByDependencyIn(ctx context.Context, tx *gorm.DB, projectID, kind, 
 	return pageIDsOf(rows), nil
 }
 
-// CountDependenciesByKind 统计某页面当前活跃产物声明的依赖条数（诊断/测试用）。
-// projectID 必填（DB-009 第四批）：同 ReplaceDependencies —— 依赖表不受策略约束。
 func (m *Model) CountDependenciesByKind(ctx context.Context, projectID, pageID, kind string) (n int64, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return 0, ErrProjectRequired

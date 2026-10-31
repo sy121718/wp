@@ -1,6 +1,5 @@
 package blockhttp
 
-// 保存端点只交JSON事实；returnUrl由工作台前端消费，服务端不导航或回显。
 import (
 	"github.com/gin-gonic/gin"
 	blockdto "go_wp/internal/module/block/dto"

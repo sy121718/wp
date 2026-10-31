@@ -113,7 +113,7 @@ func TestPublishedActionDependencyImpactAndDeleteProtection(t *testing.T) {
 	if _, err := api.Build(ctx, &pagedto.BuildReq{ID: consumer, Lang: "en-US"}); err == nil {
 		t.Fatal("目标该语言下线后不能再发布死链接")
 	}
-	// 尚未构建的文档同样进入删除保护，而不靠虚构产物依赖。
+
 	draftTarget := create("/draft-target", plainActionDocument)
 	draftRef := create("/draft-ref", strings.ReplaceAll(sourceDoc, target, draftTarget))
 	current, err := svc.ListActionTargetReferences(ctx, projectID, "page", draftTarget)

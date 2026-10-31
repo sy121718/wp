@@ -29,7 +29,6 @@ func (h *ProductPublicHandle) Variants(c *gin.Context) {
 	response.Success(c, data)
 }
 
-// ProductCatalogHandle 只绑定数据查询并返回JSON。
 type ProductCatalogHandle struct {
 	svc productcontract.PublicCatalogReader
 }

@@ -1,14 +1,5 @@
 package feature
 
-// order_range_summary_test.go — 区间订单摘要（概览页 KPI 与只读聚合的取数口）。
-//
-// 钉住三件事：
-//
-//	1. 时间窗是**含当天**的半开区间 —— 结束日当天的单必须算进来，次日的不算；
-//	2. 销售额只算「钱进来的单」（paidStatuses），且按**净额**（扣掉已实际收货的退款）——
-//	   这条与客户页订单摘要的累计消费必须逐字一致（同一个 SQL 表达式常量）；
-//	3. 别的工程的单不掺进来（工程作用域）。
-
 import (
 	"context"
 	"testing"
@@ -23,16 +14,10 @@ import (
 	"go_wp/public/test/support"
 )
 
-// rangeTime 区间用例的建单时刻：**UTC 正午**。
-//
-// 不用 summaryTime 那样按 time.Local 建：窗口是按 UTC 日界算的，本地时间的单在
-// 靠近日界的时段会落到相邻的 UTC 日，「含当天」这条断言就会变成一条随时区漂移的测试。
 func rangeTime(day int) time.Time {
 	return time.Date(2026, 9, day, 12, 0, 0, 0, time.UTC)
 }
 
-// newRangeFixture 只装配订单三张表用得到的 model 与 service
-// （与 order_customer_summary_window_test.go 同一形态：product / stock 等端口传 nil）。
 func newRangeFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *orderservice.Service) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -51,7 +36,6 @@ func newRangeFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *orderserv
 	return db, m, svc
 }
 
-// TestOrderRangeSummaryFiltersByWindowAndStatus 区间边界 + 状态口径 + 工程作用域。
 func TestOrderRangeSummaryFiltersByWindowAndStatus(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -62,7 +46,7 @@ func TestOrderRangeSummaryFiltersByWindowAndStatus(t *testing.T) {
 	mkSummaryOrder(t, m, summaryProjectA, "R-SHIPPED", ordermodel.OrderStatusShipped, 3002, 2000, rangeTime(3))
 	mkSummaryOrder(t, m, summaryProjectA, "R-CANCELLED", ordermodel.OrderStatusCancelled, 3003, 20000, rangeTime(4))
 	mkSummaryOrder(t, m, summaryProjectA, "R-REFUNDED", ordermodel.OrderStatusRefunded, 3004, 30000, rangeTime(5))
-	// 干扰项：区间开始之前的一单、以及同期别的工程里的一单。
+
 	mkSummaryOrder(t, m, summaryProjectA, "R-EARLY", ordermodel.OrderStatusPaid, 3005, 5000, rangeTime(1))
 	mkSummaryOrder(t, m, otherProject, "R-OTHER", ordermodel.OrderStatusPaid, 3006, 70000, rangeTime(3))
 
@@ -76,7 +60,7 @@ func TestOrderRangeSummaryFiltersByWindowAndStatus(t *testing.T) {
 	}{
 		{
 			name: "整整五天：四单全在窗口内，只有已付款与已发货计入销售额",
-			// 取消与退款单算「下了几单」，不算钱进来。
+
 			from: "2026-09-02", to: "2026-09-05",
 			wantOrders: 4, wantPaidOrders: 2, wantNetSales: 12000, wantLabel: "120.00",
 		},
@@ -117,7 +101,7 @@ func TestOrderRangeSummaryFiltersByWindowAndStatus(t *testing.T) {
 			if res.NetSalesLabel != tt.wantLabel {
 				t.Errorf("净销售额展示值应为 %s，实得 %s", tt.wantLabel, res.NetSalesLabel)
 			}
-			// 回显的是生效窗口（含当天），与请求值在这几条里相同。
+
 			if res.From != tt.from || res.To != tt.to {
 				t.Errorf("生效窗口应回显 %s~%s，实得 %s~%s", tt.from, tt.to, res.From, res.To)
 			}
@@ -125,11 +109,6 @@ func TestOrderRangeSummaryFiltersByWindowAndStatus(t *testing.T) {
 	}
 }
 
-// TestOrderRangeSummaryNetSalesMatchesCustomerSummary 净额口径与客户页订单摘要**同源**。
-//
-// 两处算的是同一件事的两种视图（这里按区间、那里按客户）。各写一份表达式的失败模式是
-// 「某次顺手改了净额口径之后，概览页的销售额变了、客户页的累计消费没变」——
-// 两边都不报错，只在有人对账时才发现。所以这条断言用**一次退货**把两边同时拉动。
 func TestOrderRangeSummaryNetSalesMatchesCustomerSummary(t *testing.T) {
 	db, m, svc := newRangeFixture(t)
 	if db == nil {
@@ -141,7 +120,7 @@ func TestOrderRangeSummaryNetSalesMatchesCustomerSummary(t *testing.T) {
 	if err != nil || head == nil {
 		t.Fatalf("取回建好的单失败: %v", err)
 	}
-	// 一张「已实际收货」的退款 3000：净额应降到 7000（口径见 order_net_total 的注释）。
+
 	if err := db.Exec(
 		"INSERT INTO order_returns (project_id, order_id, order_no, return_no, status, refund_amount, user_id, create_time, update_time) "+
 			"VALUES (?, ?, ?, ?, ?, ?, ?, now(), now())",
@@ -174,7 +153,6 @@ func TestOrderRangeSummaryNetSalesMatchesCustomerSummary(t *testing.T) {
 	}
 }
 
-// TestOrderRangeSummaryRejectsBadRequest 缺工程 / 非法窗口一律报错，不静默给数字。
 func TestOrderRangeSummaryRejectsBadRequest(t *testing.T) {
 	db, _, svc := newRangeFixture(t)
 	if db == nil {

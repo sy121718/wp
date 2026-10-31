@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// cssFor 用给定 props 生成产物 CSS（node id 固定，便于断言）。
 func cssFor(t *testing.T, p *Props) string {
 	t.Helper()
 	var b core.CSSBuckets
@@ -15,10 +14,6 @@ func cssFor(t *testing.T, p *Props) string {
 	return b.String()
 }
 
-// TestBadgeCSSVariants 三种外观范式各自只产出自己的声明组，且合并进同一条规则。
-//
-// 三种变体在 badge.css 里是同一个声明块内的三段条件，命中的那一支与基础声明必须合成
-// 一条规则 —— 否则产物会多出「同选择器、属性分散」的多条规则（语义等价但字节不同）。
 func TestBadgeCSSVariants(t *testing.T) {
 	base := []string{"display: inline-flex", "padding: var(--sky-space-1, 2px) var(--sky-space-5, 10px)", "border-radius: var(--sky-radius-pill, 9999px)", "white-space: nowrap"}
 	const token = "background: var(--sky-c-primary, #2563eb)"

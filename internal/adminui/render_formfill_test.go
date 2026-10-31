@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin/render"
 )
 
-// createFormFixture 表单回显的判据样本：文本 / 复选框 / 指针数值 / 多值 / 标签改名 / 未导出。
 type createFormFixture struct {
 	ProjectID     string   `form:"projectId"`
 	Name          string   `form:"name"`
@@ -23,10 +22,6 @@ type createFormFixture struct {
 	internal      string
 }
 
-// TestFillFormFillsByFieldName 回填按字段名（小驼峰）与 form 标签取值。
-//
-// 判据：字段清单就是**结构体本身** —— 原先靠手写的 `[]string{13 个 name}`，漏一个字段是渲染期
-// 500（htmx 不 swap，用户点了保存什么都看不到）。这条测试同时钉住「标签覆盖」与「未导出字段不填」。
 func TestFillFormFillsByFieldName(t *testing.T) {
 	form := url.Values{
 		"projectId":     {"p-1"},
@@ -62,11 +57,6 @@ func TestFillFormFillsByFieldName(t *testing.T) {
 	}
 }
 
-// TestFillFormPointerDistinguishesAbsentFromEmpty 「没填」与「填了空/0」是两回事。
-//
-// 判据来自 product 迁移 261 的口径：不填数量 = 不跟踪（nil），开关勾了而数量留空 = 明确 0。
-// 若把指针字段当值字段处理（缺键也写零值），这两种情况会被合并成同一个结果，
-// 而页面上看不出任何异常 —— 库存会被静默改成「明确没货」。
 func TestFillFormPointerDistinguishesAbsentFromEmpty(t *testing.T) {
 	absent := &createFormFixture{}
 	FillForm(absent, url.Values{"name": {"x"}})
@@ -87,15 +77,10 @@ func TestFillFormPointerDistinguishesAbsentFromEmpty(t *testing.T) {
 	}
 }
 
-// ambiguousFormFixture 含连续大写却没写 form 标签的字段（表单名有歧义）。
 type ambiguousFormFixture struct {
 	ProjectID string
 }
 
-// TestFillFormPanicsOnAmbiguousAcronymName 含连续大写的字段必须写 form 标签，否则当场炸。
-//
-// 判据：`ProjectID` 的表单名是 `projectId` 还是 `projectID` 猜不出，而猜错的后果是**静默**的
-// （回填读不到值、用户填的内容丢光，不报错）。宁可在第一次跑到时炸，也不要一个沉默的丢数据。
 func TestFillFormPanicsOnAmbiguousAcronymName(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -105,7 +90,6 @@ func TestFillFormPanicsOnAmbiguousAcronymName(t *testing.T) {
 	FillForm(&ambiguousFormFixture{}, url.Values{"projectId": {"p-1"}})
 }
 
-// TestFillFormRejectsNonPointer 传错形态是编程错误，必须当场炸。
 func TestFillFormRejectsNonPointer(t *testing.T) {
 	for _, bad := range []any{createFormFixture{}, nil} {
 		func() {
@@ -119,7 +103,6 @@ func TestFillFormRejectsNonPointer(t *testing.T) {
 	}
 }
 
-// pageViewFixture 渲染出口的判据样本：实现 PageResult（400 + no-store）。
 type pageViewFixture struct {
 	Title string
 	Error Msg
@@ -128,10 +111,8 @@ type pageViewFixture struct {
 func (v pageViewFixture) PageStatus() int   { return http.StatusBadRequest }
 func (v pageViewFixture) PageNoStore() bool { return true }
 
-// okViewFixture 不实现 PageResult 的视图（存量迁移期）：按 200 + 可缓存处理。
 type okViewFixture struct{ Title string }
 
-// recordingRender 记录 c.HTML 实际渲染的模板名与 data（gin 无默认渲染器，测试里装一个桩）。
 type recordingRender struct {
 	tpl  string
 	data any
@@ -149,8 +130,7 @@ type recordingHTML struct {
 
 func (h *recordingHTML) Render(w http.ResponseWriter) error {
 	h.owner.tpl, h.owner.data = h.name, h.data
-	// 必须真的写字节：gin 的 WriteHeader 是惰性的（首次 Write 才落地），
-	// 桩渲染器只记录不写时 httptest 的 Code 会恒为 200 —— 那是测试桩的问题，不是被验代码的问题。
+
 	_, err := w.Write([]byte("<stub/>"))
 	return err
 }
@@ -161,7 +141,7 @@ func newRenderContext(t *testing.T, target string) (*gin.Context, *httptest.Resp
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
-	// CreateTestContext 的第二个返回值就是它自建的引擎 —— c.HTML 走的是 c.engine.HTMLRender。
+
 	c, engine := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
 	renderer := &recordingRender{}
@@ -169,10 +149,6 @@ func newRenderContext(t *testing.T, target string) (*gin.Context, *httptest.Resp
 	return c, rec, renderer
 }
 
-// TestRenderPageUsesViewStatusAndNoStore 分档与缓存策略由**视图**给出，控制器不再手写。
-//
-// 判据：失败页的 400/500 与 no-store 若留在 handler 里，每个 handler 都要写一遍，
-// 漏一处就是「失败页被缓存」（重试看到的是缓存的失败页）或「参数不合法报 500」。
 func TestRenderPageUsesViewStatusAndNoStore(t *testing.T) {
 	c, rec, renderer := newRenderContext(t, "/admin/products/new")
 	RenderPage(c, "admin/product/products_new.html", pageViewFixture{Title: "新建商品"})
@@ -201,7 +177,6 @@ func TestRenderPageUsesViewStatusAndNoStore(t *testing.T) {
 	}
 }
 
-// TestRenderPageDefaultsToOK 不实现 PageResult 的视图按 200 + 可缓存处理。
 func TestRenderPageDefaultsToOK(t *testing.T) {
 	c, rec, _ := newRenderContext(t, "/admin/products")
 	RenderPage(c, "admin/product/products.html", okViewFixture{Title: "商品列表"})
@@ -214,10 +189,6 @@ func TestRenderPageDefaultsToOK(t *testing.T) {
 	}
 }
 
-// TestRenderBareAlwaysOK 这条出口一律 200，且只注入取词函数。
-//
-// 判据：htmx 2.0.4 把 5xx 判成 swap:false —— 失败回填返回 500 等于「用户点了没反应」，
-// 所以失败必须表达在视图的失败槽里，状态码恒 200。这条出口也不该带页壳键（csrf/PermSet/NavGroups）。
 func TestRenderBareAlwaysOK(t *testing.T) {
 	c, rec, renderer := newRenderContext(t, "/admin/products/new")
 	RenderBare(c, "admin/product/product_create_form.html", pageViewFixture{Title: "失败表单"})

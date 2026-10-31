@@ -10,8 +10,6 @@ import (
 	xhtml "golang.org/x/net/html"
 )
 
-// NormalizeRichMediaURLs 仅归一现有富文本白名单中的 img.src；不扩展标签或属性能力。
-// 本地历史地址必须明确属于 storage，外链保留原域名，不能按访问请求的 Host 猜地址。
 func NormalizeRichMediaURLs(src string) (string, error) {
 	if !strings.Contains(strings.ToLower(src), "<img") {
 		return src, nil
@@ -42,7 +40,7 @@ func NormalizeRichMediaURLs(src string) (string, error) {
 				continue
 			}
 			if !isSafeRichHref(attr.Val) && strings.Contains(stripRichHrefNoise(attr.Val), ":") {
-				// 危险协议继续交由同一白名单清洗器剥离，不能被归类为可容错的缺内容。
+
 				continue
 			}
 			value := strings.TrimSpace(attr.Val)
@@ -77,8 +75,6 @@ func NormalizeRichMediaURLs(src string) (string, error) {
 	}
 }
 
-// NormalizeRichMediaProps 在安全校验完成后的渲染入口处理声明字段的副本。
-// 不能放入 DecodeProps：配置未完成也必须先通过全部属性与 Advanced 安全校验。
 func NormalizeRichMediaProps(props any) error {
 	return normalizeRichMediaValue(reflect.ValueOf(props), "")
 }
@@ -101,7 +97,7 @@ func normalizeRichMediaValue(v reflect.Value, parent string) error {
 	if v.Kind() != reflect.Struct {
 		return nil
 	}
-	// core.text 的纯文本模式只显示字面文本，不将其中的 HTML 示例解释成图片。
+
 	plain := v.FieldByName("Mode")
 	isPlain := plain.IsValid() && plain.Kind() == reflect.String && plain.String() == "plaintext"
 	for i := 0; i < v.NumField(); i++ {

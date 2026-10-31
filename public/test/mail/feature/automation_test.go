@@ -1,12 +1,5 @@
 package feature
 
-// automation_test.go — 自动化执行器（issue #38 P3）。
-//
-// 覆盖执行模型的三条核心语义：
-//  1. 一路走到结束节点，每步留日志；
-//  2. 等待节点**推进游标后挂起**，唤醒时从下一步继续（不会重等一次）；
-//  3. **幂等**：重复推进不会重复执行动作（同一个人不会收到两封一样的邮件）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -18,7 +11,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// seedAutomation 建一个启用中的流程，返回 id。
 func seedAutomation(t *testing.T, f *fixture, name string, entry string, nodes []map[string]any, trigger string) uint64 {
 	t.Helper()
 	list := make([]any, 0, len(nodes))
@@ -55,7 +47,6 @@ func newNode(key, typ string, params map[string]any, next string) map[string]any
 	return n
 }
 
-// TestAutomationRunsToEndAndLogsEachStep 一路走到结束，每步都有日志。
 func TestAutomationRunsToEndAndLogsEachStep(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -102,7 +93,7 @@ func TestAutomationRunsToEndAndLogsEachStep(t *testing.T) {
 	if len(logs) != 3 {
 		t.Fatalf("三个节点应各有一条日志，实际 %d", len(logs))
 	}
-	// 标签节点真的加了标签。
+
 	after, _ := f.m.GetContact(ctx, contact.ID)
 	found := false
 	for _, tag := range after.Tags {
@@ -115,7 +106,6 @@ func TestAutomationRunsToEndAndLogsEachStep(t *testing.T) {
 	}
 }
 
-// TestAutomationIdempotentOnRerun 重复推进不会重复执行动作。
 func TestAutomationIdempotentOnRerun(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -140,7 +130,7 @@ func TestAutomationIdempotentOnRerun(t *testing.T) {
 	if err := f.svc.RunAutomation(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
-	// 再推进两次：终态应直接返回，不产生任何新日志。
+
 	if err := f.svc.RunAutomation(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +143,6 @@ func TestAutomationIdempotentOnRerun(t *testing.T) {
 	}
 }
 
-// TestAutomationDelayParksAndResumes 等待节点推进游标后挂起，唤醒时从下一步继续。
 func TestAutomationDelayParksAndResumes(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -186,11 +175,11 @@ func TestAutomationDelayParksAndResumes(t *testing.T) {
 	if row.NextRunAt == nil {
 		t.Fatal("等待应记录 next_run_at")
 	}
-	// **游标必须已经推进到下一步** —— 否则唤醒后会重新等待一次。
+
 	if row.CurrentNode == nil || *row.CurrentNode != "n3" {
 		t.Fatalf("等待后游标应在 n3，实际 %v", row.CurrentNode)
 	}
-	// 唤醒：继续走完。
+
 	if err := f.svc.RunAutomation(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +199,6 @@ func TestAutomationDelayParksAndResumes(t *testing.T) {
 	}
 }
 
-// TestAutomationBranchOnTag 条件分支按标签走对应分支。
 func TestAutomationBranchOnTag(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -265,7 +253,6 @@ func TestAutomationBranchOnTag(t *testing.T) {
 	check(vip, "got_vip_path")
 }
 
-// TestAutomationSuppressionSkipsSend 抑制名单里的地址：发信节点记为跳过，流程继续走完。
 func TestAutomationSuppressionSkipsSend(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {
@@ -283,7 +270,7 @@ func TestAutomationSuppressionSkipsSend(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// 模板与账号都要有，否则走不到「抑制检查」之后的路径；这里只验证抑制这条。
+
 	if _, err := f.svc.UpsertTemplate(ctx, &maildto.SaveTemplateReq{
 		TemplateKey: "auto_tpl", Subject: "s", BodyHTML: "<p>x</p>",
 	}); err != nil {
@@ -308,9 +295,7 @@ func TestAutomationSuppressionSkipsSend(t *testing.T) {
 	logs, _ := f.m.ListNodeLogs(ctx, run.ID, 10)
 	foundSkip := false
 	for _, l := range logs {
-		// Detail 与 Explain 同源，都是**运行文案编码**（service 层拿不到请求语言），出口用
-		// mailenums.FormatRunText 还原。断言必须走还原，否则测的是中间产物。
-		// 取词用「只回兜底」的函数：断言代码内兜底文案，不依赖测试库词条质量。
+
 		if l.NodeKey != "n2" || l.Detail == nil {
 			continue
 		}
@@ -324,7 +309,6 @@ func TestAutomationSuppressionSkipsSend(t *testing.T) {
 	}
 }
 
-// TestStartRunIsIdempotentWithinFlow 同一人在同一流程里不会有两个进行中实例。
 func TestStartRunIsIdempotentWithinFlow(t *testing.T) {
 	f := newAccountFixture(t)
 	if f == nil {

@@ -14,18 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Recovery 返回自定义崩溃恢复中间件。
-//
-// 行为与 gin.Recovery 保持一致：
-//   - 捕获 handler panic，进程不崩溃
-//   - 连接中断（broken pipe / connection reset）时直接中止，不写响应
-//   - 其余 panic 返回 500 Internal Server Error
-//
-// 差异：panic 值与堆栈通过 logger 以 JSON 结构化输出（scene=middleware），
-// 不再走标准库 log 的纯文本。
-//
-// 这是所有中间件链的第一个，确保任何底层 panic 都不会导致进程崩溃。
-// 适用位置：全局 engine.Use()，永远放在最前面。
 func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
@@ -34,15 +22,11 @@ func Recovery() gin.HandlerFunc {
 				return
 			}
 
-			// http.ErrAbortHandler 是 net/http 约定的「静默中止」哨兵：handler
-			// 主动 panic 它表示响应已不可用，标准库会静默关闭连接、不写日志。
-			// 若按普通 panic 处理，会往已断的连接写 500 响应体并污染日志。
 			if rec == http.ErrAbortHandler {
 				c.Abort()
 				return
 			}
 
-			// 连接中断类 panic 直接中止，不写响应、不记录堆栈噪音。
 			if isBrokenPipe(rec) {
 				c.Abort()
 				return
@@ -55,7 +39,6 @@ func Recovery() gin.HandlerFunc {
 				err = fmt.Errorf("%v", rec)
 			}
 
-			// 带 request_id：没有它，这条堆栈只能按时间窗口猜是哪一次请求。
 			logger.SceneCtx("middleware", c.Request.Context()).
 				With("stack", string(debug.Stack())).
 				Error(err, "panic 恢复")
@@ -65,7 +48,6 @@ func Recovery() gin.HandlerFunc {
 	}
 }
 
-// isBrokenPipe 判断 panic 值是否为连接中断类错误。
 func isBrokenPipe(rec any) bool {
 	e, ok := rec.(error)
 	if !ok {

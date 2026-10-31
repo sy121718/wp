@@ -5,7 +5,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 )
 
-// PublicSearchData 保留来源字段；摘要截断、分组标题与空态由前端承担。
 type PublicSearchData struct {
 	Articles []PublicArticleHit `json:"articles"`
 	Products []PublicProductHit `json:"products"`

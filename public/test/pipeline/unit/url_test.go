@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// TestNormalizeURLValid 合法路径：规范化尾斜杠、保留根路径。
 func TestNormalizeURLValid(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"/", "/"},
@@ -29,27 +28,26 @@ func TestNormalizeURLValid(t *testing.T) {
 	}
 }
 
-// TestNormalizeURLInvalid 非法路径：穿越、分隔符、空格、控制字符、保留路径等全部拒绝。
 func TestNormalizeURLInvalid(t *testing.T) {
 	cases := []string{
 		"",
-		"about-us",           // 必须以 / 开头
-		"/a/../b",            // 路径穿越
-		"/a/./b",             // . 段
-		"/a//b",              // 重复分隔符
-		"/a/%2e%2e/b",        // 编码后穿越
-		"/a/%2E/b",           // 编码后穿越（大写）
-		"/a\\b",              // 反斜杠
-		"/a b",               // 空格
-		"/a b/c",             // 段内空格
-		"/a\x00b",            // 控制字符
-		"/a\x1fb",            // 控制字符
-		"/admin",             // 保留路径
-		"/admin/users",       // 保留路径子路径
-		"/api/pages",         // 保留路径
-		"/_fragments/header", // 保留路径
-		"/assets/logo.svg",   // 保留路径
-		"/objects/abc",       // 保留路径
+		"about-us",
+		"/a/../b",
+		"/a/./b",
+		"/a//b",
+		"/a/%2e%2e/b",
+		"/a/%2E/b",
+		"/a\\b",
+		"/a b",
+		"/a b/c",
+		"/a\x00b",
+		"/a\x1fb",
+		"/admin",
+		"/admin/users",
+		"/api/pages",
+		"/_fragments/header",
+		"/assets/logo.svg",
+		"/objects/abc",
 	}
 	for _, in := range cases {
 		if _, err := pipeline.NormalizeURL(in); err == nil {
@@ -58,7 +56,6 @@ func TestNormalizeURLInvalid(t *testing.T) {
 	}
 }
 
-// TestNormalizeURLLengthBoundary 长度边界：恰 500 字符接受，501 字符拒绝。
 func TestNormalizeURLLengthBoundary(t *testing.T) {
 	ok := "/" + strings.Repeat("a", 499)
 	if got, err := pipeline.NormalizeURL(ok); err != nil || got != ok {
@@ -70,7 +67,6 @@ func TestNormalizeURLLengthBoundary(t *testing.T) {
 	}
 }
 
-// TestNormalizeURLErrorMessage 错误信息可读性。
 func TestNormalizeURLErrorMessage(t *testing.T) {
 	_, err := pipeline.NormalizeURL("/a/../b")
 	if err == nil || !strings.Contains(err.Error(), "路径穿越") {

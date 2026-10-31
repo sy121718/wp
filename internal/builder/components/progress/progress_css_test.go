@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestProgressCSSRules 迁移到 progress.css 后宽度百分比与配色逐条核对。
 func TestProgressCSSRules(t *testing.T) {
 	const token = "background: var(--sky-c-primary, #2563eb)"
 	cases := []struct {

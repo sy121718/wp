@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestVideoCSSRatio 宽高比映射到 padding-top 百分比，自适应档位不产出占位高度。
 func TestVideoCSSRatio(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -29,7 +28,6 @@ func TestVideoCSSRatio(t *testing.T) {
 		})
 	}
 
-	// auto：不产出占位高度（高度由内容决定）。
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Ratio: "auto"}, &b)
 	if strings.Contains(b.String(), "padding-top") {
@@ -37,7 +35,6 @@ func TestVideoCSSRatio(t *testing.T) {
 	}
 }
 
-// TestVideoCSSAlignAndOptional 对齐三条 margin 恒产出（居中也是显式声明）；全宽与圆角可选。
 func TestVideoCSSAlignAndOptional(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -47,7 +44,7 @@ func TestVideoCSSAlignAndOptional(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 比例框与播放器本体是两条独立规则（播放器本体绝对定位铺满）。
+
 	if !strings.Contains(out, ".sky-c-t .sky-video-frame {") {
 		t.Errorf("缺少比例框规则:\n%s", out)
 	}

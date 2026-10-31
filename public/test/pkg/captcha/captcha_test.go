@@ -1,7 +1,3 @@
-// Package captcha_test 验证码链路测试（C4 修复回归）：
-//   - 接口响应只含 captcha_id 与 captcha_image，绝不出现明文 code
-//   - GenerateImage 返回合法 base64 PNG data URL
-//   - 测试内获取验证码答案的唯一途径：同进程直调 pkg/captcha 的 Get().Generate()
 package captcha_test
 
 import (
@@ -20,7 +16,6 @@ import (
 
 const pngDataURLPrefix = "data:image/png;base64,"
 
-// TestCaptchaGenerateImageReturnsPNG GenerateImage 返回非空 id 与合法 base64 PNG 图片。
 func TestCaptchaGenerateImageReturnsPNG(t *testing.T) {
 	id, image := captcha.Get().GenerateImage()
 	if id == "" {
@@ -43,8 +38,6 @@ func TestCaptchaGenerateImageReturnsPNG(t *testing.T) {
 	}
 }
 
-// TestCaptchaVerifyWithInProcessGenerate 答案获取方式回归：同进程直调 Generate
-// 拿到的答案可通过 Verify，错误答案不通过（接口层不回 code 后的唯一取答案途径）。
 func TestCaptchaVerifyWithInProcessGenerate(t *testing.T) {
 	id, code := captcha.Get().Generate()
 	if !captcha.Get().Verify(id, code, true) {
@@ -57,8 +50,6 @@ func TestCaptchaVerifyWithInProcessGenerate(t *testing.T) {
 	}
 }
 
-// TestCaptchaHandleResponseNoPlaintextCode C4 回归：验证码接口响应
-// 只含 captcha_id 与 captcha_image，不出现任何明文答案字段。
 func TestCaptchaHandleResponseNoPlaintextCode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -81,8 +72,6 @@ func TestCaptchaHandleResponseNoPlaintextCode(t *testing.T) {
 		t.Fatalf("解析响应失败: %v", err)
 	}
 
-	// data 结构断言：仅 captcha_id + captcha_image + expire_seconds 三个字段，
-	// 杜绝明文回显（expire_seconds 供前端展示验证码有效期提示）。
 	if len(result.Data) != 3 {
 		t.Fatalf("data 应仅含 captcha_id、captcha_image、expire_seconds，got: %v", result.Data)
 	}

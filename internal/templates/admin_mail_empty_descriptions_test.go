@@ -47,7 +47,7 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 			},
 		},
 		{
-			// 运行实例的空态在拆页后归了运行记录页（流程页只答「有哪些流程」）。
+
 			name: "automation_runs", tpl: "admin/mail/mail_automation_runs",
 			data: map[string]any{
 				"Err": "", "Ok": "", "Done": "",

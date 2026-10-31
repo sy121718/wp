@@ -16,8 +16,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// 从真实 HTTP 片段提取属性，再驱动真实 JS 绑定函数，输出交回 Go 编译。
-// Node 探针只模拟事件委托接口，不模拟浏览器布局；多端和真实输入另做浏览器验证。
 func TestInspectorRepeaterClientContract(t *testing.T) {
 	nodeBin, err := exec.LookPath("node")
 	if err != nil {

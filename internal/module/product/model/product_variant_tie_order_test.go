@@ -1,14 +1,5 @@
 package productmodel_test
 
-// product_variant_tie_order_test.go — 变体顺序的唯一尾键（PRD-006 同源，后果更重）。
-//
-// 变体顺序**会进构建产物**：集合源把 variants 序列化成 JSON，商品卡的 SKU 取
-// variants[0].SKUCode。sort 与 create_time 都相同时，没有唯一尾键的 ORDER BY 由物理
-// 读序决定 —— 同一份数据两次构建可能给出不同的首个 SKU（不变量 5：确定性构建）。
-//
-// 夹具故意**反序插入**：先插 id 大的，再插 id 小的，且 sort / create_time 完全相同。
-// 依赖物理顺序的实现会先返回后插的那行，于是断言「按 id 升序」直接变红。
-
 import (
 	"context"
 	"fmt"

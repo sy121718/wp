@@ -1,12 +1,5 @@
 package migrations
 
-// 526 · 联系人 CRUD / 标签管理的 i18n 词条。
-//
-// 判据 = 「本批 22 个 admin.mail.* 键 + 3 个 mail.err.* 键在 zh-CN / en-US 两种语言下都在」
-// +「空态描述两条终值都到位」。
-// 计数与 item_key IN (…本批全部键…) 一起用：枚举闭区间保证只数本批自己的行，
-// 计数保证不是「只落了一半」。偏差方向刻意选「宁可重跑，不可静默跳过」。
-// ConditionSQL 由 db.Raw 直接执行、没有参数替换，所以整段写成 SQL 字面量。
 func init() {
 	registerSeed(Seed{
 		Version:   "526-mail-contact-crud-i18n",

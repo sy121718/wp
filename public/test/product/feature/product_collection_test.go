@@ -1,12 +1,3 @@
-// Package feature product 模块 feature 测试 —— 商品集合源（issue #9）。
-//
-// 覆盖本票验收（真实 PostgreSQL + 生产迁移 + 真实 service 装配）：
-//  1. 商品集合源出现在集合源元数据里（字段白名单 / 过滤维度 / 排序键）；
-//  2. 构建期按商品集合源解析出集合项，字段受白名单约束；
-//  3. 现有集合类组件（core.cardstack）绑定商品字段 → 构建产物包含商品数据；
-//  4. 白名单外的字段 / 维度 / 未知集合源被拒绝；
-//  5. 集合数据按工程隔离（不把别的站点商品渲染进本页）；
-//  6. 商品可翻译字段随构建语言切换（语境 product.<字段名>）。
 package feature
 
 import (
@@ -26,8 +17,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// collectionRegistry 与线上装配同形的集合源注册表：内容模块与商品模块各注册
-// 自己的集合源，构建层只认注册表（不认识具体领域模块）。
 func (f *detailFixture) collectionRegistry(t *testing.T) core.CollectionRegistry {
 	t.Helper()
 	reg := core.NewCollectionRegistry()
@@ -40,7 +29,6 @@ func (f *detailFixture) collectionRegistry(t *testing.T) core.CollectionRegistry
 	return reg
 }
 
-// collectionPage 单个 cardstack 节点的最小页面（集合源与字段映射由 props 给出）。
 func collectionPage(t *testing.T, props string) *builder.Page {
 	t.Helper()
 	raw := `{"settings":{"layout":{"mode":"boxed","maxWidth":"1200px"}},"root":[{"id":"n1","type":"core.cardstack","props":` + props + `}]}`
@@ -51,7 +39,6 @@ func collectionPage(t *testing.T, props string) *builder.Page {
 	return p
 }
 
-// compileCollection 按线上同形选项编译集合页（工程 ID 与集合解析器都注入）。
 func compileCollection(t *testing.T, p *builder.Page, reg core.CollectionRegistry, projectID string, opts ...builder.CompileOption) (*builder.CompiledPage, error) {
 	t.Helper()
 	set, err := templates.NewEmbeddedComponentSet()
@@ -66,15 +53,12 @@ func compileCollection(t *testing.T, p *builder.Page, reg core.CollectionRegistr
 	return builder.Compile(p, append(base, opts...)...)
 }
 
-// collectionProps 商品集合卡的字段映射 props（标题 / 图片 / 价格 / 链接）。
 func collectionProps() string {
 	return `{"trigger":"hover","shape":"line","collectionSource":"content:product","collectionLimit":4,` +
 		`"cardTitleField":"name","cardImageField":"images","cardMetaField":"priceRange",` +
 		`"cardLinkField":"slug","cardLinkPrefix":"/products/"}`
 }
 
-// TestProductCollectionSourceMetadata 验收 1：商品源出现在集合源元数据里，
-// 含字段白名单（与实体类型注册表同一份）、过滤维度、排序键。
 func TestProductCollectionSourceMetadata(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -101,8 +85,7 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if found.Label == "" {
 		t.Fatalf("集合源应有展示名（工作台下拉用）")
 	}
-	// 过滤维度：status（带枚举）+ 分类 / 品牌 / 标签的单值和多值 id 维度
-	// + 各自的 any/all 语义 + 属性值前缀维度（真实键是 option.<属性key>）。
+
 	wantFilters := []string{
 		productcontract.CollectionFilterStatus,
 		productcontract.CollectionFilterCategoryID,
@@ -112,14 +95,14 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 		productcontract.CollectionFilterBrandIDs,
 		productcontract.CollectionFilterBrandMode,
 		productcontract.CollectionFilterTagID,
-		// issue #27：多标签（带匹配语义）与「只看在售」。
+
 		productcontract.CollectionFilterTagIDs,
 		productcontract.CollectionFilterTagMode,
 		productcontract.CollectionFilterOnSale,
-		// issue #28：价格区间两维（价格在变体上，EXISTS 下推）。
+
 		productcontract.CollectionFilterMinPrice,
 		productcontract.CollectionFilterMaxPrice,
-		// issue #29：最低评分。
+
 		productcontract.CollectionFilterMinRating,
 		productcontract.CollectionFilterOption,
 	}
@@ -131,8 +114,7 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 			t.Fatalf("第 %d 个过滤维度应是 %s，实际 %+v", i, key, found.Filters)
 		}
 	}
-	// 前缀维度必须被标出来：工作台据此渲染成「属性组多选 + 属性值多选」，
-	// 而不是当成一个取值有限的普通下拉（它没有枚举，值由用户建的属性组决定）。
+
 	last := found.Filters[len(found.Filters)-1]
 	if !last.Prefix {
 		t.Fatalf("属性值维度应标记为前缀维度，实际 %+v", last)
@@ -145,7 +127,7 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if len(found.Filters[0].Enum) != 3 {
 		t.Fatalf("status 维度应带 draft/published/archived 枚举：%+v", found.Filters[0])
 	}
-	// 三个多值语义维度各有固定枚举；id / 开关 / 数值维度不带枚举。
+
 	for _, filter := range found.Filters[1:] {
 		switch filter.Key {
 		case productcontract.CollectionFilterCategoryMode, productcontract.CollectionFilterBrandMode, productcontract.CollectionFilterTagMode:
@@ -158,11 +140,11 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 			}
 		}
 	}
-	// 排序键：确定性默认序（sort → createdAt）。
+
 	if strings.Join(found.OrderBy, ",") != "sort,createdAt,priceAsc,priceDesc,ratingDesc" {
 		t.Fatalf("排序键白名单不符：%v", found.OrderBy)
 	}
-	// 内容集合源仍在（注册表是多源聚合，不是替换）。
+
 	hasArticle := false
 	for _, s := range schemas {
 		if s.Source == "content:article" {
@@ -174,7 +156,6 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	}
 }
 
-// TestProductCollectionResolveItems 验收 2：构建期解析出集合项，字段受白名单约束。
 func TestProductCollectionResolveItems(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -192,7 +173,7 @@ func TestProductCollectionResolveItems(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("应解析出 2 个商品，实际 %d", len(items))
 	}
-	// 按 slug 定位（同 sort / 同创建时刻时次序由 id 兜底，测试不依赖具体排序）。
+
 	var first map[string]any
 	for _, item := range items {
 		if item["slug"] == "summer-shirt" {
@@ -205,20 +186,20 @@ func TestProductCollectionResolveItems(t *testing.T) {
 	if first["id"] == "" || first["id"] == nil {
 		t.Fatalf("集合项应含 id 系统字段：%+v", first)
 	}
-	// 价格由变体派生（商品主体不存价格）：最低价 + 区间。
+
 	if first["priceRange"] != "99 ~ 199" {
 		t.Fatalf("价格区间应由变体派生：%+v", first["priceRange"])
 	}
-	// 图片给真数组（集合卡的既有渲染约定是「数组取首元素」）。
+
 	images, ok := first["images"].([]any)
 	if !ok || len(images) != 2 || images[0] != testMediaBaseURL+"/summer-shirt-1.jpg" {
 		t.Fatalf("images 应为 URL 数组：%+v", first["images"])
 	}
-	// 白名单之外的字段不进集合项（集合项只暴露可渲染字段）。
+
 	if _, leaked := first["status"]; leaked {
 		t.Fatalf("集合项不应夹带白名单外字段：%+v", first)
 	}
-	// 过滤维度：status 白名单内可用（只留已发布的那一个商品）。
+
 	published := productenums.StatusPublished
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: summerID, Status: &published}); err != nil {
 		t.Fatalf("置为已发布失败: %v", err)
@@ -232,8 +213,6 @@ func TestProductCollectionResolveItems(t *testing.T) {
 	}
 }
 
-// TestProductCollectionBuildsIntoArtifact 验收 3：既有集合类组件绑定商品字段后，
-// 构建产物包含商品数据（且绑定字段名不残留、同输入同字节）。
 func TestProductCollectionBuildsIntoArtifact(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -249,23 +228,23 @@ func TestProductCollectionBuildsIntoArtifact(t *testing.T) {
 		t.Fatalf("编译集合页失败: %v", err)
 	}
 	for _, want := range []string{
-		"夏季衬衫", "冬季外套", // 商品名（标题字段）
-		"99 ~ 199", "299", // 价格区间（变体派生）
-		testMediaBaseURL + "/summer-shirt-1.jpg", // 图集首图（数组取首元素）
-		"/products/summer-shirt",                 // 链接前缀 + slug
-		"sky-cardstack-card",                     // 卡片结构确实渲染了
+		"夏季衬衫", "冬季外套",
+		"99 ~ 199", "299",
+		testMediaBaseURL + "/summer-shirt-1.jpg",
+		"/products/summer-shirt",
+		"sky-cardstack-card",
 	} {
 		if !strings.Contains(compiled.HTML, want) {
 			t.Fatalf("构建产物应含 %q", want)
 		}
 	}
-	// 商品字段是构建期静态填入：产物里不应残留绑定字段名或集合源标识。
+
 	for _, unwanted := range []string{"content:product", "cardTitleField", "collectionSource"} {
 		if strings.Contains(compiled.HTML, unwanted) {
 			t.Fatalf("产物不应残留 %q", unwanted)
 		}
 	}
-	// 确定性：同输入两次编译字节一致。
+
 	again, err := compileCollection(t, page, reg, f.projectID)
 	if err != nil {
 		t.Fatalf("二次编译失败: %v", err)
@@ -275,8 +254,6 @@ func TestProductCollectionBuildsIntoArtifact(t *testing.T) {
 	}
 }
 
-// TestProductCollectionRejectsOutOfWhitelist 验收 4：白名单外的字段 / 维度 /
-// 未知集合源在构建期被拒绝（不静默渲染成空白）。
 func TestProductCollectionRejectsOutOfWhitelist(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -326,8 +303,6 @@ func TestProductCollectionRejectsOutOfWhitelist(t *testing.T) {
 	})
 }
 
-// TestProductCollectionScopedByProject 集合数据按工程隔离：
-// 商品是分工程的数据，构建上下文里的工程 ID 决定取哪一批。
 func TestProductCollectionScopedByProject(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -364,8 +339,6 @@ func TestProductCollectionScopedByProject(t *testing.T) {
 	}
 }
 
-// TestProductCollectionFollowsBuildLanguage 商品可翻译字段随构建语言切换：
-// 同一份集合数据在英文构建下输出译文（语境 product.<字段名>）。
 func TestProductCollectionFollowsBuildLanguage(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -397,9 +370,6 @@ func TestProductCollectionFollowsBuildLanguage(t *testing.T) {
 	}
 }
 
-// TestProductCollectionFilterByTaxonomy 验收（issue #21）：
-// 分类 / 品牌 / 标签三个维度各自与组合都能把集合收敛到正确的一批商品
-// （维度彼此 AND，并与 status 叠加）。
 func TestProductCollectionFilterByTaxonomy(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -415,7 +385,7 @@ func TestProductCollectionFilterByTaxonomy(t *testing.T) {
 	p1 := f.createProduct(t, "衬衫", "shirt", "", 99, 199)
 	p2 := f.createProduct(t, "长裤", "trousers", "", 199, 199)
 	p3 := f.createProduct(t, "外套", "coat", "", 299, 299)
-	// p1：分类 A + 品牌 X + 标签 T1；p2：分类 B + 品牌 X；p3：分类 A + 标签 T2。
+
 	colAttach(t, f, p1, []string{catA.ID}, &brandX.ID, []string{tag1.ID})
 	colAttach(t, f, p2, []string{catB.ID}, &brandX.ID, nil)
 	colAttach(t, f, p3, []string{catA.ID}, nil, []string{tag2.ID})
@@ -449,29 +419,27 @@ func TestProductCollectionFilterByTaxonomy(t *testing.T) {
 		}
 	}
 
-	// 单维度：分类 A 命中 p1 / p3。
 	assertHits(resolve(map[string]string{productcontract.CollectionFilterCategoryID: catA.ID}), "shirt", "coat")
-	// 单维度：品牌 X 命中 p1 / p2。
+
 	assertHits(resolve(map[string]string{productcontract.CollectionFilterBrandID: brandX.ID}), "shirt", "trousers")
-	// 单维度：标签 T2 只命中 p3。
+
 	assertHits(resolve(map[string]string{productcontract.CollectionFilterTagID: tag2.ID}), "coat")
-	// 组合：分类 A + 标签 T1 → p1（AND 语义）。
+
 	assertHits(resolve(map[string]string{
 		productcontract.CollectionFilterCategoryID: catA.ID,
 		productcontract.CollectionFilterTagID:      tag1.ID,
 	}), "shirt")
-	// 组合：分类 A + 品牌 X → p1。
+
 	assertHits(resolve(map[string]string{
 		productcontract.CollectionFilterCategoryID: catA.ID,
 		productcontract.CollectionFilterBrandID:    brandX.ID,
 	}), "shirt")
-	// 组合：分类 A + 标签 T2 → p3。
+
 	assertHits(resolve(map[string]string{
 		productcontract.CollectionFilterCategoryID: catA.ID,
 		productcontract.CollectionFilterTagID:      tag2.ID,
 	}), "coat")
 
-	// 与 status 叠加：把 p3 置为已发布后，分类 A + published 只留 p3。
 	published := productenums.StatusPublished
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: p3, Status: &published}); err != nil {
 		t.Fatalf("置为已发布失败: %v", err)
@@ -481,15 +449,12 @@ func TestProductCollectionFilterByTaxonomy(t *testing.T) {
 		productcontract.CollectionFilterStatus:     productenums.StatusPublished,
 	}), "coat")
 
-	// 无命中返回空集合（不是报错）：用一个真实存在但没挂任何商品的分类。
 	empty := colCategory(t, f, "空分类", "empty-category")
 	if got := resolve(map[string]string{productcontract.CollectionFilterCategoryID: empty.ID}); len(got) != 0 {
 		t.Fatalf("无命中应返回空集合，实际 %v", got)
 	}
 }
 
-// TestProductCollectionFilterRejectsInvalidID 非法 id 形状必须在解析期报错：
-// 下推到 SQL 只会得到「空集合」，那是把配置错误伪装成「这个分类下没有商品」。
 func TestProductCollectionFilterRejectsInvalidID(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -514,7 +479,6 @@ func TestProductCollectionFilterRejectsInvalidID(t *testing.T) {
 		})
 	}
 
-	// 空值 = 该维度不参与过滤（不是「匹配不到」）。
 	items, err := f.products.ResolveCollection(ctx, productcontract.CollectionSourceProduct, map[string]string{
 		productcontract.CollectionFilterCategoryID: "",
 	})
@@ -525,8 +489,6 @@ func TestProductCollectionFilterRejectsInvalidID(t *testing.T) {
 		t.Fatalf("空值维度应不参与过滤，实际命中 %d", len(items))
 	}
 }
-
-// —— 集合源过滤测试的小工具（走真实 service，不直接写库）——
 
 func colCategory(t *testing.T, f *detailFixture, name, slug string) *productdto.CategoryResp {
 	t.Helper()
@@ -561,7 +523,6 @@ func colTag(t *testing.T, f *detailFixture, name, slug string) *productdto.TagRe
 	return res
 }
 
-// colAttach 把分类 / 品牌 / 标签挂到商品上（走商品更新接口，与后台同一路径）。
 func colAttach(t *testing.T, f *detailFixture, productID string, categories []string, brandID *string, tags []string) {
 	t.Helper()
 	req := &productdto.UpdateReq{ID: productID}
@@ -579,13 +540,6 @@ func colAttach(t *testing.T, f *detailFixture, productID string, categories []st
 	}
 }
 
-// TestProductCollectionTaxonomyFilterUsesIndex 验收（issue #21）：
-// 三个维度的谓词都要能走索引 —— 分类 / 标签的 JSONB 包含走 GIN，
-// 品牌走 idx_products_brand_id（081 的外键不会自动建索引，迁移 117 补的）。
-//
-// 小表上 planner 选 Seq Scan 是**正确**的成本选择，不能当成缺陷；因此关掉
-// enable_seqscan 后再看计划：索引可用，计划里就会出现索引名。断言的是
-// 「索引能支撑这个谓词」，而不是「planner 此刻偏要用它」。
 func TestProductCollectionTaxonomyFilterUsesIndex(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -595,7 +549,6 @@ func TestProductCollectionTaxonomyFilterUsesIndex(t *testing.T) {
 	brand := colBrand(t, f, "山系", "shanshan")
 	tag := colTag(t, f, "新品", "new-arrival")
 
-	// 谓词与 model.ListForCollection 的写法逐字一致（改一边忘另一边就测不出来了）。
 	cases := []struct{ name, sql, arg, index string }{
 		{"分类", "SELECT id FROM products WHERE category_ids @> jsonb_build_array(?::text)", cat.ID, "idx_products_category_ids"},
 		{"标签", "SELECT id FROM products WHERE tag_ids @> jsonb_build_array(?::text)", tag.ID, "idx_products_tag_ids"},
@@ -608,8 +561,6 @@ func TestProductCollectionTaxonomyFilterUsesIndex(t *testing.T) {
 	}
 }
 
-// assertPlanUsesIndex 在「关掉顺序扫描」的事务里 EXPLAIN 一条查询，
-// 断言计划里出现了期望的索引名（事务随即回滚，不留副作用）。
 func assertPlanUsesIndex(t *testing.T, f *detailFixture, sql string, arg any, indexName string) {
 	t.Helper()
 	tx := f.db.Begin()
@@ -639,10 +590,6 @@ func assertPlanUsesIndex(t *testing.T, f *detailFixture, sql string, arg any, in
 	}
 }
 
-// TestProductCollectionRelatedFieldsNotBlank 回归（issue #22 发现的 #9 遗留缺陷）：
-// 集合项的 related / tags / imageAlt 都由 ListForCollection 的投影列派生 ——
-// 漏取某一列会让对应字段**恒为空**：看起来像「这个商品没填」，实际是查询根本没取那一列。
-// 这条用例挂上分类 / 品牌 / 标签并填好图集 alt 后，再断言值真的到了集合项里。
 func TestProductCollectionRelatedFieldsNotBlank(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -654,7 +601,7 @@ func TestProductCollectionRelatedFieldsNotBlank(t *testing.T) {
 	brand := colBrand(t, f, "山系", "shanshan")
 	tag := colTag(t, f, "新品", "new-arrival")
 	colAttach(t, f, pid, []string{cat.ID}, &brand.ID, []string{tag.ID})
-	// 图集 alt 落在 images_alt 列上（与 images 逐位对应）。
+
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
 		ID: pid, ImageAlts: []string{"蓝色衬衫", ""},
 	}); err != nil {

@@ -1,16 +1,5 @@
 package feature
 
-// site_ga4_test.go — 站点统计代码（GA4）的**构建期端到端**验证（BIZ-8 目标 1）。
-//
-// 链路：SiteSettings（projects.settings）→ page 服务构建上下文 → builder → 产物 head。
-// 使用真实项目设置与发布共用的AnalyticsCompileOptions；另验证只读预览不执行GA4。
-//
-// 断言两条：
-//   - 配了测量 ID：产物 head 里出现 gtag 脚本，ID 正确；
-//   - 清空测量 ID：产物里一个字节的统计代码都没有（零字节注入）。
-//
-// 依赖 PostgreSQL（support 三级回退，均不可用时整体 Skip）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -29,10 +18,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// ga4DocJSON 最小页面文档（内容为空：本例验证的是 head 注入，不是组件渲染）。
 const ga4DocJSON = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
-// TestSiteGA4InjectedIntoBuiltHead 站点设置里的测量 ID 进产物 head；清空后零字节。
 func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -40,7 +27,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 预览编译与发布共用 compileDocument；这里不需要 artifact / publication 契约（预览不落盘）。
+
 	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 	ctx := context.Background()
 
@@ -100,7 +87,6 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 		t.Errorf("统计脚本应恰好注入一次，实际 %d 次", n)
 	}
 
-	// 清空测量 ID：产物里不再有统计代码（零字节注入不变量）。
 	setGA4("")
 	html, err = compilePublished()
 	if err != nil {
@@ -110,7 +96,6 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 		t.Fatalf("清空测量 ID 后产物仍含统计代码:\n%s", html)
 	}
 
-	// 非法形状：不注入，也不把原始输入拼进 head（脚本注入防线）。
 	setGA4(`G-ABC"><script>alert(1)</script>`)
 	html, err = compilePublished()
 	if err != nil {

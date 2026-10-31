@@ -1,8 +1,5 @@
 package unit
 
-// page_seo_lang_test.go — 产物 head 的 hreflang 与站点 sitemap 语言分组
-// （多语言 P3，docs/06-D §5 / §15.5 第 4 条）。
-
 import (
 	"context"
 	"os"
@@ -14,7 +11,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
-// artifactIndexHTML 读取落盘产物的 index.html。
 func artifactIndexHTML(t *testing.T, hash string) string {
 	t.Helper()
 	root := os.Getenv("GO_WP_ARTIFACT_ROOT")
@@ -25,8 +21,6 @@ func artifactIndexHTML(t *testing.T, hash string) string {
 	return string(data)
 }
 
-// TestPageArtifactHreflangPerLanguage 同一页两种语言的产物 head 各自输出
-// 互指链接（含 x-default 指向默认语言）。
 func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	t.Setenv("WP_SITE_BASE_URL", "https://page.example.test")
 	db, svc, projects, projectID := newPageService(t)
@@ -44,7 +38,7 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 
 	page := createPage(t, svc, projectID, "/about", headingDocument)
-	// 构建返回值不必留存：断言以 page_publications 当前激活记录为准。
+
 	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatalf("zh 构建失败: %v", err)
@@ -53,16 +47,14 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("en 构建失败: %v", err)
 	}
-	// 互指 hreflang 要求两种语言都「在访问面上已发布」：只构建不发布时，
-	// 切换器与 hreflang 会把另一种语言当作尚不存在而省略（审计 I18N-021）。
-	// 后发布语言会自动刷新其它已发布语言，断言最终激活产物。
+
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); err != nil {
 		t.Fatalf("zh 发布失败: %v", err)
 	}
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
 		t.Fatalf("en 发布失败: %v", err)
 	}
-	// 站点状态稳定后的重建应保持当前激活产物字节。
+
 	zhHash := activeHashOfLang(t, db, page.ID, "zh-CN")
 	built, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
@@ -90,7 +82,6 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 }
 
-// TestPageSitemapGroupedByLanguage 发布后 sitemap.xml 按语言分组输出 xhtml:link。
 func TestPageSitemapGroupedByLanguage(t *testing.T) {
 	_, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()

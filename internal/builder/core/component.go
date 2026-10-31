@@ -1,7 +1,3 @@
-// Package core 是可视化构建器的编译内核：组件树节点结构、组件接口与注册表。
-//
-// 组件（core.container、后续的 heading/text 等）实现 Component 接口并注册到 Registry，
-// 编译器按节点 type 查找对应组件完成校验与渲染。一个组件一个目录，见 components/。
 package core
 
 import (
@@ -12,7 +8,6 @@ import (
 	"strings"
 )
 
-// Node 组件树节点通用结构。Props 由各组件自行解码为自己的 props 类型。
 type Node struct {
 	ID       string                  `json:"id"`
 	Type     string                  `json:"type"`
@@ -20,46 +15,25 @@ type Node struct {
 	Children []*Node                 `json:"children"`
 	Actions  map[string]ActionTarget `json:"actions,omitempty"`
 
-	// --- 编辑元数据（Visual Workbench 03-A，持久化于 Page Document，不参与编译产物） ---
-
-	// Name 大纲树重命名显示名（如 "首屏 Banner 容器"），仅编辑器可读性。
 	Name string `json:"name,omitempty"`
-	// Hidden 编辑期临时显隐（遮挡编辑辅助），不影响最终发布产物。
+
 	Hidden bool `json:"hidden,omitempty"`
-	// Locked 编辑期锁定防误触（禁止画布选中/拖拽）。
+
 	Locked bool `json:"locked,omitempty"`
 }
 
-// SectionClass 顶级容器附加 class，用于页面版心约束选择器。
 const SectionClass = "sky-section"
 
-// SROnlyClass 视觉隐藏但保留可聚焦的工具类（配方在 builder/settings.go 的基座 CSS 里）。
-//
-// 「读屏能播报、键盘能聚焦、视觉上不可见」。用 display:none 会把元素踢出键盘序列与
-// 读屏树 —— 折叠开关、页签 radio 这类控件全靠可聚焦才可用（触屏之外全废）。
-//
-// 组件模板给元素加这个 class 即可，不要再各自手写那 9 条声明。
 const SROnlyClass = "sky-sr-only"
 
-// Component 组件接口。每种可视化组件实现本接口并注册到 Registry。
-//
-// 说明：HTML 渲染已迁移到 Jet 模板路径（builder/jetview.go 的 nodeViewOf + renderView），
-// 组件不再承担 HTML 拼装，故接口只保留 Type + Validate 两项。
 type Component interface {
-	// Type 组件类型标识，如 "core.container"。
 	Type() string
-	// Validate 校验节点（含解码并校验自身 props、递归校验子树）。
+
 	Validate(node *Node, ids map[string]bool) error
 }
 
-// registry 组件注册表。
 var registry = map[string]Component{}
 
-// Register 注册组件。重复类型直接覆盖（便于测试替换），生产组件在包 init 中注册。
-//
-// 注册期校验可翻译字段白名单（多语言 P5b，docs/06-D §7.5 规则 2）：
-// 组件声明了 Translatable 时，字段名必须合法且存在于自身 Props 的 JSON 字段集合，
-// 拼错即 panic（init 期 fail-fast）——白名单是唯一可翻译性来源，不允许静默失效。
 func Register(c Component) {
 	if c == nil {
 		panic("core.Register: 组件为 nil")
@@ -79,8 +53,7 @@ func Register(c Component) {
 			spec = sp.PropsSpec()
 		}
 		meta := pp.Palette()
-		// 只校验「声明了要进组件库」的组件：未声明元数据由 builder 的覆盖断言
-		// 要求显式豁免（见 palette.go）。
+
 		if meta.DisplayName != "" || meta.Category != "" {
 			if err := ValidatePaletteMeta(c.Type(), spec, meta); err != nil {
 				panic(fmt.Sprintf("组件 %s 组件库元数据非法: %v", c.Type(), err))
@@ -97,13 +70,11 @@ func Register(c Component) {
 		}
 	}
 	registry[c.Type()] = c
-	// 缓存失效统一走带锁封装：直接操作裸 map 会与构建期的并发读竞态
-	// （见 translatable.go / translatable_meta.go 的并发约束）。
+
 	resetTranslatableFields(c.Type())
 	resetTranslatableMetaByType(c.Type())
 }
 
-// Lookup 按类型查找组件。
 func Lookup(typeName string) (c Component, err error) {
 	c, ok := registry[typeName]
 	if !ok {
@@ -112,8 +83,6 @@ func Lookup(typeName string) (c Component, err error) {
 	return c, nil
 }
 
-// Types 返回注册表全部组件类型标识（字典序，确定性输出）。
-// 供编辑器侧一次性拉取组件元数据（Inspector 面板 schema）。
 func Types() (types []string) {
 	types = make([]string, 0, len(registry))
 	for name := range registry {
@@ -123,25 +92,16 @@ func Types() (types []string) {
 	return types
 }
 
-// ErrIncompleteNode 标记「节点配置不完整」（如轮播未拖入 slide）——
-// 属于编辑中间态，可由预览显示局部占位而非阻断整页；
-// 与「配置非法」（非法 props / 属性 key / 超长名称）区分，后者必须拒绝。
 var ErrIncompleteNode = errors.New("节点配置不完整")
 
-// selfValidator 由允许子节点的组件实现：自身规则与树遍历分离，
-// 以便草稿容错只记录未完成节点，并继续检查其余子节点。
-// Component.Validate 仍保留严格校验整棵子树的语义。
 type selfValidator interface {
 	ValidateSelf(node *Node, ids map[string]bool) error
 }
 
-// ValidateNode 严格校验节点及子树。
 func ValidateNode(node *Node, ids map[string]bool) error {
 	return validateNode(node, ids, nil)
 }
 
-// ValidateNodeTolerant 只容忍显式标记的未完成节点，仍校验全部后续节点。
-// incomplete 按真实节点 ID 记录，不把其父容器或兄弟节点一起跳过。
 func ValidateNodeTolerant(node *Node, ids map[string]bool, incomplete map[string]bool) error {
 	return validateNode(node, ids, incomplete)
 }
@@ -190,7 +150,6 @@ func validateNode(node *Node, ids map[string]bool, incomplete map[string]bool) e
 	return nil
 }
 
-// ValidateChildren 供容器组件的严格 Validate 入口共享子树遍历。
 func ValidateChildren(node *Node, ids map[string]bool) error {
 	return validateChildren(node, ids, nil)
 }
@@ -204,9 +163,6 @@ func validateChildren(node *Node, ids map[string]bool, incomplete map[string]boo
 	return nil
 }
 
-// SpecProvider 可选接口：组件通过 PropsSpec() 暴露一个带 ct tag 的 props 结构体，
-// 声明式 Controls 据此自动生成校验与 Inspector 面板 schema（docs/02-C3）。
-// 未实现本接口的组件保留手写校验（兼容阶段）。
 type SpecProvider interface {
 	PropsSpec() any
 }

@@ -1,15 +1,5 @@
 package contenthttp
 
-// article_notice_test.go — 文章写动作结论的**新传输通道**回归。
-//
-// 背景：写动作原先靠 302 + `?err=` / `?ok=` / `?done=` 回列表页汇报结果，读侧要再判一次
-// 「这条提示是不是本仓给的」（articleQueryText / articlePageDone）—— 而查询参数不是可信边界。
-// 现在结论由 shell.RenderJump 渲染成整页提示（文案走响应体），那套读侧判定已整批删除。
-//
-// 本文件钉住两件事：
-//   - 写侧四个批量分支都渲染出提示页（不是旧的 302），文案与计数说清楚；
-//   - 手拼 /admin/articles?err=任意文案 再也不能往列表页塞伪造提示（读侧已无这条路）。
-
 import (
 	"context"
 	"errors"
@@ -31,7 +21,6 @@ import (
 	bulkids "go_wp/pkg/bulkids"
 )
 
-// articleBulkDeleteStub 只实现批量删除用到的 Delete（其余方法嵌入 nil 接口，测试不会走到）。
 type articleBulkDeleteStub struct {
 	contentcontract.ContentService
 	failIDs map[string]bool
@@ -44,7 +33,6 @@ func (s *articleBulkDeleteStub) Delete(_ context.Context, req *contentdto.Delete
 	return nil
 }
 
-// articleBulkTestEngine 挂真实 Jet 渲染器与批量删除路由（提示页要真的渲染出来）。
 func articleBulkTestEngine(s *articleBulkDeleteStub) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -61,7 +49,6 @@ func articleBulkPost(e *gin.Engine, form url.Values) *httptest.ResponseRecorder 
 	return rec
 }
 
-// TestArticlesBulkDeleteRendersJumpPage 写侧四个分支都渲染提示页（不再是 302 + ?done=）。
 func TestArticlesBulkDeleteRendersJumpPage(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -91,7 +78,6 @@ func TestArticlesBulkDeleteRendersJumpPage(t *testing.T) {
 	}
 }
 
-// TestArticlesBulkDeleteNoSelectionRendersJumpPage 未选中任何 id 也走提示页（不是静默跳走）。
 func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	rec := articleBulkPost(e, url.Values{})
@@ -104,7 +90,6 @@ func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 	}
 }
 
-// TestArticlesBulkDeleteLimitRendersControlledText 超限整批拒绝的受控提示保持可见。
 func TestArticlesBulkDeleteLimitRendersControlledText(t *testing.T) {
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	form := url.Values{}
@@ -121,10 +106,6 @@ func TestArticlesBulkDeleteLimitRendersControlledText(t *testing.T) {
 	}
 }
 
-// TestArticlesPageIgnoresForgedResultQuery 手拼 ?err= / ?ok= / ?done= 不再能注入伪造提示。
-//
-// 旧的读侧（articleQueryText / articlePageDone）已整批删除：列表页只剩**取数失败**一处提示。
-// 这条用例取代原先的「伪造被读侧拒绝」断言 —— 现在根本没有那条通道可走。
 func TestArticlesPageIgnoresForgedResultQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -147,10 +128,6 @@ func TestArticlesPageIgnoresForgedResultQuery(t *testing.T) {
 	}
 }
 
-// TestArticleDeleteRendersJumpPageWithBusinessText 单条删除的失败也走提示页，业务文案原样可见。
-//
-// 与批量删除共用同一套出口（articleListJump），但命中的是单条删除那条业务错误 ——
-// 覆盖 public/test/content 里那条 302→提示页的断言。
 func TestArticleDeleteRendersJumpPageWithBusinessText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -177,10 +154,6 @@ func TestArticleDeleteRendersJumpPageWithBusinessText(t *testing.T) {
 	}
 }
 
-// TestArticleBulkResultTemplatesAreDistinct 四个分支的候选不能互相覆盖。
-//
-// 归一（数字 → 占位）之后如果两条模板变成同一串，说明它们只差一个计数 ——
-// 那「全部失败」就会被当成「部分成功」显示（反之亦然），属于会误导运营的静默错误。
 func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	if len(articleBulkResultTemplates) != 4 {
 		t.Fatalf("四个分支应当各有一条模板，实际 %d 条", len(articleBulkResultTemplates))
@@ -188,7 +161,7 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	c := articleBulkCtx(t)
 	seen := make(map[string]int, len(articleBulkResultTemplates))
 	for i, tpl := range articleBulkResultTemplates {
-		// 比较**当前语言**的模板：词条写重了同样要红（中文相同、英文不同也算重）。
+
 		key := strings.TrimSpace(adminui.MsgText(c, tpl))
 		if prev, ok := seen[key]; ok {
 			t.Errorf("第 %d 与第 %d 条模板完全相同：%q", prev, i, key)
@@ -197,8 +170,6 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	}
 }
 
-// articleBulkCtx 纯函数用例用的上下文：批量结论文案的**事实**要按当前语言取词
-// （adminui.MsgText），取词必须带 c。本包单跑时 i18n 未初始化，取词回落到中文原文。
 func articleBulkCtx(t *testing.T) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

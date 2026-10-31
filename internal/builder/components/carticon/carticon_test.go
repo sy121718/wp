@@ -1,14 +1,5 @@
 package carticon
 
-// carticon_test.go — 购物车图标组件的视图测试。
-//
-// 钉住的是**不变量**：
-//   · 三种浮层用 <details>（无 JS 也能开合），只有 hover 形态不用 —— 桌面靠 CSS 悬停，
-//     触屏靠 sr-only checkbox + 覆盖层 label 的「点击展开」（见 carticon.css 的 @hovernone）；
-//   · 片段地址必须带工程 id（不带就永远拉不到购物车），且语言只在非空时带上；
-//   · 未配置结算动作时只展示购物车，不推断全站页面；
-//   · 缺工程 id 时给可见提示，而不是渲染一个点开永远空着的图标。
-
 import (
 	"errors"
 	"strings"
@@ -19,7 +10,6 @@ import (
 
 func baseProps() *Props { return &Props{} }
 
-// TestEffectiveMode 形态解析：未知值兜底下拉浮层。
 func TestEffectiveMode(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -39,7 +29,6 @@ func TestEffectiveMode(t *testing.T) {
 	}
 }
 
-// TestBuildViewUsesDetailsExceptHover 浮层外壳：三种形态用 details，hover 不用。
 func TestBuildViewUsesDetailsExceptHover(t *testing.T) {
 	for _, mode := range []string{ModeDropdown, ModeDrawer, ModeModal} {
 		v := BuildView(&Props{Mode: mode}, "proj-1", "zh-CN")
@@ -52,7 +41,6 @@ func TestBuildViewUsesDetailsExceptHover(t *testing.T) {
 	}
 }
 
-// TestBuildViewURLsCarrayProjectAndLang 片段地址必须带工程 id 与语言。
 func TestBuildViewURLsCarrayProjectAndLang(t *testing.T) {
 	v := BuildView(baseProps(), "proj-9", "en-US")
 	if !strings.Contains(v.CartViewURL, "projectId=proj-9") {
@@ -69,7 +57,6 @@ func TestBuildViewURLsCarrayProjectAndLang(t *testing.T) {
 	}
 }
 
-// TestBuildViewOmitsEmptyLang 语言为空时不带 lang 参数（单语言站点不做无用判断）。
 func TestBuildViewOmitsEmptyLang(t *testing.T) {
 	v := BuildView(baseProps(), "proj-9", "  ")
 	if strings.Contains(v.CartViewURL, "lang=") {
@@ -77,10 +64,6 @@ func TestBuildViewOmitsEmptyLang(t *testing.T) {
 	}
 }
 
-// TestBuildViewWithoutProjectRendersNotice 缺工程 id 时给可见提示，不让整页构建失败。
-//
-// 与 addToCart 同一条边界：pipeline.DefaultCompile 明确不带工程 id，
-// 把它当致命错误会让「一个图标坏了整页发布不了」。
 func TestBuildViewWithoutProjectRendersNotice(t *testing.T) {
 	for _, pid := range []string{"", "   "} {
 		v := BuildView(baseProps(), pid, "zh-CN")
@@ -93,7 +76,6 @@ func TestBuildViewWithoutProjectRendersNotice(t *testing.T) {
 	}
 }
 
-// 未配置动作时保留纯购物车，不猜测任何全站页面。
 func TestBuildViewDoesNotInferCheckoutTarget(t *testing.T) {
 	v := BuildView(baseProps(), "proj-1", "zh-CN")
 	if v.HasCheckoutAction || v.CheckoutAction.URL != "" {
@@ -124,7 +106,6 @@ func TestCheckoutActionConsumesOnlyResolvedTarget(t *testing.T) {
 	}
 }
 
-// TestBuildViewIconFallback 图标名未知时回退默认图标（不做成空图标）。
 func TestBuildViewIconFallback(t *testing.T) {
 	v := BuildView(&Props{Icon: "not-a-real-icon-name"}, "proj-1", "zh-CN")
 	if strings.TrimSpace(v.IconSVG) == "" {
@@ -132,11 +113,6 @@ func TestBuildViewIconFallback(t *testing.T) {
 	}
 }
 
-// TestApplyI18n 界面文案：默认标签与运行态文案取译文，作者自定义的标签不动。
-//
-// 判据是**收到的 key 集合**，不是「只收到标签那一个」：加载中文案是图标
-// 自己产出的固定文案（作者填不到），与「作者是否自定义标签」各管一段 —— 实现在这两件事上
-// 不许互相早退。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
 	v := &View{Label: textFallbackLabel}
 	asked := map[string]string{}
@@ -162,13 +138,11 @@ func TestApplyI18n(t *testing.T) {
 	if len(asked) != 14 {
 		t.Fatalf("无提示的正常渲染应包含静态购物车和图标的运行态文案，实际取了 %d 条: %v", len(asked), asked)
 	}
-	// 空值的降级提示不许被「无中生有」地填上：正常渲染的图标凭空多一行提示，
-	// 与「缺站点工程」那条真降级混在一起，用户无从分辨。
+
 	if v.Notice != "" {
 		t.Fatalf("空提示不该被翻译函数填出内容，实际 %q", v.Notice)
 	}
 
-	// 作者自定义标签 → 标签那条不翻译（它属于内容，走 Translatable 链路）；运行态照旧。
 	v2 := &View{Label: "我的车"}
 	v2.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyLabel {
@@ -186,7 +160,6 @@ func TestApplyI18n(t *testing.T) {
 		t.Fatalf("自定义标签不该带走运行态文案的取词（两件事各自独立），实际 %q", v2.LoadingText)
 	}
 
-	// 非空的降级提示按 key 取词。
 	v2b := &View{Label: textFallbackLabel, Notice: noticeNoProject}
 	v2b.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyNotice {
@@ -198,12 +171,10 @@ func TestApplyI18n(t *testing.T) {
 		t.Fatalf("降级提示应取译文，实际 %q", v2b.Notice)
 	}
 
-	// 无翻译函数 → 全部保持中文兜底，不 panic。
 	var v3 *View
-	v3.ApplyI18n(nil) // 不 panic
+	v3.ApplyI18n(nil)
 }
 
-// TestEffectiveLabel 标签文字缺省。
 func TestEffectiveLabel(t *testing.T) {
 	if got := effectiveLabel(&Props{}); got != defaultLabel {
 		t.Fatalf("空标签应回退默认值，实际 %q", got)

@@ -1,15 +1,3 @@
-// Package commentservice — comment 模块的服务层（状态机 / 校验 / 限流 / 归口文案）。
-//
-// 分层与边界：
-//
-//	· model  —— 表访问（读写 comments，全部在 rls 工程作用域内）；
-//	· service —— 业务规则：谁能发（登录）、发什么算合法（长度 / 形状 / 控制字符）、
-//	             发得多快要挡（限流）、落什么状态（先审后发）、谁能审（后台控制面）；
-//	· inbound —— 协议：HTTP 参数绑定、CSRF、响应格式（页面 / JSON）。
-//
-// service **不持有 *gorm.DB**（事务边界经 model.TransactionScoped 表达），
-// 也不 import 别的模块的 service / model —— 需要实体侧的差异化规则时只问
-// contract.EntityPolicy（收窄端口，见该接口的注释）。
 package commentservice
 
 import (
@@ -26,41 +14,27 @@ import (
 	commentmodel "go_wp/internal/module/comment/model"
 )
 
-// errScene 结构化日志场景名（三件套的第三件：原文只进日志）。
 const errScene = "comment"
 
-// Service comment 模块的服务实现。
 type Service struct {
 	model *commentmodel.Model
 
-	// entityTypes 已注册的可评论实体类型（**由拥有该实体的模块声明**，装配期传入）。
-	//
-	// 保存顺序与 map 两份：顺序服务「后台筛选下拉」（要确定性），map 服务「白名单判定」。
 	entityTypes []commentcontract.EntityType
 	byType      map[string]commentcontract.EntityType
 
-	// policy 差异化规则端口（可缺）。未注入 = 放行（判断与理由见 contract.EntityPolicy）。
 	policy commentcontract.EntityPolicy
 
-	// 提交限流（进程内令牌桶，形态与 internal/middleware/builtin 的 IP 限流同源）。
 	identityLimiter *submitLimiter
 	sourceLimiter   *submitLimiter
 
-	// now 时间源（测试可替换；默认 time.Now）。
 	now func() time.Time
 }
 
-// 编译期断言：本实现满足对外契约与片段端口。
 var (
 	_ commentcontract.CommentService = (*Service)(nil)
 	_ commentcontract.FragmentPort   = (*Service)(nil)
 )
 
-// NewService 构造（参数直传，不用 Deps 结构体；端口经 setter 注入）。
-//
-// entityTypes 为**空的**时候本模块整体不可用（任何提交与列表都会被拒），
-// 这是刻意的 fail-closed：没人注册实体类型说明装配漏了，而「静默接受任意类型」
-// 会让白名单形同虚设（同 AGENTS.md 的「没有 tag 的字段不在白名单里」）。
 func NewService(db *commentmodel.Model, entityTypes []commentcontract.EntityType) *Service {
 	s := &Service{
 		model:           db,
@@ -76,32 +50,19 @@ func NewService(db *commentmodel.Model, entityTypes []commentcontract.EntityType
 	return s
 }
 
-// SetEntityPolicy 注入差异化规则端口（装配期调用；可缺，未注入即放行）。
-//
-// 形态与 cart.SetMembershipReader / runtimefragment.Deps.SitePageResolver 一致：
-// setter + 调用方判空。装配层负责在未注入时留一条 Warn（见 wiring.go 的清单条目）。
 func (s *Service) SetEntityPolicy(p commentcontract.EntityPolicy) { s.policy = p }
 
-// SetTimeSource 替换时间源（测试用；不传即 time.Now）。
-//
-// 只影响「新行的 create_time / update_time」这类由 service 决定的值 ——
-// 排序与分页仍以数据库里的列为准。
 func (s *Service) SetTimeSource(now func() time.Time) {
 	if now != nil {
 		s.now = now
 	}
 }
 
-// IsRegisteredEntityType 实体类型是否已注册（fail-closed：未注册一律拒）。
 func (s *Service) IsRegisteredEntityType(entityType string) bool {
 	_, ok := s.byType[strings.TrimSpace(entityType)]
 	return ok
 }
 
-// EntityTypeLabels 已注册实体类型的展示名（顺序 = 注册顺序）。
-//
-// tr 由调用点按请求语言注入：本包不依赖 HTTP 展示层，
-// 取词函数一律从 inbound 传进来（同 productcontract.EntityTypeLabel 的约定）。
 func (s *Service) EntityTypeLabels(tr func(key, fallback string) string) []commentdto.EntityType {
 	out := make([]commentdto.EntityType, 0, len(s.entityTypes))
 	for _, et := range s.entityTypes {
@@ -114,12 +75,6 @@ func (s *Service) EntityTypeLabels(tr func(key, fallback string) string) []comme
 	return out
 }
 
-// —— 内部：校验 ——
-
-// validateProject 校验工程 id（合法 uuid；缺失 / 形状非法都归到 ErrProjectRequired）。
-//
-// 单独一个函数的原因：后台审核队列只需要工程（它按状态 / 类型 / 关键词筛，不需要实体 id），
-// 而公开列表需要完整三元组 —— 两块共用的那一半应当只有一份实现。
 func (s *Service) validateProject(projectID string) error {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" || len([]rune(projectID)) > 64 {
@@ -131,14 +86,6 @@ func (s *Service) validateProject(projectID string) error {
 	return nil
 }
 
-// validateTarget 校验 (工程, 实体类型, 实体 id) 三元组。
-//
-// 与「不信任客户端」相关的三条都在这里：
-//   - 工程必须是合法 uuid（策略谓词里有 ::uuid 强转，非法值会让 PG 报
-//     "invalid input syntax for type uuid"，错误归属变得像数据库故障）；
-//   - 实体类型必须在**注册表**内（白名单，fail-closed）；
-//   - 实体 id 必须是受限字符集（长度 + 字符白名单），而不是任意串 ——
-//     它会被写进列、将来可能出现在链接里，形状校验是唯一能在入口挡住注入类输入的地方。
 func (s *Service) validateTarget(projectID, entityType, entityID string) error {
 	if err := s.validateProject(projectID); err != nil {
 		return err
@@ -156,11 +103,6 @@ func (s *Service) validateTarget(projectID, entityType, entityID string) error {
 	return nil
 }
 
-// isSafeEntityID 实体 id 的形状校验：非空、长度受限、字符集受限。
-//
-// 允许的字符集是 [A-Za-z0-9_-]：uuid、雪花 id、slug 都在其中；
-// 刻意**不允许空格与路径分隔符** —— 这个值将来可能进链接与属性，宽字符集是
-// 注入类缺陷的温床（同 internal/module/*/handler 的既有判据）。
 func isSafeEntityID(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" || len(id) > commentenums.MaxEntityIDLen {
@@ -176,11 +118,6 @@ func isSafeEntityID(id string) bool {
 	return true
 }
 
-// normalizeBody 清洗并校验正文（客户端传来的任何东西都不信任）。
-//
-// 清洗只做一件事：去掉控制字符（保留 \n / \r / \t）。评论是纯文本，展示层
-// 由 Jet 默认转义 —— 所以这里**不做 HTML 转义**（转义放进库会让「&amp;」这种
-// 字面量被存下来，之后无论怎么渲染都是错的）。
 func normalizeBody(body string) (string, error) {
 	cleaned := strings.Map(func(r rune) rune {
 		switch r {
@@ -202,7 +139,6 @@ func normalizeBody(body string) (string, error) {
 	return cleaned, nil
 }
 
-// normalizePaging 归一页码与每页条数（不信任请求方）。
 func normalizePaging(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
@@ -216,9 +152,4 @@ func normalizePaging(page, pageSize int) (int, int) {
 	return page, pageSize
 }
 
-// errParam 构造一条**可展示**的业务错误（值即 enums 的 key）。
-//
-// 兜底绑在声明处（enums.Err）：出口经 pkg/facing.FactOf 同时拿到 key 与中文原文，
-// 不再查任何白名单。加明细用 fmt.Errorf("%w：%s", errParam(key), 明细) —— 判据按冒号
-// 切出明细段；直接拼成一条新串会让它退化成「系统内部错误」（CQ-010 的教训）。
 func errParam(key string) error { return commentenums.Err(key) }

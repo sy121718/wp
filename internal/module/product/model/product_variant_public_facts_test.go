@@ -1,13 +1,5 @@
 package productmodel_test
 
-// product_variant_public_facts_test.go — 访客侧变体投影的**列白名单**判据（PRD-010）。
-//
-// 公开变体接口只回答四件事（哪个变体、属于哪个商品、什么价、是否启用），却曾经读整行：
-// 成本价、仓库引用、选项 JSON、时间列全都搬进访客请求的进程内存。响应里不打印不等于
-// 安全 —— 任何一次误加字段、或某处把整行塞进日志，成本价就出去了。
-//
-// 判据是**生成的 SQL 的列清单**（不是命中行数）：成本列根本不该出现在 SELECT 里。
-
 import (
 	"context"
 	"strings"
@@ -37,7 +29,6 @@ func TestVariantPublicFactsSelectsNoCostColumn(t *testing.T) {
 		t.Fatalf("夹具备料失败：%v", err)
 	}
 
-	// 抓的是**这一条** select：作用域包装会先发 set_config，只留最后一条会抓错。
 	var captured string
 	if err := db.Callback().Query().After("gorm:query").Register("variant:public-capture",
 		func(tx *gorm.DB) {
@@ -70,15 +61,12 @@ func TestVariantPublicFactsSelectsNoCostColumn(t *testing.T) {
 		t.Fatalf("成本价不该被读出来：%+v", rows[0])
 	}
 
-	// 空清单不查库（调用方在「没有任何 id」时不该付一次往返），返回 nil 而不是空切片。
 	rows, err = productmodel.NewModel(db).ListVariantPublicFacts(context.Background(), nil, projectID)
 	if err != nil || rows != nil {
 		t.Fatalf("空清单应直接返回 nil：%v / %+v", err, rows)
 	}
 }
 
-// TestVariantDisplayFactsSelectsBuildColumns 构建期投影必须在「够用」与「不搬成本」之间：
-// 规格组合与划线价要读（optionsJSON / variantsJSON / 价格汇总都用），成本价与仓库引用不要。
 func TestVariantDisplayFactsSelectsBuildColumns(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()

@@ -1,6 +1,5 @@
 package productdto
 
-// PublicCatalogReq 只接受数据筛选、排序和分页；展示配置保留在静态组件。
 type PublicCatalogReq struct {
 	ProjectID string `form:"projectId" binding:"required,uuid"`
 	Query     string `form:"q" binding:"max=64"`
@@ -11,7 +10,6 @@ type PublicCatalogReq struct {
 	PageSize  int    `form:"pageSize" binding:"min=0,max=60"`
 }
 
-// PublicCatalogItemResp 是已上线商品的公开事实；金额为整数分。
 type PublicCatalogItemResp struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`

@@ -1,10 +1,5 @@
 package unit
 
-// theme_merge_test.go — 三层继承的中间层语义（主题 → 页面覆盖 → 组件）。
-//
-// 关键约定：每一层的「空」都表示继承上一层。页面只改主色时其余令牌必须继续跟随主题；
-// 主题日后改了字体，页面没覆盖过的字体项要跟着变、覆盖过的项保持不变。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
@@ -13,7 +8,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// TestMergeThemeSettingsKeepsUncoveredKeys 只覆盖主色，其余令牌继续跟随主题。
 func TestMergeThemeSettingsKeepsUncoveredKeys(t *testing.T) {
 	base := &builder.ThemeSettings{}
 	base.Colors.Primary = "#111111"
@@ -35,8 +29,6 @@ func TestMergeThemeSettingsKeepsUncoveredKeys(t *testing.T) {
 	}
 }
 
-// TestMergeThemeRawJSONTreatsEmptyAsUnset 空串/null/空对象都算「未覆盖」。
-// 面板把「留空」提交成 ""，不能拿它把主题的值盖掉，否则一存页面主题就全空。
 func TestMergeThemeRawJSONTreatsEmptyAsUnset(t *testing.T) {
 	theme := json.RawMessage(`{"colors":{"primary":"#111111","border":"#dddddd"}}`)
 	override := json.RawMessage(`{"colors":{"primary":"","border":null}}`)
@@ -50,8 +42,6 @@ func TestMergeThemeRawJSONTreatsEmptyAsUnset(t *testing.T) {
 	}
 }
 
-// TestMergeThemeRawJSONPreservesUnknownKeys 保真：结构体不认识的键不能在合并中丢失。
-// （快照是展示层数据，历史/未来版本的键都要原样带过去。）
 func TestMergeThemeRawJSONPreservesUnknownKeys(t *testing.T) {
 	theme := json.RawMessage(`{"colors":{"primary":"#111111"},"legacyToken":"keep-me"}`)
 	override := json.RawMessage(`{"colors":{"accent":"#00ff00"}}`)
@@ -64,12 +54,11 @@ func TestMergeThemeRawJSONPreservesUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestMergeThemeRawJSONEmptyBothSides 两边都空 → 返回空（调用方写 `{}` 快照）。
 func TestMergeThemeRawJSONEmptyBothSides(t *testing.T) {
 	if got := builder.MergeThemeRawJSON(nil, nil); len(got) != 0 {
 		t.Errorf("两边都空应返回空，got %s", string(got))
 	}
-	// 只有主题、没有覆盖：原样返回主题。
+
 	theme := json.RawMessage(`{"colors":{"primary":"#111111"}}`)
 	if got := builder.MergeThemeRawJSON(theme, nil); string(got) != string(theme) {
 		t.Errorf("无覆盖时应原样返回主题，got %s", string(got))

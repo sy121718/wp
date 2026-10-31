@@ -1,14 +1,5 @@
 package presentationmodel
 
-// presentation_menu_stale_test.go — 菜单失效标记与待重建列表的纯逻辑判据。
-//
-// 三件事必须钉死，且都只能在这里钉：
-//  1. 菜单 kind 白名单与 pipeline.DepKindMenu / 导航 / build 三方逐字一致 —— 任何一方
-//     改名，本文件先红，而不是在生产上表现为「标了但命中 0 行」；
-//  2. 菜单失效**推进** input_version（菜单译文烘进 HTML，是实体的编译输入），与其它
-//     标记入口共用 staleMarkUpdates —— 这里断言的是「菜单入口确实用了那个助手」；
-//  3. 入参校验在任何库访问之前完成：没有 projectID / 未知 kind 时不发 SQL。
-
 import (
 	"context"
 	"strings"
@@ -20,7 +11,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// TestIsMenuStaleKindMatchesNavigationKinds 四个位置全认，其余一律拒绝。
 func TestIsMenuStaleKindMatchesNavigationKinds(t *testing.T) {
 	for _, kind := range []string{
 		MenuStaleKindHeader, MenuStaleKindHeaderMobile, MenuStaleKindFooter, MenuStaleKindFooterMobile,
@@ -36,11 +26,6 @@ func TestIsMenuStaleKindMatchesNavigationKinds(t *testing.T) {
 	}
 }
 
-// TestDepKindMenuMatchesPipeline 依赖种类字面量与 pipeline.DepKindMenu 逐字一致。
-//
-// model 不 import pipeline.SQL 层，但常量必须是同一个值：依赖键由 pipeline.MenuKey 拼出，
-// 标记侧用的 kind 若与之不同，UPDATE 的 IN 子查询恒为空 — 表现为「改了菜单，详情页永远不变」
-// 且没有任何错误。
 func TestDepKindMenuMatchesPipeline(t *testing.T) {
 	if depKindMenu != pipeline.DepKindMenu {
 		t.Fatalf("depKindMenu = %q, pipeline.DepKindMenu = %q：两侧必须是同一个值", depKindMenu, pipeline.DepKindMenu)
@@ -54,10 +39,6 @@ func TestDepKindMenuMatchesPipeline(t *testing.T) {
 	}
 }
 
-// TestStaleMarkUpdatesAdvancesInputVersion 全部标记入口（含菜单）共用：stale=true 且同语句 +1。
-//
-// 表达式形态是判据：读改写会被并发入口覆盖（丢版本），而「只标 stale 不推进」会让
-// 过期批次的激活谓词放行旧字节。
 func TestStaleMarkUpdatesAdvancesInputVersion(t *testing.T) {
 	at := time.Date(2026, 10, 30, 5, 0, 0, 0, time.UTC)
 	updates := staleMarkUpdates(at)
@@ -76,9 +57,6 @@ func TestStaleMarkUpdatesAdvancesInputVersion(t *testing.T) {
 	}
 }
 
-// TestMarkInstanceMenuStaleTxRejectsBeforeDB 入参校验在任何库访问之前完成。
-//
-// tx 传 nil：若实现先碰库会 panic，本用例因此能证明「拒绝发生在发 SQL 之前」。
 func TestMarkInstanceMenuStaleTxRejectsBeforeDB(t *testing.T) {
 	m := &Model{}
 	at := time.Now().UTC()
@@ -91,10 +69,6 @@ func TestMarkInstanceMenuStaleTxRejectsBeforeDB(t *testing.T) {
 	}
 }
 
-// TestListStaleInstanceIDsRejectsEmptyProject 无工程作用域直接拒绝。
-//
-// presentation_instances 带 FORCE 策略：无作用域的读是空集，而「列表空」会被
-// menu_stale 消费侧解释成「没有待重建的实例」—— 用错误的前提宣称收敛。
 func TestListStaleInstanceIDsRejectsEmptyProject(t *testing.T) {
 	m := &Model{}
 	if ids, err := m.ListStaleInstanceIDs(context.Background(), " "); err == nil {

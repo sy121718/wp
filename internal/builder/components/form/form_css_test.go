@@ -7,11 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestFormCSSParsesAndKeepsRules 迁移到 form.css 后，逐条核对关键规则仍在。
-//
-// 背景：样式从 compileCSS 的 12 处 b.Add 迁成 CSS 文件（form.css），中间多了一层解析。
-// 解析器写错、选择器替换错、占位指令没展开 —— 任何一处出错都会让产物「悄悄少了样式」，
-// 而这类缺陷在页面上往往只表现为「有点不对劲」，很难追。所以这里把每条规则都钉住。
 func TestFormCSSParsesAndKeepsRules(t *testing.T) {
 	var b core.CSSBuckets
 	const scope = ".sky-node-test"
@@ -20,7 +15,6 @@ func TestFormCSSParsesAndKeepsRules(t *testing.T) {
 	}
 	out := b.String()
 
-	// 每条选择器 + 每条只属于它的声明，逐一对齐迁移前 compileCSS 的行为。
 	cases := []struct {
 		desc string
 		want []string
@@ -46,17 +40,15 @@ func TestFormCSSParsesAndKeepsRules(t *testing.T) {
 		}
 	}
 
-	// 占位指令必须被展开成真实声明 —— 原样漏进产物就是无效 CSS。
 	if strings.Contains(out, "@focus-") {
 		t.Errorf("占位指令没有展开，产物里残留: %s", out)
 	}
-	// 作用域必须生效：不能出现裸的顶层 & 或未替换的选择器。
+
 	if strings.Contains(out, "&") {
 		t.Errorf("产物里残留未替换的 & : %s", out)
 	}
 }
 
-// TestFormCSSRejectsBadSource 解析器遇到不认识的写法必须报错，而不是静默跳过。
 func TestFormCSSRejectsBadSource(t *testing.T) {
 	bad := []struct {
 		name string

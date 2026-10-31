@@ -1,7 +1,5 @@
 package webhookservice
 
-// sign_test.go — HMAC-SHA256 签名正确性测试。
-
 import (
 	"crypto/hmac"
 	"crypto/sha256"
@@ -10,7 +8,6 @@ import (
 	"testing"
 )
 
-// TestSignPayload_MatchesIndependentComputation 独立重算 HMAC 验证签名值正确。
 func TestSignPayload_MatchesIndependentComputation(t *testing.T) {
 	secret := "test-secret"
 	ts := int64(1700000000123456789)
@@ -26,7 +23,6 @@ func TestSignPayload_MatchesIndependentComputation(t *testing.T) {
 	}
 }
 
-// TestVerifyPayload 正例 / 反例 / 篡改敏感度。
 func TestVerifyPayload(t *testing.T) {
 	secret := "k"
 	ts := int64(42)

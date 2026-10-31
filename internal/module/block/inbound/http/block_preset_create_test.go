@@ -29,7 +29,6 @@ func (s *presetCreateStub) Create(_ context.Context, req *blockdto.CreateReq) (*
 	return &blockdto.BlockResp{ID: "created"}, s.err
 }
 
-// 覆盖真实Create handler与唯一binding入口；数据库语义另由真实PG feature验证。
 func createPresetResponse(t *testing.T, mode string, fields map[string]any, svc *presetCreateStub) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer

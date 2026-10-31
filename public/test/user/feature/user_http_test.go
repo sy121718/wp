@@ -1,12 +1,5 @@
 package feature
 
-// user_http_test.go -- 访客账号的 HTTP 链路（issue #36）。
-//
-// 验证真实访客JSON、cookie和CSRF链路；账号界面由构建器静态编译，旧固定页面已清退。
-//
-// 环境用真实的 PostgreSQL + Redis（不可用时 Skip）：会话在 Redis 里，
-// 而「登录后能拿到身份」这件事正是本模块的核心，用替身测它等于没测。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -30,7 +23,6 @@ type userHTTPEnv struct {
 	mail   *fakeMail
 }
 
-// newUserHTTPEnv 装配真实访客JSON路由。
 func newUserHTTPEnv(t *testing.T) *userHTTPEnv {
 	t.Helper()
 
@@ -76,7 +68,6 @@ func (e *userHTTPEnv) postForm(
 	return rec
 }
 
-// head 截断响应体，避免断言失败时把整页 HTML 打出来。
 func head(s string) string {
 	if len(s) > 900 {
 		return s[:900] + "\n...(截断)"
@@ -84,15 +75,10 @@ func head(s string) string {
 	return s
 }
 
-// strEq 比较可空文本列（用户资料表的文本列几乎都是 *string）。
-//
-// 直接写 p.FirstName != "三" 编译不过；写成 p.FirstName != nil && *p.FirstName == "三"
-// 会把「字段为 NULL」和「字段值不对」混进同一条失败信息，这个助手让断言只表达一件事。
 func strEq(p *string, want string) bool {
 	return p != nil && *p == want
 }
 
-// seedActiveUser 直接造一个已激活、密码已知的账号（跳过注册与邮箱验证）。
 func seedActiveUser(t *testing.T, db *gorm.DB, username, email, password string) *usermodel.UserEntity {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -113,7 +99,6 @@ func seedActiveUser(t *testing.T, db *gorm.DB, username, email, password string)
 	return u
 }
 
-// TestUserRegisterRejectsMissingCSRF 缺 CSRF token 的注册请求必须被拒，且不落库。
 func TestUserRegisterRejectsMissingCSRF(t *testing.T) {
 	env := newUserHTTPEnv(t)
 
@@ -135,7 +120,6 @@ func TestUserRegisterRejectsMissingCSRF(t *testing.T) {
 	}
 }
 
-// TestUserPendingAccountCannotLogin 未完成邮箱验证的账号不能登录。
 func TestUserPendingAccountCannotLogin(t *testing.T) {
 	env := newUserHTTPEnv(t)
 
@@ -169,7 +153,6 @@ func TestUserPendingAccountCannotLogin(t *testing.T) {
 	}
 }
 
-// loginAs 走唯一访客JSON登录，返回独立cookie。
 func loginAs(t *testing.T, env *userHTTPEnv, account, password string) []*http.Cookie {
 	t.Helper()
 	state := env.get(t, "/api/site/user/session", nil)
@@ -183,7 +166,6 @@ func loginAs(t *testing.T, env *userHTTPEnv, account, password string) []*http.C
 	return siteCookies(cookies, rec)
 }
 
-// csrfFromAccount 由独立访客session JSON获取CSRF，不读取后台或静态页面。
 func csrfFromAccount(t *testing.T, env *userHTTPEnv, cookies []*http.Cookie) (string, string) {
 	t.Helper()
 	rec := env.get(t, "/api/site/user/session", cookies)
@@ -191,7 +173,6 @@ func csrfFromAccount(t *testing.T, env *userHTTPEnv, cookies []*http.Cookie) (st
 	return rec.Header().Get("X-CSRF-Token"), rec.Body.String()
 }
 
-// TestUserUpdateProfileThroughHTTP 账号中心保存资料：改昵称写回 users，其余写 user_profiles。
 func TestUserUpdateProfileThroughHTTP(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "profileuser", "profile@example.com", "password123")
@@ -233,7 +214,6 @@ func TestUserUpdateProfileThroughHTTP(t *testing.T) {
 	}
 }
 
-// TestUserUpdatePreferenceThroughHTTP 偏好保存（含布尔字段与每页条数）。
 func TestUserUpdatePreferenceThroughHTTP(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "prefuser", "pref@example.com", "password123")
@@ -268,13 +248,12 @@ func TestUserUpdatePreferenceThroughHTTP(t *testing.T) {
 	if !pref.EmailNotify {
 		t.Fatalf("邮件通知没有保存")
 	}
-	// 未勾选的复选框不会随表单提交，必须被写成 false 而不是保持原值。
+
 	if pref.SmsNotify {
 		t.Fatalf("未勾选的短信通知应为 false，实际 true")
 	}
 }
 
-// TestUserChangePasswordRevokesSessions 改密码后所有会话失效（含当前设备）。
 func TestUserChangePasswordRevokesSessions(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "pwduser", "pwd@example.com", "password123")
@@ -290,13 +269,11 @@ func TestUserChangePasswordRevokesSessions(t *testing.T) {
 		t.Fatalf("改密码期望 200，实际 %d: %s", rec.Code, head(rec.Body.String()))
 	}
 
-	// 当前 cookie 立刻失效 —— 这是「改完密码所有设备都要重新登录」的落地口径。
 	after := env.get(t, "/api/site/user/account", cookies)
 	if after.Code != http.StatusUnauthorized {
 		t.Fatalf("改密码后旧会话应失效（期望 401），实际 %d", after.Code)
 	}
 
-	// 新密码可以登录，旧密码不行。
 	fresh := loginAs(t, env, "pwduser", "newpassword456")
 	if env.get(t, "/api/site/user/account", fresh).Code != http.StatusOK {
 		t.Fatalf("用新密码登录后打不开账号中心")
@@ -314,7 +291,6 @@ func TestUserChangePasswordRevokesSessions(t *testing.T) {
 	}
 }
 
-// TestUserChangePasswordRejectsWrongOldPassword 旧密码不对时必须拒绝，且不改动密码。
 func TestUserChangePasswordRejectsWrongOldPassword(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "pwdguard", "pwdguard@example.com", "password123")
@@ -330,13 +306,11 @@ func TestUserChangePasswordRejectsWrongOldPassword(t *testing.T) {
 		t.Fatalf("旧密码错误却改密成功了")
 	}
 
-	// 原密码必须仍然可用（改密被拒时不能把密码写坏）。
 	if env.get(t, "/api/site/user/account", loginAs(t, env, "pwdguard", "password123")).Code != http.StatusOK {
 		t.Fatalf("改密被拒后原密码不能登录了")
 	}
 }
 
-// TestUserRevokeOtherSessionsThroughHTTP 踢出其它设备，保留当前设备。
 func TestUserRevokeOtherSessionsThroughHTTP(t *testing.T) {
 	env := newUserHTTPEnv(t)
 	seedActiveUser(t, env.db, "multidev", "multidev@example.com", "password123")
@@ -345,7 +319,6 @@ func TestUserRevokeOtherSessionsThroughHTTP(t *testing.T) {
 	baseline := siteData(t, env.get(t, "/api/site/user/sessions", first), http.StatusOK)["data"].([]any)
 	second := loginAs(t, env, "multidev", "password123")
 
-	// 两台设备都应该能用。
 	if env.get(t, "/api/site/user/account", first).Code != http.StatusOK {
 		t.Fatalf("第一台设备打不开账号中心")
 	}

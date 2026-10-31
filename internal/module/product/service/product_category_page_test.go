@@ -7,9 +7,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// 分类列表按树根分页后的建树逻辑：定序、嵌套、层级都由这里定，
-// 它错了不会报错 —— 只会让某一层分类悄悄消失或排到别处。
-
 func pageRow(id, parent, name string, sort int, createdAt time.Time) *productmodel.CategoryPageRow {
 	row := &productmodel.CategoryPageRow{}
 	row.ID, row.Name, row.Sort, row.CreatedAt = id, name, sort, createdAt

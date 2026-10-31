@@ -13,7 +13,6 @@ import (
 
 const testMediaBaseURL = "https://media.example.test/storage"
 
-// initFixtureMedia 显式注入生产媒体单源，历史 /storage 输入必须编译成完整地址。
 func initFixtureMedia() error {
 	cfg := viper.New()
 	cfg.Set("upload.default_provider", "local")
@@ -34,7 +33,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// TestMediaFixtureTrustedBoundary 覆盖完整产物、无基址拒绝和未知相对路径拒绝。
 func TestMediaFixtureTrustedBoundary(t *testing.T) {
 	local := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"trusted-image","type":"core.image","props":{"src":"/storage/legacy.jpg"}}]}`)
 	published, err := compile(t, local, builder.WithCompileMode(builder.CompileModePublish))

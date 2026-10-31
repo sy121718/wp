@@ -1,62 +1,5 @@
 package service
 
-// 这一组是「HTTP 之外的那一半」：读页面 / 主题 / 块 / 模板、把契约响应压成画布要的轻量形状、
-// 拼预览查询串、算静态资源版本、算画布标题。它们原来散在 inbound/http 的三个文件里，
-// 由 handler 直接编排（router.go 的 pageOf、workbench_handle.go 的 blockSummaries 等）。
-// 搬到这里的判据是：**换一个入口（CLI / 后台任务 / 将来的画布 v2）也要用同一份口径** ——
-// 尤其是 pageOf 的「先问归属再取详情」，它是一条越权防护，不该有两份实现。
-//
-// 本文件不认识 gin：ctx 由调用方传，取词由调用方给（Translate）。
-
-// 背景：workbench.js 的 renderTree 用 100+ 行 DOM 代码递归建树并给每个节点绑 6 类事件。
-// 本文件把「树 HTML」搬到服务端产出，客户端只保留一次事件委托
-//（选中/拖拽/右键/重命名/caret 折叠），DOM 由服务端给出。
-//
-// 端点：POST /workbench/outline，参数 document（草稿 JSON）+ selectedId + filter。
-
-// 原实现在 inbound/http 的 workbench_err.go 里：判据是**文档事实**与**模块哨兵 key**，
-// 与 HTTP 无关 —— 只有「写什么状态码、取什么文案」是 HTTP 关切，那部分留在 handler。
-//
-// 三条口径各自独立，不要互相借判据：
-//   - 编译失败（页面 / 块 / 结构模板）→ 错误链事实（缺少内容解析器）与文档校验；
-//   - 模板预览失败（有样例实体）→ 模块哨兵字符串；
-//   - 实例覆盖文档保存失败 → 渲染链路的错误包装。
-
-// 合并自原 inbound/http 的 inspector_handle.go / inspector_field_handle.go /
-// 这些文件里与 HTTP 无关的部分（分组、字段构造、下拉取数、重复项骨架）整体下沉，
-// handler 只留「解析请求 → 调本方法 → 渲染片段」。
-//
-// 取词：面板 HTML 由 Go 拼串产出，模板只做插槽，所以分组标题、字段标签、占位符、
-// 按钮提示都必须在这里取词 —— 全部经 tr（Translate）。
-
-// 面板 HTML 在这里生成，不再由浏览器拼 DOM：结构只有一处定义。客户端只做事件委托
-// （改条目名、上移、下移、删除、添加）；需要读写文档 AST 的那一半（对齐语义 ——
-// 增删条目时同步画布上对应的面板节点、分配节点 ID）仍留在客户端，服务端拿不到那份状态。
-// 见 workbench/methods/controls/repeater.js 的 bindRepeaterPanel。
-//
-// 数据契约（客户端靠这些属性工作，改名要同步改绑定函数）：
-//
-//	data-wb-rep         根元素，值为组件类型
-//	data-wb-rep-field   主字段键
-//	data-wb-rep-input   主字段输入框，值为条目序号
-//	data-wb-rep-extra   额外布尔字段键
-//	data-wb-rep-index   条目序号
-//	data-wb-rep-op      add / remove / move（move 另带 data-wb-rep-to）
-//
-// 与客户端渲染版的差别只在「结构由谁生成」：类名、按钮文案、提示语逐字一致，
-// 否则同一次改动的产物与老路径会长得不一样，回归时看不出是哪种来源。
-//
-// **适用范围（别硬套）**：这里只覆盖「数组 ↔ 子节点一一对应」的对齐型面板 ——
-// 折叠项数 = 面板数、页签数 = 面板数，增删条目必须同步增删画布节点（对齐语义在
-// palette.js 的 alignMutation）。另两类面板不是这套模式：
-//
-//	普通数组（faq / social）  条目与子节点无关，增删只改 props；faq 的每行还挂一个
-//	                        富文本答案字段（客户端增强控件），服务端只能给占位。
-//	嵌套数组（nav）          条目带子项递归、两个字段、目标切换，行结构不是一维的。
-//
-// 支持范围由组件的 AlignedRepeaterProvider 声明，注册时核对真实 Props 类型；
-// Go 面板与 generated-contracts.js 共用声明，不在工作台维护组件配置表。
-
 import (
 	"context"
 	"errors"
@@ -84,11 +27,6 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 )
 
-// PageByID 按 id 读取页面（画布 / 预览共用同一取数口径）。
-//
-// Detail 把 projectID 当**必填的越权防护 scope**（少它只会得到「参数缺失」，
-// 看起来像「页面不存在」）。画布路由手上只有 pageId，所以先用只读的
-// ProjectOfPage 问「这个页面属于谁」，再按 scope 取详情。
 func (s *Service) PageByID(ctx context.Context, pageID string) (*pagecontract.PageResp, error) {
 	if s == nil || s.pages == nil {
 		return nil, errors.New("页面服务未装配")
@@ -100,7 +38,6 @@ func (s *Service) PageByID(ctx context.Context, pageID string) (*pagecontract.Pa
 	return s.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: pageID})
 }
 
-// ThemeIDOf 页面挂接的主题 ID（未挂接返回空串）。
 func ThemeIDOf(page *pagecontract.PageResp) string {
 	if page.ThemeID == "" {
 		return ""
@@ -108,7 +45,6 @@ func ThemeIDOf(page *pagecontract.PageResp) string {
 	return page.ThemeID
 }
 
-// ThemeSettingsOf 页面挂接主题的 settings（colors/fontFamily 等），未挂接或查询失败返回 nil。
 func (s *Service) ThemeSettingsOf(ctx context.Context, page *pagecontract.PageResp) json.RawMessage {
 	if page.ThemeID == "" {
 		return nil
@@ -120,11 +56,6 @@ func (s *Service) ThemeSettingsOf(ctx context.Context, page *pagecontract.PageRe
 	return theme.Settings
 }
 
-// BlockSummaries 工程块列表的轻量投影（含工程与预设来源事实，不含文档大字段）。
-// category 供 workbench 全局块按分类分组；reuseMode 供「引用/复制」双动作分流（docs/02-D §5.3）。
-//
-// 返回 []map[string]any 而不是 gin.H：这是契约无关的形状投影，service 不认识 gin。
-// 值进 gin.H 后再 json.Marshal，字节与原实现一致。
 func (s *Service) BlockSummaries(ctx context.Context, projectID string) []map[string]any {
 	blocks, err := s.blocks.List(ctx, &blockcontract.ListReq{ProjectID: projectID})
 	if err != nil {
@@ -137,10 +68,6 @@ func (s *Service) BlockSummaries(ctx context.Context, projectID string) []map[st
 	return out
 }
 
-// TemplateByID 按模板 id 取预览目标：优先用画布自己带过来的工程作用域
-// （content_templates 带 FORCE 策略，作用域缺省时只能靠「工程唯一」解析）。
-//
-// 调用方负责先确认模板端口已装配（原 handler 的 previewTemplateTarget 就做这件事）。
 func (s *Service) TemplateByID(ctx context.Context, templateID, projectID string) (*contenttemplatedto.TemplateResp, error) {
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		return s.contentTemplates.GetScoped(ctx, pid, templateID)
@@ -148,12 +75,6 @@ func (s *Service) TemplateByID(ctx context.Context, templateID, projectID string
 	return s.contentTemplates.Get(ctx, &contenttemplatedto.GetReq{ID: templateID})
 }
 
-// PluginAssembly 启用插件装配素材（无插件模块契约或无启用插件时返回 nil）。
-//
-// 与原实现的差别：**去掉了单请求内缓存**（原 handler 把结果挂在 gin.Context 的
-// "pluginAssembly" 键上）。全仓只有画布入口一处调用，一次请求最多取一次，
-// 缓存从来没有命中过；而它把「一次取数」的语义藏进了 HTTP 上下文里。
-// 真正需要复用的调用方自己存返回值即可。
 func (s *Service) PluginAssembly(ctx context.Context) *plugincontract.Assembly {
 	if s.plugins == nil {
 		return nil
@@ -168,10 +89,6 @@ func (s *Service) PluginAssembly(ctx context.Context) *plugincontract.Assembly {
 	return nil
 }
 
-// TemplatePreviewQuery 模板画布 iframe 与「新标签预览」共用的查询串。
-//
-// entityId 为空（结构模板的无实体模式）时不带该参数：空串参数与服务端「缺参数」在
-// 日志与排查里长得一样，少一个无意义的空参数省一次误判。
 func TemplatePreviewQuery(templateID, entityType, entityID, projectID string) string {
 	q := url.Values{}
 	q.Set("template", templateID)
@@ -186,25 +103,16 @@ func TemplatePreviewQuery(templateID, entityType, entityID, projectID string) st
 	return q.Encode()
 }
 
-// BlockByID 按 id 取全局块详情（块画布与块预览共用同一取数口径）。
-//
-// 与原 handler 内联调用等价：Detail 的越权防护 scope 由块的 ProjectID 承担，
-// 这里没有额外的 `pageOf` 式两跳（block 契约的 Detail 只收 id）。
 func (s *Service) BlockByID(ctx context.Context, blockID string) (*blockdto.BlockResp, error) {
 	return s.blocks.Detail(ctx, &blockdto.DetailReq{ID: blockID})
 }
 
-// StaticJSVersion 工作台脚本缓存版本：取拆分后模块目录（static/js/workbench/**）
-// 下所有 .js 的最新 mtime。任一模块改动都会让入口 URL 的 ?v= 变化，配合
-// StaticCacheMiddleware 的协商缓存，浏览器不会再执行旧模块。
-//
-// 读的是工作目录下的相对路径 —— 版本值只影响浏览器缓存键，与运行环境无关。
 func StaticJSVersion() string {
 	root := filepath.Join("internal", "templates", "static", "js", "workbench")
 	var latest int64
 	err := filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
 		if walkErr != nil {
-			return nil // 目录缺失/权限问题不阻断渲染，版本退化为 0
+			return nil
 		}
 		if fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
 			return nil
@@ -220,11 +128,6 @@ func StaticJSVersion() string {
 	return strconv.FormatInt(latest, 10)
 }
 
-// WorkbenchTitle 画布标题：作者自己的 SEO 标题优先，否则「前缀 + 草稿路径」。
-//
-// 取词在 Go 侧完成（tr 参与签名）：这个值会作为 data.title 交给 adminui.Prepare，
-// 而 injectI18n 对 title 的处理是 `t(title, title)` —— 拼接过的句子不是 key，
-// 只会原样返回，所以前缀必须先在这里翻译好（词条 workbench.title.*）。
 func WorkbenchTitle(page *pagecontract.PageResp, tr Translate) string {
 	if page == nil || strings.TrimSpace(page.ID) == "" {
 		return tr(workbenchenums.TitleEditor)
@@ -243,7 +146,6 @@ func WorkbenchTitle(page *pagecontract.PageResp, tr Translate) string {
 	return tr(workbenchenums.TitleEditorPrefix) + page.DraftPath
 }
 
-// OutlineNode 结构树节点（文档 JSON 的子集）。
 type OutlineNode struct {
 	ID       string        `json:"id"`
 	Type     string        `json:"type"`
@@ -253,18 +155,12 @@ type OutlineNode struct {
 	Children []OutlineNode `json:"children"`
 }
 
-// RenderOutlineHTML 递归渲染节点树为 HTML（树结构简单，用拼串而非模板递归）。
-//
-// tr 参与签名只为一件事：按钮提示与徽标文案要按请求语言取词。这些句子进的是
-// HTML 属性与文本节点，不经过 Jet 取词层 —— 见 workbenchenums 里 workbench.outline.*
-// 那批 key 的说明。
 func RenderOutlineHTML(nodes []OutlineNode, selectedID, filter string, tr Translate) string {
 	var sb strings.Builder
 	writeOutlineNodes(tr, &sb, nodes, selectedID, filter)
 	return sb.String()
 }
 
-// writeOutlineNodes 深度优先输出 <ul><li><div class="wb-node">…</div><ul>…</ul></li>…</ul>。
 func writeOutlineNodes(tr Translate, sb *strings.Builder, nodes []OutlineNode, selectedID, filter string) {
 	sb.WriteString("<ul>")
 	for i := range nodes {
@@ -278,8 +174,7 @@ func writeOutlineNodes(tr Translate, sb *strings.Builder, nodes []OutlineNode, s
 			cls += " is-selected"
 		}
 		sb.WriteString("<li>")
-		// role=treeitem + tabindex=0：键盘可达（焦点环样式见 workbench-a11y.css，
-		// 方向键/Enter 行为由客户端 bindTreeHtmx 的事件委托实现）。
+
 		sb.WriteString(`<div class="` + cls + `" role="treeitem" tabindex="0" data-id="` + html.EscapeString(n.ID) +
 			`" data-type="` + html.EscapeString(n.Type) + `" draggable="true">`)
 		caret := ""
@@ -288,7 +183,7 @@ func writeOutlineNodes(tr Translate, sb *strings.Builder, nodes []OutlineNode, s
 		}
 		sb.WriteString(`<button class="wb-caret" title="` +
 			html.EscapeString(tr(workbenchenums.OutlineToggle)) + `">` + caret + `</button>`)
-		// data-named 标记用户是否自定义了名称：未命名时客户端用组件中文名覆盖显示。
+
 		sb.WriteString(`<span class="wb-node-name" data-named="` + boolFlag(n.Name != "") + `">` +
 			html.EscapeString(label) + `</span>`)
 		if n.Hidden {
@@ -318,7 +213,6 @@ func writeOutlineNodes(tr Translate, sb *strings.Builder, nodes []OutlineNode, s
 	sb.WriteString("</ul>")
 }
 
-// outlineLabel 节点显示名：用户命名 > 组件类型（去 core. 前缀，客户端会换成中文）> 节点 ID。
 func outlineLabel(n *OutlineNode) string {
 	if strings.TrimSpace(n.Name) != "" {
 		return n.Name
@@ -329,7 +223,6 @@ func outlineLabel(n *OutlineNode) string {
 	return n.ID
 }
 
-// outlineSubtreeHit 节点自身或任一后代命中过滤词。
 func outlineSubtreeHit(n *OutlineNode, filter string) bool {
 	if strings.Contains(strings.ToLower(outlineLabel(n)), filter) {
 		return true
@@ -342,7 +235,6 @@ func outlineSubtreeHit(n *OutlineNode, filter string) bool {
 	return false
 }
 
-// boolFlag 布尔转 "1"/""（模板/属性用）。
 func boolFlag(v bool) string {
 	if v {
 		return "1"
@@ -350,19 +242,16 @@ func boolFlag(v bool) string {
 	return ""
 }
 
-// PreviewDocKind 预览文档的来源（决定可归因文案的口径）。
 type PreviewDocKind int
 
 const (
-	// PreviewDocPage 手工页面草稿（page 编译管线）。
 	PreviewDocPage PreviewDocKind = iota
-	// PreviewDocBlock 全局块草稿（同上）。
+
 	PreviewDocBlock
-	// PreviewDocStructureTemplate 结构模板（页眉 / 页脚）的无样例实体模式。
+
 	PreviewDocStructureTemplate
 )
 
-// PreviewDocKindName 日志用名称（结构化日志里区分三种画布）。
 func PreviewDocKindName(kind PreviewDocKind) string {
 	switch kind {
 	case PreviewDocBlock:
@@ -374,30 +263,18 @@ func PreviewDocKindName(kind PreviewDocKind) string {
 	}
 }
 
-// PreviewOutcome 预览编译的出口分级（调用方据此选状态码与文案，本包不认识 HTTP 码）。
 type PreviewOutcome int
 
 const (
-	// PreviewOK 编译成功，返回的 HTML 可用。
 	PreviewOK PreviewOutcome = iota
-	// PreviewInvalidDocument 文档非法（调用方对作者给 400）。
+
 	PreviewInvalidDocument
-	// PreviewCompileRejected 编译失败（422；文案见 ClassifyPreviewRejection）。
+
 	PreviewCompileRejected
-	// PreviewInternal 装配 / 模板加载等内部失败（500；原文只进日志）。
+
 	PreviewInternal
 )
 
-// RenderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
-//
-// 编译复用 page 模块 CompilePreview（与正式构建同源装配管线，docs/06 §10）：
-// 全局块引用展开、插件组件集注入、主题/集合解析均与构建一致，画布所见即产物。
-// editorBridge（画布联动 JS）为调用方的后处理拼接，与编译无关，仅预览启用。
-// projectID 为文档所属站点工程（页面/块的记录字段），驱动导航等站点级资源解析；
-// currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
-//
-// 不在这里做 nil 保护：与原 handler 内联实现一致（未装配 pages 时由装配侧保证，
-// 该路径在页面 / 块 / 结构模板三个入口处都先被挡住）。
 func (s *Service) RenderPreview(ctx context.Context, document json.RawMessage, projectID, currentPath, lang string, withEditorBridge bool) ([]byte, PreviewOutcome, error) {
 	html, err := s.pages.CompilePreview(ctx, document, projectID, currentPath, lang, withEditorBridge)
 	if err != nil {
@@ -413,36 +290,21 @@ func (s *Service) RenderPreview(ctx context.Context, document json.RawMessage, p
 	return html, PreviewOK, nil
 }
 
-// ClassifyPreviewRejection 预览编译失败的分级判据（纯函数，不取词、不写响应）。
-//
-//	problem 非空 → ① 组件校验原文（调用方拼「归口文案：原文」透出给作者）；
-//	key 非空     → ② 可归因文案的 key（调用方取词；取不到就落 ③ 归口）；
-//	两者皆空     → ③ 归口文案。
-//
-// 分级顺序固定：① errors.As 命中 *pagecontract.PreviewProblem —— 组件校验问题
-// （「手风琴至少需要一个折叠项」这类），带原文透出：这是工作台画布的核心价值，
-// 作者据此直接在画布上修；校验在编译里最先发生，作者先修它再看别的。
-// ② 错误链或文档校验能说清的——走 workbench.err.* 可行动文案；
-// ③ 其余（装配缺失、组件模板加载失败）—— 归口文案，**原文只进结构化日志**。
 func ClassifyPreviewRejection(document json.RawMessage, kind PreviewDocKind, err error) (problem, key string) {
-	// ① 作者可操作的组件校验提示（产生处带类型标记，不靠嗅探文本）。
+
 	var pp *pagecontract.PreviewProblem
 	if errors.As(err, &pp) {
 		if msg := strings.TrimSpace(pp.Msg); msg != "" {
 			return msg, ""
 		}
 	}
-	// ② 按真实编译错误事实或文档校验结果归因。
+
 	if k, ok := PreviewCompileFacingKey(document, kind, err); ok {
 		return "", k
 	}
 	return "", ""
 }
 
-// PreviewCompileFacingKey 按真实编译错误事实与文档校验结果分类预览失败。
-// 集合组件也会声明字段引用，因此不能用「文档包含字段绑定」推断实体上下文缺失。
-// 只有组件实际返回 ErrContentResolverRequired 才给实体绑定的处置提示，
-// 其它内部错误保留安全归口，不把错误原文交给作者。
 func PreviewCompileFacingKey(document json.RawMessage, kind PreviewDocKind, compileErr error) (string, bool) {
 	if errors.Is(compileErr, builder.ErrPublishedActionUnavailable) {
 		return workbenchenums.ErrPreviewActionTargetUnavailable, true
@@ -463,12 +325,6 @@ func PreviewCompileFacingKey(document json.RawMessage, kind PreviewDocKind, comp
 	return "", false
 }
 
-// TemplatePreviewFacingKey 模板预览（有样例实体）失败的分类。
-//
-// 判据是**模块哨兵 key**：presentation / contenttemplate 的哨兵是字符串常量，
-// errors.New(<常量>) 在各调用点新建，errors.Is 拿不到同一个值 —— 与 workbench_page.go
-// 判 ErrDetachConfirmRequired 同一口径。未命中 = 归不了因（ErrBuildFailed 下的编译细节、
-// ErrRegistryMissing 这类装配缺陷），调用方给归口文案。
 func TemplatePreviewFacingKey(raw string) (string, bool) {
 	switch {
 	case strings.Contains(raw, contenttemplateenums.ErrFieldBindingInvalid):
@@ -482,11 +338,6 @@ func TemplatePreviewFacingKey(raw string) (string, bool) {
 	return "", false
 }
 
-// InstanceSaveFacingKey 实例覆盖文档保存失败的分类（workbench/instance/save 的 422）。
-//
-// 与模板预览同为「渲染链路失败」，但入口不同：这里的编译失败一律被
-// presentation 包成 ErrBuildFailed，字段绑定越界只会以它内部的文案出现 ——
-// 不再细分，统一给一条「没写入 + 怎么修」的文案，避免把内部细节当分类依据。
 func InstanceSaveFacingKey(raw string) (string, bool) {
 	switch {
 	case strings.Contains(raw, presentationenums.ErrBuildFailed):
@@ -498,7 +349,6 @@ func InstanceSaveFacingKey(raw string) (string, bool) {
 	return "", false
 }
 
-// InspectorSchemaItem 与 core.SchemaJSON 的输出对齐（后端单源，前端不再各自解析）。
 type InspectorSchemaItem struct {
 	Key     string `json:"key"`
 	Kind    string `json:"kind"`
@@ -517,33 +367,28 @@ type InspectorSchemaItem struct {
 	Hidden bool `json:"hidden"`
 }
 
-// InspectorOption 下拉/分段选项（模板渲染用）。
 type InspectorOption struct {
 	Value    string
 	Label    string
 	Selected bool
 }
 
-// InspectorSubInput 多输入控件（spacing/corners/rtext）的单个子输入。
 type InspectorSubInput struct {
-	// Path 相对 props 的完整路径（如 advanced.margin.desktop.top）。
 	Path        string
 	Label       string
 	Value       string
 	Placeholder string
 }
 
-// InspectorRangeRow 区间列表控件的一行：上限为空表示「以上」（799+）。
 type InspectorRangeRow struct {
 	Min string
 	Max string
 }
 
-// InspectorField 单个字段（模板渲染用）。
 type InspectorField struct {
 	Key   string
 	Label string
-	// UI 渲染形态：text/textarea/number/bool/select/color/spacing/corners/rtext/classes/cssdecls/media/mediaList/dimension
+
 	UI          string
 	Value       string
 	Bool        bool
@@ -553,24 +398,18 @@ type InspectorField struct {
 	Step        int
 	Placeholder string
 	Inputs      []InspectorSubInput
-	// Rows 区间列表控件的行（rangelist）：把 `0-199,799+` 这类值拆成可编辑的行。
+
 	Rows []InspectorRangeRow
-	// Slot 非空表示该字段由客户端增强控件渲染（取色器/联动锁/媒体选择等）：
-	// 服务端只输出定位占位 div，客户端用既有控件函数填充（避免两套控件实现）。
+
 	Slot string
-	// HTML 非空表示该字段的整块结构已由服务端生成（重复项面板等）：模板原样输出，
-	// 客户端只绑行为 —— 结构只有一处定义（见 workbench.go）。
+
 	HTML string
-	// NavNewRef 非空表示该 entityref 字段支持「就地新建」（当前只有 navigation）：
-	// 模板据此渲染一个折叠的新建表单，客户端提交后把新项写回本字段。
-	// 端口未注入 / 无工程上下文时不置位 —— 入口整体不渲染，不留一个点了没反应的表单。
+
 	NavNewRef string
-	// KindOptions 新建菜单项时的位置选项（只随 NavNewRef 一起用）。
+
 	KindOptions []InspectorOption
 }
 
-// InspectorSection 面板分组（WP 式折叠分组）。
-// Key 为分组标识（content/style/layout/…），客户端据此把增强面板插入对应折叠组。
 type InspectorSection struct {
 	Key    string
 	Title  string
@@ -579,7 +418,6 @@ type InspectorSection struct {
 	Fields []InspectorField
 }
 
-// DocNode 页面文档节点（仅面板定位所需字段）。
 type DocNode struct {
 	ID       string          `json:"id"`
 	Type     string          `json:"type"`
@@ -587,8 +425,6 @@ type DocNode struct {
 	Children []DocNode       `json:"children"`
 }
 
-// 分组顺序与中文标题 key（与前端旧面板保持一致）。标题按请求语言取词：
-// 拼进面板 HTML 的是译文，key 与中文兜底登记在 workbenchenums（workbench.inspector.section.*）。
 var inspectorSectionOrder = []struct{ Key, TitleKey string }{
 	{"content", workbenchenums.InspectorSectionContent},
 	{"style", workbenchenums.InspectorSectionStyle},
@@ -602,20 +438,12 @@ var inspectorSectionOrder = []struct{ Key, TitleKey string }{
 	{"advanced", workbenchenums.InspectorSectionAdvanced},
 }
 
-// InspectorSchemas 当前进程的组件 schema 表：内置组件 + 启用插件的 InspectorSchemas。
-//
-// 为什么要这一个入口而不是各处直接调 builder.ComponentSchemas()：
-// schema 有两个来源 —— 构建内核的内置组件，和启用插件自带的（docs/06 §5）。
-// 画画入口（http 层的 canvas 模式）和检查器面板端点都必须看到**同一张合并后的表**，
-// 否则插件组件在画布里拖得进去、在面板里却一个字段都没有（用户看到的是「插件组件不可编辑」）。
-// 合并只在**副本**上做，不写进程级缓存（builder.ComponentSchemas 自 2026-11 起返回副本）。
 func (s *Service) InspectorSchemas(ctx context.Context) (map[string]json.RawMessage, error) {
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
 		return nil, err
 	}
-	// nil 接收者返回内置表（同 SetPlugins / SetProducts 的 nil 守卫口径）：
-	// 面板渲染测试会直接构造零值 Handle，它不需要插件能力。
+
 	if s == nil {
 		return schemas, nil
 	}
@@ -629,13 +457,8 @@ func (s *Service) InspectorSchemas(ctx context.Context) (map[string]json.RawMess
 	return schemas, nil
 }
 
-// InspectorSections 把节点文档装配成模板可渲染的分组数据。
-//
-// 装配链：组件 schema（构建内核，按节点类型取）→ 单字段构造 → 分组桶 →
-// 重复项面板骨架。任一步取数失败都返回 error，由调用方决定出口（HTTP 侧是 500）。
 func (s *Service) InspectorSections(ctx context.Context, node *DocNode, tab, projectID string, tr Translate) ([]InspectorSection, error) {
-	// 必须走 InspectorSchemas（含插件）而不是直接读内置表：插件组件节点的字段全靠它 ——
-	// 缺了它面板会静默变空（不报错、200、日志干净），用户以为插件组件坏了。
+
 	schemas, err := s.InspectorSchemas(ctx)
 	if err != nil {
 		return nil, err
@@ -653,11 +476,10 @@ func (s *Service) InspectorSections(ctx context.Context, node *DocNode, tab, pro
 		_ = json.Unmarshal(node.Props, &props)
 	}
 	sections := s.buildInspectorSections(ctx, items, props, tab, projectID, tr)
-	// 重复项面板（折叠项 / 页签）：结构由服务端生成，客户端只绑行为。
+
 	return AppendRepeaterPanel(sections, node, props, tab, tr), nil
 }
 
-// FindDocNode 在页面文档里按 ID 查找节点（深度优先）。
 func FindDocNode(doc json.RawMessage, nodeID string) (*DocNode, error) {
 	if len(doc) == 0 || nodeID == "" {
 		return nil, nil
@@ -683,14 +505,10 @@ func FindDocNode(doc json.RawMessage, nodeID string) (*DocNode, error) {
 	return walk(page.Root), nil
 }
 
-// buildInspectorSections 把 schema 控件按分组转成模板数据（跳过 hidden 与不满足条件的字段）。
-//
-// tr 是「key → 当前语言文案」的取词函数：分组标题与各字段的 Label / Placeholder
-// 都在本函数的下游产出，模板只负责把它们铺出来。
 func (s *Service) buildInspectorSections(ctx context.Context, items []InspectorSchemaItem, props map[string]any, tab, projectID string, tr Translate) []InspectorSection {
 	buckets := map[string][]InspectorField{}
 	used := map[string]int{}
-	// corners 合并：radiusTL/TR/BR/BL 与 advanced.radius.topLeft/… 各只渲染一次。
+
 	cornersDone := false
 	for _, ctl := range items {
 		if ctl.Hidden || !inspectorFieldVisible(ctl.Key, props) {
@@ -733,12 +551,11 @@ func (s *Service) buildInspectorSections(ctx context.Context, items []InspectorS
 		seen[sec.Key] = true
 		out = append(out, InspectorSection{
 			Key: sec.Key, Title: tr(sec.TitleKey), Fields: fields, Used: used[sec.Key],
-			// 展开规则：有值的分组展开、内容分组默认展开、首个分组兜底展开
-			// （空面板全收起时用户看不到任何控件，必须至少露一组）。
+
 			Open: used[sec.Key] > 0 || sec.Key == "content" || len(out) == 0,
 		})
 	}
-	// 未登记分组兜底（字典序，保证确定性）。
+
 	rest := make([]string, 0, 4)
 	for k := range buckets {
 		if !seen[k] {
@@ -747,7 +564,7 @@ func (s *Service) buildInspectorSections(ctx context.Context, items []InspectorS
 	}
 	sort.Strings(rest)
 	for _, k := range rest {
-		// 兜底分组同样受页签过滤约束（否则被过滤掉的已登记分组会被当成「未登记」加回来）。
+
 		if !sectionInTab(k, tab) {
 			continue
 		}
@@ -756,8 +573,6 @@ func (s *Service) buildInspectorSections(ctx context.Context, items []InspectorS
 	return out
 }
 
-// sectionInTab 分组归属页签：content = 内容页签；其余（基础/布局/背景/边框/变换/动效/
-// 响应式/高级）= 样式页签。tab 为空表示不过滤（渲染全部）。
 func sectionInTab(section, tab string) bool {
 	switch tab {
 	case "content":
@@ -768,11 +583,6 @@ func sectionInTab(section, tab string) bool {
 	return true
 }
 
-// inspectorFieldOf 单个 schema 控件 → 模板字段。
-//
-// tr 是「key → 当前语言文案」的取词函数：本函数与它的下游（圆角 / 间距 / 响应式控件、
-// 导航下拉）产出的 Label 与 Placeholder 会直接进面板 HTML，模板层不参与这些句子，
-// 所以取词必须在这里完成。
 func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem, props map[string]any, projectID string, tr Translate) InspectorField {
 	f := InspectorField{Key: ctl.Key, Label: ctl.Label, Min: ctl.Min, Max: ctl.Max, Step: ctl.Step}
 	if f.Label == "" {
@@ -788,17 +598,13 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 			refKind = ctl.Options[0].Value
 		}
 		f.Options = s.entityRefInspectorOptions(ctx, projectID, refKind, value, tr)
-		// 导航菜单项：检查器里可以就地新建（写回走 navigation 契约的 Create）。
-		// 三个条件缺一不可 —— refKind 是 navigation、端口已注入、有工程上下文；
-		// 少任何一个都会渲染出一个「提交必然失败」的入口，比不显示更糟。
+
 		if refKind == "navigation" && s.navigations != nil && projectID != "" {
 			f.NavNewRef = refKind
 			f.KindOptions = navigationKindOptions(tr)
 		}
 	case "multientityref":
-		// 多选实体（标签 id 列表等，审计 EDT-007）：值仍是逗号分隔串（读写兼容），
-		// 但勾选状态由当前值直接渲染 —— 打开面板就知道已经选了哪几个，
-		// 不用去数一串 id。选项按 ct tag 声明的实体类型逐个取。
+
 		f.UI = "multientityref"
 		f.Value = value
 		selected := map[string]bool{}
@@ -810,7 +616,7 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 		for _, kindOpt := range ctl.Options {
 			for _, o := range s.entityRefInspectorOptions(ctx, projectID, kindOpt.Value, "", tr) {
 				if o.Value == "" {
-					continue // 「（不限）」在单选的语义里有用，在多选里是噪声
+					continue
 				}
 				f.Options = append(f.Options, InspectorOption{
 					Value: o.Value, Label: o.Label, Selected: selected[o.Value],
@@ -818,8 +624,7 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 			}
 		}
 	case "rangelist":
-		// 区间列表（预设价格档位等，审计 EDT-007）：既有格式 `0-199,799+` 保持不变，
-		// 只是把「手写整串」换成逐行编辑。
+
 		f.UI = "rangelist"
 		f.Value = value
 		f.Rows = parseRangeRows(value)
@@ -833,13 +638,11 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 			f.Options = append(f.Options, InspectorOption{Value: o.Value, Label: o.Label, Selected: o.Value == value})
 		}
 	case "text", "textarea":
-		// text / textarea：多行纯文本输入。
+
 		f.UI = "textarea"
 		f.Value = value
 	case "richtext":
-		// 富文本内容字段（core.text 正文 / card 正文 / quote 引用 / infobox 描述 / faq 答案）：
-		// 编辑器为 Trix，服务端只输出 slot 占位，客户端 fillInspectorSlots 用 richTextField 填充
-		// （core.text 的 mode=plaintext 时前端回退多行输入）。
+
 		f.UI = "richtext"
 		f.Slot = "richtext"
 		f.Value = value
@@ -858,7 +661,7 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 		f.Slot = "spacing"
 		f.Inputs = spacingInputs(props, ctl.Key, tr)
 	case "boxspacing":
-		// container 的 box.padding/margin：三端 CSS 简写，客户端按「一行四向 + 联动」编辑。
+
 		f.UI = "boxspacing"
 		f.Slot = "boxspacing"
 	case "rtext":
@@ -887,10 +690,7 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 		f.Value = value
 		f.Placeholder = tr(workbenchenums.InspectorPhDimension)
 	case "collectionfield", "bindingfield":
-		// 集合字段映射（core.cardstack 的 5 个字段）与内容字段绑定（item.<字段>）：
-		// 选项来自后端字段白名单（按当前节点的「内容集合」过滤），手填字段名会绕过白名单，
-		// 所以服务端只输出 slot，客户端用 collectionFieldControl / bindingFieldControl
-		// 渲染成下拉 —— 不走 default 的文本框（退化成手填等于把白名单丢了）。
+
 		f.UI = ctl.Kind
 		f.Slot = ctl.Kind
 		f.Value = value
@@ -901,7 +701,6 @@ func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem,
 	return f
 }
 
-// cornersField 把四角圆角（组件级 radiusTL 或通用层 radius.topLeft）合并为一个字段。
 func cornersField(ctl InspectorSchemaItem, props map[string]any, tr Translate) InspectorField {
 	f := InspectorField{Key: ctl.Key, Label: ctl.Label, UI: "corners", Slot: "corners"}
 	if f.Label == "" {
@@ -931,7 +730,6 @@ func cornersField(ctl InspectorSchemaItem, props map[string]any, tr Translate) I
 	return f
 }
 
-// spacingInputs 三端 × 四向边距子输入。
 func spacingInputs(props map[string]any, key string, tr Translate) []InspectorSubInput {
 	out := make([]InspectorSubInput, 0, 12)
 	for _, bp := range []struct{ key, labelKey string }{
@@ -951,7 +749,6 @@ func spacingInputs(props map[string]any, key string, tr Translate) []InspectorSu
 	return out
 }
 
-// responsiveTextInputs 三端文本子输入（字号/行高等）。
 func responsiveTextInputs(props map[string]any, key string, tr Translate) []InspectorSubInput {
 	out := make([]InspectorSubInput, 0, 3)
 	for _, bp := range []struct{ key, labelKey string }{
@@ -964,7 +761,6 @@ func responsiveTextInputs(props map[string]any, key string, tr Translate) []Insp
 	return out
 }
 
-// hasSubValue 多输入控件是否有已填值（分组「已用项数」统计）。
 func hasSubValue(inputs []InspectorSubInput) bool {
 	for _, in := range inputs {
 		if in.Value != "" {
@@ -974,18 +770,15 @@ func hasSubValue(inputs []InspectorSubInput) bool {
 	return false
 }
 
-// isCornerKey 是否四角圆角的首个字段。
 func isCornerKey(key string) bool {
 	return strings.HasSuffix(key, "radiusTL") || strings.HasSuffix(key, "radius.topLeft")
 }
 
-// isCornerTailKey 四角圆角其余字段（已合并，跳过）。
 func isCornerTailKey(key string) bool {
 	return strings.HasSuffix(key, "radiusTR") || strings.HasSuffix(key, "radiusBR") || strings.HasSuffix(key, "radiusBL") ||
 		strings.HasSuffix(key, "radius.topRight") || strings.HasSuffix(key, "radius.bottomRight") || strings.HasSuffix(key, "radius.bottomLeft")
 }
 
-// inspectorFieldVisible 条件字段显隐（与前端旧面板同一套规则）。
 func inspectorFieldVisible(key string, props map[string]any) bool {
 	switch {
 	case key == "advanced.widthValue":
@@ -1004,7 +797,6 @@ func inspectorFieldVisible(key string, props map[string]any) bool {
 	return true
 }
 
-// propString 按点路径取 props 值并转字符串（数字去尾零）。
 func propString(props map[string]any, path string) string {
 	var cur any = props
 	for _, seg := range strings.Split(path, ".") {
@@ -1028,7 +820,6 @@ func propString(props map[string]any, path string) string {
 	return ""
 }
 
-// propListString 取字符串数组值（媒体列表）并转为换行文本。
 func propListString(props map[string]any, path string) string {
 	var cur any = props
 	for _, seg := range strings.Split(path, ".") {
@@ -1062,10 +853,6 @@ func propListString(props map[string]any, path string) string {
 	return strings.Join(out, "\n")
 }
 
-// parseRangeRows 把 `0-199,200-399,799+` 解析成行。
-//
-// 认不出的片段原样放进 Min 而不是丢弃：面板不是校验入口，把作者写的原文显示出来
-// 让他自己改，比在这一层静默吞掉更好（构建期仍按既有规则拒绝并给出明确报错）。
 func parseRangeRows(raw string) []InspectorRangeRow {
 	var rows []InspectorRangeRow
 	for _, part := range strings.Split(raw, ",") {
@@ -1086,13 +873,9 @@ func parseRangeRows(raw string) []InspectorRangeRow {
 	return rows
 }
 
-// entityRefInspectorOptions 把集合源可选筛选项转成检查器下拉（EDT-005）。
-//
-// tr 是「key → 当前语言文案」的取词函数：空选项与导航位置的标签都会直接进面板 HTML，
-// 模板层不参与，所以取词在这里完成。
 func (s *Service) entityRefInspectorOptions(ctx context.Context, projectID, refKind, selected string, tr Translate) []InspectorOption {
 	out := []InspectorOption{{Value: "", Label: tr(workbenchenums.InspectorNavAny), Selected: selected == ""}}
-	// 导航菜单项不是集合筛选项（不在商品数据源里），单独走导航模块的列表端口。
+
 	if refKind == "navigation" {
 		return s.navigationInspectorOptions(ctx, projectID, selected, tr)
 	}
@@ -1103,7 +886,7 @@ func (s *Service) entityRefInspectorOptions(ctx context.Context, projectID, refK
 	if !ok {
 		return out
 	}
-	// 检查器持有的就是商品数据源：源标识用 contract 常量，不写第二份字面量。
+
 	opts, err := provider.CollectionFilterOptions(ctx, productcontract.CollectionSourceProduct, projectID)
 	if err != nil {
 		return out
@@ -1127,10 +910,6 @@ func (s *Service) entityRefInspectorOptions(ctx context.Context, projectID, refK
 	return out
 }
 
-// navigationInspectorOptions 列出本工程全部菜单项（按位置分组排序）。
-//
-// 标签带位置前缀：同一个工程里「产品」这类标题在页眉与移动端各有一条，
-// 只显示标题会让检查器里出现两个一模一样的选项，选错就静默绑到另一端的菜单上。
 func (s *Service) navigationInspectorOptions(ctx context.Context, projectID, selected string, tr Translate) []InspectorOption {
 	out := []InspectorOption{{Value: "", Label: tr(workbenchenums.InspectorNavAny), Selected: selected == ""}}
 	if s == nil || s.navigations == nil || projectID == "" {
@@ -1144,8 +923,7 @@ func (s *Service) navigationInspectorOptions(ctx context.Context, projectID, sel
 		if row == nil || row.ID == "" {
 			continue
 		}
-		// 只列根项：按项引用时渲染的是「该项及其子树」，挂到子项上也合法，
-		// 但下拉里给全部项会让列表过长且层级难辨；子项可另用「按位置」模式取整棵树。
+
 		if row.ParentID != nil && *row.ParentID != "" {
 			continue
 		}
@@ -1158,7 +936,6 @@ func (s *Service) navigationInspectorOptions(ctx context.Context, projectID, sel
 	return out
 }
 
-// navigationKindOptions 新建菜单项时的位置选项（与导航管理页的四个位置一致）。
 func navigationKindOptions(tr Translate) []InspectorOption {
 	return []InspectorOption{
 		{Value: "header", Label: NavigationKindLabel("header", tr), Selected: true},
@@ -1168,7 +945,6 @@ func navigationKindOptions(tr Translate) []InspectorOption {
 	}
 }
 
-// NavigationKindLabel 位置名（与 admin 导航页的选项文案同义，按请求语言取词）。
 func NavigationKindLabel(kind string, tr Translate) string {
 	switch kind {
 	case "header":
@@ -1183,13 +959,11 @@ func NavigationKindLabel(kind string, tr Translate) string {
 	return kind
 }
 
-// repeaterRow 一条重复项的数据。
 type repeaterRow struct {
 	Value  string
 	Extras map[string]bool
 }
 
-// repeaterRowsOf 从 props 里取出重复项数据（取不到就是空列表，与客户端同口径）。
 func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repeaterRow {
 	raw, _ := props[spec.AlignKey].([]any)
 	rows := make([]repeaterRow, 0, len(raw))
@@ -1209,15 +983,6 @@ func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repe
 	return rows
 }
 
-// renderRepeaterHTML 生成重复项面板骨架。
-//
-// panelCount 是画布上对应的面板节点数：两者不一致时给红色提示（历史脏数据或直接在
-// 画布上增删面板都可能造成不一致），让用户保存前就知道会被校验拦下。
-//
-// tr 是「key → 当前语言文案」的取词函数：本文件的 HTML 由 Go 拼串产出，
-// 模板只做 `|unsafe` 插槽，所以按钮提示与数量说明必须在这里取词。
-// spec.Noun（项名，如「折叠项」）来自组件声明（builder/core），不属于本模块的文案，
-// 作为占位符 {noun} 填进已翻译的句子 —— 译文语序与中文不同也不会错位。
 func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int, tr Translate) string {
 	var b strings.Builder
 	b.WriteString(`<div class="wb-repeater" data-wb-rep="` + html.EscapeString(spec.Type) +
@@ -1268,10 +1033,6 @@ func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, pane
 	return b.String()
 }
 
-// fillRepeaterText 用占位符值填充已翻译的句子（占位符约定同 sys_i18n 的 {name}）。
-//
-// 键之间互不为子串，所以 map 的遍历顺序不影响结果；用它而不是 fmt.Sprintf 是为了让
-// 译文重新排序占位符时不必改 Go 代码。
 func fillRepeaterText(text string, values map[string]string) string {
 	for k, v := range values {
 		text = strings.ReplaceAll(text, k, v)
@@ -1279,7 +1040,6 @@ func fillRepeaterText(text string, values map[string]string) string {
 	return text
 }
 
-// repeaterButton 行内操作按钮（to 为相对位移，仅 move 用）。
 func repeaterButton(text, title, op string, index int, to, cls string) string {
 	s := `<button type="button" class="` + cls + `" data-wb-rep-op="` + op +
 		`" data-wb-rep-index="` + fmt.Sprint(index) + `"`
@@ -1289,9 +1049,6 @@ func repeaterButton(text, title, op string, index int, to, cls string) string {
 	return s + ` title="` + html.EscapeString(title) + `">` + html.EscapeString(text) + `</button>`
 }
 
-// AppendRepeaterPanel 把重复项面板的服务端骨架挂进「内容」分组末尾。
-//
-// 只出结构 —— 行为留在客户端（repeater.js 的 bindRepeaterPanel）。
 func AppendRepeaterPanel(sections []InspectorSection, node *DocNode, props map[string]any, tab string, tr Translate) []InspectorSection {
 	if tab == "style" || tab == "motion" {
 		return sections
@@ -1310,8 +1067,6 @@ func AppendRepeaterPanel(sections []InspectorSection, node *DocNode, props map[s
 			return sections
 		}
 	}
-	// 组件没有内容分组时补一个：tabs 的字段全在样式里（竖向 / 对齐 / 配色），
-	// 但「页签列表」本身是内容 —— 挂在样式分组里位置不对。
-	// content 是分组顺序表 inspectorSectionOrder 的第一项，前置插入即可。
+
 	return append([]InspectorSection{{Key: "content", Title: tr(workbenchenums.InspectorSectionContent), Open: true, Fields: []InspectorField{field}}}, sections...)
 }

@@ -1,20 +1,5 @@
 package i18n_test
 
-// content_project_scope_test.go — sys_translation 工程作用域（审计 I18N-009）在真实
-// PostgreSQL 上的链路验证。
-//
-// 迁移 195 由本文件手工应用：public/migrations/register.go 由父代理统一追加注册，
-// 本批不改它；手工执行与注册后的自动执行是幂等的（ADD COLUMN IF NOT EXISTS /
-// DROP CONSTRAINT IF EXISTS / CREATE INDEX IF NOT EXISTS），因此两种状态下测试都成立。
-//
-// 覆盖：
-//  1. 同 key 译文在各工程间独立（A 站 / B 站各写各的，互不覆盖）；
-//  2. 未覆盖的工程回落全局行；
-//  3. 无工程上下文的读取（离线构建路径）取全局行，且同一键只回一行；
-//  4. 写入幂等：同工程同 key 重复保存仍是一行，不影响其它工程。
-//
-// PG 不可用时 t.Skip（与其他功能测试一致）。
-
 import (
 	"os"
 	"path/filepath"
@@ -27,14 +12,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// 测试用工程 id（固定值，便于失败时与 SQL 输出对照）。
 const (
 	scopeProjectA = "11111111-1111-1111-1111-111111111111"
 	scopeProjectB = "22222222-2222-2222-2222-222222222222"
 	scopeProjectC = "33333333-3333-3333-3333-333333333333"
 )
 
-// newProjectScopeDB 建隔离 schema、跑全量迁移，再手工应用 195（工程作用域列）。
 func newProjectScopeDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newContentWriteDB(t)
@@ -42,7 +25,6 @@ func newProjectScopeDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// applyMigrationFile 执行单个迁移文件（按语句边界拆分后逐条执行）。
 func applyMigrationFile(t *testing.T, db *gorm.DB, name string) {
 	t.Helper()
 	path := filepath.Join("..", "..", "..", "migrations", name)
@@ -60,7 +42,6 @@ func applyMigrationFile(t *testing.T, db *gorm.DB, name string) {
 	}
 }
 
-// insertTestProject 插入一个工程（sys_translation 的工程外键需要真实工程行）。
 func insertTestProject(t *testing.T, db *gorm.DB, id, name string) {
 	t.Helper()
 	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, ?, '{}'::jsonb, now(), now())", id, name).Error; err != nil {
@@ -68,7 +49,6 @@ func insertTestProject(t *testing.T, db *gorm.DB, id, name string) {
 	}
 }
 
-// countTranslationRowsForProject 统计某工程的工程级译文行数。
 func countTranslationRowsForProject(t *testing.T, db *gorm.DB, projectID string) int64 {
 	t.Helper()
 	var n int64
@@ -78,7 +58,6 @@ func countTranslationRowsForProject(t *testing.T, db *gorm.DB, projectID string)
 	return n
 }
 
-// TestContentTranslationProjectScope 同 key 译文按工程隔离，未覆盖时回落全局。
 func TestContentTranslationProjectScope(t *testing.T) {
 	db := newProjectScopeDB(t)
 	insertTestProject(t, db, scopeProjectA, "工程A")
@@ -99,7 +78,6 @@ func TestContentTranslationProjectScope(t *testing.T) {
 		t.Fatalf("写入三条作用域行失败: written=%d err=%v", written, err)
 	}
 
-	// 1) 工程 A / B 各读各的（同 key 不同译法互不影响）。
 	if got := loadOneProject(t, writer, scopeProjectA, hash); got != "A 品牌说法" {
 		t.Fatalf("工程 A 应读到自己的译法，实际 %q", got)
 	}
@@ -107,12 +85,10 @@ func TestContentTranslationProjectScope(t *testing.T) {
 		t.Fatalf("工程 B 应读到自己的译法，实际 %q", got)
 	}
 
-	// 2) 工程 C 没有覆盖行 → 回落全局行。
 	if got := loadOneProject(t, writer, scopeProjectC, hash); got != "Learn more" {
 		t.Fatalf("工程 C 应回落全局译文，实际 %q", got)
 	}
 
-	// 3) 无工程上下文（离线构建路径）：取全局行，且同一键只回一行。
 	targets, err := writer.LoadTargets(ctx, "en-US", []string{hash})
 	if err != nil {
 		t.Fatalf("无工程上下文读取失败: %v", err)
@@ -124,7 +100,6 @@ func TestContentTranslationProjectScope(t *testing.T) {
 		t.Fatalf("同一 (hash, context) 应只回一行，实际 %d 行", len(targets))
 	}
 
-	// 4) 幂等：同工程同 key 再保存一次仍是一行，且不动其它工程。
 	beforeA := countTranslationRowsForProject(t, db, scopeProjectA)
 	if _, err := writer.Upsert(ctx, []i18n.ContentWriteItem{
 		{ProjectID: scopeProjectA, SourceHash: hash, Context: "core.button.text", Lang: "en-US", SourceText: src, TargetText: "A 品牌说法 v2"},
@@ -144,7 +119,6 @@ func TestContentTranslationProjectScope(t *testing.T) {
 		t.Fatalf("三个作用域应各一行（全局 + A + B），实际 %d 行", total)
 	}
 
-	// 5) 工程删除时联动清掉它的工程级译文（外键 ON DELETE CASCADE）。
 	if err := db.Exec("DELETE FROM projects WHERE id = ?::uuid", scopeProjectB).Error; err != nil {
 		t.Fatalf("删除工程失败: %v", err)
 	}
@@ -156,7 +130,6 @@ func TestContentTranslationProjectScope(t *testing.T) {
 	}
 }
 
-// loadOneProject 读某工程在该原文上的译文（取不到返回空串）。
 func loadOneProject(t *testing.T, writer *i18n.ContentWriter, projectID, hash string) string {
 	t.Helper()
 	targets, err := writer.LoadTargetsForProject(t.Context(), projectID, "en-US", []string{hash})

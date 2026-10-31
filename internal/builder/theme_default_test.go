@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestDefaultThemeSettingsValid 默认主题必须能过自身校验、能序列化。
 func TestDefaultThemeSettingsValid(t *testing.T) {
 	theme := DefaultThemeSettings()
 	if err := ValidateThemeSettings(theme); err != nil {

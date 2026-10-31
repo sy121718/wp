@@ -1,14 +1,5 @@
 package feature
 
-// theme_slot_test.go — 主题级结构槽位（审计 VIS-012）。
-//
-// 验收：**配置一次**全站公告条，所有页面都出现。
-// 这条能力此前不存在 —— settings.structure 只有页眉/页脚两个槽，其余 kind 的块
-// （公告条 / 侧边栏 / 抽屉）只能靠作者在每个页面手动插一份 globalref，
-// 结果是「加了公告条要改 N 个页面」，而且总会漏几个。
-//
-// 用例刻意建两个页面：只建一个页面时，「全站生效」与「碰巧生成了」看起来一样。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -27,13 +18,10 @@ import (
 
 const announcementBlockDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"ann-mark","props":{"text":"SITE-ANNOUNCEMENT"}}]}`
 
-// TestThemeAnnouncementSlotAppliesToAllPages 主题配置公告条槽位后，全站页面都出现。
 func TestThemeAnnouncementSlotAppliesToAllPages(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 
-	// blocks 表由生产迁移建（project_id uuid → projects 外键、document jsonb、id identity），
-	// 手抄 DDL 曾把 project_id 写成 TEXT、document 写成 JSON，与生产分叉。
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 
@@ -45,8 +33,6 @@ func TestThemeAnnouncementSlotAppliesToAllPages(t *testing.T) {
 		t.Fatalf("创建公告条块失败: %v", err)
 	}
 
-	// 主题里**只配一次**：slots.announcement → 该块。
-	// 页眉页脚的既有字段保持不变，两种写法在 SlotBindings() 里合并。
 	themeSettings, _ := json.Marshal(map[string]any{
 		"colors": map[string]any{"primary": "#2563eb"},
 		"slots":  map[string]string{"announcement": announcement.ID},
@@ -58,9 +44,6 @@ func TestThemeAnnouncementSlotAppliesToAllPages(t *testing.T) {
 		t.Fatalf("创建主题失败: %v", err)
 	}
 
-	// 两个页面都挂这个主题（第一个主题自动激活，页面保存时快照结构绑定）。
-	// 两个页面必须用不同的 kind：无内容目标的 kind（home / archive / search / notFound）
-	// 才能带 targetType=none，而 page/article/tag 必须挂内容目标。
 	pages := []struct{ path, kind string }{
 		{"/slot-a", "home"},
 		{"/slot-b", "search"},

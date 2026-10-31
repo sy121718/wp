@@ -1,22 +1,5 @@
 package backref
 
-// back_test.go — 回跳请求适配（back.go）的判据。
-//
-// 两类断言**分开**记：
-//
-//  1. **返回值边界**（与 internal/shell/back_test.go 同口径）：白名单只透传列出的键、
-//     路径必须是站内相对路径、值做形状收敛、产物稳定、边界值恰好收/放；
-//  2. **结构化日志**：两条 Warn 的级别 / 消息 / 字段（path、key、**trim 后**字节 len），
-//     以及「空白值与合法值**不刷日志**」的负断言 —— 负断言是判据的一半：只断言
-//     「丢弃时有日志」，把空值也拖进 Warn 分支同样「绿」。
-//
-// 日志断言把 logger.Init 指向 t.TempDir()（先例：internal/module/admin/inbound/http/
-// admin_err_param_test.go），不新增钩子、不读全局日志目录；scene 固定 "shell"，
-// 所以日志落在 <dir>/shell/app-*.log —— 该路径本身也是兼容性断言。
-//
-// **串行隔离**：logger 是进程级单例，本文件所有用例都不 t.Parallel()，
-// 每个用例自带 logger.Init + t.Cleanup(logger.Close)，用例之间不共享日志目录。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -34,13 +17,11 @@ import (
 	"go_wp/pkg/safepath"
 )
 
-// 两条 Warn 的文案逐字（与 internal/shell 的对应实现一致：迁移动的是位置，不是文案）。
 const (
 	warnUnsafePath   = "回跳路径不合法（非站内相对路径或超长），回控制面首页"
 	warnDroppedValue = "回跳参数被丢弃（超长或含控制字符）"
 )
 
-// logLine 结构化日志行（zap production encoder：time/level/message/caller + 自定义字段）。
 type logLine struct {
 	Level   string `json:"level"`
 	Message string `json:"message"`
@@ -49,14 +30,12 @@ type logLine struct {
 	Len     int    `json:"len"`
 }
 
-// withTempLogDir 把 logger 指到临时目录，返回该目录与「读取 shell 场景全部日志行」的闭包。
 func withTempLogDir(t *testing.T) (string, func() []logLine) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := viper.New()
 	cfg.Set("log.base_dir", dir)
-	// debug 级：任何一种「本不该出现」的日志都会落盘，负断言才有意义
-	// （若只开 warn，被误降级成 debug 的那条会消失，负断言就变成了假证据）。
+
 	cfg.Set("log.level", "debug")
 	if err := logger.Init(cfg); err != nil {
 		t.Fatalf("初始化 logger 失败: %v", err)
@@ -97,7 +76,6 @@ func backCtx(t *testing.T, target string) *gin.Context {
 	return c
 }
 
-// TestBackPathOnlyWhitelistedKeys 只有列出的键会被透传，且合法值不刷日志。
 func TestBackPathOnlyWhitelistedKeys(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?project=p1&status=enabled&evil=1&keyword=k")
@@ -113,7 +91,6 @@ func TestBackPathOnlyWhitelistedKeys(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsEmptyValuesSilently 空白值丢弃且**静默**（不产出噪音、也不刷日志）。
 func TestBackPathDropsEmptyValuesSilently(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?project=p1&status=&keyword=%20%20")
@@ -126,7 +103,6 @@ func TestBackPathDropsEmptyValuesSilently(t *testing.T) {
 	}
 }
 
-// TestBackPathNoParams 没有任何可透传参数时保持路径原样（不带问号）。
 func TestBackPathNoParams(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create")
@@ -138,7 +114,6 @@ func TestBackPathNoParams(t *testing.T) {
 	}
 }
 
-// TestBackPathEscapesValues 值里的分隔符必须转义（否则 `a&b=c` 会裂成两个参数）。
 func TestBackPathEscapesValues(t *testing.T) {
 	_, _ = withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?keyword="+`a%26b%3Dc`)
@@ -148,7 +123,6 @@ func TestBackPathEscapesValues(t *testing.T) {
 	}
 }
 
-// TestBackPathStableOrder 产物稳定：参数顺序不影响结果（url.Values.Encode 按键排序）。
 func TestBackPathStableOrder(t *testing.T) {
 	_, _ = withTempLogDir(t)
 	a := backCtx(t, "/admin/coupons/create?status=enabled&project=p1&page=2")
@@ -163,7 +137,6 @@ func TestBackPathStableOrder(t *testing.T) {
 	}
 }
 
-// TestBackPathFirstValueWinsForDuplicateKey 同键重复出现时取第一个（url.Values.Get 语义）。
 func TestBackPathFirstValueWinsForDuplicateKey(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?project=p1&project=p2")
@@ -175,8 +148,6 @@ func TestBackPathFirstValueWinsForDuplicateKey(t *testing.T) {
 	}
 }
 
-// TestBackPathBoundaryValues 边界值恰好收/放：值 == MaxQueryValueBytes 保留、
-// 路径长度 == MaxReturnPathBytes 放行（差 1 字节才拒绝）。
 func TestBackPathBoundaryValues(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	value := strings.Repeat("k", backpath.MaxQueryValueBytes)
@@ -186,7 +157,6 @@ func TestBackPathBoundaryValues(t *testing.T) {
 		t.Fatalf("恰好 %d 字节的值应当保留，实际 %q", backpath.MaxQueryValueBytes, got)
 	}
 
-	// 路径边界用**不带参数**的请求：同一个上下文里 keyword 还在，断言会变成「路径 + 参数」。
 	path := "/" + strings.Repeat("a", safepath.MaxReturnPathBytes-1)
 	plain := backCtx(t, "/admin/coupons/create")
 	if got := BackPath(plain, path, "keyword"); got != path {
@@ -197,18 +167,17 @@ func TestBackPathBoundaryValues(t *testing.T) {
 	}
 }
 
-// TestBackPathRejectsUnsafePath 非站内相对路径/超长路径一律回控制面首页，并逐条记 Warn（带 path）。
 func TestBackPathRejectsUnsafePath(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?project=p1")
 
 	badPaths := []string{
-		"//evil.example.com/x",     // 协议相对跳转
-		"https://evil.example.com", // 绝对外站地址
-		"admin/coupons",            // 不以 / 开头：浏览器会按当前路径拼接
-		"/admin/x\\..\\evil",       // 反斜杠（部分客户端当路径分隔符）
-		"/admin/x\nLocation: /y",   // 控制字符（响应头注入面）
-		"/" + strings.Repeat("a", safepath.MaxReturnPathBytes), // 超长
+		"//evil.example.com/x",
+		"https://evil.example.com",
+		"admin/coupons",
+		"/admin/x\\..\\evil",
+		"/admin/x\nLocation: /y",
+		"/" + strings.Repeat("a", safepath.MaxReturnPathBytes),
 	}
 	for i, bad := range badPaths {
 		got := BackPath(c, bad, "project")
@@ -232,10 +201,9 @@ func TestBackPathRejectsUnsafePath(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsOverlongValueLogsKeyAndLen 超长值丢弃：其余参数照常，日志带 key 与 trim 后 len。
 func TestBackPathDropsOverlongValueLogsKeyAndLen(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
-	// 原始值 = 2 个空格 + 201 个 k：trim 后 201 字节 —— len 字段若用未 trim 的长度（203）即被抓。
+
 	long := "%20%20" + strings.Repeat("k", backpath.MaxQueryValueBytes+1)
 	c := backCtx(t, "/admin/coupons/create?project=p1&keyword="+long)
 	if got, want := BackPath(c, "/admin/coupons", "project", "keyword"), "/admin/coupons?project=p1"; got != want {
@@ -260,7 +228,6 @@ func TestBackPathDropsOverlongValueLogsKeyAndLen(t *testing.T) {
 	}
 }
 
-// TestBackPathDropsControlCharsLogsKeyAndLen 含控制字符的值丢弃，日志同样带 key 与 trim 后 len。
 func TestBackPathDropsControlCharsLogsKeyAndLen(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?keyword=a%0Ab&project=p1")
@@ -283,7 +250,6 @@ func TestBackPathDropsControlCharsLogsKeyAndLen(t *testing.T) {
 	}
 }
 
-// TestBackPathKeepsValidValueSilentInLog 合法值不产生任何日志（负断言）。
 func TestBackPathKeepsValidValueSilentInLog(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 	c := backCtx(t, "/admin/coupons/create?project=p1&status=enabled&keyword=%E4%B8%AD%E6%96%87")
@@ -293,7 +259,6 @@ func TestBackPathKeepsValidValueSilentInLog(t *testing.T) {
 	}
 }
 
-// TestBackPathMissingRequestReturnsAdminHomeWithoutLog 请求缺失三形态：回首页且不写日志。
 func TestBackPathMissingRequestReturnsAdminHomeWithoutLog(t *testing.T) {
 	_, readLogs := withTempLogDir(t)
 
@@ -321,10 +286,6 @@ func TestBackPathMissingRequestReturnsAdminHomeWithoutLog(t *testing.T) {
 	}
 }
 
-// TestBackPathLogsUnderShellSceneDir scene 固定 "shell"：日志必须落在 <base>/shell/ 下。
-//
-// 这条守的是**运维兼容**：scene 就是目录名，改名会让既有检索路径与告警规则静默失效，
-// 因此迁移不夹带改名（要改必须单独批准）。
 func TestBackPathLogsUnderShellSceneDir(t *testing.T) {
 	dir, readLogs := withTempLogDir(t)
 	BackPath(backCtx(t, "/admin/coupons/create"), "//evil.example.com/x")

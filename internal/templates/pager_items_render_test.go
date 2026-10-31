@@ -1,23 +1,5 @@
 package templates
 
-// pager_items_render_test.go — 分页条「后端算好、模板无脑渲染」之后的判据。
-//
-// 改造前：模板自己 range 整数页码、用 {{if n-prev > 1}} 画省略号、用 queryURL 拼每个 href。
-// 改造后：pager(.Pagination).Items() 直接给出槽位（含省略号位与已拼好的 URL），
-// 模板只剩三个判据（it.Gap / it.Page == pg.Page / 其它）。
-//
-// —— 为什么不用「旧模板逐字节」做 oracle ——
-//
-// 试过，放弃了：旧模板的空白形态是「range 体内缩进 + 槽注释行 + 分支换行」共同决定的，
-// 手工复刻它等于把模板的缩进规则抄一遍。那种测试的价值是「改了缩进会红」——
-// 而缩进恰恰是这次改造要动的东西，抄一遍只会在下次改模板时制造假红。
-//
-// 换成三条更硬的判据：
-//  1. **元素序列**：从真实渲染出的 HTML 里抽出「省略号 / 当前页 / 链接(页码,href)」序列，
-//     与 pkg/pagination 的数据层期望逐个对齐。这才是有语义的等价。
-//  2. **逐页穷举**：pages×page 全组合都抽一遍，包括贴边平移与越界夹紧。
-//  3. **模板无算术**：源码里不许再出现 pageNumbers / n-prev / queryURL。
-
 import (
 	"net/url"
 	"regexp"
@@ -30,25 +12,18 @@ import (
 	"go_wp/pkg/pagination"
 )
 
-// slot / activeSlot / linkSlot 从渲染结果里识别三种槽位。
 var (
 	gapSlot    = regexp.MustCompile(`<span class="pagination-btn is-disabled">…</span>`)
 	activeSlot = regexp.MustCompile(`<span class="pagination-btn is-active">(\d+)</span>`)
 	linkSlot   = regexp.MustCompile(`<a class="pagination-btn" href="([^"]*)">(\d+)</a>`)
 )
 
-// slot 是一个被识别出来的槽位（与 pagination.Item 同构，便于对照）。
 type slot struct {
 	Gap  bool
 	Page int
 	URL  string
 }
 
-// extractSlots 按出现顺序抽出页码区里的槽位。
-//
-// 只取 <nav class="pagination"> 之后的内容中的**页码链接**与**省略号**；
-// 上/下一页按钮的文字是「上一页」「下一页」而不是数字，正则天然排除，
-// 所以不需要额外切分区域。
 func extractSlots(t *testing.T, html string) []slot {
 	t.Helper()
 	type hit struct {
@@ -68,7 +43,7 @@ func extractSlots(t *testing.T, html string) []slot {
 		href := htmlEscapeUndo(html[m[2]:m[3]])
 		hits = append(hits, hit{at: m[0], s: slot{Page: n, URL: href}})
 	}
-	// 按在 HTML 里出现的先后排序：这正是用户在页面上看到的顺序。
+
 	for i := 1; i < len(hits); i++ {
 		for j := i; j > 0 && hits[j].at < hits[j-1].at; j-- {
 			hits[j], hits[j-1] = hits[j-1], hits[j]
@@ -81,17 +56,13 @@ func extractSlots(t *testing.T, html string) []slot {
 	return out
 }
 
-// htmlEscapeUndo 把 Jet 插值产生的转义还原成 URL 原值（只处理 &amp;，分页 URL 只会出现它）。
 func htmlEscapeUndo(s string) string {
 	return strings.ReplaceAll(s, "&amp;", "&")
 }
 
-// expectedSlots 数据层期望：窗口槽位 + 每页应得的 href（当前页无链接）。
-//
-// 独立于 partial 复算一遍 href —— 期望值不复用 Pager.pageURL，否则「两边一起错」也会绿。
 func expectedSlots(t *testing.T, p pagination.Page) []slot {
 	t.Helper()
-	// 页数与夹紧口径与 PagerOf 一致（这里独立算一遍，不复用 Pager 的派生逻辑）。
+
 	limit := p.Limit
 	if limit < 1 {
 		limit = pagination.DefaultPageSize
@@ -119,12 +90,10 @@ func expectedSlots(t *testing.T, p pagination.Page) []slot {
 			continue
 		}
 		if it.Page == cur {
-			out = append(out, slot{Page: it.Page}) // 当前页：无链接
+			out = append(out, slot{Page: it.Page})
 			continue
 		}
-		// 按**调用顺序**追加（page 在前、limit 在后），不是 url.Values.Encode 的字典序：
-		// 生产路径是 pagination.QueryURL(base, param, n, "limit", limit)，
-		// 顺序是既有语义（迁移前的 link() 也是无条件按序追加）。
+
 		sep := "?"
 		if strings.Contains(p.Base, "?") {
 			sep = "&"
@@ -138,8 +107,6 @@ func expectedSlots(t *testing.T, p pagination.Page) []slot {
 	return out
 }
 
-// TestPagerItemsSlotSequence 逐页穷举：渲染出的槽位序列必须与数据层期望逐项相等
-// （省略号位置、当前页位置、每个 href）。
 func TestPagerItemsSlotSequence(t *testing.T) {
 	bases := []string{
 		"/admin/product-brands",
@@ -172,7 +139,6 @@ func TestPagerItemsSlotSequence(t *testing.T) {
 	}
 }
 
-// TestPagerItemsSinglePageRendersNothing 单页与空集不渲染分页条（判据是「有没有 nav」）。
 func TestPagerItemsSinglePageRendersNothing(t *testing.T) {
 	for _, p := range []pagination.Page{
 		{Total: 0, Page: 1, Limit: 20, Base: "/x"},
@@ -186,10 +152,6 @@ func TestPagerItemsSinglePageRendersNothing(t *testing.T) {
 	}
 }
 
-// TestPagerItemsPrevNextURLs 上/下一页按钮的 href 指向相邻页，不可用时是禁用态。
-//
-// 这两种按钮的文字是「上一页」「下一页」，不被 extractSlots 当成页码槽位，
-// 所以单独断言它们的 href。
 func TestPagerItemsPrevNextURLs(t *testing.T) {
 	p := pagination.Page{Total: 120, Page: 3, Limit: 20, Base: "/admin/x"}
 	html := renderPagerPartial(t, p)
@@ -201,7 +163,7 @@ func TestPagerItemsPrevNextURLs(t *testing.T) {
 			t.Fatalf("缺少 %q\n实际: %s", want, html)
 		}
 	}
-	// 首页：上一页是禁用 span，不是链接。
+
 	first := renderPagerPartial(t, pagination.Page{Total: 120, Page: 1, Limit: 20, Base: "/admin/x"})
 	if strings.Contains(first, "上一页</a>") {
 		t.Fatalf("首页的上一页不该是链接：%s", first)
@@ -211,16 +173,10 @@ func TestPagerItemsPrevNextURLs(t *testing.T) {
 	}
 }
 
-// TestPagerItemsHasNoArithmeticInTemplate 模板里不许再出现窗口算术与取址。
-//
-// 这条挡的是「有人图快，又在模板里写 {{if n-prev > 1}}」——那会让省略号重新变成
-// 模板的知识，也就重新引入「改样式得先读懂算法」。
 func TestPagerItemsHasNoArithmeticInTemplate(t *testing.T) {
-	// 只查**代码部分**：Jet 注释 {* … *} 里提到旧写法（说明为什么改）是允许的，
-	// 那种提及正是给下一个人看的上下文。
+
 	src := stripJetComments(templateSource(t, "admin/partials/pagination.html"))
-	// pageBase 不在禁令里：它是「Base 为空时从 req_path 现推基址」的兜底，
-	// 处理的是**请求事实**（当前 URL），不是窗口算术。放宽它是有意的。
+
 	for _, banned := range []string{"pageNumbers", "n-prev", "prev = n", "queryURL"} {
 		if strings.Contains(src, banned) {
 			t.Fatalf("partial 里仍出现 %q：窗口与取址应在 pkg/pagination，模板只判断三个分支", banned)
@@ -233,10 +189,6 @@ func TestPagerItemsHasNoArithmeticInTemplate(t *testing.T) {
 	}
 }
 
-// renderPagerPartial 用**生产同配置**（embed loader + injectGlobals）真实渲染 partial。
-//
-// 走 embed 而不是读磁盘：partial 与页面一样可能在打包时被漏掉，而漏掉的表现是
-// 「生产模式页面少一块」。顺带保证测试跑的就是要发布的那份字节。
 func renderPagerPartial(t *testing.T, p pagination.Page) string {
 	t.Helper()
 	set := jet.NewSet(newAdminLoader(t), jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -248,8 +200,7 @@ func renderPagerPartial(t *testing.T, p pagination.Page) string {
 	var buf strings.Builder
 	data := map[string]any{
 		"Pagination": p,
-		// t 是渲染出口注入的取词函数：本测试用中文兜底（各按钮的中文），
-		// 与 expectedSlots 里不涉及的文案解耦。
+
 		"t": func(_ string, fallback string) string { return fallback },
 	}
 	if err := tpl.Execute(&buf, nil, data); err != nil {
@@ -258,7 +209,6 @@ func renderPagerPartial(t *testing.T, p pagination.Page) string {
 	return buf.String()
 }
 
-// templateSource 读模板源码（embed，与生产同一份）。
 func templateSource(t *testing.T, name string) string {
 	t.Helper()
 	b, err := adminTemplatesFS.ReadFile(name)
@@ -268,7 +218,6 @@ func templateSource(t *testing.T, name string) string {
 	return string(b)
 }
 
-// newAdminLoader 生产同源的 embed loader（失败即测试缺陷，直接 Fatal）。
 func newAdminLoader(t *testing.T) jet.Loader {
 	t.Helper()
 	loader, err := newAdminTemplateLoader()

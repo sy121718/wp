@@ -1,16 +1,3 @@
-// inventory_transfer_approval_test.go — 调拨审批（迁移 651 / B5）的验收。
-//
-// 覆盖会红的判据：
-//
-//	1  建单落 requested（不是 pending）：申请只是「我想搬」，还没人同意
-//	2  未审批不能出货 → ErrTransferStatusInvalid（申请单绕不过审批）
-//	3  同意 → pending，且记录审批人与时刻；之后才能出货
-//	4  驳回 → rejected，理由落库并在详情里回得来；驳回不动库存
-//	5  驳回理由必填（空串 / 空白 → ErrTransferRejectReasonRequired）
-//	6  同意时重校可售：申请后货被别处搬走 → ErrStockNotEnough（不是等到出货才失败）
-//	7  审批只发生在 requested 态：对 pending 单再同意 → ErrTransferStatusInvalid
-//	8  同意时可改目标仓；改成源仓 → ErrTransferSameWarehouse
-//	9  requested 可取消（不必先审批）
 package feature
 
 import (
@@ -22,7 +9,6 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
-// mustTransferStock 造一件可调拨的货，返回 (商品, 变体, 源仓库存行 id)。
 func mustTransferStock(t *testing.T, f *invFixture, fromID, title string, qty int) (string, string) {
 	t.Helper()
 	p := mustProduct(t, f, title)
@@ -31,7 +17,6 @@ func mustTransferStock(t *testing.T, f *invFixture, fromID, title string, qty in
 	return v.ID, f.transferStockID(t, v.ID, fromID)
 }
 
-// TestTransferCreateLandsRequested 判据 1 + 2：建单是申请态，未审批不能出货。
 func TestTransferCreateLandsRequested(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -53,7 +38,7 @@ func TestTransferCreateLandsRequested(t *testing.T) {
 	if created.RequestedAt == "" {
 		t.Fatal("建单应记申请时刻（requested_at）")
 	}
-	// 未审批直接出货：拒绝（申请单绕不过审批）。
+
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrTransferStatusInvalid)) {
@@ -61,7 +46,6 @@ func TestTransferCreateLandsRequested(t *testing.T) {
 	}
 }
 
-// TestTransferApproveThenShip 判据 3：同意后转 pending 且记审批人，之后能出货。
 func TestTransferApproveThenShip(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -95,7 +79,7 @@ func TestTransferApproveThenShip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("同意之后应能出货: %v", err)
 	}
-	// 对已进入 in_transit 的单再同意：状态不允许。
+
 	if _, err := f.inventory.ApproveTransfer(ctx, &inventorydto.TransferApproveReq{
 		ProjectID: f.projectID, ID: created.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrTransferStatusInvalid)) {
@@ -103,7 +87,6 @@ func TestTransferApproveThenShip(t *testing.T) {
 	}
 }
 
-// TestTransferRejectRecordsReason 判据 4 + 5：驳回落理由、不动库存、理由必填。
 func TestTransferRejectRecordsReason(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -119,7 +102,7 @@ func TestTransferRejectRecordsReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 理由空 / 全空白都拒绝。
+
 	for _, reason := range []string{"", "   "} {
 		if _, err := f.inventory.RejectTransfer(ctx, &inventorydto.TransferRejectReq{
 			ProjectID: f.projectID, ID: created.ID, Reason: reason,
@@ -143,11 +126,11 @@ func TestTransferRejectRecordsReason(t *testing.T) {
 	if rejected.RejectedName != "主管老李" {
 		t.Fatalf("应记录驳回人姓名，实际 %q", rejected.RejectedName)
 	}
-	// 驳回不动库存。
+
 	if got := f.stockQty(t, variantID, from.ID); got != 5 {
 		t.Fatalf("驳回不该动源仓数量，实际 %d", got)
 	}
-	// 被驳回的单不能再同意。
+
 	if _, err := f.inventory.ApproveTransfer(ctx, &inventorydto.TransferApproveReq{
 		ProjectID: f.projectID, ID: created.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrTransferStatusInvalid)) {
@@ -155,7 +138,6 @@ func TestTransferRejectRecordsReason(t *testing.T) {
 	}
 }
 
-// TestTransferApproveRechecksAvailable 判据 6：申请后货被搬走，审批时报库存不足。
 func TestTransferApproveRechecksAvailable(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -174,7 +156,7 @@ func TestTransferApproveRechecksAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 申请之后，这批货被订单预占掉 3 件（可售只剩 2）。
+
 	if _, err := f.inventory.ReserveStock(ctx, &inventorydto.ReserveStockReq{
 		ProjectID: f.projectID, SourceRef: "ORD-1",
 		Lines: []inventorydto.ReserveStockLine{{
@@ -190,7 +172,6 @@ func TestTransferApproveRechecksAvailable(t *testing.T) {
 	}
 }
 
-// TestTransferApproveCanChangeTarget 判据 8：同意时可改目标仓；改成源仓被拒。
 func TestTransferApproveCanChangeTarget(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {
@@ -207,7 +188,7 @@ func TestTransferApproveCanChangeTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 改成源仓：与自己搬给自己同义。
+
 	if _, err := f.inventory.ApproveTransfer(ctx, &inventorydto.TransferApproveReq{
 		ProjectID: f.projectID, ID: created.ID, ToWarehouseID: from.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrTransferSameWarehouse)) {
@@ -227,7 +208,6 @@ func TestTransferApproveCanChangeTarget(t *testing.T) {
 	}
 }
 
-// TestTransferCancelRequested 判据 9：申请态可以直接取消。
 func TestTransferCancelRequested(t *testing.T) {
 	f, from, to := newTransferFixture(t)
 	if f == nil {

@@ -25,7 +25,6 @@ func decodeTagProducts(t *testing.T, rec *httptest.ResponseRecorder) *productdto
 	return payload.Data
 }
 
-// 首屏只给查询入口，商品分页与总数在同一 JSON 契约中返回。
 func TestTagPageHitsUsesJSONFacts(t *testing.T) {
 	f := newTagQueryFixture(t)
 	if f == nil {

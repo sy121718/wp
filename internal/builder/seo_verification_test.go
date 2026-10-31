@@ -1,10 +1,5 @@
 package builder
 
-// seo_verification_test.go — GSC 站点验证 meta 注入（SEO-009）的字节级与安全边界断言。
-//
-// 与 ga4_test.go 同形：空值零字节、设值进 head、非法值被拒（绝不原样进 head）、
-// 同一构建输入产出同一字节；额外钉住一处与 GA4 相反的口径 —— token 大小写敏感。
-
 import (
 	"strings"
 	"testing"
@@ -12,10 +7,8 @@ import (
 	"go_wp/internal/templates"
 )
 
-// seoTestToken 合法样本：base64url 字符集，含 - 与 _ 与混合大小写（40 位）。
 const seoTestToken = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_aB"
 
-// TestSearchConsoleHeadEmptyAddsNoBytes 未配置 token 时产物一个字节都不多。
 func TestSearchConsoleHeadEmptyAddsNoBytes(t *testing.T) {
 	if got := buildSearchConsoleHead(""); got != "" {
 		t.Fatalf("空 token 应零字节注入，实际 %q", got)
@@ -33,7 +26,6 @@ func TestSearchConsoleHeadEmptyAddsNoBytes(t *testing.T) {
 	}
 }
 
-// TestSearchConsoleHeadInjectionIntoDocument 配置了合法 token 时 head 里出现验证 meta。
 func TestSearchConsoleHeadInjectionIntoDocument(t *testing.T) {
 	body := &CompiledPage{HTML: "<p>x</p>", SearchConsoleHead: buildSearchConsoleHead(seoTestToken)}
 	doc, err := RenderDocument(body)
@@ -49,13 +41,12 @@ func TestSearchConsoleHeadInjectionIntoDocument(t *testing.T) {
 	if !strings.Contains(head, want) {
 		t.Fatalf("head 缺少验证 meta（期望 %q）:\n%s", want, head)
 	}
-	// 注入点在 head 内、且只出现一次（重复注入对验证无意义，但说明装配被调了两次）。
+
 	if n := strings.Count(doc, "google-site-verification"); n != 1 {
 		t.Fatalf("验证 meta 应恰好出现 1 次，实际 %d 次", n)
 	}
 }
 
-// TestSearchConsoleVerificationCasePreserved token 大小写敏感：归一化只去空白、不折叠大小写。
 func TestSearchConsoleVerificationCasePreserved(t *testing.T) {
 	token, ok := NormalizeSearchConsoleVerification("  " + seoTestToken + "  ")
 	if !ok {
@@ -74,12 +65,10 @@ func TestSearchConsoleVerificationCasePreserved(t *testing.T) {
 	}
 }
 
-// TestSearchConsoleVerificationShape 形状校验：合法通过、非法一律拒绝且零字节注入。
 func TestSearchConsoleVerificationShape(t *testing.T) {
 	valid := []string{"AbCdEfGh", "a_b-cD9-12345678", seoTestToken}
 	for _, in := range valid {
-		// 与保存 / 注入共用同一入口（NormalizeSearchConsoleVerification）：合法 = ok，
-		// 且归一化结果非空（空结果写进产物等于没写验证 meta）。
+
 		token, ok := NormalizeSearchConsoleVerification(in)
 		if !ok {
 			t.Errorf("应判为合法: %q", in)
@@ -90,7 +79,7 @@ func TestSearchConsoleVerificationShape(t *testing.T) {
 	}
 	invalid := []string{
 		"", "   ", "abcdefg", "short",
-		// 注入形状：这些值一旦被拼进 head，就是属性逃逸 / 标签逃逸。
+
 		"X\"><script>alert(1)</script>", "tok'en", "tok en", "token<br>", "令牌abcdefgh",
 		"<meta name=\"google-site-verification\" content=\"abc\">",
 	}
@@ -104,7 +93,6 @@ func TestSearchConsoleVerificationShape(t *testing.T) {
 	}
 }
 
-// TestCompileSearchConsoleInvalidNotInjected 非法 token 经编译选项进入构建，产物零字节且无残留。
 func TestCompileSearchConsoleInvalidNotInjected(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -131,7 +119,6 @@ func TestCompileSearchConsoleInvalidNotInjected(t *testing.T) {
 	}
 }
 
-// TestCompileSearchConsoleDeterminism 同一输入重复编译，验证 meta 逐字节一致。
 func TestCompileSearchConsoleDeterminism(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -165,7 +152,6 @@ func TestCompileSearchConsoleDeterminism(t *testing.T) {
 	}
 }
 
-// TestCompileSearchConsoleAbsentZeroBytes 未注入 token 时编译结果零字节。
 func TestCompileSearchConsoleAbsentZeroBytes(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -184,7 +170,6 @@ func TestCompileSearchConsoleAbsentZeroBytes(t *testing.T) {
 	}
 }
 
-// TestSearchConsoleEndToEndRender 走完整链路：Compile（注入）→ RenderDocument，产物 head 里出现验证 meta。
 func TestSearchConsoleEndToEndRender(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -194,7 +179,7 @@ func TestSearchConsoleEndToEndRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePage: %v", err)
 	}
-	// 有值：产物 head 里出现验证 meta。
+
 	compiled, err := Compile(page,
 		WithComponentSet(set),
 		WithSearchConsoleVerification(seoTestToken),
@@ -215,7 +200,7 @@ func TestSearchConsoleEndToEndRender(t *testing.T) {
 	if !strings.Contains(doc[:headEnd], want) {
 		t.Fatalf("产物 head 缺少验证 meta（期望 %q）:\n%s", want, doc[:headEnd])
 	}
-	// 空值：同一页面不注入时产物零字节（对比同一构建路径）。
+
 	compiled, err = Compile(page, WithComponentSet(set), WithLanguage("zh-CN"))
 	if err != nil {
 		t.Fatalf("Compile(空): %v", err)

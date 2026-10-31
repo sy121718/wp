@@ -1,14 +1,9 @@
-// purchase_resp.go — 采购单、入库单与进货历史出参。
 package purchasedto
 
 import (
 	"go_wp/pkg/utils"
 )
 
-// PurchaseLineResp 一条采购行（含「已入库 / 未入库」两个推导量）。
-//
-// OutstandingQuantity = Quantity - ReceivedQuantity，是登记入库时「还能收多少」的
-// 直接依据；状态推导读的也是这两个数（不是订单头上的状态列）。
 type PurchaseLineResp struct {
 	ID                  string  `json:"id"`
 	ProductID           string  `json:"productId"`
@@ -22,7 +17,6 @@ type PurchaseLineResp struct {
 	Remark              string  `json:"remark"`
 }
 
-// PurchaseOrderResp 采购单（含全部采购行与汇总数量）。
 type PurchaseOrderResp struct {
 	ID            string `json:"id"`
 	ProjectID     string `json:"projectId"`
@@ -32,16 +26,13 @@ type PurchaseOrderResp struct {
 	SourceType    string `json:"sourceType"`
 	WarehouseID   string `json:"warehouseId"`
 	WarehouseName string `json:"warehouseName"`
-	// Status 七个值（迁移 670）。ordered / partial / received 三个由「已入库数量 与
-	// 采购数量」推导；draft / exception / finished / cancelled 是人工态，只由动作推进
-	// （下单 / 标异常 / 解除异常 / 提前关单 / 取消），表单里没有状态字段。
+
 	Status     string          `json:"status"`
 	OrderedAt  utils.JSONTime  `json:"orderedAt"`
 	ExpectedAt *utils.JSONTime `json:"expectedAt"`
 	Remark     string          `json:"remark"`
 	OperatorID string          `json:"operatorId"`
-	// 数量四件一次给全：模板只显示，不做减法与除法（template_logic 门禁）。
-	// ProgressPercent 是「已入库 / 采购数量」的整数百分比（采购数量为 0 时给 0）。
+
 	TotalQuantity       int                 `json:"totalQuantity"`
 	ReceivedQuantity    int                 `json:"receivedQuantity"`
 	OutstandingQuantity int                 `json:"outstandingQuantity"`
@@ -51,7 +42,6 @@ type PurchaseOrderResp struct {
 	UpdatedAt           utils.JSONTime      `json:"updatedAt"`
 }
 
-// ReceiptItemResp 一条入库行（数量 + 单价快照 + 成本价回写结果）。
 type ReceiptItemResp struct {
 	LineID      string  `json:"lineId"`
 	ProductID   string  `json:"productId"`
@@ -63,9 +53,6 @@ type ReceiptItemResp struct {
 	CostError   string  `json:"costError"`
 }
 
-// ReceiptResp 入库单（采购收货 / 生产入库共用）。
-//
-// Idempotent 为真表示本次提交命中了幂等键（返回的是既有入库单，没有第二次动库存）。
 type ReceiptResp struct {
 	ID              string         `json:"id"`
 	Code            string         `json:"code"`
@@ -81,13 +68,12 @@ type ReceiptResp struct {
 	Remark          string         `json:"remark"`
 	OperatorID      string         `json:"operatorId"`
 	ReceivedAt      utils.JSONTime `json:"receivedAt"`
-	// CostUpdated 为真表示本单全部行的 SKU 成本价都已按单价写回。
+
 	CostUpdated bool               `json:"costUpdated"`
 	Idempotent  bool               `json:"idempotent"`
 	Items       []*ReceiptItemResp `json:"items"`
 }
 
-// PurchaseHistoryResp 一条进货历史（某 SKU 的历次入库）。
 type PurchaseHistoryResp struct {
 	ReceiptID       string         `json:"receiptId"`
 	ReceiptCode     string         `json:"receiptCode"`

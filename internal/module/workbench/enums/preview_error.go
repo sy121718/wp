@@ -6,7 +6,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// PreviewError 声明草稿预览失败的状态，字节流出口与 JSON 出口共用错误事实。
 func PreviewError(key string) error {
 	switch key {
 	case ErrBlockNotFound:

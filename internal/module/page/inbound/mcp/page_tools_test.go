@@ -1,16 +1,5 @@
 package pagemcp
 
-// page_tools_test.go — 页面工具的关键词匹配、排序与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层）。
-// 这里钉的是几件会直接决定回答对错的事：
-//   · 标题前缀命中要排在包含命中之前（用户说「帮助」时，「帮助中心」比
-//     「如何联系帮助台」更可能是他要的）；
-//   · 未发布的页面必须显示成「（未发布）」，**不能**回退成草稿路径 ——
-//     两者拼出来的链接一个能打开、一个 404；
-//   · 空结果要提示换个词再问（用户给的名字与页面标题不一致很常见）；
-//   · 同档命中要保持服务端给的原始顺序（两次问同一句得到两个顺序会让人以为数据变了）。
-
 import (
 	"context"
 	"errors"
@@ -86,10 +75,9 @@ func TestPageFindRanksPrefixBeforeContains(t *testing.T) {
 		{ID: "p2", SEOTitle: "关于帮助中心的历史", DraftPath: "/about-help"},
 		{ID: "p1", SEOTitle: "帮助中心", DraftPath: "/help", ActivePath: &active},
 	}
-	// 直接断言 rankMatches 的返回顺序，而不是在正文里找子串位置 ——
-	// 「帮助中心」是「关于帮助中心的历史」的子串，按 strings.Index 比较会误判。
+
 	got := rankMatches(list, "帮助")
-	// 前缀命中的 p1 在最前；p2 与 p3 同档（都是标题包含），保持输入里的原始顺序。
+
 	want := []string{"p1", "p3", "p2"}
 	if len(got) != len(want) {
 		t.Fatalf("三条都该命中，实得 %d 条", len(got))
@@ -103,7 +91,7 @@ func TestPageFindRanksPrefixBeforeContains(t *testing.T) {
 			t.Fatalf("第 %d 条应是 %s（前缀命中在前，同档保持原始顺序），实得 %v", i+1, id, ids)
 		}
 	}
-	_ = pageListText(list, "帮助") // 顺带确认正文生成不 panic
+	_ = pageListText(list, "帮助")
 }
 
 func TestPageFindMatchesPath(t *testing.T) {
@@ -120,7 +108,6 @@ func TestPageFindMatchesPath(t *testing.T) {
 	}
 }
 
-// 未发布的页面不能回退成草稿路径：拼出来的链接会 404。
 func TestPageFindMarksUnpublished(t *testing.T) {
 	active := "/live"
 	list := []pagedto.PageTitleResp{

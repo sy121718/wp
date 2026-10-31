@@ -9,8 +9,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// newPublicationEnv 构造本地产物体 + 发布激活体（ActiveRoot 位于产物根下的 public/active，
-// 与 artifacts 同级，保证 symlink 相对目标 ../../artifacts/{hash} 物理可达）。
 func newPublicationEnv(t *testing.T) (*pipeline.LocalStore, *pipeline.LocalPublicationStore, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -19,7 +17,6 @@ func newPublicationEnv(t *testing.T) (*pipeline.LocalStore, *pipeline.LocalPubli
 	return store, pub, root
 }
 
-// putTestArtifact 写入一个测试产物并返回定位器。
 func putTestArtifact(t *testing.T, s *pipeline.LocalStore, html, path string) pipeline.Locator {
 	t.Helper()
 	m := baseManifest()
@@ -35,7 +32,6 @@ func putTestArtifact(t *testing.T, s *pipeline.LocalStore, html, path string) pi
 	return loc
 }
 
-// TestLocalPublicationActivateLifecycle 激活/检查/取消激活闭环。
 func TestLocalPublicationActivateLifecycle(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 	loc := putTestArtifact(t, store, "<html>v1</html>", "/about")
@@ -50,7 +46,7 @@ func TestLocalPublicationActivateLifecycle(t *testing.T) {
 	if st.Kind != pipeline.PublicationPage || st.Locator == nil || st.Locator.Key != loc.Key {
 		t.Errorf("激活状态错误: %+v", st)
 	}
-	// 激活路径可直接读到产物入口。
+
 	link := filepath.Join(pub.ActiveRoot, "about")
 	data, err := os.ReadFile(link + "/index.html")
 	if err != nil || string(data) != "<html>v1</html>" {
@@ -72,7 +68,6 @@ func TestLocalPublicationActivateLifecycle(t *testing.T) {
 	}
 }
 
-// TestLocalPublicationAtomicSwitch 二次激活原子切换指针，旧请求文件仍可读。
 func TestLocalPublicationAtomicSwitch(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 	loc1 := putTestArtifact(t, store, "<html>v1</html>", "/about")
@@ -88,14 +83,13 @@ func TestLocalPublicationAtomicSwitch(t *testing.T) {
 	if st.Locator.Key != loc2.Key {
 		t.Errorf("指针应指向新版本: %s", st.Locator.Key)
 	}
-	// 旧产物未被覆盖（不可变性）。
+
 	old := filepath.Join(store.Root, loc1.Key, "index.html")
 	if data, err := os.ReadFile(old); err != nil || string(data) != "<html>v1</html>" {
 		t.Errorf("历史产物应保持不变: %v %q", err, data)
 	}
 }
 
-// TestLocalPublicationMultiLevel 多级路径激活。
 func TestLocalPublicationMultiLevel(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 	loc := putTestArtifact(t, store, "<html>x</html>", "/products/phone")
@@ -108,7 +102,6 @@ func TestLocalPublicationMultiLevel(t *testing.T) {
 	}
 }
 
-// TestLocalPublicationRedirectActivate 重定向产物激活与检查。
 func TestLocalPublicationRedirectActivate(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 	r, _ := pipeline.NewRedirectArtifact("/new-url", 301)
@@ -129,11 +122,9 @@ func TestLocalPublicationRedirectActivate(t *testing.T) {
 	}
 }
 
-// TestLocalPublicationInspectGuards 异常状态与悬空目标检查。
 func TestLocalPublicationInspectGuards(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 
-	// 悬空目标：产物被删除后 inspect 报错。
 	loc := putTestArtifact(t, store, "<html>x</html>", "/gone")
 	if err := pub.Activate("/gone", loc); err != nil {
 		t.Fatalf("激活失败: %v", err)
@@ -146,7 +137,6 @@ func TestLocalPublicationInspectGuards(t *testing.T) {
 		t.Error("悬空目标应报错")
 	}
 
-	// 非符号链接占位报错。
 	link := filepath.Join(pub.ActiveRoot, "occupied")
 	if err := os.MkdirAll(link, 0o755); err != nil {
 		t.Fatalf("mkdir 失败: %v", err)
@@ -156,9 +146,6 @@ func TestLocalPublicationInspectGuards(t *testing.T) {
 	}
 }
 
-// TestLocalPublicationConcurrentActivate 同内容并发激活互不干扰（H8 回归）：
-// 临时名含 pid + 进程内唯一序列后，并发 rename 原子竞争，不得因临时链接
-// 同名 EEXIST 而失败；完成后不残留 .activating- 临时链接。
 func TestLocalPublicationConcurrentActivate(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
 	loc1 := putTestArtifact(t, store, "<html>v1</html>", "/hot")
@@ -194,9 +181,6 @@ func TestLocalPublicationConcurrentActivate(t *testing.T) {
 	}
 }
 
-// TestLocalPublicationKeepsChildSubtreeOnFailure 父路径激活失败不得删除
-// 子路径激活树（H9 回归）：/products/phone 已激活时再激活 /products 因
-// FS 目录/符号链接互斥而失败，子路径激活必须原样保留。
 func TestLocalPublicationKeepsChildSubtreeOnFailure(t *testing.T) {
 	store, pub, root := newPublicationEnv(t)
 	child := putTestArtifact(t, store, "<html>child</html>", "/products/phone")
@@ -217,7 +201,6 @@ func TestLocalPublicationKeepsChildSubtreeOnFailure(t *testing.T) {
 	}
 }
 
-// lastSlashIndex 返回字符串最后一个 / 的下标（无则 -1）。
 func lastSlashIndex(s string) int {
 	for i := len(s) - 1; i >= 0; i-- {
 		if s[i] == '/' {

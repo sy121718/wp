@@ -1,7 +1,5 @@
 package productservice
 
-// 评分输入的纯逻辑测试：读取失败、工程隔离与算法输入事实。
-
 import (
 	"context"
 	"errors"
@@ -18,8 +16,6 @@ import (
 
 const seoTestProjectID = "proj-1"
 
-// seoReadStub 是 ProductReadPort 的最小 fake：六个读口各一个函数字段，各自可设三档
-// （返回 err / 返回 nil,nil / 返回正常实体）。
 type seoReadStub struct {
 	t          *testing.T
 	get        func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error)
@@ -83,10 +79,6 @@ func (s *seoReadStub) ListBrands(ctx context.Context, req *productdto.ListBrandR
 	return s.listBrands(ctx, req)
 }
 
-// seoInstanceStub 是 SeoInstancePathReader 的 fake（可空依赖，故零值即可用）。
-//
-// calls 记录每次问的实体：entityType 常量写错**不会**报编译错，只会让线上路径永远查不到、
-// 评分如实把 canonical / JSON-LD 判成假（“页面明明发布了，编辑期却说没有”）。
 type seoInstanceStub struct {
 	inst  *presentationcontract.InstanceResp
 	err   error
@@ -97,8 +89,6 @@ func (s *seoInstanceStub) GetByEntity(_ context.Context, req *presentationcontra
 	s.calls = append(s.calls, *req)
 	return s.inst, s.err
 }
-
-// —— 固定装置：三个实体的「正常」档 ——
 
 func seoTestProduct() *productdto.ProductResp {
 	return &productdto.ProductResp{
@@ -141,10 +131,6 @@ func seoTestBrand() *productdto.BrandResp {
 	}
 }
 
-// ==========================================================================
-// 判据 1（C5 的核心）：读取失败不能被当成数据缺失。
-// ==========================================================================
-
 func TestSeoScoreInputOfReadFailureIsNotMissing(t *testing.T) {
 	boom := errors.New("db down")
 	cases := []struct {
@@ -177,7 +163,6 @@ func TestSeoScoreInputOfMissingIsAnError(t *testing.T) {
 	}
 }
 
-// seoStubReturningNil 造「实体不存在」那一档：读口无错、实体为 nil（真 Service 查不到时就是这个形状）。
 func seoStubReturningNil(kind scoring.PageKind, t *testing.T) *seoReadStub {
 	s := &seoReadStub{t: t}
 	switch kind {
@@ -190,10 +175,6 @@ func seoStubReturningNil(kind scoring.PageKind, t *testing.T) *seoReadStub {
 	}
 	return s
 }
-
-// ==========================================================================
-// 判据 3：正常档 —— 三个页型的关键字段（Kind / Name / URL / Locale / SelfID）。
-// ==========================================================================
 
 func TestSeoScoreInputOfFillsProductFacts(t *testing.T) {
 	detail := seoTestProduct()
@@ -256,7 +237,7 @@ func TestSeoScoreInputOfFillsCategoryFacts(t *testing.T) {
 			}, nil
 		},
 	}
-	// 未发布档：实例读口零值 → 返回 nil, nil（线上路径未知）。
+
 	insts := &seoInstanceStub{}
 
 	res := SeoScoreInputOf(context.Background(), r, insts, scoring.KindCategory, cat.ID, seoTestProjectID, "zh-CN")
@@ -291,7 +272,7 @@ func TestSeoScoreInputOfFillsCategoryFacts(t *testing.T) {
 func TestSeoScoreInputOfFillsBrandFacts(t *testing.T) {
 	brand := seoTestBrand()
 	insts := &seoInstanceStub{inst: &presentationcontract.InstanceResp{URLPath: "/brands/brand-x", Publications: []presentationdto.InstancePublicationResp{{ActivePath: "/brands/brand-x", ArtifactHash: "active-brand"}}}}
-	// listCats 刻意不设：品牌分支不该查分类树（一旦被调用，fake 会让用例失败）。
+
 	r := &seoReadStub{t: t,
 		getBrand: func(context.Context, *productdto.GetBrandReq) (*productdto.BrandResp, error) { return brand, nil }}
 
@@ -320,10 +301,6 @@ func TestSeoScoreInputOfFillsBrandFacts(t *testing.T) {
 	}
 }
 
-// ==========================================================================
-// 判据 4：lang 原样进 Input.Locale（评分按语言取词与判定，见 product_seo_score.go:108-109）。
-// ==========================================================================
-
 func TestSeoScoreInputOfPassesLangThrough(t *testing.T) {
 	detail := seoTestProduct()
 	r := &seoReadStub{t: t, get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return detail, nil }}
@@ -348,8 +325,7 @@ func TestSeoScoreInputOfRejectsUnknownKind(t *testing.T) {
 }
 
 func TestPageDraftTitleBoundaries(t *testing.T) {
-	// 页面草稿的 settings.seo.title。非法 / 形状不符一律空串：拿不到标题只该让
-	// 「标题唯一性」少一条候选，不该让整个评分面板报错。
+
 	cases := []struct {
 		name string
 		doc  json.RawMessage
@@ -373,7 +349,7 @@ func TestPageDraftTitleBoundaries(t *testing.T) {
 }
 
 func TestEntityPlainTextBoundaries(t *testing.T) {
-	// 商品描述 jsonb 的两种形态（富文本对象 / JSON 字符串纯文本）+ 非法入参。
+
 	cases := []struct {
 		name string
 		raw  json.RawMessage
@@ -411,7 +387,7 @@ func TestStripEntityTagsFoldsWhitespace(t *testing.T) {
 }
 
 func TestFlatCategoriesOfShortCircuitsEmptyProject(t *testing.T) {
-	// 工程为空时不查库（读口未设定，被调用即失败），并返回**非 nil 的空切片**。
+
 	r := &seoReadStub{t: t}
 	out, err := flatCategoriesOf(context.Background(), r, "")
 	if err != nil {
@@ -446,8 +422,7 @@ func TestFlatCategoriesOfReturnsTreeInDFSOrder(t *testing.T) {
 }
 
 func TestFlatCategoriesOfPropagatesReadFailure(t *testing.T) {
-	// 读失败必须是 nil + err：上层评分用例必须传播错误，
-	// 而不是把空切片当成「这个工程没有分类」。
+
 	boom := errors.New("cats down")
 	r := &seoReadStub{t: t, listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
 		return nil, boom
@@ -488,7 +463,7 @@ func TestCategoryChildNamesBoundaries(t *testing.T) {
 }
 
 func TestProductSeoListHelpersTolerateNilEntity(t *testing.T) {
-	// 三个取素材函数都可能拿到空实体（评分面板渲染空对象），nil 必须给 nil 而不是 panic。
+
 	if got := ProductPageImages(nil); got != nil {
 		t.Fatalf("ProductPageImages(nil) 应返回 nil，实际 %+v", got)
 	}
@@ -501,8 +476,7 @@ func TestProductSeoListHelpersTolerateNilEntity(t *testing.T) {
 }
 
 func TestProductPageImagesSkipsBlankSources(t *testing.T) {
-	// 空白图址被丢掉；hero 只由**原始索引 0** 决定 —— 首图为空时整份图集没有 hero 项，
-	// 第一张有效图会落成 content。这是当前实现的实际行为（见交付报告的清单外发现）。
+
 	p := &productdto.ProductResp{Images: []string{"", "b.jpg"}, ImageAlts: []string{"x", "y"}}
 	got := ProductPageImages(p)
 	if len(got) != 1 || got[0] != (scoring.Image{Src: "b.jpg", Alt: "y", Kind: "content"}) {
@@ -531,7 +505,6 @@ func TestFirstNonEmptyTextAndSlashSlug(t *testing.T) {
 	}
 }
 
-// 工程必须传递到只读契约，不依赖单工程环境的隐式回退。
 func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
 	detail := seoTestProduct()
 	var got *productdto.GetReq
@@ -553,7 +526,6 @@ func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
 	}
 }
 
-// 分类与品牌读取也必须带上同一工程。
 func TestSeoScoreInputOfCategoryScopeReachesReadPort(t *testing.T) {
 	node := seoTestCategory()
 	var got *productdto.GetCategoryReq
@@ -562,7 +534,7 @@ func TestSeoScoreInputOfCategoryScopeReachesReadPort(t *testing.T) {
 			got = req
 			return node, nil
 		},
-		// 分类分支还会取子分类名（CategoryChildNames → ListCategories），也吃同一个 projectID。
+
 		listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
 			return nil, nil
 		},

@@ -1,16 +1,5 @@
 package builder
 
-// content_i18n_blocks_test.go — 块内文本的内容翻译（多语言 P5b 缺口补齐，docs/06-D §7.7/§15.11）。
-//
-// 覆盖四条契约：
-//  1. 候选收集覆盖块：本页 AST + 页眉/页脚绑定块（extraBlockIDs）+ core.globalref 内联块
-//     （递归，含引用环保护），且与「只扫本页 AST」的 CollectContentCandidates 有可观测差异；
-//  2. 内联块文本可翻译：取词器用「含块」的候选集合构造后，globalref 展开的块内文本随语言变化；
-//  3. 回退：块内文本无译文时产物与「不接入内容翻译」逐字节一致；
-//  4. 缺失统计包含块内：只登记本页译文时，块内未命中计入 Misses。
-//
-// 不依赖数据库：块解析用内存假解析器，译文用内存假存储（与 content_i18n_test.go 同套基建）。
-
 import (
 	"context"
 	"strings"
@@ -20,7 +9,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// 块文档（块内文本一律用与页面不同的字面量，便于断言来源）。
 const (
 	blockHeaderDoc = `{"settings":{"layout":{"mode":"full"}},"root":[` +
 		`{"id":"hb1","type":"core.heading","props":{"text":"块标题-页眉"}},` +
@@ -32,25 +20,20 @@ const (
 		`{"id":"ib1","type":"core.button","props":{"text":"块按钮-内层","action":"internal","value":"/y"}}]}`
 )
 
-// blockRefPageDoc 页面文档：本页 heading + settings.structure 页眉绑定 + 引用块（promo）的 globalref。
 const blockRefPageDoc = `{"settings":{"layout":{"mode":"full"},"seo":{"title":"p5b-blocks","description":"p5b-blocks"},"structure":{"headerBlockId":"header-block"}},"root":[` +
 	`{"id":"ph1","type":"core.heading","props":{"text":"本页标题"}},` +
 	`{"id":"ref1","type":"core.globalref","props":{"blockId":"promo-block"}}]}`
 
-// blockDocs 假块库：块 ID → 块文档 JSON。
 var blockDocs = map[string]string{
 	"header-block": blockHeaderDoc,
 	"promo-block":  blockPromoDoc,
 	"inner-block":  blockInnerDoc,
 }
 
-// blockResolverFunc 把函数适配为 core.BlockResolver（builder 测试内联使用）。
 type blockResolverFunc func(blockID string) ([]*core.Node, error)
 
-// ResolveBlockRoot 实现 core.BlockResolver。
 func (f blockResolverFunc) ResolveBlockRoot(blockID string) ([]*core.Node, error) { return f(blockID) }
 
-// fakeBlockResolver 内存版块解析器（记录每个块被解析的次数）。
 func fakeBlockResolver(docs map[string]string) (func(string) ([]*core.Node, error), map[string]int) {
 	loads := map[string]int{}
 	return func(blockID string) ([]*core.Node, error) {
@@ -73,7 +56,6 @@ func (blockUnavailableError) Error() string { return "块不可用" }
 
 var errBlockUnavailable = blockUnavailableError{}
 
-// deepCandidates 用假解析器收集「页面 + extra 块 + globalref 块」的候选。
 func deepCandidates(t *testing.T, doc string, extra []string, docs map[string]string) []ContentCandidate {
 	t.Helper()
 	p, err := ParsePage([]byte(doc))
@@ -81,19 +63,16 @@ func deepCandidates(t *testing.T, doc string, extra []string, docs map[string]st
 		t.Fatalf("ParsePage: %v", err)
 	}
 	resolve, _ := fakeBlockResolver(docs)
-	// 用**构建期口径**取候选（CollectContentCandidatesForDocument 会并入 SEO 等
-	// Settings 来源的文本）。只扫 AST 会让这里少两条候选，而编译期照样去找它们的
-	// 译文 —— 测试于是永远报 misses=2，看起来像功能坏了，其实是口径不一致。
+
 	return AppendSEOCandidates(p, CollectContentCandidatesDeep(p, extra, resolve))
 }
 
-// TestCollectContentCandidatesDeepIncludesBlocks 候选收集覆盖块内文本（缺口修复的机器证据）。
 func TestCollectContentCandidatesDeepIncludesBlocks(t *testing.T) {
 	p, err := ParsePage([]byte(blockRefPageDoc))
 	if err != nil {
 		t.Fatalf("ParsePage: %v", err)
 	}
-	// 只扫本页 AST：块内文本不在候选里（改造前的行为，缺口本身）。
+
 	for _, c := range CollectContentCandidates(p) {
 		if strings.HasPrefix(c.Source, "块") {
 			t.Fatalf("只扫本页 AST 时不应出现块内文本: %+v", c)
@@ -108,16 +87,16 @@ func TestCollectContentCandidatesDeepIncludesBlocks(t *testing.T) {
 	}
 	for _, want := range [][2]string{
 		{"core.heading.text", "本页标题"},
-		{"core.heading.text", "块标题-页眉"}, // settings.structure 页眉块
-		{"core.button.text", "块按钮-页眉"},  // 页眉块
-		{"core.text.text", "块正文-促销"},    // core.globalref 内联块
-		{"core.button.text", "块按钮-内层"},  // 块内再引用块（递归）
+		{"core.heading.text", "块标题-页眉"},
+		{"core.button.text", "块按钮-页眉"},
+		{"core.text.text", "块正文-促销"},
+		{"core.button.text", "块按钮-内层"},
 	} {
 		if !got[want[0]+"|"+want[1]] {
 			t.Fatalf("候选集合缺少 %s=%q；实际: %+v", want[0], want[1], deep)
 		}
 	}
-	// 确定性：同一输入两次收集结果一致（顺序按 (context, source) 字典序）。
+
 	again := deepCandidates(t, blockRefPageDoc, extra, blockDocs)
 	if len(again) != len(deep) {
 		t.Fatalf("两次收集数量不一致: %d vs %d", len(deep), len(again))
@@ -129,7 +108,6 @@ func TestCollectContentCandidatesDeepIncludesBlocks(t *testing.T) {
 	}
 }
 
-// TestCollectContentCandidatesDeepCycleAndDedupe 引用环不死循环、同块只解析一次。
 func TestCollectContentCandidatesDeepCycleAndDedupe(t *testing.T) {
 	cyclic := map[string]string{
 		"a": `{"settings":{},"root":[{"id":"a1","type":"core.text","props":{"text":"环-A"}},{"id":"a2","type":"core.globalref","props":{"blockId":"b"}}]}`,
@@ -155,7 +133,6 @@ func TestCollectContentCandidatesDeepCycleAndDedupe(t *testing.T) {
 	}
 }
 
-// TestContentTranslationBlockTextTranslated 内联块文本随语言切换（缺口修复）。
 func TestContentTranslationBlockTextTranslated(t *testing.T) {
 	store := &contentFakeStore{rows: map[string]string{}}
 	cands := deepCandidates(t, blockRefPageDoc, []string{"header-block"}, blockDocs)
@@ -165,9 +142,7 @@ func TestContentTranslationBlockTextTranslated(t *testing.T) {
 		"core.button.text|块按钮-页眉":  "Block button",
 		"core.text.text|块正文-促销":    "Block body",
 		"core.button.text|块按钮-内层":  "Inner button",
-		// SEO 也进候选集合（AppendSEOCandidates）：页面 title/description 是 Settings
-		// 来源的文本，组件侧 Translatable 白名单管不到，必须在这里给出译文，
-		// 否则「全部候选均有译文」的前提从一开始就不成立。
+
 		"page.seo.title|p5b-blocks":       "p5b-blocks en",
 		"page.seo.description|p5b-blocks": "p5b-blocks en",
 	}
@@ -208,7 +183,6 @@ func TestContentTranslationBlockTextTranslated(t *testing.T) {
 	}
 }
 
-// TestContentTranslationBlockFallbackOriginal 块内文本无译文时逐字节回退原文。
 func TestContentTranslationBlockFallbackOriginal(t *testing.T) {
 	p, err := ParsePage([]byte(blockRefPageDoc))
 	if err != nil {
@@ -239,7 +213,6 @@ func TestContentTranslationBlockFallbackOriginal(t *testing.T) {
 	}
 }
 
-// TestContentTranslationBlockMissesCounted 缺失统计包含块内未命中。
 func TestContentTranslationBlockMissesCounted(t *testing.T) {
 	p, err := ParsePage([]byte(blockRefPageDoc))
 	if err != nil {
@@ -248,7 +221,6 @@ func TestContentTranslationBlockMissesCounted(t *testing.T) {
 	resolve, _ := fakeBlockResolver(blockDocs)
 	cands := CollectContentCandidatesDeep(p, []string{"header-block"}, resolve)
 
-	// 只登记本页标题的译文：globalref 内联块的两处文本必然未命中。
 	store := &contentFakeStore{rows: map[string]string{}}
 	for _, c := range cands {
 		if c.Context == "core.heading.text" && c.Source == "本页标题" {

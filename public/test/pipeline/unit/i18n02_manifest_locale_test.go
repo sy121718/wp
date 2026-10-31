@@ -1,15 +1,5 @@
 package unit
 
-// i18n02_manifest_locale_test.go — 语言环境事实进 Manifest（审计 I18N-02）。
-//
-// 三项事实都只在「构建之后」才确定，所以都在内核装配 Manifest 时取走：
-//   · Dir —— 书写方向，与 HTML 的 <html dir> 同源（builder.DirAttr）；
-//   · SiteLangs —— 本次发布冻结的站点语言表；
-//   · TranslationMisses —— 内容译文缺失统计（策略 + 候选数 + 缺失数）。
-//
-// 为什么必须是 Manifest 而不是日志：发布验收要能**机器判定**「这次产物里有多少字段
-// 回退成了原文」，日志滚走了、也没法参与判定 —— 本次审计点名不许把日志告警当质量检查。
-
 import (
 	"context"
 	"testing"
@@ -17,12 +7,10 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// missCounter 复刻取词器的缺失计数（真实实现是 *i18n.ContentTranslator）。
 type missCounter struct{ misses int64 }
 
 func (m missCounter) Misses() int64 { return m.misses }
 
-// buildWithUsage 用给定编译函数构建一个产物并取回 Manifest。
 func buildWithUsage(t *testing.T, lang, path string, fn func(*pipeline.CompileUsage)) pipeline.Manifest {
 	t.Helper()
 	p, store, _, _ := newPublisherEnv(t, pipeline.WithCompile(func(ctx context.Context, in pipeline.BuildInput) ([]byte, error) {
@@ -49,7 +37,6 @@ func buildWithUsage(t *testing.T, lang, path string, fn func(*pipeline.CompileUs
 	return a.Manifest
 }
 
-// TestManifestDirFollowsLocaleDirection dir 与 HTML 同源：RTL 落字节、LTR 省略。
 func TestManifestDirFollowsLocaleDirection(t *testing.T) {
 	if m := buildWithUsage(t, "ar", "/ar/about", nil); m.Dir != "rtl" || m.Lang != "ar" {
 		t.Fatalf("RTL 语言应记录 dir=rtl，实际 dir=%q lang=%q", m.Dir, m.Lang)
@@ -61,7 +48,6 @@ func TestManifestDirFollowsLocaleDirection(t *testing.T) {
 	}
 }
 
-// TestManifestSiteLangsRecordsFrozenTable 冻结的站点语言表进 Manifest。
 func TestManifestSiteLangsRecordsFrozenTable(t *testing.T) {
 	m := buildWithUsage(t, "ar", "/ar/about", func(u *pipeline.CompileUsage) {
 		u.SetSiteLangs([]string{"zh-CN", "en-US", "ar"})
@@ -69,14 +55,12 @@ func TestManifestSiteLangsRecordsFrozenTable(t *testing.T) {
 	if len(m.SiteLangs) != 3 || m.SiteLangs[2] != "ar" {
 		t.Fatalf("Manifest 应记录本次发布冻结的语言表，实际 %v", m.SiteLangs)
 	}
-	// 未冻结（预览口径的编译函数）时字段必须缺省 —— 不能出现「空但存在」的假事实。
+
 	if m := buildWithUsage(t, "zh-CN", "/about", nil); m.SiteLangs != nil {
 		t.Fatalf("未冻结时不应写 siteLangs，实际 %v", m.SiteLangs)
 	}
 }
 
-// TestManifestTranslationMisses 缺译统计进 Manifest，且「没接入内容翻译」与
-// 「接入了但零缺失」必须区分得开。
 func TestManifestTranslationMisses(t *testing.T) {
 	m := buildWithUsage(t, "en-US", "/en/about", func(u *pipeline.CompileUsage) {
 		u.RecordContentTranslation(12, missCounter{misses: 3})
@@ -91,8 +75,6 @@ func TestManifestTranslationMisses(t *testing.T) {
 		t.Fatalf("统计应为 candidates=12 misses=3，实际 %+v", m.TranslationMisses)
 	}
 
-	// 接入了内容翻译但一条都没缺：仍要记录（candidates>0），否则「零缺失」与
-	// 「没接入」在 Manifest 里长得一样，发布验收分不清。
 	zero := buildWithUsage(t, "en-US", "/en/about", func(u *pipeline.CompileUsage) {
 		u.RecordContentTranslation(5, missCounter{misses: 0})
 	})
@@ -100,19 +82,16 @@ func TestManifestTranslationMisses(t *testing.T) {
 		t.Fatalf("零缺失也必须记录，实际 %+v", zero.TranslationMisses)
 	}
 
-	// 默认语言 / 单语言站点不接入内容翻译：字段缺省。
 	if m := buildWithUsage(t, "zh-CN", "/about", nil); m.TranslationMisses != nil {
 		t.Fatalf("未接入内容翻译时不应写统计，实际 %+v", m.TranslationMisses)
 	}
 }
 
-// TestManifestTranslationMissesReadAfterCompile 缺失数必须在**渲染结束后**读：
-// 记录时若立刻取值，写进 Manifest 的会是一份恒为 0 的假事实。
 func TestManifestTranslationMissesReadAfterCompile(t *testing.T) {
 	counter := &lateMissCounter{}
 	m := buildWithUsage(t, "en-US", "/en/about", func(u *pipeline.CompileUsage) {
 		u.RecordContentTranslation(7, counter)
-		// 记录之后「渲染」才发生：缺失数在记录那一刻还是 0。
+
 		counter.misses = 4
 	})
 	if m.TranslationMisses == nil || m.TranslationMisses.Misses != 4 {
@@ -120,7 +99,6 @@ func TestManifestTranslationMissesReadAfterCompile(t *testing.T) {
 	}
 }
 
-// lateMissCounter 可变的缺失计数（模拟渲染期累加）。
 type lateMissCounter struct{ misses int64 }
 
 func (m *lateMissCounter) Misses() int64 { return m.misses }

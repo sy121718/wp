@@ -1,8 +1,5 @@
 package webhookservice
 
-// webhook_endpoint.go — 端点管理：管理员配置的出站目标白名单（URL / 密钥 / 事件类型）。
-// 保存与停用都在写库前过一遍 URL 校验与密钥加解密，投递永远只用这里存的 URL。
-
 import (
 	"context"
 	"errors"
@@ -16,12 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---- 端点管理（管理员后台配置白名单） ----
-
-// CreateEndpoint 新建端点：URL 立即过 SSRF 校验，密钥加密落库。
-//
-// 密钥**必填**：出站请求恒带 HMAC 签名，没有密钥的端点是个发不出可验签请求的坏条目 ——
-// 与其静默建一条收件方永远验不过的记录，不如在建的时候就说清楚。
 func (s *Service) CreateEndpoint(ctx context.Context, req *webhookdto.SaveEndpointReq) (item *webhookdto.EndpointItem, err error) {
 	eventType := strings.TrimSpace(req.EventType)
 	if eventType == "" {
@@ -60,10 +51,6 @@ func (s *Service) CreateEndpoint(ctx context.Context, req *webhookdto.SaveEndpoi
 	return toEndpointItem(e), nil
 }
 
-// UpdateEndpoint 更新端点（PATCH 语义：空字段即不改）。
-//
-// 先确认端点存在再改：Update 对不存在的 id 影响 0 行且不报错，
-// 调用方会拿到「保存成功」而其实什么都没发生。改 URL / 密钥时重新校验与重新加密。
 func (s *Service) UpdateEndpoint(ctx context.Context, req *webhookdto.SaveEndpointReq) (item *webhookdto.EndpointItem, err error) {
 	if req.ID == 0 {
 		return nil, webhookenums.Err(webhookenums.ErrInvalidParam)
@@ -108,7 +95,6 @@ func (s *Service) UpdateEndpoint(ctx context.Context, req *webhookdto.SaveEndpoi
 	return toEndpointItem(e), nil
 }
 
-// DeleteEndpoint 删除端点（投递日志由外键 ON DELETE CASCADE 一并清理）。
 func (s *Service) DeleteEndpoint(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return webhookenums.Err(webhookenums.ErrInvalidParam)
@@ -116,10 +102,6 @@ func (s *Service) DeleteEndpoint(ctx context.Context, id uint64) error {
 	return s.m.DeleteEndpoint(ctx, id)
 }
 
-// SetEndpointStatus 启停端点。
-//
-// 停用只影响**新**投递的派发（DispatchEvent 只取启用端点）；
-// 已经入队的投递仍会执行 —— 改状态不该让在途任务凭空消失。
 func (s *Service) SetEndpointStatus(ctx context.Context, id uint64, status int) (err error) {
 	if id == 0 || (status != webhookenums.EndpointStatusEnabled && status != webhookenums.EndpointStatusDisabled) {
 		return webhookenums.Err(webhookenums.ErrInvalidParam)
@@ -130,10 +112,6 @@ func (s *Service) SetEndpointStatus(ctx context.Context, id uint64, status int) 
 	})
 }
 
-// ListEndpoints 列出端点（eventType 为空即全部）。
-//
-// 取**全部**而不只取启用的：后台要看得见停用的端点并把它重新启用。
-// 只取启用是派发侧的需求（DispatchEvent 走 model 自行传 onlyEnabled=true）。
 func (s *Service) ListEndpoints(ctx context.Context, eventType string) (list []*webhookdto.EndpointItem, err error) {
 	rows, lerr := s.m.ListEndpoints(ctx, eventType, false)
 	if lerr != nil {
@@ -146,7 +124,6 @@ func (s *Service) ListEndpoints(ctx context.Context, eventType string) (list []*
 	return list, nil
 }
 
-// toEndpointItem Entity → 对外条目。**刻意不含密钥**：只给「配没配」的布尔。
 func toEndpointItem(e *webhookmodel.WebhookEndpointEntity) *webhookdto.EndpointItem {
 	return &webhookdto.EndpointItem{
 		ID:          e.ID,

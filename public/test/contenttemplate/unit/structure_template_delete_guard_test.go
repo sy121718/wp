@@ -1,14 +1,5 @@
 package unit
 
-// structure_template_delete_guard_test.go — 结构模板的**删除保护**。
-//
-// 结构模板的引用写在 JSONB 文档里（settings.structure），数据库外键管不到：
-// 没有这道拦截，删掉一套正被别的模板当作页眉用的结构模板会一路成功，
-// 绑定静默丢失 —— 表现为「站点的页眉在某次重建后没了」，只在构建日志里留一行 Warn。
-//
-// 判据：被引用 → 拒绝删除，且错误里给出**可定位数据**（哪套模板、哪个槽位）；
-// 未引用 → 正常删除（不能因为加了拦截就把正常的删除也堵住）。
-
 import (
 	"context"
 	"strings"
@@ -59,12 +50,11 @@ func TestStructureTemplateDeleteGuard(t *testing.T) {
 		if !strings.Contains(err.Error(), "文章模板") || !strings.Contains(err.Error(), "页眉") {
 			t.Fatalf("错误应给出可定位数据（模板名 + 槽位）: %v", err)
 		}
-		// 拒绝删除必须真的没删：模板仍在。
+
 		if _, err := svc.Get(ctx, &contenttemplatedto.GetReq{ID: header.ID}); err != nil {
 			t.Fatalf("删除被拒绝后模板应仍然存在: %v", err)
 		}
 
-		// 解绑之后可以正常删除（拦截不能把正常路径也堵住）。
 		unbound := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"正文"}}]}`
 		if _, err := svc.Update(ctx, &contenttemplatedto.UpdateReq{ID: mustArticleID(t, svc, ctx), DraftDocument: []byte(unbound)}); err != nil {
 			t.Fatalf("解绑失败: %v", err)
@@ -100,7 +90,6 @@ func TestStructureTemplateDeleteGuard(t *testing.T) {
 	})
 }
 
-// mustArticleID 取本工程里第一套 article 模板的 id（用例内只有一套；List 内部按唯一工程解析）。
 func mustArticleID(t *testing.T, svc interface {
 	List(ctx context.Context, req *contenttemplatedto.ListReq) ([]*contenttemplatedto.TemplateResp, error)
 }, ctx context.Context) string {

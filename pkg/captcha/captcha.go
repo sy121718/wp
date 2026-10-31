@@ -1,18 +1,3 @@
-// Package captcha 验证码组件，提供验证码的生成、存储与验证能力。
-//
-// 支持三种验证码类型：
-//   - TypeDigit：纯数字（默认）
-//   - TypeAlphanumeric：字母数字混合（去掉了易混淆字符 O/0/1/l/I）
-//   - TypeMath：数学运算（加减乘）
-//
-// 存储默认使用 MemoryStore（进程内内存），启动后台协程每 5 分钟清理过期验证码。
-// 可自行实现 Store 接口替换为 Redis 存储。
-//
-// 使用方式：
-//
-//	captcha.Init(&captcha.Config{Length: 4, ExpireTime: 2 * time.Minute})
-//	id, code := captcha.Get().Generate()
-//	ok := captcha.Get().Verify(id, code, true)
 package captcha
 
 import (
@@ -23,32 +8,25 @@ import (
 	"time"
 )
 
-// CaptchaType 验证码类型
 type CaptchaType string
 
 const (
-	TypeDigit        CaptchaType = "digit"        // 纯数字
-	TypeAlphanumeric CaptchaType = "alphanumeric" // 字母数字混合
-	TypeMath         CaptchaType = "math"         // 数学运算
+	TypeDigit        CaptchaType = "digit"
+	TypeAlphanumeric CaptchaType = "alphanumeric"
+	TypeMath         CaptchaType = "math"
 )
 
-// Captcha 验证码信息
 type Captcha struct {
 	Code      string
 	ExpiresAt time.Time
 }
 
-// Store 验证码存储接口
-// 可自行实现用 Redis 替换 MemoryStore。
 type Store interface {
 	Set(id string, captcha *Captcha)
 	Get(id string) *Captcha
 	Delete(id string)
 }
 
-// MemoryStore 基于内存的验证码存储。
-// 启动后台协程每 5 分钟清理过期数据；Close 可停止该协程（幂等），
-// 避免进程内 Init/Close 循环遗留 goroutine（测试基建 goleak 泄漏检测）。
 type MemoryStore struct {
 	mu         sync.RWMutex
 	captchas   map[string]*Captcha
@@ -57,11 +35,8 @@ type MemoryStore struct {
 	stopOnce   sync.Once
 }
 
-// defaultMaxEntries MemoryStore 容量上限：防止匿名接口被脚本刷爆时
-// 验证码条目无界增长撑爆进程内存（纵深防御，与 HTTP 层按 IP 限流互补）。
 const defaultMaxEntries = 10000
 
-// NewMemoryStore 创建内存存储并启动过期清理协程。
 func NewMemoryStore() *MemoryStore {
 	store := &MemoryStore{
 		captchas:   make(map[string]*Captcha),
@@ -76,8 +51,6 @@ func (s *MemoryStore) Set(id string, captcha *Captcha) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 容量上限：新条目且已达上限时，先清理过期项；仍满则丢弃该条目
-	// （宁可验证码不可用，也不能让内存被恶意刷爆）。
 	if _, exists := s.captchas[id]; !exists && len(s.captchas) >= s.maxEntries {
 		now := time.Now()
 		for k, v := range s.captchas {
@@ -124,21 +97,18 @@ func (s *MemoryStore) cleanup() {
 	}
 }
 
-// Close 停止过期清理协程（幂等），供组件编排与测试收尾调用。
 func (s *MemoryStore) Close() error {
 	s.stopOnce.Do(func() { close(s.stopCh) })
 	return nil
 }
 
-// Config 验证码配置
 type Config struct {
-	Length     int           // 验证码长度
-	ExpireTime time.Duration // 过期时间
-	Width      int           // 图片宽度（预留）
-	Height     int           // 图片高度（预留）
+	Length     int
+	ExpireTime time.Duration
+	Width      int
+	Height     int
 }
 
-// CaptchaService 验证码服务
 type CaptchaService struct {
 	config *Config
 	store  Store
@@ -149,10 +119,6 @@ var (
 	mu             sync.Mutex
 )
 
-// Init 初始化验证码服务。
-// cfg 为 nil 或字段零值时逐项兜底默认值（Length=6, ExpireTime=1min,
-// Width=120, Height=40）——防止 config.yaml 缺失 captcha 段时 GetInt 返回 0
-// 导致 Length=0 生成空验证码（图上无字符，用户无法登录）。
 func Init(cfg *Config) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -182,8 +148,6 @@ func Init(cfg *Config) {
 	}
 }
 
-// Get 获取验证码服务单例。
-// 未初始化时自动用默认值初始化。
 func Get() *CaptchaService {
 	if captchaService == nil {
 		Init(nil)
@@ -191,7 +155,6 @@ func Get() *CaptchaService {
 	return captchaService
 }
 
-// ExpireSeconds 返回验证码有效时长（秒），供接口层下发给前端展示刷新提示。
 func (s *CaptchaService) ExpireSeconds() int64 {
 	if s.config.ExpireTime <= 0 {
 		return 0
@@ -199,8 +162,6 @@ func (s *CaptchaService) ExpireSeconds() int64 {
 	return int64(s.config.ExpireTime / time.Second)
 }
 
-// GenerateByType 按类型生成验证码。
-// 返回 id（用于验证时的标识）、display（展示给用户的文本）、answer（正确答案）。
 func (s *CaptchaService) GenerateByType(captchaType CaptchaType) (id, display, answer string) {
 	switch captchaType {
 	case TypeAlphanumeric:
@@ -214,7 +175,6 @@ func (s *CaptchaService) GenerateByType(captchaType CaptchaType) (id, display, a
 	}
 }
 
-// Generate 生成纯数字验证码。
 func (s *CaptchaService) Generate() (id string, code string) {
 	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
@@ -230,7 +190,6 @@ func (s *CaptchaService) Generate() (id string, code string) {
 	return id, code
 }
 
-// GenerateWithPrefix 生成带业务前缀的验证码，用于区分不同业务场景。
 func (s *CaptchaService) GenerateWithPrefix(prefix string) (id string, code string) {
 	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
@@ -246,8 +205,6 @@ func (s *CaptchaService) GenerateWithPrefix(prefix string) (id string, code stri
 	return id, code
 }
 
-// GenerateAlphanumeric 生成字母数字混合验证码。
-// 已排除易混淆字符：O/0/1/l/I。
 func (s *CaptchaService) GenerateAlphanumeric() (id string, code string) {
 	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
@@ -269,9 +226,6 @@ func (s *CaptchaService) GenerateAlphanumeric() (id string, code string) {
 	return id, code
 }
 
-// GenerateMath 生成数学运算验证码。
-// 返回 id、表达式（如 "3 + 5 = ?"）、答案（如 "8"）。
-// 减法保证大减小，乘法操作数范围 1-10。
 func (s *CaptchaService) GenerateMath() (id, expression, answer string) {
 	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
@@ -310,8 +264,6 @@ func (s *CaptchaService) GenerateMath() (id, expression, answer string) {
 	return id, expression, answer
 }
 
-// Verify 验证验证码。
-// clear=true 表示验证成功后清除，实现一次性验证。
 func (s *CaptchaService) Verify(id, code string, clear bool) bool {
 	captcha := s.store.Get(id)
 	if captcha == nil {
@@ -334,7 +286,6 @@ func (s *CaptchaService) Verify(id, code string, clear bool) bool {
 	return true
 }
 
-// Close 关闭验证码服务：先停止 MemoryStore 的过期清理协程，再清空运行时状态。
 func Close() error {
 	mu.Lock()
 	defer mu.Unlock()

@@ -1,15 +1,5 @@
 package builder
 
-// css_verify_multidevice_test.go — 多端硬规则守卫的断言集（审计 UI-015）。
-//
-// 两个方向都必须有，否则检查器可能是恒真或恒假：
-//   · 故意违规的样例必须被报出来（并且要指明规则、位置）；
-//   · 合规样例必须一条都不报（min() / clamp 下界 / 桶内 :hover / 注释里的说明文字）。
-//
-// 还有一条最容易漏的：**模式语义**。warn 不能让构建失败，error 必须真的拦住 ——
-// 只测「分析函数返回了什么」证明不了这两件事，所以这里直接打在生产路径的钩子上
-// （verifyAnimationRefs 就是 Compile 里唯一调用守卫的地方）。
-
 import (
 	"os"
 	"path/filepath"
@@ -19,7 +9,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// guardViolations 跑一次分析并返回指定规则的违规。
 func guardViolations(css, scope, rule string, srcMode bool) []CSSViolation {
 	var out []CSSViolation
 	for _, v := range analyzeCSS(css, scope, "test.css", srcMode) {
@@ -30,7 +19,6 @@ func guardViolations(css, scope, rule string, srcMode bool) []CSSViolation {
 	return out
 }
 
-// TestCSSGuardBareHover 规则 1：裸 :hover 必须报，桶内 / 注释里的不报。
 func TestCSSGuardBareHover(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -64,7 +52,6 @@ func TestCSSGuardBareHover(t *testing.T) {
 	}
 }
 
-// TestCSSGuardFixedWidth 规则 2：写死 px 宽度。
 func TestCSSGuardFixedWidth(t *testing.T) {
 	cases := []struct {
 		name string
@@ -98,7 +85,6 @@ func TestCSSGuardFixedWidth(t *testing.T) {
 	}
 }
 
-// TestCSSGuardClampLower 规则 4：clamp 下界不小于最窄视口。
 func TestCSSGuardClampLower(t *testing.T) {
 	cases := []struct {
 		name string
@@ -125,7 +111,6 @@ func TestCSSGuardClampLower(t *testing.T) {
 	}
 }
 
-// TestCSSGuardAcceptsCompliantCSS 合规样例一条都不报（防恒真检查器）。
 func TestCSSGuardAcceptsCompliantCSS(t *testing.T) {
 	css := "@media (hover: hover) {\n" +
 		"  .sky-c-1 .sky-card:hover {\n    transform: translateY(-2px);\n  }\n" +
@@ -141,11 +126,6 @@ func TestCSSGuardAcceptsCompliantCSS(t *testing.T) {
 	}
 }
 
-// TestCSSGuardSourceScanHoverFallback 规则 3：有 hover 桶但触屏侧零输出。
-//
-// 判据：目录里既没有 @hovernone / AddHoverNone（触屏等价形态）也没有 @active / AddActive
-// （按压反馈）。只有按压反馈的组件归到「次级观察」，不算违规 —— 审计在 UI-004 里把
-// 「hover 进桶 + AddActive」视为合格，这里沿用同一口径。
 func TestCSSGuardSourceScanHoverFallback(t *testing.T) {
 	root := t.TempDir()
 	writeTestComponent(t, root, "foo", "& .sky-foo { color: #000; }\n@hover & .sky-foo-link:hover { color: #f00; }\n")
@@ -182,7 +162,6 @@ func TestCSSGuardSourceScanHoverFallback(t *testing.T) {
 	}
 }
 
-// TestCSSGuardModes warn 不拦、error 拦、off 不检查（打在生产路径的钩子上）。
 func TestCSSGuardModes(t *testing.T) {
 	bad := ".sky-c-1 .sky-x:hover { color: #f00; }"
 	good := "@media (hover: hover) { .sky-c-1 .sky-x:hover { color: #f00; } }"
@@ -210,8 +189,6 @@ func TestCSSGuardModes(t *testing.T) {
 	}
 }
 
-// TestCSSGuardWarnModeCompileSucceeds 真实编译路径在 warn 模式下不失败（本批口径：
-// 违规清单先亮出来，整改是后续批次，不能让现有构建挂掉）。
 func TestCSSGuardWarnModeCompileSucceeds(t *testing.T) {
 	t.Setenv(CSSGuardModeEnv, CSSGuardModeWarn)
 	doc := "{\n" +
@@ -238,7 +215,6 @@ func TestCSSGuardWarnModeCompileSucceeds(t *testing.T) {
 	}
 }
 
-// TestCSSGuardExemptionsCarryReasons 豁免必须写理由，且理由要有实质内容。
 func TestCSSGuardExemptionsCarryReasons(t *testing.T) {
 	if err := validateCSSGuardExemptions(); err != nil {
 		t.Fatalf("豁免清单不合规: %v", err)
@@ -254,7 +230,7 @@ func TestCSSGuardExemptionsCarryReasons(t *testing.T) {
 			t.Errorf("豁免第 %d 条理由过短: %q", i+1, ex.Reason)
 		}
 	}
-	// 豁免真的生效（不是清单摆着好看）
+
 	kept, exempted := applyCSSGuardExemptions([]CSSViolation{
 		{Rule: ruleHoverNoFallback, Scope: "marquee", File: "a.css", Line: 1, Detail: "x"},
 		{Rule: ruleHoverNoFallback, Scope: "accordion", File: "b.css", Line: 2, Detail: "y"},
@@ -267,10 +243,6 @@ func TestCSSGuardExemptionsCarryReasons(t *testing.T) {
 	}
 }
 
-// TestCSSGuardScansRealComponents 对真实仓库跑一遍（warn 语义：只打印清单，不失败）。
-//
-// 这条用例的价值是「清单随时可复现」：CI 与本地拿到的是同一份数据。
-// 它同时防了空转 —— 组件数或样式文件数为 0 说明扫描路径写错了。
 func TestCSSGuardScansRealComponents(t *testing.T) {
 	t.Setenv(CSSGuardModeEnv, CSSGuardModeWarn)
 	root := testRepoRoot(t)
@@ -286,7 +258,6 @@ func TestCSSGuardScansRealComponents(t *testing.T) {
 	t.Log(FormatCSSGuardReport(rep))
 }
 
-// writeTestComponent 在临时仓库根下造一个组件样式源。
 func writeTestComponent(t *testing.T, root, comp, body string) {
 	t.Helper()
 	dir := filepath.Join(root, filepath.FromSlash(CSSGuardComponentsDir), comp)
@@ -298,7 +269,6 @@ func writeTestComponent(t *testing.T, root, comp, body string) {
 	}
 }
 
-// testRepoRoot 从当前测试目录向上找 go.mod（internal/builder → 仓库根）。
 func testRepoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

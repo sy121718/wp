@@ -1,27 +1,5 @@
 package feature
 
-// order_return_json_write_chain_test.go — 退货页「写动作迁 JSON」的**链式证据**（task-98 S3 / task-119）。
-//
-// 与 S1/S2 同一条链，只是换了页面与端点：
-//
-//	真渲染退货页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**表单/按钮的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js
-//	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
-//	→ 服务端记录实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
-//
-// 本页比列表页多了一层形状风险，所以非这样测不可：
-//
-//   · **`autoReceive` 是布尔**：DOM 里它是 `value="1"` 的复选框（字符串），服务端按 bool 严格绑定。
-//     复选框未勾选时浏览器根本不提交该键（服务端得到 false），不需要额外声明；
-//     而页面上只看到「操作失败」。这一条只有真基座能证。
-//   · **`returnId` 是数字**：DOM 值恒为字符串，但 formdata 的 "12" 服务端直接绑得进 uint64。
-//   · **批量两个按钮各投各的端点**：端点声明落在按钮上（表单上刻意不声明），且批量体里不得出现
-//     `autoReceive`（批档白名单里没有它，带上会整批 400 —— 批量不自动入库是硬语义）。
-//
-// 驱动脚本沿用 S1 的 testdata/coupon_json_write_chain_driver.cjs：它本身是**通用**的
-// （fixture 只描述表单/按钮属性与字段），文件名里的 coupon 是历史产物。
-// 没有 node 时**跳过并说明**（不伪装成绿）：本用例要的就是真实基座，桩掉它等于测了个假东西。
-
 import (
 	"bytes"
 	"context"
@@ -48,7 +26,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// TestReturnJSONWriteChainTemplateToHandler 退货页链式证据主用例（单档三按钮 + 批档两按钮）。
 func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -62,7 +39,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
 	_, variantID := f.addProduct(t, "退货链式证据商品", 40, 60)
 
-	// 五张**独立**申请：每个用例改的是自己那张，互不干扰（S1 共用一单踩过这个坑）。
 	mkReturn := func(email string) uint64 {
 		orderID, userID, itemID := f.paidOrder(t, email, variantID, 1)
 		return f.requestReturn(t, orderID, userID, itemID, 1).ID
@@ -72,7 +48,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	receiveC := mkReturn("chain-ret-receive@example.com")
 	bulkE := mkReturn("chain-ret-bulk-e@example.com")
 	bulkF := mkReturn("chain-ret-bulk-f@example.com")
-	// receiveC 必须先被同意，"确认收货"那张表单才会渲染出来（表单按状态出现）。
+
 	if _, aerr := f.orders.ApproveReturn(ctx, &orderdto.ReturnReviewReq{
 		ReturnID: receiveC, Remark: "先同意，等收货", OperatorName: "tester",
 	}); aerr != nil {
@@ -112,9 +88,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	server := httptest.NewServer(engine)
 	defer server.Close()
 
-	// ① 真渲染退货页。**每个状态渲染一次**：单档表单按选中申请的状态出现
-	//    （列表页的「查看 / 审核」是同一个页面 + returnId 参数，不另开路由），
-	//    所以「待审」与「已同意」两张页各取一次，属性集才是真实的。
 	fetchPage := func(t *testing.T, returnID uint64) string {
 		t.Helper()
 		u := fmt.Sprintf("%s/admin/returns?project=%s&returnId=%d", server.URL, f.projectID, returnID)
@@ -130,10 +103,9 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 		return string(raw)
 	}
-	requestedHTML := fetchPage(t, approveA) // 待审：同意 + 拒绝两张表单
-	approvedHTML := fetchPage(t, receiveC)  // 已同意：确认收货表单
+	requestedHTML := fetchPage(t, approveA)
+	approvedHTML := fetchPage(t, receiveC)
 
-	// 行内勾选框必须真的渲染出来（批量动作靠它取 id），三张单档表单也得在对应的那一页上。
 	for _, id := range []uint64{approveA, rejectB, receiveC, bulkE, bulkF} {
 		if !strings.Contains(requestedHTML, fmt.Sprintf(`name="ids" value="%d"`, id)) {
 			t.Fatalf("退货页里没有申请 %d 的行勾选框（批量动作就无从取 id）", id)
@@ -146,7 +118,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("已同意页里没有申请 %d 的收货表单（hidden returnId 缺失）", receiveC)
 	}
 
-	// ② 取原始属性：不手抄任何 data-*，模板少写一个属性本用例就必然跟着红。
 	approveForm := orderChainFormSlice(t, requestedHTML, `data-write-url="/api/order/return/approve"`+` data-write="create"`)
 	approveFormAttrs := couponAttrsOf(approveForm[:strings.Index(approveForm, ">")+1])
 	approveSubmitter := orderChainFormSubmitter(t, approveForm)
@@ -159,12 +130,9 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	receiveFormAttrs := couponAttrsOf(receiveForm[:strings.Index(receiveForm, ">")+1])
 	receiveSubmitter := orderChainFormSubmitter(t, receiveForm)
 
-	// 两个批量按钮：端点声明在**按钮**上（表单上刻意不声明），所以按端点 + mode=bulk 取；
-	// 批量条在列表区，与选中哪一条无关。
 	bulkApproveBtn := orderChainButtonAttrs(t, requestedHTML, "/api/order/return/approve", "bulk")
 	bulkRejectBtn := orderChainButtonAttrs(t, requestedHTML, "/api/order/return/reject", "bulk")
 
-	// ③ 跑真实基座：五个用例。
 	cases := []map[string]any{
 		{
 			"name":           "approve-single",
@@ -175,7 +143,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 				{Name: "remark", Value: "链式证据同意"},
 				{Name: "warehouseId", Value: "", Tag: "select"},
 				{Name: "transactionId", Value: "TX-CHAIN-A"},
-				// 勾上「同意并立即完成入库 + 退款」：DOM 给的是字符串 "1"，必须由基座转成布尔。
+
 				{Name: "autoReceive", Value: "1", Checked: true, Type: "checkbox"},
 			},
 		},
@@ -201,9 +169,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		},
 		{
 			"name": "bulk-approve",
-			// 批量**表单本身不带任何 data-write-\* 声明**（端点声明在按钮上，同一张表单两个动作）：
-			// 所以「表单属性」这一格必须是空的 —— 把按钮属性填进来等于伪造一张带 data-confirm 的表，
-			// json_write 会把确认让给表单级确认框，请求一个也不发（实测就是这么踩到的）。
+
 			"formAttrs":      map[string]string{},
 			"submitterAttrs": bulkApproveBtn,
 			"fields": orderChainFields{
@@ -263,10 +229,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// ④ 链的另一端：服务端真正收到的**请求体**。
-	//
-	// 批次 2 之后写基座统一发 formdata（multipart），值一律是字符串 ——
-	// 类型转换由服务端反射完成（实测 formdata 的 "3" 直接绑进 int、"1" 绑进 bool）。
 	assertKeys := func(t *testing.T, where, body string, want ...string) map[string]string {
 		t.Helper()
 		got, err := parseMultipartFormBody(body)
@@ -296,17 +258,16 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// 单档同意：五个字段，returnId 数字、autoReceive **布尔** true、库落到「已完成」。
 	approveBody, approveStatus := cap.nth(t, 0)
 	if approveStatus != http.StatusOK {
 		t.Fatalf("单档同意应 200（autoReceive 若不是布尔就会 400），实际 %d：%s", approveStatus, approveBody)
 	}
-	// warehouseId 留空 → 基座删掉该键（「没填」= 用默认仓），所以不在这里的字段表里。
+
 	approveJSON := assertKeys(t, "单档同意", approveBody, "returnId", "remark", "transactionId", "autoReceive")
 	assertUint(t, "单档同意", "returnId", approveJSON["returnId"], approveA)
 	assertStr(t, "单档同意", "remark", approveJSON["remark"], "链式证据同意")
 	assertStr(t, "单档同意", "transactionId", approveJSON["transactionId"], "TX-CHAIN-A")
-	// formdata 里复选框的值是 "1"（或 on），服务端 *bool 绑定认它 —— 不需要前端声明类型。
+
 	if got := strings.TrimSpace(approveJSON["autoReceive"]); got == "" || got == "false" || got == "0" {
 		t.Errorf("单档同意的 autoReceive 应表达「勾选」（值为 \"1\" 等），实际 %q", got)
 	}
@@ -314,7 +275,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("勾了 autoReceive 的同意应一步完成，实际 %s", got)
 	}
 
-	// 单档拒绝：两个字段，remark 是字符串字面。
 	rejectBody, rejectStatus := cap.nth(t, 1)
 	if rejectStatus != http.StatusOK {
 		t.Fatalf("单档拒绝应 200，实际 %d：%s", rejectStatus, rejectBody)
@@ -326,12 +286,11 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("单档拒绝后应为 rejected，实际 %s", got)
 	}
 
-	// 单档收货：四个字段（表单里带仓 / 流水 / 备注），走的是 receive 端点。
 	recvBody, recvStatus := cap.nth(t, 2)
 	if recvStatus != http.StatusOK {
 		t.Fatalf("单档收货应 200，实际 %d：%s", recvStatus, recvBody)
 	}
-	// warehouseId / remark 留空 → 基座删掉这两个键（「没填」= 不变）。
+
 	recvJSON := assertKeys(t, "单档收货", recvBody, "returnId", "transactionId")
 	assertUint(t, "单档收货", "returnId", recvJSON["returnId"], receiveC)
 	assertStr(t, "单档收货", "transactionId", recvJSON["transactionId"], "TX-CHAIN-C")
@@ -339,14 +298,13 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("确认收货（先入库后退款）后应为 completed，实际 %s", got)
 	}
 
-	// 批量同意：恰好 ids + remark，ids 是**字符串数组**，且**不得**带 autoReceive（批量不自动入库）。
 	bulkABody, bulkAStatus := cap.nth(t, 3)
 	if bulkAStatus != http.StatusOK {
 		t.Fatalf("批量同意应 200，实际 %d：%s", bulkAStatus, bulkABody)
 	}
 	bulkAJSON := assertKeys(t, "批量同意", bulkABody, "ids", "remark")
 	assertStr(t, "批量同意", "remark", bulkAJSON["remark"], "链式证据批量同意")
-	// formdata 里 ids 是多个同名值，浏览器会把它们并成数组交给服务端。
+
 	if got := bulkAJSON["ids"]; got != fmt.Sprintf("%d", bulkE) {
 		t.Errorf("批量同意的 ids 应为 [%d]，实际 %q", bulkE, got)
 	}
@@ -354,7 +312,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量同意后应为 approved（不自动入库），实际 %s", got)
 	}
 
-	// 批量拒绝：同一个表单的另一个按钮投到 reject 端点，体里同样只有 ids + remark。
 	bulkRBody, bulkRStatus := cap.nth(t, 4)
 	if bulkRStatus != http.StatusOK {
 		t.Fatalf("批量拒绝应 200，实际 %d：%s", bulkRStatus, bulkRBody)
@@ -368,14 +325,10 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量拒绝后应为 rejected，实际 %s", got)
 	}
 
-	// ⑤ 库存守恒（两段式口径，迁移 624）：链上这些订单都**从未发货**，所以在库数量
-	//    一件都不该变 —— 退货在这种单上释放的是预占，不是把货加回仓库。
-	//    批量的两条同样**一件都不许动**（批量同意不自动入库）。
 	if got, want := f.stockOf(t, variantID), stockBeforeChain; got != want {
 		t.Errorf("链跑完后在库应为 %d（未发货的退货不改变在库数量），实际 %d —— 有人把货加回去了", want, got)
 	}
 
-	// ⑥ JS 侧结论：五个用例都不该把后端那句话当成失败展示。
 	for _, r := range report.Results {
 		if strings.Contains(r.StatusText, "操作失败") {
 			t.Errorf("%s 不应显示失败文案，实际状态区：%q", r.Name, r.StatusText)
@@ -383,10 +336,6 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 }
 
-// orderChainFormSubmitter 取一张表单里第一个 submit 按钮的属性。
-//
-// 单档表单的端点声明落在 `<form>` 上（批量条才把端点放在按钮上，因为同一张表单有两个动作），
-// 所以取第一个 submit 按钮即可 —— base 的 attrFrom 口径是「按钮优先、表单兜底」。
 func orderChainFormSubmitter(t *testing.T, form string) map[string]string {
 	t.Helper()
 	for _, tag := range couponButtonRe.FindAllString(form, -1) {

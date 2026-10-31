@@ -1,15 +1,5 @@
 package mailservice
 
-// automation_definition_test.go — 图定义 v2 的归一化与出口名表（任务卡 T1）。
-//
-// 这一层的两条判据都不能靠「读代码看得出来」：
-//
-//  1. **v1 → v2 的升级必须无损**：库里存的是扁平 next/yes/no，读出来要是 out，
-//     而 out 里的目标一个都不能丢（丢了的表现是「某条分支没了」，图校验不报错、
-//     执行器把实例判失败）。
-//  2. **入参不能被改**：normalizeDefinition 会在列表页被调用（一次读一批），
-//     改入参等于悄悄改调用方手里的数据。
-
 import (
 	"reflect"
 	"strings"
@@ -19,7 +9,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// TestNormalizeDefinition 12 例：覆盖 v1/v2/畸形输入与深拷贝。
 func TestNormalizeDefinition(t *testing.T) {
 	t.Run("v1 单链", func(t *testing.T) {
 		raw := map[string]any{
@@ -126,8 +115,7 @@ func TestNormalizeDefinition(t *testing.T) {
 	})
 
 	t.Run("v2 带未知出口名原样透传", func(t *testing.T) {
-		// 未知出口是在 nodeArity 报错的，归一化只做形状升级 —— 在这里就筛掉的话
-		// 校验器永远看不到它，用户拿到的是一句「走不到 / 悬空边」的间接症状。
+
 		raw := map[string]any{
 			"schema": float64(2), "entry": "n1",
 			"nodes": []any{map[string]any{
@@ -153,8 +141,7 @@ func TestNormalizeDefinition(t *testing.T) {
 	})
 
 	t.Run("schema=1 但已带 out", func(t *testing.T) {
-		// 半升级的行：声明 v1 却已经有 out。以 out 为准（不拿扁平字段覆盖它），
-		// 否则一次「先升级字段、后改 schema」的中间态会把边弄丢。
+
 		raw := map[string]any{
 			"schema": float64(1), "entry": "n1",
 			"nodes": []any{map[string]any{
@@ -222,7 +209,7 @@ func TestNormalizeDefinition(t *testing.T) {
 		if !reflect.DeepEqual(raw, before) {
 			t.Fatalf("归一化改了入参：\n前: %#v\n后: %#v", before, raw)
 		}
-		// 输出与入参也不能共享子对象：否则改输出会反写调用方的数据。
+
 		node := got["nodes"].([]any)[0].(map[string]any)
 		node["params"].(map[string]any)["nested"].(map[string]any)["k"] = "changed"
 		if raw["nodes"].([]any)[0].(map[string]any)["params"].(map[string]any)["nested"].(map[string]any)["k"] != "v" {
@@ -231,7 +218,6 @@ func TestNormalizeDefinition(t *testing.T) {
 	})
 }
 
-// TestParseDefinitionUpgradesV1 v1 定义经 ParseDefinition 之后全链路只见 out。
 func TestParseDefinitionUpgradesV1(t *testing.T) {
 	def, err := ParseDefinition(map[string]any{
 		"entry": "n1",
@@ -264,7 +250,6 @@ func TestParseDefinitionUpgradesV1(t *testing.T) {
 	}
 }
 
-// TestNodeOutletsTable 出口名表本身：终局形状（10 种类型）。
 func TestNodeOutletsTable(t *testing.T) {
 	cases := map[string][]string{
 		NodeTypeTrigger:          {outletNext},
@@ -282,17 +267,16 @@ func TestNodeOutletsTable(t *testing.T) {
 			t.Errorf("%s 的出口名 = %v，期望 %v", typ, got, want)
 		}
 	}
-	// ab_test 的出口是动态变体 id，不能写死。
+
 	if got := nodeOutlets(NodeTypeABTest); len(got) != 0 {
 		t.Errorf("ab_test 不该有固定出口名，实际 %v", got)
 	}
-	// v1 的 branch 必须映射到 filter 的出口名（存量行走这条）。
+
 	if got := nodeOutlets(NodeTypeBranch); !reflect.DeepEqual(got, []string{outletYes, outletNo}) {
 		t.Errorf("branch 应复用 filter 的出口名，实际 %v", got)
 	}
 }
 
-// TestUnknownOutletRejected 拼错出口名必须报错（不是「边静默消失」）。
 func TestUnknownOutletRejected(t *testing.T) {
 	err := parseFromNodes(t, "n1", []map[string]any{
 		{"key": "n1", "type": NodeTypeTrigger, "out": map[string]any{"yse": "n2"}},
@@ -306,11 +290,6 @@ func TestUnknownOutletRejected(t *testing.T) {
 	}
 }
 
-// TestAutomationItemProjectsLegacyNodeType dto 投影必须把 v2 的 filter 翻回 v1 的 branch。
-//
-// 为什么值得单测：画布 JS、表单还原、MCP 工具都按 v1 的名字取值，而 dto 一旦投影成
-// filter，含条件分支的流程在表单页会**静默**退化成只读兜底页（不报错、不 500），
-// 作者再也改不了流程。这个回归只有读代码才发现，所以钉一条断言。
 func TestAutomationItemProjectsLegacyNodeType(t *testing.T) {
 	entity := &mailmodel.MailAutomationEntity{
 		ID: 1, Name: "分支流程", TriggerType: mailmodel.TriggerManual,

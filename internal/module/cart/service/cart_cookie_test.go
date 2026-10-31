@@ -1,12 +1,5 @@
 package cartservice
 
-// cart_cookie_test.go — 购物车 cookie 编解码的包内测试。
-//
-// 为什么放在 service 包里而不是 public/test：codec 是**未导出**的（它只该被本模块
-// 的用例使用），而这一层恰恰是最需要密集覆盖的地方 —— 签名校验、篡改拒绝、
-// 边界裁剪全是纯逻辑，不需要数据库，跑一次不到一秒。
-// 跨模块的链路测试在 public/test/cart/feature/（那里用真实 PostgreSQL）。
-
 import (
 	"encoding/base64"
 	"fmt"
@@ -20,7 +13,6 @@ import (
 
 const testSecret = "cart-cookie-test-secret"
 
-// TestCartCookieRejectsExpiredPayload 超过 MaxAge 的签发时间必须判废。
 func TestCartCookieRejectsExpiredPayload(t *testing.T) {
 	c := newTestCodec()
 	expired := cartPayload{
@@ -39,7 +31,6 @@ func TestCartCookieRejectsExpiredPayload(t *testing.T) {
 
 func newTestCodec() cookieCodec { return cookieCodec{secret: []byte(testSecret)} }
 
-// TestCartCookieRoundTrip 编码后再解码应当得到同一辆购物车。
 func TestCartCookieRoundTrip(t *testing.T) {
 	c := newTestCodec()
 	payload := cartPayload{V: cartCookieVersion, I: []cartPayloadLine{
@@ -59,7 +50,6 @@ func TestCartCookieRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCartCookieRejectsTamperedPayload 改了载荷体（不动签名）必须判废。
 func TestCartCookieRejectsTamperedPayload(t *testing.T) {
 	c := newTestCodec()
 	raw, err := c.encode(cartPayload{V: cartCookieVersion, I: []cartPayloadLine{
@@ -72,7 +62,7 @@ func TestCartCookieRejectsTamperedPayload(t *testing.T) {
 	if len(parts) != 2 {
 		t.Fatalf("cookie 值形状不对: %s", raw)
 	}
-	// 把数量 1 改成 99：攻击者能改的就是这一层（body），签名改不了。
+
 	body, derr := base64.RawURLEncoding.DecodeString(parts[0])
 	if derr != nil {
 		t.Fatalf("解出载荷失败: %v", derr)
@@ -93,7 +83,6 @@ func TestCartCookieRejectsTamperedPayload(t *testing.T) {
 	}
 }
 
-// TestCartCookieRejectsForeignSecret 用别的密钥签的 cookie 必须判废（换密钥即全体失效）。
 func TestCartCookieRejectsForeignSecret(t *testing.T) {
 	issuer := cookieCodec{secret: []byte("another-deployment-secret")}
 	raw, err := issuer.encode(cartPayload{V: cartCookieVersion, I: []cartPayloadLine{
@@ -107,7 +96,6 @@ func TestCartCookieRejectsForeignSecret(t *testing.T) {
 	}
 }
 
-// TestCartCookieRejectsVersionMismatch 版本号不符即判废（不尝试兼容老格式）。
 func TestCartCookieRejectsVersionMismatch(t *testing.T) {
 	c := newTestCodec()
 	raw, err := c.encode(cartPayload{V: cartCookieVersion + 1})
@@ -119,7 +107,6 @@ func TestCartCookieRejectsVersionMismatch(t *testing.T) {
 	}
 }
 
-// TestCartCookieGarbageIsInvalid 空值 / 乱值 / 分段数不对一律判废（不 panic）。
 func TestCartCookieGarbageIsInvalid(t *testing.T) {
 	c := newTestCodec()
 	for _, in := range []string{
@@ -135,10 +122,6 @@ func TestCartCookieGarbageIsInvalid(t *testing.T) {
 	}
 }
 
-// TestCartCookieNormalizeMergesDuplicateVariants 同一变体出现多行必须合并成一行。
-//
-// 为什么关键：不合并的话，结算会把同一个变体当成两行分别锁库存，
-// 而订单域的快照是按键去重的 —— 两边对不上就是一笔金额被算错的订单。
 func TestCartCookieNormalizeMergesDuplicateVariants(t *testing.T) {
 	c := newTestCodec()
 	raw, err := c.encode(cartPayload{V: cartCookieVersion, I: []cartPayloadLine{
@@ -157,7 +140,6 @@ func TestCartCookieNormalizeMergesDuplicateVariants(t *testing.T) {
 	}
 }
 
-// TestCartCookieNormalizeDropsInvalidLines 数量越界与空 id 的行被丢弃，其余保留。
 func TestCartCookieNormalizeDropsInvalidLines(t *testing.T) {
 	c := newTestCodec()
 	raw, err := c.encode(cartPayload{V: cartCookieVersion, I: []cartPayloadLine{
@@ -182,13 +164,11 @@ func TestCartCookieNormalizeDropsInvalidLines(t *testing.T) {
 	}
 }
 
-// TestCartCookieRejectsTooManyLines 超出 cookie 容量的行数整体判废（不截断）。
 func TestCartCookieRejectsTooManyLines(t *testing.T) {
 	c := newTestCodec()
 	lines := make([]cartPayloadLine, 0, maxCartLines+1)
 	for i := 0; i <= maxCartLines; i++ {
-		// id 必须各不相同：重复的变体会被 mergeLines 合并成一行，
-		// 那样测的就成了「合并」而不是「行数上限」。
+
 		lines = append(lines, cartPayloadLine{
 			VariantID: fmt.Sprintf("11111111-1111-1111-1111-%012d", i),
 			Quantity:  1,
@@ -203,7 +183,6 @@ func TestCartCookieRejectsTooManyLines(t *testing.T) {
 	}
 }
 
-// TestCartPayloadWithLine 增 / 改 / 删三种操作的结果。
 func TestCartPayloadWithLine(t *testing.T) {
 	a := "11111111-1111-1111-1111-111111111111"
 	b := "22222222-2222-2222-2222-222222222222"
@@ -229,7 +208,6 @@ func TestCartPayloadWithLine(t *testing.T) {
 	}
 }
 
-// TestCartCookieEmptyPayloadIsValid 空购物车的 cookie 是**合法**的（清空后写回的就是它）。
 func TestCartCookieEmptyPayloadIsValid(t *testing.T) {
 	c := newTestCodec()
 	raw, err := c.encode(cartPayload{V: cartCookieVersion})

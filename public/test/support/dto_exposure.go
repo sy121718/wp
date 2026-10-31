@@ -1,17 +1,3 @@
-// dto_exposure.go — 测试基建：对外响应 DTO 的凭据字段守卫（SEC-009）。
-//
-// 由来：客户管理的响应 DTO 早有一条反射断言，确保不搬 password / activation_key，
-// 但那是针对**一个能力**写的。其余模块（mail 的发信账号含 SMTP 密码、admin 含密码
-// 哈希、plugin / order / cart 各有自己的响应结构）没有同等保障。凭据泄露是**加法**
-// 造成的 —— 某次顺手把实体整个塞进响应体，人工 review 只能发现当时看到的那一次。
-//
-// 判据：dto 包里的结构体字段，只要字段名或 json tag 命中敏感词清单，就视为疑似泄露，
-// 除非在允许清单里逐条写明理由。
-//
-// 为什么走源码 AST 而不是反射：反射要求把每个类型逐个登记进测试（登记表会漂移，
-// 「新加一个 DTO 忘了登记」恰恰是要防的情形）。AST 按目录扫描，新增文件自动纳入，
-// 零维护。反射版断言（AssertNoCredentialFields）仍然保留，用于对关键类型做编译期
-// 级别存在的显式钉死 —— 两条一起用：AST 管覆盖，反射管重点。
 package support
 
 import (
@@ -30,10 +16,6 @@ import (
 	"testing"
 )
 
-// defaultCredentialPatterns 敏感词清单（小写子串匹配）。
-//
-// 宁可比实际需要更宽：命中之后由人决定进允许清单还是改代码，
-// 而漏掉一个词的代价是凭据随响应出去且没有任何提示。
 var defaultCredentialPatterns = []string{
 	"password", "passwd", "pwd",
 	"secret", "credential", "salt",
@@ -41,31 +23,19 @@ var defaultCredentialPatterns = []string{
 	"api_key", "apikey", "access_key", "private_key", "secret_key",
 }
 
-// defaultDTOExposureAllow 允许清单：`包名.类型名.字段名` → 放行理由。
-//
-// 每条都必须写清楚为什么它不是泄露 —— 这张表是给下一个读代码的人看的，
-// 不是给人图省事的开关。
 var defaultDTOExposureAllow = map[string]string{
-	// 键是「类型名.字段名」而不是「包名.类型名.字段名」：AST 扫描与反射断言两条
-	// 路径都要用同一张表，而反射拿不到 AST 里的包别名。表很短，重名歧义在实践中不存在。
+
 	"AccountItem.HasPassword":         "布尔开关：只回答「有没有设过密码」，不回显任何凭据值",
 	"GuestAccountResp.PasswordMailed": "布尔开关：只回答「初始密码有没有寄出去」，字段里没有密码本身",
 	"EndpointItem.HasSecret":          "布尔开关：只回答「这个外部集成端点配没配签名密钥」。webhook 的 HMAC 密钥以密文落库、明文只在保存那一刻出现，**没有任何读回接口**（连密文都不出），响应用 HasSecret 而不是回显密钥物 —— 这正是 SEC-009 想要的形状，不是漏网",
-	// 第三方仓对接配置（迁移 240，inventory）：出参形状刻意只留三个「非秘密」字段 ——
-	// 明文不落库（AES-GCM 密文），密文不出接口，客户端连密文都拿不到。
+
 	"WarehouseThirdPartyResp.HasCredential":    "布尔开关：只回答「这个仓配没配过对接凭据」（存了密文或引用名），字段里没有凭据本体",
 	"WarehouseThirdPartyResp.CredentialMasked": "恒为常量掩码占位（inventoryenums.CredentialMask，****），供表单回显「已配置」；服务端不按用户输入回显任何内容",
 	"WarehouseThirdPartyResp.SecretRef":        "凭据的**引用名**（如部署侧的环境变量名）：系统只知道值在别处叫什么、不知道值是什么；名字本身不是秘密，秘密在部署侧",
-	// AI 模块（迁移 511/512）。两类形状，都不是凭据：
-	//   · token 是**数量单位**（上下文窗口占用、事件内容长度、折叠分段大小），字段类型全是整型数字，
-	//     携带的是「这串文本按 token 计有多长」，与凭据无关 —— 敏感词命中的是词根"token"。
-	//   · HasAPIKey 是布尔开关，与 EndpointItem.HasSecret 同形：只回答「配没配过密钥」。
-	//     供应商密钥以 AES-GCM 密文落库（pkg/crypto），服务端**没有任何读回明文的接口**，
-	//     出参只有这个布尔值；密钥一旦更换或 API 地址变更即失效，也不出密文。
+
 	"ModelEntry.MaxOutputTokens":   "计量字段：模型声明的最大输出 token 数（整型），不是凭据",
 	"ModelRowResp.MaxOutputTokens": "计量字段：模型声明的最大输出 token 数（整型），不是凭据（同 ModelEntry 同名字段）",
-	// CSRF token 是**防跨站请求伪造的会话令牌**，与 API 凭据是两回事：
-	// 它由服务端在渲染时注入、随表单回传校验，本来就该出现在页面里（否则表单提交必被拒）。
+
 	"ProviderCardResp.CSRFToken":        "CSRF 防护令牌：由服务端渲染时注入、随表单回传校验，本来就该出现在页面里；不是 API 凭据",
 	"ProviderCardBase.CSRFToken":        "同上：卡片视图的壳键（csrf_token / t / PermSet / Buttons），从页面基座借来给 include 进来的卡片用，不是 API 凭据",
 	"SessionListPageResp.CSRFToken":     "同上：会话列表页基座的壳键，供应商卡片从这里借 csrf_token；不是 API 凭据",
@@ -76,33 +46,20 @@ var defaultDTOExposureAllow = map[string]string{
 	"SessionDetail.VisibleTokens":       "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
 	"SessionEventItem.ContentTokens":    "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
 	"FoldPlanResult.SegmentTokens":      "计量字段：折叠分段各自的 token 数（整型），不是凭据",
-	// 对外访问令牌（迁移 542）。两条都不是「把存着的凭据搬出来」：
-	//   · TokenPrefix 是令牌**前缀**（前 12 字符），只用于在列表里辨认「哪一把」，
-	//     与落库的 SHA-256 哈希无关、不能据此反推明文；
-	//   · TokenCreateResp.Token 是**刚生成的一次性明文**，只在创建应答里出现这一次
-	//     （页面用 HTMX 片段承载而不是重定向，因而不进浏览器历史 / 访问日志 / Referer），
-	//     此后任何接口都不回显明文 —— 与 Provider.HasAPIKey 恰好相反：
-	//     那个是「存了密钥但不给看」，这个是「刚生成的凭据交给它的创建者」，
-	//     不给他就没人能用这把令牌。
+
 	"TokenItem.TokenPrefix": "展示用前缀（令牌前 12 字符），仅用于辨认是哪一把；与落库哈希无关，不能据此反推明文",
 	"TokenCreateResp.Token": "刚生成的一次性明文令牌，只在创建应答出现一次（此后无任何读回明文的接口）；不交给创建者就无法使用",
-	// MCP 外部访问页（ai_page_resp.go）：从 gin.H 换成强类型视图后，这两个字段才第一次
-	// 进入 AST 扫描面 —— 同样是「刚生成的凭据交给创建者」，与 TokenCreateResp.Token 同一口径。
+
 	"McpPageResp.NewToken": "刚生成的一次性明文令牌，只在这一次页面渲染里出现（列表只给前缀，此后无任何读回明文的接口）",
-	// Tokens 是**列表**（每项只带前缀与元数据，不带明文）；命中敏感词的是字段名本身。
+
 	"McpPageResp.Tokens": "令牌列表（每项只有前缀、名称、范围、时间与状态，没有任何明文或哈希）；字段名命中词根 \"token\"，值是行列表不是凭据",
-	// 对话结果（ai_chat.go）：上游**上报**的用量。同样命中词根 "token"，同样不是凭据 ——
-	// 它们回答的是「这次调用按 token 计用了多少」，值是上游 usage 里的整数；
-	// UsageReported=false 时三列恒为 0（表示这家没上报），也没有任何字符串通道能承载凭据。
+
 	"ChatResult.InputTokens":  "计量字段：上游上报的输入 token 数（整型），不是凭据",
 	"ChatResult.OutputTokens": "计量字段：上游上报的输出 token 数（整型），不是凭据",
 	"ChatResult.TotalTokens":  "计量字段：上游上报的总 token 数（整型），不是凭据",
-	// CachedTokens 是「输入里有多少命中了上游的前缀缓存」（docs/16 §3.1 命中率的分子）。
-	// 它同样是上游 usage 里的整数，且只在**输入侧**：缓存命中的是请求前缀，
-	// 与任何密钥无关（密钥从不进请求正文，只进出站 header）。
+
 	"ChatResult.CachedTokens": "计量字段：上游上报的缓存命中 token 数（整型），不是凭据",
-	// 会话用量看板（ai_session_dto.go）：整数是原始计量值，*Text 是同源的**已格式化展示文本**
-	// （12345678 → "12.3M"，见 service 的 formatTokens）—— 两者都不含凭据。
+
 	"SessionUsage.Tokens":             "计量字段：这批会话的事件正文 token 累计（整型），不是凭据",
 	"SessionUsage.AvgTokens":          "计量字段：单会话平均 token（Tokens/Sessions 的整除结果，整型），不是凭据",
 	"SessionUsage.TokensText":         "展示文本：把 Tokens 缩成「12.3M」这类短串，与整数同源、不含凭据",
@@ -111,36 +68,31 @@ var defaultDTOExposureAllow = map[string]string{
 	"SessionTokenRow.Tokens":          "计量字段：某一类事件贡献的 token 数（整型），不是凭据",
 	"SessionModelUsage.Tokens":        "计量字段：某个 (供应商, 模型) 组合消耗的 token 数（整型），不是凭据",
 	"SessionModelUsage.TokensText":    "展示文本：把上面的 Tokens 缩成短串（悬浮卡用），与整数同源、不含凭据",
-	// 调用流水段（悬浮卡的「最近调用」）：与上面的聚合段同源 —— 一个是「总共多少」，
-	// 一个是「这一次多少」，都是上游上报的整数（未上报时为 0，见 ai_call_log.usage_reported）。
+
 	"SessionCallRow.Tokens":     "计量字段：这一次调用上游上报的总 token 数（整型），不是凭据",
 	"SessionCallRow.TokensText": "展示文本：把上面的 Tokens 缩成短串（悬浮卡用），与整数同源、不含凭据",
 }
 
-// DTOExposureOptions 扫描参数（零值即默认口径：扫 internal 下所有 dto 目录）。
 type DTOExposureOptions struct {
-	// Roots 扫描根（仓库相对路径），默认 ["internal"]。
 	Roots []string
-	// Allow 额外的允许清单，与默认清单合并（键 `包名.类型名.字段名`）。
+
 	Allow map[string]string
-	// Patterns 替换默认敏感词清单（一般不需要改）。
+
 	Patterns []string
 }
 
-// DTOExposureFinding 一条命中。
 type DTOExposureFinding struct {
-	Key   string // 包名.类型名.字段名
-	File  string // 仓库相对路径
+	Key   string
+	File  string
 	Line  int
-	Field string // 命中的字段名或 json tag
-	Match string // 命中的敏感词
+	Field string
+	Match string
 }
 
 func (f DTOExposureFinding) String() string {
 	return fmt.Sprintf("%s:%d %s 字段 %q 命中敏感词 %q", f.File, f.Line, f.Key, f.Field, f.Match)
 }
 
-// RepoRoot 从当前工作目录向上找到含 go.mod 的目录。
 func RepoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -159,7 +111,6 @@ func RepoRoot(t *testing.T) string {
 	}
 }
 
-// AssertNoCredentialFieldsInDTOs 扫描 dto 包并断言零命中。
 func AssertNoCredentialFieldsInDTOs(t *testing.T, opts DTOExposureOptions) {
 	t.Helper()
 	findings := ScanDTOExposure(t, opts)
@@ -168,7 +119,6 @@ func AssertNoCredentialFieldsInDTOs(t *testing.T, opts DTOExposureOptions) {
 	}
 }
 
-// ScanDTOExposure 扫描 dto 目录，返回未被允许清单放行的命中清单。
 func ScanDTOExposure(t *testing.T, opts DTOExposureOptions) []DTOExposureFinding {
 	t.Helper()
 	root := RepoRoot(t)
@@ -222,7 +172,6 @@ func ScanDTOExposure(t *testing.T, opts DTOExposureOptions) []DTOExposureFinding
 	return findings
 }
 
-// findDTODirs 找出 root 下所有名为 dto 的目录（含嵌套，如 product/inventory/dto）。
 func findDTODirs(root string) ([]string, error) {
 	var dirs []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -245,9 +194,8 @@ func findDTODirs(root string) ([]string, error) {
 	return dirs, nil
 }
 
-// scanDTOFile 扫描单个文件的响应结构体。
 func scanDTOFile(fset *token.FileSet, file *ast.File, relPath, fileName string, patterns []string, allow map[string]string) []DTOExposureFinding {
-	// 请求体文件整份跳过：改密码的请求**必须**能带 password 字段。
+
 	if strings.HasSuffix(fileName, "_req.go") {
 		return nil
 	}
@@ -305,11 +253,6 @@ func scanDTOFile(fset *token.FileSet, file *ast.File, relPath, fileName string, 
 	return findings
 }
 
-// isRequestShape 判断结构体是不是请求体，是则跳过。
-//
-// 三条判据任一成立即认定请求：名字以 Req / Request 结尾；任一字段带
-// binding / validate tag（gin 绑定请求的写法）。请求体带 password 是正常的
-// （改密码、登录），把它算成泄露只会让守卫被关掉。
 func isRequestShape(typeName string, structType *ast.StructType) bool {
 	if strings.HasSuffix(typeName, "Req") || strings.HasSuffix(typeName, "Request") {
 		return true
@@ -326,7 +269,6 @@ func isRequestShape(typeName string, structType *ast.StructType) bool {
 	return false
 }
 
-// jsonTagName 取 json tag 的字段名（逗号前的部分），没有则返回空串。
 func jsonTagName(field *ast.Field) string {
 	if field.Tag == nil {
 		return ""
@@ -345,10 +287,6 @@ func jsonTagName(field *ast.Field) string {
 	return strings.Split(rest[:end], ",")[0]
 }
 
-// AssertNoCredentialFields 反射版断言：给定类型的字段名与 json tag（递归含嵌套）
-// 都不含敏感词。用于对关键响应类型做显式钉死（编译期保证类型存在）。
-//
-// 与 AST 版共用同一张允许清单（键「类型名.字段名」）。
 func AssertNoCredentialFields(t *testing.T, types ...reflect.Type) {
 	t.Helper()
 	for _, typ := range types {
@@ -371,18 +309,15 @@ func AssertNoCredentialFields(t *testing.T, types ...reflect.Type) {
 	}
 }
 
-// dtoField 一个字段的两种名字：Go 字段名与 json tag 名。
 type dtoField struct {
-	Name string // Go 字段名
-	JSON string // json tag 名（逗号前的部分），无 tag 时为空
+	Name string
+	JSON string
 }
 
-// dtoFields 递归收集结构体（含嵌套、指针、切片元素）的字段。
 func dtoFields(t reflect.Type) []dtoField {
 	return collectFields(t, nil, map[reflect.Type]bool{})
 }
 
-// collectFields 递归主体。seen 防自引用类型导致的无限递归。
 func collectFields(t reflect.Type, acc []dtoField, seen map[reflect.Type]bool) []dtoField {
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		t = t.Elem()

@@ -1,11 +1,5 @@
 package userhttp
 
-// customer_membership_render_test.go — 客户详情页「会员等级」块的渲染证据（BIZ-3 展示侧）。
-//
-// 这一块的失效方向是**静默**的：会员模块没接入、等级读不出来、工程没选，
-// 三种情况都不会报错 —— 页面上少一块、或者渲染中断成通用错误页。
-// 所以断言既看「有数据时长什么样」，也看「三种降级各自的那一句话」与响应完整性。
-
 import (
 	"context"
 	"net/http"
@@ -18,7 +12,6 @@ import (
 	membershipenums "go_wp/internal/module/membership/enums"
 )
 
-// stubCustomerMembership 会员身份读取端口的替身。
 type stubCustomerMembership struct {
 	res *membershipdto.MembershipResp
 	err error
@@ -30,7 +23,6 @@ func (s *stubCustomerMembership) Resolve(_ context.Context, _ *membershipdto.Res
 
 var _ membershipcontract.Reader = (*stubCustomerMembership)(nil)
 
-// detailBodyWithMembership 组装一个挂了会员端口的客户详情页并请求一次。
 func detailBodyWithMembership(t *testing.T, reader membershipcontract.Reader) (int, string) {
 	t.Helper()
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{res: detailSummary()}, fakeProjects{items: detailProjects()})
@@ -42,7 +34,6 @@ func detailBodyWithMembership(t *testing.T, reader membershipcontract.Reader) (i
 	return rec.Code, rec.Body.String()
 }
 
-// TestCustomerDetailShowsMembershipTier 有会员身份时把等级与权益摆到页面上。
 func TestCustomerDetailShowsMembershipTier(t *testing.T) {
 	code, body := detailBodyWithMembership(t, &stubCustomerMembership{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p1", TierID: 3, TierName: "黄金会员",
@@ -62,10 +53,6 @@ func TestCustomerDetailShowsMembershipTier(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailShowsDefaultTierBadge 兜底等级要标明「还没有归属」。
-//
-// 运营看这一块是为了判断「该不该给他手工指定等级」—— 把兜底值画成真实等级，
-// 这个判断就没有依据了。
 func TestCustomerDetailShowsDefaultTierBadge(t *testing.T) {
 	_, body := detailBodyWithMembership(t, &stubCustomerMembership{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p1", TierID: 1, TierName: "普通会员", IsDefaultTier: true,
@@ -79,7 +66,6 @@ func TestCustomerDetailShowsDefaultTierBadge(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailMembershipUnavailableIsVisible 端口未接入 → 可见文案 + 页面完整。
 func TestCustomerDetailMembershipUnavailableIsVisible(t *testing.T) {
 	code, body := detailBodyWithMembership(t, nil)
 
@@ -94,7 +80,6 @@ func TestCustomerDetailMembershipUnavailableIsVisible(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailMembershipFailureShowsDeclaredText 解析失败按错误声明处的文案展示，不漏内部原文。
 func TestCustomerDetailMembershipFailureShowsDeclaredText(t *testing.T) {
 	code, body := detailBodyWithMembership(t,
 		&stubCustomerMembership{err: membershipenums.Err(membershipenums.ErrDefaultTierMissing)})
@@ -110,9 +95,8 @@ func TestCustomerDetailMembershipFailureShowsDeclaredText(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailMembershipWithoutProjectIsVisible 没有工程 → 说明等级按工程算。
 func TestCustomerDetailMembershipWithoutProjectIsVisible(t *testing.T) {
-	// fakeProjects 返回空清单 → selected 为空 → 走「还没有站点工程」那一支。
+
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{}, fakeProjects{})
 	h.SetMembershipDisplay(&stubCustomerMembership{res: &membershipdto.MembershipResp{TierName: "黄金会员"}})
 	engine := newCustomerTestEngine(h)

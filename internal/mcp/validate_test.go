@@ -1,10 +1,5 @@
 package mcp
 
-// validate_test.go — 参数校验（安全边界）的用例。
-//
-// 这些用例钉的是「模型不能通过参数表达什么」，不是「校验函数好不好用」：
-// 多传一个字段、把整数写成小数、把枚举值写成别的词，都必须被拒绝。
-
 import (
 	"errors"
 	json "go_wp/pkg/jsonx"
@@ -12,7 +7,6 @@ import (
 	"testing"
 )
 
-// orderArgsSchema 一个既有必填、又有可选与枚举的真实形状（订单区间摘要）。
 func orderArgsSchema() Schema {
 	return Object("订单区间摘要参数", map[string]Schema{
 		"projectId": String("站点工程 id"),
@@ -30,7 +24,7 @@ func TestValidate(t *testing.T) {
 		name    string
 		schema  Schema
 		args    string
-		wantErr string // 期望错误里出现的关键词；空 = 应当通过
+		wantErr string
 	}{
 		{
 			name:   "必填齐全：通过",
@@ -124,8 +118,7 @@ func TestValidate(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("错误应含 %q，实得 %q", tt.wantErr, err.Error())
 			}
-			// 参数类错误要能被 agent loop 与「系统故障」区分开 —— 否则模型会把
-			// 查库失败也当成「我参数写错了」，一遍遍重试同样的调用。
+
 			var argsErr *ArgsError
 			if !errors.As(err, &argsErr) {
 				t.Fatalf("参数错误应是 *ArgsError，实得 %T", err)

@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestCounterCSSCounterMode 整数模式才产出零 JS 计数三件套。
-//
-// 三件套必须同进同退：@property 注册（类型与初值）、keyframes、以及 ::after 的
-// counter() 显示。少任何一件，产物都是一份合法但不动（或显示为空）的 CSS。
 func TestCounterCSSCounterMode(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{End: 100}, &b)
@@ -25,7 +21,7 @@ func TestCounterCSSCounterMode(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// @property 必须落在顶层桶：层内注册会让浏览器对「层内注册」产生实现差异。
+
 	if strings.Contains(out, "@property") {
 		t.Errorf("@property 不该混进基础样式:\n%s", out)
 	}
@@ -33,7 +29,6 @@ func TestCounterCSSCounterMode(t *testing.T) {
 		t.Errorf("@property 注册块缺失或形态不符:\n%s", b.TopLevelCSS())
 	}
 
-	// 小数位模式：CSS counter 表达不了，三件套整体不产出。
 	var d core.CSSBuckets
 	compileCSS("t", &Props{End: 99.5, Decimals: 2}, &d)
 	if strings.Contains(d.String(), "sky-counter-run") || d.TopLevelCSS() != "" {
@@ -41,7 +36,6 @@ func TestCounterCSSCounterMode(t *testing.T) {
 	}
 }
 
-// TestCounterCSSValues 对齐 / 字号 / 颜色的取默认与自定义。
 func TestCounterCSSValues(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{End: 1}, &b)
@@ -62,9 +56,6 @@ func TestCounterCSSValues(t *testing.T) {
 	}
 }
 
-// TestCounterCSSLabelSelector 标签规则是「带作用域的元素名 + 无作用域兜底」一条规则。
-//
-// 这两半必须同属一条规则：拆成两条会改变产物字节（字节等价是迁移的硬要求）。
 func TestCounterCSSLabelSelector(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)

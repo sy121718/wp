@@ -1,14 +1,5 @@
 package feature
 
-// redirect_admin_page_test.go — 重定向管理页的渲染冒烟（审计 SEO-025）。
-//
-// 钉住两件事：
-//   - admin/page_redirects.html 的 Jet 语法与数据契约成立（模板写错只会在用户点开时崩）；
-//   - 页面把服务端给的重定向真的渲染出来（不是「接口对了、页面空白」）。
-//
-// 末尾断言 </html> 存在：Jet 读到缺失的键会在那一行**静默中断**（HTTP 仍是 200，
-// 中断点之后的内容整块消失），只断言状态码会漏掉这类故障。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -51,7 +42,7 @@ func TestRedirectAdminPageRenders(t *testing.T) {
 	}
 
 	engine := gin.New()
-	// 模板根相对包目录：public/test/page/feature → 项目根/internal/templates。
+
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	engine.GET("/api/page/redirect", adminui.PageSlot(pagehttp.RedirectPageTemplate), pagehttp.NewHandle(svc).RedirectPage)
 

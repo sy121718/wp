@@ -11,8 +11,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// blockReadSnapshot 固定单次编译读取的节点副本，预检和渲染不会再次读到不同文档。
-// 持久版本与发布输入冻结由模块层负责，这一层只隔离当前编译的数据读取。
 type blockReadSnapshot struct {
 	source core.BlockResolver
 	roots  map[string][]*core.Node
@@ -51,8 +49,6 @@ type actionGraph struct {
 	locations map[string]core.ResolvedAction
 }
 
-// configureActions 按真实展开后的文档索引实例。全局块引用的前缀是确定的，
-// 同一来源出现两次时，各自动作只能指向自己那份已重映射的目标。
 func configureActions(roots []*core.Node, ctx *core.RenderContext, published ...core.ActionResolver) error {
 	graph := &actionGraph{nodes: map[string]*core.Node{}, resolved: map[string]map[string]core.ResolvedAction{}, locations: map[string]core.ResolvedAction{}}
 	if len(published) > 0 {
@@ -78,7 +74,7 @@ func configureActions(roots []*core.Node, ctx *core.RenderContext, published ...
 		if len(node.Actions) == 0 {
 			continue
 		}
-		provider := comp.(core.ActionsProvider) // 有动作且未声明时，上面的统一校验已拒绝。
+		provider := comp.(core.ActionsProvider)
 		specs := map[string]core.ActionSpec{}
 		for _, spec := range provider.Actions() {
 			specs[spec.Key] = spec

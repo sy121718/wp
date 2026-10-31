@@ -1,18 +1,5 @@
 package adminhttp_test
 
-// admin_pagination_i18n_facts_test.go — task-118 的第 7 个站点：词条页（GET /admin/i18n）。
-//
-// 为什么单独一个文件、且必须真库：I18nEntriesPage 的分页只数是 pkg/i18n.ListEntries 真读
-// sys_i18n 的结果（total 由 SQL COUNT 给出），页数由 filter.Offset / adminI18nEntryPageSize
-// 反推 —— 没有库就没有这个站点。本文件把全局 database 句柄指向**本用例自己那个已迁移库**
-// （包内其它用例只用各自的 *gorm.DB，不碰全局，因此不会互相抢）。
-//
-// 钉四件事：
-//  1. 站点注入的是事实键（Page/Limit/Base/PageParam/KeepLimit），旧成品键不出现；
-//  2. total 逐字等于库里 lang='zh-CN' 的行数（证明 handler 交的是真事实，不是默认值）；
-//  3. Base 带筛选（lang）—— 链接字节用 url.Values 独立拼出；
-//  4. 同一份 handler 数据：事实键渲染 == 旧成品键渲染（逐字节）。
-
 import (
 	"go_wp/internal/adminui"
 	"go_wp/pkg/pagination"
@@ -34,7 +21,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// i18nPaginationRecorder 只记录 (模板名, data)，不出 HTML。
 type i18nPaginationRecorder struct {
 	name string
 	data any
@@ -48,12 +34,11 @@ func (r *i18nPaginationRecorder) Instance(name string, data any) ginrender.Rende
 func (r *i18nPaginationRecorder) Render(http.ResponseWriter) error     { return nil }
 func (r *i18nPaginationRecorder) WriteContentType(http.ResponseWriter) {}
 
-// newI18nPaginationEnv 真库（已迁移 + 全量 seed）+ 全局 database/i18n 指向它。
 func newI18nPaginationEnv(t *testing.T) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
-		return // NewMigratedPGTestDB 已 t.Skip
+		return
 	}
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("seed 失败：%v", err)
@@ -83,7 +68,6 @@ func newI18nPaginationEnv(t *testing.T) {
 	}
 }
 
-// TestI18nEntriesPagePaginationFacts 词条页只交事实，且 total 来自真库。
 func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	newI18nPaginationEnv(t)
 
@@ -92,8 +76,7 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = rec
 	h := adminhttp.NewAdminI18nEntryHandle()
-	// 页面出口改 PageSlot 之后，模板名归路由层：控制器只交视图，
-	// 渲染器由 slot 带进上下文（这里是测试自装的 recorder）。
+
 	engine.GET("/admin/i18n", adminui.PageSlot(adminhttp.I18nPageTemplate), h.I18nEntriesPage)
 
 	target := "/admin/i18n?lang=zh-CN&page=2"
@@ -101,7 +84,7 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	if rec.name != adminhttp.I18nPageTemplate {
 		t.Fatalf("模板名应为 %s，实际 %q", adminhttp.I18nPageTemplate, rec.name)
 	}
-	// 视图是强类型，走 ViewMap 摊平后取键（与真实渲染出口同一条路径）。
+
 	data := adminui.ViewMap(rec.data)
 	raw, ok := data["Pagination"]
 	if !ok {
@@ -112,7 +95,6 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 		t.Fatalf("Pagination 应是 pagination.Page（值类型），实际 %T", raw)
 	}
 
-	// 独立读数：库里 zh-CN 的行数就是这次分页的分母。
 	db, err := database.GetDB()
 	if err != nil {
 		t.Fatalf("取全局库句柄失败：%v", err)
@@ -143,7 +125,6 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 		}
 	}
 
-	// 链接字节：期望值独立拼出（base 已含 ?，续接用 &）。
 	nextWant := wantBase + "&page=3&limit=50"
 	prevWant := wantBase + "&page=1&limit=50"
 	renderer := templates.NewJetHTMLRender("../../../../templates", true)

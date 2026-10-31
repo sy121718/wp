@@ -1,12 +1,5 @@
 package feature
 
-// user_password_reset_test.go — 密码重置（issue #36）。
-//
-// 盯三件事：
-//  1. **不泄露账号是否存在**（否则这个接口就是账号枚举器）；
-//  2. 共用 activation_key 但不串用：注册验证的码不能拿来改密码；
-//  3. 改密成功清掉凭据与登录锁定。
-
 import (
 	"context"
 	"testing"
@@ -19,7 +12,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// activeUser 造一个已激活用户并返回（含明文激活码时为注册流程）。
 func activeUser(t *testing.T, f *userFixture, username, email, password string) {
 	t.Helper()
 	ctx := context.Background()
@@ -27,7 +19,7 @@ func activeUser(t *testing.T, f *userFixture, username, email, password string) 
 	if err != nil {
 		t.Fatalf("注册失败: %v", err)
 	}
-	// 从 fake 邮件里取注册码并激活。
+
 	var code string
 	for _, c := range f.mail.calls {
 		if c.TemplateKey == "register_verify" && c.To == email {
@@ -43,7 +35,6 @@ func activeUser(t *testing.T, f *userFixture, username, email, password string) 
 	_ = res
 }
 
-// TestPasswordResetFlow 申请 → 收码 → 改密 → 旧密码失效。
 func TestPasswordResetFlow(t *testing.T) {
 	if err := support.SetupRedisForTest(t); err != nil {
 		t.Skipf("本地 Redis 不可用，跳过密码重置会话撤销: %v", err)
@@ -67,14 +58,12 @@ func TestPasswordResetFlow(t *testing.T) {
 		t.Fatalf("重置码应为 8 位，实际 %q", code)
 	}
 
-	// 错误的码拒绝。
 	if err := f.svc.ResetPassword(ctx, &userdto.ResetPasswordReq{
 		Email: "dave@example.com", Key: "WRONGKEY", NewPassword: "new-password-1",
 	}); err == nil {
 		t.Fatal("错误的码应被拒绝")
 	}
 
-	// 正确改密。
 	if err := f.svc.ResetPassword(ctx, &userdto.ResetPasswordReq{
 		Email: "DAVE@example.com", Key: code, NewPassword: "new-password-1",
 	}); err != nil {
@@ -96,7 +85,7 @@ func TestPasswordResetFlow(t *testing.T) {
 	if row.LoginFailureCount != 0 || row.LockedUntilTime != nil {
 		t.Fatal("改密应顺带清掉登录失败锁定")
 	}
-	// 同一个码不能复用。
+
 	if err := f.svc.ResetPassword(ctx, &userdto.ResetPasswordReq{
 		Email: "dave@example.com", Key: code, NewPassword: "another-pass-1",
 	}); err == nil {
@@ -104,7 +93,6 @@ func TestPasswordResetFlow(t *testing.T) {
 	}
 }
 
-// TestPasswordResetDoesNotLeakAccountExistence 不存在的邮箱也返回成功，且不发信。
 func TestPasswordResetDoesNotLeakAccountExistence(t *testing.T) {
 	f := newUserFixture(t)
 	if f == nil {
@@ -120,14 +108,13 @@ func TestPasswordResetDoesNotLeakAccountExistence(t *testing.T) {
 	}
 }
 
-// TestRegisterCodeCannotResetPassword 注册验证的码不能拿来改密码。
 func TestRegisterCodeCannotResetPassword(t *testing.T) {
 	f := newUserFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 注册但不激活：账号是 pending，手里有注册验证码。
+
 	if _, err := f.svc.Register(ctx, &userdto.RegisterReq{
 		Username: "erin", Email: "erin@example.com", Password: "old-password-1",
 	}); err != nil {
@@ -142,7 +129,7 @@ func TestRegisterCodeCannotResetPassword(t *testing.T) {
 	if regCode == "" {
 		t.Fatal("没拿到注册码")
 	}
-	// 用注册码改密码：即使码相同也必须被状态校验挡住。
+
 	if err := f.svc.ResetPassword(ctx, &userdto.ResetPasswordReq{
 		Email: "erin@example.com", Key: regCode, NewPassword: "new-password-1",
 	}); err == nil {
@@ -154,7 +141,6 @@ func TestRegisterCodeCannotResetPassword(t *testing.T) {
 	}
 }
 
-// TestPasswordResetRetriesAfterSessionStoreFailure Redis不可用不能先消费验证码或改密码。
 func TestPasswordResetRetriesAfterSessionStoreFailure(t *testing.T) {
 	if err := support.SetupRedisForTest(t); err != nil {
 		t.Skipf("Redis不可用: %v", err)

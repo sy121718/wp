@@ -1,14 +1,5 @@
 package productmcp
 
-// variant_write_tools_test.go — 变体写工具的边界。
-//
-// 这一组要钉住三件事：
-// ① **金额单位是元** —— product 模块 float64 元、order 模块 int64 分，
-//    同一个仓库两套口径，模型把 99 元当成分就会定成 0.99；
-// ② **可空入参的语义** —— create 不给 quantity 是「无限售出」、给 0 是「没货」，
-//    两者在库里都是 0，只有入参能区分；
-// ③ **update 只改传了的字段** —— 指针语义，「不动价格」与「把价格改成 0」是两件事。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -118,7 +109,7 @@ func TestVariantCreateMoneyIsYuanFloat(t *testing.T) {
 	if req == nil {
 		t.Fatal("service 未收到请求")
 	}
-	// 99.5 必须原样到达 —— 取整成 99 或 100 都是悄悄改了用户报的价。
+
 	if req.Price == nil || *req.Price != 99.5 {
 		t.Errorf("售价应原样传 99.5（元），实得 %v", req.Price)
 	}
@@ -130,7 +121,6 @@ func TestVariantCreateMoneyIsYuanFloat(t *testing.T) {
 	}
 }
 
-// 金额字段必须是 number：用 integer 会在校验层把 99.5 直接拒掉。
 func TestVariantMoneySchemaIsNumber(t *testing.T) {
 	tool := variantTool(t, "variant_create", &stubVariantWriter{})
 	raw, err := tool.SchemaJSON()
@@ -178,8 +168,7 @@ func TestVariantCreateQuantitySemantics(t *testing.T) {
 }
 
 func TestVariantCreateQuantityReachesServiceAsNilOrZero(t *testing.T) {
-	// 不给 → nil（service 走「新增路径不覆盖」）；
-	// 这两者在 dto 层必须能区分，不能把「没给」写成 0。
+
 	stub := &stubVariantWriter{createRes: &productdto.VariantResp{ID: "v1"}}
 	if _, err := invokeVariant(t, variantTool(t, "variant_create", stub), map[string]any{"productId": "p1"}); err != nil {
 		t.Fatalf("调用失败: %v", err)
@@ -210,7 +199,6 @@ func TestVariantCreateWarnsWhenNotSellable(t *testing.T) {
 	}
 }
 
-// update 一个字段都不给 → 当场报错，不能当成「成功但什么都没改」。
 func TestVariantUpdateRejectsEmptyPatch(t *testing.T) {
 	stub := &stubVariantWriter{}
 	_, err := invokeVariant(t, variantTool(t, "variant_update", stub), map[string]any{"id": "v1"})
@@ -222,7 +210,6 @@ func TestVariantUpdateRejectsEmptyPatch(t *testing.T) {
 	}
 }
 
-// 指针语义：只说改价格，其余字段必须是 nil（保持原样），不能落成零值。
 func TestVariantUpdateOnlyTouchesGivenFields(t *testing.T) {
 	stub := &stubVariantWriter{updateRes: &productdto.VariantResp{ID: "v1", SKUCode: "SKU-1", Price: 88, Enabled: true}}
 	if _, err := invokeVariant(t, variantTool(t, "variant_update", stub), map[string]any{
@@ -240,7 +227,6 @@ func TestVariantUpdateOnlyTouchesGivenFields(t *testing.T) {
 	}
 }
 
-// 价格可以显式改成 0 —— 这正是「不传 ≠ 传 0」的另一面。
 func TestVariantUpdateCanSetPriceZero(t *testing.T) {
 	stub := &stubVariantWriter{updateRes: &productdto.VariantResp{ID: "v1", Enabled: true}}
 	if _, err := invokeVariant(t, variantTool(t, "variant_update", stub), map[string]any{
@@ -262,7 +248,7 @@ func TestVariantUpdatedTextReportsCurrentValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("调用失败: %v", err)
 	}
-	// 回执要说「现在是什么样」，否则用户还得再去翻一遍。
+
 	for _, want := range []string{"88", "199", "不可售"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("回执应含当前值 %q，实得：%s", want, text)
@@ -279,7 +265,7 @@ func TestVariantDeleteTextPointsToSofterOption(t *testing.T) {
 	if stub.deleteReq == nil || stub.deleteReq.ID != "v1" {
 		t.Fatalf("变体 id 没传到: %+v", stub.deleteReq)
 	}
-	// 「下架可逆、删除不可逆」—— 用户说「先别卖」时用错工具的代价不可逆。
+
 	if !strings.Contains(text, "下架") {
 		t.Errorf("删除回执应提示下架这个更软的动作，实得：%s", text)
 	}

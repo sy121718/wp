@@ -1,9 +1,3 @@
-// Package unit contenttemplate 模块 feature 测试（真实 PostgreSQL + 生产 DDL，0-A2）：
-// 模板创建 → 初始版本、更新 → 版本递增、ResolveTemplate 取最新版本、非法类型拒绝。
-//
-// 测试基建（本轮修复）：建表走 migrations.Run（真实迁移 SQL），不再用 AutoMigrate
-// ——AutoMigrate 会把 model 里多出来的列自动补进测试 schema，掩盖 DDL 漂移；
-// 另加「model 列集合 ⊆ 生产 DDL 列集合」断言（support.AssertModelColumnsSubset）。
 package unit
 
 import (
@@ -28,14 +22,10 @@ import (
 	"go_wp/public/test/support"
 )
 
-// pageDocument 最小合法页面文档（空 root，version=1）。
 const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
-// headingDocument 含标题组件的合法页面文档（用于验证 ResolveTemplate 取最新内容）。
 const headingDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"你好"}}]}`
 
-// newService 隔离 PG schema + 按生产迁移建表 + 真实工程行 + 装配 service。
-// 返回 (service, db, projectID)。
 func newService(t *testing.T) (*contenttemplateservice.Service, *gorm.DB, string) {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -54,7 +44,6 @@ func newService(t *testing.T) (*contenttemplateservice.Service, *gorm.DB, string
 	return contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, testRegistry(t)), db, project.ID
 }
 
-// stubEntitySource 测试桩：只提供类型标识，不提供字段解析器。
 type stubEntitySource struct{ entityType string }
 
 func (s stubEntitySource) EntityType() string       { return s.entityType }
@@ -63,9 +52,6 @@ func (s stubEntitySource) ResolverFor(_ context.Context, _ string) (core.Content
 	return nil, errors.New("测试桩不提供字段解析器")
 }
 
-// testRegistry 带内容实体类型的注册表（迁移 080 后内容只有 article）。
-//
-// 模板模块只关心「类型合法性来自注册表」，因此不引内容模块实现，保持本包测试隔离。
 func testRegistry(t *testing.T) core.EntitySourceRegistry {
 	t.Helper()
 	reg := core.NewEntitySourceRegistry()
@@ -77,8 +63,6 @@ func testRegistry(t *testing.T) core.EntitySourceRegistry {
 	return reg
 }
 
-// TestContentTemplateModelColumnsSubsetOfProductionDDL model 列集合必须是生产
-// DDL 列集合的子集（content_templates / content_template_versions）。
 func TestContentTemplateModelColumnsSubsetOfProductionDDL(t *testing.T) {
 	_, db, _ := newService(t)
 	if db == nil {
@@ -88,8 +72,6 @@ func TestContentTemplateModelColumnsSubsetOfProductionDDL(t *testing.T) {
 	support.AssertModelColumnsSubset(t, db, "content_template_versions", &contenttemplatemodel.VersionEntity{})
 }
 
-// TestContentTemplateCreatePersistsRealColumns 真实 DDL 下创建必须落库
-// project_id / current_version_id 与版本行的 source_hash / created_by。
 func TestContentTemplateCreatePersistsRealColumns(t *testing.T) {
 	svc, db, projectID := newService(t)
 	if svc == nil {
@@ -140,7 +122,6 @@ func TestContentTemplateCreatePersistsRealColumns(t *testing.T) {
 	}
 }
 
-// TestContentTemplateCreate 创建 → draft_version=1 且 LatestVersion 存在。
 func TestContentTemplateCreate(t *testing.T) {
 	svc, db, _ := newService(t)
 	if svc == nil {
@@ -160,7 +141,6 @@ func TestContentTemplateCreate(t *testing.T) {
 		t.Fatalf("初始 draft_version 应为 1: %d", res.DraftVersion)
 	}
 
-	// LatestVersion 应立即存在（version=1 快照）。
 	ver, err := contenttemplatemodel.NewModel(db).LatestVersion(ctx, res.ID)
 	if err != nil {
 		t.Fatalf("LatestVersion 应存在: %v", err)
@@ -170,7 +150,6 @@ func TestContentTemplateCreate(t *testing.T) {
 	}
 }
 
-// TestContentTemplateUpdate 更新 → draft_version 递增 + 版本数=2。
 func TestContentTemplateUpdate(t *testing.T) {
 	svc, db, _ := newService(t)
 	if svc == nil {
@@ -198,7 +177,6 @@ func TestContentTemplateUpdate(t *testing.T) {
 		t.Fatalf("draft_version 应递增为 2: %d", res2.DraftVersion)
 	}
 
-	// 版本表应产生 2 条记录。
 	var versions []contenttemplatemodel.VersionEntity
 	if err := db.Where("template_id = ?", res.ID).Find(&versions).Error; err != nil {
 		t.Fatalf("查询版本失败: %v", err)
@@ -208,7 +186,6 @@ func TestContentTemplateUpdate(t *testing.T) {
 	}
 }
 
-// TestContentTemplateResolve 解析最新模板的最新版本 document。
 func TestContentTemplateResolve(t *testing.T) {
 	svc, _, _ := newService(t)
 	if svc == nil {
@@ -252,7 +229,6 @@ func TestContentTemplateResolve(t *testing.T) {
 	}
 }
 
-// TestContentTemplateRejectInvalidType 非法 EntityType 拒绝。
 func TestContentTemplateRejectInvalidType(t *testing.T) {
 	svc, _, _ := newService(t)
 	if svc == nil {
@@ -260,7 +236,6 @@ func TestContentTemplateRejectInvalidType(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Create 非法类型拒绝。
 	if _, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
 		EntityType:    "tag",
 		Name:          "非法模板",
@@ -269,13 +244,11 @@ func TestContentTemplateRejectInvalidType(t *testing.T) {
 		t.Fatalf("非法类型应拒绝")
 	}
 
-	// ResolveTemplate 非法类型拒绝。
 	if _, err := svc.ResolveTemplate(ctx, "tag"); err == nil {
 		t.Fatalf("ResolveTemplate 非法类型应拒绝")
 	}
 }
 
-// TestContentTemplateRejectInvalidDocument 非法文档拒绝（ErrDataInvalid）。
 func TestContentTemplateRejectInvalidDocument(t *testing.T) {
 	svc, _, _ := newService(t)
 	if svc == nil {

@@ -10,10 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// 审计 PERF-006：启用插件时每次页面编译都重查数据库、读磁盘并新建 Jet Set。
-// 本文件固化缓存的两条语义：同一启用集复用同一份装配；启用集一变立刻重建。
-
-// insertRegistryRow 直插插件注册行（装配只关心注册行 + 磁盘目录，不必走 zip 安装）。
 func insertRegistryRow(t *testing.T, db *gorm.DB, id, version, dir, manifest string, enabled bool) {
 	t.Helper()
 	if err := db.Exec(
@@ -24,7 +20,6 @@ func insertRegistryRow(t *testing.T, db *gorm.DB, id, version, dir, manifest str
 	}
 }
 
-// TestEnabledAssemblyCacheReuseAndInvalidate 同启用集复用、启用集变化重建。
 func TestEnabledAssemblyCacheReuseAndInvalidate(t *testing.T) {
 	db, svc := newMigrateService(t)
 	if svc == nil {
@@ -53,7 +48,6 @@ func TestEnabledAssemblyCacheReuseAndInvalidate(t *testing.T) {
 		t.Fatal("同一启用集应命中缓存并返回同一份装配素材")
 	}
 
-	// 启停是启用集的变化：必须立即反映，不能等缓存过期（本缓存没有过期时间）。
 	if err = svc.Toggle(ctx, &plugindto.ToggleReq{ID: "marketing", Enabled: false}); err != nil {
 		t.Fatalf("停用插件失败: %v", err)
 	}
@@ -72,10 +66,6 @@ func TestEnabledAssemblyCacheReuseAndInvalidate(t *testing.T) {
 	}
 }
 
-// TestCompositeSetCacheReusesByFingerprint Jet Set 按指纹复用，空指纹不共享槽位。
-//
-// 空指纹单列一条断言：指纹缺失时若也走同一个缓存槽，两套不同的插件集会互相
-// 复用模板（装上插件却渲染出上一套的模板），这是比「没缓存」严重得多的失败。
 func TestCompositeSetCacheReusesByFingerprint(t *testing.T) {
 	templates.ResetCompositeSetCache()
 	t.Cleanup(templates.ResetCompositeSetCache)

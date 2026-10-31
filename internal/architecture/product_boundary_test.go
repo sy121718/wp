@@ -10,12 +10,6 @@ import (
 	"testing"
 )
 
-// 商品模块作为范例的职责边界，判据以 AGENTS.md 为准。
-//
-// 这些判据在其他模块还是存量债，在商品模块是**零容忍**：它就是「改完之后长什么样」的样品，
-// 样品一旦回退，后面十个模块照抄的就是回退后的样子。
-
-// 展示字段名：出现即说明「给用户看的文本/形状」在 Go 里成形了。
 var productPresentationFields = map[string]bool{
 	"Tone": true, "Class": true, "StatusClass": true,
 	"StatusLabel": true, "TypeLabel": true, "KindLabel": true,
@@ -25,7 +19,6 @@ var productPresentationFields = map[string]bool{
 	"HasSerpTitle": true, "HasSerpDesc": true, "HasSerpURL": true,
 }
 
-// TestProductDTOHasNoPresentationFields dto 只放数据：§展示字段与页面状态方法都不许有。
 func TestProductDTOHasNoPresentationFields(t *testing.T) {
 	root := repoRoot(t)
 	for _, pkg := range parseDir(t, filepath.Join(root, "internal/module/product/dto")) {
@@ -51,7 +44,6 @@ func TestProductDTOHasNoPresentationFields(t *testing.T) {
 	}
 }
 
-// TestProductTimeFieldsUseTimeTypes dto 的时间字段不许是字符串（时间形状只能有 time.Time / utils.JSONTime 两种）。
 func TestProductTimeFieldsUseTimeTypes(t *testing.T) {
 	root := repoRoot(t)
 	for _, pkg := range parseDir(t, filepath.Join(root, "internal/module/product/dto")) {
@@ -77,13 +69,10 @@ func TestProductTimeFieldsUseTimeTypes(t *testing.T) {
 	}
 }
 
-// translateSelectors 取词调用（pkg/i18n 里混着内容翻译存储，所以不能按 import 判，要看具体调用）。
 var translateSelectors = map[string]bool{
 	"Translate": true, "TranslateFunc": true, "FillTranslate": true, "TranslateArgs": true,
 }
 
-// TestProductServiceDoesNotTranslate service 不做取词：文案在声明处（enums.Err / facing.New），
-// 取词发生在出口（pkg/response）与模板。
 func TestProductServiceDoesNotTranslate(t *testing.T) {
 	root := repoRoot(t)
 	for _, pkg := range parseDir(t, filepath.Join(root, "internal/module/product/service")) {
@@ -102,11 +91,8 @@ func TestProductServiceDoesNotTranslate(t *testing.T) {
 	}
 }
 
-// productControllerI18nBudget 控制器里还能直接取词的文件（登记的是「为什么现在还留着」）。
-// 双向判定：登记了不再命中同样失败。
 var productControllerI18nBudget = map[string]string{}
 
-// TestProductControllersAvoidTranslating 控制器不取词：响应文案由 pkg/response 取一次，界面文案由模板取。
 func TestProductControllersAvoidTranslating(t *testing.T) {
 	root := repoRoot(t)
 	got := map[string]bool{}
@@ -135,7 +121,6 @@ func TestProductControllersAvoidTranslating(t *testing.T) {
 	}
 }
 
-// parseDir 解析目录下的非测试 Go 文件（键是文件名，值是 AST）。
 func parseDir(t *testing.T, dir string) map[string]map[string]*ast.File {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -156,7 +141,6 @@ func parseDir(t *testing.T, dir string) map[string]map[string]*ast.File {
 	return out
 }
 
-// 商品业务数据不得通过共享评分视图包重新带回颜色、DOM目标和HTML片段契约。
 func TestProductBusinessLayersDoNotImportScoreView(t *testing.T) {
 	root := repoRoot(t)
 	for _, dir := range []string{"dto", "service", "inbound/http"} {

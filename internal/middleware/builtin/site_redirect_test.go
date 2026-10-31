@@ -1,10 +1,5 @@
 package builtin
 
-// TestSiteRedirectMiddleware 访问面重定向中间件（真实文件系统 + 真实激活链接）。
-//
-// 这是「改 URL 时勾选保留旧链接」能不能兑现的判据：没有它，旧路径是 404，
-// 复选框形同虚设。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +10,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// setupRedirectFixture 在临时产物根下落一份页面产物与一份重定向产物，并各自激活到
-// /plain-path 与 /old-path（后者 301 指向 /new-path）。
 func setupRedirectFixture(t *testing.T) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -52,18 +45,15 @@ func setupRedirectFixture(t *testing.T) {
 	}
 }
 
-// redirectTestRouter 访问面替身：中间件 + 一条兜底路由代表静态文件服务。
 func redirectTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	// 用兼容入口前缀 /site 挂载：根挂载点（prefix=""）也走同一份中间件，
-	// 前缀不同只影响「哪些路径算访问面」，不影响重定向判定本身。
+
 	g := r.Group("/site", SiteRedirectMiddleware("/site"))
 	g.GET("/*rest", func(c *gin.Context) { c.String(http.StatusOK, "static-face") })
 	return r
 }
 
-// TestSiteRedirectMiddleware 命中重定向 → 301；其余请求一律放行给静态面。
 func TestSiteRedirectMiddleware(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -71,17 +61,17 @@ func TestSiteRedirectMiddleware(t *testing.T) {
 		wantStatus int
 		wantLoc    string
 	}{
-		// 命中的旧路径：301 到新路径（含带尾斜杠的目录访问形式）。
+
 		{"旧路径 301", "/site/old-path", http.StatusMovedPermanently, "/new-path"},
 		{"旧路径带尾斜杠 301", "/site/old-path/", http.StatusMovedPermanently, "/new-path"},
-		// 普通页面产物：放行给静态面，不改行为。
+
 		{"普通页面放行", "/site/plain-path/", http.StatusOK, ""},
-		// 未激活路径：放行（由静态面决定 404）。
+
 		{"未激活路径放行", "/site/never-activated/", http.StatusOK, ""},
-		// /index 语言根别名 301 到 /（I18N-022）。
+
 		{"index 别名 301", "/site/index", http.StatusMovedPermanently, "/"},
 		{"index 带尾斜杠 301", "/site/index/", http.StatusMovedPermanently, "/"},
-		// 路径越界：必须放行，而不是替攻击者读出激活目录之外的重定向指令。
+
 		{"越界路径放行", "/site/../site/old-path", http.StatusOK, ""},
 	}
 	for _, tc := range cases {

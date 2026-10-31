@@ -1,27 +1,5 @@
 package pagemcp
 
-// 为什么补这一个：用户问「有没有关于退换货的页面」「那个帮助页叫什么来着」
-// 时，答案在 pages 表里，而在此之前 AI 侧看不到任何页面数据 —— 它只能去猜
-// 或者让用户自己找。底层缺的不是数据而是入口。
-//
-// 只读：依赖收窄到 PageQueryReader（一个方法，见契约文件头），手里没有发布 /
-// 回滚 / 删除 —— 「AI 顺手把一个页面下线了」不会在某次改动里变得可能。
-//
-// **关键词匹配在这里做**（不在 model 层）：页面列表通道按工程与主题筛，
-// 返回体还带着整份草稿文档（每页几百 KB），为「找一个页面」去拉那些正文是浪费；
-// 而标题清单很轻（百级、每条几十字节），一次全拉进内存过滤即可。
-
-// **这一批刻意不碰页面文档本身。** 页面的 AST（页面里放哪些块、怎么排版）
-// 属于「可视化页面选组件」，那套编辑器的语义（拖拽、块树、槽位绑定）不是
-// 一段 JSON 参数能表达清楚的 —— 模型盲写一份 AST，产物在编辑器里打开时
-// 往往是一片无法维护的结构。所以这里只开：
-//
-//	建页（只有 kind 与路径，文档留给编辑器）→ 发布 → 改网址 → 删页
-//
-// 建页时的 DraftDocument 一律给空文档：调用方不需要、也不应该手写 AST。
-// 想从模板起手就用 BlueprintID（蓝图是「用完即弃」的初始化输入，
-// 服务端会把 AST 完整复制并重生成节点 ID）。
-
 import (
 	"context"
 	"errors"
@@ -35,13 +13,8 @@ import (
 	"go_wp/internal/permission"
 )
 
-// pageMatchLimit 一次最多把几个匹配的页面交给模型。
-//
-// 与其它工具的上限一个道理：命中 80 个页面时全铺出来只会挤掉回答，
-// 而用户真正要的那个通常在前几条（标题前缀命中的排在前面，见 rankMatches）。
 const pageMatchLimit = 15
 
-// Tools 返回页面模块的只读工具集。
 func Tools(reader pagecontract.PageQueryReader) ([]mcp.Tool, error) {
 	if reader == nil {
 		return nil, errors.New("pagemcp: 页面查询依赖缺失（装配期接线错误）")
@@ -100,8 +73,7 @@ func pageListText(all []pagedto.PageTitleResp, keyword string) string {
 
 	matches := rankMatches(all, kw)
 	if len(matches) == 0 {
-		// 空结果要把「怎么找」说清楚：用户给的名字与页面标题不一致很常见，
-		// 而这句提示能让他直接换个词再问一次，不必来回猜。
+
 		return fmt.Sprintf("没有匹配「%s」的页面（共 %d 个页面）。可以换一个更短的词，"+
 			"或者不给关键词让它把全部页面列出来。", keyword, len(all))
 	}
@@ -118,11 +90,6 @@ func pageListText(all []pagedto.PageTitleResp, keyword string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// rankMatches 先匹配、后按「命中位置」排序。
-//
-// 前缀命中排在包含命中之前：用户说「帮助」时，「帮助中心」比
-// 「如何联系帮助台」更可能是他要的那个。同档内按原始顺序（服务端已排好），
-// 用稳定排序保住它 —— 否则两次问同一句话得到两个顺序，看起来像数据变了。
 func rankMatches(all []pagedto.PageTitleResp, kw string) []pagedto.PageTitleResp {
 	type scored struct {
 		page pagedto.PageTitleResp
@@ -136,7 +103,7 @@ func rankMatches(all []pagedto.PageTitleResp, kw string) []pagedto.PageTitleResp
 		}
 		hits = append(hits, scored{page: p, rank: rank})
 	}
-	// 插入排序（同档保持原序）：命中数通常在几十以内，不必引入 sort 包的开销与复杂度。
+
 	for i := 1; i < len(hits); i++ {
 		cur := hits[i]
 		j := i - 1
@@ -153,7 +120,6 @@ func rankMatches(all []pagedto.PageTitleResp, kw string) []pagedto.PageTitleResp
 	return out
 }
 
-// matchRank 0 = 标题前缀命中（最相关），1 = 标题包含，2 = 路径命中，-1 = 不匹配。
 func matchRank(p pagedto.PageTitleResp, kw string) int {
 	title := strings.ToLower(p.SEOTitle)
 	if strings.HasPrefix(title, kw) {
@@ -179,12 +145,6 @@ func writePageRows(b *strings.Builder, rows []pagedto.PageTitleResp) {
 	}
 }
 
-// kindText 页面类型的中文说法。
-//
-// 列表必须带类型：只给标题与路径分不出「这是首页还是普通页」，
-// 而 page_create 只能建功能页、建之前要先确认有没有同用途的那一张。
-// 普通内容页（page / article / tag）也标出来 —— 它们跟着内容走，
-// 看到它们就知道「这类页面不是在这里建的」。
 func kindText(kind string) string {
 	switch strings.TrimSpace(kind) {
 	case "home":
@@ -205,8 +165,6 @@ func kindText(kind string) string {
 	return emptyAsDash(kind)
 }
 
-// activePathText 线上路径。未发布时**明说未发布**而不是回退成草稿路径 ——
-// 两者拼出来的链接一个能打开、一个 404，混在一起会让模型给出打不开的地址。
 func activePathText(p pagedto.PageTitleResp) string {
 	if p.ActivePath == nil || strings.TrimSpace(*p.ActivePath) == "" {
 		return "（未发布）"
@@ -228,7 +186,6 @@ type pageWriter interface {
 	Delete(ctx context.Context, req *pagedto.DeleteReq) error
 }
 
-// WriteTools 返回页面写工具集（4 个）。
 func WriteTools(w pageWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("pagemcp: 页面写依赖缺失（装配期接线错误）")
@@ -236,24 +193,8 @@ func WriteTools(w pageWriter) ([]mcp.Tool, error) {
 	return []mcp.Tool{pageCreate(w), pagePublish(w), pageURLUpdate(w), pageDelete(w)}, nil
 }
 
-// emptyDraftDocument 建页时的空文档。
-//
-// 形状必须与 builder.Page 对齐：`settings` 是对象、**`root` 是数组**（不是对象）。
-// 写成 `{"root":{"type":"page"}}` 会让 builder.ParsePage 反序列化失败，
-// 服务端报 ErrInvalidDocument —— 症状是「建页失败」但看不出哪里错了。
 var emptyDraftDocument = json.RawMessage(`{"settings":{},"root":[]}`)
 
-// structuralKinds 允许用本工具建的类型。
-//
-// **只有功能页。** pages 表有一条 content contract 约束：
-// kind=page 必须带 content_target_type='page' + 非空的 content_target_id，
-// 也就是说「普通页面」本质上是**某条内容（或某个主题页）的展示壳**，
-// 它跟着内容走 —— 内容模块自己会带出对应的页面。
-// 让调用方在这里凭空给一个 targetId，等于伪造一条内容关联。
-//
-// 而 home / archive / search / notFound 是站点自己的功能页，content_target_type='none'，
-// 没有任何内容依赖。它们通常在建站时就已存在，这个工具的用途是「站点缺了某张功能页
-// 时补一张」—— 所以描述里要求先 page_find 看一眼。
 var structuralKinds = []string{"home", "archive", "search", "notFound"}
 
 type pageCreateArgs struct {
@@ -290,7 +231,7 @@ func pageCreate(w pageWriter) mcp.Tool {
 				ProjectID: strings.TrimSpace(args.ProjectID),
 				Kind:      strings.TrimSpace(args.Kind),
 				DraftPath: ensureLeadingSlash(args.DraftPath),
-				// 功能页没有内容依赖（pages 表的 content contract 要求 none）。
+
 				ContentTargetType: "none",
 				DraftDocument:     emptyDraftDocument,
 			}
@@ -360,7 +301,6 @@ func pagePublish(w pageWriter) mcp.Tool {
 		})
 }
 
-// publishResultText 报出激活后的真实网址 —— 用户下一步就是要拿它去访问。
 func publishResultText(res *pagedto.PublishResp, action string) string {
 	if res == nil {
 		return action + "。"
@@ -377,7 +317,6 @@ func publishResultText(res *pagedto.PublishResp, action string) string {
 	return b.String()
 }
 
-// shortHash 产物哈希太长，回执里只留前 8 位（够人对账，不占版面）。
 func shortHash(h string) string {
 	if len(h) <= 8 {
 		return h

@@ -36,7 +36,7 @@ func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testi
 	if got := ActionTargetDependencies(usage); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("实际消费目标与依赖必须等式: got=%+v want=%+v", got, expected)
 	}
-	// 不把同文档区域、外链或解析失败的作者目标记成跨页依赖。
+
 	ctx := &core.RenderContext{}
 	empty := &CompileUsage{}
 	ctx.SetUsageRecorder(empty)

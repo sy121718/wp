@@ -73,8 +73,6 @@ func TestValidatePattern(t *testing.T) {
 	}
 }
 
-// TestDefaultPatternsCoverKnownKinds 默认模式必须覆盖所有内置类型 ——
-// 少一个的表现是"这个类型永远派生不出路径"，而调用方只会看到一个空表单。
 func TestDefaultPatternsCoverKnownKinds(t *testing.T) {
 	for _, k := range KnownKinds {
 		if PatternOf(k.Kind, nil) == "" {

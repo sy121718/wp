@@ -1,18 +1,5 @@
 package feature
 
-// admin_err_reverse_defect_test.go — 任务 1 的反向缺陷回归（业务错误被吞成 500 + 通用提示）。
-//
-// 背景：admin 的 22 处 r.ErrorInternal(c, "admin", err) 不看白名单 —— 它只记日志、回 500 + 通用提示。
-// 于是「用户名已存在」这类**业务**错误在运营侧表现成「系统故障」：运营看不到该改哪个字段，
-// 只会反复重试。本批把这 22 处改成 adminFail（命中白名单 → 400 + 原样文案；未命中 → 日志 + 500 归口）。
-//
-// 为什么用假 service 再测一遍 handler 层：真实库很难**稳定**造出「重名」与「PostgreSQL 唯一约束
-// + SQLSTATE」这两种错误（要并发撞唯一键），而这两条正是本批要钉死的分支。
-// 假 service 把两种 error 直接喂给 handler，断言状态码、文案与「响应体里没有内部片段」。
-//
-// 依赖同文件包的既有资产：internalCopyForms / leakMarkers / dbErrText / assertNoLeak /
-// withTempLogDir（都在 admin_err_response_test.go，同一个 feature 包）。
-
 import (
 	"context"
 	"errors"
@@ -31,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// adminBusinessCopyForms 几个管理员域业务错误的全部可能形态（key / zh-CN / en-US）。
 var adminBusinessCopyForms = map[string]bool{
 	adminenums.ErrUsernameExists: true,
 	"用户名已存在，请修改":                 true,
@@ -44,7 +30,6 @@ var adminBusinessCopyForms = map[string]bool{
 	"User not found":             true,
 }
 
-// fakeAdminService 把同一个错误注入管理员域的全部契约方法。
 type fakeAdminService struct{ err error }
 
 func (f *fakeAdminService) AdminList(context.Context, *admindto.AdminListReq) (*admindto.AdminListResp, error) {
@@ -85,7 +70,6 @@ func (f *fakeAdminService) AdminMenuSave(context.Context, *admindto.AdminMenuSav
 	return nil, f.err
 }
 
-// withStubSession 给 AdminProfile 补一个会话主体（它直接读 c.Get("user_id")）。
 func withStubSession() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("user_id", int64(1))
@@ -93,12 +77,10 @@ func withStubSession() gin.HandlerFunc {
 	}
 }
 
-// newAdminErrEngine 组一个只挂本批改过的几个端点（其余域注入 nil：本用例不会走到）。
 func newAdminErrEngine(t *testing.T, svcErr error) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	// DTO 上带了自定义规则（email_strict）：生产由 config 的组件初始化注册，
-	// 这里直接调同一个入口（sync.Once，重复调用无副作用），否则 ShouldBind 会 panic。
+
 	if err := pkgvalidate.RegisterCustomRules(); err != nil {
 		t.Fatalf("注册自定义校验规则失败: %v", err)
 	}
@@ -111,7 +93,6 @@ func newAdminErrEngine(t *testing.T, svcErr error) *gin.Engine {
 	return engine
 }
 
-// adminSend 发一个请求并返回标准响应、原始响应体与状态码。
 func adminSend(t *testing.T, engine *gin.Engine, method, path, rawBody string) (*support.StandardResponse, string, int) {
 	t.Helper()
 	recorder, err := support.SendRequest(engine, support.RequestOptions{
@@ -129,14 +110,8 @@ func adminSend(t *testing.T, engine *gin.Engine, method, path, rawBody string) (
 	return std, recorder.Body.String(), recorder.Code
 }
 
-// adminCreateBody 一条能通过 binding 的新建管理员请求体。
 const adminCreateBody = `{"username":"editor","email":"editor@example.com","password":"secret123"}`
 
-// TestAdminInternalEndpointBusinessErrorIsNotSwallowed 业务错误在这些端点上必须是 400 + 原样文案。
-//
-// 每条对应本批从 ErrorInternal 改成 adminFail 的一个**业务可能**调用点：
-// AdminCreate（重名/重邮箱）、AdminDetail / AdminProfile（目标不存在）、AdminList（排序字段非法）。
-// 修复前这些一律 500 + 通用提示 —— 运营看不到「用户名已存在」，只会反复重试。
 func TestAdminInternalEndpointBusinessErrorIsNotSwallowed(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -168,14 +143,6 @@ func TestAdminInternalEndpointBusinessErrorIsNotSwallowed(t *testing.T) {
 	}
 }
 
-// TestAdminListSortParamErrorIsNowVisible 排序参数错误已入 enums：400 + 具体文案。
-//
-// 本用例的前身是 TestAdminListServiceBusinessErrorWithoutEnumsStaysCollected —— 当时 AdminList
-// 直接 errors.New("无效的排序字段")（中文原文、不是 enums key），它进不了白名单，
-// 于是页面与接口被归口成 500 + 「操作失败，请稍后重试」：调用方把排序方向拼成 "up" 只会看到
-// 「系统故障」，不知道该改成 asc / desc。现在补了 adminenums.ErrSortFieldInvalid /
-// ErrSortDirectionInvalid（迁移 271 中英各一行），所以这条钉桩同步改成 400 + 具体文案 ——
-// 留着旧的 500 断言会与新行为互相矛盾。
 func TestAdminListSortParamErrorIsNowVisible(t *testing.T) {
 	forms := map[string]map[string]bool{
 		adminenums.ErrSortFieldInvalid: {
@@ -208,12 +175,6 @@ func TestAdminListSortParamErrorIsNowVisible(t *testing.T) {
 	}
 }
 
-// TestAdminListSortBridgeIsEnums 静态守卫：service 的排序校验必须走 enums 常量，不能退回中文原文。
-//
-// 上面那条用例用的是假 service，它只能证明「写 handler 侧已经能透出具体文案」；
-// 一旦 service 悄悄退回 errors.New("无效的排序字段")，接口又会变成 500 + 归口，而用例照样绿。
-// 所以这里按源码把两个常量钉住（判据与 scripts/check-no-internal-error-leak.sh 同源：
-// 「服务端文案是不是来自拥有白名单的模块」）。
 func TestAdminListSortBridgeIsEnums(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(support.RepoRoot(t),
 		"internal", "module", "admin", "service", "admin.go"))
@@ -221,12 +182,7 @@ func TestAdminListSortBridgeIsEnums(t *testing.T) {
 		t.Fatalf("读取 admin_crud.go 失败: %v", err)
 	}
 	src := string(raw)
-	// 判据在 2026-10 收紧过一次：从「用 enums 常量」变成「用 enums.Err() 带上兜底」。
-	//
-	// 旧形态 errors.New(adminenums.ErrSortFieldInvalid) 造出来的是**裸 key** ——
-	// facing.FactOf 只能把 key 本身当兜底，词条缺席时客户端看到的是一串
-	// `admin.err.sortFieldInvalid`。现在每个 Err* 在 enums 的 errFallbacks 里有中文兜底，
-	// service 走 enums.Err(...)，出口照旧只调一次 facing.FactOf。
+
 	for _, want := range []string{
 		"adminenums.Err(adminenums.ErrSortFieldInvalid)",
 		"adminenums.Err(adminenums.ErrSortDirectionInvalid)",
@@ -235,8 +191,7 @@ func TestAdminListSortBridgeIsEnums(t *testing.T) {
 			t.Fatalf("排序校验应返回带兜底的业务错误（%s）：裸 key 在词条缺席时会被直出给客户端", want)
 		}
 	}
-	// 反向：裸 errors.New(<enums 常量>) 不许再出现（全仓判据见
-	// internal/architecture 的 TestNoBareKeyBusinessErrors，这里只钉住本条链路）。
+
 	for _, forbidden := range []string{
 		"errors.New(adminenums.ErrSortFieldInvalid)",
 		"errors.New(adminenums.ErrSortDirectionInvalid)",
@@ -248,10 +203,6 @@ func TestAdminListSortBridgeIsEnums(t *testing.T) {
 	}
 }
 
-// TestAdminInternalEndpointInfraErrorStaysCollected 基础设施错误仍是 500 + 归口，且原文只进日志。
-//
-// 覆盖面刻意包含**列表 / 查询**端点（AdminList / AdminDetail / AdminProfile）：
-// 它们看起来「只读、不会出错」，但驱动层一样会抛原文，收口不能只做写操作。
 func TestAdminInternalEndpointInfraErrorStaysCollected(t *testing.T) {
 	cases := []struct {
 		name   string

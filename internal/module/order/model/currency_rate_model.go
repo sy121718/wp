@@ -1,14 +1,5 @@
 package model
 
-// currency_rate_model.go — 汇率（币种对，覆盖式）与订单汇率快照列（迁移 633，W5）。
-//
-// 三条口径：
-//
-//  1. 汇率是**币种对**的事实（USD→CNY），不属任何工程：同一个币对在哪个工程下都该是同一个数；
-//  2. 覆盖式：同一币对只留最新一条（与 inventory_stocks.cost_price 同口径）——
-//     汇率的历史由**订单上的快照**保存，不靠这张表存历史；
-//  3. 订单上的快照不可变：下单写一次，之后汇率怎么变都不影响历史订单（财务口径必须可重放）。
-
 import (
 	"context"
 	"errors"
@@ -20,11 +11,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// CurrencyRateEntity 汇率（迁移 633）。
-//
-// Rate 用 string 承载 numeric(18,8) 的**精确文本**（GORM 读 numeric 到 float64 会丢精度）：
-// 汇率是财务口径，1e-8 的误差在汇总时会变成可观的金额偏差。
-// 解析与换算在 service（用 big.Rat 精确算）。
 type CurrencyRateEntity struct {
 	ID         int64     `gorm:"column:id;primaryKey"`
 	BaseCode   string    `gorm:"column:base_code;not null"`
@@ -35,16 +21,10 @@ type CurrencyRateEntity struct {
 	UpdateTime time.Time `gorm:"column:update_time;not null"`
 }
 
-// TableName 实现 gorm 表名。
 func (CurrencyRateEntity) TableName() string { return "currency_rates" }
 
-// ErrCurrencyRateNotFound 该币对还没有汇率（不是错误状态，是「未固化」）。
 var ErrCurrencyRateNotFound = errors.New("currency rate not found")
 
-// GetRate 取某币对的当前汇率（覆盖式：表里最多一行）。
-//
-// 归一：代码去空白 + 大写 —— `usd`/`USD` 是同一个币种，库里存的两行会让「取到哪个」
-// 取决于查询顺序。
 func (m *OrderModel) GetRate(ctx context.Context, base, quote string) (e *CurrencyRateEntity, err error) {
 	base, quote = normalizeCurrencyCode(base), normalizeCurrencyCode(quote)
 	if base == "" || quote == "" {
@@ -62,10 +42,6 @@ func (m *OrderModel) GetRate(ctx context.Context, base, quote string) (e *Curren
 	return e, nil
 }
 
-// UpsertRate 覆盖式写汇率（同一币对只留最新一条）。
-//
-// 用 ON CONFLICT 而不是「先查再写」：并发两个写请求都读到「没有」时会各插一行，
-// 撞唯一索引后其中一个报错 —— 而覆盖式的语义就是「后来者赢」。
 func (m *OrderModel) UpsertRate(ctx context.Context, e *CurrencyRateEntity) (err error) {
 	if e == nil {
 		return errors.New("nil currency rate")
@@ -83,13 +59,7 @@ func (m *OrderModel) UpsertRate(ctx context.Context, e *CurrencyRateEntity) (err
 	if strings.TrimSpace(e.Source) == "" {
 		e.Source = "manual"
 	}
-	// 用 GORM 的 OnConflict 表达「覆盖式」而不是手写 INSERT … ON CONFLICT：
-	// 冲突目标必须与 DDL 的函数索引逐字一致（upper(base_code), upper(quote_code)）——
-	// 写成表达式列时 GORM 用 clause.Column{Name: "..."} 会被引号包住，所以这里用
-	// `ON CONFLICT ON CONSTRAINT` 的等价写法：先 Update 再按需 Insert（见下）。
-	//
-	// 两步的语义仍是「后来者赢」：Update 命中即覆盖；没命中的并发插入由唯一索引兜底，
-	// 撞索引时那一方再 Update 一次 —— 与「先查再写」的差别是不存在「两个请求都读到没有」。
+
 	res := m.db.WithContext(ctx).Model(&CurrencyRateEntity{}).
 		Where("upper(base_code) = ? AND upper(quote_code) = ?", e.BaseCode, e.QuoteCode).
 		Updates(map[string]any{
@@ -110,10 +80,8 @@ func (m *OrderModel) UpsertRate(ctx context.Context, e *CurrencyRateEntity) (err
 	}).Error
 }
 
-// normalizeCurrencyCode 币种代码归一（去空白 + 大写）。
 func normalizeCurrencyCode(raw string) string { return strings.ToUpper(strings.TrimSpace(raw)) }
 
-// FXOrderRow 有汇率快照的订单（折算用：每张单自己的快照汇率不同，必须逐单算）。
 type FXOrderRow struct {
 	ID         uint64 `gorm:"column:id"`
 	Total      int64  `gorm:"column:total"`
@@ -121,17 +89,6 @@ type FXOrderRow struct {
 	FXBaseCode string `gorm:"column:fx_base_code"`
 }
 
-// ListFXOrdersByRange 区间内**可折算到 baseCode** 的订单（迁移 633，W5）。
-//
-// 逐单而不是一条聚合 SQL：每张单的**快照汇率不同**（下单时刻不同），
-// 「每行乘以自己的汇率」需要逐行算 —— 而折算必须与 service 的 big.Rat 口径
-// 完全一致，否则页面上的数字与 service 算的会各算一套。
-//
-// 为什么必须按 fx_base_code 分组（W5 复审补的口子）：快照汇率的语义是
-// 「1 单位订单币 = rate 单位 **基准币**」，而基准币来自运行期配置，可以改。
-// 只筛 fx_rate IS NOT NULL 会把「当年按 USD 基准折算的快照」与「现在按 CNY 基准的快照」
-// 一起加总，页面标签却写着「折算到 CNY」—— 数字是对的加总、语义是假的。
-// 基准币对不上的订单与「没有快照」同等处理：都不进折算，都计入未折算。
 func (m *OrderModel) ListFXOrdersByRange(ctx context.Context, projectID string, from, to time.Time,
 	f OrderSalesFilter, baseCode string) (rows []FXOrderRow, err error) {
 	if strings.TrimSpace(projectID) == "" {
@@ -156,11 +113,6 @@ func (m *OrderModel) ListFXOrdersByRange(ctx context.Context, projectID string, 
 	return rows, err
 }
 
-// CountUnconvertedOrders 区间内**无法折算到 baseCode** 的订单数（迁移 633，W5）。
-//
-// 两种情况都算：没有快照（fx_rate IS NULL），以及快照的基准币不是现在的 baseCode
-// （快照存在但语义不是「折算到 baseCode」）。两者必须与 ListFXOrdersByRange 互补，
-// 否则「已折算 + 未折算」会小于区间订单总数，页面上出现对不上的缺口。
 func (m *OrderModel) CountUnconvertedOrders(ctx context.Context, projectID string, from, to time.Time,
 	f OrderSalesFilter, baseCode string) (n int64, err error) {
 	if strings.TrimSpace(projectID) == "" {
@@ -176,8 +128,6 @@ func (m *OrderModel) CountUnconvertedOrders(ctx context.Context, projectID strin
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return salesScope(
 			tx.Table(OrderEntity{}.TableName()+" AS o").
-				// fx_base_code 是 NOT NULL DEFAULT ''（迁移 633:38），空串表示「未固化」。
-				// 空串 <> 'CNY' 为真 —— 这类行与没有快照的行同等处理，两侧计数因此互补。
 				Where("o.fx_rate IS NULL OR upper(o.fx_base_code) <> ?", base),
 			projectID, from, to, f,
 		).Count(&n).Error

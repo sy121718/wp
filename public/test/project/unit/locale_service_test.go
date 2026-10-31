@@ -1,7 +1,5 @@
 package unit
 
-// locale_service_test.go — 站点语言清单（多语言 P3，docs/06-D §14 D10）。
-
 import (
 	"context"
 	"testing"
@@ -13,7 +11,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newLocaleService 隔离 PG schema + AutoMigrate projects/project_locales。
 func newLocaleService(t *testing.T) (*projectservice.Service, string) {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -34,7 +31,6 @@ func newLocaleService(t *testing.T) (*projectservice.Service, string) {
 
 func boolPtr(b bool) *bool { return &b }
 
-// TestProjectLocalesSaveAndList 保存清单：默认语言在前，启用语言顺序稳定。
 func TestProjectLocalesSaveAndList(t *testing.T) {
 	svc, projectID := newLocaleService(t)
 	ctx := context.Background()
@@ -57,7 +53,7 @@ func TestProjectLocalesSaveAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取启用语言失败: %v", err)
 	}
-	// 默认语言在前，禁用语言不出现。
+
 	if len(langs) != 2 || langs[0] != "zh-CN" || langs[1] != "en-US" {
 		t.Fatalf("启用语言错误: %+v", langs)
 	}
@@ -66,7 +62,6 @@ func TestProjectLocalesSaveAndList(t *testing.T) {
 		t.Fatalf("默认语言错误: %q err=%v", def, err)
 	}
 
-	// 全量替换幂等：重复保存同样输入结果一致。
 	again, err := svc.SaveLocales(ctx, &projectdto.LocalesSaveReq{
 		ProjectID: projectID,
 		Locales: []projectdto.LocaleItem{
@@ -83,7 +78,6 @@ func TestProjectLocalesSaveAndList(t *testing.T) {
 	}
 }
 
-// TestProjectLocalesFallback 无清单记录时回退站点默认语言一种（单语言兼容）。
 func TestProjectLocalesFallback(t *testing.T) {
 	svc, projectID := newLocaleService(t)
 	ctx := context.Background()
@@ -101,7 +95,6 @@ func TestProjectLocalesFallback(t *testing.T) {
 	}
 }
 
-// TestProjectLocalesValidation 清单校验：空清单/重复/双默认/默认禁用/非法语言码。
 func TestProjectLocalesValidation(t *testing.T) {
 	svc, projectID := newLocaleService(t)
 	ctx := context.Background()

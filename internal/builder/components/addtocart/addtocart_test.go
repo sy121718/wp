@@ -1,13 +1,5 @@
 package addtocart
 
-// addtocart_test.go — 加购组件的校验与视图测试。
-//
-// 覆盖的是**不变量**而不是「函数能跑通」：
-//   · 未配置商品的草稿保留局部占位，发布仍严格拒绝；
-//   · 变体标签与价格与规格选择器同源（复用 product 包的解析，测试用同一份 JSON 形状）；
-//   · 未启用的变体不出现在可加购列表里（停用的规格不能买）；
-//   · 非法字段、未知商品和失效规格不被草稿容错吞掉。
-
 import (
 	"errors"
 	"fmt"
@@ -16,7 +8,6 @@ import (
 	"testing"
 )
 
-// stubContent 按字段名返回值的解析器替身（只实现 ResolveString —— 那就是契约的全部）。
 type stubContent map[string]string
 
 func (s stubContent) ResolveString(field string) (string, error) {
@@ -26,7 +17,6 @@ func (s stubContent) ResolveString(field string) (string, error) {
 	return "", fmt.Errorf("未知字段 %q", field)
 }
 
-// 样例数据：形状与 product.options / product.variants 一致（三个变体，一个未启用）。
 const (
 	optionsJSON  = "[{\"key\":\"color\",\"name\":\"颜色\",\"values\":[{\"key\":\"red\",\"label\":\"红色\"},{\"key\":\"blue\",\"label\":\"蓝色\"}]}]"
 	variantsJSON = "[" +
@@ -70,7 +60,6 @@ func TestLegacyProductWiringRequiresExplicitConversion(t *testing.T) {
 	}
 }
 
-// 合法当前商品无启用规格属于业务空态，不是作者配置不完整。
 func TestBuildViewEmptyVariantsIsUnavailable(t *testing.T) {
 	for _, raw := range []string{"", "[]", `[{"id":"off","enabled":false}]`} {
 		content := stubContent{"product.options": optionsJSON, "product.variants": raw}
@@ -100,28 +89,21 @@ func TestBuildViewWithoutProjectIsIncomplete(t *testing.T) {
 	}
 }
 
-// TestBuildViewRequiresContentResolver 缺内容解析器时报错（字段根本无法解析）。
 func TestBuildViewRequiresContentResolver(t *testing.T) {
 	if _, err := BuildView(baseProps(), nil, "proj-1", ""); err == nil {
 		t.Fatal("缺内容解析器时应构建失败")
 	}
 }
 
-// TestBuildViewPropagatesResolveError 字段越界 / 解析失败原样上抛。
 func TestBuildViewPropagatesResolveError(t *testing.T) {
-	content := stubContent{"product.options": optionsJSON} // 缺 variants 字段
+	content := stubContent{"product.options": optionsJSON}
 	if _, err := BuildView(baseProps(), content, "proj-1", ""); err == nil {
 		t.Fatal("变体字段解析失败时应上抛错误")
 	}
 }
 
-// TestApplyI18n 界面文案：固定文案（按钮缺省值、数量框无障碍名）取译文，作者自定义的文案不动。
-//
-// 判据是**收到的 key 集合**，不是「只收到按钮那一个」：实现里三段判定各自独立、不许早退
-// （作者一填自定义按钮文字，aria-label 就永远是中文，而页面上根本看不到这串字 —— 只有看产物
-// 源码或用读屏器才发现）。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
-	// 默认文案 → 两处固定文案都取译文。
+
 	v := &View{Label: textFallbackButton}
 	asked := map[string]string{}
 	v.ApplyI18n(func(key, fallback string) string {
@@ -146,12 +128,11 @@ func TestApplyI18n(t *testing.T) {
 	if len(asked) != 3 {
 		t.Fatalf("正常渲染只该取按钮、数量与规格三条文案，实际取了 %d 条: %v", len(asked), asked)
 	}
-	// 兜底值必须原样传下去：取词函数缺该词条时返回 fallback，产物要停在中文而不是空串。
+
 	if asked[TextKeyQtyAria] != textFallbackQtyAria {
 		t.Fatalf("数量框文案的兜底值不符，实际 %q", asked[TextKeyQtyAria])
 	}
 
-	// 自定义按钮文字 → 那条不翻译（它属于内容，走 Translatable 链路）；数量框照旧取译文。
 	v2 := &View{Label: "立即抢购"}
 	v2.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyButton {
@@ -169,7 +150,6 @@ func TestApplyI18n(t *testing.T) {
 		t.Fatalf("自定义按钮文字不该带走数量框的取词（两件事各自独立），实际 %q", v2.QtyAria)
 	}
 
-	// 无翻译函数 → 全部保持中文兜底，不 panic。
 	v3 := &View{Label: textFallbackButton}
 	v3.ApplyI18n(nil)
 	if v3.Label != textFallbackButton {
@@ -179,12 +159,10 @@ func TestApplyI18n(t *testing.T) {
 		t.Fatalf("无翻译函数时数量框应保持兜底文案，实际 %q", v3.QtyAria)
 	}
 
-	// nil 视图不 panic。
 	var v4 *View
 	v4.ApplyI18n(nil)
 }
 
-// TestEffectiveButtonText 按钮文字缺省。
 func TestEffectiveButtonText(t *testing.T) {
 	if got := effectiveLabel(&Props{}); got != defaultLabel {
 		t.Fatalf("空按钮文字应回退默认值，实际 %q", got)

@@ -1,10 +1,5 @@
 package ordermcp
 
-// order_overview_tools_test.go — 概览聚合三工具的元信息、参数白名单与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text，正文里少了哪个数，用户就看不到
-// 哪个数（Data 是给渲染层的，模型不解析它）。所以这里钉的是「关键数字必须出现在 Text 里」。
-
 import (
 	"context"
 	"errors"
@@ -18,7 +13,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// stubOverview 假 reader：记录入参、回放固定结果。
 type stubOverview struct {
 	gotDaily  *orderdto.OrderDailySeriesReq
 	gotTop    *orderdto.OrderTopProductsReq
@@ -37,9 +31,6 @@ func (s *stubOverview) DailySeries(_ context.Context, req *orderdto.OrderDailySe
 	return s.dailyRes, s.err
 }
 
-// HourlySeries 属于 ordercontract.OrderOverviewReader，但**没有**对应的 MCP 工具
-// （按小时的趋势只在概览页的粒度切换里用）。它必须在这里实现，否则 *stubOverview
-// 不满足那个接口，整个包编译不过。
 func (s *stubOverview) HourlySeries(_ context.Context, req *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error) {
 	s.gotDaily = req
 	return s.dailyRes, s.err
@@ -55,9 +46,6 @@ func (s *stubOverview) StatusCounts(_ context.Context, req *orderdto.OrderStatus
 	return s.countsRes, s.err
 }
 
-// SoldQuantityByRange 属于 ordercontract.OrderOverviewReader，但**没有**对应的 MCP 工具
-// （件数是概览页 KPI 的一格，模型问「一共卖了多少件」走的是同一族的其它工具）。
-// 它必须在这里实现，否则 *stubOverview 不满足那个接口，整个包编译不过。
 func (s *stubOverview) SoldQuantityByRange(_ context.Context, req *orderdto.OrderSoldQuantityReq) (*orderdto.OrderSoldQuantityResp, error) {
 	s.gotItems = req
 	return s.itemsRes, s.err
@@ -88,7 +76,6 @@ func TestOverviewToolsRejectsNilReader(t *testing.T) {
 func TestOverviewToolsMetadata(t *testing.T) {
 	tools := mustOverviewTools(t, &stubOverview{})
 
-	// 三个工具的权限点都必须复用订单列表：工具的可见性要与「这个人本来就看不看得到订单」一致。
 	for _, name := range []string{"orders_daily", "orders_top_products", "orders_status_counts"} {
 		tool, ok := tools[name]
 		if !ok {
@@ -155,7 +142,7 @@ func TestOrdersDailyInvokePassesArgsAndExplainsText(t *testing.T) {
 }
 
 func TestOrdersDailyTextSkipsLongDetail(t *testing.T) {
-	// 31 天（超过 dailyDetailDays）：正文给汇总与峰值，但不逐日铺开 —— 否则上下文被明细吃掉。
+
 	points := make([]orderdto.OrderDailyPointDTO, 0, 31)
 	for i := 0; i < 31; i++ {
 		points = append(points, orderdto.OrderDailyPointDTO{
@@ -202,8 +189,7 @@ func TestOrdersTopProductsInvokeExplainsText(t *testing.T) {
 }
 
 func TestOrdersTopProductsTextHandlesEmpty(t *testing.T) {
-	// 空榜单要明确说「没有已付款的订单」，而不是回一句「前 5 名：。」——
-	// 后者会让模型以为数据拉取失败。
+
 	text := topProductsText(&orderdto.OrderTopProductsResp{From: "2026-09-01", To: "2026-09-30", Limit: 5})
 	if !strings.Contains(text, "没有任何已付款的订单") {
 		t.Errorf("空榜单的正文应说明原因，实得 %q", text)

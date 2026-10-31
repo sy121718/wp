@@ -2,7 +2,6 @@ package migrations
 
 import "sync"
 
-// register_mail_automation_frequency_field_i18n.go — 623b：画布的频率 / 回信即退出控件词条。
 func registerMailAutomationFrequencyFieldI18n() {
 	registerMailAutomationFrequencyFieldI18nOnce.Do(registerMailAutomationFrequencyFieldI18nSeed)
 }

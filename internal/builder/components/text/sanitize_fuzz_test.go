@@ -7,13 +7,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// FuzzSanitizeRichHTML 富文本消毒不变量：
-//  1. 属性上下文无 XSS 载体：解析输出 HTML，任何标签属性不得以 on 开头
-//     （onerror/onload/onclick/onmouseover…），href/src 不得为
-//     javascript:/vbscript:/data: 协议。纯文本中的 "onerror=" 无害，不算漏洞。
-//  2. 幂等：sanitize(sanitize(x)) == sanitize(x) —— 双重转义会破坏该不变量
-//     （历史上 1 < 2 曾被输出为 1 &amp;lt; 2，再跑一遍就变成 &amp;amp;lt;）。
-//  3. 输出长度不膨胀失控。
 func FuzzSanitizeRichHTML(f *testing.F) {
 	seeds := []string{
 		"",
@@ -73,11 +66,11 @@ func FuzzSanitizeRichHTML(f *testing.F) {
 				}
 			}
 		}
-		// 幂等性：二次消毒结果必须与首次一致。
+
 		if again := sanitizeRichHTML(out); again != out {
 			t.Fatalf("非幂等: sanitize(%q) = %q, 再消毒得 %q", src, out, again)
 		}
-		// 长度不爆炸（防畸形输入导致输出膨胀）。
+
 		if len(out) > len(src)*4+4096 {
 			t.Fatalf("输出膨胀: in=%d out=%d", len(src), len(out))
 		}

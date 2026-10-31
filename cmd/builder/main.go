@@ -1,7 +1,3 @@
-// Package main 可视化页面构建器独立启动入口。
-//
-// 只挂载 Jet 渲染器和 /builder 路由，不依赖数据库/Redis/认证等组件。
-// 用于验证构建器功能能否走通。
 package main
 
 import (
@@ -98,10 +94,8 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
-	// Jet 模板渲染器（开发模式即时生效）
 	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", true)
 
-	// 静态文件
 	router.Static("/static", "internal/templates/static")
 	if err := os.MkdirAll(previewArtifactRoot, 0o755); err != nil {
 		logger.Scene("build").Error(err, "创建测试产物目录失败")
@@ -109,7 +103,6 @@ func main() {
 	}
 	router.StaticFS("/builder-preview", http.Dir(previewArtifactRoot))
 
-	// 测试构建只持久化静态产物和对应源码，不解释 Page Document。
 	router.POST("/builder/generate", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxGenerateBodySize)
 		var request generateRequest
@@ -143,19 +136,14 @@ func main() {
 		c.File(path)
 	})
 
-	// 构建器页面
 	router.GET("/builder", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "builder/builder", gin.H{})
 	})
 
-	// 兜底重定向
 	router.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/builder")
 	})
 
-	// 只监听回环地址：本工具无认证、无 CSRF，且 /builder/generate 可写文件系统，
-	// 绑定全网卡会让同网段任意主机直接调用（误部署即存储型 XSS 宿主）。
-	// 需要远程访问时应在前面加带认证的反向代理，而不是放开监听。
 	addr := "127.0.0.1:8080"
 	logger.Scene("build").With("addr", addr).Info("构建器启动（仅本机可访问）")
 	if err := http.ListenAndServe(addr, router); err != nil {

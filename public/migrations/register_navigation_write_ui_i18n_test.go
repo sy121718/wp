@@ -9,24 +9,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// 600 的门槛判据必须覆盖「中文在、英文缺」的状态。
-//
-// 缺陷形态（与 review-sol 在 task-33 对 598 抓到的 P2 同源，599 也已按同一形态补守卫）：
-// 判据若只数 lang='zh-CN' 的 2 行 → 运营库里任意一条 en-US 缺失（历史库缺行、有人手工删过英文、
-// 或本批 SQL 曾半途失败）时，中文计数已经满足，判据返回 1 → RunSeeds 直接跳过 → 缺的英文
-// **永远补不上**，英文界面回退到模板里的中文兜底（错得安静：没有异常、没有日志）。
-// AGENTS.md §数据库 的定则是「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
-//
-// 修法（600 已经是这个形态）：判据枚举本批 2 个 key × 2 种语言 = 4 个 (item_key, lang) 组合，
-// 缺任意一项即为 0；SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、
-// 不覆盖运营改过的值。
-//
-// 四个用例分别钉住：判据与 SQL 的组合集合一致（静态）、四项齐时必须跳过且不再写库、
-// 中文齐英文缺一必须重跑并补回、补种只补缺行不覆盖运营值也不动第三语言。
-
-// TestNavigationWriteUISeedGuardCoversBothLanguages 静态核对：判据点名的 key / 语言 / 上界
-// 与 SQL 真正落下的组合完全一致。任一侧单改（加 key、加语言、把上界写成「差一也算齐」）
-// 这里立刻红 —— 这是「缺一项仍会重跑」这条保证的第一层。
 func TestNavigationWriteUISeedGuardCoversBothLanguages(t *testing.T) {
 	seed := findSeedByVersion(t, "600-navigation-write-ui-i18n")
 
@@ -59,15 +41,12 @@ func TestNavigationWriteUISeedGuardCoversBothLanguages(t *testing.T) {
 	if strings.Contains(seed.ConditionSQL, "LIKE") {
 		t.Fatalf("判据不得用前缀 LIKE（AGENTS.md §数据库）：%s", seed.ConditionSQL)
 	}
-	// 上界必须等于 SQL 真正落下的组合数：写成「少一项也算齐」会在缺一行的库里静默跳过。
+
 	if !strings.Contains(seed.ConditionSQL, "COUNT(*) >= 4") {
 		t.Fatalf("判据的上界应为本批的 4 个组合，实际：%s", seed.ConditionSQL)
 	}
 }
 
-// TestNavigationWriteUISeedSkipsWhenAllFourPairsPresent 四项齐时的语义：判据为 1 → 迁移器跳过 SQL。
-// 用运营值扰动证明「这一轮确实没写库」。support.NewMigratedPGTestDB 给的是**没有跑过 seed**
-// 的新库，第一次 RunSeeds 就是 600 的 SQL 第一回真执行（光看判据绿不等于这条 seed 能跑）。
 func TestNavigationWriteUISeedSkipsWhenAllFourPairsPresent(t *testing.T) {
 	seed := findSeedByVersion(t, "600-navigation-write-ui-i18n")
 	keys := map[string]bool{}
@@ -89,8 +68,6 @@ func TestNavigationWriteUISeedSkipsWhenAllFourPairsPresent(t *testing.T) {
 		t.Fatalf("四项齐时判据应为 1（跳过），实际 %d", applied)
 	}
 
-	// 运营改一条：四项仍然齐全，判据依旧是 1，之后每一轮 RunSeeds 都必须原样不动
-	//（判据为 1 时 SQL 根本不执行）。
 	const operatorValue = "运营改过的中文（不得被 seed 覆盖）"
 	mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = 'zh-CN'",
 		operatorValue, "admin.navigations.write.refresh")
@@ -111,8 +88,6 @@ func TestNavigationWriteUISeedSkipsWhenAllFourPairsPresent(t *testing.T) {
 	}
 }
 
-// TestNavigationWriteUISeedRunsWhenOneEnglishIsMissing 中文齐、英文缺一 —— 这条路径在该形态
-// 缺守卫前是「判据 1 → 跳过 → 英文永远补不上」。现在是判据 0，重跑 SQL 只补缺的那一行。
 func TestNavigationWriteUISeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 	seed := findSeedByVersion(t, "600-navigation-write-ui-i18n")
 	keys := map[string]bool{}
@@ -132,7 +107,6 @@ func TestNavigationWriteUISeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 		t.Fatal("首轮后 write.noJs/en-US 应有值")
 	}
 
-	// 缺陷形态：中文两行齐全（判据若只看中文就是「已齐」），英文少一行。
 	mustExec(t, db, "DELETE FROM sys_i18n WHERE item_key = ? AND lang = 'en-US'",
 		"admin.navigations.write.noJs")
 	if got := countPairs(t, db, keys, "zh-CN"); got != 2 {
@@ -156,8 +130,6 @@ func TestNavigationWriteUISeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 	}
 }
 
-// TestNavigationWriteUISeedBackfillPreservesOperatorValues 补种只补缺行：运营改过的中文保持、
-// 运营自行加的第三语言行原样不动、seed 也不新增第三语言行（DO NOTHING 的运营值保护）。
 func TestNavigationWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 	seed := findSeedByVersion(t, "600-navigation-write-ui-i18n")
 	keys := map[string]bool{}
@@ -200,7 +172,7 @@ func TestNavigationWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 		if got := valueOf(t, db, "admin.navigations.write.noJs", "ja-JP"); got != operatorJA {
 			t.Errorf("第 %d 轮后第三语言行被动了：实际 %q", round, got)
 		}
-		// 4 行（2 key × 中英）+ 运营自加的 ja-JP 1 行。
+
 		if got := countPairs(t, db, keys, ""); got != 5 {
 			t.Errorf("第 %d 轮后本批应有 5 行（4 + 第三语言 1），实际 %d 行", round, got)
 		}
@@ -212,11 +184,6 @@ func TestNavigationWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 
 var quotedNavigationKeyRe = regexp.MustCompile(`'(admin\.navigations\.[A-Za-z0-9._]+)'`)
 
-// navigationKeysMentionedIn 抽出判据 SQL 里点名的 item_key 并排序。
-//
-// 前缀写死本批的命名空间（不是全仓通用 parser）：复用 598 的 keysMentionedIn 会因为它写死
-// `admin.mail.` 前缀而返回空集合，那会让下面的「判据 key 与 SQL 一致」变成假绿
-// （两个空集合当然相等）—— task-48 实测踩过这个坑。
 func navigationKeysMentionedIn(t *testing.T, sqlText string) []string {
 	t.Helper()
 	seen := map[string]bool{}

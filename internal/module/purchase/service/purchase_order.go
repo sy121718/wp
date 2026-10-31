@@ -1,43 +1,5 @@
 package purchaseservice
 
-// 三条语义在本文件维护：
-//
-//  1. **单据身份**：采购单号工程内唯一（归一成大写）；来源（source_id）是 #17 的货源 ——
-//     外部供应商与集团内关联公司都从同一张货源表选，停用的货源不能用来下单；
-//     收货仓为空时兜底该工程默认仓（与「未指定仓库 → 默认仓」同一条兜底铁律）。
-//  2. **状态是推导值**：pending / partial / received 全部由「已入库数量 与 采购数量」推出
-//     （derivePurchaseStatus），没有任何人工置位入口；写入时与行数据在同一事务内自洽。
-//  3. **行是原子的**：行全量替换只允许发生在「一行都还没入库」时 —— 已有入库数量的行
-//     被改小会让 received_quantity <= quantity 不成立，状态推导也就失去意义。
-
-// 入库的事务形状（顺序是刻意的，不要重排）：
-//
-//	① 登记前：幂等键命中即原样返回（可重放保护，不第二次动库存）；
-//	② **一个事务**里的全部写入：锁采购单头 → 按行原子递增已入库数量（守卫在 UPDATE 的
-//	   WHERE 里）→ 写入库单与入库行 → 库存变动（复用 #16 的 ChangeStockTx，方向 in +
-//	   原因字典 + 来源引用齐全，绝不旁路写 inventory_stocks）→ 单据置 posted 并记批次号
-//	   → 用最新行重算推导状态。任一步失败整体回滚；
-//	③ 提交后：经商品模块端口回写 SKU 成本价（那是商品模块的写，端口没有 Tx 形态，
-//	   只能留在事务之外 —— 失败记在入库单行上，并可由幂等重放补做）。
-//
-// **跨模块的 DB 补偿已删除**（原 compensateReceipt / ④）：补偿只留给跨库 / 外部系统。
-// 库存变动与本模块的记账在同一库同一事务里，失败直接整体回滚就是最干净的补偿 ——
-// 原来「先提交记账、再动库存、失败再退回数量并删单」的写法一旦补偿也失败，就会留下
-// 「记了账没动库存」，而错误还被 `_ =` 吞掉。
-//
-// 成本有**两条**写路径，顺序与归属都不同（2026-09-19 批次 A 收口，docs/14 §4）：
-//
-//	· 仓库侧（(仓库, SKU) 的当前成本价，迁移 244）—— 本次到货价随库存变动进
-//	  ② 的同一条事务（见下面 stockLines 的 CostPrice），是本模块的真源；
-//	· 商品侧（product_variants.cost_price）—— 提交后经 VariantCostPort 的独立步骤，
-//	  属商品模块的兼容写回，失败只记在入库单行上。
-//
-// 之所以前者不能也放到提交后：那是同一张表的另一列，塞进提交后的独立步骤只会造出
-// 「货到了、成本没写」的中间态，而这个中间态对采购侧核算毫无意义。
-//
-// 为什么「先记账再动库存」而不是反过来：超收守卫必须发生在库存变动之前，
-// 否则并发收货会先把库存加上去再发现超收，只能靠反向变动擦屁股。
-
 import (
 	"context"
 	"errors"
@@ -58,21 +20,17 @@ import (
 )
 
 const (
-	// maxPurchaseLines 单张采购单的行数上限（与库存变动单批上限同量级）。
 	maxPurchaseLines = 100
-	// maxPurchaseCodeLen 采购单号长度上限。
+
 	maxPurchaseCodeLen = 32
-	// 采购单列表分页。
+
 	defaultPurchasePageSize = 20
 	maxPurchasePageSize     = 200
-	// reasonCodePurchaseIn / reasonCodeProductionIn 入库用的**内置**变动原因 code
-	//（迁移 103 seed，方向 in）。入库不写自由文本原因，一律引用字典条目 ——
-	// 自定义原因若用了同一个 code，字典按「工程自定义优先」覆盖显示名，历史流水仍按 code 可读。
+
 	reasonCodePurchaseIn   = "purchase_in"
 	reasonCodeProductionIn = "production_in"
 )
 
-// CreatePurchaseOrder 新建采购单（验收 1：单头 + 结构化行）。
 func (s *Service) CreatePurchaseOrder(ctx context.Context, req *purchasedto.CreatePurchaseOrderReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	if req == nil {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -89,7 +47,7 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *purchasedto.Crea
 	if err != nil {
 		return nil, err
 	}
-	// 收货仓：显式指定需同工程且启用；为空兜底默认仓（缺默认仓时 resolveWarehouse 显式报错）。
+
 	wh, err := s.stock.ResolveWarehouse(ctx, projectID, req.WarehouseID)
 	if err != nil {
 		return nil, err
@@ -99,16 +57,15 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *purchasedto.Crea
 	} else if taken {
 		return nil, purchaseenums.Err(purchaseenums.ErrPurchaseCodeTaken)
 	}
-	// 单头 id 先定，行在同一事务里带着它一起写（外键 NOT NULL）。
+
 	orderID := uuid.NewString()
-	// 收货仓的短码一起传下去：采购行的 sku_code 是**仓库侧快照**，
-	// 建行时就要按目标仓口径归一旦校验（口径与理由见 inventory_stock.go）。
+
 	lines, err := buildPurchaseLines(projectID, orderID, wh.Code, req.Lines)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	// 草稿是显式选择：勾了就停在 draft（不可收货、行可自由改），下单是一个独立动作。
+
 	status := derivePurchaseStatus(lines)
 	if req.AsDraft {
 		status = purchaseenums.PurchaseStatusDraft
@@ -126,11 +83,10 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *purchasedto.Crea
 	}); err != nil {
 		return nil, err
 	}
-	// 响应带货源与仓库名（模板与接口都不用再查一次）。
+
 	return s.purchaseOrderResp(ctx, order, lines, source, wh), nil
 }
 
-// UpdatePurchaseOrder 修改采购单（单头逐字段可选；行全量替换仅在未入库时允许）。
 func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.UpdatePurchaseOrderReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -143,20 +99,9 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 	if err != nil {
 		return nil, mapPurchaseOrderNotFound(err)
 	}
-	// 行上的工程即解析结果（策略保证同工程），后续写入一律以它作为作用域。
+
 	projectID = order.ProjectID
 
-	// **终态单不可改**（B05）：finished / cancelled 是终态，改它等于让一张已经结案的
-	// 采购单重新变回可流转的草稿 —— 状态机拦不住这条，因为它只约束流转、不约束编辑。
-	//
-	// 两种终态的后果不同，都要拦：
-	//   · cancelled：取消时若已入库，库存已经退回去了；再改行会让"采购数量"与
-	//     "实际入库流水"对不上，而流水是审计依据。
-	//   · finished：结案意味着数量与金额已确认，改它就是改历史。
-	//
-	// 备注类修改（不动行、不改金额）也一并拒绝：判据是"这张单还允不允许被编辑"，
-	// 而不是"改的是哪个字段" —— 按字段分档会让"改备注可以、改数量不行"这种
-	// 半开状态出现，而那种边界谁都记不住。
 	if prr := assertPurchaseEditable(order.Status); prr != nil {
 		return nil, prr
 	}
@@ -174,9 +119,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 		}
 		order.WarehouseID = wh.ID
 	}
-	// 行的 sku_code 快照按**改单后的**收货仓归一（改单可能同时换了仓）：仓库侧编码是
-	// 「这条货在这个仓叫什么」，换仓后旧前缀不再成立 —— 与建单走同一条归一入口。
-	// 只在真要换行时解析：改备注这类不动行的调用不该因为「当年的收货仓后来被停用」而失败。
+
 	var orderWarehouseCode string
 	if req.ReplaceLines {
 		orderWarehouse, werr := s.stock.ResolveWarehouse(ctx, projectID, order.WarehouseID)
@@ -204,7 +147,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 	var lines []*purchasemodel.PurchaseLineEntity
 	now := time.Now().UTC()
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		// 锁单头：与登记入库共用同一把锁，改单与收货不会交错出「半新半旧」的行集合。
+
 		if _, lerr := s.m.LockPurchaseOrderTx(ctx, tx, order.ID, projectID); lerr != nil {
 			return mapPurchaseOrderNotFound(lerr)
 		}
@@ -216,7 +159,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 		if req.ReplaceLines {
 			for _, line := range current {
 				if line.ReceivedQuantity > 0 {
-					// 已入库的行不可再改（改了「已入库 ≤ 采购数量」就不成立）。
+
 					return purchaseenums.Err(purchaseenums.ErrPurchaseLinesLocked)
 				}
 			}
@@ -229,7 +172,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 			}
 			lines = replaced
 		}
-		// 人工态原样保留（草稿改行不会变成已下单，见 statusAfterDerive）。
+
 		order.Status = statusAfterDerive(order.Status, derivePurchaseStatus(lines))
 		order.UpdatedAt = now
 		return s.m.UpdatePurchaseOrderTx(ctx, tx, order)
@@ -239,63 +182,28 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
-// PlacePurchaseOrder 下单：draft → ordered（670 状态机）。
-//
-// 草稿是「还没正式下单」，行可以随便改、没人按它备货。下单是它唯一的出口：
-// 状态从这一刻起交给明细行推导 —— 草稿单不会因为「加了行」自己变成已下单，
-// 否则「存草稿」就失去了意义（那只是延迟一秒的提交）。
 func (s *Service) PlacePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusOrdered)
 }
 
-// MarkPurchaseOrderException 标记异常：ordered / partial / received → exception。
-//
-// 用途是「这批货出问题了，先别继续收」：供应商断供、货不对版、验收不过。
-// 收到 exception 之后收货入口会被服务层拒掉（IsReceivableStatus 不含 exception），
-// 直到人解除异常 —— 这就是它存在的理由：让「暂停」成为一个可查询的单据事实，
-// 而不是备注里的一句「先别收」。
 func (s *Service) MarkPurchaseOrderException(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusException)
 }
 
-// ResumePurchaseOrder 解除异常：exception → 由明细行重新推导（通常是 ordered / partial）。
-//
-// 目标态不写死：异常期间行数据没动（收货被拦住），解除后该是「已下单」还是
-// 「部分到货」由已收数量说了算 —— 手填一个「已到货」会让剩下的货永远收不进来。
 func (s *Service) ResumePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseTargetResume)
 }
 
-// purchaseTargetResume 是「解除异常」的内部目标信号，**不落库**。
-//
-// 解除异常的目标态不是一个字面值，而是「按当前明细行重新推导」（见 ResumePurchaseOrder）。
-// 用一个不存在的状态字符串当信号，是为了让它无法被误当成合法列值：
-// 它既不在 PurchaseStatuses 里，也过不了 670 的 CHECK 约束。
 const purchaseTargetResume = "resume"
 
-// FinishPurchaseOrder 提前关单（迁移 626）：received / partial → finished。
-//
-// 「提前关单」= 剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）。
-// 它**不是**数量推导的结果（那是 received），而是一次人工决定 —— 所以给显式入口，
-// 不让 derivePurchaseStatus 在下次收货时把它抹回去（终态不参与推导）。
-//
-// 不写库存流水：单据状态不是库存事实（货的进出早已在收货时落账）。
 func (s *Service) FinishPurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusFinished)
 }
 
-// CancelPurchaseOrder 取消采购单（迁移 626 / 670 扩到七态）：draft / ordered / partial / exception → cancelled。
-//
-// received 不可取消：货已经进仓，要退只能走退货；把它「取消」会让库存凭空多出一批
-// 没有来源的单据对应物。同理 finished 已收尾，不再受理取消。
 func (s *Service) CancelPurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusCancelled)
 }
 
-// settlePurchaseStatus 两个终态的公共实现：锁单 → 校验当前状态 → 写终态与备注 → 交出详情。
-//
-// 锁单的理由：两个并发的关单请求（或关单 + 收货）必须串行，否则「先判状态再写」
-// 会让一个已 finished 的单被后到的收货改回 received。
 func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.PurchaseStatusReq,
 	target string) (res *purchasedto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
@@ -323,10 +231,10 @@ func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.Pur
 		}
 		next := target
 		if target == purchaseTargetResume {
-			// 解除异常：目标态按明细行重算（异常期间收货被拦住，行数据就是唯一事实）。
+
 			next = derivePurchaseStatus(list)
 		}
-		// 备注追加而不是覆盖：「提前关单」要留下原因，但不能把下单时写的备注抹掉。
+
 		if remark != "" {
 			locked.Remark = orJoinRemark(locked.Remark, remark)
 		}
@@ -344,24 +252,6 @@ func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.Pur
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
-// assertPurchaseTransition 每个人工动作的合法前置状态（670 七态）。
-//
-// 全部人工态都是**单向**的：没有任何路径把人工态改回推导状态
-// （否则「提前关单」会被下一次收货悄悄复活），唯一的回头路是 exception → 推导向
-// （ResumePurchaseOrder，人明确了「问题解决了」）。
-//
-// 前置条件按「这件事在业务上是否说得通」定，不按枚举顺序：
-//
-//	place      草稿 → 已下单        已经在流程里的单不需要再下单
-//	exception  已下单/部分/已到货 → 异常   货还在路上或刚到手，才有可能出问题
-//	resume     异常 → 推导向        只有异常中的单需要解除
-//	finish     已到货/部分 → 已完结       没到过货的单「提前关单」没有意义（取消才是它）
-//	cancel     草稿/已下单/部分/异常 → 已取消   已到货的货进了仓，要走退货；已完结已收尾
-// assertPurchaseEditable 终态单不允许任何编辑。
-//
-// 与 assertPurchaseTransition 分开：那个判「这次流转允不允许」，
-// 这个判「这张单还允不允许被改」—— 两件事，混在一个函数里会让
-// "流转合法但编辑非法"这类组合无处表达。
 func assertPurchaseEditable(current string) error {
 	switch current {
 	case purchaseenums.PurchaseStatusFinished, purchaseenums.PurchaseStatusCancelled:
@@ -403,7 +293,6 @@ func assertPurchaseTransition(current, target string) error {
 	return purchaseenums.Err(purchaseenums.ErrPurchaseStatusInvalid)
 }
 
-// isStatusIn 一组候选取值里的成员判断（避免把长条件写成四个 ||）。
 func isStatusIn(current string, candidates ...string) bool {
 	for _, c := range candidates {
 		if current == c {
@@ -413,7 +302,6 @@ func isStatusIn(current string, candidates ...string) bool {
 	return false
 }
 
-// orJoinRemark 把一句补充说明追加到已有备注之后（半角分号分隔，空则直接用新的）。
 func orJoinRemark(existing, extra string) string {
 	if strings.TrimSpace(existing) == "" {
 		return extra
@@ -421,7 +309,6 @@ func orJoinRemark(existing, extra string) string {
 	return existing + "；" + extra
 }
 
-// GetPurchaseOrder 采购单详情（含全部采购行）。
 func (s *Service) GetPurchaseOrder(ctx context.Context, req *purchasedto.GetPurchaseOrderReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -441,7 +328,6 @@ func (s *Service) GetPurchaseOrder(ctx context.Context, req *purchasedto.GetPurc
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
-// ListPurchaseOrders 采购单列表（状态 / 货源 / 关键词都是可组合的筛选维度）。
 func (s *Service) ListPurchaseOrders(ctx context.Context, req *purchasedto.ListPurchaseOrderReq) (list []*purchasedto.PurchaseOrderResp, err error) {
 	filter, page, size, err := s.purchaseOrderFilter(ctx, req)
 	if err != nil {
@@ -455,7 +341,7 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *purchasedto.ListP
 	for _, r := range rows {
 		orderIDs = append(orderIDs, r.ID)
 	}
-	// 行一次性批量取回（列表页不产生 N+1）。
+
 	allLines, err := s.m.ListPurchaseLinesByOrders(ctx, orderIDs, filter.ProjectID)
 	if err != nil {
 		return nil, err
@@ -464,7 +350,7 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *purchasedto.ListP
 	for _, line := range allLines {
 		byOrder[line.OrderID] = append(byOrder[line.OrderID], line)
 	}
-	// 仓库名一次取全工程映射：inventory_warehouses 属库存模块，跨模块只经契约（不 join 它的表）。
+
 	names := s.warehouseNames(ctx, filter.ProjectID)
 	list = make([]*purchasedto.PurchaseOrderResp, 0, len(rows))
 	for _, r := range rows {
@@ -477,12 +363,6 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *purchasedto.ListP
 	return list, nil
 }
 
-// CountPurchaseOrders 采购单总张数（分页页面的「共 N 条」与总页数）。
-//
-// **与 ListPurchaseOrders 共用同一个 purchaseOrderFilter**：状态推导值 / 货源 / 关键词 /
-// 工程作用域的归一只有一份实现。状态这一维尤其不能各抄一遍 —— 页面筛的是**推导状态**
-// （未入库 / 部分入库 / 已入库），由 service 归一到 model 的过滤，抄错时计数与列表分叉，
-// 分页条会给出一个永远翻不到底的页数。
 func (s *Service) CountPurchaseOrders(ctx context.Context, req *purchasedto.ListPurchaseOrderReq) (n int64, err error) {
 	filter, _, _, err := s.purchaseOrderFilter(ctx, req)
 	if err != nil {
@@ -491,7 +371,6 @@ func (s *Service) CountPurchaseOrders(ctx context.Context, req *purchasedto.List
 	return s.m.CountPurchaseOrders(ctx, filter)
 }
 
-// purchaseOrderFilter 把采购单列表请求归一成 model 过滤条件 + 分页参数（List / Count 共用）。
 func (s *Service) purchaseOrderFilter(ctx context.Context, req *purchasedto.ListPurchaseOrderReq) (filter purchasemodel.PurchaseOrderFilter, page, size int, err error) {
 	if req == nil {
 		return filter, page, size, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -512,14 +391,6 @@ func (s *Service) purchaseOrderFilter(ctx context.Context, req *purchasedto.List
 	return filter, page, size, nil
 }
 
-// —— 内部工具 ——
-
-// buildPurchaseLines 归一入参并构造采购行（校验集中在此：数量 / 单价 / 重复 SKU / 仓库侧 SKU 编码）。
-//
-// warehouseCode 是该单的收货仓短码：行的 sku_code 是**仓库侧快照**，按它归一并校验
-// （幂等剥前缀 + 空串拒绝，见 inventory_stock.go）。空的 sku_code 不再静默落库 ——
-// 那正是「页面表单没提交该字段」时被放过的那条路：行建出来了、编码是空的，
-// 一路带到登记入库，最后在库存真源上留下一条没有身份的货（或撞唯一约束）。
 func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []purchasedto.PurchaseLineReq) (lines []*purchasemodel.PurchaseLineEntity, err error) {
 	if len(rows) == 0 {
 		return nil, purchaseenums.Err(purchaseenums.ErrPurchaseLinesRequired)
@@ -536,7 +407,7 @@ func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []purchas
 			return nil, purchaseenums.Err(purchaseenums.ErrPurchaseLineRequired)
 		}
 		if seen[variantID] {
-			// 同一张单里同一个 SKU 只允许一行：已入库数量的归属必须不含糊。
+
 			return nil, purchaseenums.Err(purchaseenums.ErrPurchaseLineDuplicate)
 		}
 		seen[variantID] = true
@@ -550,8 +421,7 @@ func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []purchas
 		if sortValue == 0 {
 			sortValue = i
 		}
-		// 仓库侧编码的归一与校验：空串（含只给了仓码前缀的编码）一律拒绝 ——
-		// 「没给编码」必须当场变成一句可行动的错误，而不是一条没有身份的采购行。
+
 		skuCode, serr := normalizeStockSKU(row.SKUCode, warehouseCode)
 		if serr != nil {
 			return nil, serr
@@ -568,12 +438,6 @@ func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []purchas
 	return lines, nil
 }
 
-// derivePurchaseStatus 由「已入库数量 与 采购数量」推导采购单状态（验收 2）。
-//
-// 三种结果互斥且穷尽：全部未入库 → ordered；全部收满 → received；其余 → partial。
-// 推导只负责**这三个**：draft / exception / finished / cancelled 是人工态，
-// 由动作推进（见 assertPurchaseTransition 与 PurchaseDerivedStatuses），
-// 不在任何推导路径的射程里 —— 否则「提前关单」会被下一次收货悄悄复活。
 func derivePurchaseStatus(lines []*purchasemodel.PurchaseLineEntity) (status string) {
 	if len(lines) == 0 {
 		return purchaseenums.PurchaseStatusOrdered
@@ -600,12 +464,6 @@ func derivePurchaseStatus(lines []*purchasemodel.PurchaseLineEntity) (status str
 	}
 }
 
-// statusAfterDerive 重算推导状态时「当前是人工态就原样保留」。
-//
-// 改单（UpdatePurchaseOrder）会重算推导状态，但草稿不该因为「加了一行」就变成已下单
-// （草稿的唯一出口是显式下单，见 PlacePurchaseOrder）；异常中的单也不该因为改了一句备注
-// 就自己好了 —— 同理 finished / cancelled 这两个终态一旦被改单抹掉，
-// 「提前关单」这个人工决定就白做了。
 func statusAfterDerive(current, derived string) string {
 	for _, s := range purchaseenums.PurchaseDerivedStatuses {
 		if current == s {
@@ -615,7 +473,6 @@ func statusAfterDerive(current, derived string) string {
 	return current
 }
 
-// resolvePurchaseSource 解析采购来源：必须存在、同工程、启用中（停用 = 不再选用）。
 func (s *Service) resolvePurchaseSource(ctx context.Context, projectID, sourceID string) (e *purchasemodel.SourceEntity, err error) {
 	id := strings.TrimSpace(sourceID)
 	if id == "" {
@@ -634,7 +491,6 @@ func (s *Service) resolvePurchaseSource(ctx context.Context, projectID, sourceID
 	return e, nil
 }
 
-// purchaseOrderResp 组装采购单响应：源 / 仓展示信息为空时现查（详情路径）。
 func (s *Service) purchaseOrderResp(ctx context.Context, e *purchasemodel.PurchaseOrderEntity,
 	lines []*purchasemodel.PurchaseLineEntity, source *purchasemodel.SourceEntity,
 	wh *purchasecontract.WarehouseRef) *purchasedto.PurchaseOrderResp {
@@ -665,12 +521,6 @@ func (s *Service) purchaseOrderResp(ctx context.Context, e *purchasemodel.Purcha
 	return resp
 }
 
-// fillPurchaseQuantities 填三个派生数量 + 进度百分比。
-//
-// 为什么不放模板做：模板里的算术是**没有测试的第二份业务实现**，而且它看不到
-// 「采购数量为 0」这种边界（除零）；模板整型渲染也做不了四舍五入。
-// 百分比向下取整：99.6% 显示成 99 比显示成 100% 更诚实 —— 进度条走满但还差货
-// 是最容易被当成「已经收完」的显示。
 func fillPurchaseQuantities(resp *purchasedto.PurchaseOrderResp, lines []*purchasemodel.PurchaseLineEntity) {
 	resp.TotalQuantity, resp.ReceivedQuantity = sumPurchaseLines(lines)
 	resp.OutstandingQuantity = resp.TotalQuantity - resp.ReceivedQuantity
@@ -679,8 +529,6 @@ func fillPurchaseQuantities(resp *purchasedto.PurchaseOrderResp, lines []*purcha
 	}
 }
 
-// purchaseOrderRespFromRow 列表路径的响应组装（行汇总直接取投影里的聚合值，
-// 货源 / 仓库名来自同一次 join，不再逐单回查）。
 func purchaseOrderRespFromRow(row *purchasemodel.PurchaseOrderRow) *purchasedto.PurchaseOrderResp {
 	resp := &purchasedto.PurchaseOrderResp{
 		ID: row.ID, ProjectID: row.ProjectID, Code: row.Code,
@@ -698,7 +546,6 @@ func purchaseOrderRespFromRow(row *purchasemodel.PurchaseOrderRow) *purchasedto.
 	return resp
 }
 
-// toPurchaseLineResps 采购行实体 → 响应（带「未入库余量」这个推导量）。
 func toPurchaseLineResps(lines []*purchasemodel.PurchaseLineEntity) []*purchasedto.PurchaseLineResp {
 	out := make([]*purchasedto.PurchaseLineResp, 0, len(lines))
 	for _, line := range lines {
@@ -713,7 +560,6 @@ func toPurchaseLineResps(lines []*purchasemodel.PurchaseLineEntity) []*purchased
 	return out
 }
 
-// sumPurchaseLines 汇总采购数量与已入库数量。
 func sumPurchaseLines(lines []*purchasemodel.PurchaseLineEntity) (total, received int) {
 	for _, line := range lines {
 		total += line.Quantity
@@ -722,7 +568,6 @@ func sumPurchaseLines(lines []*purchasemodel.PurchaseLineEntity) (total, receive
 	return total, received
 }
 
-// normalizePurchaseCode 归一采购单号：大写，允许字母 / 数字 / 下划线 / 连字符。
 func normalizePurchaseCode(code string) (out string, err error) {
 	out = strings.ToUpper(strings.TrimSpace(code))
 	if out == "" {
@@ -740,11 +585,6 @@ func normalizePurchaseCode(code string) (out string, err error) {
 	return out, nil
 }
 
-// normalizePurchaseStatusFilter 归一状态筛选（空串表示不过滤）。
-//
-// 合法取值只认 enums 的 PurchaseStatuses —— 服务层不再自带第二份名单：
-// 新增状态时漏改这里，会让「筛不出刚加的态」变成一个静默的 409，
-// 而调用方看不出是名单没跟上还是这个值真的非法。
 func normalizePurchaseStatusFilter(status string) (out string, err error) {
 	normalized := strings.ToLower(strings.TrimSpace(status))
 	if normalized == "" {
@@ -756,7 +596,6 @@ func normalizePurchaseStatusFilter(status string) (out string, err error) {
 	return normalized, nil
 }
 
-// purchasePageArgs 归一采购单分页参数。
 func purchasePageArgs(page, size int) (outPage, outSize int) {
 	outPage, outSize = 1, defaultPurchasePageSize
 	if page > 0 {
@@ -771,7 +610,6 @@ func purchasePageArgs(page, size int) (outPage, outSize int) {
 	return outPage, outSize
 }
 
-// normalizeTime 归一可空时间（nil 保持 nil，非 nil 统一成 UTC）。
 func normalizeTime(t *time.Time) *time.Time {
 	if t == nil {
 		return nil
@@ -780,7 +618,6 @@ func normalizeTime(t *time.Time) *time.Time {
 	return &utc
 }
 
-// mapPurchaseOrderNotFound 把仓储的「记录不存在」映射成业务错误。
 func mapPurchaseOrderNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return purchaseenums.Err(purchaseenums.ErrPurchaseOrderNotFound)
@@ -789,16 +626,14 @@ func mapPurchaseOrderNotFound(err error) error {
 }
 
 const (
-	// maxRequestIDLen 幂等键长度上限。
 	maxRequestIDLen = 64
-	// 进货历史分页。
+
 	defaultHistoryPageSize = 50
 	maxHistoryPageSize     = 200
-	// maxReceiptLines 单次入库的行数上限（与库存变动单批上限同量级）。
+
 	maxReceiptLines = 200
 )
 
-// RegisterReceipt 登记采购收货（验收 3/4）：按行累加已入库数量，一次可收多行。
 func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.RegisterReceiptReq) (res *purchasedto.ReceiptResp, err error) {
 	if req == nil {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -811,14 +646,13 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 	if err != nil {
 		return nil, err
 	}
-	// ① 幂等重放：同一个键已有入库单 → 原样返回，不第二次动库存。
+
 	replay, err := s.idempotentReceipt(ctx, projectID, requestID)
 	if err != nil {
 		return nil, err
 	}
 	if replay != nil {
-		// 顺带补做上次没写成的**商品侧**成本回写（跨模块 best-effort，幂等：已写成的行跳过）。
-		// 这就是 applyReceiptCosts 的重放入口 —— 重试同一 request_id 是它的自然触发方式。
+
 		s.replayReceiptCosts(ctx, replay)
 		return s.receiptResp(ctx, replay, true)
 	}
@@ -839,7 +673,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 		stockLines []purchasecontract.StockLine
 	)
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		// ②-1 锁采购单头：同一张单的并发收货在此串行化。
+
 		locked, lerr := s.m.LockPurchaseOrderTx(ctx, tx, strings.TrimSpace(req.OrderID), projectID)
 		if lerr != nil {
 			return mapPurchaseOrderNotFound(lerr)
@@ -851,7 +685,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 		if lerr != nil {
 			return lerr
 		}
-		// 收货仓：本次指定 → 采购单上的收货仓（为空再兜底默认仓）。
+
 		wantWarehouse := strings.TrimSpace(req.WarehouseID)
 		if wantWarehouse == "" {
 			wantWarehouse = locked.WarehouseID
@@ -876,17 +710,10 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 			}
 		}
 		if !outstanding {
-			// 全部收满的单不再受理（状态已是 received）。
-			//
-			// 这个判断排在状态守卫**之前**：收满的单同时满足「状态不可收」与「没有余量」，
-			// 而后者是用户更想看到的解释（「已经收完了」比「这个状态不允许收货」有用）。
+
 			return purchaseenums.Err(purchaseenums.ErrReceiptOrderDone)
 		}
-		// 状态守卫：只有已下单 / 部分到货可以收货（dy_erp 的 receivableStatuses 同口径）。
-		//
-		// 草稿还没下单、已完结 / 已取消已收尾、异常要人工解除 —— 这几种状态下收货都是
-		// 「绕过了单据流程」。它与超收守卫是两件事：这里判「这张单现在该不该收」，
-		// IncrPurchaseLineReceivedTx 判「这一次收多少」。
+
 		if !purchaseenums.IsReceivableStatus(locked.Status) {
 			return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotReceivable)
 		}
@@ -911,14 +738,12 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 			if row.Quantity <= 0 {
 				return purchaseenums.Err(purchaseenums.ErrReceiptQuantityInvalid)
 			}
-			// 仓库侧编码归一旦校验（口径与理由见 inventory_stock.go）：采购行上的
-			// sku_code 是下单时的快照，本批收货的目标仓可能不是下单时的那个仓，
-			// 因此按**本次收货仓**再归一一次（幂等，裸码原样通过），空串一律拒绝。
+
 			skuCode, nerr := normalizeStockSKU(line.SKUCode, wh.Code)
 			if nerr != nil {
 				return nerr
 			}
-			// 单价：本次实际到货价优先，缺省沿用采购行单价（成本价按它回写）。
+
 			unitPrice := line.UnitPrice
 			if row.UnitPrice != nil {
 				if *row.UnitPrice <= 0 {
@@ -926,7 +751,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 				}
 				unitPrice = *row.UnitPrice
 			}
-			// ②-2 已入库数量原子递增：守卫写在 WHERE 里，受影响行数 0 即超收。
+
 			affected, ierr := s.m.IncrPurchaseLineReceivedTx(ctx, tx, line.ID, row.Quantity, projectID, now)
 			if ierr != nil {
 				return ierr
@@ -941,9 +766,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 				SKUCode: skuCode, Quantity: row.Quantity, UnitPrice: unitPrice,
 				CostUpdated: false, CostError: "", CreatedAt: now,
 			})
-			// 成本落到**仓库侧**（(仓库, SKU) 的当前值，迁移 244）：本次到货价
-			// （未显式给就是采购行单价）随库存变动进同一条事务 —— 货与成本一起生效，
-			// 不依赖提交之后的步骤，也就不会出现「货到了、成本还是空的」。
+
 			lineCost := unitPrice
 			stockLines = append(stockLines, purchasecontract.StockLine{
 				VariantID: line.VariantID, ProductID: line.ProductID,
@@ -951,7 +774,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 				CostPrice: &lineCost,
 			})
 		}
-		// ②-3 状态由刚更新过的行重新推导（同一把锁之下，读到的是最新值）。
+
 		fresh, lerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
 		if lerr != nil {
 			return lerr
@@ -973,17 +796,6 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 			return uerr
 		}
 
-		// ②-4 库存变动：**同一个事务**（changeStockTrackingTx 用调用方的 tx，不自己开事务、
-		// 错误原样返回）。这一处就是本次收口的核心 —— 原先它在事务提交之后跑，
-		// 失败只能靠「退回已入库数量 + 删入库单」补偿，而补偿本身也被吞掉。
-		//
-		// 这里用模块内的 changeStockTrackingTx 而不是导出的 ChangeStockTx：后者按契约只回
-		// error，而入库单要把这次变动的**批次号**写进同一行，用内部形态省一次回读。
-		//
-		// 不做「按采购单号查流水是否已存在」的判重：一张采购单可以分多次收货（部分到货是
-		// 常态），第二批会命中第一批的流水而被误判成「已经入过库」，结果是库存不加、单据
-		// 状态却推进 —— 账实不符，且没有任何报错。真正的重试保护在入口：同一 request_id
-		// 命中既有入库单直接原样返回（idempotentReceipt），连库存变动都不会走到。
 		batchID, cerr := s.stock.ChangeStockTx(ctx, tx, &purchasecontract.StockChange{
 			ProjectID: projectID, Direction: purchaseenums.DirectionIn,
 			ReasonCode: reasonCodePurchaseIn,
@@ -995,16 +807,13 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 			return cerr
 		}
 
-		// ②-5 单据置 posted 并记下批次号：仍在同一事务里。原先这一步在提交之后，
-		// 而且错误被 `if serr := ...; serr == nil` 静默吞掉 —— 单据会停在 pending
-		// 而没人知道（库存已经动了）。
 		receipt.MovementBatchID = batchID
 		receipt.Status = purchaseenums.ReceiptStatusPosted
 		return s.m.SetReceiptMovementTx(ctx, tx, receipt.ID, batchID,
 			purchaseenums.ReceiptStatusPosted, projectID)
 	})
 	if err != nil {
-		// 并发重复提交：两路同时通过 idempotentReceipt 预检，第二路在 request_id 唯一键上撞车。
+
 		if database.IsUniqueViolation(err) {
 			if replay, rerr := s.idempotentReceipt(ctx, projectID, requestID); rerr == nil && replay != nil {
 				s.replayReceiptCosts(ctx, replay)
@@ -1014,18 +823,10 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 		return nil, err
 	}
 
-	// ③ 提交之后：商品侧成本价回写（跨模块，见 applyReceiptCosts —— 留痕 + 可重放）。
 	s.applyReceiptCosts(ctx, items, receipt.OperatorID)
 	return s.receiptResp(ctx, receipt, false)
 }
 
-// RegisterProductionInbound 自家工厂生产入库（验收 5）：无采购单，成本价手工填写。
-//
-// 与采购收货的唯一区别是「没有采购行」：来源必须是内部货源（自家工厂 / 集团内关联公司），
-// 成本价由调用方手工给出 —— 生产没有采购单价可以引用。
-//
-// 手工成本同样是**显式成本**：按批次 A 的口径（「其它入库不动成本，除非显式传成本」）
-// 落到 (仓库, SKU) 的当前值上，与采购收货共用同一条写入路径。
 func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedto.ProductionInboundReq) (res *purchasedto.ReceiptResp, err error) {
 	if req == nil {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -1043,7 +844,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 		return nil, err
 	}
 	if replay != nil {
-		// 与采购收货同一口径：重放顺带补做上次没写成的商品侧成本回写。
+
 		s.replayReceiptCosts(ctx, replay)
 		return s.receiptResp(ctx, replay, true)
 	}
@@ -1055,7 +856,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 		return nil, purchaseenums.Err(purchaseenums.ErrReceiptQuantityInvalid)
 	}
 	if req.UnitCost == nil || *req.UnitCost < 0 {
-		// 成本价必须手工填写：生产入库没有采购单价可引用，缺了就写不出成本口径。
+
 		return nil, purchaseenums.Err(purchaseenums.ErrProductionCostInvalid)
 	}
 	source, err := s.resolvePurchaseSource(ctx, projectID, req.SourceID)
@@ -1063,16 +864,14 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 		return nil, err
 	}
 	if source.Type != purchaseenums.SourceTypeInternal {
-		// 外部供应商没有「无采购单的生产入库」这一说（它的路径是采购单）。
+
 		return nil, purchaseenums.Err(purchaseenums.ErrProductionSourceNotInternal)
 	}
 	wh, err := s.stock.ResolveWarehouse(ctx, projectID, req.WarehouseID)
 	if err != nil {
 		return nil, err
 	}
-	// 仓库侧编码归一旦校验（口径与理由见 inventory_stock.go）：生产入库没有采购行，
-	// 编码只能来自调用方（页面 / 接口），这里就是它的唯一入口 —— 空串一律拒绝，
-	// 带仓码前缀的按目标仓短码幂等剥掉。
+
 	skuCode, err := normalizeStockSKU(req.SKUCode, wh.Code)
 	if err != nil {
 		return nil, err
@@ -1097,8 +896,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 		SKUCode: skuCode, Quantity: req.Quantity,
 		UnitPrice: *req.UnitCost, CostUpdated: false, CostError: "", CreatedAt: now,
 	}
-	// 与采购收货同一个事务形状：建入库单 + 库存变动 + 单据置 posted 与批次号，
-	// 任一步失败整体回滚（没有跨模块 DB 补偿）。
+
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if cerr := s.m.CreateReceiptTx(ctx, tx, receipt, []*purchasemodel.ReceiptItemEntity{item}); cerr != nil {
 			return cerr
@@ -1111,8 +909,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 			Lines: []purchasecontract.StockLine{{
 				VariantID: variantID, ProductID: strings.TrimSpace(req.ProductID),
 				SKUCode: skuCode, WarehouseID: wh.ID, Quantity: req.Quantity,
-				// 生产入库的成本是手工填的（没有采购单价可引用），按**显式成本**落到
-				// (仓库, SKU) 的当前值上 —— 与采购收货同一条写入路径。
+
 				CostPrice: req.UnitCost,
 			}},
 		})
@@ -1136,10 +933,6 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *purchasedt
 	return s.receiptResp(ctx, receipt, false)
 }
 
-// ListPurchaseHistory 某 SKU 的进货历史（验收 6）。
-//
-// 维度是 SKU（skuCode / variantId 二选一，都为空即列该工程的全部入库历史），
-// 可按货源或采购单收窄；每行带单价快照、来源、收货仓与时间。
 func (s *Service) ListPurchaseHistory(ctx context.Context, req *purchasedto.ListPurchaseHistoryReq) (list []*purchasedto.PurchaseHistoryResp, err error) {
 	if req == nil {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -1181,9 +974,6 @@ func (s *Service) ListPurchaseHistory(ctx context.Context, req *purchasedto.List
 	return list, nil
 }
 
-// —— 内部工具 ——
-
-// idempotentReceipt 幂等命中检查：命中返回既有入库单，未命中返回 (nil, nil)。
 func (s *Service) idempotentReceipt(ctx context.Context, projectID, requestID string) (e *purchasemodel.ReceiptEntity, err error) {
 	if requestID == "" {
 		return nil, nil
@@ -1198,28 +988,9 @@ func (s *Service) idempotentReceipt(ctx context.Context, projectID, requestID st
 	return nil, gerr
 }
 
-// applyReceiptCosts 入库单价 → **商品侧** SKU 成本价（验收 4；验收 5：手工成本）。
-//
-// 注意这里只是商品侧（product_variants.cost_price）的兼容写回：本轮起成本的主载体是
-// **仓库侧**的 (仓库, SKU) 当前成本价（inventory_stocks.cost_price，迁移 244），
-// 它已经在入库事务里随库存一起写好（见 RegisterReceipt 的 stockLines）——
-// 本函数不负责它，也不该被当成「成本写入是否成功」的唯一判据。
-//
-// **为什么它在事务之外**：这是**另一个模块**（商品域）的写，端口 VariantCostPort 只有
-// 非 Tx 形态、实现也在商品模块内自行开事务 —— 跨模块句柄传不过去，所以按 AGENTS.md
-// 「补偿只用于跨库/外部系统」的口径，它属于事务边界之外的 best-effort 动作：必须
-// **幂等 + 留痕 + 可重放**，三样都在这里：
-//
-//	· 幂等：已写成（CostUpdated = true）的行直接跳过，重复调用不会二次改写；
-//	· 留痕：结果写进入库单行的 cost_updated / cost_error 列（后台可见），
-//	  连这一列本身写失败也要落日志（不再用 `_ =` 把错误丢掉）；
-//	· 可重放：入口是 replayReceiptCosts（幂等重放同一 request_id 时触发）。
-//
-// operatorID（issue #19）：成本价回写会进商品侧的主数据变更记录，
-// 记的操作人就是登记这次入库的人 —— 从会话带下来，不由客户端指定。
 func (s *Service) applyReceiptCosts(ctx context.Context, items []*purchasemodel.ReceiptItemEntity, operatorID string) {
 	for _, it := range items {
-		// 幂等守卫：上一次已经写成的行不再重写（重放路径会带上全部行）。
+
 		if it.CostUpdated {
 			continue
 		}
@@ -1237,10 +1008,6 @@ func (s *Service) applyReceiptCosts(ctx context.Context, items []*purchasemodel.
 	}
 }
 
-// recordReceiptCost 把一次成本回写的结果记进入库单行（留痕）。
-//
-// 写失败不再静默吞掉：这是「跨模块 best-effort」的台账，丢了它就再也说不清
-// 某一行到底回写成功没有（而库存已经在事务里动过了）。
 func (s *Service) recordReceiptCost(ctx context.Context, it *purchasemodel.ReceiptItemEntity) {
 	if err := s.m.UpdateReceiptItemCost(ctx, it.ID, it.CostUpdated, it.CostError, it.ProjectID); err != nil {
 		logger.Scene("inventory").With("receipt_item_id", it.ID).With("variant_id", it.VariantID).
@@ -1248,11 +1015,6 @@ func (s *Service) recordReceiptCost(ctx context.Context, it *purchasemodel.Recei
 	}
 }
 
-// replayReceiptCosts 幂等重放入口：把某张入库单上**还没写成**的商品侧成本补做一遍。
-//
-// 触发方式是同一 request_id 的重试（幂等命中既有入库单时调用）—— 这是运维手上
-// 现成且安全的重放手段：applyReceiptCosts 有幂等守卫，已写成的行不会被动第二次。
-// 它是事务外动作可接受的唯一理由（跨模块写 + 端口没有 Tx 形态），见 applyReceiptCosts。
 func (s *Service) replayReceiptCosts(ctx context.Context, receipt *purchasemodel.ReceiptEntity) {
 	if receipt == nil {
 		return
@@ -1266,7 +1028,6 @@ func (s *Service) replayReceiptCosts(ctx context.Context, receipt *purchasemodel
 	s.applyReceiptCosts(ctx, items, receipt.OperatorID)
 }
 
-// receiptResp 组装入库单响应（行 + 货源 / 仓库 / 采购单展示信息）。
 func (s *Service) receiptResp(ctx context.Context, e *purchasemodel.ReceiptEntity, idempotent bool) (res *purchasedto.ReceiptResp, err error) {
 	items, err := s.m.ListReceiptItems(ctx, e.ID, e.ProjectID)
 	if err != nil {
@@ -1308,7 +1069,6 @@ func (s *Service) receiptResp(ctx context.Context, e *purchasemodel.ReceiptEntit
 	return resp, nil
 }
 
-// normalizeRequestID 归一幂等键（空串表示不用幂等保护；给了就必须是安全字符集）。
 func normalizeRequestID(raw string) (out string, err error) {
 	out = strings.TrimSpace(raw)
 	if out == "" {
@@ -1327,7 +1087,6 @@ func normalizeRequestID(raw string) (out string, err error) {
 	return out, nil
 }
 
-// productionReceiptCode 生产入库单号（无采购单号可依附，用自身 id 的前 8 位）。
 func productionReceiptCode(receiptID string) (code string) {
 	short := strings.ToUpper(strings.ReplaceAll(receiptID, "-", ""))
 	if len(short) > 8 {
@@ -1336,7 +1095,6 @@ func productionReceiptCode(receiptID string) (code string) {
 	return "PROD-" + short
 }
 
-// historyPageArgs 归一进货历史分页参数。
 func historyPageArgs(page, size int) (outPage, outSize int) {
 	outPage, outSize = 1, defaultHistoryPageSize
 	if page > 0 {
@@ -1351,10 +1109,6 @@ func historyPageArgs(page, size int) (outPage, outSize int) {
 	return outPage, outSize
 }
 
-// warehouseNames 工程内「仓库 id → 名称」映射（列表 / 历史补名，一次取全工程）。
-//
-// 取数走库存契约（inventory_warehouses 属库存模块，不 join 它的表）。读失败时返回空映射：
-// 名称是展示列，缺了不该让整张单据列表打空 —— 与下拉候选的降级口径一致。
 func (s *Service) warehouseNames(ctx context.Context, projectID string) map[string]string {
 	if s.stock == nil || projectID == "" {
 		return map[string]string{}

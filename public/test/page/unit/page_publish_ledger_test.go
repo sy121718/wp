@@ -21,10 +21,6 @@ import (
 	"go_wp/internal/pipeline"
 )
 
-// TestRecoverPendingPublicationCompletesWhenSwitchHappened 崩在「已切访问面、未写数据库」之间时补齐状态（TX-009）。
-//
-// 这是 TX-009 的核心场景：符号链接已指向新产物（线上真的生效了），而数据库活跃指针
-// 还停在旧值。没有回执时只能人工比对；有回执 + 链接实际指向就能判定并补齐。
 func TestRecoverPendingPublicationCompletesWhenSwitchHappened(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -39,7 +35,7 @@ func TestRecoverPendingPublicationCompletesWhenSwitchHappened(t *testing.T) {
 	hash := "hash-crash-1"
 	writeArtifactDir(t, root, hash)
 	artifactID := insertArtifactRow(t, db, page.ID, hash)
-	// 访问面已切换：/crash 指向该产物（与生产一致，符号链接指向 artifacts 目录）。
+
 	linkActivePath(t, root, "/crash", hash)
 	insertPendingReceipt(t, db, page.ID, "/crash", "zh-CN", artifactID)
 
@@ -50,7 +46,7 @@ func TestRecoverPendingPublicationCompletesWhenSwitchHappened(t *testing.T) {
 	if recovered != 1 || rolledBack != 0 {
 		t.Fatalf("应补完成 1 条、回滚 0 条，实际 %d / %d", recovered, rolledBack)
 	}
-	// 数据库活跃指针已补齐（「DB 没跟上」的那一半）。
+
 	var activePath, activeHash string
 	if err := db.Raw("SELECT active_path, artifact_hash FROM page_publications WHERE page_id = ? AND lang = ?", page.ID, "zh-CN").
 		Row().Scan(&activePath, &activeHash); err != nil {
@@ -59,16 +55,12 @@ func TestRecoverPendingPublicationCompletesWhenSwitchHappened(t *testing.T) {
 	if activePath != "/crash" || activeHash != hash {
 		t.Fatalf("激活记录应补齐为本次产物，实际 %q / %q", activePath, activeHash)
 	}
-	// 回执已结案，下次启动不会重复判定。
+
 	if got := receiptState(t, db, "/crash"); got != "committed" {
 		t.Fatalf("回执应结案为 committed，实际 %q", got)
 	}
 }
 
-// TestRecoverPendingPublicationAbortsWhenSwitchNeverHappened 切换没发生时只结案、不改状态（TX-009）。
-//
-// 判定必须保守：证据不足时改数据库（或改文件）比什么都不做更危险 —— 这里断言
-// 「不写激活记录、只把回执标成 rolled_back」。
 func TestRecoverPendingPublicationAbortsWhenSwitchNeverHappened(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -83,7 +75,7 @@ func TestRecoverPendingPublicationAbortsWhenSwitchNeverHappened(t *testing.T) {
 	hash := "hash-crash-2"
 	writeArtifactDir(t, root, hash)
 	artifactID := insertArtifactRow(t, db, page.ID, hash)
-	// 访问面没有链接（切换没发生），只有回执留在库里。
+
 	insertPendingReceipt(t, db, page.ID, "/nocrash", "zh-CN", artifactID)
 
 	recovered, rolledBack, rerr := recoverPending(t, svc, ctx)
@@ -105,7 +97,6 @@ func TestRecoverPendingPublicationAbortsWhenSwitchNeverHappened(t *testing.T) {
 	}
 }
 
-// recoverPending 调用回执恢复入口（运维能力不进服务契约，走类型断言）。
 func recoverPending(t *testing.T, svc pagecontract.PageService, ctx context.Context) (int, int, error) {
 	t.Helper()
 	recoverer, ok := svc.(interface {
@@ -117,16 +108,10 @@ func recoverPending(t *testing.T, svc pagecontract.PageService, ctx context.Cont
 	return recoverer.RecoverPendingPublications(ctx)
 }
 
-// insertArtifactRow 直插一条 page_artifacts 行（返回 id）：回执恢复要按 id 反查 hash。
-//
-// 这一行**只提供 page_artifacts 元数据**：收敛判定不读它（判定读磁盘，见
-// seedUpdateURLArtifact 的注释）。因此 artifact_key='key-x' 与这里传入的 artifact_hash
-// 都不参与判定：前者只在 Inspect 还原 Locator 时被跳过（判定取链接的 Key，
-// page_publish.go:2307-2310），后者只是这一列的可读值。
 func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	t.Helper()
 	var id string
-	// 一条完整 SQL：gorm 的 Raw 只把首参当语句，其余参数按占位符取值。
+
 	statement := "INSERT INTO page_artifacts (" +
 		"id, page_id, version, source_document, page_document_schema_version, source_hash, " +
 		"build_input_manifest, build_input_hash, artifact_provider, artifact_key, artifact_hash, " +
@@ -139,17 +124,6 @@ func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	return id
 }
 
-// seedUpdateURLArtifact 用生产的产物构造 + 落盘入口造一份**真实**产物，并登记元数据行。
-//
-// 判定链路读的是**磁盘**：LocalStore.GetArtifact（internal/pipeline/store.go:157-200）
-// 读 artifacts/<hash>/{manifest.json,index.html} 并重算 artifactPayloadHash 校验；
-// Artifact.CanonicalPath 来自磁盘 manifest.json 的 canonicalPath，**不是**数据库
-// page_artifacts.manifest 那一列。所以「改 URL 的新路径上有产物」只能靠这份真实产物
-// 表达 —— 手写 index.html 或只插 DB 行，GetArtifact 都会失败，收敛永远落进
-// updateURLArtifactAt 的 false 分支。
-//
-// Manifest 必填项依据 internal/pipeline/artifact.go:248-250：canonicalPath 与 sourceId
-// 缺一即报错。PutArtifact 返回的 Locator 不用 —— 判定用的 Locator 由访问面链接还原。
 func seedUpdateURLArtifact(t *testing.T, db *gorm.DB, pageID, urlPath string) (hash, artifactID string) {
 	t.Helper()
 	art, err := pipeline.NewArtifact([]byte("<html><body>seed</body></html>"), &pipeline.Manifest{
@@ -173,23 +147,18 @@ func seedUpdateURLArtifact(t *testing.T, db *gorm.DB, pageID, urlPath string) (h
 	return art.Hash, insertArtifactRow(t, db, pageID, art.Hash)
 }
 
-// linkActivePath 在访问面根目录下建一个指向产物的符号链接（模拟「切换已发生」）。
 func linkActivePath(t *testing.T, root, urlPath, hash string) {
 	t.Helper()
 	link := filepath.Join(root, "public", "active", strings.TrimPrefix(urlPath, "/"))
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatalf("创建访问面目录失败: %v", err)
 	}
-	// 必须与生产同形：相对链接（形如 ../../../artifacts/<hash>）。Inspect 靠剥掉
-	// "../" 前缀还原产物 key —— 用绝对路径建的链接在真实系统里根本不会被产生，
-	// 用它测出来的结论也不作数。
+
 	target, err := filepath.Rel(filepath.Dir(link), filepath.Join(root, "artifacts", hash))
 	if err != nil {
 		t.Fatalf("计算相对链接目标失败: %v", err)
 	}
-	// 幂等：测试间共享同一个 ActiveStore 根目录，同一路径可能已有上一次留下的链接
-	//（例如绑定前先发布一次再接管旧路径）。先摘掉旧链接再建，等价于生产 rename 的覆盖语义；
-	// 忽略 ENOENT —— 也只是「本来就没有」。
+
 	if rerr := os.Remove(link); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 		t.Fatalf("清理旧访问面链接失败: %v", rerr)
 	}
@@ -198,26 +167,19 @@ func linkActivePath(t *testing.T, root, urlPath, hash string) {
 	}
 }
 
-// insertPendingReceipt 直插一条 pending 的访问面切换回执（模拟「崩在切换前后」留下的痕迹）。
 func insertPendingReceipt(t *testing.T, db *gorm.DB, pageID, path, lang, artifactID string) {
 	t.Helper()
 	data := "{\"lang\":\"" + lang + "\"}"
-	// DB-019/020 第一批：receipts.id 已是 bigint identity，不再手填 uuid；时间列改名 create_time。
+
 	if err := db.Exec("INSERT INTO publication_receipts (source_type, source_id, action, path, to_artifact_id, receipt_state, receipt_data, create_time) VALUES ('page', ?, 'switch_active', ?, ?, 'pending', ?::jsonb, now())",
 		pageID, path, artifactID, data).Error; err != nil {
 		t.Fatalf("插入回执失败: %v", err)
 	}
 }
 
-// insertPendingUpdateURLReceipt 直插一条 pending 的**改 URL** 回执。
-//
-// 与 insertPendingReceipt（switch_active）的区别：这条动作的重放会真正执行 DB 写步骤
-// （recoverUpdateURLReceipt → applyUpdateURL），因此 publishWindowFault 的注入点
-// （page_publish.go:1667）在收敛路径上真实命中 —— 发布类回执的重放不经过任何注入点。
 func insertPendingUpdateURLReceipt(t *testing.T, db *gorm.DB, pageID, newPath, oldPath, lang, artifactID string) int64 {
 	t.Helper()
-	// 旧路径写在 receipt_data 里（publication_receipts 没有 old_path 列，旧路径是回执的
-	// 事实而不是表的列），与 insertUpdateURLReceipt 同一形状。
+
 	data := fmt.Sprintf(`{"projectId":%q,"lang":%q,"oldPath":%q,"redirect":false}`,
 		projectIDOfPage(t, db, pageID), lang, oldPath)
 	var id int64
@@ -228,15 +190,6 @@ func insertPendingUpdateURLReceipt(t *testing.T, db *gorm.DB, pageID, newPath, o
 	return id
 }
 
-// ---- AR2-002：发布主链必须自己登记回执（修复「回执只实现了恢复端」） ----
-//
-// 修复前 beginPublishReceipt 零调用者、complete/abort 只被 RecoverPendingPublications
-// 自己调用：发布主链无论成功失败都不在 publication_receipts 里留痕，于是启动恢复
-// 永远扫不到「正在进行的发布」，只能在人工比对链接与数据库之后才发现状态分裂。
-// 下面三条用例把这条接线钉住：登记+结案、窗口故障后收敛、登记失败即中止。
-
-// setPublishWindowFault 注入「访问面已切换、数据库尚未写入」窗口的故障（nil = 清除，
-// 等价于进程重启后的干净状态）。运维/测试能力不进服务契约，走类型断言。
 func setPublishWindowFault(t *testing.T, svc pagecontract.PageService, fn func() error) {
 	t.Helper()
 	injector, ok := svc.(interface{ SetPublishWindowFault(func() error) })
@@ -246,8 +199,6 @@ func setPublishWindowFault(t *testing.T, svc pagecontract.PageService, fn func()
 	injector.SetPublishWindowFault(fn)
 }
 
-// setPostSwitchFault 注入「FS 已切、DB 三步已写、事务未提交」窗口的故障（nil = 清除）。
-// 与 setPublishWindowFault 是窗口的两侧（见 Service.postSwitchFault 字段注释）。
 func setPostSwitchFault(t *testing.T, svc pagecontract.PageService, fn func() error) {
 	t.Helper()
 	injector, ok := svc.(interface{ SetPostSwitchFault(func() error) })
@@ -257,10 +208,6 @@ func setPostSwitchFault(t *testing.T, svc pagecontract.PageService, fn func() er
 	injector.SetPostSwitchFault(fn)
 }
 
-// receiptRouterFailure 只让回执登记失败，其余能力透传给真实契约
-// （嵌入真实实现 + 覆写一个方法）：用来验证「登记拿不到 id = 硬失败，不切访问面」。
-// 嵌入的必须是真实实现而不是 nil 接口 —— Create 阶段就会调 ReservePath，
-// 空嵌入会让它 panic 在一个与用例无关的地方。
 type receiptRouterFailure struct {
 	pubcontract.PublicationService
 	id  string
@@ -271,7 +218,6 @@ func (f receiptRouterFailure) BeginPublishReceipt(context.Context, *pubdto.Begin
 	return f.id, f.err
 }
 
-// TestPublishMainlineRecordsCommittedReceipt 正常发布必须留下已结案的回执，且 from/to 如实（AR2-002）。
 func TestPublishMainlineRecordsCommittedReceipt(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -290,8 +236,6 @@ func TestPublishMainlineRecordsCommittedReceipt(t *testing.T) {
 		t.Fatalf("回执记录的产物应与激活记录一致，回执 %q / 激活 %q", toID, active)
 	}
 
-	// 第二次发布：from 必须接上一次的 to —— 两端合起来才是「从哪个版本切到哪个版本」，
-	// 只记 to 会让回滚与审计失去「从哪来」的依据。
 	detail, derr := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
 	if derr != nil {
 		t.Fatalf("查询页面失败: %v", derr)
@@ -319,16 +263,10 @@ func TestPublishMainlineRecordsCommittedReceipt(t *testing.T) {
 	}
 }
 
-// TestPublishCrashBetweenActivateAndDBConvergesOnRecovery 崩在「已切访问面、未写数据库」窗口后，恢复必须收敛（AR2-002）。
-//
-// 这是 AR2-002 的核心场景：修复前这个窗口里库里没有任何记录，重启不会补齐也不会判定；
-// 现在发布链在切换之前就登记了 pending，恢复按符号链接的实际指向补齐数据库（committed）
-// 或结案为未生效（rolled_back）—— 不许停在 pending。
 func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 
-	// 陪跑页面：恢复必须只按回执记录的作用域动，不许把别的页面状态一起改了。
 	other := createPage(t, svc, projectID, "/crash-other", headingDocument)
 	otherHash := buildAndPublish(t, svc, other.ID)
 
@@ -338,11 +276,6 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatalf("构建失败: %v", berr)
 	}
 
-	// 故障注入：必须打在**切换之后**的那一侧（service.postSwitchFault）。
-	//
-	// 不能用 setPublishWindowFault：它命中在 publisher.ActivateStagedArtifact 之前
-	// （page_publish.go 的 :519），访问面链接根本不会建立 —— 而本用例要测的正是
-	// 「链接已建立、DB 没写」这个窗口。注在切换前只会测到另一条分支（无副作用失败）。
 	injected := errors.New("故障注入：进程终止于切换访问面之后、写数据库之前")
 	setPostSwitchFault(t, svc, func() error { return injected })
 
@@ -350,7 +283,6 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatal("窗口故障注入后 Publish 应报错，实际返回成功")
 	}
 
-	// 窗口现场：访问面已生效、数据库没跟上、回执留在 pending（而不是被误判为 rolled_back）。
 	target, lerr := os.Readlink(filepath.Join(pipeline.ActiveRoot(), "crash-window"))
 	if lerr != nil {
 		t.Fatalf("访问面符号链接应已建立（切换已发生）: %v", lerr)
@@ -365,7 +297,6 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatalf("窗口回执应保持 pending（交启动恢复判定），实际 %q", got)
 	}
 
-	// 进程重启：清掉注入点，跑启动恢复。
 	setPostSwitchFault(t, svc, nil)
 	recovered, rolledBack, rerr := recoverPending(t, svc, ctx)
 	if rerr != nil {
@@ -381,7 +312,6 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatalf("恢复应补齐激活记录到本次产物 %s，实际 %q", built.StagedHash, got)
 	}
 
-	// 幂等：重复恢复不改结果，也不误改陪跑页面。
 	againRecovered, againRolledBack, aerr := recoverPending(t, svc, ctx)
 	if aerr != nil {
 		t.Fatalf("重复恢复失败: %v", aerr)
@@ -400,7 +330,6 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 	}
 }
 
-// TestPublishAbortsWhenReceiptRegistrationFails 登记拿不到回执 id = 硬失败，不切访问面（AR2-002 第 1 条）。
 func TestPublishAbortsWhenReceiptRegistrationFails(t *testing.T) {
 	cases := []struct {
 		name string
@@ -423,7 +352,7 @@ func TestPublishAbortsWhenReceiptRegistrationFails(t *testing.T) {
 			if _, perr := svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); !errors.Is(perr, pageservice.ErrPublishLedgerUnavailable) {
 				t.Fatalf("登记失败应中止发布并返回 ErrPublishLedgerUnavailable，实际 %v", perr)
 			}
-			// 访问面没被切换：带着「这次发布没登记」的状态去切访问面，正是回执要消灭的分裂。
+
 			if _, lerr := os.Lstat(filepath.Join(pipeline.ActiveRoot(), "receipt-fail")); !os.IsNotExist(lerr) {
 				t.Fatalf("登记失败时不得切换访问面，链接状态: %v", lerr)
 			}
@@ -431,7 +360,6 @@ func TestPublishAbortsWhenReceiptRegistrationFails(t *testing.T) {
 	}
 }
 
-// receiptOf 读该路径最新一条回执的 (状态, from 产物, to 产物)。
 func receiptOf(t *testing.T, db *gorm.DB, path string) (state, fromID, toID string) {
 	t.Helper()
 	var row struct {
@@ -439,8 +367,7 @@ func receiptOf(t *testing.T, db *gorm.DB, path string) (state, fromID, toID stri
 		FromID *string `gorm:"column:from_id"`
 		ToID   *string `gorm:"column:to_id"`
 	}
-	// 必须按 action 筛：publication_receipts 是共用表，Activate 每次也会按同一 path
-	// 登记一条路由回执（其 from 为空），不筛就会把路由回执当成发布回执读出来。
+
 	statement := "SELECT receipt_state AS state, from_artifact_id::text AS from_id, to_artifact_id::text AS to_id " +
 		"FROM publication_receipts WHERE path = ? AND action = 'switch_active' ORDER BY id DESC LIMIT 1"
 	if err := db.Raw(statement, path).Scan(&row).Error; err != nil {
@@ -455,7 +382,6 @@ func receiptOf(t *testing.T, db *gorm.DB, path string) (state, fromID, toID stri
 	return row.State, fromID, toID
 }
 
-// receiptCount 统计某路径的回执条数（每次发布登记一条）。
 func receiptCount(t *testing.T, db *gorm.DB, path string) int64 {
 	t.Helper()
 	var n int64
@@ -465,13 +391,11 @@ func receiptCount(t *testing.T, db *gorm.DB, path string) int64 {
 	return n
 }
 
-// activeArtifactID 读激活记录里的产物 id。
 func activeArtifactID(t *testing.T, db *gorm.DB, pageID string) string {
 	t.Helper()
 	return activeColumnOf(t, db, pageID, "artifact_id")
 }
 
-// activeHashOf 读激活记录里的产物 hash。
 func activeHashOf(t *testing.T, db *gorm.DB, pageID string) string {
 	t.Helper()
 	return activeColumnOf(t, db, pageID, "artifact_hash")
@@ -492,7 +416,6 @@ func activeColumnOf(t *testing.T, db *gorm.DB, pageID, column string) string {
 	return *row.Value
 }
 
-// publicationCount 统计激活记录条数（崩溃窗口里应为 0）。
 func publicationCount(t *testing.T, db *gorm.DB, pageID string) int64 {
 	t.Helper()
 	var n int64
@@ -502,7 +425,6 @@ func publicationCount(t *testing.T, db *gorm.DB, pageID string) int64 {
 	return n
 }
 
-// receiptState 读回执状态。
 func receiptState(t *testing.T, db *gorm.DB, path string) string {
 	t.Helper()
 	var state string

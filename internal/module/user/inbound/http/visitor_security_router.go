@@ -10,8 +10,6 @@ import (
 	"go_wp/pkg/response"
 )
 
-// VisitorCSRFMiddleware 为访客 API 提供独立于后台的令牌和写校验。
-// 令牌放响应头，供静态页面运行时获取，不能烘进共享发布产物。
 func VisitorCSRFMiddleware() gin.HandlerFunc {
 	check := builtin.CSRFMiddlewareWith(userCSRFStore{})
 	return func(c *gin.Context) {

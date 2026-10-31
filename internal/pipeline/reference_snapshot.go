@@ -12,14 +12,11 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// FrozenBlock 是本次编译实际引用的公开配置，版本与文档同时固定。
 type FrozenBlock struct {
 	Version  int64           `json:"version"`
 	Document json.RawMessage `json:"document"`
 }
 
-// ReferenceSnapshot 只含公开构建配置；nil 表示尚未冻结，空映射表示已冻结且没有引用。
-// 缺失项必须失败，不允许在编译期间回读最新值。
 type ReferenceSnapshot struct {
 	ProjectID string                     `json:"projectId"`
 	Blocks    map[string]FrozenBlock     `json:"blocks"`
@@ -93,8 +90,6 @@ func (p *templateCapture) ResolveStructureDocument(ctx context.Context, projectI
 	return doc, err
 }
 
-// FreezeReferences 在编译前固定递归引用闭包。候选块由现有 List 单条 SELECT 读取，
-// 所以嵌套块不可能分别读到保存事务前后两个状态；无关块不会写入发布计划。
 func FreezeReferences(ctx context.Context, projectID string, doc []byte, blocks blockSnapshotReader,
 	templates StructureTemplatePort, navigation core.NavigationResolver) (*ReferenceSnapshot, error) {
 	page, err := builder.ParsePage(doc)
@@ -113,7 +108,7 @@ func FreezeReferences(ctx context.Context, projectID string, doc []byte, blocks 
 		}
 		if _, ok := out.Blocks[id]; ok {
 			return nil
-		} // 环与最大深度仍由既有编译器判定。
+		}
 		if !loaded {
 			loaded = true
 			candidates = map[string]blockcontract.BlockResp{}

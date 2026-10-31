@@ -1,11 +1,5 @@
 package unit
 
-// media_center_unit_test.go — 媒体中心（02-B，迁移 067）service 层单元测试。
-//
-// 覆盖四项能力：稳定引用命名（<id>.<ext>）、上传去重（md5 + 类型复用）、
-// 换图（URL 不变 + generation+1 + 内容替换）、引用缓存与删除保护（refs / @> 查询）。
-// 上传物理文件落在 upload.local_dir 指向的临时目录，测试结束自动清理。
-
 import (
 	"bytes"
 	"context"
@@ -27,7 +21,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// initMediaCenterUpload 初始化上传组件并把存储根指向临时目录，返回该目录。
 func initMediaCenterUpload(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -42,7 +35,6 @@ func initMediaCenterUpload(t *testing.T) string {
 	return dir
 }
 
-// newUploadFileHeader 构造内容可控的 multipart 文件头（md5 由内容决定）。
 func newUploadFileHeader(t *testing.T, filename, contentType, content string) *multipart.FileHeader {
 	t.Helper()
 	var buf bytes.Buffer
@@ -72,7 +64,6 @@ func newUploadFileHeader(t *testing.T, filename, contentType, content string) *m
 	return fhs[0]
 }
 
-// TestMediaCenterStableNaming 新上传按 <id>.<ext> 命名：URL、file_path、物理文件三者一致。
 func TestMediaCenterStableNaming(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	storeDir := initMediaCenterUpload(t)
@@ -105,7 +96,6 @@ func TestMediaCenterStableNaming(t *testing.T) {
 	}
 }
 
-// TestMediaCenterUploadDedupReusesExisting 同内容（md5 + 类型）二次上传复用已有附件。
 func TestMediaCenterUploadDedupReusesExisting(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	initMediaCenterUpload(t)
@@ -141,7 +131,6 @@ func TestMediaCenterUploadDedupReusesExisting(t *testing.T) {
 		t.Fatalf("同一内容应只存一份，实际 %d 条记录", count)
 	}
 
-	// 内容不同 → 新记录（不复用）。
 	third, err := svc.Upload(ctx, newUploadFileHeader(t, "c.png", "image/png", "different-bytes"), nil)
 	if err != nil {
 		t.Fatalf("不同内容上传失败: %v", err)
@@ -151,7 +140,6 @@ func TestMediaCenterUploadDedupReusesExisting(t *testing.T) {
 	}
 }
 
-// TestMediaCenterReplaceKeepsURLBumpsGeneration 换图：URL 不变、内容替换、generation 递增。
 func TestMediaCenterReplaceKeepsURLBumpsGeneration(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	storeDir := initMediaCenterUpload(t)
@@ -188,7 +176,6 @@ func TestMediaCenterReplaceKeepsURLBumpsGeneration(t *testing.T) {
 		t.Fatalf("换图后文件大小未更新: %d", replaced.FileSize)
 	}
 
-	// 再次换图 → generation=3。
 	third, err := svc.Replace(ctx, first.ID, newUploadFileHeader(t, "photo-v3.png", "image/png", "v3-bytes"))
 	if err != nil {
 		t.Fatalf("二次换图失败: %v", err)
@@ -197,7 +184,6 @@ func TestMediaCenterReplaceKeepsURLBumpsGeneration(t *testing.T) {
 		t.Fatalf("二次换图 generation 应为 3，实际 %d", third.Generation)
 	}
 
-	// 内容未变 → 幂等，不再 +1。
 	same, err := svc.Replace(ctx, first.ID, newUploadFileHeader(t, "photo-v3-again.png", "image/png", "v3-bytes"))
 	if err != nil {
 		t.Fatalf("同内容换图失败: %v", err)
@@ -210,7 +196,6 @@ func TestMediaCenterReplaceKeepsURLBumpsGeneration(t *testing.T) {
 	}
 }
 
-// TestMediaCenterReplaceExtMismatchRejected 扩展名不一致拒绝（换 ext 即换 URL，破坏稳定引用）。
 func TestMediaCenterReplaceExtMismatchRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	initMediaCenterUpload(t)
@@ -226,7 +211,6 @@ func TestMediaCenterReplaceExtMismatchRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCenterDeleteBlockedByReferences 删除保护：被引用的附件拒绝删除并提示引用数。
 func TestMediaCenterDeleteBlockedByReferences(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -256,7 +240,6 @@ func TestMediaCenterDeleteBlockedByReferences(t *testing.T) {
 		t.Fatalf("删除拦截提示应含引用数量: %v", err)
 	}
 
-	// 构建期不再引用 → 引用解除 → 允许删除。
 	if _, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{RefKind: "page", RefID: "p-1"}); err != nil {
 		t.Fatalf("清空引用失败: %v", err)
 	}
@@ -272,7 +255,6 @@ func TestMediaCenterDeleteBlockedByReferences(t *testing.T) {
 	}
 }
 
-// TestMediaCenterSyncReferencesDiffAndJSONBQuery 全量同步差集增删 + jsonb @> 查询命中。
 func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -281,7 +263,6 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 	idB := seedAttachment(t, db, nil, "b.png", "image", "")
 	idC := seedAttachment(t, db, nil, "c.png", "image", "")
 
-	// 第一轮：页面 p-9 引用 A、B。
 	n, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: "page", RefID: "p-9", RefTitle: "关于我们",
 		URLs: []string{"/storage/seed/a.png", "/storage/seed/b.png", "/storage/not-exist.png"},
@@ -293,7 +274,6 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 		t.Fatalf("应命中 2 个附件（不存在的 URL 跳过），实际 %d", n)
 	}
 
-	// 第二轮：改为引用 B、C → A 的引用被移除，C 新增（差集增删）。
 	n, err = svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: "page", RefID: "p-9", RefTitle: "关于我们",
 		URLs: []string{"/storage/seed/b.png", "/storage/seed/c.png"},
@@ -318,7 +298,6 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 		t.Fatalf("B/C 应各有一条引用: B=%+v C=%+v", refsB, refsC)
 	}
 
-	// jsonb @> 查询（引用保护的反向查询形态）直接命中。
 	var hit int64
 	if err := db.Raw(`SELECT COUNT(*) FROM sys_attachment WHERE extra_info @> '{"refs":[{"kind":"page","id":"p-9"}]}'::jsonb`).
 		Scan(&hit).Error; err != nil {
@@ -328,7 +307,6 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 		t.Fatalf("@> 查询应命中 2 行，实际 %d", hit)
 	}
 
-	// refs 与 alt/title 同列共存：更新元数据后 refs 不丢（既有合并写法保留未知键）。
 	title := "B 图"
 	if err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: idB, Alt: strPtr("B alt"), Title: &title}); err != nil {
 		t.Fatalf("更新元数据失败: %v", err)
@@ -350,8 +328,6 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 	}
 }
 
-// TestMediaCenterSyncFromHTMLCollectsStorageURLs 构建期入口：从产物 HTML 收集 /storage 引用，
-// 原图与变体地址都能反查到同一附件，非媒体地址与重复地址被忽略。
 func TestMediaCenterSyncFromHTMLCollectsStorageURLs(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -380,8 +356,6 @@ func TestMediaCenterSyncFromHTMLCollectsStorageURLs(t *testing.T) {
 	}
 }
 
-// TestMediaCenterAddRefToleratesNonObjectExtraInfo extra_info 为 jsonb null / 数组 / 标量时，
-// 写入 refs 不报错（根节点先归零为对象）。
 func TestMediaCenterAddRefToleratesNonObjectExtraInfo(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -415,5 +389,4 @@ func TestMediaCenterAddRefToleratesNonObjectExtraInfo(t *testing.T) {
 	}
 }
 
-// strPtr 返回字符串指针（AttachmentUpdateReq 的 nil 字段语义为「不改」）。
 func strPtr(s string) *string { return &s }

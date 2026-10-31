@@ -1,16 +1,5 @@
 package contenttemplate
 
-// entity_templates_test.go —— 端口层判据：工程作用域必须从商品页一路传进内容模板的取数口。
-//
-// 被钉住的缺陷形态（P172）：本包的适配器把工程留空 —— ListReq 只带 EntityType、
-// ResolveTemplate 没有工程参数 —— 内容模板侧 resolveProjectID 在「工程数 != 1」时回
-// ErrProjectRequired，而商品页读模型把这条端口的失败按**降级**处理（空清单）：
-// 新建页 200、不报错、日志干净，卡片区只是显示「暂无商品详情模板」。
-//
-// 断言落在**对方收到的参数**上：只断言「返回了候选」照不出漏传 —— 单工程夹具下
-// 「唯一工程」兜底恰好就是同一个工程，传与不传结果一样；只有多工程部署才露出来。
-// 这里不搭真实库：本文件测的是**参数有没有往下传**，不是内容模板模块的取数行为。
-
 import (
 	"context"
 	"testing"
@@ -21,8 +10,6 @@ import (
 
 const entityTemplatesTestProjectID = "proj-1"
 
-// ctScopeStub 只实现端口实际要用的两个方法；其余方法由内嵌的 nil 接口兜着，
-// 被走到就是空指针 panic —— 端口够宽了会当场暴露，而不是静默多调一次。
 type ctScopeStub struct {
 	contenttemplatecontract.ContentTemplateService
 	lastList      *contenttemplatedto.ListReq

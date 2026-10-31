@@ -15,8 +15,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// TestWorkbenchIncompleteDraftPreview 保存和预览真实的未完成文档，
-// 验证嵌套空文本不再阻断兄弟内容，也不会被预览偷偷补成持久化占位。
 func TestWorkbenchIncompleteDraftPreview(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, svc, projectID := newPageService(t)

@@ -206,7 +206,7 @@ func TestPluginPageWritesUseExistingRegisteredAPI(t *testing.T) {
 			t.Fatalf("obsolete page POST registered: %s", route.Path)
 		}
 	}
-	// Production setup registers permission declarations and routes without starting a server or database.
+
 	pluginhttp.SetupPluginRoutes(permission.NewRouteGroup(r.Group("/api")), nil, nil)
 	for _, tc := range []struct {
 		path string

@@ -1,15 +1,5 @@
 package membershipmcp
 
-// membership_tools_test.go — 会员两个只读工具的元信息、入参边界与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层）。
-// 这里钉的是几件会直接决定回答对错的事：
-//   · 门槛金额库里存的是**分**，正文必须换算成元 —— 直接念 50000 会让运营
-//     以为门槛是五万元；
-//   · auto（按累计消费自动升降）与 manual（后台手工设定）要分开说：
-//     运营看到「这个人怎么是金卡」时，下一步动作完全不同；
-//   · userId / tierId 的「不筛」是 0，必须与「筛 id=0」区分开。
-
 import (
 	"context"
 	"errors"
@@ -98,7 +88,6 @@ func TestMemberTiersRequiresProject(t *testing.T) {
 	}
 }
 
-// 这条是关键：门槛单位是分，正文必须换算成元。
 func TestTierTextConvertsCentsToYuan(t *testing.T) {
 	text := tierListText([]*membershipdto.TierResp{
 		{ID: 1, Name: "金卡", ThresholdAmount: 50000, SortOrder: 2},
@@ -172,7 +161,6 @@ func TestMemberFindClampsLimit(t *testing.T) {
 	}
 }
 
-// auto（按消费自动升降）与 manual（后台手工设定）必须分开说。
 func TestSourceTextDistinguishesAutoFromManual(t *testing.T) {
 	auto := sourceText("auto")
 	manual := sourceText("manual")
@@ -192,7 +180,7 @@ func TestAssignmentListTextCarriesTierAndSource(t *testing.T) {
 	for _, want := range []string{
 		"客户 id=42", "金卡", "自动（按累计消费）",
 		"客户 id=43", "手工设定",
-		"等级 id=3", // 回显筛选范围，用户才知道自己筛了什么
+		"等级 id=3",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("正文里应含 %q：\n%s", want, text)

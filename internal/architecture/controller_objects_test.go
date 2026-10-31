@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// isObjectQueryPipeline 验证绑定、原对象查询、命名出口的语法形状。
-// 不认模块名和方法名单；循环、格式化、算术、map 与业务写调用都会退出此路径。
 func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 	objects, binding, valid := false, false, true
 	bound := map[string]bool{}
@@ -19,7 +17,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 		}
 		switch x := n.(type) {
 		case *ast.ForStmt, *ast.RangeStmt, *ast.GoStmt, *ast.DeferStmt, *ast.SendStmt, *ast.IncDecStmt, *ast.FuncLit, *ast.MapType, *ast.IndexExpr:
-			// binding.Query[T] 的 IndexExpr 是类型实例化，另在调用节点验证。
+
 			if _, ok := n.(*ast.IndexExpr); !ok {
 				valid = false
 			}
@@ -39,7 +37,7 @@ func isObjectQueryPipeline(body *ast.BlockStmt) bool {
 			if x.Tok != token.DEFINE && x.Tok != token.ASSIGN {
 				valid = false
 			}
-			// 只允许修改绑定请求的筛选范围，不能在出口前重写查询对象。
+
 			for _, lhs := range x.Lhs {
 				if sel, ok := lhs.(*ast.SelectorExpr); ok {
 					root, ok := sel.X.(*ast.Ident)

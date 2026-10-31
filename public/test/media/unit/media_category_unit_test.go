@@ -1,11 +1,5 @@
 package unit
 
-// media_category_unit_test.go — media 模块分类 service 层单元测试。
-// 覆盖：创建（重名/层级/父级校验/空名/超长）、树构建、更新（改名/移动防环/排序）、
-// 删除（有子级拒绝/附件级联/幂等）。
-// 标注 [BUG-xx] 的用例按「正确语义」断言（期望行为），当前生产代码未满足时会 FAIL，
-// 作为生产代码 bug 的复现证据；bug 明细见测试报告。
-
 import (
 	"context"
 	"strings"
@@ -15,7 +9,6 @@ import (
 	mediamodel "go_wp/internal/module/media/model"
 )
 
-// TestMediaCategoryCreateSuccess 创建顶级与子级分类成功：去空格、code 生成、Children 空切片。
 func TestMediaCategoryCreateSuccess(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -47,7 +40,6 @@ func TestMediaCategoryCreateSuccess(t *testing.T) {
 	_ = db
 }
 
-// TestMediaCategoryCreateEmptyNameRejected 空名/纯空白名拒绝。
 func TestMediaCategoryCreateEmptyNameRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -64,7 +56,6 @@ func TestMediaCategoryCreateEmptyNameRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryCreateDuplicateSiblingRejected 同父级重名拒绝（含大小写与空白变体）；不同父级同名允许。
 func TestMediaCategoryCreateDuplicateSiblingRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -99,7 +90,6 @@ func TestMediaCategoryCreateDuplicateSiblingRejected(t *testing.T) {
 	})
 }
 
-// TestMediaCategoryCreateParentNotExistRejected 父级不存在拒绝。
 func TestMediaCategoryCreateParentNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -109,19 +99,16 @@ func TestMediaCategoryCreateParentNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryCreateParentDeletedAccepted [BUG-01] 父分类已软删除（status=0）时仍允许创建子分类。
-// 期望：拒绝（父级已删除，不应再作为父级）。实际：GetCategory 不过滤 status，创建成功 → FAIL。
 func TestMediaCategoryCreateParentDeletedAccepted(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
 
-	deleted := seedCategory(t, db, "已删除分类", 0, 0) // status=0 模拟软删除
+	deleted := seedCategory(t, db, "已删除分类", 0, 0)
 	if _, err := svc.CreateCategory(ctx, &mediadto.CategoryCreateReq{ParentID: deleted.ID, CategoryName: "新子分类"}); err == nil {
 		t.Errorf("在已删除分类下创建子分类应被拒绝，实际成功（孤儿数据）")
 	}
 }
 
-// TestMediaCategoryCreateOversizeNameError 超长分类名（> varchar(100)）返回错误且不 panic。
 func TestMediaCategoryCreateOversizeNameError(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -132,7 +119,6 @@ func TestMediaCategoryCreateOversizeNameError(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryTreeBuild 多级树构建：层级正确、按 sort_order 排序、空库返回空列表。
 func TestMediaCategoryTreeBuild(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -178,7 +164,6 @@ func TestMediaCategoryTreeBuild(t *testing.T) {
 	})
 }
 
-// TestMediaCategoryUpdateRenameSuccess 改名成功且去除首尾空格。
 func TestMediaCategoryUpdateRenameSuccess(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -197,8 +182,6 @@ func TestMediaCategoryUpdateRenameSuccess(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateRenameDuplicateAccepted [BUG-03] 更新改名不检查同级重名，绕过创建时约束。
-// 期望：同级重名拒绝。实际：UpdateCategory 直接写 name，重名成功 → FAIL。
 func TestMediaCategoryUpdateRenameDuplicateAccepted(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -212,7 +195,6 @@ func TestMediaCategoryUpdateRenameDuplicateAccepted(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateMoveSelfRejected 父级设为自己拒绝。
 func TestMediaCategoryUpdateMoveSelfRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -224,7 +206,6 @@ func TestMediaCategoryUpdateMoveSelfRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateMoveDescendantRejected 移动到自己的子/孙分类下拒绝（防环）。
 func TestMediaCategoryUpdateMoveDescendantRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -253,7 +234,6 @@ func TestMediaCategoryUpdateMoveDescendantRejected(t *testing.T) {
 	})
 }
 
-// TestMediaCategoryUpdateMoveParentNotExistRejected 目标父级不存在拒绝。
 func TestMediaCategoryUpdateMoveParentNotExistRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -265,14 +245,12 @@ func TestMediaCategoryUpdateMoveParentNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateMoveToDeletedParentAccepted [BUG-02] 可把分类移动到已软删除的分类下。
-// 期望：拒绝（目标父级已删除）。实际：GetCategory 不过滤 status，移动成功 → FAIL。
 func TestMediaCategoryUpdateMoveToDeletedParentAccepted(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
 
 	a := seedCategory(t, db, "A", 0, 1)
-	deleted := seedCategory(t, db, "已删除父级", 0, 0) // status=0 模拟软删除
+	deleted := seedCategory(t, db, "已删除父级", 0, 0)
 	parent := deleted.ID
 
 	if err := svc.UpdateCategory(ctx, &mediadto.CategoryUpdateReq{ID: a.ID, ParentID: &parent}); err == nil {
@@ -280,7 +258,6 @@ func TestMediaCategoryUpdateMoveToDeletedParentAccepted(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateSortOrder 排序更新生效。
 func TestMediaCategoryUpdateSortOrder(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -302,7 +279,6 @@ func TestMediaCategoryUpdateSortOrder(t *testing.T) {
 	_ = db
 }
 
-// TestMediaCategoryUpdateNotExistRejected 更新不存在的分类拒绝。
 func TestMediaCategoryUpdateNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -313,7 +289,6 @@ func TestMediaCategoryUpdateNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryUpdateBlankRenameKeepsName 改名传纯空白时保持原名（不报错不覆盖）。
 func TestMediaCategoryUpdateBlankRenameKeepsName(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -329,7 +304,6 @@ func TestMediaCategoryUpdateBlankRenameKeepsName(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryDeleteWithChildrenRejected 有启用子级时拒绝删除。
 func TestMediaCategoryDeleteWithChildrenRejected(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -342,7 +316,6 @@ func TestMediaCategoryDeleteWithChildrenRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryDeleteWithAttachmentsDetach 有附件时删除成功，附件移入未分类（category_id=NULL）。
 func TestMediaCategoryDeleteWithAttachmentsDetach(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -366,7 +339,6 @@ func TestMediaCategoryDeleteWithAttachmentsDetach(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryDeleteNotExistRejected 删除不存在的分类拒绝。
 func TestMediaCategoryDeleteNotExistRejected(t *testing.T) {
 	_, svc := newMediaUnitService(t)
 	ctx := context.Background()
@@ -376,8 +348,6 @@ func TestMediaCategoryDeleteNotExistRejected(t *testing.T) {
 	}
 }
 
-// TestMediaCategoryDeleteTwiceAccepted [BUG-07] 二次删除已删除分类仍返回成功。
-// 期望：返回"分类不存在"。实际：GetCategory 不过滤 status，二次删除成功 → FAIL。
 func TestMediaCategoryDeleteTwiceAccepted(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	ctx := context.Background()

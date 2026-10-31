@@ -1,12 +1,5 @@
 package builder
 
-// globalref 循环引用回归测试（docs/02-F 动效实现中发现的真实 OOM 缺陷）。
-//
-// 缺陷史：块 a 引用 b、块 b 引用 a 时，渲染路径（globalrefViewOf → 递归展开）
-// 无任何防护，无限深拷贝节点树导致内存指数级消耗——机器 OOM，而非栈溢出。
-// 修复：globalrefViewOf 维护 ctx.BlockStack 展开栈，同一块 ID 嵌套即报
-// 「循环引用」；另加 32 层深度上限。本测试固化该行为：Compile 必须返回
-// 明确错误，绝不 OOM。
 import (
 	"strings"
 	"testing"
@@ -16,7 +9,7 @@ import (
 )
 
 func TestGlobalrefCycleCompileReturnsError(t *testing.T) {
-	// 块 a 引用 b，块 b 引用 a —— 形成环。
+
 	cyclic := map[string]string{
 		"a": `{"settings":{},"root":[{"id":"a1","type":"core.text","props":{"text":"环-A"}},{"id":"a2","type":"core.globalref","props":{"blockId":"b"}}]}`,
 		"b": `{"settings":{},"root":[{"id":"b1","type":"core.text","props":{"text":"环-B"}},{"id":"b2","type":"core.globalref","props":{"blockId":"a"}}]}`,

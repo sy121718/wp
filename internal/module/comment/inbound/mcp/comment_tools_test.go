@@ -1,19 +1,5 @@
 package commentmcp
 
-// comment_tools_test.go — 评论工具的元信息、入参映射与正文可读性。
-//
-// 正文断言不是「测文案」：模型的回答完全来自 Text（Data 只给渲染层），
-// 正文里少了哪个字，用户就看不到哪个字。这里钉的是几件会直接决定回答对错的事：
-//   · 评论 id 必须逐条出现 —— 它是运营在后台找到这条评论的唯一钥匙；
-//   · 状态文案走 commentenums 的真源，不自己写一份中文表（各写一份时新增状态会
-//     出现「页面上叫一个名字、AI 嘴里叫另一个」）；
-//   · 正文要压成一行并标明还剩多少字 —— 只截不说会让模型以为自己看的是全文；
-//   · 空结果要分清「这个筛选下没有」与「页码超了」，两者对用户的意义不同。
-//
-// 注意测试传参用 map 而不是参数结构体：结构体序列化会把零值写成 ""，
-// 而 mcp 的 Enum 白名单**拒绝空串**（validate.go 的 validateValue）——
-// 模型不传某个可选参数时 JSON 里根本没有那个键，两者不是一回事。
-
 import (
 	"context"
 	"errors"
@@ -27,7 +13,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// stubQuery 假 reader：记录入参、回放固定结果。
 type stubQuery struct {
 	gotList *commentdto.AdminListReq
 	listRes *commentdto.AdminListResp
@@ -94,8 +79,6 @@ func TestCommentFindMapsStatusAndKeyword(t *testing.T) {
 	}
 }
 
-// 不传 status / entityType 时不能透传空串把筛选变成「只看某个空状态」——
-// AdminList 的语义是空串 = 不过滤，这里钉住工具确实原样传了空串（不是别的值）。
 func TestCommentFindKeepsEmptyFiltersUnset(t *testing.T) {
 	stub := &stubQuery{listRes: &commentdto.AdminListResp{}}
 	runCommentFind(t, stub, map[string]any{"projectId": "p-1"})
@@ -111,9 +94,9 @@ func TestCommentFindKeepsEmptyFiltersUnset(t *testing.T) {
 
 func TestCommentFindClampsPageSize(t *testing.T) {
 	cases := []struct{ in, want int }{
-		{0, commentFindDefaultPageSize},  // 不传（JSON 里没这个键）
-		{-3, commentFindDefaultPageSize}, // 负数不是「不要」
-		{200, commentFindMaxPageSize},    // 超上限要压下来，否则一次能拉全库
+		{0, commentFindDefaultPageSize},
+		{-3, commentFindDefaultPageSize},
+		{200, commentFindMaxPageSize},
 		{7, 7},
 	}
 	for _, c := range cases {
@@ -142,7 +125,7 @@ func TestCommentFindTextListsIDStatusAndBody(t *testing.T) {
 			t.Errorf("正文缺 %q：\n%s", want, text)
 		}
 	}
-	// 状态用 enums 的中文兜底（StatusLabel 为空 —— 工具调用没有请求语言）
+
 	if !strings.Contains(text, commentenums.LabelStatusPending) {
 		t.Errorf("状态应当回落成 %q：\n%s", commentenums.LabelStatusPending, text)
 	}
@@ -151,7 +134,6 @@ func TestCommentFindTextListsIDStatusAndBody(t *testing.T) {
 	}
 }
 
-// StatusLabel 有值时优先用它（服务端按请求语言取好的成品），不覆盖成中文兜底。
 func TestCommentFindPrefersServerStatusLabel(t *testing.T) {
 	stub := &stubQuery{listRes: &commentdto.AdminListResp{
 		Total: 1,
@@ -185,7 +167,6 @@ func TestInlineCommentBodyFlattensAndMarksRemainder(t *testing.T) {
 	}
 }
 
-// 空结果的两种说法不能混：总数 0 = 这个筛选下确实没有；总数 >0 而本页 0 条 = 页码超了。
 func TestCommentFindEmptyTextDistinguishesCases(t *testing.T) {
 	none := runCommentFind(t, &stubQuery{listRes: &commentdto.AdminListResp{Total: 0}},
 		map[string]any{"projectId": "p-1"})
@@ -208,9 +189,6 @@ func TestCommentFindPropagatesReaderError(t *testing.T) {
 	}
 }
 
-// 工具描述里必须说清「本工具只读、改状态用 comment_review」：
-// 模型据描述决定说什么，缺了它会有「我帮你把这批评论通过了」这种回答 ——
-// 而 comment_find 根本没有这个能力（能力在另一个工具上，且要用户先确认）。
 func TestCommentFindDescriptionStatesReadOnly(t *testing.T) {
 	tool := mustQueryTools(t, &stubQuery{})["comment_find"]
 	desc := tool.Description()

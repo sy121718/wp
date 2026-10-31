@@ -1,13 +1,7 @@
 package migrations
 
-// registerAdminI18nSeedsAndLatest 注册「后台 i18n 词条与后续迁移（176–197）」。
-//
-// 由 register.go 的 init() 按主题拆出：本文件只做注册，不含任何 SQL 文本，
-// 注册项引用的 SQL 一律经 mustSQL 从嵌入的 .sql 取。
 func registerAdminI18nSeedsAndLatest() {
-	// 176：商品列表组件固定文案的中英词条（审计 I18N-010）。
-	// 门槛按 productList 自己的 zh-CN 行数判定，而不是模糊匹配全部 site.component.*：
-	// 后者会被别的组件 seed 顺带满足，导致本迁移「看起来已应用、词条却没写进去」。
+
 	registerSeed(Seed{
 		Version:      "176-i18n-seed-product-list",
 		TableName:    "sys_i18n",
@@ -15,9 +9,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("176_i18n_seed_product_list.sql"),
 	})
 
-	// 177：其余组件固定文案的补全词条（审计 I18N-010）。
-	// 判定按**本批自己的 key 全集合**（而不是 site.component.% 总数）：
-	// 总数门槛会被别的批次顺带满足 —— 060 就是这么被跳过的（见那里的注释）。
 	registerSeed(Seed{
 		Version:   "177-i18n-seed-component-texts",
 		TableName: "sys_i18n",
@@ -38,16 +29,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("177_i18n_seed_component_texts.sql"),
 	})
 
-	// 178：文案词条管理的权限点与后台菜单（审计 I18N-003）。
-	// 一个写权限点覆盖保存与删除：两者是同一件事的两种动作，
-	// 拆开只会让「给了保存、忘了删除」有机会发生。
-	//
-	// 判定必须把权限点代码写进 SQL 字面量：CheckSQL 里的 ? 由迁移器传的是**表名**
-	// （sys_permission），写成 permission_code = ? 等于永远查不到行 —— 这条迁移会每次启动
-	// 都重跑。以前被 SQL 里 WHERE NOT EXISTS 的幂等性掩盖，直到 208 把 sys_menus.deleted_time
-	// 改名（本迁移 SQL 引用旧列名）才暴露成启动失败。
-	// ? 仍保留在「表存在」这一项上（护栏要求自定义判定接收表名参数），语义也更严：
-	// 表都没了就不该算完成，启动时应当停下来而不是静默跳过。
 	register(Migration{
 		Version:   "178-i18n-manage-permission",
 		TableName: "sys_permission",
@@ -56,9 +37,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("178_i18n_manage_permission.sql"),
 	})
 
-	// 179：购物车模块文案词条（审计 I18N-002）。
-	// 判据按**本批自己的 key** 计数（而不是按 site.component.% 这类总量）—— 用总量会被
-	// 后来批次的行满足，于是本批在干净库上被静默跳过（060 踩过这个坑）。
 	registerSeed(Seed{
 		Version:      "179-i18n-seed-cart",
 		TableName:    "sys_i18n",
@@ -66,8 +44,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("179_i18n_seed_cart.sql"),
 	})
 
-	// 180：order 模块文案词条（审计 I18N-002）。
-	// 判据按**本批自己的 key** 计数 —— 用总量会被后来批次的行满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:      "180-i18n-seed-order",
 		TableName:    "sys_i18n",
@@ -75,8 +51,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("180_i18n_seed_order.sql"),
 	})
 
-	// 181：user 模块文案词条（审计 I18N-002）。
-	// 判据按**本批自己的 key** 计数 —— 用总量会被后来批次的行满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:      "181-i18n-seed-user",
 		TableName:    "sys_i18n",
@@ -84,8 +58,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("181_i18n_seed_user.sql"),
 	})
 
-	// 182：mail 模块文案词条（审计 I18N-002）。
-	// 判据按**本批自己的 key** 计数 —— 用总量会被后来批次的行满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:      "182-i18n-seed-mail",
 		TableName:    "sys_i18n",
@@ -93,7 +65,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("182_i18n_seed_mail.sql"),
 	})
 
-	// 183：产物 SEO 体检权限点（审计 SEO-019）。
 	register(Migration{
 		Version:   "183-seo-audit-permission",
 		TableName: "sys_permission",
@@ -101,8 +72,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:       mustSQL("183_seo_audit_permission.sql"),
 	})
 
-	// 187：后台模板文案词条（审计 I18N-001 第一批：settings / plugins / media 三页）。
-	// 判据按**本批自己的 key** 计数 —— 用总量会被后来批次的行满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:   "187-i18n-seed-admin-pages",
 		TableName: "sys_i18n",
@@ -136,8 +105,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("187_i18n_seed_admin_pages.sql"),
 	})
 
-	// 188：后台「文章 / 内容模板」页面文案词条（审计 I18N-001 第二批：article* / content* 模板）。
-	// 判据按**本批自己的 key** 计数 —— 用总量会被后来批次的行满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:   "188-i18n-seed-admin-article",
 		TableName: "sys_i18n",
@@ -195,8 +162,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("188_i18n_seed_admin_article.sql"),
 	})
 
-	// 189：自定义 404 页的后台文案（审计 SEO-013 的配套词条）。
-	// 判据按**本批自己的 key** 枚举计数 —— 用总量会被其它批次满足而静默跳过。
 	registerSeed(Seed{
 		Version:      "189-i18n-seed-not-found",
 		TableName:    "sys_i18n",
@@ -204,9 +169,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("189_i18n_seed_not_found.sql"),
 	})
 
-	// 194：审计 P7 索引类四条（IDX-008 / IDX-017 / IDX-018 / IDX-020）的落地。
-	// 判据按**本批自己的索引名**枚举计数 —— 用总量会被其它迁移的索引满足而静默跳过。
-	// 两个索引分属 inventory_stocks 与 page_routes 两张表，故表名条件写 IN (?, page_routes)。
 	register(Migration{
 		Version:   "194-p7-index-audit",
 		TableName: "inventory_stocks",
@@ -216,17 +178,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("194_p7_index_audit.sql"),
 	})
 
-	// 190：营销订单类后台模板文案（审计 I18N-001 组C）
-	// 判据按本批自己的 key 枚举计数（**762** 个全列）—— 用总量会被其它批次满足而静默跳过。
-	//
-	// 2026-09：「admin.customers.empty」已由 418 删除（孤儿词条，模板无引用），故从列表移除并把
-	// 门槛 765→764 —— 否则本条件恒为假、每轮启动重跑约 1500 行 INSERT（幂等但无谓，见 AGENTS.md
-	// 「删能力要连 seed 与幂等条件一起收口」）。
-	//
-	// 2026-09（本批）：「admin.mail.campaign.page_prefix / .page_suffix」已由 419 删除
-	// （邮件活动页换成真分页条后失去引用），同批从列表移除这两个 key、门槛 764→762，并删掉
-	// 190_i18n_seed_marketing.sql 里对应的 4 行 —— 条件列表里的 key 因此全部仍由 seed SQL 写入
-	// （本机库实测：本列表在 zh-CN 侧命中 762 行，条件成立）。
 	registerSeed(Seed{
 		Version:   "190-i18n-seed-marketing",
 		TableName: "sys_i18n",
@@ -425,12 +376,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.returns.warehouse.default')",
 		SQL: mustSQL("190_i18n_seed_marketing.sql"),
 	})
-	// 191：商品库存类后台模板文案（审计 I18N-001 组D）
-	// 判据按本批自己的 key 枚举计数（552 个全列）—— 用总量会被其它批次满足而静默跳过。
-	// 门槛的三次下调都遵循「删能力连 seed 一起收口」（条件与 SQL 同批改）：
-	//   · 582 → 581：admin.inventory_sources.filter.title 随 436 退役（模板删掉了零样式的
-	//     .fold-title 标签，key 失去引用，见 436_retire_sources_filter_title_i18n.sql）；
-	//   · 581 → 552：29 个 admin.product_bundle.* 随捆绑配置页一起下线（636）。
+
 	registerSeed(Seed{
 		Version:   "191-i18n-seed-product-inventory",
 		TableName: "sys_i18n",
@@ -577,15 +523,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("191_i18n_seed_product_inventory.sql"),
 	})
 
-	// 195：sys_translation 工程作用域（审计 I18N-009）。
-	// 判据按**本批自己的列名 + 索引名**枚举计数 —— sys_translation 早已存在，
-	// 用默认的「表存在即跳过」必然误跳过；也不可用总量。
-	//
-	// 判据里这两个名字**不要按 DB-07 的口径「纠正」**：它们是 195 自己 CREATE 出来的
-	// 真实对象名（`uq_sys_translation_scope_key` 是唯一索引，实测存在于 pg_indexes），
-	// 只不过用了历史前缀 `uq_`（仓库 001 起的约定是 `uk_`）。改名要连已执行迁移的
-	// CREATE INDEX 一起改，而本判据一旦对不上（计数永远 < 3）就会**每次启动重跑**该迁移
-	// —— 这里宁保留不一致的命名，也不动已执行迁移与幂等判据。
 	register(Migration{
 		Version:   "195-sys-translation-project-scope",
 		TableName: "sys_translation",
@@ -599,9 +536,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("195_sys_translation_project_scope.sql"),
 	})
 
-	// 196：采购单状态由数据库兜底（审计 DB-008）——status 取决于明细行，生成列表达不了
-	// 这种跨行推导，改用「明细行 AFTER 重算 + 单头 BEFORE 守卫」两道触发器。
-	// 判据按**本批自己的四个对象名**枚举计数（2 个函数 + 2 个触发器）——用总量会被别的批次满足而静默跳过。
 	register(Migration{
 		Version:   "196-inventory-purchase-status-sync",
 		TableName: "inventory_purchase_orders",
@@ -620,8 +554,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("196_inventory_purchase_status_sync.sql"),
 	})
 
-	// 197：后台 HTMX 全局反馈 + 仪表盘数据口径标注的文案词条（审计 UI-011 / UI-012）。
-	// 判据按**本批自己的 8 个 key** 枚举计数（lang=zh-CN 下每 key 一行）。
 	registerSeed(Seed{
 		Version:      "197-i18n-seed-admin-htmx-dashboard",
 		TableName:    "sys_i18n",
@@ -629,11 +561,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("197_i18n_seed_admin_htmx_dashboard.sql"),
 	})
 
-	// 198：masterdata 模块文案 key 化（审计 CQ-010 收尾）——6 个 Err + 1 个 Msg 的值从中文文案
-	// 改成 i18n key（masterdata.err.* / masterdata.msg.*），文案落本表。改值的原因：ErrorAuto 的判据只认
-	// 「key 形态」与「enums 常量名形态」两种确定性形态，值本身是中文常量两种都不匹配，会被判成内部错误
-	// （500 + 通用文案）。判据按**本批自己的 7 个 key** 枚举计数（lang=zh-CN 下每 key 一行）——
-	// 用总量会被别的批次的行满足而静默跳过。
 	registerSeed(Seed{
 		Version:   "198-masterdata-error-keys",
 		TableName: "sys_i18n",
@@ -644,9 +571,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("198_masterdata_error_keys.sql"),
 	})
 
-	// 192：站点结构类后台模板文案（审计 I18N-001 组E：site_slots / theme / theme_settings /
-	// pages / page_translations / blocks / navigations / navigation_translations / menus）。
-	// 判据按本批自己的 key 枚举计数（298 个全列）—— 用总量会被其它批次满足而静默跳过。
 	registerSeed(Seed{
 		Version:   "192-i18n-seed-admin-site-structure",
 		TableName: "sys_i18n",
@@ -729,9 +653,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("192_i18n_seed_admin_site_structure.sql"),
 	})
 
-	// 193：后台系统管理类模板文案词条（审计 I18N-001 组F）。
-	// 判据按**本批自己的 key** 枚举计数（342 个全列）—— 用总量会被其它批次的行满足而静默跳过；
-	// 前缀 LIKE 也不够：shell.login.* 另有 13 条既有词条，用 LIKE 会虚高。
 	registerSeed(Seed{
 		Version:      "193-i18n-seed-admin-system",
 		TableName:    "sys_i18n",
@@ -739,10 +660,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("193_i18n_seed_admin_system.sql"),
 	})
 
-	// 216：webhook 模块文案词条（模块接线后补，见迁移文件头）。
-	// enums 的值是 i18n key，文案必须有落处 —— 否则响应层 translate 未命中会原样返回 key。
-	// 判据按本批自己的 12 个 key 枚举计数：前缀 LIKE "webhook.%" 会被将来其它批次的
-	// webhook.* 词条满足而静默跳过。
 	registerSeed(Seed{
 		Version:   "216-webhook-i18n",
 		TableName: "sys_i18n",
@@ -755,8 +672,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'webhook.err.urlHostMissing', 'webhook.err.urlUnresolvable', 'webhook.err.urlDenied')",
 		SQL: mustSQL("216_webhook_i18n.sql"),
 	})
-	// 217：SEO 控制台模板文案词条（436d20b 引入该页时漏 key 化，门禁因此从第一天就红着）。
-	// 判据按本批自己的 38 个 key 枚举计数：前缀 LIKE "admin.seo.%" 会被将来同前缀的词条满足。
+
 	registerSeed(Seed{
 		Version:   "217-admin-seo-i18n",
 		TableName: "sys_i18n",
@@ -765,11 +681,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("217_i18n_seed_admin_seo.sql"),
 	})
 
-	// 218：重定向管理权限点与超管策略（审计 SEO-025）。
-	// 判定把 4 个权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
-	// 且用 LIKE 'page:redirect_%' 会被将来同前缀的权限点顺带满足（本批就被静默跳过）。
-	// 三张表（sys_permission / sys_casbin_rule / sys_menus）写在同一个 seed 里：
-	// 权限点与超管策略分两批落会出现「接口上线但超管也点不动」的空窗。
 	registerSeed(Seed{
 		Version:   "218-page-redirect-permissions",
 		TableName: "sys_permission",
@@ -779,9 +690,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("218_page_redirect_permissions.sql"),
 	})
 
-	// 219：重定向管理页文案词条（60 个 key × 2 语言）。
-	// 判据按本批自己的 key 全集合枚举计数：前缀 LIKE 'admin.redirect.%' 会被将来
-	// 同前缀的词条满足，本批就被静默跳过了。
 	registerSeed(Seed{
 		Version:   "219-page-redirect-i18n",
 		TableName: "sys_i18n",
@@ -790,14 +698,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("219_i18n_seed_admin_redirects.sql"),
 	})
 
-	// 220 / 221：主题包导入导出权限点与业务词条 —— 已随 VIS-014 线下线（迁移 225 清理存量）。
-
-	// 222：访问统计页维度榜与保留期提示的后台模板文案词条（18 个 template key × 2 语言，
-	// SEO-019 / SEO-021 的读路径）。
-	//
-	// 判据按本批自己的 key **全集合枚举**计数，不能按 admin.analytics.% 前缀：
-	// 193 已经 seed 了 28 个同前缀词条，前缀计数在干净库上立刻满足，本批会被静默跳过
-	//（060 与 221 的注释都记过这个坑）。
 	registerSeed(Seed{
 		Version:   "222-i18n-seed-analytics-dimensions",
 		TableName: "sys_i18n",
@@ -815,10 +715,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("222_i18n_seed_analytics_dimensions.sql"),
 	})
 
-	// 234：内容模板删除权限点与超管策略（后台列表页批量删除）。
-	// 判定把权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
-	// 且用 LIKE 'contenttemplate:%' 会被将来同模块的权限点顺带满足（本批被静默跳过）。
-	// 权限点与超管策略同批落：只补权限点不补策略会留下「接口上线但超管也点不动」的空窗。
 	registerSeed(Seed{
 		Version:      "234-contenttemplate-delete-permission",
 		TableName:    "sys_permission",
@@ -826,10 +722,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("234_contenttemplate_delete_permission.sql"),
 	})
 
-	// 254：把 188 的 4 条「富文本说明」文案纠正成真实行为（h1~h5 原样保留、表格/折叠块/水平线在白名单内）。
-	// 188 用 INSERT ... ON CONFLICT DO NOTHING，改它的 SQL 对存量库无效；历史迁移 SQL 也不回改
-	//（AGENTS.md：seed 可重复执行要同步改，历史迁移保持原样），所以这里补一条 UPDATE 迁移，
-	// 让新库与存量库最终一致。判定看自己这批的关键字（写进 SQL 字面量，ConditionSQL 不接收参数）。
 	registerSeed(Seed{
 		Version:      "254-admin-richtext-hint-fix",
 		TableName:    "sys_i18n",
@@ -837,10 +729,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("254_admin_richtext_hint_i18n_fix.sql"),
 	})
 
-	// 268：admin 内部错误归口文案（审计 CQ-009/CQ-010 的 admin 收口）。
-	// enums 的值就是 i18n key（adminenums.ErrInternal）—— 不 seed，响应层 translate 未命中
-	// 会把 key 原样返回给前端。判据按本批自己的 key 枚举计数：用总量会被同期其它批次的行
-	// 满足而静默跳过（060 / 221 都记过这个坑）。
 	registerSeed(Seed{
 		Version:      "268-admin-err-internal",
 		TableName:    "sys_i18n",
@@ -848,10 +736,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL:          mustSQL("268_admin_err_internal_i18n.sql"),
 	})
 
-	// 271：admin 错误文案第二组 —— 列表排序参数与文案词条表单缺项（5 个 key × 中英 = 10 行）。
-	// 这两组此前都不在白名单里：排序错误是 service 里的中文原文（被归口成通用提示），
-	// 表单缺项则三项共用一句「必填字段不能为空」。判据按本批自己的 key **全集合枚举**计数：
-	// 用总量或前缀（admin.err.%）会被同期其它批次的行满足，本批就被静默跳过了（060 / 221 记过这个坑）。
 	registerSeed(Seed{
 		Version:   "271-admin-err-sort-and-i18n-form-i18n",
 		TableName: "sys_i18n",
@@ -862,10 +746,6 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("271_admin_err_sort_and_i18n_form_i18n.sql"),
 	})
 
-	// 278：页面列表页的「发布回执收敛状态」词条（admin.pages.receipts.*，5 个 key × 中英 = 10 行）。
-	// 状态条渲染在 /admin/pages：待收敛条数 / 最老一条已等待多久 / 最近一次收敛 / 建议操作。
-	// 判据按本批自己的 key **全集合枚举**计数：用总量或前缀（admin.pages.%）会被同期其它批次
-	// 的行满足，本批就被静默跳过了（060 / 221 记过这个坑）。
 	registerSeed(Seed{
 		Version:   "278-page-pending-receipts-i18n",
 		TableName: "sys_i18n",

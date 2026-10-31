@@ -1,7 +1,5 @@
 package feature
 
-// 权限抽屉GET保留真实Jet树；保存直连既有JSON API，核绑定、身份、状态和无泄漏。
-
 import (
 	"errors"
 	"net/http"
@@ -23,13 +21,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 两个注入用的假错误：断言的是「原文不外泄」，所以它们必须是不可能出现在受控文案里的字符串。
 var (
 	errFakeRoleNotFound = errors.New("role permissions tree: relation does not exist")
 	errFakeRoleSave     = errors.New("role menu save: duplicate key value violates unique constraint")
 )
 
-// newAdminRolePermissionsEngine 装配带真实 Jet 渲染的角色权限分配抽屉路由。
 func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engine {
 	t.Helper()
 	return newAdminRolePermissionsEngineWithUser(t, svc, 123)
@@ -42,7 +38,7 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
-		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
+		InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.GET("/admin/roles/permissions/drawer", adminui.BareSlot(adminhttp.RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
@@ -58,13 +54,12 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 	return engine
 }
 
-// permTreeFixture 目录 → 菜单 → 按钮，外加一个未勾选的兄弟菜单（用来证明 checked 不是无差别输出）。
 func permTreeFixture() *admindto.RolePermissionTreeResp {
 	return &admindto.RolePermissionTreeResp{
 		RoleID:   7,
 		RoleCode: "editor",
 		RoleName: "编辑",
-		// 已补齐祖先：目录 1、菜单 2、按钮 3 全在集合里。
+
 		MenuIDs: []uint64{1, 2, 3},
 		Tree: []admindto.MenuTreeNode{
 			{
@@ -90,10 +85,6 @@ func permTreeFixture() *admindto.RolePermissionTreeResp {
 	}
 }
 
-// permCheckbox 取出片段里某个菜单 id 的勾选框整段 HTML。
-//
-// 不对整段做 strings.Contains("checked")：一个 checked 就能满足整段断言，
-// 于是「未勾选的节点也被渲染成 checked」这种缺陷会漏过。
 func permCheckbox(t *testing.T, body, id string) string {
 	t.Helper()
 	re := regexp.MustCompile(`<input[^>]*value="` + regexp.QuoteMeta(id) + `"[^>]*>`)
@@ -104,8 +95,6 @@ func permCheckbox(t *testing.T, body, id string) string {
 	return got
 }
 
-// assertDrawerFragment 钉住 ui/drawer.js 的 fragmentRoot 校验里最容易违反的两条：
-// 唯一根（以 host 的 div 开头、以 </div> 结尾）与「片段里没有活动标记」。
 func assertDrawerFragment(t *testing.T, body string) {
 	t.Helper()
 	trimmed := strings.TrimSpace(body)
@@ -127,7 +116,6 @@ func fetchRolePermissionsDrawer(t *testing.T, engine *gin.Engine, path string) (
 	return recorder.Code, recorder.Body.String()
 }
 
-// postRolePermissions 使用基座字段名提交；旧HX头不得改变JSON契约。
 func postRolePermissions(t *testing.T, engine *gin.Engine, form url.Values, hx bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/role/menu/save", strings.NewReader(form.Encode()))
@@ -140,7 +128,6 @@ func postRolePermissions(t *testing.T, engine *gin.Engine, form url.Values, hx b
 	return recorder
 }
 
-// TestAdminRolePermissionsDrawerRendersCheckedNodes 服务端把「已补齐祖先」的勾选态渲染进片段。
 func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
 
@@ -162,33 +149,29 @@ func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 		t.Fatal("权限表单仍调用旧HTML写出口")
 	}
 
-	// 目录（1）也必须在勾选态里：目录没有权限码，反查永远查不出它，
-	// 这一条正是「目录也要勾选」在渲染上的落点。
 	for _, id := range []string{"1", "2", "3"} {
 		if !strings.Contains(permCheckbox(t, body, id), "checked") {
 			t.Fatalf("已授权节点 %s 应渲染为已勾选", id)
 		}
 	}
-	// 未授权的兄弟菜单不得被渲染成勾选（否则上面那三条断言可以被一句「全都 checked」满足）。
+
 	if strings.Contains(permCheckbox(t, body, "4"), "checked") {
 		t.Fatal("未授权节点 4 不应渲染为已勾选")
 	}
 
-	// 层级与父子关系是 JS 联动与折叠的全部依据，必须是行上的数据而不是嵌套结构。
 	if !strings.Contains(body, `data-perm-node data-id="3" data-parent="2"`) {
 		t.Fatal("按钮节点缺少 data-parent（JS 无法向上补齐祖先）")
 	}
-	// 权限码要显示出来，配置者才能把「勾了什么」和「开了哪个接口」对上。
+
 	if !strings.Contains(body, "content:delete") {
 		t.Fatal("片段未显示节点的权限码")
 	}
-	// 联动脚本住在基座（static/js/ui/perm-tree.js），片段只留锚点。
+
 	if !strings.Contains(body, "data-perm-tree") {
 		t.Fatal("权限树缺少 data-perm-tree 锚点（控件认领不到它）")
 	}
 }
 
-// TestAdminRolePermissionsDrawerNoStore 片段不能被缓存：勾选态是「打开那一刻的策略快照」。
 func TestAdminRolePermissionsDrawerNoStore(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
 	req := httptest.NewRequest(http.MethodGet, "/admin/roles/permissions/drawer?role_id=7", nil)
@@ -199,10 +182,6 @@ func TestAdminRolePermissionsDrawerNoStore(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsDrawerRejectsMissingRoleID 缺少 role_id 时给状态码，不给半个片段。
-//
-// 抽屉对非 200 的响应会显示「编辑表单加载失败，请重试」并聚焦重试按钮 ——
-// 服务端拼一个缺 form 的片段反而会被 fragmentRoot 判非法，用户看到的还是同一个失败界面。
 func TestAdminRolePermissionsDrawerRejectsMissingRoleID(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
 
@@ -215,7 +194,6 @@ func TestAdminRolePermissionsDrawerRejectsMissingRoleID(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsDrawerNotFound 角色不存在 / 树取数失败时 404，且响应里没有内部错误原文。
 func TestAdminRolePermissionsDrawerNotFound(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{err: errFakeRoleNotFound})
 
@@ -251,7 +229,6 @@ func assertRolePermissionsJSON(t *testing.T, rec *httptest.ResponseRecorder, sta
 	return payload.Message
 }
 
-// 绑定只交真实输入，集合去重和授权规则仍由RoleMenuSave服务负责。
 func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
@@ -303,7 +280,7 @@ func TestAdminRolePermissionsSaveFailureIsJSON(t *testing.T) {
 	if svc.lastMenuSave == nil || !slices.Equal(svc.lastMenuSave.MenuIDs, []uint64{1, 2, 3, 4}) {
 		t.Fatalf("失败请求仍须交完整勾选: %+v", svc.lastMenuSave)
 	}
-	// 失败不返回替换片段；浏览器保留原DOM和输入，由write-base显示JSON文案。
+
 }
 
 func TestAdminRolePermissionsSaveJSONMatchesForm(t *testing.T) {

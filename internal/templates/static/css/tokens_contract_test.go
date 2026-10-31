@@ -1,15 +1,5 @@
 package css
 
-// tokens_contract_test.go — 档位令牌层的存在性与覆盖面契约。
-//
-// 为什么这条值得测：theme.css 原本有颜色(46) + 阴影(3) + 字体(2)，**没有**间距、
-// 圆角、字号档位。结果是同一类值在各处手写（border-radius 6px 出现 60 次、
-// gap 8px 66 次），改一次视觉密度要动几十个文件，而没人能说出「一共用了几档」。
-//
-// 判据是「档位存在且彼此不重复」而不是「有多少处用了令牌」：后者是第三批的
-// 收敛目标（要视觉基线），而**先把档位定下来**是它的前置条件 —— 没有档位，
-// 收敛就是无参照地乱改。
-
 import (
 	"os"
 	"regexp"
@@ -26,7 +16,6 @@ func readTheme(t *testing.T) string {
 	return string(b)
 }
 
-// TestTokenFamiliesExist 四个档位族必须都在（间距/圆角/字号/动效）。
 func TestTokenFamiliesExist(t *testing.T) {
 	src := readTheme(t)
 	families := map[string]*regexp.Regexp{
@@ -43,11 +32,6 @@ func TestTokenFamiliesExist(t *testing.T) {
 	}
 }
 
-// TestSpaceScaleIsMonotonic 间距档位必须严格递增，且档位号与数值同向。
-//
-// 判据取「递增」而不是「是 4 的倍数」：现有 codebase 大量使用 6px / 10px
-// （不是 4 的倍数），把档位改成纯 8pt 会改变视觉。这里要的是**有序可用**，
-// 不是美学洁癖 —— 后者要视觉基线，属于第三批。
 func TestSpaceScaleIsMonotonic(t *testing.T) {
 	src := readTheme(t)
 	re := regexp.MustCompile(`--space-(\d+)\s*:\s*([0-9.]+)(px|rem)`)
@@ -75,7 +59,6 @@ func TestSpaceScaleIsMonotonic(t *testing.T) {
 	}
 }
 
-// TestTokenValuesAreNotDuplicated 同一族内不许两个档位是同一个值（那样档位没有意义）。
 func TestTokenValuesAreNotDuplicated(t *testing.T) {
 	src := readTheme(t)
 	for label, re := range map[string]*regexp.Regexp{
@@ -94,13 +77,9 @@ func TestTokenValuesAreNotDuplicated(t *testing.T) {
 	}
 }
 
-// TestTokensDeclaredForBothThemes 档位必须在两个主题下都可见。
-//
-// 颜色令牌是分主题的（亮/暗各一套），而间距/圆角/字号/时长**不分主题**：
-// 把它们写在 [data-theme="light"] 里，暗色主题的元素就取不到值。
 func TestTokensDeclaredForBothThemes(t *testing.T) {
 	src := readTheme(t)
-	// 档位块的选择器必须是「亮 + 暗」都覆盖的那一条。
+
 	anchor := regexp.MustCompile(`\[data-theme="light"\],\s*\[data-theme="dark"\]\s*\{[^}]*--space-1`)
 	if !anchor.MatchString(src) {
 		t.Error("档位令牌没有同时声明给亮色与暗色主题 —— 暗色主题下会取不到值（回退成无效声明）")

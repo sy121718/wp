@@ -12,13 +12,11 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// PublicProductOptions 与构建字段源共用规格口径，但仅投影公开的启用变体事实。
 func (s *Service) PublicProductOptions(ctx context.Context, req *productdto.PublicProductOptionsReq) (*productdto.PublicProductOptionsResp, error) {
 	if req == nil || uuid.Validate(req.ProjectID) != nil || uuid.Validate(req.ProductID) != nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	// 窄投影：这条路径只用 id / 工程 / 名 / 状态 / attribute_ids 五列，
-	// 不把描述、图集、定价、关联与元数据搬进访客请求。
+
 	row, err := s.m.GetPublicOptionFacts(ctx, req.ProductID, req.ProjectID)
 	if err != nil {
 		return nil, mapNotFound(err)
@@ -26,8 +24,7 @@ func (s *Service) PublicProductOptions(ctx context.Context, req *productdto.Publ
 	if row.ProjectID != req.ProjectID || row.Status != productenums.StatusPublished {
 		return nil, productenums.Err(productenums.ErrNotFound)
 	}
-	// 窄投影：这一屏只读 id / sku / 价格 / 划线价 / 规格组合 / 启用，
-	// 成本价与仓库引用不进访客请求（口径不变，只少搬列）。
+
 	all, err := s.m.ListVariantDisplayFacts(ctx, []string{row.ID})
 	if err != nil {
 		return nil, err
@@ -47,7 +44,7 @@ func (s *Service) PublicProductOptions(ctx context.Context, req *productdto.Publ
 		lang = i18n.GetDefaultLang()
 	}
 	loc := s.precomputeRelatedTexts(ctx, lang, nil, nil, nil, attrs)
-	// 规格维度与实体构建源共享唯一实现，避免两处属性启用和变体引用规则漂移。
+
 	var groups []optionGroupJSON
 	if err = json.Unmarshal([]byte(optionsJSON(row, variants, attrs, loc)), &groups); err != nil {
 		return nil, err

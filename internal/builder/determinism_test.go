@@ -1,9 +1,3 @@
-// determinism_test.go — 确定性构建不变量（docs/01-overview §3.5）。
-//
-// 同一 Page Document 重复编译必须产出逐字节相同的 Artifact。
-// 该测试抓 map 迭代随机性 / 非确定性排序 / 残留状态导致的输出抖动——
-// Go 的 map 遍历顺序随机，任何依赖 map 顺序的拼接都会让该测试红灯。
-
 package builder
 
 import (
@@ -12,7 +6,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// TestCompileDeterminism 同一文档重复编译 20 次，HTML/CSS 逐字节一致。
 func TestCompileDeterminism(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -43,8 +36,6 @@ func TestCompileDeterminism(t *testing.T) {
 	}
 }
 
-// TestCompileDeterminismAcrossSets 不同组件模板 Set 实例编译产物一致
-// （防 Set 内共享可变状态污染跨编译结果）。
 func TestCompileDeterminismAcrossSets(t *testing.T) {
 	setA, err := templates.NewComponentSet("../templates/components")
 	if err != nil {

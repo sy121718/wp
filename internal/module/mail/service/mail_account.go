@@ -1,11 +1,5 @@
 package mailservice
 
-// mail_account.go — 发信账号的 CRUD 与测试发送（issue #37）。
-//
-// 两处安全要点：
-//   1. SMTP 密码**只以密文形式落库**（pkg/crypto 的 AES-GCM），解密只发生在发信那一刻；
-//   2. 任何日志与响应都不得带出明文密码（本文件里密码变量只在构造 Sender 的局部作用域）。
-
 import (
 	"context"
 	"errors"
@@ -23,13 +17,8 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// SetCipherSecret 注入敏感配置加密密钥（装配期从 config 读入后调用）。
-//
-// 为空表示未配置：此时账号保存会明确报错，而不是用弱密钥悄悄加密 ——
-// 用固定弱密钥加密等于把 SMTP 密码明文写在库里。
 func (s *Service) SetCipherSecret(secret string) { s.cipherSecret = secret }
 
-// CreateAccount 新建发信账号（密码加密存储）。
 func (s *Service) CreateAccount(ctx context.Context, req *maildto.SaveAccountReq) (res *maildto.AccountItem, err error) {
 	if req == nil {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
@@ -68,7 +57,7 @@ func (s *Service) CreateAccount(ctx context.Context, req *maildto.SaveAccountReq
 	if v := strings.TrimSpace(req.Username); v != "" {
 		e.Username = &v
 	}
-	// 第一个账号自动成为该用途的默认账号（否则事务邮件没有默认通道可用）。
+
 	if _, derr := s.m.DefaultAccount(ctx, purpose); errors.Is(derr, gorm.ErrRecordNotFound) {
 		e.IsDefault = true
 	}
@@ -78,7 +67,6 @@ func (s *Service) CreateAccount(ctx context.Context, req *maildto.SaveAccountReq
 	return accountItemOf(e), nil
 }
 
-// UpdateAccount 更新账号；**密码留空表示不改**（避免「编辑页面回显不了密码」时的误清空）。
 func (s *Service) UpdateAccount(ctx context.Context, req *maildto.SaveAccountReq) (res *maildto.AccountItem, err error) {
 	if req == nil || req.ID == 0 {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
@@ -121,7 +109,6 @@ func (s *Service) UpdateAccount(ctx context.Context, req *maildto.SaveAccountReq
 	return accountItemOf(e), nil
 }
 
-// ListAccounts 列出账号（响应里**不含任何密码字段**）。
 func (s *Service) ListAccounts(ctx context.Context, purpose string) (res []*maildto.AccountItem, err error) {
 	list, err := s.m.ListAccounts(ctx, purpose, false)
 	if err != nil {
@@ -134,7 +121,6 @@ func (s *Service) ListAccounts(ctx context.Context, purpose string) (res []*mail
 	return res, nil
 }
 
-// ListAccountsPage 保留原全量查询供发信与选择器使用，仅后台列表使用数据库分页。
 func (s *Service) ListAccountsPage(ctx context.Context, purpose string, page, limit int) (res []*maildto.AccountItem, total int64, current int, err error) {
 	list, total, current, err := s.m.ListAccountsPage(ctx, purpose, false, page, limit)
 	if err != nil {
@@ -147,12 +133,10 @@ func (s *Service) ListAccountsPage(ctx context.Context, purpose string, page, li
 	return res, total, current, nil
 }
 
-// DeleteAccount 删除账号。
 func (s *Service) DeleteAccount(ctx context.Context, id uint64) (err error) {
 	return s.m.DeleteAccount(ctx, id)
 }
 
-// SetDefaultAccount 切换某用途的默认账号（同用途唯一，先清后设在同一事务内）。
 func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) {
 	e, err := s.m.GetAccount(ctx, id)
 	if err != nil {
@@ -166,10 +150,6 @@ func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) 
 	})
 }
 
-// TestSend 用指定账号发一封测试邮件，并把结论留在账号行上（后台「测试发送」按钮）。
-//
-// 这是唯一会真正建立 SMTP 连接的地方，也是运营验证配置对不对的入口：
-// 失败原因按错误分类记进 last_check_error，界面直接能看出「认证失败」还是「连不上」。
 func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *maildto.TestSendResp, err error) {
 	if req == nil || req.AccountID == 0 || strings.TrimSpace(req.ToEmail) == "" {
 		return nil, mailenums.Err(mailenums.ErrInvalidParam)
@@ -180,9 +160,7 @@ func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *
 	}
 	to := strings.TrimSpace(req.ToEmail)
 	now := time.Now()
-	// 三条内容都按**请求语言**取词：此前 Subject / Text 传的是裸 key（邮件主题直接显示
-	// `mail.test.mailSubject`），HTML 是硬编码中文 —— 两种都到不了收件人眼里。
-	// 兜底一律给代码里的中文常量（词条缺失时宁可给中文，也不能给裸 key）。
+
 	_, sendErr := sender.Send(ctx, &mailer.Message{
 		To:      []mailer.Address{{Email: to}},
 		Subject: i18n.Translate(mailenums.TestMailSubject, mailenums.TestMailSubjectFallback, req.Lang),
@@ -211,7 +189,6 @@ func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *
 	return res, nil
 }
 
-// senderFor 由账号行构造发送器（解密只发生在这里）。
 func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender mailer.Sender, account *mailmodel.MailAccountEntity, err error) {
 	account, err = s.m.GetAccount(ctx, accountID)
 	if err != nil {
@@ -228,7 +205,7 @@ func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender maile
 	if account.PasswordCipher != nil && *account.PasswordCipher != "" {
 		plain, derr := crypto.Decrypt(*account.PasswordCipher, s.cipherSecret)
 		if derr != nil {
-			// 密钥缺失或密文损坏：给出可操作的提示，不要把底层错误原样抛给运营。
+
 			return nil, nil, mailenums.Err(mailenums.ErrCipherUnavailable)
 		}
 		password = plain
@@ -257,7 +234,6 @@ func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender maile
 	return sender, account, nil
 }
 
-// encryptPassword 加密 SMTP 密码（密钥未配置时明确报错）。
 func (s *Service) encryptPassword(plain string) (string, error) {
 	if strings.TrimSpace(s.cipherSecret) == "" {
 		return "", mailenums.Err(mailenums.ErrCipherSecretMissing)
@@ -265,7 +241,6 @@ func (s *Service) encryptPassword(plain string) (string, error) {
 	return crypto.Encrypt(plain, s.cipherSecret)
 }
 
-// describeSendError 把发送错误翻成「分类 + 可读原因」（错误分类决定要不要重试）。
 func describeSendError(err error) (kind string, msg string) {
 	e := mailer.AsError("smtp", err)
 	if e == nil {
@@ -289,7 +264,7 @@ func accountItemOf(e *mailmodel.MailAccountEntity) *maildto.AccountItem {
 		Encryption:  e.Encryption,
 		RatePerHour: e.RatePerHour,
 		Status:      e.Status,
-		// 注意：**没有密码字段**。密码只在落库时加密、发信时解密，从不回显。
+
 		HasPassword: e.PasswordCipher != nil && *e.PasswordCipher != "",
 		Incomplete:  e.Host == nil || e.Port == nil,
 	}

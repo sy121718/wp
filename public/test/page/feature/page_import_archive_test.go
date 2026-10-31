@@ -37,7 +37,7 @@ func TestImportedArchiveTargetsExistingPublishedShop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 执行真实导入函数，只把HTTP只读详情替换成同service返回的对象；禁止借此写或另找页面。
+
 	generate := func(detail *pagedto.PageResp) ([]byte, error) {
 		t.Helper()
 		raw, err := json.Marshal(detail)

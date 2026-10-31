@@ -6,21 +6,12 @@ import (
 	"testing"
 )
 
-// seo_head_sitelevel_test.go — 站点级结构化数据（审计 SEO-007）。
-//
-// 断言分四类：
-//  1. 首页输出 Organization 与带 SearchAction 的 WebSite，且与页面级主实体在同一份 JSON-LD 里；
-//  2. 非首页不输出站点级节点（品牌与站内搜索入口是站点级事实，不该每页重复）；
-//  3. 首页显式 schemaType=website 时不出现两个 WebSite 节点（合并而不是并列）；
-//  4. 站点根不可确定时不输出（宁缺毋错）。
-
 const (
 	jsonLDOpen  = `<script type="application/ld+json">`
 	jsonLDClose = "/script"
 	siteEnvKey  = "WP_SITE_BASE_URL"
 )
 
-// headJSONLD 解析 SEO 头里的第一份 JSON-LD。
 func headJSONLD(t *testing.T, head string) map[string]any {
 	t.Helper()
 	start := strings.Index(head, jsonLDOpen)
@@ -39,7 +30,6 @@ func headJSONLD(t *testing.T, head string) map[string]any {
 	return doc
 }
 
-// headJSONLDNodes 展平 JSON-LD 节点（@graph 形态与单实体形态统一处理）。
 func headJSONLDNodes(t *testing.T, head string) []map[string]any {
 	t.Helper()
 	doc := headJSONLD(t, head)
@@ -58,7 +48,6 @@ func headJSONLDNodes(t *testing.T, head string) []map[string]any {
 	return nodes
 }
 
-// findJSONLDNode 按 @type 找节点，找不到返回 nil。
 func findJSONLDNode(nodes []map[string]any, typeName string) map[string]any {
 	for _, n := range nodes {
 		if t, _ := n["@type"].(string); t == typeName {
@@ -68,7 +57,6 @@ func findJSONLDNode(nodes []map[string]any, typeName string) map[string]any {
 	return nil
 }
 
-// countJSONLDNodes 某类型节点出现次数（查重断言用）。
 func countJSONLDNodes(nodes []map[string]any, typeName string) int {
 	n := 0
 	for _, node := range nodes {
@@ -79,7 +67,6 @@ func countJSONLDNodes(nodes []map[string]any, typeName string) int {
 	return n
 }
 
-// searchActionOf 取 WebSite 节点上的 SearchAction。
 func searchActionOf(t *testing.T, site map[string]any) map[string]any {
 	t.Helper()
 	action, ok := site["potentialAction"].(map[string]any)
@@ -92,8 +79,6 @@ func searchActionOf(t *testing.T, site map[string]any) map[string]any {
 	return action
 }
 
-// TestSiteLevelJSONLDOnHomePage 首页输出 Organization 与 WebSite（含 SearchAction），
-// 且与页面级主实体同居一份 JSON-LD（不是第二个 script 标签）。
 func TestSiteLevelJSONLDOnHomePage(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test/site")
 
@@ -114,7 +99,7 @@ func TestSiteLevelJSONLDOnHomePage(t *testing.T) {
 	if org["name"] != "示例站点" {
 		t.Errorf("Organization.name = %v，期望 示例站点", org["name"])
 	}
-	// 环境变量带路径前缀时站点根要保留前缀（开发环境就是 http://host/site）。
+
 	if org["url"] != "https://shop.test/site/" {
 		t.Errorf("Organization.url = %v，期望 https://shop.test/site/", org["url"])
 	}
@@ -137,7 +122,7 @@ func TestSiteLevelJSONLDOnHomePage(t *testing.T) {
 	if target["@type"] != "EntryPoint" {
 		t.Errorf("target.@type = %v，期望 EntryPoint", target["@type"])
 	}
-	// 关键词参数名必须与 core.searchResults 组件表单的 name="q" 一致。
+
 	if target["urlTemplate"] != "https://shop.test/site/?q={search_term_string}" {
 		t.Errorf("urlTemplate = %v", target["urlTemplate"])
 	}
@@ -149,7 +134,6 @@ func TestSiteLevelJSONLDOnHomePage(t *testing.T) {
 	}
 }
 
-// TestSiteLevelJSONLDNotOnInnerPages 非首页不输出站点级节点，且产物保持单实体形态。
 func TestSiteLevelJSONLDNotOnInnerPages(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test")
 
@@ -165,8 +149,6 @@ func TestSiteLevelJSONLDNotOnInnerPages(t *testing.T) {
 	}
 }
 
-// TestSiteLevelJSONLDWebsiteSchemaKeepsSingleWebsite 首页显式 schemaType=website 时
-// 仍只有一个 WebSite 节点，SearchAction 合并进它（两个同类型节点是互相竞争的断言）。
 func TestSiteLevelJSONLDWebsiteSchemaKeepsSingleWebsite(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test")
 
@@ -185,8 +167,6 @@ func TestSiteLevelJSONLDWebsiteSchemaKeepsSingleWebsite(t *testing.T) {
 	}
 }
 
-// TestSiteLevelJSONLDSkippedWithoutBaseURL 站点根不可确定（只有站内相对 canonical）时
-// 一个站点级节点都不输出 —— 宁可不输出，也不宣称一个错的站点地址。
 func TestSiteLevelJSONLDSkippedWithoutBaseURL(t *testing.T) {
 	t.Setenv(siteEnvKey, "")
 
@@ -203,8 +183,6 @@ func TestSiteLevelJSONLDSkippedWithoutBaseURL(t *testing.T) {
 	}
 }
 
-// TestSiteLevelJSONLDFallsBackToAbsoluteCanonical 未配环境变量时，
-// 从绝对 canonical 取 origin 作为站点根。
 func TestSiteLevelJSONLDFallsBackToAbsoluteCanonical(t *testing.T) {
 	t.Setenv(siteEnvKey, "")
 
@@ -218,8 +196,6 @@ func TestSiteLevelJSONLDFallsBackToAbsoluteCanonical(t *testing.T) {
 	}
 }
 
-// TestSiteLevelJSONLDWithoutTitleSkipsOrganization 站点名缺失（无标题）时不输出站点级节点：
-// Organization 缺 name 属无效结构化数据。
 func TestSiteLevelJSONLDWithoutTitleSkipsOrganization(t *testing.T) {
 	t.Setenv(siteEnvKey, "https://shop.test")
 

@@ -2,7 +2,6 @@ package userforms
 
 import "go_wp/internal/builder/core"
 
-// View 只包含构建期表单配置和前端文案，不包含访客凭据。
 type ModeTitle struct {
 	Mode  string
 	Title string

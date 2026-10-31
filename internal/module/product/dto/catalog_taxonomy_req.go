@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// CatalogTaxonomyReq 是分类、品牌、标签、属性的目录查询条件，不包含页面或表单状态。
 type CatalogTaxonomyReq struct {
 	ProjectID string `form:"project"`
 	Keyword   string `form:"keyword"`

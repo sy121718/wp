@@ -1,12 +1,5 @@
 package feature
 
-// theme_activate_guard_test.go — model 层「激活目标不存在必须回滚」的回归测试。
-//
-// service 层的 GetTheme 会先挡掉大部分「目标不存在」，真正危险的是竞态：
-// GetTheme 通过之后目标被并发删除 —— 事务第一步已把同工程其余主题全部取消激活，
-// 第二步 UPDATE 匹配 0 行若被忽略，事务照样提交，整个工程落入 is_active 全 false，
-// 而 API 回报「激活成功」。这里绕过 service 直接打 model，覆盖那条守卫分支。
-
 import (
 	"context"
 	"errors"
@@ -20,8 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// newProjectThemeModel 建隔离 PG schema 并跑生产迁移建表（projects/themes 是真实 DDL），返回裸 model。
-// 手抄 DDL 已删除：手抄版把主键写成 TEXT、settings 写成 JSON，与生产的 uuid/jsonb 静默分叉。
 func newProjectThemeModel(t *testing.T) (*gorm.DB, *projectmodel.Model) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -42,7 +33,6 @@ func TestActivateThemeModelRollsBackOnMissingTarget(t *testing.T) {
 		t.Fatalf("插入主题失败: %v", err)
 	}
 
-	// 目标不存在（等价于 GetTheme 之后被并发删除）→ 第二步匹配 0 行。
 	err := m.ActivateTheme(ctx, projectID, missed, time.Now().UTC())
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("激活目标不存在应返回 ErrRecordNotFound 以触发回滚，got %v", err)

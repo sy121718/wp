@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BootstrapOptions 测试初始化选项。
 type BootstrapOptions struct {
 	ConfigPath      string
 	GinMode         string
@@ -22,14 +21,12 @@ type BootstrapOptions struct {
 	RouteRegistrar  func(engine *gin.Engine)
 }
 
-// SetupTestBootstrap 初始化测试用 gin 引擎并返回清理函数。
 func SetupTestBootstrap(options BootstrapOptions) (*gin.Engine, func() error, error) {
 	config.ResetForTest()
 
 	configPath := strings.TrimSpace(options.ConfigPath)
 	if configPath == "" {
-		// 默认配置必须来自版本库，避免测试依赖本机配置或误连开发业务库。
-		// 初始化外部组件的测试仍须显式传隔离配置。
+
 		if options.InitComponents {
 			return nil, nil, fmt.Errorf("初始化外部组件的测试必须显式提供隔离配置")
 		}
@@ -37,7 +34,7 @@ func SetupTestBootstrap(options BootstrapOptions) (*gin.Engine, func() error, er
 		if err != nil {
 			return nil, nil, err
 		}
-		// Viper 根据扩展名识别格式；.example 不能直接作为 YAML 配置加载。
+
 		tmp, err := os.CreateTemp("", "gowp-test-config-*.yaml")
 		if err != nil {
 			return nil, nil, err

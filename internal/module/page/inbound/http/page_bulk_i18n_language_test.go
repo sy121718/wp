@@ -1,18 +1,5 @@
 package pagehttp
 
-// page_bulk_i18n_language_test.go — 批量结论文案的**当前语言一致性**回归。
-//
-// 为什么必须有这一条：结论文案由写侧直接渲染进整页提示（shell.RenderJump），
-// 取词发生在渲染期 —— 只要有人把结论写回中文常量（不再带 key），中文环境下一切正常，
-// 英文页面上却整句变中文，既没有报错也没有日志。
-//
-// task-152 起结论是**事实**（pageMsg = key + 兜底 + `%s` 参数），所以判据有两条：
-//   · 事实必须带 key（下面每条 case 都先断言 Key）—— 没有 key 就永远取不到译文；
-//   · pageMsgText（Go 侧取词，片段槽位/JSON 出口用）与模板里注入的 tf（提示页用）
-//     走的是同一个 adminui.TranslateArgs，所以这里断言前者即可代表后者。
-//
-// 用 pkg/i18n.InjectForTest 直接塞内存词条，不建库、不起装配。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -24,8 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// pageBulkInjectedEntries 注入的词条（中英都注：只注英文会被 cache 的
-// 「当前语言没有就遍历所有可用语言」兜底顶掉，中文断言就失去意义）。
 var pageBulkInjectedEntries = map[string]map[string]string{
 	pageenums.BulkPageNoneSelected:     {"zh-CN": "没有勾选任何页面，列表未改动。", "en-US": "EN-NONE"},
 	pageenums.BulkPageAllDeleted:       {"zh-CN": "已删除 %s 个页面。", "en-US": "EN-ALL %s"},
@@ -38,7 +23,6 @@ var pageBulkInjectedEntries = map[string]map[string]string{
 	pageenums.BulkRedirectPartial:      {"zh-CN": "已删除 %s 条，%s 条未能删除（可能已不存在或访问面不可用）。", "en-US": "EN-R-PART %s %s"},
 }
 
-// pageBulkLangCtx 构造一个绑定了 Accept-Language 的上下文。
 func pageBulkLangCtx(t *testing.T, lang string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -50,7 +34,6 @@ func pageBulkLangCtx(t *testing.T, lang string) *gin.Context {
 	return c
 }
 
-// TestPageBulkNoticeFollowsRequestLanguage 页面列表与重定向两个批量结论都随当前语言。
 func TestPageBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(pageBulkInjectedEntries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
@@ -74,12 +57,10 @@ func TestPageBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		}
 	}
 
-	// 缺 id 的参数级提示（单条删除路径）走整页提示，同样随语言。
 	if msg := pageMsgText(en, pagesLocalNoticeMissingID); msg != "EN-MISSING-ID" {
 		t.Errorf("缺 id 提示应按当前语言取词，实际 %q", msg)
 	}
 
-	// 重定向批量删除（计数回带，文案由服务端重拼）。
 	redirectCases := []struct {
 		name    string
 		deleted int
@@ -97,7 +78,6 @@ func TestPageBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		}
 	}
 
-	// 中文请求走中文词条。
 	zh := pageBulkLangCtx(t, "zh-CN")
 	if msg := pageMsgText(zh, outcomeMsg(pageenums.PagesBulkDeleteOutcome(3, 0))); msg != "已删除 3 个页面。" {
 		t.Errorf("中文请求应取中文词条，实际 %q", msg)

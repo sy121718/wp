@@ -1,22 +1,5 @@
 package feature
 
-// order_json_write_chain_mutation_test.go — 链式证据的**反证**：把模板里那几处关键声明逐个
-// 改坏，链必须当场断（判据不是空转）。
-//
-// 为什么单独立一条而不是写在主用例里：主用例的判据是「属性齐全 ⇒ 请求体类型正确 ⇒ 200」，
-// 它天然无法证明「少一个属性会被抓到」—— 这正是 S1 踩过的坑（静态检查全绿、请求却是字符串
-// status）。所以这里在**内存里**把渲染出来的 HTML 改坏（不动共享树上的模板文件），再把同一套
-// 驱动跑一遍，断言服务端的回执确实变成了对应的失败形态。三条反证各自钉一个属性：
-//
-//	M1 drop-bulk-extra    批量流转按钮少了 data-write-extra → toStatus 不在请求体里 → **400**（形状档）。
-//
-// **2026-11 批次 2 删掉了另外两条反证**（M2 number-toStatus / M3 drop-detail-number）：
-// 它们注入的是 `data-write-number`，而该属性已随写基座统一被删除 —— 新基座不做类型转换
-//（实测 formdata 的 "3" 服务端直接绑进 int），所以「声明成数字字段」这个伪契约不复存在，
-// 反证也就无从谈起。前端不再声明类型 ⇒ 这一类缺陷在结构上不可能发生。
-//
-// 判据靠**服务端状态码 + 请求体**，不看前端的文案（文案会随语言与实现变）。
-
 import (
 	"bytes"
 	"fmt"
@@ -42,7 +25,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// orderMutationCapture 与主用例同形的最小记录器（独立一份，避免两条用例共享可变状态）。
 type orderMutationCapture struct {
 	mu     sync.Mutex
 	body   string
@@ -66,7 +48,6 @@ func (cap *orderMutationCapture) last() (string, int, bool) {
 	return cap.body, cap.status, cap.seen
 }
 
-// TestOrderJSONWriteChainCatchesMissingTemplateAttributes 三条模板反证：各自必须被链抓住。
 func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -95,12 +76,9 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 		mode     string
 		fields   orderChainFields
 		orderIDs []uint64
-		// target：这条反证里驱动发出去的目标状态（bulk 用，M2 刻意用非法数字目标）。
+
 		target string
-		// owns：这条反证要证明的正是**主用例的成功判据会变红**。
-		// 判据有两半：服务端 200 **且** 库里状态真的变成了目标值 ——
-		// 只判 200 会漏掉最阴的一种：字段没发出去时 handler 不报错，而是「0 个成功、N 个被跳过」，
-		// 服务端 200 而状态原地不动（用户看到的就是「一条都没做」，然后反复重试）。
+
 		owns func(t *testing.T, where, body string, status int, statusNow, target string)
 	}{
 		{
@@ -114,12 +92,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 				if strings.Contains(body, `"toStatus"`) {
 					t.Fatalf("%s：少了 data-write-extra 时请求体里仍有 toStatus（基座从别处捡到了？）：%s", where, body)
 				}
-				// 缺 toStatus 属**形状档** → 400 且零 service 调用（lead 裁定 2，见
-				// order_bulk_write.go:orderStatusBulk 的口径说明）。
-				//
-				// 这条变异原先是「200 + 全 skipped」的静默档：服务端装成功、库里一动不动，
-				// 只能靠「主用例顺带断言了 DB」才抓得到 —— 客户端漏字段被伪装成成功。
-				// 收敛为显式 400 后，同一个变异红得更硬（不再依赖 DB 那一半判据）。
+
 				if status != http.StatusBadRequest {
 					t.Fatalf("%s：缺 toStatus 应被形状档拒成 400，实际 %d（body=%s）", where, status, body)
 				}
@@ -180,8 +153,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 				form := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="bulk"`)
 				formAttrs = couponAttrsOf(form[:strings.Index(form, ">")+1])
 				submitterAttrs = orderChainButtonAttrs(t, html, tc.api, tc.mode)
-				// M2 用「数字目标」把伪契约暴露出来：把 toStatus 写成 paid 的话基座照发字符串、
-				// 服务端拒得一样（400），但那样就分不清「被拒是因为形状」还是「因为状态非法」。
+
 				target := orderChainSelectOptions(t, form, "toStatus")[0]
 				if tc.name == "M2-number-toStatus" {
 					target = "1"
@@ -234,7 +206,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 			}
 			body, status, seen := cap.last()
 			if !seen {
-				// 属性被改坏后基座一个请求都没发（例如按钮端的端点声明被连带改掉）——同样算抓住。
+
 				return
 			}
 			tc.owns(t, tc.name, body, status, f.orderStatusOf(t, orderID), tc.target)

@@ -1,14 +1,5 @@
 package feature
 
-// order_return_test.go — 退货入库的用例链路测试（BIZ-1）。
-//
-// 覆盖的是**不变量**而不是「方法能跑通」：
-//   · 归属：访客只能退自己的单（别人的单与不存在的单返回同一句话）；
-//   · 额度：累计可退数量不能被超（部分退货是一等公民）；
-//   · 顺序：**先入库、后退款** —— 入库失败时不进退款；
-//   · 幂等：重复确认收货不会把同一批货加两遍库存；
-//   · 全额 vs 部分：全额才把订单转成已退款，部分退货不动订单状态。
-
 import (
 	"context"
 	"strings"
@@ -19,9 +10,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// paidOrder 建单 → 付款 → 返回订单 id / 访客账号 id / 第一个订单项 id 与数量。
-//
-// 退货只对**已付款**的订单开放（没付钱的单没有可退的钱），所以这里必须真的走一次支付落账。
 func (f *orderFixture) paidOrder(t *testing.T, email string, variantID string, qty int) (orderID, userID, itemID uint64) {
 	t.Helper()
 	ctx := context.Background()
@@ -46,7 +34,6 @@ func (f *orderFixture) paidOrder(t *testing.T, email string, variantID string, q
 	return created.ID, *detail.Head.UserID, detail.Items[0].ID
 }
 
-// returnReq 造一个退货申请请求。
 func (f *orderFixture) returnReq(orderID uint64, items []orderdto.ReturnItemReq) *orderdto.ReturnRequestReq {
 	return &orderdto.ReturnRequestReq{
 		ProjectID: f.projectID,
@@ -56,7 +43,6 @@ func (f *orderFixture) returnReq(orderID uint64, items []orderdto.ReturnItemReq)
 	}
 }
 
-// TestReturnRequestScopedToOwnOrder 访客只能退自己的单：别人的单与不存在的单同一句话。
 func TestReturnRequestScopedToOwnOrder(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -66,20 +52,18 @@ func TestReturnRequestScopedToOwnOrder(t *testing.T) {
 	orderID, _, itemID := f.paidOrder(t, "return-owner@example.com", vid, 1)
 	ctx := context.Background()
 
-	// 别人（另一个 userID）来退：必须失败，且原因与「不存在」完全一致。
 	req := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 1}})
 	req.UserID = 999999
 	if _, err := f.orders.RequestReturn(ctx, req); err == nil || !strings.Contains(err.Error(), orderenums.ErrOrderNotFound) {
 		t.Fatalf("退别人的单应表现为「订单不存在」，实际: %v", err)
 	}
-	// 没有身份（UserID=0）一律拒绝 —— 「不传即放行」是这里最危险的默认值。
+
 	req.UserID = 0
 	if _, err := f.orders.RequestReturn(ctx, req); err == nil {
 		t.Fatal("缺少 userID 的退货申请必须被拒绝")
 	}
 }
 
-// TestReturnRequestRespectsReturnableQuantity 累计可退数量不能被超（含部分退货）。
 func TestReturnRequestRespectsReturnableQuantity(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -94,19 +78,19 @@ func TestReturnRequestRespectsReturnableQuantity(t *testing.T) {
 	if _, err := f.orders.RequestReturn(ctx, first); err != nil {
 		t.Fatalf("首次申请 2 件应成功: %v", err)
 	}
-	// 只剩 1 件可退：再申请 2 件必须被拒。
+
 	second := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 2}})
 	second.UserID = userID
 	if _, err := f.orders.RequestReturn(ctx, second); err == nil || !strings.Contains(err.Error(), orderenums.ErrReturnQuantityExceeded) {
 		t.Fatalf("超出可退数量应被拒绝，实际: %v", err)
 	}
-	// 剩下这 1 件可以退。
+
 	third := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 1}})
 	third.UserID = userID
 	if _, err := f.orders.RequestReturn(ctx, third); err != nil {
 		t.Fatalf("剩余 1 件应可退: %v", err)
 	}
-	// 第四张单一律拒绝（额度已用尽）。
+
 	fourth := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 1}})
 	fourth.UserID = userID
 	if _, err := f.orders.RequestReturn(ctx, fourth); err == nil {
@@ -114,7 +98,6 @@ func TestReturnRequestRespectsReturnableQuantity(t *testing.T) {
 	}
 }
 
-// TestReturnRequestIsIdempotentByRequestID 同一幂等键只落一张申请单。
 func TestReturnRequestIsIdempotentByRequestID(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -147,10 +130,6 @@ func TestReturnRequestIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestReturnApproveAndReceiveReturnsStockAndRefund 一步到底：入库 + 退款 + 库存回补。
-//
-// 这条是「货真的回来了才退钱」的可执行说明：只有买入的 2 件全部退回之后，
-// 库存才回到原值、订单才变成已退款。
 func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -159,9 +138,7 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	_, vid := f.addProduct(t, "退货入库商品", 88, 10)
 	orderID, userID, itemID := f.paidOrder(t, "return-flow@example.com", vid, 2)
 	ctx := context.Background()
-	// 两段式（迁移 624）：下单只预占 2 件，在库仍是 10。
-	// 退货把货**加回来**这件事在新口径下要分开读：在库数量只有在发货之后才会减少，
-	// 而本用例的订单从未发货 —— 所以「退回 2 件后在库仍是 10、预占归零」才是正确的账。
+
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("下单后预占应为 2，实际 %d", got)
 	}
@@ -178,12 +155,11 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	if created.Status != ordermodel.ReturnStatusRequested {
 		t.Fatalf("新申请应为待审核，实际 %s", created.Status)
 	}
-	// 88 元 × 2 = 17600 分
+
 	if created.RefundAmount != 17600 {
 		t.Fatalf("退款额应为 17600 分，实际 %d", created.RefundAmount)
 	}
 
-	// 同意并立即完成入库 + 退款。
 	done, err := f.orders.ApproveReturn(ctx, &orderdto.ReturnReviewReq{
 		ReturnID: created.ID, Remark: "同意", AutoReceive: true, OperatorName: "客服A",
 	})
@@ -202,10 +178,6 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	}
 }
 
-// TestReturnReceiveIsIdempotent 重复确认收货：库存只加一次。
-//
-// 入库的 ChangeStock **没有幂等键** —— 门闩（approved → received 只放行一次）是唯一的护栏，
-// 所以这条必须真的验证「第二次点击不会再加一遍库存」。
 func TestReturnReceiveIsIdempotent(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -229,8 +201,7 @@ func TestReturnReceiveIsIdempotent(t *testing.T) {
 	if first.Status != ordermodel.ReturnStatusCompleted {
 		t.Fatalf("首次收货后应完成，实际 %s", first.Status)
 	}
-	// 入库把货加回来 —— 但本单从未发货，在库一直是 10；真正变化的是**预占归零**。
-	// 断言预占而不是在库：那才是这段代码改的东西（释放留给这张单的占用）。
+
 	if got := f.reservedOf(t, vid); got != 0 {
 		t.Fatalf("退货入库后预占应归零，实际 %d", got)
 	}
@@ -248,7 +219,6 @@ func TestReturnReceiveIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestReturnReceiveRequiresApproval 未同意就收货：拒绝，且不动库存。
 func TestReturnReceiveRequiresApproval(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -266,7 +236,7 @@ func TestReturnReceiveRequiresApproval(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), orderenums.ErrReturnNotReceivable) {
 		t.Fatalf("未同意的申请不能收货，实际: %v", err)
 	}
-	// 被拒的收货不动任何库存事实（在库与预占都不变）。
+
 	if got := f.stockOf(t, vid); got != 10 {
 		t.Fatalf("被拒的收货不该动在库数量，实际 %d", got)
 	}
@@ -275,7 +245,6 @@ func TestReturnReceiveRequiresApproval(t *testing.T) {
 	}
 }
 
-// TestReturnRejectRequiresReason 拒绝必须给理由（否则客户只会再申请一次）。
 func TestReturnRejectRequiresReason(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -299,7 +268,7 @@ func TestReturnRejectRequiresReason(t *testing.T) {
 	if rejected.Status != ordermodel.ReturnStatusRejected {
 		t.Fatalf("状态应为已拒绝，实际 %s", rejected.Status)
 	}
-	// 被拒之后额度要还回来（客户可以换个理由再申请）。
+
 	again := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 1}})
 	again.UserID = userID
 	if _, err := f.orders.RequestReturn(ctx, again); err != nil {
@@ -307,7 +276,6 @@ func TestReturnRejectRequiresReason(t *testing.T) {
 	}
 }
 
-// TestReturnPartialRefundKeepsOrderStatus 部分退货：订单状态不动（还有没退的货）。
 func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -327,7 +295,7 @@ func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	if res.Status != ordermodel.ReturnStatusCompleted {
 		t.Fatalf("退货单应完成，实际 %s", res.Status)
 	}
-	// 部分退货：在库不动（本单未发货），预占从 3 降到 2（退回的那 1 件不再占着）。
+
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("退回 1 件后预占应为 2（3−1），实际 %d", got)
 	}
@@ -338,7 +306,7 @@ func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	if detail.Head.Status == ordermodel.OrderStatusRefunded {
 		t.Fatal("部分退货不该把整单标成已退款 —— 还有没退的货，财务会因此对不上账")
 	}
-	// 但流转链上要留下「退了多少钱」的痕迹（对账看的是这个，不是只看状态列）。
+
 	found := false
 	for _, lg := range detail.Logs {
 		if strings.Contains(lg.Remark, "部分退货退款") {
@@ -350,7 +318,6 @@ func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	}
 }
 
-// TestReturnCancelOnlyBeforeReview 撤销：审核前可以，审核后不行。
 func TestReturnCancelOnlyBeforeReview(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -364,7 +331,6 @@ func TestReturnCancelOnlyBeforeReview(t *testing.T) {
 	req.UserID = userID
 	created, _ := f.orders.RequestReturn(ctx, req)
 
-	// 撤销别人的申请：拒绝（与不存在同一句话）。
 	if err := f.orders.CancelReturn(ctx, &orderdto.ReturnCancelReq{ReturnID: created.ID, UserID: 888888}); err == nil || !strings.Contains(err.Error(), orderenums.ErrReturnNotFound) {
 		t.Fatalf("撤别人的申请应被拒绝，实际: %v", err)
 	}
@@ -376,7 +342,6 @@ func TestReturnCancelOnlyBeforeReview(t *testing.T) {
 		t.Fatalf("状态应为已撤销，实际 %s", got.Return.Status)
 	}
 
-	// 撤销之后额度还回来，且不能再撤销一次。
 	if err := f.orders.CancelReturn(ctx, &orderdto.ReturnCancelReq{ReturnID: created.ID, UserID: userID}); err == nil {
 		t.Fatal("已撤销的申请不能再次撤销")
 	}
@@ -387,7 +352,6 @@ func TestReturnCancelOnlyBeforeReview(t *testing.T) {
 	}
 }
 
-// TestReturnRequestRejectedForUnpaidOrder 未付款的订单不能申请退货。
 func TestReturnRequestRejectedForUnpaidOrder(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

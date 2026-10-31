@@ -23,7 +23,7 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 	if db == nil {
 		return
 	}
-	// These historical seeds establish the exact values that 441 is allowed to update.
+
 	for _, item := range migrations.AllSeeds() {
 		switch item.Version {
 		case "190-i18n-seed-marketing", "232-i18n-seed-admin-pages-round4", "437-i18n-mail-empty-descriptions":
@@ -60,12 +60,7 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 				t.Fatalf("第 %d 轮旧 seed %s 判定 %d，错误 %v", round, historical.Version, applied, err)
 			}
 		}
-		// 下面那两条键的中英终值不是 441 写的，而是比它晚的收口迁移改写的：
-		//   522 —— 邮件拆页后 `.empty`（筛选无结果）改指页头「导入联系人」抽屉；
-		//   526 —— 联系人 CRUD 落地后重写 `.initial`（无筛选空态）描述。
-		// 所以断言终值之前，先确认这两条迁移确实把判据翻转成了「已完成」：
-		// 否则「期望值」就只是现实的镜子 —— 谁把 522 / 526 删了，用例照样绿。
-		// （本用例的库里只有 `.initial.title` zh-CN 被改成运营值，不影响这两条判据。）
+
 		for _, version := range []string{
 			"522-mail-split-i18n-fixes",
 			"526-mail-contact-crud-i18n",
@@ -76,7 +71,7 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 			}
 		}
 		for _, tc := range []struct{ key, lang, want, by string }{
-			// by = 终值出处：`441` 表示这一轮仍由 441 写入/保持的值。
+
 			{"admin.mail.templates.empty", "zh-CN", "新建邮件模板，填写主题与正文。", "441"},
 			{"admin.mail.templates.empty", "en-US", custom, "441（运营值）"},
 			{"admin.mail.marketing.contacts.empty.initial.title", "zh-CN", custom, "441（运营值，后继迁移不得覆盖）"},

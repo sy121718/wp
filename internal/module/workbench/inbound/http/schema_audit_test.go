@@ -1,11 +1,5 @@
 package workbenchhttp
 
-// schema_audit_test.go — 全组件 schema 审计（客户端渲染能力覆盖检查）。
-//
-// 目的：服务端把 schema 渲染成面板/增强槽，客户端按 kind 分派控件。
-// 若某个组件声明了客户端不认识的 kind，该字段会掉进默认分支（渲染成普通文本框
-// 或空白），属于静默缺陷。本测试把「未被任何渲染分支覆盖的 kind」直接暴露出来。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"sort"
@@ -15,32 +9,25 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// clientSupportedKinds 客户端/服务端已实现的控件类型（见 inspector_handle.go 与 inspector.js）。
 var clientSupportedKinds = map[string]bool{
-	// 服务端直出 HTML
+
 	"string": true, "safe": true, "url": true, "regex": true,
 	"text": true, "textarea": true, "int": true, "slider": true, "number": true,
 	"bool": true, "select": true, "classes": true, "cssdecls": true,
-	// 服务端输出 slot，客户端用既有控件填充
+
 	"color": true, "spacing": true, "margin": true, "rtext": true,
 	"dimension": true, "media": true, "mediaList": true, "boxspacing": true,
-	// 集合字段映射 / 内容字段绑定（core.cardstack 字段映射、item.<字段>）：
-	// 选项来自后端字段白名单，服务端输出 slot、客户端渲染成下拉。
+
 	"collectionfield": true, "bindingfield": true,
-	// richtext：服务端输出 slot，客户端 richTextField（Trix）填充；
-	// core.text 的 mode=plaintext 由 isPlainTextMode 回退多行输入。
+
 	"richtext": true,
-	// entityref：实体引用下拉（分类 / 品牌 / 标签），选项由服务端 CollectionFilterOptions
-	// 提供、客户端渲染成 <select>（EDT-005）。它是「选了就一定存在」的选择器，
-	// 所以宁可列在这里被审计，也不退化成自由文本输入。
+
 	"entityref": true,
-	// multientityref / rangelist：结构化配置控件（EDT-007）—— 值仍是既有的逗号分隔串，
-	// 换掉的只是编辑方式（勾选面板 / 逐行档位）。服务端直出 HTML，客户端按 kind 拼值。
+
 	"multientityref": true,
 	"rangelist":      true,
 }
 
-// TestSchemaKindsCovered 每个组件的每个 ct 控件 kind 都必须被渲染分支覆盖。
 func TestSchemaKindsCovered(t *testing.T) {
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {

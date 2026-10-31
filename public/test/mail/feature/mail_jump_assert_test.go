@@ -1,12 +1,5 @@
 package feature
 
-// mail_jump_assert_test.go — 写动作结论走**整页提示**（shell.RenderJump）的断言助手。
-//
-// 取代原先对「302 + Location 上的 ?err= / ?ok= / ?done=」的断言：那条通道已随
-// 「结论走响应体」整批删除（见 internal/module/mail/inbound/http/mail_jump.go）。
-// 现在写动作回 **HTTP 200 + 提示页**：`data-jump-state="ok|err"` 标出成功 / 失败，
-// 结论文案直接在响应体里，回跳地址在 meta refresh / 链接上。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +8,6 @@ import (
 	"testing"
 )
 
-// mailAssertJump 断言响应是提示页，并检查状态与结论文案。
 func mailAssertJump(t *testing.T, rec *httptest.ResponseRecorder, wantOK bool, wantText string) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
@@ -36,7 +28,6 @@ func mailAssertJump(t *testing.T, rec *httptest.ResponseRecorder, wantOK bool, w
 	}
 }
 
-// mailJumpBack 从提示页里取回跳地址（meta refresh 的 url= 或「立即前往」链接的 href）。
 func mailJumpBack(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	body := rec.Body.String()

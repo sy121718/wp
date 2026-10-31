@@ -1,34 +1,5 @@
 package inventorymcp
 
-// 为什么补这两个：用户问「VIT-C 还有多少货」「哪个仓快没了」「最近出库了多少」
-// 时，答案全在 inventory_stocks / inventory_stock_movements 里，而在此之前
-// AI 侧看不到任何库存数据 —— 商品的 product_find 只给一个「不跟踪 / 合计 / 未入库」
-// 的三态摘要，具体到哪个仓、多少件是答不出来的。
-//
-// 只读：依赖收窄到 StockReader（两个方法），手里没有 AdjustStock ——
-// 「AI 顺手调一次库存」不会在某次改动里悄悄变得可能，而库存调整会直接改可卖量。
-//
-// 两个工具而不是一个：库存「现在有多少」与流水「什么时候动的」是两种问题，
-// 而流水表随时间线性增长（一次拉太多会挤掉回答），该分开限制条数。
-
-// 为什么需要它：stock_change 的 reasonCode 只能从 ListReasons 里选，而内置的九个
-// 覆盖的是通用场景（采购 / 退货 / 调拨 / 盘亏…）。真实运营很快会遇到「这个工程想要的
-// 原因内置里没有」—— 在没有这个工具之前，模型唯一能做的是告诉用户「去后台加一个」，
-// 而用户正在跟助手对话，他期待的就是别切页面。
-//
-// 两条来自 service 的硬约束，写进描述里：
-//   · code 工程内唯一，且与内置占用**同一个命名空间** —— 撞名会拒；
-//   · 内置原因**不能改名**（它的 i18n key 由系统按 code 派生，改了会两头对不上），
-//     只能改启停与排序。所以 update 用之前要先看 isBuiltin。
-
-// 与只读工具分开成文件，是因为写工具多出两件只读工具不需要的事：
-//   · 每一个都必须在说明里写清**不可逆的程度**（这条落在流水上，能改回来但留痕）；
-//   · 入参必须先能被模型填对 —— 所以 stock_change 之前要有一个 stock_reasons
-//     让它查得到合法 reasonCode，而不是猜一个然后被「原因与方向不符」挡回来。
-//
-// 幂等与确认位不在这里：mcp.NewWrite 会往 schema 追加 confirm / idempotencyKey
-// 并在任何业务代码之前校验（internal/mcp/write.go）。
-
 import (
 	"context"
 	"errors"
@@ -48,15 +19,12 @@ const (
 	stockMaxLimit     = 50
 )
 
-// Tools 返回库存模块的只读工具集。
 func Tools(reader inventorycontract.StockReader) ([]mcp.Tool, error) {
 	if reader == nil {
 		return nil, errors.New("inventorymcp: 库存查询依赖缺失（装配期接线错误）")
 	}
 	return []mcp.Tool{stockFind(reader), warehouseList(reader)}, nil
 }
-
-// —— 库存 ——
 
 type stockFindArgs struct {
 	ProjectID   string `json:"projectId"`
@@ -106,8 +74,7 @@ func stockFind(reader inventorycontract.StockReader) mcp.Tool {
 func stockListText(list []*inventorydto.StockResp, args stockFindArgs) string {
 	scope := describeStockScope(args)
 	if len(list) == 0 {
-		// 「没有库存行」与「这个 SKU 不存在」是两件事，但对用户的下一步动作是同一句：
-		// 去商品 / 仓库那边确认。所以这里把替代解释一并说清，而不是只回一个空。
+
 		return fmt.Sprintf("没有查到库存行（%s）。可能是这个 SKU 还没有入库记录，"+
 			"也可能是筛选条件写得太窄 —— 用 product_find 或 warehouse_list 确认线索是否对得上。", scope)
 	}
@@ -116,10 +83,7 @@ func stockListText(list []*inventorydto.StockResp, args stockFindArgs) string {
 	for i, s := range list {
 		fmt.Fprintf(&b, "%d. %s · %s · %s%s\n",
 			i+1, emptyAsDash(s.SKUCode), warehouseLabel(s), quantityText(s), externalSkuSuffix(s))
-		// 这一行必须给出 **variantId**：它是下一个动作的钥匙，而且只能从库存行上拿到。
-		// 实测踩到过 —— 模型用 product_find 找到商品、用 stock_find 找到库存行，
-		// 但正文里只有 SKU 没有变体 id，于是它只能停下来说「你给我一下变体 id」。
-		// 「工具的输出要让下一步动作有可能完成」在这里就是这一行。
+
 		ids := "      变体 " + emptyAsDash(s.VariantID)
 		if s.ProductID != "" {
 			ids += " · 商品 " + s.ProductID
@@ -154,10 +118,6 @@ func warehouseLabel(s *inventorydto.StockResp) string {
 	return name
 }
 
-// quantityText 存量 + 是否跟踪。
-//
-// 这两个必须一起说：quantity = 0 有两义（跟踪且卖光 / 不跟踪 = 无限），
-// 只读数量会把「无限」在回答里写成「没货」。
 func quantityText(s *inventorydto.StockResp) string {
 	if !s.TrackQuantity {
 		return "不跟踪数量（可无限售出）"
@@ -171,8 +131,6 @@ func externalSkuSuffix(s *inventorydto.StockResp) string {
 	}
 	return " · 外部编码 " + s.ExternalSKU
 }
-
-// —— 仓库 ——
 
 type warehouseListArgs struct {
 	ProjectID string `json:"projectId"`
@@ -220,8 +178,6 @@ func defaultSuffix(isDefault bool) string {
 	return ""
 }
 
-// —— 共用 ——
-
 func clampLimit(n int) int {
 	if n <= 0 {
 		return stockDefaultLimit
@@ -248,7 +204,6 @@ func firstNonEmpty(vals ...string) string {
 	return "-"
 }
 
-// ReasonTools 返回变动原因字典的写工具集。
 func ReasonTools(w inventorycontract.ReasonWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("inventorymcp: 变动原因写依赖缺失（装配期接线错误）")
@@ -297,19 +252,12 @@ func reasonCreate(w inventorycontract.ReasonWriter) mcp.Tool {
 		})
 }
 
-// createdReasonText 建原因的回执。
-//
-// 必须把 code 原样写出来：下一步 stock_change 要用的正是这个字符串，
-// 而它可能被服务端归一（转小写、去空白）—— 让模型复述自己传进去的那个写法，
-// 下一次调用就会因为大小写对不上而失败。
 func createdReasonText(res *inventorydto.ReasonResp) string {
 	if res == nil {
 		return "已新建变动原因。"
 	}
 	var b strings.Builder
-	// 用 reasonName 而不是 res.Name：自定义原因的 Name 在库里存的是
-	// inventory.reason.custom.<工程>.<code> 这个 i18n key（与内置原因同一形态），
-	// 直接印出来用户看到的就是一串路径，认不出自己刚建了什么。
+
 	fmt.Fprintf(&b, "已新建变动原因「%s」（code = %s，方向 %s）。",
 		reasonName(res), strings.TrimSpace(res.Code), directionText(res.Direction))
 	b.WriteString("\n之后变动库存时把 reasonCode 传成 ")
@@ -349,8 +297,7 @@ func reasonUpdate(w inventorycontract.ReasonWriter) mcp.Tool {
 				ProjectID: strings.TrimSpace(args.ProjectID),
 				Sort:      args.Sort,
 			}
-			// 指针字段：只有显式传了才带过去。
-			// 传空字符串会让 service 把名字改成空 —— 那不是「没改」。
+
 			if name := strings.TrimSpace(args.Name); name != "" {
 				req.Name = &name
 			}
@@ -368,11 +315,9 @@ func reasonUpdate(w inventorycontract.ReasonWriter) mcp.Tool {
 		})
 }
 
-// updatedReasonText 改原因的回执。
 func updatedReasonText(args reasonUpdateArgs, res *inventorydto.ReasonResp) string {
 	var b strings.Builder
-	// 同上：优先用模型刚给的名字（那是人写的），否则回读服务端返回的 Name，
-	// 但后者可能是 i18n key，要走 reasonName 翻一次。
+
 	name := strings.TrimSpace(args.Name)
 	if name == "" && res != nil {
 		name = reasonName(res)
@@ -386,7 +331,6 @@ func updatedReasonText(args reasonUpdateArgs, res *inventorydto.ReasonResp) stri
 	return b.String()
 }
 
-// directionText 方向的中文说法（三种取值，与 enums 一一对应）。
 func directionText(d string) string {
 	switch strings.ToLower(strings.TrimSpace(d)) {
 	case inventoryenums.DirectionIn:
@@ -402,15 +346,10 @@ func directionText(d string) string {
 
 const (
 	stockChangeMaxLines = 50
-	// stockReasonsInlineMax 一次最多列多少个原因。可选项太多时模型容易挑第一个，
-	// 而「采购入库」与「退货入库」在流水里的区别是有意义的。
+
 	stockReasonsInlineMax = 40
 )
 
-// WriteTools 库存模块的写工具集。
-//
-// reader 与 writer 分开收：写工具也要读（stock_change 出错时要把可用的原因列出来，
-// 否则模型只拿到一句「reasonCode 不合法」却不知道合法的是什么）。
 func WriteTools(w inventorycontract.StockWriter, r inventorycontract.StockReader, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if w == nil || r == nil {
 		return nil, errors.New("inventorymcp: 库存写工具依赖缺失（装配期接线错误）")
@@ -420,8 +359,6 @@ func WriteTools(w inventorycontract.StockWriter, r inventorycontract.StockReader
 		stockChange(w, r, store),
 	}, nil
 }
-
-// —— 读：变动原因字典 ——
 
 type stockReasonsArgs struct {
 	ProjectID string `json:"projectId"`
@@ -450,20 +387,12 @@ func stockReasons(r inventorycontract.StockReader) mcp.Tool {
 		})
 }
 
-// reasonName 把原因名写成用户能读的样子。
-//
-// **内置原因的 Name 是 i18n key**（`inventory.reason.<code>`，见 service 的
-// builtinReasonKey），后台页面靠 tr() 翻成中文；工具调用没有请求语言，
-// 直接输出会把裸 key 显示给用户 —— 实测回答里出现的正是
-// 「purchase_in — inventory.reason.purchase_in」这种谁也不想看的东西。
-// 这里按默认语言翻一次；翻不到就退回 code（一串点分 key 比 code 更难认）。
 func reasonName(it *inventorydto.ReasonResp) string {
 	name := strings.TrimSpace(it.Name)
 	if !strings.HasPrefix(name, "inventory.reason.") {
 		return name
 	}
-	// i18n.Translate 未命中时**返回 key 本身**（不是空串）—— 判据必须同时排除它，
-	// 否则「翻译失败」会被当成「翻出来就是这串 key」，裸 key 照样漏给用户。
+
 	if translated := strings.TrimSpace(i18n.Translate(name, "", i18n.GetDefaultLang())); translated != "" && translated != name {
 		return translated
 	}
@@ -498,11 +427,7 @@ func reasonsText(direction string, list []*inventorydto.ReasonResp) string {
 		if it.IsBuiltin {
 			kind = "内置"
 		}
-		// id 必须给出来：inventory_reason_update 要的是 id 而不是 code，
-		// 不印在这里，模型下一步就只能停下来问用户要（实测它说的正是
-		// 「刚才 stock_reasons 返回里没给出它的 reasonId，我不能拿 code 代填」）。
-		// 工具的输出里要带上**下一步动作需要的参数**，这条在 stock_find 漏 variantId
-		// 那次已经吃过一回。
+
 		fmt.Fprintf(&b, "- %s（%s，%s，id=%s）\n", it.Code, reasonName(it), kind, strings.TrimSpace(it.ID))
 	}
 	if truncated > 0 {
@@ -511,12 +436,6 @@ func reasonsText(direction string, list []*inventorydto.ReasonResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// —— 写：库存变动 ——
-
-// stockChangeArgs stock_change 的业务入参。
-//
-// Lines 用**行数组**而不是「单商品单数量」：真实的入库常常一次进多个 SKU
-// （一张采购单），拆成多次调用会生成多个 batch、流水里也看不出它们是一件事。
 type stockChangeArgs struct {
 	ProjectID   string            `json:"projectId"`
 	WarehouseID string            `json:"warehouseId"`
@@ -569,9 +488,7 @@ func stockChange(w inventorycontract.StockWriter, r inventorycontract.StockReade
 				if strings.TrimSpace(line.VariantID) == "" {
 					return mcp.Result{}, &mcp.ArgsError{Msg: fmt.Sprintf("第 %d 行缺 variantId", i+1)}
 				}
-				// adjust 允许 0（清零），in/out 必须是正数：负数在 in/out 下会产生
-				// 方向相反的效果，而那与调用者写下的 direction 矛盾 —— 流水里
-				// 会记成「入库 -5」，事后没人能一眼看出它其实是一次出库。
+
 				if args.Direction == inventoryenums.DirectionAdjust {
 					if line.Quantity < 0 {
 						return mcp.Result{}, &mcp.ArgsError{Msg: fmt.Sprintf("第 %d 行：盘点（adjust）的 quantity 是目标量，不能为负", i+1)}
@@ -603,15 +520,6 @@ func stockChange(w inventorycontract.StockWriter, r inventorycontract.StockReade
 	)
 }
 
-// teachReasonMismatch 在 reasonCode 被拒时把可用取值附在错误后面。
-//
-// 为什么值得单独做这一步：ChangeStock 拒绝原因是笼统的（「原因与方向不符」或
-// 「原因 code 不合法」），而模型手里只有这一句话 —— 它的下一步通常是**重猜一次**，
-// 于是同一次入库会连着失败两三次。把该方向的可用 code 直接写进错误里，
-// 模型（和读日志的人）第一次就知道正确的是什么。
-//
-// 只在「疑似原因错误」时去查一次字典：其它错误（库存不足、仓库不存在）
-// 附一份原因清单只会让人以为是原因的问题。
 func teachReasonMismatch(ctx context.Context, r inventorycontract.StockReader, args stockChangeArgs, cause error) error {
 	msg := cause.Error()
 	if !strings.Contains(msg, "reason") && !strings.Contains(msg, "原因") {
@@ -633,10 +541,6 @@ func teachReasonMismatch(ctx context.Context, r inventorycontract.StockReader, a
 	return fmt.Errorf("%w（方向 %s 可用的 reasonCode：%s）", cause, args.Direction, strings.Join(codes, " / "))
 }
 
-// changeResultText 把变动结果写成模型能直接引用的几句。
-//
-// 逐行给出**变动前后**：只报「已入库 5 件」时，用户问「现在有多少」还得再查一次；
-// 而 before/after 就在返回体里。
 func changeResultText(direction string, res *inventorydto.StockChangeResp) string {
 	if res == nil || len(res.Movements) == 0 {
 		return "库存变动已提交，但没有返回流水明细 —— 请调 stock_find 确认当前数量。"
@@ -659,8 +563,7 @@ func changeResultText(direction string, res *inventorydto.StockChangeResp) strin
 		if name == "" {
 			name = m.VariantID
 		}
-		// 盘点要额外说清「从多少变成多少」——它的 quantity 是目标量，
-		// 只说目标值时用户读不出这次到底动了多少。
+
 		fmt.Fprintf(&b, "- %s：%d → %d（%+d）", name, m.QuantityBefore, m.QuantityAfter, m.Delta)
 		if m.WarehouseName != "" {
 			fmt.Fprintf(&b, "，仓库 %s", m.WarehouseName)
@@ -668,8 +571,7 @@ func changeResultText(direction string, res *inventorydto.StockChangeResp) strin
 		b.WriteString("\n")
 	}
 	if !res.CacheSynced {
-		// 缓存没同步上不是致命错误（下次写回会纠），但必须说 —— 否则搜索/列表页
-		// 显示的库存会与真实值短暂不一致。
+
 		fmt.Fprintf(&b, "注意：有 %d 处汇总缓存未同步（%s），列表页的库存数可能要过一会儿才更新。",
 			len(res.CacheFailures), strings.Join(res.CacheFailures, "、"))
 	}

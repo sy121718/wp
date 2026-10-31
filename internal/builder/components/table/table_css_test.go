@@ -13,7 +13,6 @@ func tableCSSFor(p *Props) (core.CSSBuckets, string) {
 	return b, b.String()
 }
 
-// TestTableCSSSwitches 三个开关互不干扰，且都只影响自己那条规则。
 func TestTableCSSSwitches(t *testing.T) {
 	_, plain := tableCSSFor(&Props{})
 	for _, notWant := range []string{"nth-child(even)", "transition: background", "border: 1px solid"} {
@@ -27,14 +26,12 @@ func TestTableCSSSwitches(t *testing.T) {
 		t.Errorf("斑马纹规则缺失:\n%s", striped)
 	}
 
-	// 边框是 th/td 的**第二条**规则（基础那条始终在），两条同选择器各自独立。
 	_, bordered := tableCSSFor(&Props{Bordered: true})
 	if strings.Count(bordered, ".sky-c-t th, .sky-c-t td {") != 2 {
 		t.Errorf("开启边框后应有两条第 3 列规则（基础 + 边框）:\n%s", bordered)
 	}
 }
 
-// TestTableCSSRowHover 行悬停走 hover 桶：触屏不粘滞，过渡仍留在基础规则里。
 func TestTableCSSRowHover(t *testing.T) {
 	_, out := tableCSSFor(&Props{RowHover: true})
 	if !strings.Contains(out, "transition: background 0.15s ease;") {

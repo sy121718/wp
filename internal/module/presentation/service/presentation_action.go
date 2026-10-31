@@ -19,7 +19,6 @@ func (s *Service) SetPublishedPageLocator(locator pagecontract.PublishedPageLoca
 	s.actionPages = locator
 }
 
-// PublishedInstancePath 校验真实实例归属及该语言Publication，不回退到另一语言或默认实例。
 func (s *Service) PublishedInstancePath(ctx context.Context, projectID, instanceID, lang string) (string, error) {
 	if uuid.Validate(projectID) != nil || uuid.Validate(instanceID) != nil || strings.TrimSpace(lang) == "" {
 		return "", presentationenums.Err(presentationenums.ErrInvalidParam)

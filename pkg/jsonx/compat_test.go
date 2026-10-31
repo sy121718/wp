@@ -58,8 +58,6 @@ func base() sample {
 	}
 }
 
-// TestMarshalByteIdenticalWithV1 是本包存在的理由：默认选项下 jsonx 的输出必须与
-// encoding/json 逐字节一致。任何一条还原选项被删/改错，这里立刻红。
 func TestMarshalByteIdenticalWithV1(t *testing.T) {
 	cases := []struct {
 		name string
@@ -91,7 +89,6 @@ func TestMarshalByteIdenticalWithV1(t *testing.T) {
 	}
 }
 
-// TestUnmarshalMatchesV1 解析侧同等：宽容度（重复键、大小写字段名、null、未知字段）与结果必须一致。
 func TestUnmarshalMatchesV1(t *testing.T) {
 	inputs := []string{
 		`{"str":"y","nilSl":null,"nilMp":null,"empSl":[],"empMp":{},"n":1}`,
@@ -116,7 +113,6 @@ func TestUnmarshalMatchesV1(t *testing.T) {
 	}
 }
 
-// TestStrictUnknownMember 钉住「需要 v2 独有能力时怎么用」：按错误值分流，不按文案。
 func TestStrictUnknownMember(t *testing.T) {
 	var s sample
 	err := jsonx.Unmarshal([]byte(`{"unknownField":1}`), &s, jsonx.RejectUnknownMembers(true))
@@ -135,7 +131,6 @@ func TestStrictUnknownMember(t *testing.T) {
 	}
 }
 
-// TestHelpersMatchV1 辅助函数的等价性。
 func TestHelpersMatchV1(t *testing.T) {
 	for _, in := range []string{`{"a":1}`, `{oops`, ``, `[]`, `nul`, `123`, `"s"`} {
 		if jsonx.Valid([]byte(in)) != v1.Valid([]byte(in)) {

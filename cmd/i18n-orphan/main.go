@@ -1,25 +1,3 @@
-// Package main i18n 译文孤儿行的运维命令（审计 I18N-024）。
-//
-// 为什么是「运维命令」而不是自动任务：审计 I18N-024 的结论是**不做自动清理**。
-// 源数据可能只是暂时缺失（页面回滚草稿、实体临时下架、全站扫描超限被跳过），
-// 那些时刻译文行看起来就是孤儿，自动删除丢掉的是编辑者逐条人工翻译的成果。
-// 所以清理只能由人显式触发，并且必须先看到「检出多少行」再决定要不要删。
-//
-// 用法（默认只检出不删除）：
-//
-//	go run ./cmd/i18n-orphan -project <工程uuid>
-//	go run ./cmd/i18n-orphan -project <工程uuid> -lang en-US -verbose
-//	go run ./cmd/i18n-orphan -project <工程uuid> -keep-file keep.txt   # 追加「源引用消失」判据
-//	go run ./cmd/i18n-orphan -project <工程uuid> -apply                # 显式执行删除
-//
-// 输出固定包含「检出 N 行、清理 M 行」；-verbose 再逐行列出（原文 / 译文 / 判据）。
-//
-// keep-file 格式（每行一个候选键，UTF-8 文本）：
-//
-//	<64 位十六进制 hash><空白><context>
-//
-// 由构建期候选收集 / 工作台全站扫描导出；不提供该文件时只跑「hash 自洽破损」判据
-// （见 pkg/i18n/content_orphan.go 的判据定义）。
 package main
 
 import (
@@ -37,7 +15,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// options 命令行参数。
 type options struct {
 	configPath string
 	project    string
@@ -64,7 +41,6 @@ func main() {
 	}
 }
 
-// run 实际流程：初始化组件 → 读候选清单 → 检出（必要时删除）→ 输出计数。
 func run(opts options) error {
 	project := strings.TrimSpace(opts.project)
 	if project == "" {
@@ -87,7 +63,6 @@ func run(opts options) error {
 		return derr
 	}
 
-	// 默认 dry run：检出即输出，只有 -apply 才真的删。
 	writer := i18n.NewContentWriter(db)
 	scope := i18n.OrphanScope{ProjectID: project, Lang: opts.lang, Keep: keep, Limit: opts.limit}
 	result, perr := writer.PurgeOrphans(context.Background(), scope, opts.apply)
@@ -108,7 +83,6 @@ func run(opts options) error {
 	return nil
 }
 
-// langLabel 语言展示（空 = 全部语言）。
 func langLabel(lang string) string {
 	if strings.TrimSpace(lang) == "" {
 		return "全部语言"
@@ -116,10 +90,6 @@ func langLabel(lang string) string {
 	return lang
 }
 
-// loadKeepFile 读取候选保留键清单（路径为空 = 只跑判据 A，返回 nil）。
-//
-// 行格式：<64 位十六进制 hash><空白><context>。任何不合法行都直接报错而不是跳过 ——
-// 静默忽略一部分候选会让它们对应的译文被误判为孤儿后删掉。
 func loadKeepFile(path string) (map[string]bool, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -168,7 +138,6 @@ func loadKeepFile(path string) (map[string]bool, error) {
 	return keep, nil
 }
 
-// isLowerHex64 判断 64 位小写十六进制（与 066 迁移的 CHECK 同口径）。
 func isLowerHex64(s string) bool {
 	if len(s) != 64 {
 		return false

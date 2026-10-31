@@ -6,7 +6,7 @@ var registerAdminPluginWriteUII18nOnce sync.Once
 
 func registerAdminPluginWriteUII18n() {
 	registerAdminPluginWriteUII18nOnce.Do(func() {
-		// Only these four unique key/language pairs can satisfy this guard.
+
 		registerSeed(Seed{
 			Version:   "608-admin-plugin-write-ui-i18n",
 			TableName: "sys_i18n",

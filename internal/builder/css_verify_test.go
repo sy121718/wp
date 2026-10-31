@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestVerifyAnimationRefsAcceptsDefined 有定义就放行。
 func TestVerifyAnimationRefsAcceptsDefined(t *testing.T) {
 	css := "@keyframes sky-fade-in-up {\n  from { opacity: 0 }\n}\n.sky-c-a {\n  animation: sky-fade-in-up 0.6s ease backwards;\n}"
 	if err := verifyAnimationRefs(css); err != nil {
@@ -13,10 +12,8 @@ func TestVerifyAnimationRefsAcceptsDefined(t *testing.T) {
 	}
 }
 
-// TestVerifyAnimationRefsRejectsUndefined 引用了没定义的关键帧必须报错，
-// 且报错要精确指出是哪一个（已定义的那个不能出现在里面）。
 func TestVerifyAnimationRefsRejectsUndefined(t *testing.T) {
-	// 入场 + 循环逗号并接是真实产物里的形态（CompileInteraction 会这么拼）。
+
 	css := "@keyframes sky-loop-drift {\n  from { transform: none }\n}\n.sky-c-a {\n  animation: sky-fade-in-up 0.6s ease backwards, sky-loop-drift 2.4s ease-in-out infinite;\n}"
 	err := verifyAnimationRefs(css)
 	if err == nil {
@@ -30,8 +27,6 @@ func TestVerifyAnimationRefsRejectsUndefined(t *testing.T) {
 	}
 }
 
-// TestVerifyAnimationRefsIgnoresNonNamespace 不误报三类合法写法：
-// 无名字的简写（none / 纯时长）、插件经 extraCSS 带进来的自家动画、非 animation 的长写属性。
 func TestVerifyAnimationRefsIgnoresNonNamespace(t *testing.T) {
 	css := ".sky-c-a {\n  animation: none;\n}\n" +
 		".sky-c-b {\n  animation: 2s ease;\n}\n" +
@@ -42,8 +37,6 @@ func TestVerifyAnimationRefsIgnoresNonNamespace(t *testing.T) {
 	}
 }
 
-// TestVerifyAnimationRefsFindsNameAnywhere 名字不一定在简写的第一个 token ——
-// 位置写死的实现会漏掉这种写法，而漏检等于没检。
 func TestVerifyAnimationRefsFindsNameAnywhere(t *testing.T) {
 	css := ".sky-c-a {\n  animation: 2s ease-in-out infinite sky-loop-glow;\n}"
 	if err := verifyAnimationRefs(css); err == nil {

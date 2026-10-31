@@ -1,14 +1,3 @@
-// Package feature masterdata 模块 feature 测试 —— 主数据变更记录（issue #19）。
-//
-// 覆盖本票五条验收（真实 PostgreSQL + 生产迁移与 seed + 真实 service + 真实 Jet 渲染）：
-//  1. 新增 / 修改 / 删除关键主数据时写入变更记录；
-//  2. 至少覆盖变体默认发货仓、SKU 编码、商品价格、上下架状态、货源资料；
-//  3. 记录含操作人与时间，append-only 不可改写；
-//  4. 后台可按实体查询变更历史；
-//  5. 与库存流水职责分离（配置变更与库存变动各记一处）。
-//
-// 装配与生产一致（routers.SetupRoutes）：masterdata 的契约注入 product 与 inventory
-// 两个模块，商品的归属仓端口由 inventory 实现 —— 「建变体即留痕默认发货仓」走的是真实链路。
 package feature
 
 import (
@@ -48,10 +37,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// operatorForTest 测试里的操作人（会话登录名在生产由 inbound 从 session 取）。
 const operatorForTest = "alice"
 
-// mdFixture 隔离 PG schema + 生产迁移与 seed + 真实工程行 + 真实三个模块 service。
 type mdFixture struct {
 	changes   *masterdataservice.Service
 	products  *productservice.Service
@@ -62,7 +49,6 @@ type mdFixture struct {
 	projectID string
 }
 
-// newMDFixture 建隔离 schema 并装配三个模块（接线方式与 routers.SetupRoutes 一致）。
 func newMDFixture(t *testing.T) *mdFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -92,13 +78,10 @@ func newMDFixture(t *testing.T) *mdFixture {
 	}
 }
 
-// —— 小工具 ——
-
 func strPtr(s string) *string { return &s }
 
 func floatPtr(v float64) *float64 { return &v }
 
-// warehouse 建仓（工程内第一个仓自动成为默认仓）。
 func (f *mdFixture) warehouse(t *testing.T, code, name string) *inventorydto.WarehouseResp {
 	t.Helper()
 	w, err := f.inventory.CreateWarehouse(context.Background(), &inventorydto.CreateWarehouseReq{
@@ -110,7 +93,6 @@ func (f *mdFixture) warehouse(t *testing.T, code, name string) *inventorydto.War
 	return w
 }
 
-// product 建商品（首个变体自动生成）。
 func (f *mdFixture) product(t *testing.T, name, slug string, warehouseID string) *productdto.ProductResp {
 	t.Helper()
 	p, err := f.products.Create(context.Background(), &productdto.CreateReq{
@@ -123,7 +105,6 @@ func (f *mdFixture) product(t *testing.T, name, slug string, warehouseID string)
 	return p
 }
 
-// variant 取商品的首个变体（商品恒有至少一个变体）。
 func (f *mdFixture) variant(t *testing.T, productID string) *productdto.VariantResp {
 	t.Helper()
 	detail, err := f.products.Get(context.Background(), &productdto.GetReq{ID: productID})
@@ -136,7 +117,6 @@ func (f *mdFixture) variant(t *testing.T, productID string) *productdto.VariantR
 	return detail.Variants[0]
 }
 
-// entityChanges 某实体的全部变更记录（时间倒序，分页放宽到 200 条一次取全）。
 func (f *mdFixture) entityChanges(t *testing.T, entityType, entityID string) []*masterdatadto.ChangeResp {
 	t.Helper()
 	rows, err := f.changes.ListChanges(context.Background(), &masterdatadto.ListChangeReq{
@@ -148,7 +128,6 @@ func (f *mdFixture) entityChanges(t *testing.T, entityType, entityID string) []*
 	return rows
 }
 
-// findChange 在记录里找「某动作 + 某字段」那一条（找不到返回 nil）。
 func findChange(rows []*masterdatadto.ChangeResp, action, field string) *masterdatadto.ChangeResp {
 	for _, r := range rows {
 		if r.Action == action && r.Field == field {
@@ -158,7 +137,6 @@ func findChange(rows []*masterdatadto.ChangeResp, action, field string) *masterd
 	return nil
 }
 
-// mustChange 断言存在某条记录且旧值 / 新值符合预期。
 func mustChange(t *testing.T, rows []*masterdatadto.ChangeResp, action, field, oldValue, newValue string) *masterdatadto.ChangeResp {
 	t.Helper()
 	row := findChange(rows, action, field)
@@ -171,7 +149,6 @@ func mustChange(t *testing.T, rows []*masterdatadto.ChangeResp, action, field, o
 	return row
 }
 
-// describeChanges 变更记录的简要快照（失败信息用）。
 func describeChanges(rows []*masterdatadto.ChangeResp) string {
 	parts := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -180,7 +157,6 @@ func describeChanges(rows []*masterdatadto.ChangeResp) string {
 	return strings.Join(parts, ", ")
 }
 
-// changeCount 某实体的记录条数。
 func (f *mdFixture) changeCount(t *testing.T, entityType, entityID string) int64 {
 	t.Helper()
 	n, err := f.changes.CountChanges(context.Background(), &masterdatadto.ListChangeReq{
@@ -192,7 +168,6 @@ func (f *mdFixture) changeCount(t *testing.T, entityType, entityID string) int64
 	return n
 }
 
-// movementCount 某变体的库存流水条数（验收 5 的对照面）。
 func (f *mdFixture) movementCount(t *testing.T, variantID string) int {
 	t.Helper()
 	list, err := f.inventory.ListMovements(context.Background(), &inventorydto.ListMovementReq{
@@ -204,8 +179,6 @@ func (f *mdFixture) movementCount(t *testing.T, variantID string) int {
 	return len(list)
 }
 
-// —— 验收 1 + 2：新增关键主数据写入记录，且覆盖默认发货仓 / SKU 编码 ——
-
 func TestMasterDataChangeCreateCoversWarehouseAndSKU(t *testing.T) {
 	f := newMDFixture(t)
 	if f == nil {
@@ -215,13 +188,12 @@ func TestMasterDataChangeCreateCoversWarehouseAndSKU(t *testing.T) {
 	p := f.product(t, "测试 T 恤", "tee", sz.ID)
 	v := f.variant(t, p.ID)
 
-	// 商品级新增：字段级落行（上下架状态在列，初始 draft）。
 	productRows := f.entityChanges(t, masterdataenums.EntityProduct, p.ID)
 	if len(productRows) == 0 {
 		t.Fatalf("新增商品应写入变更记录")
 	}
 	for _, r := range productRows {
-		// 变更记录主键是 UUIDv7（时间有序，写入点集中）—— 换回 v4 这条会红
+
 		if len(r.ID) != 36 || r.ID[14] != '7' {
 			t.Fatalf("变更记录主键应为 UUIDv7，实际 id=%q", r.ID)
 		}
@@ -240,13 +212,12 @@ func TestMasterDataChangeCreateCoversWarehouseAndSKU(t *testing.T) {
 	}
 	mustChange(t, productRows, masterdataenums.ActionCreate, "status", "", productenums.StatusDraft)
 
-	// 变体级新增：SKU 编码 + 默认发货仓（id 与短码）+ 售价。
 	variantRows := f.entityChanges(t, masterdataenums.EntityProductVariant, v.ID)
 	skuRow := mustChange(t, variantRows, masterdataenums.ActionCreate, "sku_code", "", v.SKUCode)
 	if !strings.HasPrefix(v.SKUCode, "SZ_") {
 		t.Fatalf("SKU 编码应以归属仓短码开头，实际 %q", v.SKUCode)
 	}
-	// 展示文案由模块 enums 统一给出（页面直接渲染，不再维护第二份映射）。
+
 	if skuRow.FieldLabel != "SKU 编码" {
 		t.Fatalf("sku_code 的展示名应是「SKU 编码」，实际 %q", skuRow.FieldLabel)
 	}
@@ -254,14 +225,11 @@ func TestMasterDataChangeCreateCoversWarehouseAndSKU(t *testing.T) {
 	mustChange(t, variantRows, masterdataenums.ActionCreate, "home_warehouse_code", "", sz.Code)
 	mustChange(t, variantRows, masterdataenums.ActionCreate, "price", "", "0.00")
 
-	// 未指定仓库时兜底默认仓：再建一个商品（不传 warehouseId）→ 记录里仍是 SZ。
 	p2 := f.product(t, "第二件 T 恤", "tee-2", "")
 	v2 := f.variant(t, p2.ID)
 	rows2 := f.entityChanges(t, masterdataenums.EntityProductVariant, v2.ID)
 	mustChange(t, rows2, masterdataenums.ActionCreate, "home_warehouse_code", "", "SZ")
 }
-
-// —— 验收 2：修改只记真正变化的字段（上下架状态 / 商品价格 / SKU 编码）——
 
 func TestMasterDataChangeUpdateOnlyChangedFields(t *testing.T) {
 	f := newMDFixture(t)
@@ -273,7 +241,6 @@ func TestMasterDataChangeUpdateOnlyChangedFields(t *testing.T) {
 	p := f.product(t, "T 恤", "tee", sz.ID)
 	v := f.variant(t, p.ID)
 
-	// ① 上架：状态一行，旧值 draft、新值 published。
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
 		ID: p.ID, Status: strPtr(productenums.StatusPublished), OperatorID: operatorForTest,
 	}); err != nil {
@@ -291,7 +258,6 @@ func TestMasterDataChangeUpdateOnlyChangedFields(t *testing.T) {
 		t.Fatalf("只改了状态就该只有 1 条修改记录，实际 %d 条：%s", updateRows, describeChanges(rows))
 	}
 
-	// ② 同值重复提交不产生记录（打开表单什么都没改就保存，审计里不留噪声）。
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
 		ID: p.ID, Status: strPtr(productenums.StatusPublished), OperatorID: operatorForTest,
 	}); err != nil {
@@ -301,7 +267,6 @@ func TestMasterDataChangeUpdateOnlyChangedFields(t *testing.T) {
 		t.Fatalf("同值更新不应新增记录，实际从 %d 变成 %d", len(rows), n)
 	}
 
-	// ③ 变体改价 + 改 SKU 编码：两条记录，各自的新旧值可读。
 	if _, err := f.products.UpdateVariant(ctx, &productdto.UpdateVariantReq{
 		ID: v.ID, Price: floatPtr(128.5), SKUCode: strPtr("SZ_TEE_900"), OperatorID: operatorForTest,
 	}); err != nil {
@@ -315,8 +280,6 @@ func TestMasterDataChangeUpdateOnlyChangedFields(t *testing.T) {
 	}
 }
 
-// —— 验收 1：删除同样留痕（new 为空、old 为删除前的取值）——
-
 func TestMasterDataChangeDeleteRecordsOldValues(t *testing.T) {
 	f := newMDFixture(t)
 	if f == nil {
@@ -327,7 +290,6 @@ func TestMasterDataChangeDeleteRecordsOldValues(t *testing.T) {
 	p := f.product(t, "T 恤", "tee", sz.ID)
 	v := f.variant(t, p.ID)
 
-	// ① 删变体。
 	if err := f.products.DeleteVariant(ctx, &productdto.DeleteVariantReq{
 		ID: v.ID, OperatorID: operatorForTest,
 	}); err != nil {
@@ -337,7 +299,6 @@ func TestMasterDataChangeDeleteRecordsOldValues(t *testing.T) {
 	mustChange(t, vRows, masterdataenums.ActionDelete, "sku_code", v.SKUCode, "")
 	mustChange(t, vRows, masterdataenums.ActionDelete, "price", "0.00", "")
 
-	// ② 删商品：连带它的变体一起留痕（否则「商品的变体去哪了」查不出来）。
 	p2 := f.product(t, "第二件", "tee-2", sz.ID)
 	v2 := f.variant(t, p2.ID)
 	if err := f.products.Delete(ctx, &productdto.DeleteReq{ID: p2.ID, OperatorID: operatorForTest}); err != nil {
@@ -348,8 +309,6 @@ func TestMasterDataChangeDeleteRecordsOldValues(t *testing.T) {
 	mustChange(t, f.entityChanges(t, masterdataenums.EntityProductVariant, v2.ID),
 		masterdataenums.ActionDelete, "sku_code", v2.SKUCode, "")
 }
-
-// —— 验收 2：货源资料（含类型 / 关联方 / 结算价 / 对接配置）——
 
 func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	f := newMDFixture(t)
@@ -369,7 +328,7 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	rows := f.entityChanges(t, masterdataenums.EntityInventorySource, src.ID)
 	mustChange(t, rows, masterdataenums.ActionCreate, "code", "", "SZ_FACTORY")
 	mustChange(t, rows, masterdataenums.ActionCreate, "type", "", purchaseenums.SourceTypeInternal)
-	// 内部货源恒为关联方（DDL CHECK 兜住），留痕记的是落库后的真值。
+
 	mustChange(t, rows, masterdataenums.ActionCreate, "related_party", "", "true")
 	mustChange(t, rows, masterdataenums.ActionCreate, "settle_price", "", "3.50")
 	mustChange(t, rows, masterdataenums.ActionCreate, "config", "", `{"erp":"sap"}`)
@@ -379,7 +338,6 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 		}
 	}
 
-	// 改：停用 + 改结算价 + 换对接配置 —— 只有这三个字段产生记录。
 	if _, err = f.purchase.UpdateSource(ctx, &purchasedto.UpdateSourceReq{
 		ID: src.ID, Status: strPtr(purchaseenums.SourceStatusDisabled),
 		SettlePrice: floatPtr(4.2), Config: json.RawMessage(`{"erp":"kingdee"}`),
@@ -398,15 +356,12 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 		t.Fatalf("没改编码就不该有 code 记录：%s", describeChanges(rows))
 	}
 
-	// 删：old 为删除前的取值。
 	if err = f.purchase.DeleteSource(ctx, &purchasedto.DeleteSourceReq{ID: src.ID, OperatorID: operatorForTest}); err != nil {
 		t.Fatalf("删货源失败: %v", err)
 	}
 	rows = f.entityChanges(t, masterdataenums.EntityInventorySource, src.ID)
 	mustChange(t, rows, masterdataenums.ActionDelete, "name", "苏州自有工厂", "")
 }
-
-// —— 验收 3：操作人与时间 + append-only 不可改写 ——
 
 func TestMasterDataChangeAppendOnlyWithOperatorAndTime(t *testing.T) {
 	f := newMDFixture(t)
@@ -429,12 +384,12 @@ func TestMasterDataChangeAppendOnlyWithOperatorAndTime(t *testing.T) {
 	if err != nil || len(rows) == 0 {
 		t.Fatalf("应有变更记录，实际 %v %d", err, len(rows))
 	}
-	// 操作人逐条落库：创建时是 alice，改价那条是 bob。
+
 	priceRow := findChange(rows, masterdataenums.ActionUpdate, "price")
 	if priceRow == nil || priceRow.OperatorID != "bob" {
 		t.Fatalf("改价记录的操作人应是 bob，实际 %+v", priceRow)
 	}
-	// 时间：全部非空，且「改价」不早于「创建」。
+
 	createRow := findChange(rows, masterdataenums.ActionCreate, "price")
 	if createRow == nil || createRow.CreatedAt == "" || priceRow.CreatedAt == "" {
 		t.Fatalf("记录必须带时间：create=%+v update=%+v", createRow, priceRow)
@@ -442,7 +397,7 @@ func TestMasterDataChangeAppendOnlyWithOperatorAndTime(t *testing.T) {
 	if priceRow.CreatedAt < createRow.CreatedAt {
 		t.Fatalf("后发生的变更时间不应早于先发生的：%s < %s", priceRow.CreatedAt, createRow.CreatedAt)
 	}
-	// 操作人过滤是查询维度之一。
+
 	byBob, err := f.changes.ListChanges(ctx, &masterdatadto.ListChangeReq{
 		ProjectID: f.projectID, EntityID: v.ID, OperatorID: "bob", Size: 200,
 	})
@@ -450,7 +405,6 @@ func TestMasterDataChangeAppendOnlyWithOperatorAndTime(t *testing.T) {
 		t.Fatalf("按操作人筛选应只命中改价那条，实际 %v %d", err, len(byBob))
 	}
 
-	// append-only：数据库层直接拒绝改写（代码层也没有更新 / 删除入口）。
 	if err := f.db.Exec("UPDATE master_data_changes SET new_value = '999.00' WHERE id = ?", priceRow.ID).Error; err == nil {
 		t.Fatalf("UPDATE 变更记录应被数据库拒绝")
 	} else if !strings.Contains(err.Error(), "append-only") {
@@ -468,8 +422,6 @@ func TestMasterDataChangeAppendOnlyWithOperatorAndTime(t *testing.T) {
 	}
 }
 
-// —— 验收 5：与库存流水职责分离 ——
-
 func TestMasterDataChangeSeparatedFromStockMovements(t *testing.T) {
 	f := newMDFixture(t)
 	if f == nil {
@@ -485,7 +437,6 @@ func TestMasterDataChangeSeparatedFromStockMovements(t *testing.T) {
 		t.Fatalf("新建变体不该有库存流水")
 	}
 
-	// 库存变动（入库 +5）：只进流水，不进主数据变更记录。
 	if _, err := f.inventory.ChangeStock(ctx, &inventorydto.ChangeStockReq{
 		ProjectID: f.projectID, Direction: inventoryenums.DirectionIn,
 		ReasonCode: "purchase_in", SourceType: purchaseenums.MovementSourcePurchaseOrder,
@@ -503,7 +454,6 @@ func TestMasterDataChangeSeparatedFromStockMovements(t *testing.T) {
 		t.Fatalf("库存数量变动不该写主数据变更记录（实际从 %d 变成 %d）", before, n)
 	}
 
-	// 配置变更（改价）：只进主数据变更记录，不进库存流水。
 	if _, err := f.products.UpdateVariant(ctx, &productdto.UpdateVariantReq{
 		ID: v.ID, Price: floatPtr(88), OperatorID: operatorForTest,
 	}); err != nil {
@@ -517,8 +467,6 @@ func TestMasterDataChangeSeparatedFromStockMovements(t *testing.T) {
 	}
 }
 
-// —— 验收 2：价格改动的三条来源路径（变体编辑 / 定价工具 / 入库成本回写）——
-
 func TestMasterDataChangePriceOrigins(t *testing.T) {
 	f := newMDFixture(t)
 	if f == nil {
@@ -529,7 +477,6 @@ func TestMasterDataChangePriceOrigins(t *testing.T) {
 	p := f.product(t, "T 恤", "tee", sz.ID)
 	v := f.variant(t, p.ID)
 
-	// 成本价（变体编辑路径）。
 	if _, err := f.products.UpdateVariant(ctx, &productdto.UpdateVariantReq{
 		ID: v.ID, CostPrice: floatPtr(40), OperatorID: operatorForTest,
 	}); err != nil {
@@ -540,7 +487,6 @@ func TestMasterDataChangePriceOrigins(t *testing.T) {
 		t.Fatalf("变体编辑路径的 origin 应是 %s，实际 %s", masterdataenums.OriginVariant, row.Origin)
 	}
 
-	// 定价工具批量改价（来源 = pricing）：成本 40 × 1.5 = 60。
 	applied, err := f.products.ApplyPricing(ctx, &productdto.PricingApplyReq{
 		PricingRuleReq: productdto.PricingRuleReq{
 			ProjectID: f.projectID, RuleType: productenums.PricingRuleCostMultiple,
@@ -560,7 +506,6 @@ func TestMasterDataChangePriceOrigins(t *testing.T) {
 		t.Fatalf("定价路径的 origin 应是 %s，实际 %s", masterdataenums.OriginPricing, row.Origin)
 	}
 
-	// 入库成本价回写（来源 = receipt）：成本价 40 → 22.5。
 	if err := f.products.UpdateVariantCost(ctx, f.projectID, v.ID, 22.5, operatorForTest); err != nil {
 		t.Fatalf("成本价回写失败: %v", err)
 	}
@@ -568,14 +513,12 @@ func TestMasterDataChangePriceOrigins(t *testing.T) {
 	if row := mustChange(t, rows, masterdataenums.ActionUpdate, "cost_price", "40.00", "22.50"); row.Origin != masterdataenums.OriginReceipt {
 		t.Fatalf("入库回写的 origin 应是 %s，实际 %s", masterdataenums.OriginReceipt, row.Origin)
 	}
-	// 回写只动成本价一列：售价那条记录仍是定价工具写的。
+
 	priceRow := findChange(rows, masterdataenums.ActionUpdate, "price")
 	if priceRow == nil || priceRow.NewValue != "60.00" {
 		t.Fatalf("成本价回写不该动售价，实际 %+v", priceRow)
 	}
 }
-
-// —— 验收 4：接口链路（按实体 / 按条件查询）——
 
 func TestMasterDataChangeAPIChain(t *testing.T) {
 	f := newMDFixture(t)
@@ -588,23 +531,22 @@ func TestMasterDataChangeAPIChain(t *testing.T) {
 
 	engine := newMasterDataAPIEngine(f)
 
-	// 字段级列表。
 	rec := httptestGet(engine, "/api/masterdata/change/list?projectId="+f.projectID+
 		"&entityType="+masterdataenums.EntityProductVariant+"&entityId="+v.ID)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"field":"sku_code"`) {
 		t.Fatalf("变更列表接口应返回字段级记录，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	// 计数。
+
 	rec = httptestGet(engine, "/api/masterdata/change/count?projectId="+f.projectID+"&entityId="+v.ID)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"total"`) {
 		t.Fatalf("计数接口应返回 total，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	// 实体清单（按实体聚合）。
+
 	rec = httptestGet(engine, "/api/masterdata/change/entities?projectId="+f.projectID)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"changeCount"`) {
 		t.Fatalf("实体清单接口应返回聚合结果，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	// 单实体时间线。
+
 	rec = httptestGet(engine, "/api/masterdata/change/entity?projectId="+f.projectID+
 		"&entityType="+masterdataenums.EntityProductVariant+"&entityId="+v.ID)
 	var timeline struct {
@@ -617,30 +559,22 @@ func TestMasterDataChangeAPIChain(t *testing.T) {
 	if rec.Code != http.StatusOK || timeline.Data.Total == 0 || timeline.Data.EntityLabel != v.SKUCode {
 		t.Fatalf("单实体时间线不符：%d %+v", rec.Code, timeline.Data)
 	}
-	// 实体 id 不是 uuid：明确 400，而不是静默返回空集或 500。
+
 	rec = httptestGet(engine, "/api/masterdata/change/list?projectId="+f.projectID+"&entityId=not-a-uuid")
 	if rec.Code != http.StatusBadRequest || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrInvalidParam, "参数不合法") {
 		t.Fatalf("非法实体 id 应 400 + %s，实际 %d：%s", masterdataenums.ErrInvalidParam, rec.Code, rec.Body.String())
 	}
-	// 实体类型不在白名单：明确 400。
+
 	rec = httptestGet(engine, "/api/masterdata/change/list?projectId="+f.projectID+"&entityType=order")
 	if rec.Code != http.StatusBadRequest || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrEntityTypeInvalid, "实体类型不在变更记录的白名单内") {
 		t.Fatalf("白名单外实体类型应 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 }
 
-// mentionsMasterDataError 判断响应里透出的业务错误文案是不是「key 或它的译文」之一。
-//
-// 迁移 198 之后 masterdataenums 的 Err* 值是 i18n key（如 masterdata.err.invalidParam）：
-// 响应层 pkg/response.translate 在词条可用时返回中文译文、词条未加载时**原样返回 key** ——
-// 两种都算正确透出。断言因此两个都接受：只认 key 会在整包跑时变红（前面的测试已加载 i18n 缓存，
-// 响应里是译文），只认译文会在单跑时变红。真正要钉住的是「透出的不是通用内部错误文案」——
-// 那意味着业务错误被 response.ErrorAuto 判成了内部错误（走到了 500 分支）。
 func mentionsMasterDataError(body, errKey, zhText string) bool {
 	return strings.Contains(body, errKey) || strings.Contains(body, zhText)
 }
 
-// newMasterDataAPIEngine 只挂变更记录 JSON 接口的测试引擎（真实 handler + pkg/response）。
 func newMasterDataAPIEngine(f *mdFixture) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -652,12 +586,10 @@ func newMasterDataAPIEngine(f *mdFixture) *gin.Engine {
 	return engine
 }
 
-// httptestGet 发一个 GET 请求（页面与接口断言共用）。
 func httptestGet(engine *gin.Engine, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
 }
 
-// 编译期护栏：测试断言用的契约类型来自模块 contract（避免误用内部实现）。
 var _ masterdatacontract.MasterDataService = (*masterdataservice.Service)(nil)

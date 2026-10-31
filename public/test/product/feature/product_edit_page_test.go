@@ -1,16 +1,5 @@
 package feature
 
-// product_edit_page_test.go — 商品编辑页（GET /admin/products/edit）。
-//
-// 本页补的是「商品自身字段」的编辑入口：在这之前，名称 / URL 段 / SKU / 状态 / 价格 /
-// 单位 / 重量 / SEO / 图集只有创建时能填，建完之后再也没有入口（详情页只管子资源）。
-// 保存链路已迁到 JSON 写基座（internal/templates/static/js/ui/write-base.js 直调
-// /api/product/update），页面那条 POST 不存在了。所以本文件守两件事：
-//  1. 回填：GET 的控件里是当前值（空表单等于把已有数据擦掉）；
-//  2. UpdateReq 的替换语义：多选字段给空数组 = 解绑全部（nil 才是「本次不改」）、
-//     主图传空串 = 清除（不传 = 不改）—— 基座按这两条语义发身体，这里直调 service 钉住。
-// 表单字段名与端点的逐字对齐由 internal/templates 的声明断言守（data-write-* 那一族）。
-
 import (
 	"context"
 	"errors"
@@ -30,7 +19,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// TestProductEditPageRoundTrip 回填 → 保存 → 落库 → 多选字段整体替换。
 func TestProductEditPageRoundTrip(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
@@ -38,9 +26,7 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 	ctx := context.Background()
 	price := 99.0
-	// 主图参建：编辑页必须把它回填进媒体控件的隐藏域 —— ProductRowResp 漏赋值时控件恒空，
-	// 而保存路径会读那个隐藏域（三种形态见 TestProductEditPageSavesDefaultImage）。
-	// 历史 /storage/img/x 由受信媒体基址输出完整 URL，保留文件名回显断言。
+
 	coverImage := "/storage/img/product-cover.jpg"
 	created, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "编辑前", Slug: "before-edit", DefaultPrice: &price,
@@ -50,7 +36,6 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 		t.Fatalf("创建商品失败: %v", err)
 	}
 
-	// 1. 回填：控件里必须是当前值。
 	page := getProductEditPage(engine, f.projectID, created.ID)
 	for _, want := range []string{
 		`value="编辑前"`, `value="before-edit"`,
@@ -60,9 +45,7 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 			t.Fatalf("编辑页缺少回填内容 %q；页面尾部：%s", want, tailOfPage(page, 700))
 		}
 	}
-	// 主图回显单独判：空态渲染出来也是 name="defaultImage" value=""（前缀一模一样），
-	// 所以只查「字段名出现」会假绿 —— 要判的是**值非空、且是建商品时写的那张**。
-	// URL 会被 upload.StorageURL 归一（可能带 media base 前缀），因此只比对文件名片段。
+
 	const imgMarker = `name="defaultImage" value="`
 	imgIdx := strings.Index(page, imgMarker)
 	if imgIdx < 0 {
@@ -76,8 +59,6 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 		t.Fatalf("编辑页未回显主图（隐藏域值 = %q）；页面尾部：%s", imgVal, tailOfPage(page, 700))
 	}
 
-	// 2. 保存：一次把各类字段都改一遍。基座把整张表单发成一份 UpdateReq（文字字段照发、
-	// 点名的数值字段转小数、图集两个隐藏域按行切成数组），这里构造同一份。
 	newName, newSlug, subtitle := "编辑后", "after-edit", "副标题"
 	status, unit := productenums.StatusPublished, "件"
 	weight, newPrice := 0.5, 88.5
@@ -107,8 +88,7 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	if got.DefaultPrice == nil || *got.DefaultPrice != 88.5 {
 		t.Fatalf("默认价格未落库：%v", got.DefaultPrice)
 	}
-	// SEO 标题 / 描述已与商品名 / 副标题合并（2026-09-30）：表单里没有这两栏，
-	// 提交里塞了也不会被采纳 —— 这两列保持原值（这里是新建商品，两列为空）。
+
 	if got.SEOTitle != "" || got.SEODescription != "" {
 		t.Fatalf("SEO 两栏不该由表单写入：%q / %q", got.SEOTitle, got.SEODescription)
 	}
@@ -116,8 +96,6 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 		t.Fatalf("图集应按行切成 2 条，实际 %v", got.Images)
 	}
 
-	// 3. 多选字段的整体替换：先挂一个属性组，再用**空数组**保存一次（基座对「一个都不勾」
-	//    发的就是 []，不是不发 —— UpdateReq 里 nil 才是「本次不改」）。
 	attr, aerr := f.svc.CreateAttribute(ctx, &productdto.CreateAttributeReq{
 		ProjectID: f.projectID, Name: "颜色", Key: "color",
 	})
@@ -141,7 +119,7 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	if len(attached.AttributeIDs) != 1 || attached.AttributeIDs[0] != attr.ID {
 		t.Fatalf("属性组应已挂上，实际 %v", attached.AttributeIDs)
 	}
-	// 全部取消勾选 → 基座发空数组 → 服务端必须当成「解绑全部」。
+
 	saveAttrs([]string{})
 	detached, gerr3 := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
 	if gerr3 != nil {
@@ -152,9 +130,6 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProductEditPageSavesDefaultImage 主图保存：隐藏域**恒在表单里**，
-// 所以「提交空串」= 用户点了移除，「字段缺失」= 本次不改。三种形态都要判 ——
-// 处理器漏读它的失效模式是「编辑页能选、保存后又回到旧图」，不报错也不崩。
 func TestProductEditPageSavesDefaultImage(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
@@ -169,7 +144,7 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
 	}
-	// 读回的值可能带 media base 前缀（upload.StorageURL 归一），所以只比对文件名片段。
+
 	readImage := func(stage string) string {
 		got, gerr := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
 		if gerr != nil {
@@ -177,8 +152,7 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 		}
 		return got.DefaultImage
 	}
-	// 基座整表提交时主图隐藏域**恒在表单里**（空态也发空串），所以这里按同一形状构造：
-	// 传 nil 代表「表单里没有这个字段」（不提交），传指针代表「发出去的值」。
+
 	save := func(image *string) {
 		t.Helper()
 		nm := "主图保存"
@@ -193,20 +167,17 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 		t.Fatalf("建商品时的主图没落库：%q", baseVal)
 	}
 
-	// 1. 字段缺失 → 本次不改（不能因为「表单没带」就把图擦掉）。
 	save(nil)
 	if keep := readImage("未提交主图"); keep != baseVal {
 		t.Fatalf("没提交主图不该改动：期望 %q，实际 %q", baseVal, keep)
 	}
 
-	// 2. 提交新值 → 落库（漏读这个字段的现场就在这里）。
 	newImage := "/storage/img/product-cover-new.png"
 	save(&newImage)
 	if got := readImage("提交新主图"); !strings.Contains(got, "product-cover-new.png") {
 		t.Fatalf("主图未落库：实际 %q", got)
 	}
 
-	// 3. 提交空串 → 明确清空（媒体控件的「移除」按钮就是把隐藏域置空后提交）。
 	emptyImage := ""
 	save(&emptyImage)
 	if got := readImage("提交空主图"); got != "" {
@@ -214,8 +185,6 @@ func TestProductEditPageSavesDefaultImage(t *testing.T) {
 	}
 }
 
-// TestProductEditPageRejectsEmptyName 名称为空：服务端拒绝（不信任前端的 required），
-// 库里保持原值。
 func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
@@ -228,7 +197,7 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
 	}
-	// 基座把 name 原样发（文本框恒在表单里），service 不信任前端 required —— 空白即拒绝。
+
 	blank := "   "
 	_, uerr := f.svc.Update(ctx, &productdto.UpdateReq{ID: created.ID, ProjectID: f.projectID, Name: &blank})
 	if uerr == nil || uerr.Error() != productenums.ErrNameRequired {
@@ -243,7 +212,6 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	}
 }
 
-// failedAttributeListService 在页面实际消费的目录查询边界注入故障，验证失败 JSON 出口。
 type failedAttributeListService struct {
 	productcontract.ProductService
 	calls     int
@@ -292,7 +260,6 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 
 }
 
-// tailOfPage 取页面尾部若干字符（渲染中断时用来看断在哪一段）。
 func tailOfPage(page string, n int) string {
 	if len(page) <= n {
 		return page

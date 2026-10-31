@@ -13,8 +13,6 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 )
 
-// authzStub 是权限上下文服务的可控桩：三段查询各自可注失败，并记录被调用次数与入参。
-// 调用计数是本文件的主判据 —— 失败路径上「下游一次都不该被调」只能靠计数证明。
 type authzStub struct {
 	codes []string
 	aerr  error
@@ -59,8 +57,6 @@ func (s *authzStub) BuildAuthorizedTree(_ context.Context, codes []string) ([]ad
 	return s.tree, s.terr
 }
 
-// servePermContext 用真实 gin 链跑一遍中间件（before 用来预置会话态），返回到达 handler 时
-// 捕获的上下文。handler 没被到达（例如中间件漏了 c.Next()）即红 —— 那是整页空白的故障。
 func servePermContext(t *testing.T, authz admincontract.AuthzContextService, before gin.HandlerFunc) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -81,7 +77,6 @@ func servePermContext(t *testing.T, authz admincontract.AuthzContextService, bef
 	return captured
 }
 
-// withUser 预置会话态：user_id 是中间件唯一认的键（类型必须是 int64）。
 func withUser(uid any) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("user_id", uid)
@@ -115,16 +110,12 @@ func buttonsOf(t *testing.T, c *gin.Context) map[string]bool {
 	return m
 }
 
-// TestContextKeysAreWireContract 钉住三个键的字面量：键名是写入侧（本包）与读取侧
-// （adminui.Prepare 与模块 handler）之间的线协议；改值会让请求上下文失联。
 func TestContextKeysAreWireContract(t *testing.T) {
 	if PermSetKey != "perm_set" || NavTreeKey != "nav_tree" || ButtonsKey != "button_set" {
 		t.Fatalf("上下文键漂移：perm_set=%q nav_tree=%q button_set=%q", PermSetKey, NavTreeKey, ButtonsKey)
 	}
 }
 
-// TestMiddlewareWritesBothSetsAndTree 成功路径：两集合按桩返回填充，树写进上下文，
-// 且按钮查询收到的是**同一批**权限码（同源）。
 func TestMiddlewareWritesBothSetsAndTree(t *testing.T) {
 	tree := []admindto.MenuTreeNode{{ID: 1, Type: 1, Title: "内容"}}
 	st := &authzStub{codes: []string{"page:view"}, buttonList: []string{"page.edit"}, tree: tree}
@@ -154,12 +145,9 @@ func TestMiddlewareWritesBothSetsAndTree(t *testing.T) {
 	}
 }
 
-// TestMiddlewareFailClosedOnPermissionQueryError 本批有意变更的回归判据：
-// 服务返回「非空 codes + err」时，权限集与按钮集必须为空、授权树不得注入，
-// **且按钮查询与建树一次都不能发生**（旧实现在这里照用 codes 并继续下游查询）。
 func TestMiddlewareFailClosedOnPermissionQueryError(t *testing.T) {
 	st := &authzStub{
-		codes:      []string{"*:*", "page:view"}, // 诱饵：服务「既报错又给码」
+		codes:      []string{"*:*", "page:view"},
 		aerr:       errors.New("权限上下文查询失败（桩）"),
 		buttonList: []string{"page.edit"},
 		tree:       []admindto.MenuTreeNode{{ID: 1, Type: 1, Title: "内容"}},
@@ -182,8 +170,6 @@ func TestMiddlewareFailClosedOnPermissionQueryError(t *testing.T) {
 	}
 }
 
-// TestMiddlewareWithoutUserLeavesSetsEmpty 没有可信用户身份时：三集合空、树不注入、
-// 一次查询都不发生（未登录页面照常渲染，只是菜单与按钮消失）。
 func TestMiddlewareWithoutUserLeavesSetsEmpty(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -214,7 +200,6 @@ func TestMiddlewareWithoutUserLeavesSetsEmpty(t *testing.T) {
 	}
 }
 
-// TestMiddlewareNilAuthzDoesNotPanic 装配缺失（authz 为 nil）时不 panic：两个键仍写入空 map。
 func TestMiddlewareNilAuthzDoesNotPanic(t *testing.T) {
 	c := servePermContext(t, nil, withUser(int64(7)))
 	if set := permSetOf(t, c); len(set) != 0 {
@@ -228,8 +213,6 @@ func TestMiddlewareNilAuthzDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestMiddlewarePartialFailuresKeepTheOtherHalves：按钮查询失败 → 只按钮全隐（权限集与树照旧）；
-// 建树失败 → 只树不注入（权限集与按钮照旧）。两条现状语义各钉一颗钉子。
 func TestMiddlewarePartialFailuresKeepTheOtherHalves(t *testing.T) {
 	t.Run("按钮码查询失败", func(t *testing.T) {
 		st := &authzStub{

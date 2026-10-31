@@ -6,10 +6,6 @@ import (
 	buildmodel "go_wp/internal/module/build/model"
 )
 
-// TestNormalizeIntent 构建意图的归一化白名单（与迁移 295 的 CHECK 一致）。
-//
-// 空值归到 dependency 是刻意的：当前唯一的入队来源就是依赖失效扇出，
-// 默认值必须站在多数且更安全的一侧；白名单外的值必须在入队前被拒。
 func TestNormalizeIntent(t *testing.T) {
 	cases := []struct {
 		raw     string

@@ -1,29 +1,5 @@
 package productservice_test
 
-// product_list_page_sql_count_test.go — 商品列表页的 **SQL 次数判据**（P0-1 的硬产出）。
-//
-// 判据三条，都必须会变红：
-//   1. 行组装期间**逐商品详情查询 0 次** —— 把 s.Get 逐商品调用加回列表页或
-//      productRowsFromList，本用例立即失败（失败信息会打出命中的语句）；
-//   2. 读 `products` 表的语句条数 == 2（列表 / count(*) 各一次）——
-//      详情读取或同表补偿读取，无论等值还是 IN 查询都计入预算；
-//   3. SQL 次数**不随商品数（1 / 20 / 100 / 10000 档）线性增长** —— 页内取数必须是常数条。
-//
-// 为什么用 gorm 回调计数而不是 pg_stat_statements：判据要区分「语句的形状」——
-// 「逐商品详情查询」的形状是 FROM "products" 且 WHERE id = （s.Get → First），
-// 而列表查询是 WHERE project_id = …；库级累计量既分不出这两者，也混进了进程里别处的语句。
-//
-// 探针覆盖 Query / Row / Raw，避免漏计 Scan、Rows 与作用域设置。
-//
-// 为什么这些用例在**外部测试包**（productservice_test）：它们要真实的迁移库
-// （support.NewMigratedPGTestDB），而 support 传递依赖 internal/routers →
-// product/inbound/http → product/service —— 内部测试包（package productservice）导入它会
-// 构成「测试期导入环」（实测 go vet 报 import cycle not allowed in test）。
-// 所以：带库的判据走外部测试包 + 导出读模型；未导出纯函数的判据留在内部测试包
-// （见 product_row_facts_unit_test.go）。
-//
-// 表结构来自生产迁移，不手抄 CREATE TABLE。
-
 import (
 	"context"
 	"fmt"
@@ -42,7 +18,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// listPageProjectStub 工程契约桩（这两个用例只走工程清单一条读方法）。
 type listPageProjectStub struct {
 	projectcontract.ProjectService
 	rows []projectdto.ProjectResp
@@ -52,21 +27,11 @@ func (s listPageProjectStub) List(context.Context) ([]projectdto.ProjectResp, er
 	return s.rows, nil
 }
 
-// sqlCountProbe SQL 次数探针：记录被执行的语句文本（gorm 回调）。
 type sqlCountProbe struct {
 	mu    sync.Mutex
 	stmts []string
 }
 
-// attachSQLCountProbe 在 db 上挂**三条**计数回调（Query / Row / Raw）。
-//
-// 三条链各管一类语句，少一条就有一整类隐形：
-//   - Query（gorm:query）：Find / First / Count 这类链式读；
-//   - Row（gorm:row）：Scan / Rows 的读取同样计入预算；
-//   - Raw（gorm:raw）：rls.InProjectScope 每个带作用域的读都会发一条
-//     `set_config('app.project_id', …)` —— 它们是真实往返，不是测试噪音。
-//
-// BEGIN / COMMIT 由驱动层（database/sql）发出、不走 gorm 回调，本来就不计。
 func attachSQLCountProbe(t *testing.T, db *gorm.DB) *sqlCountProbe {
 	t.Helper()
 	p := &sqlCountProbe{}
@@ -100,7 +65,6 @@ func (p *sqlCountProbe) total() int {
 	return len(p.stmts)
 }
 
-// perProductDetailLookups 逐商品详情查询的次数（s.Get → model.Get 的形状）。
 func (p *sqlCountProbe) perProductDetailLookups() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -113,18 +77,12 @@ func (p *sqlCountProbe) perProductDetailLookups() int {
 	return n
 }
 
-// listPageProductsTableReads 列表与计数各读一次商品表，挂载事实包含在列表投影中。
-//
-// 它与 perProductDetailLookups 是两层判据：那一层认「WHERE id = 」这一种形状（s.Get），
-// 这一层按表名计数，同时防住等值查详情与 IN 回读商品事实。
 const listPageProductsTableReads = 2
 
-// productsReadStmt 判断一条语句是不是「读 products 表」。
 func productsReadStmt(sql string) bool {
 	return strings.Contains(sql, "FROM "+`"products"`)
 }
 
-// productTableReads 读 products 表的语句条数。
 func (p *sqlCountProbe) productTableReads() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -137,7 +95,6 @@ func (p *sqlCountProbe) productTableReads() int {
 	return n
 }
 
-// dumpProductTableReads 只列读 products 表的语句（失败信息给证据，而不是把整页语句都倒出来）。
 func (p *sqlCountProbe) dumpProductTableReads() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -150,14 +107,12 @@ func (p *sqlCountProbe) dumpProductTableReads() string {
 	return strings.Join(hits, "\n")
 }
 
-// dump 打全部语句（失败信息里给出证据，而不是只说「多了几次」）。
 func (p *sqlCountProbe) dump() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return strings.Join(p.stmts, "\n")
 }
 
-// seedListProduct 插一行商品（只补 NOT NULL 且无默认值的列，其余走表默认），返回 id。
 func seedListProduct(t *testing.T, db *gorm.DB, projectID string, seq int) string {
 	t.Helper()
 	id := uuid.NewString()
@@ -170,9 +125,6 @@ func seedListProduct(t *testing.T, db *gorm.DB, projectID string, seq int) strin
 	return id
 }
 
-// seedListProductsBulk 批量插入 [from, to] 区间的商品，行内容与 seedListProduct **逐字相同**
-// （同一份 NOT NULL 列清单、同一套 name / slug / sku 格式），只是每 500 行拼成一条 INSERT。
-// 为什么要它：n=10000 档若逐行 Exec，用例的时间就全花在 10000 次往返上，而不是被测的取数上。
 func seedListProductsBulk(t *testing.T, db *gorm.DB, projectID string, from, to int) {
 	t.Helper()
 	const batchRows = 500
@@ -199,12 +151,6 @@ func seedListProductsBulk(t *testing.T, db *gorm.DB, projectID string, from, to 
 	}
 }
 
-// TestProductListPageSQLCountIsConstantInProductCount 每页 1 / 20 / 100 商品三档 + 10000 档：
-// 逐商品详情查询 0 次、读 products 表恒 3 条、SQL 总次数各档相等；100 档再翻满 5 页，每页同样成立。
-//
-// 为什么另加 10000 档：n=20 与 n=100 第 1 页的**页面工作量完全相同**（各 20 行、同样 17 条语句），
-// 所以那两档只测得动「条数」；工程内行数远大于本页行数时，残余的线性项才有观测窗口 ——
-// 它不在 SQL **条数**层面（10000 档同样相等），而在单条语句自身的工作量（报告 §5 末段）。
 func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
@@ -216,8 +162,6 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	// checkPage 跑一次列表页并核对四条判据，返回本页 SQL 总次数。
-	// 四条按「形状 → 总量」排序：形状判据先给出**可定位的语句清单**，总量判据兜住形状认不出的回归。
 	checkPage := func(label string, page int, wantRows int, wantTotal int64) int {
 		t.Helper()
 		probe.reset()
@@ -261,8 +205,6 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 			totals[1], totals[20], totals[100])
 	}
 
-	// 100 个商品这一档再翻满 5 页：分页偏移不该带来任何额外次数
-	// （N+1 的另一种形态是「每行补一次」，翻页时同样会暴露）。
 	for page := 2; page <= 5; page++ {
 		label := fmt.Sprintf("100 商品第 %d 页", page)
 		got := checkPage(label, page, 20, 100)
@@ -273,9 +215,6 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 		t.Logf("100 商品第 %d 页：SQL 总次数=%d（与 1 商品页相同）", page, got)
 	}
 
-	// 第四档：工程内 1 万行、本页仍是 20 行。用途是**单独暴露「表里行数」这一项** ——
-	// 页面工作量与 20 行页逐条相同，两档之间的任何差别都只能来自单条语句自身的工作量
-	//（count(*) 要数的行、列表 ORDER BY … LIMIT/OFFSET 要跳过的索引项）。
 	seedListProductsBulk(t, db, projectID, seeded+1, 10000)
 	seeded = 10000
 	label := fmt.Sprintf("n=10000（工程内 %d 行、本页 %d 行）", seeded, 20)

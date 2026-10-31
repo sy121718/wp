@@ -105,7 +105,7 @@ func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 	if !strings.Contains(body, `data-jump-state="ok"`) {
 		t.Fatalf(`成功提示页应有 data-jump-state="ok"：%s`, body)
 	}
-	// 回跳地址由服务端从表单 action 的 query 读回（project 筛选上下文），不再走 ?ok=。
+
 	if !strings.Contains(body, "/api/page/redirect?project=p1") {
 		t.Fatalf("提示页应给回本页（带 project）的链接：%s", body)
 	}

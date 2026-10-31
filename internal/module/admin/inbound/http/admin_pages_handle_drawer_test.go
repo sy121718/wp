@@ -24,8 +24,7 @@ type drawerMenuService struct {
 	admincontract.MenuService
 	row       *admindto.MenuDetailResp
 	updateErr error
-	// parents 是上级菜单候选。MenuParentOptions 必须显式实现：嵌入的接口方法值是 nil，
-	// 未实现时被调用是 panic（不是「返回 error 走降级分支」）。
+
 	parents    []admindto.MenuParentChoice
 	parentsErr error
 }
@@ -69,8 +68,6 @@ func (s *drawerPermService) PermUpdate(_ context.Context, _ *admindto.PermUpdate
 	return &admindto.PermUpdateResp{}, nil
 }
 
-// PermOptions 供菜单表单的权限点清单使用（迁移 470：一个菜单可以挂多个码）。
-// 返回两条不同 module 的候选，顺带覆盖「分组」这条路径。
 func (s *drawerPermService) PermOptions(_ context.Context, _ *admindto.PermOptionsReq) (*admindto.PermOptionsResp, error) {
 	return &admindto.PermOptionsResp{List: []admindto.PermOptionItem{
 		{ID: 1, PermissionCode: "menu:list", PermissionName: "菜单列表", Module: "menu"},
@@ -132,7 +129,7 @@ func TestPermissionEditFragmentAndEcho(t *testing.T) {
 func TestMenuEditFragmentAndEcho(t *testing.T) {
 	s := &drawerMenuService{
 		row: &admindto.MenuDetailResp{ID: 42, Title: "原菜单", Type: 2, Status: 1, PermissionCodes: []string{"menu:list"}},
-		// 候选里带上「自己」（42）：编辑态的它必须是不可选的那一项。
+
 		parents: []admindto.MenuParentChoice{
 			{ID: 7, Title: "目录", Type: 1, Indent: ""},
 			{ID: 42, Title: "原菜单", Type: 2, Indent: "　", Disabled: true},
@@ -145,9 +142,9 @@ func TestMenuEditFragmentAndEcho(t *testing.T) {
 	for _, data := range []gin.H{
 		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents}),
 		adminui.Prepare(testDrawerContext("/menus/update"), gin.H{"MenuEdit": s.row, "MenuEditErr": "错误", "MenuEditEcho": map[string]string{"title": "用户原值", "parent_id": "7", "type": "2", "status": "1", "path": "/custom", "icon": "", "sort_order": "0", "remark": ""}, "MenuEditParent": uint64(7), "Parents": s.parents}),
-		// 候选读失败（不传 Parents）：模板必须退化成 hidden parent_id，而不是丢掉这个字段。
+
 		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row}),
-		// 权限点清单：候选按 module 分组，勾选态在 Go 侧算好（模板只渲染）。
+
 		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents, "PermChoices": []permChoiceGroup{
 			{Module: "menu", Items: []permChoiceItem{{Code: "menu:list", Name: "菜单列表", Checked: true}, {Code: "menu:create", Name: "新建菜单"}}},
 			{Module: "role", Items: []permChoiceItem{{Code: "role:list", Name: "角色列表"}}},
@@ -187,16 +184,12 @@ func TestMenuEditFragmentAndEcho(t *testing.T) {
 				if !strings.HasPrefix(body, "<div data-drawer-fragment>") || !strings.HasSuffix(body, "</div>") || !strings.Contains(body, "<form") || strings.Contains(body, "<html") {
 					t.Fatalf("fragment shape: %s", body)
 				}
-				// 权限点清单必须真的在片段里：它是「菜单能配权限」的唯一入口，
-				// 而缺 PermChoices 时模板会静默跳过整块（不做反向断言就会漏掉这个退路）。
+
 				if !strings.Contains(body, `name="permission_codes" value="menu:list" checked`) ||
 					!strings.Contains(body, `name="permission_codes" value="menu:create"`) {
 					t.Fatalf("perm picker missing: %s", body)
 				}
-				// 上级菜单必须是可改的下拉（不再是 hidden）：它是「把子菜单挂到别处 / 挪回顶级」
-				// 的唯一入口。菜单自己的那一项（42）必须标 disabled —— 选自己必然成环。
-				// data-type 是前端 applyParentFilter 的类型过滤依据（缺了会把所有候选项灰掉，
-				// 并把当前选中值重置为「（根菜单）」），data-self 是「自身与子孙」的标记。
+
 				if !strings.Contains(body, `<select name="parent_id"`) ||
 					!strings.Contains(body, `value="0" selected`) ||
 					!strings.Contains(body, `data-type="1"`) ||
@@ -206,8 +199,7 @@ func TestMenuEditFragmentAndEcho(t *testing.T) {
 			}
 		})
 	}
-	// 候选读失败：上级字段退化成 hidden，绝不能变成「整个字段都没有」
-	// —— 缺字段会让下一次提交把菜单静默搬到顶级，那是一次读失败换来的一次数据改动。
+
 	s.parentsErr = errors.New("catalog unavailable")
 	wFail := httptest.NewRecorder()
 	r.ServeHTTP(wFail, httptest.NewRequest(http.MethodGet, "/menus/edit?id=42", nil))

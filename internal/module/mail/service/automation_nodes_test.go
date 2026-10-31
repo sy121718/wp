@@ -1,16 +1,5 @@
 package mailservice
 
-// automation_nodes_test.go — T4 四个新节点的校验与执行判据（纯逻辑，不碰数据库）。
-//
-// 三组判据，每一组都对应一个「不报错但会出事」的缺陷：
-//
-//  1. **A/B 分桶必须确定性**：重试 / 补跑换了分支，不只统计作废，用户还会先后收到两个
-//     版本的邮件。判据是「同参 1000 次同值 + 不同 runID 能分到不同变体」。
-//  2. **webhook 地址必须拒绝内网**：SSRF 的判定本体在 pkg/ssrf（自己的用例覆盖六类地址），
-//     这里判的是「nodeArity 与执行期都接上了它」。
-//  3. **list_status_branch 的三档映射是封闭的**：多出来的状态归到「不在名单」而不是
-//     「未激活」—— 那才是保守的一侧。
-
 import (
 	"strings"
 	"testing"
@@ -19,7 +8,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// TestBucketOfIsDeterministic 同参 1000 次返回同值（重试不换分支）。
 func TestBucketOfIsDeterministic(t *testing.T) {
 	first := bucketOf(4242, "ab1")
 	for i := 0; i < 1000; i++ {
@@ -29,7 +17,6 @@ func TestBucketOfIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestBucketOfSpreadsAcrossRuns 不同 runID 至少出现两个不同变体（分布不是常量）。
 func TestBucketOfSpreadsAcrossRuns(t *testing.T) {
 	counts := map[int]int{}
 	for runID := uint64(1); runID <= 200; runID++ {
@@ -38,7 +25,7 @@ func TestBucketOfSpreadsAcrossRuns(t *testing.T) {
 	if len(counts) < 2 {
 		t.Fatalf("200 个 runID 只落进 %d 个桶 —— 分桶退化成常量了", len(counts))
 	}
-	// 也判「两个变体都有人」：50/50 的权重下，200 个样本全落一边的概率可以忽略。
+
 	v := abVariant{ID: "v1", Weight: 50}
 	sideA := 0
 	for runID := uint64(1); runID <= 200; runID++ {
@@ -51,14 +38,12 @@ func TestBucketOfSpreadsAcrossRuns(t *testing.T) {
 	}
 }
 
-// TestBucketOfDependsOnNodeKey 同一个实例在不同 A/B 节点上不应被同一个桶绑死。
 func TestBucketOfDependsOnNodeKey(t *testing.T) {
 	if bucketOf(1, "ab1") == bucketOf(1, "ab2") && bucketOf(1, "ab1") == bucketOf(1, "ab3") {
 		t.Fatal("不同节点 key 得到同一桶 —— 一个用户在所有 A/B 节点上被绑到同一组")
 	}
 }
 
-// TestABOutletOfPicksByWeight 命中变体按权重累加，且出口必须存在。
 func TestABOutletOfPicksByWeight(t *testing.T) {
 	node := AutomationNode{
 		Key: "ab1", Type: NodeTypeABTest,
@@ -84,7 +69,6 @@ func TestABOutletOfPicksByWeight(t *testing.T) {
 	}
 }
 
-// TestABOutletOfFailsWhenOutletMissing 命中变体的出口缺失必须报错（不许静默走第一个）。
 func TestABOutletOfFailsWhenOutletMissing(t *testing.T) {
 	node := AutomationNode{
 		Key: "ab1", Type: NodeTypeABTest,
@@ -92,20 +76,19 @@ func TestABOutletOfFailsWhenOutletMissing(t *testing.T) {
 			map[string]any{"id": "v1", "weight": float64(100)},
 			map[string]any{"id": "v2", "weight": float64(0)},
 		}},
-		Out: map[string]string{"v1": "n2"}, // v2 没有出口
+		Out: map[string]string{"v1": "n2"},
 	}
-	// v1 权重 100 → 所有桶都落 v1，有出口，不该报错。
+
 	if _, err := abOutletOf(7, node); err != nil {
 		t.Fatalf("v1 有出口时不该报错: %v", err)
 	}
-	// 把 v1 的出口也去掉 → 必须报错。
+
 	node.Out = map[string]string{}
 	if _, err := abOutletOf(7, node); err == nil {
 		t.Fatal("命中变体没有出口时必须报错，不能静默走第一个")
 	}
 }
 
-// TestListStatusOutletMapping 三档映射封闭。
 func TestListStatusOutletMapping(t *testing.T) {
 	cases := map[string]string{
 		mailmodel.ContactStatusSubscribed:   outletActive,
@@ -121,7 +104,6 @@ func TestListStatusOutletMapping(t *testing.T) {
 	}
 }
 
-// TestNodeArityRejectsBadNewNodes 四个新节点各至少一条拒绝用例。
 func TestNodeArityRejectsBadNewNodes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -195,7 +177,6 @@ func TestNodeArityRejectsBadNewNodes(t *testing.T) {
 	}
 }
 
-// TestNodeArityAcceptsValidNewNodes 四个新节点的合法形态（否则门禁只会「拒绝一切」）。
 func TestNodeArityAcceptsValidNewNodes(t *testing.T) {
 	cases := map[string]AutomationNode{
 		"list_status_branch": {
@@ -228,7 +209,6 @@ func TestNodeArityAcceptsValidNewNodes(t *testing.T) {
 	}
 }
 
-// TestDetailKeysRegisteredForNewNodes 新词条必须在 enums 的登记切片里（漏登记 = 明细被静默丢弃）。
 func TestDetailKeysRegisteredForNewNodes(t *testing.T) {
 	registered := map[string]bool{}
 	for _, k := range mailenums.DetailKeys {

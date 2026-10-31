@@ -1,43 +1,15 @@
 package templates
 
-// ui_token_fallback_test.go —— 全部 CSS 的 token 兜底值必须是**浅色主题真值**。
-//
-// 为什么需要它：ui.css 会被注入到**没有 theme.css** 的前台产物里（段切分后内联进 HTML），
-// 那时 `var(--sky-c-X, Y)` 的兜底 Y 直接生效。若 Y 抄的是**深色主题**的真值，产物侧就会
-// 出现「浅底浅字」「浅底深边」这类偏色 —— 而这类错误在后台（有 theme.css）完全看不见，
-// 只有打开产物页面才暴露。历史上已经修过两批（5 处 --sky-c-text-secondary、primary 系列），
-// 每次都是逐个找；这个文件把它变成判据：**新写 `var(--sky-c-X, <深色值>)` 直接红**。
-//
-// 判据的边界（刻意保守，避免误伤）：
-//   · 兜底等于该 token 的**深色真值** → 失败（这就是缺陷本身）；
-//   · 等于**浅色真值**、或两侧真值相同（light == dark）→ 通过；
-//   · 其它值（既不是浅色也不是深色真值，例如 rgba(...) 或某处自定的颜色）→ 只打印提示，
-//     不判失败：它们不是「抄了深色主题」，是否该收敛属于别的判据。
-//
-// 真值来源是 theme.css（运行时读取），所以 theme.css 改 token 时这里自动跟着走。
-//
-// 扫描范围（清账批扩到全部）：ui.css / media-lib.css / workbench.css / workbench-a11y.css /
-// rich-editor.css / automation.css —— 它们都会随产物投递。theme.css 也在范围内，但它是
-// **token 定义处**：`[data-theme="…"]` 块里的深色值就是定义本身、别名层的
-// `--sky-c-X: var(--c-X, Y)` 也是定义，所以对 theme.css 先剥掉定义区，只扫消费行。
-
 import (
 	"regexp"
 	"strings"
 	"testing"
 )
 
-// cssFallbackFiles 会随产物投递、因而兜底值会直接生效的样式文件。
 var cssFallbackFiles = []string{
 	"ui.css", "theme.css", "media-lib.css", "workbench.css", "workbench-a11y.css", "rich-editor.css", "automation.css",
 }
 
-// stripThemeTokenDefinitions 剥掉 theme.css 里的 **token 定义区**，只留消费行：
-//
-//	· [data-theme="light"|"dark"] 与 [data-theme] 三个块（两套真值表与别名层就是定义）；
-//	· 其余位置的自定义属性声明行（`--x: …;`）—— 例如某处只覆盖单个 token 的写法。
-//
-// 不剥的话，定义行本身会被当成「兜底取了深色值」而误报。
 func stripThemeTokenDefinitions(src string) string {
 	out := src
 	for _, sel := range []string{`[data-theme="light"]`, `[data-theme="dark"]`, "[data-theme]"} {
@@ -59,15 +31,12 @@ func stripThemeTokenDefinitions(src string) string {
 	return re.ReplaceAllString(out, "")
 }
 
-// 例外表：兜底**故意**取深色真值的场景。默认没有例外。
-// 条目不再命中即失败（同项目其它豁免约定），防止清单变成永久豁免区。
 var tokenFallbackExempt = map[string]string{
 	"--sky-c-bg = #101318":       "workbench.css「10. 深色主题」段（选择器全部限定 [data-theme=\"dark\"]）—— 只在深色语境下生效，兜底取深色真值是有意的",
 	"--sky-c-bg-soft = #171b21":  "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-field）",
 	"--sky-c-bg-hover = #1f242b": "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-cell img）",
 }
 
-// normalizeColor 把颜色值归一化到可比较的形式：小写、去掉空白、#abc → #aabbcc。
 func normalizeColor(v string) string {
 	v = strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(v)), ""))
 	if strings.HasPrefix(v, "#") && len(v) == 4 {
@@ -82,15 +51,6 @@ func normalizeColor(v string) string {
 	return v
 }
 
-// themeTokenFallbacks 从 theme.css 解析出每个 --sky-c-* 的**浅色真值**与**深色真值**。
-//
-// 解析链：`[data-theme="light"] / [data-theme="dark"]` 给出 `--c-X: 字面值`；
-// `[data-theme]` 别名层给出 `--sky-c-X: var(--c-X, Y)`。于是
-//
-//	浅色真值 = lightBase[--c-X]（缺则取别名兜底 Y），深色真值同理取 darkBase。
-//
-// 解析不出的条目跳过（例如值里带计算式、或别名指向另一个别名）：本判据只处理能静态
-// 定值的 token —— 覆盖不到的 token 不会因此静默通过，因为「既是浅色又不是深色」会走提示分支。
 func themeTokenFallbacks(t *testing.T, themeSrc string) (light, dark map[string]string) {
 	t.Helper()
 	lightBase := map[string]string{}
@@ -134,9 +94,6 @@ func themeTokenFallbacks(t *testing.T, themeSrc string) (light, dark map[string]
 	return light, dark
 }
 
-// TestUIFallbacksAreLightThemeValues ui.css 的兜底值不得取深色主题真值。
-//
-// 失败信息会指名 token、兜底值与它撞上的深色真值，方便直接改。
 func TestUIFallbacksAreLightThemeValues(t *testing.T) {
 	themeSrc := readUIOwnershipFile(t, "static/css/theme.css")
 	light, dark := themeTokenFallbacks(t, themeSrc)
@@ -155,11 +112,11 @@ func TestUIFallbacksAreLightThemeValues(t *testing.T) {
 			token, fallback := m[1], normalizeColor(m[2])
 			total++
 			if fallback == "" {
-				continue // var(--sky-c-X,) 之类：交给别的判据
+				continue
 			}
 			if dv, ok := dark[token]; ok && fallback == dv {
 				if lv, same := light[token]; same && lv == dv {
-					continue // 两侧真值相同：取谁都一样
+					continue
 				}
 				key := token + " = " + fallback
 				if reason, exempt := tokenFallbackExempt[key]; exempt {

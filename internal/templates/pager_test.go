@@ -1,11 +1,5 @@
 package templates
 
-// pager_test.go — 分页派生值（PagerOf）的口径：夹紧、页数、本页区间、按钮态。
-//
-// 这些值以前由 pkg/pagination.Facts 算好放进数据；搬到模板层后判据不变 ——
-// limit<1 回落 20、page<1 回落 1、页数向上取整、page 超出页数时夹到末页（取数之前收敛
-// 与展示必须同口径，否则会出现「表格为空、分页条显示第 999 页」）。
-
 import (
 	"testing"
 
@@ -44,8 +38,6 @@ func TestPagerOfDerivesShape(t *testing.T) {
 	}
 }
 
-// TestPagerDefaultsKeepLimitInLinks 链接默认带 limit（与迁移前所有站点的链接一致）；
-// DropLimit 是唯一的例外开关（mail 账号页、商品标签命中片段）。
 func TestPagerDefaultsKeepLimitInLinks(t *testing.T) {
 	keep := PagerOf(pagination.Page{Total: 120, Page: 2, Limit: 20})
 	if keep.PageParam != "page" || !keep.KeepLimit {

@@ -40,7 +40,7 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		wantTitle string
 	}{
 		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "2", 2, "已更新"},
-		// 无效状态给出的是声明处的中文兜底（原先兜底表不在 enums 里，页面上直接是裸 key）。
+
 		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
 		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "请选择要操作的原因"},
 		{"limit", func() url.Values {
@@ -56,7 +56,7 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 			spy := &reasonUpdateSpy{failID: tc.failID}
 			(&inventoryPageHandle{inventory: spy}).InventoryReasonsBulkStatus(c)
 			c.Writer.WriteHeaderNow()
-			// 结论走响应体：失败一律 400 + JSON，不再渲染提示页。
+
 			if rec.Code != http.StatusBadRequest || view.name != "" {
 				t.Fatalf("状态码 %d 模板 %q，want 400 且不渲染", rec.Code, view.name)
 			}
@@ -81,9 +81,7 @@ func TestInventoryReasonBulkUsesUpdatePermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 判据只看「这条路由上挂的权限点是不是 reason/update」——不锁死接收者变量名：
-	// 路由注册从 SetupInventoryPages 拆到 registerInventoryWarehouseWritePages 之后，
-	// 句柄形参名从 inventoryPages 变成了 h，而「共用 update 权限点」这条契约没变。
+
 	route := regexp.MustCompile(`pages\.POST\("/inventory/reasons/bulk-status",\s*builtin\.CasbinMiddlewareForPath\("/api/inventory/reason/update"\),\s*[\w.]+\.InventoryReasonsBulkStatus\)`)
 	if !route.Match(body) {
 		t.Fatal("bulk route must share reason_update enforcement")

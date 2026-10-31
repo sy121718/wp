@@ -1,11 +1,5 @@
 package pubenums
 
-// publication_enums_test.go — 错误声明处的**状态码与文案事实**。
-//
-// 判据在声明处（pkg/facing.WithStatus + errFallbacks），出口只读不判。
-// 所以这条断言属于 enums 自己的包：把它放在 dto 的测试里，等于让请求形状的
-// 测试去验错误声明，改了一边会误伤另一边。
-
 import (
 	"net/http"
 	"testing"
@@ -13,7 +7,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// TestErrProjectMissingDeclaresBadRequest 缺工程是**参数错误**（400），不是内部故障。
 func TestErrProjectMissingDeclaresBadRequest(t *testing.T) {
 	err := ErrProjectMissing()
 
@@ -40,10 +33,6 @@ func TestErrProjectMissingDeclaresBadRequest(t *testing.T) {
 	}
 }
 
-// TestEveryErrConstantHasFallback 每个 Err* 常量都在兜底表里有一句中文（兜底跟声明处走）。
-//
-// 与 architecture 的同名判据分工不同：那边扫全仓，这里只守本包，改本包常量时
-// 不必等整仓门禁先跑起来。
 func TestEveryErrConstantHasFallback(t *testing.T) {
 	for _, key := range []string{
 		ErrRouteOccupied,

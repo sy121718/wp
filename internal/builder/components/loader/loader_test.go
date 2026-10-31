@@ -8,7 +8,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 校验：形态白名单 + CSS 安全值。
 func TestValidateExtra(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -34,7 +33,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 样式编译：缺省尺寸、四形态 keyframes、自定义尺寸。
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{}, b)
@@ -50,7 +48,6 @@ func TestCompileCSS(t *testing.T) {
 		}
 	}
 
-	// 全量形态遍历（shapes 表即唯一清单，新增形态自动纳入）。
 	for _, s := range shapes {
 		b2 := &core.CSSBuckets{}
 		compileCSS("n2", &Props{Variant: s.variant}, b2)
@@ -66,7 +63,6 @@ func TestCompileCSS(t *testing.T) {
 	}
 }
 
-// TestBuildView 视图：形态 → DOM 结构映射 + 标签 + 确定性。
 func TestBuildView(t *testing.T) {
 	v := BuildView(&Props{Variant: VariantDots, Label: "加载中…"})
 	if v.Self != "dot" || v.Wrap || len(v.Items) != 3 {
@@ -75,14 +71,14 @@ func TestBuildView(t *testing.T) {
 	if v.Label != "加载中…" {
 		t.Errorf("标签不符: %q", v.Label)
 	}
-	// 容器形态：九宫格与波浪条的子元素都包在容器里。
+
 	if g := BuildView(&Props{Variant: VariantGrid}); !g.Wrap || g.Self != "grid" || len(g.Items) != 9 {
 		t.Errorf("grid 视图不符: %+v", g)
 	}
 	if w := BuildView(&Props{Variant: VariantWave}); !w.Wrap || w.Self != "wave" || len(w.Items) != 5 {
 		t.Errorf("wave 视图不符: %+v", w)
 	}
-	// 单元素形态无子元素（plane/orbit 曾经被 default 吞成 spinner，这里锁死）。
+
 	for _, variant := range []string{VariantPlane, VariantOrbit, VariantPulse, VariantSpinner} {
 		if s := BuildView(&Props{Variant: variant}); s.Items != nil || s.Wrap {
 			t.Errorf("形态 %s 应为单元素结构: %+v", variant, s)
@@ -97,9 +93,6 @@ func TestBuildView(t *testing.T) {
 	}
 }
 
-// TestShapeTableSync 形态表 → CSS 选择器必须一一对应：
-// self 与 compileCSS 的后缀分叉，产物就会出现「模板输出的类名没有样式 / 样式指向不存在的元素」
-// （plane/grid/orbit 曾经的缺陷）。本用例遍历 shapes 全表兜底。
 func TestShapeTableSync(t *testing.T) {
 	if len(shapes) != len(shapeByVariant) {
 		t.Fatalf("形态表存在重复项：%d 项 / %d 唯一", len(shapes), len(shapeByVariant))

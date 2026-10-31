@@ -2,10 +2,6 @@ package purchasedto
 
 import "testing"
 
-// 登记收货的表单是三列同名数组（lineId / quantity / unitPrice），按序号读。
-//
-// 这里钉的是**整单一次提交**的解析口径：本次到货量 0 / 空的行整行跳过
-// （0 不是「收 0 件」，是「这行本次不收」），跳过之后不能错位到别的行。
 func TestPurchaseReceiptFormReqRegisterReq(t *testing.T) {
 	cases := []struct {
 		name string
@@ -91,7 +87,6 @@ func TestPurchaseReceiptFormReqRegisterReq(t *testing.T) {
 	}
 }
 
-// 建单表单的草稿勾选：checkbox 未勾不提交 → false；未勾即「直接下单」。
 func TestPurchaseCreateFormReqAsDraft(t *testing.T) {
 	base := PurchaseCreateFormReq{
 		ProjectID: "P1", Code: "PO-1", SourceID: "S1",

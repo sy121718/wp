@@ -1,10 +1,5 @@
 package migrations
 
-// 697b：本批与「产物 SEO 体检结果区词条」（697-seo-audit-i18n）同主编号，
-// 因此按仓规补补丁位（同号 + 不同补丁位才合法，见 register_registry_test.go 的
-// TestSeedVersionSlotsUnique 与 155b / 199b / 228b 的先例）。
-// 排序影响：compareVersion 先比主编号、再比补丁位，"" < "b"（空串前缀更短先排），
-// 所以 697 仍在 697b 之前 —— 两条 seed 互不依赖，顺序变化不影响结果。
 func init() {
 	registerSeed(Seed{
 		Version:   "697b-product-error-detail-keys",

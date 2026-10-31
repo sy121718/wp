@@ -1,10 +1,3 @@
-// 导航译文保存的用户契约最终落在这条链上：Session（会话 Cookie）→ CSRF（X-CSRF-Token）
-// → Casbin（navigation:update，迁移 036 落的权限点）→ handler → PG。
-//
-// 本文件补的正是链路层：模块内用例是**不带中间件**的（直接 POST 到 gin 路由），它们能证明
-// 形状与取词，却证明不了「无策略会被拦住」「没带 CSRF 发不出去」「旧页面 POST 真的不在了」。
-// 这里刻意与 internal/routers/assembly.go 同构地装配 /api 的三层链，装置与生产不同构
-// 时断言的是另一个系统。
 package feature
 
 import (
@@ -50,12 +43,8 @@ import (
 
 const navTranslationAuthzPlainAdmin = "nav-tr-authz-plain"
 
-// navTranslationWriteAPIPath 写端点：四种写动作收敛到这一条真实路由上（页面借用对象）
-// —— 因此权限点与路径一一对应，不出现「一个码两条 path」的同步漂移。
 const navTranslationWriteAPIPath = "/api/navigation/update"
 
-// navTranslationWritePermission 迁移 036 落的权限点（sys_permission.api_path/api_method 与
-// 上一行逐字一致，判权只看 (obj, act)，code 列仅用于文案与菜单树）。
 const navTranslationWritePermission = "navigation:update"
 
 type navTranslationAuthzEnv struct {
@@ -66,12 +55,10 @@ type navTranslationAuthzEnv struct {
 	PlainID   int64
 	ProjectID string
 	NavSvc    navigationcontract.NavigationService
-	// Ports 是装配期装上的**真实**同事务写端口（attachNavWritePorts 的返回值）。
-	// 用例要计数时用它做委派基线（navStaleSpyAttach 重挂装饰器，五端口仍需全齐）。
+
 	Ports navWritePortFixture
 }
 
-// newNavTranslationAuthzEnv 装配与生产同构的真实链路，并落一条可翻译的导航项。
 func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	t.Helper()
 
@@ -79,7 +66,7 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	if db == nil {
 		t.Fatal("NewMigratedPGTestDB 返回 nil：没有拿到真实 PostgreSQL 库")
 	}
-	// 超管必须在业务权限 seed 之前建好（031/050 按 is_admin=1 逐行授策略）。
+
 	if err := support.SeedTestAdmin(t, db, support.TestAdminUsername, support.TestAdminPassword); err != nil {
 		t.Fatalf("准备测试超管失败: %v", err)
 	}
@@ -98,8 +85,6 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 
 	plainID := navTranslationAuthzSeedPlainAdmin(t, db)
 
-	// 普通管理员先建、seed 后跑的顺序不能颠倒：seeds 只按 is_admin=1 授权，
-	// 颠倒会让普通管理员也吃到超管策略，反例的前提就没了。
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "导航译文保存鉴权测试工程"})
 	if err != nil {
@@ -107,36 +92,29 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	}
 
 	var navSvc navigationcontract.NavigationService
-	// navImpl 具体类型（来源索引与写服务都挂在具体 Service 上）。
-	// navHandle 是 SetupNavigationRoutes 返回的**真实句柄**：写服务注入到它上面，
-	// 与生产装配同一处。两者都由路由注册函数一并返回，测试不另造一份。
+
 	var navImpl *navigationservice.Service
-	// ports 是装配期装上的真实同事务写端口，随 env 交给用例做计数委派基线。
+
 	var ports navWritePortFixture
 	var navHandle *navigationhttp.Handle
 	var pages pagecontract.PageService
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		GinMode:         gin.TestMode,
 		UseDefaultRoute: false,
-		// 组件由本用例显式装配（DB 是隔离 schema）；InitComponents 会去连生产库，刻意不接。
+
 		InitComponents: false,
 		RouteRegistrar: func(engine *gin.Engine) {
-			// 相对路径以**本包目录**为基准：public/test/navigation/feature → 上升四级才是仓库根。
-			// 写错层级时渲染器会加载到零个模板，页面 render 失败只会回一句归口错误页 ——
-			// 那种失败看起来像「鉴权挂了」，其实是装置指错了目录。
+
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
 			adminAuthz := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
-			// /admin 页面组：中间件链与 assembly.go 一致（Session + CSRF + 权限上下文）。
+
 			adminPages := engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				adminctx.PermContextMiddleware(adminAuthz))
 
-			// /api 上显式包一层三层链，与 assembly.go 的 authorizedAPI 逐字同构：
-			// navigation 的 API 路由自身不带中间件，判权全靠组级链。少了这一层，
-			// 「无策略 403」就永远测不出来（拿到的会是 handler 自己的 4xx/200）。
 			authorizedAPI := permission.NewRouteGroup(
 				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
 
@@ -151,21 +129,8 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 				nil, nil, navSvc, nil)
 			navigationhttp.SetupNavigationPages(adminPages, navSvc, projects, pages, blocks)
 
-			// 译文写服务注入到 **SetupNavigationRoutes 返回的那个真实句柄** 上，与生产装配
-			// （assembly_publish.go 的 SetTranslationWriteService）同一处、同一形状。
-			//
-			// 为什么不沿用旧的页面句柄 singleton：那套注入点已随译文 MVC 删除，
-			// 而现在写服务的依赖是三个**同事务**跨模块端口（页标记 / 实例标记 / 入队），
-			// 端口由测试库句柄真实构造 —— 本用例验收的是鉴权链，写分支必须真的能走完，
-			// 否则「无策略被 403 拦住」之前的 500 会让断言失去意义。
 			wireNavigationTranslationWriter(t, db, navHandle, navImpl, projects)
-			// 菜单 CRUD（Create / Update / Delete / SwapMove）的四端口与译文写服务是**两套**
-			// 依赖：前者装在服务实例上，后者装在路由句柄上。这里少装前者，任何走 /api/navigation
-			// 的写请求都会先撞 writePortsReady 的 fail closed，回 500 navigation.err.translation.unavailable
-			// —— 授权用例因此看不到本该看到的 403/200。
-			//
-			// 返回值（真实端口句柄）存进 env：需要计数的用例拿它做委派基线，
-			// 不必自己再构造一份（「两条写链各装一套」的口径漂移正是这么来的）。
+
 			ports = attachNavWritePorts(t, navImpl, db, projects)
 		},
 	})
@@ -196,19 +161,18 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 		NavSvc:    navSvc,
 		Ports:     ports,
 	}
-	// 一条可翻译的导航项：契约里 rows[].hash 由「菜单标签原文」算出，没有它就没有可写的行。
+
 	addNavItem(t, navSvc, env.ProjectID, "首页", "/", nil, "self")
 	return env
 }
 
-// navTranslationAuthzSeedPlainAdmin 落一个**无任何角色**的普通管理员（is_admin=0）。
 func navTranslationAuthzSeedPlainAdmin(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(support.TestAdminPassword), bcrypt.MinCost)
 	if err != nil {
 		t.Fatalf("生成密码哈希失败: %v", err)
 	}
-	// id 交给序列：固定 id 与既有 seed 撞上时的冲突是静默跳过的（SeedTestAdmin 已 setval）。
+
 	if err := db.Exec("DELETE FROM sys_admin WHERE username = ?", navTranslationAuthzPlainAdmin).Error; err != nil {
 		t.Fatalf("清理普通管理员测试账号失败: %v", err)
 	}
@@ -242,8 +206,6 @@ func navTranslationAuthzLogin(t *testing.T, engine *gin.Engine, username, label 
 	return sess
 }
 
-// navTranslationAuthzPost 发 JSON 写请求；withCSRF=false 时**不发** X-CSRF-Token
-// （模拟「前端忘了带令牌」：会话有效、令牌缺失）。
 func navTranslationAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *support.AdminSession,
 	path string, payload map[string]interface{}, withCSRF bool) *httptest.ResponseRecorder {
 	t.Helper()
@@ -267,7 +229,6 @@ func navTranslationAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *su
 	return recorder
 }
 
-// navTranslationAuthzPayload 与模板整表提交同形的载荷（action=translations 档）。
 func navTranslationAuthzPayload(projectID, lang, sourceText, target string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":  "translations",
@@ -353,34 +314,29 @@ func navTranslationAuthzWritten(t *testing.T, recorder *httptest.ResponseRecorde
 	return int(written)
 }
 
-// TestNavigationTranslationWriteAuthzChain 无策略 403、超管放行、补策略即放行 ——
-// 「403 由这条 Casbin 路径决定」用因果反证钉住（与 mail 的同一套手法）。
 func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
-	// 前提：普通管理员没有任何 navigation:update 策略（否则下面的 403 反例不成立）。
 	navTranslationAuthzRevokePolicy(t, env)
 	if got := navTranslationAuthzPolicyCount(t, env); got != 0 {
 		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navTranslationWritePermission)
 	}
 	navTranslationAuthzClearTranslation(t, env, "首页", "en-US")
 
-	// 1) 反例：无策略 —— 被 Casbin 拦在 handler 之前（不是形状错、不是 500）。
 	denied := navTranslationAuthzPost(t, env, env.Plain, navTranslationWriteAPIPath,
 		navTranslationAuthzPayload(env.ProjectID, "en-US", "首页", "Home"), true)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("无策略的普通管理员应 403，实际 %d: %s", denied.Code, denied.Body.String())
 	}
-	// 被拦下的回执里不能出现成功态字段：403 只是「没进去」的旁证，回执形状才是「没往下走」。
+
 	if strings.Contains(denied.Body.String(), "written") {
 		t.Errorf("403 的回执不该带写入计数: %s", denied.Body.String())
 	}
-	// 被拦下的请求不能留下任何痕迹：403 只是「没进去」的旁证，落库才是效果。
+
 	if got := navTranslationAuthzTarget(t, env, "首页", "en-US"); got != "" {
 		t.Fatalf("403 的请求不该写库，但译文已落成 %q", got)
 	}
 
-	// 2) 超管对照：策略由 seed 通道按 is_admin=1 补全 —— 必须是 200 且真落库。
 	asAdmin := navTranslationAuthzPost(t, env, env.Super, navTranslationWriteAPIPath,
 		navTranslationAuthzPayload(env.ProjectID, "en-US", "首页", "Home"), true)
 	if asAdmin.Code != http.StatusOK {
@@ -393,7 +349,6 @@ func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
 		t.Fatalf("译文未落库，实际 target=%q", got)
 	}
 
-	// 3) 因果反证：补上策略后普通管理员的同一请求立刻放行。
 	navTranslationAuthzClearTranslation(t, env, "首页", "en-US")
 	navTranslationAuthzGrantPolicy(t, env)
 	allowed := navTranslationAuthzPost(t, env, env.Plain, navTranslationWriteAPIPath,
@@ -407,18 +362,13 @@ func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
 	}
 }
 
-// TestNavigationTranslationWriteRequiresCSRF 会话有效但没带令牌：CSRF 层拒绝，且不落库。
-//
-// 这一档在模块内测不出来（那里的路由没有中间件）：CSRF 是**装配层**的中间件，
-// 少了它，「去掉模板里的 hidden csrf」这类改动不会有任何测试变红。
 func TestNavigationTranslationWriteRequiresCSRF(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	navTranslationAuthzClearTranslation(t, env, "首页", "en-US")
 
 	withoutToken := navTranslationAuthzPost(t, env, env.Super, navTranslationWriteAPIPath,
 		navTranslationAuthzPayload(env.ProjectID, "en-US", "首页", "Home"), false)
-	// 缺令牌的契约状态码就是 403（builtin.CSRFMiddleware：缺失或不一致 → 403「CSRF 校验失败」）；
-	// 只写「不等于 200」会把 400/500 也算通过 —— 那两种恰好是「请求进了 handler」的形态。
+
 	if withoutToken.Code != http.StatusForbidden {
 		t.Fatalf("缺少 X-CSRF-Token 的写请求应 403，实际 %d: %s", withoutToken.Code, withoutToken.Body.String())
 	}
@@ -429,7 +379,6 @@ func TestNavigationTranslationWriteRequiresCSRF(t *testing.T) {
 		t.Fatalf("被 CSRF 拦下的请求不该写库，但译文已落成 %q", got)
 	}
 
-	// 同一请求补上令牌立刻成功 —— 证明上面这一档确实是「缺令牌」，不是别的错误。
 	withToken := navTranslationAuthzPost(t, env, env.Super, navTranslationWriteAPIPath,
 		navTranslationAuthzPayload(env.ProjectID, "en-US", "首页", "Home"), true)
 	if withToken.Code != http.StatusOK {
@@ -440,10 +389,6 @@ func TestNavigationTranslationWriteRequiresCSRF(t *testing.T) {
 	}
 }
 
-// TestNavigationTranslationLegacyPagePostIsGone 旧页面写路由已下线，译文工作台页仍在。
-//
-// 两件事必须一起钉：只断言旧路由 404，改坏页面装配（路由整体没挂上）也不会红；
-// 只断言页面 200，则旧路由复活（回到两套写入口）也不会红。
 func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
@@ -481,7 +426,7 @@ func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 		t.Fatalf("译文工作台页应 200，实际 %d: %s", page.Code, page.Body.String())
 	}
 	body := page.Body.String()
-	// 页面上的写契约必须与真实端点一致：点一次保存就该打到 /api/navigation/update。
+
 	if !strings.Contains(body, `data-write-url="`+navTranslationWriteAPIPath+`"`) {
 		t.Errorf("译文页缺少 JSON 写声明 data-write-url=%q", navTranslationWriteAPIPath)
 	}
@@ -490,20 +435,6 @@ func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 	}
 }
 
-// TestNavigationTranslationsRowsShape 译文保存的 rows 形状契约（slice-of-struct）。
-//
-// 背景：前端用 data-write-rows 把表格行收成**一个对象数组**发上来，
-// 而这条链路的契约是「rows 必须是数组、每项必须是对象、键只认 context/hash/target、
-// 值必须是 JSON 字符串、三个键必须都出现」。
-//
-// 为什么值得单独测：形状错误在这里有两种截然不同的失败方式，而不是一种
-//   - 整体不是数组（例如发了单个对象）→ 必须 400。若被吞成 200+written:0，
-//     客户端会以为保存成功，实际一个字段都没提交；
-//   - 数组元素缺 target 键 → 同样必须 400。缺键与「显式空串」是两件事：
-//     空串是"本次不改动这一行"的合法表达，缺键是形状错误。混在一起就会静默吞掉。
-//
-// 本仓此前没有任何用例发过 slice-of-struct 内容 —— 合并了两个商品 P1 修复的分支
-// 上出现过「data-write-rows 发数组 → 400」的真实故障，而门禁当时是绿的。
 func TestNavigationTranslationsRowsShape(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
@@ -525,21 +456,15 @@ func TestNavigationTranslationsRowsShape(t *testing.T) {
 		return rec.Code, rec.Body.String()
 	}
 
-	// context 必须是 navigation.label（模块只接受这一个语境），hash 是源文本的哈希。
-	// 这两个值不是随便填的：它们是这条链路的**业务契约**，用假值会得到 400 而看不出
-	// 形状判据是否成立（那是另一种 400，与本测试要验的不是同一件事）。
 	ctx := i18n.ContentContext("navigation", "label")
 	hash := i18n.ContentHash("首页")
 
-	// ① 合法：数组 + 三个键齐全 + 值为字符串 → 200。
 	okPayload := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
 		`{"context":"` + ctx + `","hash":"` + hash + `","target":"Item EN"}]}`
 	if code, body := post(t, okPayload); code != http.StatusOK {
 		t.Fatalf("合法的 rows 数组应 200，实际 %d: %s", code, body)
 	}
 
-	// ② 整体不是数组（发了单个对象）→ 400，且不能是「200 + written:0」。
-	//    后者会让客户端以为保存成功。
 	objectPayload := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":` +
 		`{"context":"` + ctx + `","hash":"` + hash + `","target":"Item EN"}}`
 	if code, body := post(t, objectPayload); code != http.StatusBadRequest {
@@ -547,7 +472,6 @@ func TestNavigationTranslationsRowsShape(t *testing.T) {
 			"被吞成 200 会让客户端以为保存成功、实际一个字段都没提交", code, body)
 	}
 
-	// ③ 数组元素缺 target 键 → 400（缺键 ≠ 显式空串）。
 	missingKey := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
 		`{"context":"` + ctx + `","hash":"` + hash + `"}]}`
 	if code, body := post(t, missingKey); code != http.StatusBadRequest {
@@ -555,21 +479,18 @@ func TestNavigationTranslationsRowsShape(t *testing.T) {
 			"缺键若被当成空串，下游会按『本次不改动这一行』跳过 —— 形状错误被静默吞成 200", code, body)
 	}
 
-	// ④ 数组元素出现未知键 → 400（严格白名单，不忽略多余字段）。
 	extraKey := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
 		`{"context":"` + ctx + `","hash":"` + hash + `","target":"x","bogus":"y"}]}`
 	if code, body := post(t, extraKey); code != http.StatusBadRequest {
 		t.Errorf("数组元素含未知键时必须 400，实际 %d: %s", code, body)
 	}
 
-	// ⑤ 数组元素的键值不是字符串 → 400。
 	nonString := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
 		`{"context":"` + ctx + `","hash":"` + hash + `","target":123}]}`
 	if code, body := post(t, nonString); code != http.StatusBadRequest {
 		t.Errorf("数组元素的值不是字符串时必须 400，实际 %d: %s", code, body)
 	}
 
-	// ⑥ 空数组合法（"这次没有要改的行"是正常形态，不是错误）。
 	emptyRows := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[]}`
 	if code, body := post(t, emptyRows); code != http.StatusOK {
 		t.Errorf("空数组应 200（本次没有要改的行是正常形态），实际 %d: %s", code, body)

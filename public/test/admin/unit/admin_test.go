@@ -16,9 +16,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// --- 创建 ---
-
-// TestAdminCreateSuccess 正常创建：密码 bcrypt 哈希落库、默认启用、Name 取用户名。
 func TestAdminCreateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -60,7 +57,6 @@ func TestAdminCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestAdminCreateDuplicateUsername 重复用户名被拒绝。
 func TestAdminCreateDuplicateUsername(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -77,7 +73,6 @@ func TestAdminCreateDuplicateUsername(t *testing.T) {
 	wantErr(t, err, adminenums.ErrUsernameExists)
 }
 
-// TestAdminCreateDuplicateEmail 重复邮箱被拒绝。
 func TestAdminCreateDuplicateEmail(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -93,7 +88,6 @@ func TestAdminCreateDuplicateEmail(t *testing.T) {
 	wantErr(t, err, adminenums.ErrEmailExists)
 }
 
-// TestAdminCreateDuplicatePhone 重复手机号被拒绝。
 func TestAdminCreateDuplicatePhone(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -111,7 +105,6 @@ func TestAdminCreateDuplicatePhone(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPhoneExists)
 }
 
-// TestAdminCreateEmptyPasswordServiceLacksValidation 观察项：service 层不校验空密码（依赖 handle 层 binding）。
 func TestAdminCreateEmptyPasswordServiceLacksValidation(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -131,9 +124,6 @@ func TestAdminCreateEmptyPasswordServiceLacksValidation(t *testing.T) {
 	}
 }
 
-// --- 登录 ---
-
-// TestAdminLoginSuccess 正确账号密码 + 验证码登录成功，记录登录信息并写入会话。
 func TestAdminLoginSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -151,7 +141,7 @@ func TestAdminLoginSuccess(t *testing.T) {
 	if res.UserID != id || res.SessionID == "" {
 		t.Fatalf("登录响应应包含正确 UserID 与 SessionID: %+v", res)
 	}
-	// 登录信息已写入
+
 	var entity adminmodel.AdminEntity
 	if err := e.db.First(&entity, id).Error; err != nil {
 		t.Fatalf("查询用户失败: %v", err)
@@ -165,7 +155,7 @@ func TestAdminLoginSuccess(t *testing.T) {
 	if entity.LoginFailureCount != 0 {
 		t.Fatalf("登录成功后失败计数应清零: %d", entity.LoginFailureCount)
 	}
-	// 会话已写入 Redis
+
 	session, err := auth.GetUserSession(ctx, id)
 	wantErr(t, err, "")
 	if session == nil || session.Username != username {
@@ -173,7 +163,6 @@ func TestAdminLoginSuccess(t *testing.T) {
 	}
 }
 
-// TestAdminLoginByEmail 使用邮箱作为账号登录成功。
 func TestAdminLoginByEmail(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -191,7 +180,7 @@ func TestAdminLoginByEmail(t *testing.T) {
 	if res.UserID == 0 || res.SessionID == "" {
 		t.Fatalf("登录响应应包含 UserID 与 SessionID: %+v", res)
 	}
-	// 登录信息已写入
+
 	var entity adminmodel.AdminEntity
 	if err := e.db.First(&entity, res.UserID).Error; err != nil {
 		t.Fatalf("查询用户失败: %v", err)
@@ -205,7 +194,7 @@ func TestAdminLoginByEmail(t *testing.T) {
 	if entity.LoginFailureCount != 0 {
 		t.Fatalf("登录成功后失败计数应清零: %d", entity.LoginFailureCount)
 	}
-	// 会话已写入 Redis
+
 	session, err := auth.GetUserSession(ctx, res.UserID)
 	wantErr(t, err, "")
 	if session == nil || session.Username == "" {
@@ -213,7 +202,6 @@ func TestAdminLoginByEmail(t *testing.T) {
 	}
 }
 
-// TestAdminLoginWrongPassword 密码错误返回统一错误并累加失败计数。
 func TestAdminLoginWrongPassword(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -235,7 +223,6 @@ func TestAdminLoginWrongPassword(t *testing.T) {
 	}
 }
 
-// TestAdminLoginUserNotFound 用户不存在返回模糊错误（不泄露用户存在性）。
 func TestAdminLoginUserNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -247,7 +234,6 @@ func TestAdminLoginUserNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrBadCredentials)
 }
 
-// TestAdminLoginDisabled 禁用用户登录被拒绝。
 func TestAdminLoginDisabled(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -265,7 +251,6 @@ func TestAdminLoginDisabled(t *testing.T) {
 	wantErr(t, err, adminenums.ErrAccountDisabled)
 }
 
-// TestAdminLoginCaptchaWrong 验证码错误被拒绝（不触达账号查询）。
 func TestAdminLoginCaptchaWrong(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -277,7 +262,6 @@ func TestAdminLoginCaptchaWrong(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCaptchaExpired)
 }
 
-// TestAdminLoginLockedAfterFiveFailures 连续 5 次失败后账号锁定 30 分钟。
 func TestAdminLoginLockedAfterFiveFailures(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -293,7 +277,6 @@ func TestAdminLoginLockedAfterFiveFailures(t *testing.T) {
 		wantErr(t, err, adminenums.ErrBadCredentials)
 	}
 
-	// 第 6 次即使密码正确也因锁定被拒
 	cid, code := newCaptcha(t)
 	_, err := e.svc.AdminLogin(ctx, &admindto.AdminLoginReq{
 		Username: username, Password: "test-pass-123", CaptchaID: cid, Captcha: code,
@@ -312,7 +295,6 @@ func TestAdminLoginLockedAfterFiveFailures(t *testing.T) {
 	}
 }
 
-// TestAdminLoginUnlockAfterLockExpiry 锁定到期后自动解锁（locked_until_time 过期间隔，不改 status 也能登录）。
 func TestAdminLoginUnlockAfterLockExpiry(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -331,9 +313,6 @@ func TestAdminLoginUnlockAfterLockExpiry(t *testing.T) {
 	wantErr(t, err, "")
 }
 
-// --- 详情 / 编辑 / 删除 ---
-
-// TestAdminDetailSuccess 正常详情查询。
 func TestAdminDetailSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -351,8 +330,6 @@ func TestAdminDetailSuccess(t *testing.T) {
 	}
 }
 
-// TestAdminDetailNotExistReturnsError 已知缺陷复现：不存在的管理员应返回 ErrAdminNotFound，
-// 当前实现 Scan 不命中时静默返回空结构体（与 PermDetail 的 ID==0 检查对比）。
 func TestAdminDetailNotExistReturnsError(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -364,7 +341,6 @@ func TestAdminDetailNotExistReturnsError(t *testing.T) {
 	wantErr(t, err, adminenums.ErrAdminNotFound)
 }
 
-// TestAdminEditSuccess 正常修改用户名/邮箱/手机号。
 func TestAdminEditSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -392,7 +368,6 @@ func TestAdminEditSuccess(t *testing.T) {
 	}
 }
 
-// TestAdminEditNotFound 编辑不存在的管理员报错。
 func TestAdminEditNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -403,13 +378,12 @@ func TestAdminEditNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrAdminNotFound)
 }
 
-// TestAdminEditInvalidatesOldSession 编辑管理员成功后旧会话被删除（强制重新登录）。
 func TestAdminEditInvalidatesOldSession(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	id := createAdminDB(t, e.db, uniq("editse"), uniq("editse")+"@example.com")
-	// 前置：模拟已登录，会话写入 Redis
+
 	err := auth.SaveUserSession(ctx, &auth.UserSession{ID: id, SessionID: "sess-1", Username: uniq("editse")}, 0)
 	wantErr(t, err, "")
 	session, err := auth.GetUserSession(ctx, id)
@@ -431,16 +405,12 @@ func TestAdminEditInvalidatesOldSession(t *testing.T) {
 	}
 }
 
-// TestAdminEditSessionRevokeFailureKeepsSuccess 会话失效失败（Redis 不可用）时，
-// 编辑仍返回成功且 DB 改动已生效。
-// 修复前：DB 更新已提交但 DeleteUserSession 失败会返回错误，调用方误判整个操作失败（部分失败）。
 func TestAdminEditSessionRevokeFailureKeepsSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	id := createAdminDB(t, e.db, uniq("editfail"), uniq("editfail")+"@example.com")
 
-	// 关闭 miniredis 模拟会话存储不可用（DeleteUserSession 必然失败）
 	e.mini.Close()
 
 	newName := uniq("editedfail")
@@ -458,7 +428,6 @@ func TestAdminEditSessionRevokeFailureKeepsSuccess(t *testing.T) {
 	}
 }
 
-// TestAdminEditUsernameExists 编辑为他人已占用用户名被拒绝。
 func TestAdminEditUsernameExists(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -474,7 +443,6 @@ func TestAdminEditUsernameExists(t *testing.T) {
 	wantErr(t, err, adminenums.ErrUsernameExists)
 }
 
-// TestAdminEditEmailExists 编辑为他人已占用邮箱被拒绝。
 func TestAdminEditEmailExists(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -490,7 +458,6 @@ func TestAdminEditEmailExists(t *testing.T) {
 	wantErr(t, err, adminenums.ErrEmailExists)
 }
 
-// TestAdminDeleteSelf 删除自己被拒绝。
 func TestAdminDeleteSelf(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -503,13 +470,12 @@ func TestAdminDeleteSelf(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeleteSelf)
 }
 
-// TestAdminDeleteSuperAdmin 删除超级管理员被拒绝。
 func TestAdminDeleteSuperAdmin(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	id := createAdminDB(t, e.db, uniq("super"), uniq("super")+"@example.com")
-	// 提升为超管需要内部授权上下文（allow_modify_is_admin），模拟受信任内部调用
+
 	adminCtx := context.WithValue(ctx, "allow_modify_is_admin", true)
 	if err := e.db.WithContext(adminCtx).Model(&adminmodel.AdminEntity{}).
 		Where("id = ?", id).Update("is_admin", 1).Error; err != nil {
@@ -522,7 +488,6 @@ func TestAdminDeleteSuperAdmin(t *testing.T) {
 	wantErr(t, err, adminenums.ErrDeleteSuperAdmin)
 }
 
-// TestAdminDeleteNotFound 删除不存在的管理员报错。
 func TestAdminDeleteNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -534,13 +499,12 @@ func TestAdminDeleteNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrAdminNotFound)
 }
 
-// TestAdminDeleteSuccess 删除成功：记录消失、会话被撤销、Casbin 授权被清理。
 func TestAdminDeleteSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	id := createAdminDB(t, e.db, uniq("delok"), uniq("delok")+"@example.com")
-	// 给用户绑定角色与直接权限，验证删除后清理
+
 	roleCode := "role_del_" + uniq("")
 	if err := pkgcasbin.ReplaceUserRoleBindings(idStr(id), []string{roleCode}); err != nil {
 		t.Fatalf("绑定角色失败: %v", err)
@@ -577,9 +541,6 @@ func TestAdminDeleteSuccess(t *testing.T) {
 	}
 }
 
-// --- 列表 / 资料 ---
-
-// TestAdminListExcludesSuperAdmin 列表默认排除超管，支持邮箱筛选与分页。
 func TestAdminListExcludesSuperAdmin(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -588,7 +549,7 @@ func TestAdminListExcludesSuperAdmin(t *testing.T) {
 	u2 := uniq("list2")
 	createAdminDB(t, e.db, u1, u1+"@example.com")
 	createAdminDB(t, e.db, u2, u2+"@example.com")
-	// 直接落库一个超管
+
 	hashed, _ := bcrypt.GenerateFromPassword([]byte("x12345678"), bcrypt.DefaultCost)
 	superEmail := uniq("super") + "@example.com"
 	if err := e.db.Create(&adminmodel.AdminEntity{
@@ -609,7 +570,6 @@ func TestAdminListExcludesSuperAdmin(t *testing.T) {
 		}
 	}
 
-	// 邮箱筛选
 	res, err = e.svc.AdminList(ctx, &admindto.AdminListReq{Email: u1})
 	wantErr(t, err, "")
 	if res.Total != 1 || res.List[0].Username != u1 {
@@ -617,13 +577,12 @@ func TestAdminListExcludesSuperAdmin(t *testing.T) {
 	}
 }
 
-// TestAdminProfileFallbackToDB Redis 未命中时回源数据库并回填。
 func TestAdminProfileFallbackToDB(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	id := createAdminDB(t, e.db, uniq("profile"), uniq("profile")+"@example.com")
-	// 确保 Redis 无会话
+
 	_ = auth.DeleteUserSession(ctx, id)
 
 	res, err := e.svc.AdminProfile(ctx, id)
@@ -638,7 +597,6 @@ func TestAdminProfileFallbackToDB(t *testing.T) {
 	}
 }
 
-// TestAdminProfileNotFound 不存在的用户 Profile 报错。
 func TestAdminProfileNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -647,9 +605,6 @@ func TestAdminProfileNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrUserNotFound)
 }
 
-// --- model 层约束 ---
-
-// TestAdminModelSuperAdminUnique 超管唯一性：第二个超管被 BeforeCreate 拒绝。
 func TestAdminModelSuperAdminUnique(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -668,7 +623,6 @@ func TestAdminModelSuperAdminUnique(t *testing.T) {
 	wantErr(t, err, adminenums.ErrSuperAdminExists)
 }
 
-// TestAdminModelIsAdminFieldProtected 外部直接更新 IsAdmin 被 BeforeUpdate 拒绝。
 func TestAdminModelIsAdminFieldProtected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -687,7 +641,6 @@ func TestAdminModelIsAdminFieldProtected(t *testing.T) {
 	}
 }
 
-// TestAdminDeleteZeroID 全 0 / 空 ID 列表经唯一化后为空，返回管理员不存在。
 func TestAdminDeleteZeroID(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()

@@ -13,11 +13,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// translationProjectStub 站点语言桩：这一屏要的三件事（工程清单 / 启用语言 / 默认语言）。
-//
-// 工程清单给空 = 不选工程，读模型因此**不查商品域候选**（那条要走 model，本组用例没有库）——
-// 本文件只钉不依赖库的那些判据；整屏取数与保存的端到端行为在 feature 测试里
-// （public/test/product/feature/product_translation_test.go 的真实库链路）。
 type translationProjectStub struct {
 	projectcontract.ProjectService
 	rows       []projectdto.ProjectResp
@@ -41,7 +36,6 @@ func (s translationProjectStub) DefaultLocale(context.Context, string) (string, 
 	return s.sourceLang, nil
 }
 
-// 工程清单读取失败必须向上返回错误，不能伪装成没有可翻译内容。
 func TestProductTranslationsPageProjectListFailureIsAnError(t *testing.T) {
 	s := NewService(nil, translationProjectStub{listErr: errors.New("projects read failed")})
 	view, err := s.QueryProductTranslations(context.Background(), &productdto.ProductTranslationsPageReq{ProjectID: "p1"})
@@ -53,13 +47,6 @@ func TestProductTranslationsPageProjectListFailureIsAnError(t *testing.T) {
 	}
 }
 
-// TestTargetTranslationLangsExcludesSource 目标语言 = 启用语言剔除源语言，且**保持清单原顺序**。
-//
-// 顺序是判据不是巧合：「默认语言在前」时第一个元素就是默认选中的目标语言，
-// 换一次顺序（比如排个序）会让工作台默认落在另一种语言上。
-//
-// 反面判据：不剔源语言时「翻了个寂寞」——默认选中的是源语言，译文写回源语言那一列，
-// 前台看到的还是原文，页面上却显示「已翻译」。
 func TestTargetTranslationLangsExcludesSource(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -86,8 +73,6 @@ func TestTargetTranslationLangsExcludesSource(t *testing.T) {
 	}
 }
 
-// TestSaveProductTranslationsRejectsLangOutsideEnabled 目标语言不在启用清单里 = 保存被拒、
-// 由 JSON 出口列出拒绝结论，不按空语言写库。
 func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
 	s := NewService(nil, translationProjectStub{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
@@ -105,9 +90,6 @@ func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
 	}
 }
 
-// TestSaveProductTranslationsParallelArraysMustAlign 三组并行数组长度不齐 = 整批拒绝。
-//
-// 判据是「不按较短的那个截断」：截断会让用户以为全部保存了，而尾部几行悄悄没写。
 func TestSaveProductTranslationsParallelArraysMustAlign(t *testing.T) {
 	s := NewService(nil, translationProjectStub{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
@@ -127,8 +109,6 @@ func TestSaveProductTranslationsParallelArraysMustAlign(t *testing.T) {
 	}
 }
 
-// TestSaveProductTranslationsNoRowsIsSavedWithoutWrite 一行都没提交（或全部空输入）=
-// 保存结论成立、写入 0 条 —— 不能报错，也不能把「没有输入」当成失败。
 func TestSaveProductTranslationsNoRowsIsSavedWithoutWrite(t *testing.T) {
 	s := NewService(nil, translationProjectStub{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{

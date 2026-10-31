@@ -1,14 +1,5 @@
 package productmcp
 
-// taxonomy_write_tools_test.go — 品牌 / 分类 / 标签的边界。
-//
-// 这一组要钉住三条只靠读代码看不出来的语义：
-// ① UpdateCategoryReq.ParentID 是**三态**（不传=不改层级 / 空串=提升为顶级 / id=挂靠），
-//    三种写法看起来都像「设父级」，混了就把分类整棵挪走；
-// ② 回执要说清「这一步的影响面」—— 建品牌不会自动挂到商品上、删标签会让引用它的
-//    自动化规则静默失效（规则不报错，只是永远不再命中）；
-// ③ 清单工具必须带 id：写工具的 parentId / brandId / tagId 只能从这里拿。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -175,9 +166,8 @@ func TestTaxonomyToolNames(t *testing.T) {
 	}
 }
 
-// 三态 ParentID：不传 / 空串 / 具体 id 必须是三种不同的结果。
 func TestCategoryUpdateParentIDIsTriState(t *testing.T) {
-	// ① 不传 → nil（service 不改层级）
+
 	stub := &stubTaxonomyWriter{catUpdateRes: &productdto.CategoryResp{ID: "c1", Name: "电子烟"}}
 	if _, err := invokeTaxonomy(t, taxonomyTool(t, "category_update", stub), map[string]any{
 		"id": "c1", "name": "电子烟",
@@ -188,7 +178,6 @@ func TestCategoryUpdateParentIDIsTriState(t *testing.T) {
 		t.Errorf("不传 parentId 时应为 nil（不改层级），实得 %v", *stub.catUpdateReq.ParentID)
 	}
 
-	// ② 空串 → 指针指向空串（提升为顶级）
 	stub2 := &stubTaxonomyWriter{catUpdateRes: &productdto.CategoryResp{ID: "c1", Name: "电子烟"}}
 	if _, err := invokeTaxonomy(t, taxonomyTool(t, "category_update", stub2), map[string]any{
 		"id": "c1", "parentId": "",
@@ -199,7 +188,6 @@ func TestCategoryUpdateParentIDIsTriState(t *testing.T) {
 		t.Error("传空串 parentId 应提升为顶级（指针指向空串），实得 nil —— 那等于不改层级")
 	}
 
-	// ③ 具体 id → 挂到那个分类下
 	stub3 := &stubTaxonomyWriter{catUpdateRes: &productdto.CategoryResp{ID: "c1", Name: "电子烟", ParentID: "p9"}}
 	if _, err := invokeTaxonomy(t, taxonomyTool(t, "category_update", stub3), map[string]any{
 		"id": "c1", "parentId": "p9",
@@ -211,7 +199,6 @@ func TestCategoryUpdateParentIDIsTriState(t *testing.T) {
 	}
 }
 
-// 三态这件事必须写在描述里 —— 模型看不到 dto 的注释。
 func TestCategoryUpdateDescriptionExplainsTriState(t *testing.T) {
 	desc := taxonomyTool(t, "category_update", &stubTaxonomyWriter{}).Description()
 	if !strings.Contains(desc, "三态") {
@@ -242,7 +229,6 @@ func TestCategoryCreateTextNamesLevel(t *testing.T) {
 	}
 }
 
-// 建品牌不等于挂到商品上 —— 用户最容易以为这一步就完事了。
 func TestBrandCreateTextSaysNeedsProductLink(t *testing.T) {
 	stub := &stubTaxonomyWriter{brandCreateRes: &productdto.BrandResp{ID: "b1", Name: "Nike", Slug: "nike"}}
 	text, err := invokeTaxonomy(t, taxonomyTool(t, "brand_create", stub), map[string]any{"name": "Nike"})
@@ -266,13 +252,12 @@ func TestTagCreateTextSaysManual(t *testing.T) {
 	if !strings.Contains(text, "不会影响任何商品") {
 		t.Errorf("回执应说明新建标签不影响商品，实得：%s", text)
 	}
-	// 只建手工标签：kind 必须留空（落 manual），不能传 rule。
+
 	if stub.tagCreateReq.Kind != "" {
 		t.Errorf("本工具只建手工标签，kind 应为空，实得 %q", stub.tagCreateReq.Kind)
 	}
 }
 
-// 删标签会让引用它的自动化规则**静默失效**（规则不报错，只是永远不再命中）。
 func TestTagDeleteTextWarnsAboutSilentRuleBreakage(t *testing.T) {
 	stub := &stubTaxonomyWriter{}
 	text, err := invokeTaxonomy(t, taxonomyTool(t, "tag_delete", stub), map[string]any{"id": "t1"})
@@ -307,7 +292,6 @@ func TestTaxonomyUpdateRejectsEmptyPatch(t *testing.T) {
 	}
 }
 
-// 清单工具必须带 id：写工具的 parentId / brandId / tagId 只能从这里拿。
 func TestTaxonomyListsCarryIDs(t *testing.T) {
 	r := &stubTaxonomyReader{
 		brands:     []*productdto.BrandResp{{ID: "b1", Name: "Nike", Slug: "nike"}},
@@ -338,7 +322,6 @@ func TestTaxonomyListsCarryIDs(t *testing.T) {
 	}
 }
 
-// tag_list 要能区分手工标签与规则标签 —— 前者删了就没了，后者会自己长回来。
 func TestTagListDistinguishesRuleTags(t *testing.T) {
 	r := &stubTaxonomyReader{tags: []*productdto.TagResp{
 		{ID: "t1", Name: "热销", Kind: "manual"},

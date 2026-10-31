@@ -1,4 +1,3 @@
-// Package blueprinthttp blueprint 模块 HTTP 入口（0-B）。
 package blueprinthttp
 
 import (
@@ -13,17 +12,14 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle blueprint 接口处理器。
 type Handle struct {
 	svc blueprintcontract.BlueprintService
 }
 
-// NewHandle 构造。
 func NewHandle(svc blueprintcontract.BlueprintService) *Handle {
 	return &Handle{svc: svc}
 }
 
-// Create 新建 Blueprint。
 func (h *Handle) Create(c *gin.Context) {
 	req, ok := binding.JSON[blueprintdto.CreateReq](c)
 	if !ok {
@@ -37,7 +33,6 @@ func (h *Handle) Create(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgCreateSuccess, res)
 }
 
-// Update 更新 Blueprint。
 func (h *Handle) Update(c *gin.Context) {
 	req, ok := binding.JSON[blueprintdto.UpdateReq](c)
 	if !ok {
@@ -51,7 +46,6 @@ func (h *Handle) Update(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgUpdateSuccess, res)
 }
 
-// Publish 发布 Blueprint。
 func (h *Handle) Publish(c *gin.Context) {
 	req, ok := binding.JSON[blueprintdto.PublishReq](c)
 	if !ok {
@@ -65,7 +59,6 @@ func (h *Handle) Publish(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgPublishSuccess, res)
 }
 
-// Get Blueprint 详情。
 func (h *Handle) Get(c *gin.Context) {
 	req, ok := binding.Form[blueprintdto.GetReq](c)
 	if !ok {
@@ -79,7 +72,6 @@ func (h *Handle) Get(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgDetailSuccess, res)
 }
 
-// List Blueprint 列表。
 func (h *Handle) List(c *gin.Context) {
 	req, ok := binding.Form[blueprintdto.ListReq](c)
 	if !ok {
@@ -93,7 +85,6 @@ func (h *Handle) List(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgListSuccess, list)
 }
 
-// Delete 删除 Blueprint。
 func (h *Handle) Delete(c *gin.Context) {
 	req, ok := binding.JSON[blueprintdto.DeleteReq](c)
 	if !ok {
@@ -106,7 +97,6 @@ func (h *Handle) Delete(c *gin.Context) {
 	response.SuccessWithMessage(c, blueprintenums.MsgDeleteSuccess, nil)
 }
 
-// Init 初始化 Page Document（复制 AST 并递归重写 Node ID）。
 func (h *Handle) Init(c *gin.Context) {
 	req, ok := binding.Form[blueprintdto.GetReq](c)
 	if !ok {

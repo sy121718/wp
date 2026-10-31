@@ -18,7 +18,6 @@ const (
 	defaultRedisDB       = 0
 )
 
-// Config Redis 配置。
 type Config struct {
 	Host     string   `mapstructure:"host"`
 	Port     int      `mapstructure:"port"`
@@ -133,7 +132,6 @@ func (p *redisProvider) IsInited() bool {
 	return p.inited && p.rdb != nil
 }
 
-// NewRedisProvider 创建 Redis 实现。
 func NewRedisProvider() Provider {
 	return &redisProvider{}
 }

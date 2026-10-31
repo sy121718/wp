@@ -1,8 +1,3 @@
-// Package gallery — Jet 渲染路径辅助导出（Phase 2）。
-//
-// 与 render 函数并行的新路径：props 解码 / CSS 生成 / 数据源解析保留在 Go，
-// HTML 拼装交给 gallery.jet 模板（grid/carousel 两模式 if/else + 单图项结构）。
-// render 函数保持不变（旧输出），本文件只做最小导出与等价的数据准备。
 package gallery
 
 import (
@@ -14,117 +9,97 @@ import (
 	"go_wp/pkg/upload"
 )
 
-// CompileCSS 导出图集样式编译（复用 render 内部的 compileCSS）。
 func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	compileCSS(id, p, b)
 }
 
-// View gallery 渲染视图数据（供 gallery.jet 模板使用）。
 type View struct {
-	// Visible 是否输出组件（空图集且无占位图时 false，组件整体隐藏，不编译样式）。
 	Visible bool
-	// IsCarousel 是否轮播模式（否则为 grid 网格模式）。
+
 	IsCarousel bool
-	// FirstEager 轮播首图优先加载（carousel 且未关闭 carousel.firstEagerOff 时为真）。
+
 	FirstEager bool
-	// Items 每个单图项的渲染视图数据（URL/alt/图注/点击动作分支）。
+
 	Items []ItemView
-	// CarouselAttr 轮播增强属性 data-carousel='...'（carousel 模式，原样输出）。
+
 	CarouselAttr string
-	// Arrows 显示左右箭头（carousel 模式）。
+
 	Arrows bool
-	// Dots 显示圆点指示器（carousel 模式）。
+
 	Dots bool
-	// SlideLabel 圆点 aria-label 模板（含单个 %s；由 ApplyI18n 填充）。
+
 	SlideLabel string
-	// DotItems 圆点导航锚点（构建期生成：<a href="#...">点击由浏览器原生滚动 +
-	// scroll-snap 对齐，**零 JS 可用**；aria-label 构建期按语言 + 序号填好）。
+
 	DotItems []DotItem
 
-	// Loading 组件级加载策略三态原值（空=继承主题，由 ApplyImageLoading 解析）。
 	Loading string
-	// IsEager 立即加载（ApplyImageLoading 后有效，作用于图集内全部 <img>）。
+
 	IsEager bool
-	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+
 	Skeleton bool
-	// Class 附加 class（仅骨架类；模板拼在 "gi" 之后，空则不追加）。
+
 	Class string
 
-	// PrevLabel / NextLabel 轮播箭头 aria-label（构建期按当前语言填充，多语言 P4）。
 	PrevLabel string
 	NextLabel string
-	// PrevIcon / NextIcon 轮播箭头（基座图标库 chevron-left / chevron-right）。
-	// 以前模板里直接写字符 '‹' / '›'，与图标库的描边风格不一致。
+
 	PrevIcon string
 	NextIcon string
 }
 
-// 访客面组件文案 key：site.component.{type}.{prop}。
 const (
-	// TextKeyPrev 轮播「上一张」箭头的词条 key。
 	TextKeyPrev = "site.component.gallery.prev"
-	// TextKeyNext 轮播「下一张」箭头的词条 key。
+
 	TextKeyNext = "site.component.gallery.next"
-	// TextKeySlideLabel 圆点 aria-label 模板的词条 key（含单个 %s）。
+
 	TextKeySlideLabel = "site.component.gallery.slide_label"
 )
 
-// DotItem 圆点导航项（锚点 id 指向对应 slide 元素）。
 type DotItem struct {
-	// Anchor slide 元素 id。
 	Anchor string
-	// Label 无障碍标签（构建期翻译 + 序号替换）。
+
 	Label string
 }
 
-// textFallbackPrev / textFallbackNext 缺词条时的原中文兜底（绝不输出空串）。
 const (
 	textFallbackPrev       = "上一张"
 	textFallbackNext       = "下一张"
 	textFallbackSlideLabel = "第 %s 张"
 )
 
-// ItemView 单个图集项的渲染视图数据（供 gallery.jet 模板使用）。
 type ItemView struct {
-	// AnchorID slide 元素 id（carousel 模式构建期生成：圆点锚点跳转目标）。
 	AnchorID string
-	// URL 图片地址（img src 与灯箱原图，模板输出时由 Jet 默认转义）。
+
 	URL string
-	// Alt 替代文本（模板输出时由 Jet 默认转义）。
+
 	Alt string
-	// Caption 图注文本（模板输出时由 Jet 默认转义）。
+
 	Caption string
-	// HasFigure 是否 figure 包裹（图注模式 below/hover 且图注非空）。
+
 	HasFigure bool
-	// IsLightbox 灯箱分支（点击原图，data-lightbox 相册标记）。
+
 	IsLightbox bool
-	// IsLink 链接分支（打开 href）。
+
 	IsLink bool
-	// Href 链接地址（link 分支，模板输出时由 Jet 默认转义）。
+
 	Href string
 
-	// Loading 单图 loading 三态原值（空=继承组件级 loading）。
 	Loading string
-	// FetchPriority 单图 fetchpriority 原值（空=不输出属性）。
+
 	FetchPriority string
-	// IsEager 立即加载（ApplyImageLoading 后有效）。
+
 	IsEager bool
-	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+
 	Skeleton bool
-	// Class 附加 class（仅骨架类；模板拼在 "gi" 之后）。
+
 	Class string
-	// FetchHigh / FetchLow 资源提示（ApplyImageLoading 后有效）。
+
 	FetchHigh bool
 	FetchLow  bool
 }
 
-// BuildView 生成图集渲染视图：数据源解析（绑定优先/静态兜底）+ 单图项视图准备
-// + 轮播属性拼装（与 render 输出结构一致）。
-//
-// siteLink 站内链接本地化器（审计 I18N-015，可空）：作者手填的站内路径要按当前语言加前缀，
-// 否则英文站点上的图集点过去会跳回默认语言版本。
 func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink func(string) string) (View, error) {
-	// 与旧 render 一致：空模式回落 grid，并写回 p.Mode（compileCSS 依赖它选择分支）。
+
 	if p.Mode == "" {
 		p.Mode = LayoutGrid
 	}
@@ -135,7 +110,7 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink f
 		return View{}, err
 	}
 	if items == nil {
-		return View{}, nil // 空图集 + 无占位：组件隐藏（Visible 默认 false）
+		return View{}, nil
 	}
 
 	views := make([]ItemView, 0, len(items))
@@ -149,7 +124,7 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink f
 
 	v := View{Visible: true, IsCarousel: mode == LayoutCarousel, Items: views, Loading: p.Loading,
 		FirstEager: mode == LayoutCarousel && !p.Carousel.FirstEagerOff}
-	// 圆点锚点：构建期按图片数生成（label 由 ApplyI18n 填）。
+
 	if mode == LayoutCarousel && p.Carousel.Dots {
 		v.DotItems = make([]DotItem, 0, len(views))
 		for i := range views {
@@ -181,26 +156,20 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink f
 	return v, nil
 }
 
-// buildItemView 单图项渲染视图：img 字段 + 点击动作分支 + 图注包裹判定
-// （与旧 renderItem 输出结构一致）。
-//
-// linkFromAuthor 表示集合项的 Link 来自**作者手填**还是 CMS 绑定值：前者是站内逻辑路径，
-// 按当前语言本地化；后者是内容作者掌握的完整地址，再前缀一次可能指到不存在的页面。
-// 判据只能用数据来源 —— 两种值都是 "/xxx" 形态，从字符串上分辨不出来。
 func buildItemView(p *Props, r Item, siteLink func(string) string, linkFromAuthor bool) ItemView {
 	href := r.Link
 	if href != "" && linkFromAuthor {
 		href = core.SiteLinkOrSame(siteLink, href)
 	}
 	if href == "" && strings.TrimSpace(p.DefaultLink) != "" {
-		// 兜底链接是作者在组件属性上填的，永远本地化。
+
 		href = core.SiteLinkOrSame(siteLink, p.DefaultLink)
 	}
 
 	iv := ItemView{URL: r.URL, Alt: r.Alt, Caption: r.Caption, Loading: r.Loading, FetchPriority: r.FetchPriority}
 	switch {
 	case p.ClickAction == ClickLightbox && href == "":
-		// 默认相册灯箱：点击打开原图（客户端增强脚本接管为滑动相册；无脚本时浏览器直开图片）。
+
 		iv.IsLightbox = true
 	case (p.ClickAction == ClickLink || r.Link != "") && href != "":
 		iv.IsLink = true
@@ -213,11 +182,6 @@ func buildItemView(p *Props, r Item, siteLink func(string) string, linkFromAutho
 	return iv
 }
 
-// resolveSourceContent 图集数据源解析（绑定优先/静态兜底），与 render 内部的
-// resolveSource 逻辑等价，参数改为 ContentResolver 接口（避免依赖 AtomRender 结构）。
-//
-// 第二个返回值 fromAuthor 表示这批条目来自作者手填（p.Items）还是 CMS 绑定值：
-// 站内链接本地化只对前者生效（见 buildItemView）。
 func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item, fromAuthor bool, err error) {
 	if p.Binding == nil || p.Binding.Field == "" {
 		return p.Items, true, nil
@@ -239,12 +203,9 @@ func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item,
 	if p.Binding.Placeholder != "" {
 		return filterUnsafeItems([]Item{{URL: p.Binding.Placeholder}}), false, nil
 	}
-	return nil, false, nil // 隐藏组件
+	return nil, false, nil
 }
 
-// filterUnsafeItems 过滤 URL 未过协议校验的绑定项（对齐 button 组件「降级不阻断编译」：
-// 绑定值是 CMS 运行时数据，校验失败静默丢弃而非让整页编译失败）。
-// URL 失败丢弃整项；Link 失败降级为空（图仍显示，仅失去点击链接）。
 func filterUnsafeItems(items []Item) []Item {
 	out := make([]Item, 0, len(items))
 	for _, it := range items {
@@ -260,18 +221,15 @@ func filterUnsafeItems(items []Item) []Item {
 	return out
 }
 
-// ApplyImageLoading 按主题「图片管理」默认解析加载三态（实现 core.ImageLoadingAware）。
-// 返回 true 表示需要骨架屏 CSS，由渲染层统一输出（CSSBuckets 去重，多图不重复）。
 func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
-	// 优先级：单图设置 → 组件级设置 → 主题默认 → 内置默认（开启）。
+
 	needSkeleton := false
 	allEager := true
 	for i := range v.Items {
 		it := &v.Items[i]
 		loading := it.Loading
 		if loading == "" && v.FirstEager && i == 0 {
-			// 轮播首图优先加载（默认开启）：首屏 LCP 图立即取，不等懒加载判定。
-			// 显式的单图 loading 优先于该默认。
+
 			loading = "off"
 		}
 		if loading == "" {
@@ -282,8 +240,7 @@ func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
 		it.Class = core.ImageSkeletonClass("", attrs.Skeleton)
 		fp := core.ResolveFetchPriority(it.FetchPriority)
 		if it.FetchPriority == "" && v.IsCarousel {
-			// 轮播首屏自动分级：第 1 张是 LCP 候选（high），其余延后（low）。
-			// 显式设置（high/low）优先，不受此默认影响。
+
 			if i == 0 {
 				fp = core.ImageFetchPriority{High: true}
 			} else {
@@ -298,15 +255,13 @@ func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
 			allEager = false
 		}
 	}
-	// 组件级字段保留（全部图都立即加载才算 eager），供模板/测试的组件级判断使用。
+
 	v.IsEager = allEager
 	v.Skeleton = needSkeleton
 	v.Class = core.ImageSkeletonClass("", needSkeleton)
 	return needSkeleton
 }
 
-// ApplyI18n 按当前语言填充轮播箭头无障碍标签（实现 core.I18nAware）。
-// text 为 nil 或未命中词条时使用包内中文兜底，保证属性永不为空。
 func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
 		return
@@ -323,17 +278,12 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	v.fillDotLabels()
 }
 
-// SlideLabel 圆点 aria-label 模板（含单个 %s；由 ApplyI18n 填充）。
-// fillDotLabels 用已翻译模板 + 序号填充圆点标签。
 func (v *View) fillDotLabels() {
 	for i := range v.DotItems {
 		v.DotItems[i].Label = strings.Replace(v.SlideLabel, "%s", strconv.Itoa(i+1), 1)
 	}
 }
 
-// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：图集要么走轮播增强
-// （data-carousel，随 CarouselAttr 输出），要么每张图各自可点开灯箱（data-lightbox）。
-// Visible=false（空图集且无占位）时模板整块不输出，这里也必须什么都不登记。
 func (v View) DeclareFeatures() (attrs, classes []string) {
 	if !v.Visible {
 		return nil, nil

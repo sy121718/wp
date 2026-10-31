@@ -1,16 +1,5 @@
 package adminservice
 
-// menu_page_tree_test.go — 菜单树状列表三段纯逻辑的回归：建树 / 分页 / 摊平可见性。
-//
-// 为什么值得单独测：这三段都「不报错，只是结果不同」——
-//   - 建树：父不在集合里（孤儿、父被软删）或父子成环的行，挂错地方就从页面上消失，
-//     表现为「列表突然短了」，看起来像数据被删；
-//   - 摊平：Depth / HasChildren / Hidden / Expanded 是模板缩进与折叠三角的唯一依据，
-//     算错一列就是「缩进错层」或「点开一个空三角」；
-//   - 搜索态的展开：命中行的祖先不展开，用户搜到了东西却看不见 —— 这是最容易漏的一条。
-//
-// 模板只渲染不算，所以这些断言就是「页面上会是什么样」的等价物。
-
 import (
 	"testing"
 
@@ -24,7 +13,6 @@ func menuPageTestRow(id, parent uint64, sort int) adminmodel.MenuPageRow {
 	}}
 }
 
-// flatRow 是三分量断言的取值形态。
 type flatRow struct {
 	id       uint64
 	depth    int
@@ -55,7 +43,6 @@ func assertFlatRows(t *testing.T, out []admindto.MenuPageRow, want []flatRow) {
 	}
 }
 
-// TestFlattenMenuPageRowsBrowsingCollapsesSubtrees 浏览态：默认只显示最上级，子行全部初始隐藏。
 func TestFlattenMenuPageRowsBrowsingCollapsesSubtrees(t *testing.T) {
 	rows := []adminmodel.MenuPageRow{
 		menuPageTestRow(1, 0, 1),
@@ -72,13 +59,12 @@ func TestFlattenMenuPageRowsBrowsingCollapsesSubtrees(t *testing.T) {
 	})
 }
 
-// TestFlattenMenuPageRowsSearchExpandsAncestors 搜索态：命中路径上的祖先初始展开，命中行露出来。
 func TestFlattenMenuPageRowsSearchExpandsAncestors(t *testing.T) {
 	rows := []adminmodel.MenuPageRow{
 		menuPageTestRow(1, 0, 1),
 		menuPageTestRow(2, 1, 2),
 		menuPageTestRow(3, 2, 3),
-		// 另一棵树同样在本页里，但不在命中路径上：不展开、子孙继续隐藏。
+
 		menuPageTestRow(4, 0, 4),
 		menuPageTestRow(5, 4, 5),
 	}
@@ -86,21 +72,19 @@ func TestFlattenMenuPageRowsSearchExpandsAncestors(t *testing.T) {
 	assertFlatRows(t, out, []flatRow{
 		{id: 1, depth: 0, hasKids: true, expanded: true},
 		{id: 2, depth: 1, hasKids: true, expanded: true},
-		// 命中行自己的子行没有被读出来（搜索结果不带命中项子树），所以 HasChildren 为假 ——
-		// 模板据此不渲染折叠三角（点开一个什么都没有的三角比没有三角更糟）。
+
 		{id: 3, depth: 2, matched: true},
 		{id: 4, depth: 0, hasKids: true},
 		{id: 5, depth: 1, hidden: true},
 	})
 }
 
-// TestBuildMenuPageForestKeepsBadRowsAsRoots 坏数据（孤儿 / 成环 / 自环）一行都不能丢。
 func TestBuildMenuPageForestKeepsBadRowsAsRoots(t *testing.T) {
 	rows := []adminmodel.MenuPageRow{
-		menuPageTestRow(1, 2, 1),  // 与 2 互为父子（环）
-		menuPageTestRow(2, 1, 2),  // 同上
-		menuPageTestRow(3, 99, 3), // 父不在集合里
-		menuPageTestRow(4, 4, 4),  // 指向自身
+		menuPageTestRow(1, 2, 1),
+		menuPageTestRow(2, 1, 2),
+		menuPageTestRow(3, 99, 3),
+		menuPageTestRow(4, 4, 4),
 		menuPageTestRow(5, 0, 5),
 	}
 	out := flattenMenuPageRows(buildMenuPageForest(rows, nil))
@@ -118,7 +102,6 @@ func TestBuildMenuPageForestKeepsBadRowsAsRoots(t *testing.T) {
 	}
 }
 
-// TestPaginateMenuRootsClampsPage 分页按顶级节点切，页码越界回落最后一页。
 func TestPaginateMenuRootsClampsPage(t *testing.T) {
 	rows := []adminmodel.MenuPageRow{
 		menuPageTestRow(1, 0, 1),
@@ -130,7 +113,7 @@ func TestPaginateMenuRootsClampsPage(t *testing.T) {
 	if got := len(paginateMenuRoots(forest, 1, 2)); got != 2 {
 		t.Errorf("第 1 页应有 2 棵顶级树，实际 %d", got)
 	}
-	// 第 1 页的第二棵子树（id=2）跟着它的根走，不落到下一页。
+
 	page1 := flattenMenuPageRows(paginateMenuRoots(forest, 1, 2))
 	if len(page1) != 3 || page1[0].ID != 1 || page1[1].ID != 2 {
 		t.Errorf("第 1 页应为「根 1 + 它的子 2 + 根 3」，实际 %d 行", len(page1))
@@ -146,14 +129,12 @@ func TestPaginateMenuRootsClampsPage(t *testing.T) {
 	}
 }
 
-// TestBuildMenuParentChoicesIndent 上级下拉按父链深度缩进（缺项会让「建子菜单选不到父级」不是问题，
-// 但缩进错了会让人把子目录当顶级）。
 func TestBuildMenuParentChoicesIndent(t *testing.T) {
 	parents := []adminmodel.MenuParentOption{
 		{ID: 1, ParentID: 0, Title: "目录"},
 		{ID: 2, ParentID: 1, Title: "子目录"},
 		{ID: 3, ParentID: 2, Title: "菜单"},
-		// 悬空父：链断在集合外，深度按已能走到的层级算，不能死循环。
+
 		{ID: 4, ParentID: 404, Title: "孤儿"},
 	}
 	out := buildMenuParentChoices(parents, nil)
@@ -171,10 +152,6 @@ func TestBuildMenuParentChoicesIndent(t *testing.T) {
 	}
 }
 
-// TestBuildMenuParentChoicesDisabled 排除集合里的候选标不可选，集合外的不受影响。
-//
-// 这条是编辑抽屉的核心约束：选自己或自己的子孙必然成环（service 的 menuCheckCircle 会拦），
-// UI 不标出来的话用户只会白点一次并收到一个「父子级不能互相设置」的错误。
 func TestBuildMenuParentChoicesDisabled(t *testing.T) {
 	parents := []adminmodel.MenuParentOption{
 		{ID: 1, ParentID: 0, Title: "目录"},
@@ -182,7 +159,7 @@ func TestBuildMenuParentChoicesDisabled(t *testing.T) {
 		{ID: 3, ParentID: 2, Title: "菜单"},
 		{ID: 9, ParentID: 0, Title: "另一个目录"},
 	}
-	// 编辑 2：它自己（2）与它的子孙（3）不可选，1 和 9 仍可选。
+
 	out := buildMenuParentChoices(parents, map[uint64]bool{2: true, 3: true})
 	wantDisabled := map[uint64]bool{1: false, 2: true, 3: true, 9: false}
 	for _, c := range out {
@@ -192,7 +169,6 @@ func TestBuildMenuParentChoicesDisabled(t *testing.T) {
 	}
 }
 
-// TestBuildMenuParentChoicesSurvivesCycle 环数据不能让下拉缩进计算转不出来。
 func TestBuildMenuParentChoicesSurvivesCycle(t *testing.T) {
 	parents := []adminmodel.MenuParentOption{
 		{ID: 1, ParentID: 2, Title: "a"},

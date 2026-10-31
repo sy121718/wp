@@ -1,11 +1,3 @@
-// presentation_ddl_alignment_test.go — 生产 DDL 对齐 + 依赖 fan-out 端到端。
-//
-// 三组断言：
-//  1. model 的列集合 ⊆ 生产 DDL 的列集合（presentation 四张表）；
-//  2. 真实 DDL 下创建实例，project_id / template_id / stale / active_artifact_id
-//     等真实列全部落库（修复前 model 写的是不存在的 status / artifact_hash）；
-//  3. 内容变更 → pipeline.Fanout → presentation 精确反查 + 自动重建 + 重新发布
-//     （与 PIPE-3 的 page 侧链路同形，AGENTS.md §8.2/§8.3）。
 package unit
 
 import (
@@ -24,8 +16,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// TestPresentationModelColumnsSubsetOfProductionDDL model 列集合必须是生产
-// DDL 列集合的子集（四张表逐一校验）。
 func TestPresentationModelColumnsSubsetOfProductionDDL(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -47,7 +37,6 @@ func TestPresentationModelColumnsSubsetOfProductionDDL(t *testing.T) {
 	}
 }
 
-// TestCreateInstancePersistsRealColumns 真实 DDL 下创建：NOT NULL 外键与状态列全部落库。
 func TestCreateInstancePersistsRealColumns(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -104,7 +93,6 @@ func TestCreateInstancePersistsRealColumns(t *testing.T) {
 		t.Errorf("published_at 未落库")
 	}
 
-	// 产物行与依赖行必须齐备（fan-out 反查的前提）。
 	var artifacts, deps int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM presentation_artifacts WHERE presentation_instance_id = ?", inst.ID).
 		Scan(&artifacts).Error; err != nil {
@@ -122,7 +110,6 @@ func TestCreateInstancePersistsRealColumns(t *testing.T) {
 	}
 }
 
-// instanceUpdatedAt 读取实例行的 update_time。
 func instanceUpdatedAt(t *testing.T, f *presFixture, id string) time.Time {
 	t.Helper()
 	var at time.Time
@@ -132,7 +119,6 @@ func instanceUpdatedAt(t *testing.T, f *presFixture, id string) time.Time {
 	return at
 }
 
-// countInstanceArtifacts 统计实例的产物行数。
 func countInstanceArtifacts(t *testing.T, f *presFixture, id string) int64 {
 	t.Helper()
 	var n int64
@@ -143,7 +129,6 @@ func countInstanceArtifacts(t *testing.T, f *presFixture, id string) int64 {
 	return n
 }
 
-// TestContentChangeAutoRebuildAndPublish 内容变更 → 精确 fan-out → 自动重建 + 发布。
 func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -151,9 +136,8 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 接入依赖扇出（编排层装配的同形调用）。
 	fanout := pipeline.NewFanout()
-	fanout.SetSyncRebuild(true) // 断言需等重建完成，避免与 PERF-001 异步重建竞态
+	fanout.SetSyncRebuild(true)
 	fanout.Register(pipeline.SourceTypePresentation, f.pres)
 	fanout.SetRebuilder(pipeline.SourceTypePresentation, f.pres)
 	f.content.SetDependencyInvalidator(fanout)
@@ -184,7 +168,6 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 		t.Fatalf("创建实例 B 失败: %v", err)
 	}
 
-	// 1) 精确反查：direct_content 键只命中绑定该实体的实例。
 	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA.ID)
 	if err != nil {
 		t.Fatalf("依赖反查失败: %v", err)
@@ -192,7 +175,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	if len(ids) != 1 || ids[0] != instA.ID {
 		t.Fatalf("受影响集合应只含实例 A(%s)，实际 %v", instA.ID, ids)
 	}
-	// 反查把 A 标成 stale，重建前先复原（后续自动链路会再次标记）。
+
 	if _, err = f.pres.Rebuild(ctx, &presentationdto.RebuildReq{EntityID: entityA.ID}); err != nil {
 		t.Fatalf("复原重建失败: %v", err)
 	}
@@ -206,25 +189,23 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	}
 	time.Sleep(5 * time.Millisecond)
 
-	// 2) 内容 A 变更 → 自动链路（content → fanout → presentation.RebuildStale）。
 	if _, err = f.content.Update(ctx, &contentdto.UpdateReq{
 		ID: entityA.ID, Data: map[string]any{"title": "自动发布 A v2"},
 	}); err != nil {
 		t.Fatalf("更新实体 A 失败: %v", err)
 	}
 
-	// 3) 受影响实例被重建并重新发布。
 	if now := instanceUpdatedAt(t, f, instA.ID); !now.After(beforeA) {
 		t.Fatalf("受影响实例未重建：update_time 未前进（%v → %v）", beforeA, now)
 	}
 	if html := activeHTML(t, "/auto/a"); !strings.Contains(html, "自动发布 A v2") {
 		t.Fatalf("自动重建后访问面应更新为新内容，实际: %s", html)
 	}
-	// 内容内联进产物字节 → 新 hash → 新增一条产物行。
+
 	if n := countInstanceArtifacts(t, f, instA.ID); n != artifactsABefore+1 {
 		t.Fatalf("内容变更应新增一条产物行（%d → %d）", artifactsABefore, n)
 	}
-	// stale 收敛为 false。
+
 	var staleA bool
 	if err = f.db.Raw("SELECT stale FROM presentation_instances WHERE id = ?", instA.ID).Scan(&staleA).Error; err != nil {
 		t.Fatalf("读取 stale 失败: %v", err)
@@ -232,7 +213,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	if staleA {
 		t.Fatalf("自动重建成功后 stale 应为 false")
 	}
-	// 4) 无关实例完全不受影响。
+
 	if now := instanceUpdatedAt(t, f, instB.ID); !now.Equal(beforeB) {
 		t.Fatalf("无关实例 B 被误重建（update_time %v → %v）", beforeB, now)
 	}
@@ -244,12 +225,6 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	}
 }
 
-// TestDeleteInstanceCascadesOnRealDDL 删除实例必须级联清理本模块从属行。
-//
-// 真实 DDL 下 presentation_artifacts / document_snapshots /
-// presentation_dependencies 都以复合外键引用实例行且无 ON DELETE CASCADE，
-// 直接 DELETE 实例会被外键拒绝——旧实现（GORM Delete 单表）在真实库上必然失败，
-// 同样被 AutoMigrate 的测试环境掩盖。
 func TestDeleteInstanceCascadesOnRealDDL(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {

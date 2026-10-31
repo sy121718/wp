@@ -1,12 +1,5 @@
 package feature
 
-// order_customer_summary_test.go — 按客户聚合订单事实（后台客户管理页的「订单摘要」）。
-//
-// 这里的核心不变量是**消费口径**：累计消费只算已付款 / 已发货 / 已完成的订单。
-// 取消与退款的单不是消费（钱没进来，或者已经退回去了），待付款的还没付 ——
-// 把三类都算进去会得到一个「比实际流水大」的数字，而它看起来完全合理，
-// 运营会拿它当业绩看。口径错了不会报错，只会给出一个错误结论，所以它必须有测试。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -26,8 +19,6 @@ const (
 	summaryProjectB = "22222222-2222-2222-2222-222222222222"
 )
 
-// newSummaryFixture 只装配订单模块自己的 model 与 service：
-// 这条只读能力不碰商品与库存，传 nil 即可（NewService 允许，且这里根本不会走到那两条依赖）。
 func newSummaryFixture(t *testing.T) (*ordermodel.OrderModel, *orderservice.Service) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -46,7 +37,6 @@ func newSummaryFixture(t *testing.T) (*ordermodel.OrderModel, *orderservice.Serv
 	return m, svc
 }
 
-// mkSummaryOrder 落一单：只填聚合关心的列（状态 / 客户 / 金额 / 时间）。
 func mkSummaryOrder(t *testing.T, m *ordermodel.OrderModel,
 	projectID, orderNo, status string, userID uint64, total int64, createdAt time.Time) {
 	t.Helper()
@@ -60,8 +50,7 @@ func mkSummaryOrder(t *testing.T, m *ordermodel.OrderModel,
 		Currency:   "CNY",
 		CreateTime: createdAt,
 		UpdateTime: createdAt,
-		// attribution 是 NOT NULL 的 JSONB 列：实体零值是 nil（= NULL），
-		// 必须显式落空对象 —— 「没有归因数据」与「这一列不存在」对下游是两件事。
+
 		Attribution: json.RawMessage("{}"),
 	}
 	if err := m.Create(context.Background(), e); err != nil {
@@ -73,8 +62,6 @@ func summaryTime(day int) time.Time {
 	return time.Date(2026, 9, day, 12, 0, 0, 0, time.Local)
 }
 
-// TestCustomerOrderSummaryAggregatesPaidOnly 只有已付款的单计入消费；
-// 取消与退款不计入；别人家的单与别的工程的单都不掺进来。
 func TestCustomerOrderSummaryAggregatesPaidOnly(t *testing.T) {
 	m, svc := newSummaryFixture(t)
 	if m == nil {
@@ -84,7 +71,7 @@ func TestCustomerOrderSummaryAggregatesPaidOnly(t *testing.T) {
 	mkSummaryOrder(t, m, summaryProjectA, "A-PAID", ordermodel.OrderStatusPaid, userA, 10000, summaryTime(1))
 	mkSummaryOrder(t, m, summaryProjectA, "A-CANCELLED", ordermodel.OrderStatusCancelled, userA, 20000, summaryTime(5))
 	mkSummaryOrder(t, m, summaryProjectA, "A-REFUNDED", ordermodel.OrderStatusRefunded, userA, 30000, summaryTime(10))
-	// 干扰项：同工程的另一个客户、另一个工程里的同一个客户。
+
 	mkSummaryOrder(t, m, summaryProjectA, "B-PAID", ordermodel.OrderStatusPaid, userB, 5000, summaryTime(3))
 	mkSummaryOrder(t, m, summaryProjectB, "A-OTHER-PROJECT", ordermodel.OrderStatusPaid, userA, 70000, summaryTime(8))
 
@@ -117,7 +104,6 @@ func TestCustomerOrderSummaryAggregatesPaidOnly(t *testing.T) {
 	}
 }
 
-// TestCustomerOrderSummaryCountsShippedAndCompleted 已发货与已完成同样计入消费；待付款不计入。
 func TestCustomerOrderSummaryCountsShippedAndCompleted(t *testing.T) {
 	m, svc := newSummaryFixture(t)
 	if m == nil {
@@ -142,7 +128,6 @@ func TestCustomerOrderSummaryCountsShippedAndCompleted(t *testing.T) {
 	}
 }
 
-// TestCustomerOrderSummaryEmptyIsNotError 没下过单是正常状态，不是错误。
 func TestCustomerOrderSummaryEmptyIsNotError(t *testing.T) {
 	m, svc := newSummaryFixture(t)
 	if m == nil {
@@ -162,7 +147,6 @@ func TestCustomerOrderSummaryEmptyIsNotError(t *testing.T) {
 	}
 }
 
-// TestCustomerOrderSummaryRequiresProjectAndUser 缺工程或客户 id 一律拒绝。
 func TestCustomerOrderSummaryRequiresProjectAndUser(t *testing.T) {
 	m, svc := newSummaryFixture(t)
 	if m == nil {

@@ -1,25 +1,5 @@
 package rlstest
 
-// rls_page_scope_test.go — page 模块**跨工程扇出入口**的工程作用域护栏（DB-009 第三批）。
-//
-// 本批处理的是签名里没有工程参数的那批入口：整站标记待重建（MarkStaleForI18n）、
-// 按主题/块标记（MarkStaleForTheme / MarkStaleForBlock）、引用统计（CountBlockReference）、
-// 全站草稿扫描（ListDrafts）、按依赖源标记（MarkStaleByDependency）。
-//
-// 它们原先在 model 层隐含「不限工程」：不设 app.project_id 的语句在换非超级角色后
-// **静默匹配 0 行 / 返回空集**（fail closed 不报错），表现为「改了块但页面不被标记」
-// 「工作台显示全站 0 条草稿」。现在的形态是：model 层工程必填（空则显式报错），
-// service 层枚举工程表后**逐工程独立作用域**执行再合并。
-//
-// 每条断言都具备失败能力（不是「调用没报错」）：
-//   - 扇出必须同时覆盖两个工程 —— 把任一工程的作用域摘掉立刻红；
-//   - 统计类入口的返回值必须等于两工程之和（漏一个工程会少算）；
-//   - 跨工程隔离：拿 A 的作用域读不到 B 的行；
-//   - 缺工程作用域时显式失败，而不是静默 0 行；
-//   - 单工程部署下这些入口行为不变（父批次要求的回归确认）。
-//
-// 全程跑在非超级角色下（rlsFixture 保证，并用 rls.BypassedRole 自检）。
-
 import (
 	"context"
 	"errors"
@@ -37,10 +17,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// seedPage 在指定工程下落一行页面。
-//
-// 刻意经 rls.InProjectScope 写入：非超级角色下不带 app.project_id 的 INSERT 会被策略
-// 的 WITH CHECK 拒绝 —— 种子数据本身就在证明「写入路径必须作用域化」。
 func seedPage(t *testing.T, db *gorm.DB, projectID, path, doc string) string {
 	t.Helper()
 	id := uuid.NewString()
@@ -56,8 +32,6 @@ func seedPage(t *testing.T, db *gorm.DB, projectID, path, doc string) string {
 	return id
 }
 
-// seedPageArtifact 落一行 page_artifacts（page_dependencies 的 (artifact_id, page_id) 外键目标）。
-// page_artifacts 没有 project_id 列、不在迁移 215 的清单里，因此不受策略约束，可直插。
 func seedPageArtifact(t *testing.T, db *gorm.DB, pageID string) string {
 	t.Helper()
 	id := uuid.NewString()
@@ -74,7 +48,6 @@ func seedPageArtifact(t *testing.T, db *gorm.DB, pageID string) string {
 	return id
 }
 
-// staleCount 在**工程作用域内**数该工程被标记 stale 的页面数。
 func staleCount(t *testing.T, db *gorm.DB, projectID string) int64 {
 	t.Helper()
 	var n int64
@@ -87,7 +60,6 @@ func staleCount(t *testing.T, db *gorm.DB, projectID string) int64 {
 	return n
 }
 
-// pageFanoutFixture 造「两个工程 + page service（非超级角色）」。
 func pageFanoutFixture(t *testing.T) (*gorm.DB, *pageservice.Service, string, string) {
 	t.Helper()
 	db, _ := rlsFixture(t)
@@ -100,7 +72,6 @@ func pageFanoutFixture(t *testing.T) (*gorm.DB, *pageservice.Service, string, st
 	return db, svc, pA, pB
 }
 
-// TestRLS_PageFanout_MarkStaleForI18nAcrossProjects 整站标记必须覆盖每一个工程。
 func TestRLS_PageFanout_MarkStaleForI18nAcrossProjects(t *testing.T) {
 	db, svc, pA, pB := pageFanoutFixture(t)
 	ctx := context.Background()
@@ -117,7 +88,6 @@ func TestRLS_PageFanout_MarkStaleForI18nAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_PageFanout_MarkStaleForBlockAndCountAcrossProjects 按块标记与引用统计都跨工程。
 func TestRLS_PageFanout_MarkStaleForBlockAndCountAcrossProjects(t *testing.T) {
 	db, svc, pA, pB := pageFanoutFixture(t)
 	ctx := context.Background()
@@ -147,14 +117,12 @@ func TestRLS_PageFanout_MarkStaleForBlockAndCountAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_PageFanout_MarkStaleByDependencyAcrossProjects 依赖扇出跨工程合并去重。
 func TestRLS_PageFanout_MarkStaleByDependencyAcrossProjects(t *testing.T) {
 	db, svc, pA, pB := pageFanoutFixture(t)
 	ctx := context.Background()
 	pageA := seedPage(t, db, pA, "/dep-a", `{"settings":{},"root":[]}`)
 	pageB := seedPage(t, db, pB, "/dep-b", `{"settings":{},"root":[]}`)
 
-	// 两页各有一份产物，依赖表指向同一条依赖源（article:<uuid> 跨工程语义）。
 	const key = "article:0e1d2c3b-0000-4000-8000-0000000000aa"
 	for _, pageID := range []string{pageA, pageB} {
 		artID := seedPageArtifact(t, db, pageID)
@@ -189,7 +157,6 @@ func TestRLS_PageFanout_MarkStaleByDependencyAcrossProjects(t *testing.T) {
 	}
 }
 
-// projectOf 小工具：把页面 id 映射回它的工程（测试内固定两页）。
 func projectOf(pageID, pageA, pA, pB string) string {
 	if pageID == pageA {
 		return pA
@@ -197,7 +164,6 @@ func projectOf(pageID, pageA, pA, pB string) string {
 	return pB
 }
 
-// TestRLS_PageFanout_ListDraftsAcrossProjects 全站草稿扫描覆盖每个工程。
 func TestRLS_PageFanout_ListDraftsAcrossProjects(t *testing.T) {
 	db, svc, pA, pB := pageFanoutFixture(t)
 	ctx := context.Background()
@@ -220,10 +186,6 @@ func TestRLS_PageFanout_ListDraftsAcrossProjects(t *testing.T) {
 	}
 }
 
-// TestRLS_PageFanout_ModelRejectsMissingScope model 层的跨工程入口在缺工程时显式报错。
-//
-// 这是「把无作用域从默认行为改成显式决定」的直接断言：宁可报错，也不许退化成
-// 「不限工程」（换非超级角色后那是静默 0 行）。
 func TestRLS_PageFanout_ModelRejectsMissingScope(t *testing.T) {
 	db, _ := rlsFixture(t)
 	m := pagemodel.NewPageModel(db)
@@ -252,10 +214,6 @@ func TestRLS_PageFanout_ModelRejectsMissingScope(t *testing.T) {
 	}
 }
 
-// TestRLS_PageWritePathsRejectMissingScope 第四批新增的作用域门（写路径与子表路径）。
-//
-// 这些入口原先无作用域：pages 带 FORCE 策略（写静默 0 行），page_revisions / page_dependencies
-// 没有 project_id 列（不受策略约束，跨工程可读写）。现在一律要求显式工程。
 func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
 	db, _ := rlsFixture(t)
 	m := pagemodel.NewPageModel(db)
@@ -291,10 +249,6 @@ func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
 	}
 }
 
-// TestRLS_PageFanout_EmptyProjectTableFailsExplicitly 一个工程都没有时显式失败。
-//
-// 静默返回空结果会把「读不到工程表」伪装成「没有受影响的页面」—— 那正是本批要消灭的
-// fail-silent。这里用 TRUNCATE ... CASCADE 把工程表清空（连带外键子表），模拟这种环境。
 func TestRLS_PageFanout_EmptyProjectTableFailsExplicitly(t *testing.T) {
 	db, role := rlsFixture(t)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -319,10 +273,6 @@ func TestRLS_PageFanout_EmptyProjectTableFailsExplicitly(t *testing.T) {
 	}
 }
 
-// TestRLS_PageFanout_SingleProjectUnchanged 单工程部署下这些入口行为不变。
-//
-// 父批次点名的回归项：入口原先靠「工程唯一」拿到作用域，现在走逐工程枚举 ——
-// 单工程下必须仍然成功，且结果与改造前一致（只有该工程的数据被处理）。
 func TestRLS_PageFanout_SingleProjectUnchanged(t *testing.T) {
 	db, _ := rlsFixture(t)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -347,17 +297,11 @@ func TestRLS_PageFanout_SingleProjectUnchanged(t *testing.T) {
 	}
 }
 
-// TestRLS_PageLocateByIdAcrossProjects 只带 pageId 的路径在多工程下可用（逐工程定位）。
-//
-// 这些入口（ProjectOfPage / ListRevisions / Delete 的取页）原先用无作用域直查：
-// pages 带 FORCE 策略，换非超级角色后一律报「页面不存在」。现在先逐工程探测出归属，
-// 再用 page.ProjectID 作为后续写入与子表访问的作用域。
 func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 	db, svc, pA, pB := pageFanoutFixture(t)
 	ctx := context.Background()
 	idB := seedPage(t, db, pB, "/locate-b", `{"settings":{"layout":{"mode":"full"}},"root":[]}`)
 
-	// 只有 pageId 时问出归属（这条路径原来是无作用域直查）。
 	pid, err := svc.ProjectOfPage(ctx, idB)
 	if err != nil {
 		t.Fatalf("多工程下 ProjectOfPage 应成功: %v", err)
@@ -366,7 +310,6 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 		t.Fatalf("应定位到工程 B，实际 %s", pid)
 	}
 
-	// ListRevisions：page_revisions 没有 project_id 列、不受策略约束，隔离只能靠父实体。
 	if _, err := svc.ListRevisions(ctx, &pagedto.RevisionReq{PageID: idB}); err != nil {
 		t.Fatalf("多工程下列出本页修订应成功: %v", err)
 	}
@@ -374,9 +317,6 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 		t.Fatalf("不存在的页面应 ErrPageNotFound，实际: %v", err)
 	}
 
-	// page_revisions **没有 project_id 列**、不受策略约束（换角色后照样能读到行），
-	// 所以「跨工程读不到」这条完全靠 model 的归属校验（requirePageOwned）。
-	// 摘掉那层校验，下面两条断言立刻红 —— 这是本用例的失败能力所在。
 	m := pagemodel.NewPageModel(db)
 	if _, err := m.ListRevisions(ctx, pA, idB); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("拿 A 的作用域读 B 的页面修订应 ErrRecordNotFound，实际: %v", err)
@@ -385,8 +325,6 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 		t.Fatalf("拿 B 的作用域读本页修订应成功，实际: %v", err)
 	}
 
-	// 批量取页面（槽位列表 / 重定向目标标签用）同样必须带作用域：
-	// 不带作用域时非超级角色下静默返回空集，调用方会把「全部已绑定页面」判成悬空。
 	if list, err := m.FindPagesByIDs(ctx, pB, []string{idB}); err != nil || len(list) != 1 {
 		t.Fatalf("拿 B 的作用域应取到 1 个页面，实际 %d（err=%v）", len(list), err)
 	}
@@ -397,7 +335,6 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 		t.Fatalf("不存在的页面应 ErrPageNotFound，实际: %v", err)
 	}
 
-	// Delete 也是「只带 pageId」的入口：定位到工程后软删（svc 的 routes 为 nil，跳过路由清理）。
 	if err := svc.Delete(ctx, &pagedto.DeleteReq{ID: idB}); err != nil {
 		t.Fatalf("多工程下删除本工程页面应成功: %v", err)
 	}
@@ -407,5 +344,4 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 	_ = pA
 }
 
-// timeNow 取当前时间（把 time 依赖收敛到一处，避免各用例重复 import）。
 func timeNow() time.Time { return time.Now().UTC() }

@@ -1,12 +1,5 @@
 package orderservice
 
-// order_create_draft_test.go — 建单的纯计算部分：入参校验、金额分摊、优惠码判定。
-//
-// 这些用例是 CQ-023（把 278 行的 CreateOrder 拆开）的**直接收益**：拆分前它们只能
-// 通过整条建单链路间接验证（要起数据库、要造商品与库存），现在可以只喂数据断言结论。
-// 金额与折扣是审计里两个资损缺陷的藏身处（无券时采信客户端折扣、每人限次在事务外判定），
-// 拆出来之后这两处第一次有了不依赖数据库的回归测试。
-
 import (
 	"testing"
 	"time"
@@ -16,10 +9,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// TestValidateCreateOrderReq 入参校验的错误必须可区分。
-//
-// 校验从 CreateOrder 里抽出来之后是纯函数：不碰数据库、不构造订单，
-// 所以边界可以逐条钉死 —— 少了这一点，「哪种输入返回哪句话」只能靠读代码确认。
 func TestValidateCreateOrderReq(t *testing.T) {
 	valid := &orderdto.CreateOrderReq{
 		ProjectID:     "p-1",
@@ -29,7 +18,7 @@ func TestValidateCreateOrderReq(t *testing.T) {
 	cases := []struct {
 		name string
 		req  *orderdto.CreateOrderReq
-		want string // 期望的错误文案前缀（空 = 应通过）
+		want string
 	}{
 		{name: "nil 请求", req: nil, want: orderenums.ErrInvalidParam},
 		{name: "缺工程", req: &orderdto.CreateOrderReq{CustomerEmail: "a@b.com", Items: valid.Items}, want: orderenums.ErrProjectRequired},
@@ -59,7 +48,6 @@ func TestValidateCreateOrderReq(t *testing.T) {
 		t.Fatalf("合法请求应通过，实际: %v", err)
 	}
 
-	// 商品项上限：超限必须拒绝（无上限的输入会让一次请求锁住任意多的库存行）。
 	over := &orderdto.CreateOrderReq{ProjectID: "p-1", CustomerEmail: "a@b.com"}
 	for i := 0; i <= maxOrderItems; i++ {
 		over.Items = append(over.Items, orderdto.OrderItemReq{VariantID: "v", Quantity: 1})
@@ -69,7 +57,6 @@ func TestValidateCreateOrderReq(t *testing.T) {
 	}
 }
 
-// TestCouponDiscount 折扣计算：两种口径 + 上限收紧。
 func TestCouponDiscount(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -96,7 +83,6 @@ func TestCouponDiscount(t *testing.T) {
 	}
 }
 
-// TestCouponRuleCheck 券自身的可用性判定（不含每人限次 —— 那条要查核销表）。
 func TestCouponRuleCheck(t *testing.T) {
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.Local)
 	before := now.Add(-time.Hour)
@@ -129,7 +115,6 @@ func TestCouponRuleCheck(t *testing.T) {
 	}
 }
 
-// TestNormalizeCouponCode 券码归一化只发生在服务层一处（大写 + 去空白）。
 func TestNormalizeCouponCode(t *testing.T) {
 	if got := normalizeCouponCode("  save20 "); got != "SAVE20" {
 		t.Fatalf("券码应归一化为大写去空白，实际 %q", got)
@@ -139,11 +124,6 @@ func TestNormalizeCouponCode(t *testing.T) {
 	}
 }
 
-// TestAllocateLineDiscountsEdgeCases 分摊的边界：舍入差、全额折扣、无折扣、空列表。
-//
-// 基本比例分摊在 order_money_test.go 里已有；这里补的是「和必须精确等于折扣额」
-// 的边界 —— 它是退款的依据（退款按分摊后的 LineTotal 算），差一分钱会在多笔部分
-// 退货里累积成资损，所以最后一行吸收舍入差这件事必须有测试盯着。
 func TestAllocateLineDiscountsEdgeCases(t *testing.T) {
 	newItems := func(subtotals ...int64) []*ordermodel.OrderItemEntity {
 		items := make([]*ordermodel.OrderItemEntity, 0, len(subtotals))

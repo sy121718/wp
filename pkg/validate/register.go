@@ -15,13 +15,10 @@ var (
 	registerErr  error
 )
 
-// customRuleRegistrars 维护“规则注册函数”列表。
-// 后续新增规则时，优先新建独立文件并把注册函数放进这个列表，而不是把所有规则堆进一个文件。
 var customRuleRegistrars = []func(v *validator.Validate) error{
 	validateprovider.RegisterEmailRules,
 }
 
-// RegisterCustomRules 注册自定义校验规则到 Gin 的默认校验器。
 func RegisterCustomRules() error {
 	registerOnce.Do(func() {
 		engine := binding.Validator.Engine()

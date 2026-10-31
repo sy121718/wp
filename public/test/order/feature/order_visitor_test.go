@@ -1,11 +1,5 @@
 package feature
 
-// order_visitor_test.go — 访客自助查询的**归属**测试（BIZ-1 访问面）。
-//
-// 这一组测试守的是一条不能出错的性质：访客只能看到自己的订单。
-// 它是「片段层把身份传下来」与「订单层按身份收口」两条链路的交界处，
-// 任何一侧松动都会变成「改一个 id 就能看别人的订单」——那种缺陷不会有任何报错。
-
 import (
 	"context"
 	"strings"
@@ -15,7 +9,6 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 )
 
-// TestVisitorOrdersScopedToOwnUser 访客查询只返回自己名下的订单。
 func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -24,7 +17,6 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 	_, vid := f.addProduct(t, "帆布袋", 60.00, 10)
 	ctx := context.Background()
 
-	// 两个不同邮箱下单 → 订单域会各自开一个访客账号（迁移 137 的初始密码邮件模板）。
 	reqA := f.createBaseReq(vid, 1)
 	reqA.CustomerEmail = "a@example.com"
 	orderA, err := f.orders.CreateOrder(ctx, reqA)
@@ -52,7 +44,6 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 		t.Fatalf("两个邮箱应各自开号，实际都落到 %d", uidA)
 	}
 
-	// A 的列表里只有 A 的单，且**不含**状态计数（那是全站口径）。
 	listA, err := f.orders.ListVisitorOrders(ctx, &orderdto.VisitorOrderListReq{
 		ProjectID: f.projectID, UserID: uidA,
 	})
@@ -63,8 +54,6 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 		t.Fatalf("A 只应看到自己的 1 单，实际 %+v", listA)
 	}
 
-	// A 用 B 的订单 id 取详情：必须失败，而且失败原因与「不存在」**完全相同** ——
-	// 区分开来就是一个订单号探测器。
 	_, err = f.orders.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
 		OrderID: orderB.ID, ProjectID: f.projectID, UserID: uidA,
 	})
@@ -75,7 +64,6 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 		t.Fatalf("越权应表现为「订单不存在」，实际: %v", err)
 	}
 
-	// 自己的那单能取到，且带订单项。
 	got, err := f.orders.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
 		OrderID: orderA.ID, ProjectID: f.projectID, UserID: uidA,
 	})
@@ -84,7 +72,6 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 	}
 }
 
-// TestGetOrderCrossProject 后台按 id 查单必须带工程 scope。
 func TestGetOrderCrossProject(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -107,8 +94,6 @@ func TestGetOrderCrossProject(t *testing.T) {
 	}
 }
 
-// 少传一次归属条件就等于把全站订单列表发给某个访客 ——
-// 所以 UserID 是必填的，不能有「缺省 = 全部」这种便利。
 func TestVisitorOrdersRequireUserID(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

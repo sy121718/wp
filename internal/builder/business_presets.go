@@ -9,7 +9,6 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// BusinessPreset 是受控预设目录声明。编辑器只拿来源和说明，不拿可覆写的权威Document。
 type BusinessPreset struct {
 	PresetKey     string `json:"presetKey"`
 	PresetVersion int    `json:"presetVersion"`
@@ -47,7 +46,6 @@ var businessPresetEntries = []businessPresetEntry{{
 	document: commerceOrdersV1,
 }}
 
-// BusinessPresets 与ResolvePreset共享同一清单，返回独立元数据副本。
 func BusinessPresets() []BusinessPreset {
 	out := make([]BusinessPreset, len(businessPresetEntries))
 	for i, entry := range businessPresetEntries {
@@ -56,7 +54,6 @@ func BusinessPresets() []BusinessPreset {
 	return out
 }
 
-// BusinessPresetRegistry 按固定来源版本提供Document；不读取控制面或运行时全局状态。
 type BusinessPresetRegistry struct{}
 
 func (BusinessPresetRegistry) ResolvePreset(_ context.Context, key string, version int) (json.RawMessage, error) {

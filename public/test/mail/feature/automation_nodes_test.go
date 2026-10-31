@@ -1,15 +1,5 @@
 package feature
 
-// automation_nodes_test.go — T4 四个新节点的执行判据（真实 PG）。
-//
-// 每个用例都跑「建流程 → 启用 → 建实例 → 推进到底」，断言的是**执行结果**而不是
-// 校验器能不能拒：
-//
-//   · list_status_branch —— 三档状态各走各的出口；
-//   · ab_test            —— 同一实例重复推进落在同一个变体（幂等 + 确定性）；
-//   · webhook            —— 内网地址在执行期被拒，但流程**继续**走到结束；
-//   · filter 的 mode=any —— 任一条件命中就走 yes（v1 只有 AND 语义）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -23,7 +13,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// seedAutomationForMail 用 mailFixture 建一条启用中的流程（seedAutomation 收的是 *fixture）。
 func seedAutomationForMail(t *testing.T, f *mailFixture, name string, nodes []map[string]any) uint64 {
 	t.Helper()
 	list := make([]any, 0, len(nodes))
@@ -49,10 +38,6 @@ func seedAutomationForMail(t *testing.T, f *mailFixture, name string, nodes []ma
 	return item.ID
 }
 
-// createDraftAutomation 建一条**草稿**流程（不启用），返回 id。
-//
-// 与 seedAutomationForMail 的分工：那个建完就启用，而这个留给用例自己决定何时启用
-// （需要「草稿期间被改坏」的场景）。
 func createDraftAutomation(t *testing.T, f *mailFixture, name string, nodes []map[string]any) uint64 {
 	t.Helper()
 	list := make([]any, 0, len(nodes))
@@ -72,7 +57,6 @@ func createDraftAutomation(t *testing.T, f *mailFixture, name string, nodes []ma
 	return item.ID
 }
 
-// runAutomationToEnd 建实例并推进到底，返回实例 id 与联系人。
 func runAutomationToEnd(t *testing.T, f *mailFixture, automationID uint64, email string) (uint64, *mailmodel.MailContactEntity) {
 	t.Helper()
 	ctx := context.Background()
@@ -94,7 +78,6 @@ func runAutomationToEnd(t *testing.T, f *mailFixture, automationID uint64, email
 	return run.ID, contact
 }
 
-// logDetailOf 取某实例某节点的日志明文（含运行文案 key，便于断言分支）。
 func logDetailOf(t *testing.T, f *mailFixture, runID uint64, nodeKey string) string {
 	t.Helper()
 	logs, err := mailmodel.NewMailModel(f.db).ListNodeLogs(context.Background(), runID, 100)
@@ -113,7 +96,6 @@ func logDetailOf(t *testing.T, f *mailFixture, runID uint64, nodeKey string) str
 	return ""
 }
 
-// TestListStatusBranchRoutesByStatus 三档状态各走各的出口。
 func TestListStatusBranchRoutesByStatus(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -121,8 +103,6 @@ func TestListStatusBranchRoutesByStatus(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 流程：触发 → 按状态分流 →（三个出口各打不同标签）→ 结束。
-	// 三个标签就是「走了哪条出口」的可观察结果。
 	id := seedAutomationForMail(t, f, "按状态分流", []map[string]any{
 		newNode("n1", "trigger", nil, "n2"),
 		{
@@ -160,7 +140,6 @@ func TestListStatusBranchRoutesByStatus(t *testing.T) {
 	}
 }
 
-// TestABTestIsDeterministicPerRun 同一个实例推进两次落在同一个变体（幂等 + 确定性）。
 func TestABTestIsDeterministicPerRun(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -206,7 +185,6 @@ func TestABTestIsDeterministicPerRun(t *testing.T) {
 		t.Fatalf("应恰好命中一个变体，实际标签 %v", after.Tags)
 	}
 
-	// 重跑同一个实例：节点日志已 ok，动作不该重复执行（幂等），变体也不该换。
 	if err := f.svc.RunAutomation(ctx, runID); err != nil {
 		t.Fatalf("重复推进应无错: %v", err)
 	}
@@ -216,14 +194,6 @@ func TestABTestIsDeterministicPerRun(t *testing.T) {
 	}
 }
 
-// TestWebhookFailureFailsNodeButFlowContinues 回调失败不终止流程。
-//
-// 这是四个新节点里唯一一个「失败也要继续」的语义：第三方暂时 500 不该吃掉用户后面
-// 那封邮件。判据分两段：该节点日志是 failed（排障看得到），但**流程走到了结束**。
-//
-// 失败用注入的 HTTP 客户端造（SetWebhookClient）：真实网络不可控，而「回调 500」
-// 恰恰是这条分支要覆盖的形态。SSRF 的拒绝路径由 webhook_ssrf_test.go 单测覆盖 ——
-// 那条路径同样是 failed + 继续，只是原因不同。
 func TestWebhookFailureFailsNodeButFlowContinues(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -231,7 +201,6 @@ func TestWebhookFailureFailsNodeButFlowContinues(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 注入一个恒定返回 500 的客户端（不发真请求）。
 	old := f.svc
 	f.svc.SetWebhookClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -258,7 +227,6 @@ func TestWebhookFailureFailsNodeButFlowContinues(t *testing.T) {
 	}
 	runID, contact := runAutomationToEnd(t, f, id, "hook@example.com")
 
-	// ① 回调节点记 failed（排障看得到「回调没成功」）。
 	logs, err := mailmodel.NewMailModel(f.db).ListNodeLogs(ctx, runID, 100)
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +241,6 @@ func TestWebhookFailureFailsNodeButFlowContinues(t *testing.T) {
 		t.Fatalf("回调 500 应记 failed，实际 %q", hookStatus)
 	}
 
-	// ② 流程继续：下游标签节点执行了，实例 completed。
 	after, err := mailmodel.NewMailModel(f.db).GetContact(ctx, contact.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -290,12 +257,10 @@ func TestWebhookFailureFailsNodeButFlowContinues(t *testing.T) {
 	}
 }
 
-// roundTripFunc 让函数满足 http.RoundTripper（注入假响应）。
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// TestFilterModeAnyTakesYes 任一条件命中就走 yes（v1 只有 AND 语义）。
 func TestFilterModeAnyTakesYes(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -307,7 +272,7 @@ func TestFilterModeAnyTakesYes(t *testing.T) {
 		{
 			"key": "n2", "type": "filter",
 			"params": map[string]any{
-				// closed 条件不满足（没打开过），opened 也不满足 —— 但 subscribed 满足。
+
 				"mode":       "any",
 				"conditions": []any{"opened", "subscribed"},
 			},
@@ -332,7 +297,6 @@ func TestFilterModeAnyTakesYes(t *testing.T) {
 	}
 }
 
-// TestSaveRejectsBadABTestWeights 保存时就拒绝权重和不对的分流转（不是执行时才炸）。
 func TestSaveRejectsBadABTestWeights(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {

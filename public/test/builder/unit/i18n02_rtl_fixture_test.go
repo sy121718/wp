@@ -1,18 +1,5 @@
 package unit
 
-// i18n02_rtl_fixture_test.go — 多语言产物夹具（审计 I18N-02 的 RTL 发布路径验收）。
-//
-// 三个语言各构建一次**真实产物**（真组件模板 + 真控件基座 + 真嵌套结构）：
-// 默认语言 / 英文 / 阿拉伯语。断言的是产物自身的事实（dir、切换器链接、可见文本），
-// 不是「CSS 里写了 dir」：
-//
-//   - 只有 RTL 产物带 dir="rtl"；
-//   - 语言切换器给出本语言到各语言的链接（混排货币/数字的版面就长在这份产物里）；
-//   - 缺译回退：非默认语言下没有译文的内容仍是原文（本次不引入 required 策略）。
-//
-// 需要人工看基线时设 WP_RTL_BASELINE_OUT 指向一个目录，三个产物会被额外写到那里，
-// 由浏览器打开截图（步骤见本次整改报告）。默认只写 t.TempDir()，不留残留。
-
 import (
 	"os"
 	"path/filepath"
@@ -24,9 +11,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// rtlFixtureDoc 夹具文档：标题 + 正文（富文本）+ 表格 + 折叠块 + 列表 + 切换器，
-// 刻意混排货币符号与数字 —— RTL 下 bidi 算法会把它们排到不同的位置，
-// 这是「布局是否真的镜像」最容易看出问题的地方。
 const rtlFixtureDoc = `
 {
   "settings": {"layout": {"mode": "full"}},
@@ -41,7 +25,6 @@ const rtlFixtureDoc = `
   ]
 }`
 
-// stubNavResolver 固定的一级菜单（导航是本次验收点之一，用真实 core.nav 组件渲染）。
 type stubNavResolver struct{}
 
 func (stubNavResolver) ResolveMenu(projectID, kind string) ([]core.NavigationItem, error) {
@@ -56,7 +39,6 @@ func (stubNavResolver) ResolveNavigation(projectID, navigationID string) ([]core
 	return nil, nil
 }
 
-// TestRTLFixtureBuildsInThreeLocales 三种语言各构建一份真实产物。
 func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 	page, err := builder.ParsePage([]byte(rtlFixtureDoc))
 	if err != nil {
@@ -91,7 +73,7 @@ func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 				builder.WithLanguage(tc.lang),
 				builder.WithProjectID("p1"),
 				builder.WithNavigationResolver(stubNavResolver{}),
-				// 语言切换器：给出本语言到各语言的链接（互指在产物里的可见形态）。
+
 				builder.WithLocaleLinks([]core.LocaleLink{
 					{Lang: "zh-CN", Href: "/index", Current: tc.lang == "zh-CN"},
 					{Lang: "en-US", Href: "/en/index", Current: tc.lang == "en-US"},
@@ -105,7 +87,7 @@ func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 			if err != nil {
 				t.Fatalf("渲染失败: %v", err)
 			}
-			// 取 <html ...> 这一个标签（不能取到 <!DOCTYPE html> 的那个 '>'）。
+
 			start := strings.Index(doc, "<html")
 			if start < 0 {
 				t.Fatalf("产物缺少 <html> 标签: %s", doc[:80])
@@ -119,8 +101,7 @@ func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 			} else if !strings.Contains(head, ` dir="rtl"`) {
 				t.Fatalf("%s 应输出 dir=\"rtl\"：%s", tc.lang, head)
 			}
-			// 切换器里必须出现**其它语言**的链接（当前语言那一条各组件实现不同，
-			// 可能不带 href），因此按「三条语言链接里至少命中两条」判定。
+
 			hits := 0
 			for _, href := range []string{"/index", "/en/index", "/ar/index"} {
 				if strings.Contains(doc, "\""+href+"\"") {
@@ -137,11 +118,6 @@ func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 	}
 }
 
-// TestRTLUIKitBaseRenders uikit：抽屉 / 自绘下拉 / 颜色字段在 RTL 下的基座。
-//
-// 这三个控件是 ui.css 的基座段（后台与产物共用一份），也是本次把物理方向属性换成
-// 逻辑属性的地方。产出两份真实样式页（LTR / RTL）供浏览器截图：
-// 「CSS 里写对了」不等于「浏览器排对了」—— bidi 与逻辑属性的实际效果只能看渲染结果。
 func TestRTLUIKitBaseRenders(t *testing.T) {
 	out := os.Getenv("WP_RTL_BASELINE_OUT")
 	if out != "" {

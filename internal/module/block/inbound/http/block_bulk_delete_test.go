@@ -1,20 +1,5 @@
 package blockhttp
 
-// block_bulk_delete_test.go — 批量删除 JSON 端点（POST /api/block/bulk-delete）的护栏。
-//
-// 这个端点是「前端直调 JSON API」的第一条批量写路径（页面 POST 的薄转发会被逐批删掉），
-// 它身上有四件**错了不会有人发现**的事，本文件逐条钉住：
-//
-//  1. **上限与去重必须在服务端**。客户端那份 200 上限改一行 JS 就没了；ids 是勾选框给的，
-//     长度完全由调用方决定 —— 一次上万个 id 会把「逐条走 svc.Delete」放大成上万次事务往返。
-//  2. **判断上限用的是去重后的条数**（重复提交不该把用户挡在门外），且超限整批拒绝、
-//     不静默截断（截断会让界面显示「已删除 200 个」看着像成功，剩下 300 条无声消失）。
-//  3. **单条失败不中断整批**，部分成功回 200 + 真实计数 + 逐条原因：
-//     整批回滚会让用户以为「一个都没删」然后反复重试。
-//  4. 失败响应是**受控 JSON**：绑定错误原文（Go 结构体、字段名）只能进日志。
-//
-// 断言的是响应形状与调用次数，不碰数据库：service 用桩。
-
 import (
 	"context"
 	"errors"
@@ -33,13 +18,9 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// bulkDeleteStubService 只实现 Delete；其余方法 panic。
-//
-// panic 而不是零值：批量删除**不该**碰 List/Detail/Create/Update/CloneAST，
-// 任何多余调用都说明语义跑偏了（例如「先查一遍引用再删」），那种情况必须立刻炸。
 type bulkDeleteStubService struct {
-	fail  map[string]error // 按 id 指定失败
-	calls []string         // 实际调用顺序（用于断言去重与「不中断」）
+	fail  map[string]error
+	calls []string
 }
 
 func (s *bulkDeleteStubService) Delete(_ context.Context, req *blockdto.DeleteReq) error {
@@ -74,11 +55,6 @@ func (s *bulkDeleteStubService) ListBlockSourceRefs(context.Context, string) ([]
 	panic("BulkDelete 不应调用 ListBlockSourceRefs")
 }
 
-// bulkDeleteResp 调一次端点，返回状态码、原始体与解析结果。
-//
-// parsed 用 map 而不是结构体：本文件要断言的是**协议形状**（code / message / data.deleted /
-// data.items[].deleted|message），用 map 才能在字段被改名/被省略时立刻发现
-// （结构体 unmarshal 对缺失字段是静默的，那正是这类缺陷最难发现的形态）。
 func bulkDeleteResp(t *testing.T, svc blockcontract.BlockService, body string) (int, string, map[string]any) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -99,7 +75,6 @@ func bulkDeleteResp(t *testing.T, svc blockcontract.BlockService, body string) (
 	return w.Code, raw, parsed
 }
 
-// dataOf 取响应体里的 data 对象。
 func dataOf(t *testing.T, parsed map[string]any) map[string]any {
 	t.Helper()
 	data, ok := parsed["data"].(map[string]any)
@@ -109,7 +84,6 @@ func dataOf(t *testing.T, parsed map[string]any) map[string]any {
 	return data
 }
 
-// itemsOf 取 data.items 列表。
 func itemsOf(t *testing.T, parsed map[string]any) []map[string]any {
 	t.Helper()
 	raw, ok := dataOf(t, parsed)["items"].([]any)
@@ -127,7 +101,6 @@ func itemsOf(t *testing.T, parsed map[string]any) []map[string]any {
 	return out
 }
 
-// TestBulkDeleteBindFailIsControlledJSON 绑定失败 → 400 受控 JSON，且不碰 service。
 func TestBulkDeleteBindFailIsControlledJSON(t *testing.T) {
 	cases := []struct {
 		name string
@@ -166,10 +139,6 @@ func TestBulkDeleteBindFailIsControlledJSON(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteOverLimitRejectsWholeBatch 超过上限 → 400，整批拒绝，文案带上限与去重后条数。
-//
-// 这里注入 277 的词条（生产由迁移 seed 进 sys_i18n），因此断言的是**用户看到的那句话**，
-// 而不是「响应里有个非空字符串」——后者在词条丢失时会静默变绿。
 func TestBulkDeleteOverLimitRejectsWholeBatch(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		"shell.err.bulkIdsTooMany": {
@@ -178,7 +147,7 @@ func TestBulkDeleteOverLimitRejectsWholeBatch(t *testing.T) {
 		},
 	}, nil)
 
-	const over = 201 // 上限 200，超一条即整批拒绝
+	const over = 201
 	ids := make([]string, 0, over)
 	for i := 0; i < over; i++ {
 		ids = append(ids, "b-"+strconv.Itoa(i))
@@ -206,11 +175,9 @@ func TestBulkDeleteOverLimitRejectsWholeBatch(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteDedupesBeforeDelete 去重与去空白在服务端生效：重复 id 只删一次、顺序保持。
 func TestBulkDeleteDedupesBeforeDelete(t *testing.T) {
 	svc := &bulkDeleteStubService{}
-	// 注意：「元素是空串」在**绑定期**就被拒（BulkDeleteReq 的 dive,required），见上面的绑定用例；
-	// 能走到归一化的空白形态是「纯空白字符串」（非零值，required 放行），它必须被去空白后丢掉。
+
 	status, _, parsed := bulkDeleteResp(t, svc, `{"ids":[" b1 ","b1","  ","b2","b1"]}`)
 
 	if status != http.StatusOK {
@@ -232,10 +199,8 @@ func TestBulkDeleteDedupesBeforeDelete(t *testing.T) {
 	}
 }
 
-// TestBulkDeletePartialFailureKeepsGoing 单条失败不中断整批：200 + 真实计数 + 逐条原因。
 func TestBulkDeletePartialFailureKeepsGoing(t *testing.T) {
-	// 中间那条被页面引用（global 块）：带引用明细的拒绝错误 —— 前端要把明细显示出来，
-	// 否则运营不知道去哪儿解除引用。
+
 	inUse := blockcontract.NewBlockInUseError([]blockcontract.BlockUsage{
 		{Kind: blockcontract.UsageKindPageDocument, EntityID: "page-42", Label: "/pricing", Detail: "main"},
 	})
@@ -266,13 +231,12 @@ func TestBulkDeletePartialFailureKeepsGoing(t *testing.T) {
 	if !strings.Contains(failMsg, "/pricing") {
 		t.Fatalf("原因应带引用明细（运营据此去解除引用），实际 %q", failMsg)
 	}
-	// 成功项不回 message：前端据 deleted 判定，多一句「已删除」只是噪声。
+
 	if _, ok := items[0]["message"]; ok {
 		t.Fatalf("成功项不该带 message，实际 %v", items[0])
 	}
 }
 
-// TestBulkDeleteAllBlankSucceedsEmpty 归一化后一条不剩 → 200 + 空结果（由前端说「没有选中」）。
 func TestBulkDeleteAllBlankSucceedsEmpty(t *testing.T) {
 	svc := &bulkDeleteStubService{}
 	status, _, parsed := bulkDeleteResp(t, svc, `{"ids":["   "," \t "]}`)
@@ -293,9 +257,6 @@ func TestBulkDeleteAllBlankSucceedsEmpty(t *testing.T) {
 	}
 }
 
-// TestBulkDeleteUnknownErrorStillControlledJSON 未知错误（既非引用拒绝、也非 not found）也要受控回执。
-//
-// 前端只看 item.message：这里若不接住，运营看到的就是驱动原文。
 func TestBulkDeleteUnknownErrorStillControlledJSON(t *testing.T) {
 	svc := &bulkDeleteStubService{fail: map[string]error{"b1": errors.New(`pq: relation "blocks" does not exist`)}}
 	status, raw, parsed := bulkDeleteResp(t, svc, `{"ids":["b1"]}`)

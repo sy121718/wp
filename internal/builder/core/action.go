@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-// ActionKind 是封闭的动作目标类型；不能扩成脚本、选择器或URL模板。
 type ActionKind string
 
 const (
@@ -18,8 +17,6 @@ const (
 	ActionExternal     ActionKind = "external"
 )
 
-// ActionTarget 属于节点结构层；各kind的字段严格互斥。
-// local仅指向自己，instance通过同文档nodeId显式指向另一实例的已声明part。
 type ActionTarget struct {
 	Kind       ActionKind `json:"kind"`
 	PageID     string     `json:"pageId,omitempty"`
@@ -47,8 +44,6 @@ func actionFields(kind ActionKind) []string {
 	}
 }
 
-// UnmarshalJSON 拒绝隐藏在JSON里的未知字段及跨kind字段，包括false值的newTab。
-// 必填值留给ValidateActionTarget判断，未填完的作者草稿可以保持原始结构。
 func (a *ActionTarget) UnmarshalJSON(data []byte) error {
 	type target ActionTarget
 	var decoded target
@@ -72,7 +67,6 @@ func (a *ActionTarget) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ValidateActionTarget 只判断封闭形状；工程、发布状态与跨实例能力由编译解析器验证。
 func ValidateActionTarget(a ActionTarget) error {
 	fields := actionFields(a.Kind)
 	if fields == nil {
@@ -121,27 +115,23 @@ func validActionKey(key string) bool {
 	return true
 }
 
-// ActionSpec 声明组件提供的动作及可接受目标。TargetCapability用于local/instance的part能力匹配。
 type ActionSpec struct {
 	Key              string
 	AllowedKinds     []ActionKind
 	TargetCapability string
 }
 
-// ActionsProvider 是组件动作声明的唯一入口。敏感动作的AllowedKinds不得包含external。
 type ActionsProvider interface {
 	Actions() []ActionSpec
 	RequiredActions() []string
 }
 
-// PartSpec 只声明模板真实存在的区域。Capabilities是受控能力名，不是选择器。
 type PartSpec struct {
 	Key          string
 	Capabilities []string
 }
 type PartsProvider interface{ Parts() []PartSpec }
 
-// ResolvedAction 是编译期目标解析结果；访客脚本不解析AST或查询控制面。
 type ResolvedAction struct {
 	Kind       ActionKind
 	URL        string

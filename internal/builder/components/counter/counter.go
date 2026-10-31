@@ -1,9 +1,7 @@
-// Package counter 实现 core.counter：数字计数器（对标 WD wd_counter）。
-// 起始/结束值 + 前缀/后缀 + 小数位；轻量增强：滚动到视口时数字递增动画。
 package counter
 
 import (
-	_ "embed" // enhance.js 经 //go:embed 打进二进制
+	_ "embed"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strconv"
@@ -11,18 +9,15 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// Type 组件类型标识。
 const Type = "core.counter"
 
-// enhanceJS 组件行为源。与 .go / .css / .jet 同目录：改计数器的交互不必再去 538 行的 enhance.js 里找。
-//
 //go:embed enhance.js
 var enhanceJS string
 
 func init() {
 	core.Register(&Component{})
 	core.RegisterTemplate("counter", counterTemplate)
-	// 行为块注册：构建期按产物里是否出现 data-counter 决定要不要内联（见 builder/enhance_select.go）。
+
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCounters"},
 		Feats:  []string{"data-counter"},
@@ -30,21 +25,14 @@ func init() {
 	})
 }
 
-// Component 计数器组件（原子）。
 type Component struct{}
 
-// Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
-// Translatable 实现 core.TranslatableProvider：可翻译字段白名单（多语言 P5b，
-// docs/06-D §7.5 决策 F6）。只有这里列出的字段参与内容翻译，未声明字段永不翻译。
 func (c *Component) Translatable() []string { return []string{"prefix", "suffix", "label"} }
 
-// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
-// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
-// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
 func (c *Component) Palette() core.PaletteMeta {
 	return core.PaletteMeta{
 		Type:     Type,
@@ -59,33 +47,30 @@ func (c *Component) Palette() core.PaletteMeta {
 	}
 }
 
-// Props 计数器属性。
 type Props struct {
-	// Start 起始值。
 	Start float64 `json:"start,omitempty" ct:"number,sec=content,label=起始值"`
-	// End 结束值（目标）。
+
 	End float64 `json:"end,omitempty" ct:"number,sec=content,label=结束值"`
-	// Decimals 小数位（默认 0）。
+
 	Decimals int `json:"decimals,omitempty" ct:"int,min=0,max=6,sec=content,label=小数位"`
-	// Prefix 前缀（如 $ / + / 已售）。
+
 	Prefix string `json:"prefix,omitempty" ct:"safe,maxlen=20,sec=content,label=前缀"`
-	// Suffix 后缀（如 % / + / 万）。
+
 	Suffix string `json:"suffix,omitempty" ct:"safe,maxlen=20,sec=content,label=后缀"`
-	// Label 底部标签（如「满意客户」）。
+
 	Label string `json:"label,omitempty" ct:"safe,maxlen=100,sec=content,label=标签"`
-	// Duration 动画时长（秒，默认 2）。
+
 	Duration float64 `json:"duration,omitempty" ct:"number,sec=content,label=动画时长(s)"`
-	// Color 数字颜色。
+
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=数字颜色"`
-	// FontSize 数字字号。
+
 	FontSize string `json:"fontSize,omitempty" ct:"dimension,maxlen=30,sec=style,label=字号"`
-	// Align 对齐：left / center / right。
+
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
-	// Advanced 通用高级属性。
+
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
-// Validate 校验。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
@@ -120,21 +105,13 @@ func formatNum(v float64, decimals int) string {
 	return strconv.FormatFloat(v, 'f', decimals, 64)
 }
 
-// formatInt 整数展示（CSS 计数模式：counter-reset 只接受整数）。
 func formatInt(v float64) string {
 	return strconv.FormatFloat(v, 'f', 0, 64)
 }
 
-// counterCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组，
-// 而作用域替换、桶划分、@property / @keyframes 装配与确定性输出仍由构建期负责。
-//
 //go:embed counter.css
 var counterCSS string
 
-// compileCSS 计数器样式。
-//
-// Go 侧只补缺省值（对齐 / 字号 / 颜色）并决定走不走零 JS 计数 —— 那是业务判定
-// （小数位模式 CSS counter 表达不了），不是样式本身。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -169,8 +146,5 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// counterTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
-// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
-//
 //go:embed counter.jet
 var counterTemplate string

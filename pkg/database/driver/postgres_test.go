@@ -1,24 +1,5 @@
 package dbdriver
 
-// postgres_test.go — 连接串组装。
-//
-// 守的缺陷：旧实现用 `fmt.Sprintf("host=%s user=%s password=%s dbname=%s …")` 拼
-// **空白分隔**的 key=value 串，而那个格式里空值会吃掉下一个键 —— 空密码时得到
-//
-//	host=h user=u password= dbname=mydb port=5432 …
-//
-// pgx 把 `dbname=mydb` 当成密码值，解析出 pass="dbname=mydb"、db=""，连库时报
-// 「库不存在」，排查方向全错。密码或库名含空格 / @ / : / / 时同样会被切断。
-//
-// **两条阅读路径都要盯**，这是本文件最重要的一条约定：
-//
-//  1. pgx.ParseConfig —— 会做 URL 解码。只验它是不够的。
-//  2. gorm.io/driver/postgres —— 额外对 DSN **原文**跑正则
-//     `(time_zone|TimeZone|timezone)=(.*?)($|&| )`，把值直接交给 time.LoadLocation，
-//     **不经过 URL 解码**。所以 TimeZone 一旦被编成 Asia%2FShanghai，任何配置都在
-//     gorm.Open 时死于「unknown time zone Asia%2FShanghai」（实测复现过）。
-//     这条只有走真实 gorm.Open 才能钤住，见 TestOpenPostgresWorksThroughGorm。
-
 import (
 	"context"
 	"net"
@@ -33,9 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestPostgresDSNEmptyPasswordIsNotSwallowedByDBName 空密码不得吃掉 dbname。
-//
-// 这是原缺陷的最小复现：改之前这里 pass="dbname=mydb"、db=""。
 func TestPostgresDSNEmptyPasswordIsNotSwallowedByDBName(t *testing.T) {
 	dsn := PostgresDSN(Config{Host: "127.0.0.1", Port: 5432, User: "u", Password: "", DBName: "mydb"})
 
@@ -57,9 +35,6 @@ func TestPostgresDSNEmptyPasswordIsNotSwallowedByDBName(t *testing.T) {
 	}
 }
 
-// TestPostgresDSNPreservesSpecialCharacters 密码/库名里的 @ : / 空格必须原样到达。
-//
-// 空白分隔形式下这些字符会把连接串切成两半（`p@ss` 里的 @ 会被当成 userinfo 分隔）。
 func TestPostgresDSNPreservesSpecialCharacters(t *testing.T) {
 	const (
 		password = "p@ss w:rd/xx"
@@ -82,15 +57,11 @@ func TestPostgresDSNPreservesSpecialCharacters(t *testing.T) {
 	}
 }
 
-// TestPostgresDSNStatementTimeoutAndTimeZone 运行时参数必须进 RuntimeParams。
-//
-// options 的值自带空格与等号（`-c statement_timeout=5000`）：拼字符串时它会把连接串
-// 再切一次，走 query 编码才是安全的。TimeZone 原来就在串里，改成 URL 形式后必须还在。
 func TestPostgresDSNStatementTimeoutAndTimeZone(t *testing.T) {
 	cases := []struct {
 		name    string
 		timeout time.Duration
-		want    string // options 的期望值；空表示不出现该参数
+		want    string
 	}{
 		{"未配置超时不带 options", 0, ""},
 		{"默认超时", 5 * time.Second, "-c statement_timeout=5000"},
@@ -106,8 +77,7 @@ func TestPostgresDSNStatementTimeoutAndTimeZone(t *testing.T) {
 			if err != nil {
 				t.Fatalf("pgx 解析失败（dsn=%q）：%v", dsn, err)
 			}
-			// pgx 原样保留 `TimeZone` 这个键名（大小写敏感）。值必须是**字面**的
-			// Asia/Shanghai —— 编成 Asia%2FShanghai 会让 gorm 的 LoadLocation 直接失败。
+
 			if got := parsed.RuntimeParams["TimeZone"]; got != "Asia/Shanghai" {
 				t.Errorf("TimeZone 解析成了 %q，应为 Asia/Shanghai（dsn=%q）", got, dsn)
 			}
@@ -125,27 +95,13 @@ func TestPostgresDSNStatementTimeoutAndTimeZone(t *testing.T) {
 	}
 }
 
-// TestOpenPostgresWorksThroughGorm 走真实 gorm.Open —— 唯一的权威入口。
-//
-// 为什么必须有这一条：其余用例都用 pgx.ParseConfig 验字段，而 gorm 驱动在 pgx 解析
-// **之外**还做了一件事 —— 对 DSN 原文正则取 TimeZone 再 time.LoadLocation。只验 pgx
-// 的话，「TimeZone 被 URL 编码成 Asia%2FShanghai」这种会让**所有部署都启不动**的缺陷
-// 能一路绿着过去（本项目真实发生过）。
-//
-// 数据库连不上时 Skip（本仓口径：PG 不可用则 t.Skip），但只要连上了就必须能 Open 成功。
 func TestOpenPostgresWorksThroughGorm(t *testing.T) {
-	// 连接参数默认对齐 config.yaml.example，可用标准 libpq 环境变量覆盖。
-	//
-	// 以前把库名写死成 `artex` —— 那是另一个项目的库，与本仓无关：换一台机器（含 CI）
-	// 就没这个库，测试永久 Skip；恰好装了它的机器上，验的也是别人的库。
+
 	cfg := openTestConfig()
 
 	db, err := gorm.Open(OpenPostgres(cfg), &gorm.Config{})
 	if err != nil {
-		// **Skip 只用于「库不在」**，不能用于「库在但 DSN 组装错了」——
-		// 后者是本测试存在的理由（TimeZone 被编码成 Asia%2FShanghai 时 gorm.Open 就在这里
-		// 失败，报 unknown time zone）。用「能不能建立最朴素的连接」区分这两件事：
-		// 朴素连接也连不上 = 环境没有库，跳过；朴素连接能上、本例却失败 = 组装缺陷，判失败。
+
 		if probeErr := probePostgresReachable(cfg); probeErr != nil {
 			skipOrFailPG(t, probeErr)
 		}
@@ -157,8 +113,6 @@ func TestOpenPostgresWorksThroughGorm(t *testing.T) {
 	}
 	defer func() { _ = sqlDB.Close() }()
 
-	// 两个断言各钉一个维度：会话时区是配置那个（证明 TimeZone 真的生效，不是被丢弃），
-	// 且库名解析对了（证明空密码没吃掉 dbname）。
 	var tz, dbName string
 	if err = db.Raw("SHOW TimeZone").Scan(&tz).Error; err != nil {
 		t.Fatalf("SHOW TimeZone 失败: %v", err)
@@ -174,10 +128,6 @@ func TestOpenPostgresWorksThroughGorm(t *testing.T) {
 	}
 }
 
-// skipOrFailPG 依赖不可用时的口径：宽松模式 Skip，严格模式（GOWP_REQUIRE_PG=1）必须红。
-//
-// 只写 t.Skipf 时，`GOWP_REQUIRE_PG=1 go test ./...` 会把「库不在」报成 ok，
-// 看起来全绿，实际一条真连接都没跑。
 func skipOrFailPG(t *testing.T, err error) {
 	t.Helper()
 	if v := strings.TrimSpace(os.Getenv("GOWP_REQUIRE_PG")); v == "1" || strings.EqualFold(v, "true") {
@@ -186,13 +136,6 @@ func skipOrFailPG(t *testing.T, err error) {
 	t.Skipf("本机没有可用的 PG（跳过）：%v", err)
 }
 
-// openTestConfig 真实连接用的 Config：默认对齐 config.yaml.example 与 CI 的
-// postgres 服务凭据（127.0.0.1:5432 root/root/wp），可用标准 libpq 环境变量
-// PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE 覆盖。
-//
-// 口令默认与 public/test/support 的 DefaultPGPassword 一致（都是 "root"）：
-// CI 的 service 容器就是 POSTGRES_PASSWORD=root（.github/workflows/go-test.yml），
-// 默认空口令会让这两条测试在 integration job 里认证失败，进而把真缺陷淹掉。
 func openTestConfig() Config {
 	envOr := func(key, fallback string) string {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
@@ -213,9 +156,6 @@ func openTestConfig() Config {
 	}
 }
 
-// probePostgresReachable 用最朴素的连接串探一次库是否可达（不带任何被检参数）。
-//
-// 只用于把「环境没有库」与「我们组装的串有问题」分开：前者 Skip，后者必须红。
 func probePostgresReachable(cfg Config) error {
 	conn, err := pgx.Connect(context.Background(), probePostgresDSN(cfg))
 	if err != nil {
@@ -224,16 +164,6 @@ func probePostgresReachable(cfg Config) error {
 	return conn.Close(context.Background())
 }
 
-// probePostgresDSN 探针连接串：**必须带口令**，且口令要由标准库转义。
-//
-// 两个理由：
-//   - 不带口令时，「库在、口令错或 DSN 组装错」会被探针报成「连不上」，于是被判成
-//     「环境没有库」而 Skip —— 真缺陷就这样绿了；
-//   - 手拼 `user:pass@host` 时，口令里的 @ / : / # 会把 host 切断
-//     （password="p@ss" 解析成 host=ss@...，"p:ss/x" 报 invalid port）。
-//
-// 单独成函数是为了能被断言（见 TestProbePostgresDSNKeepsIdentity）：
-// 只靠「连不上就 Skip」的间接判据，口令被丢弃这件事在端口关闭时看不出来。
 func probePostgresDSN(cfg Config) string {
 	u := url.URL{
 		Scheme: "postgres",
@@ -247,10 +177,6 @@ func probePostgresDSN(cfg Config) string {
 	return u.String()
 }
 
-// TestPostgresDSNIPv6Host IPv6 字面量 host 必须加方括号，否则端口分隔符无从判断。
-//
-// 旧实现用空白分隔串（host=::1）时 pgx 能正常解析；改成 URL 形式后若直接
-// `cfg.Host + ":" + port` 会产出 postgres://u@::1:5432/db，pgx 报 invalid port。
 func TestPostgresDSNIPv6Host(t *testing.T) {
 	dsn := PostgresDSN(Config{Host: "::1", Port: 5432, User: "u", DBName: "mydb"})
 	parsed, err := pgx.ParseConfig(dsn)
@@ -262,11 +188,6 @@ func TestPostgresDSNIPv6Host(t *testing.T) {
 	}
 }
 
-// TestProbePostgresDSNKeepsIdentity 探针串必须原样带上 user/口令/库，且口令含特殊字符不被切坏。
-//
-// 为什么直接断言串而不是「连不上就 Skip」：端口关闭时，口令对不对都是 connection refused，
-// 丢弃口令这件事在那种判据下看不出来 —— 而丢弃口令恰好会把「库在、口令错」误判成
-// 「环境没有库」而 Skip，真 DSN 缺陷就此绿掉。
 func TestProbePostgresDSNKeepsIdentity(t *testing.T) {
 	const password = "p@ss:w/rd#x"
 	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "probe", Password: password, DBName: "probe"}

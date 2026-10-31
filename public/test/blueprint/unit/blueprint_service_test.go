@@ -1,6 +1,3 @@
-// Package unit blueprint 模块 feature 测试（真实 PostgreSQL，0-B）：
-// Blueprint 创建 → 初始版本、更新 → draft_version 递增、InitPageDocument
-// 复制 AST 并递归重写 Node ID、非法 Kind 拒绝。
 package unit
 
 import (
@@ -18,14 +15,10 @@ import (
 	"go_wp/public/test/support"
 )
 
-// pageDocument 最小合法页面文档（空 root）。
 const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
-// nestedDocument 含嵌套组件树的合法页面文档（container 内嵌 heading），
-// 用于验证 InitPageDocument 深度遍历 Children 递归重写 ID。
 const nestedDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"c1","type":"core.container","props":{"tag":"section","layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"h1","type":"core.heading","props":{"text":"你好"}}]}]}`
 
-// newService 隔离 PG schema + AutoMigrate 两张表 + 装配 service。
 func newService(t *testing.T) (*blueprintservice.Service, *gorm.DB) {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -39,7 +32,6 @@ func newService(t *testing.T) (*blueprintservice.Service, *gorm.DB) {
 	return blueprintservice.NewService(blueprintmodel.NewModel(db)), db
 }
 
-// TestBlueprintCreate 创建 → draft_version=1 且 LatestVersion 存在。
 func TestBlueprintCreate(t *testing.T) {
 	svc, db := newService(t)
 	if svc == nil {
@@ -59,7 +51,6 @@ func TestBlueprintCreate(t *testing.T) {
 		t.Fatalf("初始 draft_version 应为 1: %d", res.DraftVersion)
 	}
 
-	// LatestVersion 应立即存在（version=1 快照）。
 	ver, err := blueprintmodel.NewModel(db).LatestVersion(ctx, res.ID)
 	if err != nil {
 		t.Fatalf("LatestVersion 应存在: %v", err)
@@ -69,7 +60,6 @@ func TestBlueprintCreate(t *testing.T) {
 	}
 }
 
-// TestBlueprintUpdate 更新 → draft_version 递增 + 版本数=2。
 func TestBlueprintUpdate(t *testing.T) {
 	svc, db := newService(t)
 	if svc == nil {
@@ -97,7 +87,6 @@ func TestBlueprintUpdate(t *testing.T) {
 		t.Fatalf("draft_version 应递增为 2: %d", res2.DraftVersion)
 	}
 
-	// 版本表应产生 2 条记录。
 	var versions []blueprintmodel.VersionEntity
 	if err := db.Where("blueprint_id = ?", res.ID).Find(&versions).Error; err != nil {
 		t.Fatalf("查询版本失败: %v", err)
@@ -107,7 +96,6 @@ func TestBlueprintUpdate(t *testing.T) {
 	}
 }
 
-// TestBlueprintInitPageDocument 复制 AST 并递归重写全部 Node ID。
 func TestBlueprintInitPageDocument(t *testing.T) {
 	svc, _ := newService(t)
 	if svc == nil {
@@ -129,7 +117,6 @@ func TestBlueprintInitPageDocument(t *testing.T) {
 		t.Fatalf("InitPageDocument 失败: %v", err)
 	}
 
-	// 解析返回 AST（container 根 + heading 子节点两层）。
 	var page struct {
 		Root []struct {
 			ID       string `json:"id"`
@@ -147,7 +134,6 @@ func TestBlueprintInitPageDocument(t *testing.T) {
 		t.Fatalf("AST 结构不完整（应为 1 根 + 1 子）: %s", got)
 	}
 
-	// 全部 node.ID（含嵌套子节点）应为合法 UUID，且与原文档 ID（c1/h1）不同、互不相同。
 	gotIDs := []string{page.Root[0].ID, page.Root[0].Children[0].ID}
 	for _, id := range gotIDs {
 		if _, err := uuid.Parse(id); err != nil {
@@ -165,7 +151,6 @@ func TestBlueprintInitPageDocument(t *testing.T) {
 	}
 }
 
-// TestBlueprintRejectInvalidKind 非法 Kind 拒绝。
 func TestBlueprintRejectInvalidKind(t *testing.T) {
 	svc, _ := newService(t)
 	if svc == nil {

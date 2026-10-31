@@ -10,7 +10,6 @@ import (
 	"go_wp/pkg/actor"
 )
 
-// ActorContextMiddleware 的两件事：已登录时带上 id 与登录名；未登录时是零值（系统身份）。
 func TestActorContextMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cases := []struct {

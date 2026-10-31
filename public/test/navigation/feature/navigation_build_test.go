@@ -1,12 +1,5 @@
 package feature
 
-// navigation_build_test.go — 公开站点导航编译进产物（docs/09 §2 端到端验收）。
-//
-// 链路：navigations 表 → navigation service Tree → page service 适配为
-// core.NavigationResolver → builder 的 core.nav 节点展开为静态菜单项。
-// 同时覆盖：未绑定菜单位置的手写 items 不受影响、跨工程菜单隔离、
-// 来源/打开方式字段落库（迁移 054）。
-
 import (
 	"context"
 	"strings"
@@ -34,21 +27,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// navDocument 绑定页眉导航位置的页面文档。
 const navDocument = `{"settings":{"layout":{"mode":"full"},"seo":{"title":"导航页"}},"root":[{"id":"nav1","type":"core.nav","props":{"menu":"header"}}]}`
 
-// customNavDocument 手写菜单项的页面文档（不绑定位置）。
 const customNavDocument = `{"settings":{"layout":{"mode":"full"},"seo":{"title":"手写导航页"}},"root":[{"id":"nav1","type":"core.nav","props":{"items":[{"label":"关于我们","url":"/about"}]}}]}`
 
-// newNavigationEnv 自建导航 + 页面 schema，装配 navigation/page 服务。
 func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigationcontract.NavigationService, string) {
 	t.Helper()
 	db, pages, navSvc, projectID, _ := newNavigationEnvPorts(t)
 	return db, pages, navSvc, projectID
 }
 
-// newNavigationEnvPorts 与 newNavigationEnv 同构，额外返回装配好的真实写端口，
-// 供需要「用计数装饰器重挂端口」的用例委派（move_swap 的失效计数）。
 func newNavigationEnvPorts(t *testing.T) (*gorm.DB, pagecontract.PageService, navigationcontract.NavigationService, string, navWritePortFixture) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -59,11 +47,7 @@ func newNavigationEnvPorts(t *testing.T) (*gorm.DB, pagecontract.PageService, na
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	navSvc := navigationservice.NewService(navigationmodel.NewModel(db), projects)
-	// 写端口（标页面 / 标实例 / 入队）在**所有**导航写路径上都是必需依赖：
-	// 未装配时 Create / Update / Delete / SwapMove 一律 fail closed（writePortsReady）。
-	// 本夹具装配的是真实实现而不是探针 —— 库里真会出现 pages.stale=true、
-	// presentation input_version 前进、build_jobs 多出一条 menu_stale 任务，
-	// 于是「失效真的发生了」与「CRUD 真的成功了」分开断言（探针只能证明前者被调用过）。
+
 	ports := attachNavWritePorts(t, navSvc, db, projects)
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
@@ -73,7 +57,6 @@ func newNavigationEnvPorts(t *testing.T) (*gorm.DB, pagecontract.PageService, na
 	return db, pages, navSvc, project.ID, ports
 }
 
-// addNavItem 创建导航项并返回 ID。
 func addNavItem(t *testing.T, svc navigationcontract.NavigationService, projectID, title, path string, parentID *string, target string) string {
 	t.Helper()
 	res, err := svc.Create(context.Background(), &navigationdto.CreateReq{
@@ -86,7 +69,6 @@ func addNavItem(t *testing.T, svc navigationcontract.NavigationService, projectI
 	return res.ID
 }
 
-// TestNavigationMenuCompiledIntoArtifact 绑定的导航位置在编译期展开为静态菜单项。
 func TestNavigationMenuCompiledIntoArtifact(t *testing.T) {
 	_, pages, navSvc, projectID := newNavigationEnv(t)
 	ctx := context.Background()
@@ -100,8 +82,7 @@ func TestNavigationMenuCompiledIntoArtifact(t *testing.T) {
 		t.Fatalf("预览编译失败: %v", err)
 	}
 	out := string(html)
-	// 方案 A'（default_plain）：默认语言无前缀，但首页语言根统一映射为 /index
-	// （与带前缀语言的 /{code}/index 同形，见 pipeline.LangURLRule.Path）。
+
 	for _, want := range []string{`>首页<`, `href="/"`, `href="/products"`, `>新品<`, `target="_blank"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
@@ -109,13 +90,11 @@ func TestNavigationMenuCompiledIntoArtifact(t *testing.T) {
 	}
 }
 
-// TestNavigationMenuIsolatedByProject 导航按工程隔离：别的工程编译不出本工程菜单。
 func TestNavigationMenuIsolatedByProject(t *testing.T) {
 	_, pages, navSvc, projectID := newNavigationEnv(t)
 	ctx := context.Background()
 	addNavItem(t, navSvc, projectID, "首页", "/", nil, "self")
 
-	// 另一个工程（该工程无导航项）：编译不应带出本工程菜单。
 	otherProjectID := "00000000-0000-0000-0000-0000000000ff"
 	html, err := pages.CompilePreview(ctx, []byte(navDocument), otherProjectID, "/", "", false)
 	if err != nil {
@@ -126,7 +105,6 @@ func TestNavigationMenuIsolatedByProject(t *testing.T) {
 	}
 }
 
-// TestNavigationCustomItemsUntouched 未绑定位置时手写菜单项照常渲染。
 func TestNavigationCustomItemsUntouched(t *testing.T) {
 	_, pages, _, projectID := newNavigationEnv(t)
 	html, err := pages.CompilePreview(context.Background(), []byte(customNavDocument), projectID, "", "", false)
@@ -138,7 +116,6 @@ func TestNavigationCustomItemsUntouched(t *testing.T) {
 	}
 }
 
-// TestNavigationSourceFieldsPersisted 来源类型与打开方式落库（迁移 054 字段生效）。
 func TestNavigationSourceFieldsPersisted(t *testing.T) {
 	db, _, navSvc, projectID := newNavigationEnv(t)
 	sourceID := "00000000-0000-0000-0000-0000000000ab"
@@ -163,7 +140,6 @@ func TestNavigationSourceFieldsPersisted(t *testing.T) {
 		t.Fatalf("落库字段不符: %+v", row)
 	}
 
-	// 非法来源被拒绝。
 	if _, err = navSvc.Create(context.Background(), &navigationdto.CreateReq{
 		ProjectID: projectID, Title: "坏来源", Path: "/bad", Kind: "header", SourceType: "sql",
 	}); err == nil {

@@ -90,9 +90,6 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 	return r
 }
 
-// assertNavigationJump 断言响应是整页提示（200 + data-jump-state + 布局尾部 + 文案）。
-//
-// 取代原先对 303 + ?err= 的断言：写动作的结论由 shell.RenderJump 渲染，不再是重定向。
 func assertNavigationJump(t *testing.T, rec *httptest.ResponseRecorder, state string, wants ...string) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
@@ -198,7 +195,7 @@ func TestNavigationUpdateHTMXRetainsSubmittedValues(t *testing.T) {
 	values := url.Values{"id": {"row-1"}, "projectId": {"project-1"}, "kind": {"header"}, "title": {"我写的标题"}, "path": {"/submitted"}, "target": {"blank"}, "expectedUpdatedAt": {"old-token"}}
 	request := func(hx bool) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		// 表单 action 上带筛选上下文（shell.BackPath 从它读回回跳地址）。
+
 		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/update?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if hx {
@@ -223,7 +220,7 @@ func TestNavigationUpdateHTMXRetainsSubmittedValues(t *testing.T) {
 		t.Fatalf("乐观锁未传递: %+v", svc.lastUpdate)
 	}
 	native := request(false)
-	// 原生提交：失败提示页（200 + err 态），不再是 303 + ?err=。
+
 	assertNavigationJump(t, native, "err")
 	if native.Header().Get("HX-Redirect") != "" || native.Header().Get("Location") != "" {
 		t.Fatalf("原生提交不应有跳转头: %v", native.Header())
@@ -262,7 +259,7 @@ func TestNavigationPanelCreateJumpsToWorkbench(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel/create?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.ServeHTTP(rec, req)
-	// 成功提示页：1 秒后自动跳到块编辑器，returnUrl 指回本列表并重新展开该项。
+
 	assertNavigationJump(t, rec, "ok", "/workbench?block=block-1", "returnUrl=")
 	if rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
 		t.Fatalf("新建块不应走 303 跳转: %v", rec.Header())
@@ -283,7 +280,7 @@ func TestNavigationPanelHTMXRetainsExplicitClear(t *testing.T) {
 		"panelBlockId": {""}, "panelWidth": {"auto"}, "expectedUpdatedAt": {"old-token"}}
 	request := func(hx bool) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		// 表单 action 上带筛选上下文（shell.BackPath 从它读回回跳地址）。
+
 		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if hx {

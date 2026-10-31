@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// probeEntity tag 声明的正例。
 type probeEntity struct {
 	ID       uint64 `gorm:"column:id;primaryKey"`
 	Username string `gorm:"column:username" datarule:"label=用户名;ops=EQ,NEQ,LIKE"`
@@ -15,7 +14,6 @@ type probeEntity struct {
 
 func (probeEntity) TableName() string { return "probe_table" }
 
-// noTableName 未实现 TableName()：表名不能猜，必须由实体显式给出。
 type noTableName struct {
 	Field string `gorm:"column:field" datarule:"label=字段;ops=EQ"`
 }
@@ -28,19 +26,18 @@ func TestDomainFromEntity(t *testing.T) {
 	if cfg.TableName != "probe_table" || cfg.DomainLabel != "探针" {
 		t.Fatalf("域基本信息不符: %+v", cfg)
 	}
-	// 没有 datarule tag 的字段不进白名单（fail-closed）
+
 	if len(cfg.WhiteList) != 2 {
 		t.Fatalf("白名单应只含声明过的字段: %+v", cfg.WhiteList)
 	}
 	if cfg.WhiteList[0].Field != "username" || cfg.WhiteList[0].Label != "用户名" {
 		t.Fatalf("字段声明不符: %+v", cfg.WhiteList[0])
 	}
-	// 小写操作符归一化为大写，重复项去重
+
 	if got := strings.Join(cfg.WhiteList[1].Operators, ","); got != "EQ,NEQ" {
 		t.Fatalf("操作符应归一化去重: %s", got)
 	}
 
-	// 注册的域应能被 GetDomain 取回
 	if err := RegisterDomain(cfg); err != nil {
 		t.Fatalf("注册域失败: %v", err)
 	}
@@ -49,7 +46,6 @@ func TestDomainFromEntity(t *testing.T) {
 	}
 }
 
-// TestDomainFromEntityRejects 声明写错一律报错 —— 不允许白名单静默降级。
 func TestDomainFromEntityRejects(t *testing.T) {
 	cases := []struct {
 		name   string

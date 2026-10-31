@@ -9,17 +9,6 @@ import (
 	"testing"
 )
 
-// sitemap_shard_test.go — sitemap 分片与索引（审计 SEO-011）。
-//
-// 三条不变量：
-//  1. 小站（≤ SitemapShardLimit）产物与分片之前逐字节一致，且不产生分片文件；
-//  2. 大站 sitemap.xml 是 sitemapindex，各片是合法 urlset 且片内条数不超上限；
-//  3. 分片结果与输入顺序无关（确定性），条目缩水后旧分片被清理。
-
-// testURLSet / testSitemapIndex 测试侧解析结构。
-//
-// 刻意不复用生成侧结构体：这里按 XML 反序列化，生成侧改字段名/漏写标签时
-// 测试会真的失败，而不是跟着一起改完还绿。
 type testURLSet struct {
 	XMLName xml.Name `xml:"urlset"`
 	URLs    []struct {
@@ -34,7 +23,6 @@ type testSitemapIndex struct {
 	} `xml:"sitemap"`
 }
 
-// shardPaths 生成 n 条互不相同的访问路径。
 func shardPaths(n int) []string {
 	paths := make([]string, 0, n)
 	for i := 0; i < n; i++ {
@@ -43,7 +31,6 @@ func shardPaths(n int) []string {
 	return paths
 }
 
-// readSiteFile 读取站点级产物文件。
 func readSiteFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -53,7 +40,6 @@ func readSiteFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// listShardFiles 目录下现存的分片文件名（已排序）。
 func listShardFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	names, err := filepath.Glob(filepath.Join(dir, "sitemap-*.xml"))
@@ -67,8 +53,6 @@ func listShardFiles(t *testing.T, dir string) []string {
 	return out
 }
 
-// TestWriteSiteFilesSmallSiteUnchanged 现有站点行为不变：单文件 sitemap.xml、零分片、
-// 字节与 BuildSitemap 完全一致（分片能力不得改变小站产物）。
 func TestWriteSiteFilesSmallSiteUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	entries := EntriesFromPaths("https://e.com", []string{"/", "/a", "/b"})
@@ -91,7 +75,6 @@ func TestWriteSiteFilesSmallSiteUnchanged(t *testing.T) {
 	}
 }
 
-// TestWriteSiteFilesShardsLargeSite 超过阈值：生成索引 + 分片，每片可解析且并集完整。
 func TestWriteSiteFilesShardsLargeSite(t *testing.T) {
 	const n = 2 * SitemapShardLimit
 	dir := t.TempDir()
@@ -146,7 +129,6 @@ func TestWriteSiteFilesShardsLargeSite(t *testing.T) {
 	}
 }
 
-// TestShardEntriesBoundary 阈值边界：正好上限仍是单文件，多一条才分片。
 func TestShardEntriesBoundary(t *testing.T) {
 	base := "https://e.com"
 	atLimit := EntriesFromPaths(base, shardPaths(SitemapShardLimit))
@@ -161,7 +143,7 @@ func TestShardEntriesBoundary(t *testing.T) {
 	if len(shards[0]) != SitemapShardLimit || len(shards[1]) != 1 {
 		t.Errorf("分片切分错误: %d + %d", len(shards[0]), len(shards[1]))
 	}
-	// 空输入不产生分片（调用方据此区分「无条目」与「一片」）。
+
 	if got := ShardEntries(nil); got != nil {
 		t.Errorf("空输入应返回 nil，实际 %v", got)
 	}
@@ -179,7 +161,6 @@ func TestShardEntriesBoundary(t *testing.T) {
 	}
 }
 
-// TestShardEntriesOrderIndependent 同一集合不同输入顺序 → 分片与索引逐字节一致。
 func TestShardEntriesOrderIndependent(t *testing.T) {
 	const n = SitemapShardLimit + 500
 	base := "https://e.com"
@@ -210,7 +191,6 @@ func TestShardEntriesOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestWriteSiteFilesPrunesStaleShards 条目缩水到单文件后，上一次留下的分片必须清掉。
 func TestWriteSiteFilesPrunesStaleShards(t *testing.T) {
 	base := "https://e.com"
 	dir := t.TempDir()
@@ -235,7 +215,6 @@ func TestWriteSiteFilesPrunesStaleShards(t *testing.T) {
 	}
 }
 
-// TestIsSitemapShardName 分片名判定：只认 sitemap-<正整数>.xml（清理时的安全边界）。
 func TestIsSitemapShardName(t *testing.T) {
 	for name, want := range map[string]bool{
 		"sitemap-1.xml":     true,

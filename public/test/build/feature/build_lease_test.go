@@ -1,14 +1,5 @@
 package feature
 
-// build_lease_test.go — 构建队列的租约 / 来源互斥 / 完成归属（审计 DB-01）的链路测试。
-//
-// 覆盖审计要求的那几类竞争：双 worker 取任务、同来源串行、租约到期回收、
-// 同输入二次入队、旧 worker 延迟完成、取消与重试竞争，以及
-// 「回收一条坏任务不阻断其它任务」—— 后者是旧实现里 23505 让整条回收语句失败的复现点。
-//
-// 用例都跑真实 PostgreSQL（迁移 295 的形状），断言的是**库里的行**而不只是返回值：
-// 队列正确性的表现全在表上（谁的令牌、几条 running、谁被合并）。
-
 import (
 	"context"
 	"errors"
@@ -28,7 +19,6 @@ import (
 	"go_wp/pkg/database"
 )
 
-// jobRow 队列行里与本文件断言相关的列。
 type jobRow struct {
 	ID           int64      `gorm:"column:id"`
 	Status       string     `gorm:"column:status"`
@@ -42,7 +32,6 @@ type jobRow struct {
 	ErrorMsg     *string    `gorm:"column:error_message"`
 }
 
-// loadJob 读一行队列任务（断言任何一项都从库里取，不从被调用方的返回值推断）。
 func loadJob(t *testing.T, db *gorm.DB, id string) jobRow {
 	t.Helper()
 	var row jobRow
@@ -54,7 +43,6 @@ func loadJob(t *testing.T, db *gorm.DB, id string) jobRow {
 	return row
 }
 
-// enqueueJob 入队一条指定来源与构建输入的任务，返回任务 id。
 func enqueueJob(t *testing.T, svc *buildservice.Service, req *builddto.EnqueueReq) string {
 	t.Helper()
 	job, created, err := svc.Enqueue(context.Background(), req)
@@ -67,7 +55,6 @@ func enqueueJob(t *testing.T, svc *buildservice.Service, req *builddto.EnqueueRe
 	return job.ID
 }
 
-// expireLease 把租约改成已过期（模拟 worker 崩在任务中途、时间已经走完租约）。
 func expireLease(t *testing.T, db *gorm.DB, id string) {
 	t.Helper()
 	if err := db.Exec("UPDATE build_jobs SET lease_expires_time = now() - interval '1 hour' WHERE id = ?", id).Error; err != nil {
@@ -75,7 +62,6 @@ func expireLease(t *testing.T, db *gorm.DB, id string) {
 	}
 }
 
-// runningCount 某来源当前 running 的行数（同来源互斥的直接证据）。
 func runningCount(t *testing.T, db *gorm.DB, sourceType, sourceID string) int64 {
 	t.Helper()
 	var n int64
@@ -87,7 +73,6 @@ func runningCount(t *testing.T, db *gorm.DB, sourceType, sourceID string) int64 
 	return n
 }
 
-// jobID 任务 id 字符串 → int64（bigint identity 的十进制文本）。
 func jobID(t *testing.T, id string) int64 {
 	t.Helper()
 	v, err := strconv.ParseInt(id, 10, 64)
@@ -97,7 +82,6 @@ func jobID(t *testing.T, id string) int64 {
 	return v
 }
 
-// TestClaimIssuesLease 认领原子产生租约令牌与到期时间，并累计认领次数。
 func TestClaimIssuesLease(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -122,12 +106,11 @@ func TestClaimIssuesLease(t *testing.T) {
 	if job.Attempt != 1 {
 		t.Fatalf("首次认领 attempt 应为 1，实际 %d", job.Attempt)
 	}
-	// 队列里只有这一条，第二次认领应当为空（也顺带证明它已经不是 pending）。
+
 	if again, err := svc.Model().Claim(ctx, time.Minute); err != nil || again != nil {
 		t.Fatalf("已认领的任务不应被再次认领: job=%v err=%v", again, err)
 	}
 
-	// 带令牌结案：成功写入清空租约（不留「已完成的令牌」给后台误读）。
 	if err := svc.Model().MarkSucceeded(ctx, job.ID, *job.LeaseToken, "", time.Now().UTC()); err != nil {
 		t.Fatalf("带令牌完成失败: %v", err)
 	}
@@ -143,7 +126,6 @@ func TestClaimIssuesLease(t *testing.T) {
 	}
 }
 
-// TestClaimSerializesSameSource 同一来源同时只跑一条任务，且不会饿死其它来源。
 func TestClaimSerializesSameSource(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -153,7 +135,7 @@ func TestClaimSerializesSameSource(t *testing.T) {
 	src := uuid.NewString()
 	first := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "page", SourceID: src, DraftVersion: 1, BuildInputHash: "h1"})
 	second := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "page", SourceID: src, DraftVersion: 1, BuildInputHash: "h2"})
-	// 另一个来源的待办：同来源互斥不能变成队首阻塞。
+
 	other := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "presentation", SourceID: uuid.NewString()})
 
 	m := svc.Model()
@@ -181,7 +163,6 @@ func TestClaimSerializesSameSource(t *testing.T) {
 		t.Fatalf("被互斥挡下的同来源任务应保持 pending，实际 %q", row.Status)
 	}
 
-	// 前一条结案后，同来源的第二条才轮到。
 	if err := m.MarkSucceeded(ctx, got1.ID, *got1.LeaseToken, "", time.Now().UTC()); err != nil {
 		t.Fatalf("带令牌完成失败: %v", err)
 	}
@@ -197,7 +178,6 @@ func TestClaimSerializesSameSource(t *testing.T) {
 	}
 }
 
-// TestClaimSameSourceConcurrent 多 worker 并发认领同一来源的两条任务：至多一条 running。
 func TestClaimSameSourceConcurrent(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -236,7 +216,7 @@ func TestClaimSameSourceConcurrent(t *testing.T) {
 	if n := runningCount(t, db, "page", src); n != 1 {
 		t.Fatalf("并发认领后同来源 running 数应为 1，实际 %d", n)
 	}
-	// 第二条必须还在队列里（互斥是「排队」不是「丢弃」）。
+
 	pendingID := second
 	if strconv.FormatInt(claimed[0], 10) == second {
 		pendingID = first
@@ -246,11 +226,6 @@ func TestClaimSameSourceConcurrent(t *testing.T) {
 	}
 }
 
-// TestRunningSourceIndexRejectsSecondRunning 来源互斥在数据库层也成立（不止应用层自觉）。
-//
-// 应用层的 NOT EXISTS 只是前置过滤：两个 worker 的快照可能都通过它。真正的兜底是迁移 295 的
-// uq_build_jobs_running_source —— 这里绕过 service 直接用 SQL 造第二条 running，
-// 它必须被拒绝（索引一旦被删掉，这条用例立刻变红）。
 func TestRunningSourceIndexRejectsSecondRunning(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -277,7 +252,6 @@ func TestRunningSourceIndexRejectsSecondRunning(t *testing.T) {
 	}
 }
 
-// TestStaleWorkerCannotOverwrite 旧 worker 迟到的完成结论不能覆盖重新认领后的状态。
 func TestStaleWorkerCannotOverwrite(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -293,7 +267,6 @@ func TestStaleWorkerCannotOverwrite(t *testing.T) {
 	}
 	oldToken := *oldJob.LeaseToken
 
-	// 租约到期 → 回收 → 重新认领（模拟旧 worker 卡了很久，任务被交给了别人）。
 	expireLease(t, db, id)
 	res, err := m.ReclaimStale(ctx, time.Now().UTC())
 	if err != nil {
@@ -313,8 +286,6 @@ func TestStaleWorkerCannotOverwrite(t *testing.T) {
 		t.Fatalf("重新认领 attempt 应累加到 2，实际 %d", newJob.Attempt)
 	}
 
-	// 旧 worker 的两个结论都必须被守卫拒绝。
-	// artifact_id 是 uuid 列：这里必须用合法 uuid，否则拿到的是类型错误而不是租约判定。
 	jobPrimary := jobID(t, id)
 	oldArtifact, newArtifact := uuid.NewString(), uuid.NewString()
 	if err := m.MarkSucceeded(ctx, jobPrimary, oldToken, oldArtifact, time.Now().UTC()); !errors.Is(err, buildmodel.ErrLeaseLost) {
@@ -334,7 +305,6 @@ func TestStaleWorkerCannotOverwrite(t *testing.T) {
 		t.Fatalf("旧 worker 不得写入产物 id: %v", *row.ArtifactID)
 	}
 
-	// 新 worker 用新令牌结案才是有效的。
 	if err := m.MarkSucceeded(ctx, jobPrimary, *newJob.LeaseToken, newArtifact, time.Now().UTC()); err != nil {
 		t.Fatalf("新令牌完成失败: %v", err)
 	}
@@ -344,10 +314,6 @@ func TestStaleWorkerCannotOverwrite(t *testing.T) {
 	}
 }
 
-// TestReclaimMergesDuplicateWithoutBlockingOthers 坏任务被合并，其它僵尸任务照常回收。
-//
-// 这是审计 DB-01 的复现点：旧实现把「同键已有 pending」的陈旧 running 也改回 pending，
-// 撞上 uq_build_jobs_pending 报 23505，**整条回收语句**失败 —— 别的僵尸任务一条都回不来。
 func TestReclaimMergesDuplicateWithoutBlockingOthers(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -356,7 +322,6 @@ func TestReclaimMergesDuplicateWithoutBlockingOthers(t *testing.T) {
 	ctx := context.Background()
 	m := svc.Model()
 
-	// 坏任务：同来源同构建输入，第一条 running 之后再入队一条 pending（历史缺陷的构造方式）。
 	srcBad := uuid.NewString()
 	bad := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "page", SourceID: srcBad, DraftVersion: 1, BuildInputHash: "same"})
 	badJob, err := m.Claim(ctx, time.Minute)
@@ -365,7 +330,6 @@ func TestReclaimMergesDuplicateWithoutBlockingOthers(t *testing.T) {
 	}
 	dup := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "page", SourceID: srcBad, DraftVersion: 1, BuildInputHash: "same"})
 
-	// 另外两条互不相干的僵尸任务：它们必须被正常回收。
 	others := make([]string, 0, 2)
 	for i := 0; i < 2; i++ {
 		id := enqueueJob(t, svc, &builddto.EnqueueReq{SourceType: "presentation", SourceID: uuid.NewString()})
@@ -398,8 +362,7 @@ func TestReclaimMergesDuplicateWithoutBlockingOthers(t *testing.T) {
 			t.Fatalf("僵尸任务 %s 应退回 pending，实际 %q", id, row.Status)
 		}
 	}
-	// 合并不丢工作：被合并的那份工作仍由队列里的待办承担，它现在可以被认领
-	// （坏任务已经让出 running）。
+
 	next, err := m.Claim(ctx, time.Minute)
 	if err != nil || next == nil {
 		t.Fatalf("回收后应能继续认领: job=%v err=%v", next, err)
@@ -409,7 +372,6 @@ func TestReclaimMergesDuplicateWithoutBlockingOthers(t *testing.T) {
 	}
 }
 
-// TestEnqueueStoresExplicitScope 工程 / 语言 / 意图显式入库，且两个入队端口各自带默认意图。
 func TestEnqueueStoresExplicitScope(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -433,28 +395,24 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 		t.Fatalf("intent 应显式入库，实际 %q", row.Intent)
 	}
 
-	// 端口一：page 的溢出重建带工程、**冻结的语言**与依赖重建意图（审计 ARCH-04：
-	// 语言不再是空串 —— 空串曾让消费侧只能按默认语言构建，其余语言停在旧字节）。
 	pageID := uuid.NewString()
 	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "zh-CN", buildmodel.IntentDependency, 3, "h"); err != nil {
 		t.Fatalf("EnqueuePageBuild 失败: %v", err)
 	}
-	// 同一页面、同一输入、同一语言，但意图是 manual：必须**各自成行**（待办去重键含
-	// intent，迁移 307）—— 否则人工点的那次构建会被同键的依赖重建吞掉。
+
 	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "zh-CN", buildmodel.IntentManual, 3, "h"); err != nil {
 		t.Fatalf("EnqueuePageBuild(manual) 失败: %v", err)
 	}
-	// 同一页面、同一输入、另一语言：同样必须各自成行（去重键含 lang）——
-	// 否则多语言站点只会构建其中一种语言，另一种永远停在旧字节。
+
 	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "en-US", buildmodel.IntentDependency, 3, "h"); err != nil {
 		t.Fatalf("EnqueuePageBuild(en-US) 失败: %v", err)
 	}
-	// 端口二：presentation 的自动重建带工程与依赖重建意图（实例没有语言维度，lang 保持空串）。
+
 	presentationID := uuid.NewString()
 	if err := svc.EnqueuePresentationBuild(ctx, presentationID, projectID); err != nil {
 		t.Fatalf("EnqueuePresentationBuild 失败: %v", err)
 	}
-	// page 侧三条任务：工程 / 语言 / 意图都必须显式入库（断言直接读库，不看返回值）。
+
 	var pageJobs []struct {
 		SourceID  string  `gorm:"column:source_id"`
 		ProjectID *string `gorm:"column:project_id"`
@@ -483,7 +441,7 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 	if len(wantPageJobs) != 0 {
 		t.Fatalf("page 端口缺少这些语言/意图的任务: %v", wantPageJobs)
 	}
-	// presentation 端口：没有语言维度，lang 保持空串（与 page 侧形成对照）。
+
 	var presJob struct {
 		ProjectID *string `gorm:"column:project_id"`
 		Intent    string  `gorm:"column:intent"`
@@ -502,7 +460,6 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 		t.Fatalf("presentation 没有语言维度，lang 应为空串，实际 %q", presJob.Lang)
 	}
 
-	// 白名单外的意图在入队前就被拒绝（数据库拒绝的报错是约束名，且会留下半条任务）。
 	if _, created, err := svc.Enqueue(ctx, &builddto.EnqueueReq{
 		SourceType: "page", SourceID: uuid.NewString(), Intent: "whatever",
 	}); err == nil || created {
@@ -512,14 +469,12 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 	if err := db.Table("build_jobs").Count(&n).Error; err != nil {
 		t.Fatalf("统计任务失败: %v", err)
 	}
-	// 上面成功入队 5 条：manual(1) + pageID 的三条（zh-CN/dependency、zh-CN/manual、en-US/dependency）
-	// + presentationID(1)。
+
 	if n != 5 {
 		t.Fatalf("非法意图不应留下任务行，期望 5 行，实际 %d", n)
 	}
 }
 
-// TestRetryFailedIsAtomicUnderRace 并发重试同一条失败任务只有一次生效。
 func TestRetryFailedIsAtomicUnderRace(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -565,7 +520,7 @@ func TestRetryFailedIsAtomicUnderRace(t *testing.T) {
 	if notFound != goroutines-1 {
 		t.Fatalf("其余重试应报「任务不存在或不是失败态」，实际 %d 次", notFound)
 	}
-	// 重试把租约残留一并清掉，任务回到可认领状态。
+
 	row := loadJob(t, db, id)
 	if row.Status != buildmodel.StatusPending || row.LeaseToken != nil || row.LeaseExpires != nil {
 		t.Fatalf("重试后应为干净的 pending: %+v", row)
@@ -579,7 +534,6 @@ func TestRetryFailedIsAtomicUnderRace(t *testing.T) {
 	}
 }
 
-// TestCancelIsExclusiveWithCompletion 取消（标 superseded）与完成只能有一个生效。
 func TestCancelIsExclusiveWithCompletion(t *testing.T) {
 	db, svc := newBuildFixture(t)
 	if svc == nil {
@@ -595,7 +549,6 @@ func TestCancelIsExclusiveWithCompletion(t *testing.T) {
 	token := *job.LeaseToken
 	primary := jobID(t, id)
 
-	// 取消与完成同时发生：租约守卫让两者互斥，恰好一个生效。
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	wg.Add(2)
@@ -626,7 +579,7 @@ func TestCancelIsExclusiveWithCompletion(t *testing.T) {
 	if row.Status != buildmodel.StatusSuperseded && row.Status != buildmodel.StatusSucceeded {
 		t.Fatalf("状态应为取消或完成之一，实际 %q", row.Status)
 	}
-	// 结案之后再写一次都是租约失效（任务已经不在 running）。
+
 	if err := m.MarkFailed(ctx, primary, token, "迟到的失败", time.Now().UTC()); !errors.Is(err, buildmodel.ErrLeaseLost) {
 		t.Fatalf("已结案的任务不得再被改动，实际 err=%v", err)
 	}

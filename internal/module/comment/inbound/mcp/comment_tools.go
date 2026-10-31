@@ -1,27 +1,5 @@
 package commentmcp
 
-// 为什么把它加进来（推翻过一版判断，理由留在这里备查）：
-// 把位置和***谁授权***弄混了 —— 关键在于 ReviewerID 是不是真实的登录者，
-// 而它取自 context（Runner 在执行前注入），参数里根本没有这个字段。
-// 后台管理员点「通过」与让助手点「通过」是同一次由人授权的操作，留痕一样成立。
-//
-// 真正需要守住的因此变成了另外两件事，都写在这里：
-//   · 目标状态只允许 approved / rejected（service 也判，这里判是为了给出人能看懂的错）；
-//   · projectId 必填 —— 评论按工程隔离，一次不带工程的批量改动是危险的越界。
-
-// 为什么补这一个：评论模块此前对外只有两件事 —— 公开列表（ListApproved，必须给
-// 具体实体：EntityType + EntityID）与后台审核页。运营真正会问的是
-// 「有哪些评论还在等审核」「提到退货的评论有多少」—— 前者的答案横跨所有实体
-// （不该逼用户先说出实体 id），后者是**正文关键词**。底层一直是齐的：
-// service.AdminList 支持工程 + 状态 + 实体类型 + 正文关键词 + 分页。
-//
-// 只读面与写面分开成两个文件：本文件只有 QueryReader（一个方法），
-// 审核在 comment_tools.go 里另走 WriteTools —— 两者的依赖、权限点、
-// 变更风险都不是一回事，混在一个装配函数里会让「只想加个查询」顺手把审核也带进来。
-//
-//（本文初版写的「审核是人的判断，模型代替不了这个位置」已被推翻：判断是谁做出的
-// 取决于谁授权的，而 ReviewerID 取自登录身份、不由模型提供。详见 review 文件头。）
-
 import (
 	"context"
 	"errors"
@@ -35,7 +13,6 @@ import (
 	"go_wp/internal/permission"
 )
 
-// WriteTools 返回评论模块的写工具集。
 func WriteTools(w commentcontract.ReviewWriter) ([]mcp.Tool, error) {
 	if w == nil {
 		return nil, errors.New("commentmcp: 评论审核依赖缺失（装配期接线错误）")
@@ -43,9 +20,6 @@ func WriteTools(w commentcontract.ReviewWriter) ([]mcp.Tool, error) {
 	return []mcp.Tool{commentReview(w)}, nil
 }
 
-// commentReviewArgs comment_review 的入参。
-//
-// 没有 reviewerId：操作人从登录身份来，见文件头。
 type commentReviewArgs struct {
 	ProjectID string  `json:"projectId"`
 	IDs       []int64 `json:"ids"`
@@ -72,16 +46,14 @@ func commentReview(w commentcontract.ReviewWriter) mcp.Tool {
 			if len(args.IDs) == 0 {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "ids 不能为空：要说明处理哪几条评论。先用 comment_find 拿到 id。"}
 			}
-			// 去重 + 定量：重复 id 会让 service 的「影响条数」对不上请求条数，
-			// 而那个数字是回答里唯一能证明「到底改了几条」的东西。
+
 			ids := dedupeIDs(args.IDs)
 			if len(ids) > commentenums.MaxReviewIDs {
 				return mcp.Result{}, &mcp.ArgsError{
 					Msg: fmt.Sprintf("一次最多处理 %d 条，现在给了 %d 条。分批来。", commentenums.MaxReviewIDs, len(ids)),
 				}
 			}
-			// 操作人必须是真实登录者：拿不到身份就不执行。
-			// 放行等于写一条「审核人是 0」的流水，那条留痕谁也追溯不了。
+
 			reviewer := mcp.UserIDFrom(ctx)
 			if reviewer <= 0 {
 				return mcp.Result{}, errors.New("commentmcp: 拿不到操作人身份，拒绝执行审核")
@@ -99,7 +71,6 @@ func commentReview(w commentcontract.ReviewWriter) mcp.Tool {
 		})
 }
 
-// dedupeIDs 去重并保持原顺序（顺序是模型给的优先级，不要打乱它）。
 func dedupeIDs(in []int64) []int64 {
 	seen := make(map[int64]struct{}, len(in))
 	out := make([]int64, 0, len(in))
@@ -116,10 +87,6 @@ func dedupeIDs(in []int64) []int64 {
 	return out
 }
 
-// reviewResultText 审核结果正文。
-//
-// 必须把「请求了几条 / 实际改了几条」都说出来：两者不等时用户才知道
-// 有一部分评论已经不在待审状态（可能刚被别人处理过），而不是以为全处理完了。
 func reviewResultText(status string, requested int, res *commentdto.ReviewResp) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "已把 %d 条评论置为「%s」。", res.Affected, reviewStatusLabel(status))
@@ -135,11 +102,6 @@ func reviewResultText(status string, requested int, res *commentdto.ReviewResp) 
 	return b.String()
 }
 
-// reviewStatusLabel 目标状态的中文说法。
-//
-// 这里只有两个取值（approved / rejected），不走 commentdto.AdminItem 那条
-// StatusLabel 优先的路径 —— 那是给**已有条目**用的（条目上带着页面渲染时的译文），
-// 而这里说的是「我刚设成了什么」，没有条目可依。
 func reviewStatusLabel(status string) string {
 	if pair := commentenums.StatusLabel(status); strings.TrimSpace(pair.Fallback) != "" {
 		return pair.Fallback
@@ -150,14 +112,10 @@ func reviewStatusLabel(status string) string {
 const (
 	commentFindDefaultPageSize = 10
 	commentFindMaxPageSize     = 50
-	// commentBodyInlineMax 正文在输出里的截断长度（按字符）。
-	//
-	// 评论正文可能有几千字，而一次筛选会返回十条 —— 不截的话工具结果里全是正文，
-	// 挤掉后面几批查询的位置。截断处标明还有多少字，模型据此知道要不要细看某条。
+
 	commentBodyInlineMax = 120
 )
 
-// QueryTools 返回评论模块的只读查询工具集。
 func QueryTools(query commentcontract.QueryReader) ([]mcp.Tool, error) {
 	if query == nil {
 		return nil, errors.New("commentmcp: 评论查询依赖缺失（装配期接线错误）")
@@ -165,7 +123,6 @@ func QueryTools(query commentcontract.QueryReader) ([]mcp.Tool, error) {
 	return []mcp.Tool{commentFind(query)}, nil
 }
 
-// commentFindArgs comment_find 的入参。
 type commentFindArgs struct {
 	ProjectID  string `json:"projectId"`
 	Status     string `json:"status"`
@@ -207,10 +164,6 @@ func commentFind(query commentcontract.QueryReader) mcp.Tool {
 		})
 }
 
-// clampCommentPageSize 把每页条数夹到合法区间。
-//
-// ≤0 给默认值而不是报错：模型不传这个参数时 JSON 里就没有它，反序列化得到 0，
-// 那不是「用户要 0 条」。
 func clampCommentPageSize(n int) int {
 	if n <= 0 {
 		return commentFindDefaultPageSize
@@ -221,18 +174,13 @@ func clampCommentPageSize(n int) int {
 	return n
 }
 
-// findCommentsText 把审核队列写成模型能直接引用的几句。
-//
-// 每行都给**评论 id**：它是运营在后台找到这条评论的唯一钥匙，只给正文时
-// 用户得自己在列表里翻。
 func findCommentsText(res *commentdto.AdminListResp) string {
 	if res == nil {
 		return "没有查到评论。"
 	}
 	var b strings.Builder
 	if len(res.Items) == 0 {
-		// 空结果要区分「这个筛选下确实没有」与「这个工程一条评论都没有」——
-		// 两者对用户的意义不同（前者让他换条件，后者说明还没人评论过）。
+
 		if res.Total == 0 {
 			b.WriteString("没有符合条件的评论。换个关键词或去掉筛选（不传 status / entityType）再看一次。")
 		} else {
@@ -249,11 +197,6 @@ func findCommentsText(res *commentdto.AdminListResp) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// commentStatusText 取状态的中文说法。
-//
-// 优先用服务端按请求语言取好的 StatusLabel；工具调用没有请求语言，所以它通常是空的 ——
-// 这时回落到 enums 的中文兜底。**不自己写一张状态表**：状态枚举的中文说法只有一处真源
-// （commentenums），各写一份时新增一种状态会出现「页面上叫一个名字、AI 嘴里叫另一个」。
 func commentStatusText(it commentdto.AdminItem) string {
 	if strings.TrimSpace(it.StatusLabel) != "" {
 		return it.StatusLabel
@@ -264,10 +207,6 @@ func commentStatusText(it commentdto.AdminItem) string {
 	return it.Status
 }
 
-// commentEntityText 写出这条评论挂在哪个实体上。
-//
-// 只有类型与 id，没有实体名字：评论模块**不认识**这些实体的细节（契约里写明了），
-// 要名字就得再调一次对应模块的工具。模型据此知道下一步该调谁。
 func commentEntityText(it commentdto.AdminItem) string {
 	if it.EntityType == "" && it.EntityID == "" {
 		return "（未知实体）"
@@ -292,9 +231,6 @@ func commentTimeText(it commentdto.AdminItem) string {
 	return it.CreateTime.Time().Format("2006-01-02 15:04")
 }
 
-// inlineCommentBody 把正文压成一行并截断。
-//
-// 换行压成空格：表格 / 列表里换行会让一行变成多行，模型引用时容易只截到半句。
 func inlineCommentBody(body string) string {
 	flat := strings.Join(strings.Fields(body), " ")
 	if flat == "" {
@@ -304,7 +240,6 @@ func inlineCommentBody(body string) string {
 	if len(runes) <= commentBodyInlineMax {
 		return flat
 	}
-	// 按字符截断（中文一个字三字节），并说明还剩多少字 —— 只截不说会让模型
-	// 以为自己看到的是全文。
+
 	return string(runes[:commentBodyInlineMax]) + fmt.Sprintf("…（还有 %d 字）", len(runes)-commentBodyInlineMax)
 }

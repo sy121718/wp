@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 分割线校验：CSS 安全值、嵌入配置。
 func TestValidateExtra(t *testing.T) {
 	inset := func(kind string) Inset { return Inset{Kind: kind} }
 	tests := []struct {
@@ -43,7 +42,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 样式编译：线型缺省、双线最小线宽、嵌入 flex 比例、宽度对齐。
 func TestCompileCSS(t *testing.T) {
 	tests := []struct {
 		name  string

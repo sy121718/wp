@@ -9,12 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 安全响应头完整性与 X-Powered-By 清理。
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	engine := gin.New()
 	engine.Use(SecurityHeadersMiddleware())
 	engine.GET("/ok", func(c *gin.Context) {
-		// 模拟上游（模板/第三方库）意外残留的技术栈头。
+
 		c.Header("X-Powered-By", "go_wp/test")
 		c.Status(http.StatusOK)
 	})

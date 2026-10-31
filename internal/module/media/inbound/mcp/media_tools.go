@@ -1,16 +1,5 @@
 package mediamcp
 
-// media_tools.go — 媒体模块暴露给模型的工具（附件：一个搜 + 一个读 + 两个写）。
-//
-// 与商品/内容同构。**媒体是「元数据能改、文件本身改不了」的一类**：
-// 它的写操作只有两件事 —— 改文件名/分类/alt 那类字段，或者删掉。
-// 换图（Replace）与上传（Upload）都要求 multipart 文件，模型给不出，
-// 所以它们不在工具集里；这一点写进下面的说明，免得模型对着「换个图」的请求硬凑一个调用。
-//
-// **依赖断言成收窄的端口**：MediaService 同时握着 ReconcileStorage / GenerateVariants /
-// ReplayVariantBackfill，工具层握着它们时「顺手重算一遍变体」会从
-// 「显式加一个工具」退化成「随手就能做」。
-
 import (
 	"context"
 	"errors"
@@ -23,24 +12,16 @@ import (
 	"go_wp/internal/permission"
 )
 
-// MediaReader 读附件（单条 + 列表）。
 type MediaReader interface {
 	Detail(ctx context.Context, req *mediadto.DetailReq) (*mediadto.AttachmentResp, error)
 	List(ctx context.Context, req *mediadto.ListReq) (*mediadto.ListResp, error)
 }
 
-// MediaWriter 附件上的两个写操作。
 type MediaWriter interface {
 	UpdateAttachment(ctx context.Context, req *mediadto.AttachmentUpdateReq) error
 	Delete(ctx context.Context, req *mediadto.DeleteReq) error
 }
 
-// Tools 返回媒体模块的工具集。
-//
-// **全部工具都不收 projectId**：`sys_attachment` 没有 project_id 列（媒体库站点级共享），
-// 这个参数既不参与查询也不参与过滤。service 里有一段注释专门记着这件事 —— 它曾经
-// 被当必填，唯一效果是让没带参数的调用方拿到一个 400（看起来像「附件不存在」）。
-// 工具层重复这个错误会更糟：模型会把它当成「需要向用户索要的信息」而停下来问。
 func Tools(r MediaReader, w MediaWriter, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if r == nil || w == nil {
 		return nil, errors.New("mediamcp: 媒体读写依赖缺失（装配期接线错误）")
@@ -53,15 +34,11 @@ func Tools(r MediaReader, w MediaWriter, store mcp.IdempotencyStore) ([]mcp.Tool
 	}, nil
 }
 
-// mediaFindArgs media_find 的入参。
 type mediaFindArgs struct {
 	Search   string  `json:"search"`
 	FileType string  `json:"fileType"`
 	Category *uint64 `json:"categoryId"`
-	// Uncategorized 只看没有分类的附件。
-	//
-	// 不能靠 categoryId=0 表达：ListReq.CategoryID 的判据是「> 0 才过滤」，
-	// 传 0 等于不过滤 —— 用户问「还有哪些图没归类」时会拿到全部媒体。
+
 	Uncategorized bool `json:"uncategorized"`
 }
 
@@ -94,10 +71,7 @@ func mediaFind(r MediaReader) mcp.Tool {
 				strconv.FormatInt(res.Total, 10) + " 个）：\n")
 			for i := range res.List {
 				a := &res.List[i]
-				// 地址必须给：用户最常要的就是「把这张图的地址给我」（贴到页面/邮件里），
-				// 而工具说明承诺了「返回 id、文件名、类型与地址」—— 之前只给到 alt，
-				// 模型只能让用户自己去后台翻。URL 由 service 的 entityToResp 派生好，
-				// 这里只是把已有的字段输出出来。
+
 				b.WriteString("- " + a.FileName + "（id=" + strconv.FormatUint(a.ID, 10) +
 					"，类型=" + a.FileType + "，" + mediaMetaBrief(a.ExtraInfo) + "）\n" +
 					"  地址: " + a.URL + "\n")
@@ -107,10 +81,8 @@ func mediaFind(r MediaReader) mcp.Tool {
 	)
 }
 
-// mediaFindLimit 搜索返回的条数上限（与商品/内容侧同口径）。
 const mediaFindLimit = 20
 
-// mediaGetArgs media_get 的入参。
 type mediaGetArgs struct {
 	ID uint64 `json:"id"`
 }
@@ -133,11 +105,6 @@ func mediaGet(r MediaReader) mcp.Tool {
 	)
 }
 
-// mediaUpdateArgs media_update 的业务入参。
-//
-// 指针类型与 service 同形（nil = 不改）。**分类用 *uint64 而不是 string**：
-// service 用 0 表示「移入未分类」，所以这个字段的三态是「不传 / 0 / 某个 id」，
-// 折成字符串（"" / "0" / "12"）会把前两者混成一个。
 type mediaUpdateArgs struct {
 	ID          uint64  `json:"id"`
 	FileName    *string `json:"fileName"`
@@ -179,7 +146,6 @@ func mediaUpdate(w MediaWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// mediaDeleteArgs media_delete 的入参。
 type mediaDeleteArgs struct {
 	ID uint64 `json:"id"`
 }
@@ -202,11 +168,6 @@ func mediaDelete(w MediaWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// describeMedia 把附件摊成文本。
-//
-// **必须把 alt / 标题 / 描述显式列出来**：它们藏在 extra_info 这一列 JSON 里，
-// 不展平的话模型在 media_get 的输出里看不到它们，于是会「确认现状」之后
-// 再写一遍同样的值（或者更糟：以为要清空）。
 func describeMedia(res *mediadto.AttachmentResp) string {
 	if res == nil {
 		return "（没有读到媒体）"
@@ -225,7 +186,6 @@ func describeMedia(res *mediadto.AttachmentResp) string {
 	return b.String()
 }
 
-// mediaMetaBrief 列表项的一句摘要（只带 alt，免得列表太长）。
 func mediaMetaBrief(extraInfo string) string {
 	alt := parseExtra(extraInfo)["alt"]
 	if strings.TrimSpace(alt) == "" {
@@ -234,10 +194,6 @@ func mediaMetaBrief(extraInfo string) string {
 	return "alt=" + alt
 }
 
-// parseExtra 解析 extra_info 里的那三个键。
-//
-// 坏 JSON 回空 map 而不是报错：这个字段是**读出来给人看的**，
-// 解析失败不该让 media_get 整个失败（那时用户连文件名都看不到）。
 func parseExtra(raw string) map[string]string {
 	out := map[string]string{"alt": "", "title": "", "description": ""}
 	if strings.TrimSpace(raw) == "" {
@@ -255,7 +211,6 @@ func parseExtra(raw string) map[string]string {
 	return out
 }
 
-// writeLine 写一行「字段: 值」，空值也写（标出「本字段为空」）。
 func writeLine(b *strings.Builder, label, value string) {
 	if strings.TrimSpace(value) == "" {
 		b.WriteString("- " + label + ": （空）\n")

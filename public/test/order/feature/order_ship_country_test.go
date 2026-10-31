@@ -1,13 +1,5 @@
 package feature
 
-// order_ship_country_test.go — 订单地址「国家/地区」的落库链路（迁移 501）。
-//
-// 覆盖三件事，每一件都会**静默**出错：
-//   · 列在不在（迁移没生效时，model 里多一列只在真实写库那一刻才炸）；
-//   · 建单映射有没有把请求里的国家带进快照（漏了就是「访客填了、没地方承接」）；
-//   · 没收集时落的是空串而不是别的哨兵值 —— 列是 VARCHAR(2)，"N/A" 这类占位值装不进去，
-//     而空串正是 135 那一批地址列的既有口径（「空 = 未收集」，不是 NULL）。
-
 import (
 	"context"
 	"testing"
@@ -16,7 +8,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// TestOrderShipCountryColumnsFromMigration 两个国家列由生产迁移建出来，不是测试自建表。
 func TestOrderShipCountryColumnsFromMigration(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -30,7 +21,6 @@ func TestOrderShipCountryColumnsFromMigration(t *testing.T) {
 	}
 }
 
-// TestOrderShipCountrySnapshot 建单把收货 / 账单国家写进订单快照，并可原样回读。
 func TestOrderShipCountrySnapshot(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -56,7 +46,6 @@ func TestOrderShipCountrySnapshot(t *testing.T) {
 	}
 }
 
-// TestOrderShipCountryUncollectedIsEmpty 没收集国家时落空串（非中国站点与存量数据的合法状态）。
 func TestOrderShipCountryUncollectedIsEmpty(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

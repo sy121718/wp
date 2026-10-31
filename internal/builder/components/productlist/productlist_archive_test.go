@@ -1,21 +1,11 @@
 package productlist
 
-// productlist_archive_test.go — 归档上下文筛选（审计 EDT-004 第一层）。
-//
-// 归档型实例（分类页 / 标签页 / 品牌页）渲染列表时，筛选值来自**实例本身**。
-// 这里只测映射这一层：把「当前归档实体」正确落到组件的哪个筛选维度上。
-//
-// 最关键的一条是 default 分支：归档实体类型在这个组件里没有对应维度时**不筛**，
-// 而不是随便挑一个维度凑条件 —— 后者会安静地筛出错误结果（比如拿分类 id 当品牌筛），
-// 页面上看起来只是「商品少了几个」。
-
 import (
 	"testing"
 
 	"go_wp/internal/builder/core"
 )
 
-// archiveCtx 构造带归档实体的编译上下文。
 func archiveCtx(entityType, entityID string) *core.RenderContext {
 	ctx := &core.RenderContext{}
 	ctx.SetArchiveEntity(entityType, entityID)
@@ -84,7 +74,7 @@ func TestWithArchiveFilter(t *testing.T) {
 			if got == nil {
 				t.Fatalf("应返回合并后的副本")
 			}
-			// 副本语义：调用方的 Props 不能被改写（同一次编译里组件可能被多处使用）。
+
 			if props.FilterCategoryID != "" || props.FilterBrandID != "" || props.FilterTagIDs != "" {
 				t.Fatalf("不应改写原 Props，实际 %+v", props)
 			}

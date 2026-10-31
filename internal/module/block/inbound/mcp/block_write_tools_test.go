@@ -1,12 +1,5 @@
 package blockmcp
 
-// block_write_tools_test.go — 全局块工具的边界。
-//
-// 这一批的判据集中在两处**看不见的后果**上：
-//   - reuseMode 的 global / template 差别（光看名字分不出来）；
-//   - 强制删除被引用的块会让页面少一截（默认是拒绝的）。
-// 以及一条工程约束：工具不碰块内 AST（更新时把读回来的 document 原样带回去）。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -122,7 +115,6 @@ func TestBlockToolNames(t *testing.T) {
 	}
 }
 
-// global / template 的差别必须写在描述里 —— 两个词光看名字分不出来。
 func TestBlockReuseModeDescribed(t *testing.T) {
 	create := blockTool(t, "block_create", &stubBlockRW{}, true)
 	desc := create.Description()
@@ -144,7 +136,6 @@ func TestBlockReuseModeTextCarriesConsequence(t *testing.T) {
 	}
 }
 
-// 建块给的是空文档，且形状必须与 builder.Page 对齐。
 func TestBlockCreateSendsEmptyDocument(t *testing.T) {
 	s := &stubBlockRW{detail: &blockdto.BlockResp{ID: "b1", Name: "站点页脚", ReuseMode: "global"}}
 	text, err := invokeBlock(t, blockTool(t, "block_create", s, true), map[string]any{
@@ -160,7 +151,7 @@ func TestBlockCreateSendsEmptyDocument(t *testing.T) {
 	if !strings.Contains(text, "编辑器") {
 		t.Errorf("回执应指向编辑器去放内容：%s", text)
 	}
-	// global 的回执要让模型知道这处改动会影响全站。
+
 	if !strings.Contains(text, "所有引用") && !strings.Contains(text, "一起变") {
 		t.Errorf("global 的回执应说明影响面：%s", text)
 	}
@@ -176,8 +167,6 @@ func TestBlockCreateRequiresName(t *testing.T) {
 	}
 }
 
-// 更新是整树覆盖：调用方不说 name 时，工具要把读回来的原值合并回去，
-// 而不是把 kind / document 抹掉。
 func TestBlockUpdateMergesCurrentValues(t *testing.T) {
 	s := &stubBlockRW{detail: &blockdto.BlockResp{
 		ID: "b1", Name: "旧名", Kind: "footer", Category: "general", Version: 7,
@@ -205,7 +194,6 @@ func TestBlockUpdateMergesCurrentValues(t *testing.T) {
 	}
 }
 
-// 工具不再承诺绕过引用，旧输入也只能走相同的受保护删除请求。
 func TestBlockDeleteHasNoForceBypass(t *testing.T) {
 	s := &stubBlockRW{detail: &blockdto.BlockResp{ID: "b1", Name: "公告条"}}
 	tool := blockTool(t, "block_delete", s, true)
@@ -219,7 +207,7 @@ func TestBlockDeleteHasNoForceBypass(t *testing.T) {
 	text, err := invokeBlock(t, tool, map[string]any{"projectId": "pr1", "blockId": "b1", "force": true}, true)
 	if err != nil {
 		return
-	} // 严格schema拒绝旧参数也符合合同。
+	}
 	if s.deleted == nil || s.deleted.ID != "b1" || strings.Contains(text, "强制") {
 		t.Fatalf("旧参数不得改变受保护请求: %+v %s", s.deleted, text)
 	}

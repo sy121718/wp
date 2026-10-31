@@ -1,16 +1,5 @@
 package feature
 
-// order_stock_failure_test.go — 故障注入：库存变动失败时，订单侧必须**整体回滚**。
-//
-// 三条对应「订单侧调库存」的全部路径（建单扣减 / 取消归还 / 退货入库）。
-// 口径来自 AGENTS.md「写操作的事务与回滚」：同库跨模块只传 *gorm.DB 句柄，
-// 失败即整体回滚 —— 不允许「先提交 A、再动库存、失败再补偿」（补偿调用本身就是吞错形态，
-// 补偿再失败就留下「记了账没动库存」，事后无从分辨到底发没发货）。
-//
-// 注入方式是换一个**恒失败的库存端口**（ordercontract.StockOperator）：要验的正是
-// 「订单侧怎么对待库存的错误」。替身把两个 Tx 方法也实现掉 —— 它们拿到的是订单的
-// 真实事务，返回错误即触发回滚。
-
 import (
 	"context"
 	"errors"
@@ -24,11 +13,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// failingStockOperator 故障注入用的库存端口：六条方法恒失败。
-//
-// 六条 = 四个既有（Deduct / Change 的自足与 Tx 版）+ 两个预占/释放（迁移 624, S2）：
-// 建单现在走 ReserveStockTx，取消走 ReleaseStockTx —— 替身漏一条就会在编译期露出来
-// （下面的 var _ 断言就是为此存在）。
 type failingStockOperator struct{ err error }
 
 func (f failingStockOperator) DeductStock(context.Context, *ordercontract.StockDeduction) error {
@@ -50,13 +34,8 @@ func (f failingStockOperator) ReleaseStockTx(context.Context, *gorm.DB, *orderco
 	return f.err
 }
 
-// 编译期断言：替身必须实现订单侧的库存契约（契约加方法时这里立刻报错）。
 var _ ordercontract.StockOperator = failingStockOperator{}
 
-// TestOrderCreateStockFailureLeavesNothingBehind 建单扣减失败 → 订单头 / 明细 / 流水一条不留。
-//
-// 与「库存不足」那条互为对照：那条走真实库存（业务拒绝），这条走库存端口不可用
-// （基础设施故障）。判定与呈现不同，但「不留半截状态」是同一条断言。
 func TestOrderCreateStockFailureLeavesNothingBehind(t *testing.T) {
 	f := newOrderFixtureWithStock(t, failingStockOperator{err: errors.New("stub: 库存服务不可用")})
 	if f == nil {
@@ -65,7 +44,6 @@ func TestOrderCreateStockFailureLeavesNothingBehind(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "库存故障商品", 30, 5)
 
-	// 货是足的（5 件）且补货不经替身：失败只可能来自库存端口本身。
 	_, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
 	if err == nil || err.Error() != orderenums.ErrStockUnavailable {
 		t.Fatalf("库存端口不可用应报 %s，实际 %v", orderenums.ErrStockUnavailable, err)
@@ -80,12 +58,6 @@ func TestOrderCreateStockFailureLeavesNothingBehind(t *testing.T) {
 	}
 }
 
-// TestOrderCreateRollsBackWhenStockWriteFails 用一条**真实的**库存写入故障（不是替身）
-// 再证一次建单与扣减同事务：库存流水的 INSERT 直接抛异常，而它发生在数量写回之后 ——
-// 订单侧必须整单回滚，库存数量也必须退回去。
-//
-// 与上面替身那条的分工：替身证「订单侧怎么对待库存的错误」，这条证「跨模块句柄确实传进去了」
-// （替身拿到的 tx 即便不是真事务，订单侧的回滚也会通过；真实故障才能证明是同一条事务）。
 func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -94,11 +66,6 @@ func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "真实故障商品", 30, 5)
 
-	// 故障注入：**预占的 UPDATE** 直接失败。
-	//
-	// 两段式（迁移 624）之后建单只预占、不写流水 —— 原先拦「流水 INSERT」的触发器
-	// 已经拦不到建单这条路径了（预占根本不写流水）。改拦 UPDATE：预占走的正是
-	// `UPDATE inventory_stocks SET reserved_quantity = ...`。
 	if err := f.db.Exec("CREATE OR REPLACE FUNCTION test_block_reserve() RETURNS trigger AS $$ " +
 		"BEGIN RAISE EXCEPTION '故障注入：预占写入失败'; END $$ LANGUAGE plpgsql").Error; err != nil {
 		t.Fatalf("创建故障注入函数失败: %v", err)
@@ -124,8 +91,6 @@ func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 	}
 }
 
-// TestOrderCancelStockFailureRollsBackWholeCancel 取消时归还库存失败 →
-// 订单仍是 pending、没有取消流转、库存不动（不再有「已取消但库存没回来」的半截状态）。
 func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -137,7 +102,7 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 两段式（迁移 624）：建单预占 2 件，在库仍是 5。
+
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("建单后预占应为 2，实际 %d", got)
 	}
@@ -145,7 +110,6 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 		t.Fatalf("建单后库存应为 5（只预占不扣减），实际 %d", got)
 	}
 
-	// 同一批 model 换一个库存恒失败的 service 执行取消。
 	broken := f.serviceWithStock(failingStockOperator{err: errors.New("stub: 库存服务不可用")})
 	if _, cerr := broken.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "库存挂了",
@@ -171,8 +135,6 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	}
 }
 
-// TestReturnReceiveStockFailureKeepsApproved 退货入库失败 →
-// 退货单留在 approved（门闩、库存、明细登记同事务），received_at 与明细都不落库。
 func TestReturnReceiveStockFailureKeepsApproved(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -181,7 +143,7 @@ func TestReturnReceiveStockFailureKeepsApproved(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "退货故障商品", 50, 5)
 	orderID, userID, itemID := f.paidOrder(t, "return-stock-fail@example.com", vid, 1)
-	// 两段式：下单只预占 1 件，在库仍是 5。
+
 	if got := f.stockOf(t, vid); got != 5 {
 		t.Fatalf("下单并付款后在库应为 5（只预占），实际 %d", got)
 	}
@@ -198,7 +160,6 @@ func TestReturnReceiveStockFailureKeepsApproved(t *testing.T) {
 		t.Fatalf("同意退货失败: %v", err)
 	}
 
-	// 入库阶段库存挂掉：状态推进与库存变动在同一事务里，必须一起回滚。
 	broken := f.serviceWithStock(failingStockOperator{err: errors.New("stub: 库存服务不可用")})
 	if _, rerr := broken.ReceiveReturn(ctx, &orderdto.ReturnReceiveReq{ReturnID: created.ID}); rerr == nil {
 		t.Fatalf("入库失败时确认收货必须失败")

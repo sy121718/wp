@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newGzipRequest 构造带/不带 Accept-Encoding 的 GET 请求。
 func newGzipRequest(acceptEncoding string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/asset.js", nil)
 	if acceptEncoding != "" {
@@ -22,7 +21,6 @@ func newGzipRequest(acceptEncoding string) *http.Request {
 	return req
 }
 
-// gzipEngine 挂 StaticGzipMiddleware，注册一个文本静态资源处理器（模拟静态文件）。
 func gzipEngine() *gin.Engine {
 	engine := gin.New()
 	engine.Use(StaticGzipMiddleware())
@@ -34,7 +32,7 @@ func gzipEngine() *gin.Engine {
 		c.Data(http.StatusOK, "image/png", bytes.Repeat([]byte{0x89, 0x50}, 4096))
 	})
 	engine.GET("/tiny.js", func(c *gin.Context) {
-		// 显式 Content-Length（http.ServeContent 对静态文件的行为），模拟小文件阈值。
+
 		body := []byte("var a=1;")
 		c.Header("Content-Length", strconv.Itoa(len(body)))
 		c.Data(http.StatusOK, "application/javascript; charset=utf-8", body)
@@ -43,13 +41,13 @@ func gzipEngine() *gin.Engine {
 		c.Header("Content-Encoding", "br")
 		c.Data(http.StatusOK, "application/javascript; charset=utf-8", []byte("already-brotli"))
 	})
-	// 206：Range 分片响应（body 为字节切片，压缩会破坏 Content-Range 语义）。
+
 	engine.GET("/range.js", func(c *gin.Context) {
 		c.Header("Content-Range", "bytes 0-1023/5120")
 		c.Data(http.StatusPartialContent, "application/javascript; charset=utf-8",
 			bytes.Repeat([]byte("x"), 1024))
 	})
-	// 304：无 body，不应标记 Content-Encoding。
+
 	engine.GET("/not-modified.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript; charset=utf-8")
 		c.Status(http.StatusNotModified)
@@ -66,7 +64,6 @@ func serveGzip(path string, acceptEncoding string) *httptest.ResponseRecorder {
 	return recorder
 }
 
-// 客户端接受 gzip：文本文件应压缩，响应可解压还原且头正确。
 func TestStaticGzipCompressesTextAsset(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/asset.js", "gzip, deflate")
@@ -80,7 +77,7 @@ func TestStaticGzipCompressesTextAsset(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("静态资源应 200: got=%d", recorder.Code)
 	}
-	// 解压还原并校验内容非空。
+
 	zr, err := gzip.NewReader(bytes.NewReader(recorder.Body.Bytes()))
 	if err != nil {
 		t.Fatalf("gzip 解压失败: %v", err)
@@ -93,13 +90,12 @@ func TestStaticGzipCompressesTextAsset(t *testing.T) {
 	if len(decoded) == 0 || !bytes.Contains(decoded, []byte("var workbench=1;")) {
 		t.Fatalf("解压后内容不正确: len=%d", len(decoded))
 	}
-	// 压缩产物应明显小于原文。
+
 	if recorder.Body.Len() >= len(decoded) {
 		t.Fatalf("压缩应小于原文: gz=%d raw=%d", recorder.Body.Len(), len(decoded))
 	}
 }
 
-// 无 Accept-Encoding：不压缩、原样输出。
 func TestStaticGzipSkipsWithoutAcceptEncoding(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/asset.js", "")
@@ -112,7 +108,6 @@ func TestStaticGzipSkipsWithoutAcceptEncoding(t *testing.T) {
 	}
 }
 
-// 非文本类型（png）：即使接受 gzip 也不压缩。
 func TestStaticGzipSkipsBinary(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/asset.png", "gzip")
@@ -122,7 +117,6 @@ func TestStaticGzipSkipsBinary(t *testing.T) {
 	}
 }
 
-// 文本但长度低于阈值：不压缩（负收益）。
 func TestStaticGzipSkipsTinyText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/tiny.js", "gzip")
@@ -135,7 +129,6 @@ func TestStaticGzipSkipsTinyText(t *testing.T) {
 	}
 }
 
-// 已显式设置 Content-Encoding（如 upstream 已压缩）：不重复压缩。
 func TestStaticGzipSkipsAlreadyEncoded(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/pre-encoded.js", "gzip")
@@ -145,7 +138,6 @@ func TestStaticGzipSkipsAlreadyEncoded(t *testing.T) {
 	}
 }
 
-// 206 Partial Content：body 是 Range 字节切片，不得压缩（否则 Content-Range 语义破坏）。
 func TestStaticGzipSkipsPartialContent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/range.js", "gzip")
@@ -161,7 +153,6 @@ func TestStaticGzipSkipsPartialContent(t *testing.T) {
 	}
 }
 
-// 304 无 body：不应标记 Content-Encoding。
 func TestStaticGzipSkipsNotModified(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := serveGzip("/not-modified.js", "gzip")

@@ -60,8 +60,6 @@ func commentWriteSeedValues(t *testing.T, sqlText string) map[string]string {
 	return values
 }
 
-// Production schema comes from the existing isolated migration fixture.
-// PREPARE checks parsing and column resolution without executing the seed.
 func TestAdminCommentWriteUISeedBackfillsEveryMissingPair(t *testing.T) {
 	seed := findSeedByVersion(t, "607-admin-comment-write-ui-i18n")
 	db := support.NewMigratedPGTestDB(t)
@@ -102,7 +100,7 @@ func TestAdminCommentWriteUISeedBackfillsEveryMissingPair(t *testing.T) {
 		t.Run(pair.key+"/"+pair.lang, func(t *testing.T) {
 			original := valueOf(t, db, pair.key, pair.lang)
 			mustExec(t, db, "DELETE FROM sys_i18n WHERE item_key = ? AND lang = ?", pair.key, pair.lang)
-			// Four total rows remain, but the third language must not hide a missing pair.
+
 			if got := countPairs(t, db, keys, ""); got != 4 {
 				t.Fatalf("missing pair plus third language has %d rows, want 4", got)
 			}
@@ -129,7 +127,7 @@ func TestAdminCommentWriteUISeedBackfillsEveryMissingPair(t *testing.T) {
 					t.Fatalf("after backfill has %d rows, want 5", got)
 				}
 			}
-			// Restore the operator edit when that exact pair was deliberately removed.
+
 			mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = ?", original, pair.key, pair.lang)
 		})
 	}

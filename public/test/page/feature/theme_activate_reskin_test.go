@@ -1,18 +1,5 @@
 package feature
 
-// theme_activate_reskin_test.go — 修复遗留缺陷 H5（审计 High）：
-// 切换激活主题后「整站换皮」实际不生效。
-//
-// 复现路径：工程下页面挂接激活主题 A，切换激活主题到 B 后，页面仍渲染 A 的
-// settings.theme 快照 → 换皮不生效。
-// 本次断言：ActivateTheme（dashboard handler /admin/themes/activate）成功后，
-// 该工程整站页面转挂到 B（theme_id=B），settings.theme/structure 刷新为 B 的设置，
-// 且全部页面标记待重建（stale=true）。
-//
-// 由 dashboard 主题管理 handler 触发，走真实 PostgreSQL schema + 真实服务装配。
-// 建库走生产迁移（support.NewMigratedPGTestDB）：themes/pages 的 settings、
-// draft_document 在生产即是 jsonb，jsonb_set 快照刷新天然可用。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -44,9 +31,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// makeJsonbPageService 用**生产迁移**建库并装配 page/project/block 服务，
-// 返回 db、pages 契约、projects 服务与工程 ID。
-// （名字保留：生产 schema 的 draft_document / settings 本即 jsonb，jsonb_set 快照刷新可用。）
 func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projectservice.Service, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -56,8 +40,7 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	// 建站会自带一套默认主题（生产语义：先有主题再有页面）。本用例要自己控制
-	// 「谁是首个主题、谁被激活」，所以先清掉默认主题，前提干净。
+
 	if err := db.Exec(`DELETE FROM themes WHERE project_id = ?`, project.ID).Error; err != nil {
 		t.Fatalf("清理默认主题失败: %v", err)
 	}
@@ -69,14 +52,11 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 	return db, svc, projects, project.ID
 }
 
-// TestActivateThemeReskinsWholeSite 激活新主题后整站页面应刷新为它的外观：
-// theme_id 转挂、settings.theme/structure 更新为 B、全部标记待重建。
 func TestActivateThemeReskinsWholeSite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, svc, projects, projectID := makeJsonbPageService(t)
 	ctx := context.Background()
 
-	// 主题 A（首个自动激活）+ 主题 B（含不同颜色/字体/页眉页脚绑定）。
 	themeA, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
 		ProjectID: projectID, Name: "默认亮色",
 		Settings: json.RawMessage(`{"colors":{"primary":"#111111"},"typography":{"body":{"fontFamily":"Arial"}}}`),
@@ -98,7 +78,6 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 		t.Fatalf("第二个主题不应自动激活: %+v", themeB)
 	}
 
-	// 激活主题 A 下建两页：自动挂 A，快照为 A 的偏色。
 	pageA := createJsonbPage(t, svc, projectID, "/reskin-a", reskinDoc)
 	pageB := createJsonbPage(t, svc, projectID, "/reskin-b", reskinDoc)
 	for _, p := range []*pagedto.PageResp{pageA, pageB} {
@@ -107,17 +86,14 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 		}
 		assertThemeSnapshotX(t, p.DraftDocument, "#111111", "Arial")
 		assertStructureSnapshotX(t, p.DraftDocument, "", "")
-		// 建页后默认 stale=true；先清零以验证激活后重新标脏。
+
 		db.Table("pages").Where("id = ?", p.ID).Update("stale", false)
 	}
 
-	// 通过 dashboard handler 激活主题 B（POST /admin/themes/activate），
-	// 走真实 ActivateTheme → reskinProjectPages 编排。
 	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusOK {
 		t.Fatalf("激活主题应渲染提示页：status=%d", code)
 	}
 
-	// 断言：整站页面已转挂 B、快照为 B 的外观、全部标记待重建。
 	for _, p := range []*pagedto.PageResp{pageA, pageB} {
 		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: p.ID})
 		if err != nil {
@@ -131,15 +107,13 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 		if !detail.Stale {
 			t.Errorf("激活后页面应标记待重建：id=%s", p.ID)
 		}
-		// 展示层快照刷新不应 bump 内容版本（审计 M5 取舍，见报告）。
+
 		if detail.DraftVersion != p.DraftVersion {
 			t.Errorf("主题换皮不应改动 draft_version：got=%d want=%d", detail.DraftVersion, p.DraftVersion)
 		}
 	}
 }
 
-// TestActivateThemeThenSaveKeepsNewTheme 激活 B 后再次保存页面草稿：
-// mergeActiveTheme 取当前激活主题（B），快照保持一致，不回流到 A。
 func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, svc, projects, projectID := makeJsonbPageService(t)
@@ -164,7 +138,7 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusOK {
 		t.Fatalf("激活主题应渲染提示页：status=%d", code)
 	}
-	// 再保存一次：保存时快照取当前激活主题（B），应保持 B 的偏色。
+
 	saved, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: page.ID, ExpectedVersion: page.DraftVersion,
 		DraftPath: "/reskin-save", DraftDocument: json.RawMessage(reskinDoc),
@@ -175,14 +149,10 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 	assertThemeSnapshotX(t, saved.DraftDocument, "#09de63", "")
 }
 
-// activateThemeHTTP 构造 dashboard 主题管理 handler，POST 激活指定主题，
-// 覆盖 ActivateTheme + reskinProjectPages 编排；返回响应状态码。
 func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *projectservice.Service,
 	themeID string) int {
 	t.Helper()
-	// ActivateTheme 的换皮编排已随页面回 project 模块（themeAdminHandle）：
-	// 直挂 handler（不经 SetupProjectPages —— 那里带 Casbin 中间件，裸测试引擎没有鉴权链）。
-	// 结论由 shell.RenderJump 渲染整页提示（取代原先的 303 PRG），所以必须挂真实渲染器。
+
 	themes := projecthttp.NewThemeAdminHandle(projects, svc, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
@@ -196,7 +166,6 @@ func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *pro
 	return recorder.Code
 }
 
-// createJsonbPage 创建指定路径的页面并返回投影。
 func createJsonbPage(t *testing.T, svc pagecontract.PageService, projectID, path, doc string) *pagedto.PageResp {
 	t.Helper()
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
@@ -209,12 +178,8 @@ func createJsonbPage(t *testing.T, svc pagecontract.PageService, projectID, path
 	return created
 }
 
-// reskinDoc 最小合法页面文档（空 root）。
 const reskinDoc = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
-// ---- 断言辅助（本用例局部实现，避免与 unit 包 helper 撞名）----
-
-// assertThemeSnapshotX 断言 settings.theme 快照的偏色与字体。
 func assertThemeSnapshotX(t *testing.T, doc []byte, wantPrimary, wantFont string) {
 	t.Helper()
 	var page struct {
@@ -244,7 +209,6 @@ func assertThemeSnapshotX(t *testing.T, doc []byte, wantPrimary, wantFont string
 	}
 }
 
-// assertStructureSnapshotX 断言 settings.structure 页眉/页脚绑定。
 func assertStructureSnapshotX(t *testing.T, doc []byte, wantHeader, wantFooter string) {
 	t.Helper()
 	var page struct {

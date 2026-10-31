@@ -1,19 +1,5 @@
 package projecthttp
 
-// site_settings_shipping_test.go — 站点级运费设置（基础运费 + 满额免运费门槛）的
-// 保存校验、元/分换算与页面渲染契约。
-//
-// 三件事只在这一层能验证：
-//  1. **换算发生在表单边界**：库内是分、表单是元，且回显走同一对函数
-//     （换算写错的表现是「每次保存金额都变一点」，没有任何报错）；
-//  2. **非法值不落库、不静默归零**：负数 / 非数字 / 超上限一律 303 回带**对应字段**的提示，
-//     那条提示还要能在读侧白名单里被接受（否则写侧发了、页面上什么都不显示）；
-//  3. **模板真的能整份渲染**（不是「源码里有这几个字符串」）—— 本页 extends layout.html，
-//     新字段把 Jet 表达式写坏的症状是整块表单消失或整页 500，静态文本比对抓不到。
-//
-// 金额复算（三档交互：收 / 免 / 不收）在 internal/module/cart/service/cart_shipping_test.go
-// 与 public/test/cart/feature/cart_shipping_membership_test.go，这里只管设置面。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -33,10 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// fakeShippingProjects 站点设置保存链路的工程契约替身。
-//
-// 嵌入接口做**部分桩**：本文件的用例只走 Detail / Update 两次调用，其余方法不会被调到
-// （形态照 internal/module/user/inbound/http 的 fakeProjects）。
 type fakeShippingProjects struct {
 	projectcontract.ProjectService
 	settings json.RawMessage
@@ -54,13 +36,11 @@ func (f *fakeShippingProjects) Update(_ context.Context, req *projectcontract.Up
 	return &projectcontract.ProjectResp{ID: req.ID, Name: req.Name, Settings: req.Settings}, nil
 }
 
-// postSiteSettingsSave 以给定表单提交站点设置保存（POST /admin/settings/save）。
 func postSiteSettingsSave(t *testing.T, projects projectcontract.ProjectService, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	// 写动作的结论由 shell.RenderJump 渲染整页提示（HTTP 200），需要真实模板渲染器；
-	// 旧形态（303）不需要，所以这里在改造时补上。
+
 	router.HTMLRender = templates.NewJetHTMLRender(siteSettingsScriptsTemplateDir, true)
 	h := NewSiteSettingsAdminHandle(projects, nil, nil)
 	router.POST("/admin/settings/save", h.SaveSiteSettings)
@@ -72,7 +52,6 @@ func postSiteSettingsSave(t *testing.T, projects projectcontract.ProjectService,
 	return rec
 }
 
-// shippingSaveForm 站点设置保存的最小表单（工程名必须给：缺它连「回哪一页」都定不下来）。
 func shippingSaveForm(extra map[string]string) url.Values {
 	form := url.Values{"projectId": {"p1"}, "name": {"站点"}}
 	for k, v := range extra {
@@ -81,7 +60,6 @@ func shippingSaveForm(extra map[string]string) url.Values {
 	return form
 }
 
-// settingsOf 读替身最后写入的 settings JSON。
 func settingsOf(t *testing.T, f *fakeShippingProjects) map[string]json.RawMessage {
 	t.Helper()
 	if f.updates == 0 {
@@ -94,7 +72,6 @@ func settingsOf(t *testing.T, f *fakeShippingProjects) map[string]json.RawMessag
 	return obj
 }
 
-// int64Of 读 settings 里的整数键（键不存在返回 0）。
 func int64Of(t *testing.T, obj map[string]json.RawMessage, key string) int64 {
 	t.Helper()
 	raw, ok := obj[key]
@@ -108,10 +85,6 @@ func int64Of(t *testing.T, obj map[string]json.RawMessage, key string) int64 {
 	return v
 }
 
-// TestSaveSiteSettingsShippingFeeToCents 表单的「元」落库成「分」。
-//
-// 这是本批金额口径的关键一环：库内与订单同口径（分），表单是元。写错方向的表现
-// 是运费变成 100 倍或 1/100 —— 前者会让客户直接不买，后者让运费看起来「没生效」。
 func TestSaveSiteSettingsShippingFeeToCents(t *testing.T) {
 	projects := &fakeShippingProjects{settings: json.RawMessage(`{}`)}
 	rec := postSiteSettingsSave(t, projects, shippingSaveForm(map[string]string{
@@ -128,10 +101,6 @@ func TestSaveSiteSettingsShippingFeeToCents(t *testing.T) {
 	}
 }
 
-// assertJumpOK 断言响应是**整页成功提示**（HTTP 200 + data-jump-state="ok"）。
-//
-// 取代原先的「303 + Location 带 ?err= / ?ok=」：写动作的结论改由 shell.RenderJump
-// 渲染整页提示（文案走响应体、不进 URL）。
 func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
@@ -142,7 +111,6 @@ func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-// assertJumpErr 断言响应是**整页失败提示**（HTTP 200 + data-jump-state="err"），且含给定文案。
 func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder, wantSub string) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
@@ -157,17 +125,12 @@ func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder, wantSub string)
 	}
 }
 
-// TestSaveSiteSettingsShippingFeeRejectsInvalid 非法金额**不落库**，且提示指向出错的字段。
-//
-// 三类非法各有各的原因（负数 / 格式 / 超上限），但它们在页面上的出口是同一句受控文案；
-// 断言点因此放在「**哪个字段**的提示」上：两个字段的文案必须是两条不同的 key，
-// 否则用户对着两个几乎一样的输入框猜是哪一个填错了。
 func TestSaveSiteSettingsShippingFeeRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name    string
 		field   string
 		value   string
-		wantSub string // 期望的错误文案里能区分字段的那一段（词条缺失时的中文兜底）
+		wantSub string
 	}{
 		{"基础运费负数", "shippingBaseFee", "-1", "基础运费"},
 		{"基础运费非数字", "shippingBaseFee", "八元", "基础运费"},
@@ -191,10 +154,6 @@ func TestSaveSiteSettingsShippingFeeRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestSaveSiteSettingsShippingZeroDeletesKeys 0 = 关掉这一项，键在存储层被删掉。
-//
-// 「留空 / 填 0 = 不收运费」如果落成 `"shippingBaseFee": 0`，语义上等价（读侧解析成 0），
-// 但会在 JSON 里留噪声，并让「清空 = 关掉」在存储层看起来没生效（运营会反复保存）。
 func TestSaveSiteSettingsShippingZeroDeletesKeys(t *testing.T) {
 	projects := &fakeShippingProjects{settings: json.RawMessage(`{"shippingBaseFee":800,"shippingFreeThreshold":10000}`)}
 	rec := postSiteSettingsSave(t, projects, shippingSaveForm(map[string]string{
@@ -210,7 +169,6 @@ func TestSaveSiteSettingsShippingZeroDeletesKeys(t *testing.T) {
 	}
 }
 
-// TestSaveSiteSettingsShippingKeepsOtherKeys 只动本页管的键：别的批次写进同一列的键必须原样保留。
 func TestSaveSiteSettingsShippingKeepsOtherKeys(t *testing.T) {
 	projects := &fakeShippingProjects{
 		settings: json.RawMessage(`{"unknownKey":"别家模块写的","siteDesc":"旧简介"}`),
@@ -226,10 +184,6 @@ func TestSaveSiteSettingsShippingKeepsOtherKeys(t *testing.T) {
 	}
 }
 
-// TestSiteSettingsTemplateRendersShippingFields 两个运费输入项真的出现在渲染结果里。
-//
-// 键名写错是这一页最容易犯又最难发现的错：表单照样渲染、保存照样 200，
-// 只是那个字段永远存不进去（本页保存是「按字段逐个读表单」）。
 func TestSiteSettingsTemplateRendersShippingFields(t *testing.T) {
 	data := siteSettingsScriptsData()
 	data["HeadScripts"] = ""
@@ -255,14 +209,8 @@ func TestSiteSettingsTemplateRendersShippingFields(t *testing.T) {
 	}
 }
 
-// TestSiteSettingsWriteKeysAreRegistered 写侧产出的错误 key 必须全在 projectWriteTextKeys 里。
-//
-// 漏登记的后果是**静默的**：写侧渲染提示页时 key 没有词条，页面上显示的是**裸 key**
-// （如 `ErrGA4IDInvalid`），不报错、不记日志。
-// 判据从源码里提取（而不是手工列一遍），这样新增一条 projectMsgOf 就自动纳入守卫。
 func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
-	// 判据依赖「本模块 enums 的常量值 == 常量名」这条既有约定（projectenums 头部明文如此）。
-	// 先自检这条前提仍成立 —— 否则提取出的名字与登记表里的值对不上，断言会退化成永远通过。
+
 	if projectenums.ErrGA4IDInvalid != "ErrGA4IDInvalid" || projectenums.ErrProjectInternal != "ErrProjectInternal" {
 		t.Fatal("enums 常量值不再等于常量名：本判据的前提失效，需改为「名字 → 值」的显式映射")
 	}
@@ -284,7 +232,7 @@ func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
 			t.Errorf("写侧出口 %s 不在 projectWriteTextKeys 里：key 没有词条时页面会显示裸 key（不报错）", m[1])
 		}
 	}
-	// 反向：运费那两条必须真的在登记表里（正例，防判据整体失效）。
+
 	for _, key := range []string{projectenums.ErrShippingBaseFeeInvalid, projectenums.ErrShippingFreeThresholdInvalid} {
 		if !registered[key] {
 			t.Errorf("运费提示 %s 未登记进 projectWriteTextKeys", key)
@@ -292,10 +240,6 @@ func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
 	}
 }
 
-// TestShippingPolicyKeysMatchStore 存储键名与 dto 的 json tag 一致（读写两侧的接缝）。
-//
-// 写侧 mergeSiteSettings 用的是字面量键名，读侧靠 dto 的 json tag 解析 —— 两处
-// 拼错一个字母的表现是「保存 200、读出来永远是 0」，页面上看不出任何异常。
 func TestShippingPolicyKeysMatchStore(t *testing.T) {
 	var parsed projectdto.SiteSettings
 	if err := json.Unmarshal([]byte(`{"shippingBaseFee":800,"shippingFreeThreshold":10000}`), &parsed); err != nil {
@@ -304,7 +248,7 @@ func TestShippingPolicyKeysMatchStore(t *testing.T) {
 	if parsed.ShippingBaseFee != 800 || parsed.ShippingFreeThreshold != 10000 {
 		t.Fatalf("json tag 与存储键名不一致：%+v", parsed)
 	}
-	// 归一化（保存与读取共用）不改动金额。
+
 	policy, perr := projectdto.NormalizeShippingPolicy(parsed.ShippingBaseFee, parsed.ShippingFreeThreshold)
 	if perr != nil {
 		t.Fatalf("合法值应通过：%v", perr)

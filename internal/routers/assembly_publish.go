@@ -1,10 +1,5 @@
 package routers
 
-// assembly_publish.go — 装配的发布侧与运行时侧：发布实例、插件宿主、页面模块，
-// 以及它们之间的端口注入、启动期后台任务、后台页面挂载与公开端点。
-//
-// 与 assembly.go 同属审计 CQ-008 的拆分：切段不改顺序，注释逐字保留。
-
 import (
 	"context"
 	"go_wp/config"
@@ -59,11 +54,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// buildPublishingModules 装配发布侧主干：自动发布实例、插件宿主、页面模块，
-// 以及它们与访问面片段之间的共享解析器（集合解析器）。
-//
-// 顺序要求写在各段注释里：插件必须先于 page（page 构建路径依赖插件装配素材），
-// 片段端口必须在 page 装配之前接好（page 的构建期组件要靠它取集合）。
 func (a *assembly) buildPublishingModules() {
 	marks := a.marks
 	db := a.db
@@ -81,7 +71,6 @@ func (a *assembly) buildPublishingModules() {
 	projectService := a.projectService
 	publicationSvc := a.publicationSvc
 
-	// 业务预设文档仅来自构建器权威注册表，控制面Create不接受客户端覆写。
 	presetSetter, ok := blockSvc.(interface {
 		SetPresetResolver(blockcontract.PresetResolver)
 	})
@@ -91,19 +80,14 @@ func (a *assembly) buildPublishingModules() {
 	presetSetter.SetPresetResolver(builder.BusinessPresetRegistry{})
 	marks.mark(portBlockPresetResolver)
 
-	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
-	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry, publicationSvc)
 
-	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
-	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db, adminAuthzSvc)
-	// 插件宿主的权限上下文契约由 SetupPluginRoutes 内部注入（可选端口）。
+
 	marks.mark(portPluginAdminAuthz)
-	// 集合解析注入：注册表即 core.CollectionResolver（按源分发到内容 / 商品解析器，
-	// 同时实现 CollectionSchemaProvider 供组件按白名单严格校验）。
+
 	collectionResolver := core.CollectionResolver(collectionRegistry)
-	// 访客搜索复用两个收窄检索端口，组合发生在内容服务。
+
 	contentSearch, ok := contentSvc.(contentcontract.SearchPort)
 	if !ok {
 		panic("内容模块未实现检索端口（SearchPort）")
@@ -119,9 +103,7 @@ func (a *assembly) buildPublishingModules() {
 		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
 	}
 	marks.mark(portPublicSearchIndex)
-	// 商品侧同一端口（集合项 url 字段）：原写法是「命中即注入、未命中静默跳过」，
-	// 跳过的表现是「商品集合项的 url 全空、列表页商品没有链接」—— 静默降级（审计 CQ-019）。
-	// 改为断言：装配缺陷在启动时炸掉。
+
 	if setter, ok := productSvc.(interface {
 		SetPublishedEntityLocator(presentationcontract.PublishedEntityLocator)
 	}); ok {
@@ -144,11 +126,6 @@ func (a *assembly) buildPublishingModules() {
 	marks.mark(portProductPublicIndex)
 	contenthttp.SetupContentPublicRoutes(a.router, contentservice.NewPublicSearchService(contentSearch, productSearch, publicIndex))
 
-	// 归档页按需创建（审计 EDT-004）：分类新建 / 改名时让对应归档页跟上。
-	// 与上面的已上线定位端口同一方向（product 拿收窄接口），注入点在 presentation
-	// 装配之后 —— 端口本身就是 presentation 的服务。
-	// 同一手法（审计 CQ-019）：静默跳过时「分类改名后归档页不跟上」，线上仍是旧路径，
-	// 且没有任何日志或报错 —— 只可能是装配缺陷，故断言而非跳过。
 	if setter, ok := productSvc.(interface {
 		SetArchiveInstanceEnsurer(presentationcontract.ArchiveInstanceEnsurer)
 	}); ok {
@@ -157,35 +134,21 @@ func (a *assembly) buildPublishingModules() {
 		panic("商品模块未提供归档页创建注入点（SetArchiveInstanceEnsurer）")
 	}
 	marks.mark(portProductArchiveEnsurer)
-	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
+
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc, a.adminPages, a.workbenchPages)
-	// 页面工具（page_find）：注册点在这里而不是与其它工具并列 —— pageService
-	// 是这一层的局部变量（它依赖构建 / 发布链路，装配顺序靠后），主装配函数里拿不到。
-	// 依赖收窄到 PageQueryReader（只有 ListPageTitles）：手里没有发布 / 回滚 / 删除，
-	// 「AI 顺手把一个页面下线了」不会在某次改动里变得可能。
+
 	if pageTools, err := pagemcp.Tools(pageService); err != nil {
 		panic("页面工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(pageTools...); err != nil {
 		panic("页面工具注册失败：" + err.Error())
 	}
-	// 页面的骨架与上线动作（建页 / 发布 / 改网址 / 删页）。
-	//
-	// **刻意不含页面文档编辑**（草稿 AST 的读写属于「可视化页面选组件」）：
-	// 那套编辑器的语义是拖拽、块树、槽位绑定，不是一段 JSON 参数能表达清楚的 ——
-	// 让模型盲写 AST，产物在编辑器里打开时往往是一片无法维护的结构。
-	// 建页时一律给空文档，内容留给编辑器。
+
 	if pageWriteTools, err := pagemcp.WriteTools(pageService); err != nil {
 		panic("页面写工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(pageWriteTools...); err != nil {
 		panic("页面写工具注册失败：" + err.Error())
 	}
 
-	// 全局块（页眉 / 页脚 / 公告条这类跨页面复用的结构片段）。
-	//
-	// 与页面写工具同一条边界：**只做块的元数据**（名称、分类、复用模式），
-	// 块里的结构由可视化编辑器维护。复用模式这两个词光看名字分不出区别，
-	// 描述与回执都按后果说明（global 改一次全站跟着变 / template 只是复制来源）。
-	// 删块默认拒绝处理被引用的块，force 会让引用页少掉这个块并标待重建。
 	if blockQueryTools, err := blockmcp.QueryTools(blockSvc); err != nil {
 		panic("全局块工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(blockQueryTools...); err != nil {
@@ -198,10 +161,6 @@ func (a *assembly) buildPublishingModules() {
 		panic("全局块写工具注册失败：" + err.Error())
 	}
 
-	// 结构模板（页眉 / 页脚）→ page 构建路径的模板解析端口。
-	//
-	// 断言 + fail-fast（与相邻端口同一判据）：漏接的表现是「主题里绑定了结构模板，
-	// 站点上仍是旧块（或干脆没有页眉页脚）」—— 构建期按回退路径静默完成，日志里什么都没有。
 	pageTemplateSetter, ok := pageService.(interface {
 		SetStructureTemplatePort(pipeline.StructureTemplatePort)
 	})
@@ -211,14 +170,10 @@ func (a *assembly) buildPublishingModules() {
 	pageTemplateSetter.SetStructureTemplatePort(structureTemplatePortAdapter{svc: contentTemplateSvc})
 	marks.mark(portPageStructureTemplates)
 
-	// block ↔ page 的装配期接线（原在 dashboard 的 NewHandle 内，页面回迁后移到装配层）：
-	// 块内容变更/删除后的 stale 传播，与删除前的引用检查。两个闭包只依赖 page/project 契约。
 	if setter, ok := blockSvc.(interface {
 		SetStalePropagator(func(ctx context.Context, blockID string) error)
 	}); ok {
-		// presentation 的重建器单独取：契约接口只声明 MarkStaleByDependency，RebuildStale 是
-		// pipeline 端口。断言而不是「断言失败就只标记」—— 静默降级会退化成
-		// 「改了页眉块、自动发布实例永远停在旧字节且无报错」（与下面扇出注册处同一取舍）。
+
 		presentationRebuilder, ok := presentationSvc.(pipeline.StaleRebuilder)
 		if !ok {
 			panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
@@ -228,9 +183,7 @@ func (a *assembly) buildPublishingModules() {
 	} else {
 		panic("block 模块未提供 stale 传播注入点（SetStalePropagator）")
 	}
-	// 删除保护的引用检查（审计 ARCH-02）：五条来源在 BlockReferenceChecker 内合并。
-	// 断言而不是「命中即跳过」：漏接的表现是「删除保护整体失效或只覆盖一部分」，
-	// 而它不会让任何测试或启动日志变红 —— 只会在块被删掉后的下一次构建才暴露。
+
 	if checker, ok := blockSvc.(interface {
 		SetReferenceUsageChecker(func(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error))
 	}); ok {
@@ -246,30 +199,19 @@ func (a *assembly) buildPublishingModules() {
 	}
 
 	a.presentationSvc = presentationSvc
-	// 商品详情页的双轨写动作（迁移 282）在**接口面**也要用同一份 presentation 能力：
-	// product 的接口面早于本段装配（assembly.go 的 SetupProductRoutes），所以是后置绑定
-	// 而不是构造参数。漏接的表现是两个端点回 500（装配缺陷可见），不是静默成功。
+
 	a.productHandle.SetDetailTemplateModePort(a.presentationSvc)
 	marks.mark(portProductDetailTemplateMode)
 	a.pluginSvc = pluginSvc
 	a.collectionResolver = collectionResolver
 	a.pageService = pageService
 
-	// 收敛积压的只读观测接入 /readyz（pendingReceipts 字段，见 readyz_receipts.go）。
-	// i18n 失效扇出（翻译底座）：page.MarkStaleForI18n 是四条 i18n 保存路径的既有入口，
-	// 自动发布实例由这里挂上去 —— 否则「改了译文，商品页仍是旧字节」且无任何报错。
-	// 类型断言而不是静态依赖：两个模块互不 import，装配点负责接线（同文件其它端口的写法）。
-	// 断言到页面模块的端口类型本身（而不是内联旧接口）：端口现在要求 …Tx 变体 ——
-	// 只有能在调用方事务里标记的来源才能接上来，把「接了但事务各写各的」变成编译期不成立。
 	peer, ok := presentationSvc.(pageservice.I18nStalePeer)
 	if !ok {
-		// 就地断言而不是静默跳过（第五批收口）：漏接的表现是「改了译文，商品页仍旧字节」
-		// 而且**没有任何报错** —— 比相邻那条观测缺失更该炸，所以用同一判据。
-		// 同时登记到 wiring 的 required-port 清单（见 portPageI18nStalePeer），
-		// 让「这条端口没接上」在装配末尾的 mustAllPortsWired 里也能被一次报出来。
+
 		panic("自动发布模块未实现 i18n 失效端口（I18nStalePeer）：译文 / 词条变更不会传导到自动发布实例")
 	}
-	// pageService 在装配里是契约接口，具体 setter 用断言取（同文件其它端口写法）。
+
 	setter, ok := pageService.(interface {
 		SetI18nStalePeer(pageservice.I18nStalePeer)
 	})
@@ -278,9 +220,7 @@ func (a *assembly) buildPublishingModules() {
 	}
 	setter.SetI18nStalePeer(peer)
 	marks.mark(portPageI18nStalePeer)
-	// 断言而不是静默跳过：漏接的表现是 /readyz 里少了这个来源 —— 运维会把它读成
-	// 「这里没有积压」，而实际是「没人在看」。待收敛回执本身就是「线上与库不一致」的窗口，
-	// 让它在观测层静默消失是最不该有的降级（审计 CQ-019 的同一判据）。
+
 	presentationObserver, ok := presentationSvc.(pendingReceiptBacklog)
 	if !ok {
 		panic("自动发布模块未实现待收敛回执观测（PendingReceiptBacklog）")
@@ -293,12 +233,6 @@ func (a *assembly) buildPublishingModules() {
 	a.pendingReceipts.register("page", pageObserver)
 }
 
-// wirePublishingPorts 发布侧的端口注入：页面与发布实例互相接线、构建队列执行器注册、
-// 片段层的只读端口注入。
-//
-// 这一段几乎全是「收窄端口 + fail-fast 断言」：每个端口漏接的后果都是静默的
-// （禁用语言不下线、产物属主漏报、退货片段恒不可用、内容改了不重建），
-// 因此一律断言而不是静默跳过。
 func (a *assembly) wirePublishingPorts() {
 	marks := a.marks
 	buildSvc := a.buildSvc
@@ -310,21 +244,13 @@ func (a *assembly) wirePublishingPorts() {
 	projectService := a.projectService
 	presentationSvc := a.presentationSvc
 
-	// 语言下线端口（审计 I18N-017）：禁用语言时 project 需要把该语言的路由下掉，
-	// 而「这个语言有哪些已激活路径」只有 page 知道 —— 方向 project → 端口 → page。
-	// 反向（project 直接 import page）会成环：page 本来就依赖 project。
-	// 原写法是「命中即注入、未命中静默跳过」（审计 CQ-019）：跳过的表现是
-	// **禁用语言成功但该语言站点仍在线上** —— 运营以为下掉了，其实没有。
-	// page.Service 有编译期断言保证实现该契约，故断言成本为零。
 	retire, ok := pageService.(projectcontract.LocaleRetirePort)
 	if !ok {
 		panic("页面模块未实现语言下线端口（LocaleRetirePort）")
 	}
 	projectService.SetLocaleRetirePort(retire)
 	marks.mark(portProjectLocaleRetire)
-	// 产物磁盘对账的属主清单（IDX-015）：自动发布实例与手工页面共用同一个 artifacts 根，
-	// 反向对账必须同时问两个模块「这些磁盘目录是不是你产出的」。漏接的后果不是报错而是
-	// **误报**：实例产物全被列成孤儿，一份看不出真假的对账结果比没有对账更糟。
+
 	artifactOwnerSetter, ok := pageService.(interface {
 		SetExternalArtifactOwners(func(ctx context.Context) ([]string, error))
 	})
@@ -333,10 +259,7 @@ func (a *assembly) wirePublishingPorts() {
 	}
 	artifactOwnerSetter.SetExternalArtifactOwners(presentationSvc.ListArtifactHashes)
 	marks.mark(portPageExternalArtifactOwners)
-	// 页面产物元数据的只读视图（模块边界）：page 模块此前直接读 page_artifacts 表，
-	// 而那张表的 Entity 在 artifact 模块 —— 表名与列名因此成了跨模块接口，改一列不会有
-	// 编译错误、只会在 page 那边静默读到空值。这里把「按 id 反查 hash / 产物挂在哪张页面 /
-	// 属主 hash 清单」三项读经契约接过去。漏接的表现是显式失败（契约缺失），不是静默放行。
+
 	artifactReader, ok := a.artifactSvc.(artifactcontract.PageArtifactReader)
 	if !ok {
 		panic("产物模块未实现页面产物只读视图（PageArtifactReader）")
@@ -349,10 +272,7 @@ func (a *assembly) wirePublishingPorts() {
 	}
 	pageArtifactSetter.SetPageArtifacts(artifactReader)
 	marks.mark(portPageArtifactReader)
-	// 蓝图契约接线（审计 VIS-010）：「从蓝图新建页面」此前只有能力没有调用方 ——
-	// routes.go 在这里长期挂着一行 _ = blueprintSvc，新建页面流程始终传的是空文档。
-	// 蓝图是「用完即弃」的初始化输入：NewPage 那一刻复制 AST 并重生成节点 ID，
-	// 之后改蓝图不会影响已建页面，也不参与构建期。
+
 	if bpSetter, ok := pageService.(interface {
 		SetBlueprints(blueprintcontract.BlueprintService)
 	}); ok {
@@ -361,9 +281,7 @@ func (a *assembly) wirePublishingPorts() {
 		panic("页面模块未提供蓝图注入点（SetBlueprints）")
 	}
 	marks.mark(portPageBlueprints)
-	// 构建队列接线（审计 DB-007）：
-	//   - page 把超出单次上限的自动重建交给队列（端口定义在 page 契约里，方向是 page ← build）；
-	//   - 执行器在这里注册（build 模块不认识任何业务来源，它只知道「有个函数能做这个 type」）。
+
 	if queueSetter, ok := pageService.(interface {
 		SetBuildQueue(pagecontract.BuildQueueEnqueuer)
 	}); ok {
@@ -372,19 +290,14 @@ func (a *assembly) wirePublishingPorts() {
 		panic("页面模块未提供构建队列注入点（SetBuildQueue）")
 	}
 	marks.mark(portPageBuildQueue)
-	// 执行器按**任务上下文**执行（审计 ARCH-04）：此前只传 SourceID，溢出重建于是退化成
-	// 「裸调 Build(ID)」—— 语言集合与旧发布范围全部丢失，第 21 个之后的页面停在默认语言的
-	// 暂存态，且与同步路径（RebuildStale）结果不一致。现在把任务冻结的 lang / intent /
-	// 输入版本交给页面模块的单页重建编排（与同步路径同一份实现）。
+
 	buildSvc.RegisterExecutor("page", func(ctx context.Context, job *buildcontract.Job) error {
 		return pageService.RunPageBuildJob(ctx, &pagedto.PageBuildJobReq{
 			ID: job.SourceID, Lang: job.Lang, Intent: job.Intent,
 			DraftVersion: job.DraftVersion, BuildInputHash: job.BuildInputHash,
 		})
 	})
-	// presentation 的自动重建接线（PERF-020）：失效扇出不再在触发进程里持实例锁
-	// 同步重建（进程内锁在多实例部署下拦不住两个实例同时重建同一实例），改为入队，
-	// 由队列消费侧的 SKIP LOCKED claim 保证同一实例同一时刻只被一个 worker 重建。
+
 	if pqSetter, ok := presentationSvc.(interface {
 		SetBuildQueue(presentationcontract.BuildQueueEnqueuer)
 	}); ok {
@@ -402,35 +315,18 @@ func (a *assembly) wirePublishingPorts() {
 		}
 		return rebuilder.RebuildInstance(ctx, job.SourceID)
 	})
-	// menu_stale 执行器（导航译文 / 菜单变更触发的重建）：
-	//
-	// **注册必须早于下面的 StartWorkers**。worker 抢到的第一条 menu_stale 任务若还没有
-	// 执行器，build worker 会判 ErrExecutorMissing 直接 Failed 且**不重试** —— 表现就是
-	// 「改完菜单文字，页面永远停在旧标签，队列里一条 failed」。所以这里显式排在启动之前，
-	// 并由 registerMenuStaleExecutor 内部对端口做 fail-fast 断言（端口不齐即 panic）。
+
 	registerMenuStaleExecutor(buildSvc, pageService, presentationSvc)
 
-	// worker 数固定 2：单页构建是 CPU + IO 混合，把并发调高只是在同一台机器上互相抢资源。
-	// 多实例部署下每个实例各起 2 个是安全的 —— 取任务走 SKIP LOCKED，同一条任务只被一个 worker 拿到。
 	buildSvc.StartWorkers(context.Background(), 2)
-	// 分区维护（审计 DB-004）：三张只增表（page_views / inventory_stock_movements /
-	// master_data_changes）按月分区，启动时补齐未来分区、之后每日一次。
-	// 不启动它不会立刻出错（数据落 DEFAULT 分区），但分区裁剪与整块归档的收益就没了。
-	//
-	// 建分区是 DDL（需要 public schema 的 CREATE），业务角色（go_wp_app）会被拒 ——
-	// 所以它与结构迁移同一条线：database.run_migrations=false（业务角色启动）时一并
-	// 跳过，改由运维侧用管理连接定期跑 go run cmd/main.go -migrate-only（已含分区补齐）。
+
 	if config.RunMigrationsEnabled() {
 		partition.StartScheduler(context.Background(), a.db)
 	}
-	// 访问面守卫的登录态探针（PIPE-6 AccessGuard，「登录用户可见」）。
-	// 传的是收窄后的 UserService（只用到 ResolveVisitorID 一条只读能力）：
-	// 守卫拿不到注册 / 改密码 / 踢设备，越权防护靠接口形状。
-	// 它只在「该页确实配了 members 守卫」时才被调用，绝大多数静态请求零 Redis 访问。
+
 	builtin.SetAccessGuardLoginProbe(newVisitorLoginProbe(a.userSvc))
 	marks.mark(portAccessGuardLoginProbe)
-	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
-	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
+
 	if setter, ok := pageService.(interface {
 		SetProductDataSource(productcontract.ProductDataSource)
 	}); ok {
@@ -447,12 +343,7 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供商品数据源注入点（SetProductDataSource）")
 	}
 	marks.mark(portPresentationProductDataSource)
-	// 结算表单的国家下拉（core.checkoutForm）：从 sys_area 字典取一次（进程内缓存），
-	// 两条构建路径共用**同一个来源实例** —— 各建一个会出现「手工页有国家、自动发布页没有」
-	// 这种只在某一类页面上暴露的分叉。
-	//
-	// 装配时机不查库：来源是惰性的，首次构建到含国家字段的页面时才读字典，
-	// 失败返回空清单并记日志（组件在「表单里有国家字段」时构建失败，真因在日志里）。
+
 	checkoutCountrySource := sysconfigcheckout.New(a.sysConfigDict)
 	if setter, ok := pageService.(interface {
 		SetCheckoutCountries(func(ctx context.Context, lang string) []core.CheckoutCountry)
@@ -470,7 +361,7 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供结算国家清单注入点（SetCheckoutCountries）")
 	}
 	marks.mark(portPresentationCheckoutCountries)
-	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 响应式图片。
+
 	if setter, ok := presentationSvc.(interface {
 		SetNavigationService(navigationcontract.NavigationService)
 		SetMediaProbe(func(context.Context, string) []mediacontract.VariantRef)
@@ -499,14 +390,6 @@ func (a *assembly) wirePublishingPorts() {
 	instanceActionSetter.SetPublishedPageLocator(pageActionTargets)
 	marks.mark(portPresentationPublishedPageLocator)
 
-	// 换图失效通知（媒体变体的缓存与失效）：media 拿到「谁引用了这张图」后回调引用方
-	// 标记待重建。变体文件名带内容指纹（这是 /storage 敢给 immutable 长缓存的前提），
-	// 换图产出**一组新文件名**、旧文件按设计保留 —— 没有这一步，旧 URL 会一直返回旧字节，
-	// 换图对访客等于没发生（访客端 srcset 选中的多数是变体而不是 src）。
-	//
-	// 类型断言而不是静态依赖：media 不认识 page / presentation（依赖方向相反），
-	// 由装配点接线。每一处漏接都当场炸，并并入 wiring 的 required-port 清单
-	//（见 wiringManifest 的 media.SetStaleMarker 两条）。
 	pageMarker, ok := pageService.(mediacontract.StaleMarker)
 	if !ok {
 		panic("页面模块未实现媒体换图失效端口（mediacontract.StaleMarker）：换图后已发布页面永不更新")
@@ -526,11 +409,6 @@ func (a *assembly) wirePublishingPorts() {
 	marks.mark(portMediaStaleMarkerPresentation)
 }
 
-// startRuntimeTasks 启动期的一次性后台任务与运行时接线：默认主题补齐、组件版本比对、
-// 依赖扇出、导航来源解析。
-//
-// 这些任务全部「失败不阻断启动」—— 少一次提示不影响任何功能，
-// 但成功时必须留下可见日志（否则运维无从判断是否执行过）。
 func (a *assembly) startRuntimeTasks() {
 	marks := a.marks
 	blockSvc := a.blockSvc
@@ -541,38 +419,21 @@ func (a *assembly) startRuntimeTasks() {
 	presentationSvc := a.presentationSvc
 	projectService := a.projectService
 
-	// 默认主题补齐（启动时一次，幂等）：本能力上线前建的工程没有任何主题，
-	// 页面因此一直没有主题可继承 —— 继承链「主题 → 页面 → 组件」的起点缺失。
-	// 失败不阻断启动（不影响已有工程，新建工程仍会即时获得默认主题）。
 	if fixed, terr := projectService.EnsureDefaultThemes(context.Background()); terr != nil {
 		logger.Scene("init").Error(terr, "默认主题补齐失败（不阻断启动）")
 	} else if fixed > 0 {
 		logger.Scene("init").With("count", fixed).Info("已为无主题工程补默认主题（后台风格色值）")
 	}
-	// 组件注册表版本比对（启动时一次）：
-	// 组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后没有任何运行时事件
-	// 能提示「已有产物由旧组件产出」。这里比对产物元数据里的 registry_version 与本进程
-	// 当前指纹（builder.RegistryVersion），把差异页面标记为待重建。
-	//
-	// 只标记、不重建：启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外
-	// 副作用；重建由运维经 RebuildStale 触发，或由后续编辑/发布自然覆盖。
-	// 失败不阻断启动（少一次提示不影响任何功能）。
+
 	if marked, verr := pageService.MarkStaleByRegistryVersion(context.Background(), builder.RegistryVersion()); verr != nil {
 		logger.Scene("init").Error(verr, "组件版本比对失败（不阻断启动）")
 	} else if len(marked) > 0 {
 		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
 			Info("检测到组件已更新：相关页面已标记待重建并开始自动重建")
-		// 自动重建（异步）：部署新组件后全站产物都是旧组件渲染的字节，这一批**没有别的事件
-		// 会再来触发**（组件是编译进二进制的，不存在「下次保存」）—— 只标记的结果就是
-		// 一直躺在待重建清单里等一个不存在的人工入口。异步执行，不拖启动链。
-		// 单次上限与溢出入队由 RebuildStale 自己处理（超限部分交给构建队列）。
+
 		rebuildStaleAsync("init", pageService, marked)
 	}
-	// 自动发布实例的同一条启动收敛（报告 ARCH-03）：它同样保存 registry_version，
-	// 但此前没有任何入口据此比对 —— 组件升级后商品详情页一直是旧字节，后台看不到 stale、
-	// 日志里也没有提示（保存版本号本身不触发任何判定）。判据与上面逐字一致：
-	// 只看语言账本（presentation_publications）当前指向的产物，历史产物行不参与。
-	// 失败同样不阻断启动。
+
 	if marked, verr := presentationSvc.MarkStaleByRegistryVersion(context.Background(), builder.RegistryVersion()); verr != nil {
 		logger.Scene("init").Error(verr, "自动发布实例组件版本比对失败（不阻断启动）")
 	} else if len(marked) > 0 {
@@ -580,22 +441,12 @@ func (a *assembly) startRuntimeTasks() {
 			Info("检测到组件已更新：相关自动发布实例已标记待重建并开始自动重建")
 		rebuildStaleAsync("init", presentationStaleRebuilder(presentationSvc), marked)
 	}
-	// 依赖 fan-out（PIPE-3，AGENTS.md §8.2）：内容实体变更 → 按依赖表
-	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
-	//
-	// 装配顺序要求：page 服务必须先装配完成（作为失效目标与重建实现），
-	// 再由内容服务持有扇出端口；presentation 侧待其 DB 持久化对齐后接入同一 Fanout。
+
 	fanout := pipeline.NewFanout()
 	fanout.Register(pipeline.SourceTypePage, pageService)
-	// 自动发布实例同样是依赖失效目标（审计 AR2-001）：它实现了 MarkStaleByDependency 与
-	// RebuildStale，但此前**没有被注册进扇出** —— 页面上引用的文章 / 商品更新时，手工 Page
-	// 会重建、自动发布的详情页不会：数据库里的内容 revision 已经变了，访问面继续提供旧字节，
-	// 全程没有任何报错。注册后 presentation 侧的失效按同一套语义走（PRES-020 之后是入队，
-	// 不在触发进程里同步重建）。
+
 	fanout.Register(pipeline.SourceTypePresentation, presentationSvc)
-	// 漏注册一个发布来源不会报错（审计 AR2-001）：它只是永远不参与失效标记与自动重建，
-	// 表现是「内容更新了、那一类页面停在旧版本」，日志里什么都没有。所以这里显式断言
-	// 期望的来源都在 —— 把「静默少接一个」变成启动即失败，而不是等到线上内容陈旧才被发现。
+
 	registeredSources := fanout.RegisteredSourceTypes()
 	for _, want := range []string{pipeline.SourceTypePage, pipeline.SourceTypePresentation} {
 		found := false
@@ -609,9 +460,7 @@ func (a *assembly) startRuntimeTasks() {
 			panic("依赖扇出缺少发布来源 " + want + "：该来源的内容更新既不会被标记也不会自动重建（审计 AR2-001）")
 		}
 	}
-	// SetRebuilder 对 nil 是**静默 no-op**（「未绑定时只标记不重建」）—— 若 pageService
-	// 没实现 StaleRebuilder，内容保存会照常成功、stale 也照常标记，只是永远不重建：
-	// 线上内容停在旧版本，没有任何报错（审计 CQ-019）。故先断言再注入。
+
 	pageRebuilder, ok := pageService.(pipeline.StaleRebuilder)
 	if !ok {
 		panic("页面模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
@@ -628,10 +477,7 @@ func (a *assembly) startRuntimeTasks() {
 	marks.mark(portActionTargetReferences)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
-	// 商品写路径的静态产物失效（审计 ARCH-01）：与 content 侧同一手法 —— 商品模块只声明
-	// 窄端口（productcontract.DependencyInvalidator），扇出实现在发布内核。
-	// 断言而非「命中即跳过」：漏接的表现是「改了商品，站点静态产物永不更新」，
-	// 而它不会让任何测试变红、日志里也只有事件堆积（事件表有自己的诊断查询）。
+
 	if setter, ok := productSvc.(interface {
 		SetDependencyInvalidator(productcontract.DependencyInvalidator)
 	}); ok {
@@ -640,8 +486,7 @@ func (a *assembly) startRuntimeTasks() {
 		panic("商品模块未提供依赖失效端口注入点（SetDependencyInvalidator）")
 	}
 	marks.mark(portProductDependencyInvalidator)
-	// outbox 消费者：商品写事务里落的事件在这里被领取 → 扇出 → 精确标记 + 自动重建。
-	// 首跑一次再按间隔轮询（进程重启后积压的事件立刻被消化）。
+
 	if starter, ok := productSvc.(interface {
 		StartOutboxWorker(ctx context.Context, interval time.Duration)
 	}); ok {
@@ -649,27 +494,14 @@ func (a *assembly) startRuntimeTasks() {
 	} else {
 		panic("商品模块未提供依赖事件消费入口（StartOutboxWorker）")
 	}
-	// 内容模板 → 依赖失效接线（触发链）：模板产生新版本 / 切换生效后，按 content_template:{id}
-	// 反查引用它的页面与自动发布实例并标记 stale。
-	//
-	// 不接线 = 前面登记的依赖行永远不会被反查：改了页眉模板，站点仍是旧字节且没有任何报错
-	//（本批的核心价值点，接线漏掉在测试里也不会报错）。
-	// 契约接口不暴露 setter，故用类型断言取（同文件其它可选端口的写法）。
-	// 扇出外面包一层影响面回执适配器：Fanout.Invalidate 丢弃受影响集合，直接接它
-	// 就看不到「这次模板换代波及哪些页面 / 实例」—— 而那正是运营改全站页眉时最需要的回执。
+
 	if setter, ok := a.contentTemplateSvc.(interface {
 		SetInvalidator(contenttemplateservice.DependencyInvalidator)
 	}); ok {
 		setter.SetInvalidator(contentTemplateInvalidator{fanout: fanout})
 		marks.mark(portContentTemplateInvalidator)
 	}
-	// 导航变更 → 依赖失效（审计遗留缺口：DepKindMenu 有常量、无发射点）：
-	// navigation 侧只表达「哪个工程哪个位置变了」，键构造（pipeline.MenuKey）与扇出
-	// 都在发布内核，这里用适配器把两端接起来。键带工程 ID —— 导航是工程级资源，
-	// 位置名只有 header/footer，不带工程会让「A 工程改页眉导航」误标 B 工程的页面。
-	//
-	// 断言 + fail-fast（与 block 的 SetStalePropagator 同一手法）：漏接的表现是
-	// 「改导航后已发布页面永远不更新」，页眉/页脚全站可见却没有任何报错。
+
 	navigationDispatcherSetter, ok := navigationSvc.(interface {
 		SetMenuStaleDispatcher(navigationcontract.MenuStaleDispatcher)
 	})
@@ -679,24 +511,16 @@ func (a *assembly) startRuntimeTasks() {
 	navigationDispatcherSetter.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
 	marks.mark(portNavigationMenuDispatcher)
 
-	// 导航来源实体解析（page/article/product/category/block → 标题 + URL）：
-	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
 	navigationSvc.SetSourceResolver(navsource.New(pageService, contentSvc, presentationSvc, blockSvc))
 	marks.mark(portNavigationSourceResolver)
 
-	// 导航译文整表提交的写链（本批核心）：把「写译文 + 标手工页面 + 标自动发布实例 +
-	// 入队重建」接成**一个事务**。
-	//
-	// 三个端口的共同前提是**同一个 *gorm.DB**：适配器不自己开事务，全部用调用方传进来的
-	// tx 句柄。用另一个连接池 / 另一次 Transaction 就不再是同进同出，失效会在提交后才丢。
 	if a.navigationHandle == nil {
-		// 装配缺陷：SetupNavigationRoutes 返回的句柄没接上。缺它时译文保存整体 fail closed
-		//（500 + 归口文案），绝不能悄悄退回「接受请求但什么都没写」。
+
 		panic("导航 JSON 入口句柄未装配（SetupNavigationRoutes 返回值未接上）")
 	}
 	contentWriter, werr := i18n.NewContentWriterDefault()
 	if werr != nil {
-		// 译文存储是写路径的硬依赖：拿不到就整个写链 fail closed（不是降级）。
+
 		panic("译文存储（i18n.ContentWriter）不可用：" + werr.Error())
 	}
 	if _, ok := pageService.(pagecontract.PageMenuStalePort); !ok {
@@ -710,8 +534,7 @@ func (a *assembly) startRuntimeTasks() {
 	}); !ok {
 		panic("构建模块未实现 menu_stale 同事务入队（MenuStaleEnqueuePort）")
 	}
-	// 菜单 CRUD 的同事务失效端口：与译文写路径**同一份适配器**（见 navigationWritePorts）。
-	// 缺它时 CRUD 写入口 fail closed（500 归口），绝不退回「只写数据不派发失效」。
+
 	if setter, ok := navigationSvc.(interface {
 		SetWritePorts(navigationservice.NavigationWriteDeps)
 	}); ok {
@@ -728,12 +551,6 @@ func (a *assembly) startRuntimeTasks() {
 	markNavigationTranslationWriteWired(marks, pageService, presentationSvc, a.buildSvc)
 }
 
-// markNavigationTranslationWriteWired 一次性把导航写链（译文整表 + 菜单 CRUD）的四条端口
-// 标成已接线。
-//
-// 四条必须同时成立：任何一条单独存在都只表示「事务里只有一部分失效被写进去」，
-// 而那正是本批要消灭的静默不收敛。断言方式与其它 wiring 一致（按能力断言，不 import
-// 实现包）：缺任一条即 panic，绝不留下「部分生效」的可见降级。
 func markNavigationTranslationWriteWired(marks wiringMarks, pageSvc pagecontract.PageService,
 	presentationSvc presentationcontract.PresentationService, buildSvc buildcontract.BuildService) {
 	marks.mark(portNavigationTranslationWriter)
@@ -750,11 +567,6 @@ func markNavigationTranslationWriteWired(marks wiringMarks, pageSvc pagecontract
 	}
 }
 
-// mountAdminPages 后台页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）。
-//
-// admin 六领域 CRUD 契约：SetAdminRoutes 返回的 AuthzContextService 动态类型即合并后的
-// *Service（同实现全部六接口），此处匿名接口断言获得管理面 CRUD 能力并交给页面装配，
-// 供 /admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）消费；不使用 GET/POST 之外的动词。
 func (a *assembly) mountAdminPages() {
 	marks := a.marks
 	adminAuthzSvc := a.adminAuthzSvc
@@ -766,20 +578,10 @@ func (a *assembly) mountAdminPages() {
 		admincontract.DeptService
 		admincontract.RuleService
 	})
-	// 各模块后台页面统一在这里接线。两种形态并存（见各模块 admin_pages 文件）：
-	//   - 页面只依赖本模块 svc：Setup 追加页面组参数，在模块 Setup 内自注册；
-	//   - 页面依赖晚装配契约（content / contenttemplate / product / user / project）：
-	//     独立入口，契约齐备后在这里调用。
-	// 中间件链（Session + CSRF + 权限上下文）由两个页面组承担：adminPages（/admin 前缀）
-	// 与 workbenchPages（根级前缀，编辑器与仪表盘首页），均由 assembly.go 创建。
-	// pageService 一并传入：文案词条页改完词条要标记站点待重建（词条在构建期烘进产物字节，
-	// 漏接 = 改了文案站点不更新且无报错，与页面 / 商品 / 导航翻译、站点设置同一动作）。
+
 	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService, a.sysConfigDict)
 	adminhttp.SetupAdminShellPages(a.router)
 
-	// pageService 作为可选第 4 参传入：块的「待重建影响面」要经 page 的只读反查（引用数 +
-	// stale 页面清单）。不接也能编译，但页面会显示「页面能力未装配」且引用数一律「未知」——
-	// 那不是 0，是「没能力回答」，所以宁可不接也不能假装查过。
 	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
 	mediahttp.SetupMediaPages(a.adminPages)
 	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)
@@ -789,14 +591,7 @@ func (a *assembly) mountAdminPages() {
 		a.contentTemplateSvc, a.pageService, a.presentationSvc)
 	contenttemplatehttp.SetupContentTemplatePages(a.adminPages, a.contentTemplateSvc,
 		a.projectService, a.productSvc, a.contentSvc)
-	// 客户管理页：中间两个参数是 BIZ-3 的会员展示端口（读等级 + 错误文案出口），
-	// 详情页的「会员等级」块只读展示；等级与权益按「工程 + 客户」解析，
-	// 与同一页的订单摘要用同一个选定工程。
-	// 最后两个参数是客户域的订单侧聚合：区间增长（客户概览页用）与分段取 id
-	//（列表按「新客 / 回头客 / 复购」筛选用）。两者都在 orderSvc 上。
-	// 客户列表的「会员等级」筛选要两个只读端口（按等级反查归属 / 列出可选等级），
-	// 它们都在 MembershipService 上：断言失败是装配缺陷（少一个方法），当场 panic
-	// 而不是传 nil —— 传 nil 会让筛选静默失效，而页面看起来完全正常。
+
 	membershipAdmin, membershipAdminOK := a.membershipSvc.(membershipcontract.AssignmentAdminPort)
 	if !membershipAdminOK {
 		panic("会员模块未实现 AssignmentAdminPort（客户列表按等级筛选依赖它），装配缺陷")
@@ -810,75 +605,49 @@ func (a *assembly) mountAdminPages() {
 		membershipAdmin, membershipTiers)
 	producthttp.SetupProductPages(a.adminPages, a.authorizedAPI, a.productHandle, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
-	// 商品译文工作台：整页 GET 挂 /admin 组，保存挂 authorizedAPI 组（模板用 ui/write-base.js 提交）。
-	// 两条路由由同一个函数注册 —— 保存是接口端点，而页面组与接口组分别由 assembly.go（接口）
-	// 与这里（页面）持有，只有这一处两个都在手上。
+
 	producthttp.SetupProductTranslationRoutes(a.authorizedAPI, a.adminPages,
 		a.productSvc, a.pageService, a.presentationSvc)
-	// 页面读模型的两条只读端口在模块内部转交（SetInventoryDeps / SetDetailTemplateDeps 收到
-	// 依赖后同时给处理器与 service 读模型）：装配段只记录「这两条依赖到达过」，
-	// 于是漏接时启动自检能报出来，而不是等运营发现「新建页没有仓库下拉」。
+
 	marks.mark(portProductPageWarehouses)
 	marks.mark(portProductPageTemplates)
 	marks.mark(portProductPageDetailTemplate)
-	// 详情页模板的写侧四个契约在同一处后置转交（product_router.go 的
-	// SetDetailTemplateWriteDeps 调用点）：写动作拿不到它们就回 500，不会静默成功。
+
 	marks.mark(portProductDetailTemplateWriteDeps)
-	// 词条变更 → 站点待重建：后台词条页的页面失效端口就在下面这行 SetupAdminPages
-	// 内部注入（admin_pages_router.go 的 i18nPages.SetPageMarker），装配段记一笔。
+
 	marks.mark(portAdminI18nPageMarker)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
 
-	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。
-	// contentStore 传 nil：未注入时模块内部惰性回退默认实现（与原行为一致）。
 	workbenchHandle := workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
 		a.blockSvc, a.pluginSvc, a.collectionResolver, a.contentTemplateSvc, a.presentationSvc,
 		a.blueprintSvc, a.productSvc, nil)
-	// 实例编辑模式（AGENTS.md）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
+
 	workbenchHandle.SetInstanceOverrideDeps(a.presentationSvc)
 	marks.mark(portWorkbenchInstanceOverrideDeps)
-	// 检查器的「具体菜单项」下拉（nav 组件 Props.Navigation，ct=entityref,navigation）。
+
 	workbenchHandle.SetNavigationPicker(a.navigationSvc)
 	marks.mark(portWorkbenchNavigationPicker)
-	// 概览页的跨模块只读数据：订单聚合（KPI / 趋势 / 榜单）、访问统计（浏览量）、
-	// 页面类型（判断哪些浏览发生在文章页上）。三者在此处都已装配完毕
-	//（buildAPIAndCoreCRUD → buildIdentityAndCommerce → wireRuntimeAccessFace → 本步）。
-	// 第四个参数是货币符号的来源（后台数据字典的 currency 类型）——
-	// 界面上写「CNY 300.50」是把口径标识当符号用；符号只有那一张表说了算。
+
 	workbenchHandle.SetOverviewPorts(a.orderSvc, a.analyticsSvc, a.pageService, a.sysConfigDict)
 	marks.mark(portDashboardOverview)
-	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
+
 	marks.mark(portDashboardBlueprints)
 }
 
-// runSelfCheck 装配自检（审计 CQ-019）：必需端口逐个核对，缺失即 fail-fast 并
-// **报出端口名与后果**（一次报出全部缺失项，清单见 wiring.go 的 wiringManifest）；
-// 可选端口未接入写进启动日志 —— 降级必须可见，而不是只在代码注释里写一句「未注入时降级」。
 func (a *assembly) runSelfCheck() {
 	mustAllPortsWired(a.marks)
-	// 权限点声明同步（审计 SEC-011）：路由装配完成后，把声明表幂等 upsert 进库
-	// （只补缺失的权限点与超管策略，不动人工的角色 / 用户授权，见 internal/permission/sync.go）。
+
 	syncDeclaredPermissions(a.db)
 	logDegradedOptional(a.marks)
 }
 
-// mountPublicFace 注册模块所有的访客JSON数据端点。
 func (a *assembly) mountPublicFace() {
 	producthttp.SetupProductPublicRoutes(a.router, a.productSvc)
 	producthttp.SetupProductCatalogRoutes(a.router, a.productSvc)
 	producthttp.SetupProductOptionsRoutes(a.router, a.productSvc)
 
-	// 未匹配路由的兜底**不在这里设**：访问面挂在根上（站点独占域名根），
-	// NoRoute 由 setupStaticFace 一次性装成「站点中间件链 → 静态文件 → 站点 404」。
-	// 在这里再设一次会把它整个覆盖掉（gin 的 NoRoute 是单槽位），
-	// 表现为首页与全部站内页 404 —— 而控制面看着一切正常。
 }
 
-// presentationStaleRebuilder 取自动发布实例的重建器。
-//
-// 为什么需要它：presentation 契约只声明了 MarkStaleByDependency，RebuildStale 属于
-// pipeline 端口；而「标记了却不重建」正是审计 CQ-019 记的那类静默降级
-// （内容陈旧、日志干净）。断言失败即 panic —— 装配期缺件应当早失败。
 func presentationStaleRebuilder(svc presentationcontract.PresentationService) pipeline.StaleRebuilder {
 	r, ok := svc.(pipeline.StaleRebuilder)
 	if !ok {

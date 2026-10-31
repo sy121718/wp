@@ -1,24 +1,10 @@
 package richdoc
 
-// richdoc_known_drift_test.go — 已知未收敛缺陷的**自退役**回归桩
-//（挂账位置：AGENTS.md CMP-15、AGENTS.md 决策 5 的「⚠️ 仍存一类」）。
-//
-// 缺陷：畸形嵌套（HTML 内容模型本身非法，如 <a> 里嵌 <table>）经 x/net/html 解析后再序列化，
-// 不是自身解析的不动点；而 import.go 的 inlineTextNode 只按 token 流渲染、不按解析结果重新分组，
-// 于是「导出 → 导入 → 导出」会漂移一次。原始证据来自 FuzzRichTextRoundTrip 的失败语料
-//（testdata/fuzz 哈希 bc0233eb6e7cf0f6），因为语料文件一旦留在 testdata/fuzz/ 就会被
-// 普通 go test 当作种子执行、让门禁常红，所以改由本测试承担回归职责。
-//
-// 本测试是**自退役**的：缺陷修好（inlineTextNode 按解析结果重新切分）后它会失败 ——
-// 那是好事，请把断言改成收敛（直接复用 checkRoundTrip），并同步删掉 docs 里那两条挂账。
-
 import (
 	"strings"
 	"testing"
 )
 
-// TestRoundTripMalformedNestingKnownDrift 记录「畸形嵌套仍会漂移」这一已知状态，
-// 同时守住两件不因该缺陷让步的事：两次导出都必须能再导入，且都不含脚本。
 func TestRoundTripMalformedNestingKnownDrift(t *testing.T) {
 	const src = "<A>0<tABle><A>"
 
@@ -45,7 +31,6 @@ func TestRoundTripMalformedNestingKnownDrift(t *testing.T) {
 			html1.HTML)
 	}
 
-	// 安全底线不因该缺陷让步：两次导出都要能再导入（上面已验）且不含脚本。
 	third, err := HTMLToNodes(html2.HTML)
 	if err != nil {
 		t.Fatalf("三次导入失败：%v\nHTML=%q", err, html2.HTML)
@@ -56,8 +41,6 @@ func TestRoundTripMalformedNestingKnownDrift(t *testing.T) {
 	}
 }
 
-// containsScriptTag 只做字面检查（大小写不敏感）：本包导出的是富文本 HTML，
-// 清洗已在导入侧完成，这里要证的是「清洗过的树导回去也不会凭空长出脚本」。
 func containsScriptTag(s string) bool {
 	return strings.Contains(strings.ToLower(s), "<script")
 }

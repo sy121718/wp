@@ -1,50 +1,5 @@
 package templates
 
-// css_class_audit_test.go — CSS 类对账门禁（「用了但没定义」/「定义了没人用」）。
-//
-// 为什么自建：code-review-graph 纳不进 CSS（`status` 的语言表写死
-// bash/go/javascript/powershell/python/sql，没有 css/html/jet，也没有注入边的命令），
-// PurgeCSS 只回答「哪些 CSS 没用到」且对运行时属性（[dir="rtl"]）有确定误报，
-// 而项目零 Node 依赖、不为一次对账引工具链。这类漂移在本项目真实发生过两次、
-// 且都是没人扫得到的静默缺陷：
-//   · static/js/media-admin.js 动态生成的详情面板没带基座类 —— 控件在页面里凭空失去外观；
-//   · ui.css 的 .admin-layout 容器兜底给控件外观 —— 容器一旦被删，控件样式静默消失。
-// 本门禁不替代人看代码，只把「类名两边对不上」这件事变成红灯。
-//
-// 两个方向刻意用不同的严格度：
-//   · 方向 A「用了但没定义」→ 严格提取（class="..." 的静态 token + JS 里的类名字面量）。
-//     这里误报的代价是门禁被绕过（作者开始无视红灯），所以宁少勿滥：
-//     拼接碎片、比较值、getAttribute 的属性名一律不当类名。
-//   · 方向 B「定义了没人用」→ 宽松匹配（定义侧类名只要在使用侧文本里以 token 边界出现过就算有人用）。
-//     这里误报的代价是死样式永远清不掉，所以宁滥勿缺：连注释里出现过都算「有人提过」。
-//
-// 豁免清单沿用本项目既有约定（带可核对理由 + 条目不再命中即失败）：
-// 下一批把「待清理」的死样式删掉后，对应条目会失去命中点、测试随即变红，
-// 逼清单跟着收缩 —— 清单只增不减就等于门禁失效。
-//
-// 使用侧包含三条扫描面：模板（.html/.jet）、控制面 JS（static/js/**）、
-// 以及 **Go 代码里拼的 HTML class 字面量**（整棵 internal 树，排除 _test.go 与本包）。
-// 第三条是清账批实锤出来的盲区：`wb-node-actions` / `wb-node-flag` 由
-// internal/module/workbench/inbound/http/outline_handle.go 拼出，前两条扫描面都看不见，
-// 于是那两条**在用**的规则被当死样式删掉，靠工作台浏览器抽查发现 11 个元素带类才还原。
-// Go 侧只作「有人用」的证据（looseTokens），不进方向 A —— 它常与运行时值拼接，进 A 会误报。
-//
-// 已知让步（写在这里避免下一个人误判）：
-//   · 动态类名放行必须**有据可查**：dynamicClassEvidence 里每条前缀都写明
-//     拼接点（file:line + 表达式）与可枚举的取值域，放行条件 = 前缀匹配 **且** 后缀在取值域里。
-//     只按前缀放行会让「同前缀的孤立变体」（没人会拼出来的 is-xxx）永远逃过 B 方向 ——
-//     那正是收窄要治的病。证据表里的拼接点在本次扫描找不到时，TestDynamicClassEvidenceIsCurrent 会红。
-//   · A 方向收窄为「属于定义侧已存在的类家族」才判红（见 auditFamilyDefined）：
-//     完全新家族的无样式钩子（media-detail-form / customers-page-table 这类结构类）不判红，
-//     因为「无外观需求」是它们的常态，判红只会制造噪声；
-//     而「往既有家族里加了个没定义的变体」（form-input--x / btn-huge / wbs-month）仍然判红 ——
-//     那才是「想加样式却漏了定义」的高发形态。
-//     「JS 动态生成控件漏带基座类」那类真缺陷不靠本方向抓，它由 media_admin_js_base_test.go 的 JS 侧判据覆盖。
-//   · 只扫 internal/templates/static/css + static/vendor 的 CSS 与模板内联 <style>。
-//     前台片段（fragments/*.jet 的 sky-*、user/*.html 的 g-*）样式真源在
-//     internal/builder/components/*/*.css 这类构建期组件样式里，不在本定义侧，
-//     所以方向 A 的断言范围限定在后台与工作台宿主（它们才是 static/css 的消费者）。
-
 import (
 	"os"
 	"path/filepath"
@@ -74,18 +29,15 @@ var (
 	reAuditJSConcat   = regexp.MustCompile(`['"]\s*\+|\+\s*['"]|\$\{`)
 )
 
-// cssAuditFacts 是一次扫描的全部事实。
 type cssAuditFacts struct {
-	defined     map[string][]string // 定义侧类名 → CSS 文件（含 vendor 与模板内联 style）
-	definedOwn  map[string][]string // 只含本仓库自己的 CSS（static/css + 模板内联 style）：方向 B 的定义侧
-	usedStrict  map[string][]string // 方向 A：静态类名 → "文件:行: 片段"
-	looseTokens map[string]bool     // 方向 B：使用侧文本全集里的 token
-	goClasses   map[string][]string // Go 侧拼 HTML 的 class 字面量 → 出处（弱证据，只进 looseTokens）
-	dynPrefixes map[string][]string // 动态前缀 → 来源
+	defined     map[string][]string
+	definedOwn  map[string][]string
+	usedStrict  map[string][]string
+	looseTokens map[string]bool
+	goClasses   map[string][]string
+	dynPrefixes map[string][]string
 }
 
-// TestCSSClassesUsedButUndefined 方向 A：模板/JS 里写死的类名必须在定义侧存在。
-// 防的就是 media-admin.js 那类缺陷 —— 生成控件时漏了（或写错）类名，页面不报错、只是没样式。
 func TestCSSClassesUsedButUndefined(t *testing.T) {
 	facts := collectCSSAuditFacts(t)
 
@@ -112,15 +64,11 @@ func TestCSSClassesUsedButUndefined(t *testing.T) {
 		t.Error(b.String())
 	}
 
-	// 豁免条目不再命中即失败：使用点消失、类已被定义（或被动态前缀接管）时，清单必须同步收缩。
 	for _, cls := range staleUndefinedAllowed(facts) {
 		t.Errorf("cssUndefinedAllowed 里的 %q 已经不再是「用了但没定义」（类已被定义，或使用点已消失）：清单必须同步收缩，只增不减等于门禁失效", cls)
 	}
 }
 
-// TestCSSClassesDefinedButUnused 方向 B：定义侧里没人用的类进豁免清单，否则报错。
-// 防的是死样式堆积 —— 以及更隐蔽的一种漂移：作者把类当成「有人在用」而不敢删，
-// 实际模板与 JS 早已改用别的类名。
 func TestCSSClassesDefinedButUnused(t *testing.T) {
 	facts := collectCSSAuditFacts(t)
 
@@ -144,7 +92,6 @@ func TestCSSClassesDefinedButUnused(t *testing.T) {
 		t.Errorf("cssUnusedAllowed 里的 %q 已经不再命中未使用集合（类已被定义处删除，或已经有人用了）：清单必须同步收缩", cls)
 	}
 
-	// Go 侧扫描的覆盖面必须可观测：空转就等于盲区还在。
 	if len(facts.goClasses) < 10 {
 		t.Fatalf("Go 侧只扫到 %d 个 class 字面量（预期 ≥10）：扫描口径或路径可能已失效", len(facts.goClasses))
 	}
@@ -158,7 +105,6 @@ func TestCSSClassesDefinedButUnused(t *testing.T) {
 	t.Logf("Go 侧 class 字面量扫出 %d 个类名（出处 %d 个文件）；其中 %d 个在定义侧没有对应规则（仅提示，不判失败）：%v",
 		len(facts.goClasses), len(goFilesOf(facts)), len(goUndefined), goUndefined)
 
-	// 被动态前缀放行的类：不失败，但要留痕 —— 前缀覆盖是让步，不是结论。
 	if len(prefixCovered) > 0 {
 		sorted := make([]string, 0, len(prefixCovered))
 		for cls := range prefixCovered {
@@ -170,7 +116,6 @@ func TestCSSClassesDefinedButUnused(t *testing.T) {
 	}
 }
 
-// auditMissing 返回未命中定义侧、且不在豁免清单里的类名；keep 决定某个类是否需要继续判定。
 func auditMissing(used map[string][]string, keep func(string) bool, allowed map[string]string) []string {
 	var missing []string
 	for cls := range used {
@@ -186,13 +131,12 @@ func auditMissing(used map[string][]string, keep func(string) bool, allowed map[
 	return missing
 }
 
-// auditUnused 返回定义了却没人用的类名，以及被动态前缀放行的类名。
 func auditUnused(defined map[string][]string, strict map[string][]string, loose map[string]bool, allowed map[string]string) ([]string, map[string]bool) {
 	var unused []string
 	prefixCovered := map[string]bool{}
 	for cls := range defined {
 		if loose[cls] {
-			continue // 使用侧文本里出现过（连注释也算）→ 有人提过，不判死
+			continue
 		}
 		if len(strict[cls]) > 0 {
 			continue
@@ -210,7 +154,6 @@ func auditUnused(defined map[string][]string, strict map[string][]string, loose 
 	return unused, prefixCovered
 }
 
-// goFilesOf 统计 Go 侧字面量来自多少个文件（t.Log 用）。
 func goFilesOf(f cssAuditFacts) map[string]bool {
 	files := map[string]bool{}
 	for _, sites := range f.goClasses {
@@ -221,44 +164,38 @@ func goFilesOf(f cssAuditFacts) map[string]bool {
 	return files
 }
 
-// staleUndefinedAllowed 找出方向 A 清单里已经不该留的条目：
-// 使用点消失（模板/JS 不再写这个类）、类已被补上定义、或已被动态前缀接管 —— 三种都该删条目。
 func staleUndefinedAllowed(f cssAuditFacts) []string {
 	var stale []string
 	for cls := range cssUndefinedAllowed {
 		switch {
 		case len(f.usedStrict[cls]) == 0:
-			stale = append(stale, cls) // 使用点消失 → 门禁已经守不到它
+			stale = append(stale, cls)
 		case len(f.defined[cls]) > 0:
-			stale = append(stale, cls) // 类已被定义 → 不再是「用了但没定义」
+			stale = append(stale, cls)
 		case auditDynamicCovered(cls) || !auditFamilyDefined(f.defined, cls):
-			stale = append(stale, cls) // 收窄后不再判红（动态有据可查 / 属完全新家族）→ 条目该收回
+			stale = append(stale, cls)
 		}
 	}
 	sort.Strings(stale)
 	return stale
 }
 
-// staleUnusedAllowed 找出方向 B 清单里已经不该留的条目：
-// 类已从定义侧删除（清账完成）、或使用侧其实已经有人用、或已被动态前缀放行。
 func staleUnusedAllowed(f cssAuditFacts) []string {
 	var stale []string
 	for cls := range cssUnusedAllowed {
 		switch {
 		case len(f.definedOwn[cls]) == 0:
-			stale = append(stale, cls) // 类已删 → 清单条目连同 CSS 一起收口
+			stale = append(stale, cls)
 		case f.looseTokens[cls] || len(f.usedStrict[cls]) > 0:
-			stale = append(stale, cls) // 有人用了 → 不再是死样式
+			stale = append(stale, cls)
 		case auditDynamicCovered(cls):
-			stale = append(stale, cls) // 已被动态证据覆盖 → 不必逐条豁免
+			stale = append(stale, cls)
 		}
 	}
 	sort.Strings(stale)
 	return stale
 }
 
-// auditDynamicCovered 动态类名放行判据：前缀匹配 **且** 后缀落在该前缀的可枚举取值域里。
-// 取值域为空（枚举不出来）时退回前缀放行，理由写在 dynamicClassEvidence 的 note 里。
 func auditDynamicCovered(cls string) bool {
 	for prefix, ev := range dynamicClassEvidence {
 		if !strings.HasPrefix(cls, prefix) {
@@ -277,9 +214,6 @@ func auditDynamicCovered(cls string) bool {
 	return false
 }
 
-// auditFamilyDefined 判定「这个未定义的类是否属于定义侧已存在的某个类家族」。
-// 形状：把类名逐级剥短 —— BEM 的 -- / __ 前缀各取一次，再逐段去掉尾部的 -segment；
-// 任一候选父名在定义侧出现即算「既有家族」。
 func auditFamilyDefined(defined map[string][]string, cls string) bool {
 	for _, parent := range auditParentCandidates(cls) {
 		if len(defined[parent]) > 0 {
@@ -310,14 +244,12 @@ func auditParentCandidates(cls string) []string {
 	return out
 }
 
-// dynPrefixEvidence 一条动态前缀的放行证据。
 type dynPrefixEvidence struct {
-	site   string   // 拼接点：file:line + 表达式（可核对）
-	values []string // 可枚举的取值域（去前缀后的后缀）
-	note   string   // 取值域来源；不可枚举时写明为何只能退回前缀放行
+	site   string
+	values []string
+	note   string
 }
 
-// dynamicClassEvidence 动态类名放行的唯一出口：没有条目的前缀一律不放行。
 var dynamicClassEvidence = map[string]dynPrefixEvidence{
 	"is-": {
 		site: "ui/toast.js:61 `'wb-toast is-' + type`；media-admin.js:334 `'media-variant-badge is-' + (v.status || 'pending')`；workbench/methods/canvas.js `'wb-canvas-frame is-' + cfg.bp`；fragments/seo_score.html:33 `is-{{sec.Color}}`",
@@ -344,11 +276,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: nil,
 		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
 	},
-	// 档位词表（ok/warn/danger/mute/info）有几份副本，权威是 AGENTS.md：
-	//   · 本条的 values（Go 侧登记，TestDynamicClassToneValuesInVocabulary 按它判模板自选档）；
-	//   · scripts/check-template-presentation.sh:39 的 TONE_VOCAB（门禁判据 4 执行用）。
-	// 漂移不会**静默**失色 —— 模板自选档越表会被判据 4 直接判红（红可见），届时按 doc:161 两侧同时对齐，
-	// 不要只改一边；真正会静默失色的是「模板写了词表外的档而 ui.css 没有 .badge-<档> 别名」。
+
 	"badge-": {
 		site: "admin/ai/mcp.html:41 `badge-{{.McpTone}}`；admin/ai/provider_card.html:15 `badge-{{.StatusTone}}`；" +
 			"admin/ai/provider_card.html:31 与 admin/ai/provider_models.html:19 `badge-{{.ModelsNoticeTone}}`；" +
@@ -392,9 +320,6 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 	},
 }
 
-// TestDynamicClassEvidenceIsCurrent 放行证据必须与代码同步：
-// 表里的前缀在本次扫描找不到拼接点 → 证据失效（代码改了写法或删了功能），必须更新或删条目；
-// 扫描到表里没有的前缀 → 有新的动态点被静默放过，必须补「拼接点 + 取值域」。
 func TestDynamicClassEvidenceIsCurrent(t *testing.T) {
 	facts := collectCSSAuditFacts(t)
 	for prefix, ev := range dynamicClassEvidence {
@@ -410,20 +335,10 @@ func TestDynamicClassEvidenceIsCurrent(t *testing.T) {
 	}
 }
 
-// reToneBadgeVar 模板里 `badge-{{name}}` 的局部变量；Go 字段形态（`{{.McpTone}}`、`{{r.StatusTone}}`）含点，不在此列。
 var reToneBadgeVar = regexp.MustCompile(`badge-\{\{([a-z][A-Za-z0-9_]*)\}\}`)
 
-// reToneAssign 模板表达式里的字面量赋值：`{{x := "…"}}`（初始化）与 `{{x = "…"}}`（分支内改写）。
-// 只在 `{{…}}` 表达式内匹配，免得把同一行的 `class="badge badge-{{tone}}"` 当成赋值。
 var reToneAssign = regexp.MustCompile(`\{\{[^}]*\b([a-z][A-Za-z0-9_]*)\s*:?=\s*"([^"]*)"`)
 
-// TestDynamicClassToneValuesInVocabulary 模板自己产出的档必须落在词表内。
-//
-// 展示判断归模板（见 AGENTS.md §语义 vs 外观）之后，模板会在
-// `badge-{{tone}}` 前按事实选档，也就可能写出词表外的档（"error"、"critical"…）。
-// 这类档在 ui.css 没有 `.badge-<档>` 别名：页面不报错，只是**静默失色** —— 所以由本测试钉住，
-// 与 scripts/check-template-presentation.sh 判据 4 同一条口径（脚本守模板文件，本测试守词表本身）。
-// Go 字段（`{{.XxxTone}}` / `{{r.StatusTone}}`）的档位由各自产出函数负责，不在这里判。
 func TestDynamicClassToneValuesInVocabulary(t *testing.T) {
 	vocab := map[string]bool{}
 	for _, v := range dynamicClassEvidence["badge-"].values {
@@ -440,8 +355,6 @@ func TestDynamicClassToneValuesInVocabulary(t *testing.T) {
 		r := rel(t, p)
 		lines := strings.Split(readFile(t, p), "\n")
 
-		// 本文件内每个局部变量的字面量取值 → 首次赋值的行号。
-		// 只认本文件内的赋值：变量若由 include/yield 从别处传进来，取值域不在这里判。
 		assigned := map[string]map[string]int{}
 		for i, line := range lines {
 			for _, m := range reToneAssign.FindAllStringSubmatch(line, -1) {
@@ -493,7 +406,6 @@ func head(list []string, n int) []string {
 	return list[:n]
 }
 
-// collectCSSAuditFacts 扫描定义侧与使用侧。
 func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 	t.Helper()
 	f := cssAuditFacts{
@@ -515,11 +427,10 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	// 定义侧：static/css/*.css
 	for _, p := range mustGlob(t, "static/css/*.css") {
 		addDefined(rel(t, p), readFile(t, p), true)
 	}
-	// 定义侧：static/vendor/**/*.css（trix 等第三方基座，模板确实在用它）
+
 	filepath.WalkDir("static/vendor", func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".css") {
 			return nil
@@ -535,7 +446,6 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		return strings.HasSuffix(p, ".js") && !strings.HasSuffix(p, ".min.js") && !strings.HasSuffix(p, ".test.cjs")
 	})
 
-	// 使用侧（宽松）：全部模板 + 全部 JS 文本 token
 	for _, p := range append(append([]string{}, tplFiles...), jsFiles...) {
 		src := readFile(t, p)
 		for _, tok := range reAuditLooseToken.FindAllString(src, -1) {
@@ -543,7 +453,6 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	// 定义侧：模板内联 <style>
 	for _, p := range tplFiles {
 		src := readFile(t, p)
 		for _, m := range reAuditInlineCSS.FindAllStringSubmatch(src, -1) {
@@ -551,17 +460,6 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	// 使用侧（弱证据）：Go 代码里拼的 HTML class 字面量。
-	//
-	// 防的是 wb-node-actions / wb-node-flag 那次实锤盲区：它们由
-	// internal/module/workbench/inbound/http/outline_handle.go 用 sb.WriteString 拼出，
-	// 模板与 JS 里都看不见 —— 清账批第一遍把这两条**在用**的规则当死样式删了，
-	// 靠工作台浏览器抽查发现 11 个元素带类才还原。这条扫描补的就是这个缺口。
-	// 范围取整棵 internal 树（排除本包与 _test.go）：会拼 HTML 的 Go 代码不止 module 一处
-	// （builder 的组件 Go、pipeline 的守卫也在拼），只扫 module 等于留同类盲区。
-	// 口径刻意弱：只认能静态确定的 token，拼接（+ / %s / 反引号变量 / {{…}}）整体跳过；
-	// 并且**只当「有人用」的证据**（looseTokens），不进方向 A —— Go 侧常与运行时值拼接，
-	// 进 A 会把变量名当类名报红。
 	for _, p := range walkFiles(t, filepath.Join("..", "..", "internal"), func(p string) bool {
 		slashed := filepath.ToSlash(p)
 		return strings.HasSuffix(slashed, ".go") && !strings.HasSuffix(slashed, "_test.go") &&
@@ -575,7 +473,6 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	// 使用侧（严格）：后台 / 工作台模板的 class 属性 + 控制面 JS 的类名字面量
 	for _, p := range tplFiles {
 		r := rel(t, p)
 		if !strings.HasPrefix(r, "admin/") && !strings.HasPrefix(r, "workbench/") {
@@ -611,12 +508,10 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 }
 
 var (
-	reGoClassRaw = regexp.MustCompile(`class="([^"]*)"`)       // 反引号字符串里的 HTML
-	reGoClassEsc = regexp.MustCompile(`class=\\"([^\\"]*)\\"`) // 双引号字符串里转义的 HTML
+	reGoClassRaw = regexp.MustCompile(`class="([^"]*)"`)
+	reGoClassEsc = regexp.MustCompile(`class=\\"([^\\"]*)\\"`)
 )
 
-// auditGoClassLiterals 从 Go 源码里取能静态确定的 class token。
-// 含 `+` / 反引号 / `$` / `{{…}}`（拼接或模板变量）的值整体跳过 —— 那里面混的变量名不是类名。
 func auditGoClassLiterals(src string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -638,8 +533,6 @@ func auditGoClassLiterals(src string) []string {
 	return out
 }
 
-// auditClassValue 处理 class="..." 的值。JS 里拼接出来的值（class="edge' + cls + '"）
-// 只取静态前缀，避免把变量名当成类名。
 func auditClassValue(val string, isJS bool, file string, line int, raw string, f cssAuditFacts) {
 	if isJS && reAuditJSConcat.MatchString(val) {
 		if m := reAuditStaticPrefix(val); m != "" {
@@ -664,8 +557,6 @@ func auditClassValue(val string, isJS bool, file string, line int, raw string, f
 	}
 }
 
-// auditJSCalls 处理 classList.add/remove/toggle(...)。参数用括号配对取值，
-// 不用 [^)]* —— 参数里出现 getAttribute('x') 时正则会提前截断，把属性名当成类名。
 func auditJSCalls(line, file string, lineNo int, f cssAuditFacts) {
 	for _, kw := range []string{"classList.add(", "classList.remove(", "classList.toggle("} {
 		idx := 0
@@ -681,7 +572,6 @@ func auditJSCalls(line, file string, lineNo int, f cssAuditFacts) {
 	}
 }
 
-// balancedArg 传入以 '(' 开头的串，返回与它配对的内容（不含两端括号）。
 func balancedArg(s string) string {
 	depth := 0
 	for i := 0; i < len(s); i++ {
@@ -698,12 +588,10 @@ func balancedArg(s string) string {
 	return s[1:]
 }
 
-// auditJSLiterals 从 JS 表达式里取类名字面量（先剔除比较值、属性名、|| 兜底值，
-// 这三类都是「长得像类名但不是类名」的常见来源）。
 func auditJSLiterals(expr string, file string, line int, raw string, f cssAuditFacts) {
 	expr = stripJSCodeNoise(expr)
 	if reAuditJSConcat.MatchString(expr) {
-		// 拼接表达式：只认静态串里以 '-' 结尾的前缀（'is-drop-' + placement 之类）
+
 		for _, m := range reAuditJSLiteral.FindAllStringSubmatch(expr, -1) {
 			lit := m[1]
 			if m[2] != "" {
@@ -738,14 +626,6 @@ func stripJSCodeNoise(s string) string {
 	return reAuditJSOrDeflt.ReplaceAllString(s, " ")
 }
 
-// reAuditStaticPrefix 从拼接表达式里取动态前缀。
-// 只有「以 '-' 结尾的片段」或「单个 token 后面直接跟 +」才算前缀：
-//
-//	'is-drop-' + placement        → is-drop-
-//	class="edge' + cls + '"        → edge-
-//	'media-variant-badge is-' + x  → is-
-//	'btn btn-primary' + (…)        → 无（多 token 是完整类名列表；
-//	                                  硬加前缀会把 btn-* 全族放行，方向 B 就废了）
 func reAuditStaticPrefix(val string) string {
 	head := val
 	if i := strings.Index(val, "+"); i >= 0 {
@@ -760,7 +640,7 @@ func reAuditStaticPrefix(val string) string {
 		if i+1 < len(last) {
 			last = last[i+1:]
 		} else if j := strings.IndexAny(last, "'\""); j > 0 {
-			last = last[:j] // 'edge\'' 这种：引号在末尾，静态片段在它前面
+			last = last[:j]
 		}
 	}
 	if last == "" {
@@ -792,8 +672,6 @@ func auditAddPrefix(f cssAuditFacts, prefix, file string, line int, raw string) 
 	}
 }
 
-// auditCSSClasses 提取 CSS 里的类名。先剥注释 / url() / 字符串，
-// 否则 .png、.5em 这类「长得像类名」的片段会混进来。
 func auditCSSClasses(src string) []string {
 	s := stripCSSComments(src)
 	s = reAuditCSSURL.ReplaceAllString(s, " ")
@@ -874,41 +752,10 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-// 收窄后不再判红、且已逐个核实过的钩子（登记在此备查；它们不进未命中集合，
-// 写进豁免清单会立刻因「不再命中」变红 —— 那是机制的正确行为，不是漏登记）：
-//
-//   · 工作台 JS 生成的 7 个 wb-*（lead 要求逐条核实，结论：全部非缺样式，无需补 CSS）
-//     wb-input              workbench/methods/controls/misc.js:231 —— 容器 div.wb-hint 在
-//                           div.wb-field 内（misc.js:187），外观由 workbench.css:62 的
-//                           `.wb-field input:not([type=checkbox]):not([type=radio])` 后代选择器提供；
-//     wb-preset-item        workbench/methods/canvas.js:120 —— 与 .wb-palette-item 配对写，
-//                           外观来自 workbench.css:51；
-//     wb-preset-thumb       workbench/methods/canvas.js:125 —— 尺寸 / 圆角 / object-fit / 背景全由
-//                           内联 style 给（该处代码注释明写「内联尺寸约束（不改 CSS 文件）」）；
-//     wb-repeater-acts      workbench/methods/controls/repeater.js:242 —— 布局由父 .wb-repeater-row
-//                           决定（workbench.css:317 display:flex; gap:6px; align-items:center）；
-//     wb-faq-answer-field   workbench/methods/controls/repeater.js:92 —— 富文本挂载槽（ctx.panel=ansBox），
-//                           内容由 richTextField 生成、外观来自 .wb-field-richtext（workbench.css:227）；
-//     wb-icon-page-info     workbench/methods/controls/text.js:350 —— 纯文字 span（只 set textContent），
-//                           无尺寸需求、字号靠继承；
-//     wb-richtext-upload-hint workbench/methods/controls/text.js:54 —— 外观全由内联 style 给
-//                           （marginTop / fontSize / lineHeight / color）。
-//
-//   · 模板结构钩子（收窄前 38 条，如 analytics-page / customers-page-table / stock-qty / list-plain）：
-//     全是「完全新家族」的无样式钩子，无外观需求是常态。
-//
-//   · sre-toolbar-btn / sre-toolbar-row（原结论保留）：JS 里与 vendor 的 trix-button /
-//     trix-button-row 配对写（rich-editor/toolbar.js:28、:40），基础外观来自 trix.css。
-//     收窄后 sre 家族在定义侧不存在 → 不再判红，故不留在清单里。
-//   · sre-attachment--accordion / --rule / --table：父名 sre-attachment 已定义（rich-editor.css:219
-//     的卡片外观）→ 仍判红，故留在下面的清单里（理由已写成核实结论）。
-
-// cssUndefinedAllowed —— 方向 A 豁免：收尾清理后只剩 1 条「无样式但被 JS 查询」的功能钩子。
 var cssUndefinedAllowed = map[string]string{
 	"wb-confirm-ok": "功能钩子（**不能只看类名有没有样式**）：static/js/ui/confirm.js:45 用 `dlg.querySelector('.wb-confirm-ok')` 查询它来接管确认按钮的提交；同元素另有 btn / btn-primary 基座类给外观，但真正让确认框能用的是这个查询 —— 属「无样式但有人在查」的类，**勿删**",
 }
 
-// cssUnusedAllowed —— 方向 B 豁免：清账批收口后只剩 4 条「不是死样式」的类（站点产物侧 3 条 + vendor 运行时 1 条）。
 var cssUnusedAllowed = map[string]string{
 	"sky-image-missing":   "站点产物侧：workbench.css:536 注释「媒体缺失占位（媒体库已删除时渲染，不阻塞编译）」—— 消费者是构建期产出的占位片段，本仓模板/JS 静态扫不到是正常的（同族实例见 internal/builder/components/socialbuttons/socialbuttons.jet 渲染的 .sky-social-fallback），**不是死样式，勿删**",
 	"sky-social-fallback": "站点产物侧：由构建期组件 internal/builder/components/socialbuttons/socialbuttons.jet:1 渲染（`<span class=\"sky-social-fallback\">`），消费者在前台产物里，本仓模板/JS 零命中是正常的，**不是死样式，勿删**",

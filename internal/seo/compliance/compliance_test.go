@@ -1,23 +1,16 @@
 package compliance
 
-// compliance_test.go — 规则表的就近单测（纯函数，不碰库、不读盘）。
-//
-// 用例组织方式是「一份产物 + 期望命中的规则集合」：报告是对外输出，判断的粒度必须是
-// 规则 id（不是「有没有结论」）—— 只断言「有结论」的测试在规则写错时会照样绿。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 )
 
-// htmlDoc 组装一份形状与 builder 产物一致的文档（head 内容由用例给定）。
 func htmlDoc(lang, head string) []byte {
 	return []byte("<!DOCTYPE html>\n<html lang=\"" + lang + "\">\n<head>\n<meta charset=\"utf-8\">\n" +
 		head + "</head>\n<body><main id=\"main-content\"></main></body>\n</html>\n")
 }
 
-// baseHead 一份「处处合规」的 head：标题 + canonical + JSON-LD（name/url 与视图一致）。
 func baseHead(title, canonical string) string {
 	ld := map[string]any{
 		"@context": "https://schema.org", "@type": "WebPage",
@@ -29,7 +22,6 @@ func baseHead(title, canonical string) string {
 		"<script type=\"application/ld+json\">" + string(b) + "</script>\n"
 }
 
-// rulesOf 取结论里的规则 id 集合。
 func rulesOf(rep *Report) map[string]int {
 	out := map[string]int{}
 	for _, f := range rep.Findings {
@@ -38,14 +30,10 @@ func rulesOf(rep *Report) map[string]int {
 	return out
 }
 
-// artifacts 两个语言的站点语言表（默认语言 zh-CN 不带前缀，en-US 带 /en）。
 func twoLangs() []LangRule {
 	return []LangRule{{Code: "zh-CN", Prefix: ""}, {Code: "en-US", Prefix: "/en"}}
 }
 
-// TestInspectBaselineClean 合规产物必须一条结论都不产生。
-//
-// 这是「不误报」的基线：校验器最容易的失败方式是天天喊狼来了，那它就等于不存在。
 func TestInspectBaselineClean(t *testing.T) {
 	rep := Inspect(Artifact{
 		URL: "/about", Lang: "zh-CN", ArtifactHash: "h1",
@@ -135,12 +123,11 @@ func TestInspectCanonicalLanguageWithSiteBase(t *testing.T) {
 	}
 }
 
-// TestInspectRules 逐条规则：给定产物形状 → 必须命中指定的规则 id。
 func TestInspectRules(t *testing.T) {
 	cases := []struct {
 		name    string
 		art     Artifact
-		want    []string // 期望命中的规则（集合相等，顺序不敏感）
+		want    []string
 		wantLev map[string]Level
 	}{
 		{
@@ -288,7 +275,7 @@ func TestInspectRules(t *testing.T) {
 					}
 				}
 			}
-			// 每条结论都必须能定位到页面与产物：报告的可复核性靠这两个字段。
+
 			for _, f := range rep.Findings {
 				if f.URL != c.art.URL {
 					t.Errorf("结论缺少可定位的 URL：%+v", f)
@@ -301,9 +288,6 @@ func TestInspectRules(t *testing.T) {
 	}
 }
 
-// TestInspectDeterministic 同一输入必得同一结论（字节级）。
-//
-// 「确定性」是这次整改的硬要求：结论不能依赖 map 遍历顺序、时间或任何运行时状态。
 func TestInspectDeterministic(t *testing.T) {
 	art := Artifact{
 		URL: "/en/about", Lang: "en-US", ArtifactHash: "h9",
@@ -327,7 +311,6 @@ func TestInspectDeterministic(t *testing.T) {
 	}
 }
 
-// TestRuleRegistryConsistent 规则登记清单与计数常量必须一致。
 func TestRuleRegistryConsistent(t *testing.T) {
 	seen := map[string]bool{}
 	for _, r := range RuleIDs {
@@ -342,9 +325,6 @@ func TestRuleRegistryConsistent(t *testing.T) {
 	}
 }
 
-// ---------- 站点级（跨产物） ----------
-
-// TestInspectSiteReciprocalClean 双向互指的一对产物不产生跨产物结论。
 func TestInspectSiteReciprocalClean(t *testing.T) {
 	zh := Artifact{URL: "/about", Lang: "zh-CN", ArtifactHash: "hz", Langs: twoLangs(),
 		HTML: htmlDoc("zh-CN", baseHead("关于我们", "/about")+
@@ -365,13 +345,12 @@ func TestInspectSiteReciprocalClean(t *testing.T) {
 	}
 }
 
-// TestInspectSiteOneWayIsReported 单向互指必须被指出（用另一侧的实际产物证伪）。
 func TestInspectSiteOneWayIsReported(t *testing.T) {
 	zh := Artifact{URL: "/about", Lang: "zh-CN", ArtifactHash: "hz", Langs: twoLangs(),
 		HTML: htmlDoc("zh-CN", baseHead("关于我们", "/about")+
 			"<link rel=\"alternate\" hreflang=\"zh-CN\" href=\"/about\">\n"+
 			"<link rel=\"alternate\" hreflang=\"en-US\" href=\"/en/about\">\n")}
-	// 英文页只声明了自己：没有回指中文页。
+
 	en := Artifact{URL: "/en/about", Lang: "en-US", ArtifactHash: "he", Langs: twoLangs(),
 		HTML: htmlDoc("en-US", baseHead("About", "/en/about")+
 			"<link rel=\"alternate\" hreflang=\"zh-CN\" href=\"/en/about\">\n"+
@@ -386,7 +365,6 @@ func TestInspectSiteOneWayIsReported(t *testing.T) {
 	}
 }
 
-// TestInspectSiteTargetLangMismatch 互指目标页面的语言与声明不符时以事实为准报出。
 func TestInspectSiteTargetLangMismatch(t *testing.T) {
 	zh := Artifact{URL: "/about", Lang: "zh-CN", ArtifactHash: "hz", Langs: twoLangs(),
 		HTML: htmlDoc("zh-CN", baseHead("关于我们", "/about")+
@@ -411,10 +389,6 @@ func TestInspectSiteTargetLangMismatch(t *testing.T) {
 	}
 }
 
-// TestInspectSiteIgnoresAbsentTargets 目标不在巡检集合里时不下结论（不猜、不误报）。
-//
-// 「A 声明了 B，但 B 压根不存在」属于按激活清单抓取校验的范畴（审计 SEO-01 后半段，
-// 本轮不做）：在只能看到 A 的时候下结论就会产生误报。
 func TestInspectSiteIgnoresAbsentTargets(t *testing.T) {
 	only := Artifact{URL: "/about", Lang: "zh-CN", ArtifactHash: "hz", Langs: twoLangs(),
 		HTML: htmlDoc("zh-CN", baseHead("关于我们", "/about")+
@@ -426,7 +400,6 @@ func TestInspectSiteIgnoresAbsentTargets(t *testing.T) {
 	}
 }
 
-// TestInspectSiteOrderIndependent 入参顺序不影响结论。
 func TestInspectSiteOrderIndependent(t *testing.T) {
 	zh := Artifact{URL: "/about", Lang: "zh-CN", ArtifactHash: "hz", Langs: twoLangs(),
 		HTML: htmlDoc("zh-CN", baseHead("关于我们", "/about"))}

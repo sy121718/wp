@@ -1,16 +1,5 @@
 package support
 
-// pgdsn_test.go — 测试库 DSN 的字段级契约。
-//
-// 与 pkg/database/driver/dsn_test.go 同一个判据、同一个理由：测试基建此前自己拼
-// 关键字格式的 DSN，空密码时 `password= dbname=x` 被 libpq 解析成
-// password="dbname=x"、database="" —— 连不上时报的是 `database "root" does not exist`，
-// 与真因毫无关系。
-//
-// 这条缺陷在应用侧修过（dbdriver.PostgresDSN），测试侧却是同一个坑的另一条分支，
-// 一直靠 POSTGRES_PASSWORD=root / DefaultPGPassword="root" 掩盖着。现在两者共用同一份
-// 构造，这里钉住「测试侧也真的接上了」。
-
 import (
 	"testing"
 	"time"
@@ -40,7 +29,6 @@ func TestPGProbeUsesRealEndpoint(t *testing.T) {
 	}
 }
 
-// TestPgDSNPasswordShapes 各种密码形态都必须无损落到 password 字段，且不吃掉 dbname。
 func TestPgDSNPasswordShapes(t *testing.T) {
 	for _, tc := range []struct{ name, password string }{
 		{"空密码", ""},
@@ -68,7 +56,6 @@ func TestPgDSNPasswordShapes(t *testing.T) {
 	}
 }
 
-// TestPgDSNKeepsTestSpecificParams 测试专用参数不能丢（synchronous_commit=off 是性能前提）。
 func TestPgDSNKeepsTestSpecificParams(t *testing.T) {
 	dsn := pgDSN("127.0.0.1", "5432", "root", "", "wp_test")
 	cfg, err := pgconn.ParseConfig(dsn)

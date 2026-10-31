@@ -40,7 +40,7 @@ func TestRetiredSiteSlotsMigrationKeepsPublishedFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	var retired migrations.Migration
-	// 从真实历史迁移恢复升级前形状，不在测试中手写表结构。
+
 	for _, m := range migrations.All() {
 		if strings.HasPrefix(m.Version, "138-") || m.Version == "688-published-action-dependencies" {
 			if err := db.Exec(m.SQL).Error; err != nil {
@@ -102,7 +102,7 @@ func TestRetiredSiteSlotsMigrationKeepsPublishedFacts(t *testing.T) {
 			t.Fatalf("仅旧依赖可删，显式目标需保留: %v", kinds)
 		}
 	}
-	// 完整正式迁移重放也不得复活历史槽位或回退依赖约束。
+
 	if err := migrations.Run(db); err != nil {
 		t.Fatal(err)
 	}

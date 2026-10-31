@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestSliderCSSPerView 三端 perView 折算成 flex-basis，未设的端整段不产出。
 func TestSliderCSSPerView(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{PerView: PerView{Desktop: 3, Tablet: 2, Mobile: 1}, Gap: "24px"}, &b)
@@ -24,7 +23,6 @@ func TestSliderCSSPerView(t *testing.T) {
 		}
 	}
 
-	// 只设桌面：两端不产出（变量为空 → 声明省略 → 规则不产出）。
 	var solo core.CSSBuckets
 	compileCSS("t", &Props{}, &solo)
 	soloOut := solo.String()
@@ -36,7 +34,6 @@ func TestSliderCSSPerView(t *testing.T) {
 	}
 }
 
-// TestSliderCSSPerViewClamp 每屏张数下限 1、上限 4（再多每屏挤不下东西）。
 func TestSliderCSSPerViewClamp(t *testing.T) {
 	var over core.CSSBuckets
 	compileCSS("t", &Props{PerView: PerView{Desktop: 9, Tablet: 9, Mobile: 9}}, &over)
@@ -49,7 +46,6 @@ func TestSliderCSSPerViewClamp(t *testing.T) {
 	}
 }
 
-// TestSliderCSSSkeleton 骨架与增强样式都在，且没有残留占位。
 func TestSliderCSSSkeleton(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -60,8 +56,7 @@ func TestSliderCSSSkeleton(t *testing.T) {
 		".sky-c-t .sky-slide {",
 		".sky-c-t .sky-slide > * {",
 		".sky-c-t .sky-slider-arrow {",
-		// 圆点在产物里是 <a class="sky-slider-dot">：选择器必须与模板一致（此前写成 button，
-		// 圆点的尺寸与焦点环全部落空），见 slider_a11y_test.go 的交叉断言。
+
 		".sky-c-t .sky-slider-dot.is-active {",
 	} {
 		if !strings.Contains(out, want) {

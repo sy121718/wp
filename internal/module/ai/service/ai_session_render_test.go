@@ -14,10 +14,6 @@ import (
 	"go_wp/internal/uispec"
 )
 
-// renderStubProvider 假工具端口：**按工具名**回不同的 Data。
-//
-// 与 stubToolProvider 的差别就在 Data：展示链路只有「工具交回结构」才走得通，
-// 而结构是按工具名区分的（ui_render 交 spec，业务工具交表/列表）。
 type renderStubProvider struct {
 	specs  []aidto.ToolSpec
 	byTool map[string]aiservice.ToolRunResult
@@ -34,7 +30,6 @@ func (s *renderStubProvider) Run(_ context.Context, _ int64, name, arguments str
 	return aiservice.ToolRunResult{Text: "没有这个工具", Status: aienums.ToolCallStatusFailed}, nil
 }
 
-// uiRenderSpec 一条工具声明（参数形状与真实工具一致：spec 是**一段 JSON 字符串**）。
 func uiRenderSpec() aidto.ToolSpec {
 	return aidto.ToolSpec{
 		Name:        "ui_render",
@@ -43,7 +38,6 @@ func uiRenderSpec() aidto.ToolSpec {
 	}
 }
 
-// uiRenderArgs 把 spec 原文包成 ui_render 的工具入参。
 func uiRenderArgs(t *testing.T, specJSON string) string {
 	t.Helper()
 	raw, err := json.Marshal(map[string]string{"spec": specJSON})
@@ -53,7 +47,6 @@ func uiRenderArgs(t *testing.T, specJSON string) string {
 	return string(raw)
 }
 
-// ordersSpec 一条业务工具声明（取数用）。
 func ordersSpec() aidto.ToolSpec {
 	return aidto.ToolSpec{
 		Name:        "orders_top_products",
@@ -62,7 +55,6 @@ func ordersSpec() aidto.ToolSpec {
 	}
 }
 
-// renderMetaOf 取出结果事件里的 meta.render（没有就回空串）。
 func renderMetaOf(t *testing.T, events []aidto.SessionEventItem) string {
 	t.Helper()
 	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
@@ -78,8 +70,6 @@ func renderMetaOf(t *testing.T, events []aidto.SessionEventItem) string {
 	return ""
 }
 
-// TestUIRenderToolRendersBlocksIntoMeta 展示链路走通：模型给出 spec → 会话层逐块取数 →
-// 视图落进结果事件的 meta.render（页面靠这个键渲染，不进模型上下文）。
 func TestUIRenderToolRendersBlocksIntoMeta(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
@@ -119,7 +109,6 @@ func TestUIRenderToolRendersBlocksIntoMeta(t *testing.T) {
 	_ = waitBody(t, bodies)
 	_ = waitBody(t, bodies)
 
-	// ① 逐块取数：ui_render 之后**又调了**业务工具，且把 limit 带下去了。
 	var tookData bool
 	for _, r := range tools.runs {
 		if strings.HasPrefix(r, "orders_top_products ") && strings.Contains(r, `"limit":5`) {
@@ -130,7 +119,6 @@ func TestUIRenderToolRendersBlocksIntoMeta(t *testing.T) {
 		t.Fatalf("应按积木逐块取数且带 limit，实得调用：%v", tools.runs)
 	}
 
-	// ② 视图落进 meta.render。
 	render := renderMetaOf(t, listSessionEvents(t, sess, res.Session.ID))
 	if render == "" {
 		t.Fatal("结果事件应带 meta.render")
@@ -147,10 +135,6 @@ func TestUIRenderToolRendersBlocksIntoMeta(t *testing.T) {
 	}
 }
 
-// TestUIRenderToolSkipsOversizeRender 视图超过落库上限时**整份不写**（不截断）。
-//
-// 半个 JSON 反序列化必然失败，页面会得到一张永远渲不出来的表；
-// 宁可不渲（页面退化成一条普通消息），也不要写一份坏数据。
 func TestUIRenderToolSkipsOversizeRender(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
@@ -161,7 +145,6 @@ func TestUIRenderToolSkipsOversizeRender(t *testing.T) {
 		t.Fatalf("spec 应能解析：%v", err)
 	}
 
-	// 造一份远超 64KB 的表（2000 行 × 80 字符 ≈ 160KB）。
 	rows := make([][]string, 0, 2000)
 	for i := 0; i < 2000; i++ {
 		rows = append(rows, []string{strings.Repeat("x", 80)})
@@ -190,10 +173,6 @@ func TestUIRenderToolSkipsOversizeRender(t *testing.T) {
 	}
 }
 
-// TestUIRenderToolWithoutDataSkipsRender 工具交回的 Data 不是 spec 时**不渲染**。
-//
-// 这道判据挡的是「哪个工具都能顺手往 meta.render 里塞东西」：只有展示指令才该产生视图，
-// 业务工具的结构是给渲染器吃的原料，不是给页面看的成品。
 func TestUIRenderToolWithoutDataSkipsRender(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)

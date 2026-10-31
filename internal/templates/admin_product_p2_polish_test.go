@@ -94,8 +94,7 @@ func TestProductP2SEOFieldsHaveCounters(t *testing.T) {
 		data map[string]any
 		want int
 	}{
-		// 商品页与品牌页都是 0：SEO 标题 / 描述已分别合并进「商品名 + 副标题」与
-		// 「品牌名 + 品牌描述」（2026-09-30），三处（含分类）都不再有独立输入框。
+
 		{"product_edit", productEditPageData(), 0},
 		{"product_brands", taxonomyBrands(&productdto.BrandResp{ID: "b1", Name: "山野", Slug: "outdoor", Sort: 1, SEOTitle: "标题", SEODescription: "描述"}), 0},
 	}

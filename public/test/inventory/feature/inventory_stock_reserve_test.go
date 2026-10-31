@@ -1,16 +1,3 @@
-// inventory_stock_reserve_test.go — 库存货行建档（迁移 624 / 2026-10 去认领）与预占释放。
-//
-// 覆盖的会红断言：
-//
-//	4  货行建档：同仓同裸码插第二行撞 uq_inventory_stocks_warehouse_sku（提前拦成业务错误）
-//	7  预占不写流水
-//	8  可售不足整单拒绝（第一行 reserved 回到原值）
-//	9  并发预占不超卖（-race）
-//	10 无归属行不进商品侧聚合（只按变体引用的货行清单算）
-//	11 删仓守卫仍拦得住无归属存货
-//	12 建档的自相矛盾输入被拒（数量 > 0 却不跟踪）
-//
-// 全部走真实 PG + 生产迁移 + 真实 service（不手抄 CREATE TABLE）。
 package feature
 
 import (
@@ -25,7 +12,6 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 )
 
-// createStock 建一条无归属（尚未挂到任何商品变体）的货行，走 service 的真实建档路径。
 func createStock(t *testing.T, f *invFixture, warehouseID, sku string, qty int, track bool) *inventorydto.StockResp {
 	t.Helper()
 	res, err := f.inventory.CreateStock(context.Background(), &inventorydto.CreateStockReq{
@@ -38,7 +24,6 @@ func createStock(t *testing.T, f *invFixture, warehouseID, sku string, qty int, 
 	return res
 }
 
-// stockReserved 直读真源表的预占数量（断言落库结果，不经 service）。
 func (f *invFixture) stockReserved(t *testing.T, variantID, warehouseID string) int {
 	t.Helper()
 	var reserved int
@@ -49,7 +34,6 @@ func (f *invFixture) stockReserved(t *testing.T, variantID, warehouseID string) 
 	return reserved
 }
 
-// movementCount 流水总条数（预占 / 释放不写流水，靠它断言）。
 func (f *invFixture) movementCount(t *testing.T) int64 {
 	t.Helper()
 	var n int64
@@ -60,8 +44,6 @@ func (f *invFixture) movementCount(t *testing.T) int64 {
 	return n
 }
 
-// TestStockCreateAndDuplicateCode 验收 4：
-// 无归属行（variant_id / product_id 均 NULL）可建；同仓同裸码插第二行被拒。
 func TestStockCreateAndDuplicateCode(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -73,7 +55,7 @@ func TestStockCreateAndDuplicateCode(t *testing.T) {
 		t.Fatalf("建档后应是 10 件、预占 0、可售 10，实际 %d/%d/%d",
 			row.Quantity, row.ReservedQuantity, row.AvailableQuantity)
 	}
-	// 落库路径也要一致：NULL 必须是 NULL，不是空串。
+
 	var variantID, productID *string
 	if err := f.db.Raw("SELECT variant_id, product_id FROM inventory_stocks WHERE id = ?", row.ID).
 		Row().Scan(&variantID, &productID); err != nil {
@@ -83,21 +65,18 @@ func TestStockCreateAndDuplicateCode(t *testing.T) {
 		t.Fatalf("无归属行的 variant_id / product_id 必须是 NULL，实际 %v / %v", variantID, productID)
 	}
 
-	// 同仓同裸码第二行：提前拦截成可读的业务错误（不是 23505）。
 	if _, err := f.inventory.CreateStock(context.Background(), &inventorydto.CreateStockReq{
 		ProjectID: f.projectID, WarehouseID: wh.ID, SKUCode: "DRAWERSMOKE_001",
 		Quantity: 3, TrackQuantity: true,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrWarehouseSKUCodeTaken)) {
 		t.Fatalf("同仓同码应被拒为 ErrWarehouseSKUCodeTaken，实际 %v", err)
 	}
-	// 加工前缀也要能归一：`SZ_DRAWERSMOKE_002` 在 SZ 仓里应落成裸码。
+
 	if got := createStock(t, f, wh.ID, "SZ_DRAWERSMOKE_002", 1, true); got.SKUCode != "DRAWERSMOKE_002" {
 		t.Fatalf("仓码前缀应被剥成裸码，实际 %q", got.SKUCode)
 	}
 }
 
-// TestReserveWritesNoMovement 验收 7 / 9：
-// 预占只改 reserved_quantity、不写流水；并发预占不超卖。
 func TestReserveWritesNoMovement(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -126,8 +105,6 @@ func TestReserveWritesNoMovement(t *testing.T) {
 		t.Fatalf("预占不得改 quantity：期望 10，实际 %d", got)
 	}
 
-	// 并发：两 goroutine 各预占 6，行上 quantity = 10 → 恰一成一败，reserved = 6。
-	// 先把预占清回 0（各自独立），再跑并发。
 	if err := f.db.Exec("UPDATE inventory_stocks SET reserved_quantity = 0 "+
 		"WHERE variant_id = ? AND warehouse_id = ?", v.ID, wh.ID).Error; err != nil {
 		t.Fatalf("重置预占失败: %v", err)
@@ -163,8 +140,6 @@ func TestReserveWritesNoMovement(t *testing.T) {
 	}
 }
 
-// TestReserveInsufficientRollsBackAllLines 验收 8：
-// 两行预占请求（第一行够、第二行不够）→ 报错后第一行 reserved 回到原值。
 func TestReserveInsufficientRollsBackAllLines(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -183,7 +158,7 @@ func TestReserveInsufficientRollsBackAllLines(t *testing.T) {
 		ProjectID: f.projectID, SourceType: "order", SourceRef: "SO-short",
 		Lines: []inventorydto.ReserveStockLine{
 			{VariantID: v1.ID, Quantity: 5, WarehouseID: wh.ID},
-			{VariantID: v2.ID, Quantity: 9, WarehouseID: wh.ID}, // 只有 2 件
+			{VariantID: v2.ID, Quantity: 9, WarehouseID: wh.ID},
 		},
 	})
 	if !errors.Is(err, inventoryenums.Err(inventoryenums.ErrStockInsufficient)) {
@@ -197,7 +172,6 @@ func TestReserveInsufficientRollsBackAllLines(t *testing.T) {
 	}
 }
 
-// TestReleaseReservation 释放预占：只改 reserved，不改 quantity、不写流水；超释放打回。
 func TestReleaseReservation(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -230,7 +204,7 @@ func TestReleaseReservation(t *testing.T) {
 	if after := f.movementCount(t); after != before {
 		t.Fatalf("释放不得写流水：之前 %d 条，之后 %d 条", before, after)
 	}
-	// 超释放：reserved 已经是 0，再释放 1 件必须打回（不静默夹到 0）。
+
 	if _, err := f.inventory.ReleaseStock(ctx, &inventorydto.ReserveStockReq{
 		ProjectID: f.projectID, SourceType: "order", SourceRef: "SO-release",
 		Lines: []inventorydto.ReserveStockLine{{VariantID: v.ID, Quantity: 1, WarehouseID: wh.ID}},
@@ -239,9 +213,6 @@ func TestReleaseReservation(t *testing.T) {
 	}
 }
 
-// TestOrphanRowsStayOutOfVariantTotals 验收 10：
-// 无归属行（没有任何变体引用它）不进商品侧聚合 —— 641 之后聚合的入口是
-// 「变体引用了哪些货行」，不是 inventory_stocks.variant_id。
 func TestOrphanRowsStayOutOfVariantTotals(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -252,10 +223,9 @@ func TestOrphanRowsStayOutOfVariantTotals(t *testing.T) {
 	p := mustProduct(t, f, "Totals")
 	v := f.firstVariant(t, p.ID)
 	changeIn(t, f, p, v, wh.ID, 5, "purchase_in")
-	// 一条没有变体引用的 7 件货。
+
 	orphan := createStock(t, f, wh.ID, "ORPHAN_007", 7, true)
 
-	// 变体引用的货行 id 清单里只有它自己那条。
 	refs, err := productmodel.NewModel(f.db).ListVariantsByIDs(ctx, []string{v.ID}, f.projectID)
 	if err != nil || len(refs) != 1 {
 		t.Fatalf("读变体失败: %v", err)
@@ -279,15 +249,13 @@ func TestOrphanRowsStayOutOfVariantTotals(t *testing.T) {
 	}
 }
 
-// TestDeleteWarehouseBlockedByOrphanStock 验收 11：
-// 仓里只有一条无归属且有数量的行 → 删仓被拒（不因 variant_id 为空而漏判）。
 func TestDeleteWarehouseBlockedByOrphanStock(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 先建一个默认仓（删仓守卫对默认仓另有拒绝，故被测的仓不是默认仓）。
+
 	f.createWarehouse(t, "SZ", "苏州仓", true)
 	wh := f.createWarehouse(t, "SH", "上海仓", false)
 	createStock(t, f, wh.ID, "ONLY_ORPHAN", 3, true)
@@ -299,7 +267,6 @@ func TestDeleteWarehouseBlockedByOrphanStock(t *testing.T) {
 	}
 }
 
-// TestStockCreateRequiresTrackForQuantity 建档的自相矛盾输入被拒（数量 > 0 却不跟踪）。
 func TestStockCreateRequiresTrackForQuantity(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -315,10 +282,6 @@ func TestStockCreateRequiresTrackForQuantity(t *testing.T) {
 	}
 }
 
-// TestStockAlertCounts 验收（W4 §10.5 ③）：库存预警四卡口径。
-//
-// 构造四行：quantity=0（跟踪）/ quantity=5 reserved=5 / quantity=5 reserved=0 /
-// track_quantity=false → OutOfStock=1, LowStock=1, Alert=2, Total=3。
 func TestStockAlertCounts(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -327,7 +290,6 @@ func TestStockAlertCounts(t *testing.T) {
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
 
-	// ① quantity = 0（跟踪）—— 缺货。
 	p1 := mustProduct(t, f, "预警缺货")
 	v1 := f.firstVariant(t, p1.ID)
 	changeIn(t, f, p1, v1, wh.ID, 1, "purchase_in")
@@ -336,7 +298,6 @@ func TestStockAlertCounts(t *testing.T) {
 		t.Fatalf("把库存改成 0 失败: %v", err)
 	}
 
-	// ② quantity = 5、reserved = 5 —— 货在但全被占住（可售为 0）。
 	p2 := mustProduct(t, f, "预警被占")
 	v2 := f.firstVariant(t, p2.ID)
 	changeIn(t, f, p2, v2, wh.ID, 5, "purchase_in")
@@ -347,24 +308,20 @@ func TestStockAlertCounts(t *testing.T) {
 		t.Fatalf("预占失败: %v", err)
 	}
 
-	// ③ quantity = 5、reserved = 0 —— 健康（不进预警）。
 	p3 := mustProduct(t, f, "预警健康")
 	v3 := f.firstVariant(t, p3.ID)
 	changeIn(t, f, p3, v3, wh.ID, 5, "purchase_in")
 
-	// ④ 跟踪关闭（无限）—— 永远「有货」，不进预警。
 	loose := createStock(t, f, wh.ID, "ALERT_UNTRACKED", 0, false)
 	if loose.TrackQuantity {
 		t.Fatalf("未跟踪行不该是跟踪状态")
 	}
-	// 商品侧自动建的那些初始 0 行也是在跟踪状态 —— 它们会被算进 Total / OutOfStock，
-	// 所以断言用「增量」而不是绝对值：本用例另外造了 4 行，其中 3 行是跟踪的。
+
 	before, err := f.inventory.StockAlert(ctx, f.projectID)
 	if err != nil {
 		t.Fatalf("读库存预警失败: %v", err)
 	}
-	// 已建商品（p1 起）各有一行跟踪库存；p1 的那行是 0（缺货）、p2 的是可售 0（低库存）、
-	// p3 的是健康。所以三个增量分别是 +1 / +1 / +0。
+
 	if before.OutOfStock != 1 {
 		t.Fatalf("缺货应为 1（p1 那一行 quantity=0），实际 %d", before.OutOfStock)
 	}

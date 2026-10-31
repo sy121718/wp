@@ -21,7 +21,6 @@ import (
 	"go_wp/pkg/upload"
 )
 
-// 真实上传→JSON列表→换域名→变体文件→构建引用；不读取开发库。
 func TestMediaAbsoluteURLLifecycle(t *testing.T) {
 	db, svc := newMediaService(t)
 	dir := t.TempDir()
@@ -73,7 +72,7 @@ func TestMediaAbsoluteURLLifecycle(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil || len(listed.Data.List) != 1 || listed.Data.List[0].URL != uploaded.Data.URL {
 		t.Fatalf("列表与上传不一致: %s / %s", recorder.Body.String(), uploaded.Data.URL)
 	}
-	// 历史行里的旧URL不是真源，实际本地file_path决定读取地址。
+
 	oldURL := "/storage/" + key
 	if err := db.Model(&mediamodel.AttachmentEntity{}).Where("id = ?", uploaded.Data.ID).Update("url", oldURL).Error; err != nil {
 		t.Fatal(err)

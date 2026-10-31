@@ -1,18 +1,5 @@
 package productservice_test
 
-// product_publish_record_page_sql_count_test.go — 发布记录页「无状态筛选」档的页内读取判据。
-//
-// 判据三条，都必须会变红：
-//   1. 无状态筛选时，发布端口只收到**本页**的商品 id（100 个商品 → 20 个 id）；
-//      实现回到「先读全工程再内存切页」，第二条立即失败；
-//   2. 空页（无商品 / 关键词无匹配）**一次都不调用**发布端口 —— contract 里
-//      「entityIDs 为空 = 本工程全部」的语义，空页传空切片会让它去读全工程；
-//   3. 读 products 的语句恒为 count + 本页投影两条，且投影带 LIMIT；
-//      回到「全量读 + 内存切片」时投影语句没有 LIMIT，第三条失败。
-//
-// 有状态筛选（active/draft/none）**不适用**这三条：那一列不在 products 表里，
-// 过滤必须发生在与发布登记合并之后，跨模块有界查询另行推进（见证实施记录）。
-
 import (
 	"context"
 	"strings"
@@ -26,7 +13,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// publishRecordBatchProbe 记录发布端口每次收到的商品 id 批次。
 type publishRecordBatchProbe struct {
 	batches [][]string
 }
@@ -36,11 +22,10 @@ func (p *publishRecordBatchProbe) Langs(_ context.Context, _ string, ids []strin
 	return map[string][]productdto.PublishRecordLangResp{}, nil
 }
 
-// TestPublishRecordsUnfilteredReadsOnlyCurrentPage 无状态筛选档：分页在取发布事实之前完成。
 func TestPublishRecordsUnfilteredReadsOnlyCurrentPage(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
-	// products.project_id 有外键，先建工程行再灌商品。
+
 	support.SeedProjectRow(t, db, projectID, "发布记录分页判据")
 	seedListProductsBulk(t, db, projectID, 1, 100)
 

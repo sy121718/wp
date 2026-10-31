@@ -15,7 +15,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// newProjectService 创建隔离 PG schema 并 AutoMigrate projects/themes 两表。
 func newProjectService(t *testing.T) *projectservice.Service {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
@@ -26,8 +25,7 @@ func newProjectService(t *testing.T) *projectservice.Service {
 	if err := db.AutoMigrate(&projectmodel.ProjectEntity{}, &projectmodel.ThemeEntity{}); err != nil {
 		t.Fatalf("AutoMigrate projects/themes 失败: %v", err)
 	}
-	// 主题用例的工程 id 由 newProjectID 生成并补真实工程行（见 theme_service_test.go）：
-	// 工程作用域要靠工程表枚举，主题的归属工程必须真的在 projects 里。
+
 	themeTestDB = db
 	t.Cleanup(func() { themeTestDB = nil })
 	return projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -43,8 +41,6 @@ func wantErrContain(t *testing.T, err error, msg string) {
 	}
 }
 
-// assertJSONEqual 按 JSON 语义比较（PG jsonb 规范化存储会重排键序/空格，
-// 精确字符串比较会误报）。
 func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	t.Helper()
 	var gotV, wantV any
@@ -59,15 +55,12 @@ func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
-// TestProjectCreateNilRejected 创建工程：nil 请求被拒绝，返回参数错误
-// （ErrInvalidParam）而非名称校验错误（ErrInvalidName 语义只针对名称本身）。
 func TestProjectCreateNilRejected(t *testing.T) {
 	svc := newProjectService(t)
 	_, err := svc.Create(context.Background(), nil)
 	wantErrContain(t, err, projectenums.ErrInvalidParam)
 }
 
-// TestProjectCreateBlankNameRejected 创建工程：空白名被拒绝。
 func TestProjectCreateBlankNameRejected(t *testing.T) {
 	svc := newProjectService(t)
 	for _, name := range []string{"", "   ", "\t\n"} {
@@ -76,7 +69,6 @@ func TestProjectCreateBlankNameRejected(t *testing.T) {
 	}
 }
 
-// TestProjectCreateNameBoundary 创建工程：200 字边界（200 放行、201 拒绝）。
 func TestProjectCreateNameBoundary(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -98,7 +90,7 @@ func TestProjectCreateNameBoundary(t *testing.T) {
 	})
 
 	t.Run("多字节边界", func(t *testing.T) {
-		// 20 个 emoji（每个 4 字节）应被 RuneCount 计为 20 个字符而非 80 字节。
+
 		name := strings.Repeat("😀", 20)
 		res, err := svc.Create(ctx, &projectdto.CreateReq{Name: name})
 		if err != nil {
@@ -110,7 +102,6 @@ func TestProjectCreateNameBoundary(t *testing.T) {
 	})
 }
 
-// TestProjectCreateSettingsVariants 创建工程：settings 各形态。
 func TestProjectCreateSettingsVariants(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -158,7 +149,6 @@ func TestProjectCreateSettingsVariants(t *testing.T) {
 	})
 }
 
-// TestProjectDetailEdge Detail：空请求/空 ID/不存在。
 func TestProjectDetailEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -193,7 +183,6 @@ func TestProjectDetailEdge(t *testing.T) {
 	})
 }
 
-// TestProjectUpdateEdge Update：空请求/空 ID/不存在/空白名/非法 settings/正常更新。
 func TestProjectUpdateEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -236,7 +225,7 @@ func TestProjectUpdateEdge(t *testing.T) {
 			t.Fatalf("更新名称错误: %+v", res)
 		}
 		assertJSONEqual(t, res.Settings, `{"theme":"dark"}`)
-		// 回读验证持久化。
+
 		got, err := svc.Detail(ctx, &projectdto.DetailReq{ID: created.ID})
 		if err != nil {
 			t.Fatalf("回读失败: %v", err)
@@ -248,7 +237,6 @@ func TestProjectUpdateEdge(t *testing.T) {
 	})
 }
 
-// TestProjectExistsEdge Exists：空 ID/不存在/存在。
 func TestProjectExistsEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -279,9 +267,6 @@ func TestProjectExistsEdge(t *testing.T) {
 	})
 }
 
-// TestNormalizeSettingsThroughCreate normalizeSettings 纯逻辑覆盖：
-// normalizeSettings 为 service 包私有函数且仅被 Create 调用，
-// 故经由 Create 入口逐分支断言其行为。
 func TestNormalizeSettingsThroughCreate(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
@@ -313,7 +298,7 @@ func TestNormalizeSettingsThroughCreate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("合法对象应放行: %v", err)
 		}
-		// Go encoding/json 对 map 键排序，输出应为 {"a":2,"b":1}。
+
 		if string(res.Settings) != `{"a":2,"b":1}` {
 			t.Fatalf("对象应被规范化（键排序），实际: %s", string(res.Settings))
 		}

@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestQuoteCSSRules 迁移到 quote.css 后逐条核对关键规则，并确认居中分支是可选声明。
 func TestQuoteCSSRules(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -28,7 +27,7 @@ func TestQuoteCSSRules(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 未居中时不该产出 text-align。
+
 	if strings.Contains(out, "text-align") {
 		t.Errorf("未配置居中却产出了 text-align:\n%s", out)
 	}

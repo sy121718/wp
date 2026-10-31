@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newLangCtx 构造带语言协商三要素的测试上下文（空串表示该层缺失）。
 func newLangCtx(cookie, query, acceptLang string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 
@@ -31,8 +30,6 @@ func newLangCtx(cookie, query, acceptLang string) *gin.Context {
 	return c
 }
 
-// TestRequestLanguageCookiePriority 覆盖多语言 P1 的协商优先级：
-// Cookie lang > query lang > Accept-Language 首段 > 配置默认语言。
 func TestRequestLanguageCookiePriority(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -64,7 +61,6 @@ func TestRequestLanguageCookiePriority(t *testing.T) {
 	}
 }
 
-// TestRequestLanguageEmptyCookieFallsThrough 空 Cookie 值视为缺失，继续降级到 query。
 func TestRequestLanguageEmptyCookieFallsThrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?lang=en-US", nil)
 	req.Header.Set("Accept-Language", "zh-CN")
@@ -78,7 +74,6 @@ func TestRequestLanguageEmptyCookieFallsThrough(t *testing.T) {
 	}
 }
 
-// TestNormalizeLangExported 验证语言校验出口：合法返回规范化码 + true，非法返回默认语言 + false。
 func TestNormalizeLangExported(t *testing.T) {
 	cases := []struct {
 		raw    string
@@ -103,8 +98,6 @@ func TestNormalizeLangExported(t *testing.T) {
 	}
 }
 
-// TestTranslateUnknownKeyFallback 兜底验证：库中不存在的 key 原样返回（三种形态均不报错、不 panic），
-// 且与语言（含 Cookie 指定的语言）无关 —— 不依赖数据库，未加载缓存时同样成立。
 func TestTranslateUnknownKeyFallback(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -129,7 +122,6 @@ func TestTranslateUnknownKeyFallback(t *testing.T) {
 	}
 }
 
-// TestSetLangCookieAttributes 验证 Cookie 属性：Path=/、HttpOnly、SameSite=Lax、MaxAge 一年。
 func TestSetLangCookieAttributes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -156,7 +148,6 @@ func TestSetLangCookieAttributes(t *testing.T) {
 	}
 }
 
-// TestSetLangCookieNilContext nil 上下文不应 panic。
 func TestSetLangCookieNilContext(t *testing.T) {
 	SetLangCookie(nil, "zh-CN")
 }

@@ -1,15 +1,5 @@
 package pipeline
 
-// guard_test.go — AccessGuard 发布侧（守卫产物生成、位置约定、映射单源）。
-//
-// 两条断言是这次改造的承重墙：
-//   · TestGuardPasswordChangeChangesArtifactHash —— 改密码必须换产物 hash。
-//     否则 PutArtifact 会命中「同 hash 目录已存在」的幂等分支，新 guard.json
-//     永远写不进去，表现是「改了密码还是旧密码生效」；
-//   · TestLocalStorePersistsGuardFiles —— 产物落盘不再硬编码两个文件名。
-//     store.go 里那份硬编码会让 guard.html 永远不落盘，而编译与其它测试
-//     全都看不出来（访问面只能一直走内置兜底页）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"os"
@@ -20,7 +10,6 @@ import (
 	"go_wp/internal/builder"
 )
 
-// testManifest 一个最小可用的 Manifest（NewArtifact* 要求 canonicalPath 与 sourceId）。
 func testManifest(path string) *Manifest {
 	return &Manifest{
 		ManifestSchemaVersion:     ManifestSchemaVersion,
@@ -35,7 +24,6 @@ func testManifest(path string) *Manifest {
 	}
 }
 
-// TestBuildGuardEntriesPublicIsNoop 公开页面不生成任何守卫产物。
 func TestBuildGuardEntriesPublicIsNoop(t *testing.T) {
 	for _, access := range []*builder.AccessGuardSettings{
 		nil,
@@ -49,7 +37,6 @@ func TestBuildGuardEntriesPublicIsNoop(t *testing.T) {
 	}
 }
 
-// TestBuildGuardEntriesPasswordCarriesHashAndFingerprint 密码类型生成守卫页与元数据。
 func TestBuildGuardEntriesPasswordCarriesHashAndFingerprint(t *testing.T) {
 	access := &builder.AccessGuardSettings{Type: builder.AccessPassword, PasswordHash: "$2a$10$abcdefghijklmnopqrstuv"}
 	files, meta := BuildGuardEntries(access, "en-US")
@@ -63,11 +50,11 @@ func TestBuildGuardEntriesPasswordCarriesHashAndFingerprint(t *testing.T) {
 	if !ok {
 		t.Fatalf("缺少 %s", GuardPageFileName)
 	}
-	// 守卫页必须是 noindex：少了它搜索引擎会收录「要密码」这一页。
+
 	if !strings.Contains(string(page), "noindex") {
 		t.Error("守卫页缺少 noindex")
 	}
-	// 构建期写入的守卫页带路径占位符（路径由访问面按请求注入）。
+
 	if !strings.Contains(string(page), GuardBackPlaceholder) {
 		t.Error("守卫页缺少路径占位符")
 	}
@@ -88,7 +75,7 @@ func TestBuildGuardEntriesPasswordCarriesHashAndFingerprint(t *testing.T) {
 	if gm.Lang != "en-US" {
 		t.Errorf("元数据语言未记录：%q", gm.Lang)
 	}
-	// Manifest 上的标记只带类型：manifest 可被公开读取，哈希与指纹不进清单。
+
 	markerJSON, merr := json.Marshal(meta)
 	if merr != nil {
 		t.Fatal(merr)
@@ -98,7 +85,6 @@ func TestBuildGuardEntriesPasswordCarriesHashAndFingerprint(t *testing.T) {
 	}
 }
 
-// TestBuildGuardEntriesMembersHasNoPasswordForm 登录可见不提供密码表单。
 func TestBuildGuardEntriesMembersHasNoPasswordForm(t *testing.T) {
 	files, meta := BuildGuardEntries(&builder.AccessGuardSettings{Type: builder.AccessMembers}, "zh-CN")
 	if meta == nil || meta.Type != builder.AccessMembers {
@@ -113,7 +99,6 @@ func TestBuildGuardEntriesMembersHasNoPasswordForm(t *testing.T) {
 	}
 }
 
-// TestGuardPasswordChangeChangesArtifactHash 改密码必须换产物 hash。
 func TestGuardPasswordChangeChangesArtifactHash(t *testing.T) {
 	hashOf := func(hash string) string {
 		files, meta := BuildGuardEntries(&builder.AccessGuardSettings{
@@ -132,7 +117,6 @@ func TestGuardPasswordChangeChangesArtifactHash(t *testing.T) {
 	}
 }
 
-// TestGuardDoNotChangePublicArtifactHash 公开页面不因新增能力而改变产物字节。
 func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
 	newPublic := func() *Artifact {
 		a, err := NewArtifact([]byte("<html>page</html>"), testManifest("/about"))
@@ -142,7 +126,7 @@ func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
 		return a
 	}
 	a := newPublic()
-	// access 字段必须被 omitempty 省略，否则一次升级会改掉全站产物 hash。
+
 	encoded, err := EncodeManifest(&a.Manifest)
 	if err != nil {
 		t.Fatalf("编码失败: %v", err)
@@ -155,7 +139,6 @@ func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
 	}
 }
 
-// TestLocalStorePersistsGuardFiles 产物落盘按 Entries 写，guard.html 真的落盘。
 func TestLocalStorePersistsGuardFiles(t *testing.T) {
 	store := &LocalStore{Root: t.TempDir()}
 	files, meta := BuildGuardEntries(&builder.AccessGuardSettings{
@@ -177,20 +160,19 @@ func TestLocalStorePersistsGuardFiles(t *testing.T) {
 			t.Errorf("%s 未落盘: %v（store 是否还在硬编码文件名？）", name, serr)
 		}
 	}
-	// 落盘的守卫页必须能被访问面读出来（位置约定同源）。
+
 	if _, ok := GuardPageBody(dir); !ok {
 		t.Error("GuardPageBody 读不到刚落盘的守卫页")
 	}
 	if got, gerr := ReadGuardMeta(dir); gerr != nil || got == nil {
 		t.Errorf("ReadGuardMeta 读不到刚落盘的元数据: %v", gerr)
 	}
-	// 幂等重放必须一致（同 hash 不覆盖）。
+
 	if _, err := store.PutArtifact(a); err != nil {
 		t.Errorf("重复落盘应幂等成功: %v", err)
 	}
 }
 
-// TestNewArtifactWithEntriesRejectsBadNames 伴随文件重名与越界路径一律拒绝。
 func TestNewArtifactWithEntriesRejectsBadNames(t *testing.T) {
 	if _, err := NewArtifactWithEntries([]byte("x"), testManifest("/a"), map[string][]byte{
 		"index.html": []byte("dup"),
@@ -204,15 +186,14 @@ func TestNewArtifactWithEntriesRejectsBadNames(t *testing.T) {
 	}
 }
 
-// TestReadGuardMetaMissingVsCorrupted 存在性判据与 fail closed 的分界。
 func TestReadGuardMetaMissingVsCorrupted(t *testing.T) {
 	dir := t.TempDir()
-	// 不存在 → (nil, nil)：访问面据此放行。
+
 	got, err := ReadGuardMeta(dir)
 	if err != nil || got != nil {
 		t.Fatalf("缺失期望 (nil, nil)，实际 (%v, %v)", got, err)
 	}
-	// 存在但解析失败 → error：访问面据此 fail closed。
+
 	if werr := os.WriteFile(filepath.Join(dir, GuardMetaFileName), []byte("{not json"), 0o644); werr != nil {
 		t.Fatal(werr)
 	}
@@ -221,7 +202,6 @@ func TestReadGuardMetaMissingVsCorrupted(t *testing.T) {
 	}
 }
 
-// TestGuardPageWithPathEscapes 注入的站点路径必须 HTML 转义（否则是一处反射 XSS）。
 func TestGuardPageWithPathEscapes(t *testing.T) {
 	page := RenderGuardPage(GuardMeta{Type: builder.AccessPassword}, GuardBackPlaceholder, false)
 	out := string(GuardPageWithPath(page, `/a"onmouseover="alert(1)`))
@@ -233,7 +213,6 @@ func TestGuardPageWithPathEscapes(t *testing.T) {
 	}
 }
 
-// TestGuardFingerprint 指纹随哈希变化且稳定。
 func TestGuardFingerprint(t *testing.T) {
 	a := GuardFingerprint("hash-a")
 	if a == "" || len(a) != 32 {
@@ -250,11 +229,9 @@ func TestGuardFingerprint(t *testing.T) {
 	}
 }
 
-// TestResolveActiveEntryMapping 条目映射单源：访问面与守卫共用一条规则。
 func TestResolveActiveEntryMapping(t *testing.T) {
 	root := t.TempDir()
-	// 符号链接目标与生产同规则（LocalPublicationStore.Activate）：
-	// 上溯层数 = 路径段数 + 1，目标是相对链接。
+
 	mk := func(entry string) {
 		dirName := "h-" + strings.ReplaceAll(entry, "/", "_")
 		dir := filepath.Join(root, "artifacts", dirName)
@@ -284,10 +261,10 @@ func TestResolveActiveEntryMapping(t *testing.T) {
 	}{
 		{"", "index", true},
 		{"about", "about", true},
-		// 显式文件名写法必须归到同一条目 —— 否则守卫被 `/about/index.html` 绕过。
+
 		{"about/index.html", "about", true},
 		{"about/", "about", true},
-		// 页面 URL 真叫 /foo/index.html 时，它有自己的产物，不能归到 foo。
+
 		{"foo/index.html", "foo/index.html", true},
 		{"ghost", "", false},
 		{"../escape", "", false},
@@ -300,7 +277,6 @@ func TestResolveActiveEntryMapping(t *testing.T) {
 	}
 }
 
-// TestCleanSiteRelRejectsTraversal 归一的越界判据（守卫与静态面共用）。
 func TestCleanSiteRelRejectsTraversal(t *testing.T) {
 	cases := []struct {
 		raw  string
@@ -322,7 +298,6 @@ func TestCleanSiteRelRejectsTraversal(t *testing.T) {
 	}
 }
 
-// TestPageGuardEntriesFromDocument 从冻结的 Page Document 取访问设置。
 func TestPageGuardEntriesFromDocument(t *testing.T) {
 	doc := []byte(`{"settings":{"access":{"type":"password","passwordHash":"$2a$10$abcdefghijklmnopqrstuv"}},"root":[]}`)
 	files, meta, err := PageGuardEntries(doc, "zh-CN")
@@ -332,17 +307,16 @@ func TestPageGuardEntriesFromDocument(t *testing.T) {
 	if meta == nil || meta.Type != builder.AccessPassword || files == nil {
 		t.Fatalf("期望生成守卫产物，实际 meta=%+v files=%v", meta, files)
 	}
-	// 没有 access 字段的存量文档：不生成（行为与加能力前逐字一致）。
+
 	if files, meta, err := PageGuardEntries([]byte(`{"root":[]}`), "zh-CN"); err != nil || files != nil || meta != nil {
 		t.Fatalf("公开文档不应生成守卫产物，实际 err=%v meta=%+v", err, meta)
 	}
-	// 坏文档必须报错（构建失败），绝不能按公开出产物。
+
 	if _, _, err := PageGuardEntries([]byte(`{not json`), "zh-CN"); err == nil {
 		t.Fatal("坏文档必须报错，而不是按公开放行")
 	}
 }
 
-// TestBuildGuardEntriesUnknownTypeFailsClosed 未知类型照样生成守卫（谁都进不去）。
 func TestBuildGuardEntriesUnknownTypeFailsClosed(t *testing.T) {
 	files, meta := BuildGuardEntries(&builder.AccessGuardSettings{Type: "sso"}, "zh-CN")
 	if meta == nil || files == nil {

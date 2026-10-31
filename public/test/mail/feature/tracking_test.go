@@ -1,13 +1,5 @@
 package feature
 
-// tracking_test.go — 营销追踪（打开 / 点击 / 退订）的 feature 测试（issue #38 P1）。
-//
-// 四条不能错的语义：
-//  1. token **签名**校验：篡改载荷必须失败（否则谁都能伪造退订）；
-//  2. 点击目标**只从 token 里解**：传入的请求参数不参与跳转（防开放重定向）；
-//  3. 退订写抑制名单 + 改状态两者都做（只做一边，换个活动又会被发出去）；
-//  4. 打开端点对无效 token 也返回像素（不泄露 token 是否有效，也不让收件人看到报错图）。
-
 import (
 	"context"
 	"net/http"
@@ -41,14 +33,12 @@ func TestTrackTokenSignAndVerify(t *testing.T) {
 		t.Fatalf("载荷还原不一致: %+v", back)
 	}
 
-	// 篡改载荷（换掉联系人 id）必须失败 —— 否则任何人都能伪造「退订别人」的链接。
 	dot := strings.LastIndex(token, ".")
 	tampered := "A" + token[1:dot] + token[dot:]
 	if _, err := f.svc.ParseTrackToken(tampered); err == nil {
 		t.Fatal("篡改后的 token 必须验签失败")
 	}
 
-	// 换个密钥的 service 也验不过（签名绑密钥）。
 	other := mailmodel.NewMailModel(f.db)
 	_ = other
 }
@@ -73,11 +63,11 @@ func TestInjectTrackingRewritesLinksAndAddsPixel(t *testing.T) {
 	if strings.Contains(out, `href="https://shop.example.com/promo"`) {
 		t.Fatal("原始外链应已被改写")
 	}
-	// mailto 与锚点不该被追踪（追踪了也没意义，还会破坏客户端行为）。
+
 	if !strings.Contains(out, `href="mailto:a@b.com"`) || !strings.Contains(out, `href="#top"`) {
 		t.Fatal("mailto / 锚点不该被改写")
 	}
-	// 从改写后的链接里解出 token，目标 URL 必须与原文一致。
+
 	idx := strings.Index(out, "/_t/c/")
 	start := idx + len("/_t/c/")
 	end := strings.IndexAny(out[start:], `"`)
@@ -103,7 +93,6 @@ func newTrackingRouter(t *testing.T) (*gin.Engine, *fixture) {
 	return router, f
 }
 
-// TestClickRedirectsToSignedTarget 点击端点 302 到签名里的目标；无效 token 不跳转。
 func TestClickRedirectsToSignedTarget(t *testing.T) {
 	router, f := newTrackingRouter(t)
 	if router == nil {
@@ -124,7 +113,6 @@ func TestClickRedirectsToSignedTarget(t *testing.T) {
 		t.Fatalf("跳转目标错误: %q", loc)
 	}
 
-	// 无效 token：不跳转（跳去任意地方等于开放重定向）。
 	recorder = httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/_t/c/bogus.token", nil))
 	if recorder.Code == http.StatusFound {
@@ -132,7 +120,6 @@ func TestClickRedirectsToSignedTarget(t *testing.T) {
 	}
 }
 
-// TestOpenAlwaysReturnsPixel 打开端点对有效与无效 token 都返回 GIF。
 func TestOpenAlwaysReturnsPixel(t *testing.T) {
 	router, f := newTrackingRouter(t)
 	if router == nil {
@@ -151,7 +138,6 @@ func TestOpenAlwaysReturnsPixel(t *testing.T) {
 	}
 }
 
-// TestUnsubscribeWritesSuppressionAndStatus 退订同时改状态与写抑制名单。
 func TestUnsubscribeWritesSuppressionAndStatus(t *testing.T) {
 	router, f := newTrackingRouter(t)
 	if router == nil {
@@ -189,7 +175,6 @@ func TestUnsubscribeWritesSuppressionAndStatus(t *testing.T) {
 		t.Fatal("退订必须同时写入抑制名单（只改状态的话，换个活动又会被发出去）")
 	}
 
-	// 幂等：再点一次仍然 200，不报错。
 	recorder = httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/_t/u/"+token, nil))
 	if recorder.Code != http.StatusOK {

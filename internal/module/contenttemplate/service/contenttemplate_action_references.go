@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/builder/source"
 )
 
-// ListActionTargetReferences 合并本模块当前可编辑文档与实际产物依赖，读取失败不当作无引用。
 func (s *Service) ListActionTargetReferences(ctx context.Context, projectID, targetKind, targetID string) ([]source.ActionTargetReference, error) {
 	rows, err := s.m.List(ctx, projectID, "")
 	if err != nil {

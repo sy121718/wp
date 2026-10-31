@@ -1,8 +1,5 @@
 package unit
 
-// new_components_test.go — 第一批 WD 参照组件编译链路：
-// slider（容器型轮播）/ list / infobox / social_buttons / video。
-
 import (
 	"strings"
 	"testing"
@@ -164,7 +161,6 @@ func TestVideoLocalMp4(t *testing.T) {
 	}
 }
 
-// 确保新组件已注册（Types 含全部）。
 func TestNewComponentsRegistered(t *testing.T) {
 	types := core.Types()
 	for _, want := range []string{"core.slider", "core.list", "core.infobox", "core.social_buttons", "core.video"} {
@@ -191,12 +187,11 @@ func TestTabsRendersRadioHack(t *testing.T) {
 	if !strings.Contains(html, "sky-tabs-radio") || !strings.Contains(html, "参数面板") || !strings.Contains(html, "评价面板") {
 		t.Fatalf("页签结构缺失: %s", html[:400])
 	}
-	// 切换用 :has() 而不是「radio:checked ~ 面板」：radio 现在与标签同处导航容器（读屏才把
-	// 单选组读成一组），已不是面板的前兄弟。
+
 	if !strings.Contains(css, ":has(") || !strings.Contains(css, ":checked)") {
 		t.Fatalf("页签切换 CSS 缺失（应为 :has(...:checked) 形式）: %s", css[:300])
 	}
-	// radio 不能 display:none —— 那会让它离开键盘序列，键盘用户无法切换页签。
+
 	for _, line := range strings.Split(css, "\n") {
 		if strings.Contains(line, "sky-tabs-radio") && strings.Contains(line, "display: none") {
 			t.Fatalf("页签 radio 被 display:none 隐藏（键盘不可达）: %s", strings.TrimSpace(line))
@@ -252,7 +247,7 @@ func TestAccordionRendersDetails(t *testing.T) {
 		if summary == nil || summary.Data != "summary" {
 			t.Fatalf("第 %d 项首个元素必须是原生 summary: %s", i+1, markup)
 		}
-		// 原生 summary 自带 Enter/Space 键盘切换；禁用或移出焦点序列会破坏它。
+
 		if hasAttr(summary, "hidden") || hasAttr(summary, "disabled") || attr(summary, "tabindex") == "-1" || attr(summary, "aria-hidden") == "true" {
 			t.Errorf("第 %d 项 summary 应保持键盘可达: %s", i+1, markup)
 		}
@@ -280,8 +275,7 @@ func TestMarqueeRendersDuplicateTracks(t *testing.T) {
 }
 
 func TestCounterRendersValue(t *testing.T) {
-	// 整数模式（decimals=0）：零 JS 计数——模板不输出 data-* 增强属性，
-	// 数值由 @property <integer> + counter() 在 CSS 里生成。
+
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct1","props":{"start":0,"end":100,"suffix":"+"}}]}`
 	html, css := compileDoc(t, doc)
 
@@ -295,7 +289,6 @@ func TestCounterRendersValue(t *testing.T) {
 		t.Fatalf("CSS 计数规则缺失: %s", css[:400])
 	}
 
-	// 小数位模式：CSS counter 只支持整数，回退内嵌脚本增强（保留 data-*）。
 	doc2 := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct2","props":{"start":0,"end":99.5,"decimals":1}}]}`
 	html2, _ := compileDoc(t, doc2)
 	if !strings.Contains(html2, `data-decimals="1"`) {

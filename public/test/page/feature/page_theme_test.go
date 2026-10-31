@@ -1,8 +1,5 @@
 package feature
 
-// page_theme_test.go — 页面挂接主题链路：创建自动挂激活主题、
-// 首个主题创建后回填未挂页面、List 按主题过滤。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -19,7 +16,6 @@ func TestPageThemeBindingAndFilter(t *testing.T) {
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 
-	// 无主题阶段：创建页面不挂主题（ThemeID 空），List 全量可见。
 	first, err := svc.Create(ctx, &pagedto.CreateReq{
 		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
 		DraftPath: "/first", DraftDocument: json.RawMessage(pageDocument),
@@ -31,7 +27,6 @@ func TestPageThemeBindingAndFilter(t *testing.T) {
 		t.Fatalf("无主题时页面不应挂主题: %+v", first)
 	}
 
-	// 工程首个主题自动激活；创建后回填未挂主题的历史页面。
 	theme, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: projectID, Name: "默认主题"})
 	if err != nil {
 		t.Fatalf("创建主题失败: %v", err)
@@ -44,7 +39,6 @@ func TestPageThemeBindingAndFilter(t *testing.T) {
 		t.Fatalf("历史页面应回填到新主题: %+v err=%v", bound, err)
 	}
 
-	// 回填后创建的页面自动挂激活主题；按主题过滤可见、按他主题过滤不可见。
 	second, err := svc.Create(ctx, &pagedto.CreateReq{
 		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
 		DraftPath: "/second", DraftDocument: json.RawMessage(pageDocument),

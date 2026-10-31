@@ -7,10 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestCheckoutFormCSSParsesAndKeepsRules 逐条核对关键规则仍在。
-//
-// 样式源从 Go 字符串迁到 .css 后多了一层解析：解析器写错、选择器替换错、占位指令
-// 没展开，任何一处出错都会让产物「悄悄少了样式」，页面上只表现为「有点不对劲」。
 func TestCheckoutFormCSSParsesAndKeepsRules(t *testing.T) {
 	var b core.CSSBuckets
 	const scope = ".sky-c-test"
@@ -48,7 +44,6 @@ func TestCheckoutFormCSSParsesAndKeepsRules(t *testing.T) {
 	}
 }
 
-// TestCheckoutFormCSSTouchEquivalence 触屏等价形态：按压反馈必须存在（触屏上没有 hover）。
 func TestCheckoutFormCSSTouchEquivalence(t *testing.T) {
 	var b core.CSSBuckets
 	const scope = ".sky-c-test"

@@ -1,4 +1,3 @@
-// Package contenttemplatehttp contenttemplate 模块 HTTP 入口（0-A2）。
 package contenttemplatehttp
 
 import (
@@ -21,17 +20,14 @@ import (
 	"go_wp/pkg/response"
 )
 
-// Handle contenttemplate 接口处理器。
 type Handle struct {
 	svc contenttemplatecontract.ContentTemplateService
 }
 
-// NewHandle 构造。
 func NewHandle(svc contenttemplatecontract.ContentTemplateService) *Handle {
 	return &Handle{svc: svc}
 }
 
-// Create 新建模板。
 func (h *Handle) Create(c *gin.Context) {
 	req, ok := binding.JSON[contenttemplatedto.CreateReq](c)
 	if !ok {
@@ -45,8 +41,6 @@ func (h *Handle) Create(c *gin.Context) {
 	response.SuccessWithMessage(c, contenttemplateenums.MsgCreateSuccess, res)
 }
 
-// Update 更新模板。
-// Activate 切换生效模板（POST /api/contenttemplate/activate）。
 func (h *Handle) Activate(c *gin.Context) {
 	req, ok := binding.JSON[contenttemplatedto.ActivateReq](c)
 	if !ok {
@@ -73,7 +67,6 @@ func (h *Handle) Update(c *gin.Context) {
 	response.SuccessWithMessage(c, contenttemplateenums.MsgUpdateSuccess, res)
 }
 
-// Delete accepts one identifier or a normalized batch and reports each result.
 func (h *Handle) Delete(c *gin.Context) {
 	raw, ok := binding.JSON[map[string]json.RawMessage](c)
 	if !ok {
@@ -128,7 +121,6 @@ func (h *Handle) Delete(c *gin.Context) {
 	response.Success(c, result)
 }
 
-// Get 模板详情。
 func (h *Handle) Get(c *gin.Context) {
 	req, ok := binding.Form[contenttemplatedto.GetReq](c)
 	if !ok {
@@ -142,7 +134,6 @@ func (h *Handle) Get(c *gin.Context) {
 	response.SuccessWithMessage(c, contenttemplateenums.MsgDetailSuccess, res)
 }
 
-// List 模板列表。
 func (h *Handle) List(c *gin.Context) {
 	req, ok := binding.Form[contenttemplatedto.ListReq](c)
 	if !ok {

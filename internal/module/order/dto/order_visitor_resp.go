@@ -2,7 +2,6 @@ package orderdto
 
 import "go_wp/pkg/utils"
 
-// VisitorOrderResp 是订单事实的访客白名单；不含后台备注、成本、归因或访问指纹。
 type VisitorOrderResp struct {
 	ID                 uint64          `json:"id"`
 	OrderNo            string          `json:"orderNo"`
@@ -31,7 +30,6 @@ type VisitorOrderResp struct {
 	CreateTime         utils.JSONTime  `json:"createTime"`
 }
 
-// VisitorOrderItemResp 保留订单成交快照，不公开成本。
 type VisitorOrderItemResp struct {
 	ID           uint64 `json:"id"`
 	ProductName  string `json:"productName"`
@@ -42,7 +40,6 @@ type VisitorOrderItemResp struct {
 	LineTotal    int64  `json:"lineTotal"`
 }
 
-// VisitorOrderLogResp 只公开状态与发生时刻，操作人及后台流水备注不出访客域。
 type VisitorOrderLogResp struct {
 	FromStatus string         `json:"fromStatus"`
 	ToStatus   string         `json:"toStatus"`
@@ -60,7 +57,6 @@ type VisitorOrderListResp struct {
 	Total int64               `json:"total"`
 }
 
-// VisitorReturnResp 申请与退款的事实；不含审核内部备注、收款流水或仓储信息。
 type VisitorReturnResp struct {
 	ID           uint64                   `json:"id"`
 	OrderID      uint64                   `json:"orderId"`

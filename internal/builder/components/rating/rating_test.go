@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestValidateExtra 评分校验：值/上限边界。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -35,7 +34,6 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestEffectiveMax 评分缺省上限。
 func TestEffectiveMax(t *testing.T) {
 	if got := effectiveMax(&Props{}); got != 5 {
 		t.Fatalf("缺省 max=%d, want=5", got)
@@ -45,14 +43,13 @@ func TestEffectiveMax(t *testing.T) {
 	}
 }
 
-// TestBuildView 评分视图：星形填充状态列表。
 func TestBuildView(t *testing.T) {
 	tests := []struct {
 		name     string
 		props    *Props
 		wantLen  int
-		wantFull int // 实心星数（前缀）
-		wantHalf int // 半星数
+		wantFull int
+		wantHalf int
 	}{
 		{"缺省 5 星全空", &Props{}, 5, 0, 0},
 		{"整数 3 星", &Props{Value: 3, Max: 5}, 5, 3, 0},
@@ -89,7 +86,6 @@ func TestBuildView(t *testing.T) {
 	}
 }
 
-// TestBuildViewHalfStar 半星形态：2.5 分含半星，且 points 与全/空星一致（骨架由 rating.jet 渲染）。
 func TestBuildViewHalfStar(t *testing.T) {
 	v := BuildView(&Props{Value: 2.5, Max: 5})
 	var half StarView
@@ -107,7 +103,6 @@ func TestBuildViewHalfStar(t *testing.T) {
 	}
 }
 
-// TestCompileCSS 评分样式编译：容器/星形尺寸/配色。
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Value: 4, Max: 5}, b)

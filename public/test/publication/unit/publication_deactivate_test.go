@@ -9,7 +9,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// TestPublicationDeactivateActive 正常停用：active 行被删除，删除幂等。
 func TestPublicationDeactivateActive(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/live", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
@@ -24,7 +23,6 @@ func TestPublicationDeactivateActive(t *testing.T) {
 	}
 }
 
-// TestPublicationDeactivateMissing 不存在的路径：幂等返回 nil，无副作用。
 func TestPublicationDeactivateMissing(t *testing.T) {
 	svc := newUnitService(t)
 	if err := svc.Deactivate(context.Background(), &pubdto.DeactivateReq{
@@ -37,7 +35,6 @@ func TestPublicationDeactivateMissing(t *testing.T) {
 	}
 }
 
-// TestPublicationDeactivateRepeat 重复停用同一路径：幂等成功。
 func TestPublicationDeactivateRepeat(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/again", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
@@ -50,9 +47,6 @@ func TestPublicationDeactivateRepeat(t *testing.T) {
 	}
 }
 
-// TestPublicationDeactivateReserved 停用未激活（reserved）路径：
-// 当前实现删除条件仅限 page_id IS NOT NULL，不区分 route_kind，
-// 因此 reserved 行也会被删除。固化当前行为；状态机语义判定见报告。
 func TestPublicationDeactivateReserved(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/draft", pubmodel.RouteReserved, strPtr(pageID), nil)
@@ -61,14 +55,12 @@ func TestPublicationDeactivateReserved(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("停用 reserved 路径: %v", err)
 	}
-	// 修复语义：Deactivate 只取消 active 占用，不得误删 reserved（草稿占用）行。
+
 	if n := countRoutes(t, svc, "path = ?", "/draft"); n != 1 {
 		t.Fatalf("reserved 行应保留: %d", n)
 	}
 }
 
-// TestPublicationDeactivatePresentationRow 展示实例占用（page_id 为空）不会被停用：
-// 删除条件要求 page_id IS NOT NULL。
 func TestPublicationDeactivatePresentationRow(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/instance", pubmodel.RouteActive, nil, strPtr(artifactUUID))
@@ -82,8 +74,6 @@ func TestPublicationDeactivatePresentationRow(t *testing.T) {
 	}
 }
 
-// TestPublicationDeactivateNilRequest 空请求返回 ErrInvalidParam（参数错误，
-// 与路径占用不存在语义无关）。
 func TestPublicationDeactivateNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	err := svc.Deactivate(context.Background(), nil)

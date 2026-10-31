@@ -1,9 +1,5 @@
 package unit
 
-// 插件 L1 数据层迁移执行器 feature 测试（真实 PostgreSQL）：
-// 安装携带 migrations 的插件 → schema 创建 → 卸载 → schema 级联删除；
-// 纯展示插件（无 migrations）不建 schema；同版本重装幂等跳过。
-
 import (
 	"archive/zip"
 	"bytes"
@@ -20,18 +16,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// newMigrateService 隔离测试库 + 装配 service（表结构来自生产迁移，理由见 newService），
-// 同时返回裸 *gorm.DB 供断言 schema 存在性。
 func newMigrateService(t *testing.T) (*gorm.DB, *pluginservice.Service) {
 	t.Helper()
-	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
+
 	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
 	grantPluginMigrationCreate(t, db)
 	return db, pluginservice.NewService(pluginmodel.NewModel(db))
 }
 
-// migrationManifest 带 L1 迁移声明的 manifest（migrations 目录 + schemaVersion=1）。
 func migrationManifest(id string) string {
 	return fmt.Sprintf(`{
   "id": "%s",
@@ -48,8 +41,6 @@ func migrationManifest(id string) string {
 }`, id)
 }
 
-// pluginZipWithMigrations 构造含 migrations 目录 + 建表 SQL 的插件 zip。
-// 迁移 SQL 按 docs/06 §8 约定自行包含 CREATE SCHEMA IF NOT EXISTS + 建表。
 func pluginZipWithMigrations(t *testing.T, manifest, schemaName string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -69,7 +60,6 @@ func pluginZipWithMigrations(t *testing.T, manifest, schemaName string) []byte {
 	return buf.Bytes()
 }
 
-// schemaExists 查询 information_schema 判断 schema 是否存在。
 func schemaExists(t *testing.T, db *gorm.DB, schemaName string) bool {
 	t.Helper()
 	var count int64
@@ -79,7 +69,6 @@ func schemaExists(t *testing.T, db *gorm.DB, schemaName string) bool {
 	return count > 0
 }
 
-// TestPluginMigrateInstallUninstall 安装建 schema → 卸载级联 drop。
 func TestPluginMigrateInstallUninstall(t *testing.T) {
 	db, svc := newMigrateService(t)
 	if svc == nil {
@@ -88,7 +77,7 @@ func TestPluginMigrateInstallUninstall(t *testing.T) {
 	ctx := context.Background()
 	const id = "marketing"
 	schemaName := "plugin_" + id
-	// 防御性清理：失败中断时也不残留 schema。
+
 	t.Cleanup(func() { _ = db.Exec(`DROP SCHEMA IF EXISTS "` + schemaName + `" CASCADE`).Error })
 
 	z := pluginZipWithMigrations(t, migrationManifest(id), schemaName)
@@ -98,7 +87,7 @@ func TestPluginMigrateInstallUninstall(t *testing.T) {
 	if !schemaExists(t, db, schemaName) {
 		t.Fatalf("安装后 schema %s 应存在", schemaName)
 	}
-	// 表也应已建好。
+
 	var tbl int64
 	if err := db.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'campaigns'", schemaName).Scan(&tbl).Error; err != nil {
 		t.Fatalf("查询表失败: %v", err)
@@ -106,7 +95,7 @@ func TestPluginMigrateInstallUninstall(t *testing.T) {
 	if tbl == 0 {
 		t.Fatalf("安装后 %s.campaigns 应存在", schemaName)
 	}
-	// 卸载 → schema 级联删除。
+
 	if err := svc.Uninstall(ctx, &plugindto.UninstallReq{ID: id}); err != nil {
 		t.Fatalf("卸载失败: %v", err)
 	}
@@ -115,7 +104,6 @@ func TestPluginMigrateInstallUninstall(t *testing.T) {
 	}
 }
 
-// TestPluginMigratePureDisplay 纯展示插件（无 migrations）不建 schema。
 func TestPluginMigratePureDisplay(t *testing.T) {
 	db, svc := newMigrateService(t)
 	if svc == nil {
@@ -134,7 +122,6 @@ func TestPluginMigratePureDisplay(t *testing.T) {
 	}
 }
 
-// TestPluginMigrateIdempotentReinstall 同版本重装幂等：跳过迁移，schema 保留。
 func TestPluginMigrateIdempotentReinstall(t *testing.T) {
 	db, svc := newMigrateService(t)
 	if svc == nil {
@@ -149,7 +136,7 @@ func TestPluginMigrateIdempotentReinstall(t *testing.T) {
 	if _, err := svc.Install(ctx, z); err != nil {
 		t.Fatalf("首次安装失败: %v", err)
 	}
-	// 第二次安装同版本：应成功且 schema 仍在（幂等跳过迁移）。
+
 	if _, err := svc.Install(ctx, z); err != nil {
 		t.Fatalf("同版本重装失败: %v", err)
 	}

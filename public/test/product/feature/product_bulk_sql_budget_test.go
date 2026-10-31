@@ -1,12 +1,3 @@
-// product_bulk_sql_budget_test.go — 六个批量用例的 SQL 次数对比（task-156，dd.txt §5.4）。
-//
-// 判据不是「循环搬进了 service」，而是「同规模数据下，一条批量用例的 SQL 条数明显少于逐条
-// 调用单条用例」。所以每个用例都造两份等价数据：一份跑批量入口，一份跑单条循环（单条循环就是
-// 改造前控制器的行为），各自计 SQL 条数并断言 批量 < 逐条。
-//
-// 计数方式：给 gorm 会话挂只观察、不改语义的 logger（先例
-// public/test/product/feature/product_tag_page_query_budget_test.go）。夹具数据用批量 SQL 造，
-// 避免「造 N 份数据」本身落在计数窗口里。
 package feature
 
 import (
@@ -33,12 +24,8 @@ import (
 	"go_wp/public/test/support"
 )
 
-// bulkBudgetN 每个用例的操作项数：20 足以摊平「连接预热、第一条语句」的一次性开销，
-// 又远低于 bulkids.MaxIDs（200），不触到上限分支。
 const bulkBudgetN = 20
 
-// pricingBudgetRule 改价用例共用的规则：成本 × 1.5（成本 50 的商品 → 售价 75）。
-// 两个测试文件都用它，避免同一份规则参数抄两遍。
 func pricingBudgetRule() productdto.PricingRuleReq {
 	return productdto.PricingRuleReq{
 		RuleType:   productenums.PricingRuleCostMultiple,
@@ -46,7 +33,6 @@ func pricingBudgetRule() productdto.PricingRuleReq {
 	}
 }
 
-// bulkQueryCounter 记录经过 gorm 的每一条 SQL（含事务的 BEGIN / COMMIT）。
 type bulkQueryCounter struct {
 	mu    sync.Mutex
 	stmts []string
@@ -82,7 +68,6 @@ func (l *bulkQueryCounter) dump() string {
 	return strings.Join(l.stmts, "\n  ")
 }
 
-// bulkFixture 计数夹具：真实 PG + 生产迁移 + 真实 service，只把 model 换成挂了计数 logger 的会话。
 type bulkFixture struct {
 	db       *gorm.DB
 	svc      *productservice.Service
@@ -112,14 +97,12 @@ func (f *bulkFixture) newProject(t *testing.T, name string) string {
 	return p.ID
 }
 
-// seedProductRows 批量造 n 个商品（tagIDs 为 nil 时 tag_ids 为空数组）。
 func seedProductRows(t *testing.T, db *gorm.DB, projectID string, tagIDs []string) []string {
 	t.Helper()
 	ids := make([]string, 0, len(tagIDs))
 	values := make([]string, 0, len(tagIDs))
 	args := make([]any, 0, len(tagIDs)*5)
-	// slug 在工程内唯一（uq_products_project_slug）：同一工程可能被 seed 多次，加一段随机
-	// 前缀，否则第二次插入撞唯一键（实测 23505）。
+
 	batch := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 	for i, tagID := range tagIDs {
 		id := uuid.NewString()
@@ -137,7 +120,6 @@ func seedProductRows(t *testing.T, db *gorm.DB, projectID string, tagIDs []strin
 	return ids
 }
 
-// seedVariantRows 给每个商品各造一个变体（定价用例的成本与售价固定，便于断言「确实改了价」）。
 func seedVariantRows(t *testing.T, db *gorm.DB, productIDs []string, price, cost float64) {
 	t.Helper()
 	values := make([]string, 0, len(productIDs))
@@ -151,7 +133,6 @@ func seedVariantRows(t *testing.T, db *gorm.DB, productIDs []string, price, cost
 	}
 }
 
-// seedTaxonomyRows 批量造 n 个分类 / 品牌 / 标签（三张表的可插列一致：id / project_id / name / slug）。
 func seedTaxonomyRows(t *testing.T, db *gorm.DB, table, projectID, prefix string, n int) []string {
 	t.Helper()
 	ids := make([]string, 0, n)
@@ -169,13 +150,12 @@ func seedTaxonomyRows(t *testing.T, db *gorm.DB, table, projectID, prefix string
 	return ids
 }
 
-// seedAttributeRows 批量造 n 个属性组（属性表用 key / name 两列，与分类品牌标签不同）。
 func seedAttributeRows(t *testing.T, db *gorm.DB, projectID string, n int) []string {
 	t.Helper()
 	ids := make([]string, 0, n)
 	values := make([]string, 0, n)
 	args := make([]any, 0, n*4)
-	// key 在工程内唯一（uq_product_attributes_project_key）：理由同 seedProductRows 的 slug。
+
 	batch := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 	for i := 0; i < n; i++ {
 		id := uuid.NewString()
@@ -189,10 +169,6 @@ func seedAttributeRows(t *testing.T, db *gorm.DB, projectID string, n int) []str
 	return ids
 }
 
-// TestBulkOperationSQLBudget 六个批量用例逐个对比「批量入口」与「单条循环」的 SQL 条数。
-//
-// 逐条循环就是改造前控制器的行为：控制器拿 ID 清单自己 for 循环调单条 service。
-// 断言方向只有一个 —— 批量严格少于逐条；数字本身用 t.Logf 打出来进报告。
 func TestBulkOperationSQLBudget(t *testing.T) {
 	f := newBulkFixture(t)
 	if f == nil {
@@ -203,11 +179,11 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 
 	type bulkCase struct {
 		name string
-		// seed 造 n 份可操作数据，返回要操作的 id 清单（批量工程与逐条工程各调一次）。
+
 		seed func(t *testing.T, projectID string) []string
-		// bulk 调批量入口，返回完成项数（用于断言「真的做了事」，防止空跑得出漂亮数字）。
+
 		bulk func(t *testing.T, ids []string, projectID string) int
-		// loop 调单条入口一次。
+
 		loop func(t *testing.T, id, projectID string)
 	}
 
@@ -294,8 +270,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 			name: "标签批量删除",
 			seed: func(t *testing.T, projectID string) []string {
 				ids := seedTaxonomyRows(t, f.db, "product_tags", projectID, "标签", n)
-				// 每个标签挂一个本工程商品：本工程内引用不阻止删除，但会触发解绑 UPDATE —— 逐条
-				// 与批量两边都要付这个代价，才谈得上同一起跑线。
+
 				seedProductRows(t, f.db, projectID, ids)
 				return ids
 			},

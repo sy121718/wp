@@ -1,4 +1,3 @@
-// Package productbinding 解析构建期当前商品或指定商品引用，不解释任意查询。
 package productbinding
 
 import (
@@ -18,7 +17,6 @@ const (
 	Specific = "specific"
 )
 
-// Validate 保留未选择的编辑中间态，但拒绝非法模式和伪造 ID。
 func Validate(mode, id string) error {
 	if mode != "" && mode != Current && mode != Specific {
 		return fmt.Errorf("未知的商品来源 %q", mode)
@@ -32,7 +30,6 @@ func Validate(mode, id string) error {
 	return nil
 }
 
-// Resolve 复用商品域的受限公开事实接口；草稿缺配置仅标记该节点未完成。
 func Resolve(ctx *core.RenderContext, mode, productID string) (core.ContentResolver, error) {
 	if err := Validate(mode, productID); err != nil {
 		return nil, err
@@ -57,7 +54,7 @@ func Resolve(ctx *core.RenderContext, mode, productID string) (core.ContentResol
 	if data == nil || data.ID != productID {
 		return nil, fmt.Errorf("指定商品返回了不匹配的数据")
 	}
-	// 以下只把事实适配到已有商品字段解析器格式，不复制金额或库存业务计算。
+
 	type value struct {
 		Key   string `json:"key"`
 		Label string `json:"label"`

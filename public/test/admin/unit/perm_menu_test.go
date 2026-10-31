@@ -10,9 +10,6 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
-// --- 权限点 ---
-
-// TestPermCreateSuccess 权限点创建成功，默认启用。
 func TestPermCreateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -36,7 +33,6 @@ func TestPermCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestPermCreateDuplicateCode 重复权限编码被拒绝。
 func TestPermCreateDuplicateCode(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -52,7 +48,6 @@ func TestPermCreateDuplicateCode(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCodeExists)
 }
 
-// TestPermUpdateSuccess 更新权限点名称与路径。
 func TestPermUpdateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -72,7 +67,6 @@ func TestPermUpdateSuccess(t *testing.T) {
 	}
 }
 
-// TestPermUpdateCodeImmutable 权限编码创建后不可修改。
 func TestPermUpdateCodeImmutable(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -85,7 +79,6 @@ func TestPermUpdateCodeImmutable(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCodeImmutable)
 }
 
-// TestPermUpdateDisableAssignedRejected 已分配权限禁止禁用。
 func TestPermUpdateDisableAssignedRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -103,9 +96,6 @@ func TestPermUpdateDisableAssignedRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPermissionAssigned)
 }
 
-// TestPermUpdateDisablePersists 未分配权限点显式更新为 status=0（禁用）落库为禁用。
-// 修复前：PermissionModel.Update 用裸 Updates(struct)，零值 status=0 被跳过，
-// 禁用不落库，权限点保持启用（同 SysRuleEntity.Status default tag 一族的改写问题）。
 func TestPermUpdateDisablePersists(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -127,7 +117,6 @@ func TestPermUpdateDisablePersists(t *testing.T) {
 	}
 }
 
-// TestPermUpdateDefinitionSyncCasbin 更新已分配权限的 path/method 会同步 Casbin 策略。
 func TestPermUpdateDefinitionSyncCasbin(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -151,7 +140,6 @@ func TestPermUpdateDefinitionSyncCasbin(t *testing.T) {
 	}
 }
 
-// TestPermDeleteSuccess 删除未分配、未被菜单引用的权限点。
 func TestPermDeleteSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -164,7 +152,6 @@ func TestPermDeleteSuccess(t *testing.T) {
 	}
 }
 
-// TestPermDeleteNotFound 批量删除存在不存在的 ID 时报错。
 func TestPermDeleteNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -174,7 +161,6 @@ func TestPermDeleteNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPermissionNotFound)
 }
 
-// TestPermDeleteAssignedRejected 已分配权限禁止删除。
 func TestPermDeleteAssignedRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -188,7 +174,6 @@ func TestPermDeleteAssignedRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPermissionAssigned)
 }
 
-// TestPermDeleteMenuReferencedRejected 被菜单引用的权限禁止删除。
 func TestPermDeleteMenuReferencedRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -205,7 +190,6 @@ func TestPermDeleteMenuReferencedRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrMenuReferenced)
 }
 
-// TestPermDetailNotFound 查询不存在的权限点报错。
 func TestPermDetailNotFound(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -214,7 +198,6 @@ func TestPermDetailNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPermissionNotFound)
 }
 
-// TestPermListFilters 权限点列表筛选。
 func TestPermListFilters(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -234,9 +217,6 @@ func TestPermListFilters(t *testing.T) {
 	}
 }
 
-// --- 菜单 ---
-
-// TestMenuCreateSuccess 菜单类型（type=2）创建成功。
 func TestMenuCreateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -256,8 +236,7 @@ func TestMenuCreateSuccess(t *testing.T) {
 	if menu.Path != "/system/user" {
 		t.Fatalf("菜单字段不符: %+v", menu)
 	}
-	// 权限码自迁移 470 起写在关联表里，而且**旧列不再由界面写入**（它只作 seed 的写入通道与
-	// 幂等判据）—— 所以这里同时钉住两件事：关联行有一条，旧列仍为空。
+
 	var linked []string
 	if err := e.db.Table("sys_menu_permission").Where("menu_id = ?", menu.ID).
 		Pluck("permission_code", &linked).Error; err != nil {
@@ -271,7 +250,6 @@ func TestMenuCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestMenuCreateDirectoryRejectsCode 目录/iframe/外链不允许绑定权限编码。
 func TestMenuCreateDirectoryRejectsCode(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -283,7 +261,6 @@ func TestMenuCreateDirectoryRejectsCode(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCodeNotBindable)
 }
 
-// TestMenuCreateMenuRequiresCode 菜单类型必须绑定权限编码。
 func TestMenuCreateMenuRequiresCode(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -294,7 +271,6 @@ func TestMenuCreateMenuRequiresCode(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCodeRequired)
 }
 
-// TestMenuCreateCodeNotEnabled 绑定不存在的权限编码被拒绝。
 func TestMenuCreateCodeNotEnabled(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -305,7 +281,6 @@ func TestMenuCreateCodeNotEnabled(t *testing.T) {
 	wantErr(t, err, adminenums.ErrCodeNotEnabled)
 }
 
-// TestMenuUpdateCircleSelf 菜单不能挂到自己下面。
 func TestMenuUpdateCircleSelf(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -326,14 +301,13 @@ func TestMenuUpdateCircleSelf(t *testing.T) {
 	wantErr(t, err, adminenums.ErrMenuCircle)
 }
 
-// TestMenuUpdateCircleDescendant 菜单不能挂到自己的子孙下面。
 func TestMenuUpdateCircleDescendant(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
 	code := "menu_cir2:" + uniq("")
 	createPerm(t, e, code, "/api/cir2")
-	// 父菜单
+
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "父", Type: adminmodel.MenuTypeMenu, Path: "/p", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
@@ -343,7 +317,7 @@ func TestMenuUpdateCircleDescendant(t *testing.T) {
 	if err := e.db.Where("title = ?", "父").First(&parent).Error; err != nil {
 		t.Fatalf("查询父菜单失败: %v", err)
 	}
-	// 子菜单挂在父下
+
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "子", Type: adminmodel.MenuTypeMenu, Path: "/c",
 		PermissionCodes: []string{code}, ParentID: parent.ID, Status: 1,
@@ -355,14 +329,12 @@ func TestMenuUpdateCircleDescendant(t *testing.T) {
 		t.Fatalf("查询子菜单失败: %v", err)
 	}
 
-	// 把父挂到子下面 → 环
 	err := e.svc.MenuUpdate(ctx, &admindto.MenuUpdateReq{
 		ID: parent.ID, Title: "父", Type: adminmodel.MenuTypeMenu, Path: "/p", PermissionCodes: []string{code}, ParentID: child.ID, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrMenuCircle)
 }
 
-// TestMenuUpdateSystemTypeImmutable 系统内置菜单不允许修改类型。
 func TestMenuUpdateSystemTypeImmutable(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -388,7 +360,6 @@ func TestMenuUpdateSystemTypeImmutable(t *testing.T) {
 	wantErr(t, err, adminenums.ErrMenuIsSystem)
 }
 
-// TestMenuDeleteHasChildren 有子菜单的菜单不可删除。
 func TestMenuDeleteHasChildren(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -415,7 +386,6 @@ func TestMenuDeleteHasChildren(t *testing.T) {
 	wantErr(t, err, adminenums.ErrMenuHasChildren)
 }
 
-// TestMenuDeleteSystemRejected 系统菜单不可删除。
 func TestMenuDeleteSystemRejected(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -439,23 +409,17 @@ func TestMenuDeleteSystemRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrMenuIsSystem)
 }
 
-// TestMenuTreeBuild 菜单树组装：父子挂载、孤儿提升为顶级。
-// 已知缺陷复现：buildMenuTree 把顶级节点以值拷贝放入 roots，而子节点挂载发生在
-// nodeMap 指针上——默认排序（sort_order ASC, id ASC）下父节点先处理，
-// roots 中的父节点副本 Children 恒为空 → 本测试预期「目录下应有 1 个子节点」会失败。
 func TestMenuTreeBuild(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 生产迁移会 seed 一批权限菜单（i18n seed 等）；本用例断言「树里恰好两个顶级」，
-	// 先清空库内菜单保持原意（种子菜单自身的正确性不属本用例范围）。
 	if err := e.db.Exec("DELETE FROM sys_menus").Error; err != nil {
 		t.Fatalf("清理种子菜单失败: %v", err)
 	}
 
 	code := "menu_tree:" + uniq("")
 	createPerm(t, e, code, "/api/tree")
-	// 顶级目录
+
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "顶级目录", Type: adminmodel.MenuTypeDirectory, Path: "/top", Status: 1,
 	}); err != nil {
@@ -465,13 +429,13 @@ func TestMenuTreeBuild(t *testing.T) {
 	if err := e.db.Where("title = ?", "顶级目录").First(&dir).Error; err != nil {
 		t.Fatalf("查询目录失败: %v", err)
 	}
-	// 子菜单
+
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "子菜单X", Type: adminmodel.MenuTypeMenu, Path: "/sub", PermissionCodes: []string{code}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建子菜单失败: %v", err)
 	}
-	// 孤儿（父不存在）
+
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "孤儿菜单", Type: adminmodel.MenuTypeMenu, Path: "/orphan", PermissionCodes: []string{code}, ParentID: 987654, Status: 1,
 	}); err != nil {
@@ -497,7 +461,6 @@ func TestMenuTreeBuild(t *testing.T) {
 	}
 }
 
-// TestMenuSoftDelete 软删除后不再出现在列表与树中。
 func TestMenuSoftDelete(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -524,7 +487,7 @@ func TestMenuSoftDelete(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("软删除后应不可见")
 	}
-	// 原始行仍在（软删除语义）
+
 	var rawCount int64
 	if err := e.db.Model(&adminmodel.MenuEntity{}).Where("id = ?", menu.ID).Count(&rawCount).Error; err != nil {
 		t.Fatalf("查询失败: %v", err)

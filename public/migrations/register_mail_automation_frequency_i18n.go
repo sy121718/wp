@@ -2,9 +2,6 @@ package migrations
 
 import "sync"
 
-// register_mail_automation_frequency_i18n.go — 623a：回信退出的运行文案。
-//
-// 与 623（两列 + 索引）是同一批的两半：623 给**行为**，623a 给**说法**。
 func registerMailAutomationFrequencyI18n() {
 	registerMailAutomationFrequencyI18nOnce.Do(registerMailAutomationFrequencyI18nSeed)
 }

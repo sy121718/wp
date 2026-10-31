@@ -1,14 +1,7 @@
 package orderdto
 
-// order_req_test.go — 请求形状的纯逻辑断言：国家/地区代码的形状约束。
-//
-// 放在 dto 包内就近测：这条规则被两条入口共用（访客结算片段 + 后台代客建单页），
-// 判错了不会报错，只会让某一条入口把 "China" 这样的串写进 VARCHAR(2) 列 ——
-// 那时暴露出来的是一笔建不出来的订单，而不是「这里少了个校验」。
-
 import "testing"
 
-// TestNormalizeCountryCode 恰好两个 ASCII 字母才收，大写归一化，其余一律丢弃。
 func TestNormalizeCountryCode(t *testing.T) {
 	tests := []struct {
 		name string

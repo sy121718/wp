@@ -7,20 +7,17 @@ import (
 	"go_wp/internal/builder"
 )
 
-// mapResolver 简单字段映射 ContentResolver 测试实现。
 type mapResolver map[string]string
 
 func (m mapResolver) ResolveString(field string) (string, error) {
 	return m[field], nil
 }
 
-// headingDoc 构造 heading 节点文档。
 func headingDoc(t *testing.T, props string) *builder.Page {
 	t.Helper()
 	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":`+props+`}]}`)
 }
 
-// TestHeadingStaticCompile 静态文本：语义标签 + 排版全量编译 + 单层无包装。
 func TestHeadingStaticCompile(t *testing.T) {
 	props := `{
 		"text": "核心产品特性介绍",
@@ -57,14 +54,14 @@ func TestHeadingStaticCompile(t *testing.T) {
 		"font-size: 1.75rem",
 		"@media (max-width: 767px)",
 		"font-size: clamp(1.25rem, 4vw, 1.5rem)",
-		"font-weight: 600", // semibold token
+		"font-weight: 600",
 		"letter-spacing: 0.05em",
 		"text-transform: uppercase",
 		"text-decoration: underline #f00",
 		"color: var(--color-primary)",
 		"-webkit-line-clamp: 2",
 		"text-shadow: 0 1px 2px rgba(0,0,0,0.45)",
-		"margin-bottom: 24px", // advanced：部分设置输出长属性
+		"margin-bottom: 24px",
 	} {
 		if !strings.Contains(c.CSS, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, c.CSS)
@@ -72,7 +69,6 @@ func TestHeadingStaticCompile(t *testing.T) {
 	}
 }
 
-// TestHeadingBindingCompile CMS 绑定：发布期静态填入 + 空值 Fallback 兜底。
 func TestHeadingBindingCompile(t *testing.T) {
 	resolver := mapResolver{"post.title": "2026 年度旗舰款无线降噪耳机"}
 	props := `{"binding":{"field":"post.title","fallback":"默认标题"},"tag":"h1"}`
@@ -85,7 +81,6 @@ func TestHeadingBindingCompile(t *testing.T) {
 		t.Errorf("绑定值未静态填入: %s", c.HTML)
 	}
 
-	// 字段为空 → Fallback。
 	empty := mapResolver{"post.title": ""}
 	c2, err := compile(t, headingDoc(t, props), builder.WithContentResolver(empty))
 	if err != nil {
@@ -96,7 +91,6 @@ func TestHeadingBindingCompile(t *testing.T) {
 	}
 }
 
-// TestHeadingBindingMissingResolver 缺内容解析器报明确错误。
 func TestHeadingBindingMissingResolver(t *testing.T) {
 	props := `{"binding":{"field":"post.title"}}`
 	_, err := compile(t, headingDoc(t, props))
@@ -105,7 +99,6 @@ func TestHeadingBindingMissingResolver(t *testing.T) {
 	}
 }
 
-// TestHeadingXSS 文本内容转义。
 func TestHeadingXSS(t *testing.T) {
 	props := `{"text":"<script>alert(1)</script>","tag":"h3"}`
 	c, err := compile(t, headingDoc(t, props))
@@ -120,7 +113,6 @@ func TestHeadingXSS(t *testing.T) {
 	}
 }
 
-// TestHeadingValidateErrors 校验拒绝。
 func TestHeadingValidateErrors(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"无内容", `{"tag":"h2"}`, "必须提供静态文本或 CMS 绑定"},
@@ -144,7 +136,6 @@ func TestHeadingValidateErrors(t *testing.T) {
 		})
 	}
 
-	// 带子节点：children 在节点层（与 props 平级），叶子组件应拒绝。
 	t.Run("带子节点", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"x"},"children":[{"id":"c1","type":"core.heading","props":{"text":"y"}}]}]}`
 		_, err := compile(t, mustParse(t, doc))
@@ -154,7 +145,6 @@ func TestHeadingValidateErrors(t *testing.T) {
 	})
 }
 
-// TestHeadingWeightNumeric 字重直接数值 100~900。
 func TestHeadingWeightNumeric(t *testing.T) {
 	c, err := compile(t, headingDoc(t, `{"text":"x","weight":"800"}`))
 	if err != nil {
@@ -165,7 +155,6 @@ func TestHeadingWeightNumeric(t *testing.T) {
 	}
 }
 
-// TestHeadingDefaultTag 默认标签 h2。
 func TestHeadingDefaultTag(t *testing.T) {
 	c, err := compile(t, headingDoc(t, `{"text":"标题"}`))
 	if err != nil {

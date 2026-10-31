@@ -1,7 +1,5 @@
 package productservice
 
-// 本文件是多个业务主题共用的原语：工程解析、行 JSON 兜底、媒体 URL、slug、分页与取词。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -22,8 +20,6 @@ const (
 	maxPageSize     = 200
 )
 
-// productWriteScopeTx 先按工程协调商品事实和标签归属写入，再设置 RLS。
-// 锁不依赖现有规则行，零规则和手工标签转规则也使用相同顺序。
 func (s *Service) productWriteScopeTx(ctx context.Context, tx *gorm.DB, projectID string) error {
 	id, err := uuid.Parse(projectID)
 	if err != nil {
@@ -36,7 +32,6 @@ func (s *Service) productWriteScopeTx(ctx context.Context, tx *gorm.DB, projectI
 	return rls.ScopeTx(tx, projectID)
 }
 
-// resolveProjectID 解析工程：显式指定优先，否则取唯一工程。
 func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id string, err error) {
 	if projectID != "" {
 		return projectID, nil
@@ -51,7 +46,6 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 	return list[0].ID, nil
 }
 
-// pageArgs 归一化分页参数。
 func pageArgs(req *productdto.ListReq) utils.Paging {
 	inPage, inSize := 0, 0
 	if req != nil {
@@ -60,17 +54,6 @@ func pageArgs(req *productdto.ListReq) utils.Paging {
 	return utils.NormalizePaging(inPage, inSize, defaultPageSize, maxPageSize)
 }
 
-// optionalPaging 归一「可选分页」参数，返回 model 层接受的 (limit, offset)。
-//
-// 与 pageArgs 的关键差别：**两个入参都是零值时返回 (0, 0) = 不分页**。
-// 品牌 / 标签的 Page、Size 是后加的可选字段，同一个请求类型上并存两种调用形态：
-//
-//	· 显式分页 —— 后台列表页给出 Page/Size，要的是「当页 + 总数」；
-//	· 全量取数 —— 集合源筛选选项、内容翻译候选、规则重算的取数来源都传零值，
-//	  它们要的是全部行。这里若按 pageArgs 那样兜底成「第 1 页 20 条」，
-//	  表现为品牌筛选下拉少了一批选项、重算回执少了一批标签 —— 不报错、只是少了。
-//
-// 所以「分页」必须是调用方的显式意图，而不是模型层的默认行为。
 func optionalPaging(page, size int) (limit, offset int) {
 	if page <= 0 && size <= 0 {
 		return 0, 0
@@ -79,21 +62,6 @@ func optionalPaging(page, size int) (limit, offset int) {
 	return paging.Size, paging.Offset
 }
 
-// normalizeSlug 规范化**用户填的** slug：小写、去首尾空白、空格转连字符。
-//
-// 它对内容**只做最小改动**（信任用户），但会**校验结果**：不是合法 URL 段的一律返回空串，
-// 由调用方回退到 deriveSlug。校验放在这里而不是各调用点，是因为全部 9 处调用点
-// （品牌 / 分类 / 标签 / 商品的新建与改名）用的是同一条规则。
-//
-// 为什么必须校验（实测三种坏输入）：
-//
-//	"A&B"   → "a&b"   `&` 在 URL 里是参数分隔符，品牌页地址会被解析成别的东西
-//	"a/b"   → "a/b"   变成多一级路径（/brands/a/b），前端路由与归档页都对不上
-//	"café"  → "café"  非 ASCII 未转义，进 href 要靠浏览器猜
-//
-// 合法的 URL 段：字母、数字、连字符、下划线；首尾不能是连字符（避免 `/brands/-x`）。
-// 中文**允许**：iguide 的站点路径本来就有中文页，强制转拼音会改变既有 URL 的形态，
-// 而且拼音撞车时无从判断该给谁加后缀。所以这里只挡「结构性危险字符」，不挡非 ASCII。
 func normalizeSlug(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -106,13 +74,6 @@ func normalizeSlug(s string) string {
 	return s
 }
 
-// isLegalSlug 判一个已规范化的串能不能当 URL 段。
-//
-// 判据（与 pkg/pathkit 的站内路径规则同源，但不复用它的完整函数：那边处理的是带前导斜杠
-// 的整条路径，这里只是单段）：
-//   - 非空，且首尾不是连字符；
-//   - 字符集：小写字母 / 数字 / 连字符 / 下划线 / 非 ASCII（CJK 等）；
-//   - 不允许 `/`、`?`、`#`、`&`、`=`、`%`、空格与任何控制字符。
 func isLegalSlug(s string) bool {
 	if s == "" || strings.HasPrefix(s, "-") || strings.HasSuffix(s, "-") {
 		return false
@@ -122,7 +83,7 @@ func isLegalSlug(s string) bool {
 		case r >= 'a' && r <= 'z':
 		case r >= '0' && r <= '9':
 		case r == '-' || r == '_':
-		case r > 127: // 非 ASCII（中文等）放行，见 normalizeSlug 的说明
+		case r > 127:
 		default:
 			return false
 		}
@@ -130,7 +91,6 @@ func isLegalSlug(s string) bool {
 	return true
 }
 
-// deriveSlug 由商品名派生 slug：保留字母数字、其余转连字符；中文名派生为空，由调用方兜底。
 func deriveSlug(name string) string {
 	var b strings.Builder
 	lastDash := false
@@ -149,7 +109,6 @@ func deriveSlug(name string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// orJSON jsonb 列的兜底值。
 func orJSON(raw json.RawMessage, fallback string) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage(fallback)
@@ -157,7 +116,6 @@ func orJSON(raw json.RawMessage, fallback string) json.RawMessage {
 	return raw
 }
 
-// orJSONList 字符串数组转 jsonb（空数组写 []）。
 func orJSONList(items []string) json.RawMessage {
 	if items == nil {
 		return json.RawMessage("[]")
@@ -169,22 +127,10 @@ func orJSONList(items []string) json.RawMessage {
 	return b
 }
 
-// orIDList id 数组转 jsonb。
 func orIDList(items []string) json.RawMessage { return orJSONList(items) }
 
-// decodeStrings jsonb 数组 → 字符串切片（失败返回空切片，不阻断读取）。
-// mediaURL 媒体地址 → 对外可用的完整链接。
-//
-// 商品域里凡是「取自媒体库」的字段（images / defaultImage / 变体 image /
-// 分类 image / 品牌 logo）都要过它：媒体库给的是 upload.base_url 前缀下的地址，
-// 未配置时是 "/storage/<id>.<ext>"。写入口归一（新数据天然完整），读出口再归一
-// （存量相对值也显示对）—— 两侧共用 pkg/upload 的同一个实现，避免各写一份前缀拼接。
-//
-// 非媒体地址（外链 CDN / data: URI）由 StorageURL 原样返回，不会被改写。
 func mediaURL(u string) string { return upload.StorageURL(u) }
 
-// mediaURLs 逐个归一图片数组；空数组返回空数组（不是 nil），
-// 免得调用方在 JSON 里拿到 null 又要各自兜一次。
 func mediaURLs(list []string) []string {
 	out := make([]string, 0, len(list))
 	for _, u := range list {

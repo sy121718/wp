@@ -1,10 +1,5 @@
 package pagemcp
 
-// page_write_tools_test.go — 页面写工具的边界。
-//
-// 这一批最重要的一条约束是**它不碰页面文档**：建页必须给空文档，
-// 页面的结构只能由可视化编辑器写。测试在这里钉住。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -104,7 +99,6 @@ func TestPageWriteToolNames(t *testing.T) {
 	}
 }
 
-// 建页必须给空文档 —— 页面结构只能由可视化编辑器写。
 func TestPageCreateSendsEmptyDocument(t *testing.T) {
 	s := &stubPageWriter{createRes: &pagedto.PageResp{ID: "p1", DraftPath: "/about"}}
 	text, err := invokePageWrite(t, pageWriteTool(t, "page_create", s), map[string]any{
@@ -117,7 +111,7 @@ func TestPageCreateSendsEmptyDocument(t *testing.T) {
 	if doc == "" || doc == "{}" {
 		t.Fatalf("建页应给一个能被编辑器打开的空文档，实得 %q", doc)
 	}
-	// 形状必须与 builder.Page 对齐：settings 是对象、root 是数组。
+
 	if !strings.Contains(doc, `"settings"`) || !strings.Contains(doc, `"root":[]`) {
 		t.Errorf("空文档形状应与 builder.Page 对齐（settings 对象 + root 数组），实得 %q", doc)
 	}
@@ -141,7 +135,6 @@ func TestPageCreateNormalizesPath(t *testing.T) {
 	}
 }
 
-// 发布回执要给出线上地址，用户下一步就是拿它去访问。
 func TestPagePublishReportsPath(t *testing.T) {
 	s := &stubPageWriter{publishRes: &pagedto.PublishResp{
 		PageID: "p1", Status: "active", DraftPath: "/about", ActiveHash: "abcdef1234567890",
@@ -161,7 +154,6 @@ func TestPagePublishReportsPath(t *testing.T) {
 	}
 }
 
-// 改网址不加跳转时必须说出来 —— 老地址会 404。
 func TestPageURLUpdateWarnsWhenNoRedirect(t *testing.T) {
 	s := &stubPageWriter{urlRes: &pagedto.PublishResp{PageID: "p1", Status: "active", DraftPath: "/about-us"}}
 	text, err := invokePageWrite(t, pageWriteTool(t, "page_url_update", s), map[string]any{
@@ -186,7 +178,6 @@ func TestPageURLUpdateWarnsWhenNoRedirect(t *testing.T) {
 	}
 }
 
-// 删除是破坏性的 —— 描述必须提醒先确认，并点名功能页不该删。
 func TestPageDeleteDescriptionWarns(t *testing.T) {
 	desc := pageWriteTool(t, "page_delete", &stubPageWriter{}).Description()
 	if !strings.Contains(desc, "page_find") {
@@ -210,7 +201,6 @@ func TestPageDeleteRejectsEmptyID(t *testing.T) {
 	}
 }
 
-// 发布必须让人确认 —— 它会让改动立刻对访客可见。
 func TestPagePublishDescriptionRequiresConfirmTone(t *testing.T) {
 	desc := pageWriteTool(t, "page_publish", &stubPageWriter{}).Description()
 	if !strings.Contains(desc, "确认") {
@@ -218,8 +208,6 @@ func TestPagePublishDescriptionRequiresConfirmTone(t *testing.T) {
 	}
 }
 
-// 只能建功能页：普通内容页必须绑内容（pages 表 constraint），
-// 而内容页是跟着内容自动带出来的，不该在这里凭空造。
 func TestPageCreateKindEnumOnlyStructural(t *testing.T) {
 	tool := pageWriteTool(t, "page_create", &stubPageWriter{})
 	schema := strings.TrimSpace(string(mustJSON(t, tool)))

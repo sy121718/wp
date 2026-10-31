@@ -1,19 +1,5 @@
 package masterdatahttp
 
-// 只读页面：GET 渲染完整页，没有写表单 —— 变更记录由业务模块在写操作里追加，
-// 后台不提供「手工补一条记录」的口子（审计的入口越少越可信）。
-//
-// 页面承担两条验收：
-//
-//	· 验收 3：记录含操作人与时间，append-only 不可改写（页面按时间倒序展示，
-//	  没有任何编辑 / 删除入口）；
-//	· 验收 4：可按实体查询变更历史 —— 顶部是「哪些实体被改过」的聚合清单
-//	  （点一行即筛出该实体的完整时间线），下面是字段级变更列表（可按实体类型 / 实体 id /
-//	  字段 / 动作 / 操作人 / 时间区间组合筛选）。
-//
-// 页面同时把「与库存流水的分工」写在正文里：这张表只记配置变更，
-// 数量增减在库存流水页 —— 两张表回答的是不同的问题。
-
 import (
 	"errors"
 	"go_wp/internal/middleware/builtin"
@@ -35,29 +21,23 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-// masterDataEntityPageSize 实体清单一次展示的条数（后台核对用；完整清单走接口分页）。
 const masterDataEntityPageSize = 50
 
-// 变更记录页的两种视图。记录视图逐条列流水（默认），实体视图按实体聚合成一行 ——
-// 后者是「哪个实体改得最多」的入口，点「查看历史」即切回记录视图并锁定该实体。
 const (
 	masterDataViewRecords  = "records"
 	masterDataViewEntities = "entities"
 )
 
-// masterDataChangePageHandle 变更记录页处理器。
 type masterDataChangePageHandle struct {
 	changes  masterdatacontract.MasterDataService
 	projects projectcontract.ProjectService
 }
 
-// NewMasterDataChangePageHandle 构造。
 func NewMasterDataChangePageHandle(changes masterdatacontract.MasterDataService,
 	projects projectcontract.ProjectService) *masterDataChangePageHandle {
 	return &masterDataChangePageHandle{changes: changes, projects: projects}
 }
 
-// masterDataFilter 页面筛选条件（GET 参数，全部可选）。
 type masterDataFilter struct {
 	EntityType string
 	EntityID   string
@@ -69,7 +49,6 @@ type masterDataFilter struct {
 	Until      string
 }
 
-// masterDataFilterOf 读取筛选参数（空串 = 该维度不过滤）。
 func masterDataFilterOf(c *gin.Context) masterDataFilter {
 	return masterDataFilter{
 		EntityType: strings.TrimSpace(c.Query("entityType")),
@@ -83,12 +62,10 @@ func masterDataFilterOf(c *gin.Context) masterDataFilter {
 	}
 }
 
-// specific 是否已锁定单个实体（锁定后走「单实体完整时间线」）。
 func (f masterDataFilter) specific() bool {
 	return f.EntityType != "" && f.EntityID != ""
 }
 
-// values 非空筛选条件（分页链接与实体链接共用）。
 func (f masterDataFilter) values(projectID string) map[string]string {
 	return map[string]string{
 		"project": projectID, "entityType": f.EntityType, "entityId": f.EntityID,
@@ -97,7 +74,6 @@ func (f masterDataFilter) values(projectID string) map[string]string {
 	}
 }
 
-// entityValues 在筛选条件上锁定一个实体（实体清单里点一行）。
 func (f masterDataFilter) entityValues(projectID, entityType, entityID string) map[string]string {
 	vals := f.values(projectID)
 	vals["entityType"] = entityType
@@ -105,18 +81,10 @@ func (f masterDataFilter) entityValues(projectID, entityType, entityID string) m
 	return vals
 }
 
-// MasterDataChangesPage 变更记录页（GET /admin/masterdata/changes）。
 func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
-	// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
-	//
-	// 原先这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本 ——
-	// 侧栏、页头、筛选栏全部消失，而那块文本还是**未翻译的裸 key**（`c.String` 不经过任何
-	// translate，页面上直接显示 `MsgInternalError` 这串英文）。运营既判断不出是「这一页没读出来」
-	// 还是「后台坏了」，也没有任何可点的东西（换筛选、去别的菜单都做不到）。
-	// 装载失败优先于任何旧提示：它是**这次请求**真实发生的事；原文只进日志
-	//（masterDataErrText 的未命中分支：场景 + user_id + 原始错误）。
+
 	loadFailed := err != nil
 	pageErr := ""
 	if loadFailed {
@@ -129,21 +97,12 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	filter := masterDataFilterOf(c)
 	page, limit := reqparams.PageParams(c)
 
-	// 本页**没有** ?err= 回执通道：它是只读页，没有任何写入口会往这里回带文案
-	//（grep 过：全仓没有 redirect 到 /admin/masterdata/changes?...err=）。
-	// 此前从 query 里读 err 并原样渲染，是一条纯伪造面 —— 手拼一个 URL 就能往
-	// 「部分数据未取到：」后面塞任意文案。页面提示只由取数失败产生（见 masterDataErrText）。
 	rows := []masterdatadto.ChangeRowResp{}
 	var total int64
 	var current *masterdatadto.EntityTimelineHeadResp
 	entityRows := []masterdatadto.EntityRowResp{}
 	var entityTotal int64
 
-	// 装载失败时**一次取数都不做**：下面每一项都要工程作用域（selected 此时为空），
-	// 真跑下去只会再报一次「未指定工程」，把「这一页没读出来」盖成「你没选工程」——
-	// 两条提示打架时运营会去改筛选条件，而真正的问题是工程列表根本没读到。
-	// 列表留空，由模板按 LoadFailed 区分「空数据」与「装载失败」（空态标题不能是
-	// 「没有记录」，那是在把人往错的方向带）。
 	if !loadFailed {
 		listReq := &masterdatadto.ListChangeReq{
 			ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
@@ -152,7 +111,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			Page: page, Size: limit,
 		}
 		if filter.specific() {
-			// 锁定单个实体：一次拿到「是谁 + 共几条 + 这一页时间线」。
+
 			timeline, terr := h.changes.EntityTimeline(ctx, &masterdatadto.EntityTimelineReq{
 				ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
 				Page: page, Size: limit,
@@ -189,7 +148,6 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			}
 		}
 
-		// 实体清单（验收 4 的入口）：同一组筛选条件下被改过的实体与各自次数。
 		entityReq := &masterdatadto.ListEntityReq{
 			ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
 			Field: filter.Field, Action: filter.Action, Keyword: filter.Keyword,
@@ -209,18 +167,13 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		}
 	}
 
-	// 视图：同一批筛选条件下的两种看法 —— 记录（逐条流水）/ 实体（按实体聚合）。
-	// **一次只渲染一张表**：两者是同一数据的两种切法，并列渲染等于把 7 屏塞进一页，
-	// 而用户每次只关心其中一种。锁定单个实体时强制记录视图 —— 那时「按实体汇总」只剩一行。
 	viewMode := strings.TrimSpace(c.Query("view"))
 	if viewMode != masterDataViewEntities || filter.specific() {
 		viewMode = masterDataViewRecords
 	}
-	// 分页与视图切换链接都基于同一份筛选条件（切视图不丢筛选）。
+
 	base := reqparams.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
 
-	// tr 绑定一次：此前每个键都写一遍 i18n.TranslateFunc(response.RequestLanguage(c))，
-	// 同一个请求语言被求值 5 次，且读的时候要在长 map 里找它到底翻译了什么。
 	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	view := &masterdatadto.MasterDataChangesPageResp{
 		Title:           masterDataLabel(tr, masterdataenums.PageTitleChanges),
@@ -229,7 +182,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		SelectedProject: selected,
 		EntityTypes:     masterDataEntityTypeOptions(tr),
 		Actions:         masterDataActionOptions(tr),
-		// 筛选条件逐项传给模板（Jet 对「map 再索引」的链式访问不确定，与货源页同一手法）。
+
 		FilterEntityType: filter.EntityType,
 		FilterEntityID:   filter.EntityID,
 		FilterField:      filter.Field,
@@ -249,46 +202,25 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		EntityTotal:      entityTotal,
 		EntityShown:      len(entityRows),
 		EntityPageSize:   masterDataEntityPageSize,
-		// 实体清单被截断时给一句提示（比较运算留在 handler，模板只做判断）。
+
 		EntityTruncated: entityTotal > int64(len(entityRows)),
 		Err:             pageErr,
-		// LoadFailed：本次请求的工程列表没读到（不是「没有数据」）。
-		// 模板据此把两个面板的空态换成「没读出来」—— 空态标题若是「没有记录」，
-		// 用户会以为历史真的没了，而实际上只是这一次没读出来。
+
 		LoadFailed: loadFailed,
 	}
-	// 分页只给事实（总数 / 页码 / 每页条数 / 基址）：页数、区间句、页码窗口与链接由
-	// admin/partials/pagination.html 算。单页与空集时模板自然不渲染分页条。
-	//
-	// AttachPagination 往「现成数据对象」上挂一组小写壳键（total/page/limit/base…），
-	// 与 gin.H 时代完全一样 —— 换 DTO 不改变这条分工（AGENTS.md：一屏 = 若干现成数据对象）。
-	// AttachPaginationView 而不是 AttachPagination：后者只接 gin.H。
-	// 返回值断言在这里"有意忽略"—— 视图里已显式声明 Pagination 字段，
-	// 挂不上只可能是类型改错，而那是编译期就该发现的（对账测试会守）。
+
 	if !adminui.AttachPaginationView(view, "", nil,
 		pagination.Page{Total: total, Page: page, Limit: limit, Base: base}) {
-		// 挂不上 = 视图缺 Pagination 字段（编程错误）。不该让整页 500 ——
-		// 少一条分页条比丢掉整张表更轻，但要留痕。
+
 		logger.Scene("masterdata").Error(errors.New("变更记录视图缺少 Pagination 字段"), "分页事实挂载失败")
 	}
-	// 页面出口统一走 pageview.Render：模板名与渲染实现由路由的 PageSlot 带进上下文，
-	// 控制器不持模板名、不 import 渲染层（与商品模块同一形态）。
+
 	pageview.Render(c, view)
 	return
 }
 
-// masterDataErrScene 结构化日志的场景名（与模块其它 logger.Scene 调用点一致）。
 const masterDataErrScene = "masterdata"
 
-// masterDataFacingTexts 本页可以原样展示给运营的**业务**错误（key → 中文兜底）。
-//
-// 只登记「客户端输入导致」的那几个：非法实体 id / 非法筛选值属于「你填错了」，
-// 让运营看到「系统内部错误，请稍后重试」是 CQ-009 的**反向缺陷** —— 他不知道该改什么，
-// 只会反复重试（本页实测就是这样：`entityId=not-a-uuid` 原本显示归口文案）。
-// 一边要挡住内部错误，一边不能把业务错误一起吞掉，判据是「这个 err 是不是本模块可透出的
-// 业务错误」，不是「它长什么样」。
-//
-// 取值不手抄：enums 的值就是 key，文案由 198 迁移 seed（zh/en 成对），缺词条时回落这里的中文。
 var masterDataFacingTexts = map[string]string{
 	masterdataenums.ErrInvalidParam:      "参数不合法，请检查筛选条件。",
 	masterdataenums.ErrEntityTypeInvalid: "实体类型不在变更记录的白名单内。",
@@ -298,13 +230,6 @@ var masterDataFacingTexts = map[string]string{
 	masterdataenums.ErrTimeRangeInvalid:  "时间范围不合法：起始时间不能晚于结束时间。",
 }
 
-// masterDataErrText 取数 / 参数错误的对外文案（「错误文案三件套」的页内出口）。
-//
-//	① 命中白名单 → 取**当前语言的译文**（缺词条回落中文兜底），页面上不出现裸 key；
-//	② 未命中 → 原文只进结构化日志（场景 + user_id），对外给归口文案。
-//
-// ② 覆盖的是 List / Count / Timeline 这类**取数**失败：一旦是 PG 原文（表名、SQLSTATE），
-// 它就会顶着「部分数据未取到：」摆到运营眼前 —— 那正是「响应不是可信边界」要挡的东西。
 func masterDataErrText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
@@ -319,13 +244,8 @@ func masterDataErrText(c *gin.Context, err error) string {
 	return adminui.PageInternalText(c)
 }
 
-// masterDataTr 取词函数签名（i18n.TranslateFunc(response.RequestLanguage(c)) 的形态）。
 type masterDataTr func(key, fallback string) string
 
-// masterDataLabel 展示名取词：命中出译文、缺词条回落中文兜底。
-//
-// 空 key（enums 未登记该取值）直接给兜底 —— 「未登记」与「词条缺失」在展示上要做同一件事，
-// 但前者连查表都不必（兜底就是原值本身，如未知字段名）。
 func masterDataLabel(tr masterDataTr, pair masterdataenums.LabelPair) string {
 	if strings.TrimSpace(pair.Key) == "" {
 		return pair.Fallback
@@ -333,11 +253,6 @@ func masterDataLabel(tr masterDataTr, pair masterdataenums.LabelPair) string {
 	return tr(pair.Key, pair.Fallback)
 }
 
-// changeRow 变更记录行 → 模板视图（时间与取值都先格式化，模板不做逻辑）。
-//
-// 三个展示名**用行上的原始值重新取词**，不复用 dto 里的 *Label：那些是 service 填的中文兜底
-// （JSON API 契约），页面要的是当前语言。原始值都在行上（EntityType / Action / Field），
-// 所以这里能自己算，不需要 service 多传一份 key。
 func changeRow(tr masterDataTr, row *masterdatadto.ChangeResp) masterdatadto.ChangeRowResp {
 	if row == nil {
 		return masterdatadto.ChangeRowResp{}
@@ -359,7 +274,6 @@ func changeRow(tr masterDataTr, row *masterdatadto.ChangeResp) masterdatadto.Cha
 	}
 }
 
-// entityRow 实体清单行 → 模板视图（带一条锁定该实体的筛选链接）。
 func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter masterDataFilter, projectID string) masterdatadto.EntityRowResp {
 	if item == nil {
 		return masterdatadto.EntityRowResp{}
@@ -384,8 +298,6 @@ func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter ma
 	}
 }
 
-// masterDataValueLabel 空值显示成「—」：审计里「空」与「没有这个字段」靠列名区分，
-// 空白单元格没法读。
 func masterDataValueLabel(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "—"
@@ -393,7 +305,6 @@ func masterDataValueLabel(value string) string {
 	return value
 }
 
-// masterDataTimeLabel RFC3339 → 后台展示文本（本地时区，分钟精度）。
 func masterDataTimeLabel(at string) string {
 	if strings.TrimSpace(at) == "" {
 		return "—"
@@ -404,7 +315,6 @@ func masterDataTimeLabel(at string) string {
 	return at
 }
 
-// masterDataEntityTypeOptions 实体类型下拉（白名单来自模块 enums，单一来源）。
 func masterDataEntityTypeOptions(tr masterDataTr) []masterdatadto.LabelOptionResp {
 	options := make([]masterdatadto.LabelOptionResp, 0, len(masterdataenums.EntityTypes()))
 	for _, entityType := range masterdataenums.EntityTypes() {
@@ -416,7 +326,6 @@ func masterDataEntityTypeOptions(tr masterDataTr) []masterdatadto.LabelOptionRes
 	return options
 }
 
-// masterDataActionOptions 动作下拉（新增 / 修改 / 删除）。
 func masterDataActionOptions(tr masterDataTr) []masterdatadto.LabelOptionResp {
 	options := make([]masterdatadto.LabelOptionResp, 0, len(masterdataenums.Actions()))
 	for _, action := range masterdataenums.Actions() {
@@ -428,7 +337,6 @@ func masterDataActionOptions(tr masterDataTr) []masterdatadto.LabelOptionResp {
 	return options
 }
 
-// firstNonEmpty 返回第一个非空白值（页面在「本次查询错误」与「?err= 回显」之间取先到者）。
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {

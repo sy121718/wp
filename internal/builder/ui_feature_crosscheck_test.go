@@ -1,21 +1,5 @@
 package builder
 
-// ui_feature_crosscheck_test.go — 两条特征来源的交叉验证（审计 PERF-014 第 4 步）。
-//
-// 背景：产物要注入哪些脚本（htmx / 控件基座 / 组件增强块），此前是渲染完成后对整页
-// HTML 跑一遍 tokenizer 得出的；现在改为组件在渲染期登记（core.ViewFeatureDeclarer）。
-// 两条路径并存期间必须证明**结果一致** —— 否则漏登记的组件会静默失去交互
-//（页面照常打开、点了没反应），而这正是登记方案最危险的失效形态。
-//
-// 三条断言，各覆盖一种失效：
-//   A 注入结果逐字节一致 —— 端到端等价（remediation 的 verification 原文）；
-//   B 登记集合 ⊆ 实际输出集合 —— 抓「登记了却没输出」（白送字节 / 判定漂移）；
-//   C 影响判定的实际属性必须全登记 —— 抓「输出了却没登记」（交互静默失效）。
-//
-// 覆盖两批输入：① 组件库每个条目插入后的真实节点（与浏览器点一下同源，见
-// defaults_contract_test.go 的 palette.js 探针）；② 显式构造的条件分支场景
-//（hx-* / data-* 只在某些配置下才输出，只跑默认 props 覆盖不到）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"sort"
@@ -28,18 +12,11 @@ import (
 	"go_wp/internal/templates"
 )
 
-// crosscheckUI 交叉验证用的控件资源与样式：与组件真实产物无关，只为了让两条路径
-// 都走到「组装脚本」这条分支上，从而能逐字节比对。
 var crosscheckUI = struct {
 	sources map[string]string
 	css     string
 }{sources: crosscheckUISources(), css: "/* ui css */"}
 
-// crosscheckUISources 控件资源全集（清单与 ui_script.go 的 uiBlocks 一致）。
-//
-// 不直接用 uiSrcForTest：那份桩只含 5 个资源，于是「作者在容器上写 data-drawer →
-// 注入 drawer.js」这条**正确**判定会以「资源缺失」的构建错误报出来 —— 那是桩的缺口，
-// 不是特征判定的问题，留着会让交叉验证的失败信息指向错误的方向。
 func crosscheckUISources() map[string]string {
 	sources := uiSrcForTest()
 	for _, name := range []string{"drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js"} {
@@ -48,7 +25,6 @@ func crosscheckUISources() map[string]string {
 	return sources
 }
 
-// assertFeatureCrosscheck 对一份编译结果做三条交叉验证断言。
 func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 	t.Helper()
 	if cp == nil {
@@ -60,8 +36,6 @@ func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 	reg := cp.featureScan()
 	tok := collectHTMLScan(cp.HTML)
 
-	// B 登记 ⊆ 实际输出：登记了产物里根本没有的属性 / class，说明上报的判定条件
-	// 与模板分叉了 —— 轻则白送字节，重则让「零字节注入」这条收敛失效。
 	for _, name := range sortedFeatureKeys(reg.attrs) {
 		if _, ok := tok.attrs[name]; !ok {
 			t.Errorf("登记了产物里不存在的属性 %q（上报条件与模板输出分叉）\n登记集合: %v", name, sortedFeatureKeys(reg.attrs))
@@ -73,8 +47,6 @@ func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 		}
 	}
 
-	// C 影响判定的实际属性必须全登记：漏一个就少注入一个脚本，
-	// 而症状是「页面正常、交互不动」，没有任何错误日志。
 	for _, name := range sortedFeatureKeys(relevantAttrs(tok.attrs)) {
 		if _, ok := reg.attrs[name]; !ok {
 			t.Errorf("漏登记属性 %q：tokenize 看到它（会触发脚本注入），登记路径没有\n产物 HTML:\n%s", name, cp.HTML)
@@ -89,7 +61,6 @@ func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 		}
 	}
 
-	// A 注入结果逐字节一致（CSS 与 JS 分别比对）。
 	probe := *cp
 	probe.UISources = crosscheckUI.sources
 	probe.UIStyle = crosscheckUI.css
@@ -110,7 +81,6 @@ func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 			jsReg, jsTok, sortedFeatureKeys(reg.attrs), sortedFeatureKeys(tok.attrs))
 	}
 
-	// 增强块单独一层（enhanceScriptFor 按增强特征挑块，用的是同一份能力集合）。
 	if cp.EnhanceSource != "" {
 		regEnh := enhanceScriptFor(reg.attrs, cp.EnhanceSource)
 		tokEnh := enhanceScriptFor(tok.attrs, cp.EnhanceSource)
@@ -121,7 +91,6 @@ func assertFeatureCrosscheck(t *testing.T, cp *CompiledPage) {
 	}
 }
 
-// sortedFeatureKeys 集合的确定性输出（失败信息里要能一眼比对）。
 func sortedFeatureKeys(set map[string]struct{}) []string {
 	out := make([]string, 0, len(set))
 	for k := range set {
@@ -131,7 +100,6 @@ func sortedFeatureKeys(set map[string]struct{}) []string {
 	return out
 }
 
-// crosscheckSet 组件模板集。
 func crosscheckSet(t testing.TB) *jet.Set {
 	t.Helper()
 	set, err := templates.NewComponentSet("../templates/components")
@@ -141,7 +109,6 @@ func crosscheckSet(t testing.TB) *jet.Set {
 	return set
 }
 
-// crosscheckEnhanceSource 真实增强框架源码（裁剪逻辑依赖它的结构：onReady 尾段）。
 func crosscheckEnhanceSource(t testing.TB) string {
 	t.Helper()
 	js, err := templates.StaticJS("enhance.js")
@@ -154,7 +121,6 @@ func crosscheckEnhanceSource(t testing.TB) string {
 	return js
 }
 
-// crosscheckCompile 编译一份页面文档（带真实的控件资源与增强源码）。
 func crosscheckCompile(t testing.TB, set *jet.Set, nodes []*core.Node, opts ...CompileOption) *CompiledPage {
 	t.Helper()
 	doc, err := json.Marshal(map[string]any{
@@ -182,14 +148,11 @@ func crosscheckCompile(t testing.TB, set *jet.Set, nodes []*core.Node, opts ...C
 	return cp
 }
 
-// crosscheck 编译 + 断言。
 func crosscheck(t *testing.T, set *jet.Set, nodes []*core.Node, opts ...CompileOption) {
 	t.Helper()
 	assertFeatureCrosscheck(t, crosscheckCompile(t, set, nodes, opts...))
 }
 
-// TestUIFeatureCrosscheckPaletteComponents 组件库每个条目插入后的产物都过交叉验证。
-// 这一批的价值在覆盖面：组件库是「用户能拖出来的全部东西」，漏登记的组件必然在其中现形。
 func TestUIFeatureCrosscheckPaletteComponents(t *testing.T) {
 	set := crosscheckSet(t)
 	for _, n := range paletteInsertNodes(t) {
@@ -200,8 +163,6 @@ func TestUIFeatureCrosscheckPaletteComponents(t *testing.T) {
 	}
 }
 
-// TestUIFeatureCrosscheckScenarios 显式覆盖条件分支：hx-* 与增强特征并非每个配置都输出，
-// 只跑默认 props 会漏掉「该出没出 / 不该出却出了」这两类错误。
 func TestUIFeatureCrosscheckScenarios(t *testing.T) {
 	set := crosscheckSet(t)
 	for _, sc := range crosscheckScenarios() {
@@ -218,7 +179,6 @@ type crosscheckScenario struct {
 	opts  []CompileOption
 }
 
-// probeNode 构造一个组件节点（propsJSON 空则给空对象）。
 func probeNode(id, typeName, propsJSON string) *core.Node {
 	n := &core.Node{ID: id, Type: typeName}
 	if strings.TrimSpace(propsJSON) == "" {
@@ -228,28 +188,20 @@ func probeNode(id, typeName, propsJSON string) *core.Node {
 	return n
 }
 
-// withChildren 构造带子节点的节点。
 func withChildren(id, typeName, propsJSON string, children ...*core.Node) *core.Node {
 	n := probeNode(id, typeName, propsJSON)
 	n.Children = children
 	return n
 }
 
-// variantFixtureResolver 商品规格 / 变体的桩解析器（交叉验证用）。
-//
-// 为什么不能沿用 paletteContentResolver：它对任何字段都返回同一个占位串，而规格维度与
-// 变体组合要的是**结构完整**的 JSON —— 喂不进去时 product / productSelector / addToCart
-// 一律走空态，那几处 hx-get 条件分支就永远覆盖不到（覆盖面比断言本身更要紧）。
 type variantFixtureResolver struct{}
 
 const (
-	// fixtureOptionsJSON 规格维度（一个颜色维度、两个值）。
 	fixtureOptionsJSON = `[{"key":"color","name":"颜色","values":[{"key":"red","label":"红"},{"key":"blue","label":"蓝"}]}]`
-	// fixtureVariantsJSON 变体组合（两条启用变体：规格选择器要求组合 ≥2 才输出）。
+
 	fixtureVariantsJSON = `[{"id":"v1","price":"199.00","enabled":true,"options":{"color":"red"}},{"id":"v2","price":"219.00","enabled":true,"options":{"color":"blue"}}]`
 )
 
-// ResolveString 实现 core.ContentResolver：只对规格字段给结构，其余给占位串。
 func (variantFixtureResolver) ResolveString(field string) (string, error) {
 	switch field {
 	case "product.options":
@@ -260,11 +212,6 @@ func (variantFixtureResolver) ResolveString(field string) (string, error) {
 	return "示例值", nil
 }
 
-// BenchmarkFeatureSource 量化两条特征来源的开销差（审计 PERF-014 的 verification 第二条）。
-//
-// 这正是条目要回答的问题：换登记路径省下的是哪一段、值多少。基准里的 HTML 是**真实产物**
-// （容器 / 商品列表 / 按钮 / 表单 / 倒计时拼出的页面）重复放大到常见体量，
-// tokenize 那一路就是此前每次 RenderDocument 都要付的一遍整页解析。
 func BenchmarkFeatureSource(b *testing.B) {
 	set := crosscheckSet(b)
 	cp := crosscheckCompile(b, set, featureBenchNodes(), WithProjectID("proj-bench"))
@@ -299,7 +246,6 @@ func BenchmarkFeatureSource(b *testing.B) {
 	})
 }
 
-// featureBenchNodes 基准用的页面组件（覆盖 hx-* 与增强特征两类属性）。
 func featureBenchNodes() []*core.Node {
 	return []*core.Node{
 		probeNode("bench-sec", "core.container", `{"tag":"section","layout":{"engine":"flex","flex":{}}}`),
@@ -310,7 +256,6 @@ func featureBenchNodes() []*core.Node {
 	}
 }
 
-// crosscheckScenarios 条件分支场景集。
 func crosscheckScenarios() []crosscheckScenario {
 	return []crosscheckScenario{
 		{
@@ -318,7 +263,7 @@ func crosscheckScenarios() []crosscheckScenario {
 			nodes: []*core.Node{probeNode("btn-modal", "core.button", `{"text":"打开","action":"modal","value":"f1"}`)},
 		},
 		{
-			// 动态链接动作需要绑定字段（缺了会编译失败），补上以覆盖「不出特征的按钮」这一路。
+
 			name:  "按钮-普通链接",
 			nodes: []*core.Node{probeNode("btn-link", "core.button", `{"text":"关于","action":"link","binding":{"field":"article.url"}}`)},
 		},
@@ -328,8 +273,7 @@ func crosscheckScenarios() []crosscheckScenario {
 				`{"tag":"section","layout":{"engine":"flex","flex":{}},"position":{"type":"drawer","drawerSide":"right","drawerOverlay":true,"drawerTriggerId":"drawer-trigger-1"}}`)},
 		},
 		{
-			// 作者在容器上写的 data-* 自定义属性也会进产物（白名单允许 data-*），
-			// 所以它们同样能触发控件脚本 —— 判定必须跟着属性串一起走。
+
 			name: "容器-自定义data属性",
 			nodes: []*core.Node{probeNode("c-attr", "core.container",
 				`{"tag":"section","layout":{"engine":"flex","flex":{}},"styleEx":{"attributes":[{"key":"data-modal-open","value":"f9"},{"key":"data-drawer","value":"1"},{"key":"aria-label","value":"装饰"}]}}`)},

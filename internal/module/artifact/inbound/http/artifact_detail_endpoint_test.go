@@ -1,10 +1,5 @@
 package artifacthttp_test
 
-// artifact_detail_endpoint_test.go — 产物详情端点（FIX-24）：两种形状都真的返回数据。
-//
-// 直调导出 handler（路由上挂着 Session + Casbin，测试环境没有会话）：本用例要证的是
-// 「服务层的实现真的接到了 HTTP 出口、两种入参形状都能走通、找不到是 404 而不是 200 空体」。
-
 import (
 	"context"
 	"net/http"
@@ -25,7 +20,7 @@ func TestArtifactDetailEndpointShapes(t *testing.T) {
 	if db == nil {
 		t.Skip("本地 PostgreSQL 不可用，跳过")
 	}
-	// 外键要求 page_artifacts.page_id 指向真实页面：先建工程与页面。
+
 	projectID := uuid.NewString()
 	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, '产物详情用例', '{}'::jsonb, now(), now())", projectID).Error; err != nil {
 		t.Fatalf("准备工程失败：%v", err)
@@ -59,21 +54,18 @@ func TestArtifactDetailEndpointShapes(t *testing.T) {
 		return rec
 	}
 
-	// ① 按产物行 id。
 	rec := call("?id=" + artifactID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("按 id 查询应 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
 	t.Logf("① /detail?id=<uuid> → %d %s", rec.Code, truncate(rec.Body.String()))
 
-	// ② 按 (pageId, hash)。
 	rec = call("?pageId=" + pageID + "&hash=ah-deadbeef")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("按 (pageId,hash) 查询应 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
 	t.Logf("② /detail?pageId=…&hash=ah-deadbeef → %d %s", rec.Code, truncate(rec.Body.String()))
 
-	// ③ 找不到必须是 404，不能是 200 空体（运维靠它区分「行不在」与「文件丢了」）。
 	rec = call("?id=" + uuid.NewString())
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("不存在的产物应 404，实际 %d（body=%s）", rec.Code, rec.Body.String())

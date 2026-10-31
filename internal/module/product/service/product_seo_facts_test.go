@@ -71,7 +71,7 @@ func TestSeoTitleIndexReadsBeyondFirstHundredAndExcludesOtherProjects(t *testing
 			{ID: "page1", ProjectID: seoTestProjectID, DraftDocument: json.RawMessage(`{"settings":{"seo":{"title":"目标标题"}}}`)},
 			{ID: "cross-page", ProjectID: "other", DraftDocument: json.RawMessage(`{"settings":{"seo":{"title":"目标标题"}}}`)},
 		}},
-		// 内嵌 nil 接口的方法若被调用会 panic，确保无工程过滤的内容接口根本不读取。
+
 		Contents: seoUnscopedContentStub{},
 	}
 	index, coverage, err := SeoTitleIndex(context.Background(), r, extra, seoTestProjectID)
@@ -195,7 +195,6 @@ func TestSeoScorePreservesSharedAlgorithmWithoutPresentationFields(t *testing.T)
 
 var _ SeoInstancePathReader = (*seoInstanceStub)(nil)
 
-// 创建实例会先保存预定路径，发布失败后仍可能保留该路径与旧镜像；只有真实激活记录才算发布。
 func TestSeoScoreRequiresPublicationInsteadOfPlannedPathOrStatus(t *testing.T) {
 	detail := seoTestProduct()
 	r := &seoReadStub{t: t, get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return detail, nil }}

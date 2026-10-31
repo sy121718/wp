@@ -8,19 +8,6 @@ import (
 	"testing"
 )
 
-// admin_dashboard_ui012_test.go — 审计 UI-012（仪表盘的内联样式与数据口径）现行判据。
-//
-// 页面形态已变：仪表盘原先是「静态演示页」（handler 只注入 title/menu，页面写死
-// 128 个管理员之类的示例值），当时只能靠「显式标注演示占位」降低误读风险。
-// 现在它接的是 page / project 契约的真实统计，所以判据换成两条更硬的：
-//  ① 代码层面零内联 style（原判据保留）；
-//  ② 渲染结果里出现的是**注入的数据**，且旧演示页的硬编码示例值不得回潮。
-//
-// 保留这个文件而不是删掉它，是因为它守的是同类风险：只要有人再把数字写死进模板，
-// 第 ② 条会立刻失败。
-
-// 内联 style 属性必须清零；页面用到的 stat-* 语义类都要在 theme.css 里有定义
-// （类名写错不会报错，只会静默无样式 —— 这正是内联样式换类时最容易踩的坑）。
 func TestDashboardHasNoInlineStylesAndClassesAreDefined(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("admin/dashboard.html"))
 	if err != nil {
@@ -56,13 +43,6 @@ func TestDashboardHasNoInlineStylesAndClassesAreDefined(t *testing.T) {
 	}
 }
 
-// 仪表盘列表卡的标题行不得借用 .filter-bar。
-//
-// .filter-bar 承诺的是「筛选控件区」（theme.css 里它给的是 .filter-fields / .filter-actions
-// 的横向布局），而这一行只有一个标题 + 一个「查看全部」链接（实测 filterFields=0）。
-// 借它会让后续按 .filter-bar 做的统一布局 / 间距调整误伤本页 —— 判据是**类名语义与内容一致**，
-// 与 analytics 的列表卡标题（.card-header + .card-title）同形（audit 02-O dashboard 任务 1，
-// 02-I #29「.filter-bar 承载非筛选语义」同族第 6 处）。
 func TestDashboardListCardTitleIsNotAFilterBar(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("admin/dashboard.html"))
 	if err != nil {
@@ -78,16 +58,9 @@ func TestDashboardListCardTitleIsNotAFilterBar(t *testing.T) {
 	}
 }
 
-// 渲染结果只反映注入的数据：统计卡出现注入值，且旧演示页的硬编码示例值不再出现。
 func TestDashboardRendersInjectedDataOnly(t *testing.T) {
 	data := adminShellData()
-	// 每个数字都刻意取成旧演示页没有用过的值：若模板里还留着写死的示例，
-	// 下面的「注入值必须出现」会失败，而「示例值不得出现」也守住了回潮。
-	// 页面在 2026-10 改版：删掉了「站点内容」与「最近更新的页面」两块，
-	// 所以 ProjectCount / PageTotal / RecentPages 这批注入值已不在页面上。
-	// 本用例的立意没变（模板里不许出现写死的演示值），只是「注入值必须出现」
-	// 那一半改由渲染 AI 区与三卡的静态结构承担 —— 真实数字的渲染判据见
-	// admin_dashboard_overview_test.go（那里注入的是 Overview 结构）。
+
 	data["ProjectCount"] = 7
 	data["PageTotal"] = 42
 	data["RecentPages"] = []map[string]any{}
@@ -97,8 +70,6 @@ func TestDashboardRendersInjectedDataOnly(t *testing.T) {
 		t.Fatalf("渲染仪表盘失败: %v", err)
 	}
 
-	// layout 的 KeyframesCSS 也是 <style>（主题关键帧，不是本页内联样式）；
-	// 这里只钉本页自己的：style="" 属性不许出现。
 	if strings.Contains(out, "style=\"") {
 		t.Error("仪表盘渲染结果里仍有内联 style 属性")
 	}

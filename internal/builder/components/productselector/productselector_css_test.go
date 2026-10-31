@@ -14,11 +14,6 @@ func productSelectorCSSFor(t *testing.T, p *Props) string {
 	return b.String()
 }
 
-// TestProductSelectorCSSRules 逐条核对 16 条规则与它们的顺序。
-//
-// 产物的字节包含声明顺序，顺序漂移在页面上表现为「同优先级的规则谁赢变了」——
-// 合法 CSS、浏览器不报错，只能在这里钉住。选择器一律带 " {"，避免
-// ".sky-selector-variant" 这样的前缀误命中 ".sky-selector-variants"。
 func TestProductSelectorCSSRules(t *testing.T) {
 	out := productSelectorCSSFor(t, &Props{})
 	want := []string{
@@ -50,13 +45,12 @@ func TestProductSelectorCSSRules(t *testing.T) {
 		}
 		last = i
 	}
-	// 规则条数固定：多一条少一条都说明样式源被改坏（或选择器被拆成了两条）。
+
 	if n := strings.Count(out, " {"); n != len(want) {
 		t.Errorf("规则条数应为 %d，实际 %d:\n%s", len(want), n, out)
 	}
 }
 
-// TestProductSelectorCSSScope 作用域前缀只拼一次，且产物里不留占位。
 func TestProductSelectorCSSScope(t *testing.T) {
 	out := productSelectorCSSFor(t, &Props{})
 	for _, bad := range []string{".sky-c-t.sky-c-t", ".sky-c-t .sky-c-t"} {
@@ -72,9 +66,6 @@ func TestProductSelectorCSSScope(t *testing.T) {
 	}
 }
 
-// TestProductSelectorCSSKeyboardPath 键盘路径不得被删掉：radio 视觉隐藏要用
-// position + clip-path 而不是 display: none（后者会把 Tab / 方向键一起删掉），
-// 且必须留可见的焦点环。
 func TestProductSelectorCSSKeyboardPath(t *testing.T) {
 	out := productSelectorCSSFor(t, &Props{})
 	radio := out[strings.Index(out, ".sky-c-t .sky-selector-radio {"):]
@@ -90,15 +81,12 @@ func TestProductSelectorCSSKeyboardPath(t *testing.T) {
 	if !strings.Contains(out, ".sky-c-t .sky-selector-radio:focus-visible + .sky-selector-value {\n  outline: 2px solid var(--sky-c-primary, #2563eb);\n  outline-offset: 2px;\n}") {
 		t.Errorf("焦点环规则缺失或丢了 outline-offset:\n%s", out)
 	}
-	// 选中态与焦点环都靠**兄弟**选择器（radio 在 label 之前），零 JS。
+
 	if !strings.Contains(out, ":checked + .sky-selector-value") {
 		t.Errorf("选中态应走兄弟选择器:\n%s", out)
 	}
 }
 
-// TestProductSelectorCSSIndependentOfProps 样式不随 Props 变化 —— compileCSS 读不到
-// 任何属性（开关只影响模板）。哪天有人在样式里接上条件，这条会立刻失败，
-// 提醒迁移者把新增的分支也搬进样式源并更新基线。
 func TestProductSelectorCSSIndependentOfProps(t *testing.T) {
 	base := productSelectorCSSFor(t, &Props{})
 	for _, p := range []*Props{{Stock: "off"}, {EmptyText: "暂无"}, {Currency: "USD"}, {Stock: ""}} {

@@ -1,20 +1,3 @@
-// product_cross_project_delete_guard_test.go — 删除守卫的**跨工程**可见性（审计 DB-03 §1.2 / §5.1 第 2 条，PROD-02）。
-//
-// 每个守卫一条**失败能力**用例：构造「A 工程的分类 / 品牌 / 属性 / 标签 / 变体被 B 工程
-// 的商品引用」这一种存量形态，然后从 A 工程发起删除。
-//
-//	修改前：守卫用 rls.InProjectScope(ctx, db, A) 把作用域收在 A，命中 0 行 ⇒ 删除放行
-//	       ⇒ B 工程商品的 JSONB 引用永久悬空（本条用例在这一版上是红的）；
-//	修改后：拒绝删除，并在错误里给出可定位信息（引用面 / 工程 / 商品 id），
-//	       数据一行都不许动（本条用例在这一版上是绿的）。
-//
-// 为什么用**直接写库**造跨工程引用：写入路径（resolveCategoryIDs / resolveBrandID /
-// resolveAttributeIDs / 捆绑成员解析）一律拒绝跨工程引用，所以这种行只可能来自
-// ①校验上线前的存量 ②绕过 service 的写入（插件 / 直连 / 导入）—— 审计 DB-03 §3.2 的夹具库
-// 也是这么造的。本文件不假装 API 能写进去。
-//
-// 最后一个用例把同一条守卫放进**非超级角色**里跑：超级用户绕过 RLS，只有非超级角色能证明
-// 「换成 go_wp_app 之后守卫的跨工程能力仍然成立」（这正是任务要求讲清楚的那件事）。
 package feature
 
 import (
@@ -37,7 +20,6 @@ import (
 	"go_wp/public/test/support"
 )
 
-// crossRefFixture 隔离 PG schema + 生产迁移 + **两个工程**（跨工程引用检查需要第二个工程）。
 type crossRefFixture struct {
 	*attrFixture
 	otherProjectID string
@@ -59,7 +41,6 @@ func newCrossRefFixture(t *testing.T) *crossRefFixture {
 	return &crossRefFixture{attrFixture: base, otherProjectID: other.ID}
 }
 
-// mkProduct 在某工程下建一个商品（走真实 service；变体商品会带一个默认变体）。
 func (f *crossRefFixture) mkProduct(t *testing.T, projectID, name, slug string) *productdto.ProductResp {
 	t.Helper()
 	p, err := f.svc.Create(context.Background(), &productdto.CreateReq{
@@ -71,7 +52,6 @@ func (f *crossRefFixture) mkProduct(t *testing.T, projectID, name, slug string) 
 	return p
 }
 
-// setProductRef 把引用**直接写进 products**（绕过 service 的跨工程校验，见文件头）。
 func (f *crossRefFixture) setProductRef(t *testing.T, productID, column, value string) {
 	t.Helper()
 	var (
@@ -95,10 +75,8 @@ func (f *crossRefFixture) setProductRef(t *testing.T, productID, column, value s
 	}
 }
 
-// refGuardErrKey 把「key：明细」形态的业务错误拆成 key 与明细（删除守卫的拒绝口径）。
 func refGuardErrKey(msg string) (key, tail string) {
-	// service 用 fmt.Errorf("%w: %s", …) 拼「key + 明细」（facing 只认 ASCII 冒号）；
-	// 全角那一档是历史形态的兼容读法，两处都能切开。
+
 	if i := strings.Index(msg, ": "); i >= 0 {
 		return msg[:i], strings.TrimSpace(msg[i+2:])
 	}
@@ -108,10 +86,6 @@ func refGuardErrKey(msg string) (key, tail string) {
 	return msg, ""
 }
 
-// assertRefGuardError 断言删除守卫的拒绝形态：业务 key **逐字相等** + 明细里带引用面。
-//
-// 这是既有断言（整串等于 key）的**加强**而不是放宽：原来只认「有没有拦住」，
-// 现在还认「说清了是哪张表在引用」—— 少任何一半都红。
 func assertRefGuardError(t *testing.T, err error, key, refColumn string) {
 	t.Helper()
 	if err == nil {
@@ -126,8 +100,6 @@ func assertRefGuardError(t *testing.T, err error, key, refColumn string) {
 	}
 }
 
-// assertCrossProjectRef 断言错误同时给出四类可定位信息，并且整条文案仍在读侧白名单的
-// 字节上限内（shell.NoticeMaxBytes = 512；超了会被判成伪造，明细整条丢失）。
 func assertCrossProjectRef(t *testing.T, err error, key, refColumn, projectID, productID string) {
 	t.Helper()
 	if err == nil {
@@ -145,7 +117,6 @@ func assertCrossProjectRef(t *testing.T, err error, key, refColumn, projectID, p
 	t.Logf("%s → %s", key, msg)
 }
 
-// assertStillThere 断言被拒绝的删除没有改动任何数据。
 func (f *crossRefFixture) assertCategoryStillThere(t *testing.T, categoryID string) {
 	t.Helper()
 	if _, err := f.svc.GetCategory(context.Background(), &productdto.GetCategoryReq{ProjectID: f.projectID, ID: categoryID}); err != nil {
@@ -153,7 +124,6 @@ func (f *crossRefFixture) assertCategoryStillThere(t *testing.T, categoryID stri
 	}
 }
 
-// TestCrossProjectCategoryDeleteGuard 分类被另一个工程的商品引用时必须拒绝删除。
 func TestCrossProjectCategoryDeleteGuard(t *testing.T) {
 	f := newCrossRefFixture(t)
 	if f == nil {
@@ -166,7 +136,7 @@ func TestCrossProjectCategoryDeleteGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建分类失败: %v", err)
 	}
-	// 对端工程的商品引用本工程的分类（存量形态）。
+
 	pB := f.mkProduct(t, f.otherProjectID, "B 工程商品", "cross-project-category-product")
 	f.setProductRef(t, pB.ID, "category_ids", category.ID)
 
@@ -174,7 +144,6 @@ func TestCrossProjectCategoryDeleteGuard(t *testing.T) {
 	assertCrossProjectRef(t, derr, productenums.ErrCategoryInUse, "products.category_ids", f.otherProjectID, pB.ID)
 	f.assertCategoryStillThere(t, category.ID)
 
-	// 解绑后必须能正常删除（守卫不能变成「一律拒绝」）。
 	if err := f.db.Exec("UPDATE products SET category_ids = '[]'::jsonb WHERE id = ?", pB.ID).Error; err != nil {
 		t.Fatalf("解绑失败: %v", err)
 	}
@@ -183,8 +152,6 @@ func TestCrossProjectCategoryDeleteGuard(t *testing.T) {
 	}
 }
 
-// TestCrossProjectBrandDeleteGuard 品牌被另一个工程的商品引用时必须拒绝删除
-// （漏看跨工程引用时的后果不是悬空 id，而是外键 ON DELETE SET NULL 的**静默解绑**）。
 func TestCrossProjectBrandDeleteGuard(t *testing.T) {
 	f := newCrossRefFixture(t)
 	if f == nil {
@@ -203,7 +170,6 @@ func TestCrossProjectBrandDeleteGuard(t *testing.T) {
 	derr := f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID})
 	assertCrossProjectRef(t, derr, productenums.ErrBrandInUse, "products.brand_id", f.otherProjectID, pB.ID)
 
-	// 反证「静默解绑」确实会发生：绕开守卫直接删品牌行，对端商品的 brand_id 被置空。
 	var stillThere string
 	if err := f.db.Raw("SELECT brand_id::text FROM products WHERE id = ?", pB.ID).Scan(&stillThere).Error; err != nil {
 		t.Fatalf("读 brand_id 失败: %v", err)
@@ -213,7 +179,6 @@ func TestCrossProjectBrandDeleteGuard(t *testing.T) {
 	}
 }
 
-// TestCrossProjectAttributeDeleteGuard 属性组被另一个工程的商品引用时必须拒绝删除。
 func TestCrossProjectAttributeDeleteGuard(t *testing.T) {
 	f := newCrossRefFixture(t)
 	if f == nil {
@@ -233,8 +198,6 @@ func TestCrossProjectAttributeDeleteGuard(t *testing.T) {
 	assertCrossProjectRef(t, derr, productenums.ErrAttrInUse, "products.attribute_ids", f.otherProjectID, pB.ID)
 }
 
-// TestCrossProjectTagDeleteGuard 标签被另一个工程的商品引用时必须拒绝删除
-// （本工程内的引用照旧解绑，只有跨工程引用打回给人：跨工程写不该由本工程的删除动作代劳）。
 func TestCrossProjectTagDeleteGuard(t *testing.T) {
 	f := newCrossRefFixture(t)
 	if f == nil {
@@ -253,7 +216,6 @@ func TestCrossProjectTagDeleteGuard(t *testing.T) {
 	derr := f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: f.projectID, ID: tag.ID})
 	assertCrossProjectRef(t, derr, productenums.ErrTagCrossProject, "products.tag_ids", f.otherProjectID, pB.ID)
 
-	// 本工程内的引用仍然照旧解绑后删除（既有语义不变）。
 	tagB, err := f.svc.CreateTag(ctx, &productdto.CreateTagReq{
 		ProjectID: f.projectID, Name: "本工程标签", Slug: "same-project-tag", Kind: "manual",
 	})
@@ -269,15 +231,6 @@ func TestCrossProjectTagDeleteGuard(t *testing.T) {
 	}
 }
 
-// TestCrossProjectRefGuardUnderNonSuperRole 把同一条守卫放进**非超级角色**里跑。
-//
-// 为什么必须单独有这一条：超级用户无条件绕过 RLS（FORCE 只约束表属主），在它下面
-// 连「不带作用域的查询」都能看见全部工程 —— 那证明不了换成 go_wp_app（DB-04）之后
-// 守卫还成立。本用例用 SET ROLE 切到 NOSUPERUSER NOBYPASSRLS 角色（并断言 rls.BypassedRole
-// 为 false），再执行「删 A 工程的分类 / 标签 / 变体」，跨工程引用仍然可见 ⇒ 守卫成立。
-//
-// 连接固定：db.Connection 把整段跑在**同一条连接**上（SET ROLE 是会话级状态，
-// 连接池里多一条连接就会让后续语句落在没切角色的那条上）。
 func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -314,7 +267,7 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建对端商品失败: %v", err)
 	}
-	// 跨工程引用（直连写入，见文件头）—— 全部在切换角色**之前**准备好。
+
 	for _, stmt := range []struct {
 		sql string
 		arg string
@@ -342,9 +295,7 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 		if bypass {
 			return errors.New("测试跑在绕过 RLS 的角色上（superuser / BYPASSRLS），本用例会失真")
 		}
-		// 反证环境（与 public/test/rls 同口径）：未设作用域时 products 一行都读不到 ——
-		// 也就是说「不带作用域的一条查询」在这个角色下必然得出「没有任何人引用」。
-		// 本用例守的正是这一点：守卫的跨工程能力不能建立在那条路上。
+
 		var visible int64
 		if qerr := conn.Raw("SELECT count(*) FROM products").Scan(&visible).Error; qerr != nil {
 			return fmt.Errorf("未设作用域读 products 失败: %w", qerr)
@@ -353,7 +304,6 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 			return fmt.Errorf("未设作用域竟读到 %d 行 products：本角色没有受 RLS 约束，用例会失真", visible)
 		}
 
-		// 角色之下：同一批对象、同一条守卫。
 		scopeProjects := projectservice.NewService(projectmodel.NewProjectModel(conn))
 		scoped := productservice.NewService(productmodel.NewModel(conn), scopeProjects)
 		checks := []struct {
@@ -375,8 +325,7 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 				return scoped.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: pA.ID, ID: tag.ID})
 			}},
 		}
-		// 四个守卫**逐条报告**（不在第一条失败处停下）：这一版在「守卫只看本工程」的代码上
-		// 应当四条全红，只报第一条会让人以为另外三条没问题。
+
 		var failures []string
 		for _, c := range checks {
 			derr := c.call()
@@ -401,8 +350,6 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 	}
 }
 
-// ensureNonSuperRole 建 / 复用非超级测试角色（集群级对象，固定名 + 幂等；与
-// public/test/rls/nonsuperuser 同口径：随机名每跑一次就在集群里留一个角色）。
 func ensureNonSuperRole(t *testing.T, db *gorm.DB) string {
 	t.Helper()
 	const role = "wp_test_prod02_guard"
@@ -423,7 +370,7 @@ func ensureNonSuperRole(t *testing.T, db *gorm.DB) string {
 		}
 	}
 	if err := db.Exec("GRANT USAGE ON SCHEMA ext_shared TO " + role).Error; err != nil {
-		// ext_shared（迁移 210 的 pg_trgm 专用 schema）可能不存在；本用例的查询不需要它。
+
 		t.Logf("ext_shared 授权跳过（可选）: %v", err)
 	}
 	return role

@@ -2,12 +2,6 @@ package migrations
 
 import "sync"
 
-// register_mail_template_body_json.go — 622：模板可视化正文的三列。
-//
-// 判据是「三列都在」而不是「表存在」：mail_templates 从 129 起就在，只看表名会让这条
-// 迁移对既有库永久跳过（那正是「写了列却没加上」的静默失败形态）。
-//
-// CheckSQL 里的 `?` 由迁移器传入**表名**，且只传这一个参数 —— 列名必须写进 SQL 字面量。
 func registerMailTemplateBodyJSON() {
 	registerMailTemplateBodyJSONOnce.Do(registerMailTemplateBodyJSONMigration)
 }

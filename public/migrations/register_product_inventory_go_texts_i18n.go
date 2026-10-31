@@ -1,24 +1,5 @@
 package migrations
 
-// 449 — product / inventory 两模块「Go 侧生成、会进页面的中文」词条化（key + 中文兜底）。
-//
-// 门槛判据**逐条枚举本批自己的 item_key**（上界封闭），不用 LIKE 前缀、也不用全库总量 ——
-// 依据 AGENTS.md §数据库·迁移 的两条判据与 058 / 076 两次真实故障：
-// 前缀判据在「已有别的批次同前缀行」时计数虚高 → 本批被静默跳过；在用全库总量时
-// 将来新增同前缀 key 会让计数永远追不平 → 每次启动重跑。
-//
-// 行数 = key 数 × 2（每个 key 中英各一行）：136 × 2 = 272。
-//
-// 137 而不是 142：本批原先含 admin.seo.grade.{green,lightgreen,yellow,red,redBlocking}
-// 5 个 key（10 行）—— product 侧改用共享映射 seoscore.ScoreGradeText 后它们成为孤儿，
-// 由 458 退役（register_retire_seo_grade_keys.go）。这 5 个 key 已从下面的列表移出，
-// 门槛同步 284 → 274：**留着它们会让计数永远差 10、本 seed 每轮启动都重跑**。
-// 449 的 SQL 保持原样（历史迁移 SQL 不改），因此那 10 行仍由 458 在每轮 seed 末尾清掉。
-//
-// 2026-10 再 -1（274 → 270）：admin.product_bundle.noProduct 随捆绑配置页下线，
-// 已从 SQL 与本文件列表一起移除（门槛按「列表里剩下的 key 数」算，只删 SQL 不删列表
-// 会让计数永远差 2、本 seed 每轮重跑），636b 负责从存量库删掉那两行。同批其余 bundle
-// 词条不在本批（属 191/247/430），各批已按同样方式收口。
 func init() {
 	registerSeed(Seed{
 		Version:   "449-i18n-product-inventory-go-texts",
@@ -66,8 +47,7 @@ func init() {
 			"'admin.products.detail.variationAttributeUnreferenced', 'admin.products.detail.variationAttributeNotInProduct', 'admin.products.detail.variationValueNotEnabled', " +
 			"'admin.products.detail.relatedSelfReference', 'admin.products.detail.relatedMissing', 'admin.products.detail.relatedCrossProject', " +
 			"'admin.products.detail.refGuardBlocked', " +
-			// 可翻译字段的展示名（entityType / field，调用点在 product/contract/product_entity.go）：
-			// 2026-09 补进本批 —— 它们此前**从未 seed 过**，英文界面一直回落到中文兜底。
+
 			"'admin.product_translations.entityType.product', 'admin.product_translations.entityType.category', " +
 			"'admin.product_translations.entityType.brand', 'admin.product_translations.entityType.tag', " +
 			"'admin.product_translations.entityType.attribute', 'admin.product_translations.field.productName', " +

@@ -1,11 +1,5 @@
 package style
 
-// style_rules_test.go — 表达力补齐的回归（AGENTS.md §3）：
-//   - 触屏治理分派：hover / hover-none / active 各自进专用样式桶；
-//   - CSS 变量导出（vars）：控件值 → --name，供插件包 assets/*.css 消费；
-//   - 容器/主题查询（queries）：size / theme / local 三桶分层输出；
-//   - 新增白名单的拒绝路径与专用桶/断点的互斥校验。
-
 import (
 	"strings"
 	"testing"
@@ -13,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// compileWithQueries 编译并同时返回常规 CSS 与容器查询 CSS（两者分开输出）。
 func compileWithQueries(t *testing.T, nodeID string, props map[string]any, s *Schema) (css, queries string) {
 	t.Helper()
 	b := &core.CSSBuckets{}
@@ -23,8 +16,6 @@ func compileWithQueries(t *testing.T, nodeID string, props map[string]any, s *Sc
 	return b.String(), b.ContainerQueryCSS()
 }
 
-// TestCompilePseudoDedicatedBuckets 伪类分派：hover 包 (hover: hover)、
-// hover-none 进 (hover: none)、active 不包媒体查询且排在 hover 之后。
 func TestCompilePseudoDedicatedBuckets(t *testing.T) {
 	s := &Schema{Rules: []Rule{
 		{Pseudo: "hover", Decls: [][2]string{{"transform", "translateY(-2px)"}}},
@@ -51,7 +42,6 @@ func TestCompilePseudoDedicatedBuckets(t *testing.T) {
 	}
 }
 
-// TestCompileVars 变量导出：控件值 → CSS 变量，未设置的不导出，顺序固定。
 func TestCompileVars(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Decls: [][2]string{{"display", "flex"}},
@@ -72,7 +62,6 @@ func TestCompileVars(t *testing.T) {
 	}
 }
 
-// TestCompileVarValueInjection 变量值的防御深度（与绑定值同一道值白名单）。
 func TestCompileVarValueInjection(t *testing.T) {
 	s := &Schema{Rules: []Rule{{Vars: []VarBinding{{Name: "accent", From: "accent"}}}}}
 	for _, evil := range []string{
@@ -87,7 +76,6 @@ func TestCompileVarValueInjection(t *testing.T) {
 	}
 }
 
-// TestCompileQueries 容器/主题查询：三桶分别包进 sky-auto/sky-theme/sky-local 层，层序固定。
 func TestCompileQueries(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Decls: [][2]string{{"display", "block"}},
@@ -119,7 +107,6 @@ func TestCompileQueries(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsDedicatedPseudoWithBreakpoints 专用桶没有断点维度，互斥拒绝。
 func TestValidateRejectsDedicatedPseudoWithBreakpoints(t *testing.T) {
 	for _, p := range []string{"hover", "hover-none", "active"} {
 		s := &Schema{Rules: []Rule{{
@@ -139,7 +126,6 @@ func TestValidateRejectsDedicatedPseudoWithBreakpoints(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsBadVarsAndQueries 变量与查询声明的白名单拒绝路径。
 func TestValidateRejectsBadVarsAndQueries(t *testing.T) {
 	cases := []struct {
 		name string
@@ -166,7 +152,6 @@ func TestValidateRejectsBadVarsAndQueries(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsNewPrimitives 新增原语的合法宣告通过校验。
 func TestValidateAcceptsNewPrimitives(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Pseudo: "hover-none",
@@ -181,7 +166,6 @@ func TestValidateAcceptsNewPrimitives(t *testing.T) {
 	}
 }
 
-// TestCompileNewPrimitivesDeterministic 新增原语同样保持确定性。
 func TestCompileNewPrimitivesDeterministic(t *testing.T) {
 	s := &Schema{Rules: []Rule{{
 		Pseudo: "hover",

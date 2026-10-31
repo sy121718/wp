@@ -1,17 +1,5 @@
 package architecture
 
-// controller_orchestration_test.go — 控制器是编排出口：一个 handler 只允许「绑定 → 调业务层 → 出口」。
-//
-// 判据用**语句数**而不是行数：行数会被注释、换行和错误处理展开骗过去，语句数直接反映
-//「这个入口自己干了多少活」。上限 6 条（含 if / return / 赋值 / 表达式语句 / defer）。
-//
-// 存量按**文件**登记（pendingControllerStatements）：offenders 是「超过上限的函数个数」，
-// max 是这些函数里最大的语句数。两条都**双向**判：新超限的函数让 offenders 变多 → 红；
-// 改好一个让 offenders 变少、或最大语句数下降 → 也要改登记（只能下降，不许偷偷放宽）。
-//
-// 商品模块已删除整屏组装：多个现成对象的纯查询按绑定、查询、出口三个阶段校验；
-// 包含派生形状或写操作的处理器仍受语句预算约束。
-
 import (
 	"fmt"
 	"go/ast"
@@ -26,7 +14,6 @@ import (
 
 const controllerStatementBudget = 6
 
-// pendingControllerStatements 各控制器的存量（键是仓库相对路径）。
 var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/admin/inbound/http/admin_handle.go":                        {offenders: 8, max: 13},
 	"internal/module/admin/inbound/http/admin_i18n_write.go":                    {offenders: 1, max: 33},
@@ -75,17 +62,13 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":           {offenders: 3, max: 10},
 	"internal/module/user/inbound/http/user_page.go":                            {offenders: 5, max: 31},
 	"internal/module/workbench/inbound/http/workbench_handle.go":                {offenders: 1, max: 9},
-	// 工作台画布逻辑按域拆成 5 个文件（原先是一个 2538 行的 workbench_page.go）。
-	// 登记按**文件**记，所以拆分后要跟着拆：offenders 是该文件里超限的函数数，
-	// max 是其中最大的语句数。拆分本身不改变这些函数的大小 —— 豁免不是拆分换来的，
-	// 拆分只是为了下一步逐个把装配下沉到 service 读模型时能分开做。
-	"internal/module/workbench/inbound/http/inspector_handle.go":      {offenders: 2, max: 10}, // InspectorPanel=10, OutlineTree=7
-	"internal/module/workbench/inbound/http/canvas_handle.go":         {offenders: 1, max: 29}, // Workbench=29
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go": {offenders: 3, max: 15}, // InstanceSave=15, TemplatePreviewDraft=12, TemplatePreview=10
-	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  {offenders: 1, max: 9},  // PreviewDraft=9
+
+	"internal/module/workbench/inbound/http/inspector_handle.go":      {offenders: 2, max: 10},
+	"internal/module/workbench/inbound/http/canvas_handle.go":         {offenders: 1, max: 29},
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": {offenders: 3, max: 15},
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  {offenders: 1, max: 9},
 }
 
-// controllerHandlerStatements 每个 handler 的语句数（键是「文件:函数」，只收参数恰好一个 *gin.Context 的函数）。
 func controllerHandlerStatements(t *testing.T) (perFile map[string][]int, offenders map[string][]string) {
 	t.Helper()
 	root := repoRoot(t)
@@ -122,8 +105,7 @@ func controllerHandlerStatements(t *testing.T) (perFile map[string][]int, offend
 				continue
 			}
 			n := workStatements(fd.Body)
-			// 多个现成对象可以逐份读取；只有结构验证通过的纯查询编排按三个阶段计数。
-			// 不能为了满足语句数把一屏重新包装进 service 的 PageResp。
+
 			if isObjectQueryPipeline(fd.Body) {
 				n = 3
 			}
@@ -140,7 +122,6 @@ func controllerHandlerStatements(t *testing.T) (perFile map[string][]int, offend
 	return perFile, offenders
 }
 
-// isGinContext 参数类型是不是 *gin.Context。
 func isGinContext(e ast.Expr) bool {
 	star, ok := e.(*ast.StarExpr)
 	if !ok {
@@ -154,11 +135,6 @@ func isGinContext(e ast.Expr) bool {
 	return ok && id.Name == "gin" && sel.Sel.Name == "Context"
 }
 
-// workStatements 「干活」的语句数：赋值 / 表达式 / 循环 / 声明 / defer / go / send / 自增。
-//
-// 不数 if / switch / return / break 这些骨架：任何入口都要有它们，数进来只会让预算变成
-// 「谁能把错误处理写得更挤」。留下的是**这个入口自己做了多少事** —— 拼视图、算格式、
-// 逐行映射都会以赋值与循环的形状暴露出来。
 func workStatements(n ast.Node) int {
 	c := 0
 	ast.Inspect(n, func(x ast.Node) bool {
@@ -172,7 +148,6 @@ func workStatements(n ast.Node) int {
 	return c
 }
 
-// TestControllerHandlersStayOrchestrationOnly 一个 handler ≤6 条语句；存量按文件双向对账。
 func TestControllerHandlersStayOrchestrationOnly(t *testing.T) {
 	_, offenders := controllerHandlerStatements(t)
 
@@ -202,7 +177,6 @@ func TestControllerHandlersStayOrchestrationOnly(t *testing.T) {
 	}
 }
 
-// TestControllerHandlerStatementCeilingDrops 登记表里的 max 只能下降：上升说明某个 handler 又变胖了。
 func TestControllerHandlerStatementCeilingDrops(t *testing.T) {
 	perFile, offenders := controllerHandlerStatements(t)
 	for file, want := range pendingControllerStatements {

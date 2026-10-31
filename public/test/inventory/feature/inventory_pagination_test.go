@@ -1,24 +1,3 @@
-// Package feature 库存域三个列表页的分页（审计 D3）。
-//
-// 三页原先都是「handler 里写死上限 + 模板里没有分页条」：库存流水 50 条、货源 200 条、
-// 采购单 100 条，第 N+1 条起**静默消失**（流水按时间倒序，第 51 条之后的老记录永远看不到），
-// 页面上连「还有更多」都不说。
-//
-// 这里钉住三条判据，缺一条就会漏掉一类缺陷：
-//
-//	· 超过一页时**真的出现分页条**，且信息行给出**真源总数**（「共 N 条，第 X-Y 条」）；
-//	· 翻页链接**带着当前筛选条件**（丢条件时记录会「变多」，看着像数据错乱）；
-//	· 单页与**装载失败降级渲染**两条路都**不渲染分页条**（页壳仍完好，判据见
-//	  inventory_page_load_failed_test.go）。
-//
-// 分页条的数据来自契约的 CountMovements / CountSources / CountPurchaseOrders（真源总数，
-// 与 List 同一份过滤条件）—— 上一轮那版「实探第 page+1 页 + 只给上一页 / 下一页 +
-// 信息行写『后面还有记录』」的降级形态已随契约补齐删除，故本文件对信息行的断言
-// 从「第 N 页 · 每页 M 条」换成真源分页的「共 N 条，第 X-Y 条」。
-//
-// 每条断言都从**渲染出来的 HTML**上取（而不是重算一份期望值）：分页条由
-// admin/partials/pagination.html 渲染，handler 注入的键名 / 链接形状与它不一致时，
-// 手写的期望值会照样通过。
 package feature
 
 import (
@@ -30,14 +9,8 @@ import (
 	"time"
 )
 
-// paginationBar 分页条在页面里的稳定标记（partials/pagination.html 的 <nav class="pagination">）。
 const paginationBar = `class="pagination"`
 
-// paginationLinkLine 取分页条里指向第 page 页的那一行链接。
-//
-// 判据必须落在**那一行**上，不能在整个响应体里各查一次：筛选栏的表单里也带着同样的
-// 参数（value=... / selected），「链接丢了条件、但筛选栏还留着条件」时，全页级的两次
-// Contains 会照常通过 —— 那正是这个用例要挡的缺陷。
 func paginationLinkLine(t *testing.T, body string, page int) string {
 	t.Helper()
 	needle := "page=" + strconv.Itoa(page)
@@ -50,7 +23,6 @@ func paginationLinkLine(t *testing.T, body string, page int) string {
 	return ""
 }
 
-// TestInventoryMovementsPagePagination 流水页：超过一页出现分页条，翻到第 2 页能看到后面的记录。
 func TestInventoryMovementsPagePagination(t *testing.T) {
 	engine, f := newInventoryPageEngine(t)
 	if engine == nil {
@@ -59,7 +31,7 @@ func TestInventoryMovementsPagePagination(t *testing.T) {
 	wh := f.createWarehouse(t, "SZ", "深圳仓", true)
 	p := mustProduct(t, f, "流水分页商品")
 	v := f.firstVariant(t, p.ID)
-	// 三条流水：每页 2 条 ⇒ 第 1 页 2 行、第 2 页 1 行。
+
 	changeIn(t, f, p, v, wh.ID, 1, "purchase_in")
 	changeIn(t, f, p, v, wh.ID, 2, "purchase_in")
 	changeIn(t, f, p, v, wh.ID, 3, "purchase_in")
@@ -73,8 +45,7 @@ func TestInventoryMovementsPagePagination(t *testing.T) {
 	if !strings.Contains(body, paginationBar) {
 		t.Fatalf("流水超过一页时应出现分页条（审计 D3：这一页原先没有分页条）")
 	}
-	// 真源分页的信息行：总数来自 CountMovements（不是「本页条数」也不是探测结果）——
-	// 3 条流水、每页 2 条 ⇒「共 3 条，第 1-2 条」。
+
 	if !strings.Contains(body, "共 3 条，第 1-2 条") {
 		t.Fatalf("分页信息行应给出真源总数与区间（共 3 条，第 1-2 条）")
 	}
@@ -83,7 +54,6 @@ func TestInventoryMovementsPagePagination(t *testing.T) {
 	}
 	paginationLinkLine(t, body, 2)
 
-	// 第 2 页：剩 1 条，信息行给出末页区间。
 	second := httptestGet(engine, "/admin/inventory?project="+f.projectID+"&limit=2&page=2")
 	if second.Code != http.StatusOK {
 		t.Fatalf("流水第 2 页应 200，实际 %d", second.Code)
@@ -96,18 +66,12 @@ func TestInventoryMovementsPagePagination(t *testing.T) {
 		t.Fatalf("末页的信息行应给出末页区间（共 3 条，第 3-3 条）")
 	}
 
-	// 单页（每页 10 条）：不渲染分页条。
 	single := httptestGet(engine, "/admin/inventory?project="+f.projectID+"&limit=10")
 	if strings.Contains(single.Body.String(), paginationBar) {
 		t.Fatalf("单页不应渲染分页条")
 	}
 }
 
-// TestInventoryMovementsDefaultPageSize 缺省每页条数就是本页常量（流水 50 条）。
-//
-// 改动前写死的就是 50 条一页（只是没有分页条），这里钉住「补分页」没有顺手改掉默认页大小。
-// 判据是**端到端可观测的**：51 条流水在缺省视图下应正好两页（第 1 页 50 行、第 2 页 1 行）——
-// 缺省值若被改成别的数（service 的 20、或更小），页数、行数与信息行都会立刻不对。
 func TestInventoryMovementsDefaultPageSize(t *testing.T) {
 	engine, f := newInventoryPageEngine(t)
 	if engine == nil {
@@ -142,7 +106,6 @@ func TestInventoryMovementsDefaultPageSize(t *testing.T) {
 	}
 }
 
-// TestInventoryMovementsPaginationKeepsFilters 翻页链接保留流水的五个筛选维度。
 func TestInventoryMovementsPaginationKeepsFilters(t *testing.T) {
 	engine, f := newInventoryPageEngine(t)
 	if engine == nil {
@@ -168,13 +131,6 @@ func TestInventoryMovementsPaginationKeepsFilters(t *testing.T) {
 	}
 }
 
-// TestInventoryMovementCountMatchesListedRows 流水页的 Count 与 List 在同一组筛选条件下口径一致。
-//
-// 这是真源分页的**根本判据**：「共 N 条」来自契约的 CountMovements，而实际能翻出来的行数来自
-// ListMovements —— 两处口径一旦分叉（某个筛选维度只加在一边），页面就会给出一个永远翻不到底
-// 的页数，而两边都不会报错。流水的筛选维度最多，且 model 层曾经就漏过其中四个
-// （商品 / 来源类型 / 来源引用 / 时间区间），所以这里按维度逐个筛一遍，把「逐页行数之和」
-// 与「信息行给出的总数」对上。
 func TestInventoryMovementCountMatchesListedRows(t *testing.T) {
 	engine, f := newInventoryPageEngine(t)
 	if engine == nil {
@@ -206,9 +162,7 @@ func TestInventoryMovementCountMatchesListedRows(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			base := "/admin/inventory?project=" + f.projectID + "&limit=2" + c.query
 			got := 0
-			// 逐页数**流水行**：判据是流水行独有的增减徽章 class（move-delta-*）——
-			// 不能用 SKU 编码计数：同一个 SKU 还出现在筛选项与「各仓库存」表里，
-			// 一行流水会被数成三行（实测踩过：按 SKU 筛选时逐页合计 61）。
+
 			for page := 1; page <= 20; page++ {
 				rec := httptestGet(engine, base+"&page="+strconv.Itoa(page))
 				if rec.Code != http.StatusOK {
@@ -216,9 +170,7 @@ func TestInventoryMovementCountMatchesListedRows(t *testing.T) {
 				}
 				n := strings.Count(rec.Body.String(), "move-delta-")
 				got += n
-				// 满页才可能还有下一页；不满即到底。
-				//（越界页会收敛到末页，所以「取到空页」这个终止条件永远不成立 ——
-				//  实测踩过：按行数判断之外的写法会一直翻到循环上限。）
+
 				if n < 2 {
 					break
 				}
@@ -226,7 +178,7 @@ func TestInventoryMovementCountMatchesListedRows(t *testing.T) {
 			if got != c.want {
 				t.Fatalf("逐页行数合计 %d，期望 %d（该筛选条件下真实命中数）", got, c.want)
 			}
-			// 总数与逐页行数之和必须相等：多于一页时信息行才有，正好用它读总数。
+
 			if c.want > 2 {
 				body := httptestGet(engine, base).Body.String()
 				if !strings.Contains(body, fmt.Sprintf("共 %d 条", c.want)) {
@@ -237,17 +189,6 @@ func TestInventoryMovementCountMatchesListedRows(t *testing.T) {
 	}
 }
 
-// TestInventoryPaginationI18nSeeded 分页条真正用到的那几个词条中英各一行真的落库。
-//
-// 真源分页把信息行与翻页按钮统一到 shell 的公共词条（迁移 059 登记）：
-// shell.pagination.info（「共 %s 条，第 %s-%s 条」）/ .prev / .next。
-// 模板与 Go 里的中文只是 t() 兜底，词条命中时显示的是库里的值 —— 一条「只写了兜底、
-// 忘了迁移」的文案位在中文环境里看起来完全正常，只有英文站点才暴露（回落中文）。
-//
-// 上一轮的降级分页条自带 3 个本域词条（迁移 412 的 admin.inventory.pagination.info /
-// .more / .end），它们随降级形态一起退出了使用路径 —— 已由迁移 419 从库里删除，
-// 412 的 seed 幂等条件也同批改成「这 3 个 key 一行都不剩则跳过」（不再插回）。
-// 本用例因此钉**现在真正生效**的那几个词条。
 func TestInventoryPaginationI18nSeeded(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {

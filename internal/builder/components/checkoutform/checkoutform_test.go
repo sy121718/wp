@@ -8,7 +8,6 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 )
 
-// testContext 一份「装配完整」的构建上下文（站点工程 + 国家清单 + 语言）。
 func testContext() *core.RenderContext {
 	return &core.RenderContext{
 		ProjectID: "p-42",
@@ -20,7 +19,6 @@ func testContext() *core.RenderContext {
 	}
 }
 
-// mustRequired 取清单里所有必填字段的 key（构造合法用例时用）。
 func mustRequired() []Field {
 	fields := []Field{}
 	for _, f := range ordercontract.CheckoutFormFields() {
@@ -31,7 +29,6 @@ func mustRequired() []Field {
 	return fields
 }
 
-// fullSelection 清单里全部可进表单字段的选择（构造合法用例时用）。
 func fullSelection() []Field {
 	fields := []Field{}
 	for _, f := range ordercontract.CheckoutFormFields() {
@@ -40,12 +37,10 @@ func fullSelection() []Field {
 	return fields
 }
 
-// withFields 在必填字段的基础上追加若干字段（保持必填齐全）。
 func withFields(extra ...Field) []Field {
 	return append(mustRequired(), extra...)
 }
 
-// TestValidateExtra 校验：非法 key、重复、必填不可缺、长度与数量上限。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -75,12 +70,10 @@ func TestValidateExtra(t *testing.T) {
 	}
 }
 
-// TestValidateExtraFieldCountLimit 字段数量上限（契约只有 20 个可选项，上限 32 是防滥用）。
 func TestValidateExtraFieldCountLimit(t *testing.T) {
 	fields := mustRequired()
 	for len(fields) < maxFields+1 {
-		// 用重复 key 也不影响本用例的判据：数量检查排在前面的循环之前会先命中，
-		// 这里要断言的是「超量被拒」，具体原因不参与判定。
+
 		fields = append(fields, Field{Key: "zip"})
 	}
 	if err := validateExtra(&Props{Fields: fields}, "cf1"); err == nil {
@@ -88,7 +81,6 @@ func TestValidateExtraFieldCountLimit(t *testing.T) {
 	}
 }
 
-// TestResolveSelectionDefaults 空 Fields = 清单里 DefaultOn 的那一套，且必填项齐全。
 func TestResolveSelectionDefaults(t *testing.T) {
 	selected, err := resolveSelection(&Props{})
 	if err != nil {
@@ -106,7 +98,7 @@ func TestResolveSelectionDefaults(t *testing.T) {
 			t.Errorf("默认选择缺少默认勾选字段 %q", f.Key)
 		}
 	}
-	// 收货人 / 收货电话默认不勾（cart.go 的缺省就是联系人姓名与电话）。
+
 	for _, key := range []string{"shipName", "shipPhone"} {
 		if got[key] {
 			t.Errorf("默认选择不该包含 %q（缺省沿用联系人）", key)
@@ -114,8 +106,6 @@ func TestResolveSelectionDefaults(t *testing.T) {
 	}
 }
 
-// TestBuildViewWithoutProjectID 缺站点工程 → 提示视图，不报错（编辑器画布 / 组件库契约测试
-// 本来就没有工程上下文，报错会让「每个组件插入后都能编译」这条既有契约失效）。
 func TestBuildViewWithoutProjectID(t *testing.T) {
 	view, err := BuildView(&Props{}, &core.RenderContext{})
 	if err != nil {
@@ -133,10 +123,6 @@ func TestBuildViewWithoutProjectID(t *testing.T) {
 	}
 }
 
-// TestBuildViewMissingCountries 表单里有国家字段但构建期没注入国家清单 → 明确报错。
-//
-// 这是「静默降级 vs 构建失败」的判据所在：降级成「只有一个默认国家的下拉」会把访客
-// 锁死在一个国家，而页面上完全看不出异常。
 func TestBuildViewMissingCountries(t *testing.T) {
 	ctx := &core.RenderContext{ProjectID: "p-1"}
 	_, err := BuildView(&Props{Fields: withFields(Field{Key: "country"})}, ctx)
@@ -148,8 +134,6 @@ func TestBuildViewMissingCountries(t *testing.T) {
 	}
 }
 
-// TestBuildViewNoCountryFieldNeedsNoCountries 表单没有国家字段时不检查国家清单：
-// 不需要的数据缺失不构成缺陷（非中国站点会把国家关掉）。
 func TestBuildViewNoCountryFieldNeedsNoCountries(t *testing.T) {
 	ctx := &core.RenderContext{ProjectID: "p-1"}
 	fields := []Field{}
@@ -164,7 +148,6 @@ func TestBuildViewNoCountryFieldNeedsNoCountries(t *testing.T) {
 	}
 }
 
-// TestBuildViewGroupsOrderAndBillingSwitch 分组、字段顺序与账单开关。
 func TestBuildViewGroupsOrderAndBillingSwitch(t *testing.T) {
 	ctx := &core.RenderContext{
 		ProjectID: "p-1",
@@ -176,7 +159,6 @@ func TestBuildViewGroupsOrderAndBillingSwitch(t *testing.T) {
 	}
 	fields := withFields(Field{Key: "country"}, Field{Key: "billAddress"})
 
-	// 不开账单：字段顺序按作者配置，账单组整组不渲染。
 	view, err := BuildView(&Props{Fields: fields}, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -192,7 +174,7 @@ func TestBuildViewGroupsOrderAndBillingSwitch(t *testing.T) {
 			t.Fatalf("未开账单地址时不该渲染账单组: %+v", g)
 		}
 	}
-	// 顺序：作者配置里 country 排在必填项之后 → 收货组里 country 必须紧跟其后出现。
+
 	shipping := groupOf(view.Groups, ordercontract.CheckoutGroupShipping)
 	if shipping == nil || len(shipping.Fields) == 0 {
 		t.Fatal("应有收货地址分组")
@@ -201,7 +183,6 @@ func TestBuildViewGroupsOrderAndBillingSwitch(t *testing.T) {
 		t.Fatalf("收货组应按作者配置的顺序渲染（address → country）: %+v", shipping.Fields)
 	}
 
-	// 开账单：账单组出现。
 	view, err = BuildView(&Props{Fields: fields, CollectBilling: true}, ctx)
 	if err != nil {
 		t.Fatalf("BuildView(collectBilling): %v", err)
@@ -211,13 +192,12 @@ func TestBuildViewGroupsOrderAndBillingSwitch(t *testing.T) {
 	}
 }
 
-// TestBuildViewCountryOptionSelected 默认国家预选中；字典里没有它时全不选中（浏览器取第一项）。
 func TestBuildViewCountryOptionSelected(t *testing.T) {
 	ctx := &core.RenderContext{
 		ProjectID: "p-1",
 		Checkout: core.CheckoutInput{
 			Countries:      []core.CheckoutCountry{{Code: "CN", Label: "中国"}, {Code: "US", Label: "美国"}},
-			DefaultCountry: "us", // 大小写不敏感
+			DefaultCountry: "us",
 		},
 	}
 	view, err := BuildView(&Props{Fields: withFields(Field{Key: "country"})}, ctx)
@@ -258,13 +238,12 @@ func TestBuildViewCountryOptionSelected(t *testing.T) {
 	}
 }
 
-// TestBuildViewRequiredCanOnlyTighten 必填只能加严：清单必填项恒为 required，作者可把可选字段设为必填。
 func TestBuildViewRequiredCanOnlyTighten(t *testing.T) {
 	ctx := &core.RenderContext{ProjectID: "p-1"}
 	fields := withFields(Field{Key: "zip", Required: true})
 	for i := range fields {
 		if fields[i].Key == "email" {
-			fields[i].Required = false // 试图放松清单必填项
+			fields[i].Required = false
 		}
 	}
 	view, err := BuildView(&Props{Fields: fields}, ctx)
@@ -285,7 +264,6 @@ func TestBuildViewRequiredCanOnlyTighten(t *testing.T) {
 	}
 }
 
-// TestBuildViewHiddenAndAction projectId / lang 进隐藏字段。
 func TestBuildViewHiddenAndAction(t *testing.T) {
 	ctx := testContext()
 	view, err := BuildView(&Props{}, ctx)
@@ -307,7 +285,6 @@ func TestBuildViewHiddenAndAction(t *testing.T) {
 	}
 }
 
-// TestDeclareFeatures 表单分支登记统一 JSON 读写基座。
 func TestDeclareFeatures(t *testing.T) {
 	ctx := testContext()
 	view, err := BuildView(&Props{}, ctx)
@@ -325,13 +302,8 @@ func TestDeclareFeatures(t *testing.T) {
 	}
 }
 
-// TestFieldCatalogAlignedWithCheckoutChain 字段库必须与结算链路的收参逐条对齐。
-//
-// 判据是 cart/dto/cart_req.go 的 CartCheckoutReq.BindForm —— 那张 paramOf 调用表就是
-// 「结算链路实际收的参数」。清单与它分叉时：多一个 = 凭空发明（没人读它），
-// 少一个 = 访客填了会被静默丢弃（页面上看不出任何异常）。
 func TestFieldCatalogAlignedWithCheckoutChain(t *testing.T) {
-	// 来源：cart/dto/cart_req.go 的 CartCheckoutReq.BindForm（收货 / 账单 / 备注 / 链路参数）。
+
 	want := []string{
 		"email", "name", "phone",
 		"shipName", "shipPhone", "country", "province", "city", "district", "address", "zip",
@@ -351,7 +323,7 @@ func TestFieldCatalogAlignedWithCheckoutChain(t *testing.T) {
 	if len(got) != len(want) {
 		t.Errorf("字段清单有 %d 项、结算链路收 %d 项（多出来的必须能说出谁读它）", len(got), len(want))
 	}
-	// 金额与归属类永远不进字段库（信任边界，见 cart/service/cart_checkout.go 的运费边界）。
+
 	for _, forbidden := range []string{"shippingTotal", "total", "subtotal", "discountTotal", "userId", "user", "paid"} {
 		if got[forbidden] {
 			t.Errorf("字段库不该包含 %q（金额与归属是收银台上的东西，不能让客户端填）", forbidden)
@@ -359,7 +331,6 @@ func TestFieldCatalogAlignedWithCheckoutChain(t *testing.T) {
 	}
 }
 
-// groupOf 按分组键查找分组。
 func groupOf(groups []GroupView, key string) *GroupView {
 	for i := range groups {
 		if groups[i].Key == key {
@@ -369,7 +340,6 @@ func groupOf(groups []GroupView, key string) *GroupView {
 	return nil
 }
 
-// contains 字符串切片包含判断（小工具）。
 func contains(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {

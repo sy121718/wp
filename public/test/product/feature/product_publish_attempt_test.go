@@ -1,16 +1,5 @@
 package feature
 
-// product_publish_attempt_test.go — 发布历史（B11 / 迁移 671）的整页链路。
-//
-// 走真实链路：建商品 → 真发布（真编译、真激活）→ presentation 的 PublishAttemptPort
-// → 商品侧 outbound 适配器 → 商品读模型。假 reader 里我写什么就回什么，验不到
-// 「发布真的留了一行」这件事。
-//
-// 覆盖三件在界面上看不出来的事：
-//   1. 发布成功会**自动**留一行（不需要任何一次点击）—— 这是「全记」的前提；
-//   2. 失败也留；内部错误原文不进入商品查询响应；
-//   3. 分页是 page/size/hasMore：累计口径下重复取同一页得到同一批行（前端按 id 去重）。
-
 import (
 	"context"
 	"testing"
@@ -20,13 +9,10 @@ import (
 	publishrecordoutbound "go_wp/internal/module/product/outbound/publishrecord"
 )
 
-// withPublishAttemptPort 给 fixture 的商品 service 接上发布历史端口
-// （与装配同形：presentation service 已嵌入 PublishAttemptPort）。
 func (f *detailFixture) withPublishAttemptPort() {
 	f.products.SetPublishAttemptPort(publishrecordoutbound.NewWithAttempts(f.pres, f.pres))
 }
 
-// TestPublishAttemptsRecordsEveryPublish 一次发布留一行，再发一次变两行，最新在最前。
 func TestPublishAttemptsRecordsEveryPublish(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -62,7 +48,6 @@ func TestPublishAttemptsRecordsEveryPublish(t *testing.T) {
 		t.Fatalf("成功的尝试要指向产物版本与 hash: %+v", row)
 	}
 
-	// 第二次发布（换 URL = update_url）→ 两行，新行在前。
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{
 		ProjectID: f.projectID, EntityType: "product", EntityID: productID, NewPath: "/products/attempt-live-2",
 	}); err != nil {
@@ -83,8 +68,6 @@ func TestPublishAttemptsRecordsEveryPublish(t *testing.T) {
 	}
 }
 
-// TestPublishAttemptsPagingIsCumulativeAndStable 分页是 page/size：取第 2 页得到前 2*size 条，
-// 重复取同一页得到同一批行（累计口径下前端按 id 去重后追加即幂等）。
 func TestPublishAttemptsPagingIsCumulativeAndStable(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
@@ -123,14 +106,13 @@ func TestPublishAttemptsPagingIsCumulativeAndStable(t *testing.T) {
 	if len(p2.Rows) != 4 || p2.HasMore {
 		t.Fatalf("第 2 页应是累计前 4 条且没有更多: rows=%d hasMore=%v", len(p2.Rows), p2.HasMore)
 	}
-	// 累计口径：前 2 条必须与第 1 页逐条相同（否则前端按 id 去重会漏行）。
+
 	for i := 0; i < 2; i++ {
 		if p2.Rows[i].ID != p1.Rows[i].ID {
 			t.Fatalf("累计口径下第 %d 行应与第 1 页一致：%d != %d", i, p2.Rows[i].ID, p1.Rows[i].ID)
 		}
 	}
 
-	// 重复取第 1 页：同一批行（只增表上的恒等，前端去重才不会看到重复）。
 	again, err := f.products.ProductPublishAttempts(ctx, &productdto.PublishAttemptListReq{
 		ProjectID: f.projectID, ProductID: productID, Page: 1, Size: 2,
 	})
@@ -144,7 +126,6 @@ func TestPublishAttemptsPagingIsCumulativeAndStable(t *testing.T) {
 	}
 }
 
-// TestPublishAttemptsNotWired 端口没接：Ready=false 且不报错（装配缺陷 ≠ 读失败 ≠ 没记录）。
 func TestPublishAttemptsNotWired(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {

@@ -1,10 +1,5 @@
 package ordermcp
 
-// order_status_tools_test.go — 订单状态写工具的边界。
-//
-// 两个刻意的设计要在这里钉住：① 只吃 orderId，工程作用域由 service 探测；
-// ② 操作人从 ctx 注入，不从参数读（状态日志是审计材料）。
-
 import (
 	"context"
 	"fmt"
@@ -97,7 +92,6 @@ func TestStatusToolNames(t *testing.T) {
 	}
 }
 
-// 操作人身份必须来自 ctx，不能来自参数 —— 状态日志是审计材料。
 func TestStatusInjectsOperatorFromContext(t *testing.T) {
 	s := &stubStatus{}
 	if _, err := invokeStatus(t, statusTool(t, "order_status", s), 42, map[string]any{
@@ -113,7 +107,6 @@ func TestStatusInjectsOperatorFromContext(t *testing.T) {
 	}
 }
 
-// 参数里不该有 projectId —— 工程作用域由 service 探测。
 func TestStatusSchemaHasNoProjectID(t *testing.T) {
 	for _, name := range []string{"order_status", "order_cancel", "order_note"} {
 		schema := fmt.Sprintf("%+v", statusTool(t, name, &stubStatus{}).Schema())
@@ -126,7 +119,6 @@ func TestStatusSchemaHasNoProjectID(t *testing.T) {
 	}
 }
 
-// 取消和退款不走通用状态路径（取消要归还库存、退款要记流水号）。
 func TestOrderStatusSchemaExcludesCancelAndRefund(t *testing.T) {
 	schema := fmt.Sprintf("%+v", statusTool(t, "order_status", &stubStatus{}).Schema())
 	for _, bad := range []string{`"cancelled"`, `"refunded"`} {
@@ -155,7 +147,6 @@ func TestOrderStatusResultNamesLabel(t *testing.T) {
 	}
 }
 
-// 取消回执必须说清「退款是另一步」—— 否则用户会以为取消就退了钱。
 func TestOrderCancelResultExplainsRefundIsSeparate(t *testing.T) {
 	s := &stubStatus{}
 	text, err := invokeStatus(t, statusTool(t, "order_cancel", s), 1, map[string]any{
@@ -175,7 +166,6 @@ func TestOrderCancelResultExplainsRefundIsSeparate(t *testing.T) {
 	}
 }
 
-// 备注是整段覆盖 —— 描述必须提醒先读。
 func TestOrderNoteDescriptionWarnsOverwrite(t *testing.T) {
 	desc := statusTool(t, "order_note", &stubStatus{}).Description()
 	if !strings.Contains(desc, "order_get") {

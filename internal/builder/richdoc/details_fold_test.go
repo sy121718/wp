@@ -1,18 +1,5 @@
 package richdoc
 
-// details_fold_test.go — 折叠块（details / summary）在 richdoc 这条链路上的保真背书。
-//
-// 背景：rich-editor 扩展把「折叠块」做成 Trix 的原子附件，提交时展开为
-// <details><summary>标题</summary>正文</details>，服务端白名单（core/richtext.go）认识这两个标签。
-// 但导入器一度把 details 当通用结构壳（structuralTags）剥掉 —— 用户在编辑器里写的折叠块
-// 导入画布后会变成一串裸段落，既不报错也没有警告意义上的「结构丢失」可查。
-//
-// 这个文件钉三件事：
-//  1. 导入：折叠块整块落进一个 core.text 的富文本字段（结构完整，不是被拆散）；
-//  2. 清洗：script 剥壳、on* 事件属性全部剔除 —— 折叠块不能成为 XSS 的载体；
-//  3. 渲染：把导入结果交给真实编译器，产物里 <details>/<summary> 与正文原样在（含行内格式）。
-//     只测转换不测编译会漏掉「字段名/组件类型漂移」，自造的 props 与组件定义分叉时照样全绿。
-
 import (
 	"strings"
 	"testing"
@@ -54,7 +41,6 @@ func TestDetailsFoldSurvivesImportAndExport(t *testing.T) {
 		}
 	}
 
-	// 导出方向同样是一次清洗 + 序列化：结构仍在，危险内容仍不出现。
 	out, err := NodesToHTML(res.Nodes)
 	if err != nil {
 		t.Fatalf("导出失败：%v", err)
@@ -73,7 +59,6 @@ func TestDetailsFoldSurvivesImportAndExport(t *testing.T) {
 		}
 	}
 
-	// 往返收敛：导出结果再导入 + 再导出，字节必须一致（否则真实数据会逐次漂移）。
 	again, err := HTMLToNodes(out.HTML)
 	if err != nil {
 		t.Fatalf("二次导入失败：%v", err)
@@ -86,7 +71,6 @@ func TestDetailsFoldSurvivesImportAndExport(t *testing.T) {
 		t.Errorf("折叠块往返不收敛\n第一次 %q\n第二次 %q", out.HTML, out2.HTML)
 	}
 
-	// 空折叠块不产生空节点（否则画布上会多一个看不见的节点）。
 	empty, err := HTMLToNodes("<details><summary></summary></details>")
 	if err != nil {
 		t.Fatalf("空折叠块转换失败：%v", err)
@@ -125,7 +109,7 @@ func TestDetailsFoldRendersInCompiledArtifact(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, html)
 		}
 	}
-	// 每个折叠块都各自闭合（结构完整，而不是被压平成一段文字）。
+
 	if n := strings.Count(html, "<details"); n != 2 {
 		t.Errorf("产物里应有 2 个折叠块，实际 %d 个\n%s", n, html)
 	}

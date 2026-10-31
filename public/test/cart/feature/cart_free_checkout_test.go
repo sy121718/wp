@@ -1,13 +1,3 @@
-// cart_free_checkout_test.go — 0 元订单必须能落账（BIZ-05）。
-//
-// 缺陷：`Checkout` 无条件带 `created.Total` 调支付通道，而通道对 `Amount <= 0` 明确拒绝
-// （金额必须为正）。0 元订单（免费商品 / 100% 折扣 + 站点无运费）于是建了单、扣了库存、
-// 却停在 `pending`，30 分钟后被 order_expire 自动取消（归还库存、释放券）—— 客户永远付不了。
-//
-// 判据：
-//  1. 0 元订单结算后订单状态为 `paid`（不是 `pending`），带 paid_at；
-//  2. 落账通道与真实支付**可区分**（`free`），流水号由订单号派生（幂等、可对账）；
-//  3. 非 0 元订单不受影响（仍走真实通道，见 cart_checkout_test.go 的既有用例）。
 package feature
 
 import (
@@ -20,7 +10,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// TestCartFreeCheckoutMarksPaid 免费商品（price=0）结算：直接落账为 paid。
 func TestCartFreeCheckoutMarksPaid(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -49,14 +38,14 @@ func TestCartFreeCheckoutMarksPaid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}
-	// 核心判据：不能停在 pending —— 那会在 30 分钟后被自动取消。
+
 	if detail.Head.Status != ordermodel.OrderStatusPaid {
 		t.Fatalf("0 元订单落库状态应为 paid，实际 %q（停在 pending 即缺陷复现）", detail.Head.Status)
 	}
 	if detail.Head.PaidAt == nil {
 		t.Fatal("已付款订单必须有 paid_at")
 	}
-	// 通道与流水号必须与真实支付可区分：对账时「本来 0 元」不能混进通道营收。
+
 	if detail.Head.PaymentMethod != "free" {
 		t.Fatalf("0 元订单的落账通道应为 free，实际 %q", detail.Head.PaymentMethod)
 	}
@@ -72,8 +61,6 @@ func TestCartFreeCheckoutMarksPaid(t *testing.T) {
 	}
 }
 
-// TestCartFreeCheckoutIsIdempotentByRequestID 同一 requestId 重复提交 0 元结算只落一单，
-// 且第二次仍返回已付款状态（幂等语义覆盖这条新路径）。
 func TestCartFreeCheckoutIsIdempotentByRequestID(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -106,9 +93,6 @@ func TestCartFreeCheckoutIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestCartPaidOrderRequiresPositiveAmountGateway 回归保护：非 0 元订单仍走真实通道。
-//
-// 0 元分支必须**只**拦金额为 0 的单，别把付费单也短路了。
 func TestCartPaidOrderRequiresPositiveAmountGateway(t *testing.T) {
 	f := newCartFixture(t)
 	if f == nil {
@@ -136,7 +120,7 @@ func TestCartPaidOrderRequiresPositiveAmountGateway(t *testing.T) {
 	if detail.Head.Total != 2500 {
 		t.Fatalf("订单总额应为 2500 分，实际 %d", detail.Head.Total)
 	}
-	// 顺手确认购物车被清空（既有行为不回退）。
+
 	if res.Cookie == "" {
 		t.Fatal("结算成功后必须返回可回写的空购物车 cookie")
 	}

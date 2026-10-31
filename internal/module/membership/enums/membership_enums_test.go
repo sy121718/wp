@@ -1,16 +1,5 @@
 package membershipenums
 
-// membership_enums_test.go — 错误兜底表（errFallbacks）与 enums 常量的逐条对账。
-//
-// 兜底跟着**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。为什么要这条测试：
-// 漏写一条兜底的后果是「该业务错误在页面上显示成裸 key 或一句通用提示」—— 功能不算坏，
-// 但没人会发现，而新增业务文案恰恰是每次改需求都会发生的事。
-//
-// 双向判失败：新增 Err* 却没给兜底要红；兜底表里留着已删除的 key（错别字 / 死条目）同样要红 ——
-// 后者没人看的话，那张表会退化成注释。
-//
-// 纯 AST 解析，不依赖数据库 / 装配，毫秒级。形态照 comment / sysconfig 的同名测试。
-
 import (
 	"errors"
 	"go/ast"
@@ -24,9 +13,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// fallbackExclusions 不进兜底表的常量 → 理由（必须写明；这张表本身也要能被审计）。
-//
-// 成功回执（Msg*）不进：兜底表只服务**错误**出口，Msg* 走 response.SuccessWithMessage。
 var fallbackExclusions = map[string]string{
 	"MsgTierCreated":      "成功回执：永远不作为错误响应返回",
 	"MsgTierUpdated":      "成功回执：永远不作为错误响应返回",
@@ -36,14 +22,12 @@ var fallbackExclusions = map[string]string{
 	"MsgAssignUnlocked":   "成功回执：永远不作为错误响应返回",
 }
 
-// TestErrFallbacksCoverAllEnums 本包每个 Err* 常量都必须在 errFallbacks 里有非空兜底
-// （或在 fallbackExclusions 里写明理由），且兜底表的每个 key 都对应一条真实常量。
 func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("枚举本包源文件失败: %v", err)
 	}
-	declared := map[string]string{} // 常量值 → 常量名
+	declared := map[string]string{}
 	checked := 0
 
 	for _, file := range files {
@@ -99,7 +83,7 @@ func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("没有扫到任何 Err* / Msg* 常量：判据失效（源码结构变了？）")
 	}
-	// 反向：兜底表里的每一条都必须对应一条真实常量（防错别字 / 防死条目）。
+
 	for value := range errFallbacks {
 		if _, ok := declared[value]; !ok {
 			t.Errorf("errFallbacks 里的 %q 不对应本包任何 Err* 常量（拼写错误或常量已删？）", value)
@@ -107,10 +91,6 @@ func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	}
 }
 
-// TestErrCarriesFallbackAndKey Err 工厂把「key + 中文兜底」一起交给 pkg/facing 的判据。
-//
-// 这条是出口能工作的前提：Error() 必须是 key（IsBusinessError 的形态判据靠它），
-// FactOf 必须同时给出 Business 与 Fallback（出口靠前者决定能不能对外说、后者决定说什么）。
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrDefaultTierMissing)
 	if err.Error() != ErrDefaultTierMissing {
@@ -127,22 +107,16 @@ func TestErrCarriesFallbackAndKey(t *testing.T) {
 		t.Errorf("不带定位信息的错误不该有 Tail: %+v", fact)
 	}
 
-	// 未登记的 key 也要能构成一条错误（facing.New 会回落成 key）：出口给裸 key，一眼可见。
 	if got := Err("membership.err.notDeclared"); got.Error() != "membership.err.notDeclared" {
 		t.Errorf("未登记 key 的 Error() = %q", got.Error())
 	}
 
-	// 内部错误原文不命中判据 —— 它必须走归口分支（500 + 通用文案 + 日志）。
 	if _, ok := facing.FactOf(errors.New(`
 pq: relation "membership_tiers" does not exist`)); ok {
 		t.Error("数据库原文不该被判成业务错误")
 	}
 }
 
-// TestErrDetailKeepsTail 带定位数据的形态：key 与明细同时被 FactOf 取回。
-//
-// 分隔符必须是 ASCII「: 」—— 写成全角「：」时 FactOf 的复合形态判据不认，
-// 整条会退化成内部错误（500 + 通用文案），而 service 侧看起来完全正常。
 func TestErrDetailKeepsTail(t *testing.T) {
 	err := ErrDetail(ErrDefaultTierMissing, "p-1")
 	fact, ok := facing.FactOf(err)
@@ -155,16 +129,12 @@ func TestErrDetailKeepsTail(t *testing.T) {
 	if fact.Fallback == "" || fact.Fallback == fact.Key {
 		t.Errorf("带定位信息的错误也要带兜底: %+v", fact)
 	}
-	// 空定位信息不拼分隔符（否则页面上会多出一个孤零零的冒号）。
+
 	if ErrDetail(ErrNotFound, "   ").Error() != ErrNotFound {
 		t.Errorf("空定位信息不该拼分隔符: %q", ErrDetail(ErrNotFound, "   ").Error())
 	}
 }
 
-// TestEntitlementKindsMatchConstants 权益类型清单与两个常量一一对应。
-//
-// EntitlementKinds 是「上界封闭」的清单：新增一种权益要同时改 enums、迁移 462 的 CHECK
-// 与 462a 的词条 —— 三处漏一处都会在运行时暴露，这里先钉住第一处。
 func TestEntitlementKindsMatchConstants(t *testing.T) {
 	if len(EntitlementKinds) != 2 {
 		t.Fatalf("EntitlementKinds = %v，本期恰好两种", EntitlementKinds)

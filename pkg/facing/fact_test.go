@@ -1,12 +1,5 @@
 package facing_test
 
-// fact_test.go — 业务错误形态判据（FactOf）。
-//
-// 这个判据决定了一条错误**要不要对外展示原文**：命中业务判据 → 出口按 key 取词给用户；
-// 未命中 → 归口成「系统内部错误」+ 只进日志。判错的代价是双向的：
-//   - 漏判（业务错误当内部错误）→ 用户看到 500，而真因是可行动的一句说明；
-//   - 误判（内部错误当业务错误）→ 把 SQL / 路径原样发给客户端。
-
 import (
 	"fmt"
 	"testing"
@@ -14,7 +7,6 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// TestFactOfHalfWidthColonStillWorks 半角冒号的既有形态不受影响。
 func TestFactOfHalfWidthColonStillWorks(t *testing.T) {
 	const key = "order.err.returnQuantityExceeded"
 	fact, ok := facing.FactOf(fmt.Errorf("%s: %s", key, "detail"))
@@ -23,10 +15,6 @@ func TestFactOfHalfWidthColonStillWorks(t *testing.T) {
 	}
 }
 
-// TestFactOfSeparatorIsTheFirstOne 分隔符取**最先出现**的那个。
-//
-// 写侧形态是 `key` 紧跟分隔符、明细在后，所以第一个分隔符才是边界。
-// 明细内部可能还有冒号（如 URL），取错会把 key 切成一段无意义的前缀。
 func TestFactOfSeparatorIsTheFirstOne(t *testing.T) {
 	const key = "order.err.returnQuantityExceeded"
 	fact, ok := facing.FactOf(fmt.Errorf("%s: 见 https://example.test/a:b", key))
@@ -38,7 +26,6 @@ func TestFactOfSeparatorIsTheFirstOne(t *testing.T) {
 	}
 }
 
-// TestFactOfSingleKeyIsBusiness 单段 key 本身就是业务错误（不带明细）。
 func TestFactOfSingleKeyIsBusiness(t *testing.T) {
 	fact, ok := facing.FactOf(facing.New("ErrSessionNotFound", "会话不存在"))
 	if !ok || !fact.Business || fact.Key != "ErrSessionNotFound" {
@@ -46,14 +33,6 @@ func TestFactOfSingleKeyIsBusiness(t *testing.T) {
 	}
 }
 
-// TestFactOfPlainErrorIsNotBusiness 没有 key 形态的错误不是业务错误。
-//
-// 这条守的是泄漏方向：SQL 原文、文件路径都不该被当成业务文案发给客户端。
-//
-// 注意判据是**普通 error**（fmt.Errorf / 驱动错误），不是 facing.New：
-// facing.New 声明的是「这是我自己写的对外文案」（它实现 Source，① 优先命中），
-// 那是代码在声明处的显式选择，不是形态推断。真正的泄漏面是有人把
-// `fmt.Errorf("pq: …")` 直接返给出口 —— 那正是本用例覆盖的形态。
 func TestFactOfPlainErrorIsNotBusiness(t *testing.T) {
 	for _, raw := range []string{
 		`pq: relation "sys_config" does not exist`,

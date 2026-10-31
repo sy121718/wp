@@ -7,7 +7,6 @@ import (
 	"go_wp/pkg/binding"
 )
 
-// previewContext 只转交已绑定的临时展示事实，不持久化或授权私人数据访问。
 func previewContext(c *gin.Context) {
 	req, ok := binding.Query[workbenchdto.PreviewStateReq](c)
 	if !ok {

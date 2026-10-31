@@ -1,13 +1,5 @@
 package migrations_test
 
-// register_mail_automation_definition_v2_test.go — 迁移 621（v1 图定义刷成 v2）的判据。
-//
-// 三条都要钉住，缺一条这条迁移就会悄悄失效：
-//   1. **判据命中**：真实库跑完迁移之后，CheckSQL 必须返回 1（有一条 v1 行残留就会
-//      每次启动重跑，而重跑看起来无害、实际把作者正在编辑的行反复重写）；
-//   2. **变换正确**：v1 的 next/yes/no 折进 out、branch 改名 filter，end 没有出口；
-//   3. **幂等**：把迁移体再跑一遍不报错、不改坏已是 v2 的行。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -19,7 +11,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// mailDefinitionV2Version 与注册文件里的版本号逐字一致（改名时两边都会红）。
 const mailDefinitionV2Version = "621-mail-automation-definition-v2"
 
 func findMigration(t *testing.T, version string) migrations.Migration {
@@ -33,7 +24,6 @@ func findMigration(t *testing.T, version string) migrations.Migration {
 	return migrations.Migration{}
 }
 
-// TestMailDefinitionV2MigrationRegistered 注册项的形状：Go 回调而非 SQL，且有内容判据。
 func TestMailDefinitionV2MigrationRegistered(t *testing.T) {
 	m := findMigration(t, mailDefinitionV2Version)
 	if m.Func == nil {
@@ -50,7 +40,6 @@ func TestMailDefinitionV2MigrationRegistered(t *testing.T) {
 	}
 }
 
-// TestMailDefinitionV2MigrationUpgradesRows 造一条 v1 行，跑迁移体，断言形状。
 func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -60,7 +49,6 @@ func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 	ctx := context.Background()
 	model := mailmodel.NewMailModel(db)
 
-	// 直接写一条 v1 行（绕过 service：service 现在保存的就是 v2）。
 	v1 := mailmodel.JSONMap{
 		"entry": "n1",
 		"nodes": []any{
@@ -80,7 +68,6 @@ func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 		t.Fatalf("造 v1 行失败: %v", err)
 	}
 
-	// 迁移体的判据此刻必须说「还有 v1 行」。
 	var before int64
 	if err := db.Raw("SELECT CASE WHEN " + mailV1CountSQLForTest + " = 0 THEN 1 ELSE 0 END").Scan(&before).Error; err != nil {
 		t.Fatalf("判据执行失败: %v", err)
@@ -89,7 +76,6 @@ func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 		t.Fatalf("迁移前判据应返回 0（还有 v1 行），实际 %d", before)
 	}
 
-	// 用迁移器的入口跑一次（同一条纪律：检查 → 同事务执行 → 日志）。
 	if err := migrations.ApplyFunc(db, m.Version, m.TableName, m.CheckSQL, m.Func); err != nil {
 		t.Fatalf("执行 621 失败: %v", err)
 	}
@@ -140,16 +126,14 @@ func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 		t.Fatalf("end 不该有出口，实际 %v", out)
 	}
 
-	// 判据现在必须说「已应用」。
 	var after int64
-	if err := db.Raw("SELECT CASE WHEN "+mailV1CountSQLForTest+" = 0 THEN 1 ELSE 0 END").Scan(&after).Error; err != nil {
+	if err := db.Raw("SELECT CASE WHEN " + mailV1CountSQLForTest + " = 0 THEN 1 ELSE 0 END").Scan(&after).Error; err != nil {
 		t.Fatal(err)
 	}
 	if after != 1 {
 		t.Fatalf("迁移后判据应返回 1，实际 %d", after)
 	}
 
-	// 幂等：再跑一遍不报错，行内容不变。
 	if err := migrations.ApplyFunc(db, m.Version, m.TableName, m.CheckSQL, m.Func); err != nil {
 		t.Fatalf("第二次执行 621 应跳过而非报错: %v", err)
 	}
@@ -160,8 +144,6 @@ func TestMailDefinitionV2MigrationUpgradesRows(t *testing.T) {
 	}
 }
 
-// mailV1CountSQLForTest 与注册文件里的判据逐字一致（只用 SQL 文本，不复制 Go 侧实现）。
-// 外层括号是必须的：嵌进 CASE 表达式的子查询不带括号会报 42601。
 const mailV1CountSQLForTest = `(SELECT COUNT(*) FROM mail_automations
  WHERE definition IS NOT NULL
    AND jsonb_typeof(definition) = 'object'

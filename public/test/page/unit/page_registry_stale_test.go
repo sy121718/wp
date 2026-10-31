@@ -1,11 +1,5 @@
 package unit
 
-// page_registry_stale_test.go — 组件升级后的 stale 判定只看「当前产物」（报告 ARCH-03）。
-//
-// 判据：当前产物 = 本模块语言账本（page_publications / page_stagings）里 active/staged
-// 指向的产物行。历史回滚产物（仍 available、未被 GC）不参与判定 —— 旧实现扫全部 available
-// 行，未 GC 的旧行会让「已重建」的页面每次重启都被重新标成 stale，且每次失败的包都不同。
-
 import (
 	"context"
 	"testing"
@@ -15,10 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// insertRegistryArtifact 造一行可控 registry_version 的产物元数据。
-//
-// 真实构建路径写的是当前 builder.RegistryVersion()，造不出「旧组件产出」那一侧；
-// 这里只补产物行本身（表结构仍来自生产迁移）。
 func insertRegistryArtifact(t *testing.T, db *gorm.DB, pageID, lang string, version int64, registryVersion string) string {
 	t.Helper()
 	var id string
@@ -36,7 +26,6 @@ func insertRegistryArtifact(t *testing.T, db *gorm.DB, pageID, lang string, vers
 	return id
 }
 
-// pointPageLedger 把某语言的语言账本（激活 + 暂存）指向给定产物行。
 func pointPageLedger(t *testing.T, db *gorm.DB, pageID, lang, artifactID string) {
 	t.Helper()
 	if err := db.Exec(`INSERT INTO page_publications (page_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time)
@@ -53,7 +42,6 @@ func pointPageLedger(t *testing.T, db *gorm.DB, pageID, lang, artifactID string)
 	}
 }
 
-// enableSecondLocale 给工程补一条非默认语言（默认 zh-CN 由 helper 的工程创建路径给出）。
 func enableSecondLocale(t *testing.T, db *gorm.DB, projectID, lang string) {
 	t.Helper()
 	if err := db.Exec(
@@ -63,17 +51,12 @@ func enableSecondLocale(t *testing.T, db *gorm.DB, projectID, lang string) {
 	}
 }
 
-// TestMarkStaleByRegistryVersionIgnoresHistoricalArtifacts 重建后保留旧历史，再重启不误标。
-//
-// 这是报告 ARCH-03 验收的第一条：页面已经用新组件重建过（账本指向新产物），
-// 但旧产物行还在（未 GC）—— 判定不得因为它而把页面重新标成 stale。
 func TestMarkStaleByRegistryVersionIgnoresHistoricalArtifacts(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 	current := builder.RegistryVersion()
 	page := createPage(t, svc, projectID, "/registry-stale-history", emptyRevDoc)
 
-	// 历史产物（旧组件产出、仍 available）+ 当前产物（新组件产出）。
 	insertRegistryArtifact(t, db, page.ID, "zh-CN", 1, "old-registry-1")
 	curID := insertRegistryArtifact(t, db, page.ID, "zh-CN", 2, current)
 	pointPageLedger(t, db, page.ID, "zh-CN", curID)
@@ -92,7 +75,6 @@ func TestMarkStaleByRegistryVersionIgnoresHistoricalArtifacts(t *testing.T) {
 		t.Fatal("页面被误标为 stale（旧历史产物仍在 available，但账本已指向新产物）")
 	}
 
-	// 用例前提自检：旧产物行确实还在（否则这条用例测不到「历史行不参与」）。
 	var n int64
 	if err := db.Raw("SELECT COUNT(*) FROM page_artifacts WHERE page_id = ? AND registry_version = 'old-registry-1' AND payload_state = 'available'",
 		page.ID).Scan(&n).Error; err != nil {
@@ -103,11 +85,6 @@ func TestMarkStaleByRegistryVersionIgnoresHistoricalArtifacts(t *testing.T) {
 	}
 }
 
-// TestMarkStaleByRegistryVersionHitsOtherLangOnly 仅另一语言的产物由旧组件产出也必须命中。
-//
-// 报告 ARCH-03 验收的第三条：默认语言已经重建（新版本），只有 en-US 还停在旧产物 ——
-// 只按默认语言判定会漏掉它，线上 en-US 于是继续跑旧组件字节且无人察觉。
-// 同时覆盖「重建收敛」：账本改指新产物后再跑一次，不得再标记。
 func TestMarkStaleByRegistryVersionHitsOtherLangOnly(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -134,7 +111,6 @@ func TestMarkStaleByRegistryVersionHitsOtherLangOnly(t *testing.T) {
 		t.Fatal("页面应被标记为 stale")
 	}
 
-	// 重建收敛：en-US 账本改指新组件产物，再跑一次不该再标记。
 	if err := db.Exec("UPDATE pages SET stale = false WHERE id = ?", page.ID).Error; err != nil {
 		t.Fatalf("清理 stale 失败: %v", err)
 	}

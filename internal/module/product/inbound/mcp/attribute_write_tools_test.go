@@ -1,12 +1,5 @@
 package productmcp
 
-// attribute_write_tools_test.go — 属性组（规格）工具的边界。
-//
-// 这一组的关键是 **IsVariation**：它决定这个属性组是不是变体的来源。
-// 用户说「加个颜色属性」时想的是筛选条件，而它一旦是 true，用到它的商品
-// 就会按这些取值组合出一批 SKU —— 建完再改回来比一开始就设对麻烦得多，
-// 所以描述与回执都要把这件事说出来。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -93,7 +86,6 @@ func TestAttributeToolNames(t *testing.T) {
 	}
 }
 
-// 建组时给的取值要按顺序落成 Sort，空串要丢掉。
 func TestAttributeCreateCarriesValues(t *testing.T) {
 	stub := &stubAttributeWriter{createRes: &productdto.AttributeResp{
 		ID: "a1", Name: "颜色",
@@ -117,7 +109,6 @@ func TestAttributeCreateCarriesValues(t *testing.T) {
 	}
 }
 
-// IsVariation 的两个方向都要在回执里说清后果。
 func TestAttributeCreateTextExplainsVariation(t *testing.T) {
 	yes := &stubAttributeWriter{createRes: &productdto.AttributeResp{
 		ID: "a1", Name: "颜色", IsVariation: true,
@@ -147,7 +138,6 @@ func TestAttributeCreateTextExplainsVariation(t *testing.T) {
 	}
 }
 
-// 建空属性组要给提醒：空属性组在商品编辑页里没法选。
 func TestAttributeCreateWarnsWhenNoValues(t *testing.T) {
 	stub := &stubAttributeWriter{createRes: &productdto.AttributeResp{ID: "a1", Name: "颜色"}}
 	text, err := invokeAttr(t, attrTool(t, "attribute_create", stub), map[string]any{"name": "颜色"})
@@ -159,7 +149,6 @@ func TestAttributeCreateWarnsWhenNoValues(t *testing.T) {
 	}
 }
 
-// 改不了取值这件事必须写进描述 —— 否则模型会试着自己拼一个。
 func TestAttributeUpdateDescriptionSaysValuesNotEditable(t *testing.T) {
 	desc := attrTool(t, "attribute_update", &stubAttributeWriter{}).Description()
 	if !strings.Contains(desc, "改不了取值") {
@@ -193,7 +182,6 @@ func TestAttributeUpdateOnlyTouchesGivenFields(t *testing.T) {
 	}
 }
 
-// 清单必须带 id 与「是否用于变体」，写工具的 id 只能从这里拿。
 func TestAttributeListCarriesIDsAndVariationMark(t *testing.T) {
 	stub := &stubAttributeWriter{list: []*productdto.AttributeResp{
 		{ID: "a1", Name: "颜色", Key: "color", IsVariation: true,

@@ -1,17 +1,5 @@
 package unit
 
-// seo_compliance_build_test.go — 校验器与**真实构建产物**的对账（审计 SEO-01 前半段）。
-//
-// 这一个文件只回答一个问题：合规校验器对 builder 实际产出的形状理解对不对？
-//
-// 为什么必须单独测这一层：internal/seo/compliance 自己的用例用手写 HTML —— 手写样例
-// 永远按校验器的假设写，所以它们只能证明「规则按我以为的形状工作」，证明不了
-//「我以为的形状就是构建期真正产出的形状」。形状对不上的后果是假警（天天报「语种/路径
-// 不一致」而线上一切正常），而假警会让整个巡检失去意义。
-//
-// 因此这里用 builder.BuildSEOHead + builder.RenderDocument（与构建期同一份模板骨架）
-// 产出真产物，再断言零结论。
-
 import (
 	"strings"
 	"testing"
@@ -20,7 +8,6 @@ import (
 	"go_wp/internal/seo/compliance"
 )
 
-// renderArtifact 渲染一份与构建期同源的产物字节。
 func renderArtifact(t *testing.T, lang string, seo builder.SEO, alternates []builder.Alternate) []byte {
 	t.Helper()
 	head := builder.BuildSEOHead(seo, seo.Canonical, seo.Title, seo.Description, "首页", alternates)
@@ -37,7 +24,6 @@ func renderArtifact(t *testing.T, lang string, seo builder.SEO, alternates []bui
 	return []byte(doc)
 }
 
-// inspectBuilt 跑一次校验并返回结论。
 func inspectBuilt(t *testing.T, a compliance.Artifact) *compliance.Report {
 	t.Helper()
 	rep := compliance.Inspect(a)
@@ -47,7 +33,6 @@ func inspectBuilt(t *testing.T, a compliance.Artifact) *compliance.Report {
 	return rep
 }
 
-// TestBuiltArtifactPassesCompliance 单语言页面：真实产物必须一条结论都不产生。
 func TestBuiltArtifactPassesCompliance(t *testing.T) {
 	html := renderArtifact(t, "zh-CN", builder.SEO{
 		Title: "关于我们", Description: "关于我们的介绍", Canonical: "/about",
@@ -63,10 +48,6 @@ func TestBuiltArtifactPassesCompliance(t *testing.T) {
 	}
 }
 
-// TestBuiltArtifactHomePagePassesCompliance 首页 + 站点基址：站点级 @graph 不应触发误报。
-//
-// 首页会额外输出 Organization / WebSite / 面包屑节点，是结构化数据形状最复杂的一种；
-// 若主实体的识别写错（把站点节点当成页面节点），这里会立刻报「标题不一致」。
 func TestBuiltArtifactHomePagePassesCompliance(t *testing.T) {
 	t.Setenv("WP_SITE_BASE_URL", "https://shop.test")
 	html := renderArtifact(t, "zh-CN", builder.SEO{
@@ -94,7 +75,6 @@ func TestBuiltArtifactCrossSiteCanonicalReported(t *testing.T) {
 	}
 }
 
-// TestBuiltArtifactHreflangPassesCompliance 多语言互指：真实产物满足自指与 x-default。
 func TestBuiltArtifactHreflangPassesCompliance(t *testing.T) {
 	html := renderArtifact(t, "zh-CN", builder.SEO{
 		Title: "关于我们", Description: "描述", Canonical: "/about",
@@ -111,10 +91,6 @@ func TestBuiltArtifactHreflangPassesCompliance(t *testing.T) {
 	}
 }
 
-// TestBuiltArtifactNoindexWithoutSitemapPasses noindex 尚未进 sitemap 时不算矛盾。
-//
-// 这一条钉住「sitemap 收录」这个事实来自调用方：校验器自己判断不了站点级文件状态，
-// 拿不到就说不知道，而不是默认它已经进 sitemap 天天报警。
 func TestBuiltArtifactNoindexWithoutSitemapPasses(t *testing.T) {
 	html := renderArtifact(t, "zh-CN", builder.SEO{
 		Title: "内部页", RobotsIndex: "noindex", RobotsFollow: "nofollow", Canonical: "/internal",
@@ -133,7 +109,6 @@ func TestBuiltArtifactNoindexWithoutSitemapPasses(t *testing.T) {
 	}
 }
 
-// TestBuiltArtifactNoindexInSitemapReported 同一份产物一旦进了收录清单就是矛盾。
 func TestBuiltArtifactNoindexInSitemapReported(t *testing.T) {
 	html := renderArtifact(t, "zh-CN", builder.SEO{
 		Title: "内部页", RobotsIndex: "noindex", Canonical: "/internal",
@@ -150,11 +125,6 @@ func TestBuiltArtifactNoindexInSitemapReported(t *testing.T) {
 	}
 }
 
-// TestBuiltArtifactRealWorldDefectIsCaught 用真实 builder 产出**有缺陷**的产物：校验器必须报出来。
-//
-// 这是「失败能力验证」的常驻版本：把 canonical 指到别的路径（作者改了 URL 但没重建），
-// 校验器要能指出「产物宣称自己住在另一个地址」。若这条用例绿着而实现被改回「不校验」，
-// 说明用例没有失败能力 —— 那种用例只是装饰。
 func TestBuiltArtifactRealWorldDefectIsCaught(t *testing.T) {
 	html := renderArtifact(t, "zh-CN", builder.SEO{
 		Title: "关于我们", Canonical: "/old-about",
@@ -174,8 +144,7 @@ func TestBuiltArtifactRealWorldDefectIsCaught(t *testing.T) {
 	if !found {
 		t.Fatalf("canonical 指向别的路径必须被报出，实际 %+v", rep.Findings)
 	}
-	// warn 与 error 的区别要钉住：canonical 指向别处可能是作者有意的跨域声明，
-	// 因此它不把整份报告判成不合规 —— 等级只描述「要不要立刻看」，不描述阻断与否。
+
 	if !rep.OK() {
 		t.Fatalf("warn 级结论不应把报告判成不合规：%+v", rep.Findings)
 	}

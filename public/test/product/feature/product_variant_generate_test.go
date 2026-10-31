@@ -1,14 +1,3 @@
-// Package feature product 模块 feature 测试 —— 变体组合生成与默认值继承（issue #8）。
-//
-// 覆盖本票五条验收（真实 PostgreSQL + 生产 DDL + 真实 service）：
-//  1. 勾选若干属性值后自动生成全部组合；重复勾选 / 重复提交不产生重复变体；
-//  2. 超过维度或数量上限时拒绝并给出明确提示（且一条变体都不写）；
-//  3. 新变体逐字段继承商品级默认值；空值以 NULL 判定，0 与 false 视为已填；
-//  4. 编辑商品级默认值不影响已有变体（只影响之后新增的变体）；
-//  5. 无表单路径（不传勾选 = 批量生成 / 导入 / 接口）同样走判空继承。
-//
-// 组合的载体语义也在本文件固定下来：商品创建时生成的首个「无规格变体」就地承接
-// 第一个组合（保留其已填字段），其余组合新建 —— 商品不会多出一条悬挂变体。
 package feature
 
 import (
@@ -23,7 +12,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// mkVariationAttr 建一个「参与变体」的属性组（值与 key 一一对应，便于断言组合）。
 func mkVariationAttr(t *testing.T, f *attrFixture, name, key string, valueKeys []string) *productdto.AttributeResp {
 	t.Helper()
 	values := make([]productdto.AttributeValueReq, 0, len(valueKeys))
@@ -39,7 +27,6 @@ func mkVariationAttr(t *testing.T, f *attrFixture, name, key string, valueKeys [
 	return attr
 }
 
-// mkVariationProduct 建一个引用若干属性组的商品（同时生成它的首个无规格变体）。
 func mkVariationProduct(t *testing.T, f *attrFixture, name, slug string, attributeIDs []string, defaultPrice *float64) *productdto.ProductResp {
 	t.Helper()
 	p, err := f.svc.Create(context.Background(), &productdto.CreateReq{
@@ -52,7 +39,6 @@ func mkVariationProduct(t *testing.T, f *attrFixture, name, slug string, attribu
 	return p
 }
 
-// optionMap 读变体的规格组合。
 func optionMap(t *testing.T, v *productdto.VariantResp) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -62,8 +48,6 @@ func optionMap(t *testing.T, v *productdto.VariantResp) map[string]string {
 	return out
 }
 
-// TestGenerateVariantsCartesianProduct 验收 1：
-// 勾选（或全部）属性值后生成全部组合，顺序确定、组合互不相同、占位变体被承接。
 func TestGenerateVariantsCartesianProduct(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -78,7 +62,6 @@ func TestGenerateVariantsCartesianProduct(t *testing.T) {
 		t.Fatalf("前置条件：商品创建后应有 1 个占位变体，实际 %d", p.VariantCount)
 	}
 
-	// 无表单路径（不传勾选）= 全部参与变体的属性组 × 全部启用值。
 	res, err := f.svc.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: p.ID})
 	if err != nil {
 		t.Fatalf("生成变体组合失败: %v", err)
@@ -93,7 +76,7 @@ func TestGenerateVariantsCartesianProduct(t *testing.T) {
 	if len(res.Variants) != 4 {
 		t.Fatalf("生成后应有 4 个变体（不额外留悬挂变体），实际 %d", len(res.Variants))
 	}
-	// 组合顺序确定：按商品 attribute_ids 顺序（颜色 → 尺寸），最后一维变化最快。
+
 	want := []map[string]string{
 		{"color": "red", "size": "s"},
 		{"color": "red", "size": "m"},
@@ -115,7 +98,6 @@ func TestGenerateVariantsCartesianProduct(t *testing.T) {
 		seen[v.SKUCode] = true
 	}
 
-	// 商品详情回读：变体数与价格区间随之更新（价格区间是变体派生值）。
 	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -125,8 +107,6 @@ func TestGenerateVariantsCartesianProduct(t *testing.T) {
 	}
 }
 
-// TestGenerateVariantsIdempotentAndPartial 验收 1（幂等）：
-// 重复提交、重复勾选同一值、只勾部分值，都不产生重复变体。
 func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -140,7 +120,7 @@ func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 	if _, err := f.svc.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: p.ID}); err != nil {
 		t.Fatalf("首次生成失败: %v", err)
 	}
-	// 同参数再生成一次：全部跳过，变体数不变。
+
 	res, err := f.svc.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: p.ID})
 	if err != nil {
 		t.Fatalf("重复生成失败: %v", err)
@@ -150,8 +130,6 @@ func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 			res.Created, res.Skipped, len(res.Variants))
 	}
 
-	// 重复勾选同一个值（写两次）只算一个值：颜色限定为红，尺码取全部启用值，
-	// 两个组合都已存在 → 全部跳过，不产生重复变体。
 	red := color.Values[0].ID
 	res, err = f.svc.GenerateVariants(ctx, &productdto.GenerateVariantsReq{
 		ProductID: p.ID,
@@ -170,7 +148,6 @@ func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 		t.Fatalf("变体数不应变化，实际 %d", got.VariantCount)
 	}
 
-	// 追加一个只有单个值的属性组：勾选覆盖三个组 → 只补新值带来的那一个组合。
 	green := mkVariationAttr(t, f, "颜色2", "color2", []string{"green"})
 	if _, err := f.svc.Update(ctx, &productdto.UpdateReq{
 		ID: p.ID, AttributeIDs: []string{color.ID, size.ID, green.ID},
@@ -194,7 +171,6 @@ func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 	}
 }
 
-// TestGenerateVariantsLimits 验收 2：超维度 / 超数量时整体拒绝，且不写任何变体。
 func TestGenerateVariantsLimits(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -242,15 +218,13 @@ func TestGenerateVariantsLimits(t *testing.T) {
 		if got.VariantCount != 1 {
 			t.Fatalf("被拒绝时不应写入任何变体，实际 %d 个", got.VariantCount)
 		}
-		// 占位变体仍是「无规格」状态（拒绝发生在写库之前）。
+
 		if len(optionMap(t, got.Variants[0])) != 0 {
 			t.Fatalf("占位变体不应被改写：%s", string(got.Variants[0].OptionValues))
 		}
 	})
 }
 
-// TestGenerateVariantsInheritsDefaults 验收 3 + 5：
-// 新变体逐字段继承商品级默认值；已填字段（显式 0）不被覆盖。
 func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -266,7 +240,7 @@ func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
 	}
-	// 占位变体显式改成 0 价：0 是「已填」，生成时不得被商品默认值覆盖。
+
 	zero := 0.0
 	if _, err := f.svc.UpdateVariant(ctx, &productdto.UpdateVariantReq{
 		ID: p.Variants[0].ID, Price: &zero,
@@ -290,8 +264,6 @@ func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	}
 }
 
-// TestProductDefaultsEditDoesNotTouchVariants 验收 4：
-// 改商品级默认值只影响之后新增的变体，已有变体一个字段都不动。
 func TestProductDefaultsEditDoesNotTouchVariants(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -311,7 +283,6 @@ func TestProductDefaultsEditDoesNotTouchVariants(t *testing.T) {
 		t.Fatalf("首次生成失败: %v", err)
 	}
 
-	// 商品级默认价改成 200。
 	next := 200.0
 	if _, err := f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, DefaultPrice: &next}); err != nil {
 		t.Fatalf("改商品默认值失败: %v", err)
@@ -326,7 +297,6 @@ func TestProductDefaultsEditDoesNotTouchVariants(t *testing.T) {
 		}
 	}
 
-	// 给属性组加一个新值 → 新组合继承新的默认值 200。
 	if _, err := f.svc.SetAttributeValues(ctx, &productdto.SetAttributeValuesReq{
 		ID: color.ID,
 		Values: []productdto.AttributeValueReq{
@@ -349,7 +319,6 @@ func TestProductDefaultsEditDoesNotTouchVariants(t *testing.T) {
 	}
 }
 
-// TestGenerateVariantsSelectionValidation 边界：非法勾选一律报错，不静默忽略。
 func TestGenerateVariantsSelectionValidation(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -363,7 +332,7 @@ func TestGenerateVariantsSelectionValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改标记失败: %v", err)
 	}
-	// 停用一个值：勾选已停用的值必须报错（不允许悄悄跳过）。
+
 	if _, err := f.svc.SetAttributeValues(ctx, &productdto.SetAttributeValuesReq{
 		ID: color.ID,
 		Values: []productdto.AttributeValueReq{
@@ -407,7 +376,6 @@ func TestGenerateVariantsSelectionValidation(t *testing.T) {
 	})
 }
 
-// TestGenerateVariantsDisabledValueExcluded 边界：停用的值不参与「全部生成」。
 func TestGenerateVariantsDisabledValueExcluded(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -437,27 +405,18 @@ func TestGenerateVariantsDisabledValueExcluded(t *testing.T) {
 	}
 }
 
-// legacyProductTemplate 085 原始文档（issue #6，缺规格槽位）——
-// 用来模拟「085 已执行过、087b 尚未补槽位」的存量库。
 const legacyProductTemplate = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd-section","type":"core.container","props":{"tag":"section","layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"pd-body","type":"core.product","props":{"source":"product","mediaField":"product.defaultImage","galleryField":"product.images","titleField":"product.name","subtitleField":"product.subtitle","priceField":"product.priceRange","comparePriceField":"product.comparePrice","descriptionField":"product.description","currency":"¥","titleTag":"h1"}}]}]}`
 
-// TestVariantOptionsTemplateBackfill 迁移 087b：存量库的默认商品详情模板补规格槽位。
-//
-// 三条边界（数据迁移最容易出错的地方）：
-//
-//	· 与 085 原样一致的模板：草稿与不可变版本都必须补上槽位，且 source_hash 重算；
-//	· 作者改过的模板：一个字节都不动（缺槽位是作者的选择）；
-//	· 幂等：补完之后种子条件不再成立，重复执行不再改写。
 func TestVariantOptionsTemplateBackfill(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
 		return
 	}
-	// 先跑一次种子：085 建默认模板（新文档已含规格槽位）。
+
 	if err := migrations.RunSeeds(f.db); err != nil {
 		t.Fatalf("首次执行种子失败: %v", err)
 	}
-	// 回滚成 085 原始文档，模拟存量库。
+
 	if err := f.db.Exec("UPDATE content_templates SET draft_document = ?::jsonb WHERE entity_type = 'product'", legacyProductTemplate).Error; err != nil {
 		t.Fatalf("回滚草稿失败: %v", err)
 	}
@@ -481,7 +440,6 @@ func TestVariantOptionsTemplateBackfill(t *testing.T) {
 		t.Fatalf("补槽位后应重算 source_hash，实际 %q", hash)
 	}
 
-	// 幂等：再跑一次种子，模板内容不变。
 	if err := migrations.RunSeeds(f.db); err != nil {
 		t.Fatalf("重复执行种子失败: %v", err)
 	}
@@ -493,7 +451,6 @@ func TestVariantOptionsTemplateBackfill(t *testing.T) {
 		t.Fatalf("重复执行不应改写模板：前=%s 后=%s", draft, again)
 	}
 
-	// 作者改过的模板（同样缺槽位）不被重写。
 	custom := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"only","type":"core.heading","props":{"text":"我的版式"}}]}`
 	if err := f.db.Exec("UPDATE content_templates SET draft_document = ?::jsonb WHERE entity_type = 'product'", custom).Error; err != nil {
 		t.Fatalf("写入自定义模板失败: %v", err)
@@ -510,14 +467,12 @@ func TestVariantOptionsTemplateBackfill(t *testing.T) {
 	}
 }
 
-// TestVariantGeneratePermissionSeeded 迁移 087：变体组合生成的权限点已 seed
-// （未 seed 时 Casbin Enforce 无策略匹配 → 含超管在内全员 403）。
 func TestVariantGeneratePermissionSeeded(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
 		return
 	}
-	// 权限点由种子迁移写入：fixture 只跑结构迁移，这里显式跑一次种子。
+
 	if err := migrations.RunSeeds(f.db); err != nil {
 		t.Fatalf("执行数据种子失败: %v", err)
 	}

@@ -46,7 +46,7 @@ func TestRetiredSiteSlotUISeedIsPreciseAndIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 同前缀但不在本批精确清单的对象、非p策略和其它路径菜单均须保留。
+
 	for _, statement := range []string{
 		`INSERT INTO sys_i18n (item_key,lang,item_value,http_code,category,status) VALUES ('admin.site_slots.probe_keep','zh-CN','保留词条',200,'admin',1)`,
 		`INSERT INTO sys_permission (permission_code,permission_name,module,api_path,api_method) VALUES ('page:site_slot_probe_keep','保留权限','page','/retired-slot-probe-keep','GET')`,
@@ -68,7 +68,7 @@ func TestRetiredSiteSlotUISeedIsPreciseAndIdempotent(t *testing.T) {
 	if got := decision(); got != 0 {
 		t.Fatalf("存在旧专用对象时不得跳过清退: %d", got)
 	}
-	// 在真实生产schema中PREPARE全部删除语句，再执行，避免只校验文本形态。
+
 	tx := db.Begin()
 	if tx.Error != nil {
 		t.Fatal(tx.Error)

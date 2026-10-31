@@ -1,14 +1,11 @@
 package utils
 
-// time_test.go — 对外 JSON 时间的口径（存储微秒、输出 unix 毫秒、回读吃两种形态）。
-
 import (
 	json "go_wp/pkg/jsonx"
 	"testing"
 	"time"
 )
 
-// TestJSONTimeMarshalIsUnixMilli 输出是**毫秒数字**：时刻归协议，形状归模板。
 func TestJSONTimeMarshalIsUnixMilli(t *testing.T) {
 	std := time.Date(2026, 9, 16, 13, 57, 50, 123456000, time.UTC)
 	b, err := json.Marshal(JSONTime(std))
@@ -20,7 +17,6 @@ func TestJSONTimeMarshalIsUnixMilli(t *testing.T) {
 	}
 }
 
-// TestJSONTimeMarshalZeroIsNull 零值是 null，不是 "0001-01-01T00:00:00Z"。
 func TestJSONTimeMarshalZeroIsNull(t *testing.T) {
 	b, err := json.Marshal(JSONTime{})
 	if err != nil {
@@ -31,7 +27,6 @@ func TestJSONTimeMarshalZeroIsNull(t *testing.T) {
 	}
 }
 
-// TestJSONTimeNilPointerIsNull 可空字段用 *JSONTime，nil 即 null。
 func TestJSONTimeNilPointerIsNull(t *testing.T) {
 	var p *JSONTime
 	b, err := json.Marshal(p)
@@ -43,12 +38,8 @@ func TestJSONTimeNilPointerIsNull(t *testing.T) {
 	}
 }
 
-// TestJSONTimeUnmarshalAcceptsCommonLayouts 解析要比标准库宽松。
-//
-// 标准库的 time.Time 只吃 RFC3339，而后台原生表单与既有客户端在用空格格式与纯日期 ——
-// 这是 req 里的时间字段此前的坑。
 func TestJSONTimeUnmarshalAcceptsCommonLayouts(t *testing.T) {
-	// 引入固定的本地时区偏移，避免断言随运行环境变化。
+
 	_, offset := time.Now().Zone()
 	cases := []struct {
 		name  string
@@ -68,7 +59,6 @@ func TestJSONTimeUnmarshalAcceptsCommonLayouts(t *testing.T) {
 		}
 	}
 
-	// 带微秒的输入按本地时区解析成同一时刻（精度保留在内部，只是不往外输出）。
 	var withFrac JSONTime
 	if err := json.Unmarshal([]byte(`"2026-09-16T13:57:50.123456Z"`), &withFrac); err != nil {
 		t.Fatalf("解析带微秒的时间失败: %v", err)
@@ -78,14 +68,12 @@ func TestJSONTimeUnmarshalAcceptsCommonLayouts(t *testing.T) {
 	}
 	_ = offset
 
-	// 无法识别的格式要明确报错，而不是静默落零值。
 	var bad JSONTime
 	if err := json.Unmarshal([]byte(`"昨天"`), &bad); err == nil {
 		t.Fatal("无法解析的格式应报错")
 	}
 }
 
-// TestJSONTimeRoundTrip 毫秒是「截到毫秒」，回读后仍与毫秒精度相等。
 func TestJSONTimeRoundTrip(t *testing.T) {
 	orig := JSONTime(time.Date(2026, 1, 2, 3, 4, 5, 678901000, time.UTC))
 	b, _ := json.Marshal(orig)
@@ -98,7 +86,6 @@ func TestJSONTimeRoundTrip(t *testing.T) {
 	}
 }
 
-// TestJSONTimeValueKeepsMicroseconds 写库时**不能**截断 —— 存储层要保持微秒。
 func TestJSONTimeValueKeepsMicroseconds(t *testing.T) {
 	std := time.Date(2026, 9, 16, 13, 57, 50, 123456000, time.UTC)
 	v, err := JSONTime(std).Value()
@@ -113,14 +100,12 @@ func TestJSONTimeValueKeepsMicroseconds(t *testing.T) {
 		t.Fatalf("写库值应与原值逐纳秒一致：%v vs %v", got, std)
 	}
 
-	// 零值写 NULL 而不是 0001-01-01。
 	nilV, err := JSONTime{}.Value()
 	if err != nil || nilV != nil {
 		t.Fatalf("零值应写 NULL，实际 %v / %v", nilV, err)
 	}
 }
 
-// TestJSONTimeScan 读库回填。
 func TestJSONTimeScan(t *testing.T) {
 	std := time.Date(2026, 9, 16, 13, 57, 50, 0, time.UTC)
 	var got JSONTime

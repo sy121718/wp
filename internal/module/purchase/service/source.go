@@ -1,16 +1,3 @@
-// inventory_source.go — 货源读写（issue #17 验收 1/2/4）。
-//
-// 「一张表承载所有进货来源」是本文件维护的口径：外部供应商、集团内关联公司、自家工厂
-// 登记在同一处，靠 type + related_party 两个结构化字段区分，而不是靠命名约定或备注文字。
-//
-// 三条服务端不变量（数据库 CHECK 兜底，服务层给可读的业务错误）：
-//
-//	· 内部货源恒为关联方 —— 内部交易必须能被关联方报表捕获，不允许出现「内部但非关联」；
-//	  显式取消被拒绝（ErrSourceInternalNotRelated），而不是静默改回去。
-//	· 结算价只属于内部货源 —— 外部供应商的成本口径是采购价（采购单行上的历史快照），
-//	  给它一个结算价会让两套成本口径打架；改类型为外部时必须显式清空（ClearSettlePrice）。
-//	· config 必须是 JSON 对象 —— 它承载异构对接扩展信息，插件/适配器按键读取，
-//	  标量与数组都没有键可读，等于写进去读不出来。
 package purchaseservice
 
 import (
@@ -32,16 +19,14 @@ import (
 )
 
 const (
-	// maxSourceCodeLen 货源编码长度上限。
 	maxSourceCodeLen = 16
-	// maxSourceConfigBytes 对接配置（config）体积上限：扩展信息不是数据仓库。
+
 	maxSourceConfigBytes = 64 * 1024
-	// 货源列表分页。
+
 	defaultSourcePageSize = 50
 	maxSourcePageSize     = 200
 )
 
-// CreateSource 新建货源（验收 1/2）。
 func (s *Service) CreateSource(ctx context.Context, req *purchasedto.CreateSourceReq) (res *purchasedto.SourceResp, err error) {
 	if req == nil {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -92,10 +77,7 @@ func (s *Service) CreateSource(ctx context.Context, req *purchasedto.CreateSourc
 		Metadata:  orJSON(req.Metadata, "{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	// 主实体与变更记录**同一个事务**：分开提交时「有货源没留痕」或「有留痕没货源」都可能发生，
-	// 而 master_data_changes 是 append-only（迁移 111 的触发器直接 RAISE），写错了改不回来。
-	// 事务边界在 service，作用域设在 tx 上（rls.ScopeTx）。
-	// issue #19：新增货源 → 变更记录（编码 / 名称 / 类型 / 关联方 / 结算价 / 状态 / 对接配置）。
+
 	change := sourceChangeInput(e, masterdataenums.ActionCreate, req.OperatorID, nil, sourceChangeSnapshot(e))
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
@@ -111,7 +93,6 @@ func (s *Service) CreateSource(ctx context.Context, req *purchasedto.CreateSourc
 	return toSourceResp(e), nil
 }
 
-// UpdateSource 修改货源（逐字段可选；nil = 本次不改）。
 func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourceReq) (res *purchasedto.SourceResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -120,10 +101,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 	if err != nil {
 		return nil, err
 	}
-	// 编码唯一性预检放在事务外：SourceCodeExists 内部走 rls.InProjectScope（自带事务、另取连接），
-	// 塞进已开的写事务里既看不到未提交数据、又可能与自己的行锁互相等待（见 pkg/rls.ScopeTx 说明）。
-	// 它只是「让错误早一点、友好一点」的预检，真正的守卫是 inventory_sources 上的唯一约束；
-	// 并发撞车由约束拒绝，错误一样会打回给人，不存在静默放行。
+
 	var newCode string
 	if req.Code != nil {
 		code, cerr := normalizeSourceCode(*req.Code)
@@ -139,9 +117,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 	}
 
 	var updated *purchasemodel.SourceEntity
-	// 读-改-写必须同一个事务 + 行锁：并发的两次保存会各自按**旧快照**算字段级 diff，
-	// 于是留痕与实际落库的字段对不上；而 master_data_changes 是 append-only（迁移 111 的
-	// 触发器直接 RAISE），写错了连改都改不回来。事务边界在 service，作用域设在 tx 上。
+
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
@@ -150,7 +126,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 		if lerr != nil {
 			return mapSourceNotFound(lerr)
 		}
-		// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
+
 		before := sourceChangeSnapshot(e)
 		if req.Code != nil {
 			e.Code = newCode
@@ -162,7 +138,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 			}
 			e.Name = name
 		}
-		// 类型可能变：先算出最终类型，再据此校验关联方与结算价（顺序不能反）。
+
 		sourceType := e.Type
 		if req.Type != nil {
 			st, terr := normalizeSourceType(*req.Type)
@@ -175,7 +151,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 		if rerr != nil {
 			return rerr
 		}
-		// 结算价：显式清空优先；显式赋值必须与最终类型相容；改类型为外部时必须显式清空。
+
 		if req.ClearSettlePrice {
 			e.SettlePrice = nil
 		}
@@ -217,8 +193,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 		if uerr := s.m.UpdateSourceTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		// issue #19：字段级变更留痕（类型 / 关联方 / 结算价 / 状态 / 对接配置 / 编码 / 名称）。
-		// 只写真正变化的字段 —— 打开表单什么都没改就保存，审计里不留痕迹。
+
 		if cerr := s.recordChangesTx(ctx, tx, sourceChangeInput(e, masterdataenums.ActionUpdate,
 			req.OperatorID, before, sourceChangeSnapshot(e))); cerr != nil {
 			return cerr
@@ -232,7 +207,6 @@ func (s *Service) UpdateSource(ctx context.Context, req *purchasedto.UpdateSourc
 	return toSourceResp(updated), nil
 }
 
-// GetSource 货源详情。
 func (s *Service) GetSource(ctx context.Context, req *purchasedto.GetSourceReq) (res *purchasedto.SourceResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -248,7 +222,6 @@ func (s *Service) GetSource(ctx context.Context, req *purchasedto.GetSourceReq) 
 	return toSourceResp(e), nil
 }
 
-// DeleteSource 删除货源（硬删除；被采购单引用的守卫由 issue #18 在服务层补）。
 func (s *Service) DeleteSource(ctx context.Context, req *purchasedto.DeleteSourceReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return purchaseenums.Err(purchaseenums.ErrInvalidParam)
@@ -257,10 +230,7 @@ func (s *Service) DeleteSource(ctx context.Context, req *purchasedto.DeleteSourc
 	if err != nil {
 		return err
 	}
-	// 不再在事务外预读：读-改-写要在事务里带行锁读（LockSourceTx），
-	// 事务外那一读既拿不到锁、又会让「记的快照」与「真正删掉的那一版」出现窗口。
-	// 删除 + 留痕同事务：删成功而留痕失败会永久缺一条审计（append-only，补不回来）。
-	// 快照在事务内的**行锁读**之后取，保证记的就是真正被删的那一版。
+
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
@@ -269,7 +239,7 @@ func (s *Service) DeleteSource(ctx context.Context, req *purchasedto.DeleteSourc
 		if lerr != nil {
 			return mapSourceNotFound(lerr)
 		}
-		// issue #19：删除前取快照（删完之后连名称都查不到了），删成功后落 delete 记录。
+
 		before := sourceChangeSnapshot(locked)
 		if derr := s.m.DeleteSourceTx(ctx, tx, locked.ID); derr != nil {
 			return derr
@@ -279,9 +249,6 @@ func (s *Service) DeleteSource(ctx context.Context, req *purchasedto.DeleteSourc
 	})
 }
 
-// ListSources 货源列表（验收 4：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度）。
-//
-// 缺省只列启用中的货源（停用是「不再选用」的标记）；IncludeDisabled 显式打开才列停用的。
 func (s *Service) ListSources(ctx context.Context, req *purchasedto.ListSourceReq) (list []*purchasedto.SourceResp, err error) {
 	filter, page, size, err := s.sourceFilter(ctx, req)
 	if err != nil {
@@ -298,11 +265,6 @@ func (s *Service) ListSources(ctx context.Context, req *purchasedto.ListSourceRe
 	return list, nil
 }
 
-// CountSources 货源总条数（分页页面的「共 N 条」与总页数）。
-//
-// **与 ListSources 共用同一个 sourceFilter**：类型 / 关联方 / 状态（含「缺省只列启用中」
-// 这一档）/ 关键词 / 工程作用域的归一只有一份实现。两处各抄一遍时，最容易漏的正是
-// 「缺省只列启用中」—— 计数把停用的也算进去，分页条就凭空多出一页空列表。
 func (s *Service) CountSources(ctx context.Context, req *purchasedto.ListSourceReq) (n int64, err error) {
 	filter, _, _, err := s.sourceFilter(ctx, req)
 	if err != nil {
@@ -311,7 +273,6 @@ func (s *Service) CountSources(ctx context.Context, req *purchasedto.ListSourceR
 	return s.m.CountSources(ctx, filter)
 }
 
-// sourceFilter 把货源列表请求归一成 model 过滤条件 + 分页参数（List / Count 共用）。
 func (s *Service) sourceFilter(ctx context.Context, req *purchasedto.ListSourceReq) (filter purchasemodel.SourceFilter, page, size int, err error) {
 	page, size = 1, defaultSourcePageSize
 	if req != nil {
@@ -357,10 +318,6 @@ func (s *Service) sourceFilter(ctx context.Context, req *purchasedto.ListSourceR
 	return filter, page, size, nil
 }
 
-// SourceSummary 货源关联方统计（验收 4「关联方标志可用于报表区分」的数据出口）。
-//
-// 口径：统计**不带状态过滤** —— 停用只是「不再选用」，历史关联交易的口径不该随停用而变。
-// 两组数字交叉给出报表区分能力：类型（内部 / 外部）× 关联方（是 / 否）。
 func (s *Service) SourceSummary(ctx context.Context, req *purchasedto.SourceSummaryReq) (res *purchasedto.SourceSummaryResp, err error) {
 	projectID, err := s.resolveProjectID(ctx, projectIDOfSummary(req))
 	if err != nil {
@@ -402,7 +359,6 @@ func (s *Service) SourceSummary(ctx context.Context, req *purchasedto.SourceSumm
 	return res, nil
 }
 
-// projectIDOf / projectIDOfSummary 从可空入参里取工程（nil 安全）。
 func projectIDOf(req *purchasedto.ListSourceReq) string {
 	if req == nil {
 		return ""
@@ -417,7 +373,6 @@ func projectIDOfSummary(req *purchasedto.SourceSummaryReq) string {
 	return req.ProjectID
 }
 
-// normalizeSourceCode 归一并校验货源编码：大写字母 / 数字 / 下划线，1..maxSourceCodeLen。
 func normalizeSourceCode(code string) (out string, err error) {
 	out = strings.ToUpper(strings.TrimSpace(code))
 	if out == "" {
@@ -435,7 +390,6 @@ func normalizeSourceCode(code string) (out string, err error) {
 	return out, nil
 }
 
-// normalizeSourceType 归一货源类型：空串取默认「外部供应商」，其余必须是内置取值。
 func normalizeSourceType(sourceType string) (out string, err error) {
 	switch strings.ToLower(strings.TrimSpace(sourceType)) {
 	case "":
@@ -449,7 +403,6 @@ func normalizeSourceType(sourceType string) (out string, err error) {
 	}
 }
 
-// normalizeSourceStatus 归一货源状态：空串取默认启用，其余必须是内置取值。
 func normalizeSourceStatus(status string) (out string, err error) {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "":
@@ -463,10 +416,6 @@ func normalizeSourceStatus(status string) (out string, err error) {
 	}
 }
 
-// resolveSourceRelatedParty 解析关联方标志。
-//
-// 内部货源恒为关联方（显式取消被拒绝）；外部货源按入参，未给入参时保持当前值
-// （新建时的「当前值」是 false）。
 func resolveSourceRelatedParty(sourceType string, current bool, requested *bool) (out bool, err error) {
 	if sourceType == purchaseenums.SourceTypeInternal {
 		if requested != nil && !*requested {
@@ -480,7 +429,6 @@ func resolveSourceRelatedParty(sourceType string, current bool, requested *bool)
 	return *requested, nil
 }
 
-// normalizeSettlePrice 校验内部结算价：只属于内部货源，且非负。
 func normalizeSettlePrice(sourceType string, price *float64) (out *float64, err error) {
 	if price == nil {
 		return nil, nil
@@ -494,7 +442,6 @@ func normalizeSettlePrice(sourceType string, price *float64) (out *float64, err 
 	return price, nil
 }
 
-// normalizeSourceConfig 归一对接配置：必须是 JSON 对象（空即 {}），并压缩重写。
 func normalizeSourceConfig(raw json.RawMessage) (out json.RawMessage, err error) {
 	if len(raw) == 0 {
 		return json.RawMessage("{}"), nil
@@ -513,10 +460,6 @@ func normalizeSourceConfig(raw json.RawMessage) (out json.RawMessage, err error)
 	return json.RawMessage(compact), nil
 }
 
-// parseRelatedPartyFilter 解析报表筛选里的关联方三态："" 全部 / true 仅关联方 / false 仅非关联方。
-//
-// 参数缺失与参数为空必须是同一件事（不过滤）；写错的取值一律拒绝，
-// 绝不把「拼错的筛选条件」静默当成「不过滤」——那会让报表悄悄给出全量数字。
 func parseRelatedPartyFilter(value string) (out *bool, err error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
@@ -532,7 +475,6 @@ func parseRelatedPartyFilter(value string) (out *bool, err error) {
 	}
 }
 
-// mapSourceNotFound 行不存在 → 业务错误，其余原样透出。
 func mapSourceNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return purchaseenums.Err(purchaseenums.ErrSourceNotFound)
@@ -540,7 +482,6 @@ func mapSourceNotFound(err error) error {
 	return err
 }
 
-// toSourceResp 实体 → 响应。
 func toSourceResp(e *purchasemodel.SourceEntity) *purchasedto.SourceResp {
 	if e == nil {
 		return nil

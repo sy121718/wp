@@ -1,13 +1,5 @@
 package productlist
 
-// productlist_css_test.go -- productlist.css 的契约测试。
-//
-// 背景: 样式从 compileCSS 里的 39 处 b.Add 迁成同目录的 productlist.css, 中间多了一层解析。
-// 这份样式的易碎点比普通组件多两处:
-//   1. 网格列数是「值变量」{{cols}} -- 变量名对不上时声明会整条消失, 页面上只表现为「列数不对」;
-//   2. 列表布局独有的两条规则走规则级 @if isList -- 块被截断时后半段规则凭空消失。
-// 所以这里把「列数四档 + 两种布局 + 两个变量」逐个钉住。
-
 import (
 	"strings"
 	"testing"
@@ -15,14 +7,12 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// listCSSFor 渲染指定 Props 下的样式产物 (作用域固定为 .sky-c-t)。
 func listCSSFor(p *Props) string {
 	var b core.CSSBuckets
 	compileCSS("t", p, &b)
 	return b.String()
 }
 
-// listRuleText 从产物里取出 header 起的一整块 (按花括号配平); 首个匹配即 desktop 段的那条。
 func listRuleText(t *testing.T, css, header string) string {
 	t.Helper()
 	i := strings.Index(css, header)
@@ -45,7 +35,6 @@ func listRuleText(t *testing.T, css, header string) string {
 	return ""
 }
 
-// TestProductListCSSColumnsPerMode 列声明四档 + 列表布局恒单列 + 非法值回落自适应。
 func TestProductListCSSColumnsPerMode(t *testing.T) {
 	const auto = "repeat(auto-fill, minmax(min(100%, 15rem), 1fr))"
 	cases := []struct {
@@ -71,7 +60,6 @@ func TestProductListCSSColumnsPerMode(t *testing.T) {
 	}
 }
 
-// TestProductListCSSEmptyDeclarationsAreNotEmitted 值变量取到空值时不能留下 grid-template-columns: ; 这类无效声明。
 func TestProductListCSSEmptyDeclarationsAreNotEmitted(t *testing.T) {
 	for _, c := range []struct{ layout, columns string }{
 		{"", ""}, {LayoutGrid, ""}, {LayoutList, ""}, {LayoutGrid, "bogus"}, {LayoutGrid, "0"},
@@ -86,7 +74,6 @@ func TestProductListCSSEmptyDeclarationsAreNotEmitted(t *testing.T) {
 	}
 }
 
-// TestProductListCSSListOnlyRules 列表布局独有的两条规则: 列表模式多一份, 网格模式一条不多。
 func TestProductListCSSListOnlyRules(t *testing.T) {
 	grid := listCSSFor(&Props{Layout: LayoutGrid, Columns: ColumnsAuto})
 	list := listCSSFor(&Props{Layout: LayoutList})
@@ -100,22 +87,20 @@ func TestProductListCSSListOnlyRules(t *testing.T) {
 	if strings.Count(list, "width: min(100%, 12rem)") != 1 {
 		t.Errorf("列表模式的图片固定列缺失或重复:\n%s", list)
 	}
-	// 列表模式是「基础规则 + 追加两条」, 基础那条不能被吃掉。
+
 	base := listRuleText(t, grid, ".sky-c-t .sky-product-list-item {")
-	// 卡片基础规则：竖排 + 浅灰底图区（源站形态）。
-	// 卡片本身**没有描边与圆角** —— 一屏几十张卡时描边会把版面割碎，
-	// 圆角与浅灰底改由 .sky-product-list-thumb 承担。
+
 	if !strings.Contains(base, "flex-direction: column") || !strings.Contains(base, "background: var(--sky-c-surface, #fff)") {
 		t.Errorf("基础卡片规则缺失:\n%s", base)
 	}
-	// 折扣角标：源站是蓝色胶囊压在图左上角（底色加深一档：白字 12px 需 4.5:1 对比）。
+
 	badge := listRuleText(t, grid, ".sky-c-t .sky-product-list-discount {")
 	for _, want := range []string{"position: absolute", "border-radius: 5px", "background: var(--sky-c-primary-deep, #1d4ed8)", "color: var(--sky-c-surface, #fff)", "font-weight: 600"} {
 		if !strings.Contains(badge, want) {
 			t.Errorf("折扣角标规则缺少 %q:\n%s", want, badge)
 		}
 	}
-	// 图区：定位基准 + 浅灰底（角标挂它上面）。
+
 	thumb := listRuleText(t, grid, ".sky-c-t .sky-product-list-thumb {")
 	if !strings.Contains(thumb, "position: relative") || !strings.Contains(thumb, "background: var(--sky-c-bg-soft, #f4f5f6)") {
 		t.Errorf("图区规则缺少定位基准或浅灰底:\n%s", thumb)
@@ -123,7 +108,7 @@ func TestProductListCSSListOnlyRules(t *testing.T) {
 	if listCount, gridCount := strings.Count(list, ".sky-c-t .sky-product-list-item {"), strings.Count(grid, ".sky-c-t .sky-product-list-item {"); listCount != gridCount+1 {
 		t.Errorf("列表模式应比网格模式多一条 item 规则 (list=%d grid=%d)", listCount, gridCount)
 	}
-	// 图片区同理: 网格一条 (基础), 列表两条 (固定列 + 基础)。
+
 	mediaBase := listRuleText(t, grid, ".sky-c-t .sky-product-list-media {")
 	if !strings.Contains(mediaBase, "display: block") {
 		t.Errorf("图片区基础规则缺失:\n%s", mediaBase)
@@ -137,7 +122,6 @@ func TestProductListCSSListOnlyRules(t *testing.T) {
 	}
 }
 
-// TestProductListCSSMobileSingleColumn 窄视口恒单列: 列数与横排都要被覆盖。
 func TestProductListCSSMobileSingleColumn(t *testing.T) {
 	grid := listCSSFor(&Props{Layout: LayoutGrid, Columns: "4"})
 	mobile := listRuleText(t, grid, "@media (max-width: 767px) {")
@@ -147,17 +131,16 @@ func TestProductListCSSMobileSingleColumn(t *testing.T) {
 	if !strings.Contains(mobile, ".sky-c-t .sky-product-list-layout {") || !strings.Contains(mobile, "flex-direction: column;") {
 		t.Errorf("窄视口下筛选栏没有折到上方:\n%s", mobile)
 	}
-	// 四列模式: 1fr 只该出现在 mobile (宽视口是四列)。
+
 	if strings.Count(grid, "grid-template-columns: 1fr;") != 1 {
 		t.Errorf("1fr 应只出现一次 (mobile 覆盖), 实际:\n%s", grid)
 	}
-	// 列表模式: 宽视口本身就是 1fr, 于是两份 (desktop + mobile 覆盖)。
+
 	if list := listCSSFor(&Props{Layout: LayoutList}); strings.Count(list, "grid-template-columns: 1fr;") != 1 || !strings.Contains(list, "grid-template-columns: var(--catalog-columns, 1fr);") {
 		t.Errorf("列表模式期望 desktop + mobile 各一条 1fr:\n%s", list)
 	}
 }
 
-// TestProductListCSSTouchGovernance 悬浮走 (hover: hover); 触屏的等价形态是按压反馈 (不包媒体查询)。
 func TestProductListCSSTouchGovernance(t *testing.T) {
 	out := listCSSFor(&Props{})
 	hover := listRuleText(t, out, "@media (hover: hover) {")
@@ -176,7 +159,6 @@ func TestProductListCSSTouchGovernance(t *testing.T) {
 	}
 }
 
-// TestProductListCSSScopeIsScoped 作用域替换必须生效, 且不能多拼一次前缀。
 func TestProductListCSSScopeIsScoped(t *testing.T) {
 	for _, p := range []*Props{{}, {Layout: LayoutList, Columns: "3"}} {
 		out := listCSSFor(p)
@@ -197,10 +179,6 @@ func TestProductListCSSScopeIsScoped(t *testing.T) {
 	}
 }
 
-// TestProductListCSSTmplVariableContract 样式源与 Go 侧的变量表必须双向对齐。
-//
-// 这是「Go 与 .css 各写一半」的接口: 引用了没提供的变量会留下 {{...}} (声明整条消失),
-// 提供了没被消费的变量说明 Go 侧多算了一份东西 -- 两种都必须在构建期报错, 而不是静默少样式。
 func TestProductListCSSTmplVariableContract(t *testing.T) {
 	bad := []struct {
 		name string

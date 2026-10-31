@@ -1,20 +1,3 @@
-// Package feature inventory 模块 feature 测试 —— 库存页「外部编码」的行内编辑入口。
-//
-// 背景：迁移 251 给 inventory_stocks 加了 external_sku，但库存页当时只有**只读列** ——
-// 早于 251 建的老商品事后没有地方登记外码。本批在库存页那一列加上行内编辑
-// （原生表单 POST + 提示页），本文件覆盖它的六条完成判据：
-//
-//  1. 写入合法外码成功：渲染成功提示页，且新值真的渲染回页面；
-//  2. 非法外码（超长 / 控制字符）被拒：提示页上是**中文**，真源一字未写；
-//  3. 跨商品冲突被拒：提示页上是**中文**，真源一字未写；
-//  4. 清空外码成功（空串 = 撤销映射），页面不再回显旧值；
-//  5. 清空只动 external_sku：sku_code / quantity / cost_price 逐项不变；
-//  6. 未授权路径仍按既有权限点拦截（401 / 403 / 授权后放行）。
-//
-// 断言一律直查真源列（inventory_stocks.external_sku / sku_code / quantity / cost_price），
-// 不走 service 自己返回的响应 —— 那只能证明「service 以为自己写了」。
-// 写动作的结论由 shell.RenderJump 渲染成整页提示（取代原先的 302 + ?err= / ?done=），
-// 断言走 assertInventoryJump（HTTP 200 + data-jump-state + 文案）。
 package feature
 
 import (
@@ -38,11 +21,6 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
-// newExternalSKUEditEngine 装配只挂库存页与「外码行内编辑」写入口的测试引擎（真实 Jet + 真实 service）。
-//
-// 与生产装配同形：写入口是原生表单 POST + PRG（与采购页的「登记入库」同一手法），
-// 不入 HTMX、不写自定义 JS。这里注入的权限集合只供**渲染**（adminui.Prepare 读 PermSetKey），
-// 不参与拦截 —— 拦截一律由路由上的 Casbin 中间件判定，见 TestExternalSKUEditUnauthorizedBlocked。
 func newExternalSKUEditEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	t.Helper()
 	f := newInvFixture(t)
@@ -62,8 +40,6 @@ func newExternalSKUEditEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	return engine, f
 }
 
-// seedExternalSKUEditRow 铺一行「有数量、有成本」的库存：数量走真实变动契约，
-// 成本直改真源（成本在这里只用于「外码编辑不许把它带走」的比对）。
 func seedExternalSKUEditRow(t *testing.T, f *invFixture) (*inventorydto.WarehouseResp,
 	*productdto.ProductResp, *productdto.VariantResp) {
 	t.Helper()
@@ -78,10 +54,6 @@ func seedExternalSKUEditRow(t *testing.T, f *invFixture) (*inventorydto.Warehous
 	return wh, p, v
 }
 
-// postExternalSKU 提交行内编辑表单（字段与模板里那份表单一一对应）。
-//
-// 提交地址带上筛选上下文（页面渲染时 action 上的 `?{{ .ListQuery }}`），
-// 服务端 shell.BackPath 从它读回回跳地址 —— 与真实表单逐字同形。
 func postExternalSKU(engine *gin.Engine, projectID, warehouseID, variantID, skuCode, externalSKU string) *httptest.ResponseRecorder {
 	form := url.Values{}
 	form.Set("csrf_token", "test-csrf")
@@ -94,7 +66,6 @@ func postExternalSKU(engine *gin.Engine, projectID, warehouseID, variantID, skuC
 	return postForm(engine, path, form)
 }
 
-// externalSKUPageBody 渲染库存页某 SKU 的各仓库存（只读回显的证据都在这一段里）。
 func externalSKUPageBody(t *testing.T, engine *gin.Engine, projectID, sku, extraQuery string) string {
 	t.Helper()
 	path := "/admin/inventory?project=" + url.QueryEscape(projectID) + "&sku=" + url.QueryEscape(sku)
@@ -108,14 +79,12 @@ func externalSKUPageBody(t *testing.T, engine *gin.Engine, projectID, sku, extra
 	return rec.Body.String()
 }
 
-// stockRowSnapshot 一行库存的三列快照（清空外码时的「逐项不变」基线）。
 type stockRowSnapshot struct {
 	SKUCode  string
 	Quantity int
 	Cost     *float64
 }
 
-// snapshotStockRow 直读真源三列（不经过任何 service 投影）。
 func snapshotStockRow(t *testing.T, f *invFixture, variantID, warehouseID string) stockRowSnapshot {
 	t.Helper()
 	var row struct {
@@ -132,7 +101,6 @@ func snapshotStockRow(t *testing.T, f *invFixture, variantID, warehouseID string
 	}
 }
 
-// sameCostPtr 两个可空成本是否相等（nil 与 nil 相等；nil 与 0 不相等）。
 func sameCostPtr(a, b *float64) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -140,25 +108,22 @@ func sameCostPtr(a, b *float64) bool {
 	return *a == *b
 }
 
-// TestExternalSKUEditSavesAndRenders 判据 1：合法外码写入成功（JSON）、页面回显新值。
 func TestExternalSKUEditSavesAndRenders(t *testing.T) {
 	engine, f := newExternalSKUEditEngine(t)
 	if engine == nil {
 		return
 	}
 	wh, _, v := seedExternalSKUEditRow(t, f)
-	// 库存页的 SKU 上下文是**仓库侧裸码**（页面表单 hidden 域与筛选框都是它，
-	// 库存行 / 流水存的也是它）；商品 / 变体侧的 v.SKUCode 仍带仓码前缀。
+
 	bare := bareSKU(v.SKUCode, wh.Code)
 
 	rec := postExternalSKU(engine, f.projectID, wh.ID, v.ID, bare, "EXT-EDIT-1")
-	// 成功：200 + JSON，不跳转 —— 页面自己重载回当前地址，上下文（工程 / SKU）天然还在。
+
 	assertInventoryJump(t, rec, "ok")
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "EXT-EDIT-1" {
 		t.Fatalf("真源外码应写为 EXT-EDIT-1，实际 %q", got)
 	}
 
-	// 回列表：新值必须真的渲染进那一列的输入框（而不只是躺在库里）。
 	body := externalSKUPageBody(t, engine, f.projectID, bare, "")
 	if !strings.Contains(body, "action=\"/admin/inventory/external-sku?") {
 		t.Fatalf("库存页应渲染外部编码的行内编辑表单（action 缺失）")
@@ -166,7 +131,7 @@ func TestExternalSKUEditSavesAndRenders(t *testing.T) {
 	if !strings.Contains(body, "name=\"externalSku\"") || !strings.Contains(body, "value=\"EXT-EDIT-1\"") {
 		t.Fatalf("库存页应把新外码回显到行内输入框里")
 	}
-	// 表单必须带定位三元组（工程 / 仓库 / 变体），否则提交回不到那一行。
+
 	for _, want := range []string{
 		"name=\"variantId\" value=\"" + v.ID + "\"",
 		"name=\"warehouseId\" value=\"" + wh.ID + "\"",
@@ -178,7 +143,6 @@ func TestExternalSKUEditSavesAndRenders(t *testing.T) {
 	}
 }
 
-// TestExternalSKUEditRejectsInvalidCode 判据 2：非法外码（超长 / 控制字符）报中文且真源未写。
 func TestExternalSKUEditRejectsInvalidCode(t *testing.T) {
 	engine, f := newExternalSKUEditEngine(t)
 	if engine == nil {
@@ -197,12 +161,12 @@ func TestExternalSKUEditRejectsInvalidCode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := postExternalSKU(engine, f.projectID, wh.ID, v.ID, v.SKUCode, tc.code)
-			// 失败：提示页上是中文业务文案，不是裸 key。
+
 			assertInventoryJump(t, rec, "err", "外部编码不合法")
 			if strings.Contains(rec.Body.String(), "ErrExternalSKUInvalid") {
 				t.Fatalf("提示页不该出现裸 i18n key：%s", rec.Body.String())
 			}
-			// 真源一字未写。
+
 			if got := externalSKUOf(t, f, v.ID, wh.ID); got != "" {
 				t.Fatalf("非法外码不该落库，实际 %q", got)
 			}
@@ -210,26 +174,24 @@ func TestExternalSKUEditRejectsInvalidCode(t *testing.T) {
 	}
 }
 
-// TestExternalSKUEditCrossProductConflict 判据 3：跨商品共用一个外码报中文且真源未写。
 func TestExternalSKUEditCrossProductConflict(t *testing.T) {
 	engine, f := newExternalSKUEditEngine(t)
 	if engine == nil {
 		return
 	}
 	wh, _, va := seedExternalSKUEditRow(t, f)
-	// 另一个商品的变体（商品模块在它建仓时自动生成库存行）。
+
 	pb := mustProductPriced(t, f, "冲突商品", 19.9)
 	vb := f.firstVariant(t, pb.ID)
 
-	// 商品 A 先占住 EXT-SHARED（同一商品多口味共用是合法形态，这里只占一个变体）。
 	assertInventoryJump(t, postExternalSKU(engine, f.projectID, wh.ID, va.ID, va.SKUCode, "EXT-SHARED"), "ok")
-	// 商品 B 用同一个外码 → 必须被拒（N:1 弱校验）。
+
 	rec := postExternalSKU(engine, f.projectID, wh.ID, vb.ID, vb.SKUCode, "EXT-SHARED")
 	assertInventoryJump(t, rec, "err", "该外部编码在本仓已挂在另一个商品上")
 	if strings.Contains(rec.Body.String(), "ErrExternalSKUProductConflict") {
 		t.Fatalf("提示页不该出现裸 i18n key：%s", rec.Body.String())
 	}
-	// 被拒后真源未写：B 仍为空，A 保持不变。
+
 	if got := externalSKUOf(t, f, vb.ID, wh.ID); got != "" {
 		t.Fatalf("冲突时真源不该被写，实际 %q", got)
 	}
@@ -238,7 +200,6 @@ func TestExternalSKUEditCrossProductConflict(t *testing.T) {
 	}
 }
 
-// TestExternalSKUEditClearOnlyTouchesExternalCode 判据 4/5：清空成功，且 sku_code / 数量 / 成本逐项不变。
 func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 	engine, f := newExternalSKUEditEngine(t)
 	if engine == nil {
@@ -246,7 +207,6 @@ func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 	}
 	wh, _, v := seedExternalSKUEditRow(t, f)
 
-	// 先登记一个外码 —— 否则「清空」测的是一个空转。
 	assertInventoryJump(t, postExternalSKU(engine, f.projectID, wh.ID, v.ID, v.SKUCode, "EXT-CLEAR"), "ok")
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "EXT-CLEAR" {
 		t.Fatalf("登记后真源外码应为 EXT-CLEAR，实际 %q", got)
@@ -260,7 +220,6 @@ func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 		t.Fatalf("前置成本应为 12.50，实际 %v", before.Cost)
 	}
 
-	// 清空：空串是**合法值**（撤销映射），必须是成功而不是「保存失败」。
 	assertInventoryJump(t, postExternalSKU(engine, f.projectID, wh.ID, v.ID, v.SKUCode, ""), "ok")
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "" {
 		t.Fatalf("清空后真源外码应为空串，实际 %q", got)
@@ -277,7 +236,6 @@ func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 		t.Fatalf("清空外码动了成本：%v → %v", before.Cost, after.Cost)
 	}
 
-	// 页面不再回显旧外码（空串渲染成空输入框，不再是那一行的旧值）。
 	body := externalSKUPageBody(t, engine, f.projectID, v.SKUCode, "")
 	if strings.Contains(body, "value=\"EXT-CLEAR\"") {
 		t.Fatalf("清空后页面不该再回显旧外码")
@@ -286,7 +244,6 @@ func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 		t.Fatalf("清空后行内编辑输入框应仍在（空 = 该仓用我们自己的 SKU）")
 	}
 
-	// 空白串与空串同义（归一在 service）：再登记一次，用纯空白清空。
 	assertInventoryJump(t, postExternalSKU(engine, f.projectID, wh.ID, v.ID, v.SKUCode, "EXT-AGAIN"), "ok")
 	assertInventoryJump(t, postExternalSKU(engine, f.projectID, wh.ID, v.ID, v.SKUCode, "   "), "ok")
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "" {
@@ -294,19 +251,6 @@ func TestExternalSKUEditClearOnlyTouchesExternalCode(t *testing.T) {
 	}
 }
 
-// TestExternalSKUEditUnauthorizedBlocked 判据 6：未授权路径仍按**既有权限点**拦截。
-//
-// 生产把这条页面路由挂在 builtin.CasbinMiddlewareForPath("/api/inventory/stock/change")
-// 上（见 inventory_page_router.go；页面组不经过 authorizedAPI 的 Casbin 中间件，权限只来自这一行），
-// 权限点 inventory:stock_change 是库存页既有写入口复用的那一个，本批不新增权限点。
-// 这里用同一条中间件 + 同一个权限点复现三种情况：
-//
-//	① 没有 user_id（未登录）→ 401；
-//	② 有 user_id 但没有该权限点的策略 → 403，且真源一字未写；
-//	③ 补上该权限点的策略后放行 → 证明拒绝确实由这个权限点决定，而不是「谁都不许写」。
-//
-// 最后再核对生产装配里那一行的权限点没被改掉：页面路由不经过 Casbin 组，
-// 漏挂 / 改挂这一行不会让任何编译或既有测试变红，只会变成「登录即可写」。
 func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -332,13 +276,11 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 		return e
 	}
 
-	// ① 未登录（连 user_id 都没有）。
 	rec := postExternalSKU(newEngine(nil), f.projectID, wh.ID, v.ID, v.SKUCode, "EXT-DENIED-1")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("未登录提交应 401，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 
-	// ② 已登录但未授予 inventory:stock_change。
 	const deniedUser int64 = 4242
 	rec = postExternalSKU(newEngine(deniedUser), f.projectID, wh.ID, v.ID, v.SKUCode, "EXT-DENIED-2")
 	if rec.Code != http.StatusForbidden {
@@ -348,7 +290,6 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 		t.Fatalf("被拦下的请求不该改动真源，实际外码 %q", got)
 	}
 
-	// ③ 授予该权限点后同一条路径放行。
 	enforcer := pkgcasbin.GetEnforcer()
 	if enforcer == nil {
 		t.Fatal("Casbin enforcer 未就绪")
@@ -358,13 +299,12 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 		t.Fatalf("授予 inventory:stock_change 失败: %v", err)
 	}
 	rec = postExternalSKU(newEngine(deniedUser), f.projectID, wh.ID, v.ID, v.SKUCode, "EXT-ALLOWED")
-	// 放行：渲染成功提示页（取代原先的 302 回列表）。
+
 	assertInventoryJump(t, rec, "ok")
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "EXT-ALLOWED" {
 		t.Fatalf("放行后真源外码应为 EXT-ALLOWED，实际 %q", got)
 	}
 
-	// ④ 生产装配里这条路由挂的中间件与权限点，必须就是上面验证的那一个。
 	src, err := os.ReadFile("../../../../internal/module/inventory/inbound/http/inventory_page_router.go")
 	if err != nil {
 		t.Fatalf("读库存路由装配失败: %v", err)
@@ -375,11 +315,6 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 	}
 }
 
-// TestExternalSKUEditI18nSeeded 迁移 255 的词条真的落库了（中英各一行）。
-//
-// 为什么单独测它：页面上那条中文提示在线上来自 sys_i18n 取词，模板兜底只在**取不到词条**时生效 ——
-// 只测页面文字的话，缺 seed 也会被兜底掩盖过去（中文站点看起来完全正常，英文站点退回中文）。
-// 词条只可能来自迁移 255 的 seed，所以这个断言同时是「255 已注册且执行」的证据。
 func TestExternalSKUEditI18nSeeded(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -398,7 +333,7 @@ func TestExternalSKUEditI18nSeeded(t *testing.T) {
 			t.Fatalf("词条 %s 应有中英各一行（迁移 255），实际 %d 行", key, count)
 		}
 	}
-	// 词条值必须是真文案（等于 key 就是「没 seed」的形态）。
+
 	var value string
 	if err := f.db.Raw("SELECT item_value FROM sys_i18n WHERE item_key = ? AND lang = 'zh-CN'",
 		"admin.inventory.sku.externalSku.save").Scan(&value).Error; err != nil {

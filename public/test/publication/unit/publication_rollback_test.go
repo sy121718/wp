@@ -7,8 +7,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
-// TestPublicationRollbackReceiptsPending 回滚 pending 回执：标记 rolled_back
-// 并设置 completed_at，返回处理数量。
 func TestPublicationRollbackReceiptsPending(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
@@ -35,7 +33,6 @@ func TestPublicationRollbackReceiptsPending(t *testing.T) {
 	}
 }
 
-// TestPublicationRollbackReceiptsNone 无 pending 回执：返回 0 且无错误。
 func TestPublicationRollbackReceiptsNone(t *testing.T) {
 	svc := newUnitService(t)
 	count, err := svc.RollbackReceipts(context.Background())
@@ -47,7 +44,6 @@ func TestPublicationRollbackReceiptsNone(t *testing.T) {
 	}
 }
 
-// TestPublicationRollbackReceiptsMixed 混合状态：只处理 pending，committed 不受影响。
 func TestPublicationRollbackReceiptsMixed(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()

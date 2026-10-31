@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// With 添加单个日志字段。
 func (e *Entry) With(key string, value any) *Entry {
 	if strings.TrimSpace(key) == "" {
 		return e
@@ -17,7 +16,6 @@ func (e *Entry) With(key string, value any) *Entry {
 	return e
 }
 
-// WithFields 批量添加日志字段。
 func (e *Entry) WithFields(fields map[string]any) *Entry {
 	for k, v := range fields {
 		if strings.TrimSpace(k) == "" {
@@ -28,37 +26,30 @@ func (e *Entry) WithFields(fields map[string]any) *Entry {
 	return e
 }
 
-// Debug 记录 debug 级别日志。
 func (e *Entry) Debug(msg string) {
 	e.write("debug", msg, nil)
 }
 
-// Info 记录 info 级别日志。
 func (e *Entry) Info(msg string) {
 	e.write("info", msg, nil)
 }
 
-// Warn 记录 warn 级别日志。
 func (e *Entry) Warn(msg string) {
 	e.write("warn", msg, nil)
 }
 
-// Error 记录 error 级别日志。
 func (e *Entry) Error(err error, msg string) {
 	e.write("error", msg, err)
 }
 
-// DPanic 记录 dpanic 级别日志。
 func (e *Entry) DPanic(msg string) {
 	e.write("dpanic", msg, nil)
 }
 
-// Panic 记录 panic 级别日志。
 func (e *Entry) Panic(msg string) {
 	e.write("panic", msg, nil)
 }
 
-// Fatal 记录 fatal 级别日志。
 func (e *Entry) Fatal(msg string) {
 	e.write("fatal", msg, nil)
 }

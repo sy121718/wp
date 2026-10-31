@@ -1,11 +1,3 @@
-// Package builder 实现 go_wp 页面文档（Page Document）到静态 HTML/CSS 的编译。
-//
-// 对应规范 docs/02-A《页面设置与容器规范》：
-//   - PageSettings 为页面级全局环境配置，编译期直接作用于 <head> 与 <body>；
-//   - 组件树节点按 type 分发到已注册组件（core/Registry），一个组件一个目录
-//     （components/container、后续的 components/heading 等）；
-//   - 所有响应式断点、布局、外观及动画参数均编译为纯净 CSS，浏览器端零 JavaScript 布局计算；
-//   - 编译是确定性的：同一 Page Document 产生完全相同的输出字节。
 package builder
 
 import (
@@ -22,7 +14,6 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	// 内置组件在各自包的 init() 中 core.Register；import 触发见 jetview.go（唯一 hub）。
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/source"
 
@@ -31,15 +22,13 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 )
 
-// Page 页面文档：页面级设置 + 顶级容器（Section）列表。
 type Page struct {
 	Settings PageSettings `json:"settings"`
 	Root     []*core.Node `json:"root"`
 }
 
-// UnmarshalJSON 反序列化页面文档。
 func (p *Page) UnmarshalJSON(data []byte) (err error) {
-	type pageAlias Page // 避免递归
+	type pageAlias Page
 	var a pageAlias
 	if err = json.Unmarshal(data, &a); err != nil {
 		return err
@@ -48,7 +37,6 @@ func (p *Page) UnmarshalJSON(data []byte) (err error) {
 	return nil
 }
 
-// ParsePage 从 JSON 字节解析页面文档。
 func ParsePage(data []byte) (p *Page, err error) {
 	p = &Page{}
 	if err = json.Unmarshal(data, p); err != nil {
@@ -57,78 +45,50 @@ func ParsePage(data []byte) (p *Page, err error) {
 	return p, nil
 }
 
-// CompiledPage 页面文档的静态编译输出。
 type CompiledPage struct {
-	// PreviewReadOnly 是编译用途事实，预览禁止访客写操作；不进入作者文档。
 	PreviewReadOnly bool
 	PreviewState    source.PreviewState
 	PreviewNotice   string
-	// Lang 本次编译的目标语言（注入 <html lang>，多语言 P3）。
-	// 空表示未知，RenderDocument 回退站点默认语言（保持单语言产物字节不变）。
+
 	Lang string
-	// Title 页面标题，注入 <title>。
+
 	Title string
-	// MetaDescription 页面描述，注入 <meta name="description">。
+
 	MetaDescription string
-	// SEOHead 构建期 SEO 头片段（canonical / OG / Twitter / JSON-LD）。
+
 	SEOHead string
-	// BodyClasses 注入 <body> 的 class 列表。
+
 	BodyClasses []string
-	// HTML 组件树 HTML（单层语义标签，无内联样式、无脚本）。
+
 	HTML string
-	// CSS 全部样式（含响应式媒体查询与入场动效关键帧）。
+
 	CSS string
-	// ThemeVarsCSS 主题变量块（:root --sky-*，注入 <style> 顶部；空=无主题）。
+
 	ThemeVarsCSS string
-	// UISources 原始控件基座源码（来自 WithUISources，按 data-ui-* 特征挑控件注入）。
+
 	UISources map[string]string
-	// UIStyle 原始控件基座的样式（来自 WithUIStyle，随控件脚本一起按需注入）。
-	// 控件脚本进了产物却没样式，访客看到的就是没有外观的空壳。
+
 	UIStyle string
-	// EnhanceSource 客户端增强脚本源码（未裁剪的整份，来自 WithEnhanceSource）。
-	//
-	// 这里存的是**源码**而不是裁剪结果：裁剪要按产物 HTML 里的 data-* 特征来挑块，
-	// 而 HTML 是 Compile 的产物 —— 放在渲染阶段算，正好拿到最终 HTML。
-	// 空值表示调用方未注入：RenderDocument 会输出空增强（页面照常渲染，仅失去交互）。
+
 	EnhanceSource string
-	// TrackSource 流量来源采集脚本源码（来自 WithTrackSource，整份、不裁剪）。
-	//
-	// 与 EnhanceSource 的差别是**注入策略**而不是内容：增强按产物特征挑块，
-	// 采集每页都要有（漏掉的那页就是归因断点，而断点往往落在转化页上）。
-	// 空值表示调用方未注入：产物不含采集脚本，订单归因为空，其余一切照常。
+
 	TrackSource string
-	// TrackConfig 打点脚本的运行时配置（window.__skyTrack，BIZ-8 访问计数）。
-	// 内容是构建期的工程 ID 与语言（json.Marshal 后的字面量）；工程 ID 为空时零字节。
+
 	TrackConfig string
-	// GA4Head 站点统计代码片段（来自 WithGA4MeasurementID；空 = 零字节注入）。
+
 	GA4Head string
-	// SearchConsoleHead Google Search Console 站点验证 meta（审计 SEO-009）。
-	// 来自 WithSearchConsoleVerification；空 = 零字节注入。
+
 	SearchConsoleHead string
-	// HeadScripts 站点自定义 Head 代码片段（PIPE-8，来自 WithHeadScripts；空 = 零字节注入）。
-	//
-	// **内容是管理员配置的 HTML/JS 原文**，这是它与 GA4Head / SearchConsoleHead 的
-	// 关键差别（那两项由服务端按白名单字符集拼装，本项不能 —— 第三方脚本无法穷举形状）。
-	// 注入点固定在 </head> 之前、独占一行，因此不参与属性值与 JSON 上下文；
-	// 信任边界、允许原样注入的理由与代价见 site_scripts.go 的文件头注释。
+
 	HeadScripts string
-	// BodyScripts 站点自定义 Body 代码片段（PIPE-8，来自 WithBodyScripts；空 = 零字节注入）。
-	// 注入点在 </body> 之前、独占一行（增强脚本之后），口径与 HeadScripts 相同。
+
 	BodyScripts string
-	// Features 渲染期登记的运行时特征（审计 PERF-014）：组件在 BuildView 阶段登记的
-	// 「本次真实输出了哪些 hx-* / data-* 属性、哪些控件外观 class」。RenderDocument
-	// 据此决定注入哪些脚本，不再对整页 HTML 跑 tokenizer。
-	//
-	// Compile 路径总会给它一个（可能为空的）集合 —— 空集合意味着「这页确实什么都没用」，
-	// 于是零字节注入，而不是「不知道，只能扫一遍」。nil 只出现在手工构造 CompiledPage
-	// 的调用方（单测、历史调用点），RenderDocument 对 nil 回退到 tokenize（见 ui_script.go）。
+
 	Features *core.FeatureSet
 }
 
-// CompileOption 编译选项。
 type CompileOption func(*compileConfig)
 
-// compileConfig 编译配置。
 type compileConfig struct {
 	content    core.ContentResolver
 	block      core.BlockResolver
@@ -136,140 +96,86 @@ type compileConfig struct {
 	plugin     core.PluginResolver
 	action     core.ActionResolver
 	collection core.CollectionResolver
-	// issue #35：构建期数据源（业务侧声明的受限接口）。专用组件优先用它，
-	// 通用组件仍走上面的 collection 按名路由。
+
 	product       productcontract.ProductDataSource
 	contentSource contentcontract.ContentDataSource
 	navigation    core.NavigationResolver
 	projectID     string
 	currentPath   string
-	// usage 依赖线索记录器（可选，审计 VIS-006）：编译期记录实际消费的导航、区块和动作目标。
+
 	usage core.UsageRecorder
-	// archiveEntityType / archiveEntityID 当前归档实例的实体（审计 EDT-004）：
-	// 归档页里的集合组件据此取筛选值，而不是把筛选条件写死在 Props 里。
+
 	archiveEntityType string
 	archiveEntityID   string
-	// siteLinkResolver 站内链接本地化器（审计 I18N-015，可空）。
+
 	siteLinkResolver func(string) string
-	// assetProbe 响应式图片变体探测（WithAssetProbe 注入）：返回 URL + 宽度。
-	// 返回 URL 而非纯宽度的理由见 WithAssetProbe 的注释。
-	//
-	// 这里是装配层给的**原始**探测函数（无缓存）；Compile 会为每次编译包一层
-	// 单次编译作用域的 memoize 再进 RenderContext —— 为什么缓存只能活一次编译、
-	// 不能挂在装配期那个跨构建的闭包上，见 asset_probe.go 的文件头论证。
+
 	assetProbe func(string) []mediacontract.VariantRef
 	theme      *ThemeSettings
 	ctx        context.Context
-	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
+
 	alternates []Alternate
-	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
+
 	locales []core.LocaleLink
-	// checkoutCountries 结算表单的国家下拉选项：装配层按当前语言从 sys_area 算好的一份
-	// 静态数据（core.checkoutForm 消费）。默认选中的国家不在这里 —— 它在每次编译时取
-	// i18n.GetDefaultCountry()，见 Compile 里构造 RenderContext.Checkout 的那一处。
+
 	checkoutCountries []core.CheckoutCountry
-	// lang 本次编译目标语言（空=取 i18n.GetDefaultLang()，多语言 P4）。
+
 	lang string
-	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
+
 	translate func(key, fallback string) string
-	// contentTranslator 内容译文取词器（多语言 P5b，空=不接入内容翻译，产物字节不变）。
-	// 由装配层「每页每语言构造一次」（CollectContentCandidates → 一次 SQL）。
+
 	contentTranslator *i18n.ContentTranslator
-	// extraCSS 插件静态样式（插件包 assets/*.css，构建期注入主 CSS 之后；
-	// docs/06 §5.1 资产规范——复杂动画/特殊结构不在引擎内表达时由插件自带）。
+
 	extraCSS string
-	// uiSources 原始控件基座源码（文件名 → 源码，构建期按 data-ui-* 特征挑控件注入）。
-	// 与 enhanceSource 分开：组件增强与原始控件是两层关注点（见 ui_script.go）。
+
 	uiSources map[string]string
 	uiStyle   string
-	// structureSlots 结构槽位绑定（审计 VIS-001）：编译期展开为 root 首尾的 core.layoutSlot 节点。
-	// ga4MeasurementID 站点 GA4 测量 ID（SiteSettings 快照，空 = 不注入统计代码）。
-	// 站点级设置在这里进构建上下文：它属于本次构建的输入，不是进程级全局状态。
+
 	ga4MeasurementID string
-	// searchConsoleVerification 站点 GSC 验证 token（SiteSettings 快照，空 = 不注入验证 meta）。
-	// 与 ga4MeasurementID 同源、同一条链路（审计 SEO-009）。
+
 	searchConsoleVerification string
-	// headScripts / bodyScripts 站点自定义注入代码（SiteSettings 快照，PIPE-8；空 = 零字节注入）。
-	// 与上面两项同源、同一条装配链路（pipeline.AnalyticsCompileOptions），
-	// 差别只在内容：它们是管理员原文，不经过服务端拼接（见 site_scripts.go 的安全论证）。
+
 	headScripts    string
 	bodyScripts    string
 	structureSlots []StructureSlot
-	// canvasSlotFrames 是否为结构槽位输出画布标记层（编辑器画布专用，默认关）。
-	// 语义与不变量见 core.RenderContext.CanvasSlotFrames。
+
 	canvasSlotFrames bool
-	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
-	//
-	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
-	// 一份源文件两个出口（运行时经 /static 给后台页面、构建期经此处内联进静态产物）；
-	// 而 builder 不依赖 internal/templates（后者含 gin 依赖），所以只能走注入
-	//（与 WithComponentSet 同一条路子）。为空时产物不含增强，交互降级但不影响渲染。
+
 	enhanceSource string
-	// trackSource 流量来源采集脚本源码（internal/templates/static/js/track.js）。
-	//
-	// 内容是常量，因此不改产物字节的确定性（同 Document + BuildContext → 同字节）；
-	// 但它会让**每一页**的字节都变一次 —— 这是组件更新的正常代价，
-	// 装配层会在启动时把既有产物标记为待重建（见 builder.RegistryVersion 说明）。
+
 	trackSource string
-	// mode 本次编译的用途（审计 ARCH-05）：零值按预览处理（容忍配置缺失），
-	// 只有发布链路显式声明 CompileModePublish。
+
 	mode CompileMode
-	// degrade 引用降级归因收集器（可选）：发布链路由装配层注入，
-	// 编译期把「按设计降级」的情形记进它，最终写进 Manifest.Diagnostics。
+
 	degrade *DegradeCollector
 }
 
-// WithCompileMode 声明本次编译的用途（见 CompileMode）。
-//
-// 默认（不注入）是预览语义：既有调用方 —— 工作台画布、片段渲染、单测直连组件 ——
-// 一行都不用改，行为与改造前逐字一致。
 func WithCompileMode(mode CompileMode) CompileOption {
 	return func(c *compileConfig) { c.mode = mode }
 }
 
-// WithActionResolver 注入本工程和精确语言的已发布 page/presentation 目标解析。
-// 同文档区域与外链仍由编译器统一校验，不委托模块重复实现。
 func WithActionResolver(resolve core.ActionResolver) CompileOption {
 	return func(c *compileConfig) { c.action = resolve }
 }
 
-// WithCanvasSlotFrames 开启结构槽位的「画布标记层」（**只给编辑器画布用**）。
-//
-// 开启后，展开成功的 core.layoutSlot 会多输出一层 data-sky-slot 的 div：画布据此
-// 认出页眉 / 页脚区域、把它当只读边界、并提供「点进去编辑全局块」的入口。
-// 它渲染的是给编辑器看的元信息，不是页面内容 —— 所以**发布路径必须保持关闭**：
-// 否则 structure_slots_test 立下的「槽位展开 ≡ 块内容直接写在页面里」逐字节约定
-// 就破了（那条约定是槽位从字符串拼接迁移过来时能逐字节比对的前提）。
 func WithCanvasSlotFrames() CompileOption {
 	return func(c *compileConfig) { c.canvasSlotFrames = true }
 }
 
-// WithDegradeCollector 注入引用降级归因收集器（可选）。
-//
-// 未注入时归因只体现在预览占位上（发布期失败路径不需要它）。
 func WithDegradeCollector(collector *DegradeCollector) CompileOption {
 	return func(c *compileConfig) { c.degrade = collector }
 }
 
-// WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
 func WithContentResolver(r core.ContentResolver) CompileOption {
 	return func(c *compileConfig) { c.content = r }
 }
 
-// WithBlockResolver 注入全局块解析器（构建期内联展开 core.globalref 引用，方案 C）。
-// WithSiteLinkResolver 注入站内链接本地化器（审计 I18N-015）。
-//
-// 实现由装配层提供（pipeline 的 LangURLRule），必须幂等 —— 见 core.SetSiteLinkResolver。
-// 不注入时链接原样输出（缺前缀是可见降级，抛错会让整页构建失败）。
 func WithSiteLinkResolver(fn func(logicalPath string) string) CompileOption {
 	return func(c *compileConfig) {
 		c.siteLinkResolver = fn
 	}
 }
 
-// WithArchiveEntity 注入当前归档实例的实体（审计 EDT-004）。
-//
-// 值为空表示不在归档上下文：手工页面与详情页照旧用组件 Props 里的静态筛选。
 func WithArchiveEntity(entityType, entityID string) CompileOption {
 	return func(c *compileConfig) {
 		c.archiveEntityType = entityType
@@ -277,10 +183,6 @@ func WithArchiveEntity(entityType, entityID string) CompileOption {
 	}
 }
 
-// WithUsageRecorder 注入编译期依赖线索记录器（审计 VIS-006）。
-//
-// 未注入时渲染路径只取值、不记录：预览与片段这类「产物不进 Manifest」的场景
-// 不需要记录，行为与改造前完全一致。
 func WithUsageRecorder(r core.UsageRecorder) CompileOption {
 	return func(c *compileConfig) { c.usage = r }
 }
@@ -289,41 +191,23 @@ func WithBlockResolver(r core.BlockResolver) CompileOption {
 	return func(c *compileConfig) { c.block = r }
 }
 
-// WithComponentSet 注入组件模板 Set（构建期组件渲染专用）。
-//
-// builder 包不直接依赖 internal/templates（后者含 gin 依赖），改为由调用方
-// （page service / dashboard / pipeline / 测试）用 templates.NewComponentSet(...)
-// 创建后注入。未注入时 Compile 返回明确错误，避免静默走旧路径。
 func WithComponentSet(set *jet.Set) CompileOption {
 	return func(c *compileConfig) { c.set = set }
 }
 
-// WithExtraCSS 注入插件静态样式（插件包 assets/*.css，docs/06 §5.1）。
-// 构建期追加到主 CSS 之后（插件扩展覆盖内置语义）；接收时清洗 </style
-// 防止逃逸 <style> 块（插件样式为管理员级信任，仍做防御性清洗）。
 func WithExtraCSS(css string) CompileOption {
 	cleaned := strings.ReplaceAll(css, "</style", "")
 	return func(c *compileConfig) { c.extraCSS = cleaned }
 }
 
-// WithPluginResolver 注入插件组件解析器（plugin.* 节点渲染，docs/06 §7）。
-// 调用方（page service / dashboard）按 enabled 插件集构建；未注入时
-// 页面含插件节点将返回明确错误。
 func WithPluginResolver(r core.PluginResolver) CompileOption {
 	return func(c *compileConfig) { c.plugin = r }
 }
 
-// WithCollectionResolver 注入集合内容解析器（插件组件集合绑定渲染，docs/06 §9）。
-// 调用方（page service / dashboard）注入 content 模块的 CollectionResolver。
-// WithProductDataSource 注入商品构建期数据源（issue #35）。
-//
-// 传的是**受限接口**：只有读集合 / 元数据 / 可筛值，写方法不在它上面 ——
-// 组件拿不到改商品的能力。
 func WithProductDataSource(ds productcontract.ProductDataSource) CompileOption {
 	return func(c *compileConfig) { c.product = ds }
 }
 
-// WithContentDataSource 注入内容构建期数据源（issue #35）。
 func WithContentDataSource(ds contentcontract.ContentDataSource) CompileOption {
 	return func(c *compileConfig) { c.contentSource = ds }
 }
@@ -332,137 +216,70 @@ func WithCollectionResolver(r core.CollectionResolver) CompileOption {
 	return func(c *compileConfig) { c.collection = r }
 }
 
-// WithNavigationResolver 注入公开站点导航解析器（core.nav 绑定菜单位置时构建期展开）。
-// 调用方（page service）注入 navigation 契约的适配器；未注入时绑定菜单位置的
-// 导航节点返回明确错误（不静默渲染空菜单）。
 func WithNavigationResolver(r core.NavigationResolver) CompileOption {
 	return func(c *compileConfig) { c.navigation = r }
 }
 
-// WithProjectID 注入本次编译所属站点工程 ID（导航等站点级资源的取数上下文）。
-// 页面文档不携带工程 ID，由装配层从 pages 表注入；为空时绑定菜单位置的
-// 导航节点同样返回明确错误。
 func WithProjectID(projectID string) CompileOption {
 	return func(c *compileConfig) { c.projectID = projectID }
 }
 
-// WithAssetProbe 注入媒体资源探测函数（构建期响应式图片）：
-// 传入媒体 URL 返回可用变体（URL + 宽度，升序）；返回空则只输出原图。
-//
-// 返回**完整 URL** 而不是纯宽度：变体名带内容指纹
-// （<stem>_<type>-<generation>-<hash8>.jpg），generation 与指纹只有 media 模块知道，
-// 调用方按宽度自行拼名 = 第二份命名真源。
-//
-// 现状（勿按旧注释推理）：media 模块的实现（Service.ProbeImageVariants）是**查库**，
-// 不查文件系统 —— 每次调用两条 SQL（按 file_path 取附件 → 取该附件的变体清单）。
-// 「访客零查询」成立的理由是它只在构建期执行，不是因为它查文件系统。
-// 该代价由 Compile 兜住：注入的 fn 本身不带缓存，每次编译会被包一层单次编译作用域的
-// memoize（见 asset_probe.go），同一 URL 在一次编译里只探测一次。
 func WithAssetProbe(fn func(string) []mediacontract.VariantRef) CompileOption {
 	return func(c *compileConfig) { c.assetProbe = fn }
 }
 
-// WithCurrentPath 注入本次编译的页面访问路径（导航「当前项」高亮依据）。
-// 为空表示未知（如块预览），导航不标记当前项。
 func WithCurrentPath(path string) CompileOption {
 	return func(c *compileConfig) { c.currentPath = path }
 }
 
-// WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
-// 组件经 var(--sky-c-*) 引用——主题系统真正生效到产物）。
 func WithThemeSettings(t *ThemeSettings) CompileOption {
 	return func(c *compileConfig) { c.theme = t }
 }
 
-// WithEnhanceSource 注入客户端增强脚本源码（internal/templates 的 StaticJS("enhance.js")）。
-//
-// 不注入时产物不含增强：页面照样渲染，只是轮播/灯箱/卡片环等失去交互。
-// 调用方（page service）在装配编译选项时注入；缺失会由增强装配处告警，不静默。
 func WithEnhanceSource(js string) CompileOption {
 	return func(c *compileConfig) { c.enhanceSource = js }
 }
 
-// WithTrackSource 注入流量来源采集脚本源码（internal/templates/static/js/track.js）。
-//
-// 不注入时产物不含采集脚本：页面照常渲染，只是订单归因为空 —— 采集是增强能力，
-// 既不阻断内容发布，也不阻断下单（订单的 attribution 列落在 "{}"）。
 func WithTrackSource(js string) CompileOption {
 	return func(c *compileConfig) { c.trackSource = js }
 }
 
-// WithUISources 注入原始控件基座源码（文件名 → 源码，如 select.js / _util.js / index.js）。
-//
-// 按产物里出现的 data-ui-* 特征只注入命中的控件，基座与入口随之为其服务；
-// 一个都没命中时产物不含任何控件脚本（纯内容页不为增强付流量）。
-// nil 表示无脚本模式；非 nil 时命中的资源必须完整，否则 RenderDocument 返回错误。
 func WithUISources(sources map[string]string) CompileOption {
 	return func(c *compileConfig) { c.uiSources = sources }
 }
 
-// WithUIStyle 注入原始控件基座的样式（internal/templates 的 UICSS()）。
-//
-// 与控件脚本同进同出：产物内联了脚本却没样式，控件就是个没外观的空壳。
-// 只在产物真的用到控件（命中 data-ui-* 特征）时才注入这一段。
 func WithUIStyle(css string) CompileOption {
 	return func(c *compileConfig) { c.uiStyle = css }
 }
 
-// WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
 func WithContext(ctx context.Context) CompileOption {
 	return func(c *compileConfig) { c.ctx = ctx }
 }
 
-// WithLanguage 指定本次编译的目标语言（构建期组件文案翻译，多语言 P4）。
-//
-// 预留维度：本轮不改变产物路径与路由（站点级 /{lang}/ 输出属后续 P2），
-// 只影响 core.RenderContext.Lang 与默认取词函数。未指定（空串）时取
-// i18n.GetDefaultLang()，因此现有调用方无需改动即保持中文产物不变。
 func WithLanguage(lang string) CompileOption {
 	return func(c *compileConfig) { c.lang = strings.TrimSpace(lang) }
 }
 
-// WithAlternates 注入同页其他语言版本（多语言 P3）：编译期输出 hreflang 互指。
-// 未注入（单语言站点）时产物字节与 P3 之前完全一致。
 func WithAlternates(alternates []Alternate) CompileOption {
 	return func(c *compileConfig) { c.alternates = alternates }
 }
 
-// WithLocaleLinks 注入站点语言切换器条目（多语言 P3）：core.languages 组件据此输出
-// 各语言的静态链接。未注入（单语言站点 / 页面未放切换器）时产物字节与 P3 之前一致。
 func WithLocaleLinks(links []core.LocaleLink) CompileOption {
 	return func(c *compileConfig) { c.locales = links }
 }
 
-// WithCheckoutCountries 注入结算表单的国家下拉选项（core.checkoutForm 消费）。
-//
-// 与 WithLocaleLinks 同形：都是「装配层算好的站点级静态数据」，组件只决定怎么显示。
-// 未注入时组件**明确报错**（不是静默降级）—— 结算表单消失是交易入口消失，
-// 而产物本身完全正常（无报错、无日志），这类缺陷比构建失败难查得多。
 func WithCheckoutCountries(countries []core.CheckoutCountry) CompileOption {
 	return func(c *compileConfig) { c.checkoutCountries = countries }
 }
 
-// WithTranslator 注入自定义取词函数（key, fallback → 文案）。
-//
-// 缺省为 i18n.TranslateFunc(lang)（读 i18n 内存缓存，兜底链见 pkg/i18n.Translate）。
-// 注入点供测试与装配层使用：传入的函数同样应遵守「缺词条回退 fallback、
-// 不返回空串」的约定（RenderContext.Text 会再兜一层，绝不输出空串）。
 func WithTranslator(fn func(key, fallback string) string) CompileOption {
 	return func(c *compileConfig) { c.translate = fn }
 }
 
-// WithContentTranslator 注入内容译文取词器（多语言 P5b，docs/06-D §7.7）。
-//
-// 取词器由装配层按「本页候选原文的 hash 集合 + 目标语言」构造一次（一次批量 SQL），
-// 组件渲染期只在内存索引上取词，**不逐组件查库**。未注入（nil）时渲染层零开销，
-// 产物字节与接入前逐字节一致（无译文回退原文的等价形态）。
-//
-// 传入 nil 等价于不接入（可用于显式关闭）。
 func WithContentTranslator(t *i18n.ContentTranslator) CompileOption {
 	return func(c *compileConfig) { c.contentTranslator = t }
 }
 
-// contentTranslateFunc 把取词器转为 RenderContext 的取词函数（nil 取词器返回 nil）。
 func contentTranslateFunc(t *i18n.ContentTranslator) func(sourceText, contentContext string) string {
 	if t == nil {
 		return nil
@@ -470,12 +287,6 @@ func contentTranslateFunc(t *i18n.ContentTranslator) func(sourceText, contentCon
 	return t.TranslateContent
 }
 
-// resolveCompileI18n 解析本次编译的语言与取词函数：
-//   - 语言为空 → i18n.GetDefaultLang()（i18n 未初始化时内部回退 zh-CN）；
-//   - 取词函数未注入 → i18n.TranslateFunc(lang)。
-//
-// 两条兜底都保证返回值可用：i18n 未初始化时取词函数返回 fallback（原中文），
-// 编译不会失败，产物也不会出现空属性或裸 key。
 func resolveCompileI18n(cfg *compileConfig) (string, func(key, fallback string) string) {
 	var lang string
 	var fn func(key, fallback string) string
@@ -492,20 +303,12 @@ func resolveCompileI18n(cfg *compileConfig) (string, func(key, fallback string) 
 	return lang, fn
 }
 
-// MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
-// 正常页面 3~4 层（页面主体 > 区块 > 布局 > 叶子），复杂卡片 5~6 层；
-// 超过 8 层即结构失控（选择器特异度竞争、响应式覆盖链失控、大纲树不可用，
-// 参照 Elementor 硬 3 层 / Webflow 社区最佳实践 ≤6 层）。上限取 10：
-// 给合法复杂度留余量，同时拦住无限嵌套（含未来插件预设塞深层结构）。
 const MaxNodeDepth = 10
 
-// ValidatePage 严格校验页面文档与全部节点；正式发布不得跳过未完成组件。
 func ValidatePage(p *Page) error {
 	return validatePageNodes(p, nil)
 }
 
-// ValidatePageTolerant 用于草稿保存和预览：只标记未完成节点，
-// 同一容器中的其它节点继续校验和渲染；非法属性、重复 ID 与结构错误仍拒绝。
 func ValidatePageTolerant(p *Page) (incompleteIDs map[string]bool, err error) {
 	incompleteIDs = map[string]bool{}
 	if err = validatePageNodes(p, incompleteIDs); err != nil {
@@ -541,7 +344,6 @@ func validatePageNodes(p *Page, incompleteIDs map[string]bool) error {
 	return nil
 }
 
-// nodeDepth 节点子树深度（自身为 1）。
 func nodeDepth(n *core.Node) int {
 	if n == nil || len(n.Children) == 0 {
 		return 1
@@ -555,22 +357,6 @@ func nodeDepth(n *core.Node) int {
 	return max + 1
 }
 
-// ComponentSchemas 生成全部已注册组件的 Inspector 面板 schema（docs/02-C3）。
-// 键为组件类型（core.container 等），值为 core.Control 描述符数组 JSON。
-// 未实现 SpecProvider 的组件跳过（兼容手写校验阶段）。
-// 输出确定性：Types 字典序，桶内字段声明序。
-//
-// 结果进程级缓存：PropsSpec 由组件编译期静态声明（core.Lookup + SchemaJSON
-// 均为纯函数），进程内恒定；此前每个工作台请求都重新遍历生成，属冗余开销。
-//
-// **每次返回浅拷贝**：缓存是并发共享的，调用方一律在副本上改。
-// 缓存本身只读：调用方要往里合并自己的条目（工作台把插件 schema 并进同一张表，见
-// service.InspectorSchemas）就在副本上并，改坏了也只影响本次请求，不会污染进程级缓存、
-// 也不会与并发请求撞写。值类型是 json.RawMessage（[]byte 切片），故浅拷贝即可 ——
-// 全仓没有任何调用方改写 RawMessage 的字节，只整条覆盖。
-//
-// 返回值恒为可写的非 nil map（即使构建失败），调用方无需再做 nil 判断 ——
-// 工作台在拿到它之后会往里合并插件 schema，nil map 上写会 panic。
 func ComponentSchemas() (map[string]json.RawMessage, error) {
 	componentSchemasOnce.Do(func() {
 		componentSchemas, componentSchemasErr = buildComponentSchemas()
@@ -582,14 +368,12 @@ func ComponentSchemas() (map[string]json.RawMessage, error) {
 	return out, componentSchemasErr
 }
 
-// componentSchemas* 进程级单例（见 ComponentSchemas 注释）。
 var (
 	componentSchemasOnce sync.Once
 	componentSchemas     map[string]json.RawMessage
 	componentSchemasErr  error
 )
 
-// buildComponentSchemas 实际生成逻辑（仅首调执行一次）。
 func buildComponentSchemas() (map[string]json.RawMessage, error) {
 	out := make(map[string]json.RawMessage, 8)
 	for _, typeName := range core.Types() {
@@ -610,13 +394,12 @@ func buildComponentSchemas() (map[string]json.RawMessage, error) {
 	return out, nil
 }
 
-// Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
 func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	cfg := &compileConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	// 用途先于校验：预览保留未完成控件的局部占位，发布必须全部完成。
+
 	var incompleteIDs map[string]bool
 	if cfg.mode == CompileModePublish {
 		err = ValidatePage(p)
@@ -629,8 +412,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if cfg.set == nil {
 		return nil, errors.New("编译缺少组件模板 Set：请通过 WithComponentSet 注入（templates.NewComponentSet）")
 	}
-	// 防御性兜底：WithThemeSettings 注入的主题设置在消费（ThemeVarsCSS）前校验，
-	// 校验失败返回 error（不 panic），避免非法主题令牌进入产物 CSS 变量。
+
 	if err = ValidateThemeSettings(cfg.theme); err != nil {
 		return nil, fmt.Errorf("主题设置: %w", err)
 	}
@@ -638,20 +420,10 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	var b core.CSSBuckets
 	compileSettingsCSS(&p.Settings, &b)
 
-	// 运行时特征登记表（审计 PERF-014）：组件在渲染期把「本次真实输出了什么」写进来，
-	// 产物组装层读它决定注入哪些脚本（此前是渲染完再扫一遍整页 HTML）。
 	features := core.NewFeatureSet()
 
-	// 构建期语言与取词函数（多语言 P4）：未指定语言时取默认语言，
-	// 取词函数缺省读 i18n 内存缓存并带完整兜底链（见 resolveCompileI18n）。
 	lang, translate := resolveCompileI18n(cfg)
 
-	// 构建上下文补充：目标语言与站点工程 ID 一并进 context。
-	//
-	// 组件经 RenderContext 读得到这两个值，集合解析器（CollectionResolver）
-	// 只拿得到 context.Context —— 商品集合按工程取数（不跨站点串数据）、
-	// 可翻译字段按语言取译文都依赖它们。Presenter 路径此前已在装配层包好
-	// 构建语言，这里统一兜住，两种构建路径行为一致。
 	buildCtx := core.WithBuildProjectID(core.WithBuildLang(cfg.ctx, lang), cfg.projectID)
 
 	var htmlBuf strings.Builder
@@ -663,8 +435,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
-		// 结算表单的构建期输入：国家清单来自装配层，默认国家在**每次编译**时从
-		// pkg/i18n 的进程内缓存取（随系统设置刷新，不在装配期冻结）。
+
 		Checkout: core.CheckoutInput{
 			Countries:      cfg.checkoutCountries,
 			DefaultCountry: i18n.GetDefaultCountry(),
@@ -676,42 +447,34 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		},
 		RevealInherit:         cfg.theme.RevealInheritOf(),
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
-		// 图片变体探测按**单次编译作用域** memoize：同一张图在文档里出现 n 次
-		// （多个 image 节点 / 同一 src 复用），原来就是 n 次探测 = 2n 条 SQL。
-		// 缓存在这里新建，随本次编译的 RenderContext 生灭 —— 不跨构建，因此不会
-		// 缓存住旧 generation 的变体 URL（论证见 asset_probe.go）。
+
 		AssetProbe:       newAssetProbeMemo(cfg.assetProbe),
 		Features:         features,
 		CanvasSlotFrames: cfg.canvasSlotFrames,
 	}
 	ctx.Block = snapshotBlockReads(ctx.Block)
 	ctx.SetUsageRecorder(cfg.usage)
-	// 引用失败策略（审计 ARCH-05）：发布期「显式绑定但拿不到」直接失败，
-	// 预览期降级为带归因的占位；两种情况都经收集器留痕（若注入了收集器）。
+
 	ctx.SetRefFailureHandler(refFailureHandler(cfg))
 	ctx.SetArchiveEntity(cfg.archiveEntityType, cfg.archiveEntityID)
 	ctx.SetSiteLinkResolver(cfg.siteLinkResolver)
-	// 菜单悬浮面板（超级菜单）：把「块 → HTML」的渲染能力挂到 ctx 上（见 core.RenderContext）。
-	// 未注入块解析器时闭包为 nil，navViewOf 侧退化为「不展开面板」（编辑器画布 / 单测）。
+
 	ctx.SetPanelRenderer(panelRenderer(ctx, ctx.Block, cfg.set))
-	// 顶层节点先建 view 树（含 CSS 编译），再统一渲染：main 地标要先知道每个顶层节点的
-	// 语义标签，才能决定包裹区间（渲染顺序与逐节点渲染完全一致）。
+
 	type rootView struct {
 		view *nodeView
 		tag  string
-		// isSlot 是否为结构槽位节点：main 地标判定跳过它们（页眉页脚本来就在 main 之外，
-		// 被包进 main 会让 banner / contentinfo 地标退化成普通元素）。
+
 		isSlot bool
 	}
-	// 结构槽位展开（审计 VIS-001）：绑定变成 root 首尾的 core.layoutSlot 节点，
-	// 页眉页脚因此进入 AST，与页面里的节点走同一条渲染与 CSS 收集路径。
+
 	rootNodes := expandStructureSlots(p.Root, cfg.structureSlots)
 	if err := configureActions(rootNodes, ctx, cfg.action); err != nil {
 		return nil, err
 	}
 	roots := make([]rootView, 0, len(rootNodes))
 	for _, n := range rootNodes {
-		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
+
 		v, verr := nodeViewOf(n, true, ctx)
 		if verr != nil {
 			return nil, verr
@@ -722,9 +485,6 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		})
 	}
 
-	// main 地标（页面设置开关，默认关）：正文包进唯一的 <main>，屏幕阅读器可直接跳到内容。
-	// 首尾连续的 header / footer 顶层节点留在 main 之外 —— 它们只有在 body 直接子级下才构成
-	// banner / contentinfo 地标，一旦被包进 main 就退化成普通元素。
 	mainStart, mainEnd := -1, -1
 	if p.Settings.Layout.MainLandmark && len(roots) > 0 {
 		mainStart, mainEnd = 0, len(roots)
@@ -758,18 +518,11 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}
 	classes = append(classes, p.Settings.BodyClasses...)
 
-	// 构建期 SEO 头：canonical / OG / Twitter / JSON-LD（三级回落由 BuildSEOHead 处理）。
 	breadcrumbHome := "Home"
 	if cfg.translate != nil {
 		breadcrumbHome = cfg.translate("site.breadcrumb.home", "首页")
 	}
-	// SEO 的文本字段按语言取译文（审计 I18N-014）：它们烘在产物头部（<title> / og:title /
-	// meta description）—— 英文站点如果标题还是中文，从搜索结果点进来的人会以为走错了站。
-	//
-	// 与候选收集侧共用语境常量（写读两侧各写一份字面量，迟早分叉而看不出）。
-	// contentTranslateFunc 对 nil 取词器返回 nil 函数（见它的注释），这里必须先兜底：
-	// 未接入内容翻译的站点（默认语言、单语言、或装配没注入取词器）走的就是这条路，
-	// 直接调用会 nil panic 掉整个构建 —— 而「没配译文」恰恰是最常见的情况。
+
 	seoTrans := contentTranslateFunc(cfg.contentTranslator)
 	if seoTrans == nil {
 		seoTrans = func(sourceText, _ string) string { return sourceText }
@@ -778,38 +531,30 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	seoDescription := seoTrans(p.Settings.SEO.Description, SEODescriptionContext)
 	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, seoTitle, seoDescription, breadcrumbHome, cfg.alternates)
 
-	// 产物 CSS = 内核编译样式 + 插件静态样式，用 @layer 显式分层：
-	//   sky-base（内核基础）< sky-plugin（插件）< sky-auto（容器宽度自动适配）<
-	//   sky-theme（主题档位）< sky-local（容器/作者显式声明）< 未分层（用户自定义，最高）。
-	// 分层后优先级由层序决定（稳定显式），不再依赖源顺序（脆弱）；
-	// 未分层样式天然高于所有层，符合「用户覆盖一切」的预期。
 	var cssParts []string
 	cssParts = append(cssParts, "@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;")
 	cssParts = append(cssParts, "@layer sky-base {\n"+b.String()+"\n}")
 	if cfg.extraCSS != "" {
 		cssParts = append(cssParts, "@layer sky-plugin {\n"+cfg.extraCSS+"\n}")
 	}
-	// 容器查询块：自动适配（sky-auto）< 主题档位（sky-theme）< 局部显式（sky-local），
-	// 层序即优先级——不再依赖规则输出顺序。
+
 	if cq := b.ContainerQueryCSS(); cq != "" {
 		cssParts = append(cssParts, cq)
 	}
-	// 未分层顶层规则（@property 注册等）：注册是全局的，放层外最稳。
+
 	if tl := b.TopLevelCSS(); tl != "" {
 		cssParts = append(cssParts, tl)
 	}
 	css := strings.Join(cssParts, "\n\n")
-	// 减弱动态效果无障碍块（主题开关 + 系统偏好双重门控；未开启零输出）。
+
 	if rm := cfg.theme.ReducedMotionCSS(); rm != "" {
 		css = css + "\n\n" + rm
 	}
-	// 页面转场规则（@view-transition，主题开关；未开启零输出）。
+
 	if vt := cfg.theme.ViewTransitionsCSS(); vt != "" {
 		css = css + "\n\n" + vt
 	}
-	// 产物自洽校验：引用的动画必须有定义。放在这里是因为此刻 css 已经拼完整
-	// （基础层 / 插件层 / 容器查询 / 顶层 / 无障碍 / 页面转场都在内），
-	// 是唯一能一次看到全部动画名来源的位置（见 css_verify.go）。
+
 	if err := verifyAnimationRefs(css); err != nil {
 		return nil, err
 	}
@@ -839,16 +584,6 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}, nil
 }
 
-// RenderNodeHTML 把单个组件节点渲染为 HTML 片段（issue #27）。
-//
-// 为什么需要它：访问面的 Runtime Fragment 要返回**与静态产物同一份渲染**的 HTML ——
-// 若片段自己拼一遍列表，就会出现「点筛选得到的」与「直接打开页面看到的」两份实现，
-// 任何一处改动都会让两边悄悄分叉（docs/04 三路径的硬要求）。
-//
-// 用同一个 node id 渲染是关键：组件类名由 core.NodeClass(id) 派生，id 相同则类名相同，
-// 静态产物里已有的样式对片段同样生效，片段不必重复注入 CSS。
-//
-// set 为组件模板集（装配期构建一次复用），ctx 需带齐该组件依赖的解析器（列表：Collection）。
 func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (string, error) {
 	if node == nil {
 		return "", fmt.Errorf("渲染节点为空")
@@ -856,11 +591,10 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 	if ctx == nil {
 		return "", fmt.Errorf("渲染上下文为空")
 	}
-	// 片段只要 HTML：样式已在静态产物内联，跳过 CSS 编译（EDT-016）。
+
 	fragCtx := *ctx
 	fragCtx.CSS = core.DiscardCSS()
-	// 片段也不收集运行时特征（审计 PERF-014）：片段不组装脚本，注入决策只发生在
-	// 静态产物那条链上。共享调用方的登记表会让多次片段渲染悄悄累积特征。
+
 	fragCtx.Features = nil
 	view, err := nodeViewOf(node, true, &fragCtx)
 	if err != nil {
@@ -873,24 +607,13 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 	return sb.String(), nil
 }
 
-// RenderDocument 将编译输出组装为完整 HTML 文档（用于预览与静态发布产物）。
-//
-// 文档骨架经 go:embed 的 document.jet 模板渲染（声明式可见，IDE 可配平校验），
-// 转义策略：Title/MetaDescription 走 Jet 默认 HTML 转义（等价 html.EscapeString）；
-// CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
-// BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
-// 能力集合来自**渲染期登记**（c.featureScan，审计 PERF-014）：组件在 BuildView 阶段
-// 登记自己真实输出的 hx-* / data-* 属性与控件外观 class，这里直接读结果，
-// 不再对整页 HTML 跑 tokenizer。原先的扫描实现保留在 ui_script.go（collectHTMLScan），
-// 供交叉验证测试与手工构造 CompiledPage 的调用方使用。
 func RenderDocument(c *CompiledPage) (string, error) {
 	scan := c.featureScan()
 	uiCSS, uiScript, err := uiAssetsForScan(scan, c.UIStyle, c.UISources)
 	if err != nil {
 		return "", fmt.Errorf("组装文档控件资源失败: %w", err)
 	}
-	// <html lang>：目标语言缺省回退站点默认语言（i18n 未初始化时内部回退 zh-CN），
-	// 绝不输出空 lang 属性（空 lang 会让浏览器与屏幕阅读器失去语言线索）。
+
 	lang := strings.TrimSpace(c.Lang)
 	if lang == "" {
 		lang = i18n.GetDefaultLang()
@@ -912,39 +635,24 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		SEOHead:           c.SEOHead,
 		GA4Head:           ga4Head,
 		SearchConsoleHead: c.SearchConsoleHead,
-		// 自定义注入代码是**管理员原文**，模板里必须 unsafe 输出：转义会把脚本变成
-		// 页面上的可见文本（功能直接失效）。风险由信任边界承担 —— 只有后台有
-		// /api/project/update 权限的人能写这两个字段，公开面没有写入路径；
-		// 完整论证见 site_scripts.go 的文件头注释。
+
 		HeadScripts:  c.HeadScripts,
 		BodyScripts:  c.BodyScripts,
 		BodyClass:    strings.Join(c.BodyClasses, " "),
 		HTML:         c.HTML,
 		CSS:          c.CSS + uiCSS,
 		ThemeVarsCSS: c.ThemeVarsCSS,
-		// 采集脚本无条件排在最前：一是每页都要有（不像增强按特征挑块），
-		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
-		// 而归因丢数据是静默的，没人会发现少了什么。
-		// 打点配置（工程 ID / 语言）排在采集脚本之前：脚本运行时就要读它。
+
 		EnhanceScript: tracking + enhanceScriptFor(scan.attrs, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
-		// 渲染失败返回 error 而非 panic：构建路径应可被上层捕获并返回 500，
-		// 遵循「组件只返回 error」约定（documentTemplate 首次加载 panic 属
-		// 准启动 fail-fast，保留）。
+
 		return "", fmt.Errorf("渲染 document.jet 失败: %w", err)
 	}
 	return sb.String(), nil
 }
 
-// DirAttr <html dir> 的属性值：RTL 返回 "rtl"，其余返回空串（模板据此整段省略）。
-//
-// 为什么 LTR 不落字节：LTR 是 HTML 的缺省方向，写出来是冗余字节；而它一旦进产物，
-// 全部存量站点的产物 hash 都会变（产物 hash 含 HTML），触发一次无意义的全量重建。
-//
-// 导出给访客页面外壳（user/layout.html 的渲染数据）与 Manifest 共用：这三处的
-// 「要不要写 dir」必须是同一条规则，各判一次就会出现「Manifest 有、HTML 没有」。
 func DirAttr(lang string) string {
 	if LocaleDirection(lang) == "rtl" {
 		return "rtl"
@@ -952,34 +660,31 @@ func DirAttr(lang string) string {
 	return ""
 }
 
-// documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
 type documentView struct {
 	PreviewNotice     string
 	PreviewReadOnly   bool
 	PreviewState      source.PreviewState
-	Lang              string // <html lang>（目标语言，空回退默认语言）
-	Dir               string // <html dir>（仅 RTL 非空，缺省 = LTR）
+	Lang              string
+	Dir               string
 	Title             string
 	MetaDescription   string
-	SEOHead           string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
-	GA4Head           string // 站点统计代码（服务端拼装、ID 过白名单；模板 unsafe 输出）
-	SearchConsoleHead string // GSC 站点验证 meta（服务端拼装、token 过白名单；模板 unsafe 输出）
-	HeadScripts       string // 站点自定义 Head 代码（管理员原文、插在 </head> 之前；模板 unsafe 输出）
-	BodyScripts       string // 站点自定义 Body 代码（管理员原文、插在 </body> 之前；模板 unsafe 输出）
-	BodyClass         string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
+	SEOHead           string
+	GA4Head           string
+	SearchConsoleHead string
+	HeadScripts       string
+	BodyScripts       string
+	BodyClass         string
 	HTML              string
 	CSS               string
 	ThemeVarsCSS      string
 	EnhanceScript     string
 }
 
-// documentTpl* document.jet 的进程级单例（embed 静态模板编译一次全局复用）。
 var (
 	documentTplOnce sync.Once
 	documentTpl     *jet.Template
 )
 
-// documentTemplate 返回 document.jet 的编译后模板（首次调用加载编译）。
 func documentTemplate() *jet.Template {
 	documentTplOnce.Do(func() {
 		loader := jet.NewInMemLoader()

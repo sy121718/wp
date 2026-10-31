@@ -7,11 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestHeadingCSSSubtitleReverseSelector 副标题规则必须用 :has() 从副标题侧反向限定。
-//
-// 副标题在 DOM 中是根元素的**前置兄弟**（heading.jet：subtitle 在标题标签之前），
-// 后代选择器 .sky-c-x .sky-heading-sub 永远匹配不到任何元素 —— 副标题的颜色 / 字号 /
-// 字重 / 间距曾因此全部静默失效。这条不变量在产物里只有一处痕迹：:has(+ <scope>)。
 func TestHeadingCSSSubtitleReverseSelector(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Text: "标题", Subtitle: "副题"}, &b)
@@ -24,7 +19,6 @@ func TestHeadingCSSSubtitleReverseSelector(t *testing.T) {
 	}
 }
 
-// TestHeadingCSSSegmentDelays 文本动画产出 21 条延迟规则；未开动画时一条都不产出。
 func TestHeadingCSSSegmentDelays(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Text: "标题", TextAnim: "chars"}, &b)
@@ -51,7 +45,6 @@ func TestHeadingCSSSegmentDelays(t *testing.T) {
 	}
 }
 
-// TestHeadingCSSTextAnimDelay 自定义字间延迟按倍数展开（第 21 段是 20 倍档位）。
 func TestHeadingCSSTextAnimDelay(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Text: "标题", TextAnim: "words", TextAnimDelay: 80}, &b)
@@ -63,7 +56,6 @@ func TestHeadingCSSTextAnimDelay(t *testing.T) {
 	}
 }
 
-// TestHeadingCSSHighlightSuppressesAnim 配了高亮盒时不做拆分动画（两者视觉上会打架）。
 func TestHeadingCSSHighlightSuppressesAnim(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Text: "标题", TextAnim: "chars", HighlightColor: "#ff0"}, &b)
@@ -76,7 +68,6 @@ func TestHeadingCSSHighlightSuppressesAnim(t *testing.T) {
 	}
 }
 
-// TestHeadingCSSTextWrapAlways 平衡换行无条件产出（不支持的浏览器忽略该声明）。
 func TestHeadingCSSTextWrapAlways(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Text: "标题"}, &b)

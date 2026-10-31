@@ -1,13 +1,5 @@
 package feature
 
-// template_body_json_test.go — 可视化正文的保存 / 渲染链路（T5）。
-//
-// 三条判据：
-//
-//  1. **编译成功才落库**：坏树保存失败，库里那一行一个字都不动（不做半成品）；
-//  2. **渲染读产物**：body_json 非空时，发出去的是编译产物而不是 body_html；
-//  3. **落库字节确定性**：同一棵树保存两次，body_compiled_html 字节相同。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -18,7 +10,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
-// simpleTree 一份最小的合法块树（body → section → column → text）。
 func simpleTree(text string) map[string]any {
 	return map[string]any{
 		"schema": 1,
@@ -45,7 +36,6 @@ func treeJSON(t *testing.T, tree map[string]any) []byte {
 	return raw
 }
 
-// TestSaveTemplateCompilesBodyJSON 保存块树 → 编译产物落库。
 func TestSaveTemplateCompilesBodyJSON(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -72,7 +62,6 @@ func TestSaveTemplateCompilesBodyJSON(t *testing.T) {
 		t.Fatal("回执应带 body_json（编辑器要靠它重建树）")
 	}
 
-	// 库里三列都在。
 	row, err := mailmodel.NewMailModel(f.db).GetTemplate(ctx, "visual_tpl", "")
 	if err != nil {
 		t.Fatalf("回读失败: %v", err)
@@ -83,7 +72,6 @@ func TestSaveTemplateCompilesBodyJSON(t *testing.T) {
 	}
 }
 
-// TestSaveTemplateBadTreeWritesNothing 坏树保存失败，库里一个字都不动。
 func TestSaveTemplateBadTreeWritesNothing(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -101,7 +89,6 @@ func TestSaveTemplateBadTreeWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 未知块类型 → 编译失败。
 	bad := simpleTree("新文本")
 	bad["root"].(map[string]any)["children"] = []any{
 		map[string]any{"key": "weird", "type": "teleport"},
@@ -130,7 +117,6 @@ func TestSaveTemplateBadTreeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestSaveTemplateIsByteDeterministic 同一棵树保存两次，落库字节相同。
 func TestSaveTemplateIsByteDeterministic(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {

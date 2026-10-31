@@ -1,20 +1,5 @@
 package blockhttp
 
-// block_save_content_err_test.go — 工作台保存块内容（POST /admin/blocks/save-content）两条
-// 失败出口的形状护栏。
-//
-// 为什么这两处非改不可：它是 **JSON 端点**，调用方是工作台的 saveDraft
-// （internal/templates/static/js/workbench/methods/api.js），对响应做 `r.json()`，
-// 再按 `j.code >= 400` 取 `j.message` 弹提示。改成 303 + ?err= 是错的（那里没有页面），
-// 而原先的 `c.String(400, "参数不合法")` / `c.String(404, "全局块不存在")` 同样是错的：
-// 纯文本让 `r.json()` 直接 reject，落进 `.catch()` —— 用户只看到保存状态变红、
-// 没有一句可读的提示。
-//
-// 本文件钉三件事，都是「错了不会有人发现」的那一类：
-//  1. 响应体是合法 JSON（纯文本会让调用方的解析 reject，症状是「静默失败」）；
-//  2. 状态码如实反映失败类别（400 参数 / 404 不存在 / 500 内部故障）；
-//  3. 文案是受控文案，内部错误原文（SQL、驱动、Go 结构体字段名）不上面。
-
 import (
 	"context"
 	"errors"
@@ -32,10 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// stubBlockService 只实现本文件需要的两个方法，其余一律 panic。
-//
-// panic 而不是返回零值：本用例断言的是失败出口的形状，任何多余的服务调用都说明
-// 「失败分支没在失败点停下来」——那种情况必须立刻炸，而不是静默走通。
 type stubBlockService struct {
 	detail     *blockdto.BlockResp
 	detailErr  error
@@ -74,7 +55,6 @@ func (s *stubBlockService) ListBlockSourceRefs(context.Context, string) ([]block
 	panic("SaveBlockContent 不应调用 ListBlockSourceRefs")
 }
 
-// stubVersionConflict 与 service 层的 versionConflictError 同形（key + 兜底 + 版本号）。
 type stubVersionConflict struct{ version string }
 
 func (e *stubVersionConflict) Error() string { return blockenums.ErrBlockVersionConflict }
@@ -86,9 +66,6 @@ func (e *stubVersionConflict) Is(target error) bool {
 	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
 }
 
-// saveContentResp 调用 SaveBlockContent 并返回原始状态码、原始响应体与解析后的 JSON。
-//
-// body 不是合法 JSON 时不报错 —— 这正是「绑定失败」那条路径要覆盖的输入。
 func saveContentResp(t *testing.T, svc blockcontract.BlockService, body string) (status int, raw string, parsed struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -112,7 +89,6 @@ func saveContentResp(t *testing.T, svc blockcontract.BlockService, body string) 
 	return status, raw, parsed
 }
 
-// TestSaveBlockContentBindFailIsControlledJSON `ShouldBindJSON` 失败 → 400 JSON + 受控文案。
 func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 	cases := []struct {
 		name string
@@ -139,8 +115,7 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 			if strings.TrimSpace(parsed.Message) == "" {
 				t.Fatal("失败响应没有文案 —— 工作台会 alert 出一句空话")
 			}
-			// 受控文案的判据：gin 的绑定错误会带 Go 结构体与字段名，
-			// 那属于实现细节，只能进日志。
+
 			for _, leak := range []string{"json:", "cannot unmarshal", "Go struct", "binding", "reflect"} {
 				if strings.Contains(parsed.Message, leak) {
 					t.Fatalf("绑定错误原文泄漏到响应里（%q 出现在 %q）", leak, parsed.Message)
@@ -153,7 +128,6 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 	}
 }
 
-// TestSaveBlockContentBlockMissingIsControlledJSON 块不存在 → 404 JSON + 模块词条文案。
 func TestSaveBlockContentBlockMissingIsControlledJSON(t *testing.T) {
 	svc := &stubBlockService{detailErr: blockcontract.ErrNotFound}
 	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
@@ -167,8 +141,6 @@ func TestSaveBlockContentBlockMissingIsControlledJSON(t *testing.T) {
 	assertControlledMessage(t, parsed.Message, blockenums.ErrBlockNotFound, "全局块不存在")
 }
 
-// TestSaveBlockContentNilBlockWithoutErrorIsNotFound Detail 返回 (nil, nil) 的防御分支：
-// 契约上不该出现，但不能静默继续 —— 那会把一次写操作建在空块上。
 func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 	svc := &stubBlockService{}
 	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
@@ -182,11 +154,6 @@ func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 	}
 }
 
-// TestSaveBlockContentDetailInternalErrorHidesDetail 基础设施故障 → 500 + 归口文案，
-// 原文只进日志。
-//
-// 「把 DB 故障说成块不存在」是原先那条 `err != nil || current == nil` 分支的副作用：
-// 用户照着提示去查「块为什么不存在」，而真正的问题在连接池 / 表结构。
 func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 	const internal = `pq: relation "blocks" does not exist (SQLSTATE 42P01)`
 	svc := &stubBlockService{detailErr: errors.New(internal)}
@@ -204,8 +171,6 @@ func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 	}
 }
 
-// TestSaveBlockContentSuccessStillJSON 成功路径不受本批改动影响（护栏）：
-// 描述符（workbench target）给的键名照常工作，响应仍是 JSON 且带 code=200。
 func TestSaveBlockContentSuccessStillJSON(t *testing.T) {
 	svc := &stubBlockService{detail: &blockdto.BlockResp{ID: "b-1", Name: "页脚"}}
 	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":1}`)
@@ -221,10 +186,6 @@ func TestSaveBlockContentSuccessStillJSON(t *testing.T) {
 	}
 }
 
-// assertControlledMessage 断言文案落在受控集合里：词条 key 或它的译文。
-//
-// 单测不连库，i18n 缓存未加载时 translate 原样返回 key；连库的 feature 用例拿到译文。
-// 两者都是受控结果，硬断言其中一种会让用例随环境变红。
 func assertControlledMessage(t *testing.T, got string, allowed ...string) {
 	t.Helper()
 	for _, want := range allowed {
@@ -235,17 +196,8 @@ func assertControlledMessage(t *testing.T, got string, allowed ...string) {
 	t.Fatalf("文案不在受控集合里：got %q，允许 %v（写侧改了 key 或读侧白名单失配都会落这里）", got, allowed)
 }
 
-// TestSaveBlockContentVersionConflictIs409WithVersion 版本冲突走 409 + 带版本号的受控文案。
-//
-// 守的形态（B2 / B1 契约 §3）：并发保存的冲突是**可重试的用户动作**，不是基础设施故障。
-// 两个后果如果搞错，用户都得不到可行动的信息：
-//
-//	· 当成 500 → 前端走「系统内部错误」提示，用户以为出了 bug，不会想到刷新重试；
-//	· 文案里不带当前版本 → 用户只能整页刷新，无法知道"别人的改动到第几版了"。
 func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
-	// service 层的 conflict 错误形状：声明 409，并实现 facing.Source + Version()。
-	// 不用 `key|param` 字符串：facing.FactOf 只认「单段 key / key: 明细」，带竖线的
-	// 整串过不了业务判据会退成 500（这条是实测踩出来的）。
+
 	conflict := facing.WithStatus(&stubVersionConflict{version: "7"}, http.StatusConflict)
 
 	svc := &stubBlockService{
@@ -260,11 +212,11 @@ func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
 	if parsed.Code != http.StatusConflict {
 		t.Errorf("JSON code 应与 HTTP 状态一致（409），实际 %d", parsed.Code)
 	}
-	// 文案必须带版本号 7：前端据此提示「当前第 7 版，刷新后重试」。
+
 	if !strings.Contains(parsed.Message, "7") {
 		t.Errorf("冲突文案应带当前版本号 7，实际 %q", parsed.Message)
 	}
-	// 不许把内部 key 或错误原文漏出去。
+
 	for _, leak := range []string{"ErrBlockVersionConflict", "blockenums"} {
 		if strings.Contains(parsed.Message, leak) {
 			t.Errorf("文案里出现了内部标识 %q：%s", leak, parsed.Message)
@@ -272,7 +224,6 @@ func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
 	}
 }
 
-// 版本冲突之外的业务拒绝沿声明状态返回，不被统一伪装成409或500。
 func TestSaveBlockContentBusinessErrorPreservesDeclaredStatus(t *testing.T) {
 	svc := &stubBlockService{
 		detail:    &blockdto.BlockResp{ID: "b-1", Name: "页脚", Version: 7},

@@ -1,20 +1,5 @@
 package feature
 
-// customer_page_e2e_test.go — 后台客户管理页的端到端链路。
-//
-// 真实 PostgreSQL（隔离 schema + 生产迁移 + 生产 seed）→ 真实 user / order / project service
-// → 真实 dashboard handler → 真实 Jet 模板渲染。这一条测试覆盖的是页面背后**整条数据链**：
-//
-//	GET /admin/customers        客户列表（含筛选与计数）
-//	GET /admin/customers/detail 客户资料 + **跨模块**的订单摘要（订单模块的只读聚合）
-//	POST /api/customer/status 停用账号 → 库里真的变了
-//	POST /api/customer/unlock 解除锁定 → 锁定字段真的被清空
-//
-// 只测「handler 返回 200」是不够的：客户页最容易出的错是「页面渲染出来了，
-// 但数字是错的」（金额口径、锁定判定、筛选没落到 SQL 上），所以每条断言都回库核对。
-//
-// PG 不可用时 t.Skip（与其他功能测试一致）。
-
 import (
 	"context"
 	"go_wp/internal/adminui"
@@ -70,9 +55,8 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 
-	// 访客账号这条链路不碰资料与偏好表，构造时传 nil（与服务装配的「可选依赖」口径一致）。
 	users := userservice.NewService(usermodel.NewUserModel(db), nil, nil, nil, "测试站")
-	// 订单侧只需要订单模块自己的 model：客户页的订单摘要是纯聚合，不碰商品与库存。
+
 	orders := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
 		ordermodel.NewOrderItemModel(db),
@@ -98,7 +82,6 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	}
 }
 
-// mkE2ECustomer 直接落一个客户（走注册链路要发邮件，这里要的是页面链路）。
 func (e *customerE2EEnv) mkE2ECustomer(t *testing.T, username, email, display string, status int) *usermodel.UserEntity {
 	t.Helper()
 	registered := time.Date(2026, 9, 12, 9, 0, 0, 0, time.Local)
@@ -144,7 +127,6 @@ func (e *customerE2EEnv) post(t *testing.T, path string, form url.Values) *httpt
 	return rec
 }
 
-// TestCustomerPageE2EListDetailAndWrites 一条链路走完：列表 → 详情（含跨模块订单摘要）→ 停用 → 解锁。
 func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 	env := newCustomerE2EEnv(t)
 	if env == nil {
@@ -170,9 +152,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 		if strings.Contains(body, "other@example.com") {
 			t.Errorf("关键词筛选取不到的效果：另一个客户也出现在结果里")
 		}
-		// 计数是全局口径（不受筛选影响）。计数条已改成「徽章即筛选」的形态：
-		// 标签与数字仍在同一枚徽章里，选中的那枚用 <strong>✓ 全部</strong> 标记
-		//（未选中时是「全部 2」的平铺形态 —— 计数在 <strong> 之后，故断言带闭合标签）。
+
 		if !strings.Contains(body, "全部</strong> 2") {
 			t.Errorf("计数条应显示全部 2 个账号")
 		}
@@ -191,7 +171,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 				t.Errorf("详情页缺少 %q", want)
 			}
 		}
-		// 取消单的金额不能混进累计消费（口径由订单模块决定，页面只展示）。
+
 		if strings.Contains(body, "¥1,119.99") || strings.Contains(body, "1119.99") {
 			t.Errorf("累计消费把取消单也算进去了")
 		}
@@ -252,7 +232,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 	})
 
 	t.Run("解析出的订单摘要与订单模块的契约一致", func(t *testing.T) {
-		// 页面上的数字必须来自契约，而不是页面自己算的 —— 这里直接调契约核对一次。
+
 		orders := orderservice.NewService(
 			env.orders, ordermodel.NewOrderItemModel(env.db), ordermodel.NewOrderStatusLogModel(env.db),
 			ordermodel.NewCouponModel(env.db), ordermodel.NewReturnModel(env.db), nil, nil, nil, nil)

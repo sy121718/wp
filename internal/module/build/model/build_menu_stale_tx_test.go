@@ -1,12 +1,5 @@
 package buildmodel
 
-// build_menu_stale_tx_test.go — 事务内入队入口的**形状守卫**（不碰数据库）。
-//
-// CreateTx / NextMenuStaleVersionTx 的第一条判据都是「句柄真的在事务里」。
-// 这两条用例用 nil / 非事务句柄驱动，实现若先访问数据库会直接 panic ——
-// 它们钉住的正是「校验在碰库之前」这一点。真实事务语义见
-// public/test/build/feature/build_menu_stale_test.go（真实 PG）。
-
 import (
 	"errors"
 	"reflect"
@@ -16,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestCreateTxRequiresTransaction 非事务句柄被一律拒绝。
 func TestCreateTxRequiresTransaction(t *testing.T) {
 	m := NewModel(nil)
 	for _, tx := range []*gorm.DB{nil, &gorm.DB{}, {}} {
@@ -27,7 +19,6 @@ func TestCreateTxRequiresTransaction(t *testing.T) {
 	}
 }
 
-// TestNextMenuStaleVersionTxRequiresTransaction 取号同样只接受真实事务。
 func TestNextMenuStaleVersionTxRequiresTransaction(t *testing.T) {
 	m := NewModel(nil)
 	for _, tx := range []*gorm.DB{nil, &gorm.DB{}} {
@@ -37,13 +28,6 @@ func TestNextMenuStaleVersionTxRequiresTransaction(t *testing.T) {
 	}
 }
 
-// TestEntityHasMenuStaleColumns 实体必须同时带 input_version 与 context_key，且都不得 NOT NULL。
-//
-// 为什么在 model 的单测里钉它：两列都是 698 新增，漏掉任何一列都会让 menu_stale 的形状在
-// 库里缺一段 —— 少了 context_key，uq_build_jobs_context_version 的键里就永远是 NULL，
-// PG 的 UNIQUE 允许多个 NULL，于是「同一版本只排一次」静默失效（队列被同一份工作填满，
-// 而且没有任何报错）；少了 input_version，版本号落不下去，A→B→A 又被去重成一条。
-// 标签里多一个 not null 则会让 page / presentation 的既有入队当场失败。
 func TestEntityHasMenuStaleColumns(t *testing.T) {
 	for _, c := range []struct {
 		field string

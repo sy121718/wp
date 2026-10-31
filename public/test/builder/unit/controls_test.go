@@ -1,4 +1,3 @@
-// Package unit 声明式 Controls（docs/02-C3）引擎的单测。
 package unit
 
 import (
@@ -10,7 +9,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// ctrlSample 带 ct tag 的测试 props 模板。
 type ctrlSample struct {
 	Title  string `json:"title" ct:"text,maxlen=10"`
 	Level  string `json:"level" ct:"select,h1,h2,h3,default=h2"`
@@ -20,7 +18,6 @@ type ctrlSample struct {
 	Code   string `json:"code" ct:"regex" ctRegex:"^[a-z]{2,4}$"`
 }
 
-// TestParseControls 解析 ct tag：生成控件描述符表（含默认值与选项）。
 func TestParseControls(t *testing.T) {
 	controls, err := core.ParseControls(&ctrlSample{})
 	if err != nil {
@@ -44,12 +41,11 @@ func TestParseControls(t *testing.T) {
 	}
 }
 
-// TestValidateSpec 反射校验：各控件类型的合法/非法值。
 func TestValidateSpec(t *testing.T) {
 	cases := []struct {
 		name string
 		val  string
-		want string // 空 = 期望通过
+		want string
 	}{
 		{"合法整体", `{"title":"标题","level":"h3","shade":"#fff","times":3,"enable":true,"code":"abc"}`, ""},
 		{"文本超长", `{"title":"一二三四五六七八九十十一"}`, "超长"},
@@ -83,7 +79,6 @@ func TestValidateSpec(t *testing.T) {
 	}
 }
 
-// TestSchemaJSON 面板 schema 输出：确定性排序与字段完整性。
 func TestSchemaJSON(t *testing.T) {
 	data, err := core.SchemaJSON(&ctrlSample{})
 	if err != nil {
@@ -100,14 +95,13 @@ func TestSchemaJSON(t *testing.T) {
 	if first["key"] != "title" || first["kind"] != "text" || first["maxLen"] != float64(10) {
 		t.Errorf("首个 schema 项异常: %+v", first)
 	}
-	// 确定性：两次生成一致。
+
 	data2, _ := core.SchemaJSON(&ctrlSample{})
 	if string(data) != string(data2) {
 		t.Error("schema 输出不确定")
 	}
 }
 
-// TestHeadingSpecIntegration heading 组件接入声明式后的控件解析。
 func TestHeadingSpecIntegration(t *testing.T) {
 	controls, err := core.ParseControls(&heading.Props{})
 	if err != nil {
@@ -116,7 +110,7 @@ func TestHeadingSpecIntegration(t *testing.T) {
 	if len(controls) < 6 {
 		t.Errorf("heading 声明式控件数异常: %d", len(controls))
 	}
-	// Tag 的默认值与选项完整性（Key 取 json tag：heading.Props.Tag 序列化为 tag）。
+
 	var found bool
 	for _, c := range controls {
 		if c.Key == "tag" {

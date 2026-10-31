@@ -1,15 +1,5 @@
 package ordermcp
 
-// order_write_tools_test.go — 代客建单的入参校验与结果可读性。
-//
-// 这里最要紧的两条，都是「模型很容易做错、做错了现场看不出来」的：
-//   · provisionGuestAccount 不传时必须落成**明确的 false**，不能把 nil 透给 service ——
-//     nil 的语义是「调用方没表态，保持前台行为（下单即开户）」，沿用它会每次代客建单
-//     都顺手替客户开一个账号并寄一封密码邮件，而界面上看不出这件事发生过；
-//   · 金额只能由服务端算：参数里没有商品单价，也没放 DiscountTotal ——
-//     放了它们，模型会拿它们去凑用户说的价，而 service 在无券时忽略、有券时以试算为准，
-//     用户听到的却是「已经按他说的价下单了」。
-
 import (
 	"context"
 	"errors"
@@ -45,7 +35,6 @@ func mustOrderWriteTools(t *testing.T, stub *stubOrder) map[string]mcp.Tool {
 	return out
 }
 
-// newStore 内存幂等台账（与真实实现同语义：只记成功结果）。
 func newStore() *memStore { return &memStore{m: map[string]mcp.Result{}} }
 
 type memStore struct{ m map[string]mcp.Result }
@@ -117,7 +106,6 @@ func TestOrderCreateMapsArgs(t *testing.T) {
 	}
 }
 
-// 不传 provisionGuestAccount 时必须落成明确的 false，不能是 nil。
 func TestOrderCreateDefaultsGuestAccountToFalse(t *testing.T) {
 	stub := &stubOrder{res: &orderdto.CreateOrderResp{OrderNo: "X"}}
 	if _, err := callOrderCreate(t, stub, baseOrderArgs()); err != nil {
@@ -193,7 +181,7 @@ func TestOrderCreateTextCarriesOrderNoAndMoney(t *testing.T) {
 	if err != nil {
 		t.Fatalf("不该报错: %v", err)
 	}
-	// 订单号是用户去后台找这一单的唯一钥匙，必须出现。
+
 	for _, want := range []string{"20261005001", "CNY 123.00", "库存"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("正文缺 %q：\n%s", want, text)
@@ -201,8 +189,6 @@ func TestOrderCreateTextCarriesOrderNoAndMoney(t *testing.T) {
 	}
 }
 
-// 幂等命中时要说清「这单不是新落的」：不说的话用户会以为重复下单了，
-// 而真相多半是他自己点了两次、系统正确地去重了。
 func TestOrderCreateTextMarksDuplicated(t *testing.T) {
 	stub := &stubOrder{res: &orderdto.CreateOrderResp{
 		ID: 7, OrderNo: "20261005001", Status: "pending", Total: 100, Currency: "CNY", Duplicated: true,
@@ -216,7 +202,6 @@ func TestOrderCreateTextMarksDuplicated(t *testing.T) {
 	}
 }
 
-// 开号成功必须提示去收信 —— 不提示的话客户不知道自己已经有账号了。
 func TestOrderCreateTextMentionsMailedAccount(t *testing.T) {
 	stub := &stubOrder{res: &orderdto.CreateOrderResp{
 		ID: 7, OrderNo: "X", Status: "pending", Total: 100, Currency: "CNY", AccountMailed: true,
@@ -230,8 +215,6 @@ func TestOrderCreateTextMentionsMailedAccount(t *testing.T) {
 	}
 }
 
-// 参数里不能出现商品单价 / 折扣额：给了它们模型会拿去凑价，
-// 而 service 在无券时忽略、有券时以试算为准。
 func TestOrderCreateSchemaHasNoPriceFields(t *testing.T) {
 	tool := mustOrderWriteTools(t, &stubOrder{})["order_create"]
 	raw, err := tool.SchemaJSON()
@@ -248,7 +231,7 @@ func TestOrderCreateSchemaHasNoPriceFields(t *testing.T) {
 			t.Errorf("参数里不该有 %q —— 定价是服务端的事", forbidden)
 		}
 	}
-	// 运费是唯一的例外（运费策略不属于商品域），它必须在。
+
 	if _, ok := props["shippingTotal"]; !ok {
 		t.Error("缺 shippingTotal：运费是唯一允许调用方给出的金额字段")
 	}

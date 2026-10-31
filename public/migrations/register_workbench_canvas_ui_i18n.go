@@ -1,6 +1,5 @@
 package migrations
 
-// 本批只检查明确列出的 12 个词条在两种语言中的 24 行。
 func init() {
 	registerSeed(Seed{
 		Version:      "676-workbench-canvas-ui-i18n",

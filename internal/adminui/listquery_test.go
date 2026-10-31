@@ -1,7 +1,5 @@
 package adminui
 
-// listquery_test.go — 页面上下文的读回（白名单键、空值丢弃、地址拼接）。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +16,6 @@ func newListQueryContext(t *testing.T, rawQuery string) *gin.Context {
 	return c
 }
 
-// TestListQueryDropsEmptyAndUnknown 只透传列出的键、空值丢弃。
 func TestListQueryDropsEmptyAndUnknown(t *testing.T) {
 	c := newListQueryContext(t, "project=p1&keyword=&status=&source=x")
 	if got := ListQuery(c, "project", "keyword", "status"); got != "project=p1" {
@@ -26,7 +23,6 @@ func TestListQueryDropsEmptyAndUnknown(t *testing.T) {
 	}
 }
 
-// TestWithListQuery 地址拼接：空上下文原样返回，已有 query 用 & 连接。
 func TestWithListQuery(t *testing.T) {
 	if got := WithListQuery("/admin/products", ""); got != "/admin/products" {
 		t.Errorf("空上下文 = %q", got)

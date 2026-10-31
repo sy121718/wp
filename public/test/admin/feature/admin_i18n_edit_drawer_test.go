@@ -1,21 +1,5 @@
 package feature
 
-// admin_i18n_edit_drawer_test.go — 词条页的**读侧**回归：列表页 + 编辑抽屉片段。
-//
-// task-17 把词条页的四种写动作（新建 / 编辑 / 删除 / 批量删除）从页面 POST 收敛到真实 JSON 端点
-// POST /api/i18n/save 之后，本文件旧的写侧断言（表单 action 回投、hx-post、csrf 隐藏域、
-// 跳转提示页）整体退役 —— 它们断言的是已经不存在的通道。留下来的是读侧三件事：
-//
-//	① 两个读入口各自的鉴权：列表页走 adminui.PageAuthz("/api/i18n/list")，抽屉片段走
-//	   CasbinMiddlewareForPathAs("/api/i18n/save","POST")（片段是写表单的宿主，所以按写权限点守门）。
-//	② 抽屉片段按 (key, lang) **精确**取一条：同一 key 的另一种语言不能被串进来，且只回片段
-//	   （不是整页）；缺参数 400、查不到 404，且都带 no-store（抽屉内容随权限与数据变，不许缓存）。
-//	③ 片段与列表页都是 write-base.js 的宿主：必须带 data-write-api / data-write-mode / 动作标签
-//	   隐藏域 / 结果区，且**不再**有 action="/admin/i18n/…" 或 hx-post 这类回投形态。
-//
-// 写动作的真实链路（SessionAuth / CSRF / Casbin 三层 + 落库效果 + 中英文案）见同目录
-// admin_i18n_json_write_test.go。本文件不连写路径，因此不需要 Redis/会话。
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// i18nDrawerUser 读侧用例的登录用户（用户 id 直接进上下文，不走会话层 —— 读侧鉴权只看 Casbin）。
 const i18nDrawerUser = int64(99123)
 
 func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
@@ -43,7 +26,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 			pages.Use(func(c *gin.Context) {
 				c.Set("user_id", i18nDrawerUser)
 				c.Set("perm_set", map[string]bool{"i18n:manage": true})
-				// 模板读的是按钮码（adminctx.ButtonsKey），权限码集合只留给 Go 侧判断。
+
 				c.Set("button_set", map[string]bool{"i18n.manage": true})
 				c.Next()
 			})
@@ -76,7 +59,6 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		return recorder
 	}
 
-	// ① 列表页要 i18n:view；抽屉片段要 i18n:manage（act=POST，见页面注册处的 ForPathAs）。
 	if denied := request("/admin/i18n"); denied.Code != http.StatusForbidden {
 		t.Fatalf("列表页缺 i18n:view 应 403：%d %s", denied.Code, denied.Body.String())
 	}
@@ -88,7 +70,6 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ② 精确取一条：en-US 的片段里只有英文那条，中文那条与整页外壳都不许出现。
 	found := request(getURL)
 	if found.Code != http.StatusOK || found.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("抽屉片段：%d %v %s", found.Code, found.Header(), found.Body.String())
@@ -118,7 +99,6 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		t.Fatalf("抽屉片段不是单个片段：%s", fragment)
 	}
 
-	// ③ 缺参数 400 / 查不到 404，且都 no-store。
 	for _, tc := range []struct {
 		name, path string
 		status     int
@@ -135,8 +115,6 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		})
 	}
 
-	// ④ 列表页：抽屉入口只带 (key, lang) —— 写动作改由浏览器直调 JSON 端点后，表单 action
-	// 不再需要回带筛选与页码（保存成功整页刷新，刷新自带当前 URL）。
 	if _, err := pkgcasbin.GetEnforcer().AddPolicy("99123", "/api/i18n/list", http.MethodGet, "i18n:view"); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +126,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	for _, want := range []string{
 		`data-drawer-url="/admin/i18n/edit?key=drawer.exact.test&amp;lang=en-US"`,
 		`data-write-url="/api/i18n/save"`, `data-write="bulk"`,
-		// 批量只有「全成 / 全败」两档：没有「部分成功」可报，data-msg-partial 已随该语义删除。
+
 		"data-msg-none-selected", "data-msg-too-many",
 		`name="action" value="delete"`, `name="action" value="create"`,
 	} {
@@ -161,8 +139,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 			t.Fatalf("列表页不应出现 %q：%s", unwanted, page)
 		}
 	}
-	// 行内删除按钮在禁用 JS 时是 hidden（有 JS 时由 write-base.js 放出来）：没有端到端兜底表单，
-	// 留一个「点了只是重新加载本页」的按钮不如藏起来。
+
 	if !strings.Contains(page, "data-requires-js") {
 		t.Fatalf("列表页的写控件应带 data-requires-js（无 JS 时隐藏）：%s", page)
 	}

@@ -1,14 +1,5 @@
 package pubservice
 
-// publication_feed_xml_test.go — feed 落到激活目录之后的端到端校验（审计 SEO-012）。
-//
-// 与 publication_feed_test.go 的分工：那个文件测条目收集的取舍，本文件测
-// SEO-012 verification 原样要求的三条 ——
-//
-//  1. feed 能被校验器解析（标准库 XML 解析 + 必需元素非空）；
-//  2. 条目链接可访问（每个条目的 URL 在激活目录里真有产物文件）；
-//  3. 关闭开关后不再生成（既有 feed 被删除，且不需要数据库即可判定）。
-
 import (
 	"context"
 	"encoding/xml"
@@ -23,7 +14,6 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// feedXML 校验用的最小 RSS 2.0 解析结构（只取 verification 关心的元素）。
 type feedXML struct {
 	Version string "xml:\"version,attr\""
 	Channel struct {
@@ -42,7 +32,6 @@ type feedXML struct {
 	} "xml:\"channel\""
 }
 
-// TestFeedXMLParsesAndItemLinksResolve 写出的 feed 可解析、必需元素齐全、条目链接可达。
 func TestFeedXMLParsesAndItemLinksResolve(t *testing.T) {
 
 	dir := t.TempDir()
@@ -87,7 +76,6 @@ func TestFeedXMLParsesAndItemLinksResolve(t *testing.T) {
 		t.Fatalf("guid 应为条目链接本身: %+v", item.GUID)
 	}
 
-	// 条目链接可访问：URL 去掉站点根之后必须在激活目录里找得到产物。
 	for _, it := range parsed.Channel.Items {
 		if !strings.HasPrefix(it.Link, "https://e.com/") {
 			t.Fatalf("条目链接不在站点根之下: %q", it.Link)
@@ -99,10 +87,6 @@ func TestFeedXMLParsesAndItemLinksResolve(t *testing.T) {
 	}
 }
 
-// TestRefreshFeedDisabledRemovesFeed 关闭开关后不再生成：既有 feed 被删除。
-//
-// Service 零值即可走这条分支（开关关闭时直接删除、不查库），因此这条 verification
-// 不需要数据库就能跑 —— 也正是它该被钉成单测的理由。
 func TestRefreshFeedDisabledRemovesFeed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, seo.FeedFileName)
@@ -119,11 +103,10 @@ func TestRefreshFeedDisabledRemovesFeed(t *testing.T) {
 		t.Fatalf("关闭开关后既有 feed 应被删除: %v", err)
 	}
 
-	// 幂等：文件不存在时再关一次也不报错。
 	if err := svc.refreshFeed(context.Background(), "p-1", "https://e.com", dir, nil, "", string(i18n.SiteLangURLModeOff)); err != nil {
 		t.Fatalf("关闭开关的刷新应幂等，实际: %v", err)
 	}
-	// 空目录/空工程直接跳过（与 sitemap 同约定），不查库也不报错。
+
 	t.Setenv("GO_WP_SEO_FEED", "")
 	if err := svc.refreshFeed(context.Background(), "", "https://e.com", dir, nil, "", string(i18n.SiteLangURLModeOff)); err != nil {
 		t.Fatalf("空工程应跳过: %v", err)

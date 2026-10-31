@@ -1,11 +1,5 @@
 package navigationmcp
 
-// navigation_tools_test.go — 导航工具的边界。
-//
-// 两处会静默出错的地方：① kind 传错时 service 默认兜底成 header ——
-// 「以为加在页脚、结果长在页眉上」看起来完全正常；② 删一项会连子菜单一起删，
-// 而层级只在树里以缩进体现，看错一行就少一整块菜单。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -102,7 +96,6 @@ func TestNavigationToolNames(t *testing.T) {
 	}
 }
 
-// kind 不认识时当场报错，不能让 service 静默兜底成 header。
 func TestNavigationRejectsUnknownKind(t *testing.T) {
 	s := &stubNav{}
 	_, err := invokeNavWrite(t, navTool(t, "navigation_create", s), map[string]any{
@@ -136,7 +129,7 @@ func TestNavigationTreeIndentsHierarchy(t *testing.T) {
 			t.Errorf("树应含 %q，实得：%s", want, res.Text)
 		}
 	}
-	// 子项必须有缩进 —— 位置关系是这棵树唯一重要的信息。
+
 	if !strings.Contains(res.Text, "-   id=n2") {
 		t.Errorf("子项应有缩进，实得：%s", res.Text)
 	}
@@ -156,7 +149,6 @@ func TestNavigationTreeGuidesWhenEmpty(t *testing.T) {
 	}
 }
 
-// 来源类型选了非 custom 就得给 sourceId，否则服务端拒 —— 回执与描述都要说清。
 func TestNavigationCreatePassesSource(t *testing.T) {
 	s := &stubNav{createRes: &navigationdto.NavigationResp{
 		ID: "n1", Title: "关于我们", Path: "/about", Kind: "footer",
@@ -195,7 +187,6 @@ func TestNavigationCreateTextMarksChild(t *testing.T) {
 	}
 }
 
-// parentId 三态：不传 = 不改层级；空串 = 提升为顶层；id = 挂靠。
 func TestNavigationUpdateParentIDIsTriState(t *testing.T) {
 	stub := &stubNav{updateRes: &navigationdto.NavigationResp{ID: "n1", Title: "x", Kind: "header"}}
 	if _, err := invokeNavWrite(t, navTool(t, "navigation_update", stub), map[string]any{
@@ -237,7 +228,6 @@ func TestNavigationUpdateRejectsUnknownKind(t *testing.T) {
 	}
 }
 
-// 删除会连子菜单一起删 —— 回执必须说出来。
 func TestNavigationDeleteTextWarnsAboutChildren(t *testing.T) {
 	s := &stubNav{}
 	text, err := invokeNavWrite(t, navTool(t, "navigation_delete", s), map[string]any{"id": "n1"})
@@ -252,7 +242,6 @@ func TestNavigationDeleteTextWarnsAboutChildren(t *testing.T) {
 	}
 }
 
-// 「先读树」必须写进写工具的描述 —— 否则模型会瞎猜 parentId。
 func TestNavigationWriteDescriptionsRequireTreeFirst(t *testing.T) {
 	for _, name := range []string{"navigation_create"} {
 		desc := navTool(t, name, &stubNav{}).Description()

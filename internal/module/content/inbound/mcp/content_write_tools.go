@@ -1,15 +1,5 @@
 package contentmcp
 
-// content_write_tools.go — 内容（文章）模块暴露给模型的**写**工具。
-//
-// 与只读工具的区别全在 mcp.NewWrite 里（显式确认位 + 幂等键 + 顺序保证，
-// 见 internal/mcp/write.go 的说明）。这里只负责三件事：把业务字段映射成 schema、
-// 把权限点对准、把 service 的错误翻成给模型看的话。
-//
-// 依赖收窄到内容写服务的一个端口（三个方法），而不是整个 ContentService：
-// 工具层握着 Publish / RegisterEntityTypes 时，「AI 顺手发一版」会从
-// 「需要显式加一个工具」退化成「随手就能做」—— 能力边界该由接口形状决定。
-
 import (
 	"context"
 	"errors"
@@ -23,25 +13,17 @@ import (
 	"go_wp/internal/permission"
 )
 
-// ContentWriter 写工具需要的内容模块能力（三个方法，各自一个工具）。
 type ContentWriter interface {
 	Create(ctx context.Context, req *contentdto.CreateReq) (*contentdto.ContentResp, error)
 	Update(ctx context.Context, req *contentdto.UpdateReq) (*contentdto.ContentResp, error)
 	Delete(ctx context.Context, req *contentdto.DeleteReq) error
 }
 
-// ContentReader 读内容（单条 + 列表）。
 type ContentReader interface {
 	Get(ctx context.Context, req *contentdto.GetReq) (*contentdto.ContentResp, error)
 	List(ctx context.Context, req *contentdto.ListReq) ([]*contentdto.ContentResp, error)
 }
 
-// Tools 返回内容模块的全部工具。
-//
-// **`content_get` 与三个写工具是一批的**，不能只上写工具：update 是整份替换，
-// 没有「先读出来」的入口时模型只能凭记忆拼字段集，漏一个就抹掉一个字段 ——
-// 而那次调用会成功返回、看起来完成得很好。把读入口与写入口放在一批里，
-// 是让这条正确用法**在工具集里本来就成立**，而不是写在文档里等人遵守。
 func Tools(w ContentWriter, r ContentReader, store mcp.IdempotencyStore) ([]mcp.Tool, error) {
 	if w == nil || r == nil {
 		return nil, errors.New("contentmcp: 内容读写服务依赖缺失（装配期接线错误）")
@@ -55,17 +37,11 @@ func Tools(w ContentWriter, r ContentReader, store mcp.IdempotencyStore) ([]mcp.
 	}, nil
 }
 
-// contentFindArgs content_find 的入参。
 type contentFindArgs struct {
 	EntityType string `json:"entityType"`
 	Keyword    string `json:"keyword"`
 }
 
-// contentFind 按关键词找内容。
-//
-// **这一环是必需的**：用户说的是「把那篇讲戒烟的文章标题改一下」，他不会念 uuid，
-// 而 uuid 是其余工具的唯一入口。没有它，模型只能向用户索要 uuid（用户给不出）
-// 或者猜一个（猜出来的 id 不存在，报错会归到「内容不存在」，看起来像数据问题）。
 func contentFind(r ContentReader) mcp.Tool {
 	return mcp.New("content_find", "搜索内容",
 		"按关键词搜索内容（匹配标题与 slug），返回 id 与标题。**用户只会说文章名**，"+
@@ -104,10 +80,8 @@ func contentFind(r ContentReader) mcp.Tool {
 	)
 }
 
-// contentFindLimit 搜索返回的条数上限（与商品侧同口径）。
 const contentFindLimit = 20
 
-// contentGetArgs content_get 的入参。
 type contentGetArgs struct {
 	ID string `json:"id"`
 }
@@ -132,16 +106,10 @@ func contentGet(r ContentReader) mcp.Tool {
 	)
 }
 
-// describeContent 把一条内容摊成便于模型读的文本。
-//
-// 字段逐个列出而不是丢一个 JSON：模型要在下一轮把这份内容改完写回，
-// 而它读 JSON 时容易把「空串」与「字段不存在」当成一回事 ——
-// 这两者在整份替换下后果不同（前者写回空串、后者抹掉字段）。
 func describeContent(res *contentdto.ContentResp) string {
 	out := "内容 " + res.EntityType + " / " + res.Slug + "（id=" + res.ID +
 		"，revision=" + strconv.FormatInt(res.Revision, 10) + "）\n"
-	// 更新时间要带上：用户会问「这篇什么时候改过」，而 content_update 拿到的
-	// revision 只有变大才知道改过 —— 时间是他真正用来判断的那条线索。
+
 	out += "- 更新时间: " + emptyAsDash(res.UpdatedAt) + "\n"
 	for _, f := range contentcontract.FieldWhitelist(res.EntityType) {
 		v, ok := res.Data[f]
@@ -154,8 +122,6 @@ func describeContent(res *contentdto.ContentResp) string {
 	return out
 }
 
-// emptyAsDash 空值显示成「（空）」而不是留白（与商品侧的 writeLine 同一口径：
-// 模型要靠「存在但为空」与「不存在」区分不同情况）。
 func emptyAsDash(v string) string {
 	if strings.TrimSpace(v) == "" {
 		return "（空）"
@@ -163,7 +129,6 @@ func emptyAsDash(v string) string {
 	return v
 }
 
-// stringify 把字段值摊成一行文本（字符串原样，其余走 JSON）。
 func stringify(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -175,11 +140,6 @@ func stringify(v any) string {
 	return string(b)
 }
 
-// contentCreateArgs content_create 的业务入参。
-//
-// Data 用 map[string]any 而不是结构体：字段白名单是**按类型分**的（article 有 7 个），
-// 而工具声明的 schema 是静态的 —— 让它成为结构体等于要么把字段写死，
-// 要么让新增字段变成一次工具改动。逐字段的严格判定在 service（validateData）。
 type contentCreateArgs struct {
 	EntityType string         `json:"entityType"`
 	Slug       string         `json:"slug"`
@@ -210,7 +170,6 @@ func contentCreate(w ContentWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// contentUpdateArgs content_update 的业务入参。
 type contentUpdateArgs struct {
 	ID   string         `json:"id"`
 	Data map[string]any `json:"data"`
@@ -229,12 +188,7 @@ func contentUpdate(w ContentWriter, r ContentReader, store mcp.IdempotencyStore)
 		}, "id", "data"),
 		store,
 		func(ctx context.Context, args contentUpdateArgs) (mcp.Result, error) {
-			// **读-改-写在服务端做**，不交给模型：service 的 Update 是整份替换，
-			// 而模型的意图是「改这个字段」。让模型自己取全量再写回的结构有两个洞：
-			//   · 工具结果会被剪枝（长正文只留前 N 字），它拿不到完整字段集；
-			//   · 就算拿到了，一次「我以为我传全了」也会静默抹掉别的字段。
-			// 这两条都是真调一次模型才会暴露的（实测：它自己发现 body 被截断，
-			// 于是拒绝写入并要用户确认 —— 判断是对的，但这个死结该由工具解开）。
+
 			cur, err := r.Get(ctx, &contentdto.GetReq{ID: args.ID})
 			if err != nil {
 				return mcp.Result{}, err
@@ -256,7 +210,6 @@ func contentUpdate(w ContentWriter, r ContentReader, store mcp.IdempotencyStore)
 	)
 }
 
-// contentDeleteArgs content_delete 的业务入参。
 type contentDeleteArgs struct {
 	ID string `json:"id"`
 }
@@ -279,12 +232,6 @@ func contentDelete(w ContentWriter, store mcp.IdempotencyStore) mcp.Tool {
 	)
 }
 
-// contentDataSchema 生成 data 字段的 schema。
-//
-// 属性名从**契约的字段白名单并集**来（contentcontract.AllFields），不手抄：
-// 手抄的清单在「契约里加了字段」时不会跟着变，而失败形态是模型的参数被工具层
-// 拒掉、或者（更糟的写法下）被静默丢弃。类型一律 string —— 白名单只给名字不给类型，
-// 而这几个字段在库里全是字符串（媒体字段也是地址串）。
 func contentDataSchema(desc string) mcp.Schema {
 	props := map[string]mcp.Schema{}
 	for _, f := range contentcontract.AllFields() {

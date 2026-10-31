@@ -1,15 +1,3 @@
-// misc_page_err_i18n_test.go — 迁移 408 的词条落地与幂等（三域页面降级渲染的文案来源）。
-//
-// 为什么值得一条真库用例：408 是本批三个页面降级渲染的**文案来源**，
-// 而它的失败方式全是静默的 ——
-//
-//	· SQL 没注册 → 词条永远不落库，页面上回落中文兜底（看起来「能用」，英文界面全中文）；
-//	· 列名 / 约束写错 → 只有真跑一次才知道（本用例把 RunSeeds 真正跑过作为前提）；
-//	· 门槛（ConditionSQL）写错 → 每次启动重跑，或反过来「判定恒为真」导致永远跳过；
-//	· 少了 en-US → 英文界面上那一句回落中文，是全批最难被发现的一半。
-//
-// 文件级门禁（TestEnumsKeysHaveSeedEntries / TestEmbeddedSQLFilesAllRegistered）只看文本，
-// 抓不到「跑起来有没有落库」；本用例补的就是这一段。
 package feature
 
 import (
@@ -18,7 +6,6 @@ import (
 	"go_wp/public/migrations"
 )
 
-// miscPageErrI18nKeys 408 的 8 个 key（与 migrations/register_misc_page_err_i18n.go 的门槛同一份清单）。
 var miscPageErrI18nKeys = []string{
 	"admin.masterdata.loadFailed.lead",
 	"admin.masterdata.loadFailed.title",
@@ -30,10 +17,8 @@ var miscPageErrI18nKeys = []string{
 	"ErrAnalyticsInternal",
 }
 
-// TestMiscPageErrI18nSeededAndIdempotent 408 的词条：中英成对、落库、且重复执行不产生变化。
 func TestMiscPageErrI18nSeededAndIdempotent(t *testing.T) {
-	// fixture 装配时已经跑过一次 RunSeeds —— 本用例因此天然带着「第一次执行」的证据，
-	// 下面再跑第二次用来验证幂等（ConditionSQL 命中即跳过，词条数不变）。
+
 	f := newMDFixture(t)
 	if f == nil {
 		return
@@ -77,7 +62,6 @@ func TestMiscPageErrI18nSeededAndIdempotent(t *testing.T) {
 
 	assertSeeded(t, "首次执行 RunSeeds 后")
 
-	// 幂等：再跑一次种子，词条既不该报错也不该变化（改值会让「新库 / 老库」出现不可见差异）。
 	if err := migrations.RunSeeds(f.db); err != nil {
 		t.Fatalf("重复执行种子失败（408 不幂等）: %v", err)
 	}

@@ -1,13 +1,5 @@
 package mailmcp
 
-// template_write_tools_test.go — 邮件模板工具的边界。
-//
-// 这一组要钉住的是**模板的身份是 (templateKey, locale) 这一对**，以及它带来的三件事：
-// ① save 是 upsert（覆盖），所以 template_get 必须先把原文取回来 ——
-//    不知道原文就改一个字，等于把剩下的正文全丢掉；
-// ② delete 只删一个语言版本，不能把另一个也带走；
-// ③ locale 没对上时必须说出来，否则模型会把英文版的内容当中文版改。
-
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
@@ -59,9 +51,6 @@ func tplTool(t *testing.T, name string, s *stubTemplateStore) mcp.Tool {
 	return mcp.Tool{}
 }
 
-// invokeTpl 调一个模板工具。withConfirm=false 用于**读工具** ——
-// template_get 用 mcp.New 建，它的 schema 里没有 confirm / idempotencyKey，
-// 多传一个键会被「未知参数」直接拒掉（写工具才由 NewWrite 自动补这两个键）。
 func invokeTpl(t *testing.T, tool mcp.Tool, args map[string]any) (string, error) {
 	t.Helper()
 	return invokeTplMode(t, tool, args, true)
@@ -121,8 +110,7 @@ func TestTemplateToolNames(t *testing.T) {
 			t.Errorf("缺工具 %q", name)
 		}
 	}
-	// 「用模板发一封」不该存在：service 有 SendTemplate 但没有 HTTP 路由、
-	// 没有权限点，硬凑相近的权限点等于用「能改模板」换「能发信」。
+
 	for _, tool := range tools {
 		if tool.Name() == "template_send" {
 			t.Error("template_send 不该被注册（没有对应的权限点）")
@@ -130,7 +118,6 @@ func TestTemplateToolNames(t *testing.T) {
 	}
 }
 
-// get 命中同语言版本时要报全文，并提示保存要整套重发。
 func TestTemplateGetReturnsFullBody(t *testing.T) {
 	s := &stubTemplateStore{list: []*maildto.TemplateItem{
 		{ID: 1, TemplateKey: "welcome", Locale: "zh-CN", Name: "欢迎信", Subject: "欢迎 {{.name}}",
@@ -152,7 +139,6 @@ func TestTemplateGetReturnsFullBody(t *testing.T) {
 	}
 }
 
-// 语言没对上必须说出来 —— 否则模型会把英文版内容当成中文版改。
 func TestTemplateGetWarnsOnLocaleFallback(t *testing.T) {
 	s := &stubTemplateStore{list: []*maildto.TemplateItem{
 		{ID: 2, TemplateKey: "welcome", Locale: "en-US", Name: "Welcome", Subject: "Hi", BodyHTML: "<p>hi</p>"},
@@ -177,7 +163,6 @@ func TestTemplateGetGuidesWhenMissing(t *testing.T) {
 	}
 }
 
-// save 是覆盖写：回执要说清旧版本已被替换，以及要发信得走哪条路。
 func TestTemplateSaveReportsOverwrite(t *testing.T) {
 	s := &stubTemplateStore{saveRes: &maildto.TemplateItem{
 		ID: 3, TemplateKey: "october_sale", Locale: "zh-CN", Name: "十月促销", BodyHTML: "<p>x</p>",
@@ -203,7 +188,6 @@ func TestTemplateSaveReportsOverwrite(t *testing.T) {
 	}
 }
 
-// save 的描述必须写明「先 get 再整体覆盖」这条操作纪律。
 func TestTemplateSaveDescriptionRequiresGetFirst(t *testing.T) {
 	desc := tplTool(t, "template_save", &stubTemplateStore{}).Description()
 	if !strings.Contains(desc, "template_get") {
@@ -214,7 +198,6 @@ func TestTemplateSaveDescriptionRequiresGetFirst(t *testing.T) {
 	}
 }
 
-// delete 只删一个语言版本 —— 参数传的 locale 必须原样到达。
 func TestTemplateDeleteTargetsOneLocale(t *testing.T) {
 	s := &stubTemplateStore{}
 	text, err := invokeTpl(t, tplTool(t, "template_delete", s), map[string]any{

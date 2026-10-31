@@ -5,12 +5,11 @@ import (
 	"testing"
 )
 
-// TestAnimateEntranceAll 拆解入场词全量：白名单放行 + 编译输出 + keyframes 激活。
 func TestAnimateEntranceAll(t *testing.T) {
 	for _, kf := range keyframesAnimate {
 		name0 := kf.Name
 		if strings.HasPrefix(name0, "sky-loop-") {
-			continue // 循环词由 TestInteractionLoopAll 覆盖
+			continue
 		}
 		name := strings.TrimPrefix(name0, "sky-")
 		t.Run(name, func(t *testing.T) {
@@ -30,7 +29,6 @@ func TestAnimateEntranceAll(t *testing.T) {
 	}
 }
 
-// TestAnimateLoopAll 拆解循环词全量（flash 等 7 词）：白名单 + 编译 + 激活。
 func TestAnimateLoopAll(t *testing.T) {
 	for _, kf := range keyframesAnimate {
 		name0 := kf.Name

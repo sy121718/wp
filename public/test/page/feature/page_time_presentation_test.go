@@ -1,16 +1,5 @@
 package feature
 
-// page_time_presentation_test.go — page 展示清理四切片（S2a-1 / S2a-3 / S2b）的**真实渲染证据**。
-//
-// 为什么单独一批：这几个切片把「格式化」从 Go 挪进了模板，判据的形态也跟着变 ——
-// 编译通过、函数存在、模板渲染成功，都不能证明「渲染出来的是不是那个时刻」。
-// 尤其是时区：真实部署里本地时区与站点时区经常相同，那时把 siteDateTime 写成 dateTime
-// 照样会绿；所以这里**强制两个口径分离**（本地=UTC、站点=Asia/Shanghai），让写错必红。
-//
-// 判据矩阵：
-//   S2a-1 修订历史片段：CreatedAt 交 JSONTime 事实 → dateTime 渲染；零值渲染成空，不留 0001-01-01。
-//   S2b   发布回执状态条：ReceiptLastConverge 交 JSONTime 事实 → dateTimeSecond 秒精度；nil 不显示后缀。
-
 import (
 	"go_wp/internal/adminui"
 	"net/http"
@@ -37,9 +26,6 @@ const (
 	pageTimePresUTCStamp = "2026-09-30 10:00"
 )
 
-// pageTimePresUseSeparatedTimezones 强制「本地=UTC / 站点=Asia/Shanghai」，结束还原。
-//
-// 禁 t.Parallel()：改的是进程级状态（time.Local 与 sitetz 的 sync.Once 缓存）。
 func pageTimePresUseSeparatedTimezones(t *testing.T) {
 	t.Helper()
 	oldLocal := time.Local
@@ -47,7 +33,7 @@ func pageTimePresUseSeparatedTimezones(t *testing.T) {
 	t.Setenv(pageTimePresEnvKey, pageTimePresSiteTZ)
 	sitetz.ResetForTest()
 	t.Cleanup(func() {
-		sitetz.ResetForTest() // 还原（t.Setenv 自动恢复环境变量）
+		sitetz.ResetForTest()
 		time.Local = oldLocal
 	})
 	if got := sitetz.Name(); got != pageTimePresSiteTZ {
@@ -55,7 +41,6 @@ func pageTimePresUseSeparatedTimezones(t *testing.T) {
 	}
 }
 
-// pageTimePresRender 用真实 Jet 渲染一个后台模板或片段，返回 (状态码, 响应体)。
 func pageTimePresRender(t *testing.T, name string, data map[string]any) (int, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -67,7 +52,6 @@ func pageTimePresRender(t *testing.T, name string, data map[string]any) (int, st
 	return rec.Code, rec.Body.String()
 }
 
-// pageTimePresPagesData 构一份能完整渲染页面列表的最小数据（只给模板真正读到的键）。
 func pageTimePresPagesData(pages []map[string]any, extra map[string]any) map[string]any {
 	data := map[string]any{
 		"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("zh-CN"),
@@ -81,7 +65,6 @@ func pageTimePresPagesData(pages []map[string]any, extra map[string]any) map[str
 	return data
 }
 
-// pageTimePresPageRow 一行页面（UpdatedAt 只求渲染成功，不在本批判据范围内）。
 func pageTimePresPageRow(id, path string) map[string]any {
 	return map[string]any{
 		"ID": id, "ProjectID": "p1", "Kind": "home", "DraftPath": path,
@@ -90,7 +73,6 @@ func pageTimePresPageRow(id, path string) map[string]any {
 	}
 }
 
-// TestPagesUpdatedAtFromDB uses the production schema in an isolated test database.
 func TestPagesUpdatedAtFromDB(t *testing.T) {
 	pageTimePresUseSeparatedTimezones(t)
 	db, svc, projectID := newPageService(t)
@@ -135,11 +117,6 @@ func TestPagesUpdatedAtFromDB(t *testing.T) {
 	}
 }
 
-// TestHistoryFragmentRendersRevisionTime S2a-1：修订历史片段按事实渲染提交时刻。
-//
-// 零值那一行是本条的第二个判据：旧实现在 Go 里用 IsZero 守卫把零值折成空串，
-// 直接把时间对象交给模板后，守卫必须仍然存在 —— 否则页面上会出现 0001-01-01，
-// 那是一个**伪造的时刻**，比缺字段更坏（运维会以为这条修订存在于那年）。
 func TestHistoryFragmentRendersRevisionTime(t *testing.T) {
 	pageTimePresUseSeparatedTimezones(t)
 
@@ -149,7 +126,7 @@ func TestHistoryFragmentRendersRevisionTime(t *testing.T) {
 			{"Version": int64(3), "Path": "/demo", "CreatedAt": utils.NewJSONTime(at)},
 			{"Version": int64(2), "Path": "/legacy", "CreatedAt": utils.NewJSONTime(time.Time{})},
 		},
-		// Error 是**事实**（key + 中文兜底）：空事实 = 无错误提示；给空串会让模板的 .Error.Key 报错。
+
 		"Error": map[string]any{"Key": "", "Fallback": ""}, "t": templates.TranslateFunc("zh-CN"),
 	})
 	if code != http.StatusOK {
@@ -166,10 +143,6 @@ func TestHistoryFragmentRendersRevisionTime(t *testing.T) {
 	}
 }
 
-// TestPagesReceiptBannerUsesSecondPrecision S2b：回执状态条的收敛时刻到秒，nil 时整段后缀消失。
-//
-// 到秒是刻意的（截到分钟会让人对不上日志），用**本地**时区也是刻意的（观测值口径，不是
-// 面向人的时刻口径）—— 两条都钉在这里：站点时区的 18:00:07 出现即说明口径被换错了。
 func TestPagesReceiptBannerUsesSecondPrecision(t *testing.T) {
 	pageTimePresUseSeparatedTimezones(t)
 
@@ -193,8 +166,6 @@ func TestPagesReceiptBannerUsesSecondPrecision(t *testing.T) {
 		t.Fatalf("收敛时刻用了站点时区口径 —— 观测值与面向人的时刻不是同一个口径:\n%s", body)
 	}
 
-	// 观测没读到收敛时刻（observer 缺失 / 拉取失败 / 零值）→ 后缀整段不显示，
-	// 而不是渲染成空时刻或 0001-01-01。
 	code, body = pageTimePresRender(t, "admin/page/pages",
 		pageTimePresPagesData([]map[string]any{pageTimePresPageRow("pg1", "/demo")},
 			map[string]any{

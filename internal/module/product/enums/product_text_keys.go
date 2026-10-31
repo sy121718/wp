@@ -1,7 +1,5 @@
 package productenums
 
-// 商品仍被后端事实声明或跨模块装配引用的词条 key。
-// 纯界面文案留在模板；响应文案由统一出口取词。
 const (
 	ProductsActionDone                      = "admin.products.actionDone"
 	ProductTranslationsEntityTypeProduct    = "admin.product_translations.entityType.product"
@@ -15,7 +13,6 @@ const (
 	ProductTranslationsErrShapeMismatch     = "admin.product_translations.err.shapeMismatch"
 )
 
-// 响应消息与既有界面引用 key；不属于领域状态。
 const (
 	MsgCreateSuccess          = "MsgCreateSuccess"
 	MsgUpdateSuccess          = "MsgUpdateSuccess"

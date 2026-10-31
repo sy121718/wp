@@ -1,19 +1,11 @@
 package config
 
-// migrations_switch_test.go — 钉住 database.run_migrations 的三条语义（DB-009 切角色前置）：
-// 缺省 true、显式 false 生效、-migrate-only 强制迁移。
-
 import (
 	"testing"
 
 	"github.com/spf13/viper"
 )
 
-// TestRunMigrationsEnabledDefaultsTrue 缺省必须是 true。
-//
-// 这是这条开关最容易被写错的一处：viper 的 GetBool 对缺失键返回 false，
-// 直接用它会把「配置文件里没有这个键」读成「关掉迁移」—— 升级后所有旧部署
-// 都会静默不再迁移。判据因此必须是 IsSet 而不是 GetBool。
 func TestRunMigrationsEnabledDefaultsTrue(t *testing.T) {
 	forceMigrationsSet(false)
 	defer forceMigrationsSet(false)
@@ -34,7 +26,6 @@ func TestRunMigrationsEnabledDefaultsTrue(t *testing.T) {
 	}
 }
 
-// TestRunMigrationsEnabledExplicitValues 显式取值按写的来。
 func TestRunMigrationsEnabledExplicitValues(t *testing.T) {
 	forceMigrationsSet(false)
 	defer forceMigrationsSet(false)
@@ -52,11 +43,6 @@ func TestRunMigrationsEnabledExplicitValues(t *testing.T) {
 	}
 }
 
-// TestForceMigrationsOverridesConfig -migrate-only 是显式迁移命令，必须无视 run_migrations=false。
-//
-// 反例的代价是静默的：推荐流程是「同一份配置（run_migrations=false）+ 管理连接跑
-// -migrate-only」，若开关把显式命令也关掉，迁移什么都不做、退出码仍是 0 ——
-// 运维以为迁完了，实际上一个字符都没执行。
 func TestForceMigrationsOverridesConfig(t *testing.T) {
 	forceMigrationsSet(false)
 	defer forceMigrationsSet(false)
@@ -73,8 +59,6 @@ func TestForceMigrationsOverridesConfig(t *testing.T) {
 	}
 }
 
-// TestSuppressWorkersUsesComponentConfig 验证迁移策略作用于实际组件配置，
-// 而非 Viper 全局单例；正常启动仍遵守原消费者配置。
 func TestSuppressWorkersUsesComponentConfig(t *testing.T) {
 	originalConfig := v
 	originalComponents, originalPreparers := runtimeComponents, runtimePreparers

@@ -1,14 +1,5 @@
 package presentationenums
 
-// presentation_enums_test.go — 业务错误的**声明处兜底**与 enums 常量的逐条对账。
-//
-// 判据两条、方向相反：① 每个 Err* 常量都在 errFallbacks 里有非空中文兜底（否则出口只能显示
-// 裸 key，例如 ErrPathOccupied）；② 兜底表里没有已删常量的死条目（否则表会退化成注释）。
-// 纯 AST 解析，不依赖数据库与装配，毫秒级。
-//
-// 为什么兜底必须住在声明处：出口只调一次 pkg/facing.FactOf，它给不出兜底时由消费方各补一张
-// 补丁表，同一个 key 在不同页面显示不同的话（product 详情模板页就补过两张，随本次迁移删除）。
-
 import (
 	"errors"
 	"go/ast"
@@ -31,7 +22,6 @@ func TestNotFoundDeclares404(t *testing.T) {
 	}
 }
 
-// fallbackExclusions 不需要兜底的常量 → 理由（成功回执永远不作为错误响应返回）。
 var fallbackExclusions = map[string]string{
 	"MsgCreateSuccess":    "成功回执",
 	"MsgRebuildSuccess":   "成功回执",
@@ -42,7 +32,6 @@ var fallbackExclusions = map[string]string{
 	"MsgUpdateURLSuccess": "成功回执",
 }
 
-// TestErrFallbacksCoverAllEnums 每个 Err* 常量都必须有中文兜底，兜底表里也不能有死条目。
 func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -108,7 +97,6 @@ func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	}
 }
 
-// TestErrCarriesFallbackAndKey Err(key) 同时带 key 与中文兜底；ErrDetail 用半角冒号拼明细。
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrPathOccupied)
 	if err.Error() != ErrPathOccupied {

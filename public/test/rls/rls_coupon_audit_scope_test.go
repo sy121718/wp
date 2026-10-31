@@ -1,15 +1,5 @@
 package rlstest
 
-// rls_coupon_audit_scope_test.go — 券计数对账的工程作用域（DB-009 第七批）。
-//
-// 缺口形状：CountCoupons / ListCountMismatches 在 projectID 为空时走「全量对账」分支，
-// 两条语句都**不带任何工程作用域**，而 coupons 与 coupon_redemptions 都带 FORCE 策略、
-// 谓词读会话变量 app.project_id。换非超级角色后：
-//   · COUNT 恒 0（分母没了）；
-//   · 对账 SQL 里 LEFT JOIN 的右表被策略挡空，于是每一张券看起来都「计数虚高」——
-//     这比查不到数据更坏，它是一份**看起来合理的错误报告**。
-// 现在 projectID 必填（model 显式报 ErrProjectRequired），全站口径由 service 逐工程扇出合并。
-
 import (
 	"context"
 	"errors"
@@ -26,7 +16,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// seedCoupon 经显式作用域写一张券，返回其自增 id。
 func seedCoupon(t *testing.T, db *gorm.DB, projectID, code string, usedCount int) uint64 {
 	t.Helper()
 	var id uint64
@@ -42,7 +31,6 @@ func seedCoupon(t *testing.T, db *gorm.DB, projectID, code string, usedCount int
 	return id
 }
 
-// seedRedemption 经显式作用域写一行核销明细。
 func seedRedemption(t *testing.T, db *gorm.DB, projectID string, couponID uint64, orderID uint64, code string) {
 	t.Helper()
 	err := rls.InProjectScope(context.Background(), db, projectID, func(tx *gorm.DB) error {
@@ -55,7 +43,6 @@ func seedRedemption(t *testing.T, db *gorm.DB, projectID string, couponID uint64
 	}
 }
 
-// TestRLS_CouponAuditScopedByProject 对账必须在工程作用域内跑。
 func TestRLS_CouponAuditScopedByProject(t *testing.T) {
 	db, role := rlsFixture(t)
 	resetProjects(t, db, role)
@@ -65,9 +52,8 @@ func TestRLS_CouponAuditScopedByProject(t *testing.T) {
 	seedProject(t, db, pA, "工程 A")
 	seedProject(t, db, pB, "工程 B")
 
-	// 工程 A：used_count = 1 但没有核销明细 → 偏差（计数虚高）。
 	couponA := seedCoupon(t, db, pA, "AAA", 1)
-	// 工程 B：used_count = 1 且有一行明细 → 一致。
+
 	couponB := seedCoupon(t, db, pB, "BBB", 1)
 	seedRedemption(t, db, pB, couponB, 9001, "BBB")
 
@@ -92,7 +78,6 @@ func TestRLS_CouponAuditScopedByProject(t *testing.T) {
 		t.Fatalf("偏差应是 used_count=1 / actual=0，实际 %+v", rowsA[0])
 	}
 
-	// 工程 B 一致：没有偏差，且绝不能看到工程 A 的行。
 	rowsB, err := m.ListCountMismatches(ctx, pB, 100)
 	if err != nil {
 		t.Fatalf("工程 B 对账失败: %v", err)
@@ -101,8 +86,6 @@ func TestRLS_CouponAuditScopedByProject(t *testing.T) {
 		t.Fatalf("工程 B 的券计数一致，不该有偏差，实际 %+v", rowsB)
 	}
 
-	// 缺口对照：**不带作用域**的裸查询看不到任何券 —— 改造前那个「全量对账」分支
-	// 看到的就是这个集合（0 张券、0 个偏差的假报告）。
 	var raw int64
 	if err = db.Table("coupons").Count(&raw).Error; err != nil {
 		t.Fatalf("裸查失败: %v", err)
@@ -112,7 +95,6 @@ func TestRLS_CouponAuditScopedByProject(t *testing.T) {
 	}
 }
 
-// TestRLS_CouponAuditRequiresProject 缺工程参数时显式报错，不退化成「不限工程」。
 func TestRLS_CouponAuditRequiresProject(t *testing.T) {
 	db, role := rlsFixture(t)
 	resetProjects(t, db, role)
@@ -127,7 +109,6 @@ func TestRLS_CouponAuditRequiresProject(t *testing.T) {
 	}
 }
 
-// TestRLS_CouponAuditServiceFanout 留空工程时 service 逐工程扇出后合并结果。
 func TestRLS_CouponAuditServiceFanout(t *testing.T) {
 	db, role := rlsFixture(t)
 	resetProjects(t, db, role)
@@ -137,17 +118,16 @@ func TestRLS_CouponAuditServiceFanout(t *testing.T) {
 	seedProject(t, db, pA, "工程 A")
 	seedProject(t, db, pB, "工程 B")
 
-	seedCoupon(t, db, pA, "AAA", 1) // 有偏差
+	seedCoupon(t, db, pA, "AAA", 1)
 	couponB := seedCoupon(t, db, pB, "BBB", 1)
-	seedRedemption(t, db, pB, couponB, 9002, "BBB") // 一致
+	seedRedemption(t, db, pB, couponB, 9002, "BBB")
 
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db), nil, nil,
 		ordermodel.NewCouponModel(db), nil,
 		nil, nil, nil, nil,
 	)
-	// 全站对账（ProjectID 为空）要逐工程扇出，工程清单来自 project 契约 ——
-	// 与生产装配同形（analytics/order 的 SetProjects 都收同一个实例）。
+
 	svc.SetProjects(projectservice.NewService(projectmodel.NewProjectModel(db)))
 	res, err := svc.AuditCouponCounts(ctx, &orderdto.CouponCountAuditReq{ProjectID: "", Limit: 100})
 	if err != nil {
@@ -163,7 +143,6 @@ func TestRLS_CouponAuditServiceFanout(t *testing.T) {
 		t.Fatalf("偏差应落在工程 A，实际 %+v", res.Items)
 	}
 
-	// 显式指定工程：只跑那一个工程。
 	one, err := svc.AuditCouponCounts(ctx, &orderdto.CouponCountAuditReq{ProjectID: pB, Limit: 100})
 	if err != nil {
 		t.Fatalf("按工程对账失败: %v", err)

@@ -7,7 +7,6 @@ import (
 	"go_wp/internal/builder/core"
 )
 
-// TestFAQCSSRules 纯静态样式：迁移后关键规则逐条核对。
 func TestFAQCSSRules(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{}, &b)
@@ -28,8 +27,7 @@ func TestFAQCSSRules(t *testing.T) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
 	}
-	// 展开态由 [open] 属性选择器驱动（零 JS）——这条断掉的话展开时没有视觉反馈。
-	// 箭头本体是基座图标库的 SVG（Go 侧 icon.IconSVG 生成），CSS 只管样式钩子与翻向。
+
 	if !strings.Contains(out, ".sky-c-t details[open] .sky-faq-chevron {\n  transform: rotate(180deg);") {
 		t.Errorf("缺少展开态翻向:\n%s", out)
 	}

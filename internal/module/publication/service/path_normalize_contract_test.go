@@ -1,13 +1,5 @@
 package pubservice
 
-// path_normalize_contract_test.go — 路由路径归一化的行为契约（审计 CQ-012）。
-//
-// 收敛前这里打印「publication 自己的去尾斜杠实现」的行为矩阵，用于与 pipeline /
-// dashboard / nav / analytics 对照（对照结论：publication 与 pipeline 有两处**真实
-// 分歧** —— "/a//b" 被原样接受、"/index" 不归一为根路径）。
-// 收敛后本包不再有自己的实现，测试改为断言 normalizePath 与 pkg/pathkit 的
-// 接受/拒绝边界逐条一致，并保留矩阵输出作为对照记录。
-
 import (
 	"strings"
 	"testing"
