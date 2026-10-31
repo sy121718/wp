@@ -1516,7 +1516,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// 提交 —— 我们的 ActivateTx 随后影响 0 行（被察觉）或落到别人后面（被覆盖）。
 	// 同一把锁把「FS 切换 → 产物归档 → 路由 DB 提交」串成一个不可交错的段；
 	// 锁序仍是 实体锁（事务内）→ 路径锁，与主链一致。
-	var st *pipeline.Status
+	var st *pipeline.PageRecord
 	var artifactRowID string
 	var deps []pipeline.Dependency
 	var updated bool
@@ -1611,7 +1611,7 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 // 与主链发布一致。返回 updated 表示「数据库步骤全部执行过」，txErr 是提交段的
 // 真实错误；两者都不代表提交成功 —— 提交发生在 TransactionScoped 返回时，
 // 调用方据 updated 才可判定是否「已生效但同步失败」。
-func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.PageEntity, lang string, st *pipeline.Status, kernelNewPath, newPath, oldPath, publishedPath string, withRedirect bool, routeLangs []string, plan pipeline.PublicationPlan, persistPlan bool, receiptID string, receiptSeq int64, artifactRowID string, deps []pipeline.Dependency) (updated bool, txErr error) {
+func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.PageEntity, lang string, st *pipeline.PageRecord, kernelNewPath, newPath, oldPath, publishedPath string, withRedirect bool, routeLangs []string, plan pipeline.PublicationPlan, persistPlan bool, receiptID string, receiptSeq int64, artifactRowID string, deps []pipeline.Dependency) (updated bool, txErr error) {
 	// 数据库各步收在**一个事务**里（applyUpdateURL 与启动恢复共用同一段实现）：
 	// draft_path 迁移、该语言激活路径迁移、各语言 reserved 路由改名、新路径路由激活、
 	// 依赖记录同步。任一步失败整体回滚。
@@ -4219,9 +4219,11 @@ func (s *Service) pathIdentities(ctx context.Context, projectID, pageID string, 
 			if strings.TrimSpace(pub.ActivePath) != key {
 				continue
 			}
-			id.ArtifactID = strings.TrimSpace(pub.ArtifactID)
-			if pub.ReceiptID > 0 {
-				id.ReceiptID = strconv.FormatInt(pub.ReceiptID, 10)
+			if pub.ArtifactID != nil {
+				id.ArtifactID = strings.TrimSpace(*pub.ArtifactID)
+			}
+			if pub.ReceiptID != nil && *pub.ReceiptID > 0 {
+				id.ReceiptID = strconv.FormatInt(*pub.ReceiptID, 10)
 			}
 			break
 		}

@@ -198,6 +198,27 @@ func (m *Model) CountStale(ctx context.Context, projectID string) (n int64, err 
 	return n, err
 }
 
+// ListStaleIDs 指定工程内全部待重建页面 id（只回 id，按 id 升序）。
+//
+// 与 ListStale 的区别是**没有 limit 与排序参数**：调用方（菜单变更后的同步重建）
+// 要的是全集 —— 漏一页就永远留一页 stale。id 升序让调用方的分块顺序稳定可复现。
+//
+// 不在这里分块：一次交多少给严格重建是调用方的批容量口径，读侧再写死一个上限
+// 会让那个口径出现第二份定义。
+func (m *Model) ListStaleIDs(ctx context.Context, projectID string) (ids []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	ids = make([]string, 0)
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL AND stale = true", projectID).
+			Order("id ASC").
+			Pluck("id", &ids).Error
+	})
+	return ids, err
+}
+
 // ListBriefsByIDs 按 id 集合返回页面只读投影（工程作用域内、未删除）。
 //
 // 不筛 stale：调用方用它把**扇出返回的 id 集合**翻译成标题 / 路径，那个集合的语义

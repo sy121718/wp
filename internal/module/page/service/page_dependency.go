@@ -192,6 +192,18 @@ func (s *Service) RebuildStaleStrict(ctx context.Context, ids []string) error {
 	return err
 }
 
+// ListStalePageIDs 本工程已标记 stale 的页面 id（菜单/导航变更后的收敛入口）。
+//
+// 只回 id：装配层（internal/routers/assembly_navigation_translation.go）拿到清单后
+// 立刻交给 RebuildStaleStrict，标题与路径在那里没有消费者。工程必填 —— 空工程 id
+// 在非超级角色下读出空集，而「列表空」会被读成「本来就没有待重建页面」。
+func (s *Service) ListStalePageIDs(ctx context.Context, projectID string) ([]string, error) {
+	if s == nil || s.model == nil {
+		return nil, ErrProjectRequired
+	}
+	return s.model.ListStaleIDs(ctx, strings.TrimSpace(projectID))
+}
+
 // rebuildStale 两端口共用的编排；strict 决定单页失败是「记日志继续」还是「立即返回」。
 func (s *Service) rebuildStale(ctx context.Context, ids []string, strict bool) (int, error) {
 	if len(ids) == 0 {

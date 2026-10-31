@@ -704,6 +704,16 @@ func (s *Service) ExcludePageLang(ctx context.Context, pageID, lang string) (ret
 	if pub != nil {
 		activePath = strings.TrimSpace(pub.ActivePath)
 	}
+	// 排除集合：已有排除项（去空白、去掉本次语言）+ 本次语言。存储值是语言码本身，
+	// 不做大小写归一 —— 与 pageExcludesLang 的判定口径一致。
+	excluded := make([]string, 0, len(page.ExcludedLangs)+1)
+	for _, raw := range page.ExcludedLangs {
+		if v := strings.TrimSpace(raw); v != "" && v != l {
+			excluded = append(excluded, v)
+		}
+	}
+	excluded = append(excluded, l)
+
 	if activePath != "" {
 		// 有激活路径 ⇒ 走下线回执（与删页同一框架）。顺序：
 		//

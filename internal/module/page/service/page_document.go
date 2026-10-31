@@ -1558,6 +1558,17 @@ func deactivationPathArtifactsFromData(raw []byte) map[string]pubcontract.Receip
 	return probe.PathArtifacts
 }
 
+// DeactivationBusinessCommittedFromData / DeactivationPathArtifactsFromData 是下面两个
+// 解析函数的导出包装：回执 receipt_data 的格式只能有一份解析实现，跨包测试调用同一段代码。
+func DeactivationBusinessCommittedFromData(raw []byte) bool {
+	return deactivationBusinessCommittedFromData(raw)
+}
+
+// DeactivationPathArtifactsFromData 读回执 receipt_data.pathArtifacts。
+func DeactivationPathArtifactsFromData(raw []byte) map[string]pubcontract.ReceiptPathIdentity {
+	return deactivationPathArtifactsFromData(raw)
+}
+
 // deactivationBusinessCommittedFromData 读回执 receipt_data.businessCommitted。
 //
 // 解析失败按 false 处理：false 在恢复侧的含义是"保留 pending、不动任何链接"，

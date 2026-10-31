@@ -555,7 +555,17 @@ func requireRealTx(tx *gorm.DB) error {
 		}
 	default:
 		return errors.New("publication: 该操作必须在调用方真实事务内执行")
-// receiptDataProjectID 已并入 LoadDeactivationReceiptTx 的 SQL 谓词（缺事实即不匹配）。
+	}
+	return nil
+}
+
+// RollbackPendingReceipts 启动恢复：把全部 pending 回执标记 rolled_back，返回处理行数。
+//
+// WHERE 里的 receipt_state = pending 是幂等守卫：重复调用不会覆盖已定稿的行，
+// 后到的收敛只会拿到 0 行。这里刻意不走 requireRealTx —— 恢复是跨进程的独立动作，
+// 不与任何业务写共享事务。
+func (m *Model) RollbackPendingReceipts(ctx context.Context, now time.Time) (int64, error) {
+	result := m.ReceiptDB(ctx).
 		Where("receipt_state = ?", ReceiptPending).
 		Updates(map[string]any{"receipt_state": ReceiptRolledBack, "completed_at": now})
 	return result.RowsAffected, result.Error

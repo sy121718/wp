@@ -1102,6 +1102,13 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	return s.toResp(ctx, inst)
 }
 
+// LedgerIdentity 是 ledgerIdentity 的导出别名：判据只能有一份实现，
+// 跨包测试直接调用同一段代码，而不是在测试里抄一份比较逻辑（抄的那份永远不会先红）。
+type LedgerIdentity = ledgerIdentity
+
+// CompareRollbackLedger 供跨包测试调用同一判据（生产路径用的是下面的小写版本）。
+func CompareRollbackLedger(from, own []LedgerIdentity) error { return compareRollbackLedger(from, own) }
+
 // ledgerIdentity 一条语言账本在某一时刻的归属事实（回滚身份判据的原子单位）。
 //
 // 两个字段必须一起比：content addressing + 同版本重建会让两次不同的 attempt 命中
@@ -1130,6 +1137,15 @@ func (s *Service) ledgerIdentitiesTx(ctx context.Context, tx *gorm.DB, instanceI
 	return ledgerIdentitiesOf(rows), nil
 }
 
+// receiptIDText 回执 id 列可空：NULL 是「这一行写入时没有回执事实」（历史行），
+// 读成空串，调用方据此退回别的判据，而不是当成 0 号回执。
+func receiptIDText(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
+}
+
 func ledgerIdentitiesOf(rows []presentationmodel.PublicationEntity) []ledgerIdentity {
 	out := make([]ledgerIdentity, 0, len(rows))
 	for _, row := range rows {
@@ -1139,7 +1155,7 @@ func ledgerIdentitiesOf(rows []presentationmodel.PublicationEntity) []ledgerIden
 		}
 		out = append(out, ledgerIdentity{
 			Lang:       row.Lang,
-			ReceiptID:  strings.TrimSpace(row.ReceiptID),
+			ReceiptID:  receiptIDText(row.ReceiptID),
 			ArtifactID: art,
 		})
 	}

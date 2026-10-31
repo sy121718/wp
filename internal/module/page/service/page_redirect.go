@@ -254,13 +254,13 @@ func (s *Service) DeleteRedirect(ctx context.Context, req *pagedto.RedirectDelet
 			if oerr := s.verifyProjectRedirectOwner(ctx, tx, projectID, path, intent.PathArtifacts[path]); oerr != nil {
 				return oerr
 			}
-			res, derr := s.model.DeleteRedirectRouteTx(ctx, tx, projectID, path)
+			n, derr := s.model.DeleteRedirectRouteTx(ctx, tx, projectID, path)
 			if derr != nil {
 				return derr
 			}
 			// 受影响行必须是 1：0 行说明锁内复验之后行被并发的另一次删除拿走了，
 			// 此时按归属冲突处理，绝不当成功（否则回执会把别人的删除算成本次成果）。
-			if res == nil || res.RowsAffected != 1 {
+			if n != 1 {
 				return fmt.Errorf("%w: 路径 %s 的重定向行已不归本事务处置", ErrRedirectConflict, path)
 			}
 			if merr := s.markDeactivationCommitted(ctx, tx, intent); merr != nil {

@@ -207,6 +207,9 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 // 其实已经生效的业务意图，撤链永远不再重放（线上残留死链接）。
 var ErrCommitUncertain = errors.New("presentation: 事务提交结果不明")
 
+// ErrInstanceNil 顾问锁缺少实体 id：没有 key 就没有锁，绝不能退化成"不加锁继续写"。
+var ErrInstanceNil = errors.New("presentation: 实体 id 为空，无法取顾问锁")
+
 // InTransaction 带"回调是否跑完"事实的事务封装。
 //
 // 判据只有一条：回调返回 error → 明确回滚（callbackCompleted=false）；

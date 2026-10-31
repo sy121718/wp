@@ -93,6 +93,7 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
 )
 
@@ -2433,7 +2434,7 @@ type deactivationIntent struct {
 func (s *Service) pathIdentities(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	paths []string) map[string]pubcontract.ReceiptPathIdentity {
 	out := make(map[string]pubcontract.ReceiptPathIdentity, len(paths))
-	pubs, perr := s.m.ListActivePathsForInstance(ctx, inst.ID)
+	pubs, perr := s.m.ListPublicationsForInstance(ctx, inst.ID)
 	if perr != nil {
 		logger.Scene("build").With("instanceId", inst.ID).
 			Warn("读取实例语言账本失败，下线意图的路径归属按链接事实记录: " + perr.Error())
@@ -2449,7 +2450,9 @@ func (s *Service) pathIdentities(ctx context.Context, inst *presentationmodel.In
 			if strings.TrimSpace(pub.ActivePath) != key {
 				continue
 			}
-			id.ArtifactID = strings.TrimSpace(pub.ArtifactID)
+			if pub.ArtifactID != nil {
+				id.ArtifactID = strings.TrimSpace(*pub.ArtifactID)
+			}
 			if pub.ReceiptID != nil {
 				id.ReceiptID = strings.TrimSpace(*pub.ReceiptID)
 			}
