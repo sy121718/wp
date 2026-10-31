@@ -93,7 +93,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
 	"internal/module/user/inbound/http/customer_bulk_write.go":             true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
-	"internal/module/workbench/inbound/http/router.go":                     true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
 	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
 	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
@@ -215,7 +214,7 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go:CustomersPage":                             true,
 	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                       true,
 	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                    true,
-	"internal/module/workbench/inbound/http/router.go:SetupWorkbenchRoutes":                    true,
+	"internal/module/workbench/inbound/http/workbench_router.go:SetupWorkbenchRoutes":          true,
 	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                        true,
 	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":            true,
 	"internal/module/workbench/inbound/http/workbench_page.go:layoutTrendBars":                 true,

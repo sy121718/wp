@@ -43,11 +43,15 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	orderdto "go_wp/internal/module/order/dto"
 	pageenums "go_wp/internal/module/page/enums"
+	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
+	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -232,6 +236,61 @@ type overviewSnapshot struct {
 // 用 setter 而不是加 SetupWorkbenchRoutes 的形参：那个签名已被装配层与测试多处调用，
 // 加参数会波及所有调用点（而这里注入的是「概览页专有的三个可选依赖」）。
 // 任一参数为 nil 表示该块不可用，页面按空态渲染（不 panic、不 500）。
+
+// Dashboard 仪表盘首页（模板 admin/dashboard.html 由 internal/templates 集中管理）。
+//
+// 只放真实数据：统计口径全部来自 page / project 契约的只读面，本页不做任何计数缓存 ——
+// 缓存会让「刚发布的页面」在概览里迟到，而概览的全部价值就是「现在是什么状态」。
+func (h *Handle) Dashboard(c *gin.Context) {
+	// 依赖缺失（空 Handle）时降级为空概览，而不是 panic：生产装配必然注入这些契约，
+	// 但「只挂外壳、不装业务服务」的渲染测试与降级装配路径都可能走到这里 ——
+	// 首页是登录后的第一跳，它挂掉等于后台进不去。
+	if h.projects == nil || h.pages == nil {
+		pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+			Title: workbenchenums.MsgDashboardTitle,
+			Menu:  "dashboard",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		// 概览是**只读汇总页**：数据源读不到不该让整页 500 —— 页面壳照常渲染、
+		// 统计区退回空态、页头说明口径暂时不可用，用户仍然能用侧栏去别的页面干活。
+		// （整页 500 会把导航一起打掉，把一个"概览暂时没有数字"变成"后台进不去"。）
+		// **归口文案，不是 err.Error()**：概览是登录后的第一跳，模板直接渲染 {{.Err}}，
+		// 从前这里塞的是驱动原文（`pq: relation "projects" does not exist`），
+		// 等于把库结构写给每个登录用户看。原文只进日志。
+		logger.Scene("workbench").Error(err, "概览数据读取失败")
+		pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+			Title: workbenchenums.MsgDashboardTitle,
+			Menu:  "dashboard",
+			Err:   response.InternalText(c),
+		})
+		return
+	}
+
+	// 2026-10 改版：页面统计（工程 / 页面总数 / 已发布 / 草稿 / 最近更新）整块下线 ——
+	// 那些数字的落点是 /admin/pages 与工程列表，而概览页每渲染一次都要为全部工程
+	// 逐个 List 一遍页面，这几百毫秒在「登录后的第一跳」上是纯浪费。
+	pageview.RenderTemplate(c, DashboardPageTemplate, &workbenchdto.DashboardPageResp{
+		Title: workbenchenums.MsgDashboardTitle,
+		Menu:  "dashboard",
+		// 区间在 handler 里解析（query → from/to），三块（KPI / 趋势 / 榜单）共用同一个窗口。
+		Overview: withPresets(c, h.collectOverview(ctx, projectIDs(projects), parseOverviewRange(c, time.Now().UTC()))),
+	})
+}
+
+// projectIDs 取出工程 id 列表（概览的跨模块聚合按工程逐个调用，见 workbench_page.go）。
+func projectIDs(projects []projectcontract.ProjectResp) []string {
+	ids := make([]string, 0, len(projects))
+	for _, p := range projects {
+		ids = append(ids, p.ID)
+	}
+	return ids
+}
+
 func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAnalyticsPort,
 	pageKinds OverviewPageKindPort, currencies OverviewCurrencyPort) {
 	h.overviewOrders = orders
