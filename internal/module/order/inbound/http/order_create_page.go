@@ -307,7 +307,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 		Form: form,
 		Echo: couponEcho(c),
 	}
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, OrderNewPageTemplate, view)
 }
 
 // countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。

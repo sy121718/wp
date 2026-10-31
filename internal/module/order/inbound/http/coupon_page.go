@@ -201,7 +201,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		}),
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, CouponListPageTemplate, view)
 }
 
 // CouponEditForm 按需返回一张券的编辑抽屉内容（GET /admin/coupons/edit-form）。
@@ -243,8 +243,8 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 		return
 	}
 
-	// 片段出口：套不套页壳由路由的 BareSlot 决定，控制器不持模板名。
-	pageview.Render(c, orderdto.CouponEditFormView{
+	// 片段出口：渲染器由路由装配（adminui.RenderBare，不带页壳），模板由本处声明。
+	pageview.RenderTemplate(c, CouponEditFormTemplate, orderdto.CouponEditFormView{
 
 		Coupon:    cp,
 		ListQuery: couponListQuery(projectID, couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0),

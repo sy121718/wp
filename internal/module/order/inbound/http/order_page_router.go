@@ -132,13 +132,13 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
 	pages.GET("/orders/new",
 		adminui.PageAuthz("/api/order/list"),
-		adminui.PageSlot(OrderNewPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		orderCreate.OrderCreatePage)
 	// POST 也挂 PageSlot：失败时回的是**同一张建单页**（200 + 回填），
 	// 成功时导航由前端 data-write-nav 决定（见 AGENTS.md §6）。
 	pages.POST("/orders/create",
 		builtin.CasbinMiddlewareForPath("/api/order/create"),
-		adminui.PageSlot(OrderNewPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		orderCreate.OrderCreateSubmit)
 	// 列表页的写动作（流转 / 取消 / 退款 / 备注 与两个批量动作）已整批迁到前端直调 JSON：
 	// 单条走 order_router.go 里的 /api/order/{status,cancel,refund,note}，批量走
@@ -159,7 +159,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
 	pages.GET("/returns",
 		adminui.PageAuthz("/api/order/return/list"),
-		adminui.PageSlot(ReturnListPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		returnPages.ReturnsPage)
 
 	// 优惠码管理页：只剩两个 GET —— 列表与编辑抽屉片段。核销**没有手工入口** —— 它发生在
@@ -194,10 +194,10 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",
 		adminui.PageAuthz("/api/order/coupon/list"),
-		adminui.PageSlot(CouponListPageTemplate),
+		pageview.UseRenderer(adminui.RenderPage),
 		couponPages.CouponsPage)
 	pages.GET("/coupons/edit-form",
 		builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost),
-		adminui.BareSlot(CouponEditFormTemplate),
+		pageview.UseRenderer(adminui.RenderBare),
 		couponPages.CouponEditForm)
 }

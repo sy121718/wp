@@ -194,7 +194,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		}),
 	})
-	pageview.Render(c, view)
+	pageview.RenderTemplate(c, ReturnListPageTemplate, view)
 }
 
 // —— 请求工具 ——
