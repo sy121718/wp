@@ -173,7 +173,8 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	// SetNavigationPicker）也照旧 —— 只是后者现在转发给 svc。
 	h.svc = workbenchservice.New(pages, projects, blocks, contenttemplates, products, nil)
 	h.svc.SetPlugins(plugins)
-	// 模板名归路由层（控制器只交视图）：整页走 PageSlot，片段走 BareSlot。
+	// 模板名归路由层（控制器只交视图）：整页与片段都由 pageview.UseRenderer 装配统一渲染器，
+	// 差别只在渲染实现（adminui.RenderPage / adminui.RenderBare）。
 	g := workbenchPages
 	// 仪表盘只挂 /admin。
 	//
@@ -183,14 +184,14 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	// 会跳到店铺首页，看起来像登录失效。菜单 path 本来就是 /admin，无需改动。
 	g.GET("/admin", adminui.PageSlot(DashboardPageTemplate), h.Dashboard)
 	// 编辑器外壳（?id= 页面 / ?block= 全局块 / ?template= 内容模板）。
-	g.GET("/workbench", adminui.PageSlot(CanvasLayoutTemplate), h.Workbench)
+	g.GET("/workbench", pageview.UseRenderer(adminui.RenderPage), h.Workbench)
 	// 预览编译直出（GET 已保存草稿 / POST 未保存草稿）。
 	g.GET("/workbench/preview", previewContext, h.Preview)
 	g.POST("/workbench/preview", previewContext, h.PreviewDraft)
 	// 检查器面板片段（HTMX）：schema → 表单 HTML 由服务端渲染。
-	g.POST("/workbench/inspector", adminui.BareSlot(InspectorPanelTemplate), h.InspectorPanel)
+	g.POST("/workbench/inspector", pageview.UseRenderer(adminui.RenderBare), h.InspectorPanel)
 	// 结构树片段（HTMX）：树 HTML 由服务端渲染，客户端只做一次事件委托。
-	g.POST("/workbench/outline", adminui.BareSlot(OutlineTreeTemplate), h.OutlineTree)
+	g.POST("/workbench/outline", pageview.UseRenderer(adminui.RenderBare), h.OutlineTree)
 	// SEO 评分：只读分析草稿，返回评分与逐项建议。
 	g.POST("/workbench/seo-score", h.SEOScore)
 	// 全局块画布预览（块编辑模式 iframe 内嵌）。

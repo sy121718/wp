@@ -115,7 +115,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	pageview.Render(c, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
 		Title:     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
 		PageID:    page.ID,
 		IsBlock:   false,
@@ -194,7 +194,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	pageview.Render(c, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
 		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		PageID:   block.ID,
 		IsBlock:  true,
@@ -310,7 +310,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
-	pageview.Render(c, &workbenchdto.CanvasPageResp{
+	pageview.RenderTemplate(c, CanvasLayoutTemplate, &workbenchdto.CanvasPageResp{
 		Title:      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		PageID:     tpl.ID,
 		IsBlock:    false,
