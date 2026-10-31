@@ -530,7 +530,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go":   true,
 	"internal/module/order/inbound/http/coupon_page.go":                    true,
-	"internal/module/order/inbound/http/order_list_page.go":                true,
 	"internal/module/order/inbound/http/order_shared.go":                   true,
 	"internal/module/order/inbound/http/return_page.go":                    true,
 	"internal/module/page/inbound/http/page_jump.go":                       true,

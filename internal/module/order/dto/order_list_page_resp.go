@@ -78,7 +78,7 @@ type OrderListPageResp struct {
 	Page  int
 	Limit int
 
-	// Pagination 分页事实（由 adminui.AttachPaginationView 反射挂上，键名 = view.PaginationKey）。
+	// Pagination 分页事实（由 handler 直接赋值：基址在 handler 用 backpath 拼好，不经过渲染层反射）。
 	Pagination pagination.Page
 }
 
@@ -114,6 +114,7 @@ type CouponListPageResp struct {
 	Page  int
 	Limit int
 
+	// Pagination 分页事实（由 handler 直接赋值，不经渲染层反射）。
 	Pagination pagination.Page
 }
 
@@ -188,6 +189,7 @@ type ReturnListPageResp struct {
 	Page  int
 	Limit int
 
+	// Pagination 分页事实（由 handler 直接赋值，不经渲染层反射）。
 	Pagination pagination.Page
 }
 

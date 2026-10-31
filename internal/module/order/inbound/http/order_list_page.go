@@ -31,7 +31,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -166,15 +165,15 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		Page:         page,
 		Limit:        limit,
 	}
-	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
-	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
+	// 分页事实直接给视图的 Pagination 字段：基址由 backpath 拼（白名单参数），不经过渲染层反射。
+	view.Pagination = pagination.Page{
 		Total: data.Total, Page: page, Limit: limit,
 		Base: backpath.WithParams("/admin/orders", map[string]string{
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 			"paymentMethod": filter.PaymentMethod, "createdVia": filter.CreatedVia,
 			"fulfillment": filter.Fulfillment,
 		}),
-	})
+	}
 	pageview.RenderTemplate(c, OrderListPageTemplate, view)
 }
 
