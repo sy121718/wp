@@ -224,7 +224,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 
 	// 候选变体：关键词只匹配**商品名**（商品目录的既有语义），无分页。
 	// 取数失败只影响候选区（页面其余部分照常可用），因此不升级成整页错误。
-	var candidates []orderdto.SkuOptionResp
+	var candidates []SkuOptionResp
 	candidateErr := ""
 	if h.catalog != nil && selected != "" {
 		skus, cerr := h.catalog.ListVariantOptions(ctx, &productdto.ListVariantOptionReq{
@@ -270,7 +270,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 	shipCountries := countryOptionViews(tr, countries, form.Ship.Country)
 	billCountries := countryOptionViews(tr, countries, form.Bill.Country)
 
-	view := &orderdto.OrderNewPageResp{
+	view := &OrderNewPageResp{
 		Title: orderCreatePageTitle,
 		Menu:  "orders",
 		// 工程上下文（页头下拉；只有一个工程时整段不渲染 —— 单选项的选择器
@@ -446,7 +446,7 @@ func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOptio
 // 只是给运营选品用的线索；真正入单的单价由服务端按下单快照落库，页面无法左右它。
 
 func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
-	skus []*productdto.VariantOptionResp) []orderdto.SkuOptionResp {
+	skus []*productdto.VariantOptionResp) []SkuOptionResp {
 	tr := orderTr(c)
 	avail := map[string]int{}
 	if h.availability != nil && len(skus) > 0 {
@@ -465,7 +465,7 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 		}
 	}
 
-	out := make([]orderdto.SkuOptionResp, 0, len(skus))
+	out := make([]SkuOptionResp, 0, len(skus))
 	for _, sku := range skus {
 		if sku == nil || sku.VariantID == "" {
 			continue
@@ -478,7 +478,7 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 		if n, ok := avail[sku.VariantID]; ok {
 			label += "（" + fmt.Sprintf(tr(orderenums.OrderNewOptionAvailable, "可用 %s"), strconv.Itoa(n)) + "）"
 		}
-		out = append(out, orderdto.SkuOptionResp{ID: sku.VariantID, Label: label})
+		out = append(out, SkuOptionResp{ID: sku.VariantID, Label: label})
 	}
 	return out
 }
@@ -693,18 +693,18 @@ const (
 //
 // 为什么不直接复用内部类型：视图是**模板契约**（模板读它的字段），内部结构是这一屏的
 // 中间产物。同形时转换只是几行，但把两者绑在一起会让改其中一个必须动另一个。
-func toOrderNewItemRows(in []orderCreateItemRow) []orderdto.OrderNewItemRowResp {
-	out := make([]orderdto.OrderNewItemRowResp, 0, len(in))
+func toOrderNewItemRows(in []orderCreateItemRow) []OrderNewItemRowResp {
+	out := make([]OrderNewItemRowResp, 0, len(in))
 	for _, r := range in {
-		out = append(out, orderdto.OrderNewItemRowResp{VariantID: r.VariantID, Quantity: r.Quantity})
+		out = append(out, OrderNewItemRowResp{VariantID: r.VariantID, Quantity: r.Quantity})
 	}
 	return out
 }
 
-func toCountryOptionResps(in []countryOptionView) []orderdto.CountryOptionResp {
-	out := make([]orderdto.CountryOptionResp, 0, len(in))
+func toCountryOptionResps(in []countryOptionView) []CountryOptionResp {
+	out := make([]CountryOptionResp, 0, len(in))
 	for _, c := range in {
-		out = append(out, orderdto.CountryOptionResp{Code: c.Code, Label: c.Label, Selected: c.Selected})
+		out = append(out, CountryOptionResp{Code: c.Code, Label: c.Label, Selected: c.Selected})
 	}
 	return out
 }

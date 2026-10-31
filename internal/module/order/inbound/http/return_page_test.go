@@ -260,7 +260,7 @@ func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 
 // TestStatusLabelFactHasNoFunctionField 事实是纯数据：带函数字段就等于把取词又搬回 Go。
 func TestStatusLabelFactHasNoFunctionField(t *testing.T) {
-	typ := reflect.TypeOf(orderdto.StatusLabelFact{})
+	typ := reflect.TypeOf(StatusLabelFact{})
 	if typ.NumField() != 2 {
 		t.Fatalf("事实字段数 = %d，want 2", typ.NumField())
 	}
@@ -357,7 +357,7 @@ func TestReturnsPageStatusLabelsHandleUnknownAndEmpty(t *testing.T) {
 	})
 }
 
-func keysOf(facts map[string]orderdto.StatusLabelFact) []string {
+func keysOf(facts map[string]StatusLabelFact) []string {
 	out := make([]string, 0, len(facts))
 	for k := range facts {
 		out = append(out, k)

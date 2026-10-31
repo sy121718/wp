@@ -1,11 +1,17 @@
-package orderdto
+package orderhttp
 
-// order_list_page_resp.go — 订单列表页的渲染视图（页面 GET 的回执形状）。
+// order_view_handle.go — 订单列表 / 退货 / 优惠码 / 新建四屏的渲染视图（页面 GET 的回执形状）。
 //
-// 与 order_resp.go 的分工同 sales：接口契约 vs 页面视图。
-// **导出字段名就是模板契约**（orders.html 的 `.Field`）。
+// 这些类型属于**控制器包**：字段名就是模板契约（orders.html 的 `.Field`），只被本包
+// 的页面 handler 组装。契约与展示的分工不在 package 边界上，而在「谁组装、谁读」：
+// 页面视图由 handler 造、由模板读，所以它跟 handler 同包；接口契约留在 dto
+// （orderdto.OrderResp 等由 service 返回，JSON 与页面共用）。
+//
+// 为什么不能塞进 gin.H：模板读 `.Field` 时字段名拼错，在 gin.H 里是静默缺键，
+// 在结构体上是编译期就能被模板断言抓到的错。
 
 import (
+	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/pagination"
 )
@@ -30,10 +36,10 @@ type OrderListPageResp struct {
 	SelectedProject string
 
 	// 取数结果：dto 原样交给模板。
-	Orders []*OrderResp
+	Orders []*orderdto.OrderResp
 	Counts map[string]int64
 	Total  int64
-	Detail *OrderDetailResp
+	Detail *orderdto.OrderDetailResp
 
 	// StatusTabs 状态徽章行的「取值 + 分档」；CountsAll 是「全部」的计数（各状态之和）。
 	// 求和放在这里而不是模板里：模板做跨类型累加不值得押注。
@@ -89,11 +95,11 @@ type CouponListPageResp struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
-	Coupons []*CouponResp
+	Coupons []*orderdto.CouponResp
 	Total   int64
 	// Expanded 展开中的券（nil = 没有展开项；模板按 .Expanded.ID 比较）。
-	Expanded        *CouponResp
-	Redemptions     []*CouponRedemptionResp
+	Expanded        *orderdto.CouponResp
+	Redemptions     []*orderdto.CouponRedemptionResp
 	RedemptionTotal int64
 	RedemptionLimit int
 
@@ -123,14 +129,14 @@ type CouponListPageResp struct {
 // 只读 .Coupon（dto 原样）与 .ListQuery：写路径已迁 JSON，没有「失败重渲 + 回填」那条路，
 // 所以既不需要 Echo（本次提交的原始表单），也不需要 SubmitErr（服务端算好的错误句）。
 type CouponEditFormView struct {
-	Coupon    *CouponResp
+	Coupon    *orderdto.CouponResp
 	ListQuery string
 }
 
 // StatusLabelFact 状态 → 词条事实（key + 中文兜底），由模板用 tr(key, fallback) 取词。
 //
 // 与 StatusTabResp 的区别：那个带「分档」（拼 badge 类），这个只承载**文案事实**。
-// 两者都进 dto 而不进 gin.H：模板读 `.Field` 时，字段名拼错在 gin.H 里是静默缺键。
+// 两者都是页面视图结构体而不是 gin.H：模板读 `.Field` 时，字段名拼错在 gin.H 里是静默缺键。
 type StatusLabelFact struct {
 	Key      string
 	Fallback string
@@ -151,13 +157,13 @@ type ReturnListPageResp struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
-	Returns []*ReturnResp
+	Returns []*orderdto.ReturnResp
 	Counts  map[string]int64
 	Total   int64
 	// CountsAll 「全部」徽章的计数（各状态之和）：模板里跨类型累加（int + int64）
 	// 不值得押注，求和放 handler 一行，模板只取结果。
 	CountsAll int64
-	Detail    *ReturnDetailResp
+	Detail    *orderdto.ReturnDetailResp
 
 	// StatusTabs 状态徽章行（取值 + 分档）+ 当前生效值。
 	StatusTabs []StatusTabResp

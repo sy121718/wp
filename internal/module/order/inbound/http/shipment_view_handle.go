@@ -1,16 +1,17 @@
-package orderdto
+package orderhttp
 
-// order_shipment_page_resp.go — 发货三屏的页面视图（待发货列表 / 承运商配置）。
+// shipment_view_handle.go — 发货三屏的页面视图（待发货列表 / 承运商配置）。
 //
-// 与 order_shipment_resp.go 的分工同 orders：那里是接口契约（JSON 出口，
-// 带 json tag、字段名 camelCase），这里是**页面 GET 的回执形状**，
-// 导出字段名就是模板契约（order_pending_ship.html 的 `.Rows` 等）。
+// 这里是**页面 GET 的回执形状**，由 handler 组装、由模板直接读（导出字段名就是模板
+// 契约，order_pending_ship.html 的 `.Rows` 等）；接口契约在 dto
+// （order_shipment_resp.go，JSON 出口，带 json tag、字段名 camelCase）。
 //
 // 为什么与 PendingShipPageResp 并存而不是复用它：接口出口只回答「这一页有哪些行、
 // 一共多少」；页面还要页头的工程上下文、本次装载失败的原因、筛选回显与分页基址。
 // 把那些塞进接口响应，等于让 JSON 调用方也收到页面的东西。
 
 import (
+	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/pagination"
 )
@@ -26,7 +27,7 @@ type PendingShipPageView struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
-	Rows  []*PendingShipRow
+	Rows  []*orderdto.PendingShipRow
 	Total int64
 
 	FilterKeyword string
@@ -57,7 +58,7 @@ type CarrierListPageView struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
-	Carriers []*CarrierResp
+	Carriers []*orderdto.CarrierResp
 
 	// LoadFailed / LoadError 同待发货页：装载失败不拿走整页。
 	LoadFailed bool

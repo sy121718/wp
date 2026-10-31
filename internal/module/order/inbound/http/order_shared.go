@@ -50,19 +50,19 @@ func countsFilled(counts map[string]int64, keys []string) map[string]int64 {
 // 取值与分档一起给模板：原先模板自己拿 sv 逐个判状态选 badge 类，
 // 同一套判据在筛选行、列表行、详情头各写一遍（见 orderenums.OrderStatusTone 的说明）。
 // 顺序仍是 orderStatusValues 的顺序 —— 徽章行从左到右就是这个顺序。
-func orderStatusTabs() []orderdto.StatusTabResp {
-	tabs := make([]orderdto.StatusTabResp, 0, len(orderStatusValues))
+func orderStatusTabs() []StatusTabResp {
+	tabs := make([]StatusTabResp, 0, len(orderStatusValues))
 	for _, v := range orderStatusValues {
-		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.OrderStatusTone(v)})
+		tabs = append(tabs, StatusTabResp{Value: v, Kind: orderenums.OrderStatusTone(v)})
 	}
 	return tabs
 }
 
 // returnStatusTabs 退货状态筛选行（同上，取值白名单是 returnStatusValues）。
-func returnStatusTabs() []orderdto.StatusTabResp {
-	tabs := make([]orderdto.StatusTabResp, 0, len(returnStatusValues))
+func returnStatusTabs() []StatusTabResp {
+	tabs := make([]StatusTabResp, 0, len(returnStatusValues))
 	for _, v := range returnStatusValues {
-		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.ReturnStatusTone(v)})
+		tabs = append(tabs, StatusTabResp{Value: v, Kind: orderenums.ReturnStatusTone(v)})
 	}
 	return tabs
 }
@@ -77,10 +77,10 @@ var createdViaValues = []string{"", "checkout", "admin", "api"}
 // fulfillmentTabs 履约状态筛选行（取值 + 分档），取值清单取 model 的 FulfillmentStatuses。
 //
 // 取值清单只有一份（model 是数据层真源），这里只补分档 —— 分档是显示口径，放 enums。
-func fulfillmentTabs() []orderdto.StatusTabResp {
-	tabs := make([]orderdto.StatusTabResp, 0, len(orderenums.FulfillmentStatuses))
+func fulfillmentTabs() []StatusTabResp {
+	tabs := make([]StatusTabResp, 0, len(orderenums.FulfillmentStatuses))
 	for _, v := range orderenums.FulfillmentStatuses {
-		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.FulfillmentTone(v)})
+		tabs = append(tabs, StatusTabResp{Value: v, Kind: orderenums.FulfillmentTone(v)})
 	}
 	return tabs
 }
@@ -89,7 +89,7 @@ func fulfillmentTabs() []orderdto.StatusTabResp {
 //
 // 与 returnStatusPageFacts 同一理由：**生效筛选值必须收进来** —— 空列表时页面上
 // 唯一会显示的状态就是它，漏掉它的症状是筛选值合法时一切正常、筛选值未知时整页报错。
-func fulfillmentPageFacts(filterValue string, orders []*orderdto.OrderResp) map[string]orderdto.StatusLabelFact {
+func fulfillmentPageFacts(filterValue string, orders []*orderdto.OrderResp) map[string]StatusLabelFact {
 	list := append([]string(nil), orderenums.FulfillmentStatuses...)
 	list = append(list, filterValue)
 	for _, o := range orders {

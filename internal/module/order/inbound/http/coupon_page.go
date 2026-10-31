@@ -168,7 +168,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		}
 	}
 
-	view := &orderdto.CouponListPageResp{
+	view := &CouponListPageResp{
 		// 标题是 i18n key：渲染出口按当前语言取词（模板不再看到裸 key）。
 		Title: orderenums.CouponsHeading,
 		Menu:  "coupons",
@@ -244,7 +244,7 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 	}
 
 	// 片段出口：渲染器由路由装配（adminui.RenderBare，不带页壳），模板由本处声明。
-	pageview.RenderTemplate(c, CouponEditFormTemplate, orderdto.CouponEditFormView{
+	pageview.RenderTemplate(c, CouponEditFormTemplate, CouponEditFormView{
 
 		Coupon:    cp,
 		ListQuery: couponListQuery(projectID, couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0),

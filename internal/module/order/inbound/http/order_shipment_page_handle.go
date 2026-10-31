@@ -84,7 +84,7 @@ func pendingShipWindow(query *orderdto.ShipmentPageQueryReq) (page, limit int) {
 //
 // 装载失败**不拿走整页**：空列表 + 归口提示 + 页壳（与订单页其它出口同一形状）——
 // 页面 GET 失败时用户要能改地址栏 / 刷新，而不是看到一个 JSON 文档。
-func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdto.ShipmentPageQueryReq) (*orderdto.PendingShipPageView, bool) {
+func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdto.ShipmentPageQueryReq) (*PendingShipPageView, bool) {
 	ctx := c.Request.Context()
 	page, limit := pendingShipWindow(query)
 	projects, loadErr := h.projects.List(ctx)
@@ -121,7 +121,7 @@ func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdt
 	tr := text.TranslateFunc(c)
 	// 分页基址在这里算全（与 reqparams.FilterBaseURL 同一实现）：视图实现 view.PageList，
 	// 渲染出口据此自动挂分页条 —— 控制器不碰 PaginationKey 字面量，也不 import adminui。
-	return &orderdto.PendingShipPageView{
+	return &PendingShipPageView{
 		Title:           tr(orderenums.PendingShipTitle, "待发货"),
 		Menu:            "orders-pending-ship",
 		Projects:        projects,
@@ -139,7 +139,7 @@ func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdt
 }
 
 // carrierView 取齐承运商页的数据并组成视图（装载失败与待发货页同一形状）。
-func (h *orderShipmentPageHandle) carrierView(c *gin.Context, requested string) *orderdto.CarrierListPageView {
+func (h *orderShipmentPageHandle) carrierView(c *gin.Context, requested string) *CarrierListPageView {
 	ctx := c.Request.Context()
 	projects, loadErr := h.projects.List(ctx)
 	loadFailed := loadErr != nil
@@ -167,7 +167,7 @@ func (h *orderShipmentPageHandle) carrierView(c *gin.Context, requested string) 
 		}
 	}
 	tr := text.TranslateFunc(c)
-	return &orderdto.CarrierListPageView{
+	return &CarrierListPageView{
 		Title:           tr(orderenums.OrderCarriersTitle, "承运商"),
 		Menu:            "order-carriers",
 		Projects:        projects,

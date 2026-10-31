@@ -1,14 +1,15 @@
-package orderdto
+package orderhttp
 
-// order_sales_page_resp.go — 销售概览页的渲染视图（页面 GET 的回执形状）。
+// sales_view_handle.go — 销售概览页的渲染视图（页面 GET 的回执形状）。
 //
-// 与 order_resp.go 的分工：那一份是接口契约；这一份是页面视图（模板直接读）。
-// 理由与 product / masterdata / contenttemplate 一致：读一个类型不必先判断它是进还是出。
+// 这些字段只服务这一次页面渲染：由 handler 组装、由模板直接读。接口契约在 dto
+// （orderdto.SalesOverviewResp 等由 service 返回，JSON 与页面共用），两者不混。
 //
 // **导出字段名就是模板契约**：internal/templates/admin/order/sales_overview.html 里的
 // `.Field` 必须在这里有同名导出字段。
 
 import (
+	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -27,7 +28,7 @@ type OrderSalesPageResp struct {
 	//
 	// 取数失败时保持 nil —— 模板据此不渲染半张报表。一半真一半 0 的页面比空态危险得多
 	// （读的人会以为「这段时间只卖了一点点」）。
-	Overview *SalesOverviewResp
+	Overview *orderdto.SalesOverviewResp
 
 	// 生效区间与筛选回显（service 归一化后的值，不是请求原值）。
 	FilterFrom   string

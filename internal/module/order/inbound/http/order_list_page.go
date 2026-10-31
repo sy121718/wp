@@ -124,7 +124,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	data := h.ordersPageData(c, selected, filter, page, limit, loadErrText)
 	orders := data.Orders
 
-	view := &orderdto.OrderListPageResp{
+	view := &OrderListPageResp{
 		// 标题是 i18n key：渲染出口按当前语言取词（模板不再看到裸 key）。
 		Title:           orderenums.OrdersHeading,
 		Menu:            "orders",
@@ -186,10 +186,10 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 // 降级口径不变：工程列表读不出来时不再取数与详情（selected 只能来自 URL，
 // 拿可能属于别的工程的参数去查，查出来的是哪个工程的单都说不清）。
 func (h *orderPageHandle) ordersPageData(c *gin.Context, selected string, filter orderFilter,
-	page, limit int, loadErrText string) *orderdto.OrderListPageResp {
+	page, limit int, loadErrText string) *OrderListPageResp {
 	ctx := c.Request.Context()
 	// 计数表一开始就补齐零值：模板会拿计数做数值比较，nil 参与比较会让整页 500。
-	out := &orderdto.OrderListPageResp{
+	out := &OrderListPageResp{
 		LoadErr:           loadErrText,
 		Counts:            countsFilled(nil, orderStatusValues),
 		FulfillmentCounts: countsFilled(nil, orderenums.FulfillmentStatuses),

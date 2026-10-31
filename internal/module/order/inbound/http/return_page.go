@@ -73,11 +73,11 @@ var returnStatusValues = []string{
 	"", "requested", "approved", "received", "completed", "rejected", "cancelled",
 }
 
-func statusLabelFacts(values []string, resolve func(string) (string, string)) map[string]orderdto.StatusLabelFact {
-	facts := make(map[string]orderdto.StatusLabelFact, len(values))
+func statusLabelFacts(values []string, resolve func(string) (string, string)) map[string]StatusLabelFact {
+	facts := make(map[string]StatusLabelFact, len(values))
 	for _, value := range values {
 		key, fallback := resolve(value)
-		facts[value] = orderdto.StatusLabelFact{Key: key, Fallback: fallback}
+		facts[value] = StatusLabelFact{Key: key, Fallback: fallback}
 	}
 	return facts
 }
@@ -149,7 +149,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		}
 	}
 
-	view := &orderdto.ReturnListPageResp{
+	view := &ReturnListPageResp{
 		Title:           orderenums.ReturnsHeading,
 		Menu:            "orders",
 		Projects:        projects,
@@ -244,7 +244,7 @@ func returnStatusText(tr translate, status string) string {
 // **生效筛选值必须收进来**：空列表时页面上唯一会显示的状态就是它（空态那行
 // 「当前还带着状态筛选「…」」），漏掉它的症状是——筛选值合法时一切正常，
 // 而筛选值是空的/未知的那几种情况下整页渲染报错（模板索引到缺键）。
-func returnStatusPageFacts(values []string, filterStatus string, returns []*orderdto.ReturnResp, detail *orderdto.ReturnDetailResp) map[string]orderdto.StatusLabelFact {
+func returnStatusPageFacts(values []string, filterStatus string, returns []*orderdto.ReturnResp, detail *orderdto.ReturnDetailResp) map[string]StatusLabelFact {
 	statuses := append([]string(nil), values...)
 	statuses = append(statuses, filterStatus)
 	for _, item := range returns {
@@ -265,7 +265,7 @@ func returnStatusPageFacts(values []string, filterStatus string, returns []*orde
 // **两张表刻意分开**：退货状态与订单状态是两套枚举（key 前缀都不同），
 // 合成一张表看着省事，但模板里 `orderLabels[o.Status]` 与 `returnLabels[r.Status]`
 // 就只靠人眼区分了 —— 串表时一行状态会显示另一套词条的文本，而且不报错。
-func orderStatusPageFacts(values []string, detail *orderdto.ReturnDetailResp) map[string]orderdto.StatusLabelFact {
+func orderStatusPageFacts(values []string, detail *orderdto.ReturnDetailResp) map[string]StatusLabelFact {
 	statuses := append([]string(nil), values...)
 	if detail != nil && detail.Order != nil {
 		statuses = append(statuses, detail.Order.Status)
@@ -368,10 +368,10 @@ func returnFacingText(raw string) string {
 //
 // 视图不复用 contract.ReturnWarehouse：dto 不能 import 自己的 contract（会成环），
 // 而"页面只读 ID/Name"这件事本来就该由视图自己声明 —— 契约多一个字段时视图不必跟着变。
-func toReturnWarehouses(in []ordercontract.ReturnWarehouse) []orderdto.ReturnWarehouseResp {
-	out := make([]orderdto.ReturnWarehouseResp, 0, len(in))
+func toReturnWarehouses(in []ordercontract.ReturnWarehouse) []ReturnWarehouseResp {
+	out := make([]ReturnWarehouseResp, 0, len(in))
 	for _, w := range in {
-		out = append(out, orderdto.ReturnWarehouseResp{ID: w.ID, Name: w.Name})
+		out = append(out, ReturnWarehouseResp{ID: w.ID, Name: w.Name})
 	}
 	return out
 }

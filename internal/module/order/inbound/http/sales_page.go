@@ -136,7 +136,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 		}
 	}
 
-	view := &orderdto.OrderSalesPageResp{
+	view := &OrderSalesPageResp{
 		Title:           orderenums.OrderSalesTitle,
 		Menu:            "orders",
 		Projects:        projects,
@@ -167,12 +167,12 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 // todoView 待办块的三个数字（装配三个 map 键，handler 侧只留一条语句）。
 // 待办块的三个数字直接用 DTO 的导出类型：模板读 .Todo.alertCount（小写字段名），
 // 而 dto 层不得 import 本包，所以结构定义留在这里、字段名与模板逐字对齐。
-type todoView = orderdto.SalesTodoResp
+type todoView = SalesTodoResp
 
 // buildTodoView 取齐待办块并算好合计（迁移 624 / 623 / 624，W4）。
 func (h *orderSalesPageHandle) buildTodoView(ctx context.Context, projectID string) todoView {
 	alertCount, pendingShip := h.todoCounts(ctx, projectID)
-	return orderdto.SalesTodoResp{
+	return SalesTodoResp{
 		AlertCount: alertCount, PendingShip: pendingShip,
 		Total: todoTotal(alertCount, pendingShip),
 	}
