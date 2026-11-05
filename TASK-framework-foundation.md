@@ -438,6 +438,21 @@ pkg/database/{retention,partition}
 
 仍有既有红项（与本轮无关，已在 HEAD 复现）：`internal/routers` 的 `SetRequestUserID` 台账缺项与写端点扫码漂移、`internal/architecture` 的控制器语句上限台账、analytics/build/contenttemplate/navigation/product-enums 的部分用例。
 
+
+第四轮（剩余六项全部执行完成）：
+
+- **058 seed 退役 key**：删除 11 行已改名 key（`MsgInternalError`/`ErrInvalidParams`/`ErrPermissionDenied`/`ErrRequestEntityTooLarge`/`msg_operation_success`/`msg_delete_confirm`），剩 189 key / 263 行；`ConditionSQL` 从「全库 zh-CN ≥199」改为逐条核对本批 263 行并要求退役 key 不存在（否则清理后总数下降会把 seed 重播）；新增 745 精确清理迁移，不依赖 738 重跑。
+- **internal/mcp 删除**：56 个消费者直连 `pkg/mcp`（包名相同、调用点零改动），删 `aliases.go`。
+- **captcha / siteurl 小项**：删 `captcha/handle` 纯转发；`siteurl.Normalize` 迁 `pkg/pathkit.NormalizeSitePath`（站点 kinds/默认模式/工程读取仍留应用）。`internal/partition` 经核对属应用事实（表目录 + RLS 注入），保留。
+- **pipeline 发布转发清退**：`publish_aliases.go` 的 87 个别名整体删除；89 个外部文件 520 处改直连 `pkg/publish`。
+- **Publisher 中立化**：`Publisher`/`BuildInput`/`CompileUsage`/`Draft`/`PageRecord` 迁 `pkg/publish`；`Diagnostics` 改为中立收集器、`ActionTargets` 用字符串类别、页面守卫解析改为注入的 `PageGuardFunc`；未注入编译或守卫时构建显式失败。`DefaultCompile`、`PageGuardFunc`、`NewPublisher` 留 `internal/pipeline`；`ActionUsage` 适配构建器的 `core.ActionKind`；stage/activate 用例随迁。
+- **静态 UI 资产**：被公共模板引用的 41 个 `js/ui/*.js` 与 `ui.css`/`theme.css` 迁 `pkg/view/ui/assets`；新增 `AssetsFS`/`AssetFile`/`CompositeFS`（逻辑键重名即报错，实现 `ReadDir`/`Stat`）；`/static` 与 `EmbeddedStaticFS` 同源，开发/生产不再两套来源；`StaticJS`/`UICSS` 签名不变。
+- **adminui.Prepare**：新增 `RenderFragment`（片段唯一出口）与 `PageFacts`；`prepare*` 收为包内私有；10 处绕过渲染入口的处理器改走 `RenderPage`/`RenderBare`/`RenderFragment`，无调用者的 `orderFragmentData` 删除。
+
+验证：`go build ./...`、`go vet ./...` 通过；`go test ./pkg/...` 全绿；迁移测试（743/744/745/058/退役 key/新装库目录）在真实 PG 上全绿；`internal/pipeline`/`pkg/publish`/`public/test/pipeline`/page/presentation/ai/workbench/adminui/adminctx 定向全绿；`check-permission-gaps`（393 路由 / 363 权限点 / 33 豁免双向同源）、`check-shell-migration`、`check-contract-deps`、`check-service-db-boundary`、pkg 依赖方向与结构边界全绿。
+
+仍未做的：真实浏览器三视口验收（表单/抽屉/可视化链路）；`check-all.sh` 的 10 项既有红与干净 HEAD 一致，非本轮引入。
+
 ## 关键实施入口
 
 - 共享视图：[render.go](pkg/view/render.go)、[failure.go](pkg/view/failure.go)、[prepare.go](internal/adminui/prepare.go)、[html_failure.go](internal/adminui/html_failure.go)、[request_text.go](pkg/view/jet/request_text.go)。
