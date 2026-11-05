@@ -64,8 +64,17 @@ func uiCssSelWithPrefix(sels []string, prefix string) []string {
 	return out
 }
 
+// readUIOwnershipFile 读一个 HTML 模板或静态资产：
+// 静态资产按逻辑键走复合 FS，模板直接读应用磁盘目录。
 func readUIOwnershipFile(t *testing.T, rel string) string {
 	t.Helper()
+	if strings.HasPrefix(rel, "static/") {
+		b, err := AssetFile(strings.TrimPrefix(rel, "static/"))
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", rel, err)
+		}
+		return string(b)
+	}
 	raw, err := os.ReadFile(rel)
 	if err != nil {
 		t.Fatalf("读取 %s 失败: %v", rel, err)

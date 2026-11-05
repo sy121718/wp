@@ -3,13 +3,12 @@ package templates
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestProductCreateFormUsesSharedScan(t *testing.T) {
-	src, err := os.ReadFile(filepath.FromSlash("static/js/product-create-form.js"))
+	src, err := AssetFile("js/product-create-form.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,6 +26,7 @@ func TestProductCreateFormUsesSharedScan(t *testing.T) {
 }
 
 func TestProductCreateFormSharedScanAndOptionalInputs(t *testing.T) {
+	assets := materializeAssets(t)
 	node, err := exec.LookPath("node")
 	if err != nil {
 		if os.Getenv("GOWP_REQUIRE_NODE") == "1" {
@@ -35,6 +35,7 @@ func TestProductCreateFormSharedScanAndOptionalInputs(t *testing.T) {
 		t.Skip("缺少 Node")
 	}
 	script := `
+const ROOT = process.argv[1];
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const controls = [];
 let bound = 0, ready;
@@ -60,7 +61,7 @@ function makeForm() {
 const first = makeForm();
 const document = {querySelectorAll: () => [first.form]};
 const WBUI = {register: fn => controls.push(fn), ready: fn => {ready = fn;}};
-vm.runInNewContext(fs.readFileSync('static/js/product-create-form.js', 'utf8'), {document, window: {WBUI}});
+vm.runInNewContext(fs.readFileSync(ROOT + '/js/product-create-form.js', 'utf8'), {document, window: {WBUI}});
 assert.equal(controls.length, 1);
 ready();
 assert.equal(first.input.dataset.skuEnhanced, '1');
@@ -102,7 +103,7 @@ controls[0](dynamic.form);
 assert.equal(replacement.dataset.skuEnhanced, '1', '表单复用而内容换新时必须重新增强');
 assert.equal(first.input.value, 'Abc', '控件不得改写用户 SKU 或替 Service 添加仓库前缀');
 `
-	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
+	if out, err := exec.Command(node, "--eval", script, assets).CombinedOutput(); err != nil {
 		t.Fatalf("建表单统一扫描与可选输入回归失败: %v\n%s", err, out)
 	}
 }

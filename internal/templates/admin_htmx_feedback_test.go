@@ -1,8 +1,6 @@
 package templates
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,7 +41,7 @@ func TestAdminHtmxProgressIndicatorInShell(t *testing.T) {
 }
 
 func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
-	src, err := os.ReadFile(filepath.FromSlash("static/js/admin.js"))
+	src, err := AssetFile("js/admin.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +71,7 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 }
 
 func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
-	src, err := os.ReadFile(filepath.FromSlash("static/js/ui/htmx.min.js"))
+	src, err := AssetFile("js/ui/htmx.min.js")
 	if err != nil {
 		t.Fatal(err)
 	}

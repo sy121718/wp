@@ -82,9 +82,9 @@ func TestUIBaseClassUtilityClassesDoNotInject(t *testing.T) {
 }
 
 func TestUIBaseClassListMatchesUICSS(t *testing.T) {
-	src, err := os.ReadFile("../../internal/templates/static/css/ui.css")
+	src, err := os.ReadFile("../view/ui/assets/css/ui.css")
 	if err != nil {
-		t.Fatalf("读取 ui.css 失败（基座清单的唯一来源）：%v", err)
+		t.Fatalf("读取 ui.css 失败（基座清单的唯一来源，属主 pkg/view/ui）：%v", err)
 	}
 	defined := map[string]bool{}
 	for _, m := range classSelectorRe.FindAllStringSubmatch(string(src), -1) {

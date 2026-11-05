@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"io/fs"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -127,7 +128,11 @@ func TestUIAssetEntry(t *testing.T) {
 	if nodeErr != nil && os.Getenv("GOWP_REQUIRE_NODE") == "1" {
 		t.Fatal("完整控件检查要求 Node")
 	}
-	files, err := staticJSFS.ReadDir("static/js/ui")
+	assets, err := StaticAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := fs.ReadDir(assets, "js/ui")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +161,10 @@ func TestUIScanReportsFailureAndContinues(t *testing.T) {
 		}
 		t.Skip("缺少 Node")
 	}
+	assets := materializeAssets(t)
 	script := `
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const ROOT = process.argv[1];
 const events = [], logs = [];
 const context = {
   window: {getComputedStyle: () => ({transitionDuration:'0.1s, 200ms', transitionDelay:'50ms'})},
@@ -165,7 +172,7 @@ const context = {
   console: {error: (...args) => logs.push(args)},
   CustomEvent: class { constructor(type, options) { this.type=type; this.detail=options.detail; } }
 };
-vm.runInNewContext(fs.readFileSync('static/js/ui/_util.js','utf8'), context);
+vm.runInNewContext(fs.readFileSync(ROOT + '/js/ui/_util.js','utf8'), context);
 const ui=context.window.WBUI, scope={}, failure=new Error('故意损坏一个控件');
 let called=0;
 ui.register(() => {throw failure;});
@@ -185,7 +192,7 @@ assert.equal(disposalErrors.length,1); assert.equal(disposalErrors[0],failure);
 assert.equal(disposed,1); assert.equal(logs.length,2);
 assert.equal(events[1].type,'wbui:error'); assert.equal(events[1].detail.scope,scope);
 `
-	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
+	if out, err := exec.Command(node, "--eval", script, assets).CombinedOutput(); err != nil {
 		t.Fatalf("基座异常可观测性/动效时间契约失败: %v\n%s", err, out)
 	}
 }
@@ -198,8 +205,10 @@ func TestProductCategoryTreeSelectionSync(t *testing.T) {
 		}
 		t.Skip("缺少 Node")
 	}
+	assets := materializeAssets(t)
 	script := `
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const ROOT = process.argv[1];
 const handlers = {};
 const bar = {hidden: true};
 const count = {dataset: {bulkTemplate: '已选 {n} 项'}, textContent: ''};
@@ -218,7 +227,7 @@ const form = {
     : (selector === '[data-bulk-bar]' ? bar : (selector === '[data-bulk-count]' ? count : null))
 };
 const document = {addEventListener: (type, fn) => { handlers[type] = fn; }};
-vm.runInNewContext(fs.readFileSync('static/js/ui/product-category-tree.js', 'utf8'), {document, window: {}});
+vm.runInNewContext(fs.readFileSync(ROOT + '/js/ui/product-category-tree.js', 'utf8'), {document, window: {}});
 assert.ok(!handlers.keydown, '展开 / 折叠已退役，键盘监听不该还在');
 handlers.change({target: boxes[0], stopPropagation: () => {}});
 assert.equal(count.textContent, '已选 1 项', '批量条计数没有跟着勾选走');
@@ -226,7 +235,7 @@ assert.equal(bar.hidden, false, '勾选后批量条应显示');
 assert.equal(all.indeterminate, true, '部分勾选应是半选态');
 assert.deepEqual(marked[0], ['is-selected', true], '选中行没有标记');
 `
-	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
+	if out, err := exec.Command(node, "--eval", script, assets).CombinedOutput(); err != nil {
 		t.Fatalf("分类树勾选态契约失败: %v\n%s", err, out)
 	}
 }

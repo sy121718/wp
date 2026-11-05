@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1])
 MODE = sys.argv[2] if len(sys.argv) > 2 else ''
-BASE = ROOT / 'internal/templates/static/js/ui/write-base.js'
+BASE = ROOT / 'pkg/view/ui/assets/js/ui/write-base.js'
 FLAGS = {'data-write-reload', 'data-write-status', 'data-write-host'}
 # result 是 Jet 的 hx-target 钩子，不是基座执行属性。
 HOOKS = {'data-write-result'}

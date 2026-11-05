@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -423,17 +424,39 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	for _, p := range mustGlob(t, "static/css/*.css") {
-		addDefined(rel(t, p), readFile(t, p), true)
+	// 定义侧语料来自复合静态资产 FS：公共控件样式在 pkg/view/ui，
+	// 业务样式在应用；两侧都算「定义」。
+	assets, aerr := StaticAssets()
+	if aerr != nil {
+		t.Fatalf("构建静态资产复合 FS 失败: %v", aerr)
 	}
-
-	filepath.WalkDir("static/vendor", func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".css") {
-			return nil
+	assetSrc := map[string]string{}
+	assetErr := fs.WalkDir(assets, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
 		}
-		addDefined(rel(t, p), readFile(t, p), false)
+		if b, rerr := fs.ReadFile(assets, p); rerr == nil {
+			assetSrc[p] = string(b)
+		}
+		switch {
+		case strings.HasPrefix(p, "css/") && strings.HasSuffix(p, ".css"):
+			b, rerr := fs.ReadFile(assets, p)
+			if rerr != nil {
+				return rerr
+			}
+			addDefined(p, string(b), true)
+		case strings.HasPrefix(p, "vendor/") && strings.HasSuffix(p, ".css"):
+			b, rerr := fs.ReadFile(assets, p)
+			if rerr != nil {
+				return rerr
+			}
+			addDefined(p, string(b), false)
+		}
 		return nil
 	})
+	if assetErr != nil {
+		t.Fatalf("遍历静态资产失败: %v", assetErr)
+	}
 
 	tplFiles := walkFiles(t, ".", func(p string) bool {
 		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
@@ -443,12 +466,30 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
 	})
 	tplFiles = append(tplFiles, pkgTplFiles...)
-	jsFiles := walkFiles(t, "static/js", func(p string) bool {
-		return strings.HasSuffix(p, ".js") && !strings.HasSuffix(p, ".min.js") && !strings.HasSuffix(p, ".test.cjs")
+	var jsFiles []string
+	jsErr := fs.WalkDir(assets, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if strings.HasPrefix(p, "js/") && strings.HasSuffix(p, ".js") &&
+			!strings.HasSuffix(p, ".min.js") && !strings.HasSuffix(p, ".test.cjs") {
+			jsFiles = append(jsFiles, p)
+		}
+		return nil
 	})
+	if jsErr != nil {
+		t.Fatalf("遍历 JS 资产失败: %v", jsErr)
+	}
+
+	readAudit := func(p string) string {
+		if src, ok := assetSrc[p]; ok {
+			return src
+		}
+		return readFile(t, p)
+	}
 
 	for _, p := range append(append([]string{}, tplFiles...), jsFiles...) {
-		src := readFile(t, p)
+		src := readAudit(p)
 		for _, tok := range reAuditLooseToken.FindAllString(src, -1) {
 			f.looseTokens[tok] = true
 		}
@@ -487,8 +528,8 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 	for _, p := range jsFiles {
-		r := rel(t, p)
-		lines := strings.Split(readFile(t, p), "\n")
+		r := p
+		lines := strings.Split(readAudit(p), "\n")
 		for i, line := range lines {
 			for _, m := range reAuditClassAttr.FindAllStringSubmatch(line, -1) {
 				auditClassValue(m[1], true, r, i+1, line, f)

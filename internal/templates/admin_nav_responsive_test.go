@@ -103,7 +103,7 @@ func ruleBody(src, selector string) string {
 
 func readAdminThemeCSS(t *testing.T) string {
 	t.Helper()
-	css, err := os.ReadFile("static/css/theme.css")
+	css, err := AssetFile("css/theme.css")
 	if err != nil {
 		t.Fatalf("读取 theme.css 失败: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestAdminLayoutRendersNavToggle(t *testing.T) {
 }
 
 func TestAdminNavDrawerScriptParses(t *testing.T) {
-	src, err := os.ReadFile("static/js/admin.js")
+	src, err := AssetFile("js/admin.js")
 	if err != nil {
 		t.Fatalf("读取 admin.js 失败: %v", err)
 	}

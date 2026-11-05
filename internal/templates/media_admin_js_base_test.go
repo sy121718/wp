@@ -2,7 +2,6 @@ package templates
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -23,6 +22,8 @@ var jsSkipMarkerRe = regexp.MustCompile(`js-base-skip:\s*(\S[^\n]*)`)
 
 var jsTypeAssignRe = regexp.MustCompile(`type\s*=\s*['"]([a-zA-Z]+)['"]`)
 
+// jsScanRoot 只用于报错文案；实际扫描面是复合静态资产 FS 的 js/ 子树
+// （pkg 公共控件 + 应用专用脚本），搬包后仍然覆盖两侧。
 const jsScanRoot = "static/js"
 
 var jsScanExcludedDirs = map[string]string{
@@ -94,7 +95,11 @@ func jsControlVerdict(h jsControlHit) (bool, string) {
 func TestJSGeneratedControlsCarryBaseClass(t *testing.T) {
 	var hits []jsControlHit
 	hitFiles := map[string]int{}
-	err := filepath.WalkDir(jsScanRoot, func(path string, d fs.DirEntry, err error) error {
+	assets, aerr := StaticAssets()
+	if aerr != nil {
+		t.Fatalf("构建静态资产复合 FS 失败: %v", aerr)
+	}
+	err := fs.WalkDir(assets, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -108,11 +113,14 @@ func TestJSGeneratedControlsCarryBaseClass(t *testing.T) {
 		if !strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".min.js") {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := fs.ReadFile(assets, path)
 		if err != nil {
 			return err
 		}
-		rel := filepath.ToSlash(strings.TrimPrefix(path, jsScanRoot+string(filepath.Separator)))
+		if !strings.HasPrefix(path, "js/") {
+			return nil
+		}
+		rel := filepath.ToSlash(strings.TrimPrefix(path, "js/"))
 		hs := scanJSControlCreations(rel, string(data))
 		if len(hs) > 0 {
 			hitFiles[rel] = len(hs)

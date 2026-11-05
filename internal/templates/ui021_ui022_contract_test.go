@@ -59,6 +59,13 @@ func TestUI022AdminLoginResponsiveContract(t *testing.T) {
 }
 
 func readTemplateAsset(path string) (string, error) {
+	if strings.HasPrefix(path, "static/") {
+		data, err := AssetFile(strings.TrimPrefix(path, "static/"))
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err

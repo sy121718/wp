@@ -12,9 +12,6 @@ import (
 //go:embed all:admin all:fragments all:workbench all:partials
 var appTemplatesFS embed.FS
 
-//go:embed all:static
-var staticAssetsFS embed.FS
-
 func newAdminTemplateLoader() (*jet.FSLoader, error) {
 	// 公共 UI 在 pkg/view/ui，业务模板在应用的 embed；按逻辑键合成单一 FS。
 	composite, err := newUICompositeFS(appTemplatesFS)
@@ -29,11 +26,11 @@ func newAdminTemplateLoader() (*jet.FSLoader, error) {
 }
 
 func EmbeddedStaticFS() (http.FileSystem, error) {
-	sub, err := fs.Sub(staticAssetsFS, "static")
+	assets, err := StaticAssets()
 	if err != nil {
 		return nil, err
 	}
-	return noDirListFS{inner: http.FS(sub)}, nil
+	return noDirListFS{inner: http.FS(assets)}, nil
 }
 
 func listEmbeddedFiles(fsys fs.FS) ([]string, error) {

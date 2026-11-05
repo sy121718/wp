@@ -27,7 +27,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-UI_DIR="internal/templates/static/js/ui"
+# 公共控件在 pkg/view/ui，业务专用脚本在应用；两侧都属判定面。
+UI_DIRS=("pkg/view/ui/assets/js/ui" "internal/templates/static/js/ui")
 violations=0
 
 # 允许直接调 htmx API 的文件（**适配层**，不是控件）。加文件要写理由。
@@ -37,7 +38,9 @@ violations=0
 # json_swap.js 已随 JSON UI 执行器退役删除；白名单不再为它保留例外。
 ALLOW="htmx-bridge.js"
 
-for f in "$UI_DIR"/*.js; do
+for dir in "${UI_DIRS[@]}"; do
+  [[ -d "$dir" ]] || continue
+  for f in "$dir"/*.js; do
   base="$(basename "$f")"
   [[ "$base" == "htmx.min.js" ]] && continue
   skip=0
@@ -69,11 +72,12 @@ PY
       violations=$((violations + 1))
     done <<< "$hits"
   fi
+  done
 done
 
 # 反向自检：白名单里的适配层必须真的存在（拼错名字会让它静默变成「全部放行」）。
 for ok in $ALLOW; do
-  if [[ ! -f "$UI_DIR/$ok" ]]; then
+  if [[ ! -f "pkg/view/ui/assets/js/ui/$ok" ]]; then
     printf '✗ 白名单里的适配层 %s 不存在 —— 拼错会让门禁静默放行所有文件\n' "$ok" >&2
     violations=$((violations + 1))
   fi

@@ -1,7 +1,6 @@
 package templates
 
 import (
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -10,7 +9,7 @@ import (
 
 func uiCssSource(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile("static/css/ui.css")
+	raw, err := AssetFile("css/ui.css")
 	if err != nil {
 		t.Fatalf("读取 ui.css 失败: %v", err)
 	}
@@ -19,7 +18,7 @@ func uiCssSource(t *testing.T) string {
 
 func themeCssSource(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile("static/css/theme.css")
+	raw, err := AssetFile("css/theme.css")
 	if err != nil {
 		t.Fatalf("读取 theme.css 失败: %v", err)
 	}

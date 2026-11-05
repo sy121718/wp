@@ -22,9 +22,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-BUNDLE="internal/templates/static/js/ui/htmx.min.js"
+BUNDLE="pkg/view/ui/assets/js/ui/htmx.min.js"
 TPL_DIR="internal/templates"
-JS_DIR="internal/templates/static/js"
+JS_DIRS=("pkg/view/ui/assets/js" "internal/templates/static/js")
 
 if [[ ! -f "$BUNDLE" ]]; then
   echo "找不到 vendored htmx bundle：$BUNDLE —— 判据 4 无法执行，检查文件是否被移动" >&2
@@ -43,9 +43,12 @@ while IFS= read -r f; do tpl_files+=("$f"); done < <(
   find "$TPL_DIR" -type f \( -name '*.html' -o -name '*.jet' \) | sort
 )
 js_files=()
-while IFS= read -r f; do js_files+=("$f"); done < <(
-  find "$JS_DIR" -type f -name '*.js' ! -name 'htmx.min.js' | sort
-)
+for dir in "${JS_DIRS[@]}"; do
+  [[ -d "$dir" ]] || continue
+  while IFS= read -r f; do js_files+=("$f"); done < <(
+    find "$dir" -type f -name '*.js' ! -name 'htmx.min.js' | sort
+  )
+done
 md_files=()
 while IFS= read -r f; do md_files+=("$f"); done < <(
   find "$TPL_DIR" -type f -name '*.md' | sort

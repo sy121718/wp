@@ -282,14 +282,11 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// 统一成功出口：默认“操作成功”，自定义消息只消费明确消息事实。
 	router.Use(view.UseSuccess(adminui.NewSuccessWriter()))
 
-	staticFS := builtin.NoDirListFS("internal/templates/static")
-	if gin.Mode() == gin.ReleaseMode {
-		if embedded, err := templates.EmbeddedStaticFS(); err != nil {
-			logger.Scene("init").Error(err, "静态资源 embed 不可用，回退磁盘目录")
-		} else {
-
-			staticFS = embedded
-		}
+	// 唯一公共 UI 资产源：pkg 公共资产 + 应用专用资产，两层按逻辑键合成。
+	// 开发与生产都经同一复合 FS，不再有「release 用 embed、debug 用磁盘」两套来源。
+	staticFS, err := templates.EmbeddedStaticFS()
+	if err != nil {
+		panic("静态资源装配失败: " + err.Error())
 	}
 	router.Group("/static", builtin.StaticGzipMiddleware(), builtin.StaticCacheMiddleware()).StaticFS("/", staticFS)
 

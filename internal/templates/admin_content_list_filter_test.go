@@ -217,7 +217,7 @@ func TestPagesListEmptyStateTwoTiers(t *testing.T) {
 }
 
 func TestClientFilterContractIsImplementedInAdminJS(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("static", "js", "admin.js"))
+	src, err := AssetFile("js/admin.js")
 	if err != nil {
 		t.Fatalf("读 admin.js 失败: %v", err)
 	}

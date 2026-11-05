@@ -6,13 +6,21 @@ import (
 	"testing"
 )
 
+// readTemplateFile 读源码文件：静态资产走复合 FS，模板与 Go 源码直接读磁盘。
 func readTemplateFile(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	if strings.HasPrefix(path, "static/") {
+		b, err := AssetFile(strings.TrimPrefix(path, "static/"))
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", path, err)
+		}
+		return string(b)
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("读取 %s 失败: %v", path, err)
 	}
-	return string(data)
+	return string(b)
 }
 
 func TestWorkbenchBindingFieldHonoursPrefixes(t *testing.T) {

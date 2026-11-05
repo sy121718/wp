@@ -20,7 +20,7 @@ func TestDashboardHasNoInlineStylesAndClassesAreDefined(t *testing.T) {
 		t.Errorf("dashboard.html:%d 仍有内联 style 属性（应改用语义类）", line)
 	}
 
-	css, err := os.ReadFile(filepath.FromSlash("static/css/theme.css"))
+	css, err := AssetFile("css/theme.css")
 	if err != nil {
 		t.Fatal(err)
 	}

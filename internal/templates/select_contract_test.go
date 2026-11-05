@@ -24,11 +24,8 @@ type dropdownProbe struct {
 
 func runDropdownProbe(t *testing.T) dropdownProbe {
 	t.Helper()
-	abs, err := filepath.Abs("static/js/ui")
-	if err != nil {
-		t.Fatalf("解析 ui/select.js 路径失败: %v", err)
-	}
-	if _, err = os.Stat(abs); err != nil {
+	abs := filepath.Join(materializeAssets(t), "js", "ui")
+	if _, err := os.Stat(abs); err != nil {
 		t.Fatalf("ui/select.js 不存在: %v", err)
 	}
 	nodeBin, err := exec.LookPath("node")

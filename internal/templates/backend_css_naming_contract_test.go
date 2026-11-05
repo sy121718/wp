@@ -1,7 +1,6 @@
 package templates
 
 import (
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -19,11 +18,11 @@ var reSkyTokenDef = regexp.MustCompile(`(?m)^\s*[ \t]*(--sky-c-[a-z0-9-]+)\s*:`)
 
 func readBackendStaticCSS(t *testing.T, rel string) string {
 	t.Helper()
-	raw, err := os.ReadFile(rel)
+	b, err := AssetFile(strings.TrimPrefix(rel, "static/"))
 	if err != nil {
 		t.Fatalf("读取 %s 失败: %v", rel, err)
 	}
-	return string(raw)
+	return string(b)
 }
 
 func backendStaticSkyRefs(t *testing.T) map[string]map[string]bool {
