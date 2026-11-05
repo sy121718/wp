@@ -31,8 +31,11 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 
 	sessionSvc.SetChatPort(svc)
 
+	// 两个执行入口（站内工具 Runner 与外部 MCP 端点）共用同一个授权闭包：
+	// 都按「登记的真实路由绑定 + Casbin 主体/对象/方法」判断，缺一即拒绝。
+	authorize := casbinAuthorizer
 	if toolRegistry != nil {
-		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, casbinAuthorizer)})
+		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, authorize)})
 	}
 
 	sessionSvc.SetToolCallLogWriter(aimodel.NewToolCallLogModel(db))
@@ -55,6 +58,7 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 	if mcpRoot != nil && toolRegistry != nil {
 		recorder := aiservice.NewToolCallRecorder(aimodel.NewToolCallLogModel(db))
 		endpoint := NewMcpEndpoint(tokenSvc, toolRegistry, recorder)
+		endpoint.SetAccountAuthorizer(authorize)
 
 		endpoint.SetConfigReader(aiConfig)
 		mcpRoot.POST("/mcp", endpoint.Handle)

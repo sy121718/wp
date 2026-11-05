@@ -10,7 +10,7 @@ import (
 )
 
 func setupSiteUserRoutes(router *gin.Engine, h *Handle) {
-	api := mw.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()), mw.RouteProtected)
+	api := mw.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()), mw.RouteExempt)
 	api.GET("/session", "", h.SiteSession)
 	limit := builtin.RequestRateLimitMiddleware(userSensitiveRateLimit, userSensitiveRateWindow)
 	api.POST("/login", "", limit, h.SiteLogin)

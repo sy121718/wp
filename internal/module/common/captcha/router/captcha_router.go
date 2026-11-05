@@ -20,7 +20,7 @@ func SetupCaptchaRoutes(rg *gin.RouterGroup) {
 		return
 	}
 
-	mw.NewRouteGroup(rg, mw.RouteProtected).GET("/captcha", "",
+	mw.NewRouteGroup(rg, mw.RouteExempt).GET("/captcha", "",
 		builtin.RequestRateLimitMiddleware(captchaRateLimit, captchaRateWindow),
 		handle.CaptchaHandle)
 }

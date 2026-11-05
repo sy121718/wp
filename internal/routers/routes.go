@@ -56,8 +56,14 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 	a.startRuntimeTasks()
 
 	a.mountAdminPages()
-	a.runSelfCheck()
 	a.mountPublicFace()
+
+	// 全部路由与工具登记完成后才冻结：之后任何迟到注册都会明确 panic/报错，
+	// 不会出现「启动后目录还在悄悄长」的运行时重建。
+	mw.Freeze()
+	a.tools().Freeze()
+
+	a.runSelfCheck()
 }
 
 func setupStaticFace(router *gin.Engine) {

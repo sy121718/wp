@@ -30,7 +30,7 @@ func SetupAdminRoutes(rg *mw.RouteGroup, db *gorm.DB) admincontract.AuthzContext
 
 	admin := rg.Group("/admin")
 
-	admin.POST("/login", "",
+	admin.ExemptPOST("/login",
 		builtin.RequestRateLimitMiddleware(loginRateLimit, loginRateWindow),
 		handle.AdminLogin)
 
@@ -40,8 +40,8 @@ func SetupAdminRoutes(rg *mw.RouteGroup, db *gorm.DB) admincontract.AuthzContext
 		builtin.DataRuleContextMiddleware(),
 	)
 	{
-		auth.POST("/logout", "", handle.AdminLogout)
-		auth.GET("/profile", "", handle.AdminProfile)
+		auth.ExemptPOST("/logout", handle.AdminLogout)
+		auth.ExemptGET("/profile", handle.AdminProfile)
 	}
 
 	authorized := admin.Group("").Use(

@@ -124,7 +124,7 @@ func SetupOrderPublicRoutes(router *gin.Engine, svc ordercontract.VisitorOrderPo
 	if router == nil || svc == nil {
 		return
 	}
-	publicAPI := mw.NewRouteGroup(router.Group("/api/site/orders", middleware...), mw.RouteProtected)
+	publicAPI := mw.NewRouteGroup(router.Group("/api/site/orders", middleware...), mw.RouteExempt)
 	publicAPI.Use(builtin.RequestRateLimitMiddleware(90, time.Minute), requireVisitorOrderUser())
 	h := &PublicHandle{svc: svc}
 	publicAPI.GET("", "", h.VisitorList)

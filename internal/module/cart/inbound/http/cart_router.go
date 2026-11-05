@@ -88,7 +88,7 @@ func SetupCartPublicRoutes(router *gin.Engine, svc cartcontract.CartService, mid
 	if router == nil || svc == nil {
 		return
 	}
-	g := mw.NewRouteGroup(router.Group("/api/site/cart", middleware...), mw.RouteProtected)
+	g := mw.NewRouteGroup(router.Group("/api/site/cart", middleware...), mw.RouteExempt)
 	g.Use(builtin.RequestRateLimitMiddleware(90, time.Minute))
 	h := NewCartPublicHandle(svc)
 	g.GET("", "", h.View)

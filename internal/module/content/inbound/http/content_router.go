@@ -34,5 +34,5 @@ func SetupContentRoutes(rg *mw.RouteGroup, db *gorm.DB, collections core.Collect
 }
 
 func SetupContentPublicRoutes(router *gin.Engine, reader contentcontract.PublicSearchReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteProtected).GET("/api/site/search", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
+	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/search", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewContentPublicHandle(reader).Search)
 }

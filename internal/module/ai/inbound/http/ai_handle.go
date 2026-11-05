@@ -393,8 +393,10 @@ type McpEndpoint struct {
 	enabledUntil time.Time
 }
 
+// NewMcpEndpoint 不内置授权实现：未注入时按拒绝处理。
+// 外部 MCP 入口与站内工具 Runner 必须由装配处注入同一个授权闭包。
 func NewMcpEndpoint(tokens *aiservice.AccessTokenService, registry *mcp.Registry, recorder *aiservice.ToolCallRecorder) *McpEndpoint {
-	return &McpEndpoint{tokens: tokens, registry: registry, recorder: recorder, authorize: casbinAuthorizer}
+	return &McpEndpoint{tokens: tokens, registry: registry, recorder: recorder}
 }
 
 func (e *McpEndpoint) SetAccountAuthorizer(a AccountAuthorizer) { e.authorize = a }

@@ -64,11 +64,11 @@ func SetupProductRoutes(rg *mw.RouteGroup, db *gorm.DB, project projectcontract.
 }
 
 func SetupProductPublicRoutes(router *gin.Engine, svc productcontract.PublicVariantReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteProtected).GET("/api/site/product/variants", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
+	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/variants", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
 }
 
 func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCatalogReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteProtected).GET("/api/site/product/catalog", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
+	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/catalog", "", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductCatalogHandle(svc).List)
 }
 
 func registerProductPublishHistoryAPI(g *mw.RouteGroup, handle *PublishAttemptHandle) {
@@ -319,5 +319,5 @@ func NewProductHandle(svc productcontract.ProductService) *ProductHandle {
 }
 
 func SetupProductOptionsRoutes(router *gin.Engine, svc productcontract.PublicProductOptionsReader) {
-	mw.NewRouteGroup(router.Group(""), mw.RouteProtected).GET("/api/site/product/options", "", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
+	mw.NewRouteGroup(router.Group(""), mw.RouteExempt).GET("/api/site/product/options", "", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
 }

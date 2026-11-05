@@ -12,7 +12,8 @@ type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
 
-	names []string
+	names  []string
+	frozen bool
 }
 
 func NewRegistry() *Registry {
@@ -25,6 +26,9 @@ func (r *Registry) Register(t Tool) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.frozen {
+		return fmt.Errorf("mcp: 工具注册已冻结，%q 不能再注册", t.name)
+	}
 	if _, dup := r.tools[t.name]; dup {
 		return fmt.Errorf("mcp: 工具 %q 已被注册", t.name)
 	}
@@ -60,6 +64,13 @@ func (r *Registry) Lookup(name string) (Tool, bool) {
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
 	return t, ok
+}
+
+// Freeze 在全部工具登记完成后冻结目录：迟到注册返回错误，不实现热加载。
+func (r *Registry) Freeze() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
 }
 
 func (r *Registry) Len() int {

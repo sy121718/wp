@@ -45,6 +45,7 @@ var (
 	declaredKeys map[string]RouteSpec
 	exemptRoutes []string
 	apiPermPaths map[string]string
+	frozen       bool
 )
 
 // Declare 登记一条路由绑定；同一路由重复声明不同权限会显式 panic。
@@ -81,6 +82,16 @@ func DeclareRoute(spec RouteSpec) {
 //
 // 同一路由以相同权限重复声明是幂等操作（装配可能被测试重复调用），不重复追加。
 func declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
+	if frozen {
+		panic("路由登记已冻结：启动后不得再注册（" + spec.Method + " " + spec.Path + "）")
+	}
+	// 空权限只允许用于明确豁免；非豁免声明必须带权限码，否则等于静默公开。
+	if spec.Perm == exemptPerm && spec.Kind != RouteExempt {
+		panic("空权限只能用于明确豁免的声明：" + spec.Method + " " + spec.Path)
+	}
+	if spec.Perm != exemptPerm && spec.Kind == RouteExempt {
+		panic("豁免声明不得携带权限点：" + spec.Method + " " + spec.Path)
+	}
 	if declaredKeys == nil {
 		declaredKeys = map[string]RouteSpec{}
 	}
@@ -159,7 +170,7 @@ func Exempts() []string {
 	return out
 }
 
-// Reset 清空登记；只允许装配与测试使用，不能在服务期间清授权。
+// Reset 清空登记并解冻；只允许装配与测试使用，不能在服务期间清授权。
 func Reset() {
 	regMu.Lock()
 	defer regMu.Unlock()
@@ -167,6 +178,22 @@ func Reset() {
 	declaredKeys = nil
 	exemptRoutes = nil
 	apiPermPaths = nil
+	frozen = false
+}
+
+// Freeze 在全部路由登记完成后冻结索引：迟到的登记明确 panic，
+// 不实现热加载或运行中重建。Reset 只给装配与测试重新开始用。
+func Freeze() {
+	regMu.Lock()
+	defer regMu.Unlock()
+	frozen = true
+}
+
+// Frozen 报告登记是否已冻结。
+func Frozen() bool {
+	regMu.Lock()
+	defer regMu.Unlock()
+	return frozen
 }
 
 // RouteGroup 是一个受保护操作组：注册即登记 METHOD + 实际路径 + 权限标识。
@@ -198,6 +225,24 @@ func (g *RouteGroup) GET(relativePath, perm string, handlers ...gin.HandlerFunc)
 
 func (g *RouteGroup) POST(relativePath, perm string, handlers ...gin.HandlerFunc) gin.IRoutes {
 	return g.declareAndRegister(http.MethodPost, relativePath, perm, handlers...)
+}
+
+// ExemptGET / ExemptPOST 在受保护组内声明明确豁免的入口：
+// 仍走该组自身的认证与 CSRF，只是不进后台权限目录。
+func (g *RouteGroup) ExemptGET(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
+	return g.declareExemptAndRegister(http.MethodGet, relativePath, handlers...)
+}
+
+func (g *RouteGroup) ExemptPOST(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
+	return g.declareExemptAndRegister(http.MethodPost, relativePath, handlers...)
+}
+
+func (g *RouteGroup) declareExemptAndRegister(method, relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes {
+	Declare(method, joinRoutePaths(g.BasePath(), relativePath), "", RouteExempt)
+	if method == http.MethodGet {
+		return g.RouterGroup.GET(relativePath, handlers...)
+	}
+	return g.RouterGroup.POST(relativePath, handlers...)
 }
 
 func (g *RouteGroup) declareAndRegister(method, relativePath, perm string, handlers ...gin.HandlerFunc) gin.IRoutes {

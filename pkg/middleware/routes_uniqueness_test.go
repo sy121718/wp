@@ -73,3 +73,38 @@ func TestRouteGroupDeclaresActualPaths(t *testing.T) {
 		t.Fatalf("路由应真实注册，实际 %d", rec.Code)
 	}
 }
+
+func TestFreezeRejectsLateRegistration(t *testing.T) {
+	withCleanRegistry(t)
+	Declare(http.MethodGet, "/api/__test__/frozen", "frozen:read", RouteProtected)
+	Freeze()
+	if !Frozen() {
+		t.Fatal("Freeze 后 Frozen 应为 true")
+	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("冻结后的迟到注册必须 panic，不能静默追加")
+		}
+	}()
+	Declare(http.MethodGet, "/api/__test__/late", "frozen:write", RouteProtected)
+}
+
+func TestEmptyPermRequiresExemptKind(t *testing.T) {
+	withCleanRegistry(t)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("空权限配受保护用途必须 panic：否则等于静默公开")
+		}
+	}()
+	Declare(http.MethodGet, "/api/__test__/silent-public", "", RouteProtected)
+}
+
+func TestExemptKindRejectsPerm(t *testing.T) {
+	withCleanRegistry(t)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("豁免声明携带权限点必须 panic：两种事实自相矛盾")
+		}
+	}()
+	Declare(http.MethodGet, "/api/__test__/exempt-with-perm", "x:read", RouteExempt)
+}
