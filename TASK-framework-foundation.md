@@ -416,6 +416,12 @@ pkg/database/{retention,partition}
   - 新增门禁：13 个业务类型必须能同时从 `core.NodeViewBuilderOf` 与组件注册表命中。
   - SPEC/README/architecture 的旧路径同步。
 - 文档与门禁：`AGENTS.md` 权限段、`internal/module/admin/SPEC.md`、`pkg/CLAUDE.md` 同步；`check-page-get-authz.sh` 改为拼接模块 enums 并识别 `DeclareRoute`；`check-page-endpoint-authz.py` 的声明式判据改为「模块 enums 限定符或空串」。
+- 冻结与豁免（第四批）：
+  - `pkg/middleware` 增加 `Freeze`/`Frozen` 与 `ExemptGET`/`ExemptPOST`；装配在全部路由与工具登记**之后**冻结，迟到登记 panic；空权限只允许用于 `RouteExempt`，豁免声明不得携带权限码。
+  - 访客面（验证码、购物车、站点用户、订单、商品公开、内容搜索）改为 `RouteExempt` 组，不再靠「受保护组 + 空串」隐式豁免；DECLARED 398 / EXEMPT 33。
+  - `pkg/mcp.Registry` 同样冻结，迟到注册返回错误。
+  - AI 两个执行入口（站内 Runner、外部 MCP 端点）注入同一个授权闭包；`NewMcpEndpoint` 不再内置兜底授权，未注入即拒绝。
+  - 新增冻结、Kind 一致性单测。
 
 验证（本机 PostgreSQL 可用，数据库相关步骤真实执行、不标未验证）：
 
