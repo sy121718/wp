@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // outletEngine 复刻生产接线：失败出口、成功出口、模板失败接线与请求取词。

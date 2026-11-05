@@ -6,9 +6,9 @@ import (
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	admindto "go_wp/internal/module/admin/dto"
-	"go_wp/internal/text"
 	viewpkg "go_wp/pkg/view"
 	jetpkg "go_wp/pkg/view/jet"
+	text "go_wp/pkg/view/jet"
 )
 
 const (
@@ -85,7 +85,7 @@ func PrepareBare(c *gin.Context, data gin.H) gin.H {
 }
 
 func translateFor(c *gin.Context) func(key, fallback string) string {
-	return text.TranslateFunc(c)
+	return text.RequestTranslateFunc(c)
 }
 
 func navTreeOf(c *gin.Context) []admindto.MenuTreeNode {

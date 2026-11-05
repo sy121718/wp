@@ -10,8 +10,8 @@
 
 ## 取词
 - 页面与页面内部的 `include` 直接调用 `t(key, fallback)`、`tf`（字符串参数）与 `tn`（命名参数）；无需从业务 data 读取翻译函数。
-- 请求级接线为 `internal/text.AttachScope` → 携带 `RenderScope` 的响应 writer → Jet 执行期 `VarMap`（引擎在 `pkg/view/jet`）；直接 `c.HTML` 与共享页面渲染调用使用同一接线。语言与翻译闭包按请求隔离，不放进共享 Jet Set。
-- `internal/text` 只组装语言与翻译作用域，不读模型、不带业务语义。JSON 错误消息仍归 `pkg/response` 出口；具体判据见根规则。
+- 请求级接线为 `pkg/view/jet.AttachScope` → 携带 `RenderScope` 的响应 writer → Jet 执行期 `VarMap`；直接 `c.HTML` 与共享页面渲染调用使用同一接线。语言与翻译闭包按请求隔离，不放进共享 Jet Set。
+- `pkg/view/jet` 的请求取词层只组装语言与翻译作用域，不读模型、不带业务语义。JSON 错误消息仍归 `pkg/response` 出口；具体判据见根规则。
 - 界面 key 直接写在模板里，例如 `{{t("admin.orders.title", "订单管理")}}`，不从模块传翻译函数或预先翻译的句子。
 - `include` 的点上下文可为 struct；字段从点上下文读取，`t` / `tf` / `tn` 与 `lang` 从执行期变量读取，嵌套 include 同样可用。
 - 可选 map 键先做存在性判断；struct 字段按真实类型读取。

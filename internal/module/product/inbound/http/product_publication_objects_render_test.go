@@ -19,7 +19,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 )
 
 type translationFactsReader struct {

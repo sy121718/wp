@@ -14,8 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
 	pagemodel "go_wp/internal/module/page/model"
@@ -30,8 +28,10 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 )
 

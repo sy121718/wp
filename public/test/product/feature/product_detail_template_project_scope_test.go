@@ -18,8 +18,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 const (

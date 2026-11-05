@@ -2,7 +2,7 @@ package adminui
 
 import (
 	"errors"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"strings"

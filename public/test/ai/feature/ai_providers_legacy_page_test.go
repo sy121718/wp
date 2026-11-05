@@ -27,7 +27,7 @@ import (
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 )
 
 // newLegacyProvidersEngine 挂上真实的会话页 handle —— 老地址复用同一个渲染函数。

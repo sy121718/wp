@@ -16,8 +16,8 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
 	"github.com/gin-gonic/gin"
 )

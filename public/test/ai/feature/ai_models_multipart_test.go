@@ -15,8 +15,8 @@ import (
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // ===== 模型目录保存的 JSON 输入形状 =====

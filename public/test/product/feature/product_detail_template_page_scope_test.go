@@ -23,7 +23,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 )
 
 func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture, *detailTemplateRecordingPort) {

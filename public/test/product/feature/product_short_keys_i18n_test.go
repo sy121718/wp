@@ -13,12 +13,12 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 )
 

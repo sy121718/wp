@@ -18,9 +18,9 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 var (

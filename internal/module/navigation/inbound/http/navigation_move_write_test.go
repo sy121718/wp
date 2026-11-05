@@ -16,14 +16,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
-"go_wp/internal/templates"
-"go_wp/internal/text"
-"go_wp/internal/adminui"
-pageview "go_wp/pkg/view"
+	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type moveWriteNavigationStub struct {

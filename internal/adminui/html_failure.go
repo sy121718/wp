@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
 	jet "go_wp/pkg/view/jet"
+	text "go_wp/pkg/view/jet"
 )
 
 type failureData = jet.FailureData

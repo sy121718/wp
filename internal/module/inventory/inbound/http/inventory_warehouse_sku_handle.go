@@ -10,11 +10,11 @@ import (
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 const inventorySKUsPath = "/admin/inventory/skus"
@@ -72,7 +72,7 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		}
 	}
 
-	tr := text.TranslateFunc(c)
+	tr := text.RequestTranslateFunc(c)
 	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = reqparams.FilterBaseURL(inventorySKUsPath, map[string]string{
 		"project":     selected,
@@ -143,7 +143,7 @@ func (h *inventoryPageHandle) InventoryStockStatus(c *gin.Context) {
 }
 
 func stockStatusOptions(c *gin.Context) []OptionResp {
-	tr := text.TranslateFunc(c)
+	tr := text.RequestTranslateFunc(c)
 	return []OptionResp{
 		{Value: inventoryenums.StatusActive, Label: statusLabel(tr, inventoryenums.StatusActive)},
 		{Value: inventoryenums.StatusDisabled, Label: statusLabel(tr, inventoryenums.StatusDisabled)},

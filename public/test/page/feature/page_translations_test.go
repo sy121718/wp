@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/pkg/builder"
 	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
@@ -21,11 +20,12 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/i18n"
 	jsonx "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"

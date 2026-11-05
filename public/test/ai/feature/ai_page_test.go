@@ -14,14 +14,14 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/utils"
 
+	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/adminui"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // newAIPageEnv 交一份「供应商 + 模型目录」的写入口。

@@ -3,10 +3,10 @@ package feature
 import (
 	"bytes"
 	"context"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

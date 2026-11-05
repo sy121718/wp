@@ -436,7 +436,7 @@ pkg/database/{retention,partition}
 
 ## 关键实施入口
 
-- 共享视图：[render.go](pkg/view/render.go)、[failure.go](pkg/view/failure.go)、[prepare.go](internal/adminui/prepare.go)、[html_failure.go](internal/adminui/html_failure.go)、[scope.go](internal/text/scope.go)。
+- 共享视图：[render.go](pkg/view/render.go)、[failure.go](pkg/view/failure.go)、[prepare.go](internal/adminui/prepare.go)、[html_failure.go](internal/adminui/html_failure.go)、[request_text.go](pkg/view/jet/request_text.go)。
 - 模板与资产：[jet_render.go](internal/templates/jet_render.go)、[embed_loader.go](internal/templates/embed_loader.go)、[plugin_loader.go](internal/templates/plugin_loader.go)、[write-base.js](internal/templates/static/js/ui/write-base.js)。
 - 构建工具：[builder.go](pkg/builder/builder.go)、[core/render.go](pkg/builder/core/render.go)、[ui_script.go](pkg/builder/ui_script.go)、[ui_css_split.go](pkg/builder/ui_css_split.go)、[业务扩展](internal/builder/extensions/views/views.go)。
 - 编辑器：[index.js](internal/templates/static/js/workbench/index.js)、[methods/api.js](internal/templates/static/js/workbench/methods/api.js)、[workbench/layout.html](internal/templates/workbench/layout.html)。

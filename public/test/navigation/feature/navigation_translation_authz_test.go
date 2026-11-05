@@ -2,8 +2,8 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"regexp"

@@ -12,10 +12,10 @@ import (
 	"go_wp/internal/adminui"
 	membershipenums "go_wp/internal/module/membership/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 var membershipFacingInjectedEntries = map[string]map[string]string{

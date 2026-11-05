@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // SuccessTemplate 是唯一共享的成功提示组件（只输出一条消息，不解释业务 data）。

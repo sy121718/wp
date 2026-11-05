@@ -15,9 +15,9 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // deleteEngine 复刻生产接线：失败中间件、请求取词与 HTML 渲染都必须在场。

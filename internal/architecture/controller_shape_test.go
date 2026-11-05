@@ -484,7 +484,7 @@ func TestControllerNoUILineImport(t *testing.T) {
 					}
 					seen[rel] = true
 					if !pendingControllerUIImport[rel] {
-						t.Errorf("%s:%d：控制器不 import internal/adminui —— 取词走 internal/text、"+
+						t.Errorf("%s:%d：控制器不 import internal/adminui —— 取词走 pkg/view/jet、"+
 							"读请求走 pkg/binding、响应走 pkg/response",
 							rel, fset.Position(imp.Pos()).Line)
 					}

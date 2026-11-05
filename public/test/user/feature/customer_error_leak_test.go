@@ -21,10 +21,10 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 )
 

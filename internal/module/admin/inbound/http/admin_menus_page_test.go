@@ -17,8 +17,8 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )

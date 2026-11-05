@@ -4,11 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"go_wp/internal/text"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	text "go_wp/pkg/view/jet"
 	"strconv"
 	"strings"
 
@@ -34,7 +34,7 @@ func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		return response.InternalMsg()
 	}
 	if f.Tail != "" {
-		if detail := inventoryErrDetailText(text.TranslateFunc(c), f.Tail); detail != "" {
+		if detail := inventoryErrDetailText(text.RequestTranslateFunc(c), f.Tail); detail != "" {
 
 			return facing.Msg{Fallback: response.ArgsText(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}

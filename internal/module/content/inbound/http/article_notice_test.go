@@ -18,9 +18,9 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type articleBulkDeleteStub struct {

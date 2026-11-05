@@ -22,7 +22,6 @@ cmd/                    进程入口
   └─ routers/           唯一装配层
        ├─ internal/module/*        业务模块，跨模块只经 contract
        ├─ internal/templates       Jet 前端层（壳、片段、静态资产）
-       ├─ internal/text            按请求语言注入 t/tf/tn（共享渲染基础设施）
        ├─ internal/adminui         后台共享渲染基础设施
        ├─ internal/middleware      全局链 + 鉴权 + 访问面守卫
        └─ internal/pipeline        发布内核 → pkg/builder 编译内核

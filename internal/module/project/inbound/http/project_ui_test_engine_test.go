@@ -7,8 +7,8 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // newProjectUITestEngine 复刻生产接线：HTML 渲染、失败出口、成功出口与请求取词。

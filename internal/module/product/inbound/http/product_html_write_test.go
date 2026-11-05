@@ -17,9 +17,9 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // productHTMLWriteStub 只核对传输与出口，事务和归属由真实 PG feature 验证。

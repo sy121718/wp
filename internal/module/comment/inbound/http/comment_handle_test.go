@@ -16,9 +16,9 @@ import (
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
 	"github.com/gin-gonic/gin"
 )

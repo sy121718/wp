@@ -13,8 +13,8 @@ import (
 // 中断渲染，页面变成 500 通用文案。
 //
 // 为什么拆成两段而不是一条端到端：
-// internal/templates 不能 import internal/adminui —— internal/text 与
-// internal/pipeline 都 import 本包，而 adminui 依赖 internal/text，包内测试
+// internal/templates 不能 import internal/adminui —— pkg/view/jet 与
+// internal/pipeline 都 import 本包，而 adminui 依赖 pkg/view/jet，包内测试
 // import adminui 会构成 import cycle（得到的是 cycle 报错，不是渲染结果）。
 // 所以：
 //  1. 本文件用**与生产同名同 tag 的 struct** 造 data 走真实 Jet 渲染，证明模板

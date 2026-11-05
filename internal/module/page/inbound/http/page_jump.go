@@ -1,8 +1,8 @@
 package pagehttp
 
 import (
-	"go_wp/internal/text"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/view/jet"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -46,7 +46,7 @@ func pageErrMsgOf(c *gin.Context, f adminui.ErrFact) pageMsg {
 		return pageMsg{}
 	}
 	if f.Tail != "" {
-		if detail := pageDetailText(text.TranslateFunc(c), f.Tail); detail != "" {
+		if detail := pageDetailText(jet.TranslateFunc(jet.Lang(c)), f.Tail); detail != "" {
 
 			return pageMsg{Fallback: response.ArgsText(c, f.Key, f.Fallback, nil) + "：" + detail}
 		}

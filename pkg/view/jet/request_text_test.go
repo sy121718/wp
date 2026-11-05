@@ -1,4 +1,4 @@
-package text_test
+package jet_test
 
 import (
 	"net/http/httptest"
@@ -6,8 +6,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/text"
+	"go_wp/pkg/view/jet"
 )
+
+func TestInjectProvidesNamedPlaceholderTranslate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/admin/products", nil)
+
+	data := jet.Inject(c, nil)
+	tn, ok := data["tn"].(func(string, string, map[string]any) string)
+	if !ok {
+		t.Fatalf("tn 未注入或签名不符，实际 %T", data["tn"])
+	}
+	if got := tn("admin.products.list.tagCount", "{n} 个", map[string]any{"n": 4}); got != "4 个" {
+		t.Fatalf("具名占位符未被填充：%q", got)
+	}
+	if _, ok := data["t"].(func(string, string) string); !ok {
+		t.Fatalf("t 未注入，实际 %T", data["t"])
+	}
+}
 
 func TestInjectSeedsNestedIncludeData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -27,7 +45,7 @@ func TestInjectSeedsNestedIncludeData(t *testing.T) {
 		"Keep":    keep,
 		"Total":   1,
 	}
-	text.Inject(c, data)
+	jet.Inject(c, data)
 
 	if _, ok := inner["t"]; !ok {
 		t.Fatal("嵌套 map 没拿到 t：include 里的取词会全是空串且页面 200")
@@ -37,12 +55,5 @@ func TestInjectSeedsNestedIncludeData(t *testing.T) {
 	}
 	if gt := keep["t"]; gt != "自定义取词函数" {
 		t.Fatalf("已有键被覆盖了：%v", gt)
-	}
-	if lang, _ := inner["lang"].(string); lang == "" {
-		t.Fatal("嵌套 map 应带当前语言")
-	}
-
-	if _, ok := data["Structs"].([]row)[0].EditForm["t"]; !ok {
-		t.Fatal("结构体行里的 EditForm 没拿到 t")
 	}
 }

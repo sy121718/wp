@@ -15,8 +15,8 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // 导航写端点按动作拆开：一个端点一种确定协议。

@@ -16,7 +16,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 )
 
 func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string {

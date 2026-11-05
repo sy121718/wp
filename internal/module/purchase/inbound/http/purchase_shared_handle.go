@@ -13,7 +13,6 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
-	"go_wp/internal/text"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
@@ -21,6 +20,7 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 const purchaseErrScene = "purchase"
@@ -71,7 +71,7 @@ func purchaseErrFallback(key string) string { return key }
 func purchaseMsgText(c *gin.Context, m facing.Msg) string { return response.MsgText(c, m) }
 
 func purchaseTranslate(c *gin.Context) func(key, fallback string) string {
-	return text.TranslateFunc(c)
+	return text.RequestTranslateFunc(c)
 }
 
 var (

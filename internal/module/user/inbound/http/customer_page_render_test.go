@@ -20,9 +20,9 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
 	"github.com/gin-gonic/gin"
 )

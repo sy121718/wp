@@ -1,21 +1,21 @@
 package contenthttp
 
 import (
-	"go_wp/internal/text"
 	"context"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	presentationcontract "go_wp/internal/module/presentation/contract"
-	seoscore "go_wp/pkg/seo/scoring"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/response"
+	seoscore "go_wp/pkg/seo/scoring"
 )
 
 const articleLinkIndexSize = 100
@@ -188,7 +188,7 @@ func (h *Handle) Collections(c *gin.Context) {
 func localizeCollectionLabels(c *gin.Context, items []core.CollectionSchema) []core.CollectionSchema {
 	out := make([]core.CollectionSchema, len(items))
 	copy(out, items)
-	tr := text.TranslateFunc(c)
+	tr := text.RequestTranslateFunc(c)
 	for i := range out {
 		if strings.TrimSpace(out[i].LabelKey) == "" {
 			continue

@@ -1,11 +1,11 @@
 package contenthttp
 
 import (
-	"go_wp/internal/text"
 	"context"
 	"errors"
 	"go_wp/internal/middleware/builtin"
 	json "go_wp/pkg/jsonx"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,8 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/pkg/builder/core"
-	"go_wp/pkg/builder/richdoc"
 	blockenums "go_wp/internal/module/block/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -29,19 +27,21 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	seoscore "go_wp/pkg/seo"
-	"go_wp/pkg/seo/scoreview"
-	"go_wp/pkg/seo/scoring"
 	"go_wp/internal/siteurl"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/richdoc"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	seoscore "go_wp/pkg/seo"
+	"go_wp/pkg/seo/scoreview"
+	"go_wp/pkg/seo/scoring"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/facing"
 )
 
 const (
@@ -204,7 +204,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), text.TranslateFunc(c)))
+	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), text.RequestTranslateFunc(c)))
 }
 
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
@@ -301,7 +301,7 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
 
 	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &SeoScoreFragmentView{
-		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), text.TranslateFunc(c)),
+		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), text.RequestTranslateFunc(c)),
 	})
 }
 
@@ -326,7 +326,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 	}
 	data := item.Data
 	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &ArticleSeoDrawerResp{
-		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), text.TranslateFunc(c)),
+		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), text.RequestTranslateFunc(c)),
 		IsNew: false,
 	})
 }
@@ -334,7 +334,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
-	tr := text.TranslateFunc(c)
+	tr := text.RequestTranslateFunc(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
 		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
@@ -445,7 +445,7 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	}
 
 	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
-		Preview: articleImportPreviewViewOf(res, text.TranslateFunc(c)), Err: articleMsg{},
+		Preview: articleImportPreviewViewOf(res, text.RequestTranslateFunc(c)), Err: articleMsg{},
 	})
 }
 
@@ -1113,7 +1113,7 @@ func articleTranslationMsg(key, fallback string) articleMsg {
 }
 
 func articleTranslationFilled(c *gin.Context, key, fallback string, params map[string]string) articleMsg {
-	return articleMsg{Fallback: i18n.FillTranslate(text.TranslateFunc(c), key, fallback, params)}
+	return articleMsg{Fallback: i18n.FillTranslate(text.RequestTranslateFunc(c), key, fallback, params)}
 }
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {

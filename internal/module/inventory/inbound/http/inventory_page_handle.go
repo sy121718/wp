@@ -2,10 +2,10 @@ package inventoryhttp
 
 import (
 	"fmt"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/view/jet"
 	"strconv"
 	"strings"
 
@@ -84,7 +84,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			inventoryFail(c, serr)
 			return
 		}
-		tr := text.TranslateFunc(c)
+		tr := jet.TranslateFunc(jet.Lang(c))
 		byWarehouse := make(map[string]*inventorydto.StockResp, len(rows))
 		for _, r := range rows {
 			byWarehouse[r.WarehouseID] = r
@@ -137,7 +137,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		return
 	}
 
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	pageData := &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryTitle, "库存管理"),
 		Menu:            "inventory",
@@ -205,7 +205,7 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 		return nil, 0, 0, err
 	}
 
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	for _, m := range rows {
 		out = append(out, movementRowResp(tr, m))
 	}

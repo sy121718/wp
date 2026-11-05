@@ -14,9 +14,9 @@ import (
 	"go_wp/internal/adminui"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 func sourceBulkOverLimitForm() url.Values {

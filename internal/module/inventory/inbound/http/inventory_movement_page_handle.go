@@ -7,12 +7,12 @@ import (
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/money"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/view/jet"
 )
 
 const inventoryMovementsPath = "/admin/inventory/movements"
@@ -56,7 +56,7 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 	if err != nil {
 		return nil, err
 	}
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = reqparams.FilterBaseURL(inventoryMovementsPath, map[string]string{
 		"project":     selected,

@@ -17,9 +17,9 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type bulkDeleteStubService struct {

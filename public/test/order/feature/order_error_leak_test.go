@@ -18,10 +18,10 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 var orderLeakTokens = []string{"SQLSTATE", "uq_", "pg_", `relation "`, "constraint"}
@@ -121,7 +121,10 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 		assertOrderLeakFree(t, where, text)
 	}
 
-	for _, tc := range []struct{ path string; form url.Values }{
+	for _, tc := range []struct {
+		path string
+		form url.Values
+	}{
 		{"/api/order/return/approve", orderOverLimitForm(map[string]string{"remark": "测试"})},
 		{"/api/order/return/reject", orderOverLimitForm(map[string]string{"remark": "测试"})},
 	} {

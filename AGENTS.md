@@ -129,7 +129,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 - key 改名同步真实消费者、词库与门禁；检查完整字面量、唯一性及真实中英文命中。迁移保留自定义译文与额外语言，目标冲突整批回滚；重复运行完整 seed 后不得补回已退役 key。不能因为扫描器只认识点分 key 而把短 key 漏查当通过。
 
 - **取词只有两个出口**：模板的全局 `t` / `tf`（`internal/templates/funcs.go`，按请求语言注入），与 JSON 出口 `pkg/response.MessageOf`。
-- 按请求语言的**注入**只归共享渲染基础设施（`internal/text`、`pkg/view`、`pkg/view/jet`、`internal/adminui`）；模块不重复接线。
+- 按请求语言的**注入**只归共享渲染基础设施（`pkg/view/jet` 的 `AttachScope`/`Inject`、`pkg/view`、`internal/adminui`）；模块不重复接线。
 - Go 侧出现 `TranslateFunc(` / `templates.Translate(` / `Prepare*View(` 里的取词即越界。
 - **业务错误**在声明处只给 key + 状态码（`enums.Err(key)` → `facing.WithStatus(...)`）；HTML 出口传错误事实，由 Jet 取词，数据 JSON 出口由 `response.ErrorStatusAuto` 产生 message。缺词给归口文案，不把裸 key、编码明细或内部原文交给前端。
 - **不要求 service 为页面 UI 产出 `facing.Msg` / `facing.Labeled` 或业务枚举**；页面 UI 的文案归模板。

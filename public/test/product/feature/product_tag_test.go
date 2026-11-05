@@ -20,7 +20,7 @@ import (
 	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 
 	"go_wp/public/migrations"
 )

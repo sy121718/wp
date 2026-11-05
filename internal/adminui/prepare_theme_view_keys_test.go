@@ -15,7 +15,7 @@ import (
 // （internal/templates/admin_project_theme_view_keys_test.go）按同名 tag 造
 // data 渲染整页。两段合起来等价于「结构体经 ViewMap 后渲染通过」——
 // 之所以不在一个包内端到端，是因为 internal/templates 不能 import adminui
-// （adminui → internal/text → internal/templates 会成环）。
+// （adminui → pkg/view/jet → internal/templates 会成环）。
 
 type themeManageViewLike struct {
 	Title             string

@@ -73,7 +73,7 @@ func salesOverviewTemplateData() map[string]any {
 	// 只转顶层字段，生产里 data["Todo"] 是 SalesTodoResp 值而不是 map，模板按
 	// .Todo.Total 访问。这里写小写 map 等于模拟「view tag 在嵌套结构上生效」这个
 	// 错误假设 —— 那正是老模板 500 的成因。不放真类型是因为 internal/templates
-	// 不能 import internal/module/order/inbound/http（会绕回 internal/text 成环）。
+	// 不能 import internal/module/order/inbound/http（会绕回 pkg/view/jet 成环）。
 	data["Todo"] = struct {
 		AlertCount  int
 		PendingShip int

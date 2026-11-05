@@ -1,8 +1,8 @@
 package adminhttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
+	pageview "go_wp/pkg/view"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -18,8 +18,8 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/pagination"
+	text "go_wp/pkg/view/jet"
 )
 
 type paginationAdminsStub struct {
@@ -220,7 +220,7 @@ func captureSiteData(t *testing.T, name string, total int64, target string) (str
 }
 
 // renderAdminPage 复刻生产渲染接线：取词函数经 ScopeWriter 注入，
-// 缺它时模板里的 t / tr 全部不可用（生产由 internal/text.AttachScope 挂上）。
+// 缺它时模板里的 t / tr 全部不可用（生产由 pkg/view/jet.AttachScope 挂上）。
 func renderAdminPage(t *testing.T, name string, data gin.H) string {
 	t.Helper()
 	renderer := templates.NewJetHTMLRender("../../../../templates", true)

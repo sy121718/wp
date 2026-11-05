@@ -1,9 +1,9 @@
 package inventoryhttp
 
 import (
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/view/jet"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,7 +32,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 
 	pageview.RenderTemplate(c, InventoryReasonsPageTemplate, &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
@@ -130,7 +130,7 @@ func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out
 	if err != nil {
 		return nil, err
 	}
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	for _, r := range rows {
 		out = append(out, ReasonRowResp{
 			ID: r.ID, Code: r.Code, Name: tr(r.Name, r.Code),
@@ -165,7 +165,7 @@ func directionOptions(tr func(key, fallback string) string) []OptionResp {
 }
 
 func adjustDirectionOptions(c *gin.Context) []OptionResp {
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	return []OptionResp{
 		{Value: inventoryenums.DirectionAdjust, Label: tr(inventoryenums.InventoryAdjustDirectionAdjust, "盘点（填目标绝对量）")},
 		{Value: inventoryenums.DirectionOut, Label: tr(inventoryenums.InventoryAdjustDirectionOut, "报损（填本次减少量）")},
@@ -188,7 +188,7 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 func reasonFormData(c *gin.Context, projectID string) *ReasonFormResp {
 	return &ReasonFormResp{
 		SelectedProject: projectID,
-		Directions:      toAnySlice(directionOptions(text.TranslateFunc(c))),
+		Directions:      toAnySlice(directionOptions(jet.TranslateFunc(jet.Lang(c)))),
 	}
 }
 

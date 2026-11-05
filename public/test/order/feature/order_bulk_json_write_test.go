@@ -15,8 +15,8 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // 订单批量写是标准表单：ids 重复提交，其余是普通具名字段。

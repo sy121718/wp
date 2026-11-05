@@ -13,10 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/pkg/seo/scoreview"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/seo/scoreview"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 )
 

@@ -3,8 +3,8 @@ package adminui
 import (
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/text"
 	"go_wp/pkg/facing"
+	text "go_wp/pkg/view/jet"
 )
 
 type ErrFact = facing.Fact

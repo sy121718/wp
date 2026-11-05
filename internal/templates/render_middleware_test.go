@@ -11,10 +11,10 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // 本文件的断言口径：

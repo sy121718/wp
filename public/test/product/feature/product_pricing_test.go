@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
@@ -28,7 +27,8 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	"go_wp/pkg/builder/core"
+	text "go_wp/pkg/view/jet"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"

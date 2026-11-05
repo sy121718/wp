@@ -16,8 +16,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 )
 

@@ -17,9 +17,9 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/jsonx"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type drawerMenuService struct {

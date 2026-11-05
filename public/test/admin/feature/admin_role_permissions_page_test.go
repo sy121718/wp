@@ -14,8 +14,8 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"

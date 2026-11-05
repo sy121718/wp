@@ -15,9 +15,9 @@ import (
 	membershipdto "go_wp/internal/module/membership/dto"
 	membershipenums "go_wp/internal/module/membership/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 type membershipWriteStub struct {

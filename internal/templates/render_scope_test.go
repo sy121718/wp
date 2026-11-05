@@ -11,9 +11,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+	text "go_wp/pkg/view/jet"
 )
 
 // 这一组用例只有一条原则：**不手工拼 VarMap，也不手工调 renderWith**。

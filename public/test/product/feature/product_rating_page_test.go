@@ -15,8 +15,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
+	text "go_wp/pkg/view/jet"
 )
 
 func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {

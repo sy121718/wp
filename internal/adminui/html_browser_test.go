@@ -16,11 +16,11 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // 浏览器夹具使用固定测试令牌；不装配生产会话、数据库或外部服务。

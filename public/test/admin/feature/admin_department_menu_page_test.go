@@ -1,8 +1,8 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"fmt"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,7 +15,7 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"

@@ -1,9 +1,9 @@
 package adminhttp_test
 
 import (
-	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"go_wp/pkg/pagination"
+	pageview "go_wp/pkg/view"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +16,9 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )

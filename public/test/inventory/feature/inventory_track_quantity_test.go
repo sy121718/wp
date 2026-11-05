@@ -3,8 +3,8 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

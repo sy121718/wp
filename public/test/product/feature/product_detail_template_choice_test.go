@@ -29,7 +29,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
 
 	"github.com/google/uuid"

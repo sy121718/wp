@@ -5,17 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/view/jet"
 )
 
 const (
@@ -90,7 +90,7 @@ func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdt
 			}
 		}
 	}
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 
 	return &PendingShipPageView{
 		Title:           tr(orderenums.PendingShipTitle, "待发货"),
@@ -136,7 +136,7 @@ func (h *orderShipmentPageHandle) carrierView(c *gin.Context, requested string) 
 			list = got
 		}
 	}
-	tr := text.TranslateFunc(c)
+	tr := jet.TranslateFunc(jet.Lang(c))
 	return &CarrierListPageView{
 		Title:           tr(orderenums.OrderCarriersTitle, "承运商"),
 		Menu:            "order-carriers",

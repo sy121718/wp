@@ -13,8 +13,8 @@ import (
 	"go_wp/internal/adminui"
 	userdto "go_wp/internal/module/user/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // customerWriteEngine 复刻生产接线：失败中间件、请求取词与 HTML 渲染都必须在场。

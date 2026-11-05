@@ -14,8 +14,8 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 // 退货写是标准表单：单条用 returnId，批量用重复的 ids。两种形状走同一端点，

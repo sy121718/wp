@@ -11,15 +11,15 @@ import (
 	"testing"
 
 	"go_wp/internal/adminui"
-"go_wp/internal/templates"
-"go_wp/internal/text"
-pageview "go_wp/pkg/view"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"

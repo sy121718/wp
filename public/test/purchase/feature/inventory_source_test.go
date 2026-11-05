@@ -20,10 +20,10 @@ import (
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 )
 

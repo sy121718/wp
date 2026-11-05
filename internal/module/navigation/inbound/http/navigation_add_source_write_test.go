@@ -14,15 +14,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-"go_wp/internal/templates"
-"go_wp/internal/text"
-"go_wp/internal/adminui"
-pageview "go_wp/pkg/view"
-"net/url"
+	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	"go_wp/internal/templates"
 	"go_wp/pkg/bulkids"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
+	"net/url"
 )
 
 type navigationAddSourceStub struct {
@@ -220,7 +220,7 @@ func TestNavigationAddSourceTitleFallsBackToLabel(t *testing.T) {
 
 func TestNavigationAddSourceKindSemantics(t *testing.T) {
 	cases := []struct {
-		name    string
+		name string
 		kind string
 		want string
 	}{

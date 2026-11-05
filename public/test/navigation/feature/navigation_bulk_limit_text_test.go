@@ -11,14 +11,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-"go_wp/internal/templates"
-"go_wp/internal/text"
-"go_wp/internal/adminui"
-pageview "go_wp/pkg/view"
-"net/url"
+	"go_wp/internal/adminui"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
+	"net/url"
 )
 
 func navBulkOverLimitIDs() []string {

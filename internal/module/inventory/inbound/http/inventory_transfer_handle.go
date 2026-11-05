@@ -11,12 +11,12 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 )
 
 const inventoryTransfersPath = "/admin/inventory/transfers"
@@ -56,7 +56,7 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 			return nil, err
 		}
 	}
-	tr := text.TranslateFunc(c)
+	tr := text.RequestTranslateFunc(c)
 	page, size := transferPageArgsOf(query.Page, query.Size)
 	pg := pagination.Page{Total: total, Page: page, Limit: size}
 	pg.Base = reqparams.FilterBaseURL(inventoryTransfersPath, map[string]string{

@@ -14,9 +14,9 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/facing"
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 
 	"github.com/gin-gonic/gin"
 )

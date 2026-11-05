@@ -22,10 +22,10 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	mw "go_wp/pkg/middleware"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 

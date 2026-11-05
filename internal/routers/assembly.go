@@ -94,7 +94,6 @@ import (
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
-	"go_wp/internal/text"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/casbin"
@@ -104,6 +103,7 @@ import (
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	"go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"go_wp/public/migrations"
 
 	"github.com/gin-gonic/gin"
