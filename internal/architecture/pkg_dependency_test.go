@@ -58,6 +58,11 @@ func TestPkgDoesNotImportInternal(t *testing.T) {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
+		// 生产代码零依赖 internal；测试可以 import 应用的模板与装配做集成验证，
+		// 这条边界必须显式，不能靠碰巧。
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
 		imports := fileImports(t, path)
 		for _, imp := range imports {
 			for _, forbidden := range pkgForbiddenImports {
