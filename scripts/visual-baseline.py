@@ -30,7 +30,7 @@ Go 测试变红** —— 产物字节变了，但 golden 只比对"和上一次�
 
 ## 前置
 
-golden 由 `go test ./internal/builder/ -run TestJetViewByteEquivalent` 维护，
+golden 由 `go test ./pkg/builder/ -run TestJetViewByteEquivalent` 维护，
 里面是每个组件的 HTML 片段 + CSS。本脚本把两者拼成独立 HTML 再截图，
 因此它与 Go 侧的 golden 是同一份真相的两个视角。
 """
@@ -40,7 +40,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-GOLDEN = ROOT / "internal" / "builder" / "testdata" / "golden"
+GOLDEN = ROOT / "pkg" / "builder" / "testdata" / "golden"
 BASELINE = ROOT / "testdata" / "visual-baseline"
 DIFF_DIR = ROOT / ".visual-diff"
 

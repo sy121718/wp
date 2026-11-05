@@ -71,8 +71,9 @@ make dev       # 开发模式，air 热重载
 | 路径 | 职责 |
 |---|---|
 | `cmd/`、`config/` | 进程入口、配置与生命周期装配 |
-| `internal/builder/` | 文档协议、组件注册、受限样式编译、产物生成 |
-| `internal/builder/components/` | 组件实现及就近嵌入的模板、样式、增强资产 |
+| `pkg/builder/` | 文档协议、组件注册、受限样式编译、产物生成 |
+| `pkg/builder/components/` | 通用组件实现及就近嵌入的模板、样式、增强资产 |
+| `internal/builder/extensions/` | 业务组件、预设与数据适配，装配时注册接入 |
 | `internal/module/` | CMS、页面、发布、后台及业务模块；跨模块经契约协作 |
 | `internal/templates/` | 后台与工作台模板、公共控件和静态资产 |
 | `pkg/` | 基础设施能力 |

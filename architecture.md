@@ -25,7 +25,7 @@ cmd/                    进程入口
        ├─ internal/text            按请求语言注入 t/tf/tn（共享渲染基础设施）
        ├─ internal/adminui         后台共享渲染基础设施
        ├─ internal/middleware      全局链 + 鉴权 + 访问面守卫
-       └─ internal/pipeline        发布内核 → internal/builder 编译内核
+       └─ internal/pipeline        发布内核 → pkg/builder 编译内核
 
 访问面：PublicationStore 激活的静态文件 → 浏览器
 ```

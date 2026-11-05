@@ -14,7 +14,7 @@ parent: go-wp-arch
 
 包含：文档协议与校验、组件注册表、受限样式编译与校验、构建期数据源形状、SEO head 与结构化数据的唯一注入点、站点脚本注入、主题合并、检查器（Inspector）契约、UI 脚本与样式切分。
 
-组件实现在 `internal/builder/components/<组件>/`，一组件一目录，模板与样式就近嵌入。
+通用组件实现在 `pkg/builder/components/<组件>/`，一组件一目录，模板与样式就近嵌入；业务扩展组件在 `internal/builder/extensions/<组件>/` 注册接入。
 
 ## 边界
 

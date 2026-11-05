@@ -1,4 +1,4 @@
-package richtext
+package richdoc_test
 
 import (
 	"github.com/google/uuid"
