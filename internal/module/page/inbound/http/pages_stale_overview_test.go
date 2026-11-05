@@ -156,7 +156,7 @@ func renderPagesBareData(t *testing.T, data gin.H) string {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, data))
+		adminui.RenderBare(c, "admin/page/pages", data)
 	})
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))

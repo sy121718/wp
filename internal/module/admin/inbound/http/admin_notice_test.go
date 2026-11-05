@@ -45,9 +45,9 @@ func TestAdminLangRedirectMatchesPrepareCriterion(t *testing.T) {
 	}
 	for _, tc := range cases {
 		c := adminLangRedirectCtx(t, tc.uri)
-		rendered, ok := adminui.Prepare(c, nil)["lang_redirect"].(string)
-		if !ok || rendered == "" {
-			t.Fatalf("lang_redirect 必须注入非空字符串，实际 %q (string=%v)", rendered, ok)
+		rendered := adminui.PageFacts(c).LangRedirect
+		if rendered == "" {
+			t.Fatalf("lang_redirect 必须注入非空字符串，实际 %q", rendered)
 		}
 		if !tc.want && rendered != tc.fallback {
 			t.Fatalf("被拒绝的 URI %q 应在隐藏域回落到 %q，实际 %q", tc.uri, tc.fallback, rendered)

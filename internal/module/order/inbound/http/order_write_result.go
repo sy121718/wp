@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/bulkids"
@@ -133,11 +132,6 @@ func orderBulkFormIDs(c *gin.Context) []string {
 // orderLogWriteError 记录写失败的内部原因，对外只给声明词条。
 func orderLogWriteError(c *gin.Context, err error, message string) {
 	logger.Scene(orderErrScene).With("user_id", c.GetInt64("user_id")).Error(err, message)
-}
-
-// orderFragmentData 给写回片段补齐请求级取词与 CSRF。
-func orderFragmentData(c *gin.Context, data gin.H) gin.H {
-	return adminui.Prepare(c, data)
 }
 
 // orderWriteTranslation 取一个词条的当前语言译文；取不到时返回 key 本身。

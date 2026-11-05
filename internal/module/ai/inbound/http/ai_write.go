@@ -1,8 +1,6 @@
 package aihttp
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -31,24 +29,18 @@ func aiWriteFail(c *gin.Context, err error) {
 	pageview.FailStatus(c, status, aiErrScene, err)
 }
 
-// aiFragmentData 给写回片段补齐请求级取词与 CSRF。
-func aiFragmentData(c *gin.Context, data gin.H) gin.H {
-	return adminui.Prepare(c, data)
-}
-
 // aiWriteResult 渲染一条操作结论片段；句子只在 Jet 里按词条取。
 func aiWriteResult(c *gin.Context, key string) {
-	c.HTML(http.StatusOK, "admin/ai/ai_write_result.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/ai_write_result.html", gin.H{
 		"Key": key,
-	}))
+	})
 }
 
 // aiProviderCardData 用服务端的供应商事实组装一张卡片；整页与局部写回共用同一份 Jet。
 func aiProviderCardData(c *gin.Context, p aidto.Provider) gin.H {
-	base := adminui.Prepare(c, gin.H{})
-	csrf, _ := base["csrf_token"].(string)
+	facts := adminui.PageFacts(c)
 	return adminui.ViewMap(cardData(aidto.ProviderCardBase{
-		CSRFToken: csrf, T: base["t"], PermSet: base["PermSet"], Buttons: base["Buttons"],
+		CSRFToken: facts.CSRFToken, T: facts.T, PermSet: facts.PermSet, Buttons: facts.Buttons,
 	}, p, aiservice.BuiltinBaseURL(p.ProviderKey)))
 }
 

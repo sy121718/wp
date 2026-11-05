@@ -3,7 +3,6 @@ package producthttp
 import (
 	"errors"
 
-	"go_wp/internal/adminui"
 	"net/http"
 
 	pagecontract "go_wp/internal/module/page/contract"
@@ -97,10 +96,11 @@ func replySaveRejected(c *gin.Context, view *productcontract.TranslationSaveResu
 	}
 	// 行级错误是业务事实：结构化交给 Jet 片段取词，不走 JSON 出口。
 	c.Header("Cache-Control", "no-store")
-	c.HTML(http.StatusBadRequest, "admin/product/translation_save_errors.html", adminui.PrepareBareView(c, pageview.Objects(
+	// 片段也走路由上已装的渲染器：取词与请求事实由它统一注入。
+	pageview.RenderTemplate(c, "admin/product/translation_save_errors.html", pageview.Objects(
 		pageview.Object("Title", productservice.TranslationsErrorsTitle()),
 		pageview.Object("Rows", view.Errors),
-	)))
+	))
 }
 
 func (h *ProductTranslationHandle) page(c *gin.Context, req *productdto.ProductTranslationsPageReq) (*productcontract.ProductTranslations, error) {

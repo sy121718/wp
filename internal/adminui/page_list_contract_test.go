@@ -34,7 +34,7 @@ type plainView struct {
 
 func TestPrepareViewInjectsPaginationFromContract(t *testing.T) {
 	c := newTestCtx()
-	data := PrepareView(c, pageListView{Rows: 2, Total: 120, Page: 3, Limit: 20, Base: "/admin/x?keyword=a"})
+	data := prepareView(c, pageListView{Rows: 2, Total: 120, Page: 3, Limit: 20, Base: "/admin/x?keyword=a"})
 
 	raw, ok := data[view.PaginationKey]
 	if !ok {
@@ -51,7 +51,7 @@ func TestPrepareViewInjectsPaginationFromContract(t *testing.T) {
 
 func TestPrepareViewNoPaginationWithoutContract(t *testing.T) {
 	c := newTestCtx()
-	if _, ok := PrepareView(c, plainView{Rows: 1})[view.PaginationKey]; ok {
+	if _, ok := prepareView(c, plainView{Rows: 1})[view.PaginationKey]; ok {
 		t.Fatalf("没实现 view.PageList 的视图不该被注入分页键")
 	}
 }
@@ -59,7 +59,7 @@ func TestPrepareViewNoPaginationWithoutContract(t *testing.T) {
 func TestPrepareViewKeepsExplicitPagination(t *testing.T) {
 	c := newTestCtx()
 	explicit := pagination.Page{Total: 7, Page: 1, Limit: 5, Base: "/hand-written"}
-	data := PrepareView(c, gin.H{
+	data := prepareView(c, gin.H{
 		view.PaginationKey: explicit,
 		"Rows":             0,
 	})

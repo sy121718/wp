@@ -88,7 +88,7 @@ func TestPrepareViewInjectsI18nAndFlattens(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/products/new", nil)
 
-	data := PrepareView(c, &viewFixture{Title: "新建商品", Projects: []string{"p1"}})
+	data := prepareView(c, &viewFixture{Title: "新建商品", Projects: []string{"p1"}})
 	if data["Projects"] == nil {
 		t.Fatalf("视图键应已摊平，实际 %#v", data)
 	}

@@ -3,6 +3,7 @@ package aihttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
 
-	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"
@@ -24,6 +24,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/mcp"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 )
@@ -320,11 +321,11 @@ func (h *Handle) ModelCandidates(c *gin.Context) {
 	for _, id := range result.Existing {
 		existing[id] = true
 	}
-	c.HTML(http.StatusOK, "admin/ai/provider_picker.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/provider_picker.html", gin.H{
 		"Provider":   result.Provider,
 		"Candidates": result.Candidates,
 		"Existing":   existing,
-	}))
+	})
 }
 
 // AppendModels 把勾选的模型追加进目录（全成或全败）。
@@ -344,9 +345,9 @@ func (h *Handle) AppendModels(c *gin.Context) {
 		return
 	}
 	// 成功：模型目录换回服务端事实，并把候选弹窗宿主清空（弹窗随之关闭）。
-	c.HTML(http.StatusOK, "admin/ai/ai_models_appended.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/ai_models_appended.html", gin.H{
 		"Models": providerCardModels(c, *provider),
-	}))
+	})
 }
 
 func bindID(c *gin.Context) (int64, error) {
@@ -914,10 +915,10 @@ func (h *TokenHandle) Create(c *gin.Context) {
 		aiWriteFail(c, err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/ai/mcp_token_created.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/mcp_token_created.html", gin.H{
 		"Token":  res.Token,
 		"Tokens": toAnyRows(tokenRows(rows)),
-	}))
+	})
 }
 
 func (h *TokenHandle) Revoke(c *gin.Context) {
@@ -939,9 +940,9 @@ func (h *TokenHandle) Revoke(c *gin.Context) {
 		return
 	}
 	// 撤销不删行：审计要能回答「什么时候撤的」。回同一份行模板把状态换成已撤销事实。
-	c.HTML(http.StatusOK, "admin/ai/mcp_token_row.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/mcp_token_row.html", gin.H{
 		"Token": tokenRows([]aidto.TokenItem{item})[0],
-	}))
+	})
 }
 
 // SetMcpEnabled 开关对外接入点。
@@ -968,10 +969,10 @@ func (h *TokenHandle) SetMcpEnabled(c *gin.Context) {
 	if enabled {
 		key = aienums.McpSwitchOnDone
 	}
-	c.HTML(http.StatusOK, "admin/ai/mcp_switch_result.html", aiFragmentData(c, gin.H{
+	adminui.RenderFragment(c, "admin/ai/mcp_switch_result.html", gin.H{
 		"Key":     key,
 		"Enabled": enabled,
-	}))
+	})
 }
 
 const (

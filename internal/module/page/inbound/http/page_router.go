@@ -69,7 +69,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	g.GET("/detail", pageenums.PageDetail, handle.Detail)
 	g.POST("/draft/save", pageenums.PageDraftSave, handle.SaveDraft)
 	// 译文保存是 JSON 写出口：写基座只对接 /api/ 端点（data-write-url 的契约）。
-	g.POST("/translations/save", pageenums.PageTranslationsSave, pageview.HTMLFragment, adminHandle.SavePageTranslations)
+	g.POST("/translations/save", pageenums.PageTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderBare), adminHandle.SavePageTranslations)
 	g.GET("/revision/list", pageenums.PageRevisionList, handle.ListRevisions)
 	g.POST("/build", pageenums.PageBuild, handle.Build)
 	g.POST("/publish", pageenums.PagePublish, handle.Publish)

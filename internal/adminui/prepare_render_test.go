@@ -38,7 +38,7 @@ func TestPrepareInjectsShellFactsWithRealPipeline(t *testing.T) {
 		c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
 		c.Set(adminctx.NavTreeKey, prepareRenderNavTree())
 		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusOK, "probe.html", PrepareView(c, gin.H{"Title": "商品"}))
+		c.HTML(http.StatusOK, "probe.html", prepareView(c, gin.H{"Title": "商品"}))
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/products", nil)

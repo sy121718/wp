@@ -199,7 +199,7 @@ func TestPagesListReceiptNoticeHidesWhenObservabilityUnknown(t *testing.T) {
 
 	var current *pagesPageData
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/page/pages", adminui.PrepareView(c, current))
+		adminui.RenderPage(c, "admin/page/pages", current)
 	})
 	render := func(known, alert bool) string {
 		t.Helper()

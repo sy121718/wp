@@ -319,9 +319,9 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []TranslationRowErrorResp) {
-	c.HTML(http.StatusOK, "admin/page/page_translations_save_errors.html", adminui.PrepareBareView(c, &TranslationErrorsResp{
+	pageview.RenderTemplate(c, "admin/page/page_translations_save_errors.html", &TranslationErrorsResp{
 		Errors: errs,
-	}))
+	})
 }
 
 func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID, wantLang, filter string) (*pageTranslationsData, error) {
@@ -952,7 +952,7 @@ func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
 		Fallback: "已取消该语言：产物已下线，它也不再出现在切换器 / hreflang / sitemap 里"})
 }
 
-func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID string, rows []pagedto.TranslationMissResp, errFact pageMsg) gin.H {
+func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID string, rows []pagedto.TranslationMissResp, errFact pageMsg) *TranslationMissPageResp {
 	token, terr := builtin.GetCSRFToken(c)
 	if terr != nil {
 		token = ""
@@ -964,13 +964,13 @@ func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID str
 			projects = list
 		}
 	}
-	return adminui.PrepareBareView(c, &TranslationMissPageResp{
+	return &TranslationMissPageResp{
 		CSRFToken:       token,
 		Projects:        projects,
 		SelectedProject: projectID,
 		Rows:            rows,
 		Err:             errFact,
-	})
+	}
 }
 
 var translationMissBackKeys = []string{"project"}

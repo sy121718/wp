@@ -24,7 +24,39 @@ func CSRF(c *gin.Context) string {
 	return tok
 }
 
-func Prepare(c *gin.Context, data gin.H) gin.H {
+// 请求级事实：页面渲染需要的那几项，供「先算数据、再渲染」的少数处理器使用。
+// 它不是展示派生：不查库、不拼词，只把中间件已经算好的事实原样取出。
+type Facts struct {
+	CSRFToken string
+	T         func(key, fallback string) string
+	PermSet   map[string]bool
+	Buttons   map[string]bool
+	// LangRedirect 是语言切换后安全回跳的路径；RequestPath 是当前请求路径。
+	LangRedirect string
+	RequestPath  string
+}
+
+// PageFacts 返回本次请求的取词函数、CSRF 与权限集合。
+func PageFacts(c *gin.Context) Facts {
+	f := Facts{
+		T: translateFor(c), CSRFToken: CSRF(c),
+		PermSet: map[string]bool{}, Buttons: map[string]bool{},
+		LangRedirect: text.LangRedirect(c), RequestPath: text.RequestURI(c),
+	}
+	if v, ok := c.Get(adminctx.PermSetKey); ok {
+		if m, ok := v.(map[string]bool); ok {
+			f.PermSet = m
+		}
+	}
+	if v, ok := c.Get(adminctx.ButtonsKey); ok {
+		if m, ok := v.(map[string]bool); ok {
+			f.Buttons = m
+		}
+	}
+	return f
+}
+
+func prepare(c *gin.Context, data gin.H) gin.H {
 	if data == nil {
 		data = gin.H{}
 	}
@@ -66,8 +98,8 @@ func Prepare(c *gin.Context, data gin.H) gin.H {
 	return data
 }
 
-func PrepareView(c *gin.Context, view any) gin.H {
-	data := Prepare(c, ViewMap(view))
+func prepareView(c *gin.Context, view any) gin.H {
+	data := prepare(c, ViewMap(view))
 	injectPageList(data, view)
 	return data
 }
@@ -80,7 +112,7 @@ func ViewMap(view any) gin.H {
 	return gin.H(viewpkg.MapOf(view))
 }
 
-func PrepareBare(c *gin.Context, data gin.H) gin.H {
+func prepareBare(c *gin.Context, data gin.H) gin.H {
 	return text.Inject(c, data)
 }
 

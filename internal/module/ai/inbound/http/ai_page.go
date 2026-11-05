@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/adminctx"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"
@@ -21,6 +20,7 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/mcp"
 	"go_wp/pkg/uispec"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
@@ -488,11 +488,9 @@ func (h *SessionPageHandle) attachSessionsBlocks(c *gin.Context, ctx context.Con
 	v.Rows = h.sessionRows(ctx, rows)
 	v.Total = total
 
-	base := adminui.PrepareView(c, &aidto.SessionListPageResp{})
-	v.CSRFToken, _ = base["csrf_token"].(string)
-	v.T = base["t"]
-	v.PermSet = base["PermSet"]
-	v.Buttons = base["Buttons"]
+	// 请求事实由 adminctx 提供，这里只取不派生。
+	facts := adminui.PageFacts(c)
+	v.CSRFToken, v.T, v.PermSet, v.Buttons = facts.CSRFToken, facts.T, facts.PermSet, facts.Buttons
 
 	if err := h.attachSessionDetail(c, ctx, v); err != nil {
 		return err

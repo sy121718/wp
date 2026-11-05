@@ -71,7 +71,7 @@ func TestMcpTokenCreateReturnsHTMLFragment(t *testing.T) {
 		t.Fatalf("生成成功应为 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if ctype := rec.Header().Get("Content-Type"); !strings.HasPrefix(ctype, "text/html") {
-		t.Fatalf("生成应回 HTML 片段，实际 Content-Type=%q", ctype)
+		t.Fatalf("生成应回 HTML 片段，实际 code=%d Content-Type=%q body=%q", rec.Code, ctype, rec.Body.String())
 	}
 	body := rec.Body.String()
 	if strings.Contains(body, "<html") {

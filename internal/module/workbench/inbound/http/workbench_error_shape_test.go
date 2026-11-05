@@ -18,15 +18,17 @@ import (
 
 func internalErrorZhText(t *testing.T) string {
 	t.Helper()
-	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", "058_i18n_seed_enums.sql")
+	// 归口文案的 key 是 uiInternalErr；它的中英词条在 720（058 只播种退役前的旧 key，已停止）。
+	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", "720_product_taxonomy_short_keys_i18n.sql")
 	raw, err := os.ReadFile(sqlPath)
 	if err != nil {
-		t.Fatalf("读迁移 058 失败（路径或文件名变了？）：%v", err)
+		t.Fatalf("读迁移 720 失败（路径或文件名变了？）：%v", err)
 	}
-	re := regexp.MustCompile(`\(\s*'MsgInternalError'\s*,\s*'zh-CN'\s*,\s*'([^']*)'`)
+	// 归口文案的 key 已改为 uiInternalErr（MsgInternalError 已退役并从 058 移除）。
+	re := regexp.MustCompile(`\(\s*'uiInternalErr'\s*,\s*'zh-CN'\s*,\s*'([^']*)'`)
 	m := re.FindStringSubmatch(string(raw))
 	if m == nil {
-		t.Fatal("迁移 058 里没有 MsgInternalError 的 zh-CN 词条")
+		t.Fatal("迁移里没有 uiInternalErr 的 zh-CN 词条")
 	}
 	return m[1]
 }

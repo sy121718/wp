@@ -55,7 +55,14 @@ func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 	})
 	r.Use(adminctx.PermContextMiddleware(st))
 	r.GET("/admin/pages", func(c *gin.Context) {
-		data = adminui.Prepare(c, nil)
+		facts := adminui.PageFacts(c)
+		var tree []admindto.MenuTreeNode
+		if v, ok := c.Get(adminctx.NavTreeKey); ok {
+			tree, _ = v.([]admindto.MenuTreeNode)
+		}
+		items := adminui.NavItemsOf(tree)
+		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons,
+			"NavItems": items, "HasSubnav": len(items) > 0}
 		c.Status(http.StatusNoContent)
 	})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/admin/pages", nil))
@@ -89,7 +96,13 @@ func TestMiddlewareTreeReachesAdminuiSidebar(t *testing.T) {
 	})
 	r.Use(adminctx.PermContextMiddleware(st))
 	r.GET("/admin/pages", func(c *gin.Context) {
-		data = adminui.Prepare(c, gin.H{"title": "页面"})
+		facts := adminui.PageFacts(c)
+		var tree []admindto.MenuTreeNode
+		if v, ok := c.Get(adminctx.NavTreeKey); ok {
+			tree, _ = v.([]admindto.MenuTreeNode)
+		}
+		items := adminui.NavItemsOf(tree)
+		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons, "NavItems": items}
 		c.Status(http.StatusNoContent)
 	})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/admin/pages", nil))
