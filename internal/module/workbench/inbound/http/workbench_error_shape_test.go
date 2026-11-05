@@ -2,6 +2,7 @@ package workbenchhttp
 
 import (
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/response"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 )
 
@@ -41,7 +41,7 @@ func internalErrorContext() (*gin.Context, *httptest.ResponseRecorder) {
 
 func TestPageInternalTextIsControlledText(t *testing.T) {
 	c, _ := internalErrorContext()
-	got := adminui.PageInternalText(c)
+	got := response.InternalText(c)
 	want := internalErrorZhText(t)
 	if got != want {
 		t.Fatalf("归口文案 = %q，期望 %q", got, want)

@@ -11,9 +11,8 @@ import (
 var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\.TranslateArgs\(|shell\.TranslateFor\(`)
 
 func TestControllerI18nBoundary(t *testing.T) {
-	allow := map[string]string{
-		"page_jump.go": "提示页出口（RenderJump 那条链要成品串）+ Tail 复合形态",
-	}
+	// 控制器取词已全部收敛：page_jump.go 改走共享出口后不再有成品串。
+	allow := map[string]string{}
 
 	hits := scanControllerTranslate(t)
 	for file, lines := range hits {

@@ -2,6 +2,7 @@ package response
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -129,4 +130,20 @@ func ErrorRows(c *gin.Context, code int, title facing.Msg, rows []facing.Labeled
 		return
 	}
 	ErrorWithMessage(c, code, MsgText(c, title)+"："+strings.Join(parts, "；"))
+}
+
+// BadRequestForPage 是页面参数错误出口：日志带场景与内部错误，对外只给归口文案。
+func BadRequestForPage(c *gin.Context, scene string, err error) {
+	if err != nil {
+		LogInternalErrorf(c, scene, "后台页面参数校验失败", err)
+	}
+	ErrorWithMessage(c, http.StatusBadRequest, InternalKey)
+}
+
+// InternalErrorForPage 是页面处理错误出口：日志带场景与内部错误，对外只给归口文案。
+func InternalErrorForPage(c *gin.Context, scene string, err error) {
+	if err != nil {
+		LogInternalErrorf(c, scene, "后台页面处理失败", err)
+	}
+	ErrorWithMessage(c, http.StatusInternalServerError, InternalKey)
 }

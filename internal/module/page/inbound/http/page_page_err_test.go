@@ -3,6 +3,7 @@ package pagehttp
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/response"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -90,7 +91,7 @@ func TestBulkDeleteResultSentences(t *testing.T) {
 		}
 	}
 
-	if strings.TrimSpace(adminui.PageInternalText(c)) == "" {
+	if strings.TrimSpace(response.InternalText(c)) == "" {
 		t.Error("归口文案取词为空串：装载失败降级渲染的提示会是一条空话")
 	}
 }
@@ -247,7 +248,7 @@ func TestPagesListDegradesOnProjectLoadFailure(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("页面没有渲染完（缺 </html>）：模板在某一行中断了，body=%s", body)
 	}
-	if !strings.Contains(body, adminui.PageInternalText(pageErrCtx(t, ""))) {
+	if !strings.Contains(body, response.InternalText(pageErrCtx(t, ""))) {
 		t.Fatalf("页面上没有归口提示：用户看不出「是这一页没读出来」")
 	}
 	for _, tok := range []string{"SQLSTATE", "relation \"", "does not exist"} {

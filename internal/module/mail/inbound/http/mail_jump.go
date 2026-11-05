@@ -1,6 +1,7 @@
 package mailhttp
 
 import (
+	"go_wp/pkg/facing"
 	view "go_wp/pkg/view"
 	"net/http"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 
 	"strconv"
 
-	"go_wp/internal/adminui"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/pkg/backpath"
 	"go_wp/pkg/reqparams"
@@ -79,7 +79,7 @@ func mailAutomationRunsBack(c *gin.Context) string {
 	return backpath.FromRequest(c.Request.URL.Query(), mailAutomationRunsPath, "/admin", "mail", mailAutomationRunsBackKeys...)
 }
 
-type mailMsg = adminui.Msg
+type mailMsg = facing.Msg
 
 func mailLabelMsg(pair mailenums.LabelPair) mailMsg {
 	return mailMsg{Key: pair.Key, Fallback: pair.Fallback}

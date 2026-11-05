@@ -4,8 +4,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 	text "go_wp/pkg/view/jet"
 )
+
+const MsgInternalError = text.InternalKey
+
+const internalErrorFallback = response.InternalFallback
 
 type ErrFact = facing.Fact
 
@@ -48,4 +53,9 @@ func toAnyStrings(in []string) []any {
 		out[i] = s
 	}
 	return out
+}
+
+// InternalMsg 是归口错误消息事实（key + 兜底），供页面侧拼装受控提示。
+func InternalMsg() facing.Msg {
+	return facing.Msg{Key: MsgInternalError, Fallback: internalErrorFallback}
 }

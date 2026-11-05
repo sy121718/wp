@@ -208,47 +208,47 @@ func registerProductReadAPI(g *mw.RouteGroup, handle *ProductPageHandle) {
 
 func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/products", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductsPage)
+	pages.GET("/products", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductsPage)
 
-	pages.GET("/products/new", adminui.PageAuthzAs("/api/product/create", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductNewPage)
+	pages.GET("/products/new", mw.PageAuthzAs("/api/product/create", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductNewPage)
 
-	pages.GET("/products/detail", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailPage)
+	pages.GET("/products/detail", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailPage)
 
-	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductEditPage)
+	pages.GET("/products/edit", mw.PageAuthzAs("/api/product/update", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductEditPage)
 
-	pages.GET("/products/publish-records", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPublishRecordPage)
+	pages.GET("/products/publish-records", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPublishRecordPage)
 
-	pages.GET("/products/preview-frame", adminui.PageAuthzAs("/api/presentation/preview", http.MethodPost), productPages.ProductPreviewFrame)
+	pages.GET("/products/preview-frame", mw.PageAuthzAs("/api/presentation/preview", http.MethodPost), productPages.ProductPreviewFrame)
 }
 
 func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailTemplatePage)
+	pages.GET("/products/template", mw.PageAuthz("/api/product/get"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
 }
 
 func registerProductAttributePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-attributes", adminui.PageAuthz("/api/product/attribute/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductAttributesPage)
+	pages.GET("/product-attributes", mw.PageAuthz("/api/product/attribute/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductAttributesPage)
 }
 
 func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductCategoriesPage)
+	pages.GET("/product-categories", mw.PageAuthz("/api/product/category/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductCategoriesPage)
 
-	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductBrandsPage)
+	pages.GET("/product-brands", mw.PageAuthz("/api/product/brand/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductBrandsPage)
 
 }
 
 func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-tags", adminui.PageAuthz("/api/product/tag/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductTagsPage)
+	pages.GET("/product-tags", mw.PageAuthz("/api/product/tag/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductTagsPage)
 
 }
 
 func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPricingPage)
+	pages.GET("/product-pricing", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPricingPage)
 
 }
 
@@ -256,7 +256,7 @@ func SetupProductTranslationRoutes(apiRoot *mw.RouteGroup, adminPages *gin.Route
 	products productcontract.ProductService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	handle := NewProductTranslationHandle(products, pages, instances)
-	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
+	adminPages.GET("/products/translations", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
 
 	apiRoot.Group("/product").POST("/translations/save", productenums.ProductTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
 	return handle

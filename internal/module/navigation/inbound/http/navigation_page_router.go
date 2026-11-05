@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -34,7 +36,7 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 
 	h.SetBlockPanelPort(blocks)
 	adminPages.GET("/navigations",
-		adminui.PageAuthz("/api/navigation/list"),
+		mw.PageAuthz("/api/navigation/list"),
 		pageview.Slot(NavigationsPageTemplate, adminui.RenderPage),
 		h.NavigationsPage)
 
@@ -54,7 +56,7 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	}
 
 	adminPages.GET("/navigations/translations",
-		adminui.PageAuthz("/api/navigation/list"),
+		mw.PageAuthz("/api/navigation/list"),
 		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
 		translations.NavigationTranslations)
 }

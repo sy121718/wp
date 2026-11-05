@@ -3,6 +3,7 @@ package navigationhttp
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/response"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,21 +35,21 @@ func (h *navigationPageHandle) NavigationEditFragment(c *gin.Context) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	kind := strings.TrimSpace(c.Query("kind"))
 	if id == "" || projectID == "" || kind != normalizeNavKind(kind) {
-		c.String(http.StatusBadRequest, "%s", adminui.MsgText(c, navInvalidParamMsg))
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return
 	}
 	item, err := h.navigations.Get(c.Request.Context(), &navigationdto.GetReq{ID: id})
 	if err != nil {
 		if err.Error() == navigationenums.ErrNotFound {
-			c.String(http.StatusNotFound, "%s", adminui.MsgText(c, navigationErrMsg(c, err)))
+			c.String(http.StatusNotFound, "%s", response.MsgText(c, navigationErrMsg(c, err)))
 			return
 		}
 		logger.Scene("page").With("id", id).Error(err, "加载导航编辑片段失败")
-		c.String(http.StatusInternalServerError, "%s", adminui.PageInternalText(c))
+		c.String(http.StatusInternalServerError, "%s", response.InternalText(c))
 		return
 	}
 	if item == nil || item.ProjectID != projectID || item.Kind != kind {
-		c.String(http.StatusNotFound, "%s", adminui.MsgText(c, navNoticeItemMissing))
+		c.String(http.StatusNotFound, "%s", response.MsgText(c, navNoticeItemMissing))
 		return
 	}
 	panelID := ""
@@ -80,7 +81,7 @@ func (h *navigationPageHandle) renderNavigationEdit(c *gin.Context, echo navEdit
 
 	data := &navigationEditFormView{
 		NavEditEcho:        echo,
-		NavEditError:       adminui.MsgText(c, errMsg),
+		NavEditError:       response.MsgText(c, errMsg),
 		NavEditPanelAvail:  panelAvail,
 		NavEditPanelBlocks: blocks,
 	}
@@ -88,7 +89,7 @@ func (h *navigationPageHandle) renderNavigationEdit(c *gin.Context, echo navEdit
 	token, err := builtin.GetCSRFToken(c)
 	if err != nil || token == "" {
 		logger.Scene("page").With("id", echo.ID).Error(err, "加载导航编辑 CSRF token 失败")
-		c.String(http.StatusInternalServerError, "%s", adminui.PageInternalText(c))
+		c.String(http.StatusInternalServerError, "%s", response.InternalText(c))
 		return
 	}
 	data.CSRFToken = token
@@ -115,17 +116,17 @@ func (h *navigationPageHandle) navEditFailure(c *gin.Context, err error, echo na
 
 func (h *navigationPageHandle) navEditOwnedRow(c *gin.Context, echo navEditEcho) bool {
 	if echo.ID == "" || echo.ProjectID == "" || echo.Kind != normalizeNavKind(echo.Kind) {
-		c.String(http.StatusBadRequest, "%s", adminui.MsgText(c, navInvalidParamMsg))
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return false
 	}
 	item, err := h.navigations.Get(c.Request.Context(), &navigationdto.GetReq{ID: echo.ID})
 	if err != nil && err.Error() != navigationenums.ErrNotFound {
 		logger.Scene("page").With("id", echo.ID).Error(err, "核对导航编辑归属失败")
-		c.String(http.StatusInternalServerError, "%s", adminui.PageInternalText(c))
+		c.String(http.StatusInternalServerError, "%s", response.InternalText(c))
 		return false
 	}
 	if item == nil || item.ProjectID != echo.ProjectID || item.Kind != echo.Kind {
-		c.String(http.StatusNotFound, "%s", adminui.MsgText(c, navNoticeItemMissing))
+		c.String(http.StatusNotFound, "%s", response.MsgText(c, navNoticeItemMissing))
 		return false
 	}
 	return true
@@ -329,7 +330,7 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(echo.UpdatedAt) == "" {
-		c.String(http.StatusBadRequest, "%s", adminui.MsgText(c, navInvalidParamMsg))
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return
 	}
 	if !h.navEditOwnedRow(c, echo) {
@@ -391,7 +392,7 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(echo.UpdatedAt) == "" {
-		c.String(http.StatusBadRequest, "%s", adminui.MsgText(c, navInvalidParamMsg))
+		c.String(http.StatusBadRequest, "%s", response.MsgText(c, navInvalidParamMsg))
 		return
 	}
 	if !h.navEditOwnedRow(c, echo) {

@@ -56,7 +56,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	orderPages := NewOrderPageHandle(svc, projects, dict)
 	pages.GET("/orders",
-		adminui.PageAuthz("/api/order/list"),
+		mw.PageAuthz("/api/order/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		orderPages.OrdersPage)
 
@@ -69,7 +69,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	registerSalesPageAlerts(salesPages)
 
 	pages.GET("/orders/overview",
-		adminui.PageAuthz("/admin/orders/overview"),
+		mw.PageAuthz("/admin/orders/overview"),
 		pageview.UseRenderer(adminui.RenderPage),
 		salesPages.SalesOverviewPage)
 
@@ -81,7 +81,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
 	pages.GET("/orders/new",
-		adminui.PageAuthz("/api/order/list"),
+		mw.PageAuthz("/api/order/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		orderCreate.OrderCreatePage)
 
@@ -92,17 +92,17 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
 	pages.GET("/returns",
-		adminui.PageAuthz("/api/order/return/list"),
+		mw.PageAuthz("/api/order/return/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		returnPages.ReturnsPage)
 
 	shipPages := NewOrderShipmentPageHandle(svc, projects)
-	pages.GET("/orders/pending-ship", adminui.PageAuthz("/api/order/shipment/pending"),
+	pages.GET("/orders/pending-ship", mw.PageAuthz("/api/order/shipment/pending"),
 		pageview.UseRenderer(adminui.RenderPage), shipPages.PendingShipPage)
 
 	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
 		pageview.UseRenderer(adminui.RenderBare), shipPages.ShipFormFragment)
-	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
+	pages.GET("/order-carriers", mw.PageAuthz("/api/order/carrier/list"),
 		pageview.UseRenderer(adminui.RenderPage), shipPages.OrderCarriersPage)
 
 	mw.DeclareRoute(mw.RouteSpec{
@@ -118,7 +118,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",
-		adminui.PageAuthz("/api/order/coupon/list"),
+		mw.PageAuthz("/api/order/coupon/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		couponPages.CouponsPage)
 	pages.GET("/coupons/edit-form",

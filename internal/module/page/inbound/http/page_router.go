@@ -87,7 +87,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	if pages == nil {
 		return
 	}
-	pages.GET("/pages", adminui.PageAuthz("/api/page/list"),
+	pages.GET("/pages", mw.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(adminui.RenderPage), adminHandle.PagesList)
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), pageview.HTMLFragment, adminHandle.CreatePage)
 
@@ -107,7 +107,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 
 	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRepublish)
 
-	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"),
+	pages.GET("/pages/translations", mw.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(adminui.RenderPage), adminHandle.PageTranslations)
 
 	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),

@@ -2,10 +2,10 @@ package projecthttp
 
 import (
 	"github.com/gin-gonic/gin"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	view "go_wp/pkg/view"
 
-	"go_wp/internal/adminui"
 	projectenums "go_wp/internal/module/project/enums"
 	"go_wp/pkg/backpath"
 )
@@ -13,7 +13,7 @@ import (
 // projectErrScene 只进日志与失败事件归类；对用户可见的是消息事实本身。
 const projectErrScene = "project"
 
-type projectMsg = adminui.Msg
+type projectMsg = facing.Msg
 
 var (
 	themesBackKeys        = []string{"project"}

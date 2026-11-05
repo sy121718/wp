@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	blueprintdto "go_wp/internal/module/blueprint/dto"
@@ -633,7 +632,7 @@ func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 	revs, err := h.pages.ListRevisions(ctx, &pagecontract.RevisionReq{PageID: pageID})
 	if err != nil {
 		logger.Scene("page").With("page_id", pageID).Error(err, "读取页面修订失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
 		return
 	}
 	var target *pagecontract.RevisionResp

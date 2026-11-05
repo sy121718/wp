@@ -16,7 +16,7 @@ import (
 var (
 	adminPageRouteRe = regexp.MustCompile(`adminPages\.(GET|POST)\("([^"]+)"`)
 	adminBorrowObjRe = regexp.MustCompile(`(?:builtin\.)?CasbinMiddlewareForPath(?:As)?\("(/api/[^"]+)"(?:,\s*"([A-Z]+)")?`)
-	adminPageAuthzRe = regexp.MustCompile(`adminui\.PageAuthz\("(/api/[^"]+)"\)`)
+	adminPageAuthzRe = regexp.MustCompile(`(?:adminui|mw)\.PageAuthz\("(/api/[^"]+)"\)`)
 )
 
 type adminPageBorrow struct {

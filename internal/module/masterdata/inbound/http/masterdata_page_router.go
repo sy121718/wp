@@ -1,8 +1,10 @@
 package masterdatahttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
+	pageview "go_wp/pkg/view"
+
+	mw "go_wp/pkg/middleware"
 
 	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
@@ -19,7 +21,7 @@ func SetupMasterDataPages(pages *gin.RouterGroup, svc masterdatacontract.MasterD
 	changePages := NewMasterDataChangePageHandle(svc, project)
 
 	pages.GET("/masterdata/changes",
-		adminui.PageAuthz("/api/masterdata/change/list"),
+		mw.PageAuthz("/api/masterdata/change/list"),
 		pageview.Slot(MasterDataChangesTemplate, adminui.RenderPage),
 		changePages.MasterDataChangesPage)
 }

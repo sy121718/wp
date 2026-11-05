@@ -9,18 +9,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/facing"
 )
 
 type couponPageHandle struct {
@@ -190,7 +189,7 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 	ctx := c.Request.Context()
 	exists, err := h.projects.Exists(ctx, projectID)
 	if err != nil {
-		adminui.PageErrorInternal(c, "coupon-edit-form", err)
+		response.InternalErrorForPage(c, "coupon-edit-form", err)
 		return
 	}
 	if !exists {
@@ -205,7 +204,7 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 			response.ErrorWithMessage(c, http.StatusNotFound, orderenums.ErrCouponNotFound)
 			return
 		}
-		adminui.PageErrorInternal(c, "coupon-edit-form", err)
+		response.InternalErrorForPage(c, "coupon-edit-form", err)
 		return
 	}
 	if cp == nil || cp.ID != id || cp.ProjectID != projectID {
@@ -292,7 +291,7 @@ func couponFacingError(c *gin.Context, err error) string {
 		return response.MsgText(c, facing.Msg{Key: key, Fallback: key})
 	}
 	logger.Scene("order-coupon").With("path", c.Request.URL.Path).Error(err, "优惠码写操作失败")
-	return adminui.PageInternalText(c)
+	return response.InternalText(c)
 }
 
 func couponEcho(c *gin.Context) url.Values {

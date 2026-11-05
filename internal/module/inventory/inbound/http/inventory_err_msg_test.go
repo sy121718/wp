@@ -8,8 +8,8 @@ import (
 
 	"go_wp/internal/adminui"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -51,13 +51,13 @@ func TestInventoryErrMsgSplitsFacts(t *testing.T) {
 		{
 			name:         "全角冒号：切不开，落归口（格式是协议的一部分）",
 			err:          fullWidth,
-			wantKey:      adminui.MsgInternalError,
+			wantKey:      response.InternalKey,
 			wantInternal: true,
 		},
 		{
 			name:         "非业务错误（库表原文）：归口 + 原文只进日志",
 			err:          errors.New(`pq: relation "inventory_warehouses" does not exist`),
-			wantKey:      adminui.MsgInternalError,
+			wantKey:      response.InternalKey,
 			wantInternal: true,
 		},
 		{

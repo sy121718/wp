@@ -241,7 +241,7 @@ func masterDataErrText(c *gin.Context, err error) string {
 	logger.Scene(masterDataErrScene).
 		With("user_id", builtin.CurrentUserID(c)).
 		Error(err, "主数据变更记录页取数失败（非业务错误，只对外给归口文案）")
-	return adminui.PageInternalText(c)
+	return response.InternalText(c)
 }
 
 type masterDataTr func(key, fallback string) string

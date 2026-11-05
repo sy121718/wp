@@ -1,6 +1,7 @@
 package adminui
 
 import (
+	"go_wp/pkg/facing"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +13,7 @@ type viewFixture struct {
 	Title        string
 	Projects     []string
 	LoadFailed   bool
-	LoadError    Msg
+	LoadError    facing.Msg
 	renamed      string
 	RenamedField string `view:"CustomName"`
 }
@@ -22,7 +23,7 @@ func TestViewMapFlattensExportedFields(t *testing.T) {
 		Title:        "新建商品",
 		Projects:     []string{"p1", "p2"},
 		LoadFailed:   true,
-		LoadError:    Msg{Key: "admin.products.preview.failed", Fallback: "预览生成失败"},
+		LoadError:    facing.Msg{Key: "admin.products.preview.failed", Fallback: "预览生成失败"},
 		renamed:      "内部值",
 		RenamedField: "带标签",
 	}
@@ -38,7 +39,7 @@ func TestViewMapFlattensExportedFields(t *testing.T) {
 		t.Fatalf("LoadFailed 应为 bool true（模板用它判失败分支），实际 %#v", data["LoadFailed"])
 	}
 
-	if msg, ok := data["LoadError"].(Msg); !ok || msg.Key == "" {
+	if msg, ok := data["LoadError"].(facing.Msg); !ok || msg.Key == "" {
 		t.Fatalf("嵌套视图应原样保留结构体，实际 %#v", data["LoadError"])
 	}
 	if _, ok := data["Key"]; ok {

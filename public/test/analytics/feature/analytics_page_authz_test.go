@@ -1,8 +1,8 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	mw "go_wp/pkg/middleware"
 
 	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
@@ -28,7 +30,7 @@ import (
 )
 
 // 页面 GET 的「无权」不是页面内提示，而是统一出口给的 403 JSON：
-// 中间件 adminui.PageAuthz → PageCasbinMiddlewareAs → adminui.Reject → ErrorStatusAuto。
+// 中间件 mw.PageAuthz → PageCasbinMiddlewareAs → 共享失败出口 → ErrorStatusAuto。
 // 这里用真实生产迁移 + 真实 seed 库 + 真实 casbin 策略跑完整链路。
 const analyticsAuthzTestUserID int64 = 4242
 
@@ -125,11 +127,11 @@ func newAnalyticsAuthzEngine(t *testing.T) *gin.Engine {
 		c.Next()
 	})
 	engine.GET("/admin/analytics",
-		adminui.PageAuthz("/api/analytics/summary"),
+		mw.PageAuthz("/api/analytics/summary"),
 		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 	engine.GET("/admin/seo",
-		adminui.PageAuthzAs("/api/seo/audit", http.MethodPost),
+		mw.PageAuthzAs("/api/seo/audit", http.MethodPost),
 		pageview.Slot(analyticshttp.SEOPageTemplate, adminui.RenderPage),
 		analyticshttp.NewSEOPageHandle(nil, authzProjects{}).SEOPage)
 	return engine
@@ -198,7 +200,7 @@ func TestAnalyticsPageWithoutIdentityReturnsJSON401(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	engine.GET("/admin/analytics",
-		adminui.PageAuthz("/api/analytics/summary"),
+		mw.PageAuthz("/api/analytics/summary"),
 		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 

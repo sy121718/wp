@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/facing"
 	"net/url"
 	"strconv"
 	"strings"
@@ -104,7 +105,7 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	pageview.RenderTemplate(c, CustomerCohortPageTemplate, view)
 }
 
-type customerMsg = adminui.Msg
+type customerMsg = facing.Msg
 
 func customerErrMsg(c *gin.Context, err error) customerMsg {
 	return customerErrFactOf(adminui.PageErrorFact(c, userErrScene, err))
@@ -118,7 +119,7 @@ func customerErrFactOf(f adminui.ErrFact) customerMsg {
 }
 
 func customerErrText(c *gin.Context, err error) string {
-	return adminui.MsgText(c, customerErrMsg(c, err))
+	return response.MsgText(c, customerErrMsg(c, err))
 }
 
 type userLabel struct{ key, fallback string }
@@ -128,7 +129,7 @@ func (l userLabel) msg() customerMsg {
 }
 
 func customerLabelText(c *gin.Context, l userLabel) string {
-	return adminui.MsgText(c, l.msg())
+	return response.MsgText(c, l.msg())
 }
 
 func customerMsgFirst(values ...customerMsg) customerMsg {
@@ -529,7 +530,7 @@ var customerNoticeFallback = map[string]string{
 }
 
 func customerNotice(c *gin.Context, key string) string {
-	return adminui.MsgText(c, customerMsg{Key: key, Fallback: customerNoticeFallback[key]})
+	return response.MsgText(c, customerMsg{Key: key, Fallback: customerNoticeFallback[key]})
 }
 
 func customerListBack(c *gin.Context) (back string, backText customerMsg) {

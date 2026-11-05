@@ -15,13 +15,12 @@ import (
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
 
-	"go_wp/internal/adminui"
-	"go_wp/pkg/builder/core"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
@@ -504,7 +503,7 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 	}
 	report, err := h.mail.CampaignReport(c.Request.Context(), reqparams.ParseUint(c.Query("id")), page, mailCampaignsPageSize)
 	if err != nil {
-		adminui.PageErrorBadRequest(c, "mail_campaigns", err)
+		response.BadRequestForPage(c, "mail_campaigns", err)
 		return
 	}
 	response.Success(c, report)

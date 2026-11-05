@@ -11,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/enums"
 	"go_wp/pkg/i18n"
@@ -38,7 +37,7 @@ func TestCouponEditFormFailureIsInternalJSONFragment(t *testing.T) {
 	const path = "/admin/coupons/edit-form?id=7&project=p-1"
 
 	wantCtx, wantRecorder := couponExitContext(path)
-	response.ErrorWithMessage(wantCtx, http.StatusInternalServerError, adminui.MsgInternalError)
+	response.ErrorWithMessage(wantCtx, http.StatusInternalServerError, response.InternalKey)
 
 	c, recorder := couponExitContext(path)
 	NewCouponPageHandle(nil, couponExitProjectsStub{}).CouponEditForm(c)

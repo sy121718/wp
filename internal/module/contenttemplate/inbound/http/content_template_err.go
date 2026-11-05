@@ -1,6 +1,8 @@
 package contenttemplatehttp
 
 import (
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 	view "go_wp/pkg/view"
 	"strings"
 
@@ -14,7 +16,7 @@ const contentTemplateErrScene = "content_template"
 
 var contentTemplateErrInternalFallback = adminui.InternalMsg().Fallback
 
-type contentTemplateMsg = adminui.Msg
+type contentTemplateMsg = facing.Msg
 
 var contentTemplateFacingFallbacks = map[string]string{
 	contenttemplateenums.ErrInvalidParam: "参数不完整，请检查工程、模板名与实体类型。",
@@ -50,12 +52,12 @@ func contentTemplateErrMsg(c *gin.Context, err error) contentTemplateMsg {
 }
 
 func contentTemplateErrText(c *gin.Context, err error) string {
-	return adminui.MsgText(c, contentTemplateErrMsg(c, err))
+	return response.MsgText(c, contentTemplateErrMsg(c, err))
 }
 
 func contentTemplateInternalText(c *gin.Context, err error) string {
 	if err == nil {
-		return adminui.MsgText(c, adminui.InternalMsg())
+		return response.MsgText(c, adminui.InternalMsg())
 	}
 	return adminui.ErrorFactText(c, adminui.PageErrorFact(c, contentTemplateErrScene, err))
 }
@@ -97,7 +99,7 @@ const (
 )
 
 func contentTemplateImpactLoadFailedText(c *gin.Context) string {
-	return adminui.MsgText(c, contentTemplateImpactLoadFailedMsg)
+	return response.MsgText(c, contentTemplateImpactLoadFailedMsg)
 }
 
 var contentTemplateImpactLoadFailedMsg = contentTemplateMsg{

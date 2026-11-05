@@ -1,8 +1,8 @@
 package analyticshttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -115,7 +115,7 @@ func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
 		t.Fatal("SEO 页面必须注册在已认证的 admin 页面组")
 	}
 
-	if !strings.Contains(body, `adminui.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
+	if !strings.Contains(body, `mw.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
 		t.Fatal("SEO 页面 GET 必须按菜单绑定的 seo:audit 鉴权")
 	}
 	if !strings.Contains(body, `NewSEOPageHandle(analytics, projects)`) {

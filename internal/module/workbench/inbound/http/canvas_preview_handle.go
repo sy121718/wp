@@ -1,8 +1,8 @@
 package workbenchhttp
 
 import (
-	"go_wp/internal/builder/extensions/presets"
 	_ "embed"
+	"go_wp/internal/builder/extensions/presets"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
@@ -11,8 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
-	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -20,6 +18,7 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -241,7 +240,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 func (h *Handle) InstanceSave(c *gin.Context) {
 	if h.instances == nil {
 
-		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.MsgInternalError)
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, response.InternalKey)
 		return
 	}
 	body, err := binding.ParseJSON[presentationdto.WorkbenchSaveReq](c)

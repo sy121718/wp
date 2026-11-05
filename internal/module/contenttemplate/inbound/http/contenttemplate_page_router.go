@@ -1,8 +1,10 @@
 package contenttemplatehttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
+	pageview "go_wp/pkg/view"
+
+	mw "go_wp/pkg/middleware"
 
 	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -23,8 +25,8 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
 
 	pages.GET("/content-templates",
-		adminui.PageAuthz("/api/contenttemplate/list"),
+		mw.PageAuthz("/api/contenttemplate/list"),
 		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
 		contentTemplatePages.ContentTemplatesPage)
-	pages.GET("/content-templates/edit", adminui.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
+	pages.GET("/content-templates/edit", mw.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
 }

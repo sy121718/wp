@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -22,14 +24,14 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 	}
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
 	pages.GET("/analytics",
-		adminui.PageAuthz("/api/analytics/summary"),
+		mw.PageAuthz("/api/analytics/summary"),
 		pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage),
 		analyticsPages.AnalyticsPage)
 
 	seoPages := NewSEOPageHandle(analytics, projects)
 
 	pages.GET("/seo",
-		adminui.PageAuthzAs("/api/seo/audit", http.MethodPost),
+		mw.PageAuthzAs("/api/seo/audit", http.MethodPost),
 		pageview.Slot(SEOPageTemplate, adminui.RenderPage),
 		seoPages.SEOPage)
 }

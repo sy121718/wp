@@ -1,8 +1,10 @@
 package blockhttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
+	pageview "go_wp/pkg/view"
+
+	mw "go_wp/pkg/middleware"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
@@ -24,7 +26,7 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 	h := NewBlockPageHandle(blocks, projects, pages...)
 
 	adminPages.GET("/blocks",
-		adminui.PageAuthz("/api/block/list"),
+		mw.PageAuthz("/api/block/list"),
 		pageview.Slot(BlocksPageTemplate, adminui.RenderPage),
 		h.BlocksList)
 

@@ -3,6 +3,8 @@ package purchasehttp
 import (
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	adminui "go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -38,14 +40,14 @@ func SetupPurchasePages(pages *gin.RouterGroup, svc purchasecontract.PurchaseSer
 	purchases := NewPurchasePageHandle(svc, stock, project)
 	pageCatalogConsumers = append(pageCatalogConsumers, purchases)
 
-	pages.GET("/inventory/sources", adminui.PageAuthz("/api/inventory/source/list"),
+	pages.GET("/inventory/sources", mw.PageAuthz("/api/inventory/source/list"),
 		pageview.Slot(SourcesPageTemplate, adminui.RenderPage), sourcePages.SourcesPage)
 	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), pageview.HTMLFragment, sourcePages.SourceCreate)
 	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), pageview.HTMLFragment, sourcePages.SourceUpdate)
 	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourceDelete)
 	pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourcesBulkDelete)
 
-	pages.GET("/inventory/purchases", adminui.PageAuthz("/api/inventory/purchase/list"),
+	pages.GET("/inventory/purchases", mw.PageAuthz("/api/inventory/purchase/list"),
 		pageview.Slot(PurchasesPageTemplate, adminui.RenderPage), purchases.PurchasesPage)
 	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), pageview.HTMLFragment, purchases.PurchaseCreate)
 	pages.POST("/inventory/purchases/update", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseUpdate)

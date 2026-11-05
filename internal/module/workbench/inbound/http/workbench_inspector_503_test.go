@@ -1,12 +1,11 @@
 package workbenchhttp
 
 import (
+	"go_wp/pkg/response"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 )
 
 func TestInspectorNavigationCreateUnassembledKeepsTranslatedMessage(t *testing.T) {
@@ -21,7 +20,7 @@ func TestInspectorNavigationCreateUnassembledKeepsTranslatedMessage(t *testing.T
 		t.Fatalf("未装配能力应是 503，got %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	if strings.Contains(body, adminui.MsgInternalError) {
+	if strings.Contains(body, response.InternalKey) {
 		t.Fatalf("message 不许是裸 key（前端会原样弹出来）：%s", body)
 	}
 	if !strings.Contains(body, "系统内部错误") {

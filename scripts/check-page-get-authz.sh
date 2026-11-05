@@ -83,7 +83,7 @@ def scan(text):
         page = re.match(r'\s*"([^" ]+)"', call)
         if not page:
             continue
-        auth = re.search(r'adminui\.PageAuthz(As)?\("([^" ]+)"(?:,\s*http\.Method([A-Za-z]+))?\)', call)
+        auth = re.search(r'(?:adminui|mw|middleware)\.PageAuthz(As)?\("([^" ]+)"(?:,\s*http\.Method([A-Za-z]+))?\)', call)
         if not auth:
             continue
         if auth[1] and not auth[3]:
@@ -168,7 +168,7 @@ def self_test():
     expect('deleted exception', check(r={b}, d={a}), True)
     expect('deleted declaration', check(r={b}, v={a:'a:view'}), True)
     expect('stale virtual', check(v={a:'a:view'}, d={a}), True)
-    comment = '// pages.GET("/a", adminui.PageAuthz("/api/a"), h)\n/* pages.GET("/a", adminui.PageAuthz("/api/a"), h) */'
+    comment = '// pages.GET("/a", mw.PageAuthz("/api/a"), h)\n/* pages.GET("/a", mw.PageAuthz("/api/a"), h) */'
     expect('comment scanner', scan(comment), False)
     expect('comment cannot replace route', check(c=scan(comment) | {('/b', b[1], b[0])}), True)
     expect('stale exemption', check(e={'/admin/a'}), True)
@@ -192,7 +192,7 @@ try:
         if not path.name.endswith('_test.go'):
             code.update(scan(path.read_text()))
     if not code:
-        raise ValueError('no actual adminui.PageAuthz registrations found')
+        raise ValueError('no actual PageAuthz registrations found')
     menu = [tuple(x.split('|')) for x in pathlib.Path(sys.argv[1]).read_text().splitlines() if x]
     routes = {tuple(x.split()) for x in pathlib.Path('internal/routers/testdata/routes.snapshot').read_text().splitlines() if x}
     if not menu or any(len(x)!=4 for x in menu) or not routes or any(len(x)!=2 for x in routes):

@@ -1,8 +1,7 @@
-package adminui
+package response_test
 
 import (
 	"errors"
-	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+	text "go_wp/pkg/view/jet"
 )
 
 func newPageExitContext(path string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -22,10 +22,10 @@ func newPageExitContext(path string) (*gin.Context, *httptest.ResponseRecorder) 
 	return c, recorder
 }
 
-func TestPageErrorBadRequestHidesRawError(t *testing.T) {
+func TestBadRequestForPageHidesRawError(t *testing.T) {
 	c, recorder := newPageExitContext("/admin/roles/create")
 	secret := `pq: relation "sys_roles" does not exist (42P01)`
-	PageErrorBadRequest(c, "roles", errors.New(secret))
+	response.BadRequestForPage(c, "roles", errors.New(secret))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("参数错误出口应是 400，got %d", recorder.Code)
@@ -39,10 +39,10 @@ func TestPageErrorBadRequestHidesRawError(t *testing.T) {
 	}
 }
 
-func TestPageErrorInternalIsInternalExit(t *testing.T) {
+func TestInternalErrorForPageIsInternalExit(t *testing.T) {
 	c, recorder := newPageExitContext("/admin/coupons/edit")
 	secret := `pq: relation "order_coupons" does not exist (42P01)`
-	PageErrorInternal(c, "coupon-edit-form", errors.New(secret))
+	response.InternalErrorForPage(c, "coupon-edit-form", errors.New(secret))
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("局部内部错误出口应是 500，got %d", recorder.Code)
@@ -56,21 +56,21 @@ func TestPageErrorInternalIsInternalExit(t *testing.T) {
 	}
 
 	c2, recorder2 := newPageExitContext("/admin/coupons/edit")
-	PageErrorInternal(c2, "coupon-edit-form", nil)
+	response.InternalErrorForPage(c2, "coupon-edit-form", nil)
 	if recorder2.Code != http.StatusInternalServerError {
 		t.Fatalf("nil err 也应写出 500，got %d", recorder2.Code)
 	}
 }
 
-func TestPageErrorInternalKeepsShellProtocol(t *testing.T) {
+func TestInternalErrorForPageKeepsProtocol(t *testing.T) {
 	wantCtx, wantRecorder := newPageExitContext("/admin/coupons/edit")
-	response.ErrorWithMessage(wantCtx, http.StatusInternalServerError, MsgInternalError)
+	response.ErrorWithMessage(wantCtx, http.StatusInternalServerError, response.InternalKey)
 
 	gotCtx, gotRecorder := newPageExitContext("/admin/coupons/edit")
-	PageErrorInternal(gotCtx, "coupon-edit-form", errors.New("内部细节：表 order_coupons"))
+	response.InternalErrorForPage(gotCtx, "coupon-edit-form", errors.New("内部细节：表 order_coupons"))
 
 	if gotRecorder.Code != wantRecorder.Code {
-		t.Fatalf("状态码与 pkg/response 出口不一致：got %d want %d", gotRecorder.Code, wantRecorder.Code)
+		t.Fatalf("状态码与统一出口不一致：got %d want %d", gotRecorder.Code, wantRecorder.Code)
 	}
 	if got, want := gotRecorder.Header().Get("Content-Type"), wantRecorder.Header().Get("Content-Type"); got != want {
 		t.Fatalf("Content-Type 不一致：got %q want %q", got, want)
@@ -80,34 +80,34 @@ func TestPageErrorInternalKeepsShellProtocol(t *testing.T) {
 	}
 }
 
-func TestPageInternalTextFollowsRequestLanguage(t *testing.T) {
+func TestInternalTextFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		"uiInternalErr": {"zh-CN": "系统内部错误，请稍后重试", "en-US": "Internal error, please retry later"},
 	}, nil)
 	defer i18n.InjectForTest(nil, nil)
 
-	if c, _ := newPageExitContext("/admin/roles?lang=en-US"); PageInternalText(c) != "Internal error, please retry later" {
-		t.Fatalf("en-US 应取注入的英文词条，got %q", PageInternalText(c))
+	if c, _ := newPageExitContext("/admin/roles?lang=en-US"); response.InternalText(c) != "Internal error, please retry later" {
+		t.Fatalf("en-US 应取注入的英文词条，got %q", response.InternalText(c))
 	}
-	if c, _ := newPageExitContext("/admin/roles?lang=zh-CN"); PageInternalText(c) != "系统内部错误，请稍后重试" {
-		t.Fatalf("zh-CN 应取注入的中文词条，got %q", PageInternalText(c))
+	if c, _ := newPageExitContext("/admin/roles?lang=zh-CN"); response.InternalText(c) != "系统内部错误，请稍后重试" {
+		t.Fatalf("zh-CN 应取注入的中文词条，got %q", response.InternalText(c))
 	}
 
 	i18n.InjectForTest(nil, nil)
 	for _, path := range []string{"/admin/roles?lang=zh-CN", "/admin/roles?lang=en-US"} {
 		c, _ := newPageExitContext(path)
-		got := PageInternalText(c)
+		got := response.InternalText(c)
 		if got != "系统内部错误，请稍后重试" {
 			t.Fatalf("缺词条时应回落中文兜底，got %q（path=%s）", got, path)
 		}
-		if got == MsgInternalError {
+		if got == response.InternalKey {
 			t.Fatalf("缺词条时回落成了裸 key：%q", got)
 		}
 	}
 }
 
-func TestMsgInternalErrorIsTheKeyLiteral(t *testing.T) {
-	if MsgInternalError != "uiInternalErr" {
-		t.Fatalf("MsgInternalError 必须是 key 字面量 %q，got %q", "uiInternalErr", MsgInternalError)
+func TestInternalKeyIsTheKeyLiteral(t *testing.T) {
+	if response.InternalKey != "uiInternalErr" {
+		t.Fatalf("InternalKey 必须是 key 字面量 %q，got %q", "uiInternalErr", response.InternalKey)
 	}
 }

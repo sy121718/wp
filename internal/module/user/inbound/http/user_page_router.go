@@ -3,6 +3,8 @@ package userhttp
 import (
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/adminui"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
@@ -43,27 +45,27 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetCustomerCohort(cohort)
 	h.SetMembershipFilters(membershipAdmin, membershipTiers)
 	pages.GET("/customers",
-		adminui.PageAuthz("/api/customer/list"),
+		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomersPage)
 
 	pages.GET("/customers/overview",
-		adminui.PageAuthz("/api/customer/list"),
+		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerOverviewPage)
 
 	pages.GET("/customers/rfm",
-		adminui.PageAuthz("/api/customer/list"),
+		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerRfmPage)
 
 	pages.GET("/customers/cohort",
-		adminui.PageAuthz("/api/customer/list"),
+		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerCohortPage)
 
 	pages.GET("/customers/detail",
-		adminui.PageAuthz("/api/customer/list"),
+		mw.PageAuthz("/api/customer/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		h.CustomerDetailPage)
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/facing"
@@ -154,7 +153,7 @@ func workbenchShortText(c *gin.Context, key string) string {
 		logger.Scene(workbenchErrScene).
 			With("path", c.Request.URL.Path).
 			Error(errors.New("workbench 短句未登记中文兜底"), "受控短句表缺条目")
-		return adminui.PageInternalText(c)
+		return response.InternalText(c)
 	}
 	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/adminui"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/i18n"
 
@@ -18,7 +17,7 @@ import (
 var customerFacingInjectedEntries = map[string]map[string]string{
 	userenums.MsgCustomerDisabled:      {"zh-CN": "账号已停用", "en-US": "EN-CUSTOMER-DISABLED"},
 	userenums.ErrCustomerStatusInvalid: {"zh-CN": "账号状态取值不合法", "en-US": "EN-STATUS-INVALID"},
-	adminui.MsgInternalError:           {"zh-CN": "系统内部错误，请稍后重试", "en-US": "EN-INTERNAL"},
+	response.InternalKey:               {"zh-CN": "系统内部错误，请稍后重试", "en-US": "EN-INTERNAL"},
 }
 
 func customerFacingLangCtx(t *testing.T, lang string) *gin.Context {
@@ -65,7 +64,7 @@ func TestCustomerErrMsgFallsBackToInternalFact(t *testing.T) {
 	raw := `pq: relation "users" does not exist`
 
 	fact := customerErrMsg(c, errors.New(raw))
-	if fact.Key != adminui.MsgInternalError {
+	if fact.Key != response.InternalKey {
 		t.Errorf("非业务错误应落归口 key，实际 %q", fact.Key)
 	}
 	if got := customerErrText(c, errors.New(raw)); got != "EN-INTERNAL" {

@@ -38,7 +38,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	handle := NewAdminPagesHandle(admins, roles, perms, menus, depts, rules)
 
 	adminPages.GET("/administrators",
-		adminui.PageAuthz("/api/admin/list"),
+		mw.PageAuthz("/api/admin/list"),
 		view.Slot(AdministratorsPageTemplate, adminui.RenderPage),
 		handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
@@ -53,7 +53,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 		handle.AdministratorMenusDrawer)
 
 	adminPages.GET("/roles",
-		adminui.PageAuthz("/api/role/list"),
+		mw.PageAuthz("/api/role/list"),
 		view.Slot(RolesPageTemplate, adminui.RenderPage),
 		handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
@@ -65,7 +65,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 		handle.RolePermissionsDrawer)
 
 	adminPages.GET("/menus",
-		adminui.PageAuthz("/api/menu/tree"),
+		mw.PageAuthz("/api/menu/tree"),
 		view.Slot(MenusPageTemplate, adminui.RenderPage),
 		handle.MenusPage)
 	adminPages.GET("/menus/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
@@ -75,7 +75,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
-	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"),
+	adminPages.GET("/permissions", mw.PageAuthz("/api/permission/list"),
 		view.Slot(PermissionsPageTemplate, adminui.RenderPage), handle.PermissionsPage)
 	adminPages.GET("/permissions/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
 		handle.PermissionsEditFragment)
@@ -85,7 +85,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
 	adminPages.GET("/departments",
-		adminui.PageAuthz("/api/dept/tree"),
+		mw.PageAuthz("/api/dept/tree"),
 		view.Slot(DepartmentsPageTemplate, adminui.RenderPage),
 		handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
@@ -94,10 +94,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/departments/bulk-delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsBulkDelete)
 
 	adminPages.GET("/datarules",
-		adminui.PageAuthz("/api/datarule/list"),
+		mw.PageAuthz("/api/datarule/list"),
 		view.Slot(DatarulesPageTemplate, adminui.RenderPage),
 		handle.DatarulesPage)
-	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"),
+	adminPages.GET("/datarules/edit", mw.PageAuthz("/api/datarule/detail"),
 		view.Slot(DataruleEditPageTemplate, adminui.RenderPage), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
@@ -117,7 +117,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 		Perm: adminenums.I18nView, Kind: mw.RoutePage,
 		AuthObject: "/api/i18n/list", AuthMethod: http.MethodGet,
 	})
-	adminPages.GET("/i18n", view.HTMLPage, adminui.PageAuthz("/api/i18n/list"),
+	adminPages.GET("/i18n", view.HTMLPage, mw.PageAuthz("/api/i18n/list"),
 		view.Slot(I18nPageTemplate, adminui.RenderPage), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
 		i18nPages.I18nEntryEditFragment)

@@ -47,7 +47,7 @@ func aiErrStatus(key string) int {
 // aiPageFail 用于页面 GET 失败：与 aiErrExit 同一条出口。单独留名字是为了让调用点
 // 一眼看出「这是页面不是写动作」，出口实现没有第二份。
 //
-// 为什么不用 adminui.PageErrorInternal：它固定 500 + 归口文案，绕过了 StatusOf 的声明
+// 为什么不用 response.InternalErrorForPage：它固定 500 + 归口文案，绕过了 StatusOf 的声明
 // 状态；带声明的页面失败（比如 404 的会话不存在）会被压成 500。走 ErrorStatusAuto 才能
 // 「声明写什么就回什么」，非业务错误它自己也是 500 + 归口，结果一致。
 func aiPageFail(c *gin.Context, err error) {

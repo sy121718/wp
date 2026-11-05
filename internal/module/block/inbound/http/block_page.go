@@ -16,11 +16,11 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/facing"
 )
 
 const blocksPageTitle = "MsgBlocksTitle"
@@ -113,7 +113,7 @@ func toBlockRow(b blockcontract.BlockResp) blockRow {
 func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
 		return
 	}
 	data := &blocksPageData{
@@ -129,7 +129,7 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	if data.SelectedProject != "" {
 		blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: data.SelectedProject})
 		if err != nil {
-			response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
+			response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
 			return
 		}
 		data.Headers = toBlockRows(blocks, "header")

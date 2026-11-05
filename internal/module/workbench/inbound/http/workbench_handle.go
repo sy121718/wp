@@ -10,14 +10,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	seoscore "go_wp/pkg/seo"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	seoscore "go_wp/pkg/seo"
 )
 
 type NavigationPickerPort interface {
@@ -35,7 +34,7 @@ func (h *Handle) SetNavigationPicker(p NavigationPickerPort) {
 func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	if h == nil || h.svc == nil || h.svc.NavigationPicker() == nil {
 
-		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.PageInternalText(c))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, response.InternalText(c))
 		return
 	}
 	req, ok := binding.Form[workbenchdto.NavigationCreateReq](c)
@@ -75,7 +74,7 @@ func (h *Handle) SEOScore(c *gin.Context) {
 	}
 	res, err := seoscore.ScoreDocument(document, req.URL, requestScoreLang(c))
 	if err != nil {
-		adminui.PageErrorBadRequest(c, "seo_score", err)
+		response.BadRequestForPage(c, "seo_score", err)
 		return
 	}
 	response.Success(c, res)

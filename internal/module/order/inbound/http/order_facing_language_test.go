@@ -2,11 +2,11 @@ package orderhttp
 
 import (
 	"errors"
+	"go_wp/pkg/response"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go_wp/internal/adminui"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/i18n"
 
@@ -17,7 +17,7 @@ func TestOrderFacingErrorsUseRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		orderenums.ErrCouponNotFound: {"en-US": "Coupon missing", "zh-CN": "优惠码不存在"},
 		orderenums.ErrReturnNotFound: {"en-US": "Return missing", "zh-CN": "退货单不存在"},
-		adminui.MsgInternalError:     {"en-US": "Internal failure", "zh-CN": "内部错误"},
+		response.InternalKey:         {"en-US": "Internal failure", "zh-CN": "内部错误"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	for _, tc := range []struct {

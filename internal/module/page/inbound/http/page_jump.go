@@ -2,6 +2,7 @@ package pagehttp
 
 import (
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/view/jet"
 	"strings"
 
@@ -25,10 +26,10 @@ func pageListBack(c *gin.Context) string {
 
 var pageListBackMsg = pageMsg{Key: pageenums.MsgPagesTitle, Fallback: "页面管理"}
 
-type pageMsg = adminui.Msg
+type pageMsg = facing.Msg
 
 func pageMsgText(c *gin.Context, m pageMsg) string {
-	return adminui.MsgText(c, m)
+	return response.MsgText(c, m)
 }
 
 const pageErrScene = "page"

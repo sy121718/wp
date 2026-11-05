@@ -8,19 +8,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
+	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/response"
 )
 
 type returnPageHandle struct {
@@ -259,7 +258,7 @@ func returnFacingError(c *gin.Context, err error) string {
 		return response.MsgText(c, facing.Msg{Key: key, Fallback: key})
 	}
 	logger.Scene("order-return").With("path", c.Request.URL.Path).Error(err, "退货页读取失败")
-	return adminui.PageInternalText(c)
+	return response.InternalText(c)
 }
 
 func returnFacingText(raw string) string {

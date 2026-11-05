@@ -3,6 +3,8 @@ package projecthttp
 import (
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -29,14 +31,14 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 	if adminPages != nil {
 		themes := &themeAdminHandle{projects: svc, pages: pages, blocks: blocks}
 		adminPages.GET("/themes",
-			adminui.PageAuthz("/api/theme/list"),
+			mw.PageAuthz("/api/theme/list"),
 			pageview.Slot(ThemeManagePageTemplate, adminui.RenderPage),
 			themes.ThemeManage)
 		adminPages.POST("/themes/create", builtin.CasbinMiddlewareForPath("/api/theme/create"), pageview.HTMLFragment, themes.CreateTheme)
 		adminPages.POST("/themes/activate", builtin.CasbinMiddlewareForPath("/api/theme/activate"), pageview.HTMLFragment, themes.ActivateTheme)
 		adminPages.POST("/themes/delete", builtin.CasbinMiddlewareForPath("/api/theme/delete"), pageview.HTMLFragment, themes.DeleteTheme)
 		adminPages.GET("/themes/settings",
-			adminui.PageAuthz("/api/theme/list"),
+			mw.PageAuthz("/api/theme/list"),
 			pageview.Slot(ThemeSettingsPageTemplate, adminui.RenderPage),
 			themes.ThemeSettings)
 		adminPages.POST("/themes/settings/save", builtin.CasbinMiddlewareForPath("/api/theme/update"), pageview.HTMLFragment, themes.SaveThemeSettings)
@@ -44,7 +46,7 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 
 		settings := &siteSettingsAdminHandle{projects: svc, pages: pages, dict: dict}
 		adminPages.GET("/settings",
-			adminui.PageAuthz("/api/project/detail"),
+			mw.PageAuthz("/api/project/detail"),
 			pageview.Slot(SiteSettingsPageTemplate, adminui.RenderPage),
 			settings.SiteSettings)
 		adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), pageview.HTMLFragment, settings.SaveSiteSettings)

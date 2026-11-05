@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	mw "go_wp/pkg/middleware"
+
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -47,7 +49,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		articlePages.SetArticleLinkLocator(loc)
 	}
 	pages.GET("/articles",
-		adminui.PageAuthz("/api/content/list"),
+		mw.PageAuthz("/api/content/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		articlePages.ArticlesPage)
 
@@ -59,7 +61,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		pageview.UseRenderer(adminui.RenderPage),
 		articlePages.ArticleNewPage)
 	pages.GET("/articles/edit",
-		adminui.PageAuthz("/api/content/list"),
+		mw.PageAuthz("/api/content/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
@@ -74,7 +76,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		articleTranslations.SetContentWriter(writer)
 	}
 	pages.GET("/articles/translations",
-		adminui.PageAuthz("/api/content/list"),
+		mw.PageAuthz("/api/content/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		articleTranslations.ArticleTranslations)
 
