@@ -276,3 +276,35 @@ func (s *Service) translateData(ctx context.Context, lang, entityType string, da
 	}
 	return out
 }
+
+// BulkDeleteArticles 在一个事务里删除多篇文章：任一失败整批回滚。
+//
+// 失效通知在提交后统一发出：回滚不应留下「已通知失效、库里却没有变化」的偏差。
+func (s *Service) BulkDeleteArticles(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return contentenums.Err(contentenums.ErrInvalidParam)
+	}
+	deleted := make([]*contentmodel.Entity, 0, len(ids))
+	if err := s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, id := range ids {
+			e := &contentmodel.Entity{}
+			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(e).Error; gerr != nil {
+				if errors.Is(gerr, gorm.ErrRecordNotFound) {
+					return contentenums.Err(contentenums.ErrNotFound)
+				}
+				return gerr
+			}
+			if derr := tx.WithContext(ctx).Where("id = ?", id).Delete(&contentmodel.Entity{}).Error; derr != nil {
+				return derr
+			}
+			deleted = append(deleted, e)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, e := range deleted {
+		s.notifyContentChanged(ctx, e)
+	}
+	return nil
+}

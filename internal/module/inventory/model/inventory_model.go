@@ -215,6 +215,30 @@ func (m *Model) SetDefaultWarehouse(ctx context.Context, projectID, id string) (
 	})
 }
 
+// GetWarehouseTx 在调用方事务内读取仓库（工程作用域已由事务持有者设置）。
+func (m *Model) GetWarehouseTx(ctx context.Context, tx *gorm.DB, id, projectID string) (*WarehouseEntity, error) {
+	e := &WarehouseEntity{}
+	if err := tx.WithContext(ctx).Model(&WarehouseEntity{}).
+		Where("id = ? AND project_id = ?", id, projectID).First(e).Error; err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// CountNonZeroStocksTx 在调用方事务内统计有库存的 SKU 行数。
+func (m *Model) CountNonZeroStocksTx(ctx context.Context, tx *gorm.DB, warehouseID, projectID string) (int64, error) {
+	var n int64
+	err := tx.WithContext(ctx).Model(&StockEntity{}).
+		Where("warehouse_id = ? AND quantity <> 0 AND project_id = ?", warehouseID, projectID).
+		Count(&n).Error
+	return n, err
+}
+
+// DeleteWarehouseTx 在调用方事务内删除仓库。
+func (m *Model) DeleteWarehouseTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("id = ?", id).Delete(&WarehouseEntity{}).Error
+}
+
 func (m *Model) DeleteWarehouse(ctx context.Context, id, projectID string) (err error) {
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&WarehouseEntity{}).

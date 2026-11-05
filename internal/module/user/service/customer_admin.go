@@ -2,6 +2,7 @@ package userservice
 
 import (
 	"context"
+	"gorm.io/gorm"
 	"time"
 
 	userdto "go_wp/internal/module/user/dto"
@@ -170,4 +171,72 @@ func toCustomerResp(e *usermodel.UserEntity, now time.Time) *userdto.CustomerRes
 		r.LockedUntilText = formatTime(e.LockedUntilTime)
 	}
 	return r
+}
+
+// BulkSetCustomerStatus 在一个事务里批量改账号状态：任一失败整批回滚。
+//
+// 会话撤销是事务外的副作用，只在事务提交成功后执行；回滚不会留下半批状态。
+func (s *Service) BulkSetCustomerStatus(ctx context.Context, req *userdto.CustomerBulkStatusReq) (err error) {
+	if req == nil || len(req.IDs) == 0 || req.Status == nil {
+		return userenums.Err(userenums.ErrInvalidParam)
+	}
+	status := *req.Status
+	switch status {
+	case usermodel.UserStatusActive, usermodel.UserStatusDisabled:
+	default:
+		return userenums.Err(userenums.ErrCustomerStatusInvalid)
+	}
+	disabled := make([]uint64, 0)
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, id := range req.IDs {
+			var e usermodel.UserEntity
+			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(&e).Error; gerr != nil {
+				return userenums.Err(userenums.ErrUserNotFound)
+			}
+			if e.Status == status {
+				continue
+			}
+			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).
+				Where("id = ?", id).Update("status", status).Error; uerr != nil {
+				return uerr
+			}
+			if status == usermodel.UserStatusDisabled {
+				disabled = append(disabled, id)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, id := range disabled {
+		if rerr := s.RevokeAllSessions(ctx, id); rerr != nil {
+			logger.Scene("user").With("user_id", id).Error(rerr,
+				"停用账号后撤销会话失败（状态已更新，需人工清理残留会话）")
+		}
+	}
+	return nil
+}
+
+// BulkUnlockCustomers 在一个事务里批量解除锁定并清零失败计数。
+func (s *Service) BulkUnlockCustomers(ctx context.Context, req *userdto.CustomerBulkUnlockReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return userenums.Err(userenums.ErrInvalidParam)
+	}
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, id := range req.IDs {
+			var e usermodel.UserEntity
+			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(&e).Error; gerr != nil {
+				return userenums.Err(userenums.ErrUserNotFound)
+			}
+			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).Where("id = ?", id).
+				Updates(map[string]any{
+					"login_failure_count": 0,
+					"locked_until_time":   nil,
+					"last_failure_time":   nil,
+				}).Error; uerr != nil {
+				return uerr
+			}
+		}
+		return nil
+	})
 }

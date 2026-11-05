@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"go_wp/pkg/builder/source"
 	"go_wp/internal/module/content/dto"
+	"go_wp/pkg/builder/source"
 )
 
 var fieldWhitelist = map[string][]string{
@@ -137,6 +137,9 @@ type ContentService interface {
 	Count(ctx context.Context, req *contentdto.ListReq) (n int64, err error)
 
 	Delete(ctx context.Context, req *contentdto.DeleteReq) (err error)
+
+	// BulkDeleteArticles 在一个事务里删除多篇文章：任一失败整批回滚。
+	BulkDeleteArticles(ctx context.Context, ids []string) error
 
 	ResolverFor(ctx context.Context, entityType, entityID string) (r source.ContentResolver, err error)
 

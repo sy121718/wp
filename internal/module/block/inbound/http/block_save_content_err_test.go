@@ -53,6 +53,10 @@ func (s *stubBlockService) Delete(context.Context, *blockdto.DeleteReq) error {
 	panic("SaveBlockContent 不应调用 Delete")
 }
 
+func (s *stubBlockService) BulkDelete(context.Context, *blockdto.BulkDeleteReq) error {
+	panic("BulkDelete 未在用例中实现")
+}
+
 func (s *stubBlockService) CloneAST(context.Context, *blockdto.CloneReq) (*blockdto.CloneResp, error) {
 	panic("SaveBlockContent 不应调用 CloneAST")
 }

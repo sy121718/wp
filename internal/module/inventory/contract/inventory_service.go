@@ -20,6 +20,9 @@ type InventoryService interface {
 
 	DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteWarehouseReq) (err error)
 
+	// BulkDeleteWarehouses 在一个事务里删除多个仓库：任一失败整批回滚。
+	BulkDeleteWarehouses(ctx context.Context, req *inventorydto.BulkDeleteWarehouseReq) error
+
 	EnsureStock(ctx context.Context, req *inventorydto.EnsureStockReq) (res *inventorydto.StockResp, err error)
 
 	GetStock(ctx context.Context, req *inventorydto.GetStockReq) (res *inventorydto.StockResp, err error)
@@ -73,6 +76,9 @@ type InventoryService interface {
 	ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error)
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
+
+	// BulkUpdateReasonStatus 在一个事务里批量改原因启停：任一失败整批回滚。
+	BulkUpdateReasonStatus(ctx context.Context, req *inventorydto.BulkReasonStatusReq) error
 
 	ResolveVariantWarehouseCosts(ctx context.Context, projectID string, refs []inventorydto.VariantWarehouseCostRef) (out []inventorydto.VariantWarehouseCost, err error)
 

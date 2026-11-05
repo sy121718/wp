@@ -57,5 +57,8 @@ type NavigationService interface {
 
 	Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error)
 
+	// BulkDelete 在一个事务里删除多个导航项：任一失败整批回滚。
+	BulkDelete(ctx context.Context, req *navigationdto.BulkDeleteReq) error
+
 	Render(ctx context.Context, projectID, kind string) (html string, err error)
 }

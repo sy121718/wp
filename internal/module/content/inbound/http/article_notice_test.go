@@ -35,6 +35,16 @@ func (s *articleBulkDeleteStub) Delete(_ context.Context, req *contentdto.Delete
 	return nil
 }
 
+// BulkDeleteArticles 复刻真实语义：任一失败整批拒绝。
+func (s *articleBulkDeleteStub) BulkDeleteArticles(_ context.Context, ids []string) error {
+	for _, id := range ids {
+		if s.failIDs[id] {
+			return errors.New(contentenums.ErrNotFound)
+		}
+	}
+	return nil
+}
+
 func articleBulkTestEngine(s *articleBulkDeleteStub) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -61,9 +71,10 @@ func TestArticlesBulkDeleteRendersJumpPage(t *testing.T) {
 		state string
 		want  string
 	}{
-		{name: "全成功", ids: []string{"a", "b"}, state: "ok", want: "已删除 2 篇文章。"},
-		{name: "部分成功", ids: []string{"a", "bad"}, state: "err", want: "已删除 1 篇，1 篇未能删除"},
-		{name: "全部失败", ids: []string{"bad"}, state: "err", want: "1 篇文章都未能删除"},
+		{name: "全成功", ids: []string{"a", "b"}, state: "ok", want: "操作成功"},
+		// 全成或全败：任一条失败整批拒绝，只播报一句失败。
+		{name: "部分失败", ids: []string{"a", "bad"}, state: "err", want: "data-ui-error"},
+		{name: "全部失败", ids: []string{"bad"}, state: "err", want: "data-ui-error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,8 +110,8 @@ func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 		t.Fatalf("未选中是成功事实（未改动），应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `role="status"`) || !strings.Contains(body, "没有选中任何文章") {
-		t.Errorf("未选中应给出「没有选中任何文章」的提示：%s", body[:min(len(body), 240)])
+	if !strings.Contains(body, `role="status"`) {
+		t.Errorf("未选中应走统一提示组件：%s", body[:min(len(body), 240)])
 	}
 }
 

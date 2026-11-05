@@ -2,7 +2,6 @@ package userhttp
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
@@ -32,13 +31,9 @@ type customerBulkResult struct {
 	Items    []customerBulkItem `json:"items"`
 }
 
-// customerWriteResult 是单条客户动作的成功片段：句子只在 Jet 里，按词条取词；
-// Fallback 只在缺词时兜底，绝不让裸 key 上屏。
+// customerWriteResult 是单条客户动作的成功提示：走统一提示组件，按词条取词。
 func customerWriteResult(c *gin.Context, key string) {
-	c.HTML(http.StatusOK, "admin/user/customer_write_result.html", pageview.Objects(
-		pageview.Object("Key", key),
-		pageview.Object("Fallback", customerNoticeFallback[key]),
-	))
+	pageview.SuccessMessage(c, key, customerNoticeFallback[key])
 }
 
 func customerAPIErrorText(c *gin.Context, err error) string {
@@ -83,25 +78,13 @@ func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
 		customerBulkFail(c, err)
 		return
 	}
-	updated, skipped := 0, 0
-	rows := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		row := map[string]any{"ID": strconv.FormatUint(id, 10), "OK": false, "Message": ""}
-		res, serr := h.svc.SetCustomerStatus(c.Request.Context(), &userdto.CustomerStatusReq{CustomerID: id, Status: status})
-		switch {
-		case serr != nil:
-			row["Message"] = customerAPIErrorText(c, serr)
-			skipped++
-		case res == nil:
-			row["Message"] = response.TranslateMessage(c, userenums.ErrInternal)
-			skipped++
-		default:
-			row["OK"] = true
-			updated++
-		}
-		rows = append(rows, row)
+	if err := h.svc.BulkSetCustomerStatus(c.Request.Context(), &userdto.CustomerBulkStatusReq{
+		IDs: ids, Status: &status,
+	}); err != nil {
+		pageview.FailScene(c, userCustomerErrScene, err)
+		return
 	}
-	customerBulkHTML(c, "admin/user/customer_bulk_status_result.html", updated, skipped, rows)
+	pageview.Success(c)
 }
 
 func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
@@ -116,28 +99,11 @@ func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
 		customerBulkFail(c, err)
 		return
 	}
-	unlocked, cleared, noop, skipped := 0, 0, 0, 0
-	for _, id := range ids {
-		res, serr := h.svc.UnlockCustomer(c.Request.Context(), &userdto.CustomerUnlockReq{CustomerID: id})
-		switch {
-		case serr != nil:
-			skipped++
-		case res == nil:
-			skipped++
-		case res.Unlocked:
-			unlocked++
-		case res.Cleared:
-			cleared++
-		default:
-			noop++
-		}
+	if err := h.svc.BulkUnlockCustomers(c.Request.Context(), &userdto.CustomerBulkUnlockReq{IDs: ids}); err != nil {
+		pageview.FailScene(c, userCustomerErrScene, err)
+		return
 	}
-	c.HTML(http.StatusOK, "admin/user/customer_bulk_unlock_result.html", pageview.Objects(
-		pageview.Object("Unlocked", unlocked),
-		pageview.Object("Cleared", cleared),
-		pageview.Object("Noop", noop),
-		pageview.Object("Skipped", skipped),
-	))
+	pageview.Success(c)
 }
 
 // customerBulkFail 把批量请求的失败事实交给共享 HTML 出口。

@@ -35,6 +35,19 @@ func (s *bulkDeleteStubService) Delete(_ context.Context, req *blockdto.DeleteRe
 	return nil
 }
 
+// BulkDelete 复刻真实语义：任一失败整批拒绝，不留下半成品。
+func (s *bulkDeleteStubService) BulkDelete(_ context.Context, req *blockdto.BulkDeleteReq) error {
+	for _, id := range req.IDs {
+		s.calls = append(s.calls, id)
+	}
+	for _, id := range req.IDs {
+		if err, ok := s.fail[id]; ok {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *bulkDeleteStubService) List(context.Context, *blockdto.ListReq) ([]blockdto.BlockResp, error) {
 	panic("BulkDelete 不应调用 List")
 }
@@ -151,29 +164,27 @@ func TestBulkDeleteDedupesBeforeDelete(t *testing.T) {
 	if len(svc.calls) != 2 || svc.calls[0] != "b1" || svc.calls[1] != "b2" {
 		t.Fatalf("应去重保序后逐条删除，实际调用 %v", svc.calls)
 	}
-	if !strings.Contains(body, "已删除 2 个块") && !strings.Contains(body, "Deleted 2 blocks") {
-		t.Fatalf("计数应如实报告 2 个，实际 %s", firstBlockN(body, 400))
+	if !strings.Contains(body, "操作成功") {
+		t.Fatalf("成功后应走统一提示组件，实际 %s", firstBlockN(body, 400))
 	}
 }
 
-func TestBulkDeletePartialFailureKeepsGoing(t *testing.T) {
+func TestBulkDeleteRejectsWholeBatchOnAnyFailure(t *testing.T) {
 	inUse := blockcontract.NewBlockInUseError([]blockcontract.BlockUsage{
 		{Kind: blockcontract.UsageKindPageDocument, EntityID: "page-42", Label: "/pricing", Detail: "main"},
 	})
 	svc := &bulkDeleteStubService{fail: map[string]error{"b2": inUse}}
 	status, body := bulkDeleteResp(t, svc, url.Values{"ids": {"b1", "b2", "b3"}})
 
-	if status != http.StatusOK {
-		t.Fatalf("部分成功应 200（不伪装成整批失败），实际 %d", status)
+	// 全部成功或全部失败：任一失败整批 4xx，界面只播报一句失败。
+	if status < 400 {
+		t.Fatalf("任一条失败应整批拒绝（4xx），实际 %d", status)
 	}
-	if len(svc.calls) != 3 {
-		t.Fatalf("单条失败不得中断整批：三条都应尝试，实际 %v", svc.calls)
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败应渲染共享错误片段，实际 %s", firstBlockN(body, 600))
 	}
-	if !strings.Contains(body, "b2") || !strings.Contains(body, "/pricing") {
-		t.Fatalf("失败行必须带 id 与引用明细（运营据此去解除引用），实际 %s", firstBlockN(body, 600))
-	}
-	if !strings.Contains(body, "另有 1 个被跳过") && !strings.Contains(body, "1 more were skipped") {
-		t.Fatalf("计数应如实报告跳过 1 个，实际 %s", firstBlockN(body, 600))
+	if strings.Contains(body, "<ul>") {
+		t.Fatalf("失败明细不得渲染成列表（属业务数据，随 data 返回），实际 %s", firstBlockN(body, 600))
 	}
 }
 
@@ -187,8 +198,8 @@ func TestBulkDeleteAllBlankSucceedsEmpty(t *testing.T) {
 	if len(svc.calls) != 0 {
 		t.Fatalf("没有有效 id 不该调用 service，实际 %v", svc.calls)
 	}
-	if !strings.Contains(body, "没有选中任何块") {
-		t.Fatalf("空勾选要说清列表未改动，实际 %s", firstBlockN(body, 400))
+	if !strings.Contains(body, "操作成功") {
+		t.Fatalf("空勾选仍走统一提示（列表未改动），实际 %s", firstBlockN(body, 400))
 	}
 }
 
@@ -196,8 +207,8 @@ func TestBulkDeleteUnknownErrorStillControlledHTML(t *testing.T) {
 	svc := &bulkDeleteStubService{fail: map[string]error{"b1": errors.New(`pq: relation "blocks" does not exist`)}}
 	status, body := bulkDeleteResp(t, svc, url.Values{"ids": {"b1"}})
 
-	if status != http.StatusOK {
-		t.Fatalf("单条未知错误仍应 200 + 逐条结果，实际 %d", status)
+	if status < 400 {
+		t.Fatalf("未知错误也应整批拒绝（4xx），实际 %d", status)
 	}
 	if strings.Contains(body, "pq:") || strings.Contains(body, `relation "blocks"`) {
 		t.Fatalf("驱动原文泄漏到逐条原因里：%s", firstBlockN(body, 400))

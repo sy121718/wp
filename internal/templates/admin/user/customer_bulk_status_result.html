@@ -1,4 +1,0 @@
-{* 批量改客户状态结论：逐条原因只出现在失败行。 *}
-{{if .Done == 0 && .Skipped == 0}}{{t("custNoneSel", "请先选择客户。")}}
-{{else}}{{tn("custBulkStat", "已更新 {done} 个客户，{skipped} 个未处理。", map("done", .Done, "skipped", .Skipped))}}{{end}}
-{{if len(.Rows) > 0}}<ul>{{range _, row := .Rows}}{{if !row.OK}}<li>{{row.ID}}：{{row.Message}}</li>{{end}}{{end}}</ul>{{end}}

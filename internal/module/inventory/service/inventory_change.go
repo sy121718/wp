@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/rls"
 	"math"
 	"slices"
 	"strconv"
@@ -1020,4 +1021,46 @@ func toReasonResp(e *inventorymodel.ReasonEntity) *inventorydto.ReasonResp {
 		resp.ProjectID = *e.ProjectID
 	}
 	return resp
+}
+
+// BulkUpdateReasonStatus 在一个事务里批量改原因启停：任一失败整批回滚。
+func (s *Service) BulkUpdateReasonStatus(ctx context.Context, req *inventorydto.BulkReasonStatusReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
+		return inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)
+	}
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		at := time.Now().UTC()
+		for _, raw := range req.IDs {
+			rid, perr := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+			if perr != nil {
+				return inventoryenums.Err(inventoryenums.ErrReasonNotFound)
+			}
+			e := &inventorymodel.ReasonEntity{}
+			if gerr := tx.WithContext(ctx).Model(&inventorymodel.ReasonEntity{}).
+				Where("id = ? AND project_id = ?", rid, projectID).First(e).Error; gerr != nil {
+				return mapReasonNotFound(gerr)
+			}
+			if e.IsBuiltin {
+				return inventoryenums.Err(inventoryenums.ErrReasonBuiltin)
+			}
+			e.Status = status
+			e.UpdatedAt = at
+			if uerr := tx.WithContext(ctx).Model(&inventorymodel.ReasonEntity{}).
+				Where("id = ?", e.ID).Save(e).Error; uerr != nil {
+				return uerr
+			}
+		}
+		return nil
+	})
 }

@@ -14,6 +14,7 @@ import (
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
+	"go_wp/internal/module/inventory/enums"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/response"
 )
@@ -32,6 +33,19 @@ func (s *reasonUpdateSpy) UpdateReason(_ context.Context, req *inventorydto.Upda
 	return &inventorydto.ReasonResp{ID: req.ID}, nil
 }
 
+// BulkUpdateReasonStatus 复刻真实语义：任一失败整批拒绝，不落库。
+func (s *reasonUpdateSpy) BulkUpdateReasonStatus(_ context.Context, req *inventorydto.BulkReasonStatusReq) error {
+	for _, id := range req.IDs {
+		s.calls = append(s.calls, &inventorydto.UpdateReasonReq{ProjectID: req.ProjectID, ID: id, Status: &req.Status})
+	}
+	for _, id := range req.IDs {
+		if id == s.failID {
+			return inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)
+		}
+	}
+	return nil
+}
+
 func TestInventoryReasonsBulkStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -40,7 +54,7 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		wantCalls int
 		wantTitle string
 	}{
-		// 部分失败仍是 400：失败片段给状态码档的通用文案（缺词时不露裸 key）。
+		// 任一条失败整批拒绝：失败只给一句提示，不渲染逐条明细。
 		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "1", 2, "data-ui-error"},
 
 		// 没注入词库：业务错误落到共享归口文案，不泄漏裸 key。

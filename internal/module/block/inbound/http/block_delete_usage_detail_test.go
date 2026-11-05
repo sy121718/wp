@@ -48,7 +48,7 @@ func deleteResp(t *testing.T, svc blockcontract.BlockService, form url.Values) (
 	return rec.Code, body
 }
 
-func TestDeleteKeepsUsageDetailInHTML(t *testing.T) {
+func TestDeleteRejectionShowsOnlyOneMessage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		blockenums.ErrBlockInUse:             {"zh-CN": "该区块仍被页面引用，不能删除。"},
 		blockenums.MsgBlockUsagePageDocument: {"zh-CN": "页面文档"},
@@ -66,11 +66,15 @@ func TestDeleteKeepsUsageDetailInHTML(t *testing.T) {
 	if status != http.StatusConflict {
 		t.Fatalf("被引用应回 409，实际 %d（%s）", status, firstBlockN(body, 400))
 	}
-	if !strings.Contains(body, "/pricing") {
-		t.Errorf("删除被拒的提示必须能定位到具体引用（/pricing），实际 %s", firstBlockN(body, 600))
+	if !strings.Contains(body, "该区块仍被页面引用") {
+		t.Errorf("失败提示应只给一句「为什么不行」，实际 %s", firstBlockN(body, 600))
 	}
-	if !strings.Contains(body, "页面文档") {
-		t.Errorf("引用类别应是当前语言的文案（页面文档），实际 %s", firstBlockN(body, 600))
+	// 逐条引用明细属业务数据：随响应 data 返回，不在提示区渲染。
+	if strings.Contains(body, "/pricing") || strings.Contains(body, "页面文档") {
+		t.Errorf("引用明细不该渲染进失败提示，实际 %s", firstBlockN(body, 600))
+	}
+	if strings.Contains(body, "<ul>") {
+		t.Errorf("失败提示不得包含逐条列表，实际 %s", firstBlockN(body, 600))
 	}
 	if strings.Contains(body, "page_document") {
 		t.Errorf("提示里出现了内部枚举原文（page_document）：%s", firstBlockN(body, 600))

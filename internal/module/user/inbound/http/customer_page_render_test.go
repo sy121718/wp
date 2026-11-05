@@ -88,6 +88,27 @@ func (f *fakeCustomerAdmin) GetCustomer(_ context.Context, _ uint64) (*userdto.C
 	return f.detail, nil
 }
 
+// BulkSetCustomerStatus 复刻真实语义：任一失败整批拒绝。
+func (f *fakeCustomerAdmin) BulkSetCustomerStatus(_ context.Context, req *userdto.CustomerBulkStatusReq) error {
+	for _, id := range req.IDs {
+		f.statusIDs = append(f.statusIDs, id)
+		if f.failIDs[id] {
+			return userenums.Err(userenums.ErrUserNotFound)
+		}
+	}
+	return nil
+}
+
+// BulkUnlockCustomers 复刻真实语义：任一失败整批拒绝。
+func (f *fakeCustomerAdmin) BulkUnlockCustomers(_ context.Context, req *userdto.CustomerBulkUnlockReq) error {
+	for _, id := range req.IDs {
+		if f.failIDs[id] {
+			return userenums.Err(userenums.ErrUserNotFound)
+		}
+	}
+	return nil
+}
+
 func (f *fakeCustomerAdmin) SetCustomerStatus(_ context.Context, req *userdto.CustomerStatusReq) (*userdto.CustomerStatusResp, error) {
 	f.statusReq = req
 	f.statusIDs = append(f.statusIDs, req.CustomerID)
@@ -513,13 +534,10 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("批量解锁应渲染结果片段（200），实际 %d", rec.Code)
+		t.Fatalf("批量解锁应渲染成功片段（200），实际 %d", rec.Code)
 	}
-	body := rec.Body.String()
-	for _, want := range []string{"已解除锁定 1 个", "1 个本来就未锁定"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("结果片段应含 %q", want)
-		}
+	if body := rec.Body.String(); !strings.Contains(body, "操作成功") {
+		t.Errorf("成功应走统一提示组件：%s", body)
 	}
 }
 
@@ -586,17 +604,13 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("批量动作应渲染结果片段（200），实际 %d", rec.Code)
-	}
-	if len(fake.statusIDs) != 3 {
-		t.Fatalf("三条都应逐条走到单条写入路径，实际 %v", fake.statusIDs)
+	// 全成或全败：任一条失败整批拒绝，不落库。
+	if rec.Code < 400 {
+		t.Fatalf("任一条失败应整批拒绝，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"已更新 2 个客户", "1 个未处理"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("结果片段应含结果摘要 %q", want)
-		}
+	if !strings.Contains(body, "data-ui-error") {
+		t.Errorf("失败应走共享错误出口：%s", body)
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("写响应必须是 HTML 片段，实际 %q", ct)

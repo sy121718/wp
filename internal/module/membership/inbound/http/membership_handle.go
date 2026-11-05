@@ -107,12 +107,9 @@ var membershipMessageFallback = map[string]string{
 	membershipenums.MsgAssignUnlocked:   "已解除手工锁定的会员归属",
 }
 
-// membershipWriteOK 是写操作的统一成功片段：句子只在 Jet 里。
+// membershipWriteOK 是写操作的统一成功提示：走共享提示组件，按词条取词。
 func membershipWriteOK(c *gin.Context, key string) {
-	c.HTML(http.StatusOK, "admin/membership/membership_write_result.html", pageview.Objects(
-		pageview.Object("Key", key),
-		pageview.Object("Fallback", membershipMessageFallback[key]),
-	))
+	pageview.SuccessMessage(c, key, membershipMessageFallback[key])
 }
 
 const membershipErrScene = "membership"

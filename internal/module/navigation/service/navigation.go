@@ -590,3 +590,55 @@ func normalizeSourceID(p *string) *string {
 	}
 	return &v
 }
+
+// BulkDelete 在一个事务里删除多个导航项：任一失败整批回滚。
+//
+// 与单条删除共用同一条删除规则（含子孙项与失效标记），只是把事务边界提到批量外层：
+// 一次用户可感知的批量操作要么全成、要么全败。
+func (s *Service) BulkDelete(ctx context.Context, req *navigationdto.BulkDeleteReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	entities := make([]*navigationmodel.NavigationEntity, 0, len(req.IDs))
+	projectID := ""
+	for _, raw := range req.IDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		e, err := s.locateNavigation(ctx, id)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return navigationenums.Err(navigationenums.ErrNotFound)
+			}
+			return err
+		}
+		if projectID == "" {
+			projectID = e.ProjectID
+		} else if projectID != e.ProjectID {
+			return navigationenums.Err(navigationenums.ErrInvalidParam)
+		}
+		entities = append(entities, e)
+	}
+	if len(entities) == 0 {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+
+	at := time.Now().UTC()
+	return s.withMenuWriteTx(ctx, projectID, func(tx *gorm.DB) error {
+		rows, lerr := s.m.ListTx(ctx, tx, projectID, entities[0].Kind)
+		if lerr != nil {
+			return lerr
+		}
+		for _, e := range entities {
+			ids := navDescendantIDs(rows, e.ID)
+			if derr := s.m.DeleteManyTx(ctx, tx, projectID, ids); derr != nil {
+				return derr
+			}
+			if nerr := s.markNavigationStaleInTx(ctx, tx, projectID, e.ID); nerr != nil {
+				return nerr
+			}
+		}
+		return s.markMenuStaleInTx(ctx, tx, projectID, entities[0].Kind, at)
+	})
+}

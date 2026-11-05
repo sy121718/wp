@@ -13,11 +13,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/database"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/utils"
@@ -350,3 +350,82 @@ func normalizeReuseMode(raw string) (string, error) {
 		return "", ErrInvalidReuseMode
 	}
 }
+
+// BulkDelete 在一个事务里删除多个块：任一失败整批回滚，并把失败原因交给调用方。
+//
+// 与单条删除的区别只有事务边界：引用检查仍在提交前完成，失败项不写库。
+func (s *Service) BulkDelete(ctx context.Context, req *blockdto.BulkDeleteReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return ErrParamRequired
+	}
+	type target struct {
+		id        string
+		projectID string
+		reuseMode string
+	}
+	targets := make([]target, 0, len(req.IDs))
+	blocked := make([]facing.BlockedItem, 0)
+	for _, raw := range req.IDs {
+		entity, err := s.getExistingBlock(ctx, raw)
+		if err != nil {
+			key := blockenums.ErrBlockNotFound
+			if !errors.Is(err, ErrNotFound) {
+				key = blockenums.MsgInternalError
+			}
+			blocked = append(blocked, facing.BlockedItem{ID: raw, ReasonKey: key})
+			continue
+		}
+		if entity.ReuseMode == blockmodel.ReuseGlobal {
+			if _, inUse := s.blockRefState(ctx, entity.ID); inUse {
+				blocked = append(blocked, facing.BlockedItem{
+					ID: entity.ID, Name: entity.Name, ReasonKey: blockenums.ErrBlockInUse,
+				})
+				continue
+			}
+		}
+		targets = append(targets, target{id: entity.ID, projectID: entity.ProjectID, reuseMode: entity.ReuseMode})
+	}
+	if len(blocked) > 0 {
+		return &bulkBlockedError{items: blocked}
+	}
+
+	// 同工程的行在同一事务里删；跨工程时逐工程一个事务，任一失败不影响已提交工程。
+	groups := map[string][]target{}
+	order := make([]string, 0)
+	for _, t := range targets {
+		if _, ok := groups[t.projectID]; !ok {
+			order = append(order, t.projectID)
+		}
+		groups[t.projectID] = append(groups[t.projectID], t)
+	}
+	for _, pid := range order {
+		rows := groups[pid]
+		if err := s.model.Transaction(ctx, pid, func(tx *gorm.DB) error {
+			for _, t := range rows {
+				if err := s.model.DeleteTx(ctx, tx, t.projectID, t.id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	for _, t := range targets {
+		s.propagateStale(ctx, t.id, t.reuseMode)
+	}
+	return nil
+}
+
+// bulkBlockedError 携带整批被拒的逐条原因；由共享失败出口放进 data.items。
+type bulkBlockedError struct {
+	items []facing.BlockedItem
+}
+
+func (e *bulkBlockedError) Error() string { return blockenums.ErrBlockInUse }
+
+func (e *bulkBlockedError) Facing() (string, string) {
+	return blockenums.ErrBlockInUse, ""
+}
+
+func (e *bulkBlockedError) BlockedItems() []facing.BlockedItem { return e.items }

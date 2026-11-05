@@ -171,3 +171,8 @@ func (m *Model) collectionQuery(ctx context.Context, entityType string, filter m
 	}
 	return q
 }
+
+// Transaction 提供一份事务句柄，供批量写整体提交或回滚。
+func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}

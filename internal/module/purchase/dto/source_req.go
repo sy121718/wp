@@ -19,6 +19,15 @@ type CreateSourceReq struct {
 	OperatorID string `json:"-"`
 }
 
+// BulkDeleteSourceReq 批量删除货源：整批一个事务，任一失败全量回滚。
+type BulkDeleteSourceReq struct {
+	IDs []string `json:"ids" form:"ids" binding:"required,min=1,dive,required"`
+
+	ProjectID string `json:"projectId" form:"projectId"`
+
+	OperatorID string `json:"-"`
+}
+
 type UpdateSourceReq struct {
 	ID string `json:"id" form:"id" binding:"required"`
 

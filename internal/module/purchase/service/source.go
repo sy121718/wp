@@ -493,3 +493,34 @@ func toSourceResp(e *purchasemodel.SourceEntity) *purchasedto.SourceResp {
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 }
+
+// BulkDeleteSources 在一个事务里删除多个货源：任一失败整批回滚。
+func (s *Service) BulkDeleteSources(ctx context.Context, req *purchasedto.BulkDeleteSourceReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return purchaseenums.Err(purchaseenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		for _, raw := range req.IDs {
+			locked, lerr := s.m.LockSourceTx(ctx, tx, raw, projectID)
+			if lerr != nil {
+				return mapSourceNotFound(lerr)
+			}
+			before := sourceChangeSnapshot(locked)
+			if derr := s.m.DeleteSourceTx(ctx, tx, locked.ID); derr != nil {
+				return derr
+			}
+			if cherr := s.recordChangesTx(ctx, tx, sourceChangeInput(locked, masterdataenums.ActionDelete,
+				req.OperatorID, before, nil)); cherr != nil {
+				return cherr
+			}
+		}
+		return nil
+	})
+}

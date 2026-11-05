@@ -5,7 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"go_wp/pkg/view/jet"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -97,25 +96,13 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 		inventoryFailMsg(c, inventoryBulkReasonNoneSelected)
 		return
 	}
-	updated, skipped := 0, 0
-	for _, id := range ids {
-		if _, err := h.inventory.UpdateReason(c.Request.Context(), &inventorydto.UpdateReasonReq{
-			ProjectID: projectID, ID: id, Status: &status,
-		}); err != nil {
-			skipped++
-			continue
-		}
-		updated++
+	if err := h.inventory.BulkUpdateReasonStatus(c.Request.Context(), &inventorydto.BulkReasonStatusReq{
+		IDs: ids, ProjectID: projectID, Status: status,
+	}); err != nil {
+		pageview.FailScene(c, inventoryErrScene, err)
+		return
 	}
-
-	switch {
-	case skipped > 0:
-		inventoryFailMsg(c, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)))
-	case updated > 0:
-		inventoryWriteOK(c)
-	default:
-		inventoryWriteOK(c)
-	}
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out []ReasonRowResp, err error) {

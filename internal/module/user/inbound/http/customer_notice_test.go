@@ -22,12 +22,12 @@ func TestCustomerBulkWritesReturnHTMLFragments(t *testing.T) {
 		states []string
 	}{
 		{
-			name:   "批量停用（部分未处理）",
+			name:   "批量停用（任一条失败整批拒绝）",
 			path:   "/api/customer/bulk-status",
 			form:   url.Values{"ids": {"42", "7", "43"}, "status": {"0"}},
 			fake:   &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}},
-			status: http.StatusOK,
-			states: []string{"已更新 2 个客户", "1 个未处理", "7："},
+			status: http.StatusNotFound,
+			states: []string{"data-ui-error"},
 		},
 		{
 			name:   "批量启用",
@@ -35,10 +35,10 @@ func TestCustomerBulkWritesReturnHTMLFragments(t *testing.T) {
 			form:   url.Values{"ids": {"42", "43"}, "status": {"1"}},
 			fake:   &fakeCustomerAdmin{},
 			status: http.StatusOK,
-			states: []string{"已更新 2 个客户"},
+			states: []string{"操作成功"},
 		},
 		{
-			name: "批量解锁（解开 / 本来就没事）",
+			name: "批量解锁",
 			path: "/api/customer/bulk-unlock",
 			form: url.Values{"ids": {"42", "43"}},
 			fake: &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
@@ -46,7 +46,7 @@ func TestCustomerBulkWritesReturnHTMLFragments(t *testing.T) {
 				43: {CustomerID: 43},
 			}},
 			status: http.StatusOK,
-			states: []string{"已解除锁定 1 个", "1 个本来就未锁定"},
+			states: []string{"操作成功"},
 		},
 		{
 			name:   "批量一条都没勾",

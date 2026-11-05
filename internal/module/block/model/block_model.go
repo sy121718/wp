@@ -169,6 +169,23 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 	return rows, err
 }
 
+// DeleteTx 在调用方事务内删除一个块；工程作用域由事务持有者设置。
+func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, projectID, id string) error {
+	if tx == nil {
+		return ErrProjectRequired
+	}
+	q := tx.WithContext(ctx).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	return q.Delete(&BlockEntity{}).Error
+}
+
+// Transaction 提供一个工程作用域内的事务，供批量删除整体提交或回滚。
+func (m *Model) Transaction(ctx context.Context, projectID string, fn func(tx *gorm.DB) error) error {
+	return rls.InProjectScope(ctx, m.db, projectID, fn)
+}
+
 func (m *Model) Delete(ctx context.Context, projectID, id string) (err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return m.DB(ctx).Where("id = ?", id).Delete(&BlockEntity{}).Error

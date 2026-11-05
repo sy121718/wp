@@ -66,8 +66,9 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("成功提示状态 %d：%s", rec.Code, rec.Body.String())
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "EN-ALL 3") {
-		t.Errorf("提示页正文未按当前语言渲染：%s", body[:min(len(body), 240)])
+	// 成功走统一提示组件：批量结果只播报默认文案，逐条结果属业务数据。
+	if body := rec.Body.String(); !strings.Contains(body, "role=\"status\"") {
+		t.Errorf("成功应走统一提示组件：%s", body[:min(len(body), 240)])
 	}
 
 	zh := articleBulkLangCtx(t, "zh-CN")

@@ -14,6 +14,12 @@ type CustomerAdminPort interface {
 	SetCustomerStatus(ctx context.Context, req *userdto.CustomerStatusReq) (res *userdto.CustomerStatusResp, err error)
 
 	UnlockCustomer(ctx context.Context, req *userdto.CustomerUnlockReq) (res *userdto.CustomerUnlockResp, err error)
+
+	// BulkSetCustomerStatus 在一个事务里批量改账号状态：任一失败整批回滚。
+	BulkSetCustomerStatus(ctx context.Context, req *userdto.CustomerBulkStatusReq) error
+
+	// BulkUnlockCustomers 在一个事务里批量解除锁定。
+	BulkUnlockCustomers(ctx context.Context, req *userdto.CustomerBulkUnlockReq) error
 }
 
 type CustomerQueryReader interface {

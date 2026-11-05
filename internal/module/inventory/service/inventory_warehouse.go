@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/rls"
 	"strings"
 	"time"
 	"unicode"
@@ -530,4 +531,42 @@ func stringOf(v any) string {
 func boolOf(v any) bool {
 	b, _ := v.(bool)
 	return b
+}
+
+// BulkDeleteWarehouses 在一个事务里删除多个仓库：任一失败整批回滚。
+//
+// 前置校验（默认仓、有库存）在事务内逐条执行；失败时整批不落库。
+func (s *Service) BulkDeleteWarehouses(ctx context.Context, req *inventorydto.BulkDeleteWarehouseReq) error {
+	if req == nil || len(req.IDs) == 0 {
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	pid, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, pid); serr != nil {
+			return serr
+		}
+		for _, raw := range req.IDs {
+			e, gerr := s.m.GetWarehouseTx(ctx, tx, raw, pid)
+			if gerr != nil {
+				return mapWarehouseNotFound(gerr)
+			}
+			if e.IsDefault {
+				return inventoryenums.Err(inventoryenums.ErrWarehouseIsDefault)
+			}
+			n, cerr := s.m.CountNonZeroStocksTx(ctx, tx, e.ID, pid)
+			if cerr != nil {
+				return cerr
+			}
+			if n > 0 {
+				return inventoryenums.Err(inventoryenums.ErrWarehouseHasStock)
+			}
+			if derr := s.m.DeleteWarehouseTx(ctx, tx, e.ID); derr != nil {
+				return derr
+			}
+		}
+		return nil
+	})
 }

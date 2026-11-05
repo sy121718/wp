@@ -370,15 +370,15 @@ func TestNavigationUpdateTranslationsBlockedItems(t *testing.T) {
 				t.Fatalf("声明处给 409，出口必须照用，实际 %d body=%s", rec.Code, rec.Body.String())
 			}
 			bodyText := rec.Body.String()
-			// 整批拒绝的可定位明细由失败片段逐条列出。
-			if !strings.Contains(bodyText, "h-1") && !strings.Contains(bodyText, "12345") {
-				t.Fatalf("整批拒绝的可定位明细必须落进错误片段：%s", bodyText)
+			// 失败提示只播报一句；逐条明细（h-1 / 12345）属业务数据，随响应 data 返回。
+			if !strings.Contains(bodyText, tc.want) {
+				t.Fatalf("%s 下失败提示应取该语言，实际 %s", tc.lang, bodyText)
+			}
+			if strings.Contains(bodyText, "h-1") || strings.Contains(bodyText, "12345") {
+				t.Fatalf("逐条明细不该渲染进失败提示：%s", bodyText)
 			}
 			if strings.Contains(bodyText, navigationenums.ErrNotTranslatable) {
-				t.Fatalf("明细里不该出现裸 key：%s", bodyText)
-			}
-			if !strings.Contains(bodyText, tc.want) {
-				t.Fatalf("%s 下明细文案应取该语言，实际 %s", tc.lang, bodyText)
+				t.Fatalf("提示里不该出现裸 key：%s", bodyText)
 			}
 		})
 	}

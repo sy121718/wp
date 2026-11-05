@@ -53,6 +53,11 @@ type DeleteReq struct {
 	ID string `json:"id" form:"id" binding:"required"`
 }
 
+// BulkDeleteReq 批量删除导航项；整批在一个事务里，任一失败全量回滚。
+type BulkDeleteReq struct {
+	IDs []string `json:"ids" form:"ids" binding:"required,min=1,dive,required"`
+}
+
 type MoveReq struct {
 	ID        string `json:"id" form:"id" binding:"required"`
 	SortOrder *int   `json:"sortOrder" form:"sortOrder"`

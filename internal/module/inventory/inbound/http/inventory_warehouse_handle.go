@@ -5,7 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"go_wp/pkg/view/jet"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -120,25 +119,13 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 		inventoryFailMsg(c, inventoryBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.inventory.DeleteWarehouse(c.Request.Context(),
-			&inventorydto.DeleteWarehouseReq{ID: id, ProjectID: projectID}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	if err := h.inventory.BulkDeleteWarehouses(c.Request.Context(), &inventorydto.BulkDeleteWarehouseReq{
+		IDs: ids, ProjectID: projectID,
+	}); err != nil {
+		pageview.FailScene(c, inventoryErrScene, err)
+		return
 	}
-
-	switch {
-	case skipped > 0:
-		inventoryFailMsg(c, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
-	case deleted > 0:
-		inventoryWriteOK(c)
-	default:
-
-		inventoryWriteOK(c)
-	}
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (out []WarehouseRowResp, err error) {

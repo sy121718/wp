@@ -29,6 +29,9 @@ type BlockService interface {
 
 	Delete(ctx context.Context, req *blockdto.DeleteReq) (err error)
 
+	// BulkDelete 在一个事务里删除多个块：任一失败整批回滚。
+	BulkDelete(ctx context.Context, req *blockdto.BulkDeleteReq) error
+
 	CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *blockdto.CloneResp, err error)
 
 	ListBlockSourceRefs(ctx context.Context, blockID string) ([]BlockUsage, error)

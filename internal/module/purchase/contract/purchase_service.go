@@ -13,6 +13,9 @@ type PurchaseService interface {
 	ListSources(ctx context.Context, req *purchasedto.ListSourceReq) (list []*purchasedto.SourceResp, err error)
 	CountSources(ctx context.Context, req *purchasedto.ListSourceReq) (n int64, err error)
 	DeleteSource(ctx context.Context, req *purchasedto.DeleteSourceReq) (err error)
+
+	// BulkDeleteSources 在一个事务里删除多个货源：任一失败整批回滚。
+	BulkDeleteSources(ctx context.Context, req *purchasedto.BulkDeleteSourceReq) error
 	SourceSummary(ctx context.Context, req *purchasedto.SourceSummaryReq) (res *purchasedto.SourceSummaryResp, err error)
 
 	CreatePurchaseOrder(ctx context.Context, req *purchasedto.CreatePurchaseOrderReq) (res *purchasedto.PurchaseOrderResp, err error)

@@ -83,26 +83,24 @@ func TestCustomerStatusWritesAndReturnsFragment(t *testing.T) {
 	}
 }
 
-func TestCustomerBulkStatusReturnsEveryOutcome(t *testing.T) {
+func TestCustomerBulkStatusRejectsWholeBatchOnFailure(t *testing.T) {
 	fake := &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}}
 	code, body := customerWriteResp(t, fake, "/api/customer/bulk-status", url.Values{
 		"ids": {"42", "7", "42", "43"}, "status": {"0"},
 	})
-	if code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", code, body)
+	// 全成或全败：任一条失败整批 4xx，界面只播报一句。
+	if code < 400 {
+		t.Fatalf("任一条失败应整批拒绝，实际 %d %s", code, body)
 	}
-	if got := fake.statusIDs; len(got) != 3 || got[0] != 42 || got[1] != 7 || got[2] != 43 {
-		t.Fatalf("未逐条去重保序：%v", got)
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败应走共享错误出口：%s", body)
 	}
-	if !strings.Contains(body, "已更新 2 个客户") || !strings.Contains(body, "1 个未处理") {
-		t.Fatalf("计数/逐项结果失真：%s", body)
-	}
-	if !strings.Contains(body, "7：") {
-		t.Fatalf("失败条目必须带 id 与原因：%s", body)
+	if strings.Contains(body, "<ul>") || strings.Contains(body, "7：") {
+		t.Fatalf("失败明细不得渲染成列表：%s", body)
 	}
 }
 
-func TestCustomerBulkUnlockSeparatesChangedAndNoop(t *testing.T) {
+func TestCustomerBulkUnlockUsesSharedFeedback(t *testing.T) {
 	fake := &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
 		42: {CustomerID: 42, Unlocked: true}, 43: {CustomerID: 43, Cleared: true}, 44: {CustomerID: 44},
 	}}
@@ -110,9 +108,8 @@ func TestCustomerBulkUnlockSeparatesChangedAndNoop(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", code, body)
 	}
-	if !strings.Contains(body, "已解除锁定 1 个") || !strings.Contains(body, "清零失败计数 1 个") ||
-		!strings.Contains(body, "1 个本来就未锁定") || !strings.Contains(body, "0 个未处理") {
-		t.Fatalf("解锁结果三态失真：%s", body)
+	if !strings.Contains(body, "操作成功") {
+		t.Fatalf("成功后应走统一提示组件：%s", body)
 	}
 }
 

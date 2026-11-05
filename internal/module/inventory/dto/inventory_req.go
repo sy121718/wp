@@ -67,6 +67,22 @@ type DeleteWarehouseReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 }
 
+// BulkDeleteWarehouseReq 批量删除仓库：整批一个事务，任一失败全量回滚。
+type BulkDeleteWarehouseReq struct {
+	IDs []string `json:"ids" form:"ids" binding:"required,min=1,dive,required"`
+
+	ProjectID string `json:"projectId" form:"projectId"`
+}
+
+// BulkReasonStatusReq 批量改原因启停：整批一个事务，任一失败全量回滚。
+type BulkReasonStatusReq struct {
+	IDs []string `json:"ids" form:"ids" binding:"required,min=1,dive,required"`
+
+	ProjectID string `json:"projectId" form:"projectId"`
+
+	Status string `json:"status" form:"status" binding:"required"`
+}
+
 type EnsureStockReq struct {
 	ProjectID   string `json:"projectId" form:"projectId"`
 	ProductID   string `json:"productId" form:"productId"`

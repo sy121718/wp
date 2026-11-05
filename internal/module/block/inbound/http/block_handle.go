@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
 
-	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
@@ -149,28 +148,11 @@ func (h *Handle) BulkDelete(c *gin.Context) {
 		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, nerr)
 		return
 	}
-	deleted, skipped := 0, 0
-	rows := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		row := map[string]any{"ID": id, "OK": false, "Message": ""}
-		if derr := h.svc.Delete(c.Request.Context(), &blockdto.DeleteReq{ID: id}); derr != nil {
-			logger.Scene("block").With("op", "BulkDelete").With("block_id", id).
-				With("user_id", builtin.GetUserID(c)).With("path", c.Request.URL.Path).
-				Error(derr, "批量删除全局块失败")
-			row["Message"] = blockRefErrText(c, derr)
-			skipped++
-		} else {
-			row["OK"] = true
-			deleted++
-		}
-		rows = append(rows, row)
+	if err := h.svc.BulkDelete(c.Request.Context(), &blockdto.BulkDeleteReq{IDs: ids}); err != nil {
+		pageview.FailScene(c, blockErrScene, err)
+		return
 	}
-	c.HTML(http.StatusOK, "admin/block/block_bulk_result.html", pageview.Objects(
-		pageview.Object("None", len(ids) == 0),
-		pageview.Object("Done", deleted),
-		pageview.Object("Skipped", skipped),
-		pageview.Object("Rows", rows),
-	))
+	pageview.Success(c)
 }
 
 func (h *Handle) CloneAST(c *gin.Context) {

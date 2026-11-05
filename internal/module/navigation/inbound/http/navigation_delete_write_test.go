@@ -43,6 +43,17 @@ func (s *navigationDeleteStub) Delete(_ context.Context, req *navigationdto.Dele
 	return nil
 }
 
+// BulkDelete 复刻真实语义：任一失败整批拒绝。
+func (s *navigationDeleteStub) BulkDelete(_ context.Context, req *navigationdto.BulkDeleteReq) error {
+	s.calls = append(s.calls, req.IDs...)
+	for _, id := range req.IDs {
+		if err, ok := s.failFor[id]; ok {
+			return err
+		}
+	}
+	return nil
+}
+
 func newNavigationDeleteRouter(t *testing.T, svc navigationcontract.NavigationService) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -163,17 +174,19 @@ func TestNavigationDeleteBulkShape(t *testing.T) {
 	engine := newNavigationDeleteRouter(t, stub)
 
 	rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": {"a", "b"}})
-	body := navigationDeleteOK(t, rec)
-	if got := strings.Join(stub.calls, ","); got != "a,b" {
-		t.Fatalf("批档应按顺序逐条调用 service，实际 %v", stub.calls)
+	if rec.Code < 400 {
+		t.Fatalf("任一条失败应整批拒绝（4xx），实际 %d", rec.Code)
 	}
-	// 逐条失败原因必须在片段里出现（否则用户不知道哪条没删掉）。
-	if got := bulkItemMessage(t, body, "b"); got == "" {
-		t.Fatalf("批量片段应给出 b 的失败原因：%s", body)
+	body := rec.Body.String()
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败应渲染共享错误片段，实际 %s", body)
+	}
+	if strings.Contains(body, "<ul>") {
+		t.Fatalf("失败明细不得渲染成列表（属业务数据），实际 %s", body)
 	}
 }
 
-func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
+func TestNavigationDeleteBulkFailureIsOneMessage(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
 		navigationenums.ErrNotFound: {"zh-CN": "词条-导航项不存在", "en-US": "entry-navigation-item-missing"},
 	})
@@ -186,66 +199,41 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := postNavigationDeleteLangAt(t, engine, "/api/navigation/delete-bulk", tc.lang, url.Values{"ids": {"a", "b"}})
-			body := navigationDeleteOK(t, rec)
-			if got := bulkItemMessage(t, body, "b"); got != tc.want {
-				t.Fatalf("%s 请求的逐条原因应为 %q，实际 %q", tc.lang, tc.want, got)
+			if rec.Code < 400 {
+				t.Fatalf("整批拒绝应为 4xx，实际 %d", rec.Code)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.want) {
+				t.Fatalf("%s 请求的失败提示应为 %q，实际 %s", tc.lang, tc.want, body)
+			}
+			if strings.Contains(body, "<ul>") {
+				t.Fatalf("失败提示不得包含逐条列表：%s", body)
 			}
 		})
 	}
 }
 
-func TestNavigationDeleteBulkReasonsFallBackWhenEntryMissing(t *testing.T) {
+func TestNavigationDeleteBulkFailureNeverLeaksInternals(t *testing.T) {
 	clearNavigationEntries(t)
 	initNavigationDeleteLogger(t)
 
-	const detail = "2026-10-09T00:00:00Z"
-	cases := []struct {
-		name     string
-		err      error
-		want     string
-		wantGone []string
-	}{
-		{
-			name:     "业务 key",
-			err:      errors.New(navigationenums.ErrNotFound),
-			want:     navigationInternalFallback,
-			wantGone: []string{navigationenums.ErrNotFound},
-		},
-		{
-			name:     "带参形态",
-			err:      errors.New(navigationenums.ErrPathTaken + "|/about"),
-			want:     navigationInternalFallback,
-			wantGone: []string{navigationenums.ErrPathTaken, "|", "/about"},
-		},
-		{
-			name:     "带定位形态",
-			err:      navigationenums.ErrDetail(navigationenums.ErrStaleVersion, detail),
-			want:     navigationenums.ErrStaleVersion + ": " + detail,
-			wantGone: []string{"操作失败"},
-		},
-		{
-			name:     "未归口的内部错误",
-			err:      errors.New("SQLSTATE 42P01: relation \"navigations\" does not exist"),
-			want:     navigationInternalFallback,
-			wantGone: []string{"SQLSTATE", "42P01", "relation", "navigations"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			stub := &navigationDeleteStub{failFor: map[string]error{"bad": tc.err}}
-			engine := newNavigationDeleteRouter(t, stub)
-			rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": {"bad"}})
-			body := navigationDeleteOK(t, rec)
-			got := bulkItemMessage(t, body, "bad")
-			if got != tc.want {
-				t.Fatalf("逐条原因应为 %q，实际 %q", tc.want, got)
+	for _, err := range []error{
+		errors.New(navigationenums.ErrNotFound),
+		errors.New(navigationenums.ErrPathTaken + "|/about"),
+		errors.New(`SQLSTATE 42P01: relation "navigations" does not exist`),
+	} {
+		stub := &navigationDeleteStub{failFor: map[string]error{"bad": err}}
+		engine := newNavigationDeleteRouter(t, stub)
+		rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": {"bad"}})
+		if rec.Code < 400 {
+			t.Fatalf("%v 应整批拒绝，实际 %d", err, rec.Code)
+		}
+		body := rec.Body.String()
+		for _, tok := range []string{"SQLSTATE", "42P01", "relation", "/about", "navigations"} {
+			if strings.Contains(body, tok) {
+				t.Errorf("失败提示不该出现 %q：%s", tok, body)
 			}
-			for _, tok := range tc.wantGone {
-				if strings.Contains(got, tok) {
-					t.Errorf("逐条原因不该出现 %q：%q", tok, got)
-				}
-			}
-		})
+		}
 	}
 }
 
@@ -258,8 +246,8 @@ func TestNavigationDeleteDedupesIDs(t *testing.T) {
 	if got := strings.Join(stub.calls, ","); got != "a,b" {
 		t.Fatalf("空串应被丢掉、重复 id 只删一次，实际 %v", stub.calls)
 	}
-	if !strings.Contains(body, "2") {
-		t.Errorf("批量片段应给出成功计数 2：%s", body)
+	if !strings.Contains(body, "操作成功") {
+		t.Errorf("成功应走统一提示组件：%s", body)
 	}
 }
 

@@ -265,16 +265,11 @@ func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 		articleListJump(c, false, articleBulkIDsJumpMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.contents.Delete(c.Request.Context(), &contentdto.DeleteReq{ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	if err := h.contents.BulkDeleteArticles(c.Request.Context(), ids); err != nil {
+		pageview.FailScene(c, articleErrScene, err)
+		return
 	}
-
-	articleListJump(c, skipped == 0, articleBulkDeleteResult(deleted, skipped))
+	pageview.Success(c)
 }
 
 var articleBulkResultTemplates = []articleMsg{

@@ -258,23 +258,13 @@ func (h *sourcePageHandle) SourcesBulkDelete(c *gin.Context) {
 		purchaseFailMsg(c, purchaseBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.purchase.DeleteSource(c.Request.Context(), &purchasedto.DeleteSourceReq{ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	if err := h.purchase.BulkDeleteSources(c.Request.Context(), &purchasedto.BulkDeleteSourceReq{
+		IDs: ids, ProjectID: form.ProjectID,
+	}); err != nil {
+		pageview.FailScene(c, purchaseErrScene, err)
+		return
 	}
-	switch {
-	case skipped > 0:
-		purchaseFailMsg(c, purchaseBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
-	case deleted > 0:
-		pageview.Success(c)
-	default:
-
-		pageview.Success(c)
-	}
+	pageview.Success(c)
 }
 
 func (h *sourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, projectID string, pageErr *string) (out purchasedto.SourceSummaryView, ok bool) {
