@@ -22,11 +22,64 @@ func registerI18nDataLayer() {
 		SQL:       mustSQL("057_sys_menus_title_key.sql"),
 	})
 
+	// 058 的守门**逐条核对本批 (item_key, lang)**，不按全库中文行数：
+	//   1) 全库数量会被其它 seed 抬高，导致本批缺行时仍判「已存在」而永不补种；
+	//   2) 退役 key 已被 745 清理，若第 1 条仍按总数判断，清理后反而触发重播。
 	registerSeed(Seed{
-		Version:      "058-i18n-seed-enums",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 199 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN'",
-		SQL:          mustSQL("058_i18n_seed_enums.sql"),
+		Version:   "058-i18n-seed-enums",
+		TableName: "sys_i18n",
+		ConditionSQL: `SELECT CASE WHEN
+    (SELECT COUNT(*) FROM sys_i18n WHERE item_key IN (
+			'ErrAccountLocked', 'ErrAdminDeleteSelf', 'ErrAdminDeleteSuperAdmin', 'ErrAdminDisabled',
+			'ErrAdminEmailExists', 'ErrAdminInvalidUserIDType', 'ErrAdminNotFound', 'ErrAdminPhoneExists',
+			'ErrAdminUsernameExists', 'ErrArtifactMismatch', 'ErrArtifactNotFound', 'ErrAttachmentNotFound',
+			'ErrAttachmentNotImage', 'ErrAuthUnavailable', 'ErrAuthzFailed', 'ErrAuthzNotReady',
+			'ErrBlockDuplicate', 'ErrBlockInUse', 'ErrBlockInvalidCategory', 'ErrBlockInvalidDoc',
+			'ErrBlockInvalidKind', 'ErrBlockInvalidReuseMode', 'ErrBlockNameRequired', 'ErrBlockNotFound',
+			'ErrBlockParamRequired', 'ErrBuildFailed', 'ErrCacheError', 'ErrCaptchaExpired', 'ErrCodeExists',
+			'ErrCodeImmutable', 'ErrCodeNotBindable', 'ErrCodeNotEnabled', 'ErrCodeRequired', 'ErrComponentInvalid',
+			'ErrComponentNotAllowed', 'ErrComponentRequired', 'ErrDBQueryError', 'ErrDataInvalid', 'ErrDeptCircle',
+			'ErrDeptCodeExists', 'ErrDeptHasChildren', 'ErrDeptHasUsers', 'ErrDeptNotFound', 'ErrDownloadEmpty',
+			'ErrDownloadFailed', 'ErrDownloadStorageNotLocal', 'ErrDraftVersionConflict', 'ErrEntityMissing',
+			'ErrEnvironmentAbnormal', 'ErrFieldProtected', 'ErrForcedLogout', 'ErrInstallParse',
+			'ErrInvalidArtifact', 'ErrInvalidAssignment', 'ErrInvalidBody', 'ErrInvalidDocument',
+			'ErrInvalidDomain', 'ErrInvalidField', 'ErrInvalidKind', 'ErrInvalidMethod', 'ErrInvalidName',
+			'ErrInvalidParam', 'ErrInvalidPassword', 'ErrInvalidPath', 'ErrInvalidSettings', 'ErrInvalidSource',
+			'ErrInvalidTarget', 'ErrInvalidThemeSettings', 'ErrInvalidToken', 'ErrInvalidType', 'ErrMenuCircle',
+			'ErrMenuDepthExceeded', 'ErrMenuHasChildren', 'ErrMenuIsSystem', 'ErrMenuNotFound',
+			'ErrMenuParentMustBeDir', 'ErrMenuParentNotFound', 'ErrMenuReferenced', 'ErrMigrationFailed',
+			'ErrNoStagedArtifact', 'ErrNoTemplate', 'ErrNotFound', 'ErrPageNotFound', 'ErrPathOccupied',
+			'ErrPathTaken', 'ErrPermissionAssigned', 'ErrPermissionNotFound', 'ErrPluginNotFound',
+			'ErrProjectInternal', 'ErrProjectNotFound', 'ErrRateLimited', 'ErrRebuildRequired', 'ErrReceiptPending',
+			'ErrRoleCodeExists', 'ErrRoleCodeNumeric', 'ErrRoleIsSystem', 'ErrRoleNotFound',
+			'ErrRollbackTargetMiss', 'ErrRouteActiveRename', 'ErrRouteNotFound', 'ErrRouteOccupied',
+			'ErrRuleNotFound', 'ErrSessionExpired', 'ErrSlugTaken', 'ErrStorageFailure', 'ErrSuperAdminExists',
+			'ErrSuperAdminOnly', 'ErrSystemError', 'ErrThemeDuplicateName', 'ErrThemeInternal', 'ErrThemeIsActive',
+			'ErrThemeNameRequired', 'ErrThemeNotFound', 'ErrThemeProjectIDEmpty', 'ErrToggleFailed',
+			'ErrTokenExpired', 'ErrUnauthorized', 'ErrUninstallFailed', 'ErrUnsafePackage',
+			'ErrUploadConfigInvalid', 'ErrUploadConfigMissing', 'ErrUploadEmpty', 'ErrUploadFailed',
+			'ErrUploadFileEmpty', 'ErrUploadFileNameRequired', 'ErrUploadNotInitialized',
+			'ErrUploadProviderNotFound', 'ErrUploadRequestFailed', 'ErrUploadResponseInvalid',
+			'ErrUploadSystemError', 'ErrUploadTokenFailed', 'ErrUploadWriteFailed', 'ErrUserExists',
+			'ErrUserInfoMissing', 'ErrUserNotFound', 'ErrVariantStorageNotLocal', 'ErrVersionRegress',
+			'MsgAdminGenericFailed', 'MsgAdministratorsTitle', 'MsgArtifactFound', 'MsgArtifactSaved',
+			'MsgBadRequest', 'MsgBlockCloned', 'MsgBlockTitle', 'MsgBlocksTitle', 'MsgBuildReady',
+			'MsgCompileFailed', 'MsgCreateSuccess', 'MsgDashboardTitle', 'MsgDatarulesTitle', 'MsgDeactivated',
+			'MsgDeleteSuccess', 'MsgDepartmentsTitle', 'MsgDetailSuccess', 'MsgDraftSaved', 'MsgFieldRequired',
+			'MsgInstallFailed', 'MsgInstallSuccess', 'MsgListSuccess', 'MsgMenusTitle', 'MsgNavigationsTitle',
+			'MsgPageCreated', 'MsgPageDeleted', 'MsgPageDetail', 'MsgPagesTitle', 'MsgPermissionsTitle',
+			'MsgProjectCreated', 'MsgProjectUpdated', 'MsgPublishSuccess', 'MsgPublished', 'MsgRebuildSuccess',
+			'MsgRevisionsListed', 'MsgRolesTitle', 'MsgRollbackDone', 'MsgRolledBack', 'MsgSiteSettingsSaved',
+			'MsgSiteSettingsTitle', 'MsgSuccess', 'MsgThemeSettingsInvalid', 'MsgThemeSettingsTitle',
+			'MsgThemesTitle', 'MsgToggleSuccess', 'MsgURLUpdated', 'MsgUninstallSuccess', 'MsgUpdateSuccess',
+			'msg_admin_logout_success', 'msg_delete_success', 'msg_save_success', 'msg_update_success'
+    ) AND lang IN ('zh-CN', 'en-US')) = 263
+    AND NOT EXISTS (SELECT 1 FROM sys_i18n WHERE item_key IN (
+        'MsgInternalError', 'ErrInvalidParams', 'ErrPermissionDenied',
+        'ErrRequestEntityTooLarge', 'msg_operation_success', 'msg_delete_confirm'
+    ))
+THEN 1 ELSE 0 END`,
+		SQL: mustSQL("058_i18n_seed_enums.sql"),
 	})
 
 	registerSeed(Seed{

@@ -1,6 +1,6 @@
 -- 058 · i18n 词条 seed（pkg/enums + internal/module/*/enums 全量常量）
 --
--- 覆盖：195 个 key / zh-CN 195 行 / en-US 79 行。
+-- 覆盖：184 个 key / zh-CN 189 行 / en-US 74 行。退役 key 不再播种（见 745）。
 --   1) 已 key 化常量：命中 public/backup/a2.sql 的 79 个 key 复用 zh-CN + en-US；
 --      其余仅 zh-CN（en-US 缺失不伪造，待后续翻译）。
 --   2) 新 key 化常量（原中文直值 → 值=常量名）：仅 zh-CN。
@@ -10,8 +10,8 @@
 --   静默回滚，而「我明明改过」这种问题极难定位）。要改默认值请改这里的 item_value 并删除
 --   对应行后重跑，或在后台直接修改。
 -- 幂等：ON CONFLICT (item_key, lang) DO UPDATE（可重复执行）。
--- 注意：register.go 的 ConditionSQL 以 zh-CN 行数 195 为门槛；
---       新增词条时同步调大该阈值，seed 会重跑并补齐新 key。
+-- 注意：register.go 的 ConditionSQL 逐条核对本批 (item_key, lang) 行数；
+--       新增或删除词条时同步改该清单，seed 才会重跑并补齐新 key。
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
 ('ErrAccountLocked', 'en-US', 'Account locked, retry in %s', 423, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
@@ -111,8 +111,6 @@ VALUES
 ('ErrInvalidMethod', 'zh-CN', '请求方法只允许 GET 或 POST', 400, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrInvalidName', 'zh-CN', '站点工程名称不能为空且不能超过 200 个字符', 400, 'error', 'internal/module/project/enums/project_enums.go', 1, now(), now()),
 ('ErrInvalidParam', 'zh-CN', '请求参数无效', 400, 'error', 'internal/module/artifact/enums/artifact_enums.go', 1, now(), now()),
-('ErrInvalidParams', 'en-US', 'Invalid request parameters', 400, 'error', 'pkg/enums/errors.go', 1, now(), now()),
-('ErrInvalidParams', 'zh-CN', '请求参数错误', 400, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrInvalidPassword', 'en-US', 'Invalid username or password', 400, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrInvalidPassword', 'zh-CN', '用户名或密码错误', 400, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrInvalidPath', 'zh-CN', '页面访问路径不合法', 400, 'error', 'internal/module/page/enums/page_enums.go', 1, now(), now()),
@@ -146,8 +144,6 @@ VALUES
 ('ErrPathTaken', 'zh-CN', '同工程同类型下已存在相同路径的导航项', 400, 'error', 'internal/module/navigation/enums/navigation_enums.go', 1, now(), now()),
 ('ErrPermissionAssigned', 'en-US', 'Permission is assigned, revoke role and user grants first', 409, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrPermissionAssigned', 'zh-CN', '该权限已分配，请先解除角色和用户授权', 409, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
-('ErrPermissionDenied', 'en-US', 'Permission denied', 403, 'error', 'pkg/enums/errors.go', 1, now(), now()),
-('ErrPermissionDenied', 'zh-CN', '无权限访问', 403, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrPermissionNotFound', 'en-US', 'Permission not found', 404, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrPermissionNotFound', 'zh-CN', '权限点不存在', 404, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrPluginNotFound', 'zh-CN', '插件不存在', 404, 'error', 'internal/module/plugin/enums/plugin_enums.go', 1, now(), now()),
@@ -157,8 +153,6 @@ VALUES
 ('ErrRateLimited', 'zh-CN', '请求过于频繁', 429, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrRebuildRequired', 'zh-CN', '草稿已变更，请重新构建后再发布', 400, 'error', 'internal/module/page/enums/page_enums.go', 1, now(), now()),
 ('ErrReceiptPending', 'zh-CN', '存在未完成的发布回执，请先恢复或标记失败', 400, 'error', 'internal/module/publication/enums/publication_enums.go', 1, now(), now()),
-('ErrRequestEntityTooLarge', 'en-US', 'Request entity too large', 413, 'error', 'pkg/enums/errors.go', 1, now(), now()),
-('ErrRequestEntityTooLarge', 'zh-CN', '请求体过大', 413, 'error', 'pkg/enums/errors.go', 1, now(), now()),
 ('ErrRoleCodeExists', 'en-US', 'Role code already exists', 409, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrRoleCodeExists', 'zh-CN', '角色编码已存在', 409, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('ErrRoleCodeNumeric', 'en-US', 'Role code cannot be all numbers', 400, 'error', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
@@ -248,7 +242,6 @@ VALUES
 ('MsgFieldRequired', 'zh-CN', '必填字段不能为空', 200, 'ui', 'internal/module/dashboard/enums/dashboard_enums.go', 1, now(), now()),
 ('MsgInstallFailed', 'zh-CN', '插件安装失败', 200, 'ui', 'internal/module/plugin/enums/plugin_enums.go', 1, now(), now()),
 ('MsgInstallSuccess', 'zh-CN', '插件安装成功', 200, 'ui', 'internal/module/plugin/enums/plugin_enums.go', 1, now(), now()),
-('MsgInternalError', 'zh-CN', '系统内部错误，请稍后重试', 200, 'ui', 'internal/module/block/enums/block_enums.go', 1, now(), now()),
 ('MsgListSuccess', 'zh-CN', 'Blueprint 列表获取成功', 200, 'ui', 'internal/module/blueprint/enums/blueprint_enums.go', 1, now(), now()),
 ('MsgMenusTitle', 'zh-CN', '菜单管理', 200, 'ui', 'internal/module/dashboard/enums/dashboard_enums.go', 1, now(), now()),
 ('MsgNavigationsTitle', 'zh-CN', '导航菜单', 200, 'ui', 'internal/module/dashboard/enums/dashboard_enums.go', 1, now(), now()),
@@ -278,12 +271,8 @@ VALUES
 ('MsgUpdateSuccess', 'zh-CN', 'Blueprint 更新成功', 200, 'ui', 'internal/module/blueprint/enums/blueprint_enums.go', 1, now(), now()),
 ('msg_admin_logout_success', 'en-US', 'Logged out successfully', 200, 'msg', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
 ('msg_admin_logout_success', 'zh-CN', '退出成功', 200, 'msg', 'internal/module/admin/enums/admin_enums.go', 1, now(), now()),
-('msg_delete_confirm', 'en-US', 'Are you sure to delete?', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
-('msg_delete_confirm', 'zh-CN', '确定要删除吗？', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_delete_success', 'en-US', 'Deleted successfully', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_delete_success', 'zh-CN', '删除成功', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
-('msg_operation_success', 'en-US', 'Operation successful', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
-('msg_operation_success', 'zh-CN', '操作成功', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_save_success', 'en-US', 'Saved successfully', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_save_success', 'zh-CN', '保存成功', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_update_success', 'en-US', 'Updated successfully', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
