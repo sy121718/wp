@@ -1,7 +1,7 @@
 package inventoryhttp
 
 import (
-	"go_wp/internal/shell"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -32,7 +32,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	pageview.RenderTemplate(c, InventoryWarehousesPageTemplate, &WarehousesPageResp{
 		Title:               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		Menu:                "inventory-warehouses",
@@ -151,7 +151,7 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	if err != nil {
 		return nil, err
 	}
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	for _, w := range rows {
 		item := WarehouseRowResp{
 			ID: w.ID, Code: w.Code, Name: w.Name, Type: w.Type, Status: w.Status,
@@ -168,7 +168,7 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 }
 
 func warehouseTypeOptions(c *gin.Context) []WarehouseTypeOptionResp {
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	return []WarehouseTypeOptionResp{
 		{Value: inventoryenums.WarehouseTypeSelf, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeSelf)},
 		{Value: inventoryenums.WarehouseTypeThirdParty, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeThirdParty)},

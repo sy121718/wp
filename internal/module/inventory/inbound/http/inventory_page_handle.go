@@ -2,7 +2,6 @@ package inventoryhttp
 
 import (
 	"fmt"
-	"go_wp/internal/shell"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
@@ -85,7 +84,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			inventoryFail(c, serr)
 			return
 		}
-		tr := shell.TranslateFor(c)
+		tr := text.TranslateFunc(c)
 		byWarehouse := make(map[string]*inventorydto.StockResp, len(rows))
 		for _, r := range rows {
 			byWarehouse[r.WarehouseID] = r
@@ -138,7 +137,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		return
 	}
 
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	pageData := &InventoryPageResp{
 		Title:           tr(inventoryenums.InventoryTitle, "库存管理"),
 		Menu:            "inventory",

@@ -15,7 +15,6 @@ import (
 
 	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
-	"go_wp/internal/shell"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
@@ -35,7 +34,7 @@ func adminBulkProbeRawError(t *testing.T) error {
 	probe.Request = httptest.NewRequest(http.MethodPost, "/admin/x/bulk-delete",
 		strings.NewReader(adminBulkOverLimitForm().Encode()))
 	probe.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, rawErr := shell.BulkIDs(probe)
+	_, rawErr := bulkids.Normalize(probe.PostFormArray("ids"))
 	if rawErr == nil {
 		t.Fatalf("反证失败：ids 超过 %d 条时 shell.BulkIDs 应报错", bulkids.MaxIDs)
 	}

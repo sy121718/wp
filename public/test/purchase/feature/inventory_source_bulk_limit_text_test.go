@@ -13,7 +13,6 @@ import (
 
 	"go_wp/internal/adminui"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
-	"go_wp/internal/shell"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
@@ -41,7 +40,7 @@ func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	probe.Request = httptest.NewRequest(http.MethodPost, "/admin/inventory/sources/bulk-delete",
 		strings.NewReader(sourceBulkOverLimitForm().Encode()))
 	probe.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, rawErr := shell.BulkIDs(probe)
+	_, rawErr := bulkids.Normalize(probe.PostFormArray("ids"))
 	if rawErr == nil || !errors.Is(rawErr, bulkids.ErrTooMany) {
 		t.Fatalf("反证失败：超限应返回命中 sentinel 的错误，实际 %v", rawErr)
 	}

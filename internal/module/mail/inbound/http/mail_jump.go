@@ -1,6 +1,7 @@
 package mailhttp
 
 import (
+	"go_wp/internal/shell"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/backref"
 	mailenums "go_wp/internal/module/mail/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/reqparams"
 )
 

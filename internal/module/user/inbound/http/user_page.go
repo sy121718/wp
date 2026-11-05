@@ -1,6 +1,8 @@
 package userhttp
 
 import (
+	"go_wp/internal/shell"
+	"go_wp/internal/backref"
 	"context"
 	"errors"
 	"net/url"
@@ -24,7 +26,6 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
-	"go_wp/internal/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/pagination"
@@ -533,7 +534,7 @@ func customerNotice(c *gin.Context, key string) string {
 }
 
 func customerListBack(c *gin.Context) (back string, backText customerMsg) {
-	return shell.BackPath(c, customerListPath, customerListBackKeys...),
+	return backref.BackPath(c, customerListPath, customerListBackKeys...),
 		customerPageTitleLabel.msg()
 }
 

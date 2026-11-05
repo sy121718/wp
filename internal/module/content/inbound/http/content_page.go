@@ -1,6 +1,7 @@
 package contenthttp
 
 import (
+	"go_wp/internal/text"
 	"context"
 	"errors"
 	"go_wp/internal/middleware/builtin"
@@ -31,7 +32,6 @@ import (
 	seoscore "go_wp/pkg/seo"
 	"go_wp/pkg/seo/scoreview"
 	"go_wp/pkg/seo/scoring"
-	"go_wp/internal/shell"
 	"go_wp/internal/siteurl"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
@@ -204,7 +204,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c)))
+	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), text.TranslateFunc(c)))
 }
 
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
@@ -259,7 +259,7 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 
 func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 
 		articleListJump(c, false, articleBulkIDsJumpMsg(c, berr))
@@ -301,7 +301,7 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
 
 	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &SeoScoreFragmentView{
-		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
+		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), text.TranslateFunc(c)),
 	})
 }
 
@@ -326,7 +326,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 	}
 	data := item.Data
 	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &ArticleSeoDrawerResp{
-		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
+		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), text.TranslateFunc(c)),
 		IsNew: false,
 	})
 }
@@ -334,7 +334,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
 		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
@@ -445,7 +445,7 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	}
 
 	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
-		Preview: articleImportPreviewViewOf(res, shell.TranslateFor(c)), Err: articleMsg{},
+		Preview: articleImportPreviewViewOf(res, text.TranslateFunc(c)), Err: articleMsg{},
 	})
 }
 
@@ -1113,7 +1113,7 @@ func articleTranslationMsg(key, fallback string) articleMsg {
 }
 
 func articleTranslationFilled(c *gin.Context, key, fallback string, params map[string]string) articleMsg {
-	return articleMsg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), key, fallback, params)}
+	return articleMsg{Fallback: i18n.FillTranslate(text.TranslateFunc(c), key, fallback, params)}
 }
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {

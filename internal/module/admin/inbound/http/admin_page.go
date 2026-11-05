@@ -1,6 +1,7 @@
 package adminhttp
 
 import (
+	bulkids "go_wp/pkg/bulkids"
 	"context"
 	"errors"
 	"net"
@@ -22,7 +23,6 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/datarule"
@@ -343,7 +343,7 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return
@@ -510,7 +510,7 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return
@@ -645,7 +645,7 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return
@@ -1064,7 +1064,7 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return
@@ -1186,7 +1186,7 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return
@@ -1343,7 +1343,7 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
 		return

@@ -1,6 +1,7 @@
 package contenthttp
 
 import (
+	"go_wp/internal/text"
 	"context"
 	"net/http"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	contentenums "go_wp/internal/module/content/enums"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	seoscore "go_wp/pkg/seo/scoring"
-	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
@@ -188,7 +188,7 @@ func (h *Handle) Collections(c *gin.Context) {
 func localizeCollectionLabels(c *gin.Context, items []core.CollectionSchema) []core.CollectionSchema {
 	out := make([]core.CollectionSchema, len(items))
 	copy(out, items)
-	tr := shell.TranslateFor(c)
+	tr := text.TranslateFunc(c)
 	for i := range out {
 		if strings.TrimSpace(out[i].LabelKey) == "" {
 			continue

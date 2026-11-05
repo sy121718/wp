@@ -1,4 +1,4 @@
-package shell_test
+package adminui_test
 
 import (
 	"strings"

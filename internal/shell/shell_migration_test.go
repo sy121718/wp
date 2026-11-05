@@ -26,20 +26,15 @@ type shellExportHome struct {
 
 var shellExportPlan = map[string]shellExportHome{
 
-	"BackPath": {homePkg, "回跳路径归一：纯字符串，无 gin 之外依赖"},
-	"BulkIDs":  {homePkg, "批量 ID 旧表单入口：实现已在 pkg/bulkids，这里只剩转发（见别名清单）"},
 
 	"Jump": {homeAdmin, "整页提示的输入形状：页面出口"},
 
 	"RenderJump":   {homeAdmin, "写操作结果出口：成功交统一提示、失败交共享失败出口，不再渲染整页跳转提示"},
-	"TranslateFor": {homeAdmin, "Go 侧文案翻译：pkg/view/jet 桥接，页面 handler 不再拼文案后即可撤"},
 	"SafeBack":     {homeAdmin, "安全回跳判定的应用侧薄包装：实现归 pkg/safepath"},
 }
 
 var shellForwardAllow = map[string]string{
-	"TranslateFor": "转发 templates.TranslateFunc：Go 侧拼文案的桥接。页面 handler 不再拼 UI 文案（分页条是最后一处）后即可撤 —— 否则会原地再造一个 shell",
 
-	"BulkIDs": "旧表单入口：读 gin 表单域后立刻交给 pkg/bulkids.Normalize（唯一还需要 gin 的部分；终局删除，新代码直指 pkg）",
 }
 
 func shellTestFiles(t *testing.T) map[string]*ast.File {

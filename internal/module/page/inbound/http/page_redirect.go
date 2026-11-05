@@ -1,6 +1,7 @@
 package pagehttp
 
 import (
+	"go_wp/internal/backref"
 	"errors"
 	"strings"
 
@@ -10,7 +11,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
-	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	pageview "go_wp/pkg/view"
@@ -169,7 +169,7 @@ func redirectErrKey(err error) string {
 var redirectBackKeys = []string{"project"}
 
 func redirectBack(c *gin.Context) string {
-	return shell.BackPath(c, redirectPagePath, redirectBackKeys...)
+	return backref.BackPath(c, redirectPagePath, redirectBackKeys...)
 }
 
 var redirectBackMsg = pageMsg{Key: pageenums.RedirectTitle, Fallback: "重定向管理"}

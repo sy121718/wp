@@ -1,6 +1,7 @@
 package pagehttp
 
 import (
+	"go_wp/internal/backref"
 	"context"
 	"errors"
 	pageview "go_wp/pkg/view"
@@ -23,7 +24,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -527,7 +527,7 @@ var translationBackKeys = []string{"pageId", "lang"}
 const pageTranslationsPath = "/admin/pages/translations"
 
 func translationBack(c *gin.Context) string {
-	return shell.BackPath(c, pageTranslationsPath, translationBackKeys...)
+	return backref.BackPath(c, pageTranslationsPath, translationBackKeys...)
 }
 
 var translationBackMsg = pageMsg{Key: pageenums.MsgPageTranslationsTitle, Fallback: "多语言"}
@@ -978,7 +978,7 @@ var translationMissBackKeys = []string{"project"}
 const pageTranslationMissPath = "/admin/page-translation-misses"
 
 func translationMissBack(c *gin.Context) string {
-	return shell.BackPath(c, pageTranslationMissPath, translationMissBackKeys...)
+	return backref.BackPath(c, pageTranslationMissPath, translationMissBackKeys...)
 }
 
 var translationMissBackMsg = pageMsg{Key: pageenums.TranslationMissTitle, Fallback: "内容缺译报告"}

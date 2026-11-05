@@ -1,13 +1,13 @@
 package pluginhttp
 
 import (
+	"go_wp/internal/shell"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
 	pluginenums "go_wp/internal/module/plugin/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )

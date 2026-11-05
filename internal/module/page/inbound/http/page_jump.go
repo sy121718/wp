@@ -1,13 +1,15 @@
 package pagehttp
 
 import (
+	"go_wp/internal/shell"
+	"go_wp/internal/backref"
+	"go_wp/internal/text"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -18,7 +20,7 @@ var pageListBackKeys = []string{"project"}
 const pageListPath = "/admin/pages"
 
 func pageListBack(c *gin.Context) string {
-	return shell.BackPath(c, pageListPath, pageListBackKeys...)
+	return backref.BackPath(c, pageListPath, pageListBackKeys...)
 }
 
 var pageListBackMsg = pageMsg{Key: pageenums.MsgPagesTitle, Fallback: "页面管理"}
@@ -44,7 +46,7 @@ func pageErrMsgOf(c *gin.Context, f adminui.ErrFact) pageMsg {
 		return pageMsg{}
 	}
 	if f.Tail != "" {
-		if detail := pageDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
+		if detail := pageDetailText(text.TranslateFunc(c), f.Tail); detail != "" {
 
 			return pageMsg{Fallback: response.ArgsText(c, f.Key, f.Fallback, nil) + "：" + detail}
 		}

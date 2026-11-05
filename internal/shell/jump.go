@@ -24,6 +24,8 @@ type Jump struct {
 
 	MsgArgs []string
 
+	// Back / BackText / Seconds 保留为业务事实：当前统一出口不再用它们，
+	// 但调用点的回跳意图是真实业务信息，由发起模板的 data-write-nav 消费。
 	Back string
 
 	BackTextKey string

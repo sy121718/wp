@@ -1,16 +1,17 @@
 package contenthttp
 
 import (
+	"go_wp/internal/shell"
+	"go_wp/internal/backref"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/shell"
 	"go_wp/pkg/backpath"
 )
 
 func articleJumpListBack(c *gin.Context) string {
-	return shell.BackPath(c, articleListPath, "keyword", "limit")
+	return backref.BackPath(c, articleListPath, "keyword", "limit")
 }
 
 func articleJumpEditBack(c *gin.Context, id string) string {

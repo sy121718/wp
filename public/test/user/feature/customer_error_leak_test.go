@@ -20,7 +20,6 @@ import (
 	userhttp "go_wp/internal/module/user/inbound/http"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
-	"go_wp/internal/shell"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
@@ -83,7 +82,7 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 	body := url.Values{"ids": ids, "toStatus": {"1"}}
 	probe.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(body.Encode()))
 	probe.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, rawErr := shell.BulkIDs(probe)
+	_, rawErr := bulkids.Normalize(probe.PostFormArray("ids"))
 	if rawErr == nil || !strings.Contains(rawErr.Error(), over) {
 		t.Fatalf("反证失败：原文应带本次条数 %s，实际 %v", over, rawErr)
 	}

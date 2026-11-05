@@ -21,7 +21,6 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectenums "go_wp/internal/module/project/enums"
-	"go_wp/internal/shell"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -344,7 +343,7 @@ func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 
 func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
 
 		pageListJump(c, false, pageBulkIDsMsg(c, berr))

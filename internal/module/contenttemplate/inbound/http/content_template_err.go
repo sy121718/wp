@@ -1,6 +1,7 @@
 package contenttemplatehttp
 
 import (
+	"go_wp/internal/shell"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -8,7 +9,6 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/backref"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
-	"go_wp/internal/shell"
 )
 
 const contentTemplateErrScene = "content_template"

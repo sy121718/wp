@@ -1,6 +1,7 @@
 package navigationhttp
 
 import (
+	"go_wp/internal/shell"
 	"context"
 	"errors"
 	"net/http"
@@ -17,7 +18,6 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"

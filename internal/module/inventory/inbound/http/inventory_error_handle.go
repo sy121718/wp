@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"go_wp/internal/shell"
 	"go_wp/internal/text"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
@@ -35,7 +34,7 @@ func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		return response.InternalMsg()
 	}
 	if f.Tail != "" {
-		if detail := inventoryErrDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
+		if detail := inventoryErrDetailText(text.TranslateFunc(c), f.Tail); detail != "" {
 
 			return facing.Msg{Fallback: response.ArgsText(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}
