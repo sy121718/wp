@@ -6,8 +6,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"go_wp/internal/builder/plugincomp"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/plugincomp"
 )
 
 const collectionManifest = `{

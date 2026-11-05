@@ -49,12 +49,15 @@
     </div>
     {* 批量删除 form：勾选框提交流程主键 id，handler 逐条走单条删除路径
        （单条失败不中断整批，结论按「成功 N / 跳过 M」回带）。 *}
-    <form method="post" action="/admin/mail/automations/bulk-delete{{listQuery}}">
+    <form data-write hx-post="/admin/mail/automations/bulk-delete" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteAutomation}}{{if len(.Automations) > 0}}
       {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.automation.bulk_delete_confirm", "删除选中的流程？进行中的实例会先停止。"), danger=true)}}
+        <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                hx-confirm="{{tr("admin.mail.automation.bulk_delete_confirm", "删除选中的流程？进行中的实例会先停止。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
       {{yield bulkBarClose()}}
       {{end}}{{end}}
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation.list_heading", "流程") }}">
@@ -110,20 +113,26 @@
      「补投到点实例」的表单随实例表一起搬到了 /admin/mail/automation/runs。 *}
   {{range _, a := .Automations}}
   {{if a.Status == "active"}}
-  <form id="automation-status-{{a.ID}}-pause" class="hidden-form" method="post" action="/admin/mail/automation/status">
+  <form id="automation-status-{{a.ID}}-pause" class="hidden-form" data-write hx-post="/admin/mail/automation/status"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{a.ID}}">
     <input type="hidden" name="status" value="paused">
   </form>
   {{else}}
-  <form id="automation-status-{{a.ID}}-active" class="hidden-form" method="post" action="/admin/mail/automation/status">
+  <form id="automation-status-{{a.ID}}-active" class="hidden-form" data-write hx-post="/admin/mail/automation/status"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{a.ID}}">
     <input type="hidden" name="status" value="active">
   </form>
   {{end}}
-  <form id="automation-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/mail/automation/delete"
-        data-confirm="{{tr("admin.mail.automation.confirm.delete", "删除流程？进行中的实例会先停止。")}}" data-confirm-danger>
+  <form id="automation-del-{{a.ID}}" class="hidden-form" data-write hx-post="/admin/mail/automation/delete"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.automation.confirm.delete", "删除流程？进行中的实例会先停止。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{a.ID}}">
   </form>

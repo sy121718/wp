@@ -1,6 +1,6 @@
 package builder
 
-import "go_wp/internal/builder/core"
+import "go_wp/pkg/builder/core"
 
 func incompleteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) *nodeView {
 	classes := core.NodeClass(node.ID) + " sky-incomplete"

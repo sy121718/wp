@@ -1,0 +1,21 @@
+{* 独立只读表单不继承实体保存表单的关闭、导航或必填校验。
+
+   端点是三选一的**字面量**（不是拼接出来的）：三条分支各自是一份完整表单
+   （隐藏域 + 按钮 + 结果区都在分支内）——静态门禁按 form 标签边界解析，
+   字段与端点必须在同一段里才对得上账。 *}
+{{if .Kind == "category"}}
+<form data-write hx-post="/api/product/category/seo-score"
+      hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">
+    {{include "product_seo_form_fields.html"}}
+</form>
+{{else if .Kind == "brand"}}
+<form data-write hx-post="/api/product/brand/seo-score"
+      hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">
+    {{include "product_seo_form_fields.html"}}
+</form>
+{{else}}
+<form data-write hx-post="/api/product/seo-score"
+      hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"{{if .Kind == "product"}} hx-trigger="load, submit"{{end}}>
+    {{include "product_seo_form_fields.html"}}
+</form>
+{{end}}

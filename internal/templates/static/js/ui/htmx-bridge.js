@@ -32,6 +32,12 @@
         });
     }
 
+    // 传输层交换结束后广播内容就绪，控件无需订阅 HTMX 或调用其 API。
+    document.addEventListener('htmx:after:swap', function (ev) {
+        var el = ev.detail?.ctx?.target;
+        if (el?.isConnected) document.dispatchEvent(new CustomEvent('wb:content-ready', { detail: { el: el } }));
+    });
+
     document.addEventListener('wb:rescan', function (ev) {
         var el = ev && ev.detail && ev.detail.el;
         if (!el) return;

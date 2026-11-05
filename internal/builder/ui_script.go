@@ -38,18 +38,15 @@ var uiBaseClasses = []string{
 }
 
 var uiBlocks = []uiBlock{
+	{file: "htmx.min.js", attrs: []string{"data-write"}, prefixes: []string{"hx-"}, noStyle: true},
 	{file: "site-preview.js", attrs: []string{"data-site-read", "data-write", "data-component-instance"}, prefixes: []string{"hx-"}, noStyle: true},
 	{file: "site-actions.js", attrs: []string{"data-component-action"}, noStyle: true},
 	{file: "site-data.js", attrs: []string{"data-site-read"}, noStyle: true},
 	{file: "site-catalog.js", attrs: []string{"data-site-catalog", "data-site-search"}, noStyle: true},
 	{file: "site-product.js", attrs: []string{"data-site-product"}, noStyle: true},
-	{file: "write-base.js", attrs: []string{"data-write"}, noStyle: true},
+	{file: "write-base.js", attrs: []string{"data-write"}, prefixes: []string{"hx-"}, noStyle: true},
+	{file: "htmx-bridge.js", attrs: []string{"data-write", "data-drawer", "data-modal"}, prefixes: []string{"hx-"}, noStyle: true},
 	{file: "requires_js.js", attrs: []string{"data-requires-js"}, noStyle: true},
-	{file: "site-commerce.js", attrs: []string{"data-site-cart"}, noStyle: true},
-	{file: "site-orders.js", attrs: []string{"data-site-orders"}, noStyle: true},
-	{file: "site-user.js", attrs: []string{"data-user-form"}, noStyle: true},
-
-	{file: "htmx.min.js", prefixes: []string{"hx-"}, noStyle: true},
 	{file: "select.js", attrs: []string{"data-ui-select"}},
 	{file: "modal.js", attrs: []string{"data-modal", "data-modal-open", "data-modal-close"}},
 	{file: "drawer.js", attrs: []string{"data-drawer-open", "data-drawer-close", "data-drawer", "data-drawer-mask"}},

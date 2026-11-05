@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 func TestPaletteDefaultEntityContext(t *testing.T) {

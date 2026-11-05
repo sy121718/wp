@@ -1,0 +1,7 @@
+{* admin/ai/ai_write_result.html — AI 写操作的成功结论片段。
+   句子只在 Jet 里：key 是 Controller 交的业务事实，兜底只在词库缺词时避免裸 key 上屏。 *}
+{{fallback := ""}}
+{{if .Key == "ai.msg.saved"}}{{fallback = "已保存"}}
+{{else if .Key == "ai.msg.deleted"}}{{fallback = "已删除"}}
+{{else if .Key == "ai.msg.modelsAppended"}}{{fallback = "已添加模型。"}}{{end}}
+<p role="status" data-write-result>{{if isset(.Named)}}{{tn(.Key, fallback, .Named)}}{{else}}{{t(.Key, fallback)}}{{end}}</p>

@@ -1,0 +1,7 @@
+{* SEO 评分表单的字段：三条端点分支共用同一份隐藏域与按钮。 *}
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <input type="hidden" name="projectId" value="{{.ProjectID}}">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <p class="form-hint" data-write-status role="status" hidden></p>
+    <div class="action-row"><button type="submit" class="btn" data-requires-js hidden>{{t("pRowSeoScore", "SEO 评分")}}</button></div>
+    <div data-write-result></div>

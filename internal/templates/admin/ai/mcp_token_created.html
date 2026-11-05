@@ -1,0 +1,12 @@
+{* admin/ai/mcp_token_created.html — 生成令牌成功后的片段。
+
+   内容：一次性明文（只在这一次出现）+ 整个令牌区块（OOB 换回，空态与撤销提示跟着行数走）。
+   明文由服务端渲染，不走前端拼 DOM；句子全在 Jet 里取词。 *}
+{{if .Token}}
+<div class="card-body" id="mcp-token-plain-host" role="status">
+    <p class="badge badge-warning" role="alert">{{t("admin.ai.mcp.token.once.title", "令牌只显示这一次")}}</p>
+    <p class="form-hint">{{t("admin.ai.mcp.token.once.hint", "请现在复制保存。刷新或离开本页后无法再查看，只能吊销后重新生成。")}}</p>
+    <p><code id="mcp-token-plain">{{.Token}}</code></p>
+</div>
+{{end}}
+{{include "mcp_tokens.html" map("t", .["t"], "csrf_token", .csrf_token, "Tokens", .Tokens, "oob", true)}}

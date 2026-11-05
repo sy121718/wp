@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 )
 
 const jetDocJSON = `{

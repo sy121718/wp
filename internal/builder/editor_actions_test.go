@@ -3,7 +3,7 @@ package builder
 import (
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 func TestEditorActionDeclarationsAreCopiesAndExcludeFixedCartAction(t *testing.T) {

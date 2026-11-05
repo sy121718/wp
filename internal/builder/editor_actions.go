@@ -1,6 +1,6 @@
 package builder
 
-import "go_wp/internal/builder/core"
+import "go_wp/pkg/builder/core"
 
 type EditorActionSpec struct {
 	Key          string            `json:"key"`

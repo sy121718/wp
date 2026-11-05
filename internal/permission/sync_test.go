@@ -142,15 +142,16 @@ func TestSyncToDBIsIdempotentAndKeepsManualGrants(t *testing.T) {
 	}
 }
 
-func TestSyncToDBRejectsUnknownPerm(t *testing.T) {
+func TestDeclareAcceptsAnyPermCode(t *testing.T) {
+	// 权限名称与存在性以数据库为准；代码侧只登记路由绑定，
+	// 拼错的 code 由启动期对账（数据库目录 vs 已登记绑定）显式报错，不靠代码目录 panic。
 	permission.Reset()
-	defer func() {
-		if recover() == nil {
-			t.Fatal("未登记的权限点代码应当 panic（否则拼错的 code 会静默入库）")
-		}
-		permission.Reset()
-	}()
+	defer permission.Reset()
 	permission.Declare("GET", "/api/test/typo", permission.Perm("product:lst"))
+	routes := permission.RoutesOf(permission.Perm("product:lst"))
+	if len(routes) != 1 || routes[0].Path != "/api/test/typo" {
+		t.Fatalf("登记应保留真实绑定，实际 %+v", routes)
+	}
 }
 
 func TestSyncToDBRejectsDuplicateDeclaration(t *testing.T) {

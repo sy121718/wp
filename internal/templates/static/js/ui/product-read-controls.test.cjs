@@ -13,49 +13,13 @@ const node = (attrs = {}) => ({
     classList: {add() {}},
 });
 function queries(entries) { return {querySelector(selector) { assert.ok(entries[selector], selector); return entries[selector]; }}; }
-function seoFixture() {
-    const handlers = {}, listeners = {}, sections = node(), duplicates = node();
-    const entries = Object.fromEntries(['total','grade','profile','duplicates','duplicate-count','coverage','omitted'].map(key => ['[data-seo-' + key + ']', node()]));
-    ['title','url','description'].forEach(key => { entries['[data-seo-' + key + ']'] = node({'data-empty':'未填写'}); });
-    entries['[data-seo-sections]'] = sections;
-    entries['[data-seo-duplicate-list]'] = duplicates;
-    const renderedSections = [], renderedChecks = [];
-    entries['[data-seo-section]'] = {content: {cloneNode() {
-        const rowEntries = Object.fromEntries(['section-name','section-value','section-weight','checks','dot'].map(key=>['[data-seo-' + key + ']',node()]));
-        const row = {...queries(rowEntries), entries: rowEntries}; renderedSections.push(row); return row;
-    }}};
-    const checkTemplate = {...node({'data-seo-check':'title_present'}),content:{cloneNode(){
-        const value=node();const item={...queries({'[data-seo-check-value]':value}), value};renderedChecks.push(item);return item;
-    }}};
-    const gradeLabel = {...node({'data-seo-grade-label':'green'}),textContent:'优秀'};
-    const sectionLabel = {...node({'data-seo-section-label':'title'}),textContent:'标题标签'};
-    const profiles = ['', 'product', 'landing', 'guide'].map(key => ({...node({'data-seo-profile-label':key}),textContent:({'':'默认','product':'商品','landing':'落地页','guide':'长文指南'})[key]}));
-    const root = {...queries(entries),hidden:true,querySelectorAll(selector){return {'[data-seo-profile-label]':profiles,'[data-seo-check]':[checkTemplate],'[data-seo-grade-label]':[gradeLabel],'[data-seo-section-label]':[sectionLabel]}[selector] || [];}};
-    const ui={writeBase:{registerResultHandler(name,handler){handlers[name]=handler;}},register(){}};
-    vm.runInNewContext(source('product-seo'), {window:{WBUI:ui},document:{getElementById:()=>({content:root}),createElement:()=>node(),addEventListener(name,handler){listeners[name]=handler;}}});
-    const form = {querySelector:()=>root};
-    return {root,entries,sections,duplicates,renderedSections,renderedChecks,handler:handlers['product.seo'],form};
-}
-test('SEO结果只消费服务端评分，未知HTML值保持文本，未覆盖来源显式显示', () => {
-    const s=seoFixture();
-    const data={total:91,title:'<script>bad()</script>',url:'/a',description:'说明',sections:[{key:'title',score:3,max:10,percent:30,checks:[{key:'title_present',score:3,max:5,skipped:false},{key:'title_present',score:0,max:5,skipped:true}]}],duplicates:[{id:'1',title:'<img onerror=bad()>',path:'/b'}],coverage:{omitted:[{source:'article',reason:'project_filter_unavailable'}]}};
-    assert.equal(s.handler({form:s.form,data}),true,'评分不能执行编辑表单的关抽屉/导航');
-    assert.equal(s.entries['[data-seo-total]'].textContent,'91');
-    assert.equal(s.entries['[data-seo-grade]'].textContent,'优秀');
-    assert.equal(s.entries['[data-seo-title]'].textContent,data.title);
-    assert.equal(s.renderedChecks.length,1,'跳过的检查不作为失败提示');
-    assert.equal(s.renderedChecks[0].value.textContent,'3/5');
-    assert.equal(s.duplicates.children[0].textContent,'<img onerror=bad()> · /b');
-    assert.equal(s.entries['[data-seo-coverage]'].hidden,false);
-    assert.equal(s.entries['[data-seo-omitted]'].textContent,'article');
-});
-function tagFixture() {
+function tagFixture(words = {}) {
     const entries=Object.fromEntries(['name','total','page-info','result','status'].map(key=>['[data-tag-' + key + ']',node()]));
     entries['[data-tag-rows]']=node();entries['[data-tag-page="-1"]']=node();entries['[data-tag-page="1"]']=node();
     const made=[];
     entries['[data-tag-row]']={content:{cloneNode(){const fields=Object.fromEntries(['name','slug','status'].map(key=>['[data-tag-product-'+key+']',node()]));const row={...queries(fields),fields};made.push(row);return row;}}};
     entries['[data-tag-empty]']={content:{cloneNode(){return {empty:true};}}};
-    const panel={...queries(entries),...node({'data-page-info':'共 %s 条，第 %s-%s 条','data-count-tail':' 个商品','data-failed':'读取失败'})};
+    const panel={...queries(entries),...node({'data-page-info':'共 %s 条，第 %s-%s 条','data-count-text':'{count} 个商品','data-hit-text':'命中 {count} 个商品','data-failed':'读取失败',...words})};
     const trigger=node();const ui={},listeners={},pending=[];
     panel.isConnected=true;
     vm.runInNewContext(source('product-tag-hits'),{window:{WBUI:ui},document:{querySelector:()=>panel,getElementById:()=>trigger,addEventListener(name,handler){listeners[name]=handler;}},AbortController,URLSearchParams,fetch(url,options){const work=deferred();pending.push({url,options,...work});return work.promise;}});
@@ -71,6 +35,14 @@ test('标签总数、页码和行来自同一JSON结果，前端只算分页区�
     assert.equal(s.made[0].fields['[data-tag-product-name]'].textContent,'<b>商品</b>');
     assert.equal(state.page,2);
 });
+test('标签计数和命中说明使用完整译文，允许数量在句尾并覆盖零值',()=>{
+    for (const count of [0, 21]) {
+        const s=tagFixture({'data-count-text':'Products: {count}','data-hit-text':'Matching products: {count}'});
+        s.render(s.panel,{tagId:'t',tagName:'标签',total:count,page:1,pageSize:20,items:[]},{});
+        assert.equal(s.trigger.textContent,'Products: '+count);
+        assert.equal(s.entries['[data-tag-total]'].textContent,'Matching products: '+count);
+    }
+});
 test('标签无命中仍有空行与0-0分页，不保留旧记录',()=>{
     const s=tagFixture();s.render(s.panel,{tagId:'t',tagName:'空',total:0,page:1,pageSize:20,items:[]},{});
     assert.equal(s.entries['[data-tag-page-info]'].textContent,'共 0 条，第 0-0 条');
@@ -78,9 +50,18 @@ test('标签无命中仍有空行与0-0分页，不保留旧记录',()=>{
     assert.equal(s.entries['[data-tag-page="1"]'].disabled,true);
 });
 function previewFixture(response) {
-    const ui={register(){}},requests=[];
-    vm.runInNewContext(source('product-preview'),{window:{WBUI:ui,location:{href:'https://shop.test/admin/products/edit'}},document:{addEventListener(){},title:'商品'},fetch:async(url,options)=>{requests.push(options);return response;},URL,AbortController});
-    return {api:ui.productPreview,requests};
+    const ui={register(){}},requests=[],listeners={},parsed=[];
+    const frame=node(),body=node();frame.style={};body.style={};
+    const popup={closed:false,close(){this.closed=true;},document:{title:'',body,createElement:()=>frame}};
+    class DOMParser {
+        parseFromString(html) {
+            const base=node();
+            parsed.push({html,base});
+            return {head:{querySelector:()=>null,prepend(value){assert.equal(value,base);}},createElement:()=>base,documentElement:{outerHTML:html}};
+        }
+    }
+    vm.runInNewContext(source('product-preview'),{window:{WBUI:ui,location:{href:'https://shop.test/admin/products/edit'},open:()=>popup},document:{addEventListener(name,handler){listeners[name]=handler;},title:'商品'},fetch:async(url,options)=>{requests.push(options);return typeof response==='function'?response():response;},URL,AbortController,DOMParser,FormData:class {}});
+    return {api:ui.productPreview,requests,listeners,parsed,popup,frame};
 }
 test('预览失败保留JSON外部文案，禁止跟随重定向',async()=>{
     const s=previewFixture({ok:false,status:403,headers:{get:()=> 'application/json'},json:async()=>({code:403,message:'没有权限'})});
@@ -92,6 +73,72 @@ test('预览的非成功HTML或非HTML响应不被误显示为成功文档',asyn
         const s=previewFixture({ok,headers:{get:()=>type}});
         await assert.rejects(s.api.readDocument('/preview',{},'读取失败'),/读取失败/);
     }
+});
+test('POST预览只消费统一JSON中的HTML产物，GET仍读取页面文档',async()=>{
+    const html='<html><head></head><body>商品预览</body></html>';
+    for(const method of ['GET','POST']) {
+        const s=previewFixture(method==='POST'?jsonResponse({html},200,'成功'):{ok:true,headers:{get:()=> 'text/html'},text:async()=>html});
+        assert.equal(await s.api.readDocument('/preview',{method},'读取失败'),'<!doctype html>\n'+html);
+        assert.equal(s.parsed[0].html,html);
+        assert.equal(s.parsed[0].base.href,'https://shop.test/');
+        assert.equal(s.requests[0].redirect,'error');
+        if(method==='POST') assert.equal(s.requests[0].headers.Accept,'application/json');
+    }
+});
+test('POST预览拒绝旧HTML协议和非法JSON成功结构',async()=>{
+    const responses=[
+        {ok:true,headers:{get:()=> 'text/html'},text:async()=>'<html>旧协议</html>'},
+        ...[null,{}, {html:''},{html:'  '},{html:123}].map(data=>jsonResponse(data,200,'成功')),
+        {ok:true,headers:{get:()=> 'application/json'},json:async()=>null},
+        {ok:true,headers:{get:()=> 'application/json'},json:async()=>({data:{html:'<html>缺code</html>'}})}
+    ];
+    for(const response of responses) {
+        const s=previewFixture(response);
+        await assert.rejects(s.api.readDocument('/preview',{method:'POST'},'读取失败'),/读取失败/);
+        assert.equal(s.parsed.length,0);
+    }
+});
+test('POST预览业务失败保留message，拒绝把失败data显示成文档',async()=>{
+    for(const status of [200,403]) {
+        const response=jsonResponse({html:'<html>不能展示</html>'},403,'没有权限');
+        response.ok=status===200;
+        const s=previewFixture(response);
+        await assert.rejects(s.api.readDocument('/preview',{method:'POST'},'读取失败'),error=>error.message==='没有权限' && error.productPreviewMessage===true);
+        assert.equal(s.parsed.length,0);
+    }
+});
+test('POST预览失败关闭预开窗口，恢复按钮并释放重复提交锁',async()=>{
+    for(const kind of ['business','parse','network']) {
+        const response=kind==='business'?jsonResponse(null,403,'没有权限'):kind==='network'?async()=>{throw new TypeError('private network detail');}:{ok:true,headers:{get:()=> 'application/json'},json:async()=>{throw new SyntaxError('private JSON detail');}};
+        const s=previewFixture(response),message=node(),button={type:'submit',disabled:false},disabled={type:'submit',disabled:true};
+        const host={querySelector:()=>message};
+        const form={...node({'data-preview-failed':'读取失败'}),matches:()=>true,closest:()=>host,elements:[button,disabled],action:'/preview'};
+        const event={target:form,preventDefault(){}};
+        const pending=s.listeners.submit(event);
+        assert.equal(button.disabled,true);
+        await s.listeners.submit(event);
+        assert.equal(s.requests.length,1,'进行中的请求不能重复提交');
+        await pending;
+        assert.equal(s.popup.closed,true);
+        assert.equal(button.disabled,false);
+        assert.equal(disabled.disabled,true);
+        assert.equal(message.textContent,kind==='business'?'没有权限':'读取失败');
+        assert.equal(s.frame.srcdoc,undefined);
+        await s.listeners.submit(event);
+        assert.equal(s.requests.length,2,'失败后必须可以再次提交');
+    }
+});
+test('POST预览JSON成功在沙箱展示，按钮恢复且不关闭窗口',async()=>{
+    const html='<html><head></head><body>选中模板</body></html>';
+    const s=previewFixture(jsonResponse({html},200,'成功')),message=node(),button={type:'submit',disabled:false};
+    const form={...node({'data-preview-failed':'读取失败'}),matches:()=>true,closest:()=>({querySelector:()=>message}),elements:[button],action:'/preview'};
+    await s.listeners.submit({target:form,preventDefault(){}});
+    assert.equal(s.popup.closed,false);
+    assert.equal(s.popup.opener,null);
+    assert.equal(button.disabled,false);
+    assert.equal(message.textContent,'');
+    assert.equal(s.frame.srcdoc,'<!doctype html>\n'+html);
+    assert.equal(s.frame.getAttribute('sandbox'),'allow-scripts');
 });
 test('新窗口只接收已验证文档，并保留iframe沙箱',()=>{
     const s=previewFixture({}),frame=node(),body=node();body.style={};frame.style={};
@@ -145,15 +192,16 @@ test('标签分页展示区间按实际行数，非零总数的空页也是0-0',
 });
 
 test('分类和品牌编辑表单的默认提交仍是保存，SEO为显式次要操作',()=>{
-    for (const [name, marker] of [['product_category_form','<form data-write="custom"'],['product_brands','<template id="tpl-brand-edit-']]) {
+    for (const [name, marker] of [['product_category_form','<form data-write hx-post='],['product_brands','<template id="tpl-brand-edit-']]) {
         const raw=fs.readFileSync(__dirname+'/../../../admin/product/'+name+'.html','utf8');
         const start=raw.indexOf(marker), form=raw.slice(start,raw.indexOf('</form>',start));
         const submits=Array.from(form.matchAll(/<button\b[^>]*type="submit"[^>]*>/g)).map(match=>match[0]);
-        assert.ok(submits.length>=2,name);
-        assert.doesNotMatch(submits[0],/data-write-handler|seo-score/);
+        assert.equal(submits.length,1,name);
+        assert.doesNotMatch(submits[0],/data-write-handler|seo-score|hx-post="[^"]*seo-score"/);
         assert.match(submits[0],/btn-primary/);
-        assert.match(submits[1],/data-write-handler="product\.seo"/);
-        assert.match(submits[1],/formnovalidate/);
+        const seo=raw.indexOf('include "product_seo_form.html"',start);
+        assert.ok(seo > raw.indexOf('</form>',start),'SEO 必须处于保存表单外');
+        assert.doesNotMatch(raw,/data-write-handler="product\.seo"/);
     }
 });
 test('标签读取的网络和JSON解析错误只显示模板失败文案',async()=>{
@@ -210,18 +258,4 @@ test('opaque srcdoc加载真实预览基座和购物车模拟控件，不执行�
     assert.equal(window.WPSitePreview.active,true);
     assert.equal(root.textContent,'2');assert.equal(root.getAttribute('data-site-simulated'),'true');
     assert.equal(root.getAttribute('data-site-error'),null);assert.equal(fetches,0);
-});
-
-test('SEO页型消费模板字典，维度权重直接格式化服务端事实',()=>{
-    const s=seoFixture();
-    for(const [profileType,expected] of [['product','商品'],['landing','落地页'],['guide','长文指南'],['','默认'],['<custom-profile>','<custom-profile>']]) {
-        const data={profileType,total:42,sections:[{key:'title',score:3,max:10,percent:30,weight:0.1234,checks:[]}],duplicates:[],coverage:{omitted:[]}};
-        s.handler({form:s.form,data});
-        assert.equal(s.entries['[data-seo-profile]'].textContent,expected);
-        assert.equal(s.renderedSections.at(-1).entries['[data-seo-section-weight]'].textContent,'12.34%');
-        assert.equal(s.entries['[data-seo-total]'].textContent,'42','不得通过显示权重重新计算总分');
-        assert.equal(data.sections[0].weight,0.1234);
-    }
-    s.handler({form:s.form,data:{profileType:'product',total:0,sections:[{key:'title',score:0,max:10,percent:0,weight:0,checks:[]}],duplicates:[],coverage:{omitted:[]}}});
-    assert.equal(s.renderedSections.at(-1).entries['[data-seo-section-weight]'].textContent,'0%');
 });

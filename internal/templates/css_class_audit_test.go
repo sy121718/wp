@@ -271,16 +271,12 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: []string{"before", "after", "inside"},
 		note:   "取值见 canvas.js:544-545 的 remove 列表",
 	},
-	"perm-type-": {
-		site:   "admin/system/role_permissions.html:100 `class=\"perm-type perm-type-{{r.Type}}\"`",
-		values: nil,
-		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
-	},
 
 	"badge-": {
-		site: "admin/ai/mcp.html:41 `badge-{{.McpTone}}`；admin/ai/provider_card.html:15 `badge-{{.StatusTone}}`；" +
-			"admin/ai/provider_card.html:31 与 admin/ai/provider_models.html:19 `badge-{{.ModelsNoticeTone}}`；" +
-			"admin/ai/sessions.html:402 `badge-{{e.Tone}}`；" +
+		site: "admin/ai/mcp.html `badge-{{if .McpEnabled}}ok{{else}}mute{{end}}`（模板按开关事实选档）；" +
+			"admin/ai/provider_card.html `badge-{{if eq p.Status 1}}ok{{else}}warn{{end}}`（按启用状态事实选档）；" +
+			"admin/ai/sessions.html `badge-{{if eq e.Kind \"user\"}}info{{else if eq e.Kind \"assistant\"}}ok{{else if eq e.Kind \"tool\"}}warn{{end}}`（按事件种类事实选档，" +
+			"原先 Go 侧的 mcpSwitchTone / providerStatusTone / sessionEventTone 已删 —— 颜色分支归模板）；" +
 			"admin/purchase/purchases.html:236 `badge-{{l.OutstandingTone}}`；" +
 			"admin/mail/mail_campaign.html:126 `badge-{{p.StatusTone}}`；" +
 			"admin/order/coupons.html:175 `badge-{{cp.StateTone}}`；" +
@@ -299,7 +295,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 			"admin/user/customer_badges.html:30 `badge-{{tone}}`（筛选口径与 RFM 分段徽章，三页共用）",
 		values: []string{"ok", "warn", "danger", "mute", "info"},
 		note: "取值域 = 各产出点返回值的并集（语义档，见 AGENTS.md §语义 vs 外观）：" +
-			"Go 侧 —— mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
+			"Go 侧 —— noticeTone{ok,warn}、" +
 			"recipientStatusTone{warn,mute}、i18n.ContentEngineTone{info,mute}（product 的译文来源档，internal/module/product/inbound/http/product_translations.go 产出）、pricingLineTone（internal/module/product/service/product_pricing_page.go）/tagKindTone/variationTone{info,mute}、" +
 			"orderenums.OrderStatusTone{warn,info,ok,danger,mute}、ReturnStatusTone{warn,ok,mute}、" +
 			"CouponStateTone{ok,danger,warn,mute}、" +
@@ -442,6 +438,11 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 	tplFiles := walkFiles(t, ".", func(p string) bool {
 		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
 	})
+	// 公共 UI 模板属主在 pkg/view/ui，同样计入使用侧语料。
+	pkgTplFiles := walkFiles(t, "../../pkg/view/ui", func(p string) bool {
+		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
+	})
+	tplFiles = append(tplFiles, pkgTplFiles...)
 	jsFiles := walkFiles(t, "static/js", func(p string) bool {
 		return strings.HasSuffix(p, ".js") && !strings.HasSuffix(p, ".min.js") && !strings.HasSuffix(p, ".test.cjs")
 	})

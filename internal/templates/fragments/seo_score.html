@@ -14,15 +14,14 @@
 <div class="wb-seo-head">
     <span class="wb-seo-total">{{.Score.Total}}</span>
     <span class="wb-seo-grade">{{include "seo_grade.html" map("color", .Score.Grade, "tr", tr)}}</span>
-    <span class="wb-seo-tip">{{tr("workbench.ui.seo.totalTip", "SEO 评分（0-100）")}}</span>
+    <span class="wb-seo-tip">{{tr("seoTotalTip", "SEO 评分（0-100）")}}</span>
 </div>
 {{if .Score.ProfileReason != ""}}
-<p class="wb-seo-tip">{{tr("workbench.ui.seo.profileWeight", "页型权重：")}}{{.Score.ProfileType}} · {{.Score.ProfileReason}}</p>
+<p class="wb-seo-tip">{{tr("seoModeWeight", "页型权重：")}}{{.Score.ProfileType}} · {{.Score.ProfileReason}}</p>
 {{end}}
 {{if len(.Score.Duplicates) > 0}}
 <div class="wb-seo-dup">
-    <p class="badge badge-warning">{{tr("workbench.ui.seo.dupPrefix", "标题重复：另有 ")}}{{len(.Score.Duplicates)}}{{tr("workbench.ui.seo.dupSuffix", " 个页面用了同一个标题")}}</p>
-    <p class="wb-seo-tip">{{tn("admin.seo.dup.line", "重复的 title（{title}）出现在 {count} 个页面", map("title", .Score.Title, "count", len(.Score.Duplicates)))}}</p>
+    <p class="badge badge-warning">{{tn("seoDupLine", "重复的 title（{title}）出现在 {count} 个页面", map("title", .Score.Title, "count", len(.Score.Duplicates)))}}</p>
     <ul class="wb-seo-issues">
         {{range _, d := .Score.Duplicates}}
         <li>{{include "seo_dup_kind.html" map("kind", d.Kind, "tr", tr)}}{{d.Page}}</li>
@@ -39,16 +38,16 @@
 {{if len(sec.Issues) > 0}}
 <ul class="wb-seo-issues">
     {{range _, issue := sec.Issues}}
-    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="{{tr("workbench.ui.seo.jumpHint", "点击定位到需要修改的位置")}}"{{end}}>{{include "seo_issue_line.html" map("key", issue.Key, "actual", issue.Actual, "tr", tr, "tn", tn)}}</li>
+    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="{{tr("seoJumpHint", "点击定位到需要修改的位置")}}"{{end}}>{{include "seo_issue_line.html" map("key", issue.Key, "actual", issue.Actual, "tr", tr, "tn", tn)}}</li>
     {{end}}
 </ul>
 {{end}}
 {{end}}
 <div class="wb-seo-serp">
-    <div class="wb-serp-title">{{if .Score.HasSerpTitle}}{{truncateWidth(.Score.SerpTitle, 60)}}{{else}}{{tr("admin.seo.serp.titleEmpty", "（未填写标题）")}}{{end}}</div>
-    <div class="wb-serp-url">{{if .Score.HasSerpURL}}{{.Score.SerpURL}}{{else}}{{tr("admin.seo.serp.urlEmpty", "（线上路径未知）")}}{{end}}</div>
-    <div class="wb-serp-desc">{{if .Score.HasSerpDesc}}{{.Score.SerpDesc}}{{else}}{{tr("admin.seo.serp.descEmpty", "（未填写描述）")}}{{end}}</div>
+    <div class="wb-serp-title">{{if .Score.HasSerpTitle}}{{truncateWidth(.Score.SerpTitle, 60)}}{{else}}{{tr("seoTitleEmpty", "（未填写标题）")}}{{end}}</div>
+    <div class="wb-serp-url">{{if .Score.HasSerpURL}}{{.Score.SerpURL}}{{else}}{{tr("seoSerpUrlEmpty", "（线上路径未知）")}}{{end}}</div>
+    <div class="wb-serp-desc">{{if .Score.HasSerpDesc}}{{.Score.SerpDesc}}{{else}}{{tr("seoDescEmpty", "（未填写描述）")}}{{end}}</div>
 </div>
 {{else}}
-<p class="wb-empty">{{if .Score.EmptyKey}}{{tr(.Score.EmptyKey, .Score.EmptyFallback)}}{{else}}{{tr("workbench.ui.seo.unavailable", "评分不可用（草稿为空或评分失败）")}}{{end}}</p>
+<p class="wb-empty">{{if .Score.EmptyKey}}{{tr(.Score.EmptyKey, .Score.EmptyFallback)}}{{else}}{{tr("seoAbsent", "评分不可用（草稿为空或评分失败）")}}{{end}}</p>
 {{end}}

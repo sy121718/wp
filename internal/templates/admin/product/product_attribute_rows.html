@@ -4,25 +4,23 @@
 {{if isset(.Values)}}{{range _, value := .Values}}
 <div class="attr-value-row" data-attribute-value-row>
 <input data-attribute-field="id" type="hidden" value="{{value.ID}}">
-<input data-attribute-field="key" class="form-input" value="{{value.Key}}" aria-label="{{tr("admin.product_attributes.col.key", "标识")}}">
-<input data-attribute-field="label" class="form-input" value="{{value.Label}}" required aria-label="{{tr("admin.product_attributes.values.col.label", "显示名")}}">
-<input data-attribute-field="sort" class="form-input" type="number" value="{{value.Sort}}" aria-label="{{tr("admin.product_attributes.values.col.sort", "排序")}}">
-<label><input data-attribute-field="enabled" type="checkbox" {{if value.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}</label>
-<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("admin.common.action.delete", "删除")}}</button>
-<template name="values" data-row><input type="hidden" name="id" value="{{value.ID}}"><input type="hidden" name="key" value="{{value.Key}}"><input type="hidden" name="label" value="{{value.Label}}"><input type="hidden" name="sort" value="{{value.Sort}}"><input type="hidden" name="enabled" value="{{value.Enabled}}"></template>
+<input data-attribute-field="key" class="form-input" value="{{value.Key}}" aria-label="{{tr("attrKeyCol", "标识")}}">
+<input data-attribute-field="label" class="form-input" value="{{value.Label}}" required aria-label="{{tr("attrValueLabel", "显示名")}}">
+<input data-attribute-field="sort" class="form-input" type="number" value="{{value.Sort}}" aria-label="{{tr("attrValsSort", "排序")}}">
+<label><input data-attribute-field="enabled" type="checkbox" {{if value.Enabled}}checked{{end}}> {{tr("attrValsOn", "启用")}}</label>
+<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("uiActDel", "删除")}}</button>
 </div>
 {{end}}{{end}}
 </div>
 <template data-attribute-prototype>
 <div class="attr-value-row" data-attribute-value-row>
 <input data-attribute-field="id" type="hidden" value="">
-<input data-attribute-field="key" class="form-input" value="" aria-label="{{tr("admin.product_attributes.col.key", "标识")}}">
-<input data-attribute-field="label" class="form-input" value="" required aria-label="{{tr("admin.product_attributes.values.col.label", "显示名")}}">
-<input data-attribute-field="sort" class="form-input" type="number" value="0" aria-label="{{tr("admin.product_attributes.values.col.sort", "排序")}}">
-<label><input data-attribute-field="enabled" type="checkbox" checked> {{tr("admin.product_attributes.values.enabled", "启用")}}</label>
-<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("admin.common.action.delete", "删除")}}</button>
-<template name="values" data-row></template>
+<input data-attribute-field="key" class="form-input" value="" aria-label="{{tr("attrKeyCol", "标识")}}">
+<input data-attribute-field="label" class="form-input" value="" required aria-label="{{tr("attrValueLabel", "显示名")}}">
+<input data-attribute-field="sort" class="form-input" type="number" value="0" aria-label="{{tr("attrValsSort", "排序")}}">
+<label><input data-attribute-field="enabled" type="checkbox" checked> {{tr("attrValsOn", "启用")}}</label>
+<button type="button" class="btn btn-sm" data-attribute-remove>{{tr("uiActDel", "删除")}}</button>
 </div>
 </template>
-<button type="button" class="btn btn-sm" data-attribute-add>+ {{tr("admin.product_attributes.values.add", "添加值")}}</button>
+<button type="button" class="btn btn-sm" data-attribute-add>+ {{tr("attrValsAdd", "添加值")}}</button>
 </div>

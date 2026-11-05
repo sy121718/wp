@@ -20,10 +20,9 @@ var groupFTemplates = []string{
 	"admin/system/administrators.html",
 	"admin/system/roles.html",
 
-	"admin/system/role_permissions.html",
 	"admin/system/permissions.html",
+	"admin/system/permission_edit_drawer.html",
 
-	"admin/system/permission_edit_form.html",
 	"admin/system/departments.html",
 	"admin/system/i18n.html",
 	"admin/masterdata/masterdata_changes.html",
@@ -83,7 +82,9 @@ var groupFRetiredKeys = map[string]bool{
 	"admin.dashboard.col.actions":    true,
 }
 
-var groupFCallRe = regexp.MustCompile(`(?:\.\["t"\]|\btr)\("([^"]+)",\s*"((?:[^"\\]|\\.)*)"\)`)
+// 三种真实取词形态都要认：全局 t(...)、数据键 .["t"](...)、别名 tr(...)。
+// 只认后两种会让改用全局 t 的模板被判成「词条与模板失去同步」。
+var groupFCallRe = regexp.MustCompile(`(?:\.\["t"\]|\bt(?:r|f|n)?)\("([^"]+)",\s*"((?:[^"\\]|\\.)*)"`)
 
 var groupFSeedRe = regexp.MustCompile(`\('([A-Za-z0-9_.]+)', '(zh-CN|en-US)'`)
 
@@ -198,8 +199,9 @@ func TestGroupFI18nFallbacksArePlainText(t *testing.T) {
 }
 
 func TestGroupFI18nTemplatesParse(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
 	for _, name := range groupFTemplates {
 		name := name
 		t.Run(name, func(t *testing.T) {
@@ -211,8 +213,9 @@ func TestGroupFI18nTemplatesParse(t *testing.T) {
 }
 
 func TestGroupFDashboardRenders(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
 
 	base := map[string]any{
 		"title": "仪表盘", "lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
@@ -271,8 +274,9 @@ func TestGroupFDashboardRenders(t *testing.T) {
 }
 
 func TestGroupFRangeTranslatePath(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
 
 	type adminRow struct {
 		ID       int
@@ -331,13 +335,13 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		Category: "ui", UpdateTime: "2026-09-14 10:00",
 	}}
 	i18nData["I18nEditURLs"] = []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"}
-	out, err = render(t, set, "admin/system/i18n", i18nData)
+	out, err = render(t, set, "admin/system/i18n", i18nData, groupDRenderScope())
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
 	for _, want := range []string{
 		"文案词条", "site.component.gallery.prev", "编辑", "删除",
-		`data-drawer-url="/admin/i18n/edit?key=site.component.gallery.prev`, "tpl-i18n-create", "来源或修改原因",
+		`hx-get="/admin/i18n/edit?`, "tpl-i18n-create", "来源或修改原因",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("词条页缺少 %q（range 可能在 tr 取词处中断）", want)

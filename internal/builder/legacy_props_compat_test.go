@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/components/addtocart"
-	"go_wp/internal/builder/components/articlelist"
-	"go_wp/internal/builder/components/card"
-	"go_wp/internal/builder/components/infobox"
-	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/extensions/addtocart"
+	"go_wp/internal/builder/extensions/articlelist"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/components/card"
+	"go_wp/pkg/builder/components/infobox"
+	"go_wp/pkg/builder/core"
 )
 
 func TestLegacyPropsRenderButton(t *testing.T) {

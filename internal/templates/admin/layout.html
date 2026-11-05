@@ -113,14 +113,15 @@
 
         </div>{* /.admin-main *}
 
-        {* ===== 全局右侧抽屉：页面模板提供 <template>，admin.js 负责开合（新建/编辑表单） ===== *}
+        {* 全局抽屉：本地模板克隆或 HTMX 获取 Jet 片段；drawer 控件只负责开合与焦点。 *}
         <div class="drawer-mask" data-drawer-mask hidden></div>
-        <aside class="drawer" data-drawer hidden aria-hidden="true">
+        <aside class="drawer" data-drawer data-write-host hidden aria-hidden="true">
             <header class="drawer-head">
                 <span class="drawer-title" data-drawer-title></span>
                 <button type="button" class="drawer-close" data-drawer-close title="{{ .["t"]("shell.action.close", "关闭") }}">✕</button>
             </header>
-            <div class="drawer-body" data-drawer-body></div>
+            <div data-write-status role="alert" hidden></div>
+            <div id="admin-drawer-body" class="drawer-body" data-drawer-body></div>
         </aside>
         {* 全局悬浮球：每个后台页面都能随手问一句（docs/17 §1.1 第 3 项）。
            放在抽屉之后、脚本之前：它的面板层级要与抽屉同级，而脚本要先能拿到这段 DOM。 *}

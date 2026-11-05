@@ -4,11 +4,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	aidto "go_wp/internal/module/ai/dto"
-	"go_wp/internal/uispec"
+	"go_wp/pkg/uispec"
 )
 
 func renderSessionPage(t *testing.T, data map[string]any) string {
@@ -63,7 +64,7 @@ func sessionEventRow(seq int64, kind, tone, content, tool, phase string, views [
 	return map[string]any{
 		"Seq": seq, "Kind": kind, "Tone": tone, "Content": content,
 		"Views": views, "HasViews": len(views) > 0,
-		"TimeLabel": "10-05 01:30", "Tool": tool, "Phase": phase,
+		"At": time.UnixMilli(1791135000000), "Tool": tool, "Phase": phase,
 		"ViewsCtx": map[string]any{"Views": views},
 	}
 }

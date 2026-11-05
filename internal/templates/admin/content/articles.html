@@ -34,7 +34,7 @@
             {{if isset(.StaleImpact)}}{{if .StaleImpact.Available}}{{if .StaleImpact.Total}}
             <p class="page-sub">
                 <button type="button" class="badge badge-warning badge-btn"
-                        data-drawer-url="/admin/articles/stale/drawer"
+                        data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/articles/stale/drawer"
                         data-drawer-title="{{ .["t"]("admin.article.list.staleHeading", "待重建影响面") }}">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</button>
             </p>
             {{end}}{{end}}{{end}}

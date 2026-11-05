@@ -68,13 +68,11 @@ var errorConstantName = regexp.MustCompile("^Err[A-Z]")
 
 var pendingMsgTextDomain = map[string]int{
 	"internal/module/plugin/inbound/http/plugin_err.go":                  13,
-	"internal/module/ai/inbound/http/ai_page.go":                         3,
 	"internal/module/page/inbound/http/page_translations_handle.go":      2,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go": 2,
 	"internal/module/user/inbound/http/user_page.go":                     1,
 	"internal/module/page/inbound/http/pages_handle.go":                  1,
 	"internal/module/mail/inbound/http/mail_err.go":                      1,
-	"internal/module/admin/inbound/http/admin_err.go":                    1,
 }
 
 func msgKeyIsErrorFact(value ast.Expr) bool {

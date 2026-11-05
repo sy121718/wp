@@ -9,7 +9,7 @@ import (
 )
 
 func TestAdminSettingsTemplateParses(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	if _, err := set.GetTemplate("admin/project/settings"); err != nil {
 		t.Fatalf("站点设置页模板解析失败: %v", err)
@@ -34,7 +34,7 @@ func TestAdminSettingsHasNotFoundHTMLEditor(t *testing.T) {
 }
 
 func TestAdminSettingsRendersNotFoundHTML(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	const page = "<!doctype html><h1>页面不存在</h1>"
 	data := settingsRenderData([]map[string]any{{"ID": "p1", "Name": "站点"}}, "p1")
@@ -75,7 +75,7 @@ func settingsRenderData(projects []map[string]any, selected string) map[string]a
 }
 
 func TestAdminSettingsHeaderProjectActions(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	for _, tc := range []struct {
 		name     string

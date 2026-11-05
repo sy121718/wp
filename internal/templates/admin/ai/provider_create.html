@@ -1,27 +1,39 @@
-{* admin/ai/provider_create.html — 「新建供应商」抽屉内容（页内 <template>，由页头按钮打开）。
+{* admin/ai/provider_create.html — 「新建供应商」抽屉内容。
 
    抽成独立片段是因为**两个页面都要它**：模型配置页（ai/providers.html）与会话页的
    「AI 模型」标签（ai/sessions.html）。复制一份必然漂移 —— 加了字段只改一处，
    另一处静默少一个输入框。
 
-   这里的 <template> 第一层直接是 .tabs（不套 .stack）：克隆进 .drawer-body 后靠 ui.css 的
+   根节点直接是 .tabs（不套 .stack）：克隆进 .drawer-body 后靠 ui.css 的
    `.drawer-body > .tabs > .tab-list { padding-inline: 0 }` 让页签与面板内容同轴。
 
    调用方需保证上下文里有：csrf_token（隐藏域）、t（翻译）、Presets（内置预设）、ProtocolOptions。
-   数据来自 ai/inbound/http/ai_page.go 的 renderPage 与 ai_session_page.go 的 attachProviderCards。 *}
+   数据来自 ai/inbound/http/ai_page.go 的 renderPage 与 ai_session_page.go 的 attachProviderCards。
+
+   两个页签都是「新建供应商」：标准表单提交 /api/ai/provider/save，成功回一条结论片段；
+   新卡片由服务端渲染，页面刷新后出现（同页其它卡片里未保存的密钥与草稿不能被自动刷新吃掉）。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 <template id="tpl-ai-provider-create">
-    <div class="tabs" data-tabs>
+    <div class="tabs" data-tabs data-create-scope>
         <div class="tab-list" role="tablist">
             <button type="button" role="tab" id="ai-tab-preset" aria-controls="ai-panel-preset" aria-selected="true" tabindex="0">{{tr("admin.ai.tab.preset", "第三方模型提供商")}}</button>
             <button type="button" role="tab" id="ai-tab-custom" aria-controls="ai-panel-custom" aria-selected="false" tabindex="-1">{{tr("admin.ai.tab.custom", "自定义模型 API")}}</button>
         </div>
 
+        {* 新建成功的落点：留在当前页，**不自动刷新** —— 同页其它供应商卡片里可能还有
+           用户刚填的密钥与未保存的模型草稿，整页刷新会一起吃掉。
+           服务端回一条结论片段，再给一个用户**自己点**的刷新入口。
+           点击后整页刷新是新卡片的唯一来源：新卡是服务端渲染的复合结构（模型区 + 权限
+           按钮），前端不重建它。 *}
+        <div class="form-hint" id="ai-create-result" data-create-result hidden role="status"></div>
+
         {* ===== tab1：内置预设提供商（provider_key / 协议 / 默认地址都由预设兜底） ===== *}
         <div class="tab-panel" role="tabpanel" id="ai-panel-preset" aria-labelledby="ai-tab-preset">
             <p class="form-hint">{{tr("admin.ai.tab.presetHint", "从内置目录中选择 OpenAI、Anthropic、Kimi 等提供商，填入其 API 密钥即可使用。")}}</p>
-            <form method="post" action="/admin/ai/providers/save">
+            <form data-write hx-post="/api/ai/provider/save" data-create-form
+                  hx-target="#ai-create-result" hx-swap="outerHTML"
+                  hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <div class="form-group">
                     <label class="form-label req">{{tr("admin.ai.field.preset", "提供商")}}</label>
@@ -68,7 +80,9 @@
         {* ===== tab2：自定义端点（没有任何预设可依据，字段全手填） ===== *}
         <div class="tab-panel" role="tabpanel" id="ai-panel-custom" aria-labelledby="ai-tab-custom" hidden>
             <p class="form-hint">{{tr("admin.ai.tab.customHint", "连接中转站、自部署服务或其他兼容 OpenAI / Anthropic 协议的接口，需填写 API 地址、协议和模型。")}}</p>
-            <form method="post" action="/admin/ai/providers/save">
+            <form data-write hx-post="/api/ai/provider/save" data-create-form
+                  hx-target="#ai-create-result" hx-swap="outerHTML"
+                  hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <div class="form-group">
                     <label class="form-label req">{{tr("admin.ai.field.providerKey", "供应商标识")}}</label>

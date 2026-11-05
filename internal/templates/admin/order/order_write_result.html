@@ -1,0 +1,7 @@
+{* 订单写操作结论：片段只陈述结果；带 Href 时给下一步链接。
+
+   链接挂的钩子是各发起表单自己 data-write-nav 里声明的选择器（如 [data-order-next]），
+   不新增写属性 —— 导航配置始终由 Jet 在发起处声明。
+   Href 是可选键：map 数据缺键时直接读字段会渲染失败，必须先 isset。 *}
+<p role="status">{{t(.Key, "操作成功")}}</p>
+{{if isset(.Href) && .Href != ""}}<div hidden data-order-next><a href="{{.Href}}"></a></div>{{end}}

@@ -1,0 +1,25 @@
+{{fallback := t("uiInternalErr", "系统内部错误，请稍后重试")}}
+{{if .Status == 400 || .Status == 422}}
+    {{fallback = t("sysErrBadParam", "参数有误，请检查后重试")}}
+{{else if .Status == 401}}
+    {{fallback = t("ErrUnauthorized", "登录状态已失效，请重新登录")}}
+{{else if .Status == 403}}
+    {{fallback = t("sysErrNoPerm", "没有执行此操作的权限")}}
+{{else if .Status == 404}}
+    {{fallback = t("ErrNotFound", "请求的内容不存在")}}
+{{else if .Status == 409}}
+    {{fallback = t("http.error.conflict", "数据发生冲突，请检查后重试")}}
+{{else if .Status == 413}}
+    {{fallback = t("sysErrTooLarge", "请求体过大")}}
+{{else if .Status == 429}}
+    {{fallback = t("ErrRateLimited", "请求过于频繁，请稍后重试")}}
+{{end}}
+<div role="alert" data-ui-error>
+    <p>{{if !.Fact.Business}}{{fallback}}{{else if len(.Args) > 0}}{{tf(.Fact.Key, .Fact.Fallback, .Args)}}{{else if .Fact.Fallback != "" && .Fact.Fallback != .Fact.Key}}{{t(.Fact.Key, .Fact.Fallback)}}{{else}}{{t(.Fact.Key, fallback)}}{{end}}{{if .Fact.Business && .PlainDetail != "" && (t(.Fact.Key, .Fact.Key) != .Fact.Key || (.Fact.Fallback != "" && .Fact.Fallback != .Fact.Key))}}：{{.PlainDetail}}{{end}}</p>
+    {{if len(.Details) > 0}}
+    <ul>{{range _, detail := .Details}}<li>{{tn(detail.Key, fallback, detail.Args)}}</li>{{end}}</ul>
+    {{end}}
+    {{if len(.Items) > 0}}
+    <ul>{{range _, item := .Items}}<li>{{item.Name}} ({{item.ID}})：{{if item.Fallback != "" && item.Fallback != item.ReasonKey}}{{t(item.ReasonKey, item.Fallback)}}{{else}}{{t(item.ReasonKey, fallback)}}{{end}}</li>{{end}}</ul>
+    {{end}}
+</div>

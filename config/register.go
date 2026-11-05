@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/captcha"

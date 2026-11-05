@@ -1,0 +1,8 @@
+{* 导航批量删除结论：成功计数 + 逐条原因；原因文案由 controller 按请求语言取好。 *}
+<div role="status" data-deleted="{{.Deleted}}" data-skipped="{{.Skipped}}">
+{{if .Deleted == 0 && .Skipped == 0}}{{t("navBulkNone", "没有选中任何导航项，列表未改动。")}}
+{{else if .Deleted == 0}}{{tn("navBulkSkip", "没有导航项被删除：{skipped} 个失败。", map("skipped", .Skipped))}}
+{{else if .Skipped == 0}}{{tn("navBulkDone", "已删除 {count} 个导航项。", map("count", .Deleted))}}
+{{else}}{{tn("navBulkPart", "已删除 {done} 个导航项，另有 {skipped} 个未删除。", map("done", .Deleted, "skipped", .Skipped))}}{{end}}
+{{if len(.Items) > 0}}<ul>{{range _, item := .Items}}<li data-item-id="{{item.ID}}" data-item-ok="{{if item.Deleted}}1{{else}}0{{end}}">{{if !item.Deleted}}{{item.ID}}：{{item.Message}}{{end}}</li>{{end}}</ul>{{end}}
+</div>

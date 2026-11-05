@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/pkg/response"
 )
 
 func errFactCtx(t *testing.T) *gin.Context {
@@ -81,23 +83,47 @@ func TestTranslateArgsFillsOnlyStringPlaceholders(t *testing.T) {
 	c := errFactCtx(t)
 
 	t.Run("无参数时原样取词", func(t *testing.T) {
-		if got := TranslateArgs(c, "admin.page.langs.excluded", "已排除该语言", nil); got != "已排除该语言" {
+		if got := response.ArgsText(c, "admin.page.langs.excluded", "已排除该语言", nil); got != "已排除该语言" {
 			t.Fatalf("无参数应回落兜底原文，实际 %q", got)
 		}
 	})
 
 	t.Run("有参数时按 %s 位置填充", func(t *testing.T) {
-		got := TranslateArgs(c, "page.bulk.pageAllDeleted", "已删除 %s 个页面。", []string{"3"})
+		got := response.ArgsText(c, "page.bulk.pageAllDeleted", "已删除 %s 个页面。", []string{"3"})
 		if got != "已删除 3 个页面。" {
 			t.Fatalf("参数应填进 %%s，实际 %q", got)
 		}
 	})
 
-	t.Run("占位符与参数个数不符时按 Sprintf 语义暴露", func(t *testing.T) {
+	t.Run("无参数但句中有 %s 时归口，不把占位符上屏", func(t *testing.T) {
+		got := response.ArgsText(c, "page.bulk.pageAllDeleted", "已删除 %s 个页面。", nil)
+		if got != response.InternalText(c) {
+			t.Fatalf("未填齐应归口，实际 %q", got)
+		}
+		if strings.Contains(got, "%s") || strings.Contains(got, "%!") {
+			t.Fatalf("未填齐漏出占位符/格式标记：%q", got)
+		}
+	})
 
-		got := TranslateArgs(c, "page.bulk.pagePartial", "已删除 %s 个，%s 个未能删除。", []string{"2"})
-		if !strings.Contains(got, "%!s(MISSING)") {
-			t.Fatalf("参数不足应当场暴露（Sprintf 语义），实际 %q", got)
+	t.Run("占位符与参数个数不符时归口，不吐 Sprintf 的错误标记", func(t *testing.T) {
+		got := response.ArgsText(c, "page.bulk.pagePartial", "已删除 %s 个，%s 个未能删除。", []string{"2"})
+		if got != response.InternalText(c) {
+			t.Fatalf("少参应归口，实际 %q", got)
+		}
+		for _, leak := range []string{"%!s(MISSING)", "%!", "%s"} {
+			if strings.Contains(got, leak) {
+				t.Fatalf("漏出 Sprintf 错误标记 %q：%q", leak, got)
+			}
+		}
+	})
+
+	t.Run("参数多于 %s 个数时同样归口", func(t *testing.T) {
+		got := response.ArgsText(c, "page.bulk.pageAllDeleted", "已删除 %s 个页面。", []string{"3", "多余"})
+		if got != response.InternalText(c) {
+			t.Fatalf("多参应归口，实际 %q", got)
+		}
+		if strings.Contains(got, "EXTRA") || strings.Contains(got, "%!") {
+			t.Fatalf("多参漏出 fmt 的 EXTRA 标记：%q", got)
 		}
 	})
 }

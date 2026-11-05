@@ -113,7 +113,11 @@
     </section>
 
     {* ===== 主表单（POST）===== *}
-    <form method="post" action="/admin/orders/create" class="stack">
+    <form class="stack" data-write
+          hx-post="/admin/orders/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+          data-write-nav="[data-order-next]">
+        <div data-write-result role="status"></div>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="project" value="{{selectedProject}}">
         {* 幂等键：同一份表单重复提交（含失败后刷新重放）只落一单。 *}

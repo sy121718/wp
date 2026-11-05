@@ -1,14 +1,16 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"context"
 	"strings"
 
 	"go_wp/internal/builder"
+	"go_wp/pkg/builder/core"
 	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 )
 
 type SiteCompilePorts struct {
@@ -29,7 +31,7 @@ type SiteCompileParams struct {
 
 	TargetLangs []string
 
-	Plan *PublicationPlan
+	Plan *publish.PublicationPlan
 }
 
 func siteLangInputsFor(ports SiteCompilePorts, p SiteCompileParams) (inputs SiteLangInputs, policy LangFallback, publishFact bool, err error) {
@@ -125,8 +127,13 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 	}
 	if ports.MediaProbe != nil {
 		probe := ports.MediaProbe
-		opts = append(opts, builder.WithAssetProbe(func(url string) []mediacontract.VariantRef {
-			return probe(p.Ctx, url)
+		opts = append(opts, builder.WithAssetProbe(func(url string) []core.AssetVariant {
+			refs := probe(p.Ctx, url)
+			out := make([]core.AssetVariant, 0, len(refs))
+			for _, r := range refs {
+				out = append(out, core.AssetVariant{URL: r.URL, Width: r.Width})
+			}
+			return out
 		}))
 	}
 	return opts, nil

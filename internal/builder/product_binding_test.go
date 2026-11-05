@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/source"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 	json "go_wp/pkg/jsonx"
 )
 

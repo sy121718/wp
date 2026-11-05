@@ -31,8 +31,9 @@ var shellExportPlan = map[string]shellExportHome{
 
 	"Jump": {homeAdmin, "整页提示的输入形状：页面出口"},
 
-	"RenderJump":   {homeAdmin, "整页提示渲染：已直接调用 adminui.Prepare，终局归 internal/adminui"},
-	"TranslateFor": {homeAdmin, "Go 侧文案翻译：templates 桥接，页面 handler 不再拼文案后即可撤"},
+	"RenderJump":   {homeAdmin, "写操作结果出口：成功交统一提示、失败交共享失败出口，不再渲染整页跳转提示"},
+	"TranslateFor": {homeAdmin, "Go 侧文案翻译：pkg/view/jet 桥接，页面 handler 不再拼文案后即可撤"},
+	"SafeBack":     {homeAdmin, "安全回跳判定的应用侧薄包装：实现归 pkg/safepath"},
 }
 
 var shellForwardAllow = map[string]string{

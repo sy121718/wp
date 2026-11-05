@@ -26,7 +26,7 @@
                （实测 saveBtnTop=2.12 屏、滚 1.21 屏才够得着）—— 改一个颜色要先把页面拉到底。
                用 form="theme-settings-form" 把页头这个按钮挂到下方表单上（HTML 不允许 form 嵌套，
                而页头在 <form> 之外）：零 JS，点击即提交，csrf_token 与全部字段一并带上。
-               样板：system/role_permissions.html 的 form="perm-form"。 *}
+               样板：system/roles.html 的行内删除按钮用 form="role-del-<id>" 关联表外表单。 *}
             <button type="submit" class="btn btn-primary" form="theme-settings-form">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
         </div>
     </header>
@@ -111,32 +111,60 @@
                 </summary>
                 <div class="fold-body">
                 <div class="theme-color-grid">
+                {* 「自定义」入口：选中哪个块就开那个块的工作台画布（/workbench?block=<id>，与块列表行内编辑
+                   同一条链路，同一个块、不复制）。链接只由**候选里真正选中的那条 option** 生成 ——
+                   候选外的 id 渲染成不可点击的 button，页面不替后端猜 id。 *}
                 <div class="form-field">
                     <label class="form-label" for="tsf-headerBlockId">{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}</label>
                     <select id="tsf-headerBlockId" name="headerBlockId" class="form-select">
                         {{range _, b := .HeaderBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlockID}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
+                    {{chosen := ""}}{{range _, b := .HeaderBlocks}}{{if b.ID == .HeaderBlockID}}{{chosen = b.ID}}{{end}}{{end}}
+                    <div class="form-inline" data-block-customize="headerBlockId" data-customize-empty-title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}">
+                        {{if chosen}}
+                        <a class="btn btn-sm btn-secondary" href="{{queryURL("/workbench", "block", chosen)}}" data-block-customize-link>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</a>
+                        {{else}}
+                        <button type="button" class="btn btn-sm btn-secondary" disabled aria-disabled="true" title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}" data-block-customize-empty>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</button>
+                        {{end}}
+                    </div>
                 </div>
                 <div class="form-field">
                     <label class="form-label" for="tsf-footerBlockId">{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}</label>
                     <select id="tsf-footerBlockId" name="footerBlockId" class="form-select">
                         {{range _, b := .FooterBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .FooterBlockID}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
+                    {{chosen := ""}}{{range _, b := .FooterBlocks}}{{if b.ID == .FooterBlockID}}{{chosen = b.ID}}{{end}}{{end}}
+                    <div class="form-inline" data-block-customize="footerBlockId" data-customize-empty-title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}">
+                        {{if chosen}}
+                        <a class="btn btn-sm btn-secondary" href="{{queryURL("/workbench", "block", chosen)}}" data-block-customize-link>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</a>
+                        {{else}}
+                        <button type="button" class="btn btn-sm btn-secondary" disabled aria-disabled="true" title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}" data-block-customize-empty>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</button>
+                        {{end}}
+                    </div>
                 </div>
                 {* 公告条（审计 VIS-012）：与页眉页脚同一条链路 —— 主题配一次，全站页面生效；
                    提交键走点分约定 slots.<槽位名>，后端按前缀扫描收，将来加槽位只需在这里多一个 select。
-                   回显由服务端 selected 完成（前端回填脚本只处理 input 与页眉页脚两个 select，不碰它）。 *}
+                   服务端 selected 走 AnnouncementBlockID（= slots.announcement）；前端回填脚本按同一 name 再兜一次。
+                   自定义入口同上：选中就编辑同一个块，不复制。 *}
                 <div class="form-field">
                     <label class="form-label" for="tsf-slots-announcement">{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}</label>
                     <select id="tsf-slots-announcement" name="slots.announcement" class="form-select">
                         {{range _, b := .AnnouncementBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlockID}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
+                    {{chosen := ""}}{{range _, b := .AnnouncementBlocks}}{{if b.ID == .AnnouncementBlockID}}{{chosen = b.ID}}{{end}}{{end}}
+                    <div class="form-inline" data-block-customize="slots.announcement" data-customize-empty-title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}">
+                        {{if chosen}}
+                        <a class="btn btn-sm btn-secondary" href="{{queryURL("/workbench", "block", chosen)}}" data-block-customize-link>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</a>
+                        {{else}}
+                        <button type="button" class="btn btn-sm btn-secondary" disabled aria-disabled="true" title="{{ .["t"]("admin.theme_settings.customize_empty", "先选一个块再自定义") }}" data-block-customize-empty>{{ .["t"]("admin.theme_settings.customize", "自定义") }}</button>
+                        {{end}}
+                    </div>
                 </div>
                 </div>
             </details>
@@ -199,6 +227,11 @@
     {* 回显：从内嵌 ThemeSettings JSON 按提交点分键名填充各表单字段 value。
         无自定义框架，仅原生 DOM。CMS 值安全（服务端已走 IsSafeCSSValue 白名单校验）。 *}
     (function () {
+        // 同一页不重复初始化：本模板若被 HTMX 整块换入，旧实例的节点已随 DOM 消失，
+        // 新实例照常跑一遍（标记挂在 form 上，跟着被换掉）；同页再执行则直接退出。
+        var rawForm = document.getElementById('theme-settings-form');
+        if (rawForm && rawForm.getAttribute('data-theme-settings-ready') === '1') return;
+        if (rawForm) rawForm.setAttribute('data-theme-settings-ready', '1');
         var raw = document.getElementById('theme-settings-json');
         if (!raw) return;
         var ts = {};
@@ -215,7 +248,10 @@
         }
         var form = document.getElementById('theme-settings-form');
         if (!form) return;
-        var fields = form.querySelectorAll('input[name*="."], select[name="headerBlockId"], select[name="footerBlockId"]');
+        // 三个全局块槽位：name 就是内嵌 JSON 的提交键（headerBlockId / footerBlockId / slots.announcement），
+        // 回显与「自定义」入口共用这一张表，加槽位只在这里多一行。
+        var blockSlots = ['headerBlockId', 'footerBlockId', 'slots.announcement'];
+        var fields = form.querySelectorAll('input[name*="."], select[name="headerBlockId"], select[name="footerBlockId"], select[name="slots.announcement"]');
         for (var i = 0; i < fields.length; i++) {
             var el = fields[i];
             var key = el.getAttribute('name');
@@ -230,6 +266,66 @@
                 }
             }
         }
+        // 「自定义」入口跟着选中值走：选中哪个块就开那个块的工作台画布（同一个块，不复制副本）。
+        // **链接只来自候选里真正被选中的那条 option**：select.value 为空（未设置项）或查不到对应
+        // option（id 不在候选里）时一律渲染成 disabled 的 <button>，没有 href —— 不让页面替后端猜 id。
+        // id 走 encodeURIComponent，块 id 里带 & 或 # 也不会串参。
+        var WORKBENCH_BLOCK_URL = '/workbench?block=';
+        // 文案与服务端节点一致；节点被换掉时拿不到才用这个兜底。
+        var FALLBACK_LABEL = '自定义';
+        // 候选里有没有这个 value：逐个 option 比，不拼选择器（id 里带引号/方括号也不会查错）。
+        function optionExists(select, value) {
+            var opts = select.options || select.querySelectorAll('option');
+            for (var i = 0; i < opts.length; i++) {
+                if ((opts[i].value || '') === value) return true;
+            }
+            return false;
+        }
+        function syncCustomize(select) {
+            var host = form.querySelector('[data-block-customize="' + select.getAttribute('name') + '"]');
+            if (!host) return;
+            var current = host.querySelector('[data-block-customize-link], [data-block-customize-empty]');
+            var label = (current && current.textContent) || FALLBACK_LABEL;
+            var value = select.value || '';
+            var id = (value && optionExists(select, value)) ? value : '';
+            var cls = current ? current.className : 'btn btn-sm btn-secondary';
+            var want = id ? 'a' : 'button';
+            var node = current;
+            if (!node || node.tagName.toLowerCase() !== want) {
+                node = document.createElement(want);
+                node.className = cls;
+                node.textContent = label;
+                host.innerHTML = '';
+                host.appendChild(node);
+            }
+            if (id) {
+                // 链接不会提交表单；button 分支必须显式 type=button，否则默认 submit 会误触保存。
+                node.removeAttribute('type');
+                node.setAttribute('data-block-customize-link', '');
+                node.removeAttribute('data-block-customize-empty');
+                node.setAttribute('href', WORKBENCH_BLOCK_URL + encodeURIComponent(id));
+                node.removeAttribute('disabled');
+                node.removeAttribute('aria-disabled');
+                node.removeAttribute('title');
+            } else {
+                node.setAttribute('type', 'button');
+                node.setAttribute('data-block-customize-empty', '');
+                node.removeAttribute('data-block-customize-link');
+                node.removeAttribute('href');
+                node.setAttribute('disabled', '');
+                node.setAttribute('aria-disabled', 'true');
+                node.setAttribute('title', host.getAttribute('data-customize-empty-title'));
+            }
+        }
+        var slotSelects = [];
+        for (var s = 0; s < blockSlots.length; s++) {
+            var sel = form.querySelector('select[name="' + blockSlots[s] + '"]');
+            if (!sel) continue;
+            slotSelects.push(sel);
+            sel.addEventListener('change', function () { syncCustomize(this); });
+        }
+        // 首次同步放在服务端 selected 与回填之后：两处都可能改变选中项。
+        for (var k = 0; k < slotSelects.length; k++) syncCustomize(slotSelects[k]);
     })();
 </script>
 {{end}}

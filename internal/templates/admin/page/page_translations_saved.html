@@ -1,0 +1,2 @@
+{* 页面译文保存结果：写入条数与待重建事实用完整参数句表达。 *}
+<p role="status">{{if .Rebuild}}{{tn("pageTrRebuild", "已保存 {count} 条译文。译文变更已标记全站待重建（下次构建生效）。", map("count", .Written))}}{{else}}{{tn("pageTrSaved", "已保存 {count} 条译文。", map("count", .Written))}}{{end}}</p>

@@ -51,10 +51,7 @@ func TestUIAssetEntry(t *testing.T) {
 			t.Fatalf("%s 必须只经公共入口加载控件，不能另抄脚本清单", path)
 		}
 	}
-	entry, err := os.ReadFile("partials/ui_scripts.html")
-	if err != nil {
-		t.Fatal(err)
-	}
+	entry := []byte(layeredTemplateSource(t, "partials/ui_scripts.html"))
 
 	matches := regexp.MustCompile(`/static/js/(ui/[a-z0-9_.-]*\.js)`).FindAllStringSubmatch(string(entry), -1)
 	if len(matches) < 3 || matches[len(matches)-1][1] != "ui/index.js" {
@@ -80,8 +77,23 @@ func TestUIAssetEntry(t *testing.T) {
 		t.Fatal("前置库（htmx）必须排在控件助手之前")
 	}
 
+	order := []string{"/static/js/ui/htmx.min.js", "/static/js/ui/write-base.js", "/static/js/ui/htmx-bridge.js"}
+	previous := -1
+	for _, asset := range order {
+		position := strings.Index(string(entry), asset)
+		if position <= previous || strings.Count(string(entry), asset) != 1 {
+			t.Fatalf("HTML 交互依赖必须唯一且按 HTMX、写基座、扫描桥顺序加载：%s", asset)
+		}
+		previous = position
+	}
+	for _, retired := range []string{"form-json-v4.js", "json_swap.js"} {
+		if strings.Contains(string(entry), retired) {
+			t.Fatalf("HTML 入口不得加载旧 JSON UI 依赖：%s", retired)
+		}
+	}
+
 	writeIdx := idx("ui/write-base.js")
-	for _, name := range []string{"ui/product-seo.js", "ui/product-tag-hits.js", "ui/product-preview.js", "ui/product-category-tree.js"} {
+	for _, name := range []string{"ui/product-tag-hits.js", "ui/product-preview.js", "ui/product-category-tree.js"} {
 		position := idx(name)
 		if writeIdx < 0 || position <= writeIdx || position >= indexIdx {
 			t.Fatalf("商品控件 %s 必须在写基座与统一扫描入口之间加载", name)
@@ -99,6 +111,11 @@ func TestUIAssetEntry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, retired := range []string{"registerResultHandler", "WPJsonWrite"} {
+			if strings.Contains(src, retired) {
+				t.Fatalf("公共入口不得执行依赖已退役 JSON UI 接口的脚本：%s (%s)", name, retired)
+			}
+		}
 		if nodeErr == nil {
 			cmd := exec.Command(node, "--input-type=commonjs", "--check")
 			cmd.Stdin = strings.NewReader(src)
@@ -114,9 +131,19 @@ func TestUIAssetEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 资产存在不代表应全局执行；未加载资产仍检查语法，入口职责由明确依赖断言验证。
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".js") && !seen["ui/"+file.Name()] {
-			t.Errorf("控件未接入公共入口: %s", file.Name())
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".js") || seen["ui/"+file.Name()] || nodeErr != nil {
+			continue
+		}
+		src, err := StaticJS("ui/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(node, "--input-type=commonjs", "--check")
+		cmd.Stdin = strings.NewReader(src)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s 普通脚本解析失败: %v\n%s", file.Name(), err, out)
 		}
 	}
 }
@@ -150,6 +177,13 @@ assert.equal(events[0].type,'wbui:error'); assert.equal(events[0].detail.error,f
 assert.equal(ui.transitionTime({}),250);
 context.window.getComputedStyle=()=>({transitionDuration:'0s',transitionDelay:'0s'});
 assert.equal(ui.transitionTime({}),0);
+let disposed=0;
+ui.register(()=>{},()=>{throw failure;});
+ui.register(()=>{},got=>{assert.equal(got,scope); disposed++;});
+const disposalErrors=ui.dispose(scope);
+assert.equal(disposalErrors.length,1); assert.equal(disposalErrors[0],failure);
+assert.equal(disposed,1); assert.equal(logs.length,2);
+assert.equal(events[1].type,'wbui:error'); assert.equal(events[1].detail.scope,scope);
 `
 	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
 		t.Fatalf("基座异常可观测性/动效时间契约失败: %v\n%s", err, out)

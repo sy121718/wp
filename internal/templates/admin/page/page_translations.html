@@ -54,7 +54,7 @@
             {{end}}
             <button type="button" class="btn btn-secondary" disabled aria-disabled="true" title="{{ .["t"]("admin.page_translations.ai_title", "待接入") }}">{{ .["t"]("admin.page_translations.ai_button", "一键 AI 翻译") }}</button>
             {{if len(.Groups) > 0}}
-            <button type="submit" form="page-translations-form" class="btn btn-primary">{{ .["t"]("admin.page_translations.save_all", "保存全部") }}</button>
+            <button type="submit" form="page-translations-form" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.page_translations.save_all", "保存全部") }}</button>
             {{end}}
         </div>
     </header>
@@ -158,8 +158,7 @@
         </div>
     </section>
 
-    {* 逐行错误区：整页渲染与 htmx 片段共用一个 partial。
-       id 是 htmx 的替换目标（保存失败时就地换这一块，不重渲整页）。 *}
+    {* 逐行错误区：只服务整页 GET 成功的初始渲染（保存失败现在回 JSON，不再就地替换这一块）。 *}
     <div id="page-translations-errors">{{include "../../fragments/translation_errors.html" .}}</div>
 
     {{if len(.Groups) == 0}}
@@ -192,14 +191,12 @@
         </div>
     </section>
     {{else}}
-    {* 保存走 htmx：成功 reload（保住筛选与语言）、失败只替换逐行错误区 —— 页面与已填译文都不动。
-       从前是原生 method="post" 整页提交：失败会跳到白屏，所以服务端不得不重渲整页。
-       逐行错误（「哪一行有什么问题」）必须留在页面上，塞不进 toast，所以用一个专用片段就地替换。 *}
-    <form id="page-translations-form"
-          hx-post="/admin/pages/translations/save?pageId={{.PageID}}&amp;lang={{.Lang}}"
-          hx-target="#page-translations-errors"
-          hx-swap="innerHTML"
-          hx-disable="find button[type=submit]">
+    {* 保存走 HTMX：成功整页刷新（保住筛选与语言），失败只把逐行原因写进本表单的错误区。 *}
+    <form id="page-translations-form" data-write hx-post="/api/page/translations/save"
+          hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+        <div data-write-result></div>
+        <p data-write-status role="status" class="text-sm" hidden></p>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="pageId" value="{{.PageID}}">
         <input type="hidden" name="lang" value="{{.Lang}}">

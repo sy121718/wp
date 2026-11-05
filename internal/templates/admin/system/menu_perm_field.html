@@ -1,9 +1,8 @@
 {* admin/system/menu_perm_field.html — 菜单 / 按钮绑定权限点的复选清单片段。
 
    两个调用点共用：菜单页内嵌的「新建菜单」抽屉（menus.html）、按需取回的「编辑菜单」片段
-   （menu_edit_form.html）。两者读同一份数据键 .PermChoices（[]permChoiceGroup，勾选态在 Go 侧
-   算好），片段只渲染、不做查询与判断 —— 所以调用点必须把这个键给齐：缺键会让整个抽屉渲染中断
-   （Jet 缺键 → 500 → htmx 因 5xx 不 swap，表现是「点了保存什么都没发生」）。
+   （menu_edit_drawer.html）。两者读取 .PermChoices，片段只渲染候选与勾选事实，不做查询。
+   调用方必须给齐候选；读取失败由共享错误出口反馈，不能假装空清单让用户保存。
 
    为什么是复选清单而不是原生多选（select[multiple]）：候选近 300 个码 / 31 个模块，原生多选没有搜索、
    触屏上要逐项长按；而 ui/select.js 对 multiple 是显式跳过的（它接管的是单选弹层）。
@@ -11,7 +10,7 @@
 
    为什么目录 / iframe / 外链也照常能勾：那份限制由服务端拒绝（ErrCodeNotBindable，文案已说清规则），
    前端隐藏整块会让「目录为什么没有权限点」变成一个只能靠猜的新问题；而多勾一下的代价只是一句报错。 *}
-{{tr := .["t"]}}
+{{tr := t}}
 <div class="form-group">
     <label class="form-label">{{tr("admin.menus.field.permissions", "权限点")}}</label>
     <p class="form-hint">{{tr("admin.menus.field.permissions_hint", "菜单与按钮至少绑一个权限点，可以绑多个；目录 / iframe / 外链不允许绑。")}}</p>

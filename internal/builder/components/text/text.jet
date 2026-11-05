@@ -1,1 +1,0 @@
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ if .V.IsPlain }}<{{ .V.PlainTag }}>{{ .V.Text }}</{{ .V.PlainTag }}>{{ else }}{{ unsafe(.V.SanitizedContent) }}{{ end }}</div>

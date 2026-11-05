@@ -18,7 +18,7 @@ func adminShellData() map[string]any {
 }
 
 func newAdminTestSet() *jet.Set {
-	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	set := jet.NewSet(testTemplateLoader(), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	injectGlobals(set)
 	return set
 }
@@ -51,11 +51,11 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 
 	for _, ev := range []string{
 
-		"htmx:before:request", "htmx:after:request",
+		"htmx:before:request", "htmx:finally:request",
 		"htmx:response:error", "htmx:error",
 	} {
-		if !strings.Contains(js, "document.body.addEventListener('"+ev+"'") {
-			t.Errorf("admin.js 未在 document.body 上注册 %s —— 覆盖不到全部 hx- 请求", ev)
+		if !strings.Contains(js, "document.addEventListener('"+ev+"'") {
+			t.Errorf("admin.js 未在 document 上注册 %s —— 覆盖不到触发节点移除后的请求", ev)
 		}
 	}
 
@@ -68,7 +68,7 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 	}
 
 	if !strings.Contains(js, "WeakSet") {
-		t.Error("admin.js 未对 after:request 做同一请求去重")
+		t.Error("admin.js 未对请求开始与 finally 收尾做同一请求去重")
 	}
 }
 
@@ -80,7 +80,7 @@ func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
 	js := string(src)
 	for _, ev := range []string{
 
-		"htmx:before:request", "htmx:after:request",
+		"htmx:before:request", "htmx:finally:request",
 		"htmx:response:error", "htmx:error",
 	} {
 		if !strings.Contains(js, ev) {

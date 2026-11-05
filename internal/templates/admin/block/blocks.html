@@ -49,7 +49,7 @@
                 {* 徽章是可点入口：清单收进抽屉（/admin/blocks/stale/drawer），
                    说明文字也在抽屉里 —— 悬浮解释与抽屉说的是同一件事，留两份只是噪声。 *}
                 <button type="button" class="badge badge-warning badge-btn"
-                        data-drawer-url="/admin/blocks/stale/drawer"
+                        data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/blocks/stale/drawer"
                         data-drawer-title="{{ .["t"]("admin.blocks.impact.heading", "待重建影响面") }}">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</button>
             </p>
             {{end}}{{end}}{{end}}
@@ -89,18 +89,13 @@
     {{end}}
 
     <template id="tpl-block-create">
-        {* 新建走 JSON API（前端直调 /api/block/create，见 static/js/ui/write-base.js）：
-           成功直接进工作台编辑内容（原先是「提示页 1 秒后跳转」那一跳），失败在原地点出
-           并保住已填内容。表单只声明**事实**（端点 / 写模式 / 跳哪儿 / 文案从哪来），
-           行为全在控件里 —— 模板里不写内联 JS。
-           没有 action 是刻意的：禁用 JS 时提交按钮是 hidden 的（下方 noscript 说明原因），
-           不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
-        <form data-write-url="/api/block/create"
-              data-write="create"
-              data-write-nav="/workbench?block={id}"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+        {* 新建走标准表单：成功片段带回「立即打开编辑」链接（Jet 按实体事实生成），
+           发起表单用 data-write-nav 声明按该链接导航；失败留在本抽屉并保住已填内容。 *}
+        <form data-write hx-post="/api/block/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+              data-write-nav="[data-block-created-link]">
+            <div data-write-result></div>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页跳走。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-row">
                 <div class="form-group">
@@ -138,12 +133,8 @@
             </div>
             </div>
             <div class="action-row">
-                {* 无 JS 时新建不可用：写动作由浏览器直调接口完成，没有端到端兜底表单。
-                   按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来），
-                   这里说清原因，避免用户以为「按钮不见了」是权限问题。 *}
-                <noscript><p class="form-hint">{{ .["t"]("admin.blocks.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
             </div>
         </form>
     </template>
@@ -156,12 +147,8 @@
     {* 批量删除前段已说过「结果如何呈现」：这里只写**事实**声明。
        批量语义（去重 / 200 上限 / 逐条失败不中断）在服务端 /api/block/bulk-delete 里，
        页面这一层只负责「勾选 → 提交 → 把逐条结果说出来」。 *}
-    <form data-write-url="/api/block/bulk-delete"
-          data-write="bulk"
-          data-msg-none-selected="{{tr("admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。")}}"
-          data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-msg-refresh="{{tr("admin.blocks.write.refresh", "刷新列表")}}">
+    <form data-write hx-post="/api/block/bulk-delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
     <section class="card list-card">
         {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
            为什么是客户端而不是服务端：service 侧确实有 kind / category / reuseMode 三个维度
@@ -180,11 +167,11 @@
         </div>
         {{if canDelete}}
         {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。"), danger=true)}}
+            <button type="submit" class="btn btn-sm btn-danger"
+                    hx-confirm="{{tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{yield bulkBarClose()}}
         {{end}}
-        {* 批量结果区：成功/失败都写在这儿（不自动刷新 —— 自动刷新会让
-           「已删 N / 跳过 M + 逐条原因」一闪而过，看不完）。 *}
+        <div data-write-result></div>
         <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.heading", "全局块") }}">
             {* 一张表承载全部三类块：勾选 | 名称 | 类型 | 复用方式 | 更新时间 | 影响面 | 操作。
@@ -244,23 +231,26 @@
     <div data-write-host>
     <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, b := .Headers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-url="/api/block/delete" data-write="single"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write hx-post="/api/block/delete"
+          hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+          hx-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
+        <div data-write-result></div>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Footers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-url="/api/block/delete" data-write="single"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write hx-post="/api/block/delete"
+          hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+          hx-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
+        <div data-write-result></div>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Blocks}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-url="/api/block/delete" data-write="single"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write hx-post="/api/block/delete"
+          hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+          hx-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}">
+        <div data-write-result></div>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}

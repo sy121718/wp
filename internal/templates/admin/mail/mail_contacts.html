@@ -25,13 +25,8 @@
 {* 标签候选来自全库（handler 经 ListContactTags 注入）：只做输入提示，不限制自由输入。
     直接手打标签最容易打出近义词（vip / VIP / 贵宾）—— 打岔一个，按标签圈人群就漏人。 *}
 {{tagOptions := .["TagOptions"]}}
-{* listQuery 只给**仍在页面 POST 的**写表单用了：批量改状态（/mail/contacts/bulk-status）与
-    改状态抽屉（/mail/contact/status）没有 JSON 端点，仍要走表单并带上筛选上下文
-    （服务端 shell.BackPath 读回，改完不会被弹回未筛选的第 1 页）。
-    新建 / 编辑 / 单条删除 / 批量删除 / 批量打标签已迁到 JSON 端点，刷新由 JS 触发，
-    链接自带当前 URL，不需要 listQuery。 *}
+{* listQuery 只给导入表单带上筛选上下文：导入后整页刷新时回到同一页。 *}
 {{listQuery := ""}}{{if isset(.ListQuery)}}{{listQuery = .ListQuery}}{{end}}
-{{bulkStatusAction := "/admin/mail/contacts/bulk-status" + listQuery}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -108,18 +103,11 @@
       </div>
     </form>
 
-    {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法）；admin.js 按「最近的 form」定作用域。
-        表单里「status」是**目标状态**（改状态用），筛选上下文在改状态那条页面 POST 的 action query 上
-        （listQuery，服务端 shell.BackPath 读回）—— 不再用 return* 隐藏域：query 与 body 是两处。 *}
-    {* 端点声明落在**按钮**上而不是表单上（json_write.js 的 attrFrom：按钮优先、表单兜底）：
-        三个动作共用同一批勾选框（勾选框必须留在表单里 —— 基座按 form.querySelectorAll 收 ids，
-        抽屉在列表外看不见它们），而它们的目标不同：
-          · 批量改状态没有 JSON 端点（服务端还要同步写抑制名单），必须保持原生页面 POST ——
-            所以表单上**不能**声明 data-write-url，否则它会被继承成一个 fetch；
-          · 批量删除 / 批量打标签声明自己的端点，并在按钮上带自己的结果文案。
-        bulk_bar 的 bulkBtn 不能加属性（那个片段的属性名是冻结契约，admin.js 依赖），
-        所以这两个按钮就地写在本页；class / data-confirm / data-confirm-danger 与 bulkBtn 同形。 *}
-    <form method="post" action="{{bulkStatusAction}}">
+    {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法）。三个按钮共用同一批勾选框，
+        各自用 hx-post 覆盖端点；成功片段留在 data-write-result，整页刷新由发起表单声明。 *}
+    <form data-write hx-post="/admin/mail/contacts/bulk-status" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。
           三个批量动作的权限各自独立 —— 只给「打标签」权限的人也该看得到这条，所以条件写「任一为真」。 *}
@@ -132,37 +120,25 @@
           <option value="pending">{{ .["t"]("admin.mail.marketing.status.pending", "待确认") }}</option>
           <option value="unsubscribed">{{ .["t"]("admin.mail.marketing.contact_status.unsubscribe", "退订") }}</option>
         </select>
-        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_status_submit", "批量改状态"), cls="btn btn-sm", confirm=tr("admin.mail.marketing.bulk_status_confirm", "把选中的联系人改为所选状态？改成「退订」会同时写入抑制名单，之后不会再被群发到。"))}}
+        <button type="submit" class="btn btn-sm" data-requires-js hidden
+                hx-confirm="{{tr("admin.mail.marketing.bulk_status_confirm", "把选中的联系人改为所选状态？改成「退订」会同时写入抑制名单，之后不会再被群发到。")}}">{{tr("admin.mail.marketing.bulk_status_submit", "批量改状态")}}</button>
         {{end}}
         {{if canDeleteContact}}
         <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                data-write-url="/api/mail/contact/delete" data-write="bulk"
-                data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
-                data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                data-msg-refresh="{{tr("admin.mail.contacts.bulkDelete.refresh", "刷新列表")}}"
-                data-confirm="{{tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}"
-                data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
+                hx-post="/api/mail/contact/delete"
+                hx-confirm="{{tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{end}}
-        {* 批量打标签与「批量改状态」共用同一个 form 与同一批勾选框：抽屉在列表外，
-            里面拿不到被勾选的 id，把它们搬过去要么新增业务 JS 搬运 id、要么让人重抄一遍名单。
-            add / remove 两个输入框由 data-write-extra 点名带上（只发点名字段，不会带上 status）。 *}
+        {* 批量打标签与「批量改状态」共用同一个 form 与同一批勾选框：
+            抽屉在列表外，里面拿不到被勾选的 id。打标签只读 add / remove 两个输入框。 *}
         {{if canTagContact}}
         <input class="form-input" type="text" name="add" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.add", "加上标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.add.ph", "加上标签：vip,华南") }}">
         <input class="form-input" type="text" name="remove" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.remove", "去掉标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.remove.ph", "去掉标签：vip") }}">
         <button type="submit" class="btn btn-sm" data-requires-js hidden
-                data-write-url="/api/mail/contact/tag" data-write="bulk" data-write-outcome="update"
-                data-write-extra="add,remove"
-                data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
-                data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                data-msg-refresh="{{tr("admin.mail.contacts.bulkTag.refresh", "刷新列表")}}"
-                data-confirm="{{tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。")}}">{{tr("admin.mail.marketing.bulk_tag_submit", "批量打标签")}}</button>
+                hx-post="/api/mail/contact/tag"
+                hx-confirm="{{tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。")}}">{{tr("admin.mail.marketing.bulk_tag_submit", "批量打标签")}}</button>
         {{end}}
       {{yield bulkBarClose()}}
       {{end}}{{end}}
-      {* 批量结果区：删除与打标签共用（改状态走页面 POST，不写这里）。刻意**不自动刷新** ——
-          自动刷新会让「成功 N / 跳过 M + 逐条原因」一闪而过，看不完。 *}
       <p class="form-hint" data-write-status role="status" hidden></p>
       <noscript><p class="form-hint">{{tr("admin.mail.contacts.write.noJs", "本页的新建、编辑、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}">
@@ -249,7 +225,9 @@
     <p class="form-hint" data-write-status role="status" hidden></p>
   {{range _, c := .Contacts}}
   <template id="tpl-contact-status-{{c.ID}}">
-    <form method="post" action="/admin/mail/contact/status{{listQuery}}" class="form-stack">
+    <form data-write hx-post="/admin/mail/contact/status" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
@@ -277,8 +255,9 @@
     {* 编辑：create 模式发**表单全部具名字段**（email / name / tags / status / consent_source + id），
        id>0 即编辑 —— 与新建共用同一份字段清单（分开两个端点必然出现「新建加了字段、编辑忘了加」）。
        csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座会跳过同名字段）。 *}
-    <form data-write-url="/api/mail/contact/save" data-write="create"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+    <form data-write hx-post="/api/mail/contact/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload data-write-close="[data-drawer]">
+      <div data-write-result></div>
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
         <label class="form-label" for="ce-email-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
@@ -324,11 +303,11 @@
   </template>
   {{end}}
   {{if canDeleteContact}}
-  {* 单条删除：真端点 POST /api/mail/contact/delete，payload 只有 {id}（single 模式）。
-     确认框仍归 ui/confirm.js（data-confirm 在表单上，按钮 form="…" 关联，提交依旧要确认）。 *}
-  <form id="contact-del-{{c.ID}}" class="hidden-form" data-write-url="/api/mail/contact/delete" data-write="single"
-        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-        data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
+  {* 单条删除：按钮在表格里，表单必须放表格外（HTML 不允许 form 嵌套），用 form="<id>" 关联。 *}
+  <form id="contact-del-{{c.ID}}" class="hidden-form" data-write hx-post="/api/mail/contact/delete"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="id" value="{{c.ID}}">
   </form>
   {{end}}
@@ -340,8 +319,9 @@
       没勾选同意证据就不该直接进可发送名单；要置为已订阅，必须同时写清同意来源（留痕）。 *}
   <template id="tpl-contact-save">
     {* 新建：与编辑同一端点、同一形状（id=0 即新建），字段清单一致才不会出现「新建漏字段」。 *}
-    <form data-write-url="/api/mail/contact/save" data-write="create"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+    <form data-write hx-post="/api/mail/contact/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload data-write-close="[data-drawer]">
+      <div data-write-result></div>
       <input type="hidden" name="id" value="0">
       <div class="form-field">
         <label class="form-label" for="cn-email">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
@@ -386,7 +366,9 @@
   {* 导入抽屉：勾选「这批人已同意」才会置为已订阅并记来源。
       同意声明与批量标签放在同一屏，是为了让操作者一次就把「这批人是谁、凭什么能发」填完。 *}
   <template id="tpl-contact-import">
-    <form method="post" action="/admin/mail/contact/import{{listQuery}}" class="form-stack">
+    <form data-write hx-post="/admin/mail/contact/import?{{listQuery}}" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <div class="form-grid">
         <div class="form-field">
@@ -399,15 +381,16 @@
         </div>
       </div>
       <div class="form-field">
-        <label class="checkbox"><input type="checkbox" name="consent_declared"> {{ .["t"]("admin.mail.marketing.import.consent.lead", "这批人") }}<strong>{{ .["t"]("admin.mail.marketing.import.consent.strong", "已同意") }}</strong>{{ .["t"]("admin.mail.marketing.import.consent.tail", "接收营销邮件（勾选后置为「已订阅」并记录来源）") }}</label>
+        <label class="checkbox"><input type="checkbox" name="consent_declared" value="1"> {{ .["t"]("admin.mail.marketing.import.consent.lead", "这批人") }}<strong>{{ .["t"]("admin.mail.marketing.import.consent.strong", "已同意") }}</strong>{{ .["t"]("admin.mail.marketing.import.consent.tail", "接收营销邮件（勾选后置为「已订阅」并记录来源）") }}</label>
       </div>
       <div class="form-field">
-        <label class="checkbox"><input type="checkbox" name="update_existing"> {{ .["t"]("admin.mail.marketing.import.update_existing.lead", "已存在的联系人更新标签（") }}<strong>{{ .["t"]("admin.mail.marketing.import.update_existing.strong", "不会") }}</strong>{{ .["t"]("admin.mail.marketing.import.update_existing.tail", "改动他们的同意状态）") }}</label>
+        <label class="checkbox"><input type="checkbox" name="update_existing" value="1"> {{ .["t"]("admin.mail.marketing.import.update_existing.lead", "已存在的联系人更新标签（") }}<strong>{{ .["t"]("admin.mail.marketing.import.update_existing.strong", "不会") }}</strong>{{ .["t"]("admin.mail.marketing.import.update_existing.tail", "改动他们的同意状态）") }}</label>
       </div>
       <div class="form-field form-field--wide">
         <label class="form-label" for="mk-import-content">{{ .["t"]("admin.mail.marketing.import.content", "内容") }}</label>
         <textarea class="form-textarea" id="mk-import-content" name="content" rows="10" placeholder="{{ .["t"]("admin.mail.marketing.import.content.ph", "a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags") }}"></textarea>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>

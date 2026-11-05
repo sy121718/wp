@@ -20,8 +20,6 @@ var htmlLiteralBudget = map[string]int{
 
 	"internal/module/mail/inbound/http/mail_page.go": 10,
 
-	"internal/module/plugin/scaffold/scaffold.go": 1,
-
 	"internal/module/workbench/service/workbench.go": 31,
 
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go": 3,

@@ -4,8 +4,8 @@
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/rich_editor.html"}}
-{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}{{else}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("catTitle", "商品分类") }}{{end}}{{else}}{{ .["t"]("catTitle", "商品分类") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("catTitle", "商品分类") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -17,6 +17,7 @@
 {{canCreate := isset(.Buttons["product.category_create"])}}
 {{canUpdate := isset(.Buttons["product.category_update"])}}
 {{canDelete := isset(.Buttons["product.category_delete"])}}
+{{canSEO := isset(.PermSet) && isset(.PermSet["product:category_seo_score"]) && .PermSet["product:category_seo_score"]}}
 
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">
@@ -24,17 +25,17 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.product_categories.title", "商品分类") }}</h1>
+                <h1>{{ .["t"]("catTitle", "商品分类") }}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_categories.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_categories.intro", "分类是树：可以建父子层级（父级下拉里带缩进），同级按排序号排；工程内 slug 唯一，另带分类图与 SEO 标题 / 描述。商品可以挂多个分类并指定其中一个为主分类；被商品引用的分类不能删除。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("catHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("catIntro", "分类是树：可以建父子层级（父级下拉里带缩进），同级按排序号排；工程内 slug 唯一，另带分类图与 SEO 标题 / 描述。商品可以挂多个分类并指定其中一个为主分类；被商品引用的分类不能删除。") }}</span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
             {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-categories">
-                <label class="sr-only" for="categories-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <label class="sr-only" for="categories-project">{{ .["t"]("uiFieldProj", "站点工程") }}</label>
                 <select class="form-select" id="categories-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -43,7 +44,7 @@
             </form>
             {{end}}
             {{if canCreate}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-category-create" data-drawer-title="{{ .["t"]("admin.product_categories.create.title", "新建分类") }}">＋ {{ .["t"]("admin.product_categories.create.title", "新建分类") }}</button>
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-category-create" data-drawer-title="{{ .["t"]("catNewTitle", "新建分类") }}">＋ {{ .["t"]("catNewTitle", "新建分类") }}</button>
             {{end}}
         </div>
     </header>
@@ -58,50 +59,49 @@
             <form method="get" action="/admin/product-categories" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
-                    <label for="categories-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <label for="categories-filter-keyword">{{ .["t"]("uiFieldKw", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="categories-filter-keyword" name="keyword" value="{{fKeyword}}"
-                           placeholder="{{ .["t"]("admin.product_categories.filter.phKeyword", "分类名 / URL 段") }}" autocomplete="off">
+                           placeholder="{{ .["t"]("catFltKw", "分类名 / URL 段") }}" autocomplete="off">
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("uiFltSubmit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                 </div>
             </form>
         </div>
 
-        {{if .Query.Keyword != ""}}<p role="status">{{tr("admin.product_categories.search.matchCount", "匹配")}} {{.Result.MatchTotal}} {{tr("admin.product_categories.search.matchSuffix", "条；上级路径仅供定位")}}</p>{{end}}
+        {{if .Query.Keyword != ""}}<p role="status">{{tn("catMatchInfo", "匹配 {count} 条；上级路径仅供定位", map("count", .Result.MatchTotal))}}</p>{{end}}
 
 
 
 
-        <form data-category-tree-form data-list-bulk>
+        <form data-write hx-post="/api/product/category/bulk-delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-category-tree-form data-list-bulk data-write-reload>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div data-write-result></div>
+            <p class="form-hint" data-bulk-none="{{tr("catBulkNoneSel", "没有勾选任何分类，列表未改动。")}}" role="status" hidden></p>
+            <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{tr("catBulkRefresh", "刷新列表")}}</a>
             <p class="form-hint" role="status" hidden></p>
 
             {{if canDelete}}{{if len(.Result.Items) > 0}}
-            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBarOpen(count=tr("uiBulkSel", "已选 {n} 项"))}}
 
-                <button data-write="bulk" data-write-url="/api/product/category/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload
-                        data-msg-none-selected="{{tr("admin.product_categories.bulk.noneSelected", "没有勾选任何分类，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_categories.bulkDelete.refresh", "刷新列表")}}" data-write-confirm="{{tr("admin.product_categories.bulkDeleteConfirm", "删除选中的分类？有子分类或被商品引用的会被拒绝，其余照常删除。")}}"
-                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        hx-confirm="{{tr("catBulkConfirm", "删除选中的分类？有子分类或被商品引用的会被拒绝，其余照常删除。")}}">{{tr("uiBulkDel", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
 
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_categories.list.title", "分类树") }}">
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("catListTitle", "分类树") }}">
                 <table class="data-table">
                     <thead>
                     <tr>
                         <th class="col-check">
-                            <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                            <input type="checkbox" data-check-all aria-label="{{ .["t"]("uiBulkSelectAll", "全选") }}">
                         </th>
-                        <th>{{ .["t"]("admin.product_categories.col.name", "分类") }}</th>
-                        <th>{{ .["t"]("admin.product_categories.col.slug", "URL 段") }}</th>
-                        <th>{{ .["t"]("admin.product_categories.col.sort", "排序") }}</th>
-                        <th class="col-actions">{{ .["t"]("admin.product_categories.col.actions", "操作") }}</th>
+                        <th>{{ .["t"]("catNameCol", "分类") }}</th>
+                        <th>{{ .["t"]("catSlugCol", "URL 段") }}</th>
+                        <th>{{ .["t"]("catSortCol", "排序") }}</th>
+                        <th class="col-actions">{{ .["t"]("catActions", "操作") }}</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -110,17 +110,17 @@
                     <tr><td colspan="5" class="cell-wrap">
                         <div class="empty-state">
                             {{if .Query.Keyword != ""}}
-                            <p class="empty-title">{{ .["t"]("admin.product_categories.empty.filteredTitle", "没有匹配的分类") }}</p>
-                            <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
+                            <p class="empty-title">{{ .["t"]("catNoMatches", "没有匹配的分类") }}</p>
+                            <p class="empty-desc">{{ .["t"]("uiFltEmptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                             <div class="empty-actions">
-                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                             </div>
                             {{else}}
-                            <p class="empty-title">{{ .["t"]("admin.product_categories.empty.title", "还没有分类") }}</p>
-                            <p class="empty-desc">{{ .["t"]("admin.product_categories.empty.desc", "建一个顶级分类，再从它的「父级」里选它来建子分类。商品可以挂多个分类并指定一个主分类。") }}</p>
+                            <p class="empty-title">{{ .["t"]("catEmptyTitle", "还没有分类") }}</p>
+                            <p class="empty-desc">{{ .["t"]("catEmptyDesc", "建一个顶级分类，再从它的「父级」里选它来建子分类。商品可以挂多个分类并指定一个主分类。") }}</p>
                             {{if canCreate}}
                             <div class="empty-actions">
-                                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-category-create" data-drawer-title="{{ .["t"]("admin.product_categories.create.title", "新建分类") }}">＋ {{ .["t"]("admin.product_categories.create.title", "新建分类") }}</button>
+                                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-category-create" data-drawer-title="{{ .["t"]("catNewTitle", "新建分类") }}">＋ {{ .["t"]("catNewTitle", "新建分类") }}</button>
                             </div>
                             {{end}}
                             {{end}}
@@ -132,21 +132,23 @@
                     {{rowDepth := 0}}{{if isset(row.Depth)}}{{rowDepth = row.Depth}}{{end}}
                     <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{rowDepth + 1}}" {{if .Query.Keyword != ""}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}>
                         <td class="col-check">
-                            <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                            <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("uiBulkSelectRow", "选择该行") }}">
                         </td>
 
                         <td class="tree-cell" style="--tree-depth:{{rowDepth}}">{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if rowDepth == 0}}<strong>{{row.Name}}</strong>{{else}}{{row.Name}}{{end}}
 
-                        {{parentPresent := row.ParentID == ""}}{{range _, candidate := .Categories}}{{if candidate.ID == row.ParentID}}{{parentPresent = true}}{{end}}{{end}}{{if !parentPresent}}<span class="badge badge-warning">{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}</span>{{end}}
-                        {{if .Query.Keyword != ""}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
+                        {{parentPresent := row.ParentID == ""}}{{range _, candidate := .Categories}}{{if candidate.ID == row.ParentID}}{{parentPresent = true}}{{end}}{{end}}{{if !parentPresent}}<span class="badge badge-warning">{{tr("catParentScope", "（不属于本工程）")}}</span>{{end}}
+                        {{if .Query.Keyword != ""}}{{if row.Matched}}<span class="badge badge-info">{{tr("catFindMatched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("catFindAncestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
                         <td class="col-actions">
                             {{if canUpdate}}
-                            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("uiActEdit", "编辑") }}">{{ .["t"]("uiActEdit", "编辑") }}</button>
+                            {{else if canSEO}}
+                            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{t("pRowSeoScore", "SEO 评分")}}">{{t("pRowSeoScore", "SEO 评分")}}</button>
                             {{end}}
                             {{if canDelete}}
-                            <button data-requires-js hidden type="submit" form="category-del-{{row.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                            <button data-requires-js hidden type="submit" form="category-del-{{row.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("uiActDel", "删除") }}</button>
                             {{end}}
                         </td>
                     </tr>
@@ -166,16 +168,20 @@
     {{range _, row := .Result.Items}}
     {{if canDelete}}
 
-    <form data-write="delete" data-write-url="/api/product/category/delete" id="category-del-{{row.ID}}" class="hidden-form" data-write-reload
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{ .["t"]("admin.product_categories.list.deleteConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}" data-confirm-danger>
+    <form data-write hx-post="/api/product/category/delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload id="category-del-{{row.ID}}" class="hidden-form"
+          hx-confirm="{{ .["t"]("catDelConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}">
+        <div data-write-result></div>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{row.ID}}">
     </form>
     {{end}}
-    {{if canUpdate}}
+    {{if canUpdate || canSEO}}
     <template id="tpl-category-edit-{{row.ID}}">
-        {{include "product_category_form.html" map("Entity", row, "Project", selectedProject, "Categories", .Categories, "t", tr)}}
+        {{if canUpdate}}
+        {{include "product_category_form.html" map("Entity", row, "Project", selectedProject, "Categories", .Categories, "t", tr, "PermSet", .PermSet, "CSRF", .["csrf_token"])}}
+        {{else}}
+        {{include "product_seo_form.html" map("Kind", "category", "ProjectID", selectedProject, "ID", row.ID, "CSRF", csrf)}}
+        {{end}}
     </template>
     {{end}}
     {{end}}
@@ -189,5 +195,4 @@
 </div>
 <script src="/static/vendor/trix/trix.umd.js"></script>
 <script src="/static/js/rich-editor/index.js"></script>
-{{include "product_seo_dictionary.html"}}
 {{end}}

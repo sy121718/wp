@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	languagesPkg "go_wp/internal/builder/components/languages"
-	"go_wp/internal/builder/core"
+	languagesPkg "go_wp/pkg/builder/components/languages"
+	"go_wp/pkg/builder/core"
 )
 
 const languagesDocument = `{

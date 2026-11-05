@@ -11,9 +11,17 @@ import (
 )
 
 const (
-	CSSGuardComponentsDir  = "internal/builder/components"
+	CSSGuardComponentsDir  = "pkg/builder/components"
+
+	CSSGuardExtensionsDir = "internal/builder/extensions"
+
 	CSSGuardAdminStaticDir = "internal/templates/static/css"
 )
+
+// CSSGuardComponentRoots 是组件样式与资产的两个真实属主。
+func CSSGuardComponentRoots() []string {
+	return []string{CSSGuardComponentsDir, CSSGuardExtensionsDir}
+}
 
 const adminStaticScope = "admin-static"
 
@@ -40,24 +48,30 @@ var (
 
 func ScanMultiDeviceCSS(root string) (CSSGuardReport, error) {
 	report := CSSGuardReport{Mode: CSSGuardMode(), Root: root}
-	compRoot := filepath.Join(root, filepath.FromSlash(CSSGuardComponentsDir))
-	entries, err := os.ReadDir(compRoot)
-	if err != nil {
-		return report, fmt.Errorf("读取组件样式目录失败：%w", err)
-	}
 	var all []CSSViolation
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		report.Components++
-		v, notes, files, err := scanComponentDir(root, filepath.Join(compRoot, e.Name()), e.Name())
+	for _, relRoot := range CSSGuardComponentRoots() {
+		compRoot := filepath.Join(root, filepath.FromSlash(relRoot))
+		entries, err := os.ReadDir(compRoot)
 		if err != nil {
-			return report, err
+			// 临时夹具根可能只有主组件目录；真实仓库的覆盖由调用方断言非空。
+			if os.IsNotExist(err) {
+				continue
+			}
+			return report, fmt.Errorf("读取组件样式目录 %s 失败：%w", relRoot, err)
 		}
-		report.Files += files
-		all = append(all, v...)
-		report.Notes = append(report.Notes, notes...)
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			report.Components++
+			v, notes, files, err := scanComponentDir(root, filepath.Join(compRoot, e.Name()), e.Name())
+			if err != nil {
+				return report, err
+			}
+			report.Files += files
+			all = append(all, v...)
+			report.Notes = append(report.Notes, notes...)
+		}
 	}
 
 	adminRoot := filepath.Join(root, filepath.FromSlash(CSSGuardAdminStaticDir))

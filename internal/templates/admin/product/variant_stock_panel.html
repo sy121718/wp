@@ -31,11 +31,11 @@
 {{hasGroups := false}}
 {{if isset(groups)}}{{hasGroups = len(groups) > 0}}{{end}}
 <div class="stock-panel" data-stock-panel data-stocks-known="{{if known}}1{{else}}0{{end}}"
-     data-i18n-qty="{{tr("admin.products.stocks.qtyLabel", "该仓在库数量（目标值）")}}"
-     data-i18n-untracked="{{tr("admin.products.stocks.untrackedHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"
-     data-i18n-remove="{{tr("admin.products.stocks.remove", "移除这条货")}}"
-     data-i18n-unlimited="{{tr("admin.products.stocks.unlimited", "无限")}}"
-     data-i18n-duplicate="{{tr("admin.products.stocks.duplicated", "这个仓里的这条货已经挂上了：直接改它的数量即可，不用再加一行。")}}">
+     data-i18n-qty="{{tr("pStocksQty", "该仓在库数量（目标值）")}}"
+     data-i18n-untracked="{{tr("pStockTrackHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"
+     data-i18n-remove="{{tr("pStocksRemove", "移除这条货")}}"
+     data-i18n-unlimited="{{tr("pStocksUnlimit", "无限")}}"
+     data-i18n-duplicate="{{tr("pStocksDup", "这个仓里的这条货已经挂上了：直接改它的数量即可，不用再加一行。")}}">
     <div class="stock-groups" data-stock-groups>
         {{if hasGroups}}{{range _, g := groups}}
         <div class="stock-group" data-stock-group data-warehouse-id="{{g.WarehouseID}}" data-warehouse-code="{{g.WarehouseCode}}">
@@ -51,21 +51,21 @@
                     <span class="stock-code">{{r.SKUCode}}</span>
                     <input type="number" class="form-input stock-qty" min="0" step="1" inputmode="numeric"
                            data-stock-qty value="{{if r.TrackQuantity}}{{r.Quantity}}{{end}}"
-                           placeholder="{{if r.TrackQuantity}}{{else}}{{tr("admin.products.stocks.unlimited", "无限")}}{{end}}"
-                           aria-label="{{tr("admin.products.stocks.qtyLabel", "该仓在库数量（目标值）")}}"
-                           {{if !r.TrackQuantity}}title="{{tr("admin.products.stocks.untrackedHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"{{end}}>
-                    <button type="button" class="btn btn-sm btn-ghost" data-stock-remove aria-label="{{tr("admin.products.stocks.remove", "移除这条货")}}">×</button>
+                           placeholder="{{if r.TrackQuantity}}{{else}}{{tr("pStocksUnlimit", "无限")}}{{end}}"
+                           aria-label="{{tr("pStocksQty", "该仓在库数量（目标值）")}}"
+                           {{if !r.TrackQuantity}}title="{{tr("pStockTrackHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"{{end}}>
+                    <button type="button" class="btn btn-sm btn-ghost" data-stock-remove aria-label="{{tr("pStocksRemove", "移除这条货")}}">×</button>
                 </div>
                 {{end}}{{end}}
             </div>
         </div>
         {{end}}{{end}}
     </div>
-    <p class="hint stock-empty" data-stock-empty {{if hasGroups}}hidden{{end}}>{{tr("admin.products.stocks.empty", "这个变体还没有挂任何仓库货行。")}}</p>
+    <p class="hint stock-empty" data-stock-empty {{if hasGroups}}hidden{{end}}>{{tr("pStocksEmpty", "这个变体还没有挂任何仓库货行。")}}</p>
     <div class="stock-add">
-        <select class="form-select" data-stock-add-select aria-label="{{tr("admin.products.stocks.addLabel", "选择要挂到本变体的仓库货品")}}">
-            <option value="">{{tr("admin.products.stocks.addPlaceholder", "选一条仓库里的货…")}}</option>
+        <select class="form-select" data-stock-add-select aria-label="{{tr("pStockAddLabel", "选择要挂到本变体的仓库货品")}}">
+            <option value="">{{tr("pStocksAddPh", "选一条仓库里的货…")}}</option>
         </select>
-        <button type="button" class="btn btn-sm" data-stock-add>{{tr("admin.products.stocks.add", "添加")}}</button>
+        <button type="button" class="btn btn-sm" data-stock-add>{{tr("pStockAdd", "添加")}}</button>
     </div>
 </div>

@@ -1,29 +1,12 @@
 package templates
 
 import (
-	"fmt"
-	"io/fs"
-	"os"
+	jetengine "github.com/CloudyKit/jet/v6"
 
-	"github.com/CloudyKit/jet/v6"
+	"go_wp/pkg/view/jet"
 )
 
-func NewComponentSet(dir string) (*jet.Set, error) {
-	fsys := os.DirFS(dir)
-	entries, err := fs.ReadDir(fsys, ".")
-	if err != nil {
-		return nil, fmt.Errorf("读取组件模板目录 %s 失败: %w", dir, err)
-	}
-	files := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			files = append(files, e.Name())
-		}
-	}
-	set := jet.NewSet(
-		newEmbedLoader(fsys, files),
-		jet.WithTemplateNameExtensions([]string{"", ".jet"}),
-	)
-	injectGlobals(set)
-	return set, nil
+// NewComponentSet 构造组件模板 Set：磁盘源 + 构建器登记的组件自带模板。
+func NewComponentSet(dir string) (*jetengine.Set, error) {
+	return jet.NewComponentSetWithOwned(dir, withOwnedTemplates)
 }

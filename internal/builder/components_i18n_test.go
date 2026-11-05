@@ -53,7 +53,16 @@ func TestComponentI18nScanLogic(t *testing.T) {
 }
 
 func TestComponentI18nDeclarations(t *testing.T) {
-	entries, err := os.ReadDir("components")
+	var entries []os.DirEntry
+	for _, root := range componentRoots {
+		rootEntries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("读取组件目录 %s 失败: %v", root, err)
+		}
+		entries = append(entries, rootEntries...)
+	}
+	var err error
+	_ = err
 	if err != nil {
 		t.Fatalf("读取组件目录失败: %v", err)
 	}
@@ -65,7 +74,7 @@ func TestComponentI18nDeclarations(t *testing.T) {
 			continue
 		}
 		dirCount++
-		dir := filepath.Join("components", e.Name())
+		dir := componentDirOf(t, e.Name())
 		files, derr := os.ReadDir(dir)
 		if derr != nil {
 			continue

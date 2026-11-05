@@ -2,6 +2,8 @@
    列表页标准骨架（评审规则 admin-ui-logic §7）：页头一行（标题 + ? 悬浮说明 + 工程选择），
    正文零说明文字，主区是标准表格卡；空状态、失败提示用统一形态。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.seo.title", "SEO 控制台") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.seo.title", "SEO 控制台") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -32,10 +34,6 @@
         {{end}}
     </header>
 
-    {{if isset(.ProjectError)}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.seo.err.project_list", "站点列表暂时读取失败。") }}</p>
-    {{end}}
-
     {* ===== 主职能：产物 SEO 体检 ===== *}
     {* data-seo-audit-scope 是本页唯一的关联锚点：表单与结果区是兄弟节点，
        JS 既不能从 form 往下找到结果区，也不该用全页 selector 误配别的卡。
@@ -48,11 +46,9 @@
             </span>
         </h2>
         {{if isset(.Buttons["seo.audit"])}}
-        {* 只读检查，走写基座是为了统一 CSRF 快照、结论提示与失败保留输入。
-           data-write-latest：可连点重跑，迟到的旧响应不得盖新结论。 *}
-        <form method="post" action="/api/publication/seo-audit" data-seo-audit-action
-              data-write="custom" data-write-url="/api/publication/seo-audit"
-              data-write-handler="publication.seo-audit" data-write-latest>
+        {* 只读检查：HTMX 提交，结论区由 Jet 片段整块换掉。 *}
+        <form data-write hx-post="/api/publication/seo-audit" hx-target="find [data-seo-audit-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-seo-audit-action>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <div class="action-row">
@@ -60,83 +56,14 @@
             </div>
             <p data-write-status role="status" hidden></p>
         </form>
-        {* 结果区四档全部预置，JS 只切 hidden 与填事实。
-           「没有产物」与「没发现问题」刻意分两档 —— 并成一句会把未发布站点说成体检通过。 *}
-        <div class="stack" data-seo-audit-result role="region" aria-live="polite" aria-busy="false">
-            {* 契约被破坏（缺 scanned / issues 不是数组 / count 与 issues 对不上）时的落点：
-               上一次的结论原样保留，这里只多一句「本次没拿到结论」，不混进四档之一。
-               同一句也是 JS 的文案来源 —— 读 data-seo-audit-message 属性，取词只写一次。 *}
-            <p class="badge badge-danger" data-seo-audit-failed
-                data-seo-audit-message="{{ .["t"]("admin.seo.audit.bad_contract", "体检结果格式异常，本次未更新结论，请重试。") }}"
-                role="alert" hidden>{{ .["t"]("admin.seo.audit.bad_contract", "体检结果格式异常，本次未更新结论，请重试。") }}</p>
-            {* 形态走唯一片段（empty_state.html），档位锚点留在外面：JS 按 data-seo-audit-state
-               切 hidden，不能把锚点写进片段里。
-               desc 复用上方 .help-pop 的同一个 key（admin.seo.audit.intro）—— 这一档缺的不是
-               入口（按钮就在同一张卡内），而是「体检到底看什么」；同一件事只写一句，
-               改口径时两处一起变（02-O seo 任务 1）。 *}
-            <div data-seo-audit-state="placeholder">
-                {{placeholderTitle := tr("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。")}}
-                {{placeholderDesc := tr("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。")}}
-                {{include "../partials/empty_state.html" map("title", placeholderTitle, "desc", placeholderDesc)}}
-            </div>
-            {* 「已扫描 N 个产物」里的计数由 JS 填（[data-seo-audit-scanned]），所以这一档保留手写：
-               片段的 title 只接受**已取好词的整句**，塞不了可变节点。除这一处外本页空态全走片段。 *}
-            <div class="empty-state" data-seo-audit-state="clean" hidden>
-                <p class="empty-title">{{ .["t"]("admin.seo.audit.clean_lead", "已扫描 ") }}<span data-seo-audit-scanned></span>{{ .["t"]("admin.seo.audit.clean_tail", " 个产物，未发现 SEO 问题。") }}</p>
-            </div>
-            <div data-seo-audit-state="empty" hidden>
-                {{noArtifactsTitle := tr("admin.seo.audit.no_artifacts", "当前站点还没有可检查的产物。")}}
-                {{noArtifactsDesc := tr("admin.seo.audit.no_artifacts_desc", "发布页面后再运行体检；没有产物时体检不会给出结论。")}}
-                {{include "../partials/empty_state.html" map("title", noArtifactsTitle, "desc", noArtifactsDesc)}}
-            </div>
-            <div data-seo-audit-state="issues" hidden>
-                {* 成品句留一个空槽，JS 每次从不可变的模板里取格式再整体重写 ——
-                   直接在当前文本上替换会让第二轮的 {scanned} 再也找不到。 *}
-                <p role="status" data-seo-audit-summary></p>
-                <div class="table-wrap table-scroll" tabindex="0">
-                    <table class="data-table data-table-wide">
-                        <thead><tr><th>{{ .["t"]("admin.seo.audit.col.level", "级别") }}</th><th>{{ .["t"]("admin.seo.audit.col.path", "路径") }}</th><th>{{ .["t"]("admin.seo.audit.col.issue", "问题") }}</th></tr></thead>
-                        <tbody data-seo-audit-rows></tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="stack" data-seo-audit-result role="region" aria-live="polite">
+            {{placeholderTitle := tr("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。")}}
+            {{placeholderDesc := tr("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。")}}
+            {{include "../partials/empty_state.html" map("title", placeholderTitle, "desc", placeholderDesc)}}
         </div>
         {{else}}
         <p class="badge badge-warning">{{ .["t"]("admin.seo.audit.no_permission", "需要 SEO 体检权限才能运行检查。") }}</p>
         {{end}}
-        {* 词条与行模板随本节一起走：只在 [data-seo-audit-scope] 内查，避免同页多卡互串。 *}
-        {* ===== 体检词条与行模板 =====
-           标识是后端 service 的稳定常量（title_missing / title_duplicate / …）。
-           未知 item 走 data-seo-issue-item="unknown"：通用提示 + 原标识纯文本。
-           「受影响的路径」用原生 details/summary，每条路径完整可见。 *}
-        <template id="seo-audit-dictionary">
-            {* 级别名与色调成对写在模板里：这里给的是 data-seo-badge-tone token（danger/warning/
-               info/mute），不直接写 class —— 业务 level 也不许当类名。
-               最后一个 data-seo-level-missing 是未收录 level 的兜底，免得整格空着。 *}
-            {* 级别的四个用例：文案与 tone 在这里定死，JS 只补色档。
-               不写成 <span class="badge badge-danger"> 而是 data-seo-badge-tone="danger" ——
-               徽标形态只允许出现在 partials/badge.html 一处（门禁按字面量数处数），
-               这里给的是「色调 token + 文案」，JS 拼成 badge.html 的同一个形态。 *}
-            <template data-seo-level-item="error"><span class="badge" data-seo-issue-badge data-seo-badge-tone="danger">{{ .["t"]("admin.seo.audit.level.error", "严重") }}</span></template>
-            <template data-seo-level-item="warning"><span class="badge" data-seo-issue-badge data-seo-badge-tone="warning">{{ .["t"]("admin.seo.audit.level.warning", "警告") }}</span></template>
-            <template data-seo-level-item="info"><span class="badge" data-seo-issue-badge data-seo-badge-tone="info">{{ .["t"]("admin.seo.audit.level.info", "提示") }}</span></template>
-            <template data-seo-level-missing=""><span class="badge" data-seo-issue-badge data-seo-badge-tone="mute">{{ .["t"]("admin.seo.audit.level.unknown", "未标注级别") }}</span></template>
-            <template data-seo-issue-item="title_missing"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.title_missing", "页面没有标题") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="title_duplicate"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.title_duplicate", "多个页面使用了同一个标题") }}</span><div data-seo-issue-details></div><details><summary>{{ .["t"]("admin.seo.audit.issue.paths", "受影响的路径") }}</summary><ul data-seo-issue-paths></ul></details></td></tr></template>
-            <template data-seo-issue-item="description_missing"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.description_missing", "页面没有 meta description") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="canonical_missing"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.canonical_missing", "页面没有 canonical") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="image_alt_missing"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.image_alt_missing", "图片缺少替代文本") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="internal_link_broken"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.internal_link_broken", "站内链接指向不存在的路径") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="hreflang_incomplete"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.hreflang_incomplete", "hreflang 只有一条，缺少互指") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-item="unknown"><tr><td data-seo-level-cell></td><td><code data-seo-issue-path></code></td><td><span data-seo-issue-label>{{ .["t"]("admin.seo.audit.issue.unknown", "未识别的检查项（后端返回了界面尚未覆盖的标识）") }}</span><div data-seo-issue-details></div></td></tr></template>
-            <template data-seo-issue-detail="item">{{ .["t"]("admin.seo.audit.detail.item", "检查项标识：") }}<code data-seo-detail-value></code></template>
-            <template data-seo-issue-detail="title">{{ .["t"]("admin.seo.audit.detail.title", "标题：") }}<code data-seo-detail-value></code></template>
-            <template data-seo-issue-detail="src">{{ .["t"]("admin.seo.audit.detail.src", "图片：") }}<code data-seo-detail-value></code></template>
-            <template data-seo-issue-detail="href">{{ .["t"]("admin.seo.audit.detail.href", "链接：") }}<code data-seo-detail-value></code></template>
-            <template data-seo-path-template><li><code data-seo-path></code></li></template>
-            {* 摘要成品句：JS 从这里的不可变模板取格式，再整体写进 [data-seo-audit-summary]。 *}
-            <template data-seo-summary-template>{{ .["t"]("admin.seo.audit.issues_fmt", "已扫描 {scanned} 个产物，发现 {count} 个问题。") }}</template>
-        </template>
     </section>
 
     {* ===== 热门路径：有数据才成表，没数据就是一个空状态 ===== *}
@@ -148,12 +75,8 @@
                 <span class="help-pop" role="tooltip">{{ .["t"]("admin.seo.paths.eyebrow", "近 30 天") }}</span>
             </span>
         </div>
-        {* isset 只判「键存在」——handler 总是注入 AnalyticsError（默认 false），
-           所以这里必须再判值。写成 {{if isset(.AnalyticsError)}} 会恒真：
-           「热门路径」永远显示读取失败，路径表永远不渲染（功能坏了但不报错）。 *}
-        {{if isset(.AnalyticsError)}}{{if .AnalyticsError}}
-        <p class="badge badge-warning">{{ .["t"]("admin.seo.paths.error", "热门路径暂时读取失败。") }}</p>
-        {{end}}{{end}}
+        {* 热门路径读不出来时整个页面走 JSON 早退（真实状态码），页面不会出现在半残状态，
+           所以这里没有「读取失败」提示条，也没有 AnalyticsError 这个失败态字段。 *}
         {{if .HasPaths}}
         <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">

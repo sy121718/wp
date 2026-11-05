@@ -27,10 +27,10 @@ var pendingControllerNormalize = map[string]bool{
 
 var pendingControllerFiles = map[string]bool{
 	"internal/module/admin/inbound/http/admin_err.go":                      true,
-	"internal/module/admin/inbound/http/admin_i18n_write.go":               true,
 	"internal/module/admin/inbound/http/admin_jump.go":                     true,
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_err.go":                            true,
+	"internal/module/admin/inbound/http/admin_i18n_write.go":               true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
 	"internal/module/analytics/inbound/http/analytics_page.go":             true,
 	"internal/module/block/inbound/http/block_err.go":                      true,
@@ -126,9 +126,7 @@ var pendingControllerQuery = map[string]bool{
 }
 
 var pendingControllerMethods = map[string]bool{
-	"internal/module/admin/inbound/http/admin_i18n_write.go:adminI18nWriteReqOf":                true,
 	"internal/module/admin/inbound/http/admin_page.go:dataruleConfigFromForm":                   true,
-	"internal/module/admin/inbound/http/admin_page.go:dataruleEditorContext":                    true,
 	"internal/module/admin/inbound/http/admin_pages_router.go:SetupAdminPages":                  true,
 	"internal/module/admin/inbound/http/admin_router.go:SetupAdminRoutes":                       true,
 	"internal/module/ai/inbound/http/ai_handle.go:FabAskStream":                                 true,
@@ -361,7 +359,6 @@ func TestControllerMethodSize(t *testing.T) {
 }
 
 var pendingControllerRenderExit = map[string]bool{
-	"internal/module/admin/inbound/http/admin_page.go":              true,
 	"internal/module/page/inbound/http/page_translations_handle.go": true,
 
 	"internal/module/workbench/inbound/http/inspector_handle.go": true,
@@ -425,10 +422,7 @@ var pendingControllerUIImport = map[string]bool{
 
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
 	"internal/module/page/inbound/http/pages_handle.go":                    true,
-	"internal/module/admin/inbound/http/admin_err.go":                      true,
-	"internal/module/admin/inbound/http/admin_jump.go":                     true,
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
-	"internal/module/ai/inbound/http/ai_err.go":                            true,
 	"internal/module/block/inbound/http/block_err.go":                      true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/contenttemplate/inbound/http/content_template_err.go": true,

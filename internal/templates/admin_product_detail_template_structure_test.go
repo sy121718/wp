@@ -25,7 +25,7 @@ func detailTemplatePageData(published bool) map[string]any {
 
 func renderDetailTemplatePage(t *testing.T, published bool) (*html.Node, string) {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/product/product_detail_template", detailTemplatePageData(published))
+	out, err := render(t, groupDSet(t), "admin/product/product_detail_template", detailTemplatePageData(published), groupDRenderScope())
 	if err != nil {
 		t.Fatalf("详情模板页渲染失败: %v", err)
 	}
@@ -39,14 +39,14 @@ func renderDetailTemplatePage(t *testing.T, published bool) (*html.Node, string)
 func detailTemplateWriteForms(root *html.Node) map[string]*html.Node {
 	forms := map[string]*html.Node{}
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-url") != ""
+		return peEl(n, "form") && peAttr(n, "hx-post") != ""
 	}) {
-		forms[peAttr(n, "data-write-url")] = n
+		forms[peAttr(n, "hx-post")] = n
 	}
 	return forms
 }
 
-func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
+func TestDetailTemplateWritesUseHTMLForms(t *testing.T) {
 	root, out := renderDetailTemplatePage(t, true)
 	forms := detailTemplateWriteForms(root)
 
@@ -61,8 +61,8 @@ func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
 			t.Fatalf("详情模板页缺少挂 %s 的写表单，实际端点数 %d", api, len(forms))
 		}
 
-		if got := peAttr(f, "data-write"); got == "" {
-			t.Fatalf("%s 表单缺少 data-write（写基座的必填属性），实际属性为空", api)
+		if !peHasAttr(f, "data-write") {
+			t.Fatalf("%s 表单缺少 data-write 认领标记", api)
 		}
 
 		if !peHasAttr(f, "data-write-reload") {

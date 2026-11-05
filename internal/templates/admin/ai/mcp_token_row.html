@@ -1,0 +1,26 @@
+{* admin/ai/mcp_token_row.html — 令牌列表的一行，整页与写回复用同一份 Jet。
+
+   点上下文是 map：Token（行事实：ID / Name / Prefix / Scopes / Status / Revoked /
+   LastUsed / ExpiresAt）与 csrf_token。状态词、分隔符与时刻格式都在这里按请求语言取词，
+   Go 不产出展示句。 *}
+{{r := .Token}}
+{{t := .["t"]}}
+<tr id="mcp-token-row-{{r.ID}}" data-row>
+    <td>{{r.Name}}</td>
+    <td><code>{{r.Prefix}}…</code></td>
+    <td>{{range i, sc := r.Scopes}}{{if i > 0}}、{{end}}{{sc}}{{end}}</td>
+    <td>{{if r.Status == 1}}{{t("admin.ai.mcp.token.status.active", "启用")}}{{else}}{{t("admin.ai.mcp.token.status.revoked", "已撤销")}}{{end}}</td>
+    <td>{{if r.LastUsed}}{{dateTime(r.LastUsed)}}{{else}}{{t("admin.ai.mcp.token.never", "从未使用")}}{{end}}</td>
+    <td>{{if r.ExpiresAt}}{{dateTime(r.ExpiresAt)}}{{else}}{{t("admin.ai.mcp.token.noExpiry", "不过期")}}{{end}}</td>
+    <td>
+        {{if !r.Revoked}}
+        {* 撤销成功后这一行换回「已撤销」事实：写端点回的是同一份行模板。 *}
+        <form data-write hx-post="/api/ai/token/revoke" hx-target="#mcp-token-row-{{r.ID}}" hx-swap="outerHTML"
+              hx-sync="this:drop" hx-confirm="{{t("admin.ai.mcp.token.revokeConfirm", "确定撤销这把令牌？撤销后立刻失效且无法恢复。")}}">
+            <input type="hidden" name="csrf_token" value="{{.csrf_token}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <button type="submit" data-requires-js hidden disabled class="btn btn-danger btn-sm">{{t("admin.ai.mcp.token.revoke", "撤销")}}</button>
+        </form>
+        {{end}}
+    </td>
+</tr>

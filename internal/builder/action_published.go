@@ -3,7 +3,7 @@ package builder
 import (
 	"errors"
 	"fmt"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 var ErrPublishedActionUnavailable = errors.New("已发布动作目标当前不可用")

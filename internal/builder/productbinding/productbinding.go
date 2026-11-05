@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	json "go_wp/pkg/jsonx"

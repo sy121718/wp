@@ -1,0 +1,2 @@
+{* 评论审核结果：完整参数句，数量由具名参数承载。 *}
+{{if .Approved}}{{tn("cmtDoneApprove", "已通过 {count} 条评论。", map("count", .Affected))}}{{else}}{{tn("cmtDoneReject", "已驳回 {count} 条评论。", map("count", .Affected))}}{{end}}

@@ -1,6 +1,7 @@
 package shell_test
 
 import (
+	jetpkg "go_wp/pkg/view/jet"
 	"testing"
 
 	"go_wp/internal/adminui"
@@ -26,23 +27,19 @@ func navTestTree() []admindto.MenuTreeNode {
 
 func activePaths(t *testing.T, current string) map[string]bool {
 	t.Helper()
-	groups := adminui.BuildNav(navTestTree(), current, func(key, fallback string) string { return fallback })
+	items := adminui.NavItemsOf(navTestTree())
+	owner := jetpkg.NavOwner(items, current)
 	got := map[string]bool{}
-	var walk func([]adminui.NavNode)
-	walk = func(list []adminui.NavNode) {
+	var walk func([]jetpkg.NavItem)
+	walk = func(list []jetpkg.NavItem) {
 		for _, n := range list {
-			if n.Active {
+			if jetpkg.NavIsOwner(n, owner) {
 				got[n.Path] = true
 			}
 			walk(n.Children)
 		}
 	}
-	for _, g := range groups {
-		if g.Active && g.Path != "" {
-			got[g.Path] = true
-		}
-		walk(g.Nodes)
-	}
+	walk(items)
 	return got
 }
 

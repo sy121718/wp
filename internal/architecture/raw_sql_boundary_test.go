@@ -33,6 +33,13 @@ var rawSQLAllowedList = []rawSQLEntry{
 			"row_number() OVER (PARTITION BY …) 与 DELETE … LIMIT，GORM 三者都没有对应能力",
 	},
 	{
+		File: "internal/module/product/model/publish_record_page.go",
+		Max:  1,
+		Reason: "发布记录整页读模型：候选（关键词 + 状态 EXISTS 谓词）、精确 total、越界夹页与" +
+			"多实例多语言明细必须落在同一条只读语句的同一份快照里，total 才与本页行同源；" +
+			"具体用途是 WITH candidates（子查询）+ capped(count) + page_no(夹页) + LATERAL 聚合出差分明细",
+	},
+	{
 		File: "internal/module/product/model/product_outbox_model.go",
 		Max:  1,
 		Reason: "NextOutboxRevisionTx 的 pg_advisory_xact_lock(hashtext(?))：" +

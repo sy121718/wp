@@ -132,20 +132,15 @@
             </span>
         </h3>
 
-        {* 审核与收货都走前端直调 JSON API（task-98 S3）：端点就是同一条
-           /api/order/return/{approve,reject,receive}，页面不再有自己的写路径 —— 于是
-           「结论走提示页 + 回跳地址从表单 action 的 query 读回」那一套整批消失
-           （order 模块的 shell.RenderJump 消费者随之归零）。
-           表单只声明**事实**（端点 / 写模式 / 数字字段 / 布尔字段 / 失败文案），行为全在基座里；
-           没有 method/action 是刻意的：禁用 JS 时按钮是 hidden 的（见表格前的 noscript），
-           不会退化成「GET 当前页」这种看起来像成功的空动作。
-           returnId / autoReceive 都不必声明类型：formdata 里虽是字符串，服务端按 uint64 / bool
-           直接绑得进（实测）。前端不替服务端猜类型，也不需要猜 —— 类型在 DTO 上。 *}
+        {* 审核与收货都是标准 HTMX 表单：端点就是 /api/order/return/{approve,reject,receive}，
+           成功整页刷新、失败片段留在本表单的错误区。禁用 JS 时按钮是 hidden 的
+           （见表格前的 noscript），不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
         {{if r.Status == "requested"}}
-        <form data-write-url="/api/order/return/approve" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form class="form-stack" data-write
+              hx-post="/api/order/return/approve" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
             <input type="hidden" name="returnId" value="{{r.ID}}">
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <div data-write-result role="status"></div>
             <div class="form-inline">
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.review_remark", "审核意见（可选，客户可见）")}}" autocomplete="off">
                 <select class="form-select" name="warehouseId" aria-label="{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}">
@@ -166,20 +161,22 @@
         </form>
         {* 拒绝：理由必填由服务端的 400 兜底（缺 / 空 / null 一律整条拒绝，
            不再由页面先判一遍再渲染提示页）—— 页面侧只保留 required 这个快速反馈。 *}
-        <form data-write-url="/api/order/return/reject" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-inline">
+        <form class="form-inline" data-write
+              hx-post="/api/order/return/reject" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）")}}" required autocomplete="off">
             <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.returns.action.reject", "拒绝申请")}}</button>
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <div data-write-result role="status"></div>
         </form>
         {{end}}
 
         {{if r.Status == "approved"}}
-        <form data-write-url="/api/order/return/receive" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form class="form-stack" data-write
+              hx-post="/api/order/return/receive" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
             <input type="hidden" name="returnId" value="{{r.ID}}">
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <div data-write-result role="status"></div>
             <div class="form-inline">
                 <select class="form-select" name="warehouseId" aria-label="{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}">
                     <option value="">{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}</option>
@@ -200,10 +197,11 @@
         {* 补退款走的是**同一条** receive 端点：服务端识别出入库已完成，只补做退款。
            重复点安全（幂等，不会重复加库存）—— 这也是「单条成功只整页刷新、不再按落地态
            换一句提示」的补偿说明：刷新后行徽章就是结论，多点一次不会造成第二笔退款。 *}
-        <form data-write-url="/api/order/return/receive" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form class="form-stack" data-write
+              hx-post="/api/order/return/receive" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
             <input type="hidden" name="returnId" value="{{r.ID}}">
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <div data-write-result role="status"></div>
             <div class="form-inline">
                 <input type="text" class="form-input" name="transactionId" placeholder="{{tr("admin.returns.ph.txn_optional", "退款流水号（可选，留空则沿用原流水号）")}}" autocomplete="off">
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.remark_short", "备注（可选）")}}" autocomplete="off">
@@ -262,38 +260,37 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 8：勾选 / 退货单号 / 订单号 / 客户 / 状态 /
            退款金额 / 申请时间 / 操作）。 *}
-        {* 两个批量动作也直调 JSON（与订单列表页的批量流转同法）：端点声明落在**按钮**上
-           （attrFrom：按钮优先、表单兜底），表单上刻意不声明 —— 声明了它会被继承成一个 fetch，
-           两个按钮就没法各投各的端点。批量拒绝的理由必填由服务端判（缺 / 空 / null → 400 +
-           零 service 调用），页面不再自己拼「本次没有处理任何退货申请」这种整句结论。
+        {* 两个批量动作各有一个表单承载自己的字段；按钮用 hx-include 把勾选行所在的
+           列表表单一起带上。批量拒绝的理由必填由服务端判（缺 / 空 → 400）。
            没有 action 是刻意的：禁用 JS 时按钮是 hidden 的（下方 noscript 说明原因）。 *}
-        <form method="post">
+        <form method="post" id="ret-list-form">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(returns) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{tr("admin.returns.ph.bulk_remark", "备注（同意时可选；批量拒绝时作为拒绝理由，必填）")}}">
+                <input type="text" class="form-input" name="remark" form="ret-bulk-approve-form" autocomplete="off" placeholder="{{tr("admin.returns.ph.bulk_remark", "备注（同意时可选；批量拒绝时作为拒绝理由，必填）")}}">
+                <input type="text" class="form-input" name="remark" form="ret-bulk-reject-form" autocomplete="off" placeholder="{{tr("admin.returns.ph.bulk_reject_remark", "批量拒绝理由（必填）")}}" hidden>
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-url="/api/order/return/approve" data-write="bulk" data-write-outcome="update"
-                        data-write-extra="remark"
-                        data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}">{{tr("admin.returns.bulk.approve", "批量同意")}}</button>
+                        form="ret-bulk-approve-form"
+                        hx-post="/api/order/return/approve" hx-include="#ret-list-form, #ret-bulk-approve-form"
+                        hx-target="#ret-bulk-result" hx-swap="innerHTML"
+                        hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">{{tr("admin.returns.bulk.approve", "批量同意")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-url="/api/order/return/reject" data-write="bulk" data-write-outcome="update"
-                        data-write-extra="remark"
-                        data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}"
-                        data-confirm="{{tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。")}}"
-                        data-confirm-danger>{{tr("admin.returns.bulk.reject", "批量拒绝")}}</button>
+                        form="ret-bulk-reject-form"
+                        hx-post="/api/order/return/reject" hx-include="#ret-list-form, #ret-bulk-reject-form"
+                        hx-target="#ret-bulk-result" hx-swap="innerHTML"
+                        hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                        hx-confirm="{{tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。")}}">{{tr("admin.returns.bulk.reject", "批量拒绝")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
-            {* 批量结果区（两个动作共用）：全成功 / 部分成功 / 全跳过的摘要 + **逐条原因**写在这儿。
-               刻意不自动刷新 —— 自动刷新会让「谁失败、为什么」一闪而过看不完；刷新入口由基座追加。 *}
-            <p class="form-hint" data-write-status role="status" hidden></p>
-            <noscript><p class="form-hint">{{tr("admin.returns.write.noJs", "本页的审核、收货与两个批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
+            {* 批量动作的字段承载表单：隐藏，靠 form 属性被按钮驱动、靠 hx-include 带上勾选行。 *}
+            <form id="ret-bulk-approve-form" hidden>
+                <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            </form>
+            <form id="ret-bulk-reject-form" hidden>
+                <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            </form>
+            <div id="ret-bulk-result" role="status"></div>
+            <noscript><p class="form-hint">{{tr("admin.returns.write.noJs", "本页的审核、收货与两个批量动作需要 JavaScript。请开启 JavaScript 后重试。")}}</p></noscript>
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">
             <thead>

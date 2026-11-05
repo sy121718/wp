@@ -1,0 +1,15 @@
+<form data-drawer-fragment class="perm-drawer" method="post" action="/api/role/menu/save"
+      hx-post="/api/role/menu/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-write="update" data-write-close="[data-drawer]" data-write-reload>
+    <p data-write-status role="status" aria-live="polite" hidden></p>
+    <div data-write-result hidden></div>
+    <input type="hidden" name="role_id" value="{{.Role.RoleID}}">
+    <p class="perm-intro">{{t("admin.roles.perm.intro", "勾选该角色可用的目录、菜单与按钮。勾选子项会自动补齐它所属的菜单与目录（不补齐会出现「接口能调、侧栏却没有入口」的分裂授权）；取消父项会同时取消其下全部子项。保存按整棵树的当前勾选做全量替换。")}}</p>
+    <p class="perm-hint">{{t("admin.roles.perm.hint.search", "搜索与折叠只影响显示，保存始终提交整棵树的勾选。")}}</p>
+    {{include "grant_menu_tree.html" map("Rows", .Rows, "ShowInherited", false)}}
+    <div class="perm-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
+        {{if len(.Rows) > 0}}<button type="submit" class="btn btn-primary">{{t("admin.roles.perm.action.save", "保存权限")}}</button>{{end}}
+    </div>
+</form>

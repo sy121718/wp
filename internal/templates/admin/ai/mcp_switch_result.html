@@ -1,0 +1,13 @@
+{* admin/ai/mcp_switch_result.html — 对外接入点开关写回的状态片段。
+   徽标（状态）与按钮（动作）是两类文案：动作名不是状态名，混用会把按钮写成「已开启」。 *}
+<div class="action-row" id="mcp-switch">
+    <span class="badge badge-{{if .Enabled}}ok{{else}}mute{{end}}">{{if .Enabled}}{{t("admin.ai.mcp.switch.on", "已开启")}}{{else}}{{t("admin.ai.mcp.switch.off", "已关闭")}}{{end}}</span>
+    <form class="inline-form" data-write
+          hx-post="/api/ai/token/toggle" hx-target="#mcp-switch" hx-swap="outerHTML" hx-sync="this:drop">
+        <input type="hidden" name="csrf_token" value="{{.csrf_token}}">
+        <input type="hidden" name="enabled" value="{{if .Enabled}}0{{else}}1{{end}}">
+        <button type="submit" data-requires-js hidden disabled class="btn btn-sm{{if .Enabled}} btn-danger{{else}} btn-primary{{end}}"{{if not .Enabled}} hx-confirm="{{t("admin.ai.mcp.switch.confirm", "确认开启对外接入？开启后，持有令牌的外部客户端可以读取本站业务数据。")}}"{{end}}>
+            {{if .Enabled}}{{t("admin.ai.mcp.switch.disable", "关闭接入")}}{{else}}{{t("admin.ai.mcp.switch.enable", "开启接入")}}{{end}}
+        </button>
+    </form>
+</div>

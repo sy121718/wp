@@ -1,0 +1,31 @@
+<form data-drawer-fragment class="perm-drawer" method="post" action="/api/admin/role/save"
+      hx-post="/api/admin/role/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-write="update" data-write-close="[data-drawer]" data-write-reload>
+    <p data-write-status role="status" aria-live="polite" hidden></p>
+    <div data-write-result hidden></div>
+    <input type="hidden" name="user_id" value="{{.Account.ID}}">
+    <p class="perm-intro">{{t("admin.admins.role.intro", "勾选该管理员拥有的角色。保存按当前勾选做全量替换：没勾的会被解除绑定。角色带来的权限在「菜单权限」抽屉里显示为「来自角色」且不可在那里取消。")}}</p>
+    {{if len(.Rows) == 0}}
+    <div class="empty-state">
+        <p class="empty-title">{{t("admin.admins.role.empty", "还没有可分配的角色，先去「角色管理」建一个。")}}</p>
+        <div class="empty-actions"><a class="btn btn-primary" href="/admin/roles">{{t("admin.admins.role.empty.action", "去角色管理")}}</a></div>
+    </div>
+    {{else}}
+    <div class="role-pick">
+        {{range _, r := .Rows}}
+        <label class="role-pick-row">
+            <input type="checkbox" class="perm-box" name="role_codes" value="{{r.Code}}"{{if r.Checked}} checked{{end}}>
+            <code class="perm-code">{{r.Code}}</code>
+            <span class="perm-picker-name">{{r.Name}}</span>
+            {{if r.Missing}}<span class="badge badge-warning">{{t("admin.admins.role.missing", "未知角色")}}</span>{{end}}
+            {{if r.Status == 0}}<span class="badge badge-mute">{{t("admin.roles.status.disabled", "禁用")}}</span>{{end}}
+        </label>
+        {{end}}
+    </div>
+    {{end}}
+    <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
+        {{if len(.Rows) > 0}}<button type="submit" class="btn btn-primary">{{t("admin.admins.role.save", "保存角色")}}</button>{{end}}
+    </div>
+</form>

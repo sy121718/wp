@@ -48,8 +48,10 @@
     {{if isset(.Buttons["membership.assign_set"])}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.assign.setTitle", "手工指定等级") }}</span></div>
-        <form data-write-url="/api/membership/assign/set" data-write="create" data-write-nav="/admin/membership/assignments?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form data-write hx-post="/api/membership/assign/set" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">
@@ -68,7 +70,7 @@
                 </div>
             </div>
             <div class="action-row">
-                <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
             </div>
         </form>
     </section>
@@ -128,12 +130,14 @@
                 <td class="col-actions">
                     {{if r.Source == sourceManual}}
                     {{if isset(.Buttons["membership.assign_unlock"])}}
-                    <form data-write-url="/api/membership/assign/unlock" data-write="create" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+                    <form data-write hx-post="/api/membership/assign/unlock" hx-target="find [data-write-result]"
+                          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="userId" value="{{r.UserID}}">
-                        <button type="submit" data-requires-js hidden disabled class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
+                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
                     </form>
                     {{end}}
                     {{else}}

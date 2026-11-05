@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"errors"
+	"go_wp/pkg/publish"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -137,7 +138,7 @@ func twoPathsInSameShard(t *testing.T) []string {
 	byShard := map[int]string{}
 	for i := 0; i < 512; i++ {
 		p := "/shard/" + itoaForTest(i)
-		idx := shardIndexOf(pathLockKey(p))
+		idx := publish.ShardIndexOf(publish.PathLockKey(p))
 		if prev, ok := byShard[idx]; ok {
 			return []string{prev, p}
 		}
@@ -153,7 +154,7 @@ func twoPathsInDifferentShards(t *testing.T) (string, string) {
 	var reserved int
 	for i := 0; i < 512; i++ {
 		p := "/wide/" + itoaForTest(i)
-		idx := shardIndexOf(pathLockKey(p))
+		idx := publish.ShardIndexOf(publish.PathLockKey(p))
 		if prev, ok := seen[idx]; ok && prev != p {
 			_ = prev
 			continue

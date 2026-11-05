@@ -1,14 +1,14 @@
 {* 标签命中视图仅消费 /api/product/tag/products 的分页事实。 *}
 {{tr := .["t"]}}
 <section id="tag-hits-panel" class="card card-body" data-product-tag-panel role="region" aria-live="polite" aria-labelledby="tag-hits-title" hidden
- data-count-tail="{{tr("admin.product_tags.list.hitCountTail", " 个商品")}}" data-page-info="{{tr("shell.pagination.info", "共 %s 条，第 %s-%s 条")}}" data-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
- <h2 id="tag-hits-title" class="card-title">{{tr("admin.product_tags.list.hitTitle", "命中的商品")}}</h2>
+ data-count-text="{{tr("tagHitCount", "{count} 个商品")}}" data-hit-text="{{tr("tagHitInfo", "命中 {count} 个商品")}}" data-page-info="{{tr("pagerInfo", "共 %s 条，第 %s-%s 条")}}" data-failed="{{tr("uiInternalErr", "系统内部错误，请稍后重试")}}">
+ <h2 id="tag-hits-title" class="card-title">{{tr("tagListHitTitle", "命中的商品")}}</h2>
  <p class="form-hint" data-tag-status role="status" hidden></p>
  <div data-tag-result hidden>
- <div class="hits-head"><strong data-tag-name></strong><span class="hint">{{tr("admin.product_tags.list.hitLead", "命中 ")}}<span data-tag-total></span>{{tr("admin.product_tags.list.hitCountTail", " 个商品")}}</span></div>
- <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.product_tags.list.hitAria", "命中的商品")}}"><table class="data-table data-table-wide"><thead><tr><th>{{tr("admin.product_tags.col.product", "商品")}}</th><th>{{tr("admin.product_tags.col.slug", "URL 段")}}</th><th>{{tr("admin.product_tags.col.state", "状态")}}</th></tr></thead><tbody data-tag-rows></tbody></table></div>
- <nav class="pagination" aria-label="{{tr("shell.pagination.label", "分页")}}"><div class="pagination-info" data-tag-page-info></div><div class="pagination-pages"><button type="button" class="pagination-btn" data-tag-page="-1">{{tr("shell.pagination.prev", "上一页")}}</button><button type="button" class="pagination-btn" data-tag-page="1">{{tr("shell.pagination.next", "下一页")}}</button></div></nav>
+ <div class="hits-head"><strong data-tag-name></strong><span class="hint"><span data-tag-total></span></span></div>
+ <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("tagListHitAria", "命中的商品")}}"><table class="data-table data-table-wide"><thead><tr><th>{{tr("tagProd", "商品")}}</th><th>{{tr("tagSlugCol", "URL 段")}}</th><th>{{tr("tagState", "状态")}}</th></tr></thead><tbody data-tag-rows></tbody></table></div>
+ <nav class="pagination" aria-label="{{tr("pager", "分页")}}"><div class="pagination-info" data-tag-page-info></div><div class="pagination-pages"><button type="button" class="pagination-btn" data-tag-page="-1">{{tr("pagerPrev", "上一页")}}</button><button type="button" class="pagination-btn" data-tag-page="1">{{tr("pagerNext", "下一页")}}</button></div></nav>
  </div>
  <template data-tag-row><tr><td><strong data-tag-product-name></strong></td><td><code data-tag-product-slug></code></td><td><span class="badge" data-tag-product-status></span></td></tr></template>
- <template data-tag-empty><tr><td colspan="3"><p class="hint">{{tr("admin.product_tags.list.hitEmpty", "当前没有商品命中这个标签。")}}</p></td></tr></template>
+ <template data-tag-empty><tr><td colspan="3"><p class="hint">{{tr("tagListHitEmpty", "当前没有商品命中这个标签。")}}</p></td></tr></template>
 </section>

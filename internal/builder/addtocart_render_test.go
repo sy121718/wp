@@ -2,8 +2,8 @@ package builder
 
 import (
 	"errors"
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"

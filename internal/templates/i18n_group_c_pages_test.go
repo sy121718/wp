@@ -7,7 +7,7 @@ import (
 )
 
 func TestGroupCPagesParse(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	files := []string{
 		"admin/order/coupons", "admin/order/returns", "admin/order/orders", "admin/user/customers",

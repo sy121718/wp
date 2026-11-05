@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 
 	"golang.org/x/crypto/bcrypt"
 )

@@ -34,18 +34,34 @@ type fieldSchema struct {
 }
 
 type endpointSchema struct {
-	DTO string `json:"dto"`
-
-	Handler string `json:"handler"`
-
-	Tables []tableSchema `json:"tables,omitempty"`
-	Fields []fieldSchema `json:"fields"`
+	DTO      string        `json:"dto,omitempty"`
+	Handler  string        `json:"handler"`
+	Protocol string        `json:"protocol"`
+	Reason   string        `json:"reason,omitempty"`
+	Fields   []fieldSchema `json:"fields"`
 }
 
-type tableSchema struct {
-	Name string `json:"name"`
+type route struct {
+	Method  string
+	Path    string
+	Handler string
+}
 
-	Shape string `json:"shape"`
+type bodyBinding struct {
+	DTO      string
+	Protocol string
+	Reason   string
+}
+
+type sourceStruct struct {
+	Node    *ast.StructType
+	Package string
+	Imports map[string]string
+}
+
+type sourceIndex struct {
+	Bindings map[string]bodyBinding
+	Types    map[string]sourceStruct
 }
 
 func run(check bool) error {
@@ -53,39 +69,18 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
-	handlerDTO, err := scanHandlerBindings()
+	index, err := scanSources("internal", "go_wp/internal")
 	if err != nil {
 		return err
 	}
-	dtoInfo, err := scanDTOs()
-	if err != nil {
-		return err
-	}
-
-	out := map[string]endpointSchema{}
-	var unmatched []string
+	contracts := buildContracts(routes, index)
 	for _, r := range routes {
-		mod := moduleOfRoutePath(r.Path)
-		h := matchHandler(r.Path, mod, handlerDTO)
-		if h == "" {
-			unmatched = append(unmatched, r.Method+" "+r.Path)
-			continue
+		key := r.Method + " " + r.Path
+		if contracts[key].Reason != "" {
+			fmt.Fprintf(os.Stderr, "未检查 %s：%s（%s）\n", key, contracts[key].Reason, r.Handler)
 		}
-		dtoName := handlerDTO[h]
-		info := dtoInfo[dtoName]
-		handlerName := h
-		if i := strings.Index(h, ":"); i >= 0 {
-			handlerName = h[i+1:]
-		}
-		ep := endpointSchema{DTO: dtoName, Handler: handlerName, Fields: info.Fields}
-		if ep.Fields == nil {
-			ep.Fields = []fieldSchema{}
-		}
-		ep.Tables = info.Tables
-		out[r.Path] = ep
 	}
-
-	data, err := marshalStable(out)
+	data, err := marshalStable(contracts)
 	if err != nil {
 		return err
 	}
@@ -99,498 +94,317 @@ func run(check bool) error {
 		}
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-		return err
-	}
-	if len(unmatched) > 0 {
-
-		fmt.Fprintf(os.Stderr, "警告：%d 条写端点没匹配到 handler（这些端点没有契约）:\n", len(unmatched))
-		for _, u := range unmatched {
-			fmt.Fprintf(os.Stderr, "  %s\n", u)
-		}
-	}
 	return os.WriteFile(outPath, data, 0o644)
 }
 
-type route struct {
-	Method string
-	Path   string
-	Perm   string
-}
-
 func runtimeWriteRoutes() ([]route, error) {
-	cmd := exec.Command("go", "test", "./internal/routers/", "-run", "TestDumpRoutesForAudit", "-count=1", "-v")
+	cmd := exec.Command("go", "test", "./internal/routers/", "-run", "^TestDumpRoutesForAudit$", "-count=1", "-v")
 	cmd.Env = append(os.Environ(), "WP_DUMP_ROUTES=1")
 	raw, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("导出运行时路由表失败（需要数据库；使用根目录 config.yaml 或显式 GOWP_AUDIT_CONFIG）：%w", err)
 	}
+	return parseRoutes(string(raw))
+}
+
+func parseRoutes(raw string) ([]route, error) {
 	var out []route
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "DECLARED ") {
+	seen := map[string]bool{}
+	for _, line := range strings.Split(raw, "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 0 || parts[0] != "HANDLER" {
 			continue
 		}
-		f := strings.Fields(line)
-		if len(f) < 4 {
-			continue
+		if len(parts) != 4 {
+			return nil, fmt.Errorf("处理器审计行格式错误：%s", line)
 		}
-		method, path, perm := f[1], f[2], f[3]
-		switch method {
+		switch parts[1] {
 		case "POST", "PUT", "PATCH", "DELETE":
 		default:
 			continue
 		}
-		if !strings.HasPrefix(path, "/api/") {
-			continue
+		key := parts[1] + " " + parts[2]
+		if seen[key] {
+			return nil, fmt.Errorf("重复路由：%s", key)
 		}
-		out = append(out, route{Method: method, Path: path, Perm: perm})
+		seen[key] = true
+		out = append(out, route{Method: parts[1], Path: parts[2], Handler: parts[3]})
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("运行时路由表里没有写端点 —— 装配失败或 WP_DUMP_ROUTES 输出格式变了")
+		return nil, fmt.Errorf("未导出写端点及真实处理器；不能宣称契约已检查")
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	sort.Slice(out, func(i, j int) bool { return out[i].Method+" "+out[i].Path < out[j].Method+" "+out[j].Path })
 	return out, nil
 }
 
-func matchHandler(path, mod string, handlerDTO map[string]string) string {
-	segs := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segs) < 3 {
-		return ""
-	}
+func handlerIdentity(name string) string {
+	name = strings.TrimSuffix(name, "-fm")
+	name = strings.ReplaceAll(name, "(*", "")
+	return strings.ReplaceAll(name, ")", "")
+}
 
-	if alias, ok := exactHandlerAliases[path]; ok {
-		if id, hit := resolveAliasHandler(alias, mod, segs[1], handlerDTO); hit {
-			return id
+func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema {
+	out := map[string]endpointSchema{}
+	for _, r := range routes {
+		binding, ok := index.Bindings[handlerIdentity(r.Handler)]
+		if !ok {
+			binding = bodyBinding{Protocol: "unknown", Reason: "真实处理器没有唯一显式 body binder，或是包装闭包"}
 		}
-	}
-	rest := segs[2:]
-	if segs[1] != mod {
-
-		rest = segs[1:]
-	}
-
-	idsOf := func(name string) []string {
-		if mod == "" {
-			return nil
-		}
-		return []string{mod + ":" + name}
-	}
-	verbs := map[string]string{
-		"create": "Create", "update": "Update", "delete": "Delete",
-		"save": "Save", "add": "Add", "remove": "Remove",
-		"bulk-delete": "BulkDelete", "bulk-update": "BulkUpdate", "bulk-status": "BulkStatus", "bulk-unlock": "BulkUnlock",
-		"toggle": "Toggle", "apply": "Apply", "restore": "Restore",
-		"import": "Import", "upload": "Upload", "sort": "Sort",
-		"activate": "Activate", "deactivate": "Deactivate", "approve": "Approve",
-		"reject": "Reject", "receive": "Receive", "cancel": "Cancel",
-		"publish": "Publish", "unpublish": "Unpublish", "review": "Review",
-		"unlock": "Unlock", "lock": "Lock", "assign": "Assign",
-		"set": "Set", "status": "Status", "validate": "Validate",
-		"refresh": "Refresh", "sync": "Sync", "fetch": "Fetch",
-		"send": "Send", "test": "Test", "reset": "Reset", "rebuild": "Rebuild",
-		"preview": "Preview", "generate": "Generate", "apply-pricing": "ApplyPricing",
-		"layout": "Layout", "note": "Note", "refund": "Refund",
-	}
-	var words []string
-	verb := ""
-	for _, s := range rest {
-		if v, ok := verbs[s]; ok {
-			verb = v
-		} else {
-			words = append(words, s)
-		}
-	}
-
-	var camel []string
-	for _, w := range words {
-		camel = append(camel, camelWord(w))
-	}
-
-	if verb == "" {
-		for _, id := range idsOf(strings.Join(camel, "")) {
-			if _, ok := handlerDTO[id]; ok {
-				return id
+		ep := endpointSchema{DTO: binding.DTO, Handler: r.Handler, Protocol: binding.Protocol, Reason: binding.Reason, Fields: []fieldSchema{}}
+		if binding.Reason == "" {
+			fields, err := dtoFields(binding.DTO, binding.Protocol, index.Types, map[string]bool{})
+			if err != nil {
+				ep.Protocol, ep.Reason = "unknown", err.Error()
+			} else {
+				ep.Fields = append(ep.Fields, fields...)
 			}
 		}
+		out[r.Method+" "+r.Path] = ep
 	}
-
-	if verb != "" {
-		var cands []string
-		if len(camel) > 0 {
-			cands = append(cands, verb+strings.Join(camel, ""))
-			cands = append(cands, verb+camel[len(camel)-1])
-			if strings.HasPrefix(verb, "Bulk") {
-				cands = append(cands, "Bulk"+strings.Join(camel, "")+strings.TrimPrefix(verb, "Bulk"))
-			}
-			if segs[1] != mod {
-				cands = append(cands, strings.Join(camel, "")+verb)
-			}
-		}
-
-		if len(camel) == 0 {
-			cands = append(cands, verb)
-		}
-		for _, c := range cands {
-			for _, id := range idsOf(c) {
-				if _, ok := handlerDTO[id]; ok {
-					return id
-				}
-			}
-		}
-	}
-
-	var hits []string
-	for name := range handlerDTO {
-
-		if mod != "" && !strings.HasPrefix(name, mod+":") {
-			continue
-		}
-		all := len(camel) > 0
-		for _, c := range camel {
-			if !strings.Contains(name, c) {
-				all = false
-				break
-			}
-		}
-		if all {
-			hits = append(hits, name)
-		}
-	}
-	if len(hits) == 1 {
-		return hits[0]
-	}
-	return ""
+	return out
 }
 
-var exactHandlerAliases = map[string]string{
-	"/api/order/shipment/create": "ShipOrder",
-}
-
-func resolveAliasHandler(name, mod, routeModule string, handlerDTO map[string]string) (string, bool) {
-	if mod == "" || name == "" {
-		return "", false
-	}
-
-	if routeModule != mod {
-		return "", false
-	}
-	id := mod + ":" + name
-	dto, ok := handlerDTO[id]
-	if !ok {
-		return "", false
-	}
-	if !strings.HasPrefix(dto, mod+"dto.") {
-		return "", false
-	}
-	return id, true
-}
-
-func moduleOfRoutePath(path string) string {
-	segs := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segs) < 2 {
-		return ""
-	}
-	if segs[1] == "role" {
-		return "admin"
-	}
-	if segs[1] == "customer" {
-		return "user"
-	}
-	return segs[1]
-}
-
-func camelWord(w string) string {
-	w = strings.ReplaceAll(w, "-", " ")
-	w = strings.ReplaceAll(w, "_", " ")
-	var parts []string
-	for _, p := range strings.Fields(w) {
-		if p == "" {
-			continue
-		}
-		parts = append(parts, strings.ToUpper(p[:1])+p[1:])
-	}
-	s := strings.Join(parts, "")
-	if len(s) > 2 && strings.HasSuffix(s, "s") &&
-		!strings.HasSuffix(s, "ss") && !strings.HasSuffix(s, "us") && !strings.HasSuffix(s, "is") {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
-func marshalStable(in map[string]endpointSchema) ([]byte, error) {
-	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var buf bytes.Buffer
-	buf.WriteString("{\n")
-	for i, k := range keys {
-		inner, err := json.Marshal(in[k])
-		if err != nil {
-			return nil, err
-		}
-		keyJSON, _ := json.Marshal(k)
-		fmt.Fprintf(&buf, "  %s: %s", keyJSON, inner)
-		if i < len(keys)-1 {
-			buf.WriteString(",")
-		}
-		buf.WriteString("\n")
-	}
-	buf.WriteString("}\n")
-	return buf.Bytes(), nil
-}
-
-func scanHandlerBindings() (map[string]string, error) {
-	out := map[string]string{}
+func scanSources(root, prefix string) (sourceIndex, error) {
+	index := sourceIndex{Bindings: map[string]bodyBinding{}, Types: map[string]sourceStruct{}}
 	fset := token.NewFileSet()
-	err := filepath.WalkDir("internal", func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return walkErr
+		}
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
 			return err
 		}
-		f, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			return nil
+		relative, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
 		}
-		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || fn.Recv == nil {
-				continue
+		pkg := prefix
+		if relative != "." {
+			pkg += "/" + filepath.ToSlash(relative)
+		}
+		imports := map[string]string{}
+		for _, spec := range file.Imports {
+			name, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return err
 			}
-
-			name := fn.Name.Name
-			mod := moduleOfPath(path)
-			key := name
-			if mod != "" {
-				key = mod + ":" + name
+			alias := filepath.Base(name)
+			if spec.Name != nil {
+				alias = spec.Name.Name
 			}
-
-			if _, seen := out[key]; seen {
-				continue
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				idx, ok := call.Fun.(*ast.IndexExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := idx.X.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				pkgID, ok := sel.X.(*ast.Ident)
-				if !ok || pkgID.Name != "binding" {
-					return true
-				}
-				if sel.Sel.Name != "JSON" && sel.Sel.Name != "Form" {
-					return true
-				}
-				dt, ok := idx.Index.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				pkgName, ok := dt.X.(*ast.Ident)
-				if !ok {
-					return true
-				}
-
-				if !strings.HasSuffix(pkgName.Name, "dto") {
-					return true
-				}
-				if mod != "" {
-					out[key] = pkgName.Name + "." + dt.Sel.Name
-					if _, taken := out[name]; !taken {
-						out[name] = out[key]
+			imports[alias] = name
+		}
+		for _, decl := range file.Decls {
+			switch node := decl.(type) {
+			case *ast.GenDecl:
+				for _, spec := range node.Specs {
+					if typ, ok := spec.(*ast.TypeSpec); ok {
+						if st, ok := typ.Type.(*ast.StructType); ok {
+							index.Types[pkg+"."+typ.Name.Name] = sourceStruct{Node: st, Package: pkg, Imports: imports}
+						}
 					}
-				} else {
-					out[name] = pkgName.Name + "." + dt.Sel.Name
 				}
-				return false
-			})
-
-			found := func() bool { _, ok := out[key]; return ok }
-			if !found() {
-				if dto := dtoFromGenericHelperCall(fn.Body); dto != "" {
-					out[key] = dto
-					if _, taken := out[name]; !taken {
-						out[name] = dto
-					}
+			case *ast.FuncDecl:
+				if node.Body == nil {
+					continue
+				}
+				name := pkg + "." + node.Name.Name
+				if node.Recv != nil && len(node.Recv.List) == 1 {
+					name = typeName(node.Recv.List[0].Type, pkg, imports) + "." + node.Name.Name
+				}
+				if binding := nativeBinding(node.Body, pkg, imports); binding.DTO != "" || binding.Reason != "" {
+					index.Bindings[name] = binding
 				}
 			}
 		}
 		return nil
 	})
-	return out, err
+	return index, err
 }
 
-func dtoFromGenericHelperCall(body *ast.BlockStmt) string {
-	var found string
+func typeName(expr ast.Expr, pkg string, imports map[string]string) string {
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	switch typ := expr.(type) {
+	case *ast.Ident:
+		return pkg + "." + typ.Name
+	case *ast.SelectorExpr:
+		if alias, ok := typ.X.(*ast.Ident); ok && imports[alias.Name] != "" {
+			return imports[alias.Name] + "." + typ.Sel.Name
+		}
+	}
+	return ""
+}
+
+// declaredType 使用解析器的词法对象，不用同名变量表覆盖不同作用域的请求。
+func declaredType(expr ast.Expr, seen map[*ast.Object]bool) ast.Expr {
+	switch node := expr.(type) {
+	case *ast.UnaryExpr:
+		if node.Op == token.AND {
+			return declaredType(node.X, seen)
+		}
+	case *ast.CompositeLit:
+		return node.Type
+	case *ast.Ident:
+		obj := node.Obj
+		if obj == nil || seen[obj] {
+			return nil
+		}
+		seen[obj] = true
+		switch decl := obj.Decl.(type) {
+		case *ast.Field:
+			return decl.Type
+		case *ast.ValueSpec:
+			if decl.Type != nil {
+				return decl.Type
+			}
+			for i, name := range decl.Names {
+				if name.Obj == obj && i < len(decl.Values) {
+					return declaredType(decl.Values[i], seen)
+				}
+			}
+		case *ast.AssignStmt:
+			for i, left := range decl.Lhs {
+				if name, ok := left.(*ast.Ident); ok && name.Obj == obj && i < len(decl.Rhs) {
+					return declaredType(decl.Rhs[i], seen)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// nativeBinding 只识别 Gin Context 的确定 body binder；自动绑定与多种形状不猜协议。
+func nativeBinding(body *ast.BlockStmt, pkg string, imports map[string]string) bodyBinding {
+	var bindings []bodyBinding
 	ast.Inspect(body, func(n ast.Node) bool {
-		if found != "" {
+		switch node := n.(type) {
+		case *ast.FuncLit:
 			return false
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-
-		if indexed, ok := call.Fun.(*ast.IndexExpr); ok {
-
-			_, localHelper := indexed.X.(*ast.Ident)
-			if sel, ok := indexed.Index.(*ast.SelectorExpr); ok && localHelper {
-				if pkg, ok := sel.X.(*ast.Ident); ok && strings.HasSuffix(pkg.Name, "dto") {
-					found = pkg.Name + "." + sel.Sel.Name
-					return false
+		case *ast.CallExpr:
+			method, ok := node.Fun.(*ast.SelectorExpr)
+			if !ok || len(node.Args) == 0 {
+				break
+			}
+			contextType := declaredType(method.X, map[*ast.Object]bool{})
+			if typeName(contextType, pkg, imports) != "github.com/gin-gonic/gin.Context" {
+				break
+			}
+			protocol := ""
+			switch method.Sel.Name {
+			case "ShouldBindJSON":
+				protocol = "json"
+			case "ShouldBindWith":
+				if len(node.Args) == 2 {
+					if binder, ok := node.Args[1].(*ast.SelectorExpr); ok {
+						if alias, ok := binder.X.(*ast.Ident); ok && alias.Obj == nil && imports[alias.Name] == "github.com/gin-gonic/gin/binding" {
+							switch binder.Sel.Name {
+							case "FormPost":
+								protocol = "form"
+							case "FormMultipart":
+								protocol = "multipart"
+							case "JSON":
+								protocol = "json"
+							}
+						}
+					}
 				}
-			}
-		}
-		for _, arg := range call.Args {
-			lit, ok := arg.(*ast.FuncLit)
-			if !ok || lit.Type.Params == nil || len(lit.Type.Params.List) == 0 {
-				continue
-			}
-			expr := lit.Type.Params.List[0].Type
-			if star, ok := expr.(*ast.StarExpr); ok {
-				expr = star.X
-			}
-			if sel, ok := expr.(*ast.SelectorExpr); ok {
-				if pkg, ok := sel.X.(*ast.Ident); ok && strings.HasSuffix(pkg.Name, "dto") {
-					found = pkg.Name + "." + sel.Sel.Name
-					return false
+				if protocol == "" {
+					protocol = "unknown"
 				}
+			case "ShouldBind", "Bind":
+				protocol = "unknown"
+			default:
+				break
 			}
+			if protocol == "" {
+				break
+			}
+			expr := declaredType(node.Args[0], map[*ast.Object]bool{})
+			binding := bodyBinding{DTO: typeName(expr, pkg, imports), Protocol: protocol}
+			if protocol == "unknown" || binding.DTO == "" {
+				binding.Protocol, binding.Reason = "unknown", "自动、未知 binder 或非具名请求类型，无法确定输入契约"
+			}
+			bindings = append(bindings, binding)
 		}
 		return true
 	})
-	return found
-}
-
-func moduleOfPath(path string) string {
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	for i, p := range parts {
-		if p == "module" && i+2 < len(parts) {
-			return parts[i+1]
+	if len(bindings) == 0 {
+		return bodyBinding{}
+	}
+	for _, binding := range bindings[1:] {
+		if binding != bindings[0] {
+			return bodyBinding{Protocol: "unknown", Reason: "处理器包含多种请求绑定，不能取第一个冒充完整契约"}
 		}
 	}
-	return ""
+	return bindings[0]
 }
 
-type dtoInfo struct {
-	Fields []fieldSchema
-	Tables []tableSchema
-}
-
-var scalarTypes = map[string]bool{
-	"string": true, "int": true, "int8": true, "int16": true, "int32": true, "int64": true,
-	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
-	"bool": true, "float32": true, "float64": true, "byte": true, "rune": true,
-	"RawMessage": true, "JSONTime": true,
-}
-
-func scanDTOs() (map[string]dtoInfo, error) {
-	return scanDTOsFrom("internal")
-}
-
-func scanDTOsFrom(root string) (map[string]dtoInfo, error) {
-	types := map[string]*ast.StructType{}
-	fset := token.NewFileSet()
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return err
-		}
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			return err
-		}
-		for _, decl := range f.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				if st, ok := ts.Type.(*ast.StructType); ok {
-					types[f.Name.Name+"."+ts.Name.Name] = st
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]dtoInfo{}
-	for name := range types {
-		info := dtoFields(name, types, map[string]bool{})
-		if len(info.Fields) > 0 {
-			out[name] = info
-		}
-	}
-	return out, nil
-}
-
-func dtoFields(name string, types map[string]*ast.StructType, visiting map[string]bool) dtoInfo {
-	st := types[name]
-	if st == nil || st.Fields == nil || visiting[name] {
-		return dtoInfo{}
+func dtoFields(name, protocol string, types map[string]sourceStruct, visiting map[string]bool) ([]fieldSchema, error) {
+	source, ok := types[name]
+	if !ok || visiting[name] {
+		return nil, fmt.Errorf("请求类型缺失或递归嵌入：%s", name)
 	}
 	visiting[name] = true
 	defer delete(visiting, name)
-	pkg := strings.SplitN(name, ".", 2)[0]
-	var info dtoInfo
-	for _, fld := range st.Fields.List {
-		tag := map[string]string{}
-		if fld.Tag != nil {
-			tag = parseStructTag(fld.Tag.Value)
-		}
-		formName := strings.Split(tag["form"], ",")[0]
-		jsonName := strings.Split(tag["json"], ",")[0]
-		if len(fld.Names) == 0 && formName == "" && jsonName == "" {
-			expr := fld.Type
-			optional := false
-			if star, ok := expr.(*ast.StarExpr); ok {
-				expr = star.X
-				optional = !requiredField(tag["binding"])
-			}
-			embedded := ""
-			switch typ := expr.(type) {
-			case *ast.Ident:
-				embedded = pkg + "." + typ.Name
-			case *ast.SelectorExpr:
-				if p, ok := typ.X.(*ast.Ident); ok {
-					embedded = p.Name + "." + typ.Sel.Name
-				}
-			}
-			child := dtoFields(embedded, types, visiting)
-			if optional || strings.Contains(","+tag["binding"]+",", ",omitempty,") {
-				for i := range child.Fields {
-					child.Fields[i].Required = false
-				}
-			}
-			info.Fields = append(info.Fields, child.Fields...)
-			info.Tables = append(info.Tables, child.Tables...)
-			continue
-		}
-		fieldName := formName
-		if fieldName == "" || fieldName == "-" {
-			fieldName = jsonName
-		}
-		if fieldName == "" || fieldName == "-" {
-			continue
-		}
-		if shape := collectionShape(fld.Type); shape != "" {
-			info.Tables = append(info.Tables, tableSchema{Name: fieldName, Shape: shape})
-		}
-		info.Fields = append(info.Fields, fieldSchema{Name: fieldName, Required: requiredField(tag["binding"])})
+	tagName := "json"
+	if protocol == "form" || protocol == "multipart" {
+		tagName = "form"
 	}
-	return info
+	var fields []fieldSchema
+	for _, fld := range source.Node.Fields.List {
+		tag := reflect.StructTag("")
+		if fld.Tag != nil {
+			raw, err := strconv.Unquote(fld.Tag.Value)
+			if err != nil {
+				return nil, err
+			}
+			tag = reflect.StructTag(raw)
+		}
+		fieldName := strings.Split(tag.Get(tagName), ",")[0]
+		if fieldName == "-" {
+			continue
+		}
+		if len(fld.Names) == 0 && (fieldName == "" || tagName == "form") {
+			embedded := typeName(fld.Type, source.Package, source.Imports)
+			childFields, err := dtoFields(embedded, protocol, types, visiting)
+			if err != nil {
+				return nil, err
+			}
+			_, pointer := fld.Type.(*ast.StarExpr)
+			if (pointer && !requiredField(tag.Get("binding"))) || strings.Contains(","+tag.Get("binding")+",", ",omitempty,") {
+				for i := range childFields {
+					childFields[i].Required = false
+				}
+			}
+			fields = append(fields, childFields...)
+			continue
+		}
+		names := fld.Names
+		if len(names) == 0 {
+			names = []*ast.Ident{ast.NewIdent(fieldName)}
+		}
+		for _, name := range names {
+			if !name.IsExported() && len(fld.Names) > 0 {
+				continue
+			}
+			wireName := fieldName
+			if wireName == "" {
+				wireName = name.Name
+			}
+			fields = append(fields, fieldSchema{Name: wireName, Required: requiredField(tag.Get("binding"))})
+		}
+	}
+	seen := map[string]bool{}
+	for _, field := range fields {
+		if seen[field.Name] {
+			return nil, fmt.Errorf("请求字段名冲突，未模拟嵌入覆盖规则：%s.%s", name, field.Name)
+		}
+		seen[field.Name] = true
+	}
+	return fields, nil
 }
 
 func requiredField(binding string) bool {
@@ -605,60 +419,26 @@ func requiredField(binding string) bool {
 	return false
 }
 
-func collectionShape(expr ast.Expr) string {
-
-	ptr := false
-	switch t := expr.(type) {
-	case *ast.StarExpr:
-		ptr = true
-		expr = t.X
+func marshalStable(in map[string]endpointSchema) ([]byte, error) {
+	keys := make([]string, 0, len(in))
+	for key := range in {
+		keys = append(keys, key)
 	}
-	switch t := expr.(type) {
-	case *ast.ArrayType:
-
-		if isScalarExpr(t.Elt) {
-			return ""
+	sort.Strings(keys)
+	var buf bytes.Buffer
+	buf.WriteString("{\n")
+	for i, key := range keys {
+		inner, err := json.Marshal(in[key])
+		if err != nil {
+			return nil, err
 		}
-		return "slice-struct"
-	case *ast.MapType:
-		return "map"
-	case *ast.Ident:
-		if scalarTypes[t.Name] {
-			if ptr {
-				return ""
-			}
-			return ""
+		keyJSON, _ := json.Marshal(key)
+		fmt.Fprintf(&buf, "  %s: %s", keyJSON, inner)
+		if i < len(keys)-1 {
+			buf.WriteString(",")
 		}
-
-		if ptr {
-			return "ptr-struct"
-		}
-		return "struct"
+		buf.WriteString("\n")
 	}
-	return ""
-}
-
-func isScalarExpr(e ast.Expr) bool {
-	if star, ok := e.(*ast.StarExpr); ok {
-		e = star.X
-	}
-	if id, ok := e.(*ast.Ident); ok {
-		return scalarTypes[id.Name]
-	}
-	return false
-}
-
-func parseStructTag(lit string) map[string]string {
-	out := map[string]string{}
-	raw, err := strconv.Unquote(lit)
-	if err != nil {
-		return out
-	}
-	tag := reflect.StructTag(raw)
-	for _, key := range []string{"form", "json", "binding"} {
-		if value, ok := tag.Lookup(key); ok {
-			out[key] = value
-		}
-	}
-	return out
+	buf.WriteString("}\n")
+	return buf.Bytes(), nil
 }

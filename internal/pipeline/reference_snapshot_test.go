@@ -3,11 +3,12 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"go_wp/pkg/publish"
 	"strings"
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	json "go_wp/pkg/jsonx"
 )
@@ -91,9 +92,9 @@ func TestReferenceSnapshotFreezesRecursiveRepeatedAndMultilingualReads(t *testin
 		t.Fatalf("编译不能再次查块源: %d", rows.calls)
 	}
 
-	plan := PublicationPlan{SiteLangs: []string{"zh-CN"}, DefaultLang: "zh-CN", References: snapshot}
+	plan := PublicationPlan{SiteLangs: []string{"zh-CN"}, DefaultLang: "zh-CN", References: snapshot.Unwrap()}
 	copyPlan := plan.Normalize()
-	copyPlan.References.Blocks["inner"] = FrozenBlock{Version: 99}
+	copyPlan.References.Blocks["inner"] = publish.FrozenBlock{Version: 99}
 	if plan.References.Blocks["inner"].Version != 7 {
 		t.Fatal("计划规范化必须深复制")
 	}

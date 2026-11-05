@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/extensions/checkoutform"
 	ordercontract "go_wp/internal/module/order/contract"
+	"go_wp/pkg/builder/core"
 )
 
 const checkoutDocument = `{
@@ -17,6 +18,8 @@ const checkoutDocWithBilling = `{
   "settings": {"layout": {"mode": "full"}, "seo": {"title": "结算", "description": "结算"}},
   "root": [{"id": "cf1", "type": "core.checkoutForm", "props": {"submitLabel": "提交订单", "collectBilling": true}}]
 }`
+
+var _ = checkoutform.Type
 
 func checkoutCountries() []core.CheckoutCountry {
 	return []core.CheckoutCountry{

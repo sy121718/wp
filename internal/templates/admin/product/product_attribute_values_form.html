@@ -1,10 +1,9 @@
 
 {{vfTr := .["t"]}}
         <div data-write-host>
-        <form data-write="custom" data-write-url="/api/product/attribute/set-values" class="form-stack" data-attr-values-form
-              data-write-json="values"
-              data-msg-ok="{{vfTr("admin.product_attributes.values.saved", "属性值已保存。")}}"
-              data-msg-failed="{{vfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form data-write hx-post="/api/product/attribute/set-values" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" data-write-builder="product-attribute-values" class="form-stack" data-attr-values-form>
+            <div data-write-result></div>
+            <p class="form-hint">{{vfTr("attrValsSaved", "属性值已保存。")}}</p>
             <input type="hidden" name="projectId" value="{{.Project}}">
             <input type="hidden" name="id" value="{{.Entity.ID}}">
 
@@ -12,8 +11,8 @@
                 {{include "product_attribute_rows.html" map("Values", .Entity.Values, "t", vfTr)}}
             </div>
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{vfTr("admin.common.action.cancel", "取消")}}</button>
-                <button data-requires-js hidden type="submit" class="btn btn-primary">{{vfTr("admin.product_attributes.list.saveValues", "保存属性值")}}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{vfTr("uiActCancel", "取消")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{vfTr("attrSaveValues", "保存属性值")}}</button>
             </div>
         </form>
         <p class="form-hint" data-write-status role="status" hidden></p>

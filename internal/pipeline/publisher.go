@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go_wp/pkg/publish"
 	"sort"
 	"strings"
 	"sync"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
@@ -55,7 +56,7 @@ type PageRecord struct {
 
 	Lang string
 
-	Plan *PublicationPlan
+	Plan *publish.PublicationPlan
 
 	Version int
 
@@ -85,7 +86,7 @@ type BuildInput struct {
 
 	Diagnostics *builder.DegradeCollector
 
-	Plan *PublicationPlan
+	Plan *publish.PublicationPlan
 }
 
 type CompileUsage struct {
@@ -99,7 +100,7 @@ type CompileUsage struct {
 
 	siteLangs []string
 
-	plan *PublicationPlan
+	plan *publish.PublicationPlan
 
 	contentCandidates int
 	contentTranslator ContentMissCounter
@@ -198,7 +199,7 @@ func (u *CompileUsage) SiteLangs() []string {
 	return append([]string(nil), u.siteLangs...)
 }
 
-func (u *CompileUsage) SetPublicationPlan(plan PublicationPlan) {
+func (u *CompileUsage) SetPublicationPlan(plan publish.PublicationPlan) {
 	if u == nil {
 		return
 	}
@@ -213,7 +214,7 @@ func (u *CompileUsage) SetPublicationPlan(plan PublicationPlan) {
 	}
 }
 
-func (u *CompileUsage) PublicationPlan() *PublicationPlan {
+func (u *CompileUsage) PublicationPlan() *publish.PublicationPlan {
 	if u == nil || u.plan == nil {
 		return nil
 	}
@@ -293,7 +294,7 @@ type Draft struct {
 
 	DocJSON []byte
 
-	Plan *PublicationPlan
+	Plan *publish.PublicationPlan
 }
 
 type Option func(*Publisher)
@@ -302,17 +303,17 @@ func WithCompile(fn CompileFn) Option {
 	return func(p *Publisher) { p.compile = fn }
 }
 
-type DependencyProvider func(ctx context.Context, in BuildInput) []Dependency
+type DependencyProvider func(ctx context.Context, in BuildInput) []publish.Dependency
 
 func WithDependencies(fn DependencyProvider) Option {
 	return func(p *Publisher) { p.deps = fn }
 }
 
 type Publisher struct {
-	store Store
-	pub   PublicationStore
+	store publish.Store
+	pub   publish.PublicationStore
 
-	paths   PublicationPathLocker
+	paths   publish.PublicationPathLocker
 	compile CompileFn
 
 	deps DependencyProvider
@@ -322,11 +323,11 @@ type Publisher struct {
 	order int
 }
 
-func NewPublisher(store Store, pub PublicationStore, opts ...Option) *Publisher {
+func NewPublisher(store publish.Store, pub publish.PublicationStore, opts ...Option) *Publisher {
 	p := &Publisher{
 		store:   store,
 		pub:     pub,
-		paths:   DefaultPathLocker(),
+		paths:   publish.DefaultPathLocker(),
 		compile: DefaultCompile,
 		pages:   map[string]*PageRecord{},
 	}
@@ -336,7 +337,7 @@ func NewPublisher(store Store, pub PublicationStore, opts ...Option) *Publisher 
 	return p
 }
 
-func (p *Publisher) SetPublicationPathLocker(locker PublicationPathLocker) {
+func (p *Publisher) SetPublicationPathLocker(locker publish.PublicationPathLocker) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.paths = locker
@@ -346,7 +347,7 @@ func (p *Publisher) withPaths(paths []string, fn func() error) error {
 	if fn == nil {
 		return nil
 	}
-	return WithPathLock(p.paths, paths, fn)
+	return publish.WithPathLock(p.paths, paths, fn)
 }
 
 func (p *Publisher) oldPathWithPaths(newPath, oldPath string, pathLockHeld bool, fn func() error) error {
@@ -356,11 +357,11 @@ func (p *Publisher) oldPathWithPaths(newPath, oldPath string, pathLockHeld bool,
 	return p.withPaths([]string{newPath, oldPath}, fn)
 }
 
-func (p *Publisher) activatePath(path string, loc Locator) error {
+func (p *Publisher) activatePath(path string, loc publish.Locator) error {
 	return p.withPaths([]string{path}, func() error { return p.activatePathInLock(path, loc) })
 }
 
-func (p *Publisher) activatePathInLock(path string, loc Locator) error {
+func (p *Publisher) activatePathInLock(path string, loc publish.Locator) error {
 	return p.pub.Activate(path, loc)
 }
 
@@ -390,13 +391,13 @@ func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, d Draft)
 	if pageID == "" {
 		return 0, errors.New("页面 ID 不能为空")
 	}
-	nPath, err := NormalizeURL(d.Path)
+	nPath, err := publish.NormalizeURL(d.Path)
 	if err != nil {
 		return 0, err
 	}
 	lang := strings.TrimSpace(d.Lang)
 	if lang != "" {
-		if lang, err = NormalizeLang(lang); err != nil {
+		if lang, err = publish.NormalizeLang(lang); err != nil {
 			return 0, err
 		}
 	}
@@ -504,7 +505,7 @@ func (p *Publisher) stageArtifactLocked(pageID string) (hash string, err error) 
 	if rec.StagedHash == "" {
 		return "", ErrNoStagedArtifact
 	}
-	loc := ArtifactLocator(rec.StagedHash)
+	loc := publish.ArtifactLocator(rec.StagedHash)
 
 	a, err := p.store.GetArtifact(loc)
 	if err != nil {
@@ -530,7 +531,7 @@ func (p *Publisher) activateStagedLocked(pageID string) error {
 	if rec.StagedHash == "" {
 		return ErrNoStagedArtifact
 	}
-	loc := ArtifactLocator(rec.StagedHash)
+	loc := publish.ArtifactLocator(rec.StagedHash)
 	if err := p.activatePath(rec.Path, loc); err != nil {
 
 		logger.Scene("build").With("pageId", rec.ID).Error(err, "激活失败（线上保持不变）")
@@ -560,7 +561,7 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 		return ErrRollbackPathMismatch
 	}
 
-	loc := ArtifactLocator(targetHash)
+	loc := publish.ArtifactLocator(targetHash)
 	if err = p.store.VerifyArtifact(loc, targetHash); err != nil {
 		return err
 	}
@@ -594,7 +595,7 @@ func (p *Publisher) updateURL(ctx context.Context, pageID string, newPath string
 	}
 	oldPath = rec.Path
 
-	nPath, err := NormalizeURL(newPath)
+	nPath, err := publish.NormalizeURL(newPath)
 	if err != nil {
 		p.mu.Unlock()
 		return oldPath, err
@@ -650,7 +651,7 @@ func (p *Publisher) updateURL(ctx context.Context, pageID string, newPath string
 	}
 
 	if withRedirect {
-		ra, rerr := NewRedirectArtifact(nPath, 301)
+		ra, rerr := publish.NewRedirectArtifact(nPath, 301)
 		if rerr != nil {
 			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(rerr, "旧 URL 301 产物构造失败（新 URL 已生效）")
 			return oldPath, nil
@@ -678,7 +679,7 @@ func (p *Publisher) updateURL(ctx context.Context, pageID string, newPath string
 	return oldPath, nil
 }
 
-func draftPlan(p *PublicationPlan) *PublicationPlan {
+func draftPlan(p *publish.PublicationPlan) *publish.PublicationPlan {
 	if p == nil {
 		return nil
 	}
@@ -702,7 +703,7 @@ func freezeBuildLang(in BuildInput) BuildInput {
 	return in
 }
 
-func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Artifact, err error) {
+func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *publish.Artifact, err error) {
 
 	in = freezeBuildLang(in)
 
@@ -711,17 +712,17 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	if err != nil {
 		return nil, fmt.Errorf("编译失败: %w", err)
 	}
-	m := &Manifest{
-		ManifestSchemaVersion:     ManifestSchemaVersion,
+	m := &publish.Manifest{
+		ManifestSchemaVersion:     publish.ManifestSchemaVersion,
 		PageDocumentSchemaVersion: 1,
 		CompilerVersion:           "internal-builder",
 		SourceID:                  in.PageID,
-		SourceType:                SourceTypePage,
+		SourceType:                publish.SourceTypePage,
 		CanonicalPath:             in.Path,
 		Lang:                      in.Lang,
-		Dir:                       manifestDir(in.Lang),
-		SourceHash:                SHA256(in.DocJSON),
-		BuildInputHash:            SHA256(in.DocJSON),
+		Dir:                       publish.ManifestDirForLang(in.Lang),
+		SourceHash:                publish.SHA256(in.DocJSON),
+		BuildInputHash:            publish.SHA256(in.DocJSON),
 	}
 
 	if in.Usage != nil {
@@ -733,8 +734,8 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 		}
 
 		if candidates, misses := in.Usage.ContentTranslationMisses(); candidates > 0 || misses > 0 {
-			m.TranslationMisses = &ManifestTranslationMisses{
-				Policy: TranslationPolicyFallback, Candidates: candidates, Misses: misses,
+			m.TranslationMisses = &publish.ManifestTranslationMisses{
+				Policy: publish.TranslationPolicyFallback, Candidates: candidates, Misses: misses,
 			}
 		}
 	}
@@ -742,14 +743,14 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 		m.Dependencies = p.deps(ctx, in)
 	}
 
-	m.Diagnostics = in.Diagnostics.Items()
+	m.Diagnostics = diagnosticsOf(in.Diagnostics.Items())
 
 	guardFiles, access, gerr := PageGuardEntries(in.DocJSON, in.Lang)
 	if gerr != nil {
 		return nil, fmt.Errorf("页面访问设置解析失败: %w", gerr)
 	}
 	m.Access = access
-	a, err = NewArtifactWithEntries(html, m, guardFiles)
+	a, err = publish.NewArtifactWithEntries(html, m, guardFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -759,7 +760,7 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	return a, nil
 }
 
-func (p *Publisher) RestoreArtifact(ctx context.Context, in BuildInput) (*Artifact, error) {
+func (p *Publisher) RestoreArtifact(ctx context.Context, in BuildInput) (*publish.Artifact, error) {
 	if p.compile == nil {
 		return nil, fmt.Errorf("编译函数未注入，无法重建产物")
 	}
@@ -767,7 +768,7 @@ func (p *Publisher) RestoreArtifact(ctx context.Context, in BuildInput) (*Artifa
 }
 
 func (p *Publisher) ArtifactExists(hash string) error {
-	return p.store.VerifyArtifact(ArtifactLocator(hash), hash)
+	return p.store.VerifyArtifact(publish.ArtifactLocator(hash), hash)
 }
 
 func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
@@ -775,7 +776,7 @@ func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
 }
 
 func (p *Publisher) publishLockedWith(rec *PageRecord, stagedHash string, pathLockHeld bool) error {
-	loc := ArtifactLocator(stagedHash)
+	loc := publish.ArtifactLocator(stagedHash)
 	a, err := p.store.GetArtifact(loc)
 	if err != nil {
 		return err
@@ -910,4 +911,19 @@ func (p *Publisher) LoadRecord(rec *PageRecord) {
 	restored.DocumentJSON = snap
 	restored.Histories = histories
 	p.pages[rec.ID] = &restored
+}
+
+// diagnosticsOf 把构建器的降级诊断转成发布内核的中立事实。
+func diagnosticsOf(items []builder.Degrade) []publish.Diagnostic {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]publish.Diagnostic, 0, len(items))
+	for _, d := range items {
+		out = append(out, publish.Diagnostic{
+			Slot: d.Slot, NodeID: d.NodeID, NodeType: d.NodeType,
+			Kind: string(d.Kind), RefID: d.RefID, Reason: d.Reason,
+		})
+	}
+	return out
 }

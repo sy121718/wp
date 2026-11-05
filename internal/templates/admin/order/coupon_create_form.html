@@ -2,27 +2,24 @@
 
    唯一身份：抽屉 tpl-coupon-create 的内容（coupons.html 里 include 本文件）。
 
-   写路径已迁到「前端直调 JSON」（POST /api/order/coupon/create，见 static/js/ui/write-base.js）：
+   写路径是标准 HTMX 表单（POST /api/order/coupon/create）：
      · 成功：回到列表并带回当前筛选上下文（data-write-nav），不再有「提示页停一秒再跳」那一跳；
-     · 失败：抽屉里**原地**显示后端给的那句话，已填内容原样留着 —— 于是旧写法的
-       「失败重渲片段 + Echo 回填 + SubmitErr 错误槽」三层整块不需要了
-       （服务端的 couponCreateFail 已删，本片段不再读 .Echo / .SubmitErr / .ListQuery）。
+     · 失败：抽屉里**原地**显示 Jet 错误片段，已填内容原样留着。
    没有 action 是刻意的：禁用 JS 时提交按钮是 hidden（下方 noscript 说明原因），
-   不会退化成「GET 当前页」这种看起来像成功的空动作；也不需要 csrf 隐藏域 ——
-   写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。
+   不会退化成「GET 当前页」这种看起来像成功的空动作。
 
    字段名与 /api/order/coupon/create 的绑定逐字一致，改这里等于改协议。
    数值字段不必声明类型：formdata 的字符串服务端直接绑得进 int/float64。 *}
 {{tr := .["t"]}}
         <div>
-            <form class="form-stack"
-                  data-write-url="/api/order/coupon/create" data-write="create"
-                  data-write-nav="/admin/coupons?{{.ListQuery}}"
-                  data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+            <form class="form-stack" data-write
+                  hx-post="/api/order/coupon/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+                  hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                  data-write-nav="[data-order-next]">
                 <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                {* 结果区：失败写在这儿（表单内容原样保留），成功则整页跳回列表。 *}
-                <p class="form-hint" data-write-status role="status" hidden></p>
-                <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
+                {* 结果区：失败写在这儿（表单内容原样保留），成功后按片段里的链接整页回列表。 *}
+                <div data-write-result role="status"></div>
+                <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript。请开启 JavaScript 后重试。")}}</p></noscript>
                 <div class="form-inline">
                     <input type="text" class="form-input" name="code" placeholder="{{tr("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）")}}"
                            required autocomplete="off" maxlength="64">

@@ -1,0 +1,15 @@
+<form data-drawer-fragment class="perm-drawer" method="post" action="/api/admin/menu/save"
+      hx-post="/api/admin/menu/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-write="update" data-write-close="[data-drawer]" data-write-reload>
+    <p data-write-status role="status" aria-live="polite" hidden></p>
+    <div data-write-result hidden></div>
+    <input type="hidden" name="user_id" value="{{.Account.ID}}">
+    <p class="perm-intro">{{t("admin.admins.menu.intro", "勾选该管理员额外需要的菜单入口（超出角色已有的部分）。标着「来自角色」的项由角色授权，在这里取消不会生效，要去角色里改。保存按整棵树的当前勾选做全量替换。")}}</p>
+    <p class="perm-hint">{{t("admin.admins.menu.hint", "搜索与折叠只影响显示，保存始终提交整棵树的勾选（继承项不参与提交）。")}}</p>
+    {{include "grant_menu_tree.html" map("Rows", .Rows, "ShowInherited", true)}}
+    <div class="perm-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
+        {{if len(.Rows) > 0}}<button type="submit" class="btn btn-primary">{{t("admin.admins.menu.save", "保存菜单权限")}}</button>{{end}}
+    </div>
+</form>

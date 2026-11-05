@@ -1,7 +1,7 @@
 package builder
 
 import (
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 func applyScrollReveal(inter *core.InteractionProps, defaultEntrance string) {

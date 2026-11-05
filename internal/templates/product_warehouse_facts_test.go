@@ -13,12 +13,14 @@ func TestProductWarehouseFactsRenderWithoutDisplayFields(t *testing.T) {
 			Items: []productdto.WarehouseSKUItemResp{{SKUCode: "SKU-1", ExternalSKU: "EXT&1", TrackQuantity: true}}}},
 	})
 	for _, name := range []string{"products", "products_new", "product_edit"} {
-		out, err := render(t, groupDSet(t), "admin/product/"+name, data)
+		out, err := render(t, groupDSet(t), "admin/product/"+name, data, groupDRenderScope())
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		// 多仓 SKU 明细只出现在编辑页：新建页不再承载多仓表单，
+		// 列表页只展示汇总。断言必须跟着真实结构走。
 		wants := []string{"仓&lt;一&gt;（SZ）", "</html>"}
-		if name != "products" {
+		if name == "product_edit" {
 			wants = append(wants, "SKU-1 · EXT&amp;1")
 		}
 		for _, want := range wants {

@@ -180,8 +180,8 @@
         {* 行内启停表单放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
         {{if isset(.Buttons["inventory.stock_update"])}}
         {{range _, r := rows}}
-        <form id="sk-toggle-{{r.ID}}" method="post" action="/admin/inventory/stock/status?{{ .ListQuery }}" class="hidden-form"
-              hx-post="/admin/inventory/stock/status?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write id="sk-toggle-{{r.ID}}" method="post" action="/admin/inventory/stock/status?{{ .ListQuery }}" class="hidden-form"
+              hx-post="/admin/inventory/stock/status?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
@@ -194,8 +194,8 @@
     {* ===== 新建仓库 SKU（抽屉） ===== *}
     {{if isset(.Buttons["inventory.stock_create"])}}
     <template id="tpl-stock-sku-create">
-        <form method="post" action="/admin/inventory/stock/create?{{ .ListQuery }}"
-              hx-post="/admin/inventory/stock/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" action="/admin/inventory/stock/create?{{ .ListQuery }}"
+              hx-post="/admin/inventory/stock/create?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -289,8 +289,8 @@
     {{if isset(.Buttons["inventory.stock_update"])}}
     {{range _, r := rows}}
     <template id="tpl-stock-sku-edit-{{r.ID}}">
-        <form method="post" action="/admin/inventory/stock/update?{{ .ListQuery }}"
-              hx-post="/admin/inventory/stock/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" action="/admin/inventory/stock/update?{{ .ListQuery }}"
+              hx-post="/admin/inventory/stock/update?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">

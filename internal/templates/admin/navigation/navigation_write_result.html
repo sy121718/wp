@@ -1,0 +1,4 @@
+{* 导航写操作的结论：句子由调用方按词条取好，这里只负责结构。
+   Moved / Reason 只在换位端点上有值：边界移动是合法结果（没有可交换的邻居），
+   必须如实告诉界面，不能一律报「已完成」。 *}
+<p role="status"{{if isset(.Moved)}} data-moved="{{if .Moved}}true{{else}}false{{end}}"{{end}}{{if isset(.Reason)}}{{if .Reason}} data-reason="{{.Reason}}"{{end}}{{end}}>{{.Message}}</p>

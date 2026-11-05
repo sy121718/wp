@@ -51,7 +51,7 @@
                分数取自**已保存**的数据，看未保存改动按抽屉里的「重新评分」。 *}
             {{if !.EditUnavailable}}
             <button type="button" class="btn"
-                    data-drawer-url="/admin/articles/seo/drawer?id={{.Form.ID}}"
+                    data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/articles/seo/drawer?id={{.Form.ID}}"
                     data-drawer-title="{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}">{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}{{if .Score.OK}} <span class="badge">{{.Score.Total}} {{.Score.Grade}}</span>{{end}}</button>
             {{end}}
 

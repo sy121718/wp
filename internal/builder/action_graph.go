@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"go_wp/internal/builder/components/globalref"
-	"go_wp/internal/builder/components/layoutslot"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/components/globalref"
+	"go_wp/pkg/builder/components/layoutslot"
+	"go_wp/pkg/builder/core"
 )
 
 type blockReadSnapshot struct {

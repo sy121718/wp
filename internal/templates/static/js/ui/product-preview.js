@@ -24,15 +24,24 @@
         return '<!doctype html>\n' + parsed.documentElement.outerHTML;
     }
     async function readDocument(url, options, failed) {
-        var response = await fetch(url, Object.assign({credentials: 'same-origin', redirect: 'error', headers: {'Accept': 'text/html, application/json'}}, options));
+        var post = options && options.method === 'POST';
+        var response = await fetch(url, Object.assign({credentials: 'same-origin', redirect: 'error', headers: {'Accept': post ? 'application/json' : 'text/html, application/json'}}, options));
         var type = response.headers.get('content-type') || '';
         if (type.includes('application/json')) {
             var payload = await response.json();
+            if (post && response.ok) {
+                if (!payload || typeof payload.code !== 'number') throw new Error(failed);
+                if (payload.code === 200) {
+                    var html = payload.data && payload.data.html;
+                    if (typeof html !== 'string' || !html.trim()) throw new Error(failed);
+                    return normalizeDocument(html, response.url || new URL(url, global.location.href).href);
+                }
+            }
             var failure = new Error(payload && payload.message || failed);
             failure.productPreviewMessage = true;
             throw failure;
         }
-        if (!response.ok || !type.includes('text/html')) throw new Error(failed);
+        if (post || !response.ok || !type.includes('text/html')) throw new Error(failed);
         return normalizeDocument(await response.text(), response.url || new URL(url, global.location.href).href);
     }
     function openWindow() {

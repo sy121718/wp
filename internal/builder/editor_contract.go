@@ -4,7 +4,7 @@ import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 func EditorContractsJS() ([]byte, error) {

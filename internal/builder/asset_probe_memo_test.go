@@ -2,10 +2,10 @@ package builder
 
 import (
 	"fmt"
+	"go_wp/pkg/builder/core"
 	"strings"
 	"testing"
 
-	mediacontract "go_wp/internal/module/media/contract"
 	"go_wp/internal/templates"
 )
 
@@ -18,12 +18,12 @@ func newCountingGenProbe(gen int) *countingGenProbe {
 	return &countingGenProbe{counts: make(map[string]int), gen: gen}
 }
 
-func (p *countingGenProbe) probe(url string) []mediacontract.VariantRef {
+func (p *countingGenProbe) probe(url string) []core.AssetVariant {
 	p.counts[url]++
 	if url != "https://media.example.test/storage/a.jpg" {
 		return nil
 	}
-	return []mediacontract.VariantRef{
+	return []core.AssetVariant{
 		{URL: fmt.Sprintf("https://media.example.test/storage/a_thumb-%d-ab12cd34.jpg", p.gen), Width: 320},
 		{URL: fmt.Sprintf("https://media.example.test/storage/a_medium-%d-ab12cd34.jpg", p.gen), Width: 1280},
 	}

@@ -2,8 +2,8 @@
 
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
-{{block pageTitle()}}{{ .["t"]("admin.products.title", "商品") }}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.products.title", "商品") }}{{end}}
+{{block pageTitle()}}{{ .["t"]("pTitle", "商品") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("pTitle", "商品") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -19,17 +19,17 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.products.title", "商品") }}</h1>
+                <h1>{{ .["t"]("pTitle", "商品") }}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.products.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.hint.attrLead", "属性组在") }}<a href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.products.hint.attrTail", "页定义，同一个属性组可以被多个商品引用；分类与品牌在") }}<a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.products.hint.categoryLink", "商品分类") }}</a>{{ .["t"]("admin.products.hint.and", "与") }}<a href="/admin/product-brands?project={{selectedProject}}">{{ .["t"]("admin.products.hint.brandLink", "商品品牌") }}</a>{{ .["t"]("admin.products.hint.brandTail", "页定义，商品可以挂多个分类（其中一个为主分类）并指定品牌；标签在") }}<a href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.products.hint.tagLink", "商品标签") }}</a>{{ .["t"]("admin.products.hint.tagTail", "页定义，手工标签可手工挂载，自动标签按内置规则自动维护归属。") }}<br><br>{{ .["t"]("admin.products.hint.detailLead", "变体与评分属于单个商品，在商品的") }}{{if .["lang"] == "en-US"}}&nbsp;{{end}}<strong>{{ .["t"]("admin.products.row.edit", "编辑") }}</strong>{{ .["t"]("admin.products.hint.detailTail", "页维护（点行的「编辑」进入）。评分是独立明细：平均值与条数由明细算出，改评分不改动商品字段；「没有评分」与「评分 0 分」是两回事。") }}<br><br>{{ .["t"]("admin.products.hint.editLead", "多语言与商品基本字段在") }}<strong>{{ .["t"]("admin.products.row.edit", "编辑") }}</strong>{{ .["t"]("admin.products.hint.editTail", "里改；「预览」按当前详情页模板渲染前台效果。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("pHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ t("pHintAttrs", "商品属性页定义属性组，同一个属性组可以被多个商品引用；商品分类与商品品牌页定义分类和品牌，商品可以挂多个分类（其中一个为主分类）并指定品牌；商品标签页定义标签，手工标签可手动挂载，自动标签按内置规则自动维护归属。") }}<br><br>{{ t("pHintVariants", "变体与评分属于单个商品，在商品的编辑页维护（点行的「编辑」进入）。评分是独立明细：平均值与条数由明细算出，改评分不改动商品字段；「没有评分」与「评分 0 分」是两回事。") }}<br><br>{{ t("pHintEdit", "多语言与商品基本字段在编辑页里改；「预览」按当前详情页模板渲染前台效果。") }}<br><br><a href="/admin/product-attributes?project={{selectedProject}}">{{ t("pAttrLink", "商品属性") }}</a> · <a href="/admin/product-categories?project={{selectedProject}}">{{ t("pCatLink", "商品分类") }}</a> · <a href="/admin/product-brands?project={{selectedProject}}">{{ t("pBrandLink", "商品品牌") }}</a> · <a href="/admin/product-tags?project={{selectedProject}}">{{ t("pTagLink", "商品标签") }}</a></span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
             {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/products">
-                <label class="sr-only" for="products-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <label class="sr-only" for="products-project">{{ .["t"]("uiFieldProj", "站点工程") }}</label>
                 <select class="form-select" id="products-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -38,78 +38,80 @@
             </form>
             {{end}}
             {{if canCreate}}
-<a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
+<a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("pNewSubmit", "新建商品") }}</a>
             {{end}}
         </div>
     </header>
 
     <section class="card list-card">
-        <h2 class="card-title">{{ .["t"]("admin.products.list.title", "商品列表") }}</h2>
+        <h2 class="card-title">{{ .["t"]("pListTitle", "商品列表") }}</h2>
 
         <div class="filter-bar">
             <form method="get" action="/admin/products" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
-                    <label for="products-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <label for="products-filter-keyword">{{ .["t"]("uiFieldKw", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="products-filter-keyword" name="keyword" value="{{fKeyword}}"
-                           placeholder="{{ .["t"]("admin.products.ph.keyword", "商品名称") }}" autocomplete="off">
+                           placeholder="{{ .["t"]("pKw", "商品名称") }}" autocomplete="off">
                 </div>
                 <div class="filter-field">
-                    <label for="products-filter-status">{{ .["t"]("admin.products.col.status", "状态") }}</label>
+                    <label for="products-filter-status">{{ .["t"]("pStatus", "状态") }}</label>
                     <select class="form-select" id="products-filter-status" name="status">
 
-                        <option value=""{{if fStatus == ""}} selected{{end}}>{{tr("admin.products.status.all", "全部状态")}}</option>
-                        <option value="draft"{{if fStatus == "draft"}} selected{{end}}>{{tr("admin.products.status.draft", "草稿")}}</option>
-                        <option value="published"{{if fStatus == "published"}} selected{{end}}>{{tr("admin.products.status.published", "已上架")}}</option>
-                        <option value="archived"{{if fStatus == "archived"}} selected{{end}}>{{tr("admin.products.status.archived", "已下架")}}</option>
+                        <option value=""{{if fStatus == ""}} selected{{end}}>{{tr("pStatusAll", "全部状态")}}</option>
+                        <option value="draft"{{if fStatus == "draft"}} selected{{end}}>{{tr("pStatusDraft", "草稿")}}</option>
+                        <option value="published"{{if fStatus == "published"}} selected{{end}}>{{tr("pStatusLive", "已上架")}}</option>
+                        <option value="archived"{{if fStatus == "archived"}} selected{{end}}>{{tr("pStatusArchived", "已下架")}}</option>
                     </select>
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.products.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.products.filter.reset", "重置") }}</a>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("pFltSubmit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/products?project={{selectedProject}}">{{ .["t"]("pFltReset", "重置") }}</a>
                 </div>
             </form>
         </div>
 
-        <form data-write="bulk" data-write-url="/api/product/bulk-delete" data-list-bulk data-write-reload
-              data-write-extra="projectId"
-              data-msg-none-selected="{{tr("admin.products.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
-              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              data-msg-refresh="{{tr("admin.common.write.refresh", "刷新列表")}}">
+        <form data-write hx-post="/api/product/bulk-delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-list-bulk data-write-reload
+              hx-confirm="{{tr("pBulkDelConfirm", "删除选中的商品及其全部变体？")}}"
+              data-msg-none-selected="{{tr("pBulkNoneSel", "没有勾选任何商品，列表未改动。")}}"
+              data-msg-too-many="{{tr("bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+              data-msg-failed="{{tr("uiInternalErr", "系统内部错误，请稍后重试")}}"
+              data-msg-refresh="{{tr("uiWriteReload", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint badge" role="status" hidden></p>
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <div class="form-hint" data-write-status role="status" hidden></div>
+            <div data-write-result></div>
 
             {{if canDelete || canUpdate}}{{if len(.Result.Items) > 0}}
-            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBarOpen(count=tr("uiBulkSel", "已选 {n} 项"))}}
                 {{if canDelete}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.products.bulkDeleteConfirm", "删除选中的商品及其全部变体？"), danger=true)}}
+                {{yield bulkBtn(label=tr("uiBulkDel", "批量删除"))}}
                 {{end}}
                 {{if canUpdate}}
 
-                <button type="button" class="btn btn-sm" data-drawer-open="#tpl-product-pricing" data-drawer-title="{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}">{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}</button>
+                <button type="button" class="btn btn-sm" data-drawer-open="#tpl-product-pricing" data-drawer-title="{{ .["t"]("prApplyTitle", "按规则改价") }}">{{ .["t"]("prApplyTitle", "按规则改价") }}</button>
                 {{end}}
             {{yield bulkBarClose()}}
             {{end}}{{end}}
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.list.title", "商品列表") }}">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("pListTitle", "商品列表") }}">
             <table class="data-table data-table-wide">
                 <thead>
                 <tr>
                     <th class="col-check">
-                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("uiBulkSelectAll", "全选") }}">
                     </th>
-                    <th>{{ .["t"]("admin.products.col.name", "商品") }}</th>
-                    <th>{{ .["t"]("admin.products.col.status", "状态") }}</th>
-                    <th>{{ .["t"]("admin.products.col.variants", "变体数") }}</th>
-                    <th>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</th>
-                    <th>{{ .["t"]("admin.products.col.stock", "库存") }}</th>
-                    <th>{{ .["t"]("admin.products.col.categories", "分类") }}</th>
-                    <th>{{ .["t"]("admin.products.col.brand", "品牌") }}</th>
-                    <th>{{ .["t"]("admin.products.tags.title", "标签") }}</th>
-                    <th>{{ .["t"]("admin.products.rating.label", "评分") }}</th>
-                    <th>{{ .["t"]("admin.products.rating.countHeader", "评分数") }}</th>
-                    <th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th>
+                    <th>{{ .["t"]("pNameCol", "商品") }}</th>
+                    <th>{{ .["t"]("pStatus", "状态") }}</th>
+                    <th>{{ .["t"]("pVars", "变体数") }}</th>
+                    <th>{{ .["t"]("pPriceRange", "价格区间") }}</th>
+                    <th>{{ .["t"]("pStock", "库存") }}</th>
+                    <th>{{ .["t"]("pCats", "分类") }}</th>
+                    <th>{{ .["t"]("pBrand", "品牌") }}</th>
+                    <th>{{ .["t"]("pTagsTitle", "标签") }}</th>
+                    <th>{{ .["t"]("pRating", "评分") }}</th>
+                    <th>{{ .["t"]("pRatingHeader", "评分数") }}</th>
+                    <th class="col-actions">{{ .["t"]("pActions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -119,17 +121,17 @@
                     <div class="empty-state">
                         {{if fKeyword != "" || fStatus != ""}}
 
-                        <p class="empty-title">{{ .["t"]("admin.products.list.emptyFilteredTitle", "没有符合条件的商品") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.products.list.emptyFiltered", "换个关键词或状态再试，也可以清掉筛选看全部商品。") }}</p>
+                        <p class="empty-title">{{ .["t"]("pNoMatchesTitle", "没有符合条件的商品") }}</p>
+                        <p class="empty-desc">{{ .["t"]("pListEmptyFlt", "换个关键词或状态再试，也可以清掉筛选看全部商品。") }}</p>
                         <div class="empty-actions">
-                            <a class="btn" href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.products.filter.reset", "重置") }}</a>
+                            <a class="btn" href="/admin/products?project={{selectedProject}}">{{ .["t"]("pFltReset", "重置") }}</a>
                         </div>
                         {{else}}
-                        <p class="empty-title">{{ .["t"]("admin.products.list.emptyTitle", "还没有商品") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.products.list.empty", "新建一个商品，系统会自动生成它的第一个变体。") }}</p>
+                        <p class="empty-title">{{ .["t"]("pListEmptyTitle", "还没有商品") }}</p>
+                        <p class="empty-desc">{{ .["t"]("pListEmpty", "新建一个商品，系统会自动生成它的第一个变体。") }}</p>
                         {{if canCreate}}
                         <div class="empty-actions">
-                <a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
+                <a class="btn btn-primary" href="/admin/products/new?project={{selectedProject}}">＋ {{ .["t"]("pNewSubmit", "新建商品") }}</a>
                         </div>
                         {{end}}
                         {{end}}
@@ -139,12 +141,12 @@
                 {{range _, p := .Result.Items}}
                 <tr>
                     <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                        <input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("uiBulkSelectRow", "选择该行") }}">
                     </td>
 
                     <td><a class="row-title-link" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}"><strong>{{p.Name}}</strong></a></td>
 
-                    <td>{{st := p.Status}}{{sl := st}}{{if st == "draft"}}{{sl = tr("admin.products.status.draft", "草稿")}}{{else if st == "published"}}{{sl = tr("admin.products.status.published", "已上架")}}{{else if st == "archived"}}{{sl = tr("admin.products.status.archived", "已下架")}}{{else}}{{sl = tr("admin.products.status.all", "全部状态")}}{{end}}<span class="badge">{{sl}}</span></td>
+                    <td>{{include "status_label.html" map("status", p.Status, "t", tr)}}</td>
                     <td>{{p.VariantCount}}</td>
                     <td>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</td>
 
@@ -154,19 +156,19 @@
                             {* 库存读取失败（PRD-017）：三态与分仓明细在这次请求里都没有值，照旧按 none 渲染
                                会显示成「未入库」—— 那是把它当成事实在说。所以这里只交代故障本身，且不展开分仓：
                                那一屏列出的每个仓都是伪「未入库」。列表本身不因这个附属读取失败而整体失败。 *}
-                            <summary aria-label="{{tr("admin.products.stock.unknown", "库存读取失败")}}">
-                                {{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.products.stock.unknown", "库存读取失败"))}}
+                            <summary aria-label="{{tr("pStockUnknown", "库存读取失败")}}">
+                                {{include "../partials/badge.html" map("tone", "warning", "label", tr("pStockUnknown", "库存读取失败"))}}
                             </summary>
                             {{else}}
-                            <summary aria-label="{{tr("admin.products.stock.expand", "展开分仓库存")}}">
-                            {{if p.StockState == "infinite"}}{{tr("admin.products.stock.infinite", "∞ 无限")}}{{else if p.StockState == "tracked"}}{{p.StockTotal}}{{else}}{{tr("admin.products.stock.none", "未入库")}}{{end}}
+                            <summary aria-label="{{tr("pStockExpand", "展开分仓库存")}}">
+                            {{if p.StockState == "infinite"}}{{tr("pStockInf", "∞ 无限")}}{{else if p.StockState == "tracked"}}{{p.StockTotal}}{{else}}{{tr("pStockNone", "未入库")}}{{end}}
                             </summary>
                             <ul class="stock-rows">
                             {{range _, w := warehouseOptions}}
                                 {{state := "none"}}{{quantity := 0}}
                                 {{range _, stock := p.StockWarehouses}}{{if stock.WarehouseID == w.ID}}{{state = stock.State}}{{quantity = stock.Quantity}}{{end}}{{end}}
                                 <li><span class="stock-wh">{{w.Name}}（{{w.Code}}）</span>
-                                {{if state == "infinite"}}<span>{{tr("admin.products.stock.infiniteShort", "∞")}}</span>{{else if state == "tracked"}}<span>{{quantity}}</span>{{else}}<span class="text-mute">{{tr("admin.products.stock.none", "未入库")}}</span>{{end}}</li>
+                                {{if state == "infinite"}}<span>{{tr("pStockInfShort", "∞")}}</span>{{else if state == "tracked"}}<span>{{quantity}}</span>{{else}}<span class="text-mute">{{tr("pStockNone", "未入库")}}</span>{{end}}</li>
                             {{end}}
                             </ul>
                             {{end}}
@@ -178,14 +180,14 @@
                     <td>{{if categoryName != ""}}{{categoryName}}{{if categoryCount > 1}} <span class="badge badge-mute">+{{categoryCount - 1}}</span>{{end}}{{else}}—{{end}}</td>
                     {{brandName := ""}}{{range _, b := .Brands}}{{if b.ID == p.BrandID}}{{brandName = b.Name}}{{end}}{{end}}
                     <td>{{if brandName != ""}}{{brandName}}{{else}}—{{end}}</td>
-                    <td>{{if len(p.TagIDs) > 3}}{{tn("admin.products.list.tagCount", "{n} 个", map("n", len(p.TagIDs)))}}{{else}}{{tagCount := 0}}{{range _, t := .Tags}}{{range _, id := p.TagIDs}}{{if t.ID == id}}{{if tagCount > 0}}、{{end}}{{t.Name}}{{tagCount = tagCount + 1}}{{end}}{{end}}{{end}}{{if tagCount == 0}}—{{end}}{{end}}</td>
+                    <td>{{if len(p.TagIDs) > 3}}{{tn("pListTagCount", "{n} 个", map("n", len(p.TagIDs)))}}{{else}}{{tagCount := 0}}{{range _, tag := .Tags}}{{range _, id := p.TagIDs}}{{if tag.ID == id}}{{if tagCount > 0}}、{{end}}{{tag.Name}}{{tagCount = tagCount + 1}}{{end}}{{end}}{{end}}{{if tagCount == 0}}—{{end}}{{end}}</td>
                     <td>{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{else}}—{{end}}</td>
                     <td>{{p.Rating.RatingCount}}</td>
 
                     <td class="col-actions">
-                        <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.edit", "编辑") }}</a>
-                        <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("admin.products.row.preview", "预览") }}</button>
-                        <button data-requires-js hidden type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("pRowEdit", "编辑") }}</a>
+                        <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("pRowPrev", "预览") }}</button>
+                        <button data-requires-js hidden type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("uiActDel", "删除") }}</button>
                     </td>
                 </tr>
                 {{end}}
@@ -197,41 +199,42 @@
         {{include "catalog_pagination.html" .}}
     </section>
 
-    <div data-write-host>
-    <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, p := .Result.Items}}
-    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("uiInternalErr", "系统内部错误，请稍后重试") }}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-    <form data-write="delete" data-write-url="/api/product/delete" id="product-del-{{p.ID}}" class="hidden-form" data-write-reload
-          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
-          data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
-
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="id" value="{{p.ID}}">
-    </form>
-    {{end}}
+    <div data-write-host>
+        <div class="form-hint" data-write-status role="status" hidden></div>
+        <form data-write hx-post="/api/product/delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="[form='product-del-{{p.ID}}']:not(:disabled)"
+              id="product-del-{{p.ID}}" class="hidden-form" data-write-reload
+              hx-confirm="{{tr("pRowDelConfirm", "删除该商品及其全部变体？")}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{p.ID}}">
+            <div data-write-result></div>
+        </form>
     </div>
+    {{end}}
 
     {{if canUpdate}}
     <template id="tpl-product-pricing">
 
-        <form data-write="bulk" data-write-url="/api/product/bulk-pricing" class="form-stack" data-write-reload
-              data-write-ids-scope="[data-list-bulk]">
+        <form data-write hx-post="/api/product/bulk-pricing" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload data-write-builder="product-bulk-pricing" class="form-stack">
+            <div data-write-result></div>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
 
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
-            <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>
+            <p class="hint">{{ .["t"]("pBulkScopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
+            <p class="hint">{{ .["t"]("prApplyConfirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ t("pPriceHint", "想先看每个 SKU 的「原价 → 新价」，去定价工具页试算（不落库）。") }} <a href="/admin/product-pricing?project={{selectedProject}}">{{ t("pPricingLink", "定价工具") }}</a></p>
             {{if isset(.Rules)}}{{include "pricing_rule_fields.html"}}{{end}}
             <div class="form-inline">
-                <input type="text" class="form-input" name="note" placeholder="{{ .["t"]("admin.product_pricing.apply.phNote", "备注（写进留痕台账，如「国庆前提价」）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="note" placeholder="{{ .["t"]("prApplyNote", "备注（写进留痕台账，如「国庆前提价」）") }}" autocomplete="off">
             </div>
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("uiActCancel", "取消") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("prApplySubmit", "应用调价（落库）") }}</button>
             </div>
         </form>
     </template>

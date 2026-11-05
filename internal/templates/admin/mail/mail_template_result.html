@@ -1,0 +1,5 @@
+{* 邮件模板批量删除结论：数量由具名参数承载，句子只在 Jet 里。 *}
+{{if .None}}{{t("mailTplNoneSel", "没有勾选任何邮件模板，列表未改动。")}}
+{{else if .Done == 0}}{{tn("mailTplDelNone", "没有模板被删除：{skipped} 个不存在或已被服务端拒绝。", map("skipped", .Skipped))}}
+{{else if .Skipped == 0}}{{tn("mailTplDelDone", "已删除 {count} 个邮件模板。", map("count", .Done))}}
+{{else}}{{tn("mailTplDelPart", "已删除 {done} 个邮件模板，另有 {skipped} 个被跳过（不存在或已被服务端拒绝）。", map("done", .Done, "skipped", .Skipped))}}{{end}}

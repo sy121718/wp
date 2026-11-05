@@ -1,176 +1,107 @@
 package shell
 
 import (
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go_wp/pkg/safepath"
-
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/render"
+
+	"go_wp/internal/adminui"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	"go_wp/pkg/view"
 )
 
-type captureRenderer struct {
-	called bool
-	name   string
-	data   any
-}
-
-func (r *captureRenderer) Instance(name string, data any) render.Render {
-	r.called = true
-	r.name = name
-	r.data = data
-	return discardRender{}
-}
-
-type discardRender struct{}
-
-func (discardRender) Render(w http.ResponseWriter) error     { return nil }
-func (discardRender) WriteContentType(_ http.ResponseWriter) {}
-
-func runJump(t *testing.T, headers map[string]string, j Jump) (*httptest.ResponseRecorder, *captureRenderer) {
+func jumpEngine(t *testing.T, j Jump) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	cap := &captureRenderer{}
 	engine := gin.New()
-	engine.HTMLRender = cap
-	engine.POST("/probe", func(c *gin.Context) { RenderJump(c, j) })
-
-	req := httptest.NewRequest(http.MethodPost, "/probe", nil)
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-	return rec, cap
+	engine.HTMLRender = templates.NewJetHTMLRender("../templates", true)
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/probe", view.HTMLPage, func(c *gin.Context) { RenderJump(c, j) })
+	return engine
 }
 
-func jumpData(t *testing.T, cap *captureRenderer) map[string]any {
+func runJump(t *testing.T, j Jump) *httptest.ResponseRecorder {
 	t.Helper()
-	m, ok := cap.data.(gin.H)
-	if !ok {
-		t.Fatalf("渲染数据不是 gin.H：%T", cap.data)
-	}
-	jv, ok := m["Jump"].(adminui.JumpView)
-	if !ok {
-		t.Fatalf("Jump 不是 adminui.JumpView：%T", m["Jump"])
-	}
-	return map[string]any{
-		"title":    m["title"],
-		"OK":       jv.OK,
-		"Msg":      jv.Msg,
-		"Back":     jv.Back,
-		"BackText": jv.BackText,
-		"Seconds":  jv.Seconds,
-	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/probe", nil)
+	jumpEngine(t, j).ServeHTTP(rec, req)
+	return rec
 }
 
-func TestRenderJumpSuccess(t *testing.T) {
-	rec, cap := runJump(t, nil, Jump{
-		OK: true, Msg: "已删除 2 张优惠码",
-		Back: "/admin/coupons?project=p1", BackText: "返回优惠码列表", Seconds: 1,
-	})
+func TestRenderJumpSuccessUsesSharedFeedback(t *testing.T) {
+	rec := runJump(t, Jump{OK: true, Msg: "已删除 2 张优惠码", Back: "/admin/coupons?project=p1", Seconds: 1})
 
-	if !cap.called {
-		t.Fatal("未调用渲染")
-	}
-	if cap.name != "admin/jump.html" {
-		t.Fatalf("渲染的模板不对：%s", cap.name)
-	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("状态码期望 200，实际 %d", rec.Code)
 	}
-	got := jumpData(t, cap)
-	if got["OK"] != true || got["Msg"] != "已删除 2 张优惠码" {
-		t.Fatalf("OK/Msg 不对：%v", got)
+	body := rec.Body.String()
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf("成功必须是共享提示组件：%s", body)
 	}
-	if got["Back"] != "/admin/coupons?project=p1" || got["BackText"] != "返回优惠码列表" || got["Seconds"] != 1 {
-		t.Fatalf("回跳/秒数不对：%v", got)
+	if !strings.Contains(body, "已删除 2 张优惠码") {
+		t.Fatalf("成功消息应原样出现：%s", body)
 	}
-
-	if got["title"] != "已删除 2 张优惠码" {
-		t.Fatalf("title 期望用正文，实际 %v", got["title"])
+	if strings.Contains(body, "meta http-equiv") || strings.Contains(body, "jump-page") {
+		t.Fatalf("不得再输出整页跳转提示或 meta refresh：%s", body)
 	}
-}
-
-func TestRenderJumpHTMXUsesRedirect(t *testing.T) {
-	rec, cap := runJump(t, map[string]string{"HX-Request": "true"},
-		Jump{OK: true, Msg: "已删除", Back: "/admin/coupons?project=p1", Seconds: 1})
-
-	if cap.called {
-		t.Fatal("htmx 档不应渲染整页模板")
+	if got := rec.Header().Get("HX-Redirect"); got != "" {
+		t.Fatalf("成功不得使用后端导航头，实际 %q", got)
 	}
-	if got := rec.Header().Get("HX-Redirect"); got != "/admin/coupons?project=p1" {
-		t.Fatalf("HX-Redirect 期望回跳地址，实际 %q", got)
-	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("状态码期望 200，实际 %d", rec.Code)
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("成功提示不能缓存，Cache-Control=%q", got)
 	}
 }
 
-func TestRenderJumpRejectsUnsafeBack(t *testing.T) {
-	for _, bad := range []string{"", "//evil.example.com/x", "https://evil.example.com", "admin/x"} {
-		_, cap := runJump(t, nil, Jump{OK: true, Msg: "已删除", Back: bad})
-		got := jumpData(t, cap)
-		if got["Back"] != adminHomePath {
-			t.Fatalf("回跳地址 %q 应当收敛成 %q，实际 %v", bad, adminHomePath, got["Back"])
-		}
+func TestRenderJumpSuccessDefaultsToOperationSuccess(t *testing.T) {
+	rec := runJump(t, Jump{OK: true})
+	if !strings.Contains(rec.Body.String(), "操作成功") {
+		t.Fatalf("无消息时默认“操作成功”，实际：%s", rec.Body.String())
 	}
 }
 
-func TestRenderJumpKeepsLongSameOriginBack(t *testing.T) {
-	longBack := "/admin/coupons?filter=" + strings.Repeat("a", safepath.MaxReturnPathBytes+50)
-	if len(longBack) <= safepath.MaxReturnPathBytes {
-		t.Fatalf("用例构造有误：%d 字节并未超过 %d", len(longBack), safepath.MaxReturnPathBytes)
+func TestRenderJumpFailureUsesSharedFailureOutlet(t *testing.T) {
+	rec := runJump(t, Jump{Msg: "删除失败：存在关联数据", Back: "/admin"})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("业务失败必须给真实 4xx，实际 %d", rec.Code)
 	}
-	longUnsafe := "//evil.example.com/x?q=" + strings.Repeat("a", safepath.MaxReturnPathBytes+50)
-
-	t.Run("整页 HTML 档原样保留", func(t *testing.T) {
-		_, cap := runJump(t, nil, Jump{OK: true, Msg: "已保存", Back: longBack})
-		if got := jumpData(t, cap); got["Back"] != longBack {
-			t.Fatalf("超 512 字节的同源回跳地址应原样保留，实际 %v（长度 %d）", got["Back"], len(longBack))
-		}
-	})
-
-	t.Run("htmx 档 HX-Redirect 原样保留", func(t *testing.T) {
-		rec, cap := runJump(t, map[string]string{"HX-Request": "true"},
-			Jump{OK: true, Msg: "已保存", Back: longBack})
-		if cap.called {
-			t.Fatal("htmx 档不应渲染整页模板")
-		}
-		if got := rec.Header().Get("HX-Redirect"); got != longBack {
-			t.Fatalf("HX-Redirect 应原样保留超长同源地址，实际 %q（长度 %d）", got, len(got))
-		}
-	})
-
-	t.Run("长但非法的路径仍被拒绝", func(t *testing.T) {
-		_, cap := runJump(t, nil, Jump{OK: true, Msg: "已保存", Back: longUnsafe})
-		if got := jumpData(t, cap); got["Back"] != adminHomePath {
-			t.Fatalf("协议相对跳转即使很长也必须回 %q，实际 %v", adminHomePath, got["Back"])
-		}
-		rec, _ := runJump(t, map[string]string{"HX-Request": "true"},
-			Jump{OK: true, Msg: "已保存", Back: longUnsafe})
-		if got := rec.Header().Get("HX-Redirect"); got != adminHomePath {
-			t.Fatalf("htmx 档的 HX-Redirect 也应回 %q，实际 %q", adminHomePath, got)
-		}
-	})
-}
-
-func TestRenderJumpEmptyMsgFallsBack(t *testing.T) {
-	_, cap := runJump(t, nil, Jump{OK: false, Msg: "   ", Back: "/admin/coupons"})
-	got := jumpData(t, cap)
-	msg, _ := got["Msg"].(string)
-	if msg == "" {
-		t.Fatal("空文案应回落归口文案")
+	body := rec.Body.String()
+	if strings.Contains(body, "jump-page") || !strings.Contains(body, "<!DOCTYPE html>") {
+		t.Fatalf("失败必须走共享失败出口的 HTML 错误页：%s", body)
+	}
+	if strings.Contains(body, "jump-page") {
+		t.Fatalf("失败不得走整页跳转提示：%s", body)
+	}
+	if got := rec.Header().Get("HX-Redirect"); got != "" {
+		t.Fatalf("失败不得使用后端导航头，实际 %q", got)
 	}
 }
 
-func TestRenderJumpNegativeSecondsClamped(t *testing.T) {
-	_, cap := runJump(t, nil, Jump{OK: true, Msg: "已保存", Back: "/admin/coupons", Seconds: -3})
-	if got := jumpData(t, cap); got["Seconds"] != 0 {
-		t.Fatalf("负数秒数应收敛成 0，实际 %v", got["Seconds"])
+func TestRenderJumpFailureWithoutMessageIsInternal(t *testing.T) {
+	rec := runJump(t, Jump{})
+	if rec.Code < 400 {
+		t.Fatalf("无消息失败不能是成功状态，实际 %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "jump-page") {
+		t.Fatalf("不得回落到整页跳转提示")
+	}
+}
+
+func TestSafeBackKeepsSameOriginAndRejectsOthers(t *testing.T) {
+	c := &gin.Context{}
+	if got := SafeBack(c, "/admin/pages?a=1", "/admin"); got != "/admin/pages?a=1" {
+		t.Fatalf("同源相对路径应保留，实际 %q", got)
+	}
+	for _, bad := range []string{"https://evil.example/x", "//evil.example/x", "javascript:alert(1)", ""} {
+		if got := SafeBack(c, bad, "/admin"); got != "/admin" {
+			t.Fatalf("不安全回跳 %q 应回落 /admin，实际 %q", bad, got)
+		}
 	}
 }

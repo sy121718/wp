@@ -4,195 +4,233 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-func TestRoleMenuSaveContractUsesAdminOwner(t *testing.T) {
-	wd, err := os.Getwd()
+func writeSources(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, source := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// TestRoutesUseMethodPathAndRealHandler 不再按 /api 前缀或资源名猜处理器。
+func TestRoutesUseMethodPathAndRealHandler(t *testing.T) {
+	raw := `DECLARED POST /api/ignored permission
+HANDLER GET /admin/items example.Read
+HANDLER POST /admin/items example.(*Handle).Save-fm
+HANDLER DELETE /admin/items example.(*Handle).Delete-fm
+HANDLER POST /analytics/collect example.Collect
+`
+	routes, err := parseRoutes(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir("../.."); err != nil {
-		t.Fatal(err)
+	if len(routes) != 3 || routes[0].Method != "DELETE" || routes[1].Path != "/admin/items" || routes[2].Path != "/analytics/collect" {
+		t.Fatalf("方法、非 API 路径或处理器丢失：%+v", routes)
 	}
-	t.Cleanup(func() {
-		if err := os.Chdir(wd); err != nil {
-			t.Fatal(err)
+	for _, invalid := range []string{"DECLARED POST /api/ignored permission", "HANDLER POST /x", raw + "HANDLER POST /admin/items other.Handler\n"} {
+		if _, err := parseRoutes(invalid); err == nil {
+			t.Fatalf("缺失、损坏或重复处理器表必须报错：%s", invalid)
 		}
+	}
+}
+
+func fixtureIndex(t *testing.T) sourceIndex {
+	t.Helper()
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package othername\ntype Request struct { ID string `json:\"jsonId\" form:\"id\" binding:\"required\"`; Amount string `json:\"amount\" form:\"amountYuan\"`; HiddenJSON string `json:\"-\" form:\"visibleForm\"`; HiddenForm string `json:\"visibleJSON\" form:\"-\"`; DefaultName string; private string }\n",
+		"http/handle.go": `package examplehttp
+import (
+ request "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+type Other struct{}
+type Local struct { Value string }
+func (h *Handle) Save(c *gin.Context) { var req request.Request; c.ShouldBindWith(&req, wire.FormPost) }
+func (h *Handle) JSON(c *gin.Context) { req := &request.Request{}; c.ShouldBindJSON(req) }
+func (h *Handle) Multipart(c *gin.Context) { req := request.Request{}; c.ShouldBindWith(&req, wire.FormMultipart) }
+func (h *Other) Save(c *gin.Context) { var req Local; c.ShouldBindJSON(&req) }
+func (h *Handle) Auto(c *gin.Context) { var req request.Request; c.ShouldBind(&req) }
+func (h *Handle) Query(c *gin.Context) { var req request.Request; c.ShouldBindQuery(&req) }
+func (h *Handle) URI(c *gin.Context) { var req request.Request; c.ShouldBindUri(&req) }
+func (h *Handle) Unknown(c *gin.Context) { var req request.Request; c.ShouldBindWith(&req, wire.Form) }
+func (h *Handle) Mixed(c *gin.Context) { var a request.Request; var b Local; c.ShouldBindJSON(&a); c.ShouldBindWith(&b, wire.FormPost) }
+func (h *Handle) Callback(c *gin.Context) { consume(func() { var req request.Request; c.ShouldBindJSON(&req) }) }
+func Direct(c *gin.Context) { var req Local; c.ShouldBindJSON(&req) }
+`,
 	})
-	bindings, err := scanHandlerBindings()
+	index, err := scanSources(root, "example/internal")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := "/api/role/menu/save"
-	if got := matchHandler(path, moduleOfRoutePath(path), bindings); got != "admin:RoleMenuSave" {
-		t.Fatalf("角色菜单写入口归属错误: %q", got)
-	}
-	if dto := bindings["admin:RoleMenuSave"]; dto != "admindto.RoleMenuSaveReq" {
-		t.Fatalf("未使用权威绑定DTO: %s", dto)
-	}
-	if got := matchHandler(path, "role", map[string]string{"product:RoleMenuSave": "productdto.CreateReq"}); got != "" {
-		t.Fatalf("不得跨模块匹配同名处理器: %s", got)
-	}
+	return index
 }
 
-func TestCustomerBulkContractsUseUserDTOsThroughGenericBinder(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+// TestExplicitBinderSelectsWireTags 同一 DTO 的字段表必须由每个端点的真实 binder 决定。
+func TestExplicitBinderSelectsWireTags(t *testing.T) {
+	index := fixtureIndex(t)
+	routes := []route{
+		{Method: "POST", Path: "/same", Handler: "example/internal/http.(*Handle).Save-fm"},
+		{Method: "PUT", Path: "/same", Handler: "example/internal/http.(*Handle).JSON-fm"},
+		{Method: "POST", Path: "/upload", Handler: "example/internal/http.(*Handle).Multipart-fm"},
 	}
-	if err := os.Chdir("../.."); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	bindings, err := scanHandlerBindings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ path, handler, dto string }{
-		{"/api/customer/bulk-status", "user:BulkCustomerStatus", "userdto.CustomerBulkStatusReq"},
-		{"/api/customer/bulk-unlock", "user:BulkCustomerUnlock", "userdto.CustomerBulkUnlockReq"},
+	got := buildContracts(routes, index)
+	formFields := []fieldSchema{{Name: "id", Required: true}, {Name: "amountYuan"}, {Name: "visibleForm"}, {Name: "DefaultName"}}
+	jsonFields := []fieldSchema{{Name: "jsonId", Required: true}, {Name: "amount"}, {Name: "visibleJSON"}, {Name: "DefaultName"}}
+	for _, tc := range []struct {
+		key      string
+		protocol string
+		fields   []fieldSchema
+	}{
+		{"POST /same", "form", formFields}, {"PUT /same", "json", jsonFields}, {"POST /upload", "multipart", formFields},
 	} {
-		if got := matchHandler(tc.path, moduleOfRoutePath(tc.path), bindings); got != tc.handler || bindings[got] != tc.dto {
-			t.Fatalf("%s 未追踪到真实请求形状：handler=%q dto=%q", tc.path, got, bindings[got])
+		ep := got[tc.key]
+		if ep.Reason != "" || ep.Protocol != tc.protocol || !reflect.DeepEqual(ep.Fields, tc.fields) || ep.DTO != "example/internal/dto.Request" {
+			t.Fatalf("%s 请求契约错误：%+v", tc.key, ep)
 		}
 	}
 }
 
-func TestDTOFieldsExpandEmbeddedRequestsAcrossFiles(t *testing.T) {
-	root := t.TempDir()
-	files := map[string]string{
-		"a.go": "package testdto\ntype ApplyReq struct { *RuleReq; Note string `form:\"note\" binding:\"required\"` }\ntype PreviewReq struct { RuleReq }\n",
-		"z.go": "package testdto\ntype RuleReq struct { ProjectID string `form:\"projectId\" binding:\"required\"`; Items []Item `json:\"items\"`; Secret string `json:\"-\" form:\"-\"` }; type Item struct { ID string `form:\"id\"` }\n",
-	}
-	for name, data := range files {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(data), 0600); err != nil {
-			t.Fatal(err)
+func TestRealReceiverIdentityCannotBeReplacedBySameMethodName(t *testing.T) {
+	index := fixtureIndex(t)
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/unexpected", Handler: "example/internal/http.(*Other).Save-fm"},
+		{Method: "POST", Path: "/direct", Handler: "example/internal/http.Direct"},
+	}, index)
+	for _, key := range []string{"POST /unexpected", "POST /direct"} {
+		if ep := got[key]; ep.Protocol != "json" || ep.DTO != "example/internal/http.Local" || len(ep.Fields) != 1 || ep.Fields[0].Name != "Value" {
+			t.Fatalf("同名方法不得错配，直接函数也必须识别：%+v", ep)
 		}
 	}
-	got, err := scanDTOsFrom(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := dtoInfo{Fields: []fieldSchema{{Name: "projectId", Required: true}, {Name: "items"}}, Tables: []tableSchema{{Name: "items", Shape: "slice-struct"}}}
-	if !reflect.DeepEqual(got["testdto.PreviewReq"], base) {
-		t.Fatalf("匿名字段丢失：%+v", got["testdto.PreviewReq"])
-	}
-	base.Fields = append(base.Fields, fieldSchema{Name: "note", Required: true})
-	base.Fields[0].Required = false
-	if !reflect.DeepEqual(got["testdto.ApplyReq"], base) {
-		t.Fatalf("指针嵌入或直属字段丢失：%+v", got["testdto.ApplyReq"])
+}
+
+func TestUnknownInputsRemainVisibleInsteadOfGuessing(t *testing.T) {
+	index := fixtureIndex(t)
+	for _, name := range []string{"Auto", "Query", "URI", "Unknown", "Mixed", "Callback", "Missing", "Save.func1"} {
+		t.Run(name, func(t *testing.T) {
+			r := route{Method: "POST", Path: "/x", Handler: "example/internal/http.(*Handle)." + name + "-fm"}
+			ep := buildContracts([]route{r}, index)["POST /x"]
+			if ep.Protocol != "unknown" || ep.Reason == "" || len(ep.Fields) != 0 {
+				t.Fatalf("无法确认的请求必须明确未检查：%+v", ep)
+			}
+		})
 	}
 }
 
-func TestDTORequiredDistinguishesConditionsElementsAndOptionalParents(t *testing.T) {
-	root := t.TempDir()
-	data := "package testdto\ntype Child struct { Name string `form:\"name\" binding:\"required\"` }; type Optional struct { Child `binding:\"omitempty\"` }; type Forced struct { *Child `binding:\"required\"` }; type Fields struct { Key string `form:\"key\" binding:\"required_with=Version\"`; Version int `form:\"version\" binding:\"required_with=Key,omitempty,min=1\"`; OptionalIDs []string `form:\"optionalIds\" binding:\"dive,required\"`; IDs []string `form:\"ids\" binding:\"required,dive,required\"` }\n"
-	if err := os.WriteFile(filepath.Join(root, "dto.go"), []byte(data), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := scanDTOsFrom(root)
+func TestEmbeddedDTOFieldsAndRequiredSemantics(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"a.go": "package testdto\ntype Apply struct { *Rule; Note string `json:\"note\" form:\"note\" binding:\"required\"` }; type Forced struct { *Rule `binding:\"required\"` }; type Named struct { Rule `json:\"nested\" form:\"ignoredOnEmbedded\"` }\n",
+		"z.go": "package testdto\ntype Rule struct { Project string `json:\"project\" form:\"projectId\" binding:\"required\"`; IDs []string `json:\"ids\" form:\"ids\" binding:\"dive,required\"`; Conditional int `json:\"conditional\" form:\"conditional\" binding:\"required_with=Project\"`; Secret string `json:\"-\" form:\"-\"` }\n",
+	})
+	index, err := scanSources(root, "example/dto")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []fieldSchema{{Name: "key"}, {Name: "version"}, {Name: "optionalIds"}, {Name: "ids", Required: true}}
-	if !reflect.DeepEqual(got["testdto.Fields"].Fields, want) || got["testdto.Optional"].Fields[0].Required || !got["testdto.Forced"].Fields[0].Required {
-		t.Fatalf("条件、元素与父级可选性不应变成无条件必填：%+v", got)
-	}
-}
-
-func TestDTOFieldsKeepNamedEmbeddedContainer(t *testing.T) {
-	root := t.TempDir()
-	data := "package testdto\ntype Container struct { Nested `json:\"nested\"` }; type Nested struct { ID string `form:\"id\"` }\n"
-	if err := os.WriteFile(filepath.Join(root, "dto.go"), []byte(data), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := scanDTOsFrom(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := dtoInfo{Fields: []fieldSchema{{Name: "nested"}}, Tables: []tableSchema{{Name: "nested", Shape: "struct"}}}
-	if !reflect.DeepEqual(got["testdto.Container"], want) {
-		t.Fatalf("具名嵌入应保持嵌套：%+v", got["testdto.Container"])
-	}
-}
-
-func TestDTOFieldsKeepJSONContainersHandledByFormBinder(t *testing.T) {
-	root := t.TempDir()
-	data := "package testdto\ntype Params struct { RuleParams string `json:\"ruleParams\" form:\"-\"`; OperatorID string `json:\"-\" form:\"-\"`; Amount string `json:\"-\" form:\"amount\"` }\n"
-	if err := os.WriteFile(filepath.Join(root, "dto.go"), []byte(data), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := scanDTOsFrom(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := dtoInfo{Fields: []fieldSchema{{Name: "ruleParams"}, {Name: "amount"}}}
-	if !reflect.DeepEqual(got["testdto.Params"], want) {
-		t.Fatalf("双入口字段语义发生变化：%+v", got["testdto.Params"])
-	}
-}
-
-func TestShipmentCreateResolvesToRealHandlerThroughAlias(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir("../.."); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	bindings, err := scanHandlerBindings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := "/api/order/shipment/create"
-
-	for _, camel := range []string{"CreateShipment", "Create"} {
-		if _, ok := bindings["order:"+camel]; ok {
-			t.Fatalf("handler %s 已存在，别名 %s 应删除（常规规则可覆盖）", camel, path)
+	for _, protocol := range []string{"json", "form", "multipart"} {
+		fields, err := dtoFields("example/dto.Apply", protocol, index.Types, map[string]bool{})
+		if err != nil || len(fields) != 4 || fields[0].Required || fields[1].Required || fields[2].Required || !fields[3].Required {
+			t.Fatalf("指针可选、条件或元素必填处理错误：%+v err=%v", fields, err)
+		}
+		fields, err = dtoFields("example/dto.Forced", protocol, index.Types, map[string]bool{})
+		if err != nil || !fields[0].Required {
+			t.Fatalf("必填嵌入不得丢失：%+v err=%v", fields, err)
+		}
+		fields, err = dtoFields("example/dto.Named", protocol, index.Types, map[string]bool{})
+		if err != nil || (protocol == "json" && (len(fields) != 1 || fields[0].Name != "nested")) || (protocol != "json" && (len(fields) != 3 || fields[0].Name != "projectId")) {
+			t.Fatalf("具名 JSON 嵌入与 Gin form 展开不应混淆：%+v err=%v", fields, err)
 		}
 	}
-	got := matchHandler(path, moduleOfRoutePath(path), bindings)
-	if got != "order:ShipOrder" {
-		t.Fatalf("%s 未指向真实 handler: %q", path, got)
-	}
-	if dto := bindings[got]; dto != "orderdto.ShipOrderReq" {
-		t.Fatalf("别名未使用权威绑定 DTO: %s", dto)
+}
+
+func TestMissingDTOCannotProduceAnEmptyVerifiedContract(t *testing.T) {
+	index := fixtureIndex(t)
+	delete(index.Types, "example/internal/dto.Request")
+	ep := buildContracts([]route{{Method: "POST", Path: "/x", Handler: "example/internal/http.(*Handle).Save-fm"}}, index)["POST /x"]
+	if ep.Protocol != "unknown" || !strings.Contains(ep.Reason, "请求类型缺失") {
+		t.Fatalf("缺失类型不能当作无字段请求：%+v", ep)
 	}
 }
 
-func TestAliasRejectedWhenModuleScopeOrBindingDiffers(t *testing.T) {
-	path := "/api/order/shipment/create"
-
-	const aliasKey = "order:ShipOrder"
-
-	if got := matchHandler(path, "order", map[string]string{
-		"order:CreateShipment": "orderdto.ShipmentCreateReq",
-		"order:ShipOrder":      "",
-	}); got == aliasKey {
-		t.Fatalf("别名不得指向未扫到的 handler: %q", got)
+func TestProductionI18nContractUsesNativeFormPost(t *testing.T) {
+	t.Chdir("../..")
+	index, err := scanSources("internal", "go_wp/internal")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	if got := matchHandler(path, "product", map[string]string{"product:ShipOrder": "productdto.ShipOrderReq"}); got == aliasKey {
-		t.Fatalf("别名不得跨模块生效: %q", got)
-	}
-
-	if got := matchHandler(path, "order", map[string]string{"order:ShipOrder": "productdto.ShipOrderReq"}); got == aliasKey {
-		t.Fatalf("别名不得绑定他模块 DTO: %q", got)
-	}
-
-	if got := matchHandler(path, "order", map[string]string{"order:ShipOrder": "orderdto.ShipOrderReq"}); got != aliasKey {
-		t.Fatalf("合法别名应命中: %q", got)
+	r := route{Method: "POST", Path: "/api/i18n/save", Handler: "go_wp/internal/module/admin/inbound/http.(*adminI18nEntryHandle).I18nEntryWrite-fm"}
+	ep := buildContracts([]route{r}, index)["POST /api/i18n/save"]
+	want := []fieldSchema{{Name: "action", Required: true}, {Name: "key"}, {Name: "lang"}, {Name: "value"}, {Name: "category"}, {Name: "remark"}, {Name: "ids"}}
+	if ep.Protocol != "form" || ep.Reason != "" || !reflect.DeepEqual(ep.Fields, want) {
+		t.Fatalf("生产词条表单契约错误：%+v", ep)
 	}
 }
 
-func TestProductReadCalculationsMatchExactHandlers(t *testing.T) {
-	bindings := map[string]string{"product:SeoScore": "productdto.ScorePanelReq", "product:CategorySeoScore": "productdto.ScorePanelReq", "product:BrandSeoScore": "productdto.ScorePanelReq", "product:PreviewVariant": "productdto.VariantPreviewFormReq"}
-	for path, want := range map[string]string{"/api/product/seo-score": "product:SeoScore", "/api/product/category/seo-score": "product:CategorySeoScore", "/api/product/brand/seo-score": "product:BrandSeoScore", "/api/product/variant/preview": "product:PreviewVariant"} {
-		if got := matchHandler(path, "product", bindings); got != want {
-			t.Fatalf("%s: got %s, want %s", path, got, want)
+// TestBindingRequiresGinContextAndLexicalRequest 不把同名方法或内层遮蔽变量冒充真实请求。
+func TestBindingRequiresGinContextAndLexicalRequest(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"handle.go": `package handler
+import "github.com/gin-gonic/gin"
+type Outer struct { ID string }
+type Inner struct { Other string }
+type Fake struct{}
+func (f *Fake) ShouldBindJSON(v any) {}
+func Shadow(c *gin.Context) { var req Outer; { var req Inner; consume(req) }; c.ShouldBindJSON(&req) }
+func Initializer(c *gin.Context) { var req = Outer{}; c.ShouldBindJSON(&req) }
+func NotGin(c *Fake) { var req Outer; c.ShouldBindJSON(&req) }
+func ContextShadow(c *gin.Context) { { c := &Fake{}; var req Outer; c.ShouldBindJSON(&req) } }
+`,
+	})
+	index, err := scanSources(root, "example/handler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Shadow", "Initializer", "NotGin", "ContextShadow"} {
+		ep := buildContracts([]route{{Method: "POST", Path: "/x", Handler: "example/handler." + name}}, index)["POST /x"]
+		if name == "Shadow" || name == "Initializer" {
+			if ep.Reason != "" || ep.DTO != "example/handler.Outer" || len(ep.Fields) != 1 || ep.Fields[0].Name != "ID" {
+				t.Fatalf("%s 识别了错误作用域或遗漏具名初始化：%+v", name, ep)
+			}
+		} else if ep.Protocol != "unknown" || ep.Reason == "" {
+			t.Fatalf("%s 的非 Gin 同名方法不得产生确定契约：%+v", name, ep)
 		}
+	}
+}
+
+func TestDuplicateWireFieldsCannotProduceVerifiedContract(t *testing.T) {
+	root := writeSources(t, map[string]string{"dto.go": "package dto\ntype A struct { ID string `form:\"id\"` }; type B struct { ID string `form:\"id\"` }; type Request struct { A; B }"})
+	index, err := scanSources(root, "example/dto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = dtoFields("example/dto.Request", "form", index.Types, map[string]bool{})
+	if err == nil {
+		t.Fatal("冲突嵌入字段不能假称已模拟 binder 的覆盖规则")
+	}
+}
+
+func TestMarshalStableKeepsBothMethods(t *testing.T) {
+	contracts := map[string]endpointSchema{
+		"POST /x":   {Protocol: "form", Handler: "create", Fields: []fieldSchema{}},
+		"DELETE /x": {Protocol: "json", Handler: "delete", Fields: []fieldSchema{}},
+	}
+	first, err := marshalStable(contracts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := marshalStable(contracts)
+	if err != nil || string(first) != string(second) || !strings.Contains(string(first), "POST /x") || !strings.Contains(string(first), "DELETE /x") {
+		t.Fatalf("方法不能相互覆盖，产物必须确定：%s err=%v", first, err)
 	}
 }

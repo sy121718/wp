@@ -1,6 +1,8 @@
 {* ===== 全局 AI 悬浮球 =====
    每个后台页面都渲染它（layout.html 末尾 include），所以这里**只能有骨架**：
-   面板内容一律靠 htmx 从 /admin/ai/ask 取。
+   面板内容由 static/js/ui/ai-fab.js 读 `/admin/ai/ask/stream`（SSE）逐轮填进来。
+   非流式的 `/admin/ai/ask` 与它渲染的 partials/ai_fab_result.html 已经退役 ——
+   只剩一条出口，不会出现「同一段面板两处定义」。
 
    为什么不是「点开才创建 DOM」：那要 JS 建大量结构，而这段结构里有 i18n 文案、
    有与 ui_blocks.html 的 include 契约 —— 在 JS 里拼第二份必然与这里分叉。

@@ -3,6 +3,7 @@ package adminctx_test
 import (
 	"context"
 	"errors"
+	jetpkg "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -67,8 +68,8 @@ func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 			t.Fatalf("%s must stay empty after permission error: %#v", key, data[key])
 		}
 	}
-	groups, ok := data["NavGroups"].([]adminui.NavGroup)
-	if !ok || len(groups) != 0 || data["HasSubnav"] != false {
+	items, ok := data["NavItems"].([]jetpkg.NavItem)
+	if !ok || len(items) != 0 || data["HasSubnav"] != false {
 		t.Fatalf("sidebar must stay empty after permission error: %#v", data)
 	}
 }
@@ -96,15 +97,16 @@ func TestMiddlewareTreeReachesAdminuiSidebar(t *testing.T) {
 	if data == nil {
 		t.Fatal("handler 未被到达：中间件没有 c.Next()")
 	}
-	groups, ok := data["NavGroups"].([]adminui.NavGroup)
-	if !ok || len(groups) == 0 {
-		t.Fatalf("侧栏没有渲染出目录：NavGroups=%#v（中间件与 Prepare 的 nav_tree 键名分歧，或树未注入）", data["NavGroups"])
+	items, ok := data["NavItems"].([]jetpkg.NavItem)
+	if !ok || len(items) == 0 {
+		t.Fatalf("侧栏没有渲染出目录：NavItems=%#v（中间件与 Prepare 的 nav_tree 键名分歧，或树未注入）", data["NavItems"])
 	}
-	if groups[0].Title != "内容" || len(groups[0].Nodes) != 1 || groups[0].Nodes[0].Path != "/admin/pages" {
-		t.Fatalf("侧栏视图与桩树不一致：%#v", groups[0])
+	if items[0].Title != "内容" || len(items[0].Children) != 1 || items[0].Children[0].Path != "/admin/pages" {
+		t.Fatalf("侧栏视图与桩树不一致：%#v", items[0])
 	}
-	if !groups[0].Active || !groups[0].Nodes[0].Active {
-		t.Fatalf("当前页 /admin/pages 未被标记高亮：%#v", groups[0])
+	owner := jetpkg.NavOwner(items, "/admin/pages")
+	if !jetpkg.NavIsOwner(items[0].Children[0], owner) || !jetpkg.NavBranchActive(items[0], owner) {
+		t.Fatalf("当前页 /admin/pages 未被标记高亮：%#v", items[0])
 	}
 	if set, ok := data["PermSet"].(map[string]bool); !ok || !set["page:view"] {
 		t.Fatalf("Prepare 没读到权限码集合：%#v", data["PermSet"])

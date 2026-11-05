@@ -1,63 +1,89 @@
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const source=fs.readFileSync(__dirname+'/write-base.js','utf8');
-class Body {constructor(){this.values=new Map();}append(k,v){this.values.set(k,String(v));}set(k,v){this.values.set(k,String(v));}delete(k){this.values.delete(k);}get(k){return this.values.get(k);}getAll(k){return this.values.has(k)?[this.values.get(k)]:[];}entries(){return this.values.entries();}}
-function env(attrs={},response={ok:true,status:200,payload:{code:200,message:'已保存',data:{id:'a1'}}}){
- const listeners={},nav=[],calls=[],status={textContent:'',setAttribute(){},querySelector(){return null;},appendChild(){}};
- const values={'data-write':'custom','data-write-url':'/api/site/user/login',...attrs};
- const instance={getAttribute:()=> 'instance-A'},input={name:'account',value:'用户已填写的值',type:'text',disabled:false,tagName:'INPUT',getAttribute:n=>n==='name'?'account':null,hasAttribute:()=>false};
- const form={tagName:'FORM',getAttribute:n=>values[n]??null,hasAttribute:n=>n in values,setAttribute(){},closest:()=>instance,dispatchEvent(){},
- querySelector:s=>s==='[data-write-status]'?status:null,querySelectorAll:s=>s==='[name]'?[input]:[]};
- const document={readyState:'loading',addEventListener:(n,f)=>{listeners[n]=f;},querySelector:()=>null,createElement:()=>({setAttribute(){},appendChild(){},textContent:''})};
- const window={document,location:{assign:url=>nav.push(url),reload:()=>nav.push('reload')},WPSitePreview:Object.freeze({active:!!response.preview,state:'default'}),WPSiteSession:{csrfToken:'visitor-csrf'},confirm:()=>true};
- const context={window,document,FormData:Body,CustomEvent:class{},sessionStorage:{},fetch:async(url,opts)=>{calls.push({url,opts});return{ok:response.ok,status:response.status,redirected:!!response.redirected,url:'/admin/login',headers:{get:n=>n==='Content-Type'?(response.type||'application/json'):null},json:async()=>response.payload};}};
- vm.createContext(context);vm.runInContext(source,context);context.WBUI=window.WBUI;document.activeElement=input;
- return {window,form,status,input,nav,calls,context,listeners,submit:async()=>{listeners.submit({target:form,submitter:null,preventDefault(){}});await new Promise(setImmediate);await new Promise(setImmediate);}};
-}
-test('具名成功处理只执行一次，带当前实例与完整上下文并可接管导航',async()=>{
- const e=env({'data-write-handler':'user.forms','data-write-nav':'/account'});let seen=[];
- e.window.WBUI.writeBase.registerResultHandler('user.forms',ctx=>{seen.push(ctx);return true;});
- await e.submit();assert.equal(e.calls.length,1);assert.equal(seen.length,1);assert.equal(seen[0].instanceId,'instance-A');assert.equal(seen[0].form,e.form);assert.equal(seen[0].data.id,'a1');assert.equal(seen[0].payload.code,200);assert.equal(seen[0].text,'已保存');assert.deepEqual(e.nav,[]);
- assert.equal(e.calls[0].opts.headers['X-CSRF-Token'],'visitor-csrf');
-});
-test('返回false保留原导航；重复注册拒绝，基座重复加载保留已有注册',async()=>{
- const e=env({'data-write-handler':'user.forms','data-write-nav':'/account'});let calls=0;
- const fn=()=>{calls++;return false;};e.window.WBUI.writeBase.registerResultHandler('user.forms',fn);
- assert.throws(()=>e.window.WBUI.writeBase.registerResultHandler('user.forms',fn),/重复注册/);
- vm.runInContext(source,e.context);await e.submit();assert.equal(calls,1);assert.deepEqual(e.nav,['/account']);
-});
-test('handler与整页reload互斥、未知能力均在请求前拒绝',async()=>{
- const conflict=env({'data-write-handler':'user.forms','data-write-reload':''});conflict.window.WBUI.writeBase.registerResultHandler('user.forms',()=>true);await conflict.submit();assert.equal(conflict.calls.length,0);assert.match(conflict.status.textContent,/不能同时/);
- const unknown=env({'data-write-handler':'unknown'});await unknown.submit();assert.equal(unknown.calls.length,0);assert.match(unknown.status.textContent,/未注册/);
-});
-test('401错误不调用成功处理、不清空输入、不导航',async()=>{
- const e=env({'data-write-handler':'user.forms'},{ok:false,status:401,payload:{code:401,message:'请重新登录',data:null}});let called=false;e.window.WBUI.writeBase.registerResultHandler('user.forms',()=>{called=true;return true;});
- await e.submit();assert.equal(called,false);assert.equal(e.input.value,'用户已填写的值');assert.equal(e.context.document.activeElement,e.input);assert.equal(e.status.textContent,'请重新登录');assert.deepEqual(e.nav,[]);
-});
-test('访客收到HTML登录页时明确失败且不跳转后台',async()=>{
- const e=env({}, {ok:true,status:200,type:'text/html',redirected:true});await e.submit();assert.deepEqual(e.nav,[]);assert.match(e.status.textContent,/content-type/);assert.equal(e.input.value,'用户已填写的值');
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { env } = require('./write-base-test-env.cjs');
+
+test('响应中的全部 HX 指令在导航与最终 trigger 前清除', () => {
+    const e = env(), ctx = e.start();
+    ctx.response = { headers: new Headers({ 'HX-Redirect': '/wrong', 'HX-Trigger': 'wrong' }), raw: { redirected: false } };
+    ctx.hx = { redirect: '/wrong', trigger: 'wrong' };
+    e.hooks.htmx_before_response(e.form, { ctx });
+    assert.deepEqual(Object.keys(ctx.hx), []);
+    e.error(ctx);
+    assert.match(e.status.textContent, /不得携带/);
+    assert.deepEqual(e.nav, []); assert.equal(e.toasts.length, 1);
 });
 
-test('商品写入拒绝HTTP重定向，非JSON结果留在原表单提示',async()=>{
- const e=env({'data-write-url':'/api/product/update'}, {ok:true,status:200,type:'text/html',redirected:true});
- await e.submit();
- assert.equal(e.calls[0].opts.redirect,'error');
- assert.deepEqual(e.nav,[]);
- assert.match(e.status.textContent,/content-type/);
- assert.equal(e.input.value,'用户已填写的值');
+test('访客轮换只更新明确访客会话，后台请求不混用 token', () => {
+    for (const visitor of [true, false]) {
+        const e = env(visitor ? { 'data-write-session': 'visitor' } : {});
+        e.window.WPSiteSession = { csrfToken: 'visitor-token' };
+        const ctx = e.start();
+        assert.equal(ctx.request.headers['X-CSRF-Token'], visitor ? 'visitor-token' : 'csrf-token');
+        ctx.response = { headers: new Headers({ 'X-CSRF-Token': 'rotated' }), raw: { redirected: false } };
+        e.hooks.htmx_before_response(e.form, { ctx });
+        assert.equal(e.window.WPSiteSession.csrfToken, visitor ? 'rotated' : 'visitor-token');
+    }
 });
 
-test('商品成功回执中的导航字段不能替代前端显式导航声明',async()=>{
- const response={ok:true,status:200,payload:{code:200,message:'已保存',data:{id:'a1',redirect:'/server-chosen'}}};
- const stay=env({'data-write-url':'/api/product/update'},response);
- await stay.submit();assert.deepEqual(stay.nav,[]);
- const go=env({'data-write-url':'/api/product/update','data-write-nav':'/admin/products/edit?product={id}'},response);
- await go.submit();assert.deepEqual(go.nav,['/admin/products/edit?product=a1']);
+test('不同表单乱序响应不能用旧令牌覆盖已完成的访客轮换', () => {
+    const e = env({ 'data-write-session': 'visitor' });
+    const session = e.window.WPSiteSession = { csrfToken: 'visitor-token' };
+    const old = e.start();
+    const other = e.node({ 'data-write': '', 'data-write-session': 'visitor' });
+    const otherStatus = e.node();
+    other.querySelector = () => otherStatus;
+    const login = { request: { form: other, method: 'POST', action: '/login', headers: {} } };
+    e.hooks.htmx_config_request(other, { ctx: login });
+    e.hooks.htmx_before_request(other, { ctx: login });
+    login.response = { headers: new Headers({ 'X-CSRF-Token': 'rotated' }), raw: { redirected: false } };
+    e.hooks.htmx_before_response(other, { ctx: login });
+    old.response = { headers: new Headers({ 'X-CSRF-Token': 'visitor-token' }), raw: { redirected: false } };
+    e.hooks.htmx_before_response(e.form, { ctx: old });
+    assert.equal(session.csrfToken, 'rotated');
+    assert.equal(e.configure().request.headers['X-CSRF-Token'], 'rotated');
+    assert.equal(e.events.length, 0);
 });
 
-test('编辑预览统一阻止JSON写、原生POST和HTMX写，保留输入且零网络',async()=>{
- const e=env({}, {preview:true});await e.submit();assert.equal(e.calls.length,0);assert.match(e.status.textContent,/模拟预览/);assert.equal(e.input.value,'用户已填写的值');
- const native={...e.form,hasAttribute:()=>false,getAttribute:n=>n==='method'?'post':null};let stopped=false;
- e.listeners.submit({target:native,preventDefault(){stopped=true;}});assert.equal(stopped,true);assert.equal(e.calls.length,0);
- let htmxStopped=false;e.listeners['htmx:config:request']({detail:{ctx:{request:{method:'POST',action:'/api/site/user/login'},sourceElement:{closest:()=>e.form}}},preventDefault(){htmxStopped=true;}});assert.equal(htmxStopped,true);
- let readStopped=false;e.listeners['htmx:config:request']({detail:{ctx:{request:{method:'GET',action:'/static/logo.svg'}}},preventDefault(){readStopped=true;}});assert.equal(readStopped,false);
+test('表单移除或结果过期不阻断会话轮换，但旧会话响应不能更新替换后的会话', () => {
+    for (const kind of ['removed', 'stale', 'replaced']) {
+        const e = env({ 'data-write-session': 'visitor' });
+        e.window.WPSiteSession = { csrfToken: 'visitor-token' };
+        const ctx = e.start();
+        if (kind === 'removed') e.form.isConnected = false;
+        if (kind === 'stale') e.start();
+        if (kind === 'replaced') e.window.WPSiteSession = { csrfToken: 'visitor-token' };
+        ctx.response = { headers: new Headers({ 'X-CSRF-Token': 'rotated' }), raw: { redirected: false } };
+        e.hooks.htmx_before_response(e.form, { ctx });
+        assert.equal(e.window.WPSiteSession.csrfToken, kind === 'replaced' ? 'visitor-token' : 'rotated', kind);
+        assert.equal(e.events.length, 0);
+        assert.deepEqual(e.nav, []);
+    }
+});
+
+test('重复加载不清除请求对象注册，也不恢复 JSON 结果处理 API', () => {
+    const e = env({ 'data-write-builder': 'rows' });
+    e.base.registerPayloadBuilder('rows', () => ({ rows: [] }));
+    e.reload();
+    assert.deepEqual(JSON.parse(e.start().request.body), { rows: [] });
+    assert.equal(e.base.registerResultHandler, undefined);
+});
+
+test('只读预览在请求发送前拒绝 HTMX 写，同时拦截原生 POST，不影响 GET', () => {
+    const e = env({}, { preview: true });
+    assert.throws(() => e.start(), /模拟预览/);
+    const read = e.configure(null, '/read', 'GET');
+    assert.equal(e.base.owns(read), true);
+    assert.doesNotThrow(() => e.hooks.htmx_before_request(e.form, { ctx: read }));
+    e.finish(read);
+    let stopped = false;
+    e.listeners.submit({ target: e.form, preventDefault() { stopped = true; } });
+    assert.equal(stopped, true); assert.match(e.status.textContent, /模拟预览/);
+});
+
+test('传输异常只提示一次且不泄漏内部异常', () => {
+    const e = env(), ctx = e.start();
+    e.error(ctx); e.error(ctx);
+    assert.equal(e.status.getAttribute('data-tone'), 'error');
+    assert.doesNotMatch(e.status.textContent, /private-network-detail/);
+    assert.equal(e.toasts.length, 1);
 });

@@ -3,8 +3,8 @@
 
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
-{{block pageTitle()}}{{ .["t"]("admin.product_attributes.title", "商品属性") }}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.product_attributes.title", "商品属性") }}{{end}}
+{{block pageTitle()}}{{ .["t"]("attrTitle", "商品属性") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("attrTitle", "商品属性") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 
@@ -20,17 +20,17 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.product_attributes.title", "商品属性") }}</h1>
+                <h1>{{ .["t"]("attrTitle", "商品属性") }}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_attributes.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_attributes.intro", "属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；「参与变体」的组会参与变体规格组合的生成。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("attrHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("attrIntro", "属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；「参与变体」的组会参与变体规格组合的生成。") }}</span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
             {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-attributes">
-                <label class="sr-only" for="attributes-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <label class="sr-only" for="attributes-project">{{ .["t"]("uiFieldProj", "站点工程") }}</label>
                 <select class="form-select" id="attributes-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -39,33 +39,33 @@
             </form>
             {{end}}
             {{if canCreate}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}">＋ {{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("attrNewSubmit", "新建属性组") }}">＋ {{ .["t"]("attrNewSubmit", "新建属性组") }}</button>
             {{end}}
         </div>
     </header>
 
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}</h2>
+        <h2 class="card-title mb-lg">{{ .["t"]("attrListTitle", "属性组列表") }}</h2>
 
         <div class="filter-bar">
             <form method="get" action="/admin/product-attributes" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
-                    <label for="attributes-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <label for="attributes-filter-keyword">{{ .["t"]("uiFieldKw", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="attributes-filter-keyword" name="keyword" value="{{fKeyword}}"
-                           placeholder="{{ .["t"]("admin.product_attributes.filter.phKeyword", "名称 / 标识") }}" autocomplete="off">
+                           placeholder="{{ .["t"]("attrFltKw", "名称 / 标识") }}" autocomplete="off">
                 </div>
                 <div class="filter-field">
-                    <label for="attributes-filter-variation">{{ .["t"]("admin.product_attributes.col.variation", "变体") }}</label>
+                    <label for="attributes-filter-variation">{{ .["t"]("attrVar", "变体") }}</label>
                     <select class="form-select" id="attributes-filter-variation" name="variation">
-                        <option value="">{{ .["t"]("admin.common.filter.optionAll", "（全部）") }}</option>
-                        <option value="1" {{if isset(.Query.Variation) && .Query.Variation == "1"}}selected{{end}}>{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</option>
-                        <option value="0" {{if isset(.Query.Variation) && .Query.Variation == "0"}}selected{{end}}>{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</option>
+                        <option value="">{{ .["t"]("uiFltOptAll", "（全部）") }}</option>
+                        <option value="1" {{if isset(.Query.Variation) && .Query.Variation == "1"}}selected{{end}}>{{ .["t"]("attrIsVar", "参与变体") }}</option>
+                        <option value="0" {{if isset(.Query.Variation) && .Query.Variation == "0"}}selected{{end}}>{{ .["t"]("attrNoVar", "不参与变体") }}</option>
                     </select>
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("uiFltSubmit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                 </div>
             </form>
         </div>
@@ -74,32 +74,32 @@
 
 
 
-        <form data-list-bulk>
+        <form data-write hx-post="/api/product/attribute/bulk-delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-list-bulk data-write-reload>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div data-write-result></div>
+            <p class="form-hint" data-bulk-none="{{tr("attrBulkNoneSel", "没有勾选任何属性组，列表未改动。")}}" role="status" hidden></p>
+            <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{tr("attrBulkRefresh", "刷新列表")}}</a>
             <p class="form-hint" role="status" hidden></p>
 
             {{if canDelete}}{{if len(.Result.Items) > 0}}
-            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <button data-write="bulk" data-write-url="/api/product/attribute/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload
-                        data-msg-none-selected="{{tr("admin.product_attributes.bulk.noneSelected", "没有勾选任何属性组，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}" data-write-confirm="{{tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
-                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
+            {{yield bulkBarOpen(count=tr("uiBulkSel", "已选 {n} 项"))}}
+                <button type="submit"
+                        hx-confirm="{{tr("attrBulkConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
+                        class="btn btn-sm btn-danger" data-requires-js hidden>{{tr("uiBulkDel", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("attrListTitle", "属性组列表") }}">
             <table class="data-table">
                 <thead>
                 <tr>
                     <th class="col-check">
-                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("uiBulkSelectAll", "全选") }}">
                     </th>
-                    <th>{{ .["t"]("admin.product_attributes.col.name", "属性组") }}</th>
-                    <th>{{ .["t"]("admin.product_attributes.col.key", "标识") }}</th>
-                    <th>{{ .["t"]("admin.product_attributes.col.variation", "变体") }}</th>
-                    <th>{{ .["t"]("admin.product_attributes.col.values", "属性值") }}</th>
-                    <th class="col-actions">{{ .["t"]("admin.product_attributes.col.actions", "操作") }}</th>
+                    <th>{{ .["t"]("attrName", "属性组") }}</th>
+                    <th>{{ .["t"]("attrKeyCol", "标识") }}</th>
+                    <th>{{ .["t"]("attrVar", "变体") }}</th>
+                    <th>{{ .["t"]("attrValuesCol", "属性值") }}</th>
+                    <th class="col-actions">{{ .["t"]("attrActions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -108,17 +108,17 @@
                 <tr><td colspan="6" class="cell-wrap">
                     <div class="empty-state">
                         {{if .Query.Keyword != "" || .Query.Variation != ""}}
-                        <p class="empty-title">{{ .["t"]("admin.product_attributes.list.emptyFilteredTitle", "没有匹配的属性组") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
+                        <p class="empty-title">{{ .["t"]("attrNoMatches", "没有匹配的属性组") }}</p>
+                        <p class="empty-desc">{{ .["t"]("uiFltEmptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                         <div class="empty-actions">
-                            <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                            <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                         </div>
                         {{else}}
-                        <p class="empty-title">{{ .["t"]("admin.product_attributes.list.emptyTitle", "还没有属性组") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.product_attributes.list.empty", "建一个属性组，之后任意商品都可以引用它。") }}</p>
+                        <p class="empty-title">{{ .["t"]("attrEmptyTitle", "还没有属性组") }}</p>
+                        <p class="empty-desc">{{ .["t"]("attrListEmpty", "建一个属性组，之后任意商品都可以引用它。") }}</p>
                         {{if canCreate}}
                         <div class="empty-actions">
-                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}">＋ {{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>
+                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("attrNewSubmit", "新建属性组") }}">＋ {{ .["t"]("attrNewSubmit", "新建属性组") }}</button>
                         </div>
                         {{end}}
                         {{end}}
@@ -128,25 +128,25 @@
                 {{range _, a := .Result.Items}}
                 <tr>
                     <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                        <input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("uiBulkSelectRow", "选择该行") }}">
                     </td>
-                    <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}"><strong>{{a.Name}}</strong></button>{{else}}<strong>{{a.Name}}</strong>{{end}}</td>
+                    <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("attrListSave", "保存属性组") }}"><strong>{{a.Name}}</strong></button>{{else}}<strong>{{a.Name}}</strong>{{end}}</td>
                     <td>{{if a.Key != ""}}<code>{{a.Key}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>
                         {{if a.IsVariation}}
-                        {{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}
+                        {{include "../partials/badge.html" map("tone", "info", "label", tr("attrIsVar", "参与变体"))}}
                         {{else}}
-                        {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.notVariation", "不参与变体"))}}
+                        {{include "../partials/badge.html" map("tone", "mute", "label", tr("attrNoVar", "不参与变体"))}}
                         {{end}}
                     </td>
                     <td>{{a.ValueCount}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
-                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
-                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-values-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.saveValues", "保存属性值") }}">{{ .["t"]("admin.product_attributes.list.valuesAction", "属性值") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("attrListSave", "保存属性组") }}">{{ .["t"]("uiActEdit", "编辑") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-values-{{a.ID}}" data-drawer-title="{{ .["t"]("attrSaveValues", "保存属性值") }}">{{ .["t"]("attrListValsAct", "属性值") }}</button>
                         {{end}}
                         {{if canDelete}}
-                        <button data-requires-js hidden type="submit" form="attr-del-{{a.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        <button data-requires-js hidden type="submit" form="attr-del-{{a.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("uiActDel", "删除") }}</button>
                         {{end}}
                     </td>
                 </tr>
@@ -166,10 +166,10 @@
     {{range _, a := .Result.Items}}
     {{if canDelete}}
 
-    <form data-write="delete" data-write-url="/api/product/attribute/delete" id="attr-del-{{a.ID}}" class="hidden-form" data-write-reload
-          data-msg-ok="{{ .["t"]("admin.product_attributes.list.deleted", "属性组已删除。") }}"
-          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
-          data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
+    <form data-write hx-post="/api/product/attribute/delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload id="attr-del-{{a.ID}}" class="hidden-form"
+          data-msg-ok="{{ .["t"]("attrListDeleted", "属性组已删除。") }}"
+          data-msg-failed="{{ .["t"]("uiInternalErr", "系统内部错误，请稍后重试") }}"
+          data-confirm="{{ .["t"]("attrDelConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
         <input type="hidden" name="id" value="{{a.ID}}">
     </form>
     {{end}}

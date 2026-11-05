@@ -14,7 +14,7 @@ func pluginAttr(n *html.Node, key string) (string, bool) {
 	}
 	return "", false
 }
-func TestPluginsJSONWriteExternalForms(t *testing.T) {
+func TestPluginsHTMLWriteExternalForms(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(map[bool]string{true: "disable", false: "enable"}[enabled], func(t *testing.T) {
 			data := pluginsPatrolData(patrolView{})
@@ -49,15 +49,20 @@ func TestPluginsJSONWriteExternalForms(t *testing.T) {
 				}
 			}
 			walk(doc)
-			for _, tc := range []struct{ id, api, mode string }{{"plugin-toggle-hello", "/api/plugin/toggle", "create"}, {"plugin-uninstall-hello", "/api/plugin/uninstall", "single"}} {
+			for _, tc := range []struct{ id, api string }{{"plugin-toggle-hello", "/api/plugin/toggle"}, {"plugin-uninstall-hello", "/api/plugin/uninstall"}} {
 				f := forms[tc.id]
 				if f == nil {
 					t.Fatalf("missing form %s", tc.id)
 				}
-				for k, want := range map[string]string{"data-write-url": tc.api, "action": tc.api, "data-write": tc.mode} {
-					got, _ := pluginAttr(f, k)
-					if got != want {
-						t.Errorf("%s %s=%q want %q", tc.id, k, got, want)
+				if got, _ := pluginAttr(f, "hx-post"); got != tc.api {
+					t.Errorf("%s hx-post=%q want %q", tc.id, got, tc.api)
+				}
+				if _, ok := pluginAttr(f, "data-write"); !ok {
+					t.Errorf("%s 缺 data-write 认领标记", tc.id)
+				}
+				for _, gone := range []string{"data-write-url", "action", "method"} {
+					if got, ok := pluginAttr(f, gone); ok && gone != "method" {
+						t.Errorf("%s 仍残留 %s=%q", tc.id, gone, got)
 					}
 				}
 
@@ -104,8 +109,12 @@ func TestPluginsJSONWriteExternalForms(t *testing.T) {
 			if !hasEnabled {
 				t.Fatal("toggle 表单缺少 name=enabled 的复选框 —— 服务端收不到开关状态")
 			}
-			if v, _ := pluginAttr(f, "data-write-nav"); v != "/admin/plugins" {
-				t.Fatal("toggle navigation missing")
+			// 成功刷新由模板声明；不再用 URL 插值的导航属性。
+			if _, ok := pluginAttr(f, "data-write-reload"); !ok {
+				t.Fatal("toggle 成功动作缺 data-write-reload")
+			}
+			if _, ok := pluginAttr(f, "data-write-nav"); ok {
+				t.Fatal("toggle 不应再用 URL 导航属性")
 			}
 			gotEnabled := ""
 			for c := f.FirstChild; c != nil; c = c.NextSibling {
@@ -117,7 +126,7 @@ func TestPluginsJSONWriteExternalForms(t *testing.T) {
 			if gotEnabled != want {
 				t.Fatalf("enabled=%q want %q", gotEnabled, want)
 			}
-			if v, _ := pluginAttr(forms["plugin-uninstall-hello"], "data-confirm"); v == "" {
+			if v, _ := pluginAttr(forms["plugin-uninstall-hello"], "hx-confirm"); v == "" {
 				t.Fatal("uninstall lacks confirmation")
 			}
 			if strings.Contains(out, `action="/admin/plugins/toggle"`) || strings.Contains(out, `action="/admin/plugins/uninstall"`) {

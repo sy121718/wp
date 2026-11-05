@@ -11,9 +11,9 @@ function element(attrs) {
         get classList() { return {toggle:(k,on)=>on?this.classes.add(k):this.classes.delete(k)}; }
     };
 }
-function env(fetch, preview) {
+function env(fetch, preview, session) {
     const document={readyState:'loading',addEventListener(){},querySelectorAll(){return [];}};
-    const window={document,WPSitePreview:preview,location:{href:'https://shop.test/shop',origin:'https://shop.test'},fetch};
+    const window={document,WPSitePreview:preview,WPSiteSession:session,location:{href:'https://shop.test/shop',origin:'https://shop.test'},fetch};
     const ctx=vm.createContext({window,URL,Map,Promise,CustomEvent:class {constructor(type, options){this.type=type;Object.assign(this,options);}}});
     for (const name of ['site-data','site-product']) vm.runInContext(fs.readFileSync(__dirname+'/'+name+'.js','utf8'),ctx);
     return window.WPSiteData;
@@ -65,6 +65,29 @@ test('拒绝外站或非公开数据地址；失败保留内容，迟到响应�
     release({ok:true,json:async()=>({code:200,data:[{id:'v',known:true,enabled:true,price:14900}]})}); await second;
     finishFirst({ok:true,json:async()=>({code:200,data:[{id:'v',known:true,enabled:true,price:12900}]})}); await first;
     assert.equal(price.textContent,'价格更新为 ¥149');
+});
+
+test('数据读取的迟到响应不回退写请求已经轮换的访客令牌', async()=>{
+    let release;
+    const session={csrfToken:'visitor-token'};
+    const api=env(()=>new Promise(resolve=>{release=resolve;}),undefined,session);
+    const root=target('variantPrice');
+    const work=api.refresh(root); await Promise.resolve(); await Promise.resolve();
+    session.csrfToken='rotated';
+    release({ok:true,headers:new Headers({'X-CSRF-Token':'visitor-token'}),json:async()=>({code:200,data:[]})});
+    await work;
+    assert.equal(session.csrfToken,'rotated');
+    assert.equal(root.textContent,'');
+});
+
+test('数据读取可更新原会话令牌，读取失败也消费服务端轮换', async()=>{
+    const session={csrfToken:'visitor-token'};
+    const api=env(async()=>({ok:false,status:403,headers:new Headers({'X-CSRF-Token':'rotated'}),json:async()=>({code:403,message:'请求未完成'})}),undefined,session);
+    const root=target('variantPrice');
+    await api.refresh(root);
+    assert.equal(session.csrfToken,'rotated');
+    assert.equal(root.textContent,'原内容');
+    assert.equal(root.events.at(-1).detail.status,403);
 });
 
 test('非成功状态和业务错误不清空原内容，恢复后移除错误态', async()=>{

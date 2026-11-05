@@ -75,19 +75,16 @@
         <div class="card-header">
             <span class="card-title">{{ tr("admin.comment.menu", "评论审核") }}{{if .Total > 0}}（{{.Total}}）{{end}}</span>
         </div>
-        <form data-write="bulk" data-write-url="/api/comment/review"
-              data-write-extra="projectId,status" data-write-outcome="review"
-              data-msg-none-selected="{{tr("admin.comment.err.nothing_selected", "先勾选要审核的评论。")}}"
-              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              data-msg-refresh="{{tr("admin.comment.write.refresh", "刷新列表")}}">
+        <form data-write hx-post="/api/comment/review" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-list-bulk data-write-reload>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             {{if isset(.Buttons["comment.review"])}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <button type="submit" class="btn btn-sm" name="status" value="approved" data-requires-js hidden disabled>{{tr("admin.comment.action.approve", "通过")}}</button>
-                <button type="submit" class="btn btn-sm" name="status" value="rejected" data-requires-js hidden disabled
-                        data-confirm="{{tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。")}}" data-confirm-danger>{{tr("admin.comment.action.reject", "驳回")}}</button>
+                <button type="submit" class="btn btn-sm" name="status" value="approved" data-requires-js hidden>{{tr("admin.comment.action.approve", "通过")}}</button>
+                <button type="submit" class="btn btn-sm" name="status" value="rejected" data-requires-js hidden
+                        hx-post="/api/comment/review" hx-confirm="{{tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。")}}">{{tr("admin.comment.action.reject", "驳回")}}</button>
             {{yield bulkBarClose()}}
             <noscript><p class="form-hint">{{tr("admin.comment.write.noJs", "评论审核需要 JavaScript，请开启后重试。")}}</p></noscript>
             {{end}}

@@ -1,10 +1,10 @@
 package builder
 
 import (
+	"go_wp/pkg/builder/core"
 	"strings"
 	"testing"
 
-	mediacontract "go_wp/internal/module/media/contract"
 	"go_wp/internal/templates"
 )
 
@@ -68,9 +68,9 @@ func TestImageLoadingAllComponents(t *testing.T) {
 func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
 
-	probe := func(url string) []mediacontract.VariantRef {
+	probe := func(url string) []core.AssetVariant {
 		if url == "https://media.example.test/storage/a.jpg" {
-			return []mediacontract.VariantRef{
+			return []core.AssetVariant{
 				{URL: "https://media.example.test/storage/a_thumb-1-ab12cd34.jpg", Width: 320},
 				{URL: "https://media.example.test/storage/a_medium-1-ab12cd34.jpg", Width: 1280},
 			}

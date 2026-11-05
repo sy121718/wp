@@ -14,12 +14,8 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/source"
-
-	contentcontract "go_wp/internal/module/content/contract"
-	mediacontract "go_wp/internal/module/media/contract"
-	productcontract "go_wp/internal/module/product/contract"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 )
 
 type Page struct {
@@ -97,8 +93,8 @@ type compileConfig struct {
 	action     core.ActionResolver
 	collection core.CollectionResolver
 
-	product       productcontract.ProductDataSource
-	contentSource contentcontract.ContentDataSource
+	product       core.ProductDataSource
+	contentSource core.ContentDataSource
 	navigation    core.NavigationResolver
 	projectID     string
 	currentPath   string
@@ -110,7 +106,7 @@ type compileConfig struct {
 
 	siteLinkResolver func(string) string
 
-	assetProbe func(string) []mediacontract.VariantRef
+	assetProbe func(string) []core.AssetVariant
 	theme      *ThemeSettings
 	ctx        context.Context
 
@@ -204,11 +200,11 @@ func WithPluginResolver(r core.PluginResolver) CompileOption {
 	return func(c *compileConfig) { c.plugin = r }
 }
 
-func WithProductDataSource(ds productcontract.ProductDataSource) CompileOption {
+func WithProductDataSource(ds core.ProductDataSource) CompileOption {
 	return func(c *compileConfig) { c.product = ds }
 }
 
-func WithContentDataSource(ds contentcontract.ContentDataSource) CompileOption {
+func WithContentDataSource(ds core.ContentDataSource) CompileOption {
 	return func(c *compileConfig) { c.contentSource = ds }
 }
 
@@ -224,7 +220,7 @@ func WithProjectID(projectID string) CompileOption {
 	return func(c *compileConfig) { c.projectID = projectID }
 }
 
-func WithAssetProbe(fn func(string) []mediacontract.VariantRef) CompileOption {
+func WithAssetProbe(fn func(string) []core.AssetVariant) CompileOption {
 	return func(c *compileConfig) { c.assetProbe = fn }
 }
 

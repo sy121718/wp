@@ -86,7 +86,7 @@
                         <option value="{{.FilterStatus}}" selected>{{tr("admin.coupons.status.unknown_lead", "（未知状态：")}}{{.FilterStatus}}{{tr("admin.coupons.status.unknown_tail", "）")}}</option>
                         {{end}}
                         {{range _, v := .StatusValues}}
-                        <option value="{{v}}" {{if v == .FilterStatus}}selected{{end}}>{{tr("admin.coupons.status." + v, v)}}</option>
+                        <option value="{{v}}" {{if v == .FilterStatus}}selected{{end}}>{{f := .StateLabels[v]}}{{tr(f.Key, f.Fallback)}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -106,49 +106,42 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 11：勾选 / 券码 / 名称 / 折扣 / 门槛 / 已用上限 /
            每人限次 / 时间窗 / 状态 / 备注 / 操作）。 *}
-        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/write-base.js）：目标状态 / projectId
-           是启停要带、删除不要带的额外字段，所以端点声明落在**按钮**上（attrFrom：按钮优先、
-           表单兜底），表单上刻意不声明 data-write-url —— 声明了它会被继承成一个 fetch。
-           没有 action 是刻意的：禁用 JS 时这两个按钮是 hidden 的（下方 noscript 说明原因），
-           不会退化成「GET 当前页」这种看起来像成功的空动作。
-           也不需要 csrf 隐藏域：写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。 *}
-        <form method="post">
+        {* 两个批量动作各有一个表单承载自己的字段；按钮用 hx-include 把勾选行所在的
+           列表表单一起带上（勾选框在表格里，不在批量表单里）。结果区只有一个，两个动作共用。 *}
+        <form method="post" id="cp-list-form">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(coupons) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <select class="form-select" name="status" aria-label="{{tr("admin.coupons.bulk.target", "目标状态")}}">
+                <select class="form-select" name="status" form="cp-bulk-toggle-form" aria-label="{{tr("admin.coupons.bulk.target", "目标状态")}}">
                     <option value="1">{{tr("admin.coupons.form.enabled", "启用")}}</option>
                     <option value="0">{{tr("admin.coupons.form.disabled", "停用")}}</option>
                 </select>
-                {* Endpoints 与 payload 形状声明在**按钮**上：批量启停与批量删除的端点不同，
-                   一个表单并排两个动作。`status` 与 `projectId` 都写进 data-write-extra ——
-                   bulk 档只发 ids + 点名的字段（不发整份表单），类型由服务端 DTO 决定
-                   （formdata 的 "0" 直接绑进 int，实测）。
-                   This note stays outside the button tag: a `{* *}` comment inside the tag breaks
-                   parsing by tag (the static check and the chain test both read attributes per <button …>). *}
+                {* 批量启停与批量删除的端点不同：各自一个表单承载字段，按钮用 hx-include
+                   把勾选行所在的列表表单一起带上。 *}
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-url="/api/order/coupon/update" data-write="bulk" data-write-outcome="update"
-                        data-write-extra="status,projectId"
-                        data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
-                        data-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
+                        form="cp-bulk-toggle-form"
+                        hx-post="/api/order/coupon/update" hx-include="#cp-list-form, #cp-bulk-toggle-form"
+                        hx-target="#cp-bulk-result" hx-swap="innerHTML"
+                        hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                        hx-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-url="/api/order/coupon/delete" data-write="bulk" data-write-outcome="delete"
-                        data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
-                        data-confirm="{{tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。")}}"
-                        data-confirm-danger>{{tr("admin.coupons.bulk.delete", "批量删除")}}</button>
+                        form="cp-bulk-delete-form"
+                        hx-post="/api/order/coupon/delete" hx-include="#cp-list-form, #cp-bulk-delete-form"
+                        hx-target="#cp-bulk-result" hx-swap="innerHTML"
+                        hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                        hx-confirm="{{tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。")}}">{{tr("admin.coupons.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
-            {* 批量结果区（两个动作共用）：全成功 / 部分成功 / 全跳过的摘要 + **逐条原因**写在这儿。
-               刻意不自动刷新 —— 自动刷新会让「谁失败、为什么」一闪而过看不完；刷新入口由基座追加。 *}
-            <p class="form-hint" data-write-status role="status" hidden></p>
-            <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
+            {* 批量动作的字段承载表单：隐藏，靠 form 属性被按钮驱动、靠 hx-include 带上勾选行。 *}
+            <form id="cp-bulk-toggle-form" hidden>
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+            </form>
+            <form id="cp-bulk-delete-form" hidden>
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+            </form>
+            <div id="cp-bulk-result" role="status"></div>
+            <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript。请开启 JavaScript 后重试。")}}</p></noscript>
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.coupons.list.heading", "优惠码")}}">
             <table class="data-table data-table-wide coupons-page-table">
             <thead>
@@ -187,7 +180,7 @@
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{cp.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}"></td>
                 <td data-label="{{tr("admin.coupons.col.code", "券码")}}"><code>{{cp.Code}}</code></td>
-                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="/admin/coupons/edit-form?{{listQuery}}&id={{cp.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{cp.Code}}">{{if cp.Name}}{{cp.Name}}{{else}}—{{end}}</button>{{else}}{{if cp.Name}}{{cp.Name}}{{else}}—{{end}}{{end}}</td>
+                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/coupons/edit-form?{{listQuery}}&id={{cp.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{cp.Code}}">{{if cp.Name}}{{cp.Name}}{{else}}—{{end}}</button>{{else}}{{if cp.Name}}{{cp.Name}}{{else}}—{{end}}{{end}}</td>
                 {* 折扣口径：按比例显示「减 20%」，固定金额显示「减 20.00 元」——
                    口径值来自 dto（percent / fixed），文案与数字都在这里拼。 *}
                 <td data-label="{{tr("admin.coupons.col.discount", "折扣")}}">{{if cp.DiscountType == "percent"}}{{fill(tr("admin.coupons.discount.percent", "减 {value}%"), "value", cp.DiscountValue)}}{{else}}{{fill(tr("admin.coupons.discount.fixed", "减 {value} 元"), "value", money(cp.DiscountValue, ""))}}{{end}}</td>
@@ -198,11 +191,11 @@
                 <td data-label="{{tr("admin.coupons.col.window", "时间窗")}}">{{if cp.StartsAt || cp.EndsAt}}{{if cp.StartsAt}}{{dateTime(cp.StartsAt)}}{{else}}{{unlimited}}{{end}} ~ {{if cp.EndsAt}}{{dateTime(cp.EndsAt)}}{{else}}{{unlimited}}{{end}}{{else}}{{unlimited}}{{end}}</td>
                 {* 徽章颜色按**口径值**判（不是展示文案）：文案会随词条与语言变，拿它当键等于
                    「后台改一句词条 → 徽章静默变灰」。 *}
-                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge badge-{{cp.StateTone}}">{{if cp.State}}{{tr("admin.coupons.status." + cp.State, cp.State)}}{{else}}—{{end}}</span></td>
+                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge badge-{{cp.StateTone}}">{{if cp.State}}{{f := .StateLabels[cp.State]}}{{tr(f.Key, f.Fallback)}}{{else}}—{{end}}</span></td>
                 <td data-label="{{tr("admin.coupons.col.remark", "备注")}}">{{if cp.Remark}}{{cp.Remark}}{{else}}—{{end}}</td>
                 <td class="col-actions" data-label="{{tr("admin.coupons.col.actions", "操作")}}">
                     {{if canUpdate}}
-                    <button type="button" class="btn btn-sm" data-drawer-url="/admin/coupons/edit-form?{{listQuery}}&id={{cp.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{cp.Code}}">{{tr("admin.coupons.action.edit", "修改")}}</button>
+                    <button type="button" class="btn btn-sm" data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/coupons/edit-form?{{listQuery}}&id={{cp.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{cp.Code}}">{{tr("admin.coupons.action.edit", "修改")}}</button>
                     {{end}}
                     {{if .Expanded}}{{if cp.ID == .Expanded.ID}}
                     <a class="btn btn-sm" href="/admin/coupons?{{listQuery}}">{{tr("admin.coupons.action.collapse", "收起")}}</a>
@@ -266,17 +259,15 @@
     {* 行内写操作表单必须放在表格外：HTML 不允许 form 嵌套，
        按钮用 form="<id>" 关联到这里的隐藏表单（.hidden-form 见 theme.css）。
        全部可改字段都要回送（整体更新语义），时间窗用 dateTimeLocal 输出控件认的写法。
-       两个动作都走前端直调 JSON，形状按端点分：停用 / 启用 → /api/order/coupon/update 的单档
-       （= 完整 CouponSaveReq），所以用 create 模式发「表单全部具名字段」（single 模式只发 {id}，
-       会把门槛、时间窗悄悄写成零值）；删除 → /api/order/coupon/delete 的单档（只发 {id}）。
-       数值字段不必声明类型：formdata 里是字符串，服务端 DTO 按 int/float64 直接绑得进（实测）。
+       启停 → /api/order/coupon/update 的单条（= 完整 CouponSaveReq，不能只发 {id}，
+       否则会把门槛、时间窗悄悄写成零值）；删除 → /api/order/coupon/delete 的单条（只发 {id}）。
        结果区放在表单**外**的 host 里：隐藏表单是 display:none，写进去等于写进看不见的地方。 *}
     <div data-write-host>
-    <p class="form-hint" data-write-status role="status" hidden></p>
+    <div data-write-result role="status"></div>
     {{range _, cp := coupons}}
-    <form id="coupon-toggle-{{cp.ID}}" class="hidden-form"
-          data-write-url="/api/order/coupon/update" data-write="create"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+    <form id="coupon-toggle-{{cp.ID}}" class="hidden-form" data-write
+          hx-post="/api/order/coupon/update" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
         <input type="hidden" name="id" value="{{cp.ID}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="name" value="{{cp.Name}}">
@@ -290,10 +281,10 @@
         <input type="hidden" name="remark" value="{{cp.Remark}}">
         <input type="hidden" name="status" value="{{if cp.Status == 1}}0{{else}}1{{end}}">
     </form>
-    <form id="coupon-del-{{cp.ID}}" class="hidden-form"
-          data-write-url="/api/order/coupon/delete" data-write="single"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}" data-confirm-danger>
+    <form id="coupon-del-{{cp.ID}}" class="hidden-form" data-write
+          hx-post="/api/order/coupon/delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload
+          hx-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}">
         <input type="hidden" name="id" value="{{cp.ID}}">
     </form>
     {{end}}

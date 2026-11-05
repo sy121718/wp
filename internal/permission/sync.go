@@ -105,7 +105,8 @@ func insertMissingPermissions(tx *gorm.DB, rows []RouteSpec) (int64, error) {
 			sb.WriteString(", ")
 		}
 		sb.WriteString("(?, ?, ?, ?, ?, 1, 0, NOW(), 0, NOW())")
-		args = append(args, string(r.Perm), r.Name, r.Module, r.Path, r.Method)
+		module, name, _ := Label(r.Perm)
+		args = append(args, string(r.Perm), name, module, r.Path, r.Method)
 	}
 	sb.WriteString(" ON CONFLICT (permission_code) DO NOTHING")
 	return tx.Exec(sb.String(), args...).RowsAffected, nil

@@ -33,7 +33,7 @@ func siteStructureData() map[string]any {
 }
 
 func TestSiteStructureTemplatesParse(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	injectGlobals(set)
 	for _, name := range siteStructureTemplates {
@@ -84,7 +84,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"HeaderBlocks":       []map[string]any{{"ID": "b1", "NameKey": "", "NameFallback": "站点页眉"}},
 				"FooterBlocks":       []map[string]any{{"ID": "b2", "NameKey": "", "NameFallback": "站点页脚"}},
 				"AnnouncementBlocks": []map[string]any{{"ID": "b3", "NameKey": "", "NameFallback": "公告条"}},
-				"HeaderBlock":        "b1", "FooterBlock": "b2", "AnnouncementBlock": "b3",
+				"HeaderBlockID":      "b1", "FooterBlockID": "b2", "AnnouncementBlockID": "b3",
 			},
 			wants: []string{"主题设置：", "返回列表", "全局页眉 / 页脚块", "页眉块", "页脚块", "公告条块", "保存并应用到该主题页面", "说明"},
 		},
@@ -180,7 +180,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				}},
 			},
 
-			wants: []string{"导航菜单", "页眉导航", "添加菜单项", "当前窗口", "新标签页", "作为顶级项", "放到「", "从已有内容添加", "暂无公开路径", "加入菜单", "菜单结构", "菜单项", "打开方式", "编辑", "data-drawer-url", "确定删除「"},
+			wants: []string{"导航菜单", "页眉导航", "添加菜单项", "当前窗口", "新标签页", "作为顶级项", "放到「", "从已有内容添加", "暂无公开路径", "加入菜单", "菜单结构", "菜单项", "打开方式", "编辑", "hx-get=\"/admin/navigations/edit", "确定删除「"},
 		},
 		{
 			name: "admin/navigation/navigation_translations",
@@ -220,7 +220,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Buttons": map[string]any{"menu.create": true, "menu.update": true, "menu.delete": true},
 			},
 
-			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "权限点", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url", "page:list"},
+			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "权限点", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "hx-get=\"/admin/menus/edit?id=", "page:list"},
 		},
 	}
 
@@ -230,10 +230,10 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			for k, v := range tc.data {
 				data[k] = v
 			}
-			loader := jet.NewOSFileSystemLoader(".")
+			loader := testTemplateLoader()
 			set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 			injectGlobals(set)
-			out, err := render(t, set, tc.name, data)
+			out, err := render(t, set, tc.name, data, groupDRenderScope())
 			if err != nil {
 				t.Fatalf("%s 渲染失败: %v", tc.name, err)
 			}
@@ -282,7 +282,7 @@ func TestPageTranslationsSingleTableMergedGroups(t *testing.T) {
 		}},
 	}
 
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	injectGlobals(set)
 	out, err := render(t, set, "admin/page/page_translations", data)

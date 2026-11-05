@@ -305,7 +305,7 @@
 
 /* ===== 轻提示（js/ui/toast.js）=====
    非模态操作反馈：底部居中、自动消失、不打断用户。与确认框/弹窗（模态）分工见 toast.js 头部。
-   容器本身 pointer-events:none，只有单条提示可点 —— 浮层不该挡住底下的按钮。 */
+   容器与提示文字不拦截输入，仅关闭按钮可点，避免窄屏提示遮挡底下的操作。 */
 .wb-toasts {
     position: fixed; z-index: 3000;
     left: 50%; transform: translateX(-50%);
@@ -315,7 +315,7 @@
     pointer-events: none;
 }
 .wb-toast {
-    pointer-events: auto;
+    pointer-events: none;
     display: flex; align-items: center; gap: var(--ui-sp-sm);
     width: 100%; box-sizing: border-box;
     padding: var(--ui-sp-sm) var(--ui-sp-md, 12px);
@@ -331,6 +331,7 @@
 .wb-toast.is-error { border-color: var(--sky-c-danger, #dc2626); }
 .wb-toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .wb-toast-x {
+    pointer-events: auto;
     flex: none; border: 0; background: transparent; cursor: pointer; color: inherit;
     opacity: .6; font-size: 15px; line-height: 1; padding: 0 2px; border-radius: var(--ui-r-sm, 6px);
 }
@@ -362,6 +363,8 @@
     transform: translateX(100%);
     transition: transform var(--ui-motion-base);
 }
+/* display:flex 会覆盖浏览器默认的 [hidden]，关闭后必须立即退出布局与命中测试。 */
+.drawer[hidden], .drawer-mask[hidden] { display: none; }
 /* RTL 抽屉基座（审计 I18N-02）：定位端点/边框/对齐已改成逻辑属性，自动跟随方向；
    只有**位移量**与**投影方向**没有逻辑等价写法 —— 不显式翻转的话，右起抽屉在
    RTL 站点上会从屏幕外右侧滑入再停到左侧，动画与落位对不上。 */
@@ -670,6 +673,18 @@ body.drawer-open { overflow: hidden; }
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
+    /* 滚动区自身是所有 absolute 后代的包含块。
+       没有它时，里面的 .sr-only 以**初始包含块**为参照：1px 的框被放到自己那一列的
+       横向位置（/admin/ai/mcp 第 3 列约 right=661），落在本容器的裁剪范围之外，
+       于是哪怕 overflow-x:auto 也裁不到，横向溢出直接顶到 html 上
+       （375 视口实测 documentElement.scrollWidth 661 vs clientWidth 360）。
+       让本容器成为包含块后，absolute 后代落在裁剪盒内，溢出随之消失。
+
+       为什么不用单元格承载：theme.css:1078 的窄屏断点把表头强制成
+       `position: static`（≤720px 时 .table-scroll 的 thead th 取消吸顶），宽屏则被
+       theme.css:1069 的 `position: sticky` 覆盖 —— 单元格在两种视口下都不可能稳定做
+       包含块，而窄屏正是出问题的视口。所以包含块只能落在这个裁剪盒本身。 */
+    position: relative;
 }
 /* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
 .table-wrap:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }

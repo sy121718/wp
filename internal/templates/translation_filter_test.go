@@ -8,7 +8,7 @@ import (
 )
 
 func TestTranslationEmptyActions(t *testing.T) {
-	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	set := jet.NewSet(testTemplateLoader(), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	cases := []struct {
 		name     string
 		template string

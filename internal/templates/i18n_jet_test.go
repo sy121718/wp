@@ -2,6 +2,7 @@ package templates
 
 import (
 	"bytes"
+	jetpkg "go_wp/pkg/view/jet"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -47,15 +48,19 @@ func resolveAdminTemplateName(t *testing.T, name string) string {
 	return name
 }
 
-func render(t *testing.T, set *jet.Set, name string, data any) (string, error) {
+func render(t *testing.T, set *jet.Set, name string, data any, scopes ...RenderScope) (string, error) {
 	t.Helper()
 	name = resolveAdminTemplateName(t, name)
 	tmpl, err := set.GetTemplate(name)
 	if err != nil {
 		return "", err
 	}
+	var vars jet.VarMap
+	if len(scopes) > 0 {
+		vars = scopes[0].VarMap()
+	}
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, nil, data)
+	err = tmpl.Execute(&buf, vars, data)
 	return buf.String(), err
 }
 
@@ -186,7 +191,7 @@ func TestJetSetGlobalIsProcessShared(t *testing.T) {
 }
 
 func TestAdminShellTemplatesRender(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 
 	base := map[string]any{
@@ -277,38 +282,26 @@ type testNavNode struct {
 	Open     bool
 }
 
-type testNavGroup struct {
-	ID       uint64
-	Title    string
-	Icon     string
-	IconSVG  string
-	Path     string
-	Nodes    []testNavNode
-	Active   bool
-	FirstURL string
-}
-
 func TestShellSidebarPartialsRender(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
 
-	groups := []testNavGroup{{
-		ID:       1,
-		Title:    "内容",
-		Icon:     "file-text",
-		IconSVG:  `<svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11H5z"/></svg>`,
-		Active:   true,
-		FirstURL: "/admin/pages",
-		Nodes: []testNavNode{{
-			Title: "页面管理", Path: "/admin/pages", Active: true, Open: true,
-			Children: []testNavNode{{Title: "回收站", Path: "/admin/pages?trash=1"}},
+	items := []jetpkg.NavItem{{
+		ID:    1,
+		Title: "内容",
+		Icon:  "file-text",
+		Children: []jetpkg.NavItem{{
+			Title: "页面管理", Path: "/admin/pages",
+			Children: []jetpkg.NavItem{{Title: "回收站", Path: "/admin/pages?trash=1"}},
 		}},
 	}}
 	base := map[string]any{
-		"NavGroups":     groups,
-		"HasSubnav":     true,
-		"SidebarPinned": true,
-		"lang":          "en-US",
+		"NavItems":       items,
+		"NavCurrentPath": "/admin/pages",
+		"HasSubnav":      true,
+		"SidebarPinned":  true,
+		"lang":           "en-US",
 	}
 
 	zhData := map[string]any{}
@@ -391,21 +384,30 @@ type articleTranslationGroup struct {
 }
 
 func TestI18nEntriesPageRenders(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
+	page, err := set.GetTemplate("admin/system/i18n.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderPage := func(data any) (string, error) {
+		var out bytes.Buffer
+		err := page.Execute(&out, (RenderScope{Lang: "zh-CN", Translate: TranslateFunc("zh-CN")}).VarMap(), data)
+		return out.String(), err
+	}
 	base := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"), "title": "文案词条",
 		"t": TranslateFunc("zh-CN"), "csrf_token": "tok",
 		"Buttons": map[string]bool{"i18n.manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
-		"I18nEditURLs": []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"},
 		"Entries": []i18n.Entry{{
 			Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
 			Category: "ui", UpdateTime: "2026-09-14 10:00",
 		}},
 		"Categories": []string{"ui", "shell"},
 	}
-	out, err := render(t, set, "admin/system/i18n", base)
+	out, err := renderPage(base)
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
@@ -414,21 +416,20 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"文案词条", "page-head", "help-pop",
 		"filter-bar", "table-scroll", "data-table",
 		"site.component.gallery.prev", "Previous",
-		`data-write-url="/api/i18n/save"`, `data-write="bulk"`,
-		"data-msg-refresh", "data-write-status",
+		`hx-post="/api/i18n/save"`, `data-write="bulk"`,
+		"data-write-reload", "data-write-status", "data-write-result", `name="action" value="bulkDelete"`,
 		`name="action" value="delete"`, `name="action" value="create"`,
-		"data-requires-js",
 		`data-drawer-open="#tpl-i18n-create"`, "tpl-i18n-create",
-		`data-drawer-url="/admin/i18n/edit?key=site.component.gallery.prev`,
+		`hx-get="/admin/i18n/edit?key=site.component.gallery.prev&amp;lang=en-US"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
 		}
 	}
 
-	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`} {
+	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`, "I18nEditURLs", "data-write-url", "data-bind", "tpl-i18n-edit", "data-drawer-url"} {
 		if strings.Contains(out, unwanted) {
-			t.Fatalf("词条页不应再出现 %q —— 写动作已收敛到 JSON 端点 POST /api/i18n/save", unwanted)
+			t.Fatalf("词条页不应再出现 %q —— 写动作应使用标准表单与 HTML 片段", unwanted)
 		}
 	}
 
@@ -438,7 +439,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	}
 	empty["Entries"] = []i18n.Entry{}
 	empty["Categories"] = []string{}
-	out, err = render(t, set, "admin/system/i18n", empty)
+	out, err = renderPage(empty)
 	if err != nil {
 		t.Fatalf("空列表渲染失败: %v", err)
 	}
@@ -453,7 +454,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		readonly[k] = v
 	}
 	readonly["Buttons"] = map[string]bool{}
-	out, err = render(t, set, "admin/system/i18n", readonly)
+	out, err = renderPage(readonly)
 	if err != nil {
 		t.Fatalf("无管理权限渲染失败: %v", err)
 	}
@@ -490,7 +491,7 @@ type navigationTranslationGroup struct {
 }
 
 func TestArticleTranslationsPageRenders(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	data := map[string]any{
 		"lang": "en-US", "Langs": []translationLangOption{{Code: "en-US", Label: "en-US", Active: true}},
@@ -520,7 +521,7 @@ func TestArticleTranslationsPageRenders(t *testing.T) {
 }
 
 func TestNavigationTranslationsPageRenders(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	data := map[string]any{
 		"title": "导航译文", "menu": "navigation-translations", "t": TranslateFunc("en-US"),
@@ -546,10 +547,10 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 	for _, want := range []string{
 		"保存译文", "class=\"field nav-tr-row\"",
 		"name=\"context\"", "name=\"hash\"", "name=\"target\"",
-		"data-write-url=\"/api/navigation/update\"", "data-write=\"create\"",
-		"data-write-rows=\".nav-tr-row;context,hash,target\"",
+		"hx-post=\"/api/navigation/translations\"",
+		`data-write-builder="navigation-translations"`,
 		"name=\"action\" value=\"translations\"",
-		"/admin/navigations/translations?lang=en-US&amp;project=p1",
+		"/admin/navigations/translations?lang=",
 		"商品", "/shop", "该位置还没有菜单项",
 	} {
 		if !strings.Contains(out, want) {

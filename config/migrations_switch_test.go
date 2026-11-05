@@ -62,20 +62,17 @@ func TestForceMigrationsOverridesConfig(t *testing.T) {
 func TestSuppressWorkersUsesComponentConfig(t *testing.T) {
 	originalConfig := v
 	originalComponents, originalPreparers := runtimeComponents, runtimePreparers
-	originalRegistry, originalInited := initializedRegistry, runtimeInited
 	originalSuppression := suppressWorkers.Load()
 	t.Cleanup(func() {
 		_ = CloseComponents()
 		v = originalConfig
 		runtimeComponents, runtimePreparers = originalComponents, originalPreparers
-		initializedRegistry, runtimeInited = originalRegistry, originalInited
 		suppressWorkers.Store(originalSuppression)
 	})
 	for _, migration := range []bool{false, true} {
 		cfg := viper.New()
 		cfg.Set(keyRunWorker, true)
 		v = cfg
-		runtimeInited = false
 		runtimePreparers = nil
 		suppressWorkers.Store(false)
 		if migration {

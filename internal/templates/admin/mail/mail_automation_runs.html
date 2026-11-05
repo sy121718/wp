@@ -131,7 +131,9 @@
 
   {* 补投表单放列表外：HTML 不允许 form 嵌套，页头按钮用 form="<id>" 关联。
      重复补投是安全的（同一步不会做两次），故不做二次确认。 *}
-  <form id="automation-tick" class="hidden-form" method="post" action="/admin/mail/automation/tick{{ .["RunsQuery"] }}">
+  <form id="automation-tick" class="hidden-form" data-write hx-post="/admin/mail/automation/tick"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
   </form>
 </div>

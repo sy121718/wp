@@ -14,15 +14,14 @@
 
    只读页：本文件里唯一的写入口是那一行「重新发布」表单（data-write + data-write-reload）。 *}
 {{extends "../layout.html"}}
-{{block pageTitle()}}{{ .["t"]("admin.products.publish.title", "发布记录") }}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.products.publish.title", "发布记录") }}{{end}}
+{{block pageTitle()}}{{ .["t"]("pPubTitle", "发布记录") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("pPubTitle", "发布记录") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{selectedProject := .Scope.ProjectID}}
 {{siteName := ""}}{{range _, p := .Scope.Projects}}{{if p.ID == selectedProject}}{{siteName = p.Name}}{{end}}{{end}}
 {{records := .Records.Records}}
 {{total := .Records.Total}}
-{{ready := .Records.Available}}
 {{canHistory := isset(.Buttons["product.publish_attempts"])}}
 {{fKeyword := .Query.Keyword}}
 {{fStatus := .Query.Status}}
@@ -30,18 +29,18 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{tr("admin.products.publish.title", "发布记录")}}</h1>
+                <h1>{{tr("pPubTitle", "发布记录")}}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{tr("admin.inventory.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.products.publish.lead", "这里看的是每个商品**当前**的发布状态：有没有建详情页实例、线上路径是什么、什么时候发的、产物是哪一版、要不要重建。")}} {{tr("admin.products.publish.history.hint", "行内「发布历史」列出这个商品的每一次发布尝试（含自动重建与失败），默认最近 10 次，可加载更多。")}} {{tr("admin.products.publish.staleHint", "「待重建」表示商品的字段或模板变过、线上还是旧产物：点「重新发布」按当前模板再发一次。")}}</span>
+                    <button type="button" class="help-btn" aria-label="{{tr("invHelp", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("pPubLead", "这里看的是每个商品**当前**的发布状态：有没有建详情页实例、线上路径是什么、什么时候发的、产物是哪一版、要不要重建。")}} {{tr("pPubHistHint", "行内「发布历史」列出这个商品的每一次发布尝试（含自动重建与失败），默认最近 10 次，可加载更多。")}} {{tr("pPubStaleHint", "「待重建」表示商品的字段或模板变过、线上还是旧产物：点「重新发布」按当前模板再发一次。")}}</span>
                 </span>
             </div>
-            <p class="page-sub">{{tr("admin.products.publish.programLead", "发布的具体动作在多语言的")}}<a href="/admin/product-translations?project={{selectedProject}}">{{tr("admin.products.publish.programLink", "翻译与发布")}}</a>{{tr("admin.products.publish.programTail", "页；模板绑定在商品的编辑页。本页与它们读同一份发布真源。")}}</p>
+            <p class="page-sub">{{tr("prPubProgram", "发布的具体动作在「翻译与发布」页；模板绑定在商品的编辑页。本页与它们读同一份发布真源。")}} <a href="/admin/product-translations?project={{selectedProject}}">{{tr("prPubLink", "翻译与发布")}}</a></p>
         </div>
         <div class="page-actions">
             {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/products/publish-records">
-                <label class="sr-only" for="pub-project">{{tr("admin.inventory.field.project", "站点工程")}}</label>
+                <label class="sr-only" for="pub-project">{{tr("invFieldProj", "站点工程")}}</label>
                 <select class="form-select" id="pub-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -52,38 +51,31 @@
         </div>
     </header>
 
-    {{if !ready}}
-    {* 端口未装配 ≠ 数据读不到：那是装配缺陷，要人去查接线，重试没用。 *}
-    <section class="card list-card">
-        <p class="badge badge-warning" role="alert">{{tr("admin.products.publish.notWired", "发布能力还没有接入这一屏")}}</p>
-        <p class="page-sub">{{tr("admin.products.publish.notWiredDesc", "页面能打开，但发布状态的数据源没装配上来。这是部署侧的问题，稍后由维护者接线；不是「一个商品都没发布」。")}}</p>
-    </section>
-    {{else}}
     <section class="card list-card">
         <div class="card-header">
-            <span class="card-title">{{tr("admin.products.publish.title", "发布记录")}}{{if siteName}} · {{siteName}}{{end}}</span>
-            <span class="card-sub">{{sprintf(tr("admin.products.publish.totalNote", "共 %s 个商品"), total)}}</span>
+            <span class="card-title">{{tr("pPubTitle", "发布记录")}}{{if siteName}} · {{siteName}}{{end}}</span>
+            <span class="card-sub">{{sprintf(tr("pPubTotalNote", "共 %s 个商品"), total)}}</span>
         </div>
         <div class="filter-bar">
             <form method="get" action="/admin/products/publish-records" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
-                    <label for="pub-keyword">{{tr("admin.common.field.keyword", "关键词")}}</label>
+                    <label for="pub-keyword">{{tr("uiFieldKw", "关键词")}}</label>
                     <input type="text" class="form-input" id="pub-keyword" name="keyword" value="{{fKeyword}}"
-                           placeholder="{{tr("admin.products.ph.keyword", "商品名称")}}" autocomplete="off">
+                           placeholder="{{tr("pKw", "商品名称")}}" autocomplete="off">
                 </div>
                 <div class="filter-field">
-                    <label for="pub-status">{{tr("admin.products.publish.col.online", "状态")}}</label>
+                    <label for="pub-status">{{tr("pPubOnline", "状态")}}</label>
                     <select class="form-select" id="pub-status" name="status">
-                        <option value="">{{tr("admin.products.publish.status.all", "全部状态")}}</option>
-                        <option value="active" {{if fStatus == "active"}}selected{{end}}>{{tr("admin.products.publish.status.active", "已上线")}}</option>
-                        <option value="draft" {{if fStatus == "draft"}}selected{{end}}>{{tr("admin.products.publish.status.draft", "有实例未上线")}}</option>
-                        <option value="none" {{if fStatus == "none"}}selected{{end}}>{{tr("admin.products.publish.status.none", "未建实例")}}</option>
+                        <option value="">{{tr("pPubStatusAll", "全部状态")}}</option>
+                        <option value="active" {{if fStatus == "active"}}selected{{end}}>{{tr("pPubActive", "已上线")}}</option>
+                        <option value="draft" {{if fStatus == "draft"}}selected{{end}}>{{tr("pPubStatusDraft", "有实例未上线")}}</option>
+                        <option value="none" {{if fStatus == "none"}}selected{{end}}>{{tr("pPubStatusNone", "未建实例")}}</option>
                     </select>
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{tr("admin.products.filter.submit", "筛选")}}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/products/publish-records?project={{selectedProject}}">{{tr("admin.products.filter.reset", "重置")}}</a>
+                    <button type="submit" class="btn btn-sm">{{tr("pFltSubmit", "筛选")}}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/products/publish-records?project={{selectedProject}}">{{tr("pFltReset", "重置")}}</a>
                 </div>
             </form>
         </div>
@@ -93,113 +85,88 @@
         <table class="data-table data-table-wide">
             <thead>
             <tr>
-                <th>{{tr("admin.products.publish.col.product", "商品")}}</th>
-                <th>{{tr("admin.products.publish.col.site", "站点")}}</th>
-                <th>{{tr("admin.products.publish.col.online", "发布状态")}}</th>
-                <th>{{tr("admin.products.publish.col.lang", "语言与线上路径")}}</th>
-                <th>{{tr("admin.products.publish.col.publishedAt", "发布时间")}}</th>
-                <th>{{tr("admin.products.publish.col.artifact", "产物版本")}}</th>
-                <th class="col-actions">{{tr("admin.common.col.actions", "操作")}}</th>
+                <th>{{tr("pPubProd", "商品")}}</th>
+                <th>{{tr("pPubSite", "站点")}}</th>
+                <th>{{tr("pPubOnline", "发布状态")}}</th>
+                <th>{{tr("pPubLang", "语言与线上路径")}}</th>
+                <th>{{tr("pPubLiveAt", "发布时间")}}</th>
+                <th>{{tr("pPubArtifact", "产物版本")}}</th>
+                <th class="col-actions">{{tr("uiActions", "操作")}}</th>
             </tr>
             </thead>
             <tbody>
             {{if len(records) == 0}}
             <tr><td colspan="7" class="cell-wrap">
                 {{include "../partials/empty_state.html" map(
-                    "title", tr("admin.products.publish.emptyHeading", "没有符合条件的商品"),
-                    "desc", tr("admin.products.publish.emptyDesc", "当前筛选下没有商品。换个状态或清空关键词再试；商品本身在商品列表页维护。"))}}
+                    "title", tr("pPubEmptyHead", "没有符合条件的商品"),
+                    "desc", tr("pPubEmptyDesc", "当前筛选下没有商品。换个状态或清空关键词再试；商品本身在商品列表页维护。"))}}
             </td></tr>
             {{else}}
             {{range _, r := records}}
             <tr>
-                <td data-label="{{tr("admin.products.publish.col.product", "商品")}}">
+                <td data-label="{{tr("pPubProd", "商品")}}">
                     <div class="cell-stack">
                         <a class="cell-title" href="/admin/products/edit?project={{selectedProject}}&id={{r.ProductID}}">{{r.ProductName}}</a>
                         <code>{{r.ProductSlug}}</code>
                     </div>
                 </td>
-                <td data-label="{{tr("admin.products.publish.col.site", "站点")}}">{{if siteName}}{{siteName}}{{else}}—{{end}}</td>
-                <td data-label="{{tr("admin.products.publish.col.online", "发布状态")}}">
+                <td data-label="{{tr("pPubSite", "站点")}}">{{if siteName}}{{siteName}}{{else}}—{{end}}</td>
+                <td data-label="{{tr("pPubOnline", "发布状态")}}">
                     <div class="cell-stack">
                     {{if !r.HasInstance}}
-                        {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.publish.status.none", "未建实例"))}}
+                        {{include "../partials/badge.html" map("tone", "mute", "label", tr("pPubStatusNone", "未建实例"))}}
                     {{else if r.Online}}
-                        {{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.publish.status.active", "已上线"))}}
+                        {{include "../partials/badge.html" map("tone", "success", "label", tr("pPubActive", "已上线"))}}
                     {{else}}
-                        {{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.products.publish.status.draft", "有实例未上线"))}}
+                        {{include "../partials/badge.html" map("tone", "warning", "label", tr("pPubStatusDraft", "有实例未上线"))}}
                     {{end}}
-                    {{if r.Stale}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.products.publish.status.stale", "待重建"))}}{{end}}
+                    {{if r.Stale}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("pPubStatusStale", "待重建"))}}{{end}}
                     </div>
                 </td>
-                <td data-label="{{tr("admin.products.publish.col.lang", "语言与线上路径")}}">
+                <td data-label="{{tr("pPubLang", "语言与线上路径")}}">
                     <div class="cell-stack">
                     {{range _, l := r.Langs}}
                         <div>
                             {{include "../partials/badge.html" map("tone", "mute", "label", l.Lang != "" ? l.Lang : "—")}}
                             {{if l.Online}}
-                                {{if l.OnlinePath}}<a href="{{l.OnlinePath}}" target="_blank" rel="noopener noreferrer"><code>{{l.OnlinePath}}</code></a>{{else}}<span class="move-meta">{{tr("admin.products.publish.pathUnknown", "线上路径未登记")}}</span>{{end}}
+                                {{if l.OnlinePath}}<a href="{{l.OnlinePath}}" target="_blank" rel="noopener noreferrer"><code>{{l.OnlinePath}}</code></a>{{else}}<span class="move-meta">{{tr("pPubPathUnknown", "线上路径未登记")}}</span>{{end}}
                             {{else}}
-                                <span class="move-meta">{{tr("admin.products.publish.langNotPublished", "该语言还没发布成功")}}</span>
+                                <span class="move-meta">{{tr("pPubLangNoLive", "该语言还没发布成功")}}</span>
                             {{end}}
                         </div>
                     {{end}}
-                    {{if !r.HasInstance}}<span class="move-meta">{{tr("admin.products.publish.noInstanceHint", "还没有详情页实例：在编辑页选一套详情页模板并发布")}}</span>{{end}}
+                    {{if !r.HasInstance}}<span class="move-meta">{{tr("pPubNoInstHint", "还没有详情页实例：在编辑页选一套详情页模板并发布")}}</span>{{end}}
                     </div>
                 </td>
-                <td data-label="{{tr("admin.products.publish.col.publishedAt", "发布时间")}}">{{if r.Online}}{{formatTime(r.PublishedAt)}}{{else}}—{{end}}</td>
-                <td data-label="{{tr("admin.products.publish.col.artifact", "产物版本")}}">
+                <td data-label="{{tr("pPubLiveAt", "发布时间")}}">{{if r.Online}}{{formatTime(r.PublishedAt)}}{{else}}—{{end}}</td>
+                <td data-label="{{tr("pPubArtifact", "产物版本")}}">
                     <div class="cell-stack">
                     {{if r.ArtifactVersion}}<span>v{{r.ArtifactVersion}}</span>{{else}}—{{end}}
                     {{if r.ArtifactHash}}<code class="move-meta">{{r.ArtifactHash}}</code>{{end}}
                     </div>
                 </td>
-                <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
+                <td class="col-actions" data-label="{{tr("uiActions", "操作")}}">
                     {{if r.HasInstance}}
                     {* 重新发布 = 按当前绑定再发一次（templateId 留空即沿用实例绑定）。
                        走写基座：结论就近显示，成功整页刷新（状态列由服务端重算）。 *}
-                    <form data-write="custom" data-write-url="/api/product/detail-template/apply" data-write-reload class="form-inline">
+                    <form data-write hx-post="/api/product/detail-template/apply" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload class="form-inline">
+                        <div data-write-result></div>
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="productId" value="{{r.ProductID}}">
                         <p class="form-hint" data-write-status role="status" hidden></p>
-                        <button type="submit" class="btn btn-sm" data-requires-js hidden disabled>{{tr("admin.products.publish.republish", "重新发布")}}</button>
+                        <button type="submit" class="btn btn-sm" data-requires-js hidden disabled>{{tr("pPubRepublish", "重新发布")}}</button>
                     </form>
                     {{end}}
-                    {* 发布历史：本行展开，数据走 JSON 接口，行由文件末尾的 <template> 填。
-                       历史行容器与该按钮同在一个 <td> 里（不套抽屉：抽屉要求远程片段含 <form>）。
+                    {* 发布历史：本行展开，按页返回 Jet 片段；共用同一份行模板。
                        可见性由菜单按钮 product.publish_attempts 决定（迁移 673c）。 *}
                     {{if canHistory}}
                     <button type="button" class="btn btn-sm btn-ghost"
-                            hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}"
-                            hx-ext="json-swap"
-                            hx-target="#ph-{{r.ProductID}}" hx-swap="innerHTML"
-                            data-json-template="#tpl-publish-attempt"
-                            data-json-rows="rows"
-                            data-json-key="id"
-                            data-json-more="page"
-                            data-json-more-target="#ph-more-{{r.ProductID}}"
-                            data-json-empty-target="#ph-empty-{{r.ProductID}}"
-                            data-json-reveal="#ph-box-{{r.ProductID}}">{{tr("admin.products.publish.history.title", "发布历史")}}</button>
-                    {* 历史行容器：初始 hidden，由上面按钮的 data-json-reveal 放出。
-                       放在操作列里（表格列数不变）；行内容由 #tpl-publish-attempt 填充。
-                       与按钮同一个 canHistory 分支：没有按钮就没人能把它打开。 *}
-                    <div class="ph-box" id="ph-box-{{r.ProductID}}" hidden>
-                        <p class="page-sub">{{tr("admin.products.publish.history.lead", "每一次发布尝试都记在这里，含自动重建与失败：失败会留下原因原文。默认显示最近 10 次。")}}</p>
-                        <div class="ph-list" id="ph-{{r.ProductID}}" role="list"></div>
-                        <p class="page-sub ph-empty" id="ph-empty-{{r.ProductID}}" hidden>{{tr("admin.products.publish.history.empty", "这个商品还没有发布尝试记录。")}}</p>
-                        <button type="button" class="btn btn-sm" id="ph-more-{{r.ProductID}}" hidden
-                                hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}&amp;page=2"
-                                hx-ext="json-swap"
-                                hx-target="#ph-{{r.ProductID}}" hx-swap="innerHTML"
-                                data-json-template="#tpl-publish-attempt"
-                                data-json-rows="rows"
-                                data-json-key="id"
-                                data-json-patch="append"
-                                data-json-more="page"
-                                data-json-empty-target="#ph-empty-{{r.ProductID}}"
-                                data-json-more-hide>{{tr("admin.products.publish.history.more", "加载更多")}}</button>
-                    </div>
+                            hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}&amp;page=1"
+                            hx-target="#ph-box-{{r.ProductID}}" hx-swap="innerHTML"
+                            hx-sync="this:drop" onclick="document.getElementById('ph-box-{{r.ProductID}}').hidden=false">{{tr("pPubHistTitle", "发布历史")}}</button>
+                    <div class="ph-box" id="ph-box-{{r.ProductID}}" hidden></div>
                     {{end}}
-                    <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&id={{r.ProductID}}">{{tr("admin.products.row.edit", "编辑")}}</a>
+                    <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&id={{r.ProductID}}">{{tr("pRowEdit", "编辑")}}</a>
                 </td>
             </tr>
             {{end}}
@@ -210,47 +177,6 @@
         {* 分页条基址带当前筛选（工程 / 关键词 / 状态）：翻页不丢条件。 *}
         {{include "catalog_pagination.html" map("Result", map("Total", .Records.Total, "Page", .Records.Page, "Size", .Records.Limit), "req_path", .["req_path"], "t", tr)}}
     </section>
-    {{end}}
-
-    {* ═══ 发布历史（迁移 673）═══
-       数据走接口 GET /api/product/publish-attempts（JSON），行由本页 <template> 填 ——
-       后端不产 HTML 片段（static/js/ui/json_swap.js 开头那条规矩）。
-
-       形态照 internal/templates/admin/page/pages.html:222-229（全仓唯一的 json-swap 用法）：
-       行内按钮 hx-get 打接口、hx-target 指到本行的历史容器、data-json-* 声明模板与行数组。
-       「加载更多」复用同一接口：data-json-patch="append" 追加、data-json-more="page" 由
-       扩展自己把页码推进到下一页，没有下一页时 data-json-more-hide 让这个按钮消失 ——
-       页面里因此没有一行 JS，页码状态也不散在 DOM 属性里由脚本维护。
-
-       接口口径是**累计**（page=N 取最新 N*size 条）：台账只增不删，重复请求同一页恒定
-       返回同一批前缀，扩展按 data-json-key 去重后追加，连点不会插出重复行。 *}
-    <template id="tpl-publish-attempt">
-        <div class="ph-row" data-row>
-            <span class="ph-time" data-field="createdAt" data-field-format="datetime"></span>
-            <span class="ph-outcome">
-                <span data-when="success" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.publish.history.ok", "成功"))}}</span>
-                <span data-when="failed" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "danger", "label", tr("admin.products.publish.history.failed", "失败"))}}</span>
-            </span>
-            <span class="ph-trigger">
-                {{tr("admin.products.publish.history.trigger", "触发")}}
-                <span data-when="create" data-when-field="trigger">{{tr("admin.products.publish.history.t.create", "首次发布")}}</span>
-                <span data-when="manual" data-when-field="trigger">{{tr("admin.products.publish.history.t.manual", "手动发布")}}</span>
-                <span data-when="template_switch" data-when-field="trigger">{{tr("admin.products.publish.history.t.switch", "换模板")}}</span>
-                <span data-when="update_url" data-when-field="trigger">{{tr("admin.products.publish.history.t.url", "改 URL")}}</span>
-                <span data-when="rollback" data-when-field="trigger">{{tr("admin.products.publish.history.t.rollback", "回滚")}}</span>
-                <span data-when="override" data-when-field="trigger">{{tr("admin.products.publish.history.t.override", "改文档")}}</span>
-                <span data-when="auto_rebuild" data-when-field="trigger">{{tr("admin.products.publish.history.t.auto", "自动重建")}}</span>
-            </span>
-            <span class="ph-who" data-field="operatorName"></span>
-            <span class="ph-langs" data-field="langs" data-field-format="list"></span>
-            <span class="ph-artifact" data-field="artifactHash"></span>
-            <span class="ph-cost">
-                <span data-field="durationMs" data-field-format="duration"></span>
-                <span data-field="attempts" data-field-min="2" data-field-suffix="x"></span>
-            </span>
-            <span class="ph-error" data-when="failed" data-when-field="outcome">{{tr("admin.products.publish.history.failed", "失败")}}</span>
-        </div>
-    </template>
 
 </div>
 {{end}}

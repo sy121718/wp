@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	cardstack "go_wp/internal/builder/components/cardstack"
-	productcard "go_wp/internal/builder/components/productcard"
-	productlist "go_wp/internal/builder/components/productlist"
-	"go_wp/internal/builder/core"
+	cardstack "go_wp/internal/builder/extensions/cardstack"
+	productcard "go_wp/internal/builder/extensions/productcard"
+	productlist "go_wp/internal/builder/extensions/productlist"
+	"go_wp/pkg/builder/core"
 )
 
 type stubEntitySource struct {

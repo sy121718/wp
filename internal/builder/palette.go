@@ -5,7 +5,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"sort"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 var PaletteExemptTypes = map[string]string{

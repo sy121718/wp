@@ -1,6 +1,7 @@
 package adminui_test
 
 import (
+	jetpkg "go_wp/pkg/view/jet"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,13 +53,16 @@ func TestPrepareReadsAdminctxKeys(t *testing.T) {
 	if !ok || !buttons["product.create"] {
 		t.Fatalf("Prepare 没认出 adminctx.ButtonsKey（=%q）—— 按钮显隐会整块失效", adminctx.ButtonsKey)
 	}
-	groups, ok := data["NavGroups"].([]adminui.NavGroup)
-	if !ok || len(groups) != 2 {
-		t.Fatalf("Prepare 没认出 adminctx.NavTreeKey（=%q）—— 侧栏会空，NavGroups=%v", adminctx.NavTreeKey, data["NavGroups"])
+	items, ok := data["NavItems"].([]jetpkg.NavItem)
+	if !ok || len(items) != 2 {
+		t.Fatalf("Prepare 没认出 adminctx.NavTreeKey（=%q）—— 侧栏会空，NavItems=%v", adminctx.NavTreeKey, data["NavItems"])
 	}
-	if !groups[0].Active || !data["HasSubnav"].(bool) {
-		t.Fatalf("当前页 /admin/products 归属「商品」分组：NavGroups[0].Active 与 HasSubnav 都应为真，实际 %+v / %v",
-			groups[0], data["HasSubnav"])
+	if path, _ := data["NavCurrentPath"].(string); path != "/admin/products" {
+		t.Fatalf("Prepare 应把当前路径作为请求事实交给模板，实际 %q", data["NavCurrentPath"])
+	}
+	if !jetpkg.NavBranchActive(items[0], "/admin/products") || !data["HasSubnav"].(bool) {
+		t.Fatalf("当前页 /admin/products 归属「商品」分组：模板函数应判为激活且 HasSubnav 为真，实际 %+v / %v",
+			items[0], data["HasSubnav"])
 	}
 }
 
@@ -87,8 +91,8 @@ func TestPrepareFailsClosedOnInvalidContextValues(t *testing.T) {
 					t.Fatalf("%s must fail closed: %#v", key, data[key])
 				}
 			}
-			groups, ok := data["NavGroups"].([]adminui.NavGroup)
-			if !ok || len(groups) != 0 || data["HasSubnav"] != false {
+			items, ok := data["NavItems"].([]jetpkg.NavItem)
+			if !ok || len(items) != 0 || data["HasSubnav"] != false {
 				t.Fatalf("navigation must fail closed: %#v", data)
 			}
 		})

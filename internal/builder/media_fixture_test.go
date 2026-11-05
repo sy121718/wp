@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/upload"
 )

@@ -145,6 +145,19 @@ func TestUICSSInjectsOnlyUsedSections(t *testing.T) {
 		len(src), len(css), 100*float64(len(css))/float64(len(src)))
 }
 
+// TestUICSSDrawerKeepsHiddenRule 确保构建裁剪不丢失抽屉关闭后的隐藏规则。
+func TestUICSSDrawerKeepsHiddenRule(t *testing.T) {
+	for _, content := range []string{`<aside data-drawer></aside>`, `<button data-drawer-open="#edit">编辑</button>`} {
+		css, err := uiCSSFor(fullUICSS(t), collectHTMLScan(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(css, ".drawer[hidden], .drawer-mask[hidden] { display: none; }") {
+			t.Error("抽屉裁剪后缺少关闭时退出布局的隐藏规则")
+		}
+	}
+}
+
 func TestUICSSSplitUtilityClassesFollowNotTrigger(t *testing.T) {
 	src := fullUICSS(t)
 	onlyUtility, err := uiCSSFor(src, collectHTMLScan("<div class='flex items-center'>布局</div>"))

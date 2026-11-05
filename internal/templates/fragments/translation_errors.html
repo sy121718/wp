@@ -1,7 +1,9 @@
-{* fragments/translation_errors.html — 译文保存失败时的**逐行错误**区（整页与 htmx 片段共用）。
+{* fragments/translation_errors.html — 译文保存失败时的**逐行错误**区（整页渲染用）。
 
-   两个消费方：整页渲染（工作台的 include）与 htmx 片段（就地替换 #page-translations-errors）。
-   写两份必然漂移，漂移的表现是「片段里的错误长得和整页里的不一样」。
+   消费方只有整页 GET 成功的初始渲染（工作台的 include）。保存失败现在回 JSON，
+   逐行原因走 data.items 进写基座的 [data-write-status] 列表，不再就地替换这一块。
+   两条路的行数据同出 translationRowErrors，写两份必然漂移，漂移的表现是
+   「JSON 里的错误长得和整页里的不一样」。
 
    数据：Errors 是 []TranslationRowErrorResp，每项 Label（哪一行，可空=页面级）+ Msg（词条事实）。
    取词：本片段不经 adminui.Prepare，t / tf 由调用点经 adminui.PrepareBare(View) 注入。 *}

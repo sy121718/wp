@@ -69,7 +69,16 @@ func salesOverviewTemplateData() map[string]any {
 
 	data["LoadErr"] = ""
 
-	data["Todo"] = map[string]any{"alertCount": -1, "pendingShip": -1, "total": 0}
+	// Todo 必须是真实结构体字段名（Total/AlertCount/PendingShip）：adminui.ViewMap
+	// 只转顶层字段，生产里 data["Todo"] 是 SalesTodoResp 值而不是 map，模板按
+	// .Todo.Total 访问。这里写小写 map 等于模拟「view tag 在嵌套结构上生效」这个
+	// 错误假设 —— 那正是老模板 500 的成因。不放真类型是因为 internal/templates
+	// 不能 import internal/module/order/inbound/http（会绕回 internal/text 成环）。
+	data["Todo"] = struct {
+		AlertCount  int
+		PendingShip int
+		Total       int
+	}{AlertCount: -1, PendingShip: -1, Total: 0}
 
 	data["Projects"] = []map[string]any{
 		{"ID": "p1", "Name": "测试工程"},

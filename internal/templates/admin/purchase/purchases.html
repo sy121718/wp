@@ -81,7 +81,8 @@
                     <select class="form-select" id="po-status" name="status">
                         <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionStatusAll", "（全部）") }}</option>
                         {{range _, s := .StatusOptions}}
-                        <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
+                        {* 固定状态映射：值来自后端枚举，标签与词条 key 由模板按请求语言取词。 *}
+                        <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{if s.Value == "draft"}}{{t("admin.inventory_purchases.status.draft", "草稿")}}{{else if s.Value == "ordered"}}{{t("admin.inventory_purchases.status.ordered", "已下单")}}{{else if s.Value == "partial"}}{{t("admin.inventory_purchases.status.partial", "部分到货")}}{{else if s.Value == "received"}}{{t("admin.inventory_purchases.status.received", "已到货")}}{{else if s.Value == "exception"}}{{t("admin.inventory_purchases.status.exception", "异常")}}{{else if s.Value == "finished"}}{{t("admin.inventory_purchases.status.finished", "已完结")}}{{else if s.Value == "cancelled"}}{{t("admin.inventory_purchases.status.cancelled", "已取消")}}{{else}}{{s.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -227,37 +228,42 @@
        原因缺失只是少了一句解释，不是错误。 *}
     {{range _, o := .Orders}}
     {{if o.Status == "draft"}}
-    <form id="po-place-{{o.ID}}" method="post" action="/admin/inventory/purchases/place?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/place?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+    <form data-write id="po-place-{{o.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/place?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{o.ID}}">
+        <div data-write-result></div>
     </form>
     {{end}}
     {{if o.Status == "exception"}}
-    <form id="po-resume-{{o.ID}}" method="post" action="/admin/inventory/purchases/resume?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/resume?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+    <form data-write id="po-resume-{{o.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/resume?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{o.ID}}">
+        <div data-write-result></div>
     </form>
     {{else if o.Status == "ordered" || o.Status == "partial" || o.Status == "received"}}
-    <form id="po-exception-{{o.ID}}" method="post" action="/admin/inventory/purchases/exception?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/exception?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+    <form data-write id="po-exception-{{o.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/exception?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{o.ID}}">
+        <div data-write-result></div>
     </form>
     {{end}}
     {{if o.Status == "received" || o.Status == "partial"}}
-    <form id="po-finish-{{o.ID}}" method="post" action="/admin/inventory/purchases/finish?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/finish?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+    <form data-write id="po-finish-{{o.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/finish?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{o.ID}}">
+        <div data-write-result></div>
     </form>
     {{end}}
     {{if o.Status == "draft" || o.Status == "ordered" || o.Status == "partial" || o.Status == "exception"}}
-    <form id="po-cancel-{{o.ID}}" method="post" action="/admin/inventory/purchases/cancel?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/cancel?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+    <form data-write id="po-cancel-{{o.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/cancel?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{o.ID}}">
+        <div data-write-result></div>
     </form>
     {{end}}
     {{end}}
@@ -277,10 +283,11 @@
         {{if len(o.Lines) == 0}}
         <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.noLines", "这张采购单没有采购行。") }}</p>
         {{else}}
-        <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-post="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="orderId" value="{{o.ID}}">
+        <div data-write-result></div>
             {* 一张单一个幂等键：重复提交（连点 / 网络重试）命中同一张入库单，不会二次加库存。 *}
             <input type="hidden" name="requestId" value="{{o.RequestID}}">
             {{range _, l := o.Lines}}
@@ -334,10 +341,11 @@
        成本价必填且非负（服务端同样拒绝：ErrProductionCostInvalid），数量为正整数。 *}
     {{if isset(.Buttons["inventory.purchase_production"])}}
     <template id="tpl-production-inbound">
-        <form method="post" action="/admin/inventory/purchases/production?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/purchases/production?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" class="form-stack" hx-target="find [data-write-result]" hx-post="/admin/inventory/purchases/production?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="requestId" value="{{.ProductionRequestID}}">
+        <div data-write-result></div>
             <div class="form-group">
                 <label class="form-label req">{{ .["t"]("admin.inventory_purchases.production.labelSource", "生产来源") }}</label>
                 <select class="form-select" name="sourceId" required aria-label="{{ .["t"]("admin.inventory_purchases.production.labelSource", "生产来源") }}">

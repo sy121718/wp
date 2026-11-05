@@ -247,7 +247,7 @@
         <p class="badge badge-warning" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
         {{end}}{{end}}
         {{if isset(.LangURLOffWarning)}}{{if .LangURLOffWarning}}
-        <p class="badge badge-warning" role="alert">{{ .["t"]("MsgSiteLangURLOffWarning", "当前多语言访问路径方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请在下方「多语言访问路径方案」切换为 default_plain 或 all_prefix 并保存") }}</p>
+        <p class="badge badge-warning" role="alert">{{ .["t"]("langUrlOffWarn", "当前多语言访问路径方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请在下方「多语言访问路径方案」切换为 default_plain 或 all_prefix 并保存") }}</p>
         {{end}}{{end}}
         <form id="locale-form" method="post" action="/admin/settings/locales/save?project={{.Selected}}" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">

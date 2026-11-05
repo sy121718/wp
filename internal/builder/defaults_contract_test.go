@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 )
 
 const paletteJSRel = "../templates/static/js/workbench/palette.js"

@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/CloudyKit/jet/v6"
+
+	jetpkg "go_wp/pkg/view/jet"
 )
 
 //go:embed fragments/*.jet
@@ -25,17 +27,12 @@ func fragmentTemplateSet() (*jet.Set, error) {
 			fragmentSetErr = err
 			return
 		}
-		set := jet.NewSet(
-			loader,
-			jet.WithTemplateNameExtensions([]string{"", ".jet"}),
-		)
-		injectGlobals(set)
-		fragmentSet = set
+		fragmentSet = jetpkg.NewJetSetFromLoader(loader, false, []string{"", ".jet"})
 	})
 	return fragmentSet, fragmentSetErr
 }
 
-func newFragmentLoader() (*embedLoader, error) {
+func newFragmentLoader() (*jetpkg.FSLoader, error) {
 	sub, err := fs.Sub(fragmentsFS, "fragments")
 	if err != nil {
 		return nil, err
@@ -50,7 +47,7 @@ func newFragmentLoader() (*embedLoader, error) {
 			files = append(files, e.Name())
 		}
 	}
-	return newEmbedLoader(sub, files), nil
+	return jetpkg.NewFSLoader(sub, files), nil
 }
 
 func RenderFragment(name string, data any) (string, error) {

@@ -7,11 +7,13 @@
 
    数据见 ai/inbound/http/ai_page.go:1235 的 SessionPageHandle.SessionsPage
    （该 handler 早先从 ai_session_page.go 并入 ai_page.go，这里跟着更正）：
-     Rows / Total / Page / PageSize / TotalPages / HasPrev / HasNext / PrevURL / NextURL（列表与分页）
+     Rows / Total / Page / PageSize / Pagination（列表与分页事实；按钮与链接由模板算）
      Filter（aidto.SessionQuery，筛选项回填）、FilterOptions（三个下拉的候选）
-     Usage（指标卡）、Trend（aidto.SessionTrend：From / To / PeakText / Series，折线图）
+     Usage（指标卡）、Trend（aidto.SessionTrend：From / To / Peak / Series，折线图；
+     几何与配色由 static/js/ui/ai-trend.js 按 Series[].Values 现算，模板只交事实）
      ProviderCards / Presets / BuiltinKeys / ProtocolOptions（模型标签）
-     Detail / DetailErr / Events / FoldPlan（带 ?id= 时的详情）
+     Detail / Events（带 ?id= 时的详情）
+   （折叠建议 FoldPlan 不在这里：页面没有消费者，前端需要时单独调 fold/plan 接口）
 
    图表自绘（内联 SVG 折线，坐标由 service 算成 points 字符串）：项目没有图表基座，
    为一个趋势图引第三方库不划算。按 (供应商, 模型) 分多序列 —— 柱状图一天只有一根、
@@ -28,10 +30,6 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{canRename := isset(.Buttons["ai.session_rename"])}}
-{{canArchive := isset(.Buttons["ai.session_archive"])}}
-{{canFold := isset(.Buttons["ai.session_fold"])}}
-{{canAppend := isset(.Buttons["ai.session_append"])}}
 {* 发消息是对话，走 ai:chat 权限点（页面路由借 /api/ai/chat 的 casbin obj）。 *}
 {{canSend := isset(.Buttons["ai.chat"])}}
 {{canManage := isset(.Buttons["ai.provider_save"])}}
@@ -42,10 +40,6 @@
 {{f := .Filter}}
 {{u := .Usage}}
 {{isModels := .IsModels}}
-{* 主数据失败事实（SessionsPage 的失败出口给的）：loadFailed 为真则整块标签区换成失败说明 ——
-   列表没读出来时，拿零值渲染指标卡与空列表，与「真的是 0 用量 / 真的没有会话」长得一样。 *}
-{{loadFailed := isset(.LoadFailed) && .LoadFailed}}
-{{loadError := .["LoadError"]}}
 {* 标签状态用模板内变量而不是内联条件：`{{if c}}...{{end}}` 嵌在属性中间是既定写法，
    而属性值里的比较表达式求值时机不好把握。 *}
 {{selSessions := "true"}}
@@ -71,15 +65,6 @@
         </div>
     </header>
 
-    {{if loadFailed}}
-    {* 会话清单没读出来：整块标签区换成失败说明，页面壳与侧栏照旧。
-       文案是归口后的当前语言译文（Go 侧 aiErrText），驱动原文只进日志。 *}
-    <section class="card list-card" role="alert">
-        <p class="badge badge-danger">{{loadError}}</p>
-        <p class="page-sub">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
-        <p class="hint">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
-    </section>
-    {{else}}
     <div class="tabs ai-tabs" data-tabs>
         <div class="tab-list" role="tablist">
             {* 模型在前：这个入口叫「大模型管理」，第一屏就该是模型配置（默认标签也在这里）。 *}
@@ -95,10 +80,6 @@
         {{if canViewSessions}}
         <div class="tab-panel" role="tabpanel" id="ai-panel-sessions" aria-labelledby="ai-tab-sessions"{{if isModels}} hidden{{end}}>
         <div class="stack">
-            {{if isset(.UsageErr)}}{{if .UsageErr}}
-            <p class="badge badge-warning" role="alert">{{.UsageErr}}</p>
-            {{end}}{{end}}
-
             {* 指标卡：只放列表里看不出来的聚合。口径都写在下方小字里 ——「累计 token」与列里的
                「上下文 token」是两回事，不写清楚会被当成同一个数。
                刻意不做「压缩次数」「平均每会话」：前者是列表里已有的列，后者是能一眼除出来的
@@ -116,7 +97,7 @@
                 </div>
                 <div class="card stat-card">
                     <div class="stat-label">{{tr("admin.ai.session.stat.tokens", "累计 token")}}</div>
-                    <div class="stat-value">{{u.TokensText}}</div>
+                    <div class="stat-value">{{tokens(u.Tokens)}}</div>
                     <div class="stat-note">{{tr("admin.ai.session.stat.tokens.note", "按事件正文估算，非当前上下文")}}</div>
                 </div>
                 {* 下面三张不是「派生值」，是 docs/16 §3.1 的验收数字 —— 它们的数据源在
@@ -126,7 +107,7 @@
                    它让命中率无从判断，而不是「命中率是 0」。 *}
                 <div class="card stat-card">
                     <div class="stat-label">{{tr("admin.ai.session.stat.hitRate", "前缀缓存命中率")}}</div>
-                    <div class="stat-value">{{u.HitRateText}}</div>
+                    <div class="stat-value">{{if u.HitRateReady}}{{percent(u.HitRatePct, 1)}}{{else}}—{{end}}</div>
                     <div class="stat-note">
                         {{if u.HitRateReady}}
                         {{tr("admin.ai.session.stat.hitRate.note", "命中 / 上报缓存的调用输入；健康区间 95–97%")}}
@@ -137,7 +118,7 @@
                 </div>
                 <div class="card stat-card">
                     <div class="stat-label">{{tr("admin.ai.session.stat.compactCost", "摘要占用上下文")}}</div>
-                    <div class="stat-value">{{u.CompactCostText}}</div>
+                    <div class="stat-value">{{if u.Tokens > 0}}{{percent(u.CompactCostPct, 1)}}{{else}}—{{end}}</div>
                     <div class="stat-note">{{tr("admin.ai.session.stat.compactCost.note", "折叠摘要的 token / 全部事件 token；长期超过 2% 说明压得太频繁")}}</div>
                 </div>
                 <div class="card stat-card">
@@ -154,38 +135,33 @@
                 {{else}}
                 <div class="chart-trend">
                     {* 折线而不是柱状：柱状图一天只有一根、一个高度，多序列只能堆叠或并排 ——
-                       堆叠看不出单条趋势，并排又把一天切成一簇细柱。viewBox 固定 + preserveAspectRatio="none"
-                       让图自适应容器宽度，描边靠 CSS 的 non-scaling-stroke 保住 2px。 *}
+                       堆叠看不出单条趋势，并排又把一天切成一簇细柱。
+
+                       几何（每个点落哪、线怎么连、配色取哪一档）由 static/js/ui/ai-trend.js
+                       按 data-values 自己算：服务端只给逐日 token 数组与峰值，不给坐标。
+                       换图宽、换点数、换配色都不必改后端。没有 JS 时这一块留空并显示下面的
+                       图例与起止日期，数字仍然可读。 *}
                     <svg class="chart-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
-                         aria-label="{{tr("admin.ai.session.trend.title", "Token 用量趋势")}} {{.Trend.From}} – {{.Trend.To}}">
-                        {{range _, s := .Trend.Series}}
-                        {{if s.Single}}
-                        {* 单点用方块而不是圆：viewBox 被 preserveAspectRatio="none" 横向拉伸，
-                           圆会被拉成椭圆（宽高比随容器变），方块只是变胖一点。 *}
-                        <rect class="chart-trend-point" x="{{s.DotX}}" y="{{s.DotY}}" width="14" height="14" rx="3"
-                              transform="translate(-7,-7)" style="fill: var(--chart-c{{s.Color}})"></rect>
-                        {{else}}
-                        <polyline class="chart-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
-                        {{end}}
-                        {{end}}
-                    </svg>
+                         data-trend-svg data-trend-peak="{{.Trend.Peak}}"
+                         aria-label="{{tr("admin.ai.session.trend.title", "Token 用量趋势")}} {{.Trend.From}} – {{.Trend.To}}"></svg>
                 </div>
-                <ul class="chart-trend-legend">
-                    {{range _, s := .Trend.Series}}
-                    <li class="chart-trend-legend-item">
-                        <span class="chart-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
+                <ul class="chart-trend-legend" data-trend-legend>
+                    {{range i, s := .Trend.Series}}
+                    <li class="chart-trend-legend-item" data-trend-series="{{i}}"
+                        data-values="{{range j, v := s.Values}}{{if j}} {{end}}{{v}}{{end}}">
+                        <span class="chart-trend-swatch" style="background: var(--chart-c{{tone(i)}})"></span>
                         <span class="chart-trend-legend-label">
                             {{if s.OtherCount > 0}}{{tr("admin.ai.session.trend.other", "其他")}}（{{s.OtherCount}}）
                             {{else if s.ProviderKey == ""}}{{tr("admin.ai.session.usage.unrecorded", "未记录")}}
                             {{else}}{{s.ProviderKey}}{{if s.ModelID != ""}} / {{s.ModelID}}{{end}}{{end}}
                         </span>
-                        <span class="chart-trend-legend-value">{{s.TotalText}}</span>
+                        <span class="chart-trend-legend-value">{{tokens(s.Total)}}</span>
                     </li>
                     {{end}}
                 </ul>
                 <p class="form-hint">
                     {{.Trend.From}} – {{.Trend.To}}
-                    · {{tr("admin.ai.session.trend.peak", "峰值")}}：{{.Trend.PeakText}}
+                    · {{tr("admin.ai.session.trend.peak", "峰值")}}：{{tokens(.Trend.Peak)}}
                 </p>
                 {{end}}
             </section>
@@ -309,7 +285,7 @@
                                                     <td>{{if u.Unrecorded}}<span class="badge badge-mute">{{tr("admin.ai.session.usage.unrecorded", "未记录")}}</span>{{else}}{{u.ProviderKey}}{{end}}</td>
                                                     <td>{{if u.Unrecorded}}—{{else if u.ModelID}}{{u.ModelID}}{{else}}—{{end}}</td>
                                                     <td>{{u.Events}}</td>
-                                                    <td>{{u.TokensText}}</td>
+                                                    <td>{{tokens(u.Tokens)}}</td>
                                                 </tr>
                                                 {{end}}
                                             </tbody>
@@ -335,14 +311,14 @@
                                             <tbody>
                                                 {{range _, c := row.Calls.Rows}}
                                                 <tr>
-                                                    <td>{{c.Time}}</td>
+                                                    <td>{{dateTime(c.At)}}</td>
                                                     <td>{{if c.ModelID}}{{c.ModelID}}{{else}}—{{end}}</td>
-                                                    <td>{{c.LatencyText}}</td>
-                                                    <td>{{c.TokensText}}</td>
-                                                    {* 失败那一格显示归口后的原因（i18n key + 中文兜底），
-                                                       不是一句干巴巴的「失败」—— 排查时要知道是「供应商不存在」
-                                                       还是「上游非 2xx」。 *}
-                                                    <td>{{if c.OK}}<span class="badge badge-success">{{tr("admin.ai.session.calls.ok", "成功")}}</span>{{else}}<span class="badge badge-warning">{{tr(c.ErrorKey, c.ErrorText)}}</span>{{end}}</td>
+                                                    <td>{{latency(c.LatencyMs)}}</td>
+                                                    <td>{{tokens(c.Tokens)}}</td>
+                                                    {* 失败那一格按错误 key 取词（缺词落「调用失败」兜底），
+                                                       排查时要知道是「供应商不存在」还是「上游非 2xx」——
+                                                       service 只交 key，文案在这里取。 *}
+                                                    <td>{{if c.OK}}<span class="badge badge-success">{{tr("admin.ai.session.calls.ok", "成功")}}</span>{{else}}<span class="badge badge-warning">{{tr(c.ErrorKey, "调用失败")}}</span>{{end}}</td>
                                                 </tr>
                                                 {{end}}
                                             </tbody>
@@ -361,26 +337,18 @@
                 </div>
             </section>
 
-            {{if .TotalPages > 1}}
-            <div class="action-row">
-                <span class="form-hint">{{.Page}} / {{.TotalPages}}</span>
-                {{if .HasPrev}}<a class="btn btn-sm" href="{{.PrevURL}}">{{tr("admin.ai.session.page.prev", "上一页")}}</a>{{end}}
-                {{if .HasNext}}<a class="btn btn-sm" href="{{.NextURL}}">{{tr("admin.ai.session.page.next", "下一页")}}</a>{{end}}
-            </div>
-            {{end}}
+            {* 分页按钮窗口与每页链接归模板的共享能力（partials/pagination.html + pkg/pagination），
+               后端只交 Pagination 事实（Total / Page / Limit）。 *}
+            {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
         </div>
 
         {* 详情区：只在 ?id= 时渲染。与列表同一个 URL —— 详情是叠加在列表上的一块，
            所以它没有自己的路由与权限点：能看这个标签页就够看细节。 *}
-        {{if isset(.DetailID)}}
+        {{if isset(.DetailID) && .DetailID > 0}}
         <section class="card card-body" id="ai-session-detail">
             <div class="page-head-main">
                 <h2 class="card-title">{{tr("admin.ai.detail.title", "会话详情")}} #{{.DetailID}}</h2>
             </div>
-
-            {{if isset(.DetailErr)}}
-            <p class="badge badge-warning" role="alert">{{.DetailErr}}</p>
-            {{else}}
 
             <div class="stat-grid">
                 <div class="stat-card">
@@ -401,10 +369,6 @@
                 </div>
             </div>
 
-            {{if isset(.EventsErr)}}
-            <p class="badge badge-warning" role="alert">{{.EventsErr}}</p>
-            {{else}}
-
             <h3 class="card-title">{{tr("admin.ai.detail.timeline", "事件时间线")}}</h3>
             {{if len(.Events) == 0}}
             <p class="form-hint">{{tr("admin.ai.detail.noEvents", "这个会话还没有任何事件。")}}</p>
@@ -413,10 +377,10 @@
                 {{range _, e := .Events}}
                 <article class="event-item">
                     <header class="event-head">
-                        <span class="badge{{if e.Tone != ""}} badge-{{e.Tone}}{{end}}">{{e.Kind}}</span>
+                        <span class="badge{{if e.Kind == "user"}} badge-info{{else if e.Kind == "assistant"}} badge-ok{{else if e.Kind == "tool"}} badge-warn{{end}}">{{e.Kind}}</span>
                         <span class="form-hint">#{{e.Seq}}</span>
                         {{if e.Tool != ""}}<span class="form-hint">{{e.Tool}}{{if e.Phase != ""}} · {{e.Phase}}{{end}}</span>{{end}}
-                        <span class="event-time">{{e.TimeLabel}}</span>
+                        <span class="event-time">{{dateTime(e.At)}}</span>
                     </header>
                     <div class="event-body">{{e.Content}}</div>
                     {{if e.HasViews}}
@@ -427,9 +391,6 @@
                 </article>
                 {{end}}
             </div>
-            {{end}}
-
-            {{end}}
         </section>
         {{end}}
         </div>
@@ -446,21 +407,18 @@
                 {{end}}
             </div>
 
-            {{if isset(.ProviderErr)}}{{if .ProviderErr}}
-            <p class="badge badge-warning" role="alert">{{.ProviderErr}}</p>
-            {{end}}{{end}}
-
-            {{if len(.ProviderCards) == 0}}
-            <section class="card list-card">
+            {* 每张卡都是标准 HTMX 写表单：保存/启停换回整卡，删除由 hx-swap="delete"
+               就地摘掉 —— 不整页刷新，同页其它卡片里刚填的密钥与未保存的模型草稿不会被吃掉。 *}
+            <div class="stack" data-ai-provider-cards>
+                {{range _, card := .ProviderCards}}
+                {{include "provider_card.html" card}}
+                {{end}}
+            </div>
+            <section class="card list-card" data-ai-provider-empty{{if len(.ProviderCards) > 0}} hidden{{end}}>
                 <div class="empty-state">
                     <p class="empty-title">{{tr("admin.ai.empty", "还没有配置任何 AI 供应商。")}}</p>
                 </div>
             </section>
-            {{end}}
-
-            {{range _, card := .ProviderCards}}
-            {{include "provider_card.html" card}}
-            {{end}}
         </div>
         </div>
         {{end}}
@@ -476,13 +434,12 @@
         {{end}}
         {{end}}
     </div>
-    {{end}}
 </div>
 
 {{if canManage}}
 {{include "provider_create.html" .}}
 {{end}}
 
-{* 「获取可用模型」的候选弹窗宿主：片段由 /admin/ai/providers/models/candidates 经 htmx 换进来。 *}
+{* 候选弹窗由写回的 Jet 片段换进这个宿主（HTMX 提交「获取可用模型」）。 *}
 <div id="ai-picker-host"></div>
 {{end}}

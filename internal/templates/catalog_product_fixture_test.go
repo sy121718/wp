@@ -17,7 +17,7 @@ func groupDProductRow() *productdto.ProductResp {
 		VariantCount: 1, PriceMin: 10, PriceMax: 20, AttributeIDs: []string{"a1"},
 		Attributes:  []*productdto.AttributeResp{{ID: "a1", Key: "color", Name: "颜色", IsVariation: true, Values: []productdto.AttributeValueResp{{ID: "av1", Key: "red", Label: "红", Enabled: true}, {ID: "av2", Key: "blue", Label: "蓝", Enabled: true}}}},
 		Variants:    []*productdto.VariantResp{{ID: "v1", SKUCode: "SZ_TEE_001", Price: 19, Enabled: true, StockTotal: 5, StocksKnown: true, OptionValues: json.RawMessage(`{"color":"red"}`)}},
-		Rating:      &productdto.RatingResp{Rating: 4.5, RatingCount: 2, HasRating: true, Items: []productdto.RatingItemResp{{ID: "r1", Score: 5, Source: "manual"}}},
+		Rating:      &productdto.RatingResp{ProjectID: "pr1", ProductID: "p1", Rating: 4.5, RatingCount: 2, HasRating: true, Items: []productdto.RatingItemResp{{ID: "r1", Score: 5, Source: "manual"}}},
 		CategoryIDs: []string{"c1"}, PrimaryCategoryID: "c1", Categories: []*productdto.CategoryResp{{ID: "c1", Name: "男装"}},
 		BrandID: "b1", Brand: &productdto.BrandResp{ID: "b1", Name: "山野"}, TagIDs: []string{"t1", "t2"},
 		Tags: []*productdto.TagResp{{ID: "t1", Name: "新品", Kind: "manual"}, {ID: "t2", Name: "热销", Kind: "rule"}},

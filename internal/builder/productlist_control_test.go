@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	productlist "go_wp/internal/builder/components/productlist"
-	"go_wp/internal/builder/core"
+	productlist "go_wp/internal/builder/extensions/productlist"
+	"go_wp/pkg/builder/core"
 )
 
 func TestProductListComplexConfigUsesStructuredControls(t *testing.T) {

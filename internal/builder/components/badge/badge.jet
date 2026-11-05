@@ -1,1 +1,0 @@
-<span class="{{ .Classes }} sky-badge" role="status" aria-label="{{ .V.Text }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ .V.Text }}</span>

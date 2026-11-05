@@ -5,10 +5,10 @@
 
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
-{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("tagTitle", "商品标签") }}{{end}}{{else}}{{ .["t"]("tagTitle", "商品标签") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("tagTitle", "商品标签") }}{{end}}
 {{block body()}}
-{{tr := .["t"]}}{{tnf := .["tn"]}}
+{{tr := .["t"]}}
 
 
 {{selectedProject := .Scope.ProjectID}}
@@ -22,17 +22,17 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.product_tags.title", "商品标签") }}</h1>
+                <h1>{{ .["t"]("tagTitle", "商品标签") }}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_tags.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_tags.intro", "手工标签由人工挂到商品；自动标签只接受内置规则类型 + 参数（不接受自由表达式），归属在明确的重算时机更新：商品写操作后、变体写操作后、标签规则变更后，以及这里的「重算」按钮。重算只替换该自动标签自己的归属，不会覆盖手工标签。") }}<br>{{ .["t"]("admin.product_tags.rules.hint", "规则参数越界或带未知键一律拒绝；类型与参数只有服务端一份定义。") }}<br>{{ .["t"]("admin.product_tags.create.hint", "类型选「自动」时才读取规则与参数：新品填 days，价格区间填 minPrice / maxPrice（至少一个），促销规则无参数。类型选「手工」时规则与参数一概忽略。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("tagHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("tagIntro", "手工标签由人工挂到商品；自动标签只接受内置规则类型 + 参数（不接受自由表达式），归属在明确的重算时机更新：商品写操作后、变体写操作后、标签规则变更后，以及这里的「重算」按钮。重算只替换该自动标签自己的归属，不会覆盖手工标签。") }}<br>{{ .["t"]("tagRulesHint", "规则参数越界或带未知键一律拒绝；类型与参数只有服务端一份定义。") }}<br>{{ .["t"]("tagNewHint", "类型选「自动」时才读取规则与参数：新品填 days，价格区间填 minPrice / maxPrice（至少一个），促销规则无参数。类型选「手工」时规则与参数一概忽略。") }}</span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
             {{if len(.Scope.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/product-tags">
-                <label class="sr-only" for="tags-project">{{ .["t"]("admin.product_tags.projectAria", "站点工程") }}</label>
+                <label class="sr-only" for="tags-project">{{ .["t"]("tagProjAria", "站点工程") }}</label>
                 <select class="form-select" id="tags-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Scope.Projects}}
                     <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -40,33 +40,34 @@
                 </select>
             </form>
             {{end}}
-            <button data-requires-js hidden type="submit" form="tag-recalc-all" class="btn">{{ .["t"]("admin.product_tags.recalcAll", "重算本工程全部自动标签") }}</button>
+            <button data-requires-js hidden type="submit" form="tag-recalc-all" class="btn">{{ .["t"]("tagRecalcAll", "重算本工程全部自动标签") }}</button>
             {{if canCreate}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tag-create" data-drawer-title="{{ .["t"]("admin.product_tags.create.title", "新建标签") }}">＋ {{ .["t"]("admin.product_tags.create.title", "新建标签") }}</button>
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tag-create" data-drawer-title="{{ .["t"]("tagNewTitle", "新建标签") }}">＋ {{ .["t"]("tagNewTitle", "新建标签") }}</button>
             {{end}}
         </div>
     </header>
 
 
 
-    <form data-write="custom" data-write-url="/api/product/tag/recalc" id="tag-recalc-all" class="hidden-form" data-write-reload>
+    <form data-write hx-post="/api/product/tag/recalc" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload id="tag-recalc-all" class="hidden-form">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <div data-write-result></div>
     </form>
 
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.title", "标签列表") }}</h2>
+        <h2 class="card-title mb-lg">{{ .["t"]("tagListTitle", "标签列表") }}</h2>
 
         <div class="filter-bar">
             <form method="get" action="/admin/product-tags" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
-                    <label for="tags-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <label for="tags-filter-keyword">{{ .["t"]("uiFieldKw", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="tags-filter-keyword" name="keyword" value="{{fKeyword}}"
-                           placeholder="{{ .["t"]("admin.product_tags.filter.phKeyword", "标签名 / URL 段") }}" autocomplete="off">
+                           placeholder="{{ .["t"]("tagFltKw", "标签名 / URL 段") }}" autocomplete="off">
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("uiFltSubmit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                 </div>
             </form>
         </div>
@@ -75,33 +76,35 @@
 
 
 
-        <form data-list-bulk>
+        <form data-write hx-post="/api/product/tag/bulk-delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-list-bulk data-write-reload>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div data-write-result></div>
+            <p class="form-hint" data-bulk-none="{{tr("tagBulkNoneSel", "没有勾选任何标签，列表未改动。")}}" role="status" hidden></p>
 
 
             {{if canDelete}}{{if len(.Result.Items) > 0}}
-            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBarOpen(count=tr("uiBulkSel", "已选 {n} 项"))}}
 
 
-                <button data-write="bulk" data-write-url="/api/product/tag/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload data-write-confirm="{{tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}"
-                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        hx-confirm="{{tr("tagBulkConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}">{{tr("uiBulkDel", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
             <p class="form-hint" data-write-status role="status" hidden></p>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.title", "标签列表") }}">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("tagListTitle", "标签列表") }}">
             <table class="data-table">
                 <thead>
                 <tr>
                     <th class="col-check">
-                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("uiBulkSelectAll", "全选") }}">
                     </th>
-                    <th>{{ .["t"]("admin.product_tags.col.name", "标签") }}</th>
-                    <th>{{ .["t"]("admin.product_tags.col.slug", "URL 段") }}</th>
-                    <th>{{ .["t"]("admin.product_tags.col.kind", "类型") }}</th>
-                    <th>{{ .["t"]("admin.product_tags.col.rule", "规则") }}</th>
-                    <th>{{ .["t"]("admin.product_tags.col.hits", "命中") }}</th>
-                    <th>{{ .["t"]("admin.product_tags.col.recalcAt", "重算时间") }}</th>
-                    <th class="col-actions">{{ .["t"]("admin.product_tags.col.actions", "操作") }}</th>
+                    <th>{{ .["t"]("tagNameCol", "标签") }}</th>
+                    <th>{{ .["t"]("tagSlugCol", "URL 段") }}</th>
+                    <th>{{ .["t"]("tagKindCol", "类型") }}</th>
+                    <th>{{ .["t"]("tagRuleCol", "规则") }}</th>
+                    <th>{{ .["t"]("tagHits", "命中") }}</th>
+                    <th>{{ .["t"]("tagRecalcAt", "重算时间") }}</th>
+                    <th class="col-actions">{{ .["t"]("tagActions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -110,17 +113,17 @@
                 <tr><td colspan="8" class="cell-wrap">
                     <div class="empty-state">
                         {{if .Query.Keyword != ""}}
-                        <p class="empty-title">{{ .["t"]("admin.product_tags.list.emptyFilteredTitle", "没有匹配的标签") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
+                        <p class="empty-title">{{ .["t"]("tagNoMatches", "没有匹配的标签") }}</p>
+                        <p class="empty-desc">{{ .["t"]("uiFltEmptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                         <div class="empty-actions">
-                            <a class="btn btn-sm btn-ghost" href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                            <a class="btn btn-sm btn-ghost" href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("uiFltReset", "重置") }}</a>
                         </div>
                         {{else}}
-                        <p class="empty-title">{{ .["t"]("admin.product_tags.list.emptyTitle", "还没有标签") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.product_tags.list.empty", "建一个手工标签去商品页挂载，或者建一个自动标签按规则维护归属。") }}</p>
+                        <p class="empty-title">{{ .["t"]("tagEmptyTitle", "还没有标签") }}</p>
+                        <p class="empty-desc">{{ .["t"]("tagListEmpty", "建一个手工标签去商品页挂载，或者建一个自动标签按规则维护归属。") }}</p>
                         {{if canCreate}}
                         <div class="empty-actions">
-                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tag-create" data-drawer-title="{{ .["t"]("admin.product_tags.create.title", "新建标签") }}">＋ {{ .["t"]("admin.product_tags.create.title", "新建标签") }}</button>
+                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tag-create" data-drawer-title="{{ .["t"]("tagNewTitle", "新建标签") }}">＋ {{ .["t"]("tagNewTitle", "新建标签") }}</button>
                         </div>
                         {{end}}
                         {{end}}
@@ -130,31 +133,31 @@
                 {{range _, t := .Result.Items}}
                 <tr>
                     <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{t.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                        <input type="checkbox" name="ids" value="{{t.ID}}" data-check-item aria-label="{{ .["t"]("uiBulkSelectRow", "选择该行") }}">
                     </td>
-                    <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
+                    <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("uiActEdit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td><span class="badge badge-{{if t.Kind == "rule"}}info{{else}}mute{{end}}">{{if t.Kind == "rule"}}{{tr("admin.product_tags.kind.rule", "自动")}}{{else if t.Kind == "manual"}}{{tr("admin.product_tags.kind.manual", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
-                    <td>{{if t.Kind == "rule"}}{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td><span class="badge badge-{{if t.Kind == "rule"}}info{{else}}mute{{end}}">{{if t.Kind == "rule"}}{{tr("tagRuleKind", "自动")}}{{else if t.Kind == "manual"}}{{tr("tagManualKind", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
+                    <td>{{if t.Kind == "rule"}}{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
 
                     <td>
                         {{if t.ProductCount > 0}}
 
                         <button type="button" class="btn btn-sm" id="tag-hit-count-{{t.ID}}"
-                                data-product-tag-hits="{{t.ID}}" data-project-id="{{selectedProject}}">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
-                        {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
+                                data-product-tag-hits="{{t.ID}}" data-project-id="{{selectedProject}}">{{tn("tagHitCount", "{count} 个商品", map("count", t.ProductCount))}}</button>
+                        {{else}}<span class="text-mute">{{tn("tagHitCount", "{count} 个商品", map("count", 0))}}</span>{{end}}
                     </td>
 
-                    <td>{{if t.RecalcAt.TimeOrZero()}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
+                    <td>{{if t.RecalcAt.TimeOrZero()}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("tagRecalcNone", "未按规则重算过")}}{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
-                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("uiActEdit", "编辑") }}">{{ .["t"]("uiActEdit", "编辑") }}</button>
                         {{end}}
                         {{if t.Kind == "rule"}}
-                        <button data-requires-js hidden type="submit" form="tag-recalc-{{t.ID}}" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.recalc", "重算") }}</button>
+                        <button data-requires-js hidden type="submit" form="tag-recalc-{{t.ID}}" class="btn btn-sm">{{ .["t"]("tagListRecalc", "重算") }}</button>
                         {{end}}
                         {{if canDelete}}
-                        <button data-requires-js hidden type="submit" form="tag-del-{{t.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        <button data-requires-js hidden type="submit" form="tag-del-{{t.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("uiActDel", "删除") }}</button>
                         {{end}}
                     </td>
                 </tr>
@@ -174,19 +177,19 @@
 
     <details class="section-fold card">
         <summary>
-            <span class="fold-title">{{ .["t"]("admin.product_tags.rules.title", "内置规则类型") }}</span>
-            <span class="fold-note">{{ .["t"]("admin.product_tags.rules.note", "自动标签可选的内置规则与参数（只读）") }}</span>
+            <span class="fold-title">{{ .["t"]("tagRulesTitle", "内置规则类型") }}</span>
+            <span class="fold-note">{{ .["t"]("tagRulesNote", "自动标签可选的内置规则与参数（只读）") }}</span>
         </summary>
         <div class="fold-body">
-            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.rules.aria", "内置规则类型") }}">
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("tagRulesAria", "内置规则类型") }}">
                 <table class="data-table data-table-wide">
-                    <thead><tr><th>{{ .["t"]("admin.product_tags.col.type", "类型") }}</th><th>{{ .["t"]("admin.product_tags.col.desc", "说明") }}</th><th>{{ .["t"]("admin.product_tags.col.params", "参数") }}</th></tr></thead>
+                    <thead><tr><th>{{ .["t"]("tagType", "类型") }}</th><th>{{ .["t"]("tagDesc", "说明") }}</th><th>{{ .["t"]("tagArgs", "参数") }}</th></tr></thead>
                     <tbody>
                     {{range _, r := ruleTypes}}
                     <tr>
                         <td><code>{{r.Type}}</code></td>
-                        <td>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.name", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.name", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.name", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</td>
-                        <td>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.params", "days：必填，1~365 的整数（上架时间以 products.published_at 为准）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.params", "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.params", "无参数（留空即 {}）；命中条件为存在启用变体且对比价高于售价")}}{{end}}</td>
+                        <td>{{if r.Type == "new_arrival"}}{{tr("tagNewName", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("tagPriceName", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("tagSaleName", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</td>
+                        <td>{{if r.Type == "new_arrival"}}{{tr("tagNewArgs", "days：必填，1~365 的整数（上架时间以 products.published_at 为准）")}}{{else if r.Type == "price_range"}}{{tr("tagPriceArgs", "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice")}}{{else if r.Type == "on_sale"}}{{tr("tagSaleArgs", "无参数（留空即 {}）；命中条件为存在启用变体且对比价高于售价")}}{{end}}</td>
                     </tr>
                     {{end}}
                     </tbody>
@@ -199,14 +202,16 @@
     {{range _, t := .Result.Items}}
     {{if t.Kind == "rule"}}
 
-    <form data-write="custom" data-write-url="/api/product/tag/recalc" id="tag-recalc-{{t.ID}}" class="hidden-form" data-write-reload>
+    <form data-write hx-post="/api/product/tag/recalc" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload id="tag-recalc-{{t.ID}}" class="hidden-form">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
+        <div data-write-result></div>
     </form>
     {{end}}
     {{if canDelete}}
-    <form data-write="delete" data-write-url="/api/product/tag/delete" id="tag-del-{{t.ID}}" class="hidden-form" data-write-reload
-          data-confirm="{{ .["t"]("admin.product_tags.list.deleteConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}" data-confirm-danger>
+    <form data-write hx-post="/api/product/tag/delete" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload id="tag-del-{{t.ID}}" class="hidden-form"
+          hx-confirm="{{ .["t"]("tagDelConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}">
+        <div data-write-result></div>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{t.ID}}">
     </form>

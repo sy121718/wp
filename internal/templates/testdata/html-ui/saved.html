@@ -1,0 +1,13 @@
+<section data-saved>
+    <p data-title>{{.Title}}</p>
+    <ul data-tags>{{range _, tag := .Tags}}<li>{{tag}}</li>{{end}}</ul>
+    <span data-enabled>{{.Enabled}}</span>
+    <span data-unchecked>{{.Unchecked}}</span>
+    <span data-disabled>{{.DisabledValue}}</span>
+    <span data-quantity>{{.Quantity}}</span>
+    <span data-intent>{{.Intent}}</span>
+    <span data-external>{{.External}}</span>
+    <span data-id>{{.ID}}</span>
+    <span data-file-name>{{.FileName}}</span>
+    <span data-file-body>{{.FileBody}}</span>
+</section>

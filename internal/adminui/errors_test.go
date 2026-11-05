@@ -112,7 +112,7 @@ func TestPageErrorInternalKeepsShellProtocol(t *testing.T) {
 
 func TestPageInternalTextFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
-		"MsgInternalError": {"zh-CN": "系统内部错误，请稍后重试", "en-US": "Internal error, please retry later"},
+		"uiInternalErr": {"zh-CN": "系统内部错误，请稍后重试", "en-US": "Internal error, please retry later"},
 	}, nil)
 	defer i18n.InjectForTest(nil, nil)
 
@@ -137,7 +137,7 @@ func TestPageInternalTextFollowsRequestLanguage(t *testing.T) {
 }
 
 func TestMsgInternalErrorIsTheKeyLiteral(t *testing.T) {
-	if MsgInternalError != "MsgInternalError" {
-		t.Fatalf("MsgInternalError 必须是 key 字面量 %q，got %q", "MsgInternalError", MsgInternalError)
+	if MsgInternalError != "uiInternalErr" {
+		t.Fatalf("MsgInternalError 必须是 key 字面量 %q，got %q", "uiInternalErr", MsgInternalError)
 	}
 }

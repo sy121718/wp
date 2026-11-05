@@ -10,7 +10,8 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	"go_wp/internal/builder/source"
+	jetpkg "go_wp/pkg/view/jet"
+	"go_wp/pkg/builder/source"
 )
 
 type PluginFS = source.PluginFS
@@ -125,10 +126,5 @@ func NewCompositeSet(plugins []PluginFS) (*jet.Set, error) {
 	if err != nil {
 		return nil, fmt.Errorf("内置组件模板加载失败: %w", err)
 	}
-	set := jet.NewSet(
-		newCompositeLoader(base, plugins),
-		jet.WithTemplateNameExtensions([]string{"", ".jet"}),
-	)
-	injectGlobals(set)
-	return set, nil
+	return jetpkg.NewJetSetFromLoader(newCompositeLoader(base, plugins), false, []string{"", ".jet"}), nil
 }

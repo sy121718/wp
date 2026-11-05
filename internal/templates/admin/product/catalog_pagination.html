@@ -1,9 +1,9 @@
 {{tr := .["t"]}}{{pages := (.Result.Total - .Result.Total % .Result.Size) / .Result.Size}}{{if .Result.Total % .Result.Size > 0}}{{pages = pages + 1}}{{end}}{{page := .Result.Page}}{{size := .Result.Size}}{{base := pageBase(.["req_path"])}}
 {{if pages > 1}}
-<nav class="pagination" aria-label="{{tr("shell.pagination.label", "分页")}}">
-<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), .Result.Total, (page-1)*size+1, page*size > .Result.Total ? .Result.Total : page*size)}}</div>
+<nav class="pagination" aria-label="{{tr("pager", "分页")}}">
+<div class="pagination-info">{{sprintf(tr("pagerInfo", "共 %s 条，第 %s-%s 条"), .Result.Total, (page-1)*size+1, page*size > .Result.Total ? .Result.Total : page*size)}}</div>
 <div class="pagination-pages">
-{{if page > 1}}<a class="pagination-btn" href="{{queryURL(base, "page", page-1, "size", size)}}">{{tr("shell.pagination.prev", "上一页")}}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.prev", "上一页")}}</span>{{end}}
+{{if page > 1}}<a class="pagination-btn" href="{{queryURL(base, "page", page-1, "size", size)}}">{{tr("pagerPrev", "上一页")}}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("pagerPrev", "上一页")}}</span>{{end}}
 {{range _, n := pageNumbers(page, pages, 2)}}{{if n == 0}}<span class="pagination-btn is-disabled">…</span>{{else if n == page}}<span class="pagination-btn is-active">{{n}}</span>{{else}}<a class="pagination-btn" href="{{queryURL(base, "page", n, "size", size)}}">{{n}}</a>{{end}}{{end}}
-{{if page < pages}}<a class="pagination-btn" href="{{queryURL(base, "page", page+1, "size", size)}}">{{tr("shell.pagination.next", "下一页")}}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.next", "下一页")}}</span>{{end}}
+{{if page < pages}}<a class="pagination-btn" href="{{queryURL(base, "page", page+1, "size", size)}}">{{tr("pagerNext", "下一页")}}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("pagerNext", "下一页")}}</span>{{end}}
 </div></nav>{{end}}

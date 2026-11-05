@@ -1,0 +1,46 @@
+<form data-drawer-fragment method="post" action="/admin/permissions/update"
+      hx-post="/admin/permissions/update" hx-target="find [data-write-result]" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-write="update" data-write-close="[data-drawer]" data-write-reload>
+    <p class="form-hint" data-write-status role="status" hidden></p>
+    <div data-write-result hidden></div>
+    <input type="hidden" name="id" value="{{.ID}}">
+    <div class="form-group">
+        <label class="form-label req" for="permission-edit-code">{{t("admin.permissions.field.code", "权限编码")}}</label>
+        <input id="permission-edit-code" type="text" name="permission_code" class="form-input" required maxlength="100" value="{{.PermissionCode}}">
+    </div>
+    <div class="form-group">
+        <label class="form-label req" for="permission-edit-name">{{t("admin.permissions.field.name", "权限名称")}}</label>
+        <input id="permission-edit-name" type="text" name="permission_name" class="form-input" required maxlength="100" value="{{.PermissionName}}">
+    </div>
+    <div class="form-group">
+        <label class="form-label req" for="permission-edit-module">{{t("admin.permissions.field.module", "所属模块")}}</label>
+        <input id="permission-edit-module" type="text" name="module" class="form-input" required maxlength="50" value="{{.Module}}">
+    </div>
+    <div class="form-group">
+        <label class="form-label req" for="permission-edit-path">{{t("admin.permissions.field.api_path", "API 路径")}}</label>
+        <input id="permission-edit-path" type="text" name="api_path" class="form-input" required maxlength="200" value="{{.APIPath}}">
+    </div>
+    <div class="form-group">
+        <label class="form-label req" for="permission-edit-method">{{t("admin.permissions.field.method", "方法")}}</label>
+        <select id="permission-edit-method" name="api_method" class="form-select">
+            <option value="GET"{{if .APIMethod == "GET"}} selected{{end}}>GET</option>
+            <option value="POST"{{if .APIMethod == "POST"}} selected{{end}}>POST</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="permission-edit-status">{{t("admin.permissions.field.status", "状态")}}</label>
+        <select id="permission-edit-status" name="status" class="form-select">
+            <option value="1"{{if .Status == 1}} selected{{end}}>{{t("admin.permissions.status.enabled", "启用")}}</option>
+            <option value="0"{{if .Status == 0}} selected{{end}}>{{t("admin.permissions.status.disabled", "禁用")}}</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="permission-edit-remark">{{t("admin.permissions.field.remark", "备注")}}</label>
+        <input id="permission-edit-remark" type="text" name="remark" class="form-input" maxlength="200" value="{{.Remark}}">
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.permissions.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{t("admin.permissions.action.save", "保存修改")}}</button>
+    </div>
+</form>

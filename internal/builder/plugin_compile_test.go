@@ -7,9 +7,9 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/plugincomp"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/plugincomp"
 )
 
 const testPluginManifest = `{

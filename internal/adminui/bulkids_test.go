@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 )
 
@@ -28,6 +29,8 @@ func facingCtx(t *testing.T, lang string) *gin.Context {
 }
 
 func TestBulkIDsFacingTextUsesTypedCounts(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	err := &bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs}
 	got := BulkIDsFacingText(facingCtx(t, ""), err)
 	if !strings.Contains(got, "一次最多操作") {
@@ -45,6 +48,8 @@ func TestBulkIDsFacingTextUsesTypedCounts(t *testing.T) {
 }
 
 func TestBulkIDsFacingTextIgnoresWrappedContext(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	wrapped := fmt.Errorf("加载货源失败: SQLSTATE 42P01 relation `inventory_sources`: %w",
 		&bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs})
 	got := BulkIDsFacingText(facingCtx(t, ""), wrapped)
@@ -74,7 +79,7 @@ func TestBulkIDsFacingTextFallsBackForUnknownError(t *testing.T) {
 func TestBulkIDsFacingTextFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		bulkids.MsgTooMany: {
-			"zh-CN": bulkIDsTooManyTemplate,
+			"zh-CN": bulkids.TooManyTemplate,
 			"en-US": "At most %s items can be operated at once; %s selected, please split into batches.",
 		},
 	}, nil)
@@ -93,5 +98,18 @@ func TestBulkIDsFacingTextFollowsRequestLanguage(t *testing.T) {
 		if !strings.Contains(en, want) {
 			t.Fatalf("英文文案也应带上限与本次条数 %s，got %q", want, en)
 		}
+	}
+}
+
+func TestBulkIDsFactHasNoParameterTail(t *testing.T) {
+	err := &bulkids.IDsError{Max: 200, Count: 201}
+	fact, ok := facing.FactOf(err)
+	if !ok || fact.Key != "shell.err.bulkIdsTooMany|200|201" || fact.Tail != "" {
+		t.Fatalf("参数属于完整key，不是明细: ok=%v fact=%+v", ok, fact)
+	}
+	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+	if got := BulkIDsFacingText(facingCtx(t, "zh-CN"), err); got != "一次最多操作 200 项，当前 201 项，请分批进行" {
+		t.Fatalf("消息必须精确匹配且无参数尾巴: %q", got)
 	}
 }

@@ -10,9 +10,9 @@ import (
 
 type PageResult = view.Result
 
-func RenderPage(c *gin.Context, tpl string, view any) {
+func RenderPage(c *gin.Context, tpl string, data any) {
 	status := http.StatusOK
-	if r, ok := view.(PageResult); ok {
+	if r, ok := data.(PageResult); ok {
 		if s := r.PageStatus(); s > 0 {
 			status = s
 		}
@@ -20,13 +20,13 @@ func RenderPage(c *gin.Context, tpl string, view any) {
 			c.Header("Cache-Control", "no-store")
 		}
 	}
-	c.HTML(status, tpl, PrepareView(c, view))
+	c.HTML(status, tpl, PrepareView(c, data))
 }
 
-func RenderBare(c *gin.Context, tpl string, view any) {
-	c.HTML(http.StatusOK, tpl, PrepareBareView(c, view))
+func RenderBare(c *gin.Context, tpl string, data any) {
+	c.HTML(http.StatusOK, tpl, PrepareBareView(c, data))
 }
 
-func PrepareBareView(c *gin.Context, view any) gin.H {
-	return PrepareBare(c, ViewMap(view))
+func PrepareBareView(c *gin.Context, data any) gin.H {
+	return PrepareBare(c, ViewMap(data))
 }

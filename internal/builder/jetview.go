@@ -12,55 +12,72 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	accordionPkg "go_wp/internal/builder/components/accordion"
-	addtocartPkg "go_wp/internal/builder/components/addtocart"
-	articlelistPkg "go_wp/internal/builder/components/articlelist"
-	badgePkg "go_wp/internal/builder/components/badge"
-	breadcrumbPkg "go_wp/internal/builder/components/breadcrumb"
-	buttonPkg "go_wp/internal/builder/components/button"
-	cardPkg "go_wp/internal/builder/components/card"
-	cardstackPkg "go_wp/internal/builder/components/cardstack"
-	carticonPkg "go_wp/internal/builder/components/carticon"
-	checkoutformPkg "go_wp/internal/builder/components/checkoutform"
-	containerPkg "go_wp/internal/builder/components/container"
-	countdownPkg "go_wp/internal/builder/components/countdown"
-	counterPkg "go_wp/internal/builder/components/counter"
-	dividerPkg "go_wp/internal/builder/components/divider"
-	faqPkg "go_wp/internal/builder/components/faq"
-	formPkg "go_wp/internal/builder/components/form"
-	galleryPkg "go_wp/internal/builder/components/gallery"
-	globalrefPkg "go_wp/internal/builder/components/globalref"
-	headingPkg "go_wp/internal/builder/components/heading"
-	iconPkg "go_wp/internal/builder/components/icon"
-	imagePkg "go_wp/internal/builder/components/image"
-	infoboxPkg "go_wp/internal/builder/components/infobox"
-	languagesPkg "go_wp/internal/builder/components/languages"
-	layoutslotPkg "go_wp/internal/builder/components/layoutslot"
-	listPkg "go_wp/internal/builder/components/list"
-	loaderPkg "go_wp/internal/builder/components/loader"
-	marqueePkg "go_wp/internal/builder/components/marquee"
-	navPkg "go_wp/internal/builder/components/nav"
-	orderlistPkg "go_wp/internal/builder/components/orderlist"
-	productPkg "go_wp/internal/builder/components/product"
-	productcardPkg "go_wp/internal/builder/components/productcard"
-	productlistPkg "go_wp/internal/builder/components/productlist"
-	productselectorPkg "go_wp/internal/builder/components/productselector"
-	progressPkg "go_wp/internal/builder/components/progress"
-	quotePkg "go_wp/internal/builder/components/quote"
-	ratingPkg "go_wp/internal/builder/components/rating"
-	searchresultsPkg "go_wp/internal/builder/components/searchresults"
-	shapedividerPkg "go_wp/internal/builder/components/shapedivider"
-	sliderPkg "go_wp/internal/builder/components/slider"
-	socialbuttonsPkg "go_wp/internal/builder/components/socialbuttons"
-	spacerPkg "go_wp/internal/builder/components/spacer"
-	tablePkg "go_wp/internal/builder/components/table"
-	tabsPkg "go_wp/internal/builder/components/tabs"
-	textPkg "go_wp/internal/builder/components/text"
-	userformsPkg "go_wp/internal/builder/components/userforms"
-	videoPkg "go_wp/internal/builder/components/video"
-	"go_wp/internal/builder/core"
+	addtocartPkg "go_wp/internal/builder/extensions/addtocart"
+	articlelistPkg "go_wp/internal/builder/extensions/articlelist"
+	cardstackPkg "go_wp/internal/builder/extensions/cardstack"
+	carticonPkg "go_wp/internal/builder/extensions/carticon"
+	checkoutformPkg "go_wp/internal/builder/extensions/checkoutform"
+	navPkg "go_wp/internal/builder/extensions/nav"
+	orderlistPkg "go_wp/internal/builder/extensions/orderlist"
+	productPkg "go_wp/internal/builder/extensions/product"
+	productcardPkg "go_wp/internal/builder/extensions/productcard"
+	productlistPkg "go_wp/internal/builder/extensions/productlist"
+	productselectorPkg "go_wp/internal/builder/extensions/productselector"
+	searchresultsPkg "go_wp/internal/builder/extensions/searchresults"
+	userformsPkg "go_wp/internal/builder/extensions/userforms"
 	"go_wp/internal/builder/productbinding"
+	accordionPkg "go_wp/pkg/builder/components/accordion"
+	badgePkg "go_wp/pkg/builder/components/badge"
+	breadcrumbPkg "go_wp/pkg/builder/components/breadcrumb"
+	buttonPkg "go_wp/pkg/builder/components/button"
+	cardPkg "go_wp/pkg/builder/components/card"
+	containerPkg "go_wp/pkg/builder/components/container"
+	countdownPkg "go_wp/pkg/builder/components/countdown"
+	counterPkg "go_wp/pkg/builder/components/counter"
+	dividerPkg "go_wp/pkg/builder/components/divider"
+	faqPkg "go_wp/pkg/builder/components/faq"
+	formPkg "go_wp/pkg/builder/components/form"
+	galleryPkg "go_wp/pkg/builder/components/gallery"
+	globalrefPkg "go_wp/pkg/builder/components/globalref"
+	headingPkg "go_wp/pkg/builder/components/heading"
+	iconPkg "go_wp/pkg/builder/components/icon"
+	imagePkg "go_wp/pkg/builder/components/image"
+	infoboxPkg "go_wp/pkg/builder/components/infobox"
+	languagesPkg "go_wp/pkg/builder/components/languages"
+	layoutslotPkg "go_wp/pkg/builder/components/layoutslot"
+	listPkg "go_wp/pkg/builder/components/list"
+	loaderPkg "go_wp/pkg/builder/components/loader"
+	marqueePkg "go_wp/pkg/builder/components/marquee"
+	progressPkg "go_wp/pkg/builder/components/progress"
+	quotePkg "go_wp/pkg/builder/components/quote"
+	ratingPkg "go_wp/pkg/builder/components/rating"
+	shapedividerPkg "go_wp/pkg/builder/components/shapedivider"
+	sliderPkg "go_wp/pkg/builder/components/slider"
+	socialbuttonsPkg "go_wp/pkg/builder/components/socialbuttons"
+	spacerPkg "go_wp/pkg/builder/components/spacer"
+	tablePkg "go_wp/pkg/builder/components/table"
+	tabsPkg "go_wp/pkg/builder/components/tabs"
+	textPkg "go_wp/pkg/builder/components/text"
+	videoPkg "go_wp/pkg/builder/components/video"
+	"go_wp/pkg/builder/core"
 )
+
+func nodeViewFromCore(v *core.NodeView) *nodeView {
+	if v == nil {
+		return nil
+	}
+	out := &nodeView{
+		Type: v.Type, Template: v.Template, NodeID: v.NodeID, Classes: v.Classes,
+		CustomID: v.CustomID, TopLevel: v.TopLevel, Props: v.Props, V: v.V,
+		Tag: v.Tag, Attrs: v.Attrs, Text: v.Text, IconPrefix: v.IconPrefix,
+		IconSuffix: v.IconSuffix, ShapeTop: v.ShapeTop, ShapeBottom: v.ShapeBottom,
+		BgSlides: v.BgSlides,
+	}
+	for _, child := range v.Children {
+		out.Children = append(out.Children, nodeViewFromCore(child))
+	}
+	return out
+}
 
 type nodeView struct {
 	Type     string
@@ -87,6 +104,20 @@ type nodeView struct {
 }
 
 func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (view *nodeView, err error) {
+	// 组件注册表里的可选 BuildNodeView 入口优先：通用组件与业务扩展都经它渲染，
+	// 不再由本文件按类型硬编码分发。
+	if component, lookupErr := core.Lookup(node.Type); lookupErr == nil {
+		if builder, ok := component.(core.ViewBuilder); ok {
+			built, buildErr := builder.BuildNodeView(node, topLevel, ctx)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			if built != nil {
+				return nodeViewFromCore(built), nil
+			}
+		}
+	}
+
 	defer func() {
 		if err != nil && ctx != nil && ctx.AllowIncomplete && errors.Is(err, core.ErrIncompleteNode) {
 			view, err = incompleteViewOf(node, topLevel, ctx), nil

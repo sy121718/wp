@@ -1,0 +1,45 @@
+{* 产物 SEO 体检结果：结论档位与行结构都在 Jet 里，前端不再解释 JSON。 *}
+{{result := .Result}}
+{{if result.Scanned == 0}}
+<div class="empty-state" data-seo-audit-state="empty">
+    <p class="empty-title">{{t("seoNoArtifacts", "当前站点还没有可检查的产物。")}}</p>
+    <p class="empty-desc">{{t("seoNoArtHelp", "发布页面后再运行体检；没有产物时体检不会给出结论。")}}</p>
+</div>
+{{else if result.Count == 0}}
+<div class="empty-state" data-seo-audit-state="clean">
+    <p class="empty-title">{{tn("seoClean", "已扫描 {scanned} 个产物，未发现 SEO 问题。", map("scanned", result.Scanned))}}</p>
+</div>
+{{else}}
+<div data-seo-audit-state="issues">
+    <p role="status">{{tn("seoIssues", "已扫描 {scanned} 个产物，发现 {count} 个问题。", map("scanned", result.Scanned, "count", result.Count))}}</p>
+    <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead><tr><th>{{t("seoColLevel", "级别")}}</th><th>{{t("seoColPath", "路径")}}</th><th>{{t("seoColIssue", "问题")}}</th></tr></thead>
+            <tbody>
+            {{range _, issue := result.Issues}}
+            <tr>
+                <td>
+                    {{if issue.Level == "error"}}{{include "../partials/badge.html" map("tone", "danger", "label", t("seoLevelErr", "严重"))}}
+                    {{else if issue.Level == "warning"}}{{include "../partials/badge.html" map("tone", "warning", "label", t("seoLevelWarn", "警告"))}}
+                    {{else if issue.Level == "info"}}{{include "../partials/badge.html" map("tone", "info", "label", t("seoLevelInfo", "提示"))}}
+                    {{else}}{{include "../partials/badge.html" map("tone", "mute", "label", t("seoLevelNone", "未标注级别"))}}{{end}}
+                </td>
+                <td><code>{{issue.Path}}</code></td>
+                <td>
+                    <span>{{include "seo_audit_issue_text.html" map("Item", issue.Item)}}</span>
+                    {{if issue.Params.Title}}<div>{{t("seoDetailTitle", "标题：")}}<code>{{issue.Params.Title}}</code></div>{{end}}
+                    {{if issue.Params.Src}}<div>{{t("seoDetailSrc", "图片：")}}<code>{{issue.Params.Src}}</code></div>{{end}}
+                    {{if issue.Params.Href}}<div>{{t("seoDetailHref", "链接：")}}<code>{{issue.Params.Href}}</code></div>{{end}}
+                    {{if len(issue.Params.Paths) > 0}}
+                    <details><summary>{{t("seoIssuePaths", "受影响的路径")}}</summary>
+                        <ul>{{range _, p := issue.Params.Paths}}<li><code>{{p}}</code></li>{{end}}</ul>
+                    </details>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}

@@ -58,12 +58,15 @@
     </div>
     {* 活动表自己的批量 form：发送中的活动由服务端拒绝、只计入跳过
         （删掉发送中的活动，后台分批展开的收件人任务会在中途找不到活动，留下一批半截记录）。 *}
-    <form method="post" action="/admin/mail/campaigns/bulk-delete{{listQuery}}">
+    <form data-write hx-post="/admin/mail/campaigns/bulk-delete" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteCampaign}}{{if len(.Campaigns) > 0}}
       {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.marketing.campaigns.bulk_delete_confirm", "删除选中的活动？投递记录与报表会一并消失；正在发送的不会被删除。"), danger=true)}}
+        <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                hx-confirm="{{tr("admin.mail.marketing.campaigns.bulk_delete_confirm", "删除选中的活动？投递记录与报表会一并消失；正在发送的不会被删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
       {{yield bulkBarClose()}}
       {{end}}{{end}}
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}">
@@ -115,13 +118,17 @@
 
   {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
   {{range _, cp := .Campaigns}}
-  <form id="campaign-start-{{cp.ID}}" class="hidden-form" method="post" action="/admin/mail/campaign/start"
-        data-confirm="{{tr("admin.mail.marketing.campaigns.confirm.start", "启动该活动？会按目标标签把已订阅的联系人分批入队发送。")}}">
+  <form id="campaign-start-{{cp.ID}}" class="hidden-form" data-write hx-post="/admin/mail/campaign/start"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.marketing.campaigns.confirm.start", "启动该活动？会按目标标签把已订阅的联系人分批入队发送。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{cp.ID}}">
   </form>
-  <form id="campaign-del-{{cp.ID}}" class="hidden-form" method="post" action="/admin/mail/campaign/delete"
-        data-confirm="{{tr("admin.mail.marketing.campaigns.confirm.delete", "删除该活动？投递记录与报表会一并消失。")}}" data-confirm-danger>
+  <form id="campaign-del-{{cp.ID}}" class="hidden-form" data-write hx-post="/admin/mail/campaign/delete"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.marketing.campaigns.confirm.delete", "删除该活动？投递记录与报表会一并消失。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{cp.ID}}">
   </form>
@@ -129,7 +136,9 @@
 
   {{if canSaveCampaign}}
   <template id="tpl-campaign-create">
-    <form method="post" action="/admin/mail/campaign/save" class="form-stack">
+    <form data-write hx-post="/admin/mail/campaign/save" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
       <div class="form-field">
@@ -156,6 +165,7 @@
         <label class="form-label" for="cp-subject">{{tr("admin.mail.marketing.campaign_form.subject", "邮件主题") }}</label>
         <input class="form-input" id="cp-subject" type="text" name="subject" required>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.campaign_form.save", "保存活动")}}</button>

@@ -1,12 +1,12 @@
 package templates
 
 import (
+	"io/fs"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	productdto "go_wp/internal/module/product/dto"
 	"golang.org/x/net/html"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,24 +14,34 @@ import (
 	"time"
 )
 
+// adminTemplatePath 按文件名在应用与 pkg/view/ui 两层源里找模板逻辑键。
 func adminTemplatePath(t *testing.T, name string) string {
 	t.Helper()
-	for _, p := range adminTemplateFiles(t) {
-		if filepath.Base(p) == name {
-			return p
+	for _, layer := range templateLayers(t) {
+		var found string
+		err := fs.WalkDir(layer.fsys, "admin", func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() {
+				return nil
+			}
+			if filepath.Base(p) == name && found == "" {
+				found = p
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("遍历 %s 失败: %v", layer.name, err)
+		}
+		if found != "" {
+			return found
 		}
 	}
-	t.Fatalf("找不到模板 %s（admin/ 及其子目录）", name)
+	t.Fatalf("找不到模板 %s（admin/ 及其子目录，含 pkg/view/ui）", name)
 	return ""
 }
 
 func adminTemplateSource(t *testing.T, name string) string {
 	t.Helper()
-	src, err := os.ReadFile(adminTemplatePath(t, name))
-	if err != nil {
-		t.Fatalf("读取模板 %s 失败: %v", name, err)
-	}
-	return string(src)
+	return layeredTemplateSource(t, adminTemplatePath(t, name))
 }
 
 func templateBlock(t *testing.T, src, start, end, what string) string {
@@ -182,8 +192,8 @@ func TestContentTemplateEntityTypeSelectGroupsDimensions(t *testing.T) {
 func TestProductPricingFieldLabelsAreNotHints(t *testing.T) {
 	src := adminTemplateSource(t, "product_pricing.html")
 	for _, key := range []string{
-		"admin.product_pricing.apply.labelScope",
-		"admin.product_pricing.apply.labelFilter",
+		"prApplyScope",
+		"prApplyFlt",
 	} {
 		line := templateLineWith(t, src, key)
 		if strings.Contains(line, `class="hint"`) {
@@ -241,7 +251,7 @@ func assertEmptyCellPlaceholder(t *testing.T, name, out, placeholder string) {
 
 func renderAdminPage(t *testing.T, name string, data map[string]any) string {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/"+name, data)
+	out, err := render(t, groupDSet(t), "admin/"+name, data, groupDRenderScope())
 	if err != nil {
 		t.Fatalf("渲染 %s 失败: %v", name, err)
 	}
@@ -268,6 +278,13 @@ func couponPageData() map[string]any {
 		"Total": int64(1),
 
 		"StatusValues": []string{"enabled", "disabled", "expired", "exhausted"},
+		"StateLabels": map[string]map[string]any{
+			"enabled":     {"Key": "admin.coupons.status.enabled", "Fallback": "生效中"},
+			"disabled":    {"Key": "admin.coupons.status.disabled", "Fallback": "已停用"},
+			"expired":     {"Key": "admin.coupons.status.expired", "Fallback": "已过期"},
+			"not_started": {"Key": "admin.coupons.status.not_started", "Fallback": "未开始"},
+			"exhausted":   {"Key": "admin.coupons.status.exhausted", "Fallback": "已用完"},
+		},
 		"FilterStatus": "", "FilterStatusValid": false,
 		"LoadErr": "",
 
@@ -310,7 +327,7 @@ func TestCouponPageRendersDateTimeControlsWithMatchingLabels(t *testing.T) {
 	if len(createIDs) != 2 {
 		t.Fatalf("列表页应只下发新建抽屉的两个时间控件，实际 %d", len(createIDs))
 	}
-	if !strings.Contains(page, `data-drawer-url=`) {
+	if !strings.Contains(page, `data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get=`) {
 		t.Fatal("编辑入口没有按需加载地址")
 	}
 	for _, id := range []string{"coupon-create-starts-at", "coupon-create-ends-at"} {

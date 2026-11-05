@@ -1,935 +1,266 @@
-/* ui/write-base.js — 写表单的唯一基座。
- *
- * 三套旧实现（json_write.js 1111 行 / htmx_form_body.js 602 行 / write_feedback.js 245 行）
- * 合并在这里，因为它们做的是同一件事的三个阶段：
- *
- *   ① 整形   DOM 表单 → 请求体（删空值键、嵌套字段、多行文本、裸 HTML）
- *   ② 提交   fetch + FormData + JSON 响应
- *   ③ 收尾   取 JSON message → toast；导航 / 刷新 / 关抽屉；bulk 回执
- *
- * ═══ 契约（模板侧全部声明式，不写内联 JS）═══════════════════════════════════
- *
- *   <form data-write="create|update|delete|bulk|custom"
- *         data-write-url="/api/product/brand/create"
- *         data-write-status>                       ← 表单内必须有 <p data-write-status>
- *     ...字段...
- *     <p data-write-status role="status"></p>
- *     <button type="submit">保存</button>
- *   </form>
- *
- * 必填 3 个：data-write / data-write-url / data-write-status
- * 可选属性：
- *   data-write-handler  已注册的成功结果处理能力，返回 true 时接管导航/刷新
- *   data-write-nav      成功后跳转，含 {id}（取响应 data.id）
- *   data-write-reload   成功后整页刷新（裸属性）
- *   data-write-close    成功后关闭的容器选择器（抽屉 / 弹窗）
- *   data-write-confirm  提交前确认文案
- *   data-write-extra    逗号分隔的额外字段名（从表单按 name 取）
- *   data-write-outcome  仅 bulk：receipt / review / update / add
- *   data-write-latest   裸属性，仅同一表单可能并发提交时开：旧响应不得盖新响应
- *   data-write-items    裸属性，仅错误明细 opt-in：失败时消费响应的 data.items（见下）
- *
- * ═══ 唯一的整形属性 ══════════════════════════════════════════════════════════
- *
- *   data-write-json="values"
- *
- * HTML 表单（formdata）**没有嵌套语法** —— 每个控件只能产出一个 name + 一个字符串。
- * 实测：`values[0].key=x` 服务端绑不出 []Struct，`inner.days=3` 绑不出 *Struct。
- * 所以这类字段必须由前端组装成 JSON 串再作为一个字段发出：
- *
- *   <form data-write="update" data-write-url="/api/product/attribute/create"
- *         data-write-json="values">
- *     <input name="name" value="颜色">
- *     <template name="values" data-row>      ← 一个即对象，多个即数组
- *       <input name="key"   value="色号">
- *       <input name="value" value="红">
- *     </template>
- *     <template name="values" data-row>
- *       <input name="key" value="尺码"><input name="value" value="L">
- *     </template>
- *   </form>
- *
- * 发出：name=颜色&values=[{"key":"色号","value":"红"},{"key":"尺码","value":"L"}]
- *
- * 服务端 DTO 用 BindForm 解析该字段（既有做法，见 product 的各 Req）。
- *
- * ═══ 基座内置规则（模板不用声明）════════════════════════════════════════════
- *
- *   · **默认不丢弃迟到响应**：同一次提交的成功、失败与解锁都照常生效。这是绝大多数
- *     写表单的形态 —— 它们提交期间禁用按钮，一次只有一个在飞。
- *   · `data-write-latest` 开的那一类表单相反：每提交一次就递增该表单的请求代号，
- *     成功 / 失败 / catch / 解锁四处都先比对代号与 `form.isConnected` 再动手 ——
- *     旧响应不渲染、不提示、不解锁新请求，节点已从文档摘下时一概不碰 DOM。
- *     典型消费者是「同一个表单可被连点重跑」的只读检查（如产物 SEO 体检）：
- *     后一次的结果才代表当前状态，前一次迟到的结论会盖掉它。
- *   · 空值键一律不发 —— `sort=` 会让后端 *int 绑成 0（「没填」变成「改成 0」），
- *     而**省掉该键**才是 nil。实测确认过三种形态。
- *   · 例外：<input data-keep-empty> 标了的不删（空串有语义，如 parentId 解绑）。
- *   · 同名多值收成数组：`tags=a&tags=b` 服务端本来就绑成 []string，无需声明。
- *   · 标量类型不转换：`qty=3` 服务端直接绑进 int。**这不是遗漏，是实测结论** ——
- *     旧基座的 data-write-number/-float/-bool/-array 是为 fetch+JSON 路径补的，
- *     那条路径已删除，这些属性一并删掉。
- *   · bulk 的 ids 从 [name=ids]:checked 取。
- *   · 宿主元素从 closest('[data-write]') 找。
- *   · **错误明细（data.items）默认不消费**：只有 bulk 档（整批被拒的既有形态）与显式声明
- *     `data-write-items` 的表单才逐条列出；其余 create/update 表单失败时只显示一句结论。
- *     为什么默认关：data.items 是「整批拒绝」的形状（facing.BlockedError），单条写入的
- *     失败通常没有可定位的行；无条件展示会让每个表单都把原始条目摊到界面上。
- *   · 提交期间自动禁按钮，请求结束后恢复。
+/* HTML 写请求接线：HTMX 负责标准表单、multipart、请求与成功交换。
+ * Jet 声明成功目标与本宿主的 data-write-status 错误区；失败不替换编辑内容。
+ * 复杂编辑器只注册请求对象，不注册 JSON 结果处理器。
  */
-// ── 关于行数（方案目标 ≤450，当前 ~735）────────────────────────────────────
-//
-// 超出的部分不是「写多了」，是两类**可以消失**的内容：
-//   · ~120 行存量兼容层（legacyJson / applyBuilder 的 data-write-rows / -object /
-//     -builder），等那 10 处旧模板迁到 data-write-json 后整段删除；
-//   · ~185 行注释，写的是「为什么这样做」而不是「做了什么」—— 尤其「标量不转换」这类
-//     容易被误读成 bug 的决定。删注释能压到 550 行，但那等于让下一个人重新踩一遍。
-//
-// 所以行数会在兼容层删掉后自然降到 ~450。在那之前，行数不是进度指标。
 (function () {
     'use strict';
-    if (window.WBUI && window.WBUI.writeBase && window.WBUI.writeBase.registerResultHandler) return;
-    var resultHandlers = Object.create(null);
+    var ui = window.WBUI = window.WBUI || {};
+    if (ui.writeBase) return;
+    var requests = new WeakMap();
+    var generations = new WeakMap();
+    var active = new WeakMap();
+    var builders = Object.create(null);
 
-    // 不依赖 htmx：本基座用 fetch 发 formdata，只有在取 CSRF 头时才碰页面上的 meta。
-    // （早先版本这里有一句 `if (!window.htmx) return;` —— 那是从旧基座照抄的守卫，
-    //  而新基座根本不走 htmx，那条守卫会让整个基座在 htmx 未加载时不工作。
-    //  实测在无 htmx 的沙箱里提交不发请求，正是这条守卫造成的。）
-
-    var MAX_BULK_IDS = 200;
-
-    // ── 属性读取 ────────────────────────────────────────────────────────────
-    //
-    // 声明可以写在表单上，也可以写在提交按钮上；两者都有时**按钮优先**。
-    // 按钮上一个 data-write-url 都没有 = 这个按钮不由本文件接管，走原生提交 ——
-    // 这是「一个表单并排几个动作」的落点：改状态这类没有 JSON 端点的动作保持页面 POST。
-    function hostOf(el) {
-        return el && el.closest ? el.closest('[data-write]') : null;
+    function attr(state, name) {
+        if (state.submitter?.hasAttribute(name)) return state.submitter.getAttribute(name) || '';
+        return state.owner.getAttribute(name) || '';
     }
 
-    function attr(form, submitter, name) {
-        if (submitter && submitter.hasAttribute && submitter.hasAttribute(name)) {
-            return submitter.getAttribute(name) || '';
-        }
-        return form.getAttribute(name) || '';
+    function hasAttr(state, name) {
+        return !!state.submitter?.hasAttribute(name) || state.owner.hasAttribute(name);
     }
 
-    function hasAttr(form, submitter, name) {
-        if (submitter && submitter.hasAttribute && submitter.hasAttribute(name)) return true;
-        return form.hasAttribute(name);
-    }
-
-    // 模板文案：服务端用 tr() 渲染好带进来的成品句，占位符由本文件填。
-    function msg(form, submitter, key) {
-        return attr(form, submitter, 'data-msg-' + key) || '';
-    }
-
-    function fill(tpl, vals) {
-        var out = tpl;
-        Object.keys(vals).forEach(function (k) {
-            out = out.split('{' + k + '}').join(String(vals[k]));
-        });
-        return out;
-    }
-
-    // ── 状态区 ──────────────────────────────────────────────────────────────
-    //
-    // 结果就地显示：失败绝不重渲染片段（用户已填内容必须留在 DOM 里）。
-    // statusOf 找结论区：**先表单内、再宿主内**。
-    //
-    // 为什么必须兜到宿主：一批隐藏表单（单条删除 / 行内改状态）在列表页上各占一行，
-    // 它们的结论区是**共用**的 —— 每个表单各带一个结果区会在每行底下多出一片空白。
-    // 模板把那个共用区放在 <div data-write-host> 里（17 个模板这么写）。
-    // 只查表单内的话，这些表单的失败提示不会显示在任何地方（用户只看到"点了没反应"）。
-    function statusOf(form) {
-        var own = form.querySelector('[data-write-status]');
+    function statusOf(owner) {
+        var own = owner.querySelector('[data-write-status]');
         if (own) return own;
-        var host = form.closest ? form.closest('[data-write-host]') : null;
-        return host ? host.querySelector('[data-write-status]') : null;
-    }
-
-    function setStatus(form, text, tone, details) {
-        var box = statusOf(form);
-        if (!box) return;
-        box.textContent = text || '';
-        box.hidden = !text;
-        box.setAttribute('data-tone', tone || '');
-        // 逐条失败原因（bulk receipt）。
-        var old = box.querySelector('[data-write-details]');
-        if (old) old.remove();
-        if (details && details.length) {
-            var ul = document.createElement('ul');
-            ul.setAttribute('data-write-details', '');
-            details.forEach(function (line) {
-                var li = document.createElement('li');
-                li.textContent = line;
-                ul.appendChild(li);
-            });
-            box.appendChild(ul);
-        }
-    }
-
-    // ── ① 整形 ──────────────────────────────────────────────────────────────
-
-    // 收集一组控件的值（按 name 分组，同名多值收成数组）。
-    function collect(scope, skipNames) {
-        var out = {};
-        var els = scope.querySelectorAll('[name]');
-        for (var i = 0; i < els.length; i++) {
-            var el = els[i];
-            var name = el.getAttribute('name');
-            if (!name || (skipNames && skipNames[name])) continue;
-            var t = (el.type || '').toLowerCase();
-            if (t === 'checkbox') {
-                // 未勾选的 checkbox 浏览器根本不提交该键（不是发空串）。
-                if (!el.checked) continue;
-                push(out, name, el.value === '' ? 'on' : el.value);
-                continue;
-            }
-            if (t === 'radio') {
-                if (!el.checked) continue;
-                push(out, name, el.value);
-                continue;
-            }
-            if (t === 'file' || t === 'submit' || t === 'button' || t === 'reset') continue;
-            if (el.tagName === 'SELECT' && el.multiple) {
-                for (var j = 0; j < el.options.length; j++) {
-                    if (el.options[j].selected) push(out, name, el.options[j].value);
-                }
-                continue;
-            }
-            push(out, name, el.value);
-            // data-keep-empty：空串有语义，不能被后面的 dropEmpty 删掉。
-            if (el.hasAttribute && el.hasAttribute('data-keep-empty') && el.value === '') {
-                out[name] = out[name] === undefined ? [''] : out[name];
-            }
-        }
-        return out;
-    }
-
-    function push(obj, name, val) {
-        if (obj[name] === undefined) {
-            obj[name] = [val];
-        } else {
-            obj[name].push(val);
-        }
-    }
-
-    // data-write-json：把 <template name="X" data-row> 的每一行组装成对象。
-    //
-    // 一个 data-row → 对象；多个 → 数组。行内的字段按精确 name 取（不递归子行）。
-    function jsonFields(form) {
-        var names = String(form.getAttribute('data-write-json') || '')
-            .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-        var out = {};
-        names.forEach(function (name) {
-            var rows = [];
-            var tpls = form.querySelectorAll('template[name="' + cssEscape(name) + '"][data-row]');
-            for (var i = 0; i < tpls.length; i++) {
-                // 直接查 template.content：它是一个 DocumentFragment，本身就支持
-                // querySelectorAll。不包一层 createElement('div') —— 那多一次 DOM
-                // 操作，且在测试桩里要求额外实现（实测踩过：桩没有 div 的 querySelectorAll）。
-                var frag = tpls[i].content;
-                if (!frag || typeof frag.querySelectorAll !== 'function') continue;
-                var fields = collect(frag, null);
-                var obj = {};
-                Object.keys(fields).forEach(function (k) {
-                    var v = fields[k];
-                    obj[k] = v.length > 1 ? v : v[0];
-                });
-                // 整行都空 → 跳过（用户没填的行不该变成一个空对象）。
-                if (Object.keys(obj).some(function (k) { return String(obj[k]).trim() !== ''; })) {
-                    rows.push(obj);
-                }
-            }
-            // 一行都没有：**发空数组**，不发"键不存在"。
-            //
-            // 语义判据（与 data-write-lines 一致，也与三个 *string/*slice DTO 的约定一致）：
-            // 「删光所有行」是明确的清空意图，而"键不存在"表示本次不改。
-            // 让两者都表现成"不发键"，用户删完所有行后保存 = 什么都没发生，
-            // 而界面已经显示成功 —— 这正是 data-write-keep-empty 那条缺陷的同一种形态。
-            //
-            // 单对象（data-write-json-single）例外：它没有"空对象"的合法形态
-            // （{} 会被后端当成"填了个空结构"），所以清空时仍不发键。
-            if (rows.length === 0) {
-                if (!isSingleRow(name, form)) out[name] = [];
-                return;
-            }
-            out[name] = rows.length === 1 && !/\[\]$/.test(name) && isSingleRow(name, form)
-                ? rows[0]
-                : rows;
+        var host = owner.closest('[data-write-host]');
+        if (!host) return null;
+        // 宿主错误区不能借用其他表单或嵌套宿主的区域；不猜测多个候选的归属。
+        var boxes = Array.from(host.querySelectorAll('[data-write-status]')).filter(function (box) {
+            return !box.closest('form') && box.closest('[data-write-host]') === host;
         });
-        return out;
+        return boxes.length === 1 ? boxes[0] : null;
     }
 
-    // isSingleRow：这个 name 声明为单对象还是数组？
-    //
-    // 判据：模板里写了 data-write-json-single="a,b" 的按单对象发，其余按数组。
-    // 默认数组 —— 因为绝大多数嵌套字段是行列表；单对象（如 ruleParams）显式声明。
-    function isSingleRow(name, form) {
-        var singles = String(form.getAttribute('data-write-json-single') || '')
-            .split(',').map(function (s) { return s.trim(); });
-        return singles.indexOf(name) >= 0;
+    function stale(state) {
+        return !state.owner.isConnected || generations.get(state.scope) !== state.generation ||
+            (state.target && !state.target.isConnected);
     }
 
-    // cssEscape 转义选择器里的 name 值。
-    //
-    // 必须走 window.CSS：裸 CSS 在非浏览器环境（node vm 测试）是 ReferenceError，
-    // 而测试要能在 CI 里跑。兜底分支只转义引号与反斜杠 —— 够用于 name="..." 属性选择器。
-    function cssEscape(s) {
-        if (window.CSS && typeof window.CSS.escape === 'function') {
-            return window.CSS.escape(s);
+    function toast(message) {
+        if (typeof ui.toast === 'function') ui.toast(message, { type: 'error', duration: 6000 });
+    }
+
+    function fail(state, message, fragment) {
+        if (state.done || stale(state)) return;
+        state.done = true;
+        var box = state.errorBox;
+        if (box) {
+            if (fragment) box.replaceChildren(fragment);
+            else box.textContent = message;
+            box.hidden = false;
+            box.setAttribute('data-tone', 'error');
         }
-        return String(s).replace(/["\\]/g, '\\$&');
+        // 业务错误已有 Jet 错误区；传输/协议异常或缺失错误区才使用通用提示。
+        if (!fragment || !box) toast(message || fragment.textContent.trim());
     }
 
-    // ── 存量兼容层（只减不增）────────────────────────────────────────────────
-    //
-    // 10 处模板仍在用旧的三套整形属性（data-write-rows / -object / -builder），
-    // 它们处理的行由**服务端片段**渲染（如 product_attribute_rows.html 的行带
-    // hx-post 增删行），改成 <template data-row> 需要连着改服务端片段与交互。
-    //
-    // 本层在内部把它们翻译成 data-write-json 的等价行为，因此：
-    //   · 新模板一律写 data-write-json，不写这三个属性；
-    //   · 存量由 check-write-attributes.sh 登记（只减不增）。
-    //
-    // 为什么不在模板里直接改：改一处要动「片段端点 + 行增删交互 + 服务端数据形状」
-    // 三件东西，与本批「统一写基座」是两件事，混在一起会让 review 无法判断回归来自哪。
-    function legacyJson(form) {
-        var out = {};
+    function fragmentOf(text) {
+        if (!text?.trim() || /<!doctype\b|<\/?(?:html|head|body)\b/i.test(text)) return null;
+        var template = document.createElement('template');
+        template.innerHTML = text;
+        return template.content;
+    }
 
-        // data-write-rows=".sel;f1,f2;key"：每行容器收成对象，按 DOM 顺序组装成数组。
-        var rowsSpec = form.getAttribute('data-write-rows');
-        if (rowsSpec) {
-            var parts = rowsSpec.split(';');
-            if (parts.length >= 2) {
-                var sel = parts[0].trim();
-                var names = parts[1].split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-                var key = (parts[2] || 'rows').trim();
-                var rows = [];
-                var containers = form.querySelectorAll(sel);
-                for (var i = 0; i < containers.length; i++) {
-                    var obj = {};
-                    names.forEach(function (n) {
-                        var f = findByName(containers[i], n);
-                        if (f !== null) obj[n] = f;
-                    });
-                    // 全空的容器整行跳过。
-                    if (Object.keys(obj).some(function (k) { return String(obj[k]).trim() !== ''; })) {
-                        rows.push(obj);
-                    }
-                }
-                if (rows.length) out[key] = rows;
+    function errorOf(fragment) {
+        var root = fragment.firstElementChild;
+        if (fragment.children.length !== 1 || !root?.matches('[data-ui-error][role="alert"]')) return null;
+        // 错误模板是静态事实展示，不接受脚本、表单或跨区域交换指令。
+        for (var node of [root, ...root.querySelectorAll('*')]) {
+            if (/^(SCRIPT|STYLE|LINK|META|IFRAME|OBJECT|EMBED|FORM|INPUT|BUTTON|SELECT|TEXTAREA|TEMPLATE)$/.test(node.tagName) || node.tagName.startsWith('HX-')) return null;
+            for (var attribute of node.attributes) {
+                if (/^(hx-|data-hx-|on)/i.test(attribute.name)) return null;
             }
         }
+        return root;
+    }
 
-        // data-write-object=".sel;key;driver;cond"：把容器里由 driver 点名的键收成对象。
-        var objSpec = form.getAttribute('data-write-object');
-        if (objSpec) {
-            var op = objSpec.split(';');
-            if (op.length >= 3) {
-                var oscope = form.querySelector(op[0].trim());
-                var okey = op[1].trim();
-                var driver = op[2].trim();
-                var when = op[3] ? op[3].trim() : '';
-                var ok = true;
-                if (when) {
-                    var eq = when.indexOf('=');
-                    if (eq > 0) {
-                        var condName = when.slice(0, eq).trim();
-                        var condVal = when.slice(eq + 1).trim();
-                        var condEl = findByName(form, condName);
-                        ok = condEl === condVal || condEl === null ? ok : false;
-                        if (condEl !== null) ok = String(condEl) === condVal;
-                    }
-                }
-                if (ok && oscope) {
-                    var got = collect(oscope, null);
-                    var o = {};
-                    Object.keys(got).forEach(function (k) {
-                        var v = got[k];
-                        o[k] = v.length > 1 ? v : v[0];
-                    });
-                    if (Object.keys(o).length) out[okey] = o;
+    function drawerFragmentOf(fragment) {
+        var root = fragment.firstElementChild;
+        if (fragment.children.length !== 1 || !root?.matches('[data-drawer-fragment]')) return false;
+        if (!root.matches('[data-drawer-readonly], form') && !root.querySelector('form')) return false;
+        // 抽屉只接纳显式声明的单根片段；拒绝活动内容与外站表单/资源。
+        for (var node of [root, ...root.querySelectorAll('*')]) {
+            if (/^(SCRIPT|STYLE|LINK|META|BASE|IFRAME|OBJECT|EMBED|SVG|MATH|TEMPLATE|NOSCRIPT)$/.test(node.tagName) || node.tagName.startsWith('HX-')) return false;
+            for (var attribute of node.attributes) {
+                if (/^on/i.test(attribute.name) || /^(srcdoc|formaction|is)$/i.test(attribute.name)) return false;
+                if (/^(href|src|action|xlink:href|(?:data-)?hx-(?:get|post|put|patch|delete))$/i.test(attribute.name)) {
+                    var url = new URL(attribute.value, document.baseURI);
+                    if (!/^https?:$/.test(url.protocol) || url.origin !== location.origin || url.username || url.password) return false;
                 }
             }
         }
-        return out;
+        return true;
     }
 
-    // findByName 在容器里按 name 精确取一个值（取最后一个，与旧基座同口径）。
-    function findByName(scope, name) {
-        var els = scope.querySelectorAll('[name]');
-        var out = null;
-        for (var i = 0; i < els.length; i++) {
-            if (els[i].getAttribute('name') === name) {
-                var t = (els[i].type || '').toLowerCase();
-                if (t === 'checkbox') { out = els[i].checked ? els[i].value : '0'; }
-                else if (t === 'radio') { if (els[i].checked) out = els[i].value; }
-                else out = els[i].value;
+    function nextURL(state, fragment) {
+        var selector = attr(state, 'data-write-nav');
+        if (!selector) return '';
+        var link = fragment.querySelector(selector);
+        if (!link?.matches('a[href]')) throw new Error('成功响应缺少声明的下一步链接');
+        var url = new URL(link.getAttribute('href'), document.baseURI);
+        if (url.origin !== location.origin) throw new Error('成功导航必须使用本站链接');
+        return url.href;
+    }
+
+    function succeed(state, ctx) {
+        if (state.done || generations.get(state.scope) !== state.generation) return;
+        state.done = true;
+        if (state.errorBox?.isConnected) {
+            state.errorBox.replaceChildren();
+            state.errorBox.hidden = true;
+            state.errorBox.removeAttribute('data-tone');
+        }
+        if (!state.write) return;
+        var eventTarget = state.owner.isConnected ? state.owner : document;
+        eventTarget.dispatchEvent(new CustomEvent('write:success', { bubbles: true }));
+        var close = attr(state, 'data-write-close');
+        if (close) {
+            var panel = document.querySelector(close);
+            if (panel?.matches('[data-drawer]') && typeof ui.closeDrawer === 'function') ui.closeDrawer();
+            else if (panel) {
+                panel.hidden = true;
+                panel.dispatchEvent(new CustomEvent('wbui:drawer-close', { bubbles: true }));
             }
         }
-        return out;
+        if (state.next) window.location.assign(state.next);
+        else if (hasAttr(state, 'data-write-reload')) window.location.reload();
     }
 
-    // 组装最终请求体（FormData）。
-    function buildBody(form, submitter) {
-        var body = new FormData();
-        var jsonNames = String(form.getAttribute('data-write-json') || '')
-            .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-        var jsonVals = jsonFields(form);
-        var skip = {};
-        jsonNames.forEach(function (n) { skip[n] = true; });
-
-        // bulk 档**只发** ids + data-write-extra 点名的字段 —— 不发整份表单。
-        //
-        // 为什么：bulk 的形状是 {ids} + 该动作自己的参数（如批量流转的 toStatus/remark），
-        // 而表单里还带着筛选控件、其它动作的隐藏域。全发出去会让端点收到两种互不认识的
-        // 身体（严格白名单直接整批 400）。旧基座的 bulk 也是这个口径。
-        var bulkMode = attr(form, submitter, 'data-write') === 'bulk';
-        var bulkExtra = {};
-        if (bulkMode) {
-            attr(form, submitter, 'data-write-extra').split(',').map(function (x) { return x.trim(); })
-                .filter(Boolean).forEach(function (n) { bulkExtra[n] = true; });
-        }
-        var fields = collect(form, skip);
-        Object.keys(fields).forEach(function (name) {
-            if (bulkMode && !bulkExtra[name]) return;
-            var vals = fields[name];
-            // 删空值键：`sort=` 会被后端 *int 绑成 0。
-            // 但 data-keep-empty 字段必须保留（空串有语义）。
-            var isKeep = keepEmptyNames(form).indexOf(name) >= 0;
-            vals.forEach(function (v) {
-                if (!isKeep && String(v).trim() === '') return;
-                body.append(name, v);
-            });
-        });
-
-        Object.keys(jsonVals).forEach(function (name) {
-            body.set(name, JSON.stringify(jsonVals[name]));
-        });
-
-        // data-write-lines="images,imageAlts"：多行文本 → 字符串数组。
-        // 空行丢弃（用户多敲一个空行不该在数组里留空串）；空文本按空数组发
-        //（「一个都不填」是明确的清空意图，不是「本次不改」）。
-        attr(form, null, 'data-write-lines').split(',')
-            .map(function (x) { return x.trim(); })
-            .filter(Boolean)
-            .forEach(function (name) {
-                var raw = body.get(name);
-                if (raw === null) return;
-                body.delete(name);
-                splitLines(raw).forEach(function (line) { body.append(name, line); });
-            });
-
-        // data-write-json-wrap="descriptionHtml:description"：把裸 HTML 包成 {html: …}。
-        // 富文本控件给的是裸 HTML，而库里该字段是 jsonb 对象；这层包装原本在 handler 里做。
-        // 冒号后是目标键，省略则用源键名。不 trim —— 正文空白是排版。
-        attr(form, null, 'data-write-json-wrap').split(',')
-            .map(function (x) { return x.trim(); })
-            .filter(Boolean)
-            .forEach(function (pair) {
-                var parts = pair.split(':');
-                var from = parts[0].trim();
-                var to = (parts[1] || from).trim();
-                var raw = body.get(from);
-                if (raw === null) return;
-                body.delete(from);
-                body.set(to, JSON.stringify({ html: raw }));
-            });
-
-        // 存量兼容层：旧整形属性组装的键并入请求体。
-        var legacy = legacyJson(form);
-        Object.keys(legacy).forEach(function (name) {
-            body.set(name, JSON.stringify(legacy[name]));
-        });
-        // data-write-extra="status,projectId"：点名的额外字段一起发。
-        //
-        // 为什么必须**点名**而不是「把表单字段全带上」：bulk 的形状是 {ids} + 该动作
-        // 自己的参数，多带字段会让端点收到两种互不认识的身体。同名字段优先取本次
-        // submitter 的值（按钮上的 value 就是它要发的东西，如批量启停的 status）。
-        attr(form, submitter, 'data-write-extra').split(',')
-            .map(function (x) { return x.trim(); })
-            .filter(Boolean)
-            .forEach(function (name) {
-                if (submitter && submitter.getAttribute && submitter.getAttribute('name') === name) {
-                    body.set(name, submitter.getAttribute('value') || '');
-                    return;
+    htmx.registerExtension('write-base', {
+        htmx_config_request: function (elt, detail) {
+            var ctx = detail.ctx;
+            var request = ctx.request;
+            var owner = request.form || elt.form || elt.closest('form') || elt;
+            var submitter = request.submitter || (elt !== owner ? elt : null);
+            var state = { owner: owner, submitter: submitter, target: ctx.target, errorBox: statusOf(owner) };
+            var unsafe = !/^(GET|HEAD|OPTIONS)$/i.test(request.method);
+            if (unsafe && !hasAttr(state, 'data-write')) return;
+            state.write = unsafe;
+            // 抽屉入口在外壳之外，错误区仍由目标所在的 Jet 宿主明确提供。
+            if (!unsafe && state.target?.matches('[data-drawer-body]')) state.errorBox = statusOf(state.target);
+            // 多个查询入口可以更新同一区域；查询按目标、写操作按表单隔离迟到结果。
+            state.scope = unsafe ? owner : ctx.target || owner;
+            requests.set(ctx, state);
+            request.headers.Accept = 'text/html';
+            request.redirect = 'error';
+            var url = new URL(request.action, document.baseURI);
+            if (url.origin !== location.origin) state.error = '界面请求必须使用本站端点';
+            if (!unsafe) return;
+            if (window.WPSitePreview?.active) state.error = '模拟预览：不会提交真实数据，请在发布页面中操作。';
+            var session = attr(state, 'data-write-session');
+            state.visitor = session === 'visitor';
+            if (session && session !== 'visitor') state.error = '未知的写请求会话类型';
+            state.session = state.visitor ? window.WPSiteSession : null;
+            var token = state.visitor ? state.session?.csrfToken :
+                owner.querySelector('[name="csrf_token"]')?.value || document.querySelector('meta[name="csrf-token"]')?.content;
+            state.csrfToken = token;
+            if (!token) state.error = state.visitor ? '访客会话尚未就绪，请稍后重试' : '缺少 CSRF 令牌，请刷新页面';
+            else request.headers['X-CSRF-Token'] = token;
+        },
+        htmx_before_request: function (_elt, detail) {
+            var ctx = detail.ctx;
+            var state = requests.get(ctx);
+            if (!state) return;
+            state.generation = (generations.get(state.scope) || 0) + 1;
+            generations.set(state.scope, state.generation);
+            if (state.error) throw new Error(state.error);
+            var name = state.write && attr(state, 'data-write-builder');
+            if (name) {
+                if (!builders[name]) throw new Error('未注册的业务对象提供器: ' + name);
+                var payload = builders[name](state.owner, state.submitter);
+                if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.then === 'function') throw new Error('业务对象提供器必须返回对象');
+                ctx.request.body = JSON.stringify(payload);
+                ctx.request.headers['Content-Type'] = 'application/json';
+            }
+            if (ctx.request.timeout == null && !htmx.config.defaultTimeout) ctx.request.timeout = 30000;
+            state.started = true;
+            active.set(state.owner, (active.get(state.owner) || 0) + 1);
+            state.owner.setAttribute('aria-busy', 'true');
+        },
+        htmx_before_response: function (_elt, detail) {
+            var ctx = detail.ctx;
+            var state = requests.get(ctx);
+            if (!state) return;
+            if (state.visitor && state.session && window.WPSiteSession === state.session) {
+                var token = ctx.response.headers.get('X-CSRF-Token');
+                // 会话轮换独立于表单代数；迟到响应只能更新发出时仍有效的令牌。
+                if (token && state.session.csrfToken === state.csrfToken) state.session.csrfToken = token;
+            }
+            for (var header of ctx.response.headers.keys()) {
+                if (header.toLowerCase().startsWith('hx-')) state.error = '界面响应不得携带后端导航或交换指令头';
+            }
+            if (ctx.response.raw.redirected) state.error = '界面响应不得重定向';
+            // 在读取正文与任何后端导航、trigger、历史更新之前清除响应指令。
+            ctx.hx = {};
+        },
+        htmx_after_request: function (_elt, detail) {
+            var ctx = detail.ctx;
+            var state = requests.get(ctx);
+            if (!state) return;
+            if (stale(state)) return false;
+            var html = /^text\/html(?:;|$)/i.test(ctx.response.headers.get('Content-Type') || '');
+            var fragment = html && fragmentOf(ctx.text);
+            if (state.error || !fragment) {
+                fail(state, state.error || '接口未返回有效 HTML 片段');
+                return false;
+            }
+            if (!ctx.response.raw.ok) {
+                var error = errorOf(fragment);
+                fail(state, '请求失败，请重试', error);
+                return false;
+            }
+            try {
+                if (state.target?.matches('[data-drawer-body]') && !drawerFragmentOf(fragment)) {
+                    fail(state, '接口未返回有效抽屉片段');
+                    return false;
                 }
-                if (body.has(name)) return;   // 表单里已有，保留
-                var v = findByName(form, name);
-                if (v !== null) body.set(name, v);
-            });
-
-        // 页面级组装器（data-write-builder）：最后跑，它可以覆盖前面的一切。
-        applyBuilder(body, form);
-
-        return body;
-    }
-
-    // keepEmptyNames：本表单里「空串有语义」的字段名，两个来源合并：
-    //
-    //   ① 表单级 data-write-keep-empty="a,b" —— 模板作者声明"这几个字段的空串要保留"。
-    //   ② 控件级 <input data-keep-empty> —— 逐控件标。
-    //
-    // 为什么必须两个都认（这是实测到的真缺陷）：两个商品模板写的是**表单级**
-    // data-write-keep-empty，而基座此前只读控件级 data-keep-empty。门禁
-    // check-write-attributes.sh 认前者是合法属性，于是模板一直"合规"、
-    // 属性却从未生效：
-    //
-    //   product_category_form.html 的父级下拉选「（顶级分类）」时值是空串，后端语义是
-    //   「nil = 本次不改，空串 = 提升为顶级」。空串被当成"没填"删掉之后，
-    //   用户点「提升为顶级」实际什么都没改，界面却显示保存成功。
-    //
-    // 两种写法并存是历史原因（控件级先有）；这里合并成一个判据，不再各算一遍。
-    function keepEmptyNames(form) {
-        var out = [];
-        function add(n) {
-            n = String(n || '').trim();
-            if (n && out.indexOf(n) < 0) out.push(n);
-        }
-        // ① 表单级：逗号分隔的字段名表。
-        String(form.getAttribute('data-write-keep-empty') || '')
-            .split(',').forEach(add);
-        // ② 控件级。
-        var els = form.querySelectorAll('[data-keep-empty][name]');
-        for (var i = 0; i < els.length; i++) {
-            add(els[i].getAttribute('name'));
-        }
-        return out;
-    }
-
-    // splitLines 多行文本 → 去空行的字符串数组。
-    function splitLines(raw) {
-        if (typeof raw !== 'string') return [];
-        var out = [];
-        raw.replace(/\r\n/g, '\n').split('\n').forEach(function (line) {
-            var v = line.trim();
-            if (v) out.push(v);
-        });
-        return out;
-    }
-
-    // ── bulk ────────────────────────────────────────────────────────────────
-
-    function bulkIDs(form) {
-        var seen = {};
-        var out = [];
-        // data-write-ids-scope：ids 在**另一个容器**里（抽屉内容被克隆到 document 级，
-        // 勾选框留在列表的批量表单里）。不指回去的话，在抽屉内找 [name=ids] 恒为空，
-        // 症状是「点了应用调价什么也没发生」，提示却只说「没勾选任何项」。
-        var scopeSel = String(form.getAttribute('data-write-ids-scope') || '').trim();
-        var scope = form;
-        if (scopeSel) {
-            scope = document.querySelector(scopeSel) || form;
-        }
-        // 用 [name] + 逐个判 checked，而不是选择器里的 :checked 伪类：
-        // 伪类在最小 DOM 桩（feature 测试的驱动脚本）里不支持，而在真实浏览器里
-        // 「[name=ids] 且 checked」与「[name=ids]:checked」等价 —— 取前者兼容面更宽。
-        var els = scope.querySelectorAll('[name]');
-        for (var i = 0; i < els.length; i++) {
-            var name = els[i].getAttribute('name');
-            if (name !== 'ids' && name !== 'ids[]') continue;
-            if (!els[i].checked) continue;
-            var v = String(els[i].value || '').trim();
-            if (!v || seen[v]) continue;
-            seen[v] = 1;
-            out.push(v);
-        }
-        return out;
-    }
-
-    // 一行明细：id: 原因；id 或原因为空时只给另一项。
-    // bulk 回执与错误明细（itemsOf）共用这一份格式，别再写第二份。
-    function failureLine(item) {
-        var reason = String(item.message || item.text || '');
-        var id = item.id === undefined || item.id === null ? '' : String(item.id);
-        return id && reason ? id + ': ' + reason : (reason || id);
-    }
-
-    // ── ② 提交 ──────────────────────────────────────────────────────────────
-    //
-    // 同一基座提交 FormData 并消费 JSON；访客 API 使用运行时获取的访客令牌。
-    function send(form, submitter, body) {
-        var url = attr(form, submitter, 'data-write-url');
-        var visitor = url.indexOf('/api/site/') === 0;
-        var headers = { Accept:'application/json' };
-        if (visitor) {
-            var csrf = window.WPSiteSession && window.WPSiteSession.csrfToken;
-            if (!csrf) return Promise.reject(new Error('访客会话尚未就绪，请稍后重试'));
-            headers['X-CSRF-Token'] = csrf;
-        } else if (!form.querySelector('[name="csrf_token"]')) {
-            var fromMeta = document.querySelector('meta[name="csrf-token"]');
-            if (fromMeta) headers['X-CSRF-Token'] = fromMeta.getAttribute('content') || '';
-        }
-        return fetch(url, {
-            method:'POST', body:body, headers:headers, credentials:'same-origin',
-            redirect:'error'
-        }).then(function (res) {
-            if (visitor) {
-                var next = res.headers.get('X-CSRF-Token');
-                if (next) window.WPSiteSession.csrfToken = next;
+                state.next = state.write ? nextURL(state, fragment) : '';
             }
-            return res;
-        });
-    }
-
-    function messageOf(res) {
-        if (!res || !res.headers || typeof res.headers.get !== 'function') return '';
-        var raw = res.headers.get('X-Message');
-        if (!raw) return '';
-        try { return decodeURIComponent(raw); } catch (e) { return raw; }
-    }
-
-    function toast(text, ok) {
-        // 全程走 window.WBUI，不用裸标识符：裸 WBUI 依赖「window 就是全局对象」，
-        // 一旦这段代码跑在 vm / 沙箱 / 非浏览器宿主里就是 ReferenceError，
-        // 而前一行刚判断过 window.WBUI 存在 —— 判的和用的必须同一个东西。
-        var ui = window.WBUI;
-        if (!text || !ui || typeof ui.toast !== 'function') return;
-        ui.toast(text, { type: ok ? 'ok' : 'error', duration: ok ? 3000 : 6000 });
-    }
-
-    // ── 迟到响应保护（仅 data-write-latest）──────────────────────────────────
-    //
-    // 判据是「这次请求还是不是当前那一次」，两个条件缺一不可：
-    //
-    //   ① generation 相同 —— 表单上又提交过一次，本次已经是历史；
-    //   ② form.isConnected —— 节点已被换出文档（htmx 局部替换、抽屉关闭）。
-    //
-    // 只判 ② 不够：同一节点连跑两次时两次都 isConnected，迟到的第一次会把第二次的
-    // 结果盖掉。只判 ① 也不够：节点摘掉后代号不再递增，迟到的响应仍会把内容写进
-    // 一个已经不在页面上的 DOM（表现为「旧表单复活」或写进已关闭的抽屉）。
-    //
-    // 未声明 data-write-latest 的表单不建代号，ticketOf 返回 null，各处保护直接放行 ——
-    // 存量行为一个字节都不变。
-    function latestMode(form, submitter) {
-        return hasAttr(form, submitter, 'data-write-latest');
-    }
-
-    function ticketOf(form, guarded) {
-        if (!guarded) return null;
-        form.__wbWriteGeneration = (form.__wbWriteGeneration || 0) + 1;
-        return form.__wbWriteGeneration;
-    }
-
-    // stale 为 true 时，本次提交的一切副作用都放弃。
-    function stale(ticket, form) {
-        if (ticket === null) return false;
-        if (form.__wbWriteGeneration !== ticket) return true;
-        return form.isConnected === false;
-    }
-
-    // ── ③ 收尾 ──────────────────────────────────────────────────────────────
-
-    // lock 记下「第一次锁之前的 disabled 状态」，解锁时还原。
-    //
-    // guarded=false（默认，所有存量表单）：保持原逻辑 —— 每次上锁都按当前值重记。
-    //   它们提交期间只有一个请求在飞，谈不上重入。
-    // guarded=true（仅 data-write-latest）：只有属性不存在时才记，后续重入沿用初次记录，
-    //   否则第二次上锁会读到「已被自己禁用」的现状，把本来启用的按钮永久锁死。
-    //   标记值：data-was-disabled="1" 表示原本禁用（解锁保持禁用）；
-    //           属性存在但为 "" 表示原本启用（解锁恢复可用）。
-    //   判据是属性在不在，不是它的真值 —— 空串也是有效记录。
-    function lock(form, on, guarded) {
-        form.setAttribute('aria-busy', on ? 'true' : 'false');
-        var btns = form.querySelectorAll('button[type="submit"], input[type="submit"]');
-        for (var i = 0; i < btns.length; i++) {
-            if (on) {
-                if (!guarded || !btns[i].hasAttribute('data-was-disabled')) {
-                    btns[i].setAttribute('data-was-disabled', btns[i].disabled ? '1' : '');
-                }
-                btns[i].disabled = true;
-            } else {
-                btns[i].disabled = btns[i].getAttribute('data-was-disabled') === '1';
-                btns[i].removeAttribute('data-was-disabled');
-            }
+            catch (error) { fail(state, '接口未返回有效 HTML 片段'); return false; }
+            state.accepted = true;
+            // 成功交回 HTMX 原生交换，不解释 JSON 或生成界面。
+        },
+        htmx_before_swap: function (_elt, detail) {
+            var state = requests.get(detail.ctx);
+            if (state && (!state.accepted || stale(state))) return false;
+        },
+        htmx_after_swap: function (_elt, detail) {
+            var state = requests.get(detail.ctx);
+            if (state?.accepted) succeed(state, detail.ctx);
+        },
+        htmx_error: function (_elt, detail) {
+            var state = detail.ctx && requests.get(detail.ctx);
+            if (state) fail(state, state.error || attr(state, 'data-msg-failed') || '请求失败，请重试');
+        },
+        htmx_finally_request: function (_elt, detail) {
+            var state = requests.get(detail.ctx);
+            if (!state?.started) return;
+            var count = Math.max(0, (active.get(state.owner) || 1) - 1);
+            active.set(state.owner, count);
+            if (!count) state.owner.removeAttribute('aria-busy');
         }
-    }
+    });
 
-    function afterSuccess(form, submitter, data, text) {
-        form.dispatchEvent(new CustomEvent('write:success', {bubbles:true, detail:{data:data, url:attr(form,submitter,'data-write-url')}}));
-        toast(text, true);
-        var closeSel = attr(form, submitter, 'data-write-close');
-        if (closeSel) {
-            var target = document.querySelector(closeSel);
-            if (target) {
-                target.setAttribute('hidden', '');
-                target.dispatchEvent(new CustomEvent('wbui:drawer-close', { bubbles: true }));
-            }
+    ui.writeBase = {
+        owns: function (ctx) { return !!ctx && requests.has(ctx); },
+        registerPayloadBuilder: function (name, fn) {
+            if (!name || typeof fn !== 'function') throw new Error('注册能力需要名称和函数');
+            if (Object.prototype.hasOwnProperty.call(builders, name)) throw new Error('能力重复注册: ' + name);
+            builders[name] = fn;
         }
-        var nav = attr(form, submitter, 'data-write-nav');
-        if (nav) {
-            var id = data && data.id !== undefined && data.id !== null ? String(data.id) : '';
-            window.location.assign(nav.split('{id}').join(encodeURIComponent(id)));
-            return;
-        }
-        if (hasAttr(form, submitter, 'data-write-reload')) {
-            window.location.reload();
-        }
-    }
+    };
 
-    function previewReadOnly() {
-        return !!(window.WPSitePreview && window.WPSitePreview.active);
-    }
-
-    function previewStatus(form) {
-        setStatus(form, '模拟预览：不会提交真实数据，请在发布页面中操作。', 'error');
-    }
-
-    function onSubmit(ev) {
-        var form = ev.target;
-        if (!form || form.tagName !== 'FORM') return;
-        var submitter = ev.submitter || null;
-        // 构建器临时上下文由统一文档出口给出；不能由组件Props开启线上模拟。
-        // 原生POST表单也必须被拦截，旧组件迁移期间同样不能产生真实写操作。
-        if (previewReadOnly() && (String(form.getAttribute('method') || 'get').toLowerCase() !== 'get' || hasAttr(form, submitter, 'data-write'))) {
-            ev.preventDefault();
-            previewStatus(form);
-            return;
-        }
-
-        // 声明可以写在表单上，也可以写在提交按钮上；两者都有时按钮优先（见 attr）。
-        // 所以**任一处**有 data-write 即算本基座的表单 —— 只判表单会让
-        // 「一个表单并排几个动作、端点各写在按钮上」这种形态整个失效（实测：
-        // 批量启停/删除的按钮就长这样，表单本身刻意不声明）。
-        if (!hasAttr(form, submitter, 'data-write')) return;
-        if (!attr(form, submitter, 'data-write-url')) return;
-
-        ev.preventDefault();
-
-        var handlerName = attr(form, submitter, 'data-write-handler');
-        if (handlerName && hasAttr(form, submitter, 'data-write-reload')) {
-            setStatus(form, 'data-write-handler 与 data-write-reload 不能同时声明', 'error');
-            return;
-        }
-        if (handlerName && !resultHandlers[handlerName]) {
-            setStatus(form, '未注册的写结果处理能力: ' + handlerName, 'error');
-            return;
-        }
-
-        var confirmText = attr(form, submitter, 'data-write-confirm');
-        if (confirmText && !window.confirm(confirmText)) return;
-
-        var mode = attr(form, submitter, 'data-write');
-        var body = buildBody(form, submitter);
-
-        if (mode === 'bulk') {
-            var ids = bulkIDs(form);
-            if (ids.length === 0) {
-                setStatus(form, msg(form, submitter, 'none-selected'), 'error');
-                return;
-            }
-            if (ids.length > MAX_BULK_IDS) {
-                setStatus(form, fill(msg(form, submitter, 'too-many'),
-                    { max: MAX_BULK_IDS, count: ids.length }), 'error');
-                return;
-            }
-            body.delete('ids');
-            ids.forEach(function (id) { body.append('ids', id); });
-        }
-
-        var guarded = latestMode(form, submitter);
-        var ticket = ticketOf(form, guarded);
-
-        lock(form, true, guarded);
-        send(form, submitter, body).then(function (res) {
-            var text = messageOf(res);
-            var ctype = res.headers.get('Content-Type') || '';
-            if (ctype.indexOf('application/json') < 0) {
-                // 提示只在当前页面展示；导航只能来自显式 data-write-nav 声明。
-                throw new Error('unexpected content-type');
-            }
-            return res.json().then(function (payload) {
-                if (!res.ok || !payload || payload.code >= 400) {
-                    if (stale(ticket, form)) return;
-                    var fail = (payload && payload.message) || msg(form, submitter, 'failed');
-                    setStatus(form, fail, 'error', itemsOf(form, submitter, payload, mode));
-                    toast(fail, false);
-                    return;
-                }
-                // 并发重入：旧请求即使成功，也不得写状态、派事件、关抽屉、导航。
-                // 放在 finishOk 之前 —— 它内部一连串副作用没法事后撤回。
-                if (stale(ticket, form)) return;
-                return finishOk(form, submitter, mode, payload, text);
-            });
-        }).catch(function (err) {
-            // 网络层失败：输入与勾选一律保留。
-            //
-            // 迟到判定放在最前面：res.json() 自己 reject（响应被截断、代理回了半截
-            // JSON）也会走到这里，那时本次提交一样是历史。
-            if (stale(ticket, form)) return;
-            setStatus(form, msg(form, submitter, 'failed') || err.message, 'error');
-        }).then(function () {
-            if (stale(ticket, form)) return;
-            lock(form, false, guarded);
-        });
-    }
-
-    // ── 错误明细（data.items）───────────────────────────────────────────────
-    //
-    // 形状是 blockedDataOf 的 [{id,name,reasonKey,message}]，message 已是成品句。
-    // 只呈现，不取词、不拼句。
-    function itemsWanted(form, submitter, mode) {
-        if (mode === 'bulk') return true;
-        return hasAttr(form, submitter, 'data-write-items');
-    }
-
-    // 测试出口的纯函数视图：即 bulk 的行格式 failureLine。
-    function itemText(it) {
-        if (!it || typeof it !== 'object') return '';
-        return failureLine(it);
-    }
-
-    // opt-in 档只认声明的字符串字段：message → reasonKey → name 依次回落，
-    // id 与原因同一条尺子：原始对象/数组/数字一律不转字符串，非字符串 id 当空。
-    // 只写 String(it.id) 会让合法 message + 对象 id 输出 "[object Object]: 原因"。
-    function optInLine(it) {
-        if (!it || typeof it !== 'object' || Array.isArray(it)) return '';
-        var reason = textOf(it.message) || textOf(it.reasonKey) || textOf(it.name);
-        if (!reason) return '';
-        var id = textOf(it.id);
-        return id && reason ? id + ': ' + reason : reason;
-    }
-
-    function textOf(v) {
-        return typeof v === 'string' ? v.replace(/^\s+|\s+$/g, '') : '';
-    }
-
-    // 返回 null = 本次不展示明细。bulk 判据与格式逐字沿用旧版：任何带 message/text 的项都列。
-    function itemsOf(form, submitter, payload, mode) {
-        if (!payload || !itemsWanted(form, submitter, mode)) return null;
-        var data = payload.data;
-        var items = data && typeof data === 'object' && !Array.isArray(data) ? data.items : null;
-        if (!Array.isArray(items)) return null;
-        var bulk = mode === 'bulk';
-        var lines = [];
-        items.forEach(function (it) {
-            var line = '';
-            if (bulk) {
-                if (it && (it.message || it.text)) line = failureLine(it);
-            } else {
-                line = optInLine(it);
-            }
-            if (line) lines.push(line);
-        });
-        return lines;
-    }
-
-    function finishOk(form, submitter, mode, payload, text) {
-        var data = payload.data || {};
-        var handlerName = attr(form, submitter, 'data-write-handler');
-        if (handlerName) {
-            setStatus(form, payload.message || text, 'ok');
-            var instance = form.closest('[data-component-instance]');
-            if (resultHandlers[handlerName]({form:form, submitter:submitter, data:data, payload:payload, text:payload.message || text, instanceId:instance ? instance.getAttribute('data-component-instance') : ''}) === true) return;
-        }
-        if (mode === 'bulk') {
-            var outcome = attr(form, submitter, 'data-write-outcome') || 'receipt';
-            if (outcome === 'review') {
-                setStatus(form, payload.message || text, 'ok');
-                var box = statusOf(form);
-                if (box) {
-                    if (Object.prototype.hasOwnProperty.call(data, 'Affected')) {
-                        box.setAttribute('data-write-affected', String(data.Affected));
-                    }
-                    if (Object.prototype.hasOwnProperty.call(data, 'Status')) {
-                        box.setAttribute('data-write-review-status', String(data.Status));
-                    }
-                }
-                return;
-            }
-            // receipt（默认）：按 skipped 标记部分失败，逐条原因留在结果区。
-            var reasons = [];
-            (data.items || []).forEach(function (item) {
-                if (item && !item.updated && !item.noop && (item.message || item.text)) {
-                    reasons.push(failureLine(item));
-                }
-            });
-            var skipped = Number(data.skipped) || 0;
-            setStatus(form, payload.message || text, skipped > 0 ? 'error' : 'ok', reasons);
-            if (hasAttr(form, submitter, 'data-write-reload')) {
-                // 刷新前把结论存起来，否则用户什么都看不到。
-                storeFlash(payload.message || text);
-                window.location.reload();
-            }
-            return;
-        }
-        setStatus(form, payload.message || text, 'ok');
-        afterSuccess(form, submitter, data, payload.message || text);
-    }
-
-    // 结论跨刷新传递：sessionStorage 一条，读后即删。
-    var FLASH_KEY = 'wbui:write-flash';
-    function storeFlash(text) {
-        try { sessionStorage.setItem(FLASH_KEY, text || ''); } catch (e) { /* 隐私模式 */ }
-    }
-
-    function consumeFlash() {
-        var text = '';
-        try {
-            text = sessionStorage.getItem(FLASH_KEY) || '';
-            sessionStorage.removeItem(FLASH_KEY);
-        } catch (e) { /* 隐私模式 */ }
-        if (text) toast(text, true);
-    }
-
-    // ── 绑定 ────────────────────────────────────────────────────────────────
-    //
-    // 用捕获阶段在 document 上接 submit：表单可能是 htmx 换进来的，逐个绑定必漏。
-    if (!window.__wbWriteBaseBound) {
-        window.__wbWriteBaseBound = true;
-        document.addEventListener('submit', onSubmit, true);
-        document.addEventListener('htmx:config:request', function (event) {
-            var ctx = event.detail && event.detail.ctx;
-            var request = ctx && ctx.request;
-            if (!previewReadOnly() || !request || /^(get|head|options)$/i.test(request.method || 'GET')) return;
+    // 静态编辑器预览也拦截未被 HTMX 认领的原生写提交，不发送真实业务请求。
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (window.WPSitePreview?.active && (form.method.toLowerCase() !== 'get' || form.hasAttribute('data-write'))) {
             event.preventDefault();
-            var source = ctx.sourceElement;
-            if (source) previewStatus(source.closest('form') || source);
-        });
-        document.addEventListener('DOMContentLoaded', consumeFlash);
-        if (document.readyState !== 'loading') consumeFlash();
-    }
-
-    // ── 页面级 payload 组装器（data-write-builder）────────────────────────────
-    //
-    // 有些写动作的 payload 不是「表单字段的平铺」，而是从 DOM 另一处读出结构再合并
-    //（变体清单的行、捆绑配置的 config）。这类组装只有页面自己知道，所以走注册表：
-    // 页面脚本注册一个函数，模板只声明名字。
-    //
-    // 保留这个机制的原因：product_variant_write.js / membership_write.js 都在向它注册，
-    // 而那些组装逻辑依赖各自页面特有的 DOM 结构，用通用的 <template data-row> 表达不了
-    //（例如变体清单的行是从清单 DOM 读出来的，不是表单控件）。
-    var builders = {};
-
-    function registerResultHandler(name, fn) {
-        if (!name || typeof fn !== 'function') throw new Error('写结果处理能力需要名称和函数');
-        if (Object.prototype.hasOwnProperty.call(resultHandlers, name)) throw new Error('写结果处理能力重复注册: ' + name);
-        resultHandlers[name] = fn;
-    }
-
-    function registerPayloadBuilder(name, fn) {
-        if (name && typeof fn === 'function') builders[name] = fn;
-    }
-
-    function applyBuilder(body, form) {
-        var name = String(form.getAttribute('data-write-builder') || '').trim();
-        if (!name || !builders[name]) return;
-        var obj = builders[name](form);
-        if (!obj || typeof obj !== 'object') return;
-        Object.keys(obj).forEach(function (k) {
-            body.set(k, typeof obj[k] === 'string' ? obj[k] : JSON.stringify(obj[k]));
-        });
-    }
-
-    // 暴露纯函数与注册器给测试用（node:test 里以 vm 加载，见 write-base.test.cjs）。
-    window.WBUI = window.WBUI || {};
-    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, itemsOf: itemsOf, itemText: itemText, registerPayloadBuilder: registerPayloadBuilder, registerResultHandler: registerResultHandler };
-    // 旧附属脚本（product_variant_write.js 等）仍在向这两个名字注册组装器，
-    // 保留别名让它们不必同时改动 —— 迁完那批模板后可以删掉。
-    window.WPJsonWrite = window.WPJsonWrite || { registerPayloadBuilder: registerPayloadBuilder };
-    window.WBFormBody = window.WBFormBody || { registerPayloadBuilder: registerPayloadBuilder };
-    window.WPJsonWrite.registerPayloadBuilder = registerPayloadBuilder;
-    window.WBFormBody.registerPayloadBuilder = registerPayloadBuilder;
+            var box = statusOf(form);
+            if (box) {
+                box.textContent = '模拟预览：不会提交真实数据，请在发布页面中操作。';
+                box.hidden = false;
+            }
+        }
+    }, true);
 })();

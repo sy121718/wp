@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Status}} — {{t("http.error.title", "请求未完成")}}</title>
+</head>
+<body>
+    <main>
+        <h1>{{.Status}}</h1>
+        {{include "failure.html" .}}
+    </main>
+</body>
+</html>

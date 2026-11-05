@@ -11,9 +11,8 @@ import (
 func TestAdminEmptyActionI18nKeysSeeded(t *testing.T) {
 
 	wantKeys := map[string]string{
-		"admin.roles.perm.empty.action":                   "role_permissions.html",
+		"admin.roles.perm.empty.action":                   "grant_menu_tree.html",
 		"admin.seo.paths.empty.action":                    "seo.html",
-		"admin.analytics.no_project.refresh":              "analytics.html",
 		"admin.analytics.empty.action":                    "analytics.html",
 		"admin.mail.automation_run.timeline.empty.action": "mail_automation_run.html",
 		"admin.mail.campaign.empty.action":                "mail_campaign.html",
@@ -118,7 +117,7 @@ func analyticsProbeData(over map[string]any) map[string]any {
 		"RangeFrom": "", "RangeTo": "", "Total": 0, "Visitors": 0,
 		"Daily": []any{}, "Paths": []any{}, "PathTotal": 0,
 		"Referrers": []any{}, "UAClasses": []any{}, "Langs": []any{},
-		"RankLimit": 10, "BreakdownUnavailable": false, "Err": "", "LoadFailed": false,
+		"RankLimit": 10, "BreakdownUnavailable": false,
 	}, over)
 }
 
@@ -165,28 +164,30 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		assertEmptyActions(t, "menus", out, 1, `data-drawer-open="#tpl-menu-create"`)
 	})
 
-	t.Run("role_permissions→去菜单管理", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/system/role_permissions", map[string]any{
-			"Rows": []any{}, "Role": map[string]any{"RoleID": 1, "RoleName": "内容编辑", "RoleCode": "editor", "MenuIDs": []any{}},
-		})
-		assertEmptyActions(t, "role_permissions", out, 1, `href="/admin/menus"`)
+	// 权限抽屉改为按需加载的片段（GET /admin/roles/permissions/drawer），
+	// 空态动作必须跟着搬进 grant_menu_tree.html，否则「没有可分配菜单」时
+	// 不再给出「去菜单管理」入口。
+	t.Run("权限抽屉片段→空态仍指向菜单管理", func(t *testing.T) {
+		out := adminTemplateSource(t, "grant_menu_tree.html")
+		if !strings.Contains(out, `admin.roles.perm.empty.action`) {
+			t.Fatal("grant_menu_tree.html 里没有空态动作词条")
+		}
+		if !strings.Contains(out, `href="/admin/menus"`) {
+			t.Error("权限抽屉空态缺少「去菜单管理」入口")
+		}
+		if !strings.Contains(out, `"admin.roles.perm.empty.action"`) {
+			t.Error("权限抽屉空态缺少取词点")
+		}
 	})
 
 	t.Run("seo/热门路径→去访问统计（带工程参数）", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/analytics/seo", map[string]any{
 			"Projects":        []any{map[string]any{"ID": "pr1", "Name": "官网"}},
 			"SelectedProject": "pr1", "Paths": []any{}, "HasPaths": false,
-			"AnalyticsError": false, "Buttons": map[string]any{"seo.audit": true},
+			"Buttons": map[string]any{"seo.audit": true},
 		})
 
 		assertEmptyActions(t, "seo", out, 1, `href="/admin/analytics?project=pr1"`)
-	})
-
-	t.Run("analytics/装载失败档→刷新重试", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/analytics/analytics", analyticsProbeData(map[string]any{
-			"Projects": []any{}, "SelectedProject": "", "LoadFailed": true,
-		}))
-		assertEmptyActions(t, "analytics/loadFailed", out, 1, `href=""`)
 	})
 
 	t.Run("analytics/还没有工程→刻意不给动作（句子里已有链接）", func(t *testing.T) {

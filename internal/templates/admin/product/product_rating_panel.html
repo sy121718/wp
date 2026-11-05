@@ -1,0 +1,60 @@
+{{rating := .Rating}}
+{{csrf := .csrf_token}}
+{{canAdd := isset(.PermSet["product:rating_add"]) && .PermSet["product:rating_add"]}}
+{{canDelete := isset(.PermSet["product:rating_delete"]) && .PermSet["product:rating_delete"]}}
+<section id="product-ratings-{{rating.ProductID}}" class="card list-card" data-write-host>
+    <div class="list-toolbar">
+        <span class="card-title">{{t("pRating", "评分")}}</span>
+        <span class="badge badge-mute">{{if rating.HasRating}}<span data-product-rating="{{rating.Rating}}">{{amount(rating.Rating)}}</span>{{tn("pRatingCount", "· {count} 条", map("count", rating.RatingCount))}}{{else}}—{{end}}</span>
+        <span class="toolbar-spacer"></span>
+        {{if canAdd}}
+        <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-rating-add-{{rating.ProductID}}" data-drawer-title="{{t("pRatingAdd", "添加评分")}}">{{t("pRatingAdd", "添加评分")}}</button>
+        {{end}}
+    </div>
+    <p class="form-hint" data-write-status role="status" hidden></p>
+    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{t("pRatingsAria", "商品评分")}}">
+        <table class="data-table">
+            <thead><tr><th>{{t("pRating", "评分")}}</th><th>{{t("pRatingsSrc", "来源")}}</th><th>{{t("pRatingsTime", "时间")}}</th>{{if canDelete}}<th class="col-actions">{{t("pActions", "操作")}}</th>{{end}}</tr></thead>
+            <tbody>
+            {{if len(rating.Items) == 0}}
+            <tr><td colspan="{{if canDelete}}4{{else}}3{{end}}" class="text-mute text-sm">{{t("pRatingsEmpty", "这个商品还没有评分。")}}</td></tr>
+            {{end}}
+            {{range _, r := rating.Items}}
+            <tr>
+                <td><span data-product-rating="{{r.Score}}">{{amount(r.Score)}}</span></td>
+                <td>{{r.Source}}</td>
+                <td>{{formatTime(r.CreatedAt)}}</td>
+                {{if canDelete}}
+                <td class="col-actions">
+                    <form data-write hx-post="/api/product/rating/delete" hx-target="#product-ratings-{{rating.ProductID}}" hx-swap="outerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                          hx-confirm="{{t("pRatingDelAsk", "删除该条评分？商品的平均分与条数会随之重算。")}}">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="projectId" value="{{rating.ProjectID}}">
+                        <input type="hidden" name="id" value="{{r.ID}}">
+                        <button data-requires-js hidden type="submit" class="btn btn-sm btn-danger">{{t("uiActDel", "删除")}}</button>
+                    </form>
+                </td>
+                {{end}}
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{if canAdd}}
+    <template id="tpl-rating-add-{{rating.ProductID}}">
+        <form data-write hx-post="/api/product/rating/add" hx-target="#product-ratings-{{rating.ProductID}}" hx-swap="outerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" class="form-stack">
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{rating.ProjectID}}">
+            <input type="hidden" name="productId" value="{{rating.ProductID}}">
+            <label class="form-label">{{t("pRating", "评分")}}
+                <input type="number" class="form-input" name="score" min="0" max="5" step="0.01" inputmode="decimal" placeholder="{{t("pRatingScore", "评分 0~5")}}" required>
+            </label>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{t("uiActCancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{t("pRatingAdd", "添加评分")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+</section>

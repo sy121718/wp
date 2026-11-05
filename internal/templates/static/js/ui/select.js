@@ -191,11 +191,11 @@
             }
         }
 
-        trigger.addEventListener('click', function (e) {
+        function triggerClick(e) {
             e.preventDefault();
             if (root.classList.contains(OPEN_CLASS)) { close(); } else { open(); }
-        });
-        trigger.addEventListener('keydown', function (e) {
+        }
+        function triggerKeydown(e) {
             var opened = root.classList.contains(OPEN_CLASS);
             switch (e.key) {
                 case 'ArrowDown': e.preventDefault(); opened ? highlight(active + 1) : open(); break;
@@ -215,13 +215,16 @@
                         if (hit >= 0) { e.preventDefault(); opened ? highlight(hit) : choose(hit); }
                     }
             }
-        });
-        menu.addEventListener('click', function (e) {
+        }
+        function menuClick(e) {
             var li = e.target.closest('.wbs-option');
             if (!li) { return; }
             e.preventDefault();
             choose(parseInt(li.dataset.index, 10));
-        });
+        }
+        trigger.addEventListener('click', triggerClick);
+        trigger.addEventListener('keydown', triggerKeydown);
+        menu.addEventListener('click', menuClick);
         // label[for] 点击会把焦点交给被隐藏的原生 select，转给可见触发器。
         function focusTrigger() { trigger.focus(); }
         sel.addEventListener('focus', focusTrigger);
@@ -240,8 +243,12 @@
             get value() { return sel.value; },
             set value(v) { sel.value = v == null ? '' : String(v); sync(); },
             destroy: function () {
+                if (instances.get(sel) !== api) return;
                 close();
                 if (observer) observer.disconnect();
+                trigger.removeEventListener('click', triggerClick);
+                trigger.removeEventListener('keydown', triggerKeydown);
+                menu.removeEventListener('click', menuClick);
                 sel.removeEventListener('focus', focusTrigger);
                 sel.removeEventListener('change', sync);
                 instances.delete(sel);
@@ -279,9 +286,19 @@
         }
     };
 
-    // 控件登记：index.js 与 htmx 重扫都会调用。
+    function eachSelect(scope, fn) {
+        if (scope.matches && scope.matches('select')) fn(scope);
+        WBUI.each(WBUI.$$('select', scope), fn);
+    }
+
+    // 扫描和销毁都包含子树根；直接插入或移除 select 与整个表单采用同一生命周期。
     WBUI.register(function (scope) {
-        WBUI.each(WBUI.$$('select:not([data-wb-native])', scope), enhance);
+        eachSelect(scope, enhance);
+    }, function (scope) {
+        eachSelect(scope, function (sel) {
+            var api = instances.get(sel);
+            if (api) api.destroy();
+        });
     });
 
     document.addEventListener('click', function (e) {

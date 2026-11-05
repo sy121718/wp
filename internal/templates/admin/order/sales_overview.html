@@ -198,22 +198,22 @@
        「共 N 项待办」= 调拨待出货 + 库存预警 + 待发货，三个数字各由自己的 service 给，
        TodoTotal 是 service 算好的合计（模板只显示，不做求和）。
        每一项都是可点的入口 —— 一个不可点的待办数字只会让人去猜该去哪。 *}
-    {{if .Todo.total}}
+    {{if .Todo.Total}}
     <section class="card">
         <div class="card-header">
-            <h2 class="card-title">{{tr("admin.order.sales.todo.titleLead", "共")}} {{.Todo.total}} {{tr("admin.order.sales.todo.titleTail", "项待办")}}</h2>
+            <h2 class="card-title">{{tr("admin.order.sales.todo.titleLead", "共")}} {{.Todo.Total}} {{tr("admin.order.sales.todo.titleTail", "项待办")}}</h2>
         </div>
         <div class="card-body todo-list">
-            {{if .Todo.alertCount}}{{if .Todo.alertCount}}
+            {{if .Todo.AlertCount}}{{if .Todo.AlertCount}}
             <a class="todo-item" href="/admin/inventory?project={{selectedProject}}">
                 <span class="todo-label">{{tr("admin.order.sales.todo.alerts", "库存预警")}}</span>
-                <span class="todo-count">{{.Todo.alertCount}}</span>
+                <span class="todo-count">{{.Todo.AlertCount}}</span>
             </a>
             {{end}}{{end}}
-            {{if .Todo.pendingShip}}
+            {{if .Todo.PendingShip}}
             <a class="todo-item" href="/admin/orders/pending-ship?project={{selectedProject}}">
                 <span class="todo-label">{{tr("admin.order.sales.todo.pendingShip", "待发货")}}</span>
-                <span class="todo-count">{{.Todo.pendingShip}}</span>
+                <span class="todo-count">{{.Todo.PendingShip}}</span>
             </a>
             {{end}}
             <a class="todo-item" href="/admin/inventory/transfers?project={{selectedProject}}&status=pending">

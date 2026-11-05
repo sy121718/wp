@@ -20,7 +20,7 @@ func translationPageData() map[string]any {
 }
 
 func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
-	out, err := render(t, groupDSet(t), "admin/product/product_translations", translationPageData())
+	out, err := render(t, groupDSet(t), "admin/product/product_translations", translationPageData(), groupDRenderScope())
 	if err != nil {
 		t.Fatalf("译文工作台渲染失败: %v", err)
 	}
@@ -30,13 +30,13 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	}
 
 	forms := peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-url") != ""
+		return peEl(n, "form") && peAttr(n, "hx-post") != ""
 	})
 	if len(forms) != 1 {
 		t.Fatalf("译文工作台应恰有 1 张写表单，实际 %d", len(forms))
 	}
 	form := forms[0]
-	if got := peAttr(form, "data-write-url"); got != "/api/product/translations/save" {
+	if got := peAttr(form, "hx-post"); got != "/api/product/translations/save" {
 		t.Fatalf("写表单端点 = %q，want /api/product/translations/save", got)
 	}
 	if !peHasAttr(form, "data-write-reload") {

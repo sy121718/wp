@@ -118,18 +118,12 @@ func templateProblems(src string) []string {
 			"控制块不配平：if/range/block/with 共 %d 个，end 共 %d 个（那一行之后的内容会被整块吞掉或渲染中断，而 HTTP 仍是 200）",
 			opens, ends))
 	}
-	if varTCall {
-		scope := "不存在"
-		if rangeVarT {
-			scope = "存在"
-		}
-		problems = append(problems, fmt.Sprintf(
-			"出现变量形式的翻译调用 t(…)（本文件存在 range 变量 t：%s）：range 变量会遮蔽数据里的翻译函数，"+
-				"Jet 会在运行期报错并中断整页。后台模板的取词写法是 map 索引加 key 与兜底文案", scope))
+	if varTCall && rangeVarT {
+		problems = append(problems, "调用 t(…) 的模板同时使用 range 变量 t：请重命名循环变量，避免遮蔽请求级翻译函数")
 	}
 	if bareT && !rangeVarT {
 		problems = append(problems, "裸输出 t 但没有 range 变量 t：输出的会是函数值（页面上一串无意义的地址），"+
-			"取译文要用 map 索引形式取 t 再调用")
+			"取译文应调用请求级 t(key, fallback)")
 	}
 	return problems
 }
@@ -217,7 +211,7 @@ func TestTemplateIntegrityChecksAreNotVacuous(t *testing.T) {
 		}
 	}
 
-	good := "{{if .A}}{{ .[t](k, 兜底) }}{{range _, tag := .Tags}}{{tag}} {{end}}{{end}}"
+	good := `{{if .A}}{{t("key", "兜底")}}{{range _, tag := .Tags}}{{tag}} {{end}}{{end}}`
 	if problems := templateProblems(good); len(problems) != 0 {
 		t.Errorf("合法模板被判成有问题：%v（样本 %s）", problems, good)
 	}

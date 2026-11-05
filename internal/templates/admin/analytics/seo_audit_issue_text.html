@@ -1,0 +1,9 @@
+{* 体检检查项的名称只在这里映射一次；未知标识原样显示。 *}
+{{if .Item == "title_missing"}}{{t("seoMissTitle", "页面没有标题")}}
+{{else if .Item == "title_duplicate"}}{{t("seoDupTitle", "多个页面使用了同一个标题")}}
+{{else if .Item == "description_missing"}}{{t("seoMissDesc", "页面没有 meta description")}}
+{{else if .Item == "canonical_missing"}}{{t("seoMissCanon", "页面没有 canonical")}}
+{{else if .Item == "image_alt_missing"}}{{t("seoMissAlt", "图片缺少替代文本")}}
+{{else if .Item == "internal_link_broken"}}{{t("seoBadLink", "站内链接指向不存在的路径")}}
+{{else if .Item == "hreflang_incomplete"}}{{t("seoHreflang", "hreflang 只有一条，缺少互指")}}
+{{else}}{{t("seoIssueUnknown", "未识别的检查项：")}}<code>{{.Item}}</code>{{end}}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 func CollectFieldRefs(p *Page) (refs []core.FieldRef, err error) {

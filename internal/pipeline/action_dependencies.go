@@ -1,17 +1,18 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"sort"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
-func PageTargetKey(id string) DepKey {
-	return DepKey{Kind: DepKindPageTarget, Key: "page_target:" + id}
+func PageTargetKey(id string) publish.DepKey {
+	return publish.DepKey{Kind: publish.DepKindPageTarget, Key: "page_target:" + id}
 }
-func PresentationTargetKey(id string) DepKey {
-	return DepKey{Kind: DepKindPresentationTarget, Key: "presentation_target:" + id}
+func PresentationTargetKey(id string) publish.DepKey {
+	return publish.DepKey{Kind: publish.DepKindPresentationTarget, Key: "presentation_target:" + id}
 }
 
 func (u *CompileUsage) UseActionTarget(kind core.ActionKind, id string) {
@@ -28,17 +29,17 @@ func (u *CompileUsage) UseActionTarget(kind core.ActionKind, id string) {
 	u.ActionTargets[kind][id] = true
 }
 
-func ActionTargetDependencies(u *CompileUsage) []Dependency {
+func ActionTargetDependencies(u *CompileUsage) []publish.Dependency {
 	if u == nil {
 		return nil
 	}
-	var out []Dependency
+	var out []publish.Dependency
 	for kind, ids := range u.ActionTargets {
 		for id, used := range ids {
 			if !used {
 				continue
 			}
-			var key DepKey
+			var key publish.DepKey
 			switch kind {
 			case core.ActionPage:
 				key = PageTargetKey(id)
@@ -47,7 +48,7 @@ func ActionTargetDependencies(u *CompileUsage) []Dependency {
 			default:
 				continue
 			}
-			out = append(out, Dependency{Kind: key.Kind, Key: key.Key})
+			out = append(out, publish.Dependency{Kind: key.Kind, Key: key.Key})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {

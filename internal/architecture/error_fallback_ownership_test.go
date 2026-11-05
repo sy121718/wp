@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/facing"
 )
 
 var fallbackExemptModules = map[string]string{}
@@ -98,8 +100,9 @@ func TestErrorFallbacksCoverDeclarations(t *testing.T) {
 			t.Errorf("%s：有 Err* 常量但没有 Err(key) 工厂 —— service 只能用 errors.New 造裸 key", dir)
 		}
 		for value, name := range declared {
-			if !fallbacks[value] {
-				t.Errorf("%s：%s = %q 没有在错误兜底表里给中文兜底", relToRoot(t, root, dir), name, value)
+			if !facing.IsBusinessKey(value) {
+				t.Errorf("%s：%s = %q 过不了 pkg/facing.IsBusinessKey —— 出口会把它当成内部错误（文案归词库，key 形态必须成立）",
+					relToRoot(t, root, dir), name, value)
 			}
 		}
 		for value := range fallbacks {

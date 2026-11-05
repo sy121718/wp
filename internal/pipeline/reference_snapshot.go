@@ -1,70 +1,55 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"context"
 	"fmt"
 	"strings"
 
 	"go_wp/internal/builder"
-	nav "go_wp/internal/builder/components/nav"
-	"go_wp/internal/builder/core"
+	nav "go_wp/internal/builder/extensions/nav"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	json "go_wp/pkg/jsonx"
 )
 
-type FrozenBlock struct {
-	Version  int64           `json:"version"`
-	Document json.RawMessage `json:"document"`
-}
+type FrozenBlock = publish.FrozenBlock
+
 
 type ReferenceSnapshot struct {
-	ProjectID string                     `json:"projectId"`
-	Blocks    map[string]FrozenBlock     `json:"blocks"`
-	Templates map[string]json.RawMessage `json:"templates,omitempty"`
+	*publish.ReferenceSnapshot
 }
 
-func (s *ReferenceSnapshot) Clone() *ReferenceSnapshot {
+// Unwrap 返回 pkg 的冻结数据，便于与本包的适配器互转。
+func (s *ReferenceSnapshot) Unwrap() *publish.ReferenceSnapshot {
 	if s == nil {
 		return nil
 	}
-	out := &ReferenceSnapshot{ProjectID: s.ProjectID, Blocks: map[string]FrozenBlock{}}
-	for id, b := range s.Blocks {
-		b.Document = append(json.RawMessage(nil), b.Document...)
-		out.Blocks[id] = b
-	}
-	if s.Templates != nil {
-		out.Templates = map[string]json.RawMessage{}
-		for id, doc := range s.Templates {
-			out.Templates[id] = append(json.RawMessage(nil), doc...)
-		}
-	}
-	return out
+	return s.ReferenceSnapshot
 }
 
-func (s *ReferenceSnapshot) ResolveBlockRoot(id string) ([]*core.Node, error) {
+// WrapReferenceSnapshot 给 pkg 冻结数据补上应用侧解析能力。
+func WrapReferenceSnapshot(s *publish.ReferenceSnapshot) *ReferenceSnapshot {
 	if s == nil {
+		return nil
+	}
+	return &ReferenceSnapshot{ReferenceSnapshot: s}
+}
+
+// ResolveBlockRoot 用构建器解析冻结块文档，返回根节点。
+func (s *ReferenceSnapshot) ResolveBlockRoot(id string) ([]*core.Node, error) {
+	if s == nil || s.ReferenceSnapshot == nil {
 		return nil, fmt.Errorf("全局块 %s 缺少冻结输入", id)
 	}
-	block, ok := s.Blocks[id]
-	if !ok {
-		return nil, fmt.Errorf("全局块 %s 不在本次冻结输入中", id)
+	doc, err := s.ReferenceSnapshot.BlockDocument(id)
+	if err != nil {
+		return nil, err
 	}
-	page, err := builder.ParsePage(block.Document)
+	page, err := builder.ParsePage(doc)
 	if err != nil {
 		return nil, err
 	}
 	return page.Root, nil
-}
-
-func (s *ReferenceSnapshot) ResolveStructureDocument(_ context.Context, projectID, id string) ([]byte, error) {
-	if s.ProjectID != projectID {
-		return nil, fmt.Errorf("结构模板 %s 不属于本次冻结工程", id)
-	}
-	doc, ok := s.Templates[id]
-	if !ok {
-		return nil, fmt.Errorf("结构模板 %s 不在本次冻结输入中", id)
-	}
-	return append([]byte(nil), doc...), nil
 }
 
 type blockSnapshotReader interface {
@@ -73,7 +58,7 @@ type blockSnapshotReader interface {
 
 type templateCapture struct {
 	source   StructureTemplatePort
-	snapshot *ReferenceSnapshot
+	snapshot *publish.ReferenceSnapshot
 }
 
 func (p *templateCapture) ResolveStructureDocument(ctx context.Context, projectID, id string) ([]byte, error) {
@@ -96,7 +81,7 @@ func FreezeReferences(ctx context.Context, projectID string, doc []byte, blocks 
 	if err != nil {
 		return nil, err
 	}
-	out := &ReferenceSnapshot{ProjectID: projectID, Blocks: map[string]FrozenBlock{}, Templates: map[string]json.RawMessage{}}
+	out := &publish.ReferenceSnapshot{ProjectID: projectID, Blocks: map[string]publish.FrozenBlock{}, Templates: map[string]json.RawMessage{}}
 	var candidates map[string]blockcontract.BlockResp
 	loaded := false
 	var visit func([]*core.Node) error
@@ -131,7 +116,7 @@ func FreezeReferences(ctx context.Context, projectID string, doc []byte, blocks 
 		if e != nil {
 			return e
 		}
-		out.Blocks[id] = FrozenBlock{Version: b.Version, Document: append(json.RawMessage(nil), b.Document...)}
+		out.Blocks[id] = publish.FrozenBlock{Version: b.Version, Document: append(json.RawMessage(nil), b.Document...)}
 		return visit(parsed.Root)
 	}
 	var menuBlocks func([]core.NavigationItem) error
@@ -222,17 +207,26 @@ func FreezeReferences(ctx context.Context, projectID string, doc []byte, blocks 
 			return nil, fmt.Errorf("结构槽位 %s（引用 %s）: %w", plan.Slot, plan.BlockID, err)
 		}
 	}
-	return out, nil
+	return WrapReferenceSnapshot(out), nil
 }
 
 type referenceSnapshotKey struct{}
 
 func WithReferenceSnapshot(ctx context.Context, snapshot *ReferenceSnapshot) context.Context {
-	return context.WithValue(ctx, referenceSnapshotKey{}, snapshot.Clone())
+	return context.WithValue(ctx, referenceSnapshotKey{}, snapshot.Clone().Unwrap())
 }
+
+// Clone 复制冻结数据（返回适配器形态）。
+func (s *ReferenceSnapshot) Clone() *ReferenceSnapshot {
+	if s == nil || s.ReferenceSnapshot == nil {
+		return nil
+	}
+	return WrapReferenceSnapshot(s.ReferenceSnapshot.Clone())
+}
+
 func ReferenceSnapshotFromContext(ctx context.Context, projectID string) *ReferenceSnapshot {
-	if s, _ := ctx.Value(referenceSnapshotKey{}).(*ReferenceSnapshot); s != nil && s.ProjectID == projectID {
-		return s.Clone()
+	if s, _ := ctx.Value(referenceSnapshotKey{}).(*publish.ReferenceSnapshot); s != nil && s.ProjectID == projectID {
+		return WrapReferenceSnapshot(s.Clone())
 	}
 	return nil
 }

@@ -1,0 +1,28 @@
+{* 定价试算结果：由 Jet 输出，前端不再把 JSON 映射成 DOM。 *}
+{{preview := .Preview}}
+<section data-pricing-preview-result hidden aria-live="polite" tabindex="-1">
+    <h3>{{t("prPrevTitle", "试算预览（未落库）")}}</h3>
+    <div class="form-inline">
+        <span class="badge badge-mute">{{t("prPrevSumRule", "规则：")}}{{preview.RuleType}}</span>
+        <span class="badge badge-mute">{{t("prPrevSumRound", "尾数：")}}{{preview.Rounding}}</span>
+        <span class="badge badge-mute">{{t("prPrevSumScope", "范围：")}}{{preview.Scope}}</span>
+        <span class="badge">{{tn("prPrevSummary", "参与 {target} 个变体（改价 {changed} / 价格不变 {same} / 跳过 {skipped}）", map("target", preview.TargetCount, "changed", preview.ChangedCount, "same", preview.UnchangedCount, "skipped", preview.SkippedCount))}}</span>
+    </div>
+    <div class="pricing-table-wrap table-scroll" tabindex="0" role="region" aria-label="{{t("prPrevTableAria", "试算明细（可横向滚动查看）")}}">
+        <table class="data-table data-table-wide pricing-page-table">
+            <thead><tr><th>{{t("prProd", "商品")}}</th><th>SKU</th><th>{{t("prCostPrice", "成本价")}}</th><th>{{t("prOldPrice", "原价")}}</th><th>{{t("prNewPrice", "新价")}}</th><th>{{t("prDiff", "差值")}}</th><th>{{t("prResult", "结果")}}</th></tr></thead>
+            <tbody>
+            {{if len(preview.Lines) == 0}}
+            <tr><td colspan="7" class="text-mute text-sm">{{t("prPreviewEmpty", "没有变体落在这次试算范围内。")}}</td></tr>
+            {{end}}
+            {{range _, line := preview.Lines}}
+            <tr>
+                <td>{{line.ProductName}}</td><td><code>{{line.SKUCode}}</code></td>
+                <td>{{amountDash(line.CostPrice)}}</td><td>{{amount(line.OldPrice)}}</td><td><strong>{{amount(line.NewPrice)}}</strong></td><td>{{if line.Diff > 0}}+{{end}}{{amount(line.Diff)}}</td>
+                <td><span class="badge {{if line.Status == "changed"}}badge-ok{{else}}badge-mute{{end}}">{{if line.Status == "changed"}}{{t("prLineChange", "改价")}}{{else}}{{t("prLineSame", "不变")}}{{end}}</span> <span class="hint">{{line.Reason}}</span></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</section>

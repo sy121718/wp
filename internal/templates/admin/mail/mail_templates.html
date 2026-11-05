@@ -51,12 +51,15 @@
     </div>
     {* 批量删除 form：勾选框提交模板行的主键 id，handler 再映射回 key + locale
        走同一条单条删除路径（模板的唯一键是 key+locale，不是主键）。 *}
-    <form method="post" action="/admin/mail/templates/bulk-delete">
+    <form data-write hx-post="/admin/mail/templates/bulk-delete" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteTemplate}}{{if len(.Templates) > 0}}
       {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.templates.bulk_delete_confirm", "删除选中的邮件模板？用到它们的邮件会发不出去。"), danger=true)}}
+        <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                hx-confirm="{{tr("admin.mail.templates.bulk_delete_confirm", "删除选中的邮件模板？用到它们的邮件会发不出去。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
       {{yield bulkBarClose()}}
       {{end}}{{end}}
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}">
@@ -109,15 +112,19 @@
 
   {* 行内表单与抽屉模板放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
   {{range _, tp := .Templates}}
-  <form id="template-del-{{tp.ID}}" class="hidden-form" method="post" action="/admin/mail/template/delete"
-        data-confirm="{{tr("admin.mail.templates.confirm.delete", "删除该模板？用到它的邮件会发不出去。")}}" data-confirm-danger>
+  <form id="template-del-{{tp.ID}}" class="hidden-form" data-write hx-post="/admin/mail/template/delete"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.templates.confirm.delete", "删除该模板？用到它的邮件会发不出去。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="template_key" value="{{tp.TemplateKey}}">
     <input type="hidden" name="locale" value="{{tp.Locale}}">
   </form>
   {{if canSaveTemplate}}
   <template id="tpl-template-edit-{{tp.ID}}">
-    <form method="post" action="/admin/mail/template/save" class="form-stack">
+    <form data-write hx-post="/admin/mail/template/save" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <div class="form-grid">
         <div class="form-field">
@@ -151,6 +158,7 @@
         <label class="form-label" for="tpl-text-{{tp.ID}}">{{tr("admin.mail.template_form.body_text", "纯文本正文") }}</label>
         <textarea class="form-textarea" id="tpl-text-{{tp.ID}}" name="body_text" rows="4">{{tp.BodyText}}</textarea>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
@@ -162,7 +170,9 @@
 
   {{if canSaveTemplate}}
   <template id="tpl-mail-template">
-    <form method="post" action="/admin/mail/template/save" class="form-stack">
+    <form data-write hx-post="/admin/mail/template/save" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <div class="form-grid">
         <div class="form-field">
@@ -194,6 +204,7 @@
         <label class="form-label" for="tpl-new-text">{{tr("admin.mail.template_form.body_text", "纯文本正文") }}</label>
         <textarea class="form-textarea" id="tpl-new-text" name="body_text" rows="4"></textarea>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>

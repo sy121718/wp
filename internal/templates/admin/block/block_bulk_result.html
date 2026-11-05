@@ -1,0 +1,6 @@
+{* 全局块批量删除结论：逐条原因只在失败行出现，成功行只计数。 *}
+{{if .None}}{{t("blkNoneSel", "没有选中任何块，列表未改动。")}}
+{{else if .Done == 0}}{{tn("blkDelNone", "没有块被删除：{skipped} 个不存在或被页面引用。", map("skipped", .Skipped))}}
+{{else if .Skipped == 0}}{{tn("blkDelDone", "已删除 {count} 个块。", map("count", .Done))}}
+{{else}}{{tn("blkDelPart", "已删除 {done} 个块，另有 {skipped} 个被跳过（不存在或被页面引用）。", map("done", .Done, "skipped", .Skipped))}}{{end}}
+{{if len(.Rows) > 0}}<ul>{{range _, row := .Rows}}{{if !row.OK}}<li>{{row.ID}}：{{row.Message}}</li>{{end}}{{end}}</ul>{{end}}

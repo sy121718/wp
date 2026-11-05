@@ -326,6 +326,14 @@ const (
 
 	NavigationUpdate Perm = "navigation:update"
 
+	NavigationMove Perm = "navigation:move"
+
+	NavigationTranslate Perm = "navigation:translate"
+
+	NavigationSourceAdd Perm = "navigation:sourceAdd"
+
+	NavigationDeleteBulk Perm = "navigation:deleteBulk"
+
 	OrderCancel Perm = "order:cancel"
 
 	OrderCouponCountAudit Perm = "order:coupon_count_audit"
@@ -424,6 +432,8 @@ const (
 	PageSEOPatrol Perm = "page:seo_patrol"
 
 	PageURLUpdate Perm = "page:url_update"
+
+	PageTranslationsSave Perm = "page:translations_save"
 
 	PermissionCreate Perm = "permission:create"
 
@@ -671,6 +681,15 @@ const (
 
 	AIProviderModelsFetch Perm = "ai:provider_models_fetch"
 
+	// 候选清单与批量追加各有自己的权限点：
+	//   - candidates 会解密密钥、拿 base_url 去探远端 /models（是外部调用，代价与前缀不同）；
+	//   - append 会改写 provider 的模型目录（是写操作）。
+	// 两者都不借 provider_models_save / provider_models_fetch —— 共用会让「只想看候选」
+	// 的角色顺带拿到「改目录」或「打远端」的能力。
+	AIProviderModelsCandidates Perm = "ai:provider_models_candidates"
+
+	AIProviderModelsAppend Perm = "ai:provider_models_append"
+
 	AISessionList Perm = "ai:session_list"
 
 	AISessionGet Perm = "ai:session_get"
@@ -687,6 +706,12 @@ const (
 
 	AISessionFold Perm = "ai:session_fold"
 
+	// AISessionSend 是「往已有会话里发一条消息」。
+	//
+	// 它不能复用 ai:chat：/api/ai/chat 是「开一段新对话」，服务端会把 SessionID 清 0；
+	// 而这里是「续写指定会话」，请求带 sessionId。两件事的后果不同，权限点也不该共用一个。
+	AISessionSend Perm = "ai:session_send"
+
 	AIChat Perm = "ai:chat"
 
 	AITokenList Perm = "ai:token_list"
@@ -694,6 +719,13 @@ const (
 	AITokenCreate Perm = "ai:token_create"
 
 	AITokenRevoke Perm = "ai:token_revoke"
+
+	// AITokenToggle 是「对外接入点开关」自己的权限点。
+	//
+	// 它不改任何一把令牌，改的是「这个站点的数据要不要对外开口」——与签发令牌是两件
+	// 不同的事：可以有人能发令牌、但不能决定开口。借 token_create 会让「谁能开对外
+	// 出口」这件事在权限表里不可见，也让日后想单独收回变得无从下手。
+	AITokenToggle Perm = "ai:token_toggle"
 )
 
 var specs = map[Perm]spec{
@@ -881,7 +913,11 @@ var specs = map[Perm]spec{
 	NavigationDelete: {module: "navigation", name: "导航删除"},
 	NavigationGet:    {module: "navigation", name: "导航详情"},
 	NavigationList:   {module: "navigation", name: "导航列表"},
-	NavigationUpdate: {module: "navigation", name: "导航更新"},
+	NavigationUpdate:    {module: "navigation", name: "导航更新"},
+	NavigationMove:      {module: "navigation", name: "导航排序"},
+	NavigationTranslate: {module: "navigation", name: "导航译文写入"},
+	NavigationSourceAdd: {module: "navigation", name: "来源加入导航"},
+	NavigationDeleteBulk: {module: "navigation", name: "导航批量删除"},
 
 	OrderCancel:           {module: "order", name: "取消订单"},
 	OrderCouponCountAudit: {module: "order", name: "券计数对账"},
@@ -934,6 +970,7 @@ var specs = map[Perm]spec{
 	PageRollback:         {module: "page", name: "回滚页面"},
 	PageSEOPatrol:        {module: "page", name: "SEO 合规巡检"},
 	PageURLUpdate:        {module: "page", name: "更新页面URL"},
+	PageTranslationsSave: {module: "page", name: "保存页面译文"},
 
 	PermissionCreate:  {module: "permission", name: "新建权限点"},
 	PermissionDelete:  {module: "permission", name: "删除权限点"},
@@ -1072,16 +1109,21 @@ var specs = map[Perm]spec{
 	AIProviderModelsSave:    {module: "ai", name: "保存模型目录"},
 	AIProviderModelsRestore: {module: "ai", name: "恢复默认模型"},
 	AIProviderModelsFetch:   {module: "ai", name: "拉取可用模型"},
-	AISessionList:           {module: "ai", name: "会话列表"},
-	AISessionGet:            {module: "ai", name: "会话详情"},
-	AISessionEvents:         {module: "ai", name: "会话事件日志"},
-	AISessionFoldPlan:       {module: "ai", name: "会话折叠建议"},
-	AISessionAppend:         {module: "ai", name: "追加会话事件"},
-	AISessionRename:         {module: "ai", name: "重命名会话"},
-	AISessionArchive:        {module: "ai", name: "归档会话"},
-	AISessionFold:           {module: "ai", name: "折叠会话"},
-	AIChat:                  {module: "ai", name: "对话入口"},
-	AITokenList:             {module: "ai", name: "外部访问令牌查看"},
-	AITokenCreate:           {module: "ai", name: "外部访问令牌签发"},
-	AITokenRevoke:           {module: "ai", name: "外部访问令牌撤销"},
+
+	AIProviderModelsCandidates: {module: "ai", name: "模型候选清单"},
+	AIProviderModelsAppend:     {module: "ai", name: "追加模型到目录"},
+	AISessionList:              {module: "ai", name: "会话列表"},
+	AISessionGet:               {module: "ai", name: "会话详情"},
+	AISessionEvents:            {module: "ai", name: "会话事件日志"},
+	AISessionFoldPlan:          {module: "ai", name: "会话折叠建议"},
+	AISessionAppend:            {module: "ai", name: "追加会话事件"},
+	AISessionRename:            {module: "ai", name: "重命名会话"},
+	AISessionArchive:           {module: "ai", name: "归档会话"},
+	AISessionFold:              {module: "ai", name: "折叠会话"},
+	AISessionSend:              {module: "ai", name: "向指定会话发消息"},
+	AIChat:                     {module: "ai", name: "对话入口"},
+	AITokenList:                {module: "ai", name: "外部访问令牌查看"},
+	AITokenCreate:              {module: "ai", name: "外部访问令牌签发"},
+	AITokenRevoke:              {module: "ai", name: "外部访问令牌撤销"},
+	AITokenToggle:              {module: "ai", name: "对外接入点开关"},
 }

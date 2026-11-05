@@ -1,10 +1,11 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"context"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -18,7 +19,7 @@ type NavigationAdapter struct {
 	ProjectID string
 	Lang      string
 
-	Rule      *LangURLRule
+	Rule      *publish.LangURLRule
 	SiteLangs []string
 
 	ContentStore i18n.ContentStore

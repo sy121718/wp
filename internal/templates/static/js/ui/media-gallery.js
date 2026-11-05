@@ -26,7 +26,8 @@
         var values = root.querySelector('[data-gallery-values]');
         var alts = root.querySelector('[data-gallery-alts]');
         var urls = lines(values ? values.value : '');
-        var altList = lines(alts ? alts.value : '');
+        // alt 与图片逐项对应，空说明也占位，不能像 URL 一样过滤空行。
+        var altList = String(alts ? alts.value : '').split('\n');
         return urls.map(function (url, i) { return { url: url, alt: altList[i] || '' }; });
     }
 

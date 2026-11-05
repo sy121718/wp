@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/CloudyKit/jet/v6"
+
+	jetpkg "go_wp/pkg/view/jet"
 )
 
 //go:embed components/*.jet
@@ -30,15 +32,10 @@ func buildEmbeddedComponentSet() (*jet.Set, error) {
 	if err != nil {
 		return nil, err
 	}
-	set := jet.NewSet(
-		loader,
-		jet.WithTemplateNameExtensions([]string{"", ".jet"}),
-	)
-	injectGlobals(set)
-	return set, nil
+	return jetpkg.NewJetSetFromLoader(withOwnedTemplates(loader), false, []string{"", ".jet"}), nil
 }
 
-func newEmbeddedComponentLoader() (*embedLoader, error) {
+func newEmbeddedComponentLoader() (*jetpkg.FSLoader, error) {
 	sub, err := fs.Sub(componentsFS, "components")
 	if err != nil {
 		return nil, fmt.Errorf("组件模板 embed 子目录失败: %w", err)
@@ -54,5 +51,5 @@ func newEmbeddedComponentLoader() (*embedLoader, error) {
 		}
 	}
 
-	return newEmbedLoader(sub, files), nil
+	return jetpkg.NewFSLoader(sub, files), nil
 }

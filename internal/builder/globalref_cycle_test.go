@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 )
 
 func TestGlobalrefCycleCompileReturnsError(t *testing.T) {

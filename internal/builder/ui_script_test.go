@@ -1,28 +1,29 @@
 package builder
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"go_wp/internal/templates"
 )
 
 func uiSrcForTest() map[string]string {
 	return map[string]string{
-		"_util.js":         "/* util */ window.WBUI=window.WBUI||{};",
-		"site-catalog.js":  "/* site-catalog */",
-		"site-preview.js":  "/* site-preview */",
-		"site-actions.js":  "/* site-actions */",
-		"site-data.js":     "/* site-data */",
-		"site-product.js":  "/* site-product */",
-		"requires_js.js":   "/* requires_js */",
-		"write-base.js":    "/* write-base */",
-		"site-commerce.js": "/* site-commerce */",
-		"site-orders.js":   "/* site-orders */",
-		"site-user.js":     "/* site-user */",
-		"htmx.min.js":      "/* htmx */ var htmx=function(){};",
-		"select.js":        "/* select */ WBUI.register(function(){});",
-		"modal.js":         "/* modal */ WBUI.register(function(){});",
-		"index.js":         "/* index */ WBUI.scan(document);",
+		"_util.js":        "/* util */ window.WBUI=window.WBUI||{};",
+		"site-catalog.js": "/* site-catalog */",
+		"site-preview.js": "/* site-preview */",
+		"site-actions.js": "/* site-actions */",
+		"site-data.js":    "/* site-data */",
+		"site-product.js": "/* site-product */",
+		"requires_js.js":  "/* requires_js */",
+		"write-base.js":   "/* write-base */",
+		"htmx-bridge.js":  "/* htmx-bridge */",
+		"htmx.min.js":     "/* htmx */ var htmx=function(){};",
+		"select.js":       "/* select */ WBUI.register(function(){});",
+		"modal.js":        "/* modal */ WBUI.register(function(){});",
+		"index.js":        "/* index */ WBUI.scan(document);",
 	}
 }
 
@@ -114,7 +115,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "site-preview.js", "site-actions.js", "site-data.js", "site-catalog.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "site-orders.js", "site-user.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
+	want := []string{"_util.js", "htmx.min.js", "site-preview.js", "site-actions.js", "site-data.js", "site-catalog.js", "site-product.js", "write-base.js", "htmx-bridge.js", "requires_js.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)
@@ -249,6 +250,52 @@ func TestRenderDocumentUIUsesAttributesOnly(t *testing.T) {
 		}
 		if strings.Contains(out, "/* util */") || strings.Contains(out, "/* ui css */") {
 			t.Errorf("正文、脚本、样式、注释或属性值不应触发控件注入：%s", content)
+		}
+	}
+}
+
+func TestWriteAssetsRequireHTMLBaseAndHtmxInOrder(t *testing.T) {
+	content := `<form data-write hx-post="/products/create" hx-target="#result" hx-swap="innerHTML"></form>`
+	script := uiScriptForTest(t, content, uiSrcForTest())
+	previous := -1
+	for _, marker := range []string{"/* htmx */", "/* write-base */", "/* htmx-bridge */"} {
+		position := strings.Index(script, marker)
+		if position <= previous || strings.Count(script, marker) != 1 {
+			t.Fatalf("写依赖必须唯一且顺序正确：%s", marker)
+		}
+		previous = position
+	}
+	for _, missing := range []string{"htmx.min.js", "write-base.js", "htmx-bridge.js"} {
+		sources := uiSrcForTest()
+		delete(sources, missing)
+		_, _, err := uiAssetsFor(collectHTMLFeatures(content), "", sources)
+		if err == nil || !strings.Contains(err.Error(), missing) {
+			t.Fatalf("缺少写依赖 %s 应阻止构建：%v", missing, err)
+		}
+	}
+}
+
+func TestUIAssetExportsShareEmbeddedSources(t *testing.T) {
+	// 公共 UI 属主在 pkg/view/ui；应用侧不再保留副本。
+	entry, err := os.ReadFile("../../pkg/view/ui/templates/partials/ui_scripts.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range UIAssetFiles() {
+		if strings.Contains(name, "form-json") || strings.Contains(name, "json_swap") {
+			t.Fatalf("构建出口仍登记旧 JSON UI 执行器：%s", name)
+		}
+		source, err := templates.StaticJS("ui/" + name)
+		if err != nil || strings.TrimSpace(source) == "" {
+			t.Fatalf("构建资产缺少同源运行时嵌入：%s，%v", name, err)
+		}
+		for _, retired := range []string{"registerResultHandler", "WPJsonWrite"} {
+			if strings.Contains(source, retired) {
+				t.Fatalf("构建出口不得登记依赖已退役 JSON UI 接口的脚本：%s (%s)", name, retired)
+			}
+		}
+		if strings.Count(string(entry), `/static/js/ui/`+name+`"`) != 1 {
+			t.Fatalf("双出口必须共享同一份源且运行时只加载一次：%s", name)
 		}
 	}
 }

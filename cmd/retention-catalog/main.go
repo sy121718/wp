@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"go_wp/internal/retention"
+	"go_wp/pkg/database/retention"
 )
 
 func main() {

@@ -42,6 +42,8 @@
 </div>
 {{end}}
 {{end}}
+{{block pageTitle()}}{{ .["t"]("admin.analytics.title", "访问统计") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.analytics.title", "访问统计") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -79,8 +81,10 @@
             {{if len(.Projects) > 1}}
             {* 工程选择会重载页面，所以要把当前视图一起带上，否则切工程会被弹回第一个标签
                （标签点击是纯前端行为，不改 URL，页面自己不知道用户在看哪一维）。 *}
+            {* data-view-input 由 analytics-view.js 接管：切标签是纯前端动作，不改 URL，
+               若不把它同步进来，换工程会带着渲染时的旧 view 重载，用户被弹回原标签。 *}
             <form class="page-context" method="get" action="/admin/analytics">
-                <input type="hidden" name="view" value="{{viewMode}}">
+                <input type="hidden" name="view" value="{{viewMode}}" data-view-input>
                 <label class="sr-only" for="analytics-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
                 <select class="form-select" id="analytics-project" name="project" onchange="this.form.submit()">
                     {{range _, p := .Projects}}
@@ -92,26 +96,14 @@
         </div>
     </header>
 
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.analytics.error", "统计读取失败：") }}{{.Err}}</p>
-    {{end}}
-
     {{if len(.Projects) == 0}}
     <section class="card card-body">
         <div class="empty-state">
-            {{if isset(.LoadFailed) && .LoadFailed}}
-            {* 装载失败：工程列表确实是空的，但**不是「还没有工程」** —— 那句话会把人支去建工程，
-               而真正的问题是这一次没读出来（handler 的 loadFailed）。两者处置完全不同。 *}
-            <p class="empty-title">{{ .["t"]("admin.analytics.no_project.loadFailed", "工程列表没读出来 —— 不是「还没有工程」，先看上方的提示，刷新后重试。") }}</p>
-            {* 这一档的下一步就是「重试」本身（href="" 重载当前请求，含已有的筛选参数）。 *}
-            <div class="empty-actions">
-                <a class="btn" href="">{{ .["t"]("admin.analytics.no_project.refresh", "刷新重试") }}</a>
-            </div>
-            {{else}}
+            {* 页面只在取数成功时渲染（失败走 JSON 早退），所以这里只剩「还没有工程」一档：
+               读不出来时页面根本不会出现，「刷新重试」那种失败态提示条也随之删掉了。 *}
             <p class="empty-title">{{ .["t"]("admin.analytics.no_project.lead", "还没有站点工程 —— 统计按工程归集，先去") }}<a href="/admin/pages">{{ .["t"]("admin.analytics.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.analytics.no_project.tail", "建一个工程并发布页面。") }}</p>
             {* 这一档不给 .empty-actions：句子里的「页面管理」已经是可点的下一步动作，
                再补一个指向同一处（或多个按钮）只会让空态变成按钮堆。 *}
-            {{end}}
         </div>
     </section>
     {{end}}
@@ -137,7 +129,7 @@
         </div>
         <form class="filter-bar" method="get" action="/admin/analytics">
             <input type="hidden" name="project" value="{{selectedProject}}">
-            <input type="hidden" name="view" value="{{viewMode}}">
+            <input type="hidden" name="view" value="{{viewMode}}" data-view-input>
             <div class="filter-fields">
                 {* 区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
                    formAction 传空串：外层这个 form 已经把 project / view 包在同一份查询里。
@@ -225,10 +217,13 @@
                         </tbody>
                     </table>
                 </div>
-                {* 分页链接由 handler 的 FilterBaseURL 生成，且**固定带 view=paths**：
-                   翻页会重载页面，不带 view 就会被弹回第一个标签，而路径表在 hidden 面板里 ——
-                   表现是「点了下一页什么也没发生」。 *}
-                {{include "../partials/pagination.html"}}
+                {* 翻页打开 paths 面板；先摘旧 view，保留其他筛选并避免重复参数。 *}
+                {{if isset(.Pagination)}}
+                {{anPg := .Pagination}}
+                {{pgPath := "/admin/analytics"}}{{if isset(.["req_path"])}}{{pgPath = .["req_path"]}}{{end}}
+                {{anPg = anPg.WithBase(queryURL(pageBase(pgPath, "page", "limit", "view"), "view", "paths"))}}
+                {{include "../partials/pagination.html" map("Pagination", anPg, "t", .["t"])}}
+                {{end}}
             </div>
 
             {* ===== 面板三：来源域 ===== *}

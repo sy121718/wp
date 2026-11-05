@@ -1,48 +1,34 @@
-{{tr := .["t"]}}
-{{entry := .I18nEdit}}
-{* 编辑抽屉的片段（GET /admin/i18n/edit 按需拉取，admin.js 注入 [data-drawer-fragment]）。
-   写动作与页面其余写操作一样由前端 fetch 直调 JSON 端点 POST /api/i18n/save：表单只声明
-   端点、写模式与文案来源，不再有 hx-post / action 回投，也不再把列表 query 拼进 action。
-   为什么用 create 模式而不是 single：single 模式只发 {id}，发不出动作标签，也发不出
-   (key, lang) 这个复合键；create 模式发**全部具名字段**（含 hidden 的 action/key/lang），
-   成功后整页刷新 —— 刷新带回当前 URL，列表的筛选与页码自动保住。
-   key / lang 是只读展示，但必须以 hidden 具名提交：词条的身份由二者共同决定。 *}
-<div data-drawer-fragment>
-    <form data-write-url="/api/i18n/save" data-write="create"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
-        <input type="hidden" name="action" value="update">
-        <input type="hidden" name="key" value="{{entry.Key}}">
-        <input type="hidden" name="lang" value="{{entry.Lang}}">
-        {* 结果区：失败时就地给出原因（已填内容保留）；成功则整页刷新回列表。 *}
-        <p class="form-hint" data-write-status role="status" hidden></p>
-        <div class="form-grid">
-            <div class="form-field">
-                <label class="form-label">key</label>
-                <input type="text" class="form-input" value="{{entry.Key}}" readonly>
-            </div>
-            <div class="form-field">
-                <label class="form-label">{{tr("admin.i18n.label.lang", "语言")}}</label>
-                <input type="text" class="form-input" value="{{entry.Lang}}" readonly>
-            </div>
-            <div class="form-field form-field--wide">
-                <label class="form-label">{{tr("admin.i18n.label.value", "内容")}}</label>
-                <textarea name="value" class="form-textarea" rows="3" required>{{entry.Value}}</textarea>
-            </div>
-            <div class="form-field">
-                <label class="form-label">{{tr("admin.i18n.label.category", "分类")}}</label>
-                <input type="text" class="form-input" name="category" value="{{entry.Category}}">
-            </div>
-            <div class="form-field">
-                <label class="form-label">{{tr("admin.i18n.label.remark", "备注")}}</label>
-                <input type="text" class="form-input" name="remark" value="{{entry.Remark}}">
-            </div>
+{* 编辑片段只交一份 Jet 表单；失败留在错误区，成功关闭并刷新原列表。 *}
+<form data-drawer-fragment hx-post="/api/i18n/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+      data-write="update" data-write-close="[data-drawer]" data-write-reload>
+    <input type="hidden" name="action" value="update">
+    <p class="form-hint" data-write-status role="alert" hidden></p>
+    <div data-write-result></div>
+    <div class="form-grid">
+        <div class="form-field">
+            <label class="form-label">key</label>
+            <input type="text" class="form-input" name="key" value="{{.Key}}" readonly required>
         </div>
-        <div class="action-row">
-            {* 无 JS 时写动作不可用，按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js]
-               放出来），这里说清原因，避免被当成权限问题。 *}
-            <noscript><p class="form-hint">{{tr("admin.i18nWrite.noJs", "本页的新建、编辑与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
-            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            <button type="submit" class="btn btn-primary" data-requires-js hidden>{{tr("admin.i18n.action.save", "保存")}}</button>
+        <div class="form-field">
+            <label class="form-label">{{t("admin.i18n.label.lang", "语言")}}</label>
+            <input type="text" class="form-input" name="lang" value="{{.Lang}}" readonly required>
         </div>
-    </form>
-</div>
+        <div class="form-field form-field--wide">
+            <label class="form-label">{{t("admin.i18n.label.value", "内容")}}</label>
+            <textarea name="value" class="form-textarea" rows="3" required>{{.Value}}</textarea>
+        </div>
+        <div class="form-field">
+            <label class="form-label">{{t("admin.i18n.label.category", "分类")}}</label>
+            <input type="text" class="form-input" name="category" value="{{.Category}}">
+        </div>
+        <div class="form-field">
+            <label class="form-label">{{t("admin.i18n.label.remark", "备注")}}</label>
+            <input type="text" class="form-input" name="remark" value="{{.Remark}}">
+        </div>
+    </div>
+    <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{t("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{t("admin.i18n.action.save", "保存")}}</button>
+    </div>
+</form>

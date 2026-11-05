@@ -46,12 +46,10 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 	}
 	parent.Children = []admindto.MenuTreeNode{leaf}
 
-	groups := adminui.BuildNav([]admindto.MenuTreeNode{parent}, row.Path, func(key, fallback string) string {
-		return fallback
-	})
+	items := adminui.NavItemsOf([]admindto.MenuTreeNode{parent})
 	var rendered strings.Builder
-	for _, g := range groups {
-		for _, n := range g.Nodes {
+	for _, g := range items {
+		for _, n := range g.Children {
 			rendered.WriteString(n.Path + " ")
 		}
 	}

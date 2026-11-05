@@ -2,11 +2,9 @@
 
    唯一身份：GET /admin/coupons/edit-form 的按需抽屉响应（列表页的 data-drawer-url 加载）。
 
-   写路径已迁到「前端直调 JSON」（POST /api/order/coupon/update 的单档 = 完整 CouponSaveReq，
-   见 static/js/ui/write-base.js）：成功回列表（data-write-nav 带回当前筛选上下文），
-   失败在抽屉里**原地**显示后端给的那句话、已填内容留着。于是旧写法的
-   「失败重渲片段 + Echo 回填 + SubmitErr 错误槽」（服务端的 couponEditFail）整块不需要了，
-   本片段不再读 .Echo / .SubmitErr / .ListQuery。
+   写路径是标准 HTMX 表单（POST /api/order/coupon/update，单条 = 完整 CouponSaveReq）：
+   成功按片段里的链接回列表（data-write-nav 带回当前筛选上下文），
+   失败在抽屉里**原地**显示 Jet 错误片段、已填内容留着。
 
    数据只有一个来源：`.Coupon` 是 **dto 本身**（券码只读文本、各字段当前值、时间窗经
    dateTimeLocal 转成控件认的写法）。**必须回送全部可改字段** —— 服务端是整体更新，
@@ -20,15 +18,15 @@
 {{cp := .Coupon}}
 {{id := cp.ID}}
             <div data-drawer-fragment>
-                <form class="form-stack"
-                      data-write-url="/api/order/coupon/update" data-write="create"
-                      data-write-nav="/admin/coupons?{{.ListQuery}}"
-                      data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+                <form class="form-stack" data-write
+                      hx-post="/api/order/coupon/update" hx-target="find [data-write-result]" hx-swap="innerHTML"
+                      hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+                      data-write-nav="[data-order-next]">
                     <input type="hidden" name="id" value="{{id}}">
                     <input type="hidden" name="projectId" value="{{cp.ProjectID}}">
-                    {* 结果区：失败写在这儿（表单内容原样保留），成功则整页跳回列表。 *}
-                    <p class="form-hint" data-write-status role="status" hidden></p>
-                    <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
+                    {* 结果区：失败写在这儿（表单内容原样保留），成功后按片段里的链接整页回列表。 *}
+                    <div data-write-result role="status"></div>
+                        <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript。请开启 JavaScript 后重试。")}}</p></noscript>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-code">{{tr("admin.coupons.detail.code_aria", "券码（不可修改）")}}</label>

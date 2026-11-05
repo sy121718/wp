@@ -196,7 +196,7 @@ func TestNavToggleHiddenOnDesktop(t *testing.T) {
 }
 
 func TestAdminLayoutRendersNavToggle(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	data := map[string]any{
 		"lang": "zh-CN", "title": "页面管理", "t": TranslateFunc("zh-CN"),

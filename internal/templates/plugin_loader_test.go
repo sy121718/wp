@@ -1,6 +1,7 @@
 package templates
 
 import (
+	jetpkg "go_wp/pkg/view/jet"
 	"io"
 	"testing"
 	"testing/fstest"
@@ -54,7 +55,7 @@ func TestCompositeLoaderBuiltinIntact(t *testing.T) {
 	}
 }
 
-func mustEmbedLoader(t *testing.T) *embedLoader {
+func mustEmbedLoader(t *testing.T) *jetpkg.FSLoader {
 	t.Helper()
 	l, err := newEmbeddedComponentLoader()
 	if err != nil {

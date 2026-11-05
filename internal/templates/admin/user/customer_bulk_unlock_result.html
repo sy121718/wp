@@ -1,0 +1,2 @@
+{* 批量解除锁定结论：三态分别计数，句子只在 Jet 里。 *}
+{{tn("custBulkUnlock", "已解除锁定 {unlocked} 个，已清零失败计数 {cleared} 个，{noop} 个本来就未锁定，{skipped} 个未处理。", map("unlocked", .Unlocked, "cleared", .Cleared, "noop", .Noop, "skipped", .Skipped))}}

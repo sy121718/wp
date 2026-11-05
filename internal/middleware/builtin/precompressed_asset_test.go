@@ -3,6 +3,7 @@ package builtin
 import (
 	"bytes"
 	"compress/gzip"
+	mw "go_wp/pkg/middleware"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -303,8 +304,8 @@ func TestPrecompressedAssetNotOnStaticFace(t *testing.T) {
 }
 
 func TestPrecompressMinSizeAlignedWithGzipMiddleware(t *testing.T) {
-	if pipeline.PrecompressMinSize != gzipMinSize {
-		t.Fatalf("构建期阈值 %d ≠ 实时压缩阈值 %d", pipeline.PrecompressMinSize, gzipMinSize)
+	if pipeline.PrecompressMinSize != mw.GzipMinSize {
+		t.Fatalf("构建期阈值 %d ≠ 实时压缩阈值 %d", pipeline.PrecompressMinSize, mw.GzipMinSize)
 	}
 }
 
@@ -312,7 +313,7 @@ func TestAssetContentTypeCompressibleByGzipMiddleware(t *testing.T) {
 
 	for _, name := range []string{"index.html", "style.css", "app.js", "sitemap.xml", "icon.svg", "robots.txt"} {
 		ctype := pipeline.AssetContentType(name)
-		if !isGzipType(ctype) {
+		if !mw.IsGzipType(ctype) {
 			t.Errorf("%s：AssetContentType = %q，但实时压缩层判定为不可压缩 —— 两条路径的判据分叉了",
 				name, ctype)
 		}

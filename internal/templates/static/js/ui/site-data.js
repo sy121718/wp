@@ -16,10 +16,15 @@
     }
     function request(url) {
         if (pending.has(url)) return pending.get(url);
+        var session = global.WPSiteSession, token = session && session.csrfToken;
         var work = global.fetch(url, {credentials:'same-origin', headers:{Accept:'application/json'}, redirect:'error'})
             .then(function (res) {
                 var csrf = res.headers && res.headers.get('X-CSRF-Token');
-                if (csrf) { global.WPSiteSession = global.WPSiteSession || {}; global.WPSiteSession.csrfToken = csrf; }
+                // 读取也会回传旧令牌，不能覆盖另一请求已完成的会话轮换。
+                if (csrf && global.WPSiteSession === session && (!session || session.csrfToken === token)) {
+                    global.WPSiteSession = session || {};
+                    global.WPSiteSession.csrfToken = csrf;
+                }
                 return res.json().catch(function () { throw readError('数据读取失败', res.status); }).then(function (body) {
                     if (!res.ok || !body || (body.code !== 0 && body.code !== 200)) throw readError(body && body.message || '数据读取失败', res.status);
                     return body.data;

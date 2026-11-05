@@ -1,6 +1,6 @@
 {{extends "../layout.html"}}
-{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{else}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.products.create.submit", "新建商品") }}{{end}}
+{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("pNewSubmit", "新建商品") }}{{end}}{{else}}{{ .["t"]("pNewSubmit", "新建商品") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("pNewSubmit", "新建商品") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -11,22 +11,22 @@
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
-            <h1>{{ .["t"]("admin.products.create.submit", "新建商品") }}</h1>
+            <h1>{{ .["t"]("pNewSubmit", "新建商品") }}</h1>
         </div>
 
         <div class="page-actions">
-            <a class="btn btn-ghost" href="/admin/products?project={{selectedProject}}">← {{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
+            <a class="btn btn-ghost" href="/admin/products?project={{selectedProject}}">← {{ .["t"]("tplBackToList", "返回商品列表") }}</a>
         </div>
     </header>
 
     <div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(280px,2fr);gap:16px;align-items:start">
         <section class="card card-body">
-            <h2 class="card-title mb-lg">{{ .["t"]("admin.products.create.title", "基础信息") }}</h2>
+            <h2 class="card-title mb-lg">{{ .["t"]("pNewTitle", "基础信息") }}</h2>
 
             {{include "product_create_form.html"}}
         </section>
         <section class="card card-body">
-            <h2 class="card-title mb-lg">{{ .["t"]("admin.products.detailTemplate.title", "详情页模板") }}</h2>
+            <h2 class="card-title mb-lg">{{ .["t"]("pDetailTplTitle", "详情页模板") }}</h2>
             {{if .TemplateCatalog.Available}}
                 {{if isset(.TemplateCatalog.Items)}}
                 {{if len(.TemplateCatalog.Items) > 0}}
@@ -34,17 +34,17 @@
                     {{range _, tpl := .TemplateCatalog.Items}}
                     <li>
                         <strong>{{tpl.Name}}</strong>
-                        {{if tpl.ID == defaultTplID}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.common.default", "默认"))}}{{end}}
+                        {{if tpl.ID == defaultTplID}}{{include "../partials/badge.html" map("tone", "info", "label", tr("uiDef", "默认"))}}{{end}}
                     </li>
                     {{end}}
                 </ul>
-                <p class="hint">{{ .["t"]("admin.products.new.template.boundHint", "创建后在商品详情页绑定模板、预览并进入可视化自定义（只影响该商品）。") }}</p>
+                <p class="hint">{{ .["t"]("pNewTplBindHint", "创建后在商品详情页绑定模板、预览并进入可视化自定义（只影响该商品）。") }}</p>
                 {{else}}
-                <p class="hint">{{ .["t"]("admin.products.new.template.noneHint", "暂无商品详情模板，将使用默认结构发布。") }}</p>
+                <p class="hint">{{ .["t"]("pNewTplNoneHint", "暂无商品详情模板，将使用默认结构发布。") }}</p>
                 {{end}}
                 {{end}}
             {{else}}
-            <p class="hint">{{ .["t"]("admin.products.new.template.unavailableHint", "模板能力未装配，商品将使用默认结构发布。") }}</p>
+            <p class="hint">{{ .["t"]("pTplAbsentHint", "模板能力未装配，商品将使用默认结构发布。") }}</p>
             {{end}}
         </section>
     </div>

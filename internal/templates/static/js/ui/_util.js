@@ -38,10 +38,26 @@
         return true;
     };
 
-    // register 登记一个控件增强：index.js 与 htmx 重扫都会调用它。
+    // register 登记增强及实际需要的销毁回调；DOM 移动不算销毁。
+    var disposers = [];
     WBUI.controls = WBUI.controls || [];
-    WBUI.register = function (init) {
+    WBUI.register = function (init, dispose) {
         WBUI.controls.push(init);
+        if (dispose) disposers.push(dispose);
+    };
+
+    WBUI.dispose = function (scope) {
+        var errors = [];
+        disposers.forEach(function (dispose) {
+            try {
+                dispose(scope);
+            } catch (e) {
+                errors.push(e);
+                console.error('[WBUI] 控件销毁失败', e);
+                document.dispatchEvent(new CustomEvent('wbui:error', { detail: { error: e, scope: scope } }));
+            }
+        });
+        return errors;
     };
 
     // 读取实际 CSS 过渡时长，JS 收尾不再维护第二份毫秒常量。

@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 )
 
 type Alternate struct {

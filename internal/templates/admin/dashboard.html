@@ -31,10 +31,6 @@
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.dashboard.loadError", "概览数据暂时读不到：") }}{{.Err}}</p>
-    {{end}}{{end}}
-
     {* AI 提问框：结构与 partials/ai_fab.html 同构（同一组 data-ai-fab-* 钩子），
        所以 ai-fab.js 的那套流式逻辑直接复用 —— 它按 [data-ai-fab] 遍历多实例，
        本页只是多挂一个根。差异只有三点：
@@ -208,7 +204,7 @@
     <div class="grid-split">
         <section class="card">
             <div class="card-header">
-                <span class="card-title">{{ .["t"](.Overview.Range.GranularityTitleKey, .Overview.Range.GranularityTitle) }}</span>
+                <span class="card-title">{{ .["t"](.Overview.Range.GranularityTitleKey, "") }}</span>
                 {* 粒度切换：默认跟着区间走（短区间按小时、长区间按周），这排按钮是**覆盖**。
                    每个链接都带着当前区间（自定义区间带上 from/to），所以换粒度不换窗口。
                    区间按钮则相反 —— 它不保留粒度，见 rangePresetURL 的注释。 *}

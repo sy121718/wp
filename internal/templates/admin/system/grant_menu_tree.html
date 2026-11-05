@@ -1,0 +1,35 @@
+{* 管理员菜单与角色权限共用树结构；只有管理员授权展示继承禁用态。 *}
+{{showInherited := .ShowInherited}}
+<div class="perm-toolbar">
+    <input type="search" data-perm-search class="form-input" autocomplete="off"
+           placeholder="{{t("admin.roles.perm.ph.search", "搜索菜单名称或权限码")}}"
+           aria-label="{{t("admin.roles.perm.ph.search", "搜索菜单名称或权限码")}}">
+    <div class="perm-tools">
+        <button type="button" class="btn btn-sm btn-ghost" data-perm-all>{{t("admin.roles.perm.action.all", "全选")}}</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-perm-none>{{t("admin.roles.perm.action.none", "清空")}}</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-perm-expand>{{t("admin.roles.perm.action.expand", "展开全部")}}</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-perm-collapse>{{t("admin.roles.perm.action.collapse", "折叠全部")}}</button>
+        <span class="badge badge-mute" data-selected-count data-selected-template="{{t("admin.common.bulk.selected", "已选 {n} 项")}}" aria-live="polite"></span>
+    </div>
+</div>
+{{if len(.Rows) == 0}}
+<div class="empty-state">
+    <p class="empty-title">{{t("admin.roles.perm.empty", "没有可分配的菜单，先去「菜单管理」建目录与菜单。")}}</p>
+    <div class="empty-actions"><a class="btn btn-primary" href="/admin/menus">{{t("admin.roles.perm.empty.action", "去菜单管理")}}</a></div>
+</div>
+{{else}}
+<div class="perm-tree" data-perm-tree>
+    {{range _, n := .Rows}}
+    <div class="perm-node{{if n.Type == 3}} is-button{{end}}" data-perm-row="{{n.ID}}" data-depth="{{n.Depth}}" data-parent="{{n.ParentID}}" style="padding-left:{{(n.Depth - 1) * 20 + 10}}px">
+        {{if n.HasChildren}}<button type="button" class="perm-toggle" data-perm-toggle aria-expanded="true" aria-label="{{t("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret"></span></button>{{else}}<span class="perm-toggle is-leaf" aria-hidden="true"></span>{{end}}
+        <label class="perm-label">
+            <input type="checkbox" class="perm-box" name="menu_ids" value="{{n.ID}}" data-perm-node data-id="{{n.ID}}" data-parent="{{n.ParentID}}" data-depth="{{n.Depth}}"{{if n.Checked}} checked{{end}}{{if showInherited}}{{if n.Inherited}} disabled{{end}}{{end}}>
+            <span class="perm-title">{{n.Title}}</span>
+            {{range _, code := n.PermissionCodes}}<code class="perm-code">{{code}}</code>{{end}}
+            <span class="perm-type">{{if n.Type == 1}}{{t("admin.menus.type.dir", "目录")}}{{else if n.Type == 2}}{{t("admin.menus.type.menu", "菜单")}}{{else if n.Type == 3}}{{t("admin.menus.type.button", "按钮")}}{{else if n.Type == 4}}iframe{{else if n.Type == 5}}{{t("admin.menus.type.link", "外链")}}{{else}}{{t("admin.menus.type.unknown", "未知")}}{{end}}</span>
+            {{if showInherited}}{{if n.Inherited}}<span class="badge badge-mute">{{t("admin.admins.menu.inherited", "来自角色")}}</span>{{end}}{{end}}
+        </label>
+    </div>
+    {{end}}
+</div>
+{{end}}

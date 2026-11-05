@@ -18,7 +18,7 @@ func pricingPageData() map[string]any {
 
 func renderPricingPage(t *testing.T) (*html.Node, string) {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/product/product_pricing", pricingPageData())
+	out, err := render(t, groupDSet(t), "admin/product/product_pricing", pricingPageData(), groupDRenderScope())
 	if err != nil {
 		t.Fatalf("定价页渲染失败: %v", err)
 	}
@@ -29,57 +29,57 @@ func renderPricingPage(t *testing.T) (*html.Node, string) {
 	return root, out
 }
 
-func TestPricingPreviewUsesJSONBase(t *testing.T) {
+func TestPricingPreviewUsesHTMXForm(t *testing.T) {
 	root, out := renderPricingPage(t)
 	form := firstNode(root, func(n *html.Node) bool { return peEl(n, "form") && peHasAttr(n, "data-pricing-form") })
-	if form == nil || peAttr(form, "data-write-url") != "/api/product/pricing/preview" || peAttr(form, "data-write") != "custom" {
-		t.Fatalf("预览必须复用JSON写基座：%s", snippet(out))
+	if form == nil || peAttr(form, "hx-post") != "/api/product/pricing/preview" || !peHasAttr(form, "data-write") {
+		t.Fatalf("预览表单必须是标准 HTMX 写表单：%s", snippet(out))
 	}
 	if !hasInputNamed(form, "csrf_token") {
-		t.Fatal("JSON FormData请求仍需CSRF隐藏字段")
+		t.Fatal("写表单必需 CSRF 隐藏字段")
 	}
-	for _, old := range []string{"/admin/product-pricing/preview", "/admin/product-pricing/apply"} {
+	for _, old := range []string{"/admin/product-pricing/preview", "/admin/product-pricing/apply", "data-write-url"} {
 		if strings.Contains(out, old) {
-			t.Fatalf("保留了页面POST路径：%s", old)
+			t.Fatalf("保留了已退役的旧协议：%s", old)
 		}
 	}
-	if !strings.Contains(out, "data-preview-lines") || !strings.Contains(out, "/static/js/ui/product-pricing.js") {
-		t.Fatal("缺少消费JSON结果的节点与控件")
+	if !strings.Contains(out, "data-preview-lines") {
+		t.Fatal("预览结果表体缺失")
+	}
+	if strings.Contains(out, "product-pricing.js") {
+		t.Fatal("预览结果已由 Jet 片段渲染，不应再加载 JSON→DOM 脚本")
 	}
 }
 
-func TestPricingApplyUsesJSONBase(t *testing.T) {
+func TestPricingApplyUsesHTMXButton(t *testing.T) {
 	root, out := renderPricingPage(t)
 
 	var apply *html.Node
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "button") && peAttr(n, "data-write-url") == "/api/product/pricing/apply"
+		return peEl(n, "button") && peAttr(n, "hx-post") == "/api/product/pricing/apply"
 	}) {
 		apply = n
 	}
 	if apply == nil {
-		t.Fatalf("找不到挂 data-write-url=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
+		t.Fatalf("找不到挂 hx-post=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
 	}
-	if got := peAttr(apply, "data-write-url"); got != "/api/product/pricing/apply" {
-		t.Fatalf("应用按钮的 data-write-url = %q，want /api/product/pricing/apply", got)
-	}
-	if !peHasAttr(apply, "data-write-reload") {
-		t.Fatal("应用按钮缺 data-write-reload —— 成功后结论不会跨刷新显示")
+	if peAttr(apply, "hx-target") == "" || peAttr(apply, "hx-swap") == "" {
+		t.Fatal("应用按钮必须声明成功目标与交换方式")
 	}
 	for _, key := range []string{"data-requires-js", "hidden", "disabled"} {
 		if !peHasAttr(apply, key) {
 			t.Fatalf("应用按钮缺 %s：无 JS 时必须不可点，而不是点了没反应", key)
 		}
 	}
-	if peAttr(apply, "data-write-confirm") == "" {
-		t.Fatalf("应用调价会立刻写库，按钮必须带 data-write-confirm")
+	if peAttr(apply, "hx-confirm") == "" {
+		t.Fatalf("应用调价会立刻写库，按钮必须带 hx-confirm")
 	}
 
 	preview := firstNode(root, func(n *html.Node) bool {
-		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "data-write-url")
+		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "hx-post")
 	})
 	if preview == nil {
-		t.Fatalf("找不到试算按钮（应当继承 form 的 data-write-url）")
+		t.Fatalf("找不到试算按钮（应当提交宿主表单的 hx-post）")
 	}
 }
 

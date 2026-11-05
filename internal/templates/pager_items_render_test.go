@@ -211,11 +211,7 @@ func renderPagerPartial(t *testing.T, p pagination.Page) string {
 
 func templateSource(t *testing.T, name string) string {
 	t.Helper()
-	b, err := adminTemplatesFS.ReadFile(name)
-	if err != nil {
-		t.Fatalf("读模板 %s 失败: %v", name, err)
-	}
-	return string(b)
+	return layeredTemplateSource(t, name)
 }
 
 func newAdminLoader(t *testing.T) jet.Loader {

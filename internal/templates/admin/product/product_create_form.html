@@ -1,23 +1,25 @@
-{{tr := .["t"]}}
+{{tr := t}}
 
 {{cfProject := .Scope.ProjectID}}
 
 {{cfWarehouses := .["WarehouseOptions"]}}
 
-        <form data-write="create" data-write-url="/api/product/create" id="product-create-form" class="form-stack"
-              data-write-nav="/admin/products/edit?project={{cfProject}}&product={id}"
+        <form data-write hx-post="/api/product/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+              id="product-create-form" class="form-stack" data-write-nav="[data-product-created-link]"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">
 
-            <p class="form-hint" data-write-status role="status" hidden></p>
-            <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.products.ph.name", "商品名称") }}" required>
-            <input type="text" class="form-input" name="slug" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
+            <div class="form-hint" data-write-status role="status" hidden></div>
+            <div data-write-result></div>
+            <input type="text" class="form-input" name="name" placeholder="{{ t("pNamePh", "商品名称") }}" required>
+            <input type="text" class="form-input" name="slug" placeholder="{{ t("pSlugPh", "URL 段（留空自动生成）") }}">
 
-            <label class="form-label" for="create-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
+            <label class="form-label" for="create-sku">{{ t("pSkuLabel", "SKU 编码") }}</label>
             <div class="form-inline">
                 <input type="text" class="form-input" id="create-sku" name="sku" data-sku-input
                        list="create-sku-candidates"
-                       placeholder="{{ .["t"]("admin.products.ph.sku", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
+                       placeholder="{{ t("pSkuPh", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
                        autocomplete="off">
             </div>
 
@@ -32,72 +34,54 @@
                 {{end}}
             </datalist>
 
-            <p class="hint" data-sku-preview style="display:none" hidden
-               data-preview-label="{{ .["t"]("admin.products.skuSource.previewLabel", "将要生成的主体 SKU：") }}"
-               data-reuse-label="{{ .["t"]("admin.products.sku.reuseLabel", "该仓已有这条编码，将复用那一行（不新建）：") }}"
-               data-new-label="{{ .["t"]("admin.products.sku.newLabel", "新编码，将在勾选的每个仓各建一行：") }}"></p>
-
-            {{if isset(.WarehouseSKUOptions)}}
-            {{skuGroups := .WarehouseSKUOptions}}
-            {{if len(skuGroups) > 0}}
-            <div hidden data-sku-catalog>
-                <select class="form-select" id="create-warehouse-sku" data-warehouse-sku hidden aria-hidden="true" tabindex="-1">
-                    <option value="">{{ .["t"]("admin.products.ph.warehouseSku", "选择所选仓库里的一条货") }}</option>
-                    {{range _, g := skuGroups}}
-                    <optgroup label="{{g.WarehouseName}}（{{g.WarehouseCode}}）" data-warehouse="{{g.WarehouseID}}" data-code="{{g.WarehouseCode}}" data-default="{{if g.IsDefault}}1{{end}}">
-                        {{range _, it := g.Items}}
-                        <option value="{{it.SKUCode}}" data-external="{{it.ExternalSKU}}">{{it.SKUCode}}{{if it.ExternalSKU != "" && it.ExternalSKU != it.SKUCode}} · {{it.ExternalSKU}}{{end}}</option>
-                        {{end}}
-                    </optgroup>
-                    {{end}}
-                </select>
-            </div>
-            {{end}}
-            {{end}}
-            <label class="form-label" for="create-external-sku">{{ .["t"]("admin.products.label.externalSku", "外部编码（可选）") }}</label>
+            <label class="form-label" for="create-external-sku">{{ t("pExternalSku", "外部编码（可选）") }}</label>
             <input type="text" class="form-input" id="create-external-sku" name="externalSku" data-external-sku-input
-                   placeholder="{{ .["t"]("admin.products.ph.externalSku", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
-            <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 前缀仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
-            <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（首个变体继承）") }}">
+                   placeholder="{{ t("pExternalSkuPh", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
+            <p class="hint">{{ t("pSkuSrcWhHint", "新建时主体 SKU = 前缀仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
+            <label class="var-value">
+                <input type="checkbox" data-default-price-switch> {{t("pNewSetDefPrice", "设置默认价格")}}
+            </label>
+            <input type="number" class="form-input" name="defaultPrice" data-default-price-input min="0" step="any" disabled
+                   placeholder="{{t("pDefPrice", "默认价格（首个变体继承）")}}">
 
             {{if isset(.Attributes)}}
             {{if len(.Attributes) > 0}}
             <fieldset class="var-group">
-                <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
+                <legend>{{ t("pNewAttrs", "引用的属性组（可多选，可留空）") }}</legend>
                 {{range _, a := .Attributes}}
                 <label class="var-value">
-                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"> {{a.Name}}{{if a.Key != ""}}（{{a.Key}}）{{end}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
+                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"> {{a.Name}}{{if a.Key != ""}}（{{a.Key}}）{{end}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("attrIsVar", "参与变体"))}}{{end}}
                 </label>
                 {{end}}
             </fieldset>
             {{else}}
-            <p class="text-mute text-sm">{{ .["t"]("admin.products.create.noAttributesLead", "这个工程还没有属性组，先到") }}<a href="/admin/product-attributes?project={{cfProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.products.create.noAttributesTail", "页建一个（可留空，之后在商品详情页也能挂）。") }}</p>
+            <p class="text-mute text-sm">{{ t("pCreateNoAttr", "这个工程还没有属性组，先建一个（可留空，之后在商品详情页也能挂）。") }} <a href="/admin/product-attributes?project={{cfProject}}">{{ t("pAttrLink", "商品属性") }}</a></p>
             {{end}}
             {{end}}
             {{if isset(.WarehouseOptions)}}{{if len(cfWarehouses) > 0}}
 
             <fieldset class="var-group">
-                <legend>{{ .["t"]("admin.products.warehouses.label", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
+                <legend>{{ t("pWhs", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
                 {{range _, w := cfWarehouses}}
                 <label class="var-value">
-                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}" {{if w.IsDefault}}data-default="1"{{end}}> {{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}
+                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{if w.IsDefault}}{{tn("whOptionDefault", "{name}（{code}） · 默认仓", map("name", w.Name, "code", w.Code))}}{{else}}{{tn("whOption", "{name}（{code}）", map("name", w.Name, "code", w.Code))}}{{end}}" {{if w.IsDefault}}data-default="1"{{end}}> {{if w.IsDefault}}{{tn("whOptionDefault", "{name}（{code}） · 默认仓", map("name", w.Name, "code", w.Code))}}{{else}}{{tn("whOption", "{name}（{code}）", map("name", w.Name, "code", w.Code))}}{{end}}
                 </label>
                 {{end}}
-                <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是前缀仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
+                <p class="hint">{{ t("pWhsHint", "按本表顺序第一个勾中的仓是认领仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
             </fieldset>
 
             <label class="var-value">
-                <input type="checkbox" name="trackQuantity" value="1" data-track-quantity> {{ .["t"]("admin.products.quantity.track", "跟踪数量（不勾 = 无限）") }}
+                <input type="checkbox" name="trackQuantity" value="1" data-track-quantity> {{ t("pQtyTrack", "跟踪数量（不勾 = 无限）") }}
             </label>
             <div class="form-inline">
                 <input type="number" class="form-input" name="quantity" data-quantity-input min="0" step="1"
                        disabled
-                       placeholder="{{ .["t"]("admin.products.ph.quantity", "不跟踪时留空（无限）；跟踪时填数量，0 = 没货") }}">
+                       placeholder="{{ t("pQty", "不跟踪时留空（无限）；跟踪时填数量，0 = 没货") }}">
             </div>
-            <p class="hint">{{ .["t"]("admin.products.quantity.hint", "不填数量 = 不跟踪 = 无限；显式填数字 = 跟踪并写入该数量（0 是合法的明确值）。") }}</p>
+            <p class="hint">{{ t("pQtyHint", "不填数量 = 不跟踪 = 无限；显式填数字 = 跟踪并写入该数量（0 是合法的明确值）。") }}</p>
             {{end}}{{end}}
             <div class="action-row">
 
-                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.create.submit", "新建商品") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ t("pNewSubmit", "新建商品") }}</button>
             </div>
         </form>

@@ -1,0 +1,5 @@
+{* 发信账号批量删除结论：数量由具名参数承载，句子只在 Jet 里。 *}
+{{if .None}}{{t("mailAccNoneSel", "没有勾选任何发信账号，列表未改动。")}}
+{{else if .Done == 0}}{{tn("mailAccDelNone", "没有账号被删除：{skipped} 个不存在或已被服务端拒绝。", map("skipped", .Skipped))}}
+{{else if .Skipped == 0}}{{tn("mailAccDelDone", "已删除 {count} 个发信账号。", map("count", .Done))}}
+{{else}}{{tn("mailAccDelPart", "已删除 {done} 个发信账号，另有 {skipped} 个被跳过（不存在或已被服务端拒绝）。", map("done", .Done, "skipped", .Skipped))}}{{end}}

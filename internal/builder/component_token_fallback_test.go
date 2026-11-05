@@ -58,9 +58,13 @@ func tokenNeedsFallback(token string) bool {
 
 func componentCSSFiles(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("components", "*", "*.css"))
-	if err != nil {
-		t.Fatal(err)
+	var files []string
+	for _, root := range componentRoots {
+		matches, err := filepath.Glob(filepath.Join(root, "*", "*.css"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, matches...)
 	}
 	if len(files) < 30 {
 		t.Fatalf("只枚举到 %d 个组件 CSS（预期 ≥30）：路径口径失效，本测试会在空转中通过", len(files))

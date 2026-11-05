@@ -14,7 +14,7 @@ func tagHitsPageData() map[string]any {
 
 func tagHitsPageDOM(t *testing.T, data map[string]any) (*html.Node, string) {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/product/product_tags", data)
+	out, err := render(t, groupDSet(t), "admin/product/product_tags", data, groupDRenderScope())
 	if err != nil {
 		t.Fatalf("标签页面渲染失败：%v", err)
 	}

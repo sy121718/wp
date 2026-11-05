@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,16 @@ import (
 
 var tplRefRe = regexp.MustCompile(`\{\{\s*(?:extends|include|import)\s+"([^"]+)"`)
 
+// layeredTemplateExists 按逻辑键在应用与 pkg/view/ui 两层源里查找。
+func layeredTemplateExists(name string) bool {
+	for _, layer := range templateLayers(&testing.T{}) {
+		if _, err := fs.Stat(layer.fsys, name); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func adminTemplateRefProblems(path string, src string) []string {
 	var problems []string
 	dir := filepath.Dir(filepath.FromSlash(path))
@@ -18,10 +29,10 @@ func adminTemplateRefProblems(path string, src string) []string {
 		if !strings.HasSuffix(rel, ".html") {
 			rel += ".html"
 		}
-		target := filepath.Join(dir, filepath.FromSlash(rel))
-		if _, err := os.Stat(target); err != nil {
+		target := filepath.ToSlash(filepath.Join(dir, filepath.FromSlash(rel)))
+		if !layeredTemplateExists(target) {
 			problems = append(problems,
-				"引用 "+m[1]+" 的落点不存在："+filepath.ToSlash(target))
+				"引用 "+m[1]+" 的落点不存在："+target)
 		}
 	}
 	return problems

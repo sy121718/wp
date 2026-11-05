@@ -5,7 +5,7 @@
  *
  *   1. 失败却把目标节点换掉了 —— 用户填的内容没了，而页面看着「有反应」；
  *      规矩是失败只 toast，一个字节都不动。
- *   2. 失败判定漏了非 0 的业务码 —— HTTP 200 + code=400 是本仓的常规形态，
+ *   2. 失败判定漏了非 200 的业务码 —— HTTP 200 + code=400 是本仓的常规形态，
  *      只看 HTTP 状态码会把业务失败当成功渲染出去。
  *   3. 用 innerHTML 拼 data —— 数据库字段里的 `<img onerror=…>` 会变成 XSS。
  *   4. 空结果没有标记 —— 表格显示成「有一张空表」，而本来该显示空态文案。
@@ -168,7 +168,7 @@ test('注册名为 json-swap', () => {
 test('成功：按 template 填充行，字段走 textContent', () => {
     const env = makeEnv(['lang', 'statusText']);
     const s = swapDetail(env, JSON.stringify({
-        code: 0, message: '',
+        code: 200, message: '',
         data: { items: [{ lang: 'zh-CN', statusText: '已发布' }, { lang: 'en-US', statusText: '未发布' }] }
     }));
     env.ext.def.htmx_before_swap(s.elt, s.detail);
@@ -184,7 +184,7 @@ test('成功：按 template 填充行，字段走 textContent', () => {
 
 test('成功但空数组：清空并打空态标记', () => {
     const env = makeEnv(['lang']);
-    const s = swapDetail(env, JSON.stringify({ code: 0, data: { items: [] } }));
+    const s = swapDetail(env, JSON.stringify({ code: 200, data: { items: [] } }));
     env.ext.def.htmx_before_swap(s.elt, s.detail);
     assert.equal(s.tasks[0].fragment.children.length, 0);
     assert.equal(s.target.getAttribute('data-json-empty'), '1', '空结果必须标记，否则显示成一张空表');
@@ -201,6 +201,26 @@ test('失败（HTTP 200 + code=400）：不 swap、只 toast', () => {
     assert.equal(env.toasts.length, 1);
     assert.equal(env.toasts[0].type, 'error');
     assert.equal(env.toasts[0].msg, '该语言已排除');
+});
+
+test('0、字符串成功码和 null 均不能当成功', () => {
+    for (const code of [0, '200', null]) {
+        const env = makeEnv(['lang']);
+        const s = swapDetail(env, JSON.stringify({ code, message: 'invalid', data: { items: [] } }));
+        env.ext.def.htmx_before_swap(s.elt, s.detail);
+        assert.equal(s.tasks.length, 0);
+        assert.equal(env.toasts.length, 1);
+        assert.equal(env.toasts[0].type, 'error');
+    }
+});
+
+test('写基座已经认领的请求不被展示扩展再次处理或提示', () => {
+    const env = makeEnv(['lang']);
+    const s = swapDetail(env, JSON.stringify({ code: 400, message: 'rejected' }), 400);
+    env.win.WBUI.writeBase = { owns: ctx => ctx === s.detail.ctx };
+    env.ext.def.htmx_before_swap(s.elt, s.detail);
+    assert.equal(s.tasks.length, 0);
+    assert.equal(env.toasts.length, 0);
 });
 
 test('失败（HTTP 500）：同样不 swap', () => {
@@ -222,7 +242,7 @@ test('非本仓信封（无 code 字段）：完全不管，交回 htmx', () => 
 
 test('找不到模板：清空 tasks 并报错，不静默换掉节点', () => {
     const env = makeEnv(['lang']);
-    const s = swapDetail(env, JSON.stringify({ code: 0, data: { items: [{ lang: 'a' }] } }));
+    const s = swapDetail(env, JSON.stringify({ code: 200, data: { items: [{ lang: 'a' }] } }));
     s.elt.setAttribute('data-json-template', '#tpl-missing');
     env.ext.def.htmx_before_swap(s.elt, s.detail);
     assert.equal(s.tasks.length, 0);
@@ -245,7 +265,7 @@ test('data-json-remove：按 key 摘掉那一行，其余不动', () => {
     const tasks = [{ type: 'main', fragment: env.win.document.createDocumentFragment(), target, swapSpec: {} }];
 
     env.ext.def.htmx_before_swap(elt, {
-        ctx: { text: JSON.stringify({ code: 0, message: '已恢复', data: { removed: 'zh-CN' } }), response: { status: 200 }, target },
+        ctx: { text: JSON.stringify({ code: 200, message: '已恢复', data: { removed: 'zh-CN' } }), response: { status: 200 }, target },
         tasks
     });
 
@@ -334,7 +354,7 @@ test('data-when：全部不命中时该单元格为空（不残留别的状态�
 test('data-json-patch=append：按 data-json-key 去重，重复页不产生重复行', () => {
     const env = makeEnv(['lang']);
     const { target, elt, tasks, detail } = swapDetail(env, JSON.stringify({
-        code: 0, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
+        code: 200, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
     }));
     elt.setAttribute('data-json-patch', 'append');
     env.ext.def.htmx_before_swap(elt, detail);
@@ -343,7 +363,7 @@ test('data-json-patch=append：按 data-json-key 去重，重复页不产生重�
 
     // 同一页再来一次（用户连点）：一行都不该新增
     const again = swapDetail(env, JSON.stringify({
-        code: 0, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
+        code: 200, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
     }));
     again.elt.setAttribute('data-json-patch', 'append');
     // 把已渲染的两行搬到新 target 上，模拟「目标里已有这两行」
@@ -355,7 +375,7 @@ test('data-json-patch=append：按 data-json-key 去重，重复页不产生重�
 test('data-json-more：hasMore 为假时隐藏按钮，不再推进页码', () => {
     const env = makeEnv(['lang']);
     const { target, elt, detail } = swapDetail(env, JSON.stringify({
-        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 3, hasMore: false }
+        code: 200, message: '', data: { items: [{ lang: 'zh' }], page: 3, hasMore: false }
     }));
     elt.setAttribute('data-json-patch', 'append');
     elt.setAttribute('data-json-more', 'page');
@@ -371,7 +391,7 @@ test('data-json-more：hasMore 为假时隐藏按钮，不再推进页码', () =
 test('data-json-more：hasMore 为真时把 hx-get 的页码推进到 page+1', () => {
     const env = makeEnv(['lang']);
     const { target, elt, detail } = swapDetail(env, JSON.stringify({
-        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
+        code: 200, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
     }));
     elt.setAttribute('data-json-patch', 'append');
     elt.setAttribute('data-json-more', 'page');
@@ -386,7 +406,7 @@ test('data-json-more：hasMore 为真时把 hx-get 的页码推进到 page+1', (
 test('data-json-more：hx-get 里还没有 page 参数时补上', () => {
     const env = makeEnv(['lang']);
     const { elt, detail } = swapDetail(env, JSON.stringify({
-        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
+        code: 200, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
     }));
     elt.setAttribute('data-json-patch', 'append');
     elt.setAttribute('data-json-more', 'page');

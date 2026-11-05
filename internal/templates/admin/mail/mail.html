@@ -56,12 +56,15 @@
     </div>
     {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法，别把 form 塞进 <td>）：
        提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。 *}
-    <form method="post" action="/admin/mail/accounts/bulk-delete">
+    <form data-write hx-post="/admin/mail/accounts/bulk-delete" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteAccount}}{{if len(.Accounts) > 0}}
       {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.accounts.bulk_delete_confirm", "删除选中的发信账号？此操作不可撤销。"), danger=true)}}
+        <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                hx-confirm="{{tr("admin.mail.accounts.bulk_delete_confirm", "删除选中的发信账号？此操作不可撤销。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
       {{yield bulkBarClose()}}
       {{end}}{{end}}
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.accounts.heading", "发信账号") }}">
@@ -120,19 +123,25 @@
   {* 行内表单与抽屉模板放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
   {{range _, a := .Accounts}}
   {{if not a.IsDefault}}
-  <form id="account-default-{{a.ID}}" class="hidden-form" method="post" action="/admin/mail/account/default">
+  <form id="account-default-{{a.ID}}" class="hidden-form" data-write hx-post="/admin/mail/account/default"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{a.ID}}">
   </form>
   {{end}}
-  <form id="account-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/mail/account/delete"
-        data-confirm="{{tr("admin.mail.accounts.confirm.delete", "删除该发信账号？正在用它发信的邮件会失败。")}}" data-confirm-danger>
+  <form id="account-del-{{a.ID}}" class="hidden-form" data-write hx-post="/admin/mail/account/delete"
+        hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload
+        hx-confirm="{{tr("admin.mail.accounts.confirm.delete", "删除该发信账号？正在用它发信的邮件会失败。")}}">
+    <div data-write-result></div>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{a.ID}}">
   </form>
   {{if canSaveAccount}}
   <template id="tpl-account-edit-{{a.ID}}">
-    <form method="post" action="/admin/mail/account/save" class="form-stack">
+    <form data-write hx-post="/admin/mail/account/save" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="{{a.ID}}">
       <div class="form-grid">
@@ -188,6 +197,7 @@
           <input class="form-input" id="acc-rate-{{a.ID}}" type="number" name="rate_per_hour" value="{{a.RatePerHour}}" inputmode="numeric">
         </div>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>
@@ -196,13 +206,16 @@
   </template>
   {{end}}
   <template id="tpl-account-test-{{a.ID}}">
-    <form method="post" action="/admin/mail/account/test" class="form-stack">
+    <form data-write hx-post="/admin/mail/account/test" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="{{a.ID}}">
       <div class="form-field">
         <label class="form-label" for="acc-test-{{a.ID}}">{{tr("admin.mail.accounts.ph.recipient", "收件人")}}</label>
         <input class="form-input" id="acc-test-{{a.ID}}" type="email" name="to_email" placeholder="you@example.com" required>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.accounts.action.test", "测试发送")}}</button>
@@ -214,7 +227,9 @@
 
   {{if canSaveAccount}}
   <template id="tpl-mail-account">
-    <form method="post" action="/admin/mail/account/save" class="form-stack">
+    <form data-write hx-post="/admin/mail/account/save" hx-target="find [data-write-result]"
+          hx-swap="innerHTML" hx-sync="this:drop" data-write-reload data-write-close="[data-drawer]" class="form-stack">
+      <div data-write-result></div>
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
       <div class="form-grid">
@@ -270,6 +285,7 @@
           <input class="form-input" id="acc-new-rate" type="number" name="rate_per_hour" value="0" inputmode="numeric">
         </div>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
         <button type="submit" class="btn btn-primary">{{tr("admin.mail.account_form.save", "保存账号")}}</button>

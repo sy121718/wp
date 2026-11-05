@@ -30,13 +30,18 @@
 
     // ── 主路径：MutationObserver ────────────────────────────────────────────
     //
-    // 只看「新增元素节点」，并把同一 tick 内的多个新增合并成一次扫描 ——
-    // 一段片段换入会产生几十条 mutation，逐条扫会让每个控件被增强几十次。
-    var queue = [];
+    // 合并同一轮的新增扫描与移除销毁，避免一段片段的多条 mutation 重复处理控件。
+    var queue = [], removed = [];
     var scheduled = false;
 
     function flush() {
         scheduled = false;
+        var detached = removed;
+        removed = [];
+        // 等本轮 DOM 操作结束再判断：移到其他父节点的控件仍应保留实例。
+        detached.forEach(function (el) {
+            if (!el.isConnected) WBUI.dispose(el);
+        });
         var batch = queue;
         queue = [];
         // 去重：被祖先覆盖的节点不再单独扫。
@@ -60,8 +65,12 @@
                 for (var j = 0; j < added.length; j++) {
                     if (added[j].nodeType === 1) { queue.push(added[j]); }
                 }
+                var deleted = mutations[i].removedNodes;
+                for (var k = 0; k < deleted.length; k++) {
+                    if (deleted[k].nodeType === 1) { removed.push(deleted[k]); }
+                }
             }
-            if (queue.length && !scheduled) {
+            if ((queue.length || removed.length) && !scheduled) {
                 scheduled = true;
                 Promise.resolve().then(flush);
             }

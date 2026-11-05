@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	product "go_wp/internal/builder/components/product"
-	productcard "go_wp/internal/builder/components/productcard"
-	productlist "go_wp/internal/builder/components/productlist"
-	"go_wp/internal/builder/core"
+	product "go_wp/internal/builder/extensions/product"
+	productcard "go_wp/internal/builder/extensions/productcard"
+	productlist "go_wp/internal/builder/extensions/productlist"
+	"go_wp/pkg/builder/core"
 )
 
 func slotControls(t *testing.T, spec any) map[string]core.Control {

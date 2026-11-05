@@ -2,8 +2,8 @@ package builder
 
 import (
 	"context"
-	"go_wp/internal/builder/source"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/source"
 	"strings"
 	"testing"
 )

@@ -1,18 +1,19 @@
 {* admin/ai/provider_card.html — 单张供应商卡片（被整页 include，作用域是这张卡片自己的数据 map）。
 
    卡片体内两个并列 form：供应商（密钥 / 自定义设置）与模型目录（provider_models.html 片段）。
-   启停 / 删除是两个 .hidden-form，用 form="<id>" 从卡片头关联 —— form 不能嵌套。
+   启停 / 删除是表格外的 .hidden-form，用 form="<id>" 从卡片头关联 —— form 不能嵌套。
 
-   密钥框只读占位、不回明文：模板里根本没有明文可渲染，服务端只给 HasAPIKey。 *}
+   写回全部是标准表单 + HTMX：保存与启停把整张卡换回服务端渲染的结果，
+   删除直接把这张卡从页面删掉；失败由写基座放进卡片里的 data-write-status 区。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{p := .Provider}}
 {{canSave := isset(.Buttons["ai.provider_save"])}}
 {{canToggle := isset(.Buttons["ai.provider_status"])}}
 {{canDelete := isset(.Buttons["ai.provider_delete"])}}
-<details class="card ai-provider" data-ai-provider="{{p.ID}}">
+<details class="card ai-provider" id="ai-provider-{{p.ID}}" data-ai-provider="{{p.ID}}">
     <summary class="card-header ai-provider-head">
-        <span class="badge badge-{{.StatusTone}}">{{if p.Status == 1}}{{tr("admin.ai.status.enabled", "启用")}}{{else}}{{tr("admin.ai.status.disabled", "停用")}}{{end}}</span>
+        <span class="badge badge-{{if p.Status == 1}}ok{{else}}warn{{end}}">{{if p.Status == 1}}{{tr("admin.ai.status.enabled", "启用")}}{{else}}{{tr("admin.ai.status.disabled", "停用")}}{{end}}</span>
         <span class="card-title">{{p.DisplayName}}</span>
         <code class="move-meta">{{p.ProviderKey}}</code>
         <span class="ai-provider-actions">
@@ -21,20 +22,20 @@
             {{end}}
             {{if canDelete}}
             <button type="submit" form="ai-del-{{p.ID}}" class="btn btn-sm btn-danger"
-                    data-confirm="{{tr("admin.ai.confirm.delete", "删除该供应商？它下面的模型目录会一并删除。")}}" data-confirm-danger>{{tr("admin.common.action.delete", "删除")}}</button>
+                    hx-confirm="{{tr("admin.ai.confirm.delete", "删除该供应商？它下面的模型目录会一并删除。")}}">{{tr("admin.common.action.delete", "删除")}}</button>
             {{end}}
         </span>
     </summary>
 
     <div class="stack ai-provider-body">
-        {{if isset(.ModelsNotice)}}{{if .ModelsNotice != ""}}
-        <p class="badge badge-{{.ModelsNoticeTone}}" role="{{.ModelsNoticeRole}}">{{.ModelsNotice}}</p>
-        {{end}}{{end}}
 
         {{if canSave}}
-        <form method="post" action="/admin/ai/providers/save">
+        <form hx-post="/api/ai/provider/save" hx-target="#ai-provider-{{p.ID}}" hx-swap="outerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="providerId" value="{{p.ID}}">
+            {* 字段名必须与 SaveProviderReq.ID 的 form tag（id）一致：服务端靠 req.ID == 0
+               区分新建与更新，名字对不上会把一次编辑当成新建。 *}
+            <input type="hidden" name="id" value="{{p.ID}}">
             <input type="hidden" name="version" value="{{p.Version}}">
             <div class="form-grid">
                 <div class="form-group">
@@ -75,6 +76,7 @@
                 </div>
                 <p class="form-hint">{{tr("admin.ai.hint.baseUrl", "API 地址留空时使用该供应商的默认地址（")}}{{if isset(.DefaultBaseURL)}}{{if .DefaultBaseURL != ""}}<code>{{.DefaultBaseURL}}</code>{{else}}{{tr("admin.ai.hint.baseUrlNone", "该供应商没有内置默认地址")}}{{end}}{{else}}{{tr("admin.ai.hint.baseUrlNone", "该供应商没有内置默认地址")}}{{end}}{{tr("admin.ai.hint.baseUrlTail", "）。")}}</p>
             </details>
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="action-row">
                 <button type="submit" class="btn btn-primary">{{tr("admin.ai.action.saveProvider", "保存供应商")}}</button>
             </div>
@@ -87,16 +89,22 @@
 
 {{if canToggle}}
 {* 卡片头按钮的落点表单：启停按当前状态取反（服务端对「已是目标状态」幂等返回）。 *}
-<form id="ai-toggle-{{p.ID}}" method="post" action="/admin/ai/providers/status" class="hidden-form">
+<form id="ai-toggle-{{p.ID}}" class="hidden-form" data-write
+      hx-post="/api/ai/provider/status" hx-target="#ai-provider-{{p.ID}}" hx-swap="outerHTML"
+      hx-sync="this:drop">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
-    <input type="hidden" name="providerId" value="{{p.ID}}">
+    {* SetStatusReq.ID 的 form tag 是 id *}
+    <input type="hidden" name="id" value="{{p.ID}}">
     <input type="hidden" name="version" value="{{p.Version}}">
     <input type="hidden" name="status" value="{{if p.Status == 1}}0{{else}}1{{end}}">
 </form>
 {{end}}
 {{if canDelete}}
-<form id="ai-del-{{p.ID}}" method="post" action="/admin/ai/providers/delete" class="hidden-form">
+{* 删除成功后这张卡从页面消失：HTMX 的 delete 交换直接摘掉目标节点。 *}
+<form id="ai-del-{{p.ID}}" class="hidden-form" data-write
+      hx-post="/api/ai/provider/delete" hx-target="#ai-provider-{{p.ID}}" hx-swap="delete"
+      hx-sync="this:drop">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
-    <input type="hidden" name="providerId" value="{{p.ID}}">
+    <input type="hidden" name="id" value="{{p.ID}}">
 </form>
 {{end}}

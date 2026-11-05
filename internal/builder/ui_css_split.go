@@ -72,6 +72,7 @@ func uiCSSSectionResourcesWithoutStyle() map[string]string {
 		"site-orders.js":   "订单售后JSON视图行为，外观由订单组件静态CSS提供",
 		"requires_js.js":   "放行依赖脚本的提交按钮，只有行为，无样式",
 		"write-base.js":    "统一写请求的行为基座，无样式，展示外观由宿主提供",
+		"htmx-bridge.js":   "控件扫描事件到 HTMX 的接线，只有行为，无独立样式",
 		"site-commerce.js": "消费购物车事实的行为脚本，外观由静态壳与组件样式提供",
 		"site-user.js":     "消费账号事实与 JSON 写响应的行为脚本，外观由静态账号表单提供",
 		"site-catalog.js":  "列表与搜索JSON视图行为，外观由组件静态CSS提供",

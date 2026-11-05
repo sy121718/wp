@@ -20,8 +20,10 @@
    这样「表头 N 列、数据行 N-1 个 td」这种「浏览器不报错但整张表左移一列」的缺陷，
    在 Go 侧就被可测地挡住了。
 
-   渲染上下文：Views []uispec.View。空数据不渲染任何东西 —— 「暂无数据」由数据源放进 Empty
-   决定要不要给，模板不硬编码中文（本片段不依赖 i18n 上下文，单独渲染也不会缺键）。 *}
+   渲染上下文：Views []uispec.View + 页面全局 t/tr。四类空态（stat/table/list/accordion）
+   在「一行数据都没有」时由这里用 tr 取词显示 —— 数据源只管交数据与表头，
+   不替界面准备成品句（那个 Empty 字段因此没有任何生产构造者，读侧也一并停用）。 *}
+{{tr := .["t"]}}
 {{range .Views}}
 {{if .Type == "stat"}}
 <div class="stat-grid">
@@ -33,7 +35,7 @@
     </div>
     {{end}}
 </div>
-{{if len(.Stat.Items) == 0}}{{if .Stat.Empty != ""}}<p class="form-hint">{{.Stat.Empty}}</p>{{end}}{{end}}
+{{if len(.Stat.Items) == 0}}<p class="form-hint">{{tr("admin.ai.blocks.empty", "暂无数据")}}</p>{{end}}
 {{end}}
 
 {{if .Type == "table"}}
@@ -53,8 +55,8 @@
                 </tbody>
             </table>
         </div>
-        {{else if .Table.Empty != ""}}
-        <p class="form-hint">{{.Table.Empty}}</p>
+        {{else}}
+        <p class="form-hint">{{tr("admin.ai.blocks.empty", "暂无数据")}}</p>
         {{end}}
     </div>
 </div>
@@ -75,8 +77,8 @@
                 {{end}}
             </tbody>
         </table>
-        {{else if .List.Empty != ""}}
-        <p class="form-hint">{{.List.Empty}}</p>
+        {{else}}
+        <p class="form-hint">{{tr("admin.ai.blocks.empty", "暂无数据")}}</p>
         {{end}}
     </div>
 </div>
@@ -103,6 +105,6 @@
     </div>
 </details>
 {{end}}
-{{if len(.Accord.Groups) == 0}}{{if .Accord.Empty != ""}}<p class="form-hint">{{.Accord.Empty}}</p>{{end}}{{end}}
+{{if len(.Accord.Groups) == 0}}<p class="form-hint">{{tr("admin.ai.blocks.empty", "暂无数据")}}</p>{{end}}
 {{end}}
 {{end}}

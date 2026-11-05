@@ -5,7 +5,6 @@ import (
 
 	"go_wp/internal/text"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/response"
 )
 
 type ErrFact = facing.Fact
@@ -22,10 +21,6 @@ func PageErrorFactQuiet(_ *gin.Context, _ string, err error) ErrFact {
 		return fact
 	}
 	return ErrFact{Key: MsgInternalError, Fallback: internalErrorFallback}
-}
-
-func BusinessErrFact(err error) (ErrFact, bool) {
-	return facing.FactOf(err)
 }
 
 func ErrorFactText(c *gin.Context, fact ErrFact) string {
@@ -45,14 +40,6 @@ func PageErrorTextQuiet(c *gin.Context, scene string, err error) string {
 
 func InternalErrorFact() ErrFact {
 	return ErrFact{Key: MsgInternalError, Fallback: internalErrorFallback}
-}
-
-func TranslateArgs(c *gin.Context, key, fallback string, args []string) string {
-	return response.ArgsText(c, key, fallback, args)
-}
-
-func TranslateFill(c *gin.Context, key, fallback string, params map[string]string) string {
-	return response.FillText(c, key, fallback, params)
 }
 
 func toAnyStrings(in []string) []any {

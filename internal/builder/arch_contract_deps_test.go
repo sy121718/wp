@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 )
 
 const contractRoot = "../module"
@@ -20,7 +20,7 @@ const contractRoot = "../module"
 const builderImportPrefix = "go_wp/internal/builder/"
 
 var allowedBuilderImports = map[string]bool{
-	"go_wp/internal/builder/source": true,
+	"go_wp/pkg/builder/source": true,
 }
 
 var exemptedBuilderImports = map[string]bool{}

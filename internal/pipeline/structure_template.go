@@ -1,13 +1,14 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/logger"
 )
 
@@ -47,21 +48,21 @@ type structureSlotPlan struct {
 	FailedReason string
 }
 
-func (p structureSlotPlan) deps() []Dependency {
+func (p structureSlotPlan) deps() []publish.Dependency {
 	if p.FailedReason != "" {
 
 		return nil
 	}
 	if p.TemplateID == "" {
-		k := BlockKey(p.BlockID)
-		return []Dependency{{Kind: k.Kind, Key: k.Key}}
+		k := publish.BlockKey(p.BlockID)
+		return []publish.Dependency{{Kind: k.Kind, Key: k.Key}}
 	}
-	k := ContentTemplateKey(p.TemplateID)
-	out := []Dependency{{Kind: k.Kind, Key: k.Key}}
+	k := publish.ContentTemplateKey(p.TemplateID)
+	out := []publish.Dependency{{Kind: k.Kind, Key: k.Key}}
 
 	for _, blockID := range builder.ReferencedBlockIDs(p.Nodes) {
-		bk := BlockKey(blockID)
-		out = append(out, Dependency{Kind: bk.Kind, Key: bk.Key})
+		bk := publish.BlockKey(blockID)
+		out = append(out, publish.Dependency{Kind: bk.Kind, Key: bk.Key})
 	}
 	return out
 }
@@ -85,7 +86,7 @@ type StructureSlotResult struct {
 
 	Resolver core.BlockResolver
 
-	Deps []Dependency
+	Deps []publish.Dependency
 }
 
 func planStructureSlots(ctx context.Context, in StructureSlotInput) ([]structureSlotPlan, error) {
@@ -190,11 +191,11 @@ func BuildStructureSlots(ctx context.Context, in StructureSlotInput) (StructureS
 }
 
 func StructureSlotDependencies(ctx context.Context, port StructureTemplatePort, projectID string,
-	structure builder.StructureBindings) []Dependency {
+	structure builder.StructureBindings) []publish.Dependency {
 	plans, _ := planStructureSlots(ctx, StructureSlotInput{
 		Port: port, ProjectID: projectID, Structure: structure,
 	})
-	var out []Dependency
+	var out []publish.Dependency
 	for _, p := range plans {
 		out = append(out, p.deps()...)
 	}

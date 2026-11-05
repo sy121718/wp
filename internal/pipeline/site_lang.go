@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"context"
 	"errors"
 	"fmt"
@@ -8,9 +9,9 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -20,11 +21,11 @@ type SiteRouteEntry struct {
 	Path string
 }
 
-func LangURLRuleForProject(ctx context.Context, project projectcontract.ProjectService, projectID string) LangURLRule {
+func LangURLRuleForProject(ctx context.Context, project projectcontract.ProjectService, projectID string) publish.LangURLRule {
 	return LangURLRuleForProjectWithDefault(ctx, project, projectID, DefaultLocale(ctx, project, projectID))
 }
 
-func LangURLRuleForProjectWithDefault(ctx context.Context, project projectcontract.ProjectService, projectID, defaultLang string) LangURLRule {
+func LangURLRuleForProjectWithDefault(ctx context.Context, project projectcontract.ProjectService, projectID, defaultLang string) publish.LangURLRule {
 	return LangURLRuleOf(SiteLangURLModeOf(ctx, project, projectID), defaultLang)
 }
 
@@ -47,8 +48,8 @@ func SiteLangURLModeOf(ctx context.Context, project projectcontract.ProjectServi
 	return i18n.DefaultSiteLangURLMode()
 }
 
-func LangURLRuleOf(mode i18n.SiteLangURLMode, defaultLang string) LangURLRule {
-	return NewLangURLRule(
+func LangURLRuleOf(mode i18n.SiteLangURLMode, defaultLang string) publish.LangURLRule {
+	return publish.NewLangURLRule(
 		i18n.SiteLangURLsSeparated(mode),
 		i18n.SiteLangURLPrefixDefault(mode),
 		defaultLang,
@@ -113,7 +114,7 @@ type SiteLangInputs struct {
 	DefaultLang string
 }
 
-func SiteLangInputsOfPlan(plan *PublicationPlan) (SiteLangInputs, bool) {
+func SiteLangInputsOfPlan(plan *publish.PublicationPlan) (SiteLangInputs, bool) {
 	if plan == nil {
 		return SiteLangInputs{}, false
 	}
@@ -128,8 +129,8 @@ func SiteLangInputsOfPlan(plan *PublicationPlan) (SiteLangInputs, bool) {
 	return SiteLangInputs{SiteLangs: n.SiteLangs, DefaultLang: n.DefaultLang}, true
 }
 
-func PlanOfSiteLangInputs(in SiteLangInputs) PublicationPlan {
-	return PublicationPlan{SiteLangs: in.SiteLangs, DefaultLang: in.DefaultLang}.Normalize()
+func PlanOfSiteLangInputs(in SiteLangInputs) publish.PublicationPlan {
+	return publish.PublicationPlan{SiteLangs: in.SiteLangs, DefaultLang: in.DefaultLang}.Normalize()
 }
 
 func ResolveSiteLangInputs(ctx context.Context, project projectcontract.ProjectService, projectID string, policy LangFallback) (SiteLangInputs, error) {
@@ -140,7 +141,7 @@ func ResolveSiteLangInputs(ctx context.Context, project projectcontract.ProjectS
 	return SiteLangInputs{SiteLangs: langs, DefaultLang: DefaultLocale(ctx, project, projectID)}, nil
 }
 
-func SitePath(rule LangURLRule, lang, logical string) (string, error) {
+func SitePath(rule publish.LangURLRule, lang, logical string) (string, error) {
 	return rule.Path(lang, logical)
 }
 
@@ -148,7 +149,7 @@ func LocalizeMenuURL(ctx context.Context, project projectcontract.ProjectService
 	return LocalizeMenuURLWith(LangURLRuleForProject(ctx, project, projectID), EnabledLangs(ctx, project, projectID), lang, raw)
 }
 
-func LocalizeMenuURLWithRaw(rule LangURLRule, langs []string, lang, raw string) string {
+func LocalizeMenuURLWithRaw(rule publish.LangURLRule, langs []string, lang, raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
 		return raw
@@ -164,7 +165,7 @@ func LocalizeMenuURLWithRaw(rule LangURLRule, langs []string, lang, raw string) 
 	return seo.CanonicalPublicPath(p)
 }
 
-func LocalizeMenuURLWith(rule LangURLRule, langs []string, lang, raw string) string {
+func LocalizeMenuURLWith(rule publish.LangURLRule, langs []string, lang, raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
 		return raw
@@ -188,7 +189,7 @@ func SiteRouteEntries(ctx context.Context, project projectcontract.ProjectServic
 	return siteRouteEntriesForLangs(LangURLRuleForProject(ctx, project, projectID), EnabledLangs(ctx, project, projectID), logical)
 }
 
-func siteRouteEntriesForLangs(rule LangURLRule, langs []string, logical string) ([]SiteRouteEntry, error) {
+func siteRouteEntriesForLangs(rule publish.LangURLRule, langs []string, logical string) ([]SiteRouteEntry, error) {
 	if err := rule.Validate(langs); err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ type LocaleViewInput struct {
 
 	DefaultLang string
 
-	Rule *LangURLRule
+	Rule *publish.LangURLRule
 
 	SiteLangURLMode string
 

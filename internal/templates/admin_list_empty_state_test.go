@@ -11,7 +11,7 @@ func renderAdminEmptyProbe(t *testing.T, tpl string, extra map[string]any) strin
 	for k, v := range extra {
 		data[k] = v
 	}
-	out, err := render(t, newAdminTestSet(), tpl, data)
+	out, err := render(t, newAdminTestSet(), tpl, data, groupDRenderScope())
 	if err != nil {
 		t.Fatalf("渲染 %s 失败: %v", tpl, err)
 	}

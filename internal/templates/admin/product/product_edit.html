@@ -4,16 +4,16 @@
 {{import "../partials/media_gallery.html"}}
 {{import "../partials/media_field.html"}}
 {{import "../partials/rich_editor.html"}}
-{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}
+{{block pageTitle()}}{{if isset(.Product)}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ t("pEditTitle", "编辑商品") }}{{end}}{{else}}{{ t("pEditTitle", "编辑商品") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ t("pEditTitle", "编辑商品") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
-{{tr := .["t"]}}{{tnf := .["tn"]}}
+{{tr := t}}{{tnf := tn}}
 {{selectedProject := .Scope.ProjectID}}
 {{warehouseOptions := .WarehouseOptions}}
-{{canUpdate := isset(.Buttons["product.update"])}}
 {{canVariantCreate := isset(.Buttons["product.variant_create"])}}
 {{canVariantGenerate := isset(.Buttons["product.variant_generate"])}}
+{{canSEO := isset(.PermSet) && isset(.PermSet["product:seo_score"]) && .PermSet["product:seo_score"]}}
 {{editBlocked := false}}
 
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
@@ -22,27 +22,27 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{if isset(.Product)}}：{{.Product.Name}}{{end}}</h1>
+                <h1>{{ t("pEditTitle", "编辑商品") }}{{if isset(.Product)}}：{{.Product.Name}}{{end}}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.products.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.edit.hint.fields", "这里改的是商品自身的字段。留空的数字字段（默认价格 / 重量）表示「不设置」，不会被写成 0；主体 SKU 留空表示不改（存量编码一律不重写）。") }}<br><br>{{ .["t"]("admin.products.edit.hint.sub", "变体、评分、属性引用、分类与品牌、手工标签都在") }}<a href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.hint.detailStrong", "详情") }}</a>{{ .["t"]("admin.products.edit.hint.subTail", "页只读展示；要改就在本页改 —— 本页是商品域唯一的编辑界面。") }}<br><br>{{ .["t"]("admin.products.edit.hint.lang", "多语言在本页右上角进入：改的是这个商品各字段的译文，保存后前台按语言取用。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ t("pHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ t("pEditHintFields", "这里改的是商品自身的字段。留空的数字字段（默认价格 / 重量）表示「不设置」，不会被写成 0；主体 SKU 留空表示不改（存量编码一律不重写）。") }}<br><br>{{ t("pEditTail", "变体、评分、属性引用、分类与品牌、手工标签都在详情页只读展示；要改就在本页改 —— 本页是商品域唯一的编辑界面。") }} <a href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ t("pDetailLink", "查看详情页") }}</a><br><br>{{ t("pEditHintLang", "多语言在本页右上角进入：改的是这个商品各字段的译文，保存后前台按语言取用。") }}</span>
                 </span>
             </div>
         </div>
 
         <div class="page-actions">
 
-            {{if isset(.Product)}}
+            {{if isset(.Product) && canSEO}}
             <button type="button" class="btn"
                     data-drawer-open="#tpl-product-seo"
-                    data-drawer-title="{{ .["t"]("admin.products.seo.title", "SEO 检查") }}">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
+                    data-drawer-title="{{ t("pSeoTitle", "SEO 检查") }}">{{ t("pRowSeoScore", "SEO 评分") }}</button>
             {{end}}
-            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ t("pdBack", "返回列表") }}</a>
             {{if isset(.Product)}}
-            <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
-            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
+            <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ t("pRowDetail", "详情") }}</a>
+            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ t("pRowTrans", "多语言") }}</a>
 
-            {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.common.action.save", "保存") }}</button>{{end}}
+            {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary" data-requires-js hidden disabled>{{ t("uiActSave", "保存") }}</button>{{end}}
             {{end}}
         </div>
     </header>
@@ -51,10 +51,10 @@
 
     <section class="card card-body">
         <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.product_detail.notFound.title", "商品不存在") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.product_detail.notFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
+            <p class="empty-title">{{ t("pdNoFoundTitle", "商品不存在") }}</p>
+            <p class="empty-desc">{{ t("pdNoFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
             <div class="empty-actions">
-                <a class="btn btn-primary" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+                <a class="btn btn-primary" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ t("pdBack", "返回列表") }}</a>
             </div>
         </div>
     </section>
@@ -67,93 +67,92 @@
 
     <div class="product-edit-panes">
 
-    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form data-write="update" data-write-url="/api/product/update" id="product-edit-main" class="card card-body form-stack"
-
-          data-write-keep-empty="primaryCategoryId"
-
-          data-write-lines="images,imageAlts"
-          data-write-json-wrap="descriptionHtml:description">{{end}}
+    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form data-write id="product-edit-main" class="card card-body form-stack"
+          hx-post="/api/product/update" hx-target="#product-edit-result" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="#product-edit-main button:not(:disabled), [form='product-edit-main']:not(:disabled)"
+          data-write-builder="product-edit">{{end}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
 
-        <p class="form-hint" data-write-status role="status" hidden></p>
+        <div class="form-hint" data-write-status role="status" hidden></div>
+        <div id="product-edit-result" data-write-result aria-live="polite"></div>
 
-        <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
+        <h2 class="card-title">{{ t("pdBasicTitle", "基本信息") }}</h2>
 
-        <label class="form-label" for="product-edit-name">{{ .["t"]("admin.products.col.name", "商品") }}</label>
+        <label class="form-label" for="product-edit-name">{{ t("pNameCol", "商品") }}</label>
         <input type="text" class="form-input" id="product-edit-name" name="name" value="{{p.Name}}" required>
 
-        <label class="form-label" for="product-edit-subtitle">{{ .["t"]("admin.products.label.subtitle", "副标题") }}</label>
+        <label class="form-label" for="product-edit-subtitle">{{ t("pSub", "副标题") }}</label>
         <input type="text" class="form-input" id="product-edit-subtitle" name="subtitle" value="{{p.Subtitle}}" autocomplete="off">
 
         <details class="edit-fold">
-            <summary>{{ .["t"]("admin.products.label.description", "商品描述") }}</summary>
+            <summary>{{ t("pDesc", "商品描述") }}</summary>
             {{yield richEditor(field="descriptionHtml", key="product", value="")}}
         </details>
 
-        <label class="form-label" for="product-edit-slug">{{ .["t"]("admin.products.col.slug", "URL 段") }}</label>
+        <label class="form-label" for="product-edit-slug">{{ t("pSlugCol", "URL 段") }}</label>
         <input type="text" class="form-input" id="product-edit-slug" name="slug" value="{{p.Slug}}"
-               placeholder="{{ .["t"]("admin.products.edit.ph.slug", "留空即不改（清空路径会让旧链接失效）") }}" autocomplete="off">
+               placeholder="{{ t("pEditSlug", "留空即不改（清空路径会让旧链接失效）") }}" autocomplete="off">
 
-        <label class="form-label" for="product-edit-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
+        <label class="form-label" for="product-edit-sku">{{ t("pSkuLabel", "SKU 编码") }}</label>
         <input type="text" class="form-input" id="product-edit-sku" name="sku" value="{{p.SKUCode}}"
-               placeholder="{{ .["t"]("admin.products.edit.ph.sku", "留空即不改") }}" autocomplete="off">
-        <p class="text-mute text-sm">{{ .["t"]("admin.product_detail.sku.scope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</p>
+               placeholder="{{ t("pEditSku", "留空即不改") }}" autocomplete="off">
+        <p class="text-mute text-sm">{{ t("pdSkuScope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</p>
 
         <div class="form-inline">
-            <label for="product-edit-status">{{ .["t"]("admin.products.col.status", "状态") }}
+            <label for="product-edit-status">{{ t("pStatus", "状态") }}
                 <select class="form-select" id="product-edit-status" name="status">
-                    <option value="" {{if p.Status == ""}}selected{{end}}>{{tr("admin.products.status.all", "全部状态")}}</option>
-<option value="draft" {{if p.Status == "draft"}}selected{{end}}>{{tr("admin.products.status.draft", "草稿")}}</option>
-<option value="published" {{if p.Status == "published"}}selected{{end}}>{{tr("admin.products.status.published", "已上架")}}</option>
-<option value="archived" {{if p.Status == "archived"}}selected{{end}}>{{tr("admin.products.status.archived", "已下架")}}</option>
+                    <option value="" {{if p.Status == ""}}selected{{end}}>{{tr("pStatusAll", "全部状态")}}</option>
+<option value="draft" {{if p.Status == "draft"}}selected{{end}}>{{tr("pStatusDraft", "草稿")}}</option>
+<option value="published" {{if p.Status == "published"}}selected{{end}}>{{tr("pStatusLive", "已上架")}}</option>
+<option value="archived" {{if p.Status == "archived"}}selected{{end}}>{{tr("pStatusArchived", "已下架")}}</option>
                 </select>
             </label>
-            <label for="product-edit-price">{{ .["t"]("admin.products.edit.defaultPrice", "默认价格") }}
-                <input type="text" class="form-input" id="product-edit-price" name="defaultPrice" value="{{if isset(p.DefaultPrice)}}{{p.DefaultPrice}}{{end}}"
-                       inputmode="decimal" placeholder="{{ .["t"]("admin.products.edit.ph.price", "留空即不设置") }}" autocomplete="off">
+            <label for="product-edit-price">{{ t("pEditDefPrice", "默认价格") }}
+                <input type="number" step="any" class="form-input" id="product-edit-price" name="defaultPrice" value="{{if isset(p.DefaultPrice)}}{{p.DefaultPrice}}{{end}}"
+                       inputmode="decimal" placeholder="{{ t("pEditPrice", "留空即不设置") }}" autocomplete="off">
             </label>
-            <label for="product-edit-unit">{{ .["t"]("admin.products.label.unit", "单位") }}
+            <label for="product-edit-unit">{{ t("pUnit", "单位") }}
                 <input type="text" class="form-input" id="product-edit-unit" name="unit" value="{{p.Unit}}" autocomplete="off">
             </label>
-            <label for="product-edit-weight">{{ .["t"]("admin.products.label.weight", "重量") }}
-                <input type="text" class="form-input" id="product-edit-weight" name="weight" value="{{if isset(p.Weight)}}{{p.Weight}}{{end}}"
-                       inputmode="decimal" placeholder="{{ .["t"]("admin.products.edit.ph.weight", "留空即不设置") }}" autocomplete="off">
+            <label for="product-edit-weight">{{ t("pWeight", "重量") }}
+                <input type="number" step="any" class="form-input" id="product-edit-weight" name="weight" value="{{if isset(p.Weight)}}{{p.Weight}}{{end}}"
+                       inputmode="decimal" placeholder="{{ t("pEditWeight", "留空即不设置") }}" autocomplete="off">
             </label>
         </div>
 
-        <label class="form-label">{{ .["t"]("admin.products.label.defaultImage", "主图") }}</label>
+        <label class="form-label">{{ t("pDefImage", "主图") }}</label>
         {{yield mediaField(field="defaultImage", key="product", value=p.DefaultImage,
-            pickLabel=tr("admin.common.media.pick", "媒体库"),
-            clearLabel=tr("admin.common.media.clear", "清除"))}}
+            pickLabel=tr("uiMediaPick", "媒体库"),
+            clearLabel=tr("uiMediaClear", "清除"))}}
 
         {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=imagesInput, alts=imageAltsInput,
-            heading=tr("admin.products.label.images", "图集"),
-            addLabel=tr("admin.products.media.add", "添加图片"),
-            altPlaceholder=tr("admin.products.media.altPlaceholder", "这张图的 alt 文本"),
-            emptyLabel=tr("admin.products.media.empty", "还没有图片 —— 点网格里的「＋」从媒体库里挑，上传也在媒体库里做。"))}}
+            heading=tr("pImages", "图集"),
+            addLabel=tr("pMediaAdd", "添加图片"),
+            altPlaceholder=tr("pMediaAltPh", "这张图的 alt 文本"),
+            emptyLabel=tr("pMediaEmpty", "还没有图片 —— 点网格里的「＋」从媒体库里挑，上传也在媒体库里做。"))}}
 
-        <details class="edit-fold"><summary>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</summary>
+        <details class="edit-fold"><summary>{{ t("pAttrsTitle", "属性引用") }}</summary>
         {{if isset(.Attributes)}}
         {{if len(.Attributes) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
+            <legend>{{ t("pNewAttrs", "引用的属性组（可多选，可留空）") }}</legend>
             {{range _, a := .Attributes}}
             <label class="var-value">
-                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{range _, id := p.AttributeIDs}}{{if id == a.ID}}checked{{end}}{{end}}> {{a.Name}}{{if a.Key != ""}}（{{a.Key}}）{{end}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
+                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{range _, id := p.AttributeIDs}}{{if id == a.ID}}checked{{end}}{{end}}> {{a.Name}}{{if a.Key != ""}}（{{a.Key}}）{{end}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("attrIsVar", "参与变体"))}}{{end}}
             </label>
             {{end}}
         </fieldset>
         {{else}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.create.noAttributesLead", "这个工程还没有属性组，先到") }}<a href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.products.create.noAttributesTail", "页建一个（可留空）。") }}</p>
+        <p class="text-mute text-sm">{{ t("pNoAttrShort", "这个工程还没有属性组，先建一个（可留空）。") }} <a href="/admin/product-attributes?project={{selectedProject}}">{{ t("pAttrLink", "商品属性") }}</a></p>
         {{end}}
         {{end}}
 
         </details>
-        <details class="edit-fold"><summary>{{ .["t"]("admin.products.taxonomy.title", "分类与品牌") }}</summary>
+        <details class="edit-fold"><summary>{{ t("pTaxTitle", "分类与品牌") }}</summary>
         {{if len(.Categories) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.taxonomy.legendCategories", "挂载分类（可多选，一个都不勾即解绑全部）") }}</legend>
+            <legend>{{ t("pTaxCats", "挂载分类（可多选，一个都不勾即解绑全部）") }}</legend>
             {{range _, c := .Categories}}
             <label class="var-value">
                 <input type="checkbox" name="categoryIds" value="{{c.ID}}" {{range _, id := p.CategoryIDs}}{{if id == c.ID}}checked{{end}}{{end}}> {{repeat("　", c.Depth)}}{{c.Name}}
@@ -161,74 +160,74 @@
             {{end}}
         </fieldset>
         {{else}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.taxonomy.noCategoriesLead", "这个工程还没有分类，先到") }}<a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.products.hint.categoryLink", "商品分类") }}</a>{{ .["t"]("admin.products.taxonomy.noCategoriesTail", "页建一个。") }}</p>
+        <p class="text-mute text-sm">{{ t("pEditNoCat", "这个工程还没有分类，先建一个。") }} <a href="/admin/product-categories?project={{selectedProject}}">{{ t("pCatLink", "商品分类") }}</a></p>
         {{end}}
         <div class="form-inline">
-            <label for="product-edit-primary">{{ .["t"]("admin.products.taxonomy.primaryLabel", "主分类") }}
+            <label for="product-edit-primary">{{ t("pTaxMain", "主分类") }}
                 <select class="form-select" id="product-edit-primary" name="primaryCategoryId">
 
-                    <option value="" {{if p.PrimaryCategoryID == ""}}selected{{end}}>{{tr("admin.products.option.noPrimaryCategory", "（不指定主分类）")}}</option>
+                    <option value="" {{if p.PrimaryCategoryID == ""}}selected{{end}}>{{tr("pOptNoMainCat", "（不指定主分类）")}}</option>
 {{range _, c := .Categories}}<option value="{{c.ID}}" {{if c.ID == p.PrimaryCategoryID}}selected{{end}}>{{repeat("　", c.Depth)}}{{c.Name}}</option>{{end}}
                 </select>
             </label>
-            <label for="product-edit-brand">{{ .["t"]("admin.products.taxonomy.brandLabel", "品牌") }}
+            <label for="product-edit-brand">{{ t("pTaxBrand", "品牌") }}
                 <select class="form-select" id="product-edit-brand" name="brandId">
-                    <option value="" {{if p.BrandID == ""}}selected{{end}}>{{tr("admin.products.option.noBrand", "（不指定品牌）")}}</option>
+                    <option value="" {{if p.BrandID == ""}}selected{{end}}>{{tr("pOptNoBrand", "（不指定品牌）")}}</option>
 {{range _, b := .Brands}}<option value="{{b.ID}}" {{if b.ID == p.BrandID}}selected{{end}}>{{b.Name}}</option>{{end}}
                 </select>
             </label>
         </div>
 
         </details>
-        <details class="edit-fold"><summary>{{ .["t"]("admin.products.tags.title", "标签") }}</summary>
+        <details class="edit-fold"><summary>{{ t("pTagsTitle", "标签") }}</summary>
         {{if len(.Tags) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
-            {{range _, t := .Tags}}{{if t.Kind == "manual"}}
+            <legend>{{ t("pTagsManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
+            {{range _, tag := .Tags}}{{if tag.Kind == "manual"}}
             <label class="var-value">
-                <input type="checkbox" name="tagIds" value="{{t.ID}}" {{range _, id := p.TagIDs}}{{if id == t.ID}}checked{{end}}{{end}}> {{t.Name}}
+                <input type="checkbox" name="tagIds" value="{{tag.ID}}" {{range _, id := p.TagIDs}}{{if id == tag.ID}}checked{{end}}{{end}}> {{tag.Name}}
             </label>
             {{end}}{{end}}
         </fieldset>
         {{else}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.tags.noManualLead", "这个工程还没有手工标签，先到") }}<a href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.products.hint.tagLink", "商品标签") }}</a>{{ .["t"]("admin.products.taxonomy.noCategoriesTail", "页建一个。") }}</p>
+        <p class="text-mute text-sm">{{ t("pEditNoTag", "这个工程还没有手工标签，先建一个。") }} <a href="/admin/product-tags?project={{selectedProject}}">{{ t("pTagLink", "商品标签") }}</a></p>
         {{end}}
         {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
-            {{range _, t := p.Tags}}{{if t.Kind == "rule"}}
-            <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
+            <legend>{{ t("pTagsAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
+            {{range _, tag := p.Tags}}{{if tag.Kind == "rule"}}
+            <span class="var-value">{{tag.Name}}{{if tag.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", tag.RuleType, "rv", tag.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
             {{end}}{{end}}
         </fieldset>
         {{end}}
         </details>
 
         <div class="action-row">
-            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ t("uiActCancel", "取消") }}</a>
         </div>
     {{if editBlocked}}</fieldset></section>{{else}}</form>{{end}}
     <aside class="product-edit-aside">
-        <section class="card card-body" data-product-preview data-preview-url="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+        <section class="card card-body" data-product-preview data-preview-url="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" data-preview-failed="{{ t("uiInternalErr", "系统内部错误，请稍后重试") }}">
 
-            <h2 class="card-title">{{ .["t"]("admin.products.preview.heading", "详情页预览") }}
+            <h2 class="card-title">{{ t("pPrevHead", "详情页预览") }}
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.preview.hint", "这里用详情页模板渲染这个商品，看到的就是访客看到的样子（图集、变体分组、关联分区都在）。它只反映**已保存**的内容：改完先点保存，再点「刷新预览」。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ t("uiHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ t("pPrevHint", "这里用详情页模板渲染这个商品，看到的就是访客看到的样子（图集、变体分组、关联分区都在）。它只反映**已保存**的内容：改完先点保存，再点「刷新预览」。") }}</span>
                 </span>
             </h2>
             {{if isset(.Product)}}
             <p class="form-hint" data-product-preview-status role="status" hidden></p>
-            <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ .["t"]("admin.products.preview.heading", "详情页预览")}}" role="button" tabindex="0">
+            <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ t("pPrevHead", "详情页预览")}}" role="button" tabindex="0">
                 <iframe id="product-preview-frame" name="product-preview-frame" sandbox="allow-scripts"
                         data-product-preview-frame
-                        title="{{ .["t"]("admin.products.preview.heading", "详情页预览") }}"></iframe>
+                        title="{{ t("pPrevHead", "详情页预览") }}"></iframe>
             </div>
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-product-preview-refresh>{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</button>
-                <button type="button" class="btn btn-ghost" data-product-preview-open>{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</button>
+                <button type="button" class="btn btn-ghost" data-product-preview-refresh>{{ t("pPrevReload", "刷新预览") }}</button>
+                <button type="button" class="btn btn-ghost" data-product-preview-open>{{ t("pPrevOpenFull", "新标签打开（1:1）") }}</button>
             </div>
             {{else}}
-            <p class="page-sub">{{ .["t"]("admin.products.preview.needSave", "保存这个商品后，这里会显示它的详情页真实形态。") }}</p>
+            <p class="page-sub">{{ t("pPrevNeedSave", "保存这个商品后，这里会显示它的详情页真实形态。") }}</p>
             {{end}}
         </section>
     </aside>
@@ -239,50 +238,51 @@
     <section class="card list-card">
         <div class="list-toolbar">
 
-            <span class="card-title">{{ .["t"]("admin.products.variants.title", "变体") }}</span>
+            <span class="card-title">{{ t("pVarsTitle", "变体") }}</span>
             <span class="toolbar-spacer"></span>
             {{if canVariantGenerate}}{{if len(p.Attributes) > 0}}
-            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-variant-generate-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.combo.generate", "生成组合") }}">{{ .["t"]("admin.products.combo.generate", "生成组合") }}</button>
+            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-variant-generate-{{p.ID}}" data-drawer-title="{{ t("pComboGen", "生成组合") }}">{{ t("pComboGen", "生成组合") }}</button>
             {{end}}{{end}}
             {{if canVariantCreate}}
-            <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-variant-create-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.variant.create", "新建变体") }}">＋ {{ .["t"]("admin.products.variant.create", "新建变体") }}</button>
+            <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-variant-create-{{p.ID}}" data-drawer-title="{{ t("pVarNew", "新建变体") }}">＋ {{ t("pVarNew", "新建变体") }}</button>
             {{end}}
         </div>
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.variants.listHint", "清单里的「生成 / 移除」都不写库：生成只是把组合显示在这里，「保存变体清单」才落库。") }}</p>
+        <p class="text-mute text-sm">{{ t("pVarsListHint", "清单里的「生成 / 移除」都不写库：生成只是把组合显示在这里，「保存变体清单」才落库。") }}</p>
 
         <p class="form-hint badge" role="status" hidden></p>
 
-        <form data-write="update" data-write-url="/api/product/variant/save"
+        <form data-write hx-post="/api/product/variant/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
               data-write-builder="product-variant-rows" data-write-reload
-              data-variant-form
-              data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单保存失败，请刷新页面后重试。") }}">
+              data-variant-form>
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
-            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ t("pVarsAria", "商品变体") }}">
                 <table class="data-table data-table-wide">
-                    <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
+                    <thead><tr><th>SKU</th><th>{{ t("pSpec", "规格") }}</th><th>{{ t("pPrice", "价格") }}</th><th>{{ t("pComparePrice", "对比价") }}</th><th>{{ t("pCostPrice", "成本价") }}</th><th>{{ t("pOn", "启用") }}</th><th>{{ t("pStock", "库存") }}</th><th class="col-actions">{{ t("pActions", "操作") }}</th></tr></thead>
                     <tbody data-variant-list>
                     {{if len(p.Variants) == 0}}
-                    <tr data-variant-empty><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
+                    <tr data-variant-empty><td colspan="8" class="text-mute text-sm">{{ t("pVarsEmpty", "这个商品还没有变体。") }}</td></tr>
                     {{end}}
                     {{range _, v := p.Variants}}
                     <tr data-variant-row data-variant-id="{{v.ID}}" data-option-values="{{if len(v.OptionValues) > 0}}{{"" + v.OptionValues}}{{else}}{}{{end}}">
-                        <td><input type="text" class="form-input" data-variant-sku value="{{v.SKUCode}}" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
+                        <td><input type="text" class="form-input" data-variant-sku value="{{v.SKUCode}}" aria-label="{{ t("pVarSkuLabel", "SKU 编码（可编辑）") }}"></td>
                         <td><span data-product-spec="{{v.ID}}"></span></td>
                         <td>{{amount(v.Price)}}</td>
                         <td>{{amountDash(v.ComparePrice)}}</td>
                         <td>{{amountDash(v.CostPrice)}}</td>
-                        <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
+                        <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("pVarOn", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("pVarOff", "停用"))}}{{end}}</td>
                         <td>
                             {{v.StockTotal}}
 
                             <button type="button" class="btn btn-sm btn-ghost" data-variant-stocks-toggle
-                                    aria-expanded="false">{{ .["t"]("admin.products.stocks.toggle", "仓库明细") }}</button>
+                                    aria-expanded="false">{{ t("pStocksToggle", "仓库明细") }}</button>
                         </td>
                         <td class="col-actions">
-                            <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
-                            <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                            <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ t("pVarStockLink", "各仓库存") }}</a>
+                            <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ t("pVarRemove", "移除") }}</button>
                         </td>
                     </tr>
 
@@ -297,15 +297,15 @@
             </div>
             <div class="action-row">
                 {{if len(warehouseOptions) > 0}}
-                <label class="form-label" for="variant-save-warehouse-{{p.ID}}">{{ .["t"]("admin.products.variant.saveWarehouse", "新增变体的归属仓") }}</label>
+                <label class="form-label" for="variant-save-warehouse-{{p.ID}}">{{ t("pVarSaveWh", "新增变体的归属仓") }}</label>
                 <select class="form-select" id="variant-save-warehouse-{{p.ID}}" name="warehouseId">
-                    <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                    <option value="">{{ t("pWhDefOpt", "（默认仓）") }}</option>
                     {{range _, w := warehouseOptions}}
-                    <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                    <option value="{{w.ID}}">{{if w.IsDefault}}{{tn("whOptionDefault", "{name}（{code}） · 默认仓", map("name", w.Name, "code", w.Code))}}{{else}}{{tn("whOption", "{name}（{code}）", map("name", w.Name, "code", w.Code))}}{{end}}</option>
                     {{end}}
                 </select>
                 {{end}}
-                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ t("pVarSaveList", "保存变体清单") }}</button>
             </div>
         </form>
 
@@ -332,19 +332,19 @@
 
         <template data-variant-row-tpl>
             <tr data-variant-row data-variant-id="" data-option-values="">
-                <td><input type="text" class="form-input" data-variant-sku value="" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
+                <td><input type="text" class="form-input" data-variant-sku value="" aria-label="{{ t("pVarSkuLabel", "SKU 编码（可编辑）") }}"></td>
                 <td data-cell-spec></td>
                 <td>—</td>
                 <td>—</td>
                 <td>—</td>
-                <td>{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.pendingSave", "保存后生效"))}}</td>
+                <td>{{include "../partials/badge.html" map("tone", "mute", "label", tr("pVarPendingSave", "保存后生效"))}}</td>
                 <td>
                     —
                     <button type="button" class="btn btn-sm btn-ghost" data-variant-stocks-toggle
-                            aria-expanded="false">{{ .["t"]("admin.products.stocks.toggle", "仓库明细") }}</button>
+                            aria-expanded="false">{{ t("pStocksToggle", "仓库明细") }}</button>
                 </td>
                 <td class="col-actions">
-                    <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                    <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ t("pVarRemove", "移除") }}</button>
                 </td>
             </tr>
             <tr data-variant-stocks-row hidden>
@@ -355,102 +355,65 @@
         </template>
     </section>
 
-    <section class="card list-card" data-write-host>
-        <div class="list-toolbar">
-            <span class="card-title">{{ .["t"]("admin.products.rating.label", "评分") }}</span>
-            <span class="badge badge-mute">{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.Rating.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
-            <span class="toolbar-spacer"></span>
-            {{if canUpdate}}
-            <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-rating-add-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.rating.add", "添加评分") }}">＋ {{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
-            {{end}}
-        </div>
-
-        <p class="form-hint" data-write-status role="status" hidden></p>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
-            <table class="data-table">
-                <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
-                <tbody>
-                {{if len(p.Rating.Items) == 0}}
-                <tr><td colspan="4" class="text-mute text-sm">{{ .["t"]("admin.products.ratings.empty", "这个商品还没有评分。") }}</td></tr>
-                {{end}}
-                {{range _, r := p.Rating.Items}}
-                <tr>
-                    <td><span data-product-rating="{{r.Score}}">{{amount(r.Score)}}</span></td>
-                    <td>{{r.Source}}</td>
-                    <td>{{if isset(r.CreatedAt)}}{{formatTime(r.CreatedAt)}}{{end}}</td>
-                    <td class="col-actions">
-                        <button data-requires-js hidden type="submit" form="rating-del-{{r.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
-                    </td>
-                </tr>
-                {{end}}
-                </tbody>
-            </table>
-        </div>
-
-        {{range _, r := p.Rating.Items}}
-        <form data-write="delete" data-write-url="/api/product/rating/delete" id="rating-del-{{r.ID}}" class="hidden-form" data-write-reload
-              data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="id" value="{{r.ID}}">
-        </form>
-        {{end}}
-    </section>
+    {{include "product_rating_panel.html" map("Rating", p.Rating, "PermSet", .PermSet, "csrf_token", csrf)}}
 
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Available}}
 
     <details class="section-fold card">
         <summary>
-            <span class="fold-title">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</span>
-            {{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
+            <span class="fold-title">{{ t("pRowDetailTpl", "详情页模板") }}</span>
+            {{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("pdDocumentMode", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("pdTplModeTpl", "跟随模板"))}}{{end}}{{end}}
         </summary>
         <div class="fold-body">
         {{if isset(.TplPanel.Bound.InstanceID)}}
-        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
+        <p class="kv"><span>{{ t("pdTplNow", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
         {{if .TplPanel.Bound.Status == "published" || .TplPanel.Bound.Status == "active"}}
         <div class="flex gap-sm">
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ t("uiActPrev", "预览") }}</a>
             {{if .TplPanel.Bound.RenderMode == "document"}}
-            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.Bound.InstanceID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.product_detail.template.customize", "进入自定义（仅此商品）") }}</a>
+            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.Bound.InstanceID}}&projectId={{.Scope.ProjectID}}">{{ t("pdTplCustomize", "进入自定义（仅此商品）") }}</a>
             {{else}}
-            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if .TplPanel.HasAffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
+            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}&editor=1">{{ t("pdTplEdit", "编辑模板") }}{{if .TplPanel.HasAffectedTemplateCount}}{{tn("pAffectedCount", "（影响 {count} 个商品）", map("count", .TplPanel.AffectedTemplateCount))}}{{end}}</a>
             {{end}}
         </div>
         {{if .TplPanel.Bound.RenderMode == "document"}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.docHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
-        {{if .TplPanel.Bound.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.Bound.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
+        <p class="hint">{{ t("pdTplDocHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
+        {{if .TplPanel.Bound.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.Bound.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ t("pdTplPresetEdit", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
 
-        <form data-write="custom" data-write-url="/api/product/detail-template/reapply-preset" class="form-inline" data-write-reload>
+        <form data-write hx-post="/api/product/detail-template/reapply-preset" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload class="form-inline">
+            <div data-write-result></div>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.Bound.InstanceID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
+            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ t("pdReapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if len(.TplPanel.Snapshots) > 0}}
-        <form data-write="custom" data-write-url="/api/product/detail-template/rollback-document" class="form-inline" data-write-reload>
+        <form data-write hx-post="/api/product/detail-template/rollback-document" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload class="form-inline">
+            <div data-write-result></div>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.Bound.InstanceID}}">
-            <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
+            <label class="form-label" for="rollback-snapshot">{{ t("pdTplUndo", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
                 <option value="{{snap.ID}}">{{formatTime(snap.CreatedAt)}}</option>
                 {{end}}
             </select>
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.rollbackSubmit", "回滚文档并重发") }}</button>
+            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ t("pdTplUndoSubmit", "回滚文档并重发") }}</button>
         </form>
-        <p class="hint">{{ .["t"]("admin.product_detail.template.rollbackHint", "回滚取该历史版本的文档重新发布（实体数据取最新）。") }}</p>
+        <p class="hint">{{ t("pdTplUndoHint", "回滚取该历史版本的文档重新发布（实体数据取最新）。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.presetModeHint", "布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。") }}</p>
+        <p class="hint">{{ t("pdPresetHint", "布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.unpublishedHint", "模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。") }}</p>
+        <p class="hint">{{ t("pdTplDraftHint", "模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.noPublicationHint", "该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。") }}</p>
+        <p class="hint">{{ t("pdTplNoPubHint", "该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。") }}</p>
         {{end}}
         </div>
     </details>
@@ -459,24 +422,25 @@
     {{end}}
 
     <template id="tpl-variant-create-{{p.ID}}">
-        <form data-write="create" data-write-url="/api/product/variant/create" class="form-stack">
+        <form data-write hx-post="/api/product/variant/create" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" class="form-stack">
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
-            <input type="text" class="form-input" name="skuCode" placeholder="{{ .["t"]("admin.products.variant.phSku", "SKU 编码（留空自动生成）") }}">
-            <input type="text" class="form-input" name="price" placeholder="{{ .["t"]("admin.products.variant.phPrice", "价格（留空继承商品默认值）") }}">
+            <input type="text" class="form-input" name="skuCode" placeholder="{{ t("pVarSkuPh", "SKU 编码（留空自动生成）") }}">
+            <input type="text" class="form-input" name="price" placeholder="{{ t("pVarPrice", "价格（留空继承商品默认值）") }}">
             {{if len(warehouseOptions) > 0}}
-            <label class="form-label" for="variant-warehouse-{{p.ID}}">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
+            <label class="form-label" for="variant-warehouse-{{p.ID}}">{{ t("pWh", "归属仓") }}</label>
             <select class="form-select" id="variant-warehouse-{{p.ID}}" name="warehouseId">
-                <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                <option value="">{{ t("pWhDefOpt", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                <option value="{{w.ID}}">{{if w.IsDefault}}{{tn("whOptionDefault", "{name}（{code}） · 默认仓", map("name", w.Name, "code", w.Code))}}{{else}}{{tn("whOption", "{name}（{code}）", map("name", w.Name, "code", w.Code))}}{{end}}</option>
                 {{end}}
             </select>
             {{end}}
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.add", "新增变体") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ t("uiActCancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ t("pVarAdd", "新增变体") }}</button>
             </div>
         </form>
     </template>
@@ -487,16 +451,16 @@
         <div class="form-stack" data-variant-generate
              data-product="{{p.ID}}" data-project="{{selectedProject}}" data-csrf="{{csrf}}"
              data-preview-url="/api/product/variant/preview"
-             data-msg-added="{{ .["t"]("admin.products.combo.added", "已追加 %d 行到清单（还没保存）") }}"
-             data-msg-none="{{ .["t"]("admin.products.combo.none", "没有需要追加的组合：清单与库里都已有") }}"
-             data-msg-failed="{{ .["t"]("admin.products.combo.failed", "生成失败：") }}">
-            <p class="text-mute text-sm">{{ .["t"]("admin.products.combo.previewHint", "生成只是把组合显示在清单里，点「保存变体清单」才写入数据库。") }}</p>
+             data-msg-added="{{ t("pComboAdded", "已追加 %d 行到清单（还没保存）") }}"
+             data-msg-none="{{ t("pComboNone", "没有需要追加的组合：清单与库里都已有") }}"
+             data-msg-failed="{{ t("pComboFail", "生成失败：") }}">
+            <p class="text-mute text-sm">{{ t("pComboPrevHint", "生成只是把组合显示在清单里，点「保存变体清单」才写入数据库。") }}</p>
             {{if len(warehouseOptions) > 0}}
-            <label class="form-label" for="generate-warehouse-{{p.ID}}">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
+            <label class="form-label" for="generate-warehouse-{{p.ID}}">{{ t("pWh", "归属仓") }}</label>
             <select class="form-select" id="generate-warehouse-{{p.ID}}" data-generate-warehouse>
-                <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                <option value="">{{ t("pWhDefOpt", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                <option value="{{w.ID}}">{{if w.IsDefault}}{{tn("whOptionDefault", "{name}（{code}） · 默认仓", map("name", w.Name, "code", w.Code))}}{{else}}{{tn("whOption", "{name}（{code}）", map("name", w.Name, "code", w.Code))}}{{end}}</option>
                 {{end}}
             </select>
             {{end}}
@@ -515,34 +479,22 @@
 {{end}}
 <p class="text-mute text-sm" data-generate-status role="status"></p>
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="button" class="btn btn-primary" data-generate-selected>{{ .["t"]("admin.products.combo.generateSelected", "生成勾选组合") }}</button>
-                <button type="button" class="btn" data-generate-all>{{ .["t"]("admin.products.combo.generateAll", "生成全部组合") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ t("uiActCancel", "取消") }}</button>
+                <button type="button" class="btn btn-primary" data-generate-selected>{{ t("pComboGenSel", "生成勾选组合") }}</button>
+                <button type="button" class="btn" data-generate-all>{{ t("pComboGenAll", "生成全部组合") }}</button>
             </div>
         </div>
     </template>
     {{end}}
 
-    <template id="tpl-rating-add-{{p.ID}}">
-        <form data-write="create" data-write-url="/api/product/rating/add" class="form-stack">
-            <p class="form-hint" data-write-status role="status" hidden></p>
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="productId" value="{{p.ID}}">
-            <input type="number" class="form-input" name="score" min="0" max="5" step="0.01" inputmode="decimal" placeholder="{{ .["t"]("admin.products.rating.phScore", "评分 0~5") }}" required>
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
-            </div>
-        </form>
-    </template>
 
     {{end}}
     {{end}}
 </div>
-{{if isset(.Product)}}<template id="tpl-product-seo">{{include "entity_seo_drawer.html"}}</template>{{end}}
+{{if isset(.Product) && canSEO}}<template id="tpl-product-seo">{{include "entity_seo_drawer.html"}}</template>{{end}}
 <script type="application/json" id="product-display-data">{{writeJson(.Product)}}</script>
 <script src="/static/vendor/trix/trix.umd.js"></script>
 
 <script src="/static/js/rich-editor/index.js"></script>
-{{include "product_seo_dictionary.html"}}
+<script defer src="/static/js/ui/product-edit.js"></script>
 {{end}}

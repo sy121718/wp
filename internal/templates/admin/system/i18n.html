@@ -1,12 +1,6 @@
 {* admin/i18n.html — 文案词条管理（审计 I18N-003）。 *}
 {* 读写都走 pkg/i18n 的端口；本页只管「选一条、改一句、存回去」。 *}
-{* 写动作（新建 / 编辑 / 删除 / 批量删除）由前端 fetch 直调 JSON 端点 POST /api/i18n/save
-   （static/js/ui/write-base.js；请求体形状是严格 tagged union，见
-   internal/module/admin/inbound/http/admin_i18n_write.go）。页面 POST 已删除，因此：
-     · 表单只声明**事实**（端点 / 写模式 / 文案从哪来），行为全在控件里，模板不写内联 JS；
-     · 成功后整页刷新（列表的派生列由服务端重算，且刷新天然保住当前的筛选与页码 ——
-       原先靠表单 action 上带 ?keyword=… 回带上下文，那套已随页面 POST 一起退役）；
-     · 失败就地显示原因并保住已填内容。 *}
+{* HTMX 提交标准表单，Jet 输出结果；失败保留输入，成功刷新当前筛选与页码。 *}
 {* 版式遵循 theme.css「后台页壳」段（admin 页面设计评审，见 AGENTS.md）：
      · 领域说明（与迁移 seed 的分工）收进页头 .help —— 原版两段 232 字直接铺在首屏；
      · 筛选并入列表卡 .filter-bar，列表进 .table-scroll（表头吸顶 + 高度封顶）；
@@ -15,15 +9,14 @@
 {* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件用 || 而不是 or。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把词条 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ t("admin.i18n.title", "文案词条") }}{{end}}
+{{block topbarTitle()}}{{ t("admin.i18n.title", "文案词条") }}{{end}}
 {{block body()}}
-{{tr := .["t"]}}
 {{entries := .Entries}}
-{{editURLs := .["I18nEditURLs"]}}
-{{hasEditURLs := false}}
-{{if isset(.I18nEditURLs)}}{{hasEditURLs = true}}{{end}}
 {{cats := .Categories}}
-{* 权限与筛选状态提到块顶：range 内调 t 必须用块顶变量（.["t"] 里的 . 是当前行），
-   权限判断虽可写 .=形式在外层解析，但提到块顶只算一次、也让「谁能管理」在一处可读。 *}
+{* 权限与筛选状态提到块顶，range 内直接调用请求级全局取词函数。 *}
 {{catFilter := .CatFilter}}
 {{langFilter := .LangFilter}}
 {{canManage := false}}
@@ -32,25 +25,22 @@
 {{if .Keyword != ""}}{{hasFilter = true}}{{end}}
 {{if langFilter != ""}}{{hasFilter = true}}{{end}}
 {{if catFilter != ""}}{{hasFilter = true}}{{end}}
-{* 主数据没读到时这一页根本不渲染：整页 GET 失败走 JSON 错误体
-   （用户裁定：所有提示只需要一个提示）。所以模板里不再有失败槽 ——
-   「没读出来」与「读到了、只是空的」由出口分开，而不是由这张模板分两段渲染。 *}
 {{canCreate := canManage}}
 <div class="stack">
     {* 页头：标题 + 领域说明；新建入口在这里，不再自占一张卡。 *}
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{ .["t"]("admin.i18n.title", "文案词条") }}</h1>
+                <h1>{{ t("admin.i18n.title", "文案词条") }}</h1>
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.i18n.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.i18n.intro", "后台外壳、组件固定文案都从这张表取词。此前它们只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。") }}<br><br><strong>{{ .["t"]("admin.i18n.roles.strong1", "与迁移的分工") }}</strong>{{ .["t"]("admin.i18n.roles.after1", "：迁移 seed 是") }}<strong>{{ .["t"]("admin.i18n.roles.strong2", "默认值来源") }}</strong>{{ .["t"]("admin.i18n.roles.after2", "（写入用 DO NOTHING，不覆盖你在这里的修改）；本页是") }}<strong>{{ .["t"]("admin.i18n.roles.strong3", "真相来源") }}</strong>{{ .["t"]("admin.i18n.roles.tail", "。删除一条词条不会让页面变成空白，构建期会回退到组件包内的中文兜底 —— 但英文站点会因此退回中文，删之前请确认。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ t("admin.i18n.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ t("admin.i18n.intro", "后台外壳、组件固定文案都从这张表取词。此前它们只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。") }}<br><br><strong>{{ t("admin.i18n.roles.strong1", "与迁移的分工") }}</strong>{{ t("admin.i18n.roles.after1", "：迁移 seed 是") }}<strong>{{ t("admin.i18n.roles.strong2", "默认值来源") }}</strong>{{ t("admin.i18n.roles.after2", "（写入用 DO NOTHING，不覆盖你在这里的修改）；本页是") }}<strong>{{ t("admin.i18n.roles.strong3", "真相来源") }}</strong>{{ t("admin.i18n.roles.tail", "。删除一条词条不会让页面变成空白，构建期会回退到组件包内的中文兜底 —— 但英文站点会因此退回中文，删之前请确认。") }}</span>
                 </span>
             </div>
         </div>
         {{if canCreate}}
         <div class="page-actions">
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-i18n-create" data-drawer-title="{{ .["t"]("admin.common.action.create", "新建") }}">{{ .["t"]("admin.common.action.create", "新建") }}</button>
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-i18n-create" data-drawer-title="{{ t("admin.common.action.create", "新建") }}">{{ t("admin.common.action.create", "新建") }}</button>
         </div>
         {{end}}
     </header>
@@ -59,9 +49,9 @@
     <section class="card list-card">
         <div class="filter-bar">
             <form method="get" action="/admin/i18n" class="filter-row">
-                <input type="text" class="form-input filter-search" name="keyword" value="{{.Keyword}}" placeholder="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}" autocomplete="off" aria-label="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}">
-                <select name="lang" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.lang", "语言") }}">
-                    <option value="">{{ .["t"]("admin.i18n.option.all_langs", "全部语言") }}</option>
+                <input type="text" class="form-input filter-search" name="keyword" value="{{.Keyword}}" placeholder="{{ t("admin.i18n.ph.keyword", "key 或内容关键词") }}" autocomplete="off" aria-label="{{ t("admin.i18n.ph.keyword", "key 或内容关键词") }}">
+                <select name="lang" class="form-select" aria-label="{{ t("admin.i18n.label.lang", "语言") }}">
+                    <option value="">{{ t("admin.i18n.option.all_langs", "全部语言") }}</option>
                     {* 语言来自字典（sys_dict type='language' 且 enabled），不再写死两条 ——
                        写死时已收录的其它语言在页面上完全选不到，只能手输 URL 参数。
                        筛选项**不**展示「已有译文」标记：这里筛的是已有词条，标记只是噪音。 *}
@@ -69,14 +59,14 @@
                     <option value="{{o.Code}}"{{if o.Code == langFilter}} selected{{end}}>{{o.Code}}</option>
                     {{end}}{{end}}
                 </select>
-                <select name="category" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.category", "分类") }}">
-                    <option value="">{{ .["t"]("admin.i18n.option.all_cats", "全部分类") }}</option>
+                <select name="category" class="form-select" aria-label="{{ t("admin.i18n.label.category", "分类") }}">
+                    <option value="">{{ t("admin.i18n.option.all_cats", "全部分类") }}</option>
                     {{range _, cat := cats}}
                     <option value="{{cat}}"{{if cat == catFilter}} selected{{end}}>{{cat}}</option>
                     {{end}}
                 </select>
-                <button type="submit" class="btn">{{ .["t"]("admin.i18n.action.filter", "筛选") }}</button>
-                {{if hasFilter}}<a class="btn btn-ghost" href="/admin/i18n">{{ .["t"]("admin.common.action.reset", "重置") }}</a>{{end}}
+                <button type="submit" class="btn">{{ t("admin.i18n.action.filter", "筛选") }}</button>
+                {{if hasFilter}}<a class="btn btn-ghost" href="/admin/i18n">{{ t("admin.common.action.reset", "重置") }}</a>{{end}}
             </form>
         </div>
 
@@ -86,24 +76,22 @@
            所以行内删除表单放表格外、按钮用 form="<id>" 关联）。
            勾选值带 (key, lang) 复合键：词条唯一标识是二元组，只带 key 会把其它语言的
            同名词条一起删掉 —— 分隔符与解析见 handler 的 adminI18nEntryKeySeparator。 *}
-        <form data-write-url="/api/i18n/save"
-              data-write="bulk"
-              data-msg-none-selected="{{tr("admin.i18nBulk.noneSelected", "没有勾选任何词条，列表未改动。")}}"
-              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              data-msg-refresh="{{tr("admin.i18nWrite.refresh", "刷新列表")}}">
-            {* 结果区：批量结论（已删 N / 跳过 M + 逐条原因）就地显示在这里。 *}
-            <p class="form-hint" data-write-status role="status" hidden></p>
+        <form hx-post="/api/i18n/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+              data-write="bulk" data-write-reload hx-confirm="{{t("uiDelConfirm", "确定要删除吗？")}}">
+            <input type="hidden" name="action" value="bulkDelete">
+            <p class="form-hint" data-write-status role="alert" hidden></p>
+            <div data-write-result></div>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canManage}}{{if len(entries) > 0}}
-            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("msg_delete_confirm", "确定要删除吗？"), danger=true)}}
+            {{yield bulkBarOpen(count=t("admin.common.bulk.selected", "已选 {n} 项"))}}
+                <button type="submit" class="btn btn-sm btn-danger">{{t("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table">
                 <thead>
-                    <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>key</th><th>{{ .["t"]("admin.i18n.label.lang", "语言") }}</th><th>{{ .["t"]("admin.i18n.label.value", "内容") }}</th><th>{{ .["t"]("admin.i18n.label.category", "分类") }}</th><th>{{ .["t"]("admin.i18n.label.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.i18n.col.actions", "操作") }}</th></tr>
+                    <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ t("admin.common.bulk.selectAll", "全选") }}"></th><th>key</th><th>{{ t("admin.i18n.label.lang", "语言") }}</th><th>{{ t("admin.i18n.label.value", "内容") }}</th><th>{{ t("admin.i18n.label.category", "分类") }}</th><th>{{ t("admin.i18n.label.updated_at", "更新时间") }}</th><th class="col-actions">{{ t("admin.i18n.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                     {{if len(entries) == 0}}
@@ -111,10 +99,10 @@
                        勾选列在本表无条件渲染，所以没有「±1」的第二种形态。 *}
                     <tr><td colspan="7" class="cell-wrap">
                         <div class="empty-state">
-                            <p class="empty-title">{{ .["t"]("admin.i18n.list.empty_title", "没有匹配的词条") }}</p>
-                            <p class="empty-desc">{{ .["t"]("admin.i18n.list.empty_desc", "换一个关键词或放宽语言 / 分类筛选；确实一条都没有的话，用右上角「新建」补第一条。") }}</p>
+                            <p class="empty-title">{{ t("admin.i18n.list.empty_title", "没有匹配的词条") }}</p>
+                            <p class="empty-desc">{{ t("admin.i18n.list.empty_desc", "换一个关键词或放宽语言 / 分类筛选；确实一条都没有的话，用右上角「新建」补第一条。") }}</p>
                             {{if hasFilter}}
-                            <div class="empty-actions"><a class="btn" href="/admin/i18n">{{ .["t"]("admin.common.action.reset", "重置") }}</a></div>
+                            <div class="empty-actions"><a class="btn" href="/admin/i18n">{{ t("admin.common.action.reset", "重置") }}</a></div>
                             {{end}}
                         </div>
                     </td></tr>
@@ -122,24 +110,20 @@
                     {{range i, e := entries}}
                     <tr>
                         <td class="col-check">
-                            <input type="checkbox" name="ids" value="{{e.Key}}|{{e.Lang}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                            <input type="checkbox" name="ids" value="{{e.Key}}|{{e.Lang}}" data-check-item aria-label="{{ t("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td>{{if canManage && hasEditURLs}}<button type="button" class="row-title-link" data-drawer-url="{{editURLs[i]}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
+                        <td>{{if canManage}}<button type="button" class="row-title-link" data-drawer-open hx-get="{{queryURL("/admin/i18n/edit", "key", e.Key, "lang", e.Lang)}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{t("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
                         <td>{{e.Lang}}</td>
                         <td>{{e.Value}}</td>
                         <td>{{e.Category}}</td>
                         <td>{{e.UpdateTime}}</td>
                         <td class="col-actions">
                             {* 编辑按精确 key+lang 按需获取，避免列表为每行渲染表单。 *}
-                            {{if canManage && hasEditURLs}}
-                            <button type="button" class="btn btn-ghost" data-drawer-url="{{editURLs[i]}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                            {{if canManage}}
+                            <button type="button" class="btn btn-ghost" data-drawer-open hx-get="{{queryURL("/admin/i18n/edit", "key", e.Key, "lang", e.Lang)}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{t("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{t("admin.i18n.action.edit", "编辑")}}</button>
                             {{end}}
                             {{if canManage}}
-                            {* 无 JS 时删除按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来）：
-                               写动作由浏览器直调接口完成，没有端到端兜底表单，留一个「点了只是重新加载本页」
-                               的按钮不如藏起来。 *}
-                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger" data-requires-js hidden
-                                    data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>{{tr("admin.i18n.action.delete", "删除")}}</button>
+                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger">{{t("admin.i18n.action.delete", "删除")}}</button>
                             {{end}}
                         </td>
                     </tr>
@@ -149,18 +133,16 @@
             </table>
         </div>
         </form>
-        {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格；
-           行内按钮用 form="<id>" 指回这里的隐藏表单。
-           写模式是 create 而不是 single：single 模式只发 {id}，发不出动作标签与 (key, lang)
-           复合键；create 模式发**全部具名字段**、成功后同样整页刷新，语义正好对上。
-           动作标签 action=delete 是必需的（严格 tagged union，服务端不接受形状猜测）。 *}
+        {* 删除表单在表格外，通过 form 属性关联行按钮，避免嵌套表单。 *}
         {{if len(entries) > 0}}
         <div data-write-host>
-        <p class="form-hint" data-write-status role="status" hidden></p>
+        <p class="form-hint" data-write-status role="alert" hidden></p>
+        <div id="i18n-delete-result"></div>
         {{range i, e := entries}}
-        <form id="i18n-del-{{i}}" class="hidden-form" data-write-url="/api/i18n/save" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
+        <form id="i18n-del-{{i}}" class="hidden-form" hx-post="/api/i18n/save"
+              hx-target="#i18n-delete-result" hx-swap="innerHTML" hx-sync="this:drop"
+              hx-confirm="{{t("uiDelConfirm", "确定要删除吗？")}}"
+              hx-disable="[form='i18n-del-{{i}}']:not(:disabled)" data-write="delete" data-write-reload>
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="key" value="{{e.Key}}">
             <input type="hidden" name="lang" value="{{e.Lang}}">
@@ -173,47 +155,46 @@
 
     {* 新建抽屉：按钮在页头，模板本体留在文档末尾（<template> 不参与渲染）。 *}
     {{if canManage}}
-    <template id="tpl-i18n-create">
-        <form data-write-url="/api/i18n/save" data-write="create"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+<template id="tpl-i18n-create">
+        <form hx-post="/api/i18n/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+              data-write="create" data-write-close="[data-drawer]" data-write-reload>
             <input type="hidden" name="action" value="create">
             {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}
-            <p class="form-hint" data-write-status role="status" hidden></p>
+            <p class="form-hint" data-write-status role="alert" hidden></p>
+            <div data-write-result></div>
             <div class="form-grid">
                 <div class="form-field">
                     <label class="form-label">key</label>
                     <input type="text" class="form-input" name="key" required placeholder="site.component.gallery.prev">
                 </div>
                 <div class="form-field">
-                    <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                    <label class="form-label">{{ t("admin.i18n.label.lang", "语言") }}</label>
                     {* 新建词条的语言：同样来自字典。这里**展示** ui_available 标记 ——
                        它直接回答运营的下一步问题「我该给哪个语言补词条」；
                        标记只是提示（选择本身不受限：没有译文的语言正是最该建词条的）。 *}
                     <select name="lang" class="form-select">
                         {{if isset(.LangOptions)}}{{range _, o := .LangOptions}}
-                        <option value="{{o.Code}}">{{o.Code}}{{if o.UIAvailable}} {{ .["t"]("admin.i18n.option.ui_available", "（界面已有译文）") }}{{end}}</option>
+                        <option value="{{o.Code}}">{{o.Code}}{{if o.UIAvailable}} {{ t("admin.i18n.option.ui_available", "（界面已有译文）") }}{{end}}</option>
                         {{end}}{{end}}
                     </select>
                 </div>
                 <div class="form-field form-field--wide">
-                    <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
+                    <label class="form-label">{{ t("admin.i18n.label.value", "内容") }}</label>
                     <textarea name="value" class="form-textarea" rows="3" required></textarea>
                 </div>
                 <div class="form-field">
-                    <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
+                    <label class="form-label">{{ t("admin.i18n.label.category", "分类") }}</label>
                     <input type="text" class="form-input" name="category" placeholder="ui / shell / enums …">
                 </div>
                 <div class="form-field">
-                    <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
-                    <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.i18n.ph.remark", "来源或修改原因") }}">
+                    <label class="form-label">{{ t("admin.i18n.label.remark", "备注") }}</label>
+                    <input type="text" class="form-input" name="remark" placeholder="{{ t("admin.i18n.ph.remark", "来源或修改原因") }}">
                 </div>
             </div>
             <div class="action-row">
-                {* 无 JS 时写动作不可用：按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js]
-                   放出来），这里说清原因，避免用户以为「按钮不见了」是权限问题。 *}
-                <noscript><p class="form-hint">{{ .["t"]("admin.i18nWrite.noJs", "本页的新建、编辑与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ t("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ t("admin.i18n.action.save", "保存") }}</button>
             </div>
         </form>
     </template>

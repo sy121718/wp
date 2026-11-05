@@ -5,7 +5,7 @@
     function text(root, selector, value) { root.querySelector(selector).textContent = value == null ? '' : String(value); }
     function render(panel, data, state) {
         text(panel, '[data-tag-name]', data.tagName);
-        text(panel, '[data-tag-total]', data.total);
+        text(panel, '[data-tag-total]', panel.getAttribute('data-hit-text').replace(/\{count\}/g, String(data.total)));
         var rows = panel.querySelector('[data-tag-rows]');
         rows.replaceChildren();
         data.items.forEach(function (product) {
@@ -25,7 +25,7 @@
         state.page = data.page;
         state.size = data.pageSize;
         var trigger = document.getElementById('tag-hit-count-' + data.tagId);
-        if (trigger) trigger.textContent = data.total + panel.getAttribute('data-count-tail');
+        if (trigger) trigger.textContent = panel.getAttribute('data-count-text').replace(/\{count\}/g, String(data.total));
         panel.querySelector('[data-tag-result]').hidden = false;
     }
     function load(id, project, page, size) {

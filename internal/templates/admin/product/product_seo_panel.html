@@ -1,10 +1,28 @@
-{* 评分展示只在前端；后端不返回HTML、色标、DOM定位或翻译后的句子。 *}
-{{tr := .["t"]}}
-<div class="wb-seo-panel" data-product-seo-panel role="region" aria-live="polite" hidden>
-    <div class="wb-seo-head"><span class="wb-seo-total" data-seo-total></span><span class="wb-seo-grade" data-seo-grade></span><span class="wb-seo-tip">{{tr("workbench.ui.seo.totalTip", "SEO 评分（0-100）")}}</span></div>
-    <p class="wb-seo-tip">{{tr("workbench.ui.seo.profileWeight", "页型权重：")}}<span data-seo-profile></span></p>
-    <div data-seo-sections></div>
-    <div class="wb-seo-dup" data-seo-duplicates hidden><p class="badge badge-warning">{{tr("workbench.ui.seo.dupPrefix", "标题重复：另有 ")}}<span data-seo-duplicate-count></span>{{tr("workbench.ui.seo.dupSuffix", " 个页面用了同一个标题")}}</p><ul class="wb-seo-issues" data-seo-duplicate-list></ul></div>
-    <p class="wb-seo-tip" data-seo-coverage hidden>{{tr("admin.seo.coverage.incomplete", "重复标题检查未覆盖以下来源：")}}<span data-seo-omitted></span></p>
-    <div class="wb-seo-serp"><div class="wb-serp-title" data-seo-title data-empty="{{tr("admin.seo.serp.titleEmpty", "（未填写标题）")}}"></div><div class="wb-serp-url" data-seo-url data-empty="{{tr("admin.seo.serp.urlEmpty", "（线上路径未知）")}}"></div><div class="wb-serp-desc" data-seo-description data-empty="{{tr("admin.seo.serp.descEmpty", "（未填写描述）")}}"></div></div>
+{* 评分事实由服务端提供；Jet 负责档位、文案与展示，未知内容保持转义。 *}
+{{color := "red-blocking"}}
+{{if .Total >= 90}}{{color = "green"}}{{else if .Total >= 70}}{{color = "lightgreen"}}{{else if .Total >= 40}}{{color = "yellow"}}{{else if .Total > 0}}{{color = "red"}}{{end}}
+<div class="wb-seo-panel" data-product-seo-panel role="region" aria-live="polite">
+    <div class="wb-seo-head"><span class="wb-seo-total" data-seo-total>{{.Total}}</span><span class="wb-seo-grade" data-seo-grade>{{include "../../fragments/seo_grade.html" map("color", color, "tr", t)}}</span><span class="wb-seo-tip">{{t("seoTotalTip", "SEO 评分（0-100）")}}</span></div>
+    <p class="wb-seo-tip">{{t("seoModeWeight", "页型权重：")}}<span data-seo-profile>{{if .ProfileType == "product"}}{{t("schemaProduct", "商品")}}{{else if .ProfileType == "landing"}}{{t("seoModeLanding", "落地页")}}{{else if .ProfileType == "guide"}}{{t("seoModeGuide", "长文指南")}}{{else if .ProfileType == ""}}{{t("uiDef", "默认")}}{{else}}{{.ProfileType}}{{end}}</span></p>
+    <div data-seo-sections>
+        {{range _, sec := .Sections}}
+        {{color := "red-blocking"}}
+        {{if sec.Percent >= 90}}{{color = "green"}}{{else if sec.Percent >= 70}}{{color = "lightgreen"}}{{else if sec.Percent >= 40}}{{color = "yellow"}}{{else if sec.Percent > 0}}{{color = "red"}}{{end}}
+        <section>
+            <div class="wb-seo-sec"><span class="wb-seo-dot is-{{color}}"></span><span class="wb-seo-sec-name">{{include "../../fragments/seo_section_name.html" map("key", sec.Key, "tr", t)}}</span><span class="wb-seo-sec-val">{{sec.Score}}/{{sec.Max}} · {{t("seoModeWeight", "页型权重：")}}{{percent(sec.Weight * 100, 2)}}</span></div>
+            <ul class="wb-seo-issues">
+                {{range _, check := sec.Checks}}{{if !check.Skipped && check.Score < check.Max}}
+                <li>{{include "../../fragments/seo_issue_line.html" map("key", check.Key, "actual", sprintf("%s/%s", check.Score, check.Max), "tr", t, "tn", tn)}}</li>
+                {{end}}{{end}}
+            </ul>
+        </section>
+        {{end}}
+    </div>
+    {{if len(.Duplicates) > 0}}
+    <div class="wb-seo-dup" data-seo-duplicates><p class="badge badge-warning">{{tn("seoDupLine", "重复的 title（{title}）出现在 {count} 个页面", map("title", .Title, "count", len(.Duplicates)))}}</p><ul class="wb-seo-issues" data-seo-duplicate-list>{{range _, item := .Duplicates}}<li>{{include "../../fragments/seo_dup_kind.html" map("kind", item.Kind, "tr", t)}}{{item.Title}} {{item.Path}}</li>{{end}}</ul></div>
+    {{end}}
+    {{if len(.Coverage.Omitted) > 0}}
+    <p class="wb-seo-tip" data-seo-coverage>{{t("seoCoverPartial", "重复标题检查未覆盖以下来源：")}}<span data-seo-omitted>{{range i, item := .Coverage.Omitted}}{{if i > 0}}、{{end}}{{include "../../fragments/seo_dup_kind.html" map("kind", item.Source, "tr", t)}}{{end}}</span></p>
+    {{end}}
+    <div class="wb-seo-serp"><div class="wb-serp-title" data-seo-title>{{if .Title != ""}}{{.Title}}{{else}}{{t("seoTitleEmpty", "（未填写标题）")}}{{end}}</div><div class="wb-serp-url" data-seo-url>{{if .URL != ""}}{{.URL}}{{else}}{{t("seoSerpUrlEmpty", "（线上路径未知）")}}{{end}}</div><div class="wb-serp-desc" data-seo-description>{{if .Description != ""}}{{.Description}}{{else}}{{t("seoDescEmpty", "（未填写描述）")}}{{end}}</div></div>
 </div>

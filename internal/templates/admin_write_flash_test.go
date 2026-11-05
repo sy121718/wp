@@ -34,7 +34,10 @@ func TestAdminWriteFlashTargetsPaired(t *testing.T) {
 		}
 
 		for _, m := range fullWriteFormRe.FindAllString(text, -1) {
-			if !strings.Contains(m, "data-write-url=") {
+			// 写表单的判据是「声明了 HTMX 写方法」：data-write-url 已退役，
+			// 只剩 data-write-reload 而没有 hx-post/put/patch/delete 的表单不会真的提交。
+			if !strings.Contains(m, "hx-post=") && !strings.Contains(m, "hx-put=") &&
+				!strings.Contains(m, "hx-patch=") && !strings.Contains(m, "hx-delete=") {
 				reloadOutsideForm = append(reloadOutsideForm, path+"："+m)
 			}
 		}
@@ -54,6 +57,6 @@ func TestAdminWriteFlashTargetsPaired(t *testing.T) {
 			"新基座只认 data-write-reload（结论经 sessionStorage 跨刷新），旧属性不会生效，回执会静默丢失", p)
 	}
 	for _, p := range reloadOutsideForm {
-		t.Errorf("%s: data-write-reload 出现在没有 data-write-url 的 form 上 —— 它不是写表单，刷新永不触发", p)
+		t.Errorf("%s: data-write-reload 出现在没有 HTMX 写方法的 form 上 —— 它不是写表单，刷新永不触发", p)
 	}
 }

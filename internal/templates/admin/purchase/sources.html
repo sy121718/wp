@@ -58,7 +58,7 @@
                     <select class="form-select" id="src-type" name="type">
                         <option value="">{{ .["t"]("admin.inventory_sources.filter.optionTypeAll", "（全部）") }}</option>
                         {{range _, t := .TypeOptions}}
-                        <option value="{{t.Value}}" {{if t.Value == filterType}}selected{{end}}>{{t.Label}}</option>
+                        <option value="{{t.Value}}" {{if t.Value == filterType}}selected{{end}}>{{if t.Value == "internal"}}{{tr("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）")}}{{else if t.Value == "external"}}{{tr("admin.inventory_sources.stats.external", "外部供应商")}}{{else}}{{t.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -81,7 +81,7 @@
                     <select class="form-select" id="src-status" name="status">
                         <option value="">{{ .["t"]("admin.inventory_sources.filter.optionStatusActive", "（启用中）") }}</option>
                         {{range _, s := .StatusOptions}}
-                        <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
+                        <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{if s.Value == "active"}}{{tr("admin.inventory_sources.status.active", "启用中")}}{{else if s.Value == "disabled"}}{{tr("admin.inventory_sources.status.disabled", "已停用")}}{{else}}{{s.Value}}{{end}}</option>
                         {{end}}
                         <option value="{{.FilterStatusAll}}" {{if filterStatus == .FilterStatusAll}}selected{{end}}>{{ .["t"]("admin.inventory_sources.filter.allWithDisabled", "全部（含停用）") }}</option>
                     </select>
@@ -105,9 +105,10 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接
            带上所有勾中的 ids。行内删除表单因此挪到表格外 —— HTML 不允许 form 嵌套，
            嵌套时浏览器会丢弃内层 form 的开始标签。 *}
-        <form method="post" action="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}" hx-post="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" hx-target="find [data-write-result]" hx-post="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <div data-write-result></div>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if isset(.Buttons["inventory.source_delete"])}}{{if len(.Sources) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -197,10 +198,11 @@
         {* 行内删除表单放表格外（同一个 form 内不能再嵌 form），按钮用 form="<id>" 关联。 *}
         {{range _, s := .Sources}}
         {{if isset(.Buttons["inventory.source_delete"])}}
-        <form id="src-del-{{s.ID}}" method="post" action="/admin/inventory/sources/delete?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/sources/delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write id="src-del-{{s.ID}}" method="post" class="hidden-form" hx-target="find [data-write-result]" hx-post="/admin/inventory/sources/delete?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">
+        <div data-write-result></div>
         </form>
         {{end}}
         {{end}}
@@ -253,9 +255,10 @@
     {{if isset(.Buttons["inventory.source_create"])}}
     <template id="tpl-source-create">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" class="form-stack" hx-target="find [data-write-result]" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <div data-write-result></div>
             <div class="form-group">
                 <label class="form-label req">{{ .["t"]("admin.inventory_sources.label.code", "货源编码") }}</label>
                 <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_sources.ph.code", "如 SZ_SUPPLIER") }}" required autocomplete="off">
@@ -268,7 +271,7 @@
                 <label class="form-label">{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}</label>
                 <select class="form-select" name="type">
                     {{range _, t := .TypeOptions}}
-                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    <option value="{{t.Value}}">{{if t.Value == "internal"}}{{tr("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）")}}{{else if t.Value == "external"}}{{tr("admin.inventory_sources.stats.external", "外部供应商")}}{{else}}{{t.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -276,7 +279,7 @@
                 <label class="form-label">{{ .["t"]("admin.inventory_sources.stats.col.related", "关联方") }}</label>
                 <select class="form-select" name="relatedParty">
                     {{range _, r := .RelatedOptions}}
-                    <option value="{{r.Value}}">{{r.Label}}</option>
+                    <option value="{{r.Value}}">{{if r.Value == ""}}{{tr("admin.inventory_sources.related.typeDefault", "按类型默认 / 不改")}}{{else if r.Value == "true"}}{{tr("admin.inventory_sources.stats.related", "关联方")}}{{else if r.Value == "false"}}{{tr("admin.inventory_sources.stats.unrelated", "非关联方")}}{{else}}{{r.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -305,10 +308,11 @@
     {{range _, s := .Sources}}
     <template id="tpl-source-edit-{{s.ID}}">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" class="form-stack" hx-target="find [data-write-result]" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}" hx-swap="innerHTML" data-write-reload hx-sync="this:drop">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">
+        <div data-write-result></div>
             <div class="form-group">
                 <label class="form-label req">{{ .["t"]("admin.inventory_sources.label.name", "货源名称") }}</label>
                 <input type="text" class="form-input" name="name" value="{{s.Name}}" required>

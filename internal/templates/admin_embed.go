@@ -5,20 +5,27 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+
+	"go_wp/pkg/view/jet"
 )
 
-//go:embed all:admin
-var adminTemplatesFS embed.FS
+//go:embed all:admin all:fragments all:workbench all:partials
+var appTemplatesFS embed.FS
 
 //go:embed all:static
 var staticAssetsFS embed.FS
 
-func newAdminTemplateLoader() (*embedLoader, error) {
-	files, err := listEmbeddedFiles(adminTemplatesFS)
+func newAdminTemplateLoader() (*jet.FSLoader, error) {
+	// 公共 UI 在 pkg/view/ui，业务模板在应用的 embed；按逻辑键合成单一 FS。
+	composite, err := newUICompositeFS(appTemplatesFS)
 	if err != nil {
 		return nil, err
 	}
-	return newEmbedLoader(adminTemplatesFS, files), nil
+	files, err := composite.listAll()
+	if err != nil {
+		return nil, err
+	}
+	return withOwnedTemplates(jet.NewFSLoader(composite, files)), nil
 }
 
 func EmbeddedStaticFS() (http.FileSystem, error) {

@@ -2,6 +2,10 @@
     · 页头一行：标题 + 右侧主行动；筛选与列表同卡；行内表单放表格外。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把 Msg* 裸 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ .["t"]("MsgRolesTitle", "角色管理") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("MsgRolesTitle", "角色管理") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -23,11 +27,8 @@
         </div>
     </header>
 
-    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
-       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论走 JSON 出口（code/message/data），导航由前端 data-write-nav 决定，后端不发跳转。
+       页面没有失败页：列表取数失败也回 JSON，所以这里不再有提示条。 *}
 
     <section class="card list-card">
         {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
@@ -81,10 +82,8 @@
                 <td>{{r.SortOrder}}</td>
                 <td class="col-fill">{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="col-actions">
-                    {* 权限分配走抽屉按需拉片段（data-drawer-url）：它勾的是目录 / 菜单 / 按钮三层，
-                       抽屉一次只装一个角色的树，比给每行预渲染一棵树省掉 N 倍节点。
-                       片段由 RolePermissionsDrawer 渲染，保存回同页（不回新页面）。 *}
-                    {{if isset(.Buttons["role.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/roles/permissions/drawer?role_id={{r.ID}}" data-drawer-title="{{tr("admin.roles.perm.title", "权限分配：")}}{{r.RoleName}}">{{tr("admin.roles.action.permissions", "权限分配")}}</button>{{end}}
+                    {* 权限分配按需读取 Jet 树片段，不为每行预渲染整棵权限树。 *}
+                    {{if isset(.Buttons["role.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open hx-get="/admin/roles/permissions/drawer?role_id={{r.ID}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{tr("admin.roles.perm.title", "权限分配：")}}{{r.RoleName}}">{{tr("admin.roles.action.permissions", "权限分配")}}</button>{{end}}
                     {{if isset(.Buttons["role.update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
                     {{if isset(.Buttons["role.delete"])}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
                 </td>
@@ -183,5 +182,7 @@
         </div>
     </form>
 </template>
+
+
 {{end}}
 {{end}}

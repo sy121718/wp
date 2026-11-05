@@ -13,7 +13,7 @@
      pending   → 出货 / 取消
      in_transit → 签收
 
-   写表单全部走 JSON 端点（data-write + data-write-url + data-write-status）：
+   写表单全部走标准表单 + HTMX（data-write + hx-post + data-write-result）：
    binding.JSON 按 Content-Type 自适应，表单体与 JSON 都能进同一个 handler。
 
    明细行是 lines[i].stockId / lines[i].quantity：表单没有嵌套数组语法，DTO 的
@@ -164,8 +164,9 @@
     {* ===== 取消（隐藏表单，按钮用 form="<id>" 关联） ===== *}
     {{range _, r := rows}}
     {{if r.Status == "requested" || r.Status == "pending"}}
-    <form id="tr-cancel-{{r.ID}}" data-write="custom" data-write-url="/api/inventory/transfer/cancel"
-          data-write-reload class="hidden-form">
+    <form id="tr-cancel-{{r.ID}}" data-write hx-post="/api/inventory/transfer/cancel"
+          hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload class="hidden-form">
+        <div data-write-result></div>
         {{include "../partials/csrf_field.html" map("csrf", csrf)}}
         <p class="form-hint" data-write-status role="status" hidden></p>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -179,7 +180,8 @@
     {{range _, r := rows}}
     {{if r.Status == "requested"}}
     <template id="tpl-transfer-approve-{{r.ID}}">
-        <form data-write="custom" data-write-url="/api/inventory/transfer/approve" data-write-reload>
+        <form data-write hx-post="/api/inventory/transfer/approve" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -212,7 +214,8 @@
     {{range _, r := rows}}
     {{if r.Status == "requested"}}
     <template id="tpl-transfer-reject-{{r.ID}}">
-        <form data-write="custom" data-write-url="/api/inventory/transfer/reject" data-write-reload>
+        <form data-write hx-post="/api/inventory/transfer/reject" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -237,7 +240,8 @@
     {{range _, r := rows}}
     {{if r.Status == "pending"}}
     <template id="tpl-transfer-ship-{{r.ID}}">
-        <form data-write="custom" data-write-url="/api/inventory/transfer/ship" data-write-reload>
+        <form data-write hx-post="/api/inventory/transfer/ship" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -270,7 +274,8 @@
     {{range _, r := rows}}
     {{if r.Status == "in_transit"}}
     <template id="tpl-transfer-receive-{{r.ID}}">
-        <form data-write="custom" data-write-url="/api/inventory/transfer/receive" data-write-reload>
+        <form data-write hx-post="/api/inventory/transfer/receive" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -303,7 +308,8 @@
        明细行在抽屉里动态增删（ui/transfer_lines.js）：表单没有嵌套数组语法，
        行用 lines[i].stockId / lines[i].quantity 提交，DTO 的 BindForm 收这个形状。 *}
     <template id="tpl-transfer-create">
-        <form data-write="custom" data-write-url="/api/inventory/transfer/create" data-write-reload>
+        <form data-write hx-post="/api/inventory/transfer/create" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" data-write-builder="inventory-transfer" data-write-close="[data-drawer]">
+            <div data-write-result></div>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -347,4 +353,6 @@
     </template>
     {{end}}
 </div>
+<script defer src="/static/js/ui/transfer_lines.js"></script>
+<script defer src="/static/js/ui/inventory_transfer.js"></script>
 {{end}}

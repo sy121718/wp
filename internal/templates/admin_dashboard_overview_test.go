@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/i18n"
 )
 
 type tmplOverviewKPI struct {
@@ -90,6 +92,16 @@ type tmplOverview struct {
 }
 
 func TestDashboardRendersOverviewBlocks(t *testing.T) {
+
+	// 粒度标题的文案归词库（578_dashboard_trend_granularity_i18n.sql 已 seed），
+	// 模板不再带中文兜底 —— 这里按生产 seed 注入，别为了迁就测试把兜底写回模板。
+	i18n.InjectForTest(map[string]map[string]string{
+		"admin.dashboard.trend.title.day":   {"zh-CN": "趋势（按天）"},
+		"admin.dashboard.trend.title.hour":  {"zh-CN": "趋势（按小时）"},
+		"admin.dashboard.trend.title.week":  {"zh-CN": "趋势（按周）"},
+		"admin.dashboard.trend.title.month": {"zh-CN": "趋势（按月）"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	data := adminShellData()
 	data["menu"] = "dashboard"

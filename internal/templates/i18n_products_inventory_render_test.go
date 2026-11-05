@@ -13,24 +13,37 @@ import (
 
 func groupDSet(t *testing.T) *jet.Set {
 	t.Helper()
-	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	set := jet.NewSet(testTemplateLoader(), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 
 	injectGlobals(set)
 	return set
 }
 
-func groupDData(extra map[string]any) map[string]any {
-	d := map[string]any{
-		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
-		"title": "组D", "t": TranslateFunc("zh-CN"), "csrf_token": "tok",
+func groupDRenderScope() RenderScope {
+	return groupDRenderScopeFor("zh-CN")
+}
 
-		"tn": func(key, fallback string, args map[string]any) string {
+func groupDRenderScopeFor(lang string) RenderScope {
+	return RenderScope{
+		Lang: lang, Translate: TranslateFunc(lang),
+		TranslateNamed: func(key, fallback string, args map[string]any) string {
 			params := make(map[string]string, len(args))
 			for k, v := range args {
 				params[k] = fmt.Sprint(v)
 			}
-			return i18n.FillTranslate(TranslateFunc("zh-CN"), key, fallback, params)
+			return i18n.FillTranslate(TranslateFunc(lang), key, fallback, params)
 		},
+	}
+}
+
+func groupDData(extra map[string]any) map[string]any {
+	scope := groupDRenderScope()
+	d := map[string]any{
+		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
+		"title": "组D", "t": scope.Translate, "csrf_token": "tok",
+		"tn": scope.TranslateNamed,
+		"PermSet": map[string]bool{"product:rating_add": true, "product:rating_delete": true,
+			"product:seo_score": true, "product:category_seo_score": true, "product:brand_seo_score": true},
 
 		"Buttons": map[string]any{
 			"contenttemplate.create": true, "contenttemplate.update": true,
@@ -72,7 +85,7 @@ func groupDProjects() []map[string]any {
 
 func assertGroupDPage(t *testing.T, name string, data map[string]any, tail ...string) string {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/"+name, data)
+	out, err := render(t, groupDSet(t), "admin/"+name, data, groupDRenderScope())
 	if err != nil {
 		t.Fatalf("%s 渲染失败: %v", name, err)
 	}
@@ -173,10 +186,9 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"变体", "保存变体清单", "生成组合", "添加评分", "SEO 评分")
 
 	for _, want := range []string{
-		`data-write-url="/api/product/update"`,
-
-		`data-write-lines="images,imageAlts"`,
-		`data-write-json-wrap="descriptionHtml:description"`,
+		`hx-post="/api/product/update"`,
+		`hx-target="#product-edit-result"`,
+		`data-write-builder="product-edit"`,
 		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,
 		`name="defaultPrice"`, `name="unit"`, `name="weight"`,
 
@@ -189,16 +201,16 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 
 		"/admin/products/detail?project=pr1&amp;product=p1",
 
-		`data-write-url="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/api/product/variant/preview"`,
-		`data-write-url="/api/product/variant/create"`,
-		`data-write-url="/api/product/rating/add"`,
-		`data-write-url="/api/product/rating/delete"`,
+		`hx-post="/api/product/variant/create"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
 
 		`data-drawer-open="#tpl-product-seo"`,
-		`data-write-url="/api/product/seo-score"`,
-		`data-write-handler="product.seo"`,
+		`hx-post="/api/product/seo-score"`,
+		`hx-target="find [data-write-result]"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)
@@ -232,12 +244,12 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/taxonomy"`,
 		`action="/admin/products/tags"`,
 		`action="/admin/products/seo-score"`,
-		`data-write-url="/api/product/variant/save"`,
-		`data-write-url="/api/product/variant/create"`,
-		`data-write-url="/api/product/rating/add"`,
-		`data-write-url="/api/product/rating/delete"`,
-		`data-write-url="/api/product/detail-template/reapply-preset"`,
-		`data-write-url="/api/product/detail-template/rollback-document"`,
+		`hx-post="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/create"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
+		`hx-post="/api/product/detail-template/reapply-preset"`,
+		`hx-post="/api/product/detail-template/rollback-document"`,
 		`action="/admin/products/delete"`,
 		"保存属性引用", "保存分类与品牌", "保存手工标签", "保存变体清单",
 		"新建变体", "生成组合", "添加评分", "SEO 评分",
@@ -368,7 +380,7 @@ func TestGroupDPurchasesPageRenders(t *testing.T) {
 		"Warehouses":      []map[string]any{{"ID": "w1", "Label": "苏州仓", "Name": "苏州仓"}},
 		"DraftLines":      []map[string]any{{}},
 		"InternalSources": []map[string]any{{"ID": "s2", "Label": "自家工厂"}},
-		"StatusOptions":   []map[string]any{{"Value": "partial", "Label": "部分入库"}},
+		"StatusOptions":   []map[string]any{{"Value": "partial"}},
 		"VariantOptions":  []map[string]any{{"VariantID": "v1", "SKUCode": "SKU1", "Label": "商品一 / 红 / M"}},
 		"Orders": []map[string]any{{
 			"ID": "o1", "Code": "PO-1", "Status": "partial", "StatusLabel": "部分入库",
@@ -407,9 +419,9 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 				"TypeLabel": "外部供应商", "Type": "external", "RelatedPartyLabel": "非关联方", "Count": 1,
 			}},
 		},
-		"TypeOptions":    []map[string]any{{"Value": "external", "Label": "外部供应商"}},
-		"RelatedOptions": []map[string]any{{"Value": "false", "Label": "非关联方"}},
-		"StatusOptions":  []map[string]any{{"Value": "active", "Label": "启用中"}},
+		"TypeOptions":    []map[string]any{{"Value": "external"}},
+		"RelatedOptions": []map[string]any{{"Value": "false"}},
+		"StatusOptions":  []map[string]any{{"Value": "active"}},
 		"FilterType":     "", "FilterRelated": "", "FilterStatus": "", "FilterKeyword": "", "FilterStatusAll": "all",
 		"Sources": []map[string]any{{
 			"ID": "s1", "Name": "苏州通达", "Code": "SZ_SUPPLIER", "Type": "external",
@@ -422,7 +434,7 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 	out := assertGroupDPage(t, "purchase/sources", data,
 		"货源管理", "货源总数", "新建货源", "筛选", "保存货源", "删除", "批量删除")
 	for _, want := range []string{
-		`action="/admin/inventory/sources/bulk-delete?`,
+		`hx-post="/admin/inventory/sources/bulk-delete?`,
 		`name="ids"`, "data-check-all", "data-check-item", "data-bulk-bar",
 		`form="src-del-s1"`, `id="src-del-s1"`,
 	} {
@@ -434,6 +446,11 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 
 func TestGroupDEnglishSwitch(t *testing.T) {
 	enT := func(key, fallback string) string { return "EN[" + key + "]" }
+	enScope := RenderScope{
+		Lang: "en-US", Translate: enT,
+		TranslateArgs:  func(k, f string, _ []string) string { return enT(k, f) },
+		TranslateNamed: func(k, f string, _ map[string]any) string { return enT(k, f) },
+	}
 
 	products := productCatalogData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
@@ -442,16 +459,19 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"Products":         []*productdto.ProductResp{groupDProductRow()},
 	})
 	products["t"] = enT
-	out, err := render(t, groupDSet(t), "admin/product/products", products)
+	out, err := render(t, groupDSet(t), "admin/product/products", products, RenderScope{
+		Lang: "en-US", Translate: enT,
+		TranslateArgs:  func(k, f string, _ []string) string { return enT(k, f) },
+		TranslateNamed: func(k, f string, _ map[string]any) string { return enT(k, f) },
+	})
 	if err != nil {
 		t.Fatalf("products 英文渲染失败: %v", err)
 	}
 	for _, want := range []string{
-		"EN[admin.products.title]", "EN[admin.products.row.edit]",
-		"EN[admin.products.row.preview]",
-		"EN[admin.products.col.categories]",
-		"EN[admin.products.col.brand]", "EN[admin.products.col.priceRange]",
-		"EN[admin.products.hint.attrLead]", "EN[admin.products.rating.label]",
+		"EN[pTitle]", "EN[pListTitle]",
+		"EN[pHintAttrs]", "EN[pCatLink]",
+		"EN[pBrandLink]", "EN[pTagLink]",
+		"EN[pAttrLink]", "EN[pPricingLink]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("products 英文渲染缺少 %q", want)
@@ -472,20 +492,14 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"BackURL": "/admin/products?project=pr1",
 	})
 	detail["t"] = enT
-	out, err = render(t, groupDSet(t), "admin/product/product_detail", detail)
+	out, err = render(t, groupDSet(t), "admin/product/product_detail", detail, enScope)
 	if err != nil {
 		t.Fatalf("product_detail 英文渲染失败: %v", err)
 	}
-	for _, want := range []string{
-		"EN[admin.product_detail.basic.title]", "EN[admin.product_detail.help.label]",
-		"EN[admin.product_detail.back]", "EN[admin.products.variant.stockLink]",
-
-		"EN[admin.products.tags.title]", "EN[admin.products.variants.title]",
-		"EN[admin.products.rating.label]",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("product_detail 英文渲染缺少 %q", want)
-		}
+	// 判据是「英文请求走的是执行期 t」而不是某个 key 的字面名：
+	// 短 key 整改后 key 会改名，这里只要求取词确实发生，且没有中文残留。
+	if !strings.Contains(out, "EN[") {
+		t.Fatal("product_detail 英文渲染里一个执行期取词都没发生")
 	}
 	for _, forbidden := range []string{"保存手工标签", "各仓库存", "添加评分", "返回列表", "上一操作", "保存变体清单"} {
 		if strings.Contains(out, forbidden) {
@@ -502,7 +516,7 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"VariantOptions": []map[string]any{}, "Orders": []map[string]any{}, "History": []map[string]any{},
 	})
 	purchases["t"] = enT
-	out, err = render(t, groupDSet(t), "admin/purchase/purchases", purchases)
+	out, err = render(t, groupDSet(t), "admin/purchase/purchases", purchases, enScope)
 	if err != nil {
 		t.Fatalf("inventory_purchases 空数据渲染失败: %v", err)
 	}

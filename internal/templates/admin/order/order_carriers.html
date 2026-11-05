@@ -4,7 +4,7 @@
    停用（status = disabled）而不是删除 —— 历史发货单上的 carrier_id 还指着它，
    删掉会让「这单是哪家送的」变成一条悬空外键。
 
-   写动作走 JSON API（data-write + data-write-url）：/api/order/carrier/{create,update}。
+   写动作是标准 HTMX 表单：/api/order/carrier/{create,update}；成功后整页刷新（data-write-reload）。
    跟踪页模板里只允许 {tracking_no} 一个占位符 —— 别的占位符会让页面上原样显示
    `{order_no}`，比「没有跟踪页」更让人困惑。前端给一行预览（填运单号后的样子）。 *}
 {{extends "../layout.html"}}
@@ -99,9 +99,15 @@
         </div>
     </section>
 
+    {* 写结果区：失败信息落在表单自己的错误区里，成功后整页刷新。 *}
+    <div id="carrier-write-result" role="status"></div>
+
     {* 停用 / 启用的隐藏表单（表格外，按钮用 form="<id>" 关联）。 *}
     {{range _, c := carriers}}
-    <form id="carrier-toggle-{{c.ID}}" data-write="update" data-write-url="/api/order/carrier/update" data-write-nav method="post" class="hidden-form">
+    <form id="carrier-toggle-{{c.ID}}" class="hidden-form" data-write
+          hx-post="/api/order/carrier/update" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+        <div data-write-result role="status"></div>
         {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{c.ID}}">
@@ -111,7 +117,9 @@
 
     {* ===== 新建承运商（抽屉） ===== *}
     <template id="tpl-carrier-create">
-        <form data-write="create" data-write-url="/api/order/carrier/create" data-write-nav method="post">
+        <form data-write hx-post="/api/order/carrier/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+            <div data-write-result role="status" class="form-error"></div>
             {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -144,7 +152,9 @@
     {* ===== 编辑承运商（每个一张抽屉模板：字段要回填） ===== *}
     {{range _, c := carriers}}
     <template id="tpl-carrier-edit-{{c.ID}}">
-        <form data-write="update" data-write-url="/api/order/carrier/update" data-write-nav method="post">
+        <form data-write hx-post="/api/order/carrier/update" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+            <div data-write-result role="status" class="form-error"></div>
             {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{c.ID}}">

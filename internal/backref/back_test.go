@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	warnUnsafePath   = "回跳路径不合法（非站内相对路径或超长），回控制面首页"
+	warnUnsafePath   = "回跳路径不合法（非站内相对路径或超长），回落调用方给定路径"
 	warnDroppedValue = "回跳参数被丢弃（超长或含控制字符）"
 )
 

@@ -168,7 +168,9 @@
             </span>
         </h2>
         {{if .Actionable}}
-        <form data-write-url="/api/customer/status" data-write="create" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+        <form data-write hx-post="/api/customer/status" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" data-write-reload class="form-inline">
+ <div data-write-result></div>
  <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
@@ -176,7 +178,7 @@
             {* 动词与后缀两段都走词条：原先前半句是服务端硬编码中文（「停用」），
                英文界面上与 i18n 的 account_suffix 拼起来就是「Disable这个账号」式中英混排。
                现在中英各自成句（zh「停用」+「这个账号」/ en "Disable" + " this account"）。 *}
-            <button type="submit" data-requires-js hidden class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
         </form>
         {{else}}
         <p class="hint">
@@ -186,11 +188,13 @@
         </p>
         {{end}}
         {{if .Locked}}
-        <form data-write-url="/api/customer/unlock" data-write="create" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+        <form data-write hx-post="/api/customer/unlock" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" data-write-reload class="form-inline">
+ <div data-write-result></div>
  <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
-            <button type="submit" data-requires-js hidden class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
+            <button type="submit" class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
         </form>
         {{else}}
         <p class="hint">

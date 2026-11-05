@@ -4,6 +4,10 @@
     · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把 Msg* 裸 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ .["t"]("adminTitle", "管理员") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("adminTitle", "管理员") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -25,11 +29,8 @@
         </div>
     </header>
 
-    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
-       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论走 JSON 出口（code/message/data），导航由前端 data-write-nav 决定，后端不发跳转。
+       页面没有失败页：列表取数失败也回 JSON，所以这里不再有提示条。 *}
 
     <section class="card list-card">
         {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
@@ -90,9 +91,9 @@
                     {{else}}<span class="badge badge-mute">{{tr("admin.admins.status.unknown", "未知")}}</span>{{end}}
                 </td>
                 <td class="col-actions">
-                    {* 授权分配走抽屉按需拉片段（data-drawer-url）：一次只装一个人的授权集合。 *}
-                    {{if isset(.Buttons["admin.role_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/roles/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.role.title", "分配角色：")}}{{a.Username}}">{{tr("admin.admins.role.action", "分配角色")}}</button>{{end}}
-                    {{if isset(.Buttons["admin.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/menus/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.menu.title", "菜单权限：")}}{{a.Username}}">{{tr("admin.admins.menu.action", "菜单权限")}}</button>{{end}}
+                    {* 授权分配通过 HTMX 按需读取 Jet 片段：一次只装一个人的授权集合。 *}
+                    {{if isset(.Buttons["admin.role_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open hx-get="/admin/administrators/roles/drawer?user_id={{a.ID}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{tr("admin.admins.role.title", "分配角色：")}}{{a.Username}}">{{tr("admin.admins.role.action", "分配角色")}}</button>{{end}}
+                    {{if isset(.Buttons["admin.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open hx-get="/admin/administrators/menus/drawer?user_id={{a.ID}}" hx-target="#admin-drawer-body" hx-swap="innerHTML" data-drawer-title="{{tr("admin.admins.menu.title", "菜单权限：")}}{{a.Username}}">{{tr("admin.admins.menu.action", "菜单权限")}}</button>{{end}}
                     {{if isset(.Buttons["admin.edit"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{tr("admin.admins.action.edit", "编辑")}}</button>{{end}}
                     {{if isset(.Buttons["admin.delete"])}}<button type="submit" form="admin-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.admins.action.delete", "删除")}}</button>{{end}}
                 </td>
@@ -178,5 +179,7 @@
         </div>
     </form>
 </template>
+
+
 {{end}}
 {{end}}

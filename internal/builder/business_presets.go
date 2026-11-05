@@ -1,11 +1,11 @@
 package builder
 
 import (
+	"errors"
 	"context"
 	_ "embed"
 	"fmt"
 
-	blockcontract "go_wp/internal/module/block/contract"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -69,5 +69,9 @@ func (BusinessPresetRegistry) ResolvePreset(_ context.Context, key string, versi
 			return append(json.RawMessage(nil), entry.document...), nil
 		}
 	}
-	return nil, blockcontract.ErrPresetUnavailable
+	return nil, ErrPresetUnavailable
 }
+
+// ErrPresetUnavailable 表示受控预设不存在：工具自有事实，
+// 业务侧按需映射到自己的错误声明。
+var ErrPresetUnavailable = errors.New("受控预设不可用")

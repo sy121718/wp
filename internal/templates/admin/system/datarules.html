@@ -3,6 +3,10 @@
    需要改规则配置走抽屉底部「编辑规则配置」链接到独立页 /admin/datarules/edit?id=。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把 Msg* 裸 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ .["t"]("dataruleTitle", "数据权限") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("dataruleTitle", "数据权限") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -24,11 +28,8 @@
         </div>
     </header>
 
-    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
-       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论走 JSON 出口（code/message/data），导航由前端 data-write-nav 决定，后端不发跳转。
+       页面没有失败页：列表取数失败也回 JSON，所以这里不再有提示条。 *}
 
     <section class="card list-card">
         {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
@@ -80,7 +81,7 @@
                 <td class="text-mute">{{r.Domain}}</td>
                 <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.datarules.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.datarules.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
-                <td class="text-mute">{{if r.UpdateTime}}{{r.UpdateTime}}{{else}}{{r.CreateTime}}{{end}}</td>
+                <td class="text-mute">{{if r.UpdateTime}}{{dateTime(r.UpdateTime)}}{{else}}{{dateTime(r.CreateTime)}}{{end}}</td>
                 <td class="col-actions">
                     {{if isset(.Buttons["datarule.update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
                     {{if isset(.Buttons["datarule.delete"])}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}

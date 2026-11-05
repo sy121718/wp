@@ -1,14 +1,6 @@
-{* 商品 SEO 抽屉在页面中克隆；接口仅返回评分事实。 *}
-{{tr := .["t"]}}
+{* 商品 SEO 抽屉在页面中克隆，接口返回 Jet 评分片段。 *}
 <div class="perm-drawer">
-    <p class="perm-intro">{{tr("admin.products.seo.drawerHint", "评测按商品页的权重档案，覆盖标题、描述、关键词、内容与图片等维度。分数是提示性的：它不会拦住保存，也不会写库或改动产物。")}}</p>
-    <form data-write="custom" data-write-url="/api/product/seo-score" data-write-handler="product.seo" data-product-seo-load>
-        <input type="hidden" name="csrf_token" value="{{.["csrf_token"]}}">
-        <input type="hidden" name="projectId" value="{{.Scope.ProjectID}}">
-        <input type="hidden" name="id" value="{{.Product.ID}}">
-        <p class="form-hint" data-write-status role="status" hidden></p>
-        <div class="action-row"><button type="submit" class="btn" data-requires-js hidden>{{tr("admin.products.row.seoScore", "SEO 评分")}}</button></div>
-        {{include "product_seo_panel.html"}}
-    </form>
-    <div class="form-actions"><button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button></div>
+    <p class="perm-intro">{{t("pSeoDrawerHint", "评测按商品页的权重档案，覆盖标题、描述、关键词、内容与图片等维度。分数是提示性的：它不会拦住保存，也不会写库或改动产物。")}}</p>
+    {{include "product_seo_form.html" map("Kind", "product", "ProjectID", .Scope.ProjectID, "ID", .Product.ID, "CSRF", .["csrf_token"])}}
+    <div class="form-actions"><button type="button" class="btn btn-ghost" data-drawer-close>{{t("uiActCancel", "取消")}}</button></div>
 </div>

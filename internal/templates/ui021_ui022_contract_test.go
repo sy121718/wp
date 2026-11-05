@@ -9,7 +9,7 @@ import (
 )
 
 func TestUI021WorkbenchFocusModeContract(t *testing.T) {
-	loader := jet.NewOSFileSystemLoader(".")
+	loader := testTemplateLoader()
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	data := map[string]any{
 		"title": "页面管理", "pageId": "page-1", "isBlock": false, "isTemplate": false,

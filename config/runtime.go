@@ -1,129 +1,78 @@
 package config
 
 import (
-	"errors"
-	"fmt"
 	"sync"
 
+	"github.com/spf13/viper"
+
+	"go_wp/pkg/lifecycle"
 	"go_wp/pkg/logger"
 )
 
+type viperConfig = *viper.Viper
+
 var (
-	runtimeMu           sync.Mutex
-	initializedRegistry []runtimeComponent
-	runtimeInited       bool
+	runtimeMu sync.Mutex
+	runtime   = lifecycle.New(nil)
+	suppress  = struct{ fn func() }{}
 )
 
-const (
-	errComponentInitFailedPrefix = "component init failed"
-	errComponentNotReadyPrefix   = "component not ready"
-)
-
+// InitComponents 初始化进程组件；失败逆序回滚且不重复关闭。
 func InitComponents() error {
-	runtimeMu.Lock()
-	defer runtimeMu.Unlock()
-
-	if runtimeInited {
-		return nil
-	}
-
 	cfg, err := GetViper()
 	if err != nil {
 		return err
 	}
-
 	if suppressWorkers.Load() {
 		cfg.Set(keyRunWorker, false)
 	}
-
-	for _, prepare := range runtimePreparers {
-		prepare()
-	}
-
-	initialized := make([]runtimeComponent, 0, len(runtimeComponents))
-
+	runtimeMu.Lock()
+	defer runtimeMu.Unlock()
+	buildRuntimeLocked(cfg)
 	logger.Scene("init").Info("开始初始化组件...")
-	for _, critical := range []bool{true, false} {
-		for _, component := range runtimeComponents {
-			if component.Critical != critical {
-				continue
-			}
-			if component.Enabled != nil && !component.Enabled(cfg) {
-				continue
-			}
-
-			if err := component.Init(cfg); err != nil {
-				logger.Scene("init").With("component", component.Name).Error(err, "组件初始化失败")
-				initErr := fmt.Errorf("%s [%s]: %w", errComponentInitFailedPrefix, component.Name, err)
-				closeErr := closeComponents(initialized)
-				if closeErr != nil {
-					return errors.Join(initErr, closeErr)
-				}
-				return initErr
-			}
-			initialized = append(initialized, component)
-		}
+	if err := runtime.Init(); err != nil {
+		return err
 	}
-
-	initializedRegistry = initialized
-	runtimeInited = true
 	logger.Scene("init").Info("组件初始化完成")
 	return nil
 }
 
+// CloseComponents 逆序关闭已初始化组件。
 func CloseComponents() error {
 	runtimeMu.Lock()
 	defer runtimeMu.Unlock()
-
-	if !runtimeInited {
-		return nil
-	}
-
 	logger.Scene("init").Info("开始关闭组件...")
-	closeErr := closeComponents(initializedRegistry)
-	initializedRegistry = nil
-	runtimeInited = false
-
-	if closeErr != nil {
-		return closeErr
+	err := runtime.Close()
+	if err != nil {
+		return err
 	}
-
 	logger.Scene("init").Info("组件关闭完成")
 	return nil
 }
 
+// ValidateReady 校验运行时已初始化且组件就绪。
 func ValidateReady() error {
 	runtimeMu.Lock()
-	ready := runtimeInited
-	components := append([]runtimeComponent(nil), initializedRegistry...)
-	runtimeMu.Unlock()
-
-	if !ready {
-		return fmt.Errorf("%s [runtime]: runtime not initialized", errComponentNotReadyPrefix)
-	}
-
-	for _, component := range components {
-		if component.Ready == nil {
-			continue
-		}
-		if err := component.Ready(); err != nil {
-			return fmt.Errorf("%s [%s]: %w", errComponentNotReadyPrefix, component.Name, err)
-		}
-	}
-	return nil
+	defer runtimeMu.Unlock()
+	return runtime.Ready()
 }
 
-func closeComponents(components []runtimeComponent) error {
-	var closeErr error
-	for i := len(components) - 1; i >= 0; i-- {
-		component := components[i]
-		if component.Close == nil {
-			continue
+// buildRuntimeLocked 把应用注册表翻译成生命周期组件。
+func buildRuntimeLocked(cfg viperConfig) {
+	components := make([]lifecycle.Component, 0, len(runtimeComponents))
+	for _, c := range runtimeComponents {
+		comp := lifecycle.Component{Name: c.Name, Critical: c.Critical}
+		if c.Enabled != nil && cfg != nil {
+			enabledFn := c.Enabled
+			comp.Enabled = func() bool { return enabledFn(cfg) }
 		}
-		if err := component.Close(); err != nil {
-			logger.Scene("init").With("component", component.Name).Error(err, "组件关闭失败")
-			closeErr = errors.Join(closeErr, fmt.Errorf("关闭组件 %s 失败: %w", component.Name, err))
+		if c.Init != nil && cfg != nil {
+			initFn := c.Init
+			comp.Init = func() error { return initFn(cfg) }
 		}
+		comp.Ready = c.Ready
+		comp.Close = c.Close
+		components = append(components, comp)
 	}
-	return closeErr
+	runtime = lifecycle.New(components)
 }

@@ -6,48 +6,49 @@
 <div data-category-form-host>
 
 
-    <form data-write="custom" data-write-url="/api/product/category/{{if create}}create{{else}}update{{end}}" data-write-close="[data-drawer]"
-          data-write-keep-empty="parentId">
+    <form data-write hx-post="/api/product/category/{{if create}}create{{else}}update{{end}}" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" data-write-builder="product-category">
+        <div data-write-result></div>
         <input type="hidden" name="projectId" value="{{.Project}}">
         {{if !create}}<input type="hidden" name="id" value="{{entity.ID}}">{{end}}
         <div class="form-inline">
-            <input aria-label="{{tr("admin.product_categories.label.name", "分类名称")}}" class="form-input" type="text" name="name" value="{{entity.Name}}" placeholder="{{tr("admin.product_categories.label.name", "分类名称")}}" required>
-            <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{entity.Slug}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
+            <input aria-label="{{tr("catNameLabel", "分类名称")}}" class="form-input" type="text" name="name" value="{{entity.Name}}" placeholder="{{tr("catNameLabel", "分类名称")}}" required>
+            <input aria-label="{{tr("catSlugLabel", "URL 段")}}" class="form-input" type="text" name="slug" value="{{entity.Slug}}" placeholder="{{tr("catSlugLabel", "URL 段")}}" autocomplete="off">
             {{parent := entity.ParentID}}
             {{id := entity.ID}}
-            <div data-category-parent-picker data-category-project="{{.Project}}" data-category-empty="{{tr("admin.product_categories.parentSearch.empty", "没有匹配的分类")}}" data-category-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
-            <label for="category-parent-search-{{if create}}new{{else}}{{entity.ID}}{{end}}">{{tr("admin.product_categories.parentSearch.label", "搜索父级分类")}}</label>
+            <div data-category-parent-picker data-category-project="{{.Project}}" data-category-empty="{{tr("catParentEmpty", "没有匹配的分类")}}" data-category-failed="{{tr("uiInternalErr", "系统内部错误，请稍后重试")}}">
+            <label for="category-parent-search-{{if create}}new{{else}}{{entity.ID}}{{end}}">{{tr("catParentFind", "搜索父级分类")}}</label>
 
             <input id="category-parent-search-{{if create}}new{{else}}{{entity.ID}}{{end}}" type="search" class="form-input" autocomplete="off"
-                   placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}"
+                   placeholder="{{tr("catParentFindPh", "按名称搜索父级")}}"
                    data-category-parent-search>
-            <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
-                <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
+            <select aria-label="{{tr("catParent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
+                <option value="" {{if parent == ""}}selected{{end}}>{{tr("catOptTopLevel", "（顶级分类）")}}</option>
                 {{parentPresent := parent == ""}}{{range _, o := .Categories}}{{if o.ID == parent}}{{parentPresent = true}}{{end}}{{if o.ID != id}}<option value="{{o.ID}}" {{if o.ID == parent}}selected{{end}}>{{repeat("　", o.Depth)}}{{o.Name}}</option>{{end}}{{end}}
 
-                {{if !parentPresent}}<option value="{{parent}}" selected>{{parent}}{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}</option>{{end}}
+                {{if !parentPresent}}<option value="{{parent}}" selected>{{parent}}{{tr("catParentScope", "（不属于本工程）")}}</option>{{end}}
             </select>
             <div data-category-parent-results role="status"></div>
             </div>
-            <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{entity.Sort}}" inputmode="numeric" step="1">
+            <input aria-label="{{tr("catSortPh", "排序")}}" class="form-input" type="number" name="sort" value="{{entity.Sort}}" inputmode="numeric" step="1">
 
             {{imgValue := entity.Image}}
             {{yield mediaField(field="image", key="cat", value=imgValue,
-                pickLabel=tr("admin.common.media.pick", "媒体库"),
-                clearLabel=tr("admin.common.media.clear", "清除"))}}
+                pickLabel=tr("uiMediaPick", "媒体库"),
+                clearLabel=tr("uiMediaClear", "清除"))}}
         </div>
 
-        <label class="form-label" for="rich-description-{{if create}}new{{else}}{{entity.ID}}{{end}}">{{tr("admin.product_categories.label.description", "分类描述")}}</label>
+        <label class="form-label" for="rich-description-{{if create}}new{{else}}{{entity.ID}}{{end}}">{{tr("catDesc", "分类描述")}}</label>
         {{key := entity.ID}}{{if create}}{{key = "new"}}{{end}}
         {{descValue := entity.Description}}
         {{yield richEditor(field="description", key=key, value=descValue)}}
 
         <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="action-row">
-            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
-            {{if !create}}<button type="submit" formnovalidate class="btn" data-requires-js hidden data-write="custom" data-write-url="/api/product/category/seo-score" data-write-handler="product.seo">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("uiActCancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("catNewSubmit", "新建分类")}}{{else}}{{tr("catListSave", "保存分类")}}{{end}}</button>
         </div>
-        {{if !create}}{{include "product_seo_panel.html"}}{{end}}
     </form>
+    {{if !create && isset(.PermSet) && isset(.PermSet["product:category_seo_score"]) && .PermSet["product:category_seo_score"]}}
+    {{include "product_seo_form.html" map("Kind", "category", "ProjectID", .Project, "ID", entity.ID, "CSRF", .CSRF)}}
+    {{end}}
 </div>

@@ -1,15 +1,12 @@
 package text
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/templates"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
+	"go_wp/pkg/view/jet"
 )
 
 const AdminHomePath = "/admin"
@@ -19,26 +16,17 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 		data = map[string]any{}
 	}
 
-	lang := Lang(c)
-	t := templates.TranslateFunc(lang)
+	// 取词函数只有一份组装点（见 Scope）：页面数据 map 与渲染器 VarMap 取同一份，
+	// 两条出口才有可能给出同一句译文。
+	scope := Scope(c)
+	lang := scope.Lang
+	t := scope.Translate
 
 	data["lang"] = lang
 	data["t"] = t
-
-	tfFn := func(key, fallback string, args []string) string {
-		return response.ArgsText(c, key, fallback, args)
-	}
-	data["tf"] = tfFn
-
-	tnFn := func(key, fallback string, args map[string]any) string {
-		params := make(map[string]string, len(args))
-		for k, v := range args {
-			params[k] = fmt.Sprint(v)
-		}
-		return i18n.FillTranslate(t, key, fallback, params)
-	}
-	data["tn"] = tnFn
-	data["langs"] = templates.LanguageOptions(lang)
+	data["tf"] = scope.TranslateArgs
+	data["tn"] = scope.TranslateNamed
+	data["langs"] = jet.LanguageOptions(lang)
 
 	data["req_path"] = RequestURI(c)
 	data["lang_redirect"] = LangRedirect(c)
@@ -48,7 +36,7 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 	}
 
 	seedNested(data, map[string]any{
-		"lang": lang, "t": t, "tf": tfFn, "tn": tnFn,
+		"lang": lang, "t": t, "tf": scope.TranslateArgs, "tn": scope.TranslateNamed,
 		"langs": data["langs"], "lang_redirect": data["lang_redirect"], "req_path": data["req_path"],
 	}, 1)
 	return data

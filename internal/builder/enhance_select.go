@@ -3,7 +3,7 @@ package builder
 import (
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/logger"
 )
 

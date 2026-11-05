@@ -1,8 +1,6 @@
 package templates
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,10 +9,7 @@ const csrfFieldPartial = "admin/partials/csrf_field.html"
 
 func renderCSRFProbe(t *testing.T, data map[string]any) string {
 	t.Helper()
-	src, err := os.ReadFile(filepath.FromSlash(csrfFieldPartial))
-	if err != nil {
-		t.Fatalf("读取片段失败: %v", err)
-	}
+	src := layeredTemplateSource(t, csrfFieldPartial)
 	set := memSet(t, map[string]string{
 		"admin/order/probe.html": `{{import "../partials/csrf_field.html"}}` +
 			`{{block body()}}{{yield csrfField()}}{{end}}`,

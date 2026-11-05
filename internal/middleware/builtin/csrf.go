@@ -1,30 +1,13 @@
 package builtin
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
-	"net/http"
+	"github.com/gin-gonic/gin"
 
 	"go_wp/pkg/auth"
-	"go_wp/pkg/response"
-
-	"github.com/gin-gonic/gin"
+	"go_wp/pkg/middleware"
 )
 
-const (
-	csrfSessionKey = "csrf_token"
-
-	csrfHeaderName = "X-CSRF-Token"
-
-	csrfFormKey = "csrf_token"
-)
-
-type CSRFTokenStore interface {
-	Get(c *gin.Context) string
-
-	Save(c *gin.Context, token string) error
-}
+const csrfSessionKey = "csrf_token"
 
 type adminCSRFStore struct{}
 
@@ -44,99 +27,40 @@ func (adminCSRFStore) Save(c *gin.Context, token string) error {
 	return auth.SetSessionValue(c, csrfSessionKey, token)
 }
 
+// CSRFMiddleware 后台上行请求的参数表双提交校验。
 func CSRFMiddleware() gin.HandlerFunc {
-	return CSRFMiddlewareWith(adminCSRFStore{})
+	return middleware.CSRFMiddleware(adminCSRFStore{})
 }
 
+// CSRFTokenStore 是框架原语的会话存储接口，保留别名供应用侧实现使用。
+type CSRFTokenStore = middleware.CSRFTokenStore
+
+// CSRFMiddlewareWith 用调用方 store 执行同一个校验。
 func CSRFMiddlewareWith(store CSRFTokenStore) gin.HandlerFunc {
-	if store == nil {
-		store = adminCSRFStore{}
-	}
-	return func(c *gin.Context) {
-		if !isUnsafeMethod(c.Request.Method) {
-			c.Next()
-			return
-		}
-
-		token := c.GetHeader(csrfHeaderName)
-		if token == "" {
-			token = c.PostForm(csrfFormKey)
-		}
-
-		expected := store.Get(c)
-		if token == "" || expected == "" || !secureCompare(token, expected) {
-			response.ErrorWithMessage(c, 403, "CSRF 校验失败")
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
+	return middleware.CSRFMiddleware(store)
 }
 
+// EnsureCSRFToken 读取或签发后台会话 token。
 func EnsureCSRFToken(c *gin.Context) (string, error) {
-	return EnsureCSRFTokenWith(c, adminCSRFStore{})
+	return middleware.EnsureCSRFToken(c, adminCSRFStore{})
 }
 
+// EnsureCSRFTokenWith 用调用方 store 读取或签发 token。
 func EnsureCSRFTokenWith(c *gin.Context, store CSRFTokenStore) (string, error) {
-	if store == nil {
-		store = adminCSRFStore{}
-	}
-	if token := store.Get(c); token != "" {
-		return token, nil
-	}
-	token, err := newCSRFToken()
-	if err != nil {
-		return "", err
-	}
-	if err := store.Save(c, token); err != nil {
-		return "", err
-	}
-	return token, nil
+	return middleware.EnsureCSRFToken(c, store)
 }
 
+// GetCSRFToken 是 EnsureCSRFToken 的历史名称。
 func GetCSRFToken(c *gin.Context) (string, error) {
 	return EnsureCSRFToken(c)
 }
 
+// RotateCSRFToken 丢弃旧 token 并签发新值。
 func RotateCSRFToken(c *gin.Context) (string, error) {
-	return RotateCSRFTokenWith(c, adminCSRFStore{})
+	return middleware.RotateCSRFToken(c, adminCSRFStore{})
 }
 
+// RotateCSRFTokenWith 用调用方 store 轮换 token。
 func RotateCSRFTokenWith(c *gin.Context, store CSRFTokenStore) (string, error) {
-	if store == nil {
-		store = adminCSRFStore{}
-	}
-	token, err := newCSRFToken()
-	if err != nil {
-		return "", err
-	}
-	if err := store.Save(c, token); err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-func newCSRFToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func secureCompare(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
-func isUnsafeMethod(method string) bool {
-	switch method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return middleware.RotateCSRFToken(c, store)
 }

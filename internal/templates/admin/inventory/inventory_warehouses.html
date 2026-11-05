@@ -65,13 +65,14 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接
            带上所有勾中的 ids。行内表单（设为默认仓 / 删除）因此挪到表格外 ——
            HTML 不允许 form 嵌套，嵌套时浏览器会丢弃内层 form 的开始标签。 *}
-        <form method="post" action="/admin/inventory/warehouses/bulk-delete?{{ .ListQuery }}" hx-post="/admin/inventory/warehouses/bulk-delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" action="/admin/inventory/warehouses/bulk-delete?{{ .ListQuery }}" hx-post="/admin/inventory/warehouses/bulk-delete?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if isset(.Buttons["inventory.warehouse_delete"])}}{{if len(.Warehouses) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.inventory.warehouses.bulkDeleteConfirm", "删除选中的仓库？默认仓或仓内仍有非零库存的会被跳过，其余照常删除。"), danger=true)}}
+                <button type="submit" class="btn btn-sm btn-danger"
+                        hx-confirm="{{tr("admin.inventory.warehouses.bulkDeleteConfirm", "删除选中的仓库？默认仓或仓内仍有非零库存的会被跳过，其余照常删除。")}}">{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
             <div class="table-wrap table-scroll" tabindex="0">
@@ -147,14 +148,13 @@
            —— 与 product_categories / menus 同一手法。 *}
         {{range _, w := .Warehouses}}
         {{if not w.IsDefault}}
-        <form id="wh-default-{{w.ID}}" method="post" action="/admin/inventory/warehouse/default?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/warehouse/default?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write id="wh-default-{{w.ID}}" method="post" action="/admin/inventory/warehouse/default?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/warehouse/default?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">
         </form>
         {{end}}
         {{if isset(.Buttons["inventory.warehouse_delete"])}}
-        <form id="wh-del-{{w.ID}}" method="post" action="/admin/inventory/warehouse/delete?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/warehouse/delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write id="wh-del-{{w.ID}}" method="post" action="/admin/inventory/warehouse/delete?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/warehouse/delete?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">
@@ -167,7 +167,7 @@
     {{if isset(.Buttons["inventory.warehouse_create"])}}
     <template id="tpl-warehouse-create">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" action="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -242,7 +242,7 @@
     {{range _, w := .Warehouses}}
     <template id="tpl-warehouse-edit-{{w.ID}}">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <form data-write method="post" action="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">

@@ -42,9 +42,6 @@
     function sendOf(root) { return root.querySelector('[data-ai-fab-send]'); }
     function stopOf(root) { return root.querySelector('[data-ai-fab-stop]'); }
     function stateOf(root) { return root.querySelector('[data-ai-fab-state]'); }
-    function answerOf(root) { return root.querySelector('[data-ai-fab-answer]'); }
-    function thinkOf(root) { return root.querySelector('[data-ai-fab-think]'); }
-    function thinkBodyOf(root) { return root.querySelector('[data-ai-fab-think-body]'); }
     function attachOf(root) { return root.querySelector('[data-ai-fab-attach]'); }
     function pickOf(root) { return root.querySelector('[data-ai-fab-pick]'); }
     function fileOf(root) { return root.querySelector('[data-ai-fab-file]'); }
@@ -181,18 +178,12 @@
     // 会话一直是连着的（会话键固定、历史逐轮进请求），模型记得上一轮、界面却看不出来
     // —— 「它像个搜索引擎」这个印象就是这么来的。
     //
-    // 结构化写法（turns 容器）与旧写法（面板里单个 [data-ai-fab-answer]）都支持：
-    // htmx 那条非流式路径渲染的是 partials/ai_fab_result.html，它没有 turns 容器。
+    // 两条渲染路径（悬浮球与 dashboard 的同构提问框）都有 [data-ai-fab-turns]，
+    // 所以这里只有一种写法。没有 turns 容器就是标记坏了 —— 直接返回，不拿「单个回答位」
+    // 的旧形状兜底（那条路径随非流式 /admin/ai/ask 一起退役了，留着只会让真实缺口静默通过）。
     function beginTurn(root, userText, imageLabels) {
         var turns = turnsOf(root);
-        if (!turns) {
-            var plain = { answer: answerOf(root), think: thinkOf(root), thinkBody: thinkBodyOf(root) };
-            if (plain.answer) { plain.answer.textContent = ''; }
-            if (plain.think) { plain.think.hidden = true; }
-            if (plain.thinkBody) { plain.thinkBody.textContent = ''; }
-            setState(root, '');
-            return plain;
-        }
+        if (!turns) { return null; }
 
         var turn = document.createElement('div');
         turn.className = 'ai-turn';
@@ -236,6 +227,7 @@
     // 一条回答」两条记录，界面上要合回一轮）。
     function appendTurn(root, userText, answerText, reasoning, imageLabels) {
         var cur = beginTurn(root, userText, imageLabels);
+        if (!cur) { return null; }
         if (reasoning) {
             if (cur.think) { cur.think.hidden = false; }
             appendText(cur.thinkBody, reasoning);
@@ -434,6 +426,7 @@
         var imageLabels = pendingImages.map(function (it) { return it.label; });
 
         var cur = beginTurn(root, draft, imageLabels);
+        if (!cur) { return; }
         // 带 data-ai-fab-dock 的实例（概览页那只会常驻的提问框）：提问期间给根加
         // .is-asking —— 它的作用是**收起下面那三块数据**（CSS 里的相邻兄弟选择器），
         // 而不是把这个提问框挪到页面底部。挪位置的做法会把卡片与图表留在视口里

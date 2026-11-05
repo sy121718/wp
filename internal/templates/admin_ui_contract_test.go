@@ -65,11 +65,7 @@ func TestMigratedAdminPagesDoNotUseLegacyClasses(t *testing.T) {
 				if i := strings.LastIndex(ref, "/"); i >= 0 {
 					ref = ref[i+1:]
 				}
-				partSrc, perr := os.ReadFile(adminTemplatePath(t, ref))
-				if perr != nil {
-					t.Fatalf("%s 里 include 的片段 %s 读不到：%v", path, m[1], perr)
-				}
-				layoutSrc += string(partSrc)
+				layoutSrc += adminTemplateSource(t, ref)
 			}
 		}
 		if !hasFormLayout(layoutSrc) {

@@ -14,7 +14,9 @@
 <div class="stack">
     {* 页头恒渲染（含「还没有工程」时）——「没有工程」是主区的一种状态，不是另一张页面：
        整页必须有 h1 与导航锚点，否则用户不知道自己在哪一页（02-O theme 任务 2）。
-       页头依赖的 Projects / SelectedProject 由 handler 的 templateMap 恒定给齐。 *}
+       页头依赖的 Projects / SelectedProject 由 handler 的 struct 视图恒定给齐；
+       SelectedProject 这个键名由 themeManageData.SelectedProjectID 的 view tag 对齐
+       （adminui.ViewMap 默认取字段名，只有带 view tag 才换名）。 *}
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">

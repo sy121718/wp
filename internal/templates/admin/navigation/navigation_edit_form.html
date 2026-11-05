@@ -2,8 +2,8 @@
 {{f := .NavEditEcho}}
 <div data-drawer-fragment data-nav-edit-host>
     {{if .NavEditError != ""}}<p class="badge badge-warning" role="alert">{{.NavEditError}}</p>{{end}}
-    <form method="post" action="/admin/navigations/update?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" class="form-stack"
-          hx-post="/admin/navigations/update?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML">
+    <form data-write hx-post="/admin/navigations/update?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" class="form-stack"
+          hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML" hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{f.ProjectID}}">
         <input type="hidden" name="kind" value="{{f.Kind}}">
@@ -26,8 +26,8 @@
         </div>
     </form>
     {{if .NavEditPanelAvail}}
-    <form method="post" action="/admin/navigations/panel?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" class="form-stack mt-lg"
-          hx-post="/admin/navigations/panel?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML">
+    <form data-write hx-post="/admin/navigations/panel?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}" class="form-stack mt-lg"
+          hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML" hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{f.ProjectID}}">
         <input type="hidden" name="kind" value="{{f.Kind}}">
@@ -49,7 +49,9 @@
         </select>
         <div class="action-row"><button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button></div>
     </form>
-    <form method="post" action="/admin/navigations/panel/create?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}">
+    <form data-write hx-post="/admin/navigations/panel/create?project={{f.ProjectID}}&amp;kind={{f.Kind}}&amp;menu={{f.ID}}"
+          data-write-nav="[data-nav-next]"
+          hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML" hx-sync="this:drop">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{f.ProjectID}}">
         <input type="hidden" name="kind" value="{{f.Kind}}">

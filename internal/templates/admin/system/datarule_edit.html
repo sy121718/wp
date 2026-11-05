@@ -1,5 +1,9 @@
 {* admin/datarule_edit.html — 数据规则编辑：detail 回显 + config JSON + 保存/返回 *}
 {{extends "../layout.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把 Msg* 裸 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ .["t"]("dataruleTitle", "数据权限") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("dataruleTitle", "数据权限") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -15,8 +19,8 @@
         </div>
     </header>
 
-    {* 保存失败不再回本页并带 ?err=（写动作的结论走 shell.RenderJump 的整页提示，见 admin_jump.go）：
-       提示页会把原因说清楚，并提供回编辑页的链接。本页因此没有错误槽位。 *}
+    {* 保存失败走 JSON 出口（code/message/data）：前端按 message 弹提示，
+       不再回本页带 ?err=。本页因此没有错误槽位。 *}
 
     <section class="card card-body">
         {* 不用 form-inline：它是 flex 容器，会把 .form-row 压成内容宽（grid 的 auto-fit 因此
@@ -31,10 +35,9 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label req">{{ .["t"]("admin.datarules.field.domain", "数据域") }}</label>
-                    {* 换域即按新域白名单重渲染条件区（字段 / 操作符都跟着换）。 *}
+                    {* 换域时从 schema JSON 接口读取字段事实，本地模板更新选项。 *}
                     <select name="domain" class="form-select"
-                            hx-post="/admin/datarules/config-editor" hx-include="closest form"
-                            hx-vals='{"action":"refresh"}' hx-target="#datarule-config-editor" hx-swap="innerHTML">
+                            data-datarule-domain data-current-domain="{{.Detail.Domain}}">
                         {{range _, dm := .Domains}}
                         <option value="{{dm.Domain}}"{{if .Detail.Domain == dm.Domain}} selected{{end}}>{{dm.DomainLabel}}{{tr("admin.datarules.paren_open", "（")}}{{dm.Domain}}{{tr("admin.datarules.paren_close", "）")}}</option>
                         {{end}}
@@ -54,8 +57,7 @@
             </div>
             {* 配置编辑器标记：出现即表示本次提交带完整配置（列表抽屉不带，沿用库中配置） *}
             <input type="hidden" name="config_editor" value="1">
-            {* 不传参：片段与本页共享同一份数据上下文（片段里取 .Editor），
-               与片段端点自己渲染时的形状一致 —— 否则同一份模板会有两种数据形状。 *}
+            {* 页面内复用：真实配置和 schema 字段事实随首屏交付。 *}
             {{include "datarule_config_editor.html"}}
             <div class="action-row">
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.save_plain", "保存") }}</button>

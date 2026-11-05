@@ -1,0 +1,7 @@
+{* 页面译文保存的逐行错误：标题与原因都是业务事实，由 Jet 取词。 *}
+<div role="alert" data-ui-error>
+    <p>{{t(.Title.Key, .Title.Fallback)}}</p>
+    {{if len(.Rows) > 0}}
+    <ul>{{range _, row := .Rows}}<li>{{if row.Label != ""}}<code>{{row.Label}}</code>：{{end}}{{t(row.Msg.Key, row.Msg.Fallback)}}</li>{{end}}</ul>
+    {{end}}
+</div>

@@ -42,10 +42,8 @@
     <td class="text-mute text-sm">{{ref}}</td>
     <td class="col-actions">
         <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-        {* 删除走 JSON API（表单在表格外，见 blocks.html 的行内删除表单；按钮用 form 属性挂过去）。
-            按钮随该 form 一起需要 JS：无 JS 时写动作没有兜底端点，藏起来并在表单上方说清原因，
-            比留一个「点了只是重新加载本页」的按钮诚实。 *}
-        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger" data-requires-js hidden>{{tr("admin.blocks.action.delete", "删除")}}</button>
+        {* 删除表单在表格外（HTML 不允许 form 嵌套），按钮用 form 属性挂过去。 *}
+        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
     </td>
 </tr>
 {{end}}

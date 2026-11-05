@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 )
 
 func SiteFaceRel(prefix, fullPath string) (rel string, ok bool) {

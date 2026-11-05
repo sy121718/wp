@@ -99,13 +99,11 @@
            行为全在基座里 —— 模板不写内联 JS。
            没有 method/action 是刻意的：禁用 JS 时提交按钮是 hidden 的（下方 noscript 说明原因），
            不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
-        <form data-write-url="/api/navigation/create"
-              data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              class="form-stack">
+        <form data-write hx-post="/api/navigation/create" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="kind" value="{{kind}}">
-            {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-field">
                 <label class="form-label req" for="nav-new-title">{{ .["t"]("admin.navigations.field.title", "菜单文字") }}</label>
@@ -142,7 +140,7 @@
                    同样需要 JS。改词条要动 public/migrations（另开卡），本卡只登记不改。 *}
                 <noscript><p class="form-hint">{{ .["t"]("admin.navigations.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.navigations.add", "添加") }}</button>
+                <button type="submit" class="btn btn-primary" >{{ .["t"]("admin.navigations.add", "添加") }}</button>
             </div>
         </form>
     </template>
@@ -183,20 +181,13 @@
                提交按钮沿用「本组没有可加入项」的置灰判据，且**刻意不加** data-requires-js：
                基座放行该属性时会一并摘掉 disabled，等于把这条判据抹掉。抽屉内容在 <template>
                里、无 JS 时根本打不开，所以这里不需要切片 A 那种 noscript 兜底。 *}
-            <form data-write-url="/api/navigation/create"
-                  data-write="bulk"
-                  data-write-outcome="add"
-                  data-write-extra="action,projectId,kind,sourceType"
-                  data-msg-none-selected="{{tr("admin.navigations.notice.noSourcePicked", "请至少勾选一项要加入菜单的内容。")}}"
-                  data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
-                  data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                  data-msg-refresh="{{tr("admin.navigations.write.refresh", "刷新列表")}}"
-                  class="form-stack">
-                <input type="hidden" name="action" value="addSource">
+            <form id="nav-add-source-{{g.Type}}" method="post" data-write
+                  hx-post="/api/navigation/sources" hx-target="find [data-write-result]" hx-swap="innerHTML"
+                  hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" class="form-stack">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="kind" value="{{kind}}">
                 <input type="hidden" name="sourceType" value="{{g.Type}}">
-                {* 结果区：批量档就地显示摘要 + 逐条原因，刷新的入口也挂在这儿（不自动刷新）。 *}
+                <div data-write-result></div>
                 <p class="form-hint" data-write-status role="status" hidden></p>
                 {{range _, it := g.Items}}
                 {* 显示 Title（人类可读标题）为主、URL 为辅 —— 不是 Label。
@@ -216,7 +207,7 @@
                        而 33 个候选一个也勾不动时提交，用户收到的是「请至少勾选一项要加入菜单的内容」
                        —— 那句提示在这个场景里是误导（他一个都勾不了）。判据由页面数据给出
                        （navSourceGroup.Usable = 本组至少一个候选有公开路径）。 *}
-                    <button data-requires-js hidden type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
+                    <button  type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
                             title="{{tr("admin.navigations.add_to_menu_disabled", "本组没有可加入的内容：都还没有公开路径，先发布后再添加。")}}"{{end}}>{{tr("admin.navigations.add_to_menu", "加入菜单")}}</button>
                 </div>
             </form>
@@ -257,12 +248,9 @@
            语义（去重 / 上限 200 / 逐条失败不中断 / 子项一并删除）全在服务端同一个
            /api/navigation/delete 里，页面这层只负责「勾选 → 提交 → 把结果说出来」。
            结论词条与页面提示页时代同一批（admin.navigations.bulkResult.*，命名占位符）。 *}
-        <form data-write-url="/api/navigation/delete"
-              data-write="bulk"
-              data-msg-none-selected="{{tr("admin.navigations.bulkResult.noneSelected", "没有勾选任何菜单项，列表未改动。")}}"
-              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-              data-msg-refresh="{{tr("admin.navigations.write.refresh", "刷新列表")}}">
+        <form data-write hx-post="/api/navigation/delete-bulk" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-reload>
+            <div data-write-result></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Rows) > 0}}
@@ -299,7 +287,7 @@
                     </td>
                     {* 层级缩进：模板只把 Depth 放进 CSS 变量，间距由 theme.css 的 .tree-cell 算 ——
                        模板与 Go 都不产出 px（改间距 / 换皮只动那一条 CSS）。 *}
-                    <td><div class="tree-cell" style="--tree-depth:{{r.Depth}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</div></td>
+                    <td><div class="tree-cell" style="--tree-depth:{{r.Depth}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</div></td>
                     <td><code>{{r.Path}}</code></td>
                     <td>{{targetLabel}}</td>
                     <td>
@@ -313,7 +301,7 @@
                     </td>
                     <td class="col-actions">
                         {{if canUpdate}}
-                        <button type="button" class="btn btn-sm" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                         {{end}}
                         {* 行内删除同样**没有无 JS 兜底**（写动作由浏览器直调接口完成）：按钮 hidden，
                             由基座的 [data-requires-js] 在有 JS 时放出来。留着可见会让用户点一下
@@ -345,18 +333,18 @@
        表单刻意不带 method / action：留着 action，一旦无 JS 被提交就会打成一条已退役的页面 POST。 *}
     <div data-write-host>
         <p class="form-hint" data-write-status role="status" hidden></p>
-        <form id="nav-up-{{r.ID}}" class="hidden-form"
-              data-write-url="/api/navigation/update" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
-            <input type="hidden" name="action" value="move">
+        <form id="nav-up-{{r.ID}}" class="hidden-form" data-write
+              hx-post="/api/navigation/move" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
             <input type="hidden" name="dir" value="up">
         </form>
-        <form id="nav-down-{{r.ID}}" class="hidden-form"
-              data-write-url="/api/navigation/update" data-write="create"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
-            <input type="hidden" name="action" value="move">
+        <form id="nav-down-{{r.ID}}" class="hidden-form" data-write
+              hx-post="/api/navigation/move" hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-sync="this:drop" data-write-reload>
+            <div data-write-result></div>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
             <input type="hidden" name="dir" value="down">
@@ -364,10 +352,11 @@
     </div>
     {* 行内删除走 JSON 单档（只发 id）：确认框由 data-confirm 承担，成功整页刷新
        （列表的派生列由服务端重算，就地删行会同源不上）。 *}
-    <form id="nav-del-{{r.ID}}" class="hidden-form"
-          data-write-url="/api/navigation/delete" data-write="single"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-          data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}" data-confirm-danger>
+    <form id="nav-del-{{r.ID}}" class="hidden-form" data-write
+          hx-post="/api/navigation/delete" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" data-write-reload
+          hx-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}">
+        <div data-write-result></div>
         <input type="hidden" name="id" value="{{r.ID}}">
     </form>
     {{end}}

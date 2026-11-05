@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"go_wp/internal/module/plugin/scaffold"
+	"go_wp/pkg/scaffold"
 )
 
 func main() {

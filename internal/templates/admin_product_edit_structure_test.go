@@ -39,7 +39,7 @@ func productEditPageData() map[string]any {
 
 func productEditRender(t *testing.T) (*html.Node, string) {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/product/product_edit", productEditPageData())
+	out, err := render(t, groupDSet(t), "admin/product/product_edit", productEditPageData(), groupDRenderScope())
 	if err != nil {
 		t.Fatalf("商品编辑页渲染失败: %v", err)
 	}
@@ -68,7 +68,7 @@ func productEditStack(t *testing.T, root *html.Node) *html.Node {
 
 func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-url") == api
+		return peEl(n, "form") && peAttr(n, "hx-post") == api
 	})
 }
 
@@ -144,17 +144,19 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		t.Fatal("商品编辑页缺少SEO本地抽屉入口")
 	}
 	if strings.Contains(raw, "/admin/products/seo/drawer") || strings.Contains(raw, `action="/admin/products/seo-score"`) {
-		t.Fatal("SEO不得恢复后端HTML片段入口")
+		t.Fatal("SEO 抽屉结构必须来自本地模板，评分结果另走明确的 Jet HTML 端点")
 	}
 	seoTemplates := peAll(root, func(n *html.Node) bool { return peEl(n, "template") && peAttr(n, "id") == "tpl-product-seo" })
 	if len(seoTemplates) != 1 {
 		t.Fatalf("SEO必须有一个本地抽屉模板，实际%d", len(seoTemplates))
 	}
-	seoForms := productEditFormByWriteAPI(seoTemplates[0], "/api/product/seo-score")
-	if len(seoForms) != 1 || peAttr(seoForms[0], "data-write-handler") != "product.seo" {
-		t.Fatal("SEO抽屉必须使用JSON评分处理器")
+	seoForms := peAll(seoTemplates[0], func(n *html.Node) bool {
+		return peEl(n, "form") && peAttr(n, "hx-post") == "/api/product/seo-score"
+	})
+	if len(seoForms) != 1 || peAttr(seoForms[0], "hx-target") != "find [data-write-result]" || peAttr(seoForms[0], "hx-swap") != "innerHTML" || peHasAttr(seoForms[0], "data-write-handler") {
+		t.Fatal("SEO 抽屉必须由 HTMX 请求 Jet HTML 并局部交换")
 	}
-	if len(productEditFormByWriteAPI(stack, "/api/product/seo-score")) != 0 {
+	if peUp(seoForms[0], func(n *html.Node) bool { return n == stack }) != nil {
 		t.Fatal("SEO表单应处于未激活的本地模板，不能常驻编辑区")
 	}
 
@@ -214,11 +216,11 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	}
 	form := forms[0]
 
-	if got := peAttr(form, "data-write-url"); got != "/api/product/update" {
+	if got := peAttr(form, "hx-post"); got != "/api/product/update" {
 		t.Fatalf("编辑表单 hx-post 应为 /api/product/update，实际 %q", got)
 	}
-	if got := peAttr(form, "data-write"); got == "" {
-		t.Fatalf("编辑表单缺少 data-write（写基座必填属性；hx-swap=none 已由基座内置）")
+	if !peHasAttr(form, "data-write") || peAttr(form, "data-write-builder") != "product-edit" || peAttr(form, "hx-target") != "#product-edit-result" || peAttr(form, "hx-swap") != "innerHTML" {
+		t.Fatal("编辑表单应由 HTMX 提交真实对象，成功只更新声明的结果区")
 	}
 
 	for _, ctl := range peAll(form, peIsFormControl) {
@@ -324,13 +326,13 @@ func submitInFold(t *testing.T, fold *html.Node, api string) {
 	t.Helper()
 	forms := productEditFormByWriteAPI(fold, api)
 	if len(forms) != 1 {
-		t.Fatalf("折叠区内应恰好一个 data-write-url=%s 的表单，实际 %d 个", api, len(forms))
+		t.Fatalf("折叠区内应恰好一个 hx-post=%s 的表单，实际 %d 个", api, len(forms))
 	}
 	btns := peAll(forms[0], func(n *html.Node) bool {
 		return peEl(n, "button") && strings.EqualFold(peAttr(n, "type"), "submit")
 	})
 	if len(btns) != 1 {
-		t.Fatalf("折叠区内的 data-write-url=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
+		t.Fatalf("折叠区内的 hx-post=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
 	}
 
 	if !peHasAttr(btns[0], "data-requires-js") || !peHasAttr(btns[0], "disabled") || !peHasAttr(btns[0], "hidden") {

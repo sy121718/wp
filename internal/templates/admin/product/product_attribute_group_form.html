@@ -2,17 +2,16 @@
 {{gfCreate := !isset(.Entity)}}
 {{entity := map("ID", "new", "Name", "", "Key", "", "Sort", 0, "IsVariation", true)}}{{if !gfCreate}}{{entity = .Entity}}{{end}}
 {{gfTr := .["t"]}}
-{{gfNamePh := gfTr("admin.product_attributes.ph.groupName", "属性组名称")}}
-{{gfKeyPh := gfTr("admin.product_attributes.ph.key", "标识")}}
+{{gfNamePh := gfTr("attrGroupName", "属性组名称")}}
+{{gfKeyPh := gfTr("attrKeyPh", "标识")}}
 {{if gfCreate}}
-{{gfNamePh = gfTr("admin.product_attributes.ph.groupNameExample", "属性组名称（如 颜色）")}}
-{{gfKeyPh = gfTr("admin.product_attributes.ph.keyExample", "标识（留空自动生成，如 color）")}}
+{{gfNamePh = gfTr("attrGroupNameEg", "属性组名称（如 颜色）")}}
+{{gfKeyPh = gfTr("attrKeyEg", "标识（留空自动生成，如 color）")}}
 {{end}}
         <div data-write-host>
-        <form data-write="custom" data-write-url="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" class="form-stack" data-attr-group-form
-              {{if gfCreate}}data-write-json="values"{{end}}
-              data-msg-ok="{{gfTr("admin.product_attributes.saved", "已保存。")}}"
-              data-msg-failed="{{gfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form data-write hx-post="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write-close="[data-drawer]" data-write-builder="product-attribute-values" class="form-stack" data-attr-group-form>
+            <div data-write-result></div>
+            <p class="form-hint">{{gfTr("attrSaved", "已保存。")}}</p>
             <input type="hidden" name="projectId" value="{{.Project}}">
             {{if !gfCreate}}
             <input type="hidden" name="id" value="{{entity.ID}}">
@@ -20,10 +19,10 @@
             <div class="form-inline">
                 <input aria-label="{{gfNamePh}}" type="text" class="form-input" name="name" value="{{entity.Name}}" placeholder="{{gfNamePh}}" required>
                 <input aria-label="{{gfKeyPh}}" type="text" class="form-input" name="key" value="{{entity.Key}}" placeholder="{{gfKeyPh}}" autocomplete="off">
-                <input aria-label="{{gfTr("admin.product_attributes.ph.sort", "排序")}}" type="number" class="form-input" name="sort" value="{{entity.Sort}}" placeholder="{{gfTr("admin.product_attributes.ph.sort", "排序")}}" inputmode="numeric" step="1">
+                <input aria-label="{{gfTr("attrSort", "排序")}}" type="number" class="form-input" name="sort" value="{{entity.Sort}}" placeholder="{{gfTr("attrSort", "排序")}}" inputmode="numeric" step="1">
                 <label class="attr-switch">
                     <input type="hidden" name="isVariation" value="0">
-                    <input type="checkbox" name="isVariation" value="1"{{if entity.IsVariation}} checked{{end}}> {{gfTr("admin.product_attributes.isVariation", "参与变体")}}
+                    <input type="checkbox" name="isVariation" value="1"{{if entity.IsVariation}} checked{{end}}> {{gfTr("attrIsVar", "参与变体")}}
                 </label>
             </div>
 
@@ -33,8 +32,8 @@
             </div>
             {{end}}
             <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{gfTr("admin.common.action.cancel", "取消")}}</button>
-                {{if gfCreate}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.create.submit", "新建属性组")}}</button>{{else}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.list.save", "保存属性组")}}</button>{{end}}
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{gfTr("uiActCancel", "取消")}}</button>
+                {{if gfCreate}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("attrNewSubmit", "新建属性组")}}</button>{{else}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("attrListSave", "保存属性组")}}</button>{{end}}
             </div>
         </form>
         <p class="form-hint" data-write-status role="status" hidden></p>

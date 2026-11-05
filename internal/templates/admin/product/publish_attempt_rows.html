@@ -1,0 +1,27 @@
+{* 发布历史按页返回 Jet 片段：行结构只在这里写一次，页面与「加载更多」共用。 *}
+{{attempts := .Attempts}}{{nextPage := .NextPage}}{{projectID := .ProjectID}}{{productID := .ProductID}}
+{{if len(attempts.Rows) == 0}}
+<p class="page-sub ph-empty">{{t("pPubHistEmpty", "这个商品还没有发布尝试记录。")}}</p>
+{{else}}
+{{range _, a := attempts.Rows}}
+<div class="ph-row" data-row>
+    <span class="ph-time">{{formatTime(a.CreatedAt)}}</span>
+    <span class="ph-outcome">
+        {{if a.Outcome == "success"}}{{include "../partials/badge.html" map("tone", "success", "label", t("pPubHistOk", "成功"))}}{{else}}{{include "../partials/badge.html" map("tone", "danger", "label", t("pPubHistFail", "失败"))}}{{end}}
+    </span>
+    <span class="ph-trigger">
+        {{t("pPubHistTrigger", "触发")}}
+        {{if a.Trigger == "create"}}{{t("pPubHistTNew", "首次发布")}}{{else if a.Trigger == "manual"}}{{t("pPubHistTManual", "手动发布")}}{{else if a.Trigger == "template_switch"}}{{t("pPubHistTSwitch", "换模板")}}{{else if a.Trigger == "update_url"}}{{t("pPubHistTUrl", "改 URL")}}{{else if a.Trigger == "rollback"}}{{t("pPubHistTUndo", "回滚")}}{{else if a.Trigger == "override"}}{{t("pPubOverride", "改文档")}}{{else if a.Trigger == "auto_rebuild"}}{{t("pPubHistTAuto", "自动重建")}}{{else}}{{a.Trigger}}{{end}}
+    </span>
+    <span class="ph-who">{{a.OperatorName}}</span>
+    <span class="ph-langs">{{range i, l := a.Langs}}{{if i}}, {{end}}{{l}}{{end}}</span>
+    <span class="ph-artifact">{{a.ArtifactHash}}</span>
+    <span class="ph-cost">{{a.DurationMs}} ms{{if a.Attempts > 1}} · {{a.Attempts}}x{{end}}</span>
+    {{if a.Outcome != "success"}}<span class="ph-error">{{t("pPubHistFail", "失败")}}</span>{{end}}
+</div>
+{{end}}
+{{if attempts.HasMore}}
+<button type="button" class="btn btn-sm" hx-get="/api/product/publish-attempts?project={{projectID}}&amp;productId={{productID}}&amp;page={{nextPage}}"
+        hx-target="closest .ph-box" hx-swap="beforeend" hx-sync="this:drop">{{t("pPubHistMore", "加载更多")}}</button>
+{{end}}
+{{end}}

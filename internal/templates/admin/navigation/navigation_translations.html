@@ -97,13 +97,13 @@
         </div>
     </section>
     {{else}}
-    <form id="nav-translations-form" method="post"
-          data-write-url="/api/navigation/update" data-write="create"
-          data-write-rows=".nav-tr-row;context,hash,target"
-          data-write-items
-          data-write-nav="{{ .["SuccessURL"] }}">
-        {* 身体只带 action / lang / project 与行数组：筛选词不进身体（它只影响回跳地址），
-           否则严格白名单的端点会整条请求拒掉。CSRF 走 X-CSRF-Token 头（基座行为）。 *}
+    <form id="nav-translations-form" data-write
+          hx-post="/api/navigation/translations" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+          data-write-builder="navigation-translations">
+        {* 行是结构化输入：context/hash/target 三元组由 builder 明确编码成 JSON，
+           普通字段只带 action / lang / project；CSRF 走 X-CSRF-Token 头（基座行为）。 *}
+        <div data-write-result></div>
         <input type="hidden" name="action" value="translations">
         <input type="hidden" name="lang" value="{{lang}}">
         <input type="hidden" name="project" value="{{projectID}}">
@@ -132,4 +132,5 @@
     </form>
     {{end}}
 </div>
+<script defer src="/static/js/ui/navigation_translations.js"></script>
 {{end}}

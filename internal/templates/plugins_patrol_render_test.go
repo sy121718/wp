@@ -22,7 +22,7 @@ type patrolView struct {
 
 func pluginsPatrolSet(t *testing.T) *jet.Set {
 	t.Helper()
-	return jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	return jet.NewSet(testTemplateLoader(), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 }
 
 func pluginsPatrolData(patrol any) map[string]any {

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	breadcrumbPkg "go_wp/internal/builder/components/breadcrumb"
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	breadcrumbPkg "go_wp/pkg/builder/components/breadcrumb"
+	"go_wp/pkg/builder/core"
 )
 
 const breadcrumbDocJSON = `{

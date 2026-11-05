@@ -1,0 +1,6 @@
+{* admin/ai/ai_models_appended.html — 追加模型成功的写回片段。
+
+   ① 模型目录区换回服务端事实；
+   ② 清空候选弹窗宿主（弹窗在它里面，换空即关闭）。 *}
+{{include "provider_models.html" .Models}}
+<div id="ai-picker-host" hx-swap-oob="innerHTML"></div>

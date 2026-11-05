@@ -1,0 +1,2 @@
+{{s := .status}}{{sl := s}}{{if s == "draft"}}{{sl = .t("pStatusDraft", "草稿")}}{{else if s == "published"}}{{sl = .t("pStatusLive", "已上架")}}{{else if s == "archived"}}{{sl = .t("pStatusArchived", "已下架")}}{{end}}
+<span class="badge badge-{{if s == "published"}}success{{else if s == "archived"}}danger{{else if s == "draft"}}warning{{else}}mute{{end}}">{{sl}}</span>

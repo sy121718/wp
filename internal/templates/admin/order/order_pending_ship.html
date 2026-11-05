@@ -101,7 +101,7 @@
                 <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
                     {{if r.Shippable}}
                     <button type="button" class="btn btn-sm btn-primary"
-                            data-drawer-url="/admin/orders/ship-form?orderId={{r.OrderID}}"
+                            data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/orders/ship-form?orderId={{r.OrderID}}"
                             data-drawer-title="{{tr("admin.order.pendingShip.shipTitle", "发货：")}}{{r.OrderNo}}">{{tr("admin.order.pendingShip.ship", "发货")}}</button>
                     {{else}}
                     {* 不可发：按钮禁用 + 一行说明。理由码由 service 给（它对着发货用例的每一步），

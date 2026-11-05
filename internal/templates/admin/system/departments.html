@@ -2,6 +2,10 @@
     · 页头一行：标题 + 右侧主行动；筛选与列表同卡；行内表单放表格外。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{* 标题在模板里取词：layout 的 pageTitle / topbarTitle 兜底直接渲染 .title，
+   交给控制器就是把 Msg* 裸 key 上屏（换语言也不会变）。 *}
+{{block pageTitle()}}{{ .["t"]("deptTitle", "部门管理") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("deptTitle", "部门管理") }}{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -23,11 +27,8 @@
         </div>
     </header>
 
-    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
-       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论走 JSON 出口（code/message/data），导航由前端 data-write-nav 决定，后端不发跳转。
+       页面没有失败页：列表取数失败也回 JSON，所以这里不再有提示条。 *}
 
     <section class="card list-card">
         {* 筛选进入 SQL，分页链接保留关键词；重置回全量第一页。 *}

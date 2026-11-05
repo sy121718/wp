@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"go_wp/config"
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -24,6 +26,7 @@ func Setup(engine *gin.Engine) {
 	}
 
 	engine.Use(builtin.RequestIDMiddleware())
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
 	engine.Use(builtin.Recovery())
 	engine.Use(builtin.CORS())
 	engine.Use(builtin.SecurityHeadersMiddleware())

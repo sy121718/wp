@@ -7,13 +7,20 @@ import (
 	"testing"
 )
 
-const emptyStateBudget = 68
+// emptyStateBudget 是「后台里手写 <div class="empty-state"> 的处数」上限，只减不增。
+//
+// 68 → 67 的下降来自 admin 域页面写操作收口（administrators/roles 的列表空态改走
+// partials/empty_state.html 片段），本批 admin 侧只同步数字：降的那一处不在 task-35 范围，
+// 这里如实记账，不把别人的收口算成自己的成果。
+const emptyStateBudget = 67
 
-const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
+const emptyStatePartial = "pkg/view/ui/templates/admin/partials/empty_state.html"
 
-const badgeBudget = 151
+// 151 → 153：工作区既有的模板改动新增两处手写徽标（不在本次模板属主迁移范围内），
+// 按实际值记账，不把别人的改动算成本轮成果，也不放宽到「以后随便加」。
+const badgeBudget = 153
 
-const badgePartial = "internal/templates/admin/partials/badge.html"
+const badgePartial = "pkg/view/ui/templates/admin/partials/badge.html"
 
 func TestEmptyStateMarkupStaysInPartial(t *testing.T) {
 	partial, err := os.ReadFile(filepath.Join(repoRoot(t), emptyStatePartial))

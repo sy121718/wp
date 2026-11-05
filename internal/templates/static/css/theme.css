@@ -1041,6 +1041,12 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 
 /* ── 4. 列表卡：工具行 + 撑满剩余视口的滚动区 ────────────────────────── */
 .list-card { display: flex; flex-direction: column; min-height: 0; }
+/* [hidden] 必须显式压过上面的 display: flex —— 浏览器 UA 的 [hidden]{display:none}
+   优先级低于任何作者样式，所以 .list-card 一旦是 flex，hidden 属性就完全失效：
+   元素仍参与布局、占位、可聚焦（AI 供应商空态就是这样在有卡时依然显示的）。
+   同因先例见本文件 .nav-panel-preview-pop[hidden] / .bulk-bar[hidden] / .perm-node[hidden]。
+   写在 .list-card 之后、只加一条属性选择器，不改动 .list-card 本身的布局契约。 */
+.list-card[hidden] { display: none; }
 /* 工具行并入列表卡（复用既有 .list-toolbar，这里补齐与卡片内边距的对齐）。 */
 .list-card > .list-toolbar, .list-card > .filter-bar { border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
 .filter-bar {
@@ -1263,7 +1269,8 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 
 /* ── 11.3 概览页的 AI 提问区 ──────────────────────────────────────────
    结构与悬浮球同构（同一组 data-ai-fab-* 钩子，见 partials/ai_fab.html），
-   .ai-fab-body / .ai-fab-think / .ai-fab-answer / .ai-fab-state 的样式直接沿用 §12.4。
+   .ai-fab-body / .ai-fab-think / .ai-fab-state 的样式直接沿用 §12.4
+   （回答样式走 .ai-turn-answer —— 轮次列表，不是已退役的 .ai-fab-answer）。
    这里只补本页特有的三件：
      · 未提问时居中占位 —— 一团空白会让人以为页面还没加载完；
      · **不限定宽度**：它是这一页的主要入口，缩成 720px 的一条会让宽屏上两侧空出
@@ -1539,7 +1546,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* ==========================================================================
    角色权限分配（角色列表的抽屉片段 /admin/roles/permissions/drawer）
    授权树是 DFS 展平的「一行一个节点」：缩进由行内 style 的 padding-left 给出
-   （Go 侧算好，模板只渲染），折叠与搜索靠 data-depth 的连续区间隐藏 ——
+   （Jet 按节点深度计算），折叠与搜索靠 data-depth 的连续区间隐藏 ——
    所以这里既不需要嵌套结构，也不需要层级连线定位。
    ========================================================================== */
 .perm-intro { margin: 6px 0 10px; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
@@ -2002,6 +2009,11 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     z-index: 60;
 }
 
+/* 为悬浮按钮预留末尾滚动空间，最后一行操作也能滚出遮挡区。 */
+.admin-layout:has(> .ai-fab) .admin-content {
+    padding-bottom: calc(48px + var(--sp-lg) * 2);
+}
+
 .ai-fab-btn {
     width: 48px;
     height: 48px;
@@ -2069,8 +2081,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     padding: var(--sp-md);
 }
 
-/* 回答要保留换行：模型经常给编号列表，pre-wrap 是唯一不丢结构又不需要 markdown 渲染器的做法。 */
-.ai-fab-answer { white-space: pre-wrap; word-break: break-word; }
+/* 回答要保留换行：模型经常给编号列表，pre-wrap 是唯一不丢结构又不需要 markdown 渲染器的做法。
+   （原先并存一条 .ai-fab-answer，随非流式 /ai/ask 与其结果片段一起退役：现在回答只由
+   ai-fab.js 的 .ai-turn-answer 渲染。） */
 .ai-turn-answer { white-space: pre-wrap; word-break: break-word; }
 
 /* 轮次列表：每问一次追加一轮（提问 + 回答），提问不再清空面板。
@@ -2093,9 +2106,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     word-break: break-word;
 }
 .ai-fab-error { color: var(--sky-c-danger); }
-.ai-fab-note,
-.ai-fab-empty { color: var(--sky-c-text-mute); font-size: 13px; }
-.ai-fab-views { margin-top: var(--sp-md); }
+/* 只留 .ai-fab-note：.ai-fab-empty / .ai-fab-views 是旧结果片段的类名，
+   现在空态与图表由 .ai-turn* 与 ui_blocks 自己表达。 */
+.ai-fab-note { color: var(--sky-c-text-mute); font-size: 13px; }
 
 .ai-fab-form {
     display: flex;
@@ -2691,44 +2704,3 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     color: var(--sky-c-text-mute);
 }
 
-/* ===== 提示页（admin/jump.html）=====
-   写操作完成后的整页提示。作用域用 .stack.jump-page（与 .stack.dash-page 同一手法）：
-   这一套只服务这一页，不参与其它页面的层叠。
-   状态只用图标着色表达（成功 / 失败），三层视觉层次照基座走（页面底 + 白卡 + 描边），
-   不额外加底色 —— 提示页只有一张卡，加底色反而与其它页面不同源。 */
-.stack.jump-page {
-    display: flex;
-    justify-content: center;
-    padding-top: var(--ui-sp-xxl, 32px);
-}
-.stack.jump-page .jump-card {
-    width: min(100%, 520px);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--ui-sp-md);
-    padding: var(--ui-sp-xxl, 32px) var(--ui-sp-xl);
-    text-align: center;
-}
-.stack.jump-page .jump-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--sky-c-bg-soft);
-    color: var(--sky-c-text-mute);
-    font-size: 22px;
-    line-height: 1;
-}
-.stack.jump-page .jump-card[data-jump-state="ok"] .jump-icon { color: var(--sky-c-success); }
-.stack.jump-page .jump-card[data-jump-state="err"] .jump-icon { color: var(--sky-c-danger); }
-.stack.jump-page .jump-msg {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.6;
-    color: var(--sky-c-text);
-    overflow-wrap: anywhere;
-}
-.stack.jump-page .jump-actions { margin: 0; }

@@ -20,7 +20,6 @@ var dtoPresentationFields = map[string]struct{}{
 var pendingDTOPresentation = map[string]int{
 	"internal/module/ai/dto/ai_req.go":                1,
 	"internal/module/ai/dto/ai_resp.go":               2,
-	"internal/module/ai/dto/ai_token_resp.go":         1,
 	"internal/module/comment/dto/comment_resp.go":     1,
 	"internal/module/purchase/dto/page_resp.go":       5,
 	"internal/module/order/dto/order_resp.go":         1,
@@ -174,7 +173,8 @@ var allowedPkgDirs = map[string]struct{}{
 	"enums": {}, "facing": {}, "i18n": {}, "jsonx": {}, "logger": {},
 	"mailer": {}, "money": {}, "pagination": {}, "pathkit": {}, "queue": {},
 	"reqparams": {}, "response": {}, "rls": {}, "safepath": {}, "sitehttps": {},
-	"sitetz": {}, "ssrf": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {}, "view": {},
+	"sitetz": {}, "ssrf": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {},
+	"view": {}, "middleware": {}, "seo": {}, "uispec": {}, "builder": {}, "lifecycle": {}, "mcp": {}, "publish": {}, "scaffold": {},
 }
 
 var pendingPkgDirs = map[string]int{}

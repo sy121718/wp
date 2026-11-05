@@ -225,7 +225,7 @@ func TestBackendExclusiveClassesStayInControlPlane(t *testing.T) {
 	}
 
 	patterns := []string{
-		"../builder/components/*/*.jet", "components/*.jet", "components/*/*.jet", "components/*.html", "components/*/*.html",
+		"../../pkg/builder/components/*/*.jet", "../extensions/*/*.jet", "../extensions/*/*.html", "components/*.jet", "components/*/*.jet", "components/*.html", "components/*/*.html",
 		"fragments/*.jet",
 		"partials/*.html", "*.html", "*.jet",
 	}

@@ -211,22 +211,16 @@
     // 列表图标与图标字段的渲染已随基座扫描执行（js/ui/iconfield.js），
     // 且不再局限在页面加载这一次 —— htmx 局部替换后会重扫。
 
-    /* ===== HTMX 全局反馈：统一 loading 指示 + 失败提示（审计 UI-011）=====
-       此前这段能力各页面各写各的（多数干脆没有）：请求在飞时点了没反应，失败时也不出声 ——
-       htmx 默认只有 2xx 会替换目标节点，4xx/5xx 的响应直接丢弃，用户会以为保存成功了。
-       这里把两件事收成横切能力，页面模板不需要再逐个写 hx-indicator：
-         ① 请求计数驱动 layout.html 上的 [data-hx-progress] 进度条，同时给触发按钮加
-            控件基座的忙碌态（is-busy 自带 disabled ⇒ 顺带防重复点击）；
-         ② response:error（4xx/5xx）与 htmx:error（网络/超时/异常）一律弹 toast（失败绝不静默）。
-       4xx 与 5xx 都覆盖：htmx 的 responseHandling 把 [45].. 标为 error，两类都派发
-       htmx:response:error —— 会话过期（401）与 CSRF 失败（403）走同一条路径。
-       事件名是 htmx 4 的冒号分段写法（v2 的 responseError / sendError / beforeRequest /
-       afterRequest 在 v4 里不再派发；写错旧名不会报错，只是监听器永不触发）。 */
+    /* HTMX 全局进度只在 finally 收尾，包括取消、超时与网络失败。
+       写请求的失败区与成功动作归 write-base；这里不重复提示或接管其按钮。
+       本仓 HTMX 4 不会因 HTTP >=400 自动停止交换，不能依赖旧版 responseHandling。 */
     (function initHtmxFeedback() {
         var bar = document.querySelector('[data-hx-progress]');
         var inflight = 0;
         var pending = new Map();      // 触发元素 → 忙碌态收尾函数
-        var settled = new WeakSet();  // 已收尾的请求对象，防同一请求被重复计数（见 after:request）
+        var started = new WeakSet(); // 仅收尾真正开始的请求，编码错误不会误减其他请求计数。
+
+        function owned(ctx) { return !!window.WBUI?.writeBase?.owns(ctx); }
 
         function fallback(key, text) {
             return (bar && bar.getAttribute('data-msg-' + key)) || text;
@@ -296,6 +290,7 @@
 
         function report(e, kind) {
             var ctx = ctxOf(e);
+            if (owned(ctx)) return;
             var res = ctx.response || {};
             var tail = kind === 'network' ? fallback('network', '网络异常，请求未送达')
                 : kind === 'timeout' ? fallback('timeout', '请求超时，请重试')
@@ -311,49 +306,32 @@
         // v4 把事件名改成冒号分段（beforeRequest → before:request、afterRequest →
         // after:request、responseError → response:error、sendError → send:error）。
         // 写错旧名不会报错，只是**监听器永不触发** —— 症状是进度条不出现、错误不弹提示。
-        document.body.addEventListener('htmx:before:request', function (e) {
+        document.addEventListener('htmx:before:request', function (e) {
+            var ctx = ctxOf(e);
+            if (started.has(ctx)) return;
+            started.add(ctx);
             inflight++;
             setBar(true);
-            markBusy(ctxOf(e).sourceElement);
+            // 写表单由 HTMX 的 hx-disable 管按钮，避免两套机制争抢 disabled。
+            if (!owned(ctx)) markBusy(ctx.sourceElement);
         });
-        // after:request 在成功 / 失败 / 超时等路径上都会派发，计数与忙碌态统一在这里收尾。
-        // 触发元素在响应时已被移出文档的情况下，htmx 会再对最近的存活祖先补派发一次
-        // （同一个请求）—— 用请求对象去重，否则计数会被多减、进度条提前消失。
-        // v4 没有 xhr，去重键用 ctx.request（同一请求在补派发里是同一个对象引用）。
-        document.body.addEventListener('htmx:after:request', function (e) {
+        // 网络异常、取消和异步结果处理均在 finally 收尾，不以收到响应作为结束。
+        document.addEventListener('htmx:finally:request', function (e) {
             var ctx = ctxOf(e);
-            if (ctx.request) {
-                if (settled.has(ctx.request)) return;
-                settled.add(ctx.request);
-            }
-            inflight = inflight > 0 ? inflight - 1 : 0;
+            if (!started.has(ctx)) return;
+            started.delete(ctx);
+            inflight = Math.max(0, inflight - 1);
             if (inflight === 0) setBar(false);
-            unmarkBusy(ctx.sourceElement);
+            if (!owned(ctx)) unmarkBusy(ctx.sourceElement);
         });
         // htmx 4 的错误事件只有两个，且分工明确（官方文档 htmx:error / htmx:response:error）：
         //   htmx:response:error —— 服务端回 4xx/5xx（HTTP 层错误）
         //   htmx:error          —— 请求或 swap 抛异常（网络失败 / fetch 被拒 / **timeout 也在这里**）
         // v2 的 sendError 与 timeout 在 v4 里**都不存在**，分别并入 htmx:error；
         // 照旧名注册不会报错，只是永远不触发 —— 那是「断网时页面毫无提示」的成因。
-        document.body.addEventListener('htmx:response:error', function (e) { report(e, 'response'); });
-        document.body.addEventListener('htmx:error', function (e) { report(e, 'network'); });
-
-        // 写动作成功：后端只回 {code,message,data}，**不跳转、不给 URL**。导航是前端的事 ——
-        // 写表单在模板里用 data-write-nav 声明结果：有值就去那个地址，空值就重载当前页。
-        // 为什么不让服务端算回跳地址：页码与筛选本来就完整在地址栏里，那是用户眼里的当前
-        // 状态；服务端按同一批键再推一遍，等于把前端已有的东西实现第二遍，两处迟早分叉。
-        // hx-swap="none" 与之配套：成功响应是 JSON，不能让 htmx 把它 swap 进目标节点。
-        document.body.addEventListener('htmx:after:request', function (e) {
-            var ctx = ctxOf(e);
-            var res = ctx.response || {};
-            var elt = ctx.sourceElement;
-            if (!res.status || !elt || res.status < 200 || res.status >= 300) return;
-            var holder = elt.closest ? elt.closest('[data-write-nav]') : null;
-            if (!holder) return;
-            var nav = holder.getAttribute('data-write-nav') || '';
-            if (!nav) { window.location.reload(); return; }
-            window.location.assign(nav);
-        });
+        document.addEventListener('htmx:response:error', function (e) { report(e, 'response'); });
+        document.addEventListener('htmx:error', function (e) { report(e, 'network'); });
+        // 写请求的结论和显式成功动作只由 write-base 处理。
     })();
 })();
 
@@ -536,6 +514,11 @@
             var panel = id ? root.querySelector('#' + id) : null;
             if (panel) panel.hidden = !on;
         });
+        // 状态改完之后再广播一次，订阅方拿到的一定是新状态。
+        // 监听方不必自己猜「admin.js 什么时候激活完」，也不需要复制一份选中算法。
+        document.dispatchEvent(new CustomEvent('wbui:tabs-change', {
+            detail: { root: root, tab: target, panel: target.getAttribute('aria-controls') || '' }
+        }));
     }
 
     /* 命中的节点必须是「某个 [data-tabs] 之内的 [role=tab]」——

@@ -6,26 +6,40 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
 )
 
-const componentRoot = "components"
+const componentRoot = "../../pkg/builder/components"
 
-func TestComponentRegistryComplete(t *testing.T) {
-	entries, err := os.ReadDir(componentRoot)
-	if err != nil {
-		t.Fatalf("读取组件目录失败: %v", err)
-	}
-	dirCount := 0
-	for _, e := range entries {
-		if e.IsDir() {
-			dirCount++
+// componentRoots 是组件资产的两个真实属主：通用工具组件与业务扩展。
+var componentRoots = []string{
+	"../../pkg/builder/components",
+	"extensions",
+}
+
+func componentDirs(t *testing.T) []string {
+	t.Helper()
+	var dirs []string
+	for _, root := range componentRoots {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("读取组件目录 %s 失败: %v", root, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs = append(dirs, e.Name())
+			}
 		}
 	}
-	if dirCount == 0 {
-		t.Fatal("组件目录为空")
+	if len(dirs) == 0 {
+		t.Fatal("组件目录为空（扫描根写错了？）")
 	}
+	return dirs
+}
+
+func TestComponentRegistryComplete(t *testing.T) {
+	dirCount := len(componentDirs(t))
 	regCount := len(core.Types())
 	if regCount != dirCount {
 		t.Fatalf("core.Registry 注册数 %d != 组件目录数 %d（漏 import 或多余注册）\n已注册: %v", regCount, dirCount, core.Types())
@@ -33,28 +47,19 @@ func TestComponentRegistryComplete(t *testing.T) {
 }
 
 func TestComponentAssetsConsistent(t *testing.T) {
-	entries, err := os.ReadDir(componentRoot)
-	if err != nil {
-		t.Fatalf("读取组件目录失败: %v", err)
-	}
-	var dirs []string
-	for _, e := range entries {
-		if e.IsDir() {
-			dirs = append(dirs, e.Name())
-		}
-	}
-	if len(dirs) == 0 {
-		t.Fatal("组件目录为空")
-	}
-
+	dirs := componentDirs(t)
 	for _, dir := range dirs {
-		files, err := os.ReadDir(filepath.Join(componentRoot, dir))
+		root := componentRoot
+		if _, statErr := os.Stat(filepath.Join(root, dir)); statErr != nil {
+			root = componentRoots[1]
+		}
+		files, err := os.ReadDir(filepath.Join(root, dir))
 		if err != nil {
 			t.Fatalf("%s: %v", dir, err)
 		}
 		for _, f := range files {
 			name := f.Name()
-			path := filepath.Join(componentRoot, dir, name)
+			path := filepath.Join(root, dir, name)
 			switch {
 			case strings.HasSuffix(name, ".jet"):
 
@@ -97,7 +102,6 @@ func enhanceSourceRegistered(src string) bool {
 }
 
 func TestComponentManifest(t *testing.T) {
-	entries, _ := os.ReadDir(componentRoot)
 	ownedTpl := map[string]bool{}
 	for _, n := range core.OwnedTemplateNames() {
 		ownedTpl[n] = true
@@ -107,36 +111,42 @@ func TestComponentManifest(t *testing.T) {
 
 	total, withJet, withCss, withEnhance := 0, 0, 0, 0
 	var lines []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+	for _, root := range componentRoots {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("读取组件目录 %s 失败: %v", root, err)
 		}
-		total++
-		dir := e.Name()
-		files, _ := os.ReadDir(filepath.Join(componentRoot, dir))
-		var tags []string
-		for _, f := range files {
-			n := f.Name()
-			switch {
-			case strings.HasSuffix(n, ".jet"):
-				tags = append(tags, "模板")
-				withJet++
-			case strings.HasSuffix(n, ".css"):
-				tags = append(tags, "样式")
-				withCss++
-			case strings.HasPrefix(n, "enhance") && strings.HasSuffix(n, ".js"):
-				tags = append(tags, "行为")
-				withEnhance++
-				body, _ := os.ReadFile(filepath.Join(componentRoot, dir, n))
-				for i, b := range ownedBlocks {
-					if strings.TrimSpace(b.Source) == strings.TrimSpace(string(body)) {
-						usedBlock[i] = true
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			total++
+			dir := e.Name()
+			files, _ := os.ReadDir(filepath.Join(root, dir))
+			var tags []string
+			for _, f := range files {
+				n := f.Name()
+				switch {
+				case strings.HasSuffix(n, ".jet"):
+					tags = append(tags, "模板")
+					withJet++
+				case strings.HasSuffix(n, ".css"):
+					tags = append(tags, "样式")
+					withCss++
+				case strings.HasPrefix(n, "enhance") && strings.HasSuffix(n, ".js"):
+					tags = append(tags, "行为")
+					withEnhance++
+					body, _ := os.ReadFile(filepath.Join(root, dir, n))
+					for i, b := range ownedBlocks {
+						if strings.TrimSpace(b.Source) == strings.TrimSpace(string(body)) {
+							usedBlock[i] = true
+						}
 					}
 				}
 			}
-		}
-		if len(tags) > 0 {
-			lines = append(lines, dir+" → "+strings.Join(tags, "/"))
+			if len(tags) > 0 {
+				lines = append(lines, dir+" → "+strings.Join(tags, "/"))
+			}
 		}
 	}
 
@@ -149,4 +159,16 @@ func TestComponentManifest(t *testing.T) {
 			t.Errorf("增强块 %v 已注册但没有对应的组件文件（内容对不上任何一个 enhance*.js）", b.Fns)
 		}
 	}
+}
+
+// componentDirOf 返回组件名所属的扫描根目录。
+func componentDirOf(t *testing.T, name string) string {
+	t.Helper()
+	for _, root := range componentRoots {
+		if info, err := os.Stat(filepath.Join(root, name)); err == nil && info.IsDir() {
+			return filepath.Join(root, name)
+		}
+	}
+	t.Fatalf("组件 %s 不在任何扫描根里", name)
+	return ""
 }

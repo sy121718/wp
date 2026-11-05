@@ -1,8 +1,6 @@
-
-
 {{extends "../layout.html"}}
-{{block pageTitle()}}{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{end}}
-{{block topbarTitle()}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}
+{{block pageTitle()}}{{.Product.Name}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("pdTitle", "商品详情") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}{{tnf := .["tn"]}}
 {{csrf := .["csrf_token"]}}
@@ -12,56 +10,42 @@
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{if isset(.Product)}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}</h1>
-                {{if isset(.Product)}}<span class="badge">{{.Product.Status}}</span>{{end}}
+                <h1>{{.Product.Name}}</h1>
+                {{include "status_label.html" map("status", .Product.Status, "t", tr)}}
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_detail.hint.readonly", "本页是**只读**的：属性引用、分类与品牌、手工标签、变体清单、评分、SEO 检查、详情页模板的改动都在「编辑」页（商品列表行的「编辑」进入）。这里只回答这个商品由什么组成。") }}<br><br>{{ .["t"]("admin.product_detail.hint.autoTags", "自动标签只读 —— 它的归属由规则重算维护，手工改会被下一次重算覆盖。") }}<br><br>{{ .["t"]("admin.product_detail.hint.rating", "评分是独立明细：平均值与条数由明细算出；「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选。") }}</span>
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("pdHelp", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("pdHintReadonly", "本页是**只读**的：属性引用、分类与品牌、手工标签、变体清单、评分、SEO 检查、详情页模板的改动都在「编辑」页（商品列表行的「编辑」进入）。这里只回答这个商品由什么组成。") }}<br><br>{{ .["t"]("pdHintAutoTags", "自动标签只读 —— 它的归属由规则重算维护，手工改会被下一次重算覆盖。") }}<br><br>{{ .["t"]("pdHintRating", "评分是独立明细：平均值与条数由明细算出；「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选。") }}</span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
-            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
-            {{if isset(.Product)}}
-
-            <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
-            <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("admin.products.row.preview", "预览") }}</button>
-            {{end}}
+            <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("pdBack", "返回列表") }}</a>
+            <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("pRowDetailTpl", "详情页模板") }}</a>
+            <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("pRowPrev", "预览") }}</button>
         </div>
     </header>
 
-    {{if !isset(.Product)}}
-    <section class="card card-body">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.product_detail.notFound.title", "商品不存在") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.product_detail.notFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
-            <div class="empty-actions">
-                <a class="btn btn-primary" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
-            </div>
-        </div>
-    </section>
-    {{else}}
     {{p := .Product}}
 
     <section class="card card-body">
-        <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
+        <h2 class="card-title">{{ .["t"]("pdBasicTitle", "基本信息") }}</h2>
         <dl class="kv">
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.name", "商品") }}</dt><dd>{{p.Name}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.slug", "URL 段") }}</dt><dd>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pNameCol", "商品") }}</dt><dd>{{p.Name}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pSlugCol", "URL 段") }}</dt><dd>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
 
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</dt><dd>{{if isset(p.SKUCode)}}{{if p.SKUCode != ""}}<code>{{p.SKUCode}}</code>{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}} <span class="text-mute text-sm">{{ .["t"]("admin.product_detail.sku.scope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</span></dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.status", "状态") }}</dt><dd><span class="badge">{{p.Status}}</span></dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.variants", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</dt><dd>{{if len(p.Attributes) == 0}}<span class="text-mute">—</span>{{else}}{{range _, a := p.Attributes}}<span class="badge badge-{{if a.IsVariation}}info{{else}}mute{{end}}">{{a.Name}}{{if a.IsVariation}}{{ .["t"]("admin.products.row.variationSuffix", "（参与变体）") }}{{end}} × {{a.ValueCount}}</span>{{end}}{{end}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.categories", "分类") }}</dt><dd>{{if len(p.Categories) > 0}}{{range i, c := p.Categories}}{{if i > 0}}、{{end}}{{c.Name}}{{end}}{{else}}—{{end}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.brand", "品牌") }}</dt><dd>{{if isset(p.Brand)}}{{p.Brand.Name}}{{else}}—{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pSkuLabel", "SKU 编码") }}</dt><dd>{{if isset(p.SKUCode)}}{{if p.SKUCode != ""}}<code>{{p.SKUCode}}</code>{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}} <span class="text-mute text-sm">{{ .["t"]("pdSkuScope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pStatus", "状态") }}</dt><dd>{{include "status_label.html" map("status", p.Status, "t", tr)}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pVars", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pPriceRange", "价格区间") }}</dt><dd>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pAttrsTitle", "属性引用") }}</dt><dd>{{if len(p.Attributes) == 0}}<span class="text-mute">—</span>{{else}}{{range _, a := p.Attributes}}<span class="badge badge-{{if a.IsVariation}}info{{else}}mute{{end}}">{{if a.IsVariation}}{{tn("pAttrVarBadge", "{name}（参与变体） × {count}", map("name", a.Name, "count", a.ValueCount))}}{{else}}{{tn("pAttrBadge", "{name} × {count}", map("name", a.Name, "count", a.ValueCount))}}{{end}}</span>{{end}}{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pCats", "分类") }}</dt><dd>{{if len(p.Categories) > 0}}{{range i, c := p.Categories}}{{if i > 0}}、{{end}}{{c.Name}}{{end}}{{else}}—{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("pBrand", "品牌") }}</dt><dd>{{if isset(p.Brand)}}{{p.Brand.Name}}{{else}}—{{end}}</dd></div>
         </dl>
 
-        <h3>{{ .["t"]("admin.products.tags.title", "标签") }}</h3>
+        <h3>{{ .["t"]("pTagsTitle", "标签") }}</h3>
         {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
+            <legend>{{ .["t"]("pTagsManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
             {{range _, t := p.Tags}}
             {{if t.Kind == "manual"}}<span class="var-value">{{t.Name}}</span>{{end}}
             {{end}}
@@ -69,30 +53,30 @@
         {{end}}
         {{if len(p.Tags) > 0}}
         <fieldset class="var-group">
-            <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
+            <legend>{{ .["t"]("pTagsAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
             {{range _, t := p.Tags}}{{if t.Kind == "rule"}}
             <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
             {{end}}{{end}}
         </fieldset>
         {{end}}
         {{if len(p.Tags) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.tags.none", "这个商品还没有标签。") }}</p>
+        <p class="text-mute text-sm">{{ .["t"]("pTagsNone", "这个商品还没有标签。") }}</p>
         {{end}}
     </section>
 
     <section class="card list-card">
         <div class="list-toolbar">
-            <strong>{{ .["t"]("admin.products.variants.title", "变体") }}</strong>
+            <strong>{{ .["t"]("pVarsTitle", "变体") }}</strong>
             <span class="badge badge-mute">{{p.VariantCount}}</span>
             <span class="toolbar-spacer"></span>
         </div>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("pVarsAria", "商品变体") }}">
             <table class="data-table data-table-wide">
 
-                <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.stockLink", "库存明细") }}</th></tr></thead>
+                <thead><tr><th>SKU</th><th>{{ .["t"]("pSpec", "规格") }}</th><th>{{ .["t"]("pPrice", "价格") }}</th><th>{{ .["t"]("pComparePrice", "对比价") }}</th><th>{{ .["t"]("pCostPrice", "成本价") }}</th><th>{{ .["t"]("pOn", "启用") }}</th><th>{{ .["t"]("pStock", "库存") }}</th><th class="col-actions">{{ .["t"]("pStockLink", "库存明细") }}</th></tr></thead>
                 <tbody>
                 {{if len(p.Variants) == 0}}
-                <tr><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
+                <tr><td colspan="8" class="text-mute text-sm">{{ .["t"]("pVarsEmpty", "这个商品还没有变体。") }}</td></tr>
                 {{end}}
                 {{range _, v := p.Variants}}
                 <tr>
@@ -101,10 +85,10 @@
                     <td>{{amount(v.Price)}}</td>
                     <td>{{amountDash(v.ComparePrice)}}</td>
                     <td>{{amountDash(v.CostPrice)}}</td>
-                    <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
+                    <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("pVarOn", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("pVarOff", "停用"))}}{{end}}</td>
                     <td>{{v.StockTotal}}</td>
                     <td class="col-actions">
-                        <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
+                        <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("pVarStockLink", "各仓库存") }}</a>
                     </td>
                 </tr>
                 {{end}}
@@ -115,16 +99,16 @@
 
     <section class="card list-card">
         <div class="list-toolbar">
-            <strong>{{ .["t"]("admin.products.rating.label", "评分") }}</strong>
-            <span class="badge badge-mute">{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.Rating.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
+            <strong>{{ .["t"]("pRating", "评分") }}</strong>
+            <span class="badge badge-mute">{{if p.Rating.HasRating}}<span data-product-rating="{{p.Rating.Rating}}">{{amount(p.Rating.Rating)}}</span>{{tn("pRatingCount", "· {count} 条", map("count", p.Rating.RatingCount))}}{{else}}—{{end}}</span>
             <span class="toolbar-spacer"></span>
         </div>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("pRatingsAria", "商品评分") }}">
             <table class="data-table">
-                <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th></tr></thead>
+                <thead><tr><th>{{ .["t"]("pRating", "评分") }}</th><th>{{ .["t"]("pRatingsSrc", "来源") }}</th><th>{{ .["t"]("pRatingsTime", "时间") }}</th></tr></thead>
                 <tbody>
                 {{if len(p.Rating.Items) == 0}}
-                <tr><td colspan="3" class="text-mute text-sm">{{ .["t"]("admin.products.ratings.empty", "这个商品还没有评分。") }}</td></tr>
+                <tr><td colspan="3" class="text-mute text-sm">{{ .["t"]("pRatingsEmpty", "这个商品还没有评分。") }}</td></tr>
                 {{end}}
                 {{range _, r := p.Rating.Items}}
                 <tr>
@@ -141,28 +125,26 @@
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Available}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
+        <h2 class="card-title mb-lg">{{ tr("pRowDetailTpl", "详情页模板") }}{{if isset(.TplPanel.Bound.RenderMode)}}{{if .TplPanel.Bound.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("pdDocumentMode", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("pdTplModeTpl", "跟随模板"))}}{{end}}{{end}}</h2>
         {{if isset(.TplPanel.Bound.InstanceID)}}
-        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
+        <p class="kv"><span>{{ .["t"]("pdTplNow", "当前模板") }}</span><span>{{.TplPanel.Bound.TemplateID}}</span></p>
         {{if .TplPanel.Bound.Status == "published" || .TplPanel.Bound.Status == "active"}}
-        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.Bound.TemplateID}}&entityType=product&entityId={{.Product.ID}}&projectId={{.Scope.ProjectID}}">{{ .["t"]("uiActPrev", "预览") }}</a>
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.unpublishedHint", "模板已绑定但尚未发布：先在详情页模板页完成首次发布。") }}</p>
+        <p class="hint">{{ .["t"]("pdTplDraftHint", "模板已绑定但尚未发布：先在详情页模板页完成首次发布。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_detail.template.noPublicationHint", "该商品还没有发布详情页：完成首次发布后可在此预览。") }}</p>
+        <p class="hint">{{ .["t"]("pdTplNoPubHint", "该商品还没有发布详情页：完成首次发布后可在此预览。") }}</p>
         {{end}}
     </section>
     {{end}}
     {{end}}
 
-    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("uiInternalErr", "系统内部错误，请稍后重试") }}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-
-    {{end}}
 </div>
 <script type="application/json" id="product-display-data">{{writeJson(.Product)}}</script>
 {{end}}

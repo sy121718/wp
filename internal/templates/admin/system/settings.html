@@ -26,8 +26,10 @@
     <p class="badge badge-warning" role="alert">{{.LoadErr}}</p>
     {{end}}{{end}}
 
-    <form data-write-url="/api/sysconfig/system/save" data-write="create" data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}" class="card card-body">
-        <p data-write-status role="status" aria-live="polite"></p>
+    <form data-write hx-post="/api/sysconfig/system/save" hx-target="find [data-write-result]" hx-swap="innerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" class="card card-body">
+        <div data-write-result></div>
+        <p data-write-status role="status" aria-live="polite" hidden></p>
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         {* 乐观锁：带上读到的版本；库内已变则整批拒绝（不自动重试、不静默覆盖）。 *}
         <input type="hidden" name="i18nVersion" value="{{.I18N.Version}}">

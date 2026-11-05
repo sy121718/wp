@@ -1,38 +1,44 @@
 {* admin/ai/provider_models.html — 模型目录区。
 
-   两条渲染路径共用这一个片段：整页里被 provider_card.html include，编辑动作里作为 htmx 片段
-   被单独渲染（服务端渲染的就是片段自身）。所以片段的**根节点必须自带 data-ai-models-host**：
-   hx-swap="outerHTML" 替换掉的是宿主元素本身，片段单独返回时也要能当宿主。
+   只有一条渲染路径：整页里被 provider_card.html include；写成功后服务端也用同一份模板换回这一块。
 
-   所有写操作按钮都在同一个 form 里，靠 formaction 换落点 —— form 不能嵌套，
-   而行增删 / 恢复默认都必须带上当前表单里**用户正在编辑的行**。
+   写操作分两类：
 
-   「获取可用模型」是例外：它回的是整页（候选弹窗），所以另起一个 form 放在 form 之外。 *}
+   ① 要落库的（恢复默认 / 保存目录）：标准 HTMX 表单，保存目录的明细行是明确的 JSON 对象，
+      由 ai-models.js 的 payload builder 组装成 models[]，仍由 HTMX 发送。
+
+   ② 改草稿的（添加一行 / 移除一行）：**纯前端本地**，不发请求、也没有后端落点。
+      草稿就是用户还没保存的表单状态，为它开一个接口既多一次往返，又会把「还没保存」
+      与「已保存」两种事实搅在一起。ai-models.js 直接增删 DOM，行序号与勾选状态也由它自己算。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{p := .Provider}}
 {{canManage := isset(.Buttons["ai.provider_models_save"])}}
 {{canRestore := isset(.Buttons["ai.provider_models_restore"])}}
-{{canFetch := isset(.Buttons["ai.provider_models_fetch"])}}
-<div class="ai-models" data-ai-models-host>
-    {{if isset(.ModelsNotice)}}{{if .ModelsNotice != ""}}
-    <p class="badge badge-{{.ModelsNoticeTone}}" role="{{.ModelsNoticeRole}}">{{.ModelsNotice}}</p>
-    {{end}}{{end}}
-
+{* 候选按钮打的是独立权限点 ai:provider_models_candidates（会解密密钥打远端 /models），
+   不是「拉取并保存」的 ai.provider_models_fetch —— 借用后者会让只有保存权的人拿到候选读取。 *}
+{{canCandidates := isset(.Buttons["ai.provider_models_candidates"])}}
+<div class="ai-models" data-ai-models-host id="ai-models-{{p.ID}}">
     <div class="card-header ai-models-head">
         <span class="card-title">{{tr("admin.ai.models.title", "模型目录")}}</span>
         <span class="ai-models-actions">
             {{if canRestore}}
-            <button type="submit" form="ai-models-form-{{p.ID}}" formaction="/admin/ai/providers/models/restore" class="btn btn-sm">{{tr("admin.ai.models.restore", "恢复默认模型")}}</button>
+            {* 恢复默认只改已落库的目录：它需要一个**自己的**表单，只带 providerId/version。
+               若借用上面的保存表单，草稿行会跟着一起提交，恢复就成了「用草稿覆盖默认清单」。 *}
+            <form id="ai-models-restore-{{p.ID}}" class="inline-form" data-write
+                  hx-post="/api/ai/provider/models/restore" hx-target="#ai-provider-{{p.ID}}" hx-swap="outerHTML"
+                  hx-sync="this:drop">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="providerId" value="{{p.ID}}">
+                <input type="hidden" name="version" value="{{p.Version}}">
+                <button type="submit" data-requires-js hidden disabled class="btn btn-sm">{{tr("admin.ai.models.restore", "恢复默认模型")}}</button>
+            </form>
             {{end}}
-            {{if canFetch}}
-            {* 「获取可用模型」走 htmx：回的**就是**候选弹窗片段（provider_picker.html），
-               插进页面底部的 #ai-picker-host。两个页面合成一个之后不需要整页重渲染 ——
-               整页刷新会把用户在同一页其它卡片里刚填的密钥冲掉。
-               原生 method/action 保留：没有 JS 时回退成整页跳转（服务端对非 htmx 请求 302）。 *}
-            <form method="post" action="/admin/ai/providers/models/candidates" class="inline-form"
-                  hx-post="/admin/ai/providers/models/candidates"
-                  hx-target="#ai-picker-host" hx-swap="innerHTML">
+            {{if canCandidates}}
+            {* 「获取可用模型」：标准表单提交候选事实，服务端回 Jet 弹窗片段，
+               弹窗自己打开（data-modal-auto-open），不整页刷新。 *}
+            <form class="inline-form" hx-post="/api/ai/provider/models/candidates"
+                  hx-target="#ai-picker-host" hx-swap="innerHTML" hx-sync="this:drop">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="providerId" value="{{p.ID}}">
                 <input type="hidden" name="version" value="{{p.Version}}">
@@ -42,18 +48,64 @@
         </span>
     </div>
 
-    <form id="ai-models-form-{{p.ID}}" method="post" action="/admin/ai/providers/models/save"
-          hx-post="/admin/ai/providers/models/save"
-          hx-target="closest [data-ai-models-host]" hx-swap="outerHTML">
+{* 模型行的唯一一份标记：服务端渲染用不到它（列表在上面已铺好），它只服务前端 ——
+   ai-models.js 克隆它、按 data-field / data-check 填值、按 data-index-name 重写行内
+   带索引的字段名。文案随模板在渲染期取好，JS 里没有第二份词表。 *}
+<template id="tpl-ai-model-row">
+    <div class="ai-model-row">
+        <div class="form-grid">
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.ai.models.modelId", "模型 ID")}}</label>
+                <input type="text" class="form-input" name="modelId" data-field="id" placeholder="{{tr("admin.ai.ph.modelId", "如 deepseek-chat")}}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.ai.models.displayName", "显示名称")}}</label>
+                <input type="text" class="form-input" name="modelDisplayName" data-field="displayName" placeholder="{{tr("admin.ai.ph.modelDisplayName", "列表里显示的名字")}}" autocomplete="off">
+            </div>
+            {{if canManage}}
+            <div class="form-group">
+                <span class="form-label">&nbsp;</span>
+                <button type="button" data-row-remove class="btn btn-sm btn-ghost">{{tr("admin.ai.models.removeRow", "移除该模型")}}</button>
+            </div>
+            {{end}}
+        </div>
+        <details class="section-fold">
+            <summary>{{tr("admin.ai.models.detail", "详情")}}</summary>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.contextWindow", "上下文窗口")}}</label>
+                    <input type="number" class="form-input" name="modelContextWindow" data-field="contextWindow" inputmode="numeric" step="1" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.maxOutputTokens", "最大输出 token 数")}}</label>
+                    <input type="number" class="form-input" name="modelMaxOutputTokens" data-field="maxOutputTokens" inputmode="numeric" step="1" min="0">
+                </div>
+                <div class="form-group">
+                    <span class="form-label">{{tr("admin.ai.field.inputTypes", "输入类型")}}</span>
+                    <label class="var-value"><input type="checkbox" name="input_text_0" data-index-name="input_text" data-check="text" value="text"> {{tr("admin.ai.input.text", "文本")}}</label>
+                    <label class="var-value"><input type="checkbox" name="input_image_0" data-index-name="input_image" data-check="image" value="image"> {{tr("admin.ai.input.image", "图片")}}</label>
+                </div>
+            </div>
+        </details>
+    </div>
+</template>
+
+    {* 保存提交的是 models[] 数组，不是表单里那些平铺字段（modelId / input_text_N …）：
+       它们只是编辑草稿的载体。写基座按 data-write-builder 找 ai-models.js 注册的
+       组装器，在提交前把当前 DOM 转成 SaveModelsReq.models。没有这一句，服务端拿到
+       的是平铺字段、models 为空，目录会被清空。 *}
+    <form id="ai-models-form-{{p.ID}}" data-write
+          hx-post="/api/ai/provider/models/save" hx-target="#ai-provider-{{p.ID}}" hx-swap="outerHTML"
+          hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"
+          data-write-builder="ai-provider-models">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="providerId" value="{{p.ID}}">
         <input type="hidden" name="version" value="{{p.Version}}">
 
-        {{if len(.Rows) == 0}}
-        <p class="form-hint">{{tr("admin.ai.models.empty", "还没有模型。可以「获取可用模型」拉取候选，或手工添加。")}}</p>
-        {{end}}
+        <p class="form-hint" data-models-empty{{if .Rows}} hidden{{end}}>{{tr("admin.ai.models.empty", "还没有模型。可以「获取可用模型」拉取候选，或手工添加。")}}</p>
 
-        {{range _, row := .Rows}}
+        <div data-models-rows>
+        {{range i, row := .Rows}}
         <div class="ai-model-row">
             <div class="form-grid">
                 <div class="form-group">
@@ -67,7 +119,7 @@
                 {{if canManage}}
                 <div class="form-group">
                     <span class="form-label">&nbsp;</span>
-                    <button type="submit" formaction="/admin/ai/providers/models/row/delete" name="rowIndex" value="{{row.Index}}" class="btn btn-sm btn-ghost">{{tr("admin.ai.models.removeRow", "移除该模型")}}</button>
+                    <button type="button" data-row-remove class="btn btn-sm btn-ghost">{{tr("admin.ai.models.removeRow", "移除该模型")}}</button>
                 </div>
                 {{end}}
             </div>
@@ -84,17 +136,25 @@
                     </div>
                     <div class="form-group">
                         <span class="form-label">{{tr("admin.ai.field.inputTypes", "输入类型")}}</span>
-                        <label class="var-value"><input type="checkbox" name="input_text_{{row.Index}}" value="text" {{if row.TextChecked}}checked{{end}}> {{tr("admin.ai.input.text", "文本")}}</label>
-                        <label class="var-value"><input type="checkbox" name="input_image_{{row.Index}}" value="image" {{if row.ImageChecked}}checked{{end}}> {{tr("admin.ai.input.image", "图片")}}</label>
+                        {* 行序号 = 表单里第几条，输入类型的勾选 = InputTypes 里有没有 text / image：
+                           两者都是显示派生，由这一行现算，后端不预算。
+                           data-index-name / data-check 与行模板一字不差：删掉前面一行后，
+                           reindex 要能重写这一行的 input_text_N / input_image_N ——
+                           服务端直出的行和前端克隆的行必须用同一套标记，否则序号错位，
+                           collectModels 按新序号找 input_image_N 会取不到，图片标记被悄悄丢掉。 *}
+                        <label class="var-value"><input type="checkbox" name="input_text_{{i}}" data-index-name="input_text" data-check="text" value="text" {{if has(row.InputTypes, "text")}}checked{{end}}> {{tr("admin.ai.input.text", "文本")}}</label>
+                        <label class="var-value"><input type="checkbox" name="input_image_{{i}}" data-index-name="input_image" data-check="image" value="image" {{if has(row.InputTypes, "image")}}checked{{end}}> {{tr("admin.ai.input.image", "图片")}}</label>
                     </div>
                 </div>
             </details>
         </div>
         {{end}}
+        </div>
 
+        <p class="form-hint" data-write-status role="status" hidden></p>
         {{if canManage}}
         <div class="action-row">
-            <button type="submit" formaction="/admin/ai/providers/models/row/add" class="btn btn-sm">＋ {{tr("admin.ai.models.addRow", "添加模型")}}</button>
+            <button type="button" data-row-add class="btn btn-sm">＋ {{tr("admin.ai.models.addRow", "添加模型")}}</button>
             <button type="submit" class="btn btn-primary">{{tr("admin.ai.models.save", "保存模型目录")}}</button>
         </div>
         {{end}}

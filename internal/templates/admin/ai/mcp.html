@@ -1,12 +1,13 @@
 {* admin/ai/mcp.html — 「MCP 与外部访问」页。
 
-   结构：页头（说明气泡）→ 回执 → 接入地址 → 生成令牌 → 令牌区块 → 可用工具。
-   令牌区块抽成 ai/mcp_tokens.html：创建与撤销都只重渲染那一块（HTMX 片段），
-   整页 include 同一份标记 —— 两处各写一遍必然漂移。
+   结构：页头（说明气泡）→ 接入地址与开关 → 生成令牌 → 令牌区块 → 可用工具。
+   令牌区块的标记只有一份，在 ai/mcp_tokens.html，本页 {{include}} 它。
 
-   上下文需要：Title / Endpoint / Tokens（tokenRow 视图行）/ Tools（toolRow）/
-   ScopeOptions（Code + Label）/ NewToken（一次性明文，通常为空）/ ErrText / DoneText，
-   以及 shell.Prepare 注入的 t 与 csrf_token。 *}
+   三个写动作（开关 / 生成 / 撤销）都走 /api/ai/token/*，回 Jet HTML 片段：
+   开关换回这一段的状态与按钮，生成回一次性明文并把新行插进列表，撤销把那行换成已撤销事实。
+
+   上下文需要：Endpoint / McpEnabled / ScopeOptions（Code + Label）/
+   Tools（toolRow），以及共享渲染基础设施注入的 t 与 csrf_token。 *}
 {{extends "../layout.html"}}
 
 {{block body()}}
@@ -24,8 +25,6 @@
         </div>
     </header>
 
-    {{if .ErrText}}<p class="badge badge-warning" role="alert">{{.ErrText}}</p>{{end}}
-    {{if .DoneText}}<p class="badge" role="status">{{.DoneText}}</p>{{end}}
 
     <section class="card">
         <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.endpoint.title", "接入地址")}}</h2></div>
@@ -37,12 +36,17 @@
 
             {* 开关：默认关闭。它是本站数据对外的出口，必须由人显式打开 ——
                关闭时端点对任何请求都回 404（不是 403：探测者不该知道这里有个可以打开的东西）。 *}
-            <div class="action-row">
-                <span class="badge badge-{{.McpTone}}">{{if .McpEnabled}}{{tr("admin.ai.mcp.switch.on", "已开启")}}{{else}}{{tr("admin.ai.mcp.switch.off", "已关闭")}}{{end}}</span>
-                <form method="post" action="/admin/ai/mcp/toggle">
+            {* 开关有**两类**文案，渲染期各写一份：
+                 · 徽标（状态）：已开启 / 已关闭
+                 · 按钮（动作）：关闭接入 / 开启接入 —— 动作名不是状态名，混用会把按钮写成
+                   「已开启」，用户看不出点它会做什么。 *}
+            <div class="action-row" id="mcp-switch">
+                <span class="badge badge-{{if .McpEnabled}}ok{{else}}mute{{end}}">{{if .McpEnabled}}{{tr("admin.ai.mcp.switch.on", "已开启")}}{{else}}{{tr("admin.ai.mcp.switch.off", "已关闭")}}{{end}}</span>
+                <form class="inline-form" data-write
+                      hx-post="/api/ai/token/toggle" hx-target="#mcp-switch" hx-swap="outerHTML" hx-sync="this:drop">
                     <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                     <input type="hidden" name="enabled" value="{{if .McpEnabled}}0{{else}}1{{end}}">
-                    <button type="submit" class="btn btn-sm{{if .McpEnabled}} btn-danger{{else}} btn-primary{{end}}"{{if not .McpEnabled}} data-confirm="{{tr("admin.ai.mcp.switch.confirm", "确认开启对外接入？开启后，持有令牌的外部客户端可以读取本站业务数据。")}}"{{end}}>
+                    <button type="submit" data-requires-js hidden disabled class="btn btn-sm{{if .McpEnabled}} btn-danger{{else}} btn-primary{{end}}"{{if not .McpEnabled}} hx-confirm="{{tr("admin.ai.mcp.switch.confirm", "确认开启对外接入？开启后，持有令牌的外部客户端可以读取本站业务数据。")}}"{{end}}>
                         {{if .McpEnabled}}{{tr("admin.ai.mcp.switch.disable", "关闭接入")}}{{else}}{{tr("admin.ai.mcp.switch.enable", "开启接入")}}{{end}}
                     </button>
                 </form>
@@ -54,7 +58,11 @@
     <section class="card">
         <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.token.create.section", "生成新令牌")}}</h2></div>
         <div class="card-body">
-            <form hx-post="/admin/ai/mcp/token/create" hx-target="#mcp-token-panel" hx-swap="outerHTML">
+            {* 生成成功回的是「一次性明文 + 新的一行」Jet 片段：明文与行都由服务端渲染，
+               OOB 把新行插进本页的令牌列表。 *}
+            <form data-write hx-post="/api/ai/token/create"
+                  hx-target="#mcp-token-create-result" hx-swap="innerHTML"
+                  hx-sync="this:drop" hx-disable="findAll button:not(:disabled)">
                 <div class="form-group">
                     <label class="form-label req" for="mcp-token-name">{{tr("admin.ai.mcp.token.create.name", "用途备注")}}</label>
                     <input id="mcp-token-name" type="text" class="form-input" name="name" required maxlength="100" autocomplete="off" placeholder="{{tr("admin.ai.mcp.token.create.name.ph", "例如：dsh 本地客户端")}}">
@@ -75,12 +83,15 @@
                     <input id="mcp-token-expires" type="date" class="form-input" name="expiresAt">
                 </div>
                 <div class="action-row">
-                    <button type="submit" class="btn btn-primary">{{tr("admin.ai.mcp.token.create.submit", "生成令牌")}}</button>
+                    <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{tr("admin.ai.mcp.token.create.submit", "生成令牌")}}</button>
                 </div>
+                <div id="mcp-token-create-result"></div>
+                <p class="form-hint" data-write-status role="status" hidden></p>
             </form>
         </div>
     </section>
 
+    {* 令牌行只有 mcp_tokens.html 一处渲染；生成与撤销的写回也复用同一份 Jet。 *}
     {{include "mcp_tokens.html"}}
 
     <section class="card">

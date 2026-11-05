@@ -74,7 +74,7 @@ func TestWorkbenchSlotBlockReuseGuard(t *testing.T) {
 }
 
 func TestWorkbenchSlotFrameTemplate(t *testing.T) {
-	jet := readTemplateFile(t, "../builder/components/layoutslot/layoutslot.jet")
+	jet := readTemplateFile(t, "../../pkg/builder/components/layoutslot/layoutslot.jet")
 	for _, want := range []string{
 		`data-sky-slot="{{ .SlotFrame.Slot }}"`,
 		`data-sky-slot-ref="{{ .SlotFrame.Ref }}"`,

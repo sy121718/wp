@@ -3,89 +3,65 @@ package permission
 import (
 	"cmp"
 	"slices"
-	"strings"
 	"sync"
+
+	mw "go_wp/pkg/middleware"
 )
 
-type Perm string
+// Perm 是权限标识；终态为无类型字符串，由各操作属主声明常量。
+type Perm = string
 
+// Exempt 表示明确豁免后台权限目录。
 const Exempt Perm = ""
 
+// RouteSpec 是已登记的路由绑定事实（复用 pkg 的中立形状）。
+type RouteSpec = mw.RouteSpec
+
+// 权限名称/模块的目录由数据库提供，这里只保留进程内登记。
 type spec struct {
 	module string
 	name   string
 }
 
-type RouteSpec struct {
-	Method string
-	Path   string
-	Perm   Perm
-	Module string
-	Name   string
-}
+var regMu sync.Mutex
 
-var (
-	regMu        sync.Mutex
-	declared     []RouteSpec
-	declaredKeys map[string]Perm
-	exemptRoutes []string
-
-	apiPermPaths map[Perm]string
-)
-
-func Declare(method, path string, p Perm) {
-	regMu.Lock()
-	defer regMu.Unlock()
-	if declaredKeys == nil {
-		declaredKeys = map[string]Perm{}
-	}
-	key := method + " " + path
-	if prev, dup := declaredKeys[key]; dup {
-		if prev == p {
-			return
-		}
-		if p == Exempt {
-			panic("同一路由既声明了权限点又声明了豁免：" + key + " → " + string(prev) + " / Exempt")
-		}
-		if prev == Exempt {
-			panic("同一路由既声明了豁免又声明了权限点：" + key + " → Exempt / " + string(p))
-		}
-		panic("同一路由被声明了两种权限点：" + key + " → " + string(prev) + " / " + string(p))
-	}
+// RegisterSpec 登记权限点的模块与名称（由 admin 业务在装配时提供，不来自代码目录）。
+func RegisterSpec(p Perm, module, name string) {
 	if p == Exempt {
-		declaredKeys[key] = Exempt
-		exemptRoutes = append(exemptRoutes, key)
 		return
 	}
-	s, ok := specs[p]
-	if !ok {
-		panic("权限点未登记：路由 " + key + " 声明了 " + string(p) +
-			"，但 internal/permission/codes.go 里没有这条常量（拼写错误？新增权限点要同时加常量）")
+	regMu.Lock()
+	defer regMu.Unlock()
+	if specs == nil {
+		specs = map[Perm]spec{}
 	}
-	if strings.HasPrefix(path, "/api/") {
-		if apiPermPaths == nil {
-			apiPermPaths = map[Perm]string{}
-		}
-		if prev, used := apiPermPaths[p]; used && prev != key {
-			panic("同一权限点绑定到多条 API 路由：" + string(p) + " → " + prev + " / " + key +
-				"（sys_permission.permission_code 唯一，只有一条路径能生成超管策略，" +
-				"其余路径对所有人 403 —— 每条 API 路由要各自一个权限点）")
-		}
-		apiPermPaths[p] = key
-	}
-	declaredKeys[key] = p
-	declared = append(declared, RouteSpec{Method: method, Path: path, Perm: p, Module: s.module, Name: s.name})
+	specs[p] = spec{module: module, name: name}
 }
 
+// Declare 登记一条路由绑定。
+func Declare(method, path string, p Perm) {
+	kind := mw.RouteProtected
+	if p == Exempt {
+		kind = mw.RouteExempt
+	}
+	mw.Declare(method, path, p, kind)
+}
+
+// Known 报告权限点是否在已登记目录中。
 func Known(p Perm) bool {
 	if p == Exempt {
 		return false
 	}
+	regMu.Lock()
+	defer regMu.Unlock()
 	_, ok := specs[p]
 	return ok
 }
 
+// Label 返回权限点的模块与名称。
 func Label(p Perm) (module, name string, ok bool) {
+	regMu.Lock()
+	defer regMu.Unlock()
 	sp, ok := specs[p]
 	if !ok {
 		return "", "", false
@@ -93,7 +69,10 @@ func Label(p Perm) (module, name string, ok bool) {
 	return sp.module, sp.name, true
 }
 
+// All 返回已登记目录里的全部权限点。
 func All() []Perm {
+	regMu.Lock()
+	defer regMu.Unlock()
 	out := make([]Perm, 0, len(specs))
 	for p := range specs {
 		out = append(out, p)
@@ -106,46 +85,19 @@ func All() []Perm {
 	return out
 }
 
-func RoutesOf(p Perm) []RouteSpec {
-	regMu.Lock()
-	defer regMu.Unlock()
-	out := make([]RouteSpec, 0, 2)
-	for _, r := range declared {
-		if r.Perm == p {
-			out = append(out, r)
-		}
-	}
-	slices.SortFunc(out, func(a, b RouteSpec) int {
-		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Method, b.Method))
-	})
-	return out
-}
+// RoutesOf 返回某权限点绑定的全部路由。
+func RoutesOf(p Perm) []RouteSpec { return mw.RoutesOf(p) }
 
-func Snapshot() []RouteSpec {
-	regMu.Lock()
-	defer regMu.Unlock()
-	out := make([]RouteSpec, len(declared))
-	copy(out, declared)
-	slices.SortFunc(out, func(a, b RouteSpec) int {
-		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Method, b.Method))
-	})
-	return out
-}
+// Snapshot 返回已登记绑定的只读副本。
+func Snapshot() []RouteSpec { return mw.Snapshot() }
 
-func Exempts() []string {
-	regMu.Lock()
-	defer regMu.Unlock()
-	out := make([]string, len(exemptRoutes))
-	copy(out, exemptRoutes)
-	slices.Sort(out)
-	return out
-}
+// Exempts 返回明确豁免的路由键。
+func Exempts() []string { return mw.Exempts() }
 
+// Reset 清空登记与目录；只允许装配与测试使用。
 func Reset() {
+	mw.Reset()
 	regMu.Lock()
 	defer regMu.Unlock()
-	declared = nil
-	declaredKeys = nil
-	exemptRoutes = nil
-	apiPermPaths = nil
+	specs = nil
 }

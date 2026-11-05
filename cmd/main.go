@@ -63,7 +63,12 @@ func run(migrateOnly bool) error {
 		return nil
 	}
 
-	router := buildHTTPRouter(config.ValidateReady)
+	// 后台循环挂在 bgCtx 上：进程收尾时先 cancel 再 Shutdown，
+	// 循环不会在库已关闭之后还去领任务。
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+
+	router := buildHTTPRouter(bgCtx, config.ValidateReady)
 
 	if err := utils.EnsurePortReadyWithStrategy(serverCfg.PortStrategy, serverCfg.Mode, serverCfg.Port); err != nil {
 		return err
@@ -93,6 +98,9 @@ func run(migrateOnly bool) error {
 	case <-quit:
 		logger.Scene("init").Info("收到退出信号，开始关闭...")
 	}
+
+	// 先停后台循环，再关 HTTP 与组件：反过来会让循环在连接已关闭后继续领任务。
+	stopBackground()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -156,6 +164,7 @@ func loadAndPrepareRuntime(configPath string) (config.ServerConfig, error) {
 }
 
 func buildHTTPRouter(
+	bgCtx context.Context,
 	ready func() error,
 ) *gin.Engine {
 	router := gin.New()
@@ -171,7 +180,7 @@ func buildHTTPRouter(
 
 	middleware.Setup(router)
 
-	routers.SetupRoutes(router, ready)
+	routers.SetupRoutesWithContext(bgCtx, router, ready)
 	return router
 }
 

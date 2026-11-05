@@ -157,9 +157,10 @@
     {* 行内表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套在 <td> 里）。 *}
     {{range _, p := .Plugins}}
     <div data-write-host>
-        <form id="plugin-toggle-{{p.ID}}" method="post" action="/api/plugin/toggle" class="hidden-form"
-              data-write-url="/api/plugin/toggle" data-write="create" data-write-nav="/admin/plugins"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "插件状态更新失败") }}">
+        <form id="plugin-toggle-{{p.ID}}" class="hidden-form" data-write hx-post="/api/plugin/toggle"
+              hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop"
+              hx-disable="findAll button:not(:disabled)" data-write-reload>
+            <div data-write-result></div>
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{p.ID}}">
             <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
@@ -167,10 +168,11 @@
         <p data-write-status role="status" aria-live="polite" hidden></p>
     </div>
     <div data-write-host>
-        <form id="plugin-uninstall-{{p.ID}}" method="post" action="/api/plugin/uninstall" class="hidden-form"
-              data-write-url="/api/plugin/uninstall" data-write="single"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "插件卸载失败") }}"
-              data-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}" data-confirm-danger>
+        <form id="plugin-uninstall-{{p.ID}}" class="hidden-form" data-write hx-post="/api/plugin/uninstall"
+              hx-target="find [data-write-result]" hx-swap="innerHTML" hx-sync="this:drop"
+              hx-disable="findAll button:not(:disabled)" data-write-reload
+              hx-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}">
+            <div data-write-result></div>
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{p.ID}}">
         </form>

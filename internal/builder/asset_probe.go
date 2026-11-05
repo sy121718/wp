@@ -1,26 +1,26 @@
 package builder
 
 import (
-	mediacontract "go_wp/internal/module/media/contract"
+	"go_wp/pkg/builder/core"
 )
 
 type assetProbeMemo struct {
-	probe func(string) []mediacontract.VariantRef
-	cache map[string][]mediacontract.VariantRef
+	probe func(string) []core.AssetVariant
+	cache map[string][]core.AssetVariant
 }
 
-func newAssetProbeMemo(probe func(string) []mediacontract.VariantRef) func(string) []mediacontract.VariantRef {
+func newAssetProbeMemo(probe func(string) []core.AssetVariant) func(string) []core.AssetVariant {
 	if probe == nil {
 		return nil
 	}
 	m := &assetProbeMemo{
 		probe: probe,
-		cache: make(map[string][]mediacontract.VariantRef, 8),
+		cache: make(map[string][]core.AssetVariant, 8),
 	}
 	return m.lookup
 }
 
-func (m *assetProbeMemo) lookup(url string) []mediacontract.VariantRef {
+func (m *assetProbeMemo) lookup(url string) []core.AssetVariant {
 	if refs, ok := m.cache[url]; ok {
 		return refs
 	}

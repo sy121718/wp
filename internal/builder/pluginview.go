@@ -5,7 +5,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 )
 
 const pluginTypePrefix = "plugin."

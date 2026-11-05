@@ -9,14 +9,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/uispec"
+	"go_wp/pkg/uispec"
 )
 
 func renderBlocks(t *testing.T, views []uispec.View) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
-	data := gin.H{"Views": views}
+	// ui_blocks 的空态走页面全局 t（页面上由 adminui 注入）：
+	// 测试里给一个只返回兜底的取词函数，与真实渲染同形。
+	data := gin.H{"Views": views, "t": func(_, fallback string) string { return fallback }}
 	if err := NewJetHTMLRender(".", true).Instance("admin/ai/ui_blocks", data).Render(rec); err != nil {
 		t.Fatalf("spec 片段渲染失败: %v", err)
 	}
@@ -91,16 +93,17 @@ func TestRenderSpecBlocksEmpty(t *testing.T) {
 		{Type: uispec.TypeTable, Table: &uispec.TableView{
 			Columns: []uispec.Column{{Label: "商品"}},
 			Rows:    nil,
-			Empty:   "区间内没有任何已付款的订单。",
 		}},
 		{Type: uispec.TypeStat, Stat: &uispec.StatView{Items: nil}},
 	}
 	body := renderBlocks(t, views)
-	if !strings.Contains(body, "区间内没有任何已付款的订单。") {
-		t.Errorf("Empty 文案没有渲染出来")
+	// 空态文案归模板：数据源不填成品句（TableView.Empty 已无生产构造者）。
+	// 取词走页面全局 t/tr，这里没有注入词表时 tr 退成模板里写的中文兜底。
+	if !strings.Contains(body, "暂无数据") {
+		t.Errorf("空数据应渲染空态提示: %s", body)
 	}
-	if strings.Contains(body, "暂无数据") || strings.Contains(body, "无数据") {
-		t.Errorf("模板不该硬编码空态文案: %s", body)
+	if strings.Contains(body, "区间内没有任何已付款的订单。") {
+		t.Errorf("模板不该出现数据源自带的成品句: %s", body)
 	}
 
 	if strings.Contains(body, "<table") {

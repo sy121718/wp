@@ -154,7 +154,7 @@ func TestLocalStorePersistsGuardFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("落盘失败: %v", err)
 	}
-	dir := filepath.Join(store.Root, "artifacts", locatorHash(loc))
+	dir := filepath.Join(store.Root, "artifacts", LocatorHash(loc))
 	for _, name := range []string{"index.html", "manifest.json", GuardPageFileName, GuardMetaFileName} {
 		if _, serr := os.Stat(filepath.Join(dir, name)); serr != nil {
 			t.Errorf("%s 未落盘: %v（store 是否还在硬编码文件名？）", name, serr)

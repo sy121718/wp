@@ -1,1 +1,0 @@
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}></div>

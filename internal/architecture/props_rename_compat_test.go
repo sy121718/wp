@@ -11,10 +11,10 @@ import (
 
 var knownRenamedProps = map[string][]string{
 
-	"internal/builder/components/card/card.go":               {"buttonText"},
-	"internal/builder/components/infobox/infobox.go":         {"btnText"},
-	"internal/builder/components/addtocart/addtocart.go":     {"buttonText"},
-	"internal/builder/components/articlelist/articlelist.go": {"linkText"},
+	"pkg/builder/components/card/card.go":               {"buttonText"},
+	"pkg/builder/components/infobox/infobox.go":         {"btnText"},
+	"internal/builder/extensions/addtocart/addtocart.go":     {"buttonText"},
+	"internal/builder/extensions/articlelist/articlelist.go": {"linkText"},
 }
 
 var legacyKeysRe = regexp.MustCompile(`\{From:\s*"([^"]+)",\s*To:\s*"([^"]+)"\}`)
