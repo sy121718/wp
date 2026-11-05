@@ -393,18 +393,46 @@ pkg/database/{retention,partition}
 - **`internal/builder` 主包本轮未搬进 `pkg/builder`**。`jetview.go`（1354 行、51 个视图函数）仍硬编码 import 13 个业务扩展，nav 组件还牵涉菜单解析。完整搬迁需要在几乎每个业务组件实现 `ViewBuilder` 并重新验证产物逐字节一致，风险高于本轮收益；任务书允许分阶段，故只完成 `core`/`source`/`richdoc`/`style`/`plugincomp`/通用组件与注册表入口。
 - **静态资产本轮未物理迁入 `pkg/view/ui`**。运行时 `/static` 与构建期内联已共用 `internal/templates/static` 同一份源，满足「一份源两个出口」；再搬一次只改物理位置，不改变行为，留到与编辑器资产一并处理。
 - **`adminui.Prepare/BuildNav` 仍是 Go 侧展示对象**。改为模板递归原始菜单树会波及 sidebar/nav-nodes/多个导航测试与 i18n 断言，属于独立一批；本轮先保证统一反馈与公共 UI 属主落地。
-- **`internal/permission/codes.go` 的 363 个常量未按属主拆分**。`Perm` 已改为无类型字符串，登记机制已进 `pkg/middleware`；常量分属主需要逐条核对数据库与路由，属独立工程。
+- ~~**`internal/permission/codes.go` 的 363 个常量未按属主拆分**~~ —— **已在本轮完成并删除整个包**：常量直连各模块 `enums/permission_codes.go`；登记机制只在 `pkg/middleware`；`Known`/`Label` 改为 admin 数据库目录；新增 743 目录补齐种子与 744 路径漂移修正；启动反写 `SyncToDB` 删除，改为启动核对 + `/readyz` 不就绪。
 - **`shell.TranslateFor` 的其余消费者未迁模板**。采购选项已迁；内容/库存的预取词涉及 JSON 消费者与 HTML 选项的逐点区分，需按域核对，不批量盲改。
 
 最终验证状态：`go build ./...` 通过；`go test ./pkg/...`、`./internal/templates/ ./internal/adminui/ ./internal/shell/ ./internal/text/ ./internal/pipeline/ ./internal/permission/ ./internal/partition/ ./internal/middleware/... ./internal/builder/...` 全绿；`internal/architecture` 里因本轮搬包失效的路径已同步（重命名 props 台账、HTML 字面量台账、关键帧/组件 CSS 扫描根、公共 partial 属主路径），剩余 19 条红项均已逐条核对为**工作区既有未提交改动**所致（未跟踪的控制器文件、`enums` 去兜底、`catalog_pagination.html` 的 key、`grant_menu_tree.html` 的 style 算术、`ai_page_resp.go` 展示字段、被删除的 `workbench/error.html` 等），不是本轮引入。
 
 未验证：真实浏览器三视口、PG feature、`go run ./cmd/write-contracts -check`；工作区既有的未提交改动导致的架构门禁红项（未跟踪控制器文件、enums 去兜底、`catalog_pagination.html` 的 key、`grant_menu_tree.html` 的 style 算术、`ai_page_resp.go` 展示字段）未处理。
 
+
+第三轮（权限终态与 builder 清理，已完成并分批提交）：
+
+- 权限：
+  - `internal/permission` 整包删除（codes/perm/group/sync/SPEC 与全部测试）；全仓 `grep internal/permission` 为 0。
+  - 363 个常量直连模块 enums；跨模块只有 `adminenums.SEOAudit`（publication 借用）与 `inventoryenums.InventoryPurchase*`（purchase 复用）。
+  - `Declare`/`RouteGroup`/`Perm`/`Exempt`/`Snapshot`/`Exempts`/`RoutesOf`/`Reset` 全部收进 `pkg/middleware`。mail 的 18 条重复声明删除（真实 API 路由已由 RouteGroup 登记，DECLARED 去重后不变）；order 3 条、i18n 与 SEO 各 1 条改为 `DeclareRoute` + `RoutePage` + 显式 `AuthObject/AuthMethod`。
+  - `Known` → 已登记路由 + admin 已启用目录项，查询失败 fail-closed；`Label` → admin `ListByCodes` 批量取名（`PermBrief` 补 `Name/Status`）。AI 侧通过 `aicontract.PermDirectory` 最小端口注入，不跨层读 admin 表。
+  - 迁移：`743_permission_directory_backfill` 覆盖全部 363 个码（`ON CONFLICT DO NOTHING`，保留人工列，`ConditionSQL` 按 363 个已知码判定），`744_block_delete_route_alignment` 修已确认的 `block:delete` 路径漂移。原 `internal/permission` 的迁移/授权延续测试迁到 `public/migrations` 并改为验证真实种子与迁移。
+  - 启动：删除 `syncDeclaredPermissions`；`runSelfCheck` 改为核对「声明 ↔ 目录」（含页面复用对象的 AuthObject/AuthMethod），不一致只报问题并让 `/readyz` 返回 `not_ready`，不再写库。
+- builder：
+  - 删除与 `pkg/builder` 逐字节相同的 `document.jet`、`testdata/golden`、空壳 `presets`；`scripts/visual-baseline.py` 指向 `pkg/builder/testdata/golden`。
+  - `internal/builder/richtext` 的测试迁入 `pkg/builder/richdoc`（外部测试包）。
+  - 新增门禁：13 个业务类型必须能同时从 `core.NodeViewBuilderOf` 与组件注册表命中。
+  - SPEC/README/architecture 的旧路径同步。
+- 文档与门禁：`AGENTS.md` 权限段、`internal/module/admin/SPEC.md`、`pkg/CLAUDE.md` 同步；`check-page-get-authz.sh` 改为拼接模块 enums 并识别 `DeclareRoute`；`check-page-endpoint-authz.py` 的声明式判据改为「模块 enums 限定符或空串」。
+
+验证（本机 PostgreSQL 可用，数据库相关步骤真实执行、不标未验证）：
+
+- `go build ./...`、`go vet ./...` 通过。
+- `go test ./public/migrations/ -run 'TestBlock|TestGrantCopy|TestFreshSchema|TestUpgradeFromDamaged|TestBulkDelete|TestPermissionDirectory'` 全绿。
+- `go test ./internal/module/ai/... ./public/test/ai/...` 全绿（含签发令牌 scope 校验与 MCP 页面）。
+- `go test ./pkg/middleware/ ./internal/module/mail|block|order|admin|publication/inbound/http/ ./internal/routers/ -run ...` 相关用例全绿。
+- `bash scripts/check-page-get-authz.sh`、`python3 scripts/check-page-endpoint-authz.py`、`bash scripts/check-permission-gaps.sh` 全绿（363 权限点 / 393 路由 / 33 豁免，双向同源）。
+- `go test ./internal/architecture/ -run 'TestPkgDoesNotImportInternal|TestPkgStructuralBoundaries'` 通过。
+
+仍有既有红项（与本轮无关，已在 HEAD 复现）：`internal/routers` 的 `SetRequestUserID` 台账缺项与写端点扫码漂移、`internal/architecture` 的控制器语句上限台账、analytics/build/contenttemplate/navigation/product-enums 的部分用例。
+
 ## 关键实施入口
 
 - 共享视图：[render.go](pkg/view/render.go)、[failure.go](pkg/view/failure.go)、[prepare.go](internal/adminui/prepare.go)、[html_failure.go](internal/adminui/html_failure.go)、[scope.go](internal/text/scope.go)。
 - 模板与资产：[jet_render.go](internal/templates/jet_render.go)、[embed_loader.go](internal/templates/embed_loader.go)、[plugin_loader.go](internal/templates/plugin_loader.go)、[write-base.js](internal/templates/static/js/ui/write-base.js)。
-- 构建工具：[builder.go](internal/builder/builder.go)、[core/render.go](internal/builder/core/render.go)、[ui_script.go](internal/builder/ui_script.go)、[ui_css_split.go](internal/builder/ui_css_split.go)。
+- 构建工具：[builder.go](pkg/builder/builder.go)、[core/render.go](pkg/builder/core/render.go)、[ui_script.go](pkg/builder/ui_script.go)、[ui_css_split.go](pkg/builder/ui_css_split.go)、[业务扩展](internal/builder/extensions/views/views.go)。
 - 编辑器：[index.js](internal/templates/static/js/workbench/index.js)、[methods/api.js](internal/templates/static/js/workbench/methods/api.js)、[workbench/layout.html](internal/templates/workbench/layout.html)。
 - 发布：[publisher.go](internal/pipeline/publisher.go)、[publication_pathlock.go](internal/pipeline/publication_pathlock.go)、[assembly_publish.go](internal/routers/assembly_publish.go)。
-- 横切机制：[perm.go](internal/permission/perm.go)、[sync.go](internal/permission/sync.go)、[runtime.go](config/runtime.go)、[register.go](config/register.go)、[scaffold.go](internal/module/plugin/scaffold/scaffold.go)。
+- 横切机制：[routes.go](pkg/middleware/routes.go)（路由与权限登记）、[runtime.go](config/runtime.go)、[register.go](config/register.go)、[scaffold.go](internal/module/plugin/scaffold/scaffold.go)、[743 权限目录](public/migrations/743_permission_directory_backfill.sql)。
