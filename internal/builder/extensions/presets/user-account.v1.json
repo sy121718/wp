@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "settings": {
+    "layout": {"mode": "full"},
+    "base": {"backgroundColor": "#f7f7f8"}
+  },
+  "root": [
+    {
+      "id": "account-layout",
+      "type": "core.container",
+      "name": "账号中心",
+      "props": {
+        "tag": "main",
+        "layout": {
+          "engine": "grid",
+          "grid": {
+            "columns": {"desktop": 2, "tablet": 1, "mobile": 1},
+            "columnGap": "56px",
+            "rowGap": "24px"
+          }
+        },
+        "box": {
+          "maxWidth": "1120px",
+          "center": true,
+          "padding": {"desktop": "64px 32px", "tablet": "40px 28px", "mobile": "28px 20px"}
+        }
+      },
+      "children": [
+        {
+          "id": "account-intro",
+          "type": "core.container",
+          "name": "账号说明",
+          "props": {
+            "tag": "header",
+            "layout": {"engine": "flex", "flex": {"direction": "column", "gap": "20px"}},
+            "box": {"padding": {"desktop": "40px 0px 0px", "mobile": "0px"}}
+          },
+          "children": [
+            {
+              "id": "account-eyebrow",
+              "type": "core.text",
+              "name": "栏目名",
+              "props": {"mode": "plaintext", "plainTag": "p", "text": "ACCOUNT", "color": "#737373", "typography": {"desktop": {"fontSize": "12px", "letterSpacing": "2px"}}}
+            },
+            {
+              "id": "account-heading",
+              "type": "core.heading",
+              "name": "主标题",
+              "props": {"tag": "h1", "text": "你的账号，都在这里。", "color": "#171717", "weight": "600", "typography": {"desktop": {"fontSize": "40px", "lineHeight": "1.2"}, "mobile": {"fontSize": "30px"}}}
+            },
+            {
+              "id": "account-description",
+              "type": "core.text",
+              "name": "流程说明",
+              "props": {"mode": "plaintext", "plainTag": "p", "text": "登录或创建账号，在一个地方管理个人资料、偏好与登录设备。忘记密码时，也可以从这里找回。", "color": "#737373", "typography": {"desktop": {"fontSize": "16px", "lineHeight": "1.8"}}}
+            }
+          ]
+        },
+        {
+          "id": "account-center",
+          "type": "core.userForms",
+          "name": "完整账号流程",
+          "props": {"mode": "account", "title": "", "showTitle": true, "description": "登录后可查看并更新个人信息。", "color": "#171717"},
+          "actions": {"authenticated": {"kind": "local", "partKey": "account"}}
+        }
+      ]
+    }
+  ]
+}

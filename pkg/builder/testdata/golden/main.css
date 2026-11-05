@@ -1,0 +1,178 @@
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
+
+@layer sky-base {
+@keyframes sky-fade-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+body {
+  container-name: sky-theme;
+}
+
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  padding: 12px 26px;
+  font-size: 1.125rem;
+  border-radius: var(--sky-btn-radius, 8px);
+  gap: 8px;
+  background: #111111;
+  color: #ffffff;
+  border: var(--sky-btn-border-width, 0) var(--sky-btn-border-style, solid) var(--sky-btn-border-color, transparent);
+  box-shadow: var(--sky-btn-shadow, none);
+}
+
+.sky-c-cta {
+  transition: all 0.2s ease;
+}
+
+.sky-c-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  padding: 10px 20px;
+  font-size: 1rem;
+  border-radius: var(--sky-btn-radius, 8px);
+  background: transparent;
+  box-shadow: var(--sky-btn-shadow, none);
+}
+
+.sky-c-ghost .bt-icon-shift {
+  transition: transform 0.2s ease;
+}
+
+.sky-c-inner {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 16px;
+  row-gap: 16px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+}
+
+.sky-c-inner .sky-shape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.sky-c-inner .sky-shape svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sky-c-inner .sky-shape-top {
+  top: 0;
+}
+
+.sky-c-inner .sky-shape svg {
+  color: currentColor;
+}
+
+.sky-c-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 24px;
+  padding: 40px;
+  background-color: #f7f7f8;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.sky-c-hero {
+  animation: sky-fade-in 0.6s ease backwards;
+  animation-timing-function: linear(0, 0.0088 2.86%, 0.0347 5.83%, 0.1413 12.1%, 0.2981 18.6%, 0.4629 24.9%, 0.7415 35%, 0.8683 41.4%, 0.9727 49.5%, 1.0072 53.7%, 1.0209 59.7%, 1.0161 66%, 0.9885 75.4%, 0.9829 80.9%, 0.9854 86.9%, 0.9967 95.1%, 1);
+}
+
+.sky-c-hero .sky-shape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.sky-c-hero .sky-shape svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sky-c-hero .sky-shape-bottom {
+  bottom: 0;
+}
+
+.sky-c-hero .sky-shape svg {
+  color: #f7f7f8;
+}
+
+@media (max-width: 1024px) {
+.sky-c-inner {
+  grid-template-columns: repeat(1, 1fr);
+}
+.sky-c-hero {
+  padding: 24px;
+}
+}
+
+@media (max-width: 767px) {
+.sky-c-hero {
+  padding: 16px;
+}
+}
+
+@media (hover: hover) {
+  .sky-c-cta:hover, .sky-c-cta:focus {
+  background: #333333;
+
+}
+}
+@media (hover: hover) {
+  .sky-c-ghost:hover .bt-icon-shift {
+  transform: translateX(4px);
+
+}
+}
+
+.sky-c-cta:active {
+  opacity: 0.92;
+
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

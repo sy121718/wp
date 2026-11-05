@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/templates"
 	accordionpkg "go_wp/pkg/builder/components/accordion"
 	textpkg "go_wp/pkg/builder/components/text"

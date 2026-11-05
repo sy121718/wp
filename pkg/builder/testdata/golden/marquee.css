@@ -1,0 +1,69 @@
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
+
+@layer sky-base {
+@keyframes sky-marquee-mq1 {
+  from { transform: translateX(-50%) }
+  to { transform: translateX(0) }
+}
+
+body {
+  container-name: sky-theme;
+}
+
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-mq1 {
+  display: flex;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-mq1 .sky-marquee-track {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 32px;
+  padding-right: 32px;
+  animation: sky-marquee-mq1 15s linear infinite;
+}
+
+.sky-c-mq1 .sky-marquee-item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sky-c-mq1 {
+  background: #111;
+}
+
+.sky-c-mq1 .sky-marquee-track {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+@media (hover: hover) {
+  .sky-c-mq1:hover .sky-marquee-track {
+  animation-play-state: paused;
+
+}
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

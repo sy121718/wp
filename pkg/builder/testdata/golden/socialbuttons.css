@@ -1,0 +1,202 @@
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
+
+@layer sky-base {
+body {
+  container-name: sky-theme;
+}
+
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-sb1 {
+  display: flex;
+  gap: var(--sky-space-4, 8px);
+  justify-content: flex-start;
+}
+
+.sky-c-sb1 .sky-social-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(40px * 0.55);
+  text-decoration: none;
+  transition: transform .15s, opacity .15s;
+}
+
+.sky-c-sb1 .sky-social-btn {
+  border-radius: 999px;
+}
+
+.sky-c-sb1 a[aria-label="facebook"] {
+  color: var(--sky-c-surface, #fff);
+  background: #1877f2;
+}
+
+.sky-c-sb1 a[aria-label="x"] {
+  color: var(--sky-c-surface, #fff);
+  background: #000000;
+}
+
+.sky-c-sb1 a[aria-label="instagram"] {
+  color: var(--sky-c-surface, #fff);
+  background: #e4405f;
+}
+
+.sky-c-sb1 a[aria-label="youtube"] {
+  color: var(--sky-c-surface, #fff);
+  background: #ff0000;
+}
+
+.sky-c-sb1 a[aria-label="tiktok"] {
+  color: var(--sky-c-surface, #fff);
+  background: #000000;
+}
+
+.sky-c-sb1 a[aria-label="telegram"] {
+  color: var(--sky-c-surface, #fff);
+  background: #229ed9;
+}
+
+.sky-c-sb1 a[aria-label="whatsapp"] {
+  color: var(--sky-c-surface, #fff);
+  background: #25d366;
+}
+
+.sky-c-sb1 a[aria-label="pinterest"] {
+  color: var(--sky-c-surface, #fff);
+  background: #bd081c;
+}
+
+.sky-c-sb1 a[aria-label="linkedin"] {
+  color: var(--sky-c-surface, #fff);
+  background: #0a66c2;
+}
+
+.sky-c-sb1 a[aria-label="threads"] {
+  color: var(--sky-c-surface, #fff);
+  background: #000000;
+}
+
+.sky-c-sb1 a[aria-label="vimeo"] {
+  color: var(--sky-c-surface, #fff);
+  background: #1ab7ea;
+}
+
+.sky-c-sb1 a[aria-label="flickr"] {
+  color: var(--sky-c-surface, #fff);
+  background: #0063dc;
+}
+
+.sky-c-sb1 a[aria-label="github"] {
+  color: var(--sky-c-surface, #fff);
+  background: #181717;
+}
+
+.sky-c-sb1 a[aria-label="dribbble"] {
+  color: var(--sky-c-surface, #fff);
+  background: #ea4c89;
+}
+
+.sky-c-sb1 a[aria-label="behance"] {
+  color: var(--sky-c-surface, #fff);
+  background: #1769ff;
+}
+
+.sky-c-sb1 a[aria-label="soundcloud"] {
+  color: var(--sky-c-surface, #fff);
+  background: #ff5500;
+}
+
+.sky-c-sb1 a[aria-label="spotify"] {
+  color: var(--sky-c-surface, #fff);
+  background: #1db954;
+}
+
+.sky-c-sb1 a[aria-label="snapchat"] {
+  color: var(--sky-c-surface, #fff);
+  background: #fffc00;
+}
+
+.sky-c-sb1 a[aria-label="discord"] {
+  color: var(--sky-c-surface, #fff);
+  background: #5865f2;
+}
+
+.sky-c-sb1 a[aria-label="tumblr"] {
+  color: var(--sky-c-surface, #fff);
+  background: #36465d;
+}
+
+.sky-c-sb1 a[aria-label="viber"] {
+  color: var(--sky-c-surface, #fff);
+  background: #7360f2;
+}
+
+.sky-c-sb1 a[aria-label="vk"] {
+  color: var(--sky-c-surface, #fff);
+  background: #0077ff;
+}
+
+.sky-c-sb1 a[aria-label="bluesky"] {
+  color: var(--sky-c-surface, #fff);
+  background: #0a7aff;
+}
+
+.sky-c-sb2 {
+  display: flex;
+  gap: var(--sky-space-4, 8px);
+  justify-content: flex-start;
+}
+
+.sky-c-sb2 .sky-social-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(40px * 0.55);
+  text-decoration: none;
+  transition: transform .15s, opacity .15s;
+}
+
+.sky-c-sb2 .sky-social-btn {
+  border-radius: 999px;
+}
+
+.sky-c-sb2 .sky-social-btn {
+  color: #123456;
+  background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
+}
+
+@media (hover: hover) {
+  .sky-c-sb1 .sky-social-btn:hover, .sky-c-sb2 .sky-social-btn:hover {
+  transform: translateY(-2px);
+
+}
+}
+
+.sky-c-sb1 .sky-social-btn:active, .sky-c-sb2 .sky-social-btn:active {
+  transform: translateY(0);
+  opacity: 0.88;
+
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

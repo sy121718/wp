@@ -107,5 +107,8 @@ func DecodeProps[P any](raw json.RawMessage) (P, error) {
 	if err := normalizeMediaProps(&p); err != nil {
 		return p, err
 	}
+	if err := NormalizeRichMediaProps(&p); err != nil {
+		return p, err
+	}
 	return p, nil
 }

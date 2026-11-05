@@ -1,0 +1,76 @@
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
+
+@layer sky-base {
+body {
+  container-name: sky-theme;
+}
+
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-v1 {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.sky-c-v1 .sky-video-frame {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+}
+
+.sky-c-v1 .sky-video-frame iframe, .sky-c-v1 .sky-video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  display: block;
+}
+
+.sky-c-v2 {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.sky-c-v2 .sky-video-frame {
+  position: relative;
+  width: 100%;
+  padding-top: 75%;
+}
+
+.sky-c-v2 .sky-video-frame iframe, .sky-c-v2 .sky-video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  display: block;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

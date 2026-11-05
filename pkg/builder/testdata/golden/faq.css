@@ -1,0 +1,73 @@
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
+
+@layer sky-base {
+body {
+  container-name: sky-theme;
+}
+
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sky-c-fq1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sky-space-4, 8px);
+}
+
+.sky-c-fq1 details {
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--sky-c-surface, #fff);
+}
+
+.sky-c-fq1 summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-weight: 600;
+}
+
+.sky-c-fq1 summary::-webkit-details-marker {
+  display: none;
+}
+
+.sky-c-fq1 .sky-faq-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
+  color: var(--sky-c-text-mute, #6b7280);
+  transition: transform .2s;
+}
+
+.sky-c-fq1 details[open] .sky-faq-chevron {
+  transform: rotate(180deg);
+}
+
+.sky-c-fq1 .sky-faq-answer {
+  padding: 0 18px 14px;
+  color: var(--sky-c-text-mute, #6b7280);
+  line-height: 1.6;
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
