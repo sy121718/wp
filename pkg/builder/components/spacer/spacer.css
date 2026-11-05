@@ -1,0 +1,21 @@
+/* spacer.css — 间隔组件样式（来源：原 spacer/jet.go 的 CompileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ */
+
+/* 高度三端：只在实际设置了高度的端产出声明（空值省略整条声明）。 */
+& {
+  height: {{h_desktop}};
+}
+
+@media (max-width: 1024px) {
+  & {
+    height: {{h_tablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & {
+    height: {{h_mobile}};
+  }
+}

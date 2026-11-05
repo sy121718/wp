@@ -27,24 +27,41 @@ func TestCountPlaceholders(t *testing.T) {
 	}
 }
 
-func TestHasStringPlaceholdersOnly(t *testing.T) {
+// StringPlaceholderCount 是「这句话能不能被纯字符串参数填满」的唯一判定。
+// 它同时回答个数与可行性：调用方拿 count 核对参数个数，拿 ok 判能不能交给 Sprintf。
+func TestStringPlaceholderCount(t *testing.T) {
 	cases := []struct {
-		text string
-		want bool
+		text  string
+		count int
+		ok    bool
+		why   string
 	}{
-		{"", true},
-		{"纯文本", true},
-		{"%s", true},
-		{"%[1]s %[2]s", true},
-		{"100%% 完成", true},
-		{"%d", false},
-		{"%.2f", false},
-		{"%s%d", false},
+		{"", 0, true, "空句没有可填位置"},
+		{"纯文本", 0, true, "没有占位符"},
+		{"%s", 1, true, "裸 %s 是唯一合法形态"},
+		{"%s 与 %s", 2, true, "两个裸 %s"},
+		{"100%% 完成", 0, true, "%% 是字面百分号，不算占位符"},
+		{"占比 %s%%", 1, true, "%% 与 %s 可以共存"},
+		{"%s%d", 0, false, "%d 不接受字符串参数"},
+		{"%d", 0, false, "非 %s 动词"},
+		{"%.2f", 0, false, "非 %s 动词"},
+		{"%+v", 0, false, "非 %s 动词"},
+		{"%#v", 0, false, "非 %s 动词"},
+		{"%5d", 0, false, "非 %s 动词"},
+		{"%[1]s 和 %[2]s", 0, false, "显式索引会在参数不足时吐标记，一律拒绝"},
+		{"%05s", 0, false, "宽度会改写输出与参数消费规则"},
+		{"%.2s", 0, false, "精度同上"},
+		{"%*s", 0, false, "星号宽度同上"},
+		{"% s", 0, false, "空格标志不接受"},
+		{"不是%占位", 0, false, "% 后不是动词"},
+		{"尾随 %", 0, false, "% 在末尾没有动词"},
 	}
 
 	for _, tc := range cases {
-		if got := HasStringPlaceholdersOnly(tc.text); got != tc.want {
-			t.Fatalf("HasStringPlaceholdersOnly(%q) = %v, want %v", tc.text, got, tc.want)
+		count, ok := StringPlaceholderCount(tc.text)
+		if count != tc.count || ok != tc.ok {
+			t.Errorf("StringPlaceholderCount(%q) = (%d, %v), want (%d, %v) —— %s",
+				tc.text, count, ok, tc.count, tc.ok, tc.why)
 		}
 	}
 }

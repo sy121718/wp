@@ -39,11 +39,11 @@ func RenderTemplate(c *gin.Context, tpl string, data any) {
 func Render(c *gin.Context, data any) {
 	render, tpl, ok := slotOf(c)
 	if !ok {
-		response.ErrorInternal(c, "view", errors.New("视图出口未装配：路由缺渲染器"))
+		FailScene(c, "view", errors.New("视图出口未装配：路由缺渲染器"))
 		return
 	}
 	if data == nil {
-		response.ErrorInternal(c, sceneOf(tpl), errors.New("页面视图为空（契约：视图恒非 nil）"))
+		FailScene(c, sceneOf(tpl), errors.New("页面视图为空（契约：视图恒非 nil）"))
 		return
 	}
 	render(c, tpl, data)
@@ -55,11 +55,7 @@ func Fail(c *gin.Context, err error) {
 }
 
 func FailScene(c *gin.Context, scene string, err error) {
-	if errors.Is(err, response.ErrHandled) {
-		return
-	}
-
-	response.ErrorAuto(c, response.ErrorStatus(err), scene, err)
+	FailStatus(c, response.ErrorStatus(err), scene, err)
 }
 
 func sceneOf(tpl string) string {

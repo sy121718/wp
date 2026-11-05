@@ -1,0 +1,87 @@
+/* core.accordion 手风琴样式。零 JS：原生 <details>/<summary> 展开收起。 */
+
+& {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sky-space-4, 8px);
+}
+
+& .sky-accordion-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--sky-c-surface, #fff);
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 10px;
+  /* 三个可选值追加在末尾：属性没设时变量为空，声明整条省略，顺序与迁移前一致。 */
+  background: {{bgColor}};
+  justify-content: {{justify}};
+  font-size: {{titleSize}};
+}
+
+/* 展开箭头：基座图标库的 chevron-down（SVG），summary 默认 marker 关掉。 */
+& .sky-accordion-head::-webkit-details-marker {
+  display: none;
+}
+
+& .sky-accordion-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
+  color: var(--sky-c-text-mute, #6b7280);
+  transition: transform .2s;
+}
+
+/* 展开态由 [open] 属性驱动：箭头翻向。 */
+& details[open] .sky-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+& .sky-accordion-head {
+  transition: background .2s ease;
+}
+
+/* 触屏没有悬停，标题底色不变。
+   UI-006 判定：**装饰性，不补触屏等价形态** —— 展开是原生 <details>/<summary>
+   的点击行为（键盘 Enter/Space、触屏点击都可用），展开态由 [open] 与 ＋/× 指示，
+   底色只是鼠标下的定位辅助。 */
+@hover & .sky-accordion-head:hover {
+  background: var(--sky-c-surface-muted, #f3f4f6);
+}
+
+& .sky-accordion-body {
+  padding: 14px 18px;
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  margin-top: -8px;
+}
+
+@if borderless
+/* 无边框模式：去掉盒子的边与留白，只留标题下的一条分隔线。 */
+&.sky-accordion-borderless {
+  gap: 0;
+}
+
+&.sky-accordion-borderless .sky-accordion-head {
+  border: 0;
+  border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+&.sky-accordion-borderless .sky-accordion-body {
+  border: 0;
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+@endif

@@ -4,7 +4,7 @@ const (
 	ErrSystemError   = "ErrSystemError"
 	ErrDBQueryError  = "ErrDBQueryError"
 	ErrCacheError    = "ErrCacheError"
-	ErrInvalidParams = "ErrInvalidParams"
+	ErrInvalidParams = "sysErrBadParam"
 	ErrInvalidBody   = "ErrInvalidBody"
 	ErrNotFound      = "ErrNotFound"
 )
@@ -13,9 +13,9 @@ const (
 	ErrUnauthorized          = "ErrUnauthorized"
 	ErrInvalidToken          = "ErrInvalidToken"
 	ErrTokenExpired          = "ErrTokenExpired"
-	ErrPermissionDenied      = "ErrPermissionDenied"
+	ErrPermissionDenied      = "sysErrNoPerm"
 	ErrRateLimited           = "ErrRateLimited"
-	ErrRequestEntityTooLarge = "ErrRequestEntityTooLarge"
+	ErrRequestEntityTooLarge = "sysErrTooLarge"
 
 	ErrEnvironmentAbnormal = "ErrEnvironmentAbnormal"
 	ErrAuthUnavailable     = "ErrAuthUnavailable"

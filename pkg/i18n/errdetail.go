@@ -99,6 +99,15 @@ func ParseErrorDetail(raw string) (key string, args map[string]string, ok bool) 
 	return parts[0].Key, parts[0].Args, true
 }
 
+// EncodedDetailLike 判断一段文本是不是编码明细的残留（含段分隔符或反斜杠转义形态）：
+// 这类串不能直接交给前端显示。
+func EncodedDetailLike(raw string) bool {
+	if strings.ContainsAny(raw, ErrDetailSep+ErrDetailPartSep) {
+		return true
+	}
+	return strings.Contains(raw, `\x1f`) || strings.Contains(raw, `\x1e`)
+}
+
 var detailLogReplacer = strings.NewReplacer(ErrDetailSep, "|", ErrDetailPartSep, "||")
 
 func DetailTailForLog(raw string) string {

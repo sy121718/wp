@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ var (
 	ErrI18nLangEmpty = errors.New("语言不能为空")
 
 	ErrI18nValueEmpty = errors.New("词条内容不能为空")
+
+	// ErrI18nSelectionEmpty 是「批量删除时一个词条都没选」。
+	ErrI18nSelectionEmpty = errors.New("没有选中要删除的词条")
 )
 
 type Entry struct {
@@ -221,6 +225,137 @@ func DeleteEntry(ctx context.Context, key, lang string) (err error) {
 		return err
 	}
 	return reloadCacheAfterWrite()
+}
+
+// EntryRef 指向一条词条：(key, lang) 唯一确定 sys_i18n 里的一行。
+type EntryRef struct {
+	Key  string
+	Lang string
+}
+
+// MissingEntry 是一条「要删但库里不存在」的词条。
+//
+// 它携带原始的 Key / Lang 而不是只留一句错误文本：handler 需要把它们放进
+// data.items 让用户能定位是哪条没删成。
+type MissingEntry struct {
+	Key  string
+	Lang string
+}
+
+// MissingEntriesError 表示批量删除里至少有一条不存在。
+//
+// 为什么不用 pkg/facing 的错误形状：pkg/i18n 是被 pkg/response 依赖的基础设施，
+// 反过来 import pkg/facing 会把「错误声明 + 状态码」这条业务语义拖进词库层。
+// 这里只交「哪几条不存在」这个事实，状态码与文案由 controller 转成自己的声明。
+type MissingEntriesError struct {
+	Items []MissingEntry
+}
+
+func (e *MissingEntriesError) Error() string {
+	return "批量删除的 " + strconv.Itoa(len(e.Items)) + " 条词条不存在"
+}
+
+// DeleteEntries 批量删除词条：要么全删掉，要么一条都不删。
+//
+// 事务语义（逐条 DeleteEntry 做不到的）：
+//   - 先做参数校验，任何一条 key/lang 为空即整批拒绝，不进事务；
+//   - 事务内按 (key, lang) 升序 FOR UPDATE 锁住这批行 —— 与 DeleteEntry 单条路径
+//     以及保存路径排同一个队，避免「校验时在、删的时候没了」的窗口；
+//   - 锁回的行数必须等于请求条数，少一条就整批回滚并报 MissingEntriesError；
+//   - 删除按**锁到的行 id** 精确下刀，不按 item_key：同一 key 的多语言是不同行，
+//     按 key 删会连带删掉用户没勾的语言；
+//   - 删除与锁在同一事务，行锁保证这中间没有别的连接插进来；
+//   - 缓存重载只在提交之后做一次：事务回滚时缓存还是旧值，本来就不需要刷。
+//
+// 空选择在这里也直接拒绝：调用方不该把「什么都没选」当成「删了 0 条」的成功。
+func DeleteEntries(ctx context.Context, refs []EntryRef) (deleted int, err error) {
+	db, err := i18nAdminDB()
+	if err != nil {
+		return 0, err
+	}
+	if len(refs) == 0 {
+		return 0, ErrI18nSelectionEmpty
+	}
+
+	normalized := make([]EntryRef, 0, len(refs))
+	seen := make(map[EntryRef]struct{}, len(refs))
+	for _, ref := range refs {
+		key := strings.TrimSpace(ref.Key)
+		lang := strings.TrimSpace(ref.Lang)
+		if key == "" {
+			return 0, ErrI18nKeyEmpty
+		}
+		if lang == "" {
+			return 0, ErrI18nLangEmpty
+		}
+		item := EntryRef{Key: key, Lang: lang}
+		if _, dup := seen[item]; dup {
+			continue
+		}
+		seen[item] = struct{}{}
+		normalized = append(normalized, item)
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		if normalized[i].Key != normalized[j].Key {
+			return normalized[i].Key < normalized[j].Key
+		}
+		return normalized[i].Lang < normalized[j].Lang
+	})
+
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 锁：按 (key, lang) 升序逐条 SELECT ... FOR UPDATE。
+		// 一条查询锁不完「(key, lang) 组合」这批行，所以按排序后的顺序逐条锁 ——
+		// 顺序固定，两个并发的批量删除才不会互相等成死锁。
+		//
+		// 锁到的 **行 id** 是后面删除的唯一依据。不能退回成「按 item_key IN (...) 删」：
+		// 同一个 key 在三种语言下各有一行，用户只勾了两条，按 key 删会把没勾的
+		// 那条一起删掉 —— 行数等式在有别的 key 命中时会露馅，但语义上已经错了。
+		lockedIDs := make([]int64, 0, len(normalized))
+		locked := make(map[EntryRef]struct{}, len(normalized))
+		for _, item := range normalized {
+			var ids []int64
+			if lerr := tx.Table("sys_i18n").
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("item_key = ? AND lang = ?", item.Key, item.Lang).
+				Pluck("id", &ids).Error; lerr != nil {
+				return lerr
+			}
+			if len(ids) == 0 {
+				continue
+			}
+			locked[item] = struct{}{}
+			lockedIDs = append(lockedIDs, ids...)
+		}
+
+		if len(locked) != len(normalized) {
+			missing := make([]MissingEntry, 0, len(normalized)-len(locked))
+			for _, item := range normalized {
+				if _, ok := locked[item]; ok {
+					continue
+				}
+				missing = append(missing, MissingEntry{Key: item.Key, Lang: item.Lang})
+			}
+			// 返回错误让事务回滚：部分存在也不删，全成全败。
+			return &MissingEntriesError{Items: missing}
+		}
+
+		res := tx.Table("sys_i18n").Where("id IN ?", lockedIDs).Delete(nil)
+		if res.Error != nil {
+			return res.Error
+		}
+		// 受影响行数必须与「锁住的那批行」逐条对上：多删或少删都是缺陷，整批回滚。
+		if res.RowsAffected != int64(len(lockedIDs)) {
+			return ErrI18nUnavailable
+		}
+		deleted = int(res.RowsAffected)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	// 缓存刷新放在提交之后：事务里刷新会把「还没提交的值」写进缓存。
+	return deleted, reloadCacheAfterWrite()
 }
 
 func reloadCacheAfterWrite() error {

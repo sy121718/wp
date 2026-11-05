@@ -1,0 +1,58 @@
+/* shapedivider.css — 形状分隔线样式（来源：原 shapedivider.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 三端高度各有缺省值（120 / 90 / 64px），Go 侧兜底后作为值变量传入。
+ */
+
+/* 容器：满宽、无行高（避免 SVG 下方留出基线空隙）、裁掉 SVG 两侧的外扩部分。 */
+& {
+  position: relative;
+  display: block;
+  width: 100%;
+  line-height: 0;
+  overflow: hidden;
+}
+
+/* SVG：镜像（可选）+ 高度。 */
+& svg {
+  {{flip}};
+  height: {{h_desktop}};
+  display: block;
+  width: 100%;
+}
+
+/* 平板 / 手机各自的缺省高度。 */
+@media (max-width: 1024px) {
+  & svg {
+    height: {{h_tablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & svg {
+    height: {{h_mobile}};
+  }
+}
+
+/* 层漂移：中层正放慢速、背景层反向更慢（alternate 往返，无跳变）。
+ * 位移量 60 远小于 path 两侧的外扩量（720），平移不露边。
+ * 未开漂移时 drift 为空，下面两条规则与关键帧整体不产出。 */
+& .sd-l2 {
+  @if drift
+  animation: sky-sd-drift 14s ease-in-out infinite alternate;
+  @endif
+}
+
+& .sd-l3 {
+  @if drift
+  animation: sky-sd-drift 22s ease-in-out infinite alternate-reverse;
+  @endif
+}
+
+/* 漂移关键帧：用**规则级**条件块登记 —— @keyframes 不是声明，声明级条件段包不住它。 */
+@if drift
+@keyframes sky-sd-drift {
+  from { transform: translateX(0) }
+  to { transform: translateX(-60px) }
+}
+@endif

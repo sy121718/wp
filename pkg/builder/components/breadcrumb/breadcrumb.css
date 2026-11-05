@@ -1,0 +1,67 @@
+/* core.breadcrumb 面包屑样式（三端）。
+
+   可选属性大多只有一条声明，走「变量为空即整条省略」；
+   颜色一律由 Go 侧给出主题 Token 兜底（见 breadcrumb.go 的 compileCSS），
+   作者填了自定义色则整条替换。
+
+   注意：组件样式解析器只认「单选择器 {」形式（逗号分组的多行选择器不解析），
+   故同款声明按选择器各写一条规则。 */
+
+& .sky-breadcrumb-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: {{gap}};
+}
+
+& .sky-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+& .sky-breadcrumb-link {
+  display: inline-flex;
+  align-items: center;
+  color: {{color}};
+  font-size: {{fontSize}};
+  text-decoration: none;
+  transition: color .15s ease;
+}
+
+& .sky-breadcrumb-text {
+  display: inline-flex;
+  align-items: center;
+  color: {{color}};
+  font-size: {{fontSize}};
+  text-decoration: none;
+}
+
+/* 悬停色进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出，
+   否则点一下会把悬停色粘在链接上。 */
+@hover & .sky-breadcrumb-link:hover {
+  color: {{hoverColor}};
+}
+
+/* 当前项（末项）：强调色 + 中等字重，与可点项区分。 */
+& .sky-breadcrumb-item.is-current .sky-breadcrumb-link {
+  color: {{activeColor}};
+  font-weight: 500;
+}
+
+& .sky-breadcrumb-item.is-current .sky-breadcrumb-text {
+  color: {{activeColor}};
+  font-weight: 500;
+}
+
+/* 分隔符：装饰性，不参与无障碍树（模板已标 aria-hidden）。 */
+& .sky-breadcrumb-separator {
+  display: inline-flex;
+  align-items: center;
+  color: {{separatorColor}};
+  font-size: {{fontSize}};
+  user-select: none;
+}

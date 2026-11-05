@@ -1,0 +1,1 @@
+{{if isset(.HasSuccessMessage)}}{{if .HasSuccessMessage}}<p role="status">{{tf(.SuccessKey, .SuccessFallback, .SuccessArgs)}}</p>{{else}}<p role="status">{{t("uiOpSuccess", "操作成功")}}</p>{{end}}{{else}}<p role="status">{{t("uiOpSuccess", "操作成功")}}</p>{{end}}

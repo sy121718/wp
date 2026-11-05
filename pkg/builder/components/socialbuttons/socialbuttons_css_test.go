@@ -1,0 +1,94 @@
+package socialbuttons
+
+import (
+	"strings"
+	"testing"
+
+	"go_wp/pkg/builder/core"
+)
+
+func socialCSSFor(p *Props) string {
+	var b core.CSSBuckets
+	compileCSS("t", p, &b)
+	return b.String()
+}
+
+func TestSocialCSSBrandOrder(t *testing.T) {
+	out := socialCSSFor(&Props{})
+	prev := -1
+	count := 0
+	for _, platform := range brandOrder {
+		if _, ok := brandColors[platform]; !ok {
+			continue
+		}
+		idx := strings.Index(out, ".sky-c-t a[aria-label=\""+platform+"\"] {")
+		if idx < 0 {
+			t.Errorf("缺少平台 %s 的品牌色规则:\n%s", platform, out)
+			continue
+		}
+		if idx < prev {
+			t.Errorf("平台 %s 的顺序与 brandOrder 不一致（确定性构建会被破坏）", platform)
+		}
+		prev = idx
+		count++
+	}
+	if count < 20 {
+		t.Errorf("品牌色规则只展开了 %d 条，明显少了", count)
+	}
+}
+
+func TestSocialCSSCSColorModes(t *testing.T) {
+	brand := socialCSSFor(&Props{})
+	if strings.Contains(brand, "var(--sky-c-text-mute, #6b7280)") {
+		t.Errorf("品牌模式不该产出单色配色:\n%s", brand)
+	}
+	if strings.Contains(brand, "var(--sky-c-surface-alt, rgba(0,0,0,0.05))") {
+		t.Errorf("品牌模式不该产出单色底:\n%s", brand)
+	}
+
+	mono := socialCSSFor(&Props{Color: ColorMono})
+	if !strings.Contains(mono, "color: var(--sky-c-text-mute, #6b7280);") {
+		t.Errorf("单色配色缺失:\n%s", mono)
+	}
+	if strings.Contains(mono, "aria-label=") {
+		t.Errorf("单色模式不该产出品牌色规则:\n%s", mono)
+	}
+
+	custom := socialCSSFor(&Props{Color: ColorCustom, CustomColor: "#123456"})
+	if !strings.Contains(custom, "color: #123456;") {
+		t.Errorf("自定义色缺失:\n%s", custom)
+	}
+	fallback := socialCSSFor(&Props{Color: ColorCustom})
+	if !strings.Contains(fallback, "color: #2563eb;") {
+		t.Errorf("未填自定义色时应兜底 #2563eb:\n%s", fallback)
+	}
+}
+
+func TestSocialCSSShapeAndSize(t *testing.T) {
+	if !strings.Contains(socialCSSFor(&Props{}), "border-radius: 999px;") {
+		t.Errorf("默认形状应为全圆")
+	}
+	if !strings.Contains(socialCSSFor(&Props{Shape: "rounded"}), "border-radius: 10px;") {
+		t.Errorf("rounded 应为 10px")
+	}
+	if !strings.Contains(socialCSSFor(&Props{Shape: "square"}), "border-radius: 0;") {
+		t.Errorf("square 应为 0")
+	}
+	sized := socialCSSFor(&Props{Size: "48px"})
+	for _, want := range []string{"width: 48px;", "height: 48px;", "font-size: calc(48px * 0.55);"} {
+		if !strings.Contains(sized, want) {
+			t.Errorf("尺寸未贯穿到 %q\n%s", want, sized)
+		}
+	}
+}
+
+func TestSocialCSSHoverInHoverBucket(t *testing.T) {
+	out := socialCSSFor(&Props{})
+	if !strings.Contains(out, "@media (hover: hover) {\n  .sky-c-t .sky-social-btn:hover {\n  transform: translateY(-2px);") {
+		t.Errorf("悬停抬升应进 (hover: hover) 桶:\n%s", out)
+	}
+
+	if !strings.Contains(out, ".sky-c-t .sky-social-btn:active {") {
+		t.Errorf("按压态缺失（触屏唯一的反馈通道）:\n%s", out)
+	}
+}

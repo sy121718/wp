@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/middleware/builtin"
 )
 
 func ListQuery(c *gin.Context, keys ...string) string {
@@ -31,11 +29,4 @@ func WithListQuery(action, listQuery string) string {
 		return action + "&" + listQuery
 	}
 	return action + "?" + listQuery
-}
-
-func CSRFToken(c *gin.Context) string {
-	if tok, err := builtin.GetCSRFToken(c); err == nil {
-		return tok
-	}
-	return ""
 }

@@ -3,7 +3,7 @@ package bulkids
 import (
 	"errors"
 	"fmt"
-	"strconv"
+	"net/http"
 	"strings"
 )
 
@@ -19,10 +19,18 @@ type IDsError struct {
 const TooManyTemplate = "一次最多操作 %s 项，当前 %s 项，请分批进行"
 
 func (e *IDsError) Error() string {
-	return fmt.Sprintf(TooManyTemplate, strconv.Itoa(e.Max), strconv.Itoa(e.Count))
+	key, _ := e.Facing()
+	return key
 }
 
 func (e *IDsError) Unwrap() error { return ErrTooMany }
+
+// Facing 只交词条与数量参数，文案由 JSON 出口按请求语言生成。
+func (e *IDsError) Facing() (string, string) {
+	return fmt.Sprintf("%s|%d|%d", MsgTooMany, e.Max, e.Count), ""
+}
+
+func (e *IDsError) HTTPStatus() int { return http.StatusBadRequest }
 
 const MsgTooMany = "shell.err.bulkIdsTooMany"
 

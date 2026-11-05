@@ -5,10 +5,12 @@ type Error struct {
 	fallback string
 }
 
-func New(key, fallback string) *Error {
-	if fallback == "" {
-		fallback = key
-	}
+func New(key string) *Error {
+	return &Error{key: key}
+}
+
+// NewMessage 构造带兜底文案的错误事实，供共享失败出口按当前语言取词。
+func NewMessage(key, fallback string) *Error {
 	return &Error{key: key, fallback: fallback}
 }
 

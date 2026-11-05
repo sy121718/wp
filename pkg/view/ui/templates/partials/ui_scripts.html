@@ -1,0 +1,60 @@
+{* 控制面的控件基座唯一入口：后台、工作台和控件验证页共用。
+   顺序为 htmx → 助手 → 控件 → 扫描入口。访问面仍由 builder 按能力裁剪。
+   htmx 排在最前：htmx-bridge.js 将换页事件接入统一控件扫描，后台局部刷新
+   都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
+<script src="/static/js/ui/htmx.min.js"></script>
+<script src="/static/js/ui/site-preview.js"></script>
+<script src="/static/js/ui/site-actions.js"></script>
+{* 普通表单由 HTMX 原生编码；写基座接 CSRF、HTML 校验、错误区和成功动作。
+   复杂编辑器按明确声明提供 JSON 请求对象，不加载通用 JSON→DOM 解释器。 *}
+<script src="/static/js/ui/write-base.js"></script>
+{* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
+   没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
+<script src="/static/js/ui/htmx-bridge.js"></script>
+{* 放行 [data-requires-js] 的写按钮：排在控件基座之前 —— 首屏那批按钮要尽早可见，
+   不必等 index.js 的控件扫描跑完。 *}
+<script src="/static/js/ui/requires_js.js"></script>
+<script src="/static/js/ui/_util.js"></script>
+<script src="/static/js/ui/select.js"></script>
+<script src="/static/js/ui/drawer.js"></script>
+<script src="/static/js/ui/iconfield.js"></script>
+<script src="/static/js/ui/colorfield.js"></script>
+<script src="/static/js/ui/busy.js"></script>
+<script src="/static/js/ui/confirm.js"></script>
+<script src="/static/js/ui/modal.js"></script>
+<script src="/static/js/ui/toast.js"></script>
+<script src="/static/js/ui/themetoggle.js"></script>
+<script src="/static/js/ui/mediafield.js"></script>
+<script src="/static/js/ui/daterange.js"></script>
+<script src="/static/js/ui/product-category-tree.js"></script>
+<script src="/static/js/ui/product-tag-hits.js"></script>
+<script src="/static/js/ui/product-preview.js"></script>
+<script src="/static/js/ui/product-display.js"></script>
+<script src="/static/js/ui/product-attribute-values.js"></script>
+<script src="/static/js/ui/datarule-editor.js"></script>
+<script src="/static/js/ui/tree-table.js"></script>
+<script src="/static/js/ui/perm-tree.js"></script>
+<script src="/static/js/ui/perm-picker.js"></script>
+<script src="/static/js/ui/preview-thumb.js"></script>
+<script src="/static/js/ui/preview-zoom.js"></script>
+<script src="/static/js/ui/media-gallery.js"></script>
+{* 凭证附件字段（媒体 id 列表）：媒体库多选 → 同名多值隐藏域。
+   排在 mediafield.js 之后 —— 它复用 openMediaPickerMulti。 *}
+<script src="/static/js/ui/attachment_pick.js"></script>
+{* 调拨建单的明细行（lines[i].* 扁平键）：表单没有嵌套数组语法，行只能由前端铺。 *}
+<script src="/static/js/ui/transfer_lines.js"></script>
+<script src="/static/js/ui/hovercard.js"></script>
+<script src="/static/js/ui/ai-fab.js"></script>
+{* AI 模型目录：草稿行本地增删 + data-write-builder 的请求对象组装。 *}
+<script src="/static/js/ui/ai-models.js"></script>
+<script src="/static/js/ui/site-data.js"></script>
+<script src="/static/js/ui/site-catalog.js"></script>
+<script src="/static/js/ui/site-product.js"></script>
+{* 访问统计的分页 view 同步：切标签是纯前端动作，这脚本把当前 view 写回两张 GET
+   表单的隐藏域（[data-view-input]）。排在 index.js 之前，与 ai-trend.js 同理 ——
+   它自己扫文档、不依赖控件注册表。 *}
+<script src="/static/js/ui/analytics-view.js"></script>
+{* Token 用量趋势：服务端只给逐日数组与峰值，几何与配色在这里算。
+   排在 index.js 之前是因为它自己扫一次 [data-trend-svg]（不依赖控件注册表）。 *}
+<script src="/static/js/ui/ai-trend.js"></script>
+<script src="/static/js/ui/index.js"></script>

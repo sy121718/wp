@@ -15,19 +15,19 @@ import (
 var translateSeeds = map[string]map[string]string{
 	"ErrAdminNotFound": {"zh-CN": "管理员不存在", "en-US": "Admin not found"},
 	"ErrAccountLocked": {"zh-CN": "账号已被锁定，请 %s 后重试", "en-US": "Account locked, retry in %s"},
-	"ErrInvalidParams": {"zh-CN": "请求参数错误", "en-US": "Invalid parameters"},
+	"sysErrBadParam": {"zh-CN": "请求参数错误", "en-US": "Invalid parameters"},
 
 	"ErrTestIntPlaceholder": {"zh-CN": "已失败 %d 次，请稍后再试", "en-US": "Failed %d times, retry later"},
 
-	"msg_operation_success": {"zh-CN": "操作成功", "en-US": "Operation successful"},
+	"uiOpSuccess": {"zh-CN": "操作成功", "en-US": "Operation successful"},
 }
 
 var translateHttpCodes = map[string]int{
 	"ErrAdminNotFound":      404,
 	"ErrAccountLocked":      423,
-	"ErrInvalidParams":      400,
+	"sysErrBadParam":      400,
 	"ErrTestIntPlaceholder": 429,
-	"msg_operation_success": 200,
+	"uiOpSuccess": 200,
 }
 
 var (
@@ -100,7 +100,7 @@ func TestTranslateForms(t *testing.T) {
 		{"key|param-中文", "zh-CN", "ErrAccountLocked|5m0s", "账号已被锁定，请 5m0s 后重试"},
 		{"key|param-英文", "en-US", "ErrAccountLocked|5m0s", "Account locked, retry in 5m0s"},
 
-		{"key:detail-中文", "zh-CN", "ErrInvalidParams: json: 字段缺失", "请求参数错误: json: 字段缺失"},
+		{"key:detail-中文", "zh-CN", "sysErrBadParam: json: 字段缺失", "请求参数错误: json: 字段缺失"},
 
 		{"中文直值原样", "zh-CN", "请求的资源不存在", "请求的资源不存在"},
 

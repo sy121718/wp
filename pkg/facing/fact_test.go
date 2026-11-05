@@ -1,6 +1,7 @@
 package facing_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestFactOfSeparatorIsTheFirstOne(t *testing.T) {
 }
 
 func TestFactOfSingleKeyIsBusiness(t *testing.T) {
-	fact, ok := facing.FactOf(facing.New("ErrSessionNotFound", "会话不存在"))
+	fact, ok := facing.FactOf(facing.New("ErrSessionNotFound"))
 	if !ok || !fact.Business || fact.Key != "ErrSessionNotFound" {
 		t.Fatalf("单段 key 应命中业务判据，实际 ok=%v fact=%+v", ok, fact)
 	}
@@ -41,5 +42,29 @@ func TestFactOfPlainErrorIsNotBusiness(t *testing.T) {
 		if fact, ok := facing.FactOf(fmt.Errorf("%s", raw)); ok && fact.Business {
 			t.Errorf("%q 不该被判成业务错误（会原样上屏）", raw)
 		}
+	}
+}
+
+func TestShortKeyRequiresExplicitErrorFact(t *testing.T) {
+	const key = "pNotFound"
+	if facing.IsBusinessKey(key) || facing.IsBusinessError(errors.New(key)) {
+		t.Fatal("裸短字符串不得自动成为业务错误")
+	}
+	err := fmt.Errorf("private SQLSTATE: %w", facing.New(key))
+	if !facing.IsBusinessError(err) {
+		t.Fatal("显式错误事实包装后仍应识别为业务错误")
+	}
+	fact, ok := facing.FactOf(err)
+	if !ok || fact.Key != key || fact.Tail != "" {
+		t.Fatalf("短 key 或诊断隔离失效: %+v", fact)
+	}
+}
+
+func TestFactOfWrappedSourceDropsDiagnosticTail(t *testing.T) {
+	const key = "admin.err.facing_demo"
+	err := fmt.Errorf("SQLSTATE 23505 private_table: %w", facing.New(key))
+	fact, ok := facing.FactOf(err)
+	if !ok || fact.Key != key || fact.Tail != "" {
+		t.Fatalf("包装诊断不应进入业务明细: ok=%v fact=%+v", ok, fact)
 	}
 }

@@ -1,0 +1,66 @@
+{{import "nav-nodes.html"}}
+{* admin/partials/sidebar.html — 后台侧边栏：一级图标栏（顶层分组）+ 二级递归树。
+   数据：.NavItems（原始授权菜单树，真源是 sys_menus 表）与 .NavCurrentPath（当前路径）；
+   激活、展开、首链接由公共模板函数 navActive / navOpen / navFirstURL 计算，
+   后端只交原始菜单、身份、权限与请求事实。.SidebarOpen / .SidebarPinned 来自 cookie。
+   一级项两种形态：有 Nodes 即目录（点击展开二级栏），无 Nodes 有 Path 即直接链接（点击导航）。
+   交互在 static/js/admin.js：点菜单后收起（未固定时）、固定切换、三角展开子级。
+   Jet 语法注意：无 eq 函数（比较用中缀）；map 用 ["key"] 索引访问（缺 key 返回 nil 不报错）；
+   range 遇 nil 会报 "not rangeable"，故用 {{if}} 先判空。 *}
+{* id 供顶栏汉堡按钮的 aria-controls 指向（theme.css 断点段把 rail/subnav 变成覆盖式抽屉）。 *}
+<nav class="rail" id="adminRail">
+    <div class="rail-brand">go_wp</div>
+    {{if .["NavItems"]}}
+    {{range _, g := .["NavItems"]}}
+    {{if len(g.Children) > 0}}
+    {* 目录：点击展开/收起二级栏 *}
+    <button type="button" class="rail-btn{{if navBranchActive(g, navOwner(.["NavItems"], .["NavCurrentPath"]))}} is-active{{end}}" data-group="{{g.ID}}" data-first-url="{{navFirstURL(g)}}" title="{{if g.TitleKey}}{{t(g.TitleKey, g.Title)}}{{else}}{{g.Title}}{{end}}">
+        {* 图标名来自 sys_menus.icon（Lucide 名，与 static/js/icons.js 同源的表）。
+           公共 icon() 只输出受控 SVG，未知名返回空，这里显式退回目录里的固定图标。 *}
+        {{if g.Icon}}{{ icon(g.Icon) }}{{else}}{{ icon("settings") }}{{end}}
+        {{if g.TitleKey}}{{t(g.TitleKey, g.Title)}}{{else}}{{g.Title}}{{end}}
+    </button>
+    {{else}}
+    {* 直接链接：一级项直接导航（如仪表盘），不展开二级栏 *}
+    <a class="rail-btn{{if navBranchActive(g, navOwner(.["NavItems"], .["NavCurrentPath"]))}} is-active{{end}}" href="{{g.Path}}" title="{{if g.TitleKey}}{{t(g.TitleKey, g.Title)}}{{else}}{{g.Title}}{{end}}">
+        {* 图标名来自 sys_menus.icon（Lucide 名，与 static/js/icons.js 同源的表）。
+           公共 icon() 只输出受控 SVG，未知名返回空，这里显式退回目录里的固定图标。 *}
+        {{if g.Icon}}{{ icon(g.Icon) }}{{else}}{{ icon("settings") }}{{end}}
+        {{if g.TitleKey}}{{t(g.TitleKey, g.Title)}}{{else}}{{g.Title}}{{end}}
+    </a>
+    {{end}}
+    {{end}}
+    {{end}}
+</nav>
+
+{{if .["HasSubnav"]}}
+<nav class="subnav" id="subnav">
+    <div class="subnav-pin">
+        {* 文案走 sys_i18n（shell.sidebar.*）；data-label-* 供 admin.js 切换固定态时同步文案，
+           缺词条时 t 回退模板内中文原文。 *}
+        <button type="button" class="pin-btn{{if .["SidebarPinned"]}} is-on{{end}}" id="pinBtn"
+                title="{{ .["t"]("shell.sidebar.pin_title", "固定后导航不再自动收起") }}"
+                data-label-pinned="{{ .["t"]("shell.sidebar.pinned", "已固定") }}"
+                data-label-pin="{{ .["t"]("shell.sidebar.pin", "固定侧栏") }}"
+                data-hint-pinned="{{ .["t"]("shell.sidebar.pinned_hint", "导航后保持展开") }}"
+                data-hint-unpinned="{{ .["t"]("shell.sidebar.unpinned_hint", "点击菜单后收起") }}">
+            <svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4-5 1-1 7-1-7-5-1 4-4z"/></svg>
+            <span id="pinText">{{if .["SidebarPinned"]}}{{ .["t"]("shell.sidebar.pinned", "已固定") }}{{else}}{{ .["t"]("shell.sidebar.pin", "固定侧栏") }}{{end}}</span>
+        </button>
+        <span class="pin-hint" id="pinHint">{{if .["SidebarPinned"]}}{{ .["t"]("shell.sidebar.pinned_hint", "导航后保持展开") }}{{else}}{{ .["t"]("shell.sidebar.unpinned_hint", "点击菜单后收起") }}{{end}}</span>
+    </div>
+    <div class="subnav-scroll">
+        {{if .["NavItems"]}}
+        {{range _, g := .["NavItems"]}}
+        {{if len(g.Children) > 0}}
+        <div class="subnav-group{{if navBranchActive(g, navOwner(.["NavItems"], .["NavCurrentPath"]))}} is-active{{end}}" data-group="{{g.ID}}">
+            <div class="subnav-title">{{if g.TitleKey}}{{t(g.TitleKey, g.Title)}}{{else}}{{g.Title}}{{end}}</div>
+            {{yield navNodes(nodes=g.Children, depth=0, owner=navOwner(.["NavItems"], .["NavCurrentPath"]))}}
+        </div>
+        {{end}}
+        {{end}}
+        {{end}}
+    </div>
+
+</nav>
+{{end}}

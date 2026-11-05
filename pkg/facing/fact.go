@@ -14,11 +14,10 @@ func IsBusinessKey(msg string) bool {
 	return businessErrKey.MatchString(msg) || businessErrConstant.MatchString(msg)
 }
 
+// IsBusinessError 复用错误事实判定，显式声明的 key 不依赖字符串形状。
 func IsBusinessError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return IsBusinessKey(err.Error())
+	fact, ok := FactOf(err)
+	return ok && fact.Business
 }
 
 type Fact struct {
@@ -75,6 +74,10 @@ func selfFacingFact(err error) (Fact, bool) {
 }
 
 func tailAfterKey(raw, key string) string {
+	// 外层包装上下文不是业务明细，不让内部诊断混进对外消息。
+	if !strings.HasPrefix(strings.TrimSpace(raw), key) {
+		return ""
+	}
 	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), key))
 	return strings.TrimSpace(strings.TrimPrefix(rest, ":"))
 }

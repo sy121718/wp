@@ -7,7 +7,7 @@ import (
 )
 
 func TestStatusOfReadsDeclaredStatus(t *testing.T) {
-	base := New("inventory.err.warehouseNotFound", "仓库不存在")
+	base := New("inventory.err.warehouseNotFound")
 
 	if _, ok := StatusOf(base); ok {
 		t.Fatal("未声明状态的错误不该有状态码")
@@ -31,7 +31,7 @@ func TestStatusOfReadsDeclaredStatus(t *testing.T) {
 }
 
 func TestStatusOfWalksWrappedErrors(t *testing.T) {
-	base := WithStatus(New("inventory.err.stockInsufficient", "库存不足"), 409)
+	base := WithStatus(New("inventory.err.stockInsufficient"), 409)
 	wrapped := fmt.Errorf("扣减失败: %w", base)
 
 	status, ok := StatusOf(wrapped)
@@ -49,7 +49,7 @@ func TestWithStatusIgnoresInvalidInput(t *testing.T) {
 	if WithStatus(nil, 404) != nil {
 		t.Fatal("nil 错误不该被包装成非 nil")
 	}
-	base := New("inventory.err.x", "x")
+	base := New("inventory.err.x")
 	if got := WithStatus(base, 0); got != base {
 		t.Fatal("status <= 0 时应原样返回")
 	}

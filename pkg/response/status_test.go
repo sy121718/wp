@@ -9,9 +9,9 @@ import (
 )
 
 func TestErrorStatusUsesDeclaredStatus(t *testing.T) {
-	business := facing.New("inventory.err.invalidParam", "参数不合法")
-	notFound := facing.WithStatus(facing.New("inventory.err.warehouseNotFound", "仓库不存在"), http.StatusNotFound)
-	conflict := facing.WithStatus(facing.New("inventory.err.stockInsufficient", "库存不足"), http.StatusConflict)
+	business := facing.New("inventory.err.invalidParam")
+	notFound := facing.WithStatus(facing.New("inventory.err.warehouseNotFound"), http.StatusNotFound)
+	conflict := facing.WithStatus(facing.New("inventory.err.stockInsufficient"), http.StatusConflict)
 	internal := errors.New("pq: relation inventory_stocks does not exist")
 
 	tests := []struct {
@@ -23,6 +23,8 @@ func TestErrorStatusUsesDeclaredStatus(t *testing.T) {
 		{"declared 404", notFound, http.StatusNotFound},
 		{"declared 409", conflict, http.StatusConflict},
 		{"wrapped declared", errors.Join(errors.New("outer"), conflict), http.StatusConflict},
+		{"body limit", &http.MaxBytesError{Limit: 512}, http.StatusRequestEntityTooLarge},
+		{"wrapped body limit", errors.Join(errors.New("private context"), &http.MaxBytesError{Limit: 512}), http.StatusRequestEntityTooLarge},
 		{"internal", internal, http.StatusInternalServerError},
 		{"nil", nil, http.StatusInternalServerError},
 	}

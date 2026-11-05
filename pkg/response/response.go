@@ -63,8 +63,6 @@ func ErrorWithData(c *gin.Context, code int, message string, data interface{}) {
 	})
 }
 
-const msgInternalError = "服务器内部错误，请稍后重试"
-
 func ErrorInternal(c *gin.Context, scene string, err error) {
 	if err != nil {
 		if scene == "" {
@@ -72,7 +70,7 @@ func ErrorInternal(c *gin.Context, scene string, err error) {
 		}
 		logInternalError(c, scene, "handler 内部错误", err)
 	}
-	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
+	ErrorWithMessage(c, http.StatusInternalServerError, InternalKey)
 }
 
 func IsBusinessError(err error) bool {
@@ -80,6 +78,11 @@ func IsBusinessError(err error) bool {
 }
 
 func ErrorAuto(c *gin.Context, code int, scene string, err error) {
+	var bodyLimit *http.MaxBytesError
+	if errors.As(err, &bodyLimit) {
+		code = http.StatusRequestEntityTooLarge
+		err = facing.New(enums.ErrRequestEntityTooLarge)
+	}
 	if fact, ok := facing.FactOf(err); ok && fact.Business {
 
 		if data, blocked := blockedDataOf(c, scene, err); blocked {
@@ -96,10 +99,14 @@ func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 		logInternalError(c, scene, "handler 内部错误", err)
 	}
 
-	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
+	ErrorWithMessage(c, http.StatusInternalServerError, InternalKey)
 }
 
 func ErrorStatus(err error) int {
+	var bodyLimit *http.MaxBytesError
+	if errors.As(err, &bodyLimit) {
+		return http.StatusRequestEntityTooLarge
+	}
 	if status, ok := facing.StatusOf(err); ok {
 		return status
 	}
@@ -125,7 +132,7 @@ func blockedDataOf(c *gin.Context, scene string, err error) (gin.H, bool) {
 			"id":        it.ID,
 			"name":      it.Name,
 			"reasonKey": it.ReasonKey,
-			"message":   businessText(c, scene, facing.Fact{Key: it.ReasonKey, Fallback: it.Fallback, Business: true}),
+			"message":   blockItemText(c, scene, it),
 		})
 	}
 	return gin.H{"items": rows}, true
@@ -133,19 +140,26 @@ func blockedDataOf(c *gin.Context, scene string, err error) (gin.H, bool) {
 
 func businessText(c *gin.Context, scene string, fact facing.Fact) string {
 	out := translate(c, fact.Key)
-	if out != fact.Key {
-
-		if fact.Tail != "" {
-			return out + "：" + fact.Tail
+	if out == fact.Key {
+		if fact.Fallback != "" && fact.Fallback != fact.Key {
+			out = fact.Fallback
+		} else {
+			// 词库缺词、错误声明也没带兜底：给共享提示，不把裸 key 交出去。
+			// 前端只看到归口文案，缺哪条词只能靠这条日志定位 —— 只记 key / lang / scene / path，
+			// 不记请求参数与错误明细（那些可能带用户输入或内部原文）。
+			logMissingMessage(c, scene, fact.Key)
+			return InternalText(c)
 		}
-		return out
 	}
-
-	if fact.Fallback != "" && fact.Fallback != fact.Key {
-		return fact.Fallback
+	if fact.Tail != "" {
+		return out + "：" + detailText(c, fact.Tail)
 	}
-
 	return out
+}
+
+// blockItemText 复用 businessText：主错误与拒绝回执的行都只走这一条取词出口。
+func blockItemText(c *gin.Context, scene string, it facing.BlockedItem) string {
+	return businessText(c, scene, facing.Fact{Key: it.ReasonKey, Fallback: it.Fallback, Business: true})
 }
 
 func MessageOf(c *gin.Context, scene string, err error) string {
@@ -159,7 +173,8 @@ func MessageOf(c *gin.Context, scene string, err error) string {
 		scene = "http"
 	}
 	logInternalError(c, scene, "handler 内部错误", err)
-	return translate(c, msgInternalError)
+	// 与 ErrorAuto / ErrorInternal 同一条归口语义：走 InternalKey → 词库 → InternalFallback。
+	return translate(c, InternalKey)
 }
 
 func ParamError(c *gin.Context, msg ...string) {
@@ -285,10 +300,16 @@ func translateKnown(c *gin.Context, message string) (string, bool) {
 		key := message[:idx]
 		if text := i18n.GetText(key, lang); text != key {
 
-			if !i18n.HasStringPlaceholdersOnly(text) {
+			// 参数个数与可填位置数必须相等：非 %s 动词、索引、宽度一律不接受，
+			// 否则 Sprintf 会在屏幕上留下 %!s(MISSING) / %!d 之类标记。
+			want, fillable := i18n.StringPlaceholderCount(text)
+			if !fillable {
 				return message, false
 			}
 			args := strings.Split(message[idx+1:], "|")
+			if want != len(args) {
+				return message, false
+			}
 			anyArgs := make([]interface{}, len(args))
 			for i, a := range args {
 				anyArgs[i] = a
