@@ -71,18 +71,23 @@ func DeclareRoute(spec RouteSpec) {
 	}
 	regMu.Lock()
 	defer regMu.Unlock()
-	spec = declaredOrPanicLocked(spec)
-	declared = append(declared, spec)
+	final, added := declaredOrPanicLocked(spec)
+	if added {
+		declared = append(declared, final)
+	}
 }
 
-func declaredOrPanicLocked(spec RouteSpec) RouteSpec {
+// declaredOrPanicLocked 登记一条绑定；返回 (最终生效的绑定, 是否为新增)。
+//
+// 同一路由以相同权限重复声明是幂等操作（装配可能被测试重复调用），不重复追加。
+func declaredOrPanicLocked(spec RouteSpec) (RouteSpec, bool) {
 	if declaredKeys == nil {
 		declaredKeys = map[string]RouteSpec{}
 	}
 	key := spec.Method + " " + spec.Path
 	if prev, dup := declaredKeys[key]; dup {
 		if prev.Perm == spec.Perm {
-			return prev
+			return prev, false
 		}
 		if spec.Perm == exemptPerm || prev.Perm == exemptPerm {
 			panic("同一路由既声明了权限点又声明了豁免：" + key)
@@ -92,7 +97,7 @@ func declaredOrPanicLocked(spec RouteSpec) RouteSpec {
 	if spec.Perm == exemptPerm {
 		declaredKeys[key] = spec
 		exemptRoutes = append(exemptRoutes, key)
-		return spec
+		return spec, true
 	}
 	if strings.HasPrefix(spec.Path, "/api/") {
 		// API 路由必须各自一个权限点：策略表按权限码唯一映射一条路径。
@@ -105,13 +110,15 @@ func declaredOrPanicLocked(spec RouteSpec) RouteSpec {
 		apiPermPaths[spec.Perm] = key
 	}
 	declaredKeys[key] = spec
-	return spec
+	return spec, true
 }
 
 func declareLocked(method, path, perm string, kind RouteKind) {
 	spec := RouteSpec{Method: method, Path: path, Perm: perm, Kind: kind, AuthObject: path, AuthMethod: method}
-	spec = declaredOrPanicLocked(spec)
-	declared = append(declared, spec)
+	final, added := declaredOrPanicLocked(spec)
+	if added {
+		declared = append(declared, final)
+	}
 }
 
 // RoutesOf 返回某权限点绑定的全部路由。

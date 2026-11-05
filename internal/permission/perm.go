@@ -69,7 +69,10 @@ func Label(p Perm) (module, name string, ok bool) {
 	return sp.module, sp.name, true
 }
 
-// All 返回已登记目录里的全部权限点。
+// All 返回已登记目录里的全部权限点（按模块、名称、码排序）。
+//
+// 排序在同一把锁内直接读 specs，不调用会再次加锁的 Label ——
+// sync.Mutex 不可重入，嵌套调用会直接死锁。
 func All() []Perm {
 	regMu.Lock()
 	defer regMu.Unlock()
@@ -78,9 +81,8 @@ func All() []Perm {
 		out = append(out, p)
 	}
 	slices.SortFunc(out, func(a, b Perm) int {
-		ma, na, _ := Label(a)
-		mb, nb, _ := Label(b)
-		return cmp.Or(cmp.Compare(ma, mb), cmp.Compare(na, nb), cmp.Compare(a, b))
+		sa, sb := specs[a], specs[b]
+		return cmp.Or(cmp.Compare(sa.module, sb.module), cmp.Compare(sa.name, sb.name), cmp.Compare(a, b))
 	})
 	return out
 }
