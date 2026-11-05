@@ -89,3 +89,26 @@ func TestMatchKey(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeSitePath(t *testing.T) {
+	cases := map[string]string{
+		"":                  "",
+		"   ":               "",
+		"about":             "/about",
+		"/about":            "/about",
+		"/about/":           "/about",
+		"//a//b//":          "/a/b",
+		"/blog/x/":          "/blog/x",
+		"/blog//x":          "/blog/x",
+		"blog/{slug}":       "/blog/{slug}",
+		"/blog/{slug}/":     "/blog/{slug}",
+		"//blog//{slug}":    "/blog/{slug}",
+		" /products/{id}/ ": "/products/{id}",
+		"/":                 "",
+	}
+	for in, want := range cases {
+		if got := NormalizeSitePath(in); got != want {
+			t.Errorf("NormalizeSitePath(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+}

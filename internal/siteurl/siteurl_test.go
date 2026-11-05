@@ -31,24 +31,6 @@ func TestDetailPath(t *testing.T) {
 	}
 }
 
-func TestNormalize(t *testing.T) {
-	cases := map[string]string{
-		"":         "",
-		"   ":      "",
-		"about":    "/about",
-		"/about":   "/about",
-		"/about/":  "/about",
-		"//a//b//": "/a/b",
-		"/blog/x/": "/blog/x",
-		"/blog//x": "/blog/x",
-	}
-	for in, want := range cases {
-		if got := Normalize(in); got != want {
-			t.Errorf("Normalize(%q) = %q，期望 %q", in, got, want)
-		}
-	}
-}
-
 func TestValidatePattern(t *testing.T) {
 	ok := []string{"/blog/{slug}", "/products/{slug}", "/p/{id}", "/news/{slug}/detail", "/a.b/{slug}"}
 	for _, p := range ok {

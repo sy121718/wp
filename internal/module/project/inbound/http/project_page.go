@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/pathkit"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -445,7 +446,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 				back, siteSettingsBackMsg)
 			return
 		}
-		patterns[k.Kind] = siteurl.Normalize(raw)
+		patterns[k.Kind] = pathkit.NormalizeSitePath(raw)
 	}
 	ga4ID := ""
 	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {

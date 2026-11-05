@@ -3,6 +3,8 @@ package siteurl
 import (
 	"fmt"
 	"strings"
+
+	"go_wp/pkg/pathkit"
 )
 
 const (
@@ -45,21 +47,7 @@ func DetailPath(kind, slug, id string, patterns map[string]string) string {
 	}
 	out := strings.ReplaceAll(pattern, PlaceholderSlug, slug)
 	out = strings.ReplaceAll(out, PlaceholderID, id)
-	return Normalize(out)
-}
-
-func Normalize(path string) string {
-	p := strings.TrimSpace(path)
-	if p == "" {
-		return ""
-	}
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	for strings.Contains(p, "//") {
-		p = strings.ReplaceAll(p, "//", "/")
-	}
-	return strings.TrimRight(p, "/")
+	return pathkit.NormalizeSitePath(out)
 }
 
 const MaxPatternLen = 120

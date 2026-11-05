@@ -59,3 +59,21 @@ func NormalizeRoutePath(raw string) (string, error) {
 func MatchKey(p string) string {
 	return strings.TrimRight(strings.TrimSpace(p), "/")
 }
+
+// NormalizeSitePath 把站点 URL 路径归一成「以 / 开头、无重复斜杠、无尾斜杠」。
+//
+// 纯字符串处理：不判站点语义、不读工程配置。空串原样返回空串，
+// 调用方可据此判断「未填写」与「已填写但归一后为空」的区别。
+func NormalizeSitePath(raw string) string {
+	p := strings.TrimSpace(raw)
+	if p == "" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	for strings.Contains(p, "//") {
+		p = strings.ReplaceAll(p, "//", "/")
+	}
+	return strings.TrimRight(p, "/")
+}

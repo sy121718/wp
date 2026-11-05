@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/module/common/captcha/handle"
 	"go_wp/pkg/captcha"
 	"go_wp/public/test/support"
 
@@ -53,7 +52,7 @@ func TestCaptchaVerifyWithInProcessGenerate(t *testing.T) {
 func TestCaptchaHandleResponseNoPlaintextCode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.GET("/api/captcha", handle.CaptchaHandle)
+	engine.GET("/api/captcha", captcha.HTTPServe)
 
 	recorder, err := support.SendRequest(engine, support.RequestOptions{
 		Method: "GET",
