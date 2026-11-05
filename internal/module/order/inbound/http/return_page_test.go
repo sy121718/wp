@@ -1,6 +1,7 @@
 package orderhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +84,7 @@ func renderReturnsPage(t *testing.T, query string, svc *returnLabelsService) str
 	cap := &returnPageCapture{delegate: templates.NewJetHTMLRender(adminTemplatesDir(t), true)}
 	engine.HTMLRender = cap
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/returns"+query, nil)
-	adminui.PageSlot(ReturnListPageTemplate)(c)
+	pageview.Slot(ReturnListPageTemplate, adminui.RenderPage)(c)
 	NewReturnPageHandle(svc, orderPaginationProjects{}, nil, nil).ReturnsPage(c)
 	c.Writer.WriteHeaderNow()
 	if cap.err != nil {

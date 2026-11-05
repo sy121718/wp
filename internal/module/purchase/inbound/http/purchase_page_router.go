@@ -39,14 +39,14 @@ func SetupPurchasePages(pages *gin.RouterGroup, svc purchasecontract.PurchaseSer
 	pageCatalogConsumers = append(pageCatalogConsumers, purchases)
 
 	pages.GET("/inventory/sources", adminui.PageAuthz("/api/inventory/source/list"),
-		adminui.PageSlot(SourcesPageTemplate), sourcePages.SourcesPage)
+		pageview.Slot(SourcesPageTemplate, adminui.RenderPage), sourcePages.SourcesPage)
 	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), pageview.HTMLFragment, sourcePages.SourceCreate)
 	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), pageview.HTMLFragment, sourcePages.SourceUpdate)
 	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourceDelete)
 	pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourcesBulkDelete)
 
 	pages.GET("/inventory/purchases", adminui.PageAuthz("/api/inventory/purchase/list"),
-		adminui.PageSlot(PurchasesPageTemplate), purchases.PurchasesPage)
+		pageview.Slot(PurchasesPageTemplate, adminui.RenderPage), purchases.PurchasesPage)
 	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), pageview.HTMLFragment, purchases.PurchaseCreate)
 	pages.POST("/inventory/purchases/update", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseUpdate)
 	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), pageview.HTMLFragment, purchases.PurchaseReceipt)

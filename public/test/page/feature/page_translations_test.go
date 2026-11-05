@@ -67,9 +67,9 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
+	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, adminui.RenderPage), handle.PageTranslations)
 	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
-	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
+	router.GET("/admin/pages", pageview.Slot(pagehttp.PagesListPageTemplate, adminui.RenderPage), handle.PagesList)
 	return router, handle, db, project.ID, pageID
 }
 

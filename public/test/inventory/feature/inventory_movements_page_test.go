@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"strings"
@@ -26,7 +27,7 @@ func newMovementsPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/movements",
-		adminui.PageSlot(inventoryhttp.InventoryMovementsPageTemplate), handle.InventoryMovementsPage)
+		pageview.Slot(inventoryhttp.InventoryMovementsPageTemplate, adminui.RenderPage), handle.InventoryMovementsPage)
 	return engine, f
 }
 

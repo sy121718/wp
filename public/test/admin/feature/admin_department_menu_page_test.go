@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,8 +34,8 @@ func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 			// 页面标题在模板里本地取词，取词函数由请求级作用域注入 —— 与生产
 			// assembly 的接线一致；缺这一步模板执行期拿不到 t，页面空 body。
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/departments", adminui.PageSlot(adminhttp.DepartmentsPageTemplate), h.DepartmentsPage)
-			e.GET("/admin/menus", adminui.PageSlot(adminhttp.MenusPageTemplate), h.MenusPage)
+			e.GET("/admin/departments", pageview.Slot(adminhttp.DepartmentsPageTemplate, adminui.RenderPage), h.DepartmentsPage)
+			e.GET("/admin/menus", pageview.Slot(adminhttp.MenusPageTemplate, adminui.RenderPage), h.MenusPage)
 		},
 	})
 	if err != nil {

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,7 +26,7 @@ func newAdminShellEngine(t *testing.T) *gin.Engine {
 		RouteRegistrar: func(e *gin.Engine) {
 
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin", adminui.PageSlot(workbenchhttp.DashboardPageTemplate), home.Dashboard)
+			e.GET("/admin", pageview.Slot(workbenchhttp.DashboardPageTemplate, adminui.RenderPage), home.Dashboard)
 		},
 	})
 	if err != nil {

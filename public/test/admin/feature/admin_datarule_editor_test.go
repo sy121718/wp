@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -78,7 +79,7 @@ func TestAdminDataruleEditorPageUsesLocalTemplates(t *testing.T) {
 		}
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/datarules/edit", adminui.PageSlot(adminhttp.DataruleEditPageTemplate), h.DatarulesEditPage)
+	engine.GET("/admin/datarules/edit", pageview.Slot(adminhttp.DataruleEditPageTemplate, adminui.RenderPage), h.DatarulesEditPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/datarules/edit?id="+strconv.FormatUint(rule.ID, 10), nil))
 	if rec.Code != 200 {

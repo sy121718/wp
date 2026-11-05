@@ -1,6 +1,7 @@
 package masterdatahttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"net/http"
@@ -65,7 +66,7 @@ func TestMasterDataChangesPageDegradesWhenProjectListFails(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/masterdata/changes",
-		adminui.PageSlot(MasterDataChangesTemplate),
+		pageview.Slot(MasterDataChangesTemplate, adminui.RenderPage),
 		handle.MasterDataChangesPage)
 
 	rec := httptest.NewRecorder()

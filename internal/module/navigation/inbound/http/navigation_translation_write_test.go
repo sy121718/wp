@@ -667,7 +667,7 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 	}}
 	router := newNavigationsPageTestRouter(t, workbench, projects)
 	router.GET("/admin/navigations/translations",
-		adminui.PageSlot(NavigationTranslationsTemplate),
+		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
 		NewNavigationTranslationHandle(workbench, projects).NavigationTranslations)
 
 	rec := httptest.NewRecorder()

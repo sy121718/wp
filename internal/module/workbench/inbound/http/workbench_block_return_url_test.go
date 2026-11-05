@@ -1,6 +1,7 @@
 package workbenchhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -25,7 +26,7 @@ func newWorkbenchBlockReturnURLRouter(t *testing.T) *gin.Engine {
 		ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header", Version: 7,
 		Document: json.RawMessage(`{"type":"root"}`),
 	}}}
-	router.GET("/workbench", adminui.PageSlot(CanvasLayoutTemplate), deps.newHandle().Workbench)
+	router.GET("/workbench", pageview.Slot(CanvasLayoutTemplate, adminui.RenderPage), deps.newHandle().Workbench)
 	return router
 }
 

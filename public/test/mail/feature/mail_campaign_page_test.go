@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
 	router.GET("/admin/mail/campaign",
-		adminui.PageSlot(mailhttp.CampaignPageTemplate),
+		pageview.Slot(mailhttp.CampaignPageTemplate, adminui.RenderPage),
 		mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
 
 	recorder := httptest.NewRecorder()

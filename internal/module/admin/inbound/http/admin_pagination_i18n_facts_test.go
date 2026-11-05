@@ -1,6 +1,7 @@
 package adminhttp_test
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"go_wp/pkg/pagination"
 	"html"
@@ -78,7 +79,7 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	engine.HTMLRender = rec
 	h := adminhttp.NewAdminI18nEntryHandle()
 
-	engine.GET("/admin/i18n", adminui.PageSlot(adminhttp.I18nPageTemplate), h.I18nEntriesPage)
+	engine.GET("/admin/i18n", pageview.Slot(adminhttp.I18nPageTemplate, adminui.RenderPage), h.I18nEntriesPage)
 
 	target := "/admin/i18n?lang=zh-CN&page=2"
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))

@@ -1,6 +1,7 @@
 package projecthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func newGlobalRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 
-	router.POST("/workbench/global", adminui.BareSlot(GlobalPanelFragmentTemplate), workbenchGlobalPanel)
+	router.POST("/workbench/global", pageview.Slot(GlobalPanelFragmentTemplate, adminui.RenderBare), workbenchGlobalPanel)
 	return router
 }
 

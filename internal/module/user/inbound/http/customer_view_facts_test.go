@@ -1,6 +1,7 @@
 package userhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"go_wp/pkg/utils"
 	"net/http"
@@ -252,7 +253,7 @@ func TestCustomerRfmUnknownSegmentRendersRawKey(t *testing.T) {
 		fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(&fakeRfmReader{res: res})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", pageview.Slot(CustomerRfmPageTemplate, adminui.RenderPage), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm", nil))
@@ -268,7 +269,7 @@ func TestCustomerRfmSegmentToneComesFromTemplate(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(&fakeRfmReader{res: rfmSample()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", pageview.Slot(CustomerRfmPageTemplate, adminui.RenderPage), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=month", nil))

@@ -134,7 +134,7 @@ func orderChainEngine(t *testing.T, listPage gin.HandlerFunc, routes func(e *gin
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), listPage)
+			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), listPage)
 			routes(e, h)
 		},
 	})

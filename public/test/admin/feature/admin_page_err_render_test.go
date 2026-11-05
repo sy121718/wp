@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func newAdminRolesPageEngineWith(t *testing.T, svc *fakeRoleService) *gin.Engine
 			// 作用域注入 —— 与生产 assembly 的接线一致。缺这一步模板会在执行期
 			// 拿不到 t，页面直接失败成空 body。
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/roles", adminui.PageSlot(adminhttp.RolesPageTemplate), handle.RolesPage)
+			e.GET("/admin/roles", pageview.Slot(adminhttp.RolesPageTemplate, adminui.RenderPage), handle.RolesPage)
 		},
 	})
 	if err != nil {

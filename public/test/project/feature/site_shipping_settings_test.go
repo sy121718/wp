@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"go_wp/internal/adminui"
 	"net/http"
@@ -32,8 +33,8 @@ func newSiteShippingEnv(t *testing.T) (*gin.Engine, *projectservice.Service, str
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/settings", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SiteSettings)
-	router.POST("/admin/settings/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SaveSiteSettings)
+	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SiteSettings)
+	router.POST("/admin/settings/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SaveSiteSettings)
 	return router, projects, project.ID
 }
 

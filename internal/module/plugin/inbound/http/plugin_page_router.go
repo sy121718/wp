@@ -1,6 +1,7 @@
 package pluginhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -17,7 +18,7 @@ func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.Plugin
 	h := &pluginPageHandle{plugins: plugins}
 	adminPages.GET("/plugins",
 		adminui.PageAuthz("/api/plugin/list"),
-		adminui.PageSlot(PluginsPageTemplate),
+		pageview.Slot(PluginsPageTemplate, adminui.RenderPage),
 		h.PluginsPage)
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
 }

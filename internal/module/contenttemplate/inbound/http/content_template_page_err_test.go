@@ -1,6 +1,7 @@
 package contenttemplatehttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
@@ -157,7 +158,7 @@ func TestContentTemplatesPageMainListFailureReturnsJSON(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/content-templates",
-		adminui.PageSlot(ContentTemplatesPageTemplate),
+		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
 		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
@@ -227,7 +228,7 @@ func renderContentTemplatesPageWithDeps(t *testing.T, templatesSvc contenttempla
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/content-templates",
-		adminui.PageSlot(ContentTemplatesPageTemplate),
+		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
 		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()

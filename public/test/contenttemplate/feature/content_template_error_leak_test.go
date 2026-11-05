@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
@@ -69,7 +70,7 @@ func newContentTemplateErrorLeakEnv(t *testing.T) *contentTemplateEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates",
-		adminui.PageSlot(contenttemplatehttp.ContentTemplatesPageTemplate),
+		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, adminui.RenderPage),
 		handle.ContentTemplatesPage)
 	engine.POST("/api/contenttemplate/delete", contenttemplatehttp.NewHandle(templatesSvc).Delete)
 	return &contentTemplateEnv{engine: engine, db: db, projectID: project.ID, products: products}

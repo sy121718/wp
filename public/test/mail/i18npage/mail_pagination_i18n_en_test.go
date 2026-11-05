@@ -1,6 +1,7 @@
 package i18npage
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
 	"math/rand"
@@ -100,7 +101,7 @@ func newMailI18nEnv(t *testing.T) (*gin.Engine, *mailservice.Service, *gorm.DB) 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(svc)
-	engine.GET("/admin/mail/templates", adminui.PageSlot(mailhttp.TemplatesPageTemplate), h.MailTemplatesPage)
+	engine.GET("/admin/mail/templates", pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), h.MailTemplatesPage)
 	return engine, svc, db
 }
 

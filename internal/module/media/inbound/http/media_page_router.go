@@ -1,6 +1,7 @@
 package mediahttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -14,6 +15,6 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 	}
 	adminPages.GET("/media",
 		adminui.PageAuthz("/api/media/list"),
-		adminui.PageSlot(MediaPageTemplate),
+		pageview.Slot(MediaPageTemplate, adminui.RenderPage),
 		MediaPage)
 }

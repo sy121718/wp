@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -99,22 +100,22 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 
 	mount := map[string]func(*gin.Engine, string){
 		"MailPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
+			e.GET(p, pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), handle.MailPage)
 		},
 		"MailTemplatesPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
+			e.GET(p, pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), handle.MailTemplatesPage)
 		},
 		"MailContactsPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+			e.GET(p, pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), handle.MailContactsPage)
 		},
 		"MailCampaignsPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
+			e.GET(p, pageview.Slot(mailhttp.CampaignsPageTemplate, adminui.RenderPage), handle.MailCampaignsPage)
 		},
 		"MailAutomationPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.AutomationPageTemplate), handle.MailAutomationPage)
+			e.GET(p, pageview.Slot(mailhttp.AutomationPageTemplate, adminui.RenderPage), handle.MailAutomationPage)
 		},
 		"MailAutomationRunsPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
+			e.GET(p, pageview.Slot(mailhttp.AutomationRunsPageTemplate, adminui.RenderPage), handle.MailAutomationRunsPage)
 		},
 	}
 
@@ -186,22 +187,22 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 
 			mount := map[string]func(*gin.Engine, string){
 				"MailPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
+					e.GET(p, pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), handle.MailPage)
 				},
 				"MailTemplatesPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
+					e.GET(p, pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), handle.MailTemplatesPage)
 				},
 				"MailContactsPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+					e.GET(p, pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), handle.MailContactsPage)
 				},
 				"MailCampaignsPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
+					e.GET(p, pageview.Slot(mailhttp.CampaignsPageTemplate, adminui.RenderPage), handle.MailCampaignsPage)
 				},
 				"MailAutomationPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.AutomationPageTemplate), handle.MailAutomationPage)
+					e.GET(p, pageview.Slot(mailhttp.AutomationPageTemplate, adminui.RenderPage), handle.MailAutomationPage)
 				},
 				"MailAutomationRunsPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
+					e.GET(p, pageview.Slot(mailhttp.AutomationRunsPageTemplate, adminui.RenderPage), handle.MailAutomationRunsPage)
 				},
 			}
 			register, ok := mount[tc.method]
@@ -270,7 +271,7 @@ func TestMailSplitLegacyMarketingRedirectsToContacts(t *testing.T) {
 			engine.GET(mailSplitLegacyPath, handle.MailMarketingRedirect)
 
 			engine.GET("/admin/mail/contacts",
-				adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+				pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), handle.MailContactsPage)
 
 			rec := mailSplitGET(t, engine, mailSplitLegacyPath+tc.query)
 			if rec.Code != http.StatusFound {

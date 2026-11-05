@@ -1,6 +1,7 @@
 package analyticshttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +50,7 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/seo", adminui.PageSlot(SEOPageTemplate), func(c *gin.Context) {
+	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/seo.html", data)
 	})
 
@@ -131,7 +132,7 @@ func TestSEOPageHandlerUsesAnalyticsContract(t *testing.T) {
 	)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/seo", adminui.PageSlot(SEOPageTemplate), h.SEOPage)
+	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, adminui.RenderPage), h.SEOPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/seo", nil))

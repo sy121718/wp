@@ -46,7 +46,7 @@ func serveMenusPage(t *testing.T, handle *adminhttp.AdminPagesHandle, target str
 	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/menus", view.HTMLPage, adminui.PageSlot(adminhttp.MenusPageTemplate), handle.MenusPage)
+	engine.GET("/admin/menus", view.HTMLPage, view.Slot(adminhttp.MenusPageTemplate, adminui.RenderPage), handle.MenusPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))

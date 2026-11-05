@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
@@ -87,7 +88,7 @@ func TestPagesUpdatedAtFromDB(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
+	router.GET("/admin/pages", pageview.Slot(pagehttp.PagesListPageTemplate, adminui.RenderPage), handle.PagesList)
 	for _, tc := range []struct {
 		name string
 		at   time.Time

@@ -30,14 +30,14 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 		themes := &themeAdminHandle{projects: svc, pages: pages, blocks: blocks}
 		adminPages.GET("/themes",
 			adminui.PageAuthz("/api/theme/list"),
-			adminui.PageSlot(ThemeManagePageTemplate),
+			pageview.Slot(ThemeManagePageTemplate, adminui.RenderPage),
 			themes.ThemeManage)
 		adminPages.POST("/themes/create", builtin.CasbinMiddlewareForPath("/api/theme/create"), pageview.HTMLFragment, themes.CreateTheme)
 		adminPages.POST("/themes/activate", builtin.CasbinMiddlewareForPath("/api/theme/activate"), pageview.HTMLFragment, themes.ActivateTheme)
 		adminPages.POST("/themes/delete", builtin.CasbinMiddlewareForPath("/api/theme/delete"), pageview.HTMLFragment, themes.DeleteTheme)
 		adminPages.GET("/themes/settings",
 			adminui.PageAuthz("/api/theme/list"),
-			adminui.PageSlot(ThemeSettingsPageTemplate),
+			pageview.Slot(ThemeSettingsPageTemplate, adminui.RenderPage),
 			themes.ThemeSettings)
 		adminPages.POST("/themes/settings/save", builtin.CasbinMiddlewareForPath("/api/theme/update"), pageview.HTMLFragment, themes.SaveThemeSettings)
 		adminPages.GET("/theme", themes.ThemeRedirect)
@@ -45,19 +45,19 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 		settings := &siteSettingsAdminHandle{projects: svc, pages: pages, dict: dict}
 		adminPages.GET("/settings",
 			adminui.PageAuthz("/api/project/detail"),
-			adminui.PageSlot(SiteSettingsPageTemplate),
+			pageview.Slot(SiteSettingsPageTemplate, adminui.RenderPage),
 			settings.SiteSettings)
 		adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), pageview.HTMLFragment, settings.SaveSiteSettings)
 		adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"),
-			adminui.BareSlot(LocaleRowsFragmentTemplate), settings.LocaleRowsFragment)
+			pageview.Slot(LocaleRowsFragmentTemplate, adminui.RenderBare), settings.LocaleRowsFragment)
 		adminPages.POST("/settings/locales/save", builtin.CasbinMiddlewareForPath("/api/project/update"), pageview.HTMLFragment, settings.SaveSiteLocales)
 	}
 	if workbenchPages != nil {
 		workbenchPages.POST("/workbench/settings",
-			adminui.BareSlot(SettingsPanelFragmentTemplate), workbenchSettingsPanel)
+			pageview.Slot(SettingsPanelFragmentTemplate, adminui.RenderBare), workbenchSettingsPanel)
 		workbenchPages.POST("/workbench/seo-score-panel",
-			adminui.BareSlot(SeoScoreFragmentTemplate), workbenchSeoScorePanel)
+			pageview.Slot(SeoScoreFragmentTemplate, adminui.RenderBare), workbenchSeoScorePanel)
 		workbenchPages.POST("/workbench/global",
-			adminui.BareSlot(GlobalPanelFragmentTemplate), workbenchGlobalPanel)
+			pageview.Slot(GlobalPanelFragmentTemplate, adminui.RenderBare), workbenchGlobalPanel)
 	}
 }

@@ -1,6 +1,7 @@
 package blockhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -24,12 +25,12 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/blocks",
 		adminui.PageAuthz("/api/block/list"),
-		adminui.PageSlot(BlocksPageTemplate),
+		pageview.Slot(BlocksPageTemplate, adminui.RenderPage),
 		h.BlocksList)
 
 	adminPages.GET("/blocks/stale/drawer",
 		builtin.CasbinMiddlewareForPath("/api/block/list"),
-		adminui.BareSlot(StalePagesDrawerTemplate),
+		pageview.Slot(StalePagesDrawerTemplate, adminui.RenderBare),
 		h.BlocksStaleDrawer)
 
 	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), h.SaveBlockContent)

@@ -1,6 +1,7 @@
 package inventoryhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,7 @@ func newTransferPageRenderRouter(t *testing.T, stub *transferPageRenderStub) *gi
 	router := newInventoryPageTestRouter(t, stub, &inventoryPageRenderProjects{})
 	handle := NewInventoryTransferPageHandle(stub, &inventoryPageRenderProjects{}, warehouseRowLister)
 	router.GET("/admin/inventory/transfers",
-		adminui.PageSlot(InventoryTransfersPageTemplate), handle.InventoryTransfersPage)
+		pageview.Slot(InventoryTransfersPageTemplate, adminui.RenderPage), handle.InventoryTransfersPage)
 	return router
 }
 

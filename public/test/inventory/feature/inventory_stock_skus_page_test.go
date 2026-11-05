@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http/httptest"
 	"net/url"
@@ -35,7 +36,7 @@ func newStockSKUsPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory/skus", adminui.PageSlot(inventoryhttp.InventoryStockSKUsPageTemplate), handle.InventoryStockSKUsPage)
+	engine.GET("/admin/inventory/skus", pageview.Slot(inventoryhttp.InventoryStockSKUsPageTemplate, adminui.RenderPage), handle.InventoryStockSKUsPage)
 	engine.POST("/admin/inventory/stock/create", handle.InventoryStockCreate)
 	engine.POST("/admin/inventory/stock/update", handle.InventoryStockUpdate)
 	engine.POST("/admin/inventory/stock/status", handle.InventoryStockStatus)

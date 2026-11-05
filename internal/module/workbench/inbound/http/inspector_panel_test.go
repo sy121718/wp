@@ -1,6 +1,7 @@
 package workbenchhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,7 @@ func newInspectorRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.POST("/workbench/inspector", adminui.BareSlot(InspectorPanelTemplate), handle.InspectorPanel)
+	router.POST("/workbench/inspector", pageview.Slot(InspectorPanelTemplate, adminui.RenderBare), handle.InspectorPanel)
 	return router
 }
 

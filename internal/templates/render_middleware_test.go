@@ -55,7 +55,7 @@ func newBadEngine(t *testing.T, source string, viaAdminUI bool) *gin.Engine {
 
 	if viaAdminUI {
 		// adminui 路径：真实 PageSlot → view.Slot → RenderPage → c.Render → jetInstance.Render。
-		engine.GET("/admin/page", adminui.PageSlot("bad.html"), func(c *gin.Context) {
+		engine.GET("/admin/page", view.Slot("bad.html", adminui.RenderPage), func(c *gin.Context) {
 			view.Render(c, gin.H{"Title": "页面"})
 		})
 		return engine

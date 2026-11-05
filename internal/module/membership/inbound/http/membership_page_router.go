@@ -1,6 +1,7 @@
 package membershiphttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -21,11 +22,11 @@ func SetupMembershipPages(pages *gin.RouterGroup, svc membershipcontract.Members
 	pageHandle := NewMembershipPageHandle(svc, projects)
 	pages.GET("/membership",
 		adminui.PageAuthz("/api/membership/tier/list"),
-		adminui.PageSlot(MembershipTiersPageTemplate),
+		pageview.Slot(MembershipTiersPageTemplate, adminui.RenderPage),
 		pageHandle.MembershipPage)
 	pages.GET("/membership/assignments",
 		adminui.PageAuthz("/api/membership/assign/list"),
-		adminui.PageSlot(MembershipAssignmentsPageTemplate),
+		pageview.Slot(MembershipAssignmentsPageTemplate, adminui.RenderPage),
 		pageHandle.MembershipAssignmentsPage)
 
 }

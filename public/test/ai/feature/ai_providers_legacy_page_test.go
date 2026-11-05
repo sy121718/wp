@@ -13,6 +13,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,8 +50,8 @@ func newLegacyProvidersEngine(t *testing.T) *gin.Engine {
 		})
 		c.Next()
 	})
-	engine.GET("/admin/ai/providers", adminui.PageSlot(aihttp.SessionsPageTemplate), sessionPage.ProvidersPage)
-	engine.GET("/admin/ai/sessions", adminui.PageSlot(aihttp.SessionsPageTemplate), sessionPage.SessionsPage)
+	engine.GET("/admin/ai/providers", pageview.Slot(aihttp.SessionsPageTemplate, adminui.RenderPage), sessionPage.ProvidersPage)
+	engine.GET("/admin/ai/sessions", pageview.Slot(aihttp.SessionsPageTemplate, adminui.RenderPage), sessionPage.SessionsPage)
 	return engine
 }
 

@@ -1,6 +1,7 @@
 package navigationhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
@@ -156,7 +157,7 @@ func newNavigationsPageTestRouter(t *testing.T,
 		c.Next()
 	})
 	h := NewNavigationPageHandle(nav, projects)
-	router.GET("/admin/navigations", adminui.PageSlot(NavigationsPageTemplate), h.NavigationsPage)
+	router.GET("/admin/navigations", pageview.Slot(NavigationsPageTemplate, adminui.RenderPage), h.NavigationsPage)
 	return router
 }
 

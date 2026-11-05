@@ -1,6 +1,7 @@
 package membershiphttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
@@ -320,7 +321,7 @@ func TestMembershipPageIgnoresForgedErrQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership", adminui.PageSlot(MembershipTiersPageTemplate), NewMembershipPageHandle(&stubMembershipService{}, nil).MembershipPage)
+	engine.GET("/admin/membership", pageview.Slot(MembershipTiersPageTemplate, adminui.RenderPage), NewMembershipPageHandle(&stubMembershipService{}, nil).MembershipPage)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/membership?err=%E4%BC%AA%E9%80%A0%E6%96%87%E6%A1%88", nil)

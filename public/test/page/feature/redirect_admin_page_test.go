@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -44,7 +45,7 @@ func TestRedirectAdminPageRenders(t *testing.T) {
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	engine.GET("/api/page/redirect", adminui.PageSlot(pagehttp.RedirectPageTemplate), pagehttp.NewHandle(svc).RedirectPage)
+	engine.GET("/api/page/redirect", pageview.Slot(pagehttp.RedirectPageTemplate, adminui.RenderPage), pagehttp.NewHandle(svc).RedirectPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/redirect?project="+projectID, nil))

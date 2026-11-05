@@ -564,7 +564,7 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 		c.Set(adminctx.ButtonsKey, map[string]bool{"inventory.stock_change": true})
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), handle.InventoryPage)
+	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, adminui.RenderPage), handle.InventoryPage)
 	engine.POST("/admin/inventory/stock/tracking", pageview.HTMLFragment, handle.InventoryStockTrackingUpdate)
 	return engine, f
 }

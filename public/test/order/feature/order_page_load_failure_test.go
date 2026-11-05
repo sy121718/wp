@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
@@ -52,9 +53,9 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
-			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orders.OrdersPage)
-			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), coupons.CouponsPage)
-			e.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
+			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), orders.OrdersPage)
+			e.GET("/admin/coupons", pageview.Slot(orderhttp.CouponListPageTemplate, adminui.RenderPage), coupons.CouponsPage)
+			e.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
 		},
 	})
 	if err != nil {

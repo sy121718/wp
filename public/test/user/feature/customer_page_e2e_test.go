@@ -75,8 +75,8 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
-	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
-	engine.GET("/admin/customers/detail", adminui.PageSlot(userhttp.CustomerDetailPageTemplate), page.CustomerDetailPage)
+	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, adminui.RenderPage), page.CustomersPage)
+	engine.GET("/admin/customers/detail", pageview.Slot(userhttp.CustomerDetailPageTemplate, adminui.RenderPage), page.CustomerDetailPage)
 	engine.POST("/api/customer/status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).SetCustomerStatus)
 	engine.POST("/api/customer/unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).UnlockCustomer)
 

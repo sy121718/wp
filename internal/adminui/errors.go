@@ -2,7 +2,6 @@ package adminui
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -25,17 +24,6 @@ func PageErrorInternal(c *gin.Context, scene string, err error) {
 		response.LogInternalErrorf(c, scene, "后台页面处理失败", err)
 	}
 	response.ErrorWithMessage(c, http.StatusInternalServerError, MsgInternalError)
-}
-
-func AdminWriteFailedText(c *gin.Context, text string) {
-	if c == nil {
-		return
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		text = MsgInternalError
-	}
-	response.ErrorWithMessage(c, http.StatusBadRequest, text)
 }
 
 func PageInternalText(c *gin.Context) string {

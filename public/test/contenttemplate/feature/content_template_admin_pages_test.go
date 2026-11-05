@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -55,7 +56,7 @@ func newContentTemplateAdminEnv(t *testing.T) *contentTemplateAdminEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates",
-		adminui.PageSlot(contenttemplatehttp.ContentTemplatesPageTemplate),
+		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, adminui.RenderPage),
 		handle.ContentTemplatesPage)
 	engine.POST("/api/contenttemplate/activate", contenttemplatehttp.NewHandle(templatesSvc).Activate)
 	return &contentTemplateAdminEnv{engine: engine, db: db, projectID: project.ID, templates: templatesSvc}

@@ -50,7 +50,7 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := mailhttp.NewMailPageHandle(svc)
 	router.GET("/admin/mail/contacts",
-		adminui.PageSlot(mailhttp.ContactsPageTemplate), page.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), page.MailContactsPage)
 
 	api := router.Group("/api/mail")
 	write := mailhttp.NewHandle(svc)

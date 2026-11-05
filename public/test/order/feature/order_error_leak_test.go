@@ -172,7 +172,7 @@ func TestOrderPageHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
+	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
 
 	if err := f.db.Exec("DROP TABLE IF EXISTS orders CASCADE").Error; err != nil {
 		t.Fatalf("制造故障失败：%v", err)

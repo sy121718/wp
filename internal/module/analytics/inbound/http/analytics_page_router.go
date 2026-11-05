@@ -1,6 +1,7 @@
 package analyticshttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,13 +23,13 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
 	pages.GET("/analytics",
 		adminui.PageAuthz("/api/analytics/summary"),
-		adminui.PageSlot(AnalyticsPageTemplate),
+		pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage),
 		analyticsPages.AnalyticsPage)
 
 	seoPages := NewSEOPageHandle(analytics, projects)
 
 	pages.GET("/seo",
 		adminui.PageAuthzAs("/api/seo/audit", http.MethodPost),
-		adminui.PageSlot(SEOPageTemplate),
+		pageview.Slot(SEOPageTemplate, adminui.RenderPage),
 		seoPages.SEOPage)
 }

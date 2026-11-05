@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"os"
@@ -28,7 +29,7 @@ func newMasterDataPageEngine(t *testing.T) (*gin.Engine, *mdFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := masterdatahttp.NewMasterDataChangePageHandle(f.changes, f.projects)
 	engine.GET("/admin/masterdata/changes",
-		adminui.PageSlot(masterdatahttp.MasterDataChangesTemplate),
+		pageview.Slot(masterdatahttp.MasterDataChangesTemplate, adminui.RenderPage),
 		handle.MasterDataChangesPage)
 	return engine, f
 }

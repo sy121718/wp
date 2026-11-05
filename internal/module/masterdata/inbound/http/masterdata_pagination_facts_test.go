@@ -1,6 +1,7 @@
 package masterdatahttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"html"
 	"net/http"
@@ -60,7 +61,7 @@ func mdPagRender(t *testing.T, changes *mdPagChanges, query string) string {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 
 	engine.GET("/admin/masterdata/changes",
-		adminui.PageSlot(MasterDataChangesTemplate),
+		pageview.Slot(MasterDataChangesTemplate, adminui.RenderPage),
 		handle.MasterDataChangesPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/masterdata/changes"+query, nil))

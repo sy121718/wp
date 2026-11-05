@@ -1,6 +1,7 @@
 package analyticshttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -280,7 +281,7 @@ func renderAnalyticsPage(t *testing.T, over map[string]any) string {
 			t.Errorf("页面渲染错误: %v", err.Err)
 		}
 	})
-	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), func(c *gin.Context) {
+	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 	})
 	rec := httptest.NewRecorder()
@@ -299,7 +300,7 @@ func analyticsPageBody(t *testing.T, target string, resp *analyticscontract.Summ
 	}})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), handle.AnalyticsPage)
+	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), handle.AnalyticsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	if rec.Code != http.StatusOK {

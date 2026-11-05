@@ -1,6 +1,7 @@
 package adminhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"html"
 	"net/http"
@@ -208,7 +209,7 @@ func captureSiteData(t *testing.T, name string, total int64, target string) (str
 
 	h := siteHandler(newAdminPaginationHandle(total), name)
 	if tpl := adminPageTemplateFor(name); tpl != "" {
-		engine.GET(route, adminui.PageSlot(tpl), h)
+		engine.GET(route, pageview.Slot(tpl, adminui.RenderPage), h)
 	} else {
 		engine.GET(route, h)
 	}

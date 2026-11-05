@@ -1,6 +1,7 @@
 package commenthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -17,6 +18,6 @@ func SetupCommentPages(pages *gin.RouterGroup, svc commentcontract.CommentServic
 	pageHandle := NewCommentPageHandle(svc, projects)
 	pages.GET("/comments",
 		adminui.PageAuthz("/api/comment/list"),
-		adminui.PageSlot(CommentsPageTemplate),
+		pageview.Slot(CommentsPageTemplate, adminui.RenderPage),
 		pageHandle.CommentsPage)
 }

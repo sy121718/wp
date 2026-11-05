@@ -88,10 +88,10 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 		}
 		c.Next()
 	})
-	r.GET("/admin/navigations/edit", adminui.BareSlot(NavigationEditFormTemplate), h.NavigationEditFragment)
-	r.POST("/admin/navigations/update", adminui.BareSlot(NavigationEditFormTemplate), h.NavigationUpdate)
-	r.POST("/admin/navigations/panel", adminui.BareSlot(NavigationEditFormTemplate), h.PanelSet)
-	r.POST("/admin/navigations/panel/create", adminui.BareSlot(NavigationEditFormTemplate), h.PanelCreate)
+	r.GET("/admin/navigations/edit", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationEditFragment)
+	r.POST("/admin/navigations/update", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationUpdate)
+	r.POST("/admin/navigations/panel", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelSet)
+	r.POST("/admin/navigations/panel/create", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelCreate)
 	return r
 }
 

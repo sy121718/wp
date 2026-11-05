@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -129,7 +130,7 @@ func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/mail",
-		adminui.PageSlot(mailhttp.AccountsPageTemplate), mailhttp.NewMailPageHandle(svc).MailPage)
+		pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), mailhttp.NewMailPageHandle(svc).MailPage)
 	return router, svc
 }
 

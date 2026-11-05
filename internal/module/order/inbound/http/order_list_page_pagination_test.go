@@ -1,6 +1,7 @@
 package orderhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"html"
@@ -82,13 +83,13 @@ func orderPaginationPage(t *testing.T, kind, query string, svc *orderPaginationS
 	switch kind {
 	case "orders":
 
-		adminui.PageSlot(OrderListPageTemplate)(c)
+		pageview.Slot(OrderListPageTemplate, adminui.RenderPage)(c)
 		NewOrderPageHandle(svc, projects, nil).OrdersPage(c)
 	case "coupons":
-		adminui.PageSlot(CouponListPageTemplate)(c)
+		pageview.Slot(CouponListPageTemplate, adminui.RenderPage)(c)
 		NewCouponPageHandle(svc, projects).CouponsPage(c)
 	case "returns":
-		adminui.PageSlot(ReturnListPageTemplate)(c)
+		pageview.Slot(ReturnListPageTemplate, adminui.RenderPage)(c)
 		NewReturnPageHandle(svc, projects, nil, nil).ReturnsPage(c)
 	default:
 		t.Fatalf("unknown page %q", kind)

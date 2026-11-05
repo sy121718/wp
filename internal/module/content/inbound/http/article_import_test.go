@@ -1,6 +1,7 @@
 package contenthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
@@ -184,7 +185,7 @@ func TestArticleImportPreviewFragmentRenders(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 
 	h := &articlePageHandle{contents: failingContentService{}}
-	engine.POST("/admin/articles/import-preview", adminui.BareSlot(ArticleImportFragmentTemplate), h.ArticleImportPreview)
+	engine.POST("/admin/articles/import-preview", pageview.Slot(ArticleImportFragmentTemplate, adminui.RenderBare), h.ArticleImportPreview)
 
 	form := url.Values{"id": {"whatever"}}
 	req := httptest.NewRequest(http.MethodPost, "/admin/articles/import-preview", strings.NewReader(form.Encode()))

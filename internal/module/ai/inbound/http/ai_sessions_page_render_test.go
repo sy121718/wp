@@ -1,6 +1,7 @@
 package aihttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
@@ -183,7 +184,7 @@ func newAISessionsPageTestRouterWithButtons(t *testing.T, svc sessionServicePort
 	})
 	handle := NewSessionPageHandle(svc, providers)
 
-	router.GET("/admin/ai/sessions", adminui.PageSlot(SessionsPageTemplate), handle.SessionsPage)
+	router.GET("/admin/ai/sessions", pageview.Slot(SessionsPageTemplate, adminui.RenderPage), handle.SessionsPage)
 	return router, httptest.NewRecorder()
 }
 

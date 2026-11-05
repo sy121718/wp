@@ -1,6 +1,7 @@
 package contenthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
 	"go_wp/internal/adminui"
@@ -94,7 +95,7 @@ func TestArticlesPageKeywordFiltersBeforePagination(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	contents := &articleSearchContentStub{total: 2}
 	h := &articlePageHandle{contents: contents}
-	engine.GET("/admin/articles", adminui.PageSlot(ArticlesPageTemplate), h.ArticlesPage)
+	engine.GET("/admin/articles", pageview.Slot(ArticlesPageTemplate, adminui.RenderPage), h.ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=+needle+&page=99&limit=1", nil))
@@ -128,7 +129,7 @@ func TestArticlesPageKeywordNoMatches(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	contents := &articleSearchContentStub{total: 0}
-	engine.GET("/admin/articles", adminui.PageSlot(ArticlesPageTemplate), (&articlePageHandle{contents: contents}).ArticlesPage)
+	engine.GET("/admin/articles", pageview.Slot(ArticlesPageTemplate, adminui.RenderPage), (&articlePageHandle{contents: contents}).ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=missing&page=8", nil))
@@ -319,7 +320,7 @@ func TestArticleScorePanelRendersFragment(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 
 	h := &articlePageHandle{}
-	engine.POST("/admin/articles/score", adminui.BareSlot(SeoScoreFragmentTemplate), h.ArticleScorePanel)
+	engine.POST("/admin/articles/score", pageview.Slot(SeoScoreFragmentTemplate, adminui.RenderBare), h.ArticleScorePanel)
 
 	form := url.Values{
 		"title":        {"一篇有标题的文章"},

@@ -57,7 +57,7 @@ func newCustomerLeakEnv(t *testing.T) (*gin.Engine, *userservice.Service, *gorm.
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	page := userhttp.NewCustomerPageHandle(users, nil, projects)
-	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
+	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, adminui.RenderPage), page.CustomersPage)
 	engine.POST("/api/customer/bulk-status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerStatus)
 	engine.POST("/api/customer/bulk-unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
 	return engine, users, db

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -34,11 +35,11 @@ func newAutomationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	api := mailhttp.NewHandle(f.svc)
 
 	router.GET("/admin/mail/automation",
-		adminui.PageSlot(mailhttp.AutomationPageTemplate), h.MailAutomationPage)
+		pageview.Slot(mailhttp.AutomationPageTemplate, adminui.RenderPage), h.MailAutomationPage)
 	router.GET("/admin/mail/automation/canvas",
-		adminui.PageSlot(mailhttp.AutomationCanvasTemplate), h.MailAutomationCanvas)
+		pageview.Slot(mailhttp.AutomationCanvasTemplate, adminui.RenderPage), h.MailAutomationCanvas)
 	router.GET("/admin/mail/automation/run",
-		adminui.PageSlot(mailhttp.AutomationRunPageTemplate), h.MailAutomationRunDetail)
+		pageview.Slot(mailhttp.AutomationRunPageTemplate, adminui.RenderPage), h.MailAutomationRunDetail)
 
 	router.POST("/api/mail/automation/save", api.AutomationSave)
 	return router
@@ -165,7 +166,7 @@ func TestMailAutomationCanvasPageRenders(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
 	router.GET("/admin/mail/automation/canvas",
-		adminui.PageSlot(mailhttp.AutomationCanvasTemplate), h.MailAutomationCanvas)
+		pageview.Slot(mailhttp.AutomationCanvasTemplate, adminui.RenderPage), h.MailAutomationCanvas)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/automation/canvas?id="+strconv.FormatUint(id, 10), nil))

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -26,9 +27,9 @@ func newWarehousePagesEngine(t *testing.T, f *orderFixture) *gin.Engine {
 	returns := orderhttp.NewReturnPageHandle(f.orders, f.projects,
 		orderstock.NewWarehouseSource(f.inventory), nil)
 	engine.GET("/admin/orders/pending-ship",
-		adminui.PageSlot(orderhttp.PendingShipPageTemplate), ship.PendingShipPage)
+		pageview.Slot(orderhttp.PendingShipPageTemplate, adminui.RenderPage), ship.PendingShipPage)
 	engine.GET("/admin/returns",
-		adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
+		pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
 	return engine
 }
 

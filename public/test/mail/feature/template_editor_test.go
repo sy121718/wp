@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"io"
@@ -168,7 +169,7 @@ func newTemplateEditorRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	page := mailhttp.NewMailPageHandle(f.svc)
 	api := mailhttp.NewHandle(f.svc)
 	router.GET("/admin/mail/templates/editor",
-		adminui.PageSlot(mailhttp.TemplateEditorPageTemplate), page.MailTemplateEditor)
+		pageview.Slot(mailhttp.TemplateEditorPageTemplate, adminui.RenderPage), page.MailTemplateEditor)
 	router.POST("/admin/mail/template/save", api.TemplateSave)
 	return router
 }

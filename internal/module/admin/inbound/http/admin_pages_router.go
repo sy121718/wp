@@ -38,7 +38,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/administrators",
 		adminui.PageAuthz("/api/admin/list"),
-		adminui.PageSlot(AdministratorsPageTemplate),
+		view.Slot(AdministratorsPageTemplate, adminui.RenderPage),
 		handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
@@ -53,7 +53,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/roles",
 		adminui.PageAuthz("/api/role/list"),
-		adminui.PageSlot(RolesPageTemplate),
+		view.Slot(RolesPageTemplate, adminui.RenderPage),
 		handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
@@ -65,7 +65,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/menus",
 		adminui.PageAuthz("/api/menu/tree"),
-		adminui.PageSlot(MenusPageTemplate),
+		view.Slot(MenusPageTemplate, adminui.RenderPage),
 		handle.MenusPage)
 	adminPages.GET("/menus/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
 		handle.MenusEditFragment)
@@ -75,7 +75,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
 	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"),
-		adminui.PageSlot(PermissionsPageTemplate), handle.PermissionsPage)
+		view.Slot(PermissionsPageTemplate, adminui.RenderPage), handle.PermissionsPage)
 	adminPages.GET("/permissions/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
 		handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
@@ -85,7 +85,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/departments",
 		adminui.PageAuthz("/api/dept/tree"),
-		adminui.PageSlot(DepartmentsPageTemplate),
+		view.Slot(DepartmentsPageTemplate, adminui.RenderPage),
 		handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
@@ -94,10 +94,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/datarules",
 		adminui.PageAuthz("/api/datarule/list"),
-		adminui.PageSlot(DatarulesPageTemplate),
+		view.Slot(DatarulesPageTemplate, adminui.RenderPage),
 		handle.DatarulesPage)
 	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"),
-		adminui.PageSlot(DataruleEditPageTemplate), handle.DatarulesEditPage)
+		view.Slot(DataruleEditPageTemplate, adminui.RenderPage), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
@@ -113,7 +113,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
 	adminPages.GET("/i18n", view.HTMLPage, adminui.PageAuthz("/api/i18n/list"),
-		adminui.PageSlot(I18nPageTemplate), i18nPages.I18nEntriesPage)
+		view.Slot(I18nPageTemplate, adminui.RenderPage), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
 		i18nPages.I18nEntryEditFragment)
 
@@ -124,5 +124,5 @@ func SetupAdminShellPages(router *gin.Engine) {
 	if router == nil {
 		return
 	}
-	router.GET("/admin/login", adminui.PageSlot(LoginPageTemplate), AdminLoginPage)
+	router.GET("/admin/login", view.Slot(LoginPageTemplate, adminui.RenderPage), AdminLoginPage)
 }

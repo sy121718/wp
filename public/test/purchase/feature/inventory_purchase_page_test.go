@@ -50,13 +50,13 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	})
 	handle := purchasehttp.NewPurchasePageHandle(f.purchase, f.stock, f.projects)
 	handle.SetCatalog(f.catalog)
-	engine.GET("/admin/inventory/purchases", adminui.PageSlot(purchasehttp.PurchasesPageTemplate), handle.PurchasesPage)
+	engine.GET("/admin/inventory/purchases", pageview.Slot(purchasehttp.PurchasesPageTemplate, adminui.RenderPage), handle.PurchasesPage)
 	engine.POST("/admin/inventory/purchases/create", pageview.HTMLFragment, handle.PurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", pageview.HTMLFragment, handle.PurchaseReceipt)
 	engine.POST("/admin/inventory/purchases/production", pageview.HTMLFragment, handle.PurchaseProduction)
 
 	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), pageHandle.InventoryPage)
+	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, adminui.RenderPage), pageHandle.InventoryPage)
 	return engine, f
 }
 

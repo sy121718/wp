@@ -1,6 +1,7 @@
 package analyticshttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -99,7 +100,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 		}
 		engine := gin.New()
 		engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-		engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), func(c *gin.Context) {
+		engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 			c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 		})
 		rec := httptest.NewRecorder()

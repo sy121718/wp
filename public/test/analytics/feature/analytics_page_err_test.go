@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"net/http"
@@ -36,8 +37,8 @@ func serveAnalyticsPageOnce(t *testing.T, handler gin.HandlerFunc, path string) 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	engine.GET("/admin/analytics", adminui.PageSlot(analyticshttp.AnalyticsPageTemplate), handler)
-	engine.GET("/admin/seo", adminui.PageSlot(analyticshttp.SEOPageTemplate), handler)
+	engine.GET("/admin/analytics", pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage), handler)
+	engine.GET("/admin/seo", pageview.Slot(analyticshttp.SEOPageTemplate, adminui.RenderPage), handler)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec

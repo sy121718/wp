@@ -22,36 +22,6 @@ func newPageExitContext(path string) (*gin.Context, *httptest.ResponseRecorder) 
 	return c, recorder
 }
 
-func TestAdminWriteFailedTextBlankFallsBackToInternal(t *testing.T) {
-	for _, raw := range []string{"", "   ", "\n\t "} {
-		c, recorder := newPageExitContext("/admin/roles/create")
-		AdminWriteFailedText(c, raw)
-		if recorder.Code != http.StatusBadRequest {
-			t.Fatalf("写失败入口应是 400，got %d（raw=%q）", recorder.Code, raw)
-		}
-
-		if !strings.Contains(recorder.Body.String(), text.InternalFallback) {
-			t.Fatalf("空文案应回落到归口文案（%s），got body=%s", text.InternalFallback, recorder.Body.String())
-		}
-	}
-}
-
-func TestAdminWriteFailedTextKeepsModuleText(t *testing.T) {
-	c, recorder := newPageExitContext("/admin/roles/create")
-	AdminWriteFailedText(c, "  角色编码已存在\n")
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("写失败入口应是 400，got %d", recorder.Code)
-	}
-	body := recorder.Body.String()
-	if !strings.Contains(body, "角色编码已存在") {
-		t.Fatalf("模块传进来的文案必须原样写出，got body=%s", body)
-	}
-	if strings.Contains(body, "\n") {
-		t.Fatalf("文案应被 trim 后再写出，got body=%s", body)
-	}
-}
-
 func TestPageErrorBadRequestHidesRawError(t *testing.T) {
 	c, recorder := newPageExitContext("/admin/roles/create")
 	secret := `pq: relation "sys_roles" does not exist (42P01)`

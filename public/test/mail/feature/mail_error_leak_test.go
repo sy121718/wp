@@ -58,11 +58,11 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail",
-		adminui.PageSlot(mailhttp.AccountsPageTemplate), h.MailPage)
+		pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), h.MailPage)
 	engine.GET("/admin/mail/contacts",
-		adminui.PageSlot(mailhttp.ContactsPageTemplate), h.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), h.MailContactsPage)
 	engine.GET("/admin/mail/automation",
-		adminui.PageSlot(mailhttp.AutomationPageTemplate), h.MailAutomationPage)
+		pageview.Slot(mailhttp.AutomationPageTemplate, adminui.RenderPage), h.MailAutomationPage)
 	engine.POST("/admin/mail/account/save", pageview.HTMLFragment, h.MailAccountSave)
 	engine.POST("/admin/mail/template/save", pageview.HTMLFragment, h.MailTemplateSave)
 	return engine

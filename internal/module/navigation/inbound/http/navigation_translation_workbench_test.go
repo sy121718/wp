@@ -1,6 +1,7 @@
 package navigationhttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"net/http"
@@ -89,7 +90,7 @@ func newWorkbenchRouter(t *testing.T, nav navigationcontract.NavigationService) 
 	injectWorkbenchKindEntries(t)
 	router := newNavigationsPageTestRouter(t, nav, &pagePresentationProjectStub{})
 	router.GET("/admin/navigations/translations",
-		adminui.PageSlot(NavigationTranslationsTemplate),
+		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
 		NewNavigationTranslationHandle(nav, &pagePresentationProjectStub{}).NavigationTranslations)
 	return router
 }

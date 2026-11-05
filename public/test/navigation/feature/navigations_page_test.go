@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -26,7 +27,7 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/navigations", adminui.PageSlot(navigationhttp.NavigationsPageTemplate), func(c *gin.Context) {
+	router.GET("/admin/navigations", pageview.Slot(navigationhttp.NavigationsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, perms)
 		c.Set(adminctx.ButtonsKey, buttonsOf(perms))
 		page(c)

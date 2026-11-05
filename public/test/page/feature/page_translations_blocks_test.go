@@ -78,7 +78,7 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
+	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, adminui.RenderPage), handle.PageTranslations)
 	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
 	return router, db, project.ID, pageID, header.ID
 }

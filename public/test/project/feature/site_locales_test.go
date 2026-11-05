@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -32,9 +33,9 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/settings", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SiteSettings)
-	router.POST("/admin/settings/locales/rows", adminui.BareSlot(projecthttp.LocaleRowsFragmentTemplate), handle.LocaleRowsFragment)
-	router.POST("/admin/settings/locales/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SaveSiteLocales)
+	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SiteSettings)
+	router.POST("/admin/settings/locales/rows", pageview.Slot(projecthttp.LocaleRowsFragmentTemplate, adminui.RenderBare), handle.LocaleRowsFragment)
+	router.POST("/admin/settings/locales/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SaveSiteLocales)
 	return router, projects, project.ID, db
 }
 

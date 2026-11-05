@@ -80,8 +80,8 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	pages := orderhttp.NewOrderPageHandle(orders, projects, nil)
 	returns := orderhttp.NewReturnPageHandle(orders, projects, nil, nil)
-	engine.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), pages.OrdersPage)
-	engine.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
+	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), pages.OrdersPage)
+	engine.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
 
 	return &tradePageEnv{engine: engine, db: db, project: project.ID}
 }
@@ -449,7 +449,7 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
 	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
-	engine.GET("/admin/orders/new", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreatePage)
+	engine.GET("/admin/orders/new", pageview.Slot(orderhttp.OrderNewPageTemplate, adminui.RenderPage), page.OrderCreatePage)
 	engine.POST("/admin/orders/create", pageview.HTMLFragment, page.OrderCreateSubmit)
 	return &orderCreatePageEnv{engine: engine, fixture: f, project: f.projectID}
 }

@@ -1,6 +1,7 @@
 package commenthttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
 	"net/http"
@@ -70,7 +71,7 @@ func renderCommentsPage(t *testing.T, svc *stubCommentSvc, projects stubProjects
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	h := NewCommentPageHandle(svc, projects)
-	engine.GET("/admin/comments", adminui.PageSlot(CommentsPageTemplate), func(c *gin.Context) {
+	engine.GET("/admin/comments", pageview.Slot(CommentsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 		perm := map[string]bool{"comment:list": true}
 		if withReviewPerm {
 			perm["comment:review"] = true

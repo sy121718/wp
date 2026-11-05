@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +25,11 @@ func newShipPagesEngine(t *testing.T, f *orderFixture) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := orderhttp.NewOrderShipmentPageHandle(f.orders, f.projects)
 	engine.GET("/admin/orders/pending-ship",
-		adminui.PageSlot(orderhttp.PendingShipPageTemplate), handle.PendingShipPage)
+		pageview.Slot(orderhttp.PendingShipPageTemplate, adminui.RenderPage), handle.PendingShipPage)
 	engine.GET("/admin/orders/ship-form",
-		adminui.BareSlot(orderhttp.ShipFormPageTemplate), handle.ShipFormFragment)
+		pageview.Slot(orderhttp.ShipFormPageTemplate, adminui.RenderBare), handle.ShipFormFragment)
 	engine.GET("/admin/order-carriers",
-		adminui.PageSlot(orderhttp.OrderCarriersPageTemplate), handle.OrderCarriersPage)
+		pageview.Slot(orderhttp.OrderCarriersPageTemplate, adminui.RenderPage), handle.OrderCarriersPage)
 	return engine
 }
 

@@ -58,7 +58,7 @@ func TestRedirectCreateFailedRequestKeepsInput(t *testing.T) {
 			stub := &redirectCreateStub{createErr: tc.createErr, listErr: tc.listErr}
 			router := gin.New()
 			router.HTMLRender = newPageErrTestRender(t)
-			router.POST("/api/page/redirect/create", pageview.HTMLFragment, adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
+			router.POST("/api/page/redirect/create", pageview.HTMLFragment, pageview.Slot(RedirectPageTemplate, adminui.RenderPage), NewHandle(stub).RedirectCreate)
 			req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create", strings.NewReader(tc.form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
@@ -89,7 +89,7 @@ func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &redirectCreateStub{}
 	router := newPageErrEngine(t)
-	router.POST("/api/page/redirect/create", pageview.HTMLFragment, adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
+	router.POST("/api/page/redirect/create", pageview.HTMLFragment, pageview.Slot(RedirectPageTemplate, adminui.RenderPage), NewHandle(stub).RedirectCreate)
 	form := url.Values{"project": {"p1"}, "sourcePath": {"/old"}, "targetPath": {"/new"}}
 	req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create?project=p1", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

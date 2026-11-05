@@ -739,7 +739,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 
 	})
 	handle := purchasehttp.NewSourcePageHandle(f.purchase, f.projects)
-	engine.GET("/admin/inventory/sources", adminui.PageSlot(purchasehttp.SourcesPageTemplate), handle.SourcesPage)
+	engine.GET("/admin/inventory/sources", pageview.Slot(purchasehttp.SourcesPageTemplate, adminui.RenderPage), handle.SourcesPage)
 	engine.POST("/admin/inventory/sources/create", pageview.HTMLFragment, handle.SourceCreate)
 	engine.POST("/admin/inventory/sources/update", pageview.HTMLFragment, handle.SourceUpdate)
 	engine.POST("/admin/inventory/sources/delete", pageview.HTMLFragment, handle.SourceDelete)

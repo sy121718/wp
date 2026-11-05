@@ -1,6 +1,7 @@
 package membershiphttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"go_wp/internal/adminui"
 	"html"
@@ -61,7 +62,7 @@ func mbPagRender(t *testing.T, svc *mbPagSvc, query string) string {
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership/assignments", adminui.PageSlot(MembershipAssignmentsPageTemplate), func(c *gin.Context) {
+	engine.GET("/admin/membership/assignments", pageview.Slot(MembershipAssignmentsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
 
 		handle.MembershipAssignmentsPage(c)
 	})
@@ -169,7 +170,7 @@ func TestMembershipAssignmentsLoadFailureInjectsNoPagination(t *testing.T) {
 	handle := NewMembershipPageHandle(svc, mbPagProjects{})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership/assignments", adminui.PageSlot(MembershipAssignmentsPageTemplate), handle.MembershipAssignmentsPage)
+	engine.GET("/admin/membership/assignments", pageview.Slot(MembershipAssignmentsPageTemplate, adminui.RenderPage), handle.MembershipAssignmentsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/membership/assignments", nil))
 	if rec.Code != http.StatusOK {

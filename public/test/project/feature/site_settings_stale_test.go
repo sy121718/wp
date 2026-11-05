@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"go_wp/internal/adminui"
 	"net/http"
@@ -58,7 +59,7 @@ func TestSaveSiteSettingsMarksStaleOnlyWhenChanged(t *testing.T) {
 		engine := gin.New()
 
 		engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-		engine.POST("/admin/settings/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), h.SaveSiteSettings)
+		engine.POST("/admin/settings/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), h.SaveSiteSettings)
 		req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()

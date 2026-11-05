@@ -1,6 +1,7 @@
 package sysconfighttp
 
 import (
+	pageview "go_wp/pkg/view"
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
@@ -14,6 +15,6 @@ func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
 	}
 	adminPages.GET("/system",
 		adminui.PageAuthz("/api/sysconfig/get"),
-		adminui.PageSlot(SystemSettingsPageTemplate),
+		pageview.Slot(SystemSettingsPageTemplate, adminui.RenderPage),
 		h.SystemPage)
 }

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	pageview "go_wp/pkg/view"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -125,11 +126,11 @@ func newAnalyticsAuthzEngine(t *testing.T) *gin.Engine {
 	})
 	engine.GET("/admin/analytics",
 		adminui.PageAuthz("/api/analytics/summary"),
-		adminui.PageSlot(analyticshttp.AnalyticsPageTemplate),
+		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 	engine.GET("/admin/seo",
 		adminui.PageAuthzAs("/api/seo/audit", http.MethodPost),
-		adminui.PageSlot(analyticshttp.SEOPageTemplate),
+		pageview.Slot(analyticshttp.SEOPageTemplate, adminui.RenderPage),
 		analyticshttp.NewSEOPageHandle(nil, authzProjects{}).SEOPage)
 	return engine
 }
@@ -198,7 +199,7 @@ func TestAnalyticsPageWithoutIdentityReturnsJSON401(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	engine.GET("/admin/analytics",
 		adminui.PageAuthz("/api/analytics/summary"),
-		adminui.PageSlot(analyticshttp.AnalyticsPageTemplate),
+		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 
 	rec := httptest.NewRecorder()

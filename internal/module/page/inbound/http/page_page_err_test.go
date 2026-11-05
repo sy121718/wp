@@ -172,7 +172,7 @@ func TestPagesListIgnoresForgedNoticeQuery(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: filterProjectList{list: twoProjects()}, pages: &filterPageList{}}
-	router.GET("/admin/pages", adminui.PageSlot(PagesListPageTemplate), h.PagesList)
+	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, adminui.RenderPage), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
@@ -235,7 +235,7 @@ func TestPagesListDegradesOnProjectLoadFailure(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: failingProjectList{err: errors.New(`pq: relation "projects" does not exist (SQLSTATE 42P01)`)}}
-	router.GET("/admin/pages", adminui.PageSlot(PagesListPageTemplate), h.PagesList)
+	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, adminui.RenderPage), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))

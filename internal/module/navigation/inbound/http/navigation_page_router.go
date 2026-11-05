@@ -35,12 +35,12 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	h.SetBlockPanelPort(blocks)
 	adminPages.GET("/navigations",
 		adminui.PageAuthz("/api/navigation/list"),
-		adminui.PageSlot(NavigationsPageTemplate),
+		pageview.Slot(NavigationsPageTemplate, adminui.RenderPage),
 		h.NavigationsPage)
 
 	adminPages.GET("/navigations/edit",
 		builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost),
-		adminui.BareSlot(NavigationEditFormTemplate),
+		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare),
 		h.NavigationEditFragment)
 
 	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.PanelSet)
@@ -55,6 +55,6 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/navigations/translations",
 		adminui.PageAuthz("/api/navigation/list"),
-		adminui.PageSlot(NavigationTranslationsTemplate),
+		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
 		translations.NavigationTranslations)
 }
