@@ -1,731 +1,426 @@
 package permission
 
+// 权限标识的过渡别名：实体已按模块属主落在各 module/enums。
+// 消费点迁移完成后本文件整体删除，不保留第二份定义。
+import (
+	adminenums "go_wp/internal/module/admin/enums"
+	aienums "go_wp/internal/module/ai/enums"
+	analyticsenums "go_wp/internal/module/analytics/enums"
+	artifactenums "go_wp/internal/module/artifact/enums"
+	blockenums "go_wp/internal/module/block/enums"
+	blueprintenums "go_wp/internal/module/blueprint/enums"
+	buildenums "go_wp/internal/module/build/enums"
+	commentenums "go_wp/internal/module/comment/enums"
+	contentenums "go_wp/internal/module/content/enums"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	mailenums "go_wp/internal/module/mail/enums"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
+	mediaenums "go_wp/internal/module/media/enums"
+	membershipenums "go_wp/internal/module/membership/enums"
+	navigationenums "go_wp/internal/module/navigation/enums"
+	orderenums "go_wp/internal/module/order/enums"
+	pageenums "go_wp/internal/module/page/enums"
+	pluginenums "go_wp/internal/module/plugin/enums"
+	presentationenums "go_wp/internal/module/presentation/enums"
+	productenums "go_wp/internal/module/product/enums"
+	projectenums "go_wp/internal/module/project/enums"
+	publicationenums "go_wp/internal/module/publication/enums"
+	sysconfigenums "go_wp/internal/module/sysconfig/enums"
+	userenums "go_wp/internal/module/user/enums"
+	webhookenums "go_wp/internal/module/webhook/enums"
+)
+
 const (
-	AdminCreate Perm = "admin:create"
+	AdminCreate Perm = adminenums.AdminCreate
+	AdminDelete Perm = adminenums.AdminDelete
+	AdminDetail Perm = adminenums.AdminDetail
+	AdminEdit Perm = adminenums.AdminEdit
+	AdminList Perm = adminenums.AdminList
+	AdminMenuList Perm = adminenums.AdminMenuList
+	AdminMenuSave Perm = adminenums.AdminMenuSave
+	AdminRoleList Perm = adminenums.AdminRoleList
+	AdminRoleSave Perm = adminenums.AdminRoleSave
+	DataruleAssignmentList Perm = adminenums.DataruleAssignmentList
+	DataruleAssignmentSave Perm = adminenums.DataruleAssignmentSave
+	DataruleCreate Perm = adminenums.DataruleCreate
+	DataruleDelete Perm = adminenums.DataruleDelete
+	DataruleDetail Perm = adminenums.DataruleDetail
+	DataruleList Perm = adminenums.DataruleList
+	DataruleSchemaDetail Perm = adminenums.DataruleSchemaDetail
+	DataruleSchemaList Perm = adminenums.DataruleSchemaList
+	DataruleUpdate Perm = adminenums.DataruleUpdate
+	DeptCreate Perm = adminenums.DeptCreate
+	DeptDelete Perm = adminenums.DeptDelete
+	DeptDetail Perm = adminenums.DeptDetail
+	DeptList Perm = adminenums.DeptList
+	DeptUpdate Perm = adminenums.DeptUpdate
+	DeptUserList Perm = adminenums.DeptUserList
+	DeptUserSave Perm = adminenums.DeptUserSave
+	I18nManage Perm = adminenums.I18nManage
+	I18nView Perm = adminenums.I18nView
+	MenuCreate Perm = adminenums.MenuCreate
+	MenuDelete Perm = adminenums.MenuDelete
+	MenuDetail Perm = adminenums.MenuDetail
+	MenuList Perm = adminenums.MenuList
+	MenuUpdate Perm = adminenums.MenuUpdate
+	PermissionCreate Perm = adminenums.PermissionCreate
+	PermissionDelete Perm = adminenums.PermissionDelete
+	PermissionDetail Perm = adminenums.PermissionDetail
+	PermissionList Perm = adminenums.PermissionList
+	PermissionOptions Perm = adminenums.PermissionOptions
+	PermissionUpdate Perm = adminenums.PermissionUpdate
+	RoleCreate Perm = adminenums.RoleCreate
+	RoleDelete Perm = adminenums.RoleDelete
+	RoleDetail Perm = adminenums.RoleDetail
+	RoleList Perm = adminenums.RoleList
+	RoleMenuList Perm = adminenums.RoleMenuList
+	RoleMenuSave Perm = adminenums.RoleMenuSave
+	RoleUpdate Perm = adminenums.RoleUpdate
+	RoleUserList Perm = adminenums.RoleUserList
+	RoleUserSave Perm = adminenums.RoleUserSave
+	SEOAudit Perm = adminenums.SEOAudit
+
+	AIChat Perm = aienums.AIChat
+	AIProviderDelete Perm = aienums.AIProviderDelete
+	AIProviderGet Perm = aienums.AIProviderGet
+	AIProviderList Perm = aienums.AIProviderList
+	AIProviderModelsAppend Perm = aienums.AIProviderModelsAppend
+	AIProviderModelsCandidates Perm = aienums.AIProviderModelsCandidates
+	AIProviderModelsFetch Perm = aienums.AIProviderModelsFetch
+	AIProviderModelsList Perm = aienums.AIProviderModelsList
+	AIProviderModelsRestore Perm = aienums.AIProviderModelsRestore
+	AIProviderModelsSave Perm = aienums.AIProviderModelsSave
+	AIProviderSave Perm = aienums.AIProviderSave
+	AIProviderStatus Perm = aienums.AIProviderStatus
+	AISessionAppend Perm = aienums.AISessionAppend
+	AISessionArchive Perm = aienums.AISessionArchive
+	AISessionEvents Perm = aienums.AISessionEvents
+	AISessionFold Perm = aienums.AISessionFold
+	AISessionFoldPlan Perm = aienums.AISessionFoldPlan
+	AISessionGet Perm = aienums.AISessionGet
+	AISessionList Perm = aienums.AISessionList
+	AISessionRename Perm = aienums.AISessionRename
+	AISessionSend Perm = aienums.AISessionSend
+	AITokenCreate Perm = aienums.AITokenCreate
+	AITokenList Perm = aienums.AITokenList
+	AITokenRevoke Perm = aienums.AITokenRevoke
+	AITokenToggle Perm = aienums.AITokenToggle
+
+	AnalyticsView Perm = analyticsenums.AnalyticsView
+
+	ArtifactDetail Perm = artifactenums.ArtifactDetail
+
+	BlockBulkDelete Perm = blockenums.BlockBulkDelete
+	BlockClone Perm = blockenums.BlockClone
+	BlockCreate Perm = blockenums.BlockCreate
+	BlockDelete Perm = blockenums.BlockDelete
+	BlockDetail Perm = blockenums.BlockDetail
+	BlockList Perm = blockenums.BlockList
+	BlockUpdate Perm = blockenums.BlockUpdate
+
+	BlueprintCreate Perm = blueprintenums.BlueprintCreate
+	BlueprintDelete Perm = blueprintenums.BlueprintDelete
+	BlueprintGet Perm = blueprintenums.BlueprintGet
+	BlueprintInit Perm = blueprintenums.BlueprintInit
+	BlueprintList Perm = blueprintenums.BlueprintList
+	BlueprintPublish Perm = blueprintenums.BlueprintPublish
+	BlueprintUpdate Perm = blueprintenums.BlueprintUpdate
+
+	BuildJobs Perm = buildenums.BuildJobs
+	BuildQueue Perm = buildenums.BuildQueue
+	BuildRetry Perm = buildenums.BuildRetry
+
+	CommentList Perm = commentenums.CommentList
+	CommentReview Perm = commentenums.CommentReview
+
+	ContentCollections Perm = contentenums.ContentCollections
+	ContentCreate Perm = contentenums.ContentCreate
+	ContentDelete Perm = contentenums.ContentDelete
+	ContentGet Perm = contentenums.ContentGet
+	ContentList Perm = contentenums.ContentList
+	ContentUpdate Perm = contentenums.ContentUpdate
+
+	ContenttemplateActivate Perm = contenttemplateenums.ContenttemplateActivate
+	ContenttemplateCreate Perm = contenttemplateenums.ContenttemplateCreate
+	ContenttemplateDelete Perm = contenttemplateenums.ContenttemplateDelete
+	ContenttemplateGet Perm = contenttemplateenums.ContenttemplateGet
+	ContenttemplateList Perm = contenttemplateenums.ContenttemplateList
+	ContenttemplateUpdate Perm = contenttemplateenums.ContenttemplateUpdate
+
+	InventoryMovementList Perm = inventoryenums.InventoryMovementList
+	InventoryPurchaseCreate Perm = inventoryenums.InventoryPurchaseCreate
+	InventoryPurchaseGet Perm = inventoryenums.InventoryPurchaseGet
+	InventoryPurchaseHistory Perm = inventoryenums.InventoryPurchaseHistory
+	InventoryPurchaseList Perm = inventoryenums.InventoryPurchaseList
+	InventoryPurchaseProduction Perm = inventoryenums.InventoryPurchaseProduction
+	InventoryPurchaseReceipt Perm = inventoryenums.InventoryPurchaseReceipt
+	InventoryPurchaseUpdate Perm = inventoryenums.InventoryPurchaseUpdate
+	InventoryReasonCreate Perm = inventoryenums.InventoryReasonCreate
+	InventoryReasonList Perm = inventoryenums.InventoryReasonList
+	InventoryReasonUpdate Perm = inventoryenums.InventoryReasonUpdate
+	InventorySourceCreate Perm = inventoryenums.InventorySourceCreate
+	InventorySourceDelete Perm = inventoryenums.InventorySourceDelete
+	InventorySourceGet Perm = inventoryenums.InventorySourceGet
+	InventorySourceList Perm = inventoryenums.InventorySourceList
+	InventorySourceSummary Perm = inventoryenums.InventorySourceSummary
+	InventorySourceUpdate Perm = inventoryenums.InventorySourceUpdate
+	InventoryStockAlert Perm = inventoryenums.InventoryStockAlert
+	InventoryStockChange Perm = inventoryenums.InventoryStockChange
+	InventoryStockDeduct Perm = inventoryenums.InventoryStockDeduct
+	InventoryStockEnsure Perm = inventoryenums.InventoryStockEnsure
+	InventoryStockGet Perm = inventoryenums.InventoryStockGet
+	InventoryStockList Perm = inventoryenums.InventoryStockList
+	InventoryStockSKU Perm = inventoryenums.InventoryStockSKU
+	InventoryTransferApprove Perm = inventoryenums.InventoryTransferApprove
+	InventoryTransferCancel Perm = inventoryenums.InventoryTransferCancel
+	InventoryTransferCreate Perm = inventoryenums.InventoryTransferCreate
+	InventoryTransferGet Perm = inventoryenums.InventoryTransferGet
+	InventoryTransferList Perm = inventoryenums.InventoryTransferList
+	InventoryTransferOptions Perm = inventoryenums.InventoryTransferOptions
+	InventoryTransferReceive Perm = inventoryenums.InventoryTransferReceive
+	InventoryTransferReject Perm = inventoryenums.InventoryTransferReject
+	InventoryTransferShip Perm = inventoryenums.InventoryTransferShip
+	InventoryWarehouseCreate Perm = inventoryenums.InventoryWarehouseCreate
+	InventoryWarehouseDelete Perm = inventoryenums.InventoryWarehouseDelete
+	InventoryWarehouseGet Perm = inventoryenums.InventoryWarehouseGet
+	InventoryWarehouseList Perm = inventoryenums.InventoryWarehouseList
+	InventoryWarehouseUpdate Perm = inventoryenums.InventoryWarehouseUpdate
+
+	MailAccountDefault Perm = mailenums.MailAccountDefault
+	MailAccountDelete Perm = mailenums.MailAccountDelete
+	MailAccountList Perm = mailenums.MailAccountList
+	MailAccountSave Perm = mailenums.MailAccountSave
+	MailAccountTest Perm = mailenums.MailAccountTest
+	MailAutomationDelete Perm = mailenums.MailAutomationDelete
+	MailAutomationGet Perm = mailenums.MailAutomationGet
+	MailAutomationLayout Perm = mailenums.MailAutomationLayout
+	MailAutomationList Perm = mailenums.MailAutomationList
+	MailAutomationRunDetail Perm = mailenums.MailAutomationRunDetail
+	MailAutomationRunList Perm = mailenums.MailAutomationRunList
+	MailAutomationSave Perm = mailenums.MailAutomationSave
+	MailAutomationStart Perm = mailenums.MailAutomationStart
+	MailAutomationStatus Perm = mailenums.MailAutomationStatus
+	MailAutomationTick Perm = mailenums.MailAutomationTick
+	MailCampaignDelete Perm = mailenums.MailCampaignDelete
+	MailCampaignGet Perm = mailenums.MailCampaignGet
+	MailCampaignList Perm = mailenums.MailCampaignList
+	MailCampaignSave Perm = mailenums.MailCampaignSave
+	MailCampaignStart Perm = mailenums.MailCampaignStart
+	MailContactDelete Perm = mailenums.MailContactDelete
+	MailContactImport Perm = mailenums.MailContactImport
+	MailContactList Perm = mailenums.MailContactList
+	MailContactSave Perm = mailenums.MailContactSave
+	MailContactStatus Perm = mailenums.MailContactStatus
+	MailContactTag Perm = mailenums.MailContactTag
+	MailTemplateDelete Perm = mailenums.MailTemplateDelete
+	MailTemplateList Perm = mailenums.MailTemplateList
+	MailTemplateSave Perm = mailenums.MailTemplateSave
+
+	MasterdataChangeCount Perm = masterdataenums.MasterdataChangeCount
+	MasterdataChangeEntities Perm = masterdataenums.MasterdataChangeEntities
+	MasterdataChangeEntity Perm = masterdataenums.MasterdataChangeEntity
+	MasterdataChangeList Perm = masterdataenums.MasterdataChangeList
+
+	MediaCategoryCreate Perm = mediaenums.MediaCategoryCreate
+	MediaCategoryDelete Perm = mediaenums.MediaCategoryDelete
+	MediaCategoryTree Perm = mediaenums.MediaCategoryTree
+	MediaCategoryUpdate Perm = mediaenums.MediaCategoryUpdate
+	MediaDelete Perm = mediaenums.MediaDelete
+	MediaDetail Perm = mediaenums.MediaDetail
+	MediaDownload Perm = mediaenums.MediaDownload
+	MediaDownloadBatch Perm = mediaenums.MediaDownloadBatch
+	MediaList Perm = mediaenums.MediaList
+	MediaReferences Perm = mediaenums.MediaReferences
+	MediaReplace Perm = mediaenums.MediaReplace
+	MediaUpdate Perm = mediaenums.MediaUpdate
+	MediaUpload Perm = mediaenums.MediaUpload
+	MediaVariantsGenerate Perm = mediaenums.MediaVariantsGenerate
+
+	MembershipAssignList Perm = membershipenums.MembershipAssignList
+	MembershipAssignSet Perm = membershipenums.MembershipAssignSet
+	MembershipAssignUnlock Perm = membershipenums.MembershipAssignUnlock
+	MembershipEntitlementSave Perm = membershipenums.MembershipEntitlementSave
+	MembershipRecalc Perm = membershipenums.MembershipRecalc
+	MembershipResolve Perm = membershipenums.MembershipResolve
+	MembershipTierCreate Perm = membershipenums.MembershipTierCreate
+	MembershipTierDelete Perm = membershipenums.MembershipTierDelete
+	MembershipTierGet Perm = membershipenums.MembershipTierGet
+	MembershipTierList Perm = membershipenums.MembershipTierList
+	MembershipTierUpdate Perm = membershipenums.MembershipTierUpdate
+
+	NavigationCreate Perm = navigationenums.NavigationCreate
+	NavigationDelete Perm = navigationenums.NavigationDelete
+	NavigationDeleteBulk Perm = navigationenums.NavigationDeleteBulk
+	NavigationGet Perm = navigationenums.NavigationGet
+	NavigationList Perm = navigationenums.NavigationList
+	NavigationMove Perm = navigationenums.NavigationMove
+	NavigationSourceAdd Perm = navigationenums.NavigationSourceAdd
+	NavigationTranslate Perm = navigationenums.NavigationTranslate
+	NavigationUpdate Perm = navigationenums.NavigationUpdate
+
+	OrderCancel Perm = orderenums.OrderCancel
+	OrderCarrierCreate Perm = orderenums.OrderCarrierCreate
+	OrderCarrierList Perm = orderenums.OrderCarrierList
+	OrderCarrierManage Perm = orderenums.OrderCarrierManage
+	OrderCouponCountAudit Perm = orderenums.OrderCouponCountAudit
+	OrderCouponCreate Perm = orderenums.OrderCouponCreate
+	OrderCouponDelete Perm = orderenums.OrderCouponDelete
+	OrderCouponGet Perm = orderenums.OrderCouponGet
+	OrderCouponList Perm = orderenums.OrderCouponList
+	OrderCouponRedemption Perm = orderenums.OrderCouponRedemption
+	OrderCouponUpdate Perm = orderenums.OrderCouponUpdate
+	OrderCouponValidate Perm = orderenums.OrderCouponValidate
+	OrderCreate Perm = orderenums.OrderCreate
+	OrderCurrencyRateGet Perm = orderenums.OrderCurrencyRateGet
+	OrderCurrencyRateSet Perm = orderenums.OrderCurrencyRateSet
+	OrderGet Perm = orderenums.OrderGet
+	OrderItemList Perm = orderenums.OrderItemList
+	OrderList Perm = orderenums.OrderList
+	OrderLogList Perm = orderenums.OrderLogList
+	OrderNote Perm = orderenums.OrderNote
+	OrderOverview Perm = orderenums.OrderOverview
+	OrderPendingShip Perm = orderenums.OrderPendingShip
+	OrderRefund Perm = orderenums.OrderRefund
+	OrderReturnApprove Perm = orderenums.OrderReturnApprove
+	OrderReturnGet Perm = orderenums.OrderReturnGet
+	OrderReturnList Perm = orderenums.OrderReturnList
+	OrderReturnReceive Perm = orderenums.OrderReturnReceive
+	OrderReturnReject Perm = orderenums.OrderReturnReject
+	OrderShip Perm = orderenums.OrderShip
+	OrderShipForm Perm = orderenums.OrderShipForm
+	OrderShipmentList Perm = orderenums.OrderShipmentList
+	OrderStatus Perm = orderenums.OrderStatus
+
+	PageArtifactGc Perm = pageenums.PageArtifactGc
+	PageArtifactRebuild Perm = pageenums.PageArtifactRebuild
+	PageBuild Perm = pageenums.PageBuild
+	PageCreate Perm = pageenums.PageCreate
+	PageDelete Perm = pageenums.PageDelete
+	PageDetail Perm = pageenums.PageDetail
+	PageDraftSave Perm = pageenums.PageDraftSave
+	PageList Perm = pageenums.PageList
+	PagePublicationAudit Perm = pageenums.PagePublicationAudit
+	PagePublish Perm = pageenums.PagePublish
+	PageRedirectCreate Perm = pageenums.PageRedirectCreate
+	PageRedirectDelete Perm = pageenums.PageRedirectDelete
+	PageRedirectMerge Perm = pageenums.PageRedirectMerge
+	PageRedirectView Perm = pageenums.PageRedirectView
+	PageRevisionList Perm = pageenums.PageRevisionList
+	PageRollback Perm = pageenums.PageRollback
+	PageSEOPatrol Perm = pageenums.PageSEOPatrol
+	PageTranslationsSave Perm = pageenums.PageTranslationsSave
+	PageURLUpdate Perm = pageenums.PageURLUpdate
+
+	PluginDetail Perm = pluginenums.PluginDetail
+	PluginInstall Perm = pluginenums.PluginInstall
+	PluginList Perm = pluginenums.PluginList
+	PluginToggle Perm = pluginenums.PluginToggle
+	PluginUninstall Perm = pluginenums.PluginUninstall
+
+	PresentationCreate Perm = presentationenums.PresentationCreate
+	PresentationDelete Perm = presentationenums.PresentationDelete
+	PresentationGet Perm = presentationenums.PresentationGet
+	PresentationGetByEntity Perm = presentationenums.PresentationGetByEntity
+	PresentationList Perm = presentationenums.PresentationList
+	PresentationPreview Perm = presentationenums.PresentationPreview
+	PresentationRebuild Perm = presentationenums.PresentationRebuild
+	PresentationUpdateURL Perm = presentationenums.PresentationUpdateURL
+
+	ProductAttributeBulkDelete Perm = productenums.ProductAttributeBulkDelete
+	ProductAttributeCreate Perm = productenums.ProductAttributeCreate
+	ProductAttributeDelete Perm = productenums.ProductAttributeDelete
+	ProductAttributeGet Perm = productenums.ProductAttributeGet
+	ProductAttributeList Perm = productenums.ProductAttributeList
+	ProductAttributeSetValues Perm = productenums.ProductAttributeSetValues
+	ProductAttributeUpdate Perm = productenums.ProductAttributeUpdate
+	ProductBrandBulkDelete Perm = productenums.ProductBrandBulkDelete
+	ProductBrandCreate Perm = productenums.ProductBrandCreate
+	ProductBrandDelete Perm = productenums.ProductBrandDelete
+	ProductBrandGet Perm = productenums.ProductBrandGet
+	ProductBrandList Perm = productenums.ProductBrandList
+	ProductBrandSEOScore Perm = productenums.ProductBrandSEOScore
+	ProductBrandUpdate Perm = productenums.ProductBrandUpdate
+	ProductBulkDelete Perm = productenums.ProductBulkDelete
+	ProductBulkPricing Perm = productenums.ProductBulkPricing
+	ProductCategoryBulkDelete Perm = productenums.ProductCategoryBulkDelete
+	ProductCategoryCreate Perm = productenums.ProductCategoryCreate
+	ProductCategoryDelete Perm = productenums.ProductCategoryDelete
+	ProductCategoryGet Perm = productenums.ProductCategoryGet
+	ProductCategoryList Perm = productenums.ProductCategoryList
+	ProductCategoryParents Perm = productenums.ProductCategoryParents
+	ProductCategorySEOScore Perm = productenums.ProductCategorySEOScore
+	ProductCategoryUpdate Perm = productenums.ProductCategoryUpdate
+	ProductCreate Perm = productenums.ProductCreate
+	ProductDelete Perm = productenums.ProductDelete
+	ProductDetailTemplateApply Perm = productenums.ProductDetailTemplateApply
+	ProductDetailTemplateCreate Perm = productenums.ProductDetailTemplateCreate
+	ProductDetailTemplatePublish Perm = productenums.ProductDetailTemplatePublish
+	ProductDetailTemplateReapply Perm = productenums.ProductDetailTemplateReapply
+	ProductDetailTemplateRollback Perm = productenums.ProductDetailTemplateRollback
+	ProductDetailTemplateUpdateURL Perm = productenums.ProductDetailTemplateUpdateURL
+	ProductGet Perm = productenums.ProductGet
+	ProductList Perm = productenums.ProductList
+	ProductPricingAdjustment Perm = productenums.ProductPricingAdjustment
+	ProductPricingApply Perm = productenums.ProductPricingApply
+	ProductPricingHistory Perm = productenums.ProductPricingHistory
+	ProductPricingPreview Perm = productenums.ProductPricingPreview
+	ProductPricingRoundings Perm = productenums.ProductPricingRoundings
+	ProductPricingRules Perm = productenums.ProductPricingRules
+	ProductPublishAttempts Perm = productenums.ProductPublishAttempts
+	ProductRatingAdd Perm = productenums.ProductRatingAdd
+	ProductRatingDelete Perm = productenums.ProductRatingDelete
+	ProductSEOScore Perm = productenums.ProductSEOScore
+	ProductTagBulkDelete Perm = productenums.ProductTagBulkDelete
+	ProductTagCreate Perm = productenums.ProductTagCreate
+	ProductTagDelete Perm = productenums.ProductTagDelete
+	ProductTagGet Perm = productenums.ProductTagGet
+	ProductTagList Perm = productenums.ProductTagList
+	ProductTagProducts Perm = productenums.ProductTagProducts
+	ProductTagRecalc Perm = productenums.ProductTagRecalc
+	ProductTagRuleTypes Perm = productenums.ProductTagRuleTypes
+	ProductTagUpdate Perm = productenums.ProductTagUpdate
+	ProductTranslationsSave Perm = productenums.ProductTranslationsSave
+	ProductUpdate Perm = productenums.ProductUpdate
+	ProductVariantCreate Perm = productenums.ProductVariantCreate
+	ProductVariantDelete Perm = productenums.ProductVariantDelete
+	ProductVariantGenerate Perm = productenums.ProductVariantGenerate
+	ProductVariantPreview Perm = productenums.ProductVariantPreview
+	ProductVariantSave Perm = productenums.ProductVariantSave
+	ProductVariantUpdate Perm = productenums.ProductVariantUpdate
+
+	ProjectCreate Perm = projectenums.ProjectCreate
+	ProjectDetail Perm = projectenums.ProjectDetail
+	ProjectList Perm = projectenums.ProjectList
+	ProjectThemeActivate Perm = projectenums.ProjectThemeActivate
+	ProjectThemeActive Perm = projectenums.ProjectThemeActive
+	ProjectThemeCreate Perm = projectenums.ProjectThemeCreate
+	ProjectThemeDelete Perm = projectenums.ProjectThemeDelete
+	ProjectThemeList Perm = projectenums.ProjectThemeList
+	ProjectThemeUpdate Perm = projectenums.ProjectThemeUpdate
+	ProjectUpdate Perm = projectenums.ProjectUpdate
+
+	PublicationReceiptsPending Perm = publicationenums.PublicationReceiptsPending
+	PublicationSEOAudit Perm = publicationenums.PublicationSEOAudit
+
+	SysConfigGet Perm = sysconfigenums.SysConfigGet
+	SysConfigSave Perm = sysconfigenums.SysConfigSave
+	SysConfigSystemSave Perm = sysconfigenums.SysConfigSystemSave
+
+	UserCustomerBulkStatus Perm = userenums.UserCustomerBulkStatus
+	UserCustomerBulkUnlock Perm = userenums.UserCustomerBulkUnlock
+	UserCustomerDetail Perm = userenums.UserCustomerDetail
+	UserCustomerList Perm = userenums.UserCustomerList
+	UserCustomerStatus Perm = userenums.UserCustomerStatus
+	UserCustomerUnlock Perm = userenums.UserCustomerUnlock
+
+	WebhookDeliveryList Perm = webhookenums.WebhookDeliveryList
+	WebhookDeliveryRetry Perm = webhookenums.WebhookDeliveryRetry
+	WebhookEndpointDelete Perm = webhookenums.WebhookEndpointDelete
+	WebhookEndpointList Perm = webhookenums.WebhookEndpointList
+	WebhookEndpointSave Perm = webhookenums.WebhookEndpointSave
+	WebhookEndpointStatus Perm = webhookenums.WebhookEndpointStatus
 
-	AdminDelete Perm = "admin:delete"
-
-	AdminDetail Perm = "admin:detail"
-
-	AdminEdit Perm = "admin:edit"
-
-	AdminList Perm = "admin:list"
-
-	AdminMenuList Perm = "admin:menu_list"
-
-	AdminMenuSave Perm = "admin:menu_save"
-
-	AdminRoleList Perm = "admin:role_list"
-
-	AdminRoleSave Perm = "admin:role_save"
-
-	AnalyticsView Perm = "analytics:view"
-
-	ArtifactDetail Perm = "artifact:detail"
-
-	BlockBulkDelete Perm = "block:bulk_delete"
-
-	BlockClone Perm = "block:clone"
-
-	BlockCreate Perm = "block:create"
-
-	BlockDelete Perm = "block:delete"
-
-	BlockDetail Perm = "block:detail"
-
-	BlockList Perm = "block:list"
-
-	BlockUpdate Perm = "block:update"
-
-	BlueprintCreate Perm = "blueprint:create"
-
-	BlueprintDelete Perm = "blueprint:delete"
-
-	BlueprintGet Perm = "blueprint:get"
-
-	BlueprintInit Perm = "blueprint:init"
-
-	BlueprintList Perm = "blueprint:list"
-
-	BlueprintPublish Perm = "blueprint:publish"
-
-	BlueprintUpdate Perm = "blueprint:update"
-
-	BuildJobs Perm = "build:jobs"
-
-	BuildQueue Perm = "build:queue"
-
-	BuildRetry Perm = "build:retry"
-
-	CommentList Perm = "comment:list"
-
-	CommentReview Perm = "comment:review"
-
-	ContentCollections Perm = "content:collections"
-
-	ContentCreate Perm = "content:create"
-
-	ContentDelete Perm = "content:delete"
-
-	ContentGet Perm = "content:get"
-
-	ContentList Perm = "content:list"
-
-	ContentUpdate Perm = "content:update"
-
-	ContenttemplateCreate Perm = "contenttemplate:create"
-
-	ContenttemplateDelete Perm = "contenttemplate:delete"
-
-	ContenttemplateGet Perm = "contenttemplate:get"
-
-	ContenttemplateList Perm = "contenttemplate:list"
-
-	ContenttemplateUpdate Perm = "contenttemplate:update"
-
-	ContenttemplateActivate Perm = "contenttemplate:activate"
-
-	DataruleAssignmentList Perm = "datarule:assignment_list"
-
-	DataruleAssignmentSave Perm = "datarule:assignment_save"
-
-	DataruleCreate Perm = "datarule:create"
-
-	DataruleDelete Perm = "datarule:delete"
-
-	DataruleDetail Perm = "datarule:detail"
-
-	DataruleList Perm = "datarule:list"
-
-	DataruleSchemaDetail Perm = "datarule:schema_detail"
-
-	DataruleSchemaList Perm = "datarule:schema_list"
-
-	DataruleUpdate Perm = "datarule:update"
-
-	DeptCreate Perm = "dept:create"
-
-	DeptDelete Perm = "dept:delete"
-
-	DeptDetail Perm = "dept:detail"
-
-	DeptList Perm = "dept:list"
-
-	DeptUpdate Perm = "dept:update"
-
-	DeptUserList Perm = "dept:user_list"
-
-	DeptUserSave Perm = "dept:user_save"
-
-	I18nView Perm = "i18n:view"
-
-	I18nManage Perm = "i18n:manage"
-
-	InventoryMovementList Perm = "inventory:movement_list"
-
-	InventoryPurchaseCreate Perm = "inventory:purchase_create"
-
-	InventoryPurchaseGet Perm = "inventory:purchase_get"
-
-	InventoryPurchaseHistory Perm = "inventory:purchase_history"
-
-	InventoryPurchaseList Perm = "inventory:purchase_list"
-
-	InventoryPurchaseProduction Perm = "inventory:purchase_production"
-
-	InventoryStockAlert Perm = "inventory:stock_alert"
-
-	InventoryTransferList Perm = "inventory:transfer_list"
-	InventoryTransferGet  Perm = "inventory:transfer_get"
-
-	InventoryTransferOptions Perm = "inventory:transfer_options"
-	InventoryTransferCreate  Perm = "inventory:transfer_create"
-	InventoryTransferApprove Perm = "inventory:transfer_approve"
-	InventoryTransferReject  Perm = "inventory:transfer_reject"
-	InventoryTransferShip    Perm = "inventory:transfer_ship"
-	InventoryTransferReceive Perm = "inventory:transfer_receive"
-	InventoryTransferCancel  Perm = "inventory:transfer_cancel"
-
-	InventoryPurchaseReceipt Perm = "inventory:purchase_receipt"
-
-	InventoryPurchaseUpdate Perm = "inventory:purchase_update"
-
-	InventoryReasonCreate Perm = "inventory:reason_create"
-
-	InventoryReasonList Perm = "inventory:reason_list"
-
-	InventoryReasonUpdate Perm = "inventory:reason_update"
-
-	InventorySourceCreate Perm = "inventory:source_create"
-
-	InventorySourceDelete Perm = "inventory:source_delete"
-
-	InventorySourceGet Perm = "inventory:source_get"
-
-	InventorySourceList Perm = "inventory:source_list"
-
-	InventorySourceSummary Perm = "inventory:source_summary"
-
-	InventorySourceUpdate Perm = "inventory:source_update"
-
-	InventoryStockChange Perm = "inventory:stock_change"
-
-	InventoryStockDeduct Perm = "inventory:stock_deduct"
-
-	InventoryStockEnsure Perm = "inventory:stock_ensure"
-
-	InventoryStockGet Perm = "inventory:stock_get"
-
-	InventoryStockList Perm = "inventory:stock_list"
-
-	InventoryStockSKU Perm = "inventory:stock_sku"
-
-	InventoryWarehouseCreate Perm = "inventory:warehouse_create"
-
-	InventoryWarehouseDelete Perm = "inventory:warehouse_delete"
-
-	InventoryWarehouseGet Perm = "inventory:warehouse_get"
-
-	InventoryWarehouseList Perm = "inventory:warehouse_list"
-
-	InventoryWarehouseUpdate Perm = "inventory:warehouse_update"
-
-	MailAccountDefault Perm = "mail:account_default"
-
-	MailAccountDelete Perm = "mail:account_delete"
-
-	MailAccountList Perm = "mail:account_list"
-
-	MailAccountSave Perm = "mail:account_save"
-
-	MailAccountTest Perm = "mail:account_test"
-
-	MailAutomationDelete Perm = "mail:automation_delete"
-
-	MailAutomationGet Perm = "mail:automation_get"
-
-	MailAutomationLayout Perm = "mail:automation_layout"
-
-	MailAutomationList Perm = "mail:automation_list"
-
-	MailAutomationRunDetail Perm = "mail:automation_run_detail"
-
-	MailAutomationRunList Perm = "mail:automation_run_list"
-
-	MailAutomationSave Perm = "mail:automation_save"
-
-	MailAutomationStart Perm = "mail:automation_start"
-
-	MailAutomationStatus Perm = "mail:automation_status"
-
-	MailAutomationTick Perm = "mail:automation_tick"
-
-	MailCampaignDelete Perm = "mail:campaign_delete"
-
-	MailCampaignGet Perm = "mail:campaign_get"
-
-	MailCampaignList Perm = "mail:campaign_list"
-
-	MailCampaignSave Perm = "mail:campaign_save"
-
-	MailCampaignStart Perm = "mail:campaign_start"
-
-	MailContactDelete Perm = "mail:contact_delete"
-
-	MailContactImport Perm = "mail:contact_import"
-
-	MailContactList Perm = "mail:contact_list"
-
-	MailContactSave Perm = "mail:contact_save"
-
-	MailContactStatus Perm = "mail:contact_status"
-
-	MailContactTag Perm = "mail:contact_tag"
-
-	MailTemplateDelete Perm = "mail:template_delete"
-
-	MailTemplateList Perm = "mail:template_list"
-
-	MailTemplateSave Perm = "mail:template_save"
-
-	MasterdataChangeCount Perm = "masterdata:change_count"
-
-	MasterdataChangeEntities Perm = "masterdata:change_entities"
-
-	MasterdataChangeEntity Perm = "masterdata:change_entity"
-
-	MasterdataChangeList Perm = "masterdata:change_list"
-
-	MediaCategoryCreate Perm = "media:category_create"
-
-	MediaCategoryDelete Perm = "media:category_delete"
-
-	MediaCategoryTree Perm = "media:category_tree"
-
-	MediaCategoryUpdate Perm = "media:category_update"
-
-	MediaDelete Perm = "media:delete"
-
-	MediaDetail Perm = "media:detail"
-
-	MediaDownload Perm = "media:download"
-
-	MediaDownloadBatch Perm = "media:download_batch"
-
-	MediaList Perm = "media:list"
-
-	MediaReferences Perm = "media:references"
-
-	MediaReplace Perm = "media:replace"
-
-	MediaUpdate Perm = "media:update"
-
-	MediaUpload Perm = "media:upload"
-
-	MediaVariantsGenerate Perm = "media:variants_generate"
-
-	MembershipAssignList Perm = "membership:assign_list"
-
-	MembershipAssignSet Perm = "membership:assign_set"
-
-	MembershipAssignUnlock Perm = "membership:assign_unlock"
-
-	MembershipEntitlementSave Perm = "membership:entitlement_save"
-
-	MembershipRecalc Perm = "membership:recalc"
-
-	MembershipResolve Perm = "membership:resolve"
-
-	MembershipTierCreate Perm = "membership:tier_create"
-
-	MembershipTierDelete Perm = "membership:tier_delete"
-
-	MembershipTierGet Perm = "membership:tier_get"
-
-	MembershipTierList Perm = "membership:tier_list"
-
-	MembershipTierUpdate Perm = "membership:tier_update"
-
-	MenuCreate Perm = "menu:create"
-
-	MenuDelete Perm = "menu:delete"
-
-	MenuDetail Perm = "menu:detail"
-
-	MenuList Perm = "menu:list"
-
-	MenuUpdate Perm = "menu:update"
-
-	NavigationCreate Perm = "navigation:create"
-
-	NavigationDelete Perm = "navigation:delete"
-
-	NavigationGet Perm = "navigation:get"
-
-	NavigationList Perm = "navigation:list"
-
-	NavigationUpdate Perm = "navigation:update"
-
-	NavigationMove Perm = "navigation:move"
-
-	NavigationTranslate Perm = "navigation:translate"
-
-	NavigationSourceAdd Perm = "navigation:sourceAdd"
-
-	NavigationDeleteBulk Perm = "navigation:deleteBulk"
-
-	OrderCancel Perm = "order:cancel"
-
-	OrderCouponCountAudit Perm = "order:coupon_count_audit"
-
-	OrderCouponCreate Perm = "order:coupon_create"
-
-	OrderCouponDelete Perm = "order:coupon_delete"
-
-	OrderCouponGet Perm = "order:coupon_get"
-
-	OrderCouponList Perm = "order:coupon_list"
-
-	OrderCouponRedemption Perm = "order:coupon_redemption"
-
-	OrderCouponUpdate Perm = "order:coupon_update"
-
-	OrderCouponValidate Perm = "order:coupon_validate"
-
-	OrderCreate Perm = "order:create"
-
-	OrderGet Perm = "order:get"
-
-	OrderItemList Perm = "order:item_list"
-
-	OrderList Perm = "order:list"
-
-	OrderLogList Perm = "order:log_list"
-
-	OrderNote Perm = "order:note"
-
-	OrderOverview Perm = "order:overview"
-
-	OrderCurrencyRateGet Perm = "order:currency_rate_get"
-	OrderCurrencyRateSet Perm = "order:currency_rate_set"
-
-	OrderRefund Perm = "order:refund"
-
-	OrderReturnApprove Perm = "order:return_approve"
-
-	OrderReturnGet Perm = "order:return_get"
-
-	OrderReturnList Perm = "order:return_list"
-
-	OrderReturnReceive Perm = "order:return_receive"
-
-	OrderReturnReject Perm = "order:return_reject"
-
-	OrderStatus Perm = "order:status"
-
-	OrderShip Perm = "order:ship"
-
-	OrderShipForm Perm = "order:ship_form"
-
-	OrderShipmentList Perm = "order:shipment_list"
-
-	OrderPendingShip Perm = "order:pending_ship"
-
-	OrderCarrierCreate Perm = "order:carrier_create"
-
-	OrderCarrierManage Perm = "order:carrier_manage"
-
-	OrderCarrierList Perm = "order:carrier_list"
-
-	PageArtifactGc Perm = "page:artifact_gc"
-
-	PageArtifactRebuild Perm = "page:artifact_rebuild"
-
-	PageBuild Perm = "page:build"
-
-	PageCreate Perm = "page:create"
-
-	PageDelete Perm = "page:delete"
-
-	PageDetail Perm = "page:detail"
-
-	PageDraftSave Perm = "page:draft_save"
-
-	PageList Perm = "page:list"
-
-	PagePublicationAudit Perm = "page:publication_audit"
-
-	PagePublish Perm = "page:publish"
-
-	PageRedirectCreate Perm = "page:redirect_create"
-
-	PageRedirectDelete Perm = "page:redirect_delete"
-
-	PageRedirectMerge Perm = "page:redirect_merge"
-
-	PageRedirectView Perm = "page:redirect_view"
-
-	PageRevisionList Perm = "page:revision_list"
-
-	PageRollback Perm = "page:rollback"
-
-	PageSEOPatrol Perm = "page:seo_patrol"
-
-	PageURLUpdate Perm = "page:url_update"
-
-	PageTranslationsSave Perm = "page:translations_save"
-
-	PermissionCreate Perm = "permission:create"
-
-	PermissionDelete Perm = "permission:delete"
-
-	PermissionDetail Perm = "permission:detail"
-
-	PermissionList Perm = "permission:list"
-
-	PermissionOptions Perm = "permission:options"
-
-	PermissionUpdate Perm = "permission:update"
-
-	PluginDetail Perm = "plugin:detail"
-
-	PluginInstall Perm = "plugin:install"
-
-	PluginList Perm = "plugin:list"
-
-	PluginToggle Perm = "plugin:toggle"
-
-	PluginUninstall Perm = "plugin:uninstall"
-
-	PresentationCreate Perm = "presentation:create"
-
-	PresentationDelete Perm = "presentation:delete"
-
-	PresentationGet Perm = "presentation:get"
-
-	PresentationGetByEntity Perm = "presentation:get_by_entity"
-
-	PresentationList Perm = "presentation:list"
-
-	PresentationPreview Perm = "presentation:preview"
-
-	PresentationRebuild Perm = "presentation:rebuild"
-
-	PresentationUpdateURL Perm = "presentation:update_url"
-
-	ProductAttributeBulkDelete Perm = "product:attribute_bulk_delete"
-
-	ProductAttributeCreate Perm = "product:attribute_create"
-
-	ProductAttributeDelete Perm = "product:attribute_delete"
-
-	ProductAttributeGet Perm = "product:attribute_get"
-
-	ProductAttributeList Perm = "product:attribute_list"
-
-	ProductAttributeSetValues Perm = "product:attribute_set_values"
-
-	ProductAttributeUpdate Perm = "product:attribute_update"
-
-	ProductBrandBulkDelete Perm = "product:brand_bulk_delete"
-
-	ProductBrandCreate Perm = "product:brand_create"
-
-	ProductBrandDelete Perm = "product:brand_delete"
-
-	ProductBrandGet Perm = "product:brand_get"
-
-	ProductBrandList Perm = "product:brand_list"
-
-	ProductBrandUpdate Perm = "product:brand_update"
-
-	ProductBulkDelete Perm = "product:bulk_delete"
-
-	ProductBulkPricing Perm = "product:bulk_pricing"
-
-	ProductCategoryBulkDelete Perm = "product:category_bulk_delete"
-
-	ProductCategoryCreate Perm = "product:category_create"
-
-	ProductCategoryDelete Perm = "product:category_delete"
-
-	ProductCategoryGet Perm = "product:category_get"
-
-	ProductCategoryList Perm = "product:category_list"
-
-	ProductCategoryUpdate Perm = "product:category_update"
-
-	ProductCreate Perm = "product:create"
-
-	ProductDelete Perm = "product:delete"
-
-	ProductTranslationsSave Perm = "product:translations_save"
-
-	ProductDetailTemplateCreate Perm = "product:detail_template_create"
-
-	ProductDetailTemplatePublish Perm = "product:detail_template_publish"
-
-	ProductDetailTemplateApply Perm = "product:detail_template_apply"
-
-	ProductDetailTemplateUpdateURL Perm = "product:detail_template_update_url"
-
-	ProductDetailTemplateReapply Perm = "product:detail_template_reapply"
-
-	ProductDetailTemplateRollback Perm = "product:detail_template_rollback"
-
-	ProductPublishAttempts Perm = "product:publish_attempts"
-
-	ProductGet Perm = "product:get"
-
-	ProductList Perm = "product:list"
-
-	ProductPricingAdjustment Perm = "product:pricing_adjustment"
-
-	ProductPricingApply Perm = "product:pricing_apply"
-
-	ProductPricingHistory Perm = "product:pricing_history"
-
-	ProductPricingPreview Perm = "product:pricing_preview"
-
-	ProductPricingRoundings Perm = "product:pricing_roundings"
-
-	ProductPricingRules Perm = "product:pricing_rules"
-
-	ProductRatingAdd Perm = "product:rating_add"
-
-	ProductRatingDelete Perm = "product:rating_delete"
-
-	ProductTagBulkDelete Perm = "product:tag_bulk_delete"
-
-	ProductTagCreate Perm = "product:tag_create"
-
-	ProductTagDelete Perm = "product:tag_delete"
-
-	ProductTagGet Perm = "product:tag_get"
-
-	ProductTagList Perm = "product:tag_list"
-
-	ProductTagProducts Perm = "product:tag_products"
-
-	ProductTagRecalc Perm = "product:tag_recalc"
-
-	ProductTagRuleTypes Perm = "product:tag_rule_types"
-
-	ProductTagUpdate Perm = "product:tag_update"
-
-	ProductUpdate Perm = "product:update"
-
-	ProductVariantCreate Perm = "product:variant_create"
-
-	ProductVariantDelete Perm = "product:variant_delete"
-
-	ProductVariantGenerate Perm = "product:variant_generate"
-
-	ProductVariantSave Perm = "product:variant_save"
-
-	ProductVariantUpdate Perm = "product:variant_update"
-
-	ProductSEOScore         Perm = "product:seo_score"
-	ProductCategorySEOScore Perm = "product:category_seo_score"
-	ProductBrandSEOScore    Perm = "product:brand_seo_score"
-	ProductCategoryParents  Perm = "product:category_parents"
-	ProductVariantPreview   Perm = "product:variant_preview"
-
-	ProjectCreate Perm = "project:create"
-
-	ProjectDetail Perm = "project:detail"
-
-	ProjectList Perm = "project:list"
-
-	ProjectThemeActivate Perm = "project:theme_activate"
-
-	ProjectThemeActive Perm = "project:theme_active"
-
-	ProjectThemeCreate Perm = "project:theme_create"
-
-	ProjectThemeDelete Perm = "project:theme_delete"
-
-	ProjectThemeList Perm = "project:theme_list"
-
-	ProjectThemeUpdate Perm = "project:theme_update"
-
-	ProjectUpdate Perm = "project:update"
-
-	SysConfigGet Perm = "sysconfig:get"
-
-	SysConfigSave Perm = "sysconfig:save"
-
-	SysConfigSystemSave Perm = "sysconfig:system_save"
-
-	PublicationReceiptsPending Perm = "publication:receipts_pending"
-
-	PublicationSEOAudit Perm = "publication:seo_audit"
-
-	RoleCreate Perm = "role:create"
-
-	RoleDelete Perm = "role:delete"
-
-	RoleDetail Perm = "role:detail"
-
-	RoleList Perm = "role:list"
-
-	RoleMenuList Perm = "role:menu_list"
-
-	RoleMenuSave Perm = "role:menu_save"
-
-	RoleUpdate Perm = "role:update"
-
-	RoleUserList Perm = "role:user_list"
-
-	RoleUserSave Perm = "role:user_save"
-
-	SEOAudit Perm = "seo:audit"
-
-	UserCustomerDetail Perm = "user:customer_detail"
-
-	UserCustomerList Perm = "user:customer_list"
-
-	UserCustomerStatus Perm = "user:customer_status"
-
-	UserCustomerUnlock     Perm = "user:customer_unlock"
-	UserCustomerBulkStatus Perm = "user:customer_bulk_status"
-	UserCustomerBulkUnlock Perm = "user:customer_bulk_unlock"
-
-	WebhookDeliveryList Perm = "webhook:delivery_list"
-
-	WebhookDeliveryRetry Perm = "webhook:delivery_retry"
-
-	WebhookEndpointDelete Perm = "webhook:endpoint_delete"
-
-	WebhookEndpointList Perm = "webhook:endpoint_list"
-
-	WebhookEndpointSave Perm = "webhook:endpoint_save"
-
-	WebhookEndpointStatus Perm = "webhook:endpoint_status"
-
-	AIProviderList Perm = "ai:provider_list"
-
-	AIProviderGet Perm = "ai:provider_get"
-
-	AIProviderModelsList Perm = "ai:provider_models_list"
-
-	AIProviderSave Perm = "ai:provider_save"
-
-	AIProviderDelete Perm = "ai:provider_delete"
-
-	AIProviderStatus Perm = "ai:provider_status"
-
-	AIProviderModelsSave Perm = "ai:provider_models_save"
-
-	AIProviderModelsRestore Perm = "ai:provider_models_restore"
-
-	AIProviderModelsFetch Perm = "ai:provider_models_fetch"
-
-	// 候选清单与批量追加各有自己的权限点：
-	//   - candidates 会解密密钥、拿 base_url 去探远端 /models（是外部调用，代价与前缀不同）；
-	//   - append 会改写 provider 的模型目录（是写操作）。
-	// 两者都不借 provider_models_save / provider_models_fetch —— 共用会让「只想看候选」
-	// 的角色顺带拿到「改目录」或「打远端」的能力。
-	AIProviderModelsCandidates Perm = "ai:provider_models_candidates"
-
-	AIProviderModelsAppend Perm = "ai:provider_models_append"
-
-	AISessionList Perm = "ai:session_list"
-
-	AISessionGet Perm = "ai:session_get"
-
-	AISessionEvents Perm = "ai:session_events"
-
-	AISessionFoldPlan Perm = "ai:session_fold_plan"
-
-	AISessionAppend Perm = "ai:session_append"
-
-	AISessionRename Perm = "ai:session_rename"
-
-	AISessionArchive Perm = "ai:session_archive"
-
-	AISessionFold Perm = "ai:session_fold"
-
-	// AISessionSend 是「往已有会话里发一条消息」。
-	//
-	// 它不能复用 ai:chat：/api/ai/chat 是「开一段新对话」，服务端会把 SessionID 清 0；
-	// 而这里是「续写指定会话」，请求带 sessionId。两件事的后果不同，权限点也不该共用一个。
-	AISessionSend Perm = "ai:session_send"
-
-	AIChat Perm = "ai:chat"
-
-	AITokenList Perm = "ai:token_list"
-
-	AITokenCreate Perm = "ai:token_create"
-
-	AITokenRevoke Perm = "ai:token_revoke"
-
-	// AITokenToggle 是「对外接入点开关」自己的权限点。
-	//
-	// 它不改任何一把令牌，改的是「这个站点的数据要不要对外开口」——与签发令牌是两件
-	// 不同的事：可以有人能发令牌、但不能决定开口。借 token_create 会让「谁能开对外
-	// 出口」这件事在权限表里不可见，也让日后想单独收回变得无从下手。
-	AITokenToggle Perm = "ai:token_toggle"
 )
 
 var specs = map[Perm]spec{
