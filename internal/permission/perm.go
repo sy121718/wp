@@ -96,10 +96,11 @@ func Snapshot() []RouteSpec { return mw.Snapshot() }
 // Exempts 返回明确豁免的路由键。
 func Exempts() []string { return mw.Exempts() }
 
-// Reset 清空登记与目录；只允许装配与测试使用。
+// Reset 只清空路由登记；只允许装配与测试使用。
+//
+// 权限目录（specs）是代码侧静态事实，不随路由登记重置 ——
+// 装配开头调用 Reset 后若把 specs 也清空，Known/Label/All 会恒为空，
+// 导致 MCP 令牌 scope 全部被拒、scope 下拉退化。
 func Reset() {
 	mw.Reset()
-	regMu.Lock()
-	defer regMu.Unlock()
-	specs = nil
 }
