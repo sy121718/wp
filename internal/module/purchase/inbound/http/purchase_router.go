@@ -6,14 +6,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	purchasecontract "go_wp/internal/module/purchase/contract"
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	purchasemodel "go_wp/internal/module/purchase/model"
 	purchaseservice "go_wp/internal/module/purchase/service"
-	"go_wp/internal/permission"
 	"go_wp/pkg/binding"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 )
 
@@ -195,7 +196,7 @@ func (h *Handle) ListPurchaseHistory(c *gin.Context) {
 	response.SuccessWithMessage(c, purchaseenums.MsgListSuccess, list)
 }
 
-func SetupPurchaseRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
+func SetupPurchaseRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
 	project projectcontract.ProjectService, stock purchasecontract.StockPort) purchasecontract.PurchaseService {
 	svc := purchaseservice.NewService(purchasemodel.NewModel(db), project)
 	if stock != nil {
@@ -206,20 +207,20 @@ func SetupPurchaseRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *
 	if rg != nil {
 		g := rg.Group("/inventory")
 
-		g.GET("/source/list", permission.InventorySourceList, handle.ListSources)
-		g.GET("/source/get", permission.InventorySourceGet, handle.GetSource)
-		g.GET("/source/summary", permission.InventorySourceSummary, handle.SourceSummary)
-		g.POST("/source/create", permission.InventorySourceCreate, handle.CreateSource)
-		g.POST("/source/update", permission.InventorySourceUpdate, handle.UpdateSource)
-		g.POST("/source/delete", permission.InventorySourceDelete, handle.DeleteSource)
+		g.GET("/source/list", inventoryenums.InventorySourceList, handle.ListSources)
+		g.GET("/source/get", inventoryenums.InventorySourceGet, handle.GetSource)
+		g.GET("/source/summary", inventoryenums.InventorySourceSummary, handle.SourceSummary)
+		g.POST("/source/create", inventoryenums.InventorySourceCreate, handle.CreateSource)
+		g.POST("/source/update", inventoryenums.InventorySourceUpdate, handle.UpdateSource)
+		g.POST("/source/delete", inventoryenums.InventorySourceDelete, handle.DeleteSource)
 
-		g.GET("/purchase/list", permission.InventoryPurchaseList, handle.ListPurchaseOrders)
-		g.GET("/purchase/get", permission.InventoryPurchaseGet, handle.GetPurchaseOrder)
-		g.GET("/purchase/history", permission.InventoryPurchaseHistory, handle.ListPurchaseHistory)
-		g.POST("/purchase/create", permission.InventoryPurchaseCreate, handle.CreatePurchaseOrder)
-		g.POST("/purchase/update", permission.InventoryPurchaseUpdate, handle.UpdatePurchaseOrder)
-		g.POST("/purchase/receipt", permission.InventoryPurchaseReceipt, handle.RegisterReceipt)
-		g.POST("/purchase/production", permission.InventoryPurchaseProduction, handle.RegisterProductionInbound)
+		g.GET("/purchase/list", inventoryenums.InventoryPurchaseList, handle.ListPurchaseOrders)
+		g.GET("/purchase/get", inventoryenums.InventoryPurchaseGet, handle.GetPurchaseOrder)
+		g.GET("/purchase/history", inventoryenums.InventoryPurchaseHistory, handle.ListPurchaseHistory)
+		g.POST("/purchase/create", inventoryenums.InventoryPurchaseCreate, handle.CreatePurchaseOrder)
+		g.POST("/purchase/update", inventoryenums.InventoryPurchaseUpdate, handle.UpdatePurchaseOrder)
+		g.POST("/purchase/receipt", inventoryenums.InventoryPurchaseReceipt, handle.RegisterReceipt)
+		g.POST("/purchase/production", inventoryenums.InventoryPurchaseProduction, handle.RegisterProductionInbound)
 	}
 
 	SetupPurchasePages(pages, svc, stock, project)

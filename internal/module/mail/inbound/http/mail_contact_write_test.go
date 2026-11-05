@@ -18,7 +18,6 @@ import (
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
@@ -337,7 +336,7 @@ func TestMailContactTagResultShape(t *testing.T) {
 }
 
 var (
-	mailAPIContactPostRe  = regexp.MustCompile(`g\.POST\("(/contact/[a-z]+)",\s*(?:pageview\.HTMLFragment,\s*)?permission\.(MailContact[A-Za-z]+)`)
+	mailAPIContactPostRe  = regexp.MustCompile(`g\.POST\("(/contact/[a-z]+)",\s*(?:pageview\.HTMLFragment,\s*)?mailenums\.(MailContact[A-Za-z]+)`)
 	mailPageContactPostRe = regexp.MustCompile(`pages\.POST\("(/mail/contact[^"]*)"`)
 )
 
@@ -348,12 +347,12 @@ func TestMailContactWriteEndpointsAreRealRoutes(t *testing.T) {
 	}
 	found := map[string]string{}
 	for _, m := range mailAPIContactPostRe.FindAllStringSubmatch(string(raw), -1) {
-		found["/api/mail"+m[1]] = "permission." + m[2]
+		found["/api/mail"+m[1]] = "mailenums." + m[2]
 	}
 	want := map[string]string{
-		"/api/mail/contact/save":   "permission.MailContactSave",
-		"/api/mail/contact/delete": "permission.MailContactDelete",
-		"/api/mail/contact/tag":    "permission.MailContactTag",
+		"/api/mail/contact/save":   "mailenums.MailContactSave",
+		"/api/mail/contact/delete": "mailenums.MailContactDelete",
+		"/api/mail/contact/tag":    "mailenums.MailContactTag",
 	}
 	for path, perm := range want {
 		got, ok := found[path]
@@ -366,29 +365,6 @@ func TestMailContactWriteEndpointsAreRealRoutes(t *testing.T) {
 		}
 	}
 
-	declareMailPageObjects()
-	for path, permName := range want {
-		var target permission.Perm
-		switch permName {
-		case "permission.MailContactSave":
-			target = permission.MailContactSave
-		case "permission.MailContactDelete":
-			target = permission.MailContactDelete
-		case "permission.MailContactTag":
-			target = permission.MailContactTag
-		}
-		var matched []permission.Perm
-		for _, p := range permission.All() {
-			for _, r := range permission.RoutesOf(p) {
-				if r.Path == path && r.Method == "POST" {
-					matched = append(matched, p)
-				}
-			}
-		}
-		if len(matched) != 1 || matched[0] != target {
-			t.Errorf("%s 应恰好反解出 %v，实际 %v", path, target, matched)
-		}
-	}
 }
 
 func TestMailContactPageWritePostsAreGone(t *testing.T) {

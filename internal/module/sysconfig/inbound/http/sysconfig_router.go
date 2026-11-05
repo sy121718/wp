@@ -9,19 +9,19 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
-	"go_wp/internal/permission"
 	"go_wp/pkg/binding"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
-func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, svc sysconfigcontract.Service) {
+func SetupSysConfigRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, svc sysconfigcontract.Service) {
 	h := NewAdminHandle(svc)
 
 	g := authorizedAPI.Group("/sysconfig")
-	g.GET("/get", permission.SysConfigGet, h.APIList)
-	g.POST("/save", permission.SysConfigSave, h.APISave)
-	g.POST("/system/save", permission.SysConfigSystemSave, pageview.HTMLFragment, h.APISystemSave)
+	g.GET("/get", sysconfigenums.SysConfigGet, h.APIList)
+	g.POST("/save", sysconfigenums.SysConfigSave, h.APISave)
+	g.POST("/system/save", sysconfigenums.SysConfigSystemSave, pageview.HTMLFragment, h.APISystemSave)
 
 	SetupSysConfigPages(adminPages, h)
 }

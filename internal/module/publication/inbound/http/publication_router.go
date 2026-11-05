@@ -7,10 +7,11 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
-	"go_wp/internal/permission"
 
 	"go_wp/internal/middleware/builtin"
+	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/pkg/logger"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 
@@ -30,14 +31,18 @@ func PublicationPendingReceipts(svc pubcontract.PublicationService) gin.HandlerF
 	}
 }
 
-func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.PublicationService {
+func SetupPublicationRoutes(rg *mw.RouteGroup, db *gorm.DB) pubcontract.PublicationService {
 	svc := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	g := rg.Group("/publication", builtin.SessionAuthMiddleware())
 
-	g.GET("/receipts/pending", permission.PublicationReceiptsPending, PublicationPendingReceipts(svc))
+	g.GET("/receipts/pending", pubenums.PublicationReceiptsPending, PublicationPendingReceipts(svc))
 
-	permission.Declare(http.MethodPost, "/api/seo/audit", permission.SEOAudit)
-	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
+	mw.DeclareRoute(mw.RouteSpec{
+		Method: http.MethodPost, Path: "/api/seo/audit",
+		Perm: adminenums.SEOAudit, Kind: mw.RoutePage,
+		AuthObject: "/api/seo/audit", AuthMethod: http.MethodPost,
+	})
+	g.POST("/seo-audit", pubenums.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
 		pageview.HTMLFragment, NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
 	return svc
 }

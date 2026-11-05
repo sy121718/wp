@@ -1,9 +1,9 @@
 package feature
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,12 +11,12 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
+	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagedto "go_wp/internal/module/page/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +49,7 @@ func TestNavigationsPageRenders(t *testing.T) {
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
-	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
+	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(navigationenums.NavigationUpdate): true})
 	for _, want := range []string{"导航菜单", "首页", "新品", "/api/navigation/create"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)
@@ -96,7 +96,7 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
-	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
+	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(navigationenums.NavigationUpdate): true})
 	for _, want := range []string{"从已有内容添加", "/about", "页面（1）"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)

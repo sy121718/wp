@@ -10,7 +10,7 @@ import (
 	"go_wp/internal/mcp"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
-	"go_wp/internal/permission"
+	contentenums "go_wp/internal/module/content/enums"
 )
 
 type ContentWriter interface {
@@ -47,7 +47,7 @@ func contentFind(r ContentReader) mcp.Tool {
 		"按关键词搜索内容（匹配标题与 slug），返回 id 与标题。**用户只会说文章名**，"+
 			"所以要先用它把名字换成 id，再去调 content_get / content_update / content_delete。"+
 			"不传关键词则列出该类型最近的内容。",
-		permission.ContentList,
+		contentenums.ContentList,
 		mcp.Object("搜索参数", map[string]mcp.Schema{
 			"entityType": mcp.Enum("内容类型（留空则不限类型）", contentcontract.ContentTypes()...),
 			"keyword":    mcp.String("标题的一部分或 slug（可为空，空则列出最近的内容）"),
@@ -92,7 +92,7 @@ func contentGet(r ContentReader) mcp.Tool {
 			"**id 要先经 content_find 拿到**（用户通常只说标题）。"+
 			"注意：返回值可能被剪枝（很长的正文只保留开头），所以它**不是** content_update 的输入 ——"+
 			"content_update 只传要改的字段就够了。",
-		permission.ContentGet,
+		contentenums.ContentGet,
 		mcp.Object("读取参数", map[string]mcp.Schema{
 			"id": mcp.String("内容 id"),
 		}, "id"),
@@ -150,7 +150,7 @@ func contentCreate(w ContentWriter, store mcp.IdempotencyStore) mcp.Tool {
 	return mcp.NewWrite("content_create", "新建内容",
 		"新建一条内容实体（如文章）。slug 在同类型内必须唯一；data 只接受该类型的白名单字段，"+
 			"字段名见参数说明。",
-		permission.ContentCreate,
+		contentenums.ContentCreate,
 		mcp.Object("新建内容的参数", map[string]mcp.Schema{
 			"entityType": mcp.Enum("内容类型", contentcontract.ContentTypes()...),
 			"slug":       mcp.String("同类型内唯一的标识（字母数字与短横线）"),
@@ -180,7 +180,7 @@ func contentUpdate(w ContentWriter, r ContentReader, store mcp.IdempotencyStore)
 		"按 id 更新一条内容的**部分字段**（revision 递增）。data 里只写要改的字段即可，"+
 			"没写的字段保持原值 —— 合并由服务端做（先读出当前内容、再全量写回），"+
 			"所以**不需要**把整份内容传进来。想把某个字段清空就显式传空串。",
-		permission.ContentUpdate,
+		contentenums.ContentUpdate,
 		mcp.Object("更新参数", map[string]mcp.Schema{
 			"id": mcp.String("内容 id（新建时的返回值里带）"),
 			"data": contentDataSchema("要修改的字段。**只传要改的那几个**，" +
@@ -218,7 +218,7 @@ func contentDelete(w ContentWriter, store mcp.IdempotencyStore) mcp.Tool {
 	return mcp.NewWrite("content_delete", "删除内容",
 		"按 id 删除一条内容。**这是不可逆操作**：删之前先把 id 与标题说给用户听，"+
 			"确认后再调用本工具。",
-		permission.ContentDelete,
+		contentenums.ContentDelete,
 		mcp.Object("删除参数", map[string]mcp.Schema{
 			"id": mcp.String("要删除的内容 id"),
 		}, "id"),

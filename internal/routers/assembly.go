@@ -9,13 +9,12 @@ import (
 	"go_wp/config"
 
 	"go_wp/internal/adminui"
-	"go_wp/pkg/builder/core"
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/pipeline"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	aicontract "go_wp/internal/module/ai/contract"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimcp "go_wp/internal/module/ai/inbound/mcp"
 	aimodel "go_wp/internal/module/ai/model"
@@ -93,14 +92,16 @@ import (
 	usermcp "go_wp/internal/module/user/inbound/mcp"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
-	"go_wp/internal/permission"
+	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	"go_wp/pkg/view"
 	"go_wp/public/migrations"
@@ -109,33 +110,66 @@ import (
 	"gorm.io/gorm"
 )
 
-func syncDeclaredPermissions(db *gorm.DB) {
-	if db == nil {
-		return
+// verifyDeclaredPermissions 在路由与工具登记完成后核对权限目录：
+// 每条已声明的绑定（含页面复用的 AuthObject/AuthMethod）必须在库里存在、启用，
+// 且路径/方法与登记事实一致。不一致只报告并让就绪检查失败，不再启动反写。
+//
+// 这样既没有「先启动再写回」的窗口，也不会在冲突时自动挑一条覆盖用户定义。
+func verifyDeclaredPermissions(ctx context.Context, dir aicontract.PermDirectory) []string {
+	specs := mw.Snapshot()
+	if len(specs) == 0 {
+		return []string{"没有任何已声明的路由绑定：装配缺陷"}
 	}
-	res, err := permission.SyncToDB(context.Background(), db)
+	codes := make([]string, 0, len(specs))
+	seen := make(map[string]struct{}, len(specs))
+	for _, spec := range specs {
+		if spec.Perm == "" {
+			continue
+		}
+		if _, dup := seen[spec.Perm]; dup {
+			continue
+		}
+		seen[spec.Perm] = struct{}{}
+		codes = append(codes, spec.Perm)
+	}
+	if dir == nil {
+		return []string{"权限目录端口未注入：不能核对权限点落库"}
+	}
+	entries, err := dir.List(ctx, codes)
 	if err != nil {
-		logger.Scene("init").Error(err,
-			"权限点声明同步失败：新接口可能仍因库中缺权限点（含超管策略）而 403，请检查数据库可写与 sys_permission 表结构")
-		return
+		return []string{"读取权限目录失败：" + err.Error()}
 	}
-
-	if err := casbin.ReloadPolicy(); err != nil {
-		logger.Scene("init").With("err", err).Warn("权限点声明同步后策略重载失败（Casbin 未初始化时忽略）")
+	byCode := make(map[string]aicontract.PermEntry, len(entries))
+	for _, e := range entries {
+		byCode[e.Code] = e
 	}
-	logger.Scene("init").
-		With("declared", res.Declared).With("inserted", res.Inserted).
-		With("pathFixed", res.PathFixed).With("superPolicies", res.SuperPolicies).
-		Info("权限点声明同步完成：" + res.String())
-
-	if len(res.Unmanaged) > 0 {
-		logger.Scene("init").With("count", len(res.Unmanaged)).
-			Info("库中存在代码未声明的权限点（历史 seed 或页面路由入口，保留不动）：" + strings.Join(res.Unmanaged, "; "))
+	var problems []string
+	for _, spec := range specs {
+		if spec.Perm == "" {
+			continue
+		}
+		obj, act := spec.AuthObject, spec.AuthMethod
+		if obj == "" {
+			obj = spec.Path
+		}
+		if act == "" {
+			act = spec.Method
+		}
+		e, ok := byCode[spec.Perm]
+		if !ok {
+			problems = append(problems, spec.Perm+" 未在权限目录中登记（"+act+" "+obj+"）")
+			continue
+		}
+		if e.Status != 1 {
+			problems = append(problems, spec.Perm+" 在权限目录中已禁用（"+act+" "+obj+"）")
+			continue
+		}
+		if e.Path != obj || e.Method != act {
+			problems = append(problems, spec.Perm+" 目录记的是 "+e.Method+" "+e.Path+
+				"，注册处通过的是 "+act+" "+obj)
+		}
 	}
-	if ex := permission.Exempts(); len(ex) > 0 {
-		logger.Scene("init").With("count", len(ex)).
-			Info("以下路由显式豁免权限点（check-permission-gaps.sh 的 EXEMPT 名单应对应）：" + strings.Join(ex, "; "))
-	}
+	return problems
 }
 
 type assembly struct {
@@ -151,7 +185,7 @@ type assembly struct {
 
 	api *gin.RouterGroup
 
-	authorizedAPI *permission.RouteGroup
+	authorizedAPI *mw.RouteGroup
 
 	sysConfigSvc sysconfigcontract.Service
 
@@ -162,6 +196,9 @@ type assembly struct {
 	workbenchPages *gin.RouterGroup
 
 	adminAuthzSvc admincontract.AuthzContextService
+
+	// permProblems 是启动期权限目录核对出的不一致项；非空时 /readyz 返回 not_ready。
+	permProblems []string
 
 	mediaSvc       mediacontract.MediaService
 	projectService projectcontract.ProjectService
@@ -280,6 +317,16 @@ func (a *assembly) buildFoundation(ready func() error) {
 			"status":          "ready",
 			"pendingReceipts": a.pendingReceipts.snapshot(c.Request.Context()),
 		}
+		if len(a.permProblems) > 0 {
+			data["status"] = "not_ready"
+			data["permissionProblems"] = a.permProblems
+			c.JSON(http.StatusServiceUnavailable, response.Response{
+				Code:    http.StatusServiceUnavailable,
+				Message: "权限目录与路由声明不一致",
+				Data:    data,
+			})
+			return
+		}
 		if ready != nil {
 			if err := ready(); err != nil {
 				data["status"] = "not_ready"
@@ -351,7 +398,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 
-	adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+	adminAuthzSvc := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 	a.adminAuthzSvc = adminAuthzSvc
 
 	// 管理员副作用任务的重放循环：策略重载与会话吊销跨库/跨进程，PG 回滚不了它们，
@@ -384,15 +431,15 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		router.GET("/admin/dev-login", adminhttp.DevLoginHandler(db))
 	}
 
-	authorizedAPI := permission.NewRouteGroup(
+	authorizedAPI := mw.NewRouteGroup(
 		api.Group("", builtin.SessionAuthMiddleware(), builtin.ActorContextMiddleware(),
-			builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+			builtin.CSRFMiddleware(), builtin.CasbinMiddleware()), mw.RouteProtected)
 	a.api = api
 	a.authorizedAPI = authorizedAPI
 
 	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc)
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc))
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)

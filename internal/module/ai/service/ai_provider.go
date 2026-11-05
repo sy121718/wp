@@ -235,7 +235,11 @@ const (
 	tokenListMaxLimit = 200
 )
 
-type ScopeValidator func(perm string) bool
+// ScopeValidator 判定权限点能否作为令牌 scope。
+//
+// 带 ctx：真实实现要查数据库目录（admin 的已启用权限点），
+// 查询失败必须按拒绝处理，不能静默放行未知码。
+type ScopeValidator func(ctx context.Context, perm string) bool
 
 type TokenIdentity struct {
 	TokenID int64
@@ -282,7 +286,7 @@ func (s *AccessTokenService) Create(ctx context.Context, req *aidto.TokenCreateR
 	if name == "" {
 		return nil, aienums.Err(aienums.ErrTokenNameRequired)
 	}
-	scopes, err := s.normalizeScopes(req.Scopes)
+	scopes, err := s.normalizeScopes(ctx, req.Scopes)
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +450,7 @@ func (s *AccessTokenService) Verify(ctx context.Context, plain string) (*TokenId
 	}, nil
 }
 
-func (s *AccessTokenService) normalizeScopes(raw []string) ([]string, error) {
+func (s *AccessTokenService) normalizeScopes(ctx context.Context, raw []string) ([]string, error) {
 	out := make([]string, 0, len(raw))
 	seen := make(map[string]struct{}, len(raw))
 	for _, item := range raw {
@@ -457,7 +461,7 @@ func (s *AccessTokenService) normalizeScopes(raw []string) ([]string, error) {
 		if _, dup := seen[p]; dup {
 			continue
 		}
-		if s.scopeOK == nil || !s.scopeOK(p) {
+		if s.scopeOK == nil || !s.scopeOK(ctx, p) {
 
 			return nil, aienums.Err(aienums.ErrTokenScopeUnknown)
 		}

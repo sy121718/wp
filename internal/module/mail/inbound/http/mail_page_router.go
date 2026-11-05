@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	mailcontract "go_wp/internal/module/mail/contract"
-	"go_wp/internal/permission"
 	pageview "go_wp/pkg/view"
 )
 
@@ -29,7 +28,6 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 		return
 	}
 	mailPage := NewMailPageHandle(svc)
-	declareMailPageObjects()
 
 	pages.GET("/mail",
 		adminui.PageAuthz("/api/mail/account/list"),
@@ -101,25 +99,4 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.POST("/mail/automation/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
 	pages.POST("/mail/automations/bulk-delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationsBulkDelete)
 	pages.POST("/mail/automation/tick", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
-}
-
-func declareMailPageObjects() {
-	permission.Declare("POST", "/api/mail/account/save", permission.MailAccountSave)
-	permission.Declare("POST", "/api/mail/account/delete", permission.MailAccountDelete)
-	permission.Declare("POST", "/api/mail/account/default", permission.MailAccountDefault)
-	permission.Declare("POST", "/api/mail/account/test", permission.MailAccountTest)
-	permission.Declare("POST", "/api/mail/template/save", permission.MailTemplateSave)
-	permission.Declare("POST", "/api/mail/template/delete", permission.MailTemplateDelete)
-	permission.Declare("POST", "/api/mail/contact/import", permission.MailContactImport)
-	permission.Declare("POST", "/api/mail/contact/status", permission.MailContactStatus)
-	permission.Declare("POST", "/api/mail/contact/save", permission.MailContactSave)
-	permission.Declare("POST", "/api/mail/contact/delete", permission.MailContactDelete)
-	permission.Declare("POST", "/api/mail/contact/tag", permission.MailContactTag)
-	permission.Declare("POST", "/api/mail/campaign/save", permission.MailCampaignSave)
-	permission.Declare("POST", "/api/mail/campaign/start", permission.MailCampaignStart)
-	permission.Declare("POST", "/api/mail/campaign/delete", permission.MailCampaignDelete)
-	permission.Declare("POST", "/api/mail/automation/save", permission.MailAutomationSave)
-	permission.Declare("POST", "/api/mail/automation/status", permission.MailAutomationStatus)
-	permission.Declare("POST", "/api/mail/automation/delete", permission.MailAutomationDelete)
-	permission.Declare("POST", "/api/mail/automation/tick", permission.MailAutomationTick)
 }

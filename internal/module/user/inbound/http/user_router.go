@@ -7,9 +7,10 @@ import (
 	"gorm.io/gorm"
 
 	usercontract "go_wp/internal/module/user/contract"
+	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
@@ -42,16 +43,16 @@ func SetupUserRoutes(
 	return svc
 }
 
-func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.CustomerAdminPort) {
+func SetupCustomerAdminRoutes(rg *mw.RouteGroup, svc usercontract.CustomerAdminPort) {
 	if rg == nil || svc == nil {
 		return
 	}
 	h := NewCustomerHandle(svc)
 	g := rg.Group("/customer")
-	g.GET("/list", permission.UserCustomerList, h.ListCustomers)
-	g.GET("/get", permission.UserCustomerDetail, h.GetCustomer)
-	g.POST("/status", permission.UserCustomerStatus, pageview.HTMLFragment, h.SetCustomerStatus)
-	g.POST("/unlock", permission.UserCustomerUnlock, pageview.HTMLFragment, h.UnlockCustomer)
-	g.POST("/bulk-status", permission.UserCustomerBulkStatus, pageview.HTMLFragment, h.BulkCustomerStatus)
-	g.POST("/bulk-unlock", permission.UserCustomerBulkUnlock, pageview.HTMLFragment, h.BulkCustomerUnlock)
+	g.GET("/list", userenums.UserCustomerList, h.ListCustomers)
+	g.GET("/get", userenums.UserCustomerDetail, h.GetCustomer)
+	g.POST("/status", userenums.UserCustomerStatus, pageview.HTMLFragment, h.SetCustomerStatus)
+	g.POST("/unlock", userenums.UserCustomerUnlock, pageview.HTMLFragment, h.UnlockCustomer)
+	g.POST("/bulk-status", userenums.UserCustomerBulkStatus, pageview.HTMLFragment, h.BulkCustomerStatus)
+	g.POST("/bulk-unlock", userenums.UserCustomerBulkUnlock, pageview.HTMLFragment, h.BulkCustomerUnlock)
 }

@@ -11,7 +11,6 @@ import (
 	"go_wp/internal/module/user/contract"
 	"go_wp/internal/module/user/dto"
 	"go_wp/internal/module/user/enums"
-	"go_wp/internal/permission"
 	"go_wp/pkg/utils"
 )
 
@@ -44,7 +43,7 @@ func customerFind(query usercontract.CustomerQueryReader) mcp.Tool {
 			"不带任何筛选就返回最近注册的一批。结果里每位客户都带注册时间、最后登录时间与 IP 归属地、是否已锁定 —— "+
 			"要某一位的完整资料用 customer_get。\n"+
 			"要订单维度的事实（买过什么、花了多少）用 order_find 按同一关键词反查，客户工具里没有订单数据。",
-		permission.UserCustomerList,
+		userenums.UserCustomerList,
 		mcp.Object("按线索查客户参数", map[string]mcp.Schema{
 			"keyword": mcp.String("线索：邮箱 / 用户名 / 昵称 / 展示名，任一命中即算（可选）"),
 			"status": mcp.Enum("只看某个账号状态（可选；不传则全部状态）",
@@ -89,7 +88,7 @@ func customerGet(query usercontract.CustomerQueryReader) mcp.Tool {
 	return mcp.New("customer_get", "读单个客户的资料",
 		"按客户 id 读出一位客户的完整资料与登录事实（注册与最后登录的时间 / IP / 归属地、邮箱验证、账号状态、登录失败次数、当前是否锁定）。\n"+
 			"id 从 customer_find 的结果里拿。不要凭姓名猜 id —— 重名与昵称重复都很常见。",
-		permission.UserCustomerDetail,
+		userenums.UserCustomerDetail,
 		mcp.Object("读单个客户参数", map[string]mcp.Schema{
 			"customerId": mcp.Integer("客户 id（customer_find 结果里的 id）"),
 		}, "customerId"),
@@ -309,7 +308,7 @@ func customerSetStatus(w usercontract.CustomerWriter) mcp.Tool {
 			"**执行前必须先做两件事**：① 用 customer_get 确认这个 id 到底是谁（核对邮箱或昵称）；"+
 			"② 把「谁、从什么状态改成什么」念给用户确认。别在用户只说了「把那个刷单的停了」时自己挑一个 id 猜。\n"+
 			"需要 customerId 时用 customer_find 按邮箱 / 昵称搜。",
-		permission.UserCustomerStatus,
+		userenums.UserCustomerStatus,
 		mcp.Object("客户账号状态参数", map[string]mcp.Schema{
 			"customerId": mcp.Integer("客户 id（用 customer_find / customer_get 拿到的 id）"),
 			"status": mcp.Enum("目标状态：active=正常（可登录），disabled=停用（登不上，数据保留）",
@@ -375,7 +374,7 @@ func customerUnlock(w usercontract.CustomerWriter) mcp.Tool {
 			"与 customer_set_status 的区别：**锁定是按时间自动解除的临时状态，停用是管理动作**。"+
 			"被锁的账号本来就会自己恢复，只是要等；停用不会自己恢复。用户说「登不上」时先看清是哪一种（customer_get 里有）。\n"+
 			"如果账号本来就没锁，工具会如实告诉你「本来就没锁」—— 那不是失败。",
-		permission.UserCustomerUnlock,
+		userenums.UserCustomerUnlock,
 		mcp.Object("解除登录锁定参数", map[string]mcp.Schema{
 			"customerId": mcp.Integer("客户 id（用 customer_find / customer_get 拿到的 id）"),
 		}, "customerId"),

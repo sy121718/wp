@@ -10,7 +10,7 @@ import (
 
 	"go_wp/internal/mcp"
 	orderdto "go_wp/internal/module/order/dto"
-	"go_wp/internal/permission"
+	orderenums "go_wp/internal/module/order/enums"
 )
 
 type stubOverview struct {
@@ -81,8 +81,8 @@ func TestOverviewToolsMetadata(t *testing.T) {
 		if !ok {
 			t.Fatalf("缺少工具 %q", name)
 		}
-		if tool.Permission() != permission.OrderList {
-			t.Errorf("%s 的权限 = %q，期望复用 %q", name, tool.Permission(), permission.OrderList)
+		if tool.Permission() != orderenums.OrderList {
+			t.Errorf("%s 的权限 = %q，期望复用 %q", name, tool.Permission(), orderenums.OrderList)
 		}
 		if tool.Schema().Type != "object" {
 			t.Errorf("%s 的顶层 schema 应是 object，实得 %q", name, tool.Schema().Type)

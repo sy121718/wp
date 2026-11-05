@@ -4,16 +4,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"context"
+
 	"go_wp/config"
 	"go_wp/internal/mcp"
 	aicontract "go_wp/internal/module/ai/contract"
+	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 )
 
-func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service) aicontract.AIService {
+func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory) aicontract.AIService {
 	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
@@ -38,7 +41,15 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	sessionHandle := NewSessionHandle(sessionSvc)
 
 	tokenSvc := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
-	tokenSvc.SetScopeValidator(func(p string) bool { return permission.Known(permission.Perm(p)) })
+	tokenSvc.SetScopeValidator(func(ctx context.Context, p string) bool {
+		// 令牌 scope 必须同时是「已启用的目录项」与「真实登记过路由的操作」：
+		// 只看目录会放行没有执行入口的码，查询失败按拒绝处理。
+		if dir == nil || len(mw.RoutesOf(p)) == 0 {
+			return false
+		}
+		ok, err := dir.Exists(ctx, p)
+		return err == nil && ok
+	})
 	tokenHandle := NewTokenHandle(tokenSvc)
 
 	if mcpRoot != nil && toolRegistry != nil {
@@ -50,41 +61,41 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	}
 	g := authorizedAPI.Group("/ai")
 
-	g.GET("/provider/list", permission.AIProviderList, handle.ListProviders)
-	g.GET("/provider/get", permission.AIProviderGet, handle.GetProvider)
-	g.GET("/provider/models/list", permission.AIProviderModelsList, handle.ListModels)
+	g.GET("/provider/list", aienums.AIProviderList, handle.ListProviders)
+	g.GET("/provider/get", aienums.AIProviderGet, handle.GetProvider)
+	g.GET("/provider/models/list", aienums.AIProviderModelsList, handle.ListModels)
 
-	g.POST("/provider/save", permission.AIProviderSave, handle.SaveProvider)
-	g.POST("/provider/delete", permission.AIProviderDelete, handle.DeleteProvider)
-	g.POST("/provider/status", permission.AIProviderStatus, handle.SetProviderStatus)
-	g.POST("/provider/models/save", permission.AIProviderModelsSave, handle.SaveModels)
-	g.POST("/provider/models/restore", permission.AIProviderModelsRestore, handle.RestoreDefaultModels)
-	g.POST("/provider/models/fetch", permission.AIProviderModelsFetch, handle.FetchAvailableModels)
+	g.POST("/provider/save", aienums.AIProviderSave, handle.SaveProvider)
+	g.POST("/provider/delete", aienums.AIProviderDelete, handle.DeleteProvider)
+	g.POST("/provider/status", aienums.AIProviderStatus, handle.SetProviderStatus)
+	g.POST("/provider/models/save", aienums.AIProviderModelsSave, handle.SaveModels)
+	g.POST("/provider/models/restore", aienums.AIProviderModelsRestore, handle.RestoreDefaultModels)
+	g.POST("/provider/models/fetch", aienums.AIProviderModelsFetch, handle.FetchAvailableModels)
 
 	// 候选与追加各有独立权限点：前者会解密密钥打远端 /models，后者会改写目录。
-	g.POST("/provider/models/candidates", permission.AIProviderModelsCandidates, handle.ModelCandidates)
-	g.POST("/provider/models/append", permission.AIProviderModelsAppend, handle.AppendModels)
+	g.POST("/provider/models/candidates", aienums.AIProviderModelsCandidates, handle.ModelCandidates)
+	g.POST("/provider/models/append", aienums.AIProviderModelsAppend, handle.AppendModels)
 
-	g.GET("/session/list", permission.AISessionList, sessionHandle.List)
-	g.GET("/session/get", permission.AISessionGet, sessionHandle.Get)
-	g.GET("/session/events", permission.AISessionEvents, sessionHandle.Events)
-	g.POST("/session/fold/plan", permission.AISessionFoldPlan, sessionHandle.FoldPlan)
-	g.POST("/session/append", permission.AISessionAppend, sessionHandle.Append)
-	g.POST("/session/rename", permission.AISessionRename, sessionHandle.Rename)
-	g.POST("/session/archive", permission.AISessionArchive, sessionHandle.Archive)
-	g.POST("/session/fold", permission.AISessionFold, sessionHandle.Fold)
-	g.POST("/session/send", permission.AISessionSend, sessionHandle.Send)
+	g.GET("/session/list", aienums.AISessionList, sessionHandle.List)
+	g.GET("/session/get", aienums.AISessionGet, sessionHandle.Get)
+	g.GET("/session/events", aienums.AISessionEvents, sessionHandle.Events)
+	g.POST("/session/fold/plan", aienums.AISessionFoldPlan, sessionHandle.FoldPlan)
+	g.POST("/session/append", aienums.AISessionAppend, sessionHandle.Append)
+	g.POST("/session/rename", aienums.AISessionRename, sessionHandle.Rename)
+	g.POST("/session/archive", aienums.AISessionArchive, sessionHandle.Archive)
+	g.POST("/session/fold", aienums.AISessionFold, sessionHandle.Fold)
+	g.POST("/session/send", aienums.AISessionSend, sessionHandle.Send)
 
-	g.POST("/chat", permission.AIChat, handle.Chat)
+	g.POST("/chat", aienums.AIChat, handle.Chat)
 
-	g.GET("/token/list", permission.AITokenList, tokenHandle.List)
-	g.POST("/token/create", permission.AITokenCreate, tokenHandle.Create)
-	g.POST("/token/revoke", permission.AITokenRevoke, tokenHandle.Revoke)
+	g.GET("/token/list", aienums.AITokenList, tokenHandle.List)
+	g.POST("/token/create", aienums.AITokenCreate, tokenHandle.Create)
+	g.POST("/token/revoke", aienums.AITokenRevoke, tokenHandle.Revoke)
 
 	// 对外接入点开关有自己的权限点：它不改令牌，改的是「本站数据要不要对外开口」。
-	g.POST("/token/toggle", permission.AITokenToggle, tokenHandle.SetMcpEnabled)
+	g.POST("/token/toggle", aienums.AITokenToggle, tokenHandle.SetMcpEnabled)
 
-	SetupAIPages(adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig)
+	SetupAIPages(adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig, dir)
 
 	return svc
 }

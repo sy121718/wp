@@ -27,11 +27,12 @@ var moduleInternalSetters = map[string]string{
 	"SetCallLogWriter":     "ai.SetupAIRoutes：模块内 aimodel.NewCallLogModel(db) 构造（调用流水写侧）",
 	"SetCallLogReader":     "ai.SetupAIRoutes：同一个 callLog 实例的读侧（同一个 model，无跨模块依赖）",
 	"SetChatPort":          "ai.SetupAIRoutes：模块内 aiservice 实例转交会话层",
-	"SetScopeValidator":    "ai.SetupAIRoutes：函数字面量（permission.Known 白名单）注入令牌层",
+	"SetScopeValidator":    "ai.SetupAIRoutes：函数字面量（路由绑定 + admin 权限目录）注入令牌层",
 	"SetToolProvider":      "ai.SetupAIRoutes：模块内 &toolProvider{...}（mcp.NewRunner）构造",
 	"SetToolCallLogWriter": "ai.SetupAIRoutes：模块内 aimodel.NewToolCallLogModel(db) 构造",
 	"SetConfigReader":      "ai.SetupAIRoutes：形参 aiConfig（sysconfigcontract.Service）转交 MCP 端点",
 	"SetConfigService":     "ai.SetupAIPages：形参 aiConfig 转交 MCP 页面 handle",
+	"SetPermDirectory":     "ai.SetupAIPages：形参 dir（权限目录只读口）转交 MCP 页面 handle",
 
 	"SetCustomerCohort":    "user.SetupCustomerPages：形参 cohort（客户域聚合端口）转交",
 	"SetCustomerGrowth":    "user.SetupCustomerPages：形参 growth 转交",

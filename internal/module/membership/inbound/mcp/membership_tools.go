@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/module/membership/contract"
 	"go_wp/internal/module/membership/dto"
 	"go_wp/internal/module/membership/enums"
-	"go_wp/internal/permission"
 	"go_wp/pkg/utils"
 )
 
@@ -35,7 +34,7 @@ func tierList(reader membershipcontract.QueryReader) mcp.Tool {
 		"列出站点工程的会员等级，用于回答「有几个会员等级」「金卡门槛是多少」「每个等级有什么权益」。\n"+
 			"门槛金额以**元**给出（库里存的是分），并注明是否按累计消费额自动升级。\n"+
 			"要看某个等级里有哪些人，用 member_find 带上 tierId。",
-		permission.MembershipTierList,
+		membershipenums.MembershipTierList,
 		mcp.Object("列会员等级参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 		}, "projectId"),
@@ -113,7 +112,7 @@ func memberFind(reader membershipcontract.QueryReader) mcp.Tool {
 			"线索可以给等级 id、客户 id、来源（自动 / 手工），任一条都能单独用；都不给就列最近的一批。\n"+
 			"等级名与门槛用 member_tiers 查（本工具只给归属关系与等级名）。\n"+
 			"客户资料（邮箱 / 注册时间 / 最后登录）用 customer_get 按这里的 userId 查。",
-		permission.MembershipAssignList,
+		membershipenums.MembershipAssignList,
 		mcp.Object("查会员归属参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"tierId":    mcp.Integer("限定某个等级 id（可选；从 member_tiers 拿）"),
@@ -238,7 +237,7 @@ func memberAssignSet(w membershipcontract.Writer) mcp.Tool {
 			"如果他只是想让这个人享受 VIP 待遇一次，那是别的事，不要用这个工具。\n"+
 			"userId 是**客户 id**（用 customer_find 拿），tierId 用 member_tiers 拿，"+
 			"两者必须属于同一个工程。",
-		permission.MembershipAssignSet,
+		membershipenums.MembershipAssignSet,
 		mcp.Object("手工指定会员等级参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid，必填）"),
 			"userId":    mcp.Integer("客户 id（用 customer_find 拿到的 id，不是登录账号名）"),
@@ -281,7 +280,7 @@ func memberAssignUnlock(w membershipcontract.Writer) mcp.Tool {
 			"这是有意的：解锁本身不该造成一次看得见的等级跳变，运营可以先看一眼再让它跑。\n"+
 			"回答里要说清这一点，否则用户会以为按钮没生效。\n"+
 			"如果客户当前等级本来就是自动的，工具会如实告诉你，那不是失败。",
-		permission.MembershipAssignUnlock,
+		membershipenums.MembershipAssignUnlock,
 		mcp.Object("取消手工锁定参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid，必填）"),
 			"userId":    mcp.Integer("客户 id（用 customer_find / member_find 拿到的 id）"),
@@ -329,7 +328,7 @@ func memberTierCreate(w membershipcontract.Writer) mcp.Tool {
 			"设了一个新的默认，原来那个会被自动取消。\n"+
 			"权益两种：kind=free_shipping 时 valueInt 取 1（免运费）；"+
 			"kind=discount 时 valueInt 取 1..100 表示**扣减百分比**（20 = 打八折，不是「20% 折扣」）。",
-		permission.MembershipTierCreate,
+		membershipenums.MembershipTierCreate,
 		mcp.Object("新建会员等级参数", map[string]mcp.Schema{
 			"projectId":      mcp.String("站点工程 id（uuid，必填）"),
 			"name":           mcp.String("等级名称（如「黄金会员」）"),
@@ -422,7 +421,7 @@ func memberTierUpdate(w membershipcontract.Writer) mcp.Tool {
 			"会员就会被分到新的档上（自动管理的会员不用等到日结）。"+
 			"所以调低门槛或调高排序之前，先跟用户说清会影响哪些人。\n"+
 			"tierId 用 member_tiers 拿到的 id。改权益用不着这个工具 —— 见描述末尾。",
-		permission.MembershipTierUpdate,
+		membershipenums.MembershipTierUpdate,
 		mcp.Object("修改会员等级参数", map[string]mcp.Schema{
 			"projectId":      mcp.String("站点工程 id（uuid，必填）"),
 			"tierId":         mcp.Integer("要改的等级 id（用 member_tiers 拿到的 id）"),
@@ -485,7 +484,7 @@ func memberTierDelete(w membershipcontract.Writer) mcp.Tool {
 			"先让用户把那些会员改到别的等级（member_assign_set）或解锁交还自动管理，"+
 			"再删。这条限制是有意的 —— 直接删会让那批会员的 tier_id 指向一个不存在的档。\n"+
 			"默认等级通常也删不掉（新客户必须有地方可落），真删之前先设一个新的默认。",
-		permission.MembershipTierDelete,
+		membershipenums.MembershipTierDelete,
 		mcp.Object("删除会员等级参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid，必填）"),
 			"tierId":    mcp.Integer("要删的等级 id（用 member_tiers 拿到的 id）"),

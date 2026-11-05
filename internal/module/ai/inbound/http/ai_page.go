@@ -15,13 +15,13 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/adminctx"
+	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
-	"go_wp/pkg/uispec"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/uispec"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
 )
@@ -161,6 +161,7 @@ type McpPageHandle struct {
 	tokens   *aiservice.AccessTokenService
 	registry *mcp.Registry
 	config   sysconfigcontract.Service
+	dir      aicontract.PermDirectory
 }
 
 func NewMcpPageHandle(tokens *aiservice.AccessTokenService, registry *mcp.Registry) *McpPageHandle {
@@ -168,6 +169,9 @@ func NewMcpPageHandle(tokens *aiservice.AccessTokenService, registry *mcp.Regist
 }
 
 func (h *McpPageHandle) SetConfigService(s sysconfigcontract.Service) { h.config = s }
+
+// SetPermDirectory 注入权限目录读口：scope 选项的名称只来自数据库，不维护代码侧名称表。
+func (h *McpPageHandle) SetPermDirectory(d aicontract.PermDirectory) { h.dir = d }
 
 func (h *McpPageHandle) Page(c *gin.Context) {
 	data := h.pageData(c)
@@ -195,7 +199,7 @@ func (h *McpPageHandle) pageData(c *gin.Context) *aidto.McpPageResp {
 		Endpoint:     mcpEndpointURL(c),
 		Tokens:       toAnyRows(tokenRows(tokens)),
 		Tools:        toAnyRows(h.tools()),
-		ScopeOptions: toAnyRows(h.scopeOptions()),
+		ScopeOptions: toAnyRows(h.scopeOptions(ctx)),
 		McpEnabled:   enabled,
 	}
 }
@@ -346,26 +350,40 @@ type scopeOption struct {
 	Label string
 }
 
-func (h *McpPageHandle) scopeOptions() []scopeOption {
+func (h *McpPageHandle) scopeOptions(ctx context.Context) []scopeOption {
 	if h.registry == nil {
 		return nil
 	}
-	seen := map[permission.Perm]struct{}{}
+	seen := map[string]struct{}{}
 	out := make([]scopeOption, 0, 8)
 	for _, t := range h.registry.List() {
 		p := t.Permission()
-		if p == permission.Exempt {
+		if p == "" {
 			continue
 		}
 		if _, dup := seen[p]; dup {
 			continue
 		}
 		seen[p] = struct{}{}
-		label := string(p)
-		if _, name, ok := permission.Label(p); ok && name != "" {
-			label = name + "（" + string(p) + "）"
+		out = append(out, scopeOption{Code: p, Label: p})
+	}
+	// 名称一次性批量取；读不到就保留原始码，不让整页失败。
+	if h.dir != nil && len(out) > 0 {
+		codes := make([]string, 0, len(out))
+		for _, o := range out {
+			codes = append(codes, o.Code)
 		}
-		out = append(out, scopeOption{Code: string(p), Label: label})
+		if entries, err := h.dir.List(ctx, codes); err == nil {
+			names := make(map[string]string, len(entries))
+			for _, e := range entries {
+				names[e.Code] = e.Name
+			}
+			for i := range out {
+				if name := names[out[i].Code]; name != "" {
+					out[i].Label = name + "（" + out[i].Code + "）"
+				}
+			}
+		}
 	}
 	slices.SortFunc(out, func(a, b scopeOption) int { return cmp.Compare(a.Code, b.Code) })
 	return out

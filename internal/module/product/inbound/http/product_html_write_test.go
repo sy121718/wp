@@ -16,9 +16,9 @@ import (
 	"go_wp/internal/middleware/builtin"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 )
 
@@ -65,7 +65,7 @@ func productHTMLWriteEngine(svc *productHTMLWriteStub, middleware ...gin.Handler
 		c.Next()
 	})
 	engine.Use(middleware...)
-	registerProductCoreAPI(permission.NewRouteGroup(engine.Group("/api/product")), NewProductHandle(svc))
+	registerProductCoreAPI(mw.NewRouteGroup(engine.Group("/api/product"), mw.RouteProtected), NewProductHandle(svc))
 	return engine
 }
 

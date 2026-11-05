@@ -5,29 +5,29 @@ import (
 	"go_wp/internal/middleware/builtin"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 )
 
 func setupSiteUserRoutes(router *gin.Engine, h *Handle) {
-	api := permission.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()))
-	api.GET("/session", permission.Exempt, h.SiteSession)
+	api := mw.NewRouteGroup(router.Group("/api/site/user", attachUserSession(h.svc), VisitorCSRFMiddleware()), mw.RouteProtected)
+	api.GET("/session", "", h.SiteSession)
 	limit := builtin.RequestRateLimitMiddleware(userSensitiveRateLimit, userSensitiveRateWindow)
-	api.POST("/login", permission.Exempt, limit, h.SiteLogin)
-	api.POST("/register", permission.Exempt, limit, h.SiteRegister)
-	api.POST("/forgot", permission.Exempt, limit, h.SiteForgot)
-	api.POST("/activate", permission.Exempt, limit, h.SiteActivate)
-	api.POST("/resend", permission.Exempt, limit, h.SiteResendActivation)
-	api.POST("/reset", permission.Exempt, limit, h.SiteReset)
-	api.POST("/logout", permission.Exempt, h.SiteLogout)
+	api.POST("/login", "", limit, h.SiteLogin)
+	api.POST("/register", "", limit, h.SiteRegister)
+	api.POST("/forgot", "", limit, h.SiteForgot)
+	api.POST("/activate", "", limit, h.SiteActivate)
+	api.POST("/resend", "", limit, h.SiteResendActivation)
+	api.POST("/reset", "", limit, h.SiteReset)
+	api.POST("/logout", "", h.SiteLogout)
 	own := api.Group("", requireSiteUser())
-	own.GET("/account", permission.Exempt, h.SiteAccount)
-	own.GET("/sessions", permission.Exempt, h.SiteDevices)
-	own.POST("/account/profile", permission.Exempt, h.SiteUpdateProfile)
-	own.POST("/account/preference", permission.Exempt, h.SiteUpdatePreference)
-	own.POST("/account/password", permission.Exempt, limit, h.SiteChangePassword)
-	own.POST("/sessions/revoke", permission.Exempt, h.SiteRevokeDevice)
-	own.POST("/sessions/revoke-others", permission.Exempt, h.SiteRevokeOtherDevices)
+	own.GET("/account", "", h.SiteAccount)
+	own.GET("/sessions", "", h.SiteDevices)
+	own.POST("/account/profile", "", h.SiteUpdateProfile)
+	own.POST("/account/preference", "", h.SiteUpdatePreference)
+	own.POST("/account/password", "", limit, h.SiteChangePassword)
+	own.POST("/sessions/revoke", "", h.SiteRevokeDevice)
+	own.POST("/sessions/revoke-others", "", h.SiteRevokeOtherDevices)
 }
 
 func requireSiteUser() gin.HandlerFunc {

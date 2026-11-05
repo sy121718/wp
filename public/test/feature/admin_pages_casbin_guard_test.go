@@ -11,10 +11,10 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
+	mw "go_wp/pkg/middleware"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -129,7 +129,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
 
-			adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminAuthzSvc := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 			adminCRUD, ok := adminAuthzSvc.(interface {
 				admincontract.AdminService
 				admincontract.RoleService

@@ -8,9 +8,9 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	projecthttp "go_wp/internal/module/project/inbound/http"
-	"go_wp/internal/permission"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -87,10 +87,10 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
-			adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			authorizedGroup := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
-			authorizedAPI := permission.NewRouteGroup(authorizedGroup)
+			authorizedAPI := mw.NewRouteGroup(authorizedGroup, mw.RouteProtected)
 
 			projecthttp.SetupProjectRoutes(authorizedAPI, db, nil)
 

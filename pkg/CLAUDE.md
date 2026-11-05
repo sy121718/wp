@@ -7,7 +7,7 @@
 ## 包清单（职责一句）
 - 契约：`facing`（错误事实 key+状态码）、`response`（JSON 出口 `MessageOf` 取词产生 message，缺词时给归口文案）、`view`（视图结果、成功/失败出口与请求级渲染接线）、`view/jet`（Jet 引擎、请求作用域、显示函数、缓冲渲染与失败接线）、`view/ui`（公共模板/控件/资产，唯一 UI 实现）、`view/ui/icons`（唯一 SVG 与目录源，Go 与浏览器同源）。
 - `binding` 是待清退的旧绑定与辅助实现，不再作为唯一入口；请求绑定使用 Gin 原生能力，具体判据见根规则。未迁调用按域整改，不新增调用或同义薄包装。
-- 框架能力：`builder`（编译、组件、样式、富文本、可视化工具资产；业务扩展留 `internal/builder/extensions`）、`publish`（Store/PublicationStore/Manifest/Artifact/Publisher/路径锁）、`middleware`（通用请求与安全执行、路由权限登记）、`mcp`（工具运行机制）、`lifecycle`（初始化/就绪/逆序关闭）、`seo`、`uispec`、`scaffold`、`database/retention`、`database/partition`。
+- 框架能力：`builder`（编译、组件、样式、富文本、可视化工具资产；业务扩展留 `internal/builder/extensions`）、`publish`（Store/PublicationStore/Manifest/Artifact/Publisher/路径锁）、`middleware`（通用请求与安全执行、路由权限登记：RouteSpec/RouteKind/DeclareRoute/RoutesOf/Snapshot/Exempts/Reset 与 RouteGroup）、`mcp`（工具运行机制）、`lifecycle`（初始化/就绪/逆序关闭）、`seo`、`uispec`、`scaffold`、`database/retention`、`database/partition`。
 - 基础设施：`i18n` `logger` `database` `cache` `rls` `jsonx` `utils` `money` `pagination` `pathkit` `safepath`。
 - 能力包（provider 型，实现放 `<pkg>/provider/`）：`auth` `casbin` `crypto` `captcha` `mailer` `queue` `upload` `validate` `sitehttps` `sitetz`。
 - 小工具：`datarule` `reqparams` `backpath` `bulkids` `enums` `actor`（把操作人经 ctx 传到 service，供发布会话 / 发布历史留痕，见 internal/middleware/builtin/actor_context.go）`ssrf`（出站目标的 SSRF 判定，webhook 与 mail 回调节点共用）。

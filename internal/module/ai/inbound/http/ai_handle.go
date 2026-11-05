@@ -22,9 +22,9 @@ import (
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 )
 
@@ -377,7 +377,7 @@ const (
 	rpcInternalError  = -32603
 )
 
-type AccountAuthorizer func(ctx context.Context, userID int64, perm permission.Perm) (bool, error)
+type AccountAuthorizer func(ctx context.Context, userID int64, perm string) (bool, error)
 
 const mcpEnabledTTL = 5 * time.Second
 
@@ -524,8 +524,8 @@ func (e *McpEndpoint) toolsFor(ctx context.Context, id *aiservice.TokenIdentity)
 	return out
 }
 
-func (e *McpEndpoint) allowed(ctx context.Context, id *aiservice.TokenIdentity, perm permission.Perm) bool {
-	if id == nil || perm == permission.Exempt {
+func (e *McpEndpoint) allowed(ctx context.Context, id *aiservice.TokenIdentity, perm string) bool {
+	if id == nil || perm == "" {
 		return false
 	}
 	if !id.HasScope(string(perm)) {
@@ -1050,8 +1050,8 @@ func fabImageRequest(req *aidto.SendMessageReq, images, labels []string) {
 	req.ImageLabels = labels
 }
 
-func casbinAuthorizer(_ context.Context, userID int64, perm permission.Perm) (bool, error) {
-	routes := permission.RoutesOf(perm)
+func casbinAuthorizer(_ context.Context, userID int64, perm string) (bool, error) {
+	routes := mw.RoutesOf(perm)
 	if len(routes) == 0 {
 
 		logger.Scene("ai").With("perm", string(perm)).Warn("权限点没有声明路由，工具调用按无权限处理")

@@ -164,7 +164,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 - 迁移：版本化幂等 SQL + `register.go`；seed 门槛逐条枚举本批对象（禁用 LIKE/全库总量）；改列名同步触发器与 seed SQL；新 SQL 上线前 PREPARE 校验；Migrations 台账先跑、Seeds 后跑。
 - 裸 SQL 只减不增（`raw_sql_boundary_test.go`）；唯一 JSON 入口 `pkg/jsonx`（`json_import_boundary_test.go`）。
 - 主键：对外实体 uuid（应用层生成）；纯内部流水与字典 bigint identity；只增分区流水用 UUIDv7。
-- 权限点：一条 API 路由一个独立权限点（常量按属主就近声明（`internal/permission/codes.go` 仅保留过渡别名），注册处声明），页面路由可复用。
+- 权限点：一条 API 路由一个独立权限点（常量按操作属主声明在各模块 `enums/permission_codes.go`，注册处用 `middleware.RouteGroup`/`DeclareRoute` 声明），页面路由可复用。权限名称与启停只来自数据库；启动期只核对、不反写。
 - RLS 顺序：先包 `pkg/rls.InProjectScope` → 再把连接角色换成非超级 → 最后 `require_rls_role=true`。
 - 聚合口径：同一屏上的两个数字若回答同一批行，筛选条件抽成共享常量；多序列共用横轴时聚合粒度必须一致且由调用方统一传；桶键读回来必须还是同一时刻（`AT TIME ZONE 'UTC'` 写两遍，`::date` 不用）。
 

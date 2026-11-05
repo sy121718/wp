@@ -30,11 +30,11 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/i18n"
+	mw "go_wp/pkg/middleware"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -115,14 +115,14 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
-			adminAuthz := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminAuthz := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			adminPages := engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				adminctx.PermContextMiddleware(adminAuthz))
 
-			authorizedAPI := permission.NewRouteGroup(
-				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+			authorizedAPI := mw.NewRouteGroup(
+				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()), mw.RouteProtected)
 
 			registered, registeredHandle := navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projects)
 			navSvc, navHandle = registered, registeredHandle

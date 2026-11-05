@@ -12,7 +12,6 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/internal/permission"
 	"go_wp/pkg/utils"
 )
 
@@ -95,7 +94,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			"「当前是否在生效」是算出来的（过期 / 未开始 / 已用尽都会标出来）—— "+
 			"只看启用状态会以为一张已经过期的券还在跑。\n"+
 			"改券之前先用 coupon_get 取回完整字段。",
-		permission.OrderCouponList,
+		orderenums.OrderCouponList,
 		mcp.Object("查优惠券", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"keyword":   mcp.String("按券码或名称模糊匹配，可省略"),
@@ -130,7 +129,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 		"按 id 取回优惠券的全部字段。**改券之前必须跑这一步** —— "+
 			"保存接口是整份覆盖（只发要改的那个字段会把其余字段清成零值：门槛变 0、次数变不限），"+
 			"所以要先拿到现状，改完再把整套字段一起发回。",
-		permission.OrderCouponGet,
+		orderenums.OrderCouponGet,
 		mcp.Object("取优惠券", map[string]mcp.Schema{
 			"couponId": mcp.Integer("优惠券 id（从 coupon_list 拿）"),
 		}, "couponId"),
@@ -171,7 +170,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			"* 门槛 `minSubtotal` 同样是分。\n"+
 			"建之前把口径和用户念一遍（「减多少、满多少能用、有效期是什么时候」），"+
 			"券建出来就挂在活动上了。",
-		permission.OrderCouponCreate,
+		orderenums.OrderCouponCreate,
 		mcp.Object("新建优惠券", saveProps(), "projectId", "name", "discountType", "discountValue"),
 		store,
 		func(ctx context.Context, args CouponWriteReq) (mcp.Result, error) {
@@ -190,7 +189,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			"**再整套一起发回来**。\n"+
 			"券码建后不可改，这里也不接受。\n"+
 			"已经有人用过的券，改门槛或力度会影响后续订单的算价 —— 说清改了什么再动手。",
-		permission.OrderCouponUpdate,
+		orderenums.OrderCouponUpdate,
 		mcp.Object("改优惠券", saveProps(), "couponId", "projectId", "name", "discountType", "discountValue"),
 		store,
 		func(ctx context.Context, args CouponUpdateRaw) (mcp.Result, error) {
@@ -213,7 +212,7 @@ func CouponTools(r CouponReader, w CouponWriter, store mcp.IdempotencyStore) ([]
 			"大多数时候你要的是**停用**（`coupon_update` 传 status=0）—— "+
 			"停用后不能再被使用，但券和它的核销记录都还在，能对账。\n"+
 			"只有明显建错、从没被用过的券才该删。先 `coupon_get` 看清 usedCount。",
-		permission.OrderCouponDelete,
+		orderenums.OrderCouponDelete,
 		mcp.Object("删除优惠券", map[string]mcp.Schema{
 			"couponId": mcp.Integer("要删除的优惠券 id"),
 		}, "couponId"),
@@ -347,7 +346,7 @@ func ordersDaily(overview ordercontract.OrderOverviewReader) mcp.Tool {
 		"按站点工程与日期区间统计**每一天**的订单：当天的订单数、计入消费的订单数、净销售额。"+
 			"没有订单的那天也会返回一条 0 记录，所以「哪几天没单」「哪天最多」可以直接看结果。"+
 			"时间区间为含当天的闭区间，跨度上限 366 天；金额字段为整数分，另有展示文案字段。",
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("订单按天趋势参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"from":      mcp.String("起始日，格式 YYYY-MM-DD，含当天"),
@@ -405,7 +404,7 @@ func ordersTopProducts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 		"按站点工程与日期区间统计卖得最好的商品（按销量降序）。只统计已付款/已发货/已完成的订单，"+
 			"已取消与待付款的不上榜。商品名与 SKU 是下单当时的快照；金额为该商品的行实付合计（整数分），"+
 			"**不含退款分摊**（订单级退款摊不到商品级）。",
-		permission.OrderList,
+		orderenums.OrderList,
 
 		mcp.Object("热销商品榜参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
@@ -454,7 +453,7 @@ func ordersStatusCounts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 	return mcp.New("orders_status_counts", "订单状态计数",
 		"统计当前各状态的订单条数（**不带时间区间**：回答「现在有多少单等着处理」），"+
 			"并给出两个已解释过的口径：待付款、待发货（已付款未发货）。",
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("订单状态计数参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 		}, "projectId"),
@@ -504,7 +503,7 @@ func orderFind(query ordercontract.OrderQueryReader) mcp.Tool {
 			"keyword 会同时匹配**商户单号 / 客户邮箱 / 客户姓名**三者，所以用户给的任何一条线索都能直接用，不必先猜是哪种。\n"+
 			"时间窗（from/to，格式 YYYY-MM-DD，按 UTC 日界、含当天）与 status 都是可选的：不给就不筛那一条。\n"+
 			"拿到结果后要细节就用 order_get（按单号取，含商品行与状态流水）。",
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("按线索查订单参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"keyword":   mcp.String("线索：商户单号 / 客户邮箱 / 客户姓名，任一命中即算（可选）"),
@@ -573,7 +572,7 @@ func orderGet(query ordercontract.OrderQueryReader) mcp.Tool {
 			"以及状态流水（谁在什么时候把它推到哪一步）。\n"+
 			"回答「这单到哪了」必须用它 —— 只看状态字段答不出「到哪了」，流水才带时间与操作人。\n"+
 			"单号来自 order_find 的结果；用户直接给了单号时也可以直接调。",
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("订单详情参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"orderNo":   mcp.String("商户单号（order_find 结果里的那串）"),
@@ -750,7 +749,7 @@ func orderStatus(w statusWriter) mcp.Tool {
 			"服务端只接受合法的流转（比如没付款的订单不能直接发 `shipped`），"+
 			"被拒时回执会说明当前状态能走到哪里 —— 别绕过它硬试。\n"+
 			"改之前先 `order_get` 看清当前状态与金额，报给用户确认后再改。",
-		permission.OrderStatus,
+		orderenums.OrderStatus,
 		mcp.Object("改订单状态参数", map[string]mcp.Schema{
 			"orderId":  mcp.Integer("订单 id（用 order_find 拿，不是订单号）"),
 			"toStatus": mcp.Enum("目标状态", "pending", "paid", "shipped", "completed"),
@@ -797,7 +796,7 @@ func orderCancel(w statusWriter) mcp.Tool {
 			"已付款的订单取消前先 `order_get` 确认金额，并把「钱怎么退」跟用户讲清楚："+
 			"这个动作只把订单置为已取消，**退款要走后台的退款入口**。\n"+
 			"取消不可撤销（要恢复只能重新建单）。",
-		permission.OrderCancel,
+		orderenums.OrderCancel,
 		mcp.Object("取消订单参数", map[string]mcp.Schema{
 			"orderId": mcp.Integer("订单 id（用 order_find 拿，不是订单号）"),
 			"reason":  mcp.String("取消原因（必填，写进状态日志）"),
@@ -832,7 +831,7 @@ func orderNote(w statusWriter) mcp.Tool {
 			"备注**不是状态流转**：它不改变订单处在哪一步，所以不写状态日志。\n"+
 			"把它当便签用（「客户要求周五前发出」「电话确认过地址」），"+
 			"别把状态变更的想法写在这里 —— 那样它不会真的发生，只留下一句失效的话。",
-		permission.OrderNote,
+		orderenums.OrderNote,
 		mcp.Object("写订单备注参数", map[string]mcp.Schema{
 			"orderId":   mcp.Integer("订单 id（用 order_find 拿，不是订单号）"),
 			"adminNote": mcp.String("完整的新备注内容（会整段替换原备注；传空串 = 清空备注）"),
@@ -879,7 +878,7 @@ func ordersSummary(summary ordercontract.OrderRangeSummaryReader) mcp.Tool {
 			"（净销售额 = 计入消费的订单金额 − 已实际收货的退款额；返回值为整数分，另有展示文案字段）。"+
 			"时间区间为含当天的闭区间，跨度上限 366 天。",
 
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("订单区间摘要参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"from":      mcp.String("起始日，格式 YYYY-MM-DD，含当天"),
@@ -956,7 +955,7 @@ func orderCreate(w ordercontract.OrderWriter, store mcp.IdempotencyStore) mcp.To
 			"provisionGuestAccount 默认 false（不开号）：这个邮箱没有账号时只落单、不发任何邮件；\n"+
 			"要开号必须显式传 true，那时系统会建号并把初始密码寄到订单邮箱。\n"+
 			"建单是交易凭证的产生动作：请与用户逐项确认客户邮箱、商品、数量、收货地址后再执行。",
-		permission.OrderCreate,
+		orderenums.OrderCreate,
 		mcp.Object("代客建单参数", map[string]mcp.Schema{
 			"projectId":     mcp.String("站点工程 id（uuid，必填）"),
 			"customerEmail": mcp.String("客户邮箱（必填）。它同时是订单的联系方式与开号依据"),
@@ -1128,7 +1127,7 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 		"列出退货 / 退款申请。默认按提交时间倒序。\n"+
 			"**`status=pending` 是「等我们处理」的那一批** —— 客户已经提交，钱和货都还没动。\n"+
 			"看单条详情用 return_get（列表不带商品明细与退款额拆解）。",
-		permission.OrderReturnList,
+		orderenums.OrderReturnList,
 		mcp.Object("查退货申请", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"status": mcp.Enum("按状态筛：pending 待处理 / approved 已同意（待收货）/ rejected 已驳回 / received 已收货 / refunded 已退款 / cancelled 已撤销；省略=全部",
@@ -1163,7 +1162,7 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 		"取回退货申请的全部信息：客户、订单、申请理由、**逐条商品的退款额**、"+
 			"以及审阅与收货的时间线。\n"+
 			"同意或驳回之前先跑这一步 —— 退款额是按明细算出来的，不是整单金额。",
-		permission.OrderReturnGet,
+		orderenums.OrderReturnGet,
 		mcp.Object("取退货详情", map[string]mcp.Schema{
 			"returnId": mcp.Integer("退货申请 id（从 return_list 拿）"),
 		}, "returnId"),
@@ -1186,7 +1185,7 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 			"库存加回去、钱退给客户。只在前台已经把货拿回来了、或者你确实要立刻退款的场景才用。\n"+
 			"退款额是按申请明细逐条算的，不是整单金额；同意之前用 return_get 看清数字。"+
 			"同意之后状态就是「已同意」，不能再改回待处理。",
-		permission.OrderReturnApprove,
+		orderenums.OrderReturnApprove,
 		mcp.Object("同意退货", map[string]mcp.Schema{
 			"returnId":    mcp.Integer("退货申请 id"),
 			"autoReceive": mcp.Boolean("true = 立刻完成入库与退款（一步到底）；false 或不填 = 只同意，等收货再走 return_receive"),
@@ -1218,7 +1217,7 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 			"`remark` 是**给客户看的理由**，不是内部备注 —— 空着等于让客户收到一个没有解释的拒绝。"+
 			"驳回之前先 return_get 看清理由与明细，并把理由跟用户核对一遍。\n"+
 			"驳回不动库存也不退款。",
-		permission.OrderReturnReject,
+		orderenums.OrderReturnReject,
 		mcp.Object("驳回退货", map[string]mcp.Schema{
 			"returnId": mcp.Integer("退货申请 id"),
 			"remark":   mcp.String("驳回理由（会展示给客户，**必填**）"),
@@ -1244,7 +1243,7 @@ func ReturnTools(r ReturnReader, w ReturnWriter, store mcp.IdempotencyStore) ([]
 			"两步各自幂等，重复调用不会重复退款。\n"+
 			"只在货真的在手上时用。申请得先是「已同意」状态（没同意过先走 return_approve）。\n"+
 			"退款额按申请明细逐条算，不是整单金额 —— 部分退货只退那几件的钱。",
-		permission.OrderReturnReceive,
+		orderenums.OrderReturnReceive,
 		mcp.Object("确认收货", map[string]mcp.Schema{
 			"returnId":      mcp.Integer("退货申请 id"),
 			"warehouseId":   mcp.String("入库仓库 id，省略 = 该工程默认仓"),

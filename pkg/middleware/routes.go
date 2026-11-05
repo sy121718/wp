@@ -178,7 +178,7 @@ type RouteGroup struct {
 // NewRouteGroup 由应用装配方指定本组用途；子组继承。
 func NewRouteGroup(rg *gin.RouterGroup, kind RouteKind) *RouteGroup {
 	if rg == nil {
-		panic("middleware.NewRouteGroup 收到 nil 路由组（装配缺陷）")
+		panic("mw.NewRouteGroup 收到 nil 路由组（装配缺陷）")
 	}
 	return &RouteGroup{RouterGroup: rg, Kind: kind}
 }

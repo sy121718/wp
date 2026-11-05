@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"go_wp/internal/mcp"
+	aienums "go_wp/internal/module/ai/enums"
 	aiprompt "go_wp/internal/module/ai/prompt"
-	"go_wp/internal/permission"
 	"go_wp/pkg/uispec"
 )
 
@@ -28,7 +28,7 @@ func guideTool() mcp.Tool {
 			"新客/复购/留存怎么定义）与注意事项。可用名字见系统提示里的手册目录。"+
 			"拿不准口径、或者要回答涉及金额与统计口径的问题时先取一篇，不要凭常识答。",
 
-		permission.AIChat,
+		aienums.AIChat,
 		mcp.Object("手册名", map[string]mcp.Schema{
 			"topic": mcp.String("手册名（如 sales / customers / traffic）"),
 		}, "topic"),
@@ -89,7 +89,7 @@ func uiRenderTool(known func(name string) bool) mcp.Tool {
 			"每个积木用 type（stat / table / list / accordion）+ source（数据源名字，就是本清单里其它工具的名字）"+
 			"+ 可选 params（该数据源的参数，字符串值）+ 可选 limit。数字由服务端按 source 查出来，"+
 			"你写进去的任何数字都会被拒绝。一次最多 8 个积木；source 必须是真实存在的工具名。",
-		permission.AIChat,
+		aienums.AIChat,
 		mcp.Object("展示指令", map[string]mcp.Schema{
 			"spec": mcp.String(`展示指令 JSON，形如 {"blocks":[{"type":"table","source":"orders_top_products","params":{"projectId":"...","from":"2026-10-01","to":"2026-10-07"},"limit":5}]}`),
 		}, "spec"),

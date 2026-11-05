@@ -10,8 +10,8 @@ import (
 	"go_wp/internal/mcp"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/permission"
 )
 
 func CampaignWriteTools(w mailcontract.CampaignWriter) ([]mcp.Tool, error) {
@@ -32,7 +32,7 @@ func mailAccounts(q mailcontract.MailQueryReader) mcp.Tool {
 	return mcp.New("mail_accounts", "列出发信账号",
 		"列出本站配置的发信账号（含 id）。新建群发活动时要填 accountId，用这里的 id。\n"+
 			"只列账号的对外信息，不含密码。",
-		permission.MailAccountList,
+		mailenums.MailAccountList,
 		mcp.Object("发信账号列表参数", map[string]mcp.Schema{
 			"purpose": mcp.Enum("按用途筛选（可选；不传列全部）", "marketing", "transactional"),
 		}),
@@ -78,7 +78,7 @@ func mailTemplates(q mailcontract.MailQueryReader) mcp.Tool {
 	return mcp.New("mail_templates", "列出邮件模板",
 		"列出本站的邮件模板（含 id 与各自需要的变量）。新建群发活动时要填 templateId，用这里的 id。\n"+
 			"模板体的 HTML 不在这里返回（可能很长），只有名称、主题与变量清单。",
-		permission.MailTemplateList,
+		mailenums.MailTemplateList,
 		mcp.Object("邮件模板列表参数", map[string]mcp.Schema{
 			"key": mcp.String("按模板 key 筛选（可选；不传列全部）"),
 		}),
@@ -146,7 +146,7 @@ func campaignSave(w mailcontract.CampaignWriter) mcp.Tool {
 			"所以两个都要想清楚 —— 漏填标签的后果是全站群发。\n"+
 			"模板需要的变量要在 variables 里给全，缺变量会在启动发送时被拒（那时才发现会白跑一趟）。\n"+
 			"活动不是草稿时就改不了（已发出的内容不能回改），要新建一个。",
-		permission.MailCampaignSave,
+		mailenums.MailCampaignSave,
 		mcp.Object("群发活动参数", map[string]mcp.Schema{
 			"id":         mcp.Integer("要编辑的活动 id（可选；不传或 0 表示新建）"),
 			"name":       mcp.String("活动名称（给自己看的，如「十月新品通知」）"),
@@ -209,7 +209,7 @@ func campaignStart(w mailcontract.CampaignWriter) mcp.Tool {
 			"用户只说了「发吧」而没看到上面这几项时，先念一遍再问 —— 群发不可撤销，"+
 			"发错了只能道歉，而道歉对已经进了收件箱的信没有意义。\n"+
 			"只有草稿（或发送失败可重试）状态能启动；已经在发的不能重复启动。",
-		permission.MailCampaignStart,
+		mailenums.MailCampaignStart,
 		mcp.Object("启动群发参数", map[string]mcp.Schema{
 			"campaignId": mcp.Integer("要启动的活动 id（用 campaign_list 拿到的 id）"),
 		}, "campaignId"),
@@ -245,7 +245,7 @@ func campaignDelete(w mailcontract.CampaignWriter) mcp.Tool {
 		"删除一个群发活动。**正在发送中的活动删不掉**（已经发出去的信不会因为删记录而收回）。\n"+
 			"删除只影响这条活动记录与它的报表，不影响已有的发信记录。\n"+
 			"如果用户只是想「别再继续发」，那不是这个工具能做的 —— 告诉他去后台把活动停下来。",
-		permission.MailCampaignDelete,
+		mailenums.MailCampaignDelete,
 		mcp.Object("删除群发活动参数", map[string]mcp.Schema{
 			"campaignId": mcp.Integer("要删除的活动 id（用 campaign_list 拿到的 id）"),
 		}, "campaignId"),
@@ -298,7 +298,7 @@ func contactCreate(w mailcontract.ContactWriter) mcp.Tool {
 			"要直接能发，就传 subscribed **并且**在 consentSource 里写清同意依据（线下填表 / 网站勾选 / 客服记录），"+
 			"那条记录是将来有人问「凭什么给他发」时唯一的凭据。\n"+
 			"邮箱重复会被拒（同一邮箱只能有一条）。",
-		permission.MailContactSave,
+		mailenums.MailContactSave,
 		mcp.Object("新建联系人参数", map[string]mcp.Schema{
 			"email":         mcp.String("邮箱（必填，唯一）"),
 			"name":          mcp.String("姓名（可选）"),
@@ -351,7 +351,7 @@ func contactUpdate(w mailcontract.ContactWriter) mcp.Tool {
 			"改状态同样会触发订阅类自动化（见 contact_status 的说明）；"+
 			"把状态改成 subscribed 时应当在回答里提醒用户「可能马上会有一封自动化邮件发出去」。\n"+
 			"id 用 contact_find 拿到的 id。",
-		permission.MailContactSave,
+		mailenums.MailContactSave,
 		mcp.Object("修改联系人参数", map[string]mcp.Schema{
 			"id":     mcp.Integer("联系人 id（用 contact_find 拿到的 id）"),
 			"email":  mcp.String("新邮箱（可选；改邮箱会做唯一性校验）"),
@@ -395,7 +395,7 @@ func contactStatus(w mailcontract.ContactWriter) mcp.Tool {
 			"答案就在这里，所以线上拿到的口头同意也应当写进去。\n"+
 			"退订（unsubscribed）是客户自己的意愿，**不要用它做「暂时不想发」的手动屏蔽** ——"+
 			"那会覆盖掉他真实的退订记录。",
-		permission.MailContactStatus,
+		mailenums.MailContactStatus,
 		mcp.Object("修改联系人状态参数", map[string]mcp.Schema{
 			"id":     mcp.Integer("联系人 id（用 contact_find 拿到）"),
 			"status": mcp.Enum("目标状态", contactStatusChoices()...),
@@ -431,7 +431,7 @@ func contactDelete(w mailcontract.ContactWriter) mcp.Tool {
 			"删掉之后再想查「这个人以前收过什么」就只能翻历史发信记录了。\n"+
 			"所以执行前必须把「要删哪几个（念出邮箱）」念给用户确认；"+
 			"如果他的诉求只是「别再给这个人发了」，改用 contact_status 置为 unsubscribed。",
-		permission.MailContactDelete,
+		mailenums.MailContactDelete,
 		mcp.Object("删除联系人参数", map[string]mcp.Schema{
 			"ids": mcp.Array("要删除的联系人 id 列表（用 contact_find 拿到的 id）", mcp.Integer("联系人 id")),
 		}, "ids"),
@@ -465,7 +465,7 @@ func contactTag(w mailcontract.ContactWriter) mcp.Tool {
 			"这条会当场发出去。回答里要提醒用户。\n"+
 			"这与 contact_update 的 tags 不同：那个是**覆盖**（没列出就没了），"+
 			"这个是**增删**（不动其它标签）。只想加一个用这个。",
-		permission.MailContactTag,
+		mailenums.MailContactTag,
 		mcp.Object("联系人打标签参数", map[string]mcp.Schema{
 			"ids":    mcp.Array("联系人 id 列表（用 contact_find 拿到）", mcp.Integer("联系人 id")),
 			"add":    mcp.Array("要加上的标签（可选）", mcp.String("标签名")),
@@ -574,7 +574,7 @@ func contactFind(query mailcontract.MailQueryReader) mcp.Tool {
 			"keyword 会同时匹配**邮箱与姓名**（不区分大小写），用户给邮箱片段或名字都能命中。\n"+
 			"tags 是**全部命中**（不是任一）：给多个标签时只返回同时带这些标签的人。\n"+
 			"结果里的 id 可以拿去 campaign_stats 之外的地方用；要某次群发的效果请用 campaign_stats。",
-		permission.MailContactList,
+		mailenums.MailContactList,
 		mcp.Object("查邮件联系人参数", map[string]mcp.Schema{
 			"keyword": mcp.String("线索：邮箱或姓名，模糊匹配（可选）"),
 			"status": mcp.Enum("只看某种订阅状态（可选；不传则全部）",
@@ -669,7 +669,7 @@ func campaignList(query mailcontract.MailQueryReader) mcp.Tool {
 		"列出营销邮件（群发活动），用于回答「最近发过哪些邮件」「那封发完了吗」「一共发出去多少人」。\n"+
 			"每条都带**投递进度**（目标人数 / 已发送 / 失败）与时间，所以「发完了没」不必再调一次。\n"+
 			"要某一次的效果（打开率 / 点击率 / 退订人数）用 campaign_stats 带上这里的 id。",
-		permission.MailCampaignList,
+		mailenums.MailCampaignList,
 		mcp.Object("列营销活动参数", map[string]mcp.Schema{
 			"status": mcp.Enum("只看某个状态（可选；不传则全部）",
 				"draft", "scheduled", "sending", "sent", "failed", "canceled"),
@@ -754,7 +754,7 @@ func campaignStats(query mailcontract.MailQueryReader) mcp.Tool {
 			"用于回答「上次那封效果怎么样」「打开率是多少」「哪个链接点得多」。\n"+
 			"campaignId 从 campaign_list 的结果里拿。注意打开率与点击率都是**估算**"+
 			"（邮件客户端的图片预加载会抬高打开数），汇报时应当说明这一点。",
-		permission.MailCampaignGet,
+		mailenums.MailCampaignGet,
 		mcp.Object("读单次活动效果参数", map[string]mcp.Schema{
 			"campaignId": mcp.Integer("活动 id（campaign_list 结果里的 id）"),
 		}, "campaignId"),
@@ -838,7 +838,7 @@ func templateGet(r TemplateReader) mcp.Tool {
 			"**改模板之前必须先调它** —— 保存是整体覆盖，不知道原文就改一个字，"+
 			"等于把剩下的内容全丢了。\n"+
 			"locale 不传按 zh-CN 处理；同一个 key 通常中英各有一版。",
-		permission.MailTemplateList,
+		mailenums.MailTemplateList,
 		mcp.Object("取模板全文参数", map[string]mcp.Schema{
 			"templateKey": mcp.String("模板 key（用 mail_templates 拿）"),
 			"locale":      mcp.String("语言版本（可选，默认 zh-CN）"),
@@ -925,7 +925,7 @@ func templateSave(w TemplateWriter) mcp.Tool {
 			"变量用 Go 模板语法写：`{{.name}}`。用到的变量名要在 variables 里声明；"+
 			"发送时变量缺失会**直接报错**（配的是 missingkey=error），不会静默留空。\n"+
 			"保存前服务端会试着渲染一次（用空变量），模板语法错或变量名写错当场就能发现。",
-		permission.MailTemplateSave,
+		mailenums.MailTemplateSave,
 		mcp.Object("保存模板参数", map[string]mcp.Schema{
 			"templateKey": mcp.String("模板 key（新建时自己起一个，如 october_sale）"),
 			"locale":      mcp.String("语言版本（可选，默认 zh-CN）"),
@@ -972,7 +972,7 @@ func templateDelete(w TemplateWriter) mcp.Tool {
 			"**正在被群发活动引用的模板删不掉**（活动存的是模板 id）。\n"+
 			"如果只是想换内容，用 template_save 覆盖更合适 —— 删了之后再建，"+
 			"引用它的活动与自动化会指向一个不存在的模板。",
-		permission.MailTemplateDelete,
+		mailenums.MailTemplateDelete,
 		mcp.Object("删除模板参数", map[string]mcp.Schema{
 			"templateKey": mcp.String("模板 key"),
 			"locale":      mcp.String("语言版本（可选，默认 zh-CN；**只删这一版**）"),

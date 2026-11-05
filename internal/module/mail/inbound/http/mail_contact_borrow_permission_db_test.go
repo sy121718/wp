@@ -19,7 +19,7 @@ import (
 	"go_wp/public/test/support"
 )
 
-var mailDeclareDBRe = regexp.MustCompile(`permission\.Declare\("([A-Z]+)",\s*"(/api/[^"]+)"`)
+var mailDeclareDBRe = regexp.MustCompile(`g\.POST\("(/[^"]+)",[^)\n]*?`)
 
 type mailDeclaredBorrow struct {
 	Act string
@@ -28,22 +28,23 @@ type mailDeclaredBorrow struct {
 
 func mailPageDeclaredBorrows(t *testing.T) []mailDeclaredBorrow {
 	t.Helper()
-	raw, err := os.ReadFile("mail_page_router.go")
+	raw, err := os.ReadFile("mail_router.go")
 	if err != nil {
-		t.Fatalf("读 mail_page_router.go 失败：%v", err)
+		t.Fatalf("读 mail_router.go 失败：%v", err)
 	}
 	seen := map[string]bool{}
 	out := make([]mailDeclaredBorrow, 0)
 	for _, m := range mailDeclareDBRe.FindAllStringSubmatch(string(raw), -1) {
-		key := m[1] + " " + m[2]
+		obj := "/api/mail" + m[1]
+		key := "POST " + obj
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		out = append(out, mailDeclaredBorrow{Act: m[1], Obj: m[2]})
+		out = append(out, mailDeclaredBorrow{Act: "POST", Obj: obj})
 	}
 	if len(out) == 0 {
-		t.Fatal("没有扫到任何 permission.Declare —— 正则与注册写法脱节，本用例会静默变成空转")
+		t.Fatal("没有扫到任何 API 写路由 —— 正则与注册写法脱节，本用例会静默变成空转")
 	}
 	return out
 }

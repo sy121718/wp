@@ -61,8 +61,10 @@ type PermDeleteResp struct {
 
 type PermBrief struct {
 	PermissionCode string `json:"permission_code"`
+	PermissionName string `json:"permission_name"`
 	APIPath        string `json:"api_path"`
 	APIMethod      string `json:"api_method"`
+	Status         int    `json:"status"`
 }
 
 type PermListByCodesResp struct {

@@ -8,13 +8,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/permission"
 
 	"go_wp/pkg/logger"
 
 	cartcontract "go_wp/internal/module/cart/contract"
 	cartdto "go_wp/internal/module/cart/dto"
 	cartenums "go_wp/internal/module/cart/enums"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 )
 
@@ -88,12 +88,12 @@ func SetupCartPublicRoutes(router *gin.Engine, svc cartcontract.CartService, mid
 	if router == nil || svc == nil {
 		return
 	}
-	g := permission.NewRouteGroup(router.Group("/api/site/cart", middleware...))
+	g := mw.NewRouteGroup(router.Group("/api/site/cart", middleware...), mw.RouteProtected)
 	g.Use(builtin.RequestRateLimitMiddleware(90, time.Minute))
 	h := NewCartPublicHandle(svc)
-	g.GET("", permission.Exempt, h.View)
-	g.POST("/add", permission.Exempt, h.Add)
-	g.POST("/quantity", permission.Exempt, h.SetQuantity)
-	g.POST("/clear", permission.Exempt, h.Clear)
-	g.POST("/checkout", permission.Exempt, h.Checkout)
+	g.GET("", "", h.View)
+	g.POST("/add", "", h.Add)
+	g.POST("/quantity", "", h.SetQuantity)
+	g.POST("/clear", "", h.Clear)
+	g.POST("/checkout", "", h.Checkout)
 }

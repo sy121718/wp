@@ -2,10 +2,9 @@ package routers
 
 import (
 	"fmt"
+	mw "go_wp/pkg/middleware"
 	"os"
 	"testing"
-
-	"go_wp/internal/permission"
 )
 
 func TestDumpRoutesForAudit(t *testing.T) {
@@ -20,10 +19,10 @@ func TestDumpRoutesForAudit(t *testing.T) {
 	for _, handler := range routeDumpHandlers {
 		fmt.Println(handler)
 	}
-	for _, spec := range permission.Snapshot() {
+	for _, spec := range mw.Snapshot() {
 		fmt.Printf("DECLARED %s %s %s\n", spec.Method, spec.Path, spec.Perm)
 	}
-	for _, e := range permission.Exempts() {
+	for _, e := range mw.Exempts() {
 		fmt.Printf("EXEMPT %s\n", e)
 	}
 }

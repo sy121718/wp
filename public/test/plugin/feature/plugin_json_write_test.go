@@ -13,13 +13,14 @@ import (
 	"go_wp/internal/adminui"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
+	pluginenums "go_wp/internal/module/plugin/enums"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	pluginmodel "go_wp/internal/module/plugin/model"
 	pluginservice "go_wp/internal/module/plugin/service"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -211,13 +212,13 @@ func TestPluginPageWritesUseExistingRegisteredAPI(t *testing.T) {
 		}
 	}
 
-	pluginhttp.SetupPluginRoutes(permission.NewRouteGroup(r.Group("/api")), nil, nil)
+	pluginhttp.SetupPluginRoutes(mw.NewRouteGroup(r.Group("/api"), mw.RouteProtected), nil, nil)
 	for _, tc := range []struct {
 		path string
-		perm permission.Perm
-	}{{"/api/plugin/toggle", permission.PluginToggle}, {"/api/plugin/uninstall", permission.PluginUninstall}} {
+		perm string
+	}{{"/api/plugin/toggle", pluginenums.PluginToggle}, {"/api/plugin/uninstall", pluginenums.PluginUninstall}} {
 		found := false
-		for _, route := range permission.RoutesOf(tc.perm) {
+		for _, route := range mw.RoutesOf(tc.perm) {
 			if route.Path == tc.path && route.Method == "POST" {
 				found = true
 			}

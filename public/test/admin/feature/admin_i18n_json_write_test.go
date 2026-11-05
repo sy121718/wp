@@ -14,12 +14,12 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	captcharouter "go_wp/internal/module/common/captcha/router"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 	"go_wp/public/test/support"
 
@@ -54,7 +54,7 @@ func newI18nWriteFixture(t *testing.T) *i18nWriteFixture {
 			api := e.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
 
-			adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 		},
 	})
 	if err != nil {
@@ -98,14 +98,14 @@ func (f *i18nWriteFixture) call(t *testing.T, body string, withSession, withCSRF
 
 func (f *i18nWriteFixture) allow(t *testing.T) {
 	t.Helper()
-	if _, err := pkgcasbin.GetEnforcer().AddPolicy(f.userID, "/api/i18n/save", http.MethodPost, string(permission.I18nManage)); err != nil {
+	if _, err := pkgcasbin.GetEnforcer().AddPolicy(f.userID, "/api/i18n/save", http.MethodPost, string(adminenums.I18nManage)); err != nil {
 		t.Fatalf("挂写权限策略失败：%v", err)
 	}
 }
 
 func (f *i18nWriteFixture) deny(t *testing.T) {
 	t.Helper()
-	if _, err := pkgcasbin.GetEnforcer().RemovePolicy(f.userID, "/api/i18n/save", http.MethodPost, string(permission.I18nManage)); err != nil {
+	if _, err := pkgcasbin.GetEnforcer().RemovePolicy(f.userID, "/api/i18n/save", http.MethodPost, string(adminenums.I18nManage)); err != nil {
 		t.Fatalf("摘写权限策略失败：%v", err)
 	}
 }

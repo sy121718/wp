@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/module/comment/contract"
 	"go_wp/internal/module/comment/dto"
 	"go_wp/internal/module/comment/enums"
-	"go_wp/internal/permission"
 )
 
 func WriteTools(w commentcontract.ReviewWriter) ([]mcp.Tool, error) {
@@ -34,7 +33,7 @@ func commentReview(w commentcontract.ReviewWriter) mcp.Tool {
 			"**执行前必须先把要处理的评论念给用户确认**（哪几条、正文摘要、改成什么状态）—— "+
 			"通过会让评论立刻公开可见，用户往往并不是要放行全部待审评论。\n"+
 			"执行后如实报出影响条数：如果实际条数与请求条数不一致，说明其中一些已经不是待审状态了。",
-		permission.CommentReview,
+		commentenums.CommentReview,
 		mcp.Object("评论审核参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid，必填：评论按工程隔离）"),
 			"ids":       mcp.Array("要处理的评论 id 列表（用 comment_find 拿到的 id）", mcp.Integer("评论 id")),
@@ -139,7 +138,7 @@ func commentFind(query commentcontract.QueryReader) mcp.Tool {
 			"status / entityType 都可以不传：不传 status 就是全部状态（含待审、垃圾），\n"+
 			"不传 entityType 就是所有可评论的实体类型。\n"+
 			"本工具只读；要改状态（通过 / 驳回）用 comment_review。",
-		permission.CommentList,
+		commentenums.CommentList,
 		mcp.Object("按线索查评论参数", map[string]mcp.Schema{
 			"projectId":  mcp.String("站点工程 id（uuid，必填：评论按工程隔离）"),
 			"status":     mcp.Enum("只看某个审核状态（可选；不传则全部状态）", commentenums.Statuses()...),

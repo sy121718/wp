@@ -1,20 +1,21 @@
 package presentationhttp
 
 import (
-	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
+	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	presentationservice "go_wp/internal/module/presentation/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/internal/permission"
+	"go_wp/pkg/builder/core"
+	mw "go_wp/pkg/middleware"
 
 	"gorm.io/gorm"
 )
 
-func SetupPresentationRoutes(rg *permission.RouteGroup, db *gorm.DB,
+func SetupPresentationRoutes(rg *mw.RouteGroup, db *gorm.DB,
 	templates contenttemplatecontract.ContentTemplateService,
 	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService,
@@ -26,17 +27,17 @@ func SetupPresentationRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	handle := NewHandle(svc)
 
 	g := rg.Group("/presentation")
-	g.POST("/create", permission.PresentationCreate, handle.CreateInstance)
-	g.POST("/rebuild", permission.PresentationRebuild, handle.Rebuild)
-	g.GET("/get", permission.PresentationGet, handle.Get)
-	g.GET("/list", permission.PresentationList, handle.List)
-	g.POST("/delete", permission.PresentationDelete, handle.Delete)
+	g.POST("/create", presentationenums.PresentationCreate, handle.CreateInstance)
+	g.POST("/rebuild", presentationenums.PresentationRebuild, handle.Rebuild)
+	g.GET("/get", presentationenums.PresentationGet, handle.Get)
+	g.GET("/list", presentationenums.PresentationList, handle.List)
+	g.POST("/delete", presentationenums.PresentationDelete, handle.Delete)
 
-	g.GET("/get-by-entity", permission.PresentationGetByEntity, handle.GetByEntity)
+	g.GET("/get-by-entity", presentationenums.PresentationGetByEntity, handle.GetByEntity)
 
-	g.POST("/preview", permission.PresentationPreview, handle.Preview)
+	g.POST("/preview", presentationenums.PresentationPreview, handle.Preview)
 
-	g.POST("/update-url", permission.PresentationUpdateURL, handle.UpdateURL)
+	g.POST("/update-url", presentationenums.PresentationUpdateURL, handle.UpdateURL)
 
 	presentationservice.StartPendingReceiptConvergenceScheduler(svc)
 	return svc

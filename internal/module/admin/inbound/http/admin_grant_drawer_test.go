@@ -18,7 +18,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 )
 
@@ -298,7 +298,7 @@ func TestGrantSavesUseFormBodyAndTrustedOperator(t *testing.T) {
 
 func TestGrantSaveRoutesDeclareHTMLBeforeSession(t *testing.T) {
 	r := drawerEngine()
-	SetupAdminRoutes(permission.NewRouteGroup(r.Group("/api")), nil)
+	SetupAdminRoutes(mw.NewRouteGroup(r.Group("/api"), mw.RouteProtected), nil)
 	for _, path := range []string{"/api/admin/role/save", "/api/admin/menu/save", "/api/role/menu/save"} {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, path, nil)

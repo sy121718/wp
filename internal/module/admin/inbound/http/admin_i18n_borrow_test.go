@@ -9,7 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/permission"
+	adminenums "go_wp/internal/module/admin/enums"
+	mw "go_wp/pkg/middleware"
 )
 
 var (
@@ -61,17 +62,15 @@ func setupAdminI18nBothSides(t *testing.T) *gin.Engine {
 	SetupAdminPages(gin.New().Group("/admin"), nil, nil, nil, nil, nil, nil, nil, nil)
 	engine := gin.New()
 
-	SetupAdminRoutes(permission.NewRouteGroup(engine.Group("/api")), nil)
+	SetupAdminRoutes(mw.NewRouteGroup(engine.Group("/api"), mw.RouteProtected), nil)
 	return engine
 }
 
-func adminI18nPermsOf(method, path string) []permission.Perm {
-	var matched []permission.Perm
-	for _, p := range permission.All() {
-		for _, r := range permission.RoutesOf(p) {
-			if r.Path == path && r.Method == method {
-				matched = append(matched, p)
-			}
+func adminI18nPermsOf(method, path string) []string {
+	var matched []string
+	for _, spec := range mw.Snapshot() {
+		if spec.Path == path && spec.Method == method {
+			matched = append(matched, spec.Perm)
 		}
 	}
 	return matched
@@ -91,7 +90,7 @@ func TestAdminI18nBorrowObjectsAreDeclaredAndResolvable(t *testing.T) {
 		matched := adminI18nPermsOf(b.Act, b.Obj)
 		switch len(matched) {
 		case 0:
-			t.Errorf("页面 %s %s enforce 的 %s 在声明表里查不到权限点 —— permission.RoutesOf 查空，ai_handle.go 的 casbinAuthorizer 会 fail closed，用到它的 AI 工具一律 forbidden", b.PageMethod, b.PagePath, key)
+			t.Errorf("页面 %s %s enforce 的 %s 在声明表里查不到权限点 —— mw.RoutesOf 查空，ai_handle.go 的 casbinAuthorizer 会 fail closed，用到它的 AI 工具一律 forbidden", b.PageMethod, b.PagePath, key)
 		case 1:
 
 		default:
@@ -127,7 +126,7 @@ func TestAdminI18nWriteEndpointIsRealRoute(t *testing.T) {
 	}
 
 	owners := adminI18nPermsOf(http.MethodPost, "/api/i18n/save")
-	if len(owners) != 1 || owners[0] != permission.I18nManage {
+	if len(owners) != 1 || owners[0] != adminenums.I18nManage {
 		t.Fatalf("POST /api/i18n/save 的权限点应为唯一的 i18n:manage，实际 %v —— 迁移 178/294 的 code/obj 必须逐字不变（改它等于让既有超管与角色策略失配）", owners)
 	}
 }

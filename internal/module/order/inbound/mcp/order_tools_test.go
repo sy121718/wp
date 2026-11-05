@@ -9,7 +9,7 @@ import (
 
 	"go_wp/internal/mcp"
 	orderdto "go_wp/internal/module/order/dto"
-	"go_wp/internal/permission"
+	orderenums "go_wp/internal/module/order/enums"
 )
 
 type stubSummary struct {
@@ -48,7 +48,7 @@ func TestOrdersSummaryMetadata(t *testing.T) {
 	if tool.Name() != "orders_summary" {
 		t.Fatalf("工具名应为 orders_summary，实得 %q", tool.Name())
 	}
-	if tool.Permission() != permission.OrderList {
+	if tool.Permission() != orderenums.OrderList {
 		t.Fatalf("工具权限应复用订单列表权限点，实得 %q", tool.Permission())
 	}
 

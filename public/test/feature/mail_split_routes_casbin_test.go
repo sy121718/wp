@@ -21,11 +21,11 @@ import (
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
+	mw "go_wp/pkg/middleware"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -125,14 +125,14 @@ func newMailSplitRoutesEnv(t *testing.T) *mailSplitRoutesEnv {
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
-			adminAuthz := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminAuthz := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			adminPages := engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				adminctx.PermContextMiddleware(adminAuthz))
 
-			authorizedAPI := permission.NewRouteGroup(
-				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+			authorizedAPI := mw.NewRouteGroup(
+				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()), mw.RouteProtected)
 
 			if v, cerr := config.GetViper(); cerr == nil && v != nil {
 				v.Set("app.secret", "qa-mail-split-routes-secret")

@@ -19,7 +19,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -57,7 +57,7 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	}
 	engine := gin.New()
 
-	svc := analyticshttp.SetupAnalyticsRoutes(permission.NewRouteGroup(engine.Group("/api")), engine, db, testPepper, nil, projects)
+	svc := analyticshttp.SetupAnalyticsRoutes(mw.NewRouteGroup(engine.Group("/api"), mw.RouteProtected), engine, db, testPepper, nil, projects)
 	return &analyticsFixture{engine: engine, svc: svc, db: db, projectID: project.ID}
 }
 

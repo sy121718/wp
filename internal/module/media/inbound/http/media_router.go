@@ -3,14 +3,15 @@ package mediahttp
 import (
 	"go_wp/internal/middleware/builtin"
 	mediacontract "go_wp/internal/module/media/contract"
+	mediaenums "go_wp/internal/module/media/enums"
 	mediamodel "go_wp/internal/module/media/model"
 	mediaservice "go_wp/internal/module/media/service"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 
 	"gorm.io/gorm"
 )
 
-func SetupMediaRoutes(rg *permission.RouteGroup, db *gorm.DB) mediacontract.MediaService {
+func SetupMediaRoutes(rg *mw.RouteGroup, db *gorm.DB) mediacontract.MediaService {
 	am := mediamodel.NewAttachmentModel(db)
 	cm := mediamodel.NewFileCategoryModel(db)
 	vm := mediamodel.NewMediaVariantModel(db)
@@ -23,22 +24,22 @@ func SetupMediaRoutes(rg *permission.RouteGroup, db *gorm.DB) mediacontract.Medi
 
 	g := rg.Group("/media", builtin.SessionAuthMiddleware())
 	{
-		g.POST("/upload", permission.MediaUpload, handle.Upload)
-		g.GET("/list", permission.MediaList, handle.List)
-		g.GET("/detail", permission.MediaDetail, handle.Detail)
-		g.POST("/delete", permission.MediaDelete, handle.Delete)
-		g.POST("/update", permission.MediaUpdate, handle.UpdateAttachment)
+		g.POST("/upload", mediaenums.MediaUpload, handle.Upload)
+		g.GET("/list", mediaenums.MediaList, handle.List)
+		g.GET("/detail", mediaenums.MediaDetail, handle.Detail)
+		g.POST("/delete", mediaenums.MediaDelete, handle.Delete)
+		g.POST("/update", mediaenums.MediaUpdate, handle.UpdateAttachment)
 
-		g.POST("/replace", permission.MediaReplace, handle.Replace)
-		g.GET("/references", permission.MediaReferences, handle.References)
-		g.GET("/category/tree", permission.MediaCategoryTree, handle.CategoryTree)
-		g.POST("/category/create", permission.MediaCategoryCreate, handle.CategoryCreate)
-		g.POST("/category/update", permission.MediaCategoryUpdate, handle.CategoryUpdate)
-		g.POST("/category/delete", permission.MediaCategoryDelete, handle.CategoryDelete)
+		g.POST("/replace", mediaenums.MediaReplace, handle.Replace)
+		g.GET("/references", mediaenums.MediaReferences, handle.References)
+		g.GET("/category/tree", mediaenums.MediaCategoryTree, handle.CategoryTree)
+		g.POST("/category/create", mediaenums.MediaCategoryCreate, handle.CategoryCreate)
+		g.POST("/category/update", mediaenums.MediaCategoryUpdate, handle.CategoryUpdate)
+		g.POST("/category/delete", mediaenums.MediaCategoryDelete, handle.CategoryDelete)
 
-		g.GET("/download", permission.MediaDownload, handle.Download)
-		g.GET("/download/batch", permission.MediaDownloadBatch, handle.DownloadBatch)
-		g.POST("/variants/generate", permission.MediaVariantsGenerate, handle.GenerateVariants)
+		g.GET("/download", mediaenums.MediaDownload, handle.Download)
+		g.GET("/download/batch", mediaenums.MediaDownloadBatch, handle.DownloadBatch)
+		g.POST("/variants/generate", mediaenums.MediaVariantsGenerate, handle.GenerateVariants)
 	}
 	return svc
 }

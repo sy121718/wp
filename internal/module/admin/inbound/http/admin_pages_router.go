@@ -8,9 +8,10 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
+	adminenums "go_wp/internal/module/admin/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 )
 
@@ -111,7 +112,11 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	i18nPages.SetPageMarker(pages)
 
-	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
+	mw.DeclareRoute(mw.RouteSpec{
+		Method: http.MethodGet, Path: "/api/i18n/list",
+		Perm: adminenums.I18nView, Kind: mw.RoutePage,
+		AuthObject: "/api/i18n/list", AuthMethod: http.MethodGet,
+	})
 	adminPages.GET("/i18n", view.HTMLPage, adminui.PageAuthz("/api/i18n/list"),
 		view.Slot(I18nPageTemplate, adminui.RenderPage), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),

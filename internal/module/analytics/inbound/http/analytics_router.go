@@ -9,11 +9,12 @@ import (
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
 	analyticscontract "go_wp/internal/module/analytics/contract"
+	analyticsenums "go_wp/internal/module/analytics/enums"
 	analyticsmodel "go_wp/internal/module/analytics/model"
 	analyticsservice "go_wp/internal/module/analytics/service"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
+	mw "go_wp/pkg/middleware"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 	analyticsCollectRateWindow = time.Minute
 )
 
-func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gorm.DB,
+func SetupAnalyticsRoutes(rg *mw.RouteGroup, router *gin.Engine, db *gorm.DB,
 	sessionSecret string, pages *gin.RouterGroup,
 	projects projectcontract.ProjectService) analyticscontract.AnalyticsService {
 	svc := analyticsservice.NewService(analyticsmodel.NewModel(db), resolveAnonSalt(sessionSecret))
@@ -40,7 +41,7 @@ func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gor
 
 	if rg != nil {
 		g := rg.Group("/analytics")
-		g.GET("/summary", permission.AnalyticsView, handle.Summary)
+		g.GET("/summary", analyticsenums.AnalyticsView, handle.Summary)
 	}
 
 	setupAnalyticsPageRoutes(pages, svc, projects)

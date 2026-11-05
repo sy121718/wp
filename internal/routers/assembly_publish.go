@@ -1,13 +1,13 @@
 package routers
 
 import (
-	"go_wp/internal/builder/extensions/presets"
 	"context"
 	"go_wp/config"
+	"go_wp/internal/builder/extensions/presets"
+	mw "go_wp/pkg/middleware"
+	"strings"
 	"time"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -49,6 +49,8 @@ import (
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 
@@ -630,8 +632,27 @@ func (a *assembly) mountAdminPages() {
 func (a *assembly) runSelfCheck() {
 	mustAllPortsWired(a.marks)
 
-	syncDeclaredPermissions(a.db)
+	a.verifyPermissionDirectory()
 	logDegradedOptional(a.marks)
+}
+
+// verifyPermissionDirectory 在全部路由与工具登记后核对权限目录。
+//
+// 不一致时只记录并让就绪检查失败：不启动反写、不自动覆盖用户定义，
+// 也不留「先启动再补库」的窗口。
+func (a *assembly) verifyPermissionDirectory() {
+	dir := newAdminPermDirectory(a.adminAuthzSvc)
+	problems := verifyDeclaredPermissions(a.bgCtx, dir)
+	if len(problems) == 0 {
+		if ex := mw.Exempts(); len(ex) > 0 {
+			logger.Scene("init").With("count", len(ex)).
+				Info("以下路由显式豁免权限点（check-permission-gaps.sh 的 EXEMPT 名单应对应）：" + strings.Join(ex, "; "))
+		}
+		return
+	}
+	a.permProblems = problems
+	logger.Scene("init").With("count", len(problems)).Error(nil,
+		"权限目录与路由声明不一致，实例不就绪："+strings.Join(problems, "; "))
 }
 
 func (a *assembly) mountPublicFace() {

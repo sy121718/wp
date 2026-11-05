@@ -9,10 +9,11 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
+	orderenums "go_wp/internal/module/order/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
@@ -72,7 +73,11 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 		pageview.UseRenderer(adminui.RenderPage),
 		salesPages.SalesOverviewPage)
 
-	permission.Declare(http.MethodGet, "/admin/orders/overview", permission.OrderOverview)
+	mw.DeclareRoute(mw.RouteSpec{
+		Method: http.MethodGet, Path: "/admin/orders/overview",
+		Perm: orderenums.OrderOverview, Kind: mw.RoutePage,
+		AuthObject: "/admin/orders/overview", AuthMethod: http.MethodGet,
+	})
 
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
 	pages.GET("/orders/new",
@@ -100,8 +105,16 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
 		pageview.UseRenderer(adminui.RenderPage), shipPages.OrderCarriersPage)
 
-	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderPendingShip)
-	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierList)
+	mw.DeclareRoute(mw.RouteSpec{
+		Method: http.MethodGet, Path: "/admin/orders/pending-ship",
+		Perm: orderenums.OrderPendingShip, Kind: mw.RoutePage,
+		AuthObject: "/api/order/shipment/pending", AuthMethod: http.MethodGet,
+	})
+	mw.DeclareRoute(mw.RouteSpec{
+		Method: http.MethodGet, Path: "/admin/order-carriers",
+		Perm: orderenums.OrderCarrierList, Kind: mw.RoutePage,
+		AuthObject: "/api/order/carrier/list", AuthMethod: http.MethodGet,
+	})
 
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",

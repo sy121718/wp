@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/mcp"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/internal/permission"
 )
 
 type AttributeWriter interface {
@@ -35,7 +34,7 @@ func attributeList(w AttributeWriter) mcp.Tool {
 			"`用于变体=true` 的属性组是**变体的来源** —— 它的值会被拿去组合生成 SKU，"+
 			"商品的规格结构就由它们决定。\n"+
 			"改属性、删属性之前先用这里的 id。",
-		permission.ProductAttributeList,
+		productenums.ProductAttributeList,
 		mcp.Object("属性组列表参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（可选）"),
 			"keyword":   mcp.String("按属性组名筛选（可选）"),
@@ -87,7 +86,7 @@ func attributeCreate(w AttributeWriter) mcp.Tool {
 			"把不该参与变体的属性设成 true，会让商品凭空多出一批 SKU；"+
 			"改回来比一开始就设对麻烦得多。\n"+
 			"属性组的 key 要和其它工程内已有的区分开，重复 key 会建失败。",
-		permission.ProductAttributeCreate,
+		productenums.ProductAttributeCreate,
 		mcp.Object("新建属性组参数", map[string]mcp.Schema{
 			"projectId":   mcp.String("工程 id（可选）"),
 			"key":         mcp.String("属性标识（可选；不传由后端生成，如 color）"),
@@ -170,7 +169,7 @@ func attributeUpdate(w AttributeWriter) mcp.Tool {
 			"用工具做的话漏写一个值就等于删掉它，而它可能正被变体引用着）。\n"+
 			"把 isVariation 从 false 改成 true 会让用到它的商品开始按这个属性组合变体；"+
 			"从 true 改成 false 则会让已有的变体结构失去依据 —— 两个方向都要先跟用户确认。",
-		permission.ProductAttributeUpdate,
+		productenums.ProductAttributeUpdate,
 		mcp.Object("修改属性组参数", map[string]mcp.Schema{
 			"id":          mcp.String("属性组 id（用 attribute_list 拿）"),
 			"projectId":   mcp.String("工程 id（可选）"),
@@ -222,7 +221,7 @@ func attributeDelete(w AttributeWriter) mcp.Tool {
 			"**如果这个属性组参与生成变体，删掉它会让用到它的商品的规格结构失去依据** ——"+
 			"那些变体不会自动消失，但前台的规格选择器就没东西可显示了。\n"+
 			"删之前先用 attribute_list 确认它有没有被商品用、是不是用于变体。",
-		permission.ProductAttributeDelete,
+		productenums.ProductAttributeDelete,
 		mcp.Object("删除属性组参数", map[string]mcp.Schema{
 			"id":        mcp.String("属性组 id"),
 			"projectId": mcp.String("工程 id（可选）"),
@@ -283,7 +282,7 @@ func productFind(r ProductReader) mcp.Tool {
 			"两种情况都用这一个工具：关键词同时匹配商品名称与 SKU。"+
 			"先用它把「用户说的那个」换成 id，再去调 product_get / product_update / product_delete。"+
 			"要按状态缩小范围就传 status；都不传则按排序值列出前若干个（不是按创建时间）。",
-		permission.ProductGet,
+		productenums.ProductGet,
 		mcp.Object("搜索参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
 			"keyword":   mcp.String("商品名的一部分或 SKU（可为空，空则按排序值列出前若干个）"),
@@ -328,7 +327,7 @@ func productGet(r ProductReader) mcp.Tool {
 	return mcp.New("product_get", "读取商品",
 		"按 id 读出一个商品的字段（名称、副标题、URL 段、类型、状态、SKU 编码）。"+
 			"**id 要先经 product_find 拿到**（用户通常只说商品名）；改或删之前先调它核对名称。",
-		permission.ProductGet,
+		productenums.ProductGet,
 		mcp.Object("读取参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
 			"id":        mcp.String("商品 id（uuid）"),
@@ -354,7 +353,7 @@ func productCreate(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 	return mcp.NewWrite("product_create", "新建商品",
 		"新建一个商品主体（常规变体商品）。建好后还需要给变体（价格与库存）才能上架。"+
 			"SKU 编码由系统按规则派生，本工具不接受它。",
-		permission.ProductCreate,
+		productenums.ProductCreate,
 		mcp.Object("新建商品参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
 			"name":      mcp.String("商品名称"),
@@ -395,7 +394,7 @@ func productUpdate(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 		"按 id 更新商品的基本字段（名称 / URL 段 / 副标题）。只传要改的字段，"+
 			"没传的保持原值；传空串就是清空该字段。**商品类型不可改**（变体 ↔ 捆绑涉及"+
 			"有没有自己的 SKU 与价格放哪，要换类型只能新建）。",
-		permission.ProductUpdate,
+		productenums.ProductUpdate,
 		mcp.Object("更新商品参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
 			"id":        mcp.String("商品 id（uuid）"),
@@ -429,7 +428,7 @@ func productDelete(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 	return mcp.NewWrite("product_delete", "删除商品",
 		"按 id 删除一个商品（连同它的变体）。**这是不可逆操作**：删之前先 product_get "+
 			"读出名称，把「要删哪个商品」说给用户听，确认后再调用本工具。",
-		permission.ProductDelete,
+		productenums.ProductDelete,
 		mcp.Object("删除商品参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
 			"id":        mcp.String("要删除的商品 id"),
@@ -523,7 +522,7 @@ func brandCreate(w TaxonomyWriter) mcp.Tool {
 		"新建一个品牌（全站共用的字典项，不是挂在某个商品上）。\n"+
 			"建完还要在商品里把 brandId 指过来，商品才会带上这个品牌。\n"+
 			"slug 是前台 URL 用的短名；不传由后端按名称生成，重名时会自动加后缀。",
-		permission.ProductBrandCreate,
+		productenums.ProductBrandCreate,
 		mcp.Object("新建品牌参数", map[string]mcp.Schema{
 			"projectId":      mcp.String("工程 id（可选）"),
 			"name":           mcp.String("品牌名（如 Nike）"),
@@ -586,7 +585,7 @@ func brandUpdate(w TaxonomyWriter) mcp.Tool {
 		"改品牌的名字、slug、Logo、介绍或排序。**只改你传的字段**，没传的保持原样。\n"+
 			"改 name 或 slug 会连带影响前台已经用旧短名收录的链接（slug 变了旧链接就 404），"+
 			"除非用户明确要改，否则别动 slug。",
-		permission.ProductBrandUpdate,
+		productenums.ProductBrandUpdate,
 		mcp.Object("修改品牌参数", map[string]mcp.Schema{
 			"id":             mcp.String("品牌 id"),
 			"projectId":      mcp.String("工程 id（可选）"),
@@ -640,7 +639,7 @@ func brandDelete(w TaxonomyWriter) mcp.Tool {
 		"删除一个品牌。**品牌下还挂着商品时删不掉** —— 服务端会拒，先确认清楚。\n"+
 			"删除品牌不会动商品本身，但那批商品的品牌就变成空的（前台可能显示成「未分类」）。\n"+
 			"用户说的是「这个牌子不做了」而不是「删掉这个品牌」时，先问一句是不是要把商品改到别的品牌。",
-		permission.ProductBrandDelete,
+		productenums.ProductBrandDelete,
 		mcp.Object("删除品牌参数", map[string]mcp.Schema{
 			"id":        mcp.String("品牌 id"),
 			"projectId": mcp.String("工程 id（可选）"),
@@ -663,7 +662,7 @@ func categoryCreate(w TaxonomyWriter) mcp.Tool {
 			"分类是**树形**的：前台导航、筛选都按这棵树走，所以 parentId 传错会把分类挂到错误的层级，"+
 			"商品在前台就跟着错位。parentId 用 category_list 拿。\n"+
 			"slug 是前台 URL 用的短名；不传由后端按名称生成。",
-		permission.ProductCategoryCreate,
+		productenums.ProductCategoryCreate,
 		mcp.Object("新建分类参数", map[string]mcp.Schema{
 			"projectId":      mcp.String("工程 id（可选）"),
 			"parentId":       mcp.String("父分类 id（可选；不传 = 顶级分类）"),
@@ -736,7 +735,7 @@ func categoryUpdate(w TaxonomyWriter) mcp.Tool {
 			"· 传 parentId=\"\"（空串）→ **提升为顶级分类**；\n"+
 			"· 传 parentId=\"某 id\" → 挂到那个分类下面。\n"+
 			"把分类挂到自己或自己的子孙下面会形成环，服务端会拒。",
-		permission.ProductCategoryUpdate,
+		productenums.ProductCategoryUpdate,
 		mcp.Object("修改分类参数", map[string]mcp.Schema{
 			"id":             mcp.String("分类 id"),
 			"projectId":      mcp.String("工程 id（可选）"),
@@ -797,7 +796,7 @@ func categoryDelete(w TaxonomyWriter) mcp.Tool {
 			"要删整棵树得从叶子往上删；也可以先上删除掉父分类。\n"+
 			"分类下挂着的商品不会消失，但那批商品就不在这个分类里了（前台筛不出来）。\n"+
 			"用户说「这个分类先不要了」时，先确认是不是只想去掉前台展示，而不是删数据。",
-		permission.ProductCategoryDelete,
+		productenums.ProductCategoryDelete,
 		mcp.Object("删除分类参数", map[string]mcp.Schema{
 			"id":        mcp.String("分类 id"),
 			"projectId": mcp.String("工程 id（可选）"),
@@ -823,7 +822,7 @@ func tagCreate(w TaxonomyWriter) mcp.Tool {
 			"属于批量写，不在这个工具的能力范围内，要用请去后台「商品 → 标签」。\n"+
 			"新建前先用 tag_list 看一眼现有标签，别造出「热销」和「热卖」这种同义重复的 —— "+
 			"两个标签各自挂一半商品，之后按标签做活动就会漏人。",
-		permission.ProductTagCreate,
+		productenums.ProductTagCreate,
 		mcp.Object("新建标签参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（可选）"),
 			"name":      mcp.String("标签名（如 热销）"),
@@ -870,7 +869,7 @@ func tagUpdate(w TaxonomyWriter) mcp.Tool {
 		"改标签的名字或排序。**只改你传的字段**。\n"+
 			"改名不影响已打了这个标签的商品 —— 它们跟着的是标签 id，不是名字。\n"+
 			"规则标签（按条件自动命中商品的那种）的规则本身改不了，本工具只能改名与排序。",
-		permission.ProductTagUpdate,
+		productenums.ProductTagUpdate,
 		mcp.Object("修改标签参数", map[string]mcp.Schema{
 			"id":        mcp.String("标签 id"),
 			"projectId": mcp.String("工程 id（可选）"),
@@ -914,7 +913,7 @@ func tagDelete(w TaxonomyWriter) mcp.Tool {
 			"如果有自动化规则按这个标签触发，删掉之后那些规则就不再命中任何商品了 —— "+
 			"规则不会消失，只是永远不会被触发，这种「静默失效」比报错更难发现。"+
 			"删之前用 tag_list 或商品详情确认一下这个标签有没有在用。",
-		permission.ProductTagDelete,
+		productenums.ProductTagDelete,
 		mcp.Object("删除标签参数", map[string]mcp.Schema{
 			"id":        mcp.String("标签 id"),
 			"projectId": mcp.String("工程 id（可选）"),
@@ -956,7 +955,7 @@ func brandList(r TaxonomyReader) mcp.Tool {
 	return mcp.New("brand_list", "列出现有品牌",
 		"列出本站的品牌（含 id 与 slug）。要建品牌、要把商品改到某个品牌时用这里的 id。\n"+
 			"列表很长时用 keyword 过滤。",
-		permission.ProductBrandList,
+		productenums.ProductBrandList,
 		mcp.Object("品牌列表参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（可选）"),
 			"keyword":   mcp.String("按品牌名筛选（可选）"),
@@ -987,7 +986,7 @@ func categoryList(r TaxonomyReader) mcp.Tool {
 	return mcp.New("category_list", "列出现有商品分类",
 		"列出本站的商品分类（含 id 与层级）。建子分类、把商品归类时用这里的 id 当 parentId。\n"+
 			"分类是树形的，列表按父子缩进输出 —— 缩进层级就是它在树里的位置。",
-		permission.ProductCategoryList,
+		productenums.ProductCategoryList,
 		mcp.Object("分类列表参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（可选）"),
 			"keyword":   mcp.String("按分类名筛选（可选；命中的分类会连同它所在的整条路径一起列出）"),
@@ -1026,7 +1025,7 @@ func tagList(r TaxonomyReader) mcp.Tool {
 	return mcp.New("tag_list", "列出现有商品标签",
 		"列出本站的商品标签（含 id、是手工标签还是规则标签）。给商品打标签、改标签时用这里的 id。\n"+
 			"建新标签前先看这里：同义重复的标签（「热销」与「热卖」）会让之后按标签做的活动漏人。",
-		permission.ProductTagList,
+		productenums.ProductTagList,
 		mcp.Object("标签列表参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（可选）"),
 			"keyword":   mcp.String("按标签名筛选（可选）"),
@@ -1080,7 +1079,7 @@ func variantCreate(w VariantWriter) mcp.Tool {
 			"warehouseId 决定这个 SKU 的库存挂在哪个仓；不传用工程默认仓。"+
 			"无论选没选，都会在归属仓生成一条库存记录（初始 0）。\n"+
 			"productId 用 product_find 拿；该商品已被删除时不能加变体。",
-		permission.ProductVariantCreate,
+		productenums.ProductVariantCreate,
 		mcp.Object("新增变体参数", map[string]mcp.Schema{
 			"productId":    mcp.String("所属商品 id（用 product_find 拿）"),
 			"projectId":    mcp.String("工程 id（可选；不传由后端按唯一工程兜底）"),
@@ -1183,7 +1182,7 @@ func variantUpdate(w VariantWriter) mcp.Tool {
 			"改 skuCode 会影响所有引用这个编码的地方（对账、外部同步）；"+
 			"除非用户明确要改编码，否则别动它。\n"+
 			"enabled=false 会让它立刻从前台下架（已经下过的单不受影响）。",
-		permission.ProductVariantUpdate,
+		productenums.ProductVariantUpdate,
 		mcp.Object("修改变体参数", map[string]mcp.Schema{
 			"id":           mcp.String("变体 id（用 product_get 看商品的变体列表拿）"),
 			"projectId":    mcp.String("工程 id（可选）"),
@@ -1260,7 +1259,7 @@ func variantDelete(w VariantWriter) mcp.Tool {
 			"**如果只是不想再卖，用 variant_update 把 enabled 设成 false 更合适** ——"+
 			"下架可逆，删除不可逆。用户说「下架」「先别卖」时不要调这个工具。\n"+
 			"商品只剩一个变体时删除它，会让这个商品在前台没有可买的东西。",
-		permission.ProductVariantDelete,
+		productenums.ProductVariantDelete,
 		mcp.Object("删除变体参数", map[string]mcp.Schema{
 			"id":        mcp.String("要删除的变体 id"),
 			"projectId": mcp.String("工程 id（可选）"),

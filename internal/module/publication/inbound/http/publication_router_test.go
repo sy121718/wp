@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"go_wp/internal/middleware/builtin"
+	pubenums "go_wp/internal/module/publication/enums"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
-	"go_wp/internal/permission"
 	"go_wp/pkg/auth"
 	pkgcasbin "go_wp/pkg/casbin"
+	mw "go_wp/pkg/middleware"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -72,13 +73,13 @@ func TestSEOAuditRequiresBothExistingPermissions(t *testing.T) {
 		t.Fatal("测试会话 Cookie 创建失败")
 	}
 	r := gin.New()
-	api := permission.NewRouteGroup(r.Group("/api", func(c *gin.Context) {
+	api := mw.NewRouteGroup(r.Group("/api", func(c *gin.Context) {
 		c.Set("user_id", int64(987654321))
-	}, builtin.CasbinMiddleware()))
+	}, builtin.CasbinMiddleware()), mw.RouteProtected)
 	pubhttp.SetupPublicationRoutes(api, db)
 	var declared bool
-	for _, spec := range permission.Snapshot() {
-		if spec.Path == "/api/publication/seo-audit" && spec.Method == http.MethodPost && spec.Perm == permission.PublicationSEOAudit {
+	for _, spec := range mw.Snapshot() {
+		if spec.Path == "/api/publication/seo-audit" && spec.Method == http.MethodPost && spec.Perm == pubenums.PublicationSEOAudit {
 			declared = true
 		}
 	}

@@ -11,7 +11,7 @@ import (
 	"go_wp/internal/mcp"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
-	"go_wp/internal/permission"
+	analyticsenums "go_wp/internal/module/analytics/enums"
 )
 
 const (
@@ -46,7 +46,7 @@ func trafficSummary(reader analyticscontract.TrafficReader) mcp.Tool {
 			"projectId 用 site_projects 查（只有一个工程时就是它）。\n"+
 			"from / to 是 YYYY-MM-DD、含当天、按 **UTC 日界**（产物面向全球访客，用 UTC 避免时区歧义）；"+
 			"不传则默认最近 30 天。注意这里的「天」与订单的「天」是同一套 UTC 日界，可以并排比较。",
-		permission.AnalyticsView,
+		analyticsenums.AnalyticsView,
 		mcp.Object("站点访问统计参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid），用 site_projects 查"),
 			"from":      mcp.String("起始日期，格式 YYYY-MM-DD，含当天（可选；不传则最近 30 天）"),

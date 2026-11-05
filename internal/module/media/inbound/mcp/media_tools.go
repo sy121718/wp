@@ -9,7 +9,7 @@ import (
 
 	"go_wp/internal/mcp"
 	mediadto "go_wp/internal/module/media/dto"
-	"go_wp/internal/permission"
+	mediaenums "go_wp/internal/module/media/enums"
 )
 
 type MediaReader interface {
@@ -46,7 +46,7 @@ func mediaFind(r MediaReader) mcp.Tool {
 	return mcp.New("media_find", "搜索媒体",
 		"按文件名搜索媒体附件，返回 id、文件名、类型与地址。**用户只会说文件大概叫什么**，"+
 			"所以要先用它把名字换成 id，再去调 media_get / media_update / media_delete。",
-		permission.MediaList,
+		mediaenums.MediaList,
 		mcp.Object("搜索参数", map[string]mcp.Schema{
 			"search":        mcp.String("文件名的一部分（可为空，空则列出最近的媒体）"),
 			"fileType":      mcp.Enum("限定文件类型（可选）", "image", "video", "audio", "document", "other"),
@@ -91,7 +91,7 @@ func mediaGet(r MediaReader) mcp.Tool {
 	return mcp.New("media_get", "读取媒体",
 		"按 id 读出一个媒体附件的字段，含 alt / 标题 / 描述（SEO 与无障碍用的那几项）。"+
 			"**id 要先经 media_find 拿到**；改之前先调它核对。",
-		permission.MediaDetail,
+		mediaenums.MediaDetail,
 		mcp.Object("读取参数", map[string]mcp.Schema{
 			"id": mcp.Integer("媒体 id（数字，从 media_find 的返回值里取）"),
 		}, "id"),
@@ -119,7 +119,7 @@ func mediaUpdate(w MediaWriter, store mcp.IdempotencyStore) mcp.Tool {
 		"更新媒体的元数据：文件名、所属分类、alt 文本、标题、描述。只传要改的字段，"+
 			"没传的保持原值。**改不了文件本身**（换图要在后台上传新文件）。"+
 			"alt 是给读屏软件与搜图用的，为空时图片对无障碍用户等于不存在。",
-		permission.MediaUpdate,
+		mediaenums.MediaUpdate,
 		mcp.Object("更新参数", map[string]mcp.Schema{
 			"id":          mcp.Integer("媒体 id（数字）"),
 			"fileName":    mcp.String("新文件名（不传 = 不改）"),
@@ -154,7 +154,7 @@ func mediaDelete(w MediaWriter, store mcp.IdempotencyStore) mcp.Tool {
 	return mcp.NewWrite("media_delete", "删除媒体",
 		"按 id 删除一个媒体附件。**这是不可逆操作**：文件会一起没了，而引用它的页面会出现死图。"+
 			"删之前先用 media_get 读出文件名说给用户听，确认后再调用本工具。",
-		permission.MediaDelete,
+		mediaenums.MediaDelete,
 		mcp.Object("删除参数", map[string]mcp.Schema{
 			"id": mcp.Integer("要删除的媒体 id"),
 		}, "id"),

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/permission"
 	"go_wp/internal/pipeline"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +33,7 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 		ctx = context.Background()
 	}
 
-	permission.Reset()
+	mw.Reset()
 
 	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx}
 

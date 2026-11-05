@@ -217,10 +217,10 @@ func TestNavigationUpdateRouterRegistersSplitEndpoints(t *testing.T) {
 	}
 	src := string(raw)
 	for _, want := range []string{
-		`g.POST("/update", permission.NavigationUpdate, pageview.HTMLFragment, handle.Update)`,
-		`g.POST("/move", permission.NavigationMove, pageview.HTMLFragment, handle.Move)`,
-		`g.POST("/translations", permission.NavigationTranslate, pageview.HTMLFragment, handle.UpdateTranslations)`,
-		`g.POST("/sources", permission.NavigationSourceAdd, pageview.HTMLFragment, handle.CreateFromSource)`,
+		`g.POST("/update", navigationenums.NavigationUpdate, pageview.HTMLFragment, handle.Update)`,
+		`g.POST("/move", navigationenums.NavigationMove, pageview.HTMLFragment, handle.Move)`,
+		`g.POST("/translations", navigationenums.NavigationTranslate, pageview.HTMLFragment, handle.UpdateTranslations)`,
+		`g.POST("/sources", navigationenums.NavigationSourceAdd, pageview.HTMLFragment, handle.CreateFromSource)`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Fatalf("路由必须独立注册：缺少 %s", want)

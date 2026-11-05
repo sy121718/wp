@@ -7,8 +7,9 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
+	adminenums "go_wp/internal/module/admin/enums"
 	adminservice "go_wp/internal/module/admin/service"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/view"
 )
 
@@ -17,7 +18,7 @@ const (
 	loginRateWindow = time.Minute
 )
 
-func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.AuthzContextService {
+func SetupAdminRoutes(rg *mw.RouteGroup, db *gorm.DB) admincontract.AuthzContextService {
 	if rg == nil {
 		return nil
 	}
@@ -29,7 +30,7 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 
 	admin := rg.Group("/admin")
 
-	admin.POST("/login", permission.Exempt,
+	admin.POST("/login", "",
 		builtin.RequestRateLimitMiddleware(loginRateLimit, loginRateWindow),
 		handle.AdminLogin)
 
@@ -39,8 +40,8 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.DataRuleContextMiddleware(),
 	)
 	{
-		auth.POST("/logout", permission.Exempt, handle.AdminLogout)
-		auth.GET("/profile", permission.Exempt, handle.AdminProfile)
+		auth.POST("/logout", "", handle.AdminLogout)
+		auth.GET("/profile", "", handle.AdminProfile)
 	}
 
 	authorized := admin.Group("").Use(
@@ -50,15 +51,15 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.DataRuleContextMiddleware(),
 	)
 	{
-		authorized.GET("/list", permission.AdminList, handle.AdminList)
-		authorized.GET("/detail", permission.AdminDetail, handle.AdminDetail)
-		authorized.POST("/create", permission.AdminCreate, handle.AdminCreate)
-		authorized.POST("/edit", permission.AdminEdit, handle.AdminEdit)
-		authorized.POST("/delete", permission.AdminDelete, handle.AdminDelete)
-		authorized.GET("/role/list", permission.AdminRoleList, handle.AdminRoleList)
-		authorized.POST("/role/save", permission.AdminRoleSave, view.HTMLFragment, handle.AdminRoleSave)
-		authorized.GET("/menu/list", permission.AdminMenuList, handle.AdminMenuList)
-		authorized.POST("/menu/save", permission.AdminMenuSave, view.HTMLFragment, handle.AdminMenuSave)
+		authorized.GET("/list", adminenums.AdminList, handle.AdminList)
+		authorized.GET("/detail", adminenums.AdminDetail, handle.AdminDetail)
+		authorized.POST("/create", adminenums.AdminCreate, handle.AdminCreate)
+		authorized.POST("/edit", adminenums.AdminEdit, handle.AdminEdit)
+		authorized.POST("/delete", adminenums.AdminDelete, handle.AdminDelete)
+		authorized.GET("/role/list", adminenums.AdminRoleList, handle.AdminRoleList)
+		authorized.POST("/role/save", adminenums.AdminRoleSave, view.HTMLFragment, handle.AdminRoleSave)
+		authorized.GET("/menu/list", adminenums.AdminMenuList, handle.AdminMenuList)
+		authorized.POST("/menu/save", adminenums.AdminMenuSave, view.HTMLFragment, handle.AdminMenuSave)
 	}
 
 	role := rg.Group("/role").Use(
@@ -67,15 +68,15 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		role.GET("/list", permission.RoleList, handle.RoleList)
-		role.GET("/detail", permission.RoleDetail, handle.RoleDetail)
-		role.POST("/create", permission.RoleCreate, handle.RoleCreate)
-		role.POST("/update", permission.RoleUpdate, handle.RoleUpdate)
-		role.POST("/delete", permission.RoleDelete, handle.RoleDelete)
-		role.GET("/menu/list", permission.RoleMenuList, handle.RoleMenuList)
-		role.POST("/menu/save", permission.RoleMenuSave, view.HTMLFragment, handle.RoleMenuSave)
-		role.GET("/user/list", permission.RoleUserList, handle.RoleUserList)
-		role.POST("/user/save", permission.RoleUserSave, handle.RoleUserSave)
+		role.GET("/list", adminenums.RoleList, handle.RoleList)
+		role.GET("/detail", adminenums.RoleDetail, handle.RoleDetail)
+		role.POST("/create", adminenums.RoleCreate, handle.RoleCreate)
+		role.POST("/update", adminenums.RoleUpdate, handle.RoleUpdate)
+		role.POST("/delete", adminenums.RoleDelete, handle.RoleDelete)
+		role.GET("/menu/list", adminenums.RoleMenuList, handle.RoleMenuList)
+		role.POST("/menu/save", adminenums.RoleMenuSave, view.HTMLFragment, handle.RoleMenuSave)
+		role.GET("/user/list", adminenums.RoleUserList, handle.RoleUserList)
+		role.POST("/user/save", adminenums.RoleUserSave, handle.RoleUserSave)
 	}
 
 	perm := rg.Group("/permission").Use(
@@ -84,12 +85,12 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		perm.GET("/list", permission.PermissionList, handle.PermList)
-		perm.GET("/detail", permission.PermissionDetail, handle.PermDetail)
-		perm.GET("/options", permission.PermissionOptions, handle.PermOptions)
-		perm.POST("/create", permission.PermissionCreate, handle.PermCreate)
-		perm.POST("/update", permission.PermissionUpdate, handle.PermUpdate)
-		perm.POST("/delete", permission.PermissionDelete, handle.PermDelete)
+		perm.GET("/list", adminenums.PermissionList, handle.PermList)
+		perm.GET("/detail", adminenums.PermissionDetail, handle.PermDetail)
+		perm.GET("/options", adminenums.PermissionOptions, handle.PermOptions)
+		perm.POST("/create", adminenums.PermissionCreate, handle.PermCreate)
+		perm.POST("/update", adminenums.PermissionUpdate, handle.PermUpdate)
+		perm.POST("/delete", adminenums.PermissionDelete, handle.PermDelete)
 	}
 
 	menu := rg.Group("/menu").Use(
@@ -98,11 +99,11 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		menu.GET("/tree", permission.MenuList, handle.MenuTree)
-		menu.GET("/detail", permission.MenuDetail, handle.MenuDetail)
-		menu.POST("/create", permission.MenuCreate, handle.MenuCreate)
-		menu.POST("/update", permission.MenuUpdate, handle.MenuUpdate)
-		menu.POST("/delete", permission.MenuDelete, handle.MenuDelete)
+		menu.GET("/tree", adminenums.MenuList, handle.MenuTree)
+		menu.GET("/detail", adminenums.MenuDetail, handle.MenuDetail)
+		menu.POST("/create", adminenums.MenuCreate, handle.MenuCreate)
+		menu.POST("/update", adminenums.MenuUpdate, handle.MenuUpdate)
+		menu.POST("/delete", adminenums.MenuDelete, handle.MenuDelete)
 	}
 
 	dept := rg.Group("/dept").Use(
@@ -111,13 +112,13 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		dept.GET("/tree", permission.DeptList, handle.DeptTree)
-		dept.GET("/detail", permission.DeptDetail, handle.DeptDetail)
-		dept.POST("/create", permission.DeptCreate, handle.DeptCreate)
-		dept.POST("/update", permission.DeptUpdate, handle.DeptUpdate)
-		dept.POST("/delete", permission.DeptDelete, handle.DeptDelete)
-		dept.GET("/user/list", permission.DeptUserList, handle.DeptUserList)
-		dept.POST("/user/save", permission.DeptUserSave, handle.DeptUserSave)
+		dept.GET("/tree", adminenums.DeptList, handle.DeptTree)
+		dept.GET("/detail", adminenums.DeptDetail, handle.DeptDetail)
+		dept.POST("/create", adminenums.DeptCreate, handle.DeptCreate)
+		dept.POST("/update", adminenums.DeptUpdate, handle.DeptUpdate)
+		dept.POST("/delete", adminenums.DeptDelete, handle.DeptDelete)
+		dept.GET("/user/list", adminenums.DeptUserList, handle.DeptUserList)
+		dept.POST("/user/save", adminenums.DeptUserSave, handle.DeptUserSave)
 	}
 
 	datarule := rg.Group("/datarule").Use(
@@ -126,15 +127,15 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		datarule.GET("/list", permission.DataruleList, handle.RuleList)
-		datarule.GET("/detail", permission.DataruleDetail, handle.RuleDetail)
-		datarule.POST("/create", permission.DataruleCreate, handle.RuleCreate)
-		datarule.POST("/update", permission.DataruleUpdate, handle.RuleUpdate)
-		datarule.POST("/delete", permission.DataruleDelete, handle.RuleDelete)
-		datarule.GET("/schema/list", permission.DataruleSchemaList, handle.RuleSchemaList)
-		datarule.GET("/schema/detail", permission.DataruleSchemaDetail, handle.RuleSchemaDetail)
-		datarule.GET("/assignment/list", permission.DataruleAssignmentList, handle.RuleAssignmentList)
-		datarule.POST("/assignment/save", permission.DataruleAssignmentSave, handle.RuleAssignmentSave)
+		datarule.GET("/list", adminenums.DataruleList, handle.RuleList)
+		datarule.GET("/detail", adminenums.DataruleDetail, handle.RuleDetail)
+		datarule.POST("/create", adminenums.DataruleCreate, handle.RuleCreate)
+		datarule.POST("/update", adminenums.DataruleUpdate, handle.RuleUpdate)
+		datarule.POST("/delete", adminenums.DataruleDelete, handle.RuleDelete)
+		datarule.GET("/schema/list", adminenums.DataruleSchemaList, handle.RuleSchemaList)
+		datarule.GET("/schema/detail", adminenums.DataruleSchemaDetail, handle.RuleSchemaDetail)
+		datarule.GET("/assignment/list", adminenums.DataruleAssignmentList, handle.RuleAssignmentList)
+		datarule.POST("/assignment/save", adminenums.DataruleAssignmentSave, handle.RuleAssignmentSave)
 	}
 
 	i18nAPI := rg.Group("/i18n").Use(
@@ -143,7 +144,7 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		i18nAPI.POST("/save", permission.I18nManage, view.HTMLFragment, adminI18nHandle().I18nEntryWrite)
+		i18nAPI.POST("/save", adminenums.I18nManage, view.HTMLFragment, adminI18nHandle().I18nEntryWrite)
 	}
 
 	return svc

@@ -9,7 +9,7 @@ import (
 
 	"go_wp/internal/mcp"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/permission"
+	projectenums "go_wp/internal/module/project/enums"
 )
 
 type ProjectLister interface {
@@ -32,7 +32,7 @@ func siteProjects(projects ProjectLister) mcp.Tool {
 			"用户在概览页 / 仪表盘这类看不出工程的页面上提问时，先调它，\n"+
 			"再用工程名与用户说的店名对上号（只有一个工程时那就是它，不必反问用户）。\n"+
 			"返回的 id 直接用作其它工具的 projectId 参数。",
-		permission.ProjectList,
+		projectenums.ProjectList,
 		mcp.Object("站点工程清单（无参数）", map[string]mcp.Schema{}, []string{}...),
 		func(ctx context.Context, _ siteProjectsArgs) (mcp.Result, error) {
 			list, err := projects.List(ctx)

@@ -9,7 +9,7 @@ import "sync"
 //   - admin.ai.mcp.token.status.{active,revoked} 的中英词条（模板 tr() 用的 key，
 //     之前没有任何 seed，界面上会露出裸 key）。
 //
-// 权限点行本身由 internal/permission/sync.go 按路由声明插入，不在这里重复。
+// 权限点行本身由 743-permission-directory-backfill 统一补齐，不在这里重复。
 // 幂等：SQL 侧用 NOT EXISTS / ON CONFLICT DO NOTHING。
 func registerAIProviderModelsWriteGate() {
 	registerAIProviderModelsWriteGateOnce.Do(registerAIProviderModelsWriteGateSeed)

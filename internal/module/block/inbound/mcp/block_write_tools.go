@@ -9,7 +9,7 @@ import (
 	"go_wp/internal/mcp"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
-	"go_wp/internal/permission"
+	blockenums "go_wp/internal/module/block/enums"
 )
 
 const (
@@ -66,7 +66,7 @@ func QueryTools(reader blockcontract.BlockReader) ([]mcp.Tool, error) {
 			"`reuseMode` 有两种：`global` 全站共享（改一次所有引用页都变）、"+
 			"`template` 只作为模板供插入时复制一份（改它不影响已插入的页面）。\n"+
 			"这两种模式的实际后果完全不同，看到块先确认它是哪一种。",
-		permission.BlockList,
+		blockenums.BlockList,
 		mcp.Object("查全局块", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"kind":      mcp.String("按块类型筛，可省略"),
@@ -93,7 +93,7 @@ func QueryTools(reader blockcontract.BlockReader) ([]mcp.Tool, error) {
 	get := mcp.New("block_get", "看一个全局块的详情",
 		"取回块的元数据与文档大小。**改块之前先跑这一步** —— 更新是整树覆盖，\n"+
 			"调用方不说 name 与 kind 时工具会拿它合并回原值，读一次才能保证合并的是最新状态。",
-		permission.BlockDetail,
+		blockenums.BlockDetail,
 		mcp.Object("取块详情", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"blockId":   mcp.String("块 id（从 block_list 拿）"),
@@ -130,7 +130,7 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 			"* `global`（默认）：全站共享的同一个块，改它所有引用页一起变。页眉、页脚、公告条用这个。\n"+
 			"* `template`：只是供人插入时**复制一份**的模板，改它不影响已插入的页面。\n"+
 			"大多数「页眉/页脚/公告」的场景是 global。",
-		permission.BlockCreate,
+		blockenums.BlockCreate,
 		mcp.Object("新建全局块", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"name":      mcp.String("块名称（给人看的，例如「站点页脚」）"),
@@ -165,7 +165,7 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 			"缺 name 会被判为非法）。\n"+
 			"**复用模式只能从 global 改成 template，且要求当前没有任何页面引用它** —— "+
 			"有引用时会报「块正在被使用」。改分类不影响引用。",
-		permission.BlockUpdate,
+		blockenums.BlockUpdate,
 		mcp.Object("改块元数据", map[string]mcp.Schema{
 			"projectId":       mcp.String("工程 id"),
 			"blockId":         mcp.String("块 id"),
@@ -211,7 +211,7 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 		"删除一个全局块。仍被引用时一律拒绝，并返回页面、模板或其它区块的引用定位。\n"+
 			"被引用时正确做法通常是：先改块的内容（页眉页脚这类块本来就是拿来改的），\n"+
 			"或者先解除页面上的引用。只有确认没人用了才删。",
-		permission.BlockDelete,
+		blockenums.BlockDelete,
 		mcp.Object("删除全局块", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"blockId":   mcp.String("要删除的块 id"),

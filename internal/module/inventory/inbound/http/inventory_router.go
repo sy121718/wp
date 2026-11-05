@@ -6,11 +6,12 @@ import (
 
 	"go_wp/config"
 	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
@@ -31,7 +32,7 @@ func SetProductCatalog(products productcontract.ProductService) {
 	}
 }
 
-func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
+func SetupInventoryRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
 	project projectcontract.ProjectService) inventorycontract.InventoryService {
 	svc := inventoryservice.NewService(inventorymodel.NewModel(db), project)
 
@@ -42,38 +43,38 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 
 	g := rg.Group("/inventory")
 
-	g.GET("/warehouse/list", permission.InventoryWarehouseList, handle.ListWarehouses)
-	g.GET("/warehouse/get", permission.InventoryWarehouseGet, handle.GetWarehouse)
-	g.POST("/warehouse/create", permission.InventoryWarehouseCreate, handle.CreateWarehouse)
-	g.POST("/warehouse/update", permission.InventoryWarehouseUpdate, handle.UpdateWarehouse)
-	g.POST("/warehouse/delete", permission.InventoryWarehouseDelete, handle.DeleteWarehouse)
+	g.GET("/warehouse/list", inventoryenums.InventoryWarehouseList, handle.ListWarehouses)
+	g.GET("/warehouse/get", inventoryenums.InventoryWarehouseGet, handle.GetWarehouse)
+	g.POST("/warehouse/create", inventoryenums.InventoryWarehouseCreate, handle.CreateWarehouse)
+	g.POST("/warehouse/update", inventoryenums.InventoryWarehouseUpdate, handle.UpdateWarehouse)
+	g.POST("/warehouse/delete", inventoryenums.InventoryWarehouseDelete, handle.DeleteWarehouse)
 
-	g.GET("/stock/list", permission.InventoryStockList, handle.ListStocks)
-	g.GET("/stock/sku", permission.InventoryStockSKU, handle.ListStocksBySKU)
-	g.GET("/stock/get", permission.InventoryStockGet, handle.GetStock)
-	g.POST("/stock/ensure", permission.InventoryStockEnsure, handle.EnsureStock)
+	g.GET("/stock/list", inventoryenums.InventoryStockList, handle.ListStocks)
+	g.GET("/stock/sku", inventoryenums.InventoryStockSKU, handle.ListStocksBySKU)
+	g.GET("/stock/get", inventoryenums.InventoryStockGet, handle.GetStock)
+	g.POST("/stock/ensure", inventoryenums.InventoryStockEnsure, handle.EnsureStock)
 
-	g.GET("/stock/alert", permission.InventoryStockAlert, handle.StockAlert)
+	g.GET("/stock/alert", inventoryenums.InventoryStockAlert, handle.StockAlert)
 
-	g.POST("/stock/change", permission.InventoryStockChange, handle.ChangeStock)
-	g.POST("/stock/deduct", permission.InventoryStockDeduct, handle.DeductStock)
-	g.GET("/movement/list", permission.InventoryMovementList, handle.ListMovements)
-	g.GET("/reason/list", permission.InventoryReasonList, handle.ListReasons)
-	g.POST("/reason/create", permission.InventoryReasonCreate, handle.CreateReason)
-	g.POST("/reason/update", permission.InventoryReasonUpdate, handle.UpdateReason)
+	g.POST("/stock/change", inventoryenums.InventoryStockChange, handle.ChangeStock)
+	g.POST("/stock/deduct", inventoryenums.InventoryStockDeduct, handle.DeductStock)
+	g.GET("/movement/list", inventoryenums.InventoryMovementList, handle.ListMovements)
+	g.GET("/reason/list", inventoryenums.InventoryReasonList, handle.ListReasons)
+	g.POST("/reason/create", inventoryenums.InventoryReasonCreate, handle.CreateReason)
+	g.POST("/reason/update", inventoryenums.InventoryReasonUpdate, handle.UpdateReason)
 
 	transferPages := NewInventoryTransferPageHandle(svc, project, nil)
 	tg := rg.Group("/inventory/transfer")
-	tg.GET("/list", permission.InventoryTransferList, transferPages.InventoryTransferListJSON)
-	tg.GET("/get", permission.InventoryTransferGet, transferPages.InventoryTransferDetail)
+	tg.GET("/list", inventoryenums.InventoryTransferList, transferPages.InventoryTransferListJSON)
+	tg.GET("/get", inventoryenums.InventoryTransferGet, transferPages.InventoryTransferDetail)
 
-	tg.GET("/stock-options", permission.InventoryTransferOptions, transferPages.InventoryTransferStockOptions)
-	tg.POST("/create", permission.InventoryTransferCreate, pageview.HTMLFragment, transferPages.CreateTransfer)
-	tg.POST("/approve", permission.InventoryTransferApprove, pageview.HTMLFragment, transferPages.ApproveTransfer)
-	tg.POST("/reject", permission.InventoryTransferReject, pageview.HTMLFragment, transferPages.RejectTransfer)
-	tg.POST("/ship", permission.InventoryTransferShip, pageview.HTMLFragment, transferPages.ShipTransfer)
-	tg.POST("/receive", permission.InventoryTransferReceive, pageview.HTMLFragment, transferPages.ReceiveTransfer)
-	tg.POST("/cancel", permission.InventoryTransferCancel, pageview.HTMLFragment, transferPages.CancelTransfer)
+	tg.GET("/stock-options", inventoryenums.InventoryTransferOptions, transferPages.InventoryTransferStockOptions)
+	tg.POST("/create", inventoryenums.InventoryTransferCreate, pageview.HTMLFragment, transferPages.CreateTransfer)
+	tg.POST("/approve", inventoryenums.InventoryTransferApprove, pageview.HTMLFragment, transferPages.ApproveTransfer)
+	tg.POST("/reject", inventoryenums.InventoryTransferReject, pageview.HTMLFragment, transferPages.RejectTransfer)
+	tg.POST("/ship", inventoryenums.InventoryTransferShip, pageview.HTMLFragment, transferPages.ShipTransfer)
+	tg.POST("/receive", inventoryenums.InventoryTransferReceive, pageview.HTMLFragment, transferPages.ReceiveTransfer)
+	tg.POST("/cancel", inventoryenums.InventoryTransferCancel, pageview.HTMLFragment, transferPages.CancelTransfer)
 
 	SetupInventoryPages(pages, svc, project)
 

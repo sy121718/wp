@@ -16,13 +16,14 @@ import (
 
 func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 	sessionSvc *aiservice.SessionService, tokenSvc *aiservice.AccessTokenService,
-	toolRegistry *mcp.Registry, aiConfig sysconfigcontract.Service) {
+	toolRegistry *mcp.Registry, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory) {
 	if adminPages == nil {
 		return
 	}
 	sessionPage := NewSessionPageHandle(sessionSvc, svc)
 
 	mcpPage := NewMcpPageHandle(tokenSvc, toolRegistry)
+	mcpPage.SetPermDirectory(dir)
 
 	mcpPage.SetConfigService(aiConfig)
 	adminPages.GET("/ai/mcp", adminui.PageAuthz("/api/ai/token/list"), pageview.Slot(McpPageTemplate, adminui.RenderPage), mcpPage.Page)

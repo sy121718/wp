@@ -10,7 +10,7 @@
 # 实例文档并触发重编译发布（已在本次修复中挂上 Casbin）。
 #
 # 判据（按**调用形状**，不按文件/目录名 —— 目录名会漂移，形状不会）：
-#   1. 第二实参是 `permission.XxxPerm` → 声明式授权路由（permission.RouteGroup 的组链
+#   1. 第二实参是模块 enums 常量（`mw.RouteGroup.POST(..., xxxxenums.Xxx, ...)`）→ 声明式授权路由（RouteGroup 的组链
 #      自带 CasbinMiddleware，权限点声明同时供 check-permission-gaps.sh 对账）→ 免检；
 #   2. 否则是原生 gin 组 → 实参里必须出现 CasbinMiddleware*，或该文件在组级
 #      `.Use(...)` 里挂了它；
@@ -32,6 +32,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOW_FILE = os.path.join(ROOT, "scripts", "page-endpoint-authz-allow.txt")
 SCAN_ROOTS = ("internal", "cmd")
 NEEDLE = ".POST("
+
+# 声明式授权的第二实参：模块 enums 常量或空串（空串只允许显式豁免，由路由组 Kind 保证）。
+DECLARED_PERM_RE = re.compile(r"^(?:[a-z]+enums\.[A-Z]\w*|\"\")$")
 
 
 def iter_go_files():
@@ -286,7 +289,7 @@ def main():
             if len(args) < 2:
                 continue
             stats["total"] += 1
-            if args[1].startswith("permission."):
+            if DECLARED_PERM_RE.match(args[1]):
                 stats["declared"] += 1
                 continue
             if group_ok or any("CasbinMiddleware" in a for a in args[1:]):

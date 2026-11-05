@@ -671,8 +671,10 @@ func (s *Service) ListByCodes(ctx context.Context, codes []string) ([]admindto.P
 	for _, e := range entities {
 		result = append(result, admindto.PermBrief{
 			PermissionCode: e.PermissionCode,
+			PermissionName: e.PermissionName,
 			APIPath:        e.APIPath,
 			APIMethod:      e.APIMethod,
+			Status:         e.Status,
 		})
 	}
 	return result, nil

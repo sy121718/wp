@@ -5,26 +5,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/permission"
+	blockenums "go_wp/internal/module/block/enums"
+	mw "go_wp/pkg/middleware"
 )
 
 func TestBlockRoutesBindOneAPIPathPerPermission(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	permission.Reset()
-	t.Cleanup(permission.Reset)
+	mw.Reset()
+	t.Cleanup(mw.Reset)
 
 	engine := gin.New()
 
-	SetupBlockRoutes(permission.NewRouteGroup(engine.Group("/api")), nil, nil)
+	SetupBlockRoutes(mw.NewRouteGroup(engine.Group("/api"), mw.RouteProtected), nil, nil)
 
 	for _, tc := range []struct {
-		perm permission.Perm
+		perm string
 		want string
 	}{
-		{permission.BlockDelete, "POST /api/block/delete"},
-		{permission.BlockBulkDelete, "POST /api/block/bulk-delete"},
+		{blockenums.BlockDelete, "POST /api/block/delete"},
+		{blockenums.BlockBulkDelete, "POST /api/block/bulk-delete"},
 	} {
-		routes := permission.RoutesOf(tc.perm)
+		routes := mw.RoutesOf(tc.perm)
 		if len(routes) != 1 {
 			t.Errorf("%s 应恰好声明 1 条 API 路径，实际 %d 条 —— 共用 code 会让 SyncToDB 只能留下其中一条（另一条静默失权）",
 				tc.perm, len(routes))
@@ -35,8 +36,8 @@ func TestBlockRoutesBindOneAPIPathPerPermission(t *testing.T) {
 		}
 	}
 
-	paths := map[permission.Perm][]string{}
-	for _, spec := range permission.Snapshot() {
+	paths := map[string][]string{}
+	for _, spec := range mw.Snapshot() {
 		paths[spec.Perm] = append(paths[spec.Perm], spec.Method+" "+spec.Path)
 	}
 	for perm, list := range paths {

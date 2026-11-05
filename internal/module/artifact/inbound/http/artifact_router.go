@@ -10,21 +10,21 @@ import (
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
-	"go_wp/internal/permission"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/logger"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func SetupArtifactRoutes(rg *permission.RouteGroup, db *gorm.DB) artifactcontract.ArtifactService {
+func SetupArtifactRoutes(rg *mw.RouteGroup, db *gorm.DB) artifactcontract.ArtifactService {
 	svc := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	g := rg.Group("/artifact", builtin.SessionAuthMiddleware())
 
-	g.GET("/detail", permission.ArtifactDetail, ArtifactDetail(svc))
+	g.GET("/detail", artifactenums.ArtifactDetail, ArtifactDetail(svc))
 	return svc
 }
 

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
@@ -35,7 +35,7 @@ func newTokenPanelEnv(t *testing.T) (*aihttp.TokenHandle, *aiservice.AccessToken
 	applyProductionSchema(t, db)
 
 	tokens := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
-	tokens.SetScopeValidator(func(p string) bool { return permission.Known(permission.Perm(p)) })
+	tokens.SetScopeValidator(func(_ context.Context, p string) bool { return p != "" })
 	// handler 从 gin.Context 上取当前用户；测试直接把它固定成同一个账号。
 	th := aihttp.NewTokenHandle(tokens)
 	return th, tokens, db

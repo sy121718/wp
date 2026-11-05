@@ -2,6 +2,7 @@ package aihttp
 
 import (
 	"context"
+	aicontract "go_wp/internal/module/ai/contract"
 	json "go_wp/pkg/jsonx"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,8 @@ import (
 	"go_wp/internal/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
-	"go_wp/internal/permission"
+	orderenums "go_wp/internal/module/order/enums"
+	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/utils"
 )
@@ -168,20 +170,23 @@ func TestMcpEndpointURLUsesForwardedProto(t *testing.T) {
 
 func TestScopeOptionsDedupAndSort(t *testing.T) {
 	reg := mcp.NewRegistry()
-	mk := func(name string, perm permission.Perm) {
+	mk := func(name string, perm string) {
 		tool := mcp.New[struct{}](name, name, "desc", perm, mcp.Schema{},
 			func(_ context.Context, _ struct{}) (mcp.Result, error) { return mcp.Result{}, nil })
 		if err := reg.Register(tool); err != nil {
 			t.Fatalf("注册工具失败: %v", err)
 		}
 	}
-	mk("t_order_a", permission.OrderList)
-	mk("t_order_b", permission.OrderList)
-	mk("t_page", permission.PageList)
-	mk("t_free", permission.Exempt)
+	mk("t_order_a", orderenums.OrderList)
+	mk("t_order_b", orderenums.OrderList)
+	mk("t_page", pageenums.PageList)
+	mk("t_free", "")
 
-	h := &McpPageHandle{registry: reg}
-	got := h.scopeOptions()
+	h := &McpPageHandle{registry: reg, dir: stubPermDirectory{names: map[string]string{
+		orderenums.OrderList: "订单列表",
+		pageenums.PageList:   "页面列表",
+	}}}
+	got := h.scopeOptions(context.Background())
 	if len(got) != 2 {
 		t.Fatalf("选项数不对（去重或 Exempt 过滤失效）: %d -> %+v", len(got), got)
 	}
@@ -191,9 +196,12 @@ func TestScopeOptionsDedupAndSort(t *testing.T) {
 	if !strings.Contains(got[0].Label, got[0].Code) {
 		t.Errorf("标签里应带上权限点原文，便于与日志对照: %+v", got[0])
 	}
+	if !strings.Contains(got[0].Label, "订单列表") {
+		t.Errorf("标签应取数据库里的权限名称: %+v", got[0])
+	}
 
 	empty := &McpPageHandle{}
-	if opt := empty.scopeOptions(); opt != nil {
+	if opt := empty.scopeOptions(context.Background()); opt != nil {
 		t.Errorf("registry 为空应返回空列表: %+v", opt)
 	}
 	var _ = json.RawMessage(nil)
@@ -230,4 +238,24 @@ func TestMcpPageRendersSwitch(t *testing.T) {
 	if strings.Contains(on, "hx-confirm") {
 		t.Error("关闭动作不需要二次确认（它只收紧权限）")
 	}
+}
+
+// stubPermDirectory 是权限目录只读口的测试桩：名称来自显式 map，未命中回退空。
+type stubPermDirectory struct {
+	names map[string]string
+}
+
+func (s stubPermDirectory) Exists(_ context.Context, code string) (bool, error) {
+	_, ok := s.names[code]
+	return ok, nil
+}
+
+func (s stubPermDirectory) List(_ context.Context, codes []string) ([]aicontract.PermEntry, error) {
+	out := make([]aicontract.PermEntry, 0, len(codes))
+	for _, c := range codes {
+		if n, ok := s.names[c]; ok {
+			out = append(out, aicontract.PermEntry{Code: c, Name: n, Status: 1})
+		}
+	}
+	return out, nil
 }

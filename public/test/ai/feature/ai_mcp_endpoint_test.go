@@ -16,8 +16,8 @@ import (
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
+	orderenums "go_wp/internal/module/order/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/permission"
 	"go_wp/public/test/support"
 )
 
@@ -26,7 +26,7 @@ func echoTool() mcp.Tool {
 		ProjectID string `json:"projectId"`
 	}
 	return mcp.New("orders_summary", "订单区间摘要", "查询某个工程在时间窗内的订单数",
-		permission.OrderList,
+		orderenums.OrderList,
 		mcp.Object("查询参数",
 			map[string]mcp.Schema{"projectId": mcp.String("工程 id")},
 			"projectId"),
@@ -35,19 +35,19 @@ func echoTool() mcp.Tool {
 		})
 }
 
-func newMCPEngine(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool) (*gin.Engine, string) {
+func newMCPEngine(t *testing.T, scopes []string, accountAllowed func(string) bool) (*gin.Engine, string) {
 	t.Helper()
 	return newMCPEngineCfg(t, scopes, accountAllowed, stubMCPConfig{enabled: true})
 }
 
-func newMCPEngineCfg(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool, cfg sysconfigcontract.ConfigReader) (*gin.Engine, string) {
+func newMCPEngineCfg(t *testing.T, scopes []string, accountAllowed func(string) bool, cfg sysconfigcontract.ConfigReader) (*gin.Engine, string) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 
 	applyProductionSchema(t, db)
 
 	tokens := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
-	tokens.SetScopeValidator(func(p string) bool { return permission.Known(permission.Perm(p)) })
+	tokens.SetScopeValidator(func(_ context.Context, p string) bool { return p != "" })
 	created, err := tokens.Create(context.Background(), &aidto.TokenCreateReq{
 		Name: "外部集成", Scopes: scopes, UserID: 7,
 	})
@@ -61,7 +61,7 @@ func newMCPEngineCfg(t *testing.T, scopes []string, accountAllowed func(permissi
 	}
 
 	endpoint := aihttp.NewMcpEndpoint(tokens, registry, aiservice.NewToolCallRecorder(aimodel.NewToolCallLogModel(db)))
-	endpoint.SetAccountAuthorizer(func(_ context.Context, _ int64, perm permission.Perm) (bool, error) {
+	endpoint.SetAccountAuthorizer(func(_ context.Context, _ int64, perm string) (bool, error) {
 		return accountAllowed(perm), nil
 	})
 
@@ -92,7 +92,7 @@ func rpcCall(t *testing.T, e *gin.Engine, token, body string) (int, map[string]a
 }
 
 func TestMcpRejectsAnonymousAndBadToken(t *testing.T) {
-	e, _ := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, _ := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
 
 	code, out := rpcCall(t, e, "", body)
@@ -110,7 +110,7 @@ func TestMcpRejectsAnonymousAndBadToken(t *testing.T) {
 }
 
 func TestMcpInitialize(t *testing.T) {
-	e, token := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	code, out := rpcCall(t, e, token, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
 	if code != http.StatusOK {
 		t.Fatalf("应 200，实际 %d", code)
@@ -126,19 +126,19 @@ func TestMcpInitialize(t *testing.T) {
 
 func TestMcpToolsListIsScopedByToken(t *testing.T) {
 
-	e, token := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	_, out := rpcCall(t, e, token, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	if got := toolNames(out); len(got) != 1 || got[0] != "orders_summary" {
 		t.Fatalf("应看到 1 个工具，实际 %v", got)
 	}
 
-	e2, token2 := newMCPEngine(t, []string{"ai:chat"}, func(permission.Perm) bool { return true })
+	e2, token2 := newMCPEngine(t, []string{"ai:chat"}, func(string) bool { return true })
 	_, out2 := rpcCall(t, e2, token2, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	if got := toolNames(out2); len(got) != 0 {
 		t.Fatalf("令牌未声明时不该看到工具，实际 %v", got)
 	}
 
-	e3, token3 := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return false })
+	e3, token3 := newMCPEngine(t, []string{"order:list"}, func(string) bool { return false })
 	_, out3 := rpcCall(t, e3, token3, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	if got := toolNames(out3); len(got) != 0 {
 		t.Fatalf("账号无权限时不该看到工具，实际 %v", got)
@@ -146,7 +146,7 @@ func TestMcpToolsListIsScopedByToken(t *testing.T) {
 }
 
 func TestMcpToolsCallSucceeds(t *testing.T) {
-	e, token := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	code, out := rpcCall(t, e, token,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"orders_summary","arguments":{"projectId":"p-1"}}}`)
 	if code != http.StatusOK {
@@ -165,7 +165,7 @@ func TestMcpToolsCallSucceeds(t *testing.T) {
 }
 
 func TestMcpToolsCallDeniedLooksLikeMissing(t *testing.T) {
-	e, token := newMCPEngine(t, []string{"ai:chat"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"ai:chat"}, func(string) bool { return true })
 	code, out := rpcCall(t, e, token,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"orders_summary","arguments":{"projectId":"p-1"}}}`)
 	if code != http.StatusOK {
@@ -173,7 +173,7 @@ func TestMcpToolsCallDeniedLooksLikeMissing(t *testing.T) {
 	}
 	denied := errorMessage(out)
 
-	e2, token2 := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e2, token2 := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	_, out2 := rpcCall(t, e2, token2,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"not_a_tool","arguments":{}}}`)
 	missing := errorMessage(out2)
@@ -187,7 +187,7 @@ func TestMcpToolsCallDeniedLooksLikeMissing(t *testing.T) {
 }
 
 func TestMcpToolsCallArgsErrorIsNormalReply(t *testing.T) {
-	e, token := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 	code, out := rpcCall(t, e, token,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"orders_summary","arguments":{}}}`)
 	if code != http.StatusOK {
@@ -203,7 +203,7 @@ func TestMcpToolsCallArgsErrorIsNormalReply(t *testing.T) {
 }
 
 func TestMcpUnknownMethodAndNotification(t *testing.T) {
-	e, token := newMCPEngine(t, []string{"order:list"}, func(permission.Perm) bool { return true })
+	e, token := newMCPEngine(t, []string{"order:list"}, func(string) bool { return true })
 
 	code, out := rpcCall(t, e, token, `{"jsonrpc":"2.0","id":6,"method":"resources/list","params":{}}`)
 	if code != http.StatusOK {
@@ -299,25 +299,25 @@ func (s stubMCPConfig) GetGroup(_ context.Context, key string) (*sysconfigcontra
 	}, nil
 }
 
-func newMCPEngineNoConfig(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool) (*gin.Engine, string) {
+func newMCPEngineNoConfig(t *testing.T, scopes []string, accountAllowed func(string) bool) (*gin.Engine, string) {
 	t.Helper()
 	return newMCPEngineCfg(t, scopes, accountAllowed, nil)
 }
 
 func TestMCPEndpointClosedByDefault(t *testing.T) {
-	e, token := newMCPEngineCfg(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true }, stubMCPConfig{})
+	e, token := newMCPEngineCfg(t, []string{string(orderenums.OrderList)}, func(string) bool { return true }, stubMCPConfig{})
 	if !closedByDefault(t, e, token) {
 		t.Fatal("未注入配置读取口时端点必须不可达")
 	}
 
-	e2, token2 := newMCPEngineNoConfig(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true })
+	e2, token2 := newMCPEngineNoConfig(t, []string{string(orderenums.OrderList)}, func(string) bool { return true })
 	if !closedByDefault(t, e2, token2) {
 		t.Fatal("不注入配置读取口时端点必须不可达")
 	}
 }
 
 func TestMCPEndpointClosedWhenConfigFails(t *testing.T) {
-	e, token := newMCPEngineCfg(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true }, stubMCPConfig{failing: true})
+	e, token := newMCPEngineCfg(t, []string{string(orderenums.OrderList)}, func(string) bool { return true }, stubMCPConfig{failing: true})
 	if !closedByDefault(t, e, token) {
 		t.Fatal("配置读取失败时必须按关闭处理")
 	}

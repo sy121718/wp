@@ -26,11 +26,11 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	json "go_wp/pkg/jsonx"
+	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -105,15 +105,15 @@ func newSEOAuditChain(t *testing.T) *seoAuditChain {
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
-			adminAuthz := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
+			adminAuthz := adminhttp.SetupAdminRoutes(mw.NewRouteGroup(api, mw.RouteProtected), db)
 
 			_ = engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				adminctx.PermContextMiddleware(adminAuthz))
 
-			authorizedAPI := permission.NewRouteGroup(
+			authorizedAPI := mw.NewRouteGroup(
 				api.Group("", builtin.SessionAuthMiddleware(), builtin.ActorContextMiddleware(),
-					builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+					builtin.CSRFMiddleware(), builtin.CasbinMiddleware()), mw.RouteProtected)
 
 			_ = pubhttp.SetupPublicationRoutes(authorizedAPI, db)
 		},

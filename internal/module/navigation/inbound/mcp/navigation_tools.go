@@ -8,7 +8,7 @@ import (
 
 	"go_wp/internal/mcp"
 	navigationdto "go_wp/internal/module/navigation/dto"
-	"go_wp/internal/permission"
+	navigationenums "go_wp/internal/module/navigation/enums"
 )
 
 type dirReader interface {
@@ -72,7 +72,7 @@ func navigationTree(r dirReader) mcp.Tool {
 			"而挂错父项会让一整块菜单跑到别人下面去。\n"+
 			"kind 是位置：header 页眉 / header_mobile 页眉移动端 / footer 页脚 / footer_mobile 页脚移动端；"+
 			"页眉与页脚是两棵独立的树。",
-		permission.NavigationList,
+		navigationenums.NavigationList,
 		mcp.Object("读导航树参数", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id（用 site_projects 拿）"),
 			"kind":      mcp.Enum("菜单位置", navKindHeader, navKindHeaderMobile, navKindFooter, navKindFooterMobile),
@@ -153,7 +153,7 @@ func navigationCreate(w dirWriter) mcp.Tool {
 			"`product` / `category` / `block`。选后几种时必须同时给 sourceId（用对应的\n"+
 			"查询工具拿），否则会被拒。\n"+
 			"path 是链接地址（custom 时必填）；target 是打开方式：self 当前窗口 / blank 新窗口。",
-		permission.NavigationCreate,
+		navigationenums.NavigationCreate,
 		mcp.Object("新增导航项参数", map[string]mcp.Schema{
 			"projectId":    mcp.String("工程 id（用 site_projects 拿）"),
 			"title":        mcp.String("菜单文字（与用户看到的一致）"),
@@ -235,7 +235,7 @@ func navigationUpdate(w dirWriter) mcp.Tool {
 			"**parentId 是三态**：不传 = 层级不动；传空串 = **提升为顶层项**；传 id = 挂到那一项下面。\n"+
 			"**panelBlockId 同样三态**：不传 = 不动；传空串 = **清除悬浮面板**（已有的面板要能撤销）。\n"+
 			"移动菜单项时注意别把父项挂到自己的子孙下面（会形成环，服务端会拒）。",
-		permission.NavigationUpdate,
+		navigationenums.NavigationUpdate,
 		mcp.Object("修改导航项参数", map[string]mcp.Schema{
 			"id":           mcp.String("导航项 id（用 navigation_tree 拿）"),
 			"title":        mcp.String("新菜单文字（可选）"),
@@ -306,7 +306,7 @@ func navigationDelete(w dirWriter) mcp.Tool {
 			"删之前先调 navigation_tree 确认这一项底下挂了什么 —— 层级是缩进显示的，"+
 			"看错一行就会连带删掉一整块菜单。\n"+
 			"只是不想让它显示时，先跟用户确认是不是要连子菜单一起删。",
-		permission.NavigationDelete,
+		navigationenums.NavigationDelete,
 		mcp.Object("删除导航项参数", map[string]mcp.Schema{
 			"id": mcp.String("导航项 id（用 navigation_tree 拿）"),
 		}, "id"),

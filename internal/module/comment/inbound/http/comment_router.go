@@ -5,13 +5,14 @@ import (
 	"gorm.io/gorm"
 
 	commentcontract "go_wp/internal/module/comment/contract"
+	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
-	"go_wp/internal/permission"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
-func SetupCommentRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
+func SetupCommentRoutes(rg *mw.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
 	projects commentProjectLister, entityTypes []commentcontract.EntityType) commentcontract.CommentService {
 	if rg == nil {
 		return nil
@@ -21,9 +22,9 @@ func SetupCommentRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *g
 
 	g := rg.Group("/comment")
 
-	g.GET("/list", permission.CommentList, handle.AdminList)
+	g.GET("/list", commentenums.CommentList, handle.AdminList)
 
-	g.POST("/review", permission.CommentReview, pageview.HTMLFragment, handle.Review)
+	g.POST("/review", commentenums.CommentReview, pageview.HTMLFragment, handle.Review)
 
 	SetupCommentPages(pages, svc, projects)
 

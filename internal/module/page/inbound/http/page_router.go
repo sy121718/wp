@@ -5,19 +5,20 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/adminui"
-	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
+	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/internal/permission"
+	"go_wp/pkg/builder/core"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
@@ -33,7 +34,7 @@ const (
 	PageTranslationMissesTemplate = "admin/page/page_translation_misses.html"
 )
 
-func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
+func SetupPageRoutes(rg *mw.RouteGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
 	projectService projectcontract.ProjectService,
@@ -59,29 +60,29 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	return svc
 }
 
-func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.RouterGroup,
+func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup,
 	handle *Handle, adminHandle *pagesAdminHandle,
 	svc pagecontract.PageService, projects projectcontract.ProjectService) {
 
-	g.POST("/create", permission.PageCreate, handle.Create)
-	g.GET("/list", permission.PageList, handle.List)
-	g.GET("/detail", permission.PageDetail, handle.Detail)
-	g.POST("/draft/save", permission.PageDraftSave, handle.SaveDraft)
+	g.POST("/create", pageenums.PageCreate, handle.Create)
+	g.GET("/list", pageenums.PageList, handle.List)
+	g.GET("/detail", pageenums.PageDetail, handle.Detail)
+	g.POST("/draft/save", pageenums.PageDraftSave, handle.SaveDraft)
 	// 译文保存是 JSON 写出口：写基座只对接 /api/ 端点（data-write-url 的契约）。
-	g.POST("/translations/save", permission.PageTranslationsSave, pageview.HTMLFragment, adminHandle.SavePageTranslations)
-	g.GET("/revision/list", permission.PageRevisionList, handle.ListRevisions)
-	g.POST("/build", permission.PageBuild, handle.Build)
-	g.POST("/publish", permission.PagePublish, handle.Publish)
-	g.POST("/rollback", permission.PageRollback, handle.Rollback)
-	g.POST("/url/update", permission.PageURLUpdate, handle.UpdateURL)
-	g.POST("/delete", permission.PageDelete, handle.Delete)
+	g.POST("/translations/save", pageenums.PageTranslationsSave, pageview.HTMLFragment, adminHandle.SavePageTranslations)
+	g.GET("/revision/list", pageenums.PageRevisionList, handle.ListRevisions)
+	g.POST("/build", pageenums.PageBuild, handle.Build)
+	g.POST("/publish", pageenums.PagePublish, handle.Publish)
+	g.POST("/rollback", pageenums.PageRollback, handle.Rollback)
+	g.POST("/url/update", pageenums.PageURLUpdate, handle.UpdateURL)
+	g.POST("/delete", pageenums.PageDelete, handle.Delete)
 
-	g.POST("/artifact/rebuild", permission.PageArtifactRebuild, handle.RebuildArtifact)
-	g.GET("/publication/audit", permission.PagePublicationAudit, handle.AuditPublication)
+	g.POST("/artifact/rebuild", pageenums.PageArtifactRebuild, handle.RebuildArtifact)
+	g.GET("/publication/audit", pageenums.PagePublicationAudit, handle.AuditPublication)
 
-	g.GET("/seo/patrol", permission.PageSEOPatrol, handle.SEOPatrol)
+	g.GET("/seo/patrol", pageenums.PageSEOPatrol, handle.SEOPatrol)
 
-	g.POST("/artifact/gc", permission.PageArtifactGc, handle.GarbageCollectArtifacts)
+	g.POST("/artifact/gc", pageenums.PageArtifactGc, handle.GarbageCollectArtifacts)
 
 	if pages == nil {
 		return
@@ -114,12 +115,12 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.TranslationMissCancel)
 
 	g.GET("/redirect",
-		permission.PageRedirectView,
+		pageenums.PageRedirectView,
 		pageview.UseRenderer(adminui.RenderPage),
 		handle.RedirectPage)
-	g.POST("/redirect/create", permission.PageRedirectCreate, pageview.HTMLFragment, handle.RedirectCreate)
-	g.POST("/redirect/delete", permission.PageRedirectDelete, pageview.HTMLFragment, handle.RedirectDelete)
-	g.POST("/redirect/merge", permission.PageRedirectMerge, pageview.HTMLFragment, handle.RedirectMerge)
+	g.POST("/redirect/create", pageenums.PageRedirectCreate, pageview.HTMLFragment, handle.RedirectCreate)
+	g.POST("/redirect/delete", pageenums.PageRedirectDelete, pageview.HTMLFragment, handle.RedirectDelete)
+	g.POST("/redirect/merge", pageenums.PageRedirectMerge, pageview.HTMLFragment, handle.RedirectMerge)
 	pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), pageview.HTMLFragment, handle.RedirectBulkDelete)
 
 }

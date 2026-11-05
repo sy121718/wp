@@ -10,7 +10,7 @@ import (
 	"go_wp/internal/mcp"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/permission"
+	pageenums "go_wp/internal/module/page/enums"
 )
 
 const pageMatchLimit = 15
@@ -34,7 +34,7 @@ func pageFind(reader pagecontract.PageQueryReader) mcp.Tool {
 			"标题前缀命中的排在前面 —— 用户说得越像页面名，第一条就越可能是他要的。\n"+
 			"结果里的路径（线上路径 / 草稿路径）可以直接拼成站内链接。\n"+
 			"要看页面里的内容、修订历史或 SEO 设置：本工具只给标题与路径，正文不在其中。",
-		permission.PageList,
+		pageenums.PageList,
 		mcp.Object("查页面参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"keyword":   mcp.String("线索：页面标题或路径的一部分（可选；不传则列出全部）"),
@@ -218,7 +218,7 @@ func pageCreate(w pageWriter) mcp.Tool {
 			"真正对外可见要再走 `page_publish`。\n"+
 			"想从模板起手可以给 blueprintId（用 blueprint 列表拿）—— "+
 			"蓝图是「用完即弃」的初始化输入，服务端会把结构复制一份到新页面。",
-		permission.PageCreate,
+		pageenums.PageCreate,
 		mcp.Object("新建页面参数", map[string]mcp.Schema{
 			"projectId":   mcp.String("工程 id（用 site_projects 拿）"),
 			"kind":        mcp.Enum("页面类型（只有功能页；内容页跟着内容走，不在这里建）", structuralKinds...),
@@ -280,7 +280,7 @@ func pagePublish(w pageWriter) mcp.Tool {
 			"单种语言失败不阻断其余语言（错误按语言逐条回传，回执会列出来）。\n"+
 			"发布可能要几秒（要跑构建）；这一步**会覆盖线下的同名路径**。"+
 			"发布后改动立刻对访客可见，改之前先跟用户确认。",
-		permission.PagePublish,
+		pageenums.PagePublish,
 		mcp.Object("发布页面参数", map[string]mcp.Schema{
 			"pageId":   mcp.String("页面 id（用 page_find 拿）"),
 			"lang":     mcp.String("发布哪种语言（可选；多语言站点用，如 zh-CN）"),
@@ -338,7 +338,7 @@ func pageURLUpdate(w pageWriter) mcp.Tool {
 			"「老地址 → 新地址」的跳转，保住已有的收藏与外部链接。"+
 			"**改动公开网址时基本都该置真**，除非你确定那个地址从没对外用过。\n"+
 			"多语言站点可以用 lang 只改某一种语言的路径；不传则改默认语言。",
-		permission.PagePublish,
+		pageenums.PagePublish,
 		mcp.Object("改页面网址参数", map[string]mcp.Schema{
 			"pageId":       mcp.String("页面 id（用 page_find 拿）"),
 			"newPath":      mcp.String("新的线上路径，以 / 开头，如 /about-us"),
@@ -379,7 +379,7 @@ func pageDelete(w pageWriter) mcp.Tool {
 			"（前台找不到对应页面时会回落到默认模板）。这类页面只该改内容，不该删。\n"+
 			"如果只是不想让它被访问到，通常有更合适的做法（改路径 + 跳转、或把内容替换掉），"+
 			"先问清楚用户的意图。",
-		permission.PageDelete,
+		pageenums.PageDelete,
 		mcp.Object("删除页面参数", map[string]mcp.Schema{
 			"pageId": mcp.String("页面 id（用 page_find 拿）"),
 		}, "pageId"),

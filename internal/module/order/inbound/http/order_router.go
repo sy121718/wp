@@ -18,11 +18,12 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 
-	"go_wp/internal/permission"
+	orderenums "go_wp/internal/module/order/enums"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 
-func SetupOrderRoutes(rg *permission.RouteGroup,
+func SetupOrderRoutes(rg *mw.RouteGroup,
 	db *gorm.DB,
 
 	product productcontract.ProductService,
@@ -70,49 +71,49 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 
 	g := rg.Group("/order")
 
-	g.GET("/list", permission.OrderList, h.ListOrders)
-	g.GET("/get", permission.OrderGet, h.GetOrder)
-	g.GET("/item/list", permission.OrderItemList, h.ListItems)
-	g.GET("/log/list", permission.OrderLogList, h.ListLogs)
+	g.GET("/list", orderenums.OrderList, h.ListOrders)
+	g.GET("/get", orderenums.OrderGet, h.GetOrder)
+	g.GET("/item/list", orderenums.OrderItemList, h.ListItems)
+	g.GET("/log/list", orderenums.OrderLogList, h.ListLogs)
 
-	g.POST("/create", permission.OrderCreate, pageview.HTMLFragment, h.CreateOrder)
-	g.POST("/status", permission.OrderStatus, pageview.HTMLFragment, h.ChangeStatus)
-	g.POST("/cancel", permission.OrderCancel, pageview.HTMLFragment, h.CancelOrder)
-	g.POST("/refund", permission.OrderRefund, pageview.HTMLFragment, h.RefundOrder)
+	g.POST("/create", orderenums.OrderCreate, pageview.HTMLFragment, h.CreateOrder)
+	g.POST("/status", orderenums.OrderStatus, pageview.HTMLFragment, h.ChangeStatus)
+	g.POST("/cancel", orderenums.OrderCancel, pageview.HTMLFragment, h.CancelOrder)
+	g.POST("/refund", orderenums.OrderRefund, pageview.HTMLFragment, h.RefundOrder)
 
-	g.POST("/note", permission.OrderNote, pageview.HTMLFragment, h.UpdateOrderNote)
+	g.POST("/note", orderenums.OrderNote, pageview.HTMLFragment, h.UpdateOrderNote)
 
 	cg := rg.Group("/order/coupon")
-	cg.GET("/list", permission.OrderCouponList, h.ListCoupons)
-	cg.GET("/get", permission.OrderCouponGet, h.GetCoupon)
-	cg.GET("/validate", permission.OrderCouponValidate, h.ValidateCoupon)
-	cg.GET("/redemption/list", permission.OrderCouponRedemption, h.ListCouponRedemptions)
+	cg.GET("/list", orderenums.OrderCouponList, h.ListCoupons)
+	cg.GET("/get", orderenums.OrderCouponGet, h.GetCoupon)
+	cg.GET("/validate", orderenums.OrderCouponValidate, h.ValidateCoupon)
+	cg.GET("/redemption/list", orderenums.OrderCouponRedemption, h.ListCouponRedemptions)
 
-	cg.GET("/count-audit", permission.OrderCouponCountAudit, h.AuditCouponCounts)
-	cg.POST("/create", permission.OrderCouponCreate, pageview.HTMLFragment, h.CreateCoupon)
-	cg.POST("/update", permission.OrderCouponUpdate, pageview.HTMLFragment, h.UpdateCoupon)
-	cg.POST("/delete", permission.OrderCouponDelete, pageview.HTMLFragment, h.DeleteCoupon)
+	cg.GET("/count-audit", orderenums.OrderCouponCountAudit, h.AuditCouponCounts)
+	cg.POST("/create", orderenums.OrderCouponCreate, pageview.HTMLFragment, h.CreateCoupon)
+	cg.POST("/update", orderenums.OrderCouponUpdate, pageview.HTMLFragment, h.UpdateCoupon)
+	cg.POST("/delete", orderenums.OrderCouponDelete, pageview.HTMLFragment, h.DeleteCoupon)
 
 	sg := rg.Group("/order/shipment")
-	sg.GET("/list", permission.OrderShipmentList, h.ListShipments)
-	sg.GET("/pending", permission.OrderPendingShip, h.ListPendingShip)
-	sg.GET("/form", permission.OrderShipForm, h.ShipForm)
-	sg.POST("/create", permission.OrderShip, pageview.HTMLFragment, h.ShipOrder)
+	sg.GET("/list", orderenums.OrderShipmentList, h.ListShipments)
+	sg.GET("/pending", orderenums.OrderPendingShip, h.ListPendingShip)
+	sg.GET("/form", orderenums.OrderShipForm, h.ShipForm)
+	sg.POST("/create", orderenums.OrderShip, pageview.HTMLFragment, h.ShipOrder)
 
 	carg := rg.Group("/order/carrier")
-	carg.GET("/list", permission.OrderCarrierList, h.ListCarriers)
-	carg.POST("/create", permission.OrderCarrierCreate, pageview.HTMLFragment, h.CreateCarrier)
-	carg.POST("/update", permission.OrderCarrierManage, pageview.HTMLFragment, h.UpdateCarrier)
+	carg.GET("/list", orderenums.OrderCarrierList, h.ListCarriers)
+	carg.POST("/create", orderenums.OrderCarrierCreate, pageview.HTMLFragment, h.CreateCarrier)
+	carg.POST("/update", orderenums.OrderCarrierManage, pageview.HTMLFragment, h.UpdateCarrier)
 
-	rg.GET("/order/currency/rate", permission.OrderCurrencyRateGet, h.GetCurrencyRate)
-	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, pageview.HTMLFragment, h.SetCurrencyRate)
+	rg.GET("/order/currency/rate", orderenums.OrderCurrencyRateGet, h.GetCurrencyRate)
+	rg.POST("/order/currency/rate", orderenums.OrderCurrencyRateSet, pageview.HTMLFragment, h.SetCurrencyRate)
 
 	rgp := rg.Group("/order/return")
-	rgp.GET("/list", permission.OrderReturnList, h.ListReturns)
-	rgp.GET("/get", permission.OrderReturnGet, h.GetReturn)
-	rgp.POST("/approve", permission.OrderReturnApprove, pageview.HTMLFragment, h.ApproveReturn)
-	rgp.POST("/reject", permission.OrderReturnReject, pageview.HTMLFragment, h.RejectReturn)
-	rgp.POST("/receive", permission.OrderReturnReceive, pageview.HTMLFragment, h.ReceiveReturn)
+	rgp.GET("/list", orderenums.OrderReturnList, h.ListReturns)
+	rgp.GET("/get", orderenums.OrderReturnGet, h.GetReturn)
+	rgp.POST("/approve", orderenums.OrderReturnApprove, pageview.HTMLFragment, h.ApproveReturn)
+	rgp.POST("/reject", orderenums.OrderReturnReject, pageview.HTMLFragment, h.RejectReturn)
+	rgp.POST("/receive", orderenums.OrderReturnReceive, pageview.HTMLFragment, h.ReceiveReturn)
 
 	SetupOrderPages(pages, svc, projects, product, warehouses, dict)
 
@@ -123,14 +124,14 @@ func SetupOrderPublicRoutes(router *gin.Engine, svc ordercontract.VisitorOrderPo
 	if router == nil || svc == nil {
 		return
 	}
-	publicAPI := permission.NewRouteGroup(router.Group("/api/site/orders", middleware...))
+	publicAPI := mw.NewRouteGroup(router.Group("/api/site/orders", middleware...), mw.RouteProtected)
 	publicAPI.Use(builtin.RequestRateLimitMiddleware(90, time.Minute), requireVisitorOrderUser())
 	h := &PublicHandle{svc: svc}
-	publicAPI.GET("", permission.Exempt, h.VisitorList)
-	publicAPI.GET("/detail", permission.Exempt, h.VisitorDetail)
-	publicAPI.GET("/returnable", permission.Exempt, h.VisitorReturnable)
-	publicAPI.GET("/returns", permission.Exempt, h.VisitorReturns)
-	publicAPI.POST("/returns", permission.Exempt, h.VisitorRequestReturn)
+	publicAPI.GET("", "", h.VisitorList)
+	publicAPI.GET("/detail", "", h.VisitorDetail)
+	publicAPI.GET("/returnable", "", h.VisitorReturnable)
+	publicAPI.GET("/returns", "", h.VisitorReturns)
+	publicAPI.POST("/returns", "", h.VisitorRequestReturn)
 }
 func requireVisitorOrderUser() gin.HandlerFunc {
 	return func(c *gin.Context) {

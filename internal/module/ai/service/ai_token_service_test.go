@@ -13,7 +13,7 @@ import (
 	"go_wp/pkg/crypto"
 )
 
-func tokenTestScopeOK(p string) bool {
+func tokenTestScopeOK(_ context.Context, p string) bool {
 	return p == "order:list" || p == "ai:chat"
 }
 

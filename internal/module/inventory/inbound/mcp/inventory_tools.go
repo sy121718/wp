@@ -10,7 +10,6 @@ import (
 	"go_wp/internal/module/inventory/contract"
 	"go_wp/internal/module/inventory/dto"
 	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
 )
 
@@ -42,7 +41,7 @@ func stockFind(reader inventorycontract.StockReader) mcp.Tool {
 			"**必须看 trackQuantity**：它为 false 时这个 SKU 不跟踪数量（卖多少都不会少），"+
 			"此时 quantity 的 0 表示「无限」而不是「没货」—— 说成缺货会让人去做一次没必要的补货。\n"+
 			"要仓库清单用 warehouse_list。要「什么时候动的」用 stock_movements（本工具只有当前存量）。",
-		permission.InventoryStockList,
+		inventoryenums.InventoryStockList,
 		mcp.Object("查库存参数", map[string]mcp.Schema{
 			"projectId":   mcp.String("站点工程 id（uuid）"),
 			"warehouseId": mcp.String("限定某个仓库（可选）"),
@@ -141,7 +140,7 @@ func warehouseList(reader inventorycontract.StockReader) mcp.Tool {
 		"列出站点工程的仓库，用于回答「有几个仓」「默认仓是哪个」「有第三方仓吗」。\n"+
 			"库存工具（stock_find）的结果里带仓库名，但用户会直接问仓库本身 —— "+
 			"而且一个仓库还没建任何库存时，只有这个工具答得出来。",
-		permission.InventoryWarehouseList,
+		inventoryenums.InventoryWarehouseList,
 		mcp.Object("列仓库参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 		}, "projectId"),
@@ -227,7 +226,7 @@ func reasonCreate(w inventorycontract.ReasonWriter) mcp.Tool {
 			"code 只能用小写字母、数字、下划线（1–32 个字符），且在**整个工程内唯一** —— "+
 			"内置原因也占这个命名空间，叫 purchase_in 之类会被拒。\n"+
 			"建之前先用 stock_reasons 看看内置的够不够用：能用内置就别新建，少一个自定义原因就少一处将来对不上账的地方。",
-		permission.InventoryReasonCreate,
+		inventoryenums.InventoryReasonCreate,
 		mcp.Object("新建变动原因参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid，必填）"),
 			"code":      mcp.String("原因代码（小写字母 / 数字 / 下划线，1–32 字符，工程内唯一且不能与内置撞名）"),
@@ -282,7 +281,7 @@ func reasonUpdate(w inventorycontract.ReasonWriter) mcp.Tool {
 			"**停用不是删除**：停用后它不再出现在新建变动的可选列表里，但历史流水仍然引用它的 code，"+
 			"所以旧记录照常能显示 —— 回答里别把它说成「删掉了」。\n"+
 			"reasonId 用 stock_reasons 拿到的 id（不是 code）。",
-		permission.InventoryReasonUpdate,
+		inventoryenums.InventoryReasonUpdate,
 		mcp.Object("修改变动原因参数", map[string]mcp.Schema{
 			"reasonId":  mcp.String("要改的原因 id（用 stock_reasons 拿到的 id，不是 code）"),
 			"projectId": mcp.String("站点工程 id（uuid，可选：只有一个工程时可以不带）"),
@@ -370,7 +369,7 @@ func stockReasons(r inventorycontract.StockReader) mcp.Tool {
 		"列出可用的库存变动原因（code 与中文名）。**做任何库存变动之前先调它**："+
 			"ChangeStock 要求 reasonCode 与变动方向匹配，而可用的 code 由内置项与各工程自建项共同决定，"+
 			"猜一个会被拒。direction 可以不传（不传则三个方向的原因都列出来）。",
-		permission.InventoryReasonList,
+		inventoryenums.InventoryReasonList,
 		mcp.Object("查变动原因参数", map[string]mcp.Schema{
 			"projectId": mcp.String("站点工程 id（uuid）"),
 			"direction": mcp.Enum("只看某个方向的原因（可选）", inventoryenums.DirectionIn, inventoryenums.DirectionOut, inventoryenums.DirectionAdjust),
@@ -461,7 +460,7 @@ func stockChange(w inventorycontract.StockWriter, r inventorycontract.StockReade
 			"不确定就先调 stock_find 或 product_find 拿到 variantId。\n"+
 			"每一次变动都会写一条不可删除的库存流水（谁、什么时候、因为什么、变动前后各多少），"+
 			"所以执行前请与用户确认清楚仓库、变体与数量。",
-		permission.InventoryStockChange,
+		inventoryenums.InventoryStockChange,
 		mcp.Object("库存变动参数", map[string]mcp.Schema{
 			"projectId":   mcp.String("站点工程 id（uuid）"),
 			"warehouseId": mcp.String("仓库 id（必填）。不确定就先调 warehouse_list —— 只有一个仓时它会把默认仓标出来。"),

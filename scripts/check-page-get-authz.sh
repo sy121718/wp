@@ -93,11 +93,12 @@ def scan(text):
 
 
 def has_declaration(source, constants, key, entry):
+    """声明与常量都必须存在：声明改为 middleware.DeclareRoute 的 RouteSpec 字面量。"""
     method, obj = key
     perm, symbol, _ = entry
-    declaration = (r'permission\.Declare\(\s*http\.Method' + re.escape(method.title()) +
-                   r'\s*,\s*"' + re.escape(obj) + r'"\s*,\s*permission\.' + re.escape(symbol) + r'\s*\)')
-    constant = r'\b' + re.escape(symbol) + r'\s+Perm\s*=\s*"' + re.escape(perm) + r'"'
+    declaration = (r'(?:mw|middleware)\.DeclareRoute\(\s*(?:mw\.)?RouteSpec\{[^}]*?Path:\s*"' + re.escape(obj) +
+                   r'"[^}]*?Perm:\s*(?:[a-z]+enums|permission)\.' + re.escape(symbol))
+    constant = r'\b' + re.escape(symbol) + r'\s*=\s*"' + re.escape(perm) + r'"'
     return bool(re.search(declaration, uncomment(source)) and re.search(constant, uncomment(constants)))
 
 
@@ -176,11 +177,11 @@ def self_test():
     pc = {('/overview', pk[1], pk[0])}
     expect('retained page object', check(c=pc, m=pm, r={pk}, p={pk:'overview:view'}, d={pk}), False)
     expect('unregistered page object', check(c=pc, m=pm, r={pk}), True)
-    decl = 'permission.Declare(http.MethodGet, "/api/a", permission.A)'
+    decl = 'mw.DeclareRoute(mw.RouteSpec{Method: http.MethodGet, Path: "/api/a", Perm: aenums.A})'
     entry = ('a:view','A','')
-    expect('source declaration', not has_declaration(decl, 'A Perm = "a:view"', a, entry), False)
-    expect('commented declaration', has_declaration('// '+decl, 'A Perm = "a:view"', a, entry), False)
-    expect('deleted declaration source', has_declaration('', 'A Perm = "a:view"', a, entry), False)
+    expect('source declaration', not has_declaration(decl, 'A = "a:view"', a, entry), False)
+    expect('commented declaration', has_declaration('// '+decl, 'A = "a:view"', a, entry), False)
+    expect('deleted declaration source', has_declaration('', 'A = "a:view"', a, entry), False)
     print('Page authz self-tests: %d passed' % count)
 
 
@@ -198,15 +199,16 @@ try:
         raise ValueError('empty or malformed input inventories')
     exemptions = {x.split('#',1)[0].strip() for x in pathlib.Path('scripts/page-get-authz-allow.txt').read_text().splitlines()}
     exemptions.discard('')
-    for required in ('internal/permission/codes.go',
-                     'internal/routers/testdata/routes.snapshot',
+    constants_files = sorted(pathlib.Path('internal/module').glob('*/enums/permission_codes.go'))
+    if not constants_files:
+        raise ValueError('required input missing: internal/module/*/enums/permission_codes.go')
+    for required in ('internal/routers/testdata/routes.snapshot',
                      'scripts/page-get-authz-allow.txt'):
         if not pathlib.Path(required).is_file():
             raise ValueError('required input missing: '+required)
-    constants_path = pathlib.Path('internal/permission/codes.go')
-    constants = constants_path.read_text()
+    constants = '\n'.join(p.read_text() for p in constants_files)
     if not constants.strip():
-        raise ValueError('empty permission codes source: %s' % constants_path)
+        raise ValueError('empty permission codes sources: %s' % constants_files)
     declarations = {key for key, entry in {**VIRTUAL, **PAGE_OBJECTS}.items()
                     if has_declaration(pathlib.Path(entry[2]).read_text(), constants, key, entry)}
     errors = validate(code, menu, routes, exemptions,

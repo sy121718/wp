@@ -3,9 +3,9 @@ package navigationhttp
 import (
 	"context"
 	"errors"
-	json "go_wp/pkg/jsonx"
 	"go_wp/internal/templates"
 	"go_wp/internal/text"
+	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -555,7 +555,7 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 	}
 
 	apiRouter := readFile("navigation_router.go")
-	if !strings.Contains(apiRouter, `g.POST("/update", permission.NavigationUpdate, pageview.HTMLFragment, handle.Update)`) {
+	if !strings.Contains(apiRouter, `g.POST("/update", navigationenums.NavigationUpdate, pageview.HTMLFragment, handle.Update)`) {
 		t.Fatal("译文写必须挂在调度的 POST /api/navigation/translations 上")
 	}
 
