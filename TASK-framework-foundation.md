@@ -415,6 +415,10 @@ pkg/database/{retention,partition}
   - `internal/builder/richtext` 的测试迁入 `pkg/builder/richdoc`（外部测试包）。
   - 新增门禁：13 个业务类型必须能同时从 `core.NodeViewBuilderOf` 与组件注册表命中。
   - SPEC/README/architecture 的旧路径同步。
+- 收尾清退（第五批，已完成）：
+  - `internal/shell`、`internal/backref` 整包删除；九处 RenderJump 改 `view.SuccessWith`/`view.FailMessage`（后者新增），回跳声明归发起页面；`backref.BackPath` 的 10 个消费者改 `pkg/backpath.FromRequest`（fallback/scene 显式传入）。`check-shell-migration.sh` 从计数基线改为终局断言并删除基线文件。
+  - `internal/text` 并入 `pkg/view/jet`（`Lang`/`RequestTranslateFunc`/`Scope`/`AttachScope`/`Inject`/`FactOf`/`RequestURI`/`LangRedirect`/`SetRequestUserID`）；126 个消费者改用 `text "go_wp/pkg/view/jet"` 别名，调用点零改动；注入测试随迁。
+  - `internal/adminui` 清退纯转发：`PageAuthz`/`PageAuthzAs`（81 处）直连 `pkg/middleware`；`Msg`/`MsgText` 直连 `facing`/`response`；页面错误三出口迁入 `pkg/response`（`BadRequestForPage`/`InternalErrorForPage`/`InternalText`），测试同批迁移。
 - 文档与门禁：`AGENTS.md` 权限段、`internal/module/admin/SPEC.md`、`pkg/CLAUDE.md` 同步；`check-page-get-authz.sh` 改为拼接模块 enums 并识别 `DeclareRoute`；`check-page-endpoint-authz.py` 的声明式判据改为「模块 enums 限定符或空串」。
 - 冻结与豁免（第四批）：
   - `pkg/middleware` 增加 `Freeze`/`Frozen` 与 `ExemptGET`/`ExemptPOST`；装配在全部路由与工具登记**之后**冻结，迟到登记 panic；空权限只允许用于 `RouteExempt`，豁免声明不得携带权限码。
