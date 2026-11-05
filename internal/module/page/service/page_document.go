@@ -648,8 +648,10 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 
 	projectID, currentPath := s.pageContextOfWithDefault(ctx, in.PageID, in.Lang, planDefaultLang(in.Plan))
 
+	// 发布内核只收中立诊断；collector 是构建器侧的实现，在应用适配层持有。
+	diags := builder.NewDegradeCollector()
 	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang, in.Usage, true,
-		builder.CompileModePublish, in.Diagnostics, in.Plan,
+		builder.CompileModePublish, diags, in.Plan,
 		s.buildActionOptions(ctx, projectID, in.Lang, in.PageID, in.Path))
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
@@ -657,6 +659,7 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 		}
 		return nil, err
 	}
+	in.Diagnostics.Replace(diagnosticsOf(diags.Items()))
 	s.syncMediaRefs(ctx, in.PageID, currentPath, html)
 	return html, nil
 }
@@ -774,7 +777,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 
 	if usage != nil {
-		opts = append(opts, builder.WithUsageRecorder(usage))
+		opts = append(opts, builder.WithUsageRecorder(pipeline.NewActionUsage(usage)))
 	}
 
 	opts = append(opts, extra...)
@@ -1208,4 +1211,19 @@ func deactivationOldPathsFromData(raw []byte) []string {
 		return []string{probe.OldPath}
 	}
 	return probe.OldPaths
+}
+
+// diagnosticsOf 把构建器的降级诊断转成发布内核的中立事实。
+func diagnosticsOf(items []builder.Degrade) []publish.Diagnostic {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]publish.Diagnostic, 0, len(items))
+	for _, d := range items {
+		out = append(out, publish.Diagnostic{
+			Slot: d.Slot, NodeID: d.NodeID, NodeType: d.NodeType,
+			Kind: string(d.Kind), RefID: d.RefID, Reason: d.Reason,
+		})
+	}
+	return out
 }

@@ -23,7 +23,8 @@ func newPublisherEnv(t *testing.T, opts ...pipeline.Option) (*pipeline.Publisher
 	root := t.TempDir()
 	store := &publish.LocalStore{Root: root}
 	pub := &publish.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public/active")}
-	p := pipeline.NewPublisher(store, pub, opts...)
+	// 不注入编译函数就构建会显式失败；测试统一用应用默认编译。
+	p := pipeline.NewPublisher(store, pub, append([]pipeline.Option{pipeline.WithCompile(pipeline.DefaultCompile)}, opts...)...)
 	return p, store, pub, root
 }
 

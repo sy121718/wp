@@ -237,7 +237,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	compileOpts = append(compileOpts, pipeline.ClientAssetOptions()...)
 
 	if usage != nil {
-		compileOpts = append(compileOpts, builder.WithUsageRecorder(usage))
+		compileOpts = append(compileOpts, builder.WithUsageRecorder(pipeline.NewActionUsage(usage)))
 	}
 
 	slotRes, slotErr := pipeline.BuildStructureSlots(ctx, pipeline.StructureSlotInput{

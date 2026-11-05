@@ -22,12 +22,12 @@ func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	usage := &CompileUsage{}
+	usage := publish.NewCompileUsage()
 	resolved := func(node *core.Node, key string) (core.ResolvedAction, error) {
 		target := node.Actions[key]
 		return core.ResolvedAction{Kind: target.Kind, URL: "/published-" + string(target.Kind)}, nil
 	}
-	compiled, err := builder.Compile(page, builder.WithProjectID("p"), builder.WithComponentSet(set), builder.WithUsageRecorder(usage), builder.WithActionResolver(resolved), builder.WithCompileMode(builder.CompileModePublish))
+	compiled, err := builder.Compile(page, builder.WithProjectID("p"), builder.WithComponentSet(set), builder.WithUsageRecorder(NewActionUsage(usage)), builder.WithActionResolver(resolved), builder.WithCompileMode(builder.CompileModePublish))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,13 +35,13 @@ func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testi
 		t.Fatal("动作必须确实被组件输出")
 	}
 	expected := []publish.Dependency{{Kind: publish.DepKindPageTarget, Key: "page_target:chosen-page"}, {Kind: publish.DepKindPresentationTarget, Key: "presentation_target:chosen-instance"}}
-	if got := ActionTargetDependencies(usage); !reflect.DeepEqual(got, expected) {
+	if got := publish.ActionTargetDependencies(usage); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("实际消费目标与依赖必须等式: got=%+v want=%+v", got, expected)
 	}
 
 	ctx := &core.RenderContext{}
-	empty := &CompileUsage{}
-	ctx.SetUsageRecorder(empty)
+	empty := publish.NewCompileUsage()
+	ctx.SetUsageRecorder(NewActionUsage(empty))
 	ctx.SetActionResolver(func(*core.Node, string) (core.ResolvedAction, error) {
 		return core.ResolvedAction{}, fmt.Errorf("未发布")
 	})
@@ -51,7 +51,7 @@ func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testi
 	ctx.UseActionTarget(core.ActionExternal, "outside")
 	ctx.UseActionTarget(core.ActionLocal, "part")
 	ctx.UseActionTarget(core.ActionInstance, "same-page-node")
-	if len(ActionTargetDependencies(empty)) != 0 {
+	if len(publish.ActionTargetDependencies(empty)) != 0 {
 		t.Fatal("失败/本地/外链不能制造跨页依赖")
 	}
 }

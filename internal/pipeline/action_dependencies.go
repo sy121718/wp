@@ -1,13 +1,12 @@
 package pipeline
 
 import (
-	"go_wp/pkg/publish"
-	"sort"
-	"strings"
-
 	"go_wp/pkg/builder/core"
+	"go_wp/pkg/publish"
 )
 
+// PageTargetKey / PresentationTargetKey 是应用侧依赖键构造；
+// 依赖键本身是发布内核的中立形状。
 func PageTargetKey(id string) publish.DepKey {
 	return publish.DepKey{Kind: publish.DepKindPageTarget, Key: "page_target:" + id}
 }
@@ -15,47 +14,41 @@ func PresentationTargetKey(id string) publish.DepKey {
 	return publish.DepKey{Kind: publish.DepKindPresentationTarget, Key: "presentation_target:" + id}
 }
 
-func (u *CompileUsage) UseActionTarget(kind core.ActionKind, id string) {
-	id = strings.TrimSpace(id)
-	if u == nil || id == "" || (kind != core.ActionPage && kind != core.ActionPresentation) {
-		return
-	}
-	if u.ActionTargets == nil {
-		u.ActionTargets = map[core.ActionKind]map[string]bool{}
-	}
-	if u.ActionTargets[kind] == nil {
-		u.ActionTargets[kind] = map[string]bool{}
-	}
-	u.ActionTargets[kind][id] = true
+// ActionUsage 把发布内核的用量记录适配成构建器认识的接口。
+//
+// 构建器的 core.ActionKind 是它自己的字符串类型；pkg/publish 不认识 builder，
+// 由应用在接线处做一次显式转换，避免为了一个方法把 builder 拖进发布内核。
+type ActionUsage struct {
+	*publish.CompileUsage
 }
 
-func ActionTargetDependencies(u *CompileUsage) []publish.Dependency {
+// NewActionUsage 返回同时满足构建器 UsageRecorder 与动作目标记录的用量对象。
+//
+// 传入值既可能是发布内核的用量对象，也可能是别的 UsageRecorder 实现；
+// 显式断言失败时原样返回调用方的 recorder，不悄悄换成另一份空用量。
+func NewActionUsage(u core.UsageRecorder) core.UsageRecorder {
 	if u == nil {
-		return nil
+		return &ActionUsage{CompileUsage: &publish.CompileUsage{}}
 	}
-	var out []publish.Dependency
-	for kind, ids := range u.ActionTargets {
-		for id, used := range ids {
-			if !used {
-				continue
-			}
-			var key publish.DepKey
-			switch kind {
-			case core.ActionPage:
-				key = PageTargetKey(id)
-			case core.ActionPresentation:
-				key = PresentationTargetKey(id)
-			default:
-				continue
-			}
-			out = append(out, publish.Dependency{Kind: key.Kind, Key: key.Key})
-		}
+	if cu, ok := u.(*publish.CompileUsage); ok {
+		return &ActionUsage{CompileUsage: cu}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Kind == out[j].Kind {
-			return out[i].Key < out[j].Key
-		}
-		return out[i].Kind < out[j].Kind
-	})
-	return out
+	return u
+}
+
+// UseActionTarget 实现 core.ActionTargetUsageRecorder。
+func (u *ActionUsage) UseActionTarget(kind core.ActionKind, id string) {
+	if u == nil || u.CompileUsage == nil {
+		return
+	}
+	var mapped publish.ActionTargetKind
+	switch kind {
+	case core.ActionPage:
+		mapped = publish.ActionTargetPage
+	case core.ActionPresentation:
+		mapped = publish.ActionTargetPresentation
+	default:
+		return
+	}
+	u.CompileUsage.UseActionTarget(mapped, id)
 }
