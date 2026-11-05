@@ -30,7 +30,6 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	lang := "zh-CN"
 	data := gin.H{
-		"title":         seoPageTitle,
 		"menu":          "seo",
 		"csrf_token":    "test-token",
 		"lang":          lang,
@@ -45,8 +44,8 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 		"Paths": []analyticscontract.PathCount{
 			{Path: "/guides/seo", Views: 42, Visitors: 17},
 		},
-		"HasPaths": true, "AnalyticsError": false,
-		"Buttons": map[string]bool{"seo.audit": true},
+		"HasPaths": true,
+		"Buttons":  map[string]bool{"seo.audit": true},
 	}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
@@ -82,11 +81,11 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 	lang := "zh-CN"
 	base := gin.H{
-		"title": seoPageTitle, "menu": "seo", "csrf_token": "test-token",
+		"menu": "seo", "csrf_token": "test-token",
 		"lang": lang, "t": templates.TranslateFunc(lang),
 		"langs": templates.LanguageOptions(lang), "lang_redirect": "/admin/seo",
 		"Projects": []projectcontract.ProjectResp{}, "SelectedProject": "",
-		"Paths": []analyticscontract.PathCount{}, "HasPaths": false, "AnalyticsError": false, "Buttons": map[string]bool{},
+		"Paths": []analyticscontract.PathCount{}, "HasPaths": false, "Buttons": map[string]bool{},
 	}
 	body := renderAdminTemplate(t, "admin/analytics/seo.html", base)
 	if strings.Contains(body, `data-write-url="/api/publication/seo-audit"`) {

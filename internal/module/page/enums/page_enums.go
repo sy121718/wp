@@ -1,8 +1,11 @@
 package pageenums
 
-import "go_wp/pkg/facing"
+import (
+	"strings"
 
-import "strings"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
+)
 
 const (
 	ErrActionTargetInUse = "page.err.actionTargetInUse"
@@ -85,7 +88,7 @@ const (
 	BulkRedirectPartial      = "page.bulk.redirectPartial"
 )
 
-const MsgInternalError = "MsgInternalError"
+const MsgInternalError = response.InternalKey
 
 const (
 	PageKindHome     = "home"
@@ -127,41 +130,38 @@ func ValidatePageContentContract(kind, targetType string, targetID *string) bool
 	}
 }
 
-var errFallbacks = map[string]string{
-	ErrActionTargetInUse:        "这个目标仍被页面或区块引用，请先替换引用后再删除",
-	ErrPageLangExcluded:         "该语言已从这一页的产出范围里排除，请先恢复再发布",
-	ErrCannotExcludeDefaultLang: "站点默认语言不能排除：产物的原文就是它",
-	ErrLangAlreadyExcluded:      "该语言已经被排除过了",
-	ErrLangNotExcluded:          "该语言没有被排除，无需恢复",
-	ErrInvalidParam:             "请求参数无效",
-	ErrPageNotFound:             "页面不存在",
-	ErrProjectNotFound:          "工程不存在",
-	ErrProjectRequired:          "请先选择要操作的站点工程",
-	ErrInvalidKind:              "不支持的页面类型",
-	ErrInvalidDocument:          "页面草稿文档不合法",
-	ErrInvalidPath:              "页面访问路径不合法",
-	ErrDraftVersionConflict:     "草稿版本已更新，请刷新后重试",
-	ErrPathOccupied:             "页面访问路径已被占用",
-	ErrRevisionNotFound:         "修订版本不存在或已被清理",
-	ErrBlueprintUnavailable:     "蓝图能力未接入，暂时无法从蓝图创建页面",
-	ErrBlueprintInvalid:         "蓝图不存在或没有可用版本，请换一个蓝图",
-	ErrNoStagedArtifact:         "无暂存产物，请先构建",
-	ErrRollbackTargetMiss:       "回滚目标产物不存在",
-	ErrRebuildRequired:          "草稿已变更，请重新构建后再发布",
-	ErrInputMoved:               "编译期间内容已更新，本次发布已取消，请重新构建后再发布",
-	ErrRebuildOverloaded:        "本轮需要重建的页面超过单批上限，其余已排入队列",
-	ErrInvalidSlot:              "槽位键不在允许范围内，请回到列表页重新选择",
-	ErrSlotPageMiss:             "要绑定的页面不存在、已被删除，或不属于当前工程",
-	ErrRedirectUnavailable:      "重定向能力未接入，暂时无法管理重定向",
-	ErrRedirectNotFound:         "该重定向不存在，可能已被删除",
-	ErrRedirectOccupied:         "源路径已被占用，不能为它重复配置重定向",
-	ErrRedirectTargetMiss:       "目标路径不存在或尚未激活，请先确认目标页面已发布",
-	ErrRedirectLoop:             "该重定向会形成循环跳转，已拒绝",
-	ErrRedirectConflict:         "该重定向刚被其它操作改动，请刷新后重试",
+// StatusOf 是这些业务错误的状态码**唯一事实源**：Err(key) 在声明处就把状态包进去，
+// 出口（response.ErrorStatusAuto）只读声明，不再有一层手写的 errors.Is 映射表。
+// 分类按 AGENTS：400 参数错 / 404 不存在 / 409 冲突与版本 / 503 依赖不可用。
+// 未登记的 key（ErrActionTargetInUse、Msg* 界面词条）返回 0，表示「不声明」，由出口兜底。
+func StatusOf(key string) int {
+	switch key {
+	case ErrInvalidParam, ErrInvalidKind, ErrInvalidDocument, ErrInvalidPath,
+		ErrProjectRequired, ErrInvalidSlot, ErrRedirectLoop, ErrRedirectTargetMiss,
+		ErrBlueprintInvalid:
+		return 400
+	case ErrPageNotFound, ErrProjectNotFound, ErrRollbackTargetMiss,
+		ErrRevisionNotFound, ErrRedirectNotFound, ErrSlotPageMiss:
+		return 404
+	case ErrNoStagedArtifact, ErrDraftVersionConflict, ErrPathOccupied, ErrRebuildRequired,
+		ErrInputMoved, ErrPageLangExcluded, ErrCannotExcludeDefaultLang,
+		ErrLangAlreadyExcluded, ErrLangNotExcluded, ErrRedirectConflict, ErrRedirectOccupied:
+		return 409
+	case ErrBlueprintUnavailable, ErrRebuildOverloaded, ErrRedirectUnavailable:
+		return 503
+	default:
+		return 0
+	}
 }
 
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+func Err(key string) error {
+	err := facing.New(key)
+	if status := StatusOf(key); status != 0 {
+		return facing.WithStatus(err, status)
+	}
+	return err
+}
 
-func FallbackFor(key string) string { return errFallbacks[key] }
-
+// ActionTargetInUse 单独包 409：它的 key 是点分形式，但状态码不在 StatusOf 表里
+// （那张表只覆盖裸常量名的业务错误），所以保留这条显式包装，避免改走 StatusOf 后丢状态。
 func ActionTargetInUse() error { return facing.WithStatus(Err(ErrActionTargetInUse), 409) }

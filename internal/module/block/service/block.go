@@ -254,8 +254,10 @@ func (e *versionConflictError) Error() string { return blockenums.ErrBlockVersio
 func (e *versionConflictError) Is(target error) bool {
 	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
 }
+
+// Facing 交「key|参数」：版本号是位置参数，由失败片段取词填进完整句。
 func (e *versionConflictError) Facing() (string, string) {
-	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
+	return blockenums.ErrBlockVersionConflict + "|" + strconv.FormatInt(e.version, 10), ""
 }
 
 func (e *versionConflictError) Version() string { return strconv.FormatInt(e.version, 10) }

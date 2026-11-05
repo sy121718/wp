@@ -79,7 +79,7 @@ func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string, l
 			q = q.Where("kind = ?", kind)
 		}
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
+			q = q.Where(`name ILIKE ? ESCAPE '\'`, literalKeywordPattern(keyword))
 		}
 		q = q.Order("sort ASC, create_time ASC, id ASC")
 		if limit > 0 {
@@ -98,7 +98,7 @@ func (m *Model) CountTags(ctx context.Context, projectID, kind, keyword string) 
 			q = q.Where("kind = ?", kind)
 		}
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
+			q = q.Where(`name ILIKE ? ESCAPE '\'`, literalKeywordPattern(keyword))
 		}
 		return q.Count(&n).Error
 	})

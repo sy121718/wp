@@ -1,45 +1,24 @@
 #!/usr/bin/env python3
 """对账写表单和可覆盖提交端点的字段契约。"""
-import json, os, re, sys
+import hashlib
+import json
+import os
+import re
+import sys
 from functools import lru_cache
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 contracts = json.load(open(sys.argv[1], encoding='utf-8'))
-root = sys.argv[2] if len(sys.argv) > 2 else 'internal/templates/admin'
-
-# 不在契约里的端点。每条都要写理由 —— 这里都是「形状分派型」写端点：
-# handler 用裸 JSON map（map[string]json.RawMessage）按**顶层键**决定走哪条分支，
-# 而不是 `binding.JSON[T]` 绑一个固定 DTO，所以契约生成器取不到字段表。
-# 它们的字段契约由各自的 handler 测试与 feature chain 守，不由本门禁守。
-EXEMPT_ENDPOINTS = {
-    # 裸 JSON map + 形状分派（单档 / 批档并集）：字段表在 handler 里按分支判。
-    '/api/order/status': '裸 JSON map：单档/批档按顶层键分派（order_write.go）',
-    '/api/order/cancel': '同上',
-    '/api/order/note': '同上',
-    '/api/order/refund': '同上',
-    '/api/order/coupon/delete': '同上',
-    '/api/navigation/create': '裸 JSON map：action=addSource 形状分派',
-    '/api/navigation/update': '同上',
-    '/api/navigation/delete': '同上',
-    '/api/mail/contact/save': '裸 JSON map：含 tags 数组与 consent 分支',
-    '/api/mail/contact/delete': '同上',
-    '/api/customer/status': '裸 JSON map：批量/单档形状分派',
-    '/api/membership/assign/set': '裸 JSON map：手动分配与解锁两档',
-    '/api/membership/assign/unlock': '同上',
-    '/api/i18n/save': '裸 JSON map：单条/批量词条写入',
-    '/api/contenttemplate/delete': '仅路径/单 id，无请求体字段',
-    # 泛型写辅助函数：binding 包在 helper[T] 里，类型实参在调用处的函数字面量中，
-    # 生成器已能追（dtoFromGenericHelperCall），但下面这些的 helper 签名更绕，暂未覆盖。
-    '/api/product/attribute/set-values': '泛型辅助：逐值行由前端的 data-write-rows 组装',
-    '/api/product/bundle/set': '泛型辅助：成员表由 data-write-rows + builder 组装',
-    '/api/product/variant/save': '泛型辅助：变体行由 builder 组装',
-    '/api/product/detail-template/update-url': '泛型辅助',
-    '/api/product/detail-template/reapply-preset': '泛型辅助',
-    '/api/product/detail-template/rollback-document': '泛型辅助',
-}
+root = sys.argv[2] if len(sys.argv) > 2 else 'internal/templates'
+prefix = sys.argv[3] if len(sys.argv) > 3 else ''
+if not Path(root).is_dir():
+    sys.exit(f'字段门禁未检查：模板目录不存在：{root}')
 
 violations = 0
 checked_forms = 0
+checked_templates = 0
 
 
 def strip_comments(src):
@@ -132,130 +111,239 @@ def expand_template(path, source=None, blocks=None, active=()):
     return JET_TAG.sub(expand_tag, source)
 
 
-def form_fields(block):
-    """提取具名控件，ids[] 与动态行容器使用 DTO 顶层字段名。"""
-    names = []
-    for m in re.finditer(r'<input\b[^>]*>|<select\b[^>]*>|<textarea\b[^>]*>', block, re.S):
-        tag = m.group(0)
-        input_type = attribute(tag, 'type').lower()
-        if input_type in ('submit', 'button', 'reset', 'image'):
-            continue
-        nm = re.search(r'\bname="([^"]+)"', tag)
-        if not nm:
-            continue
-        name = nm.group(1)
-        if '{{' in name:      # 动态名（如 {{f.Name}}）交给运行时
-            continue
-        if name == 'csrf_token':
-            continue
-        names.append("ids" if name == "ids[]" else name)
-    # 容器名按 write-base.js 的声明语法解析，不把选择器和驱动字段当 DTO 字段。
-    for kind, value in re.findall(r'\b(data-write-rows|data-write-object|data-transfer-lines-name)="([^"]+)"', block):
-        if '{{' in value:
-            continue
-        parts = [part.strip() for part in value.split(';')]
-        if kind == 'data-transfer-lines-name':
-            names.append(value)
-        elif kind == 'data-write-rows' and len(parts) >= 2:
-            names.append(parts[2] if len(parts) > 2 and parts[2] else 'rows')
-        elif kind == 'data-write-object' and len(parts) >= 3:
-            names.append(parts[1])
-    return names
+WRITE_METHODS = ('post', 'put', 'patch', 'delete')
 
 
-def attribute(source, name, default=''):
-    found = re.search(r'\b' + re.escape(name) + r'="([^"]*)"', source)
-    return found.group(1) if found else default
+def write_endpoint(attrs):
+    for method in WRITE_METHODS:
+        if attrs.get('hx-' + method):
+            return method.upper(), attrs['hx-' + method]
+    if attrs.get('method', '').lower() in WRITE_METHODS and attrs.get('action'):
+        return attrs['method'].upper(), attrs['action']
+    return None
 
 
-def form_actions(attrs, block, fields):
-    """每个提交按钮单独计算实际字段；按钮值只有 data-write-extra 点名才会被基座收集。"""
-    buttons = []
-    available = set(fields)
-    for tag in re.findall(r'<(?:button|input)\b[^>]*>', block, re.S):
-        name = attribute(tag, 'name')
-        if name and '{{' not in name:
-            available.add('ids' if name == 'ids[]' else name)
-        default_type = 'submit' if tag.startswith('<button') else 'text'
-        if attribute(tag, 'type', default_type).lower() == 'submit':
-            buttons.append(tag)
-    actions = []
-    for button in buttons or ['']:
-        endpoint = attribute(button, 'data-write-url', attribute(attrs, 'data-write-url'))
-        if not endpoint or '{{' in endpoint:
-            continue
-        mode = attribute(button, 'data-write', attribute(attrs, 'data-write'))
-        extras = set(filter(None, (part.strip() for part in attribute(button, 'data-write-extra', attribute(attrs, 'data-write-extra')).split(','))))
-        offered = set(fields)
-        if mode == 'bulk':
-            offered.intersection_update(extras | {'ids'})
-        offered.update(extras & available)
-        actions.append((endpoint, offered))
-    return actions
+class FormParser(HTMLParser):
+    """保留 form 归属与 template 边界，外部控件不能混入相邻批量表单。"""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.forms = []
+        self.controls = []
+        self.form = None
+        self.templates = []
+        self.elements = []
+        self.serial = 0
+
+    def handle_starttag(self, tag, pairs):
+        attrs = dict(pairs)
+        element = {'tag': tag, 'attrs': attrs}
+        if tag == 'legend' and self.elements and self.elements[-1]['tag'] == 'fieldset':
+            fieldset = self.elements[-1]
+            element['exempts'] = fieldset if not fieldset.get('legend_seen') else None
+            fieldset['legend_seen'] = True
+        if tag == 'template':
+            self.serial += 1
+            self.templates.append(self.serial)
+        uncertain = set()
+        for ancestor in self.elements + [element]:
+            uncertain.update(set(ancestor['attrs']) & {'hx-vals', 'hx-inherit', 'hx-disinherit'})
+            # hx-include 的字面 id 选择器可静态解析（见 included_controls）；含 Jet 表达式或
+            # 非 id 选择器时照旧报未检查，不放宽判据。
+            include = ancestor['attrs'].get('hx-include')
+            if include is not None and not include_is_literal(include):
+                uncertain.add('hx-include')
+            if ancestor is not element and ancestor['tag'] != 'form' and 'hx-encoding' in ancestor['attrs']:
+                uncertain.add('hx-encoding')
+        if tag == 'form':
+            self.form = {'attrs': attrs, 'scope': tuple(self.templates), 'parent': self.form,
+                         'uncertain': uncertain}
+            self.forms.append(self.form)
+        if tag in ('input', 'select', 'textarea', 'button'):
+            disabled = 'disabled' in attrs
+            for ancestor in self.elements:
+                if ancestor['tag'] == 'fieldset' and 'disabled' in ancestor['attrs']:
+                    disabled |= not any(parent.get('exempts') is ancestor for parent in self.elements)
+            self.controls.append({'attrs': attrs, 'tag': tag, 'parent': self.form,
+                                  'scope': tuple(self.templates), 'disabled': disabled,
+                                  'uncertain': uncertain})
+        if tag not in ('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'):
+            self.elements.append(element)
+
+    def handle_endtag(self, tag):
+        if tag == 'form' and self.form:
+            self.form = self.form['parent']
+        if tag == 'template' and self.templates:
+            self.templates.pop()
+        for index in range(len(self.elements) - 1, -1, -1):
+            if self.elements[index]['tag'] == tag:
+                del self.elements[index:]
+                break
+
+    def owner(self, control):
+        attrs = control['attrs']
+        if 'form' not in attrs:
+            return control['parent']
+        return next((form for form in self.forms if form['attrs'].get('id') == attrs['form']
+                     and form['scope'] == control['scope']), None)
+
+    def fields_of(self, form):
+        """表单自身提交时带上的具名字段。hx-include 引入的字段另行合并。"""
+        out = set()
+        for control in self.controls:
+            if self.owner(control) is not form or control['scope'] != form['scope'] or control['disabled']:
+                continue
+            attrs = control['attrs']
+            kind = attrs.get('type', 'submit' if control['tag'] == 'button' else 'text').lower()
+            if kind in ('submit', 'button', 'reset', 'image') or write_endpoint(attrs):
+                continue
+            if attrs.get('name'):
+                out.add(attrs['name'])
+        return out
+
+    def form_by_id(self, form_id):
+        for form in self.forms:
+            if form['attrs'].get('id') == form_id:
+                return form
+        return None
+
+    def included_fields(self, form, attrs):
+        """按 hx-include 的字面 #id 选择器合并被引入表单的字段。"""
+        merged = set()
+        for value in (attrs.get('hx-include'), form['attrs'].get('hx-include')):
+            if not value or not include_is_literal(value):
+                continue
+            for form_id in include_ids(value):
+                target = self.form_by_id(form_id)
+                if target is not None:
+                    merged |= self.fields_of(target)
+        return merged
+
+    def actions(self):
+        for form in self.forms:
+            controls = [control for control in self.controls if self.owner(control) is form
+                        and control['scope'] == form['scope'] and not control['disabled']]
+            fields = set()
+            buttons = []
+            for control in controls:
+                attrs = control['attrs']
+                kind = attrs.get('type', 'submit' if control['tag'] == 'button' else 'text').lower()
+                if kind == 'submit' or write_endpoint(attrs):
+                    buttons.append(attrs)
+                elif kind not in ('button', 'reset', 'image') and attrs.get('name'):
+                    fields.add(attrs['name'])
+            # 独立 type=button 不替代原表单的提交入口。
+            if not any(button.get('type', 'submit').lower() == 'submit' for button in buttons):
+                buttons.append({})
+            uncertain = form['uncertain'] | set().union(*(control['uncertain'] for control in controls))
+            for button in buttons:
+                endpoint = write_endpoint(button) or write_endpoint(form['attrs'])
+                if not any('hx-' + method in button or 'hx-' + method in form['attrs'] for method in WRITE_METHODS):
+                    native = {**form['attrs']}
+                    for source, target in (('formmethod', 'method'), ('formaction', 'action'), ('formenctype', 'enctype')):
+                        if source in button:
+                            native[target] = button[source]
+                    endpoint = write_endpoint(native)
+                if endpoint:
+                    offered = fields | ({button['name']} if button.get('name') else set())
+                    attrs = {**form['attrs'], **button}
+                    offered |= self.included_fields(form, attrs)
+                    if button.get('formenctype'):
+                        attrs['enctype'] = button['formenctype']
+                    yield endpoint, attrs, offered, uncertain
+        for control in self.controls:
+            if self.owner(control) is None and not control['disabled'] and write_endpoint(control['attrs']):
+                attrs = control['attrs']
+                offered = {attrs['name']} if attrs.get('name') else set()
+                included_uncertain = set()
+                include = attrs.get('hx-include')
+                if include:
+                    if include_is_literal(include):
+                        for form_id in include_ids(include):
+                            target = self.form_by_id(form_id)
+                            if target is not None:
+                                offered |= self.fields_of(target)
+                    else:
+                        included_uncertain.add('hx-include')
+                yield write_endpoint(attrs), attrs, offered, control['uncertain'] | included_uncertain
+
+
+INCLUDE_ID = re.compile(r'^\s*#([A-Za-z][A-Za-z0-9_-]*)\s*$')
+
+
+def include_is_literal(value):
+    # hx-include 允许逗号分隔多个选择器；这里只认「纯 #id」的静态写法。
+    parts = [part.strip() for part in str(value).split(',') if part.strip()]
+    return bool(parts) and all(INCLUDE_ID.match(part) for part in parts)
+
+
+def include_ids(value):
+    return [INCLUDE_ID.match(part.strip()).group(1)
+            for part in str(value).split(',') if INCLUDE_ID.match(part.strip())]
+
+
+def mask_jet(match):
+    # 不让 Jet 内部的引号和 > 干扰 HTML 属性解析；相同表达式仍可匹配 form/id。
+    return '__JET_' + hashlib.sha256(match.group(1).encode('utf-8')).hexdigest()[:16] + '__'
+
+
+def report(message):
+    global violations
+    print(message)
+    violations += 1
 
 
 for dirpath, _, files in os.walk(root):
     for name in sorted(files):
-        if not (name.endswith('.html') or name.endswith('.jet')):
+        if not name.endswith(('.html', '.jet')):
             continue
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, root)
+        if not rel.startswith(prefix):
+            continue
+        checked_templates += 1
         text = expand_template(Path(path).resolve())
-
-        for m in re.finditer(r'<form\b([^>]*)>', text, re.S):
-            attrs = re.sub(r'\s+', ' ', m.group(1))
-            url_m = re.search(r'\bdata-write-url="([^"]*)"', attrs)
-            if not url_m:
+        parser = FormParser()
+        parser.feed(JET_TAG.sub(mask_jet, text))
+        for (method, url), attrs, offered, uncertain in parser.actions():
+            if uncertain:
+                report(f'{rel}：未检查 {method} {url} 的参数选择/继承声明：' + ', '.join(sorted(uncertain)))
                 continue
-            url = url_m.group(1)
-            if '{{' in url:
-                continue   # 动态端点：契约按静态路径索引，运行时才对得上
-            end = text.find('</form>', m.end())
-            block = text[m.start(): end if end >= 0 else len(text)]
-            present = form_fields(block)
-            actions = form_actions(attrs, block, present)
-            specs = []
-            for endpoint, offered in actions:
-                if endpoint in contracts:
-                    specs.append((endpoint, contracts[endpoint], offered))
-                elif endpoint not in EXEMPT_ENDPOINTS:
-                    print(f'✗ {rel}：端点 {endpoint} 不在写端点契约里（先重跑 go run ./cmd/write-contracts）')
-                    violations += 1
-            if not specs:
+            parsed = urlsplit(url)
+            if '__JET_' in parsed.path or not parsed.path.startswith('/') or parsed.netloc or parsed.scheme:
+                report(f'{rel}：未检查动态或非本站端点 {method} {url}；不使用宽泛前缀匹配')
                 continue
-            allowed = {f['name'] for _, spec, _ in specs for f in spec.get('fields', [])}
+            endpoint = method + ' ' + parsed.path
+            spec = contracts.get(endpoint)
+            if spec is None:
+                report(f'{rel}：端点 {endpoint} 不在写端点契约里（先重跑 go run ./cmd/write-contracts）')
+                continue
+            protocol = spec.get('protocol')
+            if protocol not in ('form', 'multipart', 'json') or spec.get('reason'):
+                report(f'{rel}：未检查 {endpoint}：' + spec.get('reason', '契约缺少确定输入协议'))
+                continue
+            encoding = attrs.get('hx-encoding') or attrs.get('enctype') or ''
+            actual = 'json' if attrs.get('data-write-builder') else ('multipart' if encoding == 'multipart/form-data' else 'form')
+            if protocol != actual:
+                report(f'{rel}：{endpoint} 输入协议不匹配：模板 {actual}，真实 binder {protocol}')
+                continue
+            if protocol == 'json':
+                report(f'{rel}：未检查 {endpoint} 的 JSON 对象提供器字段；需要真实对象链路验证，不能按普通控件冒充已对账')
+                continue
+            offered.discard('csrf_token')
+            if any('__JET_' in field for field in offered):
+                report(f'{rel}：未检查 {endpoint} 的动态字段名')
+                continue
+            allowed = {field['name'] for field in spec.get('fields', [])}
+            for field in sorted(offered - allowed):
+                report(f'{rel}：字段 name="{field}" 不在 {endpoint} 的 DTO 字段表里；原生 binder 不折叠点号或数组下标')
+            for field in spec.get('fields', []):
+                if field.get('required') and field['name'] not in offered:
+                    report(f'{rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里（端点 {endpoint}）')
             checked_forms += 1
 
-            # data-write-builder：页面级组装器会把**页面字段名**映射成 DTO 字段
-            #（membership 的 thresholdYuan → thresholdAmount、freeShipping+discountPercent
-            # → entitlements 数组）。这种映射只有页面脚本知道，本门禁看不到 —— 跳过对账。
-            #
-            # 谁来守这些映射：各自的 .test.cjs —— onboarding 侧是
-            # ui/membership_write.test.cjs，商品侧是 ui/product_variant_write.test.cjs。
-            # 注释此前把后者写成 product_bundle_write.test.cjs（bundle 概念已下线，
-            # 那个文件从来不存在），于是"由测试守"这句话对商品变体行一直是假的。
-            if 'data-write-builder=' in attrs:
-                continue
-
-            submitted = set().union(*(offered for _, _, offered in specs))
-            for fname in submitted:
-                # 嵌套字段由 data-write-json 组装，可能不在顶层字段表里 —— 放行。
-                if 'data-write-json=' in attrs and fname not in allowed:
-                    continue
-                if fname not in allowed and fname != "ids":
-                    print(f'✗ {rel}：字段 name="{fname}" 不在表单任一目标 DTO 的字段表里'
-                          f'（端点 {url}）—— 服务端会静默丢掉它')
-                    violations += 1
-
-            for endpoint, spec, offered in specs:
-                for field in spec.get('fields', []):
-                    if field.get('required') and field['name'] not in offered:
-                        print(f'✗ {rel}：{spec["dto"]} 的必填字段 "{field["name"]}" 没有出现在表单里'
-                              f'（端点 {endpoint}）—— 提交必然失败')
-                        violations += 1
-
+if checked_templates == 0:
+    report(f'字段门禁未检查：范围 {prefix or root} 没有模板')
 if violations:
-    print()
-    print('写表单契约见 internal/templates/CLAUDE.md「写操作」。', file=sys.stderr)
+    print(f'字段门禁未通过：{violations} 项错误或未检查项；已对账 {checked_forms} 个提交入口。', file=sys.stderr)
     sys.exit(1)
-print(f'✓ 写表单字段名全部对得上（{checked_forms} 个表单 vs {len(contracts)} 条端点契约）')
+print(f'字段静态对账通过：{checked_forms} 个提交入口，契约 {len(contracts)} 条；不替代真实绑定与浏览器验证。')

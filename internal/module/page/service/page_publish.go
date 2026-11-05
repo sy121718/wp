@@ -24,8 +24,8 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo"
-	"go_wp/internal/seo/compliance"
+	"go_wp/pkg/seo"
+	"go_wp/pkg/seo/compliance"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -55,10 +55,11 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if err != nil {
 		return nil, err
 	}
-	plan.References, err = s.freezeReferences(ctx, page.ProjectID, page.DraftDocument)
+	frozenRefs, err := s.freezeReferences(ctx, page.ProjectID, page.DraftDocument)
 	if err != nil {
 		return nil, err
 	}
+	plan.References = frozenRefs.Unwrap()
 	persistPlan = true
 	path, err := s.sitePathOfWithPlan(ctx, lang, page, &plan)
 	if err != nil {

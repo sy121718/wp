@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"

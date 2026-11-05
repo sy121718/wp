@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/components/heading"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/components/heading"
+	"go_wp/pkg/builder/core"
 )
 
 type ctrlSample struct {

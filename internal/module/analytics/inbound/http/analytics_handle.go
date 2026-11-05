@@ -1,7 +1,6 @@
 package analyticshttp
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,14 +9,13 @@ import (
 
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
-	analyticsenums "go_wp/internal/module/analytics/enums"
-	analyticsservice "go_wp/internal/module/analytics/service"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
 
 const maxCollectBody = 64 << 10
+
+const analyticsErrScene = "analytics"
 
 type Handle struct {
 	svc analyticscontract.AnalyticsService
@@ -60,19 +58,8 @@ func (h *Handle) Summary(c *gin.Context) {
 	}
 	res, err := h.svc.Summary(c.Request.Context(), req)
 	if err != nil {
-		analyticsError(c, err)
+		response.ErrorStatusAuto(c, analyticsErrScene, err)
 		return
 	}
 	response.Success(c, res)
-}
-
-func analyticsError(c *gin.Context, err error) {
-	status, message := http.StatusInternalServerError, analyticsenums.ErrAnalyticsInternal
-	switch {
-	case errors.Is(err, analyticsservice.ErrInvalidParam), errors.Is(err, analyticsservice.ErrInvalidRange):
-		status, message = http.StatusBadRequest, err.Error()
-	default:
-		logger.Scene("analytics").Error(err, "访问统计查询失败")
-	}
-	response.ErrorWithMessage(c, status, message)
 }

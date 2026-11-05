@@ -19,6 +19,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 type translationFactsReader struct {
@@ -42,6 +43,7 @@ func translationObjectsRequest(t *testing.T, facts *productcontract.ProductTrans
 	h := &ProductTranslationHandle{products: &translationFactsReader{facts: facts, err: readErr}}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), h.ProductTranslations)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/translations?project=p1", nil))
@@ -106,6 +108,7 @@ func TestDetailTemplateRendersBindingFromOriginalObjects(t *testing.T) {
 	h := &ProductPageHandle{products: reader, reader: reader, templates: &templateCatalogPort{}, instances: &templateInstancePort{}}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailTemplatePage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/template?project=p1&product=prod-1", nil))

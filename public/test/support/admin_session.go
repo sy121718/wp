@@ -35,6 +35,7 @@ var testRedisDBByDir = map[string]int{
 	"public/test/order/feature":                6,
 	"public/test/user/unit":                    7,
 	"public/test/publication/feature":          8,
+	"public/test/admin/feature":                9,
 }
 
 func testRedisDBForCaller(t *testing.T) int {

@@ -147,7 +147,9 @@ type GetOrderByNoReq struct {
 }
 
 type CouponSaveReq struct {
-	ID        uint64 `form:"id" json:"id"`
+	ID  uint64   `form:"id" json:"id"`
+	IDs []string `form:"ids" json:"ids"`
+
 	ProjectID string `form:"projectId" json:"projectId"`
 
 	Code string `form:"code" json:"code"`

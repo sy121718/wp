@@ -9,6 +9,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
@@ -154,15 +155,13 @@ func (h *orderShipmentPageHandle) ShipFormFragment(c *gin.Context) {
 	}
 	form, err := h.svc.BuildShipForm(c.Request.Context(), req)
 	if err != nil {
-
-		response.ErrorAuto(c, 400, "order", err)
+		// 页面 GET 失败交真实状态码：这一处原来是硬写 400。
+		response.ErrorStatusAuto(c, "order", err)
 		return
 	}
-	tr := text.TranslateFunc(c)
-	pageview.RenderTemplate(c, ShipFormPageTemplate, gin.H{
-		"Form":      form,
-		"t":         tr,
-		"CSRFToken": binding.CSRFToken(c),
+	pageview.RenderTemplate(c, ShipFormPageTemplate, &ShipFormFragmentView{
+		Form:      form,
+		CSRFToken: csrfOf(c),
 	})
 }
 
@@ -172,4 +171,13 @@ func (h *orderShipmentPageHandle) OrderCarriersPage(c *gin.Context) {
 		return
 	}
 	pageview.RenderTemplate(c, OrderCarriersPageTemplate, h.carrierView(c, query.ProjectID))
+}
+
+// csrfOf 取当前请求的 CSRF token，缺 token 时返回空串交给模板处理。
+func csrfOf(c *gin.Context) string {
+	tok, err := builtin.EnsureCSRFToken(c)
+	if err != nil {
+		return ""
+	}
+	return tok
 }

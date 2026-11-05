@@ -11,7 +11,7 @@ import (
 )
 
 func orderCohortScope(tx *gorm.DB, projectID string, from, to time.Time) (cohort, sizes *gorm.DB) {
-	statuses := strings.Join(paidStatuses, ",")
+	statuses := strings.Join(DefaultSalesStatuses, ",")
 	firsts := tx.Table(OrderEntity{}.TableName()+" AS o").
 		Select("o.user_id, MIN(o.create_time) AS first_at").
 		Where("o.project_id = ?", projectID).
@@ -48,7 +48,7 @@ func (m *OrderModel) CohortRetention(ctx context.Context, projectID string, from
 	if from.IsZero() || to.IsZero() {
 		return nil, ErrRangeRequired
 	}
-	statuses := strings.Join(paidStatuses, ",")
+	statuses := strings.Join(DefaultSalesStatuses, ",")
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		cohort, sizes := orderCohortScope(tx, projectID, from, to)
 		active := tx.Table("(?) AS c", cohort).

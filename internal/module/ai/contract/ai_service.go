@@ -25,5 +25,9 @@ type AIService interface {
 
 	FetchModelCandidates(ctx context.Context, req *aidto.ProviderActionReq) (*aidto.ModelCandidates, error)
 
+	// AppendModels 把勾选的模型追加进目录并落库（去重 / 上限 / 乐观锁都在实现里）。
+	// 与 SaveModels 分开是因为语义不同：保存是「以这份清单为准」，追加是「只增不删」。
+	AppendModels(ctx context.Context, providerID, version, updateBy int64, selected []string) (*aidto.Provider, int, error)
+
 	Chat(ctx context.Context, req *aidto.ChatReq) (*aidto.ChatResult, error)
 }

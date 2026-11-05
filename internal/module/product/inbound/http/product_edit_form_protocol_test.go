@@ -31,19 +31,18 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 	}
 	form := page[start : start+end]
 
-	if !strings.Contains(form, `data-write-url="/api/product/update"`) {
-		t.Fatalf("主表单缺少 data-write-url=/api/product/update")
-	}
-	renames := map[string]string{}
-	htmlSpec := regexp.MustCompile(`data-write-json-wrap="([^"]*)"`).FindStringSubmatch(form)
-	if len(htmlSpec) == 2 {
-		for _, pair := range strings.Split(htmlSpec[1], ",") {
-			parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
-			if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-				renames[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-			}
+	for _, want := range []string{`hx-post="/api/product/update"`, `hx-target="#product-edit-result"`, `hx-swap="innerHTML"`, `hx-sync="this:drop"`, `data-write-builder="product-edit"`, `data-write-status`, `id="product-edit-result"`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("主表单缺少明确交互声明 %s", want)
 		}
 	}
+	for _, old := range []string{"data-write-url", "data-write-json-wrap", "data-write-lines", "data-write-keep-empty", "data-write-reload"} {
+		if strings.Contains(form, old) {
+			t.Errorf("主表单仍使用退役提交属性 %s", old)
+		}
+	}
+	// 富文本控件由页面专用对象提供器组装为 description 对象，不走通用字段整形。
+	renames := map[string]string{"descriptionHtml": "description"}
 
 	allowed := map[string]bool{}
 	typ := reflect.TypeOf(productdto.UpdateReq{})
@@ -80,12 +79,7 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 		}
 	}
 
-	if renames["descriptionHtml"] != "description" {
-		t.Errorf("主表单应声明 data-write-json-wrap=descriptionHtml:description，实际 %v", renames)
-	}
-
-	if lines := regexp.MustCompile(`data-write-lines="([^"]*)"`).FindStringSubmatch(form); len(lines) != 2 ||
-		!strings.Contains(lines[1], "images") || !strings.Contains(lines[1], "imageAlts") {
-		t.Errorf("主表单应声明 data-write-lines=images,imageAlts，实际 %v", lines)
+	if !strings.Contains(page, `<script defer src="/static/js/ui/product-edit.js"></script>`) {
+		t.Error("主体编辑应按页加载结构化对象提供器")
 	}
 }

@@ -84,7 +84,7 @@ type AdminRoleSaveReq struct {
 	UserID    uint64   `json:"user_id" form:"user_id" binding:"required" validate:"required"`
 	RoleCodes []string `json:"role_codes" form:"role_codes"`
 
-	OperatorID uint64 `json:"-"`
+	OperatorID uint64 `json:"-" form:"-"`
 }
 
 type AdminMenuListReq struct {
@@ -95,5 +95,5 @@ type AdminMenuSaveReq struct {
 	UserID  uint64   `json:"user_id" form:"user_id" binding:"required" validate:"required"`
 	MenuIDs []uint64 `json:"menu_ids" form:"menu_ids"`
 
-	OperatorID uint64 `json:"-"`
+	OperatorID uint64 `json:"-" form:"-"`
 }

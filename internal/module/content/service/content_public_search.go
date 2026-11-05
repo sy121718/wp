@@ -12,7 +12,7 @@ import (
 	contentenums "go_wp/internal/module/content/enums"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 )
 
 type PublicSearchService struct {

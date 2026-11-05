@@ -7,12 +7,12 @@
 --      而那是两个完全不同的事实。noHistory 就是那一句。
 --   2. 「待重建」不是失败：它是「线上有内容，但商品字段或模板变过，产物是旧的」。
 --      staleHint 把它与「没发布成功」区分开，因为两者的处置动作不同（重建 vs 先发布）。
---   3. 「未装配」与「读不到」是两档：前者是部署侧接线缺失（重试无用），后者可重试。
---      notWired / notWiredDesc 说的是前者 —— 不写清会被人当成「一个都没发布」。
+--   3. 页面只有两档失败：「读不到」可重试；「未装配」这一档已随发布记录页改成模块内一次
+--      只读语句而消失（不再有发布端口可缺），所以 notWired / notWiredDesc 两条词一并删除。
 --
 --   表头列名、状态三档、按钮与筛选控件优先复用既有的 admin.* 商品词条
 --   （admin.products.filter.submit / .ph.keyword / admin.common.field.keyword 等，均已在
---   231 / 314 里 seed），本批只 seed 这一屏独有的 28 个 key（中英各一行，共 56 行）。
+--   231 / 314 里 seed），本批只 seed 这一屏独有的 26 个 key（中英各一行，共 52 行）。
 --
 -- 幂等：全部是新增 key，DO NOTHING 语义 —— seed 是默认值来源，后台是真相来源。
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
@@ -31,10 +31,6 @@ VALUES
 ('admin.products.publish.programLink', 'en-US', 'translations and publishing', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
 ('admin.products.publish.programTail', 'zh-CN', '页；模板绑定在商品的编辑页。本页与它们读同一份发布真源。', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
 ('admin.products.publish.programTail', 'en-US', 'page; template binding is on the product edit page. This page reads the same publication source.', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
-('admin.products.publish.notWired', 'zh-CN', '发布能力还没有接入这一屏', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
-('admin.products.publish.notWired', 'en-US', 'Publishing capability is not wired into this page', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
-('admin.products.publish.notWiredDesc', 'zh-CN', '页面能打开，但发布状态的数据源没装配上来。这是部署侧的问题，稍后由维护者接线；不是「一个商品都没发布」。', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
-('admin.products.publish.notWiredDesc', 'en-US', 'The page opens but the publication data source was not wired in. That is a deployment wiring issue for the maintainer — it does not mean no product has ever been published.', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
 ('admin.products.publish.totalNote', 'zh-CN', '共 %s 个商品', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
 ('admin.products.publish.totalNote', 'en-US', '%s products', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),
 ('admin.products.publish.ph.keyword', 'zh-CN', '商品名称', 200, 'product', 'internal/templates/admin/product/product_publish_records.html', 1, now(), now()),

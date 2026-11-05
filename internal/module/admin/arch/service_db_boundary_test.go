@@ -134,85 +134,16 @@ func dbReceiver(expr ast.Expr, dbVars map[string]bool) bool {
 	}
 }
 
-var knownDeviations = []string{
-	"admin.go:138 AdminCreate.Create",
-	"admin.go:153 AdminDetail.Scan",
-	"admin.go:153 AdminDetail.Where",
-	"admin.go:221 AdminEdit.Updates",
-	"admin.go:221 AdminEdit.Where",
-	"admin.go:34 AdminList.Where",
-	"admin.go:336 AdminListByDeptID.Where",
-	"admin.go:339 AdminListByDeptID.Count",
-	"admin.go:345 AdminListByDeptID.Find",
-	"admin.go:37 AdminList.Where",
-	"admin.go:378 AdminBatchSetDeptID.Model",
-	"admin.go:378 AdminBatchSetDeptID.Update",
-	"admin.go:378 AdminBatchSetDeptID.Where",
-	"admin.go:386 AdminCountByDeptID.Count",
-	"admin.go:386 AdminCountByDeptID.Where",
-	"admin.go:40 AdminList.Where",
-	"admin.go:43 AdminList.Where",
-	"admin.go:46 AdminList.Count",
-	"admin.go:525 AdminLogin.First",
-	"admin.go:525 AdminLogin.Where",
-	"admin.go:566 AdminLogin.Updates",
-	"admin.go:566 AdminLogin.Where",
-	"admin.go:67 AdminList.Find",
-	"admin.go:720 DevLogin.Where",
-	"admin.go:722 DevLogin.Where",
-	"admin.go:724 DevLogin.First",
-	"datarule.go:315 RuleList.Where",
-	"datarule.go:318 RuleList.Where",
-	"datarule.go:323 RuleList.Count",
-	"datarule.go:330 RuleList.Scan",
-	"datarule.go:864 loadDataRuleSnapshotFromDB.Joins",
-	"datarule.go:864 loadDataRuleSnapshotFromDB.Scan",
-	"datarule.go:864 loadDataRuleSnapshotFromDB.Where",
-	"datarule.go:902 loadDataRuleSnapshotFromDB.Scan",
-	"datarule.go:902 loadDataRuleSnapshotFromDB.Where",
-	"datarule.go:917 loadDataRuleSnapshotFromDB.Scan",
-	"role.go:555 PermList.Where",
-	"role.go:558 PermList.Where",
-	"role.go:561 PermList.Where",
-	"role.go:564 PermList.Where",
-	"role.go:568 PermList.Count",
-	"role.go:574 PermList.Scan",
-	"role.go:593 PermDetail.Scan",
-	"role.go:593 PermDetail.Where",
-	"role.go:613 PermOptions.Where",
-	"role.go:615 PermOptions.Where",
-	"role.go:617 PermOptions.Find",
-}
-
-func TestAdminServiceDirectDBDeviations(t *testing.T) {
+// admin 的 service 层不再持有 `model.DB(ctx)` 句柄做 CRUD/list/count/scan/joins：
+// 数据库筛选、聚合与分页落在所属 model，service 只做业务校验与事务编排。
+// 这里不给偏差台账 —— 一旦出现直查就是零容忍的失败，靠改 model 解决，不是登记进来。
+func TestAdminServiceHasNoDirectDBAccess(t *testing.T) {
 	actual := scanServiceDBCalls(t)
-	known := map[string]bool{}
-	for _, k := range knownDeviations {
-		known[k] = true
-	}
-	var unknown, resolved []string
 	for _, a := range actual {
-		if !known[a] {
-			unknown = append(unknown, a)
-		}
+		t.Errorf("service 层直接拿 DB 句柄查库（请把这条查询下沉到 admin/model）: %s", a)
 	}
-	inTable := map[string]bool{}
-	for _, a := range actual {
-		inTable[a] = true
-	}
-	for _, k := range knownDeviations {
-		if !inTable[k] {
-			resolved = append(resolved, k)
-		}
-	}
-	for _, u := range unknown {
-		t.Errorf("新增未登记的 service 层直查 DB（请登记进 knownDeviations）: %s", u)
-	}
-	for _, r := range resolved {
-		t.Errorf("已知偏差已不存在（请从 knownDeviations 移除，保持账实一致）: %s", r)
-	}
-	if testing.Verbose() {
-		t.Logf("当前实测 %d 处直查", len(actual))
+	if len(actual) != 0 {
+		t.Logf("提示：先跑 -run TestPrintAdminServiceDirectDB 看完整清单再逐条迁移")
 	}
 }
 

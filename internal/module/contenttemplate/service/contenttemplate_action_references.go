@@ -3,7 +3,7 @@ package contenttemplateservice
 import (
 	"context"
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 )
 
 func (s *Service) ListActionTargetReferences(ctx context.Context, projectID, targetKind, targetID string) ([]source.ActionTargetReference, error) {

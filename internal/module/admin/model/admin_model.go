@@ -9,6 +9,8 @@ import (
 
 	adminenums "go_wp/internal/module/admin/enums"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -109,6 +111,22 @@ func (m *AdminModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
+// UpdateDeptIDByIDsTx 在调用方事务内把一批成员的部门改成 deptID。
+//
+// 归属调整要走 model：service 不碰 DB 句柄，也不在 service 里拼 SQL 形状。
+func (m *AdminModel) UpdateDeptIDByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64, deptID uint64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := tx.WithContext(ctx).Model(&AdminEntity{}).
+		Where("id IN ?", ids).
+		Update("dept_id", deptID)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
 func (m *AdminModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]AdminEntity, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -125,6 +143,16 @@ func (m *AdminModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64)
 func (m *AdminModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
 	result := tx.WithContext(ctx).Model(&AdminEntity{}).Where("id IN ?", ids).Delete(&AdminEntity{})
 	return result.RowsAffected, result.Error
+}
+
+// CountByDeptIDTx 在调用方事务内数部门下的成员。
+//
+// 停用成员仍然属于该部门，所以按 dept_id 数、不按状态过滤。
+// 删除部门前的这项校验必须读本事务：非事务版看不到本事务里刚改过 dept_id 的行。
+func (m *AdminModel) CountByDeptIDTx(ctx context.Context, tx *gorm.DB, deptID uint64) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).Model(&AdminEntity{}).Where("dept_id = ?", deptID).Count(&count).Error
+	return count, err
 }
 
 func (m *AdminModel) IncrementLoginFailure(ctx context.Context, id uint64, lockThreshold int, lockDuration time.Duration) error {
@@ -215,4 +243,189 @@ func allowModifyIsAdmin(ctx context.Context) bool {
 	value := ctx.Value(allowModifyIsAdminKey)
 	allowed, ok := value.(bool)
 	return ok && allowed
+}
+
+// AdminListFilter 是管理员列表的筛选条件。
+//
+// 筛选/计数/分页属于数据库行为，归 model：service 只把请求里的条件搬过来，
+// 不再自己拼 Where/Count/Find。
+type AdminListFilter struct {
+	Keyword   string
+	Email     string
+	Name      string
+	Status    *int
+	SortField string
+	SortOrder string
+	Page      int
+	Limit     int
+}
+
+func (f AdminListFilter) orderClause() string {
+	if f.SortField == "" || f.SortOrder == "" {
+		return "id DESC"
+	}
+	return f.SortField + " " + f.SortOrder
+}
+
+// ListPage 分页查管理员列表（排除超管），返回总数与本页行。
+func (m *AdminModel) ListPage(ctx context.Context, f AdminListFilter) (int64, []AdminEntity, error) {
+	query := m.DB(ctx).Where("is_admin != ?", 1)
+	if f.Email != "" {
+		query = query.Where("email LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(f.Email)+"%")
+	}
+	if f.Name != "" {
+		query = query.Where("name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(f.Name)+"%")
+	}
+	if f.Status != nil {
+		query = query.Where("status = ?", *f.Status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 1
+	}
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	list := make([]AdminEntity, 0, limit)
+	err := query.Order(f.orderClause()).
+		Offset((page - 1) * limit).Limit(limit).Find(&list).Error
+	return total, list, err
+}
+
+// DetailByID 读管理员详情列，返回该行（不存在时 ID 为 0）。
+func (m *AdminModel) DetailByID(ctx context.Context, id uint64) (*AdminEntity, error) {
+	var entity AdminEntity
+	err := m.DB(ctx).
+		Select("id", "username", "name", "avatar", "email", "phone", "status", "is_admin",
+			"register_ip", "register_location", "last_login_ip", "last_login_location",
+			"last_login_time", "create_by", "create_time", "remark").
+		Where("id = ?", id).
+		First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// Create 新增管理员。
+func (m *AdminModel) Create(ctx context.Context, e *AdminEntity) error {
+	return m.DB(ctx).Create(e).Error
+}
+
+// UpdateByID 按主键更新管理员（只写实体上赋过值的列）。
+func (m *AdminModel) UpdateByID(ctx context.Context, id uint64, e *AdminEntity) error {
+	return m.DB(ctx).Where("id = ?", id).Updates(e).Error
+}
+
+// ListPageByDept 分页查某部门的成员，返回总数与本页行。
+func (m *AdminModel) ListPageByDept(ctx context.Context, deptID uint64, page, limit int) (int64, []AdminEntity, error) {
+	query := m.DB(ctx).Where("dept_id = ?", deptID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	if limit <= 0 {
+		limit = 1
+	}
+	if page <= 0 {
+		page = 1
+	}
+	var entities []AdminEntity
+	err := query.Select("id, username, name, email, status").
+		Offset((page - 1) * limit).Limit(limit).
+		Order("id ASC").
+		Find(&entities).Error
+	return total, entities, err
+}
+
+// CountByDeptID 数某部门的成员（含停用：停用成员仍属这个部门）。
+func (m *AdminModel) CountByDeptID(ctx context.Context, deptID uint64) (int64, error) {
+	var count int64
+	err := m.DB(ctx).Where("dept_id = ?", deptID).Count(&count).Error
+	return count, err
+}
+
+// FindByLoginName 按登录名或邮箱查账号。
+//
+// 「登录名按大小写敏感比对」是数据库方言差异，所以在 model 里按方言选表达式；
+// service 不再持 DB 句柄，也不判断方言。
+func (m *AdminModel) FindByLoginName(ctx context.Context, login string) (*AdminEntity, error) {
+	expr := "CAST(username AS BINARY) = CAST(? AS BINARY)"
+	if m.DialectName() == "postgres" {
+		expr = "username = ?"
+	}
+	var entity AdminEntity
+	err := m.DB(ctx).Where(expr+" OR email = ?", login, login).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// TouchLastLogin 记录这次登录的时刻与来源 IP。
+func (m *AdminModel) TouchLastLogin(ctx context.Context, id uint64, at time.Time, ip string) error {
+	update := map[string]any{"last_login_time": at}
+	if ip != "" {
+		update["last_login_ip"] = ip
+	}
+	return m.DB(ctx).Where("id = ?", id).
+		Select("last_login_time", "last_login_ip").
+		Updates(update).Error
+}
+
+// FirstActiveSuperAdmin 取第一个启用的超管账号，用于本地开发登录。
+func (m *AdminModel) FirstActiveSuperAdmin(ctx context.Context, username string) (*AdminEntity, error) {
+	query := m.DB(ctx).Where("is_admin = ?", 1)
+	if username != "" {
+		query = query.Where("username = ?", username)
+	}
+	var entity AdminEntity
+	err := query.Order("id ASC").First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// FieldExists 判断某列是否已被占用（新建时用，不带排除行）。
+func (m *AdminModel) FieldExists(ctx context.Context, field string, value any) (bool, error) {
+	var count int64
+	err := m.DB(ctx).Where(field+" = ?", value).Count(&count).Error
+	return count > 0, err
+}
+
+// FieldExistsTxExcept 在事务内判断某列是否被自己以外的行占用。
+//
+// 调用前必须已经锁住目标行：预检与写入之间若没有行锁，两个并发编辑会各自看到「没重名」。
+func (m *AdminModel) FieldExistsTxExcept(ctx context.Context, tx *gorm.DB, field string, value any, excludeID uint64) (bool, error) {
+	query := tx.WithContext(ctx).Model(&AdminEntity{}).Where(field+" = ?", value)
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count > 0, err
+}
+
+// UpdateByIDTx 在事务内更新一行。
+func (m *AdminModel) UpdateByIDTx(ctx context.Context, tx *gorm.DB, id uint64, e *AdminEntity) error {
+	return tx.WithContext(ctx).Model(&AdminEntity{}).Where("id = ?", id).Updates(e).Error
 }

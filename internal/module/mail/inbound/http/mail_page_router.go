@@ -35,10 +35,10 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 		adminui.PageAuthz("/api/mail/account/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailPage)
-	pages.POST("/mail/account/save", builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
-	pages.POST("/mail/account/delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
-	pages.POST("/mail/account/default", builtin.CasbinMiddlewareForPath("/api/mail/account/default"), mailPage.MailAccountDefault)
-	pages.POST("/mail/account/test", builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
+	pages.POST("/mail/account/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
+	pages.POST("/mail/account/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
+	pages.POST("/mail/account/default", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/default"), mailPage.MailAccountDefault)
+	pages.POST("/mail/account/test", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
 
 	pages.GET("/mail/templates",
 		adminui.PageAuthz("/api/mail/template/list"),
@@ -49,28 +49,28 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 		adminui.PageAuthz("/api/mail/template/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailTemplateEditor)
-	pages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
-	pages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
+	pages.POST("/mail/template/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
+	pages.POST("/mail/template/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
 
-	pages.POST("/mail/accounts/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountsBulkDelete)
-	pages.POST("/mail/templates/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplatesBulkDelete)
+	pages.POST("/mail/accounts/bulk-delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountsBulkDelete)
+	pages.POST("/mail/templates/bulk-delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplatesBulkDelete)
 
 	pages.GET("/mail/contacts",
 		adminui.PageAuthz("/api/mail/contact/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailContactsPage)
-	pages.POST("/mail/contact/import", builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
-	pages.POST("/mail/contact/status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
-	pages.POST("/mail/contacts/bulk-status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactsBulkStatus)
+	pages.POST("/mail/contact/import", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
+	pages.POST("/mail/contact/status", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
+	pages.POST("/mail/contacts/bulk-status", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactsBulkStatus)
 
 	pages.GET("/mail/campaigns",
 		adminui.PageAuthz("/api/mail/campaign/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailCampaignsPage)
-	pages.POST("/mail/campaign/save", builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
-	pages.POST("/mail/campaign/start", builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
-	pages.POST("/mail/campaign/delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
-	pages.POST("/mail/campaigns/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignsBulkDelete)
+	pages.POST("/mail/campaign/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
+	pages.POST("/mail/campaign/start", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
+	pages.POST("/mail/campaign/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
+	pages.POST("/mail/campaigns/bulk-delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignsBulkDelete)
 
 	pages.GET("/mail/campaign",
 		adminui.PageAuthz("/api/mail/campaign/list"),
@@ -97,10 +97,10 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 		adminui.PageAuthz("/api/mail/automation/list"),
 		pageview.UseRenderer(adminui.RenderPage),
 		mailPage.MailAutomationCanvas)
-	pages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
-	pages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
-	pages.POST("/mail/automations/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationsBulkDelete)
-	pages.POST("/mail/automation/tick", builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
+	pages.POST("/mail/automation/status", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
+	pages.POST("/mail/automation/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
+	pages.POST("/mail/automations/bulk-delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationsBulkDelete)
+	pages.POST("/mail/automation/tick", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
 }
 
 func declareMailPageObjects() {

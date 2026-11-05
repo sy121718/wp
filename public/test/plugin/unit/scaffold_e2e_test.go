@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"go_wp/internal/module/plugin/scaffold"
+	"go_wp/pkg/scaffold"
 )
 
 func TestScaffoldEndToEnd(t *testing.T) {

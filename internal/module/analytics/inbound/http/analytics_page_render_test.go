@@ -23,7 +23,7 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	lang := "zh-CN"
 	data := gin.H{
-		"title": analyticsPageTitle, "menu": "analytics",
+		"menu":       "analytics",
 		"csrf_token": "test-token", "lang": lang,
 		"t": templates.TranslateFunc(lang), "langs": templates.LanguageOptions(lang),
 		"lang_redirect": "/admin/analytics",
@@ -49,7 +49,6 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 		"RankLimit": 20,
 
 		"Pagination": pagination.Page{},
-		"Err":        "",
 	}
 	body := renderAnalyticsPage(t, data)
 	for _, want := range []string{
@@ -74,12 +73,12 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 
 func TestAnalyticsPageRendersWithoutViewMode(t *testing.T) {
 	body := renderAnalyticsPage(t, map[string]any{
-		"title": analyticsPageTitle, "menu": "analytics",
+		"menu":            "analytics",
 		"SelectedProject": "p-1", "Projects": []projectcontract.ProjectResp{{ID: "p-1", Name: "演示站"}},
 		"FilterFrom": "", "FilterTo": "", "RangeFrom": "", "RangeTo": "",
 		"Total": 0, "Visitors": 0, "PathTotal": 0,
 		"Daily": []any{}, "Paths": []any{}, "Referrers": []any{}, "UAClasses": []any{}, "Langs": []any{},
-		"RankLimit": 20, "Err": "",
+		"RankLimit": 20,
 	})
 	assertTabsStructure(t, body, 5)
 	if got := visiblePanels(body); got[0] != "an-panel-daily" {
@@ -89,12 +88,12 @@ func TestAnalyticsPageRendersWithoutViewMode(t *testing.T) {
 
 func TestAnalyticsEmptyViewsDistinguishMissingTrafficFromPurgedDetail(t *testing.T) {
 	base := map[string]any{
-		"title": analyticsPageTitle, "menu": "analytics",
+		"menu":            "analytics",
 		"SelectedProject": "p-1", "Projects": []projectcontract.ProjectResp{{ID: "p-1", Name: "演示站"}},
 		"FilterFrom": "", "FilterTo": "", "RangeFrom": "", "RangeTo": "",
 		"Total": 0, "Visitors": 0, "PathTotal": 0,
 		"Daily": []any{}, "Paths": []any{}, "Referrers": []any{}, "UAClasses": []any{}, "Langs": []any{},
-		"RankLimit": 20, "Err": "",
+		"RankLimit": 20,
 	}
 	for _, tc := range []struct {
 		name, view, title string
@@ -275,6 +274,12 @@ func renderAnalyticsPage(t *testing.T, over map[string]any) string {
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) {
+		c.Next()
+		for _, err := range c.Errors {
+			t.Errorf("页面渲染错误: %v", err.Err)
+		}
+	})
 	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 	})

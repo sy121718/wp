@@ -15,13 +15,13 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/pipeline"
-	seoutil "go_wp/internal/seo"
+	seoutil "go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
@@ -126,11 +126,11 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		SourceType:                pipeline.SourceTypePresentation,
 		CanonicalPath:             urlPath,
 		SourceHash:                sourceHash,
-		References:                references.Clone(),
+		References:                references.Clone().Unwrap(),
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
 		Dependencies:              deps,
-		Diagnostics:               diags.Items(),
+		Diagnostics:               pipeline.PublishDiagnostics(diags.Items()),
 	})
 	if err != nil {
 		return built, err

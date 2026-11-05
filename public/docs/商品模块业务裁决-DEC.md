@@ -95,17 +95,56 @@
 1. **公开目录**：总数与本页必须同快照 —— 用一条语句完成（`COUNT(*) OVER()`），
    不再「先 count 再 list」。越界页查不到行时窗口计数无值，退回一次 count 只为补「共 N 条」；
    第 1 页空页 = 过滤后 0 条，不再计数。
-2. **有状态发布记录**（PRD-011）：跨模块过滤（发布记录 → 商品状态）无法压进一条语句，
-   口径明确为：**items 与 total 允许来自不同快照**，但不得出现幻影行；本页因过滤为空时
-   返回空 items 与过滤后的 total。该路径的规模问题（PRD-011 全量读取）仍未解决，不因本裁决关闭。
-3. 上线索引仍是候选全集（PRD-007 成本主体未变）；本裁决只消除 count/list 之间的不一致，
-   不声称深分页成本已优化。
+   **候选资格由 SQL 直接给**（2026-11-01 用户批准跨模块只读关联例外之一）：
+   `model/product_public_catalog.go` 的 `publicCatalogQuery` 在 `collectionQuery` 上 join
+   一个「一实体一行」的发布子查询（`presentation_instances` + `presentation_publications`，
+   条件为同工程、同语言、`artifact_id IS NOT NULL`、`btrim(active_path, 空白集) <> ''`），
+   列表与计数共用这一个 builder。同一实体的多个发布实例在子查询内按 `entity_id` 分组去重，
+   total 不随发布实例数放大；同一实体有多条合法路径时取 `MIN(active_path)`（旧全集 map 也无顺序保证，
+   候选资格不变）。路径按原值随本页返回，不在 Go 侧二次裁剪。
+   **语言**：请求未带语言时按 `pipeline.DefaultLocale` 的既有语义取工程默认语言，只用于候选资格；
+   真实业务译文仍按请求语言取。
+2. **有状态发布记录**（PRD-011）：发布记录页同样用**一条只读语句**给出「精确 total + 本页明细」，
+   与本页行出自同一份语句快照（2026-11-01 批准的第二处跨模块只读关联例外，范围只到这一条读查询，
+   不推广到别的读路径）—— `model/publish_record_page.go` 只读关联 `presentation_instances` /
+   `presentation_publications` / `presentation_artifacts` 三表。
+   语句结构固定五段，全部在同一条 SQL 里：
+   ①**商品级筛选**（工程 + 关键词 + 状态 `EXISTS` 谓词；状态三档互斥：`active` = 存在
+   `active_artifact_id IS NOT NULL` 的实例、`draft` = 存在实例但都不 Online、`none` = 一实例都没有）；
+   ②`capped` 求过滤后的 `count(*)`；③`page_no` 把请求页夹到末页（`total = 0` 时页号为 0，
+   避免负 OFFSET）；④`page` 按 `(sort ASC, create_time DESC, id ASC)` 取本页；
+   ⑤`LEFT JOIN page` 后 `LATERAL` 聚合本页每个商品的实例 × 语言明细，`jsonb_agg` 交业务事实。
+   于是**一商品一行**，total 不随实例数 / 语言数放大；页内语言顺序每实例按 `pub.lang ASC` 取、
+   行内再稳定排序，明细字段口径沿用原端口的 `PublishRecords`：实例没有发布行时仍占一行、
+   语言为空；`Online` 只看 `active_artifact_id` 非空；发布行为空则 `ArtifactHash` 为空、
+   发布时间为零值 —— 由 SQL 的 NULL 交 Go 零值，不在 SQL 里造时间。
+   **不再是跨批扫描**：没有 keyset 游标、没有逐批 `Langs` 异快照、没有页窗口状态机、
+   没有跨连接长事务、不保存已见 id 集合，内存只留本页行。
+3. 公开目录不再先取候选全集（PRD-007 的这一部分已由第 1 条的关联查询消除）；
+   分页仍走数据库 `LIMIT/OFFSET`，深分页的偏移成本与以前一致，本裁决不声称深分页已优化。
+   发布记录侧要给出**精确 total**，仍必须对当前工程与关键词过滤后的**全部商品**计数一次，
+   **成本仍是 O(N)**（`capped` 里的 `count(*)`），本裁决不声称它是 O(1)：
+   省掉的是「多条语句 + 多次端口往返 + 跨批异快照 + 长事务占连接」，不是计数本身的复杂度。
 
-**落地**：`model.ListForCollectionPageWithTotal` + `orderCollectionQuery`（排序只一份）；
-`service/product_catalog.go` 改单查询。
+**落地**：公开目录：`model/product_public_catalog.go` 的 `publicCatalogQuery` /
+`ListPublicCatalogPageWithTotal` / `CountPublicCatalog`（共用 builder + `orderCollectionQuery`），
+`service/product_catalog.go` 单查询取本页、总数与路径（`SetPublicCatalogIndex` 与全集 map 已删）。
+发布记录侧：`model/publish_record_page.go` 的 `QueryPublishRecordPage`（外层 `rls.InProjectScope`、
+`publishRecordCandidatesQuery` 交候选、`publishRecordPageSQL` 一条语句）与
+`service/product_publish_record_page.go` 的 `QueryPublishRecords`（`publishRowsOf` 折叠行级事实）。
+跨批扫描的 `model/publish_record_scan.go` 与 `service/product_publish_record_scan.go` 已删，不保留旧形状。
 
-**验证**：`product_catalog_page_budget_test.go`（首页 1 次读、越界 2 次、返回总数相等）、
-`product_catalog_price_test.go`（同一条语句同时给 total 与本页行）。
+**验证**（本轮由主代理真实复跑 8 个功能包：63 个顶层 + 56 个子用例 pass、0 skip、0 fail，`go build -o /tmp/wp-followup-verify ./cmd` exit 0，本批路径 `git diff --check` exit 0；功能限定口径，非全包、非全量测试）：
+`product_catalog_page_budget_test.go`（首页 1 次读、
+越界 2 次、无候选时首页仍 1 次读且 total 为 0、本页不超过页大小）、`product_catalog_price_test.go`
+（价格仍取启用变体最低价）、`product_catalog_bounds_test.go`（页上限与缺省页大小）、
+`feature/product_catalog_publication_test.go`（无产物 / 全空白路径 / 草稿被排除，
+同一实体多发布实例 total 不翻倍）、
+`service/product_publish_record_page_sql_count_test.go`（整页只发一条 products 读取语句）、
+`service/product_publish_record_page_status_sql_test.go`（状态筛选先于分页、越界夹末页、
+无发布行时零值事实与有发布行时真实时刻）、
+`feature/product_publish_record_scan_test.go`（精确 total、夹末页、active/draft/none 三档互斥、工程隔离）、
+`feature/product_publish_record_page_test.go`（不接发布端口也能读）。
 
 ## DEC-08 错误键命名与分域
 

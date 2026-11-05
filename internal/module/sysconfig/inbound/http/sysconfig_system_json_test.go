@@ -5,14 +5,20 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/adminui"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 )
 
 type systemJSONStub struct {
@@ -47,21 +53,25 @@ func TestSystemJSONAggregate(t *testing.T) {
 		status           int
 		saved            bool
 	}{
-		{name: "atomic aggregate", body: `{"defaultLang":"en-US","siteLangURLMode":"off","defaultCountry":"US","defaultCurrency":"USD","i18nVersion":7,"tradeVersion":9}`, status: 200, saved: true},
-		{name: "conflict", body: `{"defaultLang":"en-US","siteLangURLMode":"off","defaultCountry":"US","defaultCurrency":"USD","i18nVersion":7,"tradeVersion":9}`, saveErr: errors.New(sysconfigenums.ErrVersionConflict), status: 409, saved: true},
-		{name: "unknown option", body: `{"defaultLang":"xx","siteLangURLMode":"off","defaultCountry":"US","defaultCurrency":"USD","i18nVersion":7,"tradeVersion":9}`, status: 400},
-		{name: "dictionary fails closed", body: `{"defaultLang":"en-US","siteLangURLMode":"off","defaultCountry":"US","defaultCurrency":"USD","i18nVersion":7,"tradeVersion":9}`, dictErr: errors.New("private SQL error"), status: 500},
-		{name: "bad JSON", body: `{"i18nVersion":"7"}`, status: 400},
-		{name: "missing version", body: `{"defaultLang":"en-US","siteLangURLMode":"off","defaultCountry":"US","defaultCurrency":"USD"}`, status: 400},
+		{name: "atomic aggregate", body: `defaultLang=en-US&siteLangURLMode=off&defaultCountry=US&defaultCurrency=USD&i18nVersion=7&tradeVersion=9`, status: 200, saved: true},
+		{name: "conflict", body: `defaultLang=en-US&siteLangURLMode=off&defaultCountry=US&defaultCurrency=USD&i18nVersion=7&tradeVersion=9`, saveErr: errors.New(sysconfigenums.ErrVersionConflict), status: 409, saved: true},
+		{name: "unknown option", body: `defaultLang=xx&siteLangURLMode=off&defaultCountry=US&defaultCurrency=USD&i18nVersion=7&tradeVersion=9`, status: 400},
+		{name: "dictionary fails closed", body: `defaultLang=en-US&siteLangURLMode=off&defaultCountry=US&defaultCurrency=USD&i18nVersion=7&tradeVersion=9`, dictErr: errors.New("private SQL error"), status: 500},
+		{name: "bad form", body: `i18nVersion=abc`, status: 400},
+		{name: "missing version", body: `defaultLang=en-US&siteLangURLMode=off&defaultCountry=US&defaultCurrency=USD`, status: 400},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &systemJSONStub{saveErr: tc.saveErr, dictErr: tc.dictErr}
 			h := sysconfighttp.NewAdminHandle(stub)
 			engine := gin.New()
-			engine.POST("/api/sysconfig/system/save", func(c *gin.Context) { c.Set("user_id", uint64(42)); h.APISystemSave(c) })
+			engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+			engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+			engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Set("user_id", uint64(42)); c.Next() })
+			engine.POST("/api/sysconfig/system/save", pageview.HTMLFragment, h.APISystemSave)
 			req := httptest.NewRequest(http.MethodPost, "/api/sysconfig/system/save", strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
 			if rec.Code != tc.status {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go_wp/internal/adminui"
@@ -11,6 +12,7 @@ import (
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
+	"go_wp/pkg/response"
 )
 
 var customerFacingInjectedEntries = map[string]map[string]string{
@@ -50,7 +52,7 @@ func TestCustomerErrMsgCarriesFactThenTranslates(t *testing.T) {
 	}
 
 	text := customerMsg{Fallback: "会员等级暂时读不出来"}
-	if got := adminui.MsgText(customerFacingLangCtx(t, "en-US"), text); got != "会员等级暂时读不出来" {
+	if got := response.MsgText(customerFacingLangCtx(t, "en-US"), text); got != "会员等级暂时读不出来" {
 		t.Errorf("成品结论应原样输出，实际 %q", got)
 	}
 }
@@ -76,8 +78,9 @@ func TestCustomerErrMsgFallsBackToInternalFact(t *testing.T) {
 	if msg := customerErrMsg(c, nil); !msg.Empty() {
 		t.Errorf("nil error 应给空结论，实际 %+v", msg)
 	}
-	if got := customerErrText(c, nil); got != "" {
-		t.Errorf("nil error 的成品应为空串，实际 %q", got)
+	// 无错误时 MsgText 交共享归口文案是共享出口的行为；这里只断言不返回内部原文。
+	if got := customerErrText(c, nil); strings.Contains(got, "SQLSTATE") {
+		t.Errorf("nil error 不得产出内部原文，实际 %q", got)
 	}
 }
 

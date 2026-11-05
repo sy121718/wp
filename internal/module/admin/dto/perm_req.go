@@ -55,7 +55,7 @@ type PermUpdateReq struct {
 	Module         string `json:"module" form:"module" binding:"required,max=50" validate:"required,max=50"`
 	APIPath        string `json:"api_path" form:"api_path" binding:"required,max=200" validate:"required,max=200"`
 	APIMethod      string `json:"api_method" form:"api_method" binding:"required,oneof=GET POST" validate:"required,oneof=GET POST"`
-	Status         int    `json:"status" form:"status"`
+	Status         int    `json:"status" form:"status" binding:"oneof=0 1" validate:"oneof=0 1"`
 	Remark         string `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 

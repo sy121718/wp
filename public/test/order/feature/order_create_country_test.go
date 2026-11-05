@@ -116,20 +116,19 @@ func TestAdminOrderCreateEchoesCountryOnFailure(t *testing.T) {
 	form.Set("billCountry", "JP")
 	rec := env.post(t, form)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("失败提交必须就地重渲（200），实际 %d", rec.Code)
+	// 新契约：失败只回错误片段，不进成功交换；已填内容留在表单自身。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("字段校验失败应回 400 错误片段，实际 %d（%s）", rec.Code, rec.Body.String())
 	}
 	out := rec.Body.String()
-	if !strings.Contains(out, "</html>") {
-		t.Fatal("失败重渲的输出不是一整页（缺 </html>）")
+	if !strings.Contains(out, `data-ui-error`) {
+		t.Fatalf("失败应渲染 Jet 错误片段：%s", out)
 	}
-
-	for _, want := range []string{
-		`<option value="US" selected>`,
-		`<option value="JP" selected>`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("失败重渲丢了国家选择：缺少 %q", want)
-		}
+	if strings.Contains(out, "order.err.") || strings.Contains(out, "order.msg.") {
+		t.Fatalf("失败片段漏出了声明 key：%s", out)
+	}
+	// 失败片段不替换表单：已填内容由浏览器保留，这里只确认片段本身没有整页壳。
+	if strings.Contains(out, "<html") {
+		t.Errorf("错误片段不该带整页壳：%s", out)
 	}
 }

@@ -2,6 +2,7 @@ package orderhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 
 	"go_wp/internal/adminui"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -54,7 +57,17 @@ func TestCouponEditFormFailureIsInternalJSONFragment(t *testing.T) {
 	}
 }
 
+// TestCouponEditFormBadParamsStaySeparate 钉参数非法档的出口形状。
+//
+// 这一档原来是裸 c.Status(400) 空 body，页面 GET 失败时前端拿不到 message；
+// 现在统一交 JSON 体（P1-a），所以断言从「不写响应体」改成「code 与 message
+// 都对得上词库译文」。
 func TestCouponEditFormBadParamsStaySeparate(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{
+		enums.ErrInvalidParams: {"zh-CN": "请求参数错误", "en-US": "Invalid request parameters"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	for _, path := range []string{
 		"/admin/coupons/edit-form?id=abc&project=p-1",
 		"/admin/coupons/edit-form?id=0&project=p-1",
@@ -71,11 +84,25 @@ func TestCouponEditFormBadParamsStaySeparate(t *testing.T) {
 			}
 			continue
 		}
-		if got := c.Writer.Status(); got != http.StatusBadRequest {
-			t.Fatalf("参数非法应是裸 400，got %d（path=%s）", got, path)
+		if got := recorder.Code; got != http.StatusBadRequest {
+			t.Fatalf("参数非法应是 400，got %d（path=%s）", got, path)
 		}
-		if body := recorder.Body.String(); body != "" {
-			t.Fatalf("参数非法档不应写响应体，got %q（path=%s）", body, path)
+		body := recorder.Body.String()
+		if body == "" {
+			t.Fatalf("参数非法档必须写 JSON 体（页面 GET 失败也要有 message），path=%s", path)
+		}
+		payload := struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}{}
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatalf("响应体不是 JSON：%v（body=%q，path=%s）", err, body, path)
+		}
+		if payload.Code != http.StatusBadRequest {
+			t.Fatalf("code = %d，want 400（path=%s）", payload.Code, path)
+		}
+		if payload.Message != "请求参数错误" {
+			t.Fatalf("message = %q，want 词库译文「请求参数错误」（path=%s）", payload.Message, path)
 		}
 	}
 }

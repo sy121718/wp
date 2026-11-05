@@ -1,21 +1,17 @@
 package userhttp
 
 import (
-	"errors"
-	"fmt"
-	"go_wp/pkg/binding"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/adminui"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
-	"go_wp/pkg/bulkids"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
-
-	"github.com/gin-gonic/gin"
+	pageview "go_wp/pkg/view"
 )
 
 type customerBulkItem struct {
@@ -36,31 +32,13 @@ type customerBulkResult struct {
 	Items    []customerBulkItem `json:"items"`
 }
 
-func customerBulkBody[T interface{ CustomerBulkValues() ([]uint64, int, error) }](c *gin.Context) ([]uint64, int, bool) {
-	req, err := binding.ParseJSON[T](c)
-	if err != nil {
-		customerBulkRequestError(c, err)
-		return nil, 0, false
-	}
-	ids, status, err := (*req).CustomerBulkValues()
-	if err != nil {
-		customerBulkRequestError(c, err)
-		return nil, 0, false
-	}
-	return ids, status, true
-}
-
-func customerBulkRequestError(c *gin.Context, err error) {
-	var limit *bulkids.IDsError
-	if errors.As(err, &limit) {
-		response.ErrorWithMessage(c, 400, fmt.Sprintf(i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c)), strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
-		return
-	}
-	key := userenums.ErrInvalidParam
-	if fact, ok := facing.FactOf(err); ok && fact.Key == userenums.ErrCustomerStatusInvalid {
-		key = userenums.ErrCustomerStatusInvalid
-	}
-	response.ErrorWithMessage(c, 400, key)
+// customerWriteResult 是单条客户动作的成功片段：句子只在 Jet 里，按词条取词；
+// Fallback 只在缺词时兜底，绝不让裸 key 上屏。
+func customerWriteResult(c *gin.Context, key string) {
+	c.HTML(http.StatusOK, "admin/user/customer_write_result.html", pageview.Objects(
+		pageview.Object("Key", key),
+		pageview.Object("Fallback", customerNoticeFallback[key]),
+	))
 }
 
 func customerAPIErrorText(c *gin.Context, err error) string {
@@ -89,66 +67,88 @@ func customerUnlockMessage(res *userdto.CustomerUnlockResp) string {
 }
 
 func (h *CustomerHandle) BulkCustomerStatus(c *gin.Context) {
-	ids, status, ok := customerBulkBody[userdto.CustomerBulkStatusReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form userdto.CustomerBulkForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		customerBulkFail(c, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
-	result := customerBulkResult{Items: make([]customerBulkItem, 0, len(ids))}
-	for _, id := range ids {
-		item := customerBulkItem{ID: id}
-		res, err := h.svc.SetCustomerStatus(c.Request.Context(), &userdto.CustomerStatusReq{CustomerID: id, Status: status})
-		if err != nil {
-			item.Message = customerAPIErrorText(c, err)
-			result.Skipped++
-		} else if res == nil {
-			item.Message = response.TranslateMessage(c, userenums.ErrInternal)
-			result.Skipped++
-		} else {
-			item.Updated = true
-			result.Updated++
-			item.Message = response.TranslateMessage(c, customerStatusMessage(res.Status))
-		}
-		result.Items = append(result.Items, item)
+	ids, err := form.CustomerBulkIDs()
+	if err != nil {
+		customerBulkFail(c, err)
+		return
 	}
-	response.Success(c, result)
+	status, err := form.CustomerBulkStatusValue()
+	if err != nil {
+		customerBulkFail(c, err)
+		return
+	}
+	updated, skipped := 0, 0
+	rows := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		row := map[string]any{"ID": strconv.FormatUint(id, 10), "OK": false, "Message": ""}
+		res, serr := h.svc.SetCustomerStatus(c.Request.Context(), &userdto.CustomerStatusReq{CustomerID: id, Status: status})
+		switch {
+		case serr != nil:
+			row["Message"] = customerAPIErrorText(c, serr)
+			skipped++
+		case res == nil:
+			row["Message"] = response.TranslateMessage(c, userenums.ErrInternal)
+			skipped++
+		default:
+			row["OK"] = true
+			updated++
+		}
+		rows = append(rows, row)
+	}
+	customerBulkHTML(c, "admin/user/customer_bulk_status_result.html", updated, skipped, rows)
 }
 
 func (h *CustomerHandle) BulkCustomerUnlock(c *gin.Context) {
-	ids, _, ok := customerBulkBody[userdto.CustomerBulkUnlockReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form userdto.CustomerBulkForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		customerBulkFail(c, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
-	result := customerBulkResult{Items: make([]customerBulkItem, 0, len(ids))}
-	for _, id := range ids {
-		item := customerBulkItem{ID: id}
-		res, err := h.svc.UnlockCustomer(c.Request.Context(), &userdto.CustomerUnlockReq{CustomerID: id})
-		if err != nil {
-			item.Message = customerAPIErrorText(c, err)
-			result.Skipped++
-		} else if res == nil {
-			item.Message = response.TranslateMessage(c, userenums.ErrInternal)
-			result.Skipped++
-		} else {
-			item.Unlocked = res.Unlocked
-			item.Cleared = res.Cleared
-			item.Noop = !res.Unlocked && !res.Cleared
-			item.Updated = res.Unlocked || res.Cleared
-			if item.Unlocked {
-				result.Unlocked++
-			}
-			if item.Cleared {
-				result.Cleared++
-			}
-			if item.Noop {
-				result.Noop++
-			}
-			if item.Updated {
-				result.Updated++
-			}
-			item.Message = response.TranslateMessage(c, customerUnlockMessage(res))
-		}
-		result.Items = append(result.Items, item)
+	ids, err := form.CustomerBulkIDs()
+	if err != nil {
+		customerBulkFail(c, err)
+		return
 	}
-	summary := i18n.FillTranslate(i18n.TranslateFunc(response.RequestLanguage(c)), userenums.MsgCustomerBulkUnlock, "已解除锁定 {unlocked} 个，已清零失败计数 {cleared} 个，{noop} 个本来就未锁定，{skipped} 个未处理。", map[string]string{"unlocked": strconv.Itoa(result.Unlocked), "cleared": strconv.Itoa(result.Cleared), "noop": strconv.Itoa(result.Noop), "skipped": strconv.Itoa(result.Skipped)})
-	response.SuccessWithMessage(c, summary, result)
+	unlocked, cleared, noop, skipped := 0, 0, 0, 0
+	for _, id := range ids {
+		res, serr := h.svc.UnlockCustomer(c.Request.Context(), &userdto.CustomerUnlockReq{CustomerID: id})
+		switch {
+		case serr != nil:
+			skipped++
+		case res == nil:
+			skipped++
+		case res.Unlocked:
+			unlocked++
+		case res.Cleared:
+			cleared++
+		default:
+			noop++
+		}
+	}
+	c.HTML(http.StatusOK, "admin/user/customer_bulk_unlock_result.html", pageview.Objects(
+		pageview.Object("Unlocked", unlocked),
+		pageview.Object("Cleared", cleared),
+		pageview.Object("Noop", noop),
+		pageview.Object("Skipped", skipped),
+	))
+}
+
+// customerBulkFail 把批量请求的失败事实交给共享 HTML 出口。
+func customerBulkFail(c *gin.Context, err error) {
+	pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, err)
+}
+
+func customerBulkHTML(c *gin.Context, template string, done, skipped int, rows []map[string]any) {
+	c.HTML(http.StatusOK, template, pageview.Objects(
+		pageview.Object("Done", done),
+		pageview.Object("Skipped", skipped),
+		pageview.Object("Rows", rows),
+	))
 }

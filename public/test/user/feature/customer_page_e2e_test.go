@@ -4,6 +4,7 @@ import (
 	"context"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -69,11 +71,14 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
 	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
 	engine.GET("/admin/customers/detail", adminui.PageSlot(userhttp.CustomerDetailPageTemplate), page.CustomerDetailPage)
-	engine.POST("/api/customer/status", userhttp.NewCustomerHandle(users).SetCustomerStatus)
-	engine.POST("/api/customer/unlock", userhttp.NewCustomerHandle(users).UnlockCustomer)
+	engine.POST("/api/customer/status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).SetCustomerStatus)
+	engine.POST("/api/customer/unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).UnlockCustomer)
 
 	return &customerE2EEnv{
 		engine: engine, db: db,
@@ -120,8 +125,8 @@ func (e *customerE2EEnv) get(t *testing.T, path string) *httptest.ResponseRecord
 
 func (e *customerE2EEnv) post(t *testing.T, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(customerFeatureJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	e.engine.ServeHTTP(rec, req)
 	return rec
@@ -180,17 +185,13 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 	t.Run("停用账号会真的落库", func(t *testing.T) {
 		rec := env.post(t, "/api/customer/status", url.Values{
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
-			"toStatus":   {strconv.Itoa(usermodel.UserStatusDisabled)},
+			"status":     {strconv.Itoa(usermodel.UserStatusDisabled)},
 		})
 		if rec.Code != http.StatusOK {
-			t.Fatalf("停用应渲染提示页（200），实际 %d", rec.Code)
+			t.Fatalf("停用应渲染结果片段（200），实际 %d：%s", rec.Code, rec.Body.String())
 		}
-		body := rec.Body.String()
-		if !strings.Contains(body, `"code":200`) {
-			t.Errorf(`停用后应有 data-jump-state="ok"`)
-		}
-		if !strings.Contains(body, "账号已停用") {
-			t.Errorf("停用后提示页应含「账号已停用」")
+		if !strings.Contains(rec.Body.String(), "账号已停用") {
+			t.Errorf("停用后结果片段应含「账号已停用」")
 		}
 		stored, err := env.users.GetByID(context.Background(), customer.ID)
 		if err != nil {
@@ -213,14 +214,10 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
 		})
 		if rec.Code != http.StatusOK {
-			t.Fatalf("解锁应渲染提示页（200），实际 %d", rec.Code)
+			t.Fatalf("解锁应渲染结果片段（200），实际 %d：%s", rec.Code, rec.Body.String())
 		}
-		body := rec.Body.String()
-		if !strings.Contains(body, `"code":200`) {
-			t.Errorf(`解锁后应有 data-jump-state="ok"`)
-		}
-		if !strings.Contains(body, "账号已解除锁定") {
-			t.Errorf("解锁后提示页应含「账号已解除锁定」")
+		if !strings.Contains(rec.Body.String(), "账号已解除锁定") {
+			t.Errorf("解锁后结果片段应含「账号已解除锁定」")
 		}
 		stored, err := env.users.GetByID(ctx, customer.ID)
 		if err != nil {

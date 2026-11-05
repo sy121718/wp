@@ -30,8 +30,7 @@ type Service struct {
 
 	changes masterdatacontract.MasterDataService
 
-	publishedLocator   presentationcontract.PublishedEntityLocator
-	publicCatalogIndex presentationcontract.PublishedEntityIndex
+	publishedLocator presentationcontract.PublishedEntityLocator
 
 	archiveEnsurer presentationcontract.ArchiveInstanceEnsurer
 
@@ -44,17 +43,11 @@ type Service struct {
 
 	pageDetailTemplates productcontract.DetailTemplatePort
 
-	pagePublishRecords productcontract.PublishRecordReader
-
 	pagePublishAttempts productcontract.PublishAttemptReader
 }
 
 func (s *Service) SetDetailTemplatePort(port productcontract.DetailTemplatePort) {
 	s.pageDetailTemplates = port
-}
-
-func (s *Service) SetPublishRecordPort(port productcontract.PublishRecordReader) {
-	s.pagePublishRecords = port
 }
 
 func (s *Service) SetPublishAttemptPort(port productcontract.PublishAttemptReader) {
@@ -63,8 +56,17 @@ func (s *Service) SetPublishAttemptPort(port productcontract.PublishAttemptReade
 
 func (s *Service) SetInventory(reader inventorycontract.ProductStockReader) { s.inv = reader }
 
-func NewService(m *productmodel.Model, project projectcontract.ProjectService) *Service {
-	return &Service{m: m, project: project}
+// NewService 交出商品服务：m、project 与审计变更记录三件必需依赖都在这里给齐。
+//
+// changes 是必需依赖而不是可晚接的 setter：商品的每次写都要在同一个事务里记审计变更，
+// 缺它只能在运行到写路径时才炸，那是装配错误被发现得最晚的一种。nil 直接 panic，
+// 让装配期就报出「没接 masterdata」。
+func NewService(m *productmodel.Model, project projectcontract.ProjectService,
+	changes masterdatacontract.MasterDataService) *Service {
+	if changes == nil {
+		panic("productservice.NewService：缺少 masterdata 审计变更依赖")
+	}
+	return &Service{m: m, project: project, changes: changes}
 }
 
 func (s *Service) SetContentStore(store i18n.ContentStore) {
@@ -77,10 +79,6 @@ func (s *Service) SetInventoryService(port inventorycontract.ProductStockPort) {
 
 func (s *Service) SetAvailabilityPort(port productcontract.VariantAvailabilityPort) {
 	s.availability = port
-}
-
-func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService) {
-	s.changes = port
 }
 
 func (s *Service) SetArchiveInstanceEnsurer(port presentationcontract.ArchiveInstanceEnsurer) {

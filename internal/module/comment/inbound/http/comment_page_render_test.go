@@ -130,14 +130,14 @@ func TestCommentsPageRendersRows(t *testing.T) {
 
 		"内容", "评论对象", "评论人", "提交时间", "操作",
 
-		`data-write-url="/api/comment/review"`,
-		`data-write="bulk"`,
+		`hx-post="/api/comment/review"`,
+		`data-list-bulk`,
 
-		`data-write-extra="projectId,status"`, `data-write-outcome="review"`,
-		`name="status" value="approved" data-requires-js hidden disabled`,
-		`name="status" value="rejected" data-requires-js hidden disabled`,
+		`data-write-result`,
+		`name="status" value="approved" data-requires-js hidden`,
+		`name="status" value="rejected" data-requires-js hidden`,
 		`data-write-status role="status"`, `name="projectId" value="p-1"`,
-		`name="ids" value="12"`, `data-msg-none-selected=`, `data-msg-refresh=`,
+		`name="ids" value="12"`,
 		`meta name="csrf-token"`,
 	} {
 		if !strings.Contains(body, want) {

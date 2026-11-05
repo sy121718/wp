@@ -169,15 +169,5 @@ func FieldLabel(entityType, field string) LabelPair {
 	return LabelPair{"", field}
 }
 
-var errFallbacks = map[string]string{
-	ErrInvalidParam:      "参数不合法",
-	ErrEntityTypeInvalid: "实体类型不在变更记录的白名单内",
-	ErrActionInvalid:     "变更动作不合法",
-	ErrEntityIDRequired:  "实体 id 必填",
-	ErrProjectRequired:   "未指定工程",
-	ErrTimeRangeInvalid:  "时间范围不合法",
-}
+func Err(key string) error { return facing.New(key) }
 
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
-
-func FallbackFor(key string) string { return errFallbacks[key] }

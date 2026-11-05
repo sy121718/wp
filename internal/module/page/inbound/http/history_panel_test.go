@@ -2,6 +2,7 @@ package pagehttp
 
 import (
 	"go_wp/internal/adminui"
+	"go_wp/internal/text"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ func TestHistoryPanelEmptyState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/workbench/history", adminui.BareSlot(PageHistoryListTemplate), handle.HistoryPanel)
 
 	form := url.Values{"pageId": {"page-1"}}

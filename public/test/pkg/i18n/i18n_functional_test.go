@@ -69,11 +69,11 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 	if err := db.AutoMigrate(&testI18nRecord{}); err != nil {
 		t.Fatalf("迁移 sys_i18n 失败: %v", err)
 	}
-	cleanI18nData(t, db, "msg_operation_success")
+	cleanI18nData(t, db, "uiOpSuccess")
 
 	seed := []testI18nRecord{
-		{ItemKey: "msg_operation_success", Lang: "zh-CN", ItemValue: "操作成功", HttpCode: 200, Status: 1},
-		{ItemKey: "msg_operation_success", Lang: "en-US", ItemValue: "Operation successful", HttpCode: 200, Status: 1},
+		{ItemKey: "uiOpSuccess", Lang: "zh-CN", ItemValue: "操作成功", HttpCode: 200, Status: 1},
+		{ItemKey: "uiOpSuccess", Lang: "en-US", ItemValue: "Operation successful", HttpCode: 200, Status: 1},
 	}
 	if err := db.Create(&seed).Error; err != nil {
 		t.Fatalf("写入 i18n 测试数据失败: %v", err)
@@ -88,18 +88,18 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 		t.Fatalf("默认语言不正确: got=%s want=%s", got, "en-US")
 	}
 
-	if got := i18n.GetText("msg_operation_success", ""); got != "Operation successful" {
+	if got := i18n.GetText("uiOpSuccess", ""); got != "Operation successful" {
 		t.Fatalf("默认语言文案不正确: got=%s want=%s", got, "Operation successful")
 	}
 
 	if err := db.Model(&testI18nRecord{}).
-		Where("item_key = ? AND lang = ?", "msg_operation_success", "en-US").
+		Where("item_key = ? AND lang = ?", "uiOpSuccess", "en-US").
 		Update("item_value", "Operation refreshed").Error; err != nil {
 		t.Fatalf("更新 i18n 数据失败: %v", err)
 	}
 
 	waitForText(t, func() string {
-		return i18n.GetText("msg_operation_success", "")
+		return i18n.GetText("uiOpSuccess", "")
 	}, "Operation refreshed")
 }
 

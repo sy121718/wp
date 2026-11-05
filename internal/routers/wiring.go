@@ -19,13 +19,15 @@ const (
 	portProductInventoryModel     = "product.SetInventory"
 	portInventoryVariantStockRefs = "inventory.SetVariantWarehouseStocks"
 	portPurchaseVariantCost       = "purchase.SetVariantCost"
-	portProductMasterDataChanges  = "product.SetMasterDataChanges"
+	// 商品侧是**构造参数注入**（SetupProductRoutes(..., changes)），不是 setter；
+	// 采购侧仍是 setter。名字按真实注入方式给，别再用 product.SetMasterDataChanges
+	// 这种「曾经长这样」的值 —— 找代码时会 grep 不到。
+	portProductMasterDataChanges  = "product.MasterDataChanges"
 	portPurchaseMasterDataChanges = "purchase.SetMasterDataChanges"
 	portProductAvailability       = "product.SetAvailabilityPort"
 	portProductArchiveEnsurer     = "product.SetArchiveInstanceEnsurer"
 	portProductPublishedLocator   = "product.SetPublishedEntityLocator"
 	portProductPurchaseChecker    = "product.SetPurchaseChecker"
-	portProductPublicIndex        = "product.SetPublicCatalogIndex"
 
 	portProductPageWarehouses     = "product.SetWarehouseOptionsPort"
 	portProductPageTemplates      = "product.SetEntityTemplatePort"
@@ -69,6 +71,7 @@ const (
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
 	portPurchaseVariantCatalog        = "purchase.SetVariantCatalog"
+	portAdminSideEffectWorker         = "admin.StartSideEffectWorker"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
@@ -198,7 +201,7 @@ var wiringManifest = []wiringEntry{
 		"可用量 / 成本快照 / 出库跨仓分配读不到「这个变体引用了哪些货行」（页面显示 0 且不报错）"},
 	{portPurchaseVariantCost, "product", "purchase", wiringRequiredPort,
 		"采购收货 / 生产入库的单价不回写 cost_price（入库单行记 cost_error）"},
-	{portProductMasterDataChanges, "masterdata", "product", wiringRequiredPort,
+	{portProductMasterDataChanges, "masterdata → product 构造参数", "product", wiringRequiredPort,
 		"商品 / 变体字段级审计静默缺失（改价格、改编码都查不到留痕）"},
 	{portPurchaseMasterDataChanges, "masterdata", "purchase", wiringRequiredPort,
 		"货源资料变更审计静默缺失"},
@@ -208,8 +211,6 @@ var wiringManifest = []wiringEntry{
 		"分类新建 / 改名后归档页不跟上（线上仍是旧路径）"},
 	{portProductPublishedLocator, "presentation", "product", wiringRequiredPort,
 		"商品集合项的 url 全空（列表页商品没有链接）"},
-	{portProductPublicIndex, "presentation", "product", wiringRequiredPort,
-		"公开商品列表缺少目标语言的上线实体候选集合"},
 	{portProductPurchaseChecker, "order", "product", wiringOptionalDegraded,
 		"「商品评论必须买过」不生效：任何登录访客都能提交商品评论（提交仍进审核队列）"},
 
@@ -227,6 +228,8 @@ var wiringManifest = []wiringEntry{
 		"全局默认语言 / 站点语言 URL 方案 / 默认币种读不到 —— 静默使用代码内常量（站点行为与配置不一致，日志里只有一行载入失败）"},
 	{portDataRuleDeptResolver, "admin", "builtin（数据权限中间件）", wiringRequiredPort,
 		"按部门的数据权限规则静默失效：该被拦的数据放行或被误拦，页面上看不出区别"},
+	{portAdminSideEffectWorker, "admin", "admin（自带 worker）", wiringRequiredPort,
+		"策略重载与会话吊销退化为「只做一次、失败就留在表里没人重试」：权限变更要等下次重启才在全进程生效"},
 	{portInventoryProductCatalog, "product", "inventory（商品 → 变体下拉）", wiringOptionalDegraded,
 		"库存页的「商品 → 变体」下拉为空（用户看到空列表，不是错误）"},
 	{portPurchaseVariantCatalog, "product + inventory", "purchase（采购行 SKU 下拉）", wiringOptionalDegraded,

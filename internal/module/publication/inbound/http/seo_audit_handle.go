@@ -2,13 +2,14 @@ package pubhttp
 
 import (
 	"context"
+	"net/http"
 
 	pubdto "go_wp/internal/module/publication/dto"
 	pubservice "go_wp/internal/module/publication/service"
-	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type SeoAuditHandle struct {
@@ -19,20 +20,20 @@ func NewSeoAuditHandle(run func(context.Context, string) (pubservice.AuditResult
 	return &SeoAuditHandle{run: run}
 }
 
+// SeoAudit 接收标准表单，结果由 Jet 片段渲染成结论区。
 func (h *SeoAuditHandle) SeoAudit(c *gin.Context) {
-	req, ok := binding.JSON[pubdto.SeoAuditReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req pubdto.SeoAuditReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "publication", err)
 		return
 	}
-	query, ok := binding.Query[pubdto.SeoAuditReq](c)
-	if !ok {
-		return
-	}
-	result, err := h.run(c.Request.Context(), req.ResolveProject(query))
+	result, err := h.run(c.Request.Context(), req.ResolveProject(nil))
 	if err != nil {
-
-		response.ErrorStatusAuto(c, "publication", err)
+		pageview.FailScene(c, "publication", err)
 		return
 	}
-	response.Success(c, result)
+	c.HTML(http.StatusOK, "admin/analytics/seo_audit_result.html", pageview.Objects(
+		pageview.Object("Result", result),
+	))
 }

@@ -2,9 +2,12 @@ package purchasedto
 
 import "go_wp/pkg/utils"
 
+// OptionResp 是纯选项事实：只保值和顺序。
+// 显示标签由模板按请求语言取词，不在 DTO 里预先翻译。
+// OptionResp 是纯选项事实：只保值，保持后端枚举顺序。
+// 显示标签（含词条 key 与兜底）是固定 UI 映射，写在模板里，按请求语言取词。
 type OptionResp struct {
 	Value string
-	Label string
 }
 
 type ProjectOptionResp struct {

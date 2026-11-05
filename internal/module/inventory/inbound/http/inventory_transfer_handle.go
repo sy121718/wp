@@ -2,8 +2,10 @@ package inventoryhttp
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -85,51 +87,58 @@ func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
 	if !ok {
 		return
 	}
-	res, err := h.transfers.GetTransfer(c.Request.Context(), req)
+	_, err := h.transfers.GetTransfer(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	// 明细行是真正的结构化输入：明确 JSON 请求（builder 收集行），输出仍是 Jet 片段。
 	req, ok := binding.JSON[inventorydto.CreateTransferReq](c)
 	if !ok {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, inventoryenums.Err(inventoryenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.transfers.CreateTransfer(c.Request.Context(), req)
+	_, err := h.transfers.CreateTransfer(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.TransferShipReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req inventorydto.TransferShipReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
-	res, err := h.transfers.ShipTransfer(c.Request.Context(), req)
+	_, err := h.transfers.ShipTransfer(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.TransferReceiveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req inventorydto.TransferReceiveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
-	res, err := h.transfers.ReceiveTransfer(c.Request.Context(), req)
+	_, err := h.transfers.ReceiveTransfer(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
@@ -139,54 +148,60 @@ func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Conte
 	}
 	list, err := h.transfers.ListTransferStockOptions(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
 	response.Success(c, list)
 }
 
 func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.TransferApproveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req inventorydto.TransferApproveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 
 	req.OperatorID = int64(builtin.CurrentUserID(c))
 	req.OperatorName = builtin.OperatorName(c)
-	res, err := h.transfers.ApproveTransfer(c.Request.Context(), req)
+	_, err := h.transfers.ApproveTransfer(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.TransferRejectReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req inventorydto.TransferRejectReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 	req.OperatorID = int64(builtin.CurrentUserID(c))
 	req.OperatorName = builtin.OperatorName(c)
-	res, err := h.transfers.RejectTransfer(c.Request.Context(), req)
+	_, err := h.transfers.RejectTransfer(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.TransferCancelReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req inventorydto.TransferCancelReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
-	res, err := h.transfers.CancelTransfer(c.Request.Context(), req)
+	_, err := h.transfers.CancelTransfer(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	inventoryWriteOK(c)
 }
 
 type inventoryTransferPageHandle struct {
@@ -248,7 +263,7 @@ func (h *inventoryTransferPageHandle) InventoryTransferListJSON(c *gin.Context) 
 	}
 	list, err := h.transfers.ListTransfers(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, 400, "inventory", err)
+		pageview.FailScene(c, inventoryErrScene, err)
 		return
 	}
 	response.Success(c, list)

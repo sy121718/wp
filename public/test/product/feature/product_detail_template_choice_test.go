@@ -29,6 +29,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/public/test/support"
 
 	"github.com/google/uuid"
@@ -428,6 +429,8 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
@@ -443,9 +446,9 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
 	engine.GET("/admin/products/preview-frame", handle.ProductPreviewFrame)
-	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
-	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
-	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
+	engine.POST("/api/product/detail-template/create", pageview.HTMLFragment, api.CreateDetailTemplate)
+	engine.POST("/api/product/detail-template/publish", pageview.HTMLFragment, api.PublishDetailTemplate)
+	engine.POST("/api/product/detail-template/apply", pageview.HTMLFragment, api.ApplyDetailTemplate)
 	return engine, f
 }
 
@@ -484,23 +487,23 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("页面预览应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Fatalf("预览应返回 HTML，实际 Content-Type=%q", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("预览应返回 JSON，实际 Content-Type=%q", ct)
 	}
-	if !strings.Contains(rec.Body.String(), "极简版式") {
-		t.Fatalf("页面预览应渲染选中模板: %s", rec.Body.String())
+	preview := asMap(t, jsonMap(t, rec.Body.Bytes())["data"], "预览data")
+	previewHTML, _ := preview["html"].(string)
+	if !strings.Contains(previewHTML, "极简版式") {
+		t.Fatalf("页面预览应渲染选中模板: %s", previewHTML)
 	}
 	if n := countRows(t, f.db, "presentation_instances", "entity_id = ?", productID); n != 0 {
 		t.Fatalf("页面预览不应创建实例，实际 %d 条", n)
 	}
 
-	rec = postJSON(t, engine, "/api/product/detail-template/create", map[string]any{
-		"projectId": f.projectID, "productId": productID,
-		"name": "节庆详情页", "copyFrom": first.ID,
+	rec = postForm(engine, "/api/product/detail-template/create", url.Values{
+		"projectId": {f.projectID}, "productId": {productID},
+		"name": {"节庆详情页"}, "copyFrom": {first.ID},
 	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("新建命名模板应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	assertHTMLSuccess(t, rec, "新建命名模板")
 	list, err := f.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: "product"})
 	if err != nil {
 		t.Fatalf("列模板失败: %v", err)
@@ -509,12 +512,8 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		t.Fatalf("新建后应有 4 套命名模板，实际 %d", len(list))
 	}
 
-	rec = postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
-		"projectId": f.projectID, "productId": productID, "templateId": first.ID,
-	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("首次发布应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	rec = postForm(engine, "/api/product/detail-template/publish", url.Values{"projectId": {f.projectID}, "productId": {productID}, "templateId": {first.ID}})
+	assertHTMLSuccess(t, rec, "首次发布")
 	if !strings.Contains(activeHTML(t, "/products/summer-shirt"), "活动版式") {
 		t.Fatalf("页面发布应使用选中模板")
 	}
@@ -533,12 +532,8 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		t.Fatalf("实例已存在时应展示切换入口")
 	}
 
-	rec = postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
-		"projectId": f.projectID, "productId": productID, "templateId": second.ID,
-	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("切换模板应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	rec = postForm(engine, "/api/product/detail-template/apply", url.Values{"projectId": {f.projectID}, "productId": {productID}, "templateId": {second.ID}})
+	assertHTMLSuccess(t, rec, "切换模板")
 	html := activeHTML(t, "/products/summer-shirt")
 	if !strings.Contains(html, "极简版式") || strings.Contains(html, "活动版式") {
 		t.Fatalf("切换后产物应换成第二套模板: %s", html)

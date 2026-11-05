@@ -227,12 +227,11 @@ func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 		return
 	}
 	keys := []string{
-		"admin.common.filter.submit", "admin.common.filter.reset",
-		"admin.common.filter.optionAll", "admin.common.filter.emptyHint",
-		"admin.product_attributes.filter.phKeyword", "admin.product_attributes.list.emptyFilteredTitle",
-		"admin.product_categories.filter.phKeyword", "admin.product_categories.empty.filteredTitle",
-		"admin.product_brands.filter.phKeyword", "admin.product_brands.empty.filteredTitle",
-		"admin.product_tags.filter.phKeyword", "admin.product_tags.list.emptyFilteredTitle",
+		"uiFltSubmit", "uiFltReset", "uiFltOptAll", "uiFltEmptyHint",
+		"attrFltKw", "attrNoMatches",
+		"catFltKw", "catNoMatches",
+		"brandFltKw", "brandNoMatches",
+		"tagFltKw", "tagNoMatches",
 	}
 	seeds := migrations.AllSeeds()
 	var target *migrations.Seed

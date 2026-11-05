@@ -119,7 +119,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "行对账"}},
-	})
+	}, stubMasterDataChanges{})
 	s.SetWarehouseOptionsPort(parityWarehousePortStub{
 		options: []productdto.WarehouseOptionResp{{ID: parityWarehouseID, Name: "主仓"}},
 	})

@@ -34,4 +34,3 @@ internal/module/project/inbound/http/project_page_router.go /workbench/global	�
 internal/module/content/inbound/http/content_page_router.go /articles/score	文章评分侧栏：纯计算不写库不写产物（代码注释已声明该取舍）
 internal/module/content/inbound/http/content_page_router.go /articles/link-suggestions	内链建议（SEO-015）：候选来自已上线路径解析端口，只读计算
 internal/module/content/inbound/http/content_page_router.go /articles/import-preview	导入预览：纯计算（真正创建走 /articles/import-page，已挂 /api/page/create）
-internal/module/admin/inbound/http/admin_pages_router.go /datarules/config-editor	配置编辑器片段：纯渲染不落库（真正写入走 /datarules/update，已挂 /api/datarule/update）

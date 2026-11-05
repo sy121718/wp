@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 )

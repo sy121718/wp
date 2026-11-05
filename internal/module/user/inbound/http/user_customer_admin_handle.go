@@ -5,19 +5,23 @@ import (
 	"strings"
 	"time"
 
-	usercontract "go_wp/internal/module/user/contract"
-	userdto "go_wp/internal/module/user/dto"
-	userenums "go_wp/internal/module/user/enums"
-	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
-	"go_wp/pkg/sitetz"
-	"go_wp/pkg/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+
+	usercontract "go_wp/internal/module/user/contract"
+	userdto "go_wp/internal/module/user/dto"
+	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/response"
+	"go_wp/pkg/sitetz"
+	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 const customerDayLayout = "2006-01-02"
+
+const userCustomerErrScene = "user_customer_write"
 
 type CustomerHandle struct {
 	svc usercontract.CustomerAdminPort
@@ -91,53 +95,56 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// SetCustomerStatus 接收标准表单：客户与目标状态都来自页面控件，结果由 Jet 返回。
 func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
-	body, ok := binding.JSON[userdto.CustomerStatusSetReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form userdto.CustomerStatusForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
-	if body.Status == nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrInvalidParam)
-		return
-	}
-	req := &userdto.CustomerStatusReq{CustomerID: body.CustomerID, Status: *body.Status}
-	if req.CustomerID == 0 || (req.Status != userenums.StatusActive && req.Status != userenums.StatusDisabled) {
-		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrCustomerStatusInvalid)
-		return
-	}
-	res, err := h.svc.SetCustomerStatus(c.Request.Context(), req)
+	id, status, err := form.CustomerStatusValues()
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
+		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, err)
 		return
 	}
-
-	localizeCustomerStatusLabel(c, res)
-	msg := userenums.MsgCustomerDisabled
-	if res.Status == 1 {
-		msg = userenums.MsgCustomerEnabled
+	res, err := h.svc.SetCustomerStatus(c.Request.Context(), &userdto.CustomerStatusReq{CustomerID: id, Status: status})
+	if err != nil {
+		pageview.FailScene(c, userCustomerErrScene, err)
+		return
 	}
-	response.SuccessWithMessage(c, customerNotice(c, msg), res)
+	msgKey := userenums.MsgCustomerDisabled
+	if res.Status == userenums.StatusActive {
+		msgKey = userenums.MsgCustomerEnabled
+	}
+	customerWriteResult(c, msgKey)
 }
 
 func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
-	req, ok := binding.JSON[userdto.CustomerUnlockReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form userdto.CustomerUnlockForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, userenums.Err(userenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.UnlockCustomer(c.Request.Context(), req)
+	id, err := form.CustomerUnlockValue()
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
+		pageview.FailStatus(c, http.StatusBadRequest, userCustomerErrScene, err)
 		return
 	}
-
-	msg := userenums.MsgCustomerNotLocked
+	res, err := h.svc.UnlockCustomer(c.Request.Context(), &userdto.CustomerUnlockReq{CustomerID: id})
+	if err != nil {
+		pageview.FailScene(c, userCustomerErrScene, err)
+		return
+	}
+	msgKey := userenums.MsgCustomerNotLocked
 	switch {
 	case res.Unlocked:
-		msg = userenums.MsgCustomerUnlocked
+		msgKey = userenums.MsgCustomerUnlocked
 	case res.Cleared:
-		msg = userenums.MsgCustomerFailuresCleared
+		msgKey = userenums.MsgCustomerFailuresCleared
 	}
-	response.SuccessWithMessage(c, customerNotice(c, msg), res)
+	customerWriteResult(c, msgKey)
 }
 
 func customerQueryStatus(raw string) int {

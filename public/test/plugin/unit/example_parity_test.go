@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"go_wp/internal/module/plugin/scaffold"
+	"go_wp/pkg/scaffold"
 )
 
 func repoRoot(t *testing.T) string {

@@ -98,12 +98,7 @@ func inventoryBulkIDsMsg(c *gin.Context, err error) facing.Msg {
 		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
 }
 
-func inventoryErrFallback(key string) string {
-	if text := inventoryenums.FallbackFor(key); text != "" {
-		return text
-	}
-	return key
-}
+func inventoryErrFallback(key string) string { return key }
 
 type inventoryPageMeta struct {
 	titleKey      string

@@ -11,6 +11,8 @@ import (
 	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	jsonx "go_wp/pkg/jsonx"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +32,10 @@ func newAdminRolesPageEngineWith(t *testing.T, svc *fakeRoleService) *gin.Engine
 		InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 模板标题归模板本地取词（{{block pageTitle()}}），取词函数由请求级
+			// 作用域注入 —— 与生产 assembly 的接线一致。缺这一步模板会在执行期
+			// 拿不到 t，页面直接失败成空 body。
+			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			e.GET("/admin/roles", adminui.PageSlot(adminhttp.RolesPageTemplate), handle.RolesPage)
 		},
 	})
@@ -97,37 +103,58 @@ func TestAdminRolesPageFormActionsCarryFilters(t *testing.T) {
 	}
 }
 
-func TestAdminRolesPageListLoadFailureKeepsPage(t *testing.T) {
+// TestAdminRolesPageListLoadFailureIsJSON 覆盖「页面 GET 失败」的真实协议。
+//
+// 旧断言期望「降级渲染 200 的页面骨架 + 提示条」，那是失败页形状，已退役：
+// 页面 GET 失败与其它失败一样只回 JSON {code,message,data} + 真实状态码，
+// 不渲染半截页面（AGENTS.md「响应协议」）。
+func TestAdminRolesPageListLoadFailureIsJSON(t *testing.T) {
 	engine := newAdminRolesPageEngineWith(t, &fakeRoleService{err: errors.New(dbErrText)})
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/roles", nil))
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("装载失败应降级渲染页面（200），got %d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code < http.StatusInternalServerError {
+		t.Fatalf("装载失败应至少 500，got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if ct := recorder.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("页面 GET 失败也必须回 JSON，got Content-Type=%q body=%s", ct, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, `name="keyword"`) {
-		t.Fatal("装载失败后页面骨架必须还在（筛选框 missing）—— 不能退回一块裸文本")
+	if strings.Contains(body, "<html") || strings.Contains(body, `name="keyword"`) {
+		t.Fatalf("失败响应不得渲染页面骨架：%s", body)
 	}
-	const wantAlert = "操作失败，请稍后重试"
-	if got := rolesPageAlert(body); got != wantAlert {
-		t.Fatalf("提示条应是 ErrInternal 归口文案 %q，got %q", wantAlert, got)
+
+	var payload struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := jsonx.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("不是合法 JSON：%v %s", err, body)
+	}
+	if payload.Code == 0 || payload.Message == "" {
+		t.Fatalf("失败响应缺 code/message：%s", body)
 	}
 	assertPageNoLeak(t, "角色列表装载失败", body)
 }
 
-func TestAdminRolesPageLoadFailureIsTheOnlyAlertSource(t *testing.T) {
+// TestAdminRolesPageLoadFailureIgnoresLegacyErrQuery 守两件事：
+// 装载失败时不再有页面提示条（没有失败页），且旧的 ?err= 回显通道依然关着。
+func TestAdminRolesPageLoadFailureIgnoresLegacyErrQuery(t *testing.T) {
 	engine := newAdminRolesPageEngineWith(t, &fakeRoleService{err: errors.New(dbErrText)})
 
 	stale := "已删除 3 个角色，2 个未能删除（受保护或被引用）"
-	body := fetchRolesPageErr(t, engine, stale)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/roles?err="+url.QueryEscape(stale), nil))
 
-	const wantAlert = "操作失败，请稍后重试"
-	if got := rolesPageAlert(body); got != wantAlert {
-		t.Fatalf("提示条应只由装载失败填充，got %q", got)
+	if recorder.Code < http.StatusInternalServerError {
+		t.Fatalf("装载失败应至少 500，got %d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if strings.Contains(body, stale) && rolesPageAlert(body) == stale {
-		t.Fatal("旧 ?err= 不应占据提示条")
+	body := recorder.Body.String()
+	if strings.Contains(body, stale) {
+		t.Fatalf("旧 ?err= 的文案不得出现在响应里：%s", body)
+	}
+	if strings.Contains(body, `role="alert"`) {
+		t.Fatalf("失败响应不再有页面提示条：%s", body)
 	}
 	assertPageNoLeak(t, "角色列表装载失败（带旧 ?err=）", body)
 }

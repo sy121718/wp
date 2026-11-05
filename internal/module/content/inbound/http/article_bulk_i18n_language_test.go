@@ -4,16 +4,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	contentenums "go_wp/internal/module/content/enums"
-	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 )
 
 var articleBulkInjectedEntries = map[string]map[string]string{
@@ -52,16 +50,13 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	}
 	for _, tc := range cases {
 
-		msg := adminui.MsgText(en, articleBulkDeleteResult(tc.deleted, tc.skipped))
+		msg := response.MsgText(en, articleBulkDeleteResult(tc.deleted, tc.skipped))
 		if msg != tc.want {
 			t.Errorf("%s：应按当前语言拼装，got %q want %q", tc.name, msg, tc.want)
 		}
 	}
 
-	gin.SetMode(gin.TestMode)
-	e := gin.New()
-	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.POST("/admin/articles/bulk-delete", (&articlePageHandle{contents: &articleBulkDeleteStub{}}).ArticlesBulkDelete)
+	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	form := url.Values{"ids": {"a", "b", "c"}}
 	req := httptest.NewRequest(http.MethodPost, "/admin/articles/bulk-delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -69,14 +64,14 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("提示页状态 %d", rec.Code)
+		t.Fatalf("成功提示状态 %d：%s", rec.Code, rec.Body.String())
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "EN-ALL 3") {
 		t.Errorf("提示页正文未按当前语言渲染：%s", body[:min(len(body), 240)])
 	}
 
 	zh := articleBulkLangCtx(t, "zh-CN")
-	if msg := adminui.MsgText(zh, articleBulkDeleteResult(3, 0)); msg != "已删除 3 篇文章。" {
+	if msg := response.MsgText(zh, articleBulkDeleteResult(3, 0)); msg != "已删除 3 篇文章。" {
 		t.Errorf("中文请求应取中文词条，实际 %q", msg)
 	}
 }

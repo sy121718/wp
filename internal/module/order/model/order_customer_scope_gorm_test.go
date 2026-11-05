@@ -43,7 +43,7 @@ func TestCustomerScopeQueriesAfterGormRewrite(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("客户增长五数", func(t *testing.T) {
-		row, err := m.CustomerGrowthByRange(ctx, projectID, from, to)
+		row, err := m.CustomerGrowthByRange(ctx, projectID, from, to, nil)
 		if err != nil {
 			t.Fatalf("CustomerGrowthByRange: %v", err)
 		}

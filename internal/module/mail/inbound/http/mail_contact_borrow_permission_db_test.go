@@ -1,6 +1,7 @@
 package mailhttp_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,7 +174,15 @@ func TestMailPageDeclaredBorrowPolicyAuthorizesPagePost(t *testing.T) {
 	if err := casbin.ReplaceRoleUsers(roleCode, []string{"987654322"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := casbin.ActivateRole(roleCode); err != nil {
+	// 启用角色现在是事务内原子写（ActivateRoleTx），提交后与生产一样重载策略：
+	// 不重载时内存副本仍认为角色未启用，后面的请求会一律 403。
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, aerr := casbin.ActivateRoleTx(context.Background(), tx, roleCode)
+		return aerr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := casbin.ReloadPolicy(); err != nil {
 		t.Fatal(err)
 	}
 

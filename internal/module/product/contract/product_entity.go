@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	productenums "go_wp/internal/module/product/enums"
 )
 

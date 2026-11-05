@@ -26,7 +26,7 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 
 	for _, item := range migrations.AllSeeds() {
 		switch item.Version {
-		case "190-i18n-seed-marketing", "232-i18n-seed-admin-pages-round4", "437-i18n-mail-empty-descriptions":
+		case "190-i18n-seed-marketing", "437-i18n-mail-empty-descriptions":
 			for _, stmt := range migrations.SplitStatements(item.SQL) {
 				if err := db.Exec(stmt).Error; err != nil {
 					t.Fatalf("初始化 %s: %v", item.Version, err)
@@ -53,7 +53,7 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 			t.Fatalf("第 %d 轮判定 %d，错误 %v", round, applied, err)
 		}
 		for _, historical := range migrations.AllSeeds() {
-			if historical.Version != "190-i18n-seed-marketing" && historical.Version != "232-i18n-seed-admin-pages-round4" {
+			if historical.Version != "190-i18n-seed-marketing" {
 				continue
 			}
 			if err := db.Raw(historical.ConditionSQL).Scan(&applied).Error; err != nil || applied != 1 {

@@ -2,16 +2,19 @@ package producthttp
 
 import (
 	"errors"
+
+	"go_wp/internal/adminui"
+	"net/http"
+
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type productTranslationPort = productservice.ProductTranslationStorePort
@@ -73,16 +76,18 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 }
 
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
-	req, ok := binding.JSON[productdto.SaveProductTranslationsReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.SaveProductTranslationsReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	view, err := h.save(c, req)
+	view, err := h.save(c, &req)
 	if err != nil || !view.Saved {
 		replySaveRejected(c, view, err)
 		return
 	}
-	response.SuccessMsg(c, productservice.TranslationsSavedMsg(view.Written, view.StaleMarkFailed))
+	pageview.Success(c)
 }
 
 func replySaveRejected(c *gin.Context, view *productcontract.TranslationSaveResult, err error) {
@@ -90,7 +95,12 @@ func replySaveRejected(c *gin.Context, view *productcontract.TranslationSaveResu
 		pageview.Fail(c, err)
 		return
 	}
-	response.ErrorRows(c, http.StatusBadRequest, productservice.TranslationsErrorsTitle(), view.Errors)
+	// 行级错误是业务事实：结构化交给 Jet 片段取词，不走 JSON 出口。
+	c.Header("Cache-Control", "no-store")
+	c.HTML(http.StatusBadRequest, "admin/product/translation_save_errors.html", adminui.PrepareBareView(c, pageview.Objects(
+		pageview.Object("Title", productservice.TranslationsErrorsTitle()),
+		pageview.Object("Rows", view.Errors),
+	)))
 }
 
 func (h *ProductTranslationHandle) page(c *gin.Context, req *productdto.ProductTranslationsPageReq) (*productcontract.ProductTranslations, error) {

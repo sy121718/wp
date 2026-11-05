@@ -19,8 +19,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/plugincomp"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/plugincomp"
 	"go_wp/internal/module/plugin/contract"
 	"go_wp/internal/module/plugin/dto"
 	"go_wp/internal/module/plugin/enums"

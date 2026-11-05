@@ -58,7 +58,7 @@ func TestUpdateVariantKeepsInterleavedFields(t *testing.T) {
 	}
 	id := p.Variants[0].ID
 	changes := &capturedProductChanges{}
-	f.svc.SetMasterDataChanges(changes)
+	f.rewireProductChanges(t, changes)
 	refs := []productmodel.WarehouseSKURef{{StockID: "00000000-0000-4000-8000-000000000001", WarehouseID: "00000000-0000-4000-8000-000000000002", WarehouseCode: "WH", SKUCode: "CONCURRENT"}}
 	fired := afterProductSnapshot(t, f.db, "product_variants", func() error {
 		return f.db.Model(&productmodel.VariantEntity{}).Where("id = ?", id).Updates(map[string]any{"cost_price": 23.5, "metadata": `{"concurrent":true}`, "warehouse_skus": productmodel.EncodeWarehouseSKUs(refs)}).Error
@@ -97,7 +97,7 @@ func TestUpdateVariantCostAuditsLockedSnapshot(t *testing.T) {
 	}
 	id := p.Variants[0].ID
 	changes := &capturedProductChanges{}
-	f.svc.SetMasterDataChanges(changes)
+	f.rewireProductChanges(t, changes)
 	fired := afterProductSnapshot(t, f.db, "product_variants", func() error {
 		return f.db.Model(&productmodel.VariantEntity{}).Where("id = ?", id).Updates(map[string]any{"cost_price": 23.5, "price": 88}).Error
 	})
@@ -136,7 +136,7 @@ func TestUpdateVariantCostRollsBackWhenAuditFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	injected := errors.New("injected cost audit failure")
-	f.svc.SetMasterDataChanges(&failingChangesPort{err: injected})
+	f.rewireProductChanges(t, &failingChangesPort{err: injected})
 	if err = f.svc.UpdateVariantCost(ctx, f.projectID, id, 30, ""); !errors.Is(err, injected) {
 		t.Fatalf("审计错误未返回: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestUpdateProductKeepsInterleavedPublicationAndAudit(t *testing.T) {
 				t.Fatal(err)
 			}
 			changes := &capturedProductChanges{}
-			f.svc.SetMasterDataChanges(changes)
+			f.rewireProductChanges(t, changes)
 			publishedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 			fired := afterProductSnapshot(t, f.db, "products", func() error {
 				return rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error {

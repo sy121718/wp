@@ -7,7 +7,7 @@ import (
 
 	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo/compliance"
+	"go_wp/pkg/seo/compliance"
 )
 
 func TestLangRulesOfDefaultLangHasNoPrefix(t *testing.T) {

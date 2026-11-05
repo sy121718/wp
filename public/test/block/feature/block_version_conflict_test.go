@@ -213,8 +213,9 @@ func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
 	if !bok || !fact.Business {
 		t.Fatalf("版本冲突应命中业务判据，实际 ok=%v business=%v（err=%v）", bok, fact.Business, err)
 	}
-	if fact.Key != blockenums.ErrBlockVersionConflict {
-		t.Errorf("key 应为 %s，实际 %q", blockenums.ErrBlockVersionConflict, fact.Key)
+	// 版本号是位置参数：key 以「key|参数」形态交给失败片段的取词。
+	if want := blockenums.ErrBlockVersionConflict + "|2"; fact.Key != want {
+		t.Errorf("key 应为 %s，实际 %q", want, fact.Key)
 	}
 
 	var versioned interface{ Version() string }

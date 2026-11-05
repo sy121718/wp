@@ -6,6 +6,7 @@ import (
 	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	pageview "go_wp/pkg/view"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +19,8 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { t.Errorf("编辑模板执行失败：%v", err) }))
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), h.ProductEditPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
@@ -41,7 +44,7 @@ func TestProductEditConsumesOriginalEntities(t *testing.T) {
 		t.Fatalf("编辑页状态 %d: %s", rec.Code, headOf(rec.Body.String()))
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"</html>", "data-write-url=\"/api/product/update\"", "name=\"defaultPrice\" value=\"12.5\"", "/uploads/main.png", "第一张", "value=\"a1\" checked", "value=\"c1\" checked", "value=\"b1\" selected", "value=\"t1\" checked", "product-display-data"} {
+	for _, want := range []string{"</html>", "hx-post=\"/api/product/update\"", "name=\"defaultPrice\" value=\"12.5\"", "/uploads/main.png", "第一张", "value=\"a1\" checked", "value=\"c1\" checked", "value=\"b1\" selected", "value=\"t1\" checked", "product-display-data"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("编辑页缺少 %q: %s", want, headOf(body))
 		}

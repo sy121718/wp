@@ -148,11 +148,9 @@ func (h *Handle) Dashboard(c *gin.Context) {
 	if err != nil {
 
 		logger.Scene("workbench").Error(err, "概览数据读取失败")
-		pageview.RenderTemplate(c, DashboardPageTemplate, &DashboardPageResp{
-			Title: workbenchenums.MsgDashboardTitle,
-			Menu:  "dashboard",
-			Err:   response.InternalText(c),
-		})
+		// 页面 GET 失败一律 JSON（AGENTS：没有失败页）。概览读不到不是「渲染一个空页」，
+		// 否则前端既拿不到真实状态码，也没法把失败与「本来就没有数据」区分开。
+		response.ErrorStatusAuto(c, "workbench.dashboard", err)
 		return
 	}
 
@@ -673,7 +671,6 @@ type overviewRange struct {
 	GranularityPresets []granularityPreset
 
 	GranularityTitleKey string
-	GranularityTitle    string
 
 	Clamped bool
 }
@@ -724,19 +721,6 @@ func granularityTitleKey(g string) string {
 	return workbenchenums.DashboardTrendTitlePrefix + g
 }
 
-func granularityTitle(g string) string {
-	switch g {
-	case trendGranularityHour:
-		return "趋势（按小时）"
-	case trendGranularityWeek:
-		return "趋势（按周）"
-	case trendGranularityMonth:
-		return "趋势（按月）"
-	default:
-		return "趋势（按天）"
-	}
-}
-
 func applyGranularity(r overviewRange, raw string) overviewRange {
 	if g := strings.TrimSpace(raw); isTrendGranularity(g) {
 		if g != trendGranularityHour || r.Days <= trendHourlyMaxDays {
@@ -744,7 +728,6 @@ func applyGranularity(r overviewRange, raw string) overviewRange {
 		}
 	}
 	r.GranularityTitleKey = granularityTitleKey(r.Granularity)
-	r.GranularityTitle = granularityTitle(r.Granularity)
 	return r
 }
 

@@ -16,7 +16,7 @@ import (
 func testEntityTypes() []commentcontract.EntityType {
 	return []commentcontract.EntityType{
 		{Type: "article", Label: commentcontract.LabelPair{Key: "admin.article.list.heading", Fallback: "文章"}},
-		{Type: "product", Label: commentcontract.LabelPair{Key: "admin.product_translations.entityType.product", Fallback: "商品"}},
+		{Type: "product", Label: commentcontract.LabelPair{Key: "trTypeProd", Fallback: "商品"}},
 	}
 }
 
@@ -220,12 +220,12 @@ func TestReviewRejectsOversizedBatch(t *testing.T) {
 
 func TestPolicyDeniedCarriesFacingFact(t *testing.T) {
 	fact, ok := facing.FactOf(&PolicyDeniedError{
-		Key: "product.err.commentPurchaseRequired", Fallback: "购买过这件商品才能评论。",
+		Key: "pReviewBuyReq", Fallback: "购买过这件商品才能评论。",
 	})
 	if !ok || !fact.Business {
 		t.Fatal("消费方拒绝必须是业务事实")
 	}
-	if fact.Key != "product.err.commentPurchaseRequired" || fact.Fallback != "购买过这件商品才能评论。" {
+	if fact.Key != "pReviewBuyReq" || fact.Fallback != "购买过这件商品才能评论。" {
 		t.Fatalf("事实应原样带出 key 与兜底，实际 %+v", fact)
 	}
 

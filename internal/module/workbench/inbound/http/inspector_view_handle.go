@@ -10,11 +10,3 @@ type InspectorPanelResp struct {
 type OutlineTreeResp struct {
 	HTML string
 }
-
-type WorkbenchErrorPageResp struct {
-	Lang     string `view:"lang"`
-	T        any    `view:"t"`
-	Title    string `view:"title"`
-	Message  string `view:"message"`
-	BackPath string `view:"backPath"`
-}

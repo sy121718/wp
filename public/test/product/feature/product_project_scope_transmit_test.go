@@ -16,6 +16,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 type scopeTransmitFixture struct {
@@ -49,6 +50,7 @@ func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(base.products, base.products)
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)

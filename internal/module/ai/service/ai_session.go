@@ -18,7 +18,8 @@ import (
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 	aiprompt "go_wp/internal/module/ai/prompt"
-	"go_wp/internal/uispec"
+	"go_wp/pkg/uispec"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -208,10 +209,88 @@ func (s *SessionService) ListEvents(ctx context.Context, sessionID int64, page, 
 			Content:        rows[i].Content,
 			ContentTokens:  rows[i].ContentTokens,
 			CreateTime:     utils.JSONTime(rows[i].CreateTime),
-			Meta:           map[string]any(rows[i].Meta),
+			Meta:           eventMetaForReader(rows[i].Meta),
 		})
 	}
 	return out, total, nil
+}
+
+// eventMetaForReader 交出「可以出接口的」事件 meta。
+//
+// 为什么需要这一层：meta 会随 GET /api/ai/session/events 原样进 JSON 响应。里面的
+// replyError 是我们自己的**诊断字段** —— 新写入只放错误 key，但历史行里存过 cause.Error()
+// 原文（URL、回显片段）。直接整份透传，等于让存量数据继续泄漏内部细节。
+//
+// 处理范围刻意只限这一个诊断字段：tool / reasoning / userText / imageLabels 是业务内容，
+// 原样保留；不在这里做通用的 meta 白名单（那会把「哪些键算业务」变成第二处需要维护的真相）。
+func eventMetaForReader(meta aimodel.JSONMap) map[string]any {
+	if len(meta) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		out[k] = v
+	}
+	if _, ok := out[eventMetaReplyError]; ok {
+		out[eventMetaReplyError] = stableReplyErrorKey(out[eventMetaReplyError])
+	}
+	return out
+}
+
+// stableReplyErrorKey 把 meta 里的 replyError 归一成对外可用的错误 key。
+//
+// 存量行里可能是任意原文，也可能是 `ai.err.xxx|<tail>` 这种「key + 参数原文」的形态
+// （facing 的业务 key 正则允许 `(\|.*)?`，整串会被判成合法业务 key）。所以这里**先按
+// 第一个 `|` 切**，只取 key 段再校验 —— 否则历史行里的 tail 会跟着整段透传出去，
+// 那正是要被堵的口。切出来的 key 不是我们声明的形状就归 ErrInternal，不去猜原文。
+func stableReplyErrorKey(v any) string {
+	raw, _ := v.(string)
+	if raw == "" {
+		return aienums.ErrInternal
+	}
+	key, _, _ := strings.Cut(raw, "|")
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return aienums.ErrInternal
+	}
+	if facing.IsBusinessKey(key) {
+		return key
+	}
+	return aienums.ErrInternal
+}
+
+// FailedRound 是一轮「用户说了话、模型没答上来」的定位事实。
+//
+// 只给定位（会话 + 序号）与失败 key，不给正文，也不给原文：重试时正文从会话投影里取，
+// 这里多带一份就成了第二份真源；原文里有上游 URL 与回显片段，只该进日志。
+type FailedRound struct {
+	SessionID int64
+	Seq       int64
+	Reason    string
+}
+
+// FailedRounds 列出某会话里外部调用失败的轮次，供补偿/运维重试。
+//
+// 这是 replyState 标记的对外出口：标记写在用户事件 meta 上，读侧按需扫，
+// 不在会话列表里做全表配对（那会把每一次列表查询都变成 N+1）。
+func (s *SessionService) FailedRounds(ctx context.Context, sessionID int64, limit int) ([]FailedRound, error) {
+	if sessionID <= 0 {
+		return nil, ErrSessionNotFound
+	}
+	rows, err := s.model.ListFailedRounds(ctx, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FailedRound, 0, len(rows))
+	for i := range rows {
+		// 与 Events 出口同一套归一：存量行里可能是原文，这里也只交稳定 key。
+		out = append(out, FailedRound{
+			SessionID: rows[i].SessionID,
+			Seq:       rows[i].Seq,
+			Reason:    stableReplyErrorKey(rows[i].Meta[eventMetaReplyError]),
+		})
+	}
+	return out, nil
 }
 
 func (s *SessionService) getSessionDTO(ctx context.Context, id int64) (*aidto.Session, error) {
@@ -358,12 +437,24 @@ func (s *SessionService) appendInTx(ctx context.Context, req aidto.AppendEventRe
 }
 
 func (s *SessionService) ensureSessionTx(ctx context.Context, tx *gorm.DB, req aidto.AppendEventReq) (*aimodel.AISessionEntity, error) {
+	// 两条入口（按 id / 按 key）都要：①行锁 ②归属校验。
+	//
+	// 缺一不可的原因不同：
+	//   · 不加锁 —— 追加靠 NextSeq 递增定序，两个并发追加会读到同一个 seq；
+	//   · 不校验归属 —— key 分支是真正的绕过口：FAB 的 key 形如 admin-fab:<uid>、
+	//     会话 key 又是「客户端给什么就存什么」，猜得到就能往别人的会话里追加事件。
+	//
+	// 归属口径与 EnsureSession / RecentDialogue 一致：会话属于创建人。对外统一回
+	// 「会话不存在」，不泄漏「这条会话存在但不是你的」。
 	if req.SessionID > 0 {
-		sess, err := s.model.FindSessionByIDTx(tx, req.SessionID)
+		sess, err := s.model.LockSessionByIDTx(tx, req.SessionID)
 		if err != nil {
 			return nil, err
 		}
 		if sess == nil {
+			return nil, ErrSessionNotFound
+		}
+		if sess.CreateBy != req.UserID {
 			return nil, ErrSessionNotFound
 		}
 		return sess, nil
@@ -373,11 +464,14 @@ func (s *SessionService) ensureSessionTx(ctx context.Context, tx *gorm.DB, req a
 	if key == "" {
 		return nil, ErrSessionKeyMissing
 	}
-	cur, err := s.model.FindSessionByKeyTx(tx, key)
+	cur, err := s.model.LockSessionByKeyTx(tx, key)
 	if err != nil {
 		return nil, err
 	}
 	if cur != nil {
+		if cur.CreateBy != req.UserID {
+			return nil, ErrSessionNotFound
+		}
 		if err := checkSessionBinding(cur, req.ProviderKey, req.ModelID); err != nil {
 			return nil, err
 		}
@@ -436,38 +530,23 @@ func (s *SessionService) SessionCallsOf(ctx context.Context, sessionIDs []int64)
 func callRowOf(row aimodel.SessionCallLogRow) aidto.SessionCallRow {
 	ok := row.Status == string(aienums.CallStatusOK)
 	out := aidto.SessionCallRow{
-		Time:        row.CreateTime.Format("01-02 15:04"),
+		At:          utils.NewJSONTime(row.CreateTime),
 		ProviderKey: row.ProviderKey,
 		ModelID:     row.ModelID,
-		LatencyText: formatLatency(row.LatencyMs),
+		LatencyMs:   row.LatencyMs,
 		Tokens:      row.TotalTokens,
-		TokensText:  formatTokens(row.TotalTokens),
 		OK:          ok,
 	}
 	if !ok {
-
+		// 只给错误 key，不在这里取词：文案归模板用全局 t 取，
+		// 缺词时由模板给的兜底句兜住（换语言要重算的成品句不进业务数据）。
 		key := strings.TrimSpace(row.ErrorKey)
 		if key == "" {
 			key = aienums.ErrInternal
 		}
 		out.ErrorKey = key
-		if text, has := aienums.FacingText(key); has {
-			out.ErrorText = text
-		} else {
-			out.ErrorText = "调用失败"
-		}
 	}
 	return out
-}
-
-func formatLatency(ms int64) string {
-	if ms < 0 {
-		ms = 0
-	}
-	if ms < 1000 {
-		return fmt.Sprintf("%dms", ms)
-	}
-	return fmt.Sprintf("%.1fs", float64(ms)/1000)
 }
 
 const chatTitleRunes = 60
@@ -621,9 +700,11 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 
 		chatRes, err := s.chatWithEmit(ctx, chatReq, emit)
 		if err != nil {
+			s.markRoundFailed(ctx, sessionID, userRes, req, err)
 			return nil, err
 		}
 		if chatRes == nil {
+			s.markRoundFailed(ctx, sessionID, userRes, req, ErrSessionChatEmptyReply)
 			return nil, ErrSessionChatEmptyReply
 		}
 		if r := strings.TrimSpace(chatRes.Reasoning); r != "" {
@@ -636,6 +717,7 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 			if output == "" {
 
 				if strings.TrimSpace(think) == "" {
+					s.markRoundFailed(ctx, sessionID, userRes, req, ErrSessionChatEmptyReply)
 					return nil, ErrSessionChatEmptyReply
 				}
 
@@ -671,6 +753,39 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 	}
 
 	return nil, ErrSessionToolRoundsExceeded
+}
+
+// markRoundFailed 把「这一轮外部调用没成功」记到本轮用户事件的 meta 上。
+//
+// 为什么写在这些点上而不是包一层事务：外部 HTTP 不能持 DB 事务（连接会被一次几秒到
+// 几十秒的网络调用占住），所以这里只能是「另起一条短事务补记」——它本身也可能失败，
+// 因此失败只记日志、绝不覆盖真正的业务错误：用户该看到的是「模型没答出来」，
+// 不是「补记失败」。
+func (s *SessionService) markRoundFailed(ctx context.Context, sessionID int64, res *aidto.AppendEventResult, req aidto.SendMessageReq, cause error) {
+	if res == nil || s.model == nil {
+		return
+	}
+	// meta 只放**稳定的错误事实**（错误 key），绝不放 cause.Error() 原文。
+	//
+	// 原因：ai_event.meta 会经由 GET /api/ai/session/events 原样出现在 JSON 响应里
+	// （SessionEventItem.Meta）。上游原文里可能有 URL、模型名、甚至回显的密钥碎片，
+	// 直接写进去就是把内部细节当接口返回。原文只进日志。
+	if err := s.model.MarkEventMeta(ctx, sessionID, res.Seq, map[string]any{
+		eventMetaReplyState: replyStateFailed,
+		eventMetaReplyError: replyErrorKeyOf(cause),
+	}); err != nil {
+		logger.SceneCtx("ai", ctx).
+			With("session_id", sessionID).
+			With("seq", res.Seq).
+			Error(err, "补记本轮失败状态失败（会话仍可用，只是少了重放线索）")
+	}
+	// 原始原因只进日志：排障要靠它，接口不靠它。
+	if cause != nil {
+		logger.SceneCtx("ai", ctx).
+			With("session_id", sessionID).
+			With("seq", res.Seq).
+			Error(cause, "本轮外部调用失败")
+	}
 }
 
 func (s *SessionService) finishReply(
@@ -731,6 +846,44 @@ func emitToolEvent(emit func(StreamEvent), call aidto.ToolCall) {
 		return
 	}
 	emit(StreamEvent{Kind: streamEventTool, Text: text})
+}
+
+// eventMetaReplyState 标记「这一轮回复走到了什么状态」。
+//
+// 为什么需要它：一次 sendMessage = 先写用户事件（短事务）→ 外部 HTTP（不持事务）→
+// 再写助手事件（短事务）。中间那段网络调用失败时，用户事件已经落库、助手事件没有，
+// 会话里就留下一条「说了话但没人回」的孤证 —— 事后无法区分「模型没答」和「我们没写」。
+// 把它记在 meta 里，重放/补偿能只挑这些轮次重试，不必重放整个会话。
+const eventMetaReplyState = "replyState"
+
+// replyStateFailed 表示本轮外部调用失败、助手事件缺席。
+const replyStateFailed = "failed"
+
+// eventMetaReplyError 是补记的失败原因 —— **只存错误 key，不存原文**。
+//
+// 它落在 ai_event.meta 里，而 GET /api/ai/session/events 会把 meta 原样交给调用方
+// （SessionEventItem.Meta）。上游原文（URL、模型名、回显片段）一旦写进来就从接口泄出去，
+// 所以这里只留稳定的 key：能据此判断「哪一类失败」，也说不出更多内部细节。
+const eventMetaReplyError = "replyError"
+
+// replyErrorKeyOf 把本轮失败归成稳定的错误 key。
+//
+// 已声明的业务错误给它的 key（facing.FactOf 认得出 ai.err.* 家族）；其它一律归 ErrInternal，
+// 不把原文带出去。原文在 markRoundFailed 里另记一条日志。
+func replyErrorKeyOf(cause error) string {
+	if cause == nil {
+		return aienums.ErrInternal
+	}
+	// FactOf 的签名是 (Fact, bool)：第二个返回值才是「这是不是一个可识别的错误事实」。
+	// Fact.Key 在业务 key 形态下可能是整串（含 `|tail`），写入侧也只落 key 段：
+	// 读侧按 `|` 切的那条规则与这里保持一致，两边不会对不上。
+	if fact, ok := facing.FactOf(cause); ok && fact.Key != "" {
+		key, _, _ := strings.Cut(fact.Key, "|")
+		if key = strings.TrimSpace(key); key != "" {
+			return key
+		}
+	}
+	return aienums.ErrInternal
 }
 
 const eventMetaReasoning = "reasoning"
@@ -795,13 +948,6 @@ func (s *SessionService) appendToolEvent(
 	})
 }
 
-func facingToolText(key string) string {
-	if text, ok := aienums.FacingText(key); ok {
-		return text
-	}
-	return key
-}
-
 func toolCallText(call aidto.ToolCall) string {
 	args := strings.TrimSpace(call.Arguments)
 	if args == "" || args == "{}" {
@@ -817,33 +963,65 @@ func (s *SessionService) toolSpecs() []aidto.ToolSpec {
 	return s.tools.Specs()
 }
 
+// ToolFailureFact 是一次工具失败的结构化事实。
+//
+// 为什么不是一句中文：同一个失败要同时被三方消费 ——
+//
+//	· 落库（审计/重放）：要能按 key 聚合、按 status 分档，中文句子做不到；
+//	· 模型上下文：要能区分「没权限」「参数错」「服务端炸了」，界面文案把三者抹平；
+//	· 界面：要按请求语言显示，只有拿 key 才能取对词。
+//
+// 三者共用一句中文，必然有至少一处是错的。
+type ToolFailureFact struct {
+	Key    string
+	Tool   string
+	Status string
+}
+
+// Summarize 是落库用的短摘要：结构化、可聚合，不含界面文案。
+func (f ToolFailureFact) Summarize() string {
+	return fmt.Sprintf("tool=%s status=%s error=%s", f.Tool, f.Status, f.Key)
+}
+
+// ModelText 是喂给模型的那一行：结构化到模型能据此决定下一步（换参数 / 换工具 / 告知用户），
+// 但不含任何界面成品句。它会被写进事件正文，因此也必须是可复现的事实而不是译文。
+func (f ToolFailureFact) ModelText() string {
+	return fmt.Sprintf("tool %s failed: status=%s, error=%s", f.Tool, f.Status, f.Key)
+}
+
 func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, call aidto.ToolCall) ToolRunResult {
 	start := time.Now()
 
+	// fail 记录一次失败的调用。
+	//
+	// 三件事分开记，别混成一句话：
+	//   · 落库的 ResultSummary 存**结构化失败事实**（key + 工具名），不是界面中文 ——
+	//     中文是给人看的成品句，换语言要重算，存进事件日志就成了第二份真源；
+	//   · 返回给模型的 Text 同样是结构化事实，不是「工具执行失败」这类界面句子 ——
+	//     模型要据此判断「是权限不够还是参数错了」，给它一句界面文案等于什么都没说；
+	//   · 界面怎么显示由 JSON 出口按 key 取词，那边才知道当前语言。
 	fail := func(status aienums.ToolCallStatus) ToolRunResult {
-		text := facingToolText(aienums.ErrToolRunFailed)
+		key := ToolErrorKeyOf(status)
+		fact := ToolFailureFact{Key: key, Tool: call.Name, Status: string(status)}
 		e := NewToolCallEntry(sessionID, userID, call.Name, call.Arguments, time.Since(start))
 		e.Status = string(status)
-		e.ErrorKey = ToolErrorKeyOf(status)
-		e.ResultSummary = SummarizeForLog(text)
-		e.ResultLen = int64(len([]rune(text)))
+		e.ErrorKey = key
+		e.ResultSummary = fact.Summarize()
+		e.ResultLen = int64(len([]rune(fact.Summarize())))
 		s.toolCalls.Record(ctx, e)
-		return ToolRunResult{Text: text, Status: status}
+		return ToolRunResult{Text: fact.ModelText(), Status: status}
 	}
-
+	// 没有工具提供者时不能假装工具跑了：这是配置/装配缺失，是失败而不是空结果。
 	if s.tools == nil {
 		return fail(aienums.ToolCallStatusFailed)
 	}
+
 	res, err := s.tools.Run(ctx, userID, call.Name, call.Arguments)
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-
-			logger.Scene("ai").With("tool", call.Name).Error(ctxErr, "工具调用被取消")
-			return fail(aienums.ToolCallStatusFailed)
-		}
-		logger.Scene("ai").With("tool", call.Name).With("user", userID).Error(err, "工具执行失败")
+		logger.Scene("ai").With("tool", call.Name).Error(err, "工具执行失败")
 		return fail(aienums.ToolCallStatusFailed)
 	}
+
 	status := res.Status
 	if !aienums.IsValidToolCallStatus(status) {
 
@@ -864,6 +1042,9 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 			data = views
 		} else if len(spec.Blocks) > 0 {
 
+			// 这句是给模型看的系统提示，不是界面文案：它必须说明「图表渲染了但数据源是空的」
+			// 这个具体事实，模型才能决定换查询还是告诉用户没数据。写死中文在这里是可接受的
+			// —— 它只进模型上下文、不进响应体、也不落库成展示字段；换成 key 反而要模型先学一套词表。
 			text = strings.TrimSpace(text) + "\n（系统提示：这次的图表数据源都没有取到数据，用户看不到任何图表。）"
 		}
 	}
@@ -1411,17 +1592,13 @@ func (s *SessionService) SessionUsageOf(ctx context.Context, f aidto.SessionQuer
 
 		out.AvgTokens = raw.Tokens / raw.Sessions
 	}
-	out.TokensText = formatTokens(out.Tokens)
-	out.AvgTokensText = formatTokens(out.AvgTokens)
 
 	out.HitRateReady = raw.CachedInputTokens > 0
 	out.HitRatePct = percentage(raw.CachedTokens, raw.CachedInputTokens)
-	out.HitRateText = percentText(out.HitRatePct, out.HitRateReady)
 	out.CachedCalls = raw.CachedCalls
 	out.UsageReportedCalls = raw.UsageReportedCalls
 
 	out.CompactCostPct = percentage(raw.SummaryTokens, raw.Tokens)
-	out.CompactCostText = percentText(out.CompactCostPct, raw.Tokens > 0)
 	return out, nil
 }
 
@@ -1430,13 +1607,6 @@ func percentage(part, total int64) float64 {
 		return 0
 	}
 	return float64(part) * 100 / float64(total)
-}
-
-func percentText(pct float64, ready bool) string {
-	if !ready {
-		return "—"
-	}
-	return strconv.FormatFloat(pct, 'f', 1, 64) + "%"
 }
 
 func (s *SessionService) SessionFilterOptions(ctx context.Context) (aidto.SessionFilterOptions, error) {
@@ -1452,17 +1622,10 @@ func (s *SessionService) SessionFilterOptions(ctx context.Context) (aidto.Sessio
 	}, nil
 }
 
-const (
-	trendViewW = 1000
-	trendViewH = 200
-
-	trendPadX = 6
-	trendPadY = 12
-
-	trendSeriesMax = 8
-
-	trendColorCount = 8
-)
+// trendSeriesMax 是「最多画几条线」的数据侧上限：超过就并成一条「其余」。
+// 这是事实侧的收敛（否则一个面板要塞几十条序列），不是画布参数。
+// 视图宽高、内边距、配色槽位都属于前端，这里不再有。
+const trendSeriesMax = 8
 
 func (s *SessionService) SessionTrend(ctx context.Context, f aidto.SessionQuery, trendDays int) (aidto.SessionTrend, error) {
 	q := sessionQueryOf(f)
@@ -1471,7 +1634,9 @@ func (s *SessionService) SessionTrend(ctx context.Context, f aidto.SessionQuery,
 		span = sessionTrendDaysDefault
 	}
 
-	end := dayStart(time.Now())
+	// 结束日默认取 UTC 的今天，和桶键同一时区。用本地日期会让图表最后一天的
+	// 桶和数据库切出来的桶错开一天（库里按 UTC 切，界面按本地取）。
+	end := dayStartUTC(time.Now())
 	if q.To != nil {
 		end = *q.To
 	}
@@ -1489,19 +1654,13 @@ func (s *SessionService) SessionTrend(ctx context.Context, f aidto.SessionQuery,
 		return aidto.SessionTrend{}, err
 	}
 
-	if len(rows) > 0 {
-		if first := dayStart(rows[0].Day.UTC()); first.After(start) {
-			start = first
-		}
-	}
-
 	days := make([]time.Time, 0, span)
 	for cur := start; !cur.After(end); cur = cur.AddDate(0, 0, 1) {
 		days = append(days, cur)
 	}
 	dayIndex := make(map[string]int, len(days))
 	for i := range days {
-		dayIndex[days[i].Format("2006-01-02")] = i
+		dayIndex[days[i].UTC().Format("2006-01-02")] = i
 	}
 
 	type bucket struct {
@@ -1551,43 +1710,25 @@ func (s *SessionService) SessionTrend(ctx context.Context, f aidto.SessionQuery,
 		groups["\x00other"] = rest
 	}
 
+	// 只交事实：窗口（UTC 日）、峰值、每个系列逐日的 token 数组与总量。
+	// 折线坐标、点位置、配色、数字缩写都是显示格式 —— 归前端按 values 自己算。
 	out := aidto.SessionTrend{
-		From:     start.Format("2006-01-02"),
-		To:       end.Format("2006-01-02"),
-		Peak:     peak,
-		PeakText: formatTokens(peak),
-		Series:   make([]aidto.TrendSeries, 0, len(order)),
+		From:   start.UTC().Format("2006-01-02"),
+		To:     end.UTC().Format("2006-01-02"),
+		Peak:   peak,
+		Series: make([]aidto.TrendSeries, 0, len(order)),
 	}
-	for i, key := range order {
+	for _, key := range order {
 		bk := groups[key]
-		pts := make([]string, 0, len(days))
-		var dotX, dotY int
-		for di, v := range bk.tokens {
-
-			x := trendViewW / 2
-			if len(days) > 1 {
-				x = trendPadX + di*(trendViewW-2*trendPadX)/(len(days)-1)
-			}
-			y := trendViewH - trendPadY
-			if peak > 0 {
-				y = trendViewH - trendPadY - int(v*int64(trendViewH-2*trendPadY)/peak)
-			}
-			pts = append(pts, strconv.Itoa(x)+","+strconv.Itoa(y))
-			dotX, dotY = x, y
-		}
-
 		parts := strings.SplitN(key, "\x00", 2)
+		values := make([]int64, len(bk.tokens))
+		copy(values, bk.tokens)
 		out.Series = append(out.Series, aidto.TrendSeries{
 			ProviderKey: parts[0],
 			ModelID:     parts[1],
 			OtherCount:  bk.count,
 			Total:       bk.total,
-			TotalText:   formatTokens(bk.total),
-			Color:       (i % trendColorCount) + 1,
-			Points:      strings.Join(pts, " "),
-			Single:      len(days) == 1,
-			DotX:        dotX,
-			DotY:        dotY,
+			Values:      values,
 		})
 	}
 	return out, nil
@@ -1610,15 +1751,21 @@ func parseDayStart(s string) *time.Time {
 	if s == "" {
 		return nil
 	}
-	t, err := time.ParseInLocation("2006-01-02", s, time.Local)
+	t, err := time.ParseInLocation("2006-01-02", s, time.UTC)
 	if err != nil {
 		return nil
 	}
 	return &t
 }
 
-func dayStart(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+// dayStartUTC 取一个时刻所在 UTC 日期的零点。
+//
+// 趋势图的桶键、查询边界、显示的起止日期全部按 UTC —— 和数据库里
+// 「date_trunc(... AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'」切出来的桶同一口径。
+// 混用本地日期会让最后一天的桶和库里对不上（跨时区时整条曲线错位一天）。
+func dayStartUTC(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func normalizeSessionPage(page, size int) (int, int) {
@@ -1629,19 +1776,6 @@ func normalizeSessionPage(page, size int) (int, int) {
 		size = 20
 	}
 	return page, size
-}
-
-func formatTokens(n int64) string {
-	switch {
-	case n >= 1_000_000_000:
-		return strconv.FormatFloat(float64(n)/1e9, 'f', 1, 64) + "B"
-	case n >= 1_000_000:
-		return strconv.FormatFloat(float64(n)/1e6, 'f', 1, 64) + "M"
-	case n >= 10_000:
-		return strconv.FormatFloat(float64(n)/1e3, 'f', 1, 64) + "K"
-	default:
-		return strconv.FormatInt(n, 10)
-	}
 }
 
 func (s *SessionService) SessionTokenUsageOf(ctx context.Context, id int64) (out aidto.SessionTokenUsage, err error) {
@@ -1668,7 +1802,6 @@ func (s *SessionService) SessionTokenUsageOf(ctx context.Context, id int64) (out
 		})
 	}
 	out.Total = total
-	out.TotalText = formatTokens(total)
 	out.HasBreakdown = len(out.Rows) > 0
 	return out, nil
 }
@@ -1687,7 +1820,6 @@ func (s *SessionService) SessionModelUsageOf(ctx context.Context, sessionIDs []i
 			ModelID:     mid,
 			Events:      rows[i].Events,
 			Tokens:      rows[i].Tokens,
-			TokensText:  formatTokens(rows[i].Tokens),
 			Unrecorded:  pk == "" && mid == "",
 		})
 	}

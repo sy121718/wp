@@ -11,6 +11,8 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -42,7 +44,7 @@ func newSKUFixture(t *testing.T) *skuFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 	wh, err := inv.CreateWarehouse(context.Background(), &inventorydto.CreateWarehouseReq{

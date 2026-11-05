@@ -43,7 +43,7 @@ func TestProductRatingCountHeaderSeed(t *testing.T) {
 	}
 	for lang, want := range map[string]string{"zh-CN": "评分数", "en-US": "Ratings"} {
 		var values []string
-		if err := db.Raw("SELECT item_value FROM sys_i18n WHERE item_key = ? AND lang = ?", "admin.products.rating.countHeader", lang).Scan(&values).Error; err != nil {
+		if err := db.Raw("SELECT item_value FROM sys_i18n WHERE item_key = ? AND lang = ?", "pRatingHeader", lang).Scan(&values).Error; err != nil {
 			t.Fatal(err)
 		}
 		if len(values) != 1 || values[0] != want {

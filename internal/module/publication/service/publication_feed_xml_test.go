@@ -10,7 +10,7 @@ import (
 	"time"
 
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 )
 

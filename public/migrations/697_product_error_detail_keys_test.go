@@ -51,7 +51,7 @@ func TestProductErrorDetailSeedPreservesTranslations(t *testing.T) {
 		t.Fatal(err)
 	}
 	const old = "admin.product_pricing.detail.paramRequired"
-	const target = "product.err.pricingParamRequired"
+	const target = productenums.DetailPricingParamRequired
 	if err := db.Exec("DELETE FROM sys_i18n WHERE item_key = ?", target).Error; err != nil {
 		t.Fatal(err)
 	}

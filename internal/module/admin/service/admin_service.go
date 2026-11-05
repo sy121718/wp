@@ -29,6 +29,7 @@ type Service struct {
 	dm   *adminmodel.DeptModel
 	drm  *adminmodel.SysRuleModel
 	dram *adminmodel.SysRuleAssignmentModel
+	st   *adminmodel.SideEffectTaskModel
 
 	ruleSnapshot *dataruleSnapshotStore
 
@@ -44,6 +45,7 @@ func NewService(db *gorm.DB) *Service {
 		dm:           adminmodel.NewDeptModel(db),
 		drm:          adminmodel.NewSysRuleModel(db),
 		dram:         adminmodel.NewSysRuleAssignmentModel(db),
+		st:           adminmodel.NewSideEffectTaskModel(db),
 		ruleSnapshot: &dataruleSnapshotStore{},
 	}
 }

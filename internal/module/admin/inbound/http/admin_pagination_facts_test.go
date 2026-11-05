@@ -17,6 +17,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/pagination"
 )
 
@@ -217,13 +218,18 @@ func captureSiteData(t *testing.T, name string, total int64, target string) (str
 	return rec.name, data
 }
 
+// renderAdminPage 复刻生产渲染接线：取词函数经 ScopeWriter 注入，
+// 缺它时模板里的 t / tr 全部不可用（生产由 internal/text.AttachScope 挂上）。
 func renderAdminPage(t *testing.T, name string, data gin.H) string {
 	t.Helper()
 	renderer := templates.NewJetHTMLRender("../../../../templates", true)
 	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	text.AttachScope(c)
 	inst := renderer.Instance(name, data)
-	inst.WriteContentType(rec)
-	if err := inst.Render(rec); err != nil {
+	inst.WriteContentType(c.Writer)
+	if err := inst.Render(c.Writer); err != nil {
 		t.Fatalf("渲染 %s 失败: %v", name, err)
 	}
 	return rec.Body.String()

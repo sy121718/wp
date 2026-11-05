@@ -11,7 +11,7 @@ const ErrSourceKindFailed = "navigation.err.source.kindFailed"
 const sourceKindStatus = http.StatusInternalServerError
 
 func ErrSourceKind() error {
-	return facing.WithStatus(facing.New(ErrSourceKindFailed, errFallbacks[ErrSourceKindFailed]), sourceKindStatus)
+	return facing.WithStatus(facing.New(ErrSourceKindFailed), sourceKindStatus)
 }
 
 func ErrSourceKindDetail(detail string) error {

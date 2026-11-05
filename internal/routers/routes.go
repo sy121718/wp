@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,13 +17,25 @@ import (
 )
 
 func SetupRoutes(router *gin.Engine, ready func() error) {
+	SetupRoutesWithContext(context.Background(), router, ready)
+}
+
+// SetupRoutesWithContext 装配路由，并让后台循环挂在这个 ctx 上。
+//
+// 进程收尾时调用方先 cancel 再 Shutdown：循环在取消后立刻停止领取新任务，
+// 不会出现「库已经关了，worker 还在领任务」。
+// 不传 ctx 的 SetupRoutes 保留给测试与历史调用点，它等价于一个永不过期的 ctx。
+func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func() error) {
 	if router == nil {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	permission.Reset()
 
-	a := &assembly{router: router, marks: newWiringMarks()}
+	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx}
 
 	a.buildFoundation(ready)
 	if a.db == nil {

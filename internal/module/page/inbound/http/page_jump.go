@@ -8,6 +8,7 @@ import (
 	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/shell"
+	"go_wp/pkg/response"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -45,7 +46,7 @@ func pageErrMsgOf(c *gin.Context, f adminui.ErrFact) pageMsg {
 	if f.Tail != "" {
 		if detail := pageDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
 
-			return pageMsg{Fallback: adminui.TranslateArgs(c, f.Key, f.Fallback, nil) + "：" + detail}
+			return pageMsg{Fallback: response.ArgsText(c, f.Key, f.Fallback, nil) + "：" + detail}
 		}
 	}
 	return pageMsg{Key: f.Key, Fallback: f.Fallback}

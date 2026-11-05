@@ -26,7 +26,7 @@ func (m *OrderModel) SpentTotalsByProject(ctx context.Context, projectID string)
 		return selectExpr(q, spentTotalsSelect, strings.Join(ReturnedStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.user_id IS NOT NULL").
-			Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ",")).
+			Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(DefaultSalesStatuses, ",")).
 			Group("o.user_id").
 			Scan(&rows).Error
 	})

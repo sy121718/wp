@@ -235,8 +235,10 @@ func TestMediaDownloadErrors(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/media/download?id=99999", nil)
 	router.ServeHTTP(w, req)
-	if w.Code != 400 {
-		t.Fatalf("不存在的附件应 400: got=%d", w.Code)
+	// 状态码由 mediaenums 声明（ErrAttachmentNotFound → 404），handler 不再自选：
+	// 之前 Download 一律回 400，把「附件不存在」和「参数不合法」混成同一个码。
+	if w.Code != 404 {
+		t.Fatalf("不存在的附件应 404: got=%d", w.Code)
 	}
 
 	w2 := httptest.NewRecorder()

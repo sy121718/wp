@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/richdoc"
+	"go_wp/pkg/builder/richdoc"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	pagecontract "go_wp/internal/module/page/contract"

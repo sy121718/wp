@@ -9,6 +9,8 @@ import (
 
 	"gorm.io/gorm"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -246,7 +248,7 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建工程 B 失败: %v", err)
 	}
-	svc := productservice.NewService(productmodel.NewModel(db), projects)
+	svc := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	category, err := svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: pA.ID, Name: "非超级角色分类", Slug: "nonsuper-category"})
 	if err != nil {
 		t.Fatalf("建分类失败: %v", err)
@@ -305,7 +307,7 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 		}
 
 		scopeProjects := projectservice.NewService(projectmodel.NewProjectModel(conn))
-		scoped := productservice.NewService(productmodel.NewModel(conn), scopeProjects)
+		scoped := productservice.NewService(productmodel.NewModel(conn), scopeProjects, masterdataservice.NewService(masterdatamodel.NewModel(conn), scopeProjects))
 		checks := []struct {
 			name string
 			key  string

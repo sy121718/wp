@@ -2,6 +2,7 @@ package unit
 
 import (
 	json "go_wp/pkg/jsonx"
+	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
@@ -57,25 +58,90 @@ func TestAIMigrationSeedRegistered(t *testing.T) {
 	}
 }
 
-func TestAIFacingMessagesComplete(t *testing.T) {
-	if len(aienums.FacingMessages) < 20 {
-		t.Fatalf("文案白名单条目过少（%d），检查 enums 是否被裁剪", len(aienums.FacingMessages))
-	}
-	for key, want := range aienums.FacingMessages {
-		if !strings.HasPrefix(key, "ai.") {
-			t.Errorf("key 必须以 ai. 开头（i18n 命名空间）：%q", key)
-		}
-		got, ok := aienums.FacingText(key)
-		if !ok {
-			t.Errorf("%s 未登记进 FacingMessages", key)
-		}
-		if got != want || strings.TrimSpace(got) == "" {
-			t.Errorf("%s 文案异常：%q", key, got)
-		}
+// 状态码是协议事实源：同一档错误必须给同一个真实状态码。
+//
+// 这里不为每个 key 抄一份表（抄表只证明「抄得对」，不证明 StatusOf 覆盖了全部声明）。
+// 断言的是分档等式：404 只能给「对象不存在」那三个，401 只给身份类，409 只给冲突类，
+// 500 只给「我们这边出错」，其余一律 400。改档位必须同时改这里的等式。
+func TestAIStatusBucketsMatchDeclaredSemantics(t *testing.T) {
+	cases := []struct {
+		name string
+		want int
+		keys []string
+	}{
+		{
+			name: "对象不存在 → 404",
+			want: http.StatusNotFound,
+			keys: []string{aienums.ErrProviderNotFound, aienums.ErrSessionNotFound, aienums.ErrTokenNotFound},
+		},
+		{
+			name: "没有身份 → 401",
+			want: http.StatusUnauthorized,
+			keys: []string{aienums.ErrTokenInvalid, aienums.ErrUserRequired},
+		},
+		{
+			name: "有身份没权限 → 403",
+			want: http.StatusForbidden,
+			keys: []string{aienums.ErrToolForbidden},
+		},
+		{
+			name: "对象在但状态/版本不允许 → 409",
+			want: http.StatusConflict,
+			keys: []string{aienums.ErrVersionConflict, aienums.ErrSessionConflict, aienums.ErrSessionProviderMismatch},
+		},
+		{
+			name: "我们这边出错 → 500",
+			want: http.StatusInternalServerError,
+			keys: []string{aienums.ErrCipherUnavailable, aienums.ErrToolRunFailed, aienums.ErrInternal},
+		},
+		{
+			name: "参数不对 → 400",
+			want: http.StatusBadRequest,
+			keys: []string{
+				aienums.ErrInvalidParam,
+				aienums.ErrProviderKeyRequired, aienums.ErrProviderKeyExists, aienums.ErrDisplayNameRequired,
+				aienums.ErrAPIKeyRequiredOnBaseURLChange, aienums.ErrVersionRequired,
+				aienums.ErrProtocolUnsupported, aienums.ErrNoBuiltinModels, aienums.ErrBaseURLRequired,
+				aienums.ErrModelIDRequired, aienums.ErrModelIDDuplicated, aienums.ErrModelsFetchFailed,
+				aienums.ErrURLMalformed, aienums.ErrURLSchemeUnsupported,
+				aienums.ErrURLHostMissing, aienums.ErrURLUnresolvable, aienums.ErrURLDenied,
+				aienums.ErrNoModelSelected,
+				aienums.ErrSessionKeyMissing, aienums.ErrSessionArchived,
+				aienums.ErrEventKindInvalid, aienums.ErrEventContentEmpty,
+				aienums.ErrFoldRangeInvalid, aienums.ErrFoldSummaryEmpty,
+				aienums.ErrSessionChatUnavailable, aienums.ErrSessionChatInputRequired,
+				aienums.ErrSessionChatModelRequired, aienums.ErrSessionChatEmptyReply,
+				aienums.ErrSessionToolRoundsExceeded,
+				aienums.ErrTokenNameRequired, aienums.ErrTokenScopeRequired,
+				aienums.ErrTokenScopeUnknown, aienums.ErrTokenExpiredInPast,
+			},
+		},
 	}
 
-	if _, ok := aienums.FacingText("ai.err.未登记的底层错误"); ok {
-		t.Error("未登记 key 不该命中白名单")
+	got := make(map[string]int)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range tc.keys {
+				if prev, dup := got[key]; dup {
+					t.Fatalf("%q 同时登记在两个档位（先前 %d，本次 %d）", key, prev, tc.want)
+				}
+				got[key] = tc.want
+				if status := aienums.StatusOf(key); status != tc.want {
+					t.Errorf("StatusOf(%q) = %d，想要 %d", key, status, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// 未声明的 key 在 StatusOf 里回 0（「没声明」与「声明成 400」是两件事）：
+// 出口 aiErrStatus 见 0 才按 400 兜底，未知 key 因此不会伪装成已声明。
+func TestAIUnknownErrorKeyHasNoStatus(t *testing.T) {
+	if got := aienums.StatusOf("ai.err.undeclared"); got != 0 {
+		t.Errorf("未声明 key 应回 0，实际 %d", got)
+	}
+	if got := aienums.StatusOf(""); got != 0 {
+		t.Errorf("空 key 应回 0，实际 %d", got)
 	}
 }
 

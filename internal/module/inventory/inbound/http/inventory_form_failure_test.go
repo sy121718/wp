@@ -5,152 +5,83 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	ginrender "github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	json "go_wp/pkg/jsonx"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
-type inventoryCaptureRender struct {
-	name string
-	data any
+// inventoryFormEngine 复刻生产接线：失败中间件、请求取词与 HTML 渲染都必须在场。
+func inventoryFormEngine(handler gin.HandlerFunc) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(func(c *gin.Context) {
+		text.AttachScope(c)
+		c.Next()
+	})
+	r.POST("/admin/inventory/form", pageview.HTMLFragment, handler)
+	r.POST("/admin/inventory/reasons/bulk-status", pageview.HTMLFragment, handler)
+	return r
 }
 
-func (r *inventoryCaptureRender) Instance(name string, data any) ginrender.Render {
-	r.name, r.data = name, data
-	return &hxStubInstance{name: name}
-}
-
-func inventoryFormContext(t *testing.T, values url.Values, hx bool) (*gin.Context, *httptest.ResponseRecorder, *inventoryCaptureRender) {
-	t.Helper()
-	rec := httptest.NewRecorder()
-	c, engine := gin.CreateTestContext(rec)
-	view := &inventoryCaptureRender{}
-	engine.HTMLRender = view
-	c.Request = httptest.NewRequest(http.MethodPost, "/admin/inventory/form", strings.NewReader(values.Encode()))
-	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if hx {
-		c.Request.Header.Set("HX-Request", "true")
-	}
-	return c, rec, view
-}
-
-func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
-	internal := errors.New(`pq: relation "inventory_warehouses" does not exist`)
+func TestInventoryDrawerFailureReturnsHTMLFragment(t *testing.T) {
 	tests := []struct {
 		name   string
 		fail   func(c *gin.Context, err error)
 		err    error
 		status int
-		want   string
 	}{
-
 		{"reason edit business", (&inventoryPageHandle{}).reasonEditFormFail,
-			inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest,
-			inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
-
+			inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest},
 		{"warehouse not found", (&inventoryPageHandle{}).warehouseFormFail,
-			inventoryenums.Err(inventoryenums.ErrWarehouseNotFound), http.StatusNotFound,
-			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseNotFound)},
-
+			inventoryenums.Err(inventoryenums.ErrWarehouseNotFound), http.StatusNotFound},
 		{"warehouse code taken", (&inventoryPageHandle{}).warehouseFormFail,
-			inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken), http.StatusConflict,
-			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
+			inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken), http.StatusConflict},
 		{"reason code taken", (&inventoryPageHandle{}).reasonFormFail,
-			inventoryenums.Err(inventoryenums.ErrReasonCodeTaken), http.StatusConflict,
-			inventoryenums.FallbackFor(inventoryenums.ErrReasonCodeTaken)},
-
-		{"conflict with detail", (&inventoryPageHandle{}).warehouseFormFail,
-			inventoryenums.ErrDetail(inventoryenums.ErrWarehouseCodeTaken, "WH1"), http.StatusConflict,
-			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
+			inventoryenums.Err(inventoryenums.ErrReasonCodeTaken), http.StatusConflict},
 		{"warehouse internal", (&inventoryPageHandle{}).warehouseFormFail,
-			internal, http.StatusInternalServerError, "系统内部错误"},
+			errors.New(`pq: relation "inventory_warehouses" does not exist`), http.StatusInternalServerError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, true)
-			tt.fail(c, tt.err)
-			c.Writer.WriteHeaderNow()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/admin/inventory/form", strings.NewReader(url.Values{"projectId": {"p1"}}.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			engine := inventoryFormEngine(func(c *gin.Context) { tt.fail(c, tt.err) })
+			engine.ServeHTTP(rec, req)
 
 			if rec.Code != tt.status {
 				t.Fatalf("status = %d，want %d", rec.Code, tt.status)
 			}
-			if view.name != "" {
-				t.Fatalf("抽屉失败不该渲染任何模板，实际渲染了 %q", view.name)
-			}
 			if got := rec.Header().Get("HX-Redirect"); got != "" {
-				t.Fatalf("抽屉失败不该整页跳转，HX-Redirect = %q", got)
+				t.Fatalf("失败不该整页跳转，HX-Redirect = %q", got)
 			}
-			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-				t.Fatalf("Content-Type = %q，want application/json", ct)
+			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Fatalf("Content-Type = %q，want text/html", ct)
 			}
-			var body struct {
-				Code    int    `json:"code"`
-				Message string `json:"message"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatalf("响应体不是 JSON：%v（%q）", err, rec.Body.String())
-			}
-			if !strings.Contains(body.Message, tt.want) {
-				t.Fatalf("message = %q，want 含 %q", body.Message, tt.want)
+			body := rec.Body.String()
+			if !strings.Contains(body, `data-ui-error`) {
+				t.Fatalf("失败应渲染错误片段：%s", body)
 			}
 			for _, leak := range []string{"pq:", "SQLSTATE", "inventory_warehouses"} {
-				if strings.Contains(body.Message, leak) {
-					t.Fatalf("内部原文泄漏到对外文案：%q", body.Message)
+				if strings.Contains(body, leak) {
+					t.Fatalf("内部原文泄漏到对外文案：%q", body)
 				}
 			}
+			if strings.Contains(body, response.InternalFallback+"系统内部错误，请稍后重试") {
+				t.Fatalf("归口文案重复：%s", body)
+			}
 		})
-	}
-}
-
-func TestInventoryWriteSuccessIsJSON(t *testing.T) {
-	for _, hx := range []bool{true, false} {
-		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
-		response.Success(c, nil)
-		c.Writer.WriteHeaderNow()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("hx=%v 成功状态码 = %d，want 200", hx, rec.Code)
-		}
-		if got := rec.Header().Get("HX-Redirect"); got != "" {
-			t.Fatalf("hx=%v 成功不该给跳转地址，HX-Redirect = %q", hx, got)
-		}
-		if got := rec.Header().Get("Location"); got != "" {
-			t.Fatalf("hx=%v 成功不该给 Location = %q", hx, got)
-		}
-		if view.name != "" {
-			t.Fatalf("hx=%v 成功不该渲染模板，实际 %q", hx, view.name)
-		}
-		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-			t.Fatalf("hx=%v Content-Type = %q，want application/json", hx, ct)
-		}
-		var body struct {
-			Code int `json:"code"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatalf("hx=%v 响应体不是 JSON：%v（%q）", hx, err, rec.Body.String())
-		}
-		if body.Code != 200 {
-			t.Fatalf("hx=%v code = %d，want 200", hx, body.Code)
-		}
-	}
-}
-
-func TestInventoryNativeWriteFailureIsJSON(t *testing.T) {
-	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
-	(&inventoryPageHandle{}).warehouseFormFail(c, errors.New(inventoryenums.ErrWarehouseCodeTaken))
-	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("原生失败状态码 = %d，want 400", rec.Code)
-	}
-	if view.name != "" {
-		t.Fatalf("失败不该渲染模板，实际 %q", view.name)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-		t.Fatalf("Content-Type = %q，want application/json", ct)
 	}
 }

@@ -2,7 +2,6 @@ package navigationhttp
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +13,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 type Handle struct {
@@ -31,84 +31,89 @@ func (h *Handle) SetTranslationWriteService(s navigationcontract.TranslationWrit
 }
 
 func (h *Handle) Create(c *gin.Context) {
-	body, raw, ok := navigationWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	// 普通界面提交是标准表单；「从来源批量加入」是另一个端点（CreateFromSource）。
+	var req navigationdto.CreateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	action, hasAction, shapeOK := navigationWriteAction(raw)
-	if !shapeOK {
-		response.ParamError(c)
+	if _, err := h.svc.Create(c.Request.Context(), &req); err != nil {
+		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	if hasAction {
-		if action != navigationAddSourceAction {
-			response.ParamError(c)
-			return
-		}
-		h.createFromSource(c, raw)
-		return
-	}
-	if navigationDeleteHasKey(raw, "ids") {
-
-		response.ParamError(c)
-		return
-	}
-	req := &navigationdto.CreateReq{}
-	if err := ginbinding.JSON.BindBody(body, req); err != nil {
-		response.ParamError(c)
-		return
-	}
-	res, err := h.svc.Create(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
-		return
-	}
-	response.SuccessWithMessage(c, navigationenums.MsgCreateSuccess, res)
+	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
+		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
+	))
 }
 
+// Update 是导航项基本字段的编辑：标准表单，一份确定的输入协议。
+// 换位走 /api/navigation/move，译文批量写走 /api/navigation/translations。
 func (h *Handle) Update(c *gin.Context) {
-	env, ok := binding.JSONLimited[navigationdto.UpdateEnvelope](c, 1<<20)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req navigationdto.UpdateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
+	if _, err := h.svc.Update(c.Request.Context(), &req); err != nil {
+		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
+		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
+	))
+}
 
+// Move 是上移 / 下移：标准表单（id / dir / projectId）。
+func (h *Handle) Move(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var req navigationdto.SwapMoveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
+		return
+	}
+	res, err := h.svc.SwapMove(c.Request.Context(), &req)
+	if err != nil {
+		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
+		return
+	}
+	// 边界移动是**合法结果**（没有可交换的邻居），要如实告诉界面，不能一律报「已完成」。
+	moved, reason := false, ""
+	if res != nil {
+		moved, reason = res.Moved, res.Reason
+	}
+	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
+		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
+		pageview.Object("Moved", moved),
+		pageview.Object("Reason", reason),
+	))
+}
+
+// UpdateTranslations 是译文批量的明确 JSON 输入（行是 context/hash/target 三元组）。
+func (h *Handle) UpdateTranslations(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var env navigationdto.UpdateEnvelope
+	if err := c.ShouldBindJSON(&env); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
+		return
+	}
 	if err := env.Validate(); err != nil {
-		response.ParamError(c)
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	switch env.Route() {
-	case navigationdto.RouteTranslations:
-		h.updateTranslations(c, env)
-	case navigationdto.RouteMove:
-		h.moveNavigationEnvelope(c, env)
-	case navigationdto.RouteLegacy:
-		req, err := env.DecodeLegacy()
-		if err != nil {
-			response.ParamError(c)
-			return
-		}
-		res, err := h.svc.Update(c.Request.Context(), req)
-		if err != nil {
-			response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
-			return
-		}
-		response.SuccessWithMessage(c, navigationenums.MsgUpdateSuccess, res)
-	default:
-
-		response.ParamError(c)
-	}
+	h.updateTranslations(c, &env)
 }
 
 func (h *Handle) updateTranslations(c *gin.Context, env *navigationdto.UpdateEnvelope) {
 	req, err := env.DecodeTranslation()
 	if err != nil {
-		response.ParamError(c)
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
 	if h.writerSvc == nil {
-
 		logger.Scene("navigation").Warn("导航译文写服务未装配，拒绝译文保存")
-		response.ErrorStatusAuto(c, "navigation", navigationenums.ErrTranslationWriteUnavailableError())
+		pageview.FailScene(c, navigationErrScene, navigationenums.ErrTranslationWriteUnavailableError())
 		return
 	}
 	rows := make([]navigationcontract.TranslationWriteRow, 0, len(req.Rows))
@@ -121,18 +126,18 @@ func (h *Handle) updateTranslations(c *gin.Context, env *navigationdto.UpdateEnv
 		ProjectID: req.ProjectID, Lang: req.Lang, Rows: rows,
 	})
 	if err != nil {
-
-		response.ErrorStatusAuto(c, "navigation", err)
+		pageview.FailScene(c, navigationErrScene, err)
 		return
 	}
 	if result == nil {
-
 		logger.Scene("navigation").Warn("导航译文写服务返回空回执，按失败处理")
-		response.ErrorStatusAuto(c, "navigation", navigationenums.ErrTranslationWriteUnavailableError())
+		pageview.FailScene(c, navigationErrScene, navigationenums.ErrTranslationWriteUnavailableError())
 		return
 	}
 
-	response.SuccessMsg(c, navigationenums.SavedMsg(strconv.Itoa(result.Written)), result)
+	c.HTML(http.StatusOK, "admin/navigation/navigation_translations_saved.html", pageview.Objects(
+		pageview.Object("Written", result.Written),
+	))
 }
 
 func (h *Handle) Get(c *gin.Context) {
@@ -162,40 +167,26 @@ func (h *Handle) List(c *gin.Context) {
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	body, raw, ok := navigationWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	// 普通界面提交是标准表单：单条用 id，批量用重复的 ids。
+	if err := c.Request.ParseForm(); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-
-	hasID := navigationDeleteHasKey(raw, "id")
-	hasIDs := navigationDeleteHasKey(raw, "ids")
-	if hasID && hasIDs {
-		response.ParamError(c)
+	// 一个端点一种形状：单条用 id，批量是独立端点 DeleteBulk。
+	// 单条分支用显式 binder：字段与 DeleteReq 的 form tag 一一对应，形状由 binding 判。
+	var formReq navigationdto.DeleteReq
+	if err := c.ShouldBindWith(&formReq, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	if hasIDs {
-		if !navigationDeleteShapeOK(raw, navigationDeleteBulkKeys) {
-			response.ParamError(c)
-			return
-		}
-		h.deleteBulk(c, raw)
+	if err := h.svc.Delete(c.Request.Context(), &formReq); err != nil {
+		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	if !hasID || !navigationDeleteShapeOK(raw, navigationDeleteSingleKeys) {
-		response.ParamError(c)
-		return
-	}
-	req := &navigationdto.DeleteReq{}
-
-	if err := ginbinding.JSON.BindBody(body, req); err != nil {
-		response.ParamError(c)
-		return
-	}
-	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
-		return
-	}
-	response.SuccessWithMessage(c, navigationenums.MsgDeleteSuccess, nil)
+	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
+		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
+	))
 }
 
 func navigationErrorStatus(err error) int {

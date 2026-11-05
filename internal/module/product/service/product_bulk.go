@@ -156,10 +156,10 @@ func bulkRejected(items []facing.BlockedItem) error {
 }
 
 func bulkBlocked(id, name, reasonKey string) facing.BlockedItem {
+	// 只有"跳过原因"类 key 才有业务兜底；主错误 key 的文案归词库，不在这里抄一份。
 	return facing.BlockedItem{
 		ID: id, Name: strings.TrimSpace(name), ReasonKey: reasonKey,
-
-		Fallback: productenums.FallbackFor(reasonKey),
+		Fallback: productenums.VariantSkipFallback(reasonKey),
 	}
 }
 

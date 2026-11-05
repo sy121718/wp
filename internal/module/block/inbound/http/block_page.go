@@ -2,7 +2,6 @@ package blockhttp
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/facing"
 )
 
 const blocksPageTitle = "MsgBlocksTitle"
@@ -147,54 +147,36 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 }
 
 func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
-
+	c.Header("Cache-Control", "no-store")
 	req, err := binding.ParseJSON[blockdto.SaveContentReq](c)
 	if err != nil {
-
-		paramBindFail(c, err)
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
 
 	current, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: req.ID})
 	if err != nil {
-
-		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		pageview.FailScene(c, blockErrScene, err)
 		return
 	}
 	if current == nil {
-
-		response.ErrorWithMessage(c, http.StatusNotFound, blockenums.ErrBlockNotFound)
+		pageview.FailStatus(c, http.StatusNotFound, blockErrScene, blockenums.Err(blockenums.ErrBlockNotFound))
 		return
 	}
 	name := current.Name
 	if strings.TrimSpace(req.Name) != "" {
 		name = strings.TrimSpace(req.Name)
 	}
-	updated, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
+	if _, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
 		ID: req.ID, Name: name, Document: req.Document, ExpectedVersion: req.ExpectedVersion,
-	})
-	if uerr != nil {
-
-		if errors.Is(uerr, blockcontract.ErrBlockVersionConflict) {
-			response.ErrorWithMessage(c, http.StatusConflict,
-				response.ArgsText(c, blockenums.ErrBlockVersionConflict,
-					blockenums.FallbackFor(blockenums.ErrBlockVersionConflict), versionConflictArgs(uerr)))
-			return
-		}
-
-		response.ErrorStatusAuto(c, blockErrScene, uerr)
+	}); uerr != nil {
+		pageview.FailScene(c, blockErrScene, uerr)
 		return
 	}
 
-	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued, updated)
-}
-
-func versionConflictArgs(err error) []string {
-	var withVersion interface{ Version() string }
-	if errors.As(err, &withVersion) {
-		return []string{withVersion.Version()}
-	}
-	return nil
+	c.HTML(http.StatusOK, "admin/block/block_content_saved.html", pageview.Objects(
+		pageview.Object("Name", name),
+	))
 }
 
 const blockErrScene = "block"
@@ -206,7 +188,7 @@ func blockErrFact(c *gin.Context, err error) adminui.ErrFact {
 func blockErrText(c *gin.Context, err error) string {
 	if err == nil {
 
-		return adminui.MsgText(c, adminui.InternalMsg())
+		return response.MsgText(c, adminui.InternalMsg())
 	}
 	return adminui.ErrorFactText(c, blockErrFact(c, err))
 }
@@ -214,11 +196,11 @@ func blockErrText(c *gin.Context, err error) string {
 const blockStalePageLimit = 8
 
 var (
-	blockImpactNoPageCapabilityMsg = adminui.Msg{
+	blockImpactNoPageCapabilityMsg = facing.Msg{
 		Key:      blockenums.ImpactUnavailableNoPageCapability,
 		Fallback: "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。",
 	}
-	blockImpactProjectReadFailedMsg = adminui.Msg{
+	blockImpactProjectReadFailedMsg = facing.Msg{
 		Key:      blockenums.ImpactUnavailableProjectReadFailed,
 		Fallback: "读取站点工程失败，本次无法统计待重建影响面。",
 	}
@@ -226,10 +208,10 @@ var (
 
 func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) staleImpactView {
 
-	unavailable := func(msg adminui.Msg) staleImpactView {
+	unavailable := func(msg facing.Msg) staleImpactView {
 		return staleImpactView{
 			Available: false, Pages: []stalePageRow{}, Total: 0, Truncated: false,
-			Limit: blockStalePageLimit, Hint: adminui.MsgText(c, msg),
+			Limit: blockStalePageLimit, Hint: response.MsgText(c, msg),
 		}
 	}
 	if h == nil || h.pages == nil {
@@ -246,7 +228,7 @@ func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) 
 	}
 	if res == nil {
 		logger.Scene("block").Warn("全站待重建清单返回空结果（契约实现异常）")
-		return unavailable(adminui.Msg{})
+		return unavailable(facing.Msg{})
 	}
 	pages := make([]stalePageRow, 0, len(res.Pages))
 	for i := range res.Pages {

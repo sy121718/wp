@@ -6,10 +6,14 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"go_wp/internal/adminui"
+"go_wp/internal/templates"
+"go_wp/internal/text"
+pageview "go_wp/pkg/view"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -66,11 +70,15 @@ func newNavigationErrRouter(t *testing.T, svc navigationcontract.NavigationServi
 	}
 	h := NewHandle(svc)
 	r := gin.New()
+	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	r.POST("/create", h.Create)
-	r.POST("/update", h.Update)
+	r.POST("/update", pageview.HTMLFragment, h.Update)
 	r.GET("/get", h.Get)
 	r.GET("/list", h.List)
-	r.POST("/delete", h.Delete)
+	r.POST("/delete", pageview.HTMLFragment, h.Delete)
 	return r
 }
 
@@ -89,6 +97,27 @@ func callNavigationJSON(t *testing.T, engine *gin.Engine, route struct{ name, me
 		t.Fatalf("%s 响应不是 JSON（%v）：%s", route.name, err, rec.Body.String())
 	}
 	return rec.Code, body
+}
+
+// callNavigationHTML 发一次普通表单写请求（update/delete 的界面协议），返回状态码与片段。
+func callNavigationHTML(t *testing.T, engine *gin.Engine, route struct{ name, method, path, body string }, acceptLang string) (int, string) {
+	t.Helper()
+	form := url.Values{}
+	switch route.name {
+	case "update", "delete":
+		form.Set("id", "row-1")
+	case "create":
+		form.Set("projectId", "p1")
+		form.Set("title", "t")
+		form.Set("path", "/t")
+		form.Set("kind", "header")
+	}
+	req := httptest.NewRequest(route.method, route.path, strings.NewReader(form.Encode()))
+	req.Header.Set("Accept-Language", acceptLang)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
 }
 
 func navigationLangCtx(acceptLang string) *gin.Context {
@@ -124,6 +153,20 @@ func TestNavigationJSONErrorTranslatesByRequestLanguage(t *testing.T) {
 		{"en-US", "entry-item-missing"},
 	} {
 		for _, route := range navigationErrRoutes {
+			if route.name == "update" || route.name == "delete" || route.name == "create" {
+				// 普通界面写端点回 HTML 片段：状态码与按请求语言取的词条都在片段里。
+				code, html := callNavigationHTML(t, engine, route, lang.accept)
+				if code != http.StatusNotFound {
+					t.Errorf("%s[%s] 业务错误状态码应保持 404，实际 %d", route.name, lang.accept, code)
+				}
+				if !strings.Contains(html, lang.want) {
+					t.Errorf("%s[%s] 错误片段应带该语言词条 %q，实际 %s", route.name, lang.accept, lang.want, html)
+				}
+				if strings.Contains(html, "navigation.err.") {
+					t.Errorf("%s[%s] 错误片段漏出了声明 key：%s", route.name, lang.accept, html)
+				}
+				continue
+			}
 			code, body := callNavigationJSON(t, engine, route, lang.accept)
 			if code != http.StatusNotFound {
 				t.Errorf("%s[%s] 业务错误状态码应保持 404，实际 %d", route.name, lang.accept, code)
@@ -148,7 +191,7 @@ func TestNavigationJSONErrorNormalizesDetailProtocol(t *testing.T) {
 		{"zh-CN", "词条-已被他人修改: 产品详情页"},
 		{"en-US", "entry-stale: 产品详情页"},
 	} {
-		code, body := callNavigationJSON(t, engine, navigationErrRoutes[0], lang.accept)
+		code, body := callNavigationJSON(t, engine, navigationErrRoutes[2], lang.accept)
 		if code != http.StatusConflict {
 			t.Fatalf("[%s] 乐观锁冲突应保持 409，实际 %d", lang.accept, code)
 		}
@@ -160,11 +203,11 @@ func TestNavigationJSONErrorNormalizesDetailProtocol(t *testing.T) {
 		}
 	}
 
-	page := adminui.MsgText(navigationLangCtx("zh-CN"), navigationErrMsg(navigationLangCtx("zh-CN"), err))
+	page := response.MsgText(navigationLangCtx("zh-CN"), navigationErrMsg(navigationLangCtx("zh-CN"), err))
 	if page != "词条-已被他人修改：产品详情页" {
 		t.Errorf("页面出口应保留全角分隔符的整句，实际 %q", page)
 	}
-	if en := adminui.MsgText(navigationLangCtx("en-US"), navigationErrMsg(navigationLangCtx("en-US"), err)); en != "entry-stale: 产品详情页" {
+	if en := response.MsgText(navigationLangCtx("en-US"), navigationErrMsg(navigationLangCtx("en-US"), err)); en != "entry-stale: 产品详情页" {
 		t.Errorf("英文页面出口应为 %q，实际 %q", "entry-stale: 产品详情页", en)
 	}
 }
@@ -181,7 +224,7 @@ func TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol(t *testing.T) {
 		{"zh-CN", "词条-操作失败"},
 		{"en-US", "entry-internal"},
 	} {
-		code, body := callNavigationJSON(t, engine, navigationErrRoutes[0], lang.accept)
+		code, body := callNavigationJSON(t, engine, navigationErrRoutes[2], lang.accept)
 		if code != http.StatusInternalServerError {
 			t.Fatalf("[%s] 内部错误应为 500，实际 %d", lang.accept, code)
 		}
@@ -199,14 +242,15 @@ func TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol(t *testing.T) {
 		}
 	}
 
+	// 带参事实在写端点验：update 走表单，错误片段按请求语言填参。
 	engine = newNavigationErrRouter(t, &navigationErrStub{
 		err: errors.New(navigationenums.ErrInvalidParam + "|/about"),
 	})
-	code, body := callNavigationJSON(t, engine, navigationErrRoutes[0], "zh-CN")
+	code, html := callNavigationHTML(t, engine, navigationErrRoutes[1], "zh-CN")
 	if code != http.StatusBadRequest {
 		t.Fatalf("参数类业务错误应保持 400，实际 %d", code)
 	}
-	if body.Message != "词条-参数无效：/about" {
-		t.Errorf("带参形态应由取词层填参，实际 %q", body.Message)
+	if !strings.Contains(html, "词条-参数无效：/about") {
+		t.Errorf("带参形态应由取词层填参，实际 %q", html)
 	}
 }

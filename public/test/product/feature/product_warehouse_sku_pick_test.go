@@ -18,6 +18,9 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
@@ -27,6 +30,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/test/support"
 )
@@ -35,8 +39,11 @@ type wpickFixture struct {
 	inventory *inventoryservice.Service
 	products  *productservice.Service
 	projects  *projectservice.Service
-	db        *gorm.DB
-	projectID string
+
+	// rewireProducts 用另一份审计端口重建商品服务（审计是构造依赖，故障注入只能换装配）。
+	rewireProducts func(changes masterdatacontract.MasterDataService)
+	db             *gorm.DB
+	projectID      string
 
 	sz *inventorydto.WarehouseResp
 	sh *inventorydto.WarehouseResp
@@ -55,7 +62,7 @@ func newWPickFixture(t *testing.T) *wpickFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 	sz, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
@@ -70,10 +77,15 @@ func newWPickFixture(t *testing.T) *wpickFixture {
 	if err != nil {
 		t.Fatalf("建第二个仓失败: %v", err)
 	}
-	return &wpickFixture{
+	fx := &wpickFixture{
 		inventory: inv, products: products, projects: projects,
 		db: db, projectID: project.ID, sz: sz, sh: sh,
 	}
+	fx.rewireProducts = func(changes masterdatacontract.MasterDataService) {
+		fx.products = productservice.NewService(productmodel.NewModel(db), projects, changes)
+		fx.products.SetInventoryService(inv)
+	}
+	return fx
 }
 
 func (f *wpickFixture) wpickProduct(t *testing.T, name, slug string) *productdto.ProductResp {
@@ -419,6 +431,15 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) {
+		text.AttachScope(c)
+		c.Next()
+		for _, entry := range c.Errors {
+			if _, ok := templates.AsTemplateRenderError(entry.Err); ok {
+				t.Errorf("商品新建页模板执行失败：%v", entry.Err)
+			}
+		}
+	})
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
@@ -433,8 +454,8 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	}
 	page := rec.Body.String()
 	for _, want := range []string{
-		`name="externalSku"`, `data-sku-catalog`,
-		`value="PICK-777"`, `data-warehouse="` + f.sh.ID + `"`, `data-warehouse-sku`,
+		`name="externalSku"`, `data-sku-candidates`,
+		`value="PICK-777"`, `data-warehouse="` + f.sh.ID + `"`, `data-sku-input`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("新建表单缺少 %q（仓库候选目录没渲染出来）", want)

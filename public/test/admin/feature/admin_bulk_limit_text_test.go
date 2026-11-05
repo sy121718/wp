@@ -18,6 +18,7 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 )
 
 func adminBulkOverLimitForm() url.Values {
@@ -42,6 +43,8 @@ func adminBulkProbeRawError(t *testing.T) error {
 }
 
 func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 
@@ -53,9 +56,6 @@ func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	engine.POST("/admin/menus/bulk-delete", h.MenusBulkDelete)
 	engine.POST("/admin/departments/bulk-delete", h.DepartmentsBulkDelete)
 	engine.POST("/admin/datarules/bulk-delete", h.DatarulesBulkDelete)
-
-	i18nHandle := adminhttp.NewAdminI18nEntryHandle()
-	engine.POST("/api/i18n/save", i18nHandle.I18nEntryWrite)
 
 	rawErr := adminBulkProbeRawError(t)
 	if !errors.Is(rawErr, bulkids.ErrTooMany) {
@@ -80,48 +80,27 @@ func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s 超限应渲染整页提示（200），实际 %d，body=%s", path, rec.Code, rec.Body.String())
+		// 非页面请求只回 JSON：超限不是页面失败，不许渲染整页提示。
+		got := jsonErrMessage(t, rec.Body.String())
+		if rec.Code == http.StatusOK {
+			t.Fatalf("%s 超限不应以 200 交回，body=%s", path, rec.Body.String())
 		}
-		body := rec.Body.String()
-		if !strings.Contains(body, `data-jump-state="err"`) {
-			t.Fatalf("%s 超限提示页应带 data-jump-state=\"err\"：%s", path, body)
-		}
-		got := jumpMsgFromBody(body)
 		if !strings.Contains(got, "一次最多操作") {
-			t.Errorf("%s 应显示受控提示，实际 msg=%q", path, got)
+			t.Errorf("%s 应显示受控提示，实际 message=%q", path, got)
 		}
 		if !strings.Contains(got, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(got, over) {
-			t.Errorf("%s 的受控提示应带上限 %d 与本次条数 %s（「当前 M 项」由类型给回），实际 msg=%q",
+			t.Errorf("%s 的受控提示应带上限 %d 与本次条数 %s（「当前 M 项」由类型给回），实际 message=%q",
 				path, bulkids.MaxIDs, over, got)
 		}
-		assertPageNoLeak(t, path, body)
+		assertPageNoLeak(t, path, got)
 	}
-
-	jsonOver := strconv.Itoa(bulkids.MaxIDs + 1)
-	jsonReq := httptest.NewRequest(http.MethodPost, "/api/i18n/save", strings.NewReader(adminBulkOverLimitJSONBody()))
-	jsonReq.Header.Set("Content-Type", "application/json")
-	jsonRec := httptest.NewRecorder()
-	engine.ServeHTTP(jsonRec, jsonReq)
-	if jsonRec.Code != http.StatusBadRequest {
-		t.Fatalf("JSON 通道超限应整批拒绝（400，不部分执行），实际 %d，body=%s", jsonRec.Code, jsonRec.Body.String())
+	body := adminBulkOverLimitForm()
+	body.Set("action", "bulkDelete")
+	code, message := postAdminI18nWrite(t, newAdminI18nWriteEngine(), body.Encode())
+	if code != http.StatusBadRequest || !strings.Contains(message, "一次最多操作") || !strings.Contains(message, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(message, over) || strings.Contains(message, bulkids.MsgTooMany) {
+		t.Fatalf("词条表单超限应整批拒绝并显示数量：%d %q", code, message)
 	}
-	jsonMsg := jsonErrMessage(t, jsonRec.Body.String())
-	if !strings.HasPrefix(jsonMsg, bulkids.MsgTooMany+"|") {
-		t.Fatalf("JSON 通道应回受控 key（%s）而不是原文，实际 %q", bulkids.MsgTooMany, jsonMsg)
-	}
-	if !strings.Contains(jsonMsg, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(jsonMsg, jsonOver) {
-		t.Fatalf("JSON 通道的受控提示应带上限 %d 与本次条数 %s，实际 %q", bulkids.MaxIDs, jsonOver, jsonMsg)
-	}
-	assertPageNoLeak(t, "POST /api/i18n/save", jsonMsg)
-}
-
-func adminBulkOverLimitJSONBody() string {
-	ids := make([]string, 0, bulkids.MaxIDs+1)
-	for i := 0; i < bulkids.MaxIDs+1; i++ {
-		ids = append(ids, `"k`+strconv.Itoa(i)+`|zh-CN"`)
-	}
-	return `{"ids":[` + strings.Join(ids, ",") + `]}`
+	assertPageNoLeak(t, "POST /api/i18n/save", message)
 }
 
 func jsonErrMessage(t *testing.T, body string) string {
@@ -137,6 +116,8 @@ func jsonErrMessage(t *testing.T, body string) string {
 }
 
 func TestAdminBulkLimitTextDoesNotDeriveFromErrorText(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	wrapped := fmt.Errorf(`批量删除管理员失败: SQLSTATE 23505 uk_sys_admin_username: %w`,
 		&bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs})

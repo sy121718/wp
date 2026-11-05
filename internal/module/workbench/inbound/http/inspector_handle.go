@@ -14,14 +14,13 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	"go_wp/internal/templates"
 	"go_wp/pkg/response"
 )
 
 func (h *Handle) InspectorPanel(c *gin.Context) {
 	req, err := binding.ParseForm[workbenchdto.InspectorPanelReq](c)
 	if err != nil {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrPreviewParamsIncomplete)
 		return
 	}
 	nodeID := strings.TrimSpace(req.NodeID)
@@ -37,7 +36,7 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 
 	sections, err := h.svc.InspectorSections(c.Request.Context(), node, tab, projectID, workbenchTrFunc(c))
 	if err != nil {
-		c.String(http.StatusInternalServerError, adminui.PageInternalText(c))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
 		return
 	}
 
@@ -60,25 +59,5 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 
 	pageview.RenderTemplate(c, OutlineTreeTemplate, adminui.PrepareBareView(c, &OutlineTreeResp{
 		HTML: workbenchservice.RenderOutlineHTML(page.Root, selectedID, filter, workbenchTrFunc(c)),
-	}))
-}
-
-func renderWorkbenchPageError(c *gin.Context, status int, key string) {
-	renderWorkbenchPageErrorText(c, status, key, workbenchShortText(c, key))
-}
-
-func renderWorkbenchPageErrorText(c *gin.Context, status int, key, text string) {
-	if strings.TrimSpace(text) == "" {
-		text = workbenchShortText(c, key)
-	}
-	lang := response.RequestLanguage(c)
-	c.Header("Cache-Control", "no-store")
-
-	c.HTML(status, "workbench/error", adminui.PrepareBareView(c, &WorkbenchErrorPageResp{
-		Lang:     lang,
-		T:        templates.TranslateFunc(lang),
-		Title:    text,
-		Message:  text,
-		BackPath: "/admin",
 	}))
 }

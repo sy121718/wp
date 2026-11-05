@@ -2,7 +2,6 @@ package adminservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 	"go_wp/internal/module/admin/enums"
 	"go_wp/internal/module/admin/model"
 	"go_wp/pkg/casbin"
-	"go_wp/pkg/database"
+	"go_wp/pkg/utils"
 )
 
 var pureNumericPattern = regexp.MustCompile(`^[0-9]+$`)
@@ -152,41 +151,9 @@ func (s *Service) RoleUpdate(ctx context.Context, req *admindto.RoleUpdateReq) e
 	return nil
 }
 
+// RoleDelete 删除角色，单条与批量走同一条全成全败路径。
 func (s *Service) RoleDelete(ctx context.Context, req *admindto.RoleDeleteReq) error {
-	reloadPolicy := false
-	err := s.rm.Transaction(ctx, func(tx *gorm.DB) error {
-		entity, err := s.rm.LockByIDTx(ctx, tx, req.ID)
-		if err != nil {
-			return err
-		}
-		if entity == nil {
-			return adminenums.Err(adminenums.ErrRoleNotFound)
-		}
-		if entity.IsSystem == 1 {
-			return adminenums.Err(adminenums.ErrRoleIsSystem)
-		}
-
-		changed, err := casbin.DeleteRoleAllPoliciesTx(ctx, tx, entity.RoleCode)
-		if err != nil {
-			return fmt.Errorf("角色策略清理失败，本次删除已整体回滚: %w", err)
-		}
-		if err = s.rm.DeleteTx(ctx, tx, req.ID); err != nil {
-			return err
-		}
-		reloadPolicy = changed
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if reloadPolicy {
-		if err = casbin.ReloadPolicy(); err != nil {
-			return fmt.Errorf("角色已删除，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
-		}
-	}
-
-	s.reloadDataRuleSnapshotAfterWrite("角色删除")
-	return nil
+	return s.RoleBulkDelete(ctx, req)
 }
 
 func (s *Service) GetRoleCodesByUserID(ctx context.Context, userID uint64) ([]string, error) {
@@ -280,52 +247,86 @@ func (s *Service) RoleMenuList(ctx context.Context, req *admindto.RoleMenuListRe
 }
 
 func (s *Service) RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveReq) (res *admindto.RoleMenuSaveResp, err error) {
-	role, err := s.rm.GetByID(ctx, req.RoleID)
-	if err != nil {
-		return nil, err
-	}
-	if role == nil {
-		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
-	}
+	// 授予与事务内的写同事务：先锁角色行与这次要授予的菜单/权限点行，再落 p 策略。
+	//
+	// 锁序与删除端一致（都按主键 id 升序）：删除端锁同一批行，两个写端才在同一处排队，
+	// 「读到没人引用 → 授予提交 → 删掉」这条 READ COMMITTED 反例才挡得住。
+	var reloadTaskID int64
 
-	all, err := s.mm.ListAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	menuIDs := withAncestorMenuIDs(all, req.MenuIDs)
-
-	codes, err := s.GetPermissionCodesByIDs(ctx, menuIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
-	if err != nil {
-		return nil, err
-	}
-	roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
-	if err != nil {
-		return nil, err
-	}
-	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || roleSuper); err != nil {
-		return nil, err
-	}
-
-	var policies [][3]string
-	if len(codes) > 0 {
-		briefs, err := s.ListByCodes(ctx, codes)
+	err = s.rm.Transaction(ctx, func(tx *gorm.DB) error {
+		role, err := s.rm.LockByIDTx(ctx, tx, req.RoleID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, b := range briefs {
-			policies = append(policies, [3]string{b.APIPath, b.APIMethod, b.PermissionCode})
+		if role == nil {
+			return adminenums.Err(adminenums.ErrRoleNotFound)
 		}
+
+		// 祖先菜单要一并授予，算它需要看全量菜单；锁的是本事务里真正会受影响的那批。
+		all, err := s.mm.ListAllTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		menuIDs := withAncestorMenuIDs(all, req.MenuIDs)
+
+		if len(menuIDs) > 0 {
+			lockedMenus, err := s.mm.LockByIDsTx(ctx, tx, menuIDs)
+			if err != nil {
+				return err
+			}
+			if len(lockedMenus) != len(menuIDs) {
+				return adminenums.Err(adminenums.ErrMenuNotFound)
+			}
+		}
+
+		codes, err := s.menuPermissionCodesTx(ctx, tx, menuIDs)
+		if err != nil {
+			return err
+		}
+
+		willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
+		if err != nil {
+			return err
+		}
+		roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
+		if err != nil {
+			return err
+		}
+		if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || roleSuper); err != nil {
+			return err
+		}
+
+		var policies [][3]string
+		if len(codes) > 0 {
+			lockedPerms, err := s.pm.LockByCodesTx(ctx, tx, codes)
+			if err != nil {
+				return err
+			}
+			if len(lockedPerms) != len(codes) {
+				return adminenums.Err(adminenums.ErrPermissionNotFound)
+			}
+			for _, b := range lockedPerms {
+				policies = append(policies, [3]string{b.APIPath, b.APIMethod, b.PermissionCode})
+			}
+		}
+
+		changed, err := casbin.ReplaceRolePermissionsTx(ctx, tx, role.RoleCode, policies)
+		if err != nil {
+			return err
+		}
+		if changed {
+			reloadTaskID, err = s.appendPolicyReloadTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	if err = casbin.ReplaceRolePermissions(role.RoleCode, policies); err != nil {
-		return nil, fmt.Errorf("保存角色权限失败: %w", err)
-	}
-
+	s.FlushSideEffect(ctx, reloadTaskID)
 	return &admindto.RoleMenuSaveResp{RoleID: req.RoleID}, nil
 }
 
@@ -383,43 +384,74 @@ func (s *Service) RoleUserList(ctx context.Context, req *admindto.RoleUserListRe
 	return &admindto.RoleUserListResp{Total: total, List: list}, nil
 }
 
+// RoleUserSave 保存角色成员。
+//
+// 事务内先锁角色行、再按 id 升序锁成员行：成员分配与成员删除/改归属放在同一批行上排队，
+// 否则「分配时读到成员还在 → 另一边把人删掉 → 分配把悬挂绑定写进策略」挡不住。
 func (s *Service) RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveReq) (res *admindto.RoleUserSaveResp, err error) {
-	role, err := s.rm.GetByID(ctx, req.RoleID)
-	if err != nil {
-		return nil, err
-	}
-	if role == nil {
-		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
-	}
+	ids := uniqueIDs(req.UserIDs)
+	var reloadTaskID int64
 
-	roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
-	if err != nil {
-		return nil, err
-	}
-	targetSuper := false
-	for _, id := range req.UserIDs {
-		super, err := s.IsSuperAdmin(ctx, id)
+	err = s.rm.Transaction(ctx, func(tx *gorm.DB) error {
+		role, err := s.rm.LockByIDTx(ctx, tx, req.RoleID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if super {
-			targetSuper = true
-			break
+		if role == nil {
+			return adminenums.Err(adminenums.ErrRoleNotFound)
 		}
-	}
-	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, roleSuper || targetSuper); err != nil {
+
+		var locked []adminmodel.AdminEntity
+		if len(ids) > 0 {
+			locked, err = s.am.LockByIDsTx(ctx, tx, ids)
+			if err != nil {
+				return err
+			}
+			if len(locked) != len(ids) {
+				return adminenums.Err(adminenums.ErrAdminNotFound)
+			}
+		}
+
+		roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
+		if err != nil {
+			return err
+		}
+		targetSuper := false
+		for _, entity := range locked {
+			if entity.IsSuperAdmin() {
+				targetSuper = true
+				break
+			}
+		}
+		if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, roleSuper || targetSuper); err != nil {
+			return err
+		}
+
+		userIDStrs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			userIDStrs = append(userIDStrs, strconv.FormatUint(id, 10))
+		}
+
+		// 成员绑定写本事务：非 Tx 版本走 enforcer 自己的连接，
+		// 那是另一条连接上的脏写 —— 本事务回滚时它不会跟着回滚。
+		changed, err := casbin.ReplaceRoleUsersTx(ctx, tx, role.RoleCode, userIDStrs)
+		if err != nil {
+			return fmt.Errorf("保存角色用户失败: %w", err)
+		}
+		if changed {
+			// 内存 enforcer 提交后才会与实际一致：落成任务，提交后立刻试一次。
+			reloadTaskID, err = s.appendPolicyReloadTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	userIDStrs := make([]string, 0, len(req.UserIDs))
-	for _, id := range req.UserIDs {
-		userIDStrs = append(userIDStrs, strconv.FormatUint(id, 10))
-	}
-
-	if err = casbin.ReplaceRoleUsers(role.RoleCode, userIDStrs); err != nil {
-		return nil, fmt.Errorf("保存角色用户失败: %w", err)
-	}
-
+	s.FlushSideEffect(ctx, reloadTaskID)
 	return &admindto.RoleUserSaveResp{RoleID: req.RoleID}, nil
 }
 
@@ -462,69 +494,60 @@ func (s *Service) RolePermissionTree(ctx context.Context, roleID uint64) (res *a
 }
 
 func (s *Service) PermList(ctx context.Context, req *admindto.PermListReq) (res *admindto.PermListResp, err error) {
-	query := s.pm.DB(ctx)
-
-	if req.Module != "" {
-		query = query.Where("module = ?", req.Module)
-	}
-	if req.Code != "" {
-		query = query.Where("permission_code LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(req.Code)+"%")
-	}
-	if req.APIPath != "" {
-		query = query.Where("api_path LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(req.APIPath)+"%")
-	}
-	if req.Status != nil {
-		query = query.Where("status = ?", *req.Status)
-	}
-
-	var total int64
-	if err = query.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	var items []admindto.PermItem
-	offset := (req.GetPage() - 1) * req.GetLimit()
-	err = query.Order("id DESC").
-		Offset(offset).Limit(req.GetLimit()).
-		Scan(&items).Error
+	total, entities, err := s.pm.ListPage(ctx, adminmodel.PermListFilter{
+		Module:  req.Module,
+		Code:    req.Code,
+		APIPath: req.APIPath,
+		Status:  req.Status,
+		Page:    req.GetPage(),
+		Limit:   req.GetLimit(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	list := make([]admindto.PermItem, 0, len(items))
-	for _, item := range items {
-		list = append(list, item)
+	list := make([]admindto.PermItem, 0, len(entities))
+	for _, e := range entities {
+		list = append(list, admindto.PermItem{
+			ID:             e.ID,
+			PermissionCode: e.PermissionCode,
+			PermissionName: e.PermissionName,
+			Module:         e.Module,
+			APIPath:        e.APIPath,
+			APIMethod:      e.APIMethod,
+			Status:         e.Status,
+			Remark:         stringOrEmpty(e.Remark),
+			CreateTime:     utils.NewJSONTimePtr(e.CreateTime),
+		})
 	}
 
 	return &admindto.PermListResp{Total: total, List: list}, nil
 }
 
 func (s *Service) PermDetail(ctx context.Context, req *admindto.PermDetailReq) (res *admindto.PermDetailResp, err error) {
-	res = &admindto.PermDetailResp{}
-	err = s.pm.DB(ctx).
-		Select("id", "permission_code", "permission_name", "module", "api_path", "api_method",
-			"status", "remark", "create_time", "update_time").
-		Where("id = ?", req.ID).
-		Scan(res).Error
+	entity, err := s.pm.DetailByID(ctx, req.ID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
-		}
 		return nil, err
 	}
-	if res.ID == 0 {
+	if entity == nil {
 		return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
 	}
-	return res, nil
+	return &admindto.PermDetailResp{
+		ID:             entity.ID,
+		PermissionCode: entity.PermissionCode,
+		PermissionName: entity.PermissionName,
+		Module:         entity.Module,
+		APIPath:        entity.APIPath,
+		APIMethod:      entity.APIMethod,
+		Status:         entity.Status,
+		Remark:         stringOrEmpty(entity.Remark),
+		CreateTime:     utils.NewJSONTimePtr(entity.CreateTime),
+		UpdateTime:     utils.NewJSONTimePtr(entity.UpdateTime),
+	}, nil
 }
 
 func (s *Service) PermOptions(ctx context.Context, req *admindto.PermOptionsReq) (res *admindto.PermOptionsResp, err error) {
-	var entities []adminmodel.PermissionEntity
-	query := s.pm.DB(ctx).Where("status = ?", adminmodel.PermissionStatusEnabled)
-	if req.Module != "" {
-		query = query.Where("module = ?", req.Module)
-	}
-	err = query.Order("module ASC, id ASC").Find(&entities).Error
+	entities, err := s.pm.ListEnabledForOptions(ctx, req.Module)
 	if err != nil {
 		return nil, err
 	}
@@ -633,39 +656,9 @@ func (s *Service) PermUpdate(ctx context.Context, req *admindto.PermUpdateReq) (
 	return &admindto.PermUpdateResp{ID: req.ID}, nil
 }
 
-func (s *Service) PermDelete(ctx context.Context, req *admindto.PermDeleteReq) (res *admindto.PermDeleteResp, err error) {
-	entities, err := s.pm.ListByIDs(ctx, req.IDs)
-	if err != nil {
-		return nil, err
-	}
-	if len(entities) != len(req.IDs) {
-		return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
-	}
-	codes := make([]string, 0, len(entities))
-	for _, entity := range entities {
-		assigned, err := casbin.HasPermissionPolicies(entity.PermissionCode)
-		if err != nil {
-			return nil, err
-		}
-		if assigned {
-			return nil, adminenums.Err(adminenums.ErrPermissionAssigned)
-		}
-		codes = append(codes, entity.PermissionCode)
-	}
-
-	references, err := s.CountByPermissionCodes(ctx, codes)
-	if err != nil {
-		return nil, err
-	}
-	if references > 0 {
-		return nil, adminenums.Err(adminenums.ErrMenuReferenced)
-	}
-
-	deleted, err := s.pm.DeleteByIDs(ctx, req.IDs)
-	if err != nil {
-		return nil, err
-	}
-	return &admindto.PermDeleteResp{DeletedCount: deleted}, nil
+// PermDelete 删除权限点，走与批量相同的同事务校验 + 删除路径。
+func (s *Service) PermDelete(ctx context.Context, req *admindto.PermDeleteReq) (*admindto.PermDeleteResp, error) {
+	return s.PermBulkDelete(ctx, req)
 }
 
 func (s *Service) ListByCodes(ctx context.Context, codes []string) ([]admindto.PermBrief, error) {

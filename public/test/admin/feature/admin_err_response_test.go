@@ -12,6 +12,7 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/public/test/support"
 
@@ -19,11 +20,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var internalCopyForms = map[string]bool{
-	adminenums.ErrInternal:                     true,
-	"操作失败，请稍后重试":                               true,
-	"Operation failed, please try again later": true,
-}
+var internalCopyForms = map[string]bool{"系统内部错误，请稍后重试": true}
 
 var businessCopyForms = map[string]bool{
 	adminenums.ErrRoleCodeExists: true,
@@ -51,7 +48,7 @@ func withTempLogDir(t *testing.T) func() string {
 	t.Cleanup(func() { _ = logger.Close() })
 
 	return func() string {
-		files, _ := filepath.Glob(filepath.Join(dir, "admin", "app-*.log"))
+		files, _ := filepath.Glob(filepath.Join(dir, "*", "app-*.log"))
 		var sb strings.Builder
 		for _, f := range files {
 			raw, rerr := os.ReadFile(f)
@@ -115,6 +112,7 @@ func (f *fakeRoleService) RoleUserSave(context.Context, *admindto.RoleUserSaveRe
 }
 
 func newRoleErrEngine(t *testing.T, svcErr error) *gin.Engine {
+	injectAdminErrorLexicon(t)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	handle := adminhttp.NewHandleWithDeps(nil, &fakeRoleService{err: svcErr}, nil, nil, nil, nil)
@@ -180,7 +178,7 @@ func TestAdminHandlerInternalErrorIsCollected(t *testing.T) {
 	if !strings.Contains(logText, "uk_sys_role_code") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（响应收口 ≠ 吞掉错误），日志内容=%s", logText)
 	}
-	if !strings.Contains(logText, "admin 接口内部错误") {
+	if !strings.Contains(logText, "handler 内部错误") || !strings.Contains(logText, "/api/admin/role/create") {
 		t.Fatalf("日志里应能定位到场景与事件，日志内容=%s", logText)
 	}
 }
@@ -201,4 +199,17 @@ func TestAdminHandlerBindErrorDropsFieldDetail(t *testing.T) {
 		t.Fatalf("绑定失败应给一条可翻译的参数错误文案，body=%s", body)
 	}
 	assertNoLeak(t, "绑定失败分支", body)
+}
+
+func injectAdminErrorLexicon(t *testing.T) {
+	t.Helper()
+	i18n.InjectForTest(map[string]map[string]string{
+		adminenums.ErrRoleCodeExists:       {"zh-CN": "角色编码已存在"},
+		adminenums.ErrUsernameExists:       {"zh-CN": "用户名已存在，请修改"},
+		adminenums.ErrAdminNotFound:        {"zh-CN": "管理员不存在"},
+		adminenums.ErrUserNotFound:         {"zh-CN": "用户不存在"},
+		adminenums.ErrSortFieldInvalid:     {"zh-CN": "无效的排序字段：请改用列表支持的排序字段"},
+		adminenums.ErrSortDirectionInvalid: {"zh-CN": "无效的排序方向：只支持 asc / desc"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }

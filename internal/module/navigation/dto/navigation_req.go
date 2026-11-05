@@ -65,3 +65,30 @@ type SwapMoveReq struct {
 
 	Dir string `json:"dir" form:"dir" binding:"required"`
 }
+
+// AddSourceForm 是「从来源批量加入导航」的表单输入：
+// projectId / kind / sourceType 定作用域，ids 是重复提交的候选标识。
+type AddSourceForm struct {
+	ProjectID  string   `json:"projectId" form:"projectId" binding:"required"`
+	Kind       string   `json:"kind" form:"kind"`
+	SourceType string   `json:"sourceType" form:"sourceType" binding:"required"`
+	IDs        []string `json:"ids" form:"ids" binding:"required"`
+}
+
+// PanelForm 是导航项悬浮面板的编辑表单（设置已有面板 / 新建面板共用字段）。
+type PanelForm struct {
+	ProjectID         string `json:"projectId" form:"projectId"`
+	ID                string `json:"id" form:"id"`
+	Kind              string `json:"kind" form:"kind"`
+	Title             string `json:"title" form:"title"`
+	Path              string `json:"path" form:"path"`
+	Target            string `json:"target" form:"target"`
+	PanelBlockID      string `json:"panelBlockId" form:"panelBlockId"`
+	PanelWidth        string `json:"panelWidth" form:"panelWidth"`
+	ExpectedUpdatedAt string `json:"expectedUpdatedAt" form:"expectedUpdatedAt"`
+}
+
+// BulkDeleteForm 是导航批量删除的表单输入：ids 重复提交。
+type BulkDeleteForm struct {
+	IDs []string `json:"ids" form:"ids" binding:"required"`
+}

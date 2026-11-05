@@ -9,6 +9,8 @@ import (
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 func fabForm(fields map[string]string) *gin.Context {
@@ -97,7 +99,7 @@ func TestFabTextResolvesKeysToMessages(t *testing.T) {
 		aienums.MsgFabTruncated, aienums.MsgFabToolsPrefix, aienums.MsgFabToolsSuffix,
 		aienums.MsgFabEmpty,
 	} {
-		got := fabText(key)
+		got := response.MsgText(fabForm(nil), facing.Msg{Key: key})
 		if got == "" {
 			t.Errorf("%s 没有文案", key)
 		}

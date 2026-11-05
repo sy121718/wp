@@ -1,44 +1,29 @@
 # internal/module 开发规范
 
-通用分层判据在 AGENTS.md「分层判据」，本文件只写本目录的结构与特有约束。
+架构判据、层边界、响应协议、取词规则**全仓唯一来源是** [AGENTS.md](../../AGENTS.md)。本文件只写本目录的**结构与真实局部约定**；判据不回述，遇到归属问题回根规则查。
 
 ## 目录
 ```text
 <mod>/
   contract/      对外契约：接口 + 不可变 DTO（别的模块只能 import 这里）
-  dto/           请求/响应数据结构（只做绑定与校验；不带展示字段）
-  enums/         枚举常量、错误 key 与兜底表、界面词条 key
-  model/         表访问单元（Repository）：本模块表 CRUD 与聚合内原子组合
-  service/       业务规则、事务边界、多表拼装（只出数据，不出文案）
+  dto/           请求绑定与校验；JSON 响应对象（不含后端替界面拼的成品句）
+  enums/         枚举常量、业务错误声明（key + 状态码；HTML 由 Jet 取词，数据 JSON 由共享出口取词）
+  model/         表访问单元：本模块表 CRUD、聚合内原子组合、分页筛选
+  service/       业务规则、校验、事务边界、聚合与查询（交业务事实）
   inbound/http/  控制器：<mod>_router.go 路由 + <domain>_handle.go 处理器
   inbound/mcp/   AI 工具（读用 mcp.New、写用 mcp.NewWrite）
   outbound/      对外部系统的适配器
 ```
 
-## 控制器
+## 本目录真实局部约定
 - 文件名只有两种：`<mod>_router.go`、`<domain>_handle.go`；类型 `<Module>Handle` / `<Module><Domain>PageHandle`。
-- 方法体只允许：`binding.JSON/Form/Query/Field`、校验失败转响应、调 service、`return`、`response.*`。
-- 页面处理器签名 `func(*gin.Context)`：成功 `pageview.RenderTemplate(c, tpl, data)`、失败 `pageview.Fail(c, err)`；处理器声明模板，路由用 `pageview.UseRenderer` 装配统一渲染器。存量 `Slot` 逐模块迁移；处理器不自行注入语言或公共上下文。
-- 一文件 = 一个业务功能；单方法 ≤60 行；不 import `internal/adminui`（router 除外）。
+- 本模块内部按根规则的单向分层依赖（`inbound/http → service → model`，只往下不往回，model 不 import service）；**跨模块**只经对方的 `contract`，不 import 别人的 model/service，也不直接读别人的表。
+- service 不持有 `*gorm.DB`、不调 model 的 `DB(ctx)`/`RevisionDB(ctx)`（`scripts/check-service-db-boundary.sh`）；事务句柄从 model 下传。
+- `inbound/mcp` 读工具用 `mcp.New`、写工具用 `mcp.NewWrite`。
+- 控制器不 import `internal/adminui` 的业务语义（渲染基础设施可复用）。
+- 模块内 unit 只测纯逻辑与装配；接口链路走 `public/test/<mod>/feature`（真实 PG）。
+- **反向端口是正常接线**，不算反向依赖：调用方持接口、被调方实现——`inventory/outbound/orderstock` 实现 `order` 的 `StockOperator`；`inventory/outbound/purchasestock` 实现 `purchase` 的 `StockPort` 与 `VariantCatalog`；`page` 与 `presentation` 各自实现 `media` 的 `StaleMarker`。
+- 带 FORCE 策略的表在缺工程作用域时表现为「不存在」：只有 id 的入口必须**逐工程探测归属**再进事务，不得退化成「不限工程」。
+- 存量重构债（控制器侧取词、展示分档在后端、手工读参、旧转发层等）是**待实施清单，不是许可**，见 [TODO.md](../../TODO.md)。
 
-## service
-- 只返回数据对象与事实（`pkg/facing` 的 key + 兜底）；**不拼句**。
-- 不取词：取词只有模板 t/tf 与 `pkg/response.MessageOf` 两个出口；service 只交 key + 中文兜底 + 参数。
-  自造词条同样禁止：service 里不许出现 `"admin./shell./user./workbench."` 这类 key 字面量。
-- 成品句不进 dto 的**语言绑定字段**（`Text` / 已取词的 `Err` / `ErrMsg`）：它们换一种语言就要重算，
-  由页面出口或模板临时填；dto 里只放 key + 参数这类语言无关的事实。
-- 事务边界在这里：涉及两处以上写入必须同一事务，句柄从 model 下传。
-- 不调用 model 的 `DB(ctx)`/`RevisionDB(ctx)`（`scripts/check-service-db-boundary.sh`）。
-- 跨模块只用对方的 `contract`；不 import 对方的 model/service。
-
-## model
-- 只做本模块表的 CRUD 与聚合内原子组合；不写业务规则、不写死业务条件、不跨聚合事务。
-- 不声明列型（gorm 能推断就交给它）；跨模块表名一律走契约，不在 model 里出现别人的表。
-
-## 响应与错误
-- 业务错误在声明处给状态码：`enums.Err(key)` 返回 `facing.WithStatus(...)`；出口只调 `response.ErrorStatusAuto`。
-- 兜底文案跟声明处走（`errFallbacks` + `Err`/`ErrDetail`），明细用半角 ": "。
-- 文案事实 / 界面 key 分域：界面 key 前缀 admin./shell./user./workbench. 或 Msg*。
-
-## 测试
-模块内 unit 只测纯逻辑与装配；接口链路走 `public/test/<mod>/feature`（真实 PG）。
+渲染写法、取词出口、分页归属、错误声明位置、测试判据等一律见 [AGENTS.md](../../AGENTS.md)。

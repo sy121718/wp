@@ -10,6 +10,7 @@ import (
 	"go_wp/internal/adminui"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -20,11 +21,11 @@ const workbenchErrScene = "workbench"
 const workbenchCompileFallback = "预览编译失败"
 
 func workbenchFacingText(c *gin.Context, key string) string {
-	fallback := workbenchenums.FallbackFor(key)
-	if fallback == "" {
-		return ""
-	}
-	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
+	// 走统一消息出口：词库命中就用译文；缺词时 response 会记一条可定位的
+	// logMissingMessage（key / lang / 调用处 / 路径）并交回归口文案。
+	// 这里不能自己调 TranslateFunc 把兜底传空串 —— 那会把「缺词」变成页面上
+	// 的空消息槽，既不可读也没有任何线索能查是哪条词缺了。
+	return response.MsgText(c, facing.Msg{Key: key})
 }
 
 func workbenchCompileFallbackText(c *gin.Context) string {
@@ -40,17 +41,20 @@ func writePreviewCompileRejected(c *gin.Context, document json.RawMessage, kind 
 
 	problem, key := workbenchservice.ClassifyPreviewRejection(document, kind, err)
 	if problem != "" {
-		c.String(http.StatusUnprocessableEntity, workbenchCompileFallbackText(c)+"："+problem)
+		// TODO(编码明细出口)：这里把「前缀 + problem」拼成一句，违反「编码明细只在出口
+		// 逐段取词」。等 MsgCompileFailed 词条改成带 %s 的形态后，改成 key+"|"+problem，
+		// 由 pkg/response 的 translate 逐段取词。
+		response.ErrorWithMessage(c, http.StatusUnprocessableEntity, workbenchCompileFallbackText(c)+"："+problem)
 		return
 	}
 	if key != "" {
 		if text := workbenchFacingText(c, key); text != "" {
-			c.String(http.StatusUnprocessableEntity, text)
+			response.ErrorWithMessage(c, http.StatusUnprocessableEntity, text)
 			return
 		}
 	}
 
-	c.String(http.StatusUnprocessableEntity, workbenchCompileFallbackText(c))
+	response.ErrorWithMessage(c, http.StatusUnprocessableEntity, workbenchCompileFallbackText(c))
 }
 
 var workbenchShortFallbacks = map[string]string{

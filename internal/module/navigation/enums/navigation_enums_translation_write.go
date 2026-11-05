@@ -21,17 +21,17 @@ const (
 )
 
 func ErrTranslationDuplicateError() error {
-	return facing.WithStatus(facing.New(ErrTranslationDuplicate, errFallbacks[ErrTranslationDuplicate]), translationWriteRejectStatus)
+	return facing.WithStatus(facing.New(ErrTranslationDuplicate), translationWriteRejectStatus)
 }
 
 func ErrNotTranslatableRejected() error {
-	return facing.WithStatus(facing.New(ErrNotTranslatable, errFallbacks[ErrNotTranslatable]), translationWriteRejectStatus)
+	return facing.WithStatus(facing.New(ErrNotTranslatable), translationWriteRejectStatus)
 }
 
 func ErrTranslationWriteFailedError() error {
-	return facing.WithStatus(facing.New(ErrTranslationWriteFailed, errFallbacks[ErrTranslationWriteFailed]), translationWriteFailureStatus)
+	return facing.WithStatus(facing.New(ErrTranslationWriteFailed), translationWriteFailureStatus)
 }
 
 func ErrTranslationWriteUnavailableError() error {
-	return facing.WithStatus(facing.New(ErrTranslationWriteUnavailable, errFallbacks[ErrTranslationWriteUnavailable]), translationWriteFailureStatus)
+	return facing.WithStatus(facing.New(ErrTranslationWriteUnavailable), translationWriteFailureStatus)
 }

@@ -16,6 +16,7 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
 	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"
@@ -36,20 +37,20 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
-		renderWorkbenchPageError(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)
 		return
 	}
 
 	page, err := h.svc.PageByID(c.Request.Context(), pageID)
 	if err != nil {
-		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)
 		return
 	}
 	documentJSON, err := json.Marshal(page.DraftDocument)
 	if err != nil {
 
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "草稿文档序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
 		return
 	}
 
@@ -87,20 +88,20 @@ func (h *Handle) Workbench(c *gin.Context) {
 	if err != nil {
 
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "工作台编辑器元数据序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 
 	schemas, err := componentsForCanvas(asm)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "组件 schema 生成失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "组件 schema 序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
 	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
@@ -124,14 +125,14 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 			logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
 				Error(err, "全局块读取失败")
 		}
-		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)
 		return
 	}
 	documentJSON, err := json.Marshal(block.Document)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
 			Error(err, "块文档序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed)
 		return
 	}
 	meta := gin.H{
@@ -157,21 +158,21 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
 			Error(err, "工作台编辑器元数据序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	schemas, err := componentsForCanvas(nil)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
 			Error(err, "组件 schema 生成失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
 			Error(err, "组件 schema 序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
 	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
@@ -191,7 +192,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).
 			Warn("内容模板编辑能力未装配")
-		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
 			Error(err, "内容模板读取失败")
-		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)
 		return
 	}
 
@@ -215,7 +216,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		entityID = ""
 	} else if entityID == "" {
 
-		renderWorkbenchPageErrorText(c, http.StatusBadRequest, workbenchenums.ErrPreviewEntityIDRequired,
+		response.ErrorWithMessage(c, http.StatusBadRequest,
 			strings.ReplaceAll(workbenchShortText(c, workbenchenums.ErrPreviewEntityIDRequired), "{type}", entityType))
 		return
 	}
@@ -223,13 +224,13 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if !noEntity && h.templatePreview == nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("mode", "template-preview").
 			Warn("模板预览能力未装配")
-		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
 		return
 	}
 	if noEntity && h.pages == nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("mode", "structure-preview").
 			Warn("无实体模板预览能力未装配")
-		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)
 		return
 	}
 	projectID := strings.TrimSpace(c.Query("projectId"))
@@ -237,7 +238,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
 			Error(err, "模板文档序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrTemplateEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrTemplateEncodeFailed)
 		return
 	}
 	metaJSON, err := json.Marshal(gin.H{
@@ -260,21 +261,21 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
 			Error(err, "工作台编辑器元数据序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	schemas, err := componentsForCanvas(nil)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
 			Error(err, "组件 schema 生成失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
 			Error(err, "组件 schema 序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
@@ -295,12 +296,12 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 
 func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID string) (tpl *contenttemplatedto.TemplateResp, ok bool) {
 	if !h.svc.ContentTemplatesReady() {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
 		return nil, false
 	}
 	tpl, err := h.svc.TemplateByID(c.Request.Context(), templateID, projectID)
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)
 		return nil, false
 	}
 	return tpl, true

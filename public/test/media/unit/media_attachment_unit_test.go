@@ -431,7 +431,9 @@ func TestMediaUpdateAttachmentNotExistRejected(t *testing.T) {
 	name := "x"
 	err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: 99999, FileName: &name})
 
-	if err == nil || !strings.Contains(err.Error(), "附件不存在") {
+	// 文案归词库：service 只交 key + 状态码，中文不再内嵌在 err.Error() 里。
+	// 这里断言 key 本身（库 :317 / :348 同形），别把中文串当契约。
+	if err == nil || !strings.Contains(err.Error(), mediaenums.ErrAttachmentNotFound) {
 		t.Fatalf("不存在的附件更新应被拒绝: %v", err)
 	}
 }
@@ -443,7 +445,8 @@ func TestMediaUpdateAttachmentCategoryNotExistRejected(t *testing.T) {
 	id := seedAttachment(t, db, nil, "a.png", "image", "")
 	missing := uint64(99999)
 	err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: id, CategoryID: &missing})
-	if err == nil || !strings.Contains(err.Error(), "目标分类不存在") {
+	// 同上：文件分类的错误 key 是 ErrFileCategoryNotFound（media 自有，不与 product 共用）。
+	if err == nil || !strings.Contains(err.Error(), mediaenums.ErrFileCategoryNotFound) {
 		t.Fatalf("目标分类不存在应被拒绝: %v", err)
 	}
 }

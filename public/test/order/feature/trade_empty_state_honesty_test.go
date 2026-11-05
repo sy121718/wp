@@ -26,7 +26,9 @@ import (
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -73,6 +75,9 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成空响应。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	pages := orderhttp.NewOrderPageHandle(orders, projects, nil)
 	returns := orderhttp.NewReturnPageHandle(orders, projects, nil, nil)
 	engine.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), pages.OrdersPage)
@@ -438,11 +443,14 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成空响应。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
 	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
 	engine.GET("/admin/orders/new", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreatePage)
-	engine.POST("/admin/orders/create", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreateSubmit)
+	engine.POST("/admin/orders/create", pageview.HTMLFragment, page.OrderCreateSubmit)
 	return &orderCreatePageEnv{engine: engine, fixture: f, project: f.projectID}
 }
 
@@ -495,7 +503,7 @@ func adminOrderCreateForm(project, variantID, email, requestID string) url.Value
 	}
 }
 
-func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
+func TestAdminOrderCreatePageKeepsFieldSemantics(t *testing.T) {
 	env := newOrderCreatePageEnv(t)
 	if env == nil {
 		return
@@ -503,11 +511,16 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	_, variantID := env.fixture.addProduct(t, "回填商品", 12.5, 5)
 
 	page := env.get(t, "/admin/orders/new?project="+env.project+"&keyword=回填商品&rows=3")
-	if !strings.Contains(page, `action="/admin/orders/create"`) {
-		t.Error("建单页缺少提交表单")
-	}
-	if !strings.Contains(page, `name="variantId"`) || !strings.Contains(page, `name="quantity"`) {
-		t.Error("明细行缺少并行数组字段 variantId / quantity")
+	for _, want := range []string{
+		`hx-post="/admin/orders/create"`,
+		`name="variantId"`,
+		`name="quantity"`,
+		`data-write-result`,
+		`data-write-nav="[data-order-next]"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("建单页缺少 %q", want)
+		}
 	}
 	if got := strings.Count(page, `name="quantity"`); got != 3 {
 		t.Errorf("rows=3 时应渲染 3 行明细输入框，实际 %d", got)
@@ -515,70 +528,26 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	if !strings.Contains(page, "回填商品") {
 		t.Error("候选 SKU 应带出商品名（真商品目录的 ListVariantOptions）")
 	}
+	// 幂等键必须随表单提交：重试不会落两单。
+	if !strings.Contains(page, `name="requestId"`) {
+		t.Error("建单表单缺少幂等键 requestId")
+	}
 
+	// 失败提交只回错误片段，不替换已填内容。
 	form := adminOrderCreateForm(env.project, variantID, "not-an-email", "req-echo-1")
-	form.Set("couponCode", "WELCOME")
-	form.Set("sameBilling", "1")
 	rec := env.post(t, form)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("失败提交必须就地重渲（200），实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("字段校验失败应回 400 错误片段，实际 %d（%s）", rec.Code, rec.Body.String())
 	}
 	out := rec.Body.String()
-	if !strings.Contains(out, "</html>") {
-		t.Fatal("失败重渲的输出不是一整页（缺 </html>）")
+	if !strings.Contains(out, `data-ui-error`) {
+		t.Fatalf("失败应渲染 Jet 错误片段：%s", out)
 	}
-
-	for field, want := range map[string]string{
-		"customerEmail":      "not-an-email",
-		"customerName":       "张三",
-		"customerPhone":      "13800000000",
-		"paymentMethod":      "paypal",
-		"paymentMethodTitle": "PayPal（模拟）",
-		"couponCode":         "WELCOME",
-		"shipName":           "李四",
-		"shipPhone":          "13900000000",
-		"shipProvince":       "广东省",
-		"shipCity":           "深圳市",
-		"shipDistrict":       "南山区",
-		"shipAddress":        "科技园 1 号",
-		"shipZip":            "518000",
-		"billCity":           "上海市",
-	} {
-		if !strings.Contains(out, `name="`+field+`" value="`+want+`"`) {
-			t.Errorf("失败回填丢了字段 %s（期望值 %q）", field, want)
-		}
+	if strings.Contains(out, "<html") {
+		t.Fatalf("错误片段不该带整页壳：%s", out)
 	}
-	if !strings.Contains(out, ">尽快发货</textarea>") {
-		t.Error("客户备注没有回填（textarea 的值在标签之间）")
-	}
-
-	if !strings.Contains(out, `name="shippingTotal" min="0" value="1500"`) {
-		t.Error("运费没有回填（单位是分）")
-	}
-	if !strings.Contains(out, ">电话单，客户要求顺丰</textarea>") {
-		t.Error("后台备注没有回填")
-	}
-
-	if !strings.Contains(out, `value="`+variantID+`" selected`) {
-		t.Error("明细行的变体选择没有回填")
-	}
-	if !strings.Contains(out, `name="quantity" min="1" max="100000" value="2"`) {
-		t.Error("明细行的数量没有回填")
-	}
-
-	if !strings.Contains(out, `name="sameBilling" value="1" checked`) {
-		t.Error("「同收货地址」的勾选态没有回填")
-	}
-
-	if !strings.Contains(out, `name="customerEmail" value="not-an-email" aria-invalid="true"`) {
-		t.Error("非法邮箱所在字段没有标红")
-	}
-	if !strings.Contains(out, `class="form-error"`) {
-		t.Error("缺少字段级错误文案")
-	}
-
-	if !strings.Contains(out, `name="requestId" value="req-echo-1"`) {
-		t.Error("幂等键没有回填 —— 重试会落两单")
+	if strings.Contains(out, "order.err.") || strings.Contains(out, "order.msg.") {
+		t.Fatalf("失败片段漏出了声明 key：%s", out)
 	}
 }
 
@@ -645,12 +614,20 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 
 func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 	t.Helper()
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("建单成功应回 303 PRG，实际 %d（%s）", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("建单成功应回 200 + HTML 片段，实际 %d（%s）", rec.Code, rec.Body.String())
 	}
-	loc := rec.Header().Get("Location")
+	if ctype := rec.Header().Get("Content-Type"); !strings.HasPrefix(ctype, "text/html") {
+		t.Fatalf("建单成功应回 HTML 片段，实际 Content-Type=%q", ctype)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-order-next`) {
+		t.Fatalf("建单片段必须给出下一步链接（data-order-next）：%s", body)
+	}
+	// 下一步链接由 Jet 依据实体事实生成，前端按 data-write-nav 导航。
+	loc := orderCreatedHref(t, body)
 	if loc == "" {
-		t.Fatalf("303 必须带 Location（回列表并展开新单），实际为空")
+		t.Fatalf("建单片段必须带下一步链接（回列表并展开新单），实际为空")
 	}
 	u, err := url.Parse(loc)
 	if err != nil {
@@ -668,6 +645,27 @@ func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 		t.Fatalf("Location 里的 orderId 不是有效订单 id：%q（%v）", raw, err)
 	}
 	return id
+}
+
+// orderCreatedHref 从建单结论片段里取出下一步链接的 href。
+func orderCreatedHref(t *testing.T, body string) string {
+	t.Helper()
+	marker := `data-order-next`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := body[i:]
+	hrefAt := strings.Index(rest, `href="`)
+	if hrefAt < 0 {
+		return ""
+	}
+	rest = rest[hrefAt+len(`href="`):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }
 
 func i18nValue(db *gorm.DB, key, lang string) string {

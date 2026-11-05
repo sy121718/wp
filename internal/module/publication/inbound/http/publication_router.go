@@ -12,6 +12,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -37,6 +38,6 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 
 	permission.Declare(http.MethodPost, "/api/seo/audit", permission.SEOAudit)
 	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
-		NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
+		pageview.HTMLFragment, NewSeoAuditHandle(svc.RunSEOAudit).SeoAudit)
 	return svc
 }

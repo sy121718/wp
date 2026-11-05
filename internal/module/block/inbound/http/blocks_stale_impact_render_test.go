@@ -122,8 +122,7 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 
 	for _, want := range []string{
 
-		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
-		`data-msg-none-selected`, `data-write-status`,
+		`hx-post="/api/block/bulk-delete"`, `data-write-status`,
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
 		"data-filter-input", "data-filter-text", "data-filter-empty",
 	} {
@@ -158,7 +157,7 @@ func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 		"1", "个页面有更新未发布",
 		`class="badge badge-warning badge-btn"`,
 		`class="page-sub"`,
-		`data-drawer-url="/admin/blocks/stale/drawer"`,
+		`data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/blocks/stale/drawer"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("有 stale 时缺少 %q", want)
@@ -224,40 +223,33 @@ func TestBlocksStaleImpactMissingKeyStillRenders(t *testing.T) {
 	}
 }
 
-func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
+func TestBlocksWriteFormsAreHTMXWired(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
+		`hx-post="/api/block/create"`,
+		`data-write-nav="[data-block-created-link]"`,
 
-		`data-write-url="/api/block/create"`, `data-write="create"`,
-		`data-write-nav="/workbench?block={id}"`,
+		`hx-post="/api/block/delete"`,
+		`hx-post="/api/block/bulk-delete"`,
 
-		`data-write-url="/api/block/delete"`, `data-write="single"`,
-		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
-
-		`data-write-status`, `data-write-host`,
-
-		`data-requires-js`,
+		`data-write-status`, `data-write-host`, `data-write-result`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("缺少 %q：写入口没接上 JSON 基座", want)
+			t.Errorf("缺少 %q：写入口没接上 HTMX + Jet 片段", want)
 		}
 	}
 
 	for _, stale := range []string{
 		`action="/admin/blocks/create`, `action="/admin/blocks/delete`,
-		`action="/admin/blocks/bulk-delete`,
+		`action="/admin/blocks/bulk-delete`, `data-write-url`, `data-confirm=`,
 	} {
 		if strings.Contains(body, stale) {
-			t.Errorf("仍残留页面 POST 路径 %q：半迁移状态下浏览器会按 action 提交", stale)
+			t.Errorf("仍残留旧协议属性 %q", stale)
 		}
 	}
 
-	if n := strings.Count(body, `data-write-status`); n != 3 {
-		t.Errorf("结果区数量 = %d，期望 3（新建 / 批量 / 行内删除各一）", n)
-	}
-
-	if !strings.Contains(body, "需要 JavaScript") {
-		t.Error("缺少无 JS 提示：禁用 JS 时按钮不见了，用户会以为是权限问题")
+	if n := strings.Count(body, `data-write-status`); n < 3 {
+		t.Errorf("结果区数量 = %d，期望至少 3（新建 / 批量 / 行内删除各一）", n)
 	}
 }

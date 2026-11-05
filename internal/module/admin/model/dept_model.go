@@ -155,6 +155,14 @@ func (m *DeptModel) Create(ctx context.Context, e *DeptEntity) error {
 	return m.DB(ctx).Create(e).Error
 }
 
+// CreateTx 在调用方事务内建部门。
+//
+// 调用方要在这同一个事务里锁父行、读父链，插入不能换连接，
+// 否则父链快照与插入不在同一份一致性视图里。
+func (m *DeptModel) CreateTx(ctx context.Context, tx *gorm.DB, e *DeptEntity) error {
+	return tx.WithContext(ctx).Create(e).Error
+}
+
 var deptUpdateColumns = []string{
 	"parent_id", "ancestors", "dept_name", "dept_code", "leader_id",
 	"sort_order", "status", "remark",
@@ -162,6 +170,12 @@ var deptUpdateColumns = []string{
 
 func (m *DeptModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// LockTreeTx 统一先按主键锁定部门树，结构写入随后读取最新父链。
+func (m *DeptModel) LockTreeTx(ctx context.Context, tx *gorm.DB) error {
+	var rows []DeptEntity
+	return tx.WithContext(ctx).Model(&DeptEntity{}).Clauses(clause.Locking{Strength: "UPDATE"}).Order("id ASC").Find(&rows).Error
 }
 
 func (m *DeptModel) GetByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*DeptEntity, error) {
@@ -203,4 +217,17 @@ func (m *DeptModel) UpdateAncestorsTx(ctx context.Context, tx *gorm.DB, oldPrefi
 
 func (m *DeptModel) Delete(ctx context.Context, id uint64) error {
 	return m.DB(ctx).Where("id = ?", id).Delete(&DeptEntity{}).Error
+}
+
+// CountByParentIDTx 在调用方事务内数子部门。
+// 删除端必须用事务版：非事务版读的是另一条连接，看不到本事务的行锁效果。
+func (m *DeptModel) CountByParentIDTx(ctx context.Context, tx *gorm.DB, parentID uint64) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).Model(&DeptEntity{}).Where("parent_id = ?", parentID).Count(&count).Error
+	return count, err
+}
+
+// DeleteTx 在调用方事务内删部门。
+func (m *DeptModel) DeleteTx(ctx context.Context, tx *gorm.DB, id uint64) error {
+	return tx.WithContext(ctx).Model(&DeptEntity{}).Where("id = ?", id).Delete(&DeptEntity{}).Error
 }

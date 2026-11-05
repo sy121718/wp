@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -213,8 +214,9 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	return s.toResp(ctx, e)
 }
 
+// Update 按显式字段更新主体，数值清空与审计在同一事务中完成。
 func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error) {
-	if req == nil || req.ID == "" {
+	if req == nil || req.ID == "" || (req.ClearDefaultPrice && req.DefaultPrice != nil) || (req.ClearWeight && req.Weight != nil) {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -260,7 +262,9 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if req.Unit != nil {
 		e.Unit = *req.Unit
 	}
-	if req.Weight != nil {
+	if req.ClearWeight {
+		e.Weight = nil
+	} else if req.Weight != nil {
 		e.Weight = req.Weight
 	}
 	if req.SEOTitle != nil {
@@ -315,7 +319,9 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		e.BrandID = brandID
 	}
-	if req.DefaultPrice != nil {
+	if req.ClearDefaultPrice {
+		e.DefaultPrice = nil
+	} else if req.DefaultPrice != nil {
 		e.DefaultPrice = req.DefaultPrice
 	}
 	if req.DefaultImage != nil {
@@ -1030,7 +1036,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 
-	if req.Score == nil || *req.Score < 0 || *req.Score > maxRatingScore {
+	if req.Score == nil || math.IsNaN(*req.Score) || math.IsInf(*req.Score, 0) || *req.Score < 0 || *req.Score > maxRatingScore {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -1060,14 +1066,25 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 		if serr := s.productWriteScopeTx(ctx, tx, product.ProjectID); serr != nil {
 			return serr
 		}
+		if _, lerr := s.m.GetForUpdateTx(ctx, tx, product.ID, product.ProjectID); lerr != nil {
+			return mapNotFound(lerr)
+		}
 		if cerr := s.m.CreateRatingTx(ctx, tx, row); cerr != nil {
 			return cerr
 		}
-		return s.enqueueProductInvalidationTx(ctx, tx, product.ProjectID, product.ID)
+		if ierr := s.enqueueProductInvalidationTx(ctx, tx, product.ProjectID, product.ID); ierr != nil {
+			return ierr
+		}
+		rows, rerr := s.m.ListRatingsTx(ctx, tx, product.ID, product.ProjectID)
+		if rerr != nil {
+			return rerr
+		}
+		res = ratingRespFromRows(product.ProjectID, product.ID, rows)
+		return nil
 	}); err != nil {
 		return nil, err
 	}
-	return s.ratingRespOf(ctx, product.ProjectID, product.ID)
+	return res, nil
 }
 
 func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsReq) (res *productdto.RatingResp, err error) {
@@ -1085,35 +1102,45 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	return s.ratingRespOf(ctx, projectID, strings.TrimSpace(req.ProductID))
 }
 
-func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (err error) {
+// DeleteRating 按商品串行修改评分，删除、失效事件和返回事实共用同一事务。
+func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (res *productdto.RatingResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return productenums.Err(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID); err != nil {
-		return mapNotFound(err)
+	rating, err := s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID)
+	if err != nil {
+		return nil, mapNotFound(err)
 	}
 
-	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, projectID); serr != nil {
 			return serr
 		}
-		if derr := s.m.DeleteRatingTx(ctx, tx, strings.TrimSpace(req.ID)); derr != nil {
-			return derr
+		if _, lerr := s.m.GetForUpdateTx(ctx, tx, rating.ProductID, projectID); lerr != nil {
+			return mapNotFound(lerr)
 		}
-
-		productID, perr := s.m.RatingProductIDTx(ctx, tx, strings.TrimSpace(req.ID))
-		if perr != nil {
-			return perr
+		deleted, derr := s.m.DeleteRatingTx(ctx, tx, rating.ID, projectID)
+		if derr != nil {
+			return mapNotFound(derr)
 		}
-		if productID == "" {
-			return nil
+		if ierr := s.enqueueProductInvalidationTx(ctx, tx, projectID, deleted.ProductID); ierr != nil {
+			return ierr
 		}
-		return s.enqueueProductInvalidationTx(ctx, tx, projectID, productID)
+		rows, rerr := s.m.ListRatingsTx(ctx, tx, deleted.ProductID, projectID)
+		if rerr != nil {
+			return rerr
+		}
+		res = ratingRespFromRows(projectID, deleted.ProductID, rows)
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string) (res *productdto.RatingResp, err error) {
@@ -1121,6 +1148,10 @@ func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string)
 	if err != nil {
 		return nil, err
 	}
+	return ratingRespFromRows(projectID, productID, rows), nil
+}
+
+func ratingRespFromRows(projectID, productID string, rows []*productmodel.ProductRatingEntity) *productdto.RatingResp {
 	items := make([]productmodel.ProductRatingEntity, 0, len(rows))
 	out := make([]productdto.RatingItemResp, 0, len(rows))
 	for _, row := range rows {
@@ -1130,11 +1161,11 @@ func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string)
 			CreatedAt: utils.NewJSONTime(row.CreatedAt),
 		})
 	}
-	res = &productdto.RatingResp{Items: out}
+	res := &productdto.RatingResp{ProjectID: projectID, ProductID: productID, Items: out}
 	if avg, count, ok := productmodel.RatingSummary(items); ok {
 		res.Rating, res.RatingCount, res.HasRating = avg, count, true
 	}
-	return res, nil
+	return res
 }
 
 var _ productcontract.SearchPort = (*Service)(nil)
@@ -1200,20 +1231,14 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 		v        *productmodel.VariantEntity
 		resolved string
 	)
-	if s.changes != nil {
-		if v, err = s.m.GetVariant(ctx, variantID); err != nil {
-			return mapNotFound(err)
-		}
+	if v, err = s.m.GetVariant(ctx, variantID); err != nil {
+		return mapNotFound(err)
+	}
 
-		if resolved, err = s.variantProjectID(ctx, v, projectID); err != nil {
-			return err
-		}
+	if resolved, err = s.variantProjectID(ctx, v, projectID); err != nil {
+		return err
 	}
 	now := time.Now().UTC()
-	if s.changes == nil || v == nil {
-
-		return s.m.UpdateVariantCost(ctx, variantID, cost, now)
-	}
 
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.productWriteScopeTx(ctx, tx, resolved); serr != nil {
@@ -1447,7 +1472,7 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	if req.Unit == nil {
 		e.Unit = locked.Unit
 	}
-	if req.Weight == nil {
+	if req.Weight == nil && !req.ClearWeight {
 		e.Weight = locked.Weight
 	}
 	if req.SEOTitle == nil {
@@ -1479,7 +1504,7 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	if req.BrandID == nil {
 		e.BrandID = locked.BrandID
 	}
-	if req.DefaultPrice == nil {
+	if req.DefaultPrice == nil && !req.ClearDefaultPrice {
 		e.DefaultPrice = locked.DefaultPrice
 	}
 	if req.DefaultImage == nil {

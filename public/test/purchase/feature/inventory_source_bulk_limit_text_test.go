@@ -11,10 +11,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
+	pageview "go_wp/pkg/view"
 )
 
 func sourceBulkOverLimitForm() url.Values {
@@ -29,8 +32,10 @@ func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := purchasehttp.NewSourcePageHandle(nil, nil)
-	engine.POST("/admin/inventory/sources/bulk-delete", handle.SourcesBulkDelete)
+	engine.POST("/admin/inventory/sources/bulk-delete", pageview.HTMLFragment, handle.SourcesBulkDelete)
 
 	probe, _ := gin.CreateTestContext(httptest.NewRecorder())
 	probe.Request = httptest.NewRequest(http.MethodPost, "/admin/inventory/sources/bulk-delete",

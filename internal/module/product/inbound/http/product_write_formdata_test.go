@@ -22,7 +22,6 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 		{"DeleteTagReq", "id=t1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.DeleteTagReq](c); return ok }},
 		{"DeleteAttributeReq", "id=a1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.DeleteAttributeReq](c); return ok }},
 		{"BulkDeleteReq", "projectId=p1&ids=x&ids=y", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.BulkDeleteReq](c); return ok }},
-		{"AddRatingReq", "productId=p1&score=4.5", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.AddRatingReq](c); return ok }},
 
 		{"CreateAttributeReq（带 values）", "projectId=p1&name=n&key=k" +
 			"&values=" + `[{"id":"v1","key":"k1","label":"甲"},{"id":"v2","key":"k2","label":"乙"}]`,

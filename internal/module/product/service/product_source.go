@@ -13,12 +13,12 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/money"
 )

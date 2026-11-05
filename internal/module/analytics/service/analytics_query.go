@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
 	analyticsmodel "go_wp/internal/module/analytics/model"
@@ -37,6 +39,12 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	if projectID == "" {
+		return nil, ErrInvalidParam
+	}
+	// 形状也必须在进 SQL 之前判掉：project_id 是 uuid 列，非法串下发给 PG 会在类型解析处
+	// 报错，被出口当成内部错误（500）。调用方传错了参数是 400，不是我们这边出错。
+	// 与 collect 的 buildEntity 用同一判法（那边是 skip 语义，这里返回错误）。
+	if _, perr := uuid.Parse(projectID); perr != nil {
 		return nil, ErrInvalidParam
 	}
 	from, to, rerr := s.normalizeWindow(req.From, req.To)

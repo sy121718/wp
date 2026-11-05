@@ -17,6 +17,7 @@ import (
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/view"
 )
 
 func pageErrCtx(t *testing.T, rawErr string) *gin.Context {
@@ -54,8 +55,10 @@ func TestBusinessSentinelsAreRecognisable(t *testing.T) {
 	}
 	c := pageErrCtx(t, "")
 	for _, err := range sentinels {
-		if pageErrorStatus(err) == http.StatusInternalServerError {
-			t.Errorf("sentinel %v 被判定成 500：页面出口会把它吞成归口文案（用户看到「请稍后重试」，实际是自己填错了）", err)
+		// 状态码的事实源是 pageenums.StatusOf（声明处 WithStatus），出口只读声明。
+		// 未声明（0）会被 response.ErrorStatus 兜成 500 —— 那正是这条断言要抓的形态。
+		if pageenums.StatusOf(err.Error()) == 0 {
+			t.Errorf("sentinel %v 没有声明状态码：页面出口会把它吞成归口文案（用户看到「请稍后重试」，实际是自己填错了）", err)
 			continue
 		}
 		fact := adminui.PageErrorFactQuiet(c, pageErrScene, err)
@@ -94,12 +97,11 @@ func TestBulkDeleteResultSentences(t *testing.T) {
 
 func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.HTMLRender = newPageErrTestRender(t)
+	engine := newPageErrEngine(t)
 
 	h := &pagesAdminHandle{}
-	engine.POST("/admin/projects/create", h.CreateProject)
-	engine.POST("/admin/pages/create", h.CreatePage)
+	engine.POST("/admin/projects/create", view.HTMLFragment, h.CreateProject)
+	engine.POST("/admin/pages/create", view.HTMLFragment, h.CreatePage)
 
 	post := func(path string, form url.Values) *httptest.ResponseRecorder {
 		t.Helper()
@@ -107,8 +109,8 @@ func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s 应渲染提示页（200），实际 %d，body=%s", path, rec.Code, rec.Body.String())
+		if rec.Code < 400 {
+			t.Fatalf("%s 失败应给真实 4xx，实际 %d，body=%s", path, rec.Code, rec.Body.String())
 		}
 		return rec
 	}
@@ -142,14 +144,14 @@ func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			body := post(tc.path, tc.form).Body.String()
-			if !strings.Contains(body, `data-jump-state="err"`) {
-				t.Fatalf("失败应渲染失败提示页（data-jump-state=err）：%s", body)
+			if strings.Contains(body, "jump-page") {
+				t.Fatalf("失败不得走整页跳转提示：%s", body)
 			}
-			if !strings.Contains(body, tc.want) {
-				t.Fatalf("提示页应含受控文案 %q", tc.want)
+			if !strings.Contains(body, `data-ui-error`) {
+				t.Fatalf("失败应走共享失败出口的受控错误区：%s", body)
 			}
-			if !strings.Contains(body, "/admin/pages") {
-				t.Fatal("提示页应给回列表页的链接（否则用户只能按后退键）")
+			if strings.TrimSpace(body) == "" {
+				t.Fatal("失败必须有受控错误区，不能是空响应")
 			}
 
 			for _, tok := range []string{"SQLSTATE", "relation \"", "constraint", "does not exist"} {

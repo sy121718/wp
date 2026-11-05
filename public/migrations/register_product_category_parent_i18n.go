@@ -14,9 +14,9 @@ func registerProductCategoryParentI18nSeed() {
 	registerSeed(Seed{
 		Version:   "508-i18n-category-parent-out-of-scope",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(DISTINCT item_key) >= 1 AND COUNT(*) >= 2 THEN 1 ELSE 0 END " +
-			"FROM sys_i18n WHERE lang IN ('zh-CN','en-US') AND item_key IN (" +
-			"'admin.product_categories.parent.out_of_scope')",
-		SQL: mustSQL("508_product_category_parent_i18n.sql"),
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('catParentScope')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("720f_current_508_product_category_parent_i18n.sql"),
 	})
 }

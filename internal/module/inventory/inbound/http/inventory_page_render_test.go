@@ -32,7 +32,7 @@ import (
 const (
 	permSetKey       = "perm_set"
 	buttonsKey       = "button_set"
-	internalErrorKey = "MsgInternalError"
+	internalErrorKey = "uiInternalErr"
 )
 
 type inventoryPageRenderStub struct {

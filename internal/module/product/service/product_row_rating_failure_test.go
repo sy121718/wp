@@ -137,7 +137,7 @@ func TestProductDetailPageRatingReadFailureIsNotNoRating(t *testing.T) {
 
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: ratingFailureScene}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := context.Background()
 
 	emptyView, err := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})
@@ -167,7 +167,7 @@ func TestProductEditPageRatingReadFailureIsNotNoRating(t *testing.T) {
 
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: ratingFailureScene}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := context.Background()
 
 	emptyView, err := s.Get(ctx, &productdto.GetReq{ProjectID: projectID, ID: fx.noRating})

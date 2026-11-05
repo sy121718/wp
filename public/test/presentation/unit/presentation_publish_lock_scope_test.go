@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 )

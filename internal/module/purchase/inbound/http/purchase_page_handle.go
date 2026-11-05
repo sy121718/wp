@@ -13,12 +13,10 @@ import (
 	purchasecontract "go_wp/internal/module/purchase/contract"
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -99,7 +97,7 @@ func (h *purchasePageHandle) purchasesPageView(c *gin.Context, d *purchasesPageD
 		d.Menu = "inventory-purchases"
 	}
 	d.DraftLines = draftLines()
-	d.StatusOptions = purchaseStatusOptions(shell.TranslateFor(c))
+	d.StatusOptions = purchaseStatusOptions()
 	d.ReceiptRequestID = uuid.NewString()
 	d.ProductionRequestID = uuid.NewString()
 	d.ListQuery = binding.ListQuery(c, purchaseOrderBackKeys...)
@@ -199,7 +197,7 @@ func (h *purchasePageHandle) PurchaseCreate(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
@@ -222,7 +220,7 @@ func (h *purchasePageHandle) PurchaseUpdate(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
@@ -234,7 +232,7 @@ func (h *purchasePageHandle) PurchaseReceipt(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
@@ -246,7 +244,7 @@ func (h *purchasePageHandle) PurchaseProduction(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
@@ -258,7 +256,7 @@ func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
@@ -270,7 +268,7 @@ func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
@@ -282,7 +280,7 @@ func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
@@ -294,7 +292,7 @@ func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) PurchaseResume(c *gin.Context) {
@@ -306,7 +304,7 @@ func (h *purchasePageHandle) PurchaseResume(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *purchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status, sourceID, keyword string,
@@ -496,10 +494,11 @@ func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID strin
 	return out
 }
 
-func purchaseStatusOptions(tr func(key, fallback string) string) []purchasedto.OptionResp {
+// purchaseStatusOptions 只交值与顺序；标签由模板按请求语言取词。
+func purchaseStatusOptions() []purchasedto.OptionResp {
 	out := make([]purchasedto.OptionResp, 0, len(purchaseenums.PurchaseStatuses))
 	for _, status := range purchaseenums.PurchaseStatuses {
-		out = append(out, purchasedto.OptionResp{Value: status, Label: purchaseStatusLabel(tr, status)})
+		out = append(out, purchasedto.OptionResp{Value: status})
 	}
 	return out
 }

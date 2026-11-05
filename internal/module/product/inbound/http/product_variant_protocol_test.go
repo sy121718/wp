@@ -17,7 +17,7 @@ import (
 type variantProtocolService struct{ productcontract.ProductService }
 
 func (*variantProtocolService) SaveVariantList(context.Context, *productdto.SaveVariantListReq) (*productdto.SaveVariantListResp, error) {
-	return nil, &productdto.BulkRejectedError{Err: productenums.Err(productenums.ErrBulkRejected), Items: []facing.BlockedItem{{ID: "v1", Name: "SKU1", ReasonKey: productenums.ErrVariantListDuplicated, Fallback: productenums.FallbackFor(productenums.ErrVariantListDuplicated)}}}
+	return nil, &productdto.BulkRejectedError{Err: productenums.Err(productenums.ErrBulkRejected), Items: []facing.BlockedItem{{ID: "v1", Name: "SKU1", ReasonKey: productenums.ErrVariantListDuplicated, Fallback: productenums.VariantSkipFallback(productenums.ErrVariantListDuplicated)}}}
 }
 func TestVariantSaveRejectsWholeListWithJSONItems(t *testing.T) {
 	engine := gin.New()

@@ -2,20 +2,25 @@ package sysconfighttp_test
 
 import (
 	"context"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -38,11 +43,14 @@ func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/system", handle.SystemPage)
-	engine.POST("/api/sysconfig/system/save", handle.APISystemSave)
+	engine.POST("/api/sysconfig/system/save", pageview.HTMLFragment, handle.APISystemSave)
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
@@ -91,7 +99,7 @@ func TestSystemSettingsPageRenders(t *testing.T) {
 		`name="defaultLang"`, `name="siteLangURLMode"`,
 		`name="defaultCountry"`, `name="defaultCurrency"`,
 		`name="i18nVersion"`, `name="tradeVersion"`,
-		`data-write-url="/api/sysconfig/system/save"`,
+		`hx-post="/api/sysconfig/system/save"`,
 		`value="zh-CN"`,
 		`value="CNY"`,
 		`value="CN"`,
@@ -133,14 +141,11 @@ func TestSystemSettingsSavePreservesUnexposedKeys(t *testing.T) {
 	}
 	t.Logf("保存前 lang_url_codes = %v；default_lang = %v", before, group.Data["default_lang"])
 
-	form := map[string]any{"i18nVersion": group.Version, "tradeVersion": tradeVersion(t, svc), "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
-	payload, err := json.Marshal(form)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("保存回执应为 JSON 200: %d %s", rec.Code, rec.Body.String())
+	form := url.Values{"i18nVersion": {fmt.Sprint(group.Version)}, "tradeVersion": {fmt.Sprint(tradeVersion(t, svc))},
+		"defaultLang": {"en-US"}, "siteLangURLMode": {"default_plain"}, "defaultCountry": {"CN"}, "defaultCurrency": {"CNY"}}
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", form.Encode())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("保存回执应为 HTML 200: %d %s", rec.Code, rec.Body.String())
 	}
 	after, err := svc.GetGroup(ctx, "i18n")
 	if err != nil {
@@ -163,17 +168,14 @@ func TestSystemSettingsSaveRejectsStaleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读 i18n 组失败: %v", err)
 	}
-	form := map[string]any{"i18nVersion": group.Version, "tradeVersion": tradeVersion(t, svc), "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
+	form := url.Values{"i18nVersion": {fmt.Sprint(group.Version)}, "tradeVersion": {fmt.Sprint(tradeVersion(t, svc))},
+		"defaultLang": {"en-US"}, "siteLangURLMode": {"default_plain"}, "defaultCountry": {"CN"}, "defaultCurrency": {"CNY"}}
 	if _, err := svc.SetGroup(ctx, &sysconfigdto.SetGroupReq{GroupKey: "i18n", Version: group.Version, Data: group.Data}); err != nil {
 		t.Fatal(err)
 	}
-	payload, err := json.Marshal(form)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("旧版本应返回 JSON 409: %d %s", rec.Code, rec.Body.String())
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", form.Encode())
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("旧版本应返回 HTML 409: %d %s", rec.Code, rec.Body.String())
 	}
 	after, _ := svc.GetGroup(ctx, "i18n")
 	if after.Version != group.Version+1 {
@@ -196,12 +198,9 @@ func TestSystemSettingsTradeConflictRollsBackI18N(t *testing.T) {
 	if _, err := svc.SetGroup(ctx, &sysconfigdto.SetGroupReq{GroupKey: "trade", Version: tradeBefore.Version, Data: tradeBefore.Data}); err != nil {
 		t.Fatal(err)
 	}
-	form := map[string]any{"i18nVersion": i18nBefore.Version, "tradeVersion": tradeBefore.Version, "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
-	payload, err := json.Marshal(form)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
+	form := url.Values{"i18nVersion": {fmt.Sprint(i18nBefore.Version)}, "tradeVersion": {fmt.Sprint(tradeBefore.Version)},
+		"defaultLang": {"en-US"}, "siteLangURLMode": {"default_plain"}, "defaultCountry": {"CN"}, "defaultCurrency": {"CNY"}}
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", form.Encode())
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("stale trade version: %d %s", rec.Code, rec.Body.String())
 	}

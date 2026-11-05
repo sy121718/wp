@@ -64,23 +64,23 @@ func registerEnumsMissingKeysI18nSeed() {
 			"'ErrSamePath','ErrTemplateTypeMismatch','MsgPreviewSuccess','MsgRebuildSuccess'," +
 			"'MsgUpdateURLSuccess'," +
 
-			"'ErrAttrInUse','ErrAttrKeyRequired','ErrAttrKeyTaken','ErrAttrNameRequired'," +
-			"'ErrAttrNotFound','ErrAttrProjectMismatch','ErrAttrValueLabelMissing','ErrBrandInUse'," +
-			"'ErrBrandNameRequired','ErrBrandNotFound','ErrBrandProjectMismatch','ErrBrandSlugTaken'," +
-			"'ErrCategoryCycle','ErrCategoryHasChildren','ErrCategoryInUse','ErrCategoryNameRequired'," +
-			"'ErrCategoryNotFound','ErrCategoryParentMismatch','ErrCategoryProjectMismatch'," +
-			"'ErrCategorySlugTaken','ErrCollectionFilterInvalid','ErrCollectionSourceInvalid'," +
-			"'ErrMissingProjectContext','ErrNameRequired','ErrPricingAdjustmentNotFound'," +
-			"'ErrPricingFilterEmpty','ErrPricingNothingChanged','ErrPricingRoundingInvalid'," +
-			"'ErrPricingRuleParamsInvalid','ErrPricingRuleTypeInvalid','ErrPricingScopeInvalid'," +
-			"'ErrPricingTargetNotFound','ErrPricingTargetRequired','ErrPricingTargetTooMany'," +
-			"'ErrSkuTaken','ErrTagKindInvalid','ErrTagNameRequired','ErrTagNotFound'," +
-			"'ErrTagNotManual','ErrTagProjectMismatch','ErrTagRuleNotAllowed','ErrTagRuleParamsInvalid'," +
-			"'ErrTagRuleTypeInvalid','ErrTagSlugTaken','ErrVariantHasStock'," +
-			"'ErrVariationAttributeInvalid','ErrVariationCountLimit','ErrVariationDimensionLimit'," +
-			"'ErrVariationNoDimension','ErrVariationSelectionEmpty','ErrVariationValueInvalid'," +
-			"'MsgPricingApplySuccess'," +
-			"'MsgPricingPreviewSuccess','MsgVariantGenerateSuccess','PricingSkipCostMissing'," +
+			"'pAttrInUse','pAttrKeyReq','pAttrKeyTaken','pAttrNameReq'," +
+			"'pAttrNotFound','pAttrScope','pAttrLabelReq','pBrandInUse'," +
+			"'pBrandNameReq','pBrandNotFound','pBrandScope','pBrandSlugTaken'," +
+			"'pCatCycle','pCatHasChildren','pCatInUse','pCatNameReq'," +
+			"'pCatNotFound','pCatParentScope','pCatScope'," +
+			"'pCatSlugTaken','pCollFilterBad','pCollSourceBad'," +
+			"'pProjectMissing','pNameRequired','pPriceAdjMiss'," +
+			"'pPriceFilterNil','pPriceUnchanged','pPriceRoundBad'," +
+			"'pPriceArgsBad','pPriceRuleBad','pPriceScopeBad'," +
+			"'pPriceNotFound','pPriceTargetReq','pPriceTooMany'," +
+			"'pSkuTaken','pTagKindInvalid','pTagNameReq','pTagNotFound'," +
+			"'pTagNotManual','pTagScope','pTagRuleDenied','pTagRuleArgsBad'," +
+			"'pTagRuleTypeBad','pTagSlugTaken','pVarHasStock'," +
+			"'pVarAttrBad','pVarCountLimit','pVarDimLimit'," +
+			"'pVarDimMissing','pVarSelectEmpty','pVarValueBad'," +
+			"'pPriceApplyOk'," +
+			"'pPricePreviewOk','pVarGenSuccess','PricingSkipCostMissing'," +
 			"'PricingSkipOutOfRange'," +
 
 			"'ErrInvalidName','ErrInvalidSettings','ErrInvalidThemeSettings','ErrProjectInternal'," +
@@ -91,7 +91,7 @@ func registerEnumsMissingKeysI18nSeed() {
 			"'MsgDeactivated','MsgRolledBack'," +
 
 			"'MsgDashboardTitle')",
-		SQL: mustSQL("430_i18n_enums_missing_keys.sql"),
+		SQL: mustSQL("718i_current_430_i18n_enums_missing_keys.sql"),
 	})
 }
 

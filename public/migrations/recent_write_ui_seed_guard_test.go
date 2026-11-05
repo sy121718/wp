@@ -26,7 +26,7 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 		{"591-navigation-jump-i18n", []string{"admin.navigations.actionDone"}},
 		{"592-admin-ui-new-keys-i18n", []string{
 			"admin.datarules.back_to_edit", "admin.i18n.deleted",
-			"admin.products.actionDone", "admin.products.bulk.noneSelected"}},
+			"pActDone", "pBulkNoneSel"}},
 		{"593-admin-blocks-write-ui-i18n", []string{
 			"admin.blocks.write.refresh", "admin.blocks.write.noJs"}},
 		{"595-admin-i18n-write-ui-i18n", []string{
@@ -186,7 +186,9 @@ func TestRecentWriteUISeedGuardsRequireCompleteBilingualSet(t *testing.T) {
 
 var seedCountGuardRe = regexp.MustCompile(`COUNT\(\*\)\s*(>=|=)\s*(\d+)`)
 
-var seedGuardKeyRe = regexp.MustCompile(`'([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)'`)
+// 判据点名的既可能是点分旧 key，也可能是本批改用的扁平短 key；
+// 语言码带连字符，不会被这条正则吞进来。
+var seedGuardKeyRe = regexp.MustCompile(`'([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*)'`)
 
 func guardSeedKeys(condSQL string) []string {
 	seen := map[string]bool{}

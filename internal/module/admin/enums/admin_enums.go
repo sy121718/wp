@@ -1,10 +1,16 @@
 package adminenums
 
-import "go_wp/pkg/facing"
+import (
+	"errors"
+	"net/http"
+
+	"go_wp/pkg/enums"
+	"go_wp/pkg/facing"
+)
 
 const (
-	MsgSuccess      = "msg_operation_success"
-	MsgBadRequest   = "ErrInvalidParams"
+	MsgSuccess      = enums.MsgOperationSuccess
+	MsgBadRequest   = enums.ErrInvalidParams
 	MsgUnauthorized = "ErrUnauthorized"
 
 	ErrInternal = "ErrInternal"
@@ -35,6 +41,16 @@ const (
 	ErrRoleIsSystem    = "ErrRoleIsSystem"
 	ErrRoleCodeNumeric = "ErrRoleCodeNumeric"
 )
+
+// ErrBulkDeleteEmpty 是「批量删除时一个有效 id 都没有」的拒绝 key。
+// 声明归 enums（业务错误只在这里声明 key），文案由词库在 JSON 出口取词。
+const ErrBulkDeleteEmpty = "admin.bulk.emptySelection"
+
+// ErrBulkDeleteInvalidID 是「批量删除的 ids 里有不能当主键解析的原始值」的拒绝 key。
+//
+// 每个非法原始值都会作为一个明细项出现（见 service.InvalidIDsError），
+// 出口把它翻成 data.items，让前端能点名「哪一个不对」，而不是静默丢掉。
+const ErrBulkDeleteInvalidID = "admin.bulk.invalidSelection"
 
 const (
 	ErrMenuNotFound        = "ErrMenuNotFound"
@@ -85,6 +101,12 @@ const (
 	ErrI18nKeyEmpty   = "admin.err.i18nKeyEmpty"
 	ErrI18nLangEmpty  = "admin.err.i18nLangEmpty"
 	ErrI18nValueEmpty = "admin.err.i18nValueEmpty"
+
+	// ErrI18nSelectionEmpty 是「批量删除一条都没选」。
+	ErrI18nSelectionEmpty = "admin.err.i18nSelectionEmpty"
+
+	// ErrI18nEntryMissing 是「要删的词条不存在」——整批拒绝时的主 key。
+	ErrI18nEntryMissing = "admin.err.i18nEntryMissing"
 )
 
 const (
@@ -113,7 +135,6 @@ const (
 	DatarulesEditorFieldPlaceholder = "admin.datarules.editor.field_placeholder"
 	DatarulesEditorFieldRequired    = "admin.datarules.editor.field_required"
 
-	I18nTitle           = "admin.i18n.title"
 	DatarulesBackToEdit = "admin.datarules.back_to_edit"
 
 	ShellLoginTitle = "shell.login.title"
@@ -124,61 +145,83 @@ const (
 	DevLoginCSRFFailed    = "admin.dev_login.csrf_failed"
 )
 
-var errFallbacks = map[string]string{
-	ErrSortFieldInvalid:     "无效的排序字段：请改用列表支持的排序字段",
-	ErrSortDirectionInvalid: "无效的排序方向：只支持 asc / desc",
-	ErrI18nKeyEmpty:         "词条 key 不能为空",
-	ErrI18nLangEmpty:        "词条语言不能为空",
-	ErrI18nValueEmpty:       "词条内容不能为空",
-	ErrInternal:             "操作失败，请稍后重试",
-	ErrCaptchaExpired:       "验证码错误或已过期",
-	ErrBadCredentials:       "用户名或密码错误",
-	ErrAccountLocked:        "账号已被锁定，请 %s 后重试",
-	ErrAccountDisabled:      "管理员已被禁用",
-	ErrAdminNotFound:        "管理员不存在",
-	ErrSuperAdminExists:     "系统已存在超级管理员，不能重复创建",
-	ErrFieldProtected:       "不允许外部修改",
-	ErrEmailExists:          "该邮箱已存在",
-	ErrUsernameExists:       "用户名已存在，请修改",
-	ErrPhoneExists:          "手机号码重复，请修改",
-	ErrUserNotFound:         "用户不存在",
-	ErrDeleteSelf:           "不能删除当前登录管理员",
-	ErrDeleteSuperAdmin:     "不能删除超级管理员",
-	ErrSuperAdminOnly:       "无权操作超管账号（仅超管可操作超管账号/超管角色）",
-	ErrRoleNotFound:         "角色不存在",
-	ErrRoleCodeExists:       "角色编码已存在",
-	ErrRoleIsSystem:         "系统内置角色不可删除",
-	ErrRoleCodeNumeric:      "角色编码不能为纯数字",
-	ErrMenuNotFound:         "菜单不存在",
-	ErrMenuHasChildren:      "该菜单下有子菜单，无法删除",
-	ErrMenuIsSystem:         "系统内置菜单不可删除或修改类型",
-	ErrMenuCircle:           "不能将菜单移动到自身或其子级下",
-	ErrMenuParentNotFound:   "父级菜单不存在",
-	ErrMenuParentMustBeDir:  "菜单/外链的父级必须是目录",
-	ErrMenuDepthExceeded:    "菜单层级超过上限（3 级）",
-	ErrCodeNotBindable:      "目录、iframe 和外链不能绑定权限编码",
-	ErrCodeRequired:         "菜单和按钮类型必须绑定权限编码",
-	ErrCodeNotEnabled:       "绑定的权限编码不存在或未启用",
-	ErrPermissionNotFound:   "权限点不存在",
-	ErrCodeExists:           "权限编码已存在",
-	ErrCodeImmutable:        "权限编码创建后不可修改",
-	ErrInvalidMethod:        "请求方法只允许 GET 或 POST",
-	ErrPermissionAssigned:   "该权限已分配，请先解除角色和用户授权",
-	ErrMenuReferenced:       "该权限被菜单引用，无法删除",
-	ErrDeptNotFound:         "部门不存在",
-	ErrDeptHasChildren:      "该部门下有子部门，无法删除",
-	ErrDeptHasUsers:         "该部门下有用户，无法删除",
-	ErrDeptCircle:           "不能将部门移动到自身或其子级下",
-	ErrDeptCodeExists:       "部门编码已存在",
-	ErrRuleNotFound:         "数据规则不存在",
-	ErrInvalidDomain:        "不支持的数据域",
-	ErrInvalidAssignment:    "无效的数据规则分配目标",
-	ErrRuleConfigInvalid:    "数据规则配置不合法",
-	ErrRuleFieldNotAllowed:  "规则引用了数据域白名单之外的字段",
-	ErrRuleOpNotAllowed:     "规则使用了该字段未声明的操作符",
-	ErrRuleLogicNotAllowed:  "条件组合逻辑只允许 AND 或 OR",
+func Err(key string) error {
+	err := facing.New(key)
+	if status := StatusOf(key); status != 0 {
+		return facing.WithStatus(err, status)
+	}
+	return err
 }
 
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+// BadRequest 是「请求参数不合法」的错误声明：key + 状态码只在这里给。
+//
+// 状态码是错误事实的一部分，不写在调用点 —— 之前各 handler 用
+// response.ErrorWithMessage(c, 400, ...) 把状态码钉在参数校验分支上，
+// 声明里的说法反而管不了它。现在调用点只写 enums.BadRequest()，出口按声明出状态。
+func BadRequest() error {
+	return facing.WithStatus(facing.New(MsgBadRequest), http.StatusBadRequest)
+}
 
-func FallbackFor(key string) string { return errFallbacks[key] }
+// i18nMissingEntriesError 携带「哪几条词条不存在」，并实现 facing.BlockedError，
+// 让统一出口把明细放进 data.items。
+//
+// 这是 controller 侧的声明：词库层（pkg/i18n）不认识 facing，它只交 MissingEntry 事实。
+type i18nMissingEntriesError struct {
+	items []facing.BlockedItem
+}
+
+func (e *i18nMissingEntriesError) Error() string { return "批量删除的词条不存在" }
+
+func (e *i18nMissingEntriesError) BlockedItems() []facing.BlockedItem { return e.items }
+
+// I18nEntryRef 是 controller 交给本函数的最小事实：哪条词条没找到。
+type I18nEntryRef struct {
+	Key  string
+	Lang string
+}
+
+// MissingI18nEntries 声明「批量删除里有词条不存在」：主 key + 404，明细进 data.items。
+//
+// 为什么不是 409：用户下一步是改选（刷新列表看现在还有什么），与「对象存在但
+// 当前状态不允许删」是两种处置。整批不删，所以状态取最该先说的那一条。
+func MissingI18nEntries(missing []I18nEntryRef) error {
+	items := make([]facing.BlockedItem, 0, len(missing))
+	for _, m := range missing {
+		name := m.Key
+		if m.Lang != "" {
+			name = m.Key + "|" + m.Lang
+		}
+		items = append(items, facing.BlockedItem{
+			ID:        name,
+			Name:      name,
+			ReasonKey: ErrI18nEntryMissing,
+		})
+	}
+	base := facing.WithStatus(facing.New(ErrI18nEntryMissing), http.StatusNotFound)
+	return errors.Join(base, &i18nMissingEntriesError{items: items})
+}
+
+// StatusOf 给出业务 key 的错误声明状态码；0 表示这个 key 没声明状态。
+//
+// 批量删除要知道「这批里最该先说的那条是什么状态」，靠的不是比较字符串，
+// 而是每个 key 自己声明的状态（与 product/enums 同一套做法）。
+// 没声明的 key 返回 0，调用方按冲突处理。
+func StatusOf(key string) int {
+	switch key {
+	// 查无此对象：用户下一步是改选，先说这个。
+	case ErrAdminNotFound, ErrRoleNotFound, ErrPermissionNotFound,
+		ErrMenuNotFound, ErrDeptNotFound, ErrRuleNotFound, ErrI18nEntryMissing:
+		return http.StatusNotFound
+
+	// 请求本身没给出可操作的东西：改请求，不是改数据。
+	case ErrI18nSelectionEmpty:
+		return http.StatusBadRequest
+
+	// 存在但当前状态不允许删：用户下一步是先去解除引用/关系，再回来删。
+	case ErrRoleIsSystem, ErrMenuIsSystem, ErrMenuHasChildren, ErrDeptHasChildren,
+		ErrDeptHasUsers, ErrDeleteSelf, ErrDeleteSuperAdmin,
+		ErrPermissionAssigned, ErrMenuReferenced:
+		return http.StatusConflict
+	}
+	return 0
+}

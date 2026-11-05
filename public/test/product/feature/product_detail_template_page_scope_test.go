@@ -3,9 +3,11 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	"go_wp/pkg/facing"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -15,11 +17,13 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture, *detailTemplateRecordingPort) {
@@ -39,6 +43,8 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"contenttemplate.create": true})
@@ -54,7 +60,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
 	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
-	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
+	engine.POST("/api/product/detail-template/create", pageview.HTMLFragment, api.CreateDetailTemplate)
 	return engine, scope, port
 }
 
@@ -188,9 +194,14 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 	port.assertAllScopedTo(t, selected)
 	port.reset()
 
-	_, otherErr := f.products.Get(ctx, &productdto.GetReq{ID: others, ProjectID: scope.ProjectID})
-	if otherErr != nil {
-		t.Fatalf("跨工程查询不应丢失参数作用域：%v", otherErr)
+	// 跨工程商品必须不可见：按所选工程读取时得到「不存在」，而不是读到别的工程的数据。
+	other, otherErr := f.products.Get(ctx, &productdto.GetReq{ID: others, ProjectID: scope.ProjectID})
+	if otherErr == nil {
+		t.Fatalf("跨工程商品不应可读：%+v", other)
+	}
+	fact, ok := facing.FactOf(otherErr)
+	if !ok || fact.Key != productenums.ErrNotFound {
+		t.Fatalf("跨工程读取应回「不存在」，实际：%v", otherErr)
 	}
 
 }
@@ -231,12 +242,8 @@ func TestProductDetailTemplateCreateWithoutCopySourceScopesToProject(t *testing.
 	beforeA := templateScopeTemplateCount(t, f, f.projectID)
 	beforeB := templateScopeTemplateCount(t, f, f.projectB)
 
-	rec := postJSON(t, engine, "/api/product/detail-template/create", map[string]any{
-		"projectId": f.projectID, "productId": f.productA, "name": "多工程复制默认模板",
-	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("多工程站点上新建模板应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	rec := postForm(engine, "/api/product/detail-template/create", url.Values{"projectId": {f.projectID}, "productId": {f.productA}, "name": {"多工程复制默认模板"}})
+	assertHTMLSuccess(t, rec, "多工程站点上新建模板应成功，实际 %d：%s")
 
 	afterA := templateScopeTemplateCount(t, f, f.projectID)
 	afterB := templateScopeTemplateCount(t, f, f.projectB)

@@ -1,6 +1,7 @@
 package orderhttp
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,12 +15,12 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/backpath"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/facing"
 )
 
 type couponPageHandle struct {
@@ -45,6 +46,25 @@ var couponStatusFilterValues = []string{
 	orderenums.CouponStateEnabled,
 	orderenums.CouponStateDisabled,
 	orderenums.CouponStateExpired,
+	orderenums.CouponStateExhausted,
+}
+
+// couponStateLabelFacts 把优惠券显示状态的词条 key 交给模板按请求语言取词。
+// 模板不拼 key 字符串：状态到词条的映射是枚举事实，留在 Go 侧。
+func couponStateLabelFacts() map[string]StatusLabelFact {
+	out := make(map[string]StatusLabelFact, len(couponStateLabelValues))
+	for _, v := range couponStateLabelValues {
+		key, fallback := orderenums.CouponStateLabel(v)
+		out[v] = StatusLabelFact{Key: key, Fallback: fallback}
+	}
+	return out
+}
+
+var couponStateLabelValues = []string{
+	orderenums.CouponStateEnabled,
+	orderenums.CouponStateDisabled,
+	orderenums.CouponStateExpired,
+	orderenums.CouponStateNotStarted,
 	orderenums.CouponStateExhausted,
 }
 
@@ -103,7 +123,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 			loadErrText = firstNonEmpty(loadErrText, couponFacingError(c, gerr))
 		case cp == nil || cp.ProjectID != selected:
 
-			loadErrText = firstNonEmpty(loadErrText, adminui.MsgText(c, couponForeignLabel))
+			loadErrText = firstNonEmpty(loadErrText, response.MsgText(c, couponForeignLabel))
 		default:
 			expanded = cp
 			rl, rerr := h.orders.ListCouponRedemptions(ctx, &orderdto.CouponRedemptionListReq{
@@ -135,6 +155,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		RedemptionLimit: couponRedemptionPageSize,
 
 		StatusValues:      couponStatusFilterValues,
+		StateLabels:       couponStateLabelFacts(),
 		FilterStatus:      filterStatusValue,
 		FilterStatusValid: filterStatusValid,
 		FilterKeyword:     filter.Keyword,
@@ -162,7 +183,8 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 	id := orderQueryID(rawID)
 	projectID := strings.TrimSpace(c.Query("project"))
 	if id == 0 || strconv.FormatUint(id, 10) != rawID || projectID == "" {
-		c.Status(http.StatusBadRequest)
+		// 页面 GET 失败也要交 JSON 体：空 body 的 400 会让前端拿不到 message。
+		response.ParamError(c)
 		return
 	}
 	ctx := c.Request.Context()
@@ -172,20 +194,22 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 		return
 	}
 	if !exists {
-		c.Status(http.StatusNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, orderenums.ErrCouponNotFound)
 		return
 	}
 	cp, err := h.orders.GetCoupon(ctx, id)
 	if err != nil {
-		if err.Error() == orderenums.ErrCouponNotFound {
-			c.Status(http.StatusNotFound)
+		// service 交的是 facing 错误（Error() 返回裸 key），匹配走 errors.Is；
+		// 拿 err.Error() 和 key 做字符串比较会在包装或换文案时静默失效。
+		if errors.Is(err, orderenums.Err(orderenums.ErrCouponNotFound)) {
+			response.ErrorWithMessage(c, http.StatusNotFound, orderenums.ErrCouponNotFound)
 			return
 		}
 		adminui.PageErrorInternal(c, "coupon-edit-form", err)
 		return
 	}
 	if cp == nil || cp.ID != id || cp.ProjectID != projectID {
-		c.Status(http.StatusNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, orderenums.ErrCouponNotFound)
 		return
 	}
 
@@ -239,9 +263,9 @@ var couponFacingExtras = []string{
 }
 
 var (
-	couponIDInvalidLabel = adminui.Msg{Key: orderenums.CouponFormInvalidID, Fallback: "优惠码编号不合法，请回到列表页重新操作。"}
+	couponIDInvalidLabel = facing.Msg{Key: orderenums.CouponFormInvalidID, Fallback: "优惠码编号不合法，请回到列表页重新操作。"}
 
-	couponForeignLabel = adminui.Msg{Key: orderenums.CouponFormForeignProject, Fallback: "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"}
+	couponForeignLabel = facing.Msg{Key: orderenums.CouponFormForeignProject, Fallback: "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"}
 )
 
 func couponFacingText(raw string) string {
@@ -264,8 +288,8 @@ func couponFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := couponFacingText(err.Error()); msg != "" {
-		return i18n.TranslateFunc(response.RequestLanguage(c))(msg, msg)
+	if key := couponFacingText(err.Error()); key != "" {
+		return response.MsgText(c, facing.Msg{Key: key, Fallback: key})
 	}
 	logger.Scene("order-coupon").With("path", c.Request.URL.Path).Error(err, "优惠码写操作失败")
 	return adminui.PageInternalText(c)

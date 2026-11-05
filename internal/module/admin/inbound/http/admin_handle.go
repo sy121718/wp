@@ -1,7 +1,10 @@
 package adminhttp
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
@@ -12,6 +15,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	r "go_wp/pkg/response"
+	"go_wp/pkg/view"
 )
 
 type Handle struct {
@@ -217,24 +221,24 @@ func (h *Handle) AdminRoleList(c *gin.Context) {
 	r.Success(c, res)
 }
 
+// AdminRoleSave 保存管理员角色，返回 Jet 成功或错误片段。
 func (h *Handle) AdminRoleSave(c *gin.Context) {
-	req, ok := binding.JSON[admindto.AdminRoleSaveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req admindto.AdminRoleSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-
-	uid := builtin.CurrentUserID(c)
-	if uid == 0 {
-		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
+	req.OperatorID = builtin.CurrentUserID(c)
+	if req.OperatorID == 0 {
+		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	req.OperatorID = uid
-	res, err := h.admin.AdminRoleSave(c.Request.Context(), req)
-	if err != nil {
-		adminFail(c, err)
+	if _, err := h.admin.AdminRoleSave(c.Request.Context(), &req); err != nil {
+		view.FailScene(c, "admin.write", err)
 		return
 	}
-	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
+	view.Success(c)
 }
 
 func (h *Handle) AdminMenuList(c *gin.Context) {
@@ -250,24 +254,24 @@ func (h *Handle) AdminMenuList(c *gin.Context) {
 	r.Success(c, res)
 }
 
+// AdminMenuSave 保存管理员直接菜单授权，返回 Jet 片段。
 func (h *Handle) AdminMenuSave(c *gin.Context) {
-	req, ok := binding.JSON[admindto.AdminMenuSaveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req admindto.AdminMenuSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-
-	uid := builtin.CurrentUserID(c)
-	if uid == 0 {
-		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
+	req.OperatorID = builtin.CurrentUserID(c)
+	if req.OperatorID == 0 {
+		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	req.OperatorID = uid
-	res, err := h.admin.AdminMenuSave(c.Request.Context(), req)
-	if err != nil {
-		adminFail(c, err)
+	if _, err := h.admin.AdminMenuSave(c.Request.Context(), &req); err != nil {
+		view.FailScene(c, "admin.write", err)
 		return
 	}
-	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
+	view.Success(c)
 }
 
 func (h *Handle) RuleList(c *gin.Context) {
@@ -692,24 +696,24 @@ func (h *Handle) RoleMenuList(c *gin.Context) {
 	r.Success(c, res)
 }
 
+// RoleMenuSave 保存角色菜单授权，返回 Jet 成功或错误片段。
 func (h *Handle) RoleMenuSave(c *gin.Context) {
-	req, ok := binding.JSON[admindto.RoleMenuSaveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req admindto.RoleMenuSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
-
-	uid := builtin.CurrentUserID(c)
-	if uid == 0 {
-		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
+	req.OperatorID = builtin.CurrentUserID(c)
+	if req.OperatorID == 0 {
+		view.FailStatus(c, http.StatusUnauthorized, adminErrScene, adminenums.Err(adminenums.MsgUnauthorized))
 		return
 	}
-	req.OperatorID = uid
-	res, err := h.role.RoleMenuSave(c.Request.Context(), req)
-	if err != nil {
-		adminFail(c, err)
+	if _, err := h.role.RoleMenuSave(c.Request.Context(), &req); err != nil {
+		view.FailScene(c, "admin.write", err)
 		return
 	}
-	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
+	view.Success(c)
 }
 
 func (h *Handle) RoleUserList(c *gin.Context) {

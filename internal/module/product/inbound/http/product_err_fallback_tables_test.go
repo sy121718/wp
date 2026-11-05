@@ -101,22 +101,21 @@ func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 	}
 }
 
-func TestBusinessErrTextKeepsDeclarationFallback(t *testing.T) {
+func TestBusinessErrorFactCarriesOnlyKey(t *testing.T) {
 	c, _ := newHXContext(t, "", "")
 	key := productenums.ErrNameRequired
-	want := productenums.FallbackFor(key)
-	if want == "" {
-		t.Fatalf("%q 在 enums 兜底表里没有登记", key)
-	}
 	fact, ok := facing.FactOf(productenums.Err(key))
 	if !ok || !fact.Business {
 		t.Fatalf("应判为业务错误，fact=%+v ok=%v", fact, ok)
 	}
-	if fact.Fallback != want {
-		t.Errorf("事实兜底 = %q，want %q（由 productenums.Err 随错误带出）", fact.Fallback, want)
+	if fact.Key != key {
+		t.Errorf("事实 key = %q，want %q", fact.Key, key)
 	}
-	if got := response.MessageOf(c, "product", productenums.Err(key)); got != want {
-		t.Errorf("成品串 = %q，want %q", got, want)
+	if fact.Fallback != "" {
+		t.Errorf("错误声明不该再带中文兜底（%q）：文案归词库，缺词由 JSON 出口给共享提示", fact.Fallback)
+	}
+	if got := response.MessageOf(c, "product", productenums.Err(key)); got != response.InternalText(c) {
+		t.Errorf("产品错误 key 没在测试词库里，出口应给共享归口文案，实际 %q", got)
 	}
 }
 

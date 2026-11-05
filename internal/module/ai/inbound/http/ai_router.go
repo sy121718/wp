@@ -61,6 +61,10 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	g.POST("/provider/models/restore", permission.AIProviderModelsRestore, handle.RestoreDefaultModels)
 	g.POST("/provider/models/fetch", permission.AIProviderModelsFetch, handle.FetchAvailableModels)
 
+	// 候选与追加各有独立权限点：前者会解密密钥打远端 /models，后者会改写目录。
+	g.POST("/provider/models/candidates", permission.AIProviderModelsCandidates, handle.ModelCandidates)
+	g.POST("/provider/models/append", permission.AIProviderModelsAppend, handle.AppendModels)
+
 	g.GET("/session/list", permission.AISessionList, sessionHandle.List)
 	g.GET("/session/get", permission.AISessionGet, sessionHandle.Get)
 	g.GET("/session/events", permission.AISessionEvents, sessionHandle.Events)
@@ -69,12 +73,16 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	g.POST("/session/rename", permission.AISessionRename, sessionHandle.Rename)
 	g.POST("/session/archive", permission.AISessionArchive, sessionHandle.Archive)
 	g.POST("/session/fold", permission.AISessionFold, sessionHandle.Fold)
+	g.POST("/session/send", permission.AISessionSend, sessionHandle.Send)
 
 	g.POST("/chat", permission.AIChat, handle.Chat)
 
 	g.GET("/token/list", permission.AITokenList, tokenHandle.List)
 	g.POST("/token/create", permission.AITokenCreate, tokenHandle.Create)
 	g.POST("/token/revoke", permission.AITokenRevoke, tokenHandle.Revoke)
+
+	// 对外接入点开关有自己的权限点：它不改令牌，改的是「本站数据要不要对外开口」。
+	g.POST("/token/toggle", permission.AITokenToggle, tokenHandle.SetMcpEnabled)
 
 	SetupAIPages(adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig)
 

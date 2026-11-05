@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"go_wp/internal/mcp"
-	"go_wp/internal/uispec"
+	"go_wp/pkg/uispec"
 )
 
 func knownSourcesForTest(name string) bool {

@@ -6,6 +6,7 @@ import (
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -26,14 +28,17 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	api := producthttp.NewProductHandle(f.products)
 
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
-	engine.POST("/api/product/rating/add", api.AddRating)
-	engine.POST("/api/product/rating/delete", api.DeleteRating)
+	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), api.AddRating)
+	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), api.DeleteRating)
 	return engine, f
 }
 
@@ -87,8 +92,8 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	editBody := getProductEditPage(engine, f.projectID, rated)
 	for _, want := range []string{
 		`<span data-product-rating="4.5">4.5</span>`, "2 条", "添加评分",
-		`data-write-url="/api/product/rating/add"`,
-		`data-write-url="/api/product/rating/delete"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
 	} {
 		if !strings.Contains(editBody, want) {
 			t.Fatalf("有评分的商品编辑页应包含 %q", want)
@@ -114,7 +119,7 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 
 func assertRatingFormsInsideHost(t *testing.T, body string) {
 	t.Helper()
-	deleteForm := strings.Index(body, `data-write-url="/api/product/rating/delete"`)
+	deleteForm := strings.Index(body, `hx-post="/api/product/rating/delete"`)
 	if deleteForm < 0 {
 		t.Fatalf("编辑页缺少评分删除表单")
 	}
@@ -125,18 +130,19 @@ func assertRatingFormsInsideHost(t *testing.T, body string) {
 	}
 }
 
-func TestProductRatingAddAndDeleteViaJSON(t *testing.T) {
+func TestProductRatingAddAndDeleteViaHTML(t *testing.T) {
 	engine, f := newProductsPageEngine(t)
 	if engine == nil {
 		return
 	}
 	product := f.createProduct(t, "待评分货", "rating-crud", "", 99, 99)
 
-	rec := postJSON(t, engine, "/api/product/rating/add", map[string]any{
-		"projectId": f.projectID, "productId": product, "score": 4.5,
+	rec := postProductHTMLForm(engine, "/api/product/rating/add?projectId=forged&productId=forged&score=1", url.Values{
+		"projectId": {f.projectID}, "productId": {product}, "score": {"4.5"},
 	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("添加评分应成功，实际 HTTP %d code=%d message=%s", rec.Code, env.Code, env.Message)
+	fragment := assertProductHTMLResponse(t, rec, http.StatusOK)
+	if !strings.Contains(fragment, `id="product-ratings-`+product+`"`) || !strings.Contains(fragment, `<span data-product-rating="4.5">4.5</span>`) || strings.Contains(fragment, "<!DOCTYPE") {
+		t.Fatalf("添加应直接返回评分区而非整页：%s", fragment)
 	}
 	body := productDetailBody(t, engine, f.projectID, product)
 	if !strings.Contains(body, `<span data-product-rating="4.5">4.5</span>`) || !strings.Contains(body, "1 条") {
@@ -147,11 +153,12 @@ func TestProductRatingAddAndDeleteViaJSON(t *testing.T) {
 	if err != nil || len(res.Items) != 1 {
 		t.Fatalf("应有 1 条评分明细：%v %+v", err, res)
 	}
-	rec = postJSON(t, engine, "/api/product/rating/delete", map[string]any{
-		"projectId": f.projectID, "id": res.Items[0].ID,
+	rec = postProductHTMLForm(engine, "/api/product/rating/delete?id=forged&projectId=forged", url.Values{
+		"projectId": {f.projectID}, "id": {res.Items[0].ID},
 	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("删除评分应成功，实际 HTTP %d code=%d message=%s", rec.Code, env.Code, env.Message)
+	fragment = assertProductHTMLResponse(t, rec, http.StatusOK)
+	if !strings.Contains(fragment, "这个商品还没有评分。") || strings.Contains(fragment, `data-product-rating=`) {
+		t.Fatalf("删除最后一条评分应直接返回空态：%s", fragment)
 	}
 	body = productDetailBody(t, engine, f.projectID, product)
 	if !strings.Contains(body, "这个商品还没有评分。") {
@@ -167,18 +174,18 @@ func TestProductRatingPageRejectsInvalidScore(t *testing.T) {
 	product := f.createProduct(t, "非法评分货", "rating-invalid", "", 99, 99)
 	ctx := context.Background()
 
-	for _, bad := range []any{9, -1, "abc", ""} {
-		rec := postJSON(t, engine, "/api/product/rating/add", map[string]any{
-			"projectId": f.projectID, "productId": product, "score": bad,
+	for _, bad := range []string{"9", "-1", "abc", "", "NaN", "Inf", "-Inf", "missing"} {
+		t.Run(bad, func(t *testing.T) {
+			values := url.Values{"projectId": {f.projectID}, "productId": {product}}
+			if bad != "missing" {
+				values.Set("score", bad)
+			}
+			rec := postProductHTMLForm(engine, "/api/product/rating/add?score=4.5", values)
+			body := assertProductHTMLResponse(t, rec, http.StatusBadRequest)
+			if !strings.Contains(body, `data-ui-error`) || !strings.Contains(body, `role="alert"`) {
+				t.Fatalf("非法分值必须返回可见 Jet 错误：%s", body)
+			}
 		})
-		env := decodeJSONEnvelope(t, rec)
-		if env.Code == http.StatusOK {
-			t.Fatalf("非法分值 %v 应被拒绝，实际成功：%s", bad, rec.Body.String())
-		}
-
-		if strings.TrimSpace(env.Message) == "" {
-			t.Fatalf("非法分值 %v 应带原因，body=%s", bad, rec.Body.String())
-		}
 	}
 
 	res, err := f.products.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: product})

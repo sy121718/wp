@@ -11,14 +11,19 @@ func registerProductVariantStockPanelI18n() {
 		registerSeed(Seed{
 			Version:   "660-product-variant-stock-panel-i18n",
 			TableName: "sys_i18n",
-			ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 10 THEN 1 ELSE 0 END FROM sys_i18n " +
-				"WHERE lang = 'en-US' AND item_key IN (" +
-				"'admin.products.stocks.toggle','admin.products.stocks.qtyLabel'," +
-				"'admin.products.stocks.untrackedHint','admin.products.stocks.remove'," +
-				"'admin.products.stocks.duplicated','admin.products.stocks.empty'," +
-				"'admin.products.stocks.add','admin.products.stocks.addLabel'," +
-				"'admin.products.stocks.addPlaceholder','admin.products.stocks.unlimited')",
-			SQL: mustSQL("660_product_variant_stock_panel_i18n.sql"),
+			ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('pStockAdd'),
+    ('pStockAddLabel'),
+    ('pStockTrackHint'),
+    ('pStocksAddPh'),
+    ('pStocksDup'),
+    ('pStocksEmpty'),
+    ('pStocksQty'),
+    ('pStocksRemove'),
+    ('pStocksToggle'),
+    ('pStocksUnlimit')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+			SQL: mustSQL("723ad_current_660_product_variant_stock_panel_i18n.sql"),
 		})
 	})
 }

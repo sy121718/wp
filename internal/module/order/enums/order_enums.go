@@ -97,72 +97,8 @@ const (
 
 const ErrInternal = "操作失败，请稍后重试"
 
-var errFallbacks = map[string]string{
-	ErrBulkRejected: "整批未执行：有条目不能处理，请按明细修正后重试",
-
-	ErrCarrierCodeTaken:           "该承运商编码已被占用",
-	ErrCarrierNotFound:            "承运商不存在",
-	ErrCarrierStatusInvalid:       "承运商状态不合法",
-	ErrCarrierTemplateInvalid:     "承运商模板配置不合法",
-	ErrShipWarehouseRequired:      "发货必须指定发货仓",
-	ErrShipLinesRequired:          "发货单至少需要一行商品",
-	ErrShipQuantityExceeded:       "发货数量超出可发数量",
-	ErrReturnRequestConflict:      "这个退货请求已用于另一份申请，请重新发起",
-	ErrShipRequestKeyConflict:     "该发货请求已处理过（请求键冲突）",
-	ErrOrderNotShippable:          "当前订单状态不允许发货",
-	ErrInternal:                   "操作失败，请稍后重试",
-	ErrInvalidParam:               "参数不合法",
-	ErrProjectRequired:            "缺少站点工程",
-	ErrItemsRequired:              "订单至少需要一个商品项",
-	ErrItemLimitExceeded:          "单笔订单的商品项超出上限",
-	ErrQuantityInvalid:            "商品数量必须为正整数",
-	ErrCustomerEmailRequired:      "请填写客户邮箱",
-	ErrCustomerEmailInvalid:       "客户邮箱格式不正确",
-	ErrOrderNoInvalid:             "订单号格式不合法",
-	ErrStatusInvalid:              "订单状态取值不合法",
-	ErrCurrencyUnknown:            "该币种不在系统货币字典里（可能已被停用），请重新选择",
-	ErrNoteTooLong:                "备注内容过长",
-	ErrOrderNotFound:              "订单不存在",
-	ErrOrderNoTaken:               "订单号已被占用",
-	ErrOrderHasNoItems:            "订单缺少商品项，数据不完整",
-	ErrStatusTransition:           "订单当前状态不支持该操作",
-	ErrOrderNotCancellable:        "只有未发货的订单可以取消",
-	ErrOrderNotRefundable:         "只有已付款的订单可以退款",
-	ErrAlreadyCancelled:           "订单已取消，不能再操作",
-	ErrAlreadyRefunded:            "订单已退款，不能再操作",
-	ErrCancelReasonRequired:       "请填写取消原因",
-	ErrPaymentMethodRequired:      "缺少支付方式",
-	ErrPaymentChannelFailed:       "支付未成功，请稍后重试",
-	ErrReturnNotFound:             "退货申请不存在",
-	ErrReturnItemsRequired:        "请至少选择一件要退的商品",
-	ErrReturnQuantityInvalid:      "退货数量必须是正整数",
-	ErrReturnQuantityExceeded:     "退货数量超过可退数量",
-	ErrReturnReasonRequired:       "请说明退货原因",
-	ErrReturnNotCancellable:       "该申请已进入处理流程，无法撤销",
-	ErrReturnOrderNotReturnable:   "该订单当前状态不支持退货",
-	ErrReturnNotReviewable:        "该申请不在待审核状态",
-	ErrReturnNotReceivable:        "该申请不在待收货状态（或已完成）",
-	ErrReturnRejectReasonRequired: "请填写拒绝原因",
-	ErrVariantNotFound:            "商品规格不存在或已下架",
-	ErrStockInsufficient:          "库存不足，无法下单",
-	ErrStockUnavailable:           "库存服务暂时不可用，请稍后重试",
-	ErrCouponNotFound:             "优惠码不存在",
-	ErrCouponCodeRequired:         "请填写优惠码",
-	ErrCouponCodeTaken:            "这个优惠码已经存在",
-	ErrCouponTypeInvalid:          "优惠类型只支持按比例折扣或固定金额",
-	ErrCouponValueInvalid:         "优惠值不合法",
-	ErrCouponWindowInvalid:        "生效时间不合法",
-	ErrCouponDisabled:             "优惠码已停用",
-	ErrCouponNotStarted:           "优惠码尚未开始",
-	ErrCouponExpired:              "优惠码已过期",
-	ErrCouponExhausted:            "优惠码已被用完",
-	ErrCouponUserLimit:            "你已使用过该优惠码",
-	ErrCouponMinSubtotal:          "订单金额未达到该优惠码的使用门槛",
-	ErrCouponInUse:                "该优惠码已有核销记录，不能删除",
-}
-
 func Err(key string) error {
-	err := error(facing.New(key, errFallbacks[key]))
+	err := error(facing.New(key))
 	if key == ErrReturnRequestConflict {
 		return facing.WithStatus(err, http.StatusConflict)
 	}
@@ -457,5 +393,3 @@ const (
 	OrderNewFieldCurrencyUse = "admin.order_new.field.currency_default"
 	OrderNewHintCurrency     = "admin.order_new.hint.currency"
 )
-
-func FallbackFor(key string) string { return errFallbacks[key] }

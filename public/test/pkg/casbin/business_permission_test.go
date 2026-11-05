@@ -1,9 +1,12 @@
 package casbin_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/database"
@@ -122,7 +125,15 @@ func TestBusinessPermissionRoleInheritance(t *testing.T) {
 	if err := pkgcasbin.ReplaceRolePermissions(roleCode, businessPermissionDefs); err != nil {
 		t.Fatalf("写入角色业务权限失败: %v", err)
 	}
-	if err := pkgcasbin.ActivateRole(roleCode); err != nil {
+	// 启用角色现在是事务内原子写（ActivateRoleTx），非事务包装已随事务边界收口移除。
+	db, derr := database.GetDB()
+	if derr != nil {
+		t.Fatalf("取数据库句柄失败: %v", derr)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, terr := pkgcasbin.ActivateRoleTx(context.Background(), tx, roleCode)
+		return terr
+	}); err != nil {
 		t.Fatalf("启用角色失败: %v", err)
 	}
 	if err := pkgcasbin.ReplaceUserRoleBindings(member, []string{roleCode}); err != nil {

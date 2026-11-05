@@ -35,9 +35,9 @@ func (m *OrderModel) SummaryByRange(ctx context.Context, projectID string, from,
 		return tx.Table(OrderEntity{}.TableName()+" AS o").
 			Select(orderRangeSummarySelect,
 
-				strings.Join(paidStatuses, ","),
+				strings.Join(DefaultSalesStatuses, ","),
 				strings.Join(ReturnedStatuses, ","),
-				strings.Join(paidStatuses, ",")).
+				strings.Join(DefaultSalesStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.create_time >= ?", from).
 			Where("o.create_time < ?", to).

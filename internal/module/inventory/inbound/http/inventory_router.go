@@ -11,6 +11,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 type productCatalogConsumer interface {
@@ -67,12 +68,12 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	tg.GET("/get", permission.InventoryTransferGet, transferPages.InventoryTransferDetail)
 
 	tg.GET("/stock-options", permission.InventoryTransferOptions, transferPages.InventoryTransferStockOptions)
-	tg.POST("/create", permission.InventoryTransferCreate, transferPages.CreateTransfer)
-	tg.POST("/approve", permission.InventoryTransferApprove, transferPages.ApproveTransfer)
-	tg.POST("/reject", permission.InventoryTransferReject, transferPages.RejectTransfer)
-	tg.POST("/ship", permission.InventoryTransferShip, transferPages.ShipTransfer)
-	tg.POST("/receive", permission.InventoryTransferReceive, transferPages.ReceiveTransfer)
-	tg.POST("/cancel", permission.InventoryTransferCancel, transferPages.CancelTransfer)
+	tg.POST("/create", permission.InventoryTransferCreate, pageview.HTMLFragment, transferPages.CreateTransfer)
+	tg.POST("/approve", permission.InventoryTransferApprove, pageview.HTMLFragment, transferPages.ApproveTransfer)
+	tg.POST("/reject", permission.InventoryTransferReject, pageview.HTMLFragment, transferPages.RejectTransfer)
+	tg.POST("/ship", permission.InventoryTransferShip, pageview.HTMLFragment, transferPages.ShipTransfer)
+	tg.POST("/receive", permission.InventoryTransferReceive, pageview.HTMLFragment, transferPages.ReceiveTransfer)
+	tg.POST("/cancel", permission.InventoryTransferCancel, pageview.HTMLFragment, transferPages.CancelTransfer)
 
 	SetupInventoryPages(pages, svc, project)
 

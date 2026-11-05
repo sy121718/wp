@@ -14,7 +14,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
-	"go_wp/internal/templates"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,11 +39,9 @@ func (f *fakeShippingProjects) Update(_ context.Context, req *projectcontract.Up
 func postSiteSettingsSave(t *testing.T, projects projectcontract.ProjectService, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
-	router.HTMLRender = templates.NewJetHTMLRender(siteSettingsScriptsTemplateDir, true)
+	router := newProjectUITestEngine(t)
 	h := NewSiteSettingsAdminHandle(projects, nil, nil)
-	router.POST("/admin/settings/save", h.SaveSiteSettings)
+	router.POST("/admin/settings/save", pageview.HTMLFragment, h.SaveSiteSettings)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -104,24 +102,24 @@ func TestSaveSiteSettingsShippingFeeToCents(t *testing.T) {
 func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	if rec.Code != http.StatusOK {
-		t.Fatalf("成功应 200 渲染提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+		t.Fatalf("成功应 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("成功应使用共享提示组件：\n%s", rec.Body.String())
 	}
 }
 
 func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder, wantSub string) {
 	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("失败应 200 渲染提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	if rec.Code < 400 {
+		t.Fatalf("失败应给真实 4xx，实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("响应不是失败提示页（缺 data-jump-state=\"err\"）:\n%s", body)
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("失败应走共享失败出口的受控错误区：\n%s", body)
 	}
 	if !strings.Contains(body, wantSub) {
-		t.Fatalf("提示页缺少文案 %q:\n%s", wantSub, body)
+		t.Fatalf("错误区缺少文案 %q:\n%s", wantSub, body)
 	}
 }
 

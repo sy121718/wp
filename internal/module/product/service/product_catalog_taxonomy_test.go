@@ -4,7 +4,7 @@ import "testing"
 
 func TestCatalogTaxonomyEmptyProjectSkipsDataQueries(t *testing.T) {
 
-	s := NewService(nil, nil)
+	s := NewService(nil, nil, stubMasterDataChanges{})
 	brands, err := s.CatalogBrands(t.Context(), "")
 	if err != nil || brands == nil || len(brands) != 0 {
 		t.Fatalf("空工程品牌应为空集合：%+v %v", brands, err)

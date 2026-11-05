@@ -18,6 +18,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -45,9 +46,11 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/product-attributes", pageview.UseRenderer(adminui.RenderPage), handle.ProductAttributesPage)
-	engine.POST("/api/product/attribute/set-values", producthttp.NewProductHandle(f.svc).SetAttributeValues)
+	engine.POST("/api/product/attribute/set-values", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).SetAttributeValues)
 	return engine, f
 }
 
@@ -91,7 +94,7 @@ func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 	}
 }
 
-func TestAttributeValuesFormWritesJSON(t *testing.T) {
+func TestAttributeValuesFormWritesHTML(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
 		return
@@ -102,8 +105,8 @@ func TestAttributeValuesFormWritesJSON(t *testing.T) {
 	}
 	payload := `[{"id":"` + group.Values[1].ID + `","key":"m","label":"中码","sort":"2","enabled":"false"},{"key":"l","label":"L","sort":"1","enabled":"true"}]`
 	rec := postForm(engine, "/api/product/attribute/set-values", url.Values{"id": {group.ID}, "projectId": {f.projectID}, "values": {payload}})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("保存应返回 JSON 200: %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("保存应返回 HTML 200: %d %s", rec.Code, rec.Body.String())
 	}
 	got, err := f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: group.ID, ProjectID: f.projectID})
 	if err != nil {

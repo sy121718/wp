@@ -13,7 +13,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/internal/seo/scoring"
+	"go_wp/pkg/seo/scoring"
 	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 )
@@ -186,7 +186,7 @@ func TestSeoScorePreservesSharedAlgorithmWithoutPresentationFields(t *testing.T)
 			t.Fatalf("维度事实漂移：%+v vs %+v", got, section)
 		}
 		for j, check := range section.Checks {
-			if got.Checks[j] != (productdto.SeoScoreCheckResp{Key: check.Key, Score: check.Score, Max: check.Max, Skipped: check.Skipped}) {
+			if got.Checks[j] != (SeoScoreCheck{Key: check.Key, Score: check.Score, Max: check.Max, Skipped: check.Skipped}) {
 				t.Fatalf("检查项事实漂移：%+v vs %+v", got.Checks[j], check)
 			}
 		}

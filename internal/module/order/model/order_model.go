@@ -424,7 +424,9 @@ func (m *OrderModel) CountByFulfillment(ctx context.Context, projectID string) (
 	return counts, nil
 }
 
-var paidStatuses = []string{OrderStatusPaid, OrderStatusShipped, OrderStatusCompleted}
+// DefaultSalesStatuses 是「已成交」口径：销售额、客户增长、日报等所有
+// 按成交统计的查询共用这一份，不许各自写一份。
+var DefaultSalesStatuses = []string{OrderStatusPaid, OrderStatusShipped, OrderStatusCompleted}
 
 type CustomerOrderSummaryRow struct {
 	OrderCount      int64      `gorm:"column:order_count"`
@@ -460,9 +462,9 @@ func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID
 		inner := tx.Table(OrderEntity{}.TableName()+" AS o").
 			Select(customerOrderSummaryInnerSelect,
 
-				strings.Join(paidStatuses, ","),
+				strings.Join(DefaultSalesStatuses, ","),
 				strings.Join(ReturnedStatuses, ","),
-				strings.Join(paidStatuses, ",")).
+				strings.Join(DefaultSalesStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.user_id = ?", userID).
 			Order("o.id DESC").

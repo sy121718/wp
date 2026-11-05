@@ -36,7 +36,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	}
 
 	t.Run("请求为空一律放行", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		s.SetPurchaseChecker(&fakePurchaseChecker{purchased: false})
 		denial, err := s.AllowComment(context.Background(), nil)
 		if err != nil || denial != nil {
@@ -45,7 +45,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	})
 
 	t.Run("非商品实体不问订单", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		fake := &fakePurchaseChecker{purchased: false}
 		s.SetPurchaseChecker(fake)
 		denial, err := s.AllowComment(context.Background(), reqOf(articleType))
@@ -58,7 +58,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	})
 
 	t.Run("端口未注入即放行", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		denial, err := s.AllowComment(context.Background(), reqOf(productcontract.EntityTypeProduct))
 		if err != nil || denial != nil {
 			t.Fatalf("端口未注入应放行（规则未启用），实际 denial=%+v err=%v", denial, err)
@@ -66,7 +66,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	})
 
 	t.Run("买过则放行", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		s.SetPurchaseChecker(&fakePurchaseChecker{purchased: true})
 		denial, err := s.AllowComment(context.Background(), reqOf(productcontract.EntityTypeProduct))
 		if err != nil || denial != nil {
@@ -75,7 +75,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	})
 
 	t.Run("没买过则拒绝且带可翻译文案", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		s.SetPurchaseChecker(&fakePurchaseChecker{purchased: false})
 		denial, err := s.AllowComment(context.Background(), reqOf(productcontract.EntityTypeProduct))
 		if err != nil {
@@ -94,7 +94,7 @@ func TestAllowCommentPurchasePolicy(t *testing.T) {
 	})
 
 	t.Run("判定失败放行而不是拒绝", func(t *testing.T) {
-		s := NewService(nil, nil)
+		s := NewService(nil, nil, stubMasterDataChanges{})
 		s.SetPurchaseChecker(&fakePurchaseChecker{err: errors.New("查询故障")})
 		denial, err := s.AllowComment(context.Background(), reqOf(productcontract.EntityTypeProduct))
 		if err != nil {

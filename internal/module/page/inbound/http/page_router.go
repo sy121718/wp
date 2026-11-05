@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -31,8 +31,6 @@ const (
 	PageTranslationsTemplate = "admin/page/page_translations"
 
 	PageTranslationMissesTemplate = "admin/page/page_translation_misses.html"
-
-	PageTranslationErrorsTemplate = "fragments/translation_errors.html"
 )
 
 func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
@@ -69,6 +67,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	g.GET("/list", permission.PageList, handle.List)
 	g.GET("/detail", permission.PageDetail, handle.Detail)
 	g.POST("/draft/save", permission.PageDraftSave, handle.SaveDraft)
+	// 译文保存是 JSON 写出口：写基座只对接 /api/ 端点（data-write-url 的契约）。
+	g.POST("/translations/save", permission.PageTranslationsSave, pageview.HTMLFragment, adminHandle.SavePageTranslations)
 	g.GET("/revision/list", permission.PageRevisionList, handle.ListRevisions)
 	g.POST("/build", permission.PageBuild, handle.Build)
 	g.POST("/publish", permission.PagePublish, handle.Publish)
@@ -88,12 +88,12 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	}
 	pages.GET("/pages", adminui.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(adminui.RenderPage), adminHandle.PagesList)
-	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
+	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), pageview.HTMLFragment, adminHandle.CreatePage)
 
-	pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.DeletePage)
-	pages.POST("/pages/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.PagesBulkDelete)
+	pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), pageview.HTMLFragment, adminHandle.DeletePage)
+	pages.POST("/pages/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), pageview.HTMLFragment, adminHandle.PagesBulkDelete)
 
-	pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), adminHandle.CreateProject)
+	pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), pageview.HTMLFragment, adminHandle.CreateProject)
 
 	if workbenchPages != nil {
 		workbenchPages.POST("/workbench/history",
@@ -101,26 +101,25 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
 	}
 
-	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
-	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
+	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangExclude)
+	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRestore)
 
-	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRepublish)
+	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRepublish)
 
 	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"),
 		pageview.UseRenderer(adminui.RenderPage), adminHandle.PageTranslations)
-	pages.POST("/pages/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
 
 	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
 		pageview.UseRenderer(adminui.RenderPage), adminHandle.TranslationMissesPage)
-	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
+	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.TranslationMissCancel)
 
 	g.GET("/redirect",
 		permission.PageRedirectView,
 		pageview.UseRenderer(adminui.RenderPage),
 		handle.RedirectPage)
-	g.POST("/redirect/create", permission.PageRedirectCreate, handle.RedirectCreate)
-	g.POST("/redirect/delete", permission.PageRedirectDelete, handle.RedirectDelete)
-	g.POST("/redirect/merge", permission.PageRedirectMerge, handle.RedirectMerge)
-	pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), handle.RedirectBulkDelete)
+	g.POST("/redirect/create", permission.PageRedirectCreate, pageview.HTMLFragment, handle.RedirectCreate)
+	g.POST("/redirect/delete", permission.PageRedirectDelete, pageview.HTMLFragment, handle.RedirectDelete)
+	g.POST("/redirect/merge", permission.PageRedirectMerge, pageview.HTMLFragment, handle.RedirectMerge)
+	pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), pageview.HTMLFragment, handle.RedirectBulkDelete)
 
 }

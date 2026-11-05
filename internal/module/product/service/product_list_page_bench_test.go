@@ -32,7 +32,7 @@ func TestProductListPageWallClockByProductCount(t *testing.T) {
 	probe := attachSQLCountProbe(t, db)
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "列表耗时基准"}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := context.Background()
 
 	t.Logf("环境：%s/%s，Go %s；商品档位 1 / 20 / 100（同一工程累积插入），每档热身 %d 次 + 连测 %d 次",

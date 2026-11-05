@@ -27,13 +27,13 @@ TPL_DIR="internal/templates"
 JS_DIR="internal/templates/static/js"
 
 if [[ ! -f "$BUNDLE" ]]; then
-  echo "✗ 找不到 vendored htmx bundle：$BUNDLE —— 判据 4 无法执行，检查文件是否被移动" >&2
+  echo "找不到 vendored htmx bundle：$BUNDLE —— 判据 4 无法执行，检查文件是否被移动" >&2
   exit 1
 fi
 
 violations=0
 fail() {
-  printf '✗ %s\n' "$1" >&2
+  printf '%s\n' "$1" >&2
   violations=$((violations + 1))
 }
 
@@ -97,14 +97,9 @@ fi
 #   · hx-<名> 伪元素 —— bundle 的 #Ie 有通用改写 `<hx-名>` → `<template hx type="名">`，
 #     所以任何 hx-<名> 元素名都会被当作 partial 指令处理。本仓模板已统一写 template
 #     形态（不依赖该改写），这里仍放行是为了不把合法的历史写法判红。
-# 排除名单（本项目自定义，不是 htmx API）：
-#   · hx-progress / hx-progress-slide —— 自定义 CSS 类
-#   · hx-ext —— v4 的扩展挂载属性；扩展由 registerExtension 注册（本项目 json-swap），
-#     属性名不出现在 bundle 的字符串字面量里，反向核对会把它误判成「不存在」。
-EXCLUDE='^(hx-progress|hx-progress-slide|hx-ext)$'
-# hx-ext：v4 用 registerExtension 注册扩展（本项目 json-swap 就是），属性本身合法 ——
-# bundle 里只在 config 字符串里出现，不是可 grep 的字面量属性名。
-HTMX_EXTRA_ALLOW="hx-ext"
+# 自定义 CSS 类不是 HTMX 属性。扩展属性另按真实消费源码精确登记，不放行任意 hx-*。
+EXCLUDE='^(hx-progress|hx-progress-slide)$'
+# 当前基座不使用额外 hx-* 属性；registerExtension 不能证明 core 消费 hx-ext。
 GENERIC_ELEMENT_SHIM='<hx-'   # bundle 里存在通用改写即放行 hx-<名> 元素名
 
 bundle_names="$(grep -oE 'hx-[a-z][a-z0-9-]*' "$BUNDLE" | sort -u)"
@@ -152,5 +147,5 @@ if [[ $violations -gt 0 ]]; then
   exit 1
 fi
 
-printf '✓ htmx 属性与事件名合规（扫 %d 模板 / %d JS / %d 文档；bundle 认识 %d 个 hx-*）\n' \
+printf 'htmx 属性与事件名合规（扫 %d 模板 / %d JS / %d 文档；bundle 认识 %d 个 hx-*）\n' \
   "${#tpl_files[@]}" "${#js_files[@]}" "${#md_files[@]}" "$(echo "$bundle_names" | wc -l)"

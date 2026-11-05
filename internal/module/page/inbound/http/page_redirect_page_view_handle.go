@@ -5,7 +5,6 @@ import (
 )
 
 type RedirectPageResp struct {
-	Title    string
 	PagePath string
 
 	ErrKey string

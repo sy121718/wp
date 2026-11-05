@@ -2,10 +2,12 @@ package orderhttp
 
 import (
 	"fmt"
-	"go_wp/internal/middleware/builtin"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+
+	"go_wp/internal/middleware/builtin"
 
 	"github.com/gin-gonic/gin"
 
@@ -17,6 +19,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
@@ -100,10 +103,11 @@ func (h *orderCreatePageHandle) OrderCreatePage(c *gin.Context) {
 }
 
 func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	form := orderCreateFormFromPost(c)
 	req, fieldErrs := orderCreateReqFromForm(c, form)
 	if len(fieldErrs) > 0 {
-		h.render(c, form, fieldErrs, "")
+		orderWriteFail(c, createFormFieldError(fieldErrs))
 		return
 	}
 
@@ -113,18 +117,31 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 
 	res, err := h.orders.CreateAdminOrder(c.Request.Context(), req)
 	if err != nil {
-
-		h.render(c, form, nil, orderFacingError(c, err))
+		orderWriteFail(c, err)
 		return
 	}
 
 	params := map[string]string{"project": req.ProjectID}
 	if res != nil && res.ID != 0 {
-
 		params["orderId"] = strconv.FormatUint(res.ID, 10)
 	}
+	// 成功：结论片段带上按实体事实生成的下一步链接，前端按声明导航。
+	orderWriteResultNav(c, "ordCreated", backpath.WithParams("/admin/orders", params))
+}
 
-	pageview.AfterWrite(c, backpath.WithParams("/admin/orders", params))
+// createFormFieldError 把字段级校验错误收成一条业务失败事实：
+// 词条取自字段级 key，模板逐条取词，不在 Go 里拼成品句。
+func createFormFieldError(fieldErrs map[string]string) error {
+	keys := make([]string, 0, len(fieldErrs))
+	for name := range fieldErrs {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	items := make([]facing.BlockedItem, 0, len(keys))
+	for _, name := range keys {
+		items = append(items, facing.BlockedItem{ID: name, ReasonKey: fieldErrs[name]})
+	}
+	return &orderBulkRejectedError{items: items}
 }
 
 func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fieldErrs map[string]string, pageErr string) {

@@ -17,6 +17,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"github.com/gin-gonic/gin"
 )
@@ -59,11 +60,14 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		c.Next()
 	})
 
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure), templates.FailedRenderMiddleware(pageview.Fail))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
 			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
+			"product:category_seo_score": true, "product:brand_seo_score": true,
 		})
 		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
@@ -81,8 +85,8 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	write := producthttp.NewProductHandle(f.svc)
 	router.GET("/api/product/category/parents", write.ProductCategoryParents)
 	router.GET("/api/product/tag/products", write.ListTagProducts)
-	router.POST("/api/product/category/seo-score", h.CategorySeoScore)
-	router.POST("/api/product/brand/seo-score", h.BrandSeoScore)
+	router.POST("/api/product/category/seo-score", pageview.HTMLFragment, h.CategorySeoScore)
+	router.POST("/api/product/brand/seo-score", pageview.HTMLFragment, h.BrandSeoScore)
 	router.POST("/api/product/category/update", write.UpdateCategory)
 	router.POST("/api/product/brand/update", write.UpdateBrand)
 	router.Static("/static", attrTemplateRoot()+"/static")

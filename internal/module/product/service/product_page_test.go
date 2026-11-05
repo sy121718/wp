@@ -54,7 +54,7 @@ func (s *productPageTemplatePortStub) DefaultEntityTemplate(context.Context, str
 func newProductPageReadModel(projects productPageProjectStub) (*Service, *productPageWarehousePortStub, *productPageTemplatePortStub) {
 	wh := &productPageWarehousePortStub{}
 	tpl := &productPageTemplatePortStub{}
-	s := NewService(nil, projects)
+	s := NewService(nil, projects, stubMasterDataChanges{})
 	s.SetWarehouseOptionsPort(wh)
 	s.SetEntityTemplatePort(tpl)
 	return s, wh, tpl

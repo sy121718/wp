@@ -23,6 +23,7 @@ import (
 	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/public/migrations"
@@ -119,6 +120,8 @@ func newMailSplitRoutesEnv(t *testing.T) *mailSplitRoutesEnv {
 		InitComponents: false,
 		RouteRegistrar: func(engine *gin.Engine) {
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
+			// 生产装配在基础层挂请求取词作用域；缺了它 c.HTML 的片段会在 t 处渲染失败。
+			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
@@ -483,184 +486,176 @@ func TestMailSplitPageGETRequiresCasbinPolicy(t *testing.T) {
 	}
 }
 
-func TestMailSplitPagePostJumpsBackToOwningPage(t *testing.T) {
+// TestMailSplitPageWritePostsReturnHTMLFragments 取代旧的「整页提示页」断言：
+// 邮件页面写端点已统一成 HTMX + Jet 片段，成功换结果区、失败换错误区，都不再整页跳转。
+func TestMailSplitPageWritePostsReturnHTMLFragments(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
 
 	contactID := mailSplitContactSeed(t, env,
 		fmt.Sprintf("qa.route.status.%d@example.invalid", mailSplitContactNext()))
 
 	cases := []struct {
-		name string
-		path string
-		form url.Values
-
-		want string
-
-		wantState string
+		name   string
+		path   string
+		form   url.Values
+		status int
+		marker []string
 	}{
 		{
 			name: "账号保存",
 			path: "/admin/mail/account/save",
 			form: url.Values{
-
 				"name": {"路由验收账号"}, "purpose": {"marketing"},
 				"from_name": {"QA"}, "from_email": {"qa@example.invalid"},
 				"host": {"smtp.example.invalid"}, "port": {"25"},
 				"username": {"qa"}, "password": {"qa-secret"},
 			},
-			want:      "/admin/mail",
-			wantState: "ok",
+			status: http.StatusOK,
+			marker: []string{`role="status"`},
 		},
 		{
 			name: "模板保存",
 			path: "/admin/mail/template/save",
 			form: url.Values{
-
 				"template_key": {"qa_route_tpl"}, "locale": {"zh-CN"},
 				"name": {"路由验收模板"}, "subject": {"路由验收主题"},
 				"body_html": {"<p>hi</p>"},
 			},
-			want:      "/admin/mail/templates",
-			wantState: "ok",
+			status: http.StatusOK,
+			marker: []string{`role="status"`},
 		},
 		{
 			name: "联系人导入",
 			path: "/admin/mail/contact/import",
 			form: url.Values{
-
 				"content":          {"qa-import@example.invalid"},
-				"consent_declared": {"on"},
+				"consent_declared": {"1"},
 				"consent_source":   {"qa 路由验收"},
 			},
-			want:      "/admin/mail/contacts",
-			wantState: "ok",
+			status: http.StatusOK,
+			marker: []string{`role="status"`},
 		},
 		{
-
-			name: "联系人状态变更",
-
-			path:      "/admin/mail/contact/status",
-			form:      url.Values{"id": {strconv.FormatUint(contactID, 10)}, "status": {"subscribed"}},
-			want:      "/admin/mail/contacts",
-			wantState: "ok",
+			name:   "联系人状态变更",
+			path:   "/admin/mail/contact/status",
+			form:   url.Values{"id": {strconv.FormatUint(contactID, 10)}, "status": {"subscribed"}},
+			status: http.StatusOK,
+			marker: []string{`role="status"`},
 		},
 		{
-			name:      "活动保存",
-			path:      "/admin/mail/campaign/save",
-			form:      url.Values{"name": {"路由验收活动"}, "template_id": {"1"}, "account_id": {"1"}},
-			want:      "/admin/mail/campaigns",
-			wantState: "err",
+			name:   "活动保存缺必填",
+			path:   "/admin/mail/campaign/save",
+			form:   url.Values{"name": {"路由验收活动"}},
+			status: http.StatusBadRequest,
+			marker: []string{`data-ui-error`},
 		},
 		{
-			name:      "活动启动",
-			path:      "/admin/mail/campaign/start",
-			form:      url.Values{"id": {"1"}},
-			want:      "/admin/mail/campaigns",
-			wantState: "err",
+			name:   "活动启动不存在",
+			path:   "/admin/mail/campaign/start",
+			form:   url.Values{"id": {"999999901"}},
+			status: http.StatusBadRequest,
+			marker: []string{`data-ui-error`},
 		},
 		{
-			name:      "活动删除",
-			path:      "/admin/mail/campaign/delete",
-			form:      url.Values{"id": {"1"}},
-			want:      "/admin/mail/campaigns",
-			wantState: "err",
+			name:   "活动删除不存在",
+			path:   "/admin/mail/campaign/delete",
+			form:   url.Values{"id": {"999999902"}},
+			status: http.StatusBadRequest,
+			marker: []string{`data-ui-error`},
 		},
 		{
-			name:      "流程状态变更",
-			path:      "/admin/mail/automation/status",
-			form:      url.Values{"id": {"1"}, "status": {"1"}},
-			want:      "/admin/mail/automation",
-			wantState: "err",
+			name:   "流程状态非法",
+			path:   "/admin/mail/automation/status",
+			form:   url.Values{"id": {"999999903"}, "status": {"bogus"}},
+			status: http.StatusBadRequest,
+			marker: []string{`data-ui-error`},
 		},
 		{
-			name:      "流程删除",
-			path:      "/admin/mail/automation/delete",
-			form:      url.Values{"id": {"1"}},
-			want:      "/admin/mail/automation",
-			wantState: "err",
+			name:   "流程删除不存在",
+			path:   "/admin/mail/automation/delete",
+			form:   url.Values{"id": {"999999904"}},
+			status: http.StatusBadRequest,
+			marker: []string{`data-ui-error`},
 		},
 		{
-			name:      "自动化 tick",
-			path:      "/admin/mail/automation/tick",
-			form:      url.Values{},
-			want:      "/admin/mail/automation/runs",
-			wantState: "ok",
+			name:   "自动化 tick",
+			path:   "/admin/mail/automation/tick",
+			form:   url.Values{},
+			status: http.StatusOK,
+			marker: []string{`role="status"`},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := mailSplitRoutesPOST(t, env, env.SuperAdmin, tc.path, tc.form)
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("超管 POST %s 的提示页应回 200: got=%d body=%s",
-					tc.path, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 400))
+			if recorder.Code != tc.status {
+				t.Fatalf("POST %s 应 %d: got=%d body=%s",
+					tc.path, tc.status, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 400))
 			}
-
 			if cc := recorder.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-				t.Errorf("提示页应带 no-store，得到 %q", cc)
+				t.Errorf("写响应应带 no-store，得到 %q", cc)
 			}
-
 			if loc := recorder.Header().Get("Location"); loc != "" {
-				t.Errorf("提示页不该带 Location（那是旧 302 通道），得到 %q", loc)
+				t.Errorf("写响应不该带 Location（那是旧 302 通道），得到 %q", loc)
 			}
-
-			jump := mailSplitRoutesJumpPage(t, recorder)
-			if jump.State != tc.wantState {
-				t.Errorf("POST %s 的提示页应为 %s 档，实际 %s（正文前 400 字：%s）",
-					tc.path, tc.wantState, jump.State, mailSplitRoutesHead(recorder.Body.String(), 400))
+			if ct := recorder.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Errorf("写响应必须是 HTML 片段，实际 %q", ct)
 			}
-			if jump.BackPath != tc.want {
-				t.Errorf("POST %s 应回跳到 %q，实际 %q（拆页后回错了页）",
-					tc.path, tc.want, jump.BackPath)
+			body := recorder.Body.String()
+			for _, marker := range tc.marker {
+				if !strings.Contains(body, marker) {
+					t.Errorf("POST %s 的响应缺少 %q；正文前 400 字：%s",
+						tc.path, marker, mailSplitRoutesHead(body, 400))
+				}
 			}
-
-			if tc.wantState == "ok" && !jump.FromMeta {
-				t.Errorf("成功档应经 meta refresh 自动回跳，实际回跳地址来自链接：%q", jump.Back)
-			}
-			if tc.wantState == "err" && jump.FromMeta {
-				t.Errorf("失败档不该自动跳走（运营要先看清原因），实际 meta refresh：%q", jump.Back)
+			for _, forbidden := range []string{"<!DOCTYPE", "<html", "<body"} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("局部响应不得携带整页壳 %q：%s", forbidden, mailSplitRoutesHead(body, 400))
+				}
 			}
 		})
 	}
 }
 
-type mailSplitContactJSONWrite struct {
+// 联系人写端点已统一为「标准表单 + Jet 片段」，权限点与 METHOD+PATH 不变，
+// 本用例仍验证「没有策略就 403、补上策略才落库」，但请求与断言都落在真实协议上。
+type mailSplitContactWrite struct {
 	name string
 	path string
 	api  string
 	code string
 
-	build func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{}
+	build func(t *testing.T, env *mailSplitRoutesEnv) url.Values
 
-	check func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, body map[string]interface{})
+	check func(t *testing.T, env *mailSplitRoutesEnv, form url.Values)
 
-	checkDenied func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{})
+	checkDenied func(t *testing.T, env *mailSplitRoutesEnv, form url.Values)
 }
 
-func mailSplitContactWrites() []mailSplitContactJSONWrite {
-
+func mailSplitContactWrites() []mailSplitContactWrite {
 	var deletedEmail string
 	var bulkEmails []string
 	tagged := map[string]string{}
-	return []mailSplitContactJSONWrite{
+	return []mailSplitContactWrite{
 		{
 			name: "联系人保存（新建走同一端点）",
 			path: "/api/mail/contact/save", api: "/api/mail/contact/save", code: "mail:contact_save",
-			build: func(t *testing.T, _ *mailSplitRoutesEnv) map[string]interface{} {
-				return map[string]interface{}{
-					"email":  fmt.Sprintf("qa.json.save.%d@example.invalid", mailSplitContactNext()),
-					"name":   "Casbin JSON 验收",
-					"status": string(mailmodel.ContactStatusPending),
+			build: func(t *testing.T, _ *mailSplitRoutesEnv) url.Values {
+				return url.Values{
+					"email":  {fmt.Sprintf("qa.form.save.%d@example.invalid", mailSplitContactNext())},
+					"name":   {"Casbin 表单验收"},
+					"status": {string(mailmodel.ContactStatusPending)},
 				}
 			},
-			check: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, _ map[string]interface{}) {
-				email, _ := payload["email"].(string)
+			check: func(t *testing.T, env *mailSplitRoutesEnv, form url.Values) {
+				email := form.Get("email")
 				if !mailSplitContactExists(t, env, email) {
 					t.Fatalf("放行后联系人 %s 应已落库", email)
 				}
 			},
-			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}) {
-				email, _ := payload["email"].(string)
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, form url.Values) {
+				email := form.Get("email")
 				if mailSplitContactExists(t, env, email) {
 					t.Fatalf("403 的请求不该写库，但 %s 已经存在了", email)
 				}
@@ -669,16 +664,16 @@ func mailSplitContactWrites() []mailSplitContactJSONWrite {
 		{
 			name: "联系人删除（单条）",
 			path: "/api/mail/contact/delete", api: "/api/mail/contact/delete", code: "mail:contact_delete",
-			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
-				deletedEmail = fmt.Sprintf("qa.json.del.%d@example.invalid", mailSplitContactNext())
-				return map[string]interface{}{"id": mailSplitContactSeed(t, env, deletedEmail)}
+			build: func(t *testing.T, env *mailSplitRoutesEnv) url.Values {
+				deletedEmail = fmt.Sprintf("qa.form.del.%d@example.invalid", mailSplitContactNext())
+				return url.Values{"id": {strconv.FormatUint(mailSplitContactSeed(t, env, deletedEmail), 10)}}
 			},
-			check: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}, _ map[string]interface{}) {
+			check: func(t *testing.T, env *mailSplitRoutesEnv, _ url.Values) {
 				if mailSplitContactExists(t, env, deletedEmail) {
 					t.Fatalf("放行后 %s 应已删除", deletedEmail)
 				}
 			},
-			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}) {
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ url.Values) {
 				if !mailSplitContactExists(t, env, deletedEmail) {
 					t.Fatalf("403 的删除不该动数据，但 %s 已经不在了", deletedEmail)
 				}
@@ -687,31 +682,24 @@ func mailSplitContactWrites() []mailSplitContactJSONWrite {
 		{
 			name: "联系人删除（批量，与单条同路径同权限点）",
 			path: "/api/mail/contact/delete", api: "/api/mail/contact/delete", code: "mail:contact_delete",
-			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
+			build: func(t *testing.T, env *mailSplitRoutesEnv) url.Values {
 				bulkEmails = make([]string, 0, 2)
 				ids := make([]string, 0, 2)
 				for i := 0; i < 2; i++ {
-					email := fmt.Sprintf("qa.json.bulk.%d@example.invalid", mailSplitContactNext())
+					email := fmt.Sprintf("qa.form.bulk.%d@example.invalid", mailSplitContactNext())
 					bulkEmails = append(bulkEmails, email)
 					ids = append(ids, strconv.FormatUint(mailSplitContactSeed(t, env, email), 10))
 				}
-				return map[string]interface{}{"ids": ids}
+				return url.Values{"ids": ids}
 			},
-			check: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}, body map[string]interface{}) {
-				data, ok := body["data"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("批量回执缺少 data：%#v", body)
-				}
-				if deleted, _ := data["deleted"].(float64); int(deleted) != len(bulkEmails) {
-					t.Fatalf("应删掉 %d 条，实际 %#v", len(bulkEmails), data)
-				}
+			check: func(t *testing.T, env *mailSplitRoutesEnv, _ url.Values) {
 				for _, email := range bulkEmails {
 					if mailSplitContactExists(t, env, email) {
 						t.Fatalf("放行后 %s 应已删除", email)
 					}
 				}
 			},
-			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}) {
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ url.Values) {
 				for _, email := range bulkEmails {
 					if !mailSplitContactExists(t, env, email) {
 						t.Fatalf("403 的批量删除不该动数据，但 %s 已经不在了", email)
@@ -722,36 +710,24 @@ func mailSplitContactWrites() []mailSplitContactJSONWrite {
 		{
 			name: "联系人打标签（批量，非破坏动作）",
 			path: "/api/mail/contact/tag", api: "/api/mail/contact/tag", code: "mail:contact_tag",
-			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
+			build: func(t *testing.T, env *mailSplitRoutesEnv) url.Values {
 				seq := mailSplitContactNext()
-				email := fmt.Sprintf("qa.json.tag.%d@example.invalid", seq)
-				tag := fmt.Sprintf("qa-json-%d", seq)
+				email := fmt.Sprintf("qa.form.tag.%d@example.invalid", seq)
+				tag := fmt.Sprintf("qa-form-%d", seq)
 				tagged["tag"] = tag
-
-				return map[string]interface{}{
-					"ids": []string{strconv.FormatUint(mailSplitContactSeed(t, env, email), 10)},
-					"add": tag,
+				return url.Values{
+					"ids": {strconv.FormatUint(mailSplitContactSeed(t, env, email), 10)},
+					"add": {tag},
 				}
 			},
-			check: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, body map[string]interface{}) {
-				data, ok := body["data"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("打标签回执缺少 data：%#v", body)
-				}
-
-				if _, isDelete := data["deleted"]; isDelete {
-					t.Fatalf("打标签是非破坏动作，回执不该有 deleted 键：%#v", data)
-				}
-				if updated, _ := data["updated"].(float64); updated != 1 {
-					t.Fatalf("应报告 1 条已更新，实际 %#v", data)
-				}
-				ids, _ := payload["ids"].([]string)
+			check: func(t *testing.T, env *mailSplitRoutesEnv, form url.Values) {
+				ids := form["ids"]
 				if !mailSplitContactTagged(t, env, ids[0], tagged["tag"]) {
 					t.Fatalf("放行后联系人 %s 应带上标签 %q", ids[0], tagged["tag"])
 				}
 			},
-			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}) {
-				ids, _ := payload["ids"].([]string)
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, form url.Values) {
+				ids := form["ids"]
 				if mailSplitContactTagged(t, env, ids[0], tagged["tag"]) {
 					t.Fatalf("403 的打标签不该动数据，但 %s 已经带上了 %q", ids[0], tagged["tag"])
 				}
@@ -760,13 +736,12 @@ func mailSplitContactWrites() []mailSplitContactJSONWrite {
 	}
 }
 
-func TestMailSplitContactJSONWritesRequireCasbinPolicy(t *testing.T) {
+func TestMailSplitContactWritesRequireCasbinPolicy(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
 	subject := strconv.FormatInt(env.PlainID, 10)
 
 	for _, tc := range mailSplitContactWrites() {
 		t.Run(tc.name, func(t *testing.T) {
-
 			if err := env.DB.Exec(`DELETE FROM sys_casbin_rule
 				WHERE ptype = 'p' AND v0 = ? AND v1 = ? AND v3 = ?`,
 				subject, tc.api, tc.code).Error; err != nil {
@@ -785,20 +760,21 @@ func TestMailSplitContactJSONWritesRequireCasbinPolicy(t *testing.T) {
 				t.Fatalf("反例前提不成立：普通管理员（id=%s）已有 %d 条 %s 策略", subject, policyCount, tc.api)
 			}
 
-			deniedPayload := tc.build(t, env)
-			denied := mailSplitRoutesJSONPost(t, env, env.PlainAdmin, tc.path, deniedPayload)
+			deniedForm := tc.build(t, env)
+			denied := mailSplitRoutesPOST(t, env, env.PlainAdmin, tc.path, deniedForm)
 			if denied.Code != http.StatusForbidden {
 				t.Fatalf("无策略的普通管理员 POST %s 应 403: got=%d body=%s",
 					tc.path, denied.Code, mailSplitRoutesHead(denied.Body.String(), 300))
 			}
-			if tc.checkDenied != nil {
-				tc.checkDenied(t, env, deniedPayload)
-			}
+			tc.checkDenied(t, env, deniedForm)
 
-			asAdmin := mailSplitRoutesJSONPost(t, env, env.SuperAdmin, tc.path, tc.build(t, env))
+			asAdmin := mailSplitRoutesPOST(t, env, env.SuperAdmin, tc.path, tc.build(t, env))
 			if asAdmin.Code != http.StatusOK {
 				t.Fatalf("超管 POST %s 应 200: got=%d body=%s",
 					tc.path, asAdmin.Code, mailSplitRoutesHead(asAdmin.Body.String(), 300))
+			}
+			if ct := asAdmin.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Fatalf("超管 POST %s 应返回 HTML 片段，实际 %q", tc.path, ct)
 			}
 
 			if err := env.DB.Exec(`INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
@@ -810,13 +786,13 @@ func TestMailSplitContactJSONWritesRequireCasbinPolicy(t *testing.T) {
 			if err := pkgcasbin.ReloadPolicy(); err != nil {
 				t.Fatalf("重载 Casbin 策略失败: %v", err)
 			}
-			payload := tc.build(t, env)
-			allowed := mailSplitRoutesJSONPost(t, env, env.PlainAdmin, tc.path, payload)
+			form := tc.build(t, env)
+			allowed := mailSplitRoutesPOST(t, env, env.PlainAdmin, tc.path, form)
 			if allowed.Code != http.StatusOK {
 				t.Fatalf("补上策略后 %s 应 200（说明 403 由该条 Casbin 路径决定）: got=%d body=%s",
 					tc.path, allowed.Code, mailSplitRoutesHead(allowed.Body.String(), 300))
 			}
-			tc.check(t, env, payload, mailSplitRoutesJSONBody(t, allowed))
+			tc.check(t, env, form)
 		})
 	}
 }

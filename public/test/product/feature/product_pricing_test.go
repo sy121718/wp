@@ -6,6 +6,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,7 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
@@ -25,6 +28,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -51,7 +55,7 @@ func newPricingFixture(t *testing.T) *pricingFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	registry := core.NewEntitySourceRegistry()
-	svc := productservice.NewService(productmodel.NewModel(db), projects)
+	svc := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	if err := svc.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品域实体类型失败: %v", err)
 	}
@@ -770,11 +774,14 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), handle.ProductPricingPage)
-	engine.POST("/api/product/pricing/preview", producthttp.NewProductHandle(f.svc).PreviewPricing)
+	engine.POST("/api/product/pricing/preview", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), producthttp.NewProductHandle(f.svc).PreviewPricing)
 
-	engine.POST("/api/product/pricing/apply", producthttp.NewProductHandle(f.svc).ApplyPricing)
+	engine.POST("/api/product/pricing/apply", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).ApplyPricing)
 	return engine, f
 }
 
@@ -808,16 +815,16 @@ func TestPricingAdminPages(t *testing.T) {
 	form.Set("scope", productenums.PricingScopeProduct)
 	form.Set("targetId", p.ID)
 	rec = postForm(engine, "/api/product/pricing/preview", form)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("预览应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("预览应返回 HTML 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	previewEnv := decodeJSONEnvelope(t, rec)
-	var preview productdto.PricingPreviewResp
-	if err := json.Unmarshal(mustPricingJSON(t, previewEnv.Data), &preview); err != nil {
-		t.Fatal(err)
+	// 数值明细由 Jet 渲染；断言同一行里的新价与差额，业务口径不变。
+	previewBody := rec.Body.String()
+	if !strings.Contains(previewBody, "data-pricing-preview-result") || !strings.Contains(previewBody, "66.99") || !strings.Contains(previewBody, "-433.01") {
+		t.Fatalf("预览应渲染新价与差额：%s", previewBody)
 	}
-	if preview.TargetCount != 1 || len(preview.Lines) != 1 || preview.Lines[0].NewPrice != 66.99 || preview.Lines[0].Diff != -433.01 {
-		t.Fatalf("预览应返回数值明细：%s", rec.Body.String())
+	if strings.Count(previewBody, "<tr>") < 2 {
+		t.Fatalf("预览应渲染一行明细：%s", previewBody)
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 500 {
 		t.Fatalf("页面试算不该改库，实际 %v", got)
@@ -829,7 +836,7 @@ func TestPricingAdminPages(t *testing.T) {
 	bad.Set("scope", productenums.PricingScopeProduct)
 	bad.Set("targetId", p.ID)
 	rec = postForm(engine, "/api/product/pricing/preview", bad)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(rec.Body.String(), "定价规则参数不合法") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "data-ui-error") {
 		t.Fatalf("非法参数应为400 JSON错误，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), productenums.ErrPricingRuleParamsInvalid) {
@@ -838,16 +845,8 @@ func TestPricingAdminPages(t *testing.T) {
 
 	form.Set("note", "后台改价")
 	rec = postForm(engine, "/api/product/pricing/apply", form)
-	appliedEnv := decodeJSONEnvelope(t, rec)
-	if appliedEnv.Code != http.StatusOK {
-		t.Fatalf("应用调价应成功，实际 %d：%s", appliedEnv.Code, appliedEnv.Message)
-	}
-	var applied productdto.PricingApplyResp
-	if err := json.Unmarshal(mustPricingJSON(t, appliedEnv.Data), &applied); err != nil {
-		t.Fatal(err)
-	}
-	if applied.ChangedCount != 1 || applied.AdjustmentID == "" {
-		t.Fatalf("应用回执缺少业务事实：%s", rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("应用调价应返回 HTML 成功片段，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 66.99 {
 		t.Fatalf("应用后库里应为 66.99，实际 %v", got)
@@ -861,8 +860,8 @@ func TestPricingAdminPages(t *testing.T) {
 	}
 
 	rec = postForm(engine, "/api/product/pricing/apply", form)
-	if got := decodeJSONEnvelope(t, rec); got.Code == http.StatusOK || strings.TrimSpace(got.Message) == "" {
-		t.Fatalf("无改动时应用应回失败 + 可读文案，实际 %d：%q", got.Code, got.Message)
+	if rec.Code == http.StatusOK || !strings.Contains(rec.Body.String(), "data-ui-error") || strings.TrimSpace(rec.Body.String()) == "" {
+		t.Fatalf("无改动时应用应回失败 + 可读文案，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -873,4 +872,12 @@ func mustPricingJSON(t *testing.T, data any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// assertHTMLSuccess 断言写端点返回带状态区的 HTML 成功片段。
+func assertHTMLSuccess(t *testing.T, rec *httptest.ResponseRecorder, action string) {
+	t.Helper()
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("%s应返回 HTML 成功片段，实际 %d：%s", action, rec.Code, rec.Body.String())
+	}
 }

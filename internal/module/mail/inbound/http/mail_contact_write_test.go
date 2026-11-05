@@ -2,10 +2,11 @@ package mailhttp
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,12 +14,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/permission"
-	"go_wp/pkg/bulkids"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 type mailContactWriteStub struct {
@@ -78,62 +83,55 @@ func cloneSaveReq(req *maildto.SaveContactReq) *maildto.SaveContactReq {
 
 const mailContactWriteUserID = int64(987654401)
 
+// newMailContactWriteEngine 复刻生产接线：失败出口、请求取词与 HTML 渲染都必须在场，
+// 否则失败会落成 JSON 或空响应，测出来的不是真实行为。
 func newMailContactWriteEngine(h *Handle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(gin.Recovery())
-	api := r.Group("/api/mail", func(c *gin.Context) {
+	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(func(c *gin.Context) {
+		text.AttachScope(c)
 		c.Set("user_id", mailContactWriteUserID)
 		c.Next()
 	})
-	api.POST("/contact/save", h.ContactSave)
-	api.POST("/contact/delete", h.ContactDelete)
-	api.POST("/contact/tag", h.ContactTag)
+	api := r.Group("/api/mail")
+	api.POST("/contact/save", pageview.HTMLFragment, h.ContactSave)
+	api.POST("/contact/delete", pageview.HTMLFragment, h.ContactDelete)
+	api.POST("/contact/tag", pageview.HTMLFragment, h.ContactTag)
 	return r
 }
 
-func postMailContactJSON(t *testing.T, r *gin.Engine, path, body, lang string) (int, map[string]interface{}) {
+func postMailContactForm(t *testing.T, r *gin.Engine, path string, form url.Values, lang string) *httptest.ResponseRecorder {
 	t.Helper()
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if lang != "" {
-		req.Header.Set("Accept-Language", lang)
+		req.Header.Set("Cookie", "lang="+lang)
 	}
+	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
-	parsed := map[string]interface{}{}
-	if rec.Body.Len() > 0 {
-		if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
-			t.Fatalf("响应不是 JSON（%s %s）：%s", path, body, rec.Body.String())
-		}
-	}
-	return rec.Code, parsed
+	return rec
 }
 
-func mailContactData(t *testing.T, body map[string]interface{}) map[string]interface{} {
+func assertMailWriteHTML(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	data, ok := body["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("响应缺少 data 对象：%#v", body)
+	body := rec.Body.String()
+	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("界面响应必须是 HTML，实际 %q，正文：%s", rec.Header().Get("Content-Type"), body)
 	}
-	return data
-}
-
-func mailContactItems(t *testing.T, data map[string]interface{}) []map[string]interface{} {
-	t.Helper()
-	raw, ok := data["items"].([]interface{})
-	if !ok {
-		t.Fatalf("响应缺少 items 数组：%#v", data)
-	}
-	out := make([]map[string]interface{}, 0, len(raw))
-	for _, item := range raw {
-		obj, ok := item.(map[string]interface{})
-		if !ok {
-			t.Fatalf("items 元素不是对象：%#v", item)
+	for _, forbidden := range []string{"<!DOCTYPE", "<html", "<body", "SQLSTATE", "mail_contacts"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("局部响应不得携带整页或内部细节 %q：%s", forbidden, body)
 		}
-		out = append(out, obj)
 	}
-	return out
+	for _, header := range []string{"Location", "HX-Redirect", "HX-Location", "HX-Refresh"} {
+		if rec.Header().Get(header) != "" {
+			t.Fatalf("后端不得控制导航：%s=%q", header, rec.Header().Get(header))
+		}
+	}
+	return body
 }
 
 func injectMailContactWriteEntries(t *testing.T, entries map[string]map[string]string) {
@@ -150,50 +148,15 @@ func injectMailContactWriteEntries(t *testing.T, entries map[string]map[string]s
 	t.Cleanup(func() { i18n.InjectForTest(previous, map[string]int{}) })
 }
 
-func TestMailContactWriteRejectsMalformedShapes(t *testing.T) {
-	injectMailContactWriteEntries(t, map[string]map[string]string{
-		mailenums.ErrInvalidParam: {"en-US": "BAD-SHAPE-EN", "zh-CN": "BAD-SHAPE-ZH"},
-	})
+func TestMailContactSaveRejectsMalformedID(t *testing.T) {
+	r := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{}))
 
-	h := NewHandle(&mailContactWriteStub{})
-	r := newMailContactWriteEngine(h)
-
-	cases := []struct {
-		name string
-		path string
-		body string
-	}{
-		{"save 未知字段", "/api/mail/contact/save", `{"email":"a@b.c","bogus":1}`},
-		{"save 邮箱显式 null", "/api/mail/contact/save", `{"email":null}`},
-		{"save 标签显式 null", "/api/mail/contact/save", `{"tags":null}`},
-		{"save id 是字符串数字（两种形态不许表达同一个值）", "/api/mail/contact/save", `{"id":"5","email":"a@b.c"}`},
-		{"save id 是负数", "/api/mail/contact/save", `{"id":-1}`},
-		{"save 名字是数字", "/api/mail/contact/save", `{"name":42}`},
-		{"save 顶层不是对象", "/api/mail/contact/save", `[]`},
-		{"save 空体", "/api/mail/contact/save", ``},
-		{"delete 两个都给", "/api/mail/contact/delete", `{"id":1,"ids":["1"]}`},
-		{"delete 两个都不给", "/api/mail/contact/delete", `{}`},
-		{"delete id 为 0", "/api/mail/contact/delete", `{"id":0}`},
-		{"delete ids 是 null", "/api/mail/contact/delete", `{"ids":null}`},
-		{"delete ids 不是数组", "/api/mail/contact/delete", `{"ids":"1"}`},
-		{"delete ids 里混了 null", "/api/mail/contact/delete", `{"ids":["1",null]}`},
-		{"delete ids 里混了数字", "/api/mail/contact/delete", `{"ids":[1]}`},
-		{"delete 未知字段", "/api/mail/contact/delete", `{"id":1,"reason":"x"}`},
-		{"tag ids 是 null", "/api/mail/contact/tag", `{"ids":null,"add":"vip"}`},
-		{"tag ids 非数组", "/api/mail/contact/tag", `{"ids":{},"add":"vip"}`},
-		{"tag add 显式 null", "/api/mail/contact/tag", `{"ids":["1"],"add":null}`},
-		{"tag 未知字段", "/api/mail/contact/tag", `{"ids":["1"],"add":"vip","replace":"x"}`},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			code, body := postMailContactJSON(t, r, c.path, c.body, "en-US")
-			if code != http.StatusBadRequest {
-				t.Fatalf("应 400，实际 %d（%#v）", code, body)
-			}
-			if msg, _ := body["message"].(string); msg != "BAD-SHAPE-EN" {
-				t.Fatalf("形状错的文案应是受控句（按请求语言取词），实际 %q", msg)
-			}
-		})
+	for _, raw := range []string{"abc", "-1", "1.5"} {
+		rec := postMailContactForm(t, r, "/api/mail/contact/save", url.Values{"id": {raw}, "email": {"a@b.c"}}, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("id=%q 应 400，实际 %d：%s", raw, rec.Code, rec.Body.String())
+		}
+		assertMailWriteHTML(t, rec)
 	}
 }
 
@@ -201,10 +164,15 @@ func TestMailContactSaveCreateAndUpdate(t *testing.T) {
 	stub := &mailContactWriteStub{}
 	r := newMailContactWriteEngine(NewHandle(stub))
 
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/save",
-		`{"email":"a@b.c","name":"张三","tags":"vip, 华南 ,vip","status":"pending","consent_source":"官网表单"}`, "")
-	if code != http.StatusOK {
-		t.Fatalf("新建应 200，实际 %d（%#v）", code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/save", url.Values{
+		"email": {"a@b.c"}, "name": {"张三"}, "tags": {"vip, 华南 ,vip"},
+		"status": {"pending"}, "consent_source": {"官网表单"},
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if body := assertMailWriteHTML(t, rec); !strings.Contains(body, "data-write-result") && !strings.Contains(body, "role=\"status\"") {
+		t.Fatalf("成功应答应是 Jet 片段：%s", body)
 	}
 	if len(stub.created) != 1 || len(stub.updated) != 0 {
 		t.Fatalf("id 缺省应走新建，实际 created=%d updated=%d", len(stub.created), len(stub.updated))
@@ -219,13 +187,12 @@ func TestMailContactSaveCreateAndUpdate(t *testing.T) {
 	if got.OperatorID != uint64(mailContactWriteUserID) {
 		t.Fatalf("操作人必须取自会话（builtin.GetUserID），实际 %d", got.OperatorID)
 	}
-	if id, _ := mailContactData(t, body)["id"].(float64); id != 77 {
-		t.Fatalf("回执里应带新建的 id，实际 %#v", body["data"])
-	}
 
-	code, body = postMailContactJSON(t, r, "/api/mail/contact/save", `{"id":5,"email":"a@b.c","name":"李四"}`, "")
-	if code != http.StatusOK {
-		t.Fatalf("编辑应 200，实际 %d（%#v）", code, body)
+	rec = postMailContactForm(t, r, "/api/mail/contact/save", url.Values{
+		"id": {"5"}, "email": {"a@b.c"}, "name": {"李四"},
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("编辑应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if len(stub.updated) != 1 || stub.updated[0].ID != 5 {
 		t.Fatalf("id>0 应走编辑，实际 %#v", stub.updated)
@@ -243,46 +210,26 @@ func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 	stub := &mailContactWriteStub{}
 	r := newMailContactWriteEngine(NewHandle(stub))
 
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/delete", `{"id":7}`, "")
-	if code != http.StatusOK {
-		t.Fatalf("单条删除应 200，实际 %d（%#v）", code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"id": {"7"}}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("单条删除应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
+	assertMailWriteHTML(t, rec)
 	if len(stub.deleted) != 1 || len(stub.deleted[0]) != 1 || stub.deleted[0][0] != 7 {
 		t.Fatalf("单条删除应把 [7] 交给 service，实际 %#v", stub.deleted)
 	}
 
-	code, body = postMailContactJSON(t, r, "/api/mail/contact/delete", `{"ids":["1","2","2","x","0"]}`, "en-US")
-	if code != http.StatusOK {
-		t.Fatalf("批量删除应 200，实际 %d（%#v）", code, body)
+	rec = postMailContactForm(t, r, "/api/mail/contact/delete",
+		url.Values{"ids": {"1", "2", "2", "x", "0"}}, "en-US")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量删除应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	data := mailContactData(t, body)
-	if done, _ := data["deleted"].(float64); done != 2 {
-		t.Fatalf("成功条数应为 2，实际 %#v", data)
+	body := assertMailWriteHTML(t, rec)
+	if !strings.Contains(body, "已删除 2 个联系人") && !strings.Contains(body, "Deleted 2 contacts") {
+		t.Fatalf("成功条数应为 2（去重后 1 / 2 成功），实际：%s", body)
 	}
-	if skipped, _ := data["skipped"].(float64); skipped != 2 {
-		t.Fatalf("非法 id（x / 0）应各计一次跳过，实际 %#v", data)
-	}
-	items := mailContactItems(t, data)
-	if len(items) != 4 {
-		t.Fatalf("去重后 4 条（1 / 2 / x / 0），实际 %d 条：%#v", len(items), items)
-	}
-	for _, item := range items {
-		id, _ := item["id"].(string)
-		switch id {
-		case "1", "2":
-			if deleted, _ := item["deleted"].(bool); !deleted {
-				t.Fatalf("%s 应标 deleted=true（前端据此移除行），实际 %#v", id, item)
-			}
-		case "x", "0":
-			if deleted, _ := item["deleted"].(bool); deleted {
-				t.Fatalf("%s 不该标 deleted=true", id)
-			}
-			if msg, _ := item["message"].(string); msg != "PARAM-INVALID-EN" {
-				t.Fatalf("%s 的失败原因应按请求语言取词，实际 %q", id, msg)
-			}
-		default:
-			t.Fatalf("出现了未预期的 id：%q", id)
-		}
+	if !strings.Contains(body, "PARAM-INVALID-EN") {
+		t.Fatalf("非法 id（x / 0）必须逐条给出原因，实际：%s", body)
 	}
 }
 
@@ -292,23 +239,16 @@ func TestMailContactDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	})
 	r := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{deleteMiss: true}))
 
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/delete", `{"ids":["9"]}`, "en-US")
-	if code != http.StatusOK {
-		t.Fatalf("删不存在的 id 不是 400（幂等语义），实际 %d（%#v）", code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"ids": {"9"}}, "en-US")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量里删不存在的 id 不是失败（幂等语义），实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	data := mailContactData(t, body)
-	if deleted, _ := data["deleted"].(float64); deleted != 0 {
-		t.Fatalf("真实删除 0 行：deleted 必须是 0，实际 %#v", data)
+	body := assertMailWriteHTML(t, rec)
+	if strings.Contains(body, "Deleted 1 contacts") {
+		t.Fatalf("真实删除 0 行却报了成功：%s", body)
 	}
-	if skipped, _ := data["skipped"].(float64); skipped != 1 {
-		t.Fatalf("0 行应计跳过，实际 %#v", data)
-	}
-	items := mailContactItems(t, data)
-	if deleted, _ := items[0]["deleted"].(bool); deleted {
-		t.Fatalf("这一条不许标 deleted=true（前端会把它从列表里移除）：%#v", items[0])
-	}
-	if msg, _ := items[0]["message"].(string); msg != "NOT-FOUND-EN" {
-		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际 %q", msg)
+	if !strings.Contains(body, "NOT-FOUND-EN") {
+		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际：%s", body)
 	}
 }
 
@@ -318,18 +258,19 @@ func TestMailContactDeleteSingleMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	})
 	r := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{deleteMiss: true}))
 
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/delete", `{"id":9}`, "en-US")
-	if code != http.StatusBadRequest {
-		t.Fatalf("单条删 0 行应 400（不许说「删除成功」），实际 %d（%#v）", code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"id": {"9"}}, "en-US")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("单条删 0 行应 400（不许说「删除成功」），实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if msg, _ := body["message"].(string); msg != "NOT-FOUND-EN" {
-		t.Fatalf("失败原因应是「联系人不存在」（按请求语言取词），实际 %q", msg)
+	body := assertMailWriteHTML(t, rec)
+	if !strings.Contains(body, "NOT-FOUND-EN") || !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败原因应是「联系人不存在」（按请求语言取词）并落在错误区，实际：%s", body)
 	}
 
 	ok := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{}))
-	code, body = postMailContactJSON(t, ok, "/api/mail/contact/delete", `{"id":9}`, "en-US")
-	if code != http.StatusOK {
-		t.Fatalf("删掉 1 行的单条删除应 200，实际 %d（%#v）", code, body)
+	rec = postMailContactForm(t, ok, "/api/mail/contact/delete", url.Values{"id": {"9"}}, "en-US")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("删掉 1 行的单条删除应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -343,14 +284,13 @@ func TestMailContactBulkIDsLimit(t *testing.T) {
 	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		ids = append(ids, strconv.Itoa(i+1))
 	}
-	raw, _ := json.Marshal(map[string]interface{}{"ids": ids})
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/delete", string(raw), "en-US")
-	if code != http.StatusBadRequest {
-		t.Fatalf("超过 %d 条应整批 400，实际 %d（%#v）", bulkids.MaxIDs, code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"ids": ids}, "en-US")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("超过 %d 条应整批 400，实际 %d：%s", bulkids.MaxIDs, rec.Code, rec.Body.String())
 	}
-	msg, _ := body["message"].(string)
-	if !strings.Contains(msg, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(msg, strconv.Itoa(bulkids.MaxIDs+1)) {
-		t.Fatalf("超限文案要同时说清上限与本次条数，实际 %q", msg)
+	body := assertMailWriteHTML(t, rec)
+	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs+1)) {
+		t.Fatalf("超限文案要同时说清上限与本次条数，实际：%s", body)
 	}
 }
 
@@ -363,57 +303,41 @@ func TestMailContactTagResultShape(t *testing.T) {
 	stub := &mailContactWriteStub{}
 	r := newMailContactWriteEngine(NewHandle(stub))
 
-	code, body := postMailContactJSON(t, r, "/api/mail/contact/tag", `{"ids":["1"],"add":"vip","remove":"trial"}`, "")
-	if code != http.StatusOK {
-		t.Fatalf("打标签应 200，实际 %d（%#v）", code, body)
+	rec := postMailContactForm(t, r, "/api/mail/contact/tag",
+		url.Values{"ids": {"1"}, "add": {"vip"}, "remove": {"trial"}}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("打标签应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
+	body := assertMailWriteHTML(t, rec)
 	if len(stub.tagged) != 1 || strings.Join(stub.tagged[0].Add, "|") != "vip" || strings.Join(stub.tagged[0].Remove, "|") != "trial" {
 		t.Fatalf("增与减必须在同一条请求里转给 service，实际 %#v", stub.tagged)
 	}
-	data := mailContactData(t, body)
-	if updated, _ := data["updated"].(float64); updated != 1 {
-		t.Fatalf("非破坏动作的成功计数键是 updated，实际 %#v", data)
-	}
-	if _, exists := data["deleted"]; exists {
-		t.Fatalf("打标签的摘要不得用 deleted 口径（联系人还在，说「已删除」是假话）：%#v", data)
-	}
-	items := mailContactItems(t, data)
-	if len(items) != 1 {
-		t.Fatalf("成功条目也要回（调用方要知道哪几条改好了），实际 %#v", items)
-	}
-	if up, _ := items[0]["updated"].(bool); !up {
-		t.Fatalf("成功条目标 updated=true，实际 %#v", items[0])
-	}
-	if _, exists := items[0]["deleted"]; exists {
-		t.Fatalf("成功条目不得带 deleted 键（前端会据此删行）：%#v", items[0])
+	if !strings.Contains(body, "更新标签") {
+		t.Fatalf("成功片段应说明更新了标签，实际：%s", body)
 	}
 
-	code, body = postMailContactJSON(t, r, "/api/mail/contact/tag", `{"ids":["1"],"add":"  ","remove":""}`, "en-US")
-	if code != http.StatusBadRequest {
-		t.Fatalf("空差量应 400，实际 %d（%#v）", code, body)
+	rec = postMailContactForm(t, r, "/api/mail/contact/tag",
+		url.Values{"ids": {"1"}, "add": {"  "}, "remove": {""}}, "en-US")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("空差量应 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if msg, _ := body["message"].(string); msg != "TAG-EMPTY-EN" {
-		t.Fatalf("空差量文案应按请求语言取词，实际 %q", msg)
+	if body := assertMailWriteHTML(t, rec); !strings.Contains(body, "TAG-EMPTY-EN") {
+		t.Fatalf("空差量文案应按请求语言取词，实际：%s", body)
 	}
 
 	missing := &mailContactWriteStub{tagMiss: true}
-	code, body = postMailContactJSON(t, newMailContactWriteEngine(NewHandle(missing)),
-		"/api/mail/contact/tag", `{"ids":["9"],"add":"vip"}`, "en-US")
-	if code != http.StatusOK {
-		t.Fatalf("不存在的 id 不该让整批失败，实际 %d（%#v）", code, body)
+	rec = postMailContactForm(t, newMailContactWriteEngine(NewHandle(missing)),
+		"/api/mail/contact/tag", url.Values{"ids": {"9"}, "add": {"vip"}}, "en-US")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("不存在的 id 不该让整批失败，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	data = mailContactData(t, body)
-	if skipped, _ := data["skipped"].(float64); skipped != 1 {
-		t.Fatalf("不存在的 id 应计跳过，实际 %#v", data)
-	}
-	items = mailContactItems(t, data)
-	if msg, _ := items[0]["message"].(string); msg != "NOT-FOUND-EN" {
-		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际 %q", msg)
+	if body := assertMailWriteHTML(t, rec); !strings.Contains(body, "NOT-FOUND-EN") {
+		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际：%s", body)
 	}
 }
 
 var (
-	mailAPIContactPostRe  = regexp.MustCompile(`g\.POST\("(/contact/[a-z]+)",\s*permission\.(MailContact[A-Za-z]+)`)
+	mailAPIContactPostRe  = regexp.MustCompile(`g\.POST\("(/contact/[a-z]+)",\s*(?:pageview\.HTMLFragment,\s*)?permission\.(MailContact[A-Za-z]+)`)
 	mailPageContactPostRe = regexp.MustCompile(`pages\.POST\("(/mail/contact[^"]*)"`)
 )
 
@@ -478,10 +402,10 @@ func TestMailContactPageWritePostsAreGone(t *testing.T) {
 	}
 	for _, path := range []string{"/mail/contact/save", "/mail/contact/delete", "/mail/contacts/bulk-delete", "/mail/contacts/bulk-tag"} {
 		if got[path] {
-			t.Errorf("页面 POST %s 还在 —— 写动作已经由浏览器直调 JSON 端点，这条通道必须删掉", path)
+			t.Errorf("页面 POST %s 还在 —— 写动作已经由浏览器直调端点，这条通道必须删掉", path)
 		}
 	}
 	if !got["/mail/contacts/bulk-status"] {
-		t.Errorf("批量改状态没有 JSON 端点，它的页面 POST 不该被一起删掉")
+		t.Errorf("批量改状态仍是页面端点，不该被一起删掉")
 	}
 }

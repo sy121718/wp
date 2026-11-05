@@ -4,6 +4,7 @@ import (
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string {
@@ -32,6 +34,7 @@ func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/publish-records", func(c *gin.Context) {
 		c.Set(adminctx.ButtonsKey, buttons)
 		pageview.UseRenderer(adminui.RenderPage)(c)
@@ -49,32 +52,31 @@ func TestProductPublishRecordHistoryButtonAndTemplate(t *testing.T) {
 	body := publishRecordBodyWithButtons(t, map[string]bool{"product.publish_attempts": true})
 
 	for _, want := range []string{
-
-		"/api/product/publish-attempts?project=p1&amp;productId=prod-1",
-		`hx-ext="json-swap"`,
-		`data-json-template="#tpl-publish-attempt"`,
-		`data-json-rows="rows"`,
-		`data-json-key="id"`,
-		`data-json-more="page"`,
-
-		`data-field="createdAt" data-field-format="datetime"`,
-		`data-field="operatorName"`,
-		`data-field="langs" data-field-format="list"`,
-		`data-field="artifactHash"`,
-		`data-field="durationMs" data-field-format="duration"`,
-		`data-field="attempts" data-field-min="2" data-field-suffix="x"`,
-		`class="ph-error" data-when="failed" data-when-field="outcome"`,
-
-		`data-when="create"`, `data-when="manual"`, `data-when="template_switch"`,
-		`data-when="update_url"`, `data-when="rollback"`, `data-when="override"`,
-		`data-when="auto_rebuild"`,
-
-		`data-when="success"`, `data-when="failed"`,
-
-		`data-json-patch="append"`,
+		"/api/product/publish-attempts?project=p1&amp;productId=prod-1&amp;page=1",
+		`hx-get="/api/product/publish-attempts`,
+		`hx-target="#ph-box-prod-1"`,
+		`id="ph-box-prod-1"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q", want)
+		}
+	}
+	for _, gone := range []string{`hx-ext="json-swap"`, `data-json-template`, `data-json-rows`, `data-json-key`, `data-json-patch`} {
+		if strings.Contains(body, gone) {
+			t.Fatalf("页面仍残留 JSON→DOM 解释器声明 %q", gone)
+		}
+	}
+}
+
+func TestPublishAttemptRowsFragmentOwnsRowShape(t *testing.T) {
+	body, err := os.ReadFile("../../../../templates/admin/product/publish_attempt_rows.html")
+	if err != nil {
+		t.Fatalf("读片段模板失败: %v", err)
+	}
+	text := string(body)
+	for _, want := range []string{"formatTime(a.CreatedAt)", "a.OperatorName", "a.Langs", "a.ArtifactHash", "a.DurationMs", `t("pPubHistTNew"`, `t("pPubHistFail"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("发布历史片段缺少 %q", want)
 		}
 	}
 }

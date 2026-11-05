@@ -16,6 +16,7 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,39 @@ func newMailFeatureFixture(t *testing.T) *mailFixture {
 	}
 	svc := mailservice.NewService(mailmodel.NewMailModel(db))
 	svc.SetCipherSecret("page-test-secret")
+	loadMailFeatureWords(t, db)
 	return &mailFixture{svc: svc, db: db}
+}
+
+// loadMailFeatureWords 把本用例库里的词条灌进缓存：失败区与结果片段只从词库取词，
+// 不注入时成功片段会退成兜底句、失败原因会退成归口文案，测出来的不是真实界面。
+func loadMailFeatureWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key, lang, item_value AS value").
+		Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+}
+
+// injectMailWords 只给本用例注入它断言的词条：功能库是空库，不注入会退成归口文案。
+func injectMailWords(t *testing.T, entries map[string]map[string]string) {
+	t.Helper()
+	i18n.InjectForTest(entries, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }
 
 func (f *mailFixture) seedContact(ctx context.Context, email, name, status, tag string) error {

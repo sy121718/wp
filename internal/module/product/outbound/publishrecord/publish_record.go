@@ -2,37 +2,24 @@ package publishrecord
 
 import (
 	"context"
-	"go_wp/pkg/utils"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/utils"
 )
 
 type Port struct {
-	records  presentationcontract.PublishRecordPort
 	attempts presentationcontract.PublishAttemptPort
 }
 
-func New(records presentationcontract.PublishRecordPort) *Port {
-	if records == nil {
+// NewWithAttempts 装配发布历史读口；没有尝试端口时返回 nil，调用处按「未装配」处理。
+func NewWithAttempts(attempts presentationcontract.PublishAttemptPort) *Port {
+	if attempts == nil {
 		return nil
 	}
-	return &Port{records: records}
-}
-
-func NewWithAttempts(records presentationcontract.PublishRecordPort,
-	attempts presentationcontract.PublishAttemptPort) *Port {
-	p := New(records)
-	if p == nil && attempts == nil {
-		return nil
-	}
-	if p == nil {
-		p = &Port{}
-	}
-	p.attempts = attempts
-	return p
+	return &Port{attempts: attempts}
 }
 
 func (p *Port) PublishAttempts(ctx context.Context, projectID, productID string, limit int) (*productdto.PublishAttemptListResp, error) {
@@ -63,27 +50,4 @@ func (p *Port) PublishAttempts(ctx context.Context, projectID, productID string,
 		})
 	}
 	return res, nil
-}
-
-func (p *Port) Langs(ctx context.Context, projectID string, entityIDs []string) (map[string][]productdto.PublishRecordLangResp, error) {
-	if p == nil {
-		return map[string][]productdto.PublishRecordLangResp{}, nil
-	}
-	rows, err := p.records.PublishRecords(ctx, projectID, productcontract.EntityTypeProduct, entityIDs)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string][]productdto.PublishRecordLangResp, len(rows))
-	for _, r := range rows {
-		out[r.EntityID] = append(out[r.EntityID], productdto.PublishRecordLangResp{
-			Lang:            r.Lang,
-			OnlinePath:      r.ActivePath,
-			Online:          r.Active,
-			Stale:           r.Stale,
-			PublishedAt:     r.PublishedAt,
-			ArtifactVersion: r.ArtifactVersion,
-			ArtifactHash:    r.ArtifactHash,
-		})
-	}
-	return out, nil
 }

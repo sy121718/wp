@@ -36,7 +36,6 @@ func TestPublicCatalogFactsAndPaging(t *testing.T) {
 	f.publish(t, a, "/real/catalog-a")
 	f.publish(t, b, "/real/catalog-b")
 	f.publish(t, draft, "/real/catalog-draft")
-	f.products.SetPublicCatalogIndex(f.pres)
 	category, err := f.products.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "目录分类", Slug: "catalog-category"})
 	if err != nil {
 		t.Fatal(err)

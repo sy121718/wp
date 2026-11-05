@@ -10,7 +10,6 @@ var miscPageErrI18nKeys = []string{
 	"admin.masterdata.loadFailed.lead",
 	"admin.masterdata.loadFailed.title",
 	"admin.masterdata.loadFailed.desc",
-	"admin.analytics.no_project.loadFailed",
 	"admin.content.templates.loadFailed.title",
 	"admin.content.templates.loadFailed",
 	"admin.content.templates.impact.loadFailed",

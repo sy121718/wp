@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -154,4 +156,127 @@ func (m *PermissionModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64
 func (m *PermissionModel) DeleteByIDs(ctx context.Context, ids []uint64) (int64, error) {
 	result := m.DB(ctx).Where("id IN ?", ids).Delete(&PermissionEntity{})
 	return result.RowsAffected, result.Error
+}
+
+// ListByIDsTx 在调用方事务内按 id 取权限点，供批量删除在同一事务里先校验再删。
+func (m *PermissionModel) ListByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]PermissionEntity, error) {
+	var list []PermissionEntity
+	if len(ids) == 0 {
+		return list, nil
+	}
+	err := tx.WithContext(ctx).Where("id IN ?", ids).Find(&list).Error
+	return list, err
+}
+
+// LockByIDsTx 在调用方事务内按 id 升序锁住这批权限点行。
+//
+// 授予端要锁的实体是 sys_permission（权限码属于它），不是 sys_menus：
+// 菜单只是把权限码聚起来的载体，真正被 casbin 引用的是权限码对应的这一行。
+func (m *PermissionModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]PermissionEntity, error) {
+	var list []PermissionEntity
+	if len(ids) == 0 {
+		return list, nil
+	}
+	err := tx.WithContext(ctx).Model(&PermissionEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
+// LockByCodesTx 在调用方事务内锁住这批权限码对应的权限点行（授予端的主路径：
+// 前端交的是菜单 id，真正要锁的是这些菜单背后的权限码）。
+//
+// ORDER BY id 而不是 permission_code：加锁顺序由这条 SQL 决定，事后排序改不了已经
+// 取得的锁序。删除端（PermissionsBulkDelete）按 id 升序锁同一批行，两端因此同序；
+// 用 WHERE permission_code IN 只是筛行，不参与锁序。
+func (m *PermissionModel) LockByCodesTx(ctx context.Context, tx *gorm.DB, codes []string) ([]PermissionEntity, error) {
+	var list []PermissionEntity
+	if len(codes) == 0 {
+		return list, nil
+	}
+	err := tx.WithContext(ctx).Model(&PermissionEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("permission_code IN ?", codes).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
+// DeleteByIDsTx 在调用方事务内批量删除，返回实际删除行数。
+func (m *PermissionModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := tx.WithContext(ctx).Where("id IN ?", ids).Delete(&PermissionEntity{})
+	return result.RowsAffected, result.Error
+}
+
+// PermListFilter 是权限点列表的筛选条件。
+type PermListFilter struct {
+	Module  string
+	Code    string
+	APIPath string
+	Status  *int
+	Page    int
+	Limit   int
+}
+
+// ListPage 分页查权限点，返回总数与本页行。
+func (m *PermissionModel) ListPage(ctx context.Context, f PermListFilter) (int64, []PermissionEntity, error) {
+	query := m.DB(ctx)
+	if f.Module != "" {
+		query = query.Where("module = ?", f.Module)
+	}
+	if f.Code != "" {
+		query = query.Where("permission_code LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(f.Code)+"%")
+	}
+	if f.APIPath != "" {
+		query = query.Where("api_path LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(f.APIPath)+"%")
+	}
+	if f.Status != nil {
+		query = query.Where("status = ?", *f.Status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 1
+	}
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	var list []PermissionEntity
+	err := query.Order("id DESC").Offset((page - 1) * limit).Limit(limit).Find(&list).Error
+	return total, list, err
+}
+
+// DetailByID 读权限点详情列，不存在时返回 nil。
+func (m *PermissionModel) DetailByID(ctx context.Context, id uint64) (*PermissionEntity, error) {
+	var entity PermissionEntity
+	err := m.DB(ctx).
+		Select("id", "permission_code", "permission_name", "module", "api_path", "api_method",
+			"status", "remark", "create_time", "update_time").
+		Where("id = ?", id).
+		First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// ListEnabledForOptions 列出可选权限点（启用状态），可按模块收窄，供勾选面板用。
+func (m *PermissionModel) ListEnabledForOptions(ctx context.Context, module string) ([]PermissionEntity, error) {
+	query := m.DB(ctx).Where("status = ?", PermissionStatusEnabled)
+	if module != "" {
+		query = query.Where("module = ?", module)
+	}
+	var list []PermissionEntity
+	err := query.Order("module ASC, id ASC").Find(&list).Error
+	return list, err
 }

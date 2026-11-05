@@ -8,6 +8,8 @@ import (
 	"go_wp/internal/adminui"
 	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/internal/shell"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 	pluginPagePath = "/admin/plugins"
 )
 
-type pluginMsg = adminui.Msg
+type pluginMsg = facing.Msg
 
 var (
 	pluginTextInvalidParam    = pluginMsg{Key: pluginenums.ErrInvalidParam, Fallback: "参数不完整，请检查后重试"}
@@ -68,7 +70,7 @@ func pluginFacingFallback(key string) string {
 }
 
 func pluginInstallFailMsg(c *gin.Context, m pluginMsg) pluginMsg {
-	return pluginMsg{Fallback: adminui.MsgText(c, m) + "；" + adminui.MsgText(c, pluginReselectHint)}
+	return pluginMsg{Fallback: response.MsgText(c, m) + "；" + response.MsgText(c, pluginReselectHint)}
 }
 
 func pluginErrMsg(c *gin.Context, err error) pluginMsg {
@@ -88,7 +90,7 @@ func pluginErrMsg(c *gin.Context, err error) pluginMsg {
 }
 
 func pluginErrText(c *gin.Context, err error) string {
-	return adminui.MsgText(c, pluginErrMsg(c, err))
+	return response.MsgText(c, pluginErrMsg(c, err))
 }
 
 func pluginPageJump(c *gin.Context, ok bool, msg pluginMsg) {

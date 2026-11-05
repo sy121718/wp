@@ -31,7 +31,7 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )

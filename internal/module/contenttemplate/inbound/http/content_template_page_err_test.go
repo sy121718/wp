@@ -105,7 +105,7 @@ func TestContentTemplatesPageProjectListFailureReturnsJSON(t *testing.T) {
 		t.Errorf("失败响应应带归口文案，实际：%s", body)
 	}
 	for _, forbidden := range []string{
-		"MsgInternalError",
+		"uiInternalErr",
 		rawErr.Error(),
 		ctProjectListErrText,
 	} {
@@ -178,7 +178,7 @@ func TestContentTemplatesPageMainListFailureReturnsJSON(t *testing.T) {
 		t.Errorf("失败响应应带归口文案：%s", body)
 	}
 	for _, forbidden := range []string{
-		"MsgInternalError", "还没有内容模板",
+		"uiInternalErr", "还没有内容模板",
 		"SQLSTATE", "42P01", "content_templates\"",
 	} {
 		if strings.Contains(body, forbidden) {

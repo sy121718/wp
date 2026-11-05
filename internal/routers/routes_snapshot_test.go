@@ -32,9 +32,10 @@ func bootstrapRouter(t *testing.T) []string {
 }
 
 var (
-	routeDumpOnce  sync.Once
-	routeDumpLines []string
-	routeDumpErr   error
+	routeDumpOnce     sync.Once
+	routeDumpLines    []string
+	routeDumpHandlers []string
+	routeDumpErr      error
 )
 
 func assembleRouteDump() ([]string, error) {
@@ -58,7 +59,9 @@ func assembleRouteDump() ([]string, error) {
 	lines := make([]string, 0, 512)
 	for _, r := range router.Routes() {
 		lines = append(lines, r.Method+" "+r.Path)
+		routeDumpHandlers = append(routeDumpHandlers, "HANDLER "+r.Method+" "+r.Path+" "+r.Handler)
 	}
+	sort.Strings(routeDumpHandlers)
 	sort.Strings(lines)
 	return lines, nil
 }

@@ -16,7 +16,7 @@
 # 等于砍掉无主题渲染路径 —— 那是把一种正确写法判成错误。
 #
 # 覆盖范围：
-#   · internal/builder/components/*/*.css  —— 组件样式（主要对象）
+#   · pkg/builder/components/*/*.css（通用工具组件）与 internal/builder/extensions/*/*.css（业务扩展）
 #   · 不含 *_test.go 与 testdata/golden（后者是产物基线，令牌来自源样式）
 #
 # 用法：
@@ -35,8 +35,19 @@ LIST_ONLY=0
 python3 - "$LIST_ONLY" <<'PY'
 import pathlib, re, sys
 
-root = pathlib.Path('internal/builder/components')
+# 组件有两个真实属主：通用工具组件与业务扩展，必须同时扫，漏一个就是静默空转。
+roots = [pathlib.Path('pkg/builder/components'), pathlib.Path('internal/builder/extensions')]
 list_only = sys.argv[1] == '1'
+
+for root in roots:
+    if not root.is_dir():
+        print(f'✗ 组件 CSS 根不存在：{root}（包移动后必须同步更新本脚本）', file=sys.stderr)
+        sys.exit(1)
+
+css_files = sorted(f for root in roots for f in root.glob('*/*.css'))
+if not css_files:
+    print(f'✗ 组件 CSS 两个根都没有匹配到 */*.css —— 扫描已空转，路径可能写错', file=sys.stderr)
+    sys.exit(1)
 
 # 色值形态：#rgb / #rrggbb / #rrggbbaa
 COLOR = re.compile(r'#[0-9a-fA-F]{3,8}\b')
@@ -73,7 +84,7 @@ def is_fallback(src: str, pos: int) -> bool:
 violations = []
 total_naked = 0
 total_fallback = 0
-for f in sorted(root.glob('*/*.css')):
+for f in css_files:
     src = f.read_text()
     # 跳过注释（注释里的示例色值不算）
     lines = src.split('\n')
@@ -105,5 +116,5 @@ if violations:
     print('  兜底不能省 —— 无主题页面（纯静态产物）里 --sky-c-* 没有定义。', file=sys.stderr)
     sys.exit(1)
 
-print(f'✓ 组件 CSS 无裸色值（令牌兜底 {total_fallback} 处，均为正确形态）')
+print(f'✓ 组件 CSS 无裸色值（扫 {len(css_files)} 个文件，令牌兜底 {total_fallback} 处，均为正确形态）')
 PY

@@ -15,9 +15,11 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 )
 
 var pageInternalLeakTokens = []string{"SQLSTATE", "uq_", "pg_", "relation \"", "constraint", "does not exist"}
@@ -97,6 +99,13 @@ func TestPageDeleteKeepsBusinessError(t *testing.T) {
 	if engine == nil {
 		return
 	}
+	// 取词收口后业务错误的 Fallback 恒为空串，文案只能来自词库：注入译文再断言，
+	// 别让「key 或译文」这种两可期望留着 —— 归口契约就是「不把裸 key 交出去」。
+	i18n.InjectForTest(map[string]map[string]string{
+		pageenums.ErrPageNotFound: {"zh-CN": "页面不存在"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
 		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
 		DraftPath:     "/leak-probe",
@@ -114,8 +123,8 @@ func TestPageDeleteKeepsBusinessError(t *testing.T) {
 	if strings.Contains(errBody, "系统内部错误") {
 		t.Fatalf("业务错误被吞成归口文案：body=%s", errBody)
 	}
-	if !strings.Contains(errBody, "ErrPageNotFound") && !strings.Contains(errBody, "页面不存在") {
-		t.Fatalf("业务错误应原样透出（key 或译文），实际 body=%s", errBody)
+	if !strings.Contains(errBody, "页面不存在") {
+		t.Fatalf("业务错误应透出词库译文，实际 body=%s", errBody)
 	}
 }
 

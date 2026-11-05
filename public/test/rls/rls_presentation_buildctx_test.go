@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
 )

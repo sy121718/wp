@@ -19,7 +19,7 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/logger"
 )
 

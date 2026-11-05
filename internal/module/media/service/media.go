@@ -21,7 +21,6 @@ import (
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
 	mediamodel "go_wp/internal/module/media/model"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
 )
@@ -51,7 +50,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 	}
 	if categoryID != nil && *categoryID > 0 {
 		if _, err := s.cm.GetCategory(ctx, *categoryID); err != nil {
-			return nil, errors.New("目标分类不存在")
+			return nil, mediaenums.Err(mediaenums.ErrFileCategoryNotFound)
 		}
 	}
 
@@ -60,7 +59,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 
 	md5hex, err := fileMD5(file)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, err.Error())
 	}
 
 	if existing, derr := s.am.GetByMD5AndType(ctx, md5hex, fileType); derr == nil && existing != nil {
@@ -73,7 +72,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 
 	src, err := file.Open()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, err.Error())
 	}
 	defer src.Close()
 
@@ -92,11 +91,11 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		CreateTime:  time.Now(),
 	}
 	if err := s.am.Create(ctx, entity); err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, err.Error())
 	}
 	if entity.ID == 0 {
 		s.compensateDelete(ctx, entity.ID)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, errors.New("附件主键未回填"))
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, "附件主键未回填")
 	}
 
 	objectKey := fmt.Sprintf("%d%s", entity.ID, ext)
@@ -108,7 +107,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 	}, upload.Request{ObjectKey: objectKey})
 	if err != nil {
 		s.compensateDelete(ctx, entity.ID)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, err.Error())
 	}
 
 	entity.FilePath = result.Key
@@ -140,7 +139,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 	}); terr != nil {
 
 		s.compensateDelete(ctx, entity.ID)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, terr)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrUploadFailed, terr.Error())
 	}
 
 	s.scheduleVariants(ctx, entity.ID)
@@ -201,19 +200,19 @@ func encodeMediaCursor(created time.Time, id uint64) string {
 func decodeMediaCursor(cursor string) (time.Time, uint64, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return time.Time{}, 0, errors.New("媒体列表游标无效")
+		return time.Time{}, 0, mediaenums.Err(mediaenums.ErrMediaCursorInvalid)
 	}
 	parts := strings.Split(string(raw), "|")
 	if len(parts) != 2 {
-		return time.Time{}, 0, errors.New("媒体列表游标无效")
+		return time.Time{}, 0, mediaenums.Err(mediaenums.ErrMediaCursorInvalid)
 	}
 	created, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
-		return time.Time{}, 0, errors.New("媒体列表游标无效")
+		return time.Time{}, 0, mediaenums.Err(mediaenums.ErrMediaCursorInvalid)
 	}
 	var id uint64
 	if _, err = fmt.Sscan(parts[1], &id); err != nil || id == 0 {
-		return time.Time{}, 0, errors.New("媒体列表游标无效")
+		return time.Time{}, 0, mediaenums.Err(mediaenums.ErrMediaCursorInvalid)
 	}
 	return created, id, nil
 }
@@ -255,7 +254,7 @@ func (s *Service) Delete(ctx context.Context, req *mediadto.DeleteReq) error {
 	}
 	if len(refs) > 0 {
 
-		return fmt.Errorf("%s: 被 %s", mediaenums.ErrAttachmentReferenced, summarizeRefs(refs))
+		return mediaenums.ErrDetail(mediaenums.ErrAttachmentReferenced, "被 "+summarizeRefs(refs))
 	}
 
 	return s.am.Delete(ctx, req.ID)
@@ -357,11 +356,11 @@ func buildCategoryTree(categories []mediamodel.FileCategoryEntity, parentID uint
 func (s *Service) CreateCategory(ctx context.Context, req *mediadto.CategoryCreateReq) (*mediadto.CategoryTreeNode, error) {
 	name := strings.TrimSpace(req.CategoryName)
 	if name == "" {
-		return nil, errors.New("分类名称不能为空")
+		return nil, mediaenums.Err(mediaenums.ErrFileCategoryNameRequired)
 	}
 	if req.ParentID > 0 {
 		if _, err := s.cm.GetCategory(ctx, req.ParentID); err != nil {
-			return nil, errors.New("父级分类不存在")
+			return nil, mediaenums.Err(mediaenums.ErrFileCategoryParentNotFound)
 		}
 	}
 	siblings, err := s.cm.ListAll(ctx)
@@ -370,7 +369,7 @@ func (s *Service) CreateCategory(ctx context.Context, req *mediadto.CategoryCrea
 	}
 	for _, c := range siblings {
 		if c.ParentID == req.ParentID && strings.EqualFold(c.CategoryName, name) {
-			return nil, errors.New("同级分类下已存在同名分类")
+			return nil, mediaenums.Err(mediaenums.ErrFileCategoryNameDuplicated)
 		}
 	}
 	now := time.Now()
@@ -399,7 +398,7 @@ func (s *Service) CreateCategory(ctx context.Context, req *mediadto.CategoryCrea
 func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpdateReq) error {
 	current, err := s.cm.GetCategory(ctx, req.ID)
 	if err != nil {
-		return errors.New("分类不存在")
+		return mediaenums.Err(mediaenums.ErrFileCategoryNotFound)
 	}
 
 	newParent := current.ParentID
@@ -416,7 +415,7 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 		}
 		for _, c := range siblings {
 			if c.ID != req.ID && c.ParentID == newParent && strings.EqualFold(c.CategoryName, name) {
-				return errors.New("同级分类下已存在同名分类")
+				return mediaenums.Err(mediaenums.ErrFileCategoryNameDuplicated)
 			}
 		}
 		updates["category_name"] = name
@@ -426,11 +425,11 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 	}
 	if req.ParentID != nil {
 		if newParent == req.ID {
-			return errors.New("父级不能是自己")
+			return mediaenums.Err(mediaenums.ErrFileCategoryCycle)
 		}
 		if newParent > 0 {
 			if _, err := s.cm.GetCategory(ctx, newParent); err != nil {
-				return errors.New("目标父级分类不存在")
+				return mediaenums.Err(mediaenums.ErrFileCategoryParentNotFound)
 			}
 
 			all, err := s.cm.ListAll(ctx)
@@ -438,7 +437,7 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 				return err
 			}
 			if isDescendant(all, req.ID, newParent) {
-				return errors.New("不能移动到自己的子分类下")
+				return mediaenums.Err(mediaenums.ErrFileCategoryCycle)
 			}
 		}
 		updates["parent_id"] = newParent
@@ -467,14 +466,14 @@ func isDescendant(all []mediamodel.FileCategoryEntity, root, target uint64) bool
 
 func (s *Service) DeleteCategory(ctx context.Context, req *mediadto.CategoryDeleteReq) error {
 	if _, err := s.cm.GetCategory(ctx, req.ID); err != nil {
-		return errors.New("分类不存在")
+		return mediaenums.Err(mediaenums.ErrFileCategoryNotFound)
 	}
 	hasChildren, err := s.cm.HasChildren(ctx, req.ID)
 	if err != nil {
 		return err
 	}
 	if hasChildren {
-		return errors.New("请先删除或移动该分类下的子分类")
+		return mediaenums.Err(mediaenums.ErrFileCategoryHasChildren)
 	}
 	if err := s.am.DetachAttachments(ctx, req.ID); err != nil {
 		return err
@@ -486,7 +485,7 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 
 	if _, err := s.am.GetByID(ctx, req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("附件不存在")
+			return mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return err
 	}
@@ -497,7 +496,7 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 	if req.CategoryID != nil {
 		if *req.CategoryID > 0 {
 			if _, err := s.cm.GetCategory(ctx, *req.CategoryID); err != nil {
-				return errors.New("目标分类不存在")
+				return mediaenums.Err(mediaenums.ErrFileCategoryNotFound)
 			}
 			updates["category_id"] = *req.CategoryID
 		} else {
@@ -556,12 +555,12 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 
 	md5hex, err := fileMD5(file)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceFailed, err.Error())
 	}
 
 	if att.MD5 != nil && *att.MD5 == md5hex {
 		if nerr := s.notifyRefsStale(ctx, att.ID); nerr != nil {
-			return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceStaleNotifyFailed, nerr)
+			return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceStaleNotifyFailed, nerr.Error())
 		}
 		resp := entityToResp(att)
 		list := []mediadto.AttachmentResp{*resp}
@@ -571,7 +570,7 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 
 	src, err := file.Open()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceFailed, err.Error())
 	}
 	defer src.Close()
 
@@ -583,7 +582,7 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 		ContentType: file.Header.Get("Content-Type"),
 	}, upload.Request{ObjectKey: tempKey})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceFailed, err.Error())
 	}
 
 	stagedAbs, err := localObjectPath(staged.Key)
@@ -598,12 +597,12 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 	}
 	if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
 		_ = os.Remove(stagedAbs)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceFailed, err.Error())
 	}
 
 	if err := os.Rename(stagedAbs, targetAbs); err != nil {
 		_ = os.Remove(stagedAbs)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceFailed, err.Error())
 	}
 
 	mimeType := file.Header.Get("Content-Type")
@@ -626,7 +625,7 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 	}
 
 	if nerr := s.notifyRefsStale(ctx, id); nerr != nil {
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceStaleNotifyFailed, nerr)
+		return nil, mediaenums.ErrDetail(mediaenums.ErrReplaceStaleNotifyFailed, nerr.Error())
 	}
 
 	resp := entityToResp(att)
@@ -689,43 +688,6 @@ func zipDirVariantType(dir string) string {
 	}
 }
 
-var variantStatusTexts = []struct{ Status, Key, Fallback string }{
-	{mediamodel.VariantStatusPending, "admin.media.variantStatus.pending", "排队中（pending）"},
-	{mediamodel.VariantStatusProcessing, "admin.media.variantStatus.processing", "生成中（processing）"},
-	{mediamodel.VariantStatusFailed, "admin.media.variantStatus.failed", "生成失败（failed）"},
-}
-
-func variantStatusText(status, lang string) string {
-	for _, s := range variantStatusTexts {
-		if s.Status == status {
-			return i18n.Translate(s.Key, s.Fallback, lang)
-		}
-	}
-	return i18n.Translate(mediaenums.VariantStatusMissing, "无变体记录（missing）", lang)
-}
-
-func buildVariantReadme(dirName, status, lang string) string {
-	tr := func(key, fallback string) string { return i18n.Translate(key, fallback, lang) }
-	var b strings.Builder
-	b.WriteString(tr(mediaenums.PackageTitle, "go_wp 媒体资源包"))
-	b.WriteString("\n====================\n")
-
-	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageDir, "目录：{name}",
-		map[string]string{"name": dirName}))
-	b.WriteString("\n")
-	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageVariantType, "内容：{name} 变体",
-		map[string]string{"name": zipDirVariantType(dirName)}))
-	b.WriteString("\n")
-	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageStatus, "状态：{name}",
-		map[string]string{"name": variantStatusText(status, lang)}))
-	b.WriteString("\n")
-	b.WriteString(tr(mediaenums.PackageVariantUnavailable, "说明：该变体文件当前不可用，原图见 original/ 目录。"))
-	b.WriteString("\n")
-	b.WriteString(tr(mediaenums.PackageRegenHint, "可在媒体库详情页点「重新生成变体」，生成完成后重新下载。"))
-	b.WriteString("\n")
-	return b.String()
-}
-
 func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediadto.DownloadPlan, att *mediamodel.AttachmentEntity, prefix, lang string) error {
 	if att.StorageType != "local" {
 		return mediaenums.Err(mediaenums.ErrDownloadStorageNotLocal)
@@ -746,12 +708,12 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediadto.Do
 	if srcPath, err := localObjectPath(attachmentStorageKey(att)); err != nil {
 		plan.Entries = append(plan.Entries, mediadto.DownloadEntry{
 			Name:    join(prefix, zipDirOriginal, "README.txt"),
-			Content: i18n.Translate(mediaenums.PackageOriginalPathInvalid, "原图存储路径非法，无法打包。\n", lang),
+			Content: originalReadmeText(originalReadmePathInvalid, lang),
 		})
 	} else if _, statErr := os.Stat(srcPath); statErr != nil {
 		plan.Entries = append(plan.Entries, mediadto.DownloadEntry{
 			Name:    join(prefix, zipDirOriginal, "README.txt"),
-			Content: i18n.Translate(mediaenums.PackageOriginalMissing, "原图物理文件已缺失，仅剩元数据。\n", lang),
+			Content: originalReadmeText(originalReadmeMissing, lang),
 		})
 	} else {
 		plan.Entries = append(plan.Entries, mediadto.DownloadEntry{

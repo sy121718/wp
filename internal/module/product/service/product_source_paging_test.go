@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -30,7 +30,7 @@ func TestResolveCollectionOutOfRangeTotalIsRealCount(t *testing.T) {
 
 	svc := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "分页越界"}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := core.WithBuildProjectID(context.Background(), projectID)
 
 	page, err := svc.ResolveCollectionPage(ctx, productcontract.CollectionSourceProduct, core.CollectionQuery{Offset: 180, Limit: 20})

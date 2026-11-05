@@ -11,13 +11,16 @@ import (
 	"strings"
 	"testing"
 
+	json "go_wp/pkg/jsonx"
+
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	pagecontract "go_wp/internal/module/page/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
+	"go_wp/pkg/i18n"
 )
 
 const (
@@ -29,15 +32,55 @@ const (
 	facingInvalidSettingsDoc          = `{"settings":{"layout":{"mode":"boxed"}},"root":[]}`
 )
 
-var workbenchFacingFallbacks = map[string]string{
-	workbenchenums.ErrStructureTemplateFieldBinding:  workbenchenums.FallbackFor(workbenchenums.ErrStructureTemplateFieldBinding),
-	workbenchenums.ErrPreviewFieldBindingUnsupported: workbenchenums.FallbackFor(workbenchenums.ErrPreviewFieldBindingUnsupported),
-	workbenchenums.ErrPreviewDocumentInvalid:         workbenchenums.FallbackFor(workbenchenums.ErrPreviewDocumentInvalid),
-	workbenchenums.ErrTemplateEntityTypeMismatch:     workbenchenums.FallbackFor(workbenchenums.ErrTemplateEntityTypeMismatch),
-	workbenchenums.ErrTemplateFieldBindingInvalid:    workbenchenums.FallbackFor(workbenchenums.ErrTemplateFieldBindingInvalid),
-	workbenchenums.ErrTemplateProjectScope:           workbenchenums.FallbackFor(workbenchenums.ErrTemplateProjectScope),
-	workbenchenums.ErrInstanceNoDocument:             workbenchenums.FallbackFor(workbenchenums.ErrInstanceNoDocument),
-	workbenchenums.ErrInstanceSaveRejected:           workbenchenums.FallbackFor(workbenchenums.ErrInstanceSaveRejected),
+// workbenchFacingKeys 是本测试关心的错误 key 清单（顺序即词条应覆盖的顺序）。
+// 以前这里是一张 `map[key]中文兜底` 的副本，靠 enums.FallbackFor 取值；取词收口后
+// enums 只声明 key + 状态码，成品句归词库，所以「期望文案」改为**从词条真源读**
+// —— 迁移 292 就是这个域的唯一真源，TestWorkbenchFacingFallbacksMatchMigration292
+// 早就把它当对照表在用。
+var workbenchFacingKeys = []string{
+	workbenchenums.ErrStructureTemplateFieldBinding,
+	workbenchenums.ErrPreviewFieldBindingUnsupported,
+	workbenchenums.ErrPreviewDocumentInvalid,
+	workbenchenums.ErrTemplateEntityTypeMismatch,
+	workbenchenums.ErrTemplateFieldBindingInvalid,
+	workbenchenums.ErrTemplateProjectScope,
+	workbenchenums.ErrInstanceNoDocument,
+	workbenchenums.ErrInstanceSaveRejected,
+}
+
+// workbenchFacingSeedFiles 是 workbench.err.* 词条的 seed 真源清单，按查找顺序排列。
+// 这个域的 facing 词条按批次分散在多条迁移里（292 是首屏预览/编译的一组，695 是
+// 跳转目标可用性的一条），所以按 key 逐个文件找，谁先命中就取谁。
+// 新增带 workbench.err.* 词条的迁移时，把它加进这份列表 —— 漏加的表现是
+// seededFacingText 报「找过这些文件都没有该词条」。
+var workbenchFacingSeedFiles = []string{
+	"292_workbench_facing_i18n.sql",
+	"695_workbench_action_target_availability_i18n.sql",
+}
+
+// seededFacingText 取某个 key 的 zh-CN 译文，作为对外文案的期望值。
+func seededFacingText(t *testing.T, key string) string {
+	t.Helper()
+	for _, file := range workbenchFacingSeedFiles {
+		for _, m := range facingRowRe.FindAllStringSubmatch(readWorkbenchFacingSeed(t, file), -1) {
+			if m[1] == key && m[2] == "zh-CN" {
+				return m[3]
+			}
+		}
+	}
+	t.Fatalf("%s 的 zh-CN 词条不在任何 seed 里（找过：%s）", key, strings.Join(workbenchFacingSeedFiles, "、"))
+	return ""
+}
+
+// readWorkbenchFacingSeed 读单条迁移的 SQL 原文。
+func readWorkbenchFacingSeed(t *testing.T, file string) string {
+	t.Helper()
+	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", file)
+	raw, err := os.ReadFile(sqlPath)
+	if err != nil {
+		t.Fatalf("读迁移 %s 失败（路径或文件名变了？）：%v", file, err)
+	}
+	return string(raw)
 }
 
 func TestPreviewCompileFacingKey(t *testing.T) {
@@ -156,12 +199,7 @@ func TestInstanceSaveFacingKey(t *testing.T) {
 var facingRowRe = regexp.MustCompile(`\('(workbench\.err\.[A-Za-z]+)', '(zh-CN|en-US)', '([^']*)',`)
 
 func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
-	sqlPath := filepath.Join("..", "..", "..", "..", "..", "public", "migrations", "292_workbench_facing_i18n.sql")
-	raw, err := os.ReadFile(sqlPath)
-	if err != nil {
-		t.Fatalf("读迁移 292 失败（路径或文件名变了？）：%v", err)
-	}
-	text := string(raw)
+	text := readWorkbenchFacingSeed(t, "292_workbench_facing_i18n.sql")
 
 	if !strings.HasSuffix(strings.TrimSpace(text), "DO NOTHING") {
 		t.Fatalf("迁移 292 应以 ON CONFLICT ... DO NOTHING 结尾且不带分号，实际结尾：%q",
@@ -182,12 +220,12 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 		}
 	}
 
-	if len(zh) != len(workbenchFacingFallbacks) {
-		t.Fatalf("迁移 292 的 zh-CN key 数 %d 与兜底表 %d 不等", len(zh), len(workbenchFacingFallbacks))
+	if len(zh) != len(workbenchFacingKeys) {
+		t.Fatalf("迁移 292 的 zh-CN key 数 %d 与期望 key 数 %d 不等", len(zh), len(workbenchFacingKeys))
 	}
-	for key, want := range workbenchFacingFallbacks {
-		if got := zh[key]; got != want {
-			t.Fatalf("%s 的中文兜底与词条不一致：兜底 %s / 词条 %s", key, want, got)
+	for _, key := range workbenchFacingKeys {
+		if got := zh[key]; strings.TrimSpace(got) == "" {
+			t.Fatalf("%s 在迁移 292 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
 		}
 		if strings.TrimSpace(en[key]) == "" {
 			t.Fatalf("%s 缺 en-US 词条（英文站点会回落中文，且不会有任何报错）", key)
@@ -199,29 +237,37 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 }
 
 func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
-	want := []string{
-		workbenchenums.ErrStructureTemplateFieldBinding,
-		workbenchenums.ErrPreviewFieldBindingUnsupported,
-		workbenchenums.ErrPreviewDocumentInvalid,
-		workbenchenums.ErrTemplateEntityTypeMismatch,
-		workbenchenums.ErrTemplateFieldBindingInvalid,
-		workbenchenums.ErrTemplateProjectScope,
-		workbenchenums.ErrInstanceNoDocument,
-		workbenchenums.ErrInstanceSaveRejected,
+	text := readWorkbenchFacingSeed(t, "292_workbench_facing_i18n.sql")
+	seeded := map[string]bool{}
+	for _, m := range facingRowRe.FindAllStringSubmatch(text, -1) {
+		if m[2] == "zh-CN" {
+			seeded[m[1]] = true
+		}
 	}
-	if len(workbenchFacingFallbacks) != len(want) {
-		t.Fatalf("兜底表条目数 %d 与本测试的期望 %d 不等（新增 / 删除 key 时同步这里）",
-			len(workbenchFacingFallbacks), len(want))
+	if len(seeded) != len(workbenchFacingKeys) {
+		t.Fatalf("迁移 292 的词条数 %d 与本测试期望的 key 数 %d 不等（新增 / 删除 key 时同步这里）",
+			len(seeded), len(workbenchFacingKeys))
 	}
-	for _, key := range want {
-		if strings.TrimSpace(workbenchFacingFallbacks[key]) == "" {
-			t.Fatalf("%s 没有中文兜底（缺词条时用户会看到裸 key）", key)
+	for _, key := range workbenchFacingKeys {
+		if !seeded[key] {
+			t.Fatalf("%s 在迁移 292 里没有 zh-CN 词条（缺词条时用户会看到裸 key）", key)
 		}
 	}
 }
 
 func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
+	// 级别②的子例断的是「seed 里的那句原文」。取词收口后 enums 只声明 key，
+	// workbenchFacingText 走 response.MsgText，缺词就退归口文案 —— 不注入词库
+	// 测到的就是「系统内部错误」，而不是本来的业务事实。期望值由 seededFacingText
+	// 从 seed 现读，这里注入的是同一批 key 的 zh-CN 原文。
+	i18n.InjectForTest(map[string]map[string]string{
+		workbenchenums.ErrStructureTemplateFieldBinding:  {"zh-CN": seededFacingText(t, workbenchenums.ErrStructureTemplateFieldBinding)},
+		workbenchenums.ErrPreviewFieldBindingUnsupported: {"zh-CN": seededFacingText(t, workbenchenums.ErrPreviewFieldBindingUnsupported)},
+		workbenchenums.ErrPreviewActionTargetUnavailable: {"zh-CN": seededFacingText(t, workbenchenums.ErrPreviewActionTargetUnavailable)},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	problem := pagecontract.NewPreviewProblem(
 		"节点 acc1: 手风琴至少需要一个折叠项（把组件拖入内部）", errors.New("页面编译失败"))
@@ -249,19 +295,19 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 		{
 			name: "级别②错误链事实：结构模板字段绑定给可归因文案", doc: facingStructureHeaderBinding,
 			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
-			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrStructureTemplateFieldBinding],
+			wantBody:    seededFacingText(t, workbenchenums.ErrStructureTemplateFieldBinding),
 			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
 		},
 		{
 			name: "级别②错误链事实：普通页面仍拒绝实体字段绑定", doc: facingStructureHeaderBinding,
 			kind: workbenchservice.PreviewDocPage, err: bindingErr,
-			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrPreviewFieldBindingUnsupported],
+			wantBody:    seededFacingText(t, workbenchenums.ErrPreviewFieldBindingUnsupported),
 			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
 		},
 		{
 			name: "失效跳转目标的422只给安全重选提示", doc: facingCollectionDoc, kind: workbenchservice.PreviewDocPage,
 			err:         fmt.Errorf("%w: 路径 /private/active/chosen 已被非符号链接占位", builder.ErrPublishedActionUnavailable),
-			wantBody:    workbenchenums.FallbackFor(workbenchenums.ErrPreviewActionTargetUnavailable),
+			wantBody:    seededFacingText(t, workbenchenums.ErrPreviewActionTargetUnavailable),
 			notContains: []string{"/private/active", "非符号链接", "workbench.err.", "字段绑定"},
 		},
 		{
@@ -287,9 +333,19 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 			if rec.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("状态码应保持 422，实际 %d", rec.Code)
 			}
-			body := rec.Body.String()
+			var payload struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			}
+			if uerr := json.Unmarshal(rec.Body.Bytes(), &payload); uerr != nil {
+				t.Fatalf("失败响应应为 JSON：%v，实际 %q", uerr, rec.Body.String())
+			}
+			if payload.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("响应 code 应为 422，实际 %d", payload.Code)
+			}
+			body := payload.Message
 			if body != tc.wantBody {
-				t.Fatalf("响应体不符：got %q / want %q", body, tc.wantBody)
+				t.Fatalf("message 不符：got %q / want %q", body, tc.wantBody)
 			}
 			for _, leak := range tc.notContains {
 				if strings.Contains(body, leak) {

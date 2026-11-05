@@ -6,7 +6,6 @@
 --   · role_permissions               —— 权限树的内容来自菜单管理，本页分不了任何东西；
 --   · seo（热门路径）                 —— 这栏只是摘要，没数据时该去更全的访问统计；
 --   · analytics（按天 / 路径 / 来源 / 设备 / 语言）—— 真无流量时指向「把页面发出去」；
---   · analytics（工程列表装载失败档）—— 唯一动作是重试本次请求；
 --   · mail_automation_run            —— 空时间线只可能是「任务还没跑到」，能做的就是刷新；
 --   · mail_campaign（链接排行 / 收件人明细）—— 为空九成是活动还没启动，回营销页；
 --   · page_redirects                 —— 列表空时长这样：改页面 URL 时勾「保留旧链接」也是一条来源；
@@ -28,8 +27,6 @@ VALUES
 ('admin.seo.paths.empty.action', 'zh-CN', '去访问统计', 200, 'admin', 'admin/seo.html: 热门路径为空时的空态动作（去更全的访问统计）', 1, now(), now()),
 ('admin.seo.paths.empty.action', 'en-US', 'Open analytics', 200, 'admin', 'admin/seo.html: 热门路径为空时的空态动作（去更全的访问统计）', 1, now(), now()),
 
-('admin.analytics.no_project.refresh', 'zh-CN', '刷新重试', 200, 'admin', 'admin/analytics.html: 工程列表装载失败档的空态动作（重试本次请求）', 1, now(), now()),
-('admin.analytics.no_project.refresh', 'en-US', 'Refresh and retry', 200, 'admin', 'admin/analytics.html: 工程列表装载失败档的空态动作（重试本次请求）', 1, now(), now()),
 ('admin.analytics.empty.action', 'zh-CN', '去页面管理发布页面', 200, 'admin', 'admin/analytics.html: 统计维度为空时的空态动作（没有流量 = 还没有发布页面）', 1, now(), now()),
 ('admin.analytics.empty.action', 'en-US', 'Open page management to publish pages', 200, 'admin', 'admin/analytics.html: 统计维度为空时的空态动作（没有流量 = 还没有发布页面）', 1, now(), now()),
 

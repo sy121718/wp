@@ -7,12 +7,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	presentationcontract "go_wp/internal/module/presentation/contract"
-	seoscore "go_wp/internal/seo/scoring"
+	seoscore "go_wp/pkg/seo/scoring"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"

@@ -380,147 +380,561 @@ func registerAdminI18nSeedsAndLatest() {
 	registerSeed(Seed{
 		Version:   "191-i18n-seed-product-inventory",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 552 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
-			"'admin.inventory.change.boldDict', 'admin.inventory.change.boldSource', 'admin.inventory.change.boldTarget', 'admin.inventory.change.lead', " +
-			"'admin.inventory.change.mid', 'admin.inventory.change.mid2', 'admin.inventory.change.optionPick', 'admin.inventory.change.optionReason', " +
-			"'admin.inventory.change.optionWarehouse', 'admin.inventory.change.phQty', 'admin.inventory.change.phRemark', 'admin.inventory.change.phSourceRef', " +
-			"'admin.inventory.change.phSourceType', 'admin.inventory.change.submit', 'admin.inventory.change.tail', 'admin.inventory.change.title', " +
-			"'admin.inventory.change.warehouseDefaultSuffix', 'admin.inventory.change.warehouseSuffixLead', 'admin.inventory.change.warehouseSuffixTail', 'admin.inventory.create.hint', " +
-			"'admin.inventory.create.submit', 'admin.inventory.create.title', 'admin.inventory.defaultWarehouse', 'admin.inventory.label.code', " +
-			"'admin.inventory.label.name', 'admin.inventory.lastError', 'admin.inventory.lastOk', 'admin.inventory.list.delete', " +
-			"'admin.inventory.list.deleteConfirm', 'admin.inventory.list.empty', 'admin.inventory.list.save', 'admin.inventory.list.sortLead', " +
-			"'admin.inventory.list.titleLead', 'admin.inventory.list.titleTail', 'admin.inventory.moves.col.delta', 'admin.inventory.moves.col.direction', " +
-			"'admin.inventory.moves.col.operator', 'admin.inventory.moves.col.qtyChange', 'admin.inventory.moves.col.reason', 'admin.inventory.moves.col.sourceRef', " +
-			"'admin.inventory.moves.col.time', 'admin.inventory.moves.col.warehouse', 'admin.inventory.moves.empty', 'admin.inventory.moves.hint', " +
-			"'admin.inventory.moves.titleLead', 'admin.inventory.moves.titleTail', 'admin.inventory.ph.code', 'admin.inventory.ph.name', " +
-			"'admin.inventory.ph.sku', 'admin.inventory.ph.sort', 'admin.inventory.reasons.builtin', 'admin.inventory.reasons.col.direction', " +
-			"'admin.inventory.reasons.col.name', 'admin.inventory.reasons.col.origin', 'admin.inventory.reasons.col.state', 'admin.inventory.reasons.create', " +
-			"'admin.inventory.reasons.custom', 'admin.inventory.reasons.empty', 'admin.inventory.reasons.hintLead', 'admin.inventory.reasons.hintTail', " +
-			"'admin.inventory.reasons.phCode', 'admin.inventory.reasons.phName', 'admin.inventory.reasons.titleLead', 'admin.inventory.reasons.titleTail', " +
-			"'admin.inventory.setDefault', 'admin.inventory.sku.col.code', 'admin.inventory.sku.col.qty', 'admin.inventory.sku.col.updatedAt', " +
-			"'admin.inventory.sku.col.warehouse', 'admin.inventory.sku.empty', 'admin.inventory.sku.notFoundLead', 'admin.inventory.sku.notFoundTail', " +
-			"'admin.inventory.sku.optionPick', 'admin.inventory.sku.submit', 'admin.inventory.sku.title', 'admin.inventory.source.bold', " +
-			"'admin.inventory.source.lead', 'admin.inventory.source.tail', 'admin.inventory.sourcesHint.lead', 'admin.inventory.sourcesHint.link', " +
-			"'admin.inventory.sourcesHint.tail', 'admin.inventory.status.active', 'admin.inventory.status.disabled', 'admin.inventory.title', " +
-			"'admin.inventory.warehouse.bold', 'admin.inventory.warehouse.lead', 'admin.inventory.warehouse.mid', 'admin.inventory.warehouse.mid2', " +
-			"'admin.inventory_purchases.col.costPrice', 'admin.inventory_purchases.col.doc', 'admin.inventory_purchases.col.kind', 'admin.inventory_purchases.col.operator', " +
-			"'admin.inventory_purchases.col.order', 'admin.inventory_purchases.col.outstanding', 'admin.inventory_purchases.col.qty', 'admin.inventory_purchases.col.qtySum', " +
-			"'admin.inventory_purchases.col.receipt', 'admin.inventory_purchases.col.received', 'admin.inventory_purchases.col.source', 'admin.inventory_purchases.col.time', " +
-			"'admin.inventory_purchases.col.unitPrice', 'admin.inventory_purchases.col.warehouse', 'admin.inventory_purchases.create.linesHint', 'admin.inventory_purchases.create.optionSku', " +
-			"'admin.inventory_purchases.create.optionSource', 'admin.inventory_purchases.create.optionWarehouse', 'admin.inventory_purchases.create.submit', 'admin.inventory_purchases.create.title', " +
-			"'admin.inventory_purchases.detail.operatorLead', 'admin.inventory_purchases.detail.orderedLead', 'admin.inventory_purchases.detail.remarkLead', 'admin.inventory_purchases.detail.tail', " +
-			"'admin.inventory_purchases.filter.optionSourceAll', 'admin.inventory_purchases.filter.optionStatusAll', 'admin.inventory_purchases.filter.phKeyword', 'admin.inventory_purchases.filter.submit', " +
-			"'admin.inventory_purchases.history.bold', 'admin.inventory_purchases.history.costNotWritten', 'admin.inventory_purchases.history.costWritten', 'admin.inventory_purchases.history.empty', " +
-			"'admin.inventory_purchases.history.lead', 'admin.inventory_purchases.history.optionAllSku', 'admin.inventory_purchases.history.submit', 'admin.inventory_purchases.history.tail', " +
-			"'admin.inventory_purchases.history.title', 'admin.inventory_purchases.intro.boldOrder', 'admin.inventory_purchases.intro.boldReceived', 'admin.inventory_purchases.intro.mid', " +
-			"'admin.inventory_purchases.intro.tail', 'admin.inventory_purchases.lastError', 'admin.inventory_purchases.lastOk', 'admin.inventory_purchases.list.empty', " +
-			"'admin.inventory_purchases.list.receivedLead', 'admin.inventory_purchases.list.titleLead', 'admin.inventory_purchases.list.titleTail', 'admin.inventory_purchases.noInternal.lead', " +
-			"'admin.inventory_purchases.noInternal.tail', 'admin.inventory_purchases.noSources.lead', 'admin.inventory_purchases.noSources.link', 'admin.inventory_purchases.noSources.tail', " +
-			"'admin.inventory_purchases.ph.code', 'admin.inventory_purchases.ph.lineQty', 'admin.inventory_purchases.ph.lineUnitPrice', 'admin.inventory_purchases.ph.remark', " +
-			"'admin.inventory_purchases.production.boldInternal', 'admin.inventory_purchases.production.boldManual', 'admin.inventory_purchases.production.boldNoOrder', 'admin.inventory_purchases.production.lead', " +
-			"'admin.inventory_purchases.production.mid', 'admin.inventory_purchases.production.mid2', 'admin.inventory_purchases.production.optionSource', 'admin.inventory_purchases.production.optionWarehouse', " +
-			"'admin.inventory_purchases.production.phQty', 'admin.inventory_purchases.production.phRemark', 'admin.inventory_purchases.production.phUnitCost', 'admin.inventory_purchases.production.submit', " +
-			"'admin.inventory_purchases.production.tail', 'admin.inventory_purchases.production.title', 'admin.inventory_purchases.receipt.boldContract', 'admin.inventory_purchases.receipt.boldCost', " +
-			"'admin.inventory_purchases.receipt.boldIdem', 'admin.inventory_purchases.receipt.full', 'admin.inventory_purchases.receipt.lead', 'admin.inventory_purchases.receipt.mid', " +
-			"'admin.inventory_purchases.receipt.mid2', 'admin.inventory_purchases.receipt.phQty', 'admin.inventory_purchases.receipt.phUnitPrice', 'admin.inventory_purchases.receipt.tail', " +
-			"'admin.inventory_purchases.title', 'admin.inventory_sources.create.hint.bold', 'admin.inventory_sources.create.hint.lead', 'admin.inventory_sources.create.hint.tail', " +
-			"'admin.inventory_sources.create.submit', 'admin.inventory_sources.create.title', 'admin.inventory_sources.filter.allWithDisabled', 'admin.inventory_sources.filter.hint', " +
-			"'admin.inventory_sources.filter.onlyRelated', 'admin.inventory_sources.filter.onlyUnrelated', 'admin.inventory_sources.filter.optionRelatedAll', 'admin.inventory_sources.filter.optionStatusActive', " +
-			"'admin.inventory_sources.filter.optionTypeAll', 'admin.inventory_sources.filter.phKeyword', 'admin.inventory_sources.filter.submit', " +
-			"'admin.inventory_sources.intro.boldAll', 'admin.inventory_sources.intro.boldKind', 'admin.inventory_sources.intro.boldRelated', 'admin.inventory_sources.intro.lead', " +
-			"'admin.inventory_sources.intro.mid1', 'admin.inventory_sources.intro.mid2', 'admin.inventory_sources.intro.tail', 'admin.inventory_sources.intro2.bold', " +
-			"'admin.inventory_sources.intro2.lead', 'admin.inventory_sources.intro2.tail', 'admin.inventory_sources.label.code', 'admin.inventory_sources.label.name', " +
-			"'admin.inventory_sources.lastError', 'admin.inventory_sources.lastOk', 'admin.inventory_sources.list.delete', 'admin.inventory_sources.list.deleteConfirm', " +
-			"'admin.inventory_sources.list.empty', 'admin.inventory_sources.list.save', 'admin.inventory_sources.list.settlePriceLead', 'admin.inventory_sources.list.titleLead', " +
-			"'admin.inventory_sources.list.titleTail', 'admin.inventory_sources.ph.code', 'admin.inventory_sources.ph.config', 'admin.inventory_sources.ph.name', " +
-			"'admin.inventory_sources.ph.settlePrice', 'admin.inventory_sources.ph.sort', 'admin.inventory_sources.stats.col.count', 'admin.inventory_sources.stats.col.related', " +
-			"'admin.inventory_sources.stats.col.type', 'admin.inventory_sources.stats.external', 'admin.inventory_sources.stats.hint', 'admin.inventory_sources.stats.internal', " +
-			"'admin.inventory_sources.stats.related', 'admin.inventory_sources.stats.settlePriced', 'admin.inventory_sources.stats.title', 'admin.inventory_sources.stats.total', " +
-			"'admin.inventory_sources.stats.unrelated', 'admin.inventory_sources.title', 'admin.inventory_sources.update.optionKeep', 'admin.inventory_sources.update.phConfig', " +
-			"'admin.inventory_sources.update.phSettlePrice', 'admin.product_attributes.create.submit', 'admin.product_attributes.create.title', 'admin.product_attributes.intro', " +
-			"'admin.product_attributes.isVariation', 'admin.product_attributes.lastError', 'admin.product_attributes.list.delete', 'admin.product_attributes.list.deleteConfirm', " +
-			"'admin.product_attributes.list.empty', 'admin.product_attributes.list.save', 'admin.product_attributes.list.saveValues', 'admin.product_attributes.list.title', " +
-			"'admin.product_attributes.list.valueCountTail', 'admin.product_attributes.notVariation', 'admin.product_attributes.ph.groupName', 'admin.product_attributes.ph.groupNameExample', " +
-			"'admin.product_attributes.ph.key', 'admin.product_attributes.ph.keyExample', 'admin.product_attributes.ph.sort', 'admin.product_attributes.title', " +
-			"'admin.product_brands.create.submit', 'admin.product_brands.create.title', 'admin.product_brands.intro', 'admin.product_brands.label.description', " +
-			"'admin.product_brands.label.logo', 'admin.product_brands.label.name', 'admin.product_brands.label.seoDesc', 'admin.product_brands.label.seoTitle', " +
-			"'admin.product_brands.label.slug', 'admin.product_brands.lastError', 'admin.product_brands.list.delete', 'admin.product_brands.list.deleteConfirm', " +
-			"'admin.product_brands.list.empty', 'admin.product_brands.list.save', 'admin.product_brands.list.sortLead', 'admin.product_brands.list.title', " +
-			"'admin.product_brands.ph.description', 'admin.product_brands.ph.logo', 'admin.product_brands.ph.nameExample', 'admin.product_brands.ph.seoDesc', " +
-			"'admin.product_brands.ph.seoTitle', 'admin.product_brands.ph.slug', 'admin.product_brands.ph.sort', 'admin.product_brands.projectAria', " +
-			"'admin.product_brands.seoScore', 'admin.product_brands.title', 'admin.product_categories.create.submit', " +
-			"'admin.product_categories.create.title', 'admin.product_categories.intro', 'admin.product_categories.label.description', 'admin.product_categories.label.image', " +
-			"'admin.product_categories.label.name', 'admin.product_categories.label.parent', 'admin.product_categories.label.seoDesc', 'admin.product_categories.label.seoTitle', " +
-			"'admin.product_categories.label.slug', 'admin.product_categories.lastError', 'admin.product_categories.list.delete', 'admin.product_categories.list.deleteConfirm', " +
-			"'admin.product_categories.list.empty', 'admin.product_categories.list.save', 'admin.product_categories.list.sortLead', 'admin.product_categories.list.title', " +
-			"'admin.product_categories.option.topLevel', 'admin.product_categories.ph.description', 'admin.product_categories.ph.image', 'admin.product_categories.ph.nameExample', " +
-			"'admin.product_categories.ph.seoDesc', 'admin.product_categories.ph.seoTitle', 'admin.product_categories.ph.slug', 'admin.product_categories.ph.sort', " +
-			"'admin.product_categories.projectAria', 'admin.product_categories.seoScore', 'admin.product_categories.title', 'admin.product_detail_template.afterDefaultId', " +
-			"'admin.product_detail_template.applySubmit', 'admin.product_detail_template.backToList', 'admin.product_detail_template.backToListArrow', 'admin.product_detail_template.boundToInstance', " +
-			"'admin.product_detail_template.changeURLHint', 'admin.product_detail_template.changeURLSubmit', 'admin.product_detail_template.currentTemplateLead', 'admin.product_detail_template.defaultIdLead', " +
-			"'admin.product_detail_template.detailSuffix', 'admin.product_detail_template.intro', 'admin.product_detail_template.keepRedirect', 'admin.product_detail_template.label.changeURL', " +
-			"'admin.product_detail_template.label.previewTemplate', 'admin.product_detail_template.label.useTemplate', 'admin.product_detail_template.lastError', 'admin.product_detail_template.named.bound', " +
-			"'admin.product_detail_template.named.col.name', 'admin.product_detail_template.named.col.state', 'admin.product_detail_template.named.col.templateId', 'admin.product_detail_template.named.col.updatedAt', " +
-			"'admin.product_detail_template.named.col.version', 'admin.product_detail_template.named.create', 'admin.product_detail_template.named.empty', 'admin.product_detail_template.named.label.copyFrom', " +
-			"'admin.product_detail_template.named.ph.name', 'admin.product_detail_template.named.tableAria', 'admin.product_detail_template.named.titleLead', 'admin.product_detail_template.named.titleTail', " +
-			"'admin.product_detail_template.named.typeDefaultLabel', 'admin.product_detail_template.named.visualEdit', 'admin.product_detail_template.notPublished', 'admin.product_detail_template.notReady', " +
-			"'admin.product_detail_template.ph.publishURLLead', 'admin.product_detail_template.ph.publishURLTail', 'admin.product_detail_template.previewSubmit', 'admin.product_detail_template.publishSubmit', " +
-			"'admin.product_detail_template.published', 'admin.product_detail_template.title', 'admin.product_detail_template.typeDefault', 'admin.product_detail_template.typeDefaultSuffix', " +
-			"'admin.product_detail_template.versionLead', 'admin.product_detail_template.versionTail', 'admin.product_pricing.applied.lead', 'admin.product_pricing.applied.tail', " +
-			"'admin.product_pricing.apply.confirm', 'admin.product_pricing.apply.hint', 'admin.product_pricing.apply.labelFilter', 'admin.product_pricing.apply.labelRounding', " +
-			"'admin.product_pricing.apply.labelRule', 'admin.product_pricing.apply.labelScope', 'admin.product_pricing.apply.phAmount', 'admin.product_pricing.apply.phBrandId', " +
-			"'admin.product_pricing.apply.phCategoryId', 'admin.product_pricing.apply.phKeyword', 'admin.product_pricing.apply.phMargin', 'admin.product_pricing.apply.phMultiplier', " +
-			"'admin.product_pricing.apply.phNote', 'admin.product_pricing.apply.phStatus', 'admin.product_pricing.apply.phTagId', 'admin.product_pricing.apply.phTargetId', " +
-			"'admin.product_pricing.apply.preview', 'admin.product_pricing.apply.roundingAria', 'admin.product_pricing.apply.ruleTypeAria', 'admin.product_pricing.apply.scopeAria', " +
-			"'admin.product_pricing.apply.scopeFilter', 'admin.product_pricing.apply.scopeProduct', 'admin.product_pricing.apply.scopeSku', 'admin.product_pricing.apply.submit', " +
-			"'admin.product_pricing.apply.title', 'admin.product_pricing.col.costPrice', 'admin.product_pricing.col.desc', 'admin.product_pricing.col.diff', " +
-			"'admin.product_pricing.col.newPrice', 'admin.product_pricing.col.oldPrice', 'admin.product_pricing.col.params', 'admin.product_pricing.col.product', " +
-			"'admin.product_pricing.col.result', 'admin.product_pricing.col.type', 'admin.product_pricing.history.changedLead', 'admin.product_pricing.history.changedTail', " +
-			"'admin.product_pricing.history.empty', 'admin.product_pricing.history.filterLead', 'admin.product_pricing.history.noItems', 'admin.product_pricing.history.noteLead', " +
-			"'admin.product_pricing.history.operatorLead', 'admin.product_pricing.history.tableAria', 'admin.product_pricing.history.title', 'admin.product_pricing.intro', " +
-			"'admin.product_pricing.lastError', 'admin.product_pricing.preview.confirmHint', 'admin.product_pricing.preview.empty', 'admin.product_pricing.preview.summaryChanged', " +
-			"'admin.product_pricing.preview.summaryClose', 'admin.product_pricing.preview.summaryRounding', 'admin.product_pricing.preview.summaryRule', 'admin.product_pricing.preview.summaryScope', " +
-			"'admin.product_pricing.preview.summarySkipped', 'admin.product_pricing.preview.summaryTargets', 'admin.product_pricing.preview.summaryUnchanged', 'admin.product_pricing.preview.tableAria', " +
-			"'admin.product_pricing.preview.title', 'admin.product_pricing.rounding.hint', 'admin.product_pricing.rules.aria', 'admin.product_pricing.rules.hint', " +
-			"'admin.product_pricing.rules.requiresCost', 'admin.product_pricing.rules.title', 'admin.product_pricing.title', 'admin.product_tags.col.desc', " +
-			"'admin.product_tags.col.params', 'admin.product_tags.col.product', 'admin.product_tags.col.slug', 'admin.product_tags.col.state', " +
-			"'admin.product_tags.col.type', 'admin.product_tags.create.hint', 'admin.product_tags.create.submit', 'admin.product_tags.create.title', " +
-			"'admin.product_tags.intro', 'admin.product_tags.kindAria', 'admin.product_tags.kindManual', 'admin.product_tags.kindRule', " +
-			"'admin.product_tags.label.kind', 'admin.product_tags.label.name', 'admin.product_tags.label.rule', 'admin.product_tags.label.slug', " +
-			"'admin.product_tags.lastError', 'admin.product_tags.list.delete', 'admin.product_tags.list.deleteConfirm', 'admin.product_tags.list.empty', " +
-			"'admin.product_tags.list.hitAria', 'admin.product_tags.list.hitEmpty', 'admin.product_tags.list.hitLead', 'admin.product_tags.list.hitMid', " +
-			"'admin.product_tags.list.hitTitle', 'admin.product_tags.list.recalc', 'admin.product_tags.list.save', 'admin.product_tags.list.title', " +
-			"'admin.product_tags.ph.days', 'admin.product_tags.ph.daysShort', 'admin.product_tags.ph.maxPrice', 'admin.product_tags.ph.minPrice', " +
-			"'admin.product_tags.ph.nameExample', 'admin.product_tags.ph.slug', 'admin.product_tags.ph.sort', 'admin.product_tags.projectAria', " +
-			"'admin.product_tags.recalcAll', 'admin.product_tags.ruleEmpty', 'admin.product_tags.ruleTypeAria', 'admin.product_tags.rules.aria', " +
-			"'admin.product_tags.rules.hint', 'admin.product_tags.rules.title', 'admin.product_tags.title', 'admin.product_translations.col.field', " +
-			"'admin.product_translations.col.origin', 'admin.product_translations.col.source', 'admin.product_translations.col.state', 'admin.product_translations.col.target', " +
-			"'admin.product_translations.doneLead', 'admin.product_translations.doneTail', 'admin.product_translations.empty', 'admin.product_translations.errorsTitle', " +
-			"'admin.product_translations.groupMetaLead', 'admin.product_translations.groupMetaMid', 'admin.product_translations.groupMetaTail', 'admin.product_translations.label.lang', " +
-			"'admin.product_translations.label.project', 'admin.product_translations.noscriptSwitch', 'admin.product_translations.ph.target', 'admin.product_translations.richHint', " +
-			"'admin.product_translations.saveAll', 'admin.product_translations.saveHint', 'admin.product_translations.scopeLead', 'admin.product_translations.scopeTail', " +
-			"'admin.product_translations.state.missing', 'admin.product_translations.state.translated', 'admin.product_translations.title', 'admin.product_translations.viewProject', " +
-			"'admin.products.action.delete', 'admin.products.attrs.ph', 'admin.products.attrs.save', 'admin.products.col.comparePrice', " +
-			"'admin.products.col.costPrice', 'admin.products.col.enabled', 'admin.products.col.price', 'admin.products.col.spec', " +
-			"'admin.products.col.stock', 'admin.products.combo.generateAll', 'admin.products.combo.generateSelected', 'admin.products.combo.hint', " +
-			"'admin.products.combo.title', 'admin.products.create.submit', 'admin.products.hint.and', 'admin.products.hint.attrLead', " +
-			"'admin.products.hint.attrLink', 'admin.products.hint.attrTail', 'admin.products.hint.brandLink', 'admin.products.hint.brandTail', " +
-			"'admin.products.hint.categoryLink', 'admin.products.hint.tagLink', 'admin.products.hint.tagTail', 'admin.products.lastError', " +
-			"'admin.products.list.empty', 'admin.products.list.title', 'admin.products.ph.attributeIds', 'admin.products.ph.defaultPrice', " +
-			"'admin.products.ph.name', 'admin.products.ph.slug', 'admin.products.rating.add', 'admin.products.rating.close', " +
-			"'admin.products.rating.emptyHint', 'admin.products.rating.hasHint', 'admin.products.rating.label', 'admin.products.rating.mid', " +
-			"'admin.products.rating.none', 'admin.products.rating.open', 'admin.products.rating.phScore', 'admin.products.ratings.aria', " +
-			"'admin.products.ratings.colSource', 'admin.products.ratings.colTime', 'admin.products.row.delete', 'admin.products.row.deleteConfirm', " +
-			"'admin.products.row.detailTemplate', 'admin.products.row.preview', 'admin.products.row.price', 'admin.products.row.seoScore', " +
-			"'admin.products.row.translations', 'admin.products.row.variantCountSuffix', 'admin.products.row.variationSuffix', 'admin.products.tags.autoTail', " +
-			"'admin.products.tags.legendAuto', 'admin.products.tags.legendManual', 'admin.products.tags.manualLead', 'admin.products.tags.manualMid', " +
-			"'admin.products.tags.noManualLead', 'admin.products.tags.save', 'admin.products.tags.title', 'admin.products.taxonomy.attachedLead', " +
-			"'admin.products.taxonomy.attachedMid', 'admin.products.taxonomy.brandLabel', 'admin.products.taxonomy.brandLead', 'admin.products.taxonomy.legendCategories', " +
-			"'admin.products.taxonomy.noCategoriesLead', 'admin.products.taxonomy.noCategoriesTail', 'admin.products.taxonomy.primaryLabel', 'admin.products.taxonomy.save', " +
-			"'admin.products.taxonomy.title', 'admin.products.taxonomy.unset', 'admin.products.title', 'admin.products.variant.add', " +
-			"'admin.products.variant.phPrice', 'admin.products.variant.phSku', 'admin.products.variant.stockLink', 'admin.products.variants.aria', " +
-			"'admin.products.warehouse.defaultOption', 'admin.products.warehouse.label')",
-		SQL: mustSQL("191_i18n_seed_product_inventory.sql"),
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('admin.inventory.change.boldDict'),
+    ('admin.inventory.change.boldSource'),
+    ('admin.inventory.change.boldTarget'),
+    ('admin.inventory.change.lead'),
+    ('admin.inventory.change.mid'),
+    ('admin.inventory.change.mid2'),
+    ('admin.inventory.change.optionPick'),
+    ('admin.inventory.change.optionReason'),
+    ('admin.inventory.change.optionWarehouse'),
+    ('admin.inventory.change.phQty'),
+    ('admin.inventory.change.phRemark'),
+    ('admin.inventory.change.phSourceRef'),
+    ('admin.inventory.change.phSourceType'),
+    ('admin.inventory.change.submit'),
+    ('admin.inventory.change.tail'),
+    ('admin.inventory.change.title'),
+    ('admin.inventory.change.warehouseDefaultSuffix'),
+    ('admin.inventory.change.warehouseSuffixLead'),
+    ('admin.inventory.change.warehouseSuffixTail'),
+    ('admin.inventory.create.hint'),
+    ('admin.inventory.create.submit'),
+    ('admin.inventory.create.title'),
+    ('admin.inventory.defaultWarehouse'),
+    ('admin.inventory.label.code'),
+    ('admin.inventory.label.name'),
+    ('admin.inventory.lastError'),
+    ('admin.inventory.lastOk'),
+    ('admin.inventory.list.delete'),
+    ('admin.inventory.list.deleteConfirm'),
+    ('admin.inventory.list.empty'),
+    ('admin.inventory.list.save'),
+    ('admin.inventory.list.sortLead'),
+    ('admin.inventory.list.titleLead'),
+    ('admin.inventory.list.titleTail'),
+    ('admin.inventory.moves.col.delta'),
+    ('admin.inventory.moves.col.direction'),
+    ('admin.inventory.moves.col.operator'),
+    ('admin.inventory.moves.col.qtyChange'),
+    ('admin.inventory.moves.col.reason'),
+    ('admin.inventory.moves.col.sourceRef'),
+    ('admin.inventory.moves.col.time'),
+    ('admin.inventory.moves.col.warehouse'),
+    ('admin.inventory.moves.empty'),
+    ('admin.inventory.moves.hint'),
+    ('admin.inventory.moves.titleLead'),
+    ('admin.inventory.moves.titleTail'),
+    ('admin.inventory.ph.code'),
+    ('admin.inventory.ph.name'),
+    ('admin.inventory.ph.sku'),
+    ('admin.inventory.ph.sort'),
+    ('admin.inventory.reasons.builtin'),
+    ('admin.inventory.reasons.col.direction'),
+    ('admin.inventory.reasons.col.name'),
+    ('admin.inventory.reasons.col.origin'),
+    ('admin.inventory.reasons.col.state'),
+    ('admin.inventory.reasons.create'),
+    ('admin.inventory.reasons.custom'),
+    ('admin.inventory.reasons.empty'),
+    ('admin.inventory.reasons.hintLead'),
+    ('admin.inventory.reasons.hintTail'),
+    ('admin.inventory.reasons.phCode'),
+    ('admin.inventory.reasons.phName'),
+    ('admin.inventory.reasons.titleLead'),
+    ('admin.inventory.reasons.titleTail'),
+    ('admin.inventory.setDefault'),
+    ('admin.inventory.sku.col.code'),
+    ('admin.inventory.sku.col.qty'),
+    ('admin.inventory.sku.col.updatedAt'),
+    ('admin.inventory.sku.col.warehouse'),
+    ('admin.inventory.sku.empty'),
+    ('admin.inventory.sku.notFoundLead'),
+    ('admin.inventory.sku.notFoundTail'),
+    ('admin.inventory.sku.optionPick'),
+    ('admin.inventory.sku.submit'),
+    ('admin.inventory.sku.title'),
+    ('admin.inventory.source.bold'),
+    ('admin.inventory.source.lead'),
+    ('admin.inventory.source.tail'),
+    ('admin.inventory.sourcesHint.lead'),
+    ('admin.inventory.sourcesHint.link'),
+    ('admin.inventory.sourcesHint.tail'),
+    ('admin.inventory.status.active'),
+    ('admin.inventory.status.disabled'),
+    ('admin.inventory.title'),
+    ('admin.inventory.warehouse.bold'),
+    ('admin.inventory.warehouse.lead'),
+    ('admin.inventory.warehouse.mid'),
+    ('admin.inventory.warehouse.mid2'),
+    ('admin.inventory_purchases.col.costPrice'),
+    ('admin.inventory_purchases.col.doc'),
+    ('admin.inventory_purchases.col.kind'),
+    ('admin.inventory_purchases.col.operator'),
+    ('admin.inventory_purchases.col.order'),
+    ('admin.inventory_purchases.col.outstanding'),
+    ('admin.inventory_purchases.col.qty'),
+    ('admin.inventory_purchases.col.qtySum'),
+    ('admin.inventory_purchases.col.receipt'),
+    ('admin.inventory_purchases.col.received'),
+    ('admin.inventory_purchases.col.source'),
+    ('admin.inventory_purchases.col.time'),
+    ('admin.inventory_purchases.col.unitPrice'),
+    ('admin.inventory_purchases.col.warehouse'),
+    ('admin.inventory_purchases.create.linesHint'),
+    ('admin.inventory_purchases.create.optionSku'),
+    ('admin.inventory_purchases.create.optionSource'),
+    ('admin.inventory_purchases.create.optionWarehouse'),
+    ('admin.inventory_purchases.create.submit'),
+    ('admin.inventory_purchases.create.title'),
+    ('admin.inventory_purchases.detail.operatorLead'),
+    ('admin.inventory_purchases.detail.orderedLead'),
+    ('admin.inventory_purchases.detail.remarkLead'),
+    ('admin.inventory_purchases.detail.tail'),
+    ('admin.inventory_purchases.filter.optionSourceAll'),
+    ('admin.inventory_purchases.filter.optionStatusAll'),
+    ('admin.inventory_purchases.filter.phKeyword'),
+    ('admin.inventory_purchases.filter.submit'),
+    ('admin.inventory_purchases.history.bold'),
+    ('admin.inventory_purchases.history.costNotWritten'),
+    ('admin.inventory_purchases.history.costWritten'),
+    ('admin.inventory_purchases.history.empty'),
+    ('admin.inventory_purchases.history.lead'),
+    ('admin.inventory_purchases.history.optionAllSku'),
+    ('admin.inventory_purchases.history.submit'),
+    ('admin.inventory_purchases.history.tail'),
+    ('admin.inventory_purchases.history.title'),
+    ('admin.inventory_purchases.intro.boldOrder'),
+    ('admin.inventory_purchases.intro.boldReceived'),
+    ('admin.inventory_purchases.intro.mid'),
+    ('admin.inventory_purchases.intro.tail'),
+    ('admin.inventory_purchases.lastError'),
+    ('admin.inventory_purchases.lastOk'),
+    ('admin.inventory_purchases.list.empty'),
+    ('admin.inventory_purchases.list.receivedLead'),
+    ('admin.inventory_purchases.list.titleLead'),
+    ('admin.inventory_purchases.list.titleTail'),
+    ('admin.inventory_purchases.noInternal.lead'),
+    ('admin.inventory_purchases.noInternal.tail'),
+    ('admin.inventory_purchases.noSources.lead'),
+    ('admin.inventory_purchases.noSources.link'),
+    ('admin.inventory_purchases.noSources.tail'),
+    ('admin.inventory_purchases.ph.code'),
+    ('admin.inventory_purchases.ph.lineQty'),
+    ('admin.inventory_purchases.ph.lineUnitPrice'),
+    ('admin.inventory_purchases.ph.remark'),
+    ('admin.inventory_purchases.production.boldInternal'),
+    ('admin.inventory_purchases.production.boldManual'),
+    ('admin.inventory_purchases.production.boldNoOrder'),
+    ('admin.inventory_purchases.production.lead'),
+    ('admin.inventory_purchases.production.mid'),
+    ('admin.inventory_purchases.production.mid2'),
+    ('admin.inventory_purchases.production.optionSource'),
+    ('admin.inventory_purchases.production.optionWarehouse'),
+    ('admin.inventory_purchases.production.phQty'),
+    ('admin.inventory_purchases.production.phRemark'),
+    ('admin.inventory_purchases.production.phUnitCost'),
+    ('admin.inventory_purchases.production.submit'),
+    ('admin.inventory_purchases.production.tail'),
+    ('admin.inventory_purchases.production.title'),
+    ('admin.inventory_purchases.receipt.boldContract'),
+    ('admin.inventory_purchases.receipt.boldCost'),
+    ('admin.inventory_purchases.receipt.boldIdem'),
+    ('admin.inventory_purchases.receipt.full'),
+    ('admin.inventory_purchases.receipt.lead'),
+    ('admin.inventory_purchases.receipt.mid'),
+    ('admin.inventory_purchases.receipt.mid2'),
+    ('admin.inventory_purchases.receipt.phQty'),
+    ('admin.inventory_purchases.receipt.phUnitPrice'),
+    ('admin.inventory_purchases.receipt.tail'),
+    ('admin.inventory_purchases.title'),
+    ('admin.inventory_sources.create.hint.bold'),
+    ('admin.inventory_sources.create.hint.lead'),
+    ('admin.inventory_sources.create.hint.tail'),
+    ('admin.inventory_sources.create.submit'),
+    ('admin.inventory_sources.create.title'),
+    ('admin.inventory_sources.filter.allWithDisabled'),
+    ('admin.inventory_sources.filter.hint'),
+    ('admin.inventory_sources.filter.onlyRelated'),
+    ('admin.inventory_sources.filter.onlyUnrelated'),
+    ('admin.inventory_sources.filter.optionRelatedAll'),
+    ('admin.inventory_sources.filter.optionStatusActive'),
+    ('admin.inventory_sources.filter.optionTypeAll'),
+    ('admin.inventory_sources.filter.phKeyword'),
+    ('admin.inventory_sources.filter.submit'),
+    ('admin.inventory_sources.intro.boldAll'),
+    ('admin.inventory_sources.intro.boldKind'),
+    ('admin.inventory_sources.intro.boldRelated'),
+    ('admin.inventory_sources.intro.lead'),
+    ('admin.inventory_sources.intro.mid1'),
+    ('admin.inventory_sources.intro.mid2'),
+    ('admin.inventory_sources.intro.tail'),
+    ('admin.inventory_sources.intro2.bold'),
+    ('admin.inventory_sources.intro2.lead'),
+    ('admin.inventory_sources.intro2.tail'),
+    ('admin.inventory_sources.label.code'),
+    ('admin.inventory_sources.label.name'),
+    ('admin.inventory_sources.lastError'),
+    ('admin.inventory_sources.lastOk'),
+    ('admin.inventory_sources.list.delete'),
+    ('admin.inventory_sources.list.deleteConfirm'),
+    ('admin.inventory_sources.list.empty'),
+    ('admin.inventory_sources.list.save'),
+    ('admin.inventory_sources.list.settlePriceLead'),
+    ('admin.inventory_sources.list.titleLead'),
+    ('admin.inventory_sources.list.titleTail'),
+    ('admin.inventory_sources.ph.code'),
+    ('admin.inventory_sources.ph.config'),
+    ('admin.inventory_sources.ph.name'),
+    ('admin.inventory_sources.ph.settlePrice'),
+    ('admin.inventory_sources.ph.sort'),
+    ('admin.inventory_sources.stats.col.count'),
+    ('admin.inventory_sources.stats.col.related'),
+    ('admin.inventory_sources.stats.col.type'),
+    ('admin.inventory_sources.stats.external'),
+    ('admin.inventory_sources.stats.hint'),
+    ('admin.inventory_sources.stats.internal'),
+    ('admin.inventory_sources.stats.related'),
+    ('admin.inventory_sources.stats.settlePriced'),
+    ('admin.inventory_sources.stats.title'),
+    ('admin.inventory_sources.stats.total'),
+    ('admin.inventory_sources.stats.unrelated'),
+    ('admin.inventory_sources.title'),
+    ('admin.inventory_sources.update.optionKeep'),
+    ('admin.inventory_sources.update.phConfig'),
+    ('admin.inventory_sources.update.phSettlePrice'),
+    ('admin.product_attributes.create.title'),
+    ('admin.product_attributes.lastError'),
+    ('admin.product_attributes.list.delete'),
+    ('admin.product_attributes.list.valueCountTail'),
+    ('admin.product_brands.label.logo'),
+    ('admin.product_brands.label.seoDesc'),
+    ('admin.product_brands.label.seoTitle'),
+    ('admin.product_brands.lastError'),
+    ('admin.product_brands.list.delete'),
+    ('admin.product_brands.list.empty'),
+    ('admin.product_brands.list.sortLead'),
+    ('admin.product_brands.ph.logo'),
+    ('admin.product_brands.ph.seoDesc'),
+    ('admin.product_brands.ph.seoTitle'),
+    ('admin.product_brands.projectAria'),
+    ('admin.product_brands.seoScore'),
+    ('admin.product_categories.label.image'),
+    ('admin.product_categories.label.seoDesc'),
+    ('admin.product_categories.label.seoTitle'),
+    ('admin.product_categories.lastError'),
+    ('admin.product_categories.list.delete'),
+    ('admin.product_categories.list.empty'),
+    ('admin.product_categories.list.sortLead'),
+    ('admin.product_categories.ph.description'),
+    ('admin.product_categories.ph.image'),
+    ('admin.product_categories.ph.nameExample'),
+    ('admin.product_categories.ph.seoDesc'),
+    ('admin.product_categories.ph.seoTitle'),
+    ('admin.product_categories.ph.slug'),
+    ('admin.product_categories.projectAria'),
+    ('admin.product_categories.seoScore'),
+    ('admin.product_detail_template.afterDefaultId'),
+    ('admin.product_detail_template.boundToInstance'),
+    ('admin.product_detail_template.currentTemplateLead'),
+    ('admin.product_detail_template.defaultIdLead'),
+    ('admin.product_detail_template.detailSuffix'),
+    ('admin.product_detail_template.lastError'),
+    ('admin.product_detail_template.named.col.templateId'),
+    ('admin.product_detail_template.named.titleLead'),
+    ('admin.product_detail_template.named.titleTail'),
+    ('admin.product_detail_template.notReady'),
+    ('admin.product_detail_template.ph.publishURLLead'),
+    ('admin.product_detail_template.ph.publishURLTail'),
+    ('admin.product_detail_template.typeDefault'),
+    ('admin.product_detail_template.typeDefaultSuffix'),
+    ('admin.product_detail_template.versionLead'),
+    ('admin.product_detail_template.versionTail'),
+    ('admin.product_pricing.applied.lead'),
+    ('admin.product_pricing.applied.tail'),
+    ('admin.product_pricing.apply.hint'),
+    ('admin.product_pricing.history.changedLead'),
+    ('admin.product_pricing.history.changedTail'),
+    ('admin.product_pricing.history.filterLead'),
+    ('admin.product_pricing.history.noteLead'),
+    ('admin.product_pricing.history.operatorLead'),
+    ('admin.product_pricing.lastError'),
+    ('admin.product_pricing.preview.confirmHint'),
+    ('admin.product_tags.kindAria'),
+    ('admin.product_tags.lastError'),
+    ('admin.product_tags.list.delete'),
+    ('admin.product_tags.list.hitLead'),
+    ('admin.product_tags.list.hitMid'),
+    ('admin.product_tags.ph.maxPrice'),
+    ('admin.product_tags.ph.minPrice'),
+    ('admin.product_tags.ph.nameExample'),
+    ('admin.product_tags.ph.slug'),
+    ('admin.product_tags.ruleTypeAria'),
+    ('admin.product_translations.doneLead'),
+    ('admin.product_translations.doneTail'),
+    ('admin.product_translations.groupMetaLead'),
+    ('admin.product_translations.groupMetaMid'),
+    ('admin.product_translations.groupMetaTail'),
+    ('admin.product_translations.scopeLead'),
+    ('admin.product_translations.scopeTail'),
+    ('admin.products.action.delete'),
+    ('admin.products.attrs.ph'),
+    ('admin.products.attrs.save'),
+    ('admin.products.combo.hint'),
+    ('admin.products.combo.title'),
+    ('admin.products.hint.and'),
+    ('admin.products.hint.attrLead'),
+    ('admin.products.hint.attrLink'),
+    ('admin.products.hint.attrTail'),
+    ('admin.products.hint.brandLink'),
+    ('admin.products.hint.brandTail'),
+    ('admin.products.hint.categoryLink'),
+    ('admin.products.hint.tagLink'),
+    ('admin.products.hint.tagTail'),
+    ('admin.products.lastError'),
+    ('admin.products.ph.attributeIds'),
+    ('admin.products.rating.close'),
+    ('admin.products.rating.emptyHint'),
+    ('admin.products.rating.hasHint'),
+    ('admin.products.rating.mid'),
+    ('admin.products.rating.none'),
+    ('admin.products.rating.open'),
+    ('admin.products.row.delete'),
+    ('admin.products.row.price'),
+    ('admin.products.row.variantCountSuffix'),
+    ('admin.products.row.variationSuffix'),
+    ('admin.products.tags.autoTail'),
+    ('admin.products.tags.manualLead'),
+    ('admin.products.tags.manualMid'),
+    ('admin.products.tags.noManualLead'),
+    ('admin.products.tags.save'),
+    ('admin.products.taxonomy.attachedLead'),
+    ('admin.products.taxonomy.attachedMid'),
+    ('admin.products.taxonomy.brandLead'),
+    ('admin.products.taxonomy.noCategoriesLead'),
+    ('admin.products.taxonomy.noCategoriesTail'),
+    ('admin.products.taxonomy.save'),
+    ('admin.products.taxonomy.unset'),
+    ('attrDelConfirm'),
+    ('attrGroupName'),
+    ('attrGroupNameEg'),
+    ('attrIntro'),
+    ('attrIsVar'),
+    ('attrKeyEg'),
+    ('attrKeyPh'),
+    ('attrListEmpty'),
+    ('attrListSave'),
+    ('attrListTitle'),
+    ('attrNewSubmit'),
+    ('attrNoVar'),
+    ('attrSaveValues'),
+    ('attrSort'),
+    ('attrTitle'),
+    ('brandDelAsk'),
+    ('brandDescLabel'),
+    ('brandDescPh'),
+    ('brandIntro'),
+    ('brandListSave'),
+    ('brandListTitle'),
+    ('brandNameEg'),
+    ('brandNameLabel'),
+    ('brandNewSubmit'),
+    ('brandNewTitle'),
+    ('brandSlugLabel'),
+    ('brandSlugPh'),
+    ('brandSortPh'),
+    ('brandTitle'),
+    ('catDelConfirm'),
+    ('catDesc'),
+    ('catIntro'),
+    ('catListSave'),
+    ('catListTitle'),
+    ('catNameLabel'),
+    ('catNewSubmit'),
+    ('catNewTitle'),
+    ('catOptTopLevel'),
+    ('catParent'),
+    ('catSlugLabel'),
+    ('catSortPh'),
+    ('catTitle'),
+    ('pComboGenAll'),
+    ('pComboGenSel'),
+    ('pComparePrice'),
+    ('pCostPrice'),
+    ('pDefPrice'),
+    ('pListEmpty'),
+    ('pListTitle'),
+    ('pNamePh'),
+    ('pNewSubmit'),
+    ('pOn'),
+    ('pPrice'),
+    ('pRating'),
+    ('pRatingAdd'),
+    ('pRatingScore'),
+    ('pRatingsAria'),
+    ('pRatingsSrc'),
+    ('pRatingsTime'),
+    ('pRowDelConfirm'),
+    ('pRowDetailTpl'),
+    ('pRowPrev'),
+    ('pRowSeoScore'),
+    ('pRowTrans'),
+    ('pSlugPh'),
+    ('pSpec'),
+    ('pStock'),
+    ('pTagsAuto'),
+    ('pTagsManual'),
+    ('pTagsTitle'),
+    ('pTaxBrand'),
+    ('pTaxCats'),
+    ('pTaxMain'),
+    ('pTaxTitle'),
+    ('pTitle'),
+    ('pVarAdd'),
+    ('pVarPrice'),
+    ('pVarSkuPh'),
+    ('pVarStockLink'),
+    ('pVarsAria'),
+    ('pWh'),
+    ('pWhDefOpt'),
+    ('prApplyAmount'),
+    ('prApplyBrandId'),
+    ('prApplyCatId'),
+    ('prApplyConfirm'),
+    ('prApplyFlt'),
+    ('prApplyKw'),
+    ('prApplyMargin'),
+    ('prApplyMult'),
+    ('prApplyNote'),
+    ('prApplyPrev'),
+    ('prApplyRound'),
+    ('prApplyRule'),
+    ('prApplyScope'),
+    ('prApplyScopeFlt'),
+    ('prApplyScopeSku'),
+    ('prApplyStatus'),
+    ('prApplySubmit'),
+    ('prApplyTagId'),
+    ('prApplyTgtId'),
+    ('prApplyTitle'),
+    ('prArgs'),
+    ('prCostPrice'),
+    ('prDesc'),
+    ('prDiff'),
+    ('prHistEmpty'),
+    ('prHistNoItems'),
+    ('prHistTableAria'),
+    ('prHistTitle'),
+    ('prIntro'),
+    ('prNewPrice'),
+    ('prOldPrice'),
+    ('prPrevEmpty'),
+    ('prPrevSumChange'),
+    ('prPrevSumClose'),
+    ('prPrevSumRound'),
+    ('prPrevSumRule'),
+    ('prPrevSumSame'),
+    ('prPrevSumScope'),
+    ('prPrevTableAria'),
+    ('prPrevTitle'),
+    ('prProd'),
+    ('prResult'),
+    ('prRoundAria'),
+    ('prRoundHint'),
+    ('prRuleAria'),
+    ('prRulesAria'),
+    ('prRulesHint'),
+    ('prRulesNeedCost'),
+    ('prRulesTitle'),
+    ('prScopeAria'),
+    ('prScopeProduct'),
+    ('prSkipSummary'),
+    ('prTargetSummary'),
+    ('prTitle'),
+    ('prType'),
+    ('tagArgs'),
+    ('tagDays'),
+    ('tagDaysShort'),
+    ('tagDelConfirm'),
+    ('tagDesc'),
+    ('tagIntro'),
+    ('tagKindLabel'),
+    ('tagListEmpty'),
+    ('tagListHitAria'),
+    ('tagListHitEmpty'),
+    ('tagListHitTitle'),
+    ('tagListRecalc'),
+    ('tagListSave'),
+    ('tagListTitle'),
+    ('tagManualLabel'),
+    ('tagNameLabel'),
+    ('tagNewHint'),
+    ('tagNewSubmit'),
+    ('tagNewTitle'),
+    ('tagProd'),
+    ('tagProjAria'),
+    ('tagRecalcAll'),
+    ('tagRuleEmpty'),
+    ('tagRuleKindText'),
+    ('tagRuleLabel'),
+    ('tagRulesAria'),
+    ('tagRulesHint'),
+    ('tagRulesTitle'),
+    ('tagSlugCol'),
+    ('tagSlugLabel'),
+    ('tagSort'),
+    ('tagState'),
+    ('tagTitle'),
+    ('tagType'),
+    ('tplApplySubmit'),
+    ('tplBackArrow'),
+    ('tplBackToList'),
+    ('tplCopyFrom'),
+    ('tplEditUrl'),
+    ('tplEditUrlHint'),
+    ('tplIntro'),
+    ('tplKeepRedirect'),
+    ('tplLive'),
+    ('tplNameCol'),
+    ('tplNamePh'),
+    ('tplNamedBind'),
+    ('tplNamedEditAt'),
+    ('tplNamedEmpty'),
+    ('tplNamedNew'),
+    ('tplNamedState'),
+    ('tplNamedTypeDef'),
+    ('tplNamedVersion'),
+    ('tplNamesAria'),
+    ('tplNoLive'),
+    ('tplPrevSubmit'),
+    ('tplPrevTpl'),
+    ('tplPubSubmit'),
+    ('tplTitle'),
+    ('tplUrlSubmit'),
+    ('tplUseTpl'),
+    ('tplVisualEdit'),
+    ('trEmpty'),
+    ('trErrorsTitle'),
+    ('trField'),
+    ('trLang'),
+    ('trNoJsSwitch'),
+    ('trOrigin'),
+    ('trProj'),
+    ('trRichHint'),
+    ('trSaveAll'),
+    ('trSaveHint'),
+    ('trSrc'),
+    ('trState'),
+    ('trStateDone'),
+    ('trStateMiss'),
+    ('trTargetCol'),
+    ('trTargetPh'),
+    ('trTitle'),
+    ('trViewProj')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723b_current_191_i18n_seed_product_inventory.sql"),
 	})
 
 	register(Migration{
@@ -656,7 +1070,7 @@ func registerAdminI18nSeedsAndLatest() {
 	registerSeed(Seed{
 		Version:      "193-i18n-seed-admin-system",
 		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 349 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.admins.action.cancel', 'admin.admins.action.create', 'admin.admins.action.create_submit', 'admin.admins.action.delete', 'admin.admins.action.edit', 'admin.admins.action.filter', 'admin.admins.action.reset', 'admin.admins.action.save', 'admin.admins.col.actions', 'admin.admins.col.email', 'admin.admins.col.name', 'admin.admins.col.phone', 'admin.admins.col.status', 'admin.admins.col.username', 'admin.admins.confirm.delete', 'admin.admins.edit.title', 'admin.admins.empty', 'admin.admins.field.email', 'admin.admins.field.password', 'admin.admins.field.phone', 'admin.admins.field.remark', 'admin.admins.field.username', 'admin.admins.list.heading', 'admin.admins.list.headingClose', 'admin.admins.ph.email', 'admin.admins.ph.name', 'admin.admins.status.banned', 'admin.admins.status.disabled', 'admin.admins.status.enabled', 'admin.admins.status.unknown', 'admin.analytics.badge.paths', 'admin.analytics.badge.views', 'admin.analytics.badge.visitors', 'admin.analytics.col.day', 'admin.analytics.col.path', 'admin.analytics.col.views', 'admin.analytics.col.visitors', 'admin.analytics.daily.empty.lead', 'admin.analytics.daily.empty.strong', 'admin.analytics.daily.empty.tail', 'admin.analytics.daily.title', 'admin.analytics.error', 'admin.analytics.intro.after', 'admin.analytics.intro.lead', 'admin.analytics.metrics.lead', 'admin.analytics.metrics.strong', 'admin.analytics.metrics.tail', 'admin.analytics.no_project.lead', 'admin.analytics.no_project.link', 'admin.analytics.no_project.tail', 'admin.analytics.paths.empty', 'admin.analytics.paths.title', 'admin.analytics.range.actual_mid', 'admin.analytics.range.actual_post', 'admin.analytics.range.actual_pre', 'admin.analytics.range.title', 'admin.analytics.title', 'admin.dashboard.action.cancel', 'admin.dashboard.action.delete', 'admin.dashboard.action.edit', 'admin.dashboard.action.export', 'admin.dashboard.action.new_admin', 'admin.dashboard.action.save', 'admin.dashboard.badge.draft', 'admin.dashboard.badge.pending_review', 'admin.dashboard.badge.published', 'admin.dashboard.badge.rejected', 'admin.dashboard.badges.title', 'admin.dashboard.buttons.small', 'admin.dashboard.buttons.title', 'admin.dashboard.checkbox.welcome_mail', 'admin.dashboard.col.actions', 'admin.dashboard.col.dept', 'admin.dashboard.col.last_login', 'admin.dashboard.col.name', 'admin.dashboard.col.role', 'admin.dashboard.col.status', 'admin.dashboard.col.username', 'admin.dashboard.dept.content', 'admin.dashboard.dept.market', 'admin.dashboard.dept.tech', 'admin.dashboard.field.dept', 'admin.dashboard.field.email', 'admin.dashboard.field.name', 'admin.dashboard.field.remark', 'admin.dashboard.field.role', 'admin.dashboard.field.status', 'admin.dashboard.field.username', 'admin.dashboard.form.required_hint', 'admin.dashboard.health.degraded', 'admin.dashboard.health.down', 'admin.dashboard.health.ok', 'admin.dashboard.health.unknown', 'admin.dashboard.hint.username', 'admin.dashboard.list.title', 'admin.dashboard.option.dept_placeholder', 'admin.dashboard.option.role_placeholder', 'admin.dashboard.pager.next', 'admin.dashboard.pager.prev', 'admin.dashboard.pager.summary', 'admin.dashboard.ph.name', 'admin.dashboard.ph.remark', 'admin.dashboard.ph.username', 'admin.dashboard.role.developer', 'admin.dashboard.role.editor', 'admin.dashboard.role.super_admin', 'admin.dashboard.role.viewer', 'admin.dashboard.row.name_li', 'admin.dashboard.row.name_wang', 'admin.dashboard.row.name_zhang', 'admin.dashboard.row.never_login', 'admin.dashboard.stat.admins', 'admin.dashboard.stat.admins_delta', 'admin.dashboard.stat.online', 'admin.dashboard.stat.online_note', 'admin.dashboard.stat.pending', 'admin.dashboard.stat.pending_note', 'admin.dashboard.stat.published', 'admin.dashboard.stat.published_note', 'admin.dashboard.status.disabled', 'admin.dashboard.status.disabled_row', 'admin.dashboard.status.enabled', 'admin.dashboard.status.pending', 'admin.dashboard.subtitle', 'admin.dashboard.title', 'admin.datarules.action.back', 'admin.datarules.action.cancel', 'admin.datarules.action.create', 'admin.datarules.action.create_short', 'admin.datarules.action.create_submit', 'admin.datarules.action.delete', 'admin.datarules.action.edit', 'admin.datarules.action.edit_config', 'admin.datarules.action.filter', 'admin.datarules.action.reset', 'admin.datarules.action.save', 'admin.datarules.action.save_plain', 'admin.datarules.col.actions', 'admin.datarules.col.domain', 'admin.datarules.col.name', 'admin.datarules.col.remark', 'admin.datarules.col.status', 'admin.datarules.col.updated_at', 'admin.datarules.confirm.delete', 'admin.datarules.edit.title', 'admin.datarules.edit_page_title', 'admin.datarules.empty', 'admin.datarules.create.config_hint', 'admin.datarules.editor.add_group', 'admin.datarules.editor.add_row', 'admin.datarules.editor.del_group', 'admin.datarules.editor.del_row', 'admin.datarules.editor.group', 'admin.datarules.editor.hint', 'admin.datarules.editor.logic_and', 'admin.datarules.editor.logic_or', 'admin.datarules.editor.no_domain', 'admin.datarules.editor.no_domain_hint', 'admin.datarules.editor.value_placeholder', 'admin.datarules.field.conditions', 'admin.datarules.field.omit_fields', 'admin.datarules.field.domain', 'admin.datarules.field.name', 'admin.datarules.field.remark', 'admin.datarules.field.rule_config', 'admin.datarules.field.status', 'admin.datarules.hint.config', 'admin.datarules.list.heading', 'admin.datarules.list.headingClose', 'admin.datarules.paren_close', 'admin.datarules.paren_open', 'admin.datarules.ph.domain', 'admin.datarules.status.disabled', 'admin.datarules.status.enabled', 'admin.depts.action.cancel', 'admin.depts.action.create', 'admin.depts.action.create_submit', 'admin.depts.action.delete', 'admin.depts.action.edit', 'admin.depts.action.save', 'admin.depts.col.actions', 'admin.depts.col.code', 'admin.depts.col.name', 'admin.depts.col.remark', 'admin.depts.col.sort', 'admin.depts.col.status', 'admin.depts.confirm.delete', 'admin.depts.edit.title', 'admin.depts.empty', 'admin.depts.field.code', 'admin.depts.field.name', 'admin.depts.field.parent', 'admin.depts.field.remark', 'admin.depts.field.sort', 'admin.depts.field.status', 'admin.depts.list.heading', 'admin.depts.list.headingClose', 'admin.depts.option.root', 'admin.depts.ph.code_example', 'admin.depts.ph.filter', 'admin.depts.ph.name_example', 'admin.depts.status.disabled', 'admin.depts.status.enabled', 'admin.i18n.action.delete', 'admin.i18n.action.edit', 'admin.i18n.action.filter', 'admin.i18n.action.save', 'admin.i18n.form.title', 'admin.i18n.intro', 'admin.i18n.label.category', 'admin.i18n.label.lang', 'admin.i18n.label.remark', 'admin.i18n.label.updated_at', 'admin.i18n.label.value', 'admin.i18n.option.all_cats', 'admin.i18n.option.all_langs', 'admin.i18n.pager.page_post', 'admin.i18n.pager.total_post', 'admin.i18n.pager.total_pre', 'admin.i18n.ph.keyword', 'admin.i18n.ph.remark', 'admin.i18n.roles.after1', 'admin.i18n.roles.after2', 'admin.i18n.roles.strong1', 'admin.i18n.roles.strong2', 'admin.i18n.roles.strong3', 'admin.i18n.roles.tail', 'admin.i18n.saved', 'admin.i18n.title', 'admin.i18n.unsaved', 'admin.masterdata.action.reset', 'admin.masterdata.action.view_history', 'admin.masterdata.col.action', 'admin.masterdata.col.actions', 'admin.masterdata.col.entity', 'admin.masterdata.col.field', 'admin.masterdata.col.new', 'admin.masterdata.col.old', 'admin.masterdata.col.operator', 'admin.masterdata.col.origin', 'admin.masterdata.col.time', 'admin.masterdata.col2.changes', 'admin.masterdata.col2.last_action', 'admin.masterdata.col2.last_field', 'admin.masterdata.col2.last_operator', 'admin.masterdata.col2.last_time', 'admin.masterdata.current.empty', 'admin.masterdata.current.entity_id_label', 'admin.masterdata.current.paren_close', 'admin.masterdata.current.paren_open', 'admin.masterdata.current.snapshot', 'admin.masterdata.current.title', 'admin.masterdata.current.total_post', 'admin.masterdata.current.total_pre', 'admin.masterdata.entities.empty', 'admin.masterdata.entities.heading', 'admin.masterdata.entities.headingClose', 'admin.masterdata.entities.hint', 'admin.masterdata.filter.hint', 'admin.masterdata.filter.title', 'admin.masterdata.intro1.after', 'admin.masterdata.intro1.lead', 'admin.masterdata.intro1.strong', 'admin.masterdata.intro2.after1', 'admin.masterdata.intro2.lead', 'admin.masterdata.intro2.strong1', 'admin.masterdata.intro2.strong2', 'admin.masterdata.intro2.tail', 'admin.masterdata.option.action_all', 'admin.masterdata.option.entity_all', 'admin.masterdata.partial_error', 'admin.masterdata.ph.entity_id', 'admin.masterdata.ph.field', 'admin.masterdata.ph.keyword', 'admin.masterdata.ph.operator', 'admin.masterdata.rows.empty', 'admin.masterdata.rows.heading', 'admin.masterdata.rows.headingClose', 'admin.masterdata.title', 'admin.masterdata.truncated.mid', 'admin.masterdata.truncated.post', 'admin.masterdata.truncated.pre', 'admin.permissions.action.cancel', 'admin.permissions.action.create', 'admin.permissions.action.create_submit', 'admin.permissions.action.delete', 'admin.permissions.action.edit', 'admin.permissions.action.filter', 'admin.permissions.action.reset', 'admin.permissions.action.save', 'admin.permissions.col.actions', 'admin.permissions.col.api_path', 'admin.permissions.col.code', 'admin.permissions.col.method', 'admin.permissions.col.module', 'admin.permissions.col.name', 'admin.permissions.col.remark', 'admin.permissions.col.status', 'admin.permissions.confirm.delete', 'admin.permissions.edit.title', 'admin.permissions.empty', 'admin.permissions.field.api_path', 'admin.permissions.field.code', 'admin.permissions.field.method', 'admin.permissions.field.module', 'admin.permissions.field.name', 'admin.permissions.field.remark', 'admin.permissions.field.status', 'admin.permissions.list.heading', 'admin.permissions.list.headingClose', 'admin.permissions.ph.api_path_example', 'admin.permissions.ph.code', 'admin.permissions.ph.code_example', 'admin.permissions.ph.module', 'admin.permissions.ph.module_example', 'admin.permissions.status.disabled', 'admin.permissions.status.enabled', 'admin.roles.action.cancel', 'admin.roles.action.create', 'admin.roles.action.create_submit', 'admin.roles.action.delete', 'admin.roles.action.edit', 'admin.roles.action.filter', 'admin.roles.action.reset', 'admin.roles.action.save', 'admin.roles.badge.system', 'admin.roles.col.actions', 'admin.roles.col.code', 'admin.roles.col.name', 'admin.roles.col.remark', 'admin.roles.col.sort', 'admin.roles.col.status', 'admin.roles.confirm.delete', 'admin.roles.edit.title', 'admin.roles.empty', 'admin.roles.field.code', 'admin.roles.field.name', 'admin.roles.field.remark', 'admin.roles.field.sort', 'admin.roles.field.status', 'admin.roles.list.heading', 'admin.roles.list.headingClose', 'admin.roles.ph.code', 'admin.roles.ph.keyword', 'admin.roles.status.disabled', 'admin.roles.status.enabled', 'shell.login.dev_login', 'shell.login.dev_login_hint')",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 347 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.admins.action.cancel', 'admin.admins.action.create', 'admin.admins.action.create_submit', 'admin.admins.action.delete', 'admin.admins.action.edit', 'admin.admins.action.filter', 'admin.admins.action.reset', 'admin.admins.action.save', 'admin.admins.col.actions', 'admin.admins.col.email', 'admin.admins.col.name', 'admin.admins.col.phone', 'admin.admins.col.status', 'admin.admins.col.username', 'admin.admins.confirm.delete', 'admin.admins.edit.title', 'admin.admins.empty', 'admin.admins.field.email', 'admin.admins.field.password', 'admin.admins.field.phone', 'admin.admins.field.remark', 'admin.admins.field.username', 'admin.admins.list.heading', 'admin.admins.list.headingClose', 'admin.admins.ph.email', 'admin.admins.ph.name', 'admin.admins.status.banned', 'admin.admins.status.disabled', 'admin.admins.status.enabled', 'admin.admins.status.unknown', 'admin.analytics.badge.paths', 'admin.analytics.badge.views', 'admin.analytics.badge.visitors', 'admin.analytics.col.day', 'admin.analytics.col.path', 'admin.analytics.col.views', 'admin.analytics.col.visitors', 'admin.analytics.daily.empty.lead', 'admin.analytics.daily.empty.strong', 'admin.analytics.daily.empty.tail', 'admin.analytics.daily.title', 'admin.analytics.intro.after', 'admin.analytics.intro.lead', 'admin.analytics.metrics.lead', 'admin.analytics.metrics.strong', 'admin.analytics.metrics.tail', 'admin.analytics.no_project.lead', 'admin.analytics.no_project.link', 'admin.analytics.no_project.tail', 'admin.analytics.paths.empty', 'admin.analytics.paths.title', 'admin.analytics.range.actual_mid', 'admin.analytics.range.actual_post', 'admin.analytics.range.actual_pre', 'admin.analytics.range.title', 'admin.analytics.title', 'admin.dashboard.action.cancel', 'admin.dashboard.action.delete', 'admin.dashboard.action.edit', 'admin.dashboard.action.export', 'admin.dashboard.action.new_admin', 'admin.dashboard.action.save', 'admin.dashboard.badge.draft', 'admin.dashboard.badge.pending_review', 'admin.dashboard.badge.published', 'admin.dashboard.badge.rejected', 'admin.dashboard.badges.title', 'admin.dashboard.buttons.small', 'admin.dashboard.buttons.title', 'admin.dashboard.checkbox.welcome_mail', 'admin.dashboard.col.actions', 'admin.dashboard.col.dept', 'admin.dashboard.col.last_login', 'admin.dashboard.col.name', 'admin.dashboard.col.role', 'admin.dashboard.col.status', 'admin.dashboard.col.username', 'admin.dashboard.dept.content', 'admin.dashboard.dept.market', 'admin.dashboard.dept.tech', 'admin.dashboard.field.dept', 'admin.dashboard.field.email', 'admin.dashboard.field.name', 'admin.dashboard.field.remark', 'admin.dashboard.field.role', 'admin.dashboard.field.status', 'admin.dashboard.field.username', 'admin.dashboard.form.required_hint', 'admin.dashboard.health.degraded', 'admin.dashboard.health.down', 'admin.dashboard.health.ok', 'admin.dashboard.health.unknown', 'admin.dashboard.hint.username', 'admin.dashboard.list.title', 'admin.dashboard.option.dept_placeholder', 'admin.dashboard.option.role_placeholder', 'admin.dashboard.pager.next', 'admin.dashboard.pager.prev', 'admin.dashboard.pager.summary', 'admin.dashboard.ph.name', 'admin.dashboard.ph.remark', 'admin.dashboard.ph.username', 'admin.dashboard.role.developer', 'admin.dashboard.role.editor', 'admin.dashboard.role.super_admin', 'admin.dashboard.role.viewer', 'admin.dashboard.row.name_li', 'admin.dashboard.row.name_wang', 'admin.dashboard.row.name_zhang', 'admin.dashboard.row.never_login', 'admin.dashboard.stat.admins', 'admin.dashboard.stat.admins_delta', 'admin.dashboard.stat.online', 'admin.dashboard.stat.online_note', 'admin.dashboard.stat.pending', 'admin.dashboard.stat.pending_note', 'admin.dashboard.stat.published', 'admin.dashboard.stat.published_note', 'admin.dashboard.status.disabled', 'admin.dashboard.status.disabled_row', 'admin.dashboard.status.enabled', 'admin.dashboard.status.pending', 'admin.dashboard.subtitle', 'admin.dashboard.title', 'admin.datarules.action.back', 'admin.datarules.action.cancel', 'admin.datarules.action.create', 'admin.datarules.action.create_short', 'admin.datarules.action.create_submit', 'admin.datarules.action.delete', 'admin.datarules.action.edit', 'admin.datarules.action.edit_config', 'admin.datarules.action.filter', 'admin.datarules.action.reset', 'admin.datarules.action.save', 'admin.datarules.action.save_plain', 'admin.datarules.col.actions', 'admin.datarules.col.domain', 'admin.datarules.col.name', 'admin.datarules.col.remark', 'admin.datarules.col.status', 'admin.datarules.col.updated_at', 'admin.datarules.confirm.delete', 'admin.datarules.edit.title', 'admin.datarules.edit_page_title', 'admin.datarules.empty', 'admin.datarules.create.config_hint', 'admin.datarules.editor.add_group', 'admin.datarules.editor.add_row', 'admin.datarules.editor.del_group', 'admin.datarules.editor.del_row', 'admin.datarules.editor.group', 'admin.datarules.editor.hint', 'admin.datarules.editor.logic_and', 'admin.datarules.editor.logic_or', 'admin.datarules.editor.no_domain', 'admin.datarules.editor.no_domain_hint', 'admin.datarules.editor.value_placeholder', 'admin.datarules.field.conditions', 'admin.datarules.field.omit_fields', 'admin.datarules.field.domain', 'admin.datarules.field.name', 'admin.datarules.field.remark', 'admin.datarules.field.rule_config', 'admin.datarules.field.status', 'admin.datarules.hint.config', 'admin.datarules.list.heading', 'admin.datarules.list.headingClose', 'admin.datarules.paren_close', 'admin.datarules.paren_open', 'admin.datarules.ph.domain', 'admin.datarules.status.disabled', 'admin.datarules.status.enabled', 'admin.depts.action.cancel', 'admin.depts.action.create', 'admin.depts.action.create_submit', 'admin.depts.action.delete', 'admin.depts.action.edit', 'admin.depts.action.save', 'admin.depts.col.actions', 'admin.depts.col.code', 'admin.depts.col.name', 'admin.depts.col.remark', 'admin.depts.col.sort', 'admin.depts.col.status', 'admin.depts.confirm.delete', 'admin.depts.edit.title', 'admin.depts.empty', 'admin.depts.field.code', 'admin.depts.field.name', 'admin.depts.field.parent', 'admin.depts.field.remark', 'admin.depts.field.sort', 'admin.depts.field.status', 'admin.depts.list.heading', 'admin.depts.list.headingClose', 'admin.depts.option.root', 'admin.depts.ph.code_example', 'admin.depts.ph.filter', 'admin.depts.ph.name_example', 'admin.depts.status.disabled', 'admin.depts.status.enabled', 'admin.i18n.action.delete', 'admin.i18n.action.edit', 'admin.i18n.action.filter', 'admin.i18n.action.save', 'admin.i18n.form.title', 'admin.i18n.intro', 'admin.i18n.label.category', 'admin.i18n.label.lang', 'admin.i18n.label.remark', 'admin.i18n.label.updated_at', 'admin.i18n.label.value', 'admin.i18n.option.all_cats', 'admin.i18n.option.all_langs', 'admin.i18n.pager.page_post', 'admin.i18n.pager.total_post', 'admin.i18n.pager.total_pre', 'admin.i18n.ph.keyword', 'admin.i18n.ph.remark', 'admin.i18n.roles.after1', 'admin.i18n.roles.after2', 'admin.i18n.roles.strong1', 'admin.i18n.roles.strong2', 'admin.i18n.roles.strong3', 'admin.i18n.roles.tail', 'admin.i18n.saved', 'admin.i18n.title', 'admin.i18n.unsaved', 'admin.masterdata.action.reset', 'admin.masterdata.action.view_history', 'admin.masterdata.col.action', 'admin.masterdata.col.actions', 'admin.masterdata.col.entity', 'admin.masterdata.col.field', 'admin.masterdata.col.new', 'admin.masterdata.col.old', 'admin.masterdata.col.operator', 'admin.masterdata.col.origin', 'admin.masterdata.col.time', 'admin.masterdata.col2.changes', 'admin.masterdata.col2.last_action', 'admin.masterdata.col2.last_field', 'admin.masterdata.col2.last_operator', 'admin.masterdata.col2.last_time', 'admin.masterdata.current.empty', 'admin.masterdata.current.entity_id_label', 'admin.masterdata.current.paren_close', 'admin.masterdata.current.paren_open', 'admin.masterdata.current.snapshot', 'admin.masterdata.current.title', 'admin.masterdata.current.total_post', 'admin.masterdata.current.total_pre', 'admin.masterdata.entities.empty', 'admin.masterdata.entities.heading', 'admin.masterdata.entities.headingClose', 'admin.masterdata.entities.hint', 'admin.masterdata.filter.hint', 'admin.masterdata.filter.title', 'admin.masterdata.intro1.after', 'admin.masterdata.intro1.lead', 'admin.masterdata.intro1.strong', 'admin.masterdata.intro2.after1', 'admin.masterdata.intro2.lead', 'admin.masterdata.intro2.strong1', 'admin.masterdata.intro2.strong2', 'admin.masterdata.intro2.tail', 'admin.masterdata.option.action_all', 'admin.masterdata.option.entity_all', 'admin.masterdata.partial_error', 'admin.masterdata.ph.entity_id', 'admin.masterdata.ph.field', 'admin.masterdata.ph.keyword', 'admin.masterdata.ph.operator', 'admin.masterdata.rows.empty', 'admin.masterdata.rows.heading', 'admin.masterdata.rows.headingClose', 'admin.masterdata.title', 'admin.masterdata.truncated.mid', 'admin.masterdata.truncated.post', 'admin.masterdata.truncated.pre', 'admin.permissions.action.cancel', 'admin.permissions.action.create', 'admin.permissions.action.create_submit', 'admin.permissions.action.delete', 'admin.permissions.action.edit', 'admin.permissions.action.filter', 'admin.permissions.action.reset', 'admin.permissions.action.save', 'admin.permissions.col.actions', 'admin.permissions.col.api_path', 'admin.permissions.col.code', 'admin.permissions.col.method', 'admin.permissions.col.module', 'admin.permissions.col.name', 'admin.permissions.col.remark', 'admin.permissions.col.status', 'admin.permissions.confirm.delete', 'admin.permissions.edit.title', 'admin.permissions.empty', 'admin.permissions.field.api_path', 'admin.permissions.field.code', 'admin.permissions.field.method', 'admin.permissions.field.module', 'admin.permissions.field.name', 'admin.permissions.field.remark', 'admin.permissions.field.status', 'admin.permissions.list.heading', 'admin.permissions.list.headingClose', 'admin.permissions.ph.api_path_example', 'admin.permissions.ph.code', 'admin.permissions.ph.code_example', 'admin.permissions.ph.module', 'admin.permissions.ph.module_example', 'admin.permissions.status.disabled', 'admin.permissions.status.enabled', 'admin.roles.action.cancel', 'admin.roles.action.create', 'admin.roles.action.create_submit', 'admin.roles.action.delete', 'admin.roles.action.edit', 'admin.roles.action.filter', 'admin.roles.action.reset', 'admin.roles.action.save', 'admin.roles.badge.system', 'admin.roles.col.actions', 'admin.roles.col.code', 'admin.roles.col.name', 'admin.roles.col.remark', 'admin.roles.col.sort', 'admin.roles.col.status', 'admin.roles.confirm.delete', 'admin.roles.edit.title', 'admin.roles.empty', 'admin.roles.field.code', 'admin.roles.field.name', 'admin.roles.field.remark', 'admin.roles.field.sort', 'admin.roles.field.status', 'admin.roles.list.heading', 'admin.roles.list.headingClose', 'admin.roles.ph.code', 'admin.roles.ph.keyword', 'admin.roles.status.disabled', 'admin.roles.status.enabled', 'shell.login.dev_login', 'shell.login.dev_login_hint')",
 		SQL:          mustSQL("193_i18n_seed_admin_system.sql"),
 	})
 
@@ -676,8 +1090,8 @@ func registerAdminI18nSeedsAndLatest() {
 	registerSeed(Seed{
 		Version:   "217-admin-seo-i18n",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 38 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN ('admin.seo.eyebrow.visibility', 'admin.seo.title', 'admin.seo.subtitle', 'admin.seo.label.project', 'admin.seo.action.view', 'admin.seo.err.project_list', 'admin.seo.eyebrow.issues', 'admin.seo.audit.title', 'admin.seo.audit.intro', 'admin.seo.audit.run', 'admin.seo.audit.placeholder', 'admin.seo.audit.no_permission', 'admin.seo.paths.eyebrow', 'admin.seo.paths.title', 'admin.seo.paths.error', 'admin.seo.paths.col.path', 'admin.seo.paths.col.views', 'admin.seo.paths.col.visitors', 'admin.seo.paths.empty', 'admin.seo.sources.eyebrow', 'admin.seo.sources.title', 'admin.seo.sources.unavailable', 'admin.seo.site_files.eyebrow', 'admin.seo.site_files.title', 'admin.seo.site_files.unavailable', 'admin.seo.external.eyebrow', 'admin.seo.external.title', 'admin.seo.external.unavailable', 'admin.seo.audit.loading', 'admin.seo.audit.request_failed', 'admin.seo.audit.clean_lead', 'admin.seo.audit.clean_tail', 'admin.seo.audit.issues_lead', 'admin.seo.audit.issues_mid', 'admin.seo.audit.issues_tail', 'admin.seo.audit.col.level', 'admin.seo.audit.col.path', 'admin.seo.audit.col.issue')",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 36 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('admin.seo.eyebrow.visibility', 'admin.seo.title', 'admin.seo.subtitle', 'admin.seo.label.project', 'admin.seo.action.view', 'admin.seo.eyebrow.issues', 'admin.seo.audit.title', 'admin.seo.audit.intro', 'admin.seo.audit.run', 'admin.seo.audit.placeholder', 'admin.seo.audit.no_permission', 'admin.seo.paths.eyebrow', 'admin.seo.paths.title', 'admin.seo.paths.col.path', 'admin.seo.paths.col.views', 'admin.seo.paths.col.visitors', 'admin.seo.paths.empty', 'admin.seo.sources.eyebrow', 'admin.seo.sources.title', 'admin.seo.sources.unavailable', 'admin.seo.site_files.eyebrow', 'admin.seo.site_files.title', 'admin.seo.site_files.unavailable', 'admin.seo.external.eyebrow', 'admin.seo.external.title', 'admin.seo.external.unavailable', 'admin.seo.audit.loading', 'admin.seo.audit.request_failed', 'admin.seo.audit.clean_lead', 'admin.seo.audit.clean_tail', 'admin.seo.audit.issues_lead', 'admin.seo.audit.issues_mid', 'admin.seo.audit.issues_tail', 'admin.seo.audit.col.level', 'admin.seo.audit.col.path', 'admin.seo.audit.col.issue')",
 		SQL: mustSQL("217_i18n_seed_admin_seo.sql"),
 	})
 

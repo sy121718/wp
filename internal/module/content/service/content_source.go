@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentenums "go_wp/internal/module/content/enums"
 )

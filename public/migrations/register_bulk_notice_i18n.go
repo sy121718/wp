@@ -29,12 +29,12 @@ func registerBulkNoticeI18nSeed() {
 			"'page.bulk.pageAllDeleted', 'page.bulk.pageAllSkipped', 'page.bulk.pageMissingID', " +
 			"'page.bulk.pageNoneSelected', 'page.bulk.pagePartial', 'page.bulk.redirectAllDeleted', " +
 			"'page.bulk.redirectAllSkipped', 'page.bulk.redirectNoneSelected', 'page.bulk.redirectPartial', " +
-			"'product.bulk.attrDone', 'product.bulk.attrPartial', 'product.bulk.brandDone', " +
-			"'product.bulk.brandPartial', 'product.bulk.categoryDone', 'product.bulk.categoryPartial', " +
+			"'pBulkAttrDone', 'pAttrPartial', 'pBulkBrandDone', " +
+			"'pBrandPartial', 'pBulkCatDone', 'pBulkCatPartial', " +
 			"'product.bulk.pricingAllSkip', 'product.bulk.pricingApplied', 'product.bulk.pricingNoChange', " +
-			"'product.bulk.pricingNoneSelected', 'product.bulk.pricingPartial', 'product.bulk.productDone', " +
-			"'product.bulk.productPartial', 'product.bulk.tagDone', 'product.bulk.tagPartial', " +
-			"'product.bulk.variantSaveNoChange', 'product.bulk.variantSaveSaved', 'product.bulk.variantSaveSkipped')",
-		SQL: mustSQL("283_bulk_notice_i18n.sql"),
+			"'pPriceNoneSel', 'product.bulk.pricingPartial', 'pBulkProdDone', " +
+			"'pProductPartial', 'pBulkTagDone', 'pBulkTagPartial', " +
+			"'pVarNoChange', 'pVarSaved', 'pVarSkipped')",
+		SQL: mustSQL("718e_current_283_bulk_notice_i18n.sql"),
 	})
 }

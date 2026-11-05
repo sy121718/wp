@@ -167,6 +167,13 @@ func TestVariantStockRowsRejectDuplicate(t *testing.T) {
 	if !ok || fact.Key != productenums.ErrVariantStockDuplicated {
 		t.Fatalf("期望 %s，实际 %v", productenums.ErrVariantStockDuplicated, err)
 	}
+	// 错误对象带 key 是对的；裸 key 不许上 HTTP message，那是出口的事。
+	if fact.Fallback != "" {
+		t.Fatalf("声明里不该带中文兜底，文案归词库，实际 %q", fact.Fallback)
+	}
+	if got := err.Error(); got != productenums.ErrVariantStockDuplicated {
+		t.Fatalf("错误文本应精确等于 key，实际 %q", got)
+	}
 
 	row := f.editableRow(t, p, v.OptionValues)
 	for _, g := range row.Stocks {

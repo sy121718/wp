@@ -15,6 +15,9 @@ import (
 	mailenums "go_wp/internal/module/mail/enums"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 func mailHead(s string) string {
@@ -51,6 +54,8 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 		}
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail",
 		adminui.PageSlot(mailhttp.AccountsPageTemplate), h.MailPage)
@@ -58,8 +63,8 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 		adminui.PageSlot(mailhttp.ContactsPageTemplate), h.MailContactsPage)
 	engine.GET("/admin/mail/automation",
 		adminui.PageSlot(mailhttp.AutomationPageTemplate), h.MailAutomationPage)
-	engine.POST("/admin/mail/account/save", h.MailAccountSave)
-	engine.POST("/admin/mail/template/save", h.MailTemplateSave)
+	engine.POST("/admin/mail/account/save", pageview.HTMLFragment, h.MailAccountSave)
+	engine.POST("/admin/mail/template/save", pageview.HTMLFragment, h.MailTemplateSave)
 	return engine
 }
 
@@ -128,8 +133,10 @@ func TestMailAccountSaveRedirectHidesInternalError(t *testing.T) {
 		"password":   {"secret"},
 	})
 	body := rec.Body.String()
-	assertMailLeakFree(t, "保存发信账号的提示页", body)
-	mailAssertJump(t, rec, false, mailInternText)
+	assertMailLeakFree(t, "保存发信账号的错误片段", body)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("基础设施错误应渲染 500 错误片段：%d %s", rec.Code, mailHead(body))
+	}
 }
 
 func TestMailAutomationPageHidesInternalError(t *testing.T) {
@@ -188,18 +195,29 @@ func TestMailContactsPageHidesInternalError(t *testing.T) {
 	}
 }
 
+// mailInvalidParamText 与词库（迁移 058 的 ErrInvalidParam/zh-CN）一致。
+// 声明处只给 key，成品句归词库，所以这里必须注入同一条词条才能验出
+// 「业务错误仍可读」——不注入的话任何业务 key 都会落成归口文案。
+const mailInvalidParamText = "请求参数无效"
+
 func TestMailBusinessMessageStillVisible(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
+	i18n.InjectForTest(map[string]map[string]string{
+		mailenums.ErrInvalidParam: {"zh-CN": mailInvalidParamText},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	engine := newMailLeakRouter(t, f)
 
 	rec := mailPOST(engine, "/admin/mail/template/save", url.Values{"locale": {"zh-CN"}})
 	body := rec.Body.String()
-	assertMailLeakFree(t, "业务错误提示页", body)
+	assertMailLeakFree(t, "业务错误片段", body)
 
-	mailAssertJump(t, rec, false, mailenums.FallbackFor(mailenums.ErrInvalidParam))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, mailInvalidParamText) {
+		t.Fatalf("业务错误应渲染 400 错误片段并给出原因：%d %s", rec.Code, mailHead(body))
+	}
 	if strings.Contains(body, mailInternText) {
 		t.Error("白名单业务错误被误吞成归口文案 —— 运营再也看不到「哪一项不合法」")
 	}

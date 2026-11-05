@@ -2,7 +2,11 @@ package producthttp
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/binding"
@@ -67,29 +71,31 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 }
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {
-	req, ok := binding.JSON[productdto.CreateCategoryReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.CreateCategoryReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.CreateCategory(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.CreateCategory(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) UpdateCategory(c *gin.Context) {
-	req, ok := binding.JSON[productdto.UpdateCategoryReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.UpdateCategoryReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.UpdateCategory(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) GetCategory(c *gin.Context) {
@@ -119,62 +125,74 @@ func (h *ProductHandle) ListCategories(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteCategory(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DeleteCategoryReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.DeleteCategoryReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
-	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductCategories)
+	c.Header("Cache-Control", "no-store")
+	var form productdto.BulkDeleteReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductCategories, &form)
 }
 
 func (h *ProductHandle) BulkDeleteBrands(c *gin.Context) {
-	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductBrands)
+	c.Header("Cache-Control", "no-store")
+	var form productdto.BulkDeleteReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductBrands, &form)
 }
 
-func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResultResp, error)) {
-	req, ok := binding.JSON[productdto.BulkDeleteReq](c)
-	if !ok {
+// bulkDeleteResult 是批量删除的公共出口：调用方已经完成请求绑定。
+func (h *ProductHandle) bulkDeleteResult(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResultResp, error), req *productdto.BulkDeleteReq) {
+	if _, err := del(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	res, err := del(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, productErrScene, err)
-		return
-	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) CreateBrand(c *gin.Context) {
-	req, ok := binding.JSON[productdto.CreateBrandReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.CreateBrandReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.CreateBrand(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.CreateBrand(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) UpdateBrand(c *gin.Context) {
-	req, ok := binding.JSON[productdto.UpdateBrandReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.UpdateBrandReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.UpdateBrand(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.UpdateBrand(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) GetBrand(c *gin.Context) {
@@ -204,13 +222,15 @@ func (h *ProductHandle) ListBrands(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteBrand(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DeleteBrandReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.DeleteBrandReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if err := h.svc.DeleteBrand(c.Request.Context(), req); err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if err := h.svc.DeleteBrand(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+	pageview.Success(c)
 }

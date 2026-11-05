@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -27,6 +27,7 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 )
 
 type workbenchPageStub struct {
@@ -60,70 +61,61 @@ func newWorkbenchPageErrorRouter(t *testing.T, h *Handle) *gin.Engine {
 	return router
 }
 
-func assertWorkbenchErrorShell(t *testing.T, rec *httptest.ResponseRecorder, body, wantText string) {
+// assertWorkbenchJSONError 断言失败出口是 JSON，并返回 message 供调用方续断业务文案。
+//
+// 页面 GET 失败与所有非页面请求都走这一形状（AGENTS：没有失败页），所以这里把
+// Content-Type 一起钉住 —— 防止有人又退回「渲染整页错误壳」的旧形状。
+func assertWorkbenchJSONError(t *testing.T, rec *httptest.ResponseRecorder, wantCode int, wantText string) string {
 	t.Helper()
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("整页失败出口必须是 HTML（Content-Type 含 text/html），得到 %q", ct)
-	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页不该被缓存（Cache-Control 含 no-store），得到 %q", cc)
+
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("失败出口必须是 JSON（Content-Type 含 application/json），得到 %q：%s", ct, rec.Body.String())
 	}
 
-	for _, want := range []string{
-		"<!DOCTYPE html>",
-		`class="wb-body"`,
-		`class="wb-topbar"`,
-		`href="/admin"`,
-		`id="wb-error-message"`,
-		wantText,
-		"</body>",
-		"</html>",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("工作台错误页缺少 %q，实际：%s", want, body)
-		}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
 	}
-
-	slot := errorMessageSlot(body)
-	if slot == "" {
-		t.Errorf("没有找到消息槽（模板结构变了？）：%s", body)
-	} else if !strings.Contains(slot, wantText) {
-		t.Errorf("消息槽里的文案应为 %q，实际 %q", wantText, slot)
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("失败响应不是合法 JSON：%v，实际：%s", err, rec.Body.String())
 	}
+	if rec.Code != wantCode || body.Code != wantCode {
+		t.Fatalf("状态码应为 %d，得到 HTTP %d / code %d：%s", wantCode, rec.Code, body.Code, rec.Body.String())
+	}
+	if strings.TrimSpace(body.Message) == "" {
+		t.Fatalf("message 不能为空：%s", rec.Body.String())
+	}
+	if wantText != "" && !strings.Contains(body.Message, wantText) {
+		t.Fatalf("message 应含 %q，实际 %q", wantText, body.Message)
+	}
+	return body.Message
 }
 
-func errorMessageSlot(body string) string {
-	i := strings.Index(body, `id="wb-error-message"`)
-	if i < 0 {
-		return ""
-	}
-	open := strings.Index(body[i:], ">")
-	if open < 0 {
-		return ""
-	}
-	rest := body[i+open+1:]
-	if j := strings.Index(rest, "</p>"); j >= 0 {
-		return rest[:j]
-	}
-	return rest
-}
+func TestWorkbenchPageErrorExitsAsJSONNotShell(t *testing.T) {
+	// 词库注入值照生产 seed 抄：取词收口后 message 归词库，不注入就会落到裸 key。
+	i18n.InjectForTest(map[string]map[string]string{
+		workbenchenums.ErrMissingPageID: {"zh-CN": "缺少页面 id"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-func TestWorkbenchPageErrorRendersFullShellNotBareText(t *testing.T) {
 	router := newWorkbenchPageErrorRouter(t, New(&workbenchPageStub{}, nil, nil, nil, nil, nil, nil))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/workbench?lang=zh-CN", nil))
 
-	body := rec.Body.String()
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("缺 ?id= 的状态码应为 400（请求侧的事实），得到 %d：%s", rec.Code, body)
-	}
-	assertWorkbenchErrorShell(t, rec, body, "缺少页面 id")
-	if strings.Contains(body, `"code":`) {
-		t.Errorf("整页 GET 的失败出口不应是 JSON 报文：%s", body)
+	msg := assertWorkbenchJSONError(t, rec, http.StatusBadRequest, "缺少页面 id")
+	if strings.Contains(msg, workbenchenums.ErrMissingPageID) {
+		t.Errorf("message 漏出了 i18n key：%q", msg)
 	}
 }
 
 func TestWorkbenchPageErrorDistinguishesMissingParamPageGoneAndServerFault(t *testing.T) {
+
+	i18n.InjectForTest(map[string]map[string]string{
+		workbenchenums.ErrMissingPageID:     {"zh-CN": "缺少页面 id"},
+		workbenchenums.ErrPageNotFound:      {"zh-CN": "页面不存在"},
+		workbenchenums.ErrDraftEncodeFailed: {"zh-CN": "草稿文档序列化失败"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	rawErr := errors.New(`pq: relation "pages" does not exist`)
 
@@ -154,20 +146,16 @@ func TestWorkbenchPageErrorDistinguishesMissingParamPageGoneAndServerFault(t *te
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.url, nil))
 
-			body := rec.Body.String()
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("状态码应为 %d，得到 %d：%s", tc.wantStatus, rec.Code, body)
-			}
-			assertWorkbenchErrorShell(t, rec, body, tc.wantText)
+			msg := assertWorkbenchJSONError(t, rec, tc.wantStatus, tc.wantText)
 			for _, other := range allTexts {
-				if other != tc.wantText && strings.Contains(body, other) {
+				if other != tc.wantText && strings.Contains(msg, other) {
 					t.Errorf("三档文案必须互不混同：本页（%s）出现了别档文案 %q", tc.wantText, other)
 				}
 			}
 
 			for _, leak := range []string{rawErr.Error(), "这不是 JSON", "invalid character"} {
-				if strings.Contains(body, leak) {
-					t.Errorf("内部原文漏进了页面：%q", leak)
+				if strings.Contains(msg, leak) {
+					t.Errorf("内部原文漏进了响应体：%q", leak)
 				}
 			}
 		})
@@ -192,17 +180,9 @@ func TestWorkbenchPageErrorTextFollowsRequestLanguage(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
-			body := rec.Body.String()
-			if rec.Code != http.StatusNotFound {
-				t.Fatalf("状态码应为 404，得到 %d：%s", rec.Code, body)
-			}
-
-			assertWorkbenchErrorShell(t, rec, body, tc.want)
-			if !strings.Contains(body, tc.want) {
-				t.Errorf("%s 的失败文案应含 %q：%s", tc.lang, tc.want, body)
-			}
-			if strings.Contains(body, workbenchenums.ErrPageNotFound) {
-				t.Errorf("页面上漏出了 i18n key %q", workbenchenums.ErrPageNotFound)
+			msg := assertWorkbenchJSONError(t, rec, http.StatusNotFound, tc.want)
+			if strings.Contains(msg, workbenchenums.ErrPageNotFound) {
+				t.Errorf("%s 的 message 漏出了 i18n key：%q", tc.lang, msg)
 			}
 		})
 	}
@@ -213,27 +193,28 @@ func TestWorkbenchPageExitsVsPreviewEndpointShapes(t *testing.T) {
 	code := stripLineCommentsForShape(readPackageGoSource(t))
 
 	page := goFuncBodyForShape(t, code, "func (h *Handle) Workbench(c *gin.Context) {")
-	if strings.Contains(page, "c.String(") {
-		t.Error("工作台页面 handler 不得再有裸文本出口：它是整页 GET（编辑器壳），失败也必须回完整页")
+	for _, banned := range []string{"c.String(", "c.HTML(", "renderWorkbenchPageError("} {
+		if strings.Contains(page, banned) {
+			t.Errorf("工作台页面 handler 不得有 %q：页面 GET 失败与所有非页面请求一律走 JSON 出口", banned)
+		}
 	}
 	for _, want := range []string{
-		"renderWorkbenchPageError(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)",
-		"renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)",
-		"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)",
+		"response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)",
+		"response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)",
+		"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)",
 	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("整页失败出口缺 %q（三档都要走同一个渲染函数）", want)
+			t.Errorf("整页失败出口缺 %q", want)
 		}
 	}
 
-	for _, sig := range []string{
-		"func (h *Handle) Preview(c *gin.Context) {",
-		"func (h *Handle) BlockPreview(c *gin.Context) {",
-		"func (h *Handle) PreviewDraft(c *gin.Context) {",
-	} {
-		if !strings.Contains(goFuncBodyForShape(t, code, sig), "c.String(") {
-			t.Errorf("%s 的裸文本出口被顺手改了：它不是整页编辑器外壳（预览文档 / 片段端点保持原形态）", sig)
-		}
+	// 预览成功出口是字节流 —— 整页改 JSON 不该把这两处 c.Data 顺手一起改掉。
+	// 这是 AGENTS 里唯一给非页面请求留的例外（构建器预览直接写 body），必须守住。
+	if n := strings.Count(code, "c.Data("); n < 2 {
+		t.Errorf("预览成功出口应为字节流（c.Data），实际只找到 %d 处", n)
+	}
+	if strings.Contains(code, "c.HTML(") {
+		t.Error("workbench 域不得再有 c.HTML：失败页已退役，页面失败也只回 JSON")
 	}
 }
 
@@ -378,22 +359,43 @@ func TestPluginInspectorSchemaMergeEncodeFailure(t *testing.T) {
 	goodDoc := json.RawMessage(`{"type":"root"}`)
 	pageOK := &pagedto.PageResp{ID: "page-1", ProjectID: "project-1", DraftDocument: goodDoc}
 
+	i18n.InjectForTest(map[string]map[string]string{
+		workbenchenums.ErrComponentSchemaEncodeFailed: {"zh-CN": "组件 schema 序列化失败"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	router := newWorkbenchPageErrorRouter(t, New(&workbenchPageStub{page: pageOK}, nil,
 		&workbenchBlockStub{}, injectBrokenComponentSchema(t), nil, nil, nil))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/workbench?id=page-1&lang=zh-CN", nil))
 
-	body := rec.Body.String()
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("状态码应为 500，得到 %d：%s", rec.Code, body)
-	}
-	assertWorkbenchErrorShell(t, rec, body, "组件 schema 序列化失败")
-	if strings.Contains(body, "这不是 JSON") {
-		t.Errorf("插件 schema 的原文漏到了页面上：%s", body)
+	msg := assertWorkbenchJSONError(t, rec, http.StatusInternalServerError, "组件 schema 序列化失败")
+	if strings.Contains(msg, "这不是 JSON") {
+		t.Errorf("插件 schema 的原文漏进了响应体：%q", msg)
 	}
 }
 
-func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
+func TestWorkbenchModeErrorBranchesRenderJSON(t *testing.T) {
+
+	// 这一族用例断的是「响应体里给用户看的文案」。取词收口后 enums 只声明 key，
+	// 成品句归词库，所以必须先把生产词库里的这些词条注入进来 —— 否则缺词会落到
+	// 共享归口文案（系统内部错误），测的就不是本来的业务事实了。
+	// 期望值一律照生产 seed 抄，不为了迁就代码改短改长：
+	// 292 是 workbench.err.* 的首屏批次，viewmode 相关词条各自在自己的迁移里。
+	i18n.InjectForTest(map[string]map[string]string{
+		workbenchenums.ErrBlockNotFound:                        {"zh-CN": "全局块不存在"},
+		workbenchenums.ErrBlockEncodeFailed:                    {"zh-CN": "块文档序列化失败"},
+		workbenchenums.ErrTemplateEncodeFailed:                 {"zh-CN": "模板文档序列化失败"},
+		workbenchenums.ErrDraftEncodeFailed:                    {"zh-CN": "草稿文档序列化失败"},
+		workbenchenums.ErrPreviewEntityIDRequired:              {"zh-CN": "缺少 {type} 的样例实体 id"},
+		workbenchenums.ErrTemplateNotFound:                     {"zh-CN": "模板不存在"},
+		workbenchenums.ErrInstanceNotFound:                     {"zh-CN": "实例不存在"},
+		workbenchenums.ErrInstanceNoDocument:                   {"zh-CN": "这个实例还没有可编辑的文档"},
+		workbenchenums.ErrContentTemplateEditNotAssembled:      {"zh-CN": "内容模板编辑能力未装配"},
+		workbenchenums.ErrInstanceEditNotAssembled:             {"zh-CN": "实例编辑能力未装配"},
+		workbenchenums.ErrStructureTemplatePreviewNotAssembled: {"zh-CN": "无实体模板预览能力未装配"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	rawErr := errors.New(`pq: relation "blocks" does not exist`)
 	goodDoc := json.RawMessage(`{"type":"root"}`)
@@ -466,11 +468,7 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.url, nil))
 
-			body := rec.Body.String()
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("状态码应为 %d，得到 %d：%s", tc.wantStatus, rec.Code, body)
-			}
-			assertWorkbenchErrorShell(t, rec, body, tc.wantText)
+			msg := assertWorkbenchJSONError(t, rec, tc.wantStatus, tc.wantText)
 
 			for _, leak := range []string{
 				rawErr.Error(), "这不是 JSON", "invalid character", "{type}",
@@ -478,8 +476,8 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 				workbenchenums.ErrInstanceNotFound, workbenchenums.ErrPreviewEntityIDRequired,
 				workbenchenums.ErrComponentSchemaEncodeFailed,
 			} {
-				if strings.Contains(body, leak) {
-					t.Errorf("页面上漏出了不该出现的原文 / key：%q", leak)
+				if strings.Contains(msg, leak) {
+					t.Errorf("响应体里漏出了不该出现的原文 / key：%q", leak)
 				}
 			}
 		})
@@ -531,7 +529,7 @@ func newWorkbenchErrorProbeRouter(t *testing.T, handler gin.HandlerFunc) *gin.En
 	return router
 }
 
-func TestRenderWorkbenchPageErrorCoversModeKeys(t *testing.T) {
+func TestWorkbenchErrorKeysRenderJSONWithoutLeak(t *testing.T) {
 	keys := []string{
 		workbenchenums.ErrBlockNotFound,
 		workbenchenums.ErrBlockEncodeFailed,
@@ -546,42 +544,33 @@ func TestRenderWorkbenchPageErrorCoversModeKeys(t *testing.T) {
 		workbenchenums.ErrInstanceNotFound,
 		workbenchenums.ErrDraftEncodeFailed,
 	}
+
+	// 每个 key 给一条可辨识的译文：message 必须等于它而不是裸 key —— 这条比原先
+	// 「渲染出非空消息槽」更硬，因为它同时证明「key 真的被词库换掉了」。
+	dict := make(map[string]map[string]string, len(keys))
+	for _, key := range keys {
+		dict[key] = map[string]string{"zh-CN": "译文:" + key}
+	}
+	i18n.InjectForTest(dict, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	for _, key := range keys {
 		t.Run(key, func(t *testing.T) {
 			router := newWorkbenchErrorProbeRouter(t, func(c *gin.Context) {
-				renderWorkbenchPageError(c, http.StatusInternalServerError, key)
+				response.ErrorWithMessage(c, http.StatusInternalServerError, key)
 			})
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/probe?lang=zh-CN", nil))
 
-			body := rec.Body.String()
-			if rec.Code != http.StatusInternalServerError {
-				t.Fatalf("状态码应为 500，得到 %d：%s", rec.Code, body)
+			msg := assertWorkbenchJSONError(t, rec, http.StatusInternalServerError, "译文:")
+			if msg == key {
+				t.Errorf("message 是裸 key，说明取词没生效：%q", msg)
 			}
-
-			assertWorkbenchErrorShell(t, rec, body, "")
-			if slot := strings.TrimSpace(errorMessageSlot(body)); slot == "" {
-				t.Errorf("key %s 渲染出了空消息槽（词条缺失且兜底失效）：%s", key, body)
-			}
-			if strings.Contains(body, key) {
-				t.Errorf("页面上漏出了 i18n key %q", key)
+			if msg != "译文:"+key {
+				t.Errorf("message 应等于注入的译文，实际 %q", msg)
 			}
 		})
 	}
-}
-
-func TestRenderWorkbenchPageErrorTextFallsBackOnEmptyCopy(t *testing.T) {
-	router := newWorkbenchErrorProbeRouter(t, func(c *gin.Context) {
-		renderWorkbenchPageErrorText(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed, "")
-	})
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/probe?lang=zh-CN", nil))
-
-	body := rec.Body.String()
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("状态码应为 500，得到 %d：%s", rec.Code, body)
-	}
-	assertWorkbenchErrorShell(t, rec, body, "块文档序列化失败")
 }
 
 func TestWorkbenchModeExitShapes(t *testing.T) {
@@ -595,48 +584,48 @@ func TestWorkbenchModeExitShapes(t *testing.T) {
 		{
 			"func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {",
 			[]string{
-				"renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
 			},
 		},
 		{
 			"func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {",
 			[]string{
-				"renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)",
-				"renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)",
-				"renderWorkbenchPageErrorText(c, http.StatusBadRequest, workbenchenums.ErrPreviewEntityIDRequired,",
-				"renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrTemplateEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)",
+				"response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)",
+				"response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrTemplateEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
 			},
 		},
 		{
 			"func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {",
 			[]string{
-				"renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrInstanceEditNotAssembled)",
-				"renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrInstanceNotFound)",
-				"renderWorkbenchPageErrorText(c, http.StatusUnprocessableEntity, workbenchenums.ErrInstanceNoDocument,",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
-				"renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrInstanceEditNotAssembled)",
+				"response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrInstanceNotFound)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)",
+				"response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)",
 			},
 		},
 	}
 
 	for _, m := range modes {
 		body := goFuncBodyForShape(t, code, m.sig)
-		if strings.Contains(body, "c.String(") {
-			t.Errorf("%s 不得再有裸文本出口：它渲染的是整页编辑器，失败也必须回完整页", m.sig)
+		for _, banned := range []string{"c.String(", "c.HTML(", "renderWorkbenchPageError"} {
+			if strings.Contains(body, banned) {
+				t.Errorf("%s 不得有 %q：整页失败也只回 JSON", m.sig, banned)
+			}
 		}
 		for _, want := range m.want {
 			if !strings.Contains(body, want) {
-				t.Errorf("%s 缺少整页失败出口 %q", m.sig, want)
+				t.Errorf("%s 缺少 JSON 失败出口 %q", m.sig, want)
 			}
 		}
 	}
@@ -644,8 +633,11 @@ func TestWorkbenchModeExitShapes(t *testing.T) {
 	for _, sig := range []string{
 		"func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID string) (tpl *contenttemplatedto.TemplateResp, ok bool) {",
 	} {
-		if !strings.Contains(goFuncBodyForShape(t, code, sig), "c.String(") {
-			t.Errorf("%s 的裸文本出口被顺手改了：它不是整页编辑器外壳", sig)
+		body := goFuncBodyForShape(t, code, sig)
+		for _, banned := range []string{"c.String(", "c.HTML("} {
+			if strings.Contains(body, banned) {
+				t.Errorf("%s 不得有 %q：失败只回 JSON", sig, banned)
+			}
 		}
 	}
 }

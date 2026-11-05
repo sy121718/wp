@@ -1,39 +1,44 @@
 package producthttp
 
 import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-
-	"github.com/gin-gonic/gin"
 )
 
 func (h *ProductHandle) CreateTag(c *gin.Context) {
-	req, ok := binding.JSON[productdto.CreateTagReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.CreateTagReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.CreateTag(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.CreateTag(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) UpdateTag(c *gin.Context) {
-	req, ok := binding.JSON[productdto.UpdateTagReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.UpdateTagReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.UpdateTag(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.UpdateTag(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) GetTag(c *gin.Context) {
@@ -80,32 +85,41 @@ func (h *ProductHandle) ListTagRuleTypes(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteTag(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DeleteTagReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.DeleteTagReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if err := h.svc.DeleteTag(c.Request.Context(), req); err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if err := h.svc.DeleteTag(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) RecalcTags(c *gin.Context) {
-	req, ok := binding.JSON[productdto.RecalcTagsReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.RecalcTagsReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.RecalcTags(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.RecalcTags(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
-	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductTags)
+	c.Header("Cache-Control", "no-store")
+	var form productdto.BulkDeleteReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductTags, &form)
 }
 
 func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {

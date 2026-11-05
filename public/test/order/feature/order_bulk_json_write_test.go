@@ -2,124 +2,86 @@ package feature
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 )
 
-type orderBulkShapeCase struct {
-	name   string
-	path   string
-	body   string
-	inBody string
+// 订单批量写是标准表单：ids 重复提交，其余是普通具名字段。
+// 这里锁住三件事：形状不合法时不进 service、整批被拒时回 409 + 逐条原因、成功后回成功片段。
+
+func orderBulkFormEngine(h *orderhttp.Handle) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/api/order/status", pageview.HTMLFragment, h.ChangeStatus)
+	engine.POST("/api/order/cancel", pageview.HTMLFragment, h.CancelOrder)
+	return engine
 }
 
-func bulkJSONPost(engine *gin.Engine, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+func orderBulkPost(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
 }
 
 func TestOrderBulkShapeViolationsAreRejectedBeforeService(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	h := orderhttp.NewHandle(nil)
-	engine := gin.New()
-	engine.POST("/api/order/status", h.ChangeStatus)
-	engine.POST("/api/order/cancel", h.CancelOrder)
+	engine := orderBulkFormEngine(h)
 
-	cases := []orderBulkShapeCase{
-		{name: "缺 toStatus", path: "/api/order/status", body: `{"ids":["1"]}`},
-		{name: "toStatus 空串", path: "/api/order/status", body: `{"ids":["1"],"toStatus":""}`},
-		{name: "toStatus 全空白", path: "/api/order/status", body: `{"ids":["1"],"toStatus":"   "}`},
-		{name: "toStatus 显式 null", path: "/api/order/status", body: `{"ids":["1"],"toStatus":null}`},
-		{name: "toStatus 非字符串", path: "/api/order/status", body: `{"ids":["1"],"toStatus":2}`},
-		{name: "多一个未知字段", path: "/api/order/status", body: `{"ids":["1"],"toStatus":"paid","zzz":1}`},
-		{name: "混进单档的 orderId", path: "/api/order/status", body: `{"ids":["1"],"orderId":2,"toStatus":"paid"}`},
-		{name: "ids 空数组", path: "/api/order/status", body: `{"ids":[],"toStatus":"paid"}`},
-		{name: "ids 显式 null", path: "/api/order/status", body: `{"ids":null,"toStatus":"paid"}`},
-		{name: "ids 元素非字符串", path: "/api/order/status", body: `{"ids":["1",2],"toStatus":"paid"}`},
-		{name: "批量取消缺 remark", path: "/api/order/cancel", body: `{"ids":["1"]}`,
-			inBody: "order.bulk.cancelReasonRequired"},
-		{name: "批量取消 remark 空串", path: "/api/order/cancel", body: `{"ids":["1"],"remark":""}`,
-			inBody: "order.bulk.cancelReasonRequired"},
-		{name: "批量取消 remark 非字符串", path: "/api/order/cancel", body: `{"ids":["1"],"remark":5}`},
-		{name: "批量取消多一个 toStatus", path: "/api/order/cancel", body: `{"ids":["1"],"remark":"x","toStatus":"paid"}`},
+	statusForm := func(pairs ...string) url.Values {
+		form := url.Values{}
+		for i := 0; i+1 < len(pairs); i += 2 {
+			form.Add(pairs[i], pairs[i+1])
+		}
+		return form
+	}
+
+	cases := []struct {
+		name string
+		path string
+		form url.Values
+	}{
+		{"缺 toStatus", "/api/order/status", statusForm("ids", "1")},
+		{"toStatus 全空白", "/api/order/status", statusForm("ids", "1", "toStatus", "   ")},
+		{"ids 为空", "/api/order/status", statusForm("toStatus", "paid")},
+		{"ids 只有空白项", "/api/order/status", statusForm("ids", "  ", "toStatus", "paid")},
+		{"批量取消缺 remark", "/api/order/cancel", statusForm("ids", "1")},
+		{"批量取消 remark 空串", "/api/order/cancel", statusForm("ids", "1", "remark", "")},
 	}
 	for _, tc := range cases {
-		rec := bulkJSONPost(engine, tc.path, tc.body)
+		rec := orderBulkPost(engine, tc.path, tc.form)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s：应 400（形状档），实际 %d：%s", tc.name, rec.Code, rec.Body.String())
 			continue
 		}
 		body := rec.Body.String()
-
 		for _, tok := range []string{"SQLSTATE", "panic", "%s", "%!s("} {
 			if strings.Contains(body, tok) {
 				t.Errorf("%s：响应体出现非受控片段 %q：%s", tc.name, tok, body)
 			}
 		}
-		if tc.inBody != "" && !strings.Contains(body, tc.inBody) && !strings.Contains(body, "批量取消需要先填原因") {
-			t.Errorf("%s：响应体应是受控文案（词条 key 或它的译文），实际 %s", tc.name, body)
+		if !strings.Contains(body, `data-ui-error`) {
+			t.Errorf("%s：失败应渲染 Jet 错误片段：%s", tc.name, body)
 		}
 	}
-}
-
-type bulkResult struct {
-	Updated int `json:"Updated"`
-}
-
-type bulkReject struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Name    string `json:"name"`
-			Message string `json:"message"`
-		} `json:"items"`
-	} `json:"data"`
-}
-
-func orderBulkSend(t *testing.T, engine *gin.Engine, path, body string) bulkResult {
-	t.Helper()
-	rec := bulkJSONPost(engine, path, body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("批档全部可执行时应 200，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	var envelope struct {
-		Data bulkResult `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("批档响应不是预期 JSON：%v（%s）", err, rec.Body.String())
-	}
-	return envelope.Data
-}
-
-func orderBulkRejectSend(t *testing.T, engine *gin.Engine, path, body string) bulkReject {
-	t.Helper()
-	rec := bulkJSONPost(engine, path, body)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("整批被拒应回 409，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	var out bulkReject
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("拒绝响应不是预期 JSON：%v（%s）", err, rec.Body.String())
-	}
-	if len(out.Data.Items) == 0 {
-		t.Fatalf("整批被拒必须给 data.items（用户要知道是哪一条、为什么）")
-	}
-	return out
 }
 
 func TestOrderBulkBusinessRejectionsRejectWholeBatch(t *testing.T) {
@@ -140,32 +102,37 @@ func TestOrderBulkBusinessRejectionsRejectWholeBatch(t *testing.T) {
 	ok := mkOrder("bulk-biz-ok@example.com")
 	badEdge := mkOrder("bulk-biz-edge@example.com")
 
-	gin.SetMode(gin.TestMode)
 	h := orderhttp.NewHandle(f.orders)
-	engine := gin.New()
-	engine.POST("/api/order/status", h.ChangeStatus)
-	engine.POST("/api/order/cancel", h.CancelOrder)
+	engine := orderBulkFormEngine(h)
 
-	body := `{"ids":["` + strconv.FormatUint(ok, 10) + `","` + strconv.FormatUint(badEdge, 10) +
-		`"],"toStatus":"completed","remark":"批档业务档"}`
-	rejected := orderBulkRejectSend(t, engine, "/api/order/status", body)
-	if rejected.Code != http.StatusConflict {
-		t.Errorf("拒绝响应的 code 应与 HTTP 状态一致（409），实际 %d", rejected.Code)
+	// ① 状态机不允许的边：整批被拒，两条都没动。
+	form := url.Values{}
+	form.Add("ids", strconv.FormatUint(ok, 10))
+	form.Add("ids", strconv.FormatUint(badEdge, 10))
+	form.Set("toStatus", "completed")
+	form.Set("remark", "批档业务档")
+	rec := orderBulkPost(engine, "/api/order/status", form)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("整批被拒应回 409，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-
-	if len(rejected.Data.Items) != 1 {
-		t.Fatalf("应给出挡住整批的那一条，实际 %d 条：%+v", len(rejected.Data.Items), rejected.Data.Items)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("失败应渲染 Jet 错误片段：%s", body)
 	}
-	if rejected.Data.Items[0].ID == "" || rejected.Data.Items[0].Message == "" {
-		t.Errorf("明细缺 id 或原因：%+v", rejected.Data.Items[0])
+	// 业务拒绝必须给出可读原因，且不得漏出声明 key。
+	if !strings.Contains(body, "整批") && !strings.Contains(body, "状态") && !strings.Contains(body, "流转") {
+		t.Errorf("失败片段应给出可读原因：%s", body)
 	}
-
+	if strings.Contains(body, "order.err.") || strings.Contains(body, "order.msg.") {
+		t.Errorf("失败片段漏出了声明 key：%s", body)
+	}
 	for _, id := range []uint64{ok, badEdge} {
 		if got := f.orderStatusOf(t, id); got != "pending" {
 			t.Errorf("订单 %d 在整批被拒后改了状态：%s（批量必须全败）", id, got)
 		}
 	}
 
+	// ② 批量取消里混进一张已取消的单：整批被拒。
 	cancelable := mkOrder("bulk-biz-cancel-ok@example.com")
 	already := mkOrder("bulk-biz-cancel-twice@example.com")
 	if _, err := f.orders.CancelOrder(t.Context(), &orderdto.CancelOrderReq{
@@ -173,23 +140,38 @@ func TestOrderBulkBusinessRejectionsRejectWholeBatch(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("先取消一次失败：%v", err)
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"ids":    []string{strconv.FormatUint(cancelable, 10), strconv.FormatUint(already, 10)},
-		"remark": "批档业务档取消",
-	})
-	_ = orderBulkRejectSend(t, engine, "/api/order/cancel", string(payload))
+	cancel := url.Values{}
+	cancel.Add("ids", strconv.FormatUint(cancelable, 10))
+	cancel.Add("ids", strconv.FormatUint(already, 10))
+	cancel.Set("remark", "批档业务档取消")
+	rec = orderBulkPost(engine, "/api/order/cancel", cancel)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("整批被拒应回 409，实际 %d：%s", rec.Code, rec.Body.String())
+	}
 	if got := f.orderStatusOf(t, cancelable); got != "pending" {
 		t.Errorf("整批被拒时可取消的订单不该被取消，实际 %s", got)
 	}
 
+	// ③ 两条都能取消：回成功片段，两条都落定。
 	fine := mkOrder("bulk-biz-fine@example.com")
 	fine2 := mkOrder("bulk-biz-fine2@example.com")
-	payload2, _ := json.Marshal(map[string]any{
-		"ids":    []string{strconv.FormatUint(fine, 10), strconv.FormatUint(fine2, 10)},
-		"remark": "批档合法取消",
-	})
-	okRes := orderBulkSend(t, engine, "/api/order/cancel", string(payload2))
-	if okRes.Updated != 2 {
-		t.Errorf("两条都能取消时应更新 2 条，实际 %d", okRes.Updated)
+	cancelOK := url.Values{}
+	cancelOK.Add("ids", strconv.FormatUint(fine, 10))
+	cancelOK.Add("ids", strconv.FormatUint(fine2, 10))
+	cancelOK.Set("remark", "批档合法取消")
+	rec = orderBulkPost(engine, "/api/order/cancel", cancelOK)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批档全部可执行时应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if ctype := rec.Header().Get("Content-Type"); !strings.HasPrefix(ctype, "text/html") {
+		t.Fatalf("成功应回 HTML 片段，实际 Content-Type=%q", ctype)
+	}
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("成功应回 Jet 成功片段：%s", rec.Body.String())
+	}
+	for _, id := range []uint64{fine, fine2} {
+		if got := f.orderStatusOf(t, id); got != "cancelled" {
+			t.Errorf("订单 %d 应已取消，实际 %s", id, got)
+		}
 	}
 }

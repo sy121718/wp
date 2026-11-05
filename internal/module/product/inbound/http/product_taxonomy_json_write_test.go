@@ -15,6 +15,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 func taxonomyJSONWriteRequest(t *testing.T, h *ProductPageHandle, route, target string, mw gin.HandlerFunc) *httptest.ResponseRecorder {
@@ -22,6 +23,7 @@ func taxonomyJSONWriteRequest(t *testing.T, h *ProductPageHandle, route, target 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	if mw != nil {
 		engine.Use(mw)
 	}
@@ -66,7 +68,7 @@ func assertContainsNone(t *testing.T, html string, gones []string) {
 	}
 }
 
-func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
+func TestCategoryPageUsesHTMXHTMLWrites(t *testing.T) {
 	h := taxonomyHandle(&productPageReaderStub{categories: []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装"}}})
 	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-categories", "/admin/product-categories?project=p1", taxonomyAllButtons())
 	if rec.Code != http.StatusOK {
@@ -75,12 +77,11 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 	html := rec.Body.String()
 	assertContainsAll(t, html, []string{
 		"data-list-bulk",
-		`data-write-url="/api/product/category/bulk-delete"`,
+		`hx-post="/api/product/category/bulk-delete"`,
 		`data-write-reload`,
-		`data-write-url="/api/product/category/delete"`,
+		`hx-post="/api/product/category/delete"`,
 		`data-write-reload`,
-		`data-write-url="/api/product/category/create"`,
-		`data-write="bulk"`,
+		`data-write-builder="product-category"`,
 		`data-write-close="[data-drawer]"`,
 		"data-write-status",
 		"data-write-host",
@@ -92,7 +93,7 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 	})
 }
 
-func TestBrandPageUsesJSONWriteBase(t *testing.T) {
+func TestBrandPageUsesHTMXHTMLWrites(t *testing.T) {
 	h := taxonomyHandle(&productPageReaderStub{brands: []*productdto.BrandResp{{ID: "b1", Name: "品牌一"}}})
 	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-brands", "/admin/product-brands?project=p1", taxonomyAllButtons())
 	if rec.Code != http.StatusOK {
@@ -101,12 +102,11 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 	html := rec.Body.String()
 	assertContainsAll(t, html, []string{
 		"data-list-bulk",
-		`data-write-url="/api/product/brand/bulk-delete"`,
-		`data-write-url="/api/product/brand/delete"`,
+		`hx-post="/api/product/brand/bulk-delete"`,
+		`hx-post="/api/product/brand/delete"`,
 		`data-write-reload`,
-		`data-write-url="/api/product/brand/update"`,
-		`data-write-url="/api/product/brand/create"`,
-		`data-write="bulk"`,
+		`hx-post="/api/product/brand/update"`,
+		`hx-post="/api/product/brand/create"`,
 		`data-write-close="[data-drawer]"`,
 		"data-write-status",
 		"data-write-host",
@@ -119,7 +119,7 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 	})
 }
 
-func TestTagPageUsesJSONWriteBase(t *testing.T) {
+func TestTagPageUsesHTMXHTMLWrites(t *testing.T) {
 	h := taxonomyHandle(&productPageReaderStub{tags: []*productdto.TagResp{{ID: "t2", Name: "自动标签", Kind: productenums.TagKindRule, RuleType: productenums.TagRuleNewArrival, RuleValues: productdto.RuleValuesResp{Days: 30, HasDays: true}}}})
 	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-tags", "/admin/product-tags?project=p1", taxonomyAllButtons())
 	if rec.Code != http.StatusOK {
@@ -128,15 +128,15 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 	html := rec.Body.String()
 	assertContainsAll(t, html, []string{
 		"data-list-bulk",
-		`data-write-url="/api/product/tag/bulk-delete"`,
-		`data-write-url="/api/product/tag/delete"`,
+		`hx-post="/api/product/tag/bulk-delete"`,
+		`hx-post="/api/product/tag/delete"`,
 		`data-write-reload`,
-		`data-write-url="/api/product/tag/recalc"`,
+		`hx-post="/api/product/tag/recalc"`,
 		`id="tag-recalc-all"`,
 		`id="tag-recalc-t2"`,
-		`data-write-url="/api/product/tag/create"`,
-		`data-write-url="/api/product/tag/update"`,
-		`data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule"`,
+		`data-write-builder="product-tag"`,
+		`data-write-builder="product-tag"`,
+		`data-write-builder="product-tag"`,
 		"data-write-status",
 	})
 	assertContainsNone(t, html, []string{

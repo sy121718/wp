@@ -11,7 +11,10 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +26,9 @@ import (
 func productPageLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"
+	if _, ok := base["PermSet"]; !ok {
+		base["PermSet"] = map[string]bool{}
+	}
 	base["lang"] = lang
 	base["t"] = templates.TranslateFunc(lang)
 	base["langs"] = templates.LanguageOptions(lang)
@@ -30,12 +36,16 @@ func productPageLayoutData(base gin.H) gin.H {
 	return base
 }
 
-func renderAdminTemplate(t *testing.T, name string, data gin.H) string {
+func renderAdminTemplate(t *testing.T, name string, data any) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) {
+		t.Errorf("%s 模板执行失败：%v", name, err)
+	}))
 	engine.GET("/page", func(c *gin.Context) { c.HTML(http.StatusOK, name, data) })
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/page", nil))
@@ -201,6 +211,15 @@ func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) {
+		text.AttachScope(c)
+		c.Next()
+		for _, entry := range c.Errors {
+			if _, ok := templates.AsTemplateRenderError(entry.Err); ok {
+				t.Errorf("商品页面模板执行失败：%v", entry.Err)
+			}
+		}
+	})
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), h.ProductsPage)
 	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), h.ProductNewPage)
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailPage)
@@ -228,6 +247,7 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	switch route {
 	case "/admin/product-attributes":
@@ -284,7 +304,19 @@ func headOf(body string) string {
 	return body
 }
 
+// productPageErrWords 注入页面失败出口要用的真实词条：声明不再带中文，
+// 出口只认词库，断言必须是词库那句（"内部错误"这类片段来自 InternalFallback）。
+func productPageErrWords(t *testing.T) {
+	t.Helper()
+	i18n.InjectForTest(map[string]map[string]string{
+		productenums.ErrNotFound:     {"zh-CN": "商品或变体不存在"},
+		productenums.ErrInvalidParam: {"zh-CN": "请求参数无效"},
+		response.InternalKey:         {"zh-CN": response.InternalFallback},
+	}, nil)
+}
+
 func TestProductPageQueriesKeepJSONFailures(t *testing.T) {
+	productPageErrWords(t)
 	for _, target := range []string{"/admin/products", "/admin/products/new", "/admin/products/detail?product=prod-1"} {
 		t.Run(target, func(t *testing.T) {
 			h := &ProductPageHandle{products: &productPageReaderStub{scopeErr: errors.New("pq: scope unavailable")}}
@@ -317,7 +349,7 @@ func TestProductPagesRenderOriginalObjects(t *testing.T) {
 		}
 	}
 	body := productPageRequest(t, h, "/admin/products?project=p1").Body.String()
-	for _, want := range []string{"测试商品", "data-write-url=\"/api/product/delete\"", "data-write-url=\"/api/product/bulk-delete\""} {
+	for _, want := range []string{"测试商品", "hx-post=\"/api/product/delete\"", "hx-post=\"/api/product/bulk-delete\""} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("列表缺少 %q", want)
 		}

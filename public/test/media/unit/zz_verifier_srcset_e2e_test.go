@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"go_wp/pkg/builder/core"
 	"image"
 	_ "image/jpeg"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	mediacontract "go_wp/internal/module/media/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/upload"
 )
@@ -87,8 +87,13 @@ func TestVerifierSrcsetEndToEndThroughBuilder(t *testing.T) {
 
 	set, _ := templates.NewEmbeddedComponentSet()
 
-	probe := func(url string) []mediacontract.VariantRef {
-		return svc.ProbeImageVariants(ctx, url)
+	probe := func(rawURL string) []core.AssetVariant {
+		refs := svc.ProbeImageVariants(ctx, rawURL)
+		out := make([]core.AssetVariant, 0, len(refs))
+		for _, r := range refs {
+			out = append(out, core.AssetVariant{URL: r.URL, Width: r.Width})
+		}
+		return out
 	}
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"/storage/photo.png","alt":"A"}}]}`
 	page, err := builder.ParsePage([]byte(doc))

@@ -3,6 +3,8 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -553,6 +555,9 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {
 
 		c.Set(adminctx.PermSetKey, map[string]bool{"inventory:stock_change": true})
@@ -560,7 +565,7 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), handle.InventoryPage)
-	engine.POST("/admin/inventory/stock/tracking", handle.InventoryStockTrackingUpdate)
+	engine.POST("/admin/inventory/stock/tracking", pageview.HTMLFragment, handle.InventoryStockTrackingUpdate)
 	return engine, f
 }
 

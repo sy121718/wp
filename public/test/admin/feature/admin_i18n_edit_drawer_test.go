@@ -8,6 +8,7 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/public/test/support"
@@ -22,6 +23,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			pages := e.Group("/admin")
 			pages.Use(func(c *gin.Context) {
 				c.Set("user_id", i18nDrawerUser)
@@ -74,29 +76,14 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	if found.Code != http.StatusOK || found.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("抽屉片段：%d %v %s", found.Code, found.Header(), found.Body.String())
 	}
-	fragment := strings.TrimSpace(found.Body.String())
-	for _, want := range []string{
-		"<div data-drawer-fragment>",
-		`data-write-url="/api/i18n/save"`, `data-write="create"`,
-		`name="action" value="update"`,
-		`name="key" value="drawer.exact.test"`, `name="lang" value="en-US"`,
-		"data-write-status", "data-requires-js", "noscript",
-		"Old English",
-	} {
-		if !strings.Contains(fragment, want) {
-			t.Fatalf("抽屉片段缺少 %q：%s", want, fragment)
+	body := assertI18nHTMLFragment(t, found)
+	for _, want := range []string{`<form data-drawer-fragment`, `name="key" value="drawer.exact.test" readonly`, `name="lang" value="en-US" readonly`, `>Old English</textarea>`, `name="category" value="old-cat"`, `name="remark" value="old-note"`, `name="action" value="update"`, `hx-post="/api/i18n/save"`, `</form>`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("精确配对表单缺少 %q：%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{
-		`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`,
-		"旧中文", "<html",
-	} {
-		if strings.Contains(fragment, unwanted) {
-			t.Fatalf("抽屉片段不应出现 %q（写动作已收敛到 JSON 端点）：%s", unwanted, fragment)
-		}
-	}
-	if !strings.HasSuffix(fragment, "</div>") {
-		t.Fatalf("抽屉片段不是单个片段：%s", fragment)
+	if strings.Contains(body, "旧中文") {
+		t.Fatalf("不得串到其它语言：%s", body)
 	}
 
 	for _, tc := range []struct {
@@ -109,6 +96,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := request(tc.path)
+			assertI18nHTMLFragment(t, got)
 			if got.Code != tc.status || got.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("%d %v %s", got.Code, got.Header(), got.Body.String())
 			}
@@ -124,23 +112,20 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 		t.Fatalf("列表页：%d %s", list.Code, page)
 	}
 	for _, want := range []string{
-		`data-drawer-url="/admin/i18n/edit?key=drawer.exact.test&amp;lang=en-US"`,
-		`data-write-url="/api/i18n/save"`, `data-write="bulk"`,
+		`hx-get="/admin/i18n/edit?key=drawer.exact.test&amp;lang=en-US"`,
+		`hx-post="/api/i18n/save"`, `data-write="bulk"`, `name="action" value="bulkDelete"`, `data-write-reload`,
 
-		"data-msg-none-selected", "data-msg-too-many",
+		"data-write-status", "data-write-result",
 		`name="action" value="delete"`, `name="action" value="create"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("列表页缺少 %q：%s", want, page)
 		}
 	}
-	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, "tpl-i18n-edit-"} {
+	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, "tpl-i18n-edit", "data-bind", "data-drawer-url", "data-write-url", "data-requires-js"} {
 		if strings.Contains(page, unwanted) {
 			t.Fatalf("列表页不应出现 %q：%s", unwanted, page)
 		}
 	}
 
-	if !strings.Contains(page, "data-requires-js") {
-		t.Fatalf("列表页的写控件应带 data-requires-js（无 JS 时隐藏）：%s", page)
-	}
 }

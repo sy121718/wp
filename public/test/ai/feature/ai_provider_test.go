@@ -6,19 +6,25 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/crypto"
+	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/test/support"
 )
 
@@ -32,6 +38,23 @@ func applyProductionSchema(t *testing.T, db *gorm.DB) {
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产种子失败：%v", err)
 	}
+	var terms []struct {
+		Key   string `gorm:"column:item_key"`
+		Lang  string
+		Value string `gorm:"column:item_value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key", "lang", "item_value").Where("status = ?", 1).Find(&terms).Error; err != nil {
+		t.Fatalf("读取生产词库失败：%v", err)
+	}
+	data := make(map[string]map[string]string)
+	for _, term := range terms {
+		if data[term.Key] == nil {
+			data[term.Key] = make(map[string]string)
+		}
+		data[term.Key][term.Lang] = term.Value
+	}
+	i18n.InjectForTest(data, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }
 
 func newAIProviderService(t *testing.T) (*aiservice.Service, *gorm.DB) {
@@ -139,8 +162,11 @@ func TestAIProviderLifecycleKeepsSecretCipherOnly(t *testing.T) {
 		}
 	}
 
+	// BaseURL 必须显式带上：更新时留空会被当成「把地址改成空」，从而落进
+	// 「改了地址就得同时补 apiKey」的分支。本用例要证明的是**空 apiKey 不清密钥**，
+	// 所以除名字外其余字段原样回传，不制造无关的字段变更。
 	kept, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{
-		ID: p.ID, DisplayName: "深度求索（改名）", Version: restored.Version,
+		ID: p.ID, DisplayName: "深度求索（改名）", BaseURL: p.BaseURL, Version: restored.Version,
 	})
 	if err != nil {
 		t.Fatalf("更新供应商失败：%v", err)
@@ -189,7 +215,10 @@ func TestAIProviderRejectsMissingFields(t *testing.T) {
 		req  *aidto.SaveProviderReq
 		want string
 	}{
-		{"缺显示名", &aidto.SaveProviderReq{ProviderKey: "openai"}, aienums.ErrDisplayNameRequired},
+		// 缺名必须是**未知自定义 key**：内置预设留空名会回退预设名（页面承诺的行为），
+		// 拿 openai 这种预设去断「必拒」既不符合需求，也会把该 key 提前占掉，
+		// 让后面正常新建撞上 providerKeyExists。
+		{"缺显示名", &aidto.SaveProviderReq{ProviderKey: "acme-no-name"}, aienums.ErrDisplayNameRequired},
 		{"缺 provider_key", &aidto.SaveProviderReq{DisplayName: "X"}, aienums.ErrProviderKeyRequired},
 		{"协议不支持", &aidto.SaveProviderReq{ProviderKey: "x", DisplayName: "X", Protocol: "自创协议"}, aienums.ErrProtocolUnsupported},
 	}
@@ -322,23 +351,28 @@ func newAIProviderEngine(t *testing.T) (*gin.Engine, *aiservice.Service) {
 
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
+	e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := aihttp.NewHandle(svc)
 	e.GET("/api/ai/provider/list", h.ListProviders)
 	e.GET("/api/ai/provider/get", h.GetProvider)
-	e.POST("/api/ai/provider/save", h.SaveProvider)
-	e.POST("/api/ai/provider/delete", h.DeleteProvider)
-	e.POST("/api/ai/provider/status", h.SetProviderStatus)
+	e.POST("/api/ai/provider/save", pageview.HTMLFragment, h.SaveProvider)
+	e.POST("/api/ai/provider/delete", pageview.HTMLFragment, h.DeleteProvider)
+	e.POST("/api/ai/provider/status", pageview.HTMLFragment, h.SetProviderStatus)
 	e.GET("/api/ai/provider/models/list", h.ListModels)
-	e.POST("/api/ai/provider/models/save", h.SaveModels)
-	e.POST("/api/ai/provider/models/restore", h.RestoreDefaultModels)
-	e.POST("/api/ai/provider/models/fetch", h.FetchAvailableModels)
+	e.POST("/api/ai/provider/models/save", pageview.HTMLFragment, h.SaveModels)
+	e.POST("/api/ai/provider/models/restore", pageview.HTMLFragment, h.RestoreDefaultModels)
+	e.POST("/api/ai/provider/models/fetch", pageview.HTMLFragment, h.FetchAvailableModels)
 	return e, svc
 }
 
-func postAIJSON(t *testing.T, e *gin.Engine, path, body string) *httptest.ResponseRecorder {
+// postAIForm 按浏览器真实形态提交普通表单（标准表单编码）。
+func postAIForm(t *testing.T, e *gin.Engine, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	e.ServeHTTP(w, req)
 	return w
@@ -364,18 +398,21 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 		body string
 		want int
 	}{
-		{"缺显示名", "/api/ai/provider/save", `{"providerKey":"openai"}`, http.StatusBadRequest},
-		{"缺 provider_key", "/api/ai/provider/save", `{"displayName":"X"}`, http.StatusBadRequest},
-		{"非法 JSON", "/api/ai/provider/save", `{`, http.StatusBadRequest},
-		{"重复 provider_key", "/api/ai/provider/save", `{"providerKey":"openrouter","displayName":"重复"}`, http.StatusBadRequest},
-		{"启停缺 id", "/api/ai/provider/status", `{"status":1}`, http.StatusBadRequest},
+		// 缺名用未知自定义 key：预设（openai 等）留空名回退预设名，返回 200 是正确行为。
+		{"缺显示名", "/api/ai/provider/save", `providerKey=acme-no-name-api`, http.StatusBadRequest},
+		{"缺 provider_key", "/api/ai/provider/save", `displayName=X`, http.StatusBadRequest},
+		{"重复 provider_key", "/api/ai/provider/save", `providerKey=openrouter&displayName=重复`, http.StatusBadRequest},
+		{"启停缺 id", "/api/ai/provider/status", `status=1`, http.StatusBadRequest},
 
-		{"恢复内置清单的预设", "/api/ai/provider/models/restore", `{"providerId":` + itoa(p.ID) + `,"version":1}`, http.StatusOK},
-		{"恢复无内置清单的自定义端点", "/api/ai/provider/models/restore", `{"providerId":` + itoa(custom.ID) + `,"version":1}`, http.StatusBadRequest},
-		{"删除不存在", "/api/ai/provider/delete?id=999999", ``, http.StatusNotFound},
+		{"恢复内置清单的预设", "/api/ai/provider/models/restore", `providerId=` + itoa(p.ID) + `&version=1`, http.StatusOK},
+		{"恢复无内置清单的自定义端点", "/api/ai/provider/models/restore", `providerId=` + itoa(custom.ID) + `&version=1`, http.StatusBadRequest},
+		// 删除的 id 是表单里的必填字段：不存在要在 body 里给一个合法但查不到的 id；
+		// 空 body / id<=0 是参数错误 400，不是 404 —— 两者语义不同。
+		{"删除缺 id", "/api/ai/provider/delete", ``, http.StatusBadRequest},
+		{"删除不存在", "/api/ai/provider/delete", `id=999999`, http.StatusNotFound},
 	}
 	for _, c := range cases {
-		w := postAIJSON(t, e, c.path, c.body)
+		w := postAIForm(t, e, c.path, c.body)
 		if w.Code != c.want {
 			t.Errorf("%s：期望 %d，实际 %d（body=%s）", c.name, c.want, w.Code, w.Body.String())
 		}
@@ -405,8 +442,8 @@ func TestAIProviderAPIErrorMapping(t *testing.T) {
 func TestAISaveProviderAPIKeepsSecretOutOfResponse(t *testing.T) {
 	e, _ := newAIProviderEngine(t)
 
-	w := postAIJSON(t, e, "/api/ai/provider/save",
-		`{"providerKey":"deepseek","displayName":"深度求索","apiKey":"`+testPlainKey+`"}`)
+	w := postAIForm(t, e, "/api/ai/provider/save",
+		`providerKey=deepseek&displayName=`+url.QueryEscape("深度求索")+`&apiKey=`+testPlainKey)
 	if w.Code != http.StatusOK {
 		t.Fatalf("保存失败：%d %s", w.Code, w.Body.String())
 	}
@@ -414,8 +451,9 @@ func TestAISaveProviderAPIKeepsSecretOutOfResponse(t *testing.T) {
 	if strings.Contains(body, testPlainKey) {
 		t.Fatalf("响应体出现了密钥明文：%s", body)
 	}
-	if !strings.Contains(body, `"hasApiKey":true`) {
-		t.Fatalf("响应体应只回是否已配置：%s", body)
+	// 新建成功后卡片由服务端重新渲染；本次只回结论片段，密钥状态不回明文。
+	if strings.Contains(body, "apiKey=") {
+		t.Fatalf("响应体不该带上密钥回填：%s", body)
 	}
 }
 

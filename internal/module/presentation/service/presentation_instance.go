@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"

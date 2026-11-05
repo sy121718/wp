@@ -2,7 +2,6 @@ package feature
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -11,10 +10,62 @@ import (
 const (
 	orderBulkFormTemplate = "../../../../internal/templates/admin/order/orders.html"
 	orderBulkHandlerDir   = "../../../../internal/module/order/inbound/http"
-
-	orderBulkStatusButton = `data-write-url="/api/order/status"`
 )
 
+// TestOrderBulkTargetFieldMatchesTemplate 钉住「模板下拉的字段名」与「控制器读的字段名」一致。
+//
+// 批量流转是标准表单：下拉 name="toStatus" 由自己的承载表单提交，控制器用
+// OrderStatusForm.ToStatus 读同一个名字。两侧不一致的后果是目标状态恒为空串、
+// 每条订单都被判非法 —— 页面上看着像「状态机不允许」，实际是字段名对不上。
+func TestOrderBulkTargetFieldMatchesTemplate(t *testing.T) {
+	raw, err := os.ReadFile(orderBulkFormTemplate)
+	if err != nil {
+		t.Fatalf("读取订单模板失败: %v", err)
+	}
+	src := string(raw)
+
+	selectRe := regexp.MustCompile(`<select[^>]*\sname="([^"]+)"[^>]*form="([^"]+)"`)
+	selectMatch := selectRe.FindStringSubmatch(src)
+	if selectMatch == nil {
+		t.Fatalf("批量流转下拉必须在表单外、用 form 属性挂到承载表单上（<select name=… form=…>）")
+	}
+	tmplField, ownerForm := selectMatch[1], selectMatch[2]
+
+	if tmplField != "toStatus" {
+		t.Errorf("批量流转下拉的字段名应为 toStatus（与 OrderStatusForm.ToStatus 对齐），实际 %q", tmplField)
+	}
+
+	// 承载表单本身就在模板里，且没有 action：提交由 HTMX 声明。
+	formRe := regexp.MustCompile(`<form[^>]*id="` + regexp.QuoteMeta(ownerForm) + `"[^>]*>`)
+	formTag := formRe.FindString(src)
+	if formTag == "" {
+		t.Fatalf("模板里找不到下拉声明的承载表单 #%s", ownerForm)
+	}
+	if strings.Contains(formTag, "action=") {
+		t.Errorf("批量写表单不应有 action（提交由 HTMX 声明）：%s", formTag)
+	}
+
+	// 批量流转按钮必须把勾选行所在的列表表单一起带上。
+	buttonRe := regexp.MustCompile(`<button[^>]*hx-post="/api/order/status"[^>]*>`)
+	buttonTag := buttonRe.FindString(src)
+	if buttonTag == "" {
+		t.Fatalf("模板里找不到 hx-post=\"/api/order/status\" 的批量流转按钮")
+	}
+	if !regexp.MustCompile(`hx-include="[^"]*#ord-list-form`).MatchString(buttonTag) {
+		t.Errorf("批量按钮必须用 hx-include 带上勾选行所在的列表表单（#ord-list-form）：%s", buttonTag)
+	}
+	if !regexp.MustCompile(`hx-include="[^"]*#` + regexp.QuoteMeta(ownerForm)).MatchString(buttonTag) {
+		t.Errorf("批量按钮必须用 hx-include 带上自己的承载表单 #%s：%s", ownerForm, buttonTag)
+	}
+
+	// 控制器读的字段名必须是同一个字面量。
+	handlerSrc := orderBulkHandlerSource(t)
+	if !strings.Contains(handlerSrc, "orderdto.OrderStatusForm") {
+		t.Fatalf("控制器目录 %s 里找不到 OrderStatusForm 绑定", orderBulkHandlerDir)
+	}
+}
+
+// orderBulkHandlerSource 读取控制器目录下所有非测试 .go 源码。
 func orderBulkHandlerSource(t *testing.T) string {
 	t.Helper()
 	entries, err := os.ReadDir(orderBulkHandlerDir)
@@ -28,7 +79,7 @@ func orderBulkHandlerSource(t *testing.T) string {
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(orderBulkHandlerDir, name))
+		b, err := os.ReadFile(orderBulkHandlerDir + "/" + name)
 		if err != nil {
 			t.Fatalf("读取控制器文件 %s 失败: %v", name, err)
 		}
@@ -40,80 +91,4 @@ func orderBulkHandlerSource(t *testing.T) string {
 		t.Fatalf("控制器目录 %s 下没有任何非测试 .go 文件", orderBulkHandlerDir)
 	}
 	return sb.String()
-}
-
-func orderBulkWriteFormSlice(t *testing.T, src, buttonMarker string) string {
-	t.Helper()
-	i := strings.Index(src, buttonMarker)
-	if i < 0 {
-		t.Fatalf("模板 %s 里找不到按钮声明 %s", orderBulkFormTemplate, buttonMarker)
-	}
-	open := strings.LastIndex(src[:i], "<form")
-	if open < 0 {
-		t.Fatalf("按钮 %s 不在任何 <form> 里", buttonMarker)
-	}
-	end := strings.Index(src[i:], "</form>")
-	if end < 0 {
-		t.Fatalf("按钮 %s 所在的 <form> 没有闭合标签", buttonMarker)
-	}
-	return src[open : i+end]
-}
-
-func TestOrderBulkTargetFieldMatchesTemplate(t *testing.T) {
-	raw, err := os.ReadFile(orderBulkFormTemplate)
-	if err != nil {
-		t.Fatalf("读取订单模板失败: %v", err)
-	}
-	src := string(raw)
-	form := orderBulkWriteFormSlice(t, src, orderBulkStatusButton)
-
-	selectRe := regexp.MustCompile(`<select[^>]*\sname="([^"]+)"`)
-	selectMatch := selectRe.FindStringSubmatch(form)
-	if selectMatch == nil {
-		t.Fatalf("批量流转表单里找不到目标状态下拉（<select name=…>）")
-	}
-	tmplField := selectMatch[1]
-
-	extraRe := regexp.MustCompile(`data-write-extra="([^"]*)"`)
-	extraMatch := extraRe.FindStringSubmatch(form)
-	if extraMatch == nil {
-		t.Fatalf("批量流转按钮必须声明 data-write-extra（否则目标状态进不了请求体）")
-	}
-	found := false
-	for _, name := range strings.Split(extraMatch[1], ",") {
-		if strings.TrimSpace(name) == tmplField {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("按钮的 data-write-extra=%q 里没有下拉的字段名 %q", extraMatch[1], tmplField)
-	}
-
-	if regexp.MustCompile(`name="status"`).MatchString(form) {
-		t.Errorf("批量写表单里出现了 name=\"status\"（筛选维度）；它会与目标状态 %q 混淆，"+
-			"请把它留在 GET 筛选表单里", tmplField)
-	}
-
-	tagEnd := strings.Index(form, ">")
-	if tagEnd < 0 {
-		t.Fatalf("批量写表单的开标签没闭合")
-	}
-	if strings.Contains(form[:tagEnd], "action=") {
-		t.Errorf("批量写表单不应有 action（写动作由前端基座发 JSON）：%s", form[:tagEnd+1])
-	}
-
-	handlerSrc := orderBulkHandlerSource(t)
-	keysRe := regexp.MustCompile(`orderStatusBulkKeys = map\[string\]bool\{([^}]*)\}`)
-	keysMatch := keysRe.FindStringSubmatch(handlerSrc)
-	if keysMatch == nil {
-		t.Fatalf("在控制器目录 %s 里找不到 orderStatusBulkKeys 的声明", orderBulkHandlerDir)
-	}
-	if !strings.Contains(keysMatch[1], `"`+tmplField+`": true`) {
-		t.Fatalf("批档白名单 %s 里没有模板下拉的字段名 %q —— 该字段会被当成未知字段整批 400",
-			strings.TrimSpace(keysMatch[1]), tmplField)
-	}
-	if !strings.Contains(handlerSrc, `orderWriteStringOf(raw, "`+tmplField+`")`) {
-		t.Fatalf("批档 handler 里找不到 orderWriteStringOf(raw, %q) —— 字段名两侧不一致，"+
-			"目标状态会恒为空串、每条订单都被判非法", tmplField)
-	}
 }

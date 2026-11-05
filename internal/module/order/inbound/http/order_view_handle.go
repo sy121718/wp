@@ -12,8 +12,8 @@ type StatusTabResp struct {
 }
 
 type OrderListPageResp struct {
-	Title string
-	Menu  string
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
 
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
@@ -57,8 +57,8 @@ type OrderListPageResp struct {
 }
 
 type CouponListPageResp struct {
-	Title           string
-	Menu            string
+	Title           string `view:"title"`
+	Menu            string `view:"menu"`
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
@@ -71,6 +71,7 @@ type CouponListPageResp struct {
 	RedemptionLimit int
 
 	StatusValues      []string
+	StateLabels       map[string]StatusLabelFact
 	FilterStatus      string
 	FilterStatusValid bool
 	FilterKeyword     string
@@ -101,8 +102,8 @@ type ReturnWarehouseResp struct {
 }
 
 type ReturnListPageResp struct {
-	Title           string
-	Menu            string
+	Title           string `view:"title"`
+	Menu            string `view:"menu"`
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 
@@ -137,8 +138,8 @@ type ReturnListPageResp struct {
 }
 
 type OrderNewPageResp struct {
-	Title string
-	Menu  string
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
 
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string

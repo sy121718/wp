@@ -15,7 +15,7 @@ func orderItemScope(q *gorm.DB, projectID string, from, to time.Time) *gorm.DB {
 		Where("o.project_id = ?", projectID).
 		Where("o.create_time >= ?", from).
 		Where("o.create_time < ?", to).
-		Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ","))
+		Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(DefaultSalesStatuses, ","))
 }
 
 const orderSoldQuantitySelect = "COALESCE(SUM(i.quantity), 0) AS quantity, COUNT(DISTINCT i.order_id) AS order_count"

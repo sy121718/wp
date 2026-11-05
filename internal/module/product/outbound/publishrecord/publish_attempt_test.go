@@ -21,7 +21,7 @@ func (s *attemptPortStub) PublishAttempts(context.Context, string, string, strin
 
 func TestPublishAttemptAdapterReturnsFactsWithoutInternalError(t *testing.T) {
 	created := time.Date(2026, 10, 29, 1, 2, 3, 0, time.UTC)
-	port := NewWithAttempts(nil, &attemptPortStub{row: presentationcontract.PublishAttemptRow{
+	port := NewWithAttempts(&attemptPortStub{row: presentationcontract.PublishAttemptRow{
 		ID: 7, CreatedAt: created, Outcome: "failed", ErrorText: "private SQL driver credentials",
 		Langs: []string{"zh-CN", "en-US"}, DurationMs: 1234, Attempts: 2,
 	}})

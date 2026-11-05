@@ -73,8 +73,16 @@ func injectWorkbenchKindEntries(t *testing.T) {
 		navigationenums.KindFooterMobile: {
 			"zh-CN": "页脚导航（移动端）", "en-US": "Footer navigation (mobile)",
 		},
+		// 逐位置读取失败的错误事实也要有词条：声明处只给 key + 状态码，
+		// 成品句归词库。不注入的话 tr(key, key) 会把裸 key 渲染上屏。
+		navigationenums.ErrSourceKindFailed: {
+			"zh-CN": workbenchKindFailedText, "en-US": "This position could not be read",
+		},
 	})
 }
+
+// workbenchKindFailedText 是「某位置读取失败」的对外文案（测试侧与词库对齐的一份）。
+const workbenchKindFailedText = "该位置读取失败，其余位置照常展示"
 
 func newWorkbenchRouter(t *testing.T, nav navigationcontract.NavigationService) http.Handler {
 	t.Helper()
@@ -140,11 +148,9 @@ func TestTranslationWorkbenchGroupsAllFourKinds(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`data-write-url="/api/navigation/update"`,
-		`data-write="create"`,
-		`data-write-rows=".nav-tr-row;context,hash,target"`,
-		`data-write-items`,
-		`data-write-nav="/admin/navigations/translations?`,
+		`hx-post="/api/navigation/translations"`,
+		`data-write-builder="navigation-translations"`,
+		`data-write-result`,
 		`name="action" value="translations"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -228,8 +234,11 @@ func TestTranslationWorkbenchDegradesPerKind(t *testing.T) {
 		t.Error("可读位置的行必须照常展示（逐位置降级，不是整页失败）")
 	}
 
-	if !strings.Contains(body, navigationenums.FallbackFor(navigationenums.ErrSourceKindFailed)) {
-		t.Errorf("失败位置应展示该位置的错误事实：%s", body)
+	if !strings.Contains(body, workbenchKindFailedText) {
+		t.Errorf("失败位置应展示该位置的错误事实（词库译文）：%s", body)
+	}
+	if strings.Contains(body, navigationenums.ErrSourceKindFailed) {
+		t.Errorf("失败位置不得把裸 key 渲染上屏：%s", body)
 	}
 	if got := strings.Count(body, "该位置还没有菜单项"); got != 2 {
 
@@ -244,7 +253,8 @@ func TestTranslationWorkbenchDegradesPerKind(t *testing.T) {
 func TestTranslationWorkbenchIndexFailureIsPageError(t *testing.T) {
 	nav := &workbenchNavigationStub{err: errors.New("boom: SQLSTATE 42P01 navigations")}
 	body := renderWorkbenchBody(t, nav, "?project=project-1&lang=zh-CN")
-	if !strings.Contains(body, navigationenums.FallbackFor(navigationenums.ErrSourceKindFailed)) &&
+	// 索引整页打不开走 navigationLoadErrorOf → 业务事实 / 归口句，两条形态都接受。
+	if !strings.Contains(body, navigationInternalFallback) &&
 		!strings.Contains(body, "操作失败，请稍后重试") {
 		t.Errorf("索引打开失败必须给出错误事实：%s", body)
 	}

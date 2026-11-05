@@ -69,7 +69,7 @@ func (m *Model) ListAttributes(ctx context.Context, projectID, keyword string, v
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ? OR key ILIKE ?", productKeywordPattern(keyword), productKeywordPattern(keyword))
+			q = q.Where(`(name ILIKE ? ESCAPE '\' OR key ILIKE ? ESCAPE '\')`, literalKeywordPattern(keyword), literalKeywordPattern(keyword))
 		}
 		if variation != nil {
 			q = q.Where("is_variation = ?", *variation)
@@ -83,7 +83,7 @@ func (m *Model) CountAttributes(ctx context.Context, projectID, keyword string, 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ? OR key ILIKE ?", productKeywordPattern(keyword), productKeywordPattern(keyword))
+			q = q.Where(`(name ILIKE ? ESCAPE '\' OR key ILIKE ? ESCAPE '\')`, literalKeywordPattern(keyword), literalKeywordPattern(keyword))
 		}
 		if variation != nil {
 			q = q.Where("is_variation = ?", *variation)

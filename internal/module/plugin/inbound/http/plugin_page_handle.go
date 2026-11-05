@@ -3,13 +3,13 @@ package pluginhttp
 import (
 	"io"
 
-	"go_wp/internal/adminui"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/pkg/logger"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
+	"go_wp/pkg/response"
 )
 
 type pluginsPageData struct {
@@ -46,7 +46,7 @@ func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 	if h.plugins != nil {
 		list, err := h.plugins.List(c.Request.Context())
 		if err != nil {
-			data.Error = adminui.MsgText(c, pluginNoticeListFailed)
+			data.Error = response.MsgText(c, pluginNoticeListFailed)
 		} else {
 			data.Plugins = list
 		}

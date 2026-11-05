@@ -69,7 +69,7 @@ func (m *Model) ListCategories(ctx context.Context, projectID, keyword string) (
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
+			q = q.Where(`name ILIKE ? ESCAPE '\'`, literalKeywordPattern(keyword))
 		}
 		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	})
@@ -80,7 +80,7 @@ func (m *Model) CountCategories(ctx context.Context, projectID, keyword string) 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
 		if keyword != "" {
-			q = q.Where("name ILIKE ?", productKeywordPattern(keyword))
+			q = q.Where(`name ILIKE ? ESCAPE '\'`, literalKeywordPattern(keyword))
 		}
 		return q.Count(&n).Error
 	})

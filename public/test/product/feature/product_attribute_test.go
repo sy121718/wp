@@ -15,8 +15,38 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
+	"go_wp/pkg/i18n"
+	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
+
+// loadFeatureWords 从本用例自己的迁移库里取词条灌进缓存：出口只认词库，
+// 不灌就只有共享内部提示。不走 i18n.LoadCache，它读的是会漂移的全局库。
+func loadFeatureWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").
+		Select("item_key", "lang", "item_value AS value").
+		Where("status = ?", 1).
+		Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+}
 
 type attrFixture struct {
 	svc       *productservice.Service
@@ -25,23 +55,36 @@ type attrFixture struct {
 	projectID string
 }
 
+// newAttrFixture 建真实迁移库、跑 seed 并加载词库：出口只认词库取词，
+// 词条来自 seed，不跑不加载就会把可读文案退化成共享内部提示。
 func newAttrFixture(t *testing.T) *attrFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
 		return nil
 	}
+	// 迁移只建表，seed 得单独跑：sys_i18n 的词条就是 seed 写进去的。
+	if err := migrations.RunSeeds(db); err != nil {
+		t.Fatalf("执行种子数据失败：%v", err)
+	}
+	loadFeatureWords(t, db)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "属性测试工程"})
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	return &attrFixture{
-		svc:       productservice.NewService(productmodel.NewModel(db), projects),
+		svc:       productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects)),
 		db:        db,
 		projects:  projects,
 		projectID: project.ID,
 	}
+}
+
+// rewireProductChanges 用另一份审计端口重建商品服务：审计是构造依赖，故障注入只能换装配。
+func (f *attrFixture) rewireProductChanges(t *testing.T, changes masterdatacontract.MasterDataService) {
+	t.Helper()
+	f.svc = productservice.NewService(productmodel.NewModel(f.db), f.projects, changes)
 }
 
 func boolPtr(b bool) *bool { return &b }

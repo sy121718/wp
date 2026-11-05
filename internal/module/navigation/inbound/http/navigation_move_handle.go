@@ -1,82 +1,39 @@
 package navigationhttp
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
-	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"go_wp/pkg/response"
 )
 
-var navigationMoveKeys = map[string]bool{
-	"action":    true,
-	"id":        true,
-	"projectId": true,
-	"dir":       true,
-}
-
 func (h *Handle) moveNavigationEnvelope(c *gin.Context, env *navigationdto.UpdateEnvelope) {
 	if err := env.ValidateMove(); err != nil {
-		response.ParamError(c)
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
 	req, err := env.MoveRequest()
 	if err != nil {
-		response.ParamError(c)
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	raw := map[string]json.RawMessage{}
-	for key, value := range map[string]string{"id": req.ID, "dir": req.Dir} {
-		encoded, merr := json.Marshal(value)
-		if merr != nil {
-			response.ParamError(c)
-			return
-		}
-		raw[key] = encoded
-	}
-
-	if req.ProjectID != "" {
-		encoded, merr := json.Marshal(req.ProjectID)
-		if merr != nil {
-			response.ParamError(c)
-			return
-		}
-		raw["projectId"] = encoded
-	}
-	h.moveNavigation(c, raw)
-}
-
-func (h *Handle) moveNavigation(c *gin.Context, raw map[string]json.RawMessage) {
-	if !navigationDeleteShapeOK(raw, navigationMoveKeys) {
-		response.ParamError(c)
+	// move 已在信封层校验过形状（id / dir 必填）；这里只把已校验的事实交给 service。
+	if strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.Dir) == "" {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	id, ok := navigationWriteRequiredString(raw, "id")
-	if !ok {
-		response.ParamError(c)
+	if _, err := h.svc.SwapMove(c.Request.Context(), &navigationdto.SwapMoveReq{
+		ID: req.ID, ProjectID: req.ProjectID, Dir: req.Dir,
+	}); err != nil {
+		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-
-	dir, ok := navigationWriteRequiredString(raw, "dir")
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-
-	projectID, ok := navigationAddSourceOptionalString(raw, "projectId")
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-	res, err := h.svc.SwapMove(c.Request.Context(), &navigationdto.SwapMoveReq{
-		ID:        id,
-		ProjectID: projectID,
-		Dir:       dir,
-	})
-	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
-		return
-	}
-	response.SuccessWithMessage(c, navigationenums.MsgUpdateSuccess, res)
+	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
+		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
+	))
 }

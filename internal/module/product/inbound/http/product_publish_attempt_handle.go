@@ -6,7 +6,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 type PublishAttemptHandle struct {
@@ -24,8 +24,9 @@ func (h *PublishAttemptHandle) ProductPublishAttempts(c *gin.Context) {
 	}
 	res, err := h.reader.ProductPublishAttempts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	c.Header("Cache-Control", "no-store")
+	pageview.RenderTemplate(c, "admin/product/publish_attempt_rows.html", pageview.Objects(pageview.Object("Attempts", res), pageview.Object("ProjectID", req.ProjectID), pageview.Object("ProductID", req.ProductID), pageview.Object("NextPage", req.Page+1)))
 }

@@ -3,8 +3,9 @@ package feature
 import (
 	"context"
 	"fmt"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	pagedto "go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/facing"
@@ -56,8 +57,12 @@ func TestPublishedActionDependencyImpactAndDeleteProtection(t *testing.T) {
 	} else {
 		status, ok := facing.StatusOf(err)
 		fact, factOK := facing.FactOf(err)
-		if !ok || status != 409 || !factOK || !strings.Contains(fact.Fallback, "引用") {
-			t.Fatalf("引用冲突必须是对外409事实: %+v %d %v", fact, status, err)
+		if !ok || status != 409 || !factOK || fact.Key != pageenums.ErrActionTargetInUse {
+			t.Fatalf("引用冲突必须是对外409事实: key=%q status=%d ok=%v", fact.Key, status, factOK)
+		}
+		// 业务错误的 Fallback 恒为空串：文案归词库，声明处与事实里都不带成品句。
+		if fact.Fallback != "" {
+			t.Fatalf("业务错误的 Fallback 应为空串（文案归词库），实际 %q", fact.Fallback)
 		}
 	}
 	fanout := pipeline.NewFanout()

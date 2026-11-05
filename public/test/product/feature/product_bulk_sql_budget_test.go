@@ -13,6 +13,8 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -84,7 +86,7 @@ func newBulkFixture(t *testing.T) *bulkFixture {
 	counter := &bulkQueryCounter{}
 	counted := db.Session(&gorm.Session{Logger: counter})
 	projects := projectservice.NewService(projectmodel.NewProjectModel(counted))
-	svc := productservice.NewService(productmodel.NewModel(counted), projects)
+	svc := productservice.NewService(productmodel.NewModel(counted), projects, masterdataservice.NewService(masterdatamodel.NewModel(counted), projects))
 	return &bulkFixture{db: db, svc: svc, projects: projects, counter: counter}
 }
 

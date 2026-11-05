@@ -417,6 +417,86 @@ func (s *Service) FetchModelCandidates(ctx context.Context, req *aidto.ProviderA
 	}, nil
 }
 
+// AppendModels 把选中的模型 id 追加进某供应商的目录，并落库。
+//
+// 这是真正的业务聚合，放 service 而不是 controller：
+//   - 去重（已在目录里的跳过）、限流（一次最多 maxModelAppend 个）、
+//   - 与「读到的版本号」一起走 SaveModels 的乐观锁，
+//   - 「一个都没加」要按业务事实报错，而不是回一个空成功的假象。
+//
+// req.Models 是调用方勾选的 id 原始列表（可重复、可空白）。返回追加后的 provider 与
+// 实际新增条数；新增 0 条返回 ErrNoModelSelected（「你的选择没改变任何东西」）。
+func (s *Service) AppendModels(ctx context.Context, providerID, version, updateBy int64, selected []string) (provider *aidto.Provider, added int, err error) {
+	if providerID <= 0 {
+		return nil, 0, aienums.Err(aienums.ErrInvalidParam)
+	}
+	ids := normalizeModelIDs(selected)
+	if len(ids) == 0 {
+		return nil, 0, aienums.Err(aienums.ErrNoModelSelected)
+	}
+	if len(ids) > MaxModelAppend {
+		return nil, 0, aienums.Err(aienums.ErrInvalidParam)
+	}
+	// GetProvider 找不到时直接回 ErrProviderNotFound（不是 (nil, nil)），
+	// 所以这里只需要透传错误，不用再判 nil —— 再判一次会让「不存在」变成 500。
+	current, err := s.GetProvider(ctx, providerID)
+	if err != nil {
+		return nil, 0, err
+	}
+	have := make(map[string]bool, len(current.Models))
+	for i := range current.Models {
+		have[current.Models[i].ID] = true
+	}
+	rows := append([]aidto.ModelEntry{}, current.Models...)
+	for _, id := range ids {
+		if have[id] {
+			continue
+		}
+		have[id] = true
+		rows = append(rows, aidto.ModelEntry{
+			ID:          id,
+			DisplayName: id,
+			InputTypes:  []string{aienums.InputTypeText},
+		})
+		added++
+	}
+	if added == 0 {
+		// 全都在目录里：这不是失败也不是成功，是「你的选择没改变任何东西」。
+		return nil, 0, aienums.Err(aienums.ErrNoModelSelected)
+	}
+	// 版本号取调用方提交的那个（乐观锁：别人先改过就冲突），不偷偷用刚读到的 current.Version。
+	saved, serr := s.SaveModels(ctx, &aidto.SaveModelsReq{
+		ProviderID: providerID,
+		Version:    version,
+		Models:     rows,
+		UpdateBy:   updateBy,
+	})
+	if serr != nil {
+		return nil, 0, serr
+	}
+	return saved, added, nil
+}
+
+// MaxModelAppend 是一次批量追加的条数上限。
+//
+// 这是业务约束（一次点几千个模型不现实，也会把单条 SQL 撑爆），不是界面参数。
+const MaxModelAppend = 2000
+
+// normalizeModelIDs 去空白、去重，保持调用方给的顺序。
+func normalizeModelIDs(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, v := range raw {
+		id := strings.TrimSpace(v)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 type presetEndpoint struct {
 	DSHAPI   string
 	Protocol string

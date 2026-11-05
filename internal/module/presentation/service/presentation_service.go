@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"

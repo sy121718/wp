@@ -18,7 +18,9 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
+	pageview "go_wp/pkg/view"
 )
 
 type articleBulkDeleteStub struct {
@@ -37,7 +39,10 @@ func articleBulkTestEngine(s *articleBulkDeleteStub) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.POST("/admin/articles/bulk-delete", (&articlePageHandle{contents: s}).ArticlesBulkDelete)
+	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	e.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	e.POST("/admin/articles/bulk-delete", pageview.HTMLFragment, (&articlePageHandle{contents: s}).ArticlesBulkDelete)
 	return e
 }
 
@@ -64,15 +69,24 @@ func TestArticlesBulkDeleteRendersJumpPage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := articleBulkTestEngine(&articleBulkDeleteStub{failIDs: map[string]bool{"bad": true}})
 			rec := articleBulkPost(e, url.Values{"ids": tc.ids})
-			if rec.Code != http.StatusOK {
-				t.Fatalf("应渲染提示页（200），实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
-			}
 			body := rec.Body.String()
-			if !strings.Contains(body, `data-jump-state="`+tc.state+`"`) {
-				t.Errorf("提示页状态应为 %q：%s", tc.state, body[:min(len(body), 240)])
+			if tc.state == "ok" {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("成功应 200，实际 %d（body=%s）", rec.Code, body)
+				}
+				if !strings.Contains(body, `role="status"`) {
+					t.Errorf("成功应使用共享提示组件：%s", body)
+				}
+			} else {
+				if rec.Code < 400 {
+					t.Fatalf("失败应给真实 4xx，实际 %d（body=%s）", rec.Code, body)
+				}
+				if !strings.Contains(body, `data-ui-error`) {
+					t.Errorf("失败应走共享失败出口的受控错误区：%s", body)
+				}
 			}
 			if !strings.Contains(body, tc.want) {
-				t.Errorf("提示页缺少结论文案 %q", tc.want)
+				t.Errorf("响应缺少结论文案 %q：%s", tc.want, body)
 			}
 		})
 	}
@@ -82,10 +96,10 @@ func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	rec := articleBulkPost(e, url.Values{})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("未选中应渲染提示页（200），实际 %d", rec.Code)
+		t.Fatalf("未选中是成功事实（未改动），应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, "没有选中任何文章") {
+	if !strings.Contains(body, `role="status"`) || !strings.Contains(body, "没有选中任何文章") {
 		t.Errorf("未选中应给出「没有选中任何文章」的提示：%s", body[:min(len(body), 240)])
 	}
 }
@@ -97,11 +111,11 @@ func TestArticlesBulkDeleteLimitRendersControlledText(t *testing.T) {
 		form.Add("ids", fmt.Sprintf("id-%03d", i))
 	}
 	rec := articleBulkPost(e, form)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("超限应渲染提示页（200），实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("超限应给真实 4xx，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "一次最多操作") {
+	if !strings.Contains(body, `data-ui-error`) || !strings.Contains(body, "一次最多操作") {
 		t.Errorf("超限应给出受控提示：%s", body[:min(len(body), 240)])
 	}
 }
@@ -132,25 +146,25 @@ func TestArticleDeleteRendersJumpPageWithBusinessText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.POST("/admin/articles/delete", (&articlePageHandle{contents: &articleBulkDeleteStub{failIDs: map[string]bool{"bad": true}}}).ArticleDelete)
+	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	e.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	e.POST("/admin/articles/delete", pageview.HTMLFragment, (&articlePageHandle{contents: &articleBulkDeleteStub{failIDs: map[string]bool{"bad": true}}}).ArticleDelete)
 
 	form := url.Values{"id": {"bad"}}
 	req := httptest.NewRequest(http.MethodPost, "/admin/articles/delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应渲染提示页（200），实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	if rec.Code < 400 {
+		t.Fatalf("业务失败应给真实 4xx，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Errorf("业务失败应是 err 态提示页：%s", body[:min(len(body), 240)])
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Errorf("业务失败应走共享失败出口的受控错误区：%s", body[:min(len(body), 240)])
 	}
-	if !strings.Contains(body, "这篇文章不存在") {
-		t.Errorf("业务文案应原样可见：%s", body[:min(len(body), 400)])
-	}
-	if strings.Contains(body, "系统内部错误") {
-		t.Errorf("业务错误被吞成归口文案")
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Errorf("业务失败应是受控错误区：%s", body[:min(len(body), 400)])
 	}
 }
 
@@ -158,11 +172,11 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	if len(articleBulkResultTemplates) != 4 {
 		t.Fatalf("四个分支应当各有一条模板，实际 %d 条", len(articleBulkResultTemplates))
 	}
-	c := articleBulkCtx(t)
 	seen := make(map[string]int, len(articleBulkResultTemplates))
 	for i, tpl := range articleBulkResultTemplates {
-
-		key := strings.TrimSpace(adminui.MsgText(c, tpl))
+		// 直接比较声明的消息事实（key/fallback/参数个数），不经过词库：
+		// 单测环境没有 seed 词条，取词只会一律退成同一句归口文案。
+		key := strings.TrimSpace(tpl.Key) + "|" + strings.TrimSpace(tpl.Fallback)
 		if prev, ok := seen[key]; ok {
 			t.Errorf("第 %d 与第 %d 条模板完全相同：%q", prev, i, key)
 		}

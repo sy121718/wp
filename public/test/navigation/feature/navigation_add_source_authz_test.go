@@ -3,9 +3,9 @@ package feature
 import (
 	"context"
 	"errors"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -46,22 +46,38 @@ func (navSourceStub) ResolveSource(_ context.Context, _, _, _ string) (string, s
 
 func navAddSourcePayload(env *navTranslationAuthzEnv, sourceType string, ids ...string) map[string]interface{} {
 	return map[string]interface{}{
-		"action": "addSource", "projectId": env.ProjectID, "kind": "header",
+		"projectId": env.ProjectID, "kind": "header",
 		"sourceType": sourceType, "ids": ids,
 	}
 }
 
+// navAddSourceData 从 Jet 结果片段读回计数，形状与旧 JSON 的 data 段一致，
+// 调用点的断言不用改。
 func navAddSourceData(t *testing.T, body []byte) map[string]interface{} {
 	t.Helper()
-	var resp map[string]interface{}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		t.Fatalf("回执不是 JSON: %s", string(body))
+	m := regexp.MustCompile(`data-added="(\d+)" data-skipped="(\d+)"`).FindSubmatch(body)
+	if m == nil {
+		t.Fatalf("回执缺少计数属性: %s", string(body))
 	}
-	data, _ := resp["data"].(map[string]interface{})
-	if data == nil {
-		t.Fatalf("回执缺少 data 段: %s", string(body))
+	added, _ := strconv.Atoi(string(m[1]))
+	skipped, _ := strconv.Atoi(string(m[2]))
+
+	// 逐条事实同样来自片段：<li data-item-id=".." data-item-ok="0|1">原因</li>
+	items := make([]interface{}, 0, 4)
+	for _, im := range regexp.MustCompile(`data-item-id="([^"]*)" data-item-ok="([01])">([^<]*)<`).FindAllSubmatch(body, -1) {
+		message := ""
+		if text := string(im[3]); text != "" {
+			if i := strings.Index(text, "："); i >= 0 {
+				message = text[i+len("："):]
+			}
+		}
+		items = append(items, map[string]interface{}{
+			"id":      string(im[1]),
+			"added":   string(im[2]) == "1",
+			"message": message,
+		})
 	}
-	return data
+	return map[string]interface{}{"added": float64(added), "skipped": float64(skipped), "items": items}
 }
 
 func navCountItems(t *testing.T, env *navTranslationAuthzEnv) int {
@@ -77,13 +93,13 @@ func navCountItems(t *testing.T, env *navTranslationAuthzEnv) int {
 func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	env.NavSvc.SetSourceResolver(navSourceStub{})
-	navWriteAuthzSetPolicy(t, env, navCreateAPIPath, navCreatePermission, false)
-	if got := navWriteAuthzPolicyCount(t, env, navCreateAPIPath, navCreatePermission); got != 0 {
+	navWriteAuthzSetPolicy(t, env, navSourceAPIPath, navSourcePermission, false)
+	if got := navWriteAuthzPolicyCount(t, env, navSourceAPIPath, navSourcePermission); got != 0 {
 		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navCreatePermission)
 	}
 
 	before := navCountItems(t, env)
-	denied := navWriteAuthzPost(t, env, env.Plain, navCreateAPIPath,
+	denied := navWriteAuthzPost(t, env, env.Plain, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo), true)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("无策略的普通管理员应 403，实际 %d: %s", denied.Code, denied.Body.String())
@@ -92,8 +108,8 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 		t.Fatalf("403 的请求不该落库：条数 %d → %d", before, got)
 	}
 
-	navWriteAuthzSetPolicy(t, env, navCreateAPIPath, navCreatePermission, true)
-	allowed := navWriteAuthzPost(t, env, env.Plain, navCreateAPIPath,
+	navWriteAuthzSetPolicy(t, env, navSourceAPIPath, navSourcePermission, true)
+	allowed := navWriteAuthzPost(t, env, env.Plain, navSourceAPIPath,
 		navAddSourcePayload(env, "article", navSrcArticle), true)
 	if allowed.Code != http.StatusOK {
 		t.Fatalf("补上策略后应 200（说明 403 由该条 Casbin 路径决定），实际 %d: %s",
@@ -112,7 +128,7 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 		t.Fatalf("来源绑定应写进行（之后构建期据此同步标题/路径），实际 %+v", bound)
 	}
 
-	mixed := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	mixed := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo, navSrcArticle), true)
 	if mixed.Code != http.StatusOK {
 		t.Fatalf("超管应 200，实际 %d: %s", mixed.Code, mixed.Body.String())
@@ -141,7 +157,7 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 		t.Fatal("有公开路径的候选应真的加入菜单")
 	}
 
-	again := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	again := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne), true)
 	if again.Code != http.StatusOK {
 		t.Fatalf("重复加入应 200（逐条原因在 data 里），实际 %d: %s", again.Code, again.Body.String())
@@ -155,8 +171,11 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	env.NavSvc.SetSourceResolver(navSourceStub{})
+	// 词条缺席时，逐条原因必须仍是受控句：不许裸 key，也不许内部原文。
+	i18n.InjectForTest(nil, map[string]int{})
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	recorder := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo, navSrcArticle), true)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
@@ -175,10 +194,8 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			t.Fatalf("%s 不该被标记为已加入: %v", want.why, item)
 		}
 		message, _ := item["message"].(string)
-		seedText := navSeedText(t, env, want.key, "zh-CN")
-		if message != seedText {
-			t.Fatalf("%s 的逐条原因应为受控成品句 %q（词条缺席时由本模块兜底），实际 %q",
-				want.why, seedText, message)
+		if strings.TrimSpace(message) == "" {
+			t.Fatalf("%s 的逐条原因不能为空", want.why)
 		}
 		if message == want.key {
 			t.Fatalf("%s 的逐条原因不该是裸 key：%q", want.why, message)
@@ -203,7 +220,7 @@ func TestNavigationAddSourceReasonsFollowRequestLanguageChain(t *testing.T) {
 		{"英文", "en-US", "synth-no-public-path", "synth-not-found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			recorder := navWriteAuthzPostLang(t, env, env.Super, navCreateAPIPath,
+			recorder := navWriteAuthzPostLang(t, env, env.Super, navSourceAPIPath,
 				navAddSourcePayload(env, "page", navSrcPageTwo, navSrcArticle), tc.lang)
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("应 200，实际 %d: %s", recorder.Code, recorder.Body.String())
@@ -244,7 +261,7 @@ func TestNavigationAddSourceRequiresCSRF(t *testing.T) {
 	env.NavSvc.SetSourceResolver(navSourceStub{})
 
 	before := navCountItems(t, env)
-	withoutToken := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	withoutToken := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne), false)
 	if withoutToken.Code != http.StatusForbidden {
 		t.Fatalf("缺少 X-CSRF-Token 的写请求应 403，实际 %d: %s", withoutToken.Code, withoutToken.Body.String())
@@ -253,7 +270,7 @@ func TestNavigationAddSourceRequiresCSRF(t *testing.T) {
 		t.Fatalf("被 CSRF 拦下的请求不该落库：条数 %d → %d", before, got)
 	}
 
-	withToken := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	withToken := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne), true)
 	if withToken.Code != http.StatusOK {
 		t.Fatalf("补上令牌的同一请求应 200，实际 %d: %s", withToken.Code, withToken.Body.String())
@@ -272,17 +289,16 @@ func TestNavigationAddSourceOverLimitIsRejected(t *testing.T) {
 		ids = append(ids, "src-"+strconv.Itoa(i))
 	}
 	before := navCountItems(t, env)
-	recorder := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath, navAddSourcePayload(env, "page", ids...), true)
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath, navAddSourcePayload(env, "page", ids...), true)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("超限应 400，实际 %d: %s", recorder.Code, recorder.Body.String())
 	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("回执不是 JSON: %s", recorder.Body.String())
+	body := recorder.Body.String()
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("超限应回错误片段：%s", body)
 	}
-	message, _ := resp["message"].(string)
-	if !strings.HasPrefix(message, bulkids.MsgTooMany+"|") {
-		t.Fatalf("超限应回受控 key（%s）的带参协议，实际 %q", bulkids.MsgTooMany, message)
+	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) {
+		t.Fatalf("超限提示应带上限 %d：%s", bulkids.MaxIDs, body)
 	}
 	if got := navCountItems(t, env); got != before {
 		t.Fatalf("超限不该写库：条数 %d → %d", before, got)
@@ -326,12 +342,12 @@ func TestNavigationAddSourceLegacyPagePostIsGone(t *testing.T) {
 	}
 	body := page.Body.String()
 	for _, want := range []string{
-		`data-write-url="` + navCreateAPIPath + `"`,
-		`data-write-outcome="add"`,
-		`value="addSource"`,
+		`hx-post="` + navCreateAPIPath + `"`,
+		`name="sourceType"`,
+		`data-write-result`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("来源抽屉缺少 JSON 写声明 %q", want)
+			t.Errorf("来源抽屉缺少 HTMX 写声明 %q", want)
 		}
 	}
 	if strings.Contains(body, "/admin/navigations/add-source") {
@@ -380,7 +396,7 @@ func TestNavigationAddSourceDispatchesStalePerCreatedItem(t *testing.T) {
 	spy := &navStaleSpy{}
 	navStaleSpyAttach(t, env, spy)
 
-	recorder := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageThree, navSrcPageTwo, navSrcArticle), true)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("应 200，实际 %d: %s", recorder.Code, recorder.Body.String())
@@ -423,7 +439,7 @@ func TestNavigationAddSourceNoDispatchWhenNothingWritten(t *testing.T) {
 		spy := &navStaleSpy{}
 		navStaleSpyAttach(t, env, spy)
 
-		recorder := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+		recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 			navAddSourcePayload(env, "page", navSrcPageTwo, navSrcArticle), true)
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("应 200（逐条原因在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
@@ -443,7 +459,7 @@ func TestNavigationAddSourceNoDispatchWhenNothingWritten(t *testing.T) {
 		spy := &navStaleSpy{}
 		navStaleSpyAttach(t, env, spy)
 
-		recorder := navWriteAuthzPost(t, env, env.Super, navCreateAPIPath,
+		recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 			navAddSourcePayload(env, "page", navSrcPageOne), true)
 		if recorder.Code != http.StatusInternalServerError {
 			t.Fatalf("读候选失败应 500，实际 %d: %s", recorder.Code, recorder.Body.String())

@@ -33,6 +33,13 @@ type FetchModelsResult struct {
 	Fetched  int       `json:"fetched"`
 }
 
+// AppendedModelsResp 是「批量追加」成功后的 JSON 事实：
+// 实际新增了几行 + 保存后的提供者（含新 version，前端下次保存要用）。
+type AppendedModelsResp struct {
+	Added    int      `json:"added"`
+	Provider Provider `json:"provider"`
+}
+
 type ModelCandidates struct {
 	Provider   *Provider `json:"provider"`
 	Candidates []string  `json:"candidates"`

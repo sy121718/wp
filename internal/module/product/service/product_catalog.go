@@ -2,22 +2,18 @@ package productservice
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
-	presentationcontract "go_wp/internal/module/presentation/contract"
+
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
-	"go_wp/internal/seo"
+	"go_wp/internal/pipeline"
+	"go_wp/pkg/seo"
 	json "go_wp/pkg/jsonx"
 )
-
-func (s *Service) SetPublicCatalogIndex(index presentationcontract.PublishedEntityIndex) {
-	s.publicCatalogIndex = index
-}
 
 const (
 	publicCatalogMaxPage         = 100
@@ -55,39 +51,19 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		size = publicCatalogDefaultPageSize
 	}
 	out := &productdto.PublicCatalogResp{Items: []productdto.PublicCatalogItemResp{}, Page: page, PageSize: size}
-	if s.publicCatalogIndex == nil {
-		return nil, productenums.Err(productenums.ErrInvalidParam)
-	}
-	paths, err := s.publicCatalogIndex.PublishedEntityIndex(ctx, req.ProjectID, productcontract.EntityTypeProduct, req.Lang)
-	if err != nil {
-		return nil, err
-	}
-	if len(paths) == 0 {
-		return out, nil
-	}
 	f.ProjectID, f.Order, f.Keyword = req.ProjectID, order, strings.TrimSpace(req.Query)
-	f.IDs = make([]string, 0, len(paths))
-	for id := range paths {
-		if uuid.Validate(id) == nil {
-			f.IDs = append(f.IDs, id)
-		}
-	}
-	if len(f.IDs) == 0 {
-		return out, nil
-	}
-
-	sort.Strings(f.IDs)
+	lang := s.publicCatalogLang(ctx, req.ProjectID, req.Lang)
 
 	offset := (page - 1) * size
-	rows, total, err := s.m.ListForCollectionPageWithTotal(ctx, f, size, offset)
+	rows, paths, total, err := s.m.ListPublicCatalogPageWithTotal(ctx, f, lang, size, offset)
 	if err != nil {
 		return nil, err
 	}
 	out.Total = total
 	if len(rows) == 0 {
-
+		// 越界页：与列表完全同一套发布筛选，只补一次精确总数。
 		if page > 1 {
-			if out.Total, err = s.m.CountForCollection(ctx, f); err != nil {
+			if out.Total, err = s.m.CountPublicCatalog(ctx, f, lang); err != nil {
 				return nil, err
 			}
 		}
@@ -99,6 +75,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		ids = append(ids, row.ID)
 		values = append(values, map[string]string{"name": row.Name, "subtitle": row.Subtitle})
 	}
+	// 真实业务译文仍按传入的 req.Lang 取，解析出的语言只用于候选发布资格。
 	s.translateFieldsBatch(ctx, req.Lang, productcontract.EntityTypeProduct, values)
 
 	variants, err := s.m.ListVariantPriceFacts(ctx, ids)
@@ -114,10 +91,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
 	for i, row := range rows {
-
-		if row.ProjectID != req.ProjectID || row.Status != productenums.StatusPublished || paths[row.ID] == "" {
-			continue
-		}
+		// 候选资格与路径都由 SQL 保证（工程、状态、发布产物、非空路径），这里直接构造，不做二次过滤。
 		item := productdto.PublicCatalogItemResp{ID: row.ID, Name: values[i]["name"], Subtitle: values[i]["subtitle"], URL: seo.AbsoluteSiteURL(paths[row.ID]), Images: imageURLs(row), Slug: row.Slug, Unit: row.Unit, Tags: []string{}}
 		var alts []string
 		_ = json.Unmarshal(row.ImageAlts, &alts)
@@ -144,6 +118,15 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		out.Items = append(out.Items, item)
 	}
 	return out, nil
+}
+
+// publicCatalogLang 复用 pipeline.DefaultLocale 的既有语义：显式传入的语言原样使用，
+// 未传时才按工程默认语言解析（product service 已持有 project 端口）。
+func (s *Service) publicCatalogLang(ctx context.Context, projectID, lang string) string {
+	if strings.TrimSpace(lang) == "" {
+		lang = pipeline.DefaultLocale(ctx, s.project, projectID)
+	}
+	return lang
 }
 
 func publicCatalogSort(value string) bool {

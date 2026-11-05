@@ -5,6 +5,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,8 +18,10 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 var orderLeakTokens = []string{"SQLSTATE", "uq_", "pg_", `relation "`, "constraint"}
@@ -53,12 +56,25 @@ func orderOverLimitIDs() []string {
 	return ids
 }
 
-func orderPOSTJSON(engine *gin.Engine, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+// orderPOSTForm 按标准表单编码提交：ids 重复提交，其余是普通字段。
+func orderPOSTForm(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
+}
+
+// orderOverLimitForm 造一份超过上限的批量表单：ids 重复 201 次。
+func orderOverLimitForm(extra map[string]string) url.Values {
+	form := url.Values{}
+	for _, id := range orderOverLimitIDs() {
+		form.Add("ids", id)
+	}
+	for k, v := range extra {
+		form.Set(k, v)
+	}
+	return form
 }
 
 func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) {
@@ -75,11 +91,14 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配：失败出口与请求取词都必须在场，否则失败片段落成空响应。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
-	engine.POST("/api/order/status", orderHandle.ChangeStatus)
-	engine.POST("/api/order/cancel", orderHandle.CancelOrder)
-	engine.POST("/api/order/return/approve", orderHandle.ApproveReturn)
-	engine.POST("/api/order/return/reject", orderHandle.RejectReturn)
+	engine.POST("/api/order/status", pageview.HTMLFragment, orderHandle.ChangeStatus)
+	engine.POST("/api/order/cancel", pageview.HTMLFragment, orderHandle.CancelOrder)
+	engine.POST("/api/order/return/approve", pageview.HTMLFragment, orderHandle.ApproveReturn)
+	engine.POST("/api/order/return/reject", pageview.HTMLFragment, orderHandle.RejectReturn)
 
 	_, rawErr := bulkids.Normalize(orderOverLimitIDs())
 	if rawErr == nil {
@@ -102,11 +121,11 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 		assertOrderLeakFree(t, where, text)
 	}
 
-	for _, tc := range []struct{ path, body string }{
-		{"/api/order/return/approve", orderOverLimitJSON(map[string]any{"remark": "测试"})},
-		{"/api/order/return/reject", orderOverLimitJSON(map[string]any{"remark": "测试"})},
+	for _, tc := range []struct{ path string; form url.Values }{
+		{"/api/order/return/approve", orderOverLimitForm(map[string]string{"remark": "测试"})},
+		{"/api/order/return/reject", orderOverLimitForm(map[string]string{"remark": "测试"})},
 	} {
-		rec := orderPOSTJSON(engine, tc.path, tc.body)
+		rec := orderPOSTForm(engine, tc.path, tc.form)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s 超限应回 400，实际 %d：%s", tc.path, rec.Code, rec.Body.String())
 		}
@@ -131,12 +150,12 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 	}
 	for _, tc := range []struct {
 		path string
-		body string
+		form url.Values
 	}{
-		{"/api/order/status", orderOverLimitJSON(map[string]any{"toStatus": "paid"})},
-		{"/api/order/cancel", orderOverLimitJSON(map[string]any{"remark": "测试"})},
+		{"/api/order/status", orderOverLimitForm(map[string]string{"toStatus": "paid"})},
+		{"/api/order/cancel", orderOverLimitForm(map[string]string{"remark": "测试"})},
 	} {
-		rec := orderPOSTJSON(engine, tc.path, tc.body)
+		rec := orderPOSTForm(engine, tc.path, tc.form)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s 超限应回 400，实际 %d：%s", tc.path, rec.Code, rec.Body.String())
 		}

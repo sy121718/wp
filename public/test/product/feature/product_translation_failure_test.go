@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -53,13 +54,12 @@ func TestProductTranslationStorageFailureIsJSON500(t *testing.T) {
 				port.writeErr = failure
 			}
 			f.products.SetTranslationStore(port)
-			rec := postJSON(t, engine, "/api/product/translations/save", map[string]any{
-				"projectId": f.projectID, "productId": product.ID, "lang": "en-US",
-				"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash(product.Name)}, "rowTarget": []string{"Translated product"},
+			rec := postForm(engine, "/api/product/translations/save", url.Values{
+				"projectId": {f.projectID}, "productId": {product.ID}, "lang": {"en-US"},
+				"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash(product.Name)}, "rowTarget": {"Translated product"},
 			})
-			envelope := decodeJSONEnvelope(t, rec)
-			if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(envelope.Message, "内部错误") {
-				t.Fatalf("存储故障必须为 JSON 500：%d %s", rec.Code, rec.Body.String())
+			if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "系统内部错误") {
+				t.Fatalf("存储故障必须为 HTML 500：%d %s", rec.Code, rec.Body.String())
 			}
 			if strings.Contains(rec.Body.String(), "private_translation_store") || strings.Contains(rec.Body.String(), "SQLSTATE") || rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
 				t.Fatalf("失败不得泄露内部错误或导航：%s", rec.Body.String())

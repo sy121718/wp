@@ -26,7 +26,7 @@ func TestDeleteAuditUsesLockedSnapshot(t *testing.T) {
 	}
 	variantID := p.Variants[0].ID
 	changes := &capturedProductChanges{}
-	f.svc.SetMasterDataChanges(changes)
+	f.rewireProductChanges(t, changes)
 
 	const (
 		bName  = "锁后名字"
@@ -88,7 +88,7 @@ func TestDeleteAuditRollsBackOnFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	injected := errors.New("injected delete audit failure")
-	f.svc.SetMasterDataChanges(&failingChangesPort{err: injected})
+	f.rewireProductChanges(t, &failingChangesPort{err: injected})
 	if err = f.svc.Delete(ctx, &productdto.DeleteReq{ID: p.ID, ProjectID: f.projectID}); !errors.Is(err, injected) {
 		t.Fatalf("审计错误未返回: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestBulkDeleteAuditUsesLockedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	changes := &capturedProductChanges{}
-	f.svc.SetMasterDataChanges(changes)
+	f.rewireProductChanges(t, changes)
 
 	fired := afterProductSnapshot(t, f.db, "products", func() error {
 		return rls.InProjectScope(ctx, f.db, f.projectID, func(tx *gorm.DB) error {
@@ -173,7 +173,7 @@ func TestBulkDeleteAuditRollsBackOnFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	injected := errors.New("injected bulk delete audit failure")
-	f.svc.SetMasterDataChanges(&failingChangesPort{err: injected})
+	f.rewireProductChanges(t, &failingChangesPort{err: injected})
 	_, err = f.svc.BulkDeleteProducts(ctx, &productdto.BulkDeleteReq{
 		ProjectID: f.projectID, IDs: []string{first.ID, second.ID},
 	})

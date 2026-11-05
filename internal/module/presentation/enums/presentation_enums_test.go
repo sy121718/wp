@@ -2,12 +2,7 @@ package presentationenums
 
 import (
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"net/http"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -22,89 +17,25 @@ func TestNotFoundDeclares404(t *testing.T) {
 	}
 }
 
-var fallbackExclusions = map[string]string{
-	"MsgCreateSuccess":    "成功回执",
-	"MsgRebuildSuccess":   "成功回执",
-	"MsgListSuccess":      "成功回执",
-	"MsgDetailSuccess":    "成功回执",
-	"MsgDeleteSuccess":    "成功回执",
-	"MsgPreviewSuccess":   "成功回执",
-	"MsgUpdateURLSuccess": "成功回执",
-}
-
-func TestErrFallbacksCoverAllEnums(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("枚举本包源文件失败: %v", err)
-	}
-	declared := map[string]string{}
-	checked := 0
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		parsed, perr := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if perr != nil {
-			t.Fatalf("解析 %s 失败: %v", file, perr)
-		}
-		for _, decl := range parsed.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for i, name := range vs.Names {
-					if !strings.HasPrefix(name.Name, "Err") && !strings.HasPrefix(name.Name, "Msg") {
-						continue
-					}
-					if i >= len(vs.Values) {
-						continue
-					}
-					lit, ok := vs.Values[i].(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						continue
-					}
-					value, uerr := strconv.Unquote(lit.Value)
-					if uerr != nil {
-						t.Fatalf("%s 的 %s 取值失败: %v", file, name.Name, uerr)
-					}
-					declared[value] = name.Name
-					if !strings.HasPrefix(name.Name, "Err") {
-						continue
-					}
-					if _, ok := fallbackExclusions[name.Name]; ok {
-						continue
-					}
-					checked++
-					if strings.TrimSpace(errFallbacks[value]) == "" {
-						t.Errorf("%s = %q 没有中文兜底（在 errFallbacks 里加一句，或在 fallbackExclusions 写明理由）", name.Name, value)
-					}
-				}
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("没有扫到任何 Err* 常量：判据失效（源码结构变了？）")
-	}
-	for key := range errFallbacks {
-		if _, ok := declared[key]; !ok {
-			t.Errorf("errFallbacks 里的 %q 不对应本包任何常量（已删除？拼写错误？）", key)
-		}
-	}
-}
-
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrPathOccupied)
 	if err.Error() != ErrPathOccupied {
 		t.Fatalf("Err(%q).Error() = %q，want 原 key", ErrPathOccupied, err.Error())
 	}
+	// enums 只声明 key + 状态码：FactOf 走 Source 接口拿到 (key, "")，
+	// 所以兜底必须是空串 —— 内嵌任何中文都说明文案又回到了声明处。
 	fact, ok := facing.FactOf(err)
-	if !ok || !fact.Business || fact.Key != ErrPathOccupied || fact.Fallback == "" {
-		t.Fatalf("FactOf 应给出业务事实（key + 中文兜底），实际 %+v ok=%v", fact, ok)
+	if !ok {
+		t.Fatalf("%q 没有被判成业务事实", ErrPathOccupied)
+	}
+	if fact.Key != ErrPathOccupied {
+		t.Errorf("Key = %q，want %q", fact.Key, ErrPathOccupied)
+	}
+	if fact.Fallback != "" {
+		t.Errorf("%q 内嵌了兜底文案 %q —— enums 只声明 key，文案归词库", ErrPathOccupied, fact.Fallback)
+	}
+	if !fact.Business {
+		t.Errorf("%q 应标记为业务事实", ErrPathOccupied)
 	}
 	detail := ErrDetail(ErrPathOccupied, "路径 /shop/a 已被占用")
 	if !strings.HasPrefix(detail.Error(), ErrPathOccupied+": ") {

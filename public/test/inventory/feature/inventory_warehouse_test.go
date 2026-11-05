@@ -3,7 +3,10 @@ package feature
 import (
 	"bytes"
 	"context"
+	"go_wp/internal/text"
+	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +37,8 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -47,6 +52,29 @@ type invFixture struct {
 	projectID string
 }
 
+// injectInventoryFeatureWords 把本用例库里的词条灌进 i18n 缓存。
+func injectInventoryFeatureWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key", "lang", "item_value AS value").
+		Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+}
+
 func newInvFixture(t *testing.T) *invFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -57,13 +85,15 @@ func newInvFixture(t *testing.T) *invFixture {
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
+	// 失败区与结果片段只从词库取词：把本用例库里的词条灌进缓存，不读会漂移的全局库。
+	injectInventoryFeatureWords(t, db)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "库存测试工程"})
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 
@@ -491,7 +521,7 @@ func TestInventoryAdminPage(t *testing.T) {
 
 	for _, want := range []string{
 		"库存管理", "苏州仓", "上海仓", "SZ", "默认仓",
-		v.SKUCode, "该 SKU 的各仓库存", `class="table-wrap"`,
+		v.SKUCode, "某 SKU 的各仓库存", `class="table-wrap"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("库存页缺少 %q", want)
@@ -552,6 +582,9 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们页面渲染为空。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"product:create": true})
@@ -562,7 +595,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
 
-	engine.POST("/api/product/variant/create", producthttp.NewProductHandle(f.products).CreateVariant)
+	engine.POST("/api/product/variant/create", pageview.HTMLFragment, producthttp.NewProductHandle(f.products).CreateVariant)
 
 	rec := httptestGet(engine, "/admin/products?project="+f.projectID)
 	if rec.Code != http.StatusOK {
@@ -602,7 +635,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		`name="warehouseIds" value="` + sh.ID + `"`,
 		"苏州仓（SZ） · 默认仓",
 		"上海仓（SH）",
-		"按本表顺序第一个勾中的仓是前缀仓",
+		"按本表顺序第一个勾中的仓是认领仓",
 	} {
 		if !strings.Contains(form, want) {
 			t.Fatalf("商品新建表单缺少归属仓（多仓勾选）内容 %q", want)
@@ -614,17 +647,17 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 
 	before := countVariants(t, f, p.ID)
-	rec = postJSON(t, engine, "/api/product/variant/create", map[string]any{
-		"projectId": f.projectID, "productId": p.ID, "warehouseId": sh.ID,
+	rec = postForm(engine, "/api/product/variant/create", url.Values{
+		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {sh.ID},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("新建变体应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	var created struct {
-		Code int `json:"code"`
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("新建变体应回 HTML 片段，Content-Type = %q", ct)
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Code != http.StatusOK {
-		t.Fatalf("新建变体应回成功 JSON，实际 %v：%s", err, rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("新建变体应回成功片段：%s", rec.Body.String())
 	}
 	if after := countVariants(t, f, p.ID); after != before+1 {
 		t.Fatalf("变体应真实入库：POST 前 %d 个，POST 后 %d 个", before, after)
@@ -732,18 +765,21 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 		})
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON 或空响应。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), handle.InventoryPage)
 
 	engine.GET("/admin/inventory/warehouses", adminui.PageSlot(inventoryhttp.InventoryWarehousesPageTemplate), handle.InventoryWarehousesPage)
 	engine.GET("/admin/inventory/reasons", adminui.PageSlot(inventoryhttp.InventoryReasonsPageTemplate), handle.InventoryReasonsPage)
-	engine.POST("/admin/inventory/warehouse/create", handle.InventoryWarehouseCreate)
-	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)
-	engine.POST("/admin/inventory/warehouse/default", handle.InventoryWarehouseDefault)
-	engine.POST("/admin/inventory/warehouse/delete", handle.InventoryWarehouseDelete)
-	engine.POST("/admin/inventory/stock/change", handle.InventoryStockChange)
-	engine.POST("/admin/inventory/reason/create", handle.InventoryReasonCreate)
-	engine.POST("/admin/inventory/reason/update", handle.InventoryReasonUpdate)
+	engine.POST("/admin/inventory/warehouse/create", pageview.HTMLFragment, handle.InventoryWarehouseCreate)
+	engine.POST("/admin/inventory/warehouse/update", pageview.HTMLFragment, handle.InventoryWarehouseUpdate)
+	engine.POST("/admin/inventory/warehouse/default", pageview.HTMLFragment, handle.InventoryWarehouseDefault)
+	engine.POST("/admin/inventory/warehouse/delete", pageview.HTMLFragment, handle.InventoryWarehouseDelete)
+	engine.POST("/admin/inventory/stock/change", pageview.HTMLFragment, handle.InventoryStockChange)
+	engine.POST("/admin/inventory/reason/create", pageview.HTMLFragment, handle.InventoryReasonCreate)
+	engine.POST("/admin/inventory/reason/update", pageview.HTMLFragment, handle.InventoryReasonUpdate)
 	return engine, f
 }
 

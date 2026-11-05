@@ -76,7 +76,7 @@ func TestMailContactsPageRenders(t *testing.T) {
 		"<h1>联系人</h1>", "sub@example.com", "pend@example.com",
 		`<span class="badge badge-success">已订阅</span>`,
 		`<span class="badge badge-mute">待确认</span>`,
-		`action="/admin/mail/contact/import"`,
+		`hx-post="/admin/mail/contact/import`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
@@ -145,7 +145,7 @@ func TestMailContactsPageRendersEmpty(t *testing.T) {
 				`<p class="empty-title">` + tc.title + `</p>`,
 				`<p class="empty-desc">` + tc.description + `</p>`,
 
-				`action="/admin/mail/contact/import`, "</table>", "</html>",
+				`hx-post="/admin/mail/contact/import`, "</table>", "</html>",
 			} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("空状态页面缺少 %q；前 600 字：\n%s", want, firstN(body, 600))

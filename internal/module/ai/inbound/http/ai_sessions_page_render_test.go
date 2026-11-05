@@ -134,6 +134,19 @@ func newAISessionsPageTestRouter(t *testing.T, svc sessionServicePort) *gin.Engi
 
 func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePort, providers providerLister) *gin.Engine {
 	t.Helper()
+	router, _ := newAISessionsPageTestRouterWithButtons(t, svc, providers, aiSessionsRenderDefaultButtons)
+	return router
+}
+
+// aiSessionsRenderDefaultButtons 是绝大多数用例用的按钮集：卡片的三个写控件。
+var aiSessionsRenderDefaultButtons = map[string]bool{
+	"ai.provider_save": true, "ai.provider_status": true, "ai.provider_delete": true,
+}
+
+// newAISessionsPageTestRouterWithButtons 允许用例自己给按钮集 ——
+// 「Buttons 透传」这条判据得能双向证伪：给了权限要出现，没给要消失。
+func newAISessionsPageTestRouterWithButtons(t *testing.T, svc sessionServicePort, providers providerLister, buttons map[string]bool) (*gin.Engine, *httptest.ResponseRecorder) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	logDir := filepath.Join(t.TempDir(), "logs")
@@ -150,6 +163,7 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 	}
 
 	router := gin.New()
+	router.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { t.Errorf("模板失败：%v", err) }))
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 
 	store := cookie.NewStore([]byte("ai-sessions-page-render-test-secret-32b"))
@@ -164,15 +178,13 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 
 		c.Set(aiSessionsRenderPermKey, map[string]bool{"ai:session_list": true, "ai:provider_list": true})
 
-		c.Set(aiSessionsRenderButtonKey, map[string]bool{
-			"ai.provider_save": true, "ai.provider_status": true, "ai.provider_delete": true,
-		})
+		c.Set(aiSessionsRenderButtonKey, buttons)
 		c.Next()
 	})
 	handle := NewSessionPageHandle(svc, providers)
 
 	router.GET("/admin/ai/sessions", adminui.PageSlot(SessionsPageTemplate), handle.SessionsPage)
-	return router
+	return router, httptest.NewRecorder()
 }
 
 func requestAISessionsPage(t *testing.T, svc sessionServicePort) *httptest.ResponseRecorder {
@@ -200,8 +212,7 @@ func requestAISessionsPageWithProviders(t *testing.T, svc sessionServicePort, pr
 	i18n.InjectForTest(nil, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	router := newAISessionsPageTestRouterWithProviders(t, svc, providers)
-	rec := httptest.NewRecorder()
+	router, rec := newAISessionsPageTestRouterWithButtons(t, svc, providers, aiSessionsRenderDefaultButtons)
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/ai/sessions", nil))
 	return rec
 }
@@ -225,7 +236,7 @@ func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
-	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+	if !strings.Contains(body, "系统内部错误，请稍后重试") {
 		t.Errorf("失败响应应带归口文案：%s", body)
 	}
 
@@ -244,7 +255,7 @@ func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T) {
 
 	i18n.InjectForTest(map[string]map[string]string{
-		"服务器内部错误，请稍后重试": {"en-US": "Internal server error, please try again later"},
+		"uiInternalErr": {"en-US": "Internal server error, please try again later"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
@@ -261,7 +272,7 @@ func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T
 		t.Errorf("英文请求应出现词条译文：%s", body)
 	}
 
-	for _, forbidden := range []string{"服务器内部错误，请稍后重试", rawErrText} {
+	for _, forbidden := range []string{"系统内部错误，请稍后重试", rawErrText} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("英文请求不应出现 %q", forbidden)
 		}
@@ -273,7 +284,7 @@ func TestAISessionsPageMainListFailureFallsBackWhenTermMissing(t *testing.T) {
 	rec := requestAISessionsPageLang(t, &aiSessionsRenderStub{listErr: errors.New(rawErrText)}, "en-US")
 	body := rec.Body.String()
 
-	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+	if !strings.Contains(body, "系统内部错误，请稍后重试") {
 		t.Errorf("缺词条时应落中文兜底：%s", body)
 	}
 	for _, forbidden := range []string{"ai.err.internal", rawErrText, html.EscapeString(rawErrText)} {
@@ -298,7 +309,7 @@ func TestAISessionsPageSuccessEmptyRendersList(t *testing.T) {
 			t.Errorf("空态页应含 %q", want)
 		}
 	}
-	for _, forbidden := range []string{"badge-danger", "这一页的数据没能读出来", "服务器内部错误，请稍后重试"} {
+	for _, forbidden := range []string{"badge-danger", "这一页的数据没能读出来", "系统内部错误，请稍后重试"} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("成功空态页不该出现失败痕迹 %q", forbidden)
 		}
@@ -348,6 +359,67 @@ func TestAISessionsPageLoadFailureKeepsRawErrorInLog(t *testing.T) {
 	}
 }
 
+// TestAISessionsPageProviderCardExposesWriteControls 钉住「卡片透传 Buttons」。
+//
+// ProviderCardResp 曾经漏了 Buttons，cardData 也没把 base.Buttons 传下去 ——
+// 卡片里每个 isset(.Buttons["ai.provider_save"]) 都是假，保存/启停/删除整片 hidden：
+// 页面上看着像「这个账号没有任何权限」，而权限集其实齐着。
+// 这里按真实渲染出来的 HTML 断言控件存在，不看 DTO 字段名。
+func TestAISessionsPageProviderCardExposesWriteControls(t *testing.T) {
+	providers := aiSessionsRenderProvidersWithCard{p: aidto.Provider{
+		ID: 11, ProviderKey: "openai", DisplayName: "样例供应商", Protocol: "openai", Status: 1, Version: 3,
+	}}
+	rec := requestAISessionsPageWithProviders(t, &aiSessionsRenderStub{}, providers)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("有供应商应是 200，实际 %d：%s", rec.Code, body)
+	}
+
+	for _, want := range []string{
+		`hx-post="/api/ai/provider/save"`,
+		`hx-post="/api/ai/provider/status"`,
+		`hx-post="/api/ai/provider/delete"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("卡片缺写控件 %q —— Buttons 没透传到卡片（权限集明明齐着）", want)
+		}
+	}
+
+	// 反证：这份按钮集里没有 ai.provider_models_save，模型区的保存**按钮**必须不出现。
+	// （表单元素本身是无条件渲染的骨架，靠按钮驱动提交；判据落在按钮上。）
+	// 少了这条，「恒渲染」的实现也能让上面的断言通过。
+	if strings.Contains(body, `class="btn btn-primary">保存模型目录`) {
+		t.Error("按钮集里没有 ai.provider_models_save，模型区的保存按钮不该渲染")
+	}
+}
+
+// TestAISessionsPageProviderModelsButtonsGateTheirControls 是上一条的反向验证：
+// 把模型区权限加进按钮集之后，保存表单与候选按钮必须出现。
+func TestAISessionsPageProviderModelsButtonsGateTheirControls(t *testing.T) {
+	providers := aiSessionsRenderProvidersWithCard{p: aidto.Provider{
+		ID: 12, ProviderKey: "openai", DisplayName: "样例供应商", Protocol: "openai", Status: 1, Version: 4,
+	}}
+	buttons := map[string]bool{
+		"ai.provider_save": true, "ai.provider_status": true, "ai.provider_delete": true,
+		"ai.provider_models_save": true, "ai.provider_models_candidates": true,
+	}
+	router, rec := newAISessionsPageTestRouterWithButtons(t, &aiSessionsRenderStub{}, providers, buttons)
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/ai/sessions", nil))
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应是 200，实际 %d：%s", rec.Code, body)
+	}
+
+	for _, want := range []string{
+		`hx-post="/api/ai/provider/models/save"`,
+		`hx-post="/api/ai/provider/models/candidates"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("按钮集里有对应权限，页面应渲染 %q", want)
+		}
+	}
+}
+
 func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 	providers := aiSessionsRenderProvidersWithCard{p: aidto.Provider{
 		ID: 11, ProviderKey: "openai", DisplayName: "样例供应商", Protocol: "openai", Status: 1, Version: 3,
@@ -359,7 +431,8 @@ func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 		t.Fatalf("有供应商应是 200，实际 %d：%s", rec.Code, body)
 	}
 
-	const cardForm = `action="/admin/ai/providers/save"`
+	// 保存表单是标准 HTMX 写表单：页面侧 /admin 写路由已随双轨一起清退。
+	const cardForm = `hx-post="/api/ai/provider/save"`
 	if !strings.Contains(body, "样例供应商") || !strings.Contains(body, cardForm) {
 		t.Fatalf("供应商卡片没渲染出来（缺 %q 或卡片的保存表单）：%s", "样例供应商", body)
 	}

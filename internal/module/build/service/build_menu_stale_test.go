@@ -8,6 +8,7 @@ import (
 	builddto "go_wp/internal/module/build/dto"
 	buildenums "go_wp/internal/module/build/enums"
 	buildmodel "go_wp/internal/module/build/model"
+	"go_wp/pkg/facing"
 )
 
 func TestEnqueueMenuStaleRejectsInvalidKind(t *testing.T) {
@@ -61,12 +62,20 @@ func TestMenuStaleInputHashShape(t *testing.T) {
 	}
 }
 
-func TestBuildEnumsMenuKindFallback(t *testing.T) {
-	if buildenums.FallbackFor(buildenums.ErrInvalidMenuKind) == "" {
-		t.Fatal("ErrInvalidMenuKind 必须有中文兜底")
-	}
-	if buildenums.FallbackFor(buildenums.ErrInvalidSource) == "" {
-		t.Fatal("既有来源错误必须仍有兜底（对照组：新 key 的加入不能挤掉旧 key）")
+func TestBuildEnumsDeclareKeysWithoutBundledText(t *testing.T) {
+	// 声明处只给 key + 状态码，成品句归词库：这里断言的是「不再自带中文兜底」这个
+	// 真实形态。若哪天有人把成品句塞回 enums，这条会立刻红。
+	for _, key := range []string{buildenums.ErrInvalidMenuKind, buildenums.ErrInvalidSource} {
+		fact, ok := facing.FactOf(buildenums.Err(key))
+		if !ok || !fact.Business {
+			t.Fatalf("%s 必须声明为业务错误，实际 %+v（ok=%v）", key, fact, ok)
+		}
+		if fact.Key != key {
+			t.Fatalf("%s 的 key 形状不符: %q", key, fact.Key)
+		}
+		if fact.Fallback != fact.Key {
+			t.Fatalf("%s 不该自带成品句兜底，实际兜底 %q", key, fact.Fallback)
+		}
 	}
 	if got, ok := builddto.MenuStaleSourceID("3F0F1E3A-6D9A-4C0F-9A7E-6F6B1C2D3E4F", "header"); !ok ||
 		got != "3f0f1e3a-6d9a-4c0f-9a7e-6f6b1c2d3e4f:header" {

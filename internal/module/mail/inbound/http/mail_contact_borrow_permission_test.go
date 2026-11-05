@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	mailPagePostRe = regexp.MustCompile(`pages\.POST\("([^"]+)",\s*(?:builtin\.)?CasbinMiddlewareForPath(?:As)?\("(/api/[^"]+)"`)
+	mailPagePostRe = regexp.MustCompile(`pages\.POST\("([^"]+)",[^)\n]*?CasbinMiddlewareForPath(?:As)?\("(/api/[^"]+)"`)
 	mailDeclareRe  = regexp.MustCompile(`permission\.Declare\("([A-Z]+)",\s*"([^"]+)"`)
 )
 

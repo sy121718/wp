@@ -20,7 +20,7 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 	seedPricingHistoryFixture(t, db, projectID, []int{2, 0, 3})
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "调价记录对账"}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := context.Background()
 	history, err := s.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{ProjectID: projectID, Limit: 10, IncludeItems: true})
 	if err != nil {

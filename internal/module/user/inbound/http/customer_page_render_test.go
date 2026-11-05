@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"go_wp/internal/adminui"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +20,9 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
@@ -164,47 +164,23 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/customers", adminui.PageSlot(CustomersListPageTemplate), h.CustomersPage)
-	engine.GET("/admin/customers/overview", adminui.PageSlot(CustomerOverviewPageTemplate), h.CustomerOverviewPage)
-	engine.GET("/admin/customers/detail", adminui.PageSlot(CustomerDetailPageTemplate), h.CustomerDetailPage)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.GET("/admin/customers", pageview.HTMLPage, adminui.PageSlot(CustomersListPageTemplate), h.CustomersPage)
+	engine.GET("/admin/customers/overview", pageview.HTMLPage, adminui.PageSlot(CustomerOverviewPageTemplate), h.CustomerOverviewPage)
+	engine.GET("/admin/customers/detail", pageview.HTMLPage, adminui.PageSlot(CustomerDetailPageTemplate), h.CustomerDetailPage)
 	api := NewCustomerHandle(h.users)
-	engine.POST("/api/customer/status", api.SetCustomerStatus)
-	engine.POST("/api/customer/unlock", api.UnlockCustomer)
-	engine.POST("/api/customer/bulk-status", api.BulkCustomerStatus)
-	engine.POST("/api/customer/bulk-unlock", api.BulkCustomerUnlock)
+	engine.POST("/api/customer/status", pageview.HTMLFragment, api.SetCustomerStatus)
+	engine.POST("/api/customer/unlock", pageview.HTMLFragment, api.UnlockCustomer)
+	engine.POST("/api/customer/bulk-status", pageview.HTMLFragment, api.BulkCustomerStatus)
+	engine.POST("/api/customer/bulk-unlock", pageview.HTMLFragment, api.BulkCustomerUnlock)
 	return engine
 }
 
-func customerJSONForm(t *testing.T, form url.Values) string {
-	t.Helper()
-	body := map[string]any{}
-	for key, values := range form {
-		if key == "ids" {
-			ids := make([]uint64, len(values))
-			for i, v := range values {
-				n, err := strconv.ParseUint(v, 10, 64)
-				if err != nil {
-					t.Fatal(err)
-				}
-				ids[i] = n
-			}
-			body[key] = ids
-		} else if key == "customerId" || key == "toStatus" {
-			n, err := strconv.Atoi(values[0])
-			if err != nil {
-				t.Fatal(err)
-			}
-			if key == "toStatus" {
-				key = "status"
-			}
-			body[key] = n
-		}
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
+// customerFormBody 提交标准表单：页面写端点只认表单编码与字段名。
+func customerFormBody(_ *testing.T, form url.Values) string {
+	return form.Encode()
 }
 
 func TestCustomersListTemplateRenders(t *testing.T) {
@@ -219,7 +195,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		"/admin/customers/detail?id=42", "/api/customer/status",
 		"邮箱已验证 1", "user:customer_status",
 
-		`data-write-url="/api/customer/bulk-status`, "/api/customer/bulk-unlock",
+		`hx-post="/api/customer/bulk-status"`, `hx-post="/api/customer/bulk-unlock"`,
 		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -227,7 +203,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		}
 	}
 
-	bulkForm := strings.Index(body, `data-write-url="/api/customer/bulk-status`)
+	bulkForm := strings.Index(body, `hx-post="/api/customer/bulk-status"`)
 	table := strings.Index(body, `customers-page-table`)
 	rowForm := strings.Index(body, `id="customer-status-42"`)
 	if bulkForm < 0 || table < 0 || rowForm < 0 || !(bulkForm < table && table < rowForm) {
@@ -377,29 +353,26 @@ func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"customerId": {"42"}, "toStatus": {"0"}}
+	form := url.Values{"customerId": {"42"}, "status": {"0"}}
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/customer/status?keyword=alice&status=1&page=2&limit=20",
-		strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+		strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("写操作应渲染提示页（200），实际 %d", rec.Code)
+		t.Fatalf("写操作应渲染结果片段（200），实际 %d", rec.Code)
 	}
 	if fake.statusReq == nil || fake.statusReq.Status != customerStatusDisabled {
-		t.Fatalf("目标状态没有从 toStatus 解析出来：%+v", fake.statusReq)
+		t.Fatalf("目标状态没有从表单解析出来：%+v", fake.statusReq)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("写响应必须是 HTML 片段，实际 %q", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":200`) {
-		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
-	}
 	if !strings.Contains(body, "账号已停用") {
-		t.Errorf("成功提示页应含回执文案")
-	}
-	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatal("expected JSON receipt")
+		t.Errorf("结果片段应含回执文案，实际 %s", body)
 	}
 }
 
@@ -408,22 +381,21 @@ func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"customerId": {"42"}, "toStatus": {"1"}}
+	form := url.Values{"customerId": {"42"}, "status": {"1"}}
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/customer/status?id=42&project=p1", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+		"/api/customer/status?id=42&project=p1", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("应渲染提示页（200），实际 %d", rec.Code)
+		t.Fatalf("应渲染结果片段（200），实际 %d", rec.Code)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `"code":200`) {
-		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("写响应必须是 HTML 片段，实际 %q", ct)
 	}
-	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatal("expected JSON")
+	if body := rec.Body.String(); !strings.Contains(body, "账号已启用") {
+		t.Errorf("结果片段应含回执文案，实际 %s", body)
 	}
 }
 
@@ -432,9 +404,9 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"customerId": {"42"}, "toStatus": {"2"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/customer/status", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+	form := url.Values{"customerId": {"42"}, "status": {"2"}}
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/status", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -442,11 +414,11 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 		t.Fatalf("非法目标状态不应调用 service：%+v", fake.statusReq)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":400`) {
-		t.Errorf(`应当渲染失败提示页，实际状态 %d`, rec.Code)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
+		t.Errorf("应当渲染失败片段，实际状态 %d：%s", rec.Code, body)
 	}
-	if !strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
-		t.Errorf("提示页应含「账号状态取值不合法」")
+	if strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
+		t.Errorf("失败片段里出现裸 key：%s", body)
 	}
 }
 
@@ -467,18 +439,15 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 			engine := newCustomerTestEngine(h)
 
 			form := url.Values{"customerId": {"42"}}
-			req := httptest.NewRequest(http.MethodPost, "/api/customer/unlock", strings.NewReader(customerJSONForm(t, form)))
-			req.Header.Set("Content-Type", "application/json")
+			req := httptest.NewRequest(http.MethodPost, "/api/customer/unlock", strings.NewReader(customerFormBody(t, form)))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
-				t.Fatalf("解锁后应渲染提示页（200），实际 %d", rec.Code)
+				t.Fatalf("解锁后应渲染结果片段（200），实际 %d", rec.Code)
 			}
 			body := rec.Body.String()
-			if !strings.Contains(body, `"code":200`) {
-				t.Errorf(`解锁后应有 data-jump-state="ok"`)
-			}
 			if !strings.Contains(body, tc.want) {
 				t.Errorf("回执文案应含 %q", tc.want)
 			}
@@ -491,9 +460,9 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"ids": {"42", "43"}, "toStatus": {"2"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+	form := url.Values{"ids": {"42", "43"}, "status": {"2"}}
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -501,11 +470,11 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 		t.Fatalf("非法目标状态不应调用 service：%v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":400`) {
-		t.Errorf("应当渲染失败提示页，实际状态 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
+		t.Errorf("应当渲染失败片段，实际状态 %d：%s", rec.Code, body)
 	}
-	if !strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
-		t.Errorf("提示页应含「账号状态取值不合法」")
+	if strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
+		t.Errorf("失败片段里出现裸 key：%s", body)
 	}
 }
 
@@ -514,9 +483,9 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"toStatus": {"0"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+	form := url.Values{"status": {"0"}}
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -524,11 +493,8 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 		t.Fatalf("没有勾选时不应调用 service：%v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":400`) {
-		t.Errorf("没有勾选应渲染失败提示页，实际状态 %d", rec.Code)
-	}
-	if !strings.Contains(body, userenums.ErrInvalidParam) {
-		t.Errorf("没有勾选应给出提示")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
+		t.Errorf("没有勾选应渲染失败片段，实际状态 %d：%s", rec.Code, body)
 	}
 }
 
@@ -541,21 +507,18 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	engine := newCustomerTestEngine(h)
 
 	form := url.Values{"ids": {"42", "43"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-unlock", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-unlock", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("批量解锁应渲染提示页（200），实际 %d", rec.Code)
+		t.Fatalf("批量解锁应渲染结果片段（200），实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":200`) {
-		t.Errorf(`批量解锁应有 data-jump-state="ok"`)
-	}
 	for _, want := range []string{"已解除锁定 1 个", "1 个本来就未锁定"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("提示页应含 %q", want)
+			t.Errorf("结果片段应含 %q", want)
 		}
 	}
 }
@@ -616,30 +579,27 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}}
+	form := url.Values{"ids": {"42", "7", "43"}, "status": {"0"}}
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/customer/bulk-status?keyword=alice&page=2", strings.NewReader(customerJSONForm(t, form)))
-	req.Header.Set("Content-Type", "application/json")
+		"/api/customer/bulk-status?keyword=alice&page=2", strings.NewReader(customerFormBody(t, form)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("批量动作应渲染提示页（200），实际 %d", rec.Code)
+		t.Fatalf("批量动作应渲染结果片段（200），实际 %d", rec.Code)
 	}
 	if len(fake.statusIDs) != 3 {
 		t.Fatalf("三条都应逐条走到单条写入路径，实际 %v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"code":200`) {
-		t.Errorf("批量完成应渲染成功提示页")
-	}
-	for _, want := range []string{`"updated":2`, `"skipped":1`} {
+	for _, want := range []string{"已更新 2 个客户", "1 个未处理"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("提示页应含结果摘要 %q", want)
+			t.Errorf("结果片段应含结果摘要 %q", want)
 		}
 	}
-	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatal("expected JSON receipt")
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("写响应必须是 HTML 片段，实际 %q", ct)
 	}
 }
 

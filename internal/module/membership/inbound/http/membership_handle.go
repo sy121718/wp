@@ -2,9 +2,11 @@ package membershiphttp
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
@@ -12,7 +14,106 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
+
+// membershipFormFail 是表单绑定与字段解析失败的统一出口：只给受控文案，不上屏内部原文。
+func membershipFormFail(c *gin.Context, err error) {
+	pageview.FailStatus(c, http.StatusBadRequest, membershipErrScene, err)
+}
+
+// membershipUint 把表单里的无符号整数字串转成数值；空串或非法值返回错误。
+func membershipUint(text, field string) (uint64, error) {
+	value, err := strconv.ParseUint(strings.TrimSpace(text), 10, 64)
+	if err != nil {
+		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
+	}
+	return value, nil
+}
+
+// membershipInt 把表单里的整数字串转成数值；空串或非法值返回错误。
+func membershipInt(text string) (int64, error) {
+	value, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
+		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
+	}
+	return value, nil
+}
+
+// membershipYuan 把「元」的字符串按十进制语法精确换算成分。
+// 不走浮点：金额一旦经过 float64 就会在边界上漂移。
+func membershipYuan(text string) (int64, error) {
+	raw := strings.ReplaceAll(strings.TrimSpace(text), ",", "")
+	if raw == "" {
+		return 0, nil
+	}
+	neg := false
+	if strings.HasPrefix(raw, "-") {
+		neg, raw = true, raw[1:]
+	}
+	whole, frac, hasFrac := strings.Cut(raw, ".")
+	if len(frac) > 2 || !hasFrac && strings.Contains(raw, ".") {
+		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
+	}
+	for _, r := range whole + frac {
+		if r < '0' || r > '9' {
+			return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
+		}
+	}
+	if whole == "" {
+		whole = "0"
+	}
+	for len(frac) < 2 {
+		frac += "0"
+	}
+	cents, err := strconv.ParseInt(whole+frac, 10, 64)
+	if err != nil {
+		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
+	}
+	if neg {
+		cents = -cents
+	}
+	return cents, nil
+}
+
+// membershipEntitlements 把「免运费勾选 + 折扣数字」映射成权益清单。
+// 空折扣表示该等级没有折扣权益；0 与非法值交给 service 的统一校验。
+func membershipEntitlements(freeShipping, discount string) []membershipdto.EntitlementReq {
+	items := make([]membershipdto.EntitlementReq, 0, 2)
+	if strings.TrimSpace(freeShipping) != "" {
+		items = append(items, membershipdto.EntitlementReq{
+			Kind: membershipenums.KindFreeShipping, ValueInt: 1,
+		})
+	}
+	if strings.TrimSpace(discount) != "" {
+		value, err := strconv.ParseInt(strings.TrimSpace(discount), 10, 64)
+		if err != nil {
+			value = -1
+		}
+		items = append(items, membershipdto.EntitlementReq{
+			Kind: membershipenums.KindDiscount, ValueInt: value,
+		})
+	}
+	return items
+}
+
+// membershipMessageFallback 只在缺词时兜底，绝不让裸 key 上屏。
+var membershipMessageFallback = map[string]string{
+	membershipenums.MsgTierCreated:      "等级已创建",
+	membershipenums.MsgTierUpdated:      "等级已更新",
+	membershipenums.MsgTierDeleted:      "等级已删除",
+	membershipenums.MsgEntitlementSaved: "权益已保存",
+	membershipenums.MsgAssignSet:        "已指定会员等级（该账号不再参与自动升级）",
+	membershipenums.MsgAssignUnlocked:   "已解除手工锁定的会员归属",
+}
+
+// membershipWriteOK 是写操作的统一成功片段：句子只在 Jet 里。
+func membershipWriteOK(c *gin.Context, key string) {
+	c.HTML(http.StatusOK, "admin/membership/membership_write_result.html", pageview.Objects(
+		pageview.Object("Key", key),
+		pageview.Object("Fallback", membershipMessageFallback[key]),
+	))
+}
 
 const membershipErrScene = "membership"
 
@@ -41,10 +142,10 @@ func membershipErrStatus(fact facing.Fact) int {
 func membershipFail(c *gin.Context, err error) {
 	fact, business := facing.FactOf(err)
 	if !business {
-		response.ErrorInternal(c, membershipErrScene, err)
+		pageview.FailStatus(c, http.StatusInternalServerError, membershipErrScene, err)
 		return
 	}
-	response.ErrorWithMessage(c, membershipErrStatus(fact), membershipText(c, err))
+	pageview.FailStatus(c, membershipErrStatus(fact), membershipErrScene, err)
 }
 
 func membershipText(c *gin.Context, err error) string {
@@ -53,7 +154,7 @@ func membershipText(c *gin.Context, err error) string {
 		return response.MessageOf(c, membershipErrScene, err)
 	}
 
-	text := response.MessageOf(c, membershipErrScene, facing.New(fact.Key, fact.Fallback))
+	text := response.MessageOf(c, membershipErrScene, facing.New(fact.Key))
 	if fact.Tail != "" {
 		text += membershipDetailSep(response.RequestLanguage(c)) + fact.Tail
 	}
@@ -102,54 +203,133 @@ func (h *Handle) GetTier(c *gin.Context) {
 }
 
 func (h *Handle) CreateTier(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.CreateTierReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.TierFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.CreateTier(c.Request.Context(), req)
+	threshold, err := membershipYuan(form.ThresholdYuan)
 	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	sortOrder := int64(0)
+	if strings.TrimSpace(form.SortOrder) != "" {
+		if sortOrder, err = membershipInt(form.SortOrder); err != nil {
+			membershipFormFail(c, err)
+			return
+		}
+	}
+	req := &membershipdto.CreateTierReq{
+		ProjectID:       form.ProjectID,
+		Name:            form.Name,
+		SortOrder:       int(sortOrder),
+		ThresholdAmount: threshold,
+		IsDefault:       strings.TrimSpace(form.IsDefault) != "",
+		Remark:          form.Remark,
+		Entitlements:    membershipEntitlements(form.FreeShipping, form.DiscountPercent),
+	}
+	if _, err := h.svc.CreateTier(c.Request.Context(), req); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgTierCreated, res)
+	membershipWriteOK(c, membershipenums.MsgTierCreated)
 }
 
 func (h *Handle) UpdateTier(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.UpdateTierReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.TierFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.UpdateTier(c.Request.Context(), req)
+	tierID, err := membershipInt(form.TierID)
 	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	req := &membershipdto.UpdateTierReq{ProjectID: form.ProjectID, TierID: tierID}
+	if strings.TrimSpace(form.Name) != "" {
+		name := form.Name
+		req.Name = &name
+	}
+	if strings.TrimSpace(form.Remark) != "" {
+		remark := form.Remark
+		req.Remark = &remark
+	}
+	if strings.TrimSpace(form.SortOrder) != "" {
+		sortOrder := int(0)
+		value, err := membershipInt(form.SortOrder)
+		if err != nil {
+			membershipFormFail(c, err)
+			return
+		}
+		sortOrder = int(value)
+		req.SortOrder = &sortOrder
+	}
+	if strings.TrimSpace(form.ThresholdYuan) != "" {
+		threshold, err := membershipYuan(form.ThresholdYuan)
+		if err != nil {
+			membershipFormFail(c, err)
+			return
+		}
+		req.ThresholdAmount = &threshold
+	}
+	if strings.TrimSpace(form.IsDefault) != "" {
+		isDefault := true
+		req.IsDefault = &isDefault
+	}
+	if _, err := h.svc.UpdateTier(c.Request.Context(), req); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgTierUpdated, res)
+	membershipWriteOK(c, membershipenums.MsgTierUpdated)
 }
 
 func (h *Handle) DeleteTier(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.DeleteTierReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.DeleteTierFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	if err := h.svc.DeleteTier(c.Request.Context(), req); err != nil {
+	tierID, err := membershipInt(form.TierID)
+	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	if err := h.svc.DeleteTier(c.Request.Context(), &membershipdto.DeleteTierReq{
+		ProjectID: form.ProjectID, TierID: tierID,
+	}); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgTierDeleted, gin.H{"tierId": req.TierID})
+	membershipWriteOK(c, membershipenums.MsgTierDeleted)
 }
 
 func (h *Handle) SaveEntitlements(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.SaveEntitlementsReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.EntitlementFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.SaveEntitlements(c.Request.Context(), req)
+	tierID, err := membershipInt(form.TierID)
 	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	req := &membershipdto.SaveEntitlementsReq{
+		ProjectID: form.ProjectID,
+		TierID:    tierID,
+		Items:     membershipEntitlements(form.FreeShipping, form.DiscountPercent),
+	}
+	if _, err := h.svc.SaveEntitlements(c.Request.Context(), req); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgEntitlementSaved, res)
+	membershipWriteOK(c, membershipenums.MsgEntitlementSaved)
 }
 
 func (h *Handle) ListAssignments(c *gin.Context) {
@@ -173,28 +353,48 @@ func (h *Handle) ListAssignments(c *gin.Context) {
 }
 
 func (h *Handle) AssignSet(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.AssignManualReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.AssignFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.AssignManual(c.Request.Context(), req)
+	userID, err := membershipUint(form.UserID, "userId")
 	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	tierID, err := membershipInt(form.TierID)
+	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	req := &membershipdto.AssignManualReq{ProjectID: form.ProjectID, UserID: userID, TierID: tierID}
+	if _, err := h.svc.AssignManual(c.Request.Context(), req); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgAssignSet, res)
+	membershipWriteOK(c, membershipenums.MsgAssignSet)
 }
 
 func (h *Handle) AssignUnlock(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.UnlockManualReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.UnlockFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
+	userID, err := membershipUint(form.UserID, "userId")
+	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	req := &membershipdto.UnlockManualReq{ProjectID: form.ProjectID, UserID: userID}
 	if err := h.svc.UnlockManual(c.Request.Context(), req); err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, membershipenums.MsgAssignUnlocked, gin.H{"userId": req.UserID})
+	membershipWriteOK(c, membershipenums.MsgAssignUnlocked)
 }
 
 func (h *Handle) Resolve(c *gin.Context) {
@@ -211,14 +411,20 @@ func (h *Handle) Resolve(c *gin.Context) {
 }
 
 func (h *Handle) Recalc(c *gin.Context) {
-	req, ok := binding.Form[membershipdto.RecalcProjectReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form membershipdto.RecalcProjectReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.RecalcProject(c.Request.Context(), req)
+	res, err := h.svc.RecalcProject(c.Request.Context(), &form)
 	if err != nil {
 		membershipFail(c, err)
 		return
 	}
-	response.Success(c, res)
+	c.HTML(http.StatusOK, "admin/membership/membership_recalc_result.html", pageview.Objects(
+		pageview.Object("Scanned", res.Scanned),
+		pageview.Object("Changed", res.Changed),
+		pageview.Object("Skipped", res.Skipped),
+	))
 }

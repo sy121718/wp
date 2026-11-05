@@ -3,16 +3,22 @@ package navigationhttp
 import (
 	"context"
 	"errors"
-	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/i18n"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+"go_wp/internal/templates"
+"go_wp/internal/text"
+"go_wp/internal/adminui"
+pageview "go_wp/pkg/view"
+"net/url"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -51,30 +57,84 @@ func newNavigationAddSourceRouter(t *testing.T, svc navigationcontract.Navigatio
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.POST("/api/navigation/create", NewHandle(svc).Create)
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/api/navigation/sources", pageview.HTMLFragment, NewHandle(svc).CreateFromSource)
 	return engine
 }
 
-func postNavigationAddSource(t *testing.T, engine *gin.Engine, body string) *httptest.ResponseRecorder {
+func postNavigationAddSource(t *testing.T, engine *gin.Engine, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/create", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/sources", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
 }
 
-func navigationAddSourceResponse(t *testing.T, rec *httptest.ResponseRecorder) (int, string, navigationAddSourceResult) {
+func navigationAddSourceOK(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	var resp struct {
-		Code    int                       `json:"code"`
-		Message string                    `json:"message"`
-		Data    navigationAddSourceResult `json:"data"`
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应 200 + HTML 片段，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("响应不是 JSON：%v（%s）", err, rec.Body.String())
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("应回 HTML 片段，实际 Content-Type=%q", ct)
 	}
-	return resp.Code, resp.Message, resp.Data
+	body := rec.Body.String()
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf("成功应回 Jet 成功片段：%s", body)
+	}
+	return body
+}
+
+// addSourceItemMessage 从结果片段里取某条跳过项的原因。
+func addSourceItemMessage(t *testing.T, body, id string) string {
+	t.Helper()
+	marker := id + "："
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("片段里没有 id=%s 的逐条结果：%s", id, body)
+	}
+	rest := body[i+len(marker):]
+	if end := strings.Index(rest, "<"); end >= 0 {
+		rest = rest[:end]
+	}
+	return strings.TrimSpace(rest)
+}
+
+type addSourceItem struct {
+	ok      bool
+	message string
+}
+
+var addSourceItemRe = regexp.MustCompile(`data-item-id="([^"]*)" data-item-ok="([01])"`)
+
+// addSourceItems 从结果片段读回逐条事实：ID、是否成功、失败原因。
+func addSourceItems(t *testing.T, body string) map[string]addSourceItem {
+	t.Helper()
+	out := map[string]addSourceItem{}
+	for _, m := range addSourceItemRe.FindAllStringSubmatch(body, -1) {
+		item := addSourceItem{ok: m[2] == "1"}
+		if !item.ok {
+			item.message = addSourceItemMessage(t, body, m[1])
+		}
+		out[m[1]] = item
+	}
+	return out
+}
+
+// addSourceCounts 从结果片段的 data 属性读回计数，断言真实发生的数字。
+func addSourceCounts(t *testing.T, body string) (added, skipped int) {
+	t.Helper()
+	m := regexp.MustCompile(`data-added="(\d+)" data-skipped="(\d+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("结果片段缺少计数属性：%s", body)
+	}
+	added, _ = strconv.Atoi(m[1])
+	skipped, _ = strconv.Atoi(m[2])
+	return added, skipped
 }
 
 func addSourceGroups() []navigationcontract.SourceGroup {
@@ -89,22 +149,22 @@ func addSourceGroups() []navigationcontract.SourceGroup {
 	}
 }
 
-func addSourceBody(ids ...string) string {
-	quoted := make([]string, 0, len(ids))
+func addSourceForm(ids ...string) url.Values {
+	form := url.Values{}
+	form.Set("projectId", "p1")
+	form.Set("kind", "header")
+	form.Set("sourceType", "page")
 	for _, id := range ids {
-		quoted = append(quoted, `"`+id+`"`)
+		form.Add("ids", id)
 	}
-	return `{"action":"addSource","projectId":"p1","kind":"header","sourceType":"page","ids":[` +
-		strings.Join(quoted, ",") + `]}`
+	return form
 }
 
 func TestNavigationAddSourceBulkShape(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine,
-		`{"action":"addSource","projectId":"p1","kind":"header","sourceType":"page",`+
-			`"ids":["pg-1","pg-2","ar-1","nope"]}`)
+	rec := postNavigationAddSource(t, engine, addSourceForm("pg-1", "pg-2", "ar-1", "nope"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("来源批量应 200（逐条结果在 data 里），实际 %d：%s", rec.Code, rec.Body.String())
 	}
@@ -119,16 +179,24 @@ func TestNavigationAddSourceBulkShape(t *testing.T) {
 		req.Title != "关于我们" || req.SourceID == nil || *req.SourceID != "pg-1" {
 		t.Fatalf("create 入参应逐字透传候选事实，实际 %+v", req)
 	}
-	_, _, data := navigationAddSourceResponse(t, rec)
-	if data.Added != 1 || data.Skipped != 3 || len(data.Items) != 4 {
-		t.Fatalf("回执应为 added=1 skipped=3 items=4，实际 %+v", data)
+	body := navigationAddSourceOK(t, rec)
+	added, skipped := addSourceCounts(t, body)
+	if added != 1 || skipped != 3 {
+		t.Fatalf("回执应为 added=1 skipped=3，实际 added=%d skipped=%d", added, skipped)
 	}
-	if !data.Items[0].Added || data.Items[0].ID != "pg-1" || data.Items[0].Message != "" {
-		t.Fatalf("第 1 条应标记为已加入且无原因，实际 %+v", data.Items[0])
+	items := addSourceItems(t, body)
+	if len(items) != 4 {
+		t.Fatalf("逐条结果应为 4 条，实际 %d：%s", len(items), body)
 	}
-	for _, item := range data.Items[1:] {
-		if item.Added || item.Message == "" {
-			t.Fatalf("跳过项必须带上原因（前端逐条列出来），实际 %+v", item)
+	if !items["pg-1"].ok || items["pg-1"].message != "" {
+		t.Fatalf("第 1 条应标记为已加入且无原因，实际 %+v", items["pg-1"])
+	}
+	for id, item := range items {
+		if id == "pg-1" {
+			continue
+		}
+		if item.ok || item.message == "" {
+			t.Fatalf("跳过项必须带上原因（前端逐条列出来），实际 %s=%+v", id, item)
 		}
 	}
 }
@@ -141,7 +209,7 @@ func TestNavigationAddSourceTitleFallsBackToLabel(t *testing.T) {
 	}}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine, addSourceBody("pg-1"))
+	rec := postNavigationAddSource(t, engine, addSourceForm("pg-1"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
@@ -153,37 +221,21 @@ func TestNavigationAddSourceTitleFallsBackToLabel(t *testing.T) {
 func TestNavigationAddSourceKindSemantics(t *testing.T) {
 	cases := []struct {
 		name    string
-		body    string
-		want    string
-		wantBad bool
+		kind string
+		want string
 	}{
-		{"缺省回落 header",
-			`{"action":"addSource","projectId":"p1","sourceType":"page","ids":["pg-1"]}`, "header", false},
-		{"空串回落 header",
-			`{"action":"addSource","projectId":"p1","kind":"","sourceType":"page","ids":["pg-1"]}`, "header", false},
-		{"显式 footer",
-			`{"action":"addSource","projectId":"p1","kind":"footer","sourceType":"page","ids":["pg-1"]}`, "footer", false},
-		{"不在枚举里的类型回落 header",
-			`{"action":"addSource","projectId":"p1","kind":"sidebar","sourceType":"page","ids":["pg-1"]}`, "header", false},
-		{"kind 显式 null",
-			`{"action":"addSource","projectId":"p1","kind":null,"sourceType":"page","ids":["pg-1"]}`, "", true},
-		{"kind 是数字",
-			`{"action":"addSource","projectId":"p1","kind":1,"sourceType":"page","ids":["pg-1"]}`, "", true},
+		{"缺省回落 header", "", "header"},
+		{"空串回落 header", "", "header"},
+		{"显式 footer", "footer", "footer"},
+		{"不在枚举里的类型回落 header", "sidebar", "header"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &navigationAddSourceStub{groups: addSourceGroups()}
 			engine := newNavigationAddSourceRouter(t, stub)
-			rec := postNavigationAddSource(t, engine, tc.body)
-			if tc.wantBad {
-				if rec.Code != http.StatusBadRequest {
-					t.Fatalf("应 400，实际 %d：%s", rec.Code, rec.Body.String())
-				}
-				if len(stub.createCalls) != 0 {
-					t.Fatalf("形状错不该调用 create，实际 %+v", stub.createCalls)
-				}
-				return
-			}
+			form := addSourceForm("pg-1")
+			form.Set("kind", tc.kind)
+			rec := postNavigationAddSource(t, engine, form)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("应 200，实际 %d：%s", rec.Code, rec.Body.String())
 			}
@@ -206,19 +258,21 @@ func TestNavigationAddSourceCreateFailureIsPerItem(t *testing.T) {
 	}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine, addSourceBody("pg-1", "pg-3"))
+	rec := postNavigationAddSource(t, engine, addSourceForm("pg-1", "pg-3"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("应 200（逐条结果），实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if len(stub.createCalls) != 2 {
 		t.Fatalf("一条失败不应中断整批，实际调了 %d 次", len(stub.createCalls))
 	}
-	_, _, data := navigationAddSourceResponse(t, rec)
-	if data.Added != 1 || data.Skipped != 1 {
-		t.Fatalf("回执应为 added=1 skipped=1，实际 %+v", data)
+	body := navigationAddSourceOK(t, rec)
+	added, skipped := addSourceCounts(t, body)
+	if added != 1 || skipped != 1 {
+		t.Fatalf("回执应为 added=1 skipped=1，实际 added=%d skipped=%d", added, skipped)
 	}
-	if data.Items[0].Added || data.Items[1].Added != true {
-		t.Fatalf("第 1 条应失败、第 2 条应成功，实际 %+v", data.Items)
+	items := addSourceItems(t, body)
+	if items["pg-1"].ok || !items["pg-3"].ok {
+		t.Fatalf("第 1 条应失败、第 2 条应成功，实际 %+v", items)
 	}
 }
 
@@ -235,13 +289,14 @@ func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 	}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine, addSourceBody("pg-1", "pg-2", "nope"))
+	rec := postNavigationAddSource(t, engine, addSourceForm("pg-1", "pg-2", "nope"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	_, _, data := navigationAddSourceResponse(t, rec)
-	if data.Skipped != 3 {
-		t.Fatalf("三条都应跳过，实际 %+v", data)
+	body := navigationAddSourceOK(t, rec)
+	added, skipped := addSourceCounts(t, body)
+	if added != 0 || skipped != 3 {
+		t.Fatalf("三条都应跳过，实际 added=%d skipped=%d", added, skipped)
 	}
 	for _, leak := range []string{"SQLSTATE", "uq_navigation_path", "ERROR:", "duplicate key"} {
 		if strings.Contains(rec.Body.String(), leak) {
@@ -249,11 +304,14 @@ func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 		}
 	}
 
-	if got := data.Items[0].Message; got == "" || got == rawErr.Error() {
+	items := addSourceItems(t, body)
+	if got := items["pg-1"].message; got == "" || got == rawErr.Error() {
 		t.Fatalf("第 1 条原因应归口，实际 %q", got)
 	}
-	if data.Items[1].Message == "" || data.Items[2].Message == "" {
-		t.Fatalf("跳过项都必须带原因，实际 %+v", data.Items)
+	for _, id := range []string{"pg-2", "nope"} {
+		if items[id].message == "" {
+			t.Fatalf("跳过项 %s 必须带原因，实际 %+v", id, items)
+		}
 	}
 }
 
@@ -269,32 +327,32 @@ func TestNavigationAddSourceReasonsFollowRequestLanguage(t *testing.T) {
 	}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	post := func(lang string) navigationAddSourceResult {
+	post := func(lang string) map[string]addSourceItem {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/api/navigation/create",
-			strings.NewReader(`{"action":"addSource","projectId":"p1","sourceType":"page",`+
-				`"ids":["pg-2","ar-1","nope"]}`))
-		req.Header.Set("Content-Type", "application/json")
+		form := addSourceForm("pg-2", "ar-1", "nope")
+		req := httptest.NewRequest(http.MethodPost, "/api/navigation/sources",
+			strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept-Language", lang)
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s：应 200，实际 %d：%s", lang, rec.Code, rec.Body.String())
 		}
-		_, _, data := navigationAddSourceResponse(t, rec)
-		return data
+		body := navigationAddSourceOK(t, rec)
+		return addSourceItems(t, body)
 	}
 
 	zh := post("zh-CN")
-	if zh.Items[0].Message != "该内容暂无公开路径" {
-		t.Fatalf("中文请求应拿中文原因，实际 %+v", zh.Items[0])
+	if got := zh["pg-2"].message; got != "该内容暂无公开路径" {
+		t.Fatalf("中文请求应拿中文原因，实际 %q", got)
 	}
-	if zh.Items[1].Message != "找不到该条目" || zh.Items[2].Message != "找不到该条目" {
-		t.Fatalf("不属于本类型 / 不在候选里都应给「不存在」原因，实际 %+v", zh.Items)
+	if zh["ar-1"].message != "找不到该条目" || zh["nope"].message != "找不到该条目" {
+		t.Fatalf("不属于本类型 / 不在候选里都应给「不存在」原因，实际 %+v", zh)
 	}
 	en := post("en-US")
-	if en.Items[0].Message != "No public path yet" || en.Items[1].Message != "No such item" {
-		t.Fatalf("英文请求应拿英文原因，实际 %+v", en.Items)
+	if en["pg-2"].message != "No public path yet" || en["ar-1"].message != "No such item" {
+		t.Fatalf("英文请求应拿英文原因，实际 %+v", en)
 	}
 }
 
@@ -302,16 +360,12 @@ func TestNavigationAddSourceEmptyIDsIsNoop(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine, addSourceBody())
-	if rec.Code != http.StatusOK {
-		t.Fatalf("空数组应 200（页面据此显示「请至少勾选一项」），实际 %d：%s", rec.Code, rec.Body.String())
+	rec := postNavigationAddSource(t, engine, addSourceForm())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("空 ids 应 400（没有任何候选可处理），实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if len(stub.createCalls) != 0 || len(stub.groupCalls) != 0 {
 		t.Fatalf("空批量不该读候选 / 写库，实际 groups=%v creates=%d", stub.groupCalls, len(stub.createCalls))
-	}
-	_, _, data := navigationAddSourceResponse(t, rec)
-	if data.Added != 0 || data.Skipped != 0 || data.Items == nil {
-		t.Fatalf("空批量回执应为 0/0 且 items 为空数组（不是 null），实际 %+v", data)
 	}
 }
 
@@ -319,17 +373,20 @@ func TestNavigationAddSourceUnknownTypeSkipsAll(t *testing.T) {
 	stub := &navigationAddSourceStub{groups: addSourceGroups()}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine,
-		`{"action":"addSource","projectId":"p1","sourceType":"block","ids":["pg-1","pg-2"]}`)
+	blockForm := addSourceForm("pg-1", "pg-2")
+	blockForm.Set("sourceType", "block")
+	blockForm.Del("kind")
+	rec := postNavigationAddSource(t, engine, blockForm)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("候选为空是合法结果，应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if len(stub.createCalls) != 0 {
 		t.Fatalf("类型不匹配不该落库，实际 %+v", stub.createCalls)
 	}
-	_, _, data := navigationAddSourceResponse(t, rec)
-	if data.Added != 0 || data.Skipped != 2 {
-		t.Fatalf("应 added=0 skipped=2，实际 %+v", data)
+	body := navigationAddSourceOK(t, rec)
+	added, skipped := addSourceCounts(t, body)
+	if added != 0 || skipped != 2 {
+		t.Fatalf("应 added=0 skipped=2，实际 added=%d skipped=%d", added, skipped)
 	}
 }
 
@@ -337,65 +394,50 @@ func TestNavigationAddSourceGroupsFailureIs500(t *testing.T) {
 	stub := &navigationAddSourceStub{groupsErr: errors.New(`relation "navigations" does not exist`)}
 	engine := newNavigationAddSourceRouter(t, stub)
 
-	rec := postNavigationAddSource(t, engine, addSourceBody("pg-1"))
+	rec := postNavigationAddSource(t, engine, addSourceForm("pg-1"))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("读候选失败应 500，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if len(stub.createCalls) != 0 {
 		t.Fatalf("读候选失败必须零写入，实际 %+v", stub.createCalls)
 	}
-	_, message, _ := navigationAddSourceResponse(t, rec)
-	if message != navigationInternalKey {
-		t.Fatalf("应归口到 ErrInternal（key 形态，翻译交 response），实际 %q", message)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("失败应渲染 Jet 错误片段：%s", body)
 	}
-	if strings.Contains(rec.Body.String(), "navigations") {
-		t.Fatalf("500 回执不该带原始异常：%s", rec.Body.String())
+	if strings.Contains(body, "navigations") || strings.Contains(body, "SQLSTATE") {
+		t.Fatalf("500 回执不该带原始异常：%s", body)
 	}
 }
 
 func TestNavigationAddSourceShapeRejections(t *testing.T) {
-	cases := []struct{ name, body string }{
-		{"未知 action", `{"action":"nope","projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"action 显式 null", `{"action":null,"projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"action 是数字", `{"action":1,"projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"action 是布尔", `{"action":true,"projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"action 是空串", `{"action":"","projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"action 是对象", `{"action":{},"projectId":"p1","sourceType":"page","ids":["pg-1"]}`},
-		{"顶层未知键", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":["pg-1"],"extra":1}`},
-		{"缺 projectId", `{"action":"addSource","sourceType":"page","ids":["pg-1"]}`},
-		{"projectId 显式 null", `{"action":"addSource","projectId":null,"sourceType":"page","ids":["pg-1"]}`},
-		{"projectId 空串", `{"action":"addSource","projectId":"","sourceType":"page","ids":["pg-1"]}`},
-		{"projectId 是数字", `{"action":"addSource","projectId":1,"sourceType":"page","ids":["pg-1"]}`},
-		{"缺 sourceType", `{"action":"addSource","projectId":"p1","ids":["pg-1"]}`},
-		{"sourceType 显式 null", `{"action":"addSource","projectId":"p1","sourceType":null,"ids":["pg-1"]}`},
-		{"sourceType 空串", `{"action":"addSource","projectId":"p1","sourceType":"","ids":["pg-1"]}`},
-		{"sourceType 是数字", `{"action":"addSource","projectId":"p1","sourceType":1,"ids":["pg-1"]}`},
-		{"缺 ids", `{"action":"addSource","projectId":"p1","sourceType":"page"}`},
-		{"ids 显式 null", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":null}`},
-		{"ids 数组里有 null", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":["pg-1",null]}`},
-		{"ids 里有数字", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":["pg-1",1]}`},
-		{"ids 不是数组", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":"pg-1"}`},
-		{"ids 是对象", `{"action":"addSource","projectId":"p1","sourceType":"page","ids":{}}`},
-		{"无 action 却带 ids（混形）", `{"projectId":"p1","title":"t","path":"/p","kind":"header","ids":["pg-1"]}`},
-		{"非法 JSON", `{`},
-		{"空体", ``},
-		{"顶层数组", `[]`},
-		{"顶层 null", `null`},
-		{"顶层字符串", `"x"`},
+	// 表单编码下所有值都是字符串，形状错误只剩「必填缺失 / 值为空」两类；
+	// 类型严格性（null / 数字 / 对象）是 JSON 时代的概念，不再适用。
+	cases := []struct {
+		name string
+		form url.Values
+	}{
+		{"缺 projectId", url.Values{"sourceType": {"page"}, "ids": {"pg-1"}}},
+		{"projectId 空串", url.Values{"projectId": {""}, "sourceType": {"page"}, "ids": {"pg-1"}}},
+		{"缺 sourceType", url.Values{"projectId": {"p1"}, "ids": {"pg-1"}}},
+		{"sourceType 空串", url.Values{"projectId": {"p1"}, "sourceType": {""}, "ids": {"pg-1"}}},
+		{"缺 ids", url.Values{"projectId": {"p1"}, "sourceType": {"page"}}},
+		{"ids 只有空串", url.Values{"projectId": {"p1"}, "sourceType": {"page"}, "ids": {""}}},
+		{"空体", url.Values{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &navigationAddSourceStub{groups: addSourceGroups()}
 			engine := newNavigationAddSourceRouter(t, stub)
-			rec := postNavigationAddSource(t, engine, tc.body)
+			rec := postNavigationAddSource(t, engine, tc.form)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("形状错应 400，实际 %d：%s", rec.Code, rec.Body.String())
 			}
 			if len(stub.createCalls) != 0 {
 				t.Fatalf("形状错不该落库，实际 %+v", stub.createCalls)
 			}
-			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-				t.Fatalf("出口应是 JSON 报文，实际 Content-Type=%q", ct)
+			if !strings.Contains(rec.Body.String(), `data-ui-error`) {
+				t.Fatalf("失败应渲染 Jet 错误片段：%s", rec.Body.String())
 			}
 		})
 	}
@@ -407,28 +449,29 @@ func TestNavigationAddSourceLimits(t *testing.T) {
 
 	ids := make([]string, 0, bulkids.MaxIDs+1)
 	for i := 0; i < bulkids.MaxIDs+1; i++ {
-		ids = append(ids, `"pg-`+strconv.Itoa(i)+`"`)
+		ids = append(ids, "pg-"+strconv.Itoa(i))
 	}
-	rec := postNavigationAddSource(t, engine,
-		`{"action":"addSource","projectId":"p1","sourceType":"page","ids":[`+strings.Join(ids, ",")+`]}`)
+	form := addSourceForm(ids...)
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+	rec := postNavigationAddSource(t, engine, form)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("超限应整批拒绝（400，不部分执行），实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	_, message, _ := navigationAddSourceResponse(t, rec)
-	if !strings.HasPrefix(message, bulkids.MsgTooMany+"|") {
-		t.Fatalf("超限应回受控 key（%s）的带参协议，实际 %q", bulkids.MsgTooMany, message)
-	}
-	if !strings.Contains(message, strconv.Itoa(bulkids.MaxIDs)) ||
-		!strings.Contains(message, strconv.Itoa(bulkids.MaxIDs+1)) {
-		t.Fatalf("超限协议应带上限与本次条数，实际 %q", message)
+	body := rec.Body.String()
+	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) ||
+		!strings.Contains(body, strconv.Itoa(bulkids.MaxIDs+1)) {
+		t.Fatalf("超限提示应带上限与本次条数：%s", body)
 	}
 	if len(stub.createCalls) != 0 || len(stub.groupCalls) != 0 {
 		t.Fatalf("超限不该读候选 / 写库，实际 %v / %d", stub.groupCalls, len(stub.createCalls))
 	}
 
-	huge := `{"action":"addSource","projectId":"p1","sourceType":"page","ids":["` +
-		strings.Repeat("x", navigationWriteMaxBodyBytes) + `"]}`
-	rec = postNavigationAddSource(t, engine, huge)
+	hugeForm := url.Values{"projectId": {"p1"}, "sourceType": {"page"},
+		"ids": {strings.Repeat("x", navigationWriteMaxBodyBytes)}}
+	rec = postNavigationAddSource(t, engine, hugeForm)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("超过请求体上限应 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
@@ -437,27 +480,35 @@ func TestNavigationAddSourceLimits(t *testing.T) {
 	}
 }
 
-func TestNavigationCreateLegacyShapeUnchanged(t *testing.T) {
+func TestNavigationCreateUsesFormBinding(t *testing.T) {
+	// 普通创建是标准表单：一条明确的输入协议，与「从来源加入」是两个端点。
 	cases := []struct {
 		name     string
-		body     string
+		form     url.Values
 		wantCode int
 	}{
-		{"合法创建", `{"projectId":"p1","title":"关于我们","path":"/about","kind":"header"}`, http.StatusOK},
-		{"合法创建带来源字段", `{"projectId":"p1","title":"关于我们","path":"/about","kind":"header",` +
-			`"sourceType":"page","sourceId":"pg-1"}`, http.StatusOK},
-		{"未知字段仍被忽略", `{"projectId":"p1","title":"关于我们","path":"/about","kind":"header","unknown":1}`,
-			http.StatusOK},
-		{"缺 title", `{"projectId":"p1","path":"/about","kind":"header"}`, http.StatusBadRequest},
-		{"缺 path", `{"projectId":"p1","title":"关于我们","kind":"header"}`, http.StatusBadRequest},
-		{"缺 kind", `{"projectId":"p1","title":"关于我们","path":"/about"}`, http.StatusBadRequest},
-		{"缺 projectId", `{"title":"关于我们","path":"/about","kind":"header"}`, http.StatusBadRequest},
+		{"合法创建", url.Values{"projectId": {"p1"}, "title": {"关于我们"}, "path": {"/about"}, "kind": {"header"}}, http.StatusOK},
+		{"合法创建带来源字段", url.Values{"projectId": {"p1"}, "title": {"关于我们"}, "path": {"/about"},
+			"kind": {"header"}, "sourceType": {"page"}, "sourceId": {"pg-1"}}, http.StatusOK},
+		{"缺 title", url.Values{"projectId": {"p1"}, "path": {"/about"}, "kind": {"header"}}, http.StatusBadRequest},
+		{"缺 path", url.Values{"projectId": {"p1"}, "title": {"关于我们"}, "kind": {"header"}}, http.StatusBadRequest},
+		{"缺 kind", url.Values{"projectId": {"p1"}, "title": {"关于我们"}, "path": {"/about"}}, http.StatusBadRequest},
+		{"缺 projectId", url.Values{"title": {"关于我们"}, "path": {"/about"}, "kind": {"header"}}, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &navigationAddSourceStub{groups: addSourceGroups()}
-			engine := newNavigationAddSourceRouter(t, stub)
-			rec := postNavigationAddSource(t, engine, tc.body)
+			gin.SetMode(gin.TestMode)
+			engine := gin.New()
+			engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+			engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+			engine.POST("/api/navigation/create", pageview.HTMLFragment, NewHandle(stub).Create)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/navigation/create", strings.NewReader(tc.form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
 			if rec.Code != tc.wantCode {
 				t.Fatalf("应 %d，实际 %d：%s", tc.wantCode, rec.Code, rec.Body.String())
 			}
@@ -465,8 +516,8 @@ func TestNavigationCreateLegacyShapeUnchanged(t *testing.T) {
 				if len(stub.createCalls) != 1 {
 					t.Fatalf("普通创建应落到 service.Create，实际 %+v", stub.createCalls)
 				}
-				if _, message, _ := navigationAddSourceResponse(t, rec); message != navigationenums.MsgCreateSuccess {
-					t.Fatalf("普通创建回执应为 MsgCreateSuccess，实际 %q", message)
+				if !strings.Contains(rec.Body.String(), `role="status"`) {
+					t.Fatalf("成功应回 Jet 成功片段：%s", rec.Body.String())
 				}
 			} else if len(stub.createCalls) != 0 {
 				t.Fatalf("校验失败不该落库，实际 %+v", stub.createCalls)
@@ -495,13 +546,11 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	}
 	tpl := readFile("../../../../templates/admin/navigation/navigations.html")
 	for _, want := range []string{
-		`data-write-url="/api/navigation/create"`,
-		`data-write="bulk"`,
-		`data-write-outcome="add"`,
-		`data-write-extra="action,projectId,kind,sourceType"`,
-		`<input type="hidden" name="action" value="addSource">`,
+		`hx-post="/api/navigation/sources"`,
+		`name="sourceType"`,
 		`name="ids"`,
 		`data-write-status`,
+		`data-write-result`,
 	} {
 		if !strings.Contains(tpl, want) {
 			t.Fatalf("模板应含 %q", want)
@@ -518,29 +567,14 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	}
 }
 
-func addSourceBodyOf(sourceType string, ids ...string) string {
-	quoted := make([]string, 0, len(ids))
-	for _, id := range ids {
-		quoted = append(quoted, `"`+id+`"`)
-	}
-	return `{"action":"addSource","projectId":"p1","kind":"header","sourceType":"` + sourceType +
-		`","ids":[` + strings.Join(quoted, ",") + `]}`
-}
-
-func addSourceItemMessage(t *testing.T, res navigationAddSourceResult, id string) string {
-	t.Helper()
-	for _, item := range res.Items {
-		if item.ID == id {
-			return item.Message
-		}
-	}
-	t.Fatalf("回执里没有 id=%s 的逐条结果：%+v", id, res.Items)
-	return ""
+func addSourceFormOf(sourceType string, ids ...string) url.Values {
+	form := addSourceForm(ids...)
+	form.Set("sourceType", sourceType)
+	return form
 }
 
 func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
-	clearNavigationEntries(t)
-
+	// 声明处不再带成品兜底，业务 key 的文案只从词库来：子测试各自注入中文，验真实句子。
 	const detail = "2026-10-09T00:00:00Z"
 	noPath := navigationReasonFallbacks[navigationAddSourceNoPathKey]
 	if noPath == "" {
@@ -559,7 +593,7 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			source:   "page",
 			failFor:  map[string]error{"pg-1": errors.New(navigationenums.ErrPathTaken)},
 			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrPathTaken)},
+			want:     map[string]string{"pg-1": "该链接已被占用"},
 			wantGone: []string{navigationenums.ErrPathTaken},
 		},
 		{
@@ -576,15 +610,17 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			source:   "page",
 			failFor:  map[string]error{"pg-1": navigationenums.ErrDetail(navigationenums.ErrStaleVersion, detail)},
 			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrStaleVersion) + ": " + detail},
+			want:     map[string]string{"pg-1": "页面已被他人修改: " + detail},
 			wantGone: []string{navigationenums.ErrStaleVersion},
 		},
 		{
-			name:     "带参形态",
-			source:   "page",
-			failFor:  map[string]error{"pg-1": errors.New(navigationenums.ErrPathTaken + "|/about")},
-			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrPathTaken)},
+			name:    "带参形态",
+			source:  "page",
+			failFor: map[string]error{"pg-1": errors.New(navigationenums.ErrPathTaken + "|/about")},
+			ids:     []string{"pg-1"},
+			// 该 key 的译文不含占位符，附带的参数不会被拼进句子。
+			// 带参串不是词条键，逐条原因退成归口文案（参数不上屏）。
+			want:     map[string]string{"pg-1": navigationInternalFallback},
 			wantGone: []string{navigationenums.ErrPathTaken, "|", "/about"},
 		},
 		{
@@ -600,19 +636,26 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			i18n.InjectForTest(map[string]map[string]string{
+				navigationenums.ErrPathTaken:    {"zh-CN": "该链接已被占用"},
+				navigationenums.ErrStaleVersion: {"zh-CN": "页面已被他人修改"},
+			}, nil)
+			t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 			stub := &navigationAddSourceStub{groups: addSourceGroups(), failFor: tc.failFor}
 			engine := newNavigationAddSourceRouter(t, stub)
 
-			rec := postNavigationAddSource(t, engine, addSourceBodyOf(tc.source, tc.ids...))
+			rec := postNavigationAddSource(t, engine, addSourceFormOf(tc.source, tc.ids...))
 			if rec.Code != http.StatusOK {
-				t.Fatalf("逐条失败应 200（结果在 data 里），实际 %d：%s", rec.Code, rec.Body.String())
+				t.Fatalf("逐条失败应 200，实际 %d：%s", rec.Code, rec.Body.String())
 			}
-			_, _, data := navigationAddSourceResponse(t, rec)
-			if data.Added != 0 || data.Skipped != len(tc.ids) {
-				t.Fatalf("应 added=0 skipped=%d，实际 %+v", len(tc.ids), data)
+			body := navigationAddSourceOK(t, rec)
+			added, skipped := addSourceCounts(t, body)
+			if added != 0 || skipped != len(tc.ids) {
+				t.Fatalf("应 added=0 skipped=%d，实际 added=%d skipped=%d", len(tc.ids), added, skipped)
 			}
+			items := addSourceItems(t, body)
 			for id, wantMsg := range tc.want {
-				got := addSourceItemMessage(t, data, id)
+				got := items[id].message
 				if got != wantMsg {
 					t.Fatalf("id=%s 的逐条原因应为 %q，实际 %q", id, wantMsg, got)
 				}

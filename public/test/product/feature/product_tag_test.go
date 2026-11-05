@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/migrations"
 )
@@ -448,6 +449,9 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), handle.ProductTagsPage)
 
@@ -457,7 +461,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 
-	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
+	engine.POST("/api/product/update", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
 
@@ -507,9 +511,7 @@ func TestTagAdminPages(t *testing.T) {
 	rec := postJSON(t, engine, "/api/product/update", map[string]any{
 		"projectId": f.projectID, "id": p.ID, "tagIds": []string{manualID},
 	})
-	if got := decodeJSONEnvelope(t, rec); got.Code != http.StatusOK {
-		t.Fatalf("挂手工标签应成功，实际 %d：%s", got.Code, got.Message)
-	}
+	assertProductHTMLResponse(t, rec, http.StatusOK)
 
 	rec = httptestGet(engine, "/admin/product-tags?project="+f.projectID)
 	if rec.Code != http.StatusOK {
@@ -519,7 +521,7 @@ func TestTagAdminPages(t *testing.T) {
 
 	for _, want := range []string{
 		"商品标签", "清仓", "新品", "手工", "自动", "上架 30 天内",
-		"命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
+		"命中的商品", "内置规则类型", ">" + templates.TranslateFunc("zh-CN")("tagListRecalc", "重算") + "</button>", ">删除</button>",
 
 		`data-product-tag-hits="`, `id="tag-hits-panel"`,
 	} {
@@ -549,7 +551,7 @@ func TestTagAdminPages(t *testing.T) {
 	for _, want := range []string{
 		"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`,
 		"自动标签（按规则重算维护，不能手工改动）",
-		`data-write-url="/api/product/update"`,
+		`hx-post="/api/product/update"`,
 	} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)

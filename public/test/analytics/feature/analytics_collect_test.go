@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"errors"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,7 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	if db == nil {
 		return nil
 	}
+	loadProductionGlossary(t, db)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "访问统计测试工程"})
 	if err != nil {
@@ -232,8 +234,11 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("起止颠倒应回 400，实际 %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), analyticsenums.ErrInvalidRange) {
-		t.Errorf("起止颠倒的错误文案应来自 analytics enums，实际 %s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), analyticsenums.ErrInvalidRange) {
+		t.Errorf("错误响应泄漏裸 key：%s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "时间范围不合法") {
+		t.Errorf("起止颠倒应显示生产词库译文，实际 %s", rec.Body.String())
 	}
 
 	other, err := f.svc.Summary(context.Background(), &analyticscontract.SummaryReq{
@@ -244,5 +249,41 @@ func TestAnalyticsSummaryAggregates(t *testing.T) {
 	}
 	if other.Total != 0 {
 		t.Errorf("其他工程不该看到本工程的浏览数，实际 %d", other.Total)
+	}
+}
+
+// 合法 UUID 必须照常走完聚合链路 —— 形状校验只挡传错的参数，不挡正常调用。
+// 与 TestSummaryRejectsMalformedProjectID 配对：一个证明坏形状在 service 就被
+// 拒成参数错误，另一个证明好形状没有被这道守卫误伤。
+func TestAnalyticsSummaryAcceptsWellFormedProjectID(t *testing.T) {
+	f := newAnalyticsFixture(t)
+
+	rec := f.postCollect(t, url.Values{
+		"projectId": {f.projectID}, "path": {"/ok"}, "visitor": {"v1"}, "session": {"s1"},
+	}, testUA)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("打点失败: %d", rec.Code)
+	}
+
+	res, err := f.svc.Summary(context.Background(), &analyticscontract.SummaryReq{ProjectID: f.projectID})
+	if err != nil {
+		t.Fatalf("合法 UUID 不该被形状校验拦下: %v", err)
+	}
+	if res.Total != 1 {
+		t.Errorf("合法 UUID 应正常聚合，总浏览数应为 1，实际 %d", res.Total)
+	}
+}
+
+// 页面入口同源：?project=<非法串> 必须在 Summary 这一步被拒成 400，
+// 不能下发给 PG 让 uuid 列解析失败、被出口当内部错误（500）。
+func TestAnalyticsPageRejectsMalformedProjectInSummary(t *testing.T) {
+	f := newAnalyticsFixture(t)
+
+	_, err := f.svc.Summary(context.Background(), &analyticscontract.SummaryReq{ProjectID: "not-a-uuid"})
+	if !errors.Is(err, analyticsenums.Err(analyticsenums.ErrInvalidParam)) {
+		t.Fatalf("非法 project 形状应报参数错误，实际 %v", err)
+	}
+	if got := analyticsenums.StatusOf(analyticsenums.ErrInvalidParam); got != http.StatusBadRequest {
+		t.Errorf("参数错误应映射 400，实际 %d", got)
 	}
 }

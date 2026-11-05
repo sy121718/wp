@@ -8,11 +8,11 @@
 #
 # 判据（命中即违规）：对每个 internal/module/*/contract 包跑 `go list -deps`，输出里
 # 出现下列任一包即违规：
-#     go_wp/internal/builder/core
-#     go_wp/internal/builder/style
-#     go_wp/internal/builder/plugincomp
+#     go_wp/pkg/builder/core
+#     go_wp/pkg/builder/style
+#     go_wp/pkg/builder/plugincomp
 #
-# 契约包只允许依赖 go_wp/internal/builder/source（纯数据形状，自身零 builder 内部依赖）。
+# 契约包只允许依赖 go_wp/pkg/builder/source（纯数据形状，自身零 builder 内部依赖）。
 #
 # 为什么用 `-deps`（传递闭包）而不是 `go list -f '{{.Imports}}'`：直接依赖与「经别的包
 # 绕一层的间接依赖」是同一类越界 —— plugin/contract 并不直接 import builder/core，它
@@ -31,7 +31,7 @@ cd "$ROOT" || exit 1
 TARGET="internal/module"
 ALLOW_FILE="scripts/contract-deps-allow.txt"
 # 末尾的 $ 是必要的：没有它，将来出现 builder/corex 之类的包会被误判成 builder/core。
-FORBIDDEN='^go_wp/internal/builder/(core|style|plugincomp)$'
+FORBIDDEN='^go_wp/pkg/builder/(core|style|plugincomp)$'
 
 if [ ! -d "$TARGET" ]; then
   echo "找不到目标目录：$TARGET" >&2
@@ -122,7 +122,7 @@ done
 echo
 if (( ${#VIOLATIONS[@]} > 0 )); then
   echo "✗ 契约包依赖方向违规（${#VIOLATIONS[@]} 个）：${VIOLATIONS[*]}" >&2
-  echo "  契约包只能依赖 internal/builder/source（纯数据形状）；core / style / plugincomp" >&2
+  echo "  契约包只能依赖 pkg/builder/source（纯数据形状）；core / style / plugincomp" >&2
   echo "  会把 builder/core 一起拖进契约层，反向即成型环（AGENTS.md 不变量 7）。" >&2
   echo "  待修但暂不修的，写进 $ALLOW_FILE 并写明理由。" >&2
 fi

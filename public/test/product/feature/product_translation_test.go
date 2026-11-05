@@ -7,6 +7,7 @@ import (
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -14,7 +15,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -27,6 +30,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	"go_wp/public/test/support"
 )
@@ -71,7 +75,7 @@ func newTRFixture(t *testing.T) *trFixture {
 		t.Fatalf("初始化语言清单失败: %v", err)
 	}
 	registry := core.NewEntitySourceRegistry()
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetContentStore(i18n.NewDBContentStore(db))
 	if err := products.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品域实体类型失败: %v", err)
@@ -165,9 +169,11 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
 
-	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
+	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
 	return engine
 }
 
@@ -602,21 +608,21 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 	if strings.Contains(body, `name="rowHash" value="`+i18n.ContentHash("夏季衬衫")+`"`) {
 		t.Fatalf("工作台不应再列出旧原文的指纹 %s", body)
 	}
-	if !strings.Contains(body, "缺失") {
-		t.Fatalf("旧译文失效后工作台应显示「缺失」 %s", body)
+	if !strings.Contains(body, "Missing") {
+		t.Fatalf("旧译文失效后工作台应显示「缺失」状态 %s", body)
 	}
 
-	rec := postJSON(t, engine, "/api/product/translations/save", map[string]any{
-		"projectId": f.projectID, "productId": created.ID, "lang": "en-US",
-		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
-		"rowTarget": []string{"Spring Shirt"},
+	rec := postForm(engine, "/api/product/translations/save", url.Values{
+		"projectId": {f.projectID}, "productId": {created.ID}, "lang": {"en-US"},
+		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
+		"rowTarget": {"Spring Shirt"},
 	})
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("指纹不符应回 400，实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("指纹不符应回 HTML 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if env := decodeJSONEnvelope(t, rec); !strings.Contains(env.Message, "原文已变更") {
-		t.Fatalf("应提示原文已变更，实际 %q", env.Message)
+	if !strings.Contains(rec.Body.String(), "原文已变更") {
+		t.Fatalf("应提示原文已变更，实际 %q", rec.Body.String())
 	}
 	if n := trTranslationCount(t, f.db, "en-US"); n != 1 {
 		t.Fatalf("旧指纹提交不应写库（应仍只有最初 1 条），实际 %d", n)
@@ -644,26 +650,20 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	for _, want := range []string{
 		`name="rowContext" value="product.name"`,
 		`name="rowHash" value="` + i18n.ContentHash("夏季衬衫") + `"`,
-		"商品名", "夏季衬衫", "商品多语言", "改原文后旧译文自动失效",
+		"Product name", "夏季衬衫", "Product translations",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("工作台缺少 %q %s", want, body)
 		}
 	}
 
-	form := map[string]any{
-		"projectId": f.projectID, "productId": created.ID, "lang": "en-US",
-		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
-		"rowTarget": []string{"Summer Shirt"},
+	form := url.Values{
+		"projectId": {f.projectID}, "productId": {created.ID}, "lang": {"en-US"},
+		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
+		"rowTarget": {"Summer Shirt"},
 	}
-	saved := postJSON(t, engine, "/api/product/translations/save", form)
-	savedEnv := decodeJSONEnvelope(t, saved)
-	if savedEnv.Code != http.StatusOK {
-		t.Fatalf("保存应成功，实际 %d：%s", savedEnv.Code, savedEnv.Message)
-	}
-	if !strings.Contains(savedEnv.Message, "1 条译文") {
-		t.Fatalf("成功回执应含写入条数，实际 %q", savedEnv.Message)
-	}
+	saved := postForm(engine, "/api/product/translations/save", form)
+	assertHTMLSuccess(t, saved, "保存")
 
 	target, engineName := trTranslationOf(t, f.db, "夏季衬衫", "product.name", "en-US")
 	if target != "Summer Shirt" || engineName != i18n.ContentEngineManual {
@@ -681,14 +681,8 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	if err := f.db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
-	again := postJSON(t, engine, "/api/product/translations/save", form)
-	againEnv := decodeJSONEnvelope(t, again)
-	if againEnv.Code != http.StatusOK {
-		t.Fatalf("幂等保存应成功，实际 %d：%s", againEnv.Code, againEnv.Message)
-	}
-	if !strings.Contains(againEnv.Message, "没有需要写入的变化") {
-		t.Fatalf("幂等保存应给「没有变化」回执，实际 %q", againEnv.Message)
-	}
+	again := postForm(engine, "/api/product/translations/save", form)
+	assertHTMLSuccess(t, again, "幂等保存")
 	if trPageStale(t, f.db, pageID) {
 		t.Fatal("译文未变化不应触发重建标记")
 	}
@@ -728,16 +722,16 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
 
-	saved := postJSON(t, engine, "/api/product/translations/save", map[string]any{
-		"projectId": f.projectID, "productId": productID, "lang": "en-US",
-		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
-		"rowTarget": []string{"Summer Shirt"},
+	saved := postForm(engine, "/api/product/translations/save", url.Values{
+		"projectId": {f.projectID}, "productId": {productID}, "lang": {"en-US"},
+		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
+		"rowTarget": {"Summer Shirt"},
 	})
-	if env := decodeJSONEnvelope(t, saved); env.Code != http.StatusOK {
-		t.Fatalf("保存应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	assertHTMLSuccess(t, saved, "保存")
 	if !trInstanceStale(t, f.db, inst.ID) {
 		t.Fatalf("译文变更应标记该商品的自动发布实例待重建")
 	}

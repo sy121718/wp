@@ -11,6 +11,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
+	"go_wp/pkg/view"
 )
 
 const (
@@ -23,14 +24,6 @@ const (
 	PermissionsPageTemplate    = "admin/system/permissions"
 	I18nPageTemplate           = "admin/system/i18n"
 	LoginPageTemplate          = "admin/login"
-
-	AdminRoleDrawerTemplate         = "admin/system/admin_role_drawer.html"
-	AdminMenuDrawerTemplate         = "admin/system/admin_menu_drawer.html"
-	MenuEditFormTemplate            = "admin/system/menu_edit_form.html"
-	PermissionEditFormTemplate      = "admin/system/permission_edit_form.html"
-	RolePermissionsFragmentTemplate = "admin/system/role_permissions.html"
-	I18nEditFormTemplate            = "admin/system/i18n_edit_form.html"
-	DataruleConfigEditorTemplate    = "admin/system/datarule_config_editor.html"
 )
 
 func SetupAdminPages(adminPages *gin.RouterGroup,
@@ -53,12 +46,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.POST("/administrators/bulk-delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsBulkDelete)
 
-	adminPages.GET("/administrators/roles/drawer", builtin.CasbinMiddlewareForPath("/api/admin/role/list"),
-		adminui.BareSlot(AdminRoleDrawerTemplate), handle.AdministratorRolesDrawer)
-	adminPages.POST("/administrators/roles/save", builtin.CasbinMiddlewareForPath("/api/admin/role/save"), handle.AdministratorRolesSave)
-	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"),
-		adminui.BareSlot(AdminMenuDrawerTemplate), handle.AdministratorMenusDrawer)
-	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
+	adminPages.GET("/administrators/roles/drawer", view.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/admin/role/list"),
+		handle.AdministratorRolesDrawer)
+	adminPages.GET("/administrators/menus/drawer", view.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/admin/menu/list"),
+		handle.AdministratorMenusDrawer)
 
 	adminPages.GET("/roles",
 		adminui.PageAuthz("/api/role/list"),
@@ -69,26 +60,26 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
 	adminPages.POST("/roles/bulk-delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesBulkDelete)
 
-	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"),
-		adminui.BareSlot(RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
+	adminPages.GET("/roles/permissions/drawer", view.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/role/menu/list"),
+		handle.RolePermissionsDrawer)
 
 	adminPages.GET("/menus",
 		adminui.PageAuthz("/api/menu/tree"),
 		adminui.PageSlot(MenusPageTemplate),
 		handle.MenusPage)
-	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
-		adminui.BareSlot(MenuEditFormTemplate), handle.MenusEditFragment)
+	adminPages.GET("/menus/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
+		handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
-	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
+	adminPages.POST("/menus/update", view.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
 	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"),
 		adminui.PageSlot(PermissionsPageTemplate), handle.PermissionsPage)
-	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
-		adminui.BareSlot(PermissionEditFormTemplate), handle.PermissionsEditFragment)
+	adminPages.GET("/permissions/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
+		handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
-	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
+	adminPages.POST("/permissions/update", view.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
@@ -112,9 +103,6 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
 	adminPages.POST("/datarules/bulk-delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesBulkDelete)
 
-	adminPages.POST("/datarules/config-editor",
-		adminui.BareSlot(DataruleConfigEditorTemplate), handle.DataruleConfigEditor)
-
 	i18nPages := adminI18nHandle()
 
 	if dict != nil {
@@ -124,10 +112,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	i18nPages.SetPageMarker(pages)
 
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
-	adminPages.GET("/i18n", adminui.PageAuthz("/api/i18n/list"),
+	adminPages.GET("/i18n", view.HTMLPage, adminui.PageAuthz("/api/i18n/list"),
 		adminui.PageSlot(I18nPageTemplate), i18nPages.I18nEntriesPage)
-	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
-		adminui.BareSlot(I18nEditFormTemplate), i18nPages.I18nEntryEditFragment)
+	adminPages.GET("/i18n/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
+		i18nPages.I18nEntryEditFragment)
 
 	adminPages.GET("/lang", AdminLangSwitch)
 }

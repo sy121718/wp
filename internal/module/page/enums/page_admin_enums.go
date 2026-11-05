@@ -55,9 +55,9 @@ const (
 
 	RedirectTitle = "admin.redirect.title"
 
-	TranslationsSaved = "admin.page_translations.saved"
+	TranslationsSaved = "pageTrSaved"
 
-	TranslationsSavedRebuild = "admin.page_translations.saved_rebuild"
+	TranslationsSavedRebuild = "pageTrRebuild"
 
 	TranslationMissTitle = "admin.page.translation_misses.title"
 

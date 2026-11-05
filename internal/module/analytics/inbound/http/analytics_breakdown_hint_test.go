@@ -75,7 +75,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 	renderPage := func(t *testing.T, mutate func(gin.H)) string {
 		t.Helper()
 		data := gin.H{
-			"title": analyticsPageTitle, "menu": "analytics",
+			"menu":       "analytics",
 			"csrf_token": "test-token", "lang": lang,
 			"t": templates.TranslateFunc(lang), "langs": templates.LanguageOptions(lang),
 			"lang_redirect":   "/admin/analytics",

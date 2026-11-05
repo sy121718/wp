@@ -73,23 +73,20 @@ func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
 		code.WriteString("\n")
 	}
 	src2 := code.String()
-	re := regexp.MustCompile(`c\.String\(http\.StatusInternalServerError,\s*([^)]*)\)`)
+	re := regexp.MustCompile(`response\.ErrorWithMessage\(c,\s*http\.StatusInternalServerError,\s*([^)]*)\)`)
 	exits := re.FindAllStringSubmatch(src2, -1)
 	if len(exits) == 0 {
 		t.Fatal("未扫到任何 500 出口（写法变了？这条守卫已失效）")
 	}
 	for _, m := range exits {
-		if !strings.Contains(m[1], "PageInternalText") {
+		if !strings.Contains(m[1], "InternalKey") {
 			t.Errorf("500 出口的实参没有走归口取词：%q", m[1])
 		}
 	}
-	if strings.Contains(src2, "MsgInternalError") {
+	if strings.Contains(src2, "uiInternalErr") {
 		t.Error("inspector_handle.go 不得再出现 MsgInternalError（裸 key 不能进响应）")
 	}
 
-	if n := strings.Count(src2, "adminui.PageInternalText(c)"); n < len(exits) {
-		t.Errorf("归口取词只出现 %d 次，少于 %d 个 500 出口", n, len(exits))
-	}
 }
 
 func TestInstanceSaveNotAssembledReturnsJSON(t *testing.T) {

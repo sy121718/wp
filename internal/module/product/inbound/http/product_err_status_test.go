@@ -11,9 +11,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
+	"go_wp/pkg/view"
 )
 
 type errStatusSvc struct {
@@ -33,17 +39,28 @@ func (s errStatusSvc) Create(context.Context, *productdto.CreateReq) (*productdt
 	return nil, s.err
 }
 
+func (s errStatusSvc) SaveVariantList(context.Context, *productdto.SaveVariantListReq) (*productdto.SaveVariantListResp, error) {
+	return nil, s.err
+}
+
 func productErrStatusRequest(t *testing.T, err error, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := NewProductHandle(errStatusSvc{err: err})
 	engine.GET("/product/get", h.Get)
-	engine.POST("/product/update", h.Update)
-	engine.POST("/product/create", h.Create)
+	engine.POST("/product/update", view.HTMLFragment, h.Update)
+	engine.POST("/product/create", view.HTMLFragment, h.Create)
+	engine.POST("/product/variant/save", h.SaveVariantList)
 
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	if body != "" {
+	if path == "/product/create" {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	} else if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
@@ -51,7 +68,25 @@ func productErrStatusRequest(t *testing.T, err error, method, path, body string)
 	return rec
 }
 
+// productErrWords 给这一组用例注入生产词条的真实 key 与中英固定文案：
+// 声明里不再抄中文，出口只认词库，断言必须是"词库里那句"而不是"非空"。
+func productErrWords(t *testing.T) {
+	t.Helper()
+	i18n.InjectForTest(map[string]map[string]string{
+		productenums.ErrNameRequired: {"zh-CN": "商品名称必填"},
+		productenums.ErrNotFound:     {"zh-CN": "商品或变体不存在"},
+		productenums.ErrSlugTaken:    {"zh-CN": "该 URL 段在本工程已被占用"},
+		productenums.ErrVariantStockDuplicated: {
+			"zh-CN": "库存清单里同一仓库同一 SKU 出现了多行，请合并后再保存",
+		},
+		response.InternalKey: {"zh-CN": response.InternalFallback},
+	}, nil)
+}
+
 func TestProductErrStatusComesFromDeclaration(t *testing.T) {
+	productErrWords(t)
+
+	// 受控业务明细（半角 ": " 后的纯文本）是调用方给的事实，出口按原样保留。
 	conflictWithDetail := fmt.Errorf("%w: %s", productenums.Err(productenums.ErrSlugTaken), "summer-sale")
 
 	for _, tt := range []struct {
@@ -67,7 +102,7 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 	}{
 		{
 			name: "参数不合法默认 400", err: productenums.Err(productenums.ErrNameRequired),
-			method: http.MethodPost, path: "/product/create", body: `{"name":"x"}`,
+			method: http.MethodPost, path: "/product/create", body: "name=x",
 			wantCode: http.StatusBadRequest, wantInMsg: "商品名称必填",
 		},
 		{
@@ -81,13 +116,21 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用",
 		},
 		{
-			name: "带明细的冲突仍是 409", err: conflictWithDetail,
+			name: "带受控明细的冲突仍是 409 且明细上屏", err: conflictWithDetail,
 			method: http.MethodPost, path: "/product/update", body: `{"id":"p-1"}`,
-			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用", wantNotInMsg: "summer-sale",
+			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用：summer-sale",
+		},
+		{
+			name: "声明过 400 的库存重复给 400", err: productenums.Err(productenums.ErrVariantStockDuplicated),
+			method: http.MethodPost, path: "/product/variant/save", body: `{"productId":"p-1"}`,
+			wantCode: http.StatusBadRequest, wantInMsg: "同一仓库同一 SKU",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := productErrStatusRequest(t, tt.err, tt.method, tt.path, tt.body)
+			if tt.path == "/product/create" || tt.path == "/product/update" {
+				assertProductHTMLWrite(t, rec, tt.wantCode, "data-ui-error")
+			}
 			if rec.Code != tt.wantCode {
 				t.Fatalf("状态码 = %d，want %d（%s）", rec.Code, tt.wantCode, rec.Body.String())
 			}
@@ -102,6 +145,7 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 }
 
 func TestProductInternalErrorIsFiveHundredAndOpaque(t *testing.T) {
+	productErrWords(t)
 	rec := productErrStatusRequest(t,
 		errors.New(`pq: relation "products" does not exist`),
 		http.MethodGet, "/product/get?projectId=p1&id=p-1", "")
@@ -114,7 +158,7 @@ func TestProductInternalErrorIsFiveHundredAndOpaque(t *testing.T) {
 			t.Fatalf("内部原文泄漏到对外文案（%q）：%s", leak, body)
 		}
 	}
-	if !strings.Contains(body, "服务器内部错误") {
+	if !strings.Contains(body, response.InternalFallback) {
 		t.Fatalf("应给出归口文案，实际 %s", body)
 	}
 }

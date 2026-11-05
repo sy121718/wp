@@ -11,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
@@ -22,12 +21,12 @@ import (
 func (h *Handle) Preview(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingPageID))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)
 		return
 	}
 	page, err := h.svc.PageByID(c.Request.Context(), pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)
 		return
 	}
 	h.renderPreview(c, page.DraftDocument, page.ProjectID, page.DraftPath, c.Query("editor") == "1", workbenchservice.PreviewDocPage)
@@ -36,12 +35,12 @@ func (h *Handle) Preview(c *gin.Context) {
 func (h *Handle) BlockPreview(c *gin.Context) {
 	blockID := strings.TrimSpace(c.Query("id"))
 	if blockID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingBlockID))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrMissingBlockID)
 		return
 	}
 	block, err := h.svc.BlockByID(c.Request.Context(), blockID)
 	if err != nil || block == nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrBlockNotFound))
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)
 		return
 	}
 	h.renderPreview(c, block.Document, block.ProjectID, "", c.Query("editor") == "1", workbenchservice.PreviewDocBlock)
@@ -53,16 +52,16 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 	document := json.RawMessage(req.DraftDocument)
 	version, err := strconv.ParseInt(strings.TrimSpace(req.ExpectedVersion), 10, 64)
 	if pageID == "" || err != nil || len(document) == 0 {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDecodeFailed))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrDraftDecodeFailed)
 		return
 	}
 	page, err := h.svc.PageByID(c.Request.Context(), pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)
 		return
 	}
 	if version != page.DraftVersion {
-		c.String(http.StatusConflict, workbenchShortText(c, workbenchenums.ErrDraftVersionStale))
+		response.ErrorWithMessage(c, http.StatusConflict, workbenchenums.ErrDraftVersionStale)
 		return
 	}
 	h.renderPreview(c, document, page.ProjectID, page.DraftPath, true, workbenchservice.PreviewDocPage)
@@ -80,12 +79,12 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", html)
 	case workbenchservice.PreviewInvalidDocument:
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDecodeFailed))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrDraftDecodeFailed)
 	case workbenchservice.PreviewCompileRejected:
 		writePreviewCompileRejected(c, document, kind, err)
 	default:
 
-		c.String(http.StatusInternalServerError, adminui.PageInternalText(c))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
 	}
 }
 

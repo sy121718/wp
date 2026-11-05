@@ -1,8 +1,11 @@
 package aiservice
 
 import (
-	json "go_wp/pkg/jsonx"
 	"testing"
+
+	json "go_wp/pkg/jsonx"
+
+	aidto "go_wp/internal/module/ai/dto"
 )
 
 func TestUsageFromJSONParsesCachedChatCompletions(t *testing.T) {
@@ -74,14 +77,17 @@ func TestPercentageGuardsZeroDenominator(t *testing.T) {
 	}
 }
 
-func TestPercentTextSeparatesNoData(t *testing.T) {
-	if got := percentText(0, false); got != "—" {
-		t.Errorf("没数据时应显示 —，实得 %q", got)
+// 百分比文本已归模板（`percent` 函数 + 模板里的 — 分支），service 不再拼成品串。
+// 这里只锁「有没有数据」这条业务事实 —— 它决定了模板走哪个分支。
+func TestHitRateReadySeparatesNoData(t *testing.T) {
+	// ready=false 是「供应商没上报缓存字段」，不是「命中率 0」。
+	// 这两件事在页面上必须可区分：前者显示 —，后者显示 0.0%。
+	noData := aidto.SessionUsage{HitRateReady: false, HitRatePct: 0}
+	reportedZero := aidto.SessionUsage{HitRateReady: true, HitRatePct: 0}
+	if noData.HitRateReady {
+		t.Error("没数据时 HitRateReady 应为 false")
 	}
-	if got := percentText(0, true); got != "0.0%" {
-		t.Errorf("确实报了 0 时应显示 0.0%%，实得 %q", got)
-	}
-	if got := percentText(96.234, true); got != "96.2%" {
-		t.Errorf("应保留一位小数，实得 %q", got)
+	if !reportedZero.HitRateReady {
+		t.Error("确实上报了 0 时 HitRateReady 应为 true")
 	}
 }

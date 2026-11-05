@@ -130,7 +130,7 @@ func (m *Model) CreateWithVariantsTx(ctx context.Context, tx *gorm.DB, e *Produc
 func (m *Model) Get(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", id).First(e).Error
+		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
 	})
 	return e, err
 }
@@ -510,43 +510,13 @@ func productKeywordFilter(q *gorm.DB, keyword string) *gorm.DB {
 	if keyword == "" {
 		return q
 	}
-	pattern := productKeywordPattern(keyword)
-	return q.Where("name ILIKE ? OR sku_code ILIKE ?", pattern, pattern)
+	pattern := literalKeywordPattern(keyword)
+	return q.Where(`(name ILIKE ? ESCAPE '\' OR sku_code ILIKE ? ESCAPE '\')`, pattern, pattern)
 }
 
-func productKeywordPattern(keyword string) string {
-	return "%" + keyword + "%"
-}
-
+// 商品模块唯一的 LIKE 关键词构造点，用户输入一律按字面量处理。
 func literalKeywordPattern(keyword string) string {
 	return "%" + database.EscapeLikePattern(keyword) + "%"
-}
-
-func publishRecordProductFilter(q *gorm.DB, projectID, keyword string) *gorm.DB {
-	return productKeywordFilter(q.Where("project_id = ?", projectID), keyword)
-}
-
-func (m *Model) ListForPublishRecords(ctx context.Context, projectID, keyword string) (list []*ProductEntity, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug"), projectID, keyword)
-		return q.Order("sort ASC, create_time DESC, id ASC").Find(&list).Error
-	})
-	return list, err
-}
-
-func (m *Model) CountForPublishRecords(ctx context.Context, projectID, keyword string) (n int64, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}), projectID, keyword).Count(&n).Error
-	})
-	return n, err
-}
-
-func (m *Model) ListForPublishRecordsPage(ctx context.Context, projectID, keyword string, limit, offset int) (list []*ProductEntity, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := publishRecordProductFilter(tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug"), projectID, keyword)
-		return q.Order("sort ASC, create_time DESC, id ASC").Limit(limit).Offset(offset).Find(&list).Error
-	})
-	return list, err
 }
 
 func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n int64, err error) {

@@ -100,7 +100,7 @@ func TestProductPricingHistorySQLCountIsConstantInBatchCount(t *testing.T) {
 
 		s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 			rows: []projectdto.ProjectResp{{ID: projectID, Name: "台账 SQL 判据"}},
-		})
+		}, stubMasterDataChanges{})
 		probe.reset()
 		history, err := s.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{ProjectID: projectID, Limit: 10, IncludeItems: true})
 		if err != nil {

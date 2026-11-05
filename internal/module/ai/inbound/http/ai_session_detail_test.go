@@ -9,8 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	aidto "go_wp/internal/module/ai/dto"
-	"go_wp/internal/uispec"
-	"go_wp/pkg/utils"
+	"go_wp/pkg/uispec"
 )
 
 func TestRenderViewsOfRejectsGarbage(t *testing.T) {
@@ -77,27 +76,6 @@ func TestSessionEventRowsCarriesToolAndPhase(t *testing.T) {
 	}
 }
 
-func TestSessionEventTone(t *testing.T) {
-	cases := map[string]string{
-		"user":            "info",
-		"assistant":       "ok",
-		"tool":            "warn",
-		"compact_summary": "",
-		"":                "",
-	}
-	for kind, want := range cases {
-		if got := sessionEventTone(kind); got != want {
-			t.Errorf("kind=%q 应得 %q，实得 %q", kind, want, got)
-		}
-	}
-}
-
-func TestSessionTimeLabel(t *testing.T) {
-	if got := sessionTimeLabel(utils.JSONTime{}); got != "" {
-		t.Errorf("零值应给空串，实得 %q", got)
-	}
-}
-
 func TestAttachSessionDetailSkipsWithoutID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(nil)
@@ -108,8 +86,8 @@ func TestAttachSessionDetailSkipsWithoutID(t *testing.T) {
 	h := &SessionPageHandle{}
 	h.attachSessionDetail(c, context.Background(), view)
 
-	if view.Detail != nil || view.DetailID != 0 || view.DetailErr != "" ||
-		len(view.Events) != 0 || view.EventsErr != "" || view.FoldPlan != nil || view.FoldPlanErr != "" {
+	if view.Detail != nil || view.DetailID != 0 ||
+		len(view.Events) != 0 {
 		t.Fatalf("不带 id 时不该装配详情区块：%+v", view)
 	}
 }

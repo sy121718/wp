@@ -13,15 +13,17 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
@@ -146,28 +148,50 @@ func triggerOptions(tr mailTr, selected string) []OptionResp {
 }
 
 func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	status := strings.TrimSpace(c.PostForm("status"))
-	if err := h.mail.SetAutomationStatus(c.Request.Context(), &maildto.SetAutomationStatusReq{ID: id, Status: status}); err != nil {
-		mailAutomationJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailAutomationStatusForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailAutomationJump(c, true, mailMsg{Fallback: mailAutomationStatusNotice(c, status)})
+	status := strings.TrimSpace(form.Status)
+	if err := h.mail.SetAutomationStatus(c.Request.Context(), &maildto.SetAutomationStatusReq{
+		ID: mailIDOfText(form.ID), Status: status,
+	}); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	label := mailenums.AutomationStatusLabel(status)
+	mailWriteResult(c, "admin/mail/mail_automation_status.html", pageview.Objects(
+		pageview.Object("StatusKey", label.Key),
+		pageview.Object("StatusFallback", label.Fallback),
+	))
 }
 
 func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
-	if err := h.mail.DeleteAutomation(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
-		mailAutomationJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailAutomationJump(c, true, mailAutomationDeletedMsg)
+	if err := h.mail.DeleteAutomation(c.Request.Context(), mailIDOfText(form.ID)); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
-
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDsForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
+	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
-		mailAutomationJump(c, false, mailBulkIDsMsg(c, berr))
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
 	deleted, skipped := 0, 0
@@ -183,8 +207,10 @@ func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	done, warn := mailBulkOutcome("删除", "自动化流程", deleted, skipped)
-	mailBulkJump(c, done, warn, mailAutomationBack(c), mailAutomationBackMsg)
+	mailWriteResult(c, "admin/mail/mail_automation_result.html", pageview.Objects(
+		pageview.Object("Done", deleted),
+		pageview.Object("Skipped", skipped),
+	))
 }
 
 func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
@@ -208,13 +234,20 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 }
 
 func (h *mailPageHandle) MailAutomationTick(c *gin.Context) {
-	n, err := h.mail.EnqueueDueRuns(c.Request.Context(), 500)
-	if err != nil {
-		mailAutomationRunsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailAutomationTickForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-
-	mailAutomationRunsJump(c, true, mailAutomationTickMsg.WithArgs(strconv.Itoa(n)))
+	n, err := h.mail.EnqueueDueRuns(c.Request.Context(), 500)
+	if err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteResult(c, "admin/mail/mail_automation_tick.html", pageview.Objects(
+		pageview.Object("Count", n),
+	))
 }
 
 func splitFormList(raw string) []string {
@@ -372,45 +405,58 @@ func mailCampaignsErrData(c *gin.Context, err error) *CampaignsPageResp {
 }
 
 func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
-	req := &maildto.SaveCampaignReq{
-		ID:         reqparams.ParseUint(c.PostForm("id")),
-		Name:       c.PostForm("name"),
-		AccountID:  reqparams.ParseUint(c.PostForm("account_id")),
-		TemplateID: reqparams.ParseUint(c.PostForm("template_id")),
-		Subject:    c.PostForm("subject"),
-	}
-	if tags := strings.TrimSpace(c.PostForm("target_tags")); tags != "" {
-		for _, t := range strings.Split(tags, ",") {
-			if v := strings.TrimSpace(t); v != "" {
-				req.TargetTags = append(req.TargetTags, v)
-			}
-		}
-	}
-	if _, err := h.mail.SaveCampaign(c.Request.Context(), req); err != nil {
-		mailCampaignsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailCampaignSaveForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailCampaignsJump(c, true, mailDoneMsg)
+	req := &maildto.SaveCampaignReq{
+		ID:         mailIDOfText(form.ID),
+		Name:       form.Name,
+		AccountID:  mailIDOfText(form.AccountID),
+		TemplateID: mailIDOfText(form.TemplateID),
+		Subject:    form.Subject,
+		TargetTags: splitTagInput(form.TargetTags),
+	}
+	if _, err := h.mail.SaveCampaign(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
-	res, err := h.mail.StartCampaign(c.Request.Context(), &maildto.StartCampaignReq{
-		CampaignID: reqparams.ParseUint(c.PostForm("id")),
-	})
-	if err != nil {
-		mailCampaignsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailCampaignStartForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-
-	mailCampaignsJump(c, true, mailCampaignStartedMsg.WithArgs(strconv.FormatInt(res.Total, 10)))
+	res, err := h.mail.StartCampaign(c.Request.Context(), &maildto.StartCampaignReq{
+		CampaignID: mailIDOfText(form.ID),
+	})
+	if err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteResult(c, "admin/mail/mail_campaign_started.html", pageview.Objects(
+		pageview.Object("Total", res.Total),
+	))
 }
 
 func (h *mailPageHandle) MailCampaignDelete(c *gin.Context) {
-	if err := h.mail.DeleteCampaign(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
-		mailCampaignsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailCampaignsJump(c, true, mailDoneMsg)
+	if err := h.mail.DeleteCampaign(c.Request.Context(), mailIDOfText(form.ID)); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
@@ -465,10 +511,15 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 }
 
 func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
-
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDsForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
+	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
-		mailCampaignsJump(c, false, mailBulkIDsMsg(c, berr))
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
 	deleted, skipped := 0, 0
@@ -484,8 +535,11 @@ func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	done, warn := mailBulkOutcome("删除", "群发活动", deleted, skipped)
-	mailBulkJump(c, done, warn, mailCampaignsBack(c), mailCampaignsBackMsg)
+	mailWriteResult(c, "admin/mail/mail_campaign_result.html", pageview.Objects(
+		pageview.Object("None", len(ids) == 0),
+		pageview.Object("Done", deleted),
+		pageview.Object("Skipped", skipped),
+	))
 }
 
 const mailContactsPageSize = 50
@@ -593,55 +647,89 @@ func mailContactsErrData(c *gin.Context, err error) *ContactsPageResp {
 }
 
 func (h *mailPageHandle) MailContactImport(c *gin.Context) {
-	req := &maildto.ImportContactsReq{
-		Content:         []byte(c.PostForm("content")),
-		ConsentDeclared: c.PostForm("consent_declared") == "on",
-		ConsentSource:   c.PostForm("consent_source"),
-		UpdateExisting:  c.PostForm("update_existing") == "on",
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailContactImportForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
 	}
-	if tags := strings.TrimSpace(c.PostForm("tags")); tags != "" {
-		for _, t := range strings.Split(tags, ",") {
-			if v := strings.TrimSpace(t); v != "" {
-				req.DefaultTags = append(req.DefaultTags, v)
-			}
-		}
+	req := &maildto.ImportContactsReq{
+		Content:         []byte(form.Content),
+		ConsentDeclared: form.ConsentDeclared == "1" || form.ConsentDeclared == "on" || form.ConsentDeclared == "true",
+		ConsentSource:   form.ConsentSource,
+		UpdateExisting:  form.UpdateExisting == "1" || form.UpdateExisting == "on" || form.UpdateExisting == "true",
+		DefaultTags:     splitTagInput(form.Tags),
 	}
 	res, err := h.mail.ImportContacts(c.Request.Context(), req)
 	if err != nil {
-		mailContactsJump(c, false, mailErrMsg(c, err))
+		if msg := mailErrMsg(c, err); !msg.Empty() {
+			mailWriteFail(c, response.ErrorStatus(err), msg)
+			return
+		}
+		pageview.FailScene(c, mailErrScene, err)
 		return
 	}
+	mailWriteResult(c, "admin/mail/mail_import_result.html", pageview.Objects(
+		pageview.Object("Imported", res.Imported),
+		pageview.Object("Updated", res.Updated),
+		pageview.Object("Skipped", res.Skipped),
+		pageview.Object("Suppressed", res.Suppressed),
+		pageview.Object("Bad", len(res.Errors)),
+		pageview.Object("Rows", mailImportRows(c, res.Errors)),
+	))
+}
 
-	mailContactsJump(c, true, mailContactImportMsg.WithArgs(
-		strconv.Itoa(res.Imported), strconv.Itoa(res.Updated), strconv.Itoa(res.Skipped),
-		strconv.Itoa(res.Suppressed), strconv.Itoa(len(res.Errors))))
+func mailImportRows(c *gin.Context, errs []maildto.ImportRowError) []map[string]any {
+	rows := make([]map[string]any, 0, len(errs))
+	for _, item := range errs {
+		message := item.Reason
+		if facing.IsBusinessKey(item.Reason) {
+			message = response.MsgText(c, mailMsg{Key: item.Reason})
+		}
+		rows = append(rows, map[string]any{
+			"Line": item.Line, "Email": item.Email, "Message": message,
+		})
+	}
+	return rows
 }
 
 func (h *mailPageHandle) MailContactStatus(c *gin.Context) {
-	req := &maildto.UpdateContactStatusReq{
-		ID:     reqparams.ParseUint(c.PostForm("id")),
-		Status: c.PostForm("status"),
-		Note:   c.PostForm("note"),
-	}
-	if err := h.mail.UpdateContactStatus(c.Request.Context(), req); err != nil {
-		mailContactsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailContactStatusForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailContactsJump(c, true, mailDoneMsg)
+	req := &maildto.UpdateContactStatusReq{
+		ID:     mailIDOfText(form.ID),
+		Status: form.Status,
+		Note:   form.Note,
+	}
+	if err := h.mail.UpdateContactStatus(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteResult(c, "admin/mail/mail_contact_status.html", nil)
 }
 
 func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
-	target := strings.TrimSpace(c.PostForm("status"))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailContactBulkStatusForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
+	target := strings.TrimSpace(form.Status)
 	switch target {
 	case "subscribed", "pending", "unsubscribed":
 	default:
-		mailContactsJump(c, false, mailContactStatusBadMsg)
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, facing.New(mailenums.NoticeContactStatusBad))
 		return
 	}
 
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
-		mailContactsJump(c, false, mailBulkIDsMsg(c, berr))
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
 	changed, skipped := 0, 0
@@ -659,8 +747,11 @@ func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
 		}
 		changed++
 	}
-	done, warn := mailBulkOutcome("更新", "联系人", changed, skipped)
-	mailBulkJump(c, done, warn, mailContactsBack(c), mailContactsBackMsg)
+	mailWriteResult(c, "admin/mail/mail_contact_bulk_status.html", pageview.Objects(
+		pageview.Object("None", len(ids) == 0),
+		pageview.Object("Done", changed),
+		pageview.Object("Skipped", skipped),
+	))
 }
 
 func splitTagInput(raw string) []string {
@@ -740,20 +831,26 @@ func mailPageErrData(c *gin.Context, err error) *AccountsPageResp {
 }
 
 func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailAccountSaveForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
 	req := &maildto.SaveAccountReq{
-		ID:          reqparams.ParseUint(c.PostForm("id")),
-		Name:        c.PostForm("name"),
-		Purpose:     c.PostForm("purpose"),
-		FromName:    c.PostForm("from_name"),
-		FromEmail:   c.PostForm("from_email"),
-		ReplyTo:     c.PostForm("reply_to"),
-		Provider:    c.PostForm("provider"),
-		Host:        c.PostForm("host"),
-		Port:        int(reqparams.ParseUint(c.PostForm("port"))),
-		Username:    c.PostForm("username"),
-		Password:    c.PostForm("password"),
-		Encryption:  c.PostForm("encryption"),
-		RatePerHour: int(reqparams.ParseUint(c.PostForm("rate_per_hour"))),
+		ID:          mailIDOfText(form.ID),
+		Name:        form.Name,
+		Purpose:     form.Purpose,
+		FromName:    form.FromName,
+		FromEmail:   form.FromEmail,
+		ReplyTo:     form.ReplyTo,
+		Provider:    form.Provider,
+		Host:        form.Host,
+		Port:        int(mailIDOfText(form.Port)),
+		Username:    form.Username,
+		Password:    form.Password,
+		Encryption:  form.Encryption,
+		RatePerHour: int(mailIDOfText(form.RatePerHour)),
 	}
 	var err error
 	if req.ID > 0 {
@@ -762,75 +859,100 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 		_, err = h.mail.CreateAccount(c.Request.Context(), req)
 	}
 	if err != nil {
-		mailAccountsJump(c, false, mailErrMsg(c, err))
+		pageview.FailScene(c, mailErrScene, err)
 		return
 	}
-	mailAccountsJump(c, true, mailDoneMsg)
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
-	if err := h.mail.DeleteAccount(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
-		mailAccountsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneMsg)
+	if err := h.mail.DeleteAccount(c.Request.Context(), mailIDOfText(form.ID)); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailAccountDefault(c *gin.Context) {
-	if err := h.mail.SetDefaultAccount(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
-		mailAccountsJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneMsg)
+	if err := h.mail.SetDefaultAccount(c.Request.Context(), mailIDOfText(form.ID)); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailAccountTestForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
 	res, err := h.mail.TestSend(c.Request.Context(), &maildto.TestSendReq{
-		AccountID: reqparams.ParseUint(c.PostForm("id")),
-		ToEmail:   c.PostForm("to_email"),
+		AccountID: mailIDOfText(form.ID),
+		ToEmail:   form.ToEmail,
 		Lang:      response.RequestLanguage(c),
 	})
 	if err != nil {
-		mailAccountsJump(c, false, mailErrMsg(c, err))
+		pageview.FailScene(c, mailErrScene, err)
 		return
 	}
 	if !res.OK {
-
-		mailAccountsJump(c, false, mailTestSendFailedMsg(c, res.ErrorKind, res.Error))
+		mailWriteFail(c, http.StatusBadRequest, mailTestSendFailedMsg(c, res.ErrorKind, res.Error))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneMsg)
+	mailWriteResult(c, "admin/mail/mail_account_tested.html", pageview.Objects(
+		pageview.Object("ToEmail", form.ToEmail),
+	))
 }
 
 func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
-	req := &maildto.SaveTemplateReq{
-		TemplateKey: c.PostForm("template_key"),
-		Locale:      c.PostForm("locale"),
-		Name:        c.PostForm("name"),
-		Subject:     c.PostForm("subject"),
-		BodyHTML:    c.PostForm("body_html"),
-		BodyText:    c.PostForm("body_text"),
-	}
-	if vars := strings.TrimSpace(c.PostForm("variables")); vars != "" {
-		for _, v := range strings.Split(vars, ",") {
-			if s := strings.TrimSpace(v); s != "" {
-				req.Variables = append(req.Variables, s)
-			}
-		}
-	}
-	if _, err := h.mail.UpsertTemplate(c.Request.Context(), req); err != nil {
-		mailTemplatesJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailTemplateSaveForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailTemplatesJump(c, true, mailDoneMsg)
+	req := &maildto.SaveTemplateReq{
+		TemplateKey: form.TemplateKey,
+		Locale:      form.Locale,
+		Name:        form.Name,
+		Subject:     form.Subject,
+		Variables:   splitTagInput(form.Variables),
+		BodyHTML:    form.BodyHTML,
+		BodyText:    form.BodyText,
+	}
+	if _, err := h.mail.UpsertTemplate(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
-	if err := h.mail.DeleteTemplate(c.Request.Context(), c.PostForm("template_key"), c.PostForm("locale")); err != nil {
-		mailTemplatesJump(c, false, mailErrMsg(c, err))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailTemplateDeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
 		return
 	}
-	mailTemplatesJump(c, true, mailDoneMsg)
+	if err := h.mail.DeleteTemplate(c.Request.Context(), form.TemplateKey, form.Locale); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	mailWriteOK(c)
 }
 
 func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
@@ -848,10 +970,15 @@ func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
 }
 
 func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
-
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	c.Header("Cache-Control", "no-store")
+	var form maildto.MailIDsForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
+	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
-		mailAccountsJump(c, false, mailBulkIDsMsg(c, berr))
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
 	deleted, skipped := 0, 0
@@ -867,15 +994,24 @@ func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	done, warn := mailBulkOutcome("删除", "发信账号", deleted, skipped)
-	mailBulkJump(c, done, warn, mailAccountsPath, mailAccountsBackMsg)
+	mailWriteResult(c, "admin/mail/mail_account_result.html", pageview.Objects(
+		pageview.Object("None", len(ids) == 0),
+		pageview.Object("Done", deleted),
+		pageview.Object("Skipped", skipped),
+	))
 }
 
 func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	ctx := c.Request.Context()
+	var form maildto.MailIDsForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
+	}
 	list, err := h.mail.ListTemplates(ctx, "")
 	if err != nil {
-		mailTemplatesJump(c, false, mailTemplateListFailedMsg)
+		pageview.FailScene(c, mailErrScene, err)
 		return
 	}
 	type templateRef struct{ key, locale string }
@@ -886,15 +1022,15 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 		}
 	}
 
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
-		mailTemplatesJump(c, false, mailBulkIDsMsg(c, berr))
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
 	deleted, skipped := 0, 0
 	for _, raw := range ids {
-		ref, ok := byID[reqparams.ParseUint(raw)]
-		if !ok {
+		ref, found := byID[reqparams.ParseUint(raw)]
+		if !found {
 			skipped++
 			continue
 		}
@@ -904,21 +1040,11 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	done, warn := mailBulkOutcome("删除", "邮件模板", deleted, skipped)
-	mailBulkJump(c, done, warn, mailTemplatesPath, mailTemplatesBackMsg)
-}
-
-func mailBulkOutcome(verb, noun string, done, skipped int) (doneMsg, warnMsg mailMsg) {
-	switch {
-	case done == 0 && skipped == 0:
-		return mailMsg{}, mailMsg{}
-	case skipped == 0:
-		return mailBulkAllDoneMsg.WithArgs(verb, strconv.Itoa(done), noun), mailMsg{}
-	case done == 0:
-		return mailMsg{}, mailBulkAllSkippedMsg.WithArgs(noun, verb, strconv.Itoa(skipped))
-	default:
-		return mailMsg{}, mailBulkPartialMsg.WithArgs(verb, strconv.Itoa(done), noun, strconv.Itoa(skipped))
-	}
+	mailWriteResult(c, "admin/mail/mail_template_result.html", pageview.Objects(
+		pageview.Object("None", len(ids) == 0),
+		pageview.Object("Done", deleted),
+		pageview.Object("Skipped", skipped),
+	))
 }
 
 func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {

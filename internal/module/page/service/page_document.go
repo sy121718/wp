@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -95,7 +95,12 @@ func (s *Service) initFromBlueprint(ctx context.Context, blueprintID string) (js
 	}
 	doc, err := s.blueprints.InitPageDocument(ctx, blueprintID)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", pageenums.ErrBlueprintInvalid, err)
+		// 对内层错因只记日志：%s: %w 会让 errors.As 先命中内层 *facing.Error，
+		// 把 key 和状态一起顶掉；而把 err.Error() 塞 Tail 又会命中
+		// pkg/response/errdetail.go 的「非编码明细原样返回」分支，等于泄露内部原文。
+		logger.Scene("page").With("blueprintId", blueprintID).
+			Error(err, "蓝图初始化页面文档失败")
+		return nil, pageenums.Err(pageenums.ErrBlueprintInvalid)
 	}
 	if len(doc) == 0 {
 		return nil, pageenums.Err(pageenums.ErrBlueprintInvalid)
@@ -151,6 +156,11 @@ func (s *Service) Detail(ctx context.Context, req *pagedto.DetailReq) (res *page
 func (s *Service) ProjectOfPage(ctx context.Context, pageID string) (projectID string, err error) {
 	id := strings.TrimSpace(pageID)
 	if id == "" {
+		return "", ErrInvalidParam
+	}
+	// 非法 UUID 一律按参数错误拒绝：直接下发会打到 pages.id 的 uuid 列，
+	// PG 报类型解析失败 → 500，而调用方看到的是「系统内部错误」。
+	if _, perr := uuid.Parse(id); perr != nil {
 		return "", ErrInvalidParam
 	}
 
@@ -671,7 +681,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if mode == builder.CompileModePublish {
 		frozen := pipeline.ReferenceSnapshotFromContext(ctx, projectID)
 		if plan != nil && plan.References != nil {
-			frozen = plan.References.Clone()
+			frozen = pipeline.WrapReferenceSnapshot(plan.References.Clone())
 		}
 		if frozen == nil {
 			raw, marshalErr := json.Marshal(page)

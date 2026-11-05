@@ -18,6 +18,7 @@ import (
 	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/migrations"
 )
@@ -434,6 +435,9 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 
 	engine.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), handle.ProductCategoriesPage)
@@ -444,7 +448,7 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
 
-	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
+	engine.POST("/api/product/update", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
 
@@ -521,9 +525,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		"categoryIds":       []string{rootID},
 		"primaryCategoryId": childID,
 	})
-	if got := decodeJSONEnvelope(t, rec); got.Code != http.StatusOK {
-		t.Fatalf("挂分类 / 品牌应成功，实际 %d：%s", got.Code, got.Message)
-	}
+	assertProductHTMLResponse(t, rec, http.StatusOK)
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

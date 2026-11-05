@@ -10,7 +10,7 @@ import (
 )
 
 func (f *detailFixture) withPublishAttemptPort() {
-	f.products.SetPublishAttemptPort(publishrecordoutbound.NewWithAttempts(f.pres, f.pres))
+	f.products.SetPublishAttemptPort(publishrecordoutbound.NewWithAttempts(f.pres))
 }
 
 func TestPublishAttemptsRecordsEveryPublish(t *testing.T) {

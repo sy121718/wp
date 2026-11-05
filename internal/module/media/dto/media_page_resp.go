@@ -1,8 +1,7 @@
 package mediadto
 
 type MediaPageResp struct {
-	Title string
-	Menu  string
+	Title string `view:"title"`
 
-	JSVer string
+	JSVer string `view:"jsVer"`
 }

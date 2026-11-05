@@ -14,6 +14,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/pkg/i18n"
+
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventorymodel "go_wp/internal/module/inventory/model"
@@ -56,13 +58,30 @@ func newPurchaseFixture(t *testing.T) *purchaseFixture {
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
 	}
+	// 失败区文案只从词库取词：把本用例库里的词条灌进缓存，不读会漂移的全局库。
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key, lang, item_value AS value").Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败: %v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "采购测试工程"})
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, stubMasterDataChanges{})
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 	purchase := purchaseservice.NewService(purchasemodel.NewModel(db), projects)
@@ -88,7 +107,7 @@ func assertInventoryJump(t *testing.T, rec *httptest.ResponseRecorder, state str
 	t.Helper()
 	if state == "ok" {
 		if rec.Code != http.StatusOK {
-			t.Fatalf("成功应为 200 + JSON，实际 %d：%s", rec.Code, rec.Body.String())
+			t.Fatalf("成功应为 200 + HTML，实际 %d：%s", rec.Code, rec.Body.String())
 		}
 		if loc := rec.Header().Get("Location"); loc != "" {
 			t.Fatalf("成功不该给 Location（导航在前端），实际 %q", loc)
@@ -96,16 +115,16 @@ func assertInventoryJump(t *testing.T, rec *httptest.ResponseRecorder, state str
 		if nav := rec.Header().Get("HX-Redirect"); nav != "" {
 			t.Fatalf("成功不该给 HX-Redirect（导航在前端），实际 %q", nav)
 		}
-		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-			t.Fatalf("成功响应 Content-Type = %q，want application/json", ct)
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+			t.Fatalf("成功响应 Content-Type = %q，want text/html", ct)
 		}
 		return
 	}
 	if rec.Code < 400 || rec.Code >= 500 {
-		t.Fatalf("失败应为 4xx/5xx + JSON，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("失败应为 4xx/5xx + HTML，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-		t.Fatalf("失败响应 Content-Type = %q，want application/json", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("失败响应 Content-Type = %q，want text/html", ct)
 	}
 	body := rec.Body.String()
 	for _, want := range wants {

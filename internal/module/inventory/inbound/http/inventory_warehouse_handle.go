@@ -3,12 +3,13 @@ package inventoryhttp
 import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -46,61 +47,71 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.CreateWarehouse(c.Request.Context(), form.CreateReq()); err != nil {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), form.UpdateReq()); err != nil {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseDefaultFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseDefaultFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	yes := true
 	req := &inventorydto.UpdateWarehouseReq{ID: form.ID, IsDefault: &yes}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseDeleteFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseDeleteFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if err := h.inventory.DeleteWarehouse(c.Request.Context(),
 		&inventorydto.DeleteWarehouseReq{ID: form.ID, ProjectID: form.ProjectID}); err != nil {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseBulkFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseBulkFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	projectID := form.ProjectID
 
 	ids, berr := bulkids.Normalize(form.IDs)
@@ -123,10 +134,10 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 	case skipped > 0:
 		inventoryFailMsg(c, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	default:
 
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	}
 }
 

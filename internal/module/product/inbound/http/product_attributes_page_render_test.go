@@ -41,7 +41,7 @@ func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("渲染失败: %d %s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{"</html>", "颜色", "红色", "tpl-attr-edit-a1", "tpl-attr-values-a1", "tpl-attr-create", "data-attribute-add", "data-write-json=\"values\""} {
+	for _, want := range []string{"</html>", "颜色", "红色", "tpl-attr-edit-a1", "tpl-attr-values-a1", "tpl-attr-create", "data-attribute-add", "data-write-builder=\"product-attribute-values\""} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("缺少%s", want)
 		}
@@ -51,6 +51,7 @@ func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
 	}
 }
 func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
+	productPageErrWords(t)
 	stub := &productPageReaderStub{}
 	rec := attributesPageRequest(t, &ProductPageHandle{products: stub}, "/admin/product-attributes?project=missing")
 	assertProductJSONFailure(t, "工程不存在", rec, http.StatusBadRequest, "请求参数无效")

@@ -8,6 +8,7 @@ import (
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 func SetupCommentRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
@@ -22,7 +23,7 @@ func SetupCommentRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *g
 
 	g.GET("/list", permission.CommentList, handle.AdminList)
 
-	g.POST("/review", permission.CommentReview, handle.Review)
+	g.POST("/review", permission.CommentReview, pageview.HTMLFragment, handle.Review)
 
 	SetupCommentPages(pages, svc, projects)
 

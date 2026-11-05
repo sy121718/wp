@@ -3,286 +3,116 @@ package adminhttp
 import (
 	"errors"
 	"fmt"
-	"go_wp/pkg/binding"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
 
-	adminenums "go_wp/internal/module/admin/enums"
-	bulkids "go_wp/pkg/bulkids"
-	"go_wp/pkg/i18n"
-	r "go_wp/pkg/response"
-
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
+
+	admindto "go_wp/internal/module/admin/dto"
+	adminenums "go_wp/internal/module/admin/enums"
+	"go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/view"
 )
 
 var adminI18nHandleInst = NewAdminI18nEntryHandle()
 
 func adminI18nHandle() *adminI18nEntryHandle { return adminI18nHandleInst }
 
-type adminI18nWriteAction string
-
-const (
-	adminI18nActionCreate adminI18nWriteAction = "create"
-	adminI18nActionUpdate adminI18nWriteAction = "update"
-	adminI18nActionDelete adminI18nWriteAction = "delete"
-
-	adminI18nActionBulk adminI18nWriteAction = "bulkDelete"
-)
-
-var adminI18nWriteAllowedKeys = map[adminI18nWriteAction]map[string]bool{
-	adminI18nActionCreate: {"action": true, "key": true, "lang": true, "value": true, "category": true, "remark": true},
-	adminI18nActionUpdate: {"action": true, "key": true, "lang": true, "value": true, "category": true, "remark": true},
-	adminI18nActionDelete: {"action": true, "key": true, "lang": true},
-	adminI18nActionBulk:   {"ids": true},
-}
-
-type adminI18nWriteReq struct {
-	Action   adminI18nWriteAction
-	Key      string
-	Lang     string
-	Value    string
-	Category string
-	Remark   string
-	IDs      []string
-}
-
-type adminI18nWriteResult struct {
-	Key  string `json:"key"`
-	Lang string `json:"lang"`
-}
-
-type adminI18nWriteBulkItem struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
-	Message string `json:"message,omitempty"`
-}
-
-type adminI18nWriteBulkResult struct {
-	Deleted int                      `json:"deleted"`
-	Skipped int                      `json:"skipped"`
-	Items   []adminI18nWriteBulkItem `json:"items"`
-}
-
-func adminI18nWriteIsExplicitNull(body json.RawMessage) bool {
-	return len(body) > 0 && strings.TrimSpace(string(body)) == "null"
-}
-
-func adminI18nWriteStringOf(raw map[string]json.RawMessage, key string) (string, error) {
-	body, ok := raw[key]
-	if !ok {
-		return "", nil
-	}
-	if adminI18nWriteIsExplicitNull(body) {
-		return "", fmt.Errorf("字段 %s 是 null（应省略或给字符串）", key)
-	}
-	var value string
-	if err := json.Unmarshal(body, &value); err != nil {
-		return "", fmt.Errorf("字段 %s 不是字符串", key)
-	}
-	return value, nil
-}
-
-func adminI18nWriteIDsOf(raw map[string]json.RawMessage, key string) ([]string, error) {
-	body, ok := raw[key]
-	if !ok {
-		return nil, fmt.Errorf("批量档缺 %s", key)
-	}
-	if adminI18nWriteIsExplicitNull(body) {
-		return nil, fmt.Errorf("字段 %s 是 null（应为字符串数组）", key)
-	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(body, &items); err != nil {
-		return nil, fmt.Errorf("字段 %s 不是字符串数组", key)
-	}
-	out := make([]string, 0, len(items))
-	for i, item := range items {
-		if adminI18nWriteIsExplicitNull(item) {
-			return nil, fmt.Errorf("字段 %s 第 %d 项是 null", key, i+1)
-		}
-		var value string
-		if err := json.Unmarshal(item, &value); err != nil {
-			return nil, fmt.Errorf("字段 %s 第 %d 项不是字符串", key, i+1)
-		}
-		out = append(out, value)
-	}
-	return out, nil
-}
-
-func adminI18nWriteReqOf(c *gin.Context) (adminI18nWriteReq, bool) {
-	rawMap, err := binding.ParseJSON[map[string]json.RawMessage](c)
-	if err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	raw := *rawMap
-
-	var req adminI18nWriteReq
-	action := ""
-	if body, ok := raw["action"]; ok {
-		if adminI18nWriteIsExplicitNull(body) {
-			adminBindFail(c, errors.New("action 是 null（应省略或给字符串）"))
-			return adminI18nWriteReq{}, false
-		}
-		if err := json.Unmarshal(body, &action); err != nil {
-			adminBindFail(c, errors.New("action 不是字符串"))
-			return adminI18nWriteReq{}, false
-		}
-		req.Action = adminI18nWriteAction(action)
-	} else {
-
-		req.Action = adminI18nActionBulk
-	}
-
-	allowed, ok := adminI18nWriteAllowedKeys[req.Action]
-	if !ok {
-		adminBindFail(c, fmt.Errorf("未知 action：%q", action))
-		return adminI18nWriteReq{}, false
-	}
-	for key := range raw {
-		if !allowed[key] {
-			adminBindFail(c, fmt.Errorf("动作 %s 不接受字段 %q", req.Action, key))
-			return adminI18nWriteReq{}, false
-		}
-	}
-
-	if req.Action == adminI18nActionBulk {
-		ids, err := adminI18nWriteIDsOf(raw, "ids")
-		if err != nil {
-			adminBindFail(c, err)
-			return adminI18nWriteReq{}, false
-		}
-		req.IDs = ids
-		return req, true
-	}
-
-	if req.Key, err = adminI18nWriteStringOf(raw, "key"); err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	if req.Lang, err = adminI18nWriteStringOf(raw, "lang"); err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	req.Key, req.Lang = strings.TrimSpace(req.Key), strings.TrimSpace(req.Lang)
-	if req.Action == adminI18nActionDelete {
-		if missing := adminI18nDeleteMissingMsg(req.Key, req.Lang); missing != "" {
-			r.ErrorWithMessage(c, http.StatusBadRequest, missing)
-			return adminI18nWriteReq{}, false
-		}
-		return req, true
-	}
-
-	if req.Value, err = adminI18nWriteStringOf(raw, "value"); err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	if missing := adminI18nSaveMissingMsg(req.Key, req.Lang, req.Value); missing != "" {
-		r.ErrorWithMessage(c, http.StatusBadRequest, missing)
-		return adminI18nWriteReq{}, false
-	}
-	if req.Category, err = adminI18nWriteStringOf(raw, "category"); err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	if req.Remark, err = adminI18nWriteStringOf(raw, "remark"); err != nil {
-		adminBindFail(c, err)
-		return adminI18nWriteReq{}, false
-	}
-	return req, true
-}
-
+// I18nEntryWrite 绑定页面表单，调用词库端口并交 Jet 输出操作结果。
 func (h *adminI18nEntryHandle) I18nEntryWrite(c *gin.Context) {
-	req, ok := adminI18nWriteReqOf(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req admindto.I18nWriteReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		view.FailStatus(c, http.StatusBadRequest, adminErrScene, err)
 		return
 	}
 	switch req.Action {
-	case adminI18nActionCreate, adminI18nActionUpdate:
+	case "create", "update":
 		h.i18nWriteUpsert(c, req)
-	case adminI18nActionDelete:
+	case "delete":
 		h.i18nWriteDelete(c, req)
-	case adminI18nActionBulk:
+	case "bulkDelete":
 		h.i18nWriteBulkDelete(c, req)
 	}
 }
 
-func (h *adminI18nEntryHandle) i18nWriteUpsert(c *gin.Context, req adminI18nWriteReq) {
+func (h *adminI18nEntryHandle) i18nWriteUpsert(c *gin.Context, req admindto.I18nWriteReq) {
 	entry := i18n.Entry{
 		Key: req.Key, Lang: req.Lang, Value: req.Value,
-		Category: strings.TrimSpace(req.Category), Remark: strings.TrimSpace(req.Remark), Status: 1,
+		Category: req.Category, Remark: req.Remark, Status: 1,
 	}
 	var err error
-	if req.Action == adminI18nActionUpdate {
+	if req.Action == "update" {
 		err = i18n.UpdateEntry(c.Request.Context(), entry)
 	} else {
 		err = i18n.SaveEntry(c.Request.Context(), entry)
 	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-
-			r.ErrorWithMessage(c, http.StatusNotFound, adminenums.MsgBadRequest)
+			view.FailStatus(c, http.StatusNotFound, adminErrScene, adminenums.BadRequest())
 			return
 		}
-		adminFail(c, err)
+		view.FailScene(c, adminErrScene, err)
 		return
 	}
-
 	h.markI18nStale(c)
-	r.Success(c, adminI18nWriteResult{Key: req.Key, Lang: req.Lang})
+	view.Success(c)
 }
 
-func (h *adminI18nEntryHandle) i18nWriteDelete(c *gin.Context, req adminI18nWriteReq) {
+func (h *adminI18nEntryHandle) i18nWriteDelete(c *gin.Context, req admindto.I18nWriteReq) {
 	if err := i18n.DeleteEntry(c.Request.Context(), req.Key, req.Lang); err != nil {
-		adminFail(c, err)
+		view.FailScene(c, adminErrScene, err)
 		return
 	}
-
 	h.markI18nStale(c)
-	r.Success(c)
+	view.Success(c)
 }
 
-func (h *adminI18nEntryHandle) i18nWriteBulkDelete(c *gin.Context, req adminI18nWriteReq) {
-	ids, nerr := bulkids.Normalize(req.IDs)
-	if nerr != nil {
-		r.ErrorWithMessage(c, http.StatusBadRequest, adminI18nBulkTooManyMessage(nerr))
+// i18nWriteBulkDelete 先校验完整标识集合，再调用词库的原子批量删除端口。
+func (h *adminI18nEntryHandle) i18nWriteBulkDelete(c *gin.Context, req admindto.I18nWriteReq) {
+	ids, err := bulkids.Normalize(req.IDs)
+	if err != nil {
+		view.FailScene(c, adminErrScene, err)
 		return
 	}
-	res := adminI18nWriteBulkResult{Items: []adminI18nWriteBulkItem{}}
+	refs := make([]i18n.EntryRef, 0, len(ids))
 	for _, raw := range ids {
-		item := adminI18nWriteBulkItem{ID: raw}
 		key, lang, ok := strings.Cut(strings.TrimSpace(raw), adminI18nEntryKeySeparator)
 		key, lang = strings.TrimSpace(key), strings.TrimSpace(lang)
 		if !ok || key == "" || lang == "" {
-
-			item.Message = r.TranslateMessage(c, adminenums.ErrI18nKeyEmpty)
-			res.Skipped++
-			res.Items = append(res.Items, item)
-			continue
+			view.FailStatus(c, http.StatusBadRequest, adminErrScene, fmt.Errorf("词条标识 %q 不是 key%slang 形状", raw, adminI18nEntryKeySeparator))
+			return
 		}
-		if err := i18n.DeleteEntry(c.Request.Context(), key, lang); err != nil {
-			item.Message = adminErrParam(c, err)
-			res.Skipped++
-			res.Items = append(res.Items, item)
-			continue
-		}
-		item.Deleted = true
-		res.Deleted++
-		res.Items = append(res.Items, item)
+		refs = append(refs, i18n.EntryRef{Key: key, Lang: lang})
 	}
-
-	if res.Deleted > 0 {
-		h.markI18nStale(c)
+	deleted, err := i18n.DeleteEntries(c.Request.Context(), refs)
+	if err != nil {
+		view.FailScene(c, adminErrScene, adminI18nBulkDeleteError(err))
+		return
 	}
-	r.Success(c, res)
+	h.markI18nStale(c)
+	c.HTML(http.StatusOK, "admin/system/i18n_write_success.html", struct{ Deleted int }{Deleted: deleted})
 }
 
-func adminI18nBulkTooManyMessage(err error) string {
-	max, count := bulkids.MaxIDs, 0
-	var tooMany *bulkids.IDsError
-	if errors.As(err, &tooMany) {
-		max, count = tooMany.Max, tooMany.Count
+// adminI18nBulkDeleteError 把词库层的缺失事实映射为模块错误声明。
+func adminI18nBulkDeleteError(err error) error {
+	var missing *i18n.MissingEntriesError
+	if errors.As(err, &missing) {
+		refs := make([]adminenums.I18nEntryRef, 0, len(missing.Items))
+		for _, m := range missing.Items {
+			refs = append(refs, adminenums.I18nEntryRef{Key: m.Key, Lang: m.Lang})
+		}
+		return adminenums.MissingI18nEntries(refs)
 	}
-	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, max, count)
+	if errors.Is(err, i18n.ErrI18nSelectionEmpty) {
+		return adminenums.Err(adminenums.ErrI18nSelectionEmpty)
+	}
+	return err
 }

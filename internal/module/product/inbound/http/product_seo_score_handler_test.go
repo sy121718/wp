@@ -11,10 +11,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	json "go_wp/pkg/jsonx"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 )
 
 type fakeProductService struct {
@@ -67,17 +70,20 @@ func (f *fakeProductService) GetBrand(_ context.Context, req *productdto.GetBran
 	return nil, productenums.Err(productenums.ErrBrandNotFound)
 }
 
-func postScoreJSON(t *testing.T, handler gin.HandlerFunc, form url.Values) *httptest.ResponseRecorder {
+func postScoreHTML(t *testing.T, handler gin.HandlerFunc, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.POST("/score", handler)
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure), pageview.UseSuccess(adminui.NewSuccessWriter()), templates.FailedRenderMiddleware(pageview.Fail))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/score", pageview.HTMLFragment, handler)
 	req := httptest.NewRequest(http.MethodPost, "/score", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("评分必须返回JSON：%s", rec.Body.String())
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "</div>") {
+		t.Fatalf("评分必须返回真实 HTML：%s", rec.Body.String())
 	}
 	for _, header := range []string{"Location", "HX-Redirect", "HX-Location"} {
 		if rec.Header().Get(header) != "" {
@@ -105,23 +111,17 @@ func TestScorePanelsReturnEntityFacts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {
-			rec := postScoreJSON(t, tc.handler, url.Values{"projectId": {"proj-1"}, "id": {tc.id}})
+			rec := postScoreHTML(t, tc.handler, url.Values{"projectId": {"proj-1"}, "id": {tc.id}})
 			if rec.Code != http.StatusOK {
 				t.Fatalf("正常评分失败：%d %s", rec.Code, rec.Body.String())
 			}
-			var envelope struct {
-				Code int                     `json:"code"`
-				Data productdto.SeoScoreResp `json:"data"`
+			for _, want := range []string{"data-product-seo-panel", "data-seo-sections", tc.title, tc.path, "</section>"} {
+				if !strings.Contains(rec.Body.String(), want) {
+					t.Fatalf("HTML 缺少评分事实 %q：%s", want, rec.Body.String())
+				}
 			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-				t.Fatal(err)
-			}
-			data := envelope.Data
-			if data.EntityID != tc.id || data.EntityType != tc.kind || data.ProfileType != tc.profile || data.Title != tc.title || data.URL != tc.path || len(data.Sections) == 0 {
-				t.Fatalf("实体事实不匹配：%+v", data)
-			}
-			if tc.kind == "product" && (len(data.Duplicates) != 1 || data.Duplicates[0].ID != "p2") {
-				t.Fatalf("重复标题事实丢失：%+v", data.Duplicates)
+			if tc.kind == "product" && !strings.Contains(rec.Body.String(), "重复的 title（纯棉T恤）出现在 1 个页面") {
+				t.Fatalf("重复标题事实丢失：%s", rec.Body.String())
 			}
 			for _, forbidden := range []string{`"color":`, `"grade":`, `"targetId":`, `"hiddenFields":`, `"actual":`, `"target":`, `"html":`, `"profileReason":`} {
 				if strings.Contains(rec.Body.String(), forbidden) {
@@ -153,17 +153,11 @@ func TestScorePanelsReportFailureStatusAndNeverExposeInternalError(t *testing.T)
 				if kind == "brand" {
 					handler = h.BrandSeoScore
 				}
-				rec := postScoreJSON(t, handler, url.Values{"projectId": {tc.project}, "id": {tc.id}})
+				rec := postScoreHTML(t, handler, url.Values{"projectId": {tc.project}, "id": {tc.id}})
 				if rec.Code != tc.status {
 					t.Fatalf("状态码=%d，期望%d：%s", rec.Code, tc.status, rec.Body.String())
 				}
-				var envelope struct {
-					Message string `json:"message"`
-				}
-				if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-					t.Fatal(err)
-				}
-				if envelope.Message == "" || strings.Contains(rec.Body.String(), "password=private") {
+				if !strings.Contains(rec.Body.String(), `data-ui-error`) || !strings.Contains(rec.Body.String(), `role="alert"`) || strings.Contains(rec.Body.String(), "password=private") {
 					t.Fatalf("错误必须有对外文案且不得泄露内部原文：%s", rec.Body.String())
 				}
 			})

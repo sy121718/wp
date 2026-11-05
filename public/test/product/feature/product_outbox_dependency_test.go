@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
@@ -21,6 +21,8 @@ import (
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
@@ -56,13 +58,14 @@ const productListDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth
 	"\"linkField\":\"item.url\",\"currency\":\"¥\",\"titleTag\":\"h3\",\"emptyText\":\"暂无商品\"}}]}"
 
 type outboxFixture struct {
-	db        *gorm.DB
-	products  *productservice.Service
-	templates contenttemplatecontract.ContentTemplateService
-	pres      *presentationservice.Service
-	pages     *pageservice.Service
-	projects  *projectservice.Service
-	projectID string
+	db          *gorm.DB
+	invalidator productcontract.DependencyInvalidator
+	products    *productservice.Service
+	templates   contenttemplatecontract.ContentTemplateService
+	pres        *presentationservice.Service
+	pages       *pageservice.Service
+	projects    *projectservice.Service
+	projectID   string
 }
 
 func newOutboxFixture(t *testing.T) *outboxFixture {
@@ -91,7 +94,7 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	}
 
 	registry := core.NewEntitySourceRegistry()
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetContentStore(i18n.NewDBContentStore(db))
 	if err := products.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品实体类型失败: %v", err)
@@ -123,8 +126,18 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 
 	return &outboxFixture{
 		db: db, products: products, templates: templates, pres: pres, pages: pages,
-		projects: projects, projectID: project.ID,
+		projects: projects, projectID: project.ID, invalidator: fanout,
 	}
+}
+
+// rewireProductChanges 用另一份审计端口重建商品服务并重新接回失效端口：
+// 审计是构造依赖，故障注入只能换装配。
+func (f *outboxFixture) rewireProductChanges(t *testing.T, changes masterdatacontract.MasterDataService) {
+	t.Helper()
+	svc := productservice.NewService(productmodel.NewModel(f.db), f.projects, changes)
+	svc.SetContentStore(i18n.NewDBContentStore(f.db))
+	svc.SetDependencyInvalidator(f.invalidator)
+	f.products = svc
 }
 
 func (f *outboxFixture) createProduct(t *testing.T, name, slug string) string {
@@ -593,7 +606,7 @@ func TestProductWriteRollbackLeavesNoEvent(t *testing.T) {
 	if f == nil {
 		return
 	}
-	f.products.SetMasterDataChanges(failingMasterData{})
+	f.rewireProductChanges(t, failingMasterData{})
 	price := 10.0
 	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "回滚商品", Slug: "rollback-item", DefaultPrice: &price,

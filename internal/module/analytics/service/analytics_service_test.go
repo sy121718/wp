@@ -1,11 +1,14 @@
 package analyticsservice
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	analyticsdto "go_wp/internal/module/analytics/dto"
+	analyticsenums "go_wp/internal/module/analytics/enums"
 )
 
 func fixedNow() time.Time { return time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC) }
@@ -199,5 +202,40 @@ func TestNormalizePathPaging(t *testing.T) {
 	}
 	if page, limit := normalizePathPaging(-5, 9999); page != 1 || limit != maxPathLimit {
 		t.Errorf("越界分页应收敛为 (1, %d)，实际 (%d, %d)", maxPathLimit, page, limit)
+	}
+}
+
+// Summary 的 project 形状校验：非法串必须在进 SQL 之前被拒成参数错误。
+// project_id 是 uuid 列，非法串下发给 PG 会在类型解析处报错，那会被出口当成
+// 内部错误（500）——调用方传错参数应该是 400。
+func TestSummaryRejectsMalformedProjectID(t *testing.T) {
+	s := newTestService()
+
+	bad := []string{
+		"not-a-uuid",
+		"12345",
+		"11111111-1111-4111-8111-11111111111",
+		"11111111-1111-4111-8111-1111111111111",
+		"/../etc/passwd",
+	}
+	for _, projectID := range bad {
+		_, err := s.Summary(context.Background(), &analyticsdto.SummaryReq{ProjectID: projectID})
+		if !errors.Is(err, ErrInvalidParam) {
+			t.Errorf("project=%q 应报 ErrInvalidParam，实际 %v", projectID, err)
+			continue
+		}
+		if got := analyticsenums.StatusOf(analyticsenums.ErrInvalidParam); got != http.StatusBadRequest {
+			t.Errorf("ErrInvalidParam 应映射 400，实际 %d", got)
+		}
+	}
+}
+
+// 空白串走的是既有的「必填」分支，与形状校验同一个错误身份。
+func TestSummaryRejectsBlankProjectID(t *testing.T) {
+	s := newTestService()
+	for _, projectID := range []string{"", "   "} {
+		if _, err := s.Summary(context.Background(), &analyticsdto.SummaryReq{ProjectID: projectID}); !errors.Is(err, ErrInvalidParam) {
+			t.Errorf("project=%q 应报 ErrInvalidParam，实际 %v", projectID, err)
+		}
 	}
 }

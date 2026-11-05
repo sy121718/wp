@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go_wp/internal/builder"
+	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
@@ -20,8 +21,11 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	jsonx "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -61,8 +65,10 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
-	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
+	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
 	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
 	return router, handle, db, project.ID, pageID
 }
@@ -74,6 +80,31 @@ func insertTranslationPage(t *testing.T, db *gorm.DB, id, projectID, path, doc s
 		id, projectID, path, doc).Error; err != nil {
 		t.Fatalf("插入页面失败: %v", err)
 	}
+}
+
+// decodeWritePayload 解写出口的 {code, message, data}。只在这一族断言里用，
+// 所以放在本文件而不是抽公共 helper。
+func decodeWritePayload(t *testing.T, body string) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	if err := jsonx.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("写出口应为 JSON：%v\n%s", err, body)
+	}
+	return payload
+}
+
+// decodeWriteItems 取 data.items（写基座的错误明细档，形状对齐 blockedDataOf）。
+func decodeWriteItems(t *testing.T, body string) []map[string]any {
+	t.Helper()
+	data, _ := decodeWritePayload(t, body)["data"].(map[string]any)
+	raw, _ := data["items"].([]any)
+	items := make([]map[string]any, 0, len(raw))
+	for _, v := range raw {
+		if row, ok := v.(map[string]any); ok {
+			items = append(items, row)
+		}
+	}
+	return items
 }
 
 func translationRowCount(t *testing.T, db *gorm.DB, lang string) int64 {
@@ -253,7 +284,7 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 	insertTranslationPage(t, db, "cccccccc-0000-0000-0000-000000000003", projectID, "/other",
 		"{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"bt2\",\"type\":\"core.button\",\"props\":{\"text\":\"联系我们\"}}]}")
 
-	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
+	saved := postForm(t, router, "/api/page/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"en-US"},
 		"rowContext": {"core.button.text", "core.text.text"},
 		"rowSource":  {"联系我们", "<p>我们成立于 2010 年</p>"},
@@ -261,12 +292,12 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 		"rowTarget":  {"Contact us", "<p>Founded in 2010</p>"},
 	})
 
-	if saved.Code != http.StatusOK {
-		t.Fatalf("保存成功应回 200 JSON，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("保存成功应回 HTML 200，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	body := saved.Body.String()
-	if !strings.Contains(body, "已保存 2 条译文") || !strings.Contains(body, `"written":2`) {
-		t.Fatalf("成功响应应含回执与 written 计数：%s", body)
+	if !strings.Contains(body, "已保存 2 条译文") {
+		t.Fatalf("成功响应应含完整回执句：%s", body)
 	}
 	if strings.Contains(body, `data-jump-state="ok"`) {
 		t.Fatalf("成功响应不该再渲染提示页：%s", body)
@@ -364,7 +395,7 @@ func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 		t.Fatal("没有非空输入，用例失去意义")
 	}
 
-	saved := postForm(t, router, "/admin/pages/translations/save", form)
+	saved := postForm(t, router, "/api/page/translations/save", form)
 	if saved.Code != http.StatusOK {
 		t.Fatalf("保存应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
@@ -385,7 +416,7 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 		"rowHash":    {i18n.ContentHash("联系我们")},
 		"rowTarget":  {"Contact us"},
 	}
-	if saved := postForm(t, router, "/admin/pages/translations/save", form); saved.Code != http.StatusOK {
+	if saved := postForm(t, router, "/api/page/translations/save", form); saved.Code != http.StatusOK {
 		t.Fatalf("首次保存应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	var firstUpdated time.Time
@@ -397,7 +428,7 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 
-	again := postForm(t, router, "/admin/pages/translations/save", form)
+	again := postForm(t, router, "/api/page/translations/save", form)
 	if again.Code != http.StatusOK {
 		t.Fatalf("重复保存应渲染提示页（200），实际 %d：%s", again.Code, again.Body.String())
 	}
@@ -434,17 +465,19 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 		{"跳过规则原文", "core.text.text", "2024", i18n.ContentHash("2024"), "2024", "不参与翻译"},
 	}
 	for _, tc := range cases {
-		recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
+		recorder := postForm(t, router, "/api/page/translations/save", url.Values{
 			"pageId": {pageID}, "lang": {"en-US"},
 			"rowContext": {tc.context}, "rowSource": {tc.source},
 			"rowHash": {tc.hash}, "rowTarget": {tc.target},
 		})
 
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s：校验失败应回 200 片段，实际 %d", tc.name, recorder.Code)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s：校验失败应回 400，实际 %d：%s", tc.name, recorder.Code, recorder.Body.String())
 		}
-		if !strings.Contains(recorder.Body.String(), tc.want) {
-			t.Fatalf("%s：缺少错误提示 %q\n%s", tc.name, tc.want, recorder.Body.String())
+		// 逐行原因由 Jet 片段渲染：错误区里必须有行标识与该原因。
+		body := recorder.Body.String()
+		if !strings.Contains(body, "data-ui-error") || !strings.Contains(body, tc.context) || !strings.Contains(body, tc.want) {
+			t.Fatalf("%s：错误区应带行标识与原因，实际 %s", tc.name, body)
 		}
 		if n := translationRowCount(t, db, "en-US"); n != 0 {
 			t.Fatalf("%s：校验失败不应落库，实际 %d 行", tc.name, n)
@@ -457,7 +490,7 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 
 func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
-	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
+	recorder := postForm(t, router, "/api/page/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"en-US"},
 		"rowContext": {"core.button.text"}, "rowSource": {"联系我们"},
 		"rowHash": {i18n.ContentHash("联系我们")}, "rowTarget": {"   "},
@@ -478,16 +511,21 @@ func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 
 func TestSavePageTranslationsLangNotEnabled(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
-	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
+	recorder := postForm(t, router, "/api/page/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"ja"},
 		"rowContext": {"core.button.text"}, "rowSource": {"联系我们"},
 		"rowHash": {i18n.ContentHash("联系我们")}, "rowTarget": {"お問い合わせ"},
 	})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("未启用语言应回渲染工作台（200），实际 %d", recorder.Code)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("未启用语言应回 400，实际 %d：%s", recorder.Code, recorder.Body.String())
 	}
-	if !strings.Contains(recorder.Body.String(), "目标语言未启用") {
-		t.Fatalf("缺少未启用语言提示\n%s", recorder.Body.String())
+	body := recorder.Body.String()
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("未启用语言应渲染错误区，实际 %s", body)
+	}
+	// 逐行原因由 Jet 取词，页面上不能出现 enums 裸 key。
+	if strings.Contains(body, pageenums.MsgTranslationLangInvalid) {
+		t.Fatalf("逐行原因应已是译文而非裸 key，实际 %s", body)
 	}
 	if n := translationRowCount(t, db, "ja"); n != 0 {
 		t.Fatalf("未启用语言不应落库，实际 %d 行", n)

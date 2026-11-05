@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/module/ai/dto"
 	"go_wp/internal/module/ai/enums"
 	"go_wp/internal/module/ai/model"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/utils"
 )
@@ -48,18 +49,48 @@ func (s *Service) SaveProvider(ctx context.Context, req *aidto.SaveProviderReq) 
 	if req == nil {
 		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
+	// 显示名与协议的「留空」是两组不同的事实，归一的依据是**这个 key 是不是内置预设**：
+	//
+	//   · 预设（provider_create.html 的下拉）：页面承诺「留空使用提供商默认名称」「按提供商预设」，
+	//     所以留空取 presetProviders 里的 DisplayName / primaryEndpoint().Protocol；
+	//   · 自定义网关（同一页面另一张表单）：没有内置清单可依据，名称必须由用户给。
+	//
+	// 归一放在这里而不是 Controller：它是「请求缺什么就按业务补什么」，Controller 只绑定与转发。
+	key := strings.ToLower(strings.TrimSpace(req.ProviderKey))
+	// 预设默认值只在**新建**时兜底：更新路径上留空名是 400，不能因为该 key
+	// 恰好命中内置目录就把用户的清空动作悄悄改成预设名。协议的空值默认
+	// （openai）不属于预设回退，见下面的分支，更新时照旧生效。
+	var preset BuiltinPresetOption
+	hasPreset := false
+	if req.ID == 0 {
+		preset, hasPreset = BuiltinPreset(key)
+	}
+
 	name := strings.TrimSpace(req.DisplayName)
+	if name == "" && hasPreset {
+		name = preset.DisplayName
+	}
 	if name == "" {
 		return nil, aienums.Err(aienums.ErrDisplayNameRequired)
 	}
 	protocol := strings.TrimSpace(req.Protocol)
 	if protocol == "" {
-		protocol = aienums.ProtocolOpenAIChatCompletions
+		if hasPreset {
+			// 已知预设就取它的协议原值（可能为空，交给 IsSupportedProtocol 拒）——
+			// 不能替 bedrock 这类没有标准协议的预设编一个 openai。
+			protocol = preset.Protocol
+		} else {
+			// 自定义网关的空协议沿用既有默认，不在本批改语义。
+			protocol = aienums.ProtocolOpenAIChatCompletions
+		}
 	}
 	if !aienums.IsSupportedProtocol(protocol) {
 		return nil, aienums.Err(aienums.ErrProtocolUnsupported)
 	}
 	baseURL := strings.TrimSpace(req.BaseURL)
+	if baseURL == "" && hasPreset {
+		baseURL = preset.BaseURL
+	}
 
 	status := aienums.StatusEnabled
 	if req.Status != nil {
@@ -67,7 +98,6 @@ func (s *Service) SaveProvider(ctx context.Context, req *aidto.SaveProviderReq) 
 	}
 
 	if req.ID == 0 {
-		key := strings.ToLower(strings.TrimSpace(req.ProviderKey))
 		if key == "" {
 			return nil, aienums.Err(aienums.ErrProviderKeyRequired)
 		}
@@ -280,6 +310,52 @@ func (s *AccessTokenService) Create(ctx context.Context, req *aidto.TokenCreateR
 	return &aidto.TokenCreateResp{Token: plain, Item: tokenItemOf(e)}, nil
 }
 
+// SetMcpEnabled 改写「对外接入点开关」这一项配置。
+//
+// 为什么在 service 而不是页面 handler：它是一次读-改-写（读整组 → 覆盖一个键 → 带版本号写回），
+// 属于业务写入而不是「页面拼装」。页面只该绑定 + 调一次 + 出口。
+//
+// 读整组再写回是 config 组接口的形状（SetGroup 收整份 Data），所以这里必须先把其它键原样带上，
+// 否则会把同一组里的其它配置抹掉。
+func (s *AccessTokenService) SetMcpEnabled(ctx context.Context, cfg sysconfigcontract.Service, enabled bool, updateBy int64) error {
+	if cfg == nil {
+		return aienums.Err(aienums.ErrInternal)
+	}
+	g, err := cfg.GetGroup(ctx, sysconfigcontract.GroupAI)
+	if err != nil {
+		return err
+	}
+	if g == nil {
+		return aienums.Err(aienums.ErrInternal)
+	}
+	data := make(map[string]any, len(g.Data)+1)
+	for k, v := range g.Data {
+		data[k] = v
+	}
+	data[sysconfigcontract.KeyMCPEnabled] = enabled
+	_, err = cfg.SetGroup(ctx, &sysconfigcontract.SetGroupReq{
+		GroupKey: sysconfigcontract.GroupAI,
+		Data:     data,
+		Version:  g.Version,
+		UpdateBy: updateBy,
+	})
+	return err
+}
+
+// McpEnabled 读当前开关；读不到一律按「关闭」处理（fail closed）——
+// 这是本站数据对外的出口，读不到配置时宁可对外不可用。
+func (s *AccessTokenService) McpEnabled(ctx context.Context, cfg sysconfigcontract.Service) bool {
+	if cfg == nil {
+		return false
+	}
+	g, err := cfg.GetGroup(ctx, sysconfigcontract.GroupAI)
+	if err != nil || g == nil {
+		return false
+	}
+	on, _ := g.Data[sysconfigcontract.KeyMCPEnabled].(bool)
+	return on
+}
+
 func (s *AccessTokenService) List(ctx context.Context, req *aidto.TokenListReq) ([]aidto.TokenItem, error) {
 	if req == nil {
 		return nil, aienums.Err(aienums.ErrUserRequired)
@@ -309,17 +385,38 @@ func (s *AccessTokenService) List(ctx context.Context, req *aidto.TokenListReq) 
 }
 
 func (s *AccessTokenService) Revoke(ctx context.Context, id int64) error {
+	_, err := s.RevokeWithFact(ctx, id)
+	return err
+}
+
+// RevokeWithFact 吊销一把令牌，并把**吊销之后**的事实交回调用方。
+//
+// 页面按 id 就地换掉那一行，需要的是 status / revokedTime；让前端拿旧状态去猜不行。
+// 所以：原子 UPDATE（status=active → revoked，同时写 revoked_time）→ 按 id 精确回读。
+//
+// 为什么回读不翻列表：List(limit) 有上限，被撤销的那把可能排在 limit 之外，
+// 于是页面拿到空 item 却以为撤销成功。按 id 取一次就没有这个悬空。
+// 并发两次撤销时后一次 UPDATE 命中 0 行，仍然按「不存在」打回。
+func (s *AccessTokenService) RevokeWithFact(ctx context.Context, id int64) (aidto.TokenItem, error) {
 	if id <= 0 {
-		return aienums.Err(aienums.ErrTokenNotFound)
+		return aidto.TokenItem{}, aienums.Err(aienums.ErrTokenNotFound)
 	}
 	n, err := s.tokens.Revoke(ctx, id)
 	if err != nil {
-		return err
+		return aidto.TokenItem{}, err
 	}
 	if n == 0 {
-		return aienums.Err(aienums.ErrTokenNotFound)
+		return aidto.TokenItem{}, aienums.Err(aienums.ErrTokenNotFound)
 	}
-	return nil
+	row, err := s.tokens.FindByID(ctx, id)
+	if err != nil {
+		return aidto.TokenItem{}, err
+	}
+	if row == nil {
+		// UPDATE 命中却读不回来：这是数据层异常，不是「已成功」。
+		return aidto.TokenItem{}, aienums.Err(aienums.ErrInternal)
+	}
+	return tokenItemOf(row), nil
 }
 
 func (s *AccessTokenService) Verify(ctx context.Context, plain string) (*TokenIdentity, error) {
@@ -401,7 +498,6 @@ func tokenItemOf(e *aimodel.AIAccessTokenEntity) aidto.TokenItem {
 		TokenPrefix:  e.TokenPrefix,
 		Scopes:       []string(e.Scopes),
 		Status:       e.Status,
-		StatusLabel:  aienums.TokenStatusLabel(e.Status),
 		ExpiresAt:    utils.NewJSONTimePtr(e.ExpiresAt),
 		LastUsedTime: utils.NewJSONTimePtr(e.LastUsedTime),
 		RevokedTime:  utils.NewJSONTimePtr(e.RevokedTime),

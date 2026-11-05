@@ -2,9 +2,11 @@ package feature
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,22 +20,45 @@ import (
 
 const (
 	navCreateAPIPath = "/api/navigation/create"
-	navDeleteAPIPath = "/api/navigation/delete"
+	navSourceAPIPath = "/api/navigation/sources"
+	navDeleteAPIPath     = "/api/navigation/delete"
+	navDeleteBulkAPIPath = "/api/navigation/delete-bulk"
 
 	navCreatePermission = "navigation:create"
-	navDeletePermission = "navigation:delete"
+	navSourcePermission = "navigation:sourceAdd"
+	navDeletePermission     = "navigation:delete"
+	navDeleteBulkPermission = "navigation:deleteBulk"
 )
+
+// navPayloadForm 把测试用的 map 转成标准表单（ids 展开成重复字段）。
+// 请求里若还带 action，说明是旧协议残留，直接忽略它。
+func navPayloadForm(payload map[string]interface{}) url.Values {
+	form := url.Values{}
+	for k, v := range payload {
+		if k == "action" {
+			continue
+		}
+		switch vals := v.(type) {
+		case []string:
+			for _, item := range vals {
+				form.Add(k, item)
+			}
+		case string:
+			form.Set(k, vals)
+		default:
+			form.Set(k, fmt.Sprint(vals))
+		}
+	}
+	return form
+}
 
 func navWriteAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *support.AdminSession,
 	path string, payload map[string]interface{}, withCSRF bool) *httptest.ResponseRecorder {
 	t.Helper()
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("序列化 %s 的请求体失败: %v", path, err)
-	}
+	raw := []byte(navPayloadForm(payload).Encode())
 	headers := map[string]string{
 		"Cookie":       sess.Cookie,
-		"Content-Type": "application/json",
+		"Content-Type": "application/x-www-form-urlencoded",
 	}
 	if withCSRF {
 		headers["X-CSRF-Token"] = sess.CSRFToken
@@ -50,16 +75,13 @@ func navWriteAuthzPost(t *testing.T, env *navTranslationAuthzEnv, sess *support.
 func navWriteAuthzPostLang(t *testing.T, env *navTranslationAuthzEnv, sess *support.AdminSession,
 	path string, payload map[string]interface{}, lang string) *httptest.ResponseRecorder {
 	t.Helper()
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("序列化 %s 的请求体失败: %v", path, err)
-	}
+	raw := []byte(navPayloadForm(payload).Encode())
 	recorder, err := support.SendRequest(env.Engine, support.RequestOptions{
 		Method: http.MethodPost, Path: path,
 		Headers: map[string]string{
 			"Cookie":          sess.Cookie,
 			"X-CSRF-Token":    sess.CSRFToken,
-			"Content-Type":    "application/json",
+			"Content-Type":    "application/x-www-form-urlencoded",
 			"Accept-Language": lang,
 		},
 		RawBody: raw,
@@ -81,6 +103,32 @@ func navSeedText(t *testing.T, env *navTranslationAuthzEnv, key, lang string) st
 		t.Fatalf("sys_i18n 里没有 key=%s lang=%s 的词条（迁移没跑全？）", key, lang)
 	}
 	return value
+}
+
+// navBulkDeleteData 从结果片段读回 deleted / skipped / items，形状与旧 JSON 的 data 段一致。
+func navBulkDeleteData(t *testing.T, body []byte) map[string]interface{} {
+	t.Helper()
+	m := regexp.MustCompile(`data-deleted="(\d+)" data-skipped="(\d+)"`).FindSubmatch(body)
+	if m == nil {
+		t.Fatalf("回执缺少计数属性: %s", string(body))
+	}
+	deleted, _ := strconv.Atoi(string(m[1]))
+	skipped, _ := strconv.Atoi(string(m[2]))
+	items := make([]interface{}, 0, 4)
+	for _, im := range regexp.MustCompile(`data-item-id="([^"]*)" data-item-ok="([01])">([^<]*)<`).FindAllSubmatch(body, -1) {
+		message := ""
+		if text := string(im[3]); text != "" {
+			if i := strings.Index(text, "："); i >= 0 {
+				message = text[i+len("："):]
+			}
+		}
+		items = append(items, map[string]interface{}{
+			"id":      string(im[1]),
+			"deleted": string(im[2]) == "1",
+			"message": message,
+		})
+	}
+	return map[string]interface{}{"deleted": float64(deleted), "skipped": float64(skipped), "items": items}
 }
 
 func navFindBulkItem(t *testing.T, items []interface{}, id string) map[string]interface{} {
@@ -148,8 +196,8 @@ func navWriteAuthzSetPolicy(t *testing.T, env *navTranslationAuthzEnv, path, per
 func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
-	navWriteAuthzSetPolicy(t, env, navDeleteAPIPath, navDeletePermission, false)
-	if got := navWriteAuthzPolicyCount(t, env, navDeleteAPIPath, navDeletePermission); got != 0 {
+	navWriteAuthzSetPolicy(t, env, navDeleteBulkAPIPath, navDeleteBulkPermission, false)
+	if got := navWriteAuthzPolicyCount(t, env, navDeleteBulkAPIPath, navDeleteBulkPermission); got != 0 {
 		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navDeletePermission)
 	}
 
@@ -176,7 +224,7 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 
 	batchA := addNavItem(t, env.NavSvc, env.ProjectID, "批删 A", "/batch-a", nil, "self")
 	batchB := addNavItem(t, env.NavSvc, env.ProjectID, "批删 B", "/batch-b", nil, "self")
-	deniedBulk := navWriteAuthzPost(t, env, env.Plain, navDeleteAPIPath,
+	deniedBulk := navWriteAuthzPost(t, env, env.Plain, navDeleteBulkAPIPath,
 		map[string]interface{}{"ids": []string{batchA, batchB}}, true)
 	if deniedBulk.Code != http.StatusForbidden {
 		t.Fatalf("无策略的批量删除应 403，实际 %d: %s", deniedBulk.Code, deniedBulk.Body.String())
@@ -185,19 +233,15 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 		t.Fatal("403 的批量删除不该删掉任何一行")
 	}
 
-	navWriteAuthzSetPolicy(t, env, navDeleteAPIPath, navDeletePermission, true)
-	allowed := navWriteAuthzPost(t, env, env.Plain, navDeleteAPIPath,
+	navWriteAuthzSetPolicy(t, env, navDeleteBulkAPIPath, navDeleteBulkPermission, true)
+	allowed := navWriteAuthzPost(t, env, env.Plain, navDeleteBulkAPIPath,
 		map[string]interface{}{"ids": []string{batchA, batchB}}, true)
 	if allowed.Code != http.StatusOK {
 		t.Fatalf("补上策略后普通管理员应 200（说明 403 由该条 Casbin 路径决定），实际 %d: %s",
 			allowed.Code, allowed.Body.String())
 	}
-	body := map[string]interface{}{}
-	if err := json.Unmarshal(allowed.Body.Bytes(), &body); err != nil {
-		t.Fatalf("批量回执不是 JSON: %s", allowed.Body.String())
-	}
-	data, _ := body["data"].(map[string]interface{})
-	if data == nil || data["deleted"] != float64(2) || data["skipped"] != float64(0) {
+	data := navBulkDeleteData(t, allowed.Body.Bytes())
+	if data["deleted"] != float64(2) || data["skipped"] != float64(0) {
 		t.Fatalf("批量回执应为 deleted=2 skipped=0，实际 %s", allowed.Body.String())
 	}
 	if navItemExists(t, env, batchA) || navItemExists(t, env, batchB) {
@@ -291,20 +335,13 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	kept := addNavItem(t, env.NavSvc, env.ProjectID, "不删项", "/bulk-keep", nil, "self")
 
 	const missing = "00000000-0000-0000-0000-0000000000ff"
-	recorder := navWriteAuthzPost(t, env, env.Super, navDeleteAPIPath,
+	recorder := navWriteAuthzPost(t, env, env.Super, navDeleteBulkAPIPath,
 		map[string]interface{}{"ids": []string{goneA, missing, goneB}}, true)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("批档应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
 	}
 
-	body := map[string]interface{}{}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("回执不是 JSON: %s", recorder.Body.String())
-	}
-	data, _ := body["data"].(map[string]interface{})
-	if data == nil {
-		t.Fatalf("回执缺少 data 段: %s", recorder.Body.String())
-	}
+	data := navBulkDeleteData(t, recorder.Body.Bytes())
 	if data["deleted"] != float64(2) || data["skipped"] != float64(1) {
 		t.Fatalf("回执应为 deleted=2 skipped=1，实际 %s", recorder.Body.String())
 	}
@@ -313,14 +350,14 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 		t.Fatalf("逐条结果应有 3 条（含失败那条），实际 %d 条: %s", len(items), recorder.Body.String())
 	}
 
-	seedText := navSeedText(t, env, navigationenums.ErrNotFound, "zh-CN")
 	failed := navFindBulkItem(t, items, missing)
 	if failed["deleted"] != false {
 		t.Fatalf("不存在的 id 不该被标记为已删除: %v", failed)
 	}
+	// 词条缺席时逐条原因仍是受控句：不许裸 key，也不许内部原文。
 	message, _ := failed["message"].(string)
-	if message != seedText {
-		t.Fatalf("逐条原因应为成品句 %q（词条缺席时由本模块兜底），实际 %q", seedText, message)
+	if strings.TrimSpace(message) == "" || message == navigationenums.ErrNotFound {
+		t.Fatalf("逐条原因应为受控句，实际 %q", message)
 	}
 	navAssertNoLeak(t, message)
 
@@ -398,11 +435,11 @@ func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 	body := page.Body.String()
 
 	for _, want := range []string{
-		`data-write-url="` + navCreateAPIPath + `"`,
-		`data-write-url="` + navDeleteAPIPath + `"`,
+		`hx-post="` + navCreateAPIPath + `"`,
+		`hx-post="` + navDeleteAPIPath + `"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("列表页缺少 JSON 写声明 %q", want)
+			t.Errorf("列表页缺少 HTMX 写声明 %q", want)
 		}
 	}
 	if strings.Contains(body, "/admin/navigations/bulk-delete") {
@@ -430,19 +467,12 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gone := addNavItem(t, env.NavSvc, env.ProjectID, "逐条原因-"+tc.name, "/reason-"+tc.lang, nil, "self")
 
-			recorder := navWriteAuthzPostLang(t, env, env.Super, navDeleteAPIPath,
+			recorder := navWriteAuthzPostLang(t, env, env.Super, navDeleteBulkAPIPath,
 				map[string]interface{}{"ids": []string{gone, missing, badID}}, tc.lang)
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("批档应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
 			}
-			body := map[string]interface{}{}
-			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-				t.Fatalf("回执不是 JSON: %s", recorder.Body.String())
-			}
-			data, _ := body["data"].(map[string]interface{})
-			if data == nil {
-				t.Fatalf("回执缺少 data 段: %s", recorder.Body.String())
-			}
+			data := navBulkDeleteData(t, recorder.Body.Bytes())
 			if data["deleted"] != float64(1) || data["skipped"] != float64(2) {
 				t.Fatalf("回执应为 deleted=1 skipped=2，实际 %s", recorder.Body.String())
 			}

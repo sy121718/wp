@@ -23,11 +23,13 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	"gorm.io/gorm"
 )
 
@@ -267,7 +269,7 @@ func newSEOProductFixture(t *testing.T) *seoProductFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	registry := core.NewEntitySourceRegistry()
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetContentStore(i18n.NewDBContentStore(db))
 	if err := products.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品实体类型失败: %v", err)

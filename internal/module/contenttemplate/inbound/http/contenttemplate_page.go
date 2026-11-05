@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	"go_wp/internal/builder"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -22,6 +21,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 const contentTemplatesListPath = "/admin/content-templates"
@@ -231,7 +232,7 @@ func contentTemplateLabel(c *gin.Context, pair contenttemplateenums.LabelPair) s
 	if strings.TrimSpace(pair.Key) == "" {
 		return pair.Fallback
 	}
-	return adminui.MsgText(c, adminui.Msg{Key: pair.Key, Fallback: pair.Fallback})
+	return response.MsgText(c, facing.Msg{Key: pair.Key, Fallback: pair.Fallback})
 }
 
 type contentTemplatePageRef struct {

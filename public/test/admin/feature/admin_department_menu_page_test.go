@@ -14,6 +14,7 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,9 @@ func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 页面标题在模板里本地取词，取词函数由请求级作用域注入 —— 与生产
+			// assembly 的接线一致；缺这一步模板执行期拿不到 t，页面空 body。
+			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			e.GET("/admin/departments", adminui.PageSlot(adminhttp.DepartmentsPageTemplate), h.DepartmentsPage)
 			e.GET("/admin/menus", adminui.PageSlot(adminhttp.MenusPageTemplate), h.MenusPage)
 		},

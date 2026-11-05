@@ -33,10 +33,9 @@ violations=0
 # 允许直接调 htmx API 的文件（**适配层**，不是控件）。加文件要写理由。
 #
 # htmx-bridge.js  控件广播 wb:rescan → htmx.process（控件与传输层的通用适配）
-# json-swap.js    写动作的局部刷新协议：服务端回 JSON，本文件按 JSON 里的 html
-#                 换入目标。它注册 htmx 扩展是**传输层实现细节** —— 页面只写
-#                 hx-ext="json-swap"，控件层（select/drawer/modal…）完全不知情。
-ALLOW="htmx-bridge.js json_swap.js"
+#
+# json_swap.js 已随 JSON UI 执行器退役删除；白名单不再为它保留例外。
+ALLOW="htmx-bridge.js"
 
 for f in "$UI_DIR"/*.js; do
   base="$(basename "$f")"

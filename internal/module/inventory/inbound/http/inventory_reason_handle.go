@@ -3,12 +3,13 @@ package inventoryhttp
 import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -47,34 +48,40 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.ReasonFormReq](c)
-	if !ok {
+	var form inventorydto.ReasonFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.CreateReason(c.Request.Context(), form.CreateReq()); err != nil {
 		h.reasonFormFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.ReasonFormReq](c)
-	if !ok {
+	var form inventorydto.ReasonFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.UpdateReason(c.Request.Context(), form.UpdateReq()); err != nil {
 		h.reasonEditFormFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.ReasonBulkFormReq](c)
-	if !ok {
+	var form inventorydto.ReasonBulkFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	projectID := form.ProjectID
 	if !form.ValidStatus() {
 		inventoryFail(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid))
@@ -105,9 +112,9 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	case skipped > 0:
 		inventoryFailMsg(c, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)))
 	case updated > 0:
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	default:
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	}
 }
 

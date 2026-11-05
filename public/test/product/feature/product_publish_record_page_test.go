@@ -7,19 +7,13 @@ import (
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
-	publishrecordoutbound "go_wp/internal/module/product/outbound/publishrecord"
 )
-
-func (f *detailFixture) withPublishRecordPort() {
-	f.products.SetPublishRecordPort(publishrecordoutbound.New(f.pres))
-}
 
 func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
 	}
-	f.withPublishRecordPort()
 	ctx := context.Background()
 
 	liveID := f.createProduct(t, "已发布商品", "pub-live", "上线了", 99, 129)
@@ -30,9 +24,6 @@ func TestPublishRecordPageShowsCurrentState(t *testing.T) {
 	view, err := f.products.QueryPublishRecords(ctx, &productdto.ProductPublishRecordPageReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("发布记录页读模型失败: %v", err)
-	}
-	if !view.Available {
-		t.Fatal("端口已装配，Ready 应为 true")
 	}
 	if view.Total != 2 || len(view.Records) != 2 {
 		t.Fatalf("两个商品都应有一行，实际 total=%d rows=%d", view.Total, len(view.Records))
@@ -96,7 +87,6 @@ func TestPublishRecordPageNormalizesEmptyAndOutOfRange(t *testing.T) {
 	if f == nil {
 		return
 	}
-	f.withPublishRecordPort()
 	productID := f.createProduct(t, "分页商品", "pub-page-bounds", "未发布", 9, 9)
 	for _, tc := range []struct {
 		name, status, keyword string
@@ -115,7 +105,7 @@ func TestPublishRecordPageNormalizesEmptyAndOutOfRange(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if view.Page != 1 || view.Limit != 20 || !view.Available || view.Records == nil {
+			if view.Page != 1 || view.Limit != 20 || view.Records == nil {
 				t.Fatalf("分页事实未归一: %+v", view)
 			}
 			if view.Total != int64(len(view.Records)) {
@@ -137,7 +127,6 @@ func TestPublishRecordPageClampsToActualLastPage(t *testing.T) {
 	if f == nil {
 		return
 	}
-	f.withPublishRecordPort()
 	for i := 0; i < 21; i++ {
 		f.createProduct(t, fmt.Sprintf("分页商品%d", i), fmt.Sprintf("pub-many-%d", i), "未发布", 9, 9)
 	}
@@ -169,7 +158,7 @@ func TestPublishRecordPageClampsToActualLastPage(t *testing.T) {
 	}
 }
 
-func TestPublishRecordPageNotWired(t *testing.T) {
+func TestPublishRecordPageReadsWithoutPublishPort(t *testing.T) {
 	f := newDetailFixture(t)
 	if f == nil {
 		return
@@ -178,13 +167,10 @@ func TestPublishRecordPageNotWired(t *testing.T) {
 	view, err := f.products.QueryPublishRecords(context.Background(),
 		&productdto.ProductPublishRecordPageReq{ProjectID: f.projectID})
 	if err != nil {
-		t.Fatalf("未装配档不该报错（那是部署侧提示，不是读失败）: %v", err)
+		t.Fatalf("发布记录页是模块内只读语句，不依赖发布端口装配：%v", err)
 	}
-	if view.Available {
-		t.Fatal("没接端口时 Ready 必须是 false")
-	}
-	if len(view.Records) != 0 {
-		t.Fatalf("未装配时不该编造行：%+v", view.Records)
+	if view.Total != 1 || len(view.Records) != 1 || view.Records[0].HasInstance {
+		t.Fatalf("没接端口也应照常读出「未建实例」那一行：%+v", view)
 	}
 }
 
@@ -193,7 +179,6 @@ func TestPublishRecordPageUnknownProject(t *testing.T) {
 	if f == nil {
 		return
 	}
-	f.withPublishRecordPort()
 	_, err := f.products.QueryPublishRecords(context.Background(),
 		&productdto.ProductPublishRecordPageReq{ProjectID: "does-not-exist"})
 	if err == nil {

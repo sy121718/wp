@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # check-service-db-boundary.sh — service 层的数据访问边界（审计 CQ-025）。
 #
-# 为什么需要一条脚本而不是靠评审记：AGENTS.md 给 admin 开了「service 层可经
-# DB(ctx) 直查」的明文豁免，但豁免的边界只写在文档里 —— 新模块照抄 admin 的写法
-# 不会有任何东西拦下来，而一旦破窗，表隔离约定就靠自觉了。
+# 为什么需要一条脚本而不是靠评审记：这条边界只写在 AGENTS.md 里 ——
+# 新模块照抄任何一条 service 直查 DB 的写法不会有东西拦下来，一旦破窗，表隔离约定就靠自觉了。
 #
-# 判据（命中即失败）：
-#   ①  非 admin 模块的 service 出现**任意裸句柄门面** `.<Name>DB(ctx)` —— 含
+# 判据（命中即失败，对 `internal/module/<mod>/service` 下的所有模块生效，无模块豁免）：
+#   ①  service 出现**任意裸句柄门面** `.<Name>DB(ctx)` —— 含
 #      DB(ctx) / RevisionDB(ctx)，也含 model 自定的 RouteDB(ctx) / ReceiptDB(ctx) /
 #      PublicationDB(ctx) / VariantDB(ctx) 这类。
-#   ①b 非 admin 模块的 service 在**事务/裸句柄**上直接拼查询
+#   ①b service 在**事务/裸句柄**上直接拼查询
 #      （tx.WithContext(ctx).Model(...) / tx.Create(...) / tx.Where(...) / tx.Exec(...) …，
 #      入口是下方 ENTRY 列出的裸查询全族）。
 #      句柄名 = 固定白名单（tx/txn/trx/session/dbtx/dbx/db/t）**加上动态收集**：
@@ -58,24 +57,36 @@ fi
 
 failed=0
 
-# 判据 ①：service 目录下的裸 gorm 句柄（admin 豁免）。
+# 判据 ①：service 目录下的裸 gorm 句柄（无模块豁免）。
 #
-# 形状是「任意名字 + DB(ctx)」而不是只认 DB / RevisionDB：model 自定的裸句柄
-# （RouteDB(ctx) / ReceiptDB(ctx) …）与此前那两个具名门面是同一类越界，只认两个名字
-# 等于给「换个名字」留了豁免（见文件头注释）。
-DIRECT=$(grep -rn --include='*.go' -E '\.[A-Za-z0-9_]*DB\(ctx\)' "$TARGET" \
+# 匹配的是**句柄出口的精确名字集合**，不是「名字里带 DB」也不是自然语言动词：
+# 下面这 29 个名字是 `rg 'func \(m \*\w+\) \w+DB\(ctx context\.Context\) \*gorm\.DB'`
+# 在当前 model 层实测出来的全部出口（DB / RevisionDB / RouteDB / ReceiptDB / …）。
+# 新增 model 句柄出口时必须同步这份清单 —— 清单漏一个，那条出口就没人拦。
+#
+# 为什么不用「.XXXDB(ctx)」通配：它会连 `return s.loadDataRuleSnapshotFromDB(ctx)` 一起抓，
+# 那是方法名里恰好带 DB 的普通调用，不是拿句柄；为了放行它只能按 From/For/load 这类
+# 自然语言动词排除，而动词排除又会把 `s.getFromDB(ctx)` 这类真句柄一起放过 —— 那是扩大豁免。
+# 精确名字集合没有这个问题：不在集合里的名字一律不算句柄。
+#
+# **已知边界（不掩盖）**：这份清单是白名单式的，所以 model 只要新加一个
+# `func (m *X) getFromDB(ctx) *gorm.DB`（名字不在集合里），service 拿它拼查询就拦不住。
+# 判据 ① 的兜底是判据 ①b（事务/句柄上的 .Model()/.Where()/.Create() 全族）与
+# internal/module/admin/arch/service_db_boundary_test.go 的 AST 扫描；
+# 真要根治这一条，应当把 ① 也换成 AST：判断「返回值类型是 *gorm.DB 的方法」而不是名字。
+HANDLES='AdjustmentDB|AdjustmentItemDB|ArtifactDB|AssignmentDB|attrDB|AttributeDB|BrandDB|catDB|CategoryDB|DB|DependencyDB|EntitlementDB|InstanceDB|LocaleDB|PublicationDB|PublicationPlanDB|PublishAttemptDB|RatingDB|reasonDB|ReceiptDB|RevisionDB|RouteDB|SnapshotDB|SourceDB|StockDB|TagDB|ThemeDB|varDB|VariantDB'
+
+DIRECT=$(grep -rn --include='*.go' -E "\.($HANDLES)\(ctx\)" "$TARGET" \
   | grep '/service/' \
-  | grep -v '/admin/service/' \
   | grep -v '_test\.go:' \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)
 
 if [ -n "$DIRECT" ]; then
-  echo "✗ 非 admin 模块的 service 直接使用了裸 gorm 句柄：" >&2
+  echo "✗ service 直接使用了裸 gorm 句柄：" >&2
   echo "$DIRECT" >&2
   echo "" >&2
   echo "  持久化的唯一入口是 model 的具名方法；缺查询就给 model 加方法，" >&2
   echo "  不要在 service 里拼 .Where()/.Create()（AGENTS.md「model 层定位」）。" >&2
-  echo "  仅 admin 的简单 CRUD 有豁免。" >&2
   failed=1
 fi
 
@@ -144,9 +155,6 @@ hits = []
 for path in sorted(glob.glob(os.path.join(target, "**", "service", "*.go"), recursive=True)):
     if path.endswith("_test.go"):
         continue
-    # admin 有明文豁免（仅限本模块表、简单 CRUD），与判据 ① 保持一致。
-    if os.sep + "admin" + os.sep + "service" + os.sep in path:
-        continue
     try:
         lines = open(path, encoding="utf-8").read().splitlines()
     except OSError:
@@ -193,13 +201,13 @@ for key, loc in hits:
 stale = sorted(k for k in allow if k not in seen)
 
 if problems:
-    print("✗ 非 admin 模块的 service 在事务/裸句柄上直接拼 gorm 查询：")
+    print("✗ service 在事务/裸句柄上直接拼 gorm 查询：")
     for p in sorted(problems):
         print("  " + p)
     print("")
     print("  事务回调里的句柄不是 model 的具名方法：给 model 加方法（要落在同一事务里就加 …Tx 变体，")
     print("  句柄由 service 透传），不要在 service 里拼 .Model()/.Where()（AGENTS.md「model 层定位」）。")
-    print("  仅 admin 的简单 CRUD 有豁免；确属暂缓的，写进 scripts/service-db-boundary-allow.txt 并写明理由。")
+    print("  确属暂缓的，写进 scripts/service-db-boundary-allow.txt 并写明理由。")
     print("")
 if stale:
     print("✗ 豁免清单里这些条目已经不再命中（已改成具名方法 / 被改名 / 被删）：")

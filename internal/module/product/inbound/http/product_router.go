@@ -12,6 +12,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -41,8 +42,11 @@ const (
 	ProductTranslationsPageTemplate   = "admin/product/product_translations.html"
 )
 
-func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) (productcontract.ProductService, productcontract.ProductPageReader, *ProductHandle) {
-	svc := productservice.NewService(productmodel.NewModel(db), project)
+// SetupProductRoutes 装配商品模块：审计变更属于必需依赖，随构造一起给齐；
+// 发布相关的 setter 仍是装配期的接线点，由 routers 侧按模块就绪顺序接。
+func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService,
+	changes masterdatacontract.MasterDataService) (productcontract.ProductService, productcontract.ProductPageReader, *ProductHandle) {
+	svc := productservice.NewService(productmodel.NewModel(db), project, changes)
 	svc.SetContentStore(i18n.NewDBContentStore(db))
 	handle := NewProductHandle(svc)
 
@@ -67,50 +71,50 @@ func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCat
 }
 
 func registerProductPublishHistoryAPI(g *permission.RouteGroup, handle *PublishAttemptHandle) {
-	g.GET("/publish-attempts", permission.ProductPublishAttempts, handle.ProductPublishAttempts)
+	g.GET("/publish-attempts", permission.ProductPublishAttempts, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.ProductPublishAttempts)
 }
 
 func registerProductCoreAPI(g *permission.RouteGroup, handle *ProductHandle) {
 
 	g.GET("/list", permission.ProductList, handle.List)
 	g.GET("/get", permission.ProductGet, handle.Get)
-	g.POST("/create", permission.ProductCreate, handle.Create)
-	g.POST("/update", permission.ProductUpdate, handle.Update)
-	g.POST("/delete", permission.ProductDelete, handle.Delete)
+	g.POST("/create", permission.ProductCreate, pageview.HTMLFragment, handle.Create)
+	g.POST("/update", permission.ProductUpdate, pageview.HTMLFragment, handle.Update)
+	g.POST("/delete", permission.ProductDelete, pageview.HTMLFragment, handle.Delete)
 
-	g.POST("/bulk-delete", permission.ProductBulkDelete, handle.BulkDelete)
-	g.POST("/variant/create", permission.ProductVariantCreate, handle.CreateVariant)
+	g.POST("/bulk-delete", permission.ProductBulkDelete, pageview.HTMLFragment, handle.BulkDelete)
+	g.POST("/variant/create", permission.ProductVariantCreate, pageview.HTMLFragment, handle.CreateVariant)
 
 	g.POST("/variant/generate", permission.ProductVariantGenerate, handle.GenerateVariants)
 	g.POST("/variant/update", permission.ProductVariantUpdate, handle.UpdateVariant)
-	g.POST("/variant/delete", permission.ProductVariantDelete, handle.DeleteVariant)
+	g.POST("/variant/delete", permission.ProductVariantDelete, pageview.HTMLFragment, handle.DeleteVariant)
 
 	g.POST("/variant/save", permission.ProductVariantSave, handle.SaveVariantList)
 
-	g.POST("/rating/add", permission.ProductRatingAdd, handle.AddRating)
-	g.POST("/rating/delete", permission.ProductRatingDelete, handle.DeleteRating)
+	g.POST("/rating/add", permission.ProductRatingAdd, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.AddRating)
+	g.POST("/rating/delete", permission.ProductRatingDelete, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.DeleteRating)
 }
 
 func registerProductDetailTemplateAPI(g *permission.RouteGroup, handle *ProductHandle) {
 
-	g.POST("/detail-template/reapply-preset", permission.ProductDetailTemplateReapply, handle.ReapplyDetailTemplatePreset)
-	g.POST("/detail-template/rollback-document", permission.ProductDetailTemplateRollback, handle.RollbackDetailTemplateDocument)
-	g.POST("/detail-template/create", permission.ProductDetailTemplateCreate, handle.CreateDetailTemplate)
-	g.POST("/detail-template/publish", permission.ProductDetailTemplatePublish, handle.PublishDetailTemplate)
-	g.POST("/detail-template/apply", permission.ProductDetailTemplateApply, handle.ApplyDetailTemplate)
-	g.POST("/detail-template/update-url", permission.ProductDetailTemplateUpdateURL, handle.UpdateDetailTemplateURL)
+	g.POST("/detail-template/reapply-preset", permission.ProductDetailTemplateReapply, pageview.HTMLFragment, handle.ReapplyDetailTemplatePreset)
+	g.POST("/detail-template/rollback-document", permission.ProductDetailTemplateRollback, pageview.HTMLFragment, handle.RollbackDetailTemplateDocument)
+	g.POST("/detail-template/create", permission.ProductDetailTemplateCreate, pageview.HTMLFragment, handle.CreateDetailTemplate)
+	g.POST("/detail-template/publish", permission.ProductDetailTemplatePublish, pageview.HTMLFragment, handle.PublishDetailTemplate)
+	g.POST("/detail-template/apply", permission.ProductDetailTemplateApply, pageview.HTMLFragment, handle.ApplyDetailTemplate)
+	g.POST("/detail-template/update-url", permission.ProductDetailTemplateUpdateURL, pageview.HTMLFragment, handle.UpdateDetailTemplateURL)
 }
 
 func registerProductAttributeAPI(g *permission.RouteGroup, handle *ProductHandle) {
 
 	g.GET("/attribute/list", permission.ProductAttributeList, handle.ListAttributes)
 	g.GET("/attribute/get", permission.ProductAttributeGet, handle.GetAttribute)
-	g.POST("/attribute/create", permission.ProductAttributeCreate, handle.CreateAttribute)
-	g.POST("/attribute/update", permission.ProductAttributeUpdate, handle.UpdateAttribute)
-	g.POST("/attribute/set-values", permission.ProductAttributeSetValues, handle.SetAttributeValues)
-	g.POST("/attribute/delete", permission.ProductAttributeDelete, handle.DeleteAttribute)
+	g.POST("/attribute/create", permission.ProductAttributeCreate, pageview.HTMLFragment, handle.CreateAttribute)
+	g.POST("/attribute/update", permission.ProductAttributeUpdate, pageview.HTMLFragment, handle.UpdateAttribute)
+	g.POST("/attribute/set-values", permission.ProductAttributeSetValues, pageview.HTMLFragment, handle.SetAttributeValues)
+	g.POST("/attribute/delete", permission.ProductAttributeDelete, pageview.HTMLFragment, handle.DeleteAttribute)
 
-	g.POST("/attribute/bulk-delete", permission.ProductAttributeBulkDelete, handle.BulkDeleteAttributes)
+	g.POST("/attribute/bulk-delete", permission.ProductAttributeBulkDelete, pageview.HTMLFragment, handle.BulkDeleteAttributes)
 }
 
 func registerProductTaxonomyAPI(g *permission.RouteGroup, handle *ProductHandle) {
@@ -118,16 +122,16 @@ func registerProductTaxonomyAPI(g *permission.RouteGroup, handle *ProductHandle)
 	g.GET("/category/list", permission.ProductCategoryList, handle.ListCategories)
 	g.GET("/category/parents", permission.ProductCategoryParents, handle.ProductCategoryParents)
 	g.GET("/category/get", permission.ProductCategoryGet, handle.GetCategory)
-	g.POST("/category/create", permission.ProductCategoryCreate, handle.CreateCategory)
-	g.POST("/category/update", permission.ProductCategoryUpdate, handle.UpdateCategory)
-	g.POST("/category/delete", permission.ProductCategoryDelete, handle.DeleteCategory)
-	g.POST("/category/bulk-delete", permission.ProductCategoryBulkDelete, handle.BulkDeleteCategories)
+	g.POST("/category/create", permission.ProductCategoryCreate, pageview.HTMLFragment, handle.CreateCategory)
+	g.POST("/category/update", permission.ProductCategoryUpdate, pageview.HTMLFragment, handle.UpdateCategory)
+	g.POST("/category/delete", permission.ProductCategoryDelete, pageview.HTMLFragment, handle.DeleteCategory)
+	g.POST("/category/bulk-delete", permission.ProductCategoryBulkDelete, pageview.HTMLFragment, handle.BulkDeleteCategories)
 	g.GET("/brand/list", permission.ProductBrandList, handle.ListBrands)
 	g.GET("/brand/get", permission.ProductBrandGet, handle.GetBrand)
-	g.POST("/brand/create", permission.ProductBrandCreate, handle.CreateBrand)
-	g.POST("/brand/update", permission.ProductBrandUpdate, handle.UpdateBrand)
-	g.POST("/brand/delete", permission.ProductBrandDelete, handle.DeleteBrand)
-	g.POST("/brand/bulk-delete", permission.ProductBrandBulkDelete, handle.BulkDeleteBrands)
+	g.POST("/brand/create", permission.ProductBrandCreate, pageview.HTMLFragment, handle.CreateBrand)
+	g.POST("/brand/update", permission.ProductBrandUpdate, pageview.HTMLFragment, handle.UpdateBrand)
+	g.POST("/brand/delete", permission.ProductBrandDelete, pageview.HTMLFragment, handle.DeleteBrand)
+	g.POST("/brand/bulk-delete", permission.ProductBrandBulkDelete, pageview.HTMLFragment, handle.BulkDeleteBrands)
 }
 
 func registerProductTagAPI(g *permission.RouteGroup, handle *ProductHandle) {
@@ -136,21 +140,21 @@ func registerProductTagAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	g.GET("/tag/get", permission.ProductTagGet, handle.GetTag)
 	g.GET("/tag/products", permission.ProductTagProducts, handle.ListTagProducts)
 	g.GET("/tag/rule-types", permission.ProductTagRuleTypes, handle.ListTagRuleTypes)
-	g.POST("/tag/create", permission.ProductTagCreate, handle.CreateTag)
-	g.POST("/tag/update", permission.ProductTagUpdate, handle.UpdateTag)
-	g.POST("/tag/delete", permission.ProductTagDelete, handle.DeleteTag)
-	g.POST("/tag/bulk-delete", permission.ProductTagBulkDelete, handle.BulkDeleteTags)
-	g.POST("/tag/recalc", permission.ProductTagRecalc, handle.RecalcTags)
+	g.POST("/tag/create", permission.ProductTagCreate, pageview.HTMLFragment, handle.CreateTag)
+	g.POST("/tag/update", permission.ProductTagUpdate, pageview.HTMLFragment, handle.UpdateTag)
+	g.POST("/tag/delete", permission.ProductTagDelete, pageview.HTMLFragment, handle.DeleteTag)
+	g.POST("/tag/bulk-delete", permission.ProductTagBulkDelete, pageview.HTMLFragment, handle.BulkDeleteTags)
+	g.POST("/tag/recalc", permission.ProductTagRecalc, pageview.HTMLFragment, handle.RecalcTags)
 }
 
 func registerProductPricingAPI(g *permission.RouteGroup, handle *ProductHandle) {
 
 	g.GET("/pricing/rules", permission.ProductPricingRules, handle.ListPricingRuleTypes)
 	g.GET("/pricing/roundings", permission.ProductPricingRoundings, handle.ListPricingRoundingOptions)
-	g.POST("/pricing/preview", permission.ProductPricingPreview, handle.PreviewPricing)
-	g.POST("/pricing/apply", permission.ProductPricingApply, handle.ApplyPricing)
+	g.POST("/pricing/preview", permission.ProductPricingPreview, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.PreviewPricing)
+	g.POST("/pricing/apply", permission.ProductPricingApply, pageview.HTMLFragment, handle.ApplyPricing)
 
-	g.POST("/bulk-pricing", permission.ProductBulkPricing, handle.BulkPricing)
+	g.POST("/bulk-pricing", permission.ProductBulkPricing, pageview.HTMLFragment, handle.BulkPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)
 }
@@ -176,7 +180,7 @@ func SetupProductPages(pages *gin.RouterGroup, api *permission.RouteGroup, write
 
 	productPages.SetDetailTemplateModePort(presentations)
 
-	productPages.SetPublishRecordDeps(presentations, presentations)
+	productPages.SetPublishRecordDeps(presentations)
 
 	writeHandle.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: contentTemplates, Instances: presentations, Products: products, Projects: projects,
@@ -253,7 +257,7 @@ func SetupProductTranslationRoutes(apiRoot *permission.RouteGroup, adminPages *g
 	handle := NewProductTranslationHandle(products, pages, instances)
 	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
 
-	apiRoot.Group("/product").POST("/translations/save", permission.ProductTranslationsSave, handle.SaveProductTranslations)
+	apiRoot.Group("/product").POST("/translations/save", permission.ProductTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
 	return handle
 }
 
@@ -276,11 +280,9 @@ type ProductPageHandle struct {
 	seoContents contentcontract.ContentService
 }
 
-func (h *ProductPageHandle) SetPublishRecordDeps(instances presentationcontract.PublishRecordPort,
-	attempts presentationcontract.PublishAttemptPort) {
-	port := publishrecordoutbound.NewWithAttempts(instances, attempts)
+func (h *ProductPageHandle) SetPublishRecordDeps(attempts presentationcontract.PublishAttemptPort) {
+	port := publishrecordoutbound.NewWithAttempts(attempts)
 	if wiring, ok := h.products.(productPagePortWiring); ok {
-		wiring.SetPublishRecordPort(port)
 		wiring.SetPublishAttemptPort(port)
 	}
 }
@@ -289,7 +291,6 @@ type productPagePortWiring interface {
 	SetWarehouseOptionsPort(productcontract.WarehouseOptionsPort)
 	SetEntityTemplatePort(productcontract.EntityTemplatePort)
 	SetDetailTemplatePort(productcontract.DetailTemplatePort)
-	SetPublishRecordPort(productcontract.PublishRecordReader)
 
 	SetPublishAttemptPort(productcontract.PublishAttemptReader)
 }

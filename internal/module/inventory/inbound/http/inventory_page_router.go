@@ -36,24 +36,24 @@ const (
 )
 
 func registerInventoryWarehouseWritePages(pages *gin.RouterGroup, h *inventoryPageHandle) {
-	pages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), h.InventoryWarehouseCreate)
-	pages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), h.InventoryWarehouseUpdate)
-	pages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), h.InventoryWarehouseDefault)
-	pages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), h.InventoryWarehouseDelete)
+	pages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), pageview.HTMLFragment, h.InventoryWarehouseCreate)
+	pages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), pageview.HTMLFragment, h.InventoryWarehouseUpdate)
+	pages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), pageview.HTMLFragment, h.InventoryWarehouseDefault)
+	pages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), pageview.HTMLFragment, h.InventoryWarehouseDelete)
 
-	pages.POST("/inventory/warehouses/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), h.InventoryWarehousesBulkDelete)
+	pages.POST("/inventory/warehouses/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), pageview.HTMLFragment, h.InventoryWarehousesBulkDelete)
 
-	pages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockChange)
-	pages.POST("/inventory/external-sku", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryExternalSKUUpdate)
-	pages.POST("/inventory/stock/tracking", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockTrackingUpdate)
+	pages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), pageview.HTMLFragment, h.InventoryStockChange)
+	pages.POST("/inventory/external-sku", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), pageview.HTMLFragment, h.InventoryExternalSKUUpdate)
+	pages.POST("/inventory/stock/tracking", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), pageview.HTMLFragment, h.InventoryStockTrackingUpdate)
 
-	pages.POST("/inventory/stock/create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/ensure"), h.InventoryStockCreate)
-	pages.POST("/inventory/stock/update", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUpdate)
-	pages.POST("/inventory/stock/status", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockStatus)
+	pages.POST("/inventory/stock/create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/ensure"), pageview.HTMLFragment, h.InventoryStockCreate)
+	pages.POST("/inventory/stock/update", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), pageview.HTMLFragment, h.InventoryStockUpdate)
+	pages.POST("/inventory/stock/status", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), pageview.HTMLFragment, h.InventoryStockStatus)
 
-	pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), h.InventoryReasonCreate)
-	pages.POST("/inventory/reason/update", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), h.InventoryReasonUpdate)
-	pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), h.InventoryReasonsBulkStatus)
+	pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), pageview.HTMLFragment, h.InventoryReasonCreate)
+	pages.POST("/inventory/reason/update", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), pageview.HTMLFragment, h.InventoryReasonUpdate)
+	pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), pageview.HTMLFragment, h.InventoryReasonsBulkStatus)
 }
 
 func registerInventoryTransferPage(pages *gin.RouterGroup, svc inventorycontract.InventoryService,

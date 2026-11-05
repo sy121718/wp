@@ -49,7 +49,7 @@ func TestPurchaseReceiptDrawerPerLine(t *testing.T) {
 	}
 	drawer := receiptDrawer(t, rec.Body.String(), order.ID)
 
-	if got := countIn(drawer, "action=\"/admin/inventory/purchases/receipt?"); got != 1 {
+	if got := countIn(drawer, "hx-post=\"/admin/inventory/purchases/receipt?"); got != 1 {
 		t.Fatalf("收货抽屉应只有 1 个提交表单，实际 %d 个", got)
 	}
 

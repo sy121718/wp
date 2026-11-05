@@ -17,7 +17,6 @@ func MediaPage(c *gin.Context) {
 	pageview.Render(c, &mediadto.MediaPageResp{
 
 		Title: mediaenums.Heading,
-		Menu:  "media",
 		JSVer: mediaLibJsVer(),
 	})
 }

@@ -44,22 +44,5 @@ const (
 	ErrDeliveryNotPending = "webhook.err.deliveryNotPending"
 )
 
-var errFallbacks = map[string]string{
-	ErrInvalidParam:         "参数错误",
-	ErrEndpointNotFound:     "端点不存在",
-	ErrEventTypeRequired:    "事件类型不能为空",
-	ErrTargetURLRequired:    "目标地址不能为空",
-	ErrSecretRequired:       "签名密钥不能为空",
-	ErrURLMalformed:         "目标地址格式不正确",
-	ErrURLSchemeUnsupported: "目标地址只支持 http 或 https",
-	ErrURLHostMissing:       "目标地址缺少主机名",
-	ErrURLUnresolvable:      "目标地址的域名无法解析",
-	ErrURLDenied:            "目标地址指向内网或保留地址，已拒绝",
-	ErrDeliveryNotFound:     "投递记录不存在",
-	ErrDeliveryNotFailed:    "只有失败的投递才能重投",
-	ErrDeliveryNotPending:   "投递已在进行中或已完成",
-}
+func Err(key string) error { return facing.New(key) }
 
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
-
-func FallbackFor(key string) string { return errFallbacks[key] }

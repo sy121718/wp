@@ -6,6 +6,9 @@ import (
 	"reflect"
 	"testing"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -24,7 +27,7 @@ func TestDeleteVariantKeepsOtherProject(t *testing.T) {
 			}
 			p := f.mkProduct(t, f.otherProjectID, "对端商品", "foreign-delete")
 			if audit {
-				f.svc.SetMasterDataChanges(&capturedProductChanges{})
+				f.rewireProductChanges(t, &capturedProductChanges{})
 			}
 			var before productmodel.VariantEntity
 			if err := f.db.First(&before, "id = ?", p.Variants[0].ID).Error; err != nil {
@@ -52,10 +55,11 @@ func TestDeleteVariantKeepsOtherProject(t *testing.T) {
 					return fmt.Errorf("测试角色绕过 RLS")
 				}
 				projects := projectservice.NewService(projectmodel.NewProjectModel(conn))
-				scoped := productservice.NewService(productmodel.NewModel(conn), projects)
+				var changes masterdatacontract.MasterDataService = masterdataservice.NewService(masterdatamodel.NewModel(conn), projects)
 				if audit {
-					scoped.SetMasterDataChanges(&capturedProductChanges{})
+					changes = &capturedProductChanges{}
 				}
+				scoped := productservice.NewService(productmodel.NewModel(conn), projects, changes)
 				if err := scoped.DeleteVariant(context.Background(), &productdto.DeleteVariantReq{ProjectID: f.projectID, ID: before.ID}); err == nil {
 					return fmt.Errorf("受 RLS 约束的跨工程删除应返回错误")
 				}

@@ -19,6 +19,7 @@ import (
 	webhookcontract "go_wp/internal/module/webhook/contract"
 
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 func SetupOrderRoutes(rg *permission.RouteGroup,
@@ -74,12 +75,12 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	g.GET("/item/list", permission.OrderItemList, h.ListItems)
 	g.GET("/log/list", permission.OrderLogList, h.ListLogs)
 
-	g.POST("/create", permission.OrderCreate, h.CreateOrder)
-	g.POST("/status", permission.OrderStatus, h.ChangeStatus)
-	g.POST("/cancel", permission.OrderCancel, h.CancelOrder)
-	g.POST("/refund", permission.OrderRefund, h.RefundOrder)
+	g.POST("/create", permission.OrderCreate, pageview.HTMLFragment, h.CreateOrder)
+	g.POST("/status", permission.OrderStatus, pageview.HTMLFragment, h.ChangeStatus)
+	g.POST("/cancel", permission.OrderCancel, pageview.HTMLFragment, h.CancelOrder)
+	g.POST("/refund", permission.OrderRefund, pageview.HTMLFragment, h.RefundOrder)
 
-	g.POST("/note", permission.OrderNote, h.UpdateOrderNote)
+	g.POST("/note", permission.OrderNote, pageview.HTMLFragment, h.UpdateOrderNote)
 
 	cg := rg.Group("/order/coupon")
 	cg.GET("/list", permission.OrderCouponList, h.ListCoupons)
@@ -88,30 +89,30 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	cg.GET("/redemption/list", permission.OrderCouponRedemption, h.ListCouponRedemptions)
 
 	cg.GET("/count-audit", permission.OrderCouponCountAudit, h.AuditCouponCounts)
-	cg.POST("/create", permission.OrderCouponCreate, h.CreateCoupon)
-	cg.POST("/update", permission.OrderCouponUpdate, h.UpdateCoupon)
-	cg.POST("/delete", permission.OrderCouponDelete, h.DeleteCoupon)
+	cg.POST("/create", permission.OrderCouponCreate, pageview.HTMLFragment, h.CreateCoupon)
+	cg.POST("/update", permission.OrderCouponUpdate, pageview.HTMLFragment, h.UpdateCoupon)
+	cg.POST("/delete", permission.OrderCouponDelete, pageview.HTMLFragment, h.DeleteCoupon)
 
 	sg := rg.Group("/order/shipment")
 	sg.GET("/list", permission.OrderShipmentList, h.ListShipments)
 	sg.GET("/pending", permission.OrderPendingShip, h.ListPendingShip)
 	sg.GET("/form", permission.OrderShipForm, h.ShipForm)
-	sg.POST("/create", permission.OrderShip, h.ShipOrder)
+	sg.POST("/create", permission.OrderShip, pageview.HTMLFragment, h.ShipOrder)
 
 	carg := rg.Group("/order/carrier")
 	carg.GET("/list", permission.OrderCarrierList, h.ListCarriers)
-	carg.POST("/create", permission.OrderCarrierCreate, h.CreateCarrier)
-	carg.POST("/update", permission.OrderCarrierManage, h.UpdateCarrier)
+	carg.POST("/create", permission.OrderCarrierCreate, pageview.HTMLFragment, h.CreateCarrier)
+	carg.POST("/update", permission.OrderCarrierManage, pageview.HTMLFragment, h.UpdateCarrier)
 
 	rg.GET("/order/currency/rate", permission.OrderCurrencyRateGet, h.GetCurrencyRate)
-	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, h.SetCurrencyRate)
+	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, pageview.HTMLFragment, h.SetCurrencyRate)
 
 	rgp := rg.Group("/order/return")
 	rgp.GET("/list", permission.OrderReturnList, h.ListReturns)
 	rgp.GET("/get", permission.OrderReturnGet, h.GetReturn)
-	rgp.POST("/approve", permission.OrderReturnApprove, h.ApproveReturn)
-	rgp.POST("/reject", permission.OrderReturnReject, h.RejectReturn)
-	rgp.POST("/receive", permission.OrderReturnReceive, h.ReceiveReturn)
+	rgp.POST("/approve", permission.OrderReturnApprove, pageview.HTMLFragment, h.ApproveReturn)
+	rgp.POST("/reject", permission.OrderReturnReject, pageview.HTMLFragment, h.RejectReturn)
+	rgp.POST("/receive", permission.OrderReturnReceive, pageview.HTMLFragment, h.ReceiveReturn)
 
 	SetupOrderPages(pages, svc, projects, product, warehouses, dict)
 

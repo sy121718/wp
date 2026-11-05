@@ -100,8 +100,24 @@ func (s *Service) AncestorIDs(ctx context.Context, deptID uint64) (ids []uint64,
 }
 
 func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) error {
+	// 建部门要把「编码查重 + 读父链 + 插入」放进一个事务：
+	// 只靠非事务查询挡不住并发下同码双插，也留不住父链快照。
+	err := s.dm.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.dm.LockTreeTx(ctx, tx); err != nil {
+			return err
+		}
+		return s.deptCreateTx(ctx, tx, req)
+	})
+	if err != nil {
+		return err
+	}
 
-	existing, err := s.dm.GetByCode(ctx, req.DeptCode)
+	s.reloadDataRuleSnapshotAfterWrite("部门新建")
+	return nil
+}
+
+func (s *Service) deptCreateTx(ctx context.Context, tx *gorm.DB, req *admindto.DeptCreateReq) error {
+	existing, err := s.dm.GetByCodeTx(ctx, tx, req.DeptCode)
 	if err != nil {
 		return err
 	}
@@ -109,9 +125,11 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 		return adminenums.Err(adminenums.ErrDeptCodeExists)
 	}
 
-	ancestors := "0"
+	var ancestors string
 	if req.ParentID != 0 {
-		parent, err := s.dm.GetByID(ctx, req.ParentID)
+		// 锁父行再读祖先链：否则「读到父链 → 父被改挂/删掉 → 插入」之间
+		// 建出来的部门祖先链已经与真实父链不一致。
+		parent, err := s.dm.LockByIDTx(ctx, tx, req.ParentID)
 		if err != nil {
 			return err
 		}
@@ -119,6 +137,8 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 			return adminenums.Err(adminenums.ErrDeptNotFound)
 		}
 		ancestors = parent.Ancestors + "," + fmt.Sprintf("%d", parent.ID)
+	} else {
+		ancestors = "0"
 	}
 
 	entity := &adminmodel.DeptEntity{
@@ -137,16 +157,14 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 		entity.Remark = &req.Remark
 	}
 
-	if err := s.dm.Create(ctx, entity); err != nil {
-		return err
-	}
-
-	s.reloadDataRuleSnapshotAfterWrite("部门新建")
-	return nil
+	return s.dm.CreateTx(ctx, tx, entity)
 }
 
 func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) error {
 	updateErr := s.dm.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.dm.LockTreeTx(ctx, tx); err != nil {
+			return err
+		}
 		current, err := s.dm.LockByIDTx(ctx, tx, req.ID)
 		if err != nil {
 			return err
@@ -180,7 +198,8 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 			if req.ParentID == 0 {
 				current.Ancestors = "0"
 			} else {
-				parent, err := s.dm.GetByIDTx(ctx, tx, req.ParentID)
+				// 整树锁已持有；重新读取新父，取得等待前一事务提交后的最新祖先链。
+				parent, err := s.dm.LockByIDTx(ctx, tx, req.ParentID)
 				if err != nil {
 					return err
 				}
@@ -212,6 +231,7 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 
 		oldPrefix := oldAncestors + "," + fmt.Sprintf("%d", current.ID)
 		newPrefix := current.Ancestors + "," + fmt.Sprintf("%d", current.ID)
+		// 子孙整批祖先链的改写按前缀匹配，已由事务入口的整树主键锁覆盖。
 		if err = s.dm.UpdateAncestorsTx(ctx, tx, oldPrefix, newPrefix); err != nil {
 			return fmt.Errorf("部门已移动但子孙祖先链更新失败，本次移动已整体回滚: %w", err)
 		}
@@ -225,37 +245,9 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 	return nil
 }
 
+// DeptDelete 删除部门，单条与批量走同一条全成全败路径。
 func (s *Service) DeptDelete(ctx context.Context, req *admindto.DeptDeleteReq) error {
-	entity, err := s.dm.GetByID(ctx, req.ID)
-	if err != nil {
-		return err
-	}
-	if entity == nil {
-		return adminenums.Err(adminenums.ErrDeptNotFound)
-	}
-
-	childCount, err := s.dm.CountByParentID(ctx, req.ID)
-	if err != nil {
-		return err
-	}
-	if childCount > 0 {
-		return adminenums.Err(adminenums.ErrDeptHasChildren)
-	}
-
-	userCount, err := s.AdminCountByDeptID(ctx, req.ID)
-	if err != nil {
-		return err
-	}
-	if userCount > 0 {
-		return adminenums.Err(adminenums.ErrDeptHasUsers)
-	}
-
-	if err := s.dm.Delete(ctx, req.ID); err != nil {
-		return err
-	}
-
-	s.reloadDataRuleSnapshotAfterWrite("部门删除")
-	return nil
+	return s.DeptBulkDelete(ctx, req)
 }
 
 func (s *Service) DeptUserList(ctx context.Context, req *admindto.DeptUserListReq) (resp *admindto.AdminListByDeptIDResp, err error) {

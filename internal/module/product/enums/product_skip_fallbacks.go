@@ -11,8 +11,8 @@ var VariantSkipFallbacks = map[string]string{
 func VariantSkipFallback(key string) string { return VariantSkipFallbacks[key] }
 
 const (
-	VariantSkipHasStock       = "VariantSkipHasStock"
-	VariantSkipDuplicated     = "VariantSkipDuplicated"
-	VariantSkipVariantMissing = "VariantSkipVariantMissing"
-	VariantSkipHasMovement    = "VariantSkipHasMovement"
+	VariantSkipHasStock       = "pSkipStock"
+	VariantSkipDuplicated     = "pSkipDuplicate"
+	VariantSkipVariantMissing = "pSkipMissing"
+	VariantSkipHasMovement    = "pSkipMovement"
 )

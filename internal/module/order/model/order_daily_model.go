@@ -36,9 +36,9 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Table(OrderEntity{}.TableName()+" AS o").
 			Select(orderDailyBucketSelect,
-				strings.Join(paidStatuses, ","),
+				strings.Join(DefaultSalesStatuses, ","),
 				strings.Join(ReturnedStatuses, ","),
-				strings.Join(paidStatuses, ",")).
+				strings.Join(DefaultSalesStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.create_time >= ?", from).
 			Where("o.create_time < ?", to).
@@ -61,9 +61,9 @@ func (m *OrderModel) HourlyByRange(ctx context.Context, projectID string, from, 
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Table(OrderEntity{}.TableName()+" AS o").
 			Select(orderHourlyBucketSelect,
-				strings.Join(paidStatuses, ","),
+				strings.Join(DefaultSalesStatuses, ","),
 				strings.Join(ReturnedStatuses, ","),
-				strings.Join(paidStatuses, ",")).
+				strings.Join(DefaultSalesStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.create_time >= ?", from).
 			Where("o.create_time < ?", to).

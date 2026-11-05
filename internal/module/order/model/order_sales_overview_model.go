@@ -56,10 +56,16 @@ type OrderSalesFilter struct {
 }
 
 func (f OrderSalesFilter) statusesText() string {
-	if len(f.Statuses) == 0 {
-		return strings.Join(paidStatuses, ",")
+	return salesStatusesText(f.Statuses)
+}
+
+// salesStatusesText 是「状态筛选为空就用已成交口径」的唯一实现：销售额、
+// 客户增长、运费合计都走它，不要另写第二份兜底。
+func salesStatusesText(statuses []string) string {
+	if len(statuses) == 0 {
+		return strings.Join(DefaultSalesStatuses, ",")
 	}
-	return strings.Join(f.Statuses, ",")
+	return strings.Join(statuses, ",")
 }
 
 type OrderSalesOverviewRow struct {

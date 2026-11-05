@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -93,9 +93,12 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 	})
 }
 
+// APISystemSave 接收标准表单，成功后由 Jet 返回统一成功片段。
 func (h *AdminHandle) APISystemSave(c *gin.Context) {
-	req, ok := binding.JSON[sysconfigdto.SystemSaveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req sysconfigdto.SystemSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "sysconfig", err)
 		return
 	}
 	ctx := c.Request.Context()
@@ -107,18 +110,18 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 	tradeVersion := req.TradeVersion
 
 	if status, msg := h.validateOptions(c, lang, mode, country, currency); msg != "" {
-		response.ErrorWithMessage(c, status, msg)
+		pageview.FailStatus(c, status, "sysconfig", errors.New(msg))
 		return
 	}
 
 	i18nGroup, errText := h.loadGroup(c, groupI18N)
 	if errText != "" {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, errText)
+		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", errors.New(errText))
 		return
 	}
 	tradeGroup, errText := h.loadGroup(c, groupTrade)
 	if errText != "" {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, errText)
+		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", errors.New(errText))
 		return
 	}
 
@@ -135,15 +138,14 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 		},
 		UpdateBy: int64(builtin.CurrentUserID(c)),
 	}); err != nil {
-
 		status := http.StatusInternalServerError
 		if response.IsBusinessError(err) {
 			status = http.StatusConflict
 		}
-		response.ErrorWithMessage(c, status, response.MessageOf(c, "sysconfig", err))
+		pageview.FailStatus(c, status, "sysconfig", err)
 		return
 	}
-	response.SuccessWithMessage(c, i18n.Translate(sysconfigenums.AdminSystemSaved, "系统设置已保存（全局默认值立即对读取方生效）", response.RequestLanguage(c)))
+	pageview.Success(c)
 }
 
 func (h *AdminHandle) loadGroup(c *gin.Context, key string) (groupView, string) {

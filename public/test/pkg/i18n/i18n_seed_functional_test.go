@@ -78,6 +78,17 @@ func columnCount(t *testing.T, db *gorm.DB, table string, columns ...string) int
 	return n
 }
 
+// onlyStringPlaceholders 判「这句话能不能被纯字符串参数填满」。
+//
+// 取代已收口掉的 i18n.HasStringPlaceholdersOnly，判据不变：StringPlaceholderCount
+// 的 ok=false 恰好覆盖 %d / %v / %[1]s / 宽度精度星号 / 裸百分号这些会让 fmt 吐标记的
+// 形态（pkg/i18n/placeholder.go 说它就是唯一扫描器）。这里只看 ok，不看数量 ——
+// 数量由各用例自己另行断言。
+func onlyStringPlaceholders(s string) bool {
+	_, ok := i18n.StringPlaceholderCount(s)
+	return ok
+}
+
 func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
@@ -300,7 +311,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		if p.ZH == p.EN {
 			t.Fatalf("%s 中英文案相同（%q），疑似未翻译", p.ItemKey, p.ZH)
 		}
-		if !i18n.HasStringPlaceholdersOnly(p.ZH) || !i18n.HasStringPlaceholdersOnly(p.EN) {
+		if !onlyStringPlaceholders(p.ZH) || !onlyStringPlaceholders(p.EN) {
 			t.Fatalf("%s 只允许 %%s 占位符（zh=%q en=%q）", p.ItemKey, p.ZH, p.EN)
 		}
 	}
@@ -511,7 +522,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		if zh == en {
 			t.Fatalf("%s 中英文案相同（%q），疑似未翻译", key, zh)
 		}
-		if !i18n.HasStringPlaceholdersOnly(zh) || !i18n.HasStringPlaceholdersOnly(en) {
+		if !onlyStringPlaceholders(zh) || !onlyStringPlaceholders(en) {
 			t.Fatalf("%s 只允许 %%s 占位符（zh=%q en=%q）", key, zh, en)
 		}
 	}
@@ -538,7 +549,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	if bulkZH == bulkEN {
 		t.Fatalf("shell.err.bulkIdsTooMany 中英文案相同（%q），疑似未翻译", bulkZH)
 	}
-	if !i18n.HasStringPlaceholdersOnly(bulkZH) || !i18n.HasStringPlaceholdersOnly(bulkEN) {
+	if !onlyStringPlaceholders(bulkZH) || !onlyStringPlaceholders(bulkEN) {
 		t.Fatalf("shell.err.bulkIdsTooMany 只允许 %%s 占位符（zh=%q en=%q）", bulkZH, bulkEN)
 	}
 	if strings.Count(bulkZH, "%s") != 2 || strings.Count(bulkEN, "%s") != 2 {
@@ -556,7 +567,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		Where("item_key = ? AND lang = ?", "shell.pagination.info", "zh-CN").Scan(&shellValue).Error; err != nil {
 		t.Fatalf("查询 shell.pagination.info zh-CN 失败: %v", err)
 	}
-	if !i18n.HasStringPlaceholdersOnly(shellValue) {
+	if !onlyStringPlaceholders(shellValue) {
 		t.Fatalf("shell.pagination.info zh-CN 只允许 %%s 占位符，实际 %q", shellValue)
 	}
 
@@ -591,7 +602,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("MsgPageCreated zh-CN = %q，want 页面创建成功", value)
 	}
 
-	categories := map[string]string{"ErrSystemError": "error", "msg_operation_success": "msg", "MsgPageCreated": "ui"}
+	categories := map[string]string{"ErrSystemError": "error", "uiOpSuccess": "msg", "MsgPageCreated": "ui"}
 	for key, want := range categories {
 		var got string
 		if err := db.Table("sys_i18n").Select("category").
@@ -689,12 +700,12 @@ func TestI18nEnumsSeedResponseTranslation(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"Success 通用消息", "/ok", "zh-CN", "msg_operation_success", "操作成功"},
+		{"Success 通用消息", "/ok", "zh-CN", "uiOpSuccess", "操作成功"},
 		{"纯 key 形态", "/notfound", "zh-CN", "ErrNotFound", "请求资源不存在"},
 		{"模块错误 key", "/admin", "zh-CN", "ErrAdminNotFound", "管理员不存在"},
 		{"模块成功 key", "/page", "zh-CN", "MsgPageCreated", "页面创建成功"},
 		{"key|param 形态", "/locked", "zh-CN", "ErrAccountLocked", "账号已被锁定，请 5m0s 后重试"},
-		{"key: detail 形态", "/detail", "zh-CN", "ErrInvalidParams", "请求参数错误: boom"},
+		{"key: detail 形态", "/detail", "zh-CN", "sysErrBadParam", "请求参数错误: boom"},
 		{"Accept-Language 切英文", "/admin", "en-US", "ErrAdminNotFound", "Admin not found"},
 	}
 

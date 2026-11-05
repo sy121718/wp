@@ -7,10 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 const blockRefDetailMaxBytes = 420
@@ -45,7 +46,7 @@ func blockRefUsageText(c *gin.Context, err error) string {
 	}
 
 	tr := func(key, fallback string) string {
-		return adminui.MsgText(c, adminui.Msg{Key: key, Fallback: fallback})
+		return response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
 	}
 	order := make([]blockcontract.BlockUsageKind, 0, len(usages))
 	grouped := map[blockcontract.BlockUsageKind][]string{}

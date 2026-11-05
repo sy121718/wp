@@ -2,6 +2,7 @@ package adminmodel
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"gorm.io/gorm"
@@ -196,4 +197,127 @@ func (m *SysRuleAssignmentModel) BatchCreate(ctx context.Context, entities []Sys
 		return nil
 	}
 	return m.DB(ctx).Create(&entities).Error
+}
+
+// RuleListFilter 是数据规则列表的筛选条件。
+type RuleListFilter struct {
+	Domain string
+	Status *int
+	Page   int
+	Limit  int
+}
+
+// ListPage 分页查数据规则，返回总数与本页行。
+func (m *SysRuleModel) ListPage(ctx context.Context, f RuleListFilter) (int64, []SysRuleEntity, error) {
+	query := m.DB(ctx)
+	if f.Domain != "" {
+		query = query.Where("domain = ?", f.Domain)
+	}
+	if f.Status != nil {
+		query = query.Where("status = ?", *f.Status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 1
+	}
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	var list []SysRuleEntity
+	err := query.Order("id DESC").Offset((page - 1) * limit).Limit(limit).Find(&list).Error
+	return total, list, err
+}
+
+// RuleSnapshotRow 是「规则 + 可选分配」扁平行，供数据权限快照一次性读出来。
+//
+// 分配侧列为空表示这条规则没有任何分配（LEFT JOIN 的补空行）。
+type RuleSnapshotRow struct {
+	ID          uint64  `gorm:"column:id"`
+	Domain      string  `gorm:"column:domain"`
+	Config      string  `gorm:"column:config"`
+	TargetType  *int    `gorm:"column:target_type"`
+	TargetID    *uint64 `gorm:"column:target_id"`
+	TargetScope *int    `gorm:"column:target_scope"`
+}
+
+// ListSnapshotRows 读出启用规则及其分配，行的顺序不保证。
+func (m *SysRuleModel) ListSnapshotRows(ctx context.Context) ([]RuleSnapshotRow, error) {
+	ruleTable := SysRuleEntity{}.TableName()
+	assignmentTable := SysRuleAssignmentEntity{}.TableName()
+
+	var rows []RuleSnapshotRow
+	err := m.DB(ctx).
+		Select(ruleTable+".id AS id, "+ruleTable+".domain AS domain, "+ruleTable+".config AS config, "+
+			"a.target_type AS target_type, a.target_id AS target_id, a.target_scope AS target_scope").
+		Joins("LEFT JOIN "+assignmentTable+" AS a ON a.rule_id = "+ruleTable+".id").
+		Where(ruleTable+".status = ?", RuleStatusEnabled).
+		Scan(&rows).Error
+	return rows, err
+}
+
+// RoleSnapshotRow 是快照需要的「启用角色」最小事实。
+type RoleSnapshotRow struct {
+	ID       uint64 `gorm:"column:id"`
+	RoleCode string `gorm:"column:role_code"`
+}
+
+// DeptSnapshotRow 是快照需要的「部门祖先链」最小事实。
+type DeptSnapshotRow struct {
+	ID        uint64 `gorm:"column:id"`
+	Ancestors string `gorm:"column:ancestors"`
+}
+
+// TransactionWithOptions 按调用方给的隔离级别开事务。
+//
+// 隔离级别是调用方的业务判断（比如「这批查询必须看到同一个时点」），model 只提供通道，
+// 不替 service 决定该用哪一级。传 nil 等价于数据库默认级别。
+func (m *SysRuleModel) TransactionWithOptions(
+	ctx context.Context,
+	opts sql.TxOptions,
+	fn func(tx *gorm.DB) error,
+) error {
+	return m.db.WithContext(ctx).Transaction(fn, &opts)
+}
+
+// ListEnabledRolesTx 读启用角色（事务内）。
+func (m *RoleModel) ListEnabledRolesTx(ctx context.Context, tx *gorm.DB) ([]RoleSnapshotRow, error) {
+	var rows []RoleSnapshotRow
+	err := tx.WithContext(ctx).Model(&RoleEntity{}).
+		Select("id, role_code").
+		Where("status = ?", RoleStatusEnabled).
+		Order("id ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// ListAllAncestorsTx 读全部部门的祖先链（事务内）。
+func (m *DeptModel) ListAllAncestorsTx(ctx context.Context, tx *gorm.DB) ([]DeptSnapshotRow, error) {
+	var rows []DeptSnapshotRow
+	err := tx.WithContext(ctx).Model(&DeptEntity{}).
+		Select("id, ancestors").
+		Order("id ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// ListSnapshotRowsTx 读启用规则及分配（事务内）。
+func (m *SysRuleModel) ListSnapshotRowsTx(ctx context.Context, tx *gorm.DB) ([]RuleSnapshotRow, error) {
+	ruleTable := SysRuleEntity{}.TableName()
+	assignmentTable := SysRuleAssignmentEntity{}.TableName()
+
+	var rows []RuleSnapshotRow
+	err := tx.WithContext(ctx).Model(&SysRuleEntity{}).
+		Select(ruleTable+".id AS id, "+ruleTable+".domain AS domain, "+ruleTable+".config AS config, "+
+			"a.target_type AS target_type, a.target_id AS target_id, a.target_scope AS target_scope").
+		Joins("LEFT JOIN "+assignmentTable+" AS a ON a.rule_id = "+ruleTable+".id").
+		Where(ruleTable+".status = ?", RuleStatusEnabled).
+		Scan(&rows).Error
+	return rows, err
 }

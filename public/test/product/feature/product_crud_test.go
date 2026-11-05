@@ -6,6 +6,9 @@ import (
 
 	"gorm.io/gorm"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -21,6 +24,18 @@ type fixture struct {
 	svc       *productservice.Service
 	db        *gorm.DB
 	projectID string
+
+	// changes 是当前服务的审计变更依赖，rewireProductChanges 换完依赖后用同一份重建服务。
+	changes masterdatacontract.MasterDataService
+}
+
+// rewireProductChanges 用另一份审计端口重建商品服务：审计是构造依赖，
+// 想注入故障/捕获就必须在装配处换掉，而不是运行中晚接。
+func (f *fixture) rewireProductChanges(t *testing.T, changes masterdatacontract.MasterDataService) {
+	t.Helper()
+	f.changes = changes
+	projects := projectservice.NewService(projectmodel.NewProjectModel(f.db))
+	f.svc = productservice.NewService(productmodel.NewModel(f.db), projects, changes)
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -34,10 +49,12 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
+	changes := masterdataservice.NewService(masterdatamodel.NewModel(db), projects)
 	return &fixture{
-		svc:       productservice.NewService(productmodel.NewModel(db), projects),
+		svc:       productservice.NewService(productmodel.NewModel(db), projects, changes),
 		db:        db,
 		projectID: project.ID,
+		changes:   changes,
 	}
 }
 

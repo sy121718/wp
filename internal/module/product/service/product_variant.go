@@ -1237,11 +1237,9 @@ func (s *Service) saveVariantListTx(ctx context.Context, tx *gorm.DB, projectID 
 }
 
 func variantListRejected(id, sku, reason string) error {
-	fallback := productenums.FallbackFor(reason)
-	if fallback == "" {
-		fallback = productenums.VariantSkipFallback(reason)
-	}
-	return bulkRejected([]facing.BlockedItem{{ID: id, Name: sku, ReasonKey: reason, Fallback: fallback}})
+	return bulkRejected([]facing.BlockedItem{{
+		ID: id, Name: sku, ReasonKey: reason, Fallback: productenums.VariantSkipFallback(reason),
+	}})
 }
 
 func (s *Service) variantDeletionFactsTx(ctx context.Context, tx *gorm.DB, projectID string, variants, stocks []string) (*inventorycontract.VariantDeletionFacts, error) {

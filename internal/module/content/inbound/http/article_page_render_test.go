@@ -165,7 +165,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 		"/static/js/rich-editor/index.js", "/static/css/rich-editor.css",
 		"/admin/articles/update",
 
-		"SEO 评测", `data-drawer-url="/admin/articles/seo/drawer?id=`,
+		"SEO 评测", `data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/articles/seo/drawer?id=`,
 		"保存",
 
 		"可视化编辑", "article-preview-frame",

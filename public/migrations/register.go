@@ -160,6 +160,8 @@ func init() {
 
 	registerAIConfigGroup()
 
+	registerAIMcpErrorTextI18n()
+
 	registerAIMcpSwitchI18n()
 
 	registerDashboardRangeI18n()
@@ -302,4 +304,28 @@ func init() {
 	registerMenuDedupMembership()
 
 	registerDateRangePickerI18n()
+
+	registerAdminSideEffectTasks()
+
+	registerAdminBulkReworkI18n()
+
+	registerAdminDataruleEditorI18n()
+
+	registerAdminI18nBulkDeleteI18n()
+
+	registerAIUIBlocksEmptyI18n()
+
+	registerAIProviderModelsWriteGate()
+
+	registerAIPickerNoPermissionI18n()
+
+	registerAICreateRefreshI18n()
+
+	registerThemeSettingsCustomizeI18n()
+
+	registerMediaErrorCodesI18n()
+
+	registerFileCategoryI18n()
+
+	registerPageMissingErrorI18n()
 }

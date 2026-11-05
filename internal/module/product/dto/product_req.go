@@ -2,7 +2,6 @@ package productdto
 
 import (
 	"net/url"
-	"strings"
 
 	json "go_wp/pkg/jsonx"
 )
@@ -40,7 +39,7 @@ type CreateReq struct {
 	BrandID      string          `json:"brandId" form:"brandId"`
 	DefaultPrice *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage string          `json:"defaultImage" form:"defaultImage"`
-	Metadata     json.RawMessage `json:"metadata" form:"metadata"`
+	Metadata     json.RawMessage `json:"metadata" form:"-"`
 
 	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 
@@ -83,6 +82,10 @@ type UpdateReq struct {
 	DefaultPrice      *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage" form:"defaultImage"`
 	Metadata          json.RawMessage `json:"metadata" form:"-"`
+
+	// 数值缺失表示不修改；清空与对应数值不能同时提交。
+	ClearDefaultPrice bool `json:"clearDefaultPrice" form:"-"`
+	ClearWeight       bool `json:"clearWeight" form:"-"`
 
 	OperatorID string `json:"-" form:"-"`
 }
@@ -170,30 +173,6 @@ type GenerateVariantsReq struct {
 	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 
 	OperatorID string `json:"-" form:"-"`
-}
-
-func (r *UpdateReq) BindForm(vals url.Values) error {
-	for _, f := range []struct {
-		name string
-		dst  *json.RawMessage
-	}{
-		{"description", &r.Description},
-		{"metadata", &r.Metadata},
-	} {
-		raw := strings.TrimSpace(vals.Get(f.name))
-		if raw == "" {
-			continue
-		}
-		if !json.Valid([]byte(raw)) {
-			return &FieldValueError{Field: f.name, Kind: FieldKindJSON}
-		}
-		*f.dst = json.RawMessage(raw)
-	}
-	return nil
-}
-
-func (r *CreateReq) BindForm(vals url.Values) error {
-	return bindRawJSONField(vals, "description", &r.Description)
 }
 
 func (r *CreateVariantReq) BindForm(vals url.Values) error {

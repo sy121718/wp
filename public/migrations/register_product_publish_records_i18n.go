@@ -11,16 +11,35 @@ func registerProductPublishRecordsI18n() {
 		registerSeed(Seed{
 			Version:   "661-product-publish-records-i18n",
 			TableName: "sys_i18n",
-			ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 28 THEN 1 ELSE 0 END FROM sys_i18n " +
-				"WHERE lang = 'en-US' AND item_key IN (" +
-				"'admin.products.publish.title', 'admin.products.publish.lead', 'admin.products.publish.noHistory', 'admin.products.publish.staleHint'" +
-				"'admin.products.publish.programLead', 'admin.products.publish.programLink', 'admin.products.publish.programTail', 'admin.products.publish.notWired'" +
-				"'admin.products.publish.notWiredDesc', 'admin.products.publish.totalNote', 'admin.products.publish.ph.keyword', 'admin.products.publish.col.product'" +
-				"'admin.products.publish.col.site', 'admin.products.publish.col.online', 'admin.products.publish.col.lang', 'admin.products.publish.col.publishedAt'" +
-				"'admin.products.publish.col.artifact', 'admin.products.publish.status.all', 'admin.products.publish.status.active', 'admin.products.publish.status.draft'" +
-				"'admin.products.publish.status.none', 'admin.products.publish.status.stale', 'admin.products.publish.pathUnknown', 'admin.products.publish.langNotPublished'" +
-				"'admin.products.publish.noInstanceHint', 'admin.products.publish.republish', 'admin.products.publish.emptyHeading', 'admin.products.publish.emptyDesc')",
-			SQL: mustSQL("661_product_publish_records_i18n.sql"),
+			ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('admin.products.publish.noHistory'),
+    ('admin.products.publish.ph.keyword'),
+    ('admin.products.publish.programLead'),
+    ('admin.products.publish.programLink'),
+    ('admin.products.publish.programTail'),
+    ('pPubActive'),
+    ('pPubArtifact'),
+    ('pPubEmptyDesc'),
+    ('pPubEmptyHead'),
+    ('pPubLang'),
+    ('pPubLangNoLive'),
+    ('pPubLead'),
+    ('pPubLiveAt'),
+    ('pPubNoInstHint'),
+    ('pPubOnline'),
+    ('pPubPathUnknown'),
+    ('pPubProd'),
+    ('pPubRepublish'),
+    ('pPubSite'),
+    ('pPubStaleHint'),
+    ('pPubStatusAll'),
+    ('pPubStatusDraft'),
+    ('pPubStatusNone'),
+    ('pPubStatusStale'),
+    ('pPubTitle'),
+    ('pPubTotalNote')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+			SQL: mustSQL("723aa_current_661_product_publish_records_i18n.sql"),
 		})
 	})
 }

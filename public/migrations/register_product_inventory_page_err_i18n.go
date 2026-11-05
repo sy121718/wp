@@ -13,12 +13,13 @@ func registerProductInventoryPageErrI18nSeed() {
 	registerSeed(Seed{
 		Version:   "407-i18n-product-inventory-page-err",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN (" +
-			"'admin.product_detail_template.depsMissing'," +
-			"'admin.common.list.loadFailedTitle','admin.common.list.loadFailedDesc'," +
-			"'MsgInternalError')",
-		SQL: mustSQL("407_i18n_product_inventory_page_err.sql"),
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('uiInternalErr'),
+    ('admin.common.list.loadFailedDesc'),
+    ('admin.common.list.loadFailedTitle'),
+    ('tplDepsMiss')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723x_current_407_i18n_product_inventory_page_err.sql"),
 	})
 }
 

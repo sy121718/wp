@@ -160,37 +160,6 @@ func EmailVerifiedLabel(verified bool) (key, fallback string) {
 	return LabelKeyUnverified, LabelUnverified
 }
 
-var errFallbacks = map[string]string{
-	ErrInvalidParam:             "参数不合法",
-	ErrUsernameRequired:         "用户名不能为空",
-	ErrUsernameTooShort:         "用户名至少 3 个字符",
-	ErrUsernameTooLong:          "用户名最多 32 个字符",
-	ErrUsernameTaken:            "用户名已被占用",
-	ErrEmailRequired:            "邮箱不能为空",
-	ErrEmailInvalid:             "邮箱格式不正确",
-	ErrEmailTaken:               "邮箱已被注册",
-	ErrPasswordTooShort:         "密码至少 8 个字符",
-	ErrUserNotFound:             "用户不存在",
-	ErrActivationInvalid:        "验证链接无效或已过期",
-	ErrMailUnavailable:          "验证邮件暂时发不出去，请稍后重试或联系管理员",
-	ErrLoginRequired:            "请输入账号和密码",
-	ErrBadCredentials:           "账号或密码不正确",
-	ErrAccountLocked:            "账号已锁定，请在 %s 后重试",
-	ErrAccountDisabled:          "账号已被禁用",
-	ErrAccountPending:           "账号尚未完成邮箱验证，请先查收验证邮件",
-	ErrPasswordLoginUnavailable: "该账号不支持密码登录，请使用第三方账号登录",
-	ErrSessionNotFound:          "登录设备不存在或已被移除",
-	ErrSessionExpired:           "登录已过期，请重新登录",
-	ErrLogoutFailed:             "退出登录失败，请重试",
-	ErrOldPasswordWrong:         "当前密码不正确",
-	ErrNewPasswordSame:          "新密码不能与当前密码相同",
-	ErrProfileVisibilityInvalid: "主页可见性取值不合法",
-	ErrPageSizeInvalid:          "每页条数超出允许范围",
-	ErrNotLoggedIn:              "请先登录",
-	ErrInternal:                 "操作失败，请稍后重试",
-	ErrCustomerStatusInvalid:    "账号状态取值不合法",
-}
-
 func Err(key string) error {
 	status := http.StatusBadRequest
 	switch key {
@@ -205,7 +174,6 @@ func Err(key string) error {
 	case ErrInternal, ErrMailUnavailable, ErrLogoutFailed:
 		status = http.StatusInternalServerError
 	}
-	return facing.WithStatus(facing.New(key, errFallbacks[key]), status)
+	return facing.WithStatus(facing.New(key), status)
 }
 
-func FallbackFor(key string) string { return errFallbacks[key] }

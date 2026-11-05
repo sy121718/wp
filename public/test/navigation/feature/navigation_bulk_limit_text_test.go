@@ -11,8 +11,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+"go_wp/internal/templates"
+"go_wp/internal/text"
+"go_wp/internal/adminui"
+pageview "go_wp/pkg/view"
+"net/url"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 )
 
 func navBulkOverLimitIDs() []string {
@@ -52,8 +58,15 @@ func navBulkOverLimitRawError() error {
 func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/api/navigation/delete-bulk", pageview.HTMLFragment, navigationhttp.NewHandle(nil).DeleteBulk)
 
-	engine.POST("/api/navigation/delete", navigationhttp.NewHandle(nil).Delete)
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	rawErr := navBulkOverLimitRawError()
 	if rawErr == nil || !errors.Is(rawErr, bulkids.ErrTooMany) {
@@ -64,9 +77,13 @@ func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 		t.Fatalf("反证失败：原文应带本次条数 %s，实际 %v", over, rawErr)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/delete",
-		strings.NewReader(navBulkOverLimitJSONBody()))
-	req.Header.Set("Content-Type", "application/json")
+	form := url.Values{}
+	for _, id := range navBulkOverLimitIDs() {
+		form.Add("ids", id)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/delete-bulk",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -74,12 +91,11 @@ func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 		t.Fatalf("超限应整批拒绝（400，不部分执行），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	message := navJSONErrMessage(t, body)
-	if !strings.HasPrefix(message, bulkids.MsgTooMany+"|") {
-		t.Fatalf("超限应回受控 key（%s）的带参协议而不是原文，实际 %q", bulkids.MsgTooMany, message)
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("超限应回错误片段：%s", body)
 	}
-	if !strings.Contains(message, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(message, over) {
-		t.Fatalf("受控提示应带上限 %d 与本次条数 %s，实际 %q", bulkids.MaxIDs, over, message)
+	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(body, over) {
+		t.Fatalf("受控提示应带上限 %d 与本次条数 %s，实际 %q", bulkids.MaxIDs, over, body)
 	}
 	for _, tok := range []string{
 		"SQLSTATE", "42P02", "constraint", "uuid", "invalid input syntax", "bulkids:",

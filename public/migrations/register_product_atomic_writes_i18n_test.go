@@ -34,7 +34,7 @@ func TestProductAtomicWritesSeedParsesAndBackfillsEveryLanguagePair(t *testing.T
 			t.Fatalf("补齐 %s/%s 后门槛不成立：%d", pair.key, pair.lang, got)
 		}
 	}
-	const key = "admin.product_pricing.apply.atomicHint"
+	const key = "prAtomicHint"
 	const edited = "运营已修改的提示"
 	mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = ?", edited, key, "zh-CN")
 	mustExec(t, db, seed.SQL)

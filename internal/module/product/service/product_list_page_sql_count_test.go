@@ -36,6 +36,13 @@ func attachSQLCountProbe(t *testing.T, db *gorm.DB) *sqlCountProbe {
 	t.Helper()
 	p := &sqlCountProbe{}
 	record := func(tx *gorm.DB) {
+		// GORM 构建子查询（嵌套表达式）时会用 DryRun 会话跑一遍 Query 回调
+		// （gorm@v1.31.2/statement.go:213-216 建 DryRun 子会话、:239-240 Execute），
+		// 那条 SQL 只用于拼语句、并不会被数据库执行。计数只算真正执行的语句，
+		// 所以 DryRun 直接跳过 —— 这不是放宽预算，而是把「构建」与「执行」分开。
+		if tx.DryRun {
+			return
+		}
 		sql := tx.Statement.SQL.String()
 		p.mu.Lock()
 		defer p.mu.Unlock()
@@ -159,7 +166,7 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 	probe := attachSQLCountProbe(t, db)
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "列表 SQL 判据"}},
-	})
+	}, stubMasterDataChanges{})
 	ctx := context.Background()
 
 	checkPage := func(label string, page int, wantRows int, wantTotal int64) int {

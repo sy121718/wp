@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -120,12 +121,16 @@ func TestAdminOrderCreatePageRejectsUnknownCurrency(t *testing.T) {
 	form.Set("currency", "ZZZ")
 	rec := env.post(t, form)
 
-	if rec.Code != 200 {
-		t.Fatalf("业务拒绝必须就地重渲（200），实际 %d", rec.Code)
+	// 新契约：业务拒绝回错误片段，不再是整页重渲。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("业务拒绝应回 400 错误片段，实际 %d（%s）", rec.Code, rec.Body.String())
 	}
 	out := rec.Body.String()
-	if !strings.Contains(out, "</html>") {
-		t.Fatal("失败重渲的输出不是一整页（缺 </html>）")
+	if !strings.Contains(out, `data-ui-error`) {
+		t.Fatalf("失败应渲染 Jet 错误片段：%s", out)
+	}
+	if strings.Contains(out, "order.err.") || strings.Contains(out, "order.msg.") {
+		t.Fatalf("失败片段漏出了声明 key：%s", out)
 	}
 
 	if !strings.Contains(out, orderenums.ErrCurrencyUnknown) &&
@@ -136,8 +141,8 @@ func TestAdminOrderCreatePageRejectsUnknownCurrency(t *testing.T) {
 		t.Errorf("业务拒绝被归口成了系统故障")
 	}
 
-	if !strings.Contains(out, `<option value="ZZZ" selected>`) {
-		t.Errorf("失败重渲丢了币种选择")
+	if strings.Contains(out, "<html") {
+		t.Errorf("错误片段不该带整页壳：%s", out)
 	}
 	if got := env.fixture.orderCount(t); got != 0 {
 		t.Fatalf("被拒的提交不该落单，实际 %d 张", got)

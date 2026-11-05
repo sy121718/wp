@@ -11,7 +11,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/seo/scoring"
+	"go_wp/pkg/seo/scoring"
 )
 
 const seoTestProjectID = "proj-1"

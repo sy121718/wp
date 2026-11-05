@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/i18n"
 	"testing"
 
 	"gorm.io/gorm"
@@ -25,6 +26,8 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -52,6 +55,30 @@ func newOrderFixture(t *testing.T) *orderFixture {
 	return newOrderFixtureWithStock(t, nil)
 }
 
+// injectOrderFeatureWords 把生产种子写进库的词条刷新进 i18n 进程缓存。
+// RunSeeds 只写库、不刷缓存；不注入的话取词一律落兜底，HTML 断言会误判成「模板没渲染」。
+func injectOrderFeatureWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key, lang, item_value AS value").
+		Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+}
+
 func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *orderFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
@@ -61,6 +88,8 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	if db == nil {
 		return nil
 	}
+	// RunSeeds 只写库、不刷 i18n 进程缓存；HTML 断言的取词必须先注入。
+	injectOrderFeatureWords(t, db)
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(ctx, &projectdto.CreateReq{Name: "订单测试工程"})
@@ -68,7 +97,7 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetInventoryService(inv)
 	inv.SetVariantWarehouseStocks(products)
 

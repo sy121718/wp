@@ -15,6 +15,8 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/middleware/adminctx"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -33,7 +35,7 @@ func newBrandPagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, *projectservice.Ser
 		return nil, nil, nil
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	svc := productservice.NewService(productmodel.NewModel(db), projects)
+	svc := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

@@ -43,3 +43,12 @@ type CarrierListPageView struct {
 	LoadFailed bool
 	LoadError  string
 }
+
+// ShipFormFragmentView 是发货表单片段（抽屉内容）的视图形状。
+//
+// 这里不往 data 里塞 "t"：adminui.RenderBare -> PrepareBareView -> text.Inject
+// 已经注入 t/tf/tn/lang，重复接线会让「取词从哪来」出现第二个答案。
+type ShipFormFragmentView struct {
+	Form      *orderdto.ShipForm
+	CSRFToken string
+}

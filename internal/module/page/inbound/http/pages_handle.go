@@ -19,7 +19,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
-	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectenums "go_wp/internal/module/project/enums"
 	"go_wp/internal/shell"
@@ -413,7 +412,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageCreated, res)
@@ -426,7 +425,7 @@ func (h *Handle) Detail(c *gin.Context) {
 	}
 	res, err := h.svc.Detail(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageDetail, res)
@@ -439,7 +438,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	res, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.Success(c, res)
@@ -452,7 +451,7 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 	}
 	res, err := h.svc.SaveDraft(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgDraftSaved, res)
@@ -465,7 +464,7 @@ func (h *Handle) Build(c *gin.Context) {
 	}
 	res, err := h.svc.Build(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgBuildReady, res)
@@ -480,7 +479,7 @@ func (h *Handle) Publish(c *gin.Context) {
 
 		res, err := h.svc.PublishAllLanguages(c.Request.Context(), req)
 		if err != nil {
-			response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+			response.ErrorStatusAuto(c, pageErrScene, err)
 			return
 		}
 		response.SuccessWithMessage(c, pageenums.MsgPublished, res)
@@ -488,7 +487,7 @@ func (h *Handle) Publish(c *gin.Context) {
 	}
 	res, err := h.svc.Publish(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPublished, res)
@@ -501,7 +500,7 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 	}
 	res, err := h.svc.RebuildArtifact(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.Success(c, res)
@@ -514,7 +513,7 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 	}
 	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.Success(c, res)
@@ -527,7 +526,7 @@ func (h *Handle) SEOPatrol(c *gin.Context) {
 	}
 	res, err := h.svc.SEOPatrol(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.Success(c, res)
@@ -536,7 +535,7 @@ func (h *Handle) SEOPatrol(c *gin.Context) {
 func (h *Handle) AuditPublication(c *gin.Context) {
 	res, err := h.svc.AuditPublication(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.Success(c, res)
@@ -549,7 +548,7 @@ func (h *Handle) Rollback(c *gin.Context) {
 	}
 	res, err := h.svc.Rollback(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgRollbackDone, res)
@@ -562,7 +561,7 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateURL(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgURLUpdated, res)
@@ -574,7 +573,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageDeleted, nil)
@@ -587,56 +586,10 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 	}
 	res, err := h.svc.ListRevisions(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		response.ErrorStatusAuto(c, pageErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgRevisionsListed, res)
-}
-
-func pageErrorStatus(err error) int {
-	switch {
-	case errors.Is(err, pageservice.ErrNoStagedArtifact):
-		return http.StatusConflict
-	case errors.Is(err, pageservice.ErrPageNotFound),
-		errors.Is(err, pageservice.ErrProjectNotFound),
-		errors.Is(err, pageservice.ErrRollbackTargetMiss):
-		return http.StatusNotFound
-	case errors.Is(err, pageservice.ErrDraftVersionConflict),
-		errors.Is(err, pageservice.ErrPathOccupied),
-		errors.Is(err, pageservice.ErrRebuildRequired),
-
-		errors.Is(err, pageservice.ErrInputMoved):
-		return http.StatusConflict
-
-	case errors.Is(err, pageservice.ErrPageLangExcluded),
-		errors.Is(err, pageservice.ErrCannotExcludeDefaultLang),
-		errors.Is(err, pageservice.ErrLangAlreadyExcluded),
-		errors.Is(err, pageservice.ErrLangNotExcluded):
-		return http.StatusConflict
-	case errors.Is(err, pageservice.ErrInvalidParam),
-		errors.Is(err, pageservice.ErrInvalidKind),
-		errors.Is(err, pageservice.ErrInvalidDocument),
-		errors.Is(err, pageservice.ErrInvalidPath),
-
-		errors.Is(err, pageservice.ErrProjectRequired):
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
-func pageErrorMessage(c *gin.Context, err error) string {
-	fact := adminui.PageErrorFact(c, pageErrScene, err)
-	if !fact.Business {
-		return pageenums.MsgInternalError
-	}
-	text := adminui.TranslateArgs(c, fact.Key, fact.Fallback, nil)
-	if fact.Tail != "" {
-		if detail := pageDetailText(shell.TranslateFor(c), fact.Tail); detail != "" {
-			return text + "：" + detail
-		}
-	}
-	return text
 }
 
 func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {

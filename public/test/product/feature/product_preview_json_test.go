@@ -30,6 +30,7 @@ func TestProductPreviewFailureIsJSONWithoutNavigation(t *testing.T) {
 	if f == nil {
 		return
 	}
+	loadFeatureWords(t, f.db)
 	productID := f.createProduct(t, "预览失败商品", "preview-json-error", "正文", 88, 99)
 	for _, tc := range []struct {
 		name, id string
@@ -62,6 +63,11 @@ func TestProductPreviewFailureIsJSONWithoutNavigation(t *testing.T) {
 				if rec.Code != tc.status || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(rec.Body.String(), tc.message) {
 					t.Fatalf("%s 状态或文案错误：%d %s", method, rec.Code, rec.Body.String())
 				}
+				payload := jsonMap(t, rec.Body.Bytes())
+				message, _ := payload["message"].(string)
+				if payload["code"] != float64(tc.status) || !strings.Contains(message, tc.message) {
+					t.Fatalf("%s JSON状态或文案错误：%s", method, rec.Body.String())
+				}
 				for _, header := range []string{"Location", "HX-Redirect", "HX-Location"} {
 					if rec.Header().Get(header) != "" {
 						t.Fatalf("不应输出导航头%s", header)
@@ -74,6 +80,52 @@ func TestProductPreviewFailureIsJSONWithoutNavigation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProductDetailTemplatePreviewReturnsJSONWithoutWriting(t *testing.T) {
+	engine, f := newDetailTemplatePageEngine(t)
+	if f == nil {
+		return
+	}
+	loadFeatureWords(t, f.db)
+	productID := f.createProduct(t, "JSON预览商品", "template-preview-json", "正文", 88, 99)
+	chosen := createNamedTemplate(t, f, "JSON预览模板", "选中模板的预览内容")
+	before := map[string]int{}
+	for _, table := range []string{"presentation_instances", "presentation_artifacts", "document_snapshots"} {
+		before[table] = countRows(t, f.db, table, "")
+	}
+	rec := postForm(engine, "/admin/products/template/preview", url.Values{
+		"projectId": {f.projectID}, "productId": {productID}, "templateId": {chosen.ID},
+	})
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("POST预览必须返回JSON：%d %s", rec.Code, rec.Body.String())
+	}
+	payload := jsonMap(t, rec.Body.Bytes())
+	message, _ := payload["message"].(string)
+	if payload["code"] != float64(http.StatusOK) || strings.TrimSpace(message) == "" {
+		t.Fatalf("预览必须返回统一成功结构：%s", rec.Body.String())
+	}
+	data := asMap(t, payload["data"], "预览data")
+	html, _ := data["html"].(string)
+	if !strings.Contains(html, "选中模板的预览内容") || !strings.Contains(html, "</html>") {
+		t.Fatalf("data.html应包含完整预览文档：%s", html)
+	}
+	if data["entityType"] != "product" || data["entityId"] != productID || data["templateId"] != chosen.ID {
+		t.Fatalf("预览元数据与请求不一致：%v", data)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("预览不得缓存")
+	}
+	for _, header := range []string{"Location", "HX-Redirect", "HX-Location"} {
+		if rec.Header().Get(header) != "" {
+			t.Fatalf("预览不得输出导航头%s", header)
+		}
+	}
+	for table, n := range before {
+		if after := countRows(t, f.db, table, ""); after != n {
+			t.Fatalf("预览不得写入%s：预览前%d，预览后%d", table, n, after)
+		}
 	}
 }
 
@@ -106,8 +158,8 @@ func TestProductTemplateCopyRejectsOtherProjectSource(t *testing.T) {
 	f.seedScopeSites(t)
 	beforeA := templateScopeTemplateCount(t, f, f.projectID)
 	beforeB := templateScopeTemplateCount(t, f, f.projectB)
-	rec := postJSON(t, engine, "/api/product/detail-template/create", map[string]any{"projectId": f.projectID, "productId": f.productA, "copyFrom": f.tplB, "name": "跨工程复制不得创建"})
-	if rec.Code != 404 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(rec.Body.String(), "不存在") {
+	rec := postForm(engine, "/api/product/detail-template/create", url.Values{"projectId": {f.projectID}, "productId": {f.productA}, "copyFrom": {f.tplB}, "name": {"跨工程复制不得创建"}})
+	if rec.Code != 404 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "data-ui-error") || !strings.Contains(rec.Body.String(), "不存在") {
 		t.Fatalf("跨工程来源应404：%d %s", rec.Code, rec.Body.String())
 	}
 	if templateScopeTemplateCount(t, f, f.projectID) != beforeA || templateScopeTemplateCount(t, f, f.projectB) != beforeB {

@@ -19,7 +19,9 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -74,8 +76,10 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
-	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
+	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
 	return router, db, project.ID, pageID, header.ID
 }
 
@@ -110,7 +114,7 @@ func TestPageTranslationsListsBlockText(t *testing.T) {
 
 func TestSaveBlockTextTranslation(t *testing.T) {
 	router, db, _, pageID, _ := newBlockTranslationEnv(t)
-	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
+	saved := postForm(t, router, "/api/page/translations/save", url.Values{
 		"pageId":     {pageID},
 		"lang":       {"en-US"},
 		"rowContext": {"core.button.text"},

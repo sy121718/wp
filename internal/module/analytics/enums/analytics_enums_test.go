@@ -2,100 +2,55 @@ package analyticsenums
 
 import (
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
-	"strings"
+	"net/http"
 	"testing"
 
 	"go_wp/pkg/facing"
 )
 
-var fallbackExclusions = map[string]string{
-	"MsgCollectAccepted": "成功回执：永远不作为错误响应返回",
-}
-
-func TestErrFallbacksCoverAllEnums(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("枚举本包源文件失败: %v", err)
+// 状态码是**协议**事实，声明在 StatusOf 里；文案归词库（sys_i18n），
+// 所以本包不再维护一份中文兜底词表 —— 那会变成第二份文案事实源。
+func TestStatusOfDeclaresRealHTTPCodes(t *testing.T) {
+	cases := []struct {
+		key  string
+		want int
+	}{
+		{ErrInvalidParam, http.StatusBadRequest},
+		{ErrInvalidRange, http.StatusBadRequest},
+		{ErrAnalyticsInternal, http.StatusInternalServerError},
 	}
-	declared := map[string]string{}
-	checked := 0
-
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
+	seen := map[string]bool{}
+	for _, c := range cases {
+		if seen[c.key] {
+			t.Fatalf("用例里 %q 出现两次", c.key)
 		}
-		fset := token.NewFileSet()
-		parsed, perr := parser.ParseFile(fset, file, nil, 0)
-		if perr != nil {
-			t.Fatalf("解析 %s 失败: %v", file, perr)
-		}
-		for _, decl := range parsed.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for i, name := range vs.Names {
-					if !strings.HasPrefix(name.Name, "Err") && !strings.HasPrefix(name.Name, "Msg") {
-						continue
-					}
-					if i >= len(vs.Values) {
-						continue
-					}
-					lit, ok := vs.Values[i].(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						continue
-					}
-					value, uerr := strconv.Unquote(lit.Value)
-					if uerr != nil {
-						t.Fatalf("%s 的 %s 取值失败: %v", file, name.Name, uerr)
-					}
-					checked++
-					declared[value] = name.Name
-					if _, ok := fallbackExclusions[name.Name]; ok {
-						continue
-					}
-					if !strings.HasPrefix(name.Name, "Err") {
-						t.Errorf("%s 不是 Err* 常量：Msg* 应写进 fallbackExclusions 并说明理由", name.Name)
-						continue
-					}
-					if strings.TrimSpace(errFallbacks[value]) == "" {
-						t.Errorf("%s = %q 没有在 errFallbacks 里给中文兜底", name.Name, value)
-					}
-				}
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("没有扫到任何 Err* / Msg* 常量：判据失效（源码结构变了？）")
-	}
-	for value := range errFallbacks {
-		if _, ok := declared[value]; !ok {
-			t.Errorf("errFallbacks 里的 %q 不对应本包任何 Err* 常量（拼写错误或常量已删？）", value)
+		seen[c.key] = true
+		if got := StatusOf(c.key); got != c.want {
+			t.Errorf("StatusOf(%q) = %d，期望 %d", c.key, got, c.want)
 		}
 	}
 }
 
-func TestErrCarriesFallbackAndKey(t *testing.T) {
+func TestStatusOfUnknownKeyHasNoStatus(t *testing.T) {
+	for _, key := range []string{"", "ErrNotDeclared", "analytics.err.unknown"} {
+		if got := StatusOf(key); got != 0 {
+			t.Errorf("未声明的 key %q 应返回 0（交出口按归口处理），实际 %d", key, got)
+		}
+	}
+}
+
+// Err 构造时就把声明里的状态码带上：调用点不再自己钉状态码。
+func TestErrCarriesDeclaredStatus(t *testing.T) {
 	err := Err(ErrInvalidRange)
 	if err.Error() != ErrInvalidRange {
 		t.Fatalf("Error() = %q，应为枚举 key", err.Error())
 	}
-	fact, ok := facing.FactOf(err)
-	if !ok || !fact.Business {
-		t.Fatalf("FactOf 应判为业务错误，得到 %+v / %v", fact, ok)
+	if got, ok := facing.StatusOf(err); !ok || got != http.StatusBadRequest {
+		t.Fatalf("Err(%q) 应带 400，实际 %d / %v", ErrInvalidRange, got, ok)
 	}
-	if fact.Fallback == "" || fact.Fallback == fact.Key {
-		t.Errorf("兜底不该为空、也不该回落成 key 本身：%+v", fact)
+	fact, ok := facing.FactOf(err)
+	if !ok || !fact.Business || fact.Key != ErrInvalidRange {
+		t.Fatalf("FactOf 应给业务事实 %q，得到 %+v / %v", ErrInvalidRange, fact, ok)
 	}
 	if fact.Tail != "" {
 		t.Errorf("纯 key 形态不该带定位信息：%q", fact.Tail)
@@ -112,10 +67,14 @@ func TestErrIsMatchesByKey(t *testing.T) {
 	}
 }
 
-func TestErrDetailKeepsTail(t *testing.T) {
-	fact, ok := facing.FactOf(ErrDetail(ErrInvalidRange, "2026-01-01 ~ 2027-12-31"))
+func TestErrDetailKeepsTailAndStatus(t *testing.T) {
+	err := ErrDetail(ErrInvalidRange, "2026-01-01 ~ 2027-12-31")
+	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business || fact.Tail != "2026-01-01 ~ 2027-12-31" {
 		t.Fatalf("带明细的业务错误应给 Tail，得到 %+v / %v", fact, ok)
+	}
+	if got, ok := facing.StatusOf(err); !ok || got != http.StatusBadRequest {
+		t.Errorf("带明细的错误也要保留声明的状态码，实际 %d / %v", got, ok)
 	}
 	if got := ErrDetail(ErrInvalidRange, "  ").Error(); got != ErrInvalidRange {
 		t.Errorf("空明细应退化成纯 key，实际 %q", got)

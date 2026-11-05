@@ -8,7 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"

@@ -54,9 +54,8 @@ func TestPublicCatalogPriceUsesEnabledCheapestVariant(t *testing.T) {
 		{id: uuid.NewString(), sku: "SKU-C", price: 1, compare: 5000, hasCompare: true, enabled: false},
 	})
 
-	index := &catalogIndexStub{paths: map[string]string{productID: "/p/price-scope"}}
-	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{})
-	s.SetPublicCatalogIndex(index)
+	seedCatalogPublication(t, db, projectID, "product", productID, "detail", "zh-CN", "/p/price-scope", "")
+	s := productservice.NewService(productmodel.NewModel(db), newCatalogProjectStub(projectID, "zh-CN"), stubMasterDataChanges{})
 	out, err := s.PublicCatalog(context.Background(), &productdto.PublicCatalogReq{
 		ProjectID: projectID, Page: 1, PageSize: 12,
 	})

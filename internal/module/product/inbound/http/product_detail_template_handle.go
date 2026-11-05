@@ -2,6 +2,11 @@ package producthttp
 
 import (
 	"context"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -13,9 +18,6 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
 )
 
 var productActionDoneMsg = productenums.ActionDoneMessage()
@@ -34,56 +36,62 @@ func (h *ProductHandle) SetDetailTemplateModePort(port presentationcontract.Deta
 }
 
 func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateModeReapplyReq](c)
-	if !ok {
+	var req productdto.DetailTemplateModeReapplyReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	detailTemplateFinish(c, productservice.ReapplyDetailTemplatePreset(c.Request.Context(), h.modePort, req))
+	detailTemplateFinish(c, productservice.ReapplyDetailTemplatePreset(c.Request.Context(), h.modePort, &req))
 }
 
 func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateModeRollbackReq](c)
-	if !ok {
+	var req productdto.DetailTemplateModeRollbackReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	detailTemplateFinish(c, productservice.RollbackDetailTemplateDocument(c.Request.Context(), h.modePort, req))
+	detailTemplateFinish(c, productservice.RollbackDetailTemplateDocument(c.Request.Context(), h.modePort, &req))
 }
 
 func detailTemplateFinish(c *gin.Context, err error) {
 	if err != nil {
-		response.ErrorStatusAuto(c, productErrScene, err)
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateCreateReq](c)
-	if !ok {
+	var req productdto.DetailTemplateCreateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 	detailTemplateFinish(c, productservice.CreateDetailTemplate(c.Request.Context(), h.templateDeps, req.ProjectID, req.Name, req.CopyFrom))
 }
 
 func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplatePublishReq](c)
-	if !ok {
+	var req productdto.DetailTemplatePublishReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 	detailTemplateFinish(c, productservice.PublishDetailTemplate(c.Request.Context(), h.templateDeps, req.ProjectID, req.ProductID, req.TemplateID, req.URLPath))
 }
 
 func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateApplyReq](c)
-	if !ok {
+	var req productdto.DetailTemplateApplyReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 	detailTemplateFinish(c, productservice.ApplyDetailTemplate(c.Request.Context(), h.templateDeps.Instances, req.ProjectID, req.ProductID, req.TemplateID))
 }
 
 func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateUpdateURLReq](c)
-	if !ok {
+	var req productdto.DetailTemplateUpdateURLReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
 	detailTemplateFinish(c, productservice.UpdateDetailTemplateURL(c.Request.Context(), h.templateDeps.Instances, req.ProjectID, req.ProductID, req.NewPath, req.WithRedirect))
@@ -184,7 +192,7 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+	response.Success(c, res)
 }
 
 const MsgProductsTitle = "MsgProductsTitle"

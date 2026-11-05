@@ -15,12 +15,12 @@ import (
 func (h *Handle) BlockPreviewDraft(c *gin.Context) {
 	req, err := binding.ParseForm[workbenchdto.BlockPreviewDraftReq](c)
 	if err != nil {
-		renderWorkbenchPageError(c, http.StatusBadRequest, workbenchenums.ErrDraftDecodeFailed)
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrDraftDecodeFailed)
 		return
 	}
 	block, err := h.svc.BlockDraftForPreview(c.Request.Context(), req)
 	if err != nil {
-		renderWorkbenchPageErrorText(c, response.ErrorStatus(err), workbenchenums.ErrBlockNotFound, response.MessageOf(c, "workbench.block-preview", err))
+		response.ErrorWithMessage(c, response.ErrorStatus(err), response.MessageOf(c, "workbench.block-preview", err))
 		return
 	}
 	h.renderPreview(c, json.RawMessage(req.DraftDocument), block.ProjectID, "", true, workbenchservice.PreviewDocBlock)

@@ -101,22 +101,6 @@ const (
 	MsgReviewRejected = "comment.msg.reviewRejected"
 )
 
-var errFallbacks = map[string]string{
-	ErrInvalidParam:      "参数不合法。",
-	ErrProjectRequired:   "请先选择站点工程：评论按工程隔离。",
-	ErrEntityTypeUnknown: "这个实体类型不支持评论（它还没有注册到评论模块）。",
-	ErrEntityIDInvalid:   "评论对象 id 不合法。",
-	ErrBodyRequired:      "评论内容不能为空。",
-	ErrBodyTooLong:       "评论太长了（最多 2000 字）。",
-	ErrRateLimited:       "评论提交太频繁，请稍后再试。",
-	ErrNotAllowed:        "当前不满足这条内容的评论条件。",
-	ErrLoginRequired:     "请先登录再发表评论。",
-	ErrCSRFRequired:      "页面已过期：请刷新后重试。",
-	ErrUnavailable:       "评论服务暂不可用：请联系管理员检查配置。",
-	ErrNothingSelected:   "请先勾选要审核的评论。",
-	ErrParentInvalid:     "回复的上级评论不存在或不属于同一条内容。",
-}
-
 func ErrDetail(key, detail string) error {
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
@@ -126,7 +110,7 @@ func ErrDetail(key, detail string) error {
 }
 
 func Err(key string) error {
-	return facing.New(key, errFallbacks[key])
+	return facing.New(key)
 }
 
 type LabelPair struct {
@@ -186,8 +170,8 @@ const (
 	LabelKeyEmptyHint = "admin.comment.empty_hint"
 	LabelKeyHint      = "admin.comment.hint"
 
-	LabelKeyDoneApproved = "admin.comment.done.approved"
-	LabelKeyDoneRejected = "admin.comment.done.rejected"
+	LabelKeyDoneApproved = "cmtDoneApprove"
+	LabelKeyDoneRejected = "cmtDoneReject"
 
 	LabelKeyErrNothingSelected = "admin.comment.err.nothing_selected"
 	LabelKeyProjectRequired    = "admin.comment.project_required"
@@ -220,8 +204,8 @@ const (
 	LabelEmptyHint = "换一个筛选条件，或等访客提交新的评论。"
 	LabelHint      = "评论按「站点工程 + 实体」隔离；只有「已通过」的评论会出现在公开页面上。"
 
-	LabelDoneApprovedTemplate = "已通过 %d 条评论。"
-	LabelDoneRejectedTemplate = "已驳回 %d 条评论。"
+	LabelDoneApprovedTemplate = "已通过 {count} 条评论。"
+	LabelDoneRejectedTemplate = "已驳回 {count} 条评论。"
 
 	LabelErrNothingSelected = "没有选择任何评论。"
 	LabelProjectRequired    = "请先选择站点工程：评论按工程隔离。"
@@ -235,5 +219,3 @@ func DoneTemplate(approved bool) LabelPair {
 	}
 	return LabelPair{LabelKeyDoneRejected, LabelDoneRejectedTemplate}
 }
-
-func FallbackFor(key string) string { return errFallbacks[key] }

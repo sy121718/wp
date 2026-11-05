@@ -26,7 +26,22 @@ type DeptUpdateReq struct {
 }
 
 type DeptDeleteReq struct {
-	ID uint64 `json:"id" form:"id" binding:"required" validate:"required"`
+	ID  uint64   `json:"id" form:"id"`
+	IDs []uint64 `json:"ids" form:"ids"`
+}
+
+// IDList 返回本次要处理的主键集合。
+//
+// 单条删除传 ID，批量删除传 IDs；两者都传时以 IDs 为准。
+// 这里只做请求字段归一，不含业务规则。
+func (r *DeptDeleteReq) IDList() []uint64 {
+	if len(r.IDs) > 0 {
+		return r.IDs
+	}
+	if r.ID == 0 {
+		return nil
+	}
+	return []uint64{r.ID}
 }
 
 type DeptUserListReq struct {

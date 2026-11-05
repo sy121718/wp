@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/rls"
@@ -15,7 +17,7 @@ func TestRLS_VariantSnapshotScope_OwnProjectOnly(t *testing.T) {
 	ctx := context.Background()
 	pA, _, aIDs, _ := productScopeFixture(t, db)
 
-	svc := productservice.NewService(productmodel.NewModel(db), nil)
+	svc := productservice.NewService(productmodel.NewModel(db), nil, masterdataservice.NewService(masterdatamodel.NewModel(db), nil))
 	snaps, err := svc.VariantSnapshots(ctx, []string{aIDs["variant"]}, pA)
 	if err != nil {
 		t.Fatalf("本工程取变体快照应成功，实际 %v", err)
@@ -38,7 +40,7 @@ func TestRLS_VariantSnapshotScope_CrossProjectInvisible(t *testing.T) {
 	ctx := context.Background()
 	pA, _, aIDs, bIDs := productScopeFixture(t, db)
 
-	svc := productservice.NewService(productmodel.NewModel(db), nil)
+	svc := productservice.NewService(productmodel.NewModel(db), nil, masterdataservice.NewService(masterdatamodel.NewModel(db), nil))
 
 	snaps, err := svc.VariantSnapshots(ctx, []string{bIDs["variant"]}, pA)
 	if err != nil {
@@ -62,7 +64,7 @@ func TestRLS_VariantSnapshotScope_RejectsMissingScope(t *testing.T) {
 	ctx := context.Background()
 	_, _, aIDs, _ := productScopeFixture(t, db)
 
-	svc := productservice.NewService(productmodel.NewModel(db), nil)
+	svc := productservice.NewService(productmodel.NewModel(db), nil, masterdataservice.NewService(masterdatamodel.NewModel(db), nil))
 	for _, bad := range []string{"", "not-a-uuid"} {
 		if _, err := svc.VariantSnapshots(ctx, []string{aIDs["variant"]}, bad); !errors.Is(err, rls.ErrInvalidProjectID) {
 			t.Errorf("工程 id 为 %q 时应返回 rls.ErrInvalidProjectID，实际 %v", bad, err)

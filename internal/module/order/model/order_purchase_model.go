@@ -16,7 +16,7 @@ func (m *OrderModel) HasPurchasedProduct(ctx context.Context, projectID string, 
 			Select("id").
 			Where("project_id = ?", projectID).
 			Where("user_id = ?", userID).
-			Where("status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ","))
+			Where("status = ANY(string_to_array(?, ',')::text[])", strings.Join(DefaultSalesStatuses, ","))
 
 		var hit []string
 		if err := tx.Model(&OrderItemEntity{}).

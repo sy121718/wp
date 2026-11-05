@@ -7,13 +7,14 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 const navigationAddSourceAction = "addSource"
@@ -51,49 +52,35 @@ func navigationAddSourceOptionalString(raw map[string]json.RawMessage, key strin
 	return strings.TrimSpace(text), true
 }
 
-func (h *Handle) createFromSource(c *gin.Context, raw map[string]json.RawMessage) {
-	if !navigationDeleteShapeOK(raw, navigationAddSourceKeys) {
-		response.ParamError(c)
+// CreateFromSource 是「从页面/内容等来源批量加入菜单」的独立端点：
+// 一个端点一种确定协议，输入是标准表单（projectId / kind / sourceType / ids）。
+func (h *Handle) CreateFromSource(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	// 请求体上限：批量 ids 可能很长，超限整批拒绝而不是部分执行。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, navigationWriteMaxBodyBytes)
+	var form navigationdto.AddSourceForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	projectID, ok := navigationWriteRequiredString(raw, "projectId")
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-	sourceType, ok := navigationWriteRequiredString(raw, "sourceType")
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-	kindText, ok := navigationAddSourceOptionalString(raw, "kind")
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-	kind := normalizeNavKind(kindText)
-	params, ok := navigationDeleteBulkIDsOf(raw["ids"])
-	if !ok {
-		response.ParamError(c)
-		return
-	}
-	ids, nerr := bulkids.Normalize(params)
+	projectID := strings.TrimSpace(form.ProjectID)
+	sourceType := strings.TrimSpace(form.SourceType)
+	kind := normalizeNavKind(form.Kind)
+	ids, nerr := bulkids.Normalize(form.IDs)
 	if nerr != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navigationBulkTooManyMessage(nerr))
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, nerr)
 		return
 	}
 	if len(ids) == 0 {
-
-		response.Success(c, navigationAddSourceResult{Items: []navigationAddSourceItem{}})
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
 
 	ctx := c.Request.Context()
 	groups, gerr := h.svc.SourceGroups(ctx, projectID)
 	if gerr != nil {
-
 		logger.Scene(navigationErrScene).With("project", projectID).Error(gerr, "加载导航来源候选失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, navigationInternalKey)
+		pageview.FailScene(c, navigationErrScene, gerr)
 		return
 	}
 
@@ -148,5 +135,9 @@ func (h *Handle) createFromSource(c *gin.Context, raw map[string]json.RawMessage
 	logger.Scene(navigationErrScene).With("project", projectID).With("kind", kind).
 		With("sourceType", sourceType).With("added", res.Added).With("skipped", res.Skipped).
 		Info("来源实体加入导航菜单")
-	response.Success(c, res)
+	c.HTML(http.StatusOK, "admin/navigation/navigation_add_source_result.html", pageview.Objects(
+		pageview.Object("Added", res.Added),
+		pageview.Object("Skipped", res.Skipped),
+		pageview.Object("Items", res.Items),
+	))
 }

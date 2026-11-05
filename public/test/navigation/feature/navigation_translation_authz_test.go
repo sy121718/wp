@@ -2,9 +2,11 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,9 +45,9 @@ import (
 
 const navTranslationAuthzPlainAdmin = "nav-tr-authz-plain"
 
-const navTranslationWriteAPIPath = "/api/navigation/update"
+const navTranslationWriteAPIPath = "/api/navigation/translations"
 
-const navTranslationWritePermission = "navigation:update"
+const navTranslationWritePermission = "navigation:translate"
 
 type navTranslationAuthzEnv struct {
 	Engine    *gin.Engine
@@ -73,6 +75,8 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行业务权限 seed 失败: %v", err)
 	}
+	// RunSeeds 只写库、不刷新 i18n 进程缓存；不注入的话取词一律落兜底。
+	injectNavigationFeatureWords(t, db)
 	if err := pkgcasbin.InitCasbin(db); err != nil {
 		t.Fatalf("初始化 Casbin 失败: %v", err)
 	}
@@ -106,6 +110,8 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 		RouteRegistrar: func(engine *gin.Engine) {
 
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 生产装配在基础层挂请求取词；缺了它成功/失败片段都会渲染失败。
+			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
@@ -297,21 +303,22 @@ func navTranslationAuthzRevokePolicy(t *testing.T, env *navTranslationAuthzEnv) 
 	}
 }
 
+// navTranslationAuthzWritten 从 Jet 结果片段里读写入条数；缺片段视为失败。
 func navTranslationAuthzWritten(t *testing.T, recorder *httptest.ResponseRecorder) int {
 	t.Helper()
-	body := map[string]interface{}{}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("回执不是 JSON: %s", recorder.Body.String())
+	body := recorder.Body.String()
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf("回执不是成功片段: %s", body)
 	}
-	data, ok := body["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("回执缺少 data 段: %s", recorder.Body.String())
+	m := regexp.MustCompile(`\d+`).FindString(body)
+	if m == "" {
+		t.Fatalf("结果片段缺少写入条数: %s", body)
 	}
-	written, ok := data["written"].(float64)
-	if !ok {
-		t.Fatalf("回执缺少 written 计数: %s", recorder.Body.String())
+	n, err := strconv.Atoi(m)
+	if err != nil {
+		t.Fatalf("写入条数解析失败: %s", body)
 	}
-	return int(written)
+	return n
 }
 
 func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
@@ -427,8 +434,8 @@ func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 	}
 	body := page.Body.String()
 
-	if !strings.Contains(body, `data-write-url="`+navTranslationWriteAPIPath+`"`) {
-		t.Errorf("译文页缺少 JSON 写声明 data-write-url=%q", navTranslationWriteAPIPath)
+	if !strings.Contains(body, `hx-post="`+navTranslationWriteAPIPath+`"`) {
+		t.Errorf("译文页缺少 HTMX 写声明 hx-post=%q", navTranslationWriteAPIPath)
 	}
 	if strings.Contains(body, "translations/save") {
 		t.Errorf("译文页仍在引用已下线的页面写路由: %s", page.Body.String())
@@ -495,4 +502,27 @@ func TestNavigationTranslationsRowsShape(t *testing.T) {
 	if code, body := post(t, emptyRows); code != http.StatusOK {
 		t.Errorf("空数组应 200（本次没有要改的行是正常形态），实际 %d: %s", code, body)
 	}
+}
+
+// injectNavigationFeatureWords 把生产种子写进库的词条刷新进 i18n 进程缓存。
+func injectNavigationFeatureWords(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []struct {
+		ItemKey string `gorm:"column:item_key"`
+		Lang    string
+		Value   string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_i18n").Select("item_key, lang, item_value AS value").
+		Where("status = ?", 1).Scan(&rows).Error; err != nil {
+		t.Fatalf("读取词条失败：%v", err)
+	}
+	words := make(map[string]map[string]string, len(rows))
+	for _, r := range rows {
+		if words[r.ItemKey] == nil {
+			words[r.ItemKey] = map[string]string{}
+		}
+		words[r.ItemKey][r.Lang] = r.Value
+	}
+	i18n.InjectForTest(words, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 }

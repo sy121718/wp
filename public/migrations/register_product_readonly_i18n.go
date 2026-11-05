@@ -13,8 +13,13 @@ func registerProductReadonlyI18nSeed() {
 	registerSeed(Seed{
 		Version:   "315-i18n-seed-product-readonly",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN ('admin.product_detail.hint.readonly','admin.products.tags.none','admin.products.col.stockLink')",
-		SQL: mustSQL("315_i18n_seed_product_readonly.sql"),
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('pStockLink'),
+    ('pTagsNone'),
+    ('pdHintAutoTags'),
+    ('pdHintRating'),
+    ('pdHintReadonly')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723ac_current_315_i18n_seed_product_readonly.sql"),
 	})
 }

@@ -21,7 +21,6 @@
 --   admin.masterdata.loadFailed.lead      —— 装载失败时的提示条前缀（原先写死「部分数据未取到：」）
 --   admin.masterdata.loadFailed.title     —— 记录 / 实体两个面板的空态标题（装载失败版）
 --   admin.masterdata.loadFailed.desc      —— 同上，说明句
---   admin.analytics.no_project.loadFailed —— 统计页工程空态（装载失败版）
 --   admin.content.templates.loadFailed.title —— 内容模板空态标题（装载失败版）
 --   admin.content.templates.loadFailed    —— 同上，说明句
 --   admin.content.templates.impact.loadFailed —— 装载失败时的引用面提示（与「能力未装配」分开：
@@ -42,8 +41,6 @@ VALUES
 ('admin.masterdata.loadFailed.title', 'en-US', 'The list could not be loaded', 200, 'admin', 'admin/masterdata_changes.html: 装载失败时的空态标题（不是「没有记录」）', 1, now(), now()),
 ('admin.masterdata.loadFailed.desc', 'zh-CN', '这一次没取到变更记录（不是「没有记录」）—— 先看上方的提示，刷新后重试。', 200, 'admin', 'admin/masterdata_changes.html: 装载失败时的空态说明', 1, now(), now()),
 ('admin.masterdata.loadFailed.desc', 'en-US', 'This request could not fetch the change records (this is not "no records") — check the notice above and refresh to retry.', 200, 'admin', 'admin/masterdata_changes.html: 装载失败时的空态说明', 1, now(), now()),
-('admin.analytics.no_project.loadFailed', 'zh-CN', '工程列表没读出来 —— 不是「还没有工程」，先看上方的提示，刷新后重试。', 200, 'admin', 'admin/analytics.html: 装载失败时的空态（区别于「还没有站点工程」）', 1, now(), now()),
-('admin.analytics.no_project.loadFailed', 'en-US', 'The project list could not be loaded — this is not "no projects yet". Check the notice above and refresh to retry.', 200, 'admin', 'admin/analytics.html: 装载失败时的空态（区别于「还没有站点工程」）', 1, now(), now()),
 ('admin.content.templates.loadFailed.title', 'zh-CN', '列表没读出来', 200, 'admin', 'admin/content_templates.html: 装载失败时的空态标题（不是「还没有内容模板」）', 1, now(), now()),
 ('admin.content.templates.loadFailed.title', 'en-US', 'The list could not be loaded', 200, 'admin', 'admin/content_templates.html: 装载失败时的空态标题（不是「还没有内容模板」）', 1, now(), now()),
 ('admin.content.templates.loadFailed', 'zh-CN', '这一次没取到模板清单（不是「还没有模板」）—— 先看上方的提示，刷新后重试。', 200, 'admin', 'admin/content_templates.html: 装载失败时的空态说明', 1, now(), now()),

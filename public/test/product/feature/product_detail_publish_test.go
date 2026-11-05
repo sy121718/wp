@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
@@ -18,6 +18,8 @@ import (
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	presentationservice "go_wp/internal/module/presentation/service"
@@ -68,7 +70,7 @@ func newDetailFixture(t *testing.T) *detailFixture {
 	}
 
 	registry := core.NewEntitySourceRegistry()
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	products.SetContentStore(i18n.NewDBContentStore(db))
 	if err := products.RegisterEntityTypes(registry); err != nil {
 		t.Fatalf("注册商品实体类型失败: %v", err)

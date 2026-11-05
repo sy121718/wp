@@ -319,7 +319,7 @@ func validateContexts(rows []navigationcontract.TranslationWriteRow, contextName
 		items = append(items, facing.BlockedItem{
 			ID: row.Hash, Name: row.Hash,
 			ReasonKey: navigationenums.ErrContextInvalid,
-			Fallback:  navigationenums.FallbackFor(navigationenums.ErrContextInvalid),
+			Fallback:  "",
 		})
 	}
 	if len(items) == 0 {
@@ -346,7 +346,7 @@ func rejectDuplicates(rows []navigationcontract.TranslationWriteRow, contextName
 			ID:        row.Hash,
 			Name:      fmt.Sprintf("%s / %s", rows[first].Target, row.Target),
 			ReasonKey: navigationenums.ErrTranslationDuplicate,
-			Fallback:  navigationenums.FallbackFor(navigationenums.ErrTranslationDuplicate),
+			Fallback:  "",
 		})
 	}
 	if len(items) == 0 {
@@ -366,7 +366,7 @@ func validateSources(rows []navigationcontract.TranslationWriteRow, contextName,
 			unknown = append(unknown, facing.BlockedItem{
 				ID: row.Hash, Name: row.Hash,
 				ReasonKey: navigationenums.ErrSourceChanged,
-				Fallback:  navigationenums.FallbackFor(navigationenums.ErrSourceChanged),
+				Fallback:  "",
 			})
 			continue
 		}
@@ -374,7 +374,7 @@ func validateSources(rows []navigationcontract.TranslationWriteRow, contextName,
 			untranslatable = append(untranslatable, facing.BlockedItem{
 				ID: entry.Hash, Name: sourceNameOrHash(entry.Source, entry.Hash),
 				ReasonKey: navigationenums.ErrNotTranslatable,
-				Fallback:  navigationenums.FallbackFor(navigationenums.ErrNotTranslatable),
+				Fallback:  "",
 			})
 			continue
 		}

@@ -134,7 +134,9 @@ func TestAdminRoleSaveAndList(t *testing.T) {
 
 	code := "ar_" + uniq("")
 	createRole(t, e, code, "用户角色")
-	userID := uint64(31337)
+	// 授予目标必须是真实的管理员行：AdminRoleSave 现在在事务里锁这一行，
+	// 锁不到就是 ErrAdminNotFound —— 授权对象不存在，绑定不该凭空落下。
+	userID := createAdminDB(t, e.db, uniq("aruser"), uniq("aruser")+"@example.com")
 
 	_, err := e.svc.AdminRoleSave(ctx, &admindto.AdminRoleSaveReq{UserID: userID, RoleCodes: []string{code}})
 	wantErr(t, err, "")

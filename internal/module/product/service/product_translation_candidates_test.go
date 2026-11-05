@@ -30,7 +30,7 @@ func TestProjectTranslationCandidatesCoverListOmittedColumns(t *testing.T) {
 		t.Fatalf("造数据失败：%v", err)
 	}
 
-	svc := productservice.NewService(productmodel.NewModel(db), candidateProjectStub{projectID: projectID})
+	svc := productservice.NewService(productmodel.NewModel(db), candidateProjectStub{projectID: projectID}, stubMasterDataChanges{})
 	list, err := svc.ProjectTranslationCandidates(context.Background(), projectID)
 	if err != nil {
 		t.Fatalf("取候选失败：%v", err)

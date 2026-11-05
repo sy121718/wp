@@ -17,6 +17,7 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 	"go_wp/pkg/logger"
 
 	"github.com/gin-contrib/sessions"
@@ -184,7 +185,7 @@ func TestNavigationsPageLoadFailureReturnsJSON(t *testing.T) {
 			name:       "zh-CN",
 			acceptLang: "zh-CN",
 			entries: map[string]map[string]string{
-				"服务器内部错误，请稍后重试": {"zh-CN": "操作失败，请稍后重试"},
+				"uiInternalErr": {"zh-CN": "操作失败，请稍后重试"},
 			},
 			wantMsg: "操作失败，请稍后重试",
 		},
@@ -192,7 +193,7 @@ func TestNavigationsPageLoadFailureReturnsJSON(t *testing.T) {
 			name:       "en-US",
 			acceptLang: "en-US",
 			entries: map[string]map[string]string{
-				"服务器内部错误，请稍后重试": {"en-US": "Operation failed, please try again later"},
+				"uiInternalErr": {"en-US": "Operation failed, please try again later"},
 			},
 			wantMsg: "Operation failed, please try again later",
 		},
@@ -201,7 +202,7 @@ func TestNavigationsPageLoadFailureReturnsJSON(t *testing.T) {
 			name:       "词条缺席回落兜底",
 			acceptLang: "en-US",
 			entries:    nil,
-			wantMsg:    "服务器内部错误，请稍后重试",
+			wantMsg:    response.InternalFallback,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -270,21 +271,23 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			absent: []string{"MsgInternalError"},
 		},
 		{
-			name:       "纯 key / 词条缺席 → 中文兜底",
+			// 词条缺席时不能把裸 key 交给前端（AGENTS.md 取词规则），给归口文案。
+			name:       "纯 key / 词条缺席 → 归口文案",
 			acceptLang: "en-US",
 			entries:    nil,
 			err:        errors.New(navigationenums.ErrPathTaken),
-			want:       navigationenums.ErrPathTaken,
-			absent:     []string{"MsgInternalError"},
+			want:       response.InternalFallback,
+			absent:     []string{navigationenums.ErrPathTaken, "uiInternalErr"},
 		},
 		{
-			name:       "key+定位 / 词条缺席 → 中文兜底 + 全角定位",
+			// 词条缺席时同样给归口文案；定位细节不上屏。
+			name:       "key+定位 / 词条缺席 → 归口文案",
 			acceptLang: "zh-CN",
 			entries:    nil,
 			err:        navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
 
-			want:   "该菜单项已被其他窗口修改，请刷新后重试",
-			absent: []string{"MsgInternalError"},
+			want:   response.InternalFallback,
+			absent: []string{navigationenums.ErrStaleVersion, "uiInternalErr"},
 		},
 		{
 			name:       "key+定位 / 词条在场 en-US → 英文 + 半角定位",

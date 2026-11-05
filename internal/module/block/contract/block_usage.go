@@ -2,8 +2,9 @@ package blockcontract
 
 import (
 	"errors"
-	"fmt"
 	"strings"
+
+	"go_wp/pkg/facing"
 )
 
 type BlockUsageKind string
@@ -58,18 +59,58 @@ type BlockInUseError struct {
 	Usages []BlockUsage
 }
 
-func (e *BlockInUseError) Error() string {
-	if e == nil || len(e.Usages) == 0 {
-		return ErrBlockInUse.Error()
+func blockUsageKindKey(kind BlockUsageKind) string {
+	switch kind {
+	case UsageKindPageDocument:
+		return "MsgBlockUsagePageDocument"
+	case UsageKindPageStructure:
+		return "MsgBlockUsagePageStructure"
+	case UsageKindPageRevision:
+		return "MsgBlockUsagePageRevision"
+	case UsageKindThemeSlot:
+		return "MsgBlockUsageThemeSlot"
+	case UsageKindBlockDocument:
+		return "MsgBlockUsageBlockDocument"
+	case UsageKindContentTemplate:
+		return "MsgBlockUsageContentTemplate"
+	case UsageKindPresentationInstance:
+		return "MsgBlockUsagePresentationInstance"
+	default:
+		return string(kind)
 	}
-	parts := make([]string, 0, len(e.Usages))
-	for _, u := range e.Usages {
-		parts = append(parts, u.String())
-	}
-	return fmt.Sprintf("%s: %s", ErrBlockInUse.Error(), strings.Join(parts, "; "))
 }
 
+// Error 只给业务 key：引用明细是界面事实，走 BlockedItems 由失败片段逐条取词。
+// 把明细拼进 Error() 会让它经日志与错误链外泄内部枚举（page_document 等）。
+func (e *BlockInUseError) Error() string { return ErrBlockInUse.Error() }
+
 func (e *BlockInUseError) Unwrap() error { return ErrBlockInUse }
+
+// Facing 只交业务 key：引用明细走 BlockedItems，由失败片段逐条取词，
+// 不让 err.Error() 里的内部枚举原文混进对外提示。
+func (e *BlockInUseError) Facing() (string, string) { return ErrBlockInUse.Error(), "" }
+
+// BlockedItems 把引用位置交失败的 HTML 出口逐条取词，
+// 不让控制器把「类型 + 位置」拼成一条成品句。
+func (e *BlockInUseError) BlockedItems() []facing.BlockedItem {
+	if e == nil {
+		return nil
+	}
+	items := make([]facing.BlockedItem, 0, len(e.Usages))
+	for _, u := range e.Usages {
+		name := strings.TrimSpace(u.Label)
+		if name == "" {
+			name = strings.TrimSpace(u.EntityID)
+		}
+		items = append(items, facing.BlockedItem{
+			ID:        u.EntityID,
+			Name:      name,
+			ReasonKey: blockUsageKindKey(u.Kind),
+			Fallback:  strings.TrimSpace(u.Detail),
+		})
+	}
+	return items
+}
 
 func NewBlockInUseError(usages []BlockUsage) error {
 	if len(usages) == 0 {

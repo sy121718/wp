@@ -2,6 +2,7 @@ package productenums
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"go_wp/pkg/facing"
@@ -9,28 +10,45 @@ import (
 
 func TestErrStatusesOnlyCoverDeclaredKeys(t *testing.T) {
 	declared := errKeyConstants(t)
-	for key := range errFallbacks {
-		if _, ok := declared[key]; !ok {
-			t.Fatalf("错误声明登记了本包不存在的 key %q —— 改名后残留的条目永远不会生效", key)
+	for key, name := range declared {
+		if !isErrConstant(name) {
+			continue
+		}
+		status := StatusFor(key)
+		switch status {
+		case 0, http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError:
+		default:
+			t.Errorf("%s (=%q) 声明了非标准业务状态码 %d", name, key, status)
 		}
 	}
 }
 
 func TestErrFactoryCarriesDeclaredStatus(t *testing.T) {
-	if got, ok := facing.StatusOf(Err(ErrNotFound)); !ok || got != 404 {
-		t.Fatalf("Err(ErrNotFound) 的状态码 = (%d, %v)，want (404, true)", got, ok)
+	cases := []struct {
+		key    string
+		status int
+	}{
+		{ErrNotFound, http.StatusNotFound},
+		{ErrSlugTaken, http.StatusConflict},
+		{ErrNameRequired, 0},
 	}
-	if got, ok := facing.StatusOf(Err(ErrSlugTaken)); !ok || got != 409 {
-		t.Fatalf("Err(ErrSlugTaken) 的状态码 = (%d, %v)，want (409, true)", got, ok)
-	}
-	if got, ok := facing.StatusOf(Err(ErrNameRequired)); ok {
-		t.Fatalf("未登记的 key 不该带状态码，实际 %d（默认档由出口给）", got)
+	for _, tc := range cases {
+		got, ok := facing.StatusOf(Err(tc.key))
+		if tc.status == 0 {
+			if ok {
+				t.Errorf("Err(%s) 未声明状态，实际带 %d（默认档由出口给）", tc.key, got)
+			}
+			continue
+		}
+		if !ok || got != tc.status {
+			t.Errorf("Err(%s) 的状态码 = (%d, %v)，want (%d, true)", tc.key, got, ok, tc.status)
+		}
 	}
 }
 
 func TestCompositeErrorKeepsStatus(t *testing.T) {
 	err := fmt.Errorf("%w: %s", Err(ErrSlugTaken), "summer-sale")
-	if got, ok := facing.StatusOf(err); !ok || got != 409 {
+	if got, ok := facing.StatusOf(err); !ok || got != http.StatusConflict {
 		t.Fatalf("复合错误的状态码 = (%d, %v)，want (409, true)", got, ok)
 	}
 	if fact, ok := facing.FactOf(err); !ok || fact.Key != ErrSlugTaken {
@@ -38,15 +56,22 @@ func TestCompositeErrorKeepsStatus(t *testing.T) {
 	}
 }
 
-func TestErrorDefinitionsCarryFallbackAndStatus(t *testing.T) {
-	for key, definition := range errFallbacks {
-		fact, ok := facing.FactOf(Err(key))
-		if !ok || fact.Key != key || fact.Fallback != definition.fallback {
-			t.Errorf("错误事实与声明不一致: key=%s fact=%+v", key, fact)
+func TestErrFactoryDeclaresOnlyKeyAndStatus(t *testing.T) {
+	for key, name := range errKeyConstants(t) {
+		if !isErrConstant(name) {
+			continue
 		}
-		status, hasStatus := facing.StatusOf(Err(key))
-		if hasStatus != (definition.status != 0) || (hasStatus && status != StatusFor(key)) {
-			t.Errorf("错误状态与声明不一致: key=%s status=%d present=%v", key, status, hasStatus)
+		fact, ok := facing.FactOf(Err(key))
+		if !ok || !fact.Business || fact.Key != key {
+			t.Errorf("%s：错误事实应为业务 key %q，实际 %+v（ok=%v）", name, key, fact, ok)
+			continue
+		}
+		if fact.Fallback != "" {
+			t.Errorf("%s：错误声明不该再带中文兜底（%q）—— 文案归词库，缺词由 JSON 出口给共享提示",
+				name, fact.Fallback)
+		}
+		if fact.Tail != "" {
+			t.Errorf("%s：错误事实不该带明细，实际 %q", name, fact.Tail)
 		}
 	}
 }

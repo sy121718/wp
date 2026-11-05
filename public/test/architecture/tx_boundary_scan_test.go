@@ -60,6 +60,7 @@ func isWriteCall(name string) bool {
 }
 
 var txBoundaryAllow = map[string]string{
+	"internal/module/admin/service/side_effect.go#applySideEffect": "误报：MarkFailed 后立即 return，MarkDone 只在副作用成功时执行；同一路径只写一次带 attempts 租约令牌的状态，不存在多写原子性缺口",
 
 	"internal/module/plugin/service/plugin.go#Install": "待修（中）：L1 迁移（已提交）+ 落盘 + registry 写入；失败会留孤儿 schema，需巡检或补偿。归插件批",
 
@@ -75,7 +76,6 @@ var txBoundaryAllow = map[string]string{
 
 	"internal/module/mail/service/mail_campaign.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics 的同类保留期函数（DeleteViewsBefore 所在函数）只有 1 处写，本轮不构成候选；page 的同类函数（PurgeRetention）在定时上下线下线后回到单个 retention.Task（page_revisions），同样只有 1 处写",
 
-	"internal/module/admin/service/admin.go#AdminEdit":                                    "可接受：两处是**不同存储边界** —— sys_admin 行更新（Updates，DB）与会话失效（auth.DeleteUserSession，Redis）。Redis 不在数据库事务的覆盖范围内，本函数已按该边界写成「先提交 DB 主操作、再撤会话、撤失败只记结构化日志」，重登 / 再次编辑自然收敛",
 	"internal/module/mail/service/mail_account.go#TestSend":                               "误报：两处 UpdateAccountFields 是 sendErr 的 if/else **互斥分支**（成功写 last_check_error=nil、失败写错误原因），同一路径只执行一支；写的是同一行上的「最近检查结果」诊断字段，无跨行不变量",
 	"internal/module/mail/service/mail_automation.go#SaveAutomation":                      "误报：CreateAutomation 与 UpdateAutomationFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支 —— 与 mail_campaign.go#SaveCampaign 同形",
 	"internal/module/mail/service/mail_automation.go#RunAutomation":                       "误报：两处 UpdateRunFields 落在不同节点类型的分支里（delay 节点写完 waiting 即挂起返回 / email 节点发信失败写 error 后重试），同一次调用只落一支。发信与入队是跨系统边界（不可回滚），本函数按「一步一提交 + node_logs 幂等判重（NodeLogExists）+ 游标先推进」设计，包成一个大事务反而让行锁横跨 SMTP 往返",

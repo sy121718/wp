@@ -11,7 +11,7 @@
 # flip-x → flip-in-x、zoom-out → zoom-in-out），本门禁守「不再新增例外」。
 #
 # 判据：
-#   1. internal/builder/core/groups.go 的 allowedEntrance 里，每个名字必须匹配
+#   1. pkg/builder/core/groups.go 的 allowedEntrance 里，每个名字必须匹配
 #      `<效果>-in`、`<效果>-in-<方向>`，或属于静态白名单（见下）。
 #   2. 动效名必须在 builtin.css / animate.css 里有关键帧（反向核对）。
 #
@@ -24,8 +24,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-GROUPS_GO="internal/builder/core/groups.go"
-KF_DIR="internal/builder/core/keyframes"
+GROUPS_GO="pkg/builder/core/groups.go"
+KF_DIR="pkg/builder/core/keyframes"
 
 violations=0
 fail() { printf '✗ %s\n' "$1" >&2; violations=$((violations + 1)); }
@@ -37,15 +37,28 @@ import re, sys, os
 
 groups = os.environ['WB_GROUPS']
 kf_dir = os.environ['WB_KF_DIR']
+if not os.path.isfile(groups):
+    print(f'✗ 动效词汇表不存在：{groups}（包移动后必须同步更新本脚本）', file=sys.stderr)
+    sys.exit(1)
 src = open(groups, encoding='utf-8').read()
+if 'allowedEntrance = map[string]bool{' not in src:
+    print(f'✗ {groups} 里找不到 allowedEntrance —— 取词源已改名或搬走', file=sys.stderr)
+    sys.exit(1)
 i = src.index('allowedEntrance = map[string]bool{')
 j = src.index('\n\t}', i)
 names = re.findall(r'"([a-z][a-z0-9-]*)":\s*true', src[i:j])
+if not names:
+    print(f'✗ 从 {groups} 提取到的入场动效名为空 —— 扫描已空转', file=sys.stderr)
+    sys.exit(1)
 
 # 关键帧全集（两个共享词汇表文件）
 kf = set()
 for fn in ('builtin.css', 'animate.css'):
-    text = open(os.path.join(kf_dir, fn), encoding='utf-8').read()
+    p = os.path.join(kf_dir, fn)
+    if not os.path.isfile(p):
+        print(f'✗ 关键帧文件不存在：{p}', file=sys.stderr)
+        sys.exit(1)
+    text = open(p, encoding='utf-8').read()
     kf.update(re.findall(r'@keyframes\s+(sky-[a-z0-9-]+)', text))
 
 violations = 0
@@ -79,6 +92,6 @@ PY
 
 if [[ $violations -gt 0 ]]; then
   echo
-  echo "动效词汇表见 internal/builder/core/groups.go 与 core/keyframes/。" >&2
+  echo "动效词汇表见 pkg/builder/core/groups.go 与 core/keyframes/。" >&2
   exit 1
 fi

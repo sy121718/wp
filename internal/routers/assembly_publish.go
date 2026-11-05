@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -116,14 +116,6 @@ func (a *assembly) buildPublishingModules() {
 	if !ok {
 		panic("自动发布模块未实现公开实体索引")
 	}
-	if setter, ok := productSvc.(interface {
-		SetPublicCatalogIndex(presentationcontract.PublishedEntityIndex)
-	}); ok {
-		setter.SetPublicCatalogIndex(publicIndex)
-	} else {
-		panic("商品模块未提供公开实体索引注入点")
-	}
-	marks.mark(portProductPublicIndex)
 	contenthttp.SetupContentPublicRoutes(a.router, contentservice.NewPublicSearchService(contentSearch, productSearch, publicIndex))
 
 	if setter, ok := productSvc.(interface {

@@ -15,13 +15,15 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 )
 
@@ -629,7 +631,9 @@ func TestSourceAPIChain(t *testing.T) {
 
 	rec = httptestGet(engine, "/api/inventory/source/list?projectId="+f.projectID+"&relatedParty=yes")
 
-	filterText := inventoryenums.FallbackFor(purchaseenums.ErrSourceFilterInvalid)
+	// 声明处只给 key + 状态码，成品句归词库；本 fixture 的引擎没有把词库注入 i18n，
+	// 所以出口交出共享归口文案（pkg/response.InternalFallback）。
+	filterText := response.InternalFallback
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), filterText) ||
 		strings.Contains(rec.Body.String(), purchaseenums.ErrSourceFilterInvalid) {
 		t.Fatalf("非法筛选值应 400 + %s，实际 %d：%s", filterText, rec.Code, rec.Body.String())
@@ -651,7 +655,7 @@ func TestSourceAPIChain(t *testing.T) {
 		t.Fatalf("删除接口应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	rec = httptestGet(engine, "/api/inventory/source/get?id="+created.Data.ID)
-	notFoundText := inventoryenums.FallbackFor(purchaseenums.ErrSourceNotFound)
+	notFoundText := response.InternalFallback
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), notFoundText) ||
 		strings.Contains(rec.Body.String(), purchaseenums.ErrSourceNotFound) {
 		t.Fatalf("删除后详情应 404 + %s，实际 %d：%s", notFoundText, rec.Code, rec.Body.String())
@@ -722,6 +726,8 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
@@ -734,9 +740,9 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	})
 	handle := purchasehttp.NewSourcePageHandle(f.purchase, f.projects)
 	engine.GET("/admin/inventory/sources", adminui.PageSlot(purchasehttp.SourcesPageTemplate), handle.SourcesPage)
-	engine.POST("/admin/inventory/sources/create", handle.SourceCreate)
-	engine.POST("/admin/inventory/sources/update", handle.SourceUpdate)
-	engine.POST("/admin/inventory/sources/delete", handle.SourceDelete)
+	engine.POST("/admin/inventory/sources/create", pageview.HTMLFragment, handle.SourceCreate)
+	engine.POST("/admin/inventory/sources/update", pageview.HTMLFragment, handle.SourceUpdate)
+	engine.POST("/admin/inventory/sources/delete", pageview.HTMLFragment, handle.SourceDelete)
 	return engine, f
 }
 

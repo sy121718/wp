@@ -32,7 +32,7 @@ func (h *Handle) TemplatePreview(c *gin.Context) {
 	}
 	templateID := strings.TrimSpace(c.Query("template"))
 	if templateID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateParamRequired))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrTemplateParamRequired)
 		return
 	}
 	projectID := c.Query("projectId")
@@ -46,13 +46,13 @@ func (h *Handle) TemplatePreview(c *gin.Context) {
 		return
 	}
 	if h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplatePreviewNotAssembled)
 		return
 	}
 	entityType := strings.TrimSpace(c.Query("entityType"))
 	entityID := strings.TrimSpace(c.Query("entityId"))
 	if entityType == "" || entityID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsRequired))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrPreviewParamsRequired)
 		return
 	}
 	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, nil,
@@ -68,7 +68,7 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 		return
 	}
 	if templateID == "" || len(document) == 0 {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrPreviewParamsIncomplete)
 		return
 	}
 	projectID := req.ProjectID
@@ -81,13 +81,13 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 		return
 	}
 	if h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplatePreviewNotAssembled)
 		return
 	}
 	entityType := strings.TrimSpace(req.EntityType)
 	entityID := strings.TrimSpace(req.EntityID)
 	if entityType == "" || entityID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrPreviewParamsIncomplete)
 		return
 	}
 	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, document, true)
@@ -96,11 +96,11 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.RawMessage,
 	projectID string, withEditorBridge bool) {
 	if h.pages == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrStructureTemplatePreviewNotAssembled))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)
 		return
 	}
 	if len(document) == 0 {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateDocumentEmpty))
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchenums.ErrTemplateDocumentEmpty)
 		return
 	}
 	h.renderPreview(c, document, projectID, "", withEditorBridge, workbenchservice.PreviewDocStructureTemplate)
@@ -120,7 +120,7 @@ func (h *Handle) renderInstancePreview(c *gin.Context, instanceID, projectID str
 
 func (h *Handle) renderEntityPreview(c *gin.Context, req *presentationdto.PreviewInstanceReq, withEditorBridge bool) {
 	if h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplatePreviewNotAssembled)
 		return
 	}
 	res, err := h.templatePreview.PreviewInstance(c.Request.Context(), req)
@@ -134,7 +134,7 @@ func (h *Handle) renderEntityPreview(c *gin.Context, req *presentationdto.Previe
 				message = text
 			}
 		}
-		c.String(http.StatusUnprocessableEntity, message)
+		response.ErrorWithMessage(c, http.StatusUnprocessableEntity, message)
 		return
 	}
 	html := res.HTML
@@ -152,7 +152,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if h.instances == nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).
 			Warn("实例编辑能力未装配")
-		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrInstanceEditNotAssembled)
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.ErrInstanceEditNotAssembled)
 		return
 	}
 	ctx := c.Request.Context()
@@ -160,14 +160,14 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
 			Error(err, "呈现实例读取失败")
-		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrInstanceNotFound)
+		response.ErrorWithMessage(c, http.StatusNotFound, workbenchenums.ErrInstanceNotFound)
 		return
 	}
 
 	document := inst.Document
 	if len(document) == 0 {
 
-		renderWorkbenchPageErrorText(c, http.StatusUnprocessableEntity, workbenchenums.ErrInstanceNoDocument,
+		response.ErrorWithMessage(c, http.StatusUnprocessableEntity,
 			workbenchFacingText(c, workbenchenums.ErrInstanceNoDocument))
 		return
 	}
@@ -176,7 +176,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
 			Error(derr, "实例文档序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
 		return
 	}
 
@@ -201,21 +201,21 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if merr != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
 			Error(merr, "工作台编辑器元数据序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	schemas, serr := componentsForCanvas(nil)
 	if serr != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
 			Error(serr, "组件 schema 生成失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, serr2 := json.Marshal(schemas)
 	if serr2 != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
 			Error(serr2, "组件 schema 序列化失败")
-		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
 
@@ -240,12 +240,12 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 func (h *Handle) InstanceSave(c *gin.Context) {
 	if h.instances == nil {
 
-		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": adminui.PageInternalText(c)})
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.MsgInternalError)
 		return
 	}
 	body, err := binding.ParseJSON[presentationdto.WorkbenchSaveReq](c)
 	if err != nil || body.Override().InstanceID == "" || len(body.DraftDocument) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": workbenchShortText(c, workbenchenums.ErrSaveParamsIncomplete)})
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrSaveParamsIncomplete))
 		return
 	}
 	req := body.Override()
@@ -253,10 +253,7 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 	if err != nil {
 
 		if strings.TrimSpace(err.Error()) == presentationenums.ErrDetachConfirmRequired {
-			c.JSON(http.StatusConflict, gin.H{
-				"code":    409,
-				"message": workbenchShortText(c, workbenchenums.ErrDetachConfirmRequired),
-			})
+			response.ErrorWithMessage(c, http.StatusConflict, workbenchShortText(c, workbenchenums.ErrDetachConfirmRequired))
 			return
 		}
 
@@ -267,7 +264,7 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 				message = text
 			}
 		}
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": 422, "message": message})
+		response.ErrorWithMessage(c, http.StatusUnprocessableEntity, message)
 		return
 	}
 	mode := presentationdto.RenderModeTemplate
@@ -275,5 +272,5 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		mode = res.RenderMode
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "", "data": gin.H{"renderMode": mode}})
+	response.SuccessWithMessage(c, "", gin.H{"renderMode": mode})
 }

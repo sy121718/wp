@@ -132,7 +132,7 @@ func TestTranslationEngineBadgeToneFromEngineFact(t *testing.T) {
 		t.Skip("PG 不可用：来源徽标要读 sys_translation.engine")
 	}
 
-	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
+	saved := postForm(t, router, "/api/page/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"en-US"},
 		"rowContext": {"core.heading.text", "core.heading.subtitle", "core.button.text"},
 		"rowSource":  {"关于我们", "了解更多", "联系我们"},

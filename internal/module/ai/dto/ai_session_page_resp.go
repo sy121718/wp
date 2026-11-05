@@ -1,5 +1,7 @@
 package aidto
 
+import "go_wp/pkg/pagination"
+
 type PresetOption struct {
 	Key         string
 	DisplayName string
@@ -8,9 +10,11 @@ type PresetOption struct {
 	ModelCount  int
 }
 
+// SessionListPageResp 是「大模型管理」整页的数据。
+//
+// 没有 Title：页面标题是界面文案，归模板的 pageTitle/topbarTitle block 用全局 t 取词。
+// 布局的 <title> 兜底会直接渲染 .title，把 key 塞进来就是裸 key 上屏。
 type SessionListPageResp struct {
-	Title string `view:"title"`
-
 	CSRFToken string `view:"csrf_token"`
 	T         any    `view:"t"`
 	PermSet   any    `view:"PermSet"`
@@ -28,22 +32,15 @@ type SessionListPageResp struct {
 	CanViewModels   bool
 	CanViewSessions bool
 
-	LoadFailed bool
-	LoadError  string
-
 	Rows  []SessionRowResp
 	Total int64
 
-	TotalPages int
-	HasPrev    bool
-	HasNext    bool
-	PrevURL    string
-	NextURL    string
+	// Pagination 是分页事实（pkg/pagination.Page）：按钮窗口与每页链接由模板调用
+	// 共享分页能力算出，后端只交总数、当前页与每页条数。
+	Pagination pagination.Page
 
 	Usage         SessionUsage
-	UsageErr      string
 	Trend         SessionTrend
-	OptionsErr    string
 	FilterOptions SessionFilterOptions
 
 	Presets         []PresetOption
@@ -52,15 +49,10 @@ type SessionListPageResp struct {
 
 	ProviderCards []any
 	Providers     []Provider
-	ProviderErr   string
 
-	Detail      *SessionDetail
-	DetailID    int64
-	DetailErr   string
-	Events      []SessionEventRowResp
-	EventsErr   string
-	FoldPlan    *FoldPlanResult
-	FoldPlanErr string
+	Detail   *SessionDetail
+	DetailID int64
+	Events   []SessionEventRowResp
 }
 
 type SessionRowResp struct {

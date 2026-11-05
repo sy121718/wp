@@ -21,6 +21,7 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 const purchaseErrScene = "purchase"
@@ -66,12 +67,7 @@ func purchaseErrDetailText(tr func(key, fallback string) string, tail string) st
 	return strings.Join(out, "；")
 }
 
-func purchaseErrFallback(key string) string {
-	if fallback := purchaseenums.FallbackFor(key); fallback != "" {
-		return fallback
-	}
-	return key
-}
+func purchaseErrFallback(key string) string { return key }
 
 func purchaseMsgText(c *gin.Context, m facing.Msg) string { return response.MsgText(c, m) }
 
@@ -85,11 +81,27 @@ var (
 )
 
 func purchaseFail(c *gin.Context, err error) {
-	response.ErrorWithMessage(c, response.ErrorStatus(err), purchaseErrText(c, err))
+	// HTML 界面：把已映射的业务事实（key + 兜底）交给 Jet 取词。
+	msg := purchaseErrMsg(c, err)
+
+	if msg.Key == "" && msg.Fallback == "" {
+		pageview.FailStatus(c, response.ErrorStatus(err), purchaseErrScene, err)
+		return
+	}
+	key := msg.Key
+	if len(msg.Args) > 0 {
+		key += "|" + strings.Join(msg.Args, "|")
+	}
+	pageview.FailStatus(c, response.ErrorStatus(err), purchaseErrScene, facing.WithStatus(facing.New(key), response.ErrorStatus(err)))
 }
 
+// purchaseFailMsg 把已声明的消息事实交给失败出口：HTML 由 Jet 取词，数据接口仍走 JSON。
 func purchaseFailMsg(c *gin.Context, msg facing.Msg) {
-	response.ErrorMsg(c, http.StatusBadRequest, msg)
+	key := msg.Key
+	if len(msg.Args) > 0 {
+		key += "|" + strings.Join(msg.Args, "|")
+	}
+	pageview.FailStatus(c, http.StatusBadRequest, purchaseErrScene, facing.New(key))
 }
 
 func purchaseBulkIDsMsg(c *gin.Context, err error) facing.Msg {

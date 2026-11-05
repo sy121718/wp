@@ -7,6 +7,7 @@ import (
 	"go_wp/pkg/database"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameSysMenus = "sys_menus"
@@ -69,6 +70,13 @@ func (m *MenuModel) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&MenuEntity{})
 }
 
+// Transaction 在菜单库连接上起事务。
+//
+// 菜单的「软删 + 清权限绑定」必须和引用校验同事务，所以调用方需要在这里开事务。
+func (m *MenuModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
 func (e *MenuEntity) BeforeCreate(tx *gorm.DB) error {
 	now := time.Now()
 	e.CreateTime = &now
@@ -83,8 +91,20 @@ func (e *MenuEntity) BeforeUpdate(tx *gorm.DB) error {
 }
 
 func (m *MenuModel) GetByID(ctx context.Context, id uint64) (*MenuEntity, error) {
+	return m.getByID(ctx, m.DB(ctx), id)
+}
+
+// GetByIDTx 在调用方事务内读一条菜单（含权限编码）。
+//
+// 删除端必须用事务版：非事务版走的是另一条连接，看不到本事务已加的行锁，
+// 校验与删除就会落进两个不同的快照。
+func (m *MenuModel) GetByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*MenuEntity, error) {
+	return m.getByID(ctx, tx.WithContext(ctx).Model(&MenuEntity{}), id)
+}
+
+func (m *MenuModel) getByID(ctx context.Context, db *gorm.DB, id uint64) (*MenuEntity, error) {
 	var entity MenuEntity
-	err := m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&entity).Error
+	err := db.Where("id = ? AND deleted_at IS NULL", id).First(&entity).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -108,6 +128,13 @@ func (m *MenuModel) ListAll(ctx context.Context) ([]MenuEntity, error) {
 		return nil, err
 	}
 	return list, nil
+}
+
+// ListAllTx 在调用方事务内读全量菜单（授予端算祖先闭包要用同一事务的快照）。
+func (m *MenuModel) ListAllTx(ctx context.Context, tx *gorm.DB) ([]MenuEntity, error) {
+	var rows []MenuEntity
+	err := tx.WithContext(ctx).Where("deleted_at IS NULL").Order("sort_order ASC, id ASC").Find(&rows).Error
+	return rows, err
 }
 
 type MenuParentOption struct {
@@ -346,6 +373,22 @@ func (m *MenuModel) ListByIDs(ctx context.Context, ids []uint64) ([]MenuEntity, 
 	return list, err
 }
 
+// LockByIDsTx 在调用方事务内按 id 升序锁住这批菜单行。
+//
+// 权限授予端（RoleMenuSave / AdminMenuSave）和删除端要用同一批实体上的行锁：
+// READ COMMITTED 下「A 读到菜单还活着 → B 把该菜单的权限码授予出去并提交 → A 删菜单」
+// 是真实反例，只在删除端加锁不够。锁序按 id 升序，与 uniqueIDs 的排序一致，避免互相等待。
+func (m *MenuModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]MenuEntity, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var list []MenuEntity
+	err := tx.WithContext(ctx).Model(&MenuEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ? AND deleted_at IS NULL", ids).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
 var menuUpdateColumns = []string{
 	"title",
 	"title_key",
@@ -365,6 +408,16 @@ var menuUpdateColumns = []string{
 func (m *MenuModel) CountByParentID(ctx context.Context, parentID uint64) (int64, error) {
 	var count int64
 	err := m.DB(ctx).Where("parent_id = ? AND deleted_at IS NULL", parentID).Count(&count).Error
+	return count, err
+}
+
+// CountByParentIDTx 在调用方事务内数子节点。
+//
+// 与 CountByParentID 分开是因为删除端必须先锁父行、再在本事务里数子行：
+// 非事务版读的是另一条连接，看不到本事务的锁与未提交删改。
+func (m *MenuModel) CountByParentIDTx(ctx context.Context, tx *gorm.DB, parentID uint64) (int64, error) {
+	var count int64
+	err := tx.WithContext(ctx).Model(&MenuEntity{}).Where("parent_id = ? AND deleted_at IS NULL", parentID).Count(&count).Error
 	return count, err
 }
 
@@ -425,48 +478,89 @@ func (m *MenuModel) ListMenuIDsByPermissionCodes(ctx context.Context, codes []st
 	return ids, err
 }
 
+// ListMenuIDsByPermissionCodesTx 在调用方事务内查「哪些菜单引用了这些权限码」。
+//
+// 权限点删除前的引用校验必须读本事务：非事务版看不到本事务里刚建立的绑定。
+func (m *MenuModel) ListMenuIDsByPermissionCodesTx(ctx context.Context, tx *gorm.DB, codes []string) ([]uint64, error) {
+	if len(codes) == 0 {
+		return nil, nil
+	}
+	var ids []uint64
+	err := tx.WithContext(ctx).Table(tableNameSysMenuPermission).
+		Where("permission_code IN ?", codes).
+		Distinct("menu_id").
+		Order("menu_id ASC").
+		Pluck("menu_id", &ids).Error
+	return ids, err
+}
 func (m *MenuModel) CreateWithPermissionCodes(ctx context.Context, e *MenuEntity, codes []string) error {
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return m.CreateWithPermissionCodesTx(ctx, tx, e, codes)
+	})
+}
+
+// CreateWithPermissionCodesTx 在调用方事务内建菜单并落权限码绑定。
+//
+// 调用方要在这同一个事务里先锁父行、再校验层级，所以插入不能开自己的事务：
+// 另开一个事务等于换一条连接，看不到也不参与调用方持有的行锁。
+func (m *MenuModel) CreateWithPermissionCodesTx(ctx context.Context, tx *gorm.DB, e *MenuEntity, codes []string) error {
 	unique := DedupePermissionCodes(codes)
 
 	e.PermissionCode = nil
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(e).Error; err != nil {
-			return err
-		}
-		return replaceMenuPermissionCodes(tx, e.ID, unique)
-	})
+	if err := tx.WithContext(ctx).Create(e).Error; err != nil {
+		return err
+	}
+	return replaceMenuPermissionCodes(tx, e.ID, unique)
 }
 
 func (m *MenuModel) UpdateWithPermissionCodes(ctx context.Context, e *MenuEntity, codes []string) error {
-	unique := DedupePermissionCodes(codes)
-
-	e.PermissionCode = nil
 	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&MenuEntity{}).Where("id = ?", e.ID).
-			Select(menuUpdateColumns).Updates(e).Error; err != nil {
-			return err
-		}
-		return replaceMenuPermissionCodes(tx, e.ID, unique)
+		return m.UpdateWithPermissionCodesTx(ctx, tx, e, codes)
 	})
 }
 
+// UpdateWithPermissionCodesTx 在调用方事务内更新菜单并重写权限码绑定。
+//
+// 与 CreateWithPermissionCodesTx 同理：重挂要在同一事务里先锁自己与新父两行，
+// 另开事务会换连接、看不到调用方持有的行锁。
+func (m *MenuModel) UpdateWithPermissionCodesTx(ctx context.Context, tx *gorm.DB, e *MenuEntity, codes []string) error {
+	unique := DedupePermissionCodes(codes)
+
+	e.PermissionCode = nil
+	if err := tx.WithContext(ctx).Model(&MenuEntity{}).Where("id = ?", e.ID).
+		Select(menuUpdateColumns).Updates(e).Error; err != nil {
+		return err
+	}
+	return replaceMenuPermissionCodes(tx, e.ID, unique)
+}
+
 func (m *MenuModel) SoftDeleteWithPermissionCodes(ctx context.Context, ids []uint64) (int64, error) {
+	var affected int64
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var inner int64
+		inner, err := m.SoftDeleteWithPermissionCodesTx(ctx, tx, ids)
+		affected = inner
+		return err
+	})
+	return affected, err
+}
+
+// SoftDeleteWithPermissionCodesTx 在调用方事务内软删菜单及其权限绑定。
+//
+// 去掉了「affected == 0 就跳过清绑定」那条捷径：批量里若有一行已被别人软删，
+// 它的绑定仍要清掉，否则留下悬挂记录；同事务内一次条件写 + 一次绑定删，语义更直白。
+func (m *MenuModel) SoftDeleteWithPermissionCodesTx(ctx context.Context, tx *gorm.DB, ids []uint64) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	var affected int64
-	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&MenuEntity{}).Where("id IN ? AND deleted_at IS NULL", ids).Update("deleted_at", time.Now())
-		if res.Error != nil {
-			return res.Error
-		}
-		affected = res.RowsAffected
-		if affected == 0 {
-			return nil
-		}
-		return tx.Table(tableNameSysMenuPermission).Where("menu_id IN ?", ids).Delete(nil).Error
-	})
-	return affected, err
+	res := tx.WithContext(ctx).Model(&MenuEntity{}).Where("id IN ? AND deleted_at IS NULL", ids).Update("deleted_at", time.Now())
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	if err := tx.WithContext(ctx).Table(tableNameSysMenuPermission).Where("menu_id IN ?", ids).Delete(nil).Error; err != nil {
+		return res.RowsAffected, err
+	}
+	return res.RowsAffected, nil
 }
 
 type menuPermissionRow struct {
@@ -505,4 +599,32 @@ func DedupePermissionCodes(codes []string) []string {
 		out = append(out, code)
 	}
 	return out
+}
+
+// ListPermissionCodesByMenuIDsTx 在调用方事务内读这批菜单挂的权限码。
+//
+// 授予端先锁菜单行、再在**同一事务**里读权限码：非事务版走另一条连接，
+// 看不到本事务的锁，可能读到别的连接刚提交的改绑，授予就落到了已经变化的实体上。
+func (m *MenuModel) ListPermissionCodesByMenuIDsTx(ctx context.Context, tx *gorm.DB, menuIDs []uint64) (map[uint64][]string, error) {
+	if len(menuIDs) == 0 {
+		return nil, nil
+	}
+	type row struct {
+		MenuID         uint64
+		PermissionCode string
+	}
+	var rows []row
+	err := tx.WithContext(ctx).Table(tableNameSysMenuPermission).
+		Select("menu_id", "permission_code").
+		Where("menu_id IN ?", menuIDs).
+		Order("menu_id ASC, permission_code ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint64][]string, len(rows))
+	for _, r := range rows {
+		out[r.MenuID] = append(out[r.MenuID], r.PermissionCode)
+	}
+	return out, nil
 }

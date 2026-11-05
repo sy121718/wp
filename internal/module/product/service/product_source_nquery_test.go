@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -63,7 +63,7 @@ func TestCollectionRelatedTranslationQueryCountDoesNotGrowWithProducts(t *testin
 		}
 
 		store := &countingStore{}
-		svc := productservice.NewService(productmodel.NewModel(db), nqueryProjectStub{projectID: projectID})
+		svc := productservice.NewService(productmodel.NewModel(db), nqueryProjectStub{projectID: projectID}, stubMasterDataChanges{})
 		svc.SetContentStore(store)
 
 		ctx := core.WithBuildLang(core.WithBuildProjectID(context.Background(), projectID), "en-US")

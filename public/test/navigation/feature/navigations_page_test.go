@@ -56,16 +56,15 @@ func TestNavigationsPageRenders(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`data-write-url="/api/navigation/update"`,
-		`data-write="create"`,
-		`<input type="hidden" name="action" value="move">`,
+		`hx-post="/api/navigation/move"`,
+		`name="dir" value="up"`,
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,
 		`<span data-requires-js hidden><button type="submit" form="nav-up-`,
 		`<span data-requires-js hidden><button type="submit" form="nav-down-`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("排序表单缺少 JSON 写声明 %q", want)
+			t.Errorf("排序表单缺少 HTMX 写声明 %q", want)
 		}
 	}
 	if strings.Contains(body, "/admin/navigations/move") {
@@ -73,11 +72,11 @@ func TestNavigationsPageRenders(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`data-write-url="/api/navigation/create"`,
-		`data-write-url="/api/navigation/delete"`,
+		`hx-post="/api/navigation/create"`,
+		`hx-post="/api/navigation/delete"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("页面缺少 JSON 写端点声明 %q", want)
+			t.Errorf("页面缺少 HTMX 写端点声明 %q", want)
 		}
 	}
 }
@@ -104,16 +103,14 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`data-write-url="/api/navigation/create"`,
-		`data-write="bulk"`,
-		`data-write-outcome="add"`,
-		`data-write-extra="action,projectId,kind,sourceType"`,
-		`<input type="hidden" name="action" value="addSource">`,
+		`hx-post="/api/navigation/create"`,
+		`name="sourceType"`,
 		`name="ids"`,
 		`data-write-status`,
+		`data-write-result`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("来源抽屉缺少 JSON 写声明 %q", want)
+			t.Errorf("来源抽屉缺少 HTMX 写声明 %q", want)
 		}
 	}
 	if strings.Contains(body, "/admin/navigations/add-source") {

@@ -9,17 +9,15 @@ import (
 	"testing"
 
 	adminenums "go_wp/internal/module/admin/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 )
 
-var pageInternalCopyForms = map[string]bool{
-	adminenums.ErrInternal:                     true,
-	"操作失败，请稍后重试":                               true,
-	"Operation failed, please try again later": true,
-}
+var pageInternalCopyForms = map[string]bool{"系统内部错误，请稍后重试": true}
 
 var pageBusinessCopyForms = map[string]bool{
 	adminenums.ErrRoleCodeExists: true,
@@ -68,9 +66,16 @@ func withPageTempLogDir(t *testing.T) func() string {
 	}
 }
 
-func TestAdminErrParamBusinessTextStaysVisible(t *testing.T) {
+// 本文件直接测 pkg/response 的取词出口 MessageOf。
+//
+// 原先测的是 admin 包内的 adminErrParam 薄包装（body 只有一行 return MessageOf），
+// 那个包装已随批量删除的逐条回执一起删除 —— 留着测「包装再包装」只会掩盖
+// 出口本身的行为。现在测出口：业务错误取词、内部错误归口且日志留原文、nil 精确空串。
+func TestMessageOfBusinessTextStaysVisible(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{adminenums.ErrRoleCodeExists: {"zh-CN": "角色编码已存在"}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	c := newPageErrContext(t)
-	got := adminErrParam(c, errors.New(adminenums.ErrRoleCodeExists))
+	got := response.MessageOf(c, "admin", errors.New(adminenums.ErrRoleCodeExists))
 	if !pageBusinessCopyForms[got] {
 		t.Fatalf("业务错误应原样透出 enums 文案，got %q", got)
 	}
@@ -81,11 +86,11 @@ func TestAdminErrParamBusinessTextStaysVisible(t *testing.T) {
 	}
 }
 
-func TestAdminErrParamInternalErrorIsCollected(t *testing.T) {
+func TestMessageOfInternalErrorIsCollected(t *testing.T) {
 	readLog := withPageTempLogDir(t)
 	c := newPageErrContext(t)
 
-	got := adminErrParam(c, errors.New(pageDBErrText))
+	got := response.MessageOf(c, "admin", errors.New(pageDBErrText))
 	if !pageInternalCopyForms[got] {
 		t.Fatalf("内部错误应返回归口文案，got %q", got)
 	}
@@ -100,23 +105,33 @@ func TestAdminErrParamInternalErrorIsCollected(t *testing.T) {
 		t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 	}
 
-	if !strings.Contains(logText, "只对外给归口文案") {
-		t.Fatalf("日志里应能定位到场景与事件，日志内容=%s", logText)
+	// 日志事件是 pkg/response 给的那条固定串，并带请求 path 便于定位。
+	if !strings.Contains(logText, "handler 内部错误") {
+		t.Fatalf("日志里应能定位到事件（handler 内部错误），日志内容=%s", logText)
+	}
+	if !strings.Contains(logText, "/admin/i18n/save") {
+		t.Fatalf("日志里应带请求 path 便于定位，日志内容=%s", logText)
 	}
 }
 
-func TestAdminErrParamNilErrorIsCollected(t *testing.T) {
+// MessageOf(nil) 是「没有错误」而不是「内部错误」：必须精确返回空串。
+//
+// 早先这条断言期望归口文案，那是把「调用方传了 nil」当成故障；真实语义是
+// 没有失败就没有 message，前端拿到空串什么也不弹。
+func TestMessageOfNilErrorIsExactlyEmpty(t *testing.T) {
 	c := newPageErrContext(t)
-	got := adminErrParam(c, nil)
-	if !pageInternalCopyForms[got] {
-		t.Fatalf("nil 错误应返回归口文案，got %q", got)
+	got := response.MessageOf(c, "admin", nil)
+	if got != "" {
+		t.Fatalf("nil 错误应精确返回空串，got %q", got)
 	}
 }
 
-func TestAdminErrParamCarriesParamKey(t *testing.T) {
+func TestMessageOfCarriesParamKey(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{adminenums.ErrAccountLocked: {"zh-CN": "账号已被锁定，请 %s 后重试"}}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	c := newPageErrContext(t)
 
-	got := adminErrParam(c, errors.New(adminenums.ErrAccountLocked+"|30分钟"))
+	got := response.MessageOf(c, "admin", errors.New(adminenums.ErrAccountLocked+"|30分钟"))
 	if got == adminenums.ErrInternal || got == "操作失败，请稍后重试" ||
 		got == "Operation failed, please try again later" {
 		t.Fatalf("带参的业务文案不应被归口：got %q", got)

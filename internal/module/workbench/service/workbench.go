@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
@@ -29,7 +29,10 @@ import (
 
 func (s *Service) PageByID(ctx context.Context, pageID string) (*pagecontract.PageResp, error) {
 	if s == nil || s.pages == nil {
-		return nil, errors.New("页面服务未装配")
+		// 装配期自检：正常启动路径到不了这里（routers 装配保证 pages 非 nil）。
+		// service 不造界面词条 —— 这里给的是诊断事实，不是给用户看的句子；
+		// handler 目前把它当「页面取不到」处理，状态码语义待收口（见台账）。
+		return nil, errors.New("workbench: page service not assembled")
 	}
 	projectID, err := s.pages.ProjectOfPage(ctx, pageID)
 	if err != nil {

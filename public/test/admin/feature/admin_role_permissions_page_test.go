@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -15,7 +14,8 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/internal/templates"
-	"go_wp/pkg/jsonx"
+	"go_wp/internal/text"
+	"go_wp/pkg/view"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -41,8 +41,11 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 		InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/roles/permissions/drawer", adminui.BareSlot(adminhttp.RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
-			e.POST("/api/role/menu/save", func(c *gin.Context) {
+			e.Use(view.FailureMiddleware(adminui.RenderFailure))
+			e.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
+			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+			e.GET("/admin/roles/permissions/drawer", view.HTMLFragment, handle.RolePermissionsDrawer)
+			e.POST("/api/role/menu/save", view.HTMLFragment, func(c *gin.Context) {
 				c.Set("user_id", int64(userID))
 			}, api.RoleMenuSave)
 		},
@@ -56,10 +59,7 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 
 func permTreeFixture() *admindto.RolePermissionTreeResp {
 	return &admindto.RolePermissionTreeResp{
-		RoleID:   7,
-		RoleCode: "editor",
-		RoleName: "编辑",
-
+		RoleID: 7, RoleCode: "editor", RoleName: "编辑",
 		MenuIDs: []uint64{1, 2, 3},
 		Tree: []admindto.MenuTreeNode{
 			{
@@ -69,42 +69,13 @@ func permTreeFixture() *admindto.RolePermissionTreeResp {
 						ID: 2, ParentID: 1, Title: "文章", Type: adminmodel.MenuTypeMenu,
 						Path: "/admin/articles", PermissionCodes: []string{"content:list"}, Status: 1,
 						Children: []admindto.MenuTreeNode{
-							{
-								ID: 3, ParentID: 2, Title: "删除文章", Type: adminmodel.MenuTypeButton,
-								PermissionCodes: []string{"content:delete"}, Status: 1,
-							},
+							{ID: 3, ParentID: 2, Title: "删除文章", Type: adminmodel.MenuTypeButton, PermissionCodes: []string{"content:delete"}, Status: 1},
 						},
 					},
-					{
-						ID: 4, ParentID: 1, Title: "分类", Type: adminmodel.MenuTypeMenu,
-						Path: "/admin/categories", PermissionCodes: []string{"content:category"}, Status: 1,
-					},
+					{ID: 4, ParentID: 1, Title: "分类", Type: adminmodel.MenuTypeMenu, Path: "/admin/categories", PermissionCodes: []string{"content:category"}, Status: 1},
 				},
 			},
 		},
-	}
-}
-
-func permCheckbox(t *testing.T, body, id string) string {
-	t.Helper()
-	re := regexp.MustCompile(`<input[^>]*value="` + regexp.QuoteMeta(id) + `"[^>]*>`)
-	got := re.FindString(body)
-	if got == "" {
-		t.Fatalf("片段里没有 value=%q 的勾选框", id)
-	}
-	return got
-}
-
-func assertDrawerFragment(t *testing.T, body string) {
-	t.Helper()
-	trimmed := strings.TrimSpace(body)
-	if !strings.HasPrefix(trimmed, `<div data-drawer-fragment`) || !strings.HasSuffix(trimmed, `</div>`) {
-		t.Fatalf("片段必须是唯一的 data-drawer-fragment 根元素：%s", trimmed)
-	}
-	for _, banned := range []string{"<script", "<style", "<template", "<svg", "<link"} {
-		if strings.Contains(trimmed, banned) {
-			t.Fatalf("片段里出现了 %s：drawer.js 的 fragmentRoot 会整段拒收（表现为「加载失败，请重试」）", banned)
-		}
 	}
 }
 
@@ -130,45 +101,19 @@ func postRolePermissions(t *testing.T, engine *gin.Engine, form url.Values, hx b
 
 func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
-
 	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer?role_id=7")
-	if code != http.StatusOK {
-		t.Fatalf("GET 片段状态码 %d", code)
+	if code != http.StatusOK || !strings.Contains(body, `data-drawer-fragment`) || strings.Count(body, `data-perm-node`) != 4 {
+		t.Fatalf("Jet 权限树错误: status=%d body=%s", code, body)
 	}
-	assertDrawerFragment(t, body)
-	if !strings.Contains(body, "<form") {
-		t.Fatal("片段必须自带表单（drawer.js 的 fragmentRoot 要求）")
-	}
-
-	for _, attr := range []string{`action="/api/role/menu/save"`, `data-write="update"`, `data-write-url="/api/role/menu/save"`, `data-write-status`, `data-drawer-close`} {
-		if !strings.Contains(body, attr) {
-			t.Fatalf("权限表单缺少既有JSON写基座声明 %s", attr)
+	for _, id := range []uint64{1, 2, 3, 4} {
+		if got := drawerCheckboxChecked(t, body, "menu_ids", itoa(id)); got != (id <= 3) {
+			t.Fatalf("节点 %d 勾选错误: %v", id, got)
 		}
 	}
-	if strings.Contains(body, "/admin/roles/permissions/save") {
-		t.Fatal("权限表单仍调用旧HTML写出口")
-	}
-
-	for _, id := range []string{"1", "2", "3"} {
-		if !strings.Contains(permCheckbox(t, body, id), "checked") {
-			t.Fatalf("已授权节点 %s 应渲染为已勾选", id)
+	for _, want := range []string{`data-id="3" data-parent="2" data-depth="3"`, "content:delete", `padding-left:50px`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("权限树缺少父级、权限或缩进 %q: %s", want, body)
 		}
-	}
-
-	if strings.Contains(permCheckbox(t, body, "4"), "checked") {
-		t.Fatal("未授权节点 4 不应渲染为已勾选")
-	}
-
-	if !strings.Contains(body, `data-perm-node data-id="3" data-parent="2"`) {
-		t.Fatal("按钮节点缺少 data-parent（JS 无法向上补齐祖先）")
-	}
-
-	if !strings.Contains(body, "content:delete") {
-		t.Fatal("片段未显示节点的权限码")
-	}
-
-	if !strings.Contains(body, "data-perm-tree") {
-		t.Fatal("权限树缺少 data-perm-tree 锚点（控件认领不到它）")
 	}
 }
 
@@ -184,56 +129,49 @@ func TestAdminRolePermissionsDrawerNoStore(t *testing.T) {
 
 func TestAdminRolePermissionsDrawerRejectsMissingRoleID(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
-
 	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer")
-	if code != http.StatusBadRequest {
-		t.Fatalf("缺 role_id 应 400，实际 %d（body=%s）", code, body)
-	}
-	if strings.TrimSpace(body) != "" {
-		t.Fatalf("失败响应不应带正文（内部细节不外泄）：%s", body)
+	if code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") || strings.Contains(body, "<form") {
+		t.Fatalf("参数错误须返回 400 Jet 错误片段: %d %s", code, body)
 	}
 }
 
-func TestAdminRolePermissionsDrawerNotFound(t *testing.T) {
+func TestAdminRolePermissionsDrawerInfrastructureFailure(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{err: errFakeRoleNotFound})
-
 	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer?role_id=7")
-	if code != http.StatusNotFound {
-		t.Fatalf("树取数失败应 404，实际 %d", code)
-	}
-	if strings.Contains(body, errFakeRoleNotFound.Error()) {
-		t.Fatalf("响应泄漏了内部错误原文：%s", body)
+	if code != http.StatusInternalServerError || !strings.Contains(body, "data-ui-error") || strings.Contains(body, errFakeRoleNotFound.Error()) {
+		t.Fatalf("基础设施错误须脱敏且返回 HTML 500: %d %s", code, body)
 	}
 }
 
-func assertRolePermissionsJSON(t *testing.T, rec *httptest.ResponseRecorder, status int) string {
+func assertRolePermissionsHTML(t *testing.T, rec *httptest.ResponseRecorder, status int) string {
 	t.Helper()
-	if rec.Code != status || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatalf("期望JSON %d，实际 %d: %s", status, rec.Code, rec.Body.String())
-	}
-	var payload struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := jsonx.Unmarshal(rec.Body.Bytes(), &payload); err != nil || payload.Code != status || payload.Message == "" {
-		t.Fatalf("JSON状态或文案不符: %s (%v)", rec.Body.String(), err)
+	body := rec.Body.String()
+	if rec.Code != status || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("期望 HTML %d，实际 %d: %s", status, rec.Code, body)
 	}
 	if rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
-		t.Fatal("API写响应不应导航")
+		t.Fatal("写响应不应导航")
 	}
-	for _, raw := range []string{"<form", "data-jump-state", "duplicate key", "relation does not exist", "SQLSTATE"} {
-		if strings.Contains(rec.Body.String(), raw) {
-			t.Fatalf("响应包含HTML或内部错误 %q: %s", raw, rec.Body.String())
+	for _, raw := range []string{"<form", "<html", "data-jump-state", "duplicate key", "relation does not exist", "SQLSTATE"} {
+		if strings.Contains(body, raw) {
+			t.Fatalf("响应包含表单、整页或内部错误 %q: %s", raw, body)
 		}
 	}
-	return payload.Message
+	marker := `role="status"`
+	if status >= 400 {
+		marker = "data-ui-error"
+	}
+	if !strings.Contains(body, marker) || (status >= 400 && strings.Contains(body, `role="status"`)) {
+		t.Fatalf("HTML 结果标记不符: %s", body)
+	}
+	return body
 }
 
 func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
-	rec := postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "menu_ids": {"3", "3", "12"}, "operator_id": {"999"}}, false)
-	assertRolePermissionsJSON(t, rec, http.StatusOK)
+	rec := postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "menu_ids": {"3", "3", "12"}, "operator_id": {"999"}, "OperatorID": {"999"}}, false)
+	assertRolePermissionsHTML(t, rec, http.StatusOK)
 	if svc.lastMenuSave == nil || svc.lastMenuSave.RoleID != 7 || !slices.Equal(svc.lastMenuSave.MenuIDs, []uint64{3, 3, 12}) {
 		t.Fatalf("输入未原样交服务: %+v", svc.lastMenuSave)
 	}
@@ -245,7 +183,7 @@ func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
-	assertRolePermissionsJSON(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}}, false), http.StatusOK)
+	assertRolePermissionsHTML(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}}, false), http.StatusOK)
 	if svc.lastMenuSave == nil || len(svc.lastMenuSave.MenuIDs) != 0 {
 		t.Fatalf("空勾选必须交服务清空: %+v", svc.lastMenuSave)
 	}
@@ -263,7 +201,7 @@ func TestAdminRolePermissionsSaveRejectsInvalidInput(t *testing.T) {
 			svc := &fakeRoleService{}
 			engine := newAdminRolePermissionsEngine(t, svc)
 			for _, hx := range []bool{false, true} {
-				assertRolePermissionsJSON(t, postRolePermissions(t, engine, tt.form, hx), http.StatusBadRequest)
+				assertRolePermissionsHTML(t, postRolePermissions(t, engine, tt.form, hx), http.StatusBadRequest)
 			}
 			if svc.lastMenuSave != nil {
 				t.Fatal("非法输入不得调用服务")
@@ -272,40 +210,38 @@ func TestAdminRolePermissionsSaveRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestAdminRolePermissionsSaveFailureIsJSON(t *testing.T) {
+func TestAdminRolePermissionsSaveFailureIsHTML(t *testing.T) {
 	svc := &fakeRoleService{err: errFakeRoleSave}
 	engine := newAdminRolePermissionsEngine(t, svc)
 	form := url.Values{"role_id": {"7"}, "menu_ids": {"1", "2", "3", "4"}}
-	assertRolePermissionsJSON(t, postRolePermissions(t, engine, form, true), http.StatusInternalServerError)
+	assertRolePermissionsHTML(t, postRolePermissions(t, engine, form, true), http.StatusInternalServerError)
 	if svc.lastMenuSave == nil || !slices.Equal(svc.lastMenuSave.MenuIDs, []uint64{1, 2, 3, 4}) {
 		t.Fatalf("失败请求仍须交完整勾选: %+v", svc.lastMenuSave)
 	}
-
 }
 
-func TestAdminRolePermissionsSaveJSONMatchesForm(t *testing.T) {
+func TestAdminRolePermissionsSaveRejectsJSONAndQueryFallback(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
-	form := url.Values{"role_id": {"7"}, "menu_ids": {"1", "2", "3"}}
-	formMessage := assertRolePermissionsJSON(t, postRolePermissions(t, engine, form, false), http.StatusOK)
-	formReq := *svc.lastMenuSave
-	req := httptest.NewRequest(http.MethodPost, "/api/role/menu/save", strings.NewReader(`{"role_id":7,"menu_ids":[1,2,3],"operator_id":999}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-	if message := assertRolePermissionsJSON(t, rec, http.StatusOK); message != formMessage {
-		t.Fatalf("JSON和表单成功文案不一致: %q != %q", message, formMessage)
+	for _, input := range []struct{ contentType, body string }{
+		{"application/json", `{"role_id":7,"menu_ids":[1,2,3],"operator_id":999}`},
+		{"application/x-www-form-urlencoded", "menu_ids=3&OperatorID=999"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/role/menu/save?role_id=7", strings.NewReader(input.body))
+		req.Header.Set("Content-Type", input.contentType)
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		assertRolePermissionsHTML(t, rec, http.StatusBadRequest)
 	}
-	got := svc.lastMenuSave
-	if got.RoleID != formReq.RoleID || got.OperatorID != formReq.OperatorID || !slices.Equal(got.MenuIDs, formReq.MenuIDs) {
-		t.Fatalf("JSON/表单效果不等: %+v != %+v", got, formReq)
+	if svc.lastMenuSave != nil {
+		t.Fatal("不能从 JSON 或 query 补全表单参数")
 	}
 }
 
 func TestAdminRolePermissionsSaveRequiresSessionIdentity(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngineWithUser(t, svc, 0)
-	assertRolePermissionsJSON(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "operator_id": {"999"}}, false), http.StatusUnauthorized)
+	assertRolePermissionsHTML(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "operator_id": {"999"}, "OperatorID": {"999"}}, false), http.StatusUnauthorized)
 	if svc.lastMenuSave != nil {
 		t.Fatal("未登录不得调用服务")
 	}

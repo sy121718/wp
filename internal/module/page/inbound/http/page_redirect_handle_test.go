@@ -13,6 +13,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
@@ -57,7 +58,7 @@ func TestRedirectCreateFailedRequestKeepsInput(t *testing.T) {
 			stub := &redirectCreateStub{createErr: tc.createErr, listErr: tc.listErr}
 			router := gin.New()
 			router.HTMLRender = newPageErrTestRender(t)
-			router.POST("/api/page/redirect/create", adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
+			router.POST("/api/page/redirect/create", pageview.HTMLFragment, adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
 			req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create", strings.NewReader(tc.form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
@@ -87,9 +88,8 @@ func TestRedirectCreateFailedRequestKeepsInput(t *testing.T) {
 func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &redirectCreateStub{}
-	router := gin.New()
-	router.HTMLRender = newPageErrTestRender(t)
-	router.POST("/api/page/redirect/create", adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
+	router := newPageErrEngine(t)
+	router.POST("/api/page/redirect/create", pageview.HTMLFragment, adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
 	form := url.Values{"project": {"p1"}, "sourcePath": {"/old"}, "targetPath": {"/new"}}
 	req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create?project=p1", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -102,11 +102,10 @@ func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 		t.Fatalf("应调用一次 CreateRedirect，实际 %d", stub.created)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) {
-		t.Fatalf(`成功提示页应有 data-jump-state="ok"：%s`, body)
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf(`成功应使用共享提示组件：%s`, body)
 	}
-
-	if !strings.Contains(body, "/api/page/redirect?project=p1") {
-		t.Fatalf("提示页应给回本页（带 project）的链接：%s", body)
+	if strings.Contains(body, "jump-page") || strings.Contains(body, "meta http-equiv") {
+		t.Fatalf("不得再用整页跳转提示：%s", body)
 	}
 }

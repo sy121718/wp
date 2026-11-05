@@ -3,9 +3,10 @@ package commentfeature
 import (
 	"context"
 	"fmt"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,27 +14,28 @@ import (
 	commenthttp "go_wp/internal/module/comment/inbound/http"
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"github.com/gin-gonic/gin"
 )
 
-func reviewViaAPI(t *testing.T, svc *commentservice.Service, id int64, status string, reviewer int64) commentdto.ReviewResp {
+// reviewViaAPI 走真实处理器；返回值只保留调用方关心的事实，结果正文由 HTML 断言。
+func reviewViaAPI(t *testing.T, svc *commentservice.Service, id int64, status string, reviewer int64) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Set("user_id", reviewer)
-	body := fmt.Sprintf(`{"projectId":%q,"ids":[%d],"status":%q}`, testProjectID, id, status)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/comment/review", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-	commenthttp.NewHandle(svc).Review(c)
-	var receipt struct{ Data commentdto.ReviewResp }
-	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil {
-		t.Fatal(err)
-	}
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Set("user_id", reviewer); c.Next() })
+	engine.POST("/api/comment/review", commenthttp.NewHandle(svc).Review)
+	form := url.Values{"projectId": {testProjectID}, "ids": {fmt.Sprint(id)}, "status": {status}}
+	req := httptest.NewRequest(http.MethodPost, "/api/comment/review", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	engine.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("审核 API status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	return receipt.Data
+	return rec.Body.String()
 }
 
 func TestCommentReviewAPIRecordsReviewerAndReceipt(t *testing.T) {
@@ -46,25 +48,19 @@ func TestCommentReviewAPIRecordsReviewerAndReceipt(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handler := commenthttp.NewHandle(svc)
 	router.POST("/api/comment/review", func(c *gin.Context) { c.Set("user_id", int64(19)); handler.Review(c) })
 	for _, status := range []string{"approved", "rejected"} {
 		t.Run(status, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			body := fmt.Sprintf(`{"projectId":%q,"ids":[%d],"status":%q,"reviewerId":999}`, testProjectID, submitted.ID, status)
-			req := httptest.NewRequest(http.MethodPost, "/api/comment/review", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
+			form := url.Values{"projectId": {testProjectID}, "ids": {fmt.Sprint(submitted.ID)}, "status": {status}}
+			req := httptest.NewRequest(http.MethodPost, "/api/comment/review", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			router.ServeHTTP(rec, req)
-			var receipt struct {
-				Code    int
-				Message string
-				Data    commentdto.ReviewResp
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil {
-				t.Fatal(err)
-			}
-			if rec.Code != 200 || receipt.Data.Affected != 1 || receipt.Data.Status != status || !strings.Contains(receipt.Message, "1") {
-				t.Fatalf("status=%d receipt=%+v", rec.Code, receipt)
+			if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "1") {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
 			var row commentmodel.Entity
 			if err := db.Where("id = ?", submitted.ID).First(&row).Error; err != nil {
@@ -79,11 +75,15 @@ func TestCommentReviewAPIRecordsReviewerAndReceipt(t *testing.T) {
 
 func TestCommentReviewAPIRejectsEmptyAndOversizedBatches(t *testing.T) {
 	handler := commenthttp.NewHandle(commentservice.NewService(commentmodel.NewModel(nil), nil))
-	for _, body := range []string{`{"ids":[],"status":"approved"}`, `{"ids":[` + strings.Repeat("1,", 200) + `1],"status":"approved"}`} {
+	many := url.Values{"status": {"approved"}}
+	for i := 0; i < 201; i++ {
+		many.Add("ids", "1")
+	}
+	for _, body := range []string{url.Values{"status": {"approved"}}.Encode(), many.Encode()} {
 		rec := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(rec)
 		c.Request = httptest.NewRequest(http.MethodPost, "/api/comment/review", strings.NewReader(body))
-		c.Request.Header.Set("Content-Type", "application/json")
+		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		handler.Review(c)
 		if rec.Code != 400 {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())

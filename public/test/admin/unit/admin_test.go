@@ -2,6 +2,8 @@ package unit
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/pkg/auth"
 	pkgcasbin "go_wp/pkg/casbin"
+	"go_wp/pkg/facing"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -641,21 +644,47 @@ func TestAdminModelIsAdminFieldProtected(t *testing.T) {
 	}
 }
 
+// TestAdminDeleteZeroID 覆盖「一个有效 id 都没选中」这条拒绝。
+//
+// 当前请求语义：0 不是主键（uniqueIDs 会去掉它），去掉后没有可选对象即
+// ErrBulkDeleteEmpty —— 是「你没选」而不是「这个 id 不存在」，两者对外文案与
+// 处置都不同，所以断言精确到 key 与状态码，不用 Contains 模糊匹配。
 func TestAdminDeleteZeroID(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	_, err := e.svc.AdminDelete(ctx, &admindto.AdminDeleteReq{
-		Id:         []uint64{0, 0},
-		OperatorID: 1,
-	})
-	wantErr(t, err, adminenums.ErrAdminNotFound)
+	for _, tc := range []struct {
+		name string
+		ids  []uint64
+	}{
+		{"全是 0", []uint64{0, 0}},
+		{"空列表", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := e.svc.AdminDelete(ctx, &admindto.AdminDeleteReq{Id: tc.ids, OperatorID: 1})
+			if err == nil {
+				t.Fatal("没有有效 id 时应拒绝")
+			}
+			if got := facingKeyOf(t, err); got != adminenums.ErrBulkDeleteEmpty {
+				t.Fatalf("拒绝 key = %q，期望 %q", got, adminenums.ErrBulkDeleteEmpty)
+			}
+			if status, ok := facing.StatusOf(err); !ok || status != http.StatusBadRequest {
+				t.Fatalf("状态码 = %d（声明 %v），期望 400 —— 参数问题不是 404", status, ok)
+			}
+		})
+	}
+}
 
-	_, err = e.svc.AdminDelete(ctx, &admindto.AdminDeleteReq{
-		Id:         nil,
-		OperatorID: 1,
-	})
-	wantErr(t, err, adminenums.ErrAdminNotFound)
+// facingKeyOf 取错误声明里的业务 key；没有声明时直接判失败 —— 说明书层没有给出可翻译的事实。
+func facingKeyOf(t *testing.T, err error) string {
+	t.Helper()
+	var sourced interface{ Facing() (string, string) }
+	if errors.As(err, &sourced) {
+		key, _ := sourced.Facing()
+		return key
+	}
+	t.Fatalf("错误没有业务 key 声明，出口只能退归口文案：%v", err)
+	return ""
 }
 
 func idStr(id uint64) string {

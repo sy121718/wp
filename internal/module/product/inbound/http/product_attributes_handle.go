@@ -1,7 +1,11 @@
 package producthttp
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
+
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/binding"
@@ -30,42 +34,45 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 }
 
 func (h *ProductHandle) CreateAttribute(c *gin.Context) {
-	req, ok := binding.JSON[productdto.CreateAttributeReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.CreateAttribute(c.Request.Context(), req)
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseForm[productdto.CreateAttributeReq](c)
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+	if _, err := h.svc.CreateAttribute(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
+		return
+	}
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
-	req, ok := binding.JSON[productdto.UpdateAttributeReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.UpdateAttribute(c.Request.Context(), req)
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseForm[productdto.UpdateAttributeReq](c)
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	if _, err := h.svc.UpdateAttribute(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
+		return
+	}
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
-	req, ok := binding.JSON[productdto.SetAttributeValuesReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.SetAttributeValuesReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	res, err := h.svc.SetAttributeValues(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if _, err := h.svc.SetAttributeValues(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) GetAttribute(c *gin.Context) {
@@ -95,17 +102,25 @@ func (h *ProductHandle) ListAttributes(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteAttribute(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DeleteAttributeReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req productdto.DeleteAttributeReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	if err := h.svc.DeleteAttribute(c.Request.Context(), req); err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+	if err := h.svc.DeleteAttribute(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+	pageview.Success(c)
 }
 
 func (h *ProductHandle) BulkDeleteAttributes(c *gin.Context) {
-	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductAttributes)
+	c.Header("Cache-Control", "no-store")
+	var form productdto.BulkDeleteReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return
+	}
+	h.bulkDeleteResult(c, h.svc.BulkDeleteProductAttributes, &form)
 }

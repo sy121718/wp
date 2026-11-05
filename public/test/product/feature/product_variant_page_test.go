@@ -15,6 +15,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -24,12 +25,13 @@ func grantProductPerms(engine *gin.Engine) {
 			"product:create": true, "product:update": true,
 			"product:variant_create": true, "product:variant_generate": true,
 			"product:variant_delete": true, "product:delete": true,
+			"product:rating_add": true, "product:rating_delete": true,
+			"product:seo_score": true,
 		})
 		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.create": true, "product.update": true,
 			"product.variant_create": true, "product.variant_generate": true,
-			"product.variant_delete": true, "product.delete": true,
-		})
+			"product.variant_delete": true, "product.delete": true})
 
 		c.Next()
 	})
@@ -45,6 +47,7 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 
@@ -199,10 +202,10 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 
 	body := getProductEditPage(engine, f.projectID, product.ID)
 	for _, want := range []string{
-		`data-write-url="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-write-reload`,
-		`data-write-url="/api/product/variant/create"`,
+		`hx-post="/api/product/variant/create"`,
 		`data-preview-url="/api/product/variant/preview"`,
 	} {
 		if !strings.Contains(body, want) {

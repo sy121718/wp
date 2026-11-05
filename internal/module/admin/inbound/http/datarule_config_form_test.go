@@ -11,7 +11,7 @@ import (
 
 func newFormContext(t *testing.T, form url.Values) *gin.Context {
 	t.Helper()
-	req := httptest.NewRequest("POST", "/admin/datarules/config-editor", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest("POST", "/admin/datarules/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = req

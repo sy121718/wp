@@ -1,10 +1,10 @@
 package productenums
 
 const (
-	MsgTranslationSaveFailed  = "MsgTranslationSaveFailed"
-	MsgTranslationInvalid     = "MsgTranslationInvalid"
-	MsgTranslationStale       = "MsgTranslationStale"
-	MsgTranslationLangInvalid = "MsgTranslationLangInvalid"
+	MsgTranslationSaveFailed  = "pTransSaveFail"
+	MsgTranslationInvalid     = "pTransInvalid"
+	MsgTranslationStale       = "pTransStale"
+	MsgTranslationLangInvalid = "pTransLangBad"
 )
 
 var TranslationMsgFallbacks = map[string]string{

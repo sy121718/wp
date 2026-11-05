@@ -50,8 +50,6 @@ var defaultDTOExposureAllow = map[string]string{
 	"TokenItem.TokenPrefix": "展示用前缀（令牌前 12 字符），仅用于辨认是哪一把；与落库哈希无关，不能据此反推明文",
 	"TokenCreateResp.Token": "刚生成的一次性明文令牌，只在创建应答出现一次（此后无任何读回明文的接口）；不交给创建者就无法使用",
 
-	"McpPageResp.NewToken": "刚生成的一次性明文令牌，只在这一次页面渲染里出现（列表只给前缀，此后无任何读回明文的接口）",
-
 	"McpPageResp.Tokens": "令牌列表（每项只有前缀、名称、范围、时间与状态，没有任何明文或哈希）；字段名命中词根 \"token\"，值是行列表不是凭据",
 
 	"ChatResult.InputTokens":  "计量字段：上游上报的输入 token 数（整型），不是凭据",

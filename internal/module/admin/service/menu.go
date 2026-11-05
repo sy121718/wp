@@ -14,6 +14,8 @@ import (
 	"go_wp/pkg/i18n"
 
 	"go_wp/pkg/tree"
+
+	"gorm.io/gorm"
 )
 
 func (s *Service) MenuPage(ctx context.Context, page, limit int, keyword string) (*admindto.MenuPageResp, error) {
@@ -223,9 +225,6 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 	if err := s.validatePermissionBinding(req.Type, req.PermissionCodes, ctx); err != nil {
 		return err
 	}
-	if err := s.validateMenuPlacement(ctx, req.ParentID, req.Type); err != nil {
-		return err
-	}
 
 	entity := &adminmodel.MenuEntity{
 		Title:       req.Title,
@@ -244,10 +243,75 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 		entity.Remark = &req.Remark
 	}
 
-	if err := s.mm.CreateWithPermissionCodes(ctx, entity, req.PermissionCodes); err != nil {
+	// 建子菜单要在事务里先锁父行再校验层级：
+	// 校验读的是父链，若父链在「校验完 → 插入」之间被改挂或删掉，建出来的菜单
+	// 就落进了一条已经不成立的父链。锁父行让校验与插入看到同一份状态。
+	err := s.mm.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.lockMenuParentTx(ctx, tx, req.ParentID, 0); err != nil {
+			return err
+		}
+		if err := s.validateMenuPlacementTx(ctx, tx, req.ParentID, req.Type); err != nil {
+			return err
+		}
+		return s.mm.CreateWithPermissionCodesTx(ctx, tx, entity, req.PermissionCodes)
+	})
+	if err != nil {
 		return err
 	}
 	invalidateMenuCache()
+	return nil
+}
+
+// lockMenuParentTx 在调用方事务内锁住目标父菜单行（parentID 为 0 表示根级，无需锁）。
+//
+// 锁序与删除端一致：都按主键 id 加锁。selfID 是重挂场景下正在改的那一行 ——
+// 它自己也在这批行里，提前锁住可以避免「改挂自己」与「别人改挂它」交叉。
+func (s *Service) lockMenuParentTx(ctx context.Context, tx *gorm.DB, parentID, selfID uint64) error {
+	ids := make([]uint64, 0, 2)
+	if selfID > 0 {
+		ids = append(ids, selfID)
+	}
+	if parentID > 0 && parentID != selfID {
+		ids = append(ids, parentID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	locked, err := s.mm.LockByIDsTx(ctx, tx, ids)
+	if err != nil {
+		return err
+	}
+	if len(locked) != len(ids) {
+		// 锁不到 = 目标行在并发里被删掉了，这条改挂/新建已经不成立。
+		return adminenums.Err(adminenums.ErrMenuParentNotFound)
+	}
+	return nil
+}
+
+// validateMenuPlacementTx 是 validateMenuPlacement 的事务版：父链读本事务的锁内状态。
+func (s *Service) validateMenuPlacementTx(ctx context.Context, tx *gorm.DB, parentID uint64, menuType int) error {
+	if parentID == 0 {
+		return nil
+	}
+	_ = menuType
+	depth := 1
+	cur, err := s.mm.GetByIDTx(ctx, tx, parentID)
+	if err != nil {
+		return err
+	}
+	for cur != nil {
+		depth++
+		if depth > maxNavDepth {
+			return adminenums.Err(adminenums.ErrMenuDepthExceeded)
+		}
+		if cur.ParentID == 0 {
+			break
+		}
+		cur, err = s.mm.GetByIDTx(ctx, tx, cur.ParentID)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -297,42 +361,27 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 		entity.Remark = nil
 	}
 
-	if err := s.mm.UpdateWithPermissionCodes(ctx, entity, req.PermissionCodes); err != nil {
+	// 重挂同样在事务里锁「自己 + 新父」两行再校验：
+	// 只锁自己挡不住别人同时在改挂它，只锁父挡不住自己这一行被别人改。
+	err = s.mm.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.lockMenuParentTx(ctx, tx, req.ParentID, req.ID); err != nil {
+			return err
+		}
+		if err := s.validateMenuPlacementTx(ctx, tx, req.ParentID, req.Type); err != nil {
+			return err
+		}
+		return s.mm.UpdateWithPermissionCodesTx(ctx, tx, entity, req.PermissionCodes)
+	})
+	if err != nil {
 		return err
 	}
 	invalidateMenuCache()
 	return nil
 }
 
+// MenuDelete 删除菜单，单条与批量走同一条全成全败路径。
 func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) error {
-
-	for _, id := range req.IDs {
-		entity, err := s.mm.GetByID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if entity == nil {
-			continue
-		}
-		if entity.IsSystem == 1 {
-			return adminenums.Err(adminenums.ErrMenuIsSystem)
-		}
-
-		childCount, err := s.mm.CountByParentID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if childCount > 0 {
-			return adminenums.Err(adminenums.ErrMenuHasChildren)
-		}
-	}
-
-	_, err := s.mm.SoftDeleteWithPermissionCodes(ctx, req.IDs)
-	if err != nil {
-		return err
-	}
-	invalidateMenuCache()
-	return nil
+	return s.MenuBulkDelete(ctx, req)
 }
 
 func (s *Service) validatePermissionBinding(menuType int, codes []string, ctx context.Context) error {
@@ -515,6 +564,23 @@ func (s *Service) GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64)
 	if err != nil {
 		return nil, err
 	}
+	return flattenMenuPermissionCodes(byMenu), nil
+}
+
+// menuPermissionCodesTx 是 GetPermissionCodesByIDs 的事务版，供授予端在同一事务里取码。
+//
+// 授予端先锁菜单行，再要读「这些菜单现在挂哪些权限码」：非事务版读的是另一条连接，
+// 与本事务的锁不在同一个事务边界内，读到的是锁外面的状态。
+func (s *Service) menuPermissionCodesTx(ctx context.Context, tx *gorm.DB, menuIDs []uint64) ([]string, error) {
+	byMenu, err := s.mm.ListPermissionCodesByMenuIDsTx(ctx, tx, menuIDs)
+	if err != nil {
+		return nil, err
+	}
+	return flattenMenuPermissionCodes(byMenu), nil
+}
+
+// flattenMenuPermissionCodes 把「菜单 → 权限码」按菜单 id 升序、码首次出现顺序摊平去重。
+func flattenMenuPermissionCodes(byMenu map[uint64][]string) []string {
 	ids := make([]uint64, 0, len(byMenu))
 	for id := range byMenu {
 		ids = append(ids, id)
@@ -522,7 +588,7 @@ func (s *Service) GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64)
 	slices.Sort(ids)
 
 	seen := make(map[string]struct{})
-	var codes []string
+	codes := make([]string, 0, len(ids))
 	for _, id := range ids {
 		for _, code := range byMenu[id] {
 			if _, ok := seen[code]; ok {
@@ -532,7 +598,7 @@ func (s *Service) GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64)
 			codes = append(codes, code)
 		}
 	}
-	return codes, nil
+	return codes
 }
 
 func matchedMenuCodes(codes []string, codeSet map[string]struct{}) []string {

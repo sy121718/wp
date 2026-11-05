@@ -11,14 +11,24 @@ func registerProductPublishHistoryI18n() {
 		registerSeed(Seed{
 			Version:   "673b-product-publish-history-i18n",
 			TableName: "sys_i18n",
-			ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 15 THEN 1 ELSE 0 END FROM sys_i18n " +
-				"WHERE lang = 'en-US' AND item_key IN (" +
-				"'admin.products.publish.history.title', 'admin.products.publish.history.lead', 'admin.products.publish.history.hint', 'admin.products.publish.history.ok'" +
-				"'admin.products.publish.history.failed', 'admin.products.publish.history.trigger', 'admin.products.publish.history.t.create', 'admin.products.publish.history.t.manual'" +
-				"'admin.products.publish.history.t.switch', 'admin.products.publish.history.t.url', 'admin.products.publish.history.t.rollback', 'admin.products.publish.history.t.override'" +
-				"'admin.products.publish.history.t.auto', 'admin.products.publish.history.more', 'admin.products.publish.history.empty'" +
-				")",
-			SQL: mustSQL("673b_product_publish_history_i18n.sql"),
+			ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('pPubHistEmpty'),
+    ('pPubHistFail'),
+    ('pPubHistHint'),
+    ('pPubHistLead'),
+    ('pPubHistMore'),
+    ('pPubHistOk'),
+    ('pPubHistTAuto'),
+    ('pPubHistTManual'),
+    ('pPubHistTNew'),
+    ('pPubHistTSwitch'),
+    ('pPubHistTUndo'),
+    ('pPubHistTUrl'),
+    ('pPubHistTitle'),
+    ('pPubHistTrigger'),
+    ('pPubOverride')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+			SQL: mustSQL("723z_current_673b_product_publish_history_i18n.sql"),
 		})
 	})
 }

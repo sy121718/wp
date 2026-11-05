@@ -10,6 +10,7 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -49,8 +50,8 @@ func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.Custom
 	g := rg.Group("/customer")
 	g.GET("/list", permission.UserCustomerList, h.ListCustomers)
 	g.GET("/get", permission.UserCustomerDetail, h.GetCustomer)
-	g.POST("/status", permission.UserCustomerStatus, h.SetCustomerStatus)
-	g.POST("/unlock", permission.UserCustomerUnlock, h.UnlockCustomer)
-	g.POST("/bulk-status", permission.UserCustomerBulkStatus, h.BulkCustomerStatus)
-	g.POST("/bulk-unlock", permission.UserCustomerBulkUnlock, h.BulkCustomerUnlock)
+	g.POST("/status", permission.UserCustomerStatus, pageview.HTMLFragment, h.SetCustomerStatus)
+	g.POST("/unlock", permission.UserCustomerUnlock, pageview.HTMLFragment, h.UnlockCustomer)
+	g.POST("/bulk-status", permission.UserCustomerBulkStatus, pageview.HTMLFragment, h.BulkCustomerStatus)
+	g.POST("/bulk-unlock", permission.UserCustomerBulkUnlock, pageview.HTMLFragment, h.BulkCustomerUnlock)
 }

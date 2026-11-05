@@ -3,7 +3,7 @@ package productcontract
 import (
 	"context"
 
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	productdto "go_wp/internal/module/product/dto"
 )
 
@@ -38,7 +38,7 @@ type ProductService interface {
 
 	AddRating(ctx context.Context, req *productdto.AddRatingReq) (res *productdto.RatingResp, err error)
 	ListRatings(ctx context.Context, req *productdto.ListRatingsReq) (res *productdto.RatingResp, err error)
-	DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (err error)
+	DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (res *productdto.RatingResp, err error)
 
 	CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (res *productdto.VariantResp, err error)
 	UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (res *productdto.VariantResp, err error)

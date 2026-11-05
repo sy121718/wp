@@ -11,7 +11,9 @@ type RatingItemResp struct {
 }
 
 type RatingResp struct {
-	Items []RatingItemResp `json:"items"`
+	ProjectID string           `json:"projectId"`
+	ProductID string           `json:"productId"`
+	Items     []RatingItemResp `json:"items"`
 
 	Rating      float64 `json:"rating"`
 	RatingCount int     `json:"ratingCount"`

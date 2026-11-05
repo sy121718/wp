@@ -264,13 +264,13 @@ func TestSessionChatToolFailureKeepsConversation(t *testing.T) {
 	if strings.Contains(second, "db down") || strings.Contains(second, "password") {
 		t.Fatalf("工具失败原文不该回灌给模型：%s", second)
 	}
-	if !strings.Contains(second, "工具执行失败") {
-		t.Fatalf("应回灌归口文案，实得：%s", second)
+	if !strings.Contains(second, "tool orders_summary failed: status=failed, error="+aienums.ErrToolRunFailed) {
+		t.Fatalf("应回灌工具失败事实，实得：%s", second)
 	}
 
 	events := listSessionEvents(t, sess, res.Session.ID)
 	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
-	if events[2].Content != "工具执行失败" {
+	if events[2].Content != "tool orders_summary failed: status=failed, error="+aienums.ErrToolRunFailed {
 		t.Fatalf("结果事件正文 = %q", events[2].Content)
 	}
 }

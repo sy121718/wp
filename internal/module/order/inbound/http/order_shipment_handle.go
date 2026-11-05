@@ -4,28 +4,34 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
 func (h *Handle) ShipOrder(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.ShipOrderReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	// multipart 表单：普通字段走原生 binder，明细行是 lines[<下标>][<字段>] 的扁平键，
+	// 由 ShipOrderReq.BindForm 收成结构。
+	var req orderdto.ShipOrderReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-
-	{
-		id, name := operatorFromContext(c)
-		req.OperatorID, req.OperatorName = int64(id), name
-	}
-	res, err := h.svc.ShipOrder(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if err := req.BindForm(c.Request.PostForm); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	response.Success(c, res)
+	id, name := operatorFromContext(c)
+	req.OperatorID, req.OperatorName = int64(id), name
+	if _, err := h.svc.ShipOrder(c.Request.Context(), &req); err != nil {
+		orderWriteFail(c, err)
+		return
+	}
+	orderWriteResult(c, "ordShipped")
 }
 
 func (h *Handle) ListShipments(c *gin.Context) {
@@ -81,29 +87,31 @@ func (h *Handle) ListCarriers(c *gin.Context) {
 }
 
 func (h *Handle) CreateCarrier(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.CarrierCreateReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req orderdto.CarrierCreateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.CreateCarrier(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.CreateCarrier(c.Request.Context(), &req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	response.Success(c, res)
+	orderWriteResult(c, "ordCarrierSaved")
 }
 
 func (h *Handle) UpdateCarrier(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.CarrierUpdateReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req orderdto.CarrierUpdateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.UpdateCarrier(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.UpdateCarrier(c.Request.Context(), &req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	response.Success(c, res)
+	orderWriteResult(c, "ordCarrierSaved")
 }
 
 func (h *Handle) GetCurrencyRate(c *gin.Context) {
@@ -120,11 +128,13 @@ func (h *Handle) GetCurrencyRate(c *gin.Context) {
 }
 
 func (h *Handle) SetCurrencyRate(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.SetRateReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req orderdto.SetRateReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.SetRate(c.Request.Context(), req)
+	res, err := h.svc.SetRate(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, 400, "order", err)
 		return

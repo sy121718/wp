@@ -32,31 +32,32 @@ func renderPage(t *testing.T, instance string, data gin.H) string {
 	return rec.Body.String()
 }
 
-func pageDataFor(tokens []tokenRow, tools []toolRow, newToken string) gin.H {
+func pageDataFor(tokens []tokenRow, tools []toolRow) gin.H {
+	// 页面数据与生产的 McpPageResp 同形：没有 title/Title —— 标题是界面文案，
+	// 由 mcp.html 的 tr("admin.ai.mcp.title", …) 取词，不由 controller 塞成品句。
 	return gin.H{
-		"title":        "MCP 与外部访问",
-		"Title":        "MCP 与外部访问",
 		"Endpoint":     "http://example.test/mcp",
 		"Tokens":       tokens,
 		"Tools":        tools,
 		"ScopeOptions": []scopeOption{{Code: "order:list", Label: "订单查看（order:list）"}},
-		"NewToken":     newToken,
-		"ErrText":      "",
-		"DoneText":     "",
 
 		"McpEnabled": false,
-		"McpTone":    mcpSwitchTone(false),
 	}
 }
 
 func TestMcpPageRendersToolsAndTokens(t *testing.T) {
 	body := renderPage(t, "admin/ai/mcp", pageDataFor(
 		[]tokenRow{{
-			ID: 7, Name: "dsh 本地客户端", Prefix: "wp_pat_ab12", ScopesText: "order:list",
-			StatusLabel: "启用中", LastUsedText: "", ExpiresText: "2026-12-31 00:00",
+			ID: 7, Name: "dsh 本地客户端", Prefix: "wp_pat_ab12", Scopes: []string{"order:list"},
+			Status: int16(aienums.TokenStatusActive),
+			ExpiresAt: func() *utils.JSONTime {
+				t := time.Date(2026, 12, 31, 0, 0, 0, 0, time.Local)
+				v := utils.NewJSONTime(t)
+				return &v
+			}(),
 		}},
 		[]toolRow{{Name: "orders_summary", Description: "订单汇总", Permission: "order:list"}},
-		""))
+	))
 
 	if !strings.HasSuffix(strings.TrimSpace(body), "</html>") {
 		t.Fatalf("整页没有渲染完（缺 </html>）：模板在某一行中断了")
@@ -67,7 +68,8 @@ func TestMcpPageRendersToolsAndTokens(t *testing.T) {
 		"order:list",
 		"dsh 本地客户端",
 		"wp_pat_ab12",
-		`hx-post="/admin/ai/mcp/token/revoke"`,
+		`hx-post="/api/ai/token/revoke"`,
+		`id="mcp-token-row-7"`,
 		"从未使用",
 	} {
 		if !strings.Contains(body, want) {
@@ -75,21 +77,41 @@ func TestMcpPageRendersToolsAndTokens(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(body, "令牌只显示这一次") {
-		t.Errorf("没有新令牌时不应出现一次性明文提示")
+	// 令牌行由服务端直接渲染：状态词、时刻与权限点都在模板里取词，前端不再按 JSON 键取值。
+	for _, key := range []string{
+		`hx-target="#mcp-token-row-7"`,
+		`name="id" value="7"`,
+		`name="csrf_token" value="test-csrf"`,
+	} {
+		if !strings.Contains(body, key) {
+			t.Errorf("令牌行缺少 %q", key)
+		}
+	}
+
+	// 一次性明文只在生成那一次的响应里出现：整页渲染时结果区是空的，也不能出现明文。
+	if strings.Contains(body, `id="mcp-token-plain"`) {
+		t.Errorf("整页不该渲染一次性明文区（只有生成响应才有）")
 	}
 }
 
-func TestMcpTokensPartialShowsPlaintext(t *testing.T) {
-	body := renderPage(t, "admin/ai/mcp_tokens", pageDataFor(nil, nil, "wp_pat_PLAINTEXT_ONCE"))
-	if !strings.Contains(body, "wp_pat_PLAINTEXT_ONCE") {
-		t.Fatalf("片段里没有一次性明文")
+func TestMcpTokensBlockRendersEmptyStateWithoutPlaintext(t *testing.T) {
+	body := renderPage(t, "admin/ai/mcp_tokens", pageDataFor(nil, nil))
+	// 令牌区块不再承载一次性明文：那是生成这一次响应的事，列表只管已有令牌。
+	if strings.Contains(body, "wp_pat_") {
+		t.Fatalf("令牌区块不该出现任何明文")
 	}
 	if !strings.Contains(body, `id="mcp-token-panel"`) {
-		t.Fatalf("片段缺少替换目标 id —— HTMX hx-target 会指空")
+		t.Fatalf("区块缺少面板 id")
+	}
+	if !strings.Contains(body, `id="mcp-token-rows"`) {
+		t.Fatalf("区块缺少行容器 id —— 前端按它插行")
 	}
 	if !strings.Contains(body, "还没有令牌") {
 		t.Fatalf("空列表没有提示")
+	}
+	// 空列表时表格与撤销说明都要隐藏，否则会出现「表头 + 空表」。
+	if !strings.Contains(body, `id="mcp-token-table" hidden`) {
+		t.Errorf("空列表时表格应隐藏")
 	}
 
 	if strings.Contains(body, "</html>") {
@@ -101,23 +123,24 @@ func TestTokenRowsFormatsEmptyTimes(t *testing.T) {
 	now := utils.NewJSONTime(time.Date(2026, 10, 5, 9, 30, 0, 0, time.UTC))
 	rows := tokenRows([]aidto.TokenItem{
 		{ID: 1, Name: "a", TokenPrefix: "wp_pat_x", Scopes: []string{"order:list", "page:list"},
-			Status: int16(aienums.TokenStatusActive), StatusLabel: "启用中", LastUsedTime: &now},
-		{ID: 2, Name: "b", Status: int16(aienums.TokenStatusRevoked), StatusLabel: "已撤销"},
+			Status: int16(aienums.TokenStatusActive), LastUsedTime: &now},
+		{ID: 2, Name: "b", Status: int16(aienums.TokenStatusRevoked)},
 	})
 	if len(rows) != 2 {
 		t.Fatalf("行数不对: %d", len(rows))
 	}
-	if rows[0].LastUsedText != "2026-10-05 09:30" {
-		t.Errorf("时间格式化不对: %q", rows[0].LastUsedText)
+	// 时间与分隔符都不在这里格式化：tokenRow 只交代时刻事实，显示格式由模板决定。
+	if rows[0].LastUsed == nil || !time.Time(*rows[0].LastUsed).Equal(time.Date(2026, 10, 5, 9, 30, 0, 0, time.UTC)) {
+		t.Errorf("最近使用时刻事实不对: %v", rows[0].LastUsed)
 	}
-	if rows[0].ScopesText != "order:list、page:list" {
-		t.Errorf("权限点拼接不对: %q", rows[0].ScopesText)
+	if len(rows[0].Scopes) != 2 || rows[0].Scopes[0] != "order:list" || rows[0].Scopes[1] != "page:list" {
+		t.Errorf("权限点事实不对: %v", rows[0].Scopes)
 	}
 	if rows[0].Revoked || !rows[1].Revoked {
 		t.Errorf("撤销状态判定不对: %v / %v", rows[0].Revoked, rows[1].Revoked)
 	}
-	if rows[1].LastUsedText != "" || rows[1].ExpiresText != "" {
-		t.Errorf("nil 时间应渲染成空串（由模板决定显示什么）: %q / %q", rows[1].LastUsedText, rows[1].ExpiresText)
+	if rows[1].LastUsed != nil || rows[1].ExpiresAt != nil {
+		t.Errorf("nil 时刻应保持 nil（由模板决定显示什么）: %v / %v", rows[1].LastUsed, rows[1].ExpiresAt)
 	}
 }
 
@@ -177,32 +200,34 @@ func TestScopeOptionsDedupAndSort(t *testing.T) {
 }
 
 func TestMcpPageRendersSwitch(t *testing.T) {
-	off := renderPage(t, "admin/ai/mcp", pageDataFor(nil, nil, ""))
+	off := renderPage(t, "admin/ai/mcp", pageDataFor(nil, nil))
+	// 开关是写动作：标准 HTMX 表单，落点是 /api，页面组的 POST 双轨已清退。
 	for _, want := range []string{
-		`action="/admin/ai/mcp/toggle"`,
+		`hx-post="/api/ai/token/toggle"`,
+		`hx-target="#mcp-switch"`,
 		"已关闭",
 		"开启接入",
 		`name="enabled" value="1"`,
-		"data-confirm",
+		"hx-confirm",
 	} {
 		if !strings.Contains(off, want) {
 			t.Errorf("关闭态缺少 %q", want)
 		}
 	}
 
-	onData := pageDataFor(nil, nil, "")
+	onData := pageDataFor(nil, nil)
 	onData["McpEnabled"] = true
-	onData["McpTone"] = mcpSwitchTone(true)
 	on := renderPage(t, "admin/ai/mcp", onData)
 	for _, want := range []string{"已开启", "关闭接入", `name="enabled" value="0"`} {
 		if !strings.Contains(on, want) {
 			t.Errorf("开启态缺少 %q", want)
 		}
 	}
+	// 开启态里「开启接入」一个都不该出现：那说明状态传反了。
 	if strings.Contains(on, "开启接入") {
-		t.Error("开启态不该渲染「开启接入」按钮（状态传错了）")
+		t.Error("开启态不该把「开启接入」渲染成任何文字（状态传错了）")
 	}
-	if strings.Contains(on, "data-confirm") {
+	if strings.Contains(on, "hx-confirm") {
 		t.Error("关闭动作不需要二次确认（它只收紧权限）")
 	}
 }

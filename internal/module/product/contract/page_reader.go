@@ -15,9 +15,8 @@ type ProductPageReader interface {
 }
 
 type PublishRecordList struct {
-	Available bool
-	Records   []productdto.PublishRecordRowResp
-	Total     int64
-	Page      int
-	Limit     int
+	Records []productdto.PublishRecordRowResp
+	Total   int64
+	Page    int
+	Limit   int
 }

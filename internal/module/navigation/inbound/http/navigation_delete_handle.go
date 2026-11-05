@@ -8,11 +8,13 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	navigationdto "go_wp/internal/module/navigation/dto"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
+	navigationenums "go_wp/internal/module/navigation/enums"
+	pageview "go_wp/pkg/view"
 )
 
 var navigationDeleteSingleKeys = map[string]bool{"id": true}
@@ -75,15 +77,26 @@ func navigationBulkTooManyMessage(err error) string {
 	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, tooMany.Max, tooMany.Count)
 }
 
-func (h *Handle) deleteBulk(c *gin.Context, raw map[string]json.RawMessage) {
-	params, ok := navigationDeleteBulkIDsOf(raw["ids"])
-	if !ok {
-		response.ParamError(c)
+// DeleteBulk 是批量删除的独立端点：标准表单，ids 重复提交。
+func (h *Handle) DeleteBulk(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var form navigationdto.BulkDeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
+	h.deleteBulk(c)
+}
+
+func (h *Handle) deleteBulk(c *gin.Context) {
+	params := c.Request.PostForm["ids"]
 	ids, nerr := bulkids.Normalize(params)
 	if nerr != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navigationBulkTooManyMessage(nerr))
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, nerr)
+		return
+	}
+	if len(ids) == 0 {
+		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
 	res := navigationBulkDeleteResult{Items: []navigationBulkDeleteItem{}}
@@ -100,5 +113,10 @@ func (h *Handle) deleteBulk(c *gin.Context, raw map[string]json.RawMessage) {
 		res.Deleted++
 		res.Items = append(res.Items, item)
 	}
-	response.Success(c, res)
+	// 批量结论也走 Jet 片段：计数文案在模板里取词，逐条原因由失败行承载。
+	c.HTML(http.StatusOK, "admin/navigation/navigation_bulk_result.html", pageview.Objects(
+		pageview.Object("Deleted", res.Deleted),
+		pageview.Object("Skipped", res.Skipped),
+		pageview.Object("Items", res.Items),
+	))
 }

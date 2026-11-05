@@ -12,9 +12,12 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 const NavigationEditFormTemplate = "admin/navigation/navigation_edit_form"
+
+const NavigationPanelCreatedTemplate = "admin/navigation/panel_created"
 
 const NavigationsPageTemplate = "admin/navigation/navigations"
 
@@ -40,9 +43,9 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 		adminui.BareSlot(NavigationEditFormTemplate),
 		h.NavigationEditFragment)
 
-	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.PanelSet)
-	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)
-	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationUpdate)
+	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.PanelSet)
+	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), pageview.HTMLFragment, h.PanelCreate)
+	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.NavigationUpdate)
 
 	translations := NewNavigationTranslationHandle(navigations, projects)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"regexp"
@@ -13,8 +14,8 @@ import (
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/response"
 )
 
 type reasonUpdateSpy struct {
@@ -39,26 +40,31 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		wantCalls int
 		wantTitle string
 	}{
-		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "2", 2, "已更新"},
+		// 部分失败仍是 400：失败片段给状态码档的通用文案（缺词时不露裸 key）。
+		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "1", 2, "data-ui-error"},
 
-		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
-		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "请选择要操作的原因"},
+		// 没注入词库：业务错误落到共享归口文案，不泄漏裸 key。
+		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, "参数有误"},
+		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "data-ui-error"},
 		{"limit", func() url.Values {
 			v := url.Values{"projectId": {"p1"}, "status": {"active"}}
 			for i := 0; i <= bulkids.MaxIDs; i++ {
 				v.Add("ids", fmt.Sprint(i))
 			}
 			return v
-		}(), "", 0, "一次最多操作"},
+		}(), "", 0, response.InternalFallback},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, rec, view := inventoryFormContext(t, tc.values, false)
 			spy := &reasonUpdateSpy{failID: tc.failID}
-			(&inventoryPageHandle{inventory: spy}).InventoryReasonsBulkStatus(c)
-			c.Writer.WriteHeaderNow()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/admin/inventory/reasons/bulk-status",
+				strings.NewReader(tc.values.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			engine := inventoryFormEngine((&inventoryPageHandle{inventory: spy}).InventoryReasonsBulkStatus)
+			engine.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusBadRequest || view.name != "" {
-				t.Fatalf("状态码 %d 模板 %q，want 400 且不渲染", rec.Code, view.name)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("状态码 %d，want 400", rec.Code)
 			}
 			body := rec.Body.String()
 			if !strings.Contains(body, tc.wantTitle) {
@@ -82,7 +88,7 @@ func TestInventoryReasonBulkUsesUpdatePermission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	route := regexp.MustCompile(`pages\.POST\("/inventory/reasons/bulk-status",\s*builtin\.CasbinMiddlewareForPath\("/api/inventory/reason/update"\),\s*[\w.]+\.InventoryReasonsBulkStatus\)`)
+	route := regexp.MustCompile(`pages\.POST\("/inventory/reasons/bulk-status",\s*builtin\.CasbinMiddlewareForPath\("/api/inventory/reason/update"\),\s*(?:pageview\.HTMLFragment,\s*)?[\w.]+\.InventoryReasonsBulkStatus\)`)
 	if !route.Match(body) {
 		t.Fatal("bulk route must share reason_update enforcement")
 	}

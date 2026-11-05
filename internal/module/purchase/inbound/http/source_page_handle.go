@@ -17,7 +17,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -72,10 +71,9 @@ type sourcesPageData struct {
 }
 
 func fillSourceOptions(d *sourcesPageData, c *gin.Context) *sourcesPageData {
-	tr := purchaseTranslate(c)
 	d.Title, d.Menu = purchaseenums.MsgInventorySourcesTitle, "inventory-sources"
-	d.TypeOptions, d.StatusOptions = sourceTypeOptions(tr), sourceStatusOptions(tr)
-	d.RelatedOptions, d.FilterStatusAll = sourceRelatedOptions(tr), sourceStatusFilterAll
+	d.TypeOptions, d.StatusOptions = sourceTypeOptions(), sourceStatusOptions()
+	d.RelatedOptions, d.FilterStatusAll = sourceRelatedOptions(), sourceStatusFilterAll
 	d.ListQuery = binding.ListQuery(c, purchaseSourceBackKeys...)
 	return d
 }
@@ -213,7 +211,7 @@ func (h *sourcePageHandle) SourceCreate(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
@@ -231,7 +229,7 @@ func (h *sourcePageHandle) SourceUpdate(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
@@ -245,7 +243,7 @@ func (h *sourcePageHandle) SourceDelete(c *gin.Context) {
 		purchaseFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	pageview.Success(c)
 }
 
 func (h *sourcePageHandle) SourcesBulkDelete(c *gin.Context) {
@@ -272,10 +270,10 @@ func (h *sourcePageHandle) SourcesBulkDelete(c *gin.Context) {
 	case skipped > 0:
 		purchaseFailMsg(c, purchaseBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		response.Success(c, nil)
+		pageview.Success(c)
 	default:
 
-		response.Success(c, nil)
+		pageview.Success(c)
 	}
 }
 
@@ -323,25 +321,27 @@ func sourceRow(tr func(key, fallback string) string, s *purchasedto.SourceResp) 
 	}
 }
 
-func sourceTypeOptions(tr func(key, fallback string) string) []purchasedto.OptionResp {
+// 选项只交「值 + 固定词条 key + 兜底」；取词归模板。
+
+func sourceTypeOptions() []purchasedto.OptionResp {
 	return []purchasedto.OptionResp{
-		{Value: purchaseenums.SourceTypeExternal, Label: sourceTypeLabel(tr, purchaseenums.SourceTypeExternal)},
-		{Value: purchaseenums.SourceTypeInternal, Label: sourceTypeLabel(tr, purchaseenums.SourceTypeInternal)},
+		{Value: purchaseenums.SourceTypeExternal},
+		{Value: purchaseenums.SourceTypeInternal},
 	}
 }
 
-func sourceStatusOptions(tr func(key, fallback string) string) []purchasedto.OptionResp {
+func sourceStatusOptions() []purchasedto.OptionResp {
 	return []purchasedto.OptionResp{
-		{Value: purchaseenums.SourceStatusActive, Label: statusLabel(tr, purchaseenums.SourceStatusActive)},
-		{Value: purchaseenums.SourceStatusDisabled, Label: statusLabel(tr, purchaseenums.SourceStatusDisabled)},
+		{Value: purchaseenums.SourceStatusActive},
+		{Value: purchaseenums.SourceStatusDisabled},
 	}
 }
 
-func sourceRelatedOptions(tr func(key, fallback string) string) []purchasedto.OptionResp {
+func sourceRelatedOptions() []purchasedto.OptionResp {
 	return []purchasedto.OptionResp{
-		{Value: "", Label: tr(purchaseenums.KeySourcesRelatedTypeDefault, "按类型默认 / 不改")},
-		{Value: "true", Label: sourceRelatedLabel(tr, true)},
-		{Value: "false", Label: sourceRelatedLabel(tr, false)},
+		{Value: ""},
+		{Value: "true"},
+		{Value: "false"},
 	}
 }
 
@@ -375,10 +375,9 @@ func prettyJSON(raw json.RawMessage) string {
 }
 
 func sourceFormData(c *gin.Context, projectID string, edit bool, row any) *purchasedto.SourceFormResp {
-	tr := purchaseTranslate(c)
 	return &purchasedto.SourceFormResp{
 		IsEdit: edit, Row: row, SelectedProject: projectID,
-		TypeOptions: sourceTypeOptions(tr), RelatedOptions: sourceRelatedOptions(tr),
-		StatusOptions: sourceStatusOptions(tr),
+		TypeOptions: sourceTypeOptions(), RelatedOptions: sourceRelatedOptions(),
+		StatusOptions: sourceStatusOptions(),
 	}
 }

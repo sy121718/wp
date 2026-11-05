@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/templates"
 
 	"golang.org/x/net/html"

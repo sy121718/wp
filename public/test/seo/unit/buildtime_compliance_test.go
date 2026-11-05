@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/seo/compliance"
+	"go_wp/pkg/seo/compliance"
 )
 
 func renderArtifact(t *testing.T, lang string, seo builder.SEO, alternates []builder.Alternate) []byte {

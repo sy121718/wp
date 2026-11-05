@@ -13,7 +13,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/retention"
+	"go_wp/pkg/database/retention"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
 	"go_wp/pkg/queue"

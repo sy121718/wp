@@ -131,15 +131,15 @@ func TestCustomerDetailPageMissingRendersJump(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/detail?id=42", nil))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("客户不存在时应渲染提示页（200），实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
+		t.Fatalf("客户不存在应给真实 4xx，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Errorf(`提示页应有 data-jump-state="err"`)
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Errorf("客户不存在应走共享失败出口的受控错误区：%s", body)
 	}
-	if !strings.Contains(body, "/admin/customers") {
-		t.Errorf("提示页应给出回客户列表的链接")
+	if strings.Contains(body, "jump-page") {
+		t.Errorf("不得再走整页跳转提示：%s", body)
 	}
 }
 
@@ -150,14 +150,11 @@ func TestCustomerDetailPageWithoutIDRendersJump(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/detail", nil))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("没带 id 时应渲染提示页（200），实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("没带 id 应给真实 400，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Errorf(`提示页应有 data-jump-state="err"`)
-	}
-	if !strings.Contains(body, "客户编号不合法") {
-		t.Errorf("提示页应含「客户编号不合法」")
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Errorf("没带 id 应走共享失败出口的受控错误区：%s", body)
 	}
 }

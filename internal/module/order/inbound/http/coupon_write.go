@@ -1,43 +1,19 @@
 package orderhttp
 
 import (
-	json "go_wp/pkg/jsonx"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 )
 
-var (
-	orderCouponDeleteSingleKeys = map[string]bool{"id": true, "couponId": true}
-	orderCouponDeleteBulkKeys   = map[string]bool{"ids": true}
-
-	orderCouponToggleBulkKeys = map[string]bool{"ids": true, "status": true, "projectId": true}
-)
-
-func orderCouponDeleteIDKey(raw map[string]json.RawMessage) (string, bool) {
-	hasID := orderWriteHasKey(raw, "id")
-	hasCouponID := orderWriteHasKey(raw, "couponId")
-	switch {
-	case hasID && hasCouponID:
-		return "", false
-	case hasCouponID:
-		return "couponId", true
-	case hasID:
-		return "id", true
-	default:
-		return "", false
-	}
-}
-
+// couponTimeInputValue 把浏览器 datetime-local 的值规整成数据库接受的时刻串。
 func couponTimeInputValue(raw string) string {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -51,20 +27,6 @@ func couponTimeInputValue(raw string) string {
 	return s
 }
 
-type orderCouponBulkItem struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted,omitempty"`
-	Updated bool   `json:"updated,omitempty"`
-	Message string `json:"message,omitempty"`
-}
-
-type orderCouponBulkResult struct {
-	Deleted int                   `json:"deleted"`
-	Updated int                   `json:"updated"`
-	Skipped int                   `json:"skipped"`
-	Items   []orderCouponBulkItem `json:"items"`
-}
-
 var couponReasonFallbacks = map[string]string{
 	orderenums.ErrCouponCodeTaken:     "这个优惠码已经存在",
 	orderenums.ErrCouponTypeInvalid:   "优惠类型只支持按比例折扣或固定金额",
@@ -73,56 +35,22 @@ var couponReasonFallbacks = map[string]string{
 	orderenums.ErrCouponInUse:         "该优惠码已有核销记录，不能删除",
 }
 
+// orderCouponReasonText 取一条优惠码批量逐条失败的原因（按请求语言）。
 func orderCouponReasonText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
 	msg := couponFacingText(err.Error())
 	if msg == "" {
-		return orderReasonText(c, err)
+		return orderFacingFallback(c, err)
 	}
-	if text := response.TranslateMessage(c, msg); text != msg {
+	if text := orderWriteTranslation(c, msg); text != msg {
 		return text
 	}
 	if fallback := couponReasonFallbacks[msg]; fallback != "" {
 		return fallback
 	}
-
 	return msg
-}
-
-func orderWriteMissingCouponText(c *gin.Context) string {
-	return orderWriteTextOf(c, orderenums.ErrCouponNotFound, "优惠码不存在")
-}
-
-func orderCouponToggleTargetOf(raw map[string]json.RawMessage) (int, bool) {
-	body, ok := raw["status"]
-	if !ok || orderWriteIsExplicitNull(body) {
-		return 0, false
-	}
-	switch strings.TrimSpace(string(body)) {
-	case "0":
-		return 0, true
-	case "1":
-		return 1, true
-	default:
-		return 0, false
-	}
-}
-
-func orderCouponProjectOf(raw map[string]json.RawMessage) (string, bool) {
-	body, ok := raw["projectId"]
-	if !ok {
-		return "", true
-	}
-	if orderWriteIsExplicitNull(body) {
-		return "", false
-	}
-	var value string
-	if err := json.Unmarshal(body, &value); err != nil {
-		return "", false
-	}
-	return strings.TrimSpace(value), true
 }
 
 func couponTimeValueUTC(v *utils.JSONTime) string {
@@ -153,85 +81,106 @@ func couponToggleReq(cp *orderdto.CouponResp, target int, operatorID uint64, ope
 	}
 }
 
-func (h *Handle) couponDeleteBulk(c *gin.Context, raw map[string]json.RawMessage) {
-	ids, ok := orderWriteNormalizeIDs(c, raw)
+// couponDeleteBulk 是勾选多张优惠码的批量删除。
+func (h *Handle) couponDeleteBulk(c *gin.Context) {
+	var form orderdto.CouponDeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	ids, ok := orderNormalizeBulkIDs(c, form.IDs)
 	if !ok {
 		return
 	}
-	res := orderCouponBulkResult{Items: make([]orderCouponBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
+	rows := make([]orderBulkResultRow, 0, len(ids))
+	done, skipped := 0, 0
 	for _, rawID := range ids {
-		item := orderCouponBulkItem{ID: rawID}
 		id, perr := strconv.ParseUint(rawID, 10, 64)
 		switch {
 		case perr != nil || id == 0:
-
-			item.Message = orderWriteParamText(c)
+			rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderWriteTranslation(c, orderenums.ErrInvalidParam)})
+			skipped++
 		default:
 			if derr := h.svc.DeleteCoupon(ctx, id); derr != nil {
-				logger.Scene(orderWriteScene).With("id", rawID).Error(derr, "批量删除优惠码失败")
-				item.Message = orderCouponReasonText(c, derr)
+				orderLogWriteError(c, derr, "批量删除优惠码失败")
+				rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderCouponReasonText(c, derr)})
+				skipped++
 			} else {
-				item.Deleted = true
+				done++
 			}
 		}
-		if item.Deleted {
-			res.Deleted++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
 	}
-	response.Success(c, res)
+	orderBulkResult(c, done, skipped, rows)
 }
 
-func (h *Handle) couponToggleBulk(c *gin.Context, raw map[string]json.RawMessage) {
-	target, ok := orderCouponToggleTargetOf(raw)
-	if !ok {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+// couponToggleBulk 是勾选多张优惠码的批量启停。
+func (h *Handle) couponToggleBulk(c *gin.Context) {
+	var form orderdto.CouponSaveReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	projectID, ok := orderCouponProjectOf(raw)
-	if !ok {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	// 表单里没这个键、或给了空串 = 未提供；有了就必须是 0/1。空串会绑成 0，不能当成合法值。
+	raw, present := c.Request.PostForm["status"]
+	if !present || len(raw) == 0 || strings.TrimSpace(raw[0]) == "" {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	ids, ok := orderWriteNormalizeIDs(c, raw)
+	target, ok := couponToggleTargetText(form.Status)
+	if !ok {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return
+	}
+	ids, ok := orderNormalizeBulkIDs(c, form.IDs)
 	if !ok {
 		return
 	}
+	projectID := strings.TrimSpace(form.ProjectID)
 	operatorID, operatorName := operatorFromContext(c)
-	res := orderCouponBulkResult{Items: make([]orderCouponBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
+	rows := make([]orderBulkResultRow, 0, len(ids))
+	done, skipped := 0, 0
 	for _, rawID := range ids {
-		item := orderCouponBulkItem{ID: rawID}
 		id, perr := strconv.ParseUint(rawID, 10, 64)
 		switch {
 		case perr != nil || id == 0:
-			item.Message = orderWriteParamText(c)
+			rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderWriteTranslation(c, orderenums.ErrInvalidParam)})
+			skipped++
 		default:
 			cp, gerr := h.svc.GetCoupon(ctx, id)
 			switch {
 			case gerr != nil || cp == nil:
-				item.Message = orderWriteMissingCouponText(c)
+				rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderCouponNotFoundText(c)})
+				skipped++
 			case projectID != "" && cp.ProjectID != projectID:
-
-				item.Message = orderWriteMissingCouponText(c)
+				rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderCouponNotFoundText(c)})
+				skipped++
 			default:
 				if _, uerr := h.svc.UpdateCoupon(ctx, couponToggleReq(cp, target, operatorID, operatorName)); uerr != nil {
-					logger.Scene(orderWriteScene).With("id", rawID).Error(uerr, "批量启停优惠码失败")
-					item.Message = orderCouponReasonText(c, uerr)
+					orderLogWriteError(c, uerr, "批量启停优惠码失败")
+					rows = append(rows, orderBulkResultRow{ID: rawID, Message: orderCouponReasonText(c, uerr)})
+					skipped++
 				} else {
-					item.Updated = true
+					done++
 				}
 			}
 		}
-		if item.Updated {
-			res.Updated++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
 	}
-	response.Success(c, res)
+	orderBulkResult(c, done, skipped, rows)
+}
+
+// couponToggleTargetText 只接受 "0" / "1"：表单取值是字符串，语义是启停。
+func couponToggleTargetText(raw int) (int, bool) {
+	switch raw {
+	case 0, 1:
+		return raw, true
+	default:
+		return 0, false
+	}
+}
+
+// orderCouponNotFoundText 取「优惠码不存在」的当前语言文案。
+func orderCouponNotFoundText(c *gin.Context) string {
+	return orderWriteTranslation(c, orderenums.ErrCouponNotFound)
 }

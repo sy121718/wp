@@ -11,7 +11,7 @@ func TestDepsMissingPromptLivesInTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读模板失败: %v", err)
 	}
-	if !strings.Contains(string(body), "admin.product_detail_template.depsMissing") {
+	if !strings.Contains(string(body), "tplDepsMiss") {
 		t.Fatal("模板缺少未装配提示的取词：Go 侧已不再提供这句文案")
 	}
 }

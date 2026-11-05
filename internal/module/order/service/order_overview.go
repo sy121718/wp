@@ -258,11 +258,8 @@ const (
 	salesMaxMonthly = 24
 )
 
-var salesStatusWhitelist = []string{
-	ordermodel.OrderStatusPaid,
-	ordermodel.OrderStatusShipped,
-	ordermodel.OrderStatusCompleted,
-}
+// salesStatusWhitelist 直接引用 model 的已成交口径：两处各写一份就会漂。
+var salesStatusWhitelist = ordermodel.DefaultSalesStatuses
 
 func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverviewReq) (res *orderdto.SalesOverviewResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
@@ -284,7 +281,9 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		return nil, err
 	}
 
-	growth, err := s.orders.CustomerGrowthByRange(ctx, req.ProjectID, from, to)
+	// 把同一个 statuses 传给客户增长：显式筛状态时，同屏的销售额与新客数
+	// 必须出自同一批行。
+	growth, err := s.orders.CustomerGrowthByRange(ctx, req.ProjectID, from, to, statuses)
 	if err != nil {
 		return nil, err
 	}

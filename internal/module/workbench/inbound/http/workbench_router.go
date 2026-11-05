@@ -3,7 +3,7 @@ package workbenchhttp
 import (
 	"context"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	pageview "go_wp/pkg/view"
 

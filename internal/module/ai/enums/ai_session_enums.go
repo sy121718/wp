@@ -90,24 +90,3 @@ func IsValidToolCallStatus(s ToolCallStatus) bool {
 	}
 	return false
 }
-
-func ToolCallStatusLabel(s ToolCallStatus) string {
-	switch s {
-	case ToolCallStatusOK:
-		return "成功"
-	case ToolCallStatusArgsError:
-		return "参数错误"
-	case ToolCallStatusForbidden:
-		return "无权限"
-	case ToolCallStatusFailed:
-		return "失败"
-	}
-	return string(s)
-}
-
-func SessionStatusLabel(s SessionStatus) string {
-	if s == SessionActive {
-		return "进行中"
-	}
-	return "已归档"
-}

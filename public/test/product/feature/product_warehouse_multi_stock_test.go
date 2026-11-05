@@ -23,6 +23,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/migrations"
 )
@@ -418,7 +419,7 @@ func TestProductCreateRollsBackWhenChangeRecordFails(t *testing.T) {
 	if f == nil {
 		return
 	}
-	f.products.SetMasterDataChanges(&failingChangesPort{err: errors.New("留痕端口故障（故障注入）")})
+	f.rewireProducts(&failingChangesPort{err: errors.New("留痕端口故障（故障注入）")})
 	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "留痕失败的商品", Slug: "rollback-1", SKUCode: "ROLLBACK-1",
 		WarehouseIDs: []string{f.sz.ID, f.sh.ID},
@@ -462,7 +463,7 @@ func TestSaveVariantListRollsBackOnFailure(t *testing.T) {
 		t.Fatalf("初始应有一个变体，实际 %d", got)
 	}
 
-	f.products.SetMasterDataChanges(&failingChangesPort{err: errors.New("留痕端口故障（故障注入）")})
+	f.rewireProducts(&failingChangesPort{err: errors.New("留痕端口故障（故障注入）")})
 	_, err = f.products.SaveVariantList(ctx, &productdto.SaveVariantListReq{
 		ProductID: p.ID, ProjectID: f.projectID,
 		Rows: []productdto.VariantListResp{
@@ -494,6 +495,7 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
@@ -617,6 +619,7 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
@@ -667,6 +670,7 @@ func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 
 	f.products.SetInventoryService(stockFailurePort{ProductStockPort: f.inventory, err: errors.New("injected: 库存读失败")})
@@ -705,11 +709,11 @@ func TestProductStockUnknownI18nSeeded(t *testing.T) {
 	}
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		var n int
-		if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'admin.products.stock.unknown' AND lang = ?", lang).Scan(&n).Error; err != nil {
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'pStockUnknown' AND lang = ?", lang).Scan(&n).Error; err != nil {
 			t.Fatalf("查词条失败: %v", err)
 		}
 		if n == 0 {
-			t.Fatalf("%s 的 admin.products.stock.unknown 词条缺失（迁移 698 未生效）", lang)
+			t.Fatalf("%s 的 pStockUnknown 词条缺失（迁移 698 未生效）", lang)
 		}
 	}
 }
@@ -724,7 +728,7 @@ func TestContainerSKUTakenI18nSeeded(t *testing.T) {
 	}
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		var n int
-		if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'ErrContainerSKUTaken' AND lang = ?", lang).Scan(&n).Error; err != nil {
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'pBoxSkuTaken' AND lang = ?", lang).Scan(&n).Error; err != nil {
 			t.Fatalf("查词条失败: %v", err)
 		}
 		if n == 0 {

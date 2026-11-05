@@ -13,16 +13,12 @@ import (
 	"go_wp/public/test/support"
 )
 
-type publishRecordBatchProbe struct {
-	batches [][]string
-}
-
-func (p *publishRecordBatchProbe) Langs(_ context.Context, _ string, ids []string) (map[string][]productdto.PublishRecordLangResp, error) {
-	p.batches = append(p.batches, append([]string(nil), ids...))
-	return map[string][]productdto.PublishRecordLangResp{}, nil
-}
-
-func TestPublishRecordsUnfilteredReadsOnlyCurrentPage(t *testing.T) {
+// TestPublishRecordsReadsOneStatementPerPage 断言发布记录读一页只打一条只读语句：
+// 候选、产品级 total、夹页与本页明细都在这一条里。
+//
+// 计数口径按 probe 记录的真实回调次数（Raw 回调一次就是一条语句），不按 SQL 文本换行拆分 ——
+// 整页语句本身是多行的，按行拆会把一条语句算成多条。
+func TestPublishRecordsReadsOneStatementPerPage(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
 
@@ -31,9 +27,7 @@ func TestPublishRecordsUnfilteredReadsOnlyCurrentPage(t *testing.T) {
 
 	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "发布记录分页判据"}},
-	})
-	reader := &publishRecordBatchProbe{}
-	s.SetPublishRecordPort(reader)
+	}, stubMasterDataChanges{})
 	probe := attachSQLCountProbe(t, db)
 
 	cases := []struct {
@@ -51,7 +45,6 @@ func TestPublishRecordsUnfilteredReadsOnlyCurrentPage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			reader.batches = nil
 			probe.reset()
 			got, err := s.QueryPublishRecords(context.Background(), &productdto.ProductPublishRecordPageReq{
 				ProjectID: projectID, Keyword: tc.keyword, Page: tc.page,
@@ -63,32 +56,18 @@ func TestPublishRecordsUnfilteredReadsOnlyCurrentPage(t *testing.T) {
 				t.Fatalf("分页结果错误：total=%d page=%d rows=%d，期望 total=%d page=%d rows=%d（%+v）",
 					got.Total, got.Page, len(got.Records), tc.total, tc.wantPage, tc.wantRows, got)
 			}
-			if !got.Available || got.Limit != productservice.ProductPublishRecordPageSize {
+			if got.Limit != productservice.ProductPublishRecordPageSize {
 				t.Fatalf("分页事实未归一：%+v", got)
 			}
-			if tc.wantRows == 0 {
-				if len(reader.batches) != 0 {
-					t.Fatalf("空页不得调用发布端口（空 id 在本端口意味着全工程）：%+v", reader.batches)
-				}
-				return
+			// 一次请求只一条语句：候选、total、夹页与明细都在这一条里。
+			// 计数口径是产品表被读的语句数（按 probe 记录的真实回调，不按 SQL 文本换行拆分）：
+			// rls 的 set_config 与事务开启不算 product 读取，不进入这个计数。
+			if n := probe.productTableReads(); n != 1 {
+				t.Fatalf("整页应只有一条语句读 products（同快照收敛 total 与本页），实际 %d 条：\n%s",
+					n, probe.dumpProductTableReads())
 			}
-			if len(reader.batches) != 1 {
-				t.Fatalf("发布端口应只被调用一次，实际 %d 次：%+v", len(reader.batches), reader.batches)
-			}
-			if n := len(reader.batches[0]); n != tc.wantRows {
-				t.Fatalf("发布端口收到 %d 个商品 id，期望本页 %d 个：%+v", n, tc.wantRows, reader.batches[0])
-			}
-			stmts := strings.Split(probe.dumpProductTableReads(), "\n")
-			if len(stmts) != 2 {
-				t.Fatalf("本页应只读 products 两次（count + 本页投影），实际 %d 次：\n%s",
-					len(stmts), probe.dumpProductTableReads())
-			}
-			for _, sql := range stmts {
-				lower := strings.ToLower(sql)
-				if strings.Contains(lower, "count(") || strings.Contains(sql, "LIMIT") {
-					continue
-				}
-				t.Fatalf("商品投影缺少页容量约束（回到全量读会在内存切页）：%s", sql)
+			if !strings.Contains(probe.dump(), "presentation_instances") {
+				t.Fatalf("整页语句应自身带上发布事实，实际：\n%s", probe.dump())
 			}
 		})
 	}

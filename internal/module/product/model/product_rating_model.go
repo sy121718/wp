@@ -5,10 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
-	"errors"
 	"go_wp/pkg/rls"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ProductRatingEntity struct {
@@ -46,9 +45,8 @@ func (p *ProductEntity) RatingSummaryOf() (avg float64, count int, ok bool) {
 
 func (m *Model) ListRatings(ctx context.Context, productID, projectID string) (list []*ProductRatingEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
-			Where("product_id = ?", productID).
-			Order("create_time DESC, id DESC").Find(&list).Error
+		list, err = m.ListRatingsTx(ctx, tx, productID, projectID)
+		return err
 	})
 	return list, err
 }
@@ -100,7 +98,7 @@ func (m *Model) CreateRating(ctx context.Context, e *ProductRatingEntity) (err e
 func (m *Model) GetRating(ctx context.Context, id, projectID string) (e *ProductRatingEntity, err error) {
 	var row ProductRatingEntity
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).Where("id = ?", id).Take(&row).Error
+		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).Where("id = ? AND project_id = ?", id, projectID).Take(&row).Error
 	}); err != nil {
 		return nil, err
 	}
@@ -110,7 +108,7 @@ func (m *Model) GetRating(ctx context.Context, id, projectID string) (e *Product
 func (m *Model) DeleteRating(ctx context.Context, id, projectID string) (err error) {
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
-			Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
+			Where("id = ? AND project_id = ?", id, projectID).Delete(&ProductRatingEntity{}).Error
 	})
 }
 
@@ -118,19 +116,24 @@ func (m *Model) CreateRatingTx(ctx context.Context, tx *gorm.DB, e *ProductRatin
 	return tx.WithContext(ctx).Model(&ProductRatingEntity{}).Create(e).Error
 }
 
-func (m *Model) DeleteRatingTx(ctx context.Context, tx *gorm.DB, id string) error {
-	return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
-		Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
+// DeleteRatingTx 删除并返回同工程的评分事实；不存在时拒绝，不重复产生事件。
+func (m *Model) DeleteRatingTx(ctx context.Context, tx *gorm.DB, id, projectID string) (*ProductRatingEntity, error) {
+	var row ProductRatingEntity
+	result := tx.WithContext(ctx).Clauses(clause.Returning{}).
+		Where("id = ? AND project_id = ?", id, projectID).Delete(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &row, nil
 }
 
-func (m *Model) RatingProductIDTx(ctx context.Context, tx *gorm.DB, id string) (productID string, err error) {
-	var row ProductRatingEntity
-	if err = tx.WithContext(ctx).Model(&ProductRatingEntity{}).
-		Select("product_id").Where("id = ?", id).First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", nil
-		}
-		return "", err
-	}
-	return row.ProductID, nil
+// ListRatingsTx 在当前事务内读取评分明细，供写入结果与聚合使用同一份事实。
+func (m *Model) ListRatingsTx(ctx context.Context, tx *gorm.DB, productID, projectID string) (list []*ProductRatingEntity, err error) {
+	err = tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+		Where("project_id = ? AND product_id = ?", projectID, productID).
+		Order("create_time DESC, id DESC").Find(&list).Error
+	return list, err
 }

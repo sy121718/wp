@@ -1,90 +1,10 @@
 #!/usr/bin/env bash
-# check-i18n-keys-seeded.sh — 「key 被用但没 seed」门禁（与 check-i18n-coverage.sh 互补）。
-#
-# 为什么需要第二条：check-i18n-coverage.sh 只查**一个方向** ——
-#   「模板里硬编码了中文，该换成 key」。它查不出另一个方向：
-#   「代码/模板里用了 key，但没有任何迁移 seed 过这个词条」。
-#
-# 后者的表现是 t(key, "中文兜底") 命中失败 → 回落源码里的中文兜底：
-#   · 不报错、不 500、日志干净；
-#   · 默认语言（中文）下**完全看不出来**；
-#   · 只有切到 en-US 才暴露，而那时看到的是中文。
-#
-# 实测（2026-10）：`admin.page.langs.*` 一个面板里 18 个 key 有 16 个没 seed，
-# 而 i18n 门禁是绿的、基线是 0 —— **基线 0 只证明「没人硬编码中文」，
-# 没证明「每个用到的 key 都有词条」**。同一个面板的 seed 迁移（494）自己还写着
-# 「必须同批 seed，否则英文界面回落中文」，规则只对其中 2 个 key 执行了。
-#
-# ── 判据口径（2026-10 收紧，本脚本最容易搞错的地方）────────────────────────
-# 「已 seed」的定义 = 该 item_key **真的出现在 `INSERT INTO sys_i18n … VALUES (…)` 的元组里**。
-# 实现：解析 public/**/*.sql 的 INSERT 元组，取出 (item_key, lang) 对；
-# **不是**「key 的文本在 public/ 的任意 .go / .sql 里出现过」。
-#
-# 为什么必须收紧（两条实测过的**假绿**，方向都是「该红却绿」—— 比假红危险得多）：
-#   1. **注释里提到 key 就算已 seed**：接入当天，505 的 SQL 注释里写了一条例外 key
-#      （「这条属别的批次，本批不补」），计数立刻从 1 掉到 0 —— 门禁把那一条真缺失掩盖掉了。
-#      结论不是「别在注释里写 key」（注释是正常沟通方式），而是判据不许认注释。
-#   2. **注册文件的 ConditionSQL 判据列表**里列出 key 也算已 seed —— 那只是门槛 SQL 的 IN 列表，
-#      与词条有没有写入无关：判据文件写了 20 个 key、SQL 少写词条，门禁照样绿。
-#
-# ── 扫描范围（窄是刻意的，宽会立刻变成红着的门禁）───────────────────────────
-# 只扫 `admin.*` 与 `workbench.*`：这两个命名空间的词条**只能**来自迁移 seed，
-# 没有第二个来源，所以「未 seed」必然等于「回落中文」。
-#
-# 刻意**不扫** `site.*`：那是访客面组件文案（`site.component.{type}.{prop}`，
-# docs/06-D §10.3），词条按**工程**存在内容 i18n 里、由译者在后台逐条填，
-# 全新安装回落中文是设计而非缺陷。把它算进来 = 一条永远红着的门禁。
-# 同理不扫 `page.*` / `product.*` 之类的**内容字段标识**（不是 UI 词条）。
-#
-# ── 扫描对象 ──────────────────────────────────────────────────────────────
-# internal/ 下的 .go/.html/.jet/.js 字符串字面量，形如 `a.b.c`（≥2 个点、各段小写）。
-# **排除 `*_test.go` 与任何 test 目录**：测试会故意引用捏造的 key 当负例，
-# 把它们算进来会让门禁永远红着，而红着的门禁等于没有门禁。
-#
-# ── 中英成对（WARN 段，不参与退出码）──────────────────────────────────────
-# 解析出的元组同时给出每个 key 的语言集合：若某个**被引用**的 key 缺 zh-CN 或 en-US 之一，
-# 会打印在 WARN 段并写入 I18N_KEYS_UNPAIRED（默认 /tmp/i18n-keys-unpaired.txt）。
-# 不并入主计数：主计数的语义是「被引用但完全没 seed」（必然回落中文兜底）；
-# 「只 seed 了一种语言」是另一类债务，混进来会让基线的含义漂移。
-#
-# ── 为什么不做「前缀常量拼接」的兜底推测 ────────────────────────────────────
-# 曾试过「全文命中失败后，再看末两段是否出现」这种宽松兜底，结论是**弊大于利**：
-# 短段如 `status.draft` / `col.lang` 与其它 key 的文本撞车，把 16 条真缺失掩盖成 8 条（实测）。
-# 而它想防的假阳性其实不会发生：key 由 `Prefix + "id"` 拼出时，完整 key 从不以字面量
-# 出现在 internal/，**根本不会成为候选** → 不报，也就不会误报。两个方向都安全，故不保留。
-#
-# ── 已知盲区（明写在这里，别当成"全覆盖"）────────────────────────────────
-#   1. 运行时完全动态拼装、且任何一段都不以字面量出现的 key（扫不到）；
-#   2. seed 若不经过 .sql 迁移（例如 Go 代码里执行 INSERT）→ 会被误报为缺失。
-#      当前仓库无此形态（`INSERT INTO sys_i18n` 全在 public/migrations/*.sql）；
-#      将来新增这种 seed 方式时，必须同步扩展本脚本的解析来源；
-#   3. seed 侧用 SQL 拼接（`EXECUTE format(...)` / 变量拼字符串）而非字面量元组 → 误报为缺失；
-#   4. 不校验译文本身的质量（空串 / 与兜底不一致等）；
-#   5. 不查「seed 了但没人用」的孤儿词条（另一个方向，且无害）；
-#   6. 只认 INSERT 元组：删词条（DELETE）与改值（UPDATE）不属于本门禁范围。
-#
-# ── 基线口径变更记录（基线只降不升）────────────────────────────────────────
-#   · 旧口径（key 文本出现在 public/ 任意 .go/.sql 即算已 seed）：21 →（补 505 的 20 条词条，
-#     并清掉 505 注释里那条例外 key 的字面量）→ 1；
-#   · 新口径（INSERT INTO sys_i18n 的 VALUES 元组）：**仍为 1** —— 收紧后计数没变，
-#     说明除那处已修的注释外，全仓没有第二处「文本命中了但不是真 seed」。
-#     这次改动是**判据防伪**，不是债务数字的变化：它挡的是「将来有人把 key 写进注释 /
-#     判据列表，而词条并没写」这类假绿。剩余那 1 条是 customers 批量操作结果词条，
-#     属 FIX-24 的机制范围，本批刻意不补。
-#
-# ── 改本脚本后必跑的自检（判据自己坏了会**静默假绿**，比业务缺陷更难发现）──────────
-# 造一个临时 root，三个文件就能覆盖全部分支：
-#   mkdir -p /tmp/probe-root/internal /tmp/probe-root/public/migrations
-#   echo 'const a = "admin.probe.commentFake";' > /tmp/probe-root/internal/probe.js
-#   printf -- '-- 注释里提到 admin.probe.commentFake，但没有 INSERT\n' > /tmp/probe-root/public/migrations/x.sql
-#   # 再往 x.sql 追加一条真 INSERT（admin.probe.realKey 的 zh-CN / en-US 两行）
-#   GOWP_ROOT=/tmp/probe-root I18N_KEYS_BASELINE=/tmp/probe-base.txt bash scripts/check-i18n-keys-seeded.sh
-# 期望：**计数 1**（只有 commentFake 报缺；realKey 有真 INSERT，不算缺）。
-# 计数 0 = 正则/解析退化了（key 扫不到或元组解析失效），门禁正在假绿 —— 别提交。
-# 实测教训：python raw string 里写成双反斜杠（r'\\s'）会被解释成「反斜杠 + 任意字符」，
-# INSERT 正则与 KEY 正则双双静默失配，计数恒 0；本条自检就是用来抓这种退化的。
-#
-# 计数口径：**去重后的 key 个数**。基线只降不升（与 check-i18n-coverage.sh 同规矩）。
+# 按真实取词调用识别短 key，同时保留未迁命名空间的既有检查。
+# 只认 SQL 的实际 INSERT VALUES 或 INSERT SELECT FROM (VALUES) 词条行，
+# 不把注释、ConditionSQL 或迁移旧新映射当作 seed。
+# 静态扫描不代替 PG 终态验证；UPDATE/DELETE 和额外语言迁移由真实库测试验证。
+# 短 key 缺任一基础语言、动态拼接均失败，不消耗旧基线；
+# 无法静态确定的事实 key 如实输出待核对清单，不声称全覆盖。
 set -euo pipefail
 
 ROOT="${GOWP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -102,18 +22,22 @@ for d in "$INTERNAL" "$PUBLIC"; do
 done
 
 COUNTS=$(python3 - "$INTERNAL" "$PUBLIC" "$LIST_FILE" "$UNPAIRED_FILE" <<'PYEOF'
-import os, re, sys
+import os, re, sys, json
 
 internal, public, out_path, unpaired_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
-# key 形状：小写点分，≥2 个点。≥2 是为了避开 `node.js` / `vimeo.com` / 版本号。
+# 点分形状只用于尚未迁移的既有检查；短 key 由真实取词位置识别。
 KEY = re.compile(r'"([a-z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+){2,})"')
-# 只扫「唯一来源是迁移 seed」的命名空间。理由见文件头注释。
-# ai. 自 513 起纳入：AI 模块的响应文案 key（ai.msg.* / ai.err.*）同样只能靠迁移 seed，
-# 不纳入就会重演「切到 en-US 页面露出裸 key」的缺口。
 SCOPE = ('admin.', 'workbench.', 'ai.')
-# 中英成对的两侧（AGENTS.md 的要求）。
+FLAT = re.compile(r'^[A-Za-z][A-Za-z0-9]{0,14}$')
+CALL = re.compile(r"(?<![\w])(?:t|tr|tf|tn)\s*\(|\[\s*[\"'](?:t|tr|tf|tn)[\"']\s*\]\s*\(")
+LITERAL = re.compile(r"\s*([\"'`])((?:\\.|(?!\1).)*)\1\s*(?=,|\))", re.S)
 PAIR = {'zh-CN', 'en-US'}
+
+def source_without_comments(src):
+    # 保留字符串中的 URL、SQL 与中文，避免把字面量中的注释符误删。
+    token = re.compile(r'''("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`)|\{\*.*?\*\}|<!--.*?-->|/\*.*?\*/|//[^\n]*''', re.S)
+    return token.sub(lambda m: m.group(1) or '\n' * m.group(0).count('\n'), src)
 
 def walk(root, exts):
     for dirpath, dirnames, filenames in os.walk(root):
@@ -122,20 +46,115 @@ def walk(root, exts):
             if fn.endswith(exts):
                 yield os.path.join(dirpath, fn)
 
-# 1) internal/ 里被引用的 key 候选（排除测试：测试会故意用捏造的 key 当负例）
-used = {}
+def dynamic_key_argument(src, start):
+    """取词调用的第一个实参里是否含字符串拼接。
+
+    只看到第一个实参结束（同层的 , 或 )）为止，按括号配对跳过嵌套调用。
+    旧做法取「到下一个换行」再找 +，会把取词结果参与外层拼接（如
+    `tr(k) + x`、多行函数调用的后续参数）误判成「key 是拼出来的」。
+    """
+    depth = 0
+    quote = ''
+    for i in range(start, len(src)):
+        ch = src[i]
+        if quote:
+            if ch == '\\':
+                continue
+            if ch == quote:
+                quote = ''
+            continue
+        if ch in '"\'`':
+            quote = ch
+        elif ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            if depth == 0:
+                return False
+            depth -= 1
+        elif ch == ',' and depth == 0:
+            return False
+        elif ch == '+' and depth == 0:
+            return True
+    return False
+
+# 0) 能力标识（data-write-handler / data-picker-fetch / registerResultHandler）
+#    与词条同为点分小写形状，但它们不是界面文案：
+#      · data-write-handler="ai.provider.saved"  —— 写基座的结果处理器名字；
+#      · registerResultHandler('ai.provider.saved', fn) —— 同一个名字的注册点。
+#    这些标识没有、也不该有 sys_i18n 词条，扫进来会让门禁逼人给代码标识符编译文。
+#    做法：先在源码里把这些**标识出现的位置**抹成空串，再扫剩下的候选 ——
+#    只抹标识本身，不抹整行，避免连带丢掉同一行里的真词条。
+#
+# 只排除三类**确实指向注册名字**的属性（每个都在 JS 里有对应的注册入口）：
+#   data-write-handler → write-base.js 的 registerResultHandler
+#   data-write-builder → write-base.js 的 registerPayloadBuilder
+#   data-picker-fetch  → 直接就是请求地址，由 ai-model-picker.js 读走
+# 其余 data-*（write-extra / filter-input / row-add / row-remove …）**不排除**：
+# 它们不是注册名字，值与 key 形状撞车时就该照常报红。
+CAPABILITY_ATTR = re.compile(r'data-(?:write-handler|write-builder|picker-fetch)="[^"]*"')
+# 注册点同时可能写成单引号或双引号：KEY 正则只认双引号，若这里只认单引号，
+# registerResultHandler("ai.x.y", fn) 会被漏掉、进而误报成「未 seed 的词条」。
+CAPABILITY_REG = re.compile(r'registerResultHandler\(\s*["\']([^"\']*)["\']')
+CAPABILITY_BUILDER = re.compile(r'registerPayloadBuilder\(\s*["\']([^"\']*)["\']')
+CAPABILITY_LIST = re.compile(r"\[\s*((?:'[^']*'\s*,?\s*)+)\]\.forEach\(\s*function\s*\(\s*name\s*\)")
+
+def strip_capabilities(src):
+    src = CAPABILITY_ATTR.sub('', src)
+    src = CAPABILITY_REG.sub('', src)
+    src = CAPABILITY_BUILDER.sub('', src)
+    src = CAPABILITY_LIST.sub('', src)
+    return src
+
+# 短 key 不从任意字符串猜测；只收真实取词调用及本批商品错误/消息声明。
+used, short_used, unresolved, invalid = {}, set(), [], []
 for path in walk(internal, ('.go', '.html', '.jet', '.js')):
     if path.endswith('_test.go') or os.sep + 'test' + os.sep in path:
         continue
-    try:
-        src = open(path, encoding='utf-8', errors='replace').read()
-    except OSError:
+    # testdata/ 下是浏览器/组件测试的夹具页面（fixture.title 之类），不是产品界面文案：
+    # 它们不该有、也不该被迫有 sys_i18n 词条。
+    if os.sep + 'testdata' + os.sep in path:
         continue
-    for m in KEY.finditer(src):
-        k = m.group(1)
-        if not k.startswith(SCOPE):
+    src = source_without_comments(open(path, encoding='utf-8').read())
+    relative = os.path.relpath(path, os.path.dirname(internal))
+    for m in KEY.finditer(strip_capabilities(src)):
+        if m.group(1).startswith(SCOPE):
+            used.setdefault(m.group(1), relative)
+    calls = CALL
+    if path.endswith(('.html', '.jet')):
+        aliases = {'t', 'tr', 'tf', 'tn'}
+        assignments = re.findall(r'''\{\{\s*([A-Za-z_]\w*)\s*:?=\s*(?:\.\[\s*["'](t|tr|tf|tn)["']\s*\]|([A-Za-z_]\w*))\s*\}\}''', src)
+        # 每轮至少增加一个别名才继续，链式赋值也能覆盖且必定终止。
+        while True:
+            found = {name for name, direct, previous in assignments if direct or previous in aliases}
+            if found <= aliases:
+                break
+            aliases.update(found)
+        calls = re.compile(CALL.pattern + r'|(?<![\w])(?:' + '|'.join(re.escape(name) for name in sorted(aliases)) + r')\s*\(')
+    for call in calls.finditer(src):
+        literal = LITERAL.match(src, call.end())
+        if not literal:
+            expression = src[call.end():].split('\n', 1)[0][:160]
+            unresolved.append(relative + ': ' + expression)
+            if dynamic_key_argument(src, call.end()):
+                # site.* 前缀既是既有词条命名空间，也已被本脚本整体豁免（见下方
+                # key.startswith('site.') 分支）；对它们报「动态拼接」会与既有判据自相矛盾。
+                if 'site.' not in expression:
+                    invalid.append(relative + ': 动态拼接取词 key')
             continue
-        used.setdefault(k, os.path.relpath(path, os.path.dirname(internal)))
+        key = literal.group(2)
+        if key.startswith('site.'):
+            continue
+        used.setdefault(key, relative)
+        if FLAT.fullmatch(key):
+            short_used.add(key)
+        elif '.' not in key:
+            invalid.append(relative + ': 非法扁平 key ' + key)
+    if os.sep + 'module' + os.sep + 'product' + os.sep + 'enums' + os.sep in path:
+        for name, key in re.findall(r'^\s*((?:Err|Msg|Detail|Bulk|VariantSkip|BundleMember|ProductTranslations|ProductsAction)\w*)\s*=\s*"([^"\n]+)"', src, re.M):
+            used.setdefault(key, relative)
+            short_used.add(key)
+            if not FLAT.fullmatch(key):
+                invalid.append(relative + ': 非法业务词条 ' + name + '=' + key)
 
 # 2) 词条台账：解析 public 下 .sql 里 INSERT INTO sys_i18n … VALUES (...) 的 (item_key, lang) 元组。
 #    不认注释、不认判据列表 —— 理由见文件头「判据口径」。
@@ -174,7 +193,7 @@ def strip_comments(sql):
         i += 1
     return ''.join(out)
 
-INSERT = re.compile(r'INSERT\s+INTO\s+sys_i18n\s*\([^)]*\)\s*VALUES', re.I)
+INSERT = re.compile(r'INSERT\s+INTO\s+sys_i18n\s*\([^)]*\)\s*(?:VALUES|SELECT\s+[^;]*?\s+FROM\s*\(\s*VALUES)', re.I)
 
 def parse_tuples(sql):
     """取每条 INSERT INTO sys_i18n 的顶层元组 → 字段列表的列表。"""
@@ -209,6 +228,8 @@ def parse_tuples(sql):
                 continue
             if ch == ')':
                 depth -= 1
+                if depth < 0:
+                    break
                 if depth == 0 and in_tuple:
                     fields.append(cur.strip())
                     tuples.append(fields)
@@ -254,15 +275,33 @@ with open(out_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join('%s\t(%s)' % (k, used[k]) for k in missing) + ('\n' if missing else ''))
 with open(unpaired_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join('%s\t(已有语言: %s)' % (k, ','.join(sorted(seeded[k]))) for k in unpaired) + ('\n' if unpaired else ''))
+short_failures = sorted(k for k in short_used if not PAIR <= seeded.get(k, set()))
+with open(out_path + '.unresolved', 'w', encoding='utf-8') as f:
+    f.write('\n'.join(sorted(unresolved)) + ('\n' if unresolved else ''))
+for entry in invalid:
+    print(entry, file=sys.stderr)
+for key in short_failures:
+    print('短 key 缺基础语言: ' + key + ' (' + used[key] + ')', file=sys.stderr)
 print(len(missing))
 print(len(unpaired))
+print(len(invalid) + len(short_failures))
+print(len(unresolved))
 PYEOF
 )
 
 CURRENT=$(printf '%s\n' "$COUNTS" | sed -n '1p')
 UNPAIRED=$(printf '%s\n' "$COUNTS" | sed -n '2p')
+STRICT=$(printf '%s\n' "$COUNTS" | sed -n '3p')
+UNRESOLVED=$(printf '%s\n' "$COUNTS" | sed -n '4p')
+if [ "$UNRESOLVED" -gt 0 ]; then
+  echo "另有 $UNRESOLVED 处动态事实取词无法静态确定，待核对清单：$LIST_FILE.unresolved"
+fi
+if [ "$STRICT" -gt 0 ]; then
+  echo "短词条校验失败：$STRICT 处，不能用旧基线放行" >&2
+  exit 1
+fi
 
-echo "admin/workbench 被引用但未 seed 的 i18n key 数：$CURRENT"
+echo "被引用但未 seed 的 i18n key 数：$CURRENT"
 if [ "$UNPAIRED" -gt 0 ]; then
   echo "提示：另有 $UNPAIRED 个被引用的 key 只 seed 了一侧语言（中英成对要求，清单见 $UNPAIRED_FILE）"
 fi
@@ -277,8 +316,8 @@ BASE=$(tr -d '[:space:]' < "$BASELINE_FILE")
 if [ "$CURRENT" -gt "$BASE" ]; then
   echo "" >&2
   echo "✗ 新增了未 seed 的 i18n key：$BASE → $CURRENT" >&2
-  echo "  修法：同批补一条迁移 seed（中英成对，ON CONFLICT DO NOTHING）。" >&2
-  echo "  ConditionSQL 取**本批自己的代表 key** 作门槛 —— 不要用全库计数，" >&2
+  echo "  修法：同批补真实迁移 seed（中英成对，保留自定义译文并检查冲突）。" >&2
+  echo "  ConditionSQL 逐条检查本批对象与语言 —— 不要用全库计数，" >&2
   echo "  存量库永远满足、补词条的那条迁移永远不会执行（迁移 494 的写法可抄）。" >&2
   echo "  注意：把 key 写进注释或 ConditionSQL 列表**不会**让本门禁变绿（判据只认 INSERT 元组）。" >&2
   echo "  新增的 key（完整清单见 $LIST_FILE）：" >&2

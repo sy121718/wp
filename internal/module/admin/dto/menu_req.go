@@ -44,6 +44,20 @@ type MenuUpdateReq struct {
 	Remark          string   `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
+// MenuUpdateFormReq 是菜单编辑表单的完整替换输入，不开放未编辑的系统字段。
+type MenuUpdateFormReq struct {
+	ID              uint64   `form:"id" binding:"required"`
+	Title           string   `form:"title" binding:"required,max=50"`
+	ParentID        uint64   `form:"parent_id"`
+	Type            int      `form:"type" binding:"required,oneof=1 2 3 4 5"`
+	Path            string   `form:"path" binding:"omitempty,max=100"`
+	Icon            string   `form:"icon" binding:"omitempty,max=50"`
+	Status          int      `form:"status" binding:"oneof=0 1"`
+	SortOrder       int      `form:"sort_order"`
+	Remark          string   `form:"remark" binding:"omitempty,max=200"`
+	PermissionCodes []string `form:"permission_codes" binding:"max=50,dive,max=100"`
+}
+
 type MenuDeleteReq struct {
 	IDs []uint64 `json:"ids" form:"ids" binding:"required,min=1" validate:"required,min=1"`
 }

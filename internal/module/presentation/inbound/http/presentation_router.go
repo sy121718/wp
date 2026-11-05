@@ -1,7 +1,7 @@
 package presentationhttp
 
 import (
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"

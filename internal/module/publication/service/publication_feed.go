@@ -16,7 +16,7 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo"
+	"go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )

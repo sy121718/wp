@@ -3,7 +3,7 @@ package plugincontract
 import (
 	"context"
 
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	admincontract "go_wp/internal/module/admin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 )

@@ -78,6 +78,7 @@ func withStubSession() gin.HandlerFunc {
 }
 
 func newAdminErrEngine(t *testing.T, svcErr error) *gin.Engine {
+	injectAdminErrorLexicon(t)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 

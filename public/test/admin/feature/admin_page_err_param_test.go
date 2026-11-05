@@ -8,19 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/database"
+	"go_wp/pkg/view"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
 )
 
-var pageInternalCopyForms = map[string]bool{
-	"ErrInternal":                              true,
-	"操作失败，请稍后重试":                               true,
-	"Operation failed, please try again later": true,
-}
+var pageInternalCopyForms = map[string]bool{"系统内部错误，请稍后重试": true}
 
 var pageRequiredCopyForms = map[string]bool{
 	"MsgFieldRequired": true,
@@ -112,14 +112,18 @@ func TestAdminPageHandlersDoNotInlineErrorText(t *testing.T) {
 	}
 	if len(hits) > 0 {
 		t.Fatalf("页面路径直出了内部错误（会渲染表名 / 约束名 / SQLSTATE）：\n  %s\n"+
-			"  改用 adminErrParam(c, err)（internal/module/admin/inbound/http/admin_err.go）", strings.Join(hits, "\n  "))
+			"  交给统一出口：response.ErrorStatusAuto / response.MessageOf", strings.Join(hits, "\n  "))
 	}
 }
 
 func newAdminI18nWriteEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.POST("/api/i18n/save", adminhttp.NewAdminI18nEntryHandle().I18nEntryWrite)
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/api/i18n/save", view.HTMLFragment, adminhttp.NewAdminI18nEntryHandle().I18nEntryWrite)
 	return engine
 }
 
@@ -129,12 +133,12 @@ func postAdminI18nWrite(t *testing.T, engine *gin.Engine, body string) (int, str
 		Method:  http.MethodPost,
 		Path:    "/api/i18n/save",
 		RawBody: []byte(body),
-		Headers: map[string]string{"Content-Type": "application/json"},
+		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 	})
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
-	return recorder.Code, jsonErrMessage(t, recorder.Body.String())
+	return recorder.Code, i18nHTMLMessage(t, assertI18nHTMLFragment(t, recorder))
 }
 
 func TestAdminI18nWriteBusinessTextVisible(t *testing.T) {
@@ -145,11 +149,11 @@ func TestAdminI18nWriteBusinessTextVisible(t *testing.T) {
 		body string
 		want string
 	}{
-		{"新建时 key 为空", `{"action":"create","lang":"zh-CN","value":"x"}`, adminenums.ErrI18nKeyEmpty},
-		{"新建时语言为空", `{"action":"create","key":"a.b","value":"x"}`, adminenums.ErrI18nLangEmpty},
-		{"新建时内容为空", `{"action":"create","key":"a.b","lang":"zh-CN","value":"   "}`, adminenums.ErrI18nValueEmpty},
-		{"删除时 key 为空", `{"action":"delete","lang":"zh-CN"}`, adminenums.ErrI18nKeyEmpty},
-		{"删除时语言为空", `{"action":"delete","key":"a.b"}`, adminenums.ErrI18nLangEmpty},
+		{"新建时 key 为空", "action=create&lang=zh-CN&value=x", adminenums.ErrI18nKeyEmpty},
+		{"新建时语言为空", "action=create&key=a.b&value=x", adminenums.ErrI18nLangEmpty},
+		{"新建时内容为空", "action=create&key=a.b&lang=zh-CN&value=+++", adminenums.ErrI18nValueEmpty},
+		{"删除时 key 为空", "action=delete&lang=zh-CN", adminenums.ErrI18nKeyEmpty},
+		{"删除时语言为空", "action=delete&key=a.b", adminenums.ErrI18nLangEmpty},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,9 +178,9 @@ func TestAdminI18nEmptyFieldTextsAreDistinct(t *testing.T) {
 		"value": adminenums.ErrI18nValueEmpty,
 	}
 	bodies := map[string]string{
-		"key":   `{"action":"create","lang":"zh-CN","value":"x"}`,
-		"lang":  `{"action":"create","key":"a.b","value":"x"}`,
-		"value": `{"action":"create","key":"a.b","lang":"zh-CN","value":"   "}`,
+		"key":   "action=create&lang=zh-CN&value=x",
+		"lang":  "action=create&key=a.b&value=x",
+		"value": "action=create&key=a.b&lang=zh-CN&value=+++",
 	}
 
 	seen := map[string]string{}
@@ -204,7 +208,7 @@ func TestAdminI18nWriteInternalErrorCollected(t *testing.T) {
 		t.Skip("database 组件已被同包其它用例初始化，跳过（避免真的写库）；归口分支由 internal 单测覆盖")
 	}
 	engine := newAdminI18nWriteEngine()
-	code, got := postAdminI18nWrite(t, engine, `{"action":"create","key":"page.err.test","lang":"zh-CN","value":"测试"}`)
+	code, got := postAdminI18nWrite(t, engine, "action=create&key=page.err.test&lang=zh-CN&value=%E6%B5%8B%E8%AF%95")
 	if code != http.StatusInternalServerError {
 		t.Fatalf("存储不可用应回 500（归口），got %d msg=%q", code, got)
 	}

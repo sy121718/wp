@@ -2,6 +2,7 @@ package projecthttp
 
 import (
 	"github.com/gin-gonic/gin"
+	"go_wp/pkg/response"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/backref"
@@ -40,7 +41,7 @@ func projectMsgOf(key, fallback string) projectMsg {
 }
 
 func projectTr(c *gin.Context) func(key, fallback string) string {
-	return func(key, fallback string) string { return adminui.TranslateArgs(c, key, fallback, nil) }
+	return func(key, fallback string) string { return response.ArgsText(c, key, fallback, nil) }
 }
 
 func projectJump(c *gin.Context, ok bool, msg projectMsg, back string, backText projectMsg) {

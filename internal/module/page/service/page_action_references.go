@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/pipeline"
 	"strings"

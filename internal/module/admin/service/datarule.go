@@ -2,9 +2,9 @@ package adminservice
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-	json "go_wp/pkg/jsonx"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +17,7 @@ import (
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/pkg/datarule"
+	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -31,18 +32,7 @@ func (s *Service) RuleDetail(ctx context.Context, req *admindto.RuleDetailReq) (
 		return nil, adminenums.Err(adminenums.ErrRuleNotFound)
 	}
 
-	remark := ""
-	if entity.Remark != nil {
-		remark = *entity.Remark
-	}
-	createTime := ""
-	if entity.CreateTime != nil {
-		createTime = entity.CreateTime.Format("2006-01-02 15:04:05")
-	}
-	updateTime := ""
-	if entity.UpdateTime != nil {
-		updateTime = entity.UpdateTime.Format("2006-01-02 15:04:05")
-	}
+	remark := stringOrEmpty(entity.Remark)
 
 	config, err := decodeRuleConfig(entity.Config)
 	if err != nil {
@@ -57,9 +47,9 @@ func (s *Service) RuleDetail(ctx context.Context, req *admindto.RuleDetailReq) (
 		Status:     entity.Status,
 		Remark:     remark,
 		CreateBy:   entity.CreateBy,
-		CreateTime: createTime,
+		CreateTime: utils.NewJSONTimePtr(entity.CreateTime),
 		UpdateBy:   entity.UpdateBy,
-		UpdateTime: updateTime,
+		UpdateTime: utils.NewJSONTimePtr(entity.UpdateTime),
 	}, nil
 }
 
@@ -131,51 +121,9 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 	return nil
 }
 
+// RuleDelete 删除数据规则，走与批量相同的同事务校验 + 删除路径。
 func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) error {
-	ids := uniqueRuleIDs(req.IDs)
-	if len(ids) == 0 {
-		return nil
-	}
-	if err := s.drm.Transaction(ctx, func(tx *gorm.DB) error {
-		locked, err := s.drm.LockByIDsTx(ctx, tx, ids)
-		if err != nil {
-			return err
-		}
-		if len(locked) != len(ids) {
-			return adminenums.Err(adminenums.ErrRuleNotFound)
-		}
-
-		for _, id := range ids {
-			if err = s.dram.DeleteByRuleIDTx(ctx, tx, id); err != nil {
-				return err
-			}
-		}
-		if _, err = s.drm.DeleteByIDsTx(ctx, tx, ids); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	s.reloadDataRuleSnapshotAfterWrite("规则删除")
-	return nil
-}
-
-func uniqueRuleIDs(ids []uint64) []uint64 {
-	seen := make(map[uint64]struct{}, len(ids))
-	out := make([]uint64, 0, len(ids))
-	for _, id := range ids {
-		if id == 0 {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	return out
+	return s.RuleBulkDelete(ctx, req)
 }
 
 func validateRuleConfig(domain string, cfg datarule.RuleConfig) (datarule.RuleConfig, error) {
@@ -254,35 +202,30 @@ func decodeRuleConfig(config string) (admindto.RuleConfigDTO, error) {
 }
 
 func (s *Service) RuleList(ctx context.Context, req *admindto.RuleListReq) (res *admindto.RuleListResp, err error) {
-
-	query := s.drm.DB(ctx)
-
-	if req.Domain != "" {
-		query = query.Where("domain = ?", req.Domain)
-	}
-	if req.Status != nil {
-		query = query.Where("status = ?", *req.Status)
-	}
-
-	var total int64
-	if err = query.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	var items []admindto.RuleItem
-	offset := (req.GetPage() - 1) * req.GetLimit()
-	err = query.Order("id DESC").
-		Offset(offset).Limit(req.GetLimit()).
-		Scan(&items).Error
+	total, rows, err := s.drm.ListPage(ctx, adminmodel.RuleListFilter{
+		Domain: req.Domain,
+		Status: req.Status,
+		Page:   req.GetPage(),
+		Limit:  req.GetLimit(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if items == nil {
-		items = []admindto.RuleItem{}
+	list := make([]admindto.RuleItem, 0, len(rows))
+	for _, r := range rows {
+		list = append(list, admindto.RuleItem{
+			ID:         r.ID,
+			RuleName:   r.RuleName,
+			Domain:     r.Domain,
+			Status:     r.Status,
+			Remark:     stringOrEmpty(r.Remark),
+			CreateTime: utils.NewJSONTimePtr(r.CreateTime),
+			UpdateTime: utils.NewJSONTimePtr(r.UpdateTime),
+		})
 	}
 
-	return &admindto.RuleListResp{Total: total, List: items}, nil
+	return &admindto.RuleListResp{Total: total, List: list}, nil
 }
 
 func (s *Service) RuleSchemaList(ctx context.Context) (res []admindto.RuleDomainItem, err error) {
@@ -390,17 +333,13 @@ func (s *Service) RuleAssignmentList(ctx context.Context, req *admindto.RuleAssi
 
 	list := make([]admindto.RuleAssignmentResp, 0, len(entities))
 	for _, e := range entities {
-		createTime := ""
-		if e.CreateTime != nil {
-			createTime = e.CreateTime.Format("2006-01-02 15:04:05")
-		}
 		list = append(list, admindto.RuleAssignmentResp{
 			ID:          e.ID,
 			RuleID:      e.RuleID,
 			TargetType:  e.TargetType,
 			TargetID:    e.TargetID,
 			TargetScope: e.TargetScope,
-			CreateTime:  createTime,
+			CreateTime:  utils.NewJSONTimePtr(e.CreateTime),
 		})
 	}
 
@@ -677,23 +616,27 @@ func (s *Service) loadDataRuleSnapshot(ctx context.Context) (*dataruleSnapshot, 
 }
 
 func (s *Service) loadDataRuleSnapshotFromDB(ctx context.Context) (*dataruleSnapshot, error) {
-	ruleTable := adminmodel.SysRuleEntity{}.TableName()
-	assignmentTable := adminmodel.SysRuleAssignmentEntity{}.TableName()
+	var (
+		ruleRows []adminmodel.RuleSnapshotRow
+		roleRows []adminmodel.RoleSnapshotRow
+		deptRows []adminmodel.DeptSnapshotRow
+	)
 
-	var ruleRows []struct {
-		ID          uint64  `gorm:"column:id"`
-		Domain      string  `gorm:"column:domain"`
-		Config      string  `gorm:"column:config"`
-		TargetType  *int    `gorm:"column:target_type"`
-		TargetID    *uint64 `gorm:"column:target_id"`
-		TargetScope *int    `gorm:"column:target_scope"`
-	}
-	if err := s.drm.DB(ctx).
-		Select(ruleTable+".id AS id, "+ruleTable+".domain AS domain, "+ruleTable+".config AS config, "+
-			"a.target_type AS target_type, a.target_id AS target_id, a.target_scope AS target_scope").
-		Joins("LEFT JOIN "+assignmentTable+" AS a ON a.rule_id = "+ruleTable+".id").
-		Where(ruleTable+".status = ?", adminmodel.RuleStatusEnabled).
-		Scan(&ruleRows).Error; err != nil {
+	// 一致性快照的隔离级别是 service 的决定，不是 model 的：
+	// 规则→分配→角色 id 与部门祖先链要被同一时点读到。READ COMMITTED 下每句都看最新提交，
+	// 会出现「规则指向的角色刚被删掉」这种半截视图；REPEATABLE READ 让三条查询共用同一个快照。
+	err := s.drm.TransactionWithOptions(ctx, sql.TxOptions{Isolation: sql.LevelRepeatableRead}, func(tx *gorm.DB) error {
+		var err error
+		if ruleRows, err = s.drm.ListSnapshotRowsTx(ctx, tx); err != nil {
+			return err
+		}
+		if roleRows, err = s.rm.ListEnabledRolesTx(ctx, tx); err != nil {
+			return err
+		}
+		deptRows, err = s.dm.ListAllAncestorsTx(ctx, tx)
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -722,30 +665,11 @@ func (s *Service) loadDataRuleSnapshotFromDB(ctx context.Context) (*dataruleSnap
 		})
 	}
 
-	var roleRows []struct {
-		ID       uint64 `gorm:"column:id"`
-		RoleCode string `gorm:"column:role_code"`
-	}
-	if err := s.rm.DB(ctx).
-		Select("id, role_code").
-		Where("status = ?", adminmodel.RoleStatusEnabled).
-		Scan(&roleRows).Error; err != nil {
-		return nil, err
-	}
 	roleIDs := make(map[string]uint64, len(roleRows))
 	for _, row := range roleRows {
 		roleIDs[row.RoleCode] = row.ID
 	}
 
-	var deptRows []struct {
-		ID        uint64 `gorm:"column:id"`
-		Ancestors string `gorm:"column:ancestors"`
-	}
-	if err := s.dm.DB(ctx).
-		Select("id, ancestors").
-		Scan(&deptRows).Error; err != nil {
-		return nil, err
-	}
 	deptAncestors := make(map[uint64][]uint64, len(deptRows))
 	deptSubtrees := make(map[uint64][]uint64, len(deptRows))
 	for _, row := range deptRows {

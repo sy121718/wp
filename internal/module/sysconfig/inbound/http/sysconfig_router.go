@@ -12,6 +12,7 @@ import (
 	"go_wp/internal/permission"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, svc sysconfigcontract.Service) {
@@ -20,7 +21,7 @@ func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.
 	g := authorizedAPI.Group("/sysconfig")
 	g.GET("/get", permission.SysConfigGet, h.APIList)
 	g.POST("/save", permission.SysConfigSave, h.APISave)
-	g.POST("/system/save", permission.SysConfigSystemSave, h.APISystemSave)
+	g.POST("/system/save", permission.SysConfigSystemSave, pageview.HTMLFragment, h.APISystemSave)
 
 	SetupSysConfigPages(adminPages, h)
 }

@@ -6,17 +6,12 @@
 # 宽松绑定下**静默忽略**），用户看到「保存成功但没改」。
 #
 # 数据来源：`cmd/write-contracts` 生成物（internal/templates/static/js/ui/write-contracts.json）。
-# 它把「端点 → DTO → 字段表」这条链固定下来，DTO 一侧由 form tag 决定
-#（批次 2 已给全部写 DTO 补齐，99 条存量登记已清零）。
+# 它按真实处理器与显式 binder 固定「METHOD+PATH → 输入协议 → DTO 字段表」。
+# form/multipart 按 form tag，JSON 按 json tag；不折叠点号/下标、不保留端点豁免。
 #
-# 判据：
-#   1. 每个写表单的字段名必须在它 data-write-url 对应 DTO 的字段表里；
-#   2. DTO 上标了 binding:"required" 的字段必须出现在表单里。
-#
-# 已知豁免（写进豁免表，必须逐条写理由）：
-#   · 端点不在契约文件里（如极少数用路径参数而非请求体的写端点）—— 逐条登记。
-#
-# 退出码 0 = 通过；1 = 有对不上的字段。
+# 判据：每个提交入口单独核对原生 name 与必填项，包含外部 form 归属与 template 边界。
+# 动态端点、未知 binder、额外参数选择与 JSON 对象提供器明确报未检查，不冒充已覆盖。
+# 退出码 0 = 本次字段静态对账通过；1 = 错误或未检查。可传模板相对路径前缀限定范围。
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,8 +19,8 @@ cd "$ROOT" || exit 1
 
 CONTRACTS="internal/templates/static/js/ui/write-contracts.json"
 if [[ ! -f "$CONTRACTS" ]]; then
-  echo "✗ 找不到写端点契约文件 $CONTRACTS —— 先跑 go run ./cmd/write-contracts" >&2
+  printf '找不到写端点契约文件 %s —— 先跑 go run ./cmd/write-contracts\n' "$CONTRACTS" >&2
   exit 1
 fi
 
-python3 scripts/write-fields-scan.py "$CONTRACTS" internal/templates/admin
+python3 scripts/write-fields-scan.py "$CONTRACTS" internal/templates "${1:-}"

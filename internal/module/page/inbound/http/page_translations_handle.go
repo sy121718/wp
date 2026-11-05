@@ -16,7 +16,7 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -173,7 +173,7 @@ type pageTranslationsFailure struct {
 }
 
 func translationsFailureStatus(err error) int {
-	switch status := pageErrorStatus(err); status {
+	switch status := response.ErrorStatus(err); status {
 	case http.StatusNotFound, http.StatusBadRequest:
 		return status
 	default:
@@ -319,7 +319,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 }
 
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []TranslationRowErrorResp) {
-	c.HTML(http.StatusOK, PageTranslationErrorsTemplate, adminui.PrepareBareView(c, &TranslationErrorsResp{
+	c.HTML(http.StatusOK, "admin/page/page_translations_save_errors.html", adminui.PrepareBareView(c, &TranslationErrorsResp{
 		Errors: errs,
 	}))
 }

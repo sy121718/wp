@@ -11,6 +11,7 @@ import (
 
 	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 
 	"gorm.io/gorm"
@@ -41,7 +42,7 @@ func TestBlockSentinelsAreBusinessErrors(t *testing.T) {
 		if !response.IsBusinessError(err) {
 			t.Fatalf("业务错误 %v 过不了共享形态判据（会被当成内部故障：通用提示 + 日志）", err)
 		}
-		fact, ok := adminui.BusinessErrFact(err)
+		fact, ok := facing.FactOf(err)
 		if !ok {
 			t.Fatalf("业务错误 %v 未被判定为可展示", err)
 		}
@@ -51,16 +52,26 @@ func TestBlockSentinelsAreBusinessErrors(t *testing.T) {
 	}
 }
 
-func TestBlockErrFactSplitsCompositeError(t *testing.T) {
+func TestBlockErrFactKeepsBusinessKeyWithoutInternalDetail(t *testing.T) {
+	// 引用明细是界面事实，只走 BlockedItems 由失败片段逐条取词；
+	// Error() 与错误事实都只交业务 key，绝不把 page_document 这类内部枚举带出去。
 	err := blockcontract.NewBlockInUseError([]blockcontract.BlockUsage{
 		{Kind: blockcontract.UsageKindPageDocument, EntityID: "page-42", Label: "/pricing", Detail: "main"},
 	})
-	fact, ok := adminui.BusinessErrFact(err)
+	fact, ok := facing.FactOf(err)
 	if !ok || fact.Key != blockcontract.ErrBlockInUse.Error() {
-		t.Fatalf("复合错误应从前段认出业务 key，实际 key=%q ok=%v（原文 %q）", fact.Key, ok, err.Error())
+		t.Fatalf("复合错误应认出业务 key，实际 key=%q ok=%v（原文 %q）", fact.Key, ok, err.Error())
 	}
-	if strings.TrimSpace(fact.Tail) == "" {
-		t.Fatalf("明细段应原样带出（引用类别与定位由模块自己解码），实际空：%+v", fact)
+	if strings.TrimSpace(fact.Tail) != "" {
+		t.Fatalf("错误事实不得携带内部枚举明文，实际 %+v", fact)
+	}
+	var blocked facing.BlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatal("引用错误必须实现 BlockedError，失败片段才能列出具体引用")
+	}
+	items := blocked.BlockedItems()
+	if len(items) != 1 || items[0].Name != "/pricing" || items[0].ReasonKey != "MsgBlockUsagePageDocument" {
+		t.Fatalf("引用条目应交界面事实（名称/位置/词条），实际 %+v", items)
 	}
 }
 
@@ -71,7 +82,7 @@ func TestBlockErrTextBusinessErrorKeepsKey(t *testing.T) {
 		t.Fatal("业务错误必须给出一句可展示文案（空串会让失败在页面上完全不可见）")
 	}
 
-	if got == adminui.MsgText(c, adminui.InternalMsg()) {
+	if got == response.MsgText(c, adminui.InternalMsg()) {
 		t.Fatalf("业务错误被吞成归口文案：%q", got)
 	}
 }
@@ -84,7 +95,7 @@ func TestBlockErrTextNonBusinessGivesInternal(t *testing.T) {
 	}
 	for _, err := range cases {
 		got := blockErrText(c, err)
-		if got != adminui.MsgText(c, adminui.InternalMsg()) {
+		if got != response.MsgText(c, adminui.InternalMsg()) {
 			t.Fatalf("非业务错误应落归口文案，实际 %q（原文 %q）", got, err.Error())
 		}
 		for _, leak := range []string{"pq:", "blocks", "SQLSTATE", "record not found"} {

@@ -2,8 +2,12 @@ package blockhttp
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -15,9 +19,22 @@ import (
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
-
-	"github.com/gin-gonic/gin"
+	pageview "go_wp/pkg/view"
 )
+
+// blockWriteOK 是写操作的统一成功片段。
+func blockWriteOK(c *gin.Context) {
+	pageview.Success(c)
+}
+
+// parseBlockInt 把表单里的整数字串转成 int；空串或非法返回 0。
+func parseBlockInt(text string) int64 {
+	value, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
 
 type Handle struct {
 	svc blockcontract.BlockService
@@ -48,87 +65,112 @@ func (h *Handle) Detail(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// Create 接收标准表单：普通字段由页面控件提交，成功后由 Jet 返回包含下一步链接的片段。
 func (h *Handle) Create(c *gin.Context) {
-	req, ok := binding.JSON[blockdto.CreateReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form blockdto.CreateForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), req)
+	// 表单字段是字符串，预设组合的取值语义在这里显式核对：
+	// 有预设必须给出 ≥1 的版本，没有预设不得单独给版本（与复杂 JSON 输入同一条规则）。
+	presetVersion := parseBlockInt(form.PresetVersion)
+	switch {
+	case form.PresetKey != "" && presetVersion < 1:
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockPresetInvalid))
+		return
+	case form.PresetKey == "" && presetVersion != 0:
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockPresetInvalid))
+		return
+	}
+	res, err := h.svc.Create(c.Request.Context(), &blockdto.CreateReq{
+		ProjectID:     form.ProjectID,
+		Name:          form.Name,
+		Kind:          form.Kind,
+		Category:      form.Category,
+		ReuseMode:     form.ReuseMode,
+		PresetKey:     form.PresetKey,
+		PresetVersion: int(presetVersion),
+	})
 	if err != nil {
-		response.ErrorStatusAuto(c, "block", err)
+		pageview.FailScene(c, blockErrScene, err)
 		return
 	}
-	response.Success(c, res)
+	c.HTML(http.StatusOK, "admin/block/block_created.html", pageview.Objects(
+		pageview.Object("Name", res.Name),
+		pageview.Object("ID", res.ID),
+	))
 }
 
+// Update 保留复杂编辑器的明确 JSON 输入，输出仍是 Jet 片段。
 func (h *Handle) Update(c *gin.Context) {
-	req, ok := binding.JSON[blockdto.UpdateReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.Update(c.Request.Context(), req)
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseJSON[blockdto.UpdateReq](c)
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
-	response.Success(c, res)
+	if _, err := h.svc.Update(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, blockErrScene, err)
+		return
+	}
+	blockWriteOK(c)
 }
 
 func (h *Handle) Delete(c *gin.Context) {
-	req, ok := binding.JSON[blockdto.DeleteReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form blockdto.DeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), blockRefErrorMessage(c, err))
+	if err := h.svc.Delete(c.Request.Context(), &blockdto.DeleteReq{ID: form.ID}); err != nil {
+		pageview.FailScene(c, blockErrScene, err)
 		return
 	}
-	response.Success(c, nil)
+	blockWriteOK(c)
 }
 
 func (h *Handle) BulkDelete(c *gin.Context) {
-	req, ok := binding.JSON[blockdto.BulkDeleteReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form blockdto.BulkDeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
 		return
 	}
-	ids, nerr := bulkids.Normalize(req.IDs)
+	// 表单编码下「完全没有 ids」与「ids 全为空」不相等：前者是缺形状，后者是空勾选。
+	if _, present := c.Request.PostForm["ids"]; !present {
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, blockenums.Err(blockenums.ErrBlockParamRequired))
+		return
+	}
+	ids, nerr := bulkids.Normalize(form.IDs)
 	if nerr != nil {
-
-		response.ErrorWithMessage(c, http.StatusBadRequest, bulkTooManyMessage(nerr))
+		pageview.FailStatus(c, http.StatusBadRequest, blockErrScene, nerr)
 		return
 	}
-	if len(ids) == 0 {
-
-		response.Success(c, &blockdto.BulkDeleteResp{Items: []blockdto.BulkDeleteItemResult{}})
-		return
-	}
-
-	res := &blockdto.BulkDeleteResp{Items: make([]blockdto.BulkDeleteItemResult, 0, len(ids))}
+	deleted, skipped := 0, 0
+	rows := make([]map[string]any, 0, len(ids))
 	for _, id := range ids {
-		item := blockdto.BulkDeleteItemResult{ID: id}
+		row := map[string]any{"ID": id, "OK": false, "Message": ""}
 		if derr := h.svc.Delete(c.Request.Context(), &blockdto.DeleteReq{ID: id}); derr != nil {
 			logger.Scene("block").With("op", "BulkDelete").With("block_id", id).
 				With("user_id", builtin.GetUserID(c)).With("path", c.Request.URL.Path).
 				Error(derr, "批量删除全局块失败")
-
-			item.Message = blockRefErrText(c, derr)
-			res.Skipped++
+			row["Message"] = blockRefErrText(c, derr)
+			skipped++
 		} else {
-			item.Deleted = true
-			res.Deleted++
+			row["OK"] = true
+			deleted++
 		}
-		res.Items = append(res.Items, item)
+		rows = append(rows, row)
 	}
-	response.Success(c, res)
-}
-
-func bulkTooManyMessage(err error) string {
-	max, count := bulkids.MaxIDs, 0
-	var tooMany *bulkids.IDsError
-	if errors.As(err, &tooMany) {
-		max, count = tooMany.Max, tooMany.Count
-	}
-	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, max, count)
+	c.HTML(http.StatusOK, "admin/block/block_bulk_result.html", pageview.Objects(
+		pageview.Object("None", len(ids) == 0),
+		pageview.Object("Done", deleted),
+		pageview.Object("Skipped", skipped),
+		pageview.Object("Rows", rows),
+	))
 }
 
 func (h *Handle) CloneAST(c *gin.Context) {

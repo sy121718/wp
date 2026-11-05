@@ -17,6 +17,8 @@ import (
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -59,7 +61,7 @@ func newContentTemplateErrorLeakEnv(t *testing.T) *contentTemplateEnv {
 	if err != nil {
 		t.Fatalf("创建测试工程失败：%v", err)
 	}
-	products := productservice.NewService(productmodel.NewModel(db), projects)
+	products := productservice.NewService(productmodel.NewModel(db), projects, masterdataservice.NewService(masterdatamodel.NewModel(db), projects))
 	templatesSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, nil)
 
 	gin.SetMode(gin.TestMode)

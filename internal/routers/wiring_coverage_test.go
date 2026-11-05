@@ -43,10 +43,9 @@ var moduleInternalSetters = map[string]string{
 	"SetInventoryDeps":      "product.SetupProductPages：形参 inventories 转交；它在转交方法内注入真端口 product.SetWarehouseOptionsPort（已登记 manifest）",
 	"SetDetailTemplateDeps": "product.SetupProductPages：形参 contentTemplates + instances 转交；它在转交方法内注入真端口 product.SetEntityTemplatePort / SetDetailTemplatePort（已登记 manifest）",
 
-	"SetPublishRecordDeps": "product.SetupProductPages：形参 instances 转交；它在转交方法内注入真端口 product.SetPublishRecordPort（本模块读模型字段）",
-	"SetPublishRecordPort": "product.SetPublishRecordPort：moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service 读模型，本行即那个真端口",
+	"SetPublishRecordDeps": "product.SetupProductPages：形参 attempts 转交；它在转交方法内注入真端口 product.SetPublishAttemptPort（发布历史读口；发布记录页已改模块内一次只读语句，不再需要发布端口）",
 
-	"SetPublishAttemptPort":   "product.SetPublishAttemptPort：发布历史读口，与 SetPublishRecordPort 同一份 outbound/publishrecord 适配器、同一次转交",
+	"SetPublishAttemptPort":   "product.SetPublishAttemptPort：发布历史读口，由 moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service",
 	"SetSeoTitleSources":      "product.SetupProductPages：形参 pageSvc 转交 SEO 标题候选来源",
 	"SetI18nStaleMarker":      "product.NewProductTranslationHandle：构造参数 pages（失效标记）转交",
 	"SetTranslationInstances": "product.NewProductTranslationHandle：构造参数 instances 转交",

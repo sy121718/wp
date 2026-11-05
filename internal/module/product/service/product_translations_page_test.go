@@ -37,7 +37,7 @@ func (s translationProjectStub) DefaultLocale(context.Context, string) (string, 
 }
 
 func TestProductTranslationsPageProjectListFailureIsAnError(t *testing.T) {
-	s := NewService(nil, translationProjectStub{listErr: errors.New("projects read failed")})
+	s := NewService(nil, translationProjectStub{listErr: errors.New("projects read failed")}, stubMasterDataChanges{})
 	view, err := s.QueryProductTranslations(context.Background(), &productdto.ProductTranslationsPageReq{ProjectID: "p1"})
 	if err == nil {
 		t.Fatal("工程清单读不到时工作台必须报错（不能渲染成「没有可翻译内容」）")
@@ -74,7 +74,7 @@ func TestTargetTranslationLangsExcludesSource(t *testing.T) {
 }
 
 func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
-	s := NewService(nil, translationProjectStub{})
+	s := NewService(nil, translationProjectStub{}, stubMasterDataChanges{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
 		Lang:     "de-DE",
 		Contexts: []string{"product.name"}, Hashes: []string{"h1"}, Targets: []string{"Shirt"},
@@ -91,7 +91,7 @@ func TestSaveProductTranslationsRejectsLangOutsideEnabled(t *testing.T) {
 }
 
 func TestSaveProductTranslationsParallelArraysMustAlign(t *testing.T) {
-	s := NewService(nil, translationProjectStub{})
+	s := NewService(nil, translationProjectStub{}, stubMasterDataChanges{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
 		Lang:     i18n.GetDefaultLang(),
 		Contexts: []string{"product.name", "product.subtitle"},
@@ -110,7 +110,7 @@ func TestSaveProductTranslationsParallelArraysMustAlign(t *testing.T) {
 }
 
 func TestSaveProductTranslationsNoRowsIsSavedWithoutWrite(t *testing.T) {
-	s := NewService(nil, translationProjectStub{})
+	s := NewService(nil, translationProjectStub{}, stubMasterDataChanges{})
 	view, err := s.SaveProductTranslations(context.Background(), &productdto.SaveProductTranslationsReq{
 		Lang: i18n.GetDefaultLang(),
 	})

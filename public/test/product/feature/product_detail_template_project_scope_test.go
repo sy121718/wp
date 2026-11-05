@@ -3,12 +3,13 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
-	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
@@ -17,6 +18,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -51,14 +54,16 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	api := producthttp.NewProductHandle(base.products)
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	engine.POST("/api/product/detail-template/update-url", api.UpdateDetailTemplateURL)
-	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
-	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
+	engine.POST("/api/product/detail-template/update-url", pageview.HTMLFragment, api.UpdateDetailTemplateURL)
+	engine.POST("/api/product/detail-template/apply", pageview.HTMLFragment, api.ApplyDetailTemplate)
+	engine.POST("/api/product/detail-template/publish", pageview.HTMLFragment, api.PublishDetailTemplate)
 	return engine, scope
 }
 
@@ -149,13 +154,10 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	rec := postJSON(t, engine, "/api/product/detail-template/update-url", map[string]any{
-		"projectId": f.projectID, "productId": f.productA, "newPath": scopePathANew,
+	rec := postForm(engine, "/api/product/detail-template/update-url", url.Values{
+		"projectId": {f.projectID}, "productId": {f.productA}, "newPath": {scopePathANew},
 	})
-
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("改 URL 应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	assertHTMLSuccess(t, rec, "改 URL")
 
 	if got := f.instanceOf(t, f.projectID, f.productA).URLPath; got != scopePathANew {
 		t.Fatalf("A 站实例路径应改为 %s，实际 %s", scopePathANew, got)
@@ -191,13 +193,10 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	rec := postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
-		"projectId": f.projectID, "productId": f.productA, "templateId": f.tplASwitch,
+	rec := postForm(engine, "/api/product/detail-template/apply", url.Values{
+		"projectId": {f.projectID}, "productId": {f.productA}, "templateId": {f.tplASwitch},
 	})
-
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("切换模板应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	assertHTMLSuccess(t, rec, "切换模板")
 
 	if got := instanceTemplateID(t, f.detailFixture, f.instA); got != f.tplASwitch {
 		t.Fatalf("A 站实例应绑定切换后的模板 %s，实际 %s", f.tplASwitch, got)
@@ -234,12 +233,10 @@ func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	rec := postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
-		"projectId": f.projectID, "productId": pubA, "templateId": f.tplAFirst,
+	rec := postForm(engine, "/api/product/detail-template/publish", url.Values{
+		"projectId": {f.projectID}, "productId": {pubA}, "templateId": {f.tplAFirst},
 	})
-	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
-		t.Fatalf("首次发布应成功，实际 %d：%s", env.Code, env.Message)
-	}
+	assertHTMLSuccess(t, rec, "首次发布")
 
 	want := siteurl.DetailPathForProject(context.Background(), f.projects, f.projectID,
 		siteurl.KindProduct, pubSlug, pubA)

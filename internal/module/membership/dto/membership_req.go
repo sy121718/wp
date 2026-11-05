@@ -90,3 +90,41 @@ type UnlockManualReq struct {
 type RecalcProjectReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 }
+
+// 页面表单：普通控件提交，服务端负责把「门槛元」与「权益勾选」映射成业务对象。
+// 复杂结构（EntitlementReq 清单）不从这里走 —— 表单只有真实控件能表达的字段。
+
+type TierFormReq struct {
+	ProjectID       string `form:"projectId"`
+	TierID          string `form:"tierId"`
+	Name            string `form:"name"`
+	ThresholdYuan   string `form:"thresholdYuan"`
+	SortOrder       string `form:"sortOrder"`
+	IsDefault       string `form:"isDefault"`
+	Remark          string `form:"remark"`
+	FreeShipping    string `form:"freeShipping"`
+	DiscountPercent string `form:"discountPercent"`
+}
+
+type EntitlementFormReq struct {
+	ProjectID       string `form:"projectId"`
+	TierID          string `form:"tierId"`
+	FreeShipping    string `form:"freeShipping"`
+	DiscountPercent string `form:"discountPercent"`
+}
+
+type AssignFormReq struct {
+	ProjectID string `form:"projectId"`
+	UserID    string `form:"userId"`
+	TierID    string `form:"tierId"`
+}
+
+type UnlockFormReq struct {
+	ProjectID string `form:"projectId"`
+	UserID    string `form:"userId"`
+}
+
+type DeleteTierFormReq struct {
+	ProjectID string `form:"projectId"`
+	TierID    string `form:"tierId"`
+}

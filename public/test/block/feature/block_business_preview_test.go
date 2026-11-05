@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	pagemodel "go_wp/internal/module/page/model"

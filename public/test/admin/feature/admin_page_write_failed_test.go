@@ -15,12 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var roleIsSystemCopyForms = map[string]bool{
-	adminenums.ErrRoleIsSystem:                true,
-	"系统内置角色不可删除":                              true,
-	"System built-in roles cannot be deleted": true,
-}
-
 func newAdminPageWriteEngine(t *testing.T, svcErr error) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -46,36 +40,22 @@ func postAdminPageWrite(t *testing.T, engine *gin.Engine, path string, form url.
 	return recorder.Body.String(), recorder.Code
 }
 
-func jumpMsgFromBody(body string) string {
-	const marker = `<p class="jump-msg">`
-	i := strings.Index(body, marker)
-	if i < 0 {
-		return ""
-	}
-	rest := body[i+len(marker):]
-	if j := strings.Index(rest, "</p>"); j >= 0 {
-		return rest[:j]
-	}
-	return rest
-}
-
-func TestAdminPageWriteFailedKeepsBusinessText(t *testing.T) {
+func TestAdminPageWriteFailureIsJSONWithDeclaredStatus(t *testing.T) {
 	cases := []struct {
-		name    string
-		path    string
-		form    url.Values
-		svcErr  error
-		allowed map[string]bool
+		name   string
+		path   string
+		form   url.Values
+		svcErr error
 	}{
 		{
 			name: "页面新建角色重名", path: "/admin/roles/create",
 			form:   url.Values{"role_code": {"editor"}, "role_name": {"编辑"}},
-			svcErr: errors.New(adminenums.ErrRoleCodeExists), allowed: businessCopyForms,
+			svcErr: errors.New(adminenums.ErrRoleCodeExists),
 		},
 		{
 			name: "页面删除系统内置角色", path: "/admin/roles/delete",
 			form:   url.Values{"id": {"7"}},
-			svcErr: errors.New(adminenums.ErrRoleIsSystem), allowed: roleIsSystemCopyForms,
+			svcErr: errors.New(adminenums.ErrRoleIsSystem),
 		},
 	}
 	for _, tc := range cases {
@@ -83,42 +63,36 @@ func TestAdminPageWriteFailedKeepsBusinessText(t *testing.T) {
 			engine := newAdminPageWriteEngine(t, tc.svcErr)
 			body, code := postAdminPageWrite(t, engine, tc.path, tc.form)
 
-			if code != http.StatusOK {
-				t.Fatalf("页面写失败应渲染整页提示（200），got %d body=%s", code, body)
+			// 非页面请求只回 JSON + 真实状态码：不再渲染失败提示页，也不再一律 200。
+			if code < http.StatusBadRequest {
+				t.Fatalf("写失败必须给真实状态码（>=400），got %d body=%s", code, body)
 			}
-			if !strings.Contains(body, `data-jump-state="err"`) {
-				t.Fatalf("失败提示页应带 data-jump-state=\"err\"：%s", body)
+			if strings.Contains(body, "<html") || strings.Contains(body, "data-jump-state") {
+				t.Fatalf("写失败不得再渲染 HTML 提示页：%s", body)
 			}
-			msg := jumpMsgFromBody(body)
-			if msg == "" {
-				t.Fatalf("提示页缺少 .jump-msg 文案：%s", body)
+			if !strings.Contains(body, `"message"`) || !strings.Contains(body, `"code"`) {
+				t.Fatalf("写失败必须回 JSON {code,message,data}：%s", body)
 			}
-			if internalCopyForms[msg] {
-				t.Fatalf("业务错误被页面出口吞成了通用提示（修复前正是这个表现）：msg=%q", msg)
-			}
-			if !tc.allowed[msg] {
-				t.Fatalf("业务错误应原样透出 enums 文案，got msg=%q", msg)
+			// message 是取过词的界面文案，不能是裸 key。
+			if strings.Contains(body, `"message":"`+keyOfErr(tc.svcErr)+`"`) {
+				t.Fatalf("message 不得是裸 key：%s", body)
 			}
 			assertNoLeak(t, tc.name+"（body）", body)
 		})
 	}
 }
 
-func TestAdminPageWriteFailedCollectsInfraError(t *testing.T) {
+func TestAdminPageWriteFailureCollectsInfraError(t *testing.T) {
 	readLog := withTempLogDir(t)
 	engine := newAdminPageWriteEngine(t, errors.New(dbErrText))
 	body, code := postAdminPageWrite(t, engine, "/admin/roles/create",
 		url.Values{"role_code": {"editor"}, "role_name": {"编辑"}})
 
-	if code != http.StatusOK {
-		t.Fatalf("基础设施错误在页面路径应渲染提示页（200），got %d body=%s", code, body)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("未声明的错误按 500 打回，got %d body=%s", code, body)
 	}
-	msg := jumpMsgFromBody(body)
-	if msg == "" {
-		t.Fatalf("提示页缺少 .jump-msg 文案：%s", body)
-	}
-	if !internalCopyForms[msg] {
-		t.Fatalf("未命中白名单的错误必须归口，got msg=%q", msg)
+	if strings.Contains(body, "<html") || strings.Contains(body, "data-jump-state") {
+		t.Fatalf("写失败不得渲染 HTML 提示页：%s", body)
 	}
 	assertNoLeak(t, "基础设施错误分支（body）", body)
 
@@ -126,4 +100,17 @@ func TestAdminPageWriteFailedCollectsInfraError(t *testing.T) {
 	if !strings.Contains(logText, "uk_sys_role_code") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 	}
+}
+
+// keyOfErr 取错误声明里的 key（业务错误用 errors.New(key) 构造，没有 Facing 就直接用 Error()）。
+func keyOfErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	var sourced interface{ Facing() (string, string) }
+	if errors.As(err, &sourced) {
+		key, _ := sourced.Facing()
+		return key
+	}
+	return err.Error()
 }

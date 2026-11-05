@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	pkgcasbin "go_wp/pkg/casbin"
 	navigationservice "go_wp/internal/module/navigation/service"
 )
 
@@ -533,7 +535,7 @@ func TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain(t *testing
 		"dir":       dirAwayFromEdgeSvc(t, env.NavSvc, first),
 	}
 
-	denied := navWriteAuthzPostLang(t, env, env.Plain, navTranslationWriteAPIPath, payload, "")
+	denied := navWriteAuthzPost(t, env, env.Plain, "/api/navigation/move", payload, true)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("无 navigation:update 策略的普通管理员应 403，实际 %d: %s", denied.Code, denied.Body.String())
 	}
@@ -541,12 +543,12 @@ func TestNavigationMoveRouteKeepsPermissionGuardAndWritesThroughChain(t *testing
 		t.Fatalf("被拦下的请求不得写入：%+v → %+v", beforeFirst, got)
 	}
 
-	navTranslationAuthzGrantPolicy(t, env)
-	allowed := navWriteAuthzPostLang(t, env, env.Plain, navTranslationWriteAPIPath, payload, "")
+	navMoveGrantPolicy(t, env)
+	allowed := navWriteAuthzPost(t, env, env.Plain, "/api/navigation/move", payload, true)
 	if allowed.Code != http.StatusOK {
 		t.Fatalf("补上策略后应 200，实际 %d: %s", allowed.Code, allowed.Body.String())
 	}
-	if !strings.Contains(allowed.Body.String(), `"moved":true`) {
+	if !strings.Contains(allowed.Body.String(), `role="status"`) {
 		t.Fatalf("回执应带 moved:true：%s", allowed.Body.String())
 	}
 	afterFirst := readNavSwapState(t, env.DB, first)
@@ -569,14 +571,14 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	edge := edgeSiblingIDSvc(t, env.NavSvc, first, "up")
 	before := readNavSwapState(t, env.DB, edge)
 
-	navTranslationAuthzGrantPolicy(t, env)
-	rec := navWriteAuthzPostLang(t, env, env.Plain, navTranslationWriteAPIPath, map[string]interface{}{
+	navMoveGrantPolicy(t, env)
+	rec := navWriteAuthzPost(t, env, env.Plain, "/api/navigation/move", map[string]interface{}{
 		"action": "move", "projectId": env.ProjectID, "id": edge, "dir": "up",
-	}, "")
+	}, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("边界移动应 200（不是错误），实际 %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"moved":false`) || !strings.Contains(rec.Body.String(), `"reason":"boundary"`) {
+	if !strings.Contains(rec.Body.String(), `data-moved="false"`) || !strings.Contains(rec.Body.String(), `data-reason="boundary"`) {
 		t.Fatalf("边界回执应带 moved:false + reason=boundary：%s", rec.Body.String())
 	}
 	if got := readNavSwapState(t, env.DB, edge); got != before {
@@ -746,4 +748,18 @@ func navSwapActivityDump(t *testing.T, conn *sql.Conn) string {
 		fmt.Fprintf(&b, "pid=%d state=%s wait=%s/%s query=%s\n", pid, state, waitType, wait, query)
 	}
 	return b.String()
+}
+
+// navMoveGrantPolicy 给普通管理员授「换位」端点的策略，验证 403 由该条路径决定。
+func navMoveGrantPolicy(t *testing.T, env *navTranslationAuthzEnv) {
+	t.Helper()
+	if err := env.DB.Exec(`INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
+		VALUES ('p', ?, '/api/navigation/move', 'POST', 'navigation:move')
+		ON CONFLICT (ptype, v0, v1, v2, v3, v4, v5) DO NOTHING`,
+		strconv.FormatInt(env.PlainID, 10)).Error; err != nil {
+		t.Fatalf("补换位策略失败: %v", err)
+	}
+	if err := pkgcasbin.ReloadPolicy(); err != nil {
+		t.Fatalf("重载 Casbin 策略失败: %v", err)
+	}
 }

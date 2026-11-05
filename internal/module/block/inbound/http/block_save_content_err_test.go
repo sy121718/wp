@@ -3,18 +3,24 @@ package blockhttp
 import (
 	"context"
 	"errors"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/facing"
-
-	"github.com/gin-gonic/gin"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 type stubBlockService struct {
@@ -59,34 +65,39 @@ type stubVersionConflict struct{ version string }
 
 func (e *stubVersionConflict) Error() string { return blockenums.ErrBlockVersionConflict }
 func (e *stubVersionConflict) Facing() (string, string) {
-	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
+	// 第二返回值是「声明处兜底」，取词收口后 enums 不再带成品句，这里给空串。
+	return blockenums.ErrBlockVersionConflict + "|" + e.version, ""
 }
 func (e *stubVersionConflict) Version() string { return e.version }
 func (e *stubVersionConflict) Is(target error) bool {
 	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
 }
 
-func saveContentResp(t *testing.T, svc blockcontract.BlockService, body string) (status int, raw string, parsed struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}) {
-	t.Helper()
+// saveContentEngine 复刻生产接线：失败中间件、请求取词与 HTML 渲染都必须在场。
+func saveContentEngine(svc blockcontract.BlockService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
+	r := gin.New()
+	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(func(c *gin.Context) {
+		text.AttachScope(c)
+		c.Next()
+	})
+	r.POST("/admin/blocks/save-content", pageview.HTMLFragment, NewBlockPageHandle(svc, nil).SaveBlockContent)
+	return r
+}
+
+func saveContentResp(t *testing.T, svc blockcontract.BlockService, body string) (status int, raw string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/admin/blocks/save-content", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	c.Request = req
-
-	NewBlockPageHandle(svc, nil).SaveBlockContent(c)
-
-	raw = w.Body.String()
-	status = w.Code
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		t.Fatalf("响应不是合法 JSON —— 调用方 r.json() 会 reject，表现为「保存状态变红但没有提示」\n"+
-			"  status=%d\n  body=%q\n  err=%v", status, raw, err)
+	saveContentEngine(svc).ServeHTTP(rec, req)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("界面响应必须是 HTML，实际 %q，正文：%s", ct, rec.Body.String())
 	}
-	return status, raw, parsed
+	return rec.Code, rec.Body.String()
 }
 
 func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
@@ -104,21 +115,18 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &stubBlockService{}
-			status, _, parsed := saveContentResp(t, svc, tc.body)
+			status, body := saveContentResp(t, svc, tc.body)
 
 			if status != http.StatusBadRequest {
 				t.Fatalf("绑定失败应为 400，实际 %d", status)
 			}
-			if parsed.Code != http.StatusBadRequest {
-				t.Fatalf("响应体 code 应与状态码一致（调用方按 code 判定失败），实际 %d", parsed.Code)
-			}
-			if strings.TrimSpace(parsed.Message) == "" {
-				t.Fatal("失败响应没有文案 —— 工作台会 alert 出一句空话")
+			if !strings.Contains(body, "data-ui-error") || !strings.Contains(body, "<p>") {
+				t.Fatalf("失败应渲染带文案的错误片段，实际 %s", firstBlockN(body, 400))
 			}
 
 			for _, leak := range []string{"json:", "cannot unmarshal", "Go struct", "binding", "reflect"} {
-				if strings.Contains(parsed.Message, leak) {
-					t.Fatalf("绑定错误原文泄漏到响应里（%q 出现在 %q）", leak, parsed.Message)
+				if strings.Contains(body, leak) {
+					t.Fatalf("绑定错误原文泄漏到响应里（%q 出现在 %s）", leak, firstBlockN(body, 400))
 				}
 			}
 			if svc.listCall != 0 || svc.updateCall != 0 {
@@ -130,25 +138,29 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 
 func TestSaveBlockContentBlockMissingIsControlledJSON(t *testing.T) {
 	svc := &stubBlockService{detailErr: blockcontract.ErrNotFound}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
+	status, body := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusNotFound {
 		t.Fatalf("块不存在应为 404，实际 %d", status)
 	}
-	if parsed.Code != http.StatusNotFound {
-		t.Fatalf("响应体 code 应为 404，实际 %d", parsed.Code)
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("失败应渲染错误片段，实际 %s", firstBlockN(body, 400))
 	}
-	assertControlledMessage(t, parsed.Message, blockenums.ErrBlockNotFound, "全局块不存在")
+	if strings.Contains(body, blockenums.ErrBlockNotFound) {
+		t.Fatalf("提示里出现裸 key：%s", firstBlockN(body, 400))
+	}
 }
 
 func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 	svc := &stubBlockService{}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
+	status, body := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusNotFound {
 		t.Fatalf("(nil, nil) 应落 404，实际 %d", status)
 	}
-	assertControlledMessage(t, parsed.Message, blockenums.ErrBlockNotFound, "全局块不存在")
+	if strings.Contains(body, blockenums.ErrBlockNotFound) {
+		t.Fatalf("提示里出现裸 key：%s", firstBlockN(body, 400))
+	}
 	if svc.updateCall != 0 {
 		t.Fatal("未定位到块时不应写库")
 	}
@@ -157,15 +169,14 @@ func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 	const internal = `pq: relation "blocks" does not exist (SQLSTATE 42P01)`
 	svc := &stubBlockService{detailErr: errors.New(internal)}
-	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
+	status, raw := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusInternalServerError {
 		t.Fatalf("内部故障应为 500（不能伪装成 404），实际 %d", status)
 	}
-	if parsed.Code != http.StatusInternalServerError {
-		t.Fatalf("响应体 code 应为 500，实际 %d", parsed.Code)
+	if !strings.Contains(raw, response.InternalFallback) {
+		t.Fatalf("500 应给共享归口文案，实际 %s", firstBlockN(raw, 400))
 	}
-	assertControlledMessage(t, parsed.Message, blockenums.MsgInternalError, "系统内部错误，请稍后重试")
 	if strings.Contains(raw, "pq:") || strings.Contains(raw, "SQLSTATE") || strings.Contains(raw, "relation") {
 		t.Fatalf("内部错误原文出现在响应里：%q", raw)
 	}
@@ -173,27 +184,17 @@ func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 
 func TestSaveBlockContentSuccessStillJSON(t *testing.T) {
 	svc := &stubBlockService{detail: &blockdto.BlockResp{ID: "b-1", Name: "页脚"}}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":1}`)
+	status, body := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":1}`)
 
 	if status != http.StatusOK {
 		t.Fatalf("成功路径应为 200，实际 %d", status)
 	}
-	if parsed.Code != http.StatusOK {
-		t.Fatalf("响应体 code 应为 200，实际 %d", parsed.Code)
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf("成功应回 Jet 成功片段，实际 %s", firstBlockN(body, 400))
 	}
 	if svc.updateCall != 1 {
 		t.Fatalf("成功路径应恰好调用一次 Update，实际 %d", svc.updateCall)
 	}
-}
-
-func assertControlledMessage(t *testing.T, got string, allowed ...string) {
-	t.Helper()
-	for _, want := range allowed {
-		if got == want {
-			return
-		}
-	}
-	t.Fatalf("文案不在受控集合里：got %q，允许 %v（写侧改了 key 或读侧白名单失配都会落这里）", got, allowed)
 }
 
 func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
@@ -204,22 +205,22 @@ func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
 		detail:    &blockdto.BlockResp{ID: "b-1", Name: "页脚", Version: 7},
 		updateErr: conflict,
 	}
-	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":3}`)
+	i18n.InjectForTest(map[string]map[string]string{
+		blockenums.ErrBlockVersionConflict: {"zh-CN": "该块已被修改（当前第 %s 版），请刷新后重试"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+	status, raw := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":3}`)
 
 	if status != http.StatusConflict {
-		t.Fatalf("版本冲突应回 409，实际 %d：%s", status, raw)
+		t.Fatalf("版本冲突应回 409，实际 %d：%s", status, firstBlockN(raw, 400))
 	}
-	if parsed.Code != http.StatusConflict {
-		t.Errorf("JSON code 应与 HTTP 状态一致（409），实际 %d", parsed.Code)
-	}
-
-	if !strings.Contains(parsed.Message, "7") {
-		t.Errorf("冲突文案应带当前版本号 7，实际 %q", parsed.Message)
+	if !strings.Contains(raw, "当前第 7 版") {
+		t.Errorf("冲突文案应带当前版本号 7，实际 %s", firstBlockN(raw, 400))
 	}
 
 	for _, leak := range []string{"ErrBlockVersionConflict", "blockenums"} {
-		if strings.Contains(parsed.Message, leak) {
-			t.Errorf("文案里出现了内部标识 %q：%s", leak, parsed.Message)
+		if strings.Contains(raw, leak) {
+			t.Errorf("文案里出现了内部标识 %q：%s", leak, firstBlockN(raw, 400))
 		}
 	}
 }
@@ -229,11 +230,16 @@ func TestSaveBlockContentBusinessErrorPreservesDeclaredStatus(t *testing.T) {
 		detail:    &blockdto.BlockResp{ID: "b-1", Name: "页脚", Version: 7},
 		updateErr: blockenums.Err(blockenums.ErrBlockInvalidDoc),
 	}
-	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":7}`)
-	if status != http.StatusBadRequest || parsed.Code != http.StatusBadRequest {
-		t.Fatalf("业务校验应400: status=%d body=%s", status, raw)
+	status, raw := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":7}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("业务校验应400: status=%d body=%s", status, firstBlockN(raw, 400))
 	}
-	if parsed.Message != blockenums.FallbackFor(blockenums.ErrBlockInvalidDoc) {
-		t.Fatalf("应输出声明文案且不含内部标识: %s", raw)
+	// 本用例没有注入词库：失败片段退成该状态码档的通用文案，
+	// 不泄漏裸 key、也不泄漏内部标识。
+	if !strings.Contains(raw, "参数有误") && !strings.Contains(raw, response.InternalFallback) {
+		t.Fatalf("缺词时应退成通用文案: %s", firstBlockN(raw, 400))
+	}
+	if strings.Contains(raw, blockenums.ErrBlockInvalidDoc) {
+		t.Fatalf("提示里出现裸 key：%s", firstBlockN(raw, 400))
 	}
 }

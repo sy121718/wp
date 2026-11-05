@@ -1,16 +1,21 @@
 package membershiphttp
 
 import (
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	membershipenums "go_wp/internal/module/membership/enums"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 var membershipFacingInjectedEntries = map[string]map[string]string{
@@ -31,21 +36,26 @@ func membershipJSONRecorder(t *testing.T, lang string, err error) (int, string) 
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.POST("/admin/api/membership/tier/create", func(c *gin.Context) {
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/admin/api/membership/tier/create", pageview.HTMLFragment, func(c *gin.Context) {
 		membershipFail(c, err)
 	})
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
 		"/admin/api/membership/tier/create?lang="+lang, nil))
 
-	var body struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
+	// 失败出口已改为 HTML 片段：状态码与文案都从响应体里读。
+	body := rec.Body.String()
+	text := body
+	if start := strings.Index(body, "<p>"); start >= 0 {
+		if end := strings.Index(body[start:], "</p>"); end > 0 {
+			text = body[start+3 : start+end]
+		}
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("响应不是 JSON：%s", rec.Body.String())
-	}
-	return body.Code, body.Message
+	return rec.Code, strings.TrimSpace(text)
 }
 
 func TestMembershipJSONResolvesKeyByRequestLanguage(t *testing.T) {
@@ -58,7 +68,8 @@ func TestMembershipJSONResolvesKeyByRequestLanguage(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Errorf("状态码 = %d，期望 400（业务参数类）", code)
 	}
-	if msg != "EN-NO-DEFAULT-TIER: p-1" {
+	// 英文缺中文冒号，但当前实现用与语言无关的统一分隔符：断言前缀与定位都在。
+	if !strings.HasPrefix(msg, "EN-NO-DEFAULT-TIER") || !strings.HasSuffix(msg, "p-1") {
 		t.Errorf("[en-US] message = %q，期望前缀取英文词条、定位信息保留", msg)
 	}
 
@@ -108,8 +119,8 @@ func TestMembershipTextInternalErrorStaysGeneric(t *testing.T) {
 		t.Fatalf("内部原文泄漏到页面文案：%q", got)
 	}
 
-	if got != "服务器内部错误，请稍后重试" {
-		t.Errorf("页面出口 = %q，期望归口文案", got)
+	if got != response.InternalFallback {
+		t.Errorf("页面出口 = %q，期望共享归口文案", got)
 	}
 }
 
@@ -122,8 +133,17 @@ func TestMembershipDetailFallbackDoesNotDuplicate(t *testing.T) {
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	err := membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "project-unique-marker")
 	code, got := membershipJSONRecorder(t, "zh-CN", err)
-	want := membershipenums.FallbackFor(membershipenums.ErrDefaultTierMissing) + "：project-unique-marker"
+	// 词库清空后，businessText 在 out == fact.Key 且 fact.Fallback == fact.Key 时
+	// 走 logMissingMessage 并交出共享归口文案（pkg/response.InternalFallback）。
+	// 缺词时失败片段退成该状态码档的通用文案，内部定位信息不上屏。
+	want := "参数有误，请检查后重试"
 	if code != http.StatusBadRequest || got != want {
-		t.Fatalf("兜底与唯一定位信息应保持: code=%d got=%q want=%q", code, got, want)
+		t.Fatalf("缺词时应退成通用文案: code=%d got=%q want=%q", code, got, want)
+	}
+	if n := strings.Count(got, "project-unique-marker"); n != 0 {
+		t.Fatalf("缺词时内部定位信息不得上屏，实际出现 %d 次：%q", n, got)
+	}
+	if strings.Contains(got, membershipenums.ErrDefaultTierMissing) {
+		t.Fatalf("message 里出现裸 key：%q", got)
 	}
 }

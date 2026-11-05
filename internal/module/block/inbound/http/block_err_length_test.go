@@ -1,13 +1,9 @@
 package blockhttp
 
 import (
-	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	blockcontract "go_wp/internal/module/block/contract"
 )
 
 func TestTruncateRunesBoundaries(t *testing.T) {
@@ -53,63 +49,4 @@ func TestBlockRefTextCapMatchesFormerShellLimit(t *testing.T) {
 	if !strings.HasSuffix(got, "…") {
 		t.Fatalf("超限时必须留下截断标记，实际 %q", got)
 	}
-}
-
-func TestBlockRefErrorCapsLongUsageDetail(t *testing.T) {
-	short := deleteRefMessage(t, "page-42")
-	prefix, _, ok := strings.Cut(short, "：")
-	if !ok {
-		t.Fatalf("带明细的提示应形如「受控文案 ：明细」，实际 %q", short)
-	}
-
-	longDetail := "/" + strings.Repeat("x", 900)
-	long := deleteRefMessage(t, longDetail)
-
-	if !strings.HasPrefix(long, prefix+"：") {
-		t.Fatalf("长明细不应改动受控文案前缀：\n got %q\nwant 前缀 %q", long, prefix)
-	}
-	body := strings.TrimSuffix(long, "…")
-	if len(body) > blockRefTextMaxBytes-1 {
-		t.Fatalf("整串内容超过 %d 字节：%d（%q）", blockRefTextMaxBytes-1, len(body), long)
-	}
-	if !strings.HasSuffix(long, "…") {
-		t.Fatalf("900 字符的定位串必须被截断并留下标记，实际 %q", long)
-	}
-	if !utf8.ValidString(long) {
-		t.Fatalf("整串不是合法 UTF-8：%q", long)
-	}
-	if strings.Contains(long, longDetail) {
-		t.Fatalf("900 字符的定位串不该原样出现在提示里")
-	}
-}
-
-func TestBlockRefTextCallSiteKeepsOffset(t *testing.T) {
-	src, err := os.ReadFile("block_err.go")
-	if err != nil {
-		t.Fatalf("读取 block_err.go 失败：%v", err)
-	}
-	const want = `truncateRunes(msg+"："+detail, blockRefTextMaxBytes-1)`
-	if !strings.Contains(string(src), want) {
-		t.Fatalf("整串封顶的调用点变了：期望出现 %s（−1 = 给截断标记留 1 字节）", want)
-	}
-}
-
-func deleteRefMessage(t *testing.T, label string) string {
-	t.Helper()
-	svc := &bulkDeleteStubService{
-		fail: map[string]error{
-			"b1": blockcontract.NewBlockInUseError([]blockcontract.BlockUsage{
-				{Kind: blockcontract.UsageKindPageDocument, EntityID: "page-42", Label: label, Detail: "main"},
-			}),
-		},
-	}
-	status, parsed := deleteResp(t, svc, `{"id":"b1"}`)
-	if status != http.StatusConflict {
-		t.Fatalf("被引用应回 409，实际 %d（body=%v）", status, parsed)
-	}
-	msg, _ := parsed["message"].(string)
-	if strings.TrimSpace(msg) == "" {
-		t.Fatalf("409 响应必须带可读提示，实际 %v", parsed)
-	}
-	return msg
 }

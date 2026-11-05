@@ -24,6 +24,7 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/public/test/support"
 )
 
@@ -39,6 +40,9 @@ func i18nPageRenderEnv(t *testing.T) (*gin.Engine, *gorm.DB, string) {
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 页面标题在模板里本地取词，取词函数由请求级作用域注入 —— 与生产
+			// assembly 的接线一致；缺这一步模板执行期拿不到 t，页面空 body。
+			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			pages := e.Group("/admin")
 			pages.Use(func(c *gin.Context) {
 				c.Set("user_id", i18nPageRenderUser)
@@ -180,9 +184,9 @@ func TestAdminI18nEntriesPageRendersListOnSuccess(t *testing.T) {
 		`class="data-table"`,
 		i18nPageRenderSeedKey,
 		"页面渲染哨兵",
-		`data-write-url="/api/i18n/save"`,
+		`hx-post="/api/i18n/save"`,
 	)
-	i18nPageRenderAssertAbsent(t, body, `role="alert"`, "这一页的数据没能读出来", "badge-danger")
+	i18nPageRenderAssertAbsent(t, body, `data-ui-error`, "这一页的数据没能读出来", "badge-danger")
 }
 
 func i18nPageFailureMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
@@ -190,18 +194,12 @@ func i18nPageFailureMessage(t *testing.T, rec *httptest.ResponseRecorder) string
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据失败必须500: %d %s", rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-		t.Fatalf("失败必须JSON: %q", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("页面失败必须 HTML：%q", ct)
 	}
-	var body struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Code != http.StatusInternalServerError || body.Message == "" {
-		t.Fatalf("错误协议不完整: %s %v", rec.Body.String(), err)
-	}
-	i18nPageRenderAssertAbsent(t, rec.Body.String(), append([]string{"<!DOCTYPE", "role=\"alert\"", "admin.err.internal", "MsgInternalError"}, i18nPageRenderForbiddenRaw...)...)
-	return body.Message
+	i18nPageRenderAssertContains(t, rec.Body.String(), "<!DOCTYPE html>", "data-ui-error", `role="alert"`)
+	i18nPageRenderAssertAbsent(t, rec.Body.String(), append([]string{"admin.err.internal", "uiInternalErr"}, i18nPageRenderForbiddenRaw...)...)
+	return i18nHTMLMessage(t, rec.Body.String())
 }
 
 func TestAdminI18nEntriesPageMainListFailureRenders500(t *testing.T) {

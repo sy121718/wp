@@ -22,7 +22,10 @@ import (
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/test/support"
 )
 
@@ -49,11 +52,14 @@ func newCustomerLeakEnv(t *testing.T) (*gin.Engine, *userservice.Service, *gorm.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	page := userhttp.NewCustomerPageHandle(users, nil, projects)
 	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
-	engine.POST("/api/customer/bulk-status", userhttp.NewCustomerHandle(users).BulkCustomerStatus)
-	engine.POST("/api/customer/bulk-unlock", userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
+	engine.POST("/api/customer/bulk-status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerStatus)
+	engine.POST("/api/customer/bulk-unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
 	return engine, users, db
 }
 
@@ -62,6 +68,10 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 	if engine == nil {
 		return
 	}
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate, "en-US": "At most %s items; got %s"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	n := bulkids.MaxIDs + 1
 	ids := make([]string, 0, n)
 	for i := 1; i <= n; i++ {
@@ -82,29 +92,29 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 		path string
 		form url.Values
 	}{
-		{"/api/customer/bulk-status", url.Values{"ids": ids, "toStatus": {"1"}}},
+		{"/api/customer/bulk-status", url.Values{"ids": ids, "status": {"1"}}},
 		{"/api/customer/bulk-unlock", url.Values{"ids": ids}},
 	} {
-		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(customerFeatureJSONForm(t, tc.form)))
-		req.Header.Set("Content-Type", "application/json")
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
 		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("%s 应渲染提示页（200），实际 %d", tc.path, rec.Code)
+			t.Fatalf("%s 应渲染失败片段（400），实际 %d", tc.path, rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `"code":400`) {
-			t.Errorf("%s 应渲染失败提示页", tc.path)
+		if !strings.Contains(body, "data-ui-error") {
+			t.Errorf("%s 应渲染失败片段", tc.path)
 		}
 		if !strings.Contains(body, "一次最多操作") {
 			t.Errorf("%s 应显示「一次最多操作」的受控文案", tc.path)
 		}
 
 		if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(body, over) {
-			t.Errorf("%s 的提示页应带上限 %d 与本次条数 %s（由受控类型给回）",
+			t.Errorf("%s 的错误片段应带上限 %d 与本次条数 %s（由受控类型给回）",
 				tc.path, bulkids.MaxIDs, over)
 		}
-		assertCustomerLeakFree(t, tc.path+" 的提示页", body)
+		assertCustomerLeakFree(t, tc.path+" 的错误片段", body)
 	}
 }
 

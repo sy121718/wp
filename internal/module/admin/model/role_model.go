@@ -130,6 +130,21 @@ func (m *RoleModel) CreateTx(ctx context.Context, tx *gorm.DB, e *RoleEntity) er
 	return tx.WithContext(ctx).Model(&RoleEntity{}).Create(e).Error
 }
 
+// LockByCodesTx 在调用方事务内锁住这批角色编码对应的角色行。
+//
+// ORDER BY id：加锁顺序由这条 SQL 决定。成员授予（AdminRoleSave / RoleUserSave）
+// 与角色删除端都锁 sys_role，两端必须按同一顺序排队；用 WHERE role_code IN 只是筛行。
+func (m *RoleModel) LockByCodesTx(ctx context.Context, tx *gorm.DB, codes []string) ([]RoleEntity, error) {
+	var list []RoleEntity
+	if len(codes) == 0 {
+		return list, nil
+	}
+	err := tx.WithContext(ctx).Model(&RoleEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("role_code IN ?", codes).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
 func (m *RoleModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*RoleEntity, error) {
 	var entity RoleEntity
 	err := tx.WithContext(ctx).Model(&RoleEntity{}).
@@ -158,5 +173,20 @@ func (m *RoleModel) Delete(ctx context.Context, id uint64) error {
 }
 
 func (m *RoleModel) DeleteTx(ctx context.Context, tx *gorm.DB, id uint64) error {
-	return tx.WithContext(ctx).Model(&RoleEntity{}).Where("id = ?", id).Delete(&RoleEntity{}).Error
+	_, err := m.deleteByIDsTx(ctx, tx, []uint64{id})
+	return err
+}
+
+// DeleteByIDsTx 在调用方事务内批量删除，返回实际删除行数。
+// 批量走一条 SQL：调用方据此判断「是不是全删掉了」，不逐条累计。
+func (m *RoleModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (int64, error) {
+	return m.deleteByIDsTx(ctx, tx, ids)
+}
+
+func (m *RoleModel) deleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := tx.WithContext(ctx).Model(&RoleEntity{}).Where("id IN ?", ids).Delete(&RoleEntity{})
+	return result.RowsAffected, result.Error
 }

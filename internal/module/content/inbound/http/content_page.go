@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/richdoc"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/richdoc"
 	blockenums "go_wp/internal/module/block/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -28,9 +28,9 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	seoscore "go_wp/internal/seo"
-	"go_wp/internal/seo/scoreview"
-	"go_wp/internal/seo/scoring"
+	seoscore "go_wp/pkg/seo"
+	"go_wp/pkg/seo/scoreview"
+	"go_wp/pkg/seo/scoring"
 	"go_wp/internal/shell"
 	"go_wp/internal/siteurl"
 	bulkids "go_wp/pkg/bulkids"
@@ -41,6 +41,7 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
+	"go_wp/pkg/facing"
 )
 
 const (
@@ -63,7 +64,7 @@ const (
 	articleDeletedText = contentenums.OkDeleted
 )
 
-type articleMsg = adminui.Msg
+type articleMsg = facing.Msg
 
 var articleFallbacks = map[string]string{
 
@@ -1099,7 +1100,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 
 			data.Errors = []articleMsg{articleTranslationFilled(c,
 				contentenums.TranslationsErrSaveFailed, "保存失败：{detail}",
-				map[string]string{"detail": adminui.MsgText(c, articleErrMsgQuiet(c, uerr))})}
+				map[string]string{"detail": response.MsgText(c, articleErrMsgQuiet(c, uerr))})}
 			pageview.RenderTemplate(c, ArticleTranslationsTemplate, data)
 			return
 		}
@@ -1117,7 +1118,7 @@ func articleTranslationFilled(c *gin.Context, key, fallback string, params map[s
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {
 	return articleTranslationFilled(c, key, fallback,
-		map[string]string{"detail": adminui.MsgText(c, articleErrMsg(c, err))})
+		map[string]string{"detail": response.MsgText(c, articleErrMsg(c, err))})
 }
 
 func articleTranslationDone(c *gin.Context, projectID, lang, keyword string, page, limit, written int) {
@@ -1466,7 +1467,7 @@ func articleErrMsgOfFact(scoped map[string]string, fact adminui.ErrFact) article
 
 func articleErrFallback(scoped map[string]string, key, factFallback string) string {
 
-	for _, fb := range []string{scoped[key], articleFallbacks[key], contentenums.FallbackFor(key), factFallback} {
+	for _, fb := range []string{scoped[key], articleFallbacks[key], factFallback} {
 		if fb = strings.TrimSpace(fb); fb != "" {
 			return fb
 		}

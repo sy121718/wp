@@ -2,7 +2,7 @@ package routers
 
 import (
 	"context"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	"sort"
 )
 

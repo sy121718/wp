@@ -198,7 +198,15 @@ try:
         raise ValueError('empty or malformed input inventories')
     exemptions = {x.split('#',1)[0].strip() for x in pathlib.Path('scripts/page-get-authz-allow.txt').read_text().splitlines()}
     exemptions.discard('')
-    constants = pathlib.Path('internal/permission/codes.go').read_text()
+    for required in ('internal/permission/codes.go',
+                     'internal/routers/testdata/routes.snapshot',
+                     'scripts/page-get-authz-allow.txt'):
+        if not pathlib.Path(required).is_file():
+            raise ValueError('required input missing: '+required)
+    constants_path = pathlib.Path('internal/permission/codes.go')
+    constants = constants_path.read_text()
+    if not constants.strip():
+        raise ValueError('empty permission codes source: %s' % constants_path)
     declarations = {key for key, entry in {**VIRTUAL, **PAGE_OBJECTS}.items()
                     if has_declaration(pathlib.Path(entry[2]).read_text(), constants, key, entry)}
     errors = validate(code, menu, routes, exemptions,

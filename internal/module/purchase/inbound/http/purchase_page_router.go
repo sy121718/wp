@@ -7,6 +7,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	projectcontract "go_wp/internal/module/project/contract"
 	purchasecontract "go_wp/internal/module/purchase/contract"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -39,22 +40,22 @@ func SetupPurchasePages(pages *gin.RouterGroup, svc purchasecontract.PurchaseSer
 
 	pages.GET("/inventory/sources", adminui.PageAuthz("/api/inventory/source/list"),
 		adminui.PageSlot(SourcesPageTemplate), sourcePages.SourcesPage)
-	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.SourceCreate)
-	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.SourceUpdate)
-	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.SourceDelete)
-	pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.SourcesBulkDelete)
+	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), pageview.HTMLFragment, sourcePages.SourceCreate)
+	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), pageview.HTMLFragment, sourcePages.SourceUpdate)
+	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourceDelete)
+	pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), pageview.HTMLFragment, sourcePages.SourcesBulkDelete)
 
 	pages.GET("/inventory/purchases", adminui.PageAuthz("/api/inventory/purchase/list"),
 		adminui.PageSlot(PurchasesPageTemplate), purchases.PurchasesPage)
-	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchases.PurchaseCreate)
-	pages.POST("/inventory/purchases/update", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseUpdate)
-	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchases.PurchaseReceipt)
-	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchases.PurchaseProduction)
+	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), pageview.HTMLFragment, purchases.PurchaseCreate)
+	pages.POST("/inventory/purchases/update", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseUpdate)
+	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), pageview.HTMLFragment, purchases.PurchaseReceipt)
+	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), pageview.HTMLFragment, purchases.PurchaseProduction)
 
-	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseFinish)
-	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseCancel)
+	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseFinish)
+	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseCancel)
 
-	pages.POST("/inventory/purchases/place", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchasePlace)
-	pages.POST("/inventory/purchases/exception", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseException)
-	pages.POST("/inventory/purchases/resume", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseResume)
+	pages.POST("/inventory/purchases/place", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchasePlace)
+	pages.POST("/inventory/purchases/exception", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseException)
+	pages.POST("/inventory/purchases/resume", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), pageview.HTMLFragment, purchases.PurchaseResume)
 }

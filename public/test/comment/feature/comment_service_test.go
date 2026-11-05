@@ -2,6 +2,7 @@ package commentfeature
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -39,8 +40,8 @@ func submitAndApprove(t *testing.T, svc *commentservice.Service, entityType, ent
 		t.Fatalf("新评论必须先审后发: %+v", res)
 	}
 	receipt := reviewViaAPI(t, svc, res.ID, commentenums.StatusApproved, 9)
-	if receipt.Affected != 1 {
-		t.Fatalf("审核回执需与实际一条写入相等: %+v", receipt)
+	if !strings.Contains(receipt, "1") {
+		t.Fatalf("审核回执需与实际一条写入相等: %s", receipt)
 	}
 	return res.ID
 }

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	plugincontract "go_wp/internal/module/plugin/contract"
 )
 

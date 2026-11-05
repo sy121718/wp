@@ -39,7 +39,7 @@ func TestStockFactsDistinguishFailureFromEmpty(t *testing.T) {
 	newService := func(port inventorycontract.ProductStockPort) *productservice.Service {
 		s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{
 			rows: []projectdto.ProjectResp{{ID: projectID, Name: "库存事实"}},
-		})
+		}, stubMasterDataChanges{})
 		s.SetWarehouseOptionsPort(parityWarehousePortStub{
 			options: []productdto.WarehouseOptionResp{{ID: parityWarehouseID, Name: "主仓"}},
 		})

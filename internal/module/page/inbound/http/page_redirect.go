@@ -11,10 +11,8 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/shell"
-	"go_wp/internal/templates"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -115,18 +113,14 @@ func (h *Handle) RedirectBulkDelete(c *gin.Context) {
 }
 
 func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) *RedirectPageResp {
-	lang := response.RequestLanguage(c)
-	t := templates.TranslateFunc(lang)
 	token, err := builtin.GetCSRFToken(c)
 	if err != nil {
 
 		token = ""
 	}
 
-	_ = lang
 	_ = token
 	view := &RedirectPageResp{
-		Title:           t(pageenums.RedirectTitle, "重定向管理"),
 		PagePath:        redirectPagePath,
 		ErrKey:          errKey,
 		Projects:        []pagedto.RedirectProjectOptionResp{},

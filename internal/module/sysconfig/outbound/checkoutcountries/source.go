@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/logger"
 )

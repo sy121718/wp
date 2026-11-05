@@ -6,6 +6,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -15,6 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
+"go_wp/internal/templates"
+"go_wp/internal/text"
+"go_wp/internal/adminui"
+pageview "go_wp/pkg/view"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -57,14 +62,18 @@ func initMoveWriteLogger(t *testing.T) {
 func newMoveWriteRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", NewHandle(svc).Update)
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/move", pageview.HTMLFragment, NewHandle(svc).Move)
 	return router
 }
 
 func postMoveWrite(t *testing.T, engine *gin.Engine, lang, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/move", strings.NewReader(moveFormOf(body)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if lang != "" {
 		req.Header.Set("Accept-Language", lang)
 	}
@@ -86,6 +95,21 @@ func navigationMoveResponse(t *testing.T, rec *httptest.ResponseRecorder) (int, 
 	return resp.Code, resp.Message, resp.Data
 }
 
+// moveFormOf 把 JSON 形态的测试输入转成标准表单编码：
+// 换位端点只接受表单，测试沿用同一组字段名即可。
+func moveFormOf(body string) string {
+	var fields map[string]string
+	_ = json.Unmarshal([]byte(body), &fields)
+	form := url.Values{}
+	for k, v := range fields {
+		if k == "action" {
+			continue
+		}
+		form.Set(k, v)
+	}
+	return form.Encode()
+}
+
 func moveBody(fields map[string]string) string {
 	keys := make([]string, 0, len(fields))
 	for k := range fields {
@@ -99,33 +123,17 @@ func moveBody(fields map[string]string) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-func TestNavigationUpdateMoveShapeIsStrict(t *testing.T) {
+func TestNavigationMoveShapeIsStrict(t *testing.T) {
+	// 表单编码下所有值都是字符串：形状错误只剩「必填字段缺失或为空」。
 	cases := []struct {
 		name string
 		body string
 	}{
-		{"缺 id 与 dir", `{"action":"move"}`},
-		{"缺 dir", `{"action":"move","id":"nav-1"}`},
-		{"空 id", `{"action":"move","id":"","dir":"up"}`},
-		{"空 dir", `{"action":"move","id":"nav-1","dir":""}`},
-		{"id 显式 null", `{"action":"move","id":null,"dir":"up"}`},
-		{"dir 显式 null", `{"action":"move","id":"nav-1","dir":null}`},
-		{"id 非字符串", `{"action":"move","id":1,"dir":"up"}`},
-		{"dir 非字符串", `{"action":"move","id":"nav-1","dir":true}`},
-		{"白名单外的键（页面旧表单的 kind）", `{"action":"move","id":"nav-1","projectId":"p-1","dir":"up","kind":"header"}`},
-		{"projectId 显式 null", `{"action":"move","id":"nav-1","dir":"up","projectId":null}`},
-		{"projectId 非字符串", `{"action":"move","id":"nav-1","dir":"up","projectId":42}`},
-		{"混形 rows", `{"action":"move","id":"nav-1","dir":"up","rows":[]}`},
-		{"混形 project（译文分支的键）", `{"action":"move","id":"nav-1","dir":"up","project":"p-1"}`},
-		{"混形 lang", `{"action":"move","id":"nav-1","dir":"up","lang":"en-US"}`},
-		{"未知 action", `{"action":"turn","id":"nav-1","dir":"up"}`},
-		{"action 显式 null", `{"action":null,"id":"nav-1","dir":"up"}`},
-		{"无 action 却带 dir", `{"id":"nav-1","dir":"up"}`},
-		{"无 action 却带 projectId", `{"id":"nav-1","projectId":"p-1"}`},
-		{"不是对象", `[]`},
-		{"JSON 非法", `{`},
-		{"空体", ``},
-		{"显式 null", `null`},
+		{"缺 id 与 dir", `{}`},
+		{"缺 dir", `{"id":"nav-1"}`},
+		{"空 id", `{"id":"","dir":"up"}`},
+		{"空 dir", `{"id":"nav-1","dir":""}`},
+		{"缺 id", `{"dir":"up"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,8 +145,8 @@ func TestNavigationUpdateMoveShapeIsStrict(t *testing.T) {
 			if len(stub.calls) != 0 {
 				t.Fatalf("形状不对不得落 service，实际 %+v", stub.calls)
 			}
-			if len(stub.updateCalls) != 0 {
-				t.Fatalf("形状不对不得落到旧更新分支，实际 %+v", stub.updateCalls)
+			if !strings.Contains(rec.Body.String(), `data-ui-error`) {
+				t.Fatalf("失败应渲染 Jet 错误片段：%s", rec.Body.String())
 			}
 		})
 	}
@@ -159,8 +167,9 @@ func TestNavigationUpdateMoveCallsSwapMoveOnce(t *testing.T) {
 	if got.ID != "nav-9" || got.ProjectID != "p-1" || got.Dir != "down" {
 		t.Fatalf("请求字段被改动：%+v", got)
 	}
-	if _, _, data := navigationMoveResponse(t, rec); !strings.Contains(string(data), `"moved":true`) {
-		t.Fatalf("回执 data 应带 moved:true，实际 %s", data)
+	// 成功回 Jet 片段（不再是 JSON 回执）；交换已由 stub 断言。
+	if body := rec.Body.String(); !strings.Contains(body, `role="status"`) {
+		t.Fatalf("成功应回 Jet 成功片段，实际 %s", body)
 	}
 
 	stub.calls = nil
@@ -211,14 +220,18 @@ func TestNavigationUpdateMoveMessageFollowsRequestLanguage(t *testing.T) {
 		rec := postMoveWrite(t, newMoveWriteRouter(stub), tc.lang, moveBody(map[string]string{
 			"action": "move", "id": "nav-1", "dir": "up",
 		}))
-		_, message, _ := navigationMoveResponse(t, rec)
-		if message != tc.want {
-			t.Fatalf("%s 的消息应为 %q，实际 %q", tc.lang, tc.want, message)
+		// 失败回 Jet 错误片段：按请求语言取的词条必须出现在片段里。
+		body := rec.Body.String()
+		if !strings.Contains(body, tc.want) {
+			t.Fatalf("%s 的错误片段应带 %q，实际 %s", tc.lang, tc.want, body)
+		}
+		if strings.Contains(body, "navigation.err.") {
+			t.Fatalf("%s 的错误片段漏出了声明 key：%s", tc.lang, body)
 		}
 	}
 }
 
-var moveTemplateFormRe = regexp.MustCompile(`(?s)<form[^>]*data-write-url="/api/navigation/update".*?</form>`)
+var moveTemplateFormRe = regexp.MustCompile(`(?s)<form[^>]*hx-post="/api/navigation/move".*?</form>`)
 
 var moveTemplateNameRe = regexp.MustCompile(`name="([^"]+)"`)
 
@@ -242,9 +255,9 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 
 	tpl := readFile("../../../../templates/admin/navigation/navigations.html")
 	for _, want := range []string{
-		`data-write-url="/api/navigation/update"`,
-		`data-write="create"`,
-		`<input type="hidden" name="action" value="move">`,
+		`hx-post="/api/navigation/move"`,
+		`data-write`,
+		`name="dir"`,
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,
 		`data-write-status`,
@@ -274,8 +287,8 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 	if len(forms) != 2 {
 		t.Fatalf("应恰好两个声明了本端点的行内表单（up / down），实际 %d 个", len(forms))
 	}
-	want := make([]string, 0, len(navigationMoveKeys))
-	for key := range navigationMoveKeys {
+	want := make([]string, 0, 3)
+	for _, key := range []string{"id", "dir", "projectId"} {
 		want = append(want, key)
 	}
 	sort.Strings(want)

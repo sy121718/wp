@@ -16,6 +16,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 type pricingCatalogStub struct {
@@ -53,20 +54,21 @@ func pricingPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), h.ProductPricingPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
 }
 
-func TestProductPricingPageUsesBusinessObjectsAndJSONWriteBase(t *testing.T) {
+func TestProductPricingPageUsesBusinessObjectsAndHTMLWrites(t *testing.T) {
 	service := &pricingCatalogStub{}
 	rec := pricingPageRequest(t, &ProductPageHandle{products: service}, "/admin/product-pricing?project=p1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("页面应成功：%d %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"</html>", "定价工具", "统一售价", "调价留痕", "data-pricing-preview", "data-write-status", "data-write-url=\"/api/product/pricing/preview\"", "data-write-url=\"/api/product/pricing/apply\""} {
+	for _, want := range []string{"</html>", "定价工具", "统一售价", "调价留痕", "data-pricing-preview", "data-write-status", "hx-post=\"/api/product/pricing/preview\"", "hx-post=\"/api/product/pricing/apply\""} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q：%s", want, body)
 		}

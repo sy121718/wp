@@ -16,6 +16,10 @@ func TestDumpRoutesForAudit(t *testing.T) {
 		fmt.Println(l)
 	}
 
+	// 契约工具使用真实处理器身份，不从资源路径猜方法名；路由快照仍只记录 METHOD+PATH。
+	for _, handler := range routeDumpHandlers {
+		fmt.Println(handler)
+	}
 	for _, spec := range permission.Snapshot() {
 		fmt.Printf("DECLARED %s %s %s\n", spec.Method, spec.Path, spec.Perm)
 	}

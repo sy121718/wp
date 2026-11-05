@@ -243,8 +243,9 @@ func TestMapTierConflictMapsIndexNames(t *testing.T) {
 
 func TestErrorFactsAreDeclaredAtSource(t *testing.T) {
 	fact, ok := facing.FactOf(membershipenums.Err(membershipenums.ErrTierNameTaken))
-	if !ok || !fact.Business || fact.Fallback == "" {
-		t.Fatalf("业务错误应给出 key + 兜底，实际 %+v ok=%v", fact, ok)
+	// 声明处只给 key；中文归词库，取词发生在出口。
+	if !ok || !fact.Business || fact.Key != membershipenums.ErrTierNameTaken || fact.Fallback != "" {
+		t.Fatalf("业务错误应给出 key、不带成品兜底，实际 %+v ok=%v", fact, ok)
 	}
 	detailed, ok := facing.FactOf(membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "p-1"))
 	if !ok || detailed.Tail != "p-1" {

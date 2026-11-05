@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
@@ -92,63 +93,70 @@ func (h *Handle) ListOrders(c *gin.Context) {
 }
 
 func (h *Handle) ChangeStatus(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.orderStatusBulk(c)
 		return
 	}
-	if raw != nil && orderWriteHasKey(raw, "ids") {
-		h.orderStatusBulk(c, raw)
+	var form orderdto.OrderStatusForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := binding.JSON[orderdto.ChangeStatusReq](c)
-	if !ok {
-		return
+	req := &orderdto.ChangeStatusReq{
+		OrderID:  form.OrderID,
+		ToStatus: form.ToStatus,
+		Remark:   form.Remark,
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
 	if err := h.svc.ChangeStatus(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+		orderWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgStatusChanged, nil)
+	orderWriteResult(c, "ordStChanged")
 }
 
 func (h *Handle) CancelOrder(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.orderCancelBulk(c)
 		return
 	}
-	if raw != nil && orderWriteHasKey(raw, "ids") {
-		h.orderCancelBulk(c, raw)
+	var form orderdto.OrderCancelForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := binding.JSON[orderdto.CancelOrderReq](c)
-	if !ok {
-		return
-	}
+	req := &orderdto.CancelOrderReq{OrderID: form.OrderID, Reason: form.Reason}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
-	resp, err := h.svc.CancelOrder(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.CancelOrder(c.Request.Context(), req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-
-	response.SuccessWithMessage(c, orderenums.MsgCancelled, resp)
+	orderWriteResult(c, "ordCancelled")
 }
 
 func (h *Handle) RefundOrder(c *gin.Context) {
-	req, ok := binding.JSON[orderdto.RefundOrderReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form orderdto.OrderRefundForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
+	}
+	req := &orderdto.RefundOrderReq{
+		OrderID:       form.OrderID,
+		Reason:        form.Reason,
+		TransactionID: form.TransactionID,
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
 	if err := h.svc.RefundOrder(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+		orderWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgRefunded, nil)
+	orderWriteResult(c, "ordRefunded")
 }
 
 func (h *Handle) ListItems(c *gin.Context) {
@@ -213,90 +221,59 @@ func (h *Handle) GetCoupon(c *gin.Context) {
 }
 
 func (h *Handle) CreateCoupon(c *gin.Context) {
-	req, ok := binding.Form[orderdto.CouponSaveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req orderdto.CouponSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
-	applyCouponOperator(c, req)
-	res, err := h.svc.CreateCoupon(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	applyCouponOperator(c, &req)
+	if _, err := h.svc.CreateCoupon(c.Request.Context(), &req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgCouponCreated, res)
+	orderWriteResultNav(c, "ordCpCreated", couponBackURL(c, req.ProjectID))
 }
 
 func (h *Handle) UpdateCoupon(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.couponToggleBulk(c)
 		return
 	}
-	if orderWriteHasKey(raw, "ids") {
-		if !orderWriteShapeOK(raw, orderCouponToggleBulkKeys) {
-			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-			return
-		}
-		h.couponToggleBulk(c, raw)
+	var req orderdto.CouponSaveReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil || req.ID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := binding.Form[orderdto.CouponSaveReq](c)
-	if !ok {
-		return
-	}
-
 	req.StartsAt = couponTimeInputValue(req.StartsAt)
 	req.EndsAt = couponTimeInputValue(req.EndsAt)
-	applyCouponOperator(c, req)
-	res, err := h.svc.UpdateCoupon(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	applyCouponOperator(c, &req)
+	if _, err := h.svc.UpdateCoupon(c.Request.Context(), &req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgCouponUpdated, res)
+	orderWriteResultNav(c, "ordCpUpdated", couponBackURL(c, req.ProjectID))
 }
 
 func (h *Handle) DeleteCoupon(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.couponDeleteBulk(c)
 		return
 	}
-	hasIDs := orderWriteHasKey(raw, "ids")
-	if hasIDs {
-		if orderWriteHasKey(raw, "id") || orderWriteHasKey(raw, "couponId") {
-
-			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-			return
-		}
-		if !orderWriteShapeOK(raw, orderCouponDeleteBulkKeys) {
-			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-			return
-		}
-		h.couponDeleteBulk(c, raw)
+	var form orderdto.CouponDeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	if !orderWriteShapeOK(raw, orderCouponDeleteSingleKeys) {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	if err := h.svc.DeleteCoupon(c.Request.Context(), form.ID); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	idKey, ok := orderCouponDeleteIDKey(raw)
-	if !ok {
-
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-		return
-	}
-	id, ok := orderWriteUintOf(raw, idKey)
-	if !ok || id == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-		return
-	}
-	if err := h.svc.DeleteCoupon(c.Request.Context(), id); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
-		return
-	}
-	response.SuccessWithMessage(c, orderenums.MsgCouponDeleted, nil)
+	orderWriteResult(c, "ordCpDeleted")
 }
 
 func (h *Handle) ValidateCoupon(c *gin.Context) {
@@ -387,84 +364,92 @@ func (h *Handle) GetReturn(c *gin.Context) {
 }
 
 func (h *Handle) ApproveReturn(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.returnBulkApprove(c)
 		return
 	}
-	if raw != nil && orderWriteHasKey(raw, "ids") {
-		h.returnBulkApprove(c, raw)
+	var form orderdto.ReturnReviewForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := binding.Form[orderdto.ReturnReviewReq](c)
-	if !ok {
-		return
+	req := &orderdto.ReturnReviewReq{
+		ReturnID:      form.ReturnID,
+		Remark:        form.Remark,
+		AutoReceive:   orderReturnAutoReceive(c),
+		WarehouseID:   form.WarehouseID,
+		TransactionID: form.TransactionID,
 	}
 	applyReturnOperator(c, req)
-	res, err := h.svc.ApproveReturn(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.ApproveReturn(c.Request.Context(), req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	localizeReturnLabels(c, res)
-	response.SuccessWithMessage(c, orderenums.MsgReturnApproved, res)
+	orderWriteResult(c, "ordRetApproved")
 }
 
 func (h *Handle) RejectReturn(c *gin.Context) {
-	raw, ok := orderWriteBody(c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	if orderBulkFormIDs(c) != nil {
+		h.returnBulkReject(c)
 		return
 	}
-	if raw != nil && orderWriteHasKey(raw, "ids") {
-		h.returnBulkReject(c, raw)
+	var form orderdto.ReturnReviewForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
-	req, ok := binding.Form[orderdto.ReturnReviewReq](c)
-	if !ok {
-		return
-	}
+	req := &orderdto.ReturnReviewReq{ReturnID: form.ReturnID, Remark: form.Remark}
 	applyReturnOperator(c, req)
-	res, err := h.svc.RejectReturn(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.RejectReturn(c.Request.Context(), req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	localizeReturnLabels(c, res)
-	response.SuccessWithMessage(c, orderenums.MsgReturnRejected, res)
+	orderWriteResult(c, "ordRetRejected")
 }
 
 func (h *Handle) ReceiveReturn(c *gin.Context) {
-	req, ok := binding.Form[orderdto.ReturnReceiveReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form orderdto.ReturnReceiveForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.ReturnID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
+	}
+	req := &orderdto.ReturnReceiveReq{
+		ReturnID:      form.ReturnID,
+		WarehouseID:   form.WarehouseID,
+		Remark:        form.Remark,
+		TransactionID: form.TransactionID,
 	}
 	id, name := operatorFromContext(c)
 	req.OperatorType = "admin"
 	req.OperatorID = id
 	req.OperatorName = name
-	res, err := h.svc.ReceiveReturn(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.ReceiveReturn(c.Request.Context(), req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	localizeReturnLabels(c, res)
-	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
+	orderWriteResult(c, "ordRetReceived")
 }
 
 func (h *Handle) UpdateOrderNote(c *gin.Context) {
-	req, ok := binding.Form[orderdto.UpdateOrderNoteReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var form orderdto.OrderNoteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || form.OrderID == 0 {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
+	req := &orderdto.UpdateOrderNoteReq{OrderID: form.OrderID, AdminNote: form.AdminNote}
 	id, name := operatorFromContext(c)
 	req.OperatorType = "admin"
 	req.OperatorID = id
 	req.OperatorName = name
-	res, err := h.svc.UpdateOrderNote(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+	if _, err := h.svc.UpdateOrderNote(c.Request.Context(), req); err != nil {
+		orderWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgNoteUpdated, res)
+	orderWriteResult(c, "ordNoteSaved")
 }
 
 func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {

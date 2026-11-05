@@ -67,7 +67,8 @@ func (m *OrderModel) CustomerSegmentIDsByRange(ctx context.Context, projectID st
 	}
 	var rows []row
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		ranged, firsts := orderCustomerScope(tx, projectID, from, to)
+		// 客户分层与销售额同口径：不传状态即用已成交默认值。
+		ranged, firsts := orderCustomerScope(tx, projectID, from, to, nil)
 		q := tx.Table("(?) AS r", ranged).
 			Joins("JOIN (?) AS f ON f.user_id = r.user_id", firsts).
 			Select(customerSegmentSelect)

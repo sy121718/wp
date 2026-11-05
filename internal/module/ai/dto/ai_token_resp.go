@@ -12,9 +12,8 @@ type TokenItem struct {
 
 	TokenPrefix string `json:"tokenPrefix"`
 
-	Scopes      []string `json:"scopes"`
-	Status      int16    `json:"status"`
-	StatusLabel string   `json:"statusLabel"`
+	Scopes []string `json:"scopes"`
+	Status int16    `json:"status"`
 
 	ExpiresAt    *utils.JSONTime `json:"expiresAt,omitempty"`
 	LastUsedTime *utils.JSONTime `json:"lastUsedTime,omitempty"`

@@ -27,7 +27,5 @@ type DashboardPageResp struct {
 	Title string `view:"title"`
 	Menu  string
 
-	Err string
-
 	Overview any
 }

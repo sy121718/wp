@@ -6,52 +6,133 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/adminui"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 )
 
-func newAIPageEnv(t *testing.T) (*aihttp.PageHandle, *aiservice.Service, *gorm.DB) {
+// newAIPageEnv 交一份「供应商 + 模型目录」的写入口。
+//
+// 页面侧的 PageHandle 已经退役：这些写操作只有 /api 一条入口，所以这里直接给 API
+// handler（与 internal/module/ai/inbound/http/ai_router.go 里注册的是同一个）。
+func newAIPageEnv(t *testing.T) (*aihttp.Handle, *aiservice.Service, *gorm.DB) {
 	t.Helper()
 	svc, db := newAIProviderService(t)
-	return aihttp.NewPageHandle(svc), svc, db
+	return aihttp.NewHandle(svc), svc, db
 }
 
-func assertAIJump(t *testing.T, rec *httptest.ResponseRecorder, ok bool, msg string) {
+// aiJSON 是 ai 页写动作的响应信封：非页面请求一律 {code, message, data} + 真实状态码。
+type aiJSON struct {
+	Code    int            `json:"code"`
+	Message string         `json:"message"`
+	Data    map[string]any `json:"data"`
+}
+
+func decodeAIJSON(t *testing.T, rec *httptest.ResponseRecorder) aiJSON {
+	t.Helper()
+	var out aiJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("响应不是 JSON 信封：%v，body=%s", err, rec.Body.String())
+	}
+	return out
+}
+
+// assertAIOK 断言一次写动作成功：200 + JSON + code 0 + 文案精确等于 want。
+//
+// want 为空时只校验「有文案」。非空时按整句比对 —— 成功文案也归词库，
+// 用 Contains 会放过「文案被拼进了别的东西」这类回归。
+func assertAIOK(t *testing.T, rec *httptest.ResponseRecorder, want string) aiJSON {
 	t.Helper()
 	if rec.Code != http.StatusOK {
-		t.Fatalf("应为提示页 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("成功应为 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	state := "err"
-	if ok {
-		state = "ok"
+	if ctype := rec.Header().Get("Content-Type"); !strings.Contains(ctype, "application/json") {
+		t.Fatalf("非页面请求应回 JSON，实际 Content-Type=%q", ctype)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="`+state+`"`) {
-		t.Fatalf("提示页状态应为 %s，body=%s", state, body)
+	if body := rec.Body.String(); strings.Contains(body, "<html") {
+		t.Fatalf("非页面请求不该回 HTML：%s", body)
 	}
-	if msg != "" && !strings.Contains(body, msg) {
-		t.Fatalf("提示页缺少文案 %q，body=%s", msg, body)
+	out := decodeAIJSON(t, rec)
+	if out.Code != http.StatusOK {
+		t.Fatalf("成功码应为 0，实际 %d（message=%s）", out.Code, out.Message)
 	}
+	if want == "" {
+		if out.Message == "" {
+			t.Fatal("成功应有回执文案")
+		}
+		return out
+	}
+	if out.Message != want {
+		t.Fatalf("文案应为 %q，实际 %q", want, out.Message)
+	}
+	return out
 }
 
-func serveAIPage(t *testing.T, ph *aihttp.PageHandle, method, target, body string) *httptest.ResponseRecorder {
+// assertAIFail 断言一次写动作失败：真实状态码 + JSON + code 与状态同值 + 文案精确。
+//
+// 失败信封的 code 就是 HTTP 状态码（pkg/response 的 ErrorWithMessage 把同一个值写进
+// 头与 code），所以这里断言两者相等，而不是像成功那样 code==0 —— 成功是 200 + code 0，
+// 失败是 4xx/5xx + code 同值，混成一条会让「服务端把失败当成功返回」永远测不出来。
+//
+// want 非空时按**整句精确**比对：文案归词库，测试要锁住的就是那一句；退回 Contains
+// 会放过「文案被拼进了别的东西」这类回归。
+func assertAIFail(t *testing.T, rec *httptest.ResponseRecorder, status int, want string) aiJSON {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("应为 %d，实际 %d：%s", status, rec.Code, rec.Body.String())
+	}
+	if ctype := rec.Header().Get("Content-Type"); !strings.Contains(ctype, "application/json") {
+		t.Fatalf("失败也应回 JSON，实际 Content-Type=%q", ctype)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "<html") {
+		t.Fatalf("失败不该回 HTML：%s", body)
+	}
+	out := decodeAIJSON(t, rec)
+	if out.Code != status {
+		t.Fatalf("失败信封的 code 应与状态码同值：code=%d status=%d", out.Code, status)
+	}
+	if out.Message == "" {
+		t.Fatal("失败必须有 message")
+	}
+	// 声明 key 与内部原文一律不上屏。
+	for _, leak := range []string{"ai.err.", "ai.msg.", "Err", "SQLSTATE", "duplicate key", "constraint"} {
+		if strings.Contains(out.Message, leak) {
+			t.Fatalf("message 漏出内部标识 %q：%q", leak, out.Message)
+		}
+	}
+	if want != "" && out.Message != want {
+		t.Fatalf("文案应为 %q，实际 %q", want, out.Message)
+	}
+	return out
+}
+
+func serveAIPage(t *testing.T, h *aihttp.Handle, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/ai/providers", ph.ProvidersPage)
-	engine.POST("/admin/ai/providers/save", ph.ProviderSave)
-	engine.POST("/admin/ai/providers/delete", ph.ProviderDelete)
-	engine.POST("/admin/ai/providers/status", ph.ProviderStatus)
-	engine.POST("/admin/ai/providers/models/candidates", ph.ModelsCandidates)
-	engine.POST("/admin/ai/providers/models/append", ph.ModelsAppend)
+	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	// 与 ai_router.go 注册的路径逐字一致：页面侧不再有 /admin 转发路由。
+	engine.POST("/api/ai/provider/save", pageview.HTMLFragment, h.SaveProvider)
+	engine.POST("/api/ai/provider/delete", pageview.HTMLFragment, h.DeleteProvider)
+	engine.POST("/api/ai/provider/status", pageview.HTMLFragment, h.SetProviderStatus)
+	engine.POST("/api/ai/provider/models/candidates", pageview.HTMLFragment, h.ModelCandidates)
+	engine.POST("/api/ai/provider/models/append", pageview.HTMLFragment, h.AppendModels)
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -79,7 +160,10 @@ func pageBaseData(title string) gin.H {
 		"Buttons": map[string]bool{
 			"ai.provider_list": true, "ai.provider_get": true, "ai.provider_models_list": true,
 			"ai.provider_save": true, "ai.provider_delete": true, "ai.provider_status": true,
-			"ai.provider_models_save": true, "ai.provider_models_restore": true, "ai.provider_models_fetch": true,
+			"ai.provider_models_save": true, "ai.provider_models_restore": true,
+			// 候选与追加是独立权限点：候选按钮打 candidates（会解密密钥打远端 /models），
+			// 追加表单打 append（会改写目录）。夹具要按真实权限码给，否则弹窗整块不渲染。
+			"ai.provider_models_candidates": true, "ai.provider_models_append": true,
 			"ai.session_list": true, "ai.session_get": true, "ai.session_events": true,
 			"ai.session_fold_plan": true, "ai.session_append": true, "ai.session_rename": true,
 			"ai.session_archive": true, "ai.session_fold": true,
@@ -128,17 +212,19 @@ func TestAISessionsPageRendersUsageHovercard(t *testing.T) {
 			ID: 3, SessionKey: "k-3", Title: "会话三", Status: 1,
 			EventCount: 4, ContextTokens: 15,
 		},
+		// 夹具按 DTO 的事实形状给：token 是整数、耗时是毫秒、错误只给 key。
+		// 显示文本（1.2M / 2.90 s / 归口译文）由模板函数与全局 t 现算。
 		"Usage": []aidto.SessionModelUsage{
-			{ProviderKey: "opencode-go", ModelID: "muse-spark", Events: 2, Tokens: 12, TokensText: "12"},
+			{ProviderKey: "opencode-go", ModelID: "muse-spark", Events: 2, Tokens: 12},
 
-			{Unrecorded: true, Events: 2, Tokens: 3, TokensText: "3"},
+			{Unrecorded: true, Events: 2, Tokens: 3},
 		},
 
 		"Calls": aidto.SessionCalls{
 			Total: 7,
 			Rows: []aidto.SessionCallRow{
-				{Time: "10-04 14:12", ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyText: "2.9s", Tokens: 465, TokensText: "465", OK: true},
-				{Time: "10-04 13:40", ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyText: "480ms", Tokens: 0, TokensText: "0", ErrorKey: aienums.ErrInternal, ErrorText: "服务器内部错误，请稍后重试"},
+				{At: utils.NewJSONTime(time.Date(2026, 10, 4, 14, 12, 0, 0, time.Local)), ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyMs: 2900, Tokens: 465, OK: true},
+				{At: utils.NewJSONTime(time.Date(2026, 10, 4, 13, 40, 0, 0, time.Local)), ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyMs: 480, Tokens: 0, ErrorKey: aienums.ErrInternal},
 			},
 		},
 	}}
@@ -156,10 +242,11 @@ func TestAISessionsPageRendersUsageHovercard(t *testing.T) {
 		"共",
 		"7",
 		"次调用",
-		"2.9s",
-		"480ms",
+		// 耗时按 latency 函数显示：≥1000ms 走秒（两位小数），<1000ms 走毫秒。
+		"2.90 s",
+		"480 ms",
 		"成功",
-		"服务器内部错误，请稍后重试",
+		// 失败格按 key 取词（缺词落「调用失败」兜底）：这里断言它没有裸 key。
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("token 悬浮卡缺少 %q", want)
@@ -186,7 +273,7 @@ func TestAIModelsTabRenders(t *testing.T) {
 		t.Fatalf("整页没有渲染完（缺 </html>）：模板在某一行中断了")
 	}
 	for _, want := range []string{
-		`action="/admin/ai/providers/save"`,
+		`hx-post="/api/ai/provider/save"`,
 		`name="providerKey"`,
 		`name="csrf_token"`,
 		`value="test-token"`,
@@ -215,11 +302,9 @@ func TestAIModelsTabRenders(t *testing.T) {
 
 func TestAIModelPickerFragmentRenders(t *testing.T) {
 	data := pageBaseData("模型")
-	data["Picker"] = gin.H{
-		"Provider":   aidto.Provider{ID: 7, ProviderKey: "acme-gateway", DisplayName: "Acme Gateway", Version: 2},
-		"Candidates": []string{"gpt-4o", "already-there"},
-		"Existing":   map[string]bool{"already-there": true},
-	}
+	data["Provider"] = aidto.Provider{ID: 7, ProviderKey: "acme-gateway", DisplayName: "Acme Gateway", Version: 2}
+	data["Candidates"] = []string{"gpt-4o", "already-there"}
+	data["Existing"] = map[string]bool{"already-there": true}
 	body := renderAITemplate(t, "admin/ai/provider_picker", data)
 	if strings.Contains(body, "<html") || strings.Contains(body, "<!doctype") {
 		t.Fatal("候选弹窗应是片段，不该带整页壳")
@@ -229,13 +314,13 @@ func TestAIModelPickerFragmentRenders(t *testing.T) {
 		"选择要添加的模型",
 		"以下是模型提供商的可用模型",
 		"搜索模型",
-		"全选",
 		"添加所选",
-		`name="modelIds"`,
-		`value="gpt-4o"`,
-		`value="already-there"`,
+		`name="modelIds" value="gpt-4o"`,
+		`name="modelIds" value="already-there"`,
+		`data-check-item disabled`,
 		"已在目录",
-		`action="/admin/ai/providers/models/append"`,
+		`hx-post="/api/ai/provider/models/append"`,
+		`data-modal-auto-open`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("候选弹窗缺少 %q", want)
@@ -246,8 +331,55 @@ func TestAIModelPickerFragmentRenders(t *testing.T) {
 	}
 }
 
+// TestAIModelsAppendRejectsStaleVersion 钉住乐观锁：带上过期的版本号追加必须被 409 打回，
+// 且目录一个字节都没变。缺版本号是**另一类**错误（400 参数不完整），也别混成一类。
+func TestAIModelsAppendRejectsStaleVersion(t *testing.T) {
+	h, svc, _ := newAIPageEnv(t)
+	ctx := t.Context()
+
+	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "stale-gateway", DisplayName: "Stale Gateway"})
+	if err != nil {
+		t.Fatalf("新建供应商失败：%v", err)
+	}
+	if _, err = svc.SaveModels(ctx, &aidto.SaveModelsReq{
+		ProviderID: p.ID, Version: p.Version,
+		Models: []aidto.ModelEntry{{ID: "keep"}},
+	}); err != nil {
+		t.Fatalf("准备目录失败：%v", err)
+	}
+	cur, err := svc.GetProvider(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("回读版本号失败：%v", err)
+	}
+
+	// ① 缺版本号：参数不完整，不是「版本不对」。
+	rec := serveAIPage(t, h, http.MethodPost, "/api/ai/provider/models/append",
+		"providerId="+strconv.FormatInt(p.ID, 10)+"&modelIds=new-a")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("缺版本号应为 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	// ② 过期版本：被别人抢先写过，必须整批拒绝。
+	rec = serveAIPage(t, h, http.MethodPost, "/api/ai/provider/models/append",
+		"providerId="+strconv.FormatInt(p.ID, 10)+
+			"&version="+strconv.FormatInt(cur.Version-1, 10)+
+			"&modelIds=new-a")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("陈旧版本应为 409，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	// 目录必须还是原样：乐观锁的意义就是「拒绝时不留半个改动」。
+	after, err := svc.GetProvider(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("回读失败：%v", err)
+	}
+	if len(after.Models) != 1 || after.Models[0].ID != "keep" {
+		t.Fatalf("被拒绝的追加不该改目录，实际 %+v", after.Models)
+	}
+}
+
 func TestAIModelsAppendKeepsExistingRows(t *testing.T) {
-	ph, svc, _ := newAIPageEnv(t)
+	h, svc, _ := newAIPageEnv(t)
 	ctx := t.Context()
 
 	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "acme-gateway", DisplayName: "Acme Gateway"})
@@ -261,9 +393,25 @@ func TestAIModelsAppendKeepsExistingRows(t *testing.T) {
 		t.Fatalf("准备目录失败：%v", err)
 	}
 
-	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/models/append",
-		"providerId="+strconv.FormatInt(p.ID, 10)+"&modelIds=existing&modelIds=new-a&modelIds=new-a&modelIds=")
-	assertAIJump(t, rec, true, "已添加 1 个模型。")
+	// 带真实版本号：追加是「读目录 → 合并 → 按版本号写回」，缺版本是参数错误（400），
+	// 拿旧版本会被乐观锁打回（409）—— 两种情况都不能被静默放行。
+	stored, err := svc.GetProvider(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("回读版本号失败：%v", err)
+	}
+	rec := serveAIPage(t, h, http.MethodPost, "/api/ai/provider/models/append",
+		"providerId="+strconv.FormatInt(p.ID, 10)+
+			"&version="+strconv.FormatInt(stored.Version, 10)+
+			"&modelIds=existing&modelIds=new-a&modelIds=new-a&modelIds=")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("追加应成功，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if ctype := rec.Header().Get("Content-Type"); !strings.HasPrefix(ctype, "text/html") {
+		t.Fatalf("追加应回 HTML 片段，实际 Content-Type=%q", ctype)
+	}
+	if !strings.Contains(rec.Body.String(), "new-a") {
+		t.Fatalf("追加片段应回新的模型目录：%s", rec.Body.String())
+	}
 
 	after, err := svc.GetProvider(ctx, p.ID)
 	if err != nil {
@@ -282,16 +430,26 @@ func TestAIModelsAppendKeepsExistingRows(t *testing.T) {
 }
 
 func TestAIModelsAppendRejectsEmptySelection(t *testing.T) {
-	ph, svc, _ := newAIPageEnv(t)
+	h, svc, _ := newAIPageEnv(t)
 	ctx := t.Context()
 
 	p, err := svc.SaveProvider(ctx, &aidto.SaveProviderReq{ProviderKey: "acme-gateway", DisplayName: "Acme Gateway"})
 	if err != nil {
 		t.Fatalf("新建供应商失败：%v", err)
 	}
-	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/models/append",
+	rec := serveAIPage(t, h, http.MethodPost, "/api/ai/provider/models/append",
 		"providerId="+strconv.FormatInt(p.ID, 10)+"&modelIds=&modelIds=++")
-	assertAIJump(t, rec, false, "请先勾选要添加的模型。")
+	// 文案与词库逐字一致（517_ai_preset_i18n.sql 的 ai.err.noModelSelected）。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("空勾选应为 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-ui-error`) || !strings.Contains(body, "请先勾选要添加的模型。") {
+		t.Fatalf("失败应渲染 Jet 错误片段且带译文：%s", body)
+	}
+	if strings.Contains(body, "ai.err.") {
+		t.Fatalf("失败片段漏出了错误 key：%s", body)
+	}
 }
 
 func TestAISessionsPageRenders(t *testing.T) {
@@ -338,27 +496,33 @@ func TestAISessionsPageRendersTrendAndUsage(t *testing.T) {
 	data := sessionPageData()
 	data["Usage"] = aidto.SessionUsage{
 		Sessions: 3, Events: 9, Tokens: 120, Compacts: 1, AvgTokens: 40,
-		TokensText: "120", AvgTokensText: "40",
 	}
+	// 趋势只交事实：逐日 token 数组 + 总量。坐标与配色由 ai-trend.js 按 values 现算，
+	// 所以这里没有 Points / Color / TotalText —— 那些是显示格式，不是服务端事实。
 	data["Trend"] = aidto.SessionTrend{
-		From: "2026-10-01", To: "2026-10-03", Peak: 120, PeakText: "120",
+		From: "2026-10-01", To: "2026-10-03", Peak: 120,
 		Series: []aidto.TrendSeries{
-			{ProviderKey: "opencode-go", ModelID: "muse-spark", Total: 100, TotalText: "100",
-				Color: 1, Points: "0,200 500,12 1000,120"},
+			{ProviderKey: "opencode-go", ModelID: "muse-spark", Total: 100, Values: []int64{0, 108, 80}},
 
-			{Total: 20, TotalText: "20", Color: 2, Points: "0,200 500,180 1000,190"},
+			{Total: 20, Values: []int64{0, 20, 10}},
 
-			{OtherCount: 3, Total: 5, TotalText: "5", Color: 8, Points: "0,200 500,199 1000,199"},
+			{OtherCount: 3, Total: 5, Values: []int64{0, 1, 1}},
 		},
 	}
 	body := renderAITemplate(t, "admin/ai/sessions", data)
 
+	// 趋势块只验「事实与骨架」：坐标由前端算，所以这里断言逐日数组与峰值都上了页面，
+	// 而不再断言 points= / stroke=（那些由 ai-trend.js 生成，见 ai-trend.test.cjs）。
 	for _, want := range []string{
 		`class="chart-trend"`,
 		`class="chart-trend-svg"`,
-		`points="0,200 500,12 1000,120"`,
-		`stroke: var(--chart-c1)`,
-		`stroke: var(--chart-c8)`,
+		`data-trend-svg`,
+		`data-trend-peak="120"`,
+		`data-trend-legend`,
+		`data-trend-series="0"`,
+		`data-values="0 108 80"`,
+		`style="background: var(--chart-c1)"`,
+		`style="background: var(--chart-c3)"`,
 		"opencode-go / muse-spark",
 		"未记录",
 		"其他（3）",
@@ -396,20 +560,35 @@ func TestAISessionsPageModelsTabSelected(t *testing.T) {
 	}
 }
 
-func TestAIProvidersSaveValidationRedirects(t *testing.T) {
-	ph, _, _ := newAIPageEnv(t)
-	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/save", "providerKey=&displayName=")
-	assertAIJump(t, rec, false, "请填写显示名称")
-	if !strings.Contains(rec.Body.String(), `href="/admin/ai/sessions"`) {
-		t.Fatal("回跳应指向大模型管理页")
+func TestAIProvidersSaveValidationIsHTMLFailure(t *testing.T) {
+	h, _, _ := newAIPageEnv(t)
+	rec := serveAIPage(t, h, http.MethodPost, "/api/ai/provider/save", "providerKey=&displayName=")
+	// 校验失败是请求内容问题：400 + 词库文案，片段只进表单声明的错误区。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("校验失败应为 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-ui-error`) || !strings.Contains(body, "请填写显示名称") {
+		t.Fatalf("失败应渲染 Jet 错误片段且带译文：%s", body)
+	}
+	if strings.Contains(body, "ai.err.") {
+		t.Fatalf("失败片段漏出了错误 key：%s", body)
 	}
 }
 
-func TestAIProvidersSaveSuccessRedirectsAndPersists(t *testing.T) {
-	ph, svc, _ := newAIPageEnv(t)
-	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/save",
+func TestAIProvidersSaveSuccessIsHTMLAndPersists(t *testing.T) {
+	h, svc, _ := newAIPageEnv(t)
+	rec := serveAIPage(t, h, http.MethodPost, "/api/ai/provider/save",
 		"providerKey=deepseek&displayName=深度求索&apiKey=sk-ai-test-plain-0123456789abcdef")
-	assertAIJump(t, rec, true, "已保存")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存应成功，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if ctype := rec.Header().Get("Content-Type"); !strings.HasPrefix(ctype, "text/html") {
+		t.Fatalf("保存应回 HTML 片段，实际 Content-Type=%q", ctype)
+	}
+	if !strings.Contains(rec.Body.String(), "已保存") {
+		t.Fatalf("保存片段应带成功结论：%s", rec.Body.String())
+	}
 	rows, err := svc.ListProviders(t.Context())
 	if err != nil {
 		t.Fatalf("回读供应商失败：%v", err)

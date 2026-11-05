@@ -3,18 +3,20 @@ package inventoryhttp
 import (
 	"context"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.StockChangeFormReq](c)
-	if !ok {
+	var form inventorydto.StockChangeFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 
@@ -23,7 +25,7 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 			inventoryFail(c, err)
 			return
 		}
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	}
 
 	if !form.ValidDirection() {
@@ -42,20 +44,23 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 }
 
 func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.ExternalSKUFormReq](c)
-	if !ok {
+	var form inventorydto.ExternalSKUFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.BindExternalSKU(c.Request.Context(), form.BindReq()); err != nil {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.StockTrackingFormReq](c)
-	if !ok {
+	var form inventorydto.StockTrackingFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 
@@ -64,7 +69,7 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 			inventoryFail(c, err)
 			return
 		}
-		response.Success(c, nil)
+		inventoryWriteOK(c)
 	}
 
 	if form.Tracked() && form.QuantityValue() == "" {

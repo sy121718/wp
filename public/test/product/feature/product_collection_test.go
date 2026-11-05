@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
+	"go_wp/pkg/builder/core"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 	productcontract "go_wp/internal/module/product/contract"

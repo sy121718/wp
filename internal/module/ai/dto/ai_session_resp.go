@@ -93,47 +93,46 @@ type SessionQuery struct {
 }
 
 type SessionUsage struct {
-	Sessions      int64  `json:"sessions"`
-	Events        int64  `json:"events"`
-	Tokens        int64  `json:"tokens"`
-	Compacts      int64  `json:"compacts"`
-	AvgTokens     int64  `json:"avgTokens"`
-	TokensText    string `json:"tokensText"`
-	AvgTokensText string `json:"avgTokensText"`
+	Sessions  int64 `json:"sessions"`
+	Events    int64 `json:"events"`
+	Tokens    int64 `json:"tokens"`
+	Compacts  int64 `json:"compacts"`
+	AvgTokens int64 `json:"avgTokens"`
 
 	HitRateReady bool    `json:"hitRateReady"`
 	HitRatePct   float64 `json:"hitRatePct"`
-	HitRateText  string  `json:"hitRateText"`
 
 	CachedCalls        int64 `json:"cachedCalls"`
 	UsageReportedCalls int64 `json:"usageReportedCalls"`
 
-	CompactCostPct  float64 `json:"compactCostPct"`
-	CompactCostText string  `json:"compactCostText"`
+	// CompactCostPct 读作「压缩成本占 token 总量的百分比」，与 Tokens 出自同一份快照。
+	// 没有 CompactCostText：百分比文本是显示格式，模板用 percent 函数拼。
+	CompactCostPct float64 `json:"compactCostPct"`
 }
 
+// TrendSeries 是一个系列（供应商+模型）在窗口内逐日的 token 事实。
+//
+// 只交事实：逐日 token 数组与总量。没有 Points / DotX / DotY / Color / TotalText ——
+// 折线几何与配色是显示格式，归前端按数组自己算；数字缩写也是显示格式。
+// service 一旦算好坐标，换图宽/换点数/换配色都要改后端，而且数字会走样。
 type TrendSeries struct {
 	ProviderKey string `json:"providerKey"`
 	ModelID     string `json:"modelId"`
 
-	OtherCount int    `json:"otherCount"`
-	Total      int64  `json:"total"`
-	TotalText  string `json:"totalText"`
+	// OtherCount > 0 表示这是「其余若干系列」的合并项，不是单一模型。
+	OtherCount int `json:"otherCount"`
 
-	Color  int    `json:"color"`
-	Points string `json:"points"`
+	Total int64 `json:"total"`
 
-	Single bool `json:"single"`
-	DotX   int  `json:"dotX"`
-	DotY   int  `json:"dotY"`
+	// Values 是按 From..To 逐日的 token 数，长度 = 天数。索引 i 对应 From+i 天（UTC）。
+	Values []int64 `json:"values"`
 }
 
 type SessionTrend struct {
-	From     string        `json:"from"`
-	To       string        `json:"to"`
-	Peak     int64         `json:"peak"`
-	PeakText string        `json:"peakText"`
-	Series   []TrendSeries `json:"series"`
+	From   string        `json:"from"`
+	To     string        `json:"to"`
+	Peak   int64         `json:"peak"`
+	Series []TrendSeries `json:"series"`
 }
 
 type SessionFilterOptions struct {
@@ -143,10 +142,9 @@ type SessionFilterOptions struct {
 }
 
 type SessionTokenUsage struct {
-	ContextTokens int64  `json:"contextTokens"`
-	Total         int64  `json:"total"`
-	TotalText     string `json:"totalText"`
-	Compacts      int64  `json:"compacts"`
+	ContextTokens int64 `json:"contextTokens"`
+	Total         int64 `json:"total"`
+	Compacts      int64 `json:"compacts"`
 
 	Rows         []SessionTokenRow `json:"rows"`
 	HasBreakdown bool              `json:"hasBreakdown"`
@@ -158,18 +156,21 @@ type SessionTokenRow struct {
 	Tokens int64  `json:"tokens"`
 }
 
+// SessionCallRow 是一次上游调用的记录事实。
+//
+// 只交事实：调用时刻、耗时毫秒、token 数、状态、错误 key。
+// 没有 LatencyText / TokensText / ErrorText —— 缩写、耗时单位、错误文案全是显示格式，
+// 由 sessions.html 用模板函数与全局 t 取词；service 里取词会把界面语言写进业务数据。
 type SessionCallRow struct {
-	Time        string `json:"time"`
-	ProviderKey string `json:"providerKey"`
-	ModelID     string `json:"modelId"`
+	At          utils.JSONTime `json:"at"`
+	ProviderKey string         `json:"providerKey"`
+	ModelID     string         `json:"modelId"`
 
-	LatencyText string `json:"latencyText"`
-	Tokens      int64  `json:"tokens"`
-	TokensText  string `json:"tokensText"`
-	OK          bool   `json:"ok"`
+	LatencyMs int64 `json:"latencyMs"`
+	Tokens    int64 `json:"tokens"`
+	OK        bool  `json:"ok"`
 
-	ErrorKey  string `json:"errorKey"`
-	ErrorText string `json:"errorText"`
+	ErrorKey string `json:"errorKey"`
 }
 
 type SessionCalls struct {
@@ -182,7 +183,6 @@ type SessionModelUsage struct {
 	ModelID     string `json:"modelId"`
 	Events      int64  `json:"events"`
 	Tokens      int64  `json:"tokens"`
-	TokensText  string `json:"tokensText"`
 
 	Unrecorded bool `json:"unrecorded"`
 }

@@ -1,6 +1,6 @@
 package contentcontract
 
-import "go_wp/internal/builder/source"
+import "go_wp/pkg/builder/source"
 
 type ContentDataSource interface {
 	source.CollectionResolver

@@ -52,21 +52,17 @@ func stripJetComments(src string) string {
 func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 	form := readCreateForm(t)
 
-	if !strings.Contains(form, `data-write-url="/api/product/create"`) {
-		t.Fatalf(`建表单缺少 data-write-url="/api/product/create"（按钮会退化成原生提交）`)
+	if !strings.Contains(form, `hx-post="/api/product/create"`) {
+		t.Fatal("建表单必须声明真实 HTMX 写端点")
 	}
-	if !strings.Contains(form, `data-write="create"`) {
-		t.Fatalf("建表单缺少 data-write=\"create\"（写基座的必填属性）")
-	}
-
-	if !strings.Contains(form, `data-write-nav="/admin/products/edit?project=`) {
-		t.Errorf("建表单缺少 data-write-nav（成功后应去商品编辑页）")
+	if !strings.Contains(form, `data-write-nav="[data-product-created-link]"`) {
+		t.Error("导航必须引用 Jet 成功片段中的链接，不是 URL 插值串")
 	}
 
 	allowed := map[string]bool{}
 	typ := reflect.TypeOf(productdto.CreateReq{})
 	for i := 0; i < typ.NumField(); i++ {
-		tag := typ.Field(i).Tag.Get("json")
+		tag := typ.Field(i).Tag.Get("form")
 		if tag == "" || tag == "-" {
 			continue
 		}
@@ -79,7 +75,7 @@ func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 	names := formFieldNames(form)
 	for name := range names {
 		if !allowed[name] {
-			t.Errorf("表单字段 name=%q 在 CreateReq 里没有对应的 json 键（严格解码会整条 400）", name)
+			t.Errorf("表单字段 name=%q 在 CreateReq 里没有对应的原生 form tag", name)
 		}
 	}
 
@@ -102,14 +98,13 @@ func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 func TestProductCreateFormDeclaresBaseAttributes(t *testing.T) {
 	form := readCreateForm(t)
 
-	if !strings.Contains(form, `data-write-url="/api/product/create"`) {
-		t.Errorf("建表单缺少 data-write-url=\"/api/product/create\"")
-	}
-	if !strings.Contains(form, `data-write-nav="/admin/products/edit?`) {
-		t.Errorf("建表单缺少 data-write-nav（成功后要跳编辑页）")
+	for _, want := range []string{`hx-post="/api/product/create"`, `hx-target="find [data-write-result]"`, `hx-swap="innerHTML"`, `hx-sync="this:drop"`, `hx-disable="findAll button:not(:disabled)"`, `data-write-status`, `data-write-result`, `data-default-price-switch`, `data-default-price-input`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("建表单缺少 %q", want)
+		}
 	}
 
-	for _, gone := range []string{"data-product-create-host", "action=\"/admin/products/create\"", "hx-post="} {
+	for _, gone := range []string{"data-product-create-host", "data-write-url", "product={id}", "data-sku-preview", "data-warehouse-sku"} {
 		if strings.Contains(form, gone) {
 			t.Errorf("建表单仍含已撤掉的提交机制 %q", gone)
 		}

@@ -16,6 +16,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 const seedProductDetailTemplateName = "商品详情页"
@@ -39,6 +40,7 @@ func newNewPageTemplateEngine(t *testing.T) (*gin.Engine, *detailFixture, string
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(base.products, base.products)
 	handle.SetDetailTemplateDeps(base.templates, base.pres)

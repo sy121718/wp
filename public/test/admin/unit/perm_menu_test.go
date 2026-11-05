@@ -436,10 +436,15 @@ func TestMenuTreeBuild(t *testing.T) {
 		t.Fatalf("创建子菜单失败: %v", err)
 	}
 
-	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "孤儿菜单", Type: adminmodel.MenuTypeMenu, Path: "/orphan", PermissionCodes: []string{code}, ParentID: 987654, Status: 1,
-	}); err != nil {
-		t.Fatalf("创建孤儿菜单失败: %v", err)
+	// 孤儿行由历史数据造成，不是可创建的状态：MenuCreate 现在会锁父行，
+	// 父不存在即 ErrMenuParentNotFound —— 这条生产校验不能为了造测试数据而削弱。
+	// 树构建的容错必须仍然成立（父缺失的节点要升为根，不能被丢掉），所以这里
+	// 直接写一条「父已不存在」的脏记录来复现历史现场。
+	orphan := &adminmodel.MenuEntity{
+		Title: "孤儿菜单", Type: adminmodel.MenuTypeMenu, Path: "/orphan", ParentID: 987654, Status: 1,
+	}
+	if err := e.db.WithContext(ctx).Create(orphan).Error; err != nil {
+		t.Fatalf("写入历史孤儿菜单失败: %v", err)
 	}
 
 	tree, err := e.svc.MenuTree(ctx, &admindto.MenuTreeReq{})

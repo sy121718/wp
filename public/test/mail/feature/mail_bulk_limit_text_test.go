@@ -11,10 +11,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
+	pageview "go_wp/pkg/view"
 )
 
 func mailBulkOverLimitForm() url.Values {
@@ -27,10 +31,16 @@ func mailBulkOverLimitForm() url.Values {
 
 func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate, "en-US": "LIMIT %s / GOT %s"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := mailhttp.NewMailPageHandle(nil)
-	engine.POST("/admin/mail/accounts/bulk-delete", handle.MailAccountsBulkDelete)
+	engine.POST("/admin/mail/accounts/bulk-delete", pageview.HTMLFragment, handle.MailAccountsBulkDelete)
 
 	probe, _ := gin.CreateTestContext(httptest.NewRecorder())
 	probe.Request = httptest.NewRequest(http.MethodPost, "/admin/mail/accounts/bulk-delete",
@@ -48,7 +58,9 @@ func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	engine.ServeHTTP(rec, req)
 
 	body := rec.Body.String()
-	mailAssertJump(t, rec, false, "一次最多操作")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("超限应渲染 400 错误片段：%d %s", rec.Code, firstN(body, 300))
+	}
 	over := strconv.Itoa(bulkids.MaxIDs + 1)
 	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) {
 		t.Fatalf("受控提示应带上限 %d；正文前 600 字：\n%s", bulkids.MaxIDs, firstN(body, 600))
@@ -56,5 +68,5 @@ func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	if !strings.Contains(body, over) {
 		t.Fatalf("受控提示应带本次条数 %s（旧的模块重组实现丢掉的正是这个数）；正文前 600 字：\n%s", over, firstN(body, 600))
 	}
-	assertMailLeakFree(t, "批量删除超限的提示页", body)
+	assertMailLeakFree(t, "批量删除超限的错误片段", body)
 }

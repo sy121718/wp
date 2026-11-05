@@ -22,7 +22,7 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 	for _, want := range []string{
 		"待重建影响面",
-		`data-drawer-url="/admin/articles/stale/drawer"`,
+		`data-drawer-open hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-get="/admin/articles/stale/drawer"`,
 		"第一篇",
 		"/admin/articles/new",
 	} {

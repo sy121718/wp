@@ -20,7 +20,7 @@ func assertLoadFailedPage(t *testing.T, where, body string) {
 	if !strings.Contains(body, "系统内部错误") {
 		t.Fatalf("%s 的降级渲染缺归口文案：页面上没有任何提示", where)
 	}
-	if strings.Contains(body, "MsgInternalError") {
+	if strings.Contains(body, "uiInternalErr") {
 		t.Fatalf("%s 直出了裸归口 key `MsgInternalError`（应当显示译文）", where)
 	}
 
@@ -38,8 +38,8 @@ func TestPageErrI18nSeeded(t *testing.T) {
 	keys := []string{
 		"admin.common.list.loadFailedTitle",
 		"admin.common.list.loadFailedDesc",
-		"admin.product_detail_template.depsMissing",
-		"MsgInternalError",
+		"tplDepsMiss",
+		"uiInternalErr",
 	}
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		var n int64

@@ -15,6 +15,7 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
@@ -129,9 +130,12 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	prevWant := wantBase + "&page=1&limit=50"
 	renderer := templates.NewJetHTMLRender("../../../../templates", true)
 	pageRec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(pageRec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	text.AttachScope(c)
 	inst := renderer.Instance("admin/system/i18n", data)
-	inst.WriteContentType(pageRec)
-	if err := inst.Render(pageRec); err != nil {
+	inst.WriteContentType(c.Writer)
+	if err := inst.Render(c.Writer); err != nil {
 		t.Fatalf("渲染词条页失败：%v", err)
 	}
 	got := pageRec.Body.String()

@@ -15,6 +15,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
+
 	"go_wp/internal/middleware/adminctx"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
@@ -26,7 +29,7 @@ import (
 
 const sessionSendBaseURL = "http://198.51.100.7"
 
-func newSessionSendEnv(t *testing.T) (*aihttp.SessionPageHandle, *aiservice.SessionService, *aiservice.Service, *gorm.DB) {
+func newSessionSendEnv(t *testing.T) (*aihttp.SessionHandle, *aiservice.SessionService, *aiservice.Service, *gorm.DB) {
 	t.Helper()
 	svc, db := newAIProviderService(t)
 	sess := aiservice.NewSessionService(aimodel.NewSessionModel(db))
@@ -35,7 +38,8 @@ func newSessionSendEnv(t *testing.T) (*aihttp.SessionPageHandle, *aiservice.Sess
 	callLog := aimodel.NewCallLogModel(db)
 	svc.SetCallLogWriter(callLog)
 	sess.SetCallLogReader(callLog)
-	return aihttp.NewSessionPageHandle(sess, svc), sess, svc, db
+	// 续写已有会话只有一个入口：POST /api/ai/session/send（页面侧的 /admin 写路由已清退）。
+	return aihttp.NewSessionHandle(sess), sess, svc, db
 }
 
 func sessionSendUpstream(t *testing.T, svc *aiservice.Service, reply string) {
@@ -70,7 +74,7 @@ func newSessionSendProvider(t *testing.T, svc *aiservice.Service) {
 
 const sessionSendUserID int64 = 1
 
-func serveSessionSend(t *testing.T, ph *aihttp.SessionPageHandle, target, body string) *httptest.ResponseRecorder {
+func serveSessionSend(t *testing.T, h *aihttp.SessionHandle, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -80,7 +84,7 @@ func serveSessionSend(t *testing.T, ph *aihttp.SessionPageHandle, target, body s
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.POST("/admin/ai/sessions/send", ph.SessionSend)
+	engine.POST("/api/ai/session/send", h.Send)
 	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -93,18 +97,14 @@ func TestAISessionSendPageRedirectsAndAppendsTwoEvents(t *testing.T) {
 	sessionSendUpstream(t, svc, "模型回复")
 	newSessionSendProvider(t, svc)
 
-	head, err := sess.EnsureSession(context.Background(), "send-key-1", "sess-page", "muse", "会话", 0)
+	head, err := sess.EnsureSession(context.Background(), "send-key-1", "sess-page", "muse", "会话", sessionSendUserID)
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
 
-	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
+	rec := serveSessionSend(t, ph, "/api/ai/session/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	assertAIJump(t, rec, true, "消息已发送，模型已回复")
-
-	if !strings.Contains(rec.Body.String(), `href="/admin/ai/sessions"`) {
-		t.Fatalf("回跳地址不对：%s", rec.Body.String())
-	}
+	assertAIOK(t, rec, "消息已发送，模型已回复")
 
 	events, _, err := sess.ListEvents(context.Background(), head.ID, 1, 100)
 	if err != nil {
@@ -160,9 +160,9 @@ func TestAISessionSendWritesCallLog(t *testing.T) {
 		t.Fatalf("建会话失败：%v", err)
 	}
 
-	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
+	rec := serveSessionSend(t, ph, "/api/ai/session/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	assertAIJump(t, rec, true, "消息已发送，模型已回复")
+	assertAIOK(t, rec, "消息已发送，模型已回复")
 
 	row := awaitCallLog(t, db, head.ID)
 	if row.Status != string(aienums.CallStatusOK) {
@@ -219,13 +219,15 @@ func TestAISessionSendPageShowsRecentCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
-	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
+	rec := serveSessionSend(t, ph, "/api/ai/session/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	assertAIJump(t, rec, true, "消息已发送，模型已回复")
+	assertAIOK(t, rec, "消息已发送，模型已回复")
 
 	awaitCallLog(t, db, head.ID)
 
-	page := serveSessionsPage(t, ph)
+	// 页面句柄必须复用本用例的 sess/svc/db：另建一套环境会连到另一份测试库，
+	// 页面就看不到刚写进去的事件与调用流水。
+	page := serveSessionsPage(t, aihttp.NewSessionPageHandle(sess, svc))
 	if page.Code != http.StatusOK {
 		t.Fatalf("会话页状态码 = %d，想要 200；body=%s", page.Code, page.Body.String())
 	}
@@ -250,9 +252,15 @@ func TestAISessionSendWritesFailedCallLog(t *testing.T) {
 		t.Fatalf("建会话失败：%v", err)
 	}
 
-	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
+	rec := serveSessionSend(t, ph, "/api/ai/session/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=会失败")
-	assertAIJump(t, rec, false, "")
+	// 上游 500：服务端不把上游原文交给前端，只给归口文案 + 500。
+	// 归口文案就是共享出口那一句（pkg/response.InternalFallback），逐字断言。
+	failed := assertAIFail(t, rec, http.StatusInternalServerError, "")
+	wantMessage := i18n.Translate(aienums.ErrInternal, response.InternalFallback, "zh-CN")
+	if failed.Message != wantMessage {
+		t.Fatalf("失败应给生产词库归口文案 %q，实际 %q", wantMessage, failed.Message)
+	}
 
 	row := awaitCallLog(t, db, head.ID)
 	if row.Status != string(aienums.CallStatusError) {
@@ -273,14 +281,14 @@ func TestAISessionSendPageRedirectsErrOnEmptyInput(t *testing.T) {
 	ph, sess, svc, _ := newSessionSendEnv(t)
 	newSessionSendProvider(t, svc)
 
-	head, err := sess.EnsureSession(context.Background(), "send-key-2", "sess-page", "muse", "会话", 0)
+	head, err := sess.EnsureSession(context.Background(), "send-key-2", "sess-page", "muse", "会话", sessionSendUserID)
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
 
-	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
+	rec := serveSessionSend(t, ph, "/api/ai/session/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=")
-	assertAIJump(t, rec, false, "请输入消息内容")
+	assertAIFail(t, rec, http.StatusBadRequest, "请输入消息内容")
 	if events, _, err := sess.ListEvents(context.Background(), head.ID, 1, 100); err != nil || len(events) != 0 {
 		t.Fatalf("空输入不该落事件：n=%d err=%v", len(events), err)
 	}

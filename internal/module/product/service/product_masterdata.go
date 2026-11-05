@@ -45,7 +45,7 @@ func variantChangeSnapshot(v *productmodel.VariantEntity, ref *productcontract.W
 }
 
 func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantEntity, scopeID string) (projectID string, err error) {
-	if s.changes == nil || v == nil {
+	if v == nil {
 		return "", nil
 	}
 
@@ -57,14 +57,14 @@ func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantE
 }
 
 func (s *Service) recordChanges(ctx context.Context, inputs ...*masterdatacontract.ChangeInput) (err error) {
-	if s.changes == nil || len(inputs) == 0 {
+	if len(inputs) == 0 {
 		return nil
 	}
 	return s.changes.RecordChanges(ctx, inputs)
 }
 
 func (s *Service) recordChangesTx(ctx context.Context, tx *gorm.DB, inputs ...*masterdatacontract.ChangeInput) (err error) {
-	if s.changes == nil || len(inputs) == 0 {
+	if len(inputs) == 0 {
 		return nil
 	}
 	return s.changes.RecordChangesTx(ctx, tx, inputs)

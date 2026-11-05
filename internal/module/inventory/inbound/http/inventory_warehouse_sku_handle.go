@@ -2,9 +2,11 @@ package inventoryhttp
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -12,7 +14,6 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -100,32 +101,37 @@ func (h *inventoryPageHandle) stockSKURows(ctx context.Context, filter *inventor
 }
 
 func (h *inventoryPageHandle) InventoryStockCreate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseSKUFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseSKUFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.CreateStock(c.Request.Context(), form.CreateReq()); err != nil {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryStockUpdate(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.WarehouseSKUFormReq](c)
-	if !ok {
+	var form inventorydto.WarehouseSKUFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
+
 	if _, err := h.inventory.UpdateStock(c.Request.Context(), form.UpdateReq()); err != nil {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func (h *inventoryPageHandle) InventoryStockStatus(c *gin.Context) {
-	form, ok := binding.Form[inventorydto.StockStatusFormReq](c)
-	if !ok {
+	var form inventorydto.StockStatusFormReq
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
 		return
 	}
 
@@ -133,7 +139,7 @@ func (h *inventoryPageHandle) InventoryStockStatus(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	response.Success(c, nil)
+	inventoryWriteOK(c)
 }
 
 func stockStatusOptions(c *gin.Context) []OptionResp {

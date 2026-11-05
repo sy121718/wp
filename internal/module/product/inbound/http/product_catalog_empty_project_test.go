@@ -17,7 +17,7 @@ func TestProductPagesWithoutProjectsSkipDataQueries(t *testing.T) {
 		t.Run(tc.path, func(t *testing.T) {
 			projects := productPageProjectsStub{rows: []projectdto.ProjectResp{}}
 
-			svc := productservice.NewService(nil, projects)
+			svc := productservice.NewService(nil, projects, stubMasterDataChanges{})
 			h := NewProductPageHandle(svc, svc)
 			rec := productPageRequest(t, h, tc.path)
 			if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {

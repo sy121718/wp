@@ -25,8 +25,8 @@ func TestPublicCatalogPageBounds(t *testing.T) {
 		productID, projectID).Error; err != nil {
 		t.Fatalf("插入商品失败：%v", err)
 	}
-	s := productservice.NewService(productmodel.NewModel(db), listPageProjectStub{})
-	s.SetPublicCatalogIndex(&catalogIndexStub{paths: map[string]string{productID: "/p/bounds"}})
+	seedCatalogPublication(t, db, projectID, "product", productID, "detail", "zh-CN", "/p/bounds", "")
+	s := productservice.NewService(productmodel.NewModel(db), newCatalogProjectStub(projectID, "zh-CN"), stubMasterDataChanges{})
 
 	cases := []struct {
 		name             string

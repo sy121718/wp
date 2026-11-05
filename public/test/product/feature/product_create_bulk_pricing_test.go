@@ -15,9 +15,10 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
-func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
+func newCreateFlowEngine(t *testing.T, middleware ...gin.HandlerFunc) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
 	if f == nil {
@@ -26,13 +27,27 @@ func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.Use(middleware...)
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
 	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
 	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
 
-	engine.POST("/api/product/bulk-pricing", producthttp.NewProductHandle(f.svc).BulkPricing)
+	write := producthttp.NewProductHandle(f.svc)
+	engine.POST("/api/product/create", pageview.HTMLFragment, write.Create)
+	engine.POST("/api/product/update", pageview.HTMLFragment, write.Update)
+	engine.POST("/api/product/delete", pageview.HTMLFragment, write.Delete)
+	engine.POST("/api/product/bulk-delete", pageview.HTMLFragment, write.BulkDelete)
+	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), write.AddRating)
+	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), write.DeleteRating)
+	engine.POST("/api/product/bulk-pricing", write.BulkPricing)
+	engine.POST("/api/product/seo-score", pageview.HTMLFragment, handle.SeoScore)
+	engine.POST("/api/product/category/seo-score", pageview.HTMLFragment, handle.CategorySeoScore)
+	engine.POST("/api/product/brand/seo-score", pageview.HTMLFragment, handle.BrandSeoScore)
 	return engine, f
 }
 
@@ -177,18 +192,8 @@ func TestProductsBulkPricing(t *testing.T) {
 		"rounding":   productenums.PricingRoundingNone,
 		"note":       "批量改价：成本翻倍",
 	})
-	env := decodeJSONEnvelope(t, rec)
-	if env.Code != http.StatusOK {
-		t.Fatalf("批量改价应成功，实际 %d：%s", env.Code, env.Message)
-	}
-	if got, _ := env.Data["done"].(float64); int(got) != 2 {
-		t.Fatalf("done 应为 2，实际 %v（data=%v）", env.Data["done"], env.Data)
-	}
-	if got, _ := env.Data["changedVariants"].(float64); int(got) != 2 {
-		t.Fatalf("changedVariants 应为 2，实际 %v", env.Data["changedVariants"])
-	}
-	if _, ok := env.Data["skipped"]; ok {
-		t.Fatalf("整批或零不该有 skipped 桶，data=%v", env.Data)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("批量改价应返回 HTML 成功片段，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 
 	got1, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p1.ID})

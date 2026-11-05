@@ -87,20 +87,20 @@ func TestProductPublishRecordPageRendersStates(t *testing.T) {
 	}
 }
 
-func TestProductPublishRecordPageNotWiredRendersHint(t *testing.T) {
-	view := publishRecordListStub(func(v *productcontract.PublishRecordList) {
-		v.Available = false
-	})
+// TestProductPublishRecordPageRendersEmptyState 守住「没有发布事实时是空态，不是提示页」：
+// 发布记录页已改成模块内一次只读语句，不再有「端口没接」这一档，页面照常 200 渲染。
+func TestProductPublishRecordPageRendersEmptyState(t *testing.T) {
+	view := publishRecordListStub(func(*productcontract.PublishRecordList) {})
 	reader := &publicationReaderStub{publishView: view}
 	h := &ProductPageHandle{reader: reader, products: reader}
 
 	rec := publishRecordRequest(t, h, "/admin/products/publish-records?project=p1")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
-		t.Fatalf("未装配档也应是 200（提示而非错误），实际 %d，body=%s", rec.Code, headOf(body))
+		t.Fatalf("空档也应是 200（空态而非错误），实际 %d，body=%s", rec.Code, headOf(body))
 	}
-	if !strings.Contains(body, "发布能力还没有接入这一屏") {
-		t.Fatalf("缺少未装配提示：%s", headOf(body))
+	if !strings.Contains(body, "publish-records") && !strings.Contains(body, "发布") {
+		t.Fatalf("空态页应渲染发布记录模板：%s", headOf(body))
 	}
 }
 
@@ -128,7 +128,7 @@ func (s *publicationReaderStub) QueryPublishRecords(_ context.Context, req *prod
 	return s.publishView, s.publishErr
 }
 func publishRecordListStub(change func(*productcontract.PublishRecordList)) *productcontract.PublishRecordList {
-	r := &productcontract.PublishRecordList{Available: true, Records: []productdto.PublishRecordRowResp{}, Page: 1, Limit: 20}
+	r := &productcontract.PublishRecordList{Records: []productdto.PublishRecordRowResp{}, Page: 1, Limit: 20}
 	change(r)
 	return r
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/builtin"
@@ -22,6 +23,7 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -36,11 +38,9 @@ func (h *Handle) Chat(c *gin.Context) {
 	req.SessionID = 0
 	result, err := h.svc.Chat(c.Request.Context(), req)
 	if err != nil {
-		code := http.StatusBadRequest
-		if errors.Is(err, aiservice.ErrProviderNotFound) {
-			code = http.StatusNotFound
-		}
-		response.ErrorAuto(c, code, "ai", err)
+		// 状态码由错误声明决定：这里原本手工映射 providerNotFound→404，其余一律 400，
+		// 等于把 409 版本冲突、401 未登录也压成 400。
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, result)
@@ -59,18 +59,18 @@ type fabStreamChunk struct {
 func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 	providerKey, model, ok := h.defaultModel(c.Request.Context())
 	if !ok {
-		writeFabStreamError(c, fabText(aienums.MsgFabNoModel))
+		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: aienums.MsgFabNoModel}))
 		return
 	}
 
 	form, ferr := binding.ParseForm[aidto.FabAskFormReq](c)
 	if ferr != nil {
-		writeFabStreamError(c, fabText(aienums.MsgFabEmptyInput))
+		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: aienums.MsgFabEmptyInput}))
 		return
 	}
 	input := strings.TrimSpace(form.Input)
 	if input == "" {
-		writeFabStreamError(c, fabText(aienums.MsgFabEmptyInput))
+		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: aienums.MsgFabEmptyInput}))
 		return
 	}
 	truncated := false
@@ -81,7 +81,7 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 
 	images, imageLabels, imgErr := parseFabImages(form.Images, form.ImageLabels)
 	if imgErr != nil {
-		writeFabStreamError(c, fabText(imgErr.Key))
+		writeFabStreamError(c, response.MsgText(c, facing.Msg{Key: imgErr.Key}))
 		return
 	}
 
@@ -117,22 +117,22 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		flush(fabStreamChunk{Kind: ev.Kind, Text: ev.Text})
 	})
 	if err != nil {
-		flush(fabStreamChunk{Kind: "error", Text: fabText(aienums.MsgFabFailed)})
+		flush(fabStreamChunk{Kind: "error", Text: response.MsgText(c, facing.Msg{Key: aienums.MsgFabFailed})})
 		return
 	}
 
 	answer := strings.TrimSpace(res.AssistantEvent.Content)
-	note := fabDoneNote(res, truncated)
+	note := fabDoneNote(c, res, truncated)
 	flush(fabStreamChunk{Kind: "done", Answer: answer, Note: note})
 }
 
-func fabDoneNote(res *aidto.SendMessageResult, truncated bool) string {
+func fabDoneNote(c *gin.Context, res *aidto.SendMessageResult, truncated bool) string {
 	parts := make([]string, 0, 2)
 	if truncated {
-		parts = append(parts, fabText(aienums.MsgFabTruncated))
+		parts = append(parts, response.MsgText(c, facing.Msg{Key: aienums.MsgFabTruncated}))
 	}
 	if n := len(res.ToolEvents); n > 0 {
-		parts = append(parts, fabText(aienums.MsgFabToolsPrefix)+strconv.Itoa(n)+fabText(aienums.MsgFabToolsSuffix))
+		parts = append(parts, response.MsgText(c, facing.Msg{Key: aienums.MsgFabToolsPrefix})+strconv.Itoa(n)+response.MsgText(c, facing.Msg{Key: aienums.MsgFabToolsSuffix}))
 	}
 	return strings.Join(parts, " ")
 }
@@ -141,7 +141,7 @@ func (h *SessionPageHandle) FabHistory(c *gin.Context) {
 	uid := int64(builtin.CurrentUserID(c))
 	turns, err := h.svc.RecentDialogue(c.Request.Context(), fabSessionKeyOf(uid), 0, uid)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	if turns == nil {
@@ -168,7 +168,7 @@ func NewHandle(svc aicontract.AIService) *Handle { return &Handle{svc: svc} }
 func (h *Handle) ListProviders(c *gin.Context) {
 	rows, err := h.svc.ListProviders(c.Request.Context())
 	if err != nil {
-		response.ErrorAuto(c, http.StatusInternalServerError, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, gin.H{"list": rows})
@@ -177,98 +177,112 @@ func (h *Handle) ListProviders(c *gin.Context) {
 func (h *Handle) GetProvider(c *gin.Context) {
 	id := parseInt64(c.Query("id"))
 	if id <= 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+		aiErrExit(c, aienums.Err(aienums.ErrInvalidParam))
 		return
 	}
 	provider, err := h.svc.GetProvider(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, provider)
 }
 
 func (h *Handle) SaveProvider(c *gin.Context) {
-	req, ok := binding.JSON[aidto.SaveProviderReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.SaveProviderReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SaveProvider(c.Request.Context(), req)
+	provider, err := h.svc.SaveProvider(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, aienums.MsgSaved, provider)
+	// 新建时卡片还不存在，页面刷新后由服务端渲染；保存现有卡片时只回这张卡。
+	if req.ID == 0 {
+		aiWriteResult(c, aienums.MsgSaved)
+		return
+	}
+	c.HTML(http.StatusOK, aiProviderCardName, aiProviderCardData(c, *provider))
 }
 
 func (h *Handle) DeleteProvider(c *gin.Context) {
-	id, err := bindID(c)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	c.Header("Cache-Control", "no-store")
+	var req aidto.ProviderDeleteReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil || req.ID <= 0 {
+		aiWriteBadInput(c)
 		return
 	}
-	if err = h.svc.DeleteProvider(c.Request.Context(), id); err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "ai", err)
+	if err := h.svc.DeleteProvider(c.Request.Context(), req.ID); err != nil {
+		aiWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, aienums.MsgDeleted, nil)
+	aiWriteResult(c, aienums.MsgDeleted)
 }
 
 func (h *Handle) SetProviderStatus(c *gin.Context) {
-	req, ok := binding.JSON[aidto.SetStatusReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.SetStatusReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SetProviderStatus(c.Request.Context(), req)
+	provider, err := h.svc.SetProviderStatus(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, aienums.MsgStatusChanged, provider)
+	c.HTML(http.StatusOK, aiProviderCardName, aiProviderCardData(c, *provider))
 }
 
 func (h *Handle) ListModels(c *gin.Context) {
 	id, err := bindID(c)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+		aiErrExit(c, aienums.Err(aienums.ErrInvalidParam))
 		return
 	}
 	provider, err := h.svc.GetProvider(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, gin.H{"providerId": provider.ID, "list": provider.Models})
 }
 
 func (h *Handle) SaveModels(c *gin.Context) {
-	req, ok := binding.JSON[aidto.SaveModelsReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.SaveModelsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SaveModels(c.Request.Context(), req)
+	provider, err := h.svc.SaveModels(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, aienums.MsgModelsSaved, provider)
+	c.HTML(http.StatusOK, aiProviderCardName, aiProviderCardData(c, *provider))
 }
 
 func (h *Handle) RestoreDefaultModels(c *gin.Context) {
-	req, ok := binding.JSON[aidto.ProviderActionReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.ProviderActionReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), req)
+	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, aienums.MsgModelsRestored, provider)
+	c.HTML(http.StatusOK, aiProviderCardName, aiProviderCardData(c, *provider))
 }
 
 func (h *Handle) FetchAvailableModels(c *gin.Context) {
@@ -279,10 +293,60 @@ func (h *Handle) FetchAvailableModels(c *gin.Context) {
 	req.UpdateBy = userID(c)
 	result, err := h.svc.FetchAvailableModels(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, aienums.MsgModelsFetched, result)
+}
+
+// ModelCandidates 交候选清单：远端可用模型 + 目录里已有的 id。
+//
+// 与 fetch 的区别是**不落库**：这里只探一次远端、回事实，用户勾完再走 append。
+// 服务端不再自己决定「弹窗怎么显示」—— 前端按 provider / candidates / existing 重绘。
+func (h *Handle) ModelCandidates(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.ProviderActionReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
+		return
+	}
+	req.UpdateBy = userID(c)
+	result, err := h.svc.FetchModelCandidates(c.Request.Context(), &req)
+	if err != nil {
+		aiWriteFail(c, err)
+		return
+	}
+	existing := make(map[string]bool, len(result.Existing))
+	for _, id := range result.Existing {
+		existing[id] = true
+	}
+	c.HTML(http.StatusOK, "admin/ai/provider_picker.html", aiFragmentData(c, gin.H{
+		"Provider":   result.Provider,
+		"Candidates": result.Candidates,
+		"Existing":   existing,
+	}))
+}
+
+// AppendModels 把勾选的模型追加进目录（全成或全败）。
+//
+// 去重 / 上限 / 乐观锁 / 「一个都没加」都归 service；这里只做绑定、调一次、出口。
+func (h *Handle) AppendModels(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var req aidto.AppendModelsReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
+		return
+	}
+	provider, _, err := h.svc.AppendModels(
+		c.Request.Context(), req.ProviderID, req.Version, userID(c), req.ModelIDs)
+	if err != nil {
+		aiWriteFail(c, err)
+		return
+	}
+	// 成功：模型目录换回服务端事实，并把候选弹窗宿主清空（弹窗随之关闭）。
+	c.HTML(http.StatusOK, "admin/ai/ai_models_appended.html", aiFragmentData(c, gin.H{
+		"Models": providerCardModels(c, *provider),
+	}))
 }
 
 func bindID(c *gin.Context) (int64, error) {
@@ -380,11 +444,11 @@ func (e *McpEndpoint) Handle(c *gin.Context) {
 	if err != nil {
 
 		c.Header("WWW-Authenticate", "Bearer")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": facingKey(aienums.ErrTokenInvalid)})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgText(c, facing.Msg{Key: aienums.MsgMcpTokenInvalid, Fallback: "访问令牌无效"})})
 		return
 	}
 	if e.registry == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": facingKey(aienums.ErrToolRunFailed)})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": response.MsgText(c, facing.Msg{Key: aienums.MsgMcpToolRunFailed, Fallback: "工具执行失败"})})
 		return
 	}
 
@@ -502,7 +566,7 @@ func (e *McpEndpoint) callTool(c *gin.Context, req rpcRequest, id *aiservice.Tok
 	if err != nil {
 
 		var argsErr *mcp.ArgsError
-		text := facingKey(aienums.ErrToolRunFailed)
+		text := response.MsgText(c, facing.Msg{Key: aienums.MsgMcpToolRunFailed, Fallback: "工具执行失败"})
 		if errors.As(err, &argsErr) {
 			text = argsErr.Msg
 		}
@@ -606,7 +670,7 @@ func (h *SessionHandle) List(c *gin.Context) {
 	status := sessionIntOr(c.DefaultQuery("status", "-1"), -1)
 	rows, total, err := h.svc.ListSessions(c.Request.Context(), c.Query("keyword"), status, page, size)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, gin.H{"items": rows, "total": total, "page": page, "size": size})
@@ -615,12 +679,12 @@ func (h *SessionHandle) List(c *gin.Context) {
 func (h *SessionHandle) Get(c *gin.Context) {
 	id, err := bindID(c)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	detail, err := h.svc.GetSession(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, detail)
@@ -629,14 +693,14 @@ func (h *SessionHandle) Get(c *gin.Context) {
 func (h *SessionHandle) Events(c *gin.Context) {
 	id, err := bindID(c)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	page := sessionIntOr(c.DefaultQuery("page", "1"), 1)
 	size := sessionIntOr(c.DefaultQuery("size", "50"), 50)
 	rows, total, err := h.svc.ListEvents(c.Request.Context(), id, page, size)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, gin.H{"items": rows, "total": total})
@@ -660,10 +724,32 @@ func (h *SessionHandle) Append(c *gin.Context) {
 		UserID:      userID(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, aienums.MsgSessionAppended, res)
+}
+
+// Send 往**已有会话**续写一条消息并等模型回复。
+//
+// 为什么不复用 /api/ai/chat：Chat 的语义是「开一段新对话」，它把 SessionID 清 0 再交给
+// service。这里是「在这个会话里继续说」，sessionId 是必填入口参数 —— 两者混用会让一次
+// 续写变成新会话，历史全丢。输入内容的校验、失败轮次标记、工具调用都在 service 里，
+// 这里只绑定、调一次、出口。
+func (h *SessionHandle) Send(c *gin.Context) {
+	req, ok := binding.JSON[aidto.SendMessageReq](c)
+	if !ok {
+		return
+	}
+	req.UserID = userID(c)
+	result, err := h.svc.SendMessage(c.Request.Context(), *req)
+	if err != nil {
+		aiErrExit(c, err)
+		return
+	}
+	// 走 SuccessMsg + facing.Msg：裸 key 交给 SuccessWithMessage 会被当作文案原样回显，
+	// 只有命中词库时才是译文。既有收口是 facing.Msg 这一条。
+	response.SuccessMsg(c, facing.Msg{Key: aienums.MsgSessionSent}, result)
 }
 
 func (h *SessionHandle) Rename(c *gin.Context) {
@@ -685,7 +771,7 @@ func (h *SessionHandle) Rename(c *gin.Context) {
 		UserID:      userID(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, aienums.MsgSessionRenamed, res)
@@ -705,7 +791,7 @@ func (h *SessionHandle) Archive(c *gin.Context) {
 		UserID:  userID(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, aienums.MsgSessionRenamed, res)
@@ -721,7 +807,7 @@ func (h *SessionHandle) FoldPlan(c *gin.Context) {
 		KeepRecent: body.KeepRecent,
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, plan)
@@ -741,7 +827,7 @@ func (h *SessionHandle) Fold(c *gin.Context) {
 		UserID:        userID(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, aienums.MsgSessionFolded, res)
@@ -756,24 +842,32 @@ func sessionIntOr(raw string, def int) int {
 }
 
 type TokenHandle struct {
-	svc *aiservice.AccessTokenService
+	svc    *aiservice.AccessTokenService
+	config sysconfigcontract.Service
 }
 
 func NewTokenHandle(svc *aiservice.AccessTokenService) *TokenHandle { return &TokenHandle{svc: svc} }
 
+// SetConfigService 注入配置端口：对外接入点开关就存在 AI 配置组里。
+func (h *TokenHandle) SetConfigService(cfg sysconfigcontract.Service) { h.config = cfg }
+
 type tokenCreateBody struct {
-	Name      string   `json:"name"`
-	Scopes    []string `json:"scopes"`
-	ExpiresAt string   `json:"expiresAt"`
+	Name      string   `json:"name" form:"name"`
+	Scopes    []string `json:"scopes" form:"scopes"`
+	ExpiresAt string   `json:"expiresAt" form:"expiresAt"`
 }
 
 type tokenRevokeBody struct {
-	ID int64 `json:"id"`
+	ID int64 `json:"id" form:"id"`
+}
+
+type mcpToggleBody struct {
+	Enabled string `json:"enabled" form:"enabled"`
 }
 
 func (h *TokenHandle) List(c *gin.Context) {
 	if h.svc == nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, aienums.ErrInternal)
+		aiErrExit(c, aienums.Err(aienums.ErrInternal))
 		return
 	}
 
@@ -784,7 +878,7 @@ func (h *TokenHandle) List(c *gin.Context) {
 	}
 	rows, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiErrExit(c, err)
 		return
 	}
 	response.Success(c, gin.H{"list": rows})
@@ -792,11 +886,13 @@ func (h *TokenHandle) List(c *gin.Context) {
 
 func (h *TokenHandle) Create(c *gin.Context) {
 	if h.svc == nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, aienums.ErrInternal)
+		aiErrExit(c, aienums.Err(aienums.ErrInternal))
 		return
 	}
-	body, ok := binding.JSON[tokenCreateBody](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var body tokenCreateBody
+	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), &aidto.TokenCreateReq{
@@ -807,26 +903,73 @@ func (h *TokenHandle) Create(c *gin.Context) {
 		UserID: userID(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		aiWriteFail(c, err)
 		return
 	}
-	response.Success(c, res)
+	// 一次性明文只在本响应里出现一次：模板把它写进结果区，之后任何接口都不会再回它。
+	rows, err := h.svc.List(c.Request.Context(), &aidto.TokenListReq{All: true, UserID: userID(c)})
+	if err != nil {
+		aiWriteFail(c, err)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/ai/mcp_token_created.html", aiFragmentData(c, gin.H{
+		"Token":  res.Token,
+		"Tokens": toAnyRows(tokenRows(rows)),
+	}))
 }
 
 func (h *TokenHandle) Revoke(c *gin.Context) {
 	if h.svc == nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, aienums.ErrInternal)
+		aiErrExit(c, aienums.Err(aienums.ErrInternal))
 		return
 	}
-	body, ok := binding.JSON[tokenRevokeBody](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var body tokenRevokeBody
+	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil || body.ID <= 0 {
+		// id 是必填入口参数：缺了是参数错误（400），不能落进「找不到这个 id」那条路。
+		// 传一个不存在的 id 仍然走 404 —— 两种情况的语义不同，前端要能分辨。
+		aiWriteBadInput(c)
 		return
 	}
-	if err := h.svc.Revoke(c.Request.Context(), body.ID); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+	item, err := h.svc.RevokeWithFact(c.Request.Context(), body.ID)
+	if err != nil {
+		aiWriteFail(c, err)
 		return
 	}
-	response.Success(c, gin.H{"id": body.ID})
+	// 撤销不删行：审计要能回答「什么时候撤的」。回同一份行模板把状态换成已撤销事实。
+	c.HTML(http.StatusOK, "admin/ai/mcp_token_row.html", aiFragmentData(c, gin.H{
+		"Token": tokenRows([]aidto.TokenItem{item})[0],
+	}))
+}
+
+// SetMcpEnabled 开关对外接入点。
+//
+// 读-改-写整组配置是业务写入，放 service（AccessTokenService.SetMcpEnabled）；
+// 这里只绑定、调一次、出口。开关的成败用两个既有的词条交代，不拼句子。
+func (h *TokenHandle) SetMcpEnabled(c *gin.Context) {
+	if h.svc == nil || h.config == nil {
+		aiErrExit(c, aienums.Err(aienums.ErrInternal))
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	var body mcpToggleBody
+	if err := c.ShouldBindWith(&body, ginbinding.FormPost); err != nil {
+		aiWriteBadInput(c)
+		return
+	}
+	enabled := strings.TrimSpace(body.Enabled) == "1"
+	if err := h.svc.SetMcpEnabled(c.Request.Context(), h.config, enabled, userID(c)); err != nil {
+		aiErrExit(c, err)
+		return
+	}
+	key := aienums.McpSwitchOffDone
+	if enabled {
+		key = aienums.McpSwitchOnDone
+	}
+	c.HTML(http.StatusOK, "admin/ai/mcp_switch_result.html", aiFragmentData(c, gin.H{
+		"Key":     key,
+		"Enabled": enabled,
+	}))
 }
 
 const (
@@ -969,16 +1112,9 @@ func failureText(tool string, err error) (string, aienums.ToolCallStatus) {
 	}
 	var permErr *mcp.PermissionError
 	if errors.As(err, &permErr) {
-		return facingKey(aienums.ErrToolForbidden), aienums.ToolCallStatusForbidden
+		return aienums.ErrToolForbidden, aienums.ToolCallStatusForbidden
 	}
 
 	logger.Scene("ai").With("tool", tool).Error(err, "工具执行失败")
-	return facingKey(aienums.ErrToolRunFailed), aienums.ToolCallStatusFailed
-}
-
-func facingKey(key string) string {
-	if text, ok := aienums.FacingText(key); ok {
-		return text
-	}
-	return key
+	return aienums.ErrToolRunFailed, aienums.ToolCallStatusFailed
 }

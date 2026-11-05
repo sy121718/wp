@@ -11,7 +11,7 @@ import (
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aiservice "go_wp/internal/module/ai/service"
-	"go_wp/internal/uispec"
+	"go_wp/pkg/uispec"
 )
 
 type renderStubProvider struct {

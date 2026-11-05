@@ -3,10 +3,10 @@ package productenums
 import "go_wp/pkg/facing"
 
 const (
-	ErrDetailTemplateNameRequired = "product.err.detailTemplateNameRequired"
-	ErrDetailTemplatePathRequired = "product.err.detailTemplatePathRequired"
-	ErrDetailTemplateUnavailable  = "product.err.detailTemplateUnavailable"
-	ErrDetailTemplatePreviewEmpty = "product.err.detailTemplatePreviewEmpty"
+	ErrDetailTemplateNameRequired = "pTplNameReq"
+	ErrDetailTemplatePathRequired = "pTplPathReq"
+	ErrDetailTemplateUnavailable  = "pTplUnavailable"
+	ErrDetailTemplatePreviewEmpty = "pTplPreviewNil"
 )
 
 func ActionDoneMessage() facing.Msg {

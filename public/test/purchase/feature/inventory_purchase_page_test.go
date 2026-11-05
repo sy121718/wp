@@ -20,6 +20,8 @@ import (
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 )
 
@@ -32,6 +34,8 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
@@ -47,9 +51,9 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	handle := purchasehttp.NewPurchasePageHandle(f.purchase, f.stock, f.projects)
 	handle.SetCatalog(f.catalog)
 	engine.GET("/admin/inventory/purchases", adminui.PageSlot(purchasehttp.PurchasesPageTemplate), handle.PurchasesPage)
-	engine.POST("/admin/inventory/purchases/create", handle.PurchaseCreate)
-	engine.POST("/admin/inventory/purchases/receipt", handle.PurchaseReceipt)
-	engine.POST("/admin/inventory/purchases/production", handle.PurchaseProduction)
+	engine.POST("/admin/inventory/purchases/create", pageview.HTMLFragment, handle.PurchaseCreate)
+	engine.POST("/admin/inventory/purchases/receipt", pageview.HTMLFragment, handle.PurchaseReceipt)
+	engine.POST("/admin/inventory/purchases/production", pageview.HTMLFragment, handle.PurchaseProduction)
 
 	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), pageHandle.InventoryPage)
@@ -103,8 +107,8 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	for _, want := range []string{
 		"采购入库", "新建采购单",
 		"name=\"csrf_token\"",
-		"action=\"/admin/inventory/purchases/create?",
-		"action=\"/admin/inventory/purchases/production?",
+		"hx-post=\"/admin/inventory/purchases/create?",
+		"hx-post=\"/admin/inventory/purchases/production?",
 		"data-drawer-open=\"#tpl-purchase-create\"",
 	} {
 		if !strings.Contains(body, want) {
@@ -120,7 +124,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 			t.Fatalf("库存页缺少「入库走单据」的边界提示 %s", want)
 		}
 	}
-	if strings.Contains(invBody, "action=\"/admin/inventory/production\"") {
+	if strings.Contains(invBody, "hx-post=\"/admin/inventory/production\"") {
 		t.Fatalf("库存管理页不应再有内联的生产入库表单")
 	}
 
@@ -172,7 +176,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	}
 
 	rec = httptestGet(engine, "/admin/inventory/purchases?project="+f.projectID)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "action=\"/admin/inventory/purchases/receipt?") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "hx-post=\"/admin/inventory/purchases/receipt?") {
 		t.Fatalf("有采购单后页面应渲染收货表单，实际 %d", rec.Code)
 	}
 

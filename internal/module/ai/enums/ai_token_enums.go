@@ -8,13 +8,6 @@ const (
 	TokenStatusActive TokenStatus = 1
 )
 
-func TokenStatusLabel(s int16) string {
-	if s == int16(TokenStatusActive) {
-		return "启用"
-	}
-	return "已撤销"
-}
-
 const (
 	ErrTokenNotFound = "ai.err.tokenNotFound"
 

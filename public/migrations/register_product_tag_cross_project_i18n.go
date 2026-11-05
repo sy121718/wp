@@ -14,7 +14,7 @@ func registerProductTagCrossProjectI18nSeed() {
 		Version:   "312-i18n-seed-product-tag-cross-project",
 		TableName: "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN ('ErrTagCrossProject')",
-		SQL: mustSQL("312_i18n_seed_product_tag_cross_project.sql"),
+			"WHERE lang = 'zh-CN' AND item_key IN ('pTagCrossScope')",
+		SQL: mustSQL("718g_current_312_i18n_seed_product_tag_cross_project.sql"),
 	})
 }

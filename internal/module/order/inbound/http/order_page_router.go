@@ -82,7 +82,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	pages.POST("/orders/create",
 		builtin.CasbinMiddlewareForPath("/api/order/create"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.HTMLFragment,
 		orderCreate.OrderCreateSubmit)
 
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)

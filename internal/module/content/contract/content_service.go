@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/source"
 	"go_wp/internal/module/content/dto"
 )
 

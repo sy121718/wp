@@ -17,6 +17,8 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	"go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -40,7 +42,11 @@ func serveMenusPage(t *testing.T, handle *adminhttp.AdminPagesHandle, target str
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.GET("/admin/menus", adminui.PageSlot(adminhttp.MenusPageTemplate), handle.MenusPage)
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.GET("/admin/menus", view.HTMLPage, adminui.PageSlot(adminhttp.MenusPageTemplate), handle.MenusPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
@@ -136,7 +142,10 @@ func serveMenusUpdate(t *testing.T, handle *adminhttp.AdminPagesHandle, form url
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.POST("/admin/menus/update", handle.MenusUpdate)
+	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	engine.POST("/admin/menus/update", view.HTMLFragment, handle.MenusUpdate)
 	req := httptest.NewRequest(http.MethodPost, "/admin/menus/update", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -178,11 +187,11 @@ func TestMenusUpdateParentKeepsUneditedColumns(t *testing.T) {
 		"permission_codes": {"product:tag_list"},
 	}
 	rec := serveMenusUpdate(t, handle, form)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("保存成功应渲染整页提示（200，见 admin_jump.go），实际 %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("保存成功应返回 HTML 确认片段，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("成功提示页应带 data-jump-state=\"ok\"：%s", rec.Body.String())
+	if rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
+		t.Fatalf("成功响应不得决定界面导航: %s", rec.Body.String())
 	}
 
 	row, err := m.GetByID(ctx, child)

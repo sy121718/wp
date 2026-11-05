@@ -11,7 +11,7 @@ import (
 )
 
 func orderRfmScored(tx *gorm.DB, projectID string, from, to time.Time) *gorm.DB {
-	statuses := strings.Join(paidStatuses, ",")
+	statuses := strings.Join(DefaultSalesStatuses, ",")
 	agg := tx.Table(OrderEntity{}.TableName()+" AS o").
 		Select("o.user_id, MAX(o.create_time) AS last_at, "+
 			"COUNT(*) FILTER (WHERE o.create_time >= ? AND o.create_time < ?) AS freq, "+

@@ -4,7 +4,6 @@ import (
 	"go_wp/internal/middleware/builtin"
 	"strings"
 
-	"go_wp/internal/adminui"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
@@ -56,25 +55,25 @@ func navigationErrText(c *gin.Context, err error) string {
 	return fact.Key
 }
 
-func navigationErrMsg(c *gin.Context, err error) adminui.Msg {
+func navigationErrMsg(c *gin.Context, err error) facing.Msg {
 	fact, business := navigationFact(err)
 	if !business {
-		return adminui.Msg{Key: navigationInternalKey, Fallback: navigationInternalFallback}
+		return facing.Msg{Key: navigationInternalKey, Fallback: navigationInternalFallback}
 	}
 	return navigationFactMsg(c, fact)
 }
 
-func navigationFactMsg(c *gin.Context, fact facing.Fact) adminui.Msg {
+func navigationFactMsg(c *gin.Context, fact facing.Fact) facing.Msg {
 	if key, param, hasParam := strings.Cut(fact.Key, "|"); hasParam {
-		return adminui.Msg{Key: key, Fallback: fact.Fallback}.WithArgs(param)
+		return facing.Msg{Key: key, Fallback: fact.Fallback}.WithArgs(param)
 	}
 	if fact.Tail != "" {
-		return adminui.Msg{
-			Fallback: adminui.TranslateArgs(c, fact.Key, fact.Fallback, nil) +
+		return facing.Msg{
+			Fallback: response.ArgsText(c, fact.Key, fact.Fallback, nil) +
 				navigationDetailSep(c) + fact.Tail,
 		}
 	}
-	return adminui.Msg{Key: fact.Key, Fallback: fact.Fallback}
+	return facing.Msg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
 var navigationReasonFallbacks = map[string]string{
@@ -82,9 +81,6 @@ var navigationReasonFallbacks = map[string]string{
 }
 
 func navigationReasonFallback(key string) string {
-	if text := navigationenums.FallbackFor(key); text != "" {
-		return text
-	}
 	return navigationReasonFallbacks[key]
 }
 
@@ -136,7 +132,7 @@ func navigationReasonFallbackText(msg string) string {
 }
 
 func navTr(c *gin.Context) func(key, fallback string) string {
-	return func(key, fallback string) string { return adminui.TranslateArgs(c, key, fallback, nil) }
+	return func(key, fallback string) string { return response.ArgsText(c, key, fallback, nil) }
 }
 
 var navNoticeItemMissing = navText{Key: navigationenums.ErrNotFound, Fallback: "菜单项不存在"}
@@ -147,4 +143,4 @@ var navNoticeNoSourcePicked = navText{
 	Key: navigationenums.NoticeNoSourcePicked, Fallback: "请至少勾选一项要加入菜单的内容。",
 }
 
-type navText = adminui.Msg
+type navText = facing.Msg

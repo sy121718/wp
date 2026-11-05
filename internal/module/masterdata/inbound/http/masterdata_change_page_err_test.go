@@ -91,7 +91,7 @@ func TestMasterDataChangesPageDegradesWhenProjectListFails(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"MsgInternalError",
+		"uiInternalErr",
 		"SQLSTATE", "projects\"", "42P01",
 		"没有符合条件的变更记录", "没有任何变更记录",
 	} {

@@ -326,14 +326,13 @@ func reportContentMisses(lang string, candidates int, misses int64) {
 }
 
 var (
-	ErrPageLangExcluded = facing.New(pageenums.ErrPageLangExcluded, "该语言已被本页排除")
+	ErrPageLangExcluded = facing.New(pageenums.ErrPageLangExcluded)
 
-	ErrCannotExcludeDefaultLang = facing.New(pageenums.ErrCannotExcludeDefaultLang,
-		"不能排除站点默认语言：它的产物承载 x-default，且「默认语言无前缀」的路径映射以它为锚点")
+	ErrCannotExcludeDefaultLang = facing.New(pageenums.ErrCannotExcludeDefaultLang)
 
-	ErrLangAlreadyExcluded = facing.New(pageenums.ErrLangAlreadyExcluded, "该语言已被本页排除，无需重复操作")
+	ErrLangAlreadyExcluded = facing.New(pageenums.ErrLangAlreadyExcluded)
 
-	ErrLangNotExcluded = facing.New(pageenums.ErrLangNotExcluded, "该语言未被本页排除，无从恢复")
+	ErrLangNotExcluded = facing.New(pageenums.ErrLangNotExcluded)
 )
 
 func pageExcludesLang(page *pagemodel.PageEntity, lang string) bool {

@@ -145,8 +145,8 @@ func baselineCases(t *testing.T, db *gorm.DB, projectID string, rows int, liveLi
 			args:  []any{projectID, keywordPattern("商品 1"), keywordPattern("商品 1")},
 		},
 		{
-			label: "发布记录本页投影 LIMIT 20 OFFSET 0（只读四列）",
-			sql: "SELECT id, project_id, name, slug FROM products WHERE project_id = ? " +
+			label: "发布记录整页候选 LIMIT 20 OFFSET 0（只读六列）",
+			sql: "SELECT id, project_id, name, slug, sort, create_time FROM products WHERE project_id = ? " +
 				"ORDER BY sort ASC, create_time DESC, id ASC LIMIT 20 OFFSET 0",
 			args: []any{projectID},
 		},
@@ -204,12 +204,16 @@ func TestProductSQLBaselineCasesMatchProduction(t *testing.T) {
 
 	var capturedSQL string
 	var capturedVars []any
-	if err := db.Callback().Query().After("gorm:query").Register("baseline:capture",
-		func(tx *gorm.DB) {
-			capturedSQL = tx.Statement.SQL.String()
-			capturedVars = append([]any(nil), tx.Statement.Vars...)
-		}); err != nil {
+	capture := func(tx *gorm.DB) {
+		capturedSQL = tx.Statement.SQL.String()
+		capturedVars = append([]any(nil), tx.Statement.Vars...)
+	}
+	if err := db.Callback().Query().After("gorm:query").Register("baseline:capture", capture); err != nil {
 		t.Fatalf("注册 SQL 抓取回调失败：%v", err)
+	}
+	// 整页语句使用 Raw.Scan，必须从 Row 回调抓取，不能只监听普通查询。
+	if err := db.Callback().Row().After("gorm:row").Register("baseline:capture", capture); err != nil {
+		t.Fatalf("注册整页 SQL 抓取回调失败：%v", err)
 	}
 	m := productmodel.NewModel(db)
 	ctx := context.Background()
@@ -235,8 +239,9 @@ func TestProductSQLBaselineCasesMatchProduction(t *testing.T) {
 	})
 
 	for _, tc := range []struct {
-		label string
-		run   func() error
+		label   string
+		aliases []string
+		run     func() error
 	}{
 		{label: "集合源本页",
 			run: func() error {
@@ -245,9 +250,9 @@ func TestProductSQLBaselineCasesMatchProduction(t *testing.T) {
 				}, 20, 0)
 				return err
 			}},
-		{label: "发布记录本页投影",
+		{label: "发布记录整页候选", aliases: []string{"c.", "pg."},
 			run: func() error {
-				_, err := m.ListForPublishRecordsPage(ctx, projectID, "", 20, 0)
+				_, err := m.QueryPublishRecordPage(ctx, projectID, "", "", 20, 1)
 				return err
 			}},
 		{label: "变体按商品 id 批量取全行",
@@ -262,12 +267,23 @@ func TestProductSQLBaselineCasesMatchProduction(t *testing.T) {
 			if err := tc.run(); err != nil {
 				t.Fatalf("生产查询失败：%v", err)
 			}
-			want, got := orderClause(c.sql), orderClause(capturedSQL)
-			if want == "" || got == "" {
-				t.Fatalf("ORDER BY 子句没解析出来：基线 %q / 生产 %q", want, got)
+			aliases := tc.aliases
+			if len(aliases) == 0 {
+				aliases = []string{""}
 			}
-			if want != got {
-				t.Fatalf("排序不同源：基线 ORDER BY %q / 生产 ORDER BY %q", want, got)
+			// 分页层和最终输出层都要保留同一组排序键，不能只核对其中一处。
+			for _, alias := range aliases {
+				start := strings.Index(capturedSQL, "ORDER BY "+alias)
+				if start < 0 {
+					t.Fatalf("没抓到生产 ORDER BY %s：%s", alias, capturedSQL)
+				}
+				want, got := orderClause(c.sql), strings.ReplaceAll(orderClause(capturedSQL[start:]), alias, "")
+				if want == "" || got == "" {
+					t.Fatalf("ORDER BY 子句没解析出来：基线 %q / 生产 %q", want, got)
+				}
+				if want != got {
+					t.Fatalf("排序不同源（%s）：基线 ORDER BY %q / 生产 ORDER BY %q", alias, want, got)
+				}
 			}
 		})
 	}

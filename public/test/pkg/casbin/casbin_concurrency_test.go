@@ -1,16 +1,43 @@
 package casbin_test
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 
 	"github.com/spf13/viper"
 )
+
+// activateRole / deactivateRole：角色启用标记是事务内原子写（ActivateRoleTx /
+// DeactivateRoleTx），非事务包装已随事务边界收口移除，测试侧自己开一个事务。
+func activateRole(roleCode string) error {
+	return inTx(func(tx *gorm.DB) error {
+		_, err := pkgcasbin.ActivateRoleTx(context.Background(), tx, roleCode)
+		return err
+	})
+}
+
+func deactivateRole(roleCode string) error {
+	return inTx(func(tx *gorm.DB) error {
+		_, err := pkgcasbin.DeactivateRoleTx(context.Background(), tx, roleCode)
+		return err
+	})
+}
+
+func inTx(fn func(tx *gorm.DB) error) error {
+	db, err := database.GetDB()
+	if err != nil {
+		return err
+	}
+	return db.Transaction(fn)
+}
 
 func TestCasbinConcurrentEnforceAndPolicyMutation(t *testing.T) {
 	cfg := viper.New()
@@ -52,7 +79,7 @@ func TestCasbinConcurrentEnforceAndPolicyMutation(t *testing.T) {
 	if err := pkgcasbin.ReplaceUserRoleBindings(userID, []string{roleCode}); err != nil {
 		t.Fatalf("写入用户角色绑定失败: %v", err)
 	}
-	if err := pkgcasbin.ActivateRole(roleCode); err != nil {
+	if err := activateRole(roleCode); err != nil {
 		t.Fatalf("启用角色失败: %v", err)
 	}
 
@@ -144,11 +171,11 @@ func TestCasbinConcurrentEnforceAndPolicyMutation(t *testing.T) {
 			}()
 			for j := 0; j < writeLoopPerGoru; j++ {
 				if j%2 == 0 {
-					if err := pkgcasbin.DeactivateRole(roleCode); err != nil {
+					if err := deactivateRole(roleCode); err != nil {
 						errCh <- fmt.Errorf("toggler %d DeactivateRole: %w", i, err)
 						return
 					}
-					if err := pkgcasbin.ActivateRole(roleCode); err != nil {
+					if err := activateRole(roleCode); err != nil {
 						errCh <- fmt.Errorf("toggler %d ActivateRole: %w", i, err)
 						return
 					}
@@ -163,7 +190,7 @@ func TestCasbinConcurrentEnforceAndPolicyMutation(t *testing.T) {
 		t.Errorf("并发阶段错误: %v", err)
 	}
 
-	if err := pkgcasbin.ActivateRole(roleCode); err != nil {
+	if err := activateRole(roleCode); err != nil {
 		t.Fatalf("收敛阶段启用角色失败: %v", err)
 	}
 	if err := pkgcasbin.ReplaceRolePermissions(roleCode, [][3]string{{path, "GET", code}}); err != nil {

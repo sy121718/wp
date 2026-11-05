@@ -21,7 +21,7 @@ func assertLoadFailedPage(t *testing.T, where, body string) {
 	if !strings.Contains(body, "系统内部错误") {
 		t.Fatalf("%s 的降级渲染缺归口文案：页面上没有任何提示", where)
 	}
-	if strings.Contains(body, "MsgInternalError") {
+	if strings.Contains(body, "uiInternalErr") {
 		t.Fatalf("%s 直出了裸归口 key `MsgInternalError`（应当显示译文）", where)
 	}
 

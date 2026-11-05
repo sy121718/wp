@@ -2,16 +2,15 @@ package commenthttp
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/facing"
+	pageview "go_wp/pkg/view"
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
@@ -38,21 +37,24 @@ func (h *Handle) AdminList(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// Review 接收标准表单，成功后由 Jet 返回完整结果句。
 func (h *Handle) Review(c *gin.Context) {
-	req, ok := binding.JSON[commentdto.ReviewReq](c)
-	if !ok {
+	c.Header("Cache-Control", "no-store")
+	var req commentdto.ReviewReq
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "comment", err)
 		return
 	}
 	req.ReviewerID = builtin.CurrentUserID(c)
-	res, err := h.svc.Review(c.Request.Context(), req)
+	res, err := h.svc.Review(c.Request.Context(), &req)
 	if err != nil {
-		commentFail(c, err)
+		pageview.FailScene(c, "comment", err)
 		return
 	}
-
-	c.JSON(http.StatusOK, response.Response{
-		Code: http.StatusOK, Message: commentReviewMessage(c, res), Data: res,
-	})
+	c.HTML(http.StatusOK, "admin/comment/comment_review_result.html", pageview.Objects(
+		pageview.Object("Affected", reviewAffected(res)),
+		pageview.Object("Approved", res != nil && res.Status == commentenums.StatusApproved),
+	))
 }
 
 func commentFail(c *gin.Context, err error) {
@@ -68,15 +70,9 @@ func commentFail(c *gin.Context, err error) {
 	response.ErrorWithMessage(c, status, response.MessageOf(c, "comment", err))
 }
 
-func commentReviewMessage(c *gin.Context, res *commentdto.ReviewResp) string {
-	pair := commentenums.DoneTemplate(res != nil && res.Status == commentenums.StatusApproved)
-	tpl := i18n.TranslateFunc(response.RequestLanguage(c))(pair.Key, pair.Fallback)
-	if strings.Count(tpl, "%d") != 1 || strings.Contains(strings.Replace(tpl, "%d", "", 1), "%") {
-		tpl = pair.Fallback
+func reviewAffected(res *commentdto.ReviewResp) int64 {
+	if res == nil {
+		return 0
 	}
-	var affected int64
-	if res != nil {
-		affected = res.Affected
-	}
-	return strings.Replace(tpl, "%d", strconv.FormatInt(affected, 10), 1)
+	return res.Affected
 }

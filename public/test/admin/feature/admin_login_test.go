@@ -124,10 +124,11 @@ func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
 	captchaID, code := captcha.Get().Generate()
 	std, err := postLogin(engine, username, password, captchaID, code)
 	requireLoginFailure(t, "锁定窗口内登录", std, err)
+	// 423 Locked：账号存在、凭证也许没错，只是此刻被锁住，与「参数错了」不同档。
 	const lockMessagePrefix = "账号已被锁定，请 "
-	if std.Code != http.StatusBadRequest || !strings.HasPrefix(std.Message, lockMessagePrefix) ||
+	if std.Code != http.StatusLocked || !strings.HasPrefix(std.Message, lockMessagePrefix) ||
 		!strings.HasSuffix(std.Message, " 后重试") {
-		t.Fatalf("锁定窗口内应返回可读锁定文案，got code=%d message=%q", std.Code, std.Message)
+		t.Fatalf("锁定窗口内应返回 423 + 可读锁定文案，got code=%d message=%q", std.Code, std.Message)
 	}
 	remainingText := strings.TrimSuffix(strings.TrimPrefix(std.Message, lockMessagePrefix), " 后重试")
 	remaining, err := time.ParseDuration(remainingText)

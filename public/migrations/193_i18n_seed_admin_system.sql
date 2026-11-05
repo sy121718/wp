@@ -99,8 +99,6 @@ VALUES
     ('admin.analytics.daily.empty.tail', 'en-US', ' is what creates data — the beacon script ships with the artifacts (the analytics code is baked into the HTML at build time), so changing settings never retroactively applies to artifacts that were already built.', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
     ('admin.analytics.daily.title', 'zh-CN', '按天', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
     ('admin.analytics.daily.title', 'en-US', 'By day', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
-    ('admin.analytics.error', 'zh-CN', '统计读取失败：', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
-    ('admin.analytics.error', 'en-US', 'Failed to read analytics: ', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
     ('admin.analytics.intro.after', 'zh-CN', '）：访问面是静态产物直出，服务端不在访客请求路径上，所以计数只能从客户端来。打点失败静默丢弃 —— 统计永远不会影响访客看到的页面。', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
     ('admin.analytics.intro.after', 'en-US', '): the public site serves static artifacts, so the server is not on the visitor request path and counts can only come from the client. Failed beacons are dropped silently — analytics never affects the page a visitor sees.', 200, 'admin', 'admin/analytics.html', 1, now(), now()),
     ('admin.analytics.intro.lead', 'zh-CN', '数据由访客浏览器打点（', 200, 'admin', 'admin/analytics.html', 1, now(), now()),

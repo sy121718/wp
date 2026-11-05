@@ -19,6 +19,8 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 
 	"go_wp/internal/middleware/adminctx"
+	masterdatamodel "go_wp/internal/module/masterdata/model"
+	masterdataservice "go_wp/internal/module/masterdata/service"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -26,6 +28,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 
 	"go_wp/public/test/support"
 )
@@ -85,7 +88,7 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 	counter := &tagQueryCounter{}
 	counted := db.Session(&gorm.Session{Logger: counter})
 	projects := projectservice.NewService(projectmodel.NewProjectModel(counted))
-	svc := productservice.NewService(productmodel.NewModel(counted), projects)
+	svc := productservice.NewService(productmodel.NewModel(counted), projects, masterdataservice.NewService(masterdatamodel.NewModel(counted), projects))
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -100,6 +103,7 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := producthttp.NewProductPageHandle(svc, svc)
 	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
 	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(svc).ListTagProducts)

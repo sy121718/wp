@@ -15,7 +15,7 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	seoscore "go_wp/internal/seo"
+	seoscore "go_wp/pkg/seo"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )

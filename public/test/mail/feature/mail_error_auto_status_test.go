@@ -14,6 +14,8 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 )
 
 type errAutoFakeSvc struct {
@@ -28,7 +30,8 @@ func (f errAutoFakeSvc) ListAutomations(context.Context, *maildto.AutomationList
 func TestMailErrorAutoStatusCode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	const internalText = "服务器内部错误，请稍后重试"
+	// 归口文案只有一处定义：pkg/response 的 InternalFallback。
+	const internalText = response.InternalFallback
 
 	leakTokens := []string{"SQLSTATE", `relation "`, "mail_automations"}
 
@@ -55,6 +58,12 @@ func TestMailErrorAutoStatusCode(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "业务错误回 400 且文案可展示" {
+				i18n.InjectForTest(map[string]map[string]string{
+					mailenums.ErrAutomationNotFound: {"zh-CN": "自动化流程不存在"},
+				}, nil)
+				t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+			}
 			router := gin.New()
 			router.GET("/api/mail/automation/list", mailhttp.NewHandle(errAutoFakeSvc{err: tc.err}).AutomationList)
 			recorder := httptest.NewRecorder()

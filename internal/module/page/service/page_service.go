@@ -9,8 +9,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/source"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 	"go_wp/internal/module/artifact/contract"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/blueprint/contract"
@@ -26,7 +26,7 @@ import (
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/retention"
+	"go_wp/pkg/database/retention"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"

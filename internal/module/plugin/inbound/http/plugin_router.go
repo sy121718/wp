@@ -6,6 +6,7 @@ import (
 	pluginmodel "go_wp/internal/module/plugin/model"
 	pluginservice "go_wp/internal/module/plugin/service"
 	"go_wp/internal/permission"
+	pageview "go_wp/pkg/view"
 
 	"gorm.io/gorm"
 )
@@ -22,8 +23,8 @@ func SetupPluginRoutes(rg *permission.RouteGroup, db *gorm.DB, adminAuthz adminc
 	g := rg.Group("/plugin")
 	g.POST("/install", permission.PluginInstall, handle.Install)
 	g.GET("/list", permission.PluginList, handle.List)
-	g.POST("/toggle", permission.PluginToggle, handle.Toggle)
-	g.POST("/uninstall", permission.PluginUninstall, handle.Uninstall)
+	g.POST("/toggle", permission.PluginToggle, pageview.HTMLFragment, handle.Toggle)
+	g.POST("/uninstall", permission.PluginUninstall, pageview.HTMLFragment, handle.Uninstall)
 	g.GET("/detail", permission.PluginDetail, handle.Detail)
 	return svc
 }

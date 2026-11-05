@@ -3,7 +3,7 @@ package pluginservice
 import (
 	"testing"
 
-	"go_wp/internal/builder/plugincomp"
+	"go_wp/pkg/builder/plugincomp"
 )
 
 func TestDropSchemaSQLFormat(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	"go_wp/pkg/response"
 )
 
 type redirectListFailStub struct {
@@ -48,7 +49,7 @@ func TestRedirectPageLoadFailureReturnsJSON(t *testing.T) {
 			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
-	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+	if !strings.Contains(body, response.InternalFallback) {
 		t.Errorf("失败响应应带归口文案：%s", body)
 	}
 	if strings.Contains(body, rawErr.Error()) {

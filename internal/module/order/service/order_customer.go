@@ -54,7 +54,7 @@ func (s *Service) CustomerGrowthByRange(ctx context.Context, req *orderdto.Custo
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.orders.CustomerGrowthByRange(ctx, req.ProjectID, from, to)
+	row, err := s.orders.CustomerGrowthByRange(ctx, req.ProjectID, from, to, req.Statuses)
 	if err != nil {
 		return nil, err
 	}

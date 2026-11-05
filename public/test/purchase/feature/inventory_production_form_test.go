@@ -21,10 +21,10 @@ var productionFormControls = []string{
 
 func renderedFormBlock(t *testing.T, body, action string) string {
 	t.Helper()
-	marker := `action="` + action
+	marker := `hx-post="` + action
 	idx := strings.Index(body, marker)
 	if idx < 0 {
-		t.Fatalf("渲染出的页面里没有 action=%q 的表单（表单没补回页面？）", action)
+		t.Fatalf("渲染出的页面里没有 hx-post=%q 的表单（表单没补回页面？）", action)
 	}
 	start := strings.LastIndex(body[:idx], "<form")
 	if start < 0 {

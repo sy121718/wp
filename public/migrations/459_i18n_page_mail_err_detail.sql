@@ -3,7 +3,7 @@
 -- 背景：这两个模块的写侧此前把 builder 校验 / 流程图校验的**中文原文**直接拼进业务错误的
 -- tail（`ErrInvalidDocument: 顶级节点 0: 组件树深度 11 超过上限 10…`、
 -- `mail.err.automationGraphInvalid: 流程里有环: a → b`），而读侧又把它原样拼回响应
---（page 的 pageFacingText / pageErrorMessage、mail 的 translateMailFacing）——
+--（page 的 response.businessText、mail 的 translateMailFacing）——
 -- 英文界面下必然中英混排，且经 302 的 ?err= 会进页面与浏览器历史。
 --
 -- 本批把这两族的 tail 改成 i18n.ErrorDetail 协议（控制字符 + 词条 key + 具名参数，可多段），

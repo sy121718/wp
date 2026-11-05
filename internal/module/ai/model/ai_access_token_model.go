@@ -118,6 +118,25 @@ func (m *AccessTokenModel) List(ctx context.Context, userID int64, limit int) (r
 	return rows, err
 }
 
+// FindByID 按主键读一把令牌（含已撤销的）。
+//
+// 撤销后要把"吊销之后的事实"交回前端，不能靠 List(limit) 去翻 —— 那把令牌可能
+// 排在第 limit 之外，于是页面拿到空 item 却以为成功。这里按 id 精确取。
+func (m *AccessTokenModel) FindByID(ctx context.Context, id int64) (*AIAccessTokenEntity, error) {
+	if id <= 0 {
+		return nil, nil
+	}
+	var row AIAccessTokenEntity
+	err := m.tokens(ctx).Where("id = ?", id).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (m *AccessTokenModel) Revoke(ctx context.Context, id int64) (int64, error) {
 	if id <= 0 {
 		return 0, nil

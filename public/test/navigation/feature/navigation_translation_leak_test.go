@@ -3,8 +3,13 @@ package feature
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,7 +32,7 @@ func translationWriteRequest(projectID, lang, sourceText, target string) *http.R
 	body := fmt.Sprintf(
 		`{"action":"translations","project":%q,"lang":%q,"rows":[{"context":%q,"hash":%q,"target":%q}]}`,
 		projectID, lang, i18n.ContentContext("navigation", "label"), i18n.ContentHash(sourceText), target)
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -57,7 +62,10 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", handle.Update)
+	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, translationWriteRequest(projectID, "en-US", "首页", "Home"))
@@ -67,8 +75,8 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	}
 	payload := recorder.Body.String()
 
-	if !strings.Contains(payload, "保存失败") {
-		t.Fatalf("失败分支应给出归口句，实际 body=%s", payload)
+	if !strings.Contains(payload, "data-ui-error") {
+		t.Fatalf("失败分支应渲染错误片段，实际 body=%s", payload)
 	}
 	for _, tok := range translationLeakTokens {
 		if strings.Contains(payload, tok) {
@@ -91,7 +99,10 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", handle.Update)
+	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, translationWriteRequest(projectID, "en-US", "首页", "Home"))
@@ -99,8 +110,9 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 		t.Fatalf("保存应 200，实际 %d，body=%s", recorder.Code, recorder.Body.String())
 	}
 	payload := recorder.Body.String()
-	if !strings.Contains(payload, "已保存 1 条译文") || !strings.Contains(payload, `"written":1`) {
-		t.Fatalf("成功响应应带写入计数与成品句（本进程无词条缓存 → 中文兜底），实际 %s", payload)
+	// 回执是 Jet 片段：写入条数来自写服务，句子在模板里。
+	if !strings.Contains(payload, `role="status"`) || !strings.Contains(payload, "1") {
+		t.Fatalf("成功响应应是带写入条数的结果片段，实际 %s", payload)
 	}
 	if strings.Contains(payload, "%!") {
 		t.Errorf("成功句出现格式化垃圾（占位符没按语言填）: %s", payload)
@@ -116,7 +128,7 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 
 func translationWriteRaw(t *testing.T, router *gin.Engine, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
@@ -143,7 +155,10 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", handle.Update)
+	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
 	context := i18n.ContentContext("navigation", "label")
 	hash := i18n.ContentHash("首页")
@@ -179,7 +194,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if empty.Code != http.StatusOK {
 		t.Fatalf("显式空 target 应被接受（本次不改动），实际 %d body=%s", empty.Code, empty.Body.String())
 	}
-	if !strings.Contains(empty.Body.String(), `"written":0`) {
+	// 回执是 Jet 片段：零写入时片段里必须出现 0。
+	if !strings.Contains(empty.Body.String(), `role="status"`) || !strings.Contains(empty.Body.String(), "0") {
 		t.Fatalf("空译文不该产生写入，实际 %s", empty.Body.String())
 	}
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {

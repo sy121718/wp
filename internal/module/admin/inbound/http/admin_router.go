@@ -9,6 +9,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/permission"
+	"go_wp/pkg/view"
 )
 
 const (
@@ -55,9 +56,9 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		authorized.POST("/edit", permission.AdminEdit, handle.AdminEdit)
 		authorized.POST("/delete", permission.AdminDelete, handle.AdminDelete)
 		authorized.GET("/role/list", permission.AdminRoleList, handle.AdminRoleList)
-		authorized.POST("/role/save", permission.AdminRoleSave, handle.AdminRoleSave)
+		authorized.POST("/role/save", permission.AdminRoleSave, view.HTMLFragment, handle.AdminRoleSave)
 		authorized.GET("/menu/list", permission.AdminMenuList, handle.AdminMenuList)
-		authorized.POST("/menu/save", permission.AdminMenuSave, handle.AdminMenuSave)
+		authorized.POST("/menu/save", permission.AdminMenuSave, view.HTMLFragment, handle.AdminMenuSave)
 	}
 
 	role := rg.Group("/role").Use(
@@ -72,7 +73,7 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		role.POST("/update", permission.RoleUpdate, handle.RoleUpdate)
 		role.POST("/delete", permission.RoleDelete, handle.RoleDelete)
 		role.GET("/menu/list", permission.RoleMenuList, handle.RoleMenuList)
-		role.POST("/menu/save", permission.RoleMenuSave, handle.RoleMenuSave)
+		role.POST("/menu/save", permission.RoleMenuSave, view.HTMLFragment, handle.RoleMenuSave)
 		role.GET("/user/list", permission.RoleUserList, handle.RoleUserList)
 		role.POST("/user/save", permission.RoleUserSave, handle.RoleUserSave)
 	}
@@ -142,7 +143,7 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		builtin.CasbinMiddleware(),
 	)
 	{
-		i18nAPI.POST("/save", permission.I18nManage, adminI18nHandle().I18nEntryWrite)
+		i18nAPI.POST("/save", permission.I18nManage, view.HTMLFragment, adminI18nHandle().I18nEntryWrite)
 	}
 
 	return svc

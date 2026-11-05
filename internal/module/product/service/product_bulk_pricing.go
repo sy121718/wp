@@ -24,7 +24,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 
 	if len(ids) == 0 {
 		return nil, facing.WithStatus(
-			facing.New(productenums.BulkPricingNoneSelected, "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"),
+			facing.New(productenums.BulkPricingNoneSelected),
 			http.StatusBadRequest)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)

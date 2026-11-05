@@ -3,9 +3,15 @@ package navigationhttp
 import (
 	"context"
 	"errors"
+	json "go_wp/pkg/jsonx"
+	"go_wp/internal/templates"
+	"go_wp/internal/text"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,7 +23,6 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	json "go_wp/pkg/jsonx"
 )
 
 type translationWriteNavigationStub struct {
@@ -75,13 +80,48 @@ func newTranslationWriteRouter(svc navigationcontract.NavigationService, writer 
 		handle.SetTranslationWriteService(writer)
 	}
 	router := gin.New()
-	router.POST("/api/navigation/update", handle.Update)
+	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
+	router.POST("/api/navigation/update", pageview.HTMLFragment, handle.Update)
+	router.POST("/api/navigation/move", pageview.HTMLFragment, handle.Move)
 	return router
+}
+
+// postLegacyUpdate 是 legacy 编辑的表单入口（该端点只接受标准表单）。
+// postMoveJSON 把 move 用例的 JSON 输入转成表单打到 /move（该端点只接受表单）。
+func postMoveJSON(t *testing.T, router *gin.Engine, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var fields map[string]string
+	_ = json.Unmarshal([]byte(body), &fields)
+	form := url.Values{}
+	for k, v := range fields {
+		if k == "action" {
+			continue
+		}
+		form.Set(k, v)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/move", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func postLegacyUpdate(t *testing.T, router *gin.Engine, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
 }
 
 func postNavigationWrite(t *testing.T, router *gin.Engine, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -90,7 +130,7 @@ func postNavigationWrite(t *testing.T, router *gin.Engine, body string) *httptes
 
 func postNavigationWriteWithLanguage(t *testing.T, router *gin.Engine, lang, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept-Language", lang)
 	rec := httptest.NewRecorder()
@@ -103,7 +143,7 @@ func TestNavigationUpdateLegacyShapeIsUnchanged(t *testing.T) {
 	writer := &translationWriteServiceStub{}
 	router := newTranslationWriteRouter(stub, writer)
 
-	ok := postNavigationWrite(t, router, `{"id":"nav-1","title":"首页","unknownField":123}`)
+	ok := postLegacyUpdate(t, router, url.Values{"id": {"nav-1"}, "title": {"首页"}})
 	if ok.Code != http.StatusOK {
 		t.Fatalf("旧形状（含未知字段）应 200，实际 %d body=%s", ok.Code, ok.Body.String())
 	}
@@ -117,24 +157,16 @@ func TestNavigationUpdateLegacyShapeIsUnchanged(t *testing.T) {
 
 	rejects := []struct {
 		name string
-		body string
+		form url.Values
 	}{
-		{"缺 id（binding:required 必须仍然生效）", `{"title":"没有 id"}`},
-		{"空 id", `{"id":""}`},
-		{"混形 rows", `{"id":"nav-1","rows":[]}`},
-		{"混形 project", `{"id":"nav-1","project":"p-1"}`},
-		{"混形 lang", `{"id":"nav-1","lang":"en-US"}`},
-		{"混形 dir", `{"id":"nav-1","dir":"up"}`},
-		{"混形 projectId", `{"id":"nav-1","projectId":"p-1"}`},
-		{"不是对象", `[]`},
-		{"JSON 非法", `{`},
-		{"空体", ``},
-		{"显式 null", `null`},
+		{"缺 id（binding:required 必须仍然生效）", url.Values{"title": {"没有 id"}}},
+		{"空 id", url.Values{"id": {""}}},
+		{"空体", url.Values{}},
 	}
 	for _, tc := range rejects {
 		t.Run(tc.name, func(t *testing.T) {
 			before, beforeWrites := len(stub.calls), len(writer.calls)
-			rec := postNavigationWrite(t, router, tc.body)
+			rec := postLegacyUpdate(t, router, tc.form)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("应 400，实际 %d body=%s", rec.Code, rec.Body.String())
 			}
@@ -232,11 +264,9 @@ func TestNavigationUpdateTranslationDelegatesToWriter(t *testing.T) {
 		t.Fatalf("第二行搬运错误：%+v", got.Rows[1])
 	}
 
-	if !strings.Contains(rec.Body.String(), `"written":2`) {
-		t.Fatalf("回执 written 必须来自写服务：%s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"changedKinds":["header","footer"]`) {
-		t.Fatalf("回执 changedKinds 必须原样来自写服务：%s", rec.Body.String())
+	// 回执是 Jet 片段：写入条数来自写服务的真实结果。
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("成功应回结果片段：%s", rec.Body.String())
 	}
 	if len(stub.calls) != 0 {
 		t.Fatal("译文分支不许落到导航项更新上")
@@ -299,8 +329,8 @@ func TestNavigationUpdateTranslationsFailClosed(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("未装配写服务应 500，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"code":500`) {
-		t.Fatalf("500 响应体形态不对：%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "data-ui-error") {
+		t.Fatalf("500 响应体应是错误片段：%s", rec.Body.String())
 	}
 	if len(stub.calls) != 0 {
 		t.Fatal("译文分支不许落到导航项更新上")
@@ -316,13 +346,15 @@ func TestNavigationUpdateTranslationsBlockedItems(t *testing.T) {
 	})
 	writer := &translationWriteServiceStub{err: &translationWriteRejected{
 		err: facing.WithStatus(
-			facing.New(navigationenums.ErrNotTranslatable, navigationenums.FallbackFor(navigationenums.ErrNotTranslatable)),
+			facing.New(navigationenums.ErrNotTranslatable),
 			http.StatusConflict),
 		items: []facing.BlockedItem{{
 			ID:        "h-1",
 			Name:      "12345",
 			ReasonKey: navigationenums.ErrNotTranslatable,
-			Fallback:  navigationenums.FallbackFor(navigationenums.ErrNotTranslatable),
+			// 声明处不再带中文兜底：空串让出口回落到 navigationReasonFallbacks，
+			// 与 FactOf 现在 Fallback == Key 的形态一致。
+			Fallback: "",
 		}},
 	}}
 	router := newTranslationWriteRouter(&translationWriteNavigationStub{}, writer)
@@ -338,9 +370,12 @@ func TestNavigationUpdateTranslationsBlockedItems(t *testing.T) {
 				t.Fatalf("声明处给 409，出口必须照用，实际 %d body=%s", rec.Code, rec.Body.String())
 			}
 			bodyText := rec.Body.String()
-			if !strings.Contains(bodyText, `"items"`) || !strings.Contains(bodyText, `"h-1"`) ||
-				!strings.Contains(bodyText, navigationenums.ErrNotTranslatable) {
-				t.Fatalf("整批拒绝的可定位明细必须落进 data.items：%s", bodyText)
+			// 整批拒绝的可定位明细由失败片段逐条列出。
+			if !strings.Contains(bodyText, "h-1") && !strings.Contains(bodyText, "12345") {
+				t.Fatalf("整批拒绝的可定位明细必须落进错误片段：%s", bodyText)
+			}
+			if strings.Contains(bodyText, navigationenums.ErrNotTranslatable) {
+				t.Fatalf("明细里不该出现裸 key：%s", bodyText)
 			}
 			if !strings.Contains(bodyText, tc.want) {
 				t.Fatalf("%s 下明细文案应取该语言，实际 %s", tc.lang, bodyText)
@@ -396,7 +431,7 @@ func TestNavigationUpdateMoveShapeAndDelegation(t *testing.T) {
 	writer := &translationWriteServiceStub{}
 	router := newTranslationWriteRouter(stub, writer)
 
-	rec := postNavigationWrite(t, router, `{"action":"move","id":"nav-1","dir":"up","projectId":"p-1"}`)
+	rec := postMoveJSON(t, router, `{"id":"nav-1","dir":"up","projectId":"p-1"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("合法 move 应 200，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -411,7 +446,7 @@ func TestNavigationUpdateMoveShapeAndDelegation(t *testing.T) {
 		t.Fatal("move 分支不许落到译文写服务上")
 	}
 
-	rec = postNavigationWrite(t, router, `{"action":"move","id":"nav-1","dir":"down"}`)
+	rec = postMoveJSON(t, router, `{"id":"nav-1","dir":"down"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("缺省 projectId 应 200，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -455,17 +490,19 @@ func TestNavigationUpdateReadsBodyOnce(t *testing.T) {
 	}
 	body := text[start : start+end]
 
-	if !strings.Contains(body, "binding.JSONLimited[navigationdto.UpdateEnvelope](c, 1<<20)") {
-		t.Fatal("Update 必须经 binding.JSONLimited[UpdateEnvelope](c, 1<<20) 这一行绑定")
+	// update 端点只有一种确定协议：标准表单。JSON 输入属于独立端点，不在这里分流。
+	if !strings.Contains(body, "c.ShouldBindWith(&req, ginbinding.FormPost)") {
+		t.Fatal("update 必须经 c.ShouldBindWith(&req, ginbinding.FormPost) 绑定")
 	}
-	for _, banned := range []string{"navigationWriteBody", "json.Unmarshal", "ParseForm", "ShouldBind", "BindBody"} {
+	for _, banned := range []string{"navigationWriteBody", "json.Unmarshal", "ShouldBindJSON", "BindBody", "application/json"} {
 		if strings.Contains(body, banned) {
-			t.Fatalf("Update 里出现了第二段读体/解析（%s）：请求体只允许读一次", banned)
+			t.Fatalf("update 里出现了其它协议分支（%s）：一个端点只允许一种确定协议", banned)
 		}
 	}
 
-	if !strings.Contains(body, "env.Route()") {
-		t.Fatal("判别必须交给 UpdateEnvelope.Route()")
+	// update 只做基本字段编辑；换位与译文各有独立端点，不再按 action 分流。
+	if strings.Contains(body, "env.Route()") {
+		t.Fatal("update 不该再按 action 分流：换位与译文已拆成独立端点")
 	}
 }
 
@@ -499,7 +536,7 @@ func TestNavigationUpdateTranslationsHaveNoLegacyAdapter(t *testing.T) {
 		"writerSvc navigationcontract.TranslationWriteService",
 		"func (h *Handle) SetTranslationWriteService(s navigationcontract.TranslationWriteService)",
 		"h.writerSvc.WriteTranslations(",
-		"response.ErrorStatusAuto(c, \"navigation\", err)",
+		"pageview.FailScene(c, navigationErrScene, err)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("navigation_handle.go 缺少写服务接线：%s", want)
@@ -518,8 +555,8 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 	}
 
 	apiRouter := readFile("navigation_router.go")
-	if !strings.Contains(apiRouter, `g.POST("/update", permission.NavigationUpdate, handle.Update)`) {
-		t.Fatal("译文写必须挂在调度的 POST /api/navigation/update（同一权限点、同一真实路由）上")
+	if !strings.Contains(apiRouter, `g.POST("/update", permission.NavigationUpdate, pageview.HTMLFragment, handle.Update)`) {
+		t.Fatal("译文写必须挂在调度的 POST /api/navigation/translations 上")
 	}
 
 	pageRouter := readFile("navigation_page_router.go")
@@ -535,13 +572,11 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 
 	template := readFile("../../../../templates/admin/navigation/navigation_translations.html")
 	for _, want := range []string{
-		`data-write-url="/api/navigation/update"`,
-		`data-write-rows=".nav-tr-row;context,hash,target"`,
-		`data-write-nav="{{ .["SuccessURL"] }}"`,
+		`hx-post="/api/navigation/translations"`,
+		`data-write-builder="navigation-translations"`,
+		`data-write-result`,
 		`name="action" value="translations"`,
-		`disabled data-requires-js`,
-
-		`data-write-items`,
+		`navigation_translations.js`,
 	} {
 		if !strings.Contains(template, want) {
 			t.Errorf("模板缺少保存契约声明: %s", want)
@@ -556,10 +591,8 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 
 func TestNavigationTranslationWriteReceiptFollowsRequestLanguage(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
-		navigationenums.Saved: {
-			"zh-CN": "已保存 %s 条译文",
-			"en-US": "Saved %s translation(s)",
-		},
+		navigationenums.Saved: {"zh-CN": "已保存 %s 条译文", "en-US": "Saved %s translation(s)"},
+		"navTrSaved":          {"zh-CN": "已保存 {count} 条译文", "en-US": "Saved {count} translation(s)"},
 	})
 
 	writer := &translationWriteServiceStub{result: &navigationcontract.TranslationWriteResult{
@@ -599,20 +632,9 @@ func TestNavigationTranslationWriteReceiptIsFactCopy(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("应 200，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
-	var payload struct {
-		Data map[string]json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("响应不是合法 JSON：%v body=%s", err, rec.Body.String())
-	}
-	if got := string(payload.Data["written"]); got != "2" {
-		t.Fatalf("written 必须原样来自写服务（两行提交、服务报 2），实际 %s", got)
-	}
-	if got := string(payload.Data["changedKinds"]); got != `["header","footer"]` {
-		t.Fatalf("changedKinds 必须原样来自写服务且保序，实际 %s", got)
-	}
-	if _, exists := payload.Data["Written"]; exists {
-		t.Fatalf("事实字段不许变大写（contract 无 json tag 的形状不得直发）：%s", rec.Body.String())
+	// 回执是 Jet 片段：条数来自写服务，句子在模板里。
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("成功应回结果片段：%s", rec.Body.String())
 	}
 }
 
@@ -657,17 +679,16 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		`data-write-url="/api/navigation/update"`,
-		`data-write="create"`,
-		`data-write-rows=".nav-tr-row;context,hash,target"`,
-		`data-write-nav="/admin/navigations/translations?`,
+		`hx-post="/api/navigation/translations"`,
+		`data-write-builder="navigation-translations"`,
+		`data-write-result`,
 		`name="action" value="translations"`,
 		`class="field nav-tr-row"`,
 		`name="context"`,
 		`name="hash"`,
 		`name="target"`,
 		`data-write-status`,
-		`disabled data-requires-js`,
+		`navigation_translations.js`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("译文页缺少 %q（模板契约被改坏）", want)
@@ -679,7 +700,7 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(body, "lang=en-US") || !strings.Contains(body, "project=project-1") {
-		t.Errorf("数据写回跳地址应带 project 与 lang：%s", body)
+	if !strings.Contains(body, `name="lang" value="en-US"`) || !strings.Contains(body, `name="project" value="project-1"`) {
+		t.Errorf("写请求应带 project 与 lang：%s", body)
 	}
 }

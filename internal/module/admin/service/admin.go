@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,53 +20,28 @@ import (
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
 func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (res *admindto.AdminListResp, err error) {
-
-	var total int64
-	page := req.GetPage()
-	limit := req.GetLimit()
-
-	query := s.am.DB(ctx).Where("is_admin != ?", 1)
-
-	if email := strings.TrimSpace(req.Email); email != "" {
-		query = query.Where("email LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(email)+"%")
-	}
-	if name := strings.TrimSpace(req.Name); name != "" {
-		query = query.Where("name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(name)+"%")
-	}
-	if req.Status != nil {
-		query = query.Where("status = ?", *req.Status)
-	}
-
-	if err = query.Count(&total).Error; err != nil {
+	// 排序白名单是业务判断：不合法的字段/方向必须给出业务错误，不能悄悄退回默认排序。
+	sortField, sortOrder, err := normalizeAdminSort(req.SortField, req.SortOrder)
+	if err != nil {
 		return nil, err
 	}
 
-	orderClause := "id DESC"
-	if req.SortField != "" && req.SortOrder != "" {
-		field := strings.ToLower(strings.TrimSpace(req.SortField))
-		dir := strings.ToUpper(strings.TrimSpace(req.SortOrder))
-		if dir != "ASC" && dir != "DESC" {
-			return nil, adminenums.Err(adminenums.ErrSortDirectionInvalid)
-		}
-		switch field {
-		case "id", "username", "name", "email", "phone", "status", "create_time", "last_login_time":
-			orderClause = field + " " + dir
-		default:
-			return nil, adminenums.Err(adminenums.ErrSortFieldInvalid)
-		}
-	}
-
-	list := make([]adminmodel.AdminEntity, 0, limit)
-	if err = query.
-		Order(orderClause).
-		Offset((page - 1) * limit).
-		Limit(limit).
-		Find(&list).Error; err != nil {
+	total, list, err := s.am.ListPage(ctx, adminmodel.AdminListFilter{
+		Email:     strings.TrimSpace(req.Email),
+		Name:      strings.TrimSpace(req.Name),
+		Status:    req.Status,
+		SortField: sortField,
+		SortOrder: sortOrder,
+		Page:      req.GetPage(),
+		Limit:     req.GetLimit(),
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -91,13 +67,31 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 	return
 }
 
+// normalizeAdminSort 把请求里的排序字段/方向归一成白名单内的值。
+func normalizeAdminSort(sortField, sortOrder string) (field, dir string, err error) {
+	if sortField == "" || sortOrder == "" {
+		return "", "", nil
+	}
+	field = strings.ToLower(strings.TrimSpace(sortField))
+	dir = strings.ToUpper(strings.TrimSpace(sortOrder))
+	if dir != "ASC" && dir != "DESC" {
+		return "", "", adminenums.Err(adminenums.ErrSortDirectionInvalid)
+	}
+	switch field {
+	case "id", "username", "name", "email", "phone", "status", "create_time", "last_login_time":
+		return field, dir, nil
+	default:
+		return "", "", adminenums.Err(adminenums.ErrSortFieldInvalid)
+	}
+}
+
 func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq) (res *admindto.AdminCreateResp, err error) {
-	if emailExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "email", req.Email); err != nil {
+	if emailExists, err := s.am.FieldExists(ctx, "email", req.Email); err != nil {
 		return nil, err
 	} else if emailExists {
 		return nil, adminenums.Err(adminenums.ErrEmailExists)
 	}
-	if nameExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "username", req.Username); err != nil {
+	if nameExists, err := s.am.FieldExists(ctx, "username", req.Username); err != nil {
 		return nil, err
 	} else if nameExists {
 		return nil, adminenums.Err(adminenums.ErrUsernameExists)
@@ -117,7 +111,7 @@ func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq)
 	}
 
 	if req.Phone != "" {
-		if phoneExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "phone", req.Phone); err != nil {
+		if phoneExists, err := s.am.FieldExists(ctx, "phone", req.Phone); err != nil {
 			return nil, err
 		} else if phoneExists {
 			return nil, adminenums.Err(adminenums.ErrPhoneExists)
@@ -128,7 +122,12 @@ func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq)
 		entity.Avatar = &req.Avatar
 	}
 
-	if err := s.am.DB(ctx).Create(entity).Error; err != nil {
+	// 预检与插入之间还有窗口，库里的唯一约束才是最后一道：
+	// 撞了就把约束名翻成业务 key，别让 SQLSTATE 原文流到出口。
+	if err := s.am.Create(ctx, entity); err != nil {
+		if mapped, ok := adminUniqueViolationKey(err); ok {
+			return nil, mapped
+		}
 		return nil, err
 	}
 	res = &admindto.AdminCreateResp{
@@ -140,76 +139,96 @@ func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq)
 }
 
 func (s *Service) AdminDetail(ctx context.Context, req *admindto.AdminDetailReq) (res *admindto.AdminDetailResp, err error) {
-	res = &admindto.AdminDetailResp{}
-
-	err = s.am.DB(ctx).
-		Select("id", "username", "name", "avatar", "email", "phone", "status", "is_admin",
-			"register_ip", "register_location", "last_login_ip", "last_login_location",
-			"last_login_time", "create_by", "create_time", "remark").
-		Where("id = ?", req.Id).
-		Scan(res).Error
+	entity, err := s.am.DetailByID(ctx, req.Id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, adminenums.Err(adminenums.ErrAdminNotFound)
-		}
 		return nil, err
 	}
-
-	if res.ID == 0 {
+	if entity == nil {
 		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
-	res.Roles = []any{}
-	res.Menus = []any{}
+	res = &admindto.AdminDetailResp{
+		ID:                entity.ID,
+		Username:          entity.Username,
+		Name:              stringOrEmpty(entity.Name),
+		Avatar:            stringOrEmpty(entity.Avatar),
+		Email:             stringOrEmpty(entity.Email),
+		Phone:             stringOrEmpty(entity.Phone),
+		Status:            entity.Status,
+		IsAdmin:           entity.IsAdmin,
+		RegisterIP:        stringOrEmpty(entity.RegisterIP),
+		RegisterLocation:  stringOrEmpty(entity.RegisterLocation),
+		LastLoginIP:       stringOrEmpty(entity.LastLoginIP),
+		LastLoginLocation: stringOrEmpty(entity.LastLoginLocation),
+		LastLoginTime:     utils.NewJSONTimePtr(entity.LastLoginTime),
+		CreateBy:          entity.CreateBy,
+		CreateTime:        utils.NewJSONTimePtr(entity.CreateTime),
+		Remark:            stringOrEmpty(entity.Remark),
+		Roles:             []any{},
+		Menus:             []any{},
+	}
 	return
 }
 
 func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (res *admindto.AdminEditResp, err error) {
-	entityExists, err := s.am.GetByID(ctx, req.Id)
-	if err != nil {
-		return nil, err
-	}
-	if entityExists == nil {
-		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
-	}
-
-	if emailExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "email", req.Email, req.Id); err != nil {
-		return nil, err
-	} else if emailExists {
-		return nil, adminenums.Err(adminenums.ErrEmailExists)
-	}
-
-	if nameExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "username", req.Username, req.Id); err != nil {
-		return nil, err
-	} else if nameExists {
-		return nil, adminenums.Err(adminenums.ErrUsernameExists)
-	}
-
 	entity := &adminmodel.AdminEntity{
 		Username: req.Username,
 		Email:    &req.Email,
 	}
 	if req.Phone != "" {
-
-		if phoneExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "phone", req.Phone, req.Id); err != nil {
-			return nil, err
-		} else if phoneExists {
-			return nil, adminenums.Err(adminenums.ErrPhoneExists)
-		}
 		entity.Phone = &req.Phone
 	}
-
 	if req.Remark != "" {
 		entity.Remark = &req.Remark
 	}
 
-	if err := s.am.DB(ctx).Where("id = ?", req.Id).Updates(entity).Error; err != nil {
+	var taskID int64
+	err = s.am.Transaction(ctx, func(tx *gorm.DB) error {
+		// 存在性、重名预检、更新都在同一个事务里：
+		// 先锁住这一行，再判断重名，最后落库；否则两个并发编辑会各自通过预检。
+		locked, err := s.am.LockByIDsTx(ctx, tx, []uint64{req.Id})
+		if err != nil {
+			return err
+		}
+		if len(locked) == 0 {
+			return adminenums.Err(adminenums.ErrAdminNotFound)
+		}
+
+		if emailExists, err := s.am.FieldExistsTxExcept(ctx, tx, "email", req.Email, req.Id); err != nil {
+			return err
+		} else if emailExists {
+			return adminenums.Err(adminenums.ErrEmailExists)
+		}
+		if nameExists, err := s.am.FieldExistsTxExcept(ctx, tx, "username", req.Username, req.Id); err != nil {
+			return err
+		} else if nameExists {
+			return adminenums.Err(adminenums.ErrUsernameExists)
+		}
+		if req.Phone != "" {
+			if phoneExists, err := s.am.FieldExistsTxExcept(ctx, tx, "phone", req.Phone, req.Id); err != nil {
+				return err
+			} else if phoneExists {
+				return adminenums.Err(adminenums.ErrPhoneExists)
+			}
+		}
+
+		if err := s.am.UpdateByIDTx(ctx, tx, req.Id, entity); err != nil {
+			if mapped, ok := adminUniqueViolationKey(err); ok {
+				return mapped
+			}
+			return err
+		}
+
+		// 会话吊销是跨库副作用，删不掉就回滚不了：登记成持久任务，提交后立即尝试，
+		// 失败也留在表里可重放，而不是只写一行日志就丢掉。
+		taskID, err = s.appendRevokeSessionTx(ctx, tx, req.Id)
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	if err := auth.DeleteUserSession(ctx, req.Id); err != nil {
-		logger.Scene("admin").With("user_id", req.Id).Error(err, "编辑管理员后失效旧会话失败")
-	}
+	s.FlushSideEffect(ctx, taskID)
 
 	res = &admindto.AdminEditResp{
 		ID: req.Id,
@@ -217,38 +236,58 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 	return
 }
 
-func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq) (res *admindto.AdminDeleteResp, err error) {
-	ids := uniqueAdminIDs(req.Id)
+// adminUniqueViolationKey 把库里的唯一约束冲突翻成对应的业务 key。
+//
+// 只有 sys_admin 上真实存在的唯一约束才映射得出来 ── 当前仅 uk_sys_admin_username；
+// email / phone 只有普通索引，重复只能靠事务内的预检发现，不要在这里假装能兜住。
+func adminUniqueViolationKey(err error) (error, bool) {
+	if !database.IsUniqueViolation(err) {
+		return nil, false
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "uk_sys_admin_username"):
+		return adminenums.Err(adminenums.ErrUsernameExists), true
+	default:
+		return nil, false
+	}
+}
+
+// AdminDelete 删除管理员，走与批量相同的同事务校验 + 删除路径。
+func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq) (*admindto.AdminDeleteResp, error) {
+	return s.AdminBulkDelete(ctx, req)
+}
+
+func (s *Service) AdminListByDeptID(ctx context.Context, req *admindto.AdminListByDeptIDReq) (res *admindto.AdminListByDeptIDResp, err error) {
+	total, entities, err := s.am.ListPageByDept(ctx, req.DeptID, req.GetPage(), req.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+
+	list := make([]admindto.DeptAdminItem, 0, len(entities))
+	for _, e := range entities {
+		list = append(list, admindto.DeptAdminItem{
+			ID:       e.ID,
+			Username: e.Username,
+			Name:     stringOrEmpty(e.Name),
+			Email:    stringOrEmpty(e.Email),
+			Status:   e.Status,
+		})
+	}
+	return &admindto.AdminListByDeptIDResp{Total: total, List: list}, nil
+}
+
+// AdminBatchSetDeptID 批量把成员调到某个部门。
+//
+// 与部门删除端协调：删除部门要数「还有没有成员」，改归属要挪成员。
+// 两边都锁 sys_admin 的行，且在同一个事务里完成，
+// 才不会出现「删除端数完 0 个成员 → 改归属插进来 → 部门被删掉留下悬挂 dept_id」。
+func (s *Service) AdminBatchSetDeptID(ctx context.Context, req *admindto.AdminBatchSetDeptIDReq) error {
+	ids := uniqueIDs(req.UserIDs)
 	if len(ids) == 0 {
-		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
+		return nil
 	}
-
-	for _, id := range ids {
-		entity, err := s.am.GetByID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if entity == nil {
-			return nil, adminenums.Err(adminenums.ErrAdminNotFound)
-		}
-		if id == req.OperatorID {
-			return nil, adminenums.Err(adminenums.ErrDeleteSelf)
-		}
-		if entity.IsSuperAdmin() {
-			return nil, adminenums.Err(adminenums.ErrDeleteSuperAdmin)
-		}
-	}
-
-	for _, id := range ids {
-		if err = auth.RevokeUserSession(ctx, id); err != nil {
-			return nil, err
-		}
-	}
-
-	reloadPolicy := false
-	var deleted int64
-	err = s.am.Transaction(ctx, func(tx *gorm.DB) error {
-
+	return s.am.Transaction(ctx, func(tx *gorm.DB) error {
 		locked, err := s.am.LockByIDsTx(ctx, tx, ids)
 		if err != nil {
 			return err
@@ -256,113 +295,25 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 		if len(locked) != len(ids) {
 			return adminenums.Err(adminenums.ErrAdminNotFound)
 		}
-		for _, entity := range locked {
-			if entity.ID == req.OperatorID {
-				return adminenums.Err(adminenums.ErrDeleteSelf)
-			}
-			if entity.IsSuperAdmin() {
-				return adminenums.Err(adminenums.ErrDeleteSuperAdmin)
-			}
-		}
-
-		deleted, err = s.am.DeleteByIDsTx(ctx, tx, ids)
-		if err != nil {
-			return err
-		}
-		if deleted != int64(len(ids)) {
-			return adminenums.Err(adminenums.ErrAdminNotFound)
-		}
-
-		for _, id := range ids {
-			changed, err := casbin.DeleteUserAllPoliciesTx(ctx, tx, strconv.FormatUint(id, 10))
+		if req.DeptID != 0 {
+			// 必须是锁不是读：DeptBulkDelete 的「有成员就打回」也是先数 sys_admin 再删。
+			// 这里只读一次部门存在性，删除端就可能刚数完 0 个成员、没看到本事务待插入的行，
+			// 于是删掉部门、留下指向空部门的成员。锁住这个 dept 实体让两端在同一行上排队。
+			dept, err := s.dm.LockByIDTx(ctx, tx, req.DeptID)
 			if err != nil {
-				return fmt.Errorf("管理员行已删但策略清理失败，本次删除已整体回滚: %w", err)
+				return err
 			}
-			reloadPolicy = reloadPolicy || changed
+			if dept == nil {
+				return adminenums.Err(adminenums.ErrDeptNotFound)
+			}
 		}
-		return nil
+		_, err = s.am.UpdateDeptIDByIDsTx(ctx, tx, ids, req.DeptID)
+		return err
 	})
-	if err != nil {
-		return nil, err
-	}
-	if reloadPolicy {
-		if err = casbin.ReloadPolicy(); err != nil {
-			return nil, fmt.Errorf("管理员已删除，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
-		}
-	}
-	return &admindto.AdminDeleteResp{DeletedCount: deleted}, nil
-}
-
-func (s *Service) AdminListByDeptID(ctx context.Context, req *admindto.AdminListByDeptIDReq) (res *admindto.AdminListByDeptIDResp, err error) {
-	page := req.GetPage()
-	limit := req.GetLimit()
-
-	query := s.am.DB(ctx).Where("dept_id = ?", req.DeptID)
-
-	var total int64
-	if err = query.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	var entities []adminmodel.AdminEntity
-	offset := (page - 1) * limit
-	if err = query.Select("id, username, name, email, status").
-		Offset(offset).Limit(limit).
-		Order("id ASC").
-		Find(&entities).Error; err != nil {
-		return nil, err
-	}
-
-	list := make([]admindto.DeptAdminItem, 0, len(entities))
-	for _, e := range entities {
-		name := ""
-		if e.Name != nil {
-			name = *e.Name
-		}
-		email := ""
-		if e.Email != nil {
-			email = *e.Email
-		}
-		list = append(list, admindto.DeptAdminItem{
-			ID:       e.ID,
-			Username: e.Username,
-			Name:     name,
-			Email:    email,
-			Status:   e.Status,
-		})
-	}
-	return &admindto.AdminListByDeptIDResp{Total: total, List: list}, nil
-}
-
-func (s *Service) AdminBatchSetDeptID(ctx context.Context, req *admindto.AdminBatchSetDeptIDReq) error {
-	if len(req.UserIDs) == 0 {
-		return nil
-	}
-	return s.am.DB(ctx).Model(&adminmodel.AdminEntity{}).
-		Where("id IN ?", req.UserIDs).
-		Update("dept_id", req.DeptID).Error
 }
 
 func (s *Service) AdminCountByDeptID(ctx context.Context, deptID uint64) (int64, error) {
-	var count int64
-	err := s.am.DB(ctx).Where("dept_id = ?", deptID).Count(&count).Error
-	return count, err
-}
-
-func uniqueAdminIDs(ids []uint64) []uint64 {
-	seen := make(map[uint64]struct{}, len(ids))
-	result := make([]uint64, 0, len(ids))
-	for _, id := range ids {
-		if id == 0 {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		result = append(result, id)
-	}
-	return result
+	return s.am.CountByDeptID(ctx, deptID)
 }
 
 func (s *Service) IsSuperAdmin(ctx context.Context, userID uint64) (bool, error) {
@@ -451,26 +402,26 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		return nil, adminenums.Err(adminenums.ErrCaptchaExpired)
 	}
 
-	var entity adminmodel.AdminEntity
-
-	binaryExpr := "CAST(username AS BINARY) = CAST(? AS BINARY)"
-	switch s.am.DialectName() {
-	case "postgres":
-		binaryExpr = "username = ?"
-	}
-	if err := s.am.DB(ctx).Where(binaryExpr+" OR email = ?", req.Username, req.Username).First(&entity).Error; err != nil {
-		logger.Scene("admin").With("username", req.Username).With("reason", "用户不存在").Warn("登录失败")
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, adminenums.Err(adminenums.ErrBadCredentials)
-		}
+	entity, err := s.am.FindByLoginName(ctx, req.Username)
+	if err != nil {
 		return nil, err
+	}
+	if entity == nil {
+		logger.Scene("admin").With("username", req.Username).With("reason", "用户不存在").Warn("登录失败")
+		return nil, adminenums.Err(adminenums.ErrBadCredentials)
 	}
 
 	if entity.IsLocked() {
 		logger.Scene("admin").With("username", req.Username).With("reason", "账号已锁定").Warn("登录失败")
 
-		return nil, fmt.Errorf("%s|%s", adminenums.ErrAccountLocked,
-			time.Until(*entity.LockedUntilTime).Round(time.Minute).String())
+		// 423 Locked 是这条错误自己的事实：账号存在、凭证也许没错，只是此刻被锁住。
+		// 用 errors.New + WithStatus 而不是 fmt.Errorf("%s|%s")：后者只是个普通
+		// fmt 错误，状态只能靠出口默认成 400，把「锁多久」和「参数错了」混成同一档。
+		return nil, facing.WithStatus(
+			errors.New(adminenums.ErrAccountLocked+"|"+
+				time.Until(*entity.LockedUntilTime).Round(time.Minute).String()),
+			http.StatusLocked,
+		)
 	}
 
 	if !entity.IsActive() {
@@ -489,14 +440,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	if err := s.am.ResetLoginFailure(ctx, entity.ID); err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	loginUpdate := map[string]any{"last_login_time": now}
-	if clientIP != "" {
-		loginUpdate["last_login_ip"] = clientIP
-	}
-	if err := s.am.DB(ctx).Where("id = ?", entity.ID).
-		Select("last_login_time", "last_login_ip").
-		Updates(loginUpdate).Error; err != nil {
+	if err := s.am.TouchLastLogin(ctx, entity.ID, time.Now(), clientIP); err != nil {
 		return nil, err
 	}
 
@@ -626,16 +570,12 @@ const (
 )
 
 func (s *Service) DevLogin(ctx context.Context, username string) (*admindto.AdminLoginResp, error) {
-	var entity adminmodel.AdminEntity
-	q := s.am.DB(ctx).Where("is_admin = ?", 1)
-	if username != "" {
-		q = q.Where("username = ?", username)
-	}
-	if err := q.Order("id ASC").First(&entity).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("没有可用的超管账号（is_admin=1）")
-		}
+	entity, err := s.am.FirstActiveSuperAdmin(ctx, username)
+	if err != nil {
 		return nil, err
+	}
+	if entity == nil {
+		return nil, errors.New("没有可用的超管账号（is_admin=1）")
 	}
 	if !entity.IsActive() {
 		return nil, adminenums.Err(adminenums.ErrAccountDisabled)
@@ -697,23 +637,62 @@ func (s *Service) AdminRoleList(ctx context.Context, req *admindto.AdminRoleList
 	return &admindto.AdminRoleListResp{List: list}, nil
 }
 
+// AdminRoleSave 保存某个管理员的角色集合。
+//
+// 与 RoleUserSave 是同一张绑定表的两侧，必须用同一套锁与同一套事务写：
+// 先按角色 id 升序锁角色行，再锁被改的人，绑定写在本事务里。
+// 只锁人会让「两个入口同时改同一个角色」互相看不见；只写 enforcer 连接会让
+// 本事务回滚后绑定还留着。
 func (s *Service) AdminRoleSave(ctx context.Context, req *admindto.AdminRoleSaveReq) (res *admindto.AdminRoleSaveResp, err error) {
-	targetSuper, err := s.IsSuperAdmin(ctx, req.UserID)
+	var reloadTaskID int64
+
+	err = s.am.Transaction(ctx, func(tx *gorm.DB) error {
+
+		codes := uniqueStrings(req.RoleCodes)
+		if len(codes) > 0 {
+			locked, err := s.rm.LockByCodesTx(ctx, tx, codes)
+			if err != nil {
+				return err
+			}
+			if len(locked) != len(codes) {
+				return adminenums.Err(adminenums.ErrRoleNotFound)
+			}
+		}
+		lockedAdmins, err := s.am.LockByIDsTx(ctx, tx, []uint64{req.UserID})
+		if err != nil {
+			return err
+		}
+		if len(lockedAdmins) != 1 {
+			return adminenums.Err(adminenums.ErrAdminNotFound)
+		}
+
+		targetSuper := lockedAdmins[0].IsSuperAdmin()
+		roleSuper, err := s.roleHasSuperAdminPermission(ctx, codes)
+		if err != nil {
+			return err
+		}
+		if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, targetSuper || roleSuper); err != nil {
+			return err
+		}
+
+		userIDStr := strconv.FormatUint(req.UserID, 10)
+		changed, err := casbin.ReplaceUserRoleBindingsTx(ctx, tx, userIDStr, codes)
+		if err != nil {
+			return err
+		}
+		if changed {
+			reloadTaskID, err = s.appendPolicyReloadTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	roleSuper, err := s.roleHasSuperAdminPermission(ctx, req.RoleCodes)
-	if err != nil {
-		return nil, err
-	}
-	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, targetSuper || roleSuper); err != nil {
 		return nil, err
 	}
 
-	userIDStr := strconv.FormatUint(req.UserID, 10)
-	if err = casbin.ReplaceUserRoleBindings(userIDStr, req.RoleCodes); err != nil {
-		return nil, err
-	}
+	s.FlushSideEffect(ctx, reloadTaskID)
 	return &admindto.AdminRoleSaveResp{UserID: req.UserID}, nil
 }
 
@@ -776,40 +755,82 @@ func (s *Service) AdminMenuList(ctx context.Context, req *admindto.AdminMenuList
 }
 
 func (s *Service) AdminMenuSave(ctx context.Context, req *admindto.AdminMenuSaveReq) (res *admindto.AdminMenuSaveResp, err error) {
-
-	codes, err := s.GetPermissionCodesByIDs(ctx, req.MenuIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
-	if err != nil {
-		return nil, err
-	}
-	targetSuper, err := s.IsSuperAdmin(ctx, req.UserID)
-	if err != nil {
-		return nil, err
-	}
-	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || targetSuper); err != nil {
-		return nil, err
-	}
+	// 授予与本事务的写在同一事务里：先锁住这次要授予的菜单与权限点行，再落 p 策略。
+	//
+	// READ COMMITTED 下「A 读菜单还在 → B 授予后提交 → A 删菜单」是真实反例，
+	// 只在删除端加锁挡不住它 —— 授予端必须锁同一批实体，双方才在同一个锁上排队。
+	// 锁序：菜单与权限点都按各自的 id 升序（见 LockByIDsTx / LockByCodesTx 里的 ORDER BY id），
+	// 与删除端 PermBulkDelete / MenuBulkDelete 一致，两端在同一批行上排同一个队。
+	menuIDs := uniqueIDs(req.MenuIDs)
 
 	var policies [][3]string
-	if len(codes) > 0 {
-		briefs, err := s.ListByCodes(ctx, codes)
-		if err != nil {
-			return nil, err
-		}
-		for _, b := range briefs {
-			policies = append(policies, [3]string{b.APIPath, b.APIMethod, b.PermissionCode})
-		}
-	}
+	var changed bool
+	var reloadTaskID int64
 
-	userIDStr := strconv.FormatUint(req.UserID, 10)
-	if err = casbin.ReplaceUserPermissions(userIDStr, policies); err != nil {
+	err = s.mm.Transaction(ctx, func(tx *gorm.DB) error {
+		if len(menuIDs) > 0 {
+			lockedMenus, err := s.mm.LockByIDsTx(ctx, tx, menuIDs)
+			if err != nil {
+				return err
+			}
+			if len(lockedMenus) != len(menuIDs) {
+				// 锁不到 = 有菜单在并发里被删掉了。授予这批已经不成立，整体打回。
+				return adminenums.Err(adminenums.ErrMenuNotFound)
+			}
+		}
+
+		codes, err := s.menuPermissionCodesTx(ctx, tx, menuIDs)
+		if err != nil {
+			return err
+		}
+
+		willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
+		if err != nil {
+			return err
+		}
+		targetSuper, err := s.IsSuperAdmin(ctx, req.UserID)
+		if err != nil {
+			return err
+		}
+		if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || targetSuper); err != nil {
+			return err
+		}
+
+		if len(codes) > 0 {
+			// 权限点行也锁住：删除权限点端要能看到「这条码刚被授予」，
+			// 靠的就是同一批 sys_permission 行上的锁，而不是内存 enforcer 的旧副本。
+			lockedPerms, err := s.pm.LockByCodesTx(ctx, tx, codes)
+			if err != nil {
+				return err
+			}
+			if len(lockedPerms) != len(codes) {
+				return adminenums.Err(adminenums.ErrPermissionNotFound)
+			}
+			for _, b := range lockedPerms {
+				policies = append(policies, [3]string{b.APIPath, b.APIMethod, b.PermissionCode})
+			}
+		}
+
+		userIDStr := strconv.FormatUint(req.UserID, 10)
+		changed, err = casbin.ReplaceUserPermissionsTx(ctx, tx, userIDStr, policies)
+		if err != nil {
+			return err
+		}
+		if changed {
+			// 重载作用在进程内 enforcer 副本上，回滚不了：落成任务，
+			// 提交后立刻试一次，失败交给 worker，绝不在已提交后报整体失败。
+			reloadTaskID, err = s.appendPolicyReloadTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
+	s.FlushSideEffect(ctx, reloadTaskID)
 	return &admindto.AdminMenuSaveResp{UserID: req.UserID}, nil
 }
 
@@ -858,4 +879,12 @@ func (s *Service) EffectivePermissionCodes(ctx context.Context, userID uint64) (
 		return nil, err
 	}
 	return codes, nil
+}
+
+// stringOrEmpty 把可空列读成空串 —— 对外 JSON 只给字符串事实，不把 nil 指针交给上层。
+func stringOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }

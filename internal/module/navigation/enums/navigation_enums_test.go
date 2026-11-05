@@ -2,101 +2,10 @@ package navigationenums
 
 import (
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	"go_wp/pkg/facing"
 )
-
-var fallbackExclusions = map[string]string{
-	"MsgCreateSuccess": "成功回执：永远不作为错误响应返回",
-	"MsgUpdateSuccess": "成功回执：永远不作为错误响应返回",
-	"MsgListSuccess":   "成功回执：永远不作为错误响应返回",
-	"MsgDetailSuccess": "成功回执：永远不作为错误响应返回",
-	"MsgDeleteSuccess": "成功回执：永远不作为错误响应返回",
-
-	"ErrRowCountMismatch":   "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrStorageUnavailable": "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrContextInvalid":     "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrSourceChanged":      "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrNotTranslatable":    "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrSaveFailed":         "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-	"ErrProjectListFailed":  "页面错误槽文案 key（非哨兵错误），兜底在调用点",
-}
-
-func TestErrFallbacksCoverAllEnums(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("枚举本包源文件失败: %v", err)
-	}
-	declared := map[string]string{}
-	checked := 0
-
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		fset := token.NewFileSet()
-		parsed, perr := parser.ParseFile(fset, file, nil, 0)
-		if perr != nil {
-			t.Fatalf("解析 %s 失败: %v", file, perr)
-		}
-		for _, decl := range parsed.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for i, name := range vs.Names {
-					if !strings.HasPrefix(name.Name, "Err") && !strings.HasPrefix(name.Name, "Msg") {
-						continue
-					}
-					if i >= len(vs.Values) {
-						continue
-					}
-					lit, ok := vs.Values[i].(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						continue
-					}
-					value, uerr := strconv.Unquote(lit.Value)
-					if uerr != nil {
-						t.Fatalf("%s 的 %s 取值失败: %v", file, name.Name, uerr)
-					}
-					checked++
-					declared[value] = name.Name
-					if _, ok := fallbackExclusions[name.Name]; ok {
-						continue
-					}
-					if !strings.HasPrefix(name.Name, "Err") {
-						t.Errorf("%s 不是 Err* 常量：Msg* 应写进 fallbackExclusions 并说明理由", name.Name)
-						continue
-					}
-					if strings.TrimSpace(errFallbacks[value]) == "" {
-						t.Errorf("%s = %q 没有在 errFallbacks 里给中文兜底", name.Name, value)
-					}
-				}
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("没有扫到任何 Err* / Msg* 常量：判据失效（源码结构变了？）")
-	}
-
-	for value := range errFallbacks {
-		if _, ok := declared[value]; !ok {
-			t.Errorf("errFallbacks 里的 %q 不对应本包任何 Err* 常量（拼写错误或常量已删？）", value)
-		}
-	}
-}
 
 func TestErrCarriesFallbackAndKey(t *testing.T) {
 	err := Err(ErrStaleVersion)
@@ -107,8 +16,9 @@ func TestErrCarriesFallbackAndKey(t *testing.T) {
 	if !ok || !fact.Business {
 		t.Fatalf("FactOf 应判为业务错误，得到 %+v / %v", fact, ok)
 	}
-	if fact.Fallback == "" || fact.Fallback == fact.Key {
-		t.Errorf("兜底不该为空、也不该回落成 key 本身：%+v", fact)
+	// enums 只声明 key + 状态码，中文归词库；声明处不再带成品兜底。
+	if fact.Fallback != "" {
+		t.Errorf("声明处不得再带兜底句，实际 %+v", fact)
 	}
 	if fact.Tail != "" {
 		t.Errorf("纯 key 形态不该带定位信息：%q", fact.Tail)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"go_wp/config"
 
-	"go_wp/internal/builder/core"
+	"go_wp/internal/adminui"
+	"go_wp/pkg/builder/core"
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
@@ -92,12 +94,14 @@ import (
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"go_wp/pkg/view"
 	"go_wp/public/migrations"
 
 	"github.com/gin-gonic/gin"
@@ -136,6 +140,9 @@ func syncDeclaredPermissions(db *gorm.DB) {
 type assembly struct {
 	router *gin.Engine
 	marks  wiringMarks
+
+	// bgCtx 是装配阶段启动的后台循环共用的 ctx：进程收尾时取消它，循环立刻停。
+	bgCtx context.Context
 
 	db *gorm.DB
 
@@ -199,6 +206,13 @@ type assembly struct {
 	commentSvc commentcontract.CommentService
 }
 
+// adminSideEffectStarter 是 admin 模块提供的副作用重放入口。
+//
+// 装配端只认这个最小接口：ctx 取消即停，interval<=0 用模块自己的默认间隔。
+type adminSideEffectStarter interface {
+	StartSideEffectWorker(ctx context.Context, interval time.Duration)
+}
+
 type dataRuleSnapshotPort interface {
 	LoadDataRuleSnapshot(ctx context.Context) error
 
@@ -209,8 +223,24 @@ type dataRuleSnapshotPort interface {
 
 func (a *assembly) buildFoundation(ready func() error) {
 	router := a.router
+	// 请求事实由应用装配提供：框架的错误日志只问「这次请求的主体是谁」。
+	text.SetRequestUserID(func(c *gin.Context) int64 {
+		return int64(builtin.CurrentUserID(c))
+	})
 
 	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", gin.Mode() != gin.ReleaseMode)
+
+	// 直接 c.HTML 与共享视图出口使用同一套请求取词与缓冲失败接线。
+	// 失败按注册的路由协议处理；模板路径和内部原文只进日志。
+	router.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) {
+		view.FailScene(c, "template", err)
+	}))
+	router.Use(func(c *gin.Context) {
+		text.AttachScope(c)
+		c.Next()
+	})
+	// 统一成功出口：默认“操作成功”，自定义消息只消费明确消息事实。
+	router.Use(view.UseSuccess(adminui.NewSuccessWriter()))
 
 	staticFS := builtin.NoDirListFS("internal/templates/static")
 	if gin.Mode() == gin.ReleaseMode {
@@ -321,6 +351,13 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
 	a.adminAuthzSvc = adminAuthzSvc
 
+	// 管理员副作用任务的重放循环：策略重载与会话吊销跨库/跨进程，PG 回滚不了它们，
+	// 只能靠持久任务 + 自己的 worker 补做。装配阶段启动一次，挂在进程级可取消 ctx 上。
+	if starter, ok := adminAuthzSvc.(adminSideEffectStarter); ok {
+		starter.StartSideEffectWorker(a.bgCtx, 0)
+		marks.mark(portAdminSideEffectWorker)
+	}
+
 	snapPort, ok := adminAuthzSvc.(dataRuleSnapshotPort)
 	if !ok {
 		panic("admin 模块未实现数据权限快照端口（装配缺陷：部门快照无法注入中间件）")
@@ -329,11 +366,14 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	builtin.SetDataRuleDeptResolver(snapPort.DeptSubtreeIDsFromSnapshot)
 	marks.mark(portDataRuleDeptResolver)
 
+	// 后台页面组显式声明 HTML 页面协议：组内页面 GET 失败走 HTML 失败出口。
 	a.adminPages = router.Group("/admin",
+		view.HTMLPage,
 		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 		adminctx.PermContextMiddleware(adminAuthzSvc))
 
 	a.workbenchPages = router.Group("",
+		view.HTMLPage,
 		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 		adminctx.PermContextMiddleware(adminAuthzSvc))
 
@@ -391,7 +431,12 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		concrete.SetAttachmentResolver(mediaatt.New(a.mediaSvc))
 	}
 
-	productSvc, productReader, productHandle := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	productSvc, productReader, productHandle := producthttp.SetupProductRoutes(authorizedAPI, db, projectService, masterdataSvc)
+
+	// 主数据变更记录在 SetupProductRoutes 里已经作为构造参数注入
+	// （product_router.go:47-49 → productservice.NewService(..., changes)），
+	// 不再是 setter 后置注入 —— mark 跟着真实注入方式走，放在构造成功之后。
+	marks.mark(portProductMasterDataChanges)
 
 	inventoryhttp.SetProductCatalog(productSvc)
 	marks.mark(portInventoryProductCatalog)
@@ -882,22 +927,15 @@ func (a *assembly) wireProductInventoryPorts() {
 	variantCostSetter.SetVariantCost(variantCostPort)
 	marks.mark(portPurchaseVariantCost)
 
-	masterDataSetters := []struct {
-		name   string
-		target any
-	}{
-		{"商品模块", productSvc}, {"采购模块", a.purchaseSvc},
+	// 商品的审计变更依赖已在构造时给齐（productservice.NewService 的第三参），
+	// 这里不再晚接；采购仍用自己的注入点。
+	purchaseChanges, ok := a.purchaseSvc.(interface {
+		SetMasterDataChanges(masterdatacontract.MasterDataService)
+	})
+	if !ok {
+		panic("采购模块未提供主数据变更记录注入点（SetMasterDataChanges）")
 	}
-	for _, item := range masterDataSetters {
-		setter, sok := item.target.(interface {
-			SetMasterDataChanges(masterdatacontract.MasterDataService)
-		})
-		if !sok {
-			panic(item.name + "未提供主数据变更记录注入点（SetMasterDataChanges）")
-		}
-		setter.SetMasterDataChanges(a.masterdataSvc)
-	}
-	marks.mark(portProductMasterDataChanges)
+	purchaseChanges.SetMasterDataChanges(a.masterdataSvc)
 	marks.mark(portPurchaseMasterDataChanges)
 
 	availabilityPort, ok := inventorySvc.(productcontract.VariantAvailabilityPort)

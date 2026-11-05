@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/ssrf"
 	"net"
 	"net/http"
 	"net/url"
@@ -126,10 +127,8 @@ var (
 	ErrURLDenied            = aienums.Err(aienums.ErrURLDenied)
 )
 
-func isForbiddenIP(ip net.IP) bool {
-	return !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
-}
+// isForbiddenIP 纯 IP 禁用判定复用 pkg/ssrf（与 webhook / mail 回调节点同一判据）。
+func isForbiddenIP(ip net.IP) bool { return ssrf.IsForbiddenIP(ip) }
 
 func dialAIContext(ctx context.Context, network, address string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, DialTimeout)

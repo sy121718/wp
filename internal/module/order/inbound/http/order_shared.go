@@ -10,10 +10,10 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	"go_wp/pkg/facing"
 )
 
 func countsFilled(counts map[string]int64, keys []string) map[string]int64 {
@@ -65,7 +65,7 @@ type translate = func(key, fallback string) string
 
 func orderTr(c *gin.Context) translate {
 	return func(key, fallback string) string {
-		return adminui.TranslateArgs(c, key, fallback, nil)
+		return response.ArgsText(c, key, fallback, nil)
 	}
 }
 
@@ -126,16 +126,37 @@ func orderQueryID(raw string) uint64 {
 	return id
 }
 
+// orderFacingMsg 把错误收成一条消息事实，取词留给出口。
+//
+// 允许上屏的只有 orderenums.UserFacingMessages 里的 key（这些都是词库条目，
+// 中英双语都在），其余一律归口成内部错误文案，不把裸 key、SQL 原文或
+// err.Error() 交给前端。这里不取词：Go 侧取词只有模板 t/tf 与 JSON 出口
+// response 两条路，handler 自己翻译等于第三种出口。
+func orderFacingMsg(c *gin.Context, err error) facing.Msg {
+	if err == nil {
+		return facing.Msg{}
+	}
+	if key := orderFacingText(err.Error()); key != "" {
+		// Key 与 Fallback 同值是有意的：词库查得到就用译文，查不到时
+		// response.ArgsText 会先看 fallback 是否等于 key，相等即整条归口
+		// 成内部错误文案 —— 这正是我们要的「不许裸 key 上屏」。
+		return facing.Msg{Key: key, Fallback: key}
+	}
+	// orderFacingText 白名单里有 ErrInternal 这个中文常量（不是 key），
+	// 它上面已经命中过；走到这里说明是真实失败，记日志再归口。
+	logger.Scene("order-page").With("path", c.Request.URL.Path).Error(err, "订单后台页处理失败")
+	return adminui.InternalMsg()
+}
+
+// orderFacingError 保留原签名：调用点都在页面 View 里填 LoadErr 字符串。
+//
+// nil 必须在进 MsgText 之前短路：空 Msg{} 会被 ArgsText 当成「缺词」，
+// 反过来产出一条内部错误文案 —— nil 不是错误，不该产出任何文案。
 func orderFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-
-	if msg := orderFacingText(err.Error()); msg != "" {
-		return i18n.TranslateFunc(response.RequestLanguage(c))(msg, msg)
-	}
-	logger.Scene("order-page").With("path", c.Request.URL.Path).Error(err, "订单后台页处理失败")
-	return adminui.PageInternalText(c)
+	return response.MsgText(c, orderFacingMsg(c, err))
 }
 
 func orderFacingText(raw string) string {

@@ -462,17 +462,34 @@ func registerCatalogAndInventory() {
 	})
 
 	registerSeed(Seed{
-		Version:      "247-i18n-seed-product-followups",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.product_translations.noTargetLang.action'",
-		SQL:          mustSQL("247_i18n_seed_product_followups.sql"),
+		Version:   "247-i18n-seed-product-followups",
+		TableName: "sys_i18n",
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('admin.product_translations.noTargetLang.desc'),
+    ('admin.product_translations.noTargetLang.descTail'),
+    ('admin.products.bulkPricing.previewHintLead'),
+    ('admin.products.bulkPricing.previewHintTail'),
+    ('admin.products.create.noAttributesLead'),
+    ('admin.products.create.noAttributesTail'),
+    ('pBulkScopeHint'),
+    ('pNewAttrs'),
+    ('trNoLangTitle'),
+    ('trNoTgtLangAct')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723e_current_247_i18n_seed_product_followups.sql"),
 	})
 
 	registerSeed(Seed{
-		Version:      "248-i18n-seed-product-sku",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrSkuContainerMissing'",
-		SQL:          mustSQL("248_product_sku_error_i18n.sql"),
+		Version:   "248-i18n-seed-product-sku",
+		TableName: "sys_i18n",
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('pBoxSkuInvalid'),
+    ('pSkuBoxMissing'),
+    ('pSkuLabel'),
+    ('pSkuPh'),
+    ('pdSkuScope')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723f_current_248_product_sku_error_i18n.sql"),
 	})
 
 	registerSeed(Seed{
@@ -502,10 +519,27 @@ func registerCatalogAndInventory() {
 	})
 
 	registerSeed(Seed{
-		Version:      "252-i18n-seed-inventory-external-sku",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrExternalSKUProductConflict'",
-		SQL:          mustSQL("252_i18n_seed_inventory_external_sku.sql"),
+		Version:   "252-i18n-seed-inventory-external-sku",
+		TableName: "sys_i18n",
+		ConditionSQL: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM (VALUES
+    ('ErrExternalSKUInvalid'),
+    ('ErrExternalSKUProductConflict'),
+    ('ErrSKUSourceInvalid'),
+    ('ErrWarehouseSKUCodeTaken'),
+    ('ErrWarehouseSKUNotFound'),
+    ('ErrWarehouseSKURequired'),
+    ('admin.inventory.sku.col.externalSku'),
+    ('admin.products.label.warehouseSku'),
+    ('admin.products.ph.warehouseSku'),
+    ('admin.products.skuSource.custom'),
+    ('admin.products.skuSource.label'),
+    ('admin.products.skuSource.previewLabel'),
+    ('admin.products.skuSource.warehouse'),
+    ('pExternalSku'),
+    ('pExternalSkuPh'),
+    ('pSkuSrcWhHint')) AS keys(item_key) CROSS JOIN (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
+WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = keys.item_key AND t.lang = langs.lang)) THEN 1 ELSE 0 END`,
+		SQL: mustSQL("723g_current_252_i18n_seed_inventory_external_sku.sql"),
 	})
 
 	registerSeed(Seed{

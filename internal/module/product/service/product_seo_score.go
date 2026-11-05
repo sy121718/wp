@@ -13,7 +13,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/internal/seo/scoring"
+	"go_wp/pkg/seo/scoring"
 	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 )
@@ -44,8 +44,9 @@ type SeoScoreInputResult struct {
 	Err    error
 }
 
+// SeoScore 只读汇总实体评分及同工程重复标题事实。
 func SeoScore(ctx context.Context, r ProductReadPort, insts SeoInstancePathReader, extra SeoTitleExtraSources,
-	kind scoring.PageKind, req *productdto.ScorePanelReq, lang string) (*productdto.SeoScoreResp, error) {
+	kind scoring.PageKind, req *productdto.ScorePanelReq, lang string) (*SeoScoreFacts, error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -59,27 +60,27 @@ func SeoScore(ctx context.Context, r ProductReadPort, insts SeoInstancePathReade
 		return nil, err
 	}
 	score := scoring.ScoreEntityPage(input.Input)
-	out := &productdto.SeoScoreResp{
+	out := &SeoScoreFacts{
 		EntityType: string(kind), EntityID: input.SelfID, ProjectID: projectID,
 		Total: score.Total, Title: scoring.EntityTitle(input.Input),
 		Description: firstNonEmpty(input.Input.SEODescription, input.Input.Description),
 		URL:         input.Input.URL, Coverage: coverage,
-		Sections:   make([]productdto.SeoScoreSectionResp, 0, len(score.Sections)),
-		Duplicates: []productdto.SeoTitleDuplicateResp{},
+		Sections:   make([]SeoScoreSection, 0, len(score.Sections)),
+		Duplicates: []SeoTitleDuplicate{},
 	}
 	if score.Profile != nil {
 		out.ProfileType = score.Profile.Type
 	}
 	for _, section := range score.Sections {
-		fact := productdto.SeoScoreSectionResp{Key: section.Key, Score: section.Score, Max: section.Max,
-			Weight: section.Weight, Percent: section.Percent, Checks: make([]productdto.SeoScoreCheckResp, 0, len(section.Checks))}
+		fact := SeoScoreSection{Key: section.Key, Score: section.Score, Max: section.Max,
+			Weight: section.Weight, Percent: section.Percent, Checks: make([]SeoScoreCheck, 0, len(section.Checks))}
 		for _, check := range section.Checks {
-			fact.Checks = append(fact.Checks, productdto.SeoScoreCheckResp{Key: check.Key, Score: check.Score, Max: check.Max, Skipped: check.Skipped})
+			fact.Checks = append(fact.Checks, SeoScoreCheck{Key: check.Key, Score: check.Score, Max: check.Max, Skipped: check.Skipped})
 		}
 		out.Sections = append(out.Sections, fact)
 	}
 	for _, duplicate := range scoring.DuplicateTitles(out.Title, index, input.SelfID) {
-		out.Duplicates = append(out.Duplicates, productdto.SeoTitleDuplicateResp{ID: duplicate.ID, Kind: duplicate.Kind, Title: duplicate.Title, Path: duplicate.Page})
+		out.Duplicates = append(out.Duplicates, SeoTitleDuplicate{ID: duplicate.ID, Kind: duplicate.Kind, Title: duplicate.Title, Path: duplicate.Page})
 	}
 	return out, nil
 }
@@ -176,9 +177,10 @@ func seoInstancePublicationOf(ctx context.Context, insts SeoInstancePathReader, 
 	return strings.TrimSpace(inst.URLPath), published, nil
 }
 
+// SeoTitleIndex 收集同工程标题并明确记录未覆盖的来源。
 func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSources,
-	projectID string) ([]scoring.TitleEntry, productdto.SeoTitleCoverageResp, error) {
-	coverage := productdto.SeoTitleCoverageResp{Included: []string{"product", "category", "brand"}, Omitted: []productdto.SeoTitleOmissionResp{}}
+	projectID string) ([]scoring.TitleEntry, SeoTitleCoverage, error) {
+	coverage := SeoTitleCoverage{Included: []string{"product", "category", "brand"}, Omitted: []SeoTitleOmission{}}
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil, coverage, productenums.Err(productenums.ErrInvalidParam)
@@ -220,7 +222,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 		}
 	}
 	if extra.Pages == nil {
-		coverage.Omitted = append(coverage.Omitted, productdto.SeoTitleOmissionResp{Source: "page", Reason: "not_configured"})
+		coverage.Omitted = append(coverage.Omitted, SeoTitleOmission{Source: "page", Reason: "not_configured"})
 	} else {
 		drafts, err := extra.Pages.ListDrafts(ctx)
 		if err != nil {
@@ -240,7 +242,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 	if extra.Contents != nil {
 		reason = "project_filter_unavailable"
 	}
-	coverage.Omitted = append(coverage.Omitted, productdto.SeoTitleOmissionResp{Source: "article", Reason: reason})
+	coverage.Omitted = append(coverage.Omitted, SeoTitleOmission{Source: "article", Reason: reason})
 	return out, coverage, nil
 }
 

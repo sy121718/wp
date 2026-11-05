@@ -10,6 +10,7 @@ import (
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
 	membershipenums "go_wp/internal/module/membership/enums"
+	"go_wp/pkg/i18n"
 )
 
 type stubCustomerMembership struct {
@@ -81,6 +82,11 @@ func TestCustomerDetailMembershipUnavailableIsVisible(t *testing.T) {
 }
 
 func TestCustomerDetailMembershipFailureShowsDeclaredText(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{
+		membershipenums.ErrDefaultTierMissing: {"zh-CN": "该工程还没有默认等级，请先建一个（错误里带的工程 id 用于定位）"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	code, body := detailBodyWithMembership(t,
 		&stubCustomerMembership{err: membershipenums.Err(membershipenums.ErrDefaultTierMissing)})
 
