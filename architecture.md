@@ -68,7 +68,7 @@ cmd/                    进程入口
 
 - 待核对：控制器侧是否仍有取词残留；展示分档（`Tone`/`Kind` 一类）是否仍在后端计算并由 service 交成品标签。
 - 待核对：`dto` 里是否仍有换语言要重算的成品句；`c.PostForm` 是否已全部改走 `binding`。
-- 待核对：`internal/shell` 是否仍作为转发层存在（终局是删除）。
+- 已确认：`internal/shell`、`internal/backref`、`internal/text`、`internal/permission` 均已删除；`check-shell-migration.sh` 是终局断言，不是计数基线。
 - 待核对：页面失败是否仍有渲染成页面的出口；是否仍有模块保留旧包装链。
 - 待核对：前端模板统一封装的完成度，见 [internal/templates/CLAUDE.md](internal/templates/CLAUDE.md) 的「待实施」清单。
 - 已确认的现状：`internal/templates` 里同时有模板资产与渲染基础设施 Go（引擎适配、模板函数、嵌入）；`pkg/view` 只做接线与失败出口。
