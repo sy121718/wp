@@ -7,7 +7,7 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func instanceStale(t *testing.T, f *presFixture, instanceID string) bool {

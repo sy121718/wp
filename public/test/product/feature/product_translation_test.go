@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"

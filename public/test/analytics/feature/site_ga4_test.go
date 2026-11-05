@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
 )

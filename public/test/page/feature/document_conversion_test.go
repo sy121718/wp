@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"

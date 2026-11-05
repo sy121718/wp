@@ -6,11 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 )
 
 func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testing.T) {
+	RegisterBusinessViews()
 	doc := []byte(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"one","type":"core.cartIcon","props":{"mode":"inline"},"actions":{"checkout":{"kind":"page","pageId":"chosen-page"}}},{"id":"two","type":"core.cartIcon","props":{"mode":"inline"},"actions":{"checkout":{"kind":"page","pageId":"chosen-page"}}},{"id":"three","type":"core.cartIcon","props":{"mode":"inline"},"actions":{"checkout":{"kind":"presentation","instanceId":"chosen-instance"}}}]}`)
 	page, err := builder.ParsePage(doc)
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	pagecontract "go_wp/internal/module/page/contract"

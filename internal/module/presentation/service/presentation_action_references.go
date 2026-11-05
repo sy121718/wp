@@ -3,7 +3,7 @@ package presentationservice
 import (
 	"context"
 	"fmt"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/source"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	"go_wp/internal/pipeline"

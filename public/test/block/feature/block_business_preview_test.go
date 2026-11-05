@@ -1,13 +1,14 @@
 package feature
 
 import (
+	"go_wp/internal/builder/extensions/presets"
 	"context"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
@@ -21,7 +22,7 @@ func TestBusinessPresetGlobalReferencesPreviewRealContents(t *testing.T) {
 	env := newRefEnv(t)
 	env.blocks.(interface {
 		SetPresetResolver(blockcontract.PresetResolver)
-	}).SetPresetResolver(builder.BusinessPresetRegistry{})
+	}).SetPresetResolver(presets.BusinessPresetRegistry{})
 	block, err := env.blocks.Create(t.Context(), &blockdto.CreateReq{ProjectID: env.projectID, Name: "共享购物流程", PresetKey: "commerce.cart-checkout", PresetVersion: 1})
 	if err != nil {
 		t.Fatal(err)

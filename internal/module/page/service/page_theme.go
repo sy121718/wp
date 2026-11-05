@@ -9,7 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/pipeline"
 )

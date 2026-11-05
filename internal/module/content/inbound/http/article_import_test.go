@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/richdoc"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"

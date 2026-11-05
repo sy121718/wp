@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"

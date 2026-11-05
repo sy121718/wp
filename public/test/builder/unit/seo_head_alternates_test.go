@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func TestBuildSEOHeadAlternates(t *testing.T) {

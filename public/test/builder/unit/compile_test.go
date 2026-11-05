@@ -8,7 +8,7 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/templates"
 )
 

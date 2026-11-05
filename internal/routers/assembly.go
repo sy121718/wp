@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/pipeline"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	aihttp "go_wp/internal/module/ai/inbound/http"
@@ -223,6 +224,8 @@ type dataRuleSnapshotPort interface {
 
 func (a *assembly) buildFoundation(ready func() error) {
 	router := a.router
+	// 业务组件的视图构建必须在首次编译/组件缓存之前登记。
+	pipeline.RegisterBusinessViews()
 	// 请求事实由应用装配提供：框架的错误日志只问「这次请求的主体是谁」。
 	text.SetRequestUserID(func(c *gin.Context) int64 {
 		return int64(builtin.CurrentUserID(c))

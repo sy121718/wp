@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"

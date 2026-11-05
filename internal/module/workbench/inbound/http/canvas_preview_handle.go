@@ -1,6 +1,7 @@
 package workbenchhttp
 
 import (
+	"go_wp/internal/builder/extensions/presets"
 	_ "embed"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
@@ -11,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -190,7 +191,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	}
 	metaJSON, merr := json.Marshal(gin.H{
 		"mediaBaseUrl":     upload.BaseURL(),
-		"businessPresets":  builder.BusinessPresets(),
+		"businessPresets":  presets.BusinessPresets(),
 		"componentActions": builder.ComponentActions(),
 		"blocks":           h.svc.BlockSummaries(c.Request.Context(), inst.ProjectID),
 		"target":           workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func main() {

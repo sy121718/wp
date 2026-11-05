@@ -2,7 +2,7 @@ package unit
 
 import (
 	"fmt"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"os"
 	"strings"
 	"testing"

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"go_wp/internal/backref"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"

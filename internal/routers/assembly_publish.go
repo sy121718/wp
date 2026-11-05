@@ -1,11 +1,12 @@
 package routers
 
 import (
+	"go_wp/internal/builder/extensions/presets"
 	"context"
 	"go_wp/config"
 	"time"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
@@ -77,7 +78,7 @@ func (a *assembly) buildPublishingModules() {
 	if !ok {
 		panic("区块模块未实现受控预设解析器注入")
 	}
-	presetSetter.SetPresetResolver(builder.BusinessPresetRegistry{})
+	presetSetter.SetPresetResolver(presets.BusinessPresetRegistry{})
 	marks.mark(portBlockPresetResolver)
 
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry, publicationSvc)

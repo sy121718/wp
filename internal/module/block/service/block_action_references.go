@@ -2,7 +2,7 @@ package blockservice
 
 import (
 	"context"
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/source"
 )
 

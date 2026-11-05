@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/logger"
 )

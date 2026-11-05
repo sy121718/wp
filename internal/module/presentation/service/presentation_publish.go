@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"

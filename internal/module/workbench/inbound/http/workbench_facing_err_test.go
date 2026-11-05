@@ -15,7 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	pagecontract "go_wp/internal/module/page/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"

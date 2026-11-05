@@ -6,7 +6,7 @@ import (
 
 	json "go_wp/pkg/jsonx"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	plugincontract "go_wp/internal/module/plugin/contract"
 )
 

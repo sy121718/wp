@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"

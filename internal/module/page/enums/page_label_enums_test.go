@@ -3,7 +3,7 @@ package pageenums
 import (
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func TestSlotTokensMirrorBuilder(t *testing.T) {

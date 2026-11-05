@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
 

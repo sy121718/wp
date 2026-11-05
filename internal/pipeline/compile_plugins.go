@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/templates"
 

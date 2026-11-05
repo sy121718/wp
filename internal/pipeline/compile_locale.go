@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
 )

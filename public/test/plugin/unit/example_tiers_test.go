@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/templates"

@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	blueprintdto "go_wp/internal/module/blueprint/dto"
 	blueprintenums "go_wp/internal/module/blueprint/enums"

@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"

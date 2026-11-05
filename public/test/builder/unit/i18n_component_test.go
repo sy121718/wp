@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"

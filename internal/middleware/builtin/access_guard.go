@@ -18,7 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
 )

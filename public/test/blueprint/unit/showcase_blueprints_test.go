@@ -8,7 +8,7 @@ import (
 	"github.com/CloudyKit/jet/v6"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	blueprintmodel "go_wp/internal/module/blueprint/model"
 	blueprintservice "go_wp/internal/module/blueprint/service"
 	"go_wp/internal/templates"

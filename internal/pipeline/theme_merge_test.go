@@ -5,7 +5,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func TestMergeActiveThemeIntoDocument_NoProject(t *testing.T) {

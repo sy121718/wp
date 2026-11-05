@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
 )

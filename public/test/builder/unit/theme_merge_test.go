@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func TestMergeThemeSettingsKeepsUncoveredKeys(t *testing.T) {

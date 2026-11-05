@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/seo"

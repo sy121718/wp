@@ -1,6 +1,7 @@
 package workbenchhttp
 
 import (
+	"go_wp/internal/builder/extensions/presets"
 	_ "embed"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
@@ -9,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -68,7 +69,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	metaJSON, err := json.Marshal(gin.H{
 
 		"mediaBaseUrl":     upload.BaseURL(),
-		"businessPresets":  builder.BusinessPresets(),
+		"businessPresets":  presets.BusinessPresets(),
 		"componentActions": builder.ComponentActions(),
 		"target":           workbenchTargetOf(EditTargetPage),
 		"pageId":           page.ID,
@@ -138,7 +139,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	meta := gin.H{
 
 		"mediaBaseUrl":     upload.BaseURL(),
-		"businessPresets":  builder.BusinessPresets(),
+		"businessPresets":  presets.BusinessPresets(),
 		"componentActions": builder.ComponentActions(),
 		"target":           workbenchTargetOf(EditTargetBlock),
 		"pageId":           block.ID,
@@ -244,7 +245,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	metaJSON, err := json.Marshal(gin.H{
 
 		"mediaBaseUrl":     upload.BaseURL(),
-		"businessPresets":  builder.BusinessPresets(),
+		"businessPresets":  presets.BusinessPresets(),
 		"componentActions": builder.ComponentActions(),
 		"target":           workbenchTargetOf(EditTargetTemplate),
 		"pageId":           tpl.ID,

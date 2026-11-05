@@ -3,7 +3,7 @@ package pipeline
 import (
 	"sync"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )

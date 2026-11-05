@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"

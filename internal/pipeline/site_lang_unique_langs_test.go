@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 )

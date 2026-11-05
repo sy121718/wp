@@ -1,7 +1,7 @@
 package pipeline
 
 import (
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/publish"
 )
 

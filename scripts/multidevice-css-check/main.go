@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 func main() {

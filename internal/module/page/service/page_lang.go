@@ -12,7 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	"go_wp/internal/pipeline"

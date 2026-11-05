@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	nav "go_wp/internal/builder/extensions/nav"
 	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"

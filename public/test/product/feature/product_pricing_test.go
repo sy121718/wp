@@ -670,7 +670,7 @@ func TestPricingHasNoBuildPipelineDependency(t *testing.T) {
 
 	serviceDir := filepath.Join("..", "..", "..", "..", "internal", "module", "product", "service")
 	banned := []string{
-		"go_wp/internal/builder",
+		"go_wp/pkg/builder",
 		"go_wp/internal/pipeline",
 		"go_wp/internal/artifact",
 		"go_wp/internal/module/artifact",

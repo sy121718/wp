@@ -5,7 +5,7 @@ import (
 	"context"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
 	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"

@@ -6,7 +6,7 @@ import (
 	"go_wp/pkg/publish"
 	"strings"
 
-	"go_wp/internal/builder"
+	"go_wp/pkg/builder"
 )
 
 const (
