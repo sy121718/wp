@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ func TestAuditActiveLinksSkipsSiteRootFiles(t *testing.T) {
 		t.Fatalf("建悬空链接失败: %v", err)
 	}
 
-	for _, name := range []string{"sitemap.xml", "robots.txt", "feed.xml", NotFoundFileName} {
+	for _, name := range []string{"sitemap.xml", "robots.txt", "feed.xml", publish.NotFoundFileName} {
 		if err := os.WriteFile(filepath.Join(active, name), []byte("x"), 0o644); err != nil {
 			t.Fatalf("写站点级文件 %s 失败: %v", name, err)
 		}
@@ -39,11 +40,11 @@ func TestAuditActiveLinksSkipsSiteRootFiles(t *testing.T) {
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatalf("建深层目录失败: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(deep, NotFoundFileName), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(deep, publish.NotFoundFileName), []byte("x"), 0o644); err != nil {
 		t.Fatalf("写深层文件失败: %v", err)
 	}
 
-	store := &LocalPublicationStore{ActiveRoot: active}
+	store := &publish.LocalPublicationStore{ActiveRoot: active}
 	issues, checked, err := store.AuditActiveLinks()
 	if err != nil {
 		t.Fatalf("审计失败: %v", err)
@@ -60,7 +61,7 @@ func TestAuditActiveLinksSkipsSiteRootFiles(t *testing.T) {
 		switch {
 		case strings.Contains(is.Reason, "链接目标不可达"):
 			sawDangling = true
-		case strings.Contains(is.Reason, "非符号链接") && strings.HasSuffix(filepath.ToSlash(is.Link), "docs/"+NotFoundFileName):
+		case strings.Contains(is.Reason, "非符号链接") && strings.HasSuffix(filepath.ToSlash(is.Link), "docs/"+publish.NotFoundFileName):
 			sawDeep = true
 		}
 	}
@@ -71,7 +72,7 @@ func TestAuditActiveLinksSkipsSiteRootFiles(t *testing.T) {
 		t.Errorf("深层同名真实文件未被报出（白名单越界到了子目录）: %+v", issues)
 	}
 	for _, is := range issues {
-		for _, name := range []string{"sitemap.xml", "robots.txt", "feed.xml", NotFoundFileName} {
+		for _, name := range []string{"sitemap.xml", "robots.txt", "feed.xml", publish.NotFoundFileName} {
 			if !strings.Contains(filepath.ToSlash(is.Link), "/docs/") && strings.HasSuffix(filepath.ToSlash(is.Link), "/"+name) {
 				t.Errorf("站点级文件 %s 被误报为异常: %+v", name, is)
 			}
@@ -80,7 +81,7 @@ func TestAuditActiveLinksSkipsSiteRootFiles(t *testing.T) {
 }
 
 func TestAuditActiveLinksNeverPublished(t *testing.T) {
-	store := &LocalPublicationStore{ActiveRoot: filepath.Join(t.TempDir(), "public", "active")}
+	store := &publish.LocalPublicationStore{ActiveRoot: filepath.Join(t.TempDir(), "public", "active")}
 	issues, checked, err := store.AuditActiveLinks()
 	if err != nil {
 		t.Fatalf("未发布过不该报错: %v", err)

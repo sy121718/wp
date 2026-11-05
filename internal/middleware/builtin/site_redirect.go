@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/seo"
 )
 
@@ -72,7 +72,7 @@ func redirectTargetOf(prefix, fullPath string) (target string, code int, ok bool
 		rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", 0, false
 	}
-	link := filepath.Join(pipeline.ActiveRoot(), rel)
+	link := filepath.Join(publish.ActiveRoot(), rel)
 
 	linkTarget, err := os.Readlink(link)
 	if err != nil {
@@ -83,7 +83,7 @@ func redirectTargetOf(prefix, fullPath string) (target string, code int, ok bool
 	if err != nil {
 		return "", 0, false
 	}
-	directive, perr := pipeline.ParseRedirectEntry(data)
+	directive, perr := publish.ParseRedirectEntry(data)
 	if perr != nil || directive == nil || strings.TrimSpace(directive.TargetPath) == "" {
 		return "", 0, false
 	}

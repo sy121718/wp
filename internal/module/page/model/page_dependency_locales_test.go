@@ -2,12 +2,12 @@ package pagemodel_test
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	pagemodel "go_wp/internal/module/page/model"
-	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 	"gorm.io/gorm"
 )
@@ -25,8 +25,8 @@ func TestDependencyLookupIncludesEachLocaleLedger(t *testing.T) {
 			insertArtifact(t, db, b, page, 2)
 			insertArtifact(t, db, history, page, 3)
 			setPointers(t, db, page, b, b)
-			dep := pipeline.BlockKey(uuid.NewString())
-			oldDep := pipeline.BlockKey(uuid.NewString())
+			dep := publish.BlockKey(uuid.NewString())
+			oldDep := publish.BlockKey(uuid.NewString())
 			insertDependency(t, db, a, page, dep)
 			insertDependency(t, db, history, page, oldDep)
 			if ledger == "published" {

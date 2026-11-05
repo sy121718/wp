@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,6 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/jsonx"
 )
 
@@ -664,8 +664,8 @@ func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 		t.Skip("环境里没有第二个实体可用的产物（跳过外来链接场景）")
 	}
 
-	store := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
-	if err := store.Activate(row.OldPath, pipeline.Locator{Provider: "local", Key: "artifacts/" + otherArtifact}); err != nil {
+	store := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
+	if err := store.Activate(row.OldPath, publish.Locator{Provider: "local", Key: "artifacts/" + otherArtifact}); err != nil {
 		t.Skipf("无法构造外来链接现场（跳过）：%v", err)
 	}
 
@@ -675,7 +675,7 @@ func TestOldPathDisposalRefusesForeignFSTarget(t *testing.T) {
 	}
 	if st, ierr := store.Inspect(row.OldPath); ierr != nil {
 		t.Fatalf("复核旧路径状态失败: %v", ierr)
-	} else if st.Kind == pipeline.PublicationNone {
+	} else if st.Kind == publish.PublicationNone {
 		t.Fatalf("旧路径的链接属于别的产物，旧路径处置不得删除它（实际已被下线）")
 	}
 }

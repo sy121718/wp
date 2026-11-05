@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,9 +19,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/builder"
 )
 
 const AccessUnlockPath = "/access/unlock"
@@ -87,7 +88,7 @@ func activeEntryDir(entry string) (dir string, ok bool) {
 	if entry == "" {
 		return "", false
 	}
-	link := filepath.Join(pipeline.ActiveRoot(), filepath.FromSlash(entry))
+	link := filepath.Join(publish.ActiveRoot(), filepath.FromSlash(entry))
 	fi, err := os.Lstat(link)
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		return "", false
@@ -115,16 +116,16 @@ func AccessGuardMiddleware(prefix string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		clean, ok := pipeline.CleanSiteRel(raw)
+		clean, ok := publish.CleanSiteRel(raw)
 		if !ok {
 			c.Next()
 			return
 		}
 
 		clean = stripContentEncodingSuffix(clean)
-		root := pipeline.ActiveRoot()
+		root := publish.ActiveRoot()
 
-		entry, isEntry := pipeline.ResolveActiveEntry(root, clean)
+		entry, isEntry := publish.ResolveActiveEntry(root, clean)
 		if !isEntry {
 
 			if folded, okFold := resolveEntryFolded(root, clean); okFold {
@@ -193,7 +194,7 @@ func serveGuardDenied(c *gin.Context, guard *pipeline.GuardMeta, dir, sitePath s
 			return
 		}
 	}
-	c.Data(status, "text/html; charset=utf-8", pipeline.RenderGuardPage(meta, sitePath, false))
+	c.Data(status, "text/html; charset=utf-8", publish.RenderGuardPage(meta, sitePath, false))
 	c.Abort()
 }
 
@@ -320,13 +321,13 @@ func writeAccessCookie(c *gin.Context, p accessPayload) error {
 
 func AccessUnlockHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		clean, ok := pipeline.CleanSiteRel(strings.TrimSpace(c.PostForm("path")))
+		clean, ok := publish.CleanSiteRel(strings.TrimSpace(c.PostForm("path")))
 		if !ok {
 			serveUnlockFailure(c, nil, "/", false)
 			return
 		}
-		root := pipeline.ActiveRoot()
-		entry, isEntry := pipeline.ResolveActiveEntry(root, clean)
+		root := publish.ActiveRoot()
+		entry, isEntry := publish.ResolveActiveEntry(root, clean)
 		if !isEntry {
 			serveUnlockFailure(c, nil, "/", false)
 			return
@@ -380,11 +381,11 @@ func serveUnlockFailure(c *gin.Context, guard *pipeline.GuardMeta, back string, 
 	}
 	c.Header("Cache-Control", "private, no-store")
 	c.Data(accessWrongPasswordStatus, "text/html; charset=utf-8",
-		pipeline.RenderGuardPage(meta, back, showError))
+		publish.RenderGuardPage(meta, back, showError))
 	c.Abort()
 }
 
-var contentEncodingSuffixes = []string{pipeline.PrecompressedSuffix, ".br"}
+var contentEncodingSuffixes = []string{publish.PrecompressedSuffix, ".br"}
 
 func stripContentEncodingSuffix(clean string) string {
 	for _, suffix := range contentEncodingSuffixes {
@@ -413,7 +414,7 @@ func resolveEntryFolded(root, clean string) (string, bool) {
 
 		candidate := e.Name() + clean[len(e.Name()):]
 
-		if resolved, ok := pipeline.ResolveActiveEntry(root, candidate); ok {
+		if resolved, ok := publish.ResolveActiveEntry(root, candidate); ok {
 			hit = resolved
 			matches++
 		}

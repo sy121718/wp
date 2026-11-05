@@ -3,12 +3,12 @@ package feature
 import (
 	"context"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
@@ -28,6 +28,7 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/routers"
+	"go_wp/pkg/builder/core"
 
 	"go_wp/public/test/support"
 )
@@ -71,7 +72,7 @@ func createUnionPage(t *testing.T, svc pagecontract.PageService, projectID, path
 
 func countUnionDepRows(t *testing.T, db *gorm.DB, pageID, templateID string) int64 {
 	t.Helper()
-	dep := pipeline.ContentTemplateKey(templateID)
+	dep := publish.ContentTemplateKey(templateID)
 	var n int64
 	if err := db.Raw(`
 		SELECT count(*)

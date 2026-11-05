@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,6 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/pkg/builder/core"
-	"go_wp/internal/pipeline"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -142,7 +142,7 @@ func (f *presFixture) createTemplate(t *testing.T) {
 func activeHTML(t *testing.T, urlPath string) string {
 	t.Helper()
 	rel := strings.TrimPrefix(urlPath, "/")
-	b, err := os.ReadFile(filepath.Join(pipeline.ActiveRoot(), rel, "index.html"))
+	b, err := os.ReadFile(filepath.Join(publish.ActiveRoot(), rel, "index.html"))
 	if err != nil {
 		t.Fatalf("读取激活产物 %s 失败: %v", urlPath, err)
 	}

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/pipeline"
 )
 
 func doGet(router *gin.Engine, path string) *httptest.ResponseRecorder {
@@ -29,12 +28,12 @@ func newSiteFaceRouter() *gin.Engine {
 func TestSiteFaceUnknownPathServesCustomNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
 	const page = "<!doctype html><html><body><h1>页面不存在</h1></body></html>"
-	if err := pipeline.SyncNotFoundPage(active, page); err != nil {
+	if err := publish.SyncNotFoundPage(active, page); err != nil {
 		t.Fatalf("写入自定义 404 页失败: %v", err)
 	}
 
@@ -57,7 +56,7 @@ func TestSiteFaceUnknownPathServesCustomNotFound(t *testing.T) {
 func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
@@ -74,10 +73,10 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 		t.Errorf("未配置时不应输出 HTML 页面，实际 body %q", rec.Body.String())
 	}
 
-	if err := pipeline.SyncNotFoundPage(active, "<h1>旧页</h1>"); err != nil {
+	if err := publish.SyncNotFoundPage(active, "<h1>旧页</h1>"); err != nil {
 		t.Fatalf("写入 404 页失败: %v", err)
 	}
-	if err := pipeline.SyncNotFoundPage(active, ""); err != nil {
+	if err := publish.SyncNotFoundPage(active, ""); err != nil {
 		t.Fatalf("清空 404 页失败: %v", err)
 	}
 	rec = doGet(router, "/site/ghost")
@@ -89,11 +88,11 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
-	if err := pipeline.SyncNotFoundPage(active, "<h1>页面不存在</h1>"); err != nil {
+	if err := publish.SyncNotFoundPage(active, "<h1>页面不存在</h1>"); err != nil {
 		t.Fatalf("写入自定义 404 页失败: %v", err)
 	}
 
@@ -123,7 +122,7 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 func TestSiteFaceActiveArtifactStillServed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	art := filepath.Join(filepath.Dir(filepath.Dir(active)), "artifacts", "hash1")
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
@@ -138,7 +137,7 @@ func TestSiteFaceActiveArtifactStillServed(t *testing.T) {
 	if err := os.Symlink("../../artifacts/hash1", filepath.Join(active, "about")); err != nil {
 		t.Fatalf("建激活链接失败: %v", err)
 	}
-	if err := pipeline.SyncNotFoundPage(active, "<h1>页面不存在</h1>"); err != nil {
+	if err := publish.SyncNotFoundPage(active, "<h1>页面不存在</h1>"); err != nil {
 		t.Fatalf("写入自定义 404 页失败: %v", err)
 	}
 

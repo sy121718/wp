@@ -3,6 +3,7 @@ package pagemodel_test
 import (
 	"context"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"sort"
 	"testing"
 	"time"
@@ -11,13 +12,12 @@ import (
 	"gorm.io/gorm"
 
 	pagemodel "go_wp/internal/module/page/model"
-	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 )
 
-var lookupDepKey = pipeline.ContentTemplateKey("11111111-1111-1111-1111-111111111111")
+var lookupDepKey = publish.ContentTemplateKey("11111111-1111-1111-1111-111111111111")
 
-var otherDepKey = pipeline.ContentTemplateKey("22222222-2222-2222-2222-222222222222")
+var otherDepKey = publish.ContentTemplateKey("22222222-2222-2222-2222-222222222222")
 
 type lookupFixture struct {
 	m        *pagemodel.Model
@@ -68,7 +68,7 @@ func setPointers(t *testing.T, db *gorm.DB, pageID string, active, staged any) {
 	}
 }
 
-func insertDependency(t *testing.T, db *gorm.DB, artifactID, pageID string, dep pipeline.DepKey) {
+func insertDependency(t *testing.T, db *gorm.DB, artifactID, pageID string, dep publish.DepKey) {
 	t.Helper()
 	if err := db.Exec(`
 		INSERT INTO page_dependencies (artifact_id, page_id, dependency_kind, dependency_key, last_checked)

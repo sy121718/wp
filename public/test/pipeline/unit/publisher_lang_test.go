@@ -2,13 +2,14 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 
 	"go_wp/internal/pipeline"
 )
 
-func buildWithLang(t *testing.T, p *pipeline.Publisher, store *pipeline.LocalStore, lang, path string) (string, *pipeline.Artifact) {
+func buildWithLang(t *testing.T, p *pipeline.Publisher, store *publish.LocalStore, lang, path string) (string, *publish.Artifact) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := p.SaveDraftInput("page-1", 0, pipeline.Draft{Path: path, Lang: lang, DocJSON: []byte(docV2)}); err != nil {
@@ -18,7 +19,7 @@ func buildWithLang(t *testing.T, p *pipeline.Publisher, store *pipeline.LocalSto
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
-	a, err := store.GetArtifact(pipeline.ArtifactLocator(hash))
+	a, err := store.GetArtifact(publish.ArtifactLocator(hash))
 	if err != nil {
 		t.Fatalf("读取产物失败: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestPublisherLangDimension(t *testing.T) {
 	if zhHash == enHash {
 		t.Fatal("不同语言产物 hash 不应相同（lang 必须进 Manifest）")
 	}
-	enArt, err := store.GetArtifact(pipeline.ArtifactLocator(enHash))
+	enArt, err := store.GetArtifact(publish.ArtifactLocator(enHash))
 	if err != nil {
 		t.Fatalf("读取 en-US 产物失败: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestPublisherDeterminismSameLang(t *testing.T) {
 	if firstHash != secondHash {
 		t.Fatalf("同输入两次构建 hash 不一致: %s vs %s", firstHash, secondHash)
 	}
-	secondArt, err := store.GetArtifact(pipeline.ArtifactLocator(secondHash))
+	secondArt, err := store.GetArtifact(publish.ArtifactLocator(secondHash))
 	if err != nil {
 		t.Fatalf("读取第二次产物失败: %v", err)
 	}
@@ -81,8 +82,8 @@ func TestPublisherDeterminismSameLang(t *testing.T) {
 
 func TestPublisherI18nDependency(t *testing.T) {
 	p, store, _, _ := newPublisherEnv(t, pipeline.WithDependencies(
-		func(context.Context, pipeline.BuildInput) []pipeline.Dependency {
-			return []pipeline.Dependency{pipeline.I18NDependency("i18n-rev-7")}
+		func(context.Context, pipeline.BuildInput) []publish.Dependency {
+			return []publish.Dependency{publish.I18NDependency("i18n-rev-7")}
 		}))
 	hash, err := p.Build(context.Background(), func() string {
 		if _, e := p.SaveDraftInput("page-1", 0, pipeline.Draft{Path: "/zh-CN/about", Lang: "zh-CN", DocJSON: []byte(docV2)}); e != nil {
@@ -93,7 +94,7 @@ func TestPublisherI18nDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
-	a, err := store.GetArtifact(pipeline.ArtifactLocator(hash))
+	a, err := store.GetArtifact(publish.ArtifactLocator(hash))
 	if err != nil {
 		t.Fatalf("读取产物失败: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestPublisherI18nDependency(t *testing.T) {
 		t.Fatalf("依赖条目数错误: %+v", a.Manifest.Dependencies)
 	}
 	d := a.Manifest.Dependencies[0]
-	if d.Kind != pipeline.DependencyKindI18N || d.Key != pipeline.I18NDependencyKey || d.Revision != "i18n-rev-7" {
+	if d.Kind != publish.DependencyKindI18N || d.Key != publish.I18NDependencyKey || d.Revision != "i18n-rev-7" {
 		t.Fatalf("i18n 依赖条目错误: %+v", d)
 	}
 }

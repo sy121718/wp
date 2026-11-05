@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 )
 
@@ -188,7 +188,7 @@ func executeMenuStaleJob(ctx context.Context, job *builddto.Job,
 		return err
 	}
 
-	key := pipeline.MenuKey(decoded.ProjectID, decoded.Kind)
+	key := publish.MenuKey(decoded.ProjectID, decoded.Kind)
 	refs, err := lookup.FindPagesByDependency(ctx, decoded.ProjectID, key.Kind, key.Key)
 	if err != nil {
 

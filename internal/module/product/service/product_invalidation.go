@@ -2,6 +2,7 @@ package productservice
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"sort"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 )
 
@@ -78,12 +78,12 @@ func (s *Service) enqueueInvalidationTx(ctx context.Context, tx *gorm.DB, projec
 		if err != nil {
 			return err
 		}
-		direct := pipeline.DirectContentKey(t.EntityType, t.EntityID)
-		keys := []pipeline.DepKey{direct}
+		direct := publish.DirectContentKey(t.EntityType, t.EntityID)
+		keys := []publish.DepKey{direct}
 
 		if !collectionEmitted {
 			collectionEmitted = true
-			keys = append(keys, pipeline.ContentCollectionKey(productcontract.EntityTypeProduct))
+			keys = append(keys, publish.ContentCollectionKey(productcontract.EntityTypeProduct))
 		}
 		for _, k := range keys {
 			rows = append(rows, productmodel.OutboxEventEntity{

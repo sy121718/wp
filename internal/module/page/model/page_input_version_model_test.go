@@ -2,6 +2,7 @@ package pagemodel_test
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -9,7 +10,6 @@ import (
 	"gorm.io/gorm"
 
 	pagemodel "go_wp/internal/module/page/model"
-	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 )
 
@@ -160,7 +160,7 @@ func TestMarkMenuStaleTxAdvancesAndRollsBack(t *testing.T) {
 		t.Fatalf("挂暂存产物失败：%v", err)
 	}
 
-	depKey := pipeline.MenuKey(versionProject, "header")
+	depKey := publish.MenuKey(versionProject, "header")
 	if err := f.db.Exec(`
 		INSERT INTO page_dependencies (page_id, artifact_id, dependency_kind, dependency_key, last_checked)
 		VALUES (?, ?, ?, ?, NOW())`, pageID, artifactID, depKey.Kind, depKey.Key).Error; err != nil {

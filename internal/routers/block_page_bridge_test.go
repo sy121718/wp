@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/pipeline"
 )
 
 type blockPageTarget struct {
@@ -69,7 +69,7 @@ func TestBlockChangesReachBothPublishingSources(t *testing.T) {
 	if err := propagate(t.Context(), "shared-block"); err != nil {
 		t.Fatal(err)
 	}
-	want := pipeline.BlockKey("shared-block")
+	want := publish.BlockKey("shared-block")
 	if pages.hit != "shared-block" || instances.kind != want.Kind || instances.key != want.Key {
 		t.Fatalf("块变更必须同时标记两种发布来源：%+v %+v", pages, instances)
 	}

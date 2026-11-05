@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -18,9 +18,9 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/pipeline"
-	"go_wp/pkg/seo"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/seo"
 )
 
 func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error) {
@@ -36,7 +36,7 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 	}
 	at := time.Now().UTC()
 
-	templateKind := kind == pipeline.DepKindContentTemplate
+	templateKind := kind == publish.DepKindContentTemplate
 	seen := make(map[string]bool)
 	for _, p := range projects {
 		if ctx.Err() != nil {

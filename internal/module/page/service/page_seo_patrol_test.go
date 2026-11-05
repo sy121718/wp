@@ -1,17 +1,17 @@
 package pageservice
 
 import (
+	publish "go_wp/pkg/publish"
 	"os"
 	"strings"
 	"testing"
 
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/seo/compliance"
 )
 
 func TestLangRulesOfDefaultLangHasNoPrefix(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	got := langRulesOf(rule, []string{"zh-CN", "en-US"})
 	if len(got) != 2 {
 		t.Fatalf("应推导出两条语言规则，实际 %d", len(got))
@@ -25,7 +25,7 @@ func TestLangRulesOfDefaultLangHasNoPrefix(t *testing.T) {
 }
 
 func TestLangRulesOfPrefixDefault(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, true, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, true, "zh-CN", nil)
 	got := langRulesOf(rule, []string{"zh-CN", "en-US"})
 	if len(got) != 2 || got[0].Prefix != "/zh" || got[1].Prefix != "/en" {
 		t.Fatalf("全前缀模式下两条语言都应带前缀，实际 %+v", got)
@@ -33,7 +33,7 @@ func TestLangRulesOfPrefixDefault(t *testing.T) {
 }
 
 func TestLangRulesOfUnseparated(t *testing.T) {
-	rule := pipeline.NewLangURLRule(false, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(false, false, "zh-CN", nil)
 	got := langRulesOf(rule, []string{"zh-CN", "en-US"})
 	for _, l := range got {
 		if l.Prefix != "" {
@@ -44,7 +44,7 @@ func TestLangRulesOfUnseparated(t *testing.T) {
 
 func TestLangRulesOfShortCodeOverride(t *testing.T) {
 
-	rule := pipeline.NewLangURLRule(true, true, "zh-CN", map[string]string{"zh-CN": "cn"})
+	rule := publish.NewLangURLRule(true, true, "zh-CN", map[string]string{"zh-CN": "cn"})
 	got := langRulesOf(rule, []string{"zh-CN", "en-US"})
 	if got[0].Prefix != "/cn" {
 		t.Fatalf("短码覆盖为 cn 时 zh-CN 的前缀应为 /cn，实际 %+v", got[0])
@@ -55,7 +55,7 @@ func TestLangRulesOfShortCodeOverride(t *testing.T) {
 }
 
 func TestLangRulesOfInvalidLangSkipped(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	got := langRulesOf(rule, []string{"zh-CN", "a/b"})
 	if len(got) != 1 || got[0].Code != "zh-CN" {
 		t.Fatalf("非法语言码应被跳过，实际 %+v", got)
@@ -64,17 +64,17 @@ func TestLangRulesOfInvalidLangSkipped(t *testing.T) {
 
 func TestInspectArtifactSEOReadsArtifactFromStore(t *testing.T) {
 	t.Setenv("WP_SITE_BASE_URL", "https://shop.test/store")
-	store := &pipeline.LocalStore{Root: t.TempDir()}
+	store := &publish.LocalStore{Root: t.TempDir()}
 
 	html := []byte("<!DOCTYPE html><html lang=\"zh-CN\"><head><title>关于我们</title>" +
 		"<link rel=\"canonical\" href=\"https://shop.test/store/old-about\">" +
 		"<script type=\"application/ld+json\">{\"@type\":\"WebPage\",\"name\":\"关于我们\",\"url\":\"https://shop.test/store/old-about\"}</script>" +
 		"</head><body></body></html>")
-	art, err := pipeline.NewArtifact(html, &pipeline.Manifest{
-		ManifestSchemaVersion: pipeline.ManifestSchemaVersion,
+	art, err := publish.NewArtifact(html, &publish.Manifest{
+		ManifestSchemaVersion: publish.ManifestSchemaVersion,
 		CompilerVersion:       "test",
 		SourceID:              "page-1",
-		SourceType:            pipeline.SourceTypePage,
+		SourceType:            publish.SourceTypePage,
 		CanonicalPath:         "/about",
 		Lang:                  "zh-CN",
 	})
@@ -105,7 +105,7 @@ func TestInspectArtifactSEOReadsArtifactFromStore(t *testing.T) {
 }
 
 func TestInspectArtifactSEOEmptyHash(t *testing.T) {
-	svc := &Service{store: &pipeline.LocalStore{Root: t.TempDir()}}
+	svc := &Service{store: &publish.LocalStore{Root: t.TempDir()}}
 	if _, err := svc.inspectArtifactSEO("", "/about", "zh-CN", false, nil); err == nil {
 		t.Fatal("空 hash 应返回错误（静默返回空结论 = 假绿）")
 	}

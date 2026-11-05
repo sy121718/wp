@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationmodel "go_wp/internal/module/presentation/model"
 
-	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 )
 
@@ -136,10 +136,10 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	fanout := pipeline.NewFanout()
+	fanout := publish.NewFanout()
 	fanout.SetSyncRebuild(true)
-	fanout.Register(pipeline.SourceTypePresentation, f.pres)
-	fanout.SetRebuilder(pipeline.SourceTypePresentation, f.pres)
+	fanout.Register(publish.SourceTypePresentation, f.pres)
+	fanout.SetRebuilder(publish.SourceTypePresentation, f.pres)
 	f.content.SetDependencyInvalidator(fanout)
 
 	f.createTemplate(t)
@@ -168,7 +168,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 		t.Fatalf("创建实例 B 失败: %v", err)
 	}
 
-	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA.ID)
+	ids, err := f.pres.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+entityA.ID)
 	if err != nil {
 		t.Fatalf("依赖反查失败: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestDeleteInstanceCascadesOnRealDDL(t *testing.T) {
 			t.Errorf("删除后 %s 残留 %d 行", q.table, n)
 		}
 	}
-	if _, err = os.Lstat(filepath.Join(pipeline.ActiveRoot(), "del/shirt")); !os.IsNotExist(err) {
+	if _, err = os.Lstat(filepath.Join(publish.ActiveRoot(), "del/shirt")); !os.IsNotExist(err) {
 		t.Errorf("删除实例后访问面链接应被移除，Lstat err=%v", err)
 	}
 }

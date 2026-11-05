@@ -3,13 +3,14 @@ package feature
 import (
 	"context"
 	"fmt"
-	"go_wp/pkg/builder/source"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder/source"
 	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
+	pubpkg "go_wp/pkg/publish"
 	"reflect"
 	"strings"
 	"testing"
@@ -65,8 +66,8 @@ func TestPublishedActionDependencyImpactAndDeleteProtection(t *testing.T) {
 			t.Fatalf("业务错误的 Fallback 应为空串（文案归词库），实际 %q", fact.Fallback)
 		}
 	}
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePage, svc)
+	fanout := pubpkg.NewFanout()
+	fanout.Register(pubpkg.SourceTypePage, svc)
 	svc.SetActionTargetInvalidator(fanout)
 	if _, err := api.UpdateURL(ctx, &pagedto.UpdateURLReq{ID: target, NewPath: "/target-moved", Lang: "en-US"}); err != nil {
 		t.Fatal(err)

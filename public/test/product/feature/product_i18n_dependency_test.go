@@ -2,9 +2,8 @@ package feature
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestProductArtifactRegistersI18nDependencies(t *testing.T) {
@@ -16,11 +15,11 @@ func TestProductArtifactRegistersI18nDependencies(t *testing.T) {
 	productID := f.createProduct(t, "译文依赖商品", "/i18n-dep", "译文依赖测试描述", 10, 20)
 	inst := f.publish(t, productID, "/i18n-dep")
 
-	for _, key := range []string{pipeline.I18NDependencyKey} {
+	for _, key := range []string{publish.I18NDependencyKey} {
 		var cnt int64
 		if err := f.db.Table("presentation_dependencies").
 			Where("presentation_id = ? AND dependency_kind = ? AND dependency_key = ?",
-				inst.ID, pipeline.DependencyKindI18N, key).
+				inst.ID, publish.DependencyKindI18N, key).
 			Count(&cnt).Error; err != nil {
 			t.Fatalf("查询依赖表失败: %v", err)
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"slices"
 	"sort"
 	"strings"
@@ -12,13 +13,13 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -32,11 +33,11 @@ func buildLang(requested string) string {
 	return lang
 }
 
-func (s *Service) langURLRuleOf(ctx context.Context, projectID string) pipeline.LangURLRule {
+func (s *Service) langURLRuleOf(ctx context.Context, projectID string) publish.LangURLRule {
 	return pipeline.LangURLRuleForProject(ctx, s.project, projectID)
 }
 
-func sitePath(rule pipeline.LangURLRule, lang, logical string) (string, error) {
+func sitePath(rule publish.LangURLRule, lang, logical string) (string, error) {
 	return rule.Path(lang, logical)
 }
 
@@ -235,34 +236,34 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []pipeline.Dependency {
+func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []publish.Dependency {
 
 	page, pageErr := s.locatePageInProjects(ctx, in.PageID)
 	projectID := ""
 	if page != nil {
 		projectID = page.ProjectID
 	}
-	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
+	deps := []publish.Dependency{publish.I18NDependency(i18n.Revision())}
 	deps = append(deps, pipeline.ActionTargetDependencies(in.Usage)...)
 	if s.pageUsesContentTranslation(ctx, in) {
 
-		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
+		deps = append(deps, publish.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
 
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		for _, kind := range in.Usage.MenuList() {
-			k := pipeline.MenuKey(pid, kind)
-			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.MenuKey(pid, kind)
+			deps = append(deps, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 
 		for _, navID := range in.Usage.NavigationList() {
-			k := pipeline.NavigationKey(navID)
-			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.NavigationKey(navID)
+			deps = append(deps, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 
 		for _, blockID := range in.Usage.BlockList() {
-			k := pipeline.BlockKey(blockID)
-			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.BlockKey(blockID)
+			deps = append(deps, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 	}
 
@@ -620,7 +621,7 @@ func dropExcludedLangs(inputs pipeline.SiteLangInputs, excluded []string) pipeli
 	return inputs
 }
 
-func planHasExcludedLang(plan pipeline.PublicationPlan, excluded []string) bool {
+func planHasExcludedLang(plan publish.PublicationPlan, excluded []string) bool {
 	if len(excluded) == 0 {
 		return false
 	}

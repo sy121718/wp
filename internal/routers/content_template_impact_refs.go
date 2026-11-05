@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"slices"
 	"strings"
 
@@ -17,7 +18,6 @@ import (
 	"go_wp/pkg/logger"
 
 	"go_wp/pkg/builder"
-	"go_wp/internal/pipeline"
 )
 
 type contentTemplateImpactRefs struct {
@@ -153,7 +153,7 @@ func (p *contentTemplateImpactRefs) ListTemplateReferences(ctx context.Context, 
 
 	if p.pages != nil {
 		for id := range known {
-			dep := pipeline.ContentTemplateKey(id)
+			dep := publish.ContentTemplateKey(id)
 			hit, derr := p.pages.FindPagesByDependency(ctx, projectID, dep.Kind, dep.Key)
 			if derr != nil {
 

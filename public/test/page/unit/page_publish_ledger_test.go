@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +18,6 @@ import (
 	pageservice "go_wp/internal/module/page/service"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubdto "go_wp/internal/module/publication/dto"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestRecoverPendingPublicationCompletesWhenSwitchHappened(t *testing.T) {
@@ -126,7 +125,7 @@ func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 
 func seedUpdateURLArtifact(t *testing.T, db *gorm.DB, pageID, urlPath string) (hash, artifactID string) {
 	t.Helper()
-	art, err := pipeline.NewArtifact([]byte("<html><body>seed</body></html>"), &pipeline.Manifest{
+	art, err := publish.NewArtifact([]byte("<html><body>seed</body></html>"), &publish.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,
 		CompilerVersion:           "v1",
@@ -140,7 +139,7 @@ func seedUpdateURLArtifact(t *testing.T, db *gorm.DB, pageID, urlPath string) (h
 	if err != nil {
 		t.Fatalf("构造产物失败: %v", err)
 	}
-	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
+	store := &publish.LocalStore{Root: publish.DefaultArtifactRoot()}
 	if _, perr := store.PutArtifact(art); perr != nil {
 		t.Fatalf("落盘产物失败: %v", perr)
 	}
@@ -283,7 +282,7 @@ func TestPublishCrashBetweenActivateAndDBConvergesOnRecovery(t *testing.T) {
 		t.Fatal("窗口故障注入后 Publish 应报错，实际返回成功")
 	}
 
-	target, lerr := os.Readlink(filepath.Join(pipeline.ActiveRoot(), "crash-window"))
+	target, lerr := os.Readlink(filepath.Join(publish.ActiveRoot(), "crash-window"))
 	if lerr != nil {
 		t.Fatalf("访问面符号链接应已建立（切换已发生）: %v", lerr)
 	}
@@ -353,7 +352,7 @@ func TestPublishAbortsWhenReceiptRegistrationFails(t *testing.T) {
 				t.Fatalf("登记失败应中止发布并返回 ErrPublishLedgerUnavailable，实际 %v", perr)
 			}
 
-			if _, lerr := os.Lstat(filepath.Join(pipeline.ActiveRoot(), "receipt-fail")); !os.IsNotExist(lerr) {
+			if _, lerr := os.Lstat(filepath.Join(publish.ActiveRoot(), "receipt-fail")); !os.IsNotExist(lerr) {
 				t.Fatalf("登记失败时不得切换访问面，链接状态: %v", lerr)
 			}
 		})

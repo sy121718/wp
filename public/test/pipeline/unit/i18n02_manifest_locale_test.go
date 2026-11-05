@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 
 	"go_wp/internal/pipeline"
@@ -11,7 +12,7 @@ type missCounter struct{ misses int64 }
 
 func (m missCounter) Misses() int64 { return m.misses }
 
-func buildWithUsage(t *testing.T, lang, path string, fn func(*pipeline.CompileUsage)) pipeline.Manifest {
+func buildWithUsage(t *testing.T, lang, path string, fn func(*pipeline.CompileUsage)) publish.Manifest {
 	t.Helper()
 	p, store, _, _ := newPublisherEnv(t, pipeline.WithCompile(func(ctx context.Context, in pipeline.BuildInput) ([]byte, error) {
 		u := pipeline.CompileUsageFromContext(ctx)
@@ -30,7 +31,7 @@ func buildWithUsage(t *testing.T, lang, path string, fn func(*pipeline.CompileUs
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
-	a, err := store.GetArtifact(pipeline.ArtifactLocator(hash))
+	a, err := store.GetArtifact(publish.ArtifactLocator(hash))
 	if err != nil {
 		t.Fatalf("读取产物失败: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestManifestTranslationMisses(t *testing.T) {
 	if m.TranslationMisses == nil {
 		t.Fatal("接入内容翻译时必须记录缺失统计")
 	}
-	if m.TranslationMisses.Policy != pipeline.TranslationPolicyFallback {
+	if m.TranslationMisses.Policy != publish.TranslationPolicyFallback {
 		t.Fatalf("字段策略应显式声明为回退原文，实际 %q", m.TranslationMisses.Policy)
 	}
 	if m.TranslationMisses.Candidates != 12 || m.TranslationMisses.Misses != 3 {

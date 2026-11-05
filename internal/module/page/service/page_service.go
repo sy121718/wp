@@ -3,14 +3,13 @@ package pageservice
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
-	"go_wp/pkg/builder/source"
 	"go_wp/internal/module/artifact/contract"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/blueprint/contract"
@@ -26,6 +25,8 @@ import (
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 	"go_wp/pkg/database/retention"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -63,9 +64,9 @@ type Service struct {
 	contentStore i18n.ContentStore
 
 	publisher *pipeline.Publisher
-	store     *pipeline.LocalStore
+	store     *publish.LocalStore
 
-	publication *pipeline.LocalPublicationStore
+	publication *publish.LocalPublicationStore
 
 	externalArtifactOwners func(ctx context.Context) ([]string, error)
 
@@ -79,7 +80,7 @@ type Service struct {
 
 	lastConvergeAt atomic.Int64
 
-	pathLock pipeline.PublicationPathLocker
+	pathLock publish.PublicationPathLocker
 
 	checkoutCountries func(ctx context.Context, lang string) []core.CheckoutCountry
 }
@@ -89,11 +90,11 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 	blocks blockcontract.BlockService, plugins plugincontract.PluginService,
 	content core.CollectionResolver, navigation navigationcontract.NavigationService,
 	media mediacontract.MediaService) *Service {
-	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
-	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
+	store := &publish.LocalStore{Root: publish.DefaultArtifactRoot()}
+	publication := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
 	s := &Service{
 
-		pathLock:    pipeline.DefaultPathLocker(),
+		pathLock:    publish.DefaultPathLocker(),
 		model:       model,
 		artifacts:   artifacts,
 		routes:      routes,
@@ -126,7 +127,7 @@ func (s *Service) SetStructureTemplatePort(port pipeline.StructureTemplatePort) 
 	s.structureTemplates = port
 }
 
-func (s *Service) SetPublicationPathLocker(locker pipeline.PublicationPathLocker) {
+func (s *Service) SetPublicationPathLocker(locker publish.PublicationPathLocker) {
 	s.pathLock = locker
 }
 
@@ -135,7 +136,7 @@ func (s *Service) withPaths(paths []string, fn func() error) error {
 		return nil
 	}
 
-	return pipeline.WithPathLock(s.pathLock, paths, fn)
+	return publish.WithPathLock(s.pathLock, paths, fn)
 }
 
 func (s *Service) withPath(path string, fn func() error) error {

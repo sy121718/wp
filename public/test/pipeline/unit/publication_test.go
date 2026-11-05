@@ -1,27 +1,26 @@
 package unit
 
 import (
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
-func newPublicationEnv(t *testing.T) (*pipeline.LocalStore, *pipeline.LocalPublicationStore, string) {
+func newPublicationEnv(t *testing.T) (*publish.LocalStore, *publish.LocalPublicationStore, string) {
 	t.Helper()
 	root := t.TempDir()
-	store := &pipeline.LocalStore{Root: root}
-	pub := &pipeline.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public/active")}
+	store := &publish.LocalStore{Root: root}
+	pub := &publish.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public/active")}
 	return store, pub, root
 }
 
-func putTestArtifact(t *testing.T, s *pipeline.LocalStore, html, path string) pipeline.Locator {
+func putTestArtifact(t *testing.T, s *publish.LocalStore, html, path string) publish.Locator {
 	t.Helper()
 	m := baseManifest()
 	m.CanonicalPath = path
-	a, err := pipeline.NewArtifact([]byte(html), m)
+	a, err := publish.NewArtifact([]byte(html), m)
 	if err != nil {
 		t.Fatalf("构建产物失败: %v", err)
 	}
@@ -43,7 +42,7 @@ func TestLocalPublicationActivateLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect 失败: %v", err)
 	}
-	if st.Kind != pipeline.PublicationPage || st.Locator == nil || st.Locator.Key != loc.Key {
+	if st.Kind != publish.PublicationPage || st.Locator == nil || st.Locator.Key != loc.Key {
 		t.Errorf("激活状态错误: %+v", st)
 	}
 
@@ -60,7 +59,7 @@ func TestLocalPublicationActivateLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect 失败: %v", err)
 	}
-	if st.Kind != pipeline.PublicationNone {
+	if st.Kind != publish.PublicationNone {
 		t.Errorf("取消激活后应为 none: %+v", st)
 	}
 	if err := pub.Deactivate("/about"); err != nil {
@@ -97,14 +96,14 @@ func TestLocalPublicationMultiLevel(t *testing.T) {
 		t.Fatalf("多级路径激活失败: %v", err)
 	}
 	st, _ := pub.Inspect("/products/phone")
-	if st.Kind != pipeline.PublicationPage {
+	if st.Kind != publish.PublicationPage {
 		t.Errorf("多级路径状态错误: %+v", st)
 	}
 }
 
 func TestLocalPublicationRedirectActivate(t *testing.T) {
 	store, pub, _ := newPublicationEnv(t)
-	r, _ := pipeline.NewRedirectArtifact("/new-url", 301)
+	r, _ := publish.NewRedirectArtifact("/new-url", 301)
 	loc, err := store.PutRedirect(r)
 	if err != nil {
 		t.Fatalf("PutRedirect 失败: %v", err)
@@ -116,7 +115,7 @@ func TestLocalPublicationRedirectActivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect 失败: %v", err)
 	}
-	if st.Kind != pipeline.PublicationRedirect || st.Redirect == nil ||
+	if st.Kind != publish.PublicationRedirect || st.Redirect == nil ||
 		st.Redirect.TargetPath != "/new-url" || st.Redirect.StatusCode != 301 {
 		t.Errorf("重定向状态错误: %+v", st)
 	}
@@ -176,7 +175,7 @@ func TestLocalPublicationConcurrentActivate(t *testing.T) {
 		t.Errorf("激活后不应残留临时链接: %v err=%v", leftovers, err)
 	}
 	st, err := pub.Inspect("/hot")
-	if err != nil || st.Kind != pipeline.PublicationPage {
+	if err != nil || st.Kind != publish.PublicationPage {
 		t.Fatalf("并发激活后状态错误: %+v err=%v", st, err)
 	}
 }
@@ -192,7 +191,7 @@ func TestLocalPublicationKeepsChildSubtreeOnFailure(t *testing.T) {
 		t.Fatal("父子路径在 FS 上互斥，父路径激活应失败")
 	}
 	st, err := pub.Inspect("/products/phone")
-	if err != nil || st.Kind != pipeline.PublicationPage || st.Locator == nil || st.Locator.Key != child.Key {
+	if err != nil || st.Kind != publish.PublicationPage || st.Locator == nil || st.Locator.Key != child.Key {
 		t.Fatalf("父路径激活失败后子路径激活树被破坏: %+v err=%v", st, err)
 	}
 	data, rerr := os.ReadFile(filepath.Join(root, "public", "active", "products", "phone", "index.html"))

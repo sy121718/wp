@@ -2,10 +2,9 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
-
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 
@@ -136,7 +135,7 @@ func TestRecoverProjectDeactivateKeepsPendingWithoutBusinessCommit(t *testing.T)
 
 func redirectLocatorOf(t *testing.T, urlPath string) string {
 	t.Helper()
-	state, err := (&pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}).Inspect(urlPath)
+	state, err := (&publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}).Inspect(urlPath)
 	if err != nil {
 		t.Fatalf("读取访问面状态失败: %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"go_wp/config"
 	"go_wp/internal/builder/extensions/presets"
 	mw "go_wp/pkg/middleware"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
 
@@ -169,9 +170,9 @@ func (a *assembly) buildPublishingModules() {
 		SetStalePropagator(func(ctx context.Context, blockID string) error)
 	}); ok {
 
-		presentationRebuilder, ok := presentationSvc.(pipeline.StaleRebuilder)
+		presentationRebuilder, ok := presentationSvc.(publish.StaleRebuilder)
 		if !ok {
-			panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+			panic("自动发布模块未实现依赖失效重建接口（publish.StaleRebuilder）")
 		}
 		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc, presentationRebuilder))
 		marks.mark(portBlockStalePropagator)
@@ -437,13 +438,13 @@ func (a *assembly) startRuntimeTasks() {
 		rebuildStaleAsync("init", presentationStaleRebuilder(presentationSvc), marked)
 	}
 
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePage, pageService)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePage, pageService)
 
-	fanout.Register(pipeline.SourceTypePresentation, presentationSvc)
+	fanout.Register(publish.SourceTypePresentation, presentationSvc)
 
 	registeredSources := fanout.RegisteredSourceTypes()
-	for _, want := range []string{pipeline.SourceTypePage, pipeline.SourceTypePresentation} {
+	for _, want := range []string{publish.SourceTypePage, publish.SourceTypePresentation} {
 		found := false
 		for _, got := range registeredSources {
 			if got == want {
@@ -456,17 +457,17 @@ func (a *assembly) startRuntimeTasks() {
 		}
 	}
 
-	pageRebuilder, ok := pageService.(pipeline.StaleRebuilder)
+	pageRebuilder, ok := pageService.(publish.StaleRebuilder)
 	if !ok {
-		panic("页面模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+		panic("页面模块未实现依赖失效重建接口（publish.StaleRebuilder）")
 	}
-	fanout.SetRebuilder(pipeline.SourceTypePage, pageRebuilder)
+	fanout.SetRebuilder(publish.SourceTypePage, pageRebuilder)
 	marks.mark(portPipelinePageRebuilder)
-	presentationRebuilder, ok := presentationSvc.(pipeline.StaleRebuilder)
+	presentationRebuilder, ok := presentationSvc.(publish.StaleRebuilder)
 	if !ok {
-		panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+		panic("自动发布模块未实现依赖失效重建接口（publish.StaleRebuilder）")
 	}
-	fanout.SetRebuilder(pipeline.SourceTypePresentation, presentationRebuilder)
+	fanout.SetRebuilder(publish.SourceTypePresentation, presentationRebuilder)
 	marks.mark(portPipelinePresentationRebuilder)
 	wireActionTargetReferences(pageService, blockSvc, a.contentTemplateSvc, presentationSvc, fanout)
 	marks.mark(portActionTargetReferences)
@@ -662,10 +663,10 @@ func (a *assembly) mountPublicFace() {
 
 }
 
-func presentationStaleRebuilder(svc presentationcontract.PresentationService) pipeline.StaleRebuilder {
-	r, ok := svc.(pipeline.StaleRebuilder)
+func presentationStaleRebuilder(svc presentationcontract.PresentationService) publish.StaleRebuilder {
+	r, ok := svc.(publish.StaleRebuilder)
 	if !ok {
-		panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+		panic("自动发布模块未实现依赖失效重建接口（publish.StaleRebuilder）")
 	}
 	return r
 }

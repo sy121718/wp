@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,7 +12,6 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationmodel "go_wp/internal/module/presentation/model"
-	"go_wp/internal/pipeline"
 )
 
 func TestRetireInstanceKeepsHistoryAndReplay(t *testing.T) {
@@ -39,7 +39,7 @@ func TestRetireInstanceKeepsHistoryAndReplay(t *testing.T) {
 	}
 	files := map[string][]byte{}
 	for _, pub := range pubs {
-		path := filepath.Join(pipeline.ActiveRoot(), pub.ActivePath, "index.html")
+		path := filepath.Join(publish.ActiveRoot(), pub.ActivePath, "index.html")
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -81,12 +81,12 @@ func TestRetireInstanceKeepsHistoryAndReplay(t *testing.T) {
 			t.Fatalf("路由需在同事务释放: %d %v", routes, err)
 		}
 		for _, pub := range pubs {
-			if _, err := os.Lstat(filepath.Join(pipeline.ActiveRoot(), pub.ActivePath)); !os.IsNotExist(err) {
+			if _, err := os.Lstat(filepath.Join(publish.ActiveRoot(), pub.ActivePath)); !os.IsNotExist(err) {
 				t.Fatalf("激活路径未撤销: %s %v", pub.ActivePath, err)
 			}
 		}
 		for hash, expected := range files {
-			raw, err := os.ReadFile(filepath.Join(pipeline.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
+			raw, err := os.ReadFile(filepath.Join(publish.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
 			if err != nil || !reflect.DeepEqual(raw, expected) {
 				t.Fatalf("历史产物字节不可改变: %s %v", hash, err)
 			}

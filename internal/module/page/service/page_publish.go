@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"sort"
 	"strconv"
@@ -14,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -24,10 +24,11 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
-	"go_wp/pkg/seo"
-	"go_wp/pkg/seo/compliance"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/seo"
+	"go_wp/pkg/seo/compliance"
 	"go_wp/pkg/utils"
 )
 
@@ -278,7 +279,7 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 		return nil, ErrPublishLedgerUnavailable
 	}
 
-	activationPlan := (*pipeline.PublicationPlan)(nil)
+	activationPlan := (*publish.PublicationPlan)(nil)
 	if persistPlan {
 		activationPlan = &plan
 	}
@@ -397,7 +398,7 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 	if lerr != nil {
 		logger.Scene("publication").With("pageId", page.ID).
 			Error(lerr, "站点语言清单不可读，跳过 sitemap/robots 刷新（保留上一版站点文件）")
-	} else if rerr := s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
+	} else if rerr := s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), publish.ActiveRoot(),
 		siteLangs, s.defaultLocaleOf(ctx, page.ProjectID),
 
 		string(pipeline.SiteLangURLModeOf(ctx, s.project, page.ProjectID)),
@@ -418,7 +419,7 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 	}, nil
 }
 
-func (s *Service) refreshPeerLocaleLinks(ctx context.Context, page *pagemodel.PageEntity, plan pipeline.PublicationPlan, lang string) {
+func (s *Service) refreshPeerLocaleLinks(ctx context.Context, page *pagemodel.PageEntity, plan publish.PublicationPlan, lang string) {
 	if s == nil || page == nil || ctx.Err() != nil {
 		return
 	}
@@ -677,9 +678,9 @@ func (s *Service) stagedArtifactOf(ctx context.Context, page *pagemodel.PageEnti
 	return art, nil
 }
 
-func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage, lang string) (string, []pipeline.Dependency, error) {
+func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage, lang string) (string, []publish.Dependency, error) {
 	existing, err := s.artifacts.Detail(ctx, &artifactcontract.DetailReq{PageID: page.ID, Hash: hash})
-	loc := pipeline.ArtifactLocator(hash)
+	loc := publish.ArtifactLocator(hash)
 	art, err := s.store.GetArtifact(loc)
 	if err != nil {
 		return "", nil, err
@@ -737,7 +738,7 @@ func mapPublishError(err error) error {
 	}
 }
 
-func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID string, plan *pipeline.PublicationPlan) error {
+func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID string, plan *publish.PublicationPlan) error {
 	draft := pipeline.Draft{Path: path, Lang: lang, DocJSON: doc, Plan: plan}
 	st, err := s.publisher.Status(pageID)
 	if errors.Is(err, pipeline.ErrPageNotFound) {
@@ -771,7 +772,7 @@ func (s *Service) restoreKernelForHistory(page *pagemodel.PageEntity, target *ar
 	return nil
 }
 
-func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.PageEntity, publishedPath string, plan *pipeline.PublicationPlan) error {
+func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.PageEntity, publishedPath string, plan *publish.PublicationPlan) error {
 	doc := page.DraftDocument
 	activeHash := ""
 	histories := []*pipeline.HistoryEntry{}
@@ -797,15 +798,15 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 	return nil
 }
 
-func publicationPlanFromManifest(raw []byte) *pipeline.PublicationPlan {
+func publicationPlanFromManifest(raw []byte) *publish.PublicationPlan {
 	if len(raw) == 0 {
 		return nil
 	}
-	var m pipeline.Manifest
+	var m publish.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil
 	}
-	plan := pipeline.PublicationPlan{SiteLangs: m.SiteLangs, DefaultLang: m.SiteDefaultLang, References: m.References.Clone()}
+	plan := publish.PublicationPlan{SiteLangs: m.SiteLangs, DefaultLang: m.SiteDefaultLang, References: m.References.Clone()}
 	if plan.Empty() {
 		return nil
 	}
@@ -837,7 +838,7 @@ func pageHasPublishedState(rec *pipeline.PageRecord) bool {
 
 func (s *Service) kernelVersionOrOne(pageID string) int { return s.kernelVersion(pageID) }
 
-func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.PageEntity, lang string) (*pipeline.PublicationPlan, bool) {
+func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.PageEntity, lang string) (*publish.PublicationPlan, bool) {
 	if s.model == nil || page == nil || strings.TrimSpace(lang) == "" {
 		return nil, false
 	}
@@ -849,7 +850,7 @@ func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.Pag
 		}
 		return nil, false
 	}
-	var plan pipeline.PublicationPlan
+	var plan publish.PublicationPlan
 	if uerr := json.Unmarshal(row.Plan, &plan); uerr != nil {
 		logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
 			Error(uerr, "发布计划解析失败：本次按当前站点语言配置解析并重新冻结")
@@ -874,7 +875,7 @@ func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.Pag
 	return &plan, true
 }
 
-func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEntity, lang string) (pipeline.PublicationPlan, bool, error) {
+func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEntity, lang string) (publish.PublicationPlan, bool, error) {
 	if frozen, ok := s.frozenPublicationPlan(ctx, page, lang); ok {
 
 		s.warnPlanDrift(ctx, page, lang, *frozen)
@@ -882,13 +883,13 @@ func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEn
 	}
 	inputs, err := pipeline.ResolveSiteLangInputs(ctx, s.project, page.ProjectID, pipeline.LangFallbackForbidden)
 	if err != nil {
-		return pipeline.PublicationPlan{}, false, err
+		return publish.PublicationPlan{}, false, err
 	}
 
 	inputs = dropExcludedLangs(inputs, page.ExcludedLangs)
 	plan := pipeline.PlanOfSiteLangInputs(inputs)
 	if plan.Empty() {
-		return pipeline.PublicationPlan{}, false, pipeline.ErrLangTableUnavailable
+		return publish.PublicationPlan{}, false, pipeline.ErrLangTableUnavailable
 	}
 
 	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
@@ -896,7 +897,7 @@ func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEn
 	return plan, true, nil
 }
 
-func planHasLang(plan pipeline.PublicationPlan, lang string) bool {
+func planHasLang(plan publish.PublicationPlan, lang string) bool {
 	for _, l := range plan.SiteLangs {
 		if l == lang {
 			return true
@@ -905,7 +906,7 @@ func planHasLang(plan pipeline.PublicationPlan, lang string) bool {
 	return false
 }
 
-func (s *Service) warnPlanDrift(ctx context.Context, page *pagemodel.PageEntity, lang string, plan pipeline.PublicationPlan) {
+func (s *Service) warnPlanDrift(ctx context.Context, page *pagemodel.PageEntity, lang string, plan publish.PublicationPlan) {
 	if s == nil || s.project == nil || page == nil || plan.Empty() {
 		return
 	}
@@ -963,7 +964,7 @@ func (s *Service) sitePathOf(ctx context.Context, lang string, page *pagemodel.P
 	return s.sitePathOfWithPlan(ctx, lang, page, nil)
 }
 
-func (s *Service) sitePathOfWithPlan(ctx context.Context, lang string, page *pagemodel.PageEntity, plan *pipeline.PublicationPlan) (string, error) {
+func (s *Service) sitePathOfWithPlan(ctx context.Context, lang string, page *pagemodel.PageEntity, plan *publish.PublicationPlan) (string, error) {
 	rule := s.langURLRuleOf(ctx, page.ProjectID)
 	if plan != nil && strings.TrimSpace(plan.DefaultLang) != "" {
 		rule = pipeline.LangURLRuleForProjectWithDefault(ctx, s.project, page.ProjectID, plan.DefaultLang)
@@ -1110,7 +1111,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 
 	var st *pipeline.PageRecord
 	var artifactRowID string
-	var deps []pipeline.Dependency
+	var deps []publish.Dependency
 	var updated bool
 	var txErr error
 	lockErr := s.withPaths([]string{kernelNewPath, publishedPath}, func() error {
@@ -1192,9 +1193,9 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 	return "", nil
 }
 
-func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.PageEntity, lang string, st *pipeline.PageRecord, kernelNewPath, newPath, oldPath, publishedPath string, withRedirect bool, routeLangs []string, plan pipeline.PublicationPlan, persistPlan bool, receiptID string, receiptSeq int64, artifactRowID string, deps []pipeline.Dependency) (updated bool, txErr error) {
+func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.PageEntity, lang string, st *pipeline.PageRecord, kernelNewPath, newPath, oldPath, publishedPath string, withRedirect bool, routeLangs []string, plan publish.PublicationPlan, persistPlan bool, receiptID string, receiptSeq int64, artifactRowID string, deps []publish.Dependency) (updated bool, txErr error) {
 
-	activationPlan := (*pipeline.PublicationPlan)(nil)
+	activationPlan := (*publish.PublicationPlan)(nil)
 	if persistPlan {
 		activationPlan = &plan
 	}
@@ -1211,7 +1212,7 @@ func (s *Service) updateURLCommitUnderLock(ctx context.Context, page *pagemodel.
 		}
 
 		if publishedPath != "" && publishedPath != kernelNewPath && s.activeArtifactHashAt(publishedPath) != "" &&
-			s.activeKindAt(publishedPath) != pipeline.PublicationRedirect && publishedPath != withdrawArt.CanonicalPath {
+			s.activeKindAt(publishedPath) != publish.PublicationRedirect && publishedPath != withdrawArt.CanonicalPath {
 			return errUpdateURLWithdrawn
 		}
 		if snap.InputVersion != page.InputVersion {
@@ -1346,7 +1347,7 @@ type publishActivationInput struct {
 
 	OldPath string
 
-	Plan *pipeline.PublicationPlan
+	Plan *publish.PublicationPlan
 }
 
 func (s *Service) applyPublishActivation(ctx context.Context, in publishActivationInput) error {
@@ -1400,9 +1401,9 @@ type updateURLApplyInput struct {
 
 	RouteLangs []string
 
-	Deps []pipeline.Dependency
+	Deps []publish.Dependency
 
-	Plan *pipeline.PublicationPlan
+	Plan *publish.PublicationPlan
 
 	ReceiptID int64
 }
@@ -1540,7 +1541,7 @@ func (s *Service) settleOldPathLocked(ctx context.Context, pageID, projectID, ne
 	return nil
 }
 
-func (s *Service) prepareOldPathSettle(newPath, oldPath string, withRedirect bool) (*pipeline.Locator, error) {
+func (s *Service) prepareOldPathSettle(newPath, oldPath string, withRedirect bool) (*publish.Locator, error) {
 	if strings.TrimSpace(oldPath) == "" || oldPath == newPath {
 		return nil, nil
 	}
@@ -1550,7 +1551,7 @@ func (s *Service) prepareOldPathSettle(newPath, oldPath string, withRedirect boo
 	if s.store == nil || s.publication == nil {
 		return nil, nil
 	}
-	ra, rerr := pipeline.NewRedirectArtifact(newPath, 301)
+	ra, rerr := publish.NewRedirectArtifact(newPath, 301)
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -1621,7 +1622,7 @@ func isRouteOccupiedErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), pubenums.ErrRouteOccupied)
 }
 
-func (s *Service) settleOldPathFS(oldPath string, withRedirect bool, loc *pipeline.Locator) error {
+func (s *Service) settleOldPathFS(oldPath string, withRedirect bool, loc *publish.Locator) error {
 	if !withRedirect {
 		if s.publication == nil {
 			return nil
@@ -1646,7 +1647,7 @@ func (s *Service) InspectPublicationPath(path string) (string, bool) {
 		return "", false
 	}
 	st, err := s.publication.Inspect(path)
-	if err != nil || st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+	if err != nil || st == nil || st.Kind == publish.PublicationNone || st.Locator == nil {
 		return "", false
 	}
 	return strings.TrimSpace(st.Locator.Provider + ":" + st.Locator.Key), true
@@ -1674,12 +1675,12 @@ func (s *Service) activeArtifactHashAt(path string) string {
 	return strings.TrimPrefix(state.Locator.Key, "artifacts/")
 }
 
-func (s *Service) updateURLArtifactAt(path string) (*pipeline.Artifact, string, bool) {
+func (s *Service) updateURLArtifactAt(path string) (*publish.Artifact, string, bool) {
 	if s == nil || s.publication == nil || s.store == nil {
 		return nil, "", false
 	}
 	state, err := s.publication.Inspect(path)
-	if err != nil || state == nil || state.Kind != pipeline.PublicationPage || state.Locator == nil {
+	if err != nil || state == nil || state.Kind != publish.PublicationPage || state.Locator == nil {
 		return nil, "", false
 	}
 	art, aerr := s.store.GetArtifact(*state.Locator)
@@ -1693,7 +1694,7 @@ func (s *Service) updateURLArtifactAt(path string) (*pipeline.Artifact, string, 
 	return art, hash, true
 }
 
-func (s *Service) ensureUpdateURLArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash, fromArtifactID, lang string) (string, []pipeline.Dependency, error) {
+func (s *Service) ensureUpdateURLArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash, fromArtifactID, lang string) (string, []publish.Dependency, error) {
 	if strings.TrimSpace(hash) == "" {
 		return "", nil, errors.New("改 URL 恢复：产物 hash 为空")
 	}
@@ -2950,7 +2951,7 @@ func (s *Service) GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCAr
 			res.Items = append(res.Items, item)
 			continue
 		}
-		if derr := s.store.DeleteArtifact(pipeline.ArtifactLocator(c.ArtifactHash), c.ArtifactHash); derr != nil {
+		if derr := s.store.DeleteArtifact(publish.ArtifactLocator(c.ArtifactHash), c.ArtifactHash); derr != nil {
 			item.Action, item.Reason = "delete_failed", derr.Error()
 			res.Failed++
 			logger.Scene("artifact").With("id", c.ID).With("hash", c.ArtifactHash).Error(derr, "产物文件删除失败")
@@ -2993,7 +2994,7 @@ func (s *Service) seoLangs(ctx context.Context, projectID string) []compliance.L
 	return langRulesOf(pipeline.LangURLRuleForProject(ctx, s.project, projectID), langs)
 }
 
-func langRulesOf(rule pipeline.LangURLRule, langs []string) []compliance.LangRule {
+func langRulesOf(rule publish.LangURLRule, langs []string) []compliance.LangRule {
 	out := make([]compliance.LangRule, 0, len(langs))
 	for _, lang := range langs {
 		p, err := rule.Path(lang, seoLangProbePath)
@@ -3016,7 +3017,7 @@ func (s *Service) inspectArtifactSEO(hash, url, lang string, sitemapListed bool,
 	if strings.TrimSpace(hash) == "" {
 		return nil, fmt.Errorf("产物 hash 为空")
 	}
-	art, err := s.store.GetArtifact(pipeline.ArtifactLocator(hash))
+	art, err := s.store.GetArtifact(publish.ArtifactLocator(hash))
 	if err != nil {
 		return nil, err
 	}
@@ -3096,7 +3097,7 @@ func (s *Service) SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res
 			unchecked(url, "产物元数据读取失败（产物行不存在或不可读）")
 			continue
 		}
-		loaded, lerr := s.store.GetArtifact(pipeline.ArtifactLocator(art.ArtifactHash))
+		loaded, lerr := s.store.GetArtifact(publish.ArtifactLocator(art.ArtifactHash))
 		if lerr != nil {
 			unchecked(url, "产物文件缺失或不可读："+art.ArtifactHash)
 			continue

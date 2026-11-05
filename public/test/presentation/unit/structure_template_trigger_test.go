@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 
@@ -11,8 +12,6 @@ import (
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
-
-	"go_wp/internal/pipeline"
 )
 
 const structureHeaderTemplateDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"hdr-mark","props":{"text":"结构模板页眉"}}]}`
@@ -63,15 +62,15 @@ func TestStructureTemplateVersionChangeStalesInstance(t *testing.T) {
 	var n int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM presentation_dependencies WHERE presentation_id = ?
 		AND dependency_kind = ? AND dependency_key = ?`,
-		inst.ID, pipeline.DepKindContentTemplate, "content_template:"+headerTpl.ID).Scan(&n).Error; err != nil {
+		inst.ID, publish.DepKindContentTemplate, "content_template:"+headerTpl.ID).Scan(&n).Error; err != nil {
 		t.Fatalf("统计结构模板依赖失败: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("实例应声明恰好 1 条 content_template:%s 依赖，实际 %d 条", headerTpl.ID, n)
 	}
 
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePresentation, f.pres)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePresentation, f.pres)
 
 	tplImpl, ok := f.templates.(*contenttemplateservice.Service)
 	if !ok {

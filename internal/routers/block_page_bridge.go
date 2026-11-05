@@ -2,17 +2,17 @@ package routers
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 )
 
-func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService, presentations pipeline.DependencyTarget, presentationRebuilder pipeline.StaleRebuilder) func(context.Context, string) error {
+func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService, presentations publish.DependencyTarget, presentationRebuilder publish.StaleRebuilder) func(context.Context, string) error {
 	return func(ctx context.Context, blockID string) error {
 		themes, err := projects.ListThemesByBlockID(ctx, blockID)
 		if err != nil {
@@ -35,7 +35,7 @@ func BlockStalePropagator(pages pagecontract.PageService, projects projectcontra
 		}
 		pageIDs = append(pageIDs, ids...)
 
-		dep := pipeline.BlockKey(blockID)
+		dep := publish.BlockKey(blockID)
 		instIDs, err := presentations.MarkStaleByDependency(ctx, dep.Kind, dep.Key)
 		if err != nil {
 			logger.Scene("block").With("block_id", blockID).Error(err, "标记引用块的自动发布实例待重建失败")
@@ -48,7 +48,7 @@ func BlockStalePropagator(pages pagecontract.PageService, projects projectcontra
 	}
 }
 
-func rebuildStaleAsync(scene string, rebuilder pipeline.StaleRebuilder, ids []string) {
+func rebuildStaleAsync(scene string, rebuilder publish.StaleRebuilder, ids []string) {
 	batch := uniqueIDs(ids)
 	if len(batch) == 0 || rebuilder == nil {
 		return

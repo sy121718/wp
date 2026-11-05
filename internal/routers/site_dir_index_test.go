@@ -1,6 +1,7 @@
 package routers
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/pipeline"
 )
 
 func seedSitePage(t *testing.T, active, rel, body string) {
@@ -44,7 +43,7 @@ func seedSitePage(t *testing.T, active, rel, body string) {
 func TestSiteFaceServesDirectoryRootIndex(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
@@ -77,7 +76,7 @@ func TestSiteFaceServesDirectoryRootIndex(t *testing.T) {
 func TestSiteFaceDirectoryRootWithoutArtifactIs404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
@@ -94,7 +93,7 @@ func TestSiteFaceDirectoryRootRejectsTraversal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", root)
-	active := pipeline.ActiveRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}

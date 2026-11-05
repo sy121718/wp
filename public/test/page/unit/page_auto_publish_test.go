@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -9,7 +10,6 @@ import (
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 	pagecontract "go_wp/internal/module/page/contract"
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 )
@@ -18,10 +18,10 @@ func newContentFanoutPageService(t *testing.T) (*gorm.DB, pagecontract.PageServi
 	t.Helper()
 	db, svc, _, projectID := newPageService(t)
 	contentSvc := contentservice.NewService(contentmodel.NewModel(db))
-	fanout := pipeline.NewFanout()
+	fanout := publish.NewFanout()
 	fanout.SetSyncRebuild(true)
-	fanout.Register(pipeline.SourceTypePage, svc)
-	fanout.SetRebuilder(pipeline.SourceTypePage, svc)
+	fanout.Register(publish.SourceTypePage, svc)
+	fanout.SetRebuilder(publish.SourceTypePage, svc)
 	contentSvc.SetDependencyInvalidator(fanout)
 	return db, svc, contentSvc, projectID
 }
@@ -132,7 +132,7 @@ func TestContentChangeFanoutAffectedSet(t *testing.T) {
 	buildAndPublish(t, svc, page)
 	buildAndPublish(t, svc, other)
 
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindContentCollection, pipeline.ContentCollectionKey("article").Key)
+	ids, err := svc.MarkStaleByDependency(ctx, publish.DepKindContentCollection, publish.ContentCollectionKey("article").Key)
 	if err != nil {
 		t.Fatalf("集合键反查失败: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestContentChangeFanoutAffectedSet(t *testing.T) {
 		t.Fatalf("无产物声明集合依赖时不应命中页面，实际 %v", ids)
 	}
 
-	ids, err = svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entity.ID)
+	ids, err = svc.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+entity.ID)
 	if err != nil {
 		t.Fatalf("反查失败: %v", err)
 	}

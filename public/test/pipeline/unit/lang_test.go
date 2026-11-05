@@ -1,13 +1,12 @@
 package unit
 
 import (
+	publish "go_wp/pkg/publish"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestLangURLRuleDefaultPlain(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	cases := []struct {
 		name string
 		lang string
@@ -39,7 +38,7 @@ func TestLangURLRuleDefaultPlain(t *testing.T) {
 }
 
 func TestLangURLRuleAllPrefix(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, true, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, true, "zh-CN", nil)
 	cases := []struct{ lang, path, want string }{
 		{"zh-CN", "/", "/zh/index"},
 		{"zh-CN", "/about", "/zh/about"},
@@ -54,7 +53,7 @@ func TestLangURLRuleAllPrefix(t *testing.T) {
 }
 
 func TestLangURLRuleOff(t *testing.T) {
-	rule := pipeline.NewLangURLRule(false, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(false, false, "zh-CN", nil)
 	if got, err := rule.Path("en-US", "/about"); err != nil || got != "/about" {
 		t.Fatalf("off 方案 Path = %q (%v)，期望 /about", got, err)
 	}
@@ -64,7 +63,7 @@ func TestLangURLRuleOff(t *testing.T) {
 }
 
 func TestLangURLRuleCodes(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", map[string]string{"zh-TW": "tw", "xx-YY": "xy"})
+	rule := publish.NewLangURLRule(true, false, "zh-CN", map[string]string{"zh-TW": "tw", "xx-YY": "xy"})
 	cases := []struct{ lang, want string }{
 		{"zh-CN", "zh"},
 		{"en-US", "en"},
@@ -79,31 +78,31 @@ func TestLangURLRuleCodes(t *testing.T) {
 		}
 	}
 
-	lower := pipeline.NewLangURLRule(true, false, "zh-CN", map[string]string{"zh-tw": "tw"})
+	lower := publish.NewLangURLRule(true, false, "zh-CN", map[string]string{"zh-tw": "tw"})
 	if got := lower.URLCode("zh-TW"); got != "tw" {
 		t.Fatalf("配置键大小写不敏感匹配失败: %q", got)
 	}
 }
 
 func TestLangURLRuleValidate(t *testing.T) {
-	ok := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	ok := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	if err := ok.Validate([]string{"zh-CN", "en-US"}); err != nil {
 		t.Fatalf("zh-CN/en-US 不应冲突: %v", err)
 	}
 
-	bad := pipeline.NewLangURLRule(true, false, "en-US", nil)
+	bad := publish.NewLangURLRule(true, false, "en-US", nil)
 	if err := bad.Validate([]string{"en-US", "zh-TW", "zh-Hant"}); err == nil {
 		t.Fatal("zh-TW 与 zh-Hant 映射同一短码，应报错")
 	}
 
-	def := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	def := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	if err := def.Validate([]string{"zh-CN", "en-US"}); err != nil {
 		t.Fatalf("默认语言不占短码: %v", err)
 	}
 }
 
 func TestLangURLRuleStrip(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	cases := []struct{ lang, path, want string }{
 		{"zh-CN", "/index", "/"},
 		{"zh-CN", "/about", "/about"},
@@ -121,7 +120,7 @@ func TestLangURLRuleStrip(t *testing.T) {
 }
 
 func TestLangURLRuleLocate(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	langs := []string{"zh-CN", "en-US"}
 	cases := []struct {
 		path        string
@@ -143,7 +142,7 @@ func TestLangURLRuleLocate(t *testing.T) {
 		}
 	}
 
-	all := pipeline.NewLangURLRule(true, true, "zh-CN", nil)
+	all := publish.NewLangURLRule(true, true, "zh-CN", nil)
 	if _, _, ok := all.Locate("/about", langs); ok {
 		t.Fatal("all_prefix 下未带前缀的路径不应参与语言分组")
 	}
@@ -153,7 +152,7 @@ func TestLangURLRuleLocate(t *testing.T) {
 }
 
 func TestLangPathRejects(t *testing.T) {
-	rule := pipeline.NewLangURLRule(true, false, "zh-CN", nil)
+	rule := publish.NewLangURLRule(true, false, "zh-CN", nil)
 	cases := []struct {
 		name string
 		lang string
@@ -180,19 +179,19 @@ func TestLangPathRejects(t *testing.T) {
 }
 
 func TestLangPathLegacyCompat(t *testing.T) {
-	if got, err := pipeline.LangPath("zh-CN", "/about"); err != nil || got != "/zh/about" {
+	if got, err := publish.LangPath("zh-CN", "/about"); err != nil || got != "/zh/about" {
 		t.Fatalf("LangPath = %q (%v)，期望 /zh/about", got, err)
 	}
-	if got := pipeline.StripLangPath("zh-CN", "/zh/about"); got != "/about" {
+	if got := publish.StripLangPath("zh-CN", "/zh/about"); got != "/about" {
 		t.Fatalf("StripLangPath = %q，期望 /about", got)
 	}
 }
 
 func TestNormalizeLang(t *testing.T) {
-	if got, err := pipeline.NormalizeLang(" en-US "); err != nil || got != "en-US" {
+	if got, err := publish.NormalizeLang(" en-US "); err != nil || got != "en-US" {
 		t.Fatalf("NormalizeLang 应去空白并保留原大小写: %q %v", got, err)
 	}
-	if _, err := pipeline.NormalizeLang(""); err == nil {
+	if _, err := publish.NormalizeLang(""); err == nil {
 		t.Fatal("空语言码应报错")
 	}
 }

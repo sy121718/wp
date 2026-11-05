@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 )
@@ -64,7 +64,7 @@ func stagedHashOf(t *testing.T, db *gorm.DB, pageID, lang string) string {
 	return hash
 }
 
-func publicationPlanRowOf(t *testing.T, db *gorm.DB, pageID, lang string) (plan pipeline.PublicationPlan, planHash string, draftVersion int64) {
+func publicationPlanRowOf(t *testing.T, db *gorm.DB, pageID, lang string) (plan publish.PublicationPlan, planHash string, draftVersion int64) {
 	t.Helper()
 	var row struct {
 		PlanRaw      string

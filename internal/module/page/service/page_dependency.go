@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,19 +14,19 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	mediacontract "go_wp/internal/module/media/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
-func (s *Service) SourceType() string { return pipeline.SourceTypePage }
+func (s *Service) SourceType() string { return publish.SourceTypePage }
 
 func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) ([]string, error) {
 	if strings.TrimSpace(kind) == "" || strings.TrimSpace(key) == "" {
@@ -171,7 +172,7 @@ func (s *Service) rebuildStale(ctx context.Context, ids []string, strict bool) (
 	return rebuilt, nil
 }
 
-func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, artifactID string, deps []pipeline.Dependency) {
+func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, artifactID string, deps []publish.Dependency) {
 	rows, rerr := dependencyRows(pageID, artifactID, deps)
 	if rerr != nil {
 		return
@@ -187,7 +188,7 @@ func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, ar
 	}
 }
 
-func (s *Service) persistDependenciesTx(ctx context.Context, tx *gorm.DB, projectID, pageID, artifactID string, deps []pipeline.Dependency) error {
+func (s *Service) persistDependenciesTx(ctx context.Context, tx *gorm.DB, projectID, pageID, artifactID string, deps []publish.Dependency) error {
 	rows, rerr := dependencyRows(pageID, artifactID, deps)
 	if rerr != nil {
 		return rerr
@@ -226,7 +227,7 @@ func (s *Service) pageArtifactHashByID(ctx context.Context, id string) (string, 
 	return s.pageArtifacts.PageArtifactHashByID(ctx, id)
 }
 
-func dependencyRows(pageID, artifactID string, deps []pipeline.Dependency) ([]pagemodel.DependencyEntity, error) {
+func dependencyRows(pageID, artifactID string, deps []publish.Dependency) ([]pagemodel.DependencyEntity, error) {
 	if strings.TrimSpace(pageID) == "" || strings.TrimSpace(artifactID) == "" {
 		return nil, nil
 	}
@@ -260,7 +261,7 @@ func (s *Service) persistDependenciesFromManifest(ctx context.Context, projectID
 	if len(manifestJSON) == 0 {
 		return
 	}
-	var m pipeline.Manifest
+	var m publish.Manifest
 	if err := json.Unmarshal(manifestJSON, &m); err != nil {
 		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
 			Warn("产物 Manifest 解析失败，跳过依赖记录补写")
@@ -269,19 +270,19 @@ func (s *Service) persistDependenciesFromManifest(ctx context.Context, projectID
 	s.persistDependencies(ctx, projectID, pageID, artifactID, m.Dependencies)
 }
 
-func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEntity) []pipeline.Dependency {
+func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEntity) []publish.Dependency {
 	if page == nil {
 		return nil
 	}
 	keys := map[[2]string]string{}
-	add := func(k pipeline.DepKey) {
+	add := func(k publish.DepKey) {
 		keys[[2]string{k.Kind, k.Key}] = k.Key
 	}
 
 	if t := strings.TrimSpace(page.ContentTargetType); t != "" && t != "none" {
 		if page.ContentTargetID != nil {
 			if id := strings.TrimSpace(*page.ContentTargetID); id != "" {
-				add(pipeline.DirectContentKey(t, id))
+				add(publish.DirectContentKey(t, id))
 			}
 		}
 	}
@@ -290,20 +291,20 @@ func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEn
 	if len(doc) > 0 {
 		if parsed, err := builder.ParsePage(doc); err == nil {
 			for _, id := range builder.ReferencedBlockIDs(parsed.Root) {
-				add(pipeline.BlockKey(id))
+				add(publish.BlockKey(id))
 			}
 
 			for _, dep := range pipeline.StructureSlotDependencies(ctx, s.structureTemplates, page.ProjectID, parsed.Settings.Structure) {
-				add(pipeline.DepKey{Kind: dep.Kind, Key: dep.Key})
+				add(publish.DepKey{Kind: dep.Kind, Key: dep.Key})
 			}
 			for _, src := range s.collectionSourcesOf(ctx, parsed.Root) {
-				add(pipeline.DepKey{Kind: pipeline.DepKindContentCollection, Key: "collection:" + src})
+				add(publish.DepKey{Kind: publish.DepKindContentCollection, Key: "collection:" + src})
 			}
 		}
 	}
-	out := make([]pipeline.Dependency, 0, len(keys))
+	out := make([]publish.Dependency, 0, len(keys))
 	for key := range keys {
-		out = append(out, pipeline.Dependency{Kind: key[0], Key: key[1]})
+		out = append(out, publish.Dependency{Kind: key[0], Key: key[1]})
 	}
 	return out
 }

@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,16 +18,16 @@ const (
 	docV2 = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"你好"}}]}`
 )
 
-func newPublisherEnv(t *testing.T, opts ...pipeline.Option) (*pipeline.Publisher, *pipeline.LocalStore, *pipeline.LocalPublicationStore, string) {
+func newPublisherEnv(t *testing.T, opts ...pipeline.Option) (*pipeline.Publisher, *publish.LocalStore, *publish.LocalPublicationStore, string) {
 	t.Helper()
 	root := t.TempDir()
-	store := &pipeline.LocalStore{Root: root}
-	pub := &pipeline.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public/active")}
+	store := &publish.LocalStore{Root: root}
+	pub := &publish.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public/active")}
 	p := pipeline.NewPublisher(store, pub, opts...)
 	return p, store, pub, root
 }
 
-func activeHTML(t *testing.T, pub *pipeline.LocalPublicationStore, path string) string {
+func activeHTML(t *testing.T, pub *publish.LocalPublicationStore, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(pub.ActiveRoot, strings.TrimPrefix(path, "/"), "index.html"))
 	if err != nil {
@@ -145,7 +146,7 @@ func TestPublisherBuildFailure(t *testing.T) {
 	if _, err := p.Publish("page-1"); !errors.Is(err, pipeline.ErrNoStagedArtifact) {
 		t.Errorf("构建失败后不允许发布: %v", err)
 	}
-	if insp, err := pub.Inspect("/about"); err != nil || insp.Kind != pipeline.PublicationNone {
+	if insp, err := pub.Inspect("/about"); err != nil || insp.Kind != publish.PublicationNone {
 		t.Errorf("构建失败不应激活任何 URL: %+v %v", insp, err)
 	}
 }
@@ -237,11 +238,11 @@ func TestPublisherUpdateURLWithRedirect(t *testing.T) {
 	}
 
 	insp, err := pub.Inspect("/about-us")
-	if err != nil || insp.Kind != pipeline.PublicationPage {
+	if err != nil || insp.Kind != publish.PublicationPage {
 		t.Errorf("新 URL 应为激活页面: %+v %v", insp, err)
 	}
 	insp, err = pub.Inspect("/about")
-	if err != nil || insp.Kind != pipeline.PublicationRedirect ||
+	if err != nil || insp.Kind != publish.PublicationRedirect ||
 		insp.Redirect.TargetPath != "/about-us" || insp.Redirect.StatusCode != 301 {
 		t.Errorf("旧 URL 应为 301 重定向: %+v %v", insp, err)
 	}
@@ -263,11 +264,11 @@ func TestPublisherUpdateURLNoRedirect(t *testing.T) {
 		t.Fatalf("URL 修改失败: %v", err)
 	}
 	insp, err := pub.Inspect("/about")
-	if err != nil || insp.Kind != pipeline.PublicationNone {
+	if err != nil || insp.Kind != publish.PublicationNone {
 		t.Errorf("旧 URL 应已取消激活: %+v %v", insp, err)
 	}
 	insp, err = pub.Inspect("/about-us")
-	if err != nil || insp.Kind != pipeline.PublicationPage {
+	if err != nil || insp.Kind != publish.PublicationPage {
 		t.Errorf("新 URL 应为激活页面: %+v %v", insp, err)
 	}
 }
@@ -323,7 +324,7 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 		t.Fatal("构建失败时 URL 修改应报错")
 	}
 	insp, _ := pub.Inspect("/about")
-	if insp.Kind != pipeline.PublicationPage {
+	if insp.Kind != publish.PublicationPage {
 		t.Errorf("旧 URL 应保持激活: %+v", insp)
 	}
 }

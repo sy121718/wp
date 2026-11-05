@@ -5,18 +5,18 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
-	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
@@ -38,9 +38,9 @@ func (s *Service) notifyContentChanged(ctx context.Context, e *contentmodel.Enti
 	if s == nil || s.invalidator == nil || e == nil {
 		return
 	}
-	for _, k := range []pipeline.DepKey{
-		pipeline.DirectContentKey(e.EntityType, e.ID),
-		pipeline.ContentCollectionKey(e.EntityType),
+	for _, k := range []publish.DepKey{
+		publish.DirectContentKey(e.EntityType, e.ID),
+		publish.ContentCollectionKey(e.EntityType),
 	} {
 		s.invalidator.Invalidate(ctx, k.Kind, k.Key)
 	}

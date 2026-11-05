@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,16 +15,16 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/pipeline"
-	seoutil "go_wp/pkg/seo"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	seoutil "go_wp/pkg/seo"
 	"go_wp/pkg/upload"
 )
 
@@ -104,33 +105,33 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		return built, err
 	}
 
-	var slotDeps []pipeline.Dependency
+	var slotDeps []publish.Dependency
 
 	var collectionSources []string
 	if pageDoc, perr := builder.ParsePage(tpl.Document); perr == nil {
 		slotDeps = pipeline.StructureSlotDependencies(ctx, references, projectID, pageDoc.Settings.Structure)
 		collectionSources = core.CollectionSourcesOf(pageDoc.Root)
 	}
-	sourceHash := pipeline.SHA256(tpl.Document)
+	sourceHash := publish.SHA256(tpl.Document)
 
 	deps := presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, collectionSources, usage)
-	deps = append(deps, pipeline.I18NDependency(i18n.Revision()))
+	deps = append(deps, publish.I18NDependency(i18n.Revision()))
 	if usage != nil && usage.ContentTranslation {
-		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
+		deps = append(deps, publish.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
 	deps = append(deps, slotDeps...)
-	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
+	artifact, err := publish.NewArtifact(html, &publish.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,
 		SourceID:                  entityID,
-		SourceType:                pipeline.SourceTypePresentation,
+		SourceType:                publish.SourceTypePresentation,
 		CanonicalPath:             urlPath,
 		SourceHash:                sourceHash,
 		References:                references.Clone().Unwrap(),
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
 		Dependencies:              deps,
-		Diagnostics:               pipeline.PublishDiagnostics(diags.Items()),
+		Diagnostics:               diagnosticsOf(diags.Items()),
 	})
 	if err != nil {
 		return built, err
@@ -276,7 +277,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		return nil, err
 	}
 	if contentTranslator != nil {
-		pipeline.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
+		publish.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
 	}
 
 	if usage != nil && contentCandidates > 0 {
@@ -299,40 +300,40 @@ func (s *Service) activate(urlPath string, built builtArtifact) error {
 }
 
 func presentationDependencies(entityType, entityID, templateID, projectID string,
-	collectionSources []string, usage *pipeline.CompileUsage) []pipeline.Dependency {
-	dep := pipeline.DirectContentKey(entityType, entityID)
-	out := []pipeline.Dependency{{Kind: dep.Kind, Key: dep.Key}}
+	collectionSources []string, usage *pipeline.CompileUsage) []publish.Dependency {
+	dep := publish.DirectContentKey(entityType, entityID)
+	out := []publish.Dependency{{Kind: dep.Kind, Key: dep.Key}}
 	out = append(out, pipeline.ActionTargetDependencies(usage)...)
 
 	for _, src := range collectionSources {
 		if src = strings.TrimSpace(src); src == "" {
 			continue
 		}
-		out = append(out, pipeline.Dependency{
-			Kind: pipeline.DepKindContentCollection,
+		out = append(out, publish.Dependency{
+			Kind: publish.DepKindContentCollection,
 			Key:  "collection:" + src,
 		})
 	}
 	if strings.TrimSpace(templateID) != "" {
-		out = append(out, pipeline.Dependency{
-			Kind: pipeline.DepKindContentTemplate,
+		out = append(out, publish.Dependency{
+			Kind: publish.DepKindContentTemplate,
 			Key:  "content_template:" + templateID,
 		})
 	}
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		for _, kind := range usage.MenuList() {
-			k := pipeline.MenuKey(pid, kind)
-			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.MenuKey(pid, kind)
+			out = append(out, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 
 		for _, navID := range usage.NavigationList() {
-			k := pipeline.NavigationKey(navID)
-			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.NavigationKey(navID)
+			out = append(out, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 
 		for _, blockID := range usage.BlockList() {
-			k := pipeline.BlockKey(blockID)
-			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+			k := publish.BlockKey(blockID)
+			out = append(out, publish.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 	}
 	return out
@@ -584,7 +585,7 @@ func (s *Service) instanceLogicalPath(ctx context.Context, inst *presentationmod
 }
 
 func (s *Service) normalizeLogicalPath(ctx context.Context, projectID, raw string) (string, error) {
-	normalized, err := pipeline.NormalizeURL(raw)
+	normalized, err := publish.NormalizeURL(raw)
 	if err != nil {
 		return "", err
 	}
@@ -800,4 +801,19 @@ func (s *Service) persistMultiLangArtifactsTx(ctx context.Context, tx *gorm.DB, 
 		}
 	}
 	return primaryArtifactID, snapID, nil
+}
+
+// diagnosticsOf 把构建器的降级诊断转成发布内核的中立事实。
+func diagnosticsOf(items []builder.Degrade) []publish.Diagnostic {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]publish.Diagnostic, 0, len(items))
+	for _, d := range items {
+		out = append(out, publish.Diagnostic{
+			Slot: d.Slot, NodeID: d.NodeID, NodeType: d.NodeType,
+			Kind: string(d.Kind), RefID: d.RefID, Reason: d.Reason,
+		})
+	}
+	return out
 }

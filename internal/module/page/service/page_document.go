@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"strconv"
 	"strings"
 	"time"
@@ -14,8 +15,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -26,6 +25,8 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -325,7 +326,7 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 }
 
 func normalizePagePath(raw string) (string, error) {
-	path, err := pipeline.NormalizeURL(raw)
+	path, err := publish.NormalizeURL(raw)
 	if err != nil {
 		return "", ErrInvalidPath
 	}
@@ -407,7 +408,7 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 			if pub.ArtifactID == nil || *pub.ArtifactID == "" {
 				continue
 			}
-			path, pathErr := pipeline.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
+			path, pathErr := publish.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
 			if pathErr != nil || path == "" {
 				continue
 			}
@@ -669,7 +670,7 @@ func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, ht
 	}
 }
 
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector, plan *pipeline.PublicationPlan, extra ...builder.CompileOption) ([]byte, error) {
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector, plan *publish.PublicationPlan, extra ...builder.CompileOption) ([]byte, error) {
 
 	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
 	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
@@ -788,7 +789,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 
 	if contentTranslator != nil {
-		pipeline.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
+		publish.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
 	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {
@@ -858,14 +859,14 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 	return page, nil
 }
 
-func planDefaultLang(plan *pipeline.PublicationPlan) string {
+func planDefaultLang(plan *publish.PublicationPlan) string {
 	if plan == nil {
 		return ""
 	}
 	return strings.TrimSpace(plan.DefaultLang)
 }
 
-func compileDefaultLang(ctx context.Context, project projectcontract.ProjectService, projectID string, plan *pipeline.PublicationPlan) string {
+func compileDefaultLang(ctx context.Context, project projectcontract.ProjectService, projectID string, plan *publish.PublicationPlan) string {
 	if plan != nil && strings.TrimSpace(plan.DefaultLang) != "" {
 		return strings.TrimSpace(plan.DefaultLang)
 	}
@@ -1061,7 +1062,7 @@ func (s *Service) verifyDeactivatedPathOwner(ctx context.Context, tx *gorm.DB, p
 	if ierr != nil {
 		return ierr
 	}
-	if st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+	if st == nil || st.Kind == publish.PublicationNone || st.Locator == nil {
 
 		return nil
 	}
@@ -1145,10 +1146,10 @@ func (s *Service) verifyProjectRedirectOwner(ctx context.Context, tx *gorm.DB, p
 	if ierr != nil {
 		return ierr
 	}
-	if st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+	if st == nil || st.Kind == publish.PublicationNone || st.Locator == nil {
 		return nil
 	}
-	if st.Kind != pipeline.PublicationRedirect {
+	if st.Kind != publish.PublicationRedirect {
 		return fmt.Errorf("%w: 路径 %s 的访问面已被改成 %s", errOldPathTaken, path, st.Kind)
 	}
 

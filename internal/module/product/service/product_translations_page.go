@@ -2,6 +2,7 @@ package productservice
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -224,7 +224,7 @@ func (s *Service) markTranslationInstancesStale(ctx context.Context, groups []pr
 	}
 	failed := false
 	for _, ref := range translationAffectedEntities(groups, changedKeys) {
-		dep := pipeline.DirectContentKey(ref.EntityType, ref.EntityID)
+		dep := publish.DirectContentKey(ref.EntityType, ref.EntityID)
 		if _, err := s.translationInstances.MarkStaleByDependency(ctx, dep.Kind, dep.Key); err != nil {
 			failed = true
 			logger.Scene("product").With("entity_type", ref.EntityType).With("entity_id", ref.EntityID).

@@ -3,10 +3,10 @@ package routers
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"strings"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 )
 
@@ -29,7 +29,7 @@ func (a structureTemplatePortAdapter) ResolveStructureDocument(ctx context.Conte
 }
 
 type contentTemplateInvalidator struct {
-	fanout *pipeline.Fanout
+	fanout *publish.Fanout
 }
 
 const invalidatorSampleLimit = 5
@@ -38,7 +38,7 @@ func (a contentTemplateInvalidator) Invalidate(ctx context.Context, kind, key st
 	if a.fanout == nil {
 		return
 	}
-	affected := a.fanout.InvalidateKeys(ctx, pipeline.DepKey{Kind: kind, Key: key})
+	affected := a.fanout.InvalidateKeys(ctx, publish.DepKey{Kind: kind, Key: key})
 	if len(affected) == 0 {
 
 		logger.Scene("contenttemplate").With("kind", kind).With("key", key).
@@ -46,7 +46,7 @@ func (a contentTemplateInvalidator) Invalidate(ctx context.Context, kind, key st
 		return
 	}
 	entry := logger.Scene("contenttemplate").With("kind", kind).With("key", key)
-	for _, st := range []string{pipeline.SourceTypePage, pipeline.SourceTypePresentation} {
+	for _, st := range []string{publish.SourceTypePage, publish.SourceTypePresentation} {
 		ids := affected[st]
 		if len(ids) == 0 {
 			continue

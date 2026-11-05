@@ -1,10 +1,9 @@
 package unit
 
 import (
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestNormalizeURLValid(t *testing.T) {
@@ -17,7 +16,7 @@ func TestNormalizeURLValid(t *testing.T) {
 		{"/aB-c_1", "/aB-c_1"},
 	}
 	for _, tc := range cases {
-		got, err := pipeline.NormalizeURL(tc.in)
+		got, err := publish.NormalizeURL(tc.in)
 		if err != nil {
 			t.Errorf("NormalizeURL(%q) 不应报错: %v", tc.in, err)
 			continue
@@ -50,7 +49,7 @@ func TestNormalizeURLInvalid(t *testing.T) {
 		"/objects/abc",
 	}
 	for _, in := range cases {
-		if _, err := pipeline.NormalizeURL(in); err == nil {
+		if _, err := publish.NormalizeURL(in); err == nil {
 			t.Errorf("NormalizeURL(%q) 应被拒绝", in)
 		}
 	}
@@ -58,21 +57,21 @@ func TestNormalizeURLInvalid(t *testing.T) {
 
 func TestNormalizeURLLengthBoundary(t *testing.T) {
 	ok := "/" + strings.Repeat("a", 499)
-	if got, err := pipeline.NormalizeURL(ok); err != nil || got != ok {
+	if got, err := publish.NormalizeURL(ok); err != nil || got != ok {
 		t.Errorf("500 字符路径应接受: got=%q err=%v", got, err)
 	}
 	tooLong := "/" + strings.Repeat("a", 500)
-	if _, err := pipeline.NormalizeURL(tooLong); err == nil {
+	if _, err := publish.NormalizeURL(tooLong); err == nil {
 		t.Errorf("501 字符路径应被拒绝")
 	}
 }
 
 func TestNormalizeURLErrorMessage(t *testing.T) {
-	_, err := pipeline.NormalizeURL("/a/../b")
+	_, err := publish.NormalizeURL("/a/../b")
 	if err == nil || !strings.Contains(err.Error(), "路径穿越") {
 		t.Errorf("错误信息应指出路径穿越: %v", err)
 	}
-	_, err = pipeline.NormalizeURL("/admin")
+	_, err = publish.NormalizeURL("/admin")
 	if err == nil || !strings.Contains(err.Error(), "保留路径") {
 		t.Errorf("错误信息应指出保留路径: %v", err)
 	}

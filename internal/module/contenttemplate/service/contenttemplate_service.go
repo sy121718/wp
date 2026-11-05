@@ -3,18 +3,18 @@ package contenttemplateservice
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"strings"
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/utils"
 )
 
@@ -45,7 +45,7 @@ func (s *Service) notifyTemplateChanged(ctx context.Context, templateID string) 
 	if s == nil || s.invalidator == nil || strings.TrimSpace(templateID) == "" {
 		return
 	}
-	k := pipeline.ContentTemplateKey(templateID)
+	k := publish.ContentTemplateKey(templateID)
 	s.invalidator.Invalidate(ctx, k.Kind, k.Key)
 }
 

@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -9,7 +10,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationmodel "go_wp/internal/module/presentation/model"
-	"go_wp/internal/pipeline"
 )
 
 func TestPresentationDependencyIncludesOtherPublishedLocale(t *testing.T) {
@@ -37,9 +37,9 @@ func TestPresentationDependencyIncludesOtherPublishedLocale(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, templateOnly := range []bool{false, true} {
-		dep := pipeline.BlockKey(uuid.NewString())
+		dep := publish.BlockKey(uuid.NewString())
 		if templateOnly {
-			dep = pipeline.ContentTemplateKey(uuid.NewString())
+			dep = publish.ContentTemplateKey(uuid.NewString())
 		}
 		if err := f.db.Exec(`INSERT INTO presentation_dependencies(presentation_id,artifact_id,dependency_kind,dependency_key,last_checked) VALUES (?,?,?,?,now())`, inst.ID, pubs[0].ArtifactID, dep.Kind, dep.Key).Error; err != nil {
 			t.Fatal(err)
@@ -66,7 +66,7 @@ func TestPresentationDependencyIncludesOtherPublishedLocale(t *testing.T) {
 		id   string
 		want int
 	}{{boundTemplate, 0}, {uuid.NewString(), 1}} {
-		dep := pipeline.ContentTemplateKey(tc.id)
+		dep := publish.ContentTemplateKey(tc.id)
 		if err := f.db.Exec(`INSERT INTO presentation_dependencies(presentation_id,artifact_id,dependency_kind,dependency_key,last_checked) VALUES (?,?,?,?,now()) ON CONFLICT DO NOTHING`, inst.ID, pubs[0].ArtifactID, dep.Kind, dep.Key).Error; err != nil {
 			t.Fatal(err)
 		}

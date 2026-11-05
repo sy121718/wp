@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bytes"
 	"compress/gzip"
+	"go_wp/pkg/publish"
 	"io"
 	"slices"
 	"strings"
@@ -45,9 +46,9 @@ func mustGunzip(t *testing.T, stream []byte) []byte {
 func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 	plain := bytes.Repeat([]byte("<p>确定性构建</p>\n"), 200)
 
-	gz, err := GzipDeterministic(plain)
+	gz, err := publish.GzipDeterministic(plain)
 	if err != nil {
-		t.Fatalf("GzipDeterministic 失败: %v", err)
+		t.Fatalf("publish.GzipDeterministic 失败: %v", err)
 	}
 	h := parseGzipHeader(gz)
 	if !h.ok {
@@ -55,14 +56,14 @@ func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 	}
 	t.Logf("明文 %d B → .gz %d B（级别 BestCompression）", len(plain), len(gz))
 	t.Logf("header: FLG=0x%02x MTIME=% x OS=%d", h.flg, h.mtime, h.os)
-	t.Logf(".gz sha256 = %s", SHA256(gz))
+	t.Logf(".gz sha256 = %s", publish.SHA256(gz))
 	if h.mtime != [4]byte{} {
 		t.Errorf("MTIME = % x（期望全零）：RFC 1952 规定 0 = 无时间戳，非零表示"+
 			"「这份产物诞生于某个具体时刻」，会把构建时刻烙进不可变产物", h.mtime)
 	}
-	if h.os != gzipOSUnknown {
+	if h.os != publish.GzipOSUnknown {
 		t.Errorf("OS 字节 = %d（期望 %d = unknown）：不写死它，同一份文档在不同构建"+
-			"机器上会产出不同字节", h.os, gzipOSUnknown)
+			"机器上会产出不同字节", h.os, publish.GzipOSUnknown)
 	}
 
 	if h.flg&0x08 != 0 || h.flg&0x10 != 0 {
@@ -76,27 +77,27 @@ func TestGzipDeterministicHeaderIsFrozen(t *testing.T) {
 func TestGzipDeterministicByteIdentical(t *testing.T) {
 	plain := []byte("<!doctype html>\n" + strings.Repeat("<p>正文 bytes</p>\n", 300))
 
-	first, err := GzipDeterministic(plain)
+	first, err := publish.GzipDeterministic(plain)
 	if err != nil {
-		t.Fatalf("GzipDeterministic 失败: %v", err)
+		t.Fatalf("publish.GzipDeterministic 失败: %v", err)
 	}
-	t.Logf("第 1 次：%d B  sha256=%s", len(first), SHA256(first))
+	t.Logf("第 1 次：%d B  sha256=%s", len(first), publish.SHA256(first))
 	for i := range 4 {
-		again, err := GzipDeterministic(plain)
+		again, err := publish.GzipDeterministic(plain)
 		if err != nil {
 			t.Fatalf("第 %d 次派生失败: %v", i+1, err)
 		}
-		t.Logf("第 %d 次：%d B  sha256=%s", i+2, len(again), SHA256(again))
+		t.Logf("第 %d 次：%d B  sha256=%s", i+2, len(again), publish.SHA256(again))
 		if !bytes.Equal(first, again) {
 			t.Fatalf("第 %d 次派生与首次逐字节不同：sha256 %s vs %s",
-				i+1, SHA256(first), SHA256(again))
+				i+1, publish.SHA256(first), publish.SHA256(again))
 		}
 	}
 	t.Log("5 次派生逐字节相同")
 }
 
 func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
-	big := bytes.Repeat([]byte("x"), PrecompressMinSize)
+	big := bytes.Repeat([]byte("x"), publish.PrecompressMinSize)
 
 	cases := []struct {
 		name string
@@ -122,17 +123,17 @@ func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 		{"archive.zip", big, false},
 		{"bundle.js.br", big, false},
 
-		{"tiny.html", big[:PrecompressMinSize-1], false},
+		{"tiny.html", big[:publish.PrecompressMinSize-1], false},
 
 		{"exact.html", big, true},
 	}
 
 	for _, tc := range cases {
 		entries := map[string][]byte{tc.name: tc.data}
-		if err := PrecompressEntries(entries); err != nil {
-			t.Fatalf("PrecompressEntries(%s) 失败: %v", tc.name, err)
+		if err := publish.PrecompressEntries(entries); err != nil {
+			t.Fatalf("publish.PrecompressEntries(%s) 失败: %v", tc.name, err)
 		}
-		gz, got := entries[tc.name+PrecompressedSuffix]
+		gz, got := entries[tc.name+publish.PrecompressedSuffix]
 		if got != tc.want {
 			t.Errorf("%s：派生 = %v，期望 %v", tc.name, got, tc.want)
 			continue
@@ -146,15 +147,15 @@ func TestPrecompressEntriesWhitelistAndThreshold(t *testing.T) {
 func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 	html := []byte("<!doctype html>\n" + strings.Repeat("<p>页面正文</p>\n", 300))
 
-	build := func() *Artifact {
+	build := func() *publish.Artifact {
 		t.Helper()
-		m := &Manifest{
+		m := &publish.Manifest{
 			CanonicalPath: "/about",
 			SourceID:      "page-1",
-			SourceType:    SourceTypePage,
+			SourceType:    publish.SourceTypePage,
 			Files:         map[string]string{},
 		}
-		a, err := NewArtifact(html, m)
+		a, err := publish.NewArtifact(html, m)
 		if err != nil {
 			t.Fatalf("组装产物失败: %v", err)
 		}
@@ -162,7 +163,7 @@ func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 	}
 
 	a := build()
-	gzName := "index.html" + PrecompressedSuffix
+	gzName := "index.html" + publish.PrecompressedSuffix
 	gz, ok := a.Entries[gzName]
 	if !ok {
 		keys := mapKeys(a.Entries)
@@ -173,7 +174,7 @@ func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 		t.Error("预压缩产物解压后与入口 HTML 不一致")
 	}
 	if _, registered := a.Manifest.Files[gzName]; registered {
-		t.Errorf("派生字节被登记进 Manifest.Files：产物 hash 会随压缩库实现变化（不变量 5 的可用性一面）")
+		t.Errorf("派生字节被登记进 publish.Manifest.Files：产物 hash 会随压缩库实现变化（不变量 5 的可用性一面）")
 	}
 
 	b := build()
@@ -182,7 +183,7 @@ func TestArtifactCarriesPrecompressedDerivative(t *testing.T) {
 	}
 	if !bytes.Equal(gz, b.Entries[gzName]) {
 		t.Errorf("同一份文档两次构建的 .gz 字节不同：sha256 %s vs %s",
-			SHA256(gz), SHA256(b.Entries[gzName]))
+			publish.SHA256(gz), publish.SHA256(b.Entries[gzName]))
 	}
 }
 
@@ -190,15 +191,15 @@ func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 	html := []byte("<!doctype html>" + strings.Repeat("<!--p-->", 300))
 	guard := []byte("<!doctype html>" + strings.Repeat("<p>请输入密码</p>", 200))
 
-	m := &Manifest{CanonicalPath: "/secret", SourceID: "page-2", Files: map[string]string{}}
-	a, err := NewArtifactWithEntries(html, m, map[string][]byte{"guard.html": guard})
+	m := &publish.Manifest{CanonicalPath: "/secret", SourceID: "page-2", Files: map[string]string{}}
+	a, err := publish.NewArtifactWithEntries(html, m, map[string][]byte{"guard.html": guard})
 	if err != nil {
 		t.Fatalf("组装产物失败: %v", err)
 	}
 	for _, name := range []string{"index.html", "guard.html"} {
-		gz, ok := a.Entries[name+PrecompressedSuffix]
+		gz, ok := a.Entries[name+publish.PrecompressedSuffix]
 		if !ok {
-			t.Errorf("伴随文件 %s 没有派生 %s", name, PrecompressedSuffix)
+			t.Errorf("伴随文件 %s 没有派生 %s", name, publish.PrecompressedSuffix)
 			continue
 		}
 		plain := a.Entries[name]
@@ -207,10 +208,10 @@ func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 		}
 
 		if _, ok := a.Manifest.Files[name]; !ok {
-			t.Errorf("%s 的明文哈希不在 Manifest.Files 里", name)
+			t.Errorf("%s 的明文哈希不在 publish.Manifest.Files 里", name)
 		}
-		if _, ok := a.Manifest.Files[name+PrecompressedSuffix]; ok {
-			t.Errorf("%s 的派生字节被登记进 Manifest.Files", name)
+		if _, ok := a.Manifest.Files[name+publish.PrecompressedSuffix]; ok {
+			t.Errorf("%s 的派生字节被登记进 publish.Manifest.Files", name)
 		}
 	}
 }
@@ -227,15 +228,15 @@ func TestAssetContentTypeHtmlHasCharset(t *testing.T) {
 		"noext-unknown": "application/octet-stream",
 	}
 	for path, want := range cases {
-		got := AssetContentType(path)
+		got := publish.AssetContentType(path)
 		if strings.HasSuffix(want, "charset=utf-8") {
 			if got != want {
-				t.Errorf("AssetContentType(%q) = %q，期望 %q", path, got, want)
+				t.Errorf("publish.AssetContentType(%q) = %q，期望 %q", path, got, want)
 			}
 			continue
 		}
 		if !strings.Contains(got, want) {
-			t.Errorf("AssetContentType(%q) = %q，期望包含 %q", path, got, want)
+			t.Errorf("publish.AssetContentType(%q) = %q，期望包含 %q", path, got, want)
 		}
 	}
 }

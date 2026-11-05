@@ -9,6 +9,7 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/facing"
+	publish "go_wp/pkg/publish"
 	"reflect"
 	"testing"
 )
@@ -53,8 +54,8 @@ func TestPresentationActionDependencyImpactAndDeleteProtection(t *testing.T) {
 	} else if status, ok := facing.StatusOf(err); !ok || status != 409 {
 		t.Fatalf("必须声明409: %v", err)
 	}
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePresentation, f.pres)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePresentation, f.pres)
 	f.pres.SetActionTargetInvalidator(fanout)
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{ProjectID: f.projectID, ID: target, NewPath: "/explicit-target-moved"}); err != nil {
 		t.Fatal(err)

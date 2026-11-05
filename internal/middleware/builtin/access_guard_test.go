@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,9 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"go_wp/pkg/builder"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/builder"
 )
 
 type guardTestEntry struct {
@@ -28,8 +29,8 @@ type guardTestEntry struct {
 
 func addGuardTestEntry(t *testing.T, entry string, e guardTestEntry) {
 	t.Helper()
-	root := pipeline.DefaultArtifactRoot()
-	active := pipeline.ActiveRoot()
+	root := publish.DefaultArtifactRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
@@ -38,7 +39,7 @@ func addGuardTestEntry(t *testing.T, entry string, e guardTestEntry) {
 		html = "<html><body>" + entry + "</body></html>"
 	}
 	extra, _ := pipeline.BuildGuardEntries(e.Access, e.Lang)
-	hash := pipeline.SHA256([]byte(entry + html))
+	hash := publish.SHA256([]byte(entry + html))
 	dir := filepath.Join(root, "artifacts", hash)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("建产物目录失败: %v", err)
@@ -237,7 +238,7 @@ func TestAccessGuardFingerprintChangeInvalidatesCookie(t *testing.T) {
 		t.Fatalf("解锁后期望 200，实际 %d", rec.Code)
 	}
 
-	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), "about")); err != nil {
+	if err := os.Remove(filepath.Join(publish.ActiveRoot(), "about")); err != nil {
 		t.Fatalf("移除旧激活链接失败: %v", err)
 	}
 	addGuardTestEntry(t, "about", guardTestEntry{HTML: "<html><body>SECRET-ABOUT-V2</body></html>", Access: passwordGuard(t, "new-pass")})
@@ -292,11 +293,11 @@ func TestAccessGuardMetaCorruptedFailsClosed(t *testing.T) {
 		"about": {HTML: "<html><body>SECRET-ABOUT</body></html>", Access: passwordGuard(t, "s3cret")},
 	})
 
-	target, err := os.Readlink(filepath.Join(pipeline.ActiveRoot(), "about"))
+	target, err := os.Readlink(filepath.Join(publish.ActiveRoot(), "about"))
 	if err != nil {
 		t.Fatalf("读链接失败: %v", err)
 	}
-	dir := filepath.Clean(filepath.Join(pipeline.ActiveRoot(), target))
+	dir := filepath.Clean(filepath.Join(publish.ActiveRoot(), target))
 	if err := os.WriteFile(filepath.Join(dir, pipeline.GuardMetaFileName), []byte(`{"version":1}`), 0o644); err != nil {
 		t.Fatalf("写坏元数据失败: %v", err)
 	}

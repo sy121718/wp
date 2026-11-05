@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,13 +11,13 @@ import (
 	"go_wp/pkg/builder"
 )
 
-func testManifest(path string) *Manifest {
-	return &Manifest{
-		ManifestSchemaVersion:     ManifestSchemaVersion,
+func testManifest(path string) *publish.Manifest {
+	return &publish.Manifest{
+		ManifestSchemaVersion:     publish.ManifestSchemaVersion,
 		PageDocumentSchemaVersion: 1,
 		CompilerVersion:           "test",
 		SourceID:                  "page-1",
-		SourceType:                SourceTypePage,
+		SourceType:                publish.SourceTypePage,
 		CanonicalPath:             path,
 		SourceHash:                "src",
 		BuildInputHash:            "bin",
@@ -81,7 +82,7 @@ func TestBuildGuardEntriesPasswordCarriesHashAndFingerprint(t *testing.T) {
 		t.Fatal(merr)
 	}
 	if string(markerJSON) != `{"type":"password"}` {
-		t.Errorf("Manifest 访问标记形状不符（不应含哈希/指纹）：%s", markerJSON)
+		t.Errorf("publish.Manifest 访问标记形状不符（不应含哈希/指纹）：%s", markerJSON)
 	}
 }
 
@@ -106,7 +107,7 @@ func TestGuardPasswordChangeChangesArtifactHash(t *testing.T) {
 		}, "zh-CN")
 		m := testManifest("/about")
 		m.Access = meta
-		a, err := NewArtifactWithEntries([]byte("<html>page</html>"), m, files)
+		a, err := publish.NewArtifactWithEntries([]byte("<html>page</html>"), m, files)
 		if err != nil {
 			t.Fatalf("组装产物失败: %v", err)
 		}
@@ -118,8 +119,8 @@ func TestGuardPasswordChangeChangesArtifactHash(t *testing.T) {
 }
 
 func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
-	newPublic := func() *Artifact {
-		a, err := NewArtifact([]byte("<html>page</html>"), testManifest("/about"))
+	newPublic := func() *publish.Artifact {
+		a, err := publish.NewArtifact([]byte("<html>page</html>"), testManifest("/about"))
 		if err != nil {
 			t.Fatalf("组装产物失败: %v", err)
 		}
@@ -127,7 +128,7 @@ func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
 	}
 	a := newPublic()
 
-	encoded, err := EncodeManifest(&a.Manifest)
+	encoded, err := publish.EncodeManifest(&a.Manifest)
 	if err != nil {
 		t.Fatalf("编码失败: %v", err)
 	}
@@ -140,13 +141,13 @@ func TestGuardDoNotChangePublicArtifactHash(t *testing.T) {
 }
 
 func TestLocalStorePersistsGuardFiles(t *testing.T) {
-	store := &LocalStore{Root: t.TempDir()}
+	store := &publish.LocalStore{Root: t.TempDir()}
 	files, meta := BuildGuardEntries(&builder.AccessGuardSettings{
 		Type: builder.AccessPassword, PasswordHash: "$2a$10$abcdefghijklmnopqrstuv",
 	}, "zh-CN")
 	m := testManifest("/about")
 	m.Access = meta
-	a, err := NewArtifactWithEntries([]byte("<html>page</html>"), m, files)
+	a, err := publish.NewArtifactWithEntries([]byte("<html>page</html>"), m, files)
 	if err != nil {
 		t.Fatalf("组装产物失败: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestLocalStorePersistsGuardFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("落盘失败: %v", err)
 	}
-	dir := filepath.Join(store.Root, "artifacts", LocatorHash(loc))
+	dir := filepath.Join(store.Root, "artifacts", publish.LocatorHash(loc))
 	for _, name := range []string{"index.html", "manifest.json", GuardPageFileName, GuardMetaFileName} {
 		if _, serr := os.Stat(filepath.Join(dir, name)); serr != nil {
 			t.Errorf("%s 未落盘: %v（store 是否还在硬编码文件名？）", name, serr)
@@ -174,12 +175,12 @@ func TestLocalStorePersistsGuardFiles(t *testing.T) {
 }
 
 func TestNewArtifactWithEntriesRejectsBadNames(t *testing.T) {
-	if _, err := NewArtifactWithEntries([]byte("x"), testManifest("/a"), map[string][]byte{
+	if _, err := publish.NewArtifactWithEntries([]byte("x"), testManifest("/a"), map[string][]byte{
 		"index.html": []byte("dup"),
 	}); err == nil {
 		t.Error("与入口重名应被拒绝")
 	}
-	if _, err := NewArtifactWithEntries([]byte("x"), testManifest("/a"), map[string][]byte{
+	if _, err := publish.NewArtifactWithEntries([]byte("x"), testManifest("/a"), map[string][]byte{
 		"../escape.html": []byte("x"),
 	}); err == nil {
 		t.Error("越界路径应被拒绝")
@@ -203,7 +204,7 @@ func TestReadGuardMetaMissingVsCorrupted(t *testing.T) {
 }
 
 func TestGuardPageWithPathEscapes(t *testing.T) {
-	page := RenderGuardPage(GuardMeta{Type: builder.AccessPassword}, GuardBackPlaceholder, false)
+	page := publish.RenderGuardPage(GuardMeta{Type: builder.AccessPassword}, GuardBackPlaceholder, false)
 	out := string(GuardPageWithPath(page, `/a"onmouseover="alert(1)`))
 	if strings.Contains(out, `value="/a"onmouseover=`) {
 		t.Fatal("路径未转义，存在属性注入")
@@ -224,8 +225,8 @@ func TestGuardFingerprint(t *testing.T) {
 	if a == GuardFingerprint("hash-b") {
 		t.Fatal("不同哈希的指纹必须不同（否则改密码不失效旧解锁）")
 	}
-	if a == SHA256([]byte("hash-a")) {
-		t.Fatal("指纹与裸 SHA256 相同（领域前缀失效，可能与别的摘要撞读）")
+	if a == publish.SHA256([]byte("hash-a")) {
+		t.Fatal("指纹与裸 publish.SHA256 相同（领域前缀失效，可能与别的摘要撞读）")
 	}
 }
 
@@ -270,9 +271,9 @@ func TestResolveActiveEntryMapping(t *testing.T) {
 		{"../escape", "", false},
 	}
 	for _, c := range cases {
-		entry, ok := ResolveActiveEntry(active, c.rel)
+		entry, ok := publish.ResolveActiveEntry(active, c.rel)
 		if ok != c.ok || entry != c.entry {
-			t.Errorf("ResolveActiveEntry(%q) = (%q, %v)，期望 (%q, %v)", c.rel, entry, ok, c.entry, c.ok)
+			t.Errorf("publish.ResolveActiveEntry(%q) = (%q, %v)，期望 (%q, %v)", c.rel, entry, ok, c.entry, c.ok)
 		}
 	}
 }
@@ -291,9 +292,9 @@ func TestCleanSiteRelRejectsTraversal(t *testing.T) {
 		{"a/../../b", "", false},
 	}
 	for _, c := range cases {
-		got, ok := CleanSiteRel(c.raw)
+		got, ok := publish.CleanSiteRel(c.raw)
 		if ok != c.ok || got != c.want {
-			t.Errorf("CleanSiteRel(%q) = (%q, %v)，期望 (%q, %v)", c.raw, got, ok, c.want, c.ok)
+			t.Errorf("publish.CleanSiteRel(%q) = (%q, %v)，期望 (%q, %v)", c.raw, got, ok, c.want, c.ok)
 		}
 	}
 }

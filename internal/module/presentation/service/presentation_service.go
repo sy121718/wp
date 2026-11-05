@@ -3,6 +3,7 @@ package presentationservice
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"hash/fnv"
 	"strings"
 	"sync"
@@ -12,8 +13,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
-	"go_wp/pkg/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -26,6 +25,8 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/source"
 	"go_wp/pkg/i18n"
 )
 
@@ -59,8 +60,8 @@ type Service struct {
 	plugins plugincontract.PluginService
 
 	contentStore i18n.ContentStore
-	store        *pipeline.LocalStore
-	publication  *pipeline.LocalPublicationStore
+	store        *publish.LocalStore
+	publication  *publish.LocalPublicationStore
 
 	routes pubcontract.PublicationService
 
@@ -76,10 +77,10 @@ type Service struct {
 
 	lastOldPathPending atomic.Int64
 
-	pathLock pipeline.PublicationPathLocker
+	pathLock publish.PublicationPathLocker
 }
 
-func (s *Service) SetPublicationPathLocker(locker pipeline.PublicationPathLocker) {
+func (s *Service) SetPublicationPathLocker(locker publish.PublicationPathLocker) {
 	s.pathLock = locker
 }
 
@@ -90,7 +91,7 @@ func (s *Service) withPaths(paths []string, fn func() error) error {
 	locker := s.pathLock
 	if locker == nil {
 
-		return pipeline.ErrPathLockerUnavailable
+		return publish.ErrPathLockerUnavailable
 	}
 	return locker.WithPaths(paths, fn)
 }
@@ -117,10 +118,10 @@ func NewService(m *presentationmodel.Model,
 		registry:    registry,
 		project:     project,
 		blocks:      blocks,
-		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
-		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
+		store:       &publish.LocalStore{Root: publish.DefaultArtifactRoot()},
+		publication: &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()},
 		routes:      routes,
-		pathLock:    pipeline.DefaultPathLocker(),
+		pathLock:    publish.DefaultPathLocker(),
 
 		convergeWake: make(chan struct{}, 1),
 	}
@@ -145,10 +146,10 @@ var _ presentationcontract.DetailTemplateModePort = (*Service)(nil)
 
 var _ presentationcontract.PublishRecordPort = (*Service)(nil)
 
-var _ pipeline.DependencyTarget = (*Service)(nil)
-var _ pipeline.StaleRebuilder = (*Service)(nil)
+var _ publish.DependencyTarget = (*Service)(nil)
+var _ publish.StaleRebuilder = (*Service)(nil)
 
-func (s *Service) SourceType() string { return pipeline.SourceTypePresentation }
+func (s *Service) SourceType() string { return publish.SourceTypePresentation }
 
 func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }
 

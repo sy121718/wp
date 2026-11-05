@@ -86,8 +86,8 @@ const (
 	portPagePublishedInstanceLocator     = "page.SetPublishedInstanceLocator"
 	portPresentationPublishedPageLocator = "presentation.SetPublishedPageLocator"
 	portActionTargetReferences           = "page/presentation.SetActionTargetReferences/SetActionTargetInvalidator"
-	portPipelinePageRebuilder            = "pipeline.Fanout.SetRebuilder(page)"
-	portPipelinePresentationRebuilder    = "pipeline.Fanout.SetRebuilder(presentation)"
+	portPipelinePageRebuilder            = "publish.Fanout.SetRebuilder(page)"
+	portPipelinePresentationRebuilder    = "publish.Fanout.SetRebuilder(presentation)"
 	portContentDependencyInvalidator     = "content.SetDependencyInvalidator"
 	portProductDependencyInvalidator     = "product.SetDependencyInvalidator"
 	portContentTemplateInvalidator       = "contenttemplate.SetInvalidator"
@@ -275,19 +275,19 @@ var wiringManifest = []wiringEntry{
 		"显式目标删除保护或改址下线失效通知缺失，可能留下死链接"},
 	{portPresentationSiteAssembly, "navigation/page/media/plugin", "presentation", wiringRequiredPort,
 		"自动发布详情页缺头尾菜单 / 槽位链接 / 响应式 srcset / 插件组件（只有详情页受影响）"},
-	{portPipelinePageRebuilder, "page", "pipeline.Fanout", wiringRequiredPort,
+	{portPipelinePageRebuilder, "page", "publish.Fanout", wiringRequiredPort,
 		"内容变更只标记 stale 不自动重建（线上内容停在旧版本）"},
-	{portPipelinePresentationRebuilder, "presentation", "pipeline.Fanout", wiringRequiredPort,
+	{portPipelinePresentationRebuilder, "presentation", "publish.Fanout", wiringRequiredPort,
 		"自动发布的详情页不在失效扇出里：内容更新只重建手工页，详情页继续给旧字节（审计 AR2-001）"},
-	{portContentDependencyInvalidator, "pipeline.Fanout", "content", wiringOptionalDegraded,
+	{portContentDependencyInvalidator, "publish.Fanout", "content", wiringOptionalDegraded,
 		"内容变更不触发精确失效（行为与本端口接入前逐字一致）"},
-	{portProductDependencyInvalidator, "pipeline.Fanout", "product", wiringRequiredPort,
+	{portProductDependencyInvalidator, "publish.Fanout", "product", wiringRequiredPort,
 		"商品写路径的静态产物失效事件无人消费：详情页与集合列表页永远停在旧字节（审计 ARCH-01）"},
-	{portContentTemplateInvalidator, "pipeline.Fanout", "contenttemplate", wiringOptionalDegraded,
+	{portContentTemplateInvalidator, "publish.Fanout", "contenttemplate", wiringOptionalDegraded,
 		"模板产生新版本 / 切换生效后不触发精确失效：引用它的页面与实例停留在旧字节"},
 	{portNavigationSourceResolver, "navsource", "navigation", wiringOptionalDegraded,
 		"来源菜单项退化为记录自身的 title/path（不解析目标实体）"},
-	{portNavigationMenuDispatcher, "pipeline.Fanout", "navigation", wiringRequiredPort,
+	{portNavigationMenuDispatcher, "publish.Fanout", "navigation", wiringRequiredPort,
 		"改公开站点导航不派发任何失效：已发布页面的页眉/页脚永远停在旧菜单（全站可见且无报错）"},
 
 	{portNavigationTranslationWriter, "navigation（TranslationWriter 构造于装配层）", "navigation.inbound/http", wiringRequiredPort,

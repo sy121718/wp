@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"sync"
 	"testing"
@@ -9,13 +10,12 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/pipeline"
 )
 
 type countingPathLocker struct {
 	mu    sync.Mutex
 	calls [][]string
-	inner pipeline.PublicationPathLocker
+	inner publish.PublicationPathLocker
 }
 
 func (c *countingPathLocker) WithPaths(paths []string, fn func() error) error {
@@ -36,7 +36,7 @@ func TestPresentationServiceUsesInjectedPathLocker(t *testing.T) {
 	if f == nil {
 		return
 	}
-	locker := &countingPathLocker{inner: pipeline.NewProcessPathLocker()}
+	locker := &countingPathLocker{inner: publish.NewProcessPathLocker()}
 	f.pres.SetPublicationPathLocker(locker)
 
 	if _, err := f.pres.UpdateURL(context.Background(), &presentationdto.UpdateURLReq{
@@ -83,12 +83,12 @@ func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 		t.Fatalf("没有路径锁时不应完成激活（应 fail closed）")
 	}
 
-	store := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
+	store := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
 	state, serr := store.Inspect("/path-lock-closed")
 	if serr != nil {
 		t.Fatalf("检查访问面失败: %v", serr)
 	}
-	if state != nil && state.Kind != pipeline.PublicationNone {
+	if state != nil && state.Kind != publish.PublicationNone {
 		t.Fatalf("没有路径锁时不得改动访问面，实际 %v", state.Kind)
 	}
 
@@ -96,7 +96,7 @@ func TestNilPathLockerFailsClosedAndKeepsReceiptPending(t *testing.T) {
 	if oerr != nil {
 		t.Fatalf("检查旧路径失败: %v", oerr)
 	}
-	if oldState == nil || oldState.Kind == pipeline.PublicationNone {
+	if oldState == nil || oldState.Kind == publish.PublicationNone {
 		t.Fatalf("fail closed 之后旧路径的线上链接必须仍在")
 	}
 }
@@ -107,7 +107,7 @@ func TestOldPathDisposalLocksEveryPathInOneCall(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	locker := &countingPathLocker{inner: pipeline.NewProcessPathLocker()}
+	locker := &countingPathLocker{inner: publish.NewProcessPathLocker()}
 	f.pres.SetPublicationPathLocker(locker)
 
 	if _, err := f.pres.UpdateURL(ctx, &presentationdto.UpdateURLReq{
@@ -133,7 +133,7 @@ func TestOldPathDisposalLocksEveryPathInOneCall(t *testing.T) {
 		t.Fatalf("改写 oldPaths 失败: %v", err)
 	}
 
-	locker = &countingPathLocker{inner: pipeline.NewProcessPathLocker()}
+	locker = &countingPathLocker{inner: publish.NewProcessPathLocker()}
 	f.pres.SetPublicationPathLocker(locker)
 	if _, cerr := f.pres.ConvergePendingReceipts(ctx); cerr != nil {
 		t.Fatalf("收敛失败: %v", cerr)

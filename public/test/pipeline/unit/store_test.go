@@ -1,16 +1,15 @@
 package unit
 
 import (
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestLocalStorePutGetVerify(t *testing.T) {
-	s := &pipeline.LocalStore{Root: t.TempDir()}
-	a, err := pipeline.NewArtifact([]byte("<html>v1</html>"), baseManifest())
+	s := &publish.LocalStore{Root: t.TempDir()}
+	a, err := publish.NewArtifact([]byte("<html>v1</html>"), baseManifest())
 	if err != nil {
 		t.Fatalf("构建产物失败: %v", err)
 	}
@@ -33,8 +32,8 @@ func TestLocalStorePutGetVerify(t *testing.T) {
 
 func TestLocalStorePutIdempotent(t *testing.T) {
 	root := t.TempDir()
-	s := &pipeline.LocalStore{Root: root}
-	a, _ := pipeline.NewArtifact([]byte("<html>v1</html>"), baseManifest())
+	s := &publish.LocalStore{Root: root}
+	a, _ := publish.NewArtifact([]byte("<html>v1</html>"), baseManifest())
 	loc1, err := s.PutArtifact(a)
 	if err != nil {
 		t.Fatalf("PutArtifact 失败: %v", err)
@@ -54,8 +53,8 @@ func TestLocalStorePutIdempotent(t *testing.T) {
 }
 
 func TestLocalStoreDeleteArtifact(t *testing.T) {
-	s := &pipeline.LocalStore{Root: t.TempDir()}
-	a, _ := pipeline.NewArtifact([]byte("<html>v1</html>"), baseManifest())
+	s := &publish.LocalStore{Root: t.TempDir()}
+	a, _ := publish.NewArtifact([]byte("<html>v1</html>"), baseManifest())
 	loc, _ := s.PutArtifact(a)
 
 	if err := s.DeleteArtifact(loc, "wrong-hash"); err == nil {
@@ -70,8 +69,8 @@ func TestLocalStoreDeleteArtifact(t *testing.T) {
 }
 
 func TestLocalStoreRedirectRoundTrip(t *testing.T) {
-	s := &pipeline.LocalStore{Root: t.TempDir()}
-	r, _ := pipeline.NewRedirectArtifact("/new-url", 301)
+	s := &publish.LocalStore{Root: t.TempDir()}
+	r, _ := publish.NewRedirectArtifact("/new-url", 301)
 	loc, err := s.PutRedirect(r)
 	if err != nil {
 		t.Fatalf("PutRedirect 失败: %v", err)
@@ -92,8 +91,8 @@ func TestLocalStoreRedirectRoundTrip(t *testing.T) {
 }
 
 func TestLocalStoreDeleteObject(t *testing.T) {
-	s := &pipeline.LocalStore{Root: t.TempDir()}
-	a, _ := pipeline.NewArtifact([]byte("<html>x</html>"), baseManifest())
+	s := &publish.LocalStore{Root: t.TempDir()}
+	a, _ := publish.NewArtifact([]byte("<html>x</html>"), baseManifest())
 	loc, _ := s.PutArtifact(a)
 	if err := s.DeleteArtifactObject(loc, "index.html"); err != nil {
 		t.Fatalf("删除 index.html 失败: %v", err)
@@ -107,8 +106,8 @@ func TestLocalStoreDeleteObject(t *testing.T) {
 }
 
 func TestLocalStoreGetMissing(t *testing.T) {
-	s := &pipeline.LocalStore{Root: t.TempDir()}
-	if _, err := s.GetArtifact(pipeline.Locator{Provider: "local", Key: "artifacts/none"}); err == nil {
+	s := &publish.LocalStore{Root: t.TempDir()}
+	if _, err := s.GetArtifact(publish.Locator{Provider: "local", Key: "artifacts/none"}); err == nil {
 		t.Error("读取不存在产物应报错")
 	}
 }

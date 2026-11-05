@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,13 +14,13 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
@@ -95,7 +96,7 @@ type publishFreeze struct {
 
 	langs []string
 
-	rule pipeline.LangURLRule
+	rule publish.LangURLRule
 
 	logicalPath string
 
@@ -619,8 +620,8 @@ func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.I
 
 type builtArtifact struct {
 	Hash     string
-	Loc      pipeline.Locator
-	Manifest pipeline.Manifest
+	Loc      publish.Locator
+	Manifest publish.Manifest
 }
 
 func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *presentationmodel.InstanceEntity,
@@ -656,7 +657,7 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 	return e.ID, nil
 }
 
-func (s *Service) persistDependenciesTx(tx *gorm.DB, instanceID, artifactID string, deps []pipeline.Dependency, now time.Time) error {
+func (s *Service) persistDependenciesTx(tx *gorm.DB, instanceID, artifactID string, deps []publish.Dependency, now time.Time) error {
 	if strings.TrimSpace(instanceID) == "" || strings.TrimSpace(artifactID) == "" {
 		return nil
 	}
@@ -1489,7 +1490,7 @@ func (s *Service) reverifyOldPathOwnershipTx(ctx context.Context, tx *gorm.DB,
 func (s *Service) disposeOldPathTx(ctx context.Context, tx *gorm.DB,
 	inst *presentationmodel.InstanceEntity, oldPath, newPath, artifactID string, withRedirect bool) error {
 	if withRedirect {
-		ra, rerr := pipeline.NewRedirectArtifact(newPath, 301)
+		ra, rerr := publish.NewRedirectArtifact(newPath, 301)
 		if rerr != nil {
 			return rerr
 		}
@@ -1534,11 +1535,11 @@ func (s *Service) oldPathFSTargetAllowsDeactivate(oldPath string) error {
 
 		return ierr
 	}
-	if st == nil || st.Kind == pipeline.PublicationNone {
+	if st == nil || st.Kind == publish.PublicationNone {
 		return nil
 	}
 
-	if st.Kind == pipeline.PublicationPage || st.Kind == pipeline.PublicationRedirect {
+	if st.Kind == publish.PublicationPage || st.Kind == publish.PublicationRedirect {
 		return nil
 	}
 	logger.Scene("publication").With("oldPath", oldPath).With("kind", st.Kind).
@@ -1554,11 +1555,11 @@ func (s *Service) oldPathFSTargetAllowsRedirect(oldPath, newPath string) error {
 	if ierr != nil {
 		return ierr
 	}
-	if st == nil || st.Kind == pipeline.PublicationNone {
+	if st == nil || st.Kind == publish.PublicationNone {
 		return nil
 	}
 
-	if st.Kind != pipeline.PublicationRedirect {
+	if st.Kind != publish.PublicationRedirect {
 		return nil
 	}
 
@@ -1646,7 +1647,7 @@ func (s *Service) activeArtifactHash(path string) string {
 		return ""
 	}
 
-	if state.Kind != pipeline.PublicationPage {
+	if state.Kind != publish.PublicationPage {
 		return ""
 	}
 	return strings.TrimPrefix(state.Locator.Key, artifactLocatorKeyPrefix)
@@ -1855,7 +1856,7 @@ func (s *Service) verifyDeactivatedPathOwner(ctx context.Context, tx *gorm.DB, p
 	if ierr != nil {
 		return ierr
 	}
-	if st == nil || st.Kind == pipeline.PublicationNone || st.Locator == nil {
+	if st == nil || st.Kind == publish.PublicationNone || st.Locator == nil {
 
 		return nil
 	}

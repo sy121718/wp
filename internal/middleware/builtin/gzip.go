@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/pipeline"
 	mw "go_wp/pkg/middleware"
 )
 
@@ -41,7 +41,7 @@ func servePrecompressed(c *gin.Context, prefix string) bool {
 	if !ok {
 		return false
 	}
-	f, err := os.Open(file + pipeline.PrecompressedSuffix)
+	f, err := os.Open(file + publish.PrecompressedSuffix)
 	if err != nil {
 		return false
 	}
@@ -54,7 +54,7 @@ func servePrecompressed(c *gin.Context, prefix string) bool {
 	h := c.Writer.Header()
 	h.Set("Content-Encoding", "gzip")
 
-	h.Set("Content-Type", pipeline.AssetContentType(file))
+	h.Set("Content-Type", publish.AssetContentType(file))
 
 	addVaryAcceptEncoding(h)
 
@@ -70,13 +70,13 @@ func siteAssetFile(prefix, urlPath string) (string, bool) {
 	if !inFace {
 		return "", false
 	}
-	clean, ok := pipeline.CleanSiteRel(rel)
+	clean, ok := publish.CleanSiteRel(rel)
 	if !ok {
 		return "", false
 	}
-	root := pipeline.ActiveRoot()
+	root := publish.ActiveRoot()
 
-	if entry, hit := pipeline.ResolveActiveEntry(root, clean); hit {
+	if entry, hit := publish.ResolveActiveEntry(root, clean); hit {
 		return filepath.Join(root, filepath.FromSlash(entry), "index.html"), true
 	}
 

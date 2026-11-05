@@ -5,6 +5,7 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	text "go_wp/pkg/view/jet"
 	"go_wp/public/test/support"
@@ -118,7 +118,7 @@ func countRows(t *testing.T, db *gorm.DB, table, where string, args ...any) int 
 }
 
 func activeFileExists(urlPath string) bool {
-	_, err := os.Stat(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(urlPath, "/"), "index.html"))
+	_, err := os.Stat(filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(urlPath, "/"), "index.html"))
 	return err == nil
 }
 
@@ -374,7 +374,7 @@ func TestProductSwitchTemplateChangesArtifact(t *testing.T) {
 		t.Fatalf("未显式切换模板的重建应沿用实例绑定模板: %s", html)
 	}
 
-	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+productID)
+	ids, err := f.pres.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "product:"+productID)
 	if err != nil {
 		t.Fatalf("标记依赖失效失败: %v", err)
 	}

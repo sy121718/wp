@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 )
@@ -39,7 +39,7 @@ func menuDependencyExists(t *testing.T, db *gorm.DB, pageID, key string) bool {
 	var n int64
 	if err := db.Raw(
 		"SELECT COUNT(*) FROM page_dependencies WHERE page_id = ? AND dependency_kind = ? AND dependency_key = ?",
-		pageID, pipeline.DepKindMenu, key).Scan(&n).Error; err != nil {
+		pageID, publish.DepKindMenu, key).Scan(&n).Error; err != nil {
 		t.Fatalf("查询依赖行失败: %v", err)
 	}
 	return n > 0
@@ -72,9 +72,9 @@ func TestMenuStalePortHitsProductionDependencyKey(t *testing.T) {
 	foreign := createPage(t, svc, other.ID, "/menu-owner", navMenuDocument(menuKindHeader)).ID
 	buildAndPublish(t, svc, foreign)
 
-	fullKey := pipeline.MenuKey(projectID, menuKindHeader).Key
+	fullKey := publish.MenuKey(projectID, menuKindHeader).Key
 	if !menuDependencyExists(t, db, page, fullKey) {
-		t.Fatalf("构建期应登记菜单依赖 %q（kind=%q）", fullKey, pipeline.DepKindMenu)
+		t.Fatalf("构建期应登记菜单依赖 %q（kind=%q）", fullKey, publish.DepKindMenu)
 	}
 	if menuDependencyExists(t, db, page, menuKindHeader) {
 		t.Fatalf("依赖键不得是裸位置名 %q：登记侧与标记侧必须同一个构造函数", menuKindHeader)

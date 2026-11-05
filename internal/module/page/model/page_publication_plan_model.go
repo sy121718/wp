@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/rls"
 )
 
@@ -44,7 +44,7 @@ func (m *Model) GetPublicationPlan(ctx context.Context, pageID, lang string) (e 
 	return e, nil
 }
 
-func (m *Model) UpdatePublicationPlanRecordTx(ctx context.Context, tx *gorm.DB, pageID, lang string, plan pipeline.PublicationPlan, draftVersion int64, at time.Time) (err error) {
+func (m *Model) UpdatePublicationPlanRecordTx(ctx context.Context, tx *gorm.DB, pageID, lang string, plan publish.PublicationPlan, draftVersion int64, at time.Time) (err error) {
 	if strings.TrimSpace(pageID) == "" || strings.TrimSpace(lang) == "" {
 		return errors.New("发布计划缺少 page_id/lang")
 	}

@@ -1,24 +1,23 @@
 package builtin
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/pipeline"
 )
 
 func setupRedirectFixture(t *testing.T) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
-	pub := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
+	store := &publish.LocalStore{Root: publish.DefaultArtifactRoot()}
+	pub := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
 
-	page, err := pipeline.NewArtifact([]byte("<html>plain</html>"), &pipeline.Manifest{
+	page, err := publish.NewArtifact([]byte("<html>plain</html>"), &publish.Manifest{
 		ManifestSchemaVersion: 1, PageDocumentSchemaVersion: 1,
-		SourceID: "p1", SourceType: pipeline.SourceTypePage,
+		SourceID: "p1", SourceType: publish.SourceTypePage,
 		CanonicalPath: "/plain-path", SourceHash: "h", BuildInputHash: "h",
 	})
 	if err != nil {
@@ -32,7 +31,7 @@ func setupRedirectFixture(t *testing.T) {
 		t.Fatalf("激活页面产物失败: %v", err)
 	}
 
-	ra, err := pipeline.NewRedirectArtifact("/new-path", 301)
+	ra, err := publish.NewRedirectArtifact("/new-path", 301)
 	if err != nil {
 		t.Fatalf("构造重定向产物失败: %v", err)
 	}

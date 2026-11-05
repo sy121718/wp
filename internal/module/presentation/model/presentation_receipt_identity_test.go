@@ -2,13 +2,13 @@ package presentationmodel_test
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
 	presmodel "go_wp/internal/module/presentation/model"
-	"go_wp/internal/pipeline"
 	"go_wp/public/test/support"
 )
 
@@ -226,8 +226,8 @@ func TestMarkInstanceNavigationStaleTxMarksOnlyDeclaringInstances(t *testing.T) 
 	const navID = "12312312-1231-1231-1231-123123123123"
 	seedInstance(t, db, pid, hit)
 	seedInstance(t, db, pid, miss)
-	key := pipeline.NavigationKey(navID)
-	if key.Kind != pipeline.DepKindNavigation {
+	key := publish.NavigationKey(navID)
+	if key.Kind != publish.DepKindNavigation {
 		t.Fatalf("依赖种类必须来自 pipeline 常量，实际 %q", key.Kind)
 	}
 

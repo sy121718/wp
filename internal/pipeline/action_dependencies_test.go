@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"go_wp/pkg/publish"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func TestActionTargetDependenciesComeFromSuccessfulComponentConsumption(t *testi
 	if strings.Count(compiled.HTML, `href="/published-page"`) != 2 || !strings.Contains(compiled.HTML, `href="/published-presentation"`) {
 		t.Fatal("动作必须确实被组件输出")
 	}
-	expected := []Dependency{{Kind: DepKindPageTarget, Key: "page_target:chosen-page"}, {Kind: DepKindPresentationTarget, Key: "presentation_target:chosen-instance"}}
+	expected := []publish.Dependency{{Kind: publish.DepKindPageTarget, Key: "page_target:chosen-page"}, {Kind: publish.DepKindPresentationTarget, Key: "presentation_target:chosen-instance"}}
 	if got := ActionTargetDependencies(usage); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("实际消费目标与依赖必须等式: got=%+v want=%+v", got, expected)
 	}

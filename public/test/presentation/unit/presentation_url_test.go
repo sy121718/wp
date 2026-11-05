@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 
@@ -9,7 +10,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/internal/pipeline"
 
 	"github.com/google/uuid"
 )
@@ -55,9 +55,9 @@ func routeOwnedByInstance(t *testing.T, f *presFixture, path, instanceID string)
 	}
 }
 
-func activeState(t *testing.T, urlPath string) *pipeline.PublicationState {
+func activeState(t *testing.T, urlPath string) *publish.PublicationState {
 	t.Helper()
-	state, err := (&pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}).Inspect(urlPath)
+	state, err := (&publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}).Inspect(urlPath)
 	if err != nil {
 		t.Fatalf("读取 %s 的激活状态失败: %v", urlPath, err)
 	}
@@ -92,7 +92,7 @@ func TestPresentationUpdateURLEndToEnd(t *testing.T) {
 	}
 
 	old := activeState(t, "/blog/old-name")
-	if old.Kind != pipeline.PublicationRedirect {
+	if old.Kind != publish.PublicationRedirect {
 		t.Fatalf("旧路径应为 301 重定向，实际 kind=%q", old.Kind)
 	}
 	if old.Redirect == nil || old.Redirect.TargetPath != "/blog/new-name" {
@@ -189,7 +189,7 @@ func TestPresentationUpdateURLWithoutRedirect(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("改 URL 失败: %v", err)
 	}
-	if state := activeState(t, "/blog/post-c"); state.Kind != pipeline.PublicationNone {
+	if state := activeState(t, "/blog/post-c"); state.Kind != publish.PublicationNone {
 		t.Fatalf("不勾选重定向时旧路径应失效（kind=%q）", state.Kind)
 	}
 

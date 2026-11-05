@@ -1,10 +1,9 @@
 package pageservice
 
 import (
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 var pagePathMatrix = []string{
@@ -50,13 +49,13 @@ var pagePathMatrix = []string{
 func TestPageNormalizePagePathMatrix(t *testing.T) {
 	for _, in := range pagePathMatrix {
 		got, err := normalizePagePath(in)
-		want, wantErr := pipeline.NormalizeURL(in)
+		want, wantErr := publish.NormalizeURL(in)
 		if (err != nil) != (wantErr != nil) {
-			t.Errorf("normalizePagePath(%q) 的接受/拒绝与 pipeline.NormalizeURL 不一致：err=%v pipeline=%v", in, err, wantErr)
+			t.Errorf("normalizePagePath(%q) 的接受/拒绝与 publish.NormalizeURL 不一致：err=%v pipeline=%v", in, err, wantErr)
 			continue
 		}
 		if err == nil && got != want {
-			t.Errorf("normalizePagePath(%q) = %q，pipeline.NormalizeURL 得到 %q", in, got, want)
+			t.Errorf("normalizePagePath(%q) = %q，publish.NormalizeURL 得到 %q", in, got, want)
 		}
 		if err != nil {
 			t.Logf("NORMALIZE_MATRIX\t%q\t=> ERROR\t%s", in, err)

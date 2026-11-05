@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,7 +17,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/internal/pipeline"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -52,7 +52,7 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 	if published.ActiveHash != built.StagedHash {
 		t.Fatalf("Build→Publish不得混入新块版本: staged=%s active=%s", built.StagedHash, published.ActiveHash)
 	}
-	read := func(hash string) (string, pipeline.Manifest) {
+	read := func(hash string) (string, publish.Manifest) {
 		t.Helper()
 		base := filepath.Join(os.Getenv("GO_WP_ARTIFACT_ROOT"), "artifacts", hash)
 		html, e := os.ReadFile(filepath.Join(base, "index.html"))
@@ -63,7 +63,7 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		var manifest pipeline.Manifest
+		var manifest publish.Manifest
 		if e = json.Unmarshal(raw, &manifest); e != nil {
 			t.Fatal(e)
 		}

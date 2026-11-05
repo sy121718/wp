@@ -3,13 +3,13 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"go_wp/pkg/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
@@ -31,8 +31,8 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/pkg/builder/core"
 
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -126,7 +126,7 @@ func (f *detailFixture) publish(t *testing.T, productID, urlPath string) *presen
 func activeHTML(t *testing.T, urlPath string) string {
 	t.Helper()
 	rel := strings.TrimPrefix(urlPath, "/")
-	b, err := os.ReadFile(filepath.Join(pipeline.ActiveRoot(), rel, "index.html"))
+	b, err := os.ReadFile(filepath.Join(publish.ActiveRoot(), rel, "index.html"))
 	if err != nil {
 		t.Fatalf("读取激活产物 %s 失败: %v", urlPath, err)
 	}

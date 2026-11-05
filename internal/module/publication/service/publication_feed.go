@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"io"
 	"net/url"
 	"os"
@@ -16,9 +17,9 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
-	"go_wp/pkg/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/seo"
 )
 
 func (s *Service) refreshFeed(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang, siteLangMode string) (err error) {
@@ -38,9 +39,9 @@ func (s *Service) refreshFeed(ctx context.Context, projectID, baseURL, dir strin
 	return seo.WriteFeed(dir, channel, items, seo.FeedLimit())
 }
 
-func siteLangRule(langs []string, defaultLang, siteLangMode string) (rule pipeline.LangURLRule, ok bool) {
+func siteLangRule(langs []string, defaultLang, siteLangMode string) (rule publish.LangURLRule, ok bool) {
 	if !i18n.SiteLangURLsSeparated(i18n.SiteLangURLMode(siteLangMode)) || len(langs) < 2 {
-		return pipeline.LangURLRule{}, false
+		return publish.LangURLRule{}, false
 	}
 
 	return pipeline.LangURLRuleOf(i18n.SiteLangURLMode(siteLangMode), defaultLang), true
@@ -285,7 +286,7 @@ func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir 
 		return nil
 	}
 
-	if nerr := pipeline.SyncNotFoundPage(dir, notFoundHTML); nerr != nil {
+	if nerr := publish.SyncNotFoundPage(dir, notFoundHTML); nerr != nil {
 		logger.Scene("publication").With("dir", dir).Error(nerr, "自定义 404 页刷新失败")
 		return nerr
 	}
@@ -554,7 +555,7 @@ func (s *Service) RunSEOAudit(ctx context.Context, projectID string) (AuditResul
 	for _, p := range paths {
 		active[p] = true
 	}
-	docs, err := CollectActiveDocuments(pipeline.ActiveRoot(), paths)
+	docs, err := CollectActiveDocuments(publish.ActiveRoot(), paths)
 	if err != nil {
 		return AuditResult{}, err
 	}

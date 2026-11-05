@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"testing"
 
 	blockdto "go_wp/internal/module/block/dto"
@@ -10,7 +11,6 @@ import (
 	blockservice "go_wp/internal/module/block/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/pipeline"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -44,13 +44,13 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 		buildAndPublish(t, svc, id)
 	}
 
-	assertDependencyRow(t, db, pageA, pipeline.DepKindDirectContent, "article:"+entityA)
-	assertDependencyRow(t, db, pageB, pipeline.DepKindDirectContent, "article:"+entityB)
-	if n := countDependencyRows(t, db, pageHome, pipeline.DepKindDirectContent); n != 0 {
+	assertDependencyRow(t, db, pageA, publish.DepKindDirectContent, "article:"+entityA)
+	assertDependencyRow(t, db, pageB, publish.DepKindDirectContent, "article:"+entityB)
+	if n := countDependencyRows(t, db, pageHome, publish.DepKindDirectContent); n != 0 {
 		t.Fatalf("首页不应声明 direct_content 依赖，实际 %d 条", n)
 	}
 
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
+	ids, err := svc.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("MarkStaleByDependency 失败: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 		}
 	}
 
-	again, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
+	again, err := svc.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("重复标记失败: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 		t.Fatalf("重复标记应仍只命中 %s，实际 %v", pageA, again)
 	}
 
-	none, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+uuid.NewString())
+	none, err := svc.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("未命中查询失败: %v", err)
 	}
@@ -101,13 +101,13 @@ func TestPageDependencyBlockAndI18nKeys(t *testing.T) {
 	buildAndPublish(t, svc, page)
 	buildAndPublish(t, svc, other)
 
-	assertDependencyRow(t, db, page, pipeline.DepKindBlock, "block:"+blockID)
-	assertDependencyRow(t, db, page, pipeline.DepKindI18N, pipeline.I18NDependencyKey)
-	if n := countDependencyRows(t, db, other, pipeline.DepKindBlock); n != 0 {
+	assertDependencyRow(t, db, page, publish.DepKindBlock, "block:"+blockID)
+	assertDependencyRow(t, db, page, publish.DepKindI18N, publish.I18NDependencyKey)
+	if n := countDependencyRows(t, db, other, publish.DepKindBlock); n != 0 {
 		t.Fatalf("未绑定块的页面不应有 block 依赖，实际 %d 条", n)
 	}
 
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindBlock, "block:"+blockID)
+	ids, err := svc.MarkStaleByDependency(ctx, publish.DepKindBlock, "block:"+blockID)
 	if err != nil {
 		t.Fatalf("块依赖反查失败: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 	if err := db.Exec("UPDATE pages SET stale = false").Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
+	ids, err := svc.MarkStaleByDependency(ctx, publish.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("精确标记失败: %v", err)
 	}

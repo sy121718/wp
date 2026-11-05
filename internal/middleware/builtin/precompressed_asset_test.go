@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	mw "go_wp/pkg/middleware"
+	publish "go_wp/pkg/publish"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,8 +15,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/pipeline"
 )
 
 type precompressedFixture struct {
@@ -33,14 +32,14 @@ func setupPrecompressedFixture(t *testing.T, docURL string) *precompressedFixtur
 		strings.Repeat("<p>预压缩验收正文 paragraph</p>\n", 200) +
 		"</body></html>")
 
-	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
-	pub := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
+	store := &publish.LocalStore{Root: publish.DefaultArtifactRoot()}
+	pub := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
 
-	a, err := pipeline.NewArtifact(plain, &pipeline.Manifest{
-		ManifestSchemaVersion:     pipeline.ManifestSchemaVersion,
+	a, err := publish.NewArtifact(plain, &publish.Manifest{
+		ManifestSchemaVersion:     publish.ManifestSchemaVersion,
 		PageDocumentSchemaVersion: 1,
 		SourceID:                  "page-precompressed",
-		SourceType:                pipeline.SourceTypePage,
+		SourceType:                publish.SourceTypePage,
 		CanonicalPath:             docURL,
 		SourceHash:                "h",
 		BuildInputHash:            "h",
@@ -56,11 +55,11 @@ func setupPrecompressedFixture(t *testing.T, docURL string) *precompressedFixtur
 		t.Fatalf("激活 %s 失败: %v", docURL, err)
 	}
 
-	clean, ok := pipeline.CleanSiteRel(docURL)
+	clean, ok := publish.CleanSiteRel(docURL)
 	if !ok {
 		t.Fatalf("夹具不成立：%s 不是合法站点路径", docURL)
 	}
-	entry, ok := pipeline.ResolveActiveEntry(pipeline.ActiveRoot(), clean)
+	entry, ok := publish.ResolveActiveEntry(publish.ActiveRoot(), clean)
 	if !ok {
 		t.Fatalf("夹具不成立：%s 解析不出激活条目", docURL)
 	}
@@ -68,8 +67,8 @@ func setupPrecompressedFixture(t *testing.T, docURL string) *precompressedFixtur
 	return &precompressedFixture{
 		router: precompressedAssetRouter(),
 		plain:  plain,
-		gzPath: filepath.Join(pipeline.ActiveRoot(), filepath.FromSlash(entry),
-			"index.html"+pipeline.PrecompressedSuffix),
+		gzPath: filepath.Join(publish.ActiveRoot(), filepath.FromSlash(entry),
+			"index.html"+publish.PrecompressedSuffix),
 	}
 }
 
@@ -81,7 +80,7 @@ func precompressedAssetRouter() *gin.Engine {
 		PrecompressedAssetMiddleware("/site"),
 		StaticGzipMiddleware(),
 	)
-	g.StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
+	g.StaticFS("/", gin.Dir(publish.ActiveRoot(), false))
 	return r
 }
 
@@ -143,7 +142,7 @@ func TestPrecompressedAssetServedFromFile(t *testing.T) {
 		res.StatusCode, res.Header.Get("Content-Encoding"), res.Header.Get("Content-Length"),
 		res.Header.Get("Vary"), res.Header.Get("Content-Type"))
 	t.Logf("响应体逐字节等于磁盘 .gz：%v（响应体 sha256 %s）",
-		bytes.Equal(body, gzOnDisk), pipeline.SHA256(body))
+		bytes.Equal(body, gzOnDisk), publish.SHA256(body))
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("状态码 = %d，期望 200", res.StatusCode)
@@ -205,9 +204,9 @@ func TestPrecompressedAssetFallsBackToRuntimeGzip(t *testing.T) {
 	res, runtimeGzip := getWithHeaders(t, fx.router, "/site/about/",
 		map[string]string{"Accept-Encoding": "gzip"})
 
-	t.Logf("预压缩命中：%d B  sha256=%s", len(precompressed), pipeline.SHA256(precompressed))
+	t.Logf("预压缩命中：%d B  sha256=%s", len(precompressed), publish.SHA256(precompressed))
 	t.Logf("删掉 .gz 后：%d B  sha256=%s  Content-Encoding=%q Content-Length=%q",
-		len(runtimeGzip), pipeline.SHA256(runtimeGzip),
+		len(runtimeGzip), publish.SHA256(runtimeGzip),
 		res.Header.Get("Content-Encoding"), res.Header.Get("Content-Length"))
 	t.Logf("两条路径都解压回明文：%v；字节不同（确认是重新压的）：%v",
 		bytes.Equal(mustGunzipBytes(t, runtimeGzip), fx.plain), !bytes.Equal(runtimeGzip, precompressed))
@@ -304,15 +303,15 @@ func TestPrecompressedAssetNotOnStaticFace(t *testing.T) {
 }
 
 func TestPrecompressMinSizeAlignedWithGzipMiddleware(t *testing.T) {
-	if pipeline.PrecompressMinSize != mw.GzipMinSize {
-		t.Fatalf("构建期阈值 %d ≠ 实时压缩阈值 %d", pipeline.PrecompressMinSize, mw.GzipMinSize)
+	if publish.PrecompressMinSize != mw.GzipMinSize {
+		t.Fatalf("构建期阈值 %d ≠ 实时压缩阈值 %d", publish.PrecompressMinSize, mw.GzipMinSize)
 	}
 }
 
 func TestAssetContentTypeCompressibleByGzipMiddleware(t *testing.T) {
 
 	for _, name := range []string{"index.html", "style.css", "app.js", "sitemap.xml", "icon.svg", "robots.txt"} {
-		ctype := pipeline.AssetContentType(name)
+		ctype := publish.AssetContentType(name)
 		if !mw.IsGzipType(ctype) {
 			t.Errorf("%s：AssetContentType = %q，但实时压缩层判定为不可压缩 —— 两条路径的判据分叉了",
 				name, ctype)
@@ -320,7 +319,7 @@ func TestAssetContentTypeCompressibleByGzipMiddleware(t *testing.T) {
 	}
 
 	for _, name := range []string{"logo.png", "font.woff2", "photo.jpg"} {
-		if pipeline.IsPrecompressible(name, pipeline.PrecompressMinSize) {
+		if publish.IsPrecompressible(name, publish.PrecompressMinSize) {
 			t.Errorf("%s 不该在构建期预压缩白名单里", name)
 		}
 	}

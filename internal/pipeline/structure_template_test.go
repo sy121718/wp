@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/publish"
 	"strings"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestStructureSlotsPreviewDegradesUnavailableTemplateWithAttribution(t *test
 		t.Fatalf("预览降级必须留归因诊断，实际: %+v", items)
 	}
 	for _, d := range res.Deps {
-		if d.Kind == DepKindContentTemplate {
+		if d.Kind == publish.DepKindContentTemplate {
 			t.Fatalf("回退掉的模板不该被登记成依赖: %+v", res.Deps)
 		}
 	}
@@ -134,7 +135,7 @@ func TestStructureSlotsPublishUsesAvailableTemplate(t *testing.T) {
 	if rerr != nil || len(roots) != 1 {
 		t.Fatalf("虚拟引用必须解析出模板节点: roots=%d err=%v", len(roots), rerr)
 	}
-	if len(res.Deps) == 0 || res.Deps[0].Kind != DepKindContentTemplate || !strings.HasSuffix(res.Deps[0].Key, "tpl-1") {
+	if len(res.Deps) == 0 || res.Deps[0].Kind != publish.DepKindContentTemplate || !strings.HasSuffix(res.Deps[0].Key, "tpl-1") {
 		t.Fatalf("模板被消费时应登记 content_template 依赖，实际: %+v", res.Deps)
 	}
 	if len(diags.Items()) != 0 {

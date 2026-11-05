@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 
@@ -50,12 +51,12 @@ func newNavPanelEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageService,
 	blocks = blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	pages = pageservice.NewService(pagemodel.NewPageModel(db), artifacts, routes, projects, blocks, nil, nil, nav, nil)
 
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePage, pages)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePage, pages)
 	nav.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
 
 	blocks.SetStalePropagator(func(ctx context.Context, blockID string) error {
-		fanout.InvalidateKeys(ctx, pipeline.BlockKey(blockID))
+		fanout.InvalidateKeys(ctx, publish.BlockKey(blockID))
 		return nil
 	})
 	return db, pages, nav, blocks, project.ID
@@ -87,10 +88,10 @@ func TestNavigationByItemDependencyAndInvalidation(t *testing.T) {
 	pageID := createNavPage(t, pages, projectID, "home", "/by-item", navByItemDoc(itemID, "按项引用"))
 	buildNavPage(t, pages, pageID)
 
-	if n := navDepCount(t, db, pageID, pipeline.DepKindNavigation, "navigation:"+itemID); n != 1 {
+	if n := navDepCount(t, db, pageID, publish.DepKindNavigation, "navigation:"+itemID); n != 1 {
 		t.Fatalf("按项引用应登记恰好 1 条 navigation:{itemID} 依赖，实际 %d 条", n)
 	}
-	if n := navDepCount(t, db, pageID, pipeline.DepKindMenu, "menu:"+projectID+":header"); n != 0 {
+	if n := navDepCount(t, db, pageID, publish.DepKindMenu, "menu:"+projectID+":header"); n != 0 {
 		t.Fatalf("按项引用的页面不应登记位置键，实际 %d 条", n)
 	}
 	markPageActivated(t, db, pageID)
@@ -130,7 +131,7 @@ func TestNavigationPanelBlockDependencyAndInvalidation(t *testing.T) {
 	if html := readStagedHTML(t, hash); !strings.Contains(html, "面板标记文本") {
 		t.Fatalf("面板块内容未出现在产物中（面板渲染链断了）")
 	}
-	if n := navDepCount(t, db, pageID, pipeline.DepKindBlock, "block:"+block.ID); n != 1 {
+	if n := navDepCount(t, db, pageID, publish.DepKindBlock, "block:"+block.ID); n != 1 {
 		t.Fatalf("面板引用的块应登记恰好 1 条 block:{id} 依赖，实际 %d 条", n)
 	}
 	changed := json.RawMessage("{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"pn1\",\"type\":\"core.heading\",\"props\":{\"text\":\"面板改后文本\",\"tag\":\"div\"}}]}")

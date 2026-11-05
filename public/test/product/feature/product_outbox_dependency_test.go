@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"go_wp/pkg/builder/core"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
@@ -39,8 +39,8 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/pkg/builder/core"
 
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -116,12 +116,12 @@ func newOutboxFixture(t *testing.T) *outboxFixture {
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	pages := pageservice.NewService(pagemodel.NewPageModel(db), artifacts, pub, projects, blocks, nil, collections, nil, nil)
 
-	fanout := pipeline.NewFanout()
+	fanout := publish.NewFanout()
 	fanout.SetSyncRebuild(true)
-	fanout.Register(pipeline.SourceTypePage, pages)
-	fanout.Register(pipeline.SourceTypePresentation, pres)
-	fanout.SetRebuilder(pipeline.SourceTypePage, pages)
-	fanout.SetRebuilder(pipeline.SourceTypePresentation, pres)
+	fanout.Register(publish.SourceTypePage, pages)
+	fanout.Register(publish.SourceTypePresentation, pres)
+	fanout.SetRebuilder(publish.SourceTypePage, pages)
+	fanout.SetRebuilder(publish.SourceTypePresentation, pres)
 	products.SetDependencyInvalidator(fanout)
 
 	return &outboxFixture{
@@ -268,7 +268,7 @@ func activeHTMLAt(activePath string) string {
 	if strings.TrimSpace(activePath) == "" {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(activePath, "/"), "index.html"))
+	b, err := os.ReadFile(filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(activePath, "/"), "index.html"))
 	if err != nil {
 		return ""
 	}
@@ -334,7 +334,7 @@ func TestProductListPageRegistersCollectionDependency(t *testing.T) {
 	pageID := f.publishListPage(t, "/shop")
 
 	keys := pageDependencyKeys(t, f.db, pageID)
-	want := pipeline.DepKindContentCollection + "|" + productCollectionKey
+	want := publish.DepKindContentCollection + "|" + productCollectionKey
 	if !keys[want] {
 		t.Fatalf("列表页产物未登记商品集合依赖 %q（改了商品不会让列表页失效）——实际依赖：%v", want, keys)
 	}
@@ -349,7 +349,7 @@ func TestPresentationCollectionInstanceRegistersCollectionDependency(t *testing.
 	inst := f.publishCollectionInstance(t, productID, "/collections/collection-item")
 
 	keys := presentationDependencyKeys(t, f.db, inst.ID)
-	want := pipeline.DepKindContentCollection + "|" + productCollectionKey
+	want := publish.DepKindContentCollection + "|" + productCollectionKey
 	if !keys[want] {
 		t.Fatalf("presentation 列表产物未登记商品集合依赖 %q（别的商品变更不会让它更新）——实际依赖：%v", want, keys)
 	}
@@ -511,7 +511,7 @@ func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
 	}
 
 	keys := presentationDependencyKeys(t, f.db, inst.ID)
-	wantKey := pipeline.DepKindContentCollection + "|" + productCollectionKey
+	wantKey := publish.DepKindContentCollection + "|" + productCollectionKey
 	if !keys[wantKey] {
 		t.Fatalf("分类归档产物未登记商品集合依赖 %q（商品增删改不会让它更新）——实际依赖：%v", wantKey, keys)
 	}
@@ -801,7 +801,7 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 	}
 	found := false
 	for _, row := range rows {
-		if row.DependencyKind == pipeline.DepKindDirectContent && row.DependencyKey == "product:"+xID {
+		if row.DependencyKind == publish.DepKindDirectContent && row.DependencyKey == "product:"+xID {
 			found = true
 		}
 	}

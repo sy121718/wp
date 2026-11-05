@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/internal/pipeline"
 )
 
 func enableLangs(t *testing.T, f *presFixture, langs ...string) {
@@ -70,7 +70,7 @@ func instancePointer(t *testing.T, f *presFixture, instanceID string) (activeArt
 
 func activeHash(t *testing.T, path string) string {
 	t.Helper()
-	store := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
+	store := &publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}
 	state, err := store.Inspect(path)
 	if err != nil || state == nil || state.Locator == nil {
 		return ""
@@ -232,7 +232,7 @@ func between(s, open, close string) string {
 
 func artifactHTML(t *testing.T, hash string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(pipeline.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
+	b, err := os.ReadFile(filepath.Join(publish.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
 	if err != nil {
 		t.Fatalf("读取产物 %s 失败: %v", hash, err)
 	}

@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 
 	contentdto "go_wp/internal/module/content/dto"
@@ -52,15 +53,15 @@ func TestPresentationMenuDependencyAndStale(t *testing.T) {
 	var n int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM presentation_dependencies
 		WHERE presentation_id = ? AND dependency_kind = ? AND dependency_key = ?`,
-		inst.ID, pipeline.DepKindMenu, "menu:"+f.projectID+":header").Scan(&n).Error; err != nil {
+		inst.ID, publish.DepKindMenu, "menu:"+f.projectID+":header").Scan(&n).Error; err != nil {
 		t.Fatalf("统计导航依赖失败: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("绑定页眉导航的实例应声明恰好 1 条 menu:{pid}:header 依赖，实际 %d 条", n)
 	}
 
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePresentation, f.pres)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePresentation, f.pres)
 	navSvc.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
 	newPath := "/new-menu"
 	var itemID string

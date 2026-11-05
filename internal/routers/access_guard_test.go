@@ -1,6 +1,7 @@
 package routers
 
 import (
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,20 +13,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"go_wp/pkg/builder"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/builder"
 )
 
 func publishGuardTestEntry(t *testing.T, entry string, html string, access *builder.AccessGuardSettings) {
 	t.Helper()
-	root := pipeline.DefaultArtifactRoot()
-	active := pipeline.ActiveRoot()
+	root := publish.DefaultArtifactRoot()
+	active := publish.ActiveRoot()
 	if err := os.MkdirAll(active, 0o755); err != nil {
 		t.Fatalf("建激活目录失败: %v", err)
 	}
 	extra, _ := pipeline.BuildGuardEntries(access, "zh-CN")
-	hash := pipeline.SHA256([]byte(entry + html))
+	hash := publish.SHA256([]byte(entry + html))
 	dir := filepath.Join(root, "artifacts", hash)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("建产物目录失败: %v", err)

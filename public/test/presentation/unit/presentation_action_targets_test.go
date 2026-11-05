@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationmodel "go_wp/internal/module/presentation/model"
-	"go_wp/internal/pipeline"
 )
 
 func TestPublishedInstanceActionTargetIsScopedExactAndReadable(t *testing.T) {
@@ -74,7 +74,7 @@ func TestPublishedInstanceActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if _, err := f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID, ActionTargetsOnly: true}); err == nil {
 		t.Fatal("动作候选必须指定精确语言")
 	}
-	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
+	if err := os.Remove(filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.pres.PublishedInstancePath(ctx, f.projectID, instance.ID, pub.Lang); err == nil {

@@ -10,7 +10,7 @@ import (
 )
 
 func TestPathLockReentrantShardDoesNotDeadlock(t *testing.T) {
-	locker := &ProcessPathLocker{}
+	locker := &publish.ProcessPathLocker{}
 	sameShard := twoPathsInSameShard(t)
 
 	done := make(chan error, 1)
@@ -28,7 +28,7 @@ func TestPathLockReentrantShardDoesNotDeadlock(t *testing.T) {
 }
 
 func TestPathLockDifferentShardsRunConcurrently(t *testing.T) {
-	locker := &ProcessPathLocker{}
+	locker := &publish.ProcessPathLocker{}
 	left, right := twoPathsInDifferentShards(t)
 
 	inLeft := make(chan struct{})
@@ -66,7 +66,7 @@ func TestPathLockDifferentShardsRunConcurrently(t *testing.T) {
 }
 
 func TestPathLockSerializesSamePath(t *testing.T) {
-	locker := &ProcessPathLocker{}
+	locker := &publish.ProcessPathLocker{}
 	path := "/lock/same"
 	var inside atomic.Int32
 	var maxInside atomic.Int32
@@ -105,18 +105,18 @@ func TestPathLockSerializesSamePath(t *testing.T) {
 }
 
 func TestPathLockFailsClosedWithoutLocker(t *testing.T) {
-	var typedNil *ProcessPathLocker
+	var typedNil *publish.ProcessPathLocker
 	ran := false
 	err := typedNil.WithPaths([]string{"/lock/nil"}, func() error { ran = true; return nil })
-	if !errors.Is(err, ErrPathLockerUnavailable) {
+	if !errors.Is(err, publish.ErrPathLockerUnavailable) {
 		t.Fatalf("typed nil 锁应 fail closed，实际 err = %v", err)
 	}
 	if ran {
 		t.Fatal("typed nil 锁下 fn 不得执行（不允许无互斥改访问面）")
 	}
 
-	var nilLocker PublicationPathLocker
-	if err := WithPathLock(nilLocker, []string{"/lock/nil"}, func() error { ran = true; return nil }); !errors.Is(err, ErrPathLockerUnavailable) {
+	var nilLocker publish.PublicationPathLocker
+	if err := publish.WithPathLock(nilLocker, []string{"/lock/nil"}, func() error { ran = true; return nil }); !errors.Is(err, publish.ErrPathLockerUnavailable) {
 		t.Fatalf("nil 接口应被前置检查 fail closed，实际 err = %v", err)
 	}
 	if ran {
@@ -125,10 +125,10 @@ func TestPathLockFailsClosedWithoutLocker(t *testing.T) {
 }
 
 func TestDefaultPathLockerIsShared(t *testing.T) {
-	if DefaultPathLocker() == nil {
+	if publish.DefaultPathLocker() == nil {
 		t.Fatal("默认路径锁为空")
 	}
-	if DefaultPathLocker() != DefaultPathLocker() {
+	if publish.DefaultPathLocker() != publish.DefaultPathLocker() {
 		t.Fatal("默认路径锁不是同一实例：各服务各自持锁等于没加锁")
 	}
 }

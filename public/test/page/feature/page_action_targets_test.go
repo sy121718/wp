@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -104,7 +105,7 @@ func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	html, err := os.ReadFile(filepath.Join(pipeline.DefaultArtifactRoot(), "artifacts", built.StagedHash, "index.html"))
+	html, err := os.ReadFile(filepath.Join(publish.DefaultArtifactRoot(), "artifacts", built.StagedHash, "index.html"))
 	if err != nil || !strings.Contains(string(html), `href="`+pub.ActivePath+`"`) {
 		t.Fatalf("真实构建须输出目标Publication路径: err=%v", err)
 	}
@@ -115,7 +116,7 @@ func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if _, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, ActionTargetsOnly: true}); err == nil {
 		t.Fatal("动作候选必须指定精确语言")
 	}
-	active := filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"))
+	active := filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"))
 	link, err := os.Readlink(active)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +156,7 @@ func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if err := os.Symlink(link, active); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
+	if err := os.Remove(filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := locator.PublishedPagePath(ctx, projectID, target.ID, pub.Lang); err == nil {

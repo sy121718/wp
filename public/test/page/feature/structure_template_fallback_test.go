@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"go_wp/pkg/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
@@ -23,6 +23,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder/core"
 
 	"gorm.io/gorm"
 )
@@ -192,10 +193,10 @@ func TestPageStructureTemplateMissingFailsPublish(t *testing.T) {
 	if got := stagedArtifactIDOf(t, svc, projectID, pageID); got != "" {
 		t.Fatalf("发布失败不该产生暂存产物，实际 %q", got)
 	}
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindBlock, "block:"+headerID); n != 0 {
+	if n := countStagedDepRows(t, db, pageID, publish.DepKindBlock, "block:"+headerID); n != 0 {
 		t.Fatalf("发布失败不该登记任何依赖，实际块依赖 %d 条", n)
 	}
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindContentTemplate, "content_template:"+missing); n != 0 {
+	if n := countStagedDepRows(t, db, pageID, publish.DepKindContentTemplate, "content_template:"+missing); n != 0 {
 		t.Fatalf("发布失败不该登记任何依赖，实际模板依赖 %d 条", n)
 	}
 
@@ -270,7 +271,7 @@ func TestPageStructureTemplateInvalidDocumentFailsPublish(t *testing.T) {
 	if containsBytes([]byte(html), []byte("FALLBACK-HEADER-BLOCK")) {
 		t.Fatalf("模板优先时不该再渲染块绑定内容: %s", html[:min(len(html), 400)])
 	}
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindContentTemplate, "content_template:"+tpl.ID); n != 1 {
+	if n := countStagedDepRows(t, db, pageID, publish.DepKindContentTemplate, "content_template:"+tpl.ID); n != 1 {
 		t.Fatalf("模板被消费时应登记 content_template:%s，实际 %d 条", tpl.ID, n)
 	}
 	stagedBefore := stagedArtifactIDOf(t, svc, projectID, pageID)

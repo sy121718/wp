@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
-	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
 )
 
 func (s *Service) SetPublishedPageLocator(locator pagecontract.PublishedPageLocator) {
@@ -40,7 +40,7 @@ func (s *Service) PublishedInstancePath(ctx context.Context, projectID, instance
 	if publication.ArtifactID == nil || *publication.ArtifactID == "" {
 		return "", nil
 	}
-	return pipeline.ActivePublishedPath(s.publication, s.store, publication.ActivePath, publication.ArtifactHash)
+	return publish.ActivePublishedPath(s.publication, s.store, publication.ActivePath, publication.ArtifactHash)
 }
 
 func (s *Service) publishedActionOptions(ctx context.Context, projectID, lang string) builder.CompileOption {

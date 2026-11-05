@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	pageservice "go_wp/internal/module/page/service"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 )
@@ -188,7 +188,7 @@ func TestDeleteWithRedirectFailsClosedWithoutPathLock(t *testing.T) {
 	}
 
 	concrete.SetPublicationPathLocker(nil)
-	defer concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
+	defer concrete.SetPublicationPathLocker(publish.DefaultPathLocker())
 
 	if derr := svc.Delete(ctx, &pagedto.DeleteReq{ID: pageID}); derr != nil {
 
@@ -215,7 +215,7 @@ func TestDeleteWithRedirectFailsClosedWithoutPathLock(t *testing.T) {
 		t.Fatal("业务事务已提交，页面应已被软删")
 	}
 
-	concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
+	concrete.SetPublicationPathLocker(publish.DefaultPathLocker())
 	if _, _, cerr := recoverPending(t, svc, ctx); cerr != nil {
 		t.Logf("收敛返回错误（允许：单条失败保 pending）：%v", cerr)
 	}

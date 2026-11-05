@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,7 +30,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 )
 
@@ -103,7 +103,7 @@ func countMenuDependency(t *testing.T, f *presFixture, instanceID, key string) i
 	var n int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM presentation_dependencies
 		WHERE presentation_id = ? AND dependency_kind = ? AND dependency_key = ?`,
-		instanceID, pipeline.DepKindMenu, key).Scan(&n).Error; err != nil {
+		instanceID, publish.DepKindMenu, key).Scan(&n).Error; err != nil {
 		t.Fatalf("统计导航依赖失败: %v", err)
 	}
 	return n

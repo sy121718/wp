@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"errors"
+	publish "go_wp/pkg/publish"
 	"testing"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/pkg/builder/core"
-	"go_wp/internal/pipeline"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -202,7 +202,7 @@ func TestMenuStaleAdvancesInputVersionAndHitsOnlyDeclaringInstances(t *testing.T
 	var deps int64
 	if err := f.db.Raw(`SELECT COUNT(*) FROM presentation_dependencies
 		WHERE presentation_id = ? AND dependency_kind = ? AND dependency_key = ?`,
-		f.instance, pipeline.DepKindMenu, "menu:"+f.projectID+":header").Scan(&deps).Error; err != nil {
+		f.instance, publish.DepKindMenu, "menu:"+f.projectID+":header").Scan(&deps).Error; err != nil {
 		t.Fatalf("统计菜单依赖失败: %v", err)
 	}
 	if deps != 1 {

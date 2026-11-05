@@ -2,6 +2,7 @@ package routers
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/pipeline"
 	mw "go_wp/pkg/middleware"
 	"go_wp/pkg/response"
 
@@ -67,7 +67,7 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 }
 
 func setupStaticFace(router *gin.Engine) {
-	root := pipeline.ActiveRoot()
+	root := publish.ActiveRoot()
 
 	router.POST(accessUnlockPath, builtin.RequestRateLimitMiddleware(10, time.Minute),
 		builtin.AccessUnlockHandler())
@@ -92,7 +92,7 @@ func siteFaceChain(prefix string) []gin.HandlerFunc {
 }
 
 func activeEntryFile(root, rel string) (string, bool) {
-	entry, ok := pipeline.ResolveActiveEntry(root, rel)
+	entry, ok := publish.ResolveActiveEntry(root, rel)
 	if !ok {
 		return "", false
 	}
@@ -127,7 +127,7 @@ func siteFileServeMiddleware(root string) gin.HandlerFunc {
 }
 
 func cleanSiteRel(reqPath string) (string, bool) {
-	return pipeline.CleanSiteRel(reqPath)
+	return publish.CleanSiteRel(reqPath)
 }
 
 func serveArtifactFile(c *gin.Context, path string) {
@@ -143,7 +143,7 @@ func serveArtifactFile(c *gin.Context, path string) {
 		return
 	}
 
-	c.Header("Content-Type", pipeline.AssetContentType(path))
+	c.Header("Content-Type", publish.AssetContentType(path))
 	http.ServeContent(c.Writer, c.Request, filepath.Base(path), st.ModTime(), f)
 	c.Abort()
 }
@@ -167,19 +167,19 @@ func siteDirIndexServeMiddleware(prefix string) gin.HandlerFunc {
 		rel = strings.Trim(rel, "/")
 		if rel != "" {
 
-			clean, ok := pipeline.CleanSiteRel(rel)
+			clean, ok := publish.CleanSiteRel(rel)
 			if !ok {
 				c.Next()
 				return
 			}
 			rel = clean
 		}
-		file, ok := activeEntryFile(pipeline.ActiveRoot(), rel)
+		file, ok := activeEntryFile(publish.ActiveRoot(), rel)
 		if !ok {
 			c.Next()
 			return
 		}
-		body, err := os.ReadFile(filepath.Join(pipeline.ActiveRoot(), filepath.FromSlash(file)))
+		body, err := os.ReadFile(filepath.Join(publish.ActiveRoot(), filepath.FromSlash(file)))
 		if err != nil {
 			c.Next()
 			return
@@ -226,7 +226,7 @@ func serveSiteNotFoundPage(c *gin.Context, prefix string) bool {
 	if _, inFace := builtin.SiteFaceRel(prefix, c.Request.URL.Path); !inFace {
 		return false
 	}
-	body, ok := pipeline.ReadNotFoundPage(pipeline.ActiveRoot())
+	body, ok := publish.ReadNotFoundPage(publish.ActiveRoot())
 	if !ok {
 		return false
 	}

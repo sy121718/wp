@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,7 +11,6 @@ import (
 	"testing"
 
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/pipeline"
 	json "go_wp/pkg/jsonx"
 	"go_wp/public/migrations"
 	"gorm.io/gorm"
@@ -34,7 +34,7 @@ func TestRetiredSiteSlotsMigrationKeepsPublishedFacts(t *testing.T) {
 		t.Fatalf("需要真实发布记录: %+v %v", before, err)
 	}
 	pub := before.Publications[0]
-	active := filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")
+	active := filepath.Join(publish.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")
 	bytesBefore, err := os.ReadFile(active)
 	if err != nil {
 		t.Fatal(err)

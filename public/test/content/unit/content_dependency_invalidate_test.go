@@ -2,19 +2,19 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
-	"go_wp/internal/pipeline"
 )
 
 type recordingInvalidator struct {
-	keys []pipeline.DepKey
+	keys []publish.DepKey
 }
 
 func (r *recordingInvalidator) Invalidate(_ context.Context, kind, key string) {
-	r.keys = append(r.keys, pipeline.DepKey{Kind: kind, Key: key})
+	r.keys = append(r.keys, publish.DepKey{Kind: kind, Key: key})
 }
 
 func TestContentChangeInvalidatesDependencySources(t *testing.T) {
@@ -38,10 +38,10 @@ func TestContentChangeInvalidatesDependencySources(t *testing.T) {
 		if len(rec.keys) != 2 {
 			t.Fatalf("%s 应扇出 2 条依赖键，实际 %d: %+v", stage, len(rec.keys), rec.keys)
 		}
-		if rec.keys[0] != pipeline.DirectContentKey("article", created.ID) {
+		if rec.keys[0] != publish.DirectContentKey("article", created.ID) {
 			t.Fatalf("%s 第一条应为 direct_content 实体键，实际 %+v", stage, rec.keys[0])
 		}
-		if rec.keys[1] != pipeline.ContentCollectionKey("article") {
+		if rec.keys[1] != publish.ContentCollectionKey("article") {
 			t.Fatalf("%s 第二条应为集合键，实际 %+v", stage, rec.keys[1])
 		}
 	}

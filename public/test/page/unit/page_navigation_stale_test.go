@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"testing"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -9,7 +10,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
 )
@@ -64,12 +64,12 @@ func TestNavigationStalePortHitsItemKey(t *testing.T) {
 	page := createPage(t, svc, projectID, "/nav-item", navItemDocument(itemID)).ID
 	buildAndPublish(t, svc, page)
 
-	key := pipeline.NavigationKey(itemID)
+	key := publish.NavigationKey(itemID)
 	if !dependencyExists(t, db, page, key.Kind, key.Key) {
 		t.Fatalf("构建期应登记项键 %q（kind=%q）", key.Key, key.Kind)
 	}
 
-	if dependencyExists(t, db, page, pipeline.DepKindMenu, pipeline.MenuKey(projectID, menuKindHeader).Key) {
+	if dependencyExists(t, db, page, publish.DepKindMenu, publish.MenuKey(projectID, menuKindHeader).Key) {
 		t.Fatal("按项引用不应登记位置键（两者是不同事实，混登记会让失效面虚高）")
 	}
 

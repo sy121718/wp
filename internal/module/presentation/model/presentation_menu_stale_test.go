@@ -2,13 +2,12 @@ package presentationmodel
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"testing"
 	"time"
 
 	"gorm.io/gorm/clause"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestIsMenuStaleKindMatchesNavigationKinds(t *testing.T) {
@@ -27,12 +26,12 @@ func TestIsMenuStaleKindMatchesNavigationKinds(t *testing.T) {
 }
 
 func TestDepKindMenuMatchesPipeline(t *testing.T) {
-	if depKindMenu != pipeline.DepKindMenu {
-		t.Fatalf("depKindMenu = %q, pipeline.DepKindMenu = %q：两侧必须是同一个值", depKindMenu, pipeline.DepKindMenu)
+	if depKindMenu != publish.DepKindMenu {
+		t.Fatalf("depKindMenu = %q, publish.DepKindMenu = %q：两侧必须是同一个值", depKindMenu, publish.DepKindMenu)
 	}
-	key := pipeline.MenuKey("3f0f1e3a-6d9a-4c0f-9a7e-6f6b1c2d3e4f", MenuStaleKindHeader)
+	key := publish.MenuKey("3f0f1e3a-6d9a-4c0f-9a7e-6f6b1c2d3e4f", MenuStaleKindHeader)
 	if key.Kind != depKindMenu {
-		t.Fatalf("pipeline.MenuKey 的 kind = %q, 与 depKindMenu 不一致", key.Kind)
+		t.Fatalf("publish.MenuKey 的 kind = %q, 与 depKindMenu 不一致", key.Kind)
 	}
 	if key.Key != "menu:3f0f1e3a-6d9a-4c0f-9a7e-6f6b1c2d3e4f:header" {
 		t.Fatalf("菜单依赖键形状变了: %q", key.Key)

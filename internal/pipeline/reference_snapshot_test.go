@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/builder/core"
-	blockcontract "go_wp/internal/module/block/contract"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -92,7 +92,7 @@ func TestReferenceSnapshotFreezesRecursiveRepeatedAndMultilingualReads(t *testin
 		t.Fatalf("编译不能再次查块源: %d", rows.calls)
 	}
 
-	plan := PublicationPlan{SiteLangs: []string{"zh-CN"}, DefaultLang: "zh-CN", References: snapshot.Unwrap()}
+	plan := publish.PublicationPlan{SiteLangs: []string{"zh-CN"}, DefaultLang: "zh-CN", References: snapshot.Unwrap()}
 	copyPlan := plan.Normalize()
 	copyPlan.References.Blocks["inner"] = publish.FrozenBlock{Version: 99}
 	if plan.References.Blocks["inner"].Version != 7 {

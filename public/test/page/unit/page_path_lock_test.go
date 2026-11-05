@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"sync"
 	"testing"
 	"time"
@@ -9,15 +10,14 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/pipeline"
 )
 
 func TestPageServiceUsesProcessSharedPathLock(t *testing.T) {
-	shared := pipeline.DefaultPathLocker()
+	shared := publish.DefaultPathLocker()
 	if shared == nil {
 		t.Fatal("进程默认路径锁为空：各服务会各自 new 一个，等于没加锁")
 	}
-	if pipeline.DefaultPathLocker() != shared {
+	if publish.DefaultPathLocker() != shared {
 		t.Fatal("DefaultPathLocker 不是稳定单例")
 	}
 	_, svc, _, _ := newPageServiceWithRoutes(t)
@@ -27,11 +27,11 @@ func TestPageServiceUsesProcessSharedPathLock(t *testing.T) {
 		t.Fatalf("页面服务具体类型不是 *pageservice.Service，实际 %T", svc)
 	}
 	concrete.SetPublicationPathLocker(shared)
-	concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
+	concrete.SetPublicationPathLocker(publish.DefaultPathLocker())
 }
 
 func TestPathLockSerializesSamePathTwoPhases(t *testing.T) {
-	locker := &pipeline.ProcessPathLocker{}
+	locker := &publish.ProcessPathLocker{}
 	path := "/lock/serialized"
 	var mu sync.Mutex
 	var trace []string
@@ -68,7 +68,7 @@ func TestPathLockSerializesSamePathTwoPhases(t *testing.T) {
 }
 
 func TestPathLockConcurrentSamePathNeverOverlaps(t *testing.T) {
-	locker := &pipeline.ProcessPathLocker{}
+	locker := &publish.ProcessPathLocker{}
 	path := "/lock/overlap"
 	var inFlight, maxInFlight int32
 	var mu sync.Mutex
@@ -107,7 +107,7 @@ func TestPageRedirectFailsClosedWithoutPathLock(t *testing.T) {
 		t.Fatalf("页面服务具体类型不是 *pageservice.Service，实际 %T", svc)
 	}
 	concrete.SetPublicationPathLocker(nil)
-	defer concrete.SetPublicationPathLocker(pipeline.DefaultPathLocker())
+	defer concrete.SetPublicationPathLocker(publish.DefaultPathLocker())
 
 	err := svc.DeleteRedirect(context.Background(), &pagedto.RedirectDeleteReq{
 		ProjectID: projectID,

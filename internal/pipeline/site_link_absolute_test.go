@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"strings"
 	"testing"
 )
@@ -44,7 +45,7 @@ func TestAbsoluteSiteURLKeepsBasePathPrefix(t *testing.T) {
 
 func TestLocalizeMenuURLIsAbsolute(t *testing.T) {
 	t.Setenv("WP_SITE_BASE_URL", "https://shop.example.com")
-	rule := NewLangURLRule(false, false, "en-AU", nil)
+	rule := publish.NewLangURLRule(false, false, "en-AU", nil)
 	cases := []struct{ raw, want string }{
 		{"/shop", "https://shop.example.com/shop"},
 		{"/product_category/kuz", "https://shop.example.com/product_category/kuz"},

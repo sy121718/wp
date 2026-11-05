@@ -1,12 +1,11 @@
 package unit
 
 import (
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/pipeline"
 )
 
 func TestLocalPublicationLangPrefix(t *testing.T) {
@@ -16,7 +15,7 @@ func TestLocalPublicationLangPrefix(t *testing.T) {
 
 	for _, c := range []struct {
 		path string
-		loc  pipeline.Locator
+		loc  publish.Locator
 		want string
 	}{
 		{"/zh-CN/about", zh, "<html>zh</html>"},
@@ -26,7 +25,7 @@ func TestLocalPublicationLangPrefix(t *testing.T) {
 			t.Fatalf("激活 %s 失败: %v", c.path, err)
 		}
 		st, err := pub.Inspect(c.path)
-		if err != nil || st.Kind != pipeline.PublicationPage || st.Locator == nil || st.Locator.Key != c.loc.Key {
+		if err != nil || st.Kind != publish.PublicationPage || st.Locator == nil || st.Locator.Key != c.loc.Key {
 			t.Fatalf("激活状态错误 %s: %+v err=%v", c.path, st, err)
 		}
 		data, rerr := os.ReadFile(filepath.Join(pub.ActiveRoot, strings.TrimPrefix(c.path, "/"), "index.html"))
@@ -39,11 +38,11 @@ func TestLocalPublicationLangPrefix(t *testing.T) {
 	if err := pub.Activate("/zh-CN/index", root); err != nil {
 		t.Fatalf("语言根页激活失败: %v", err)
 	}
-	if st, err := pub.Inspect("/zh-CN/index"); err != nil || st.Kind != pipeline.PublicationPage {
+	if st, err := pub.Inspect("/zh-CN/index"); err != nil || st.Kind != publish.PublicationPage {
 		t.Fatalf("语言根页状态错误: %+v err=%v", st, err)
 	}
 
-	if st, err := pub.Inspect("/zh-CN/about"); err != nil || st.Kind != pipeline.PublicationPage {
+	if st, err := pub.Inspect("/zh-CN/about"); err != nil || st.Kind != publish.PublicationPage {
 		t.Fatalf("语言根页激活后子路径状态被破坏: %+v err=%v", st, err)
 	}
 }
@@ -71,7 +70,7 @@ func TestLocalPublicationRejectsSymlinkAncestor(t *testing.T) {
 	}
 
 	st, err := pub.Inspect("/zh-CN")
-	if err != nil || st.Kind != pipeline.PublicationPage {
+	if err != nil || st.Kind != publish.PublicationPage {
 		t.Fatalf("父路径激活状态被破坏: %+v err=%v", st, err)
 	}
 }

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"go_wp/pkg/publish"
 	"strings"
 	"testing"
 )
@@ -47,7 +48,7 @@ var urlNormalizeMatrix = []string{
 
 func TestNormalizeURLContract(t *testing.T) {
 	for _, in := range urlNormalizeMatrix {
-		got, err := NormalizeURL(in)
+		got, err := publish.NormalizeURL(in)
 		if err != nil {
 			t.Logf("NORMALIZE_MATRIX\t%q\t=> ERROR\t%s", in, err)
 			continue

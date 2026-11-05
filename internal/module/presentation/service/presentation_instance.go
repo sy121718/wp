@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"sort"
 	"strings"
 	"time"
@@ -13,8 +14,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -22,6 +21,8 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
 )
@@ -167,7 +168,7 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 				if pub.Lang != lang || pub.ArtifactID == nil || *pub.ArtifactID == "" {
 					continue
 				}
-				path, pathErr := pipeline.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
+				path, pathErr := publish.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
 				active = pathErr == nil && path != ""
 				break
 			}
@@ -786,7 +787,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
 
-	loc := pipeline.ArtifactLocator(art.ArtifactHash)
+	loc := publish.ArtifactLocator(art.ArtifactHash)
 	if verr := s.store.VerifyArtifact(loc, art.ArtifactHash); verr != nil {
 		logger.Scene("build").With("presentation_id", inst.ID).With("hash", art.ArtifactHash).
 			Warn("产物回滚目标文件不在位，拒绝回滚")

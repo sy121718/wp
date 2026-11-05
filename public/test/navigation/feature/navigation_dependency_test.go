@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,8 +52,8 @@ func newNavDependencyEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageServ
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	pages = pageservice.NewService(pagemodel.NewPageModel(db), artifacts, routes, projects, blocks, nil, nil, navSvc, nil)
 
-	fanout := pipeline.NewFanout()
-	fanout.Register(pipeline.SourceTypePage, pages)
+	fanout := publish.NewFanout()
+	fanout.Register(publish.SourceTypePage, pages)
 	nav.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
 	return db, pages, navSvc, projects, project.ID
 }
@@ -92,7 +93,7 @@ func navMenuDependencyCount(t *testing.T, db *gorm.DB, pageID, projectID, kind s
 	var n int64
 	if err := db.Raw(`SELECT COUNT(*) FROM page_dependencies
 		WHERE page_id = ? AND dependency_kind = ? AND dependency_key = ?`,
-		pageID, pipeline.DepKindMenu, "menu:"+projectID+":"+kind).Scan(&n).Error; err != nil {
+		pageID, publish.DepKindMenu, "menu:"+projectID+":"+kind).Scan(&n).Error; err != nil {
 		t.Fatalf("统计导航依赖失败: %v", err)
 	}
 	return n

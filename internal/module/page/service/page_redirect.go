@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publish "go_wp/pkg/publish"
 	"strings"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	pagemodel "go_wp/internal/module/page/model"
 	pubcontract "go_wp/internal/module/publication/contract"
 
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 
@@ -95,11 +95,11 @@ func (s *Service) CreateRedirect(ctx context.Context, req *pagedto.RedirectCreat
 	if projectID == "" {
 		return nil, ErrInvalidParam
 	}
-	source, err := pipeline.NormalizeURL(strings.TrimSpace(req.SourcePath))
+	source, err := publish.NormalizeURL(strings.TrimSpace(req.SourcePath))
 	if err != nil || source == "/" {
 		return nil, ErrInvalidPath
 	}
-	target, err := pipeline.NormalizeURL(strings.TrimSpace(req.TargetPath))
+	target, err := publish.NormalizeURL(strings.TrimSpace(req.TargetPath))
 	if err != nil || target == "/" {
 		return nil, ErrInvalidPath
 	}
@@ -171,7 +171,7 @@ func (s *Service) DeleteRedirect(ctx context.Context, req *pagedto.RedirectDelet
 	if projectID == "" {
 		return ErrInvalidParam
 	}
-	path, err := pipeline.NormalizeURL(strings.TrimSpace(req.Path))
+	path, err := publish.NormalizeURL(strings.TrimSpace(req.Path))
 	if err != nil {
 		return ErrInvalidPath
 	}
@@ -275,7 +275,7 @@ func (s *Service) MergeRedirectChain(ctx context.Context, req *pagedto.RedirectM
 	if projectID == "" {
 		return nil, ErrInvalidParam
 	}
-	path, err := pipeline.NormalizeURL(strings.TrimSpace(req.Path))
+	path, err := publish.NormalizeURL(strings.TrimSpace(req.Path))
 	if err != nil {
 		return nil, ErrInvalidPath
 	}
@@ -336,7 +336,7 @@ func (s *Service) redirectRecords(ctx context.Context, projectID string) (recs m
 			case ierr != nil:
 
 				logger.Scene("page").With("path", row.Path).Warn("重定向激活状态读取失败：" + ierr.Error())
-			case st != nil && st.Kind == pipeline.PublicationRedirect && st.Redirect != nil:
+			case st != nil && st.Kind == publish.PublicationRedirect && st.Redirect != nil:
 				rec.effective = true
 				rec.targetPath = st.Redirect.TargetPath
 				rec.statusCode = st.Redirect.StatusCode
@@ -370,7 +370,7 @@ func (s *Service) redirectOwnerLabels(ctx context.Context, projectID string, rec
 }
 
 func (s *Service) writeRedirectArtifact(sourcePath, targetPath string) (err error) {
-	ra, err := pipeline.NewRedirectArtifact(targetPath, 301)
+	ra, err := publish.NewRedirectArtifact(targetPath, 301)
 	if err != nil {
 		return err
 	}

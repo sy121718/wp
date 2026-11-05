@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	publish "go_wp/pkg/publish"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,7 +15,6 @@ import (
 	"gorm.io/gorm"
 
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/pipeline"
 )
 
 func TestUpdateURLCrashWindowConvergesOnRecovery(t *testing.T) {
@@ -303,14 +303,14 @@ func routeOccupiedAt(t *testing.T, db *gorm.DB, projectID, path string) string {
 
 func linkedArtifactHash(t *testing.T, urlPath string) string {
 	t.Helper()
-	state, err := (&pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}).Inspect(urlPath)
+	state, err := (&publish.LocalPublicationStore{ActiveRoot: publish.ActiveRoot()}).Inspect(urlPath)
 	if err != nil {
 		t.Fatalf("读取访问面状态失败: %v", err)
 	}
 	if state == nil || state.Locator == nil {
 		t.Fatalf("路径 %s 未激活", urlPath)
 	}
-	if state.Kind != pipeline.PublicationPage {
+	if state.Kind != publish.PublicationPage {
 		t.Fatalf("路径 %s 应是页面产物，实际 kind=%s", urlPath, state.Kind)
 	}
 	return strings.TrimPrefix(state.Locator.Key, "artifacts/")

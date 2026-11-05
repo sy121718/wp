@@ -2,23 +2,24 @@ package pipeline
 
 import (
 	"errors"
+	"go_wp/pkg/publish"
 	"strings"
 	"testing"
 )
 
 type fakeStore struct {
-	arts   map[string]*Artifact
+	arts   map[string]*publish.Artifact
 	getErr error
 }
 
-func newFakeStore() *fakeStore { return &fakeStore{arts: map[string]*Artifact{}} }
+func newFakeStore() *fakeStore { return &fakeStore{arts: map[string]*publish.Artifact{}} }
 
-func (s *fakeStore) PutArtifact(a *Artifact) (Locator, error) {
+func (s *fakeStore) PutArtifact(a *publish.Artifact) (publish.Locator, error) {
 	s.arts[a.Hash] = a
-	return ArtifactLocator(a.Hash), nil
+	return publish.ArtifactLocator(a.Hash), nil
 }
 
-func (s *fakeStore) GetArtifact(loc Locator) (*Artifact, error) {
+func (s *fakeStore) GetArtifact(loc publish.Locator) (*publish.Artifact, error) {
 	if s.getErr != nil {
 		return nil, s.getErr
 	}
@@ -30,20 +31,20 @@ func (s *fakeStore) GetArtifact(loc Locator) (*Artifact, error) {
 	return a, nil
 }
 
-func (s *fakeStore) VerifyArtifact(loc Locator, expectedHash string) error {
+func (s *fakeStore) VerifyArtifact(loc publish.Locator, expectedHash string) error {
 	_, err := s.GetArtifact(loc)
 	return err
 }
 
-func (s *fakeStore) DeleteArtifact(Locator, string) error       { return nil }
-func (s *fakeStore) DeleteArtifactObject(Locator, string) error { return nil }
-func (s *fakeStore) PutRedirect(*RedirectArtifact) (Locator, error) {
-	return Locator{}, nil
+func (s *fakeStore) DeleteArtifact(publish.Locator, string) error       { return nil }
+func (s *fakeStore) DeleteArtifactObject(publish.Locator, string) error { return nil }
+func (s *fakeStore) PutRedirect(*publish.RedirectArtifact) (publish.Locator, error) {
+	return publish.Locator{}, nil
 }
-func (s *fakeStore) GetRedirect(Locator) (*RedirectArtifact, error) {
+func (s *fakeStore) GetRedirect(publish.Locator) (*publish.RedirectArtifact, error) {
 	return nil, errors.New("未实现")
 }
-func (s *fakeStore) DeleteRedirect(Locator, string) error { return nil }
+func (s *fakeStore) DeleteRedirect(publish.Locator, string) error { return nil }
 
 type fakePub struct {
 	active      map[string]string
@@ -54,7 +55,7 @@ type fakePub struct {
 
 func newFakePub() *fakePub { return &fakePub{active: map[string]string{}} }
 
-func (p *fakePub) Activate(path string, loc Locator) error {
+func (p *fakePub) Activate(path string, loc publish.Locator) error {
 	if p.activateErr != nil {
 		return p.activateErr
 	}
@@ -69,20 +70,20 @@ func (p *fakePub) Deactivate(path string) error {
 	return nil
 }
 
-func (p *fakePub) Inspect(path string) (*PublicationState, error) {
+func (p *fakePub) Inspect(path string) (*publish.PublicationState, error) {
 	h, ok := p.active[path]
 	if !ok {
-		return &PublicationState{Kind: PublicationNone}, nil
+		return &publish.PublicationState{Kind: publish.PublicationNone}, nil
 	}
-	loc := Locator{Provider: "local", Key: h}
-	return &PublicationState{Kind: PublicationPage, Locator: &loc}, nil
+	loc := publish.Locator{Provider: "local", Key: h}
+	return &publish.PublicationState{Kind: publish.PublicationPage, Locator: &loc}, nil
 }
 
 func stagedPublisher(path, stagedHash string) (*Publisher, *fakeStore, *fakePub) {
 	store := newFakeStore()
 	pub := newFakePub()
 	if stagedHash != "" {
-		store.arts[stagedHash] = &Artifact{Hash: stagedHash, CanonicalPath: path}
+		store.arts[stagedHash] = &publish.Artifact{Hash: stagedHash, CanonicalPath: path}
 	}
 	p := NewPublisher(store, pub)
 	p.pages["p1"] = &PageRecord{
