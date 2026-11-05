@@ -1,13 +1,12 @@
 package contenttemplatehttp
 
 import (
-	"go_wp/internal/shell"
+	view "go_wp/pkg/view"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/backref"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 )
 
@@ -107,29 +106,11 @@ var contentTemplateImpactLoadFailedMsg = contentTemplateMsg{
 
 const contentTemplateImpactUnparsableTemplate = "有 %d 份文档无法解析，影响面可能不完整（这些文档仍可能引用本模板）。"
 
-var contentTemplateBackMsg = contentTemplateMsg{
-	Key: contentTemplateBackTextKey, Fallback: contentTemplateBackTextFallback,
-}
-
-const (
-	contentTemplateBackTextKey      = contenttemplateenums.Heading
-	contentTemplateBackTextFallback = "内容模板"
-)
-
-var contentTemplateJumpKeys = []string{"project", "entityType"}
-
 func contentTemplateJump(c *gin.Context, ok bool, msg contentTemplateMsg) {
-	back := backref.BackPath(c, contentTemplatesListPath, contentTemplateJumpKeys...)
-	backText := contentTemplateBackMsg
+	// 回跳由发起页面声明；这里只交结果事实。
 	if ok {
-		shell.RenderJump(c, shell.Jump{
-			OK: true, MsgKey: msg.Key, Msg: msg.Fallback, MsgArgs: msg.Args,
-			Back: back, BackTextKey: backText.Key, BackText: backText.Fallback, Seconds: 1,
-		})
+		view.SuccessWith(c, view.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
 		return
 	}
-	shell.RenderJump(c, shell.Jump{
-		MsgKey: msg.Key, Msg: msg.Fallback, MsgArgs: msg.Args,
-		Back: back, BackTextKey: backText.Key, BackText: backText.Fallback,
-	})
+	view.FailMessage(c, contentTemplateErrScene, msg.Key, msg.Fallback, msg.Args...)
 }

@@ -1,7 +1,7 @@
 package pluginhttp
 
 import (
-	"go_wp/internal/shell"
+	view "go_wp/pkg/view"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -94,19 +94,10 @@ func pluginErrText(c *gin.Context, err error) string {
 }
 
 func pluginPageJump(c *gin.Context, ok bool, msg pluginMsg) {
-	back := pluginPagePath
-	backText := pluginBackMsg
+	// 回跳由发起页面声明；这里只交结果事实。
 	if ok {
-		shell.RenderJump(c, shell.Jump{
-			OK: true, MsgKey: msg.Key, Msg: msg.Fallback, MsgArgs: msg.Args,
-			Back: back, BackTextKey: backText.Key, BackText: backText.Fallback, Seconds: 1,
-		})
+		view.SuccessWith(c, view.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
 		return
 	}
-	shell.RenderJump(c, shell.Jump{
-		MsgKey: msg.Key, Msg: msg.Fallback, MsgArgs: msg.Args,
-		Back: back, BackTextKey: backText.Key, BackText: backText.Fallback,
-	})
+	view.FailMessage(c, pluginErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
-
-var pluginBackMsg = pluginMsg{Key: pluginenums.TitlePlugins, Fallback: "插件管理"}

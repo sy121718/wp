@@ -14,20 +14,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"go_wp/internal/backref"
-	"go_wp/pkg/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	seoscore "go_wp/pkg/seo"
-	"go_wp/pkg/seo/scoreview"
 	"go_wp/internal/siteurl"
+	"go_wp/pkg/backpath"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	seoscore "go_wp/pkg/seo"
+	"go_wp/pkg/seo/scoreview"
 	pageview "go_wp/pkg/view"
 )
 
@@ -411,7 +411,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 
 	if projectID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
-			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
+			backpath.FromRequest(c.Request.URL.Query(), "/admin/settings", "/admin", "project"), siteSettingsBackMsg)
 		return
 	}
 	back := siteSettingsBack(c)
@@ -429,7 +429,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		}
 
 		projectJump(c, false, projectMsgOf(projectenums.ErrProjectNotFound, "站点工程不存在"),
-			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
+			backpath.FromRequest(c.Request.URL.Query(), "/admin/settings", "/admin", "project"), siteSettingsBackMsg)
 		return
 	}
 
@@ -731,7 +731,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	if projectID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
-			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
+			backpath.FromRequest(c.Request.URL.Query(), "/admin/settings", "/admin", "project"), siteSettingsBackMsg)
 		return
 	}
 	back := siteSettingsBack(c)

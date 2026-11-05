@@ -1,18 +1,18 @@
 package pagehttp
 
 import (
-	"go_wp/internal/shell"
-	"go_wp/internal/backref"
 	"go_wp/internal/text"
+	"go_wp/pkg/backpath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
-	"go_wp/pkg/response"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
+	view "go_wp/pkg/view"
 )
 
 var pageListBackKeys = []string{"project"}
@@ -20,7 +20,7 @@ var pageListBackKeys = []string{"project"}
 const pageListPath = "/admin/pages"
 
 func pageListBack(c *gin.Context) string {
-	return backref.BackPath(c, pageListPath, pageListBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), pageListPath, "/admin", "page", pageListBackKeys...)
 }
 
 var pageListBackMsg = pageMsg{Key: pageenums.MsgPagesTitle, Fallback: "页面管理"}
@@ -78,21 +78,14 @@ func pageDetailText(tr func(key, fallback string) string, tail string) string {
 	return strings.Join(out, "；")
 }
 
-func pageJump(c *gin.Context, ok bool, msg pageMsg, back string, backText pageMsg) {
-	seconds := 0
+// pageJump 只交结果事实：成功走统一提示组件，失败走共享失败出口。
+// 回跳由发起页面声明，本层不再构造整页跳转提示。
+func pageJump(c *gin.Context, ok bool, msg pageMsg, _ string, _ pageMsg) {
 	if ok {
-		seconds = 1
+		view.SuccessWith(c, view.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
+		return
 	}
-	shell.RenderJump(c, shell.Jump{
-		OK:          ok,
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-		Seconds:     seconds,
-	})
+	view.FailMessage(c, pageErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
 
 func pageListJump(c *gin.Context, ok bool, msg pageMsg) {

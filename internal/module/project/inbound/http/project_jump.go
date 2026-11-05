@@ -1,14 +1,17 @@
 package projecthttp
 
 import (
-	"go_wp/internal/shell"
 	"github.com/gin-gonic/gin"
 	"go_wp/pkg/response"
+	view "go_wp/pkg/view"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/backref"
 	projectenums "go_wp/internal/module/project/enums"
+	"go_wp/pkg/backpath"
 )
+
+// projectErrScene 只进日志与失败事件归类；对用户可见的是消息事实本身。
+const projectErrScene = "project"
 
 type projectMsg = adminui.Msg
 
@@ -19,15 +22,15 @@ var (
 )
 
 func themesBack(c *gin.Context) string {
-	return backref.BackPath(c, "/admin/themes", themesBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), "/admin/themes", "/admin", "project", themesBackKeys...)
 }
 
 func siteSettingsBack(c *gin.Context) string {
-	return backref.BackPath(c, "/admin/settings", siteSettingsBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), "/admin/settings", "/admin", "project", siteSettingsBackKeys...)
 }
 
 func themeSettingsBack(c *gin.Context) string {
-	return backref.BackPath(c, "/admin/themes/settings", themeSettingsBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), "/admin/themes/settings", "/admin", "project", themeSettingsBackKeys...)
 }
 
 var (
@@ -44,20 +47,12 @@ func projectTr(c *gin.Context) func(key, fallback string) string {
 	return func(key, fallback string) string { return response.ArgsText(c, key, fallback, nil) }
 }
 
-func projectJump(c *gin.Context, ok bool, msg projectMsg, back string, backText projectMsg) {
-	j := shell.Jump{
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-	}
+func projectJump(c *gin.Context, ok bool, msg projectMsg, _ string, _ projectMsg) {
 	if ok {
-		j.OK = true
-		j.Seconds = 1
+		view.SuccessWith(c, view.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
+		return
 	}
-	shell.RenderJump(c, j)
+	view.FailMessage(c, projectErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
 
 var (

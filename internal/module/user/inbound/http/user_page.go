@@ -1,10 +1,9 @@
 package userhttp
 
 import (
-	"go_wp/internal/shell"
-	"go_wp/internal/backref"
 	"context"
 	"errors"
+	"go_wp/pkg/backpath"
 	"net/url"
 	"strconv"
 	"strings"
@@ -534,24 +533,16 @@ func customerNotice(c *gin.Context, key string) string {
 }
 
 func customerListBack(c *gin.Context) (back string, backText customerMsg) {
-	return backref.BackPath(c, customerListPath, customerListBackKeys...),
+	return backpath.FromRequest(c.Request.URL.Query(), customerListPath, "/admin", "user", customerListBackKeys...),
 		customerPageTitleLabel.msg()
 }
 
-func customerJump(c *gin.Context, ok bool, msg customerMsg, back string, backText customerMsg) {
-	j := shell.Jump{
-		OK:          ok,
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-	}
+func customerJump(c *gin.Context, ok bool, msg customerMsg, _ string, _ customerMsg) {
 	if ok {
-		j.Seconds = 1
+		pageview.SuccessWith(c, pageview.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
+		return
 	}
-	shell.RenderJump(c, j)
+	pageview.FailMessage(c, userCustomerErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
 
 func customerListJumpFail(c *gin.Context, msg customerMsg) {

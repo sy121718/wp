@@ -1,7 +1,7 @@
 package mailhttp
 
 import (
-	"go_wp/internal/shell"
+	view "go_wp/pkg/view"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,8 +11,8 @@ import (
 	"strconv"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/backref"
 	mailenums "go_wp/internal/module/mail/enums"
+	"go_wp/pkg/backpath"
 	"go_wp/pkg/reqparams"
 )
 
@@ -64,19 +64,19 @@ func mailTemplatesBack(c *gin.Context) string {
 }
 
 func mailContactsBack(c *gin.Context) string {
-	return backref.BackPath(c, mailContactsPath, mailContactsBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), mailContactsPath, "/admin", "mail", mailContactsBackKeys...)
 }
 
 func mailCampaignsBack(c *gin.Context) string {
-	return backref.BackPath(c, mailCampaignsPath, mailCampaignsBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), mailCampaignsPath, "/admin", "mail", mailCampaignsBackKeys...)
 }
 
 func mailAutomationBack(c *gin.Context) string {
-	return backref.BackPath(c, mailAutomationPath, mailAutomationBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), mailAutomationPath, "/admin", "mail", mailAutomationBackKeys...)
 }
 
 func mailAutomationRunsBack(c *gin.Context) string {
-	return backref.BackPath(c, mailAutomationRunsPath, mailAutomationRunsBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), mailAutomationRunsPath, "/admin", "mail", mailAutomationRunsBackKeys...)
 }
 
 type mailMsg = adminui.Msg
@@ -94,21 +94,12 @@ var (
 	mailAutomationRunsBackMsg = mailLabelMsg(mailenums.PageTitleAutomationRuns)
 )
 
-func mailJump(c *gin.Context, ok bool, msg mailMsg, back string, backText mailMsg) {
-	seconds := 0
+func mailJump(c *gin.Context, ok bool, msg mailMsg, _ string, _ mailMsg) {
 	if ok {
-		seconds = 1
+		view.SuccessWith(c, view.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
+		return
 	}
-	shell.RenderJump(c, shell.Jump{
-		OK:          ok,
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-		Seconds:     seconds,
-	})
+	view.FailMessage(c, mailErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
 
 func mailAccountsJump(c *gin.Context, ok bool, msg mailMsg) {

@@ -1,8 +1,8 @@
 package pagehttp
 
 import (
-	"go_wp/internal/backref"
 	"errors"
+	"go_wp/pkg/backpath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -169,7 +169,7 @@ func redirectErrKey(err error) string {
 var redirectBackKeys = []string{"project"}
 
 func redirectBack(c *gin.Context) string {
-	return backref.BackPath(c, redirectPagePath, redirectBackKeys...)
+	return backpath.FromRequest(c.Request.URL.Query(), redirectPagePath, "/admin", "page", redirectBackKeys...)
 }
 
 var redirectBackMsg = pageMsg{Key: pageenums.RedirectTitle, Fallback: "重定向管理"}

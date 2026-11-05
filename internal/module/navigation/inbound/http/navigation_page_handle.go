@@ -1,7 +1,6 @@
 package navigationhttp
 
 import (
-	"go_wp/internal/shell"
 	"context"
 	"errors"
 	"net/http"
@@ -11,13 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/backref"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/backpath"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -857,11 +856,11 @@ func navigationLoadErrorOf(err error) navigationLoadError {
 const navigationListPath = "/admin/navigations"
 
 func navListBack(c *gin.Context) string {
-	return backref.BackPath(c, navigationListPath, "project", "kind")
+	return backpath.FromRequest(c.Request.URL.Query(), navigationListPath, "/admin", "navigation", "project", "kind")
 }
 
 func navListBackMenu(c *gin.Context) string {
-	return backref.BackPath(c, navigationListPath, "project", "kind", "menu")
+	return backpath.FromRequest(c.Request.URL.Query(), navigationListPath, "/admin", "navigation", "project", "kind", "menu")
 }
 
 var (
@@ -870,20 +869,12 @@ var (
 	navDoneNotice = navText{Key: navigationenums.ActionDone, Fallback: "操作已完成"}
 )
 
-func navJump(c *gin.Context, ok bool, msg navText, back string, backText navText) {
-	j := shell.Jump{
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-	}
+func navJump(c *gin.Context, ok bool, msg navText, _ string, _ navText) {
 	if ok {
-		j.OK = true
-		j.Seconds = 1
+		pageview.SuccessWith(c, pageview.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
+		return
 	}
-	shell.RenderJump(c, j)
+	pageview.FailMessage(c, navigationErrScene, msg.Key, msg.Fallback, msg.Args...)
 }
 
 func navJumpList(c *gin.Context, ok bool, msg navText) {

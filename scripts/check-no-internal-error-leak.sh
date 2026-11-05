@@ -69,8 +69,7 @@ SHAPE3_RE='(Errors|Errors:)'
 # 豁免不再需要（清单只减不增，这也是它能收敛的原因）。
 # 更早收敛的：navigation 的 5 处（Create/Update/Delete/List/Detail）与 shell.BulkIDs 的原豁免批，
 # 消息统一走 internal/module/navigation/inbound/http/navigation_err.go 的归口助手。
-# 回归用例：public/test/{admin,navigation,inventory,order,user,mail}/** 的批量超限路径用例，
-# 以及 internal/shell/bulk_test.go 的类型与受控文案守卫。
+# 回归用例：public/test/{admin,navigation,inventory,order,user,mail}/** 的批量超限路径用例。
 declare -A EXEMPT=()
 
 # 候选 = inbound/http 下所有 .Error() 行（logger 的 .Error(err, msg) 带参数，不会被 \\.Error\\(\\) 匹配到）。
