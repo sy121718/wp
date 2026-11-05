@@ -2,7 +2,7 @@
 
 [中文贡献指南](CONTRIBUTING.md)
 
-go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面文档和内容，构建器把它们编译为不可变 HTML/CSS/JS，发布存储负责激活 URL。普通静态访问不执行模板、不查数据库；需要实时数据的功能经独立的受限 Runtime Fragment 端点提供。
+go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面文档和内容，构建器把它们编译为不可变 HTML/CSS/JS，发布存储负责激活 URL。普通静态访问不执行模板、不查数据库；需要实时数据的访客能力经**明确注册的访客业务 API**（JSON）提供，不再走运行时 HTML 片段出口。
 
 项目处于开发阶段，协议和扩展接口仍在整理。上面这些能力的成熟度与接入范围各不相同，不能把「模块存在」等同于已具备完整的开源发行与插件生态。
 
@@ -13,7 +13,7 @@ go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面�
 - **可视化建站**：组件库 + Page Document 文档协议 + 工作台画布；组件自带模板、样式与增强资产，经 `go:embed` 打进二进制。
 - **自动发布实例**：内容与展示模板组合成 PresentationInstance，与手工 Page 共用同一编译与发布管线。
 - **静态发布引擎**：不可变 Artifact + 内容寻址资源 + URL 激活与回滚；发布前可预览，且预览字节 == 发布字节。
-- **受限动态片段**：Runtime Fragment Registry 提供购物车、商品筛选、实时可用量、站内搜索等能力，都是白名单只读或纯计算，不把访客请求带进应用主链路。
+- **访客业务 API**：购物车、商品筛选、实时可用量、站内搜索等能力以 JSON 端点提供（白名单只读或纯计算），不把访客请求带进页面渲染主链路。运行时 HTML 片段出口已退役。
 - **CMS**：文章、媒体库、复用区块、分类与标签。
 - **商品与库存**：商品 / 变体 / 属性 / 分类 / 品牌 / 标签 / 定价工具 / 捆绑配置；仓库、库存真源、流水、物料清单、货源、采购入库。
 - **交易链路**：购物车（客户端签名 cookie）、结算、订单状态机、优惠码、退货入库、访客订单自助查询。
@@ -33,12 +33,14 @@ Publish Compiler → 不可变 Artifact
               ↓
 ArtifactStore → PublicationStore 激活 → Static Server / CDN
 
-实时交互 → Runtime Fragment Registry → 受限业务能力 → HTML Fragment
+实时交互 → 明确注册的访客业务 API → 业务数据（JSON）
 ```
 
 Page 是手工页面；PresentationInstance 是由内容与展示模板生成的自动发布实例。两者共享编译与发布管线。Blueprint 只初始化页面，后续修改不传播。
 
-技术栈为 Go 1.27、Gin、Jet、PostgreSQL、Redis、Session + Cookie 和 Casbin。后台由 Jet 渲染 HTML，交互使用原生 JavaScript 与 HTMX，没有独立前端打包工程。Redis 是必需的关键组件。
+技术栈为 Go 1.27、Gin、Jet、PostgreSQL、Redis、Session + Cookie 和 Casbin。后台是 **MVC + Service**：控制器选模板并带业务 data，Jet 渲染；Service 承载业务规则与事务；交互用原生 JavaScript 与 HTMX，没有独立前端打包工程。Redis 是必需的关键组件。
+
+响应协议见 [`AGENTS.md`](AGENTS.md) 的「响应协议」一节（页面 GET 成功回模板，其余回 JSON `{code, message, data}`），本文不复制判据。
 
 ## 快速开始
 
@@ -146,7 +148,7 @@ GOWP_REPEATER_BROWSER=1 go test ./public/test/dashboard/feature \
 
 第一次进入这个仓库，先读 [`AGENTS.md`](AGENTS.md)：分层判据、架构不变量与开发红线都在那里。准备动手改代码，再读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 与各目录下的 `CLAUDE.md`（模块分层、模板约定、测试组织）。
 
-- `AGENTS.md`：分层判据、架构不变量、命名约束、迁移与 seed 纪律。
+- `AGENTS.md`：**唯一规则源** —— 架构（MVC + Service）、层判据、响应协议、取词规则、架构不变量、迁移与 seed 纪律。
 - `CONTRIBUTING.md`：本地起步、门禁、测试与提交约定（面向首次接触本仓库的开发者）。
 - `internal/module/CLAUDE.md`、`internal/templates/CLAUDE.md`、`pkg/CLAUDE.md`、`public/test/CLAUDE.md`：目录级规则。
 ## 许可与贡献

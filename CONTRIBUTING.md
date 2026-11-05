@@ -7,10 +7,15 @@
 
 | 文件 | 为什么先读 |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | 常驻红线清单：不变量、命名约束、路由动词、错误文案、迁移与 seed 纪律、时间列命名、软删除、RLS 顺序 |
-| [`internal/module/CLAUDE.md`](internal/module/CLAUDE.md) | 模块分层与契约：目录骨架、contract 三段分工、service 不得持 `*gorm.DB`、装配与 datarule 注册 |
-| [`internal/templates/CLAUDE.md`](internal/templates/CLAUDE.md) | Jet 模板约定：可选键必须 `isset`、缺键的两种后果、CSRF 取值链 |
+| [`AGENTS.md`](AGENTS.md) | **唯一规则源**：架构（MVC + Service）、分层判据、响应协议、取词规则、架构不变量、迁移与 seed 纪律、RLS 顺序 |
+| [`internal/module/CLAUDE.md`](internal/module/CLAUDE.md) | 模块目录骨架与落地细节：控制器渲染两种等价写法、service 不取词、service 不得持 `*gorm.DB` |
+| [`internal/templates/CLAUDE.md`](internal/templates/CLAUDE.md) | Jet 模板约定：取词写法、可选键必须 `isset`、写基座 `data-write-*`、htmx v4 属性、多端硬规则、前端模板统一封装待实施清单 |
 | [`public/test/CLAUDE.md`](public/test/CLAUDE.md) | 测试目录组织、命名约定、测试配置与执行边界 |
+
+## 1.1 架构一句话
+
+**MVC + Service**：Controller 选模板并带业务 data → Jet 渲染；Service 承载业务规则、事务与查询；Model 管本模块表；View 是 Jet 模板 + HTMX。
+响应协议（页面 GET 成功回模板，其余回 JSON `{code, message, data}`）与全部分层判据见 [`AGENTS.md`](AGENTS.md)「架构」「响应协议」两节，本文不复制。
 
 ## 2. 本地起步
 
@@ -63,7 +68,7 @@ make migrate
 - seed 用 `registerSeed(Seed{Version, TableName, ConditionSQL, SQL})`，`ConditionSQL` 是幂等判据（「本批对象是否已存在」，**不要**写成宽泛的前缀判断）。
 - `TestEmbeddedSQLFilesAllRegistered` 对磁盘 `.sql` 与注册台账做双向一一对应校验 —— 写了 SQL 却忘了注册会被测试抓住。
 
-> 迁移编号取现有最大值之后的号（当前最大为 `510`）。命名与判据写法见 [`AGENTS.md`](AGENTS.md) 的数据库一节。
+> 迁移编号取 `public/migrations/` 里现有最大数字之后的号（不要在本文件记具体数字，会过期）。命名与判据写法见 [`AGENTS.md`](AGENTS.md) 的数据库一节。
 
 ### 2.4 起服务
 
@@ -82,122 +87,15 @@ make run     # 直接编译并运行，无热重载
 
 | 目标 | 实际执行 | 覆盖 | 是否依赖数据库 |
 |---|---|---|---|
-| `make check` | `gofmt -l` + `go vet ./...` + `bash scripts/check-all.sh` | 无外部依赖的 12 个门禁脚本 | 否 |
-| `make check-db` | `bash scripts/check-all.sh --db-only` | 需要 PostgreSQL 的 1 个门禁脚本（须先 `make migrate`） | 是 |
-| `make check-all` | `bash scripts/check-all.sh --with-db` | 上两组全跑，共 13 个脚本 | 是 |
+| `make check` | `gofmt -l` + `go vet ./...` + `bash scripts/check-all.sh` | `check-all.sh` 的无依赖组（`PLAIN_SCRIPTS`） | 否 |
+| `make check-db` | `bash scripts/check-all.sh --db-only` | 需要 PostgreSQL 的那组（`DB_SCRIPTS`，须先 `make migrate`） | 是 |
+| `make check-all` | `bash scripts/check-all.sh --with-db` | 上两组全跑 | 是 |
 | `make test-race` | `go test -race -p 4 ...` | 五个核心域的竞态检测（`pkg/`、`pipeline`、`builder`、`publication`、`presentation`），超时 20 分钟 | 否 |
 | `make test` | `go test -p $(nproc) ./... -count=1` | 全量（feature + unit），可用 `TEST_PARALLEL=8` 覆盖并发 | 部分用例 |
 | `make test-short` | `go test ./pkg/... ./internal/... ./cmd/... ./config/... ./public/migrations/... -count=1` | 不依赖数据库的包 | 否 |
 | `make lint` | `gofmt -l internal/ pkg/ public/ cmd/ config/` + `go vet ./...` | 格式与静态检查 | 否 |
 
-<!-- TODO(开源前确认): `scripts/check-all.sh`、`scripts/check-contract-deps.sh`、`scripts/check-dto-immutability.sh`、`scripts/check-page-endpoint-authz.py`、`scripts/page-endpoint-authz-allow.txt`、`scripts/contract-deps-allow.txt` 在本节写作时仍是工作区未提交文件（`git ls-files` 无输出），`make check-db` / `make check-all` / `make test-race` 三个目标也只存在于工作区的 Makefile 改动里；必须确认它们已入库，否则克隆下来的仓库里不存在这些命令。 -->
-
 统一入口脚本是 [`scripts/check-all.sh`](scripts/check-all.sh)，模式为默认（无依赖组）/ `--db-only` / `--with-db`，末尾打印「✓ 全部门禁通过（模式，共 N 个脚本）」。
+**具体脚本清单以 `scripts/check-all.sh` 的 `PLAIN_SCRIPTS` / `DB_SCRIPTS` 为准**，本文件不抄名单（会随增删过期）；脚本清单与用途见 [`scripts/README.md`](scripts/README.md)。
 
-无依赖组（12 个）：
-
-```text
-scripts/check-no-internal-error-leak.sh
-scripts/check-i18n-coverage.sh
-scripts/check-i18n-keys-seeded.sh
-scripts/check-service-db-boundary.sh
-scripts/check-page-endpoint-authz.py
-scripts/check-multidevice-css.sh
-scripts/check-empty-state-table-head.sh
-scripts/check-inventory-sku-format.sh
-scripts/check-stock-sku-prefix-collisions.sh
-scripts/check-workbench.sh
-scripts/check-contract-deps.sh
-scripts/check-dto-immutability.sh
-```
-
-数据库组（1 个）：
-
-```text
-scripts/check-permission-gaps.sh
-```
-
-每个脚本拦什么、判据是什么、豁免怎么记账 → 见各脚本文件头的注释与 `scripts/check-all.sh`。
-
-`scripts/` 下还有不入门禁的脚本：`dev.sh`（`make dev` 调用）、`rls-role-setup.sh`（建非超级角色并授权）、`index-usage-report.sh`（索引使用量快照）、`site-preview.py`、`audit-*.py`、`deploy.sh`（见 [`scripts/README.md`](scripts/README.md)）。
-
-## 4. 测试约定
-
-### 4.1 两层
-
-- **模块内就近单测**：`internal/module/**/*_test.go`。纯逻辑，不碰数据库、不走路由装配。
-- **feature / 集成测试**：`public/test/**`。需要数据库、事务、HTTP 或完整装配的用例放这里。
-
-判据是「这个判断错了会不会静默出错」：会静默出错的逻辑必须有测试，纯取值的浅层测试不写。
-
-### 4.2 目录组织
-
-```text
-public/test/<模块>/feature/    接口链路测试（主）
-public/test/<模块>/unit/       模块规则单测（辅）
-public/test/feature/           跨模块顶层链路
-public/test/architecture/      架构红线静态扫描（边界 / 事务 / model 标签）
-public/test/rls|partition|security|seo|pipeline|pkg/   横切主题
-public/test/support/           测试基建
-public/test/fixtures/          静态夹具数据（只放静态数据）
-```
-
-目录名直接用模块名或领域名，不再额外分层（是 `public/test/order/feature/`，不是 `public/test/backend/order/`）。
-
-### 4.3 命名
-
-- 文件：`<模块>_<场景>_test.go`
-- 函数：`Test<模块><场景><结果>`，例如 `TestAdminLoginSuccess`、`TestOrderCreateStockShortage`
-- 每个核心场景一个顶层 `TestXxx`，内部分支用 `t.Run` 切子用例
-
-### 4.4 测试表结构一律来自生产迁移
-
-**禁止手抄 `CREATE TABLE`**。手抄的 DDL 与生产 schema 会静默分叉：迁移改了列名或主键类型后，用例要么集体变红看不出原因，要么在缺约束的表上继续绿、把真实缺陷放过。
-
-用 `public/test/support/` 里的基建：
-
-- `migrated_db.go`：`NewMigratedPGTestDB` —— 跑生产迁移得到结构（需要父行时用 `SeedProjectRow` 一类助手补）
-- `pgtest.go`：`NewPGTestDB` —— 空库，给自建表或刻意构造旧 schema 的用例
-- `test_bootstrap.go`：只做环境初始化与清理，不启动生产服务进程
-- `test_client.go`：HTTP 客户端
-
-### 4.5 执行
-
-```bash
-go test ./public/test/...                                  # 全部集成测试
-go test ./public/test/order/feature -v                      # 单个模块
-go test ./public/test/admin/unit -v                          # 模块规则单测
-go test ./public/test/order/feature -run TestOrderCreate -v  # 单个场景
-make test                                                    # 全量
-```
-
-数据库与 Redis 用 `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` 和 `TEST_REDIS_ADDR` 指向专用测试实例；部分用例支持容器回退。
-
-**退出码 0 不能证明用例真跑过**：环境缺失时用例会 skip。下结论前看 skip 原因与环境依赖缺口，把它写进改动说明。
-
-## 5. 提交约定
-
-- **一次改动一个主题**：不与无关清理、依赖升级、大范围格式化混在一起，diff 才可读、可 review。
-- **拆分大文件要说明等价性**：证明「只切段、不改行为」的证据是仓库里已有的路由清单快照测试（`internal/routers` 的路由快照用例，`WP_DUMP_ROUTES=1` 可输出装配出的路由表）——装配是线性的，重排等于引入编译期看不见的顺序漂移。
-- **新增门禁脚本要接进 `scripts/check-all.sh`**：无外部依赖的进 `PLAIN_SCRIPTS`，需要 PostgreSQL 的进 `DB_SCRIPTS`。散在 `scripts/` 下不被任何入口调用的门禁等于没有门禁（当前这个入口本身就是为此补的）。
-- **改动某模块的落地细节时，同批更新该模块的 `CLAUDE.md`**。
-- **提交前跑**：
-
-```bash
-gofmt -w path/to/changed.go
-go build ./...
-go vet ./...
-make check
-make test-race      # 触及 pkg/ 或核心五域时
-```
-
-- **模块纪律摘要**（细节在 `internal/module/CLAUDE.md`）：跨模块只经 `contract` 与不可变 dto；service 不持 `*gorm.DB`、不切别人的表；两处及以上持久化写入必须同一事务。
-- **权限点**：新增接口在路由注册处声明权限点（`permission.RouteGroup` 的 `GET` / `POST` 第二参数），启动期幂等 upsert 入库，**不需要写 seed 迁移**；`internal/permission/codes.go` 的常量字符串不要手工改名（改名等于新建权限点，旧授权失效）。
-- **路由动词只用 `GET` 与 `POST`**。
-- **不要碰**：`git reset --hard` / `git checkout --` 一类会丢弃他人改动的命令；工作区里已有的无关改动保持原样。
-
-## 6. 已知限制
-
-- 前端打包脚本（`build-all.*` / `build-frontend.*` / `prepare-embed.*`）已于 2026-11 删除：它们依赖的 `web/` 前端工程与 `internal/embed/dist` 在本仓都不存在（实测前者 `cd web` 直接失败）。静态资源由 `internal/templates/static_embed.go` 的 `go:embed` 打进入二进制，发布用 `go build -o app ./cmd`。`deploy.sh` 保留，详见 [`scripts/README.md`](scripts/README.md)。
-- 生产构建用 `go build -o app ./cmd`，后台模板与 `/static` 须一并交付 —— 不能只复制一个二进制。
-- 开源发行仍待补可复现发行包与更完整的自动检查。
+每个脚本拦什么、判据是什么、豁免怎么记账 → 见各脚本的说明与 `scripts/check-all.sh`。
