@@ -7,7 +7,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"

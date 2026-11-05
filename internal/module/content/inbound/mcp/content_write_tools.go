@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"

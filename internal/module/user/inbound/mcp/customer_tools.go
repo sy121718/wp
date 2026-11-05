@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/module/user/contract"
 	"go_wp/internal/module/user/dto"
 	"go_wp/internal/module/user/enums"

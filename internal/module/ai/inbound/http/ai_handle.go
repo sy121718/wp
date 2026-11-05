@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"

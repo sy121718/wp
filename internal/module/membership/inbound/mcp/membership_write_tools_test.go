@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	membershipdto "go_wp/internal/module/membership/dto"
 )
 

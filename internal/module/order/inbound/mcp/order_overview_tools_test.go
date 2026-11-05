@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 )

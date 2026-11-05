@@ -6,7 +6,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	aienums "go_wp/internal/module/ai/enums"
 	aiprompt "go_wp/internal/module/ai/prompt"
 	"go_wp/pkg/uispec"

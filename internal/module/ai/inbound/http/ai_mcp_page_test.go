@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	orderenums "go_wp/internal/module/order/enums"

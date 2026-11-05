@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	orderdto "go_wp/internal/module/order/dto"
 	"go_wp/pkg/utils"
 )

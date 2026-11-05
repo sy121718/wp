@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	navigationdto "go_wp/internal/module/navigation/dto"
 )
 

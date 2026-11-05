@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"

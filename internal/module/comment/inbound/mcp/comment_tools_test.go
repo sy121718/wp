@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	"go_wp/pkg/utils"

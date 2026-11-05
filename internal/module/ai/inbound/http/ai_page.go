@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/adminctx"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"

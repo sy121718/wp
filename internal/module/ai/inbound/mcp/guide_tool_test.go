@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 )
 
 func invokeGuide(t *testing.T, topic string) (mcp.Result, error) {

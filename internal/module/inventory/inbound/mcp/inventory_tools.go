@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/module/inventory/contract"
 	"go_wp/internal/module/inventory/dto"
 	"go_wp/internal/module/inventory/enums"

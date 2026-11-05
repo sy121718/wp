@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
 )

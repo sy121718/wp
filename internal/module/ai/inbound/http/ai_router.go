@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"go_wp/config"
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	aicontract "go_wp/internal/module/ai/contract"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"

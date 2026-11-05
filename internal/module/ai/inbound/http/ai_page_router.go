@@ -9,7 +9,7 @@ import (
 	mw "go_wp/pkg/middleware"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
 	aiservice "go_wp/internal/module/ai/service"

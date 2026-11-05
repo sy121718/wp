@@ -13,7 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"

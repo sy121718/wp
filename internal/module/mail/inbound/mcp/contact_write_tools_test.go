@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	maildto "go_wp/internal/module/mail/dto"
 	mailmodel "go_wp/internal/module/mail/model"
 )

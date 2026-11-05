@@ -7,7 +7,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"

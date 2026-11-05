@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"

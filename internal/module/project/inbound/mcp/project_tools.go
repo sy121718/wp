@@ -7,7 +7,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 )

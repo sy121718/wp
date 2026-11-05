@@ -9,7 +9,7 @@ import (
 	"go_wp/config"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/mcp"
+	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
