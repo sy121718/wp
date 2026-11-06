@@ -3,13 +3,13 @@ package i18n
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -154,7 +154,8 @@ func UpdateEntry(ctx context.Context, e Entry) (err error) {
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
-	return reloadCacheAfterWrite()
+	reloadCacheAfterWrite()
+	return nil
 }
 
 func Categories(ctx context.Context) (out []string, err error) {
@@ -208,7 +209,8 @@ func SaveEntry(ctx context.Context, e Entry) (err error) {
 	}).Create(row).Error; err != nil {
 		return err
 	}
-	return reloadCacheAfterWrite()
+	reloadCacheAfterWrite()
+	return nil
 }
 
 func DeleteEntry(ctx context.Context, key, lang string) (err error) {
@@ -224,7 +226,8 @@ func DeleteEntry(ctx context.Context, key, lang string) (err error) {
 		Delete(nil).Error; err != nil {
 		return err
 	}
-	return reloadCacheAfterWrite()
+	reloadCacheAfterWrite()
+	return nil
 }
 
 // EntryRef 指向一条词条：(key, lang) 唯一确定 sys_i18n 里的一行。
@@ -265,7 +268,8 @@ func (e *MissingEntriesError) Error() string {
 //   - 删除按**锁到的行 id** 精确下刀，不按 item_key：同一 key 的多语言是不同行，
 //     按 key 删会连带删掉用户没勾的语言；
 //   - 删除与锁在同一事务，行锁保证这中间没有别的连接插进来；
-//   - 缓存重载只在提交之后做一次：事务回滚时缓存还是旧值，本来就不需要刷。
+//   - 缓存重载只在提交之后做一次：事务回滚时缓存还是旧值，本来就不需要刷；
+//   - 提交后的缓存重载失败只记日志并降级给自动刷新，不改写本次已提交的结果。
 //
 // 空选择在这里也直接拒绝：调用方不该把「什么都没选」当成「删了 0 条」的成功。
 func DeleteEntries(ctx context.Context, refs []EntryRef) (deleted int, err error) {
@@ -355,14 +359,20 @@ func DeleteEntries(ctx context.Context, refs []EntryRef) (deleted int, err error
 	}
 
 	// 缓存刷新放在提交之后：事务里刷新会把「还没提交的值」写进缓存。
-	return deleted, reloadCacheAfterWrite()
+	// 提交后的重载失败只降级给自动刷新，不把已提交的删除改写成失败结果。
+	reloadCacheAfterWrite()
+	return deleted, nil
 }
 
-func reloadCacheAfterWrite() error {
+// reloadCacheAfterWrite 在写事务提交后刷新词条缓存。
+//
+// 写入此刻已经提交：重载失败不能把一次已提交的写入伪装成失败，更不能宣称整批回滚。
+// 按既有降级语义记日志，由 i18n 自动刷新（或下一次写入）收敛；这与词条后台既有的
+// 「保存后立即重载、失败不当作保存失败」一致。
+func reloadCacheAfterWrite() {
 	if err := LoadCache(); err != nil {
-		return fmt.Errorf("词条已保存，但缓存重载失败（%w）：稍后会自动刷新", err)
+		logger.Error(err, "词条已写入，但缓存重载失败；将在下次自动刷新时生效")
 	}
-	return nil
 }
 
 func escapeLike(s string) string {
