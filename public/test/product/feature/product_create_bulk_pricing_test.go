@@ -28,6 +28,7 @@ func newCreateFlowEngine(t *testing.T, middleware ...gin.HandlerFunc) (*gin.Engi
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(middleware...)

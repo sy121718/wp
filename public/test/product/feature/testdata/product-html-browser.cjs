@@ -330,8 +330,11 @@ test('商品创建、主体编辑与列表删除的真实 HTML 链路', async t 
                 const rejectedBulk = page.waitForResponse(response => response.url() === `${origin}/api/product/bulk-delete`);
                 await page.click(bulkButton);
                 assert.equal((await rejectedBulk).status(), 409);
-                await page.waitForSelector('[data-list-bulk] [data-write-status] [data-ui-error] li');
-                assert.equal(await page.$$eval('[data-list-bulk] [data-ui-error] li', nodes => nodes.length), 1);
+                // 共享失败出口只播报一句拒绝原因；逐条 id/名称属于响应数据，
+                // 不再渲染成 DOM 列表（见 1bdde422 / 279f15bb 的语义收口）。
+                await page.waitForSelector('[data-list-bulk] [data-write-status] [data-ui-error]');
+                assert.match(await page.$eval('[data-list-bulk] [data-write-status]', node => node.textContent), /批量操作被拒绝/);
+                assert.equal(await page.$$eval('[data-list-bulk] [data-ui-error] li', nodes => nodes.length), 0);
                 assert.equal(await page.$$eval('[data-check-item]:checked', nodes => nodes.length), 2);
                 assert.equal(await page.$$eval('[data-write-host] > [data-write-status]:not([hidden])', nodes => nodes.length), 0);
                 await page.$eval('[data-check-item][value="11111111-1111-4111-8111-111111111111"]', (node, id) => { node.value = id; }, checks[1]);

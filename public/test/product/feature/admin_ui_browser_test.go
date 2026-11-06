@@ -89,7 +89,7 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	router.POST("/api/product/brand/seo-score", pageview.HTMLFragment, h.BrandSeoScore)
 	router.POST("/api/product/category/update", write.UpdateCategory)
 	router.POST("/api/product/brand/update", write.UpdateBrand)
-	router.Static("/static", attrTemplateRoot()+"/static")
+	mountStaticAssets(router)
 	return router
 }
 

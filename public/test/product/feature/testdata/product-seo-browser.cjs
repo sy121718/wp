@@ -68,6 +68,8 @@ test('SEO 三入口只交换 Jet 结果，保留未保存状态', async t => {
                     const id = process.env[`GOWP_SEO_${kind.toUpperCase()}`];
                     const path = `/api/product/${kind === 'product' ? '' : kind + '/'}seo-score`;
                     const selector = `[data-drawer-body] form[hx-post="${path}"]`;
+                    // 分类/品牌的实体保存表单：独立评分表单之外的未保存状态载体。
+                    const editForm = `[data-drawer-body] form[hx-post="/api/product/${kind}/update"]`;
                     const button = `${selector} button[type=submit]`;
                     const panel = `${selector} [data-product-seo-panel]`;
                     const status = `${selector} [data-write-status]`;
@@ -86,16 +88,16 @@ test('SEO 三入口只交换 Jet 结果，保留未保存状态', async t => {
                         assert.equal(writes.length, beforeOpen + 1, '商品抽屉应自动评分一次');
                     } else {
                         assert.equal(writes.length, beforeOpen, '分类品牌不应自动提交保存或评分');
-                        await page.$eval('[data-drawer-body] form[data-write-url] [name=name]', node => { node.value = ''; });
+                        await page.$eval(editForm, node => { node.querySelector('[name=name]').value = ''; });
                         await page.$eval('[data-drawer-body] trix-editor', (node, kind) => node.editor.loadHTML(`<p>未保存-${kind}</p>`), kind);
                     }
                     async function checkPreserved() {
                         assert.equal(await page.$eval('[data-drawer]', n => n.hidden), false, '评分不得关闭抽屉');
                         if (kind === 'product') assert.equal(await page.$eval('#product-edit-main [name=name]', n => n.value), '');
                         else {
-                            assert.equal(await page.$eval('[data-drawer-body] form[data-write-url] [name=name]', n => n.value), '');
+                            assert.equal(await page.$eval(editForm, n => n.querySelector('[name=name]').value), '');
                             assert.match(await page.$eval('[data-drawer-body] trix-editor', n => n.editor.getDocument().toString()), new RegExp(`未保存-${kind}`));
-                            assert.equal(await page.$eval('[data-drawer-body] form[data-write-url] [data-write-status]', n => n.hidden), true, '不能串入保存表单错误区');
+                            assert.equal(await page.$eval(`${editForm} [data-write-status]`, n => n.hidden), true, '不能串入保存表单错误区');
                         }
                     }
                     stage = `${kind} 成功、防重复和忙碌恢复`;
@@ -166,7 +168,7 @@ test('SEO 三入口只交换 Jet 结果，保留未保存状态', async t => {
                         await page.goto(origin + url + '&readonly=1', {waitUntil: 'networkidle0'});
                         await click(opener);
                         await page.waitForSelector(button + ':not([hidden]):not([disabled])');
-                        assert.equal(await page.$('[data-drawer-body] form[data-write-url]'), null, '仅评分权限不显示编辑表单');
+                        assert.equal(await page.$(editForm), null, '仅评分权限不显示编辑表单');
                         await click(button);
                         await page.waitForSelector(panel);
                         await page.keyboard.press('Escape');
