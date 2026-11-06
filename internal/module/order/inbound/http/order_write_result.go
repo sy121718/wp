@@ -55,23 +55,6 @@ func orderWriteFail(c *gin.Context, err error) {
 	pageview.FailStatus(c, response.ErrorStatus(err), orderErrScene, err)
 }
 
-// orderBulkResult 是批量写成功后的片段：只计数，逐条原因只在失败时出现。
-func orderBulkResult(c *gin.Context, done, skipped int, rows []orderBulkResultRow) {
-	c.HTML(http.StatusOK, "admin/order/order_bulk_result.html", gin.H{
-		"None":    done == 0 && skipped == 0,
-		"Done":    done,
-		"Skipped": skipped,
-		"Rows":    rows,
-	})
-}
-
-// orderBulkResultRow 是批量结果里的一条失败事实。
-type orderBulkResultRow struct {
-	ID      string
-	OK      bool
-	Message string
-}
-
 // orderBulkFail 是批量写被整批拒绝时的失败片段：逐条原因由 Jet 逐条取词。
 func orderBulkFail(c *gin.Context, items []facing.BlockedItem) {
 	pageview.FailStatus(c, http.StatusConflict, orderErrScene,

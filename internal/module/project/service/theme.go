@@ -125,7 +125,15 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 		}
 		settings = normalized
 	}
-	if err = s.model.UpdateTheme(ctx, entity.ProjectID, entity.ID, name, settings, time.Now().UTC()); err != nil {
+	if err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if lerr := s.lockAndCheckThemeRefsTx(ctx, tx, entity.ProjectID, settings); lerr != nil {
+			return lerr
+		}
+		if _, lerr := s.model.LockThemeTx(ctx, tx, entity.ProjectID, entity.ID); lerr != nil {
+			return lerr
+		}
+		return s.model.UpdateThemeTx(ctx, tx, entity.ProjectID, entity.ID, name, settings, time.Now().UTC())
+	}); err != nil {
 		return nil, err
 	}
 	entity.Name = name

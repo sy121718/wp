@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
@@ -29,6 +30,9 @@ type Service struct {
 	retire projectcontract.LocaleRetirePort
 
 	structureTemplateOpts projectcontract.StructureTemplateOptionsPort
+
+	// templateCheck 是主题写事务内的模板存在性复核端口；设置引用结构模板时必需。
+	templateCheck contenttemplatecontract.TemplateExistenceTxReader
 }
 
 func (s *Service) SetStructureTemplateOptionsPort(p projectcontract.StructureTemplateOptionsPort) {

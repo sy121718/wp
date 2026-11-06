@@ -11,6 +11,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 var (
@@ -59,7 +60,7 @@ func (h *Handle) orderStatusBulk(c *gin.Context) {
 		}})
 		return
 	}
-	orderBulkResult(c, len(ids), 0, nil)
+	pageview.Success(c)
 }
 
 // orderCancelBulk 是勾选多张订单的批量取消：备注即取消原因。
@@ -105,7 +106,7 @@ func (h *Handle) orderCancelBulk(c *gin.Context) {
 		}})
 		return
 	}
-	orderBulkResult(c, len(ids), 0, nil)
+	pageview.Success(c)
 }
 
 // orderFacingFallback 取一条业务错误按请求语言取词后的兜底文案；非业务错误统一给内部错误。

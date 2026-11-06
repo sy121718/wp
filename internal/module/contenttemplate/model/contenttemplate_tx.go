@@ -20,6 +20,28 @@ func (m *Model) LockDraftTx(ctx context.Context, tx *gorm.DB, projectID, id stri
 	return &row, err
 }
 
+// CreateWithVersionTx 在调用方事务内创建模板与首个版本。
+func (m *Model) CreateWithVersionTx(ctx context.Context, tx *gorm.DB, e *TemplateEntity, v *VersionEntity) error {
+	if err := rls.ScopeTx(tx, e.ProjectID); err != nil {
+		return err
+	}
+	if err := tx.WithContext(ctx).Create(e).Error; err != nil {
+		return err
+	}
+	if err := tx.WithContext(ctx).Create(v).Error; err != nil {
+		return err
+	}
+	res := tx.WithContext(ctx).Model(&TemplateEntity{}).Where("id = ?", e.ID).
+		Updates(map[string]any{"current_version_id": v.ID, "update_time": e.UpdatedAt})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (m *Model) SaveWithVersionTx(ctx context.Context, tx *gorm.DB, projectID string, expectedVersion int64, v *VersionEntity, e *TemplateEntity) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err

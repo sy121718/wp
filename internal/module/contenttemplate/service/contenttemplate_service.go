@@ -28,6 +28,9 @@ type Service struct {
 	invalidator DependencyInvalidator
 
 	impact contenttemplatecontract.TemplateImpactPort
+
+	// refs 是删除事务内的引用反查端口；未装配时删除 fail-closed。
+	refs contenttemplatecontract.TemplateReferenceTxReader
 }
 
 func NewService(m *contenttemplatemodel.Model, project projectcontract.ProjectService,

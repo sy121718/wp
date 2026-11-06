@@ -80,6 +80,11 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 	}
 
 	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		// 工程内容写锁先于任何实体 / 路径占用：文档新引用的结构模板必须与删除
+		// 共用同一把锁，锁内确认模板仍存在，删除提交后不会再写出悬空引用。
+		if lerr := s.lockAndCheckPageTemplateRefsTx(ctx, tx, page.ProjectID, doc); lerr != nil {
+			return lerr
+		}
 		if rerr := s.reservePathTx(ctx, tx, page.ProjectID, path, page.ID); rerr != nil {
 			return rerr
 		}
@@ -229,6 +234,10 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	routeLangs := s.enabledLangsOf(ctx, page.ProjectID)
 
 	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		// 与模板删除共用工程内容写锁，锁内确认新引用的结构模板仍存在。
+		if lerr := s.lockAndCheckPageTemplateRefsTx(ctx, tx, page.ProjectID, doc); lerr != nil {
+			return lerr
+		}
 		if changedPath {
 			if rerr := s.renameReservedAllLangsTx(ctx, tx, renameReservedInput{
 				ProjectID: page.ProjectID, PageID: page.ID,

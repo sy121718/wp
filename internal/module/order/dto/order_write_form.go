@@ -83,6 +83,31 @@ type CouponDeleteForm struct {
 	ProjectID string   `form:"projectId" json:"projectId"`
 }
 
+// CouponBulkDeleteReq 是批量删除优惠码的明确入口：整批同事务，合法重复 id 去重。
+type CouponBulkDeleteReq struct {
+	IDs       []string `form:"ids" json:"ids"`
+	ProjectID string   `form:"projectId" json:"projectId"`
+}
+
+// CouponBulkStatusForm 是批量启停的表单形状：status 用字符串承载，
+// 以便「未提供 / 空串 / 非法值」都与合法的 "0" / "1" 区分开。
+type CouponBulkStatusForm struct {
+	IDs       []string `form:"ids" json:"ids"`
+	Status    string   `form:"status" json:"status"`
+	ProjectID string   `form:"projectId" json:"projectId"`
+}
+
+// CouponBulkStatusReq 是批量启停的明确入口：只改 status，不整行覆盖其它字段。
+type CouponBulkStatusReq struct {
+	IDs []string
+
+	ProjectID string
+
+	Status int
+
+	OperatorID uint64
+}
+
 // CarrierStatusForm 是承运商的启停（沿用 update 端点，只提交 id 与 status）。
 type CarrierStatusForm struct {
 	ID        string `form:"id" json:"id"`

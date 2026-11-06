@@ -1,6 +1,6 @@
 # 框架基础归一与可视化工具化任务书
 
-当前状态：仅记录任务，尚未执行。用户明确要求本轮不删除目录、不实施重构；后续须收到明确执行指令再动手。
+当前状态：主体已实施并分批提交，**尚未达到本任务书自身的全部收口条件**。完成项、未完成项与证据见文末「实施进度」和「第五轮完成度核查」。后续未完成项须收到明确执行指令再继续。
 
 本任务书是本次重构的唯一实施清单，不是第二份架构规范；规范仍以 [AGENTS.md](AGENTS.md) 为准。原 [商品后台通用写反馈任务书](TASK-html-feedback.md) 保留为背景和原始用例索引，其实施安排由本文接替：不再由 `internal/adminui` 承担成功渲染，不分开交付第二套反馈，不按旧任务书默认运行全量门禁。
 
@@ -100,7 +100,7 @@ pkg/database/{retention,partition}
 ### 2. 视图、反馈和资产形成完整框架能力
 - 复用 pkg/view/render.go 的 Renderer、Slot、UseRenderer、RenderTemplate/Render，以及 failure.go 的显式协议与失败接线；吸收 adminui 真正通用的实现，删纯转发和同义 API。
 - 迁移 Jet 引擎、RenderScope、缓冲渲染、显示函数、失败中间件；保留直接 c.HTML 与共享出口一致的作用域和安全失败行为。共享 Jet Set 不存请求语言，早期 CSRF/鉴权拒绝也能渲染本请求语言。
-- **第二阶段先解显示宽度依赖**：[funcs.go](internal/templates/funcs.go#L12) 为 truncateWidth 依赖私有 seo。把 [DisplayWidth/TruncateDisplayWidth](internal/seo/display_width.go) 的纯 Unicode 算法一次迁入既有 pkg/utils，模板函数和 SEO 同时直引；删除旧实现，不留 alias。不等第三阶段整体 SEO 提取，也不把 SEO 评分语义引入 Jet 包。保留现有宽度/省略号行为并补中英文、边界值回归，不借搬函数重设计 Unicode 算法。
+- **显示宽度依赖已解耦（已完成）**：[pkg/view/jet/funcs.go](pkg/view/jet/funcs.go#L12) 的 truncateWidth 与 [pkg/utils/display_width.go](pkg/utils/display_width.go) 同源，`internal/seo` 旧实现已删除。
 - **错误日志主体落点已定**：框架失败渲染装配接收 `func(*gin.Context) int64` 请求主体回调，routers 以当前 CurrentUserID 正式入口提供；每次失败按当前请求取值，不写进全局。早期拒绝可为匿名 ID，不以主体缺失改变响应/泄漏；不额外推定所有页面已经运行 actor 中间件，也不新建一套身份上下文。
 - 以 fs.FS/已有 loader 交付唯一公共 UI 模板与资产，由应用装配一次，只挂一个 /static UI 静态资源出口；后台、可视化和其他页面共用它，不另开 admin/workbench/visitor 专用静态入口，也不各自维护 UI base/vendor/图标/主题令牌副本。
 - 业务页面可以选择公共布局/组件、传参数和设置允许的主题值；业务模板与操作适配器不构成另一套 UI。需要应用扩展资产时合入同一逻辑 FS 和同一出口，重名冲突明确报错，不借 overlay 覆盖公共控件形成后台分叉。开发磁盘与生产 embed 都经过同一装配；运行时 /static 与构建期内联读取同一份源，无旧目录镜像、复制生成第二份或磁盘兜底私有依赖。
@@ -162,9 +162,9 @@ pkg/database/{retention,partition}
 物理文件源与装配原语可以统一，**不按 `.html/.jet` 后缀盲目把所有模板塞进一个全局 Set**。页面、邮件、组件、插件的真实边界先按消费者核对；复用同一文件源不等于共享所有查找回退和缓存作用域。验证邮件/导航片段、工作台/商品区域、插件缺失与跨工程同名各一条真实链路。
 
 #### 图标单一源与先行顺序
-- 现有 SVG 在 [core/icons.go](internal/builder/core/icons.go)，浏览器 [icons.js](internal/templates/static/js/icons.js) 目前是人工同步副本。先迁 SVG 和目录元数据到 `pkg/view/ui/icons`（无 Gin、builder、internal 依赖），再迁 view/builder 消费者；不是让 view 反向依赖 builder。
+- SVG 与目录元数据已迁 [pkg/view/ui/icons](pkg/view/ui/icons/icons.go)（无 Gin、builder、internal 依赖），view/builder 消费者同源读取；不再是人工同步副本。
 - 新增最小模板入口 `icon(name)`，这是需要补设计/测试的新 API，不冒充已有函数。选择直接输出受控内联 SVG，复用现有目录与尺寸/样式语义；本次不新增 sprite、`<use>` 加载协议或第二个图标入口。只接受目录图标名，拒绝路径/任意 SVG/HTML；未知名返回可预期空结果，fallback 由公共模板显式选择目录中的固定图标。通过 Jet 的受控安全输出接线，不要求业务数据带 SVG 或调用方 `unsafe`。
-- builder 图标/列表/卡片等直接读同一中立源，删除 core 转发副本。迁移 [侧栏](internal/templates/admin/partials/sidebar.html) 等当前 `g.IconSVG | unsafe` 与重复内联 SVG：普通 UI 图标改公共入口，确为独立品牌/业务插图的资源按真实属主管理，不按 `<svg>` 数量批删。保留 aria/装饰隐藏、键盘与暗色样式；测试恶意图标名不能输出活动内容、未知名可控、Go/JS/Jet 同名等式。
+- builder 图标/列表/卡片等直接读同一中立源，core 转发副本已删除。迁移 [侧栏](pkg/view/ui/templates/admin/partials/sidebar.html) 等当前 `g.IconSVG | unsafe` 与重复内联 SVG：普通 UI 图标改公共入口，确为独立品牌/业务插图的资源按真实属主管理，不按 `<svg>` 数量批删。保留 aria/装饰隐藏、键盘与暗色样式；测试恶意图标名不能输出活动内容、未知名可控、Go/JS/Jet 同名等式。
 - 保留现有 `window.WPIcons`/picker 行为，但图标数据段确定性生成到公共 UI 资产树；生成命令放 UI 工具子目录，带 `-check` 与同源等式测试，不把整份图标表手写留 internal。SVG/目录是源，JS 数据段是唯一派生产物；只从公共 `/static` 提供，不改变工具组件名称。
 
 ### 3. 构建器与可视化工具化
@@ -188,7 +188,7 @@ pkg/database/{retention,partition}
 
 - `image` 的 media.VariantRef 只是输入耦合，改为工具自有变体形状/probe，不因为 import 私有契约就把图像展示整体判业务。
 - articlelist、cardstack、productcard、searchresults 当前包含固定内容种类、商品字段/文案或本站搜索端点；本次先归实际业务扩展，内部仍复用工具卡片/列表。暂不为使其“通用”改现有文档语义，也不按组件名称自动判断。以后确有第二个独立消费者再单独提取纯展示。
-- [jetview.go](internal/builder/jetview.go#L103-L201) 的 `nodeViewOf` 目前是硬编码分发，`core.Register` 只登记描述/模板，**仅把业务包移出并 init 注册还不能渲染**。把通用 nodeView 骨架所需的最小视图契约落在工具内，沿用组件注册表增加一个可选的 BuildView 入口；业务组件及对应 jetview_product 等构建函数在应用扩展实现并注册。RenderContext 只交窄输入，扩展返回中立视图，不使用未导出的工具私有类型，不让 pkg 反向 import extensions。不新造第二个独立注册系统。
+- [pkg/builder/jetview.go](pkg/builder/jetview.go) 的 `nodeViewOf` 已完成改造：硬编码分发改为注册表可选 `ViewBuilder` 入口（`core.NodeView`），业务组件的视图构建函数在应用扩展实现并注册。RenderContext 只交窄输入，扩展返回中立视图，不使用未导出的工具私有类型，不让 pkg 反向 import extensions；未新造第二个注册系统。
 - 通用组件仍由工具导入/登记，业务扩展由 routers 的既有 builder 装配明确导入登记（绝不能由 pkg/builder 导入 internal 扩展）；完成登记后再创建组件模板 Set，再读 ComponentSchemas/RegistryVersion/生成契约。保持全量应用目录/版本摘要一致，不能仅缓存 base 后漏算扩展；本次不支持随请求动态注册。
 - 出口测试至少各编译一个通用组件与业务扩展，验证组件描述、schema、模板、BuildView、CSS/特性注册和生成契约一致；未注册扩展明确报错，不通过旧 switch 兜底内部包。
 
@@ -260,7 +260,7 @@ pkg/database/{retention,partition}
 - 不顺手重写 AI 协议客户端、邮件块编译/自动化、media 变体等复杂域。这些候选只保留为“需专项核实”，本次不声称已完成逐函数审计。
 
 ### 7. 成组清退与规则收口
-- 待执行：删除 [internal/siteservices/SPEC.md](internal/siteservices/SPEC.md) 及其随后变空的目录，清理真实引用；该目录目前仅有归类说明，无 Go 实现、无 Go 导入。不提取新包、不补站点服务门面，不删除说明中列举的其他真实能力包。执行前重新确认目录内容；若出现新增实现或其他文件，停止该删除项并说明。验收：目录及失效引用消失，实际服务包保持不变。本轮不执行此项。
+- 已完成：`internal/siteservices` 目录与 SPEC.md 已删除，未新建替代包，说明中列举的其他真实能力包仍在各自位置。
 - 删除 pkg/view/redirect.go 的 AfterWrite/GoTo/Back/HXRedirect 及维护旧契约的测试；RenderJump 按第二节的函数切分完成全部真实端点迁移后，删除 shell.Jump、RenderJump、adminui.RenderJumpPage/With 与只服务旧跳转链的 jump.html/旧测试。保留安全回跳路径解析，不清退站点规范化等非 UI 成功导航协议。
 - shell/backref、adminui 的 Msg/Slot/bulk 等转发按真实语义合并；替换 LocalReturnPath 单消费者后删除同义别名。无引用仅是线索，删除前回读实现、测试与动态/生成引用。
 - 清退 json_swap.js、form-json-v4.js、专门维护退役执行器行为的测试与 fixture，以及 check-controls-no-htmx.sh 中 json_swap 白名单；保留“不能恢复加载”的边界测试，并覆盖框架与应用两个资产源。
@@ -277,7 +277,7 @@ pkg/database/{retention,partition}
 | [页面 GET 鉴权](scripts/check-page-get-authz.sh)、[前端命名](scripts/check-frontend-naming.sh)、[组件颜色](scripts/check-component-colors.sh)、[JS 控件](scripts/check-js-controls.sh) | 根/必要语料缺失明确失败；保留 JS 控件现有空数组拒绝，补实际缺失的组件 CSS 与命名空提取检查。同步正式路径、路由快照新鲜度和实际消费点，不硬编码旧文件数；不得只改聚合入口而漏掉脚本自身 |
 | [表单绑定](internal/architecture/write_binding_form_tag_test.go)、[模板展示](scripts/check-template-presentation.sh)、HTMX/写属性/字段/取词检查 | 同时扫 pkg 公共模板资产、工具模板资产与应用模板；不能只把旧 internal 路径替换成 pkg 后漏扫应用 |
 | [发布 SEO 边界](internal/architecture/publication_seo_audit_boundary_test.go)、[契约依赖](scripts/check-contract-deps.sh)、组件 CSS/资源测试 | 改正式包路径并保留传递依赖与职责断言；扫通用组件与业务扩展两个真实属主 |
-| [shell 迁移脚本](scripts/check-shell-migration.sh)、[shell 台账](scripts/shell-migration-allow.txt) | 在全部调用迁完且语义由新边界覆盖后成组退役，移除聚合入口的真实引用；不能改成总是通过。仍需保留无旧包/无后端写后导航的断言 |
+| [shell 迁移脚本](scripts/check-shell-migration.sh) | 已完成：旧包删除后脚本改为终局断言，14 行计数基线 `shell-migration-allow.txt` 已删除；无旧包/无后端写后导航的断言保留 |
 | [权限缺口](scripts/check-permission-gaps.sh)、路由导出与对账测试 | 同步真实注册数据源和 DECLARED/EXEMPT 导出格式；依赖已迁移的测试 PostgreSQL 与 psql，在第五阶段的 DB 出口验证，不能只跑静态文本扫描 |
 | UI 资产/旧执行器白名单、workbench 契约 | 门禁检查唯一图标生成源、实际 `/static` 注册、框架及应用资源两侧；同步 embed、测试 fixture 与生成脚本路径，保留“不得加载已退役执行器”的断言 |
 
@@ -453,11 +453,52 @@ pkg/database/{retention,partition}
 
 仍未做的：真实浏览器三视口验收（表单/抽屉/可视化链路）；`check-all.sh` 的 10 项既有红与干净 HEAD 一致，非本轮引入。
 
+
+## 第五轮完成度核查（只读）
+
+核查基线：`HEAD=1bdde422`，工作区除本文档外无改动。结论按任务书自身条款分三类，`go build ./...` 已通过。
+
+### 已达成
+
+| 条款 | 证据 |
+|---|---|
+| pkg 不依赖 internal | `pkg/binding/context.go` 已无 `internal` 导入；生产代码零 `pkg→internal`（`pkg/builder` 的 internal 引用只在测试） |
+| 旧私有包清退 | `internal/text`、`internal/shell`、`internal/backref`、`internal/permission`、`internal/mcp`、`internal/seo`、`internal/uispec`、`internal/retention`、`internal/siteservices` 均已删除 |
+| 权限单源 | `internal/permission` 删除；登记机制在 `pkg/middleware`（`RouteSpec`/`Declare`/`Freeze`）；启动不再反写 |
+| 发布内核 | `pkg/publish` 存在，`internal/pipeline` 只留应用编译适配 |
+| 构建器内核 | `pkg/builder` 存在，业务组件在 `internal/builder/extensions` |
+| 单套 UI 与单入口 | 只有一处 `/static` UI 注册（`internal/routers/assembly.go`）；`pkg/view/ui` 为公共 UI 属主 |
+| 图标 | `pkg/view/ui/icons` 单一源，`icon(name)` 模板入口已注册 |
+| 生命周期 | `pkg/lifecycle` 存在，`config/runtime.go` 已改为调用它 |
+| 退役执行器源 | `json_swap.js`、`form-json-v4.js` 源已删除，`check-controls-no-htmx.sh` 白名单已移除 |
+
+### 未达成（按任务书条款）
+
+1. **阶段 7「无 adminui 旧生产包」未完成。** `internal/adminui` 仍有 21 个 Go 文件、41 处生产导入，承担 87 处 `RenderPage`、18 处 `RenderBare`、11 处 `RenderFragment`、8 处 `AttachPaginationView`、7 处 `PageErrorFact`、7 处 `InternalMsg`。它是当前页面渲染主入口，不是残余转发。任务书约束 8 明确要求该包不存在。
+2. **规则文档未同步。** [AGENTS.md](AGENTS.md) 第 59、91、132 行仍把 `internal/adminui` 写成合法渲染基础设施；`pkg/CLAUDE.md` 未列入 `pkg/middleware`、`pkg/builder`、`pkg/publish`、`pkg/mcp`、`pkg/lifecycle`。阶段 7 的「同步规则」未真正收口。
+3. **可视化编辑器未工具化。** 任务书第三节要求 `pkg/builder/editor` 与编辑器 JS/CSS 随工具交付；实际 34 个 workbench 脚本、592K 仍在 `internal/templates/static/js/workbench`，`pkg/builder/editor` 不存在。
+4. **`check-js-controls.sh` 实际是红的，且由本轮资产搬迁引入。** 当前 37 个 `.test.cjs` 中 25 个失败。根因：`97a3f4fa` 把 `js/ui/*.js` 移到 `pkg/view/ui/assets/js/ui`，但测试仍留在 `internal/templates/static/js`，并用 `__dirname + '/write-base.js'`、`'htmx.min.js'` 相对读取源文件，全部 `ENOENT`。
+5. **两个僵尸测试未清退。** `json_swap.test.cjs`、`form-json-browser.test.cjs` 仍分别读取已删除的 `json_swap.js` 与 `vendor/form-json/form-json-v4.js`，必然失败；任务书第七节要求「维护退役执行器行为的测试与 fixture」成组清退。
+6. **`theme_schema.go` 未删。** `pkg/builder/theme_schema.go` 仍只有一行 `package builder`，任务书第三节点名要求删除。
+7. **仍有专用成功模板直连。** `admin_i18n_write.go:101` 直接渲染 `admin/system/i18n_write_success.html`，属「Controller 指定成功提示碎片」，与统一的 `view.Success` 出口不一致。
+8. **控制器侧取词未清完。** `sysconfig`、`order`、`masterdata`、`comment`、`mail` 等仍有 `i18n.TranslateFunc(...)` 提前取词；任务书已把 content/inventory 列为未做，但其余域未在文档中显式登记。
+9. **`scaffold` 仍硬编码 `go_wp/internal/module/` 前缀。** 生成器用字符串模板写入该路径，未按任务书「模块路径作为实际输入」参数化。
+
+### 未验证
+
+- 真实浏览器三视口（1440/768/375 × 鼠标/滚轮/触摸/键盘）未执行。
+- 真实 PG feature 的上次结果来自实施时记录，本轮未复跑。
+- 第 4 条 JS 门禁失败已实际运行确认；其余门禁未全部复跑。
+
+### 直接后果
+
+任务书首行此前写「尚未执行」、文末却记录四轮完成，两者矛盾，已改为「主体已实施、未全部收口」。第 4、5 条属会变红的门禁回归，应在继续任何新重构前先修：把测试移到资产属主或改为从 `pkg/view/ui/assets` 读取，并删除两个僵尸测试。
+
 ## 关键实施入口
 
 - 共享视图：[render.go](pkg/view/render.go)、[failure.go](pkg/view/failure.go)、[prepare.go](internal/adminui/prepare.go)、[html_failure.go](internal/adminui/html_failure.go)、[request_text.go](pkg/view/jet/request_text.go)。
-- 模板与资产：[jet_render.go](internal/templates/jet_render.go)、[embed_loader.go](internal/templates/embed_loader.go)、[plugin_loader.go](internal/templates/plugin_loader.go)、[write-base.js](internal/templates/static/js/ui/write-base.js)。
+- 模板与资产：[jet_adapter.go](internal/templates/jet_adapter.go)、[owned_templates.go](internal/templates/owned_templates.go)、[plugin_loader.go](internal/templates/plugin_loader.go)、[write-base.js](pkg/view/ui/assets/js/ui/write-base.js)。
 - 构建工具：[builder.go](pkg/builder/builder.go)、[core/render.go](pkg/builder/core/render.go)、[ui_script.go](pkg/builder/ui_script.go)、[ui_css_split.go](pkg/builder/ui_css_split.go)、[业务扩展](internal/builder/extensions/views/views.go)。
 - 编辑器：[index.js](internal/templates/static/js/workbench/index.js)、[methods/api.js](internal/templates/static/js/workbench/methods/api.js)、[workbench/layout.html](internal/templates/workbench/layout.html)。
-- 发布：[publisher.go](internal/pipeline/publisher.go)、[publication_pathlock.go](internal/pipeline/publication_pathlock.go)、[assembly_publish.go](internal/routers/assembly_publish.go)。
-- 横切机制：[routes.go](pkg/middleware/routes.go)（路由与权限登记）、[runtime.go](config/runtime.go)、[register.go](config/register.go)、[scaffold.go](internal/module/plugin/scaffold/scaffold.go)、[743 权限目录](public/migrations/743_permission_directory_backfill.sql)。
+- 发布：[pkg/publish](pkg/publish)、[publisher.go](internal/pipeline/publisher.go)、[publication_pathlock.go](pkg/publish/publication_pathlock.go)、[assembly_publish.go](internal/routers/assembly_publish.go)。
+- 横切机制：[routes.go](pkg/middleware/routes.go)（路由与权限登记）、[lifecycle.go](pkg/lifecycle/lifecycle.go)、[runtime.go](config/runtime.go)、[register.go](config/register.go)、[scaffold.go](pkg/scaffold/scaffold.go)、[743 权限目录](public/migrations/743_permission_directory_backfill.sql)。

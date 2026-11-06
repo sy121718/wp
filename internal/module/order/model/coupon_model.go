@@ -159,6 +159,64 @@ func (m *CouponModel) LockByIDTx(ctx context.Context, tx *gorm.DB, projectID str
 	return e, nil
 }
 
+// LockByIDsTx 在同一工程内按 id 升序锁定多张券，供批量写在同一事务里复核存在性。
+// 稳定的 id 升序是避免两个批量请求反序加锁而死锁的前提。
+func (m *CouponModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, projectID string, ids []uint64) (list []*CouponEntity, err error) {
+	if tx == nil || len(ids) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
+	err = tx.WithContext(ctx).Model(&CouponEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
+// DeleteTx 在调用方事务内删除一张券并返回受影响行数。
+// 具名 Tx 方法自带工程作用域：跨工程批次在同一事务里逐段切换，不依赖调用方兜底。
+func (m *CouponModel) DeleteTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64) (affected int64, err error) {
+	if tx == nil || strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	res := tx.WithContext(ctx).Model(&CouponEntity{}).
+		Where("project_id = ? AND id = ?", projectID, id).
+		Delete(&CouponEntity{})
+	return res.RowsAffected, res.Error
+}
+
+// UpdateStatusTx 在调用方事务内只改状态（附带审计列），不整行覆盖其它字段。
+// 具名 Tx 方法自带工程作用域，跨工程批次逐段切换。
+func (m *CouponModel) UpdateStatusTx(ctx context.Context, tx *gorm.DB, projectID string, ids []uint64,
+	status int, updateBy uint64, now time.Time) (affected int64, err error) {
+	if tx == nil || strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	res := tx.WithContext(ctx).Model(&CouponEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).
+		Updates(map[string]any{
+			"status":      status,
+			"update_by":   updateBy,
+			"update_time": now,
+		})
+	return res.RowsAffected, res.Error
+}
+
 func (m *CouponModel) List(ctx context.Context, f CouponFilter) (list []*CouponEntity, total int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
 		return m.listLocked(tx, f, &list, &total)
@@ -206,15 +264,6 @@ func (m *CouponModel) UpdateFields(ctx context.Context, projectID string, id uin
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(fields).Error
-	})
-}
-
-func (m *CouponModel) Delete(ctx context.Context, projectID string, id uint64) (err error) {
-	if strings.TrimSpace(projectID) == "" {
-		return ErrProjectRequired
-	}
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Delete(&CouponEntity{}).Error
 	})
 }
 

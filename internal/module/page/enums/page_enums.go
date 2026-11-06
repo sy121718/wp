@@ -51,6 +51,10 @@ const (
 	ErrRedirectLoop        = "ErrRedirectLoop"
 
 	ErrRedirectConflict = "ErrRedirectConflict"
+
+	// ErrBatchReject 是多项批量删除被整体拒绝时的公共主消息；
+	// 单条请求仍给该条的具体业务原因。
+	ErrBatchReject = "pageBatchReject"
 )
 
 const (

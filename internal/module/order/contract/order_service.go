@@ -161,6 +161,13 @@ type CouponService interface {
 	ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (res *orderdto.CouponListResp, err error)
 	GetCoupon(ctx context.Context, couponID uint64) (res *orderdto.CouponResp, err error)
 	DeleteCoupon(ctx context.Context, couponID uint64) (err error)
+
+	// DeleteCoupons 是批量删除的明确入口：整批同一事务，任一失败整批回滚。
+	DeleteCoupons(ctx context.Context, req *orderdto.CouponBulkDeleteReq) (deleted int64, err error)
+
+	// SetCouponsStatus 是批量启停的明确入口：只写 status，不整行覆盖其它字段。
+	SetCouponsStatus(ctx context.Context, req *orderdto.CouponBulkStatusReq) (updated int64, err error)
+
 	ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error)
 	ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error)
 

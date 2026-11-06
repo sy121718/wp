@@ -5,18 +5,6 @@ import (
 	"go_wp/pkg/utils"
 )
 
-type BulkDeleteItemResult struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
-	Message string `json:"message,omitempty"`
-}
-
-type BulkDeleteResp struct {
-	Deleted int                    `json:"deleted"`
-	Skipped int                    `json:"skipped"`
-	Items   []BulkDeleteItemResult `json:"items"`
-}
-
 const (
 	ReferenceKindPage = "page"
 

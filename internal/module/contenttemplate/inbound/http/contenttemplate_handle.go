@@ -1,15 +1,10 @@
 package contenttemplatehttp
 
 import (
-	"errors"
-	"fmt"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
@@ -70,63 +65,29 @@ func (h *Handle) Update(c *gin.Context) {
 	response.SuccessWithMessage(c, contenttemplateenums.MsgUpdateSuccess, res)
 }
 
-// Delete 接收标准表单：id 表示单条，ids 表示批量；两种形态互斥。
-// 逐条结果作为业务事实交 Jet 片段，失败不再落到 JSON 出口。
+// Delete 接收标准表单：id 表示单条，ids 表示批量，两种形态互斥；
+// 同一次 BulkDelete 事务完成整批删除，成功走统一成功出口，失败走共享失败出口。
 func (h *Handle) Delete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	ids, ok := contentTemplateDeleteIDs(c)
-	if !ok {
+	var form contenttemplatedto.DeleteForm
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, contentTemplateErrScene, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam))
 		return
 	}
-	normalized, err := bulkids.Normalize(ids)
-	if err != nil {
-		var limit *bulkids.IDsError
-		if errors.As(err, &limit) {
-			message := fmt.Sprintf(i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c)), strconv.Itoa(limit.Max), strconv.Itoa(limit.Count))
-			pageview.FailStatus(c, http.StatusBadRequest, "contenttemplate", errors.New(message))
-			return
-		}
-		pageview.FailStatus(c, http.StatusBadRequest, "contenttemplate", contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam))
+	id := strings.TrimSpace(form.ID)
+	if (id == "") == (len(form.IDs) == 0) {
+		pageview.FailStatus(c, http.StatusBadRequest, contentTemplateErrScene, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam))
 		return
 	}
-	result := contenttemplatedto.BulkDeleteResp{Items: make([]contenttemplatedto.BulkDeleteItemResult, 0, len(normalized))}
-	errs := make([]error, 0, len(normalized))
-	for _, id := range normalized {
-		item := contenttemplatedto.BulkDeleteItemResult{ID: id}
-		delErr := h.svc.Delete(c.Request.Context(), &contenttemplatedto.DeleteReq{ID: id})
-		if delErr != nil {
-			item.Message = delErr.Error()
-			result.Skipped++
-		} else {
-			item.Deleted = true
-			result.Deleted++
-		}
-		result.Items = append(result.Items, item)
-		errs = append(errs, delErr)
-	}
-	c.HTML(http.StatusOK, "admin/contenttemplate/content_template_delete_result.html", pageview.Objects(
-		pageview.Object("Result", result),
-		pageview.Object("Rows", contentTemplateDeleteRows(c, result, errs)),
-	))
-}
-
-// contentTemplateDeleteIDs 只读标准表单编码，并拒绝同时提交 id 与 ids。
-func contentTemplateDeleteIDs(c *gin.Context) ([]string, bool) {
-	if err := c.Request.ParseForm(); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, "contenttemplate", err)
-		return nil, false
-	}
-	form := c.Request.PostForm
-	id := strings.TrimSpace(form.Get("id"))
-	batch := form["ids"]
-	if (id == "") == (len(batch) == 0) {
-		pageview.FailStatus(c, http.StatusBadRequest, "contenttemplate", contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam))
-		return nil, false
-	}
+	req := &contenttemplatedto.BulkDeleteReq{IDs: form.IDs}
 	if id != "" {
-		return []string{id}, true
+		req.IDs = []string{id}
 	}
-	return batch, true
+	if err := h.svc.BulkDelete(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, contentTemplateErrScene, err)
+		return
+	}
+	pageview.Success(c)
 }
 
 func (h *Handle) Get(c *gin.Context) {

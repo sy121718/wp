@@ -10,6 +10,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/facing"
+	pageview "go_wp/pkg/view"
 )
 
 // returnBulkApprove 是勾选多条退货的批量通过。
@@ -47,7 +48,7 @@ func (h *Handle) returnBulkApprove(c *gin.Context) {
 		}})
 		return
 	}
-	orderBulkResult(c, len(ids), 0, nil)
+	pageview.Success(c)
 }
 
 // returnBulkReject 是勾选多条退货的批量驳回：备注即驳回原因，必填。
@@ -89,5 +90,5 @@ func (h *Handle) returnBulkReject(c *gin.Context) {
 		}})
 		return
 	}
-	orderBulkResult(c, len(ids), 0, nil)
+	pageview.Success(c)
 }

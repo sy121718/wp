@@ -38,6 +38,11 @@ func (m *Model) ThemeDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&ThemeEntity{})
 }
 
+// Transaction 提供一个工程作用域内的事务，供主题设置等写入口统一提交。
+func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
 func (m *Model) Create(ctx context.Context, e *ProjectEntity) (err error) {
 	return m.DB(ctx).Create(e).Error
 }

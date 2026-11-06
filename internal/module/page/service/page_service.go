@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/module/artifact/contract"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/blueprint/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	"go_wp/internal/module/media/contract"
 	"go_wp/internal/module/navigation/contract"
 	"go_wp/internal/module/page/contract"
@@ -60,6 +61,9 @@ type Service struct {
 
 	structureTemplates pipeline.StructureTemplatePort
 	actionInstances    presentationcontract.PublishedInstanceLocator
+
+	// templateCheck 是写事务内的模板存在性复核端口；文档引用结构模板时必需。
+	templateCheck contenttemplatecontract.TemplateExistenceTxReader
 
 	contentStore i18n.ContentStore
 

@@ -188,30 +188,18 @@ func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) 
 	return res, nil
 }
 
+// DeleteCoupon 是单条删除，与批量删除共用同一条事务内删除规则：
+// 锁券行、复核存在性、在同一事务里计核销并删除，按受影响行数确认。
 func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error) {
 	if couponID == 0 {
 		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	projectID, perr := s.locateCouponProject(ctx, couponID)
-	if perr != nil {
-		return perr
+	targets, missing, terr := s.resolveCouponTargets(ctx, []uint64{couponID}, "")
+	if terr != nil {
+		return terr
 	}
-	e, err := s.coupons.GetByID(ctx, projectID, couponID)
-	if err != nil {
-		return err
-	}
-	if e == nil {
-		return orderenums.Err(orderenums.ErrCouponNotFound)
-	}
-	used, cerr := s.coupons.CountRedemptions(ctx, e.ProjectID, couponID, nil)
-	if cerr != nil {
-		return cerr
-	}
-	if used > 0 {
-		return orderenums.Err(orderenums.ErrCouponInUse)
-	}
-
-	return s.coupons.Delete(ctx, e.ProjectID, couponID)
+	_, err = s.deleteCouponTargetsTx(ctx, targets, missing, 1)
+	return err
 }
 
 func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error) {

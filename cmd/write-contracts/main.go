@@ -62,6 +62,19 @@ type sourceStruct struct {
 type sourceIndex struct {
 	Bindings map[string]bodyBinding
 	Types    map[string]sourceStruct
+
+	// funcs 是本次扫描到的全部函数体，用于识别「处理器把请求委托给另一个处理器」：
+	// 这种端点的输入形状由被委托方决定，不能只取本函数里的那一个 binder 冒充完整契约。
+	funcs map[string]*funcSource
+}
+
+type funcSource struct {
+	name string
+	body *ast.BlockStmt
+	pkg  string
+	// ctxParams 是本函数里类型为 gin.Context 的参数名，用于识别「把请求委托给另一个处理器」。
+	ctxParams map[string]bool
+	imports   map[string]string
 }
 
 func run(check bool) error {
@@ -165,7 +178,11 @@ func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema
 }
 
 func scanSources(root, prefix string) (sourceIndex, error) {
-	index := sourceIndex{Bindings: map[string]bodyBinding{}, Types: map[string]sourceStruct{}}
+	index := sourceIndex{
+		Bindings: map[string]bodyBinding{},
+		Types:    map[string]sourceStruct{},
+		funcs:    map[string]*funcSource{},
+	}
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -213,6 +230,7 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 				if node.Recv != nil && len(node.Recv.List) == 1 {
 					name = typeName(node.Recv.List[0].Type, pkg, imports) + "." + node.Name.Name
 				}
+				index.funcs[name] = &funcSource{name: name, body: node.Body, pkg: pkg, imports: imports}
 				if binding := nativeBinding(node.Body, pkg, imports); binding.DTO != "" || binding.Reason != "" {
 					index.Bindings[name] = binding
 				}

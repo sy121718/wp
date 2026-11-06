@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
-	"sort"
 	"strings"
 	"time"
 
@@ -61,9 +60,15 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 
 	verID := uuid.NewString()
 	e.CurrentVersionID = &verID
-	if err = s.m.CreateWithVersion(ctx, e, &contenttemplatemodel.VersionEntity{
-		ID: verID, TemplateID: e.ID, Version: 1, Document: doc,
-		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: now,
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		// 文档里的结构模板绑定与删除共用工程内容写锁，锁内确认模板仍存在。
+		if lerr := s.LockAndCheckTemplateRefsTx(ctx, tx, projectID, doc); lerr != nil {
+			return lerr
+		}
+		return s.m.CreateWithVersionTx(ctx, tx, e, &contenttemplatemodel.VersionEntity{
+			ID: verID, TemplateID: e.ID, Version: 1, Document: doc,
+			SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: now,
+		})
 	}); err != nil {
 		return nil, err
 	}
@@ -136,94 +141,13 @@ func (s *Service) Activate(ctx context.Context, req *contenttemplatedto.Activate
 	return toResp(e), nil
 }
 
+// Delete 是单条删除：与批量删除共用同一条事务规则（工程内容锁、锁内重验引用、
+// 整批原子写入），单条失败时主消息取该条的具体业务原因。
 func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
-	e, err := s.locateTemplate(ctx, req.ID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
-		}
-		return err
-	}
-
-	if contenttemplatemodel.IsStructureTemplateType(e.EntityType) {
-		refs, rerr := s.structureTemplateRefs(ctx, e.ProjectID, e.ID)
-		if rerr != nil {
-
-			logger.Scene("contenttemplate").With("templateId", e.ID).Error(rerr, "结构模板引用检查失败，已拒绝删除")
-			return rerr
-		}
-		if len(refs) > 0 {
-			logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(refs, "；")).
-				Warn("结构模板删除被拒绝：仍被其它模板绑定为结构槽位")
-
-			return contenttemplateenums.ErrDetail(contenttemplateenums.ErrStructureTemplateInUse, strings.Join(refs, "；"))
-		}
-	}
-
-	bindingRefs, berr := s.referencesOfTemplate(ctx, e.ProjectID, e.ID)
-	if berr != nil {
-
-		logger.Scene("contenttemplate").With("templateId", e.ID).Error(berr, "模板引用检查失败，已拒绝删除")
-		return berr
-	}
-	if len(bindingRefs) > 0 {
-		logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(bindingRefs, "；")).
-			Warn("模板删除被拒绝：仍被页面或实例引用")
-		return contenttemplateenums.ErrDetail(contenttemplateenums.ErrTemplateInUse, strings.Join(bindingRefs, "；"))
-	}
-	if err = s.m.DeleteWithHistory(ctx, e.ProjectID, e.ID); err != nil {
-		if isForeignKeyViolation(err) {
-			return contenttemplateenums.Err(contenttemplateenums.ErrTemplateInUse)
-		}
-		logger.Scene("contenttemplate").With("templateId", e.ID).Error(err, "删除内容模板失败")
-		return err
-	}
-	return nil
-}
-
-func (s *Service) structureTemplateRefs(ctx context.Context, projectID, templateID string) ([]string, error) {
-	rows, err := s.m.ListStructureBindingRows(ctx, projectID, templateID)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, row := range rows {
-		var doc struct {
-			Settings struct {
-				Structure builder.StructureBindings `json:"structure"`
-			} `json:"settings"`
-		}
-		if err := json.Unmarshal(row.DraftDocument, &doc); err != nil {
-
-			out = append(out, fmt.Sprintf("模板《%s》（文档无法解析，无法判定槽位）", row.Name))
-			continue
-		}
-		var slots []string
-		for slot, id := range doc.Settings.Structure.TemplateBindings() {
-			if id == templateID {
-				slots = append(slots, structureSlotLabel(slot))
-			}
-		}
-		if len(slots) == 0 {
-
-			slots = append(slots, "结构绑定")
-		}
-		sort.Strings(slots)
-		out = append(out, fmt.Sprintf("模板《%s》的%s", row.Name, strings.Join(slots, " / ")))
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-func isForeignKeyViolation(err error) bool {
-	var state interface{ SQLState() string }
-	if errors.As(err, &state) {
-		return state.SQLState() == "23503"
-	}
-	return false
+	return s.BulkDelete(ctx, &contenttemplatedto.BulkDeleteReq{IDs: []string{req.ID}})
 }
 
 func hashDocument(doc []byte) string {
@@ -485,30 +409,6 @@ func (s *Service) Impact(ctx context.Context, req *contenttemplatedto.ImpactReq)
 	return &contenttemplatedto.ImpactResp{Available: true, References: refs, Unparsable: unparsable}, nil
 }
 
-func (s *Service) referencesOfTemplate(ctx context.Context, projectID, templateID string) (refs []string, err error) {
-	if s.impact == nil {
-		logger.Scene("contenttemplate").With("templateId", templateID).
-			Warn("模板引用反查未装配：本次删除未检查页面 / 实例绑定")
-		return nil, nil
-	}
-	ids, lerr := s.templateIDsOf(ctx, projectID)
-	if lerr != nil {
-		return nil, lerr
-	}
-	all, _, ierr := s.impact.ListTemplateReferences(ctx, projectID, ids)
-	if ierr != nil {
-		return nil, ierr
-	}
-	for _, r := range all {
-		if r.TemplateID != templateID {
-			continue
-		}
-		refs = append(refs, templateReferenceText(r))
-	}
-	sort.Strings(refs)
-	return refs, nil
-}
-
 func (s *Service) templateIDsOf(ctx context.Context, projectID string) ([]string, error) {
 	rows, err := s.m.List(ctx, projectID, "")
 	if err != nil {
@@ -524,41 +424,4 @@ func (s *Service) templateIDsOf(ctx context.Context, projectID string) ([]string
 		}
 	}
 	return out, nil
-}
-
-func templateReferenceText(r contenttemplatedto.TemplateReference) string {
-	switch r.Kind {
-	case contenttemplatedto.ReferenceKindPage:
-		name := strings.TrimSpace(r.PageTitle)
-		if name == "" {
-			name = strings.TrimSpace(r.PagePath)
-		}
-		if name == "" {
-			name = r.PageID
-		}
-		if len(r.Slots) > 0 {
-			return fmt.Sprintf("页面《%s》的%s", name, slotsLabelText(r.Slots))
-		}
-		return fmt.Sprintf("页面《%s》", name)
-	case contenttemplatedto.ReferenceKindInstance:
-		name := strings.TrimSpace(r.URLPath)
-		if name == "" {
-			name = r.EntityType + ":" + r.EntityID
-		}
-		if strings.TrimSpace(r.EntityType) != "" {
-			return fmt.Sprintf("自动发布实例（%s %s，%s）", r.EntityType, r.EntityID, name)
-		}
-		return fmt.Sprintf("自动发布实例（%s）", name)
-	default:
-		return "未知来源的引用"
-	}
-}
-
-func slotsLabelText(slots []string) string {
-	labels := make([]string, 0, len(slots))
-	for _, slot := range slots {
-		labels = append(labels, structureSlotLabel(slot))
-	}
-	sort.Strings(labels)
-	return strings.Join(labels, " / ")
 }

@@ -89,6 +89,10 @@ type PublicationService interface {
 
 	ListActivePaths(ctx context.Context, req *pubdto.ListActivePathsReq) (paths []string, err error)
 
+	// ListActivePathsByPageTx 在调用方事务内（锁内）重读页面持有的访问路径集合。
+	// 删除/下线必须用它复核登记意图时的路径事实，不能退回事务外版本。
+	ListActivePathsByPageTx(ctx context.Context, tx *gorm.DB, req *pubdto.ListActivePathsReq) (paths []string, err error)
+
 	IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error)
 
 	ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error)

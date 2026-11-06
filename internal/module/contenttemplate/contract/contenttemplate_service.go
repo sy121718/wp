@@ -37,6 +37,9 @@ type ContentTemplateService interface {
 
 	Delete(ctx context.Context, req *contenttemplatedto.DeleteReq) (err error)
 
+	// BulkDelete 在同一事务里删除整批模板：任一失败整批拒绝，不逐条回执。
+	BulkDelete(ctx context.Context, req *contenttemplatedto.BulkDeleteReq) error
+
 	Get(ctx context.Context, req *contenttemplatedto.GetReq) (res *contenttemplatedto.TemplateResp, err error)
 
 	GetScoped(ctx context.Context, projectID, id string) (res *contenttemplatedto.TemplateResp, err error)
