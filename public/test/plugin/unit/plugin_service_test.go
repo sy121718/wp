@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,4 +137,68 @@ func TestInstallRejectsBadPackage(t *testing.T) {
 	if _, err := svc.Install(ctx, nil); err == nil {
 		t.Fatalf("空包应拒绝")
 	}
+}
+
+// TestInstallRollsBackSchemaWhenStorageFails 覆盖「schema 已建、文件没写成」：
+// 安装失败必须把刚建的 schema 撤掉，否则下一次安装会撞上残留。
+func TestInstallRollsBackSchemaWhenStorageFails(t *testing.T) {
+	svc := newService(t)
+	if svc == nil {
+		return
+	}
+	ctx := context.Background()
+
+	// 把插件根目录指到一个文件上：MkdirAll 必然失败，模拟磁盘写失败。
+	root := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(root, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GO_WP_PLUGIN_ROOT", root)
+
+	manifest := `{
+  "id": "rollback_probe",
+  "name": "回滚探针",
+  "version": "1.0.0",
+  "migrations": "migrations",
+  "components": [{"name":"probe","label":"探针","template":"probe.jet"}]
+}`
+	zipBytes := zipWithFiles(t, map[string]string{
+		"manifest.json":            manifest,
+		"components/probe.jet":     "<div>{{ .Classes }}</div>",
+		"migrations/001_init.sql":  "CREATE TABLE IF NOT EXISTS probe (id int);",
+	})
+	if _, err := svc.Install(ctx, zipBytes); err == nil {
+		t.Fatal("存储失败时安装必须报错")
+	}
+
+	// schema 必须已回滚：再装一次同 id 的包不应撞上残留（这里只验 schema 不存在）。
+	db := support.NewMigratedPGTestDB(t)
+	var exists bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = ?)",
+		"plugin_rollback_probe").Scan(&exists).Error; err != nil {
+		t.Fatalf("查询 schema 失败: %v", err)
+	}
+	if exists {
+		t.Fatal("安装失败后插件 schema 必须已被回滚")
+	}
+}
+
+// zipWithFiles 按给定文件表打包（插件包的最小形态）。
+func zipWithFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

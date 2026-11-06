@@ -15,6 +15,8 @@ import (
 	pluginmodel "go_wp/internal/module/plugin/model"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/logger"
 )
 
 type Service struct {
@@ -78,13 +80,18 @@ func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (e
 		return err
 	}
 
-	if row.SchemaVersion > 0 {
-		if err = s.m.Exec(ctx, dropSchemaSQL(row.PluginID)); err != nil {
-			return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
-		}
-	}
+	// 删注册行先于删 schema：注册行是「这个插件存在」的唯一事实源，
+	// 先删它，schema 与文件即使随后清理失败也只是可重试的残留（幂等 DROP / RemoveAll）。
 	if err = s.m.Delete(ctx, req.ID); err != nil {
 		return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
+	}
+	if row.SchemaVersion > 0 {
+		if err = s.m.Exec(ctx, dropSchemaSQL(row.PluginID)); err != nil {
+			// 注册行已删：对外的结论是「插件已卸载，残留 schema 待清理」，
+			// 下一轮同 id 安装会重建 schema，不会悬空。
+			logger.Scene("plugin").With("plugin_id", row.PluginID).
+				Error(err, "插件已卸载，但 schema 清理失败（残留待人工或下次安装清理）")
+		}
 	}
 	removePluginStorage(row.PluginID)
 	return nil

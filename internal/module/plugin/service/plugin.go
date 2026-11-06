@@ -19,14 +19,15 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/pkg/builder/core"
-	"go_wp/pkg/builder/plugincomp"
 	"go_wp/internal/module/plugin/contract"
 	"go_wp/internal/module/plugin/dto"
 	"go_wp/internal/module/plugin/enums"
 	"go_wp/internal/module/plugin/model"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/plugincomp"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/public/migrations"
 )
 
@@ -81,12 +82,16 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 		row = nil
 	}
 
+	// 安装跨 schema 与文件系统，无法用一个数据库事务整体回滚；
+	// 每步失败都补偿已完成的副作用，保证「失败后回到装之前」。
 	if err = s.migrateSchema(ctx, manifest, files, row); err != nil {
 		return nil, fmt.Errorf("%s: %w", pluginenums.ErrMigrationFailed, err)
 	}
 
 	target := filepath.Join(pluginStorageRoot(), manifest.ID, manifest.Version)
 	if err = writePluginFiles(target, files); err != nil {
+		// 文件没写成：把刚建的 schema 撤掉，不留半套。
+		s.rollbackSchema(ctx, manifest.ID)
 		return nil, fmt.Errorf("%s: %w", pluginenums.ErrStorageFailure, err)
 	}
 
@@ -107,10 +112,27 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 	if err = s.m.Update(ctx, row); err != nil {
 
 		if cerr := s.m.Create(ctx, row); cerr != nil {
+			// 注册行没写成：schema 与文件都要撤掉，否则下次安装会撞上残留。
+			s.rollbackSchema(ctx, manifest.ID)
+			removePluginVersionDir(manifest.ID, manifest.Version)
 			return nil, fmt.Errorf("插件注册行写入失败: %w", cerr)
 		}
 	}
 	return toResp(row, false), nil
+}
+
+// rollbackSchema 是安装失败时的补偿：撤掉本次可能建出来的 schema。
+//
+// 它只记日志、不向外抛错：调用方已经在处理安装失败，补偿再失败时
+// 能做的只有留下可定位日志供人工清理，不能把原始失败原因盖掉。
+func (s *Service) rollbackSchema(ctx context.Context, pluginID string) {
+	if strings.TrimSpace(pluginID) == "" {
+		return
+	}
+	if err := s.m.Exec(ctx, dropSchemaSQL(pluginID)); err != nil {
+		logger.Scene("plugin").With("plugin_id", pluginID).
+			Error(err, "安装失败后回滚插件 schema 失败（需人工清理残留 schema）")
+	}
 }
 
 func extractZipSafe(data []byte) (map[string][]byte, error) {
