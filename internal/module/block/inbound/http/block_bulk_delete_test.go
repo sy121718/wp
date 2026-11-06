@@ -17,6 +17,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/templates"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
@@ -125,7 +126,7 @@ func TestBulkDeleteBindFailIsControlledHTML(t *testing.T) {
 
 func TestBulkDeleteOverLimitRejectsWholeBatch(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
-		"shell.err.bulkIdsTooMany": {
+		bulkids.MsgTooMany: {
 			"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行",
 			"en-US": "At most %s items can be operated at once; %s selected, please split into batches.",
 		},
@@ -146,7 +147,7 @@ func TestBulkDeleteOverLimitRejectsWholeBatch(t *testing.T) {
 	if !strings.Contains(body, "200") || !strings.Contains(body, "201") {
 		t.Fatalf("超限文案应带上限与本次条数（200 / 201），实际 %s", firstBlockN(body, 400))
 	}
-	if strings.Contains(body, "shell.err.bulkIdsTooMany") {
+	if strings.Contains(body, bulkids.MsgTooMany) {
 		t.Fatalf("词条没取到，前端会看到裸 key：%s", firstBlockN(body, 400))
 	}
 	if len(svc.calls) != 0 {

@@ -134,6 +134,29 @@ func (s *Service) SetReferenceUsageChecker(r func(ctx context.Context, blockID s
 	s.usages = r
 }
 
+// blockRefStateTx 是删除事务内的引用复核：同工程块文档引用读事务快照，
+// 跨模块引用（页面 / 模板 / 主题）由注入端口回答。
+//
+// 端口失败一律按「被引用」处理，删除整批拒绝；不能因为查不出来就放行。
+func (s *Service) blockRefStateTx(ctx context.Context, tx *gorm.DB, projectID, blockID string) ([]blockcontract.BlockUsage, bool) {
+	usages, referenced := s.blockRefState(ctx, blockID)
+	if referenced {
+		return usages, true
+	}
+	rows, err := s.model.ListBlockDocumentRefsTx(ctx, tx, projectID, blockID)
+	if err != nil {
+		logger.Scene("block").With("block_id", blockID).Error(err, "块文档引用检查失败，按被引用处理")
+		return nil, true
+	}
+	for i := range rows {
+		usages = append(usages, blockcontract.BlockUsage{
+			Kind: blockcontract.UsageKindBlockDocument, ProjectID: projectID,
+			EntityID: rows[i].ID, Label: rows[i].Name,
+		})
+	}
+	return usages, len(usages) > 0
+}
+
 func (s *Service) blockRefState(ctx context.Context, blockID string) (usages []blockcontract.BlockUsage, referenced bool) {
 	if s.usages != nil {
 		list, err := s.usages(ctx, blockID)

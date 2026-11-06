@@ -223,3 +223,24 @@ func (m *Model) Delete(ctx context.Context, projectID, id string) (err error) {
 		return tx.Model(&BlockEntity{}).Where("id = ? AND project_id = ?", id, projectID).Delete(&BlockEntity{}).Error
 	})
 }
+
+// ListBlockDocumentRefsTx 在调用方事务内读取同工程其它块文档里对本块的引用。
+//
+// 删除保护的引用复核必须在删除方事务、行锁之后执行：事务外的读取与锁内快照
+// 不是同一视图，「刚才还没引用」不能证明「现在也没引用」。
+func (m *Model) ListBlockDocumentRefsTx(ctx context.Context, tx *gorm.DB, projectID, blockID string) (rows []BlockDocRefRow, err error) {
+	if tx == nil {
+		return nil, ErrProjectRequired
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = tx.WithContext(ctx).Table(BlockEntity{}.TableName()).
+		Select("id::text AS id, name").
+		Where("project_id = ?", projectID).
+		Where("id::text <> ?::text", blockID).
+		Where("jsonb_path_query_array(document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+		Order("name ASC, id ASC").
+		Scan(&rows).Error
+	return rows, err
+}

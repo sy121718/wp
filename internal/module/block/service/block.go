@@ -21,6 +21,7 @@ import (
 	"go_wp/pkg/builder"
 	"go_wp/pkg/database"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/utils"
 )
 
@@ -160,11 +161,6 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 			return nil, err
 		}
 
-		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate {
-			if usages, inUse := s.blockRefState(ctx, entity.ID); inUse {
-				return nil, blockcontract.NewBlockInUseError(usages)
-			}
-		}
 	}
 	document := entity.Document
 	if len(req.Document) > 0 {
@@ -174,8 +170,23 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	}
 	now := time.Now().UTC()
 
-	affected, err := s.model.UpdateDocumentTx(ctx, entity.ProjectID, entity.ID, req.ExpectedVersion,
-		name, kind, category, reuseMode, document, now)
+	// 全局块转模板会放开「可被删除」的约束：引用复核必须与写入同事务、共享工程内容锁，
+	// 否则检查通过到提交之间仍可能新增引用。
+	var affected int64
+	err = s.model.Transaction(ctx, entity.ProjectID, func(tx *gorm.DB) error {
+		if lerr := i18n.LockProjectContentWrite(ctx, tx, entity.ProjectID); lerr != nil {
+			return lerr
+		}
+		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate {
+			if usages, inUse := s.blockRefStateTx(ctx, tx, entity.ProjectID, entity.ID); inUse {
+				return blockcontract.NewBlockInUseError(usages)
+			}
+		}
+		n, uerr := s.model.UpdateDocumentTx(ctx, entity.ProjectID, entity.ID, req.ExpectedVersion,
+			name, kind, category, reuseMode, document, now)
+		affected = n
+		return uerr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -433,6 +444,16 @@ func (s *Service) deleteTargetsTx(ctx context.Context, targets []blockTarget) ([
 	blocked := make([]facing.BlockedItem, 0)
 	var blockedUsages []blockcontract.BlockUsage
 	err := s.model.TransactionAny(ctx, func(tx *gorm.DB) error {
+		// 工程内容写锁先于任何行操作：块引用的写入方（页面 / 模板 / 主题）持同一把锁，
+		// 否则「锁内检查通过」与「提交后又有新引用」之间的窗口仍然存在。
+		for _, projectID := range order {
+			if serr := s.model.ScopeTx(tx, projectID); serr != nil {
+				return serr
+			}
+			if lerr := i18n.LockProjectContentWrite(ctx, tx, projectID); lerr != nil {
+				return lerr
+			}
+		}
 		for _, projectID := range order {
 			rows := groups[projectID]
 			if serr := s.model.ScopeTx(tx, projectID); serr != nil {
@@ -457,8 +478,9 @@ func (s *Service) deleteTargetsTx(ctx context.Context, targets []blockTarget) ([
 					continue
 				}
 				// 全局块的引用检查必须在锁内复核：定位阶段的检查到删除之间可能有新引用。
+				// 同工程块文档引用用事务内读取；跨模块引用由注入端口回答（端口自身不在事务内）。
 				if entity.ReuseMode == blockmodel.ReuseGlobal {
-					if usages, inUse := s.blockRefState(ctx, t.id); inUse {
+					if usages, inUse := s.blockRefStateTx(ctx, tx, projectID, t.id); inUse {
 						blocked = append(blocked, facing.BlockedItem{
 							ID: t.id, Name: entity.Name, ReasonKey: blockenums.ErrBlockInUse,
 						})
