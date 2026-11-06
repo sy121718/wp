@@ -1,11 +1,13 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
+const fs=require('node:fs'),path=require('node:path');
 const vm=require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 function preview(mode,state){
  const events={};
  const window={location:{href:'https://site.test/zh/shop'},document:{querySelector(selector){return selector.includes('-mode')?(mode?{content:mode}:null):(state?{content:state}:null);},addEventListener:(key,fn)=>events[key]=fn}};
- vm.runInNewContext(fs.readFileSync(__dirname+'/site-preview.js','utf8'),{window,URL});
+ vm.runInNewContext(fs.readFileSync(path.join(UI_SRC, 'site-preview.js'),'utf8'),{window,URL});
  return {api:window.WPSitePreview,events};
 }
 test('模拟状态只来自预览meta，发布页面忽略遗留状态且上下文不可变',()=>{

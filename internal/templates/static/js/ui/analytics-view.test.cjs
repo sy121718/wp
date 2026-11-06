@@ -13,8 +13,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
-const SRC = path.join(__dirname, 'analytics-view.js');
+const SRC = path.join(UI_SRC, 'analytics-view.js');
 // 测试在 static/js/ui/ 下，admin.js 在 static/js/ —— 只退一级。
 const ADMIN_SRC = path.join(__dirname, '..', 'admin.js');
 

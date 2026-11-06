@@ -1,11 +1,14 @@
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+// 属主按真实位置显式定位：site-data 在 pkg 公共控件，site-user 是应用专用脚本。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
+const APP_SRC = __dirname;
 function item(attrs={}){const values={...attrs};return{hidden:false,disabled:false,value:'',textContent:'',getAttribute:n=>values[n]??null,setAttribute:(n,v)=>{values[n]=String(v);},removeAttribute:n=>delete values[n],hasAttribute:n=>n in values,isConnected:true,dispatchEvent(){}};}
 function env(options={}){
  const views={},previews={},events={},handlers={},refreshes=[],roots=[],nav=[],registrations=[],document={documentElement:{lang:'en-US'},addEventListener:(n,f)=>events[n]=f,querySelectorAll:()=>roots};
  const window={document,location:{search:'',href:'https://shop.example/account',origin:'https://shop.example',assign:n=>nav.push(n)},WPSitePreview:Object.freeze({active:!!options.preview,state:options.state||'default'}),WPSiteData:{register:(n,f)=>views[n]=f,registerPreview:(n,f,states)=>previews[n]={render:f,states},refresh:n=>refreshes.push(n)},WBUI:{writeBase:{registerResultHandler:(n,f)=>{registrations.push(n);handlers[n]=f;}}}};
  const fetches=[];window.fetch=async(...args)=>{fetches.push(args);throw new Error('模拟预览不应发网络请求');};
- if(options.realData){document.readyState='loading';vm.runInNewContext(fs.readFileSync(__dirname+'/site-data.js','utf8'),{window,URL,Map,Promise,Number,Object,Array,CustomEvent:class{}});}
- const source=fs.readFileSync(__dirname+'/site-user.js','utf8');
+ if(options.realData){document.readyState='loading';vm.runInNewContext(fs.readFileSync(path.join(UI_SRC,'site-data.js'),'utf8'),{window,URL,Map,Promise,Number,Object,Array,CustomEvent:class{}});}
+ const source=fs.readFileSync(path.join(APP_SRC,'site-user.js'),'utf8');
  function runAgain(){vm.runInNewContext(source,{window,URL,URLSearchParams,Date,Intl,Number,Object,String,Array});}
  runAgain();
  function root(id,mode='login'){

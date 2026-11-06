@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
 function element(attrs) {
     return { attrs:{...attrs}, textContent:'原内容', isConnected:true, events:[],
@@ -15,7 +18,7 @@ function env(fetch, preview, session) {
     const document={readyState:'loading',addEventListener(){},querySelectorAll(){return [];}};
     const window={document,WPSitePreview:preview,WPSiteSession:session,location:{href:'https://shop.test/shop',origin:'https://shop.test'},fetch};
     const ctx=vm.createContext({window,URL,Map,Promise,CustomEvent:class {constructor(type, options){this.type=type;Object.assign(this,options);}}});
-    for (const name of ['site-data','site-product']) vm.runInContext(fs.readFileSync(__dirname+'/'+name+'.js','utf8'),ctx);
+    for (const name of ['site-data','site-product']) vm.runInContext(fs.readFileSync(path.join(UI_SRC, name+'.js'),'utf8'),ctx);
     return window.WPSiteData;
 }
 const labels={ 'data-label-delisted':'已下架','data-label-updated':'价格更新为 %s',

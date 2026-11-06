@@ -1,5 +1,9 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+
+// 公共控件属主在 pkg/view/ui；测试留在应用侧，读取路径显式指向真实属主。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
 // 这里只验证配置与生命周期钩子；HTML 解析、真实编码和交换由浏览器测试覆盖。
 function env(attrs = {}, options = {}) {
@@ -37,7 +41,7 @@ function env(attrs = {}, options = {}) {
         htmx: { config: {}, registerExtension: (_name, value) => { hooks = value; } },
         CustomEvent: class { constructor(type) { this.type = type; } },
     });
-    const source = fs.readFileSync(__dirname + '/write-base.js', 'utf8');
+    const source = fs.readFileSync(path.join(UI_SRC, 'write-base.js'), 'utf8');
     vm.runInContext(source, context);
     const base = window.WBUI.writeBase;
     function configure(submitter = null, action = '/write', method = 'POST') {

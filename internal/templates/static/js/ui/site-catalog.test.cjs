@@ -1,7 +1,9 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
+const fs=require('node:fs'),path=require('node:path');
 const vm=require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 function element(attrs={}) {
     return {attrs:{...attrs},isConnected:true,classes:new Set(),getAttribute(k){return this.attrs[k]??null;},setAttribute(k,v){this.attrs[k]=String(v);},removeAttribute(k){delete this.attrs[k];},hasAttribute(k){return Object.hasOwn(this.attrs,k);},querySelector(){return null;},querySelectorAll(){return [];},dispatchEvent(){},get classList(){return {toggle:(k,v)=>v?this.classes.add(k):this.classes.delete(k)};}};
 }
@@ -10,9 +12,9 @@ function setup(href='https://shop.test/catalog',fetch) {
     const document={readyState:'loading',addEventListener(k,fn){listeners[k]=fn;},querySelectorAll(){return roots;}};
     const window={document,location,fetch,addEventListener(){},history:{pushState(_a,_b,url){const u=new URL(url,location);location.href=u.href;}}};
     const context=vm.createContext({window,URL,URLSearchParams,Map,Promise,CustomEvent:class {constructor(type,options){this.type=type;Object.assign(this,options);}}});
-    if(fetch) vm.runInContext(fs.readFileSync(__dirname+'/site-data.js','utf8'),context);
+    if(fetch) vm.runInContext(fs.readFileSync(path.join(UI_SRC, 'site-data.js'),'utf8'),context);
     else window.WPSiteData={register(name,render,prepare){views[name]=render;prepared[name]=prepare;},refresh(root){prepared[root.attrs['data-site-view']](root);return Promise.resolve();}};
-    vm.runInContext(fs.readFileSync(__dirname+'/site-catalog.js','utf8'),context);
+    vm.runInContext(fs.readFileSync(path.join(UI_SRC, 'site-catalog.js'),'utf8'),context);
     function click(root,query) {
         const link=element({'data-catalog-query':query});link.closest=()=>root;
         listeners.click({target:{closest:()=>link},button:0,preventDefault(){}});

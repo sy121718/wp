@@ -14,10 +14,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
-const utilSrc = fs.readFileSync(__dirname + '/_util.js', 'utf8');
-const treeSrc = fs.readFileSync(__dirname + '/tree-table.js', 'utf8');
+const utilSrc = fs.readFileSync(path.join(UI_SRC, '_util.js'), 'utf8');
+const treeSrc = fs.readFileSync(path.join(UI_SRC, 'tree-table.js'), 'utf8');
 
 function makeNode(attrs) {
     return {

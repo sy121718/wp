@@ -1,7 +1,9 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
+const fs=require('node:fs'),path=require('node:path');
 const vm=require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 class Element {
  constructor(attrs={},children=[]) {this.attrs={...attrs};this.children=children;this.hidden=true;this.events=[];children.forEach(child=>child.parent=this);}
  getAttribute(key){return this.attrs[key]??null;}
@@ -17,7 +19,7 @@ function env(roots){
  const events={},navigation=[],opened=[];
  const document={querySelectorAll(selector){assert.equal(selector,'[data-component-instance]');return roots.flatMap(root=>[root,...root.querySelectorAll(selector)]);},addEventListener:(key,fn)=>events[key]=fn};
  const window={document,location:{href:'https://site.test/zh/shop',origin:'https://site.test',assign:url=>navigation.push(url)},open:(...args)=>opened.push(args)};
- vm.runInNewContext(fs.readFileSync(__dirname+'/site-actions.js','utf8'),{window,URL,CustomEvent:class{constructor(type,opts){this.type=type;Object.assign(this,opts);}}});
+ vm.runInNewContext(fs.readFileSync(path.join(UI_SRC, 'site-actions.js'),'utf8'),{window,URL,CustomEvent:class{constructor(type,opts){this.type=type;Object.assign(this,opts);}}});
  return {api:window.WPSiteActions,events,navigation,opened};
 }
 function control(kind,instance,part,key='checkout'){return new Element({'data-component-action':key,'data-action-kind':kind,'data-action-instance':instance,'data-action-part':part});}

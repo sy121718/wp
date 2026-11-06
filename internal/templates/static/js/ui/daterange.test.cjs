@@ -9,9 +9,11 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
-const SRC = fs.readFileSync(path.join(__dirname, 'daterange.js'), 'utf8');
-const UTIL = fs.readFileSync(path.join(__dirname, '_util.js'), 'utf8');
+const SRC = fs.readFileSync(path.join(UI_SRC, 'daterange.js'), 'utf8');
+const UTIL = fs.readFileSync(path.join(UI_SRC, '_util.js'), 'utf8');
 
 function load() {
   const listeners = [];

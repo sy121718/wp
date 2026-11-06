@@ -1,7 +1,4 @@
-// 业务预设只提交受控来源；AST权威在服务端注册表，页面只插全局块引用。
-const bindings = new WeakMap();
-let registeredBase = null;
-
+// 业务预设只提交受控来源；AST 权威在服务端注册表，页面只消费 Jet 生成的实体链接并插全局引用。
 export function presetIdentity(preset) {
     return preset.presetKey ? 'business:' + preset.presetKey + '@' + preset.presetVersion : preset.id;
 }
@@ -13,35 +10,6 @@ function insertReference(self, block, target) {
     self.showEdit();
 }
 
-function bindResult(base) {
-    if (registeredBase === base) return;
-    base.registerResultHandler('workbench.presetCreate', function (ctx) {
-        const binding = bindings.get(ctx.form);
-        if (!binding) return false;
-        const { self, preset, meta, dialog, status, target } = binding;
-        const data = ctx.data;
-        if (!data || !data.id || data.projectId !== meta.projectId || data.reuseMode !== 'global' ||
-            data.presetKey !== preset.presetKey || data.presetVersion !== preset.presetVersion) {
-            status.textContent = '区块已创建，但来源回执不匹配。请刷新全局块后检查。';
-            status.setAttribute('data-tone', 'error');
-            return true;
-        }
-        // 调色板只留引用事实，创建回执里的document不作为前端预设源。
-        const block = { id: data.id, projectId: data.projectId, name: data.name, kind: data.kind,
-            category: data.category, reuseMode: data.reuseMode, version: data.version,
-            presetKey: data.presetKey, presetVersion: data.presetVersion };
-        const blocks = meta.blocks || (meta.blocks = []);
-        const previous = blocks.findIndex(item => item.id === block.id);
-        if (previous < 0) blocks.push(block);
-        else blocks[previous] = block;
-        self.renderPaletteBlocks();
-        insertReference(self, block, target);
-        dialog.close();
-        return true;
-    });
-    registeredBase = base;
-}
-
 function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -49,15 +17,24 @@ function element(tag, className, text) {
     return node;
 }
 
+// createdBlockID 只从 Jet 生成的实体链接消费创建结果；响应正文不是前端预设源。
+function createdBlockID(fragment) {
+    const link = fragment && fragment.querySelector('[data-block-created-link]');
+    const href = link && link.getAttribute('href');
+    if (!href) return '';
+    const url = new URL(href, document.baseURI || 'http://localhost/');
+    if (!/^https?:$/.test(url.protocol)) return '';
+    if (window.location && window.location.origin && window.location.origin !== 'null' && url.origin !== window.location.origin) return '';
+    return url.searchParams.get('block') || '';
+}
+
 // 命名仅在第一次创建时需要；同预设已有实例由用户明确选择，不自动取第一个。
 export function openBusinessPreset(self, preset, meta) {
     if (!preset || !preset.presetKey || !Number.isInteger(preset.presetVersion) || preset.presetVersion < 1) return;
     if (!meta.projectId) { self.setNotice('请先选择站点工程，再创建业务区块。'); return; }
-    const base = window.WBUI && window.WBUI.writeBase;
-    if (!base || !base.registerResultHandler) { self.setNotice('写入基座未就绪，请刷新编辑器后重试。'); return; }
+    if (!window.htmx || !window.WBUI || !window.WBUI.writeBase) { self.setNotice('写入基座未就绪，请刷新编辑器后重试。'); return; }
     const previous = document.getElementById('wb-business-preset-dialog');
     if (previous) { previous.querySelector('[name="name"]').focus(); return; }
-    bindResult(base);
     const opener = document.activeElement;
     const target = self.pendingInsertTarget && { ...self.pendingInsertTarget };
     const dialog = element('dialog', 'wb-confirm wb-business-preset-dialog');
@@ -65,14 +42,20 @@ export function openBusinessPreset(self, preset, meta) {
     dialog.setAttribute('aria-labelledby', 'wb-business-preset-title');
     const form = element('form', 'wb-confirm-inner');
     form.method = 'post';
-    form.setAttribute('data-write', 'custom');
-    form.setAttribute('data-write-url', '/api/block/create');
-    form.setAttribute('data-write-handler', 'workbench.presetCreate');
+    // 标准 HTMX 表单：方法/地址/目标写在 hx-* 上；data-write 只作写基座认领标记。
+    form.setAttribute('data-write', '');
+    form.setAttribute('hx-post', '/api/block/create');
+    form.setAttribute('hx-target', 'find [data-write-result]');
+    form.setAttribute('hx-swap', 'innerHTML');
+    form.setAttribute('hx-sync', 'this:drop');
+    form.setAttribute('hx-disable', 'findAll button:not(:disabled)');
     form.setAttribute('data-msg-failed', '创建失败，请稍后重试。');
     const title = element('h3', 'wb-confirm-title', preset.label || '业务预设');
     title.id = 'wb-business-preset-title';
     const description = element('p', 'wb-confirm-msg', preset.description || '命名后创建可复用区块，再插入当前页面。以后可在全局块中直接引用。');
-    form.append(title, description);
+    const result = element('div');
+    result.setAttribute('data-write-result', '');
+    form.append(title, description, result);
     const existing = (meta.blocks || []).filter(block => block.projectId === meta.projectId && block.reuseMode === 'global' && block.presetKey === preset.presetKey && block.presetVersion === preset.presetVersion);
     if (existing.length) {
         const choices = element('div', 'wb-business-preset-existing');
@@ -108,20 +91,44 @@ export function openBusinessPreset(self, preset, meta) {
         const input = element('input'); input.type = 'hidden'; input.name = key; input.value = String(fields[key]); form.append(input);
     });
     const status = element('p', 'wb-business-preset-status');
-    status.id = 'wb-business-preset-status'; status.setAttribute('data-write-status', ''); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+    status.id = 'wb-business-preset-status'; status.hidden = true;
+    status.setAttribute('data-write-status', ''); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     form.append(status);
+    // 成功片段由 HTMX 换进结果区；前端只认 Jet 生成的实体链接，不解释 JSON、不读回执 AST。
+    let completed = false;
+    form.addEventListener('write:success', () => {
+        if (completed || !dialog.open) return;
+        const id = createdBlockID(result);
+        if (!id) {
+            status.textContent = '区块已创建，但回执缺少实体链接。请刷新全局块后检查。';
+            status.setAttribute('data-tone', 'error');
+            status.hidden = false;
+            return;
+        }
+        const block = { id, projectId: meta.projectId, name: name.value.trim(), kind: preset.kind || 'block',
+            category: preset.category || 'general', reuseMode: 'global',
+            presetKey: preset.presetKey, presetVersion: preset.presetVersion };
+        const blocks = meta.blocks || (meta.blocks = []);
+        const previousBlock = blocks.findIndex(item => item.id === block.id);
+        if (previousBlock < 0) blocks.push(block);
+        else blocks[previousBlock] = block;
+        completed = true;
+        self.renderPaletteBlocks();
+        insertReference(self, block, target);
+        dialog.close();
+    });
     const actions = element('div', 'wb-confirm-actions');
     const cancel = element('button', 'btn', '取消'); cancel.type = 'button';
     const submit = element('button', 'btn btn-primary', '创建并引用'); submit.type = 'submit';
     cancel.addEventListener('click', () => { if (form.getAttribute('aria-busy') !== 'true') dialog.close(); });
     dialog.addEventListener('cancel', event => { if (form.getAttribute('aria-busy') === 'true') event.preventDefault(); });
     dialog.addEventListener('close', () => {
-        bindings.delete(form);
         dialog.remove();
         if (opener && opener.isConnected) opener.focus();
     });
     actions.append(cancel, submit); form.append(actions); dialog.append(form); document.body.append(dialog);
-    bindings.set(form, { self, preset, meta, dialog, status, target });
     dialog.showModal();
     name.focus(); name.select();
+    // 动态表单需要 HTMX 认领；控件层只广播 wb:rescan，由 htmx-bridge 翻译。
+    document.dispatchEvent(new CustomEvent('wb:rescan', { detail: { el: form } }));
 }

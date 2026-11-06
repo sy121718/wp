@@ -1,10 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
 // 网络、交换、失败保留与迟到响应由真实 HTTP/Chrome 用例验证；这里反查已退役的第二套实现。
 test('抽屉不保留 fetch、JSON 绑定解释器、旧属性或直接 HTMX 调用', () => {
-    const source = fs.readFileSync(__dirname + '/drawer.js', 'utf8');
+    const source = fs.readFileSync(path.join(UI_SRC, 'drawer.js'), 'utf8');
     assert.doesNotMatch(source, /\bfetch\s*\(|\bAbortController\b|\bJSON\.|data-bind|fillTemplate|bindValue|data-drawer-url|data-drawer-template|data-drawer-retry|\bhtmx\s*\./);
     assert.doesNotMatch(source, /createElement\s*\(|innerHTML\s*=/);
     assert.match(source, /wb:content-ready/);

@@ -2,7 +2,12 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 const puppeteer = require('/home/sky/.dsh/profiles/desktop/node_modules/puppeteer-core');
+
+// 公共控件属主在 pkg/view/ui；应用专用脚本（admin.js）仍在应用侧，两处分别显式定位。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
+const APP_SRC = path.join(__dirname, '..');
 
 // 不替换 fetch：编码、网络、交换、取消与 finally 均由仓内 HTMX 执行。
 test('HTML 写基座的真实浏览器契约', async t => {
@@ -45,12 +50,12 @@ test('HTML 写基座的真实浏览器契约', async t => {
     const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true,
         args: ['--no-sandbox', '--disable-gpu'] });
     try {
-        async function setup(path = '/save', attrs = '', fields = '', width = 1440, hasTouch = false) {
+        async function setup(target = '/save', attrs = '', fields = '', width = 1440, hasTouch = false) {
             const p = await browser.newPage();
             await p.setViewport({ width, height: 900, hasTouch });
             await p.goto(origin);
-            await p.setContent(`<meta name="csrf-token" content="meta-token"><div data-hx-progress hidden></div><section data-write-host><form id="f" hx-post="${path}" hx-target="#result" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write ${attrs}><input name="title" value="keep"><input name="csrf_token" value="form-token"><input name="tags" value="a"><input name="tags" value="b"><input type="file" name="file"><textarea name="editor">unsaved document</textarea>${fields}<div data-write-status hidden></div><button type="submit" id="save" name="intent" value="save">save</button><button id="disabled" disabled>disabled</button></form><div id="result">original</div></section>`);
-            await p.addScriptTag({ content: fs.readFileSync(__dirname + '/htmx.min.js', 'utf8') });
+            await p.setContent(`<meta name="csrf-token" content="meta-token"><div data-hx-progress hidden></div><section data-write-host><form id="f" hx-post="${target}" hx-target="#result" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)" data-write ${attrs}><input name="title" value="keep"><input name="csrf_token" value="form-token"><input name="tags" value="a"><input name="tags" value="b"><input type="file" name="file"><textarea name="editor">unsaved document</textarea>${fields}<div data-write-status hidden></div><button type="submit" id="save" name="intent" value="save">save</button><button id="disabled" disabled>disabled</button></form><div id="result">original</div></section>`);
+            await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, 'htmx.min.js'), 'utf8') });
             await p.evaluate(() => {
                 window.toasts = []; window.successes = 0; window.finals = 0; window.forbidden = 0;
                 window.WBUI = { toast: (text, options) => window.toasts.push({ text, type: options.type }) };
@@ -58,9 +63,9 @@ test('HTML 写基座的真实浏览器契约', async t => {
                 document.addEventListener('htmx:finally:request', () => window.finals++);
                 document.addEventListener('forbidden-event', () => window.forbidden++);
             });
-            await p.addScriptTag({ content: fs.readFileSync(__dirname + '/write-base.js', 'utf8') });
-            await p.addScriptTag({ content: fs.readFileSync(__dirname + '/htmx-bridge.js', 'utf8') });
-            await p.addScriptTag({ content: fs.readFileSync(__dirname + '/../admin.js', 'utf8') });
+            await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, 'write-base.js'), 'utf8') });
+            await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, 'htmx-bridge.js'), 'utf8') });
+            await p.addScriptTag({ content: fs.readFileSync(path.join(APP_SRC, 'admin.js'), 'utf8') });
             await p.evaluate(() => htmx.process(document.body));
             return p;
         }
@@ -196,7 +201,7 @@ test('HTML 写基座的真实浏览器契约', async t => {
                     document.body.insertAdjacentHTML('beforeend', '<button id="open" data-drawer-open="#edit-template">open</button><template id="edit-template"><form data-write hx-post="/status/422" hx-target="#result" hx-swap="innerHTML" hx-sync="this:drop" hx-disable="findAll button:not(:disabled)"><input name="title" value="draft"><select name="choice" data-ui-select><option value="a">A</option><option value="b">B</option></select><div data-write-status hidden></div><button id="save" type="submit">save</button></form></template><aside data-drawer hidden><header><span data-drawer-title></span><button data-drawer-close>close</button></header><div data-drawer-body></div></aside><div data-drawer-mask hidden></div><div id="result">original</div>');
                 });
                 for (const name of ['_util.js', 'select.js', 'drawer.js', 'index.js']) {
-                    await p.addScriptTag({ content: fs.readFileSync(__dirname + '/' + name, 'utf8') });
+                    await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, name), 'utf8') });
                 }
                 await p.tap('#open');
                 await p.waitForSelector('[data-drawer] .wbs-trigger');
@@ -239,7 +244,7 @@ test('HTML 写基座的真实浏览器契约', async t => {
                     document.body.insertAdjacentHTML('beforeend', '<form id="background-form"><div id="background-error" data-write-status>bulk-error</div><button id="remote" type="button" data-drawer-open hx-get="/drawer" hx-target="#remote-body" hx-swap="innerHTML">remote</button></form><aside data-drawer data-write-host hidden><header><span data-drawer-title></span><button data-drawer-close>close</button></header><div id="remote-error" data-write-status hidden></div><div id="remote-body" data-drawer-body></div></aside><div data-drawer-mask hidden></div><div id="result">original</div>');
                 });
                 for (const name of ['_util.js', 'select.js', 'drawer.js', 'index.js']) {
-                    await p.addScriptTag({ content: fs.readFileSync(__dirname + '/' + name, 'utf8') });
+                    await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, name), 'utf8') });
                 }
                 await p.evaluate(() => htmx.process(document.body));
                 await p.tap('#remote'); await settle(p);
@@ -300,7 +305,7 @@ test('HTML 写基座的真实浏览器契约', async t => {
                 document.body.insertAdjacentHTML('beforeend', '<section id="select-host"><select id="disposable"><option value="a">A</option><option value="b">B</option></select></section><section id="move-target"></section>');
             });
             for (const name of ['_util.js', 'select.js', 'index.js']) {
-                await p.addScriptTag({ content: fs.readFileSync(__dirname + '/' + name, 'utf8') });
+                await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, name), 'utf8') });
             }
             await p.waitForSelector('#select-host .wbs-trigger');
             await p.evaluate(() => {
@@ -420,7 +425,7 @@ test('HTML 写基座的真实浏览器契约', async t => {
             }
             const p = await setup('/visitor-rotate', 'data-write-session="visitor"');
             await p.evaluate(() => { window.WPSiteSession = { csrfToken: 'visitor-token' }; });
-            await p.addScriptTag({ content: fs.readFileSync(__dirname + '/site-data.js', 'utf8') });
+            await p.addScriptTag({ content: fs.readFileSync(path.join(UI_SRC, 'site-data.js'), 'utf8') });
             const readStarted = p.waitForRequest(request => request.url().includes('/api/site/visitor-echo'));
             await p.evaluate(() => {
                 WPSiteData.register('csrf-test', node => { node.textContent = 'loaded'; });

@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
 function load(product, ratings = []) {
   let init, loadedHTML;
@@ -15,7 +18,7 @@ function load(product, ratings = []) {
     querySelectorAll: selector => selector === '[data-product-rating]' ? ratingNodes : [spec],
   };
   const window = {document, WBUI: {register: callback => {init = callback;}, markOnce: () => true}};
-  vm.runInNewContext(fs.readFileSync(__dirname + '/product-display.js', 'utf8'), {window});
+  vm.runInNewContext(fs.readFileSync(path.join(UI_SRC, 'product-display.js'), 'utf8'), {window});
   init();
   return {api: window.WBProductDisplay, input, spec, loadedHTML, ratingNodes};
 }

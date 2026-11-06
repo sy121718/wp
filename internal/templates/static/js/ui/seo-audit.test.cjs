@@ -17,5 +17,6 @@ test('SEO 体检页使用 HTMX + Jet 片段，不保留 JSON 解释器', () => {
     for (const state of ['data-seo-audit-state="empty"', 'data-seo-audit-state="clean"', 'data-seo-audit-state="issues"']) {
         assert.ok(fragment.includes(state), '结果片段缺少档位 ' + state);
     }
-    assert.ok(fragment.includes('seoAuditIssues'), '问题档应使用完整参数句');
+    // 问题结论是完整参数句：词条 key + 具名参数由 Jet 取词，前端不再拼接碎句。
+    assert.match(fragment, /tn\("seoIssues",[^)]*map\("scanned",\s*result\.Scanned,\s*"count",\s*result\.Count\)\)/, '问题档应使用完整参数句');
 });

@@ -17,8 +17,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
-const MODELS_SRC = path.join(__dirname, 'ai-models.js');
+const MODELS_SRC = path.join(UI_SRC, 'ai-models.js');
 
 // ── 极简 DOM 桩（与 mcp-token.test.cjs 同源，只实现用到的部分） ────────────────
 function makeNode(tag) {

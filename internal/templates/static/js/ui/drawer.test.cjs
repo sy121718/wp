@@ -1,9 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
-const source = fs.readFileSync(__dirname + '/drawer.js', 'utf8');
+const source = fs.readFileSync(path.join(UI_SRC, 'drawer.js'), 'utf8');
 
 function setup() {
     const listeners = {}, events = [], calls = [];

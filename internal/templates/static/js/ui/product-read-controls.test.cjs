@@ -1,8 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
-const source = name => fs.readFileSync(__dirname + '/' + name + '.js', 'utf8');
+// 属主按真实位置显式定位：商品控件在 pkg 公共资产，site-commerce 仍是应用专用脚本。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
+const APP_ONLY = new Set(['site-commerce']);
+const source = name => fs.readFileSync(path.join(APP_ONLY.has(name) ? __dirname : UI_SRC, name + '.js'), 'utf8');
 const node = (attrs = {}) => ({
     textContent: '', hidden: false, children: [], classes: [],
     getAttribute(name) { return attrs[name] ?? null; },

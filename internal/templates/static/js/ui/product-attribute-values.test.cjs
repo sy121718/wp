@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
+// 公共控件属主在 pkg/view/ui；本测试读取真实源，不复制到旧位置。
+const UI_SRC = path.join(__dirname, '../../../../..', 'pkg/view/ui/assets/js/ui');
 
 // 属性值是嵌套数组：脚本只注册请求对象提供器，发送与响应由写基座/HTMX 负责。
 function setup() {
@@ -82,7 +85,7 @@ function setup() {
         console,
     };
     vm.createContext(sandbox);
-    vm.runInContext(fs.readFileSync(__dirname + '/product-attribute-values.js', 'utf8'), sandbox);
+    vm.runInContext(fs.readFileSync(path.join(UI_SRC, 'product-attribute-values.js'), 'utf8'), sandbox);
     assert.equal(typeof builder, 'function', '脚本必须注册请求对象提供器');
     return {
         rows, form, fire,
