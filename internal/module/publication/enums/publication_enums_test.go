@@ -28,7 +28,8 @@ func TestErrProjectMissingDeclaresBadRequest(t *testing.T) {
 	if fact.Tail != "" {
 		t.Errorf("这条错误没有明细段，实际 %q", fact.Tail)
 	}
-	if fact.Fallback != fact.Key {
-		t.Errorf("兜底 = %q，应回落到 key 本身（文案归词库，声明处不再带中文）", fact.Fallback)
+	// 声明处只给 key：兜底留空，由词库与出口归口，绝不能等于 key（那等于把裸 key 交给前端）。
+	if fact.Fallback != "" {
+		t.Errorf("兜底 = %q，声明处应留空（文案归词库）", fact.Fallback)
 	}
 }

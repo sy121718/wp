@@ -26,8 +26,9 @@ func orderBulkFormEngine(h *orderhttp.Handle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	// 生产装配在基础层挂失败 / 成功出口与请求取词；缺了它们片段渲染为空。
 	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/order/status", pageview.HTMLFragment, h.ChangeStatus)
 	engine.POST("/api/order/cancel", pageview.HTMLFragment, h.CancelOrder)

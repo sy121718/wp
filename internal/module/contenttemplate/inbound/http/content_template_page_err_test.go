@@ -28,6 +28,7 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
 
 const ctProjectListErrText = `pq: relation "projects" does not exist (SQLSTATE 42P01)`
@@ -102,7 +103,7 @@ func TestContentTemplatesPageProjectListFailureReturnsJSON(t *testing.T) {
 		t.Errorf("失败出口不该渲染页壳：%s", body)
 	}
 
-	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+	if !strings.Contains(body, response.InternalFallback) {
 		t.Errorf("失败响应应带归口文案，实际：%s", body)
 	}
 	for _, forbidden := range []string{
@@ -175,7 +176,7 @@ func TestContentTemplatesPageMainListFailureReturnsJSON(t *testing.T) {
 		t.Errorf("失败出口不该渲染页壳：%s", body)
 	}
 
-	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+	if !strings.Contains(body, response.InternalFallback) {
 		t.Errorf("失败响应应带归口文案：%s", body)
 	}
 	for _, forbidden := range []string{
@@ -288,12 +289,12 @@ func TestContentTemplatesPageEmptyRendersEmptyState(t *testing.T) {
 	}
 }
 
-const ctInternalErrorKey = "服务器内部错误，请稍后重试"
+const ctInternalErrorKey = response.InternalFallback
 
 func TestContentTemplatesPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T) {
 
 	i18n.InjectForTest(map[string]map[string]string{
-		ctInternalErrorKey: {"en-US": "EN-INTERNAL-ERROR"},
+		response.InternalKey: {"en-US": "EN-INTERNAL-ERROR"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
@@ -307,7 +308,7 @@ func TestContentTemplatesPageMainListFailureRendersEnglishWhenTermPresent(t *tes
 		t.Errorf("英文请求应出现词条译文：%s", body)
 	}
 	for _, forbidden := range []string{
-		contentTemplateErrInternalFallback, ctInternalErrorKey,
+		contentTemplateErrInternalFallback, response.InternalKey,
 		ctTemplateListErrText, html.EscapeString(ctTemplateListErrText),
 	} {
 		if strings.Contains(body, forbidden) {
