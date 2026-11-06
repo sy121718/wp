@@ -100,9 +100,9 @@ var retainedSQLArchives = map[string]struct {
 		"8da48482907fa2cfd6b5c61b4750d9b55b081b2ee43f6c61ba386ca9c4332344",
 	},
 	"407_i18n_product_inventory_page_err.sql": {
-		"723x_current_407_i18n_product_inventory_page_err.sql",
+		"747d_current_407_i18n_product_inventory_page_err.sql",
 		"a723a92efe3e94c863ed2c15a5531285bbbec467824254bdcde72af8e2212ba5",
-		"bb66581eaf6eaa490cae529db82ebc1ad643a21476cbfeb56bfb6cb788e55825",
+		"7f31bf69770646a0759fb618a6b5d4e9263c39c90a2d8301cf0ed87b81ad3fc2",
 	},
 	"411_i18n_product_list_filter.sql": {
 		"721e_current_411_i18n_product_list_filter.sql",
@@ -258,6 +258,36 @@ var retainedSQLArchives = map[string]struct {
 		"718q_current_704_product_blocked_errors_i18n.sql",
 		"71dac467cfadc7805b489d6a7f19e03e0245dc84ce75060eed62eee0b14a6c87",
 		"929e33a7d528e2ad8af38ce1b19154918b39bcb89b98401bb40fc671f8d5b195",
+	},
+	"058_i18n_seed_enums.sql": {
+		"747a_current_058_i18n_seed_enums.sql",
+		"eec75d7fd3a811becc60d93f8b189814730741e7bc5949af9c870e8ab97bdceb",
+		"4de2cbe08715ca17c17642897fa091f3330d5651968ef673c9fadabe50f94b2c",
+	},
+	"738_shared_error_short_keys_i18n.sql": {
+		"747_shared_feedback_short_keys_i18n.sql",
+		"5f9caba34e1ebe38b6139d52ccaf4e9ad69ebe56771bb733900c56c888b592a4",
+		"02298139aa3721244b1f06a6d68523284b5bb0bf40d4f590c532f5810f66c95c",
+	},
+	"745_retire_legacy_enum_i18n.sql": {
+		"747_shared_feedback_short_keys_i18n.sql",
+		"0350f446e8e9af61ed1976700dd94123e0b2aab70254196915b454a226b95ed6",
+		"02298139aa3721244b1f06a6d68523284b5bb0bf40d4f590c532f5810f66c95c",
+	},
+	"405_i18n_block_page_err.sql": {
+		"747c_current_405_i18n_block_page_err.sql",
+		"60605defafd2ef6cffa9e43a52d58fa9b938259063b45391bc937fdd744ef340",
+		"e3b643c1a3583c447641ca84fb4280aa3d1e63982f091128b03c7992a929e1f3",
+	},
+	"723x_current_407_i18n_product_inventory_page_err.sql": {
+		"747d_current_407_i18n_product_inventory_page_err.sql",
+		"bb66581eaf6eaa490cae529db82ebc1ad643a21476cbfeb56bfb6cb788e55825",
+		"7f31bf69770646a0759fb618a6b5d4e9263c39c90a2d8301cf0ed87b81ad3fc2",
+	},
+	"720_product_taxonomy_short_keys_i18n.sql": {
+		"747e_current_720_product_taxonomy_short_keys_i18n.sql",
+		"0cf8de5d470976aed88b29357ea58b56832db50e992f113d24344f4966822ac2",
+		"b29a63a0b2b368bb31bdf248cca44916976e60c8992fc02af4e3373578c00fe7",
 	},
 	"718a_current_191_i18n_seed_product_inventory.sql": {
 		"723b_current_191_i18n_seed_product_inventory.sql",

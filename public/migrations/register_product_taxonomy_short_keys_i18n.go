@@ -5,7 +5,6 @@ func init() {
 		Version:   "720-product-taxonomy-short-keys-i18n",
 		TableName: "sys_i18n",
 		ConditionSQL: `WITH keys(old_key, new_key, retire) AS (VALUES
-    ('MsgInternalError', 'uiInternalErr', false),
     ('admin.common.action.cancel', 'uiActCancel', false),
     ('admin.common.action.delete', 'uiActDel', false),
     ('admin.common.action.edit', 'uiActEdit', false),
@@ -123,6 +122,6 @@ SELECT CASE WHEN
  AND NOT EXISTS (SELECT 1 FROM (VALUES ('zh-CN'), ('en-US')) AS langs(lang)
  WHERE NOT EXISTS (SELECT 1 FROM sys_i18n t WHERE t.item_key = 'catMatchInfo' AND t.lang = langs.lang))
  THEN 1 ELSE 0 END`,
-		SQL: mustSQL("720_product_taxonomy_short_keys_i18n.sql"),
+		SQL: mustSQL("747e_current_720_product_taxonomy_short_keys_i18n.sql"),
 	})
 }

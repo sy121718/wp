@@ -40,8 +40,8 @@ func TestProductTaxonomyShortKeysRenderRealLanguages(t *testing.T) {
 			}
 		}
 	}
-	if len(keys) != 110 {
-		t.Fatalf("109 个改名和一个完整句的范围改变: %d", len(keys))
+	if len(keys) != 109 {
+		t.Fatalf("108 个改名和一个完整句的范围改变: %d", len(keys))
 	}
 	paths, err := filepath.Glob(filepath.Join(attrTemplateRoot(), "admin/product/*.html"))
 	if err != nil || len(paths) == 0 {

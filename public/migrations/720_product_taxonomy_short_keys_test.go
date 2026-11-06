@@ -27,7 +27,8 @@ func productTaxonomyShortKeySeed(t *testing.T) (migrations.Seed, []productKeyRen
 			seen[match[2]] = true
 			pairs = append(pairs, productKeyRename{match[1], match[2], match[3] == "true"})
 		}
-		if len(pairs) != 109 {
+		// 共享反馈的 MsgInternalError→uiInternalErr 已移出本批（只在 747 维护六映射）。
+		if len(pairs) != 108 {
 			t.Fatalf("分类属性品牌 词条迁移范围改变: %d", len(pairs))
 		}
 		_, businessPairs := productShortKeySeed(t)

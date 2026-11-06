@@ -68,7 +68,9 @@ func TestProductShortKeysCurrentSourcesPrepare(t *testing.T) {
 			sources = append(sources, migration.SQL)
 		}
 	}
-	if len(sources) != 47 {
+	// 405/407/720 的现行版切到 747c/747d/747e 后各多一份当前回补源，
+	// 723x 退出执行、原文归档。
+	if len(sources) != 49 {
 		t.Fatalf("当前回补源数量改变: %d", len(sources))
 	}
 	if err := db.Connection(func(conn *gorm.DB) error {
