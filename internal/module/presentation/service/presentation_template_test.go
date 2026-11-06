@@ -50,6 +50,10 @@ func (s *stubTemplateService) Delete(context.Context, *contenttemplatedto.Delete
 	return nil
 }
 
+func (s *stubTemplateService) BulkDelete(context.Context, *contenttemplatedto.BulkDeleteReq) error {
+	return nil
+}
+
 func (s *stubTemplateService) Impact(context.Context, *contenttemplatedto.ImpactReq) (*contenttemplatedto.ImpactResp, error) {
 	return &contenttemplatedto.ImpactResp{Available: false, References: []contenttemplatedto.TemplateReference{}}, nil
 }
