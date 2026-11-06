@@ -51,6 +51,13 @@ func mailGuardTemplates(t *testing.T) []string {
 	return files
 }
 
+// mailGuardAppTemplateRoot 与 mailGuardSharedTemplateRoot 是复合 FS 的两层属主：
+// 逻辑键相对应用根解析，应用侧没有实体时回落到公共层，路径结构必须保持一致。
+const (
+	mailGuardAppTemplateRoot    = "../../../../internal/templates/"
+	mailGuardSharedTemplateRoot = "../../../../pkg/view/ui/templates/"
+)
+
 func mailGuardRefProblems(path string, src string) []string {
 	var problems []string
 	dir := filepath.Dir(filepath.FromSlash(path))
@@ -60,9 +67,21 @@ func mailGuardRefProblems(path string, src string) []string {
 			rel += ".html"
 		}
 		target := filepath.Join(dir, filepath.FromSlash(rel))
-		if _, err := os.Stat(target); err != nil {
-			problems = append(problems, "引用 "+m[1]+" 的落点不存在："+filepath.ToSlash(target))
+		if _, err := os.Stat(target); err == nil {
+			continue
 		}
+		// 应用侧没有实体时，用同一逻辑键回落到公共属主；不能只按文件名匹配，
+		// 否则不同目录下的同名模板会互相冒充。
+		logical := strings.TrimPrefix(filepath.ToSlash(target), mailGuardAppTemplateRoot)
+		if !strings.HasPrefix(filepath.ToSlash(target), mailGuardAppTemplateRoot) {
+			problems = append(problems, "引用 "+m[1]+" 不在应用模板根内："+filepath.ToSlash(target))
+			continue
+		}
+		shared := filepath.Join(mailGuardSharedTemplateRoot, logical)
+		if _, err := os.Stat(shared); err == nil {
+			continue
+		}
+		problems = append(problems, "引用 "+m[1]+" 的落点不存在："+filepath.ToSlash(target))
 	}
 	return problems
 }

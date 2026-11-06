@@ -1,5 +1,0 @@
-{* 群发活动批量删除结论：数量由具名参数承载，句子只在 Jet 里。 *}
-{{if .None}}{{t("mailCmpNoneSel", "没有勾选任何活动，列表未改动。")}}
-{{else if .Done == 0}}{{tn("mailCmpDelNone", "没有活动被删除：{skipped} 个不存在、正在发送或已被服务端拒绝。", map("skipped", .Skipped))}}
-{{else if .Skipped == 0}}{{tn("mailCmpDelDone", "已删除 {count} 个活动。", map("count", .Done))}}
-{{else}}{{tn("mailCmpDelPart", "已删除 {done} 个活动，另有 {skipped} 个被跳过（不存在、正在发送或已被服务端拒绝）。", map("done", .Done, "skipped", .Skipped))}}{{end}}

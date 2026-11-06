@@ -1,5 +1,0 @@
-{* 自动化流程删除结论：数量由具名参数承载，句子只在 Jet 里。 *}
-{{if .None}}{{t("mailAutoNoneSel", "没有勾选任何流程，列表未改动。")}}
-{{else if .Done == 0}}{{tn("mailAutoDelNone", "没有流程被删除：{skipped} 个不存在或已被服务端拒绝。", map("skipped", .Skipped))}}
-{{else if .Skipped == 0}}{{tn("mailAutoDelDone", "已删除 {count} 个自动化流程。", map("count", .Done))}}
-{{else}}{{tn("mailAutoDelPart", "已删除 {done} 个自动化流程，另有 {skipped} 个被跳过（不存在或已被服务端拒绝）。", map("done", .Done, "skipped", .Skipped))}}{{end}}

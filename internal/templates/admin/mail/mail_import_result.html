@@ -1,3 +1,0 @@
-{* 联系人导入结论：五个计数由具名参数承载；逐行错误单独列出。 *}
-<p role="status">{{tn("mailImpDone", "导入完成：新增 {imported}，更新 {updated}，跳过 {skipped}，抑制名单命中 {suppressed}，非法 {bad}。", map("imported", .Imported, "updated", .Updated, "skipped", .Skipped, "suppressed", .Suppressed, "bad", .Bad))}}</p>
-{{if len(.Rows) > 0}}<ul>{{range _, row := .Rows}}<li>{{if row.Line > 0}}第 {{row.Line}} 行{{else}}文件{{end}}{{if row.Email != ""}}（{{row.Email}}）{{end}}：{{row.Message}}</li>{{end}}</ul>{{end}}

@@ -26,12 +26,7 @@ func mailErrMsg(c *gin.Context, err error) mailMsg {
 	if !fact.Business {
 		return mailInternalMsg()
 	}
-	if fact.Tail != "" {
-
-		if detail := mailDetailText(mailTranslate(c), fact.Tail); detail != "" {
-			return mailMsg{Fallback: response.ArgsText(c, fact.Key, fact.Fallback, nil) + "：" + detail}
-		}
-	}
+	// 主消息只播报公共一句；明细不在这里拼进成品句。
 	return mailMsg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
@@ -44,30 +39,6 @@ func mailInternalMsg() mailMsg {
 }
 
 const mailInternalFallback = "操作失败，请稍后重试"
-
-func mailDetailText(tr func(key, fallback string) string, tail string) string {
-	parts, ok := i18n.ParseErrorDetails(tail)
-	if !ok {
-		logger.Scene(mailErrScene).With("tail", i18n.DetailTailForLog(tail)).
-			Warn("业务错误的补充说明不是登记的词条形态，已丢弃（不再原样透出）")
-		return ""
-	}
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		fallback, registered := mailenums.ErrDetailFallbacks[p.Key]
-		if !registered || fallback == "" {
-			logger.Scene(mailErrScene).With("detail_key", p.Key).
-				Warn("业务错误的补充说明词条未登记，已省略该段")
-			continue
-		}
-		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
-	}
-	return strings.Join(out, "；")
-}
-
-func mailBulkIDsText(c *gin.Context, err error) string {
-	return adminui.BulkIDsFacingText(c, err)
-}
 
 func mailVisitorText(c *gin.Context, key, fallback string) string {
 	return mailTranslate(c)(key, fallback)

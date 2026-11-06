@@ -1,6 +1,0 @@
-{* 联系人批量打标签结论：逐条原因只在失败行出现，成功行只计数。 *}
-{{if .None}}{{t("mailCtcNoneSel", "没有勾选任何联系人，列表未改动。")}}
-{{else if .Done == 0}}{{tn("mailCtcTagNone", "没有联系人被打上标签：{skipped} 个不存在或已被服务端拒绝。", map("skipped", .Skipped))}}
-{{else if .Skipped == 0}}{{tn("mailCtcTagDone", "已为 {count} 个联系人更新标签。", map("count", .Done))}}
-{{else}}{{tn("mailCtcTagPart", "已为 {done} 个联系人更新标签，另有 {skipped} 个被跳过（不存在或已被服务端拒绝）。", map("done", .Done, "skipped", .Skipped))}}{{end}}
-{{if len(.Rows) > 0}}<ul>{{range _, row := .Rows}}{{if !row.OK}}<li>{{row.ID}}：{{row.Message}}</li>{{end}}{{end}}</ul>{{end}}

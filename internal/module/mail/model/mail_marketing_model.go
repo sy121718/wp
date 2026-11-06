@@ -231,6 +231,10 @@ func (m *MailModel) GetContactByEmail(ctx context.Context, email string) (e *Mai
 }
 
 func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (ids map[string]uint64, err error) {
+	return m.ExistingContactIDsTx(ctx, nil, emails)
+}
+
+func (m *MailModel) ExistingContactIDsTx(ctx context.Context, tx *gorm.DB, emails []string) (ids map[string]uint64, err error) {
 	ids = map[string]uint64{}
 	if len(emails) == 0 {
 		return ids, nil
@@ -248,9 +252,44 @@ func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (id
 		ID    uint64
 		Email string
 	}
-	err = m.tx(ctx).Model(&MailContactEntity{}).
+	err = m.txOr(ctx, tx).Model(&MailContactEntity{}).
 		Select("id, lower(email) AS email").
 		Where("lower(email) IN ?", lowered).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		ids[strings.ToLower(r.Email)] = r.ID
+	}
+	return ids, nil
+}
+
+// ExistingContactIDsForUpdateTx 按邮箱锁定已存在的联系人（id 升序）：
+// 导入的旧标签差集与随后的更新必须共用这把锁，避免并发导入互相覆盖或重复触发 tag_added。
+func (m *MailModel) ExistingContactIDsForUpdateTx(ctx context.Context, tx *gorm.DB, emails []string) (ids map[string]uint64, err error) {
+	ids = map[string]uint64{}
+	if len(emails) == 0 {
+		return ids, nil
+	}
+	lowered := make([]string, 0, len(emails))
+	for _, e := range emails {
+		if v := strings.TrimSpace(e); v != "" {
+			lowered = append(lowered, strings.ToLower(v))
+		}
+	}
+	if len(lowered) == 0 {
+		return ids, nil
+	}
+	var rows []struct {
+		ID    uint64
+		Email string
+	}
+	err = m.txOr(ctx, tx).Model(&MailContactEntity{}).
+		Select("id, lower(email) AS email").
+		Where("lower(email) IN ?", lowered).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -264,6 +303,10 @@ func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (id
 const contactTagsChunkSize = 2000
 
 func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags map[uint64][]string, err error) {
+	return m.TagsByContactIDsTx(ctx, nil, ids)
+}
+
+func (m *MailModel) TagsByContactIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (tags map[uint64][]string, err error) {
 	tags = make(map[uint64][]string, len(ids))
 	if len(ids) == 0 {
 		return tags, nil
@@ -289,7 +332,7 @@ func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags ma
 			ID   uint64
 			Tags StringArray
 		}
-		if qerr := m.tx(ctx).Model(&MailContactEntity{}).
+		if qerr := m.txOr(ctx, tx).Model(&MailContactEntity{}).
 			Select("id", "tags").
 			Where("id IN ?", uniq[start:end]).
 			Scan(&rows).Error; qerr != nil {
@@ -303,6 +346,10 @@ func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags ma
 }
 
 func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContactEntity, batchSize int) (err error) {
+	return m.BatchInsertContactsTx(ctx, nil, list, batchSize)
+}
+
+func (m *MailModel) BatchInsertContactsTx(ctx context.Context, tx *gorm.DB, list []*MailContactEntity, batchSize int) (err error) {
 	if len(list) == 0 {
 		return nil
 	}
@@ -314,7 +361,7 @@ func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContact
 	if batchSize <= 0 {
 		batchSize = 200
 	}
-	return m.tx(ctx).CreateInBatches(list, batchSize).Error
+	return m.txOr(ctx, tx).CreateInBatches(list, batchSize).Error
 }
 
 type ContactImportUpdate struct {
@@ -324,6 +371,10 @@ type ContactImportUpdate struct {
 }
 
 func (m *MailModel) BatchUpdateContactImportFields(ctx context.Context, rows []ContactImportUpdate, source string, at time.Time) (emails []string, err error) {
+	return m.BatchUpdateContactImportFieldsTx(ctx, nil, rows, source, at)
+}
+
+func (m *MailModel) BatchUpdateContactImportFieldsTx(ctx context.Context, tx *gorm.DB, rows []ContactImportUpdate, source string, at time.Time) (emails []string, err error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
@@ -348,7 +399,7 @@ FROM (
 ) AS v
 WHERE lower(c.email) = lower(v.email)
 RETURNING lower(c.email)`
-	if err = m.tx(ctx).Raw(q, source, at, string(payload)).Scan(&emails).Error; err != nil {
+	if err = m.txOr(ctx, tx).Raw(q, source, at, string(payload)).Scan(&emails).Error; err != nil {
 		return nil, err
 	}
 	return emails, nil
@@ -453,6 +504,19 @@ func (m *MailModel) LockContactTagsTx(ctx context.Context, tx *gorm.DB, contactI
 	return row.Tags, nil
 }
 
+// ContactsByIDsTx 按 id 升序锁定并取回联系人：批量写需要稳定顺序加锁，避免并发死锁。
+func (m *MailModel) ContactsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (list []*MailContactEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.txOr(ctx, tx).Model(&MailContactEntity{}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
 func (m *MailModel) DeleteContact(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailContactEntity{}).Error
 }
@@ -503,6 +567,26 @@ func (m *MailModel) GetCampaign(ctx context.Context, id uint64) (e *MailCampaign
 
 func (m *MailModel) DeleteCampaign(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailCampaignEntity{}).Error
+}
+
+func (m *MailModel) CampaignsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (list []*MailCampaignEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.txOr(ctx, tx).Model(&MailCampaignEntity{}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
+func (m *MailModel) DeleteCampaignsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.txOr(ctx, tx).Where("id IN ?", ids).Delete(&MailCampaignEntity{})
+	return res.RowsAffected, res.Error
 }
 
 func (m *MailModel) ListCampaigns(ctx context.Context, status string, offset, limit int) (list []*MailCampaignEntity, total int64, err error) {

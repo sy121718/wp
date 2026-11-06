@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -138,6 +139,26 @@ func (m *MailModel) UpdateAutomationFields(ctx context.Context, id uint64, field
 
 func (m *MailModel) DeleteAutomation(ctx context.Context, id uint64) (err error) {
 	return m.DeleteAutomationTx(ctx, nil, id)
+}
+
+func (m *MailModel) AutomationsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (list []*MailAutomationEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.txOr(ctx, tx).Model(&MailAutomationEntity{}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
+func (m *MailModel) DeleteAutomationsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.txOr(ctx, tx).Where("id IN ?", ids).Delete(&MailAutomationEntity{})
+	return res.RowsAffected, res.Error
 }
 
 func (m *MailModel) DeleteAutomationTx(ctx context.Context, tx *gorm.DB, id uint64) (err error) {

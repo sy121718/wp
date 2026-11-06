@@ -29,7 +29,6 @@ type stubContactWriter struct {
 
 	tagReq     *maildto.TagContactsReq
 	tagChanged int
-	tagSkipped int
 	tagErr     error
 }
 
@@ -53,9 +52,9 @@ func (s *stubContactWriter) DeleteContacts(_ context.Context, req *maildto.Delet
 	return s.deleteN, s.deleteErr
 }
 
-func (s *stubContactWriter) TagContacts(_ context.Context, req *maildto.TagContactsReq) (int, int, error) {
+func (s *stubContactWriter) TagContacts(_ context.Context, req *maildto.TagContactsReq) (int, error) {
 	s.tagReq = req
-	return s.tagChanged, s.tagSkipped, s.tagErr
+	return s.tagChanged, s.tagErr
 }
 
 type contactWriteStore struct{ m map[string]mcp.Result }

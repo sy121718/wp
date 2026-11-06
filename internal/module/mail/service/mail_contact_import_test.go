@@ -1,10 +1,12 @@
 package mailservice
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 )
 
 func TestDiffTagsOnlyNewOnes(t *testing.T) {
@@ -33,18 +35,28 @@ func TestDiffTagsOnlyNewOnes(t *testing.T) {
 	}
 }
 
-func TestFailedImportEmailsNormalizes(t *testing.T) {
-	res := &maildto.ImportContactsResp{Errors: []maildto.ImportRowError{
-		{Email: "Bad@Example.com", Reason: "更新失败: 联系人已不存在"},
-		{Line: 3, Email: "  spaced@Example.com ", Reason: "非法邮箱"},
-		{Line: 9, Reason: "CSV 解析失败: 无表头"},
-	}}
-	got := failedImportEmails(res)
-	want := map[string]bool{"bad@example.com": true, "spaced@example.com": true}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("failedImportEmails = %v，期望 %v", got, want)
+// TestImportRowBlockedCarriesRowsAndReason 守住导入的非法行整批拒绝事实：
+// 行号进 id、邮箱进 name、原因 key 原样保留，主消息只有公共一句。
+func TestImportRowBlockedCarriesRowsAndReason(t *testing.T) {
+	err := importRowBlocked([]maildto.ImportRowError{
+		{Email: "Bad@Example.com", Reason: mailenums.ErrContactNotFound},
+		{Line: 3, Email: "  spaced@Example.com ", Reason: mailenums.ErrEmailInvalid},
+	})
+	var blocked *mailBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("应产出整批拒绝事实，实际 %T", err)
 	}
-	if got[""] {
-		t.Fatal("空邮箱不该进入失败集合（否则会误伤所有行）")
+	if blocked.Error() != mailenums.ErrBatchReject {
+		t.Fatalf("主消息 key = %q，want %q", blocked.Error(), mailenums.ErrBatchReject)
+	}
+	items := blocked.BlockedItems()
+	if len(items) != 2 {
+		t.Fatalf("拒绝项 = %d，want 2", len(items))
+	}
+	if items[0].ID != "" || items[0].Name != "Bad@Example.com" || items[0].ReasonKey != mailenums.ErrContactNotFound {
+		t.Fatalf("第 1 项 = %+v", items[0])
+	}
+	if items[1].ID != "3" || items[1].Name != "spaced@Example.com" || items[1].ReasonKey != mailenums.ErrEmailInvalid {
+		t.Fatalf("第 2 项 = %+v", items[1])
 	}
 }

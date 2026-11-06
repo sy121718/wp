@@ -481,7 +481,7 @@ func contactTag(w mailcontract.ContactWriter) mcp.Tool {
 			if len(add) == 0 && len(remove) == 0 {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "add 与 remove 不能同时为空：这次调用没有要改的东西。"}
 			}
-			changed, skipped, err := w.TagContacts(ctx, &maildto.TagContactsReq{
+			changed, err := w.TagContacts(ctx, &maildto.TagContactsReq{
 				IDs: ids, Add: add, Remove: remove, OperatorID: operatorID(ctx),
 			})
 			if err != nil {
@@ -489,10 +489,6 @@ func contactTag(w mailcontract.ContactWriter) mcp.Tool {
 			}
 			var b strings.Builder
 			fmt.Fprintf(&b, "已修改 %d 个联系人的标签（请求 %d 个）", changed, len(ids))
-			if skipped > 0 {
-
-				fmt.Fprintf(&b, "，跳过 %d 个（标签本来就是这个状态）", skipped)
-			}
 			if len(add) > 0 {
 				b.WriteString("，加上：" + strings.Join(add, "、"))
 			}

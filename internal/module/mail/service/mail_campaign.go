@@ -14,6 +14,7 @@ import (
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/database/retention"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
 	"go_wp/pkg/queue"
@@ -109,14 +110,56 @@ func (s *Service) GetCampaign(ctx context.Context, id uint64) (res *maildto.Camp
 }
 
 func (s *Service) DeleteCampaign(ctx context.Context, id uint64) (err error) {
-	row, gerr := s.m.GetCampaign(ctx, id)
-	if gerr != nil {
-		return mailenums.Err(mailenums.ErrCampaignNotFound)
+	_, err = s.DeleteCampaigns(ctx, &maildto.DeleteIDsReq{IDs: []uint64{id}})
+	return err
+}
+
+// DeleteCampaigns 整批原子删除活动：任一条不存在或正在发送则整批拒绝，
+// 逐条原因进 data.items，不把其它 DB 错误改写成 notfound。
+func (s *Service) DeleteCampaigns(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error) {
+	if req == nil || len(req.IDs) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
-	if row.Status == mailmodel.CampaignStatusSending {
-		return mailenums.Err(mailenums.ErrCampaignSending)
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
-	return s.m.DeleteCampaign(ctx, id)
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.CampaignsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		byID := make(map[uint64]*mailmodel.MailCampaignEntity, len(rows))
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		items := make([]facing.BlockedItem, 0)
+		for _, id := range ids {
+			row, ok := byID[id]
+			switch {
+			case !ok:
+				items = append(items, blockedIDItem(id, mailenums.ErrCampaignNotFound))
+			case row.Status == mailmodel.CampaignStatusSending:
+				items = append(items, blockedIDItem(id, mailenums.ErrCampaignSending))
+			}
+		}
+		if len(items) > 0 {
+			return rejectBatch(len(ids), items)
+		}
+		var derr error
+		deleted, derr = s.m.DeleteCampaignsByIDsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if deleted != int64(len(ids)) {
+			return rejectBatch(len(ids), blockedIDs(ids, mailenums.ErrCampaignNotFound))
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 func (s *Service) StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (res *maildto.StartCampaignResp, err error) {

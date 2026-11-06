@@ -243,6 +243,46 @@ func (m *MailModel) DeleteAccount(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailAccountEntity{}).Error
 }
 
+func (m *MailModel) AccountsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (list []*MailAccountEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.txOr(ctx, tx).Model(&MailAccountEntity{}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
+func (m *MailModel) DeleteAccountsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.txOr(ctx, tx).Where("id IN ?", ids).Delete(&MailAccountEntity{})
+	return res.RowsAffected, res.Error
+}
+
+func (m *MailModel) TemplatesByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (list []*MailTemplateEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.txOr(ctx, tx).Model(&MailTemplateEntity{}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
+}
+
+func (m *MailModel) DeleteTemplatesByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.txOr(ctx, tx).Where("id IN ?", ids).Delete(&MailTemplateEntity{})
+	return res.RowsAffected, res.Error
+}
+
 func (m *MailModel) GetTemplate(ctx context.Context, key, locale string) (e *MailTemplateEntity, err error) {
 	e = &MailTemplateEntity{}
 	err = m.tx(ctx).Where("template_key = ? AND locale = ?", strings.TrimSpace(key), strings.TrimSpace(locale)).First(e).Error
@@ -374,6 +414,10 @@ func (m *MailModel) IsSuppressed(ctx context.Context, email string) (suppressed 
 }
 
 func (m *MailModel) SuppressedEmails(ctx context.Context, emails []string) (blocked map[string]bool, err error) {
+	return m.SuppressedEmailsTx(ctx, nil, emails)
+}
+
+func (m *MailModel) SuppressedEmailsTx(ctx context.Context, tx *gorm.DB, emails []string) (blocked map[string]bool, err error) {
 	blocked = map[string]bool{}
 	if len(emails) == 0 {
 		return blocked, nil
@@ -388,7 +432,7 @@ func (m *MailModel) SuppressedEmails(ctx context.Context, emails []string) (bloc
 		return blocked, nil
 	}
 	var rows []string
-	err = m.tx(ctx).Model(&MailSuppressionEntity{}).
+	err = m.txOr(ctx, tx).Model(&MailSuppressionEntity{}).
 		Where("lower(email) IN ?", lowered).
 		Pluck("lower(email)", &rows).Error
 	if err != nil {

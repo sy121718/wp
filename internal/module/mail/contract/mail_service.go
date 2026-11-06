@@ -12,6 +12,7 @@ type MailService interface {
 	ListAccounts(ctx context.Context, purpose string) ([]*maildto.AccountItem, error)
 	ListAccountsPage(ctx context.Context, purpose string, page, limit int) ([]*maildto.AccountItem, int64, int, error)
 	DeleteAccount(ctx context.Context, id uint64) error
+	DeleteAccounts(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error)
 	SetDefaultAccount(ctx context.Context, id uint64) error
 	TestSend(ctx context.Context, req *maildto.TestSendReq) (*maildto.TestSendResp, error)
 
@@ -21,10 +22,12 @@ type MailService interface {
 	ListTemplates(ctx context.Context, key string) ([]*maildto.TemplateItem, error)
 	ListTemplatesPage(ctx context.Context, key string, page, limit int) ([]*maildto.TemplateItem, int64, int, error)
 	DeleteTemplate(ctx context.Context, key, locale string) error
+	DeleteTemplates(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error)
 
 	ImportContacts(ctx context.Context, req *maildto.ImportContactsReq) (*maildto.ImportContactsResp, error)
 	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (*maildto.ContactListResp, error)
 	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) error
+	UpdateContactsStatus(ctx context.Context, req *maildto.UpdateContactsStatusReq) error
 
 	CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error)
 
@@ -32,7 +35,7 @@ type MailService interface {
 
 	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
 
-	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
+	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed int, err error)
 
 	ListContactTags(ctx context.Context) (tags []string, err error)
 
@@ -40,6 +43,7 @@ type MailService interface {
 	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (*maildto.CampaignListResp, error)
 	GetCampaign(ctx context.Context, id uint64) (*maildto.CampaignItem, error)
 	DeleteCampaign(ctx context.Context, id uint64) error
+	DeleteCampaigns(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error)
 	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (*maildto.StartCampaignResp, error)
 
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (*maildto.CampaignReport, error)
@@ -51,6 +55,7 @@ type MailService interface {
 
 	SaveAutomationLayout(ctx context.Context, req *maildto.SaveAutomationLayoutReq) error
 	DeleteAutomation(ctx context.Context, id uint64) error
+	DeleteAutomations(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error)
 
 	StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (bool, error)
 
@@ -99,7 +104,7 @@ type ContactWriter interface {
 
 	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
 
-	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
+	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed int, err error)
 }
 
 type TransactionalSender interface {

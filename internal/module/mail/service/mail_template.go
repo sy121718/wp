@@ -9,6 +9,8 @@ import (
 	"text/template"
 	"time"
 
+	"gorm.io/gorm"
+
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
@@ -106,7 +108,45 @@ func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto
 }
 
 func (s *Service) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
-	return s.m.DeleteTemplate(ctx, key, locale)
+	tpl, gerr := s.m.GetTemplate(ctx, key, locale)
+	if gerr != nil {
+		return mailenums.Err(mailenums.ErrTemplateNotFound)
+	}
+	_, err = s.DeleteTemplates(ctx, &maildto.DeleteIDsReq{IDs: []uint64{tpl.ID}})
+	return err
+}
+
+// DeleteTemplates 整批原子删除模板：任一条不存在则整批拒绝，逐条原因进 data.items。
+func (s *Service) DeleteTemplates(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error) {
+	if req == nil || len(req.IDs) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.TemplatesByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		if missing := missingIDs(ids, rows, func(t *mailmodel.MailTemplateEntity) uint64 { return t.ID }); len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrTemplateNotFound))
+		}
+		var derr error
+		deleted, derr = s.m.DeleteTemplatesByIDsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if deleted != int64(len(ids)) {
+			return rejectBatch(len(ids), blockedIDs(ids, mailenums.ErrTemplateNotFound))
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 func bodyOf(tpl *mailmodel.MailTemplateEntity) (html, text string) {

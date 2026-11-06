@@ -134,7 +134,41 @@ func (s *Service) ListAccountsPage(ctx context.Context, purpose string, page, li
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, id uint64) (err error) {
-	return s.m.DeleteAccount(ctx, id)
+	_, err = s.DeleteAccounts(ctx, &maildto.DeleteIDsReq{IDs: []uint64{id}})
+	return err
+}
+
+// DeleteAccounts 整批原子删除发信账号：任一条不存在则整批拒绝，逐条原因进 data.items。
+func (s *Service) DeleteAccounts(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error) {
+	if req == nil || len(req.IDs) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.AccountsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		if missing := missingIDs(ids, rows, func(a *mailmodel.MailAccountEntity) uint64 { return a.ID }); len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrAccountNotFound))
+		}
+		var derr error
+		deleted, derr = s.m.DeleteAccountsByIDsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if deleted != int64(len(ids)) {
+			return rejectBatch(len(ids), blockedIDs(ids, mailenums.ErrAccountNotFound))
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) {

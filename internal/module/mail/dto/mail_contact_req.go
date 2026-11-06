@@ -48,6 +48,20 @@ type DeleteContactsReq struct {
 	OperatorID uint64
 }
 
+// DeleteIDsReq 是账号 / 模板 / 活动 / 自动化批量删除的共同入参。
+type DeleteIDsReq struct {
+	IDs        []uint64
+	OperatorID uint64
+}
+
+// UpdateContactsStatusReq 是一次批量改状态：整批同一事务，逐条校验。
+type UpdateContactsStatusReq struct {
+	IDs        []uint64
+	Status     string
+	Note       string
+	OperatorID uint64
+}
+
 type TagContactsReq struct {
 	IDs        []uint64
 	Add        []string

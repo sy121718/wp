@@ -47,6 +47,7 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	}
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := mailhttp.NewMailPageHandle(svc)
 	router.GET("/admin/mail/contacts",
@@ -202,8 +203,8 @@ func TestMailContactCrudSaveDuplicateEmailIsReadable(t *testing.T) {
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/save", mailCrudForm(
 		"id", "0", "email", "QA.Taken@Example.invalid", "name", "重复", "tags", "", "status", "",
 	))
-	if code != http.StatusBadRequest {
-		t.Fatalf("重复邮箱是预期内的业务失败，应 400，实际 %d（%s）", code, body)
+	if code != http.StatusConflict {
+		t.Fatalf("重复邮箱是预期内的业务冲突，应 409，实际 %d（%s）", code, body)
 	}
 	mailCrudContains(t, body, "重复邮箱新建", "该邮箱已存在", "already exists")
 
@@ -335,8 +336,8 @@ func TestMailContactCrudDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	}
 
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/delete", mailCrudForm("id", strconv.FormatUint(maxID+999999, 10)))
-	if code != http.StatusBadRequest {
-		t.Fatalf("删不存在的 id 应 400（不许报「删除成功」），实际 %d（%s）", code, body)
+	if code != http.StatusNotFound {
+		t.Fatalf("删不存在的 id 应 404（不许报「删除成功」），实际 %d（%s）", code, body)
 	}
 	mailCrudContains(t, body, "单条删除不存在", "联系人不存在", "not found")
 
@@ -387,8 +388,8 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	rec := mailCrudPagePost(t, router, "/admin/mail/contact/status", url.Values{
 		"id": {strconv.FormatUint(missing, 10)}, "status": {mailmodel.ContactStatusSubscribed},
 	})
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("不存在的 id 必须走失败片段（不能报成功），实际 %d（%s）", rec.Code, firstN(rec.Body.String(), 300))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("不存在的 id 必须走失败片段并给 404（不能报成功），实际 %d（%s）", rec.Code, firstN(rec.Body.String(), 300))
 	}
 	page := rec.Body.String()
 	if !strings.Contains(page, `data-ui-error`) || !strings.Contains(page, "联系人不存在") {
@@ -404,15 +405,11 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	recBulk := mailCrudPagePost(t, router, "/admin/mail/contacts/bulk-status", url.Values{
 		"ids": {strconv.FormatUint(missing, 10)}, "status": {mailmodel.ContactStatusUnsubscribed},
 	})
-	if recBulk.Code != http.StatusOK {
-		t.Fatalf("批量状态写应回 200 结果片段，实际 %d（%s）", recBulk.Code, firstN(recBulk.Body.String(), 300))
+	if recBulk.Code != http.StatusNotFound {
+		t.Fatalf("整批都不存在必须失败并给 404（不能报 0 条成功），实际 %d（%s）", recBulk.Code, firstN(recBulk.Body.String(), 300))
 	}
-	bulkPage := recBulk.Body.String()
-	if !strings.Contains(bulkPage, "没有联系人被更新") {
-		t.Fatalf("整批都不存在时必须说清没人被更新：%s", firstN(bulkPage, 400))
-	}
-	if strings.Contains(bulkPage, "已把 0 个") {
-		t.Fatal("计数把不存在的 id 算成了已更新")
+	if !strings.Contains(recBulk.Body.String(), "data-ui-error") {
+		t.Fatalf("整批拒绝应落在错误区：%s", firstN(recBulk.Body.String(), 400))
 	}
 
 	if got := countOf("mail_contacts"); got != contactsBefore {
@@ -437,9 +434,6 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	injectMailWords(t, map[string]map[string]string{
-		"mailCtcStSaved": {"zh-CN": "联系人状态已更新", "en-US": "Contact status updated"},
-	})
 	rec = mailCrudPagePost(t, router, "/admin/mail/contact/status", url.Values{
 		"id": {strconv.FormatUint(row.ID, 10)}, "status": {mailmodel.ContactStatusUnsubscribed},
 	})
@@ -452,7 +446,7 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 	rec = mailCrudPagePost(t, router, "/admin/mail/contact/status", url.Values{
 		"id": {strconv.FormatUint(row.ID, 10)}, "status": {mailmodel.ContactStatusSubscribed},
 	})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "联系人状态已更新") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `role="status"`) {
 		t.Fatalf("真实 id 必须返回成功片段：%d %s", rec.Code, firstN(rec.Body.String(), 400))
 	}
 	after, err := m.GetContact(ctx, row.ID)
@@ -563,20 +557,37 @@ func TestMailContactCrudBulkDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	missing := strconv.FormatUint(maxID+999999, 10)
+
+	// 纯合法批次：一次事务全部删除，只播报公共成功。
 	code, body := mailCrudWrite(t, router, "/api/mail/contact/delete", url.Values{"ids": {
 		strconv.FormatUint(drop1.ID, 10),
 		strconv.FormatUint(drop2.ID, 10),
+	}})
+	if code != http.StatusOK || !strings.Contains(body, `role="status"`) {
+		t.Fatalf("合法批量删除应 200 公共提示，实际 %d（%s）", code, firstN(body, 400))
+	}
+
+	// 混合合法 / 非法 / 不存在：整批拒绝，已存在的那条也不能被删。
+	if err := f.seedContact(ctx, "qa.bulk.mixed@example.invalid", "混合", mailmodel.ContactStatusPending, ""); err != nil {
+		t.Fatal(err)
+	}
+	mixed, err := m.GetContactByEmail(ctx, "qa.bulk.mixed@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, body = mailCrudWrite(t, router, "/api/mail/contact/delete", url.Values{"ids": {
+		strconv.FormatUint(mixed.ID, 10),
 		missing,
 		"qa-not-a-number",
 	}})
-	if code != http.StatusOK {
-		t.Fatalf("批量删除应 200，实际 %d（%s）", code, body)
+	if code != http.StatusBadRequest || !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("混合批次应整批 400，实际 %d（%s）", code, firstN(body, 400))
 	}
-	if !strings.Contains(body, "已删除 2 个联系人") {
-		t.Fatalf("应删掉 2 条，实际：%s", firstN(body, 400))
+	if strings.Contains(body, missing) || strings.Contains(body, "qa-not-a-number") {
+		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", firstN(body, 600))
 	}
-	if !strings.Contains(body, missing) || !strings.Contains(body, "qa-not-a-number") {
-		t.Fatalf("不存在的 id 与非法 id 必须逐条列出原因，实际：%s", firstN(body, 600))
+	if _, err := m.GetContactByEmail(ctx, "qa.bulk.mixed@example.invalid"); err != nil {
+		t.Fatalf("整批回滚后合法行不该被删：%v", err)
 	}
 	if _, err := m.GetContactByEmail(ctx, "qa.bulk1@example.invalid"); err == nil {
 		t.Fatal("qa.bulk1 应已删除")
@@ -620,8 +631,8 @@ func TestMailContactCrudBulkTag(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("批量打标签应 200，实际 %d（%s）", code, body)
 	}
-	if !strings.Contains(body, "已为 2 个联系人更新标签") {
-		t.Fatalf("成功的标签计数应为 2，实际：%s", firstN(body, 400))
+	if !strings.Contains(body, `role="status"`) {
+		t.Fatalf("批量打标签成功应走公共提示，实际：%s", firstN(body, 400))
 	}
 	if strings.Contains(body, "已删除") {
 		t.Fatalf("打标签的摘要不得用删除口径（联系人还在，说「已删除」是假话）：%s", firstN(body, 400))

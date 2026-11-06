@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/pkg/facing"
 
 	"go_wp/public/test/support"
 )
@@ -90,29 +92,20 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 
 	content := "a@example.com\nnot-an-email\n# 注释行\n\nB@Example.COM\nb@example.com\n"
 	res, err := f.svc.ImportContacts(ctx, &maildto.ImportContactsReq{Content: []byte(content)})
-	if err != nil {
-		t.Fatalf("导入失败: %v", err)
+	if err == nil {
+		t.Fatalf("含非法行的导入必须整批拒绝，实际成功：%+v", res)
 	}
-
-	if len(res.Errors) != 1 || res.Errors[0].Email != "not-an-email" {
-		t.Fatalf("应恰好报 1 行非法，实际 %+v", res.Errors)
+	var blocked facing.BlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("应给结构化拒绝事实，实际 %T", err)
 	}
-	if res.Imported != 2 {
-		t.Fatalf("应导入 2 条（第三条与小写后的第二条重复），实际 %d", res.Imported)
+	items := blocked.BlockedItems()
+	if len(items) != 1 || items[0].Name != "not-an-email" {
+		t.Fatalf("应恰好报 1 行非法，实际 %+v", items)
 	}
-	if res.Skipped != 1 {
-		t.Fatalf("应有 1 条批内重复被跳过，实际 %d", res.Skipped)
-	}
-
-	got, err := f.m.GetContactByEmail(ctx, "a@example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != mailmodel.ContactStatusPending {
-		t.Fatalf("未声明同意的导入必须是 pending，实际 %s", got.Status)
-	}
-	if got.SubscribedAt != nil {
-		t.Fatal("pending 不该有 subscribed_at")
+	// 零提交：合法行也不能落库。
+	if _, gerr := f.m.GetContactByEmail(ctx, "a@example.com"); gerr == nil {
+		t.Fatal("非法行存在时整批回滚，合法行不该被导入")
 	}
 }
 

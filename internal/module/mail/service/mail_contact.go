@@ -6,7 +6,8 @@ import (
 	"encoding/csv"
 	"errors"
 	"net/mail"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"go_wp/internal/module/mail/dto"
 	"go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/pkg/logger"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/utils"
 )
 
@@ -50,22 +51,78 @@ func (s *Service) ListContacts(ctx context.Context, req *maildto.ContactFilterRe
 	return res, nil
 }
 
+// UpdateContactStatus 与批量改状态共用同一条规则：事务内按 id 加锁、缺行 404、写库错误原样上抛。
 func (s *Service) UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) (err error) {
 	if req == nil || req.ID == 0 || !contactStatusValid(req.Status) {
 		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
-	row, err := s.m.GetContact(ctx, req.ID)
+	was := ""
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.ContactsByIDsTx(ctx, tx, []uint64{req.ID})
+		if lerr != nil {
+			return lerr
+		}
+		if len(rows) != 1 {
+			return rejectBatch(1, blockedIDs([]uint64{req.ID}, mailenums.ErrContactNotFound))
+		}
+		was = rows[0].Status
+		return s.applyContactStatusTx(ctx, tx, req.ID, rows[0].Email, req.Status, req.Note, time.Now())
+	})
 	if err != nil {
-		return mailenums.Err(mailenums.ErrContactNotFound)
-	}
-
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		return s.applyContactStatusTx(ctx, tx, req.ID, row.Email, req.Status, req.Note, time.Now())
-	}); err != nil {
 		return err
 	}
+	s.fireContactSubscribedIfChanged(ctx, req.ID, was, req.Status)
+	return nil
+}
 
-	s.fireContactSubscribedIfChanged(ctx, req.ID, row.Status, req.Status)
+// UpdateContactsStatus 整批改联系人状态：同一事务内按 id 升序锁定、逐条校验，
+// 任一条不存在就整批回滚；订阅类自动化在提交后才触发。
+func (s *Service) UpdateContactsStatus(ctx context.Context, req *maildto.UpdateContactsStatusReq) (err error) {
+	if req == nil || len(req.IDs) == 0 || !contactStatusValid(req.Status) {
+		return mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	now := time.Now()
+	subscribed := make([]uint64, 0, len(ids))
+
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.ContactsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		byID := make(map[uint64]*mailmodel.MailContactEntity, len(rows))
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		missing := make([]uint64, 0, len(ids)-len(rows))
+		for _, id := range ids {
+			if _, ok := byID[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+		if len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrContactNotFound))
+		}
+		for _, id := range ids {
+			row := byID[id]
+			if aerr := s.applyContactStatusTx(ctx, tx, id, row.Email, req.Status, req.Note, now); aerr != nil {
+				return aerr
+			}
+			if req.Status == mailmodel.ContactStatusSubscribed && row.Status != mailmodel.ContactStatusSubscribed {
+				subscribed = append(subscribed, id)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, id := range subscribed {
+		s.fireContactSubscribedIfChanged(ctx, id, "", req.Status)
+	}
 	return nil
 }
 
@@ -184,6 +241,8 @@ type contactRow struct {
 	Tags  []string
 }
 
+// ImportContacts 是一次批量写：解析出的任一行非法、或持久化中途任何一步失败，
+// 都整批回滚（零提交）。多批 SQL 共用同一个事务句柄；触发在提交后统一发出。
 func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContactsReq) (res *maildto.ImportContactsResp, err error) {
 	if req == nil || len(req.Content) == 0 {
 		return nil, mailenums.Err(mailenums.ErrImportEmpty)
@@ -195,6 +254,9 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	res = &maildto.ImportContactsResp{Errors: []maildto.ImportRowError{}}
 	rows := parseContactRows(req.Content, res)
 	res.Total = len(rows)
+	if len(res.Errors) > 0 {
+		return nil, importRowBlocked(res.Errors)
+	}
 	if len(rows) == 0 {
 		return res, nil
 	}
@@ -215,131 +277,151 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	for _, r := range unique {
 		emails = append(emails, r.Email)
 	}
-	blocked, err := s.m.SuppressedEmails(ctx, emails)
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	list := make([]*mailmodel.MailContactEntity, 0, len(unique))
-	for _, r := range unique {
-		if blocked[strings.ToLower(r.Email)] {
-
-			res.Suppressed++
-			continue
-		}
-		tags := mailmodel.StringArray(mergeTags(r.Tags, req.DefaultTags))
-		name := r.Name
-		e := &mailmodel.MailContactEntity{
-			Email:  r.Email,
-			Source: mailmodel.ContactSourceImport,
-			Status: mailmodel.ContactStatusPending,
-			Tags:   tags,
-		}
-		if name != "" {
-			e.Name = &name
-		}
-		if req.ConsentDeclared {
-
-			e.Status = mailmodel.ContactStatusSubscribed
-			e.SubscribedAt = &now
-			if src := strings.TrimSpace(req.ConsentSource); src != "" {
-				e.ConsentSource = &src
-			}
-		}
-		list = append(list, e)
-	}
-
-	if len(list) == 0 {
-		return res, nil
-	}
-
-	existing, err := s.m.ExistingContactIDs(ctx, emails)
-	if err != nil {
-		return nil, err
-	}
-
-	toInsert := make([]*mailmodel.MailContactEntity, 0, len(list))
-	toUpdate := make([]mailmodel.ContactImportUpdate, 0, len(list))
-
 	needTagDiff := hasTriggerType(s.activeAutomations(ctx), mailmodel.TriggerTagAdded)
+	now := time.Now()
 
-	tagAdds := make(map[string][]string, len(list))
+	var (
+		createdIDs []uint64
+		tagAdds    map[string][]string
+		newIDs     map[string]uint64
+		existing   map[string]uint64
+		toInsert   []*mailmodel.MailContactEntity
+	)
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		blocked, berr := s.m.SuppressedEmailsTx(ctx, tx, emails)
+		if berr != nil {
+			return berr
+		}
 
-	pendingTags := make([]pendingTagDiff, 0, len(list))
-	for _, e := range list {
-		key := strings.ToLower(e.Email)
-		if _, exists := existing[key]; !exists {
-			toInsert = append(toInsert, e)
-
-			if len(e.Tags) > 0 {
-				tagAdds[key] = []string(e.Tags)
+		list := make([]*mailmodel.MailContactEntity, 0, len(unique))
+		for _, r := range unique {
+			if blocked[strings.ToLower(r.Email)] {
+				res.Suppressed++
+				continue
 			}
-			continue
-		}
-		if !req.UpdateExisting {
-			res.Skipped++
-			continue
+			tags := mailmodel.StringArray(mergeTags(r.Tags, req.DefaultTags))
+			name := r.Name
+			e := &mailmodel.MailContactEntity{
+				Email:  r.Email,
+				Source: mailmodel.ContactSourceImport,
+				Status: mailmodel.ContactStatusPending,
+				Tags:   tags,
+			}
+			if name != "" {
+				e.Name = &name
+			}
+			if req.ConsentDeclared {
+				e.Status = mailmodel.ContactStatusSubscribed
+				e.SubscribedAt = &now
+				if src := strings.TrimSpace(req.ConsentSource); src != "" {
+					e.ConsentSource = &src
+				}
+			}
+			list = append(list, e)
 		}
 
-		toUpdate = append(toUpdate, mailmodel.ContactImportUpdate{Email: e.Email, Name: e.Name, Tags: e.Tags})
-		if needTagDiff && len(e.Tags) > 0 && existing[key] != 0 {
-			pendingTags = append(pendingTags, pendingTagDiff{email: key, contactID: existing[key], tags: e.Tags})
+		if len(list) == 0 {
+			return nil
 		}
-	}
 
-	if len(pendingTags) > 0 {
-		ids := make([]uint64, 0, len(pendingTags))
-		for _, p := range pendingTags {
-			ids = append(ids, p.contactID)
+		var xerr error
+		// 先按邮箱锁定已存在行，再读旧标签、再更新：差集与更新基于同一份锁内快照。
+		existing, xerr = s.m.ExistingContactIDsForUpdateTx(ctx, tx, emails)
+		if xerr != nil {
+			return xerr
 		}
-		oldTags, terr := s.m.TagsByContactIDs(ctx, ids)
-		if terr != nil {
 
-			logger.Scene("mail").With("contacts", len(ids)).
-				Warn("批量读取联系人旧标签失败，本次导入不触发 tag_added（导入本身不受影响）")
-		} else {
+		toInsert = make([]*mailmodel.MailContactEntity, 0, len(list))
+		toUpdate := make([]mailmodel.ContactImportUpdate, 0, len(list))
+		tagAdds = make(map[string][]string, len(list))
+		pendingTags := make([]pendingTagDiff, 0, len(list))
+
+		for _, e := range list {
+			key := strings.ToLower(e.Email)
+			if _, exists := existing[key]; !exists {
+				toInsert = append(toInsert, e)
+				if len(e.Tags) > 0 {
+					tagAdds[key] = []string(e.Tags)
+				}
+				continue
+			}
+			if !req.UpdateExisting {
+				res.Skipped++
+				continue
+			}
+			toUpdate = append(toUpdate, mailmodel.ContactImportUpdate{Email: e.Email, Name: e.Name, Tags: e.Tags})
+			if needTagDiff && len(e.Tags) > 0 && existing[key] != 0 {
+				pendingTags = append(pendingTags, pendingTagDiff{email: key, contactID: existing[key], tags: e.Tags})
+			}
+		}
+
+		if len(pendingTags) > 0 {
+			ids := make([]uint64, 0, len(pendingTags))
+			for _, p := range pendingTags {
+				ids = append(ids, p.contactID)
+			}
+			oldTags, terr := s.m.TagsByContactIDsTx(ctx, tx, ids)
+			if terr != nil {
+				return terr
+			}
 			for _, p := range pendingTags {
 				if added := diffTags(oldTags[p.contactID], p.tags); len(added) > 0 {
 					tagAdds[p.email] = added
 				}
 			}
 		}
-	}
 
-	if len(toUpdate) > 0 {
-		if err = s.updateExistingContacts(ctx, toUpdate, existing, now, res); err != nil {
-			return nil, err
+		if len(toUpdate) > 0 {
+			hit, uerr := s.m.BatchUpdateContactImportFieldsTx(ctx, tx, toUpdate, mailmodel.ContactSourceImport, now)
+			if uerr != nil {
+				return uerr
+			}
+			written := make(map[string]struct{}, len(hit))
+			for _, email := range hit {
+				written[email] = struct{}{}
+			}
+			missing := make([]maildto.ImportRowError, 0)
+			for _, row := range toUpdate {
+				if _, ok := written[strings.ToLower(row.Email)]; ok {
+					res.Updated++
+					continue
+				}
+				missing = append(missing, maildto.ImportRowError{Email: row.Email, Reason: mailenums.ErrContactNotFound})
+			}
+			if len(missing) > 0 {
+				return importRowBlocked(missing)
+			}
 		}
-	}
 
-	if err = s.m.BatchInsertContacts(ctx, toInsert, importBatchSize); err != nil {
+		if xerr = s.m.BatchInsertContactsTx(ctx, tx, toInsert, importBatchSize); xerr != nil {
+			return xerr
+		}
+		res.Imported = len(toInsert)
+
+		newIDs = make(map[string]uint64, len(toInsert))
+		createdIDs = make([]uint64, 0, len(toInsert))
+		for _, e := range toInsert {
+			if e.ID == 0 {
+				continue
+			}
+			newIDs[strings.ToLower(e.Email)] = e.ID
+			createdIDs = append(createdIDs, e.ID)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	res.Imported = len(toInsert)
 
-	failed := failedImportEmails(res)
-	newIDs := make(map[string]uint64, len(toInsert))
-	createdIDs := make([]uint64, 0, len(toInsert))
-	for _, e := range toInsert {
-		if e.ID == 0 {
-			continue
-		}
-		newIDs[strings.ToLower(e.Email)] = e.ID
-		createdIDs = append(createdIDs, e.ID)
-	}
+	// 提交成功后才触发：回滚的导入不会留下自动化实例或 tag_added 副作用。
 	switch {
 	case len(createdIDs) == 1:
 		s.OnContactCreated(ctx, createdIDs[0])
 	case len(createdIDs) > 1:
 		s.OnContactsCreated(ctx, createdIDs)
 	}
-
 	tagContacts := make(map[string][]uint64, len(tagAdds))
 	for _, email := range sortedKeys(tagAdds) {
-		if failed[email] {
-			continue
-		}
 		id := existing[email]
 		if id == 0 {
 			id = newIDs[email]
@@ -360,6 +442,19 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 		s.OnTagsAddedBatch(ctx, tag, ids)
 	}
 	return res, nil
+}
+
+// importRowBlocked 把逐行解析/校验失败交给共享拒绝出口，整批零提交。
+func importRowBlocked(rows []maildto.ImportRowError) error {
+	items := make([]facing.BlockedItem, 0, len(rows))
+	for _, row := range rows {
+		id := ""
+		if row.Line > 0 {
+			id = strconv.Itoa(row.Line)
+		}
+		items = append(items, blockedRow(id, row.Email, row.Reason))
+	}
+	return rejectBatch(len(items), items)
 }
 
 type pendingTagDiff struct {
@@ -390,68 +485,6 @@ func diffTags(old []string, incoming []string) []string {
 		out = append(out, v)
 	}
 	return out
-}
-
-func failedImportEmails(res *maildto.ImportContactsResp) map[string]bool {
-	out := make(map[string]bool, len(res.Errors))
-	for _, e := range res.Errors {
-		if email := strings.ToLower(strings.TrimSpace(e.Email)); email != "" {
-			out[email] = true
-		}
-	}
-	return out
-}
-
-func sortedKeys[T any](m map[string][]T) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func (s *Service) updateExistingContacts(ctx context.Context, rows []mailmodel.ContactImportUpdate, existing map[string]uint64, now time.Time, res *maildto.ImportContactsResp) (err error) {
-	hit, uerr := s.m.BatchUpdateContactImportFields(ctx, rows, mailmodel.ContactSourceImport, now)
-	if uerr != nil {
-
-		return s.updateExistingContactsOneByOne(ctx, rows, existing, now, res)
-	}
-	written := make(map[string]struct{}, len(hit))
-	for _, e := range hit {
-		written[e] = struct{}{}
-	}
-	for _, r := range rows {
-		if _, ok := written[strings.ToLower(r.Email)]; ok {
-			res.Updated++
-			continue
-		}
-		res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: 联系人已不存在"})
-	}
-	return nil
-}
-
-func (s *Service) updateExistingContactsOneByOne(ctx context.Context, rows []mailmodel.ContactImportUpdate, existing map[string]uint64, now time.Time, res *maildto.ImportContactsResp) (err error) {
-	for _, r := range rows {
-		id, ok := existing[strings.ToLower(r.Email)]
-		if !ok {
-			res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: 联系人已不存在"})
-			continue
-		}
-		fields := map[string]any{"source": mailmodel.ContactSourceImport, "update_time": now}
-		if r.Name != nil {
-			fields["name"] = *r.Name
-		}
-		if len(r.Tags) > 0 {
-			fields["tags"] = mailmodel.StringArray(r.Tags)
-		}
-		if uerr := s.m.UpdateContactFields(ctx, id, fields); uerr != nil {
-			res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: " + uerr.Error()})
-			continue
-		}
-		res.Updated++
-	}
-	return nil
 }
 
 func parseContactRows(content []byte, res *maildto.ImportContactsResp) []contactRow {
@@ -486,7 +519,7 @@ func parseCSVRows(text string, res *maildto.ImportContactsResp) []contactRow {
 	reader.TrimLeadingSpace = true
 	records, err := reader.ReadAll()
 	if err != nil {
-		res.Errors = append(res.Errors, maildto.ImportRowError{Line: 0, Reason: "CSV 解析失败: " + err.Error()})
+		res.Errors = append(res.Errors, maildto.ImportRowError{Line: 0, Reason: mailenums.ErrImportCsvBad})
 		return nil
 	}
 	if len(records) == 0 {
@@ -755,16 +788,46 @@ func (s *Service) UpdateContact(ctx context.Context, req *maildto.SaveContactReq
 	return nil
 }
 
+// DeleteContacts 是整批原子删除：先按 id 升序锁定取回，任一条不存在就整批拒绝，
+// 逐条原因放进 data.items；数据库错误不改写成 notfound。
 func (s *Service) DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error) {
 	if req == nil || len(req.IDs) == 0 {
 		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
 
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.ContactsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		found := make(map[uint64]struct{}, len(rows))
+		for _, row := range rows {
+			found[row.ID] = struct{}{}
+		}
+		missing := make([]uint64, 0, len(ids)-len(rows))
+		for _, id := range ids {
+			if _, ok := found[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+		if len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrContactNotFound))
+		}
 		var derr error
-		deleted, derr = s.m.DeleteContactsByIDsTx(ctx, tx, req.IDs)
-		return derr
-	}); err != nil {
+		deleted, derr = s.m.DeleteContactsByIDsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if deleted != int64(len(ids)) {
+			return rejectBatch(len(ids), blockedIDs(ids, mailenums.ErrContactNotFound))
+		}
+		return nil
+	})
+	if err != nil {
 		return 0, err
 	}
 	return deleted, nil
@@ -794,42 +857,75 @@ func (s *Service) fireContactTagsAdded(ctx context.Context, contactID uint64, be
 	}
 }
 
-func (s *Service) TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error) {
+// TagContacts 是整批原子打标签：同一事务内按 id 升序加锁、逐条校验；
+// 任一条不存在就整批回滚（同值 no-op 仍视为成功），触发在提交后统一发出。
+func (s *Service) TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed int, err error) {
 	if req == nil || len(req.IDs) == 0 {
-		return 0, 0, mailenums.Err(mailenums.ErrInvalidParam)
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	add, remove := normalizeTagList(req.Add), normalizeTagList(req.Remove)
 	if len(add) == 0 && len(remove) == 0 {
-		return 0, 0, mailenums.Err(mailenums.ErrContactTagEmpty)
+		return 0, mailenums.Err(mailenums.ErrContactTagEmpty)
 	}
-	for _, id := range dedupIDs(req.IDs) {
-		var addedTags []string
-		werr := s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			cur, lerr := s.m.LockContactTagsTx(ctx, tx, id)
-			if lerr != nil {
-				return lerr
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+
+	type tagChange struct {
+		id    uint64
+		added []string
+	}
+	changes := make([]tagChange, 0, len(ids))
+	now := time.Now()
+
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.ContactsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		current := make(map[uint64]*mailmodel.MailContactEntity, len(rows))
+		for _, row := range rows {
+			current[row.ID] = row
+		}
+		missing := make([]uint64, 0, len(ids)-len(rows))
+		for _, id := range ids {
+			if _, ok := current[id]; !ok {
+				missing = append(missing, id)
 			}
+		}
+		if len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrContactNotFound))
+		}
+		for _, id := range ids {
+			// 行已在同一事务里按 id 升序加锁，直接用锁内读到的标签，避免二次查询。
+			cur := current[id].Tags
 			next, added := applyTagDelta(cur, add, remove)
-			addedTags = added
 			if tagListEqual(cur, next) {
-
-				return nil
+				// 合法同值 no-op：不改行，也不计入 changed。
+				continue
 			}
-			return s.m.UpdateContactFieldsTx(ctx, tx, id, map[string]any{
-				"tags": mailmodel.StringArray(next), "update_time": time.Now(),
-			})
-		})
-		if werr != nil {
-			skipped++
-			continue
+			if uerr := s.m.UpdateContactFieldsTx(ctx, tx, id, map[string]any{
+				"tags": mailmodel.StringArray(next), "update_time": now,
+			}); uerr != nil {
+				return uerr
+			}
+			changed++
+			changes = append(changes, tagChange{id: id, added: added})
 		}
-		changed++
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
 
-		for _, tag := range addedTags {
-			s.OnTagsAddedBatch(ctx, tag, []uint64{id})
+	// 提交后才发触发：回滚的事务不会再留下半截自动化实例。
+	for _, change := range changes {
+		for _, tag := range change.added {
+			s.OnTagsAddedBatch(ctx, tag, []uint64{change.id})
 		}
 	}
-	return changed, skipped, nil
+	return changed, nil
 }
 
 func (s *Service) ListContactTags(ctx context.Context) (tags []string, err error) {
@@ -906,18 +1002,21 @@ func tagListEqual(a, b []string) bool {
 	return true
 }
 
-func dedupIDs(ids []uint64) []uint64 {
-	out := make([]uint64, 0, len(ids))
+// dedupIDs 去重并按升序返回；任一 id 为 0 时整批参数非法。
+// 不能静默过滤 0：那会把「含非法项的批量」变成部分成功。
+func dedupIDs(ids []uint64) (out []uint64, ok bool) {
+	out = make([]uint64, 0, len(ids))
 	seen := make(map[uint64]struct{}, len(ids))
 	for _, id := range ids {
 		if id == 0 {
-			continue
+			return nil, false
 		}
-		if _, ok := seen[id]; ok {
+		if _, dup := seen[id]; dup {
 			continue
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
 	}
-	return out
+	slices.Sort(out)
+	return out, true
 }

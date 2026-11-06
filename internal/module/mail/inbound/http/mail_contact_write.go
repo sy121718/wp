@@ -13,7 +13,6 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	bulkids "go_wp/pkg/bulkids"
-	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
 
@@ -22,18 +21,6 @@ func mailContactOperator(c *gin.Context) uint64 {
 		return uint64(id)
 	}
 	return 0
-}
-
-type mailContactBulkItem struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
-	Message string `json:"message,omitempty"`
-}
-
-type mailContactTagItem struct {
-	ID      string `json:"id"`
-	Updated bool   `json:"updated"`
-	Message string `json:"message,omitempty"`
 }
 
 func mailContactUintOfText(text string) (uint64, error) {
@@ -78,7 +65,7 @@ func (h *Handle) ContactSave(c *gin.Context) {
 		pageview.FailScene(c, mailErrScene, err)
 		return
 	}
-	mailWriteOK(c)
+	pageview.Success(c)
 }
 
 func (h *Handle) ContactDelete(c *gin.Context) {
@@ -113,49 +100,32 @@ func (h *Handle) ContactDelete(c *gin.Context) {
 			pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrContactNotFound))
 			return
 		}
-		mailWriteOK(c)
+		pageview.Success(c)
 		return
 	}
 
-	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
+	rawIDs, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
-	res := mailContactBulkResult{Items: make([]mailContactBulkItem, 0, len(ids))}
-	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		item := mailContactBulkItem{ID: rawID}
-		contactID := mailIDOfText(rawID)
-		switch {
-		case contactID == 0:
-			item.Message = response.TranslateMessage(c, mailenums.ErrInvalidParam)
-		default:
-			deleted, derr := h.svc.DeleteContacts(ctx, &maildto.DeleteContactsReq{
-				IDs: []uint64{contactID}, OperatorID: operator,
-			})
-			switch {
-			case derr != nil:
-				item.Message = mailErrPageText(c, derr)
-			case deleted == 0:
-				item.Message = response.TranslateMessage(c, mailenums.ErrContactNotFound)
-			default:
-				item.Deleted = true
-			}
-		}
-		if item.Deleted {
-			res.Deleted++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
+	if len(rawIDs) == 0 {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
 	}
-	mailWriteResult(c, "admin/mail/mail_contact_result.html", pageview.Objects(
-		pageview.Object("None", len(ids) == 0),
-		pageview.Object("Done", res.Deleted),
-		pageview.Object("Skipped", res.Skipped),
-		pageview.Object("Rows", mailContactRowsOf(res.Items)),
-	))
+	ids, invalid := mailBatchIDs(rawIDs)
+	if len(invalid) > 0 {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, &mailInvalidBatchError{ids: invalid})
+		return
+	}
+	// 一次 service 调用：整批同一事务，任一条失败整批回滚。
+	if _, err := h.svc.DeleteContacts(c.Request.Context(), &maildto.DeleteContactsReq{
+		IDs: ids, OperatorID: operator,
+	}); err != nil {
+		pageview.FailScene(c, mailErrScene, err)
+		return
+	}
+	pageview.Success(c)
 }
 
 func (h *Handle) ContactTag(c *gin.Context) {
@@ -170,47 +140,30 @@ func (h *Handle) ContactTag(c *gin.Context) {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrContactTagEmpty))
 		return
 	}
-	ids, berr := bulkids.Normalize(mailContactIDs(form.IDs))
+	rawIDs, berr := bulkids.Normalize(mailContactIDs(form.IDs))
 	if berr != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
 		return
 	}
-	operator := mailContactOperator(c)
-	res := mailContactTagResult{Items: make([]mailContactTagItem, 0, len(ids))}
-	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		contactID := mailIDOfText(rawID)
-		if contactID == 0 {
-			res.Skipped++
-			res.Items = append(res.Items, mailContactTagItem{
-				ID: rawID, Message: response.TranslateMessage(c, mailenums.ErrInvalidParam),
-			})
-			continue
-		}
-		changed, skipped, terr := h.svc.TagContacts(ctx, &maildto.TagContactsReq{
-			IDs:        []uint64{contactID},
-			Add:        addTags,
-			Remove:     removeTags,
-			OperatorID: operator,
-		})
-		switch {
-		case terr != nil:
-			res.Skipped++
-			res.Items = append(res.Items, mailContactTagItem{ID: rawID, Message: mailErrPageText(c, terr)})
-		case skipped > 0 || changed == 0:
-			res.Skipped++
-			res.Items = append(res.Items, mailContactTagItem{
-				ID: rawID, Message: response.TranslateMessage(c, mailenums.ErrContactNotFound),
-			})
-		default:
-			res.Updated++
-			res.Items = append(res.Items, mailContactTagItem{ID: rawID, Updated: true})
-		}
+	if len(rawIDs) == 0 {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
+		return
 	}
-	mailWriteResult(c, "admin/mail/mail_contact_tag_result.html", pageview.Objects(
-		pageview.Object("None", len(ids) == 0),
-		pageview.Object("Done", res.Updated),
-		pageview.Object("Skipped", res.Skipped),
-		pageview.Object("Rows", mailTagRowsOf(res.Items)),
-	))
+	ids, invalid := mailBatchIDs(rawIDs)
+	if len(invalid) > 0 {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, &mailInvalidBatchError{ids: invalid})
+		return
+	}
+	operator := mailContactOperator(c)
+	// 一次 service 调用：加与减、整批联系人在同一事务里完成。
+	if _, terr := h.svc.TagContacts(c.Request.Context(), &maildto.TagContactsReq{
+		IDs:        ids,
+		Add:        addTags,
+		Remove:     removeTags,
+		OperatorID: operator,
+	}); terr != nil {
+		pageview.FailScene(c, mailErrScene, terr)
+		return
+	}
+	pageview.Success(c)
 }

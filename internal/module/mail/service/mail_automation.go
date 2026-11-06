@@ -219,15 +219,48 @@ func (s *Service) SetAutomationStatus(ctx context.Context, req *maildto.SetAutom
 }
 
 func (s *Service) DeleteAutomation(ctx context.Context, id uint64) (err error) {
-	if _, gerr := s.m.GetAutomation(ctx, id); gerr != nil {
-		return mailenums.Err(mailenums.ErrAutomationNotFound)
+	_, err = s.DeleteAutomations(ctx, &maildto.DeleteIDsReq{IDs: []uint64{id}})
+	return err
+}
+
+// DeleteAutomations 整批原子删除自动化：同一事务内先停运行中的实例再删流程；
+// 任一条不存在则整批拒绝，逐条原因进 data.items。
+func (s *Service) DeleteAutomations(ctx context.Context, req *maildto.DeleteIDsReq) (deleted int64, err error) {
+	if req == nil || len(req.IDs) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
-	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if serr := s.m.StopRunsOfAutomationTx(ctx, tx, id, time.Now()); serr != nil {
-			return serr
+	ids, ok := dedupIDs(req.IDs)
+	if !ok || len(ids) == 0 {
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
+	}
+	now := time.Now()
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		rows, lerr := s.m.AutomationsByIDsTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
 		}
-		return s.m.DeleteAutomationTx(ctx, tx, id)
+		if missing := missingIDs(ids, rows, func(a *mailmodel.MailAutomationEntity) uint64 { return a.ID }); len(missing) > 0 {
+			return rejectBatch(len(ids), blockedIDs(missing, mailenums.ErrAutomationNotFound))
+		}
+		for _, id := range ids {
+			if serr := s.m.StopRunsOfAutomationTx(ctx, tx, id, now); serr != nil {
+				return serr
+			}
+		}
+		var derr error
+		deleted, derr = s.m.DeleteAutomationsByIDsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if deleted != int64(len(ids)) {
+			return rejectBatch(len(ids), blockedIDs(ids, mailenums.ErrAutomationNotFound))
+		}
+		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 func validTrigger(t string) bool {

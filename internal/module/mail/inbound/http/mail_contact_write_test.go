@@ -20,6 +20,7 @@ import (
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
@@ -37,6 +38,7 @@ type mailContactWriteStub struct {
 	deleteMiss bool
 	tagErr     error
 	tagMiss    bool
+	tagNoop    bool
 }
 
 func (s *mailContactWriteStub) CreateContact(_ context.Context, req *maildto.SaveContactReq) (uint64, error) {
@@ -55,23 +57,48 @@ func (s *mailContactWriteStub) DeleteContacts(_ context.Context, req *maildto.De
 		return 0, s.deleteErr
 	}
 	if s.deleteMiss {
-		return 0, nil
+		return 0, &mailTestBlockedError{itemID: "9", reasonKey: mailenums.ErrContactNotFound, requested: len(req.IDs)}
 	}
 	return int64(len(req.IDs)), nil
 }
 
-func (s *mailContactWriteStub) TagContacts(_ context.Context, req *maildto.TagContactsReq) (int, int, error) {
+func (s *mailContactWriteStub) TagContacts(_ context.Context, req *maildto.TagContactsReq) (int, error) {
 	s.tagged = append(s.tagged, &maildto.TagContactsReq{
 		IDs: append([]uint64(nil), req.IDs...), Add: append([]string(nil), req.Add...),
 		Remove: append([]string(nil), req.Remove...), OperatorID: req.OperatorID,
 	})
 	if s.tagErr != nil {
-		return 0, 0, s.tagErr
+		return 0, s.tagErr
 	}
 	if s.tagMiss {
-		return 0, 0, nil
+		return 0, &mailTestBlockedError{itemID: "9", reasonKey: mailenums.ErrContactNotFound, requested: len(req.IDs)}
 	}
-	return 1, 0, nil
+	if s.tagNoop {
+		return 0, nil
+	}
+	return len(req.IDs), nil
+}
+
+// mailTestBlockedError 复刻 service 的整批拒绝事实：
+// 单条请求取该条的具体原因、其余取公共整批文案；两种形状都保留 items，状态按原因推导。
+type mailTestBlockedError struct {
+	itemID    string
+	reasonKey string
+	requested int
+}
+
+func (e *mailTestBlockedError) key() string {
+	if e.requested == 1 {
+		return e.reasonKey
+	}
+	return mailenums.ErrBatchReject
+}
+
+func (e *mailTestBlockedError) Error() string            { return e.key() }
+func (e *mailTestBlockedError) Facing() (string, string) { return e.key(), "" }
+func (e *mailTestBlockedError) HTTPStatus() int          { return mailenums.StatusFor(e.reasonKey) }
+func (e *mailTestBlockedError) BlockedItems() []facing.BlockedItem {
+	return []facing.BlockedItem{{ID: e.itemID, ReasonKey: e.reasonKey}}
 }
 
 func cloneSaveReq(req *maildto.SaveContactReq) *maildto.SaveContactReq {
@@ -203,7 +230,9 @@ func TestMailContactSaveCreateAndUpdate(t *testing.T) {
 
 func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
-		mailenums.ErrInvalidParam: {"zh-CN": "参数-非法", "en-US": "PARAM-INVALID-EN"},
+		mailenums.ErrInvalidParam:    {"zh-CN": "参数-非法", "en-US": "PARAM-INVALID-EN"},
+		mailenums.ErrBatchReject:     {"zh-CN": "整批未执行", "en-US": "BATCH-REJECTED-EN"},
+		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
 	})
 
 	stub := &mailContactWriteStub{}
@@ -218,52 +247,67 @@ func TestMailContactDeleteSingleAndBulk(t *testing.T) {
 		t.Fatalf("单条删除应把 [7] 交给 service，实际 %#v", stub.deleted)
 	}
 
+	// 合法批量只调用一次 service，id 去重后整批转交。
 	rec = postMailContactForm(t, r, "/api/mail/contact/delete",
-		url.Values{"ids": {"1", "2", "2", "x", "0"}}, "en-US")
+		url.Values{"ids": {"1", "2", "2"}}, "en-US")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("批量删除应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	body := assertMailWriteHTML(t, rec)
-	if !strings.Contains(body, "已删除 2 个联系人") && !strings.Contains(body, "Deleted 2 contacts") {
-		t.Fatalf("成功条数应为 2（去重后 1 / 2 成功），实际：%s", body)
+	assertMailWriteHTML(t, rec)
+	if len(stub.deleted) != 2 || len(stub.deleted[1]) != 2 {
+		t.Fatalf("批量删除必须一次调用 service 且整批传 id，实际 %#v", stub.deleted)
 	}
-	if !strings.Contains(body, "PARAM-INVALID-EN") {
-		t.Fatalf("非法 id（x / 0）必须逐条给出原因，实际：%s", body)
+
+	// 混合非法/合法 id 整批拒绝，不进 service。
+	before := len(stub.deleted)
+	rec = postMailContactForm(t, r, "/api/mail/contact/delete",
+		url.Values{"ids": {"1", "x", "0"}}, "en-US")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("混合非法 id 应整批 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	body := assertMailWriteHTML(t, rec)
+	if !strings.Contains(body, "BATCH-REJECTED-EN") || strings.Contains(body, "PARAM-INVALID-EN") {
+		t.Fatalf("失败区只播报公共一句，不逐条拼明细：%s", body)
+	}
+	if len(stub.deleted) != before {
+		t.Fatalf("非法批次不该进 service，实际多调用 %d 次", len(stub.deleted)-before)
 	}
 }
 
 func TestMailContactDeleteMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
+		mailenums.ErrBatchReject:     {"zh-CN": "整批未执行", "en-US": "BATCH-REJECTED-EN"},
 		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
 	})
 	r := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{deleteMiss: true}))
 
 	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"ids": {"9"}}, "en-US")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("批量里删不存在的 id 不是失败（幂等语义），实际 %d：%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("批量里删不存在的 id 应整批失败且按缺失给 404，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := assertMailWriteHTML(t, rec)
 	if strings.Contains(body, "Deleted 1 contacts") {
 		t.Fatalf("真实删除 0 行却报了成功：%s", body)
 	}
 	if !strings.Contains(body, "NOT-FOUND-EN") {
-		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际：%s", body)
+		t.Fatalf("单项拒绝应给具体业务原因，逐条明细仍只进 data.items：%s", body)
 	}
 }
 
 func TestMailContactDeleteSingleMissingRowIsNotReportedAsSuccess(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
+		mailenums.ErrBatchReject:     {"zh-CN": "整批未执行", "en-US": "BATCH-REJECTED-EN"},
 		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
 	})
 	r := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{deleteMiss: true}))
 
 	rec := postMailContactForm(t, r, "/api/mail/contact/delete", url.Values{"id": {"9"}}, "en-US")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("单条删 0 行应 400（不许说「删除成功」），实际 %d：%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("单条删 0 行应 404（不许说「删除成功」），实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := assertMailWriteHTML(t, rec)
 	if !strings.Contains(body, "NOT-FOUND-EN") || !strings.Contains(body, "data-ui-error") {
-		t.Fatalf("失败原因应是「联系人不存在」（按请求语言取词）并落在错误区，实际：%s", body)
+		t.Fatalf("单条失败应给具体业务原因并落在错误区，实际：%s", body)
 	}
 
 	ok := newMailContactWriteEngine(NewHandle(&mailContactWriteStub{}))
@@ -296,6 +340,7 @@ func TestMailContactBulkIDsLimit(t *testing.T) {
 func TestMailContactTagResultShape(t *testing.T) {
 	injectMailContactWriteEntries(t, map[string]map[string]string{
 		mailenums.ErrContactTagEmpty: {"zh-CN": "差量-空", "en-US": "TAG-EMPTY-EN"},
+		mailenums.ErrBatchReject:     {"zh-CN": "整批未执行", "en-US": "BATCH-REJECTED-EN"},
 		mailenums.ErrContactNotFound: {"zh-CN": "联系人-不存在", "en-US": "NOT-FOUND-EN"},
 	})
 
@@ -311,8 +356,8 @@ func TestMailContactTagResultShape(t *testing.T) {
 	if len(stub.tagged) != 1 || strings.Join(stub.tagged[0].Add, "|") != "vip" || strings.Join(stub.tagged[0].Remove, "|") != "trial" {
 		t.Fatalf("增与减必须在同一条请求里转给 service，实际 %#v", stub.tagged)
 	}
-	if !strings.Contains(body, "更新标签") {
-		t.Fatalf("成功片段应说明更新了标签，实际：%s", body)
+	if strings.Contains(body, "data-ui-error") {
+		t.Fatalf("成功应走公共成功提示，实际：%s", body)
 	}
 
 	rec = postMailContactForm(t, r, "/api/mail/contact/tag",
@@ -324,14 +369,23 @@ func TestMailContactTagResultShape(t *testing.T) {
 		t.Fatalf("空差量文案应按请求语言取词，实际：%s", body)
 	}
 
+	// 不存在的 id：整批拒绝，状态按原因给 404，逐条原因不进 HTML。
 	missing := &mailContactWriteStub{tagMiss: true}
 	rec = postMailContactForm(t, newMailContactWriteEngine(NewHandle(missing)),
 		"/api/mail/contact/tag", url.Values{"ids": {"9"}, "add": {"vip"}}, "en-US")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("不存在的 id 不该让整批失败，实际 %d：%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("不存在的 id 必须让整批失败，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	if body := assertMailWriteHTML(t, rec); !strings.Contains(body, "NOT-FOUND-EN") {
-		t.Fatalf("跳过原因应是「联系人不存在」（当前语言），实际：%s", body)
+		t.Fatalf("单项拒绝应给具体业务原因，实际：%s", body)
+	}
+
+	// 合法同值 no-op：不算失败，仍走公共成功提示。
+	noop := &mailContactWriteStub{tagNoop: true}
+	rec = postMailContactForm(t, newMailContactWriteEngine(NewHandle(noop)),
+		"/api/mail/contact/tag", url.Values{"ids": {"9"}, "add": {"vip"}}, "en-US")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("同值 no-op 应成功，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 }
 
