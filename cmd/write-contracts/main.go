@@ -74,7 +74,10 @@ type funcSource struct {
 	pkg  string
 	// ctxParams 是本函数里类型为 gin.Context 的参数名，用于识别「把请求委托给另一个处理器」。
 	ctxParams map[string]bool
-	imports   map[string]string
+	// selfParams 是接收者标识与其它形参名，委托调用时按位置把它们映射成被委托方的形参。
+	recvName   string
+	paramNames []string
+	imports    map[string]string
 }
 
 func run(check bool) error {
@@ -159,8 +162,12 @@ func handlerIdentity(name string) string {
 func buildContracts(routes []route, index sourceIndex) map[string]endpointSchema {
 	out := map[string]endpointSchema{}
 	for _, r := range routes {
-		binding, ok := index.Bindings[handlerIdentity(r.Handler)]
+		identity := handlerIdentity(r.Handler)
+		binding, ok := index.Bindings[identity]
 		if !ok {
+			binding = delegateBinding(identity, index)
+		}
+		if binding.Protocol == "" && binding.Reason == "" {
 			binding = bodyBinding{Protocol: "unknown", Reason: "真实处理器没有唯一显式 body binder，或是包装闭包"}
 		}
 		ep := endpointSchema{DTO: binding.DTO, Handler: r.Handler, Protocol: binding.Protocol, Reason: binding.Reason, Fields: []fieldSchema{}}
@@ -227,10 +234,23 @@ func scanSources(root, prefix string) (sourceIndex, error) {
 					continue
 				}
 				name := pkg + "." + node.Name.Name
+				src := &funcSource{name: name, body: node.Body, pkg: pkg, imports: imports, ctxParams: map[string]bool{}}
 				if node.Recv != nil && len(node.Recv.List) == 1 {
 					name = typeName(node.Recv.List[0].Type, pkg, imports) + "." + node.Name.Name
+					if names := node.Recv.List[0].Names; len(names) == 1 {
+						src.recvName = names[0].Name
+					}
 				}
-				index.funcs[name] = &funcSource{name: name, body: node.Body, pkg: pkg, imports: imports}
+				src.name = name
+				for _, field := range node.Type.Params.List {
+					for _, paramName := range field.Names {
+						src.paramNames = append(src.paramNames, paramName.Name)
+						if typeName(field.Type, pkg, imports) == "github.com/gin-gonic/gin.Context" {
+							src.ctxParams[paramName.Name] = true
+						}
+					}
+				}
+				index.funcs[name] = src
 				if binding := nativeBinding(node.Body, pkg, imports); binding.DTO != "" || binding.Reason != "" {
 					index.Bindings[name] = binding
 				}
@@ -459,4 +479,112 @@ func marshalStable(in map[string]endpointSchema) ([]byte, error) {
 	}
 	buf.WriteString("}\n")
 	return buf.Bytes(), nil
+}
+
+// delegateBinding 识别「处理器把请求整包转交给另一个函数」的形态。
+//
+// 这种端点的输入形状由被委托方决定；只取本函数里的 binder（通常没有）
+// 会把受检端点误报成未检查。沿调用链只跟一层：调用方把 gin.Context 实参
+// 传给被委托方的 gin.Context 形参，被委托方自己的 binder 才是该端点的契约。
+// 出现多条委托或委托目标仍无 binder 时如实返回 unknown 与原因，不猜。
+func delegateBinding(name string, index sourceIndex) bodyBinding {
+	src, ok := index.funcs[name]
+	if !ok {
+		return bodyBinding{}
+	}
+	var targets []string
+	for _, target := range delegatedTargets(src, index) {
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return bodyBinding{}
+	}
+	if len(targets) > 1 {
+		return bodyBinding{Protocol: "unknown", Reason: "处理器把请求委托给多个处理器，无法确定唯一输入契约"}
+	}
+	callee, ok := index.funcs[targets[0]]
+	if !ok {
+		return bodyBinding{Protocol: "unknown", Reason: "委托目标不在源码索引内：" + targets[0]}
+	}
+	if binding, ok := index.Bindings[callee.name]; ok {
+		return binding
+	}
+	// 二层包装很常见（导出处理器 → 私有实现），但只跟一层就停：
+	// 继续展开会把无关调用链误并进来，宁可如实报 unknown。
+	return bodyBinding{Protocol: "unknown", Reason: "委托目标没有显式 body binder：" + callee.name}
+}
+
+// delegatedTargets 返回本函数里「把 gin.Context 实参转交给另一个函数」的目标标识。
+func delegatedTargets(src *funcSource, index sourceIndex) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 1)
+	ast.Inspect(src.body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		// 找一找实参里有没有本函数的 gin.Context 形参。
+		passesCtx := false
+		for i, arg := range call.Args {
+			ident, ok := arg.(*ast.Ident)
+			if !ok || !src.ctxParams[ident.Name] {
+				continue
+			}
+			// 被委托方的第 i 个形参也必须是 gin.Context，才算是整包委托。
+			target := resolveCallee(src, sel, index)
+			if target == nil || i >= len(target.paramNames) {
+				continue
+			}
+			if target.ctxParams[target.paramNames[i]] {
+				passesCtx = true
+				break
+			}
+		}
+		if passesCtx {
+			if target := resolveCallee(src, sel, index); target != nil && !seen[target.name] {
+				seen[target.name] = true
+				out = append(out, target.name)
+			}
+		}
+		return true
+	})
+	sort.Strings(out)
+	return out
+}
+
+// resolveCallee 把一次方法调用解析成源码索引里的函数标识；解析不出返回 nil。
+func resolveCallee(src *funcSource, sel *ast.SelectorExpr, index sourceIndex) *funcSource {
+	switch recv := sel.X.(type) {
+	case *ast.Ident:
+		// 同包私有方法或包级函数：src 的接收者类型 + 方法名。
+		if src.recvName != "" && recv.Name == src.recvName {
+			if callee, ok := index.funcs[funcWithMethod(src, sel.Sel.Name)]; ok {
+				return callee
+			}
+		}
+		// 形参上的委托（接口字段等）无法静态解析成具体实现，不猜。
+		return nil
+	case *ast.SelectorExpr:
+		// a.h.foo(...) 形态：按字段类型解析。
+		if typ := typeName(recv, src.pkg, src.imports); typ != "" {
+			if callee, ok := index.funcs[typ+"."+sel.Sel.Name]; ok {
+				return callee
+			}
+		}
+		return nil
+	}
+	return nil
+}
+
+// funcWithMethod 返回接收者方法在索引里的标识。
+func funcWithMethod(src *funcSource, method string) string {
+	dot := strings.LastIndex(src.name, ".")
+	if dot < 0 {
+		return src.name
+	}
+	return src.name[:dot] + "." + method
 }

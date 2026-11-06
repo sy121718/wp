@@ -234,3 +234,54 @@ func TestMarshalStableKeepsBothMethods(t *testing.T) {
 		t.Fatalf("方法不能相互覆盖，产物必须确定：%s err=%v", first, err)
 	}
 }
+
+// TestDelegatedHandlerInheritsCalleeBinder 锁住「处理器把请求转交给另一个处理器」：
+// 输入契约由被委托方决定，不能因为本函数没有 binder 就报未检查。
+func TestDelegatedHandlerInheritsCalleeBinder(t *testing.T) {
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\ntype SaveReq struct { ID string `form:\"id\" binding:\"required\"` }\n" +
+			"type OtherReq struct { Note string `form:\"note\"` }\n",
+		"http/handle.go": `package examplehttp
+import (
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+type Handle struct{}
+func (h *Handle) Export(c *gin.Context) { h.saveImpl(c) }
+func (h *Handle) saveImpl(c *gin.Context) { var in req.SaveReq; c.ShouldBindWith(&in, wire.FormPost) }
+func (h *Handle) Ambiguous(c *gin.Context) { h.saveImpl(c); h.other(c) }
+func (h *Handle) other(c *gin.Context) { var in req.OtherReq; c.ShouldBindWith(&in, wire.FormPost) }
+func (h *Handle) Wrapped(c *gin.Context) { h.nested(c) }
+func (h *Handle) nested(c *gin.Context) { h.deeper(c) }
+func (h *Handle) deeper(c *gin.Context) { var in req.OtherReq; c.ShouldBindWith(&in, wire.FormPost) }
+func (h *Handle) NoCallee(c *gin.Context) { passed := c; _ = passed }
+`,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/export", Handler: "example/internal/http.(*Handle).Export-fm"},
+		{Method: "POST", Path: "/ambiguous", Handler: "example/internal/http.(*Handle).Ambiguous-fm"},
+		{Method: "POST", Path: "/wrapped", Handler: "example/internal/http.(*Handle).Wrapped-fm"},
+	}, index)
+
+	export := got["POST /export"]
+	if export.Reason != "" || export.Protocol != "form" || export.DTO != "example/internal/dto.SaveReq" ||
+		!reflect.DeepEqual(export.Fields, []fieldSchema{{Name: "id", Required: true}}) {
+		t.Fatalf("委托端点应继承被委托方的 binder 契约：%+v", export)
+	}
+
+	ambiguous := got["POST /ambiguous"]
+	if ambiguous.Protocol != "unknown" || !strings.Contains(ambiguous.Reason, "多个处理器") {
+		t.Fatalf("多条委托必须如实报未检查：%+v", ambiguous)
+	}
+
+	// 只跟一层：二层包装不展开，避免把无关调用链误并进来。
+	wrapped := got["POST /wrapped"]
+	if wrapped.Protocol != "unknown" || !strings.Contains(wrapped.Reason, "没有显式 body binder") {
+		t.Fatalf("二层包装不应被静默展开：%+v", wrapped)
+	}
+}
