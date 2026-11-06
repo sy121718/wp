@@ -435,7 +435,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                    true,
 	"internal/module/project/inbound/http/project_jump.go":                 true,
-	"internal/module/user/inbound/http/customer_bulk_write.go":             true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":           true,

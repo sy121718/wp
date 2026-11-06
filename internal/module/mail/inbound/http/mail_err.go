@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/pkg/i18n"
@@ -14,6 +13,7 @@ import (
 	"go_wp/pkg/mailer"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	text "go_wp/pkg/view/jet"
 )
 
 const mailErrScene = "mail"
@@ -22,7 +22,8 @@ func mailErrMsg(c *gin.Context, err error) mailMsg {
 	if err == nil {
 		return mailMsg{}
 	}
-	fact := adminui.PageErrorFact(c, mailErrScene, err)
+	// 直连请求级错误事实：adminui.PageErrorFact 只是同一条接线的转发。
+	fact := text.FactOf(c, mailErrScene, err)
 	if !fact.Business {
 		return mailInternalMsg()
 	}

@@ -56,7 +56,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/plugin/inbound/http/plugin_page_handle.go":                 {offenders: 2, max: 10},
 	"internal/module/project/inbound/http/project_page.go":                      {offenders: 11, max: 49},
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":           {offenders: 2, max: 19},
-	"internal/module/user/inbound/http/customer_bulk_write.go":                  {offenders: 2, max: 21},
+	"internal/module/user/inbound/http/customer_bulk_write.go":                  {offenders: 2, max: 11},
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":           {offenders: 3, max: 10},
 	"internal/module/user/inbound/http/user_page.go":                            {offenders: 5, max: 31},
 	"internal/module/workbench/inbound/http/workbench_handle.go":                {offenders: 1, max: 9},
