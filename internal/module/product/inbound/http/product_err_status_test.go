@@ -86,7 +86,8 @@ func productErrWords(t *testing.T) {
 func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 	productErrWords(t)
 
-	// 受控业务明细（半角 ": " 后的纯文本）是调用方给的事实，出口按原样保留。
+	// 主消息只播报声明文案；普通明文尾部既不进入提示，也不会被自动搬进 data，
+	// 需要保留的明细必须由业务层显式给结构化/受控编码事实（共享失败批次已收口）。
 	conflictWithDetail := fmt.Errorf("%w: %s", productenums.Err(productenums.ErrSlugTaken), "summer-sale")
 
 	for _, tt := range []struct {
@@ -116,9 +117,10 @@ func TestProductErrStatusComesFromDeclaration(t *testing.T) {
 			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用",
 		},
 		{
-			name: "带受控明细的冲突仍是 409 且明细上屏", err: conflictWithDetail,
+			name: "带受控明细的冲突仍是 409 但明细不上屏", err: conflictWithDetail,
 			method: http.MethodPost, path: "/product/update", body: `{"id":"p-1"}`,
-			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用：summer-sale",
+			wantCode: http.StatusConflict, wantInMsg: "该 URL 段在本工程已被占用",
+			wantNotInMsg: "summer-sale",
 		},
 		{
 			name: "声明过 400 的库存重复给 400", err: productenums.Err(productenums.ErrVariantStockDuplicated),
