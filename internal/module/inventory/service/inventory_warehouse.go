@@ -16,6 +16,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	"go_wp/pkg/crypto"
+	"go_wp/pkg/database"
 )
 
 func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateWarehouseReq) (res *inventorydto.WarehouseResp, err error) {
@@ -42,40 +43,49 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 	if err != nil {
 		return nil, err
 	}
-	if taken, cerr := s.m.CodeExists(ctx, projectID, code, ""); cerr != nil {
-		return nil, cerr
-	} else if taken {
-		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
-	}
-
-	existing, lerr := s.m.ListWarehouses(ctx, projectID)
-	if lerr != nil {
-		return nil, lerr
-	}
-	asDefault := req.IsDefault || len(existing) == 0
-
-	if asDefault && typ == inventoryenums.WarehouseTypeVirtual {
+	if asDefault := req.IsDefault; asDefault && typ == inventoryenums.WarehouseTypeVirtual {
 		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseTypeVirtualDefault)
 	}
 	config, err := s.applyThirdPartyConfig(typ, req.ThirdParty, nil)
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-
 	priority, perr := normalizeDeductPriority(req.DeductPriority)
 	if perr != nil {
 		return nil, perr
 	}
+	now := time.Now().UTC()
 	e := &inventorymodel.WarehouseEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Code: code, Name: name, Type: typ, Status: status,
-		IsDefault: asDefault, Sort: req.Sort, DeductPriority: priority,
+		Sort: req.Sort, DeductPriority: priority,
 		Config:    config,
 		Metadata:  orJSON(req.Metadata, "{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateWarehouse(ctx, e, asDefault); err != nil {
+	// 查重、是否首个仓（默认）、建行与清旧默认必须在同一事务：
+	// 事务外查重会在并发建同编码时把唯一冲突裸露成 500。
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if taken, cerr := s.m.CodeExistsTx(ctx, tx, projectID, code, ""); cerr != nil {
+			return cerr
+		} else if taken {
+			return inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
+		}
+		count, cerr := s.m.CountWarehousesTx(ctx, tx, projectID)
+		if cerr != nil {
+			return cerr
+		}
+		asDefault := req.IsDefault || count == 0
+		if asDefault && typ == inventoryenums.WarehouseTypeVirtual {
+			return inventoryenums.Err(inventoryenums.ErrWarehouseTypeVirtualDefault)
+		}
+		e.IsDefault = asDefault
+		return s.m.CreateWarehouseTx(ctx, tx, e, asDefault)
+	})
+	if err != nil {
+		if database.IsUniqueViolation(err) {
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
+		}
 		return nil, err
 	}
 	return toWarehouseResp(e), nil
@@ -167,13 +177,23 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseIsDefault)
 	}
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateWarehouse(ctx, e); err != nil {
+	promoteDefault := req.IsDefault != nil && *req.IsDefault && !e.IsDefault
+	// 整行保存与设默认必须同事务：分开提交会在中间态留下「旧默认已清、新默认未置」。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if uerr := s.m.UpdateWarehouseTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		if !promoteDefault {
+			return nil
+		}
+		return s.m.SetDefaultWarehouseTx(ctx, tx, e.ProjectID, e.ID)
+	}); err != nil {
+		if database.IsUniqueViolation(err) {
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
+		}
 		return nil, err
 	}
-	if req.IsDefault != nil && *req.IsDefault && !e.IsDefault {
-		if err = s.m.SetDefaultWarehouse(ctx, e.ProjectID, e.ID); err != nil {
-			return nil, err
-		}
+	if promoteDefault {
 		e.IsDefault = true
 	}
 	return toWarehouseResp(e), nil

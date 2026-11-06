@@ -640,3 +640,53 @@ func (m *Model) ExternalSKUProductConflict(ctx context.Context, projectID, wareh
 	})
 	return owner, err
 }
+
+// UpdateWarehouseTx 在调用方事务内整行保存仓库。
+func (m *Model) UpdateWarehouseTx(ctx context.Context, tx *gorm.DB, e *WarehouseEntity) error {
+	return tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+// SetDefaultWarehouseTx 在调用方事务内先把同工程其它仓库置为非默认，再把目标置为默认。
+//
+// 两步必须在同一事务：分开提交会让「旧默认已清、新默认未置」的中间态对外可见，
+// 并发下还会撞上 uq_inventory_warehouses_project_default。
+func (m *Model) SetDefaultWarehouseTx(ctx context.Context, tx *gorm.DB, projectID, id string) error {
+	if err := tx.WithContext(ctx).Model(&WarehouseEntity{}).
+		Where("project_id = ? AND is_default AND id <> ?", projectID, id).
+		Update("is_default", false).Error; err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("id = ?", id).Update("is_default", true).Error
+}
+
+// CodeExistsTx 在调用方事务内复核仓库编码是否已被同工程其它仓库占用。
+func (m *Model) CodeExistsTx(ctx context.Context, tx *gorm.DB, projectID, code, excludeID string) (bool, error) {
+	q := tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("project_id = ? AND code = ?", projectID, code)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var n int64
+	if err := q.Count(&n).Error; err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// CountWarehousesTx 在调用方事务内统计本工程仓库数（判断新建是否应成为默认）。
+func (m *Model) CountWarehousesTx(ctx context.Context, tx *gorm.DB, projectID string) (int64, error) {
+	var n int64
+	err := tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("project_id = ?", projectID).Count(&n).Error
+	return n, err
+}
+
+// CreateWarehouseTx 在调用方事务内建仓库；置默认时同事务内先清掉旧默认。
+func (m *Model) CreateWarehouseTx(ctx context.Context, tx *gorm.DB, e *WarehouseEntity, asDefault bool) error {
+	if asDefault {
+		if err := tx.WithContext(ctx).Model(&WarehouseEntity{}).
+			Where("project_id = ? AND is_default", e.ProjectID).
+			Update("is_default", false).Error; err != nil {
+			return err
+		}
+	}
+	return tx.WithContext(ctx).Create(e).Error
+}
