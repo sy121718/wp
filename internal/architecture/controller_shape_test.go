@@ -12,17 +12,15 @@ import (
 )
 
 var pendingControllerNormalize = map[string]bool{
-	"internal/module/admin/inbound/http/admin_i18n_write.go":                  true,
-	"internal/module/block/inbound/http/block_handle.go":                      true,
-	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go":  true,
-	"internal/module/inventory/inbound/http/inventory_reason_handle.go":       true,
-	"internal/module/purchase/inbound/http/source_page_handle.go":             true,
-	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":    true,
-	"internal/module/mail/inbound/http/mail_contact_write.go":                 true,
-	"internal/module/mail/inbound/http/mail_page.go":                          true,
-	"internal/module/navigation/inbound/http/navigation_add_source_handle.go": true,
-	"internal/module/navigation/inbound/http/navigation_delete_handle.go":     true,
-	"internal/module/order/inbound/http/order_write.go":                       true,
+	"internal/module/admin/inbound/http/admin_i18n_write.go":                 true,
+	"internal/module/block/inbound/http/block_handle.go":                     true,
+	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go": true,
+	"internal/module/inventory/inbound/http/inventory_reason_handle.go":      true,
+	"internal/module/purchase/inbound/http/source_page_handle.go":            true,
+	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":   true,
+	"internal/module/mail/inbound/http/mail_contact_write.go":                true,
+	"internal/module/mail/inbound/http/mail_page.go":                         true,
+	"internal/module/order/inbound/http/order_write.go":                      true,
 }
 
 var pendingControllerFiles = map[string]bool{

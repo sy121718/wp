@@ -101,7 +101,7 @@ func navEditHTMX(c *gin.Context) bool { return c.GetHeader("HX-Request") == "tru
 func (h *navigationPageHandle) navEditFailure(c *gin.Context, err error, echo navEditEcho) {
 	if !navEditHTMX(c) {
 
-		navJumpListMenu(c, false, navigationErrMsg(c, err))
+		navNotify(c, false, navigationErrMsg(c, err))
 		return
 	}
 	if echo.ID == "" || echo.ProjectID == "" || echo.Kind != normalizeNavKind(echo.Kind) {
@@ -325,7 +325,7 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 		if navEditHTMX(c) {
 			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
 		} else {
-			navJumpListMenu(c, false, navInvalidParamMsg)
+			navNotify(c, false, navInvalidParamMsg)
 		}
 		return
 	}
@@ -356,7 +356,7 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 		h.navEditFailure(c, err, echo)
 		return
 	}
-	navJumpList(c, true, navDoneNotice)
+	navNotify(c, true, navDoneNotice)
 }
 
 var errPanelUnavailable = errors.New("面板块能力未装配")
@@ -387,7 +387,7 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 		if navEditHTMX(c) {
 			h.renderNavigationEdit(c, echo, navInvalidParamMsg)
 		} else {
-			navJumpListMenu(c, false, navInvalidParamMsg)
+			navNotify(c, false, navInvalidParamMsg)
 		}
 		return
 	}
@@ -413,10 +413,11 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 		h.navEditFailure(c, err, echo)
 		return
 	}
-	navJumpListMenu(c, true, navDoneNotice)
+	navNotify(c, true, navDoneNotice)
 }
 
 func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	title := strings.TrimSpace(c.PostForm("title"))
@@ -427,7 +428,7 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	}
 	if h.blocks == nil {
 		logger.Scene("page").With("project", projectID).Error(errPanelUnavailable, "新建面板块失败：块能力未装配")
-		navJumpListMenu(c, false, adminui.InternalMsg())
+		navNotify(c, false, adminui.InternalMsg())
 		return
 	}
 	name := panelBlockName(navTr(c), kind, title)
@@ -436,7 +437,7 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	})
 	if err != nil {
 		logger.Scene("page").With("project_id", projectID).Error(err, "新建面板块失败")
-		navJumpListMenu(c, false, navigationErrMsg(c, err))
+		navNotify(c, false, navigationErrMsg(c, err))
 		return
 	}
 
@@ -445,7 +446,11 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 		target += "&returnUrl=" + url.QueryEscape(back)
 	}
 
-	navJump(c, true, navDoneNotice, target, navText{})
+	// 新建面板块是真实业务视图：提示由共享组件出，下一步链接由模板声明，
+	// 不降成不含目标链接的纯提示，也不在 Go 里拼跳转页。
+	c.HTML(http.StatusOK, NavigationPanelCreatedTemplate, pageview.Objects(
+		pageview.Object("Target", target),
+	))
 }
 
 func panelBlockName(tr func(key, fallback string) string, kind, title string) string {
@@ -864,26 +869,16 @@ func navListBackMenu(c *gin.Context) string {
 	return backpath.FromRequest(c.Request.URL.Query(), navigationListPath, "/admin", "navigation", "project", "kind", "menu")
 }
 
-var (
-	navListBackTitle = navText{Key: navigationenums.Heading, Fallback: "导航菜单"}
+var navDoneNotice = navText{Key: navigationenums.ActionDone, Fallback: "操作已完成"}
 
-	navDoneNotice = navText{Key: navigationenums.ActionDone, Fallback: "操作已完成"}
-)
-
-func navJump(c *gin.Context, ok bool, msg navText, _ string, _ navText) {
+// navNotify 只交成功/失败事实：成功走共享提示，失败走共享失败出口。
+// 页面跳转由发起模板声明，后端不再携带回跳地址或标题。
+func navNotify(c *gin.Context, ok bool, msg navText) {
 	if ok {
 		pageview.SuccessWith(c, pageview.SuccessFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args})
 		return
 	}
 	pageview.FailMessage(c, navigationErrScene, msg.Key, msg.Fallback, msg.Args...)
-}
-
-func navJumpList(c *gin.Context, ok bool, msg navText) {
-	navJump(c, ok, msg, navListBack(c), navListBackTitle)
-}
-
-func navJumpListMenu(c *gin.Context, ok bool, msg navText) {
-	navJump(c, ok, msg, navListBackMenu(c), navListBackTitle)
 }
 
 type navigationEditFormView struct {

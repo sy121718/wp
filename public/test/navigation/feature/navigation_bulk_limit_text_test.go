@@ -1,10 +1,12 @@
 package feature
 
 import (
+	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,13 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	navigationcontract "go_wp/internal/module/navigation/contract"
+	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	navigationservice "go_wp/internal/module/navigation/service"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
-	"net/url"
 )
 
 func navBulkOverLimitIDs() []string {
@@ -55,13 +59,23 @@ func navBulkOverLimitRawError() error {
 	return err
 }
 
+// navOverLimitService 把批量删除交给真实 service 的上限判定：
+// 超限在触库前就返回带 Count/Max 的受控错误，不需要 PG。
+type navOverLimitService struct {
+	navigationcontract.NavigationService
+}
+
+func (navOverLimitService) BulkDelete(ctx context.Context, req *navigationdto.BulkDeleteReq) error {
+	return navigationservice.NewService(nil, nil).BulkDelete(ctx, req)
+}
+
 func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.POST("/api/navigation/delete-bulk", pageview.HTMLFragment, navigationhttp.NewHandle(nil).DeleteBulk)
+	engine.POST("/api/navigation/delete-bulk", pageview.HTMLFragment, navigationhttp.NewHandle(navOverLimitService{}).DeleteBulk)
 
 	i18n.InjectForTest(map[string]map[string]string{
 		bulkids.MsgTooMany: {"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行"},

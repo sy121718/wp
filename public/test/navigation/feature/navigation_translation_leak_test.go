@@ -64,6 +64,8 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
@@ -101,6 +103,8 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
@@ -110,12 +114,12 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 		t.Fatalf("保存应 200，实际 %d，body=%s", recorder.Code, recorder.Body.String())
 	}
 	payload := recorder.Body.String()
-	// 回执是 Jet 片段：写入条数来自写服务，句子在模板里。
-	if !strings.Contains(payload, `role="status"`) || !strings.Contains(payload, "1") {
-		t.Fatalf("成功响应应是带写入条数的结果片段，实际 %s", payload)
+	// 普通成功只给公共一句提示：条数属明细，不进成功消息。
+	if !strings.Contains(payload, `role="status"`) {
+		t.Fatalf("成功响应应是公共提示片段，实际 %s", payload)
 	}
-	if strings.Contains(payload, "%!") {
-		t.Errorf("成功句出现格式化垃圾（占位符没按语言填）: %s", payload)
+	if strings.Contains(payload, "written") || strings.Contains(payload, "%!") || strings.Contains(payload, "{count}") {
+		t.Errorf("成功提示不得携带条数、裸占位或格式化垃圾: %s", payload)
 	}
 
 	var target string
@@ -157,6 +161,8 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
+	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
@@ -194,9 +200,9 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	if empty.Code != http.StatusOK {
 		t.Fatalf("显式空 target 应被接受（本次不改动），实际 %d body=%s", empty.Code, empty.Body.String())
 	}
-	// 回执是 Jet 片段：零写入时片段里必须出现 0。
-	if !strings.Contains(empty.Body.String(), `role="status"`) || !strings.Contains(empty.Body.String(), "0") {
-		t.Fatalf("空译文不该产生写入，实际 %s", empty.Body.String())
+	// 零写入仍是成功，但回执只给公共一句提示，不出现计数。
+	if !strings.Contains(empty.Body.String(), `role="status"`) || strings.Contains(empty.Body.String(), "0") {
+		t.Fatalf("空译文应给公共成功提示且不带计数，实际 %s", empty.Body.String())
 	}
 	if got := translationRowCount(t, db, "首页", "en-US"); got != 0 {
 		t.Fatalf("空译文不该写库，但已有 %d 行", got)

@@ -1,10 +1,6 @@
 package navigationhttp
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -12,93 +8,22 @@ import (
 
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
-	"go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
 )
 
-var navigationDeleteSingleKeys = map[string]bool{"id": true}
-
-var navigationDeleteBulkKeys = map[string]bool{"ids": true}
-
-type navigationBulkDeleteItem struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
-	Message string `json:"message,omitempty"`
-}
-
-type navigationBulkDeleteResult struct {
-	Deleted int                        `json:"deleted"`
-	Skipped int                        `json:"skipped"`
-	Items   []navigationBulkDeleteItem `json:"items"`
-}
-
-func navigationDeleteHasKey(raw map[string]json.RawMessage, key string) bool {
-	_, ok := raw[key]
-	return ok
-}
-
-func navigationDeleteShapeOK(raw map[string]json.RawMessage, allow map[string]bool) bool {
-	for key := range raw {
-		if !allow[key] {
-			return false
-		}
-	}
-	return true
-}
-
-func navigationDeleteBulkIDsOf(raw json.RawMessage) ([]string, bool) {
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return nil, false
-	}
-	var list []json.RawMessage
-	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, false
-	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		if bytes.Equal(bytes.TrimSpace(item), []byte("null")) {
-			return nil, false
-		}
-		var text string
-		if err := json.Unmarshal(item, &text); err != nil {
-			return nil, false
-		}
-		out = append(out, text)
-	}
-	return out, true
-}
-
-func navigationBulkTooManyMessage(err error) string {
-	var tooMany *bulkids.IDsError
-	if !errors.As(err, &tooMany) {
-		return bulkids.MsgTooMany
-	}
-	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, tooMany.Max, tooMany.Count)
-}
-
 // DeleteBulk 是批量删除的独立端点：标准表单，ids 重复提交。
+//
+// 控制器只做原生绑定与“至少有一个值”的基础校验；空串、非法 uuid、不存在项和
+// 跨工程批量都由 service 统一判定并整批拒绝，控制器不先过滤/去重，避免把非法项
+// 悄悄丢掉后变成一次部分提交。
 func (h *Handle) DeleteBulk(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var form navigationdto.BulkDeleteForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil || len(form.IDs) == 0 {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	h.deleteBulk(c)
-}
-
-func (h *Handle) deleteBulk(c *gin.Context) {
-	params := c.Request.PostForm["ids"]
-	ids, nerr := bulkids.Normalize(params)
-	if nerr != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, nerr)
-		return
-	}
-	if len(ids) == 0 {
-		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
-		return
-	}
-	if err := h.svc.BulkDelete(c.Request.Context(), &navigationdto.BulkDeleteReq{IDs: ids}); err != nil {
+	if err := h.svc.BulkDelete(c.Request.Context(), &navigationdto.BulkDeleteReq{IDs: form.IDs}); err != nil {
 		pageview.FailScene(c, navigationErrScene, err)
 		return
 	}

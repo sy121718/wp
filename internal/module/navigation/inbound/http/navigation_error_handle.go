@@ -77,58 +77,11 @@ func navigationFactMsg(c *gin.Context, fact facing.Fact) facing.Msg {
 }
 
 var navigationReasonFallbacks = map[string]string{
-	navigationAddSourceNoPathKey: "（暂无公开路径，先发布后再添加）",
+	navigationenums.NoPublicPath: "（暂无公开路径，先发布后再添加）",
 }
 
 func navigationReasonFallback(key string) string {
 	return navigationReasonFallbacks[key]
-}
-
-func navigationReasonText(c *gin.Context, err error) string {
-	fact, business := navigationFact(err)
-	if !business {
-		logger.Scene(navigationErrScene).
-			With("user_id", builtin.CurrentUserID(c)).
-			Error(err, "navigation 接口内部错误")
-
-		if text := response.TranslateMessage(c, navigationInternalKey); text != navigationInternalKey {
-			return text
-		}
-		return navigationInternalFallback
-	}
-	return navigationFactReasonText(c, fact)
-}
-
-func navigationFactReasonText(c *gin.Context, fact facing.Fact) string {
-	if fact.Tail == "" {
-		return navigationReasonKeyText(c, fact.Key)
-	}
-	text := response.TranslateMessage(c, fact.Key)
-	if text == fact.Key {
-		if fallback := navigationReasonFallback(fact.Key); fallback != "" {
-			text = fallback
-		}
-	}
-	return text + ": " + fact.Tail
-}
-
-func navigationReasonKeyText(c *gin.Context, msg string) string {
-	if text := response.TranslateMessage(c, msg); text != msg {
-		return text
-	}
-	return navigationReasonFallbackText(msg)
-}
-
-func navigationReasonFallbackText(msg string) string {
-	key := msg
-	if k, _, ok := strings.Cut(msg, "|"); ok {
-
-		key = k
-	}
-	if text := navigationReasonFallback(key); text != "" {
-		return text
-	}
-	return navigationInternalFallback
 }
 
 func navTr(c *gin.Context) func(key, fallback string) string {
@@ -138,9 +91,5 @@ func navTr(c *gin.Context) func(key, fallback string) string {
 var navNoticeItemMissing = navText{Key: navigationenums.ErrNotFound, Fallback: "菜单项不存在"}
 
 var navInvalidParamMsg = navText{Key: navigationenums.ErrInvalidParam, Fallback: "参数错误"}
-
-var navNoticeNoSourcePicked = navText{
-	Key: navigationenums.NoticeNoSourcePicked, Fallback: "请至少勾选一项要加入菜单的内容。",
-}
 
 type navText = facing.Msg

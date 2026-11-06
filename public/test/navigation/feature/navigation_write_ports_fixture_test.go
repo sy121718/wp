@@ -23,7 +23,16 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/internal/pipeline"
 )
+
+// registerNavigationBusinessViews 走生产同一装配入口登记业务组件视图。
+// 组件自身的 init 只登记组件与模板，ViewBuilder 由应用装配显式注册；
+// 测试必须在首次编译/组件 schema/缓存读取之前完成这一步。
+func registerNavigationBusinessViews(t *testing.T) {
+	t.Helper()
+	pipeline.RegisterBusinessViews()
+}
 
 type navWritePortFixture struct {
 	Pages navigationcontract.PageStalePort

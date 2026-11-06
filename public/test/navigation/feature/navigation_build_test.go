@@ -39,6 +39,7 @@ func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigat
 
 func newNavigationEnvPorts(t *testing.T) (*gorm.DB, pagecontract.PageService, navigationcontract.NavigationService, string, navWritePortFixture) {
 	t.Helper()
+	registerNavigationBusinessViews(t)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

@@ -60,5 +60,8 @@ type NavigationService interface {
 	// BulkDelete 在一个事务里删除多个导航项：任一失败整批回滚。
 	BulkDelete(ctx context.Context, req *navigationdto.BulkDeleteReq) error
 
+	// AddSources 从来源候选批量加入菜单：候选规则、校验与写入同一事务，任一失败整批回滚。
+	AddSources(ctx context.Context, req *navigationdto.AddSourceReq) (added int, err error)
+
 	Render(ctx context.Context, projectID, kind string) (html string, err error)
 }

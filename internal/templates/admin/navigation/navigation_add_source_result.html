@@ -1,8 +1,0 @@
-{* 从来源加入导航菜单的结论：成功计数 + 逐条跳过原因。 *}
-<div role="status" data-added="{{.Added}}" data-skipped="{{.Skipped}}">
-{{if .Added == 0 && .Skipped == 0}}{{t("navSrcNone", "没有选中任何条目，菜单未改动。")}}
-{{else if .Added == 0}}{{tn("navSrcSkip", "没有条目被加入菜单：{skipped} 个被跳过。", map("skipped", .Skipped))}}
-{{else if .Skipped == 0}}{{tn("navSrcDone", "已把 {count} 个条目加入菜单。", map("count", .Added))}}
-{{else}}{{tn("navSrcPart", "已加入 {added} 个条目，另有 {skipped} 个被跳过。", map("added", .Added, "skipped", .Skipped))}}{{end}}
-{{if len(.Items) > 0}}<ul>{{range _, item := .Items}}<li data-item-id="{{item.ID}}" data-item-ok="{{if item.Added}}1{{else}}0{{end}}">{{if !item.Added}}{{item.ID}}：{{item.Message}}{{end}}</li>{{end}}</ul>{{end}}
-</div>

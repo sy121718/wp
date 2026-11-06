@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,13 +18,13 @@ import (
 )
 
 const (
-	navCreateAPIPath = "/api/navigation/create"
-	navSourceAPIPath = "/api/navigation/sources"
+	navCreateAPIPath     = "/api/navigation/create"
+	navSourceAPIPath     = "/api/navigation/sources"
 	navDeleteAPIPath     = "/api/navigation/delete"
 	navDeleteBulkAPIPath = "/api/navigation/delete-bulk"
 
-	navCreatePermission = "navigation:create"
-	navSourcePermission = "navigation:sourceAdd"
+	navCreatePermission     = "navigation:create"
+	navSourcePermission     = "navigation:sourceAdd"
 	navDeletePermission     = "navigation:delete"
 	navDeleteBulkPermission = "navigation:deleteBulk"
 )
@@ -103,44 +102,6 @@ func navSeedText(t *testing.T, env *navTranslationAuthzEnv, key, lang string) st
 		t.Fatalf("sys_i18n 里没有 key=%s lang=%s 的词条（迁移没跑全？）", key, lang)
 	}
 	return value
-}
-
-// navBulkDeleteData 从结果片段读回 deleted / skipped / items，形状与旧 JSON 的 data 段一致。
-func navBulkDeleteData(t *testing.T, body []byte) map[string]interface{} {
-	t.Helper()
-	m := regexp.MustCompile(`data-deleted="(\d+)" data-skipped="(\d+)"`).FindSubmatch(body)
-	if m == nil {
-		t.Fatalf("回执缺少计数属性: %s", string(body))
-	}
-	deleted, _ := strconv.Atoi(string(m[1]))
-	skipped, _ := strconv.Atoi(string(m[2]))
-	items := make([]interface{}, 0, 4)
-	for _, im := range regexp.MustCompile(`data-item-id="([^"]*)" data-item-ok="([01])">([^<]*)<`).FindAllSubmatch(body, -1) {
-		message := ""
-		if text := string(im[3]); text != "" {
-			if i := strings.Index(text, "："); i >= 0 {
-				message = text[i+len("："):]
-			}
-		}
-		items = append(items, map[string]interface{}{
-			"id":      string(im[1]),
-			"deleted": string(im[2]) == "1",
-			"message": message,
-		})
-	}
-	return map[string]interface{}{"deleted": float64(deleted), "skipped": float64(skipped), "items": items}
-}
-
-func navFindBulkItem(t *testing.T, items []interface{}, id string) map[string]interface{} {
-	t.Helper()
-	for _, raw := range items {
-		item, _ := raw.(map[string]interface{})
-		if item["id"] == id {
-			return item
-		}
-	}
-	t.Fatalf("批档回执里没有 id=%s 的逐条结果: %v", id, items)
-	return nil
 }
 
 func navAssertNoLeak(t *testing.T, message string) {
@@ -240,9 +201,8 @@ func TestNavigationDeleteWriteAuthzChain(t *testing.T) {
 		t.Fatalf("补上策略后普通管理员应 200（说明 403 由该条 Casbin 路径决定），实际 %d: %s",
 			allowed.Code, allowed.Body.String())
 	}
-	data := navBulkDeleteData(t, allowed.Body.Bytes())
-	if data["deleted"] != float64(2) || data["skipped"] != float64(0) {
-		t.Fatalf("批量回执应为 deleted=2 skipped=0，实际 %s", allowed.Body.String())
+	if body := allowed.Body.String(); !strings.Contains(body, `role="status"`) {
+		t.Fatalf("整批成功应只播报公共一句，实际 %s", body)
 	}
 	if navItemExists(t, env, batchA) || navItemExists(t, env, batchB) {
 		t.Fatal("补策略后的批量删除应真的删掉两行")
@@ -328,7 +288,9 @@ func TestNavigationWriteRequiresCSRF(t *testing.T) {
 	}
 }
 
-func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
+// TestNavigationDeleteBulkMixedIDsRejectsWholeBatch 覆盖批量删除的整批语义：
+// 混合存在 / 不存在 id 时整批拒绝，已存在的行也不能被删；纯合法批次一次删净。
+func TestNavigationDeleteBulkMixedIDsRejectsWholeBatch(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	goneA := addNavItem(t, env.NavSvc, env.ProjectID, "批删甲", "/bulk-gone-a", nil, "self")
 	goneB := addNavItem(t, env.NavSvc, env.ProjectID, "批删乙", "/bulk-gone-b", nil, "self")
@@ -337,32 +299,30 @@ func TestNavigationDeleteBulkResultFromRealRows(t *testing.T) {
 	const missing = "00000000-0000-0000-0000-0000000000ff"
 	recorder := navWriteAuthzPost(t, env, env.Super, navDeleteBulkAPIPath,
 		map[string]interface{}{"ids": []string{goneA, missing, goneB}}, true)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("批档应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("混合不存在 id 应整批 404，实际 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Fatalf("整批拒绝应渲染共享错误片段：%s", body)
+	}
+	if strings.Contains(body, "<ul>") || strings.Contains(body, missing) {
+		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", body)
+	}
+	for _, id := range []string{goneA, goneB, kept} {
+		if !navItemExists(t, env, id) {
+			t.Fatalf("整批拒绝后 id=%s 不该被删", id)
+		}
 	}
 
-	data := navBulkDeleteData(t, recorder.Body.Bytes())
-	if data["deleted"] != float64(2) || data["skipped"] != float64(1) {
-		t.Fatalf("回执应为 deleted=2 skipped=1，实际 %s", recorder.Body.String())
+	// 纯合法批次一次删净，只播报公共成功。
+	ok := navWriteAuthzPost(t, env, env.Super, navDeleteBulkAPIPath,
+		map[string]interface{}{"ids": []string{goneA, goneB}}, true)
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `role="status"`) {
+		t.Fatalf("纯合法整批应 200 公共提示，实际 %d: %s", ok.Code, ok.Body.String())
 	}
-	items, _ := data["items"].([]interface{})
-	if len(items) != 3 {
-		t.Fatalf("逐条结果应有 3 条（含失败那条），实际 %d 条: %s", len(items), recorder.Body.String())
-	}
-
-	failed := navFindBulkItem(t, items, missing)
-	if failed["deleted"] != false {
-		t.Fatalf("不存在的 id 不该被标记为已删除: %v", failed)
-	}
-	// 词条缺席时逐条原因仍是受控句：不许裸 key，也不许内部原文。
-	message, _ := failed["message"].(string)
-	if strings.TrimSpace(message) == "" || message == navigationenums.ErrNotFound {
-		t.Fatalf("逐条原因应为受控句，实际 %q", message)
-	}
-	navAssertNoLeak(t, message)
-
 	if navItemExists(t, env, goneA) || navItemExists(t, env, goneB) {
-		t.Fatal("成功那两条应真的从库里消失")
+		t.Fatal("合法整批应真的删掉两行")
 	}
 	if !navItemExists(t, env, kept) {
 		t.Fatal("没参与本次批量的行不该被删")
@@ -447,55 +407,54 @@ func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 	}
 }
 
-func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
+func TestNavigationDeleteBulkRejectsNonUUIDInRequestLanguage(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 
 	i18n.InjectForTest(map[string]map[string]string{
-		navigationenums.ErrNotFound: {"zh-CN": "合成-导航项不存在", "en-US": "synth-navigation-item-missing"},
-		navInternalKey:              {"zh-CN": "合成-操作失败", "en-US": "synth-operation-failed"},
+		navigationenums.ErrBatchReject:  {"zh-CN": "合成-整批未执行", "en-US": "synth-batch-rejected"},
+		navigationenums.ErrInvalidParam: {"zh-CN": "合成-参数无效", "en-US": "synth-invalid-param"},
 	}, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	const badID = "not-a-uuid"
 
-	const missing = "00000000-0000-0000-0000-0000000000fd"
-
-	for _, tc := range []struct{ name, lang, wantMissing, wantInternal string }{
-		{"中文", "zh-CN", "合成-导航项不存在", "合成-操作失败"},
-		{"英文", "en-US", "synth-navigation-item-missing", "synth-operation-failed"},
+	// 多项请求：主消息是公共整批文案，具体原因只进 data.items。
+	for _, tc := range []struct{ name, lang, wantInvalid string }{
+		{"中文", "zh-CN", "合成-整批未执行"},
+		{"英文", "en-US", "synth-batch-rejected"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gone := addNavItem(t, env.NavSvc, env.ProjectID, "逐条原因-"+tc.name, "/reason-"+tc.lang, nil, "self")
 
 			recorder := navWriteAuthzPostLang(t, env, env.Super, navDeleteBulkAPIPath,
-				map[string]interface{}{"ids": []string{gone, missing, badID}}, tc.lang)
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("批档应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
+				map[string]interface{}{"ids": []string{gone, badID}}, tc.lang)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("含非 uuid 的整批应按参数错误 400，实际 %d: %s", recorder.Code, recorder.Body.String())
 			}
-			data := navBulkDeleteData(t, recorder.Body.Bytes())
-			if data["deleted"] != float64(1) || data["skipped"] != float64(2) {
-				t.Fatalf("回执应为 deleted=1 skipped=2，实际 %s", recorder.Body.String())
+			body := recorder.Body.String()
+			if !strings.Contains(body, tc.wantInvalid) || strings.Contains(body, "合成-参数无效") {
+				t.Fatalf("%s 多项请求的主消息应为公共整批文案 %q，实际 %s", tc.lang, tc.wantInvalid, body)
 			}
-			items, _ := data["items"].([]interface{})
-			for _, want := range []struct {
-				id, message, why string
-			}{
-				{missing, tc.wantMissing, "业务失败（id 不存在）"},
-				{badID, tc.wantInternal, "内部失败（非 uuid）"},
-			} {
-				item := navFindBulkItem(t, items, want.id)
-				if item["deleted"] != false {
-					t.Fatalf("%s 不该被标记为已删除: %v", want.why, item)
-				}
-				message, _ := item["message"].(string)
-				if message != want.message {
-					t.Fatalf("%s 在 %s 下的逐条原因应为 %q，实际 %q", want.why, tc.lang, want.message, message)
-				}
-				navAssertNoLeak(t, message)
+			if strings.Contains(body, "<ul>") || strings.Contains(body, badID) {
+				t.Fatalf("失败区不逐条列明细：%s", body)
 			}
-			if navItemExists(t, env, gone) {
-				t.Fatalf("成功那一条应真的从库里消失（id=%s）", gone)
+			navAssertNoLeak(t, body)
+			if !navItemExists(t, env, gone) {
+				t.Fatalf("整批拒绝后合法行不该被删（id=%s）", gone)
 			}
 		})
 	}
+
+	// 单条请求：主消息必须给该条的具体原因，而不是公共整批文案。
+	t.Run("单条给具体原因", func(t *testing.T) {
+		recorder := navWriteAuthzPostLang(t, env, env.Super, navDeleteBulkAPIPath,
+			map[string]interface{}{"ids": []string{badID}}, "zh-CN")
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("单条非 uuid 应按参数错误 400，实际 %d: %s", recorder.Code, recorder.Body.String())
+		}
+		body := recorder.Body.String()
+		if !strings.Contains(body, "合成-参数无效") || strings.Contains(body, "合成-整批未执行") {
+			t.Fatalf("单条请求应给该条具体原因，实际 %s", body)
+		}
+	})
 }

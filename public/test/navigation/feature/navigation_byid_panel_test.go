@@ -33,6 +33,7 @@ import (
 func newNavPanelEnv(t *testing.T) (db *gorm.DB, pages pagecontract.PageService,
 	navSvc navigationcontract.NavigationService, blocks *blockservice.Service, projectID string) {
 	t.Helper()
+	registerNavigationBusinessViews(t)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db = support.NewMigratedPGTestDB(t)
 	if db == nil {

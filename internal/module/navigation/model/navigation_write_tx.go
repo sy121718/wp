@@ -67,18 +67,40 @@ func (m *Model) SaveWithExpectedTx(ctx context.Context, tx *gorm.DB, projectID, 
 	return res.RowsAffected, res.Error
 }
 
-func (m *Model) DeleteManyTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) error {
+// DeleteManyTx 在调用方事务内删除指定行，并返回受影响行数；
+// 批量删除据此核对「请求的每一行都真的被删掉」，不把零行当成成功。
+func (m *Model) DeleteManyTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) (deleted int64, err error) {
 	if tx == nil {
-		return ErrTransactionRequired
+		return 0, ErrTransactionRequired
 	}
 	if len(ids) == 0 {
-		return nil
+		return 0, nil
 	}
 	if err := rls.ScopeTx(tx, projectID); err != nil {
-		return err
+		return 0, err
 	}
-	return tx.WithContext(ctx).Model(&NavigationEntity{}).
-		Where("project_id = ? AND id IN ?", projectID, ids).Delete(&NavigationEntity{}).Error
+	res := tx.WithContext(ctx).Model(&NavigationEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).Delete(&NavigationEntity{})
+	return res.RowsAffected, res.Error
+}
+
+// LockByIDsTx 按 id 升序锁定同一工程内的导航项，供批量删除在同一事务内复核存在性与归属。
+func (m *Model) LockByIDsTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) (list []*NavigationEntity, err error) {
+	if tx == nil {
+		return nil, ErrTransactionRequired
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return nil, err
+	}
+	err = tx.WithContext(ctx).Model(&NavigationEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
 }
 
 func (m *Model) SwapSortOrdersTx(ctx context.Context, tx *gorm.DB, projectID string, first, second SwapRow) error {

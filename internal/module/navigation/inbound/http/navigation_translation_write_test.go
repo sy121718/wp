@@ -589,38 +589,11 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 	}
 }
 
-func TestNavigationTranslationWriteReceiptFollowsRequestLanguage(t *testing.T) {
+func TestNavigationTranslationWriteReceiptIsSharedSuccess(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
-		navigationenums.Saved: {"zh-CN": "已保存 %s 条译文", "en-US": "Saved %s translation(s)"},
-		"navTrSaved":          {"zh-CN": "已保存 {count} 条译文", "en-US": "Saved {count} translation(s)"},
+		"uiOpSuccess": {"zh-CN": "操作成功-词条", "en-US": "success-entry"},
 	})
 
-	writer := &translationWriteServiceStub{result: &navigationcontract.TranslationWriteResult{
-		Written: 2, ChangedKinds: []string{},
-	}}
-	router := newTranslationWriteRouter(&translationWriteNavigationStub{}, writer)
-
-	body := `{"action":"translations","project":"p-1","lang":"en-US","rows":[{"context":"navigation.label","hash":"h","target":"Home"}]}`
-	for _, tc := range []struct{ lang, want string }{
-		{"zh-CN", "已保存 2 条译文"},
-		{"en-US", "Saved 2 translation(s)"},
-	} {
-		t.Run(tc.lang, func(t *testing.T) {
-			rec := postNavigationWriteWithLanguage(t, router, tc.lang, body)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("应 200，实际 %d body=%s", rec.Code, rec.Body.String())
-			}
-			if !strings.Contains(rec.Body.String(), tc.want) {
-				t.Fatalf("%s 下回执应取该语言，实际 %s", tc.lang, rec.Body.String())
-			}
-			if strings.Contains(rec.Body.String(), "%!") || strings.Contains(rec.Body.String(), navigationenums.Saved) {
-				t.Fatalf("回执既不许带格式化垃圾也不许裸 key：%s", rec.Body.String())
-			}
-		})
-	}
-}
-
-func TestNavigationTranslationWriteReceiptIsFactCopy(t *testing.T) {
 	writer := &translationWriteServiceStub{result: &navigationcontract.TranslationWriteResult{
 		Written: 2, ChangedKinds: []string{"header", "footer"},
 	}}
@@ -628,13 +601,24 @@ func TestNavigationTranslationWriteReceiptIsFactCopy(t *testing.T) {
 
 	body := `{"action":"translations","project":"p-1","lang":"en-US","rows":[` +
 		`{"context":"navigation.label","hash":"h-1","target":"Home"},{"context":"navigation.label","hash":"h-2","target":"About"}]}`
-	rec := postNavigationWrite(t, router, body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应 200，实际 %d body=%s", rec.Code, rec.Body.String())
-	}
-	// 回执是 Jet 片段：条数来自写服务，句子在模板里。
-	if !strings.Contains(rec.Body.String(), `role="status"`) {
-		t.Fatalf("成功应回结果片段：%s", rec.Body.String())
+	for _, tc := range []struct{ lang, want string }{
+		{"zh-CN", "操作成功-词条"},
+		{"en-US", "success-entry"},
+	} {
+		t.Run(tc.lang, func(t *testing.T) {
+			rec := postNavigationWriteWithLanguage(t, router, tc.lang, body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("应 200，实际 %d body=%s", rec.Code, rec.Body.String())
+			}
+			payload := rec.Body.String()
+			// 普通成功只给公共一句提示；写入条数属明细，不进入成功消息。
+			if !strings.Contains(payload, `role="status"`) || !strings.Contains(payload, tc.want) {
+				t.Fatalf("%s 下应渲染公共成功提示 %q：%s", tc.lang, tc.want, payload)
+			}
+			if strings.Contains(payload, "2") || strings.Contains(payload, "uiOpSuccess") {
+				t.Fatalf("成功回执不得携带条数或裸 key：%s", payload)
+			}
+		})
 	}
 }
 

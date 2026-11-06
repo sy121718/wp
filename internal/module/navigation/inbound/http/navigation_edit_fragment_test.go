@@ -89,9 +89,12 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 		c.Next()
 	})
 	r.GET("/admin/navigations/edit", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationEditFragment)
-	r.POST("/admin/navigations/update", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationUpdate)
-	r.POST("/admin/navigations/panel", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelSet)
-	r.POST("/admin/navigations/panel/create", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelCreate)
+	r.POST("/admin/navigations/update", pageview.HTMLFragment,
+		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationUpdate)
+	r.POST("/admin/navigations/panel", pageview.HTMLFragment,
+		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelSet)
+	r.POST("/admin/navigations/panel/create", pageview.HTMLFragment,
+		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelCreate)
 	return r
 }
 
@@ -224,11 +227,16 @@ func TestNavigationUpdateHTMXRetainsSubmittedValues(t *testing.T) {
 	if svc.lastUpdate == nil || svc.lastUpdate.ExpectedUpdatedAt == nil || *svc.lastUpdate.ExpectedUpdatedAt != "old-token" {
 		t.Fatalf("乐观锁未传递: %+v", svc.lastUpdate)
 	}
-	// 页面写通道只有一种协议：失败回填片段，成功后由模板声明的动作刷新。
+	// 页面写通道只有一种协议：HTMX 失败回填抽屉片段；非 HTMX 失败走共享失败出口，
+	// 两者都必须带 role="alert"；非 HTMX 保留真实失败状态码（不再装作 200 成功）。
 	for _, hx := range []bool{true, false} {
 		failed := request(hx)
-		if failed.Code != 200 || !strings.Contains(failed.Body.String(), `role="alert"`) {
-			t.Fatalf("失败应回填片段（hx=%v）：%d", hx, failed.Code)
+		wantStatus := http.StatusOK
+		if !hx {
+			wantStatus = http.StatusBadRequest
+		}
+		if failed.Code != wantStatus || !strings.Contains(failed.Body.String(), `role="alert"`) {
+			t.Fatalf("失败应回填片段并保留真实状态（hx=%v）：%d", hx, failed.Code)
 		}
 	}
 	svc.updateErr = nil
@@ -326,8 +334,8 @@ func TestNavigationPanelHTMXRetainsExplicitClear(t *testing.T) {
 	if svc.lastUpdate == nil || svc.lastUpdate.PanelBlockID == nil || *svc.lastUpdate.PanelBlockID != "" {
 		t.Fatalf("面板清空未传给服务: %+v", svc.lastUpdate)
 	}
-	if failed := request(false); failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), `role="alert"`) {
-		t.Fatalf("面板失败应回填片段: %d", failed.Code)
+	if failed := request(false); failed.Code != http.StatusBadRequest || !strings.Contains(failed.Body.String(), `role="alert"`) {
+		t.Fatalf("面板非 HTMX 失败应保留真实状态并回失败片段: %d", failed.Code)
 	}
 	svc.updateErr = nil
 	if success := request(true); success.Code != http.StatusOK || !strings.Contains(success.Body.String(), `role="status"`) {

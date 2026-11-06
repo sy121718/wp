@@ -27,7 +27,8 @@ import (
 )
 
 // 导航删除是标准表单：单条用 id，批量用重复的 ids。
-// 成功回 Jet 片段（单条结论 / 批量计数 + 逐条原因），失败回错误片段。
+// 成功走公共一句提示，失败回共享错误片段；空串/非法 uuid/超限都由 service 整批拒绝，
+// 控制器不先过滤，避免非法项被静默丢掉。
 
 type navigationDeleteStub struct {
 	navigationcontract.NavigationService
@@ -164,8 +165,8 @@ func TestNavigationDeleteSingleShape(t *testing.T) {
 	if got := stub.calls; len(got) != 1 || got[0] != "row-1" {
 		t.Fatalf("service 应恰好被调用一次且带 row-1，实际 %v", got)
 	}
-	if !strings.Contains(body, "操作已完成") && !strings.Contains(body, "navDone") {
-		t.Errorf("单条成功片段应给出结论：%s", body)
+	if !strings.Contains(body, "操作成功") {
+		t.Errorf("单条成功应走公共提示组件：%s", body)
 	}
 }
 
@@ -237,30 +238,32 @@ func TestNavigationDeleteBulkFailureNeverLeaksInternals(t *testing.T) {
 	}
 }
 
-func TestNavigationDeleteDedupesIDs(t *testing.T) {
+// 控制器不再静默过滤：重复项与空串原样转交 service，由 service 按 uuid 身份
+// 去重并对空标识整批拒绝。
+func TestNavigationDeletePassesRawIDsToService(t *testing.T) {
 	stub := &navigationDeleteStub{}
 	engine := newNavigationDeleteRouter(t, stub)
 
 	rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": {"a", "a", "b", ""}})
 	body := navigationDeleteOK(t, rec)
-	if got := strings.Join(stub.calls, ","); got != "a,b" {
-		t.Fatalf("空串应被丢掉、重复 id 只删一次，实际 %v", stub.calls)
+	if got := strings.Join(stub.calls, ","); got != "a,a,b," {
+		t.Fatalf("原始 ids（含重复与空串）必须整批转交 service，实际 %v", stub.calls)
 	}
 	if !strings.Contains(body, "操作成功") {
 		t.Errorf("成功应走统一提示组件：%s", body)
 	}
 }
 
-func TestNavigationDeleteEmptyIDListIsNoop(t *testing.T) {
-	stub := &navigationDeleteStub{}
+func TestNavigationDeleteEmptyValuesGoToService(t *testing.T) {
+	stub := &navigationDeleteStub{failFor: map[string]error{"": errors.New(navigationenums.ErrInvalidParam)}}
 	engine := newNavigationDeleteRouter(t, stub)
 
 	rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": {""}})
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("空 ids 应 400（没有可删的东西），实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("空标识应整批 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if len(stub.calls) != 0 {
-		t.Fatalf("空 ids 不该调用 service，实际 %v", stub.calls)
+	if got := strings.Join(stub.calls, ","); got != "" {
+		t.Fatalf("空标识必须交给 service 判定，实际 %v", stub.calls)
 	}
 }
 
@@ -272,7 +275,6 @@ func TestNavigationDeleteShapeRejections(t *testing.T) {
 	}{
 		{"两个键都没有", "/api/navigation/delete", url.Values{}},
 		{"id 是空串", "/api/navigation/delete", url.Values{"id": {""}}},
-		{"ids 只有空串", "/api/navigation/delete-bulk", url.Values{"ids": {""}}},
 		{"批量缺少 ids", "/api/navigation/delete-bulk", url.Values{}},
 	}
 	for _, tc := range cases {
@@ -293,18 +295,21 @@ func TestNavigationDeleteShapeRejections(t *testing.T) {
 	}
 }
 
-func TestNavigationDeleteBulkLimits(t *testing.T) {
+func TestNavigationDeleteBulkTooManyIsRejected(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
 		bulkids.MsgTooMany: {"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
-	stub := &navigationDeleteStub{}
+	stub := &navigationDeleteStub{failFor: map[string]error{
+		"bulk": &bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs},
+	}}
 	engine := newNavigationDeleteRouter(t, stub)
 
 	ids := make([]string, 0, bulkids.MaxIDs+1)
 	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		ids = append(ids, "nav-"+strconv.Itoa(i))
 	}
+	ids[0] = "bulk"
 	rec := postNavigationDeleteAt(t, engine, "/api/navigation/delete-bulk", url.Values{"ids": ids})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("超限应整批拒绝（400，不部分执行），实际 %d：%s", rec.Code, rec.Body.String())
@@ -313,8 +318,5 @@ func TestNavigationDeleteBulkLimits(t *testing.T) {
 	if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) ||
 		!strings.Contains(body, strconv.Itoa(bulkids.MaxIDs+1)) {
 		t.Fatalf("超限提示应带上限与本次条数：%s", body)
-	}
-	if len(stub.calls) != 0 {
-		t.Fatalf("超限不该逐条删除，实际 %v", stub.calls)
 	}
 }

@@ -58,6 +58,15 @@ type BulkDeleteReq struct {
 	IDs []string `json:"ids" form:"ids" binding:"required,min=1,dive,required"`
 }
 
+// AddSourceReq 从页面/内容等来源批量加入菜单：候选规则与写入都在服务层，
+// 同一事务里全成或全败。
+type AddSourceReq struct {
+	ProjectID  string   `json:"projectId" form:"projectId"`
+	Kind       string   `json:"kind" form:"kind"`
+	SourceType string   `json:"sourceType" form:"sourceType"`
+	IDs        []string `json:"ids" form:"ids"`
+}
+
 type MoveReq struct {
 	ID        string `json:"id" form:"id" binding:"required"`
 	SortOrder *int   `json:"sortOrder" form:"sortOrder"`

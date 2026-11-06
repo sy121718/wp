@@ -3,6 +3,7 @@ package navigationservice
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"go_wp/internal/module/navigation/enums"
 	"go_wp/internal/module/navigation/model"
 	"go_wp/internal/templates"
+	"go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 )
 
 func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res *navigationdto.NavigationResp, err error) {
@@ -315,8 +318,16 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 		return navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
+	parsed, perr := uuid.Parse(id)
+	// 非 uuid 无法定位到任何工程：按参数错误拒绝，不让驱动把 22P02 抛成 500。
+	if perr != nil {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	canonical := parsed.String()
 
-	e, err := s.locateNavigation(ctx, id)
+	// 事务外只做定位：FORCE RLS 下必须逐工程探测归属，不能退化成不限工程查询。
+	// 事务内的存在性、最新 kind 与子树都在锁内重新读取，不沿用这里的事实。
+	e, err := s.locateNavigation(ctx, canonical)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return navigationenums.Err(navigationenums.ErrNotFound)
 	}
@@ -324,23 +335,190 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 		return err
 	}
 
-	at := time.Now().UTC()
 	return s.withMenuWriteTx(ctx, e.ProjectID, func(tx *gorm.DB) error {
-
-		rows, lerr := s.m.ListTx(ctx, tx, e.ProjectID, e.Kind)
-		if lerr != nil {
-			return lerr
-		}
-		if derr := s.m.DeleteManyTx(ctx, tx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
-			return derr
-		}
-		if merr := s.markMenuStaleInTx(ctx, tx, e.ProjectID, e.Kind, at); merr != nil {
-			return merr
-		}
-		return s.markNavigationStaleInTx(ctx, tx, e.ProjectID, e.ID)
+		return s.deleteNavigationTx(ctx, tx, e.ProjectID, []string{canonical})
 	})
 }
 
+// deleteNavigationTx 是单条与批量删除共用的批删规则：
+//
+//   - 全部目标根在同一事务内按 id 升序加锁后重新核对存在性；
+//   - kind 只用锁内读到的行，不用事务外的旧 kind 计算子树；
+//   - 完整读取工程内所有导航行，跨 kind 也按 parent 关系求子树并合并重叠；
+//   - 只删合并后的根（都被选中的父子项只删一次），子孙由外键级联删除；
+//   - 每个实际被删的行都标记按项失效，涉及的每个 kind 都标记菜单失效。
+func (s *Service) deleteNavigationTx(ctx context.Context, tx *gorm.DB, projectID string, rootIDs []string) error {
+	if len(rootIDs) == 0 {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	locked, err := s.m.LockByIDsTx(ctx, tx, projectID, rootIDs)
+	if err != nil {
+		return err
+	}
+	if len(locked) != len(rootIDs) {
+		found := make(map[string]struct{}, len(locked))
+		for _, row := range locked {
+			found[row.ID] = struct{}{}
+		}
+		blocked := make([]facing.BlockedItem, 0, len(rootIDs)-len(locked))
+		for _, id := range rootIDs {
+			if _, ok := found[id]; !ok {
+				blocked = append(blocked, facing.BlockedItem{ID: id, ReasonKey: navigationenums.ErrNotFound})
+			}
+		}
+		return RejectBatch(len(rootIDs), blocked)
+	}
+
+	rows, err := s.m.ListTx(ctx, tx, projectID, "")
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]*navigationmodel.NavigationEntity, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	// 锁内复核：加锁后行必须仍在本工程可见；并发删除时整批拒绝。
+	blocked := make([]facing.BlockedItem, 0)
+	for _, id := range rootIDs {
+		if _, ok := byID[id]; !ok {
+			blocked = append(blocked, facing.BlockedItem{ID: id, ReasonKey: navigationenums.ErrNotFound})
+		}
+	}
+	if len(blocked) > 0 {
+		return RejectBatch(len(rootIDs), blocked)
+	}
+
+	// 稳定顺序合并重叠子树：先求每个根的完整子树，再丢掉「已被别的选中根
+	// 覆盖」的根。否则父项与子项同时被选中且 kind 不同时，父项先删会级联掉子项，
+	// 轮到子项那批就命中零行而被误判成不存在。
+	sortedRoots := append([]string(nil), rootIDs...)
+	sort.Strings(sortedRoots)
+	subtrees := make(map[string]map[string]struct{}, len(sortedRoots))
+	for _, root := range sortedRoots {
+		ids := navDescendantIDs(rows, root)
+		set := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			set[id] = struct{}{}
+		}
+		subtrees[root] = set
+	}
+	mergedRoots := make([]string, 0, len(sortedRoots))
+	for _, root := range sortedRoots {
+		covered := false
+		for _, other := range sortedRoots {
+			if other == root {
+				continue
+			}
+			if _, inOther := subtrees[other][root]; !inOther {
+				continue
+			}
+			// root 被 other 的子树覆盖：跨 kind 的父子同时选中也只保留祖先。
+			// 异常环里两个根互相覆盖时，保留字典序更早的那个，
+			// 不会两个都被丢掉而变成「什么都没删」。
+			if _, otherInRoot := subtrees[root][other]; !otherInRoot || other < root {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			mergedRoots = append(mergedRoots, root)
+		}
+	}
+	claimed := make(map[string]struct{}, len(rows))
+	deletedIDs := make([]string, 0, len(rows))
+	for _, root := range mergedRoots {
+		for id := range subtrees[root] {
+			if _, seen := claimed[id]; seen {
+				continue
+			}
+			claimed[id] = struct{}{}
+			deletedIDs = append(deletedIDs, id)
+		}
+	}
+	deletedIDs = uniqueStrings(deletedIDs)
+	sort.Strings(deletedIDs)
+	rootKind := make(map[string]string, len(mergedRoots))
+	for _, id := range mergedRoots {
+		rootKind[id] = byID[id].Kind
+	}
+	kinds := make([]string, 0, 4)
+	for _, id := range deletedIDs {
+		kinds = append(kinds, byID[id].Kind)
+	}
+	kinds = uniqueStrings(kinds)
+	sort.Strings(kinds)
+
+	at := time.Now().UTC()
+	for _, kind := range kinds {
+		// 只删合并后的根：子孙由外键级联删除，父项与子项同时被选中时也不会
+		// 出现「第二遍删已删空集」。
+		kindRoots := make([]string, 0, len(mergedRoots))
+		for _, id := range mergedRoots {
+			if rootKind[id] == kind {
+				kindRoots = append(kindRoots, id)
+			}
+		}
+		if len(kindRoots) > 0 {
+			deleted, derr := s.m.DeleteManyTx(ctx, tx, projectID, kindRoots)
+			if derr != nil {
+				return derr
+			}
+			if deleted != int64(len(kindRoots)) {
+				return navigationenums.Err(navigationenums.ErrNotFound)
+			}
+		}
+		// 每个实际被删的行（含已由级联删除的子孙）都按项标记失效。
+		for _, id := range deletedIDs {
+			if byID[id].Kind != kind {
+				continue
+			}
+			if nerr := s.markNavigationStaleInTx(ctx, tx, projectID, id); nerr != nil {
+				return nerr
+			}
+		}
+		if merr := s.markMenuStaleInTx(ctx, tx, projectID, kind, at); merr != nil {
+			return merr
+		}
+	}
+
+	// 核对真实删除结果：合并后的整棵子树（含级联子孙）必须一行不剩，
+	// 不把「根删掉了」当成「子树都删掉了」。
+	remaining, rerr := s.m.ListTx(ctx, tx, projectID, "")
+	if rerr != nil {
+		return rerr
+	}
+	stillThere := make(map[string]struct{}, len(deletedIDs))
+	for _, row := range remaining {
+		stillThere[row.ID] = struct{}{}
+	}
+	blocked = blocked[:0]
+	for _, id := range deletedIDs {
+		if _, exists := stillThere[id]; exists {
+			blocked = append(blocked, facing.BlockedItem{ID: id, ReasonKey: navigationenums.ErrNotFound})
+		}
+	}
+	if len(blocked) > 0 {
+		return RejectBatch(len(rootIDs), blocked)
+	}
+	return nil
+}
+
+// uniqueStrings 去重并保持首次出现顺序。
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+// navDescendantIDs 返回 root 及其全部子孙。visited 集合保证已有的异常环
+// （parent_id 互相指向）也能终止，不会无限展开。
 func navDescendantIDs(rows []*navigationmodel.NavigationEntity, rootID string) []string {
 	children := make(map[string][]string, len(rows))
 	for _, r := range rows {
@@ -349,12 +527,22 @@ func navDescendantIDs(rows []*navigationmodel.NavigationEntity, rootID string) [
 		}
 	}
 	out := make([]string, 0, 4)
+	visited := make(map[string]struct{}, 4)
 	stack := []string{rootID}
 	for len(stack) > 0 {
 		cur := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		if _, seen := visited[cur]; seen {
+			continue
+		}
+		visited[cur] = struct{}{}
 		out = append(out, cur)
-		stack = append(stack, children[cur]...)
+		for _, child := range children[cur] {
+			if _, seen := visited[child]; seen {
+				continue
+			}
+			stack = append(stack, child)
+		}
 	}
 	return out
 }
@@ -599,46 +787,83 @@ func (s *Service) BulkDelete(ctx context.Context, req *navigationdto.BulkDeleteR
 	if req == nil || len(req.IDs) == 0 {
 		return navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
-	entities := make([]*navigationmodel.NavigationEntity, 0, len(req.IDs))
-	projectID := ""
+	// 先判形状与上限，再触库：超限在解析 uuid 之前就整批拒绝，
+	// 空标识与非法 uuid 也在这里明确拒绝，不让驱动错误变成 500。
+	blocked := make([]facing.BlockedItem, 0, len(req.IDs))
+	distinct := make([]string, 0, len(req.IDs))
+	seenRaw := make(map[string]struct{}, len(req.IDs))
+	requested := 0
 	for _, raw := range req.IDs {
 		id := strings.TrimSpace(raw)
-		if id == "" {
+		// 请求项数按 uuid 身份去重后计算：合法重复不能让单条请求变成「多项」；
+		// 空标识同样是一个请求项，单条空串仍给该条具体原因而不是公共整批文案。
+		identity := id
+		if parsed, perr := uuid.Parse(id); perr == nil {
+			identity = parsed.String()
+		}
+		if _, dup := seenRaw[identity]; dup {
 			continue
 		}
+		seenRaw[identity] = struct{}{}
+		requested++
+		if id == "" {
+			blocked = append(blocked, facing.BlockedItem{ID: raw, ReasonKey: navigationenums.ErrInvalidParam})
+			continue
+		}
+		distinct = append(distinct, id)
+	}
+	if len(blocked) == 0 && len(distinct) > bulkids.MaxIDs {
+		return &bulkids.IDsError{Count: len(distinct), Max: bulkids.MaxIDs}
+	}
+	seen := make(map[string]struct{}, len(distinct))
+	rootIDs := make([]string, 0, len(distinct))
+	for _, id := range distinct {
+		parsed, perr := uuid.Parse(id)
+		if perr != nil {
+			blocked = append(blocked, facing.BlockedItem{ID: id, ReasonKey: navigationenums.ErrInvalidParam})
+			continue
+		}
+		canonical := parsed.String()
+		if _, dup := seen[canonical]; dup {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		rootIDs = append(rootIDs, canonical)
+	}
+	// 空 ID / 不合法项都让整批失败：不推算 skipped、不返回部分成功。
+	if len(blocked) > 0 {
+		return RejectBatch(requested, blocked)
+	}
+	if len(rootIDs) == 0 {
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	}
+	if len(rootIDs) > bulkids.MaxIDs {
+		return &bulkids.IDsError{Count: len(rootIDs), Max: bulkids.MaxIDs}
+	}
+
+	// 事务外只定位工程：FORCE RLS 下逐工程探测归属，不 bypass。
+	projectID := ""
+	for _, id := range rootIDs {
 		e, err := s.locateNavigation(ctx, id)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return navigationenums.Err(navigationenums.ErrNotFound)
+				blocked = append(blocked, facing.BlockedItem{ID: id, ReasonKey: navigationenums.ErrNotFound})
+				continue
 			}
 			return err
 		}
 		if projectID == "" {
 			projectID = e.ProjectID
 		} else if projectID != e.ProjectID {
+			// 一个用户可感知的批量删除只作用于一个工程；跨工程整批拒绝。
 			return navigationenums.Err(navigationenums.ErrInvalidParam)
 		}
-		entities = append(entities, e)
 	}
-	if len(entities) == 0 {
-		return navigationenums.Err(navigationenums.ErrInvalidParam)
+	if len(blocked) > 0 {
+		return RejectBatch(requested, blocked)
 	}
 
-	at := time.Now().UTC()
 	return s.withMenuWriteTx(ctx, projectID, func(tx *gorm.DB) error {
-		rows, lerr := s.m.ListTx(ctx, tx, projectID, entities[0].Kind)
-		if lerr != nil {
-			return lerr
-		}
-		for _, e := range entities {
-			ids := navDescendantIDs(rows, e.ID)
-			if derr := s.m.DeleteManyTx(ctx, tx, projectID, ids); derr != nil {
-				return derr
-			}
-			if nerr := s.markNavigationStaleInTx(ctx, tx, projectID, e.ID); nerr != nil {
-				return nerr
-			}
-		}
-		return s.markMenuStaleInTx(ctx, tx, projectID, entities[0].Kind, at)
+		return s.deleteNavigationTx(ctx, tx, projectID, rootIDs)
 	})
 }

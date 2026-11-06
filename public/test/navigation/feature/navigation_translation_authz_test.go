@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	builtin "go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -35,6 +36,7 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/i18n"
 	mw "go_wp/pkg/middleware"
+	pageview "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -110,7 +112,9 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 		RouteRegistrar: func(engine *gin.Engine) {
 
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			// 生产装配在基础层挂请求取词；缺了它成功/失败片段都会渲染失败。
+			// 生产装配在基础层挂请求取词与成功出口；缺了它们成功/失败片段都会渲染失败。
+			engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+			engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
 			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")
@@ -303,22 +307,17 @@ func navTranslationAuthzRevokePolicy(t *testing.T, env *navTranslationAuthzEnv) 
 	}
 }
 
-// navTranslationAuthzWritten 从 Jet 结果片段里读写入条数；缺片段视为失败。
-func navTranslationAuthzWritten(t *testing.T, recorder *httptest.ResponseRecorder) int {
+// navTranslationAuthzSuccess 校验普通成功只给公共一句提示：
+// 写入条数属明细，不得进入成功消息。
+func navTranslationAuthzSuccess(t *testing.T, recorder *httptest.ResponseRecorder) {
 	t.Helper()
 	body := recorder.Body.String()
 	if !strings.Contains(body, `role="status"`) {
 		t.Fatalf("回执不是成功片段: %s", body)
 	}
-	m := regexp.MustCompile(`\d+`).FindString(body)
-	if m == "" {
-		t.Fatalf("结果片段缺少写入条数: %s", body)
+	if regexp.MustCompile(`\d`).MatchString(body) {
+		t.Fatalf("成功提示不得携带计数或其它数字明细: %s", body)
 	}
-	n, err := strconv.Atoi(m)
-	if err != nil {
-		t.Fatalf("写入条数解析失败: %s", body)
-	}
-	return n
 }
 
 func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
@@ -349,9 +348,7 @@ func TestNavigationTranslationWriteAuthzChain(t *testing.T) {
 	if asAdmin.Code != http.StatusOK {
 		t.Fatalf("超管保存应 200，实际 %d: %s", asAdmin.Code, asAdmin.Body.String())
 	}
-	if got := navTranslationAuthzWritten(t, asAdmin); got != 1 {
-		t.Fatalf("回执 written 应为 1，实际 %d: %s", got, asAdmin.Body.String())
-	}
+	navTranslationAuthzSuccess(t, asAdmin)
 	if got := navTranslationAuthzTarget(t, env, "首页", "en-US"); got != "Home" {
 		t.Fatalf("译文未落库，实际 target=%q", got)
 	}

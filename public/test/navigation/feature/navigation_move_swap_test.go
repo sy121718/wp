@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
-	"strconv"
 	"testing"
 	"time"
 
@@ -17,8 +17,8 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
-	pkgcasbin "go_wp/pkg/casbin"
 	navigationservice "go_wp/internal/module/navigation/service"
+	pkgcasbin "go_wp/pkg/casbin"
 )
 
 type navDispatchBase struct{ menu, nav int }
@@ -578,8 +578,10 @@ func TestNavigationMoveRouteBoundaryIsSuccessWithoutWrite(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("边界移动应 200（不是错误），实际 %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `data-moved="false"`) || !strings.Contains(rec.Body.String(), `data-reason="boundary"`) {
-		t.Fatalf("边界回执应带 moved:false + reason=boundary：%s", rec.Body.String())
+	// 边界项由模板按首末项禁用按钮；若请求仍到达，服务端是合法无写结果，
+	// 成功只需公共一句提示，不再另造 moved/reason 结果协议。
+	if !strings.Contains(rec.Body.String(), `role="status"`) {
+		t.Fatalf("边界移动应走公共成功提示：%s", rec.Body.String())
 	}
 	if got := readNavSwapState(t, env.DB, edge); got != before {
 		t.Fatalf("边界移动不得写库：%+v → %+v", before, got)

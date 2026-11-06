@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -51,35 +51,6 @@ func navAddSourcePayload(env *navTranslationAuthzEnv, sourceType string, ids ...
 	}
 }
 
-// navAddSourceData 从 Jet 结果片段读回计数，形状与旧 JSON 的 data 段一致，
-// 调用点的断言不用改。
-func navAddSourceData(t *testing.T, body []byte) map[string]interface{} {
-	t.Helper()
-	m := regexp.MustCompile(`data-added="(\d+)" data-skipped="(\d+)"`).FindSubmatch(body)
-	if m == nil {
-		t.Fatalf("回执缺少计数属性: %s", string(body))
-	}
-	added, _ := strconv.Atoi(string(m[1]))
-	skipped, _ := strconv.Atoi(string(m[2]))
-
-	// 逐条事实同样来自片段：<li data-item-id=".." data-item-ok="0|1">原因</li>
-	items := make([]interface{}, 0, 4)
-	for _, im := range regexp.MustCompile(`data-item-id="([^"]*)" data-item-ok="([01])">([^<]*)<`).FindAllSubmatch(body, -1) {
-		message := ""
-		if text := string(im[3]); text != "" {
-			if i := strings.Index(text, "："); i >= 0 {
-				message = text[i+len("："):]
-			}
-		}
-		items = append(items, map[string]interface{}{
-			"id":      string(im[1]),
-			"added":   string(im[2]) == "1",
-			"message": message,
-		})
-	}
-	return map[string]interface{}{"added": float64(added), "skipped": float64(skipped), "items": items}
-}
-
 func navCountItems(t *testing.T, env *navTranslationAuthzEnv) int {
 	t.Helper()
 	items, err := env.NavSvc.List(context.Background(),
@@ -90,17 +61,29 @@ func navCountItems(t *testing.T, env *navTranslationAuthzEnv) int {
 	return len(items)
 }
 
+func navAddSourceSuccess(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应 200，实际 %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `role="status"`) || strings.Contains(body, "data-ui-error") {
+		t.Fatalf("成功应走公共提示组件，实际：%s", body)
+	}
+	return body
+}
+
 func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 	env := newNavTranslationAuthzEnv(t)
 	env.NavSvc.SetSourceResolver(navSourceStub{})
 	navWriteAuthzSetPolicy(t, env, navSourceAPIPath, navSourcePermission, false)
 	if got := navWriteAuthzPolicyCount(t, env, navSourceAPIPath, navSourcePermission); got != 0 {
-		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navCreatePermission)
+		t.Fatalf("反例前提不成立：普通管理员仍有 %d 条 %s 策略", got, navSourcePermission)
 	}
 
 	before := navCountItems(t, env)
 	denied := navWriteAuthzPost(t, env, env.Plain, navSourceAPIPath,
-		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo), true)
+		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageThree), true)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("无策略的普通管理员应 403，实际 %d: %s", denied.Code, denied.Body.String())
 	}
@@ -111,14 +94,7 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 	navWriteAuthzSetPolicy(t, env, navSourceAPIPath, navSourcePermission, true)
 	allowed := navWriteAuthzPost(t, env, env.Plain, navSourceAPIPath,
 		navAddSourcePayload(env, "article", navSrcArticle), true)
-	if allowed.Code != http.StatusOK {
-		t.Fatalf("补上策略后应 200（说明 403 由该条 Casbin 路径决定），实际 %d: %s",
-			allowed.Code, allowed.Body.String())
-	}
-	data := navAddSourceData(t, allowed.Body.Bytes())
-	if data["added"] != float64(1) || data["skipped"] != float64(0) {
-		t.Fatalf("应 added=1 skipped=0，实际 %s", allowed.Body.String())
-	}
+	navAddSourceSuccess(t, allowed)
 	created := navItemByTitle(t, env, "你好世界")
 	if created == "" {
 		t.Fatalf("加入成功但行没落库：%s", allowed.Body.String())
@@ -126,120 +102,6 @@ func TestNavigationAddSourceWriteAuthzChain(t *testing.T) {
 	bound := navItemSourceBinding(t, env, created)
 	if bound.sourceType != "article" || bound.sourceID != navSrcArticle {
 		t.Fatalf("来源绑定应写进行（之后构建期据此同步标题/路径），实际 %+v", bound)
-	}
-
-	mixed := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
-		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo, navSrcArticle), true)
-	if mixed.Code != http.StatusOK {
-		t.Fatalf("超管应 200，实际 %d: %s", mixed.Code, mixed.Body.String())
-	}
-	mixedData := navAddSourceData(t, mixed.Body.Bytes())
-	if mixedData["added"] != float64(1) || mixedData["skipped"] != float64(2) {
-		t.Fatalf("应 added=1 skipped=2，实际 %s", mixed.Body.String())
-	}
-	items, _ := mixedData["items"].([]interface{})
-	if len(items) != 3 {
-		t.Fatalf("逐条结果应有 3 条，实际 %d 条：%s", len(items), mixed.Body.String())
-	}
-	for _, raw := range items[1:] {
-		item, _ := raw.(map[string]interface{})
-		message, _ := item["message"].(string)
-		if item["added"] != false || message == "" {
-			t.Fatalf("跳过项必须带原因：%v", item)
-		}
-		for _, token := range []string{"SQLSTATE", "pg_", "constraint", "record not found"} {
-			if strings.Contains(message, token) {
-				t.Errorf("逐条原因泄漏内部细节 %q：%q", token, message)
-			}
-		}
-	}
-	if navItemByTitle(t, env, "关于我们") == "" {
-		t.Fatal("有公开路径的候选应真的加入菜单")
-	}
-
-	again := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
-		navAddSourcePayload(env, "page", navSrcPageOne), true)
-	if again.Code != http.StatusOK {
-		t.Fatalf("重复加入应 200（逐条原因在 data 里），实际 %d: %s", again.Code, again.Body.String())
-	}
-	againData := navAddSourceData(t, again.Body.Bytes())
-	if againData["added"] != float64(0) || againData["skipped"] != float64(1) {
-		t.Fatalf("重复加入应 added=0 skipped=1，实际 %s", again.Body.String())
-	}
-}
-
-func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
-	env := newNavTranslationAuthzEnv(t)
-	env.NavSvc.SetSourceResolver(navSourceStub{})
-	// 词条缺席时，逐条原因必须仍是受控句：不许裸 key，也不许内部原文。
-	i18n.InjectForTest(nil, map[string]int{})
-	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
-
-	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
-		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo, navSrcArticle), true)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("应 200（逐条结果在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
-	}
-	data := navAddSourceData(t, recorder.Body.Bytes())
-	if data["added"] != float64(1) || data["skipped"] != float64(2) {
-		t.Fatalf("应 added=1 skipped=2，实际 %s", recorder.Body.String())
-	}
-	items, _ := data["items"].([]interface{})
-	for _, want := range []struct{ id, key, why string }{
-		{navSrcPageTwo, "admin.navigations.no_public_path", "候选暂无公开路径（正常跳过）"},
-		{navSrcArticle, navigationenums.ErrNotFound, "候选不属于本工程的该来源类型"},
-	} {
-		item := navFindBulkItem(t, items, want.id)
-		if item["added"] != false {
-			t.Fatalf("%s 不该被标记为已加入: %v", want.why, item)
-		}
-		message, _ := item["message"].(string)
-		if strings.TrimSpace(message) == "" {
-			t.Fatalf("%s 的逐条原因不能为空", want.why)
-		}
-		if message == want.key {
-			t.Fatalf("%s 的逐条原因不该是裸 key：%q", want.why, message)
-		}
-		navAssertNoLeak(t, message)
-	}
-}
-
-func TestNavigationAddSourceReasonsFollowRequestLanguageChain(t *testing.T) {
-	env := newNavTranslationAuthzEnv(t)
-	env.NavSvc.SetSourceResolver(navSourceStub{})
-
-	const noPathKey = "admin.navigations.no_public_path"
-	i18n.InjectForTest(map[string]map[string]string{
-		noPathKey:                   {"zh-CN": "合成-暂无公开路径", "en-US": "synth-no-public-path"},
-		navigationenums.ErrNotFound: {"zh-CN": "合成-不存在", "en-US": "synth-not-found"},
-	}, map[string]int{})
-	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
-
-	for _, tc := range []struct{ name, lang, wantNoPath, wantNotFound string }{
-		{"中文", "zh-CN", "合成-暂无公开路径", "合成-不存在"},
-		{"英文", "en-US", "synth-no-public-path", "synth-not-found"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			recorder := navWriteAuthzPostLang(t, env, env.Super, navSourceAPIPath,
-				navAddSourcePayload(env, "page", navSrcPageTwo, navSrcArticle), tc.lang)
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("应 200，实际 %d: %s", recorder.Code, recorder.Body.String())
-			}
-			data := navAddSourceData(t, recorder.Body.Bytes())
-			if data["added"] != float64(0) || data["skipped"] != float64(2) {
-				t.Fatalf("应 added=0 skipped=2，实际 %s", recorder.Body.String())
-			}
-			items, _ := data["items"].([]interface{})
-			for _, want := range []struct{ id, message, why string }{
-				{navSrcPageTwo, tc.wantNoPath, "暂无公开路径"},
-				{navSrcArticle, tc.wantNotFound, "不属于本来源类型"},
-			} {
-				item := navFindBulkItem(t, items, want.id)
-				if message, _ := item["message"].(string); message != want.message {
-					t.Fatalf("%s 在 %s 下的逐条原因应为 %q，实际 %q", want.why, tc.lang, want.message, message)
-				}
-			}
-		})
 	}
 }
 
@@ -254,6 +116,72 @@ func navItemSourceBinding(t *testing.T, env *navTranslationAuthzEnv, id string) 
 		out.sourceID = *item.SourceID
 	}
 	return out
+}
+
+// TestNavigationAddSourceMixedBatchRejectedWhole 覆盖整批语义：
+// 合法项与「无公开路径」项混合时，整批拒绝、合法项也不落库。
+func TestNavigationAddSourceMixedBatchRejectedWhole(t *testing.T) {
+	env := newNavTranslationAuthzEnv(t)
+	env.NavSvc.SetSourceResolver(navSourceStub{})
+	i18n.InjectForTest(map[string]map[string]string{
+		navigationenums.ErrBatchReject: {"zh-CN": "合成-整批拒绝", "en-US": "synth-batch-rejected"},
+	}, map[string]int{})
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
+	before := navCountItems(t, env)
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
+		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo), true)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("含无公开路径项应整批 400，实际 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "data-ui-error") {
+		t.Fatalf("整批拒绝应渲染共享错误片段：%s", body)
+	}
+	if strings.Contains(body, "<ul>") || strings.Contains(body, navSrcPageOne) {
+		t.Fatalf("失败区不逐条列明细（明细只进 data.items）：%s", body)
+	}
+	if got := navCountItems(t, env); got != before {
+		t.Fatalf("整批拒绝不该写入任何行：条数 %d → %d", before, got)
+	}
+}
+
+// TestNavigationAddSourceMissingCandidateIsNotFound 覆盖候选缺失：状态按 404 声明。
+func TestNavigationAddSourceMissingCandidateIsNotFound(t *testing.T) {
+	env := newNavTranslationAuthzEnv(t)
+	env.NavSvc.SetSourceResolver(navSourceStub{})
+	before := navCountItems(t, env)
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
+		navAddSourcePayload(env, "page", navSrcPageOne, "00000000-0000-0000-0000-0000000000aa"), true)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("候选不存在应 404，实际 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := navCountItems(t, env); got != before {
+		t.Fatalf("整批拒绝不该写入任何行：条数 %d → %d", before, got)
+	}
+}
+
+// TestNavigationAddSourcePathConflictRejectsWholeBatch 覆盖路径冲突：整批拒绝且零写入。
+func TestNavigationAddSourcePathConflictRejectsWholeBatch(t *testing.T) {
+	env := newNavTranslationAuthzEnv(t)
+	env.NavSvc.SetSourceResolver(navSourceStub{})
+	before := navCountItems(t, env)
+	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
+		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageThree), true)
+	navAddSourceSuccess(t, recorder)
+	if got := navCountItems(t, env); got != before+2 {
+		t.Fatalf("合法整批应写入 2 行，实际 %d → %d", before, got)
+	}
+
+	// 同一候选再次加入时路径已存在：整批拒绝，不追加第二份。
+	again := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
+		navAddSourcePayload(env, "page", navSrcPageOne), true)
+	if again.Code < 400 {
+		t.Fatalf("路径已存在的重复加入应整批拒绝，实际 %d: %s", again.Code, again.Body.String())
+	}
+	if got := navCountItems(t, env); got != before+2 {
+		t.Fatalf("被拒绝的重复加入不该写入：条数 %d", got)
+	}
 }
 
 func TestNavigationAddSourceRequiresCSRF(t *testing.T) {
@@ -272,9 +200,7 @@ func TestNavigationAddSourceRequiresCSRF(t *testing.T) {
 
 	withToken := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
 		navAddSourcePayload(env, "page", navSrcPageOne), true)
-	if withToken.Code != http.StatusOK {
-		t.Fatalf("补上令牌的同一请求应 200，实际 %d: %s", withToken.Code, withToken.Body.String())
-	}
+	navAddSourceSuccess(t, withToken)
 	if navItemByTitle(t, env, "关于我们") == "" {
 		t.Fatal("补令牌后应真的加入菜单")
 	}
@@ -342,7 +268,7 @@ func TestNavigationAddSourceLegacyPagePostIsGone(t *testing.T) {
 	}
 	body := page.Body.String()
 	for _, want := range []string{
-		`hx-post="` + navCreateAPIPath + `"`,
+		`hx-post="` + navSourceAPIPath + `"`,
 		`name="sourceType"`,
 		`data-write-result`,
 	} {
@@ -397,18 +323,13 @@ func TestNavigationAddSourceDispatchesStalePerCreatedItem(t *testing.T) {
 	navStaleSpyAttach(t, env, spy)
 
 	recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
-		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageThree, navSrcPageTwo, navSrcArticle), true)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("应 200，实际 %d: %s", recorder.Code, recorder.Body.String())
-	}
-	data := navAddSourceData(t, recorder.Body.Bytes())
-	if data["added"] != float64(2) || data["skipped"] != float64(2) {
-		t.Fatalf("应 added=2 skipped=2，实际 %s", recorder.Body.String())
-	}
+		navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageThree), true)
+	navAddSourceSuccess(t, recorder)
 
 	menus, items, menuKeys, itemKeys := spy.counts()
-	if menus != 2 || items != 2 {
-		t.Fatalf("两条成功应各派发一次：menu=2 navigation=2，实际 menu=%d navigation=%d（跳过项不许派发）",
+	// 菜单级失效按 kind 合并成一次；每个新建项各自派发一次 navigation 失效。
+	if menus != 1 || items != 2 {
+		t.Fatalf("整批应派发 menu=1 navigation=2，实际 menu=%d navigation=%d",
 			menus, items)
 	}
 	for _, key := range menuKeys {
@@ -433,20 +354,16 @@ func TestNavigationAddSourceDispatchesStalePerCreatedItem(t *testing.T) {
 }
 
 func TestNavigationAddSourceNoDispatchWhenNothingWritten(t *testing.T) {
-	t.Run("全部跳过", func(t *testing.T) {
+	t.Run("整批拒绝", func(t *testing.T) {
 		env := newNavTranslationAuthzEnv(t)
 		env.NavSvc.SetSourceResolver(navSourceStub{})
 		spy := &navStaleSpy{}
 		navStaleSpyAttach(t, env, spy)
 
 		recorder := navWriteAuthzPost(t, env, env.Super, navSourceAPIPath,
-			navAddSourcePayload(env, "page", navSrcPageTwo, navSrcArticle), true)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("应 200（逐条原因在 data 里），实际 %d: %s", recorder.Code, recorder.Body.String())
-		}
-		data := navAddSourceData(t, recorder.Body.Bytes())
-		if data["added"] != float64(0) || data["skipped"] != float64(2) {
-			t.Fatalf("应 added=0 skipped=2，实际 %s", recorder.Body.String())
+			navAddSourcePayload(env, "page", navSrcPageOne, navSrcPageTwo), true)
+		if recorder.Code < 400 {
+			t.Fatalf("含无公开路径项应整批拒绝，实际 %d: %s", recorder.Code, recorder.Body.String())
 		}
 		if menus, items, _, _ := spy.counts(); menus != 0 || items != 0 {
 			t.Fatalf("没有写入就不许派发失效，实际 menu=%d navigation=%d", menus, items)

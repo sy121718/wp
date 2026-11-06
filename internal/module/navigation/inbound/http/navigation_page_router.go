@@ -45,9 +45,14 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare),
 		h.NavigationEditFragment)
 
-	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.PanelSet)
-	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), pageview.HTMLFragment, h.PanelCreate)
-	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.NavigationUpdate)
+	// 这三个是抽屉内的局部写：失败只进宿主声明的错误区（HTML 片段），
+	// 不整页跳转、不返回 JSON，状态码保留真实语义。
+	adminPages.POST("/navigations/panel",
+		builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.PanelSet)
+	adminPages.POST("/navigations/panel/create",
+		builtin.CasbinMiddlewareForPath("/api/block/create"), pageview.HTMLFragment, h.PanelCreate)
+	adminPages.POST("/navigations/update",
+		builtin.CasbinMiddlewareForPath("/api/navigation/update"), pageview.HTMLFragment, h.NavigationUpdate)
 
 	translations := NewNavigationTranslationHandle(navigations, projects)
 

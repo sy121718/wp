@@ -11,6 +11,7 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -42,9 +43,7 @@ func (h *Handle) Create(c *gin.Context) {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
-		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
-	))
+	pageview.Success(c)
 }
 
 // Update 是导航项基本字段的编辑：标准表单，一份确定的输入协议。
@@ -60,9 +59,7 @@ func (h *Handle) Update(c *gin.Context) {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
-		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
-	))
+	pageview.Success(c)
 }
 
 // Move 是上移 / 下移：标准表单（id / dir / projectId）。
@@ -73,21 +70,13 @@ func (h *Handle) Move(c *gin.Context) {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
 		return
 	}
-	res, err := h.svc.SwapMove(c.Request.Context(), &req)
-	if err != nil {
+	if _, err := h.svc.SwapMove(c.Request.Context(), &req); err != nil {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	// 边界移动是**合法结果**（没有可交换的邻居），要如实告诉界面，不能一律报「已完成」。
-	moved, reason := false, ""
-	if res != nil {
-		moved, reason = res.Moved, res.Reason
-	}
-	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
-		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
-		pageview.Object("Moved", moved),
-		pageview.Object("Reason", reason),
-	))
+	// 边界移动是合法结果（没有可交换的邻居），按钮在模板侧已按首末项禁用；
+	// 成功只需公共提示，不另造结果模板或导航协议。
+	pageview.Success(c)
 }
 
 // UpdateTranslations 是译文批量的明确 JSON 输入（行是 context/hash/target 三元组）。
@@ -135,9 +124,8 @@ func (h *Handle) updateTranslations(c *gin.Context, env *navigationdto.UpdateEnv
 		return
 	}
 
-	c.HTML(http.StatusOK, "admin/navigation/navigation_translations_saved.html", pageview.Objects(
-		pageview.Object("Written", result.Written),
-	))
+	// 纯成功只给公共一句提示；写入条数是明细，不进入成功消息。
+	pageview.Success(c)
 }
 
 func (h *Handle) Get(c *gin.Context) {
@@ -168,11 +156,6 @@ func (h *Handle) List(c *gin.Context) {
 
 func (h *Handle) Delete(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	// 普通界面提交是标准表单：单条用 id，批量用重复的 ids。
-	if err := c.Request.ParseForm(); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
-		return
-	}
 	// 一个端点一种形状：单条用 id，批量是独立端点 DeleteBulk。
 	// 单条分支用显式 binder：字段与 DeleteReq 的 form tag 一一对应，形状由 binding 判。
 	var formReq navigationdto.DeleteReq
@@ -184,31 +167,20 @@ func (h *Handle) Delete(c *gin.Context) {
 		pageview.FailStatus(c, navigationErrorStatus(err), navigationErrScene, err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/navigation/navigation_write_result.html", pageview.Objects(
-		pageview.Object("Message", response.MsgText(c, navDoneNotice)),
-	))
+	pageview.Success(c)
 }
 
 func navigationErrorStatus(err error) int {
+	// 错误自己声明的状态（批量拒绝、超限、带状态包装）优先：它比按键猜更准确。
+	if status, ok := facing.StatusOf(err); ok {
+		return status
+	}
 	fact, business := navigationFact(err)
 	if !business {
 		return http.StatusInternalServerError
 	}
 
 	key, _, _ := strings.Cut(fact.Key, "|")
-	switch key {
-	case navigationenums.ErrNotFound:
-		return http.StatusNotFound
-
-	case navigationenums.ErrStaleVersion:
-		return http.StatusConflict
-	case navigationenums.ErrInvalidParam,
-		navigationenums.ErrInvalidKind,
-		navigationenums.ErrPathTaken,
-
-		navigationenums.ErrSortTied:
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
-	}
+	// 状态只在 enums 声明一次；这里沿用同一份声明，不再维护第二份 switch。
+	return navigationenums.StatusFor(key)
 }
