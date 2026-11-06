@@ -6,6 +6,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -187,26 +188,26 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	return blockRespPtr(entity), nil
 }
 
+// Delete 是单条删除，与 BulkDelete 共用同一条事务内删除规则：
+// 锁行、复核存在性、检查全局块引用、按行数确认删除，任一不成立都不写库。
 func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err error) {
 
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return ErrParamRequired
 	}
 
-	entity, err := s.getExistingBlock(ctx, req.ID)
+	located, err := s.getExistingBlock(ctx, req.ID)
 	if err != nil {
 		return err
 	}
-	if entity.ReuseMode == blockmodel.ReuseGlobal {
-		if usages, inUse := s.blockRefState(ctx, entity.ID); inUse {
-
-			return blockcontract.NewBlockInUseError(usages)
-		}
-	}
-	if err = s.model.Delete(ctx, entity.ProjectID, entity.ID); err != nil {
+	targets := []blockTarget{{id: located.ID, projectID: located.ProjectID, reuseMode: located.ReuseMode}}
+	deleted, err := s.deleteTargetsTx(ctx, targets)
+	if err != nil {
 		return err
 	}
-	s.propagateStale(ctx, req.ID, entity.ReuseMode)
+	for _, t := range deleted {
+		s.propagateStale(ctx, t.id, t.reuseMode)
+	}
 	return nil
 }
 
@@ -352,69 +353,149 @@ func normalizeReuseMode(raw string) (string, error) {
 }
 
 // BulkDelete 在一个事务里删除多个块：任一失败整批回滚，并把失败原因交给调用方。
-//
-// 与单条删除的区别只有事务边界：引用检查仍在提交前完成，失败项不写库。
 func (s *Service) BulkDelete(ctx context.Context, req *blockdto.BulkDeleteReq) error {
 	if req == nil || len(req.IDs) == 0 {
 		return ErrParamRequired
 	}
-	type target struct {
-		id        string
-		projectID string
-		reuseMode string
+	targets, err := s.locateTargets(ctx, req.IDs)
+	if err != nil {
+		return err
 	}
-	targets := make([]target, 0, len(req.IDs))
+	deleted, err := s.deleteTargetsTx(ctx, targets)
+	if err != nil {
+		return err
+	}
+	for _, t := range deleted {
+		s.propagateStale(ctx, t.id, t.reuseMode)
+	}
+	return nil
+}
+
+// blockTarget 是待删块的最小事实：工程用于 RLS 作用域，复用方式决定是否要查引用与传播 stale。
+type blockTarget struct {
+	id        string
+	projectID string
+	reuseMode string
+}
+
+// locateTargets 逐 id 定位所属工程并去重；任一 id 非法或不存在都整批拒绝，
+// 逐条原因进 data.items，不静默跳过。
+func (s *Service) locateTargets(ctx context.Context, rawIDs []string) ([]blockTarget, error) {
+	targets := make([]blockTarget, 0, len(rawIDs))
+	seen := make(map[string]struct{}, len(rawIDs))
 	blocked := make([]facing.BlockedItem, 0)
-	for _, raw := range req.IDs {
-		entity, err := s.getExistingBlock(ctx, raw)
+
+	for _, raw := range rawIDs {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			blocked = append(blocked, facing.BlockedItem{ID: raw, ReasonKey: blockenums.ErrBlockNotFound})
+			continue
+		}
+		if _, dup := seen[trimmed]; dup {
+			continue
+		}
+		entity, err := s.getExistingBlock(ctx, trimmed)
 		if err != nil {
 			key := blockenums.ErrBlockNotFound
 			if !errors.Is(err, ErrNotFound) {
 				key = blockenums.MsgInternalError
 			}
-			blocked = append(blocked, facing.BlockedItem{ID: raw, ReasonKey: key})
+			blocked = append(blocked, facing.BlockedItem{ID: trimmed, ReasonKey: key})
 			continue
 		}
-		if entity.ReuseMode == blockmodel.ReuseGlobal {
-			if _, inUse := s.blockRefState(ctx, entity.ID); inUse {
-				blocked = append(blocked, facing.BlockedItem{
-					ID: entity.ID, Name: entity.Name, ReasonKey: blockenums.ErrBlockInUse,
-				})
-				continue
-			}
-		}
-		targets = append(targets, target{id: entity.ID, projectID: entity.ProjectID, reuseMode: entity.ReuseMode})
+		seen[trimmed] = struct{}{}
+		targets = append(targets, blockTarget{
+			id: entity.ID, projectID: entity.ProjectID, reuseMode: entity.ReuseMode,
+		})
 	}
 	if len(blocked) > 0 {
-		return &bulkBlockedError{items: blocked}
+		return nil, &bulkBlockedError{items: blocked}
 	}
+	if len(targets) == 0 {
+		return nil, ErrParamRequired
+	}
+	return targets, nil
+}
 
-	// 同工程的行在同一事务里删；跨工程时逐工程一个事务，任一失败不影响已提交工程。
-	groups := map[string][]target{}
-	order := make([]string, 0)
+// deleteTargetsTx 把所有目标放进同一个事务：按工程稳定排序逐段切换 RLS 作用域，
+// 段内按 id 升序锁定、复核存在性与引用、逐条核对受影响行数；任一失败整批回滚。
+func (s *Service) deleteTargetsTx(ctx context.Context, targets []blockTarget) ([]blockTarget, error) {
+	groups := map[string][]blockTarget{}
+	order := make([]string, 0, len(targets))
 	for _, t := range targets {
 		if _, ok := groups[t.projectID]; !ok {
 			order = append(order, t.projectID)
 		}
 		groups[t.projectID] = append(groups[t.projectID], t)
 	}
-	for _, pid := range order {
-		rows := groups[pid]
-		if err := s.model.Transaction(ctx, pid, func(tx *gorm.DB) error {
+	sort.Strings(order)
+
+	blocked := make([]facing.BlockedItem, 0)
+	var blockedUsages []blockcontract.BlockUsage
+	err := s.model.TransactionAny(ctx, func(tx *gorm.DB) error {
+		for _, projectID := range order {
+			rows := groups[projectID]
+			if serr := s.model.ScopeTx(tx, projectID); serr != nil {
+				return serr
+			}
+			ids := make([]string, 0, len(rows))
 			for _, t := range rows {
-				if err := s.model.DeleteTx(ctx, tx, t.projectID, t.id); err != nil {
-					return err
+				ids = append(ids, t.id)
+			}
+			locked, lerr := s.model.LockByIDsTx(ctx, tx, projectID, ids)
+			if lerr != nil {
+				return lerr
+			}
+			found := make(map[string]*blockmodel.BlockEntity, len(locked))
+			for i := range locked {
+				found[locked[i].ID] = &locked[i]
+			}
+			for _, t := range rows {
+				entity, ok := found[t.id]
+				if !ok {
+					blocked = append(blocked, facing.BlockedItem{ID: t.id, ReasonKey: blockenums.ErrBlockNotFound})
+					continue
+				}
+				// 全局块的引用检查必须在锁内复核：定位阶段的检查到删除之间可能有新引用。
+				if entity.ReuseMode == blockmodel.ReuseGlobal {
+					if usages, inUse := s.blockRefState(ctx, t.id); inUse {
+						blocked = append(blocked, facing.BlockedItem{
+							ID: t.id, Name: entity.Name, ReasonKey: blockenums.ErrBlockInUse,
+						})
+						blockedUsages = append(blockedUsages, usages...)
+					}
 				}
 			}
-			return nil
-		}); err != nil {
-			return err
+			if len(blocked) > 0 {
+				return blockedErrorFor(targets, blocked, blockedUsages)
+			}
+			for _, t := range rows {
+				affected, derr := s.model.DeleteTx(ctx, tx, projectID, t.id)
+				if derr != nil {
+					return derr
+				}
+				if affected != 1 {
+					return &bulkBlockedError{items: []facing.BlockedItem{
+						{ID: t.id, ReasonKey: blockenums.ErrBlockNotFound},
+					}}
+				}
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	for _, t := range targets {
-		s.propagateStale(ctx, t.id, t.reuseMode)
+	return targets, nil
+}
+
+// blockedErrorFor 保留单条删除对引用明细的既有契约：唯一目标因引用被拒时，
+// 仍返回携带逐条引用位置的 *BlockInUseError；批量则收敛为一条公共拒绝事实。
+func blockedErrorFor(targets []blockTarget, items []facing.BlockedItem, usages []blockcontract.BlockUsage) error {
+	if len(targets) == 1 && len(items) == 1 && items[0].ReasonKey == blockenums.ErrBlockInUse {
+		return blockcontract.NewBlockInUseError(usages)
 	}
-	return nil
+	return &bulkBlockedError{items: items}
 }
 
 // bulkBlockedError 携带整批被拒的逐条原因；由共享失败出口放进 data.items。

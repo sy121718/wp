@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -169,16 +170,44 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 	return rows, err
 }
 
-// DeleteTx 在调用方事务内删除一个块；工程作用域由事务持有者设置。
-func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, projectID, id string) error {
+// DeleteTx 在调用方事务内删除一个块并返回受影响行数；工程作用域由事务持有者设置。
+func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, projectID, id string) (affected int64, err error) {
 	if tx == nil {
-		return ErrProjectRequired
+		return 0, ErrProjectRequired
 	}
 	q := tx.WithContext(ctx).Where("id = ?", id)
 	if strings.TrimSpace(projectID) != "" {
 		q = q.Where("project_id = ?", projectID)
 	}
-	return q.Delete(&BlockEntity{}).Error
+	res := q.Delete(&BlockEntity{})
+	return res.RowsAffected, res.Error
+}
+
+// TransactionAny 提供一个不带工程作用域的事务句柄：跨工程批量写在同一事务里
+// 按工程逐段调用 ScopeTx 切换作用域，避免逐工程独立提交造成半成功。
+func (m *Model) TransactionAny(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// ScopeTx 在调用方事务内切换工程作用域；RLS 会话变量是事务级的，可多次覆盖。
+func (m *Model) ScopeTx(tx *gorm.DB, projectID string) error {
+	return rls.ScopeTx(tx, projectID)
+}
+
+// LockByIDsTx 按 id 升序锁定同一工程内的块，供批量删除在同一事务内复核存在性。
+func (m *Model) LockByIDsTx(ctx context.Context, tx *gorm.DB, projectID string, ids []string) (list []BlockEntity, err error) {
+	if tx == nil {
+		return nil, ErrProjectRequired
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = tx.WithContext(ctx).Model(&BlockEntity{}).
+		Where("project_id = ? AND id IN ?", projectID, ids).
+		Order("id ASC").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Find(&list).Error
+	return list, err
 }
 
 // Transaction 提供一个工程作用域内的事务，供批量删除整体提交或回滚。
