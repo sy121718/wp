@@ -419,7 +419,6 @@ func TestControllerRenderExit(t *testing.T) {
 var pendingControllerUIImport = map[string]bool{
 
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/block/inbound/http/block_err.go":                      true,
 	"internal/module/content/inbound/http/content_page.go":                 true,

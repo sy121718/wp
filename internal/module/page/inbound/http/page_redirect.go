@@ -94,22 +94,16 @@ func (h *Handle) RedirectBulkDelete(c *gin.Context) {
 		redirectJump(c, false, redirectErrMsg(pageenums.RedirectErrInvalid))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, raw := range req.Paths {
-		path := strings.TrimSpace(raw)
-		if path == "" {
-			continue
-		}
-		if err := h.svc.DeleteRedirect(c.Request.Context(), &pagedto.RedirectDeleteReq{
-			ProjectID: req.ProjectID, Path: path,
-		}); err != nil {
-			logger.Scene("page").With("path", path).Error(err, "批量删除重定向失败")
-			skipped++
-			continue
-		}
-		deleted++
+	// 原始路径原样交给 service：规范化、去重、归属复核都归 service，
+	// 要么全成，要么整批拒绝，控制器不统计跳过数。
+	if err := h.svc.BulkDeleteRedirect(c.Request.Context(), &pagedto.RedirectBulkDeleteReq{
+		ProjectID: req.ProjectID, Paths: req.Paths,
+	}); err != nil {
+		// 交原始错误事实：拒绝状态码与逐条明细都在它上面。
+		pageview.FailScene(c, pageErrScene, err)
+		return
 	}
-	redirectJump(c, skipped == 0 && deleted > 0, outcomeMsg(pageenums.RedirectBulkDeleteOutcome(deleted, skipped)))
+	redirectJump(c, true, outcomeMsg(pageenums.RedirectBulkDeleteOutcome(len(req.Paths), 0)))
 }
 
 func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) *RedirectPageResp {

@@ -340,24 +340,21 @@ func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 	pageListJump(c, true, pageDeletedMsg())
 }
 
+// PagesBulkDelete 是勾选多页的批量删除：一次 Service 调用、同一事务整批删除。
+// 原始 ids 原样交给 service（去重、上限、形状与引用复核都归 service），
+// 控制器不预过滤也不统计跳过数 —— 要么全成，要么整批拒绝。
 func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
-
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
-	if berr != nil {
-
-		pageListJump(c, false, pageBulkIDsMsg(c, berr))
+	form, ok := binding.Form[pagedto.PageBulkDeleteFormReq](c)
+	if !ok {
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.pages.Delete(c.Request.Context(), &pagecontract.DeleteReq{ID: id}); err != nil {
-			logger.Scene("page").With("pageId", id).Error(err, "批量删除页面失败")
-			skipped++
-			continue
-		}
-		deleted++
+	if err := h.pages.BulkDelete(c.Request.Context(), &pagedto.BulkDeleteReq{IDs: form.IDs}); err != nil {
+		// 交原始错误事实：拒绝状态码（404 / 409）与逐条明细都在它上面，
+		// 先转成消息再走出口会把状态码压成 400。
+		pageview.FailScene(c, pageErrScene, err)
+		return
 	}
-	pageListJump(c, skipped == 0 && deleted > 0, outcomeMsg(pageenums.PagesBulkDeleteOutcome(deleted, skipped)))
+	pageListJump(c, true, pageDeletedMsg())
 }
 
 func pageProjectCreatedMsg() pageMsg {

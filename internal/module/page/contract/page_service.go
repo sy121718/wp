@@ -169,6 +169,14 @@ type PageService interface {
 
 	Delete(ctx context.Context, req *pagedto.DeleteReq) (err error)
 
+	// BulkDelete 在同一次事务里删除整批页面：任一目标缺失 / 非法 / 仍被引用都整批拒绝，
+	// 不返回部分成功。
+	BulkDelete(ctx context.Context, req *pagedto.BulkDeleteReq) (err error)
+
+	// BulkDeleteRedirect 在同一次事务里删除整批重定向：任一目标非法 / 不存在 / 归属变化
+	// 都整批拒绝，不返回部分成功。
+	BulkDeleteRedirect(ctx context.Context, req *pagedto.RedirectBulkDeleteReq) (err error)
+
 	RefreshThemeForTheme(ctx context.Context, themeID string, theme json.RawMessage) error
 
 	RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error

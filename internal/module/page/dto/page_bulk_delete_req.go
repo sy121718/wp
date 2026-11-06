@@ -13,3 +13,10 @@ type BulkDeleteReq struct {
 type PageBulkDeleteFormReq struct {
 	IDs []string `form:"ids"`
 }
+
+// RedirectBulkDeleteReq 是重定向批量删除的入参：一次调用按同一套规则整批删除，
+// 任一目标非法、不存在或归属变化都整批拒绝，不返回部分成功。
+type RedirectBulkDeleteReq struct {
+	ProjectID string
+	Paths     []string
+}
