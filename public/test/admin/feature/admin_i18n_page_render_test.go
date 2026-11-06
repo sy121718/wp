@@ -249,7 +249,8 @@ func TestAdminI18nEntriesPageFailureFollowsRequestLanguage(t *testing.T) {
 	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n")); msg != "系统内部错误，请稍后重试" {
 		t.Fatalf("中文失败文案不符: %q", msg)
 	}
-	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "Internal server error, please try again later" {
+	// 与 747 迁移的 uiInternalErr/en-US 种子一致（旧 MsgInternalError 已退役改名）。
+	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "Internal error, please try again later" {
 		t.Fatalf("英文失败文案不符: %q", msg)
 	}
 	i18n.InjectForTest(map[string]map[string]string{response.InternalKey: {"zh-CN": "注入的默认语言兜底"}}, nil)

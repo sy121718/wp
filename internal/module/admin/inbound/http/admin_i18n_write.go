@@ -2,7 +2,6 @@ package adminhttp
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -75,30 +74,46 @@ func (h *adminI18nEntryHandle) i18nWriteDelete(c *gin.Context, req admindto.I18n
 	view.Success(c)
 }
 
-// i18nWriteBulkDelete 先校验完整标识集合，再调用词库的原子批量删除端口。
+// i18nWriteBulkDelete 先校验数量上限，再逐条校验**原始提交**的复合标识，
+// 最后一次性交给词库的原子批量删除端口。
+//
+// 上限沿用 bulkids.Normalize 的去重口径；但形状校验必须遍历原始 ids：
+// Normalize 会静默滤掉空项，只依赖它等于把「空项」变成一次成功删除。
+// 空项与非 key|lang 形状同属「请求本身不可执行」，整批拒绝、一条都不写。
 func (h *adminI18nEntryHandle) i18nWriteBulkDelete(c *gin.Context, req admindto.I18nWriteReq) {
-	ids, err := bulkids.Normalize(req.IDs)
-	if err != nil {
+	if _, err := bulkids.Normalize(req.IDs); err != nil {
 		view.FailScene(c, adminErrScene, err)
 		return
 	}
-	refs := make([]i18n.EntryRef, 0, len(ids))
-	for _, raw := range ids {
+	refs := make([]i18n.EntryRef, 0, len(req.IDs))
+	seen := make(map[i18n.EntryRef]struct{}, len(req.IDs))
+	for _, raw := range req.IDs {
 		key, lang, ok := strings.Cut(strings.TrimSpace(raw), adminI18nEntryKeySeparator)
 		key, lang = strings.TrimSpace(key), strings.TrimSpace(lang)
-		if !ok || key == "" || lang == "" {
-			view.FailStatus(c, http.StatusBadRequest, adminErrScene, fmt.Errorf("词条标识 %q 不是 key%slang 形状", raw, adminI18nEntryKeySeparator))
+		// 复合标识只能是恰好一段 key + 一段 lang；lang 里再出现分隔符说明提交的不是二元组。
+		if !ok || key == "" || lang == "" || strings.Contains(lang, adminI18nEntryKeySeparator) {
+			// 只给一句参数错误：坏标识本身不回显进响应。
+			view.FailStatus(c, http.StatusBadRequest, adminErrScene, adminenums.BadRequest())
 			return
 		}
-		refs = append(refs, i18n.EntryRef{Key: key, Lang: lang})
+		item := i18n.EntryRef{Key: key, Lang: lang}
+		if _, dup := seen[item]; dup {
+			continue
+		}
+		seen[item] = struct{}{}
+		refs = append(refs, item)
 	}
-	deleted, err := i18n.DeleteEntries(c.Request.Context(), refs)
-	if err != nil {
+	if len(refs) == 0 {
+		view.FailScene(c, adminErrScene, adminenums.Err(adminenums.ErrI18nSelectionEmpty))
+		return
+	}
+	if _, err := i18n.DeleteEntries(c.Request.Context(), refs); err != nil {
 		view.FailScene(c, adminErrScene, adminI18nBulkDeleteError(err))
 		return
 	}
 	h.markI18nStale(c)
-	c.HTML(http.StatusOK, "admin/system/i18n_write_success.html", struct{ Deleted int }{Deleted: deleted})
+	// 纯成功只给公共一句提示：删除条数属明细，不进入成功消息。
+	view.Success(c)
 }
 
 // adminI18nBulkDeleteError 把词库层的缺失事实映射为模块错误声明。

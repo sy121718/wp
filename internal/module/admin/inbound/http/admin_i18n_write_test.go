@@ -135,11 +135,29 @@ func bulkBody(distinct, repeat int) string {
 
 func TestAdminI18nWriteBulkRejectsUnshapedIDWholeBatch(t *testing.T) {
 	injectAdminI18nWriteEntries(t, map[string]map[string]string{adminenums.MsgBadRequest: {"zh-CN": "BAD-SHAPE-ZH"}})
-	for _, id := range []string{"no-separator", "|zh-CN", "a|"} {
+	// 空项与非 key|lang 形状一样整批拒绝：空项先被 Normalize 滤掉再当成成功删除是缺陷。
+	for _, id := range []string{"no-separator", "|zh-CN", "a|", "", "   ", "a|zh-CN|extra"} {
 		code, html := adminI18nWriteCall(t, url.Values{"action": {"bulkDelete"}, "ids": {"valid|zh-CN", id}}.Encode(), "zh-CN")
-		if code != http.StatusBadRequest || !strings.Contains(html, "BAD-SHAPE-ZH") || strings.Contains(html, id) {
-			t.Fatalf("坏标识应整批拒绝且不回显：%d %s", code, html)
+		if code != http.StatusBadRequest || !strings.Contains(html, "BAD-SHAPE-ZH") {
+			t.Fatalf("坏标识 %q 应整批 400：%d %s", id, code, html)
 		}
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		if strings.Contains(html, id) {
+			t.Fatalf("坏标识 %q 不得回显：%s", id, html)
+		}
+	}
+}
+
+// TestAdminI18nWriteBulkEmptySelectionRejects 空选择不是成功删除 0 条。
+func TestAdminI18nWriteBulkEmptySelectionRejects(t *testing.T) {
+	injectAdminI18nWriteEntries(t, map[string]map[string]string{
+		adminenums.ErrI18nSelectionEmpty: {"zh-CN": "NOTHING-SELECTED"},
+	})
+	code, html := adminI18nWriteCall(t, url.Values{"action": {"bulkDelete"}}.Encode(), "zh-CN")
+	if code != http.StatusBadRequest || !strings.Contains(html, "NOTHING-SELECTED") {
+		t.Fatalf("空选择应 400 并显示受控文案：%d %s", code, html)
 	}
 }
 

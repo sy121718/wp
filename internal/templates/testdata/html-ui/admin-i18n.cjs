@@ -159,7 +159,9 @@ test('词条标准表单、精确语言编辑、单删和批量删除的真实�
                 await confirmClick(() => page.click('[data-bulk-bar] [type="submit"]'), true);
                 const bulkResponse = await bulk;
                 assert.equal(bulkResponse.status(), 200);
-                assert.match(await bulkResponse.text(), /：2<\/p>/);
+                const bulkText = await bulkResponse.text();
+                assert.match(bulkText, /<p role="status">[^<]+<\/p>/);
+                assert.doesNotMatch(bulkText, /：2/);
                 await empty;
                 assert.equal(await page.$$eval('tbody [name="ids"]', nodes => nodes.length), 0);
                 assert.equal(writes.length, 5);
