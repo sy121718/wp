@@ -2,12 +2,18 @@ package userservice
 
 import (
 	"context"
-	"gorm.io/gorm"
+	"net/http"
+	"sort"
+	"strconv"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -186,22 +192,26 @@ func (s *Service) BulkSetCustomerStatus(ctx context.Context, req *userdto.Custom
 	default:
 		return userenums.Err(userenums.ErrCustomerStatusInvalid)
 	}
+	ids := customerUniqueIDs(req.IDs)
 	disabled := make([]uint64, 0)
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		for _, id := range req.IDs {
-			var e usermodel.UserEntity
-			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(&e).Error; gerr != nil {
-				return userenums.Err(userenums.ErrUserNotFound)
-			}
-			if e.Status == status {
+		locked, missing, lerr := s.lockCustomersTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		if len(missing) > 0 {
+			return newCustomerBatchError(ids, missing)
+		}
+		for i := range locked {
+			if locked[i].Status == status {
 				continue
 			}
 			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).
-				Where("id = ?", id).Update("status", status).Error; uerr != nil {
+				Where("id = ?", locked[i].ID).Update("status", status).Error; uerr != nil {
 				return uerr
 			}
 			if status == usermodel.UserStatusDisabled {
-				disabled = append(disabled, id)
+				disabled = append(disabled, locked[i].ID)
 			}
 		}
 		return nil
@@ -222,13 +232,17 @@ func (s *Service) BulkUnlockCustomers(ctx context.Context, req *userdto.Customer
 	if req == nil || len(req.IDs) == 0 {
 		return userenums.Err(userenums.ErrInvalidParam)
 	}
+	ids := customerUniqueIDs(req.IDs)
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		for _, id := range req.IDs {
-			var e usermodel.UserEntity
-			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(&e).Error; gerr != nil {
-				return userenums.Err(userenums.ErrUserNotFound)
-			}
-			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).Where("id = ?", id).
+		locked, missing, lerr := s.lockCustomersTx(ctx, tx, ids)
+		if lerr != nil {
+			return lerr
+		}
+		if len(missing) > 0 {
+			return newCustomerBatchError(ids, missing)
+		}
+		for i := range locked {
+			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).Where("id = ?", locked[i].ID).
 				Updates(map[string]any{
 					"login_failure_count": 0,
 					"locked_until_time":   nil,
@@ -239,4 +253,77 @@ func (s *Service) BulkUnlockCustomers(ctx context.Context, req *userdto.Customer
 		}
 		return nil
 	})
+}
+
+// customerUniqueIDs 去重并保持提交顺序；批量错误明细按这个顺序列出。
+func customerUniqueIDs(raw []uint64) []uint64 {
+	out := make([]uint64, 0, len(raw))
+	seen := make(map[uint64]bool, len(raw))
+	for _, id := range raw {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// lockCustomersTx 在调用方事务内按 id 升序锁定这批账号，返回锁定行与缺失 id。
+//
+// 锁序固定，避免两个批量以相反顺序取行锁形成死锁；缺失不在这里直接报错，
+// 由调用方汇总成整批拒绝事实（逐条 id 进 data.items）。
+func (s *Service) lockCustomersTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]usermodel.UserEntity, []uint64, error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	ordered := append([]uint64(nil), ids...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
+	var rows []usermodel.UserEntity
+	if err := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ordered).
+		Order("id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, nil, err
+	}
+	found := make(map[uint64]bool, len(rows))
+	for i := range rows {
+		found[rows[i].ID] = true
+	}
+	missing := make([]uint64, 0)
+	for _, id := range ordered {
+		if !found[id] {
+			missing = append(missing, id)
+		}
+	}
+	return rows, missing, nil
+}
+
+// customerBatchError 是一次客户批量写被整体拒绝的事实：
+// 主消息只给一句，逐条 id 与原因走共享失败出口的 data.items。
+type customerBatchError struct {
+	items []facing.BlockedItem
+}
+
+func (e *customerBatchError) Error() string { return userenums.ErrUserNotFound }
+
+func (e *customerBatchError) Facing() (string, string) { return userenums.ErrUserNotFound, "" }
+
+func (e *customerBatchError) HTTPStatus() int { return http.StatusNotFound }
+
+func (e *customerBatchError) BlockedItems() []facing.BlockedItem { return e.items }
+
+// newCustomerBatchError 把缺失 id 收成结构化拒绝明细。
+func newCustomerBatchError(requested []uint64, missing []uint64) error {
+	items := make([]facing.BlockedItem, 0, len(missing))
+	for _, id := range missing {
+		items = append(items, facing.BlockedItem{
+			ID: strconv.FormatUint(id, 10), ReasonKey: userenums.ErrUserNotFound,
+		})
+	}
+	if len(requested) == 1 && len(items) == 1 {
+		return userenums.Err(userenums.ErrUserNotFound)
+	}
+	return &customerBatchError{items: items}
 }
