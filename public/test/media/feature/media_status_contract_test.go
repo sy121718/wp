@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	mediamodel "go_wp/internal/module/media/model"
+	json "go_wp/pkg/jsonx"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
