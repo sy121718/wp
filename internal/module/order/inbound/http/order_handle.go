@@ -114,7 +114,7 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordStChanged")
+	orderWriteOK(c, "ordStChanged")
 }
 
 func (h *Handle) CancelOrder(c *gin.Context) {
@@ -135,7 +135,7 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordCancelled")
+	orderWriteOK(c, "ordCancelled")
 }
 
 func (h *Handle) RefundOrder(c *gin.Context) {
@@ -156,7 +156,7 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordRefunded")
+	orderWriteOK(c, "ordRefunded")
 }
 
 func (h *Handle) ListItems(c *gin.Context) {
@@ -273,7 +273,7 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordCpDeleted")
+	orderWriteOK(c, "ordCpDeleted")
 }
 
 func (h *Handle) ValidateCoupon(c *gin.Context) {
@@ -386,7 +386,7 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordRetApproved")
+	orderWriteOK(c, "ordRetApproved")
 }
 
 func (h *Handle) RejectReturn(c *gin.Context) {
@@ -406,7 +406,7 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordRetRejected")
+	orderWriteOK(c, "ordRetRejected")
 }
 
 func (h *Handle) ReceiveReturn(c *gin.Context) {
@@ -430,7 +430,7 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordRetReceived")
+	orderWriteOK(c, "ordRetReceived")
 }
 
 func (h *Handle) UpdateOrderNote(c *gin.Context) {
@@ -449,7 +449,7 @@ func (h *Handle) UpdateOrderNote(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordNoteSaved")
+	orderWriteOK(c, "ordNoteSaved")
 }
 
 func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {

@@ -27,19 +27,30 @@ func orderReturnAutoReceive(c *gin.Context) bool {
 	return false
 }
 
-// orderWriteOK 是写操作成功后的统一片段：只给「成功了」这一条事实，
-// 需要整页刷新的表单由 Jet 在发起处声明 data-write-reload。
-func orderWriteOK(c *gin.Context) {
-	orderWriteResult(c, "ordSaved")
+// orderWriteFallback 是纯成功消息的缺词兜底：只作为词库缺失时的最后一句，
+// 不能把裸 key 交给界面（与 membership 的同类约定一致）。
+var orderWriteFallback = map[string]string{
+	"ordSaved":        "已保存。",
+	"ordStChanged":    "订单状态已流转。",
+	"ordCancelled":    "订单已取消，未发货部分库存已归还。",
+	"ordRefunded":     "订单已退款。",
+	"ordNoteSaved":    "后台备注已保存。",
+	"ordCpDeleted":    "优惠码已删除。",
+	"ordShipped":      "已发货，库存已按明细扣减。",
+	"ordCarrierSaved": "承运商已保存。",
+	"ordRetApproved":  "退货申请已通过。",
+	"ordRetRejected":  "退货申请已拒绝。",
+	"ordRetReceived":  "退货已收货，库存与退款已处理。",
 }
 
-// orderWriteResult 渲染一条带词条 key 的操作结论片段。
-func orderWriteResult(c *gin.Context, key string) {
-	c.HTML(http.StatusOK, "admin/order/order_write_result.html", gin.H{"Key": key})
+// orderWriteOK 输出纯成功消息：只有一句结论，走共享成功出口。
+func orderWriteOK(c *gin.Context, key string) {
+	pageview.SuccessMessage(c, key, orderWriteFallback[key])
 }
 
-// orderWriteResultNav 渲染结论片段，并给出 Jet 声明的下一步链接。
-// 链接由调用方按实体事实算好，前端只负责按 data-write-nav 导航。
+// orderWriteResultNav 渲染带实体链接的结论片段。
+// 链接由调用方按实体事实算好，前端只按发起模板声明的 data-write-nav 导航；
+// 纯消息不走这里（共用共享成功出口）。
 func orderWriteResultNav(c *gin.Context, key, href string) {
 	c.HTML(http.StatusOK, "admin/order/order_write_result.html", gin.H{"Key": key, "Href": href})
 }

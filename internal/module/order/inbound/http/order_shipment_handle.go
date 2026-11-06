@@ -31,7 +31,7 @@ func (h *Handle) ShipOrder(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordShipped")
+	orderWriteOK(c, "ordShipped")
 }
 
 func (h *Handle) ListShipments(c *gin.Context) {
@@ -97,7 +97,7 @@ func (h *Handle) CreateCarrier(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordCarrierSaved")
+	orderWriteOK(c, "ordCarrierSaved")
 }
 
 func (h *Handle) UpdateCarrier(c *gin.Context) {
@@ -111,7 +111,7 @@ func (h *Handle) UpdateCarrier(c *gin.Context) {
 		orderWriteFail(c, err)
 		return
 	}
-	orderWriteResult(c, "ordCarrierSaved")
+	orderWriteOK(c, "ordCarrierSaved")
 }
 
 func (h *Handle) GetCurrencyRate(c *gin.Context) {
