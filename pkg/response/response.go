@@ -84,8 +84,17 @@ func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 		err = facing.New(enums.ErrRequestEntityTooLarge)
 	}
 	if fact, ok := facing.FactOf(err); ok && fact.Business {
-
-		if data, blocked := blockedDataOf(c, scene, err); blocked {
+		// 主 message 只给一条公共文案；逐条 id / 明细只进 data，不自动展示。
+		// blocked 与受控编码明细共用同一个 data 出口，不另造响应形状。
+		data, hasData := blockedDataOf(c, scene, err)
+		if details := errorDetailsOf(fact.Tail); len(details) > 0 {
+			if data == nil {
+				data = gin.H{}
+			}
+			data["details"] = details
+			hasData = true
+		}
+		if hasData {
 			ErrorWithData(c, code, businessText(c, scene, fact), data)
 			return
 		}
@@ -150,9 +159,6 @@ func businessText(c *gin.Context, scene string, fact facing.Fact) string {
 			logMissingMessage(c, scene, fact.Key)
 			return InternalText(c)
 		}
-	}
-	if fact.Tail != "" {
-		return out + "：" + detailText(c, fact.Tail)
 	}
 	return out
 }

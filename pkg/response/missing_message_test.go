@@ -113,22 +113,21 @@ func TestBusinessTextDoesNotLogWhenTranslationIsGenericHint(t *testing.T) {
 	}
 }
 
-// TestDetailTextDoesNotLogWhenPlaceholderArgsMissing 守住「不猜缺词」：
-// 词条存在、只是命名占位符没给全时退成归口文案 —— 那是参数问题，不是词库缺词。
-func TestDetailTextDoesNotLogWhenPlaceholderArgsMissing(t *testing.T) {
+// TestErrorDetailsOfDoesNotLogWhenPlaceholderArgsMissing 守住「不猜缺词」：
+// 明细只做结构化提取、不在此处取词，参数不齐也不会被误记成词库缺词。
+func TestErrorDetailsOfDoesNotLogWhenPlaceholderArgsMissing(t *testing.T) {
 	dir := initLoggerTo(t)
 	i18n.InjectForTest(map[string]map[string]string{
 		"product.err.detailNamed": {i18n.GetDefaultLang(): "缺少 {missing} 字段"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(translateSeeds, translateHttpCodes) })
 
-	var out, want string
+	var details []gin.H
 	newProbeCtx(t, func(c *gin.Context) {
-		want = InternalText(c)
-		out = detailText(c, i18n.ErrorDetail("product.err.detailNamed", "name", "x"))
+		details = errorDetailsOf(i18n.ErrorDetail("product.err.detailNamed", "name", "x"))
 	})
-	if out != want {
-		t.Fatalf("命名占位符没填全应退成归口文案，实际 %q（期望 %q）", out, want)
+	if len(details) != 1 {
+		t.Fatalf("受控编码应提取成结构化明细，实际 %#v", details)
 	}
 	if logs := readSceneLogs(t, dir, missingMessageScene); logs != "" {
 		t.Fatalf("参数不齐不是缺词，不该记缺词日志：%s", logs)

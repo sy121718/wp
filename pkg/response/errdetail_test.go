@@ -1,6 +1,7 @@
 package response
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 )
 
 const (
@@ -26,6 +28,18 @@ func newLangContext(t *testing.T, lang string) *gin.Context {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/x?lang="+lang, nil)
 	return c
+}
+
+func newLangRecorder(t *testing.T, lang string) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/x", nil)
+	if lang != "" {
+		c.Request.Header.Set("Accept-Language", lang)
+	}
+	return c, w
 }
 
 // injectTestWords 在本用例缓存上叠加词条，结束后还原包内既有夹具（translateSeeds）：
@@ -66,111 +80,64 @@ func assertNoControlChars(t *testing.T, label, text string) {
 	}
 }
 
-func TestBusinessTextRendersChineseDetailWithArgs(t *testing.T) {
+// TestBusinessTextKeepsOnlyMainMessage 守住主 message 只播报公共一句：
+// 带 Tail 的业务错误不再把明细拼进 message，两种语言都一样。
+func TestBusinessTextKeepsOnlyMainMessage(t *testing.T) {
 	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	got := businessText(c, "product", facing.Fact{
-		Key: testErrKey, Business: true, Tail: detailTailWithArgs(),
-	})
-	if want := testErrZh + "：变体 SKU-9 的数量 3 超过上限 2"; got != want {
-		t.Fatalf("成品串 = %q，want %q", got, want)
+	for _, tc := range []struct{ lang, want string }{
+		{"zh-CN", testErrZh},
+		{"en-US", "Duplicate variant stock"},
+	} {
+		c := newLangContext(t, tc.lang)
+		got := businessText(c, "product", facing.Fact{
+			Key: testErrKey, Business: true, Tail: detailTailWithArgs(),
+		})
+		if got != tc.want {
+			t.Fatalf("%s 主 message = %q，want %q", tc.lang, got, tc.want)
+		}
+		for _, leak := range []string{"SKU-9", "变体 {sku}", "Variant {sku}", "product.err.detail", "："} {
+			if strings.Contains(got, leak) {
+				t.Fatalf("%s 主 message 混入了明细 %q：%q", tc.lang, leak, got)
+			}
+		}
+		assertNoControlChars(t, tc.lang+"主 message", got)
 	}
-	assertNoControlChars(t, "中文明细", got)
 }
 
-func TestBusinessTextRendersEnglishDetailWithArgs(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "en-US")
-
-	got := businessText(c, "product", facing.Fact{
-		Key: testErrKey, Business: true, Tail: detailTailWithArgs(),
-	})
-	if want := "Duplicate variant stock：Variant SKU-9 quantity 3 exceeds the limit 2"; got != want {
-		t.Fatalf("成品串 = %q，want %q", got, want)
-	}
-}
-
-func TestBusinessTextJoinsMultipleDetailParts(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
+// TestErrorDetailsOfExtractsControlledEncoding 证明受控编码变成结构化 data.details，
+// 保留 key 与 args 原样，不在此处二次取词。
+func TestErrorDetailsOfExtractsControlledEncoding(t *testing.T) {
 	tail := i18n.JoinErrorDetails(
 		i18n.ErrorDetail("product.err.detail", "sku", "SKU-9", "n", "3", "max", "2"),
 		i18n.ErrorDetail("product.err.detail", "sku", "SKU-10", "n", "4", "max", "3"),
 	)
-	got := businessText(c, "product", facing.Fact{Key: testErrKey, Business: true, Tail: tail})
-	want := testErrZh + "：变体 SKU-9 的数量 3 超过上限 2；变体 SKU-10 的数量 4 超过上限 3"
-	if got != want {
-		t.Fatalf("多段明细 = %q，want %q", got, want)
+	details := errorDetailsOf(tail)
+	if len(details) != 2 {
+		t.Fatalf("details 段数 = %d，want 2", len(details))
 	}
+	if got, _ := details[0]["key"].(string); got != "product.err.detail" {
+		t.Fatalf("details[0].key = %q", got)
+	}
+	args, _ := details[0]["args"].(map[string]string)
+	if args["sku"] != "SKU-9" || args["n"] != "3" || args["max"] != "2" {
+		t.Fatalf("details[0].args = %#v", args)
+	}
+	assertNoControlChars(t, "details key", fmt.Sprint(details[0]["key"]))
+	assertNoControlChars(t, "details args", fmt.Sprint(details[0]["args"]))
 }
 
-func TestDetailTextFallsBackWhenArgsIncomplete(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	// 词条要 {sku}/{n}/{max} 三个参数，这里只给一个：不能把没替换的占位符当译文。
-	tail := i18n.ErrorDetail("product.err.detail", "sku", "SKU-9")
-	got := detailText(c, tail)
-	if got != InternalText(c) {
-		t.Fatalf("参数不足应给共享归口文案 %q，实际 %q", InternalText(c), got)
-	}
-	if strings.Contains(got, "{") {
-		t.Fatalf("参数不足时不该留下占位符: %q", got)
-	}
-	assertNoControlChars(t, "缺参明细", got)
-}
-
-func TestDetailTextFallsBackWhenWordMissing(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	got := detailText(c, i18n.ErrorDetail("product.err.detailNotSeeded", "sku", "SKU-9"))
-	if got != InternalText(c) {
-		t.Fatalf("明细缺词应给共享归口文案 %q，实际 %q", InternalText(c), got)
-	}
-	if strings.Contains(got, "detailNotSeeded") {
-		t.Fatalf("明细缺词不该露 key: %q", got)
-	}
-}
-
-func TestDetailTextDropsBrokenEncoding(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	for _, tail := range []string{
-		i18n.ErrDetailSep + "product.err.detail" + "broken",
+// TestErrorDetailsOfDropsUncontrolledText 证明明文 tail、损坏编码与内部原文一律不转成 details。
+func TestErrorDetailsOfDropsUncontrolledText(t *testing.T) {
+	for _, raw := range []string{
+		"",
+		"不存在（2 个：a@1，b@1）",
+		"private SQLSTATE 23505",
+		i18n.ErrDetailSep + "product.err.detail" + i18n.ErrDetailSep + "broken",
 		"\\x1fproduct.err.detail",
 	} {
-		got := detailText(c, tail)
-		assertNoControlChars(t, "异常编码", got)
-		if got != InternalText(c) {
-			t.Fatalf("异常编码应给共享归口文案，实际 %q", got)
+		if got := errorDetailsOf(raw); len(got) != 0 {
+			t.Fatalf("非受控编码 %q 不应产出 details：%#v", raw, got)
 		}
-	}
-}
-
-func TestDetailTextKeepsPlainTail(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	const plain = "不存在（2 个：a@1，b@1）"
-	if got := detailText(c, plain); got != plain {
-		t.Fatalf("受控业务明细应原样保留，实际 %q", got)
-	}
-}
-
-func TestBusinessTextHidesMissingWordKey(t *testing.T) {
-	injectTestWords(t)
-	c := newLangContext(t, "zh-CN")
-
-	got := businessText(c, "product", facing.Fact{Key: "product.err.keyWithoutSeed", Business: true})
-	if got != InternalText(c) {
-		t.Fatalf("缺词应给共享归口文案，实际 %q", got)
-	}
-	if strings.Contains(got, "keyWithoutSeed") {
-		t.Fatalf("缺词不该露 key: %q", got)
 	}
 }
 
@@ -178,6 +145,20 @@ type testBlockedError struct{ items []facing.BlockedItem }
 
 func (e *testBlockedError) Error() string                      { return "blocked" }
 func (e *testBlockedError) BlockedItems() []facing.BlockedItem { return e.items }
+
+// testBlockedDetailError 同时携带拒绝回执与编码明细，用来证明两者合并进同一份 data。
+type testBlockedDetailError struct {
+	items []facing.BlockedItem
+	tail  string
+}
+
+func (e *testBlockedDetailError) Error() string {
+	return testErrKey + ": " + e.tail
+}
+
+func (e *testBlockedDetailError) Facing() (string, string) { return testErrKey, "" }
+
+func (e *testBlockedDetailError) BlockedItems() []facing.BlockedItem { return e.items }
 
 func TestBlockedItemsReuseBusinessText(t *testing.T) {
 	injectTestWords(t)
@@ -203,5 +184,129 @@ func TestBlockedItemsReuseBusinessText(t *testing.T) {
 	}
 	if key, _ := rows[0]["reasonKey"].(string); key != "product.err.keyWithoutSeed" {
 		t.Errorf("reasonKey 仍应是原始 key（机器可读字段），实际 %q", key)
+	}
+}
+
+// TestErrorAutoJSONKeepsDetailsOutOfMessage 用真实 JSON 出口证明：
+// 主 message 不含 id/详情，data.items/data.details 仍然携带机器可读数据。
+func TestErrorAutoJSONKeepsDetailsOutOfMessage(t *testing.T) {
+	injectTestWords(t)
+	c, w := newLangRecorder(t, "zh-CN")
+	err := &testBlockedDetailError{
+		items: []facing.BlockedItem{{ID: "v1", Name: "SKU1", ReasonKey: "product.err.keyWithoutSeed"}},
+		tail:  detailTailWithArgs(),
+	}
+
+	ErrorAuto(c, http.StatusConflict, "product", err)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("状态码 = %d，want 409", w.Code)
+	}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Items []struct {
+				ID        string `json:"id"`
+				Name      string `json:"name"`
+				ReasonKey string `json:"reasonKey"`
+			} `json:"items"`
+			Details []struct {
+				Key  string            `json:"key"`
+				Args map[string]string `json:"args"`
+			} `json:"details"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("响应不是合法 JSON：%v %s", err, w.Body.String())
+	}
+	if body.Message != testErrZh {
+		t.Fatalf("message = %q，want %q", body.Message, testErrZh)
+	}
+	for _, leak := range []string{"v1", "SKU1", "SKU-9", "product.err.", "变体 {sku}"} {
+		if strings.Contains(body.Message, leak) {
+			t.Fatalf("message 混入 %q：%q", leak, body.Message)
+		}
+	}
+	if len(body.Data.Items) != 1 || body.Data.Items[0].ID != "v1" || body.Data.Items[0].ReasonKey != "product.err.keyWithoutSeed" {
+		t.Fatalf("data.items 丢失：%+v", body.Data.Items)
+	}
+	if len(body.Data.Details) != 1 || body.Data.Details[0].Key != "product.err.detail" || body.Data.Details[0].Args["sku"] != "SKU-9" {
+		t.Fatalf("data.details 丢失：%+v", body.Data.Details)
+	}
+}
+
+// TestErrorAutoJSONDropsUncontrolledTail 证明明文 tail、坏编码与未知错误只给公共文案，
+// 不泄漏进 message，也不产出 data.details。
+func TestErrorAutoJSONDropsUncontrolledTail(t *testing.T) {
+	injectTestWords(t)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"plain-tail", fmt.Errorf("%w: summer-sale", facing.New(testErrKey)), testErrZh},
+		{"broken-encoding", fmt.Errorf("%w: %s", facing.New(testErrKey), i18n.ErrDetailSep+"product.err.detail"+i18n.ErrDetailSep+"broken"), testErrZh},
+		{"escaped-encoding", fmt.Errorf(`%w: \x1fproduct.err.detail`, facing.New(testErrKey)), testErrZh},
+		{"raw-sqlstate", fmt.Errorf("%w: ERROR: duplicate key (SQLSTATE 23505)", facing.New(testErrKey)), testErrZh},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, w := newLangRecorder(t, "zh-CN")
+			ErrorAuto(c, http.StatusConflict, "product", tc.err)
+			var body struct {
+				Message string         `json:"message"`
+				Data    map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("响应不是合法 JSON：%v %s", err, w.Body.String())
+			}
+			if body.Message != tc.want {
+				t.Fatalf("message = %q，want %q", body.Message, tc.want)
+			}
+			for _, leak := range []string{"summer-sale", "SQLSTATE", "23505", "product.err.detail", `\x1f`} {
+				if strings.Contains(w.Body.String(), leak) {
+					t.Fatalf("响应泄漏 %q：%s", leak, w.Body.String())
+				}
+			}
+			if _, has := body.Data["details"]; has {
+				t.Fatalf("非受控 tail 不应产出 data.details：%s", w.Body.String())
+			}
+		})
+	}
+}
+
+// TestErrorAutoJSONUnknownErrorNotLeaked 证明非业务错误统一归口，明细不因 data 通道而透出。
+func TestErrorAutoJSONUnknownErrorNotLeaked(t *testing.T) {
+	injectTestWords(t)
+	c, w := newLangRecorder(t, "zh-CN")
+	ErrorAuto(c, http.StatusBadRequest, "product", fmt.Errorf("private SQLSTATE 23505"))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("非业务错误应为 500，实际 %d", w.Code)
+	}
+	var body struct {
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("响应不是合法 JSON：%v %s", err, w.Body.String())
+	}
+	if body.Message != InternalText(c) {
+		t.Fatalf("message = %q，want 归口文案", body.Message)
+	}
+	for _, leak := range []string{"SQLSTATE", "23505", "private"} {
+		if strings.Contains(w.Body.String(), leak) {
+			t.Fatalf("响应泄漏 %q：%s", leak, w.Body.String())
+		}
+	}
+}
+
+// TestMessageOfKeepsOnlyMainMessage 守住 MessageOf 与新主消息语义一致，不再拼明细。
+func TestMessageOfKeepsOnlyMainMessage(t *testing.T) {
+	injectTestWords(t)
+	c := newLangContext(t, "zh-CN")
+	err := fmt.Errorf("%w: %s", facing.New(testErrKey), detailTailWithArgs())
+	if got := MessageOf(c, "product", err); got != testErrZh {
+		t.Fatalf("MessageOf = %q，want %q", got, testErrZh)
 	}
 }

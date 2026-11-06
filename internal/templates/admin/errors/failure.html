@@ -15,7 +15,7 @@
     {{fallback = t("ErrRateLimited", "请求过于频繁，请稍后重试")}}
 {{end}}
 <div role="alert" data-ui-error>
-    <p>{{if !.Fact.Business}}{{fallback}}{{else if len(.Args) > 0}}{{tf(.Fact.Key, .Fact.Fallback, .Args)}}{{else if .Fact.Fallback != "" && .Fact.Fallback != .Fact.Key}}{{t(.Fact.Key, .Fact.Fallback)}}{{else}}{{t(.Fact.Key, fallback)}}{{end}}{{if .Fact.Business && .PlainDetail != "" && (t(.Fact.Key, .Fact.Key) != .Fact.Key || (.Fact.Fallback != "" && .Fact.Fallback != .Fact.Key))}}：{{.PlainDetail}}{{end}}</p>
+    <p>{{if !.Fact.Business}}{{fallback}}{{else if len(.Args) > 0}}{{tf(.Fact.Key, .Fact.Fallback, .Args)}}{{else if .Fact.Fallback != "" && .Fact.Fallback != .Fact.Key}}{{t(.Fact.Key, .Fact.Fallback)}}{{else}}{{t(.Fact.Key, fallback)}}{{end}}</p>
     {* 失败只播报一句：逐条 id / 名称 / 原因属业务数据，随响应 data 返回，
        不在这里渲染成列表 —— 提示组件只负责「失败了」这件事。 *}
 </div>

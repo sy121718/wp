@@ -182,32 +182,52 @@ func TestHTMLFailureRateLimitAndPageProtocol(t *testing.T) {
 	}
 }
 
+// TestHTMLFailureLanguageAndEscaping 守住两件事：
+// 主消息只播报公共一句（编码明细不上屏），以及位置参数按请求语言安全转义且并发不串语言。
 func TestHTMLFailureLanguageAndEscaping(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
-		"product.err.conflict": {"zh-CN": "发生冲突", "en-US": "Conflict occurred"},
+		"product.err.conflict": {"zh-CN": "发生冲突：%s", "en-US": "Conflict occurred: %s"},
+		"product.err.encoded":  {"zh-CN": "发生冲突", "en-US": "Conflict occurred"},
 		"product.err.detail":   {"zh-CN": "编码 {code} 重复", "en-US": "Duplicate {code}"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	engine := failureEngine()
 	engine.GET("/failure", view.HTMLFragment, func(c *gin.Context) {
-		err := fmt.Errorf("%w: %s", facing.New("product.err.conflict"), i18n.ErrorDetail("product.err.detail", "code", `<script>alert(1)</script>`))
+		view.FailScene(c, "product", facing.WithStatus(facing.New("product.err.conflict|<script>alert(1)</script>"), http.StatusConflict))
+	})
+	engine.GET("/encoded", view.HTMLFragment, func(c *gin.Context) {
+		err := fmt.Errorf("%w: %s", facing.New("product.err.encoded"), i18n.ErrorDetail("product.err.detail", "code", `<script>alert(1)</script>`))
 		view.FailScene(c, "product", facing.WithStatus(err, http.StatusConflict))
 	})
+
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {
-		for _, tc := range []struct{ lang, want, other string }{{"zh-CN", "发生冲突", "Conflict occurred"}, {"en-US", "Conflict occurred", "发生冲突"}} {
+		for _, tc := range []struct{ lang, want, other, encoded string }{
+			{"zh-CN", "发生冲突：&lt;script&gt;alert(1)&lt;/script&gt;", "Conflict occurred", "编码 <script>alert(1)</script> 重复"},
+			{"en-US", "Conflict occurred: &lt;script&gt;alert(1)&lt;/script&gt;", "发生冲突", "Duplicate <script>alert(1)</script>"},
+		} {
 			wg.Add(1)
-			go func(lang, want, other string) {
+			go func(lang, want, other, encoded string) {
 				defer wg.Done()
 				req := httptest.NewRequest(http.MethodGet, "/failure", nil)
 				req.Header.Set("Accept-Language", lang)
 				rec := httptest.NewRecorder()
 				engine.ServeHTTP(rec, req)
 				body := rec.Body.String()
-				if rec.Code != http.StatusConflict || !strings.Contains(body, want) || strings.Contains(body, other) || strings.Contains(body, "<script>") || !strings.Contains(body, "&lt;script&gt;") || strings.Contains(body, "product.err.") {
+				if rec.Code != http.StatusConflict || !strings.Contains(body, want) || strings.Contains(body, other) || strings.Contains(body, "<script>") || strings.Contains(body, "product.err.") {
 					t.Errorf("%s 语言/转义错误：%d %s", lang, rec.Code, body)
 				}
-			}(tc.lang, tc.want, tc.other)
+
+				// 编码明细是数据，不是主消息：HTML 不展示它，也不留隐藏 JSON/DOM 解释器。
+				rec = httptest.NewRecorder()
+				engine.ServeHTTP(rec, req)
+				encodedBody := rec.Body.String()
+				for _, leak := range []string{encoded, "product.err.", "<script>", "data-details", "<script type=\"application/json\">"} {
+					if strings.Contains(encodedBody, leak) {
+						t.Errorf("%s 编码明细上屏：%q\n%s", lang, leak, encodedBody)
+					}
+				}
+			}(tc.lang, tc.want, tc.other, tc.encoded)
 		}
 	}
 	wg.Wait()
@@ -248,11 +268,11 @@ func TestHTMLTemplateFailureDoesNotLeakPartialOrRecurse(t *testing.T) {
 // TestHTMLFailureStatusAndPositionArgs 覆盖绑定错误归口、位置参数及格式损坏时的安全回退。
 func TestHTMLFailureStatusAndPositionArgs(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{
-		"sysErrBadParam": {"en-US": "Invalid input"},
-		"uiInternalErr": {"en-US": "Internal failure"},
-		"test.err.limit":   {"en-US": "Maximum %s; received %s"},
-		"test.err.broken":  {"en-US": "Wrong %d"},
-		"test.err.plain":   {"en-US": "Conflict"},
+		"sysErrBadParam":  {"en-US": "Invalid input"},
+		"uiInternalErr":   {"en-US": "Internal failure"},
+		"test.err.limit":  {"en-US": "Maximum %s; received %s"},
+		"test.err.broken": {"en-US": "Wrong %d"},
+		"test.err.plain":  {"en-US": "Conflict"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	for _, tc := range []struct {
@@ -264,8 +284,9 @@ func TestHTMLFailureStatusAndPositionArgs(t *testing.T) {
 		{"binding", 400, errors.New("private binding error SQLSTATE"), "Invalid input"},
 		{"internal", 500, errors.New("private database error SQLSTATE"), "Internal failure"},
 		{"args", 400, facing.New("test.err.limit|200|201"), "Maximum 200; received 201"},
-		{"plain-detail", 409, fmt.Errorf("%w: summer-sale", facing.New("test.err.plain")), "Conflict：summer-sale"},
-		{"plain-escaping", 409, fmt.Errorf("%w: <script>&", facing.New("test.err.plain")), "Conflict：&lt;script&gt;&amp;"},
+		// 明文 tail 不上屏：主消息只播报公共一句。
+		{"plain-detail", 409, fmt.Errorf("%w: summer-sale", facing.New("test.err.plain")), "Conflict"},
+		{"plain-escaping", 409, fmt.Errorf("%w: <script>&", facing.New("test.err.plain")), "Conflict"},
 		{"wrapped-diagnostic", 409, fmt.Errorf("private SQLSTATE: %w", facing.New("test.err.plain")), "Conflict"},
 		{"missing-plain", 500, fmt.Errorf("%w: private SQLSTATE", facing.New("test.err.absent")), "Internal failure"},
 		{"malformed-detail", 409, fmt.Errorf("%w: %s", facing.New("test.err.plain"), i18n.ErrDetailSep), "Conflict"},
