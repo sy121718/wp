@@ -10,6 +10,7 @@ import (
 	"go_wp/pkg/database"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameContents = "contents"
@@ -175,4 +176,30 @@ func (m *Model) collectionQuery(ctx context.Context, entityType string, filter m
 // Transaction 提供一份事务句柄，供批量写整体提交或回滚。
 func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// UpdateDataTx 在一个事务里锁定目标行、原子递增 revision 并写入新数据。
+//
+// 读-改-写必须在行锁内完成：先读 revision 再 Save 会让两个并发更新写入同一个
+// revision，后提交者静默覆盖前者。「递增」由数据库表达式完成，不依赖读到的值。
+func (m *Model) UpdateDataTx(ctx context.Context, id string, data json.RawMessage, updatedAt time.Time) (revision int64, rows int64, err error) {
+	err = m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row Entity
+		if lerr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", id).First(&row).Error; lerr != nil {
+			return lerr
+		}
+		res := tx.Model(&Entity{}).Where("id = ?", id).Updates(map[string]any{
+			"revision":    gorm.Expr("revision + 1"),
+			"data":        data,
+			"update_time": updatedAt,
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		rows = res.RowsAffected
+		return tx.Model(&Entity{}).Where("id = ?", id).
+			Pluck("revision", &revision).Error
+	})
+	return revision, rows, err
 }

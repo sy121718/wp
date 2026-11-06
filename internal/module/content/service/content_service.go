@@ -97,12 +97,22 @@ func (s *Service) Update(ctx context.Context, req *contentdto.UpdateReq) (res *c
 		return nil, err
 	}
 	raw, _ := json.Marshal(data)
-	e.Data = raw
-	e.Revision++
-	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.Save(ctx, e); err != nil {
-		return nil, err
+	now := time.Now().UTC()
+	// 锁内读改写在 model 里一次完成：并发的两次更新各自拿到递增后的 revision，
+	// 不会出现「读到同一个 revision、后提交者静默覆盖」。
+	revision, rows, uerr := s.m.UpdateDataTx(ctx, e.ID, raw, now)
+	if uerr != nil {
+		if errors.Is(uerr, gorm.ErrRecordNotFound) {
+			return nil, contentenums.Err(contentenums.ErrNotFound)
+		}
+		return nil, uerr
 	}
+	if rows != 1 {
+		return nil, contentenums.Err(contentenums.ErrNotFound)
+	}
+	e.Data = raw
+	e.Revision = revision
+	e.UpdatedAt = now
 	s.notifyContentChanged(ctx, e)
 	return toResp(e, data), nil
 }
