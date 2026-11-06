@@ -19,6 +19,7 @@ import (
 	"go_wp/pkg/auth"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/casbin"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/database"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
@@ -283,9 +284,17 @@ func (s *Service) AdminListByDeptID(ctx context.Context, req *admindto.AdminList
 // 两边都锁 sys_admin 的行，且在同一个事务里完成，
 // 才不会出现「删除端数完 0 个成员 → 改归属插进来 → 部门被删掉留下悬挂 dept_id」。
 func (s *Service) AdminBatchSetDeptID(ctx context.Context, req *admindto.AdminBatchSetDeptIDReq) error {
+	if req == nil {
+		return adminenums.BadRequest()
+	}
 	ids := uniqueIDs(req.UserIDs)
+	// 空选择不是「改了 0 条」的成功：调用方把「没勾任何人」当成功会掩盖表单问题。
 	if len(ids) == 0 {
-		return nil
+		return adminenums.Err(adminenums.ErrAdminSelectionEmpty)
+	}
+	// 上限与其它批量一致：去重后计数，超限整批拒绝。
+	if len(ids) > bulkids.MaxIDs {
+		return adminenums.Err(adminenums.ErrAdminBatchTooMany)
 	}
 	return s.am.Transaction(ctx, func(tx *gorm.DB) error {
 		locked, err := s.am.LockByIDsTx(ctx, tx, ids)

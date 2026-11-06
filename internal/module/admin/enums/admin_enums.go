@@ -110,6 +110,14 @@ const (
 )
 
 const (
+	// ErrAdminSelectionEmpty 是「批量操作一个人都没选」：空选择不是「改了 0 条」的成功。
+	ErrAdminSelectionEmpty = "admin.err.adminSelectionEmpty"
+
+	// ErrAdminBatchTooMany 是「批量操作人数超过上限」。
+	ErrAdminBatchTooMany = "admin.err.adminBatchTooMany"
+)
+
+const (
 	BulkDoneKey = "admin.bulk.done"
 
 	BulkPartialKey = "admin.bulk.partial"
@@ -214,7 +222,7 @@ func StatusOf(key string) int {
 		return http.StatusNotFound
 
 	// 请求本身没给出可操作的东西：改请求，不是改数据。
-	case ErrI18nSelectionEmpty:
+	case ErrI18nSelectionEmpty, ErrAdminSelectionEmpty, ErrAdminBatchTooMany:
 		return http.StatusBadRequest
 
 	// 存在但当前状态不允许删：用户下一步是先去解除引用/关系，再回来删。
