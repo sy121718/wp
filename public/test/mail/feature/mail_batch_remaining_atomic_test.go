@@ -12,8 +12,8 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// TestMailContactsStatusAllOrNothing 覆盖整批改状态：第二个人写库失败时，
-// 第一个人的状态、抑制名单和订阅自动化都一起回滚。
+// TestMailContactsStatusAllOrNothing 覆盖整批改状态：退订路径的抑制名单回滚，
+// 以及订阅路径第二个人写库失败时两个人的状态、订阅时刻与同意来源一起回滚且不触发订阅自动化。
 func TestMailContactsStatusAllOrNothing(t *testing.T) {
 	f := newFixture(t)
 	if f == nil {
@@ -59,9 +59,8 @@ func TestMailContactsStatusAllOrNothing(t *testing.T) {
 		}
 	})
 
-	t.Run("改到第二个人失败时第一个人的状态与抑制名单都回滚", func(t *testing.T) {
+	t.Run("退订到第二个人失败时第一个人的状态与抑制名单都回滚", func(t *testing.T) {
 		a, b := seed("st-dbfail-a@example.com"), seed("st-dbfail-b@example.com")
-		subscribedID := seedAutomationWithParams(t, f, "订阅后跟进", mailmodel.TriggerContactSubscribed, nil)
 		failUpdatingContact(t, f, b)
 
 		err := f.svc.UpdateContactsStatus(ctx, &maildto.UpdateContactsStatusReq{
@@ -91,8 +90,74 @@ func TestMailContactsStatusAllOrNothing(t *testing.T) {
 		if sup != 0 {
 			t.Fatalf("回滚的批次不该留下抑制名单记录，实际 %d 行", sup)
 		}
+	})
+
+	t.Run("订阅到第二个人失败时两个人的状态与订阅留痕都回滚", func(t *testing.T) {
+		a, b := seed("st-sub-fail-a@example.com"), seed("st-sub-fail-b@example.com")
+		subscribedID := seedAutomationWithParams(t, f, "订阅后跟进", mailmodel.TriggerContactSubscribed, nil)
+		// 批量按 id 升序处理：a 先写入订阅留痕，随后 b 的更新被注入故障中止，
+		// 断言 a 已写出的 status / subscribed_at / consent_source 也随整批回滚。
+		failUpdatingContact(t, f, b)
+
+		err := f.svc.UpdateContactsStatus(ctx, &maildto.UpdateContactsStatusReq{
+			IDs: []uint64{a, b}, Status: mailmodel.ContactStatusSubscribed, Note: "批次同意来源",
+		})
+		if err == nil {
+			t.Fatal("DB 错误必须整批失败")
+		}
+		if _, ok := facing.StatusOf(err); ok {
+			t.Fatalf("原始 DB 错误不能伪装成业务状态，实际 %v", err)
+		}
+		for _, id := range []uint64{a, b} {
+			row, gerr := f.m.GetContact(ctx, id)
+			if gerr != nil {
+				t.Fatal(gerr)
+			}
+			if row.Status != mailmodel.ContactStatusPending {
+				t.Fatalf("DB 错误后 id=%d 的状态不该改动，实际 %q", id, row.Status)
+			}
+			if row.SubscribedAt != nil {
+				t.Fatalf("DB 错误后 id=%d 不该留下 subscribed_at，实际 %v", id, row.SubscribedAt)
+			}
+			if row.ConsentSource != nil {
+				t.Fatalf("DB 错误后 id=%d 不该留下 consent_source，实际 %v", id, row.ConsentSource)
+			}
+		}
 		if got := runTotal(t, f, subscribedID); got != 0 {
 			t.Fatalf("回滚的批次不该触发订阅自动化，实际实例数 %d", got)
+		}
+
+		// 成功对照：同一订阅自动化在后两人提交成功后必须各触发一次。
+		c, d := seed("st-sub-ok-a@example.com"), seed("st-sub-ok-b@example.com")
+		if err := f.svc.UpdateContactsStatus(ctx, &maildto.UpdateContactsStatusReq{
+			IDs: []uint64{c, d}, Status: mailmodel.ContactStatusSubscribed, Note: "批次同意来源",
+		}); err != nil {
+			t.Fatalf("提交成功的批量订阅不该失败: %v", err)
+		}
+		for _, id := range []uint64{c, d} {
+			row, gerr := f.m.GetContact(ctx, id)
+			if gerr != nil {
+				t.Fatal(gerr)
+			}
+			if row.Status != mailmodel.ContactStatusSubscribed || row.SubscribedAt == nil {
+				t.Fatalf("id=%d 提交后应为 subscribed 且有 subscribed_at，实际 %q / %v", id, row.Status, row.SubscribedAt)
+			}
+			if row.ConsentSource == nil || *row.ConsentSource != "批次同意来源" {
+				t.Fatalf("id=%d 的同意来源没落库，实际 %v", id, row.ConsentSource)
+			}
+		}
+		if got := runTotal(t, f, subscribedID); got != 2 {
+			t.Fatalf("提交成功的订阅应各建一个实例，实际 %d", got)
+		}
+
+		// 同值 no-op：状态已经是 subscribed，再提交不能重复触发。
+		if err := f.svc.UpdateContactsStatus(ctx, &maildto.UpdateContactsStatusReq{
+			IDs: []uint64{c, d}, Status: mailmodel.ContactStatusSubscribed, Note: "批次同意来源",
+		}); err != nil {
+			t.Fatalf("同值订阅应成功: %v", err)
+		}
+		if got := runTotal(t, f, subscribedID); got != 2 {
+			t.Fatalf("状态未变化的同值提交不该重复触发，实际 %d", got)
 		}
 	})
 }

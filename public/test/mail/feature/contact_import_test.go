@@ -95,6 +95,9 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 	if err == nil {
 		t.Fatalf("含非法行的导入必须整批拒绝，实际成功：%+v", res)
 	}
+	if res != nil {
+		t.Fatalf("整批拒绝的导入不该返回结果，实际 %+v", res)
+	}
 	var blocked facing.BlockedError
 	if !errors.As(err, &blocked) {
 		t.Fatalf("应给结构化拒绝事实，实际 %T", err)
@@ -103,9 +106,15 @@ func TestImportPlainTextReportsBadRows(t *testing.T) {
 	if len(items) != 1 || items[0].Name != "not-an-email" {
 		t.Fatalf("应恰好报 1 行非法，实际 %+v", items)
 	}
-	// 零提交：合法行也不能落库。
-	if _, gerr := f.m.GetContactByEmail(ctx, "a@example.com"); gerr == nil {
-		t.Fatal("非法行存在时整批回滚，合法行不该被导入")
+	// 零提交：两条去重后的合法邮箱（a@example.com 与 B@Example.COM/b@example.com 合并为 b）都不能落库。
+	var persisted []string
+	if qerr := f.db.Model(&mailmodel.MailContactEntity{}).
+		Where("lower(email) IN ?", []string{"a@example.com", "b@example.com"}).
+		Pluck("lower(email)", &persisted).Error; qerr != nil {
+		t.Fatalf("查询落库联系人失败: %v", qerr)
+	}
+	if len(persisted) != 0 {
+		t.Fatalf("非法行存在时整批回滚，合法邮箱都不该被导入，实际 %v", persisted)
 	}
 }
 
