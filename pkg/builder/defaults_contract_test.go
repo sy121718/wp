@@ -14,7 +14,7 @@ import (
 	"go_wp/pkg/builder/core"
 )
 
-const paletteJSRel = "../../internal/templates/static/js/workbench/palette.js"
+const paletteJSRel = "editor/assets/js/editor/catalog.js"
 
 type paletteProbe struct {
 	Nodes []*core.Node `json:"nodes"`
@@ -39,7 +39,12 @@ func runPaletteProbe(t *testing.T) (p paletteProbe) {
 	}
 
 	url := "file://" + filepath.ToSlash(abs)
-	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(paletteProbeScript, url)).CombinedOutput()
+	contractsAbs, err := filepath.Abs("../../internal/templates/static/js/editor-app/generated-contracts.js")
+	if err != nil {
+		t.Fatalf("解析生成契约路径失败: %v", err)
+	}
+	contractsURL := "file://" + filepath.ToSlash(contractsAbs)
+	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(paletteProbeScript, contractsURL, url)).CombinedOutput()
 	if err != nil {
 		t.Fatalf("node 求值 palette.js 失败: %v\n%s", err, out)
 	}
@@ -58,7 +63,9 @@ func paletteInsertNodes(t *testing.T) []*core.Node {
 }
 
 const paletteProbeScript = `
-import { paletteItems, paletteGroups, buildInsertNode } from %q;
+import { paletteSpec, alignedRepeaters } from %q;
+import { configureCatalog, paletteItems, paletteGroups, buildInsertNode } from %q;
+configureCatalog({ items: paletteSpec.items || {}, alignedRepeaters: alignedRepeaters });
 // 每次插入新建一个分配器（与浏览器里的 makeIdAllocator 同语义）。
 function makeAlloc() {
   var seq = {};

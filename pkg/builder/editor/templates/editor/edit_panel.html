@@ -1,0 +1,17 @@
+{* editor/edit_panel.html — 元素属性编辑面板（通用编辑器区域）。
+   字段片段由 editor/inspector_panel 渲染；面板字段路径与控件行为属于工具。 *}
+<section class="wb-panel" id="wb-panel-edit" aria-label="{{ .["t"]("workbench.ui.edit.ariaLabel", "组件编辑") }}" hidden>
+    <div class="wb-panel-head wb-edit-head">
+        <div><span class="wb-eyebrow">{{ .["t"]("workbench.ui.edit.editing", "正在编辑") }}</span><strong id="wb-edit-title">{{ .["t"]("workbench.ui.library.tabComponents", "组件") }}</strong><span id="wb-edit-subtitle" class="wb-element-id"></span></div>
+        <button type="button" class="wb-icon-btn" id="wb-back-library" aria-label="{{ .["t"]("workbench.ui.edit.openLibrary", "打开组件库") }}" title="{{ .["t"]("workbench.ui.edit.openLibrary", "打开组件库") }}"><span data-wb-icon="x" aria-hidden="true"></span></button>
+    </div>
+    <div class="wb-tabs" role="tablist" aria-label="{{ .["t"]("workbench.ui.edit.ariaLabel", "组件编辑") }}">
+        <button type="button" role="tab" aria-selected="true" data-tab="content" class="is-active">{{ .["t"]("workbench.ui.edit.tabContent", "内容") }}</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="layout">{{ .["t"]("workbench.ui.edit.tabLayout", "布局") }}</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="style">{{ .["t"]("workbench.ui.edit.tabStyle", "样式") }}</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="motion">{{ .["t"]("workbench.ui.edit.tabMotion", "动效") }}</button>
+    </div>
+    <div class="wb-inspector-body" id="inspector-panel">
+        <p class="wb-empty">{{ .["t"]("workbench.ui.edit.empty", "在画布或大纲树中选择节点") }}</p>
+    </div>
+</section>

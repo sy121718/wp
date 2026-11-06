@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	canvasJSRel = "../../internal/templates/static/js/workbench/methods/canvas.js"
-	nodesJSRel  = "../../internal/templates/static/js/workbench/methods/nodes.js"
+	canvasJSRel = "editor/assets/js/editor/methods/canvas.js"
+	nodesJSRel  = "editor/assets/js/editor/methods/nodes.js"
 )
 
 type canvasAlignCase struct {
@@ -53,8 +53,8 @@ func canvasAlignDirty(name string) bool {
 
 func runCanvasAlignProbe(t *testing.T) (p canvasAlignProbe) {
 	t.Helper()
-	urls := make([]string, 0, 3)
-	for _, rel := range []string{paletteJSRel, canvasJSRel, nodesJSRel} {
+	urls := make([]string, 0, 4)
+	for _, rel := range []string{"../../internal/templates/static/js/editor-app/generated-contracts.js", paletteJSRel, canvasJSRel, nodesJSRel} {
 		abs, err := filepath.Abs(rel)
 		if err != nil {
 			t.Fatalf("解析 %s 路径失败: %v", rel, err)
@@ -69,7 +69,7 @@ func runCanvasAlignProbe(t *testing.T) (p canvasAlignProbe) {
 		t.Skip("未找到 node，跳过画布对齐契约测试")
 	}
 	out, err := exec.Command(nodeBin, "--input-type=module", "--eval",
-		fmt.Sprintf(canvasAlignProbeScript, urls[0], urls[1], urls[2])).CombinedOutput()
+		fmt.Sprintf(canvasAlignProbeScript, urls[0], urls[1], urls[2], urls[3])).CombinedOutput()
 	if err != nil {
 		t.Fatalf("node 求值画布路径失败: %v\n%s", err, out)
 	}
@@ -102,9 +102,11 @@ globalThis.document = {
 };
 globalThis.window = { location: { origin: 'http://localhost' } };
 
+const catalog = await import(%q);
 const palette = await import(%q);
 const { canvasMethods } = await import(%q);
 const { nodesMethods } = await import(%q);
+palette.configureCatalog({ items: catalog.paletteSpec.items || {}, alignedRepeaters: catalog.alignedRepeaters });
 const paletteItems = palette.paletteItems;
 const alignKeyOf = palette.alignKeyOf;
 const alignMutation = palette.alignMutation;

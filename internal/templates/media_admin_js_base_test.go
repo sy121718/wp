@@ -27,11 +27,15 @@ var jsTypeAssignRe = regexp.MustCompile(`type\s*=\s*['"]([a-zA-Z]+)['"]`)
 const jsScanRoot = "static/js"
 
 var jsScanExcludedDirs = map[string]string{
-	"workbench": "工作台检查器控件族的外观真源是 workbench.css，不吃后台基座类",
+	"editor":    "编辑器检查器控件族的外观真源是 editor.css，不吃后台基座类",
+	"workbench": "旧工作台目录已删除，保留该键只为让旧路径显式失败而不是静默放行",
 }
 
 var jsFileExemptions = map[string]string{
-	"icons.js": "公开站点图标选择器（.sky-ip-* 族）：外观真源是前台主题 CSS，不属于后台基座作用域",
+	"editor-app/host.js":                     "编辑器宿主适配层：预览表单字段在编辑器工作台 iframe 内创建，外观真源是 editor.css，不吃后台基座类",
+	"editor-app/index.js":                    "编辑器宿主装配：导航新建等编辑器内联控件的外观真源是 editor.css，不吃后台基座类",
+	"editor-app/methods/controls/product.js": "商品选品面板属编辑器检查器控件族，外观真源是 editor.css，不吃后台基座类",
+	"icons.js":                               "公开站点图标选择器（.sky-ip-* 族）：外观真源是前台主题 CSS，不属于后台基座作用域",
 	"rich-editor/dialog.js": "Trix 富文本对话框字段（.sre-dialog-field 族）：外观真源见 rich-editor.css，" +
 		"基座的 form-input 尺寸会与对话框的紧凑排版打架",
 	"ui/select.js": "WBUI.select 的自定义下拉：原生 select 在 enhance() 里被加上 wbs-native（ui/select.js:73），" +

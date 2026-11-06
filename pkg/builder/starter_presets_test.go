@@ -15,7 +15,7 @@ func TestStarterPresetsCompile(t *testing.T) {
 	if err != nil {
 		t.Skip("缺少 Node")
 	}
-	path, err := filepath.Abs("../../internal/templates/static/js/workbench/starter-presets.js")
+	path, err := filepath.Abs("editor/assets/js/editor/starter-presets.js")
 	if err != nil {
 		t.Fatal(err)
 	}

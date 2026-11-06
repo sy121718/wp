@@ -24,7 +24,7 @@ func readTemplateFile(t *testing.T, path string) string {
 }
 
 func TestWorkbenchBindingFieldHonoursPrefixes(t *testing.T) {
-	misc := readTemplateFile(t, "static/js/workbench/methods/controls/misc.js")
+	misc := readTemplateFile(t, "static/js/editor/methods/controls/misc.js")
 	if !strings.Contains(misc, "ctl.prefixes") {
 		t.Fatalf("字段绑定控件应读取组件声明的 prefixes")
 	}
@@ -38,8 +38,8 @@ func TestWorkbenchBindingFieldHonoursPrefixes(t *testing.T) {
 }
 
 func TestWorkbenchStructuredConfigControls(t *testing.T) {
-	tpl := readTemplateFile(t, "fragments/inspector_panel.html")
-	js := readTemplateFile(t, "static/js/workbench/methods/inspector.js")
+	tpl := readTemplateFile(t, "../../pkg/builder/editor/templates/fragments/inspector_panel.html")
+	js := readTemplateFile(t, "static/js/editor/methods/inspector.js")
 	for _, kind := range []string{"multientityref", "rangelist"} {
 		if !strings.Contains(tpl, "data-wb-kind=\""+kind+"\"") {
 			t.Fatalf("检查器模板缺少 %s 控件分支", kind)
@@ -57,16 +57,20 @@ func TestWorkbenchStructuredConfigControls(t *testing.T) {
 }
 
 func TestWorkbenchSaveDraftFollowsTargetDescriptor(t *testing.T) {
-	js := readTemplateFile(t, "static/js/workbench/methods/api.js")
-	for _, want := range []string{"meta.target", "target.save.path", "this.saveBody(savedDocument)", "await this.persistDraft(savedDocument)"} {
+	js := readTemplateFile(t, "static/js/editor-app/host.js")
+	for _, want := range []string{"meta.target", "target.save.path", "saveBody(wb, savedDocument)"} {
 		if !strings.Contains(js, want) {
-			t.Errorf("保存调用链缺少 %q", want)
+			t.Errorf("宿主保存调用链缺少 %q", want)
 		}
+	}
+	api := readTemplateFile(t, "static/js/editor/methods/api.js")
+	if !strings.Contains(api, "persistDraft(savedDocument)") {
+		t.Fatal("编辑器保存必须经 persistDraft（内部委托宿主 save）")
 	}
 }
 
 func TestWorkbenchReuseInsertActions(t *testing.T) {
-	canvas := readTemplateFile(t, "static/js/workbench/methods/canvas.js")
+	canvas := readTemplateFile(t, "static/js/editor/methods/canvas.js")
 
 	if !strings.Contains(canvas, "'core.globalref'") {
 		t.Fatalf("工作台应能插入 core.globalref 引用节点")

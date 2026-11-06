@@ -230,6 +230,8 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		PreviewQS: "instance=" + inst.ID + "&entityType=" + inst.EntityType +
 			"&entityId=" + inst.EntityID + "&editor=1&projectId=" + inst.ProjectID,
 		JSVer: workbenchservice.StaticJSVersion(),
+		PreviewURL: "/workbench/template/preview?" + "instance=" + inst.ID + "&entityType=" + inst.EntityType +
+			"&entityId=" + inst.EntityID + "&editor=1&projectId=" + inst.ProjectID,
 
 		InstanceMode:    true,
 		RenderMode:      renderMode,

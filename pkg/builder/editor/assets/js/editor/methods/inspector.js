@@ -1,0 +1,327 @@
+// editor/methods/inspector.js — 检查器面板与事件接线（docs/09 §3 拆分）。
+// 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
+// 控件函数已按功能拆分到 methods/controls/*（base/color/corners/spacing/media/text/repeater/misc）。
+import { meta, getHost, morphHTML, wbLinkedPatch, controlLabel } from '../core.js';
+import { fillInspectorSlots, inlineSlots, renderInspectorExtras, sectionFor } from './controls/misc.js';
+import { inspectorTabOf } from '../experience.js';
+import { renderActionTargets } from '../actions.js';
+import { get, set } from './controls/base.js';
+import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
+
+export const inspectorMethods = {
+            // 撤销替换了节点对象：先废止请求与旧控件，再读取新快照。
+            invalidateInspector() {
+                this._inspectorReq = (this._inspectorReq || 0) + 1;
+                var panel = document.getElementById('inspector-panel');
+                if (!panel) return;
+                panel.onchange = null;
+                panel.oninput = null;
+                panel.onfocusout = null;
+                panel.oncompositionstart = null;
+                panel.oncompositionend = null;
+                panel.onclick = null;
+                panel.replaceChildren();
+                this._inspectorNode = null;
+            },
+            // 说明：面板/结构树/设置的 HTML 全部由服务端渲染（fragments/*），客户端只做
+            // 「值回写 + 事件委托」。旧的前端渲染路径已删除，故不再有 htmx 开关。
+            // fetchInspectorPanel 拉取服务端渲染的面板片段并填入面板（done 回调在片段就绪后执行）。
+            fetchInspectorPanel(node, panel, done) {
+                var self = this;
+                // 请求序号：快速切换页签/节点时丢弃过期响应（否则后发先至会显示错页签内容）。
+                var seq = (this._inspectorReq = (this._inspectorReq || 0) + 1);
+                // 检查器片段由宿主端点渲染（组件 schema、工程实体选项与文案都属于应用）。
+                Promise.resolve(getHost().fetchInspector(self, node)).then(function (html) {
+                    if (seq !== self._inspectorReq) return;   // 过期响应：丢弃
+                    // morph 替换：未变节点（输入框/展开的分组）原地保留，滚动位置与焦点不复位。
+                    morphHTML(panel, html);
+                    if (done) {
+                        // done 里的增强渲染（slot 填充/手写面板/事件绑定）异常必须单独兜底：
+                        // 否则会被下方 catch 捕获并把面板覆盖成「加载失败」，掩盖真实原因。
+                        try { done(); } catch (e) {
+                            console.error('[workbench] 检查器增强渲染失败', e);
+                            var notice = document.createElement('p');
+                            notice.className = 'wb-empty';
+                            notice.setAttribute('role', 'alert');
+                            notice.textContent = '部分编辑控件加载失败，请刷新页面后重试。';
+                            panel.prepend(notice);
+                        }
+                    }
+                }).catch(function () {
+                    if (seq !== self._inspectorReq) return;
+                    morphHTML(panel, '<p class="wb-empty">面板加载失败</p>');
+                });
+            },
+            arrangeInspector(ctx) {
+                var panel = ctx.panel;
+                var tab = this.tab;
+                Array.from(panel.querySelectorAll('[data-wb-section]')).forEach(function (group) {
+                    var section = group.dataset.wbSection;
+                    if (section === 'collection') {
+                        var summary = group.querySelector('summary');
+                        var count = summary && summary.querySelector('.wb-group-count');
+                        if (summary) { summary.textContent = '数据源'; if (count) summary.appendChild(count); }
+                    }
+                    Array.from(group.children).forEach(function (field) {
+                        if (field.tagName === 'SUMMARY') return;
+                        var input = field.matches('[data-wb-path]') ? field : field.querySelector('[data-wb-path]');
+                        var path = field.dataset.wbSlot || (input && input.dataset.wbPath) || '';
+                        var destination = inspectorTabOf(section, path);
+                        if (destination === inspectorTabOf(section)) return;
+                        var labels = { layout: '尺寸与布局', motion: '动效与交互', style: '基础样式', content: '内容' };
+                        var target = sectionFor(ctx, destination, labels[destination]);
+                        target.open = true;
+                        target.appendChild(field);
+                    });
+                });
+                panel.querySelectorAll('[data-wb-section]').forEach(function (group) {
+                    if (inspectorTabOf(group.dataset.wbSection) !== tab || group.children.length < 2) group.remove();
+                });
+            },
+            bindInspectorHtmx() {
+                var panel = document.getElementById('inspector-panel');
+                if (!panel) return;
+                var self = this;
+                var boundNode = self.findNode(self.selectedId);
+                var composing = new WeakSet();
+                function setPath(path, value) {
+                    var node = self.findNode(self.selectedId);
+                    if (!node) return;
+                    var parts = ('props.' + path).split('.');
+                    var target = node;
+                    for (var i = 0; i < parts.length - 1; i++) {
+                        if (!target[parts[i]]) target[parts[i]] = {};
+                        target = target[parts[i]];
+                    }
+                    target[parts[parts.length - 1]] = value;
+                }
+                function commit(el, numericInput) {
+                    if (!boundNode || self.findNode(self.selectedId) !== boundNode || !panel.contains(el)) return;
+                    if (composing.has(el)) return;
+                    var path = el.getAttribute('data-wb-path');
+                    if (!path) return;
+                    var kind = el.getAttribute('data-wb-kind') || 'text';
+                    var value;
+                    if (el.type === 'checkbox') { value = el.checked; }
+                    else if (kind === 'number') {
+                        // 不改写正在输入的空值、负号、小数或 IME 中间态。
+                        // 清空在结束编辑时仍沿用原有空字符串语义，由现有校验决定是否合法。
+                        if (el.validity && el.validity.badInput) return;
+                        if (numericInput && el.value === '') return;
+                        value = el.value === '' ? '' : Number(el.value);
+                        if (value !== '' && !Number.isFinite(value)) return;
+                        // input 已同步的值不再因 change / focusout 重复入历史。
+                        if (get({ node: boundNode }, 'props.' + path) === value) return;
+                    }
+                    else if (kind === 'mediaList') { value = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
+                    else if (kind === 'multientityref') {
+                        // 勾选项拼成逗号分隔 id 串（EDT-007）：与手写格式一致，
+                        // 存储格式与构建期解析都不动，换的只是编辑方式。
+                        var picked = [];
+                        Array.prototype.slice.call(el.querySelectorAll('input[data-wb-ref]')).forEach(function (box) {
+                            if (box.checked) picked.push(box.getAttribute('data-wb-ref'));
+                        });
+                        value = picked.join(',');
+                    }
+                    else if (kind === 'rangelist') {
+                        // 逐行拼回 `a-b,c-d,N+`：上限留空即「以上」。
+                        // 起值为空的行直接跳过 —— 那是作者正在输入的中间态，不该被写成档位。
+                        var ranges = [];
+                        Array.prototype.slice.call(el.querySelectorAll('.wb-range-row')).forEach(function (row) {
+                            var lo = row.querySelector('[data-wb-range="min"]');
+                            var hi = row.querySelector('[data-wb-range="max"]');
+                            var min = lo ? lo.value.trim() : '';
+                            var max = hi ? hi.value.trim() : '';
+                            if (!min) return;
+                            ranges.push(max ? (min + '-' + max) : (min + '+'));
+                        });
+                        value = ranges.join(',');
+                    }
+                    else { value = el.value; }
+                    self.snapshot();
+                    setPath(path, value);
+                    // 字段联动（core.js WB_FIELD_LINKS）：如 button 的 action 切换后把
+                    // value 归一为新动作的合法形态，避免「切动作 → 预览编译失败」。
+                    var linked = self.applyLinkedFields('props.' + path);
+                    self.renderTree(); self.refreshCanvas(); self.renderUI();
+                    // 联动改写了其它字段：值输入框与提示必须重渲染才能看到新值。
+                    if (linked) self.syncInspector(); else self.refreshFieldHints();
+                }
+                // 覆盖式绑定：面板 DOM 每次整块替换，避免监听器累积。
+                panel.onchange = function (e) {
+                    var el = e.target && e.target.closest ? e.target.closest('[data-wb-path]') : null;
+                    if (el && panel.contains(el)) commit(el);
+                };
+                // 数值字段不能只等 change：有效输入立即进入草稿，结束编辑只补交未同步的值。
+                // 原生字段共用此入口，不在商品列表等组件内另绑一份事件。
+                function numberField(e) {
+                    var el = e.target;
+                    return el && el.getAttribute && el.getAttribute('data-wb-kind') === 'number'
+                        && el.hasAttribute('data-wb-path') ? el : null;
+                }
+                panel.oninput = function (e) {
+                    var el = numberField(e);
+                    if (el && !e.isComposing) commit(el, true);
+                };
+                panel.onfocusout = function (e) {
+                    var el = numberField(e);
+                    if (el) commit(el);
+                };
+                panel.oncompositionstart = function (e) {
+                    var el = numberField(e);
+                    if (el) composing.add(el);
+                };
+                panel.oncompositionend = function (e) {
+                    var el = numberField(e);
+                    if (el) { composing.delete(el); commit(el, true); }
+                };
+                // createNav 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）。
+                //
+                // 写回走服务端端点（/editor/navigation/create → navigation 模块的 Create
+                // 契约，权限点沿用 navigation:create）：客户端只负责把返回的新项塞进当前字段。
+                // 为什么不在本地先占位、保存时再建 —— 那样一次保存会带上两处写，失败时
+                // 「菜单项建了、页面没存」这种半截状态没人能收拾。
+                function createNav(btn) {
+                    var box = btn.closest('[data-wb-nav-new]');
+                    if (!box) return;
+                    var fieldKey = box.getAttribute('data-wb-nav-new');
+                    var titleEl = box.querySelector('[data-wb-nav-field="title"]');
+                    var pathEl = box.querySelector('[data-wb-nav-field="path"]');
+                    var kindEl = box.querySelector('[data-wb-nav-field="kind"]');
+                    var msg = box.querySelector('[data-wb-nav-msg]');
+                    var title = titleEl ? titleEl.value.trim() : '';
+                    var path = pathEl ? pathEl.value.trim() : '';
+                    var kind = kindEl ? kindEl.value : 'header';
+                    function say(text) { if (msg) msg.textContent = text || ''; }
+                    if (!self.contextProjectId || !self.contextProjectId()) { say('当前文档没有站点工程上下文，无法新建菜单项。'); return; }
+                    if (!title || !path) { say('标题与链接都要填。'); return; }
+                    btn.disabled = true;
+                    say('');
+                    // 菜单项创建是宿主业务写操作（权限与实体校验在应用）；工具只接返回的实体事实。
+                    Promise.resolve(getHost().createNavigation(self, { title: title, path: path, kind: kind })).then(function (item) {
+                        btn.disabled = false;
+                        if (!item || !item.id) { say('新建失败，请稍后重试。'); return; }
+                        var sel = panel.querySelector('select[data-wb-path="' + fieldKey + '"]');
+                        if (!sel) return;
+                        var opt = document.createElement('option');
+                        opt.value = item.id;
+                        opt.textContent = item.label || item.title || item.id;
+                        sel.appendChild(opt);
+                        sel.value = item.id;
+                        if (titleEl) titleEl.value = '';
+                        if (pathEl) pathEl.value = '';
+                        commit(sel);
+                    }).catch(function (error) {
+                        btn.disabled = false;
+                        say((error && error.message) || '新建失败，请稍后重试。');
+                    });
+                }
+                panel.onclick = function (e) {
+                    var pick = e.target && e.target.closest ? e.target.closest('[data-wb-media-pick]') : null;
+                    if (pick) {
+                        var key = pick.getAttribute('data-wb-media-pick');
+                        var input = panel.querySelector('[data-wb-path="' + key + '"]');
+                        self.openMediaPicker(function (url) {
+                            if (self.findNode(self.selectedId) !== boundNode || !input || !panel.contains(input)) return;
+                            if (input) input.value = url;
+                            self.snapshot();
+                            setPath(key, url);
+                            self.renderTree(); self.refreshCanvas(); self.renderUI();
+                        });
+                        return;
+                    }
+                    var create = e.target && e.target.closest ? e.target.closest('[data-wb-nav-create]') : null;
+                    if (create) { e.preventDefault(); createNav(create); }
+                };
+            },
+            // refreshFieldHints 提交后按模型刷新联动提示（值补全 → 提示立刻消失）。
+            refreshFieldHints() {
+                var panel = document.getElementById('inspector-panel');
+                var node = this.findNode(this.selectedId);
+                if (!panel || !node) return;
+                refreshFieldHints({ panel: panel, node: node, self: this });
+            },
+
+            // applyLinkedFields 字段联动落地：声明在 core.js 的 WB_FIELD_LINKS（唯一实现），
+            // 两条提交路径（本文件 bindInspectorHtmx.commit 与 controls/base.js commit）
+            // 都在写入源字段后调用它，避免各写一份联动逻辑。返回 true 表示有改写。
+            applyLinkedFields(changedPath) {
+                var node = this.findNode(this.selectedId);
+                if (!node) return false;
+                var patch = wbLinkedPatch(node, changedPath);
+                if (!patch) return false;
+                var touched = false;
+                patch.forEach(function (l) {
+                    if (!l.changed) return;
+                    set({ node: node }, l.path, l.value);
+                    touched = true;
+                });
+                return touched;
+            },
+
+            // ---------------- 可视化属性检查器（docs/02-C3 schema 驱动） ----------------
+            syncInspector() {
+                var activeTab = this.tab;
+                document.querySelectorAll('.wb-tabs [data-tab]').forEach(function (button) {
+                    var selected = button.dataset.tab === activeTab;
+                    button.classList.toggle('is-active', selected);
+                    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+                });
+                // 注意：服务端片段就绪后的填充依赖下方闭包控件函数（函数声明会提升）——
+                // htmx 路径要用同一批闭包控件函数填充 slot，提前 return 会导致面板控件为空。
+                // 说明：控件函数已按功能拆分到 methods/controls/*，统一通过 ctx 传递面板/节点/实例。
+                var panel = document.getElementById('inspector-panel');
+                if (!panel) return;
+                var node = this.findNode(this.selectedId);
+                var self = this;
+                if (this._inspectorNode !== node) this.invalidateInspector();
+                this._inspectorNode = node;
+                if (!node) {
+                    // 未选中节点：没有可 morph 的旧内容，保持整块清空 + 占位。
+                    panel.innerHTML = '';
+                    var empty = document.createElement('p');
+                    empty.className = 'wb-empty';
+                    empty.textContent = '在画布或大纲树中选择组件';
+                    panel.appendChild(empty);
+                    return;
+                }
+                // 选中节点时不再预清空面板：片段返回后由 fetchInspectorPanel 走 idiomorph
+                // morphing，保留滚动位置 / 输入焦点 / 展开的分组。旧控件（含 Trix 编辑器）
+                // 由 morph 移除节点触发 disconnectedCallback，实例仍随 DOM 回收。
+                node.props = node.props || {};
+
+                // ---- 服务端渲染路径（docs/09 §3）：片段 + 闭包内增强填充 ----
+                // 简单字段由服务端渲染（fragments/inspector_panel）；增强字段（取色器/
+                // 联动锁/媒体选择等）由服务端输出 slot，这里用既有控件函数就地填充。
+                // 旧「schema → DOM」渲染路径已删除，此处是唯一入口。
+                var ctx = { panel: panel, node: node, self: self };
+                // 展开态搬运：morph 会整体替换客户端创建的下拉子树（服务端片段里没有它），
+                // 不在这里记录，重渲染就等于把用户刚点开的下拉强行收起。
+                var openSelectKeys = window.WBUI && window.WBUI.select ? window.WBUI.select.openKeys(panel) : [];
+                self.fetchInspectorPanel(node, panel, function () {
+                    self.arrangeInspector(ctx);
+                    fillInspectorSlots(ctx);
+                    // 最小/最大高度并到一行（WP 式紧凑布局）。
+                    inlineSlots(ctx, 'box.minHeight', 'box.maxHeight');
+                    // 原生字段与复杂字段使用同一个公共下拉。
+                    upgradeNativeSelects(ctx);
+                    renderInspectorExtras(ctx);
+                    renderActionTargets(ctx, meta);
+                    panel.querySelectorAll('.wb-field').forEach(function (field, index) {
+                        var label = field.querySelector('label');
+                        var input = field.querySelector('input:not([type=hidden]), textarea, select');
+                        if (!label || !input || input.type === 'checkbox') return;
+                        var path = input.dataset.wbPath || field.dataset.wbSlot || '';
+                        if (label.textContent.trim() === path) label.textContent = controlLabel(path);
+                        input.id = 'wb-field-' + node.id + '-' + index;
+                        label.htmlFor = input.id;
+                        input.setAttribute('aria-label', label.textContent.trim());
+                    });
+                    // 联动后仍非法的字段给出就地提示（如 native 动作缺号码）。
+                    renderFieldHints(ctx);
+                    window.WBUI.select.restoreOpen(panel, openSelectKeys);
+                    self.bindInspectorHtmx();
+                });
+            },
+
+};

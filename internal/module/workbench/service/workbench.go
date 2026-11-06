@@ -3,18 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	json "go_wp/pkg/jsonx"
-	"html"
 	"net/url"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
@@ -25,6 +17,10 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	"go_wp/internal/templates"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/core"
+	"go_wp/pkg/builder/editor"
 )
 
 func (s *Service) PageByID(ctx context.Context, pageID string) (*pagecontract.PageResp, error) {
@@ -110,25 +106,10 @@ func (s *Service) BlockByID(ctx context.Context, blockID string) (*blockdto.Bloc
 	return s.blocks.Detail(ctx, &blockdto.DetailReq{ID: blockID})
 }
 
+// StaticJSVersion 返回最终复合资产（公共 UI + 编辑器工具 + 应用宿主适配）的内容哈希，
+// 由 templates 读取实际 embed 复合 FS，不写死私有磁盘目录。
 func StaticJSVersion() string {
-	root := filepath.Join("internal", "templates", "static", "js", "workbench")
-	var latest int64
-	err := filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		if fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
-			return nil
-		}
-		if m := fi.ModTime().Unix(); m > latest {
-			latest = m
-		}
-		return nil
-	})
-	if err != nil || latest == 0 {
-		return "0"
-	}
-	return strconv.FormatInt(latest, 10)
+	return templates.StaticJSVersion()
 }
 
 func WorkbenchTitle(page *pagecontract.PageResp, tr Translate) string {
@@ -149,100 +130,21 @@ func WorkbenchTitle(page *pagecontract.PageResp, tr Translate) string {
 	return tr(workbenchenums.TitleEditorPrefix) + page.DraftPath
 }
 
-type OutlineNode struct {
-	ID       string        `json:"id"`
-	Type     string        `json:"type"`
-	Name     string        `json:"name"`
-	Hidden   bool          `json:"hidden"`
-	Locked   bool          `json:"locked"`
-	Children []OutlineNode `json:"children"`
-}
+type OutlineNode = editor.OutlineNode
 
+// RenderOutlineHTML 渲染大纲树；文案由调用方按请求语言提供。
 func RenderOutlineHTML(nodes []OutlineNode, selectedID, filter string, tr Translate) string {
-	var sb strings.Builder
-	writeOutlineNodes(tr, &sb, nodes, selectedID, filter)
-	return sb.String()
+	return editor.RenderOutlineHTML(nodes, selectedID, filter, outlineLabels(tr))
 }
 
-func writeOutlineNodes(tr Translate, sb *strings.Builder, nodes []OutlineNode, selectedID, filter string) {
-	sb.WriteString("<ul>")
-	for i := range nodes {
-		n := &nodes[i]
-		if filter != "" && !outlineSubtreeHit(n, filter) {
-			continue
-		}
-		label := outlineLabel(n)
-		cls := "wb-node"
-		if n.ID == selectedID {
-			cls += " is-selected"
-		}
-		sb.WriteString("<li>")
-
-		sb.WriteString(`<div class="` + cls + `" role="treeitem" tabindex="0" data-id="` + html.EscapeString(n.ID) +
-			`" data-type="` + html.EscapeString(n.Type) + `" draggable="true">`)
-		caret := ""
-		if len(n.Children) > 0 {
-			caret = "▾"
-		}
-		sb.WriteString(`<button class="wb-caret" title="` +
-			html.EscapeString(tr(workbenchenums.OutlineToggle)) + `">` + caret + `</button>`)
-
-		sb.WriteString(`<span class="wb-node-name" data-named="` + boolFlag(n.Name != "") + `">` +
-			html.EscapeString(label) + `</span>`)
-		if n.Hidden {
-			sb.WriteString(`<span class="wb-node-flag" title="` +
-				html.EscapeString(tr(workbenchenums.OutlineHiddenHint)) + `">` +
-				html.EscapeString(tr(workbenchenums.OutlineHiddenBadge)) + `</span>`)
-		}
-		if n.Locked {
-			sb.WriteString(`<span class="wb-node-flag" title="` +
-				html.EscapeString(tr(workbenchenums.OutlineLockedHint)) + `">` +
-				html.EscapeString(tr(workbenchenums.OutlineLockedBadge)) + `</span>`)
-		}
-		sb.WriteString(`<span class="wb-node-actions">`)
-		for _, op := range []struct{ text, titleKey, op string }{
-			{"↑", workbenchenums.OutlineOpUp, "up"}, {"↓", workbenchenums.OutlineOpDown, "down"},
-			{"⧉", workbenchenums.OutlineOpDup, "dup"}, {"✕", workbenchenums.OutlineOpDel, "del"},
-		} {
-			sb.WriteString(`<button type="button" class="wb-node-action" data-wb-op="` + op.op +
-				`" title="` + html.EscapeString(tr(op.titleKey)) + `">` + op.text + `</button>`)
-		}
-		sb.WriteString(`</span></div>`)
-		if len(n.Children) > 0 {
-			writeOutlineNodes(tr, sb, n.Children, selectedID, filter)
-		}
-		sb.WriteString("</li>")
+func outlineLabels(tr Translate) editor.OutlineLabels {
+	return editor.OutlineLabels{
+		Toggle: tr(workbenchenums.OutlineToggle), HiddenHint: tr(workbenchenums.OutlineHiddenHint),
+		HiddenBadge: tr(workbenchenums.OutlineHiddenBadge), LockedHint: tr(workbenchenums.OutlineLockedHint),
+		LockedBadge: tr(workbenchenums.OutlineLockedBadge), OpUp: tr(workbenchenums.OutlineOpUp),
+		OpDown: tr(workbenchenums.OutlineOpDown), OpDup: tr(workbenchenums.OutlineOpDup),
+		OpDel: tr(workbenchenums.OutlineOpDel),
 	}
-	sb.WriteString("</ul>")
-}
-
-func outlineLabel(n *OutlineNode) string {
-	if strings.TrimSpace(n.Name) != "" {
-		return n.Name
-	}
-	if t := strings.TrimPrefix(n.Type, "core."); t != "" {
-		return t
-	}
-	return n.ID
-}
-
-func outlineSubtreeHit(n *OutlineNode, filter string) bool {
-	if strings.Contains(strings.ToLower(outlineLabel(n)), filter) {
-		return true
-	}
-	for i := range n.Children {
-		if outlineSubtreeHit(&n.Children[i], filter) {
-			return true
-		}
-	}
-	return false
-}
-
-func boolFlag(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }
 
 type PreviewDocKind int
@@ -352,101 +254,20 @@ func InstanceSaveFacingKey(raw string) (string, bool) {
 	return "", false
 }
 
-type InspectorSchemaItem struct {
-	Key     string `json:"key"`
-	Kind    string `json:"kind"`
-	Label   string `json:"label"`
-	Section string `json:"section"`
-	Default string `json:"default"`
-	Min     int    `json:"min"`
-	Max     int    `json:"max"`
-	Step    int    `json:"step"`
-	MaxLen  int    `json:"maxLen"`
-	Unit    string `json:"unit"`
-	Options []struct {
-		Value string `json:"value"`
-		Label string `json:"label"`
-	} `json:"options"`
-	Hidden bool `json:"hidden"`
-}
+type InspectorSchemaItem = editor.InspectorSchemaItem
+type InspectorOption = editor.InspectorOption
+type InspectorSubInput = editor.InspectorSubInput
+type InspectorRangeRow = editor.InspectorRangeRow
+type InspectorField = editor.InspectorField
+type InspectorSection = editor.InspectorSection
+type DocNode = editor.DocNode
 
-type InspectorOption struct {
-	Value    string
-	Label    string
-	Selected bool
-}
-
-type InspectorSubInput struct {
-	Path        string
-	Label       string
-	Value       string
-	Placeholder string
-}
-
-type InspectorRangeRow struct {
-	Min string
-	Max string
-}
-
-type InspectorField struct {
-	Key   string
-	Label string
-
-	UI          string
-	Value       string
-	Bool        bool
-	Options     []InspectorOption
-	Min         int
-	Max         int
-	Step        int
-	Placeholder string
-	Inputs      []InspectorSubInput
-
-	Rows []InspectorRangeRow
-
-	Slot string
-
-	HTML string
-
-	NavNewRef string
-
-	KindOptions []InspectorOption
-}
-
-type InspectorSection struct {
-	Key    string
-	Title  string
-	Open   bool
-	Used   int
-	Fields []InspectorField
-}
-
-type DocNode struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Props    json.RawMessage `json:"props"`
-	Children []DocNode       `json:"children"`
-}
-
-var inspectorSectionOrder = []struct{ Key, TitleKey string }{
-	{"content", workbenchenums.InspectorSectionContent},
-	{"style", workbenchenums.InspectorSectionStyle},
-	{"layout", workbenchenums.InspectorSectionLayout},
-	{"background", workbenchenums.InspectorSectionBackground},
-	{"border", workbenchenums.InspectorSectionBorder},
-	{"transform", workbenchenums.InspectorSectionTransform},
-	{"motion", workbenchenums.InspectorSectionMotion},
-	{"hover", workbenchenums.InspectorSectionHover},
-	{"responsive", workbenchenums.InspectorSectionResponsive},
-	{"advanced", workbenchenums.InspectorSectionAdvanced},
-}
-
+// InspectorSchemas 返回组件 Inspector schema（含插件 schema 合并）。
 func (s *Service) InspectorSchemas(ctx context.Context) (map[string]json.RawMessage, error) {
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
 		return nil, err
 	}
-
 	if s == nil {
 		return schemas, nil
 	}
@@ -460,420 +281,51 @@ func (s *Service) InspectorSchemas(ctx context.Context) (map[string]json.RawMess
 	return schemas, nil
 }
 
+// InspectorSections 用工具内核构建字段；实体引用与导航候选等业务选项经窄端口注入。
 func (s *Service) InspectorSections(ctx context.Context, node *DocNode, tab, projectID string, tr Translate) ([]InspectorSection, error) {
-
 	schemas, err := s.InspectorSchemas(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var items []InspectorSchemaItem
-	if node != nil {
-		if raw, ok := schemas[node.Type]; ok {
-			if err = json.Unmarshal(raw, &items); err != nil {
-				return nil, err
-			}
-		}
-	}
-	var props map[string]any
-	if node != nil && len(node.Props) > 0 {
-		_ = json.Unmarshal(node.Props, &props)
-	}
-	sections := s.buildInspectorSections(ctx, items, props, tab, projectID, tr)
-
-	return AppendRepeaterPanel(sections, node, props, tab, tr), nil
+	return editor.BuildInspectorSections(ctx, editor.InspectorInput{
+		Node: node, Schemas: schemas, Tab: tab, ProjectID: projectID,
+		Labels: inspectorLabels(tr),
+		Ports: editor.Ports{
+			EntityRefOptions: func(ctx context.Context, projectID, refKind, selected string) []editor.InspectorOption {
+				return s.entityRefInspectorOptions(ctx, projectID, refKind, selected, tr)
+			},
+			NavigationKinds: func() []editor.InspectorOption { return navigationKindOptions(tr) },
+		},
+	})
 }
 
+func inspectorLabels(tr Translate) editor.Labels {
+	return editor.Labels{
+		Sections: map[string]string{
+			"content": tr(workbenchenums.InspectorSectionContent), "style": tr(workbenchenums.InspectorSectionStyle),
+			"layout": tr(workbenchenums.InspectorSectionLayout), "background": tr(workbenchenums.InspectorSectionBackground),
+			"border": tr(workbenchenums.InspectorSectionBorder), "transform": tr(workbenchenums.InspectorSectionTransform),
+			"motion": tr(workbenchenums.InspectorSectionMotion), "hover": tr(workbenchenums.InspectorSectionHover),
+			"responsive": tr(workbenchenums.InspectorSectionResponsive), "advanced": tr(workbenchenums.InspectorSectionAdvanced),
+		},
+		Corners: tr(workbenchenums.InspectorCorners), TopLeft: tr(workbenchenums.InspectorCornerTopLeft),
+		TopRight: tr(workbenchenums.InspectorCornerTopRight), BottomRight: tr(workbenchenums.InspectorCornerBottomRight),
+		BottomLeft: tr(workbenchenums.InspectorCornerBottomLeft),
+		BpDesktop:  tr(workbenchenums.InspectorBpDesktop), BpTablet: tr(workbenchenums.InspectorBpTablet),
+		BpMobile: tr(workbenchenums.InspectorBpMobile),
+		DirTop:   tr(workbenchenums.InspectorDirTop), DirRight: tr(workbenchenums.InspectorDirRight),
+		DirBottom: tr(workbenchenums.InspectorDirBottom), DirLeft: tr(workbenchenums.InspectorDirLeft),
+		PhClasses: tr(workbenchenums.InspectorPhClasses), PhCSSDecls: tr(workbenchenums.InspectorPhCSSDecls),
+		PhDimension: tr(workbenchenums.InspectorPhDimension), NavAny: tr(workbenchenums.InspectorNavAny),
+		MoveUp: tr(workbenchenums.InspectorRepeaterMoveUp), MoveDown: tr(workbenchenums.InspectorRepeaterMoveDown),
+		Remove: tr(workbenchenums.InspectorRepeaterRemove), Matched: tr(workbenchenums.InspectorRepeaterMatched),
+		Mismatch: tr(workbenchenums.InspectorRepeaterMismatch),
+	}
+}
+
+// FindDocNode 在文档 root 中按 ID 深度优先查找。
 func FindDocNode(doc json.RawMessage, nodeID string) (*DocNode, error) {
-	if len(doc) == 0 || nodeID == "" {
-		return nil, nil
-	}
-	var page struct {
-		Root []DocNode `json:"root"`
-	}
-	if err := json.Unmarshal(doc, &page); err != nil {
-		return nil, err
-	}
-	var walk func(nodes []DocNode) *DocNode
-	walk = func(nodes []DocNode) *DocNode {
-		for i := range nodes {
-			if nodes[i].ID == nodeID {
-				return &nodes[i]
-			}
-			if found := walk(nodes[i].Children); found != nil {
-				return found
-			}
-		}
-		return nil
-	}
-	return walk(page.Root), nil
-}
-
-func (s *Service) buildInspectorSections(ctx context.Context, items []InspectorSchemaItem, props map[string]any, tab, projectID string, tr Translate) []InspectorSection {
-	buckets := map[string][]InspectorField{}
-	used := map[string]int{}
-
-	cornersDone := false
-	for _, ctl := range items {
-		if ctl.Hidden || !inspectorFieldVisible(ctl.Key, props) {
-			continue
-		}
-		sec := ctl.Section
-		if sec == "" {
-			sec = "content"
-		}
-		if isCornerKey(ctl.Key) {
-			if cornersDone {
-				continue
-			}
-			cornersDone = true
-			buckets[sec] = append(buckets[sec], cornersField(ctl, props, tr))
-			continue
-		}
-		if isCornerTailKey(ctl.Key) {
-			continue
-		}
-		f := s.inspectorFieldOf(ctx, ctl, props, projectID, tr)
-		if f.Key == "" {
-			continue
-		}
-		if f.Value != "" || f.Bool || hasSubValue(f.Inputs) {
-			used[sec]++
-		}
-		buckets[sec] = append(buckets[sec], f)
-	}
-	out := make([]InspectorSection, 0, len(inspectorSectionOrder))
-	seen := map[string]bool{}
-	for _, sec := range inspectorSectionOrder {
-		if !sectionInTab(sec.Key, tab) {
-			continue
-		}
-		fields := buckets[sec.Key]
-		if len(fields) == 0 {
-			continue
-		}
-		seen[sec.Key] = true
-		out = append(out, InspectorSection{
-			Key: sec.Key, Title: tr(sec.TitleKey), Fields: fields, Used: used[sec.Key],
-
-			Open: used[sec.Key] > 0 || sec.Key == "content" || len(out) == 0,
-		})
-	}
-
-	rest := make([]string, 0, 4)
-	for k := range buckets {
-		if !seen[k] {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	for _, k := range rest {
-
-		if !sectionInTab(k, tab) {
-			continue
-		}
-		out = append(out, InspectorSection{Key: k, Title: k, Fields: buckets[k], Used: used[k], Open: used[k] > 0 || len(out) == 0})
-	}
-	return out
-}
-
-func sectionInTab(section, tab string) bool {
-	switch tab {
-	case "content":
-		return section == "content"
-	case "style":
-		return section != "content"
-	}
-	return true
-}
-
-func (s *Service) inspectorFieldOf(ctx context.Context, ctl InspectorSchemaItem, props map[string]any, projectID string, tr Translate) InspectorField {
-	f := InspectorField{Key: ctl.Key, Label: ctl.Label, Min: ctl.Min, Max: ctl.Max, Step: ctl.Step}
-	if f.Label == "" {
-		f.Label = ctl.Key
-	}
-	value := propString(props, ctl.Key)
-	switch ctl.Kind {
-	case "entityref":
-		f.UI = "select"
-		f.Value = value
-		refKind := ""
-		if len(ctl.Options) > 0 {
-			refKind = ctl.Options[0].Value
-		}
-		f.Options = s.entityRefInspectorOptions(ctx, projectID, refKind, value, tr)
-
-		if refKind == "navigation" && s.navigations != nil && projectID != "" {
-			f.NavNewRef = refKind
-			f.KindOptions = navigationKindOptions(tr)
-		}
-	case "multientityref":
-
-		f.UI = "multientityref"
-		f.Value = value
-		selected := map[string]bool{}
-		for _, id := range strings.Split(value, ",") {
-			if id = strings.TrimSpace(id); id != "" {
-				selected[id] = true
-			}
-		}
-		for _, kindOpt := range ctl.Options {
-			for _, o := range s.entityRefInspectorOptions(ctx, projectID, kindOpt.Value, "", tr) {
-				if o.Value == "" {
-					continue
-				}
-				f.Options = append(f.Options, InspectorOption{
-					Value: o.Value, Label: o.Label, Selected: selected[o.Value],
-				})
-			}
-		}
-	case "rangelist":
-
-		f.UI = "rangelist"
-		f.Value = value
-		f.Rows = parseRangeRows(value)
-	case "bool":
-		f.UI = "bool"
-		f.Bool = value == "true"
-	case "select":
-		f.UI = "select"
-		f.Value = value
-		for _, o := range ctl.Options {
-			f.Options = append(f.Options, InspectorOption{Value: o.Value, Label: o.Label, Selected: o.Value == value})
-		}
-	case "text", "textarea":
-
-		f.UI = "textarea"
-		f.Value = value
-	case "richtext":
-
-		f.UI = "richtext"
-		f.Slot = "richtext"
-		f.Value = value
-	case "int", "slider", "number":
-		f.UI = "number"
-		f.Value = value
-		if f.Step == 0 {
-			f.Step = 1
-		}
-	case "color":
-		f.UI = "color"
-		f.Slot = "color"
-		f.Value = value
-	case "spacing", "margin":
-		f.UI = "spacing"
-		f.Slot = "spacing"
-		f.Inputs = spacingInputs(props, ctl.Key, tr)
-	case "boxspacing":
-
-		f.UI = "boxspacing"
-		f.Slot = "boxspacing"
-	case "rtext":
-		f.UI = "rtext"
-		f.Slot = "rtext"
-		f.Inputs = responsiveTextInputs(props, ctl.Key, tr)
-	case "classes":
-		f.UI = "classes"
-		f.Value = value
-		f.Placeholder = tr(workbenchenums.InspectorPhClasses)
-	case "cssdecls":
-		f.UI = "cssdecls"
-		f.Value = value
-		f.Placeholder = tr(workbenchenums.InspectorPhCSSDecls)
-	case "media":
-		f.UI = "media"
-		f.Slot = "media"
-		f.Value = value
-	case "mediaList":
-		f.UI = "mediaList"
-		f.Slot = "mediaList"
-		f.Value = propListString(props, ctl.Key)
-	case "dimension":
-		f.UI = "dimension"
-		f.Slot = "dimension"
-		f.Value = value
-		f.Placeholder = tr(workbenchenums.InspectorPhDimension)
-	case "collectionfield", "bindingfield":
-
-		f.UI = ctl.Kind
-		f.Slot = ctl.Kind
-		f.Value = value
-	default:
-		f.UI = "text"
-		f.Value = value
-	}
-	return f
-}
-
-func cornersField(ctl InspectorSchemaItem, props map[string]any, tr Translate) InspectorField {
-	f := InspectorField{Key: ctl.Key, Label: ctl.Label, UI: "corners", Slot: "corners"}
-	if f.Label == "" {
-		f.Label = tr(workbenchenums.InspectorCorners)
-	}
-	if strings.HasSuffix(ctl.Key, "radiusTL") {
-		base := strings.TrimSuffix(ctl.Key, "TL")
-		for _, pair := range []struct{ suffix, labelKey string }{
-			{"TL", workbenchenums.InspectorCornerTopLeft}, {"TR", workbenchenums.InspectorCornerTopRight},
-			{"BR", workbenchenums.InspectorCornerBottomRight}, {"BL", workbenchenums.InspectorCornerBottomLeft},
-		} {
-			f.Inputs = append(f.Inputs, InspectorSubInput{
-				Path: base + pair.suffix, Label: tr(pair.labelKey), Value: propString(props, base+pair.suffix),
-			})
-		}
-		return f
-	}
-	base := strings.TrimSuffix(ctl.Key, "topLeft")
-	for _, pair := range []struct{ suffix, labelKey string }{
-		{"topLeft", workbenchenums.InspectorCornerTopLeft}, {"topRight", workbenchenums.InspectorCornerTopRight},
-		{"bottomRight", workbenchenums.InspectorCornerBottomRight}, {"bottomLeft", workbenchenums.InspectorCornerBottomLeft},
-	} {
-		f.Inputs = append(f.Inputs, InspectorSubInput{
-			Path: base + pair.suffix, Label: tr(pair.labelKey), Value: propString(props, base+pair.suffix),
-		})
-	}
-	return f
-}
-
-func spacingInputs(props map[string]any, key string, tr Translate) []InspectorSubInput {
-	out := make([]InspectorSubInput, 0, 12)
-	for _, bp := range []struct{ key, labelKey string }{
-		{"desktop", workbenchenums.InspectorBpDesktop}, {"tablet", workbenchenums.InspectorBpTablet},
-		{"mobile", workbenchenums.InspectorBpMobile},
-	} {
-		for _, dir := range []struct{ key, labelKey string }{
-			{"top", workbenchenums.InspectorDirTop}, {"right", workbenchenums.InspectorDirRight},
-			{"bottom", workbenchenums.InspectorDirBottom}, {"left", workbenchenums.InspectorDirLeft},
-		} {
-			path := fmt.Sprintf("%s.%s.%s", key, bp.key, dir.key)
-			out = append(out, InspectorSubInput{
-				Path: path, Label: tr(bp.labelKey) + tr(dir.labelKey), Value: propString(props, path), Placeholder: "0px",
-			})
-		}
-	}
-	return out
-}
-
-func responsiveTextInputs(props map[string]any, key string, tr Translate) []InspectorSubInput {
-	out := make([]InspectorSubInput, 0, 3)
-	for _, bp := range []struct{ key, labelKey string }{
-		{"desktop", workbenchenums.InspectorBpDesktop}, {"tablet", workbenchenums.InspectorBpTablet},
-		{"mobile", workbenchenums.InspectorBpMobile},
-	} {
-		path := key + "." + bp.key
-		out = append(out, InspectorSubInput{Path: path, Label: tr(bp.labelKey), Value: propString(props, path)})
-	}
-	return out
-}
-
-func hasSubValue(inputs []InspectorSubInput) bool {
-	for _, in := range inputs {
-		if in.Value != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func isCornerKey(key string) bool {
-	return strings.HasSuffix(key, "radiusTL") || strings.HasSuffix(key, "radius.topLeft")
-}
-
-func isCornerTailKey(key string) bool {
-	return strings.HasSuffix(key, "radiusTR") || strings.HasSuffix(key, "radiusBR") || strings.HasSuffix(key, "radiusBL") ||
-		strings.HasSuffix(key, "radius.topRight") || strings.HasSuffix(key, "radius.bottomRight") || strings.HasSuffix(key, "radius.bottomLeft")
-}
-
-func inspectorFieldVisible(key string, props map[string]any) bool {
-	switch {
-	case key == "advanced.widthValue":
-		return propString(props, "advanced.widthMode") == "fixed"
-	case key == "visual.bgPositionXY":
-		return propString(props, "visual.bgPosition") == "custom"
-	case key == "visual.bgSizeValue":
-		return propString(props, "visual.bgSize") == "custom"
-	case strings.HasPrefix(key, "position.top"), strings.HasPrefix(key, "position.right"),
-		strings.HasPrefix(key, "position.bottom"), strings.HasPrefix(key, "position.left"):
-		pt := propString(props, "position.type")
-		return pt != "" && pt != "static"
-	case strings.HasPrefix(key, "position.drawer"):
-		return propString(props, "position.type") == "drawer"
-	}
-	return true
-}
-
-func propString(props map[string]any, path string) string {
-	var cur any = props
-	for _, seg := range strings.Split(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return ""
-		}
-		cur, ok = m[seg]
-		if !ok {
-			return ""
-		}
-	}
-	switch v := cur.(type) {
-	case string:
-		return v
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(v)
-	}
-	return ""
-}
-
-func propListString(props map[string]any, path string) string {
-	var cur any = props
-	for _, seg := range strings.Split(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return ""
-		}
-		cur, ok = m[seg]
-		if !ok {
-			return ""
-		}
-	}
-	list, ok := cur.([]any)
-	if !ok {
-		return ""
-	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		switch v := item.(type) {
-		case string:
-			out = append(out, v)
-		case map[string]any:
-			for _, key := range []string{"url", "src", "value"} {
-				if s, ok := v[key].(string); ok && s != "" {
-					out = append(out, s)
-					break
-				}
-			}
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
-func parseRangeRows(raw string) []InspectorRangeRow {
-	var rows []InspectorRangeRow
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if min, ok := strings.CutSuffix(part, "+"); ok {
-			rows = append(rows, InspectorRangeRow{Min: min})
-			continue
-		}
-		if lo, hi, ok := strings.Cut(part, "-"); ok {
-			rows = append(rows, InspectorRangeRow{Min: lo, Max: hi})
-			continue
-		}
-		rows = append(rows, InspectorRangeRow{Min: part})
-	}
-	return rows
+	return editor.FindDocNode(doc, nodeID)
 }
 
 func (s *Service) entityRefInspectorOptions(ctx context.Context, projectID, refKind, selected string, tr Translate) []InspectorOption {
@@ -960,116 +412,4 @@ func NavigationKindLabel(kind string, tr Translate) string {
 		return tr(workbenchenums.InspectorNavKindFooterMobile)
 	}
 	return kind
-}
-
-type repeaterRow struct {
-	Value  string
-	Extras map[string]bool
-}
-
-func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repeaterRow {
-	raw, _ := props[spec.AlignKey].([]any)
-	rows := make([]repeaterRow, 0, len(raw))
-	for _, it := range raw {
-		entry, _ := it.(map[string]any)
-		row := repeaterRow{Extras: map[string]bool{}}
-		if v, ok := entry[spec.Field].(string); ok {
-			row.Value = v
-		}
-		for _, ex := range spec.Extra {
-			if b, ok := entry[ex.Key].(bool); ok {
-				row.Extras[ex.Key] = b
-			}
-		}
-		rows = append(rows, row)
-	}
-	return rows
-}
-
-func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int, tr Translate) string {
-	var b strings.Builder
-	b.WriteString(`<div class="wb-repeater" data-wb-rep="` + html.EscapeString(spec.Type) +
-		`" data-wb-rep-field="` + html.EscapeString(spec.Field) + `">`)
-	for i, row := range rows {
-		b.WriteString(`<div class="wb-repeater-row" data-wb-rep-index="` + fmt.Sprint(i) + `">`)
-		b.WriteString(`<div class="wb-repeater-mid">`)
-		placeholder := spec.Noun + fmt.Sprint(i+1) + " " + spec.Label
-		b.WriteString(`<input type="text" data-wb-rep-input="` + fmt.Sprint(i) +
-			`" value="` + html.EscapeString(row.Value) + `" placeholder="` + html.EscapeString(placeholder) + `">`)
-		for _, ex := range spec.Extra {
-			checked := ""
-			if row.Extras[ex.Key] {
-				checked = " checked"
-			}
-			b.WriteString(`<label class="wb-check-field"><input type="checkbox" data-wb-rep-extra="` +
-				html.EscapeString(ex.Key) + `" data-wb-rep-index="` + fmt.Sprint(i) + `"` + checked + `> ` + html.EscapeString(ex.Label) + `</label>`)
-		}
-		b.WriteString(`</div><div class="wb-repeater-acts">`)
-		if i > 0 {
-			b.WriteString(repeaterButton("↑", tr(workbenchenums.InspectorRepeaterMoveUp), "move", i, "-1", "wb-btn wb-btn-sm wb-btn-ghost"))
-		}
-		if i < len(rows)-1 {
-			b.WriteString(repeaterButton("↓", tr(workbenchenums.InspectorRepeaterMoveDown), "move", i, "1", "wb-btn wb-btn-sm wb-btn-ghost"))
-		}
-		b.WriteString(repeaterButton("✕",
-			strings.ReplaceAll(tr(workbenchenums.InspectorRepeaterRemove), "{noun}", spec.Noun),
-			"remove", i, "", "wb-icon-btn"))
-		b.WriteString(`</div></div>`)
-	}
-	b.WriteString(`<button type="button" class="wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add" data-wb-rep-op="add">` +
-		html.EscapeString(spec.AddText) + `</button>`)
-	b.WriteString(`<p class="wb-empty"`)
-	if len(rows) != panelCount {
-		b.WriteString(` style="color: var(--c-danger, #d93425)"`)
-	}
-	b.WriteString(`>`)
-	if len(rows) == panelCount {
-		b.WriteString(html.EscapeString(fillRepeaterText(tr(workbenchenums.InspectorRepeaterMatched), map[string]string{
-			"{noun}": spec.Noun, "{count}": fmt.Sprint(len(rows)),
-		})))
-	} else {
-		b.WriteString(html.EscapeString(fillRepeaterText(tr(workbenchenums.InspectorRepeaterMismatch), map[string]string{
-			"{noun}": spec.Noun, "{rows}": fmt.Sprint(len(rows)), "{panels}": fmt.Sprint(panelCount),
-		})))
-	}
-	b.WriteString(`</p></div>`)
-	return b.String()
-}
-
-func fillRepeaterText(text string, values map[string]string) string {
-	for k, v := range values {
-		text = strings.ReplaceAll(text, k, v)
-	}
-	return text
-}
-
-func repeaterButton(text, title, op string, index int, to, cls string) string {
-	s := `<button type="button" class="` + cls + `" data-wb-rep-op="` + op +
-		`" data-wb-rep-index="` + fmt.Sprint(index) + `"`
-	if to != "" {
-		s += ` data-wb-rep-to="` + to + `"`
-	}
-	return s + ` title="` + html.EscapeString(title) + `">` + html.EscapeString(text) + `</button>`
-}
-
-func AppendRepeaterPanel(sections []InspectorSection, node *DocNode, props map[string]any, tab string, tr Translate) []InspectorSection {
-	if tab == "style" || tab == "motion" {
-		return sections
-	}
-	spec := core.AlignedRepeaterFor(node.Type)
-	if spec == nil {
-		return sections
-	}
-	field := InspectorField{
-		Key:  "__repeater",
-		HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children), tr),
-	}
-	for i := range sections {
-		if sections[i].Key == "content" {
-			sections[i].Fields = append(sections[i].Fields, field)
-			return sections
-		}
-	}
-
-	return append([]InspectorSection{{Key: "content", Title: tr(workbenchenums.InspectorSectionContent), Open: true, Fields: []InspectorField{field}}}, sections...)
 }

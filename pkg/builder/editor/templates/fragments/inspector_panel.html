@@ -1,0 +1,95 @@
+{* editor/inspector_panel.html — 检查器面板片段（通用控件结构）。
+   字段事实由 pkg/builder/editor 的检查器构建；文案由宿主按请求语言传入。 *}
+{{if .NodeID == ""}}
+<p class="wb-empty">{{ .["t"]("workbench.ui.inspector.empty", "在画布或大纲树中选择组件") }}</p>
+{{else}}
+{{range _, s := .Sections}}
+<details class="wb-inspector-group" data-wb-section="{{s.Key}}"{{if s.Open}} open{{end}}>
+    <summary class="wb-inspector-section">{{s.Title}}{{if s.Used}} <span class="wb-group-count">{{s.Used}}</span>{{end}}</summary>
+    {{range _, f := s.Fields}}
+    {{if f.HTML != ""}}
+    <div class="wb-field wb-field-repeater">{{f.HTML | unsafe}}</div>
+    {{else if f.Slot != ""}}
+    <div class="wb-field-slot" data-wb-slot="{{f.Key}}" data-wb-enhance="{{f.Slot}}"></div>
+    {{else if f.UI == "bool"}}
+    <div class="wb-field wb-field-check"><label><input type="checkbox" data-wb-path="{{f.Key}}" data-wb-kind="bool"{{if f.Bool}} checked{{end}}> {{f.Label}}</label></div>
+    {{else if f.UI == "select"}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label>
+        <select data-wb-path="{{f.Key}}" data-wb-kind="select" aria-label="{{f.Label}}">
+            {{if f.Value == ""}}<option value="" selected>{{ .["t"]("workbench.ui.inspector.defaultOption", "（默认）") }}</option>{{end}}
+            {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+        </select>
+        {{if f.Extra}}
+        {* 宿主专属控件（如导航新建）：工具只输出占位，行为由应用宿主脚本填充。 *}
+        <div data-wb-host-extra="{{f.Key}}"></div>
+        {{end}}
+    </div>
+    {{else if f.UI == "multientityref"}}
+    <div class="wb-field" data-wb-path="{{f.Key}}" data-wb-kind="multientityref">
+        <label>{{f.Label}}</label>
+        <div class="wb-checkgrid">
+            {{range _, o := f.Options}}
+            <label class="wb-check-cell"><input type="checkbox" data-wb-ref="{{o.Value}}"{{if o.Selected}} checked{{end}}> {{o.Label}}</label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "rangelist"}}
+    <div class="wb-field" data-wb-path="{{f.Key}}" data-wb-kind="rangelist">
+        <label>{{f.Label}}</label>
+        <div class="wb-range-rows">
+            {{range _, r := f.Rows}}
+            <div class="wb-range-row">
+                <input type="text" data-wb-range="min" value="{{r.Min}}" placeholder="{{ .["t"]("workbench.ui.inspector.rangeMin", "起") }}">
+                <span class="wb-range-sep">—</span>
+                <input type="text" data-wb-range="max" value="{{r.Max}}" placeholder="{{ .["t"]("workbench.ui.inspector.rangeMax", "止（留空 = 以上）") }}">
+            </div>
+            {{end}}
+        </div>
+        <p class="wb-hint">{{ .["t"]("workbench.ui.inspector.rangeHint", "每行一个档位；上限留空表示「以上」（如 799+）") }}</p>
+    </div>
+    {{else if f.UI == "textarea"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="4" data-wb-path="{{f.Key}}" data-wb-kind="text">{{f.Value}}</textarea></div>
+    {{else if f.UI == "cssdecls"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="cssdecls" placeholder="{{f.Placeholder}}">{{f.Value}}</textarea></div>
+    {{else if f.UI == "mediaList"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="mediaList" placeholder="{{ .["t"]("workbench.ui.inspector.mediaListPlaceholder", "每行一个图片地址") }}">{{f.Value}}</textarea></div>
+    {{else if f.UI == "number"}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="number" data-wb-path="{{f.Key}}" data-wb-kind="number" value="{{f.Value}}"{{if f.Min}} min="{{f.Min}}"{{end}}{{if f.Max}} max="{{f.Max}}"{{end}} step="{{f.Step}}"></div>
+    {{else if f.UI == "color"}}
+    <div class="wb-field wb-field-color"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="color" value="{{f.Value}}" placeholder="#rrggbb / var(--sky-c-…)"></div>
+    {{else if f.UI == "media"}}
+    <div class="wb-field wb-field-media"><label>{{f.Label}}</label>
+        <input type="text" data-wb-path="{{f.Key}}" data-wb-kind="media" value="{{f.Value}}">
+        <button type="button" class="wb-btn wb-btn-sm wb-btn-secondary" data-wb-media-pick="{{f.Key}}">{{ .["t"]("workbench.ui.inspector.pickMedia", "选择") }}</button>
+    </div>
+    {{else if f.UI == "spacing"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}" placeholder="{{in.Placeholder}}"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "corners"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid wb-corners-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}" placeholder="0px"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "rtext"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="{{f.UI}}" value="{{f.Value}}"{{if f.Placeholder}} placeholder="{{f.Placeholder}}"{{end}}></div>
+    {{end}}
+    {{end}}
+</details>
+{{end}}
+{{end}}

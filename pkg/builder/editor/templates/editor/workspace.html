@@ -1,0 +1,37 @@
+{* editor/workspace.html — 通用编辑器工作区：左栏（组件库 + 属性检查器）、中央画布、浮动大纲树。
+   业务设置 / 主题 / 修订历史等宿主面板由应用在自己的布局里与这里并列组合；
+   品牌、后台链接、发布按钮与页面/块/模板/实例模式差异也归应用布局。 *}
+<div class="wb-main" id="wb-main">
+    <aside class="wb-inspector is-open">
+        <div class="wb-sidebar-top"><span>{{ .["t"]("workbench.ui.library.heading", "组件库") }}</span><button type="button" class="wb-collapse" id="wb-library-close" aria-label="{{ .["t"]("workbench.ui.action.collapsePreview", "收起面板并预览") }}">‹ {{ .["t"]("workbench.ui.action.collapse", "收起") }}</button></div>
+        {{include "library_panel.html"}}
+        {{include "edit_panel.html"}}
+    </aside>
+
+    {{include "canvas_stage.html"}}
+    {{include "navigator.html"}}
+</div>
+
+<button type="button" id="wb-sidebar-restore" class="wb-sidebar-restore" hidden aria-label="{{ .["t"]("workbench.ui.edit.restorePanel", "恢复编辑面板") }}">›</button>
+
+<div id="wb-editor-labels" hidden
+    data-destinations="{{ .["t"]("workbench.ui.editor.destinations", "跳转到") }}"
+    data-preview-first="{{ .["t"]("workbench.ui.editor.preview-first", "画布就绪后可选择目标") }}"
+    data-action-list="{{ .["t"]("workbench.ui.editor.action-list", "查看全部") }}"
+    data-action-authenticated="{{ .["t"]("workbench.ui.editor.action-authenticated", "登录后跳转") }}"
+    data-action-back="{{ .["t"]("workbench.ui.editor.action-back", "返回购物车") }}"
+    data-action-checkout="{{ .["t"]("workbench.ui.editor.action-checkout", "前往结账") }}"
+    data-action-login="{{ .["t"]("workbench.ui.editor.action-login", "前往登录") }}"
+    data-default-flow="{{ .["t"]("workbench.ui.editor.default-flow", "默认流程") }}"
+    data-current-flow="{{ .["t"]("workbench.ui.editor.current-flow", "当前区块内流程") }}"
+    data-target-unavailable="{{ .["t"]("workbench.ui.editor.target-unavailable", "当前目标不可用，请重新选择") }}"
+    data-target-reselect="{{ .["t"]("workbench.ui.editor.target-reselect", "当前跳转目标不可用，请重新选择已发布目标或恢复默认流程。") }}"
+    data-current-target="{{ .["t"]("workbench.ui.editor.current-target", "当前已选目标") }}"
+    data-targets-loading="{{ .["t"]("workbench.ui.editor.targets-loading", "正在读取已发布目标…") }}"
+    data-targets-failed="{{ .["t"]("workbench.ui.editor.targets-failed", "目标读取失败，请重试") }}"
+    data-targets-empty="{{ .["t"]("workbench.ui.editor.targets-empty", "尚无已发布目标，请先发布目标页面") }}"
+    data-targets-partial="{{ .["t"]("workbench.ui.editor.targets-partial", "部分目标无法读取；仍可选择已列出的页面。") }}"
+    data-page="{{ .["t"]("workbench.ui.editor.page", "页面") }}"
+    data-presentation="{{ .["t"]("workbench.ui.editor.presentation", "展示页") }}"
+    data-retry="{{ .["t"]("workbench.ui.editor.retry", "重试") }}"
+    data-preview-label="{{ .["t"]("workbench.ui.editor.preview-label", "模拟预览") }}"></div>

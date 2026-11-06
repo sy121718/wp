@@ -1,9 +1,11 @@
-import { inspectorMethods } from '/qa-static/js/workbench/methods/inspector.js';
-import { stateMethods } from '/qa-static/js/workbench/methods/state.js';
-import { bindRepeaterPanel } from '/qa-static/js/workbench/methods/controls/repeater.js';
-import { paletteItems, buildInsertNode, alignKeyOf } from '/qa-static/js/workbench/palette.js';
-import { field } from '/qa-static/js/workbench/methods/controls/base.js';
-import { shortcutsMethods } from '/qa-static/js/workbench/methods/shortcuts.js';
+import { inspectorMethods } from '/qa-static/js/editor/methods/inspector.js';
+import { stateMethods } from '/qa-static/js/editor/methods/state.js';
+import { bindRepeaterPanel } from '/qa-static/js/editor/methods/controls/repeater.js';
+import { paletteItems, buildInsertNode, alignKeyOf, configureCatalog } from '/qa-static/js/editor/catalog.js';
+import { paletteSpec, alignedRepeaters } from '/qa-static/js/editor-app/generated-contracts.js';
+configureCatalog({ items: paletteSpec.items || {}, alignedRepeaters });
+import { field } from '/qa-static/js/editor/methods/controls/base.js';
+import { shortcutsMethods } from '/qa-static/js/editor/methods/shortcuts.js';
 
 let seq = 0;
 let compileSeq = 0;

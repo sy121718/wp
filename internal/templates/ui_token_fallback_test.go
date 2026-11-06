@@ -7,7 +7,7 @@ import (
 )
 
 var cssFallbackFiles = []string{
-	"ui.css", "theme.css", "media-lib.css", "workbench.css", "workbench-a11y.css", "rich-editor.css", "automation.css",
+	"ui.css", "theme.css", "media-lib.css", "editor.css", "editor-a11y.css", "rich-editor.css", "automation.css",
 }
 
 func stripThemeTokenDefinitions(src string) string {
@@ -32,9 +32,9 @@ func stripThemeTokenDefinitions(src string) string {
 }
 
 var tokenFallbackExempt = map[string]string{
-	"--sky-c-bg = #101318":       "workbench.css「10. 深色主题」段（选择器全部限定 [data-theme=\"dark\"]）—— 只在深色语境下生效，兜底取深色真值是有意的",
-	"--sky-c-bg-soft = #171b21":  "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-field）",
-	"--sky-c-bg-hover = #1f242b": "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-cell img）",
+	"--sky-c-bg = #101318":       "editor.css「10. 深色主题」段（选择器全部限定 [data-theme=\"dark\"]）—— 只在深色语境下生效，兜底取深色真值是有意的",
+	"--sky-c-bg-soft = #171b21":  "同上：editor.css 深色主题段（[data-theme=\"dark\"] .wb-media-field）",
+	"--sky-c-bg-hover = #1f242b": "同上：editor.css 深色主题段（[data-theme=\"dark\"] .wb-media-cell img）",
 }
 
 func normalizeColor(v string) string {

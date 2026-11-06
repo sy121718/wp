@@ -52,7 +52,12 @@ func runAlignedProbe(t *testing.T) alignedProbe {
 		t.Skip("未找到 node，跳过 tabs/accordion 对齐契约测试")
 	}
 	url := "file://" + filepath.ToSlash(abs)
-	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(alignedProbeScript, url)).CombinedOutput()
+	contractsAbs, err := filepath.Abs("../../internal/templates/static/js/editor-app/generated-contracts.js")
+	if err != nil {
+		t.Fatalf("解析生成契约路径失败: %v", err)
+	}
+	contractsURL := "file://" + filepath.ToSlash(contractsAbs)
+	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(alignedProbeScript, contractsURL, url)).CombinedOutput()
 	if err != nil {
 		t.Fatalf("node 求值 alignMutation 失败: %v\n%s", err, out)
 	}
@@ -67,7 +72,9 @@ func runAlignedProbe(t *testing.T) alignedProbe {
 }
 
 const alignedProbeScript = `
-import { paletteItems, buildInsertNode, alignMutation, alignKeyOf } from %q;
+import { paletteSpec, alignedRepeaters } from %q;
+import { configureCatalog, paletteItems, buildInsertNode, alignMutation, alignKeyOf } from %q;
+configureCatalog({ items: paletteSpec.items || {}, alignedRepeaters: alignedRepeaters });
 
 // findNode 与 workbench 的 findNode 同语义（递归查找文档内节点）。
 function findNode(list, id) {

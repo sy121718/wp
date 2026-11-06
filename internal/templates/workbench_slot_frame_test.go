@@ -29,12 +29,12 @@ func TestWorkbenchSlotFrameBridgeContract(t *testing.T) {
 }
 
 func TestWorkbenchSlotFrameSelectionFlow(t *testing.T) {
-	shortcuts := readTemplateFile(t, "static/js/workbench/methods/shortcuts.js")
+	shortcuts := readTemplateFile(t, "static/js/editor/methods/shortcuts.js")
 	if !strings.Contains(shortcuts, "wb-slot-select") || !strings.Contains(shortcuts, "selectSlotFrame") {
 		t.Fatalf("父窗口应把 wb-slot-select 分流到 selectSlotFrame（否则槽位选中走 select() 静默失败）")
 	}
 
-	nodes := readTemplateFile(t, "static/js/workbench/methods/nodes.js")
+	nodes := readTemplateFile(t, "static/js/editor/methods/nodes.js")
 	if !strings.Contains(nodes, "selectSlotFrame(") {
 		t.Fatalf("缺少 selectSlotFrame：槽位选中态无法记录")
 	}
@@ -42,13 +42,14 @@ func TestWorkbenchSlotFrameSelectionFlow(t *testing.T) {
 		t.Fatalf("选中普通节点应清掉槽位态（两者互斥，否则面板会显示上一个槽位）")
 	}
 
-	panels := readTemplateFile(t, "static/js/workbench/methods/panels.js")
+	panels := readTemplateFile(t, "static/js/editor/methods/panels.js")
 	if !strings.Contains(panels, "renderSlotPanel(") {
 		t.Fatalf("缺少 renderSlotPanel：点页眉打开的会是组件检查器")
 	}
+	host := readTemplateFile(t, "static/js/editor-app/host.js")
 	for _, want := range []string{"'/workbench?block='", "'/workbench?template='", "returnUrl="} {
-		if !strings.Contains(panels, want) {
-			t.Fatalf("槽位面板应提供跳转入口 %s（块与结构模板的编辑入口不同）", want)
+		if !strings.Contains(host, want) {
+			t.Fatalf("宿主槽位适配应提供跳转入口 %s（块与结构模板的编辑入口不同）", want)
 		}
 	}
 
@@ -58,7 +59,7 @@ func TestWorkbenchSlotFrameSelectionFlow(t *testing.T) {
 }
 
 func TestWorkbenchSlotBlockReuseGuard(t *testing.T) {
-	canvas := readTemplateFile(t, "static/js/workbench/methods/canvas.js")
+	canvas := readTemplateFile(t, "static/js/editor/methods/canvas.js")
 	if !strings.Contains(canvas, "slotRoleOf(") {
 		t.Fatalf("缺少 slotRoleOf：无法判断某块是否已被站点结构占用")
 	}

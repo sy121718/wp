@@ -1,7 +1,7 @@
 package templates
 
 import (
-	"io/fs"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,31 +17,34 @@ func TestWorkbenchModuleSyntax(t *testing.T) {
 		}
 		t.Skip("缺少 Node；完整工作台检查请运行 scripts/check-workbench.sh")
 	}
-	err = filepath.WalkDir("static/js/workbench", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	assets, aerr := StaticAssets()
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	for _, path := range assets.Keys() {
+		if !strings.HasPrefix(path, "js/editor/") || !strings.HasSuffix(path, ".js") {
+			continue
 		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".js") {
-			return nil
-		}
+		path := path
 		t.Run(path, func(t *testing.T) {
-			data, err := os.ReadFile(path)
+			data, err := assets.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer data.Close()
+			raw, err := io.ReadAll(data)
 			if err != nil {
 				t.Fatal(err)
 			}
 			cmd := exec.Command(node, "--input-type=module", "--check")
-			cmd.Stdin = strings.NewReader(string(data))
+			cmd.Stdin = strings.NewReader(string(raw))
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("ES module 解析失败: %v\n%s", err, out)
 			}
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 
-	entry, err := filepath.Abs("static/js/workbench/methods/controls/misc.js")
+	entry, err := filepath.Abs("../../pkg/builder/editor/assets/js/editor/methods/controls/misc.js")
 	if err != nil {
 		t.Fatal(err)
 	}

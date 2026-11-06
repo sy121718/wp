@@ -2,8 +2,11 @@
 // 此适配器只覆盖绑定与文档变更，不声称覆盖浏览器渲染、触屏和焦点。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { bindRepeaterPanel } from '../../../../templates/static/js/workbench/methods/controls/repeater.js';
-import { alignKeyOf } from '../../../../templates/static/js/workbench/palette.js';
+import { bindRepeaterPanel } from '../../../../../pkg/builder/editor/assets/js/editor/methods/controls/repeater.js';
+import { alignKeyOf, configureCatalog } from '../../../../../pkg/builder/editor/assets/js/editor/catalog.js';
+import { paletteSpec, alignedRepeaters } from '../../../../templates/static/js/editor-app/generated-contracts.js';
+
+configureCatalog({ items: paletteSpec.items || {}, alignedRepeaters });
 
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const copy = value => JSON.parse(JSON.stringify(value));

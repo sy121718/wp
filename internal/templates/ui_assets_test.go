@@ -36,7 +36,7 @@ func TestWorkbenchShellLoadsSharedUI(t *testing.T) {
 			}
 		}
 		entry := `/static/js/ui/index.js`
-		if strings.Count(html, entry) != 1 || strings.Index(html, entry) > strings.Index(html, `/static/js/workbench/index.js`) {
+		if strings.Count(html, entry) != 1 || strings.Index(html, entry) > strings.Index(html, `/static/js/editor-app/index.js`) {
 			t.Fatal("工作台必须在自身入口前加载一次完整控件基座")
 		}
 	}

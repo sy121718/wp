@@ -18,6 +18,10 @@ type CanvasPageResp struct {
 
 	PreviewQS string `view:"previewQS"`
 
+	// PreviewURL 是画布 iframe 的初始地址：页面/块/结构模板/实例四种模式由应用决定，
+	// 工具布局只消费这个事实。
+	PreviewURL string `view:"previewURL"`
+
 	InstanceMode    bool   `view:"instanceMode"`
 	RenderMode      string `view:"renderMode"`
 	RenderModeLabel string `view:"renderModeLabel"`

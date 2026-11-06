@@ -11,7 +11,7 @@ import (
 	"go_wp/pkg/builder/core"
 )
 
-const coreJSRel = "../../internal/templates/static/js/workbench/core.js"
+const coreJSRel = "editor/assets/js/editor/core.js"
 
 type actionValueCase struct {
 	Action string `json:"action"`

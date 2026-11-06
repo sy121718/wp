@@ -1,0 +1,10 @@
+{* editor/navigator.html — 浮动大纲树（通用编辑器区域）。树内容由宿主大纲端点按文档渲染。 *}
+<aside class="wb-navigator is-hidden" id="wb-navigator">
+    <div class="wb-navigator-head">
+        <strong>{{ .["t"]("workbench.ui.tree.heading", "结构") }}</strong>
+        <button type="button" class="wb-icon-btn" id="wb-navigator-collapse" aria-label="{{ .["t"]("workbench.ui.tree.fold", "折叠结构树") }}">−</button>
+        <button type="button" class="wb-icon-btn" id="wb-navigator-close" title="{{ .["t"]("workbench.ui.action.collapse", "收起") }}">×</button>
+    </div>
+    <input type="search" class="wb-search" placeholder="{{ .["t"]("workbench.ui.tree.searchPlaceholder", "搜索组件或 ID…") }}">
+    <ul class="wb-tree" id="wb-tree"></ul>
+</aside>

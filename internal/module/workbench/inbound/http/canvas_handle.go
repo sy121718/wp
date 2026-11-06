@@ -1,8 +1,8 @@
 package workbenchhttp
 
 import (
-	"go_wp/internal/builder/extensions/presets"
 	_ "embed"
+	"go_wp/internal/builder/extensions/presets"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -10,12 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
+	"go_wp/pkg/builder"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
@@ -106,15 +106,16 @@ func (h *Handle) Workbench(c *gin.Context) {
 		return
 	}
 	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
-		Title:     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
-		PageID:    page.ID,
-		IsBlock:   false,
-		DraftPath: page.DraftPath,
-		Version:   page.DraftVersion,
-		Document:  utils.JsonSafe(string(documentJSON)),
-		Meta:      utils.JsonSafe(string(metaJSON)),
-		Schemas:   utils.JsonSafe(string(schemasJSON)),
-		JSVer:     workbenchservice.StaticJSVersion(),
+		Title:      workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
+		PageID:     page.ID,
+		IsBlock:    false,
+		DraftPath:  page.DraftPath,
+		Version:    page.DraftVersion,
+		Document:   utils.JsonSafe(string(documentJSON)),
+		Meta:       utils.JsonSafe(string(metaJSON)),
+		Schemas:    utils.JsonSafe(string(schemasJSON)),
+		JSVer:      workbenchservice.StaticJSVersion(),
+		PreviewURL: "/workbench/preview?id=" + page.ID + "&editor=1",
 	})
 }
 
@@ -177,14 +178,15 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		return
 	}
 	pageview.RenderTemplate(c, CanvasLayoutTemplate, &CanvasPageResp{
-		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
-		PageID:   block.ID,
-		IsBlock:  true,
-		Version:  block.Version,
-		Document: utils.JsonSafe(string(documentJSON)),
-		Meta:     utils.JsonSafe(string(metaJSON)),
-		Schemas:  utils.JsonSafe(string(schemasJSON)),
-		JSVer:    workbenchservice.StaticJSVersion(),
+		Title:      workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
+		PageID:     block.ID,
+		IsBlock:    true,
+		Version:    block.Version,
+		Document:   utils.JsonSafe(string(documentJSON)),
+		Meta:       utils.JsonSafe(string(metaJSON)),
+		Schemas:    utils.JsonSafe(string(schemasJSON)),
+		JSVer:      workbenchservice.StaticJSVersion(),
+		PreviewURL: "/workbench/block/preview?id=" + block.ID + "&editor=1",
 	})
 }
 
@@ -292,6 +294,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		Schemas:             utils.JsonSafe(string(schemasJSON)),
 		PreviewQS:           previewQS,
 		JSVer:               workbenchservice.StaticJSVersion(),
+		PreviewURL:          "/workbench/template/preview?" + previewQS,
 	})
 }
 

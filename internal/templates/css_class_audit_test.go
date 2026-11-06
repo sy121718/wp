@@ -253,22 +253,22 @@ type dynPrefixEvidence struct {
 
 var dynamicClassEvidence = map[string]dynPrefixEvidence{
 	"is-": {
-		site: "ui/toast.js:61 `'wb-toast is-' + type`；media-admin.js:334 `'media-variant-badge is-' + (v.status || 'pending')`；workbench/methods/canvas.js `'wb-canvas-frame is-' + cfg.bp`；fragments/seo_score.html:33 `is-{{sec.Color}}`",
+		site: "ui/toast.js:61 `'wb-toast is-' + type`；media-admin.js:334 `'media-variant-badge is-' + (v.status || 'pending')`；editor/methods/canvas.js `'wb-canvas-frame is-' + cfg.bp`；fragments/seo_score.html:33 `is-{{sec.Color}}`",
 		values: []string{
 			"info", "success", "error",
 			"pending", "processing", "ready", "failed",
 			"desktop", "tablet", "mobile",
 			"green", "lightgreen", "yellow", "red", "red-blocking",
 		},
-		note: "四个拼接点各自的取值域 —— toast type {info,success,error}（toast.js:15 的注释）；媒体变体 status {pending,processing,ready,failed}（media-admin.js:331 的 texts 映射键，与 media-lib.css:213-216 的四个变体一一对应）；断点 bp {desktop,tablet,mobile}（workbench/methods/state.js:16-18）；SEO 维度色 {green,lightgreen,yellow,red,red-blocking}（workbench.css:790-794 的五个变体，另见 scoring_test.go:70 的 red-blocking）",
+		note: "四个拼接点各自的取值域 —— toast type {info,success,error}（toast.js:15 的注释）；媒体变体 status {pending,processing,ready,failed}（media-admin.js:331 的 texts 映射键，与 media-lib.css:213-216 的四个变体一一对应）；断点 bp {desktop,tablet,mobile}（editor/methods/state.js:16-18）；SEO 维度色 {green,lightgreen,yellow,red,red-blocking}（editor.css:790-794 的五个变体，另见 scoring_test.go:70 的 red-blocking）",
 	},
 	"is-drop-": {
-		site:   "workbench/methods/tree.js:106 `classList.add('is-drop-target', 'is-drop-' + placement)`",
+		site:   "editor/methods/tree.js:106 `classList.add('is-drop-target', 'is-drop-' + placement)`",
 		values: []string{"before", "after", "inside"},
 		note:   "placement 取值见同文件 111/120 行的 remove 列表",
 	},
 	"wb-drop-": {
-		site:   "workbench/methods/canvas.js:563 `target.classList.add('wb-drop-' + placement)`",
+		site:   "editor/methods/canvas.js:563 `target.classList.add('wb-drop-' + placement)`",
 		values: []string{"before", "after", "inside"},
 		note:   "取值见 canvas.js:544-545 的 remove 列表",
 	},
@@ -466,6 +466,11 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
 	})
 	tplFiles = append(tplFiles, pkgTplFiles...)
+	// 编辑器工具区域模板与公共 UI 同属框架资产，同样计入使用侧语料。
+	editorTplFiles := walkFiles(t, "../../pkg/builder/editor", func(p string) bool {
+		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
+	})
+	tplFiles = append(tplFiles, editorTplFiles...)
 	var jsFiles []string
 	jsErr := fs.WalkDir(assets, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -502,11 +507,16 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
-	for _, p := range walkFiles(t, filepath.Join("..", "..", "internal"), func(p string) bool {
-		slashed := filepath.ToSlash(p)
-		return strings.HasSuffix(slashed, ".go") && !strings.HasSuffix(slashed, "_test.go") &&
-			!strings.HasPrefix(slashed, "../../internal/templates/")
-	}) {
+	goRoots := []string{filepath.Join("..", "..", "internal"), filepath.Join("..", "..", "pkg", "builder", "editor")}
+	var goFiles []string
+	for _, root := range goRoots {
+		goFiles = append(goFiles, walkFiles(t, root, func(p string) bool {
+			slashed := filepath.ToSlash(p)
+			return strings.HasSuffix(slashed, ".go") && !strings.HasSuffix(slashed, "_test.go") &&
+				!strings.HasPrefix(slashed, "../../internal/templates/")
+		})...)
+	}
+	for _, p := range goFiles {
 		for _, cls := range auditGoClassLiterals(readFile(t, p)) {
 			f.looseTokens[cls] = true
 			if site := rel(t, p); !contains(f.goClasses[cls], site) {
@@ -517,7 +527,9 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 
 	for _, p := range tplFiles {
 		r := rel(t, p)
-		if !strings.HasPrefix(r, "admin/") && !strings.HasPrefix(r, "workbench/") {
+		// 业务页面（admin/workbench）与编辑器工具区域模板都是真实使用侧。
+		if !strings.HasPrefix(r, "admin/") && !strings.HasPrefix(r, "workbench/") &&
+			!strings.Contains(filepath.ToSlash(p), "pkg/builder/editor/templates/") {
 			continue
 		}
 		lines := strings.Split(readFile(t, p), "\n")
@@ -795,7 +807,8 @@ func contains(list []string, want string) bool {
 }
 
 var cssUndefinedAllowed = map[string]string{
-	"wb-confirm-ok": "功能钩子（**不能只看类名有没有样式**）：static/js/ui/confirm.js:45 用 `dlg.querySelector('.wb-confirm-ok')` 查询它来接管确认按钮的提交；同元素另有 btn / btn-primary 基座类给外观，但真正让确认框能用的是这个查询 —— 属「无样式但有人在查」的类，**勿删**",
+	"wb-field-repeater": "纯结构钩子：编辑器检查器模板（pkg/builder/editor/templates/fragments/inspector_panel.html）用它标记「整块结构由工具渲染」的字段容器，外观来自内部 .wb-repeater 等子元素，本身不需要样式，**勿删**",
+	"wb-confirm-ok":     "功能钩子（**不能只看类名有没有样式**）：static/js/ui/confirm.js:45 用 `dlg.querySelector('.wb-confirm-ok')` 查询它来接管确认按钮的提交；同元素另有 btn / btn-primary 基座类给外观，但真正让确认框能用的是这个查询 —— 属「无样式但有人在查」的类，**勿删**",
 }
 
 var cssUnusedAllowed = map[string]string{

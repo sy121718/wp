@@ -11,7 +11,7 @@ func TestEditorContractsGeneratedFileIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile("../../internal/templates/static/js/workbench/generated-contracts.js")
+	got, err := os.ReadFile("../../internal/templates/static/js/editor-app/generated-contracts.js")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	"go_wp/pkg/builder/editor"
 	jetpkg "go_wp/pkg/view/jet"
 	"go_wp/pkg/view/ui"
 )
@@ -27,6 +28,8 @@ type layer struct {
 func newUICompositeFS(app fs.FS) (*compositeFS, error) {
 	c := &compositeFS{layers: []layer{
 		{name: "pkg/view/ui", fsys: ui.TemplatesFS()},
+		// 编辑器区域模板与检查器/大纲片段：通用结构归工具，业务布局与面板归应用。
+		{name: "pkg/builder/editor", fsys: editor.TemplatesFS()},
 		{name: "app", fsys: app},
 	}}
 	if err := c.checkConflicts(); err != nil {

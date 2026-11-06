@@ -19,7 +19,7 @@ func main() {
 }
 
 func run(check bool) error {
-	const path = "internal/templates/static/js/workbench/generated-contracts.js"
+	const path = "internal/templates/static/js/editor-app/generated-contracts.js"
 	data, err := builder.EditorContractsJS()
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func run(check bool) error {
 			return err
 		}
 		if !bytes.Equal(current, data) {
-			return fmt.Errorf("工作台契约已过期，请在仓库根目录执行 go run ./cmd/workbench-contracts")
+			return fmt.Errorf("编辑器契约已过期，请在仓库根目录执行 go run ./cmd/workbench-contracts")
 		}
 		return nil
 	}

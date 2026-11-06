@@ -26,7 +26,7 @@ func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 			t.Errorf("工作台渲染缺少 %q", want)
 		}
 	}
-	js, err := readTemplateAsset("static/js/workbench/methods/shortcuts.js")
+	js, err := readTemplateAsset("static/js/editor/methods/shortcuts.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 			t.Errorf("工作台聚焦模式脚本缺少 %q", want)
 		}
 	}
-	workspace := readTemplateFile(t, "static/js/workbench/methods/workspace.js")
+	workspace := readTemplateFile(t, "static/js/editor/methods/workspace.js")
 	for _, want := range []string{"is-immersive", "wb-sidebar-restore", "wb-editor-state", "preview: this.immersive"} {
 		if !strings.Contains(workspace, want) {
 			t.Errorf("预览与恢复面板缺少 %q", want)

@@ -7,6 +7,7 @@ import (
 	"path"
 	"sync"
 
+	"go_wp/pkg/builder/editor"
 	uipkg "go_wp/pkg/view/ui"
 )
 
@@ -17,6 +18,8 @@ var (
 	staticCompositeOnce sync.Once
 	staticComposite     *uipkg.CompositeFS
 	staticCompositeErr  error
+	staticVersionOnce   sync.Once
+	staticVersionValue  string
 )
 
 // StaticAssets 返回唯一公共 UI 资产源：pkg 公共资产 + 应用专用资产。
@@ -33,6 +36,7 @@ func StaticAssets() (*uipkg.CompositeFS, error) {
 		}
 		staticComposite, staticCompositeErr = uipkg.NewCompositeFS(
 			uipkg.Layer{Name: "pkg/view/ui", FS: uipkg.AssetsFS()},
+			uipkg.Layer{Name: "pkg/builder/editor", FS: editor.AssetsFS()},
 			uipkg.Layer{Name: "internal/templates", FS: app},
 		)
 	})
@@ -59,6 +63,25 @@ func AssetFile(name string) ([]byte, error) {
 		return nil, fmt.Errorf("读取静态资产 %s: %w", name, err)
 	}
 	return b, nil
+}
+
+// StaticJSVersion 返回最终复合资产（公共 UI + 编辑器工具 + 应用宿主适配）的内容哈希，
+// 不读私有磁盘 mtime；结果在进程内缓存一次。
+func StaticJSVersion() string {
+	staticVersionOnce.Do(func() {
+		assets, err := StaticAssets()
+		if err != nil {
+			staticVersionValue = "0"
+			return
+		}
+		version, err := editor.Version(assets)
+		if err != nil || version == "" {
+			staticVersionValue = "0"
+			return
+		}
+		staticVersionValue = version
+	})
+	return staticVersionValue
 }
 
 // StaticJS 保留既有签名，按逻辑键读 JS（含子目录，如 ui/select.js）。

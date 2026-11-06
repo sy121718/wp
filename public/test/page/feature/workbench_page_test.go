@@ -26,6 +26,8 @@ func TestWorkbenchPageShell(t *testing.T) {
 			"document":   `{"settings":{},"root":[]}`,
 			"meta":       `{"pageId":"p-1","draftPath":"/about","version":3}`,
 			"schemas":    `{"core.heading":[{"key":"text","kind":"text","section":"content"}]}`,
+			// 画布初始地址由应用按编辑目标给出，工具布局只消费这个事实。
+			"previewURL": "/workbench/preview?id=p-1&editor=1",
 
 			"jsVer": "test-1",
 
@@ -48,7 +50,7 @@ func TestWorkbenchPageShell(t *testing.T) {
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,
 		`id="wb-schemas"`, `"core.heading"`,
 
-		"/static/js/workbench/index.js", "存草稿", "editor=1",
+		"/static/js/editor-app/index.js", "存草稿", "editor=1",
 
 		"/static/vendor/trix/trix.umd.js", "/static/vendor/trix/trix.css",
 	} {

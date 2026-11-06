@@ -9,9 +9,9 @@ import (
 
 var backendStaticCSSFiles = []string{
 	"static/css/theme.css",
-	"static/css/workbench.css",
+	"static/css/editor.css",
 	"static/css/media-lib.css",
-	"static/css/workbench-a11y.css",
+	"static/css/editor-a11y.css",
 }
 
 var reSkyTokenDef = regexp.MustCompile(`(?m)^\s*[ \t]*(--sky-c-[a-z0-9-]+)\s*:`)

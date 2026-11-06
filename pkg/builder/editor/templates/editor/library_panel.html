@@ -1,0 +1,16 @@
+{* editor/library_panel.html — 通用组件库与元素编辑面板（编辑器工具区域）。
+   组件目录由完整应用注册生成后经 bootstrap 注入；本模板只定义结构与取词入口。
+   业务设置 / 主题 / 修订历史面板由应用宿主模板组合，不在工具模板内。 *}
+<section class="wb-panel" id="wb-panel-library" aria-label="{{ .["t"]("workbench.ui.library.heading", "组件库") }}">
+    <div class="wb-lib-tabs" role="tablist">
+        <button type="button" class="is-active" data-libtab="components">{{ .["t"]("workbench.ui.library.tabComponents", "组件") }}</button>
+        <button type="button" data-libtab="blocks">{{ .["t"]("workbench.ui.library.tabBlocks", "全局块") }}</button>
+    </div>
+    <input type="search" class="wb-search wb-library-search" id="wb-library-search" placeholder="{{ .["t"]("workbench.ui.library.searchPlaceholder", "搜索组件…") }}">
+    <div class="wb-library-categories" id="wb-library-categories" role="group" aria-label="{{ .["t"]("workbench.ui.library.categories", "组件分类") }}"></div>
+    <p class="wb-library-hint" id="wb-library-hint" style="display:none"></p>
+    <div class="wb-inspector-body" id="wb-library-body">
+        <div class="wb-palette-accordion" id="wb-palette"></div>
+        <div class="wb-palette-blocks" id="wb-palette-blocks" hidden></div>
+    </div>
+</section>

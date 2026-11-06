@@ -9,12 +9,21 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/pkg/builder"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder"
 
 	"github.com/gin-gonic/gin"
 )
+
+func mustStaticFS(t *testing.T) http.FileSystem {
+	t.Helper()
+	fsys, err := templates.EmbeddedStaticFS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fsys
+}
 
 func TestRepeaterBrowserFixture(t *testing.T) {
 	if os.Getenv("GOWP_REPEATER_BROWSER") != "1" {
@@ -24,7 +33,7 @@ func TestRepeaterBrowserFixture(t *testing.T) {
 	router.Use(builtin.StaticCacheMiddleware())
 	router.Static("/static", "../../../../internal/templates/static")
 
-	router.Static("/qa-static", "../../../../internal/templates/static")
+	router.StaticFS("/qa-static", mustStaticFS(t))
 	fixture, err := os.ReadFile("../fixtures/repeater_browser.html")
 	if err != nil {
 		t.Fatal(err)
