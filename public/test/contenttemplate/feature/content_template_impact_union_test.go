@@ -13,6 +13,7 @@ import (
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
@@ -116,6 +117,10 @@ func TestTemplateImpactUnionFindsBuiltAndUnbuiltPages(t *testing.T) {
 	}
 
 	pageSvc := newUnionPageService(t, db, projects)
+	// 页面写事务会复核文档引用的结构模板仍存在；生产装配由 routers 注入同一端口。
+	pageSvc.(interface {
+		SetTemplateExistencePort(contenttemplatecontract.TemplateExistenceTxReader)
+	}).SetTemplateExistencePort(tplSvc)
 	setter, ok := pageSvc.(interface {
 		SetStructureTemplatePort(pipeline.StructureTemplatePort)
 	})

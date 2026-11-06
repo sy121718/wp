@@ -104,7 +104,7 @@ func TestBulkIDsFacingTextFollowsRequestLanguage(t *testing.T) {
 func TestBulkIDsFactHasNoParameterTail(t *testing.T) {
 	err := &bulkids.IDsError{Max: 200, Count: 201}
 	fact, ok := facing.FactOf(err)
-	if !ok || fact.Key != "shell.err.bulkIdsTooMany|200|201" || fact.Tail != "" {
+	if !ok || fact.Key != bulkids.MsgTooMany+"|200|201" || fact.Tail != "" {
 		t.Fatalf("参数属于完整key，不是明细: ok=%v fact=%+v", ok, fact)
 	}
 	i18n.InjectForTest(map[string]map[string]string{bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate}}, nil)

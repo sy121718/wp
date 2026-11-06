@@ -8,6 +8,7 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
+	"go_wp/pkg/facing"
 )
 
 func TestStructureTemplateDeleteGuard(t *testing.T) {
@@ -15,6 +16,8 @@ func TestStructureTemplateDeleteGuard(t *testing.T) {
 	if svc == nil {
 		return
 	}
+	// 本用例的引用来自模板之间的结构槽位绑定，外部端口给空集即可。
+	withRefStub(svc, &stubTemplateRefs{})
 	ctx := context.Background()
 
 	newHeader := func(t *testing.T, name string) *contenttemplatedto.TemplateResp {
@@ -47,8 +50,13 @@ func TestStructureTemplateDeleteGuard(t *testing.T) {
 			t.Fatalf("错误应带 %s 前缀（handler 的三件套按它取文案）: %v",
 				contenttemplateenums.ErrStructureTemplateInUse, err)
 		}
-		if !strings.Contains(err.Error(), "文章模板") || !strings.Contains(err.Error(), "页眉") {
-			t.Fatalf("错误应给出可定位数据（模板名 + 槽位）: %v", err)
+		// 可定位明细走结构化 BlockedItems（对外只进 data.items），不拼进主消息。
+		blocked, ok := err.(interface{ BlockedItems() []facing.BlockedItem })
+		if !ok || len(blocked.BlockedItems()) != 1 {
+			t.Fatalf("拒绝事实应带一条可定位明细: %v", err)
+		}
+		if detail := blocked.BlockedItems()[0].Fallback; !strings.Contains(detail, "文章模板") || !strings.Contains(detail, "页眉") {
+			t.Fatalf("明细应给出模板名与槽位: %q", detail)
 		}
 
 		if _, err := svc.Get(ctx, &contenttemplatedto.GetReq{ID: header.ID}); err != nil {
@@ -77,8 +85,9 @@ func TestStructureTemplateDeleteGuard(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), contenttemplateenums.ErrStructureTemplateInUse) {
 			t.Fatalf("槽位模板绑定同样应拒绝删除: %v", err)
 		}
-		if !strings.Contains(err.Error(), "announcement") {
-			t.Fatalf("错误应指出是哪个槽位: %v", err)
+		blocked, ok := err.(interface{ BlockedItems() []facing.BlockedItem })
+		if !ok || len(blocked.BlockedItems()) != 1 || !strings.Contains(blocked.BlockedItems()[0].Fallback, "announcement") {
+			t.Fatalf("明细应指出槽位: %v", err)
 		}
 	})
 

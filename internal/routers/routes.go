@@ -52,6 +52,7 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 	a.wirePublishingPorts()
 
 	a.wireContentTemplateImpact()
+	a.wireTemplateReferencePorts()
 
 	a.startRuntimeTasks()
 

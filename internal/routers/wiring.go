@@ -76,6 +76,9 @@ const (
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
 	portProjectStructureTemplates     = "project.SetStructureTemplateOptionsPort"
+	portContentTemplateReferencePort  = "contenttemplate.SetReferencePort"
+	portPageTemplateExistence         = "page.SetTemplateExistencePort"
+	portProjectTemplateExistence      = "project.SetTemplateExistencePort"
 
 	portMediaStaleMarkerPage             = "media.SetStaleMarker(page)"
 	portMediaStaleMarkerPresentation     = "media.SetStaleMarker(presentation)"
@@ -242,6 +245,12 @@ var wiringManifest = []wiringEntry{
 		"模板影响面与删除保护退化为仅查本模块表与实例外键（删模板不再拦页面引用）"},
 	{portProjectStructureTemplates, "contenttemplate", "project（主题设置）", wiringOptionalDegraded,
 		"主题设置页的「选结构模板」下拉只有「不绑定」"},
+	{portContentTemplateReferencePort, "page + presentation + project", "contenttemplate（删除保护）", wiringRequiredPort,
+		"模板删除失去跨模块引用反查：删除会按「端口未装配」fail-closed 一律拒绝，或漏掉页面 / 实例 / 主题引用"},
+	{portPageTemplateExistence, "contenttemplate", "page（写事务复核）", wiringRequiredPort,
+		"页面文档引用结构模板时写入直接失败（fail-closed），页面无法保存"},
+	{portProjectTemplateExistence, "contenttemplate", "project（主题写事务复核）", wiringRequiredPort,
+		"主题设置引用结构模板时写入直接失败（fail-closed），主题无法保存"},
 	{portBlockPresetResolver, "builder", "block", wiringRequiredPort,
 		"首次业务预设无法解析，创建不能获得权威文档"},
 	{portBlockStalePropagator, "block", "page / presentation", wiringRequiredPort,

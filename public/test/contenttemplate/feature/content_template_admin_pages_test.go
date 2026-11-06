@@ -2,10 +2,11 @@ package feature
 
 import (
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"context"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -54,11 +55,17 @@ func newContentTemplateAdminEnv(t *testing.T) *contentTemplateAdminEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 与生产装配一致：失败出口、成功出口与请求级取词都在场。
+	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates",
 		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, adminui.RenderPage),
 		handle.ContentTemplatesPage)
-	engine.POST("/api/contenttemplate/activate", contenttemplatehttp.NewHandle(templatesSvc).Activate)
+	// 与生产路由一致：启用是 HTML 片段端点，表单编码。
+	engine.POST("/api/contenttemplate/activate", pageview.HTMLFragment,
+		pageview.UseRenderer(adminui.RenderPage), contenttemplatehttp.NewHandle(templatesSvc).Activate)
 	return &contentTemplateAdminEnv{engine: engine, db: db, projectID: project.ID, templates: templatesSvc}
 }
 
@@ -129,22 +136,22 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 		t.Error("结构模板的编辑入口不该带样例实体参数（无实体模式）")
 	}
 
-	payload, err := json.Marshal(map[string]string{"id": first.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
+	form := url.Values{"id": {first.ID}}
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/contenttemplate/activate",
-		strings.NewReader(string(payload)))
-	req.Header.Set("Content-Type", "application/json")
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("切换生效应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("切换生效应返回成功片段（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	assertNoContentTemplateInternalLeak(t, "启用 JSON 回执", rec.Body.String())
-	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		t.Fatal("expected JSON")
+	assertNoContentTemplateInternalLeak(t, "启用成功片段", rec.Body.String())
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("启用成功应走 HTML 片段，实际 %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), "操作成功") {
+		t.Fatalf("启用成功应走公共成功出口：%s", rec.Body.String())
 	}
 
 	gotFirst, err := env.templates.Get(ctx, &contenttemplatedto.GetReq{ID: first.ID})
@@ -168,12 +175,15 @@ func TestContentTemplatesActivateRejectsMissingID(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/contenttemplate/activate",
-		strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
+		strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing id status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	assertNoContentTemplateInternalLeak(t, "缺 id JSON 回执", rec.Body.String())
+	assertNoContentTemplateInternalLeak(t, "缺 id 失败片段", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "data-ui-error") {
+		t.Fatalf("失败应渲染错误区：%s", rec.Body.String())
+	}
 }

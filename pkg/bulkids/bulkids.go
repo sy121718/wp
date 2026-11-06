@@ -32,7 +32,8 @@ func (e *IDsError) Facing() (string, string) {
 
 func (e *IDsError) HTTPStatus() int { return http.StatusBadRequest }
 
-const MsgTooMany = "shell.err.bulkIdsTooMany"
+// MsgTooMany 是批量上限的共享词条 key（迁移 720 已把旧点分 key 改名为短 key）。
+const MsgTooMany = "bulkIdsTooMany"
 
 func Normalize(raw []string) ([]string, error) {
 	if len(raw) == 0 {

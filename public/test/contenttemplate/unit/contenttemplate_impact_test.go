@@ -5,8 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
+	"go_wp/pkg/facing"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 )
 
@@ -73,9 +75,10 @@ func TestPageReferenceBlocksTemplateDelete(t *testing.T) {
 		t.Fatalf("创建结构模板失败: %v", err)
 	}
 
-	svc.SetImpactPort(&fakeImpactPort{refs: []contenttemplatedto.TemplateReference{{
-		TemplateID: header.ID, Kind: contenttemplatedto.ReferenceKindPage,
-		PageID: "page-1", PagePath: "/about", PageTitle: "关于我们", Slots: []string{"header"},
+	// 删除保护走事务内反查端口；页面引用以外部实体事实进入拒绝明细。
+	withRefStub(svc, &stubTemplateRefs{rows: []contenttemplatecontract.TemplateReferenceRow{{
+		TemplateID: header.ID, Kind: contenttemplatecontract.TemplateReferenceKindPage,
+		EntityID: "page-1", Label: "关于我们", Detail: "header",
 	}}})
 	err = svc.Delete(ctx, &contenttemplatedto.DeleteReq{ID: header.ID})
 	if err == nil {
@@ -85,15 +88,22 @@ func TestPageReferenceBlocksTemplateDelete(t *testing.T) {
 		t.Fatalf("错误应带 %s 前缀（handler 的三件套按它取文案）: %v", contenttemplateenums.ErrTemplateInUse, err)
 	}
 
-	if !strings.Contains(err.Error(), "关于我们") || !strings.Contains(err.Error(), "页眉") {
-		t.Fatalf("错误应给出可定位数据（页面名 + 槽位）: %v", err)
+	// 可定位明细走结构化 BlockedItems（对外只进 data.items），不拼进主消息。
+	blocked, ok := err.(interface{ BlockedItems() []facing.BlockedItem })
+	if !ok || len(blocked.BlockedItems()) != 1 {
+		t.Fatalf("拒绝事实应带一条可定位明细: %v", err)
+	}
+	item := blocked.BlockedItems()[0]
+	// 被拒绝的是模板本身；明细里给出引用方名称与槽位。
+	if !strings.Contains(item.Fallback, "关于我们") || !strings.Contains(item.Fallback, "header") {
+		t.Fatalf("明细应给出页面与槽位: %+v", item)
 	}
 
 	if _, err = svc.Get(ctx, &contenttemplatedto.GetReq{ID: header.ID}); err != nil {
 		t.Fatalf("删除被拒绝后模板应仍然存在: %v", err)
 	}
 
-	svc.SetImpactPort(&fakeImpactPort{})
+	withRefStub(svc, &stubTemplateRefs{})
 	if err = svc.Delete(ctx, &contenttemplatedto.DeleteReq{ID: header.ID}); err != nil {
 		t.Fatalf("解绑后应可删除: %v", err)
 	}
