@@ -414,13 +414,13 @@ func (h *SessionPageHandle) ProvidersPage(c *gin.Context) {
 	h.sessionsPage(c, sessionTabModels)
 }
 
-func (h *SessionPageHandle) sessionsPage(c *gin.Context, forcedTab string) {
-	ctx := c.Request.Context()
+// sessionQueryOf 解析会话列表的页码与筛选条件。
+func sessionQueryOf(c *gin.Context) (int, aidto.SessionQuery) {
 	page := sessionIntOr(c.DefaultQuery("page", "1"), 1)
 	if page < 1 {
 		page = 1
 	}
-	filter := aidto.SessionQuery{
+	return page, aidto.SessionQuery{
 		Keyword:     strings.TrimSpace(c.Query("keyword")),
 		Status:      sessionIntOr(c.DefaultQuery("status", "-1"), -1),
 		ProviderKey: strings.TrimSpace(c.Query("provider")),
@@ -429,22 +429,32 @@ func (h *SessionPageHandle) sessionsPage(c *gin.Context, forcedTab string) {
 		From:        strings.TrimSpace(c.Query("from")),
 		To:          strings.TrimSpace(c.Query("to")),
 	}
+}
 
+// sessionTabFor 决定展示哪个标签：强制标签优先，其次按权限回落到用户能看的那个。
+func sessionTabFor(want, forced string, canModels, canSessions bool) string {
+	tab := sessionTabOf(want)
+	if forced != "" {
+		tab = forced
+	}
+	if tab == sessionTabModels && !canModels && canSessions {
+		return sessionTabSessions
+	}
+	if tab == sessionTabSessions && !canSessions && canModels {
+		return sessionTabModels
+	}
+	return tab
+}
+
+func (h *SessionPageHandle) sessionsPage(c *gin.Context, forcedTab string) {
+	ctx := c.Request.Context()
+	page, filter := sessionQueryOf(c)
 	rows, total, err := h.svc.ListSessionsFiltered(ctx, filter, page, sessionPageSize)
 	loadFailed := err != nil
 
-	tab := sessionTabOf(c.Query("tab"))
-	if forcedTab != "" {
-		tab = forcedTab
-	}
-
 	canModels := sessionCan(c, permProviderList)
 	canSessions := sessionCan(c, permSessionList)
-	if tab == sessionTabModels && !canModels && canSessions {
-		tab = sessionTabSessions
-	} else if tab == sessionTabSessions && !canSessions && canModels {
-		tab = sessionTabModels
-	}
+	tab := sessionTabFor(c.Query("tab"), forcedTab, canModels, canSessions)
 
 	view := &aidto.SessionListPageResp{
 

@@ -10,7 +10,6 @@ import (
 	ginbinding "github.com/gin-gonic/gin/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
@@ -20,27 +19,13 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 		return
 	}
 
-	respond := func(err error) {
-		if err != nil {
-			inventoryFail(c, err)
-			return
+	stockRespond(c, func() error {
+		if err := form.Validate(); err != nil {
+			return err
 		}
-		inventoryWriteOK(c)
-	}
-
-	if !form.ValidDirection() {
-		respond(inventoryenums.Err(inventoryenums.ErrStockDirectionInvalid))
-		return
-	}
-	if form.RemarkValue() == "" {
-		respond(inventoryenums.Err(inventoryenums.ErrStockRemarkRequired))
-		return
-	}
-	if _, err := h.inventory.ChangeStock(c.Request.Context(), form.ChangeReq(builtin.GetUsername(c))); err != nil {
-		respond(err)
-		return
-	}
-	respond(nil)
+		_, err := h.inventory.ChangeStock(c.Request.Context(), form.ChangeReq(builtin.GetUsername(c)))
+		return err
+	})
 }
 
 func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
@@ -64,23 +49,13 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 		return
 	}
 
-	respond := func(err error) {
-		if err != nil {
-			inventoryFail(c, err)
-			return
+	stockRespond(c, func() error {
+		if err := form.Validate(); err != nil {
+			return err
 		}
-		inventoryWriteOK(c)
-	}
-
-	if form.Tracked() && form.QuantityValue() == "" {
-		respond(inventoryenums.Err(inventoryenums.ErrStockQuantityRequired))
-		return
-	}
-	if _, err := h.inventory.UpdateStockTracking(c.Request.Context(), form.TrackingReq()); err != nil {
-		respond(err)
-		return
-	}
-	respond(nil)
+		_, err := h.inventory.UpdateStockTracking(c.Request.Context(), form.TrackingReq())
+		return err
+	})
 }
 
 func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID string) (out []VariantOptionResp, err error) {
@@ -108,4 +83,13 @@ func skuOfVariant(options []VariantOptionResp, variantID string) string {
 		}
 	}
 	return ""
+}
+
+// stockRespond 是库存写端点的公共出口：失败交共享失败出口，成功给统一提示。
+func stockRespond(c *gin.Context, run func() error) {
+	if err := run(); err != nil {
+		inventoryFail(c, err)
+		return
+	}
+	inventoryWriteOK(c)
 }

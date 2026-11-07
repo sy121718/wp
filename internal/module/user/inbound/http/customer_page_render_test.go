@@ -117,7 +117,13 @@ func (f *fakeCustomerAdmin) SetCustomerStatus(_ context.Context, req *userdto.Cu
 	if f.failIDs[req.CustomerID] {
 		return nil, errors.New(userenums.ErrUserNotFound)
 	}
-	return &userdto.CustomerStatusResp{CustomerID: req.CustomerID, Status: req.Status, StatusLabel: "已停用"}, nil
+	msgKey := userenums.MsgCustomerDisabled
+	if req.Status == userenums.StatusActive {
+		msgKey = userenums.MsgCustomerEnabled
+	}
+	return &userdto.CustomerStatusResp{
+		CustomerID: req.CustomerID, Status: req.Status, StatusLabel: "已停用", MsgKey: msgKey,
+	}, nil
 }
 
 func (f *fakeCustomerAdmin) UnlockCustomer(_ context.Context, req *userdto.CustomerUnlockReq) (*userdto.CustomerUnlockResp, error) {
@@ -130,7 +136,7 @@ func (f *fakeCustomerAdmin) UnlockCustomer(_ context.Context, req *userdto.Custo
 	if f.unlockRes != nil {
 		return f.unlockRes, nil
 	}
-	return &userdto.CustomerUnlockResp{CustomerID: req.CustomerID, Unlocked: true}, nil
+	return &userdto.CustomerUnlockResp{CustomerID: req.CustomerID, Unlocked: true, MsgKey: userenums.MsgCustomerUnlocked}, nil
 }
 
 var _ usercontract.CustomerAdminPort = (*fakeCustomerAdmin)(nil)
@@ -449,9 +455,10 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 
 		want string
 	}{
-		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, "账号已解除锁定"},
-		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true}, "账号未处于锁定状态，登录失败计数已清零"},
-		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42}, "该账号没有处于锁定状态，无需解除"},
+		// 消息 key 是 service 判定后交回的结论，桩按同一语义给。
+		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true, MsgKey: userenums.MsgCustomerUnlocked}, "账号已解除锁定"},
+		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true, MsgKey: userenums.MsgCustomerFailuresCleared}, "账号未处于锁定状态，登录失败计数已清零"},
+		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42, MsgKey: userenums.MsgCustomerNotLocked}, "该账号没有处于锁定状态，无需解除"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

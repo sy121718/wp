@@ -27,6 +27,18 @@ func (r *StockChangeFormReq) ValidDirection() bool {
 
 func (r *StockChangeFormReq) RemarkValue() string { return strings.TrimSpace(r.Remark) }
 
+// Validate 是这张表单的完整业务校验：方向合法且备注必填。
+// 校验归 DTO / service，控制器只负责把失败交给出口。
+func (r *StockChangeFormReq) Validate() error {
+	if !r.ValidDirection() {
+		return inventoryenums.Err(inventoryenums.ErrStockDirectionInvalid)
+	}
+	if r.RemarkValue() == "" {
+		return inventoryenums.Err(inventoryenums.ErrStockRemarkRequired)
+	}
+	return nil
+}
+
 func (r *StockChangeFormReq) ChangeReq(operatorID string) *ChangeStockReq {
 	return &ChangeStockReq{
 		ProjectID:   strings.TrimSpace(r.ProjectID),
@@ -73,6 +85,14 @@ type StockTrackingFormReq struct {
 func (r *StockTrackingFormReq) Tracked() bool { return formBool(r.TrackQuantity) }
 
 func (r *StockTrackingFormReq) QuantityValue() string { return strings.TrimSpace(r.Quantity) }
+
+// Validate 是这张表单的业务校验：勾选跟踪数量时数量必填。
+func (r *StockTrackingFormReq) Validate() error {
+	if r.Tracked() && r.QuantityValue() == "" {
+		return inventoryenums.Err(inventoryenums.ErrStockQuantityRequired)
+	}
+	return nil
+}
 
 func (r *StockTrackingFormReq) TrackingReq() *UpdateStockTrackingReq {
 	return &UpdateStockTrackingReq{

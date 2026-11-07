@@ -53,6 +53,9 @@ type CustomerStatusResp struct {
 	Status     int    `json:"status"`
 
 	StatusLabel string `json:"statusLabel"`
+
+	// MsgKey 是本次操作对应的消息事实 key；控制器只把它交给共享成功出口。
+	MsgKey string `json:"-"`
 }
 
 type CustomerUnlockResp struct {
@@ -61,4 +64,7 @@ type CustomerUnlockResp struct {
 	Unlocked bool `json:"unlocked"`
 
 	Cleared bool `json:"cleared"`
+
+	// MsgKey 是本次操作对应的消息事实 key；控制器只把它交给共享成功出口。
+	MsgKey string `json:"-"`
 }

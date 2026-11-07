@@ -102,6 +102,15 @@ func (h *orderCreatePageHandle) OrderCreatePage(c *gin.Context) {
 	h.render(c, form, nil, "")
 }
 
+// orderCreatedBackURL 按实体事实生成建单后的回列表链接（保留工程与订单上下文）。
+func orderCreatedBackURL(projectID string, res *orderdto.CreateOrderResp) string {
+	params := map[string]string{"project": projectID}
+	if res != nil && res.ID != 0 {
+		params["orderId"] = strconv.FormatUint(res.ID, 10)
+	}
+	return backpath.WithParams("/admin/orders", params)
+}
+
 func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	form := orderCreateFormFromPost(c)
@@ -121,12 +130,8 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 		return
 	}
 
-	params := map[string]string{"project": req.ProjectID}
-	if res != nil && res.ID != 0 {
-		params["orderId"] = strconv.FormatUint(res.ID, 10)
-	}
 	// 成功：结论片段带上按实体事实生成的下一步链接，前端按声明导航。
-	orderWriteResultNav(c, "ordCreated", backpath.WithParams("/admin/orders", params))
+	orderWriteResultNav(c, "ordCreated", orderCreatedBackURL(req.ProjectID, res))
 }
 
 // createFormFieldError 把字段级校验错误收成一条业务失败事实：

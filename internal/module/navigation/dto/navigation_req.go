@@ -1,5 +1,7 @@
 package navigationdto
 
+import "strings"
+
 type CreateReq struct {
 	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
 	Title     string `json:"title" form:"title" binding:"required"`
@@ -62,7 +64,7 @@ type BulkDeleteReq struct {
 // 同一事务里全成或全败。
 type AddSourceReq struct {
 	ProjectID  string   `json:"projectId" form:"projectId"`
-	Kind       string   `json:"kind" form:"kind"`
+	Kind       string   `json:"kind" form:"kind" binding:"required"`
 	SourceType string   `json:"sourceType" form:"sourceType"`
 	IDs        []string `json:"ids" form:"ids"`
 }
@@ -84,9 +86,19 @@ type SwapMoveReq struct {
 // projectId / kind / sourceType 定作用域，ids 是重复提交的候选标识。
 type AddSourceForm struct {
 	ProjectID  string   `json:"projectId" form:"projectId" binding:"required"`
-	Kind       string   `json:"kind" form:"kind"`
+	Kind       string   `json:"kind" form:"kind" binding:"required"`
 	SourceType string   `json:"sourceType" form:"sourceType" binding:"required"`
 	IDs        []string `json:"ids" form:"ids" binding:"required"`
+}
+
+// Req 把表单投影成 service 入参。
+func (f *AddSourceForm) Req() *AddSourceReq {
+	return &AddSourceReq{
+		ProjectID:  strings.TrimSpace(f.ProjectID),
+		Kind:       strings.TrimSpace(f.Kind),
+		SourceType: strings.TrimSpace(f.SourceType),
+		IDs:        f.IDs,
+	}
 }
 
 // PanelForm 是导航项悬浮面板的编辑表单（设置已有面板 / 新建面板共用字段）。

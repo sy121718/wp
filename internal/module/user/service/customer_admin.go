@@ -112,9 +112,15 @@ func (s *Service) SetCustomerStatus(ctx context.Context, req *userdto.CustomerSt
 		}
 	}
 
+	// 「这次启用还是停用」是业务结论，由 service 判定。
+	msgKey := userenums.MsgCustomerDisabled
+	if req.Status == userenums.StatusActive {
+		msgKey = userenums.MsgCustomerEnabled
+	}
 	return &userdto.CustomerStatusResp{
 		CustomerID: req.CustomerID,
 		Status:     req.Status,
+		MsgKey:     msgKey,
 	}, nil
 }
 
@@ -130,6 +136,14 @@ func (s *Service) UnlockCustomer(ctx context.Context, req *userdto.CustomerUnloc
 	locked := e.LockedUntilTime != nil && e.LockedUntilTime.After(now)
 	cleared := e.LoginFailureCount > 0
 	res = &userdto.CustomerUnlockResp{CustomerID: req.CustomerID, Unlocked: locked, Cleared: cleared}
+	// 「这次到底做了什么」是业务结论，由 service 判定；控制器只负责出口。
+	res.MsgKey = userenums.MsgCustomerNotLocked
+	if cleared {
+		res.MsgKey = userenums.MsgCustomerFailuresCleared
+	}
+	if locked {
+		res.MsgKey = userenums.MsgCustomerUnlocked
+	}
 	if !locked && !cleared {
 
 		return res, nil

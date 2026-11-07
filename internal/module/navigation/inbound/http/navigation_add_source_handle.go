@@ -2,7 +2,6 @@ package navigationhttp
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	ginbinding "github.com/gin-gonic/gin/binding"
@@ -19,26 +18,26 @@ import (
 // 空标识、非法 uuid、超限、候选缺失、无公开路径与路径冲突都由 service 一次性判定，
 // 控制器不先过滤/去重，避免把「混合空 ID」悄悄变成一次合法的部分提交。
 // 成功/失败都走公共出口：成功只播报一句，失败按真实状态码渲染共享错误片段。
-func (h *Handle) CreateFromSource(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	// 请求体上限：批量 ids 可能很长，超限整批拒绝而不是部分执行。
+// bindAddSourceForm 应用请求体上限并绑定表单；失败已由这里写出 400。
+//
+// 批量 ids 可能很长，超限整批拒绝而不是部分执行。
+func bindAddSourceForm(c *gin.Context) (*navigationdto.AddSourceForm, bool) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, navigationWriteMaxBodyBytes)
 	var form navigationdto.AddSourceForm
 	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
+		return nil, false
+	}
+	return &form, true
+}
+
+func (h *Handle) CreateFromSource(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	form, ok := bindAddSourceForm(c)
+	if !ok {
 		return
 	}
-	if strings.TrimSpace(form.ProjectID) == "" || strings.TrimSpace(form.Kind) == "" ||
-		strings.TrimSpace(form.SourceType) == "" || len(form.IDs) == 0 {
-		pageview.FailStatus(c, http.StatusBadRequest, navigationErrScene, navigationenums.Err(navigationenums.ErrInvalidParam))
-		return
-	}
-	if _, err := h.svc.AddSources(c.Request.Context(), &navigationdto.AddSourceReq{
-		ProjectID:  strings.TrimSpace(form.ProjectID),
-		Kind:       strings.TrimSpace(form.Kind),
-		SourceType: strings.TrimSpace(form.SourceType),
-		IDs:        form.IDs,
-	}); err != nil {
+	if _, err := h.svc.AddSources(c.Request.Context(), form.Req()); err != nil {
 		pageview.FailScene(c, navigationErrScene, err)
 		return
 	}

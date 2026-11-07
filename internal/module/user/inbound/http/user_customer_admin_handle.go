@@ -113,11 +113,7 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 		pageview.FailScene(c, userCustomerErrScene, err)
 		return
 	}
-	msgKey := userenums.MsgCustomerDisabled
-	if res.Status == userenums.StatusActive {
-		msgKey = userenums.MsgCustomerEnabled
-	}
-	customerWriteResult(c, msgKey)
+	customerWriteResult(c, res.MsgKey)
 }
 
 func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
@@ -137,14 +133,7 @@ func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
 		pageview.FailScene(c, userCustomerErrScene, err)
 		return
 	}
-	msgKey := userenums.MsgCustomerNotLocked
-	switch {
-	case res.Unlocked:
-		msgKey = userenums.MsgCustomerUnlocked
-	case res.Cleared:
-		msgKey = userenums.MsgCustomerFailuresCleared
-	}
-	customerWriteResult(c, msgKey)
+	customerWriteResult(c, res.MsgKey)
 }
 
 func customerQueryStatus(raw string) int {
