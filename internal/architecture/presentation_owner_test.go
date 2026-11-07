@@ -78,15 +78,12 @@ var moduleTextFuncs = map[string]struct{}{
 }
 
 var pendingModuleText = map[string]int{
-	"internal/module/block/inbound/http/block_err.go":                  1,
 	"internal/module/content/inbound/http/content_page.go":             2,
 	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
-	"internal/module/mail/inbound/http/mail_err.go":                    1,
 	"internal/module/mail/service/mail_account.go":                     3,
 	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；
 	// 这是全域唯一允许 service 取词的地方（理由见该文件头）。
 	"internal/module/media/service/media_export_text.go":      9,
-	"internal/module/page/inbound/http/page_jump.go":          1,
 
 }
 

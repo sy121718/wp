@@ -8,7 +8,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	mailenums "go_wp/internal/module/mail/enums"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
 	"go_wp/pkg/reqparams"
@@ -101,9 +101,13 @@ func mailQueryID(c *gin.Context) (uint64, bool) {
 	return reqparams.ParseUint(raw), true
 }
 
+// mailAutomationStatusNotice 组装「流程状态已变更」的一句文案。
+//
+// 状态名先按词条取词，再填进整句；两段取词都走 JSON 出口（pkg/response），
+// 不在控制器里自建 i18n 闭包。
 func mailAutomationStatusNotice(c *gin.Context, status string) string {
-	tr := mailTranslate(c)
-	return i18n.FillTranslate(tr,
-		mailenums.AutomationStatusChanged, mailenums.AutomationStatusChangedFallback,
-		map[string]string{"status": mailLabel(tr, mailenums.AutomationStatusLabel(status))})
+	pair := mailenums.AutomationStatusLabel(status)
+	statusText := response.MsgText(c, facing.Msg{Key: pair.Key, Fallback: pair.Fallback})
+	return response.FillText(c, mailenums.AutomationStatusChanged,
+		mailenums.AutomationStatusChangedFallback, map[string]string{"status": statusText})
 }

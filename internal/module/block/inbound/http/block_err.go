@@ -9,7 +9,6 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
@@ -71,7 +70,7 @@ func blockRefUsageText(c *gin.Context, err error) string {
 		tail := ""
 		if len(locs) > 3 {
 			shown = locs[:3]
-			tail = i18n.FillTranslate(tr, blockenums.UsageMore, " 等 {count} 处",
+			tail = response.FillText(c, blockenums.UsageMore, " 等 {count} 处",
 				map[string]string{"count": strconv.Itoa(len(locs))})
 		}
 		parts = append(parts, tr(key, key)+"："+strings.Join(shown, "、")+tail)

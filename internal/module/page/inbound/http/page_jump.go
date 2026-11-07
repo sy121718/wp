@@ -3,7 +3,6 @@ package pagehttp
 import (
 	"go_wp/pkg/backpath"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/view/jet"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -45,7 +44,7 @@ func pageErrMsgOf(c *gin.Context, f view.ErrFact) pageMsg {
 		return pageMsg{}
 	}
 	if f.Tail != "" {
-		if detail := pageDetailText(jet.TranslateFunc(jet.Lang(c)), f.Tail); detail != "" {
+		if detail := pageDetailText(c, f.Tail); detail != "" {
 
 			return pageMsg{Fallback: response.ArgsText(c, f.Key, f.Fallback, nil) + "：" + detail}
 		}
@@ -57,7 +56,7 @@ func pageErrText(c *gin.Context, err error) string {
 	return pageMsgText(c, pageErrMsg(c, err))
 }
 
-func pageDetailText(tr func(key, fallback string) string, tail string) string {
+func pageDetailText(c *gin.Context, tail string) string {
 	parts, ok := i18n.ParseErrorDetails(tail)
 	if !ok {
 		logger.Scene(pageErrScene).With("tail", i18n.DetailTailForLog(tail)).
@@ -72,7 +71,7 @@ func pageDetailText(tr func(key, fallback string) string, tail string) string {
 				Warn("业务错误的补充说明词条未登记，已省略该段")
 			continue
 		}
-		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+		out = append(out, response.FillText(c, p.Key, fallback, p.Args))
 	}
 	return strings.Join(out, "；")
 }
