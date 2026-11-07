@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -17,7 +16,6 @@ const (
 
 	seoAuditRouterFile = "internal/module/publication/inbound/http/publication_router.go"
 
-	seoAuditRetiredTemplate = "internal/templates/admin/analytics/seo_audit_result.html"
 )
 
 var seoAuditBannedFacts = map[string]string{
@@ -77,34 +75,26 @@ func TestSEOAuditResultTypesCarryFactsOnly(t *testing.T) {
 	}
 }
 
+// TestSEOAuditHasNoPageExit 约束体检端点的**出口形状**：
+//   - 它是普通界面写入口：标准表单 + Jet 片段，结果区由发起页面声明；
+//   - 不允许挂整页槽（那不是局部更新），也不允许走已清退的旧渲染包；
+//   - 结果类型只交事实（见 TestSEOAuditResultTypesCarryFactsOnly）。
 func TestSEOAuditHasNoPageExit(t *testing.T) {
 	root := repoRoot(t)
-
-	retired := filepath.Join(root, seoAuditRetiredTemplate)
-	if _, err := os.Stat(retired); err == nil {
-		t.Errorf("%s 仍然存在 —— 审计只回事实 JSON，结果区由页面预置结构 + 专用 JS 填值；"+
-			"片段模板复活就等于「同一端点两种形状」回来了", seoAuditRetiredTemplate)
-	} else if !os.IsNotExist(err) {
-		t.Errorf("检查 %s 失败（不是「不存在」而是别的错误，判据不可信）: %v", seoAuditRetiredTemplate, err)
-	}
 
 	handler := mustParseFile(t, filepath.Join(root, seoAuditHandleFile), seoAuditHandleFile)
 	for _, spec := range handler.Imports {
 		switch spec.Path.Value {
 		case `"go_wp/internal/adminui"`:
 			// 该包已清退；这条保留为终局断言：任何代码都不得再引用旧渲染出口。
-			t.Errorf("%s: import 了已清退的后台渲染包 —— handler 只做 binding → 调用 → JSON 出口", seoAuditHandleFile)
-		case `"go_wp/pkg/view"`:
-			t.Errorf("%s: import 了视图结果接口 —— 审计回数据，不回视图", seoAuditHandleFile)
+			t.Errorf("%s: import 了已清退的后台渲染包", seoAuditHandleFile)
 		}
 	}
 	for path, why := range map[string]string{
-		`"go_wp/pkg/binding"`:  "绑定唯一入口",
-		`"go_wp/pkg/response"`: "JSON 出口",
+		`"go_wp/pkg/view"`: "片段出口",
 	} {
 		if !hasImport(handler, path) {
-			t.Errorf("%s: 没有 import %s（%s）—— 缺了它，绑定或出口会退回手写形态",
-				seoAuditHandleFile, path, why)
+			t.Errorf("%s: 没有 import %s（%s）", seoAuditHandleFile, path, why)
 		}
 	}
 

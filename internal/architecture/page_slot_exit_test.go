@@ -46,7 +46,9 @@ func pageSlotWiredHandlers(t *testing.T, root string) map[string]string {
 					}
 					continue
 				}
-				if fs, ok := inner.Fun.(*ast.SelectorExpr); ok && fs.Sel.Name == "PageSlot" {
+				// 页面渲染槽的现行名称是 pageview.Slot；PageSlot 是已清退的旧名，
+				// 两者都认，避免改名后判据静默扫不到任何路由。
+				if fs, ok := inner.Fun.(*ast.SelectorExpr); ok && (fs.Sel.Name == "Slot" || fs.Sel.Name == "PageSlot") {
 					hasSlot = true
 				}
 			}

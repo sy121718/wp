@@ -18,9 +18,14 @@ var templateComment = regexp.MustCompile("(?s)<!--.*?-->|\\{\\*.*?\\*\\}")
 
 var uiKeyPrefixes = []string{"admin.", "shell.", "user.", "workbench.", "site.", "msg_"}
 
+// flatUIKey 是 AGENTS.md 规定的扁平短 key 形态：ASCII 字母数字、首字符字母、长度 1–15。
+var flatUIKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,14}$`)
+
+// uiKeyAllowed 认两种合法形态：
+//  1. 带域前缀的点分 key（历史形态，仍在用）；
+//  2. 扁平短 key（现行规则：一个 key 表达完整语义，分类走 category 字段）。
 func uiKeyAllowed(key string) bool {
 	if strings.HasPrefix(key, "Msg") {
-
 		return true
 	}
 	for _, prefix := range uiKeyPrefixes {
@@ -28,7 +33,7 @@ func uiKeyAllowed(key string) bool {
 			return true
 		}
 	}
-	return false
+	return flatUIKey.MatchString(key)
 }
 
 func TestTemplateTranslateKeysStayInUIDomain(t *testing.T) {
