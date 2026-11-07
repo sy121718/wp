@@ -17,6 +17,7 @@ import (
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
 )
@@ -33,8 +34,15 @@ func (s *articleBulkDeleteStub) Delete(_ context.Context, req *contentdto.Delete
 	return nil
 }
 
-// BulkDeleteArticles 复刻真实语义：任一失败整批拒绝。
-func (s *articleBulkDeleteStub) BulkDeleteArticles(_ context.Context, ids []string) error {
+// BulkDeleteArticles 复刻真实语义：先归一（去重 / 上限），任一失败整批拒绝。
+func (s *articleBulkDeleteStub) BulkDeleteArticles(_ context.Context, raw []string) error {
+	ids, err := bulkids.Normalize(raw)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return contentenums.Err(contentenums.ErrInvalidParam)
+	}
 	for _, id := range ids {
 		if s.failIDs[id] {
 			return errors.New(contentenums.ErrNotFound)
@@ -104,16 +112,21 @@ func TestArticlesBulkDeleteRendersJumpPage(t *testing.T) {
 func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	rec := articleBulkPost(e, url.Values{})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("未选中是成功事实（未改动），应 200，实际 %d", rec.Code)
+	// 空选择不是「删了 0 条」的成功：整批拒绝，交共享失败出口。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("未选中应整批拒绝 400，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `role="status"`) {
-		t.Errorf("未选中应走统一提示组件：%s", body[:min(len(body), 240)])
+	if !strings.Contains(body, `data-ui-error`) {
+		t.Errorf("未选中应渲染错误区：%s", body[:min(len(body), 240)])
 	}
 }
 
 func TestArticlesBulkDeleteLimitRendersControlledText(t *testing.T) {
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": bulkids.TooManyTemplate},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	form := url.Values{}
 	for i := 0; i < bulkids.MaxIDs+1; i++ {

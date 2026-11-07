@@ -12,8 +12,10 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/reqparams"
 )
 
 // 批量删除：全成或全败。
@@ -611,4 +613,32 @@ func blockSummary(items []facing.BlockedItem) (string, int) {
 	default:
 		return adminenums.ErrBulkDeleteEmpty, statusBadInput
 	}
+}
+
+// NormalizeBulkIDs 是后台批量写入口的共享 id 归一：去重、校验上限、
+// 逐条解析为数字 id，并把非法项作为可定位明细交回。
+//
+// 归一属于业务规则，归 service；控制器只把表单原始值交进来、把结果交给出口。
+func NormalizeBulkIDs(raw []string) (ids []uint64, err error) {
+	normalized, berr := bulkids.Normalize(raw)
+	if berr != nil {
+		return nil, berr
+	}
+	ids = make([]uint64, 0, len(normalized))
+	invalid := make([]string, 0)
+	for _, item := range normalized {
+		id := reqparams.ParseUint(item)
+		if id == 0 {
+			invalid = append(invalid, item)
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if len(invalid) > 0 {
+		return nil, NewInvalidIDsError(invalid)
+	}
+	if len(ids) == 0 {
+		return nil, adminenums.Err(adminenums.ErrAdminSelectionEmpty)
+	}
+	return ids, nil
 }

@@ -7,7 +7,7 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/pkg/bulkids"
+	orderservice "go_wp/internal/module/order/service"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -79,15 +79,12 @@ func couponBackURL(c *gin.Context, projectID string) string {
 		couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0)
 }
 
-// orderNormalizeBulkIDs 归一化表单勾选的 id；超过上限按 400 打回。
+// orderNormalizeBulkIDs 把归一交给 service（去重与上限属于业务规则），
+// 这里只负责把失败事实交给共享出口。
 func orderNormalizeBulkIDs(c *gin.Context, ids []string) ([]string, bool) {
-	normalized, err := bulkids.Normalize(ids)
+	normalized, err := orderservice.NormalizeBatchIDs(ids)
 	if err != nil {
 		orderWriteFail(c, err)
-		return nil, false
-	}
-	if len(normalized) == 0 {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return nil, false
 	}
 	return normalized, true

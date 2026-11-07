@@ -257,13 +257,8 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 
 func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
-	if berr != nil {
-
-		articleListJump(c, false, articleBulkIDsJumpMsg(c, berr))
-		return
-	}
-	if err := h.contents.BulkDeleteArticles(c.Request.Context(), ids); err != nil {
+	// 原始 ids 原样交给 service：去重、上限与整批拒绝都归它。
+	if err := h.contents.BulkDeleteArticles(c.Request.Context(), c.PostFormArray("ids")); err != nil {
 		pageview.FailScene(c, articleErrScene, err)
 		return
 	}

@@ -353,3 +353,18 @@ func (s *Service) setCouponTargetsStatusTx(ctx context.Context, targets []coupon
 	}
 	return wrote, nil
 }
+
+// NormalizeBatchIDs 是批量写入口的共享 id 归一：去重、去空白并校验上限。
+//
+// 归一属于业务规则（身份去重与上限），归 service；控制器只把表单原始值交进来。
+// 返回空集时按参数错误拒绝——空选择不是「改了 0 条」的成功。
+func NormalizeBatchIDs(raw []string) ([]string, error) {
+	normalized, err := bulkids.Normalize(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(normalized) == 0 {
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
+	}
+	return normalized, nil
+}

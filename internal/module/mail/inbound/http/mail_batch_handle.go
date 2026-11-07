@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mailenums "go_wp/internal/module/mail/enums"
-	bulkids "go_wp/pkg/bulkids"
+	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/pkg/facing"
 	pageview "go_wp/pkg/view"
 )
@@ -46,20 +46,12 @@ func mailBatchIDs(raw []string) (ids []uint64, invalid []string) {
 	return ids, invalid
 }
 
-// mailBatchIDsOrFail 归一化并校验批量 id：超限、空集、非法项都按整批失败写出。
+// mailBatchIDsOrFail 把归一交给 service（去重、上限与解析都是业务规则），
+// 这里只负责把失败事实交给共享出口。
 func mailBatchIDsOrFail(c *gin.Context, raw []string) ([]uint64, bool) {
-	normalized, berr := bulkids.Normalize(mailContactIDs(raw))
-	if berr != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, berr)
-		return nil, false
-	}
-	if len(normalized) == 0 {
-		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, mailenums.Err(mailenums.ErrInvalidParam))
-		return nil, false
-	}
-	ids, invalid := mailBatchIDs(normalized)
-	if len(invalid) > 0 {
-		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, &mailInvalidBatchError{ids: invalid})
+	ids, err := mailservice.NormalizeBatchIDs(raw)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, mailErrScene, err)
 		return nil, false
 	}
 	return ids, true

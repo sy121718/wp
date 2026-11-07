@@ -1,7 +1,6 @@
 package adminhttp
 
 import (
-	bulkids "go_wp/pkg/bulkids"
 	"context"
 	"errors"
 	"net"
@@ -342,15 +341,9 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		// 非法 id 不静默丢：作为 400 的明细逐条点名，前端能指出哪一个不对。
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	res, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
@@ -509,15 +502,9 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		// 非法 id 不静默丢：作为 400 的明细逐条点名，前端能指出哪一个不对。
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: normalized}); err != nil {
@@ -644,15 +631,9 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		// 非法 id 不静默丢：作为 400 的明细逐条点名，前端能指出哪一个不对。
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{IDs: normalized}); err != nil {
@@ -1063,14 +1044,9 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: normalized}); err != nil {
@@ -1185,15 +1161,9 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		// 非法 id 不静默丢：作为 400 的明细逐条点名，前端能指出哪一个不对。
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	res, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: normalized})
@@ -1342,15 +1312,9 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 
 func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 	// 批量删除要么全成要么全败：一次进 service，同事务校验 + 删除。
-	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
+	normalized, berr := adminservice.NormalizeBulkIDs(c.PostFormArray("ids"))
 	if berr != nil {
 		response.ErrorStatusAuto(c, adminErrScene, berr)
-		return
-	}
-	normalized, invalid := parseBulkIDs(ids)
-	if len(invalid) > 0 {
-		// 非法 id 不静默丢：作为 400 的明细逐条点名，前端能指出哪一个不对。
-		response.ErrorStatusAuto(c, adminErrScene, adminservice.NewInvalidIDsError(invalid))
 		return
 	}
 	if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{IDs: normalized}); err != nil {

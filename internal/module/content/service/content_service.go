@@ -17,6 +17,7 @@ import (
 	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
 	"go_wp/pkg/builder/core"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
@@ -290,7 +291,12 @@ func (s *Service) translateData(ctx context.Context, lang, entityType string, da
 // BulkDeleteArticles 在一个事务里删除多篇文章：任一失败整批回滚。
 //
 // 失效通知在提交后统一发出：回滚不应留下「已通知失效、库里却没有变化」的偏差。
-func (s *Service) BulkDeleteArticles(ctx context.Context, ids []string) error {
+func (s *Service) BulkDeleteArticles(ctx context.Context, rawIDs []string) error {
+	// 归一（去重与上限）属于业务规则，归 service；控制器只交表单原始值。
+	ids, err := bulkids.Normalize(rawIDs)
+	if err != nil {
+		return err
+	}
 	if len(ids) == 0 {
 		return contentenums.Err(contentenums.ErrInvalidParam)
 	}
