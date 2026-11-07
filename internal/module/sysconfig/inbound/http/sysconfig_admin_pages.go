@@ -13,7 +13,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
@@ -82,7 +82,6 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 		}
 	}
 	pageview.Render(c, &sysconfigdto.SystemSettingsPageResp{
-		Title:           i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemTitle, "系统设置"),
 		I18N:            i18nGroup,
 		Trade:           tradeGroup,
 		LangOptions:     toAnySlice(langs),
@@ -109,14 +108,14 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 	i18nVersion := req.I18NVersion
 	tradeVersion := req.TradeVersion
 
-	if status, msg := h.validateOptions(c, lang, mode, country, currency); msg != "" {
-		pageview.FailStatus(c, status, "sysconfig", errors.New(msg))
+	if status, verr := h.validateOptions(c, lang, mode, country, currency); verr != nil {
+		pageview.FailStatus(c, status, "sysconfig", verr)
 		return
 	}
 
-	i18nGroup, errText := h.loadGroup(c, groupI18N)
-	if errText != "" {
-		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", errors.New(errText))
+	i18nGroup, gerr := h.loadGroupErr(c, groupI18N)
+	if gerr != nil {
+		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", gerr)
 		return
 	}
 	tradeGroup, errText := h.loadGroup(c, groupTrade)
@@ -148,17 +147,35 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 	pageview.Success(c)
 }
 
+// loadGroup 是读取链路：页面数据里的 LoadErr 需要成品文案（JSON 出口取词）。
 func (h *AdminHandle) loadGroup(c *gin.Context, key string) (groupView, string) {
+	view, err := h.loadGroupErr(c, key)
+	if err == nil {
+		return view, ""
+	}
+	return view, response.MsgText(c, facing.Msg{Key: facingKeyOf(err), Fallback: ""})
+}
+
+// facingKeyOf 取错误事实的 key；非业务错误交给归口。
+func facingKeyOf(err error) string {
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		return fact.Key
+	}
+	return response.InternalKey
+}
+
+// loadGroupErr 在保存链路里返回错误事实；调用方交共享失败出口取词。
+func (h *AdminHandle) loadGroupErr(c *gin.Context, key string) (groupView, error) {
 	ctx := c.Request.Context()
 	g, err := h.svc.GetGroup(ctx, key)
 	if err != nil {
 		if errors.Is(err, sysconfigcontract.ErrGroupNotFound) {
 			return groupView{Key: key, Data: map[string]any{}},
-				i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemGroupMissing, "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
+				facing.WithStatus(facing.New(sysconfigenums.AdminSystemGroupMissing), http.StatusInternalServerError)
 		}
-		return groupView{Key: key, Data: map[string]any{}}, response.MessageOf(c, "sysconfig", err)
+		return groupView{Key: key, Data: map[string]any{}}, err
 	}
-	return groupView{Key: g.Key, Version: g.Version, Data: g.Data}, ""
+	return groupView{Key: g.Key, Version: g.Version, Data: g.Data}, nil
 }
 
 func mergeGroup(current map[string]any, editable []string, values map[string]string) map[string]any {
@@ -174,34 +191,35 @@ func mergeGroup(current map[string]any, editable []string, values map[string]str
 	return merged
 }
 
-func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, currency string) (int, string) {
+// validateOptions 只用业务错误事实回答：状态码与词条 key 都在事实里，
+// 成品文案由共享失败出口按请求语言取。
+func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, currency string) (int, error) {
 	ctx := c.Request.Context()
-	t := i18n.TranslateFunc(response.RequestLanguage(c))
 	if lang == "" || country == "" || currency == "" || !contains(siteLangURLModeValues, mode) {
-		return http.StatusBadRequest, t(sysconfigenums.ErrInvalidParam, "请把四个设置项都选上")
+		return http.StatusBadRequest, facing.WithStatus(facing.New(sysconfigenums.ErrInvalidParam), http.StatusBadRequest)
 	}
 	langs, err := h.dict.ListDictOptions(ctx, "language")
 	if err != nil {
-		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
+		return http.StatusInternalServerError, err
 	}
 	if !hasCode(langs, lang) {
-		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrLangUnknown, "选择的默认语言不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, facing.WithStatus(facing.New(sysconfigenums.AdminSystemErrLangUnknown), http.StatusBadRequest)
 	}
 	currencies, err := h.dict.ListDictOptions(ctx, "currency")
 	if err != nil {
-		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
+		return http.StatusInternalServerError, err
 	}
 	if !hasCode(currencies, currency) {
-		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCurrencyUnknown, "选择的默认货币不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, facing.WithStatus(facing.New(sysconfigenums.AdminSystemErrCurrencyUnknown), http.StatusBadRequest)
 	}
 	countries, err := h.dict.ListCountryOptions(ctx, response.RequestLanguage(c))
 	if err != nil {
-		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
+		return http.StatusInternalServerError, err
 	}
 	if !hasCode2(countries, country) {
-		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCountryUnknown, "选择的默认国家不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, facing.WithStatus(facing.New(sysconfigenums.AdminSystemErrCountryUnknown), http.StatusBadRequest)
 	}
-	return http.StatusOK, ""
+	return http.StatusOK, nil
 }
 
 func contains(list []string, v string) bool {

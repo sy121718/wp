@@ -7,6 +7,8 @@
    前端：四字段用 .form-grid（桌面两列、窄屏一列，宽度 min(100%, …)），控件全是原生
    <select> —— 鼠标 / 滚轮 / 触屏 / 键盘四种输入天然可用。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.system.title", "系统设置") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.system.title", "系统设置") }}{{end}}
 {{block body()}}
 <div class="stack">
     <header class="page-head">
