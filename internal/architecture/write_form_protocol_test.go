@@ -48,13 +48,20 @@ func TestWriteFormsHaveSingleSubmitProtocol(t *testing.T) {
 	assertBudget(t, hits, pendingFormProtocolConflicts, "同一个写表单只能挂一套提交声明（htmx 或 json_write）")
 }
 
+// TestWriteBaseEntryGuardsOnUrl 锁住「写基座只认领声明过的写表单」：
+// data-write-url 旧协议已退役，现行契约是 data-write 认领标记 + HTMX 提交；
+// 基座不得接管普通筛选 / 搜索表单，也不得自带 URL 执行器。
 func TestWriteBaseEntryGuardsOnUrl(t *testing.T) {
 	src := readFile(t, filepath.Join(repoRoot(t),
-		"internal/templates/static/js/ui/write-base.js"))
-	if !strings.Contains(src, "if (!attr(form, submitter, 'data-write-url')) return;") {
-		t.Fatalf("write-base.js 的 submit 入口不再以 data-write-url 为空即放行为前提 —— " +
-			"这会让页面上的非写表单（筛选 / 搜索）也被接管并 post 到空 URL。" +
-			"见该文件 onSubmit 附近。")
+		"pkg/view/ui/assets/js/ui/write-base.js"))
+	if strings.Contains(src, "data-write-url") {
+		t.Fatal("write-base.js 仍引用已退役的 data-write-url —— 旧执行器不应复活")
+	}
+	if !strings.Contains(src, "data-write'") && !strings.Contains(src, "data-write\"") {
+		t.Fatal("write-base.js 不再按 data-write 认领标记判断写表单 —— 会误接管普通筛选/搜索表单")
+	}
+	if !strings.Contains(src, "document.addEventListener('submit'") {
+		t.Fatal("write-base.js 缺少 submit 拦截入口：预览态与未认领表单将发出真实请求")
 	}
 }
 
