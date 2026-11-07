@@ -112,33 +112,11 @@ func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 }
 
 func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req inventorydto.TransferShipReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
-		return
-	}
-	_, err := h.transfers.ShipTransfer(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, inventoryErrScene, err)
-		return
-	}
-	inventoryWriteOK(c)
+	runTransferWrite(c, nil, h.transfers.ShipTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req inventorydto.TransferReceiveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
-		return
-	}
-	_, err := h.transfers.ReceiveTransfer(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, inventoryErrScene, err)
-		return
-	}
-	inventoryWriteOK(c)
+	runTransferWrite(c, nil, h.transfers.ReceiveTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
@@ -155,53 +133,28 @@ func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Conte
 }
 
 func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req inventorydto.TransferApproveReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
-		return
-	}
-
-	req.OperatorID = int64(builtin.CurrentUserID(c))
-	req.OperatorName = builtin.OperatorName(c)
-	_, err := h.transfers.ApproveTransfer(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, inventoryErrScene, err)
-		return
-	}
-	inventoryWriteOK(c)
+	runTransferWrite(c, transferApproveOperator, h.transfers.ApproveTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req inventorydto.TransferRejectReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
-		return
-	}
-	req.OperatorID = int64(builtin.CurrentUserID(c))
-	req.OperatorName = builtin.OperatorName(c)
-	_, err := h.transfers.RejectTransfer(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, inventoryErrScene, err)
-		return
-	}
-	inventoryWriteOK(c)
+	runTransferWrite(c, transferRejectOperator, h.transfers.RejectTransfer, inventoryWriteOK)
 }
 
 func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req inventorydto.TransferCancelReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
-		return
-	}
-	_, err := h.transfers.CancelTransfer(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, inventoryErrScene, err)
-		return
-	}
-	inventoryWriteOK(c)
+	runTransferWrite(c, nil, h.transfers.CancelTransfer, inventoryWriteOK)
+}
+
+// transferOperatorOf 取审批人：身份只从会话取，不能由表单提交。
+func transferOperatorOf(c *gin.Context) (int64, string) {
+	return int64(builtin.CurrentUserID(c)), builtin.OperatorName(c)
+}
+
+func transferApproveOperator(c *gin.Context, req *inventorydto.TransferApproveReq) {
+	req.OperatorID, req.OperatorName = transferOperatorOf(c)
+}
+
+func transferRejectOperator(c *gin.Context, req *inventorydto.TransferRejectReq) {
+	req.OperatorID, req.OperatorName = transferOperatorOf(c)
 }
 
 type inventoryTransferPageHandle struct {
@@ -267,4 +220,26 @@ func (h *inventoryTransferPageHandle) InventoryTransferListJSON(c *gin.Context) 
 		return
 	}
 	response.Success(c, list)
+}
+
+// runTransferWrite 是调拨单写端点的统一骨架：绑定表单 → 可选注入可信字段 →
+// 调用 service → 统一成功出口。失败已由这里写出，控制器不再重复判断。
+func runTransferWrite[F, R any](c *gin.Context,
+	prepare func(*gin.Context, *F),
+	call func(context.Context, *F) (R, error),
+	success func(*gin.Context)) {
+	c.Header("Cache-Control", "no-store")
+	var req F
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, inventoryErrScene, err)
+		return
+	}
+	if prepare != nil {
+		prepare(c, &req)
+	}
+	if _, err := call(c.Request.Context(), &req); err != nil {
+		pageview.FailScene(c, inventoryErrScene, err)
+		return
+	}
+	success(c)
 }

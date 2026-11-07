@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -60,6 +61,34 @@ func orderWriteFail(c *gin.Context, err error) {
 func orderBulkFail(c *gin.Context, items []facing.BlockedItem) {
 	pageview.FailStatus(c, http.StatusConflict, orderErrScene,
 		&orderBulkRejectedError{items: items})
+}
+
+// bindOrderForm 绑定订单写表单；失败已由这里写出 400。
+func bindOrderForm[T any](c *gin.Context) *T {
+	c.Header("Cache-Control", "no-store")
+	var req T
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return nil
+	}
+	return &req
+}
+
+// orderWriteFailure 记录内部原因后走公共失败出口。
+func orderWriteFailure(c *gin.Context, err error, message string) {
+	orderLogWriteError(c, err, message)
+	orderWriteFail(c, err)
+}
+
+// orderBulkFailure 是批量写失败的完整出口：记录内部原因并整批拒绝，
+// 逐条原因由 BlockedItems 的数据出口交给前端。
+func orderBulkFailure(c *gin.Context, err error, message, firstID string) {
+	orderLogWriteError(c, err, message)
+	orderBulkFail(c, []facing.BlockedItem{{
+		ID:        firstID,
+		ReasonKey: orderenums.ErrBulkRejected,
+		Fallback:  orderFacingFallback(c, err),
+	}})
 }
 
 type orderBulkRejectedError struct {

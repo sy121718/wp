@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -29,14 +28,12 @@ func couponTimeInputValue(raw string) string {
 // couponDeleteBulk 是勾选多张优惠码的批量删除：表单原样交给 service 一次调用，
 // 整批同一事务；失败只回一句公共文案，逐条原因走 BlockedItems 的数据出口。
 func (h *Handle) couponDeleteBulk(c *gin.Context) {
-	var form orderdto.CouponBulkDeleteReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+	form := bindOrderForm[orderdto.CouponBulkDeleteReq](c)
+	if form == nil {
 		return
 	}
-	if _, err := h.svc.DeleteCoupons(c.Request.Context(), &form); err != nil {
-		orderLogWriteError(c, err, "批量删除优惠码失败")
-		orderWriteFail(c, err)
+	if _, err := h.svc.DeleteCoupons(c.Request.Context(), form); err != nil {
+		orderWriteFailure(c, err, "批量删除优惠码失败")
 		return
 	}
 	// 普通写成功只回公共一句：批量要么全成、要么全败，不展示逐条回执。
@@ -46,29 +43,36 @@ func (h *Handle) couponDeleteBulk(c *gin.Context) {
 // couponToggleBulk 是勾选多张优惠码的批量启停：一次调用只改 status，
 // 不整行覆盖名称、门槛、时间窗等其它字段。
 func (h *Handle) couponToggleBulk(c *gin.Context) {
-	var form orderdto.CouponBulkStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+	form := bindOrderForm[orderdto.CouponBulkStatusForm](c)
+	if form == nil {
 		return
 	}
-	target, ok := couponToggleTarget(form.Status)
+	req, ok := couponToggleReq(c, form)
 	if !ok {
 		orderWriteBadInput(c, orderenums.ErrInvalidParam)
 		return
 	}
+	if _, err := h.svc.SetCouponsStatus(c.Request.Context(), req); err != nil {
+		orderWriteFailure(c, err, "批量启停优惠码失败")
+		return
+	}
+	pageview.Success(c)
+}
+
+// couponToggleReq 把表单投影成 service 入参：目标状态只接受 "0"/"1"，
+// 操作人只从会话取。
+func couponToggleReq(c *gin.Context, form *orderdto.CouponBulkStatusForm) (*orderdto.CouponBulkStatusReq, bool) {
+	target, ok := couponToggleTarget(form.Status)
+	if !ok {
+		return nil, false
+	}
 	operatorID, _ := operatorFromContext(c)
-	req := &orderdto.CouponBulkStatusReq{
+	return &orderdto.CouponBulkStatusReq{
 		IDs:        form.IDs,
 		ProjectID:  form.ProjectID,
 		Status:     target,
 		OperatorID: operatorID,
-	}
-	if _, err := h.svc.SetCouponsStatus(c.Request.Context(), req); err != nil {
-		orderLogWriteError(c, err, "批量启停优惠码失败")
-		orderWriteFail(c, err)
-		return
-	}
-	pageview.Success(c)
+	}, true
 }
 
 // couponToggleTarget 只接受 "0" / "1"：表单取值是字符串，语义是启停。

@@ -1,15 +1,14 @@
 package orderhttp
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
@@ -19,61 +18,78 @@ var (
 	orderCancelBulkKeys = map[string]bool{"ids": true, "remark": true}
 )
 
-// orderStatusBulk 是勾选多张订单的批量流转。
-func (h *Handle) orderStatusBulk(c *gin.Context) {
-	var form orderdto.OrderStatusForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+// runOrderBulkWrite 是批量写端点的统一骨架：绑定 → 归一 → 投影 → 调用 → 出口。
+// 归一（去重 / 上限）、投影里的人身份与业务校验、失败渲染都已在下面写出口，
+// 各批量端点只剩一句调用。
+func runOrderBulkWrite[F, T any](c *gin.Context,
+	idsOf func(*F) []string,
+	build func(*gin.Context, *F, []string) ([]*T, bool),
+	call func(context.Context, []*T) error,
+	message string) {
+	form := bindOrderForm[F](c)
+	if form == nil {
 		return
 	}
-	ids, ok := orderNormalizeBulkIDs(c, form.OrderIDs)
+	ids, ok := orderNormalizeBulkIDs(c, idsOf(form))
 	if !ok {
 		return
 	}
-	fmtStatus := strings.TrimSpace(form.ToStatus)
-	if fmtStatus == "" {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+	reqs, ok := build(c, form, ids)
+	if !ok {
 		return
 	}
-	operatorID, operatorName := operatorFromContext(c)
-	ctx := c.Request.Context()
+	if err := call(c.Request.Context(), reqs); err != nil {
+		orderBulkFailure(c, err, message, ids[0])
+		return
+	}
+	pageview.Success(c)
+}
 
+// orderStatusBulk 是勾选多张订单的批量流转。
+func (h *Handle) orderStatusBulk(c *gin.Context) {
+	runOrderBulkWrite(c,
+		func(f *orderdto.OrderStatusForm) []string { return f.OrderIDs },
+		orderStatusBulkReqs, h.svc.ChangeStatusBatch, "批量流转订单失败")
+}
+
+func orderStatusBulkReqs(c *gin.Context, form *orderdto.OrderStatusForm,
+	ids []string) ([]*orderdto.ChangeStatusReq, bool) {
+	to := strings.TrimSpace(form.ToStatus)
+	if to == "" {
+		orderWriteBadInput(c, orderenums.ErrInvalidParam)
+		return nil, false
+	}
+	operatorID, operatorName := operatorFromContext(c)
+	return orderChangeStatusReqs(ids, to, form.Remark, operatorID, operatorName), true
+}
+
+func orderChangeStatusReqs(ids []string, to, remark string, operatorID uint64,
+	operatorName string) []*orderdto.ChangeStatusReq {
 	reqs := make([]*orderdto.ChangeStatusReq, 0, len(ids))
 	for _, rawID := range ids {
 		id, _ := strconv.ParseUint(rawID, 10, 64)
 		reqs = append(reqs, &orderdto.ChangeStatusReq{
 			OrderID:  id,
-			ToStatus: fmtStatus,
-			Remark:   form.Remark,
+			ToStatus: to,
+			Remark:   remark,
 
 			OperatorType: orderOperatorTypeAdmin,
 			OperatorID:   operatorID,
 			OperatorName: operatorName,
 		})
 	}
-	if err := h.svc.ChangeStatusBatch(ctx, reqs); err != nil {
-		orderLogWriteError(c, err, "批量流转订单失败")
-		orderBulkFail(c, []facing.BlockedItem{{
-			ID:        ids[0],
-			ReasonKey: orderenums.ErrBulkRejected,
-			Fallback:  orderFacingFallback(c, err),
-		}})
-		return
-	}
-	pageview.Success(c)
+	return reqs
 }
 
 // orderCancelBulk 是勾选多张订单的批量取消：备注即取消原因。
 func (h *Handle) orderCancelBulk(c *gin.Context) {
-	var form orderdto.OrderCancelForm
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		orderWriteBadInput(c, orderenums.ErrInvalidParam)
-		return
-	}
-	ids, ok := orderNormalizeBulkIDs(c, form.OrderIDs)
-	if !ok {
-		return
-	}
+	runOrderBulkWrite(c,
+		func(f *orderdto.OrderCancelForm) []string { return f.OrderIDs },
+		orderCancelBulkReqs, h.svc.CancelOrderBatch, "批量取消订单失败")
+}
+
+func orderCancelBulkReqs(c *gin.Context, form *orderdto.OrderCancelForm,
+	ids []string) ([]*orderdto.CancelOrderReq, bool) {
 	// 批量取消的备注框就叫 remark；单条取消叫 reason。两者都接受，优先 remark。
 	reason := strings.TrimSpace(form.Remark)
 	if reason == "" {
@@ -81,11 +97,9 @@ func (h *Handle) orderCancelBulk(c *gin.Context) {
 	}
 	if reason == "" {
 		orderWriteBadInput(c, orderenums.BulkCancelReasonRequired)
-		return
+		return nil, false
 	}
 	operatorID, operatorName := operatorFromContext(c)
-	ctx := c.Request.Context()
-
 	reqs := make([]*orderdto.CancelOrderReq, 0, len(ids))
 	for _, rawID := range ids {
 		id, _ := strconv.ParseUint(rawID, 10, 64)
@@ -97,16 +111,7 @@ func (h *Handle) orderCancelBulk(c *gin.Context) {
 			OperatorName: operatorName,
 		})
 	}
-	if err := h.svc.CancelOrderBatch(ctx, reqs); err != nil {
-		orderLogWriteError(c, err, "批量取消订单失败")
-		orderBulkFail(c, []facing.BlockedItem{{
-			ID:        ids[0],
-			ReasonKey: orderenums.ErrBulkRejected,
-			Fallback:  orderFacingFallback(c, err),
-		}})
-		return
-	}
-	pageview.Success(c)
+	return reqs, true
 }
 
 // orderFacingFallback 取一条业务错误按请求语言取词后的兜底文案；非业务错误统一给内部错误。

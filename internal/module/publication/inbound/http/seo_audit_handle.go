@@ -20,12 +20,21 @@ func NewSeoAuditHandle(run func(context.Context, string) (pubservice.AuditResult
 	return &SeoAuditHandle{run: run}
 }
 
-// SeoAudit 接收标准表单，结果由 Jet 片段渲染成结论区。
-func (h *SeoAuditHandle) SeoAudit(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
+// bindSeoAuditReq 绑定 SEO 审计表单；失败已由这里写出 400。
+func bindSeoAuditReq(c *gin.Context) (*pubdto.SeoAuditReq, bool) {
 	var req pubdto.SeoAuditReq
 	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
 		pageview.FailStatus(c, http.StatusBadRequest, "publication", err)
+		return nil, false
+	}
+	return &req, true
+}
+
+// SeoAudit 接收标准表单，结果由 Jet 片段渲染成结论区。
+func (h *SeoAuditHandle) SeoAudit(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	req, ok := bindSeoAuditReq(c)
+	if !ok {
 		return
 	}
 	result, err := h.run(c.Request.Context(), req.ResolveProject(nil))
