@@ -169,6 +169,8 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	// 写成功走共享成功出口（生产 assembly 同款接线）。
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/translations", pageview.UseRenderer(pageview.RenderPage), handle.ProductTranslations)
 
@@ -722,6 +724,8 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	// 写成功走共享成功出口（生产 assembly 同款接线）。
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.SaveProductTranslations)
 

@@ -12,6 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
+
+	"go_wp/internal/templates"
+
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
@@ -196,12 +201,19 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/api/navigation/update", handle.Update)
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	// 生产装配同款：该端点在模板里是 HTMX 写表单，成功是 HTML 片段（见
+	// internal/templates/admin/navigation/navigation_translations.html），所以这里挂
+	// 失败出口、请求取词与共享成功出口三者。
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
+	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
+	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
 	body := fmt.Sprintf(
 		`{"action":"translations","project":%q,"lang":"en-US","rows":[{"context":%q,"hash":%q,"target":%q}]}`,
 		f.projectID, i18n.ContentContext("navigation", "label"), i18n.ContentHash(sourceText), target)
-	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/translations", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
@@ -209,17 +221,8 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 		t.Fatalf("保存译文应 200（JSON 写接口），实际 %d，body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	var envelope struct {
-		Code int `json:"code"`
-		Data struct {
-			Written int `json:"written"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("保存响应不是 JSON 信封: %v，body=%s", err, recorder.Body.String())
-	}
-	if envelope.Code != http.StatusOK || envelope.Data.Written == 0 {
-		t.Fatalf("保存必须真的写入译文，实际 code=%d written=%d body=%s",
-			envelope.Code, envelope.Data.Written, recorder.Body.String())
+	// 成功是共享成功组件的一句话；写入条数不进提示（明细归数据出口）。
+	if !strings.Contains(recorder.Body.String(), `role="status"`) {
+		t.Fatalf("保存成功应渲染共享成功片段，body=%s", recorder.Body.String())
 	}
 }

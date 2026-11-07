@@ -23,8 +23,9 @@ func returnFormEngine(h *orderhttp.Handle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
+	// 生产装配在基础层挂失败出口、共享成功出口与请求取词；缺了它们片段渲染为空或成功路径 500。
 	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/order/return/approve", pageview.HTMLFragment, h.ApproveReturn)
 	engine.POST("/api/order/return/reject", pageview.HTMLFragment, h.RejectReturn)

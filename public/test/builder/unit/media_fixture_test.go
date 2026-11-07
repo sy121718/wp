@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"go_wp/internal/pipeline"
 	"go_wp/pkg/upload"
 )
 
@@ -21,6 +22,8 @@ func initFixtureMedia() error {
 }
 
 func TestMain(m *testing.M) {
+	// 业务组件的视图构建必须在首次编译前登记；生产装配在基础层调同一入口。
+	pipeline.RegisterBusinessViews()
 	if err := initFixtureMedia(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
