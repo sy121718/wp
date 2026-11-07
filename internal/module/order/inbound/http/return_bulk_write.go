@@ -1,6 +1,7 @@
 package orderhttp
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -14,7 +15,10 @@ import (
 func (h *Handle) returnBulkApprove(c *gin.Context) {
 	runOrderBulkWrite(c,
 		func(f *orderdto.ReturnReviewForm) []string { return f.ReturnIDs },
-		returnApproveReqs, h.svc.ApproveReturnBatch, "批量同意退货申请失败")
+		returnApproveReqs,
+		func(ctx context.Context, reqs []*orderdto.ReturnReviewReq) error {
+			return h.svc.ApproveReturnBatch(ctx, reqs)
+		}, "批量同意退货申请失败")
 }
 
 func returnApproveReqs(c *gin.Context, form *orderdto.ReturnReviewForm,
@@ -27,7 +31,10 @@ func returnApproveReqs(c *gin.Context, form *orderdto.ReturnReviewForm,
 func (h *Handle) returnBulkReject(c *gin.Context) {
 	runOrderBulkWrite(c,
 		func(f *orderdto.ReturnReviewForm) []string { return f.ReturnIDs },
-		returnRejectReqs, h.svc.RejectReturnBatch, "批量拒绝退货申请失败")
+		returnRejectReqs,
+		func(ctx context.Context, reqs []*orderdto.ReturnReviewReq) error {
+			return h.svc.RejectReturnBatch(ctx, reqs)
+		}, "批量拒绝退货申请失败")
 }
 
 func returnRejectReqs(c *gin.Context, form *orderdto.ReturnReviewForm,

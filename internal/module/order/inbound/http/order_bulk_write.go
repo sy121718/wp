@@ -49,7 +49,12 @@ func runOrderBulkWrite[F, T any](c *gin.Context,
 func (h *Handle) orderStatusBulk(c *gin.Context) {
 	runOrderBulkWrite(c,
 		func(f *orderdto.OrderStatusForm) []string { return f.OrderIDs },
-		orderStatusBulkReqs, h.svc.ChangeStatusBatch, "批量流转订单失败")
+		orderStatusBulkReqs,
+		// 用闭包而不是方法值：方法值在参数求值时就解引用 svc，
+		// 会把「形状校验前不碰 service」的契约变成空指针。
+		func(ctx context.Context, reqs []*orderdto.ChangeStatusReq) error {
+			return h.svc.ChangeStatusBatch(ctx, reqs)
+		}, "批量流转订单失败")
 }
 
 func orderStatusBulkReqs(c *gin.Context, form *orderdto.OrderStatusForm,
@@ -85,7 +90,10 @@ func orderChangeStatusReqs(ids []string, to, remark string, operatorID uint64,
 func (h *Handle) orderCancelBulk(c *gin.Context) {
 	runOrderBulkWrite(c,
 		func(f *orderdto.OrderCancelForm) []string { return f.OrderIDs },
-		orderCancelBulkReqs, h.svc.CancelOrderBatch, "批量取消订单失败")
+		orderCancelBulkReqs,
+		func(ctx context.Context, reqs []*orderdto.CancelOrderReq) error {
+			return h.svc.CancelOrderBatch(ctx, reqs)
+		}, "批量取消订单失败")
 }
 
 func orderCancelBulkReqs(c *gin.Context, form *orderdto.OrderCancelForm,
