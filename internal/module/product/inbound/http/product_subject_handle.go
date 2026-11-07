@@ -38,14 +38,12 @@ func (h *ProductHandle) Create(c *gin.Context) {
 // Update 接收编辑器的结构化对象，结果交 Jet，失败不替换已编辑内容。
 func (h *ProductHandle) Update(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req productdto.UpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+	req, ok := binding.JSON[productdto.UpdateReq](c)
+	if !ok {
 		return
 	}
-
 	req.OperatorID = builtin.OperatorName(c)
-	if _, err := h.svc.Update(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.Update(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
 	}
@@ -363,8 +361,8 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
 		return
 	}
-	// FormPost 会将空数字绑定为零；空输入必须拒绝，明确的零分仍然合法。
-	if c.PostForm("score") == "" {
+	// Score 是指针：未出现时绑定失败，明确的零分仍然是合法输入。
+	if req.Score == nil {
 		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, productenums.Err(productenums.ErrInvalidParam))
 		return
 	}

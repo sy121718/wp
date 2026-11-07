@@ -256,13 +256,12 @@ func (h *Handle) ListModels(c *gin.Context) {
 
 func (h *Handle) SaveModels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req aidto.SaveModelsReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		aiWriteBadInput(c)
+	req, ok := binding.JSON[aidto.SaveModelsReq](c)
+	if !ok {
 		return
 	}
 	req.UpdateBy = userID(c)
-	provider, err := h.svc.SaveModels(c.Request.Context(), &req)
+	provider, err := h.svc.SaveModels(c.Request.Context(), req)
 	if err != nil {
 		aiWriteFail(c, err)
 		return
