@@ -84,7 +84,6 @@ var pendingModuleText = map[string]int{
 	"internal/module/purchase/inbound/http/purchase_shared_handle.go":  1,
 	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
 	"internal/module/mail/inbound/http/mail_err.go":                    1,
-	"internal/module/mail/inbound/http/mail_handle.go":                 2,
 	"internal/module/mail/service/mail_account.go":                     3,
 	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；
 	// 这是全域唯一允许 service 取词的地方（理由见该文件头）。

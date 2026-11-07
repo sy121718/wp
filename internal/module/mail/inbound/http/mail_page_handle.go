@@ -65,6 +65,10 @@ const mailAutomationPageSize = 50
 
 type mailTr func(key, fallback string) string
 
+// mailTranslate 是邮件后台页面/片段的取词闭包。
+//
+// 它是模板渲染的取词口：页面与片段都经 Jet 的请求作用域，语言取值与模板 t/tf 同源，
+// 因此用 templates.TranslateFunc（Jet 适配层的正式入口），不另造 i18n 直连闭包。
 func mailTranslate(c *gin.Context) mailTr {
 	return templates.TranslateFunc(response.RequestLanguage(c))
 }

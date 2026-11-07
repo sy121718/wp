@@ -12,7 +12,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -103,6 +103,14 @@ func (h *Handle) AutomationStartRun(c *gin.Context) {
 	response.SuccessWithMessage(c, mailenums.MsgAutomationStarted, nil)
 }
 
+// jsonOutletTr 是 JSON 出口的取词口：投递/运行记录里的错误说明是数据接口字段，
+// 取词走 pkg/response（与 response.MessageOf 同源），不在 handler 里自建 i18n 闭包。
+func jsonOutletTr(c *gin.Context) mailTr {
+	return func(key, fallback string) string {
+		return response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
+	}
+}
+
 func (h *Handle) AutomationRunList(c *gin.Context) {
 	res, err := h.svc.ListAutomationRuns(c.Request.Context(), &maildto.AutomationRunListReq{
 		AutomationID: parseID(c.Query("automationId")),
@@ -115,7 +123,7 @@ func (h *Handle) AutomationRunList(c *gin.Context) {
 		return
 	}
 
-	mailRunTexts(i18n.TranslateFunc(response.RequestLanguage(c)), res.Items)
+	mailRunTexts(jsonOutletTr(c), res.Items)
 	response.Success(c, res)
 }
 
@@ -125,7 +133,7 @@ func (h *Handle) AutomationRunDetail(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
-	mailRunDetailTexts(i18n.TranslateFunc(response.RequestLanguage(c)), res)
+	mailRunDetailTexts(jsonOutletTr(c), res)
 	response.Success(c, res)
 }
 
