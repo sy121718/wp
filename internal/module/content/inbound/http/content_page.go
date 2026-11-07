@@ -8,7 +8,6 @@ import (
 	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -206,24 +205,41 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c)))
 }
 
-func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
+// articleCreatedView 是新建成功的业务视图：只带实体事实，链接与文案由模板生成。
+type articleCreatedView struct {
+	ID string
+}
+
+// bindArticleCreateForm 绑定并校验新建表单；失败已由这里写出 400 片段。
+func bindArticleCreateForm(c *gin.Context) (*articleForm, bool) {
 	form := articleFormOf(c)
 	if form.Title == "" {
-		response.ErrorMsg(c, http.StatusBadRequest, articleMissingTitleMsg)
-		return
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(articleMissingTitleText))
+		return nil, false
 	}
 	if form.Slug == "" {
-		response.ErrorMsg(c, http.StatusBadRequest, articleMissingSlugMsg)
+		pageview.FailStatus(c, http.StatusBadRequest, articleErrScene, contentenums.Err(articleMissingSlugText))
+		return nil, false
+	}
+	return &form, true
+}
+
+func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	form, ok := bindArticleCreateForm(c)
+	if !ok {
 		return
 	}
 	res, err := h.contents.Create(c.Request.Context(), &contentdto.CreateReq{
 		EntityType: articleEntityType, Slug: form.Slug, Data: form.data(),
 	})
 	if err != nil {
-		response.ErrorMsg(c, response.ErrorStatus(err), articleFacingErrMsg(c, err))
+		pageview.FailScene(c, articleErrScene, err)
 		return
 	}
-	response.SuccessMsg(c, articleCreatedMsg, gin.H{"id": res.ID})
+	// 成功交业务视图：结论与「打开编辑器」的真实链接都由 Jet 生成，
+	// 发起表单按 data-write-nav 声明的节点导航（与商品新建同一契约）。
+	pageview.RenderFragment(c, ArticleCreatedTemplate, articleCreatedView{ID: res.ID})
 }
 
 func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
@@ -1104,33 +1120,18 @@ func articleTranslationMsg(key, fallback string) articleMsg {
 	return articleMsg{Key: key, Fallback: fallback}
 }
 
-// articleTranslationFilled 只组装消息事实：key + 兜底 + 具名参数。
-// 取词发生在消费点 —— 页面/片段由模板 t/tn，成功提示由共享成功出口。
-func articleTranslationFilled(_ *gin.Context, key, fallback string, params map[string]string) articleMsg {
-	return articleMsg{Key: key, Fallback: fallback, Args: msgArgsOf(params)}
-}
-
-func msgArgsOf(params map[string]string) []string {
-	if len(params) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, params[k])
-	}
-	return out
+// articleTranslationFilled 组装一条**已填好具名参数**的消息事实。
+//
+// 已登记例外：这几条词条用 `{detail}` / `{count}` 具名占位符，而模板注入的 tf 只支持 %s；
+// 换占位符要改写已 seed 的词条，中英语序也不同。与 fragments/article_import.html 的
+// CountText 是同一类（见该片段文件头）。其余消息一律只交 key + 兜底。
+func articleTranslationFilled(c *gin.Context, key, fallback string, params map[string]string) articleMsg {
+	return articleMsg{Fallback: i18n.FillTranslate(text.RequestTranslateFunc(c), key, fallback, params)}
 }
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {
-	// detail 是「详情」这一段的**文案事实**，由这里的 Quiet 出口按请求语言取词后拼进参数，
-	// 因为它是一个嵌套消息，模板的 tn 只渲染扁平占位符。
-	return articleMsg{Key: key, Fallback: fallback,
-		Args: []string{response.MsgText(c, articleErrMsgQuiet(c, err))}}
+	return articleTranslationFilled(c, key, fallback,
+		map[string]string{"detail": response.MsgText(c, articleErrMsgQuiet(c, err))})
 }
 
 func articleTranslationDone(c *gin.Context, projectID, lang, keyword string, page, limit, written int) {

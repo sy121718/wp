@@ -27,14 +27,16 @@
 
     {* 左右两栏（评审规则 ~/.dsh/skills/admin-ui-logic §2.2）：宽屏两栏，窄屏自动单列。 *}
     <div class="article-edit-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start">
-        {* 保存走 htmx（与商品模块同一套契约）：hx-swap="none" + data-write-nav ——
-           成功后按响应里的 id 跳编辑页，失败由 write_feedback.js 弹 toast，页面一个字段都不动。 *}
-        <form id="article-new-form" class="article-edit-main"
+        {* 保存走共享写基座（与商品新建同一契约）：data-write 认领，成功片段进 data-write-result，
+           下一步由 data-write-nav 指向片段里的实体链接；失败只进声明过的错误区，已填内容不动。 *}
+        <form id="article-new-form" class="article-edit-main" data-write
               hx-post="/admin/articles/create"
-              hx-swap="none"
-              hx-disable="find button[type=submit]"
-              data-write-nav="/admin/articles/edit?id={id}">
+              hx-target="find [data-write-result]" hx-swap="innerHTML"
+              hx-disable="find button[type=submit]" hx-sync="this:drop"
+              data-write-nav="[data-article-created-link]">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <div class="form-hint" data-write-status role="status" hidden></div>
+            <div data-write-result></div>
             <section class="card card-body">
                 <h2>{{ .["t"]("admin.article.new.formHeading", "正文") }}</h2>
 

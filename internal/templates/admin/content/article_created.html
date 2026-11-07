@@ -1,0 +1,6 @@
+{* admin/content/article_created.html — 文章新建成功的结论片段。
+
+   与商品新建同一形态：结论由 Jet 取词，编辑入口由实体事实生成，
+   发起表单用 data-write-nav="[data-article-created-link]" 声明下一步。
+   不把 id 交给前端拼链接（那是后端才有的实体事实），也不改成 JSON 再让 JS 导航。 *}
+<p role="status">{{t("admin.article.ok.created", "文章已创建。写完正文后记得保存。")}} <a data-article-created-link href="{{queryURL("/admin/articles/edit", "id", .ID)}}">{{t("admin.article.list.edit", "编辑")}}</a></p>

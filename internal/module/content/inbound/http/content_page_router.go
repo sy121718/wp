@@ -26,6 +26,8 @@ const ArticleTranslationsTemplate = "admin/content/article_translations.html"
 
 const ArticleEditPageTemplate = "admin/content/article_edit.html"
 
+const ArticleCreatedTemplate = "admin/content/article_created.html"
+
 const (
 	SeoScoreFragmentTemplate      = "fragments/seo_score"
 	ArticleImportFragmentTemplate = "fragments/article_import"
@@ -62,7 +64,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		mw.PageAuthz("/api/content/list"),
 		pageview.UseRenderer(pageview.RenderPage),
 		articlePages.ArticleEditPage)
-	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
+	pages.POST("/articles/create", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	pages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
 
