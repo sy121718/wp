@@ -8,6 +8,8 @@
    跟踪页模板里只允许 {tracking_no} 一个占位符 —— 别的占位符会让页面上原样显示
    `{order_no}`，比「没有跟踪页」更让人困惑。前端给一行预览（填运单号后的样子）。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.order.carriers.title", "承运商") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.order.carriers.title", "承运商") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}

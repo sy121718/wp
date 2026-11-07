@@ -9,6 +9,8 @@
        而不是让人点了才在提交时失败（对齐 dy_erp 仓库发货台的守卫）；
      · 关键词只匹配订单号 / 客户名（仓库手里拿的是拣货单），翻页保留筛选。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.order.pendingShip.title", "待发货") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.order.pendingShip.title", "待发货") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}

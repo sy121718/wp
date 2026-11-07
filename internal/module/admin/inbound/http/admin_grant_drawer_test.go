@@ -152,7 +152,7 @@ func TestGrantDrawersRenderJetFacts(t *testing.T) {
 		want []string
 	}{
 		{"/roles?user_id=42", []string{`name="role_codes" value="editor" checked`, `value="unknown" checked`, "未知角色", "禁用角色", "&lt;script&gt;"}},
-		{"/menus?user_id=42", []string{`data-id="2" data-parent="1" data-depth="2" checked disabled`, "来自角色", "grant:direct", "&lt;script&gt;", "padding-left:30px"}},
+		{"/menus?user_id=42", []string{`data-id="2" data-parent="1" data-depth="2" checked disabled`, "来自角色", "grant:direct", "&lt;script&gt;", `style="--perm-depth:2"`}},
 		{"/permissions?role_id=7", []string{`data-id="2" data-parent="1" data-depth="2" checked>`, "grant:direct", `name="role_id" value="7"`}},
 	} {
 		w := httptest.NewRecorder()
