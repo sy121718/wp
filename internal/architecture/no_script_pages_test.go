@@ -15,9 +15,16 @@ var noScriptPages = []struct {
 	reason string
 }{
 	{
-		glob:   "internal/templates/workbench/error.html",
-		reason: "工作台错误壳的前提就是「编辑器打不开」——它不能依赖编辑器自己的脚本",
+		// 工作台错误壳就是渲染失败的整页/片段出口：前提是「页面已经渲染不出来」，
+		// 因此它们不能依赖编辑器或后台自己的脚本。
+		glob:   "internal/templates/admin/errors/page.html",
+		reason: "整页失败出口的前提就是「页面脚本不可用」，必须纯静态 HTML 可读",
 	},
+	{
+		glob:   "internal/templates/admin/errors/failure.html",
+		reason: "局部失败片段只更新错误区，不能再引入脚本依赖",
+	},
+
 }
 
 func TestNoScriptPagesStayScriptFree(t *testing.T) {

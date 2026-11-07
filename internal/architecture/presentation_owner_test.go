@@ -140,9 +140,12 @@ func moduleTranslationsIn(t *testing.T, path string) int {
 	return count
 }
 
-var templateTranslateCall = regexp.MustCompile(`\["tf?"\]\(|\["tn"\]\(|\btr\(`)
+// 三种取词形态都要认：全局 t / tf / tn、点作用域 .["t"] / .["tf"] / .["tn"]，以及别名 tr。
+var templateTranslateCall = regexp.MustCompile(`\["tf?"\]\(|\["tn"\]\(|\btr\(|\btf?\(|\btn\(`)
 
-var templateNotWholePage = regexp.MustCompile(`(^|/)(partials|fragments)/|_(form|drawer|options|fields|text|rows|panel|notice|hits|card|values|group)\.html$`)
+// templateNotWholePage 识别**片段**：它们由写出端点单独渲染，不经整页布局，
+// 取词由发起页面统一负责。`_result` 一类是写操作的结果片段，同属此列。
+var templateNotWholePage = regexp.MustCompile(`(^|/)(partials|fragments)/|_(form|drawer|options|fields|text|rows|panel|notice|hits|card|values|group|result|saved|created|appended|switch|switch_result|row)\.html$`)
 
 var pendingTemplateOwnText = map[string]int{
 	"internal/templates/admin/ai/ui_blocks.html": 0,
