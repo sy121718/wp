@@ -14,7 +14,7 @@ import (
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -75,7 +75,7 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 	switch outcome {
 	case workbenchservice.PreviewOK:
 		if withEditorBridge {
-			html = []byte(injectEditorBridge(string(html), i18n.TranslateFunc(response.RequestLanguage(c))))
+			html = []byte(injectEditorBridge(string(html), canvasBridgeTr(c)))
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", html)
 	case workbenchservice.PreviewInvalidDocument:
@@ -85,6 +85,16 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 	default:
 
 		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalKey)
+	}
+}
+
+// canvasBridgeTr 是注入给编辑器桥脚本的取词闭包。
+//
+// 桥脚本把菜单项文案嵌进 HTML 字符串（物理上不经过 Jet 模板），这是已登记的例外；
+// 但取词本身仍走 pkg/response 的正式口，不直连 i18n。
+func canvasBridgeTr(c *gin.Context) func(key, fallback string) string {
+	return func(key, fallback string) string {
+		return response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
 	}
 }
 

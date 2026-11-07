@@ -88,8 +88,6 @@ var pendingModuleText = map[string]int{
 	"internal/module/media/service/media_export_text.go":      9,
 	"internal/module/page/inbound/http/page_jump.go":          1,
 
-	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go": 1,
 }
 
 func TestModulesDoNotTranslate(t *testing.T) {

@@ -19,7 +19,6 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/builder"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/upload"
@@ -139,7 +138,7 @@ func (h *Handle) renderEntityPreview(c *gin.Context, req *presentationdto.Previe
 	}
 	html := res.HTML
 	if withEditorBridge {
-		html = injectEditorBridge(html, i18n.TranslateFunc(response.RequestLanguage(c)))
+		html = injectEditorBridge(html, canvasBridgeTr(c))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
