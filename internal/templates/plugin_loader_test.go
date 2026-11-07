@@ -15,7 +15,7 @@ func testPluginFS() fstest.MapFS {
 }
 
 func TestCompositeLoaderRoutesPlugin(t *testing.T) {
-	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
+	l := jetpkg.NewCompositeLoader(mustEmbedLoader(t), []jetpkg.PluginFS{{ID: "marketing", FS: testPluginFS()}})
 
 	for _, p := range []string{"plugin/marketing/card.jet", "/plugin/marketing/card.jet"} {
 		if !l.Exists(p) {
@@ -34,14 +34,14 @@ func TestCompositeLoaderRoutesPlugin(t *testing.T) {
 }
 
 func TestCompositeLoaderUnknownPlugin(t *testing.T) {
-	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
+	l := jetpkg.NewCompositeLoader(mustEmbedLoader(t), []jetpkg.PluginFS{{ID: "marketing", FS: testPluginFS()}})
 	if l.Exists("plugin/ghost/card.jet") {
 		t.Fatalf("未知插件不应命中")
 	}
 }
 
 func TestCompositeLoaderPathTraversal(t *testing.T) {
-	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
+	l := jetpkg.NewCompositeLoader(mustEmbedLoader(t), []jetpkg.PluginFS{{ID: "marketing", FS: testPluginFS()}})
 
 	if l.Exists("plugin/marketing/../../secret.jet") {
 		t.Fatalf("穿越路径不应命中")
@@ -49,7 +49,7 @@ func TestCompositeLoaderPathTraversal(t *testing.T) {
 }
 
 func TestCompositeLoaderBuiltinIntact(t *testing.T) {
-	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
+	l := jetpkg.NewCompositeLoader(mustEmbedLoader(t), []jetpkg.PluginFS{{ID: "marketing", FS: testPluginFS()}})
 	if !l.Exists("_placeholder.jet") {
 		t.Fatalf("内置共享模板 _placeholder.jet 应仍可加载")
 	}
