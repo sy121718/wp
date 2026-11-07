@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
+	"go_wp/internal/middleware/builtin"
 	aidto "go_wp/internal/module/ai/dto"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
@@ -161,6 +162,15 @@ func newAISessionsPageTestRouterWithButtons(t *testing.T, svc sessionServicePort
 	if err := auth.Init(nil); err != nil {
 		t.Fatal(err)
 	}
+
+	// 页面渲染的请求事实由应用装配注入：测试按 routers 的同一方式接 CSRF 端口。
+	pageview.SetAdminPort(pageview.AdminPort{CSRFToken: func(c *gin.Context) string {
+		tok, err := builtin.EnsureCSRFToken(c)
+		if err != nil {
+			return ""
+		}
+		return tok
+	}})
 
 	router := gin.New()
 	router.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { t.Errorf("模板失败：%v", err) }))

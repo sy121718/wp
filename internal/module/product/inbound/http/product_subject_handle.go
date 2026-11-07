@@ -26,18 +26,30 @@ func (h *ProductHandle) Create(c *gin.Context) {
 }
 
 // Update 接收编辑器的结构化对象，结果交 Jet，失败不替换已编辑内容。
+// 编辑器提交的是 JSON 对象，失败必须落 HTML 错误区而不是 JSON 参数出口，
+// 因此用 ParseJSON 取错误事实，而不是 JSON[T] 的 JSON 参数出口。
 func (h *ProductHandle) Update(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	req, ok := binding.JSON[productdto.UpdateReq](c)
+	req, ok := updateForm(c)
 	if !ok {
 		return
 	}
-	req.OperatorID = builtin.OperatorName(c)
 	if _, err := h.svc.Update(c.Request.Context(), req); err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
 	}
 	pageview.Success(c)
+}
+
+// updateForm 绑定编辑器提交的结构化对象并注入可信操作人；失败已由这里写出 400。
+func updateForm(c *gin.Context) (*productdto.UpdateReq, bool) {
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseJSON[productdto.UpdateReq](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return nil, false
+	}
+	req.OperatorID = builtin.OperatorName(c)
+	return req, true
 }
 
 func (h *ProductHandle) Get(c *gin.Context) {
@@ -394,13 +406,28 @@ func (h *ProductHandle) PreviewPricing(c *gin.Context) {
 }
 
 func (h *ProductHandle) ApplyPricing(c *gin.Context) {
-	runProductWriteErrWith(c,
-		func(c *gin.Context, req *productdto.PricingApplyReq) { req.OperatorID = builtin.OperatorName(c) },
-		func(ctx context.Context, req *productdto.PricingApplyReq) error {
-			_, err := h.svc.ApplyPricing(ctx, req)
-			return err
-		},
-		productWriteOK)
+	// 与预览共用同一份表单契约：规则参数由 PricingRuleReq.BindForm 从字段派生。
+	req, ok := applyPricingForm(c)
+	if !ok {
+		return
+	}
+	if _, err := h.svc.ApplyPricing(c.Request.Context(), req); err != nil {
+		pageview.FailScene(c, productErrScene, err)
+		return
+	}
+	pageview.Success(c)
+}
+
+// applyPricingForm 绑定定价应用表单并注入可信操作人；失败已由这里写出 400。
+func applyPricingForm(c *gin.Context) (*productdto.PricingApplyReq, bool) {
+	c.Header("Cache-Control", "no-store")
+	req, err := binding.ParseForm[productdto.PricingApplyReq](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+		return nil, false
+	}
+	req.OperatorID = builtin.OperatorName(c)
+	return req, true
 }
 
 func (h *ProductHandle) BulkPricing(c *gin.Context) {
