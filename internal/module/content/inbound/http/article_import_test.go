@@ -1,9 +1,9 @@
 package contenthttp
 
 import (
-	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,13 +13,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/builder"
-	"go_wp/pkg/builder/richdoc"
+	"go_wp/pkg/i18n"
+
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/builder"
+	"go_wp/pkg/builder/richdoc"
 )
 
 type stubProjectService struct {
@@ -120,13 +122,24 @@ func TestArticleImportDocumentFallsBackToArticleFields(t *testing.T) {
 	}
 }
 
+// importPreviewCtx 给视图构造器一个最小请求上下文：CountText 的取词走 response 出口。
+func importPreviewCtx(t *testing.T) *gin.Context {
+	t.Helper()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/admin/articles/import-preview", nil)
+	i18n.InjectForTest(nil, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+	return c
+}
+
 func TestArticleImportPreviewView(t *testing.T) {
 
 	res, err := richdoc.HTMLToNodes("<h2>一</h2><h2>二</h2><p>段落</p><div>壳里的字</div>")
 	if err != nil {
 		t.Fatalf("转换失败：%v", err)
 	}
-	view := articleImportPreviewViewOf(res)
+	view := articleImportPreviewViewOf(importPreviewCtx(t), res)
 	if !view.OK {
 		t.Fatal("预览视图应为可用状态")
 	}
@@ -151,7 +164,7 @@ func TestArticleImportPreviewView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("转换失败：%v", err)
 	}
-	if v := articleImportPreviewViewOf(clean); !v.Lossless {
+	if v := articleImportPreviewViewOf(importPreviewCtx(t), clean); !v.Lossless {
 		t.Errorf("无损输入被标成有损：%+v", v.Warnings)
 	}
 }

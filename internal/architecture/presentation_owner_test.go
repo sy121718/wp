@@ -78,7 +78,6 @@ var moduleTextFuncs = map[string]struct{}{
 }
 
 var pendingModuleText = map[string]int{
-	"internal/module/content/inbound/http/content_page.go":             2,
 	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
 	"internal/module/mail/service/mail_account.go":                     3,
 	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；

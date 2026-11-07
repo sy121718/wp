@@ -5,7 +5,6 @@ import (
 	"errors"
 	"go_wp/internal/middleware/builtin"
 	json "go_wp/pkg/jsonx"
-	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -450,7 +449,7 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	}
 
 	pageview.RenderTemplate(c, ArticleImportFragmentTemplate, &ArticleImportFragmentView{
-		Preview: articleImportPreviewViewOf(res, text.RequestTranslateFunc(c)), Err: articleMsg{},
+		Preview: articleImportPreviewViewOf(c, res), Err: articleMsg{},
 	})
 }
 
@@ -548,9 +547,7 @@ func articleImportDocument(data map[string]any, nodes []*core.Node) (json.RawMes
 	return json.Marshal(doc)
 }
 
-func articleImportPreviewViewOf(res *richdoc.Result,
-	trs ...func(key, fallback string) string) articleImportPreviewView {
-	tr := articlePublishTr(trs)
+func articleImportPreviewViewOf(c *gin.Context, res *richdoc.Result) articleImportPreviewView {
 	if res == nil {
 		return articleImportPreviewView{}
 	}
@@ -570,7 +567,7 @@ func articleImportPreviewViewOf(res *richdoc.Result,
 		NodeCount: len(res.Nodes),
 		// 已登记例外：CountText 的具名占位符 {count} 在模板 tf（%s）里无法表达，
 		// 中英语序也不同；与 fragments/article_import.html 文件头记录的是同一处。
-		CountText: i18n.FillTranslate(tr, contentenums.ImportResultCount,
+		CountText: response.FillText(c, contentenums.ImportResultCount,
 			"转换结果：{count} 个组件", map[string]string{"count": strconv.Itoa(len(res.Nodes))}),
 		Lossless: len(res.Warnings) == 0,
 		Types:    make([]articleImportTypeView, 0, len(order)),
@@ -1126,7 +1123,7 @@ func articleTranslationMsg(key, fallback string) articleMsg {
 // 换占位符要改写已 seed 的词条，中英语序也不同。与 fragments/article_import.html 的
 // CountText 是同一类（见该片段文件头）。其余消息一律只交 key + 兜底。
 func articleTranslationFilled(c *gin.Context, key, fallback string, params map[string]string) articleMsg {
-	return articleMsg{Fallback: i18n.FillTranslate(text.RequestTranslateFunc(c), key, fallback, params)}
+	return articleMsg{Fallback: response.FillText(c, key, fallback, params)}
 }
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {
