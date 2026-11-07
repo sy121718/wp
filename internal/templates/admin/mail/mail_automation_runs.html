@@ -10,6 +10,8 @@
      · 本页不做批量操作（实例由流程驱动，人工批量改状态会破坏「同一步不会做两次」的语义），
        故无首列勾选、无批量栏、无 .col-check —— 空态 colspan = 7。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}

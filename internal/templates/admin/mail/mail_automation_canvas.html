@@ -10,6 +10,8 @@
      render（片段渲染）/ menu（palette 与边菜单）/ index（事件与保存）/ graph（读注入 + 参数解析）。
      模板只提供容器、控件与取词，不做任何业务计算。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.automation_canvas.title", "流程画布") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.automation_canvas.title", "流程画布") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <link rel="stylesheet" href="/static/css/automation.css?v={{.jsVer}}">
@@ -27,7 +29,7 @@
       <span>{{ .["t"]("admin.mail.automation_canvas.field.trigger", "触发方式") }}</span>
       <select id="autoTrigger" class="form-select">
         {{range _, o := .Triggers}}
-        <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+        <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.Value == "manual"}}{{ .["t"]("admin.mail.automation.trigger.manual", "手工添加（后台选人加入）") }}{{else if o.Value == "contact_created"}}{{ .["t"]("admin.mail.automation.trigger.contact_created", "新联系人产生") }}{{else if o.Value == "contact_subscribed"}}{{ .["t"]("admin.mail.automation.trigger.contact_subscribed", "变为已订阅") }}{{else if o.Value == "email_opened"}}{{ .["t"]("admin.mail.automation.trigger.email_opened", "打开过营销邮件") }}{{else if o.Value == "email_clicked"}}{{ .["t"]("admin.mail.automation.trigger.email_clicked", "点击过营销链接") }}{{else if o.Value == "tag_added"}}{{ .["t"]("admin.mail.automation.trigger.tag_added", "被打上某个标签") }}{{else}}{{o.Value}}{{end}}</option>
         {{end}}
       </select>
     </label>

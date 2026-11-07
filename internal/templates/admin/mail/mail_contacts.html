@@ -11,6 +11,8 @@
      · 抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开对应模板。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}

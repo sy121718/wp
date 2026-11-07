@@ -4,6 +4,8 @@
      · 页头一行：标题 + 一句话解释 + 返回入口；
      · 空数据用 .empty-state；状态用徽章并保留文字。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.automation_run.heading", "实例排障") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.automation_run.heading", "实例排障") }}{{end}}
 {{block body()}}
 {{d := .D}}
 <div class="stack">

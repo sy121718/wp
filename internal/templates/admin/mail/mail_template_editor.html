@@ -6,6 +6,8 @@
    与后台整页壳的「一屏一卡」假设冲突。这是与既有设计系统一致的例外，
    与画布页（mail_automation_canvas.html）同一取舍。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.template_editor.title", "模板编辑器") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.template_editor.title", "模板编辑器") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <link rel="stylesheet" href="/static/css/template_editor.css?v={{.jsVer}}">

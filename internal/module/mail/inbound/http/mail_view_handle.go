@@ -33,7 +33,7 @@ type AutomationRowResp struct {
 	Description  string
 	Status       string
 	Version      int
-	TriggerLabel string
+	TriggerType string
 }
 
 type AutomationListPageResp struct {

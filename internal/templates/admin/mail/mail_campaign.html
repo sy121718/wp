@@ -4,6 +4,8 @@
      · 页头一行：活动名 + 状态 / 主题（数据放 .page-sub）+ 返回入口；
      · 三张表都是标准表格 + .table-scroll（撑满视口的滚动列表），空数据用 .empty-state。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.campaign.heading", "活动报表") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.campaign.heading", "活动报表") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{r := .R}}

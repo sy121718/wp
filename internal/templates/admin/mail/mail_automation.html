@@ -10,6 +10,8 @@
      · 空数据用 .empty-state；状态用徽章而非裸文字；列数 = 6（勾选 / 名称 / 触发方式 / 状态 / 版本 / 操作）。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.automation.heading", "自动化流程") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.automation.heading", "自动化流程") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
@@ -84,7 +86,7 @@
             {{a.Name}}
             {{if a.Description != ""}}<br><span class="text-mute text-sm">{{a.Description}}</span>{{end}}
           </td>
-          <td class="text-sm">{{a.TriggerLabel}}</td>
+          <td class="text-sm">{{if a.TriggerType == "manual"}}{{tr("admin.mail.automation.trigger.manual", "手工添加（后台选人加入）")}}{{else if a.TriggerType == "contact_created"}}{{tr("admin.mail.automation.trigger.contact_created", "新联系人产生")}}{{else if a.TriggerType == "contact_subscribed"}}{{tr("admin.mail.automation.trigger.contact_subscribed", "变为已订阅")}}{{else if a.TriggerType == "email_opened"}}{{tr("admin.mail.automation.trigger.email_opened", "打开过营销邮件")}}{{else if a.TriggerType == "email_clicked"}}{{tr("admin.mail.automation.trigger.email_clicked", "点击过营销链接")}}{{else if a.TriggerType == "tag_added"}}{{tr("admin.mail.automation.trigger.tag_added", "被打上某个标签")}}{{else}}{{a.TriggerType}}{{end}}</td>
           <td>
             {{if a.Status == "active"}}<span class="badge badge-success">{{tr("admin.mail.automation.status.active", "启用中")}}</span>
             {{else if a.Status == "paused"}}<span class="badge badge-warning">{{tr("admin.mail.automation.status.paused", "已暂停")}}</span>

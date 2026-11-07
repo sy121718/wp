@@ -10,6 +10,8 @@
      · 每行的「报表」是它自己的子资源页（/admin/mail/campaign?id=N），不在列表里扩展明细。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}

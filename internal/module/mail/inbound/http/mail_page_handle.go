@@ -84,12 +84,10 @@ type nodeTypeOption struct {
 
 func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := mailTranslate(c)
 	pq, _ := binding.Query[maildto.PageQuery](c)
 	page := mailPageNumber(pq.Page)
 	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailAutomationPageSize})
 	view := &AutomationListPageResp{
-		Title:       mailLabel(tr, mailenums.PageTitleAutomation),
 		Page:        page,
 		ListQuery:   mailPageQuery(page),
 		Automations: []AutomationRowResp{},
@@ -107,7 +105,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		autoRows = append(autoRows, AutomationRowResp{
 			ID: a.ID, Name: a.Name, Description: a.Description,
 			Status: a.Status, Version: a.Version,
-			TriggerLabel: triggerLabelOf(tr, a.TriggerType),
+			TriggerType: a.TriggerType,
 		})
 	}
 	view.Automations = autoRows
@@ -124,22 +122,14 @@ type automationFormValues struct {
 	Entry       string
 }
 
-func triggerLabelOf(tr mailTr, value string) string {
-	for _, o := range mailenums.AutomationTriggers {
-		if o.Value == value {
-			return mailLabel(tr, o.Label)
-		}
-	}
-	return value
-}
-
-func triggerOptions(tr mailTr, selected string) []OptionResp {
+// triggerOptions 只交值与选中事实；标签由模板按请求语言取词。
+func triggerOptions(selected string) []OptionResp {
 	if selected == "" {
 		selected = "manual"
 	}
 	opts := make([]OptionResp, 0, len(mailenums.AutomationTriggers))
 	for _, o := range mailenums.AutomationTriggers {
-		opts = append(opts, OptionResp{Value: o.Value, Label: mailLabel(tr, o.Label), Selected: o.Value == selected})
+		opts = append(opts, OptionResp{Value: o.Value, Selected: o.Value == selected})
 	}
 	return opts
 }
@@ -208,7 +198,6 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 
 	mailRunDetailTexts(mailTranslate(c), detail)
 	pageview.RenderTemplate(c, AutomationRunPageTemplate, &AutomationRunPageResp{
-		Title: mailenums.PageTitleAutomationRun.Key,
 		D:     detail,
 	})
 }
@@ -279,7 +268,6 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 		PageSize:     mailAutomationRunsPageSize,
 	})
 	view := &AutomationRunsPageResp{
-		Title:     mailLabel(tr, mailenums.PageTitleAutomationRuns),
 		Page:      page,
 		FilterID:  automationID,
 		FilterRun: runStatus,
@@ -336,7 +324,6 @@ func mailCampaignsClampPage(page int, total int64) int {
 
 func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := mailTranslate(c)
 	cq, _ := binding.Query[maildto.PageQuery](c)
 	page := mailPageNumber(cq.Page)
 
@@ -357,7 +344,6 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
 	view := &CampaignsPageResp{
-		Title:         mailLabel(tr, mailenums.PageTitleCampaigns),
 		Campaigns:     toAnySlice(campaigns.Items),
 		CampaignTotal: campaigns.Total,
 		Accounts:      toAnySlice(accounts),
@@ -374,7 +360,6 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 
 func mailCampaignsErrData(c *gin.Context, err error) *CampaignsPageResp {
 	return &CampaignsPageResp{
-		Title:     mailenums.PageTitleCampaigns.Key,
 		Err:       mailErrPageText(c, err),
 		Campaigns: []any{},
 		Accounts:  []any{},
@@ -462,7 +447,6 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		}
 	}
 	view := &CampaignReportPageResp{
-		Title: mailenums.PageTitleCampaignReport.Key,
 		R:     report,
 		Page:  page,
 	}
@@ -525,7 +509,6 @@ func mailContactsClampPage(page int, total int64) int {
 
 func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := mailTranslate(c)
 	lq, _ := binding.Query[maildto.ContactListQuery](c)
 	page := mailPageNumber(lq.Page)
 	keyword, status, tags := lq.Keyword, lq.Status, lq.Tags
@@ -560,7 +543,6 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	}
 
 	view := &ContactsPageResp{
-		Title:        mailLabel(tr, mailenums.PageTitleContacts),
 		Contacts:     toAnyRows(contacts.Items),
 		ContactTotal: contacts.Total,
 		Page:         page,
@@ -597,7 +579,6 @@ func mailContactsListQuery(keyword, status, tags string, page int) string {
 
 func mailContactsErrData(c *gin.Context, err error) *ContactsPageResp {
 	return &ContactsPageResp{
-		Title:      mailenums.PageTitleContacts.Key,
 		Err:        mailErrPageText(c, err),
 		Contacts:   []any{},
 		Page:       1,
@@ -725,7 +706,6 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 
 	view := &AccountsPageResp{
 
-		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
 		Accounts: toAnyRows(accountRows),
 	}
 
@@ -735,7 +715,6 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 
 func mailPageErrData(c *gin.Context, err error) *AccountsPageResp {
 	return &AccountsPageResp{
-		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
 		Err:      mailErrPageText(c, err),
 		Accounts: []any{},
 	}
@@ -934,7 +913,6 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 	}
 	view := &TemplatesPageResp{
 
-		Title:         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		Templates:     toAnyRows(rows),
 		TemplateTotal: total,
 	}
@@ -945,7 +923,6 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 
 func mailTemplatesErrData(c *gin.Context, err error) *TemplatesPageResp {
 	return &TemplatesPageResp{
-		Title:     mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		Err:       mailErrPageText(c, err),
 		Templates: []any{},
 	}
@@ -1093,13 +1070,12 @@ func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.Auto
 	}
 	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
 	return &AutomationCanvasPageResp{
-		Title:        mailenums.PageTitleAutomationCanvas.Key,
 		A:            item,
 		NodesJSON:    utils.JsonSafe(string(nodesJSON)),
 		MetaJSON:     utils.JsonSafe(string(metaJSON)),
 		JSVer:        automationJsVer(),
 		KeyframesCSS: core.KeyframeCSS([]string{"sky-fade-in-up"}),
-		Triggers:     triggerOptions(mailTranslate(c), item.TriggerType),
+		Triggers:     triggerOptions(item.TriggerType),
 		NodeTypes:    mapListOf(paletteFromMeta(h.automationCanvasMeta(c, item)["nodeTypes"])),
 		IsNew:        item.ID == 0,
 
@@ -1204,7 +1180,6 @@ func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
 		"compiledText": item.BodyCompiledText,
 	})
 	pageview.RenderTemplate(c, TemplateEditorPageTemplate, &TemplateEditorPageResp{
-		Title:    mailenums.PageTitleTemplateEditor.Key,
 		T:        item,
 		MetaJSON: utils.JsonSafe(string(metaJSON)),
 		JSVer:    templateEditorJsVer(),

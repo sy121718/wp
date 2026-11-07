@@ -9,6 +9,8 @@
      · 模板的唯一键是 key + locale（同一标识可有多语言版本），删除按 key + locale 走。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
