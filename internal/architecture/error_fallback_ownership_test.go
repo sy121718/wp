@@ -100,8 +100,11 @@ func TestErrorFallbacksCoverDeclarations(t *testing.T) {
 			t.Errorf("%s：有 Err* 常量但没有 Err(key) 工厂 —— service 只能用 errors.New 造裸 key", dir)
 		}
 		for value, name := range declared {
-			if !facing.IsBusinessKey(value) {
-				t.Errorf("%s：%s = %q 过不了 pkg/facing.IsBusinessKey —— 出口会把它当成内部错误（文案归词库，key 形态必须成立）",
+			// 判据是「声明出来的错误在出口被认成业务错误」，不是字符串本身长什么样：
+			// 短 key（如 tplRefGone）是合法声明形态，由 enums.Err(key) 包成显式事实；
+			// 裸字符串不能自己变成业务错误（那会把任意文本当业务错误透出）。
+			if !facing.IsBusinessError(facing.New(value)) {
+				t.Errorf("%s：%s = %q 经 enums.Err(key) 包装后仍不被认作业务错误 —— 出口会把它当成内部错误（文案归词库）",
 					relToRoot(t, root, dir), name, value)
 			}
 		}

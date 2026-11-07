@@ -101,40 +101,24 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	lang := strings.TrimSpace(req.DefaultLang)
-	mode := strings.TrimSpace(req.SiteLangURLMode)
-	country := strings.TrimSpace(req.DefaultCountry)
-	currency := strings.TrimSpace(req.DefaultCurrency)
-	i18nVersion := req.I18NVersion
-	tradeVersion := req.TradeVersion
-
+	lang, mode := strings.TrimSpace(req.DefaultLang), strings.TrimSpace(req.SiteLangURLMode)
+	country, currency := strings.TrimSpace(req.DefaultCountry), strings.TrimSpace(req.DefaultCurrency)
 	if status, verr := h.validateOptions(c, lang, mode, country, currency); verr != nil {
 		pageview.FailStatus(c, status, "sysconfig", verr)
 		return
 	}
 
-	i18nGroup, gerr := h.loadGroupErr(c, groupI18N)
+	groups, gerr := h.mergeSaveGroups(c, map[string]saveGroupInput{
+		groupI18N:  {version: req.I18NVersion, values: map[string]string{"default_lang": lang, "site_lang_url_mode": mode}},
+		groupTrade: {version: req.TradeVersion, values: map[string]string{"default_country": country, "default_currency": currency}},
+	})
 	if gerr != nil {
 		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", gerr)
 		return
 	}
-	tradeGroup, errText := h.loadGroup(c, groupTrade)
-	if errText != "" {
-		pageview.FailStatus(c, http.StatusInternalServerError, "sysconfig", errors.New(errText))
-		return
-	}
 
 	if _, err := h.svc.SetGroups(ctx, &sysconfigdto.SetGroupsReq{
-		Groups: []sysconfigdto.SetGroupReq{
-			{GroupKey: groupI18N, Version: i18nVersion, Data: mergeGroup(i18nGroup.Data, i18nEditableKeys, map[string]string{
-				"default_lang":       lang,
-				"site_lang_url_mode": mode,
-			})},
-			{GroupKey: groupTrade, Version: tradeVersion, Data: mergeGroup(tradeGroup.Data, tradeEditableKeys, map[string]string{
-				"default_country":  country,
-				"default_currency": currency,
-			})},
-		},
+		Groups:   groups,
 		UpdateBy: int64(builtin.CurrentUserID(c)),
 	}); err != nil {
 		status := http.StatusInternalServerError
@@ -145,6 +129,40 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 		return
 	}
 	pageview.Success(c)
+}
+
+// saveGroupInput 是保存时每个分组要合并的可编辑字段。
+type saveGroupInput struct {
+	version int64
+	values  map[string]string
+}
+
+// mergeSaveGroups 读出各分组当前数据，再把本次可编辑字段合并进去。
+// 顺序固定（i18n → trade），保证同一请求的写入顺序与登记顺序一致。
+func (h *AdminHandle) mergeSaveGroups(c *gin.Context, inputs map[string]saveGroupInput) ([]sysconfigdto.SetGroupReq, error) {
+	order := []struct {
+		key      string
+		editable []string
+	}{
+		{groupI18N, i18nEditableKeys},
+		{groupTrade, tradeEditableKeys},
+	}
+	out := make([]sysconfigdto.SetGroupReq, 0, len(order))
+	for _, g := range order {
+		in, ok := inputs[g.key]
+		if !ok {
+			continue
+		}
+		group, err := h.loadGroupErr(c, g.key)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sysconfigdto.SetGroupReq{
+			GroupKey: g.key, Version: in.version,
+			Data: mergeGroup(group.Data, g.editable, in.values),
+		})
+	}
+	return out, nil
 }
 
 // loadGroup 是读取链路：页面数据里的 LoadErr 需要成品文案（JSON 出口取词）。

@@ -20,7 +20,6 @@ var pendingControllerNormalize = map[string]bool{
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":   true,
 	"internal/module/mail/inbound/http/mail_contact_write.go":                true,
 	"internal/module/mail/inbound/http/mail_page.go":                         true,
-	"internal/module/order/inbound/http/order_write.go":                      true,
 }
 
 var pendingControllerFiles = map[string]bool{
@@ -49,7 +48,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/order/inbound/http/order_create_page.go":              true,
 	"internal/module/order/inbound/http/order_list_page.go":                true,
 	"internal/module/order/inbound/http/order_shared.go":                   true,
-	"internal/module/order/inbound/http/order_write.go":                    true,
 	"internal/module/order/inbound/http/return_bulk_write.go":              true,
 	"internal/module/order/inbound/http/return_page.go":                    true,
 	"internal/module/order/inbound/http/sales_page.go":                     true,

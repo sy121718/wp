@@ -6,7 +6,6 @@ import (
 	"go_wp/pkg/binding"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/facing"
@@ -40,21 +39,28 @@ func (h *Handle) AdminList(c *gin.Context) {
 // Review 接收标准表单，成功后由 Jet 返回完整结果句。
 func (h *Handle) Review(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var req commentdto.ReviewReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, "comment", err)
+	req, ok := binding.Form[commentdto.ReviewReq](c)
+	if !ok {
 		return
 	}
 	req.ReviewerID = builtin.CurrentUserID(c)
-	res, err := h.svc.Review(c.Request.Context(), &req)
+	res, err := h.svc.Review(c.Request.Context(), req)
 	if err != nil {
 		pageview.FailScene(c, "comment", err)
 		return
 	}
 	c.HTML(http.StatusOK, "admin/comment/comment_review_result.html", pageview.Objects(
 		pageview.Object("Affected", reviewAffected(res)),
-		pageview.Object("Approved", res != nil && res.Status == commentenums.StatusApproved),
+		pageview.Object("Status", reviewStatus(res)),
 	))
+}
+
+// reviewStatus 只交落定后的状态枚举，是否「通过」由模板判断。
+func reviewStatus(res *commentdto.ReviewResp) string {
+	if res == nil {
+		return ""
+	}
+	return res.Status
 }
 
 func commentFail(c *gin.Context, err error) {
