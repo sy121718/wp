@@ -37,7 +37,9 @@ func purchaseErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		return response.InternalMsg()
 	}
 	if f.Tail != "" {
-		if detail := purchaseErrDetailText(purchaseTranslate(c), f.Tail); detail != "" {
+		// 逐段明细属于错误事实本身：取词发生在出口（这里是 response.ArgsText 的正式口），
+		// 不在控制器里再造一个翻译闭包。
+		if detail := purchaseErrDetailText(c, f.Tail); detail != "" {
 			return facing.Msg{Fallback: response.ArgsText(c, f.Key, purchaseErrFallback(f.Key), nil) + "：" + detail}
 		}
 	}
@@ -48,7 +50,7 @@ func purchaseErrText(c *gin.Context, err error) string {
 	return purchaseMsgText(c, purchaseErrMsg(c, err))
 }
 
-func purchaseErrDetailText(tr func(key, fallback string) string, tail string) string {
+func purchaseErrDetailText(c *gin.Context, tail string) string {
 	parts, ok := i18n.ParseErrorDetails(tail)
 	if !ok {
 		return tail
@@ -61,7 +63,7 @@ func purchaseErrDetailText(tr func(key, fallback string) string, tail string) st
 				Warn("业务错误的补充说明词条未登记，已省略该段")
 			continue
 		}
-		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+		out = append(out, response.FillText(c, p.Key, fallback, p.Args))
 	}
 	return strings.Join(out, "；")
 }
@@ -70,9 +72,7 @@ func purchaseErrFallback(key string) string { return key }
 
 func purchaseMsgText(c *gin.Context, m facing.Msg) string { return response.MsgText(c, m) }
 
-func purchaseTranslate(c *gin.Context) func(key, fallback string) string {
-	return text.RequestTranslateFunc(c)
-}
+
 
 var (
 	purchaseSourceBackKeys = []string{"project", "type", "relatedParty", "status", "keyword", "page", "limit"}
