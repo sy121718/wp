@@ -88,7 +88,6 @@ var pendingModuleText = map[string]int{
 	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；
 	// 这是全域唯一允许 service 取词的地方（理由见该文件头）。
 	"internal/module/media/service/media_export_text.go":      9,
-	"internal/module/order/inbound/http/order_handle.go":      1,
 	"internal/module/page/inbound/http/page_jump.go":          1,
 
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,

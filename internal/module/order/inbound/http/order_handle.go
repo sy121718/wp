@@ -13,7 +13,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -315,13 +315,17 @@ func (h *Handle) AuditCouponCounts(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// localizeReturnLabels 给退货列表/详情补状态文案。
+//
+// 这是**数据接口**（response.Success 直接把 ReturnResp 交给调用方），状态文案是
+// 该字段的对外内容，因此取词走 pkg/response 的正式口，不在这里自建 i18n 闭包。
 func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
-	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	for _, r := range resps {
 		if r == nil {
 			continue
 		}
-		r.StatusLabel = returnStatusText(tr, r.Status)
+		key, fallback := orderenums.ReturnStatusLabel(r.Status)
+		r.StatusLabel = response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
 	}
 }
 
