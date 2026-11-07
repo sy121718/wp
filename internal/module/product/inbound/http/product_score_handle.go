@@ -12,7 +12,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 func (h *ProductPageHandle) SetSeoTitleSources(pages pagecontract.PageService, contents contentcontract.ContentService) {
@@ -26,13 +25,11 @@ func (h *ProductPageHandle) seoTitleSources() productservice.SeoTitleExtraSource
 
 // SeoScore 返回商品评分事实的 Jet HTML，不保存编辑内容。
 func (h *ProductPageHandle) SeoScore(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.ScorePanelReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+	req := bindProductForm[productdto.ScorePanelReq](c)
+	if req == nil {
 		return
 	}
-	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindProduct, &req, response.RequestLanguage(c))
+	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindProduct, req, response.RequestLanguage(c))
 	if err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
@@ -42,13 +39,11 @@ func (h *ProductPageHandle) SeoScore(c *gin.Context) {
 
 // CategorySeoScore 返回分类评分事实的 Jet HTML。
 func (h *ProductPageHandle) CategorySeoScore(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.ScorePanelReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+	req := bindProductForm[productdto.ScorePanelReq](c)
+	if req == nil {
 		return
 	}
-	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindCategory, &req, response.RequestLanguage(c))
+	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindCategory, req, response.RequestLanguage(c))
 	if err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return
@@ -58,13 +53,11 @@ func (h *ProductPageHandle) CategorySeoScore(c *gin.Context) {
 
 // BrandSeoScore 返回品牌评分事实的 Jet HTML。
 func (h *ProductPageHandle) BrandSeoScore(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.ScorePanelReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+	req := bindProductForm[productdto.ScorePanelReq](c)
+	if req == nil {
 		return
 	}
-	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindBrand, &req, response.RequestLanguage(c))
+	res, err := productservice.SeoScore(c.Request.Context(), h.products, h.instances, h.seoTitleSources(), scoring.KindBrand, req, response.RequestLanguage(c))
 	if err != nil {
 		pageview.FailScene(c, productErrScene, err)
 		return

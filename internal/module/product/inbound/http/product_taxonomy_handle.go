@@ -71,31 +71,15 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 }
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.CreateCategoryReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.CreateCategory(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.CreateCategoryReq) (any, error) {
+		return h.svc.CreateCategory(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) UpdateCategory(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.UpdateCategoryReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.UpdateCategoryReq) (any, error) {
+		return h.svc.UpdateCategory(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) GetCategory(c *gin.Context) {
@@ -125,17 +109,9 @@ func (h *ProductHandle) ListCategories(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteCategory(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteCategoryReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErr(c, func(ctx context.Context, req *productdto.DeleteCategoryReq) error {
+		return h.svc.DeleteCategory(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
@@ -168,31 +144,15 @@ func (h *ProductHandle) bulkDeleteResult(c *gin.Context, del func(context.Contex
 }
 
 func (h *ProductHandle) CreateBrand(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.CreateBrandReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.CreateBrand(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.CreateBrandReq) (any, error) {
+		return h.svc.CreateBrand(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) UpdateBrand(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.UpdateBrandReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.UpdateBrand(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.UpdateBrandReq) (any, error) {
+		return h.svc.UpdateBrand(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) GetBrand(c *gin.Context) {
@@ -222,15 +182,7 @@ func (h *ProductHandle) ListBrands(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteBrand(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteBrandReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if err := h.svc.DeleteBrand(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErr(c, func(ctx context.Context, req *productdto.DeleteBrandReq) error {
+		return h.svc.DeleteBrand(ctx, req)
+	}, productWriteOK)
 }

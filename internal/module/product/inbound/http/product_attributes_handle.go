@@ -1,6 +1,7 @@
 package producthttp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -62,17 +63,9 @@ func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 }
 
 func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.SetAttributeValuesReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.SetAttributeValues(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.SetAttributeValuesReq) (any, error) {
+		return h.svc.SetAttributeValues(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) GetAttribute(c *gin.Context) {
@@ -102,17 +95,9 @@ func (h *ProductHandle) ListAttributes(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteAttribute(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteAttributeReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if err := h.svc.DeleteAttribute(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErr(c, func(ctx context.Context, req *productdto.DeleteAttributeReq) error {
+		return h.svc.DeleteAttribute(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) BulkDeleteAttributes(c *gin.Context) {

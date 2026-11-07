@@ -3,7 +3,6 @@ package producthttp
 import (
 	"errors"
 
-	"net/http"
 
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -13,7 +12,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 )
 
 type productTranslationPort = productservice.ProductTranslationStorePort
@@ -75,13 +73,11 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 }
 
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.SaveProductTranslationsReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
+	req := bindProductForm[productdto.SaveProductTranslationsReq](c)
+	if req == nil {
 		return
 	}
-	view, err := h.save(c, &req)
+	view, err := h.save(c, req)
 	if err != nil || !view.Saved {
 		replySaveRejected(c, view, err)
 		return

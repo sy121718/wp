@@ -1,6 +1,7 @@
 package producthttp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,31 +15,15 @@ import (
 )
 
 func (h *ProductHandle) CreateTag(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.CreateTagReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.CreateTag(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.CreateTagReq) (any, error) {
+		return h.svc.CreateTag(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) UpdateTag(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.UpdateTagReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.UpdateTag(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.UpdateTagReq) (any, error) {
+		return h.svc.UpdateTag(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) GetTag(c *gin.Context) {
@@ -85,31 +70,15 @@ func (h *ProductHandle) ListTagRuleTypes(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteTag(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteTagReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if err := h.svc.DeleteTag(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErr(c, func(ctx context.Context, req *productdto.DeleteTagReq) error {
+		return h.svc.DeleteTag(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) RecalcTags(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.RecalcTagsReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	if _, err := h.svc.RecalcTags(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWrite(c, func(ctx context.Context, req *productdto.RecalcTagsReq) (any, error) {
+		return h.svc.RecalcTags(ctx, req)
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {

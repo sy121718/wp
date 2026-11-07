@@ -1,11 +1,11 @@
 package producthttp
 
 import (
+	"context"
 	"go_wp/pkg/binding"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
@@ -19,20 +19,10 @@ const productErrScene = "product"
 
 // Create 绑定新建表单，交 Service 创建并由 Jet 提供真实编辑链接。
 func (h *ProductHandle) Create(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.CreateReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-
-	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.Create(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	c.HTML(http.StatusOK, "admin/product/product_created.html", res)
+	runProductWriteResult(c,
+		func(c *gin.Context, req *productdto.CreateReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.CreateReq) (any, error) { return h.svc.Create(ctx, req) },
+		func(c *gin.Context, res any) { c.HTML(http.StatusOK, "admin/product/product_created.html", res) })
 }
 
 // Update 接收编辑器的结构化对象，结果交 Jet，失败不替换已编辑内容。
@@ -78,51 +68,28 @@ func (h *ProductHandle) List(c *gin.Context) {
 
 // Delete 只绑定写入 body，操作人始终取自当前登录态。
 func (h *ProductHandle) Delete(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-
-	req.OperatorID = builtin.OperatorName(c)
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErrWith(c,
+		func(c *gin.Context, req *productdto.DeleteReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.DeleteReq) error { return h.svc.Delete(ctx, req) },
+		productWriteOK)
 }
 
 // BulkDelete 保留 Service 的整批原子语义，失败事实交共享 Jet 出口。
 func (h *ProductHandle) BulkDelete(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.BulkDeleteReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-
-	if _, err := h.svc.BulkDeleteProducts(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteEnd(c, func(ctx context.Context, req *productdto.BulkDeleteReq) error {
+		_, err := h.svc.BulkDeleteProducts(ctx, req)
+		return err
+	}, productWriteOK)
 }
 
 func (h *ProductHandle) CreateVariant(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.CreateVariantReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-
-	req.OperatorID = builtin.OperatorName(c)
-	if _, err := h.svc.CreateVariant(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErrWith(c,
+		func(c *gin.Context, req *productdto.CreateVariantReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.CreateVariantReq) error {
+			_, err := h.svc.CreateVariant(ctx, req)
+			return err
+		},
+		productWriteOK)
 }
 
 func (h *ProductHandle) UpdateVariant(c *gin.Context) {
@@ -141,19 +108,10 @@ func (h *ProductHandle) UpdateVariant(c *gin.Context) {
 }
 
 func (h *ProductHandle) DeleteVariant(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteVariantReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-
-	req.OperatorID = builtin.OperatorName(c)
-	if err := h.svc.DeleteVariant(c.Request.Context(), &req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErrWith(c,
+		func(c *gin.Context, req *productdto.DeleteVariantReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.DeleteVariantReq) error { return h.svc.DeleteVariant(ctx, req) },
+		productWriteOK)
 }
 
 func (h *ProductHandle) GenerateVariants(c *gin.Context) {
@@ -355,40 +313,21 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 
 // AddRating 接收标准表单并返回完整评分区域，不替换商品编辑器。
 func (h *ProductHandle) AddRating(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.AddRatingReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	// Score 是指针：未出现时绑定失败，明确的零分仍然是合法输入。
-	if req.Score == nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, productenums.Err(productenums.ErrInvalidParam))
-		return
-	}
-	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.AddRating(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.RenderTemplate(c, "admin/product/product_rating_panel.html", pageview.Objects(pageview.Object("Rating", res)))
+	runProductWriteResult(c,
+		func(c *gin.Context, req *productdto.AddRatingReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.AddRatingReq) (any, error) { return h.svc.AddRating(ctx, req) },
+		func(c *gin.Context, res any) {
+			pageview.RenderTemplate(c, "admin/product/product_rating_panel.html", pageview.Objects(pageview.Object("Rating", res)))
+		})
 }
 
 // DeleteRating 将删除后的评分事实交同一 Jet 区域，失败保留当前输入。
 func (h *ProductHandle) DeleteRating(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	var req productdto.DeleteRatingReq
-	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	res, err := h.svc.DeleteRating(c.Request.Context(), &req)
-	if err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.RenderTemplate(c, "admin/product/product_rating_panel.html", pageview.Objects(pageview.Object("Rating", res)))
+	runProductWriteResult(c, nil,
+		func(ctx context.Context, req *productdto.DeleteRatingReq) (any, error) { return h.svc.DeleteRating(ctx, req) },
+		func(c *gin.Context, res any) {
+			pageview.RenderTemplate(c, "admin/product/product_rating_panel.html", pageview.Objects(pageview.Object("Rating", res)))
+		})
 }
 
 func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
@@ -455,18 +394,13 @@ func (h *ProductHandle) PreviewPricing(c *gin.Context) {
 }
 
 func (h *ProductHandle) ApplyPricing(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	req, err := binding.ParseForm[productdto.PricingApplyReq](c)
-	if err != nil {
-		pageview.FailStatus(c, http.StatusBadRequest, productErrScene, err)
-		return
-	}
-	req.OperatorID = builtin.OperatorName(c)
-	if _, err := h.svc.ApplyPricing(c.Request.Context(), req); err != nil {
-		pageview.FailScene(c, productErrScene, err)
-		return
-	}
-	pageview.Success(c)
+	runProductWriteErrWith(c,
+		func(c *gin.Context, req *productdto.PricingApplyReq) { req.OperatorID = builtin.OperatorName(c) },
+		func(ctx context.Context, req *productdto.PricingApplyReq) error {
+			_, err := h.svc.ApplyPricing(ctx, req)
+			return err
+		},
+		productWriteOK)
 }
 
 func (h *ProductHandle) BulkPricing(c *gin.Context) {

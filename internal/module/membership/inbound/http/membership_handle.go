@@ -1,6 +1,7 @@
 package membershiphttp
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,39 @@ func membershipFormFail(c *gin.Context, err error) {
 	pageview.FailStatus(c, http.StatusBadRequest, membershipErrScene, err)
 }
 
+// runMembershipWrite 是会员写端点的统一骨架：绑定 → 投影 → 调用服务 → 成功出口。
+//
+// 三个回调各自只做一件事；任一环节失败都已写出响应，控制器不再重复判断。
+func runMembershipWrite[F any, R any](c *gin.Context,
+	build func(*F) (R, error),
+	call func(context.Context, R) (any, error),
+	success func(*gin.Context)) {
+	form := bindMembershipForm[F](c)
+	if form == nil {
+		return
+	}
+	req, err := build(form)
+	if err != nil {
+		membershipFormFail(c, err)
+		return
+	}
+	if _, err := call(c.Request.Context(), req); err != nil {
+		membershipFail(c, err)
+		return
+	}
+	success(c)
+}
+
+// bindMembershipForm 绑定会员写表单；失败已由这里写出 400。
+func bindMembershipForm[T any](c *gin.Context) *T {
+	var form T
+	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
+		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
+		return nil
+	}
+	return &form
+}
+
 // membershipUint 把表单里的无符号整数字串转成数值；空串或非法值返回错误。
 func membershipUint(text, field string) (uint64, error) {
 	value, err := strconv.ParseUint(strings.TrimSpace(text), 10, 64)
@@ -31,50 +65,11 @@ func membershipUint(text, field string) (uint64, error) {
 	return value, nil
 }
 
-// membershipInt 把表单里的整数字串转成数值；空串或非法值返回错误。
-func membershipInt(text string) (int64, error) {
-	value, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
-	if err != nil {
-		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
-	}
-	return value, nil
-}
+// membershipInt 是 DTO 解析的本地别名（控制器只做绑定，解析归 DTO）。
+func membershipInt(text string) (int64, error) { return membershipdto.ParseIntField(text) }
 
-// membershipYuan 把「元」的字符串按十进制语法精确换算成分。
-// 不走浮点：金额一旦经过 float64 就会在边界上漂移。
-func membershipYuan(text string) (int64, error) {
-	raw := strings.ReplaceAll(strings.TrimSpace(text), ",", "")
-	if raw == "" {
-		return 0, nil
-	}
-	neg := false
-	if strings.HasPrefix(raw, "-") {
-		neg, raw = true, raw[1:]
-	}
-	whole, frac, hasFrac := strings.Cut(raw, ".")
-	if len(frac) > 2 || !hasFrac && strings.Contains(raw, ".") {
-		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
-	}
-	for _, r := range whole + frac {
-		if r < '0' || r > '9' {
-			return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
-		}
-	}
-	if whole == "" {
-		whole = "0"
-	}
-	for len(frac) < 2 {
-		frac += "0"
-	}
-	cents, err := strconv.ParseInt(whole+frac, 10, 64)
-	if err != nil {
-		return 0, membershipenums.Err(membershipenums.ErrInvalidParam)
-	}
-	if neg {
-		cents = -cents
-	}
-	return cents, nil
-}
+// membershipYuan 是 DTO 金额解析的本地别名。
+func membershipYuan(text string) (int64, error) { return membershipdto.ParseYuan(text) }
 
 // membershipEntitlements 把「免运费勾选 + 折扣数字」映射成权益清单。
 // 空折扣表示该等级没有折扣权益；0 与非法值交给 service 的统一校验。
@@ -201,132 +196,38 @@ func (h *Handle) GetTier(c *gin.Context) {
 
 func (h *Handle) CreateTier(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.TierFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	threshold, err := membershipYuan(form.ThresholdYuan)
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	sortOrder := int64(0)
-	if strings.TrimSpace(form.SortOrder) != "" {
-		if sortOrder, err = membershipInt(form.SortOrder); err != nil {
-			membershipFormFail(c, err)
-			return
-		}
-	}
-	req := &membershipdto.CreateTierReq{
-		ProjectID:       form.ProjectID,
-		Name:            form.Name,
-		SortOrder:       int(sortOrder),
-		ThresholdAmount: threshold,
-		IsDefault:       strings.TrimSpace(form.IsDefault) != "",
-		Remark:          form.Remark,
-		Entitlements:    membershipEntitlements(form.FreeShipping, form.DiscountPercent),
-	}
-	if _, err := h.svc.CreateTier(c.Request.Context(), req); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgTierCreated)
+	runMembershipWrite(c, (*membershipdto.TierFormReq).CreateReq,
+		func(ctx context.Context, req *membershipdto.CreateTierReq) (any, error) {
+			return h.svc.CreateTier(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgTierCreated) })
 }
 
 func (h *Handle) UpdateTier(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.TierFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	tierID, err := membershipInt(form.TierID)
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	req := &membershipdto.UpdateTierReq{ProjectID: form.ProjectID, TierID: tierID}
-	if strings.TrimSpace(form.Name) != "" {
-		name := form.Name
-		req.Name = &name
-	}
-	if strings.TrimSpace(form.Remark) != "" {
-		remark := form.Remark
-		req.Remark = &remark
-	}
-	if strings.TrimSpace(form.SortOrder) != "" {
-		sortOrder := int(0)
-		value, err := membershipInt(form.SortOrder)
-		if err != nil {
-			membershipFormFail(c, err)
-			return
-		}
-		sortOrder = int(value)
-		req.SortOrder = &sortOrder
-	}
-	if strings.TrimSpace(form.ThresholdYuan) != "" {
-		threshold, err := membershipYuan(form.ThresholdYuan)
-		if err != nil {
-			membershipFormFail(c, err)
-			return
-		}
-		req.ThresholdAmount = &threshold
-	}
-	if strings.TrimSpace(form.IsDefault) != "" {
-		isDefault := true
-		req.IsDefault = &isDefault
-	}
-	if _, err := h.svc.UpdateTier(c.Request.Context(), req); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgTierUpdated)
+	runMembershipWrite(c, (*membershipdto.TierFormReq).UpdateReq,
+		func(ctx context.Context, req *membershipdto.UpdateTierReq) (any, error) {
+			return h.svc.UpdateTier(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgTierUpdated) })
 }
 
 func (h *Handle) DeleteTier(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.DeleteTierFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	tierID, err := membershipInt(form.TierID)
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	if err := h.svc.DeleteTier(c.Request.Context(), &membershipdto.DeleteTierReq{
-		ProjectID: form.ProjectID, TierID: tierID,
-	}); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgTierDeleted)
+	runMembershipWrite(c, (*membershipdto.DeleteTierFormReq).DeleteReq,
+		func(ctx context.Context, req *membershipdto.DeleteTierReq) (any, error) {
+			return nil, h.svc.DeleteTier(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgTierDeleted) })
 }
 
 func (h *Handle) SaveEntitlements(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.EntitlementFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	tierID, err := membershipInt(form.TierID)
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	req := &membershipdto.SaveEntitlementsReq{
-		ProjectID: form.ProjectID,
-		TierID:    tierID,
-		Items:     membershipEntitlements(form.FreeShipping, form.DiscountPercent),
-	}
-	if _, err := h.svc.SaveEntitlements(c.Request.Context(), req); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgEntitlementSaved)
+	runMembershipWrite(c, (*membershipdto.EntitlementFormReq).SaveReq,
+		func(ctx context.Context, req *membershipdto.SaveEntitlementsReq) (any, error) {
+			return h.svc.SaveEntitlements(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgEntitlementSaved) })
 }
 
 func (h *Handle) ListAssignments(c *gin.Context) {
@@ -351,47 +252,20 @@ func (h *Handle) ListAssignments(c *gin.Context) {
 
 func (h *Handle) AssignSet(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.AssignFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	userID, err := membershipUint(form.UserID, "userId")
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	tierID, err := membershipInt(form.TierID)
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	req := &membershipdto.AssignManualReq{ProjectID: form.ProjectID, UserID: userID, TierID: tierID}
-	if _, err := h.svc.AssignManual(c.Request.Context(), req); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgAssignSet)
+	runMembershipWrite(c, (*membershipdto.AssignFormReq).AssignReq,
+		func(ctx context.Context, req *membershipdto.AssignManualReq) (any, error) {
+			return h.svc.AssignManual(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgAssignSet) })
 }
 
 func (h *Handle) AssignUnlock(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.UnlockFormReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
-		return
-	}
-	userID, err := membershipUint(form.UserID, "userId")
-	if err != nil {
-		membershipFormFail(c, err)
-		return
-	}
-	req := &membershipdto.UnlockManualReq{ProjectID: form.ProjectID, UserID: userID}
-	if err := h.svc.UnlockManual(c.Request.Context(), req); err != nil {
-		membershipFail(c, err)
-		return
-	}
-	membershipWriteOK(c, membershipenums.MsgAssignUnlocked)
+	runMembershipWrite(c, (*membershipdto.UnlockFormReq).UnlockReq,
+		func(ctx context.Context, req *membershipdto.UnlockManualReq) (any, error) {
+			return nil, h.svc.UnlockManual(ctx, req)
+		},
+		func(c *gin.Context) { membershipWriteOK(c, membershipenums.MsgAssignUnlocked) })
 }
 
 func (h *Handle) Resolve(c *gin.Context) {
@@ -409,12 +283,11 @@ func (h *Handle) Resolve(c *gin.Context) {
 
 func (h *Handle) Recalc(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var form membershipdto.RecalcProjectReq
-	if err := c.ShouldBindWith(&form, ginbinding.FormPost); err != nil {
-		membershipFormFail(c, membershipenums.Err(membershipenums.ErrInvalidParam))
+	form := bindMembershipForm[membershipdto.RecalcProjectReq](c)
+	if form == nil {
 		return
 	}
-	res, err := h.svc.RecalcProject(c.Request.Context(), &form)
+	res, err := h.svc.RecalcProject(c.Request.Context(), form)
 	if err != nil {
 		membershipFail(c, err)
 		return
