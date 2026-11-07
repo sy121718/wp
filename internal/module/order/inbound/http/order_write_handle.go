@@ -8,6 +8,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	orderservice "go_wp/internal/module/order/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -74,9 +75,13 @@ func (e *orderBulkRejectedError) Facing() (string, string) {
 func (e *orderBulkRejectedError) BlockedItems() []facing.BlockedItem { return e.items }
 
 // couponBackURL 是优惠码写成功后回到列表的地址：保留当前筛选上下文。
+// 查询参数经 binding.Query 读取（键名在 DTO 的 form tag 里），不手工读查询串。
 func couponBackURL(c *gin.Context, projectID string) string {
-	return "/admin/coupons?" + couponListQuery(projectID,
-		couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0)
+	filter := couponFilter{}
+	if q, ok := binding.Query[orderdto.CouponListReq](c); ok {
+		filter.Status, filter.Keyword = q.Status, q.Keyword
+	}
+	return "/admin/coupons?" + couponListQuery(projectID, filter, 0, 0)
 }
 
 // orderNormalizeBulkIDs 把归一交给 service（去重与上限属于业务规则），

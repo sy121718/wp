@@ -170,8 +170,9 @@ var (
 		"PostForm": true, "GetPostForm": true, "PostFormArray": true, "GetPostFormArray": true,
 	}
 
+	// 只约束查询串。c.Param 是路径参数（路由段），不属于「入参走 Query[T]」的范围。
 	controllerQueryMethods = map[string]bool{
-		"Query": true, "DefaultQuery": true, "Param": true,
+		"Query": true, "DefaultQuery": true,
 	}
 )
 
