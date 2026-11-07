@@ -56,7 +56,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 
 - 浏览器链接/表单 → Controller 原生绑定与基础校验 → Service → Controller 选模板并传业务事实 → HTMX 更新 Jet 声明的区域。
 - **Jet 定义界面，Go 不写界面**：标签、属性、文案、界面 URL、HTMX 目标归模板；Go 不拼 HTML/成品属性串，不返回 DOM 选择器或导航配置。
-- 两种合法出口形状：控制器直接 `c.HTML(status, tpl, data)`，或走共享渲染基础设施（`pkg/view`、`pkg/view/jet`、`internal/adminui`）注入语言与页面公共上下文后再渲染。共享基础设施只装配一次，不在每个模块重复接线。
+- 两种合法出口形状：控制器直接 `c.HTML(status, tpl, data)`，或走共享渲染基础设施（`pkg/view`、`pkg/view/jet`）注入语言与页面公共上下文后再渲染。共享基础设施只装配一次，不在每个模块重复接线；后台页面的请求事实（CSRF、授权菜单树）由 routers 在装配期经 `pkg/view.SetAdminPort` 注入。
 - 路由按真实职责声明响应协议，且在鉴权、CSRF、限流、请求体拒绝之前可识别；不按 `/api`、`Accept` 或 `HX-Request` 猜测协议，不机械复制 HTML/JSON 双端点。
 - 输入与输出协议解耦：普通 form、明确 multipart、复杂编辑器 JSON 都可以返回 HTML。普通 UI 不再使用 JSON→DOM 解释器。
 - 成功导航只由发起模板显式决定；后端不发 302、`HX-Redirect`、`HX-Location`、`HX-Refresh`。失败、网络错误、非法类型、迟到响应不得执行成功动作。
@@ -71,7 +71,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 | 目录 | 只准 | 一律禁止 |
 |---|---|---|
 | dto | 请求基础校验（必填、类型、格式、长度、范围、数组元素的 tag / Validate），以及**返回给 JSON 调用方的响应对象** | 业务规则、数据库查询、表单编码适配；换语言就要重算的**界面**成品句（已取词的 Err/ErrMsg、后端为页面拼的标签句）、`gin.H`、语言注入字段、import service/model |
-| service | 业务规则、校验、事务边界、CRUD/list、数据库聚合、多表拼装成业务对象；交业务事实 | 取词（`i18n.Translate` / `TranslateFunc` / `templates.Translate`）、自造界面词条、把已取词句子或 HTML 塞进 data、`*PageResp`、import templates/adminui |
+| service | 业务规则、校验、事务边界、CRUD/list、数据库聚合、多表拼装成业务对象；交业务事实 | 取词（`i18n.Translate` / `TranslateFunc` / `templates.Translate`）、自造界面词条、把已取词句子或 HTML 塞进 data、`*PageResp`、import templates / pkg/view 的业务包装 |
 | model | 本模块表的 CRUD、聚合内原子组合、分页筛选/count/limit/offset | 业务规则、跨聚合事务、别人的表名、import service |
 | contract | 接口 + 不可变 DTO | import 别人的 service/model、反向依赖 builder/core |
 | enums | 枚举、**业务错误声明**（key + 状态码；文案归词库，声明里不抄中文） | 取词、拼句；**不要求登记按钮/标题等界面 key** |
@@ -88,7 +88,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
 | routers | 装配、路由注册、渲染器装配 | 业务逻辑、SQL |
-| adminui | 后台渲染基础设施（公共上下文、页面/局部渲染、Jet 失败出口） | 业务语义、数据派生、Go 拼界面 HTML |
+| view（`pkg/view`） | 视图结果、成功/失败出口、页面/局部渲染与公共上下文注入、Jet 失败出口 | 业务语义、数据派生、Go 拼界面 HTML |
 | text | 按请求语言注入 `t`/`tf`/`tn` 与语言上下文（**共享渲染基础设施**）、`FactOf` 判定 | 业务语义、读模型、替业务拼成品句 |
 | builder/** | 构建期编译与组件 | 控制面 DB 写、访客请求处理 |
 | pipeline | 发布内核（编译→产物→激活） | 反向 import build/artifact 实现 |
@@ -104,7 +104,7 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 | binding | 待清退的旧绑定与辅助实现；不是请求绑定入口规范，按实际调用逐项迁移 | 新增调用、表单与 JSON 双轨适配、业务校验 |
 | facing | 错误事实（key + 状态码；`facing.Msg` 的兜底是**消息事实**，合法保留） | 取词、日志 |
 | response | JSON 出口取词与状态码（`MessageOf` 产生 message） | 业务语义 |
-| view | 视图结果接口、请求级渲染接线与统一失败出口（只接线，不含模板引擎） | 模板引擎实现、业务逻辑、按模块定制包装 |
+| view | 视图结果接口、请求级渲染接线、页面/片段渲染入口、统一成功与失败出口（不含模板引擎） | 模板引擎实现、业务逻辑、按模块定制包装 |
 | money pagination | **按函数职责**：`pagination.Window`/`Derive`/`PageBase`/`QueryURL` 与 `templates` 的金额显示函数 → 前端展示；`pagination.ClampPage`/`Slice` → service/model 的数据库分页工具；`money.*` 的金额显示格式函数被模板侧调用 | 业务规则、金额求和、数据库筛选/count；**不要整包归一类** |
 | i18n logger database cache rls jsonx utils pathkit safepath | 基础设施 | import internal/** |
 | auth casbin crypto captcha mailer queue upload validate sitehttps sitetz datarule reqparams backpath bulkids enums | 能力包（provider 型带 `provider/` 实现） | 业务语义、import internal/** |
@@ -128,8 +128,8 @@ bash scripts/check-all.sh    # 门禁全集（--with-db 含需要库的那组）
 - 此约束不适用于权限码、按钮权限标识、业务状态、SEO 算法检查项、内容字段路径和内容翻译哈希。带参数的错误载荷不是 key 本体，不对整条载荷套用 15 字符限制。未整改模块如实列为待实施，不新增旧形状、兼容别名或放行白名单。
 - key 改名同步真实消费者、词库与门禁；检查完整字面量、唯一性及真实中英文命中。迁移保留自定义译文与额外语言，目标冲突整批回滚；重复运行完整 seed 后不得补回已退役 key。不能因为扫描器只认识点分 key 而把短 key 漏查当通过。
 
-- **取词只有两个出口**：模板的全局 `t` / `tf`（`internal/templates/funcs.go`，按请求语言注入），与 JSON 出口 `pkg/response.MessageOf`。
-- 按请求语言的**注入**只归共享渲染基础设施（`pkg/view/jet` 的 `AttachScope`/`Inject`、`pkg/view`、`internal/adminui`）；模块不重复接线。
+- **取词只有两个出口**：模板的全局 `t` / `tf`（`pkg/view/jet` 的请求作用域，经 `pkg/view` 注入渲染数据），与 JSON 出口 `pkg/response.MessageOf`。
+- 按请求语言的**注入**只归共享渲染基础设施（`pkg/view/jet` 的 `AttachScope`/`Inject`、`pkg/view`）；模块不重复接线。
 - Go 侧出现 `TranslateFunc(` / `templates.Translate(` / `Prepare*View(` 里的取词即越界。
 - **业务错误**在声明处只给 key + 状态码（`enums.Err(key)` → `facing.WithStatus(...)`）；HTML 出口传错误事实，由 Jet 取词，数据 JSON 出口由 `response.ErrorStatusAuto` 产生 message。缺词给归口文案，不把裸 key、编码明细或内部原文交给前端。
 - **不要求 service 为页面 UI 产出 `facing.Msg` / `facing.Labeled` 或业务枚举**；页面 UI 的文案归模板。

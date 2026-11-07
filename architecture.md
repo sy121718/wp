@@ -22,7 +22,7 @@ cmd/                    进程入口
   └─ routers/           唯一装配层
        ├─ internal/module/*        业务模块，跨模块只经 contract
        ├─ internal/templates       Jet 前端层（壳、片段、静态资产）
-       ├─ internal/adminui         后台共享渲染基础设施
+       ├─ pkg/view                 视图结果 / 页面与片段渲染 / 公共上下文注入
        ├─ internal/middleware      全局链 + 鉴权 + 访问面守卫
        └─ internal/pipeline        发布内核 → pkg/builder 编译内核
 
