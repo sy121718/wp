@@ -2,7 +2,6 @@ package orderhttp
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,16 +15,6 @@ import (
 )
 
 const orderErrScene = "order"
-
-// orderReturnAutoReceive 把退货审核表单里的 autoReceive 读成布尔。
-// checkbox 未勾选时浏览器根本不发这个键，所以「未出现」即 false。
-func orderReturnAutoReceive(c *gin.Context) bool {
-	switch strings.ToLower(strings.TrimSpace(c.PostForm("autoReceive"))) {
-	case "1", "true", "on":
-		return true
-	}
-	return false
-}
 
 // orderWriteFallback 是纯成功消息的缺词兜底：只作为词库缺失时的最后一句，
 // 不能把裸 key 交给界面（与 membership 的同类约定一致）。

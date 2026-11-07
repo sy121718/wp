@@ -377,7 +377,7 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 	req := &orderdto.ReturnReviewReq{
 		ReturnID:      form.ReturnID,
 		Remark:        form.Remark,
-		AutoReceive:   orderReturnAutoReceive(c),
+		AutoReceive:   form.AutoReceive,
 		WarehouseID:   form.WarehouseID,
 		TransactionID: form.TransactionID,
 	}

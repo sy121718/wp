@@ -19,7 +19,6 @@ var pendingControllerNormalize = map[string]bool{
 	"internal/module/purchase/inbound/http/source_page_handle.go":            true,
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":   true,
 	"internal/module/mail/inbound/http/mail_contact_write.go":                true,
-	"internal/module/mail/inbound/http/mail_page.go":                         true,
 }
 
 var pendingControllerFiles = map[string]bool{
@@ -39,7 +38,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/mail/inbound/http/mail_contact_write.go":              true,
 	"internal/module/mail/inbound/http/mail_err.go":                        true,
 	"internal/module/mail/inbound/http/mail_jump.go":                       true,
-	"internal/module/mail/inbound/http/mail_page.go":                       true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
 	"internal/module/order/inbound/http/coupon_page.go":                    true,
@@ -71,7 +69,6 @@ var pendingControllerBinding = map[string]bool{
 	"internal/module/ai/inbound/http/ai_page.go":                        true,
 	"internal/module/content/inbound/http/content_handle.go":            true,
 	"internal/module/content/inbound/http/content_page.go":              true,
-	"internal/module/mail/inbound/http/mail_page.go":                    true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
 	"internal/module/order/inbound/http/order_create_page.go":           true,
 	"internal/module/project/inbound/http/project_page.go":              true,
@@ -95,7 +92,6 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go": true,
 	"internal/module/mail/inbound/http/mail_err.go":                        true,
 	"internal/module/mail/inbound/http/mail_handle.go":                     true,
-	"internal/module/mail/inbound/http/mail_page.go":                       true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
 	"internal/module/media/inbound/http/media_handle.go":                   true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
@@ -134,13 +130,9 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/content/inbound/http/content_page_router.go:SetupContentPages":             true,
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go:ContentTemplatesPage": true,
 	"internal/module/inventory/inbound/http/inventory_page_handle.go:InventoryPage":             true,
-
-	"internal/module/mail/inbound/http/mail_contact_write.go:ContactDelete":                    true,
-	"internal/module/mail/inbound/http/mail_contact_write.go:ContactSave":                      true,
 	"internal/module/mail/inbound/http/mail_page_router.go:setupMailPageRoutes":                true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go:MasterDataChangesPage":         true,
 	"internal/module/membership/inbound/http/membership_page.go:MembershipAssignmentsPage":     true,
-	"internal/module/navigation/inbound/http/navigation_add_source_handle.go:createFromSource": true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go:build":                  true,
 	"internal/module/order/inbound/http/coupon_page.go:CouponsPage":                            true,
 	"internal/module/order/inbound/http/order_create_page.go:render":                           true,
