@@ -1,6 +1,7 @@
 package contenthttp
 
 type PreviewNoticeResp struct {
-	Text string
-	Lang string
+	Key      string
+	Fallback string
+	Lang     string
 }

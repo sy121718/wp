@@ -2,7 +2,6 @@ package contenthttp
 
 import (
 	"context"
-	text "go_wp/pkg/view/jet"
 	"net/http"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/builder/core"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	seoscore "go_wp/pkg/seo/scoring"
 )
@@ -168,7 +168,7 @@ func (h *Handle) Collections(c *gin.Context) {
 			return
 		}
 		response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess,
-			gin.H{"collections": localizeCollectionLabels(c, items)})
+			gin.H{"collections": collectionSchemasForJSON(c, items)})
 		return
 	}
 	provider, ok := h.svc.(core.CollectionSchemaProvider)
@@ -182,18 +182,24 @@ func (h *Handle) Collections(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess,
-		gin.H{"collections": localizeCollectionLabels(c, items)})
+		gin.H{"collections": collectionSchemasForJSON(c, items)})
 }
 
-func localizeCollectionLabels(c *gin.Context, items []core.CollectionSchema) []core.CollectionSchema {
+// collectionSchemasForJSON 交编辑器 JSON 消费方的集合目录。
+//
+// 这里的 Label 是**给编辑器 JS 的显示名**，不是页面文案：/api/content/collections 是
+// 明确 JSON 数据接口（编辑器按集合名渲染候选），没有模板渲染通道。因此按 JSON 出口
+// 的取词口（response.MessageOf 同源的事实）构造 Label，而不是在控制器里翻成品句。
+func collectionSchemasForJSON(c *gin.Context, items []core.CollectionSchema) []core.CollectionSchema {
 	out := make([]core.CollectionSchema, len(items))
 	copy(out, items)
-	tr := text.RequestTranslateFunc(c)
 	for i := range out {
 		if strings.TrimSpace(out[i].LabelKey) == "" {
 			continue
 		}
-		out[i].Label = tr(out[i].LabelKey, out[i].Label)
+		out[i].Label = response.MsgText(c, facing.Msg{
+			Key: out[i].LabelKey, Fallback: out[i].Label,
+		})
 	}
 	return out
 }

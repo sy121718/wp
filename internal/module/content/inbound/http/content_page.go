@@ -8,6 +8,7 @@ import (
 	text "go_wp/pkg/view/jet"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -202,7 +203,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), text.RequestTranslateFunc(c)))
+	pageview.RenderTemplate(c, ArticleEditPageTemplate, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c)))
 }
 
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
@@ -289,7 +290,7 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
 
 	pageview.RenderTemplate(c, SeoScoreFragmentTemplate, &SeoScoreFragmentView{
-		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), text.RequestTranslateFunc(c)),
+		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c)),
 	})
 }
 
@@ -314,7 +315,7 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 	}
 	data := item.Data
 	pageview.RenderTemplate(c, ArticleSeoDrawerTemplate, &ArticleSeoDrawerResp{
-		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), text.RequestTranslateFunc(c)),
+		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c)),
 		IsNew: false,
 	})
 }
@@ -322,13 +323,12 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
-	tr := text.RequestTranslateFunc(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。"))
 	}
 	if h == nil || h.instances == nil {
-		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。"))
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
 		EntityType: articleEntityType, EntityID: id,
@@ -336,18 +336,19 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	if err != nil {
 
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。"))
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
+		pageview.RenderTemplate(c, ContentPreviewNoticeTemplate, previewPlaceholderResp(c, contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。"))
 	}
 
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
 	return
 }
 
-func previewPlaceholderResp(c *gin.Context, text string) PreviewNoticeResp {
-	return PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
+// previewPlaceholderResp 只交词条事实；模板按请求语言取词（见 admin/preview_notice.html）。
+func previewPlaceholderResp(c *gin.Context, key, fallback string) PreviewNoticeResp {
+	return PreviewNoticeResp{Key: key, Fallback: fallback, Lang: response.RequestLanguage(c)}
 }
 
 const (
@@ -531,7 +532,8 @@ func articleImportDocument(data map[string]any, nodes []*core.Node) (json.RawMes
 	return json.Marshal(doc)
 }
 
-func articleImportPreviewViewOf(res *richdoc.Result, trs ...func(key, fallback string) string) articleImportPreviewView {
+func articleImportPreviewViewOf(res *richdoc.Result,
+	trs ...func(key, fallback string) string) articleImportPreviewView {
 	tr := articlePublishTr(trs)
 	if res == nil {
 		return articleImportPreviewView{}
@@ -550,6 +552,8 @@ func articleImportPreviewViewOf(res *richdoc.Result, trs ...func(key, fallback s
 	view := articleImportPreviewView{
 		OK:        true,
 		NodeCount: len(res.Nodes),
+		// 已登记例外：CountText 的具名占位符 {count} 在模板 tf（%s）里无法表达，
+		// 中英语序也不同；与 fragments/article_import.html 文件头记录的是同一处。
 		CountText: i18n.FillTranslate(tr, contentenums.ImportResultCount,
 			"转换结果：{count} 个组件", map[string]string{"count": strconv.Itoa(len(res.Nodes))}),
 		Lossless: len(res.Warnings) == 0,
@@ -1100,13 +1104,33 @@ func articleTranslationMsg(key, fallback string) articleMsg {
 	return articleMsg{Key: key, Fallback: fallback}
 }
 
-func articleTranslationFilled(c *gin.Context, key, fallback string, params map[string]string) articleMsg {
-	return articleMsg{Fallback: i18n.FillTranslate(text.RequestTranslateFunc(c), key, fallback, params)}
+// articleTranslationFilled 只组装消息事实：key + 兜底 + 具名参数。
+// 取词发生在消费点 —— 页面/片段由模板 t/tn，成功提示由共享成功出口。
+func articleTranslationFilled(_ *gin.Context, key, fallback string, params map[string]string) articleMsg {
+	return articleMsg{Key: key, Fallback: fallback, Args: msgArgsOf(params)}
+}
+
+func msgArgsOf(params map[string]string) []string {
+	if len(params) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, params[k])
+	}
+	return out
 }
 
 func articleErrFilled(c *gin.Context, key, fallback string, err error) articleMsg {
-	return articleTranslationFilled(c, key, fallback,
-		map[string]string{"detail": response.MsgText(c, articleErrMsg(c, err))})
+	// detail 是「详情」这一段的**文案事实**，由这里的 Quiet 出口按请求语言取词后拼进参数，
+	// 因为它是一个嵌套消息，模板的 tn 只渲染扁平占位符。
+	return articleMsg{Key: key, Fallback: fallback,
+		Args: []string{response.MsgText(c, articleErrMsgQuiet(c, err))}}
 }
 
 func articleTranslationDone(c *gin.Context, projectID, lang, keyword string, page, limit, written int) {
