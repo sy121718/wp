@@ -21,11 +21,8 @@ type SourceRowResp struct {
 	Name string
 	Type string
 
-	TypeLabel         string
-	RelatedParty      bool
-	RelatedPartyLabel string
-	Status            string
-	StatusLabel       string
+	RelatedParty bool
+	Status       string
 
 	SettlePrice    string
 	HasSettlePrice bool
@@ -45,23 +42,19 @@ type SourceSummaryView struct {
 }
 
 type SourceSummaryGroupView struct {
-	Type              string
-	TypeLabel         string
-	RelatedParty      bool
-	RelatedPartyLabel string
-	Count             int64
+	Type         string
+	RelatedParty bool
+	Count        int64
 }
 
 type PurchaseOrderViewResp struct {
 	ID   string
 	Code string
 
-	SourceName      string
-	SourceType      string
-	SourceTypeLabel string
-	WarehouseName   string
-	Status          string
-	StatusLabel     string
+	SourceName    string
+	SourceType    string
+	WarehouseName string
+	Status        string
 
 	OrderedAt  utils.JSONTime
 	ExpectedAt *utils.JSONTime
@@ -75,9 +68,7 @@ type PurchaseOrderViewResp struct {
 
 	OutstandingTone string
 
-	ReceivedLabel    string
-	OutstandingLabel string
-	ProgressLabel    string
+	ProgressLabel string
 	Lines            []PurchaseOrderLineViewResp
 
 	RequestID string
@@ -102,10 +93,9 @@ type PurchaseOrderLineViewResp struct {
 type PurchaseHistoryViewResp struct {
 	ReceiptCode     string
 	Kind            string
-	KindLabel       string
 	OrderCode       string
 	SourceName      string
-	SourceTypeLabel string
+	SourceType      string
 	WarehouseName   string
 	SKUCode         string
 	Quantity        int
@@ -116,26 +106,30 @@ type PurchaseHistoryViewResp struct {
 	ReceivedAt      utils.JSONTime
 }
 
+// SourceOptionViewResp 只交货源事实；选项文案由模板按请求语言组合。
 type SourceOptionViewResp struct {
-	ID    string
-	Code  string
-	Name  string
-	Type  string
-	Label string
+	ID   string
+	Code string
+	Name string
+	Type string
 }
 
+// WarehouseOptionViewResp 只交仓库事实；「默认仓」等文案由模板取词。
 type WarehouseOptionViewResp struct {
 	ID        string
-	Label     string
+	Name      string
+	Code      string
 	IsDefault bool
 }
 
+// VariantOptionViewResp 只交变体事实；成本说明等文案由模板取词。
 type VariantOptionViewResp struct {
 	VariantID string
 	ProductID string
 	SKUCode   string
 	BareSKU   string
 	Label     string
+	Cost      string
 }
 
 type DraftLineViewResp struct {

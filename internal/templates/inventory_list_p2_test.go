@@ -132,13 +132,13 @@ func TestPurchaseListColumnsAlign(t *testing.T) {
 		sources, orders []map[string]any
 	}{
 		{"无货源", nil, nil},
-		{"有货源无采购单", []map[string]any{{"ID": "s1", "Label": "货源甲"}}, nil},
-		{"有采购单", []map[string]any{{"ID": "s1", "Label": "货源甲"}}, []map[string]any{{
-			"ID": "o1", "Code": "PO-1", "SourceName": "货源甲", "SourceTypeLabel": "外部供应商",
-			"WarehouseName": "仓库甲", "Status": "partial", "StatusLabel": "部分入库",
+		{"有货源无采购单", []map[string]any{{"ID": "s1", "Code": "S1", "Name": "货源甲", "Type": "external"}}, nil},
+		{"有采购单", []map[string]any{{"ID": "s1", "Code": "S1", "Name": "货源甲", "Type": "external"}}, []map[string]any{{
+			"ID": "o1", "Code": "PO-1", "SourceName": "货源甲", "SourceType": "external",
+			"WarehouseName": "仓库甲", "Status": "partial",
 			"ReceivedQuantity": 1, "TotalQuantity": 2, "OrderedAt": "2026-01-01", "Lines": []map[string]any{},
 			"OutstandingQuantity": 1, "ProgressPercent": 50, "OutstandingTone": "warn",
-			"ReceivedLabel": "已入库 1 / 2", "OutstandingLabel": "未入库 1", "ProgressLabel": "50%",
+			"ProgressLabel": "50%",
 		}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

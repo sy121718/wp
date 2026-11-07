@@ -175,9 +175,8 @@ func (h *sourcePageHandle) fillSourceRows(c *gin.Context, f *sourcePageFilter) {
 				f.d.Err = purchaseErrText(c, lerr)
 			}
 		} else {
-			tr := purchaseTranslate(c)
 			for _, item := range list {
-				f.d.Sources = append(f.d.Sources, sourceRow(tr, item))
+				f.d.Sources = append(f.d.Sources, sourceRow(item))
 			}
 		}
 	}
@@ -281,12 +280,9 @@ func (h *sourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, pr
 		return out, false
 	}
 	groups := make([]purchasedto.SourceSummaryGroupView, 0, len(res.Groups))
-	tr := purchaseTranslate(c)
 	for _, g := range res.Groups {
 		groups = append(groups, purchasedto.SourceSummaryGroupView{
-			Type: g.Type, TypeLabel: sourceTypeLabel(tr, g.Type),
-			RelatedParty: g.RelatedParty, RelatedPartyLabel: sourceRelatedLabel(tr, g.RelatedParty),
-			Count: g.Count,
+			Type: g.Type, RelatedParty: g.RelatedParty, Count: g.Count,
 		})
 	}
 	return purchasedto.SourceSummaryView{
@@ -296,16 +292,15 @@ func (h *sourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, pr
 	}, true
 }
 
-func sourceRow(tr func(key, fallback string) string, s *purchasedto.SourceResp) purchasedto.SourceRowResp {
+func sourceRow(s *purchasedto.SourceResp) purchasedto.SourceRowResp {
 	settlePrice := "—"
 	if s.SettlePrice != nil {
 		settlePrice = strconv.FormatFloat(*s.SettlePrice, 'f', 2, 64)
 	}
 	return purchasedto.SourceRowResp{
 		ID: s.ID, Code: s.Code, Name: s.Name,
-		Type: s.Type, TypeLabel: sourceTypeLabel(tr, s.Type),
-		RelatedParty: s.RelatedParty, RelatedPartyLabel: sourceRelatedLabel(tr, s.RelatedParty),
-		Status: s.Status, StatusLabel: statusLabel(tr, s.Status),
+		Type: s.Type, RelatedParty: s.RelatedParty,
+		Status: s.Status,
 		SettlePrice: settlePrice, HasSettlePrice: s.SettlePrice != nil,
 		Config: prettyJSON(s.Config), Sort: s.Sort, UpdatedAt: s.UpdatedAt,
 	}
@@ -333,24 +328,6 @@ func sourceRelatedOptions() []purchasedto.OptionResp {
 		{Value: "true"},
 		{Value: "false"},
 	}
-}
-
-func sourceTypeLabel(tr func(key, fallback string) string, sourceType string) string {
-	switch sourceType {
-	case purchaseenums.SourceTypeInternal:
-		return tr(purchaseenums.KeySourcesTypeInternal, "内部（集团内 / 自家工厂）")
-	case purchaseenums.SourceTypeExternal:
-		return tr(purchaseenums.KeySourcesStatsExternal, "外部供应商")
-	default:
-		return sourceType
-	}
-}
-
-func sourceRelatedLabel(tr func(key, fallback string) string, related bool) string {
-	if related {
-		return tr(purchaseenums.KeySourcesStatsRelated, "关联方")
-	}
-	return tr(purchaseenums.KeySourcesStatsUnrelated, "非关联方")
 }
 
 func prettyJSON(raw json.RawMessage) string {

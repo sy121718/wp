@@ -169,14 +169,14 @@
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.name", "名称") }}">{{if isset(.Buttons["inventory.source_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{s.Name}}</strong></button>{{else}}<strong>{{s.Name}}</strong>{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.code", "编码") }}"><code>{{s.Code}}</code></td>
-                <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}"><span class="badge badge-mute">{{s.TypeLabel}}</span></td>
+                <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}"><span class="badge badge-mute">{{if s.Type == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if s.Type == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{s.Type}}{{end}}</span></td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.related", "关联方") }}">
-                    {{if s.RelatedParty}}<span class="badge badge-info">{{s.RelatedPartyLabel}}</span>
-                    {{else}}<span class="badge badge-mute">{{s.RelatedPartyLabel}}</span>{{end}}
+                    {{if s.RelatedParty}}<span class="badge badge-info">{{if s.RelatedParty}}{{ .["t"]("admin.inventory_sources.stats.related", "关联方") }}{{else}}{{ .["t"]("admin.inventory_sources.stats.unrelated", "非关联方") }}{{end}}</span>
+                    {{else}}<span class="badge badge-mute">{{if s.RelatedParty}}{{ .["t"]("admin.inventory_sources.stats.related", "关联方") }}{{else}}{{ .["t"]("admin.inventory_sources.stats.unrelated", "非关联方") }}{{end}}</span>{{end}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.status", "状态") }}">
-                    {{if s.Status == "disabled"}}<span class="badge badge-warning">{{s.StatusLabel}}</span>
-                    {{else}}<span class="badge badge-success">{{s.StatusLabel}}</span>{{end}}
+                    {{if s.Status == "disabled"}}<span class="badge badge-warning">{{if s.Status == "disabled"}}{{ .["t"]("admin.inventory_sources.status.disabled", "已停用") }}{{else}}{{ .["t"]("admin.inventory_sources.status.active", "启用中") }}{{end}}</span>
+                    {{else}}<span class="badge badge-success">{{if s.Status == "disabled"}}{{ .["t"]("admin.inventory_sources.status.disabled", "已停用") }}{{else}}{{ .["t"]("admin.inventory_sources.status.active", "启用中") }}{{end}}</span>{{end}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.settlePrice", "结算价") }}">{{if s.HasSettlePrice}}{{s.SettlePrice}}{{else}}—{{end}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
@@ -238,8 +238,8 @@
             <tbody>
             {{range _, g := summary.Groups}}
             <tr>
-                <td>{{g.TypeLabel}} <span class="source-meta">{{g.Type}}</span></td>
-                <td>{{g.RelatedPartyLabel}}</td>
+                <td>{{if g.Type == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if g.Type == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{g.Type}}{{end}} <span class="source-meta">{{g.Type}}</span></td>
+                <td>{{if g.RelatedParty}}{{ .["t"]("admin.inventory_sources.stats.related", "关联方") }}{{else}}{{ .["t"]("admin.inventory_sources.stats.unrelated", "非关联方") }}{{end}}</td>
                 <td>{{g.Count}}</td>
             </tr>
             {{end}}
@@ -325,7 +325,7 @@
                 <label class="form-label">{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}</label>
                 <select class="form-select" name="type">
                     {{range _, t := .TypeOptions}}
-                    <option value="{{t.Value}}" {{if t.Value == s.Type}}selected{{end}}>{{t.Label}}</option>
+                    <option value="{{t.Value}}" {{if t.Value == s.Type}}selected{{end}}>{{if t.Value == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if t.Value == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{t.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -341,7 +341,7 @@
                 <label class="form-label">{{ .["t"]("admin.inventory_sources.col.status", "状态") }}</label>
                 <select class="form-select" name="status">
                     {{range _, st := .StatusOptions}}
-                    <option value="{{st.Value}}" {{if st.Value == s.Status}}selected{{end}}>{{st.Label}}</option>
+                    <option value="{{st.Value}}" {{if st.Value == s.Status}}selected{{end}}>{{if st.Value == "active"}}{{ .["t"]("admin.inventory_sources.status.active", "启用中") }}{{else if st.Value == "disabled"}}{{ .["t"]("admin.inventory_sources.status.disabled", "已停用") }}{{else}}{{st.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>

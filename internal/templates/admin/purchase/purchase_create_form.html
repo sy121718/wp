@@ -15,7 +15,7 @@
             <select class="form-select" name="sourceId" required>
                 <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（选择货源）") }}</option>
                 {{range _, s := .Sources}}
-                <option value="{{s.ID}}">{{s.Label}}</option>
+                <option value="{{s.ID}}">{{s.Name}}（{{s.Code}}）· {{if s.Type == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if s.Type == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{s.Type}}{{end}}</option>
                 {{end}}
             </select>
         </div>
@@ -24,7 +24,7 @@
             <select class="form-select" name="warehouseId">
                 <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（默认仓）") }}</option>
                 {{range _, w := .Warehouses}}
-                <option value="{{w.ID}}">{{w.Label}}</option>
+                <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory_purchases.option.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                 {{end}}
             </select>
         </div>
@@ -49,9 +49,9 @@
                 <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
                 {{range _, o := .VariantOptions}}
                 {{if isset(o.ProductID) && isset(o.BareSKU)}}
-                <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}" {{if o.VariantID + "|" + o.ProductID + "|" + o.BareSKU == pcSku}}selected{{end}}>{{o.Label}}</option>
+                <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}" {{if o.VariantID + "|" + o.ProductID + "|" + o.BareSKU == pcSku}}selected{{end}}>{{o.Label}}{{if o.Cost}} {{ .["t"]("admin.inventory_purchases.option.cost", "（成本") }}{{o.Cost}}{{ .["t"]("admin.inventory_purchases.option.costTail", "）") }}{{else}} {{ .["t"]("admin.inventory_purchases.option.costUnset", "（成本未填）") }}{{end}}</option>
                 {{else}}
-                <option disabled>{{o.Label}}</option>
+                <option disabled>{{o.Label}}{{if o.Cost}} {{ .["t"]("admin.inventory_purchases.option.cost", "（成本") }}{{o.Cost}}{{ .["t"]("admin.inventory_purchases.option.costTail", "）") }}{{else}} {{ .["t"]("admin.inventory_purchases.option.costUnset", "（成本未填）") }}{{end}}</option>
                 {{end}}
                 {{end}}
             </select>

@@ -14,7 +14,6 @@ import (
 	purchasedto "go_wp/internal/module/purchase/dto"
 	purchaseenums "go_wp/internal/module/purchase/enums"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	pageview "go_wp/pkg/view"
@@ -165,12 +164,12 @@ type purchaseOrderFilter struct {
 }
 
 func (h *purchasePageHandle) fillPurchaseOptions(c *gin.Context, d *purchasesPageData, projectID string) {
-	ctx, tr := c.Request.Context(), purchaseTranslate(c)
-	d.Sources = h.sourceOptions(ctx, projectID, "", tr)
+	ctx := c.Request.Context()
+	d.Sources = h.sourceOptions(ctx, projectID, "")
 
-	d.InternalSources = h.sourceOptions(ctx, projectID, purchaseenums.SourceTypeInternal, tr)
-	d.Warehouses = h.warehouseOptions(ctx, projectID, tr)
-	d.VariantOptions = h.variantOptions(ctx, projectID, tr)
+	d.InternalSources = h.sourceOptions(ctx, projectID, purchaseenums.SourceTypeInternal)
+	d.Warehouses = h.warehouseOptions(ctx, projectID)
+	d.VariantOptions = h.variantOptions(ctx, projectID)
 }
 
 func (h *purchasePageHandle) fillPurchaseOrders(c *gin.Context, f *purchaseOrderFilter) {
@@ -337,15 +336,13 @@ func (h *purchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status
 		}
 		return out, total, curPage
 	}
-	tr := purchaseTranslate(c)
 	for _, o := range orders {
-		out = append(out, purchaseOrderRowView(o, tr))
+		out = append(out, purchaseOrderRowView(o))
 	}
 	return out, total, curPage
 }
 
-func purchaseOrderRowView(o *purchasedto.PurchaseOrderResp,
-	tr func(key, fallback string) string) purchasedto.PurchaseOrderViewResp {
+func purchaseOrderRowView(o *purchasedto.PurchaseOrderResp) purchasedto.PurchaseOrderViewResp {
 	lines := make([]purchasedto.PurchaseOrderLineViewResp, 0, len(o.Lines))
 	for _, l := range o.Lines {
 		lines = append(lines, purchasedto.PurchaseOrderLineViewResp{
@@ -361,19 +358,14 @@ func purchaseOrderRowView(o *purchasedto.PurchaseOrderResp,
 	return purchasedto.PurchaseOrderViewResp{
 		ID: o.ID, Code: o.Code,
 		SourceName: o.SourceName, SourceType: o.SourceType,
-		SourceTypeLabel: sourceTypeLabel(tr, o.SourceType),
-		WarehouseName:   o.WarehouseName,
-		Status:          o.Status, StatusLabel: purchaseStatusLabel(tr, o.Status),
+		WarehouseName: o.WarehouseName,
+		Status:        o.Status,
 		OrderedAt: o.OrderedAt, ExpectedAt: o.ExpectedAt,
 		Remark: o.Remark, OperatorID: o.OperatorID,
 		TotalQuantity: o.TotalQuantity, ReceivedQuantity: o.ReceivedQuantity,
 		OutstandingQuantity: o.OutstandingQuantity, ProgressPercent: o.ProgressPercent,
 		OutstandingTone: outstandingTone(o.OutstandingQuantity),
 
-		ReceivedLabel: tr(purchaseenums.KeyPurchasesColReceived, "已入库") +
-			" " + strconv.Itoa(o.ReceivedQuantity) + " / " + strconv.Itoa(o.TotalQuantity),
-		OutstandingLabel: tr(purchaseenums.KeyPurchasesColOutstanding, "未入库") +
-			" " + strconv.Itoa(o.OutstandingQuantity),
 		ProgressLabel: strconv.Itoa(o.ProgressPercent) + "%",
 		Lines:         lines,
 		RequestID:     uuid.NewString(),
@@ -395,12 +387,11 @@ func (h *purchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku 
 		}
 		return out
 	}
-	tr := purchaseTranslate(c)
 	for _, r := range rows {
 		out = append(out, purchasedto.PurchaseHistoryViewResp{
-			ReceiptCode: r.ReceiptCode, Kind: r.Kind, KindLabel: receiptKindLabel(tr, r.Kind),
+			ReceiptCode: r.ReceiptCode, Kind: r.Kind,
 			OrderCode: r.OrderCode, SourceName: r.SourceName,
-			SourceTypeLabel: sourceTypeLabel(tr, r.SourceType),
+			SourceType: r.SourceType,
 			WarehouseName:   r.WarehouseName, SKUCode: r.SKUCode,
 			Quantity: r.Quantity, UnitPrice: strconv.FormatFloat(r.UnitPrice, 'f', 2, 64),
 			CostUpdated: r.CostUpdated, Remark: r.Remark,
@@ -410,8 +401,7 @@ func (h *purchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku 
 	return out
 }
 
-func (h *purchasePageHandle) sourceOptions(ctx context.Context, projectID, sourceType string,
-	tr func(key, fallback string) string) (out []purchasedto.SourceOptionViewResp) {
+func (h *purchasePageHandle) sourceOptions(ctx context.Context, projectID, sourceType string) (out []purchasedto.SourceOptionViewResp) {
 	out = []purchasedto.SourceOptionViewResp{}
 	if projectID == "" {
 		return out
@@ -425,18 +415,12 @@ func (h *purchasePageHandle) sourceOptions(ctx context.Context, projectID, sourc
 	for _, s := range rows {
 		out = append(out, purchasedto.SourceOptionViewResp{
 			ID: s.ID, Code: s.Code, Name: s.Name, Type: s.Type,
-			Label: sourceOptionLabel(tr, s),
 		})
 	}
 	return out
 }
 
-func sourceOptionLabel(tr func(key, fallback string) string, s *purchasedto.SourceResp) string {
-	return s.Name + "（" + s.Code + "）· " + sourceTypeLabel(tr, s.Type)
-}
-
-func (h *purchasePageHandle) warehouseOptions(ctx context.Context, projectID string,
-	tr func(key, fallback string) string) (out []purchasedto.WarehouseOptionViewResp) {
+func (h *purchasePageHandle) warehouseOptions(ctx context.Context, projectID string) (out []purchasedto.WarehouseOptionViewResp) {
 	out = []purchasedto.WarehouseOptionViewResp{}
 	if projectID == "" || h.stock == nil {
 		return out
@@ -446,17 +430,14 @@ func (h *purchasePageHandle) warehouseOptions(ctx context.Context, projectID str
 		return out
 	}
 	for _, w := range rows {
-		label := w.Name + "（" + w.Code + "）"
-		if w.IsDefault {
-			label += " " + tr(purchaseenums.KeyWarehouseDefaultSuffix, "· 默认仓")
-		}
-		out = append(out, purchasedto.WarehouseOptionViewResp{ID: w.ID, Label: label, IsDefault: w.IsDefault})
+		out = append(out, purchasedto.WarehouseOptionViewResp{
+			ID: w.ID, Name: w.Name, Code: w.Code, IsDefault: w.IsDefault,
+		})
 	}
 	return out
 }
 
-func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID string,
-	tr func(key, fallback string) string) (out []purchasedto.VariantOptionViewResp) {
+func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID string) (out []purchasedto.VariantOptionViewResp) {
 	out = []purchasedto.VariantOptionViewResp{}
 
 	if projectID == "" || h.catalog == nil {
@@ -472,13 +453,8 @@ func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID strin
 		bare = map[string]string{}
 	}
 
-	costSuffix := func(cost string) string {
-		return i18n.FillTranslate(tr, purchaseenums.KeyPurchasesOptionCostLabel, "（成本 {value}）",
-			map[string]string{"value": cost})
-	}
-	unsetCost := tr(purchaseenums.KeyPurchasesOptionCostUnset, "未填")
 	for _, o := range options {
-		cost := unsetCost
+		cost := ""
 		if o.CostPrice != nil {
 			cost = strconv.FormatFloat(*o.CostPrice, 'f', 2, 64)
 		}
@@ -488,7 +464,8 @@ func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID strin
 		}
 		out = append(out, purchasedto.VariantOptionViewResp{
 			VariantID: o.VariantID, ProductID: o.ProductID, SKUCode: o.SKUCode, BareSKU: sku,
-			Label: o.ProductName + " · " + o.SKUCode + costSuffix(cost),
+			Label: o.ProductName + " · " + o.SKUCode,
+			Cost:  cost,
 		})
 	}
 	return out
@@ -501,28 +478,6 @@ func purchaseStatusOptions() []purchasedto.OptionResp {
 		out = append(out, purchasedto.OptionResp{Value: status})
 	}
 	return out
-}
-
-func purchaseStatusLabel(tr func(key, fallback string) string, status string) string {
-	switch status {
-	case purchaseenums.PurchaseStatusDraft:
-		return tr(purchaseenums.KeyPurchasesStatusDraft, "草稿")
-	case purchaseenums.PurchaseStatusOrdered:
-		return tr(purchaseenums.KeyPurchasesStatusOrdered, "已下单")
-	case purchaseenums.PurchaseStatusPartial:
-		return tr(purchaseenums.KeyPurchasesStatusPartial, "部分到货")
-	case purchaseenums.PurchaseStatusReceived:
-
-		return tr(purchaseenums.KeyPurchasesStatusReceived, "已到货")
-	case purchaseenums.PurchaseStatusException:
-		return tr(purchaseenums.KeyPurchasesStatusException, "异常")
-	case purchaseenums.PurchaseStatusFinished:
-		return tr(purchaseenums.KeyPurchasesStatusFinished, "已完结")
-	case purchaseenums.PurchaseStatusCancelled:
-		return tr(purchaseenums.KeyPurchasesStatusCancelled, "已取消")
-	default:
-		return status
-	}
 }
 
 func receiptKindLabel(tr func(key, fallback string) string, kind string) string {

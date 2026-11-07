@@ -12,6 +12,7 @@
    一直在，页面却不可达），本批按提示文案的指引把表单补回本页。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{orders := .Orders}}
@@ -91,7 +92,7 @@
                     <select class="form-select" id="po-source" name="sourceId">
                         <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionSourceAll", "（全部）") }}</option>
                         {{range _, s := .Sources}}
-                        <option value="{{s.ID}}" {{if s.ID == filterSource}}selected{{end}}>{{s.Label}}</option>
+                        <option value="{{s.ID}}" {{if s.ID == filterSource}}selected{{end}}>{{s.Name}}（{{s.Code}}）· {{if s.Type == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if s.Type == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{s.Type}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -158,7 +159,7 @@
             <tr>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}"><code>{{o.Code}}</code></td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}">{{o.SourceName}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}">{{o.SourceTypeLabel}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}">{{if o.SourceType == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if o.SourceType == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{o.SourceType}}{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}">{{o.WarehouseName}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}">
                     {* 七态（迁移 670）。配色按「这张单现在该由谁动」分档：
@@ -167,13 +168,16 @@
                        已到货 = 收齐了（success）；异常 = 要人处理（danger）；
                        已完结 / 已取消 = 收尾了（mute，不再是待办）。 *}
                     {{tone := "mute"}}{{if o.Status == "received"}}{{tone = "success"}}{{else if o.Status == "partial"}}{{tone = "warning"}}{{else if o.Status == "exception"}}{{tone = "danger"}}{{end}}
-                    {{include "../partials/badge.html" map("tone", tone, "label", o.StatusLabel)}}
+                    {{statusText := ""}}{{if o.Status == "draft"}}{{statusText = tr("admin.inventory_purchases.status.draft", "草稿")}}{{else if o.Status == "ordered"}}{{statusText = tr("admin.inventory_purchases.status.ordered", "已下单")}}{{else if o.Status == "partial"}}{{statusText = tr("admin.inventory_purchases.status.partial", "部分到货")}}{{else if o.Status == "received"}}{{statusText = tr("admin.inventory_purchases.status.received", "已到货")}}{{else if o.Status == "exception"}}{{statusText = tr("admin.inventory_purchases.status.exception", "异常")}}{{else if o.Status == "finished"}}{{statusText = tr("admin.inventory_purchases.status.finished", "已完结")}}{{else if o.Status == "cancelled"}}{{statusText = tr("admin.inventory_purchases.status.cancelled", "已取消")}}{{else}}{{statusText = o.Status}}{{end}}
+                    {{include "../partials/badge.html" map("tone", tone, "label", statusText)}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}">
                     {* 四个数（订购 / 已到 / 未到 / 进度%）全部由 service 算好，模板只显示 ——
                        模板里的减法和百分号换算是没有测试的第二份业务实现，且看不到除零边界。 *}
-                    {{include "../partials/badge.html" map("tone", "mute", "label", o.ReceivedLabel)}}
-                    {{include "../partials/badge.html" map("tone", o.OutstandingTone, "label", o.OutstandingLabel)}}
+                    {{receivedText := tr("admin.inventory_purchases.col.received", "已入库") + " " + o.ReceivedQuantity + " / " + o.TotalQuantity}}
+                    {{outstandingText := tr("admin.inventory_purchases.col.outstanding", "未入库") + " " + o.OutstandingQuantity}}
+                    {{include "../partials/badge.html" map("tone", "mute", "label", receivedText)}}
+                    {{include "../partials/badge.html" map("tone", o.OutstandingTone, "label", outstandingText)}}
                     {{include "../partials/badge.html" map("tone", "mute", "label", o.ProgressLabel)}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.orderedAt", "下单时间") }}">{{o.OrderedAt}}</td>
@@ -351,7 +355,7 @@
                 <select class="form-select" name="sourceId" required aria-label="{{ .["t"]("admin.inventory_purchases.production.labelSource", "生产来源") }}">
                     <option value="">{{ .["t"]("admin.inventory_purchases.production.optionSource", "（选择内部货源）") }}</option>
                     {{range _, s := .InternalSources}}
-                    <option value="{{s.ID}}">{{s.Label}}</option>
+                    <option value="{{s.ID}}">{{s.Name}}（{{s.Code}}）· {{if s.Type == "internal"}}{{ .["t"]("admin.inventory_sources.type.internal", "内部（集团内 / 自家工厂）") }}{{else if s.Type == "external"}}{{ .["t"]("admin.inventory_sources.stats.external", "外部供应商") }}{{else}}{{s.Type}}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -360,7 +364,7 @@
                 <select class="form-select" name="lineSku" required aria-label="{{ .["t"]("admin.inventory_purchases.production.labelSku", "SKU 编码") }}">
                     <option value="">{{ .["t"]("admin.inventory_purchases.production.optionSku", "（选择 SKU）") }}</option>
                     {{range _, o := .VariantOptions}}
-                    <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}">{{o.Label}}</option>
+                    <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}">{{o.Label}}{{if o.Cost}} {{ .["t"]("admin.inventory_purchases.option.cost", "（成本") }}{{o.Cost}}{{ .["t"]("admin.inventory_purchases.option.costTail", "）") }}{{else}} {{ .["t"]("admin.inventory_purchases.option.costUnset", "（成本未填）") }}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -369,7 +373,7 @@
                 <select class="form-select" name="warehouseId" aria-label="{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "收货仓") }}">
                     <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（默认仓）") }}</option>
                     {{range _, w := .Warehouses}}
-                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}} {{ .["t"]("admin.inventory_purchases.option.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                     {{end}}
                 </select>
             </div>
