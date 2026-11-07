@@ -303,14 +303,14 @@ func (s *Service) BulkDeleteArticles(ctx context.Context, rawIDs []string) error
 	deleted := make([]*contentmodel.Entity, 0, len(ids))
 	if err := s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		for _, id := range ids {
-			e := &contentmodel.Entity{}
-			if gerr := tx.WithContext(ctx).Where("id = ?", id).First(e).Error; gerr != nil {
+			e, gerr := s.m.GetTx(ctx, tx, id)
+			if gerr != nil {
 				if errors.Is(gerr, gorm.ErrRecordNotFound) {
 					return contentenums.Err(contentenums.ErrNotFound)
 				}
 				return gerr
 			}
-			if derr := tx.WithContext(ctx).Where("id = ?", id).Delete(&contentmodel.Entity{}).Error; derr != nil {
+			if derr := s.m.DeleteTx(ctx, tx, id); derr != nil {
 				return derr
 			}
 			deleted = append(deleted, e)

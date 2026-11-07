@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
@@ -220,8 +219,7 @@ func (s *Service) BulkSetCustomerStatus(ctx context.Context, req *userdto.Custom
 			if locked[i].Status == status {
 				continue
 			}
-			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).
-				Where("id = ?", locked[i].ID).Update("status", status).Error; uerr != nil {
+			if uerr := s.m.UpdateFieldsTx(ctx, tx, locked[i].ID, map[string]any{"status": status}); uerr != nil {
 				return uerr
 			}
 			if status == usermodel.UserStatusDisabled {
@@ -256,12 +254,11 @@ func (s *Service) BulkUnlockCustomers(ctx context.Context, req *userdto.Customer
 			return newCustomerBatchError(ids, missing)
 		}
 		for i := range locked {
-			if uerr := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).Where("id = ?", locked[i].ID).
-				Updates(map[string]any{
-					"login_failure_count": 0,
-					"locked_until_time":   nil,
-					"last_failure_time":   nil,
-				}).Error; uerr != nil {
+			if uerr := s.m.UpdateFieldsTx(ctx, tx, locked[i].ID, map[string]any{
+				"login_failure_count": 0,
+				"locked_until_time":   nil,
+				"last_failure_time":   nil,
+			}); uerr != nil {
 				return uerr
 			}
 		}
@@ -293,12 +290,8 @@ func (s *Service) lockCustomersTx(ctx context.Context, tx *gorm.DB, ids []uint64
 	}
 	ordered := append([]uint64(nil), ids...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
-	var rows []usermodel.UserEntity
-	if err := tx.WithContext(ctx).Model(&usermodel.UserEntity{}).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id IN ?", ordered).
-		Order("id ASC").
-		Find(&rows).Error; err != nil {
+	rows, err := s.m.LockByIDsTx(ctx, tx, ordered)
+	if err != nil {
 		return nil, nil, err
 	}
 	found := make(map[uint64]bool, len(rows))

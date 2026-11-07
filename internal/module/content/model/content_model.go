@@ -178,6 +178,20 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
+// GetTx 在调用方的事务里按 id 读一行；批量删除要在同一事务里先确认目标存在。
+func (m *Model) GetTx(ctx context.Context, tx *gorm.DB, id string) (e *Entity, err error) {
+	var row Entity
+	if err = tx.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// DeleteTx 在调用方的事务里按 id 删除一行。
+func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Where("id = ?", id).Delete(&Entity{}).Error
+}
+
 // UpdateDataTx 在一个事务里锁定目标行、原子递增 revision 并写入新数据。
 //
 // 读-改-写必须在行锁内完成：先读 revision 再 Save 会让两个并发更新写入同一个

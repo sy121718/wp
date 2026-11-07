@@ -20,7 +20,7 @@
 {{else}}
 <div class="perm-tree" data-perm-tree>
     {{range _, n := .Rows}}
-    <div class="perm-node{{if n.Type == 3}} is-button{{end}}" data-perm-row="{{n.ID}}" data-depth="{{n.Depth}}" data-parent="{{n.ParentID}}" style="padding-left:{{(n.Depth - 1) * 20 + 10}}px">
+    <div class="perm-node{{if n.Type == 3}} is-button{{end}}" data-perm-row="{{n.ID}}" data-depth="{{n.Depth}}" data-parent="{{n.ParentID}}" style="--perm-depth:{{n.Depth}}">
         {{if n.HasChildren}}<button type="button" class="perm-toggle" data-perm-toggle aria-expanded="true" aria-label="{{t("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret"></span></button>{{else}}<span class="perm-toggle is-leaf" aria-hidden="true"></span>{{end}}
         <label class="perm-label">
             <input type="checkbox" class="perm-box" name="menu_ids" value="{{n.ID}}" data-perm-node data-id="{{n.ID}}" data-parent="{{n.ParentID}}" data-depth="{{n.Depth}}"{{if n.Checked}} checked{{end}}{{if showInherited}}{{if n.Inherited}} disabled{{end}}{{end}}>

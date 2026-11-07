@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -225,6 +226,21 @@ func (m *UserModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, 
 		return nil
 	}
 	return tx.WithContext(ctx).Model(&UserEntity{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// LockByIDsTx 在调用方事务内按 id 升序加行锁读这批账号。
+//
+// 锁序固定，避免两个批量以相反顺序取行锁形成死锁。
+func (m *UserModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (rows []UserEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = tx.WithContext(ctx).Model(&UserEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).
+		Order("id ASC").
+		Find(&rows).Error
+	return rows, err
 }
 
 func (m *UserModel) SoftDelete(ctx context.Context, id uint64, at time.Time) (err error) {

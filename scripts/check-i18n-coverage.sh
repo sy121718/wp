@@ -68,9 +68,20 @@ lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|Engli
 # 为什么不用变量名白名单：局部变量名是任意的 —— `product_attribute_group_form.html` 用的是
 # `{{gfTr := .["t"]}}` 之后 `gfTr("admin.x", "中文")`，白名单认不出 gfTr，那 4 行就被误算成
 # 「硬编码」（实测踩过）；而每加一个新变量名都要回来改正则，迟早再漏一次。
-# key 的两种合法形态：点分 UI 词条（admin.x.y）与归口文案（MsgInternalError 这类 Msg* 常量；
-# Err* 不算 —— 错误 key 不得当界面词条用，那是 text_domain_test.go 的另一条门禁）。
-t_call = re.compile(r'\(\s*"(?:[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+|Msg[A-Z][A-Za-z0-9]*)"\s*,\s*"')
+# key 的三种合法形态：
+#   · 点分 UI 词条（admin.x.y，历史形态，仍在用）；
+#   · **扁平短 key**（现行规则：首字符字母、仅 ASCII 字母数字、长度 1–15，见 AGENTS.md）；
+#   · 归口文案（MsgInternalError 这类 Msg* 常量；Err* 不算 —— 错误 key 不得当界面词条用，
+#     那是 text_domain_test.go 的另一条门禁）。
+# 只认点分会把已经 key 化的扁平短 key 行继续算成硬编码（实测 2026-11：262 行里 191 行是
+# 这种误报），门禁数字虚高会让人不再相信它 —— 判据必须跟着现行 key 规则走。
+flat_key = r'[A-Za-z][A-Za-z0-9]{0,14}'
+t_call = re.compile(
+    r'\(\s*"(?:[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+|Msg[A-Z][A-Za-z0-9]*|' + flat_key + r')"\s*,\s*"')
+# 动态 key 的合法形态：key 本身是 Controller 交来的业务消息事实（如 .Key = MsgSaved），
+# 模板只提供兜底文案 —— `t(.Key, "已保存")`。这不是「硬编码文案」，是消息事实出口；
+# 但扫描只能看到变量，因此单独认这种「取词函数 + 首个参数是变量、第二个是字面量」的调用。
+t_call_dynamic = re.compile(r'(?:\.\["t"\]|\bt[fn]?)\(\s*\.?[A-Za-z_][A-Za-z0-9_.]*\s*,\s*"')
 # 兜底形态：不带兜底文案的取词调用（t("key") / .["t"]("key")）。
 t_call_bare = re.compile(r'(?:\.\["t"\]|\btr)\(')
 rows = []
@@ -93,7 +104,7 @@ for path in paths:
     for i, line in enumerate(src.split('\n'), 1):
         if not cjk.search(line):
             continue
-        if t_call.search(line) or t_call_bare.search(line):
+        if t_call.search(line) or t_call_bare.search(line) or t_call_dynamic.search(line):
             continue
         if lang_self_name.search(line):
             continue

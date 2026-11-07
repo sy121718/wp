@@ -1560,6 +1560,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .perm-node {
     display: flex; align-items: center; gap: 4px;
     padding: 3px 12px 3px 0; border-radius: 6px;
+    /* 层级缩进：模板只交层级（--perm-depth），间距在这里算 —— 模板不产出外观数值。
+       与 .tree-link 的 --tree-depth 同一手法（见本文件「层级缩进」一节）。 */
+    padding-left: calc(10px + (var(--perm-depth, 1) - 1) * 20px);
 }
 @media (hover: hover) {
     .perm-node:hover { background: var(--sky-c-bg-hover, #ececec); }

@@ -35,8 +35,14 @@ violations=0
 #
 # htmx-bridge.js  控件广播 wb:rescan → htmx.process（控件与传输层的通用适配）
 #
+# write-base.js   写请求基座本身：它**就是**写操作与 HTMX 之间的适配层，注册
+#                 htmx.registerExtension('write-base') 来实现 CSRF 注入、响应校验、
+#                 失败区与写生命周期（见 internal/templates/CLAUDE.md：普通界面提交
+#                 只有一个执行入口 HTMX 4）。它不是界面控件，不提供 DOM 交互原语；
+#                 控件仍只能广播事件、经 htmx-bridge.js 翻译。
+#
 # json_swap.js 已随 JSON UI 执行器退役删除；白名单不再为它保留例外。
-ALLOW="htmx-bridge.js"
+ALLOW="htmx-bridge.js write-base.js"
 
 for dir in "${UI_DIRS[@]}"; do
   [[ -d "$dir" ]] || continue

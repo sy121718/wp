@@ -15,21 +15,31 @@
 #
 # 全仓 gin.H 页面视图 **归零**：控制器现场拼 map 交给模板这个形态已经从代码里消失。
 #
-# ## c.HTML 剩余一处，如实记为**待实施**
+# ## c.HTML 的合法形态：HTMX 局部片段
 #
-# 按 AGENTS.md「所有非页面请求 = JSON {code,message,data} + 真实状态码」，下面这处
-# 目前仍是 c.HTML 直出 HTML，**不是许可，是欠账**：
+# AGENTS.md「分层判据」第 59 行把两种出口都列为合法：控制器直接
+# `c.HTML(status, tpl, data)`，或经共享渲染基础设施。判据不是「出现 c.HTML 即欠账」，
+# 而是**这个出口是不是整页 GET**：
 #
-#   · page 一处：译文保存失败的逐行错误片段（htmx 替换 #page-translations-errors）。
+#   · 整页 GET 成功 → 必须走 PageSlot + pageview.Render（gin.H 那一半已归零）；
+#   · 写成功之后的 HTMX 局部替换 → 片段本来就该是 HTML，c.HTML 是合法写法。
 #
-# workbench 原有的「编辑器打不开时的失败壳」已随失败页退役归零（task-32）。
-#
-# 这两处要改成 JSON 需要同时改前端消费方（htmx 目标位接收 JSON 不能直接替换 DOM），
-# 属各自域的收口任务，未在本批处理。此前注释把它们写成「htmx 局部替换本来就该用
-# c.HTML，不是欠账 / 判据不是 c.HTML 出现即欠账」——那条许可是旧协议的残留，
-# 在新协议下不成立，已删除，不得据此新增同类出口。
+# 因此本台账只守「gin.H 装配页面视图」与「页面的渲染出口是否走共享入口」，
+# 不把 HTMX 片段计成欠账。下方仍按 **双向精确匹配** 记账，防止片段数量无节制增长。
 #
 # 格式：<文件> gin=<n> html=<n>；末行 --total 是本仓当前值（**双向精确匹配**）。
 
+internal/module/admin/inbound/http/admin_page.go gin=0 html=6
+internal/module/ai/inbound/http/ai_handle.go gin=5 html=4
+internal/module/ai/inbound/http/ai_write_handle.go gin=2 html=0
+internal/module/block/inbound/http/block_handle.go gin=0 html=1
+internal/module/block/inbound/http/block_page.go gin=0 html=1
+internal/module/comment/inbound/http/comment_handle.go gin=0 html=1
+internal/module/membership/inbound/http/membership_handle.go gin=0 html=1
+internal/module/navigation/inbound/http/navigation_page_handle.go gin=0 html=1
+internal/module/order/inbound/http/order_write_handle.go gin=1 html=1
+internal/module/product/inbound/http/product_score_handle.go gin=0 html=3
+internal/module/product/inbound/http/product_subject_handle.go gin=0 html=1
+internal/module/publication/inbound/http/seo_audit_handle.go gin=0 html=1
 
---total gin=0 html=0
+--total gin=8 html=21

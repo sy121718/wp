@@ -149,7 +149,11 @@ for path in walk(internal, ('.go', '.html', '.jet', '.js')):
             short_used.add(key)
         elif '.' not in key:
             invalid.append(relative + ': 非法扁平 key ' + key)
-    if os.sep + 'module' + os.sep + 'product' + os.sep + 'enums' + os.sep in path:
+    # 权限码不是界面词条：AGENTS.md 明确权限码、按钮权限标识不适用短 key 规则，
+    # 也不进 sys_i18n。permission_codes.go 里的 ProductTranslationsSave 这类名字
+    # 只是和文本常量同前缀，按文本词条扫它会永远缺基础语言。
+    is_permission_codes = path.endswith(os.sep + 'permission_codes.go')
+    if not is_permission_codes and os.sep + 'module' + os.sep + 'product' + os.sep + 'enums' + os.sep in path:
         for name, key in re.findall(r'^\s*((?:Err|Msg|Detail|Bulk|VariantSkip|BundleMember|ProductTranslations|ProductsAction)\w*)\s*=\s*"([^"\n]+)"', src, re.M):
             used.setdefault(key, relative)
             short_used.add(key)

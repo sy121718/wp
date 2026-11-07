@@ -329,6 +329,19 @@ func (m *Model) GetReason(ctx context.Context, id int64, projectID string) (e *R
 	return e, err
 }
 
+// GetReasonTx 在调用方的事务里按 id + 工程取一条变动原因。
+func (m *Model) GetReasonTx(ctx context.Context, tx *gorm.DB, id int64, projectID string) (e *ReasonEntity, err error) {
+	e = &ReasonEntity{}
+	err = tx.WithContext(ctx).Model(&ReasonEntity{}).
+		Where("id = ? AND project_id = ?", id, projectID).First(e).Error
+	return e, err
+}
+
+// SaveReasonTx 在调用方的事务里整行保存一条变动原因。
+func (m *Model) SaveReasonTx(ctx context.Context, tx *gorm.DB, e *ReasonEntity) error {
+	return tx.WithContext(ctx).Model(&ReasonEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
 func (m *Model) FindReasonByCode(ctx context.Context, projectID, code string) (e *ReasonEntity, err error) {
 	e = &ReasonEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

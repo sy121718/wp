@@ -1046,9 +1046,8 @@ func (s *Service) BulkUpdateReasonStatus(ctx context.Context, req *inventorydto.
 			if perr != nil {
 				return inventoryenums.Err(inventoryenums.ErrReasonNotFound)
 			}
-			e := &inventorymodel.ReasonEntity{}
-			if gerr := tx.WithContext(ctx).Model(&inventorymodel.ReasonEntity{}).
-				Where("id = ? AND project_id = ?", rid, projectID).First(e).Error; gerr != nil {
+			e, gerr := s.m.GetReasonTx(ctx, tx, rid, projectID)
+			if gerr != nil {
 				return mapReasonNotFound(gerr)
 			}
 			if e.IsBuiltin {
@@ -1056,8 +1055,7 @@ func (s *Service) BulkUpdateReasonStatus(ctx context.Context, req *inventorydto.
 			}
 			e.Status = status
 			e.UpdatedAt = at
-			if uerr := tx.WithContext(ctx).Model(&inventorymodel.ReasonEntity{}).
-				Where("id = ?", e.ID).Save(e).Error; uerr != nil {
+			if uerr := s.m.SaveReasonTx(ctx, tx, e); uerr != nil {
 				return uerr
 			}
 		}
