@@ -7,76 +7,76 @@ import (
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 )
 
-func fallbackTr(_, fallback string) string { return fallback }
+// 页面的展示名不再由后端预取：只要枚举值与词条 key + 兜底，
+// 译文由模板按请求语言取。这里锁住「key 与兜底都交齐、未登记项原样回显」。
 
-func keyTr(key, _ string) string { return "T:" + key }
-
-func TestChangeRowLabelsFollowLanguage(t *testing.T) {
+func TestChangeRowLabelsCarryKeyAndFallback(t *testing.T) {
 	row := &masterdatadto.ChangeResp{
 		EntityType: masterdataenums.EntityProductVariant,
 		Action:     masterdataenums.ActionUpdate,
 		Field:      "sku_code",
 	}
 
-	zh := changeRow(fallbackTr, row)
-	if zh.EntityTypeLabel != "商品变体" || zh.ActionLabel != "修改" || zh.FieldLabel != "SKU 编码" {
-		t.Fatalf("缺词条时应给中文兜底，实际 %v / %v / %v",
-			zh.EntityTypeLabel, zh.ActionLabel, zh.FieldLabel)
+	got := changeRow(row)
+	if got.EntityTypeKey != masterdataenums.LabelKeyProductVariant || got.EntityTypeFallback != "商品变体" {
+		t.Fatalf("实体类型应同时带 key 与兜底：%q / %q", got.EntityTypeKey, got.EntityTypeFallback)
 	}
-
-	en := changeRow(keyTr, row)
-	if en.EntityTypeLabel != "T:"+masterdataenums.LabelKeyProductVariant {
-		t.Fatalf("实体类型没走取词：%v", en.EntityTypeLabel)
+	if got.ActionKey != masterdataenums.LabelKeyActionUpdate || got.ActionFallback != "修改" {
+		t.Fatalf("动作应同时带 key 与兜底：%q / %q", got.ActionKey, got.ActionFallback)
 	}
-	if en.ActionLabel != "T:"+masterdataenums.LabelKeyActionUpdate {
-		t.Fatalf("动作没走取词：%v", en.ActionLabel)
-	}
-	if en.FieldLabel != "T:admin.masterdata.field.product_variant.sku_code" {
-		t.Fatalf("字段没走取词：%v", en.FieldLabel)
+	if got.FieldKey != "admin.masterdata.field.product_variant.sku_code" || got.FieldFallback != "SKU 编码" {
+		t.Fatalf("字段应同时带 key 与兜底：%q / %q", got.FieldKey, got.FieldFallback)
 	}
 }
 
 func TestChangeRowUnknownFieldKeepsRawName(t *testing.T) {
-	view := changeRow(keyTr, &masterdatadto.ChangeResp{
+	view := changeRow(&masterdatadto.ChangeResp{
 		EntityType: masterdataenums.EntityProduct,
 		Action:     "archive",
 		Field:      "not_registered",
 	})
 
-	if view.ActionLabel != "archive" {
-		t.Fatalf("未登记动作应原样回显，实际 %v", view.ActionLabel)
+	if view.ActionFallback != "archive" {
+		t.Fatalf("未登记动作应原样回显，实际 %q", view.ActionFallback)
 	}
-	if view.FieldLabel != "not_registered" {
-		t.Fatalf("未登记字段应原样回显，实际 %v", view.FieldLabel)
+	if view.FieldFallback != "not_registered" {
+		t.Fatalf("未登记字段应原样回显，实际 %q", view.FieldFallback)
 	}
 }
 
-func TestEntityRowLabelsFollowLanguage(t *testing.T) {
+func TestEntityRowLabelsCarryKeyAndFallback(t *testing.T) {
 	item := &masterdatadto.EntityHistoryResp{
 		EntityType: masterdataenums.EntityInventorySource,
 		LastAction: masterdataenums.ActionDelete,
 		LastField:  "settle_price",
 	}
-	view := entityRow(fallbackTr, item, masterDataFilter{}, "")
-	if view.EntityTypeLabel != "货源" || view.LastActionLabel != "删除" || view.LastFieldLabel != "内部结算价" {
-		t.Fatalf("实体清单的展示名应给中文兜底，实际 %v / %v / %v",
-			view.EntityTypeLabel, view.LastActionLabel, view.LastFieldLabel)
+	view := entityRow(item, masterDataFilter{}, "")
+	if view.EntityTypeFallback != "货源" || view.LastActionFallback != "删除" || view.LastFieldFallback != "内部结算价" {
+		t.Fatalf("实体清单的兜底展示名不对：%q / %q / %q",
+			view.EntityTypeFallback, view.LastActionFallback, view.LastFieldFallback)
+	}
+	if view.EntityTypeKey == "" || view.LastActionKey == "" || view.LastFieldKey == "" {
+		t.Fatalf("实体清单应带词条 key：%+v", view)
 	}
 }
 
-func TestMasterDataOptionsFollowLanguage(t *testing.T) {
-	types := masterDataEntityTypeOptions(keyTr)
+func TestMasterDataOptionsCarryKeys(t *testing.T) {
+	types := masterDataEntityTypeOptions()
 	if len(types) != 3 {
 		t.Fatalf("实体类型下拉应有 3 项，实际 %d", len(types))
 	}
 	for _, o := range types {
-
-		if o.Label == "" || o.Label[:2] != "T:" {
-			t.Fatalf("下拉项没走取词：%v", o)
+		if o.LabelKey == "" || o.LabelFallb == "" {
+			t.Fatalf("下拉项应同时带 key 与兜底：%+v", o)
 		}
 	}
-	actions := masterDataActionOptions(keyTr)
+	actions := masterDataActionOptions()
 	if len(actions) != 3 {
 		t.Fatalf("动作下拉应有 3 项，实际 %d", len(actions))
+	}
+	for _, o := range actions {
+		if o.LabelKey == "" || o.LabelFallb == "" {
+			t.Fatalf("动作下拉项应同时带 key 与兜底：%+v", o)
+		}
 	}
 }

@@ -25,7 +25,7 @@
             </div>
             {{if isset(.FilterSpecific)}}{{if .FilterSpecific}}{{if isset(.Current)}}{{if .Current}}
             <p class="page-sub">
-                {{.Current.EntityTypeLabel}}{{ .["t"]("admin.masterdata.current.paren_open", "（") }}{{.Current.EntityType}}{{ .["t"]("admin.masterdata.current.paren_close", "）") }}·
+                {{if .Current.EntityTypeKey}}{{ .["t"](.Current.EntityTypeKey, .Current.EntityTypeFallback) }}{{else}}{{.Current.EntityTypeFallback}}{{end}}{{ .["t"]("admin.masterdata.current.paren_open", "（") }}{{.Current.EntityType}}{{ .["t"]("admin.masterdata.current.paren_close", "）") }}·
                 {{ .["t"]("admin.masterdata.current.entity_id_label", "实体 id ") }}<code>{{.Current.EntityID}}</code> ·
                 {{ .["t"]("admin.masterdata.current.snapshot", "名称快照 ") }}<strong>{{.Current.EntityLabel}}</strong> ·
                 {{ .["t"]("admin.masterdata.current.total_pre", "共 ") }}{{.Current.Total}}{{ .["t"]("admin.masterdata.current.total_post", " 条变更记录") }}
@@ -59,8 +59,8 @@
                     <label for="md-entity-type">{{ .["t"]("admin.masterdata.col.entity", "实体") }}</label>
                     <select class="form-select" id="md-entity-type" name="entityType">
                         <option value="">{{ .["t"]("admin.masterdata.option.entity_all", "（实体类型：全部）") }}</option>
-                        {{range _, t := .EntityTypes}}
-                        <option value="{{t.Value}}" {{if t.Value == .FilterEntityType}}selected{{end}}>{{t.Label}}</option>
+                        {{range _, opt := .EntityTypes}}
+                        <option value="{{opt.Value}}" {{if opt.Value == .FilterEntityType}}selected{{end}}>{{if opt.LabelKey}}{{ .["t"](opt.LabelKey, opt.LabelFallb) }}{{else}}{{opt.LabelFallb}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -77,7 +77,7 @@
                     <select class="form-select" id="md-action" name="action">
                         <option value="">{{ .["t"]("admin.masterdata.option.action_all", "（动作：全部）") }}</option>
                         {{range _, a := .Actions}}
-                        <option value="{{a.Value}}" {{if a.Value == .FilterAction}}selected{{end}}>{{a.Label}}</option>
+                        <option value="{{a.Value}}" {{if a.Value == .FilterAction}}selected{{end}}>{{if a.LabelKey}}{{ .["t"](a.LabelKey, a.LabelFallb) }}{{else}}{{a.LabelFallb}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -154,9 +154,9 @@
                         {{range _, r := .Rows}}
                         <tr>
                             <td>{{r.Time}}</td>
-                            <td>{{r.EntityTypeLabel}} · <strong>{{r.EntityLabel}}</strong> <span class="masterdata-meta">{{r.EntityID}}</span></td>
-                            <td>{{r.ActionLabel}}</td>
-                            <td>{{r.FieldLabel}} <span class="masterdata-meta">{{r.Field}}</span></td>
+                            <td>{{if r.EntityTypeKey}}{{ .["t"](r.EntityTypeKey, r.EntityTypeFallback) }}{{else}}{{r.EntityTypeFallback}}{{end}} · <strong>{{r.EntityLabel}}</strong> <span class="masterdata-meta">{{r.EntityID}}</span></td>
+                            <td>{{if r.ActionKey}}{{ .["t"](r.ActionKey, r.ActionFallback) }}{{else}}{{r.ActionFallback}}{{end}}</td>
+                            <td>{{if r.FieldKey}}{{ .["t"](r.FieldKey, r.FieldFallback) }}{{else}}{{r.FieldFallback}}{{end}} <span class="masterdata-meta">{{r.Field}}</span></td>
                             <td>{{r.OldValue}}</td>
                             <td>{{r.NewValue}}</td>
                             <td>{{include "../partials/badge.html" map("tone", "mute", "label", r.Origin)}}</td>
@@ -202,10 +202,10 @@
                         {{else}}
                         {{range _, e := .Entities}}
                         <tr>
-                            <td>{{e.EntityTypeLabel}} · <strong>{{e.EntityLabel}}</strong> <span class="masterdata-meta">{{e.EntityID}}</span></td>
+                            <td>{{if e.EntityTypeKey}}{{ .["t"](e.EntityTypeKey, e.EntityTypeFallback) }}{{else}}{{e.EntityTypeFallback}}{{end}} · <strong>{{e.EntityLabel}}</strong> <span class="masterdata-meta">{{e.EntityID}}</span></td>
                             <td>{{e.ChangeCount}}</td>
-                            <td>{{e.LastActionLabel}}</td>
-                            <td>{{e.LastFieldLabel}} <span class="masterdata-meta">{{e.LastField}}</span></td>
+                            <td>{{if e.LastActionKey}}{{ .["t"](e.LastActionKey, e.LastActionFallback) }}{{else}}{{e.LastActionFallback}}{{end}}</td>
+                            <td>{{if e.LastFieldKey}}{{ .["t"](e.LastFieldKey, e.LastFieldFallback) }}{{else}}{{e.LastFieldFallback}}{{end}} <span class="masterdata-meta">{{e.LastField}}</span></td>
                             <td>{{e.LastAt}}</td>
                             <td>{{e.LastOperatorID}}</td>
                             <td class="col-actions">

@@ -5,49 +5,59 @@ import (
 	"go_wp/pkg/pagination"
 )
 
+// ChangeRowResp 只交枚举值与词条 key；成品译文由模板按请求语言取。
 type ChangeRowResp struct {
-	Time            string
-	EntityType      string
-	EntityTypeLabel string
-	EntityID        string
-	EntityLabel     string
-	Action          string
-	ActionLabel     string
-	Field           string
-	FieldLabel      string
-	OldValue        string
-	NewValue        string
-	Origin          string
-	OperatorID      string
+	Time                string
+	EntityType          string
+	EntityTypeKey       string
+	EntityTypeFallback  string
+	EntityID            string
+	EntityLabel         string
+	Action              string
+	ActionKey           string
+	ActionFallback      string
+	Field               string
+	FieldKey            string
+	FieldFallback       string
+	OldValue            string
+	NewValue            string
+	Origin              string
+	OperatorID          string
 }
 
 type EntityRowResp struct {
-	EntityType      string
-	EntityTypeLabel string
-	EntityID        string
-	EntityLabel     string
-	ChangeCount     int64
-	LastAction      string
-	LastActionLabel string
-	LastField       string
-	LastFieldLabel  string
-	LastOperatorID  string
-	LastAt          string
+	EntityType         string
+	EntityTypeKey      string
+	EntityTypeFallback string
+	EntityID           string
+	EntityLabel        string
+	ChangeCount        int64
+	LastAction         string
+	LastActionKey      string
+	LastActionFallback string
+	LastField          string
+	LastFieldKey       string
+	LastFieldFallback  string
+	LastOperatorID     string
+	LastAt             string
 
 	URL string
 }
 
 type EntityTimelineHeadResp struct {
-	EntityType      string
-	EntityTypeLabel string
-	EntityID        string
-	EntityLabel     string
-	Total           int64
+	EntityType         string
+	EntityTypeKey      string
+	EntityTypeFallback string
+	EntityID           string
+	EntityLabel        string
+	Total              int64
 }
 
+// LabelOptionResp 只交枚举值与词条 key。
 type LabelOptionResp struct {
-	Value string
-	Label string
+	Value      string
+	LabelKey   string
+	LabelFallb string
 }
 
 type MasterDataChangesPageResp struct {
