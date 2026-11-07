@@ -10,7 +10,7 @@ import (
 	webhookdto "go_wp/internal/module/webhook/dto"
 	webhookenums "go_wp/internal/module/webhook/enums"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/i18n"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -91,7 +91,7 @@ func (h *Handle) DeliveryList(c *gin.Context) {
 		return
 	}
 
-	webhookDeliveryTexts(response.RequestLanguage(c), res.Items)
+	webhookDeliveryTexts(c, res.Items)
 	response.Success(c, res)
 }
 
@@ -116,8 +116,14 @@ func parseID(raw string) uint64 {
 	return id
 }
 
-func webhookDeliveryTexts(lang string, items []*webhookdto.DeliveryItem) {
-	tr := i18n.TranslateFunc(lang)
+// webhookDeliveryTexts 给投递记录的错误说明取词。
+//
+// 这是 JSON 出口（response.Success 直接把 DeliveryItem 交给调用方），
+// 因此取词走 pkg/response 的正式口，不在这里拿 i18n 包自建闭包。
+func webhookDeliveryTexts(c *gin.Context, items []*webhookdto.DeliveryItem) {
+	tr := func(key, fallback string) string {
+		return response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
+	}
 	for _, it := range items {
 		if it == nil {
 			continue

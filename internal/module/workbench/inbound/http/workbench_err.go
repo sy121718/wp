@@ -10,7 +10,6 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -28,7 +27,7 @@ func workbenchFacingText(c *gin.Context, key string) string {
 }
 
 func workbenchCompileFallbackText(c *gin.Context) string {
-	return i18n.TranslateFunc(response.RequestLanguage(c))(workbenchenums.MsgCompileFailed, workbenchCompileFallback)
+	return response.MsgText(c, facing.Msg{Key: workbenchenums.MsgCompileFailed, Fallback: workbenchCompileFallback})
 }
 
 func writePreviewCompileRejected(c *gin.Context, document json.RawMessage, kind workbenchservice.PreviewDocKind, err error) {
@@ -155,7 +154,7 @@ func workbenchShortText(c *gin.Context, key string) string {
 			Error(errors.New("workbench 短句未登记中文兜底"), "受控短句表缺条目")
 		return response.InternalText(c)
 	}
-	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
+	return response.MsgText(c, facing.Msg{Key: key, Fallback: fallback})
 }
 
 func workbenchTrFunc(c *gin.Context) func(key string) string {
