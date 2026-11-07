@@ -11,10 +11,14 @@ import (
 	"testing"
 )
 
+// dtoPresentationFields 是「后端替界面拼好的成品展示」字段。
+//
+// 判据是是否已取词：`StatusLabel`（成品译文）算违规；`LabelKey` / `LabelFallback`
+// 是「词条 key + 缺词兜底」，交给模板按请求语言取词，属于正确形态，不在名单内。
 var dtoPresentationFields = map[string]struct{}{
 	"Tone": {}, "Class": {}, "StatusClass": {}, "StatusLabel": {},
-	"TypeLabel": {}, "KindLabel": {}, "LabelKey": {}, "LabelFallback": {},
-	"TextKey": {}, "LabelText": {}, "DisplayText": {}, "DisplayName": {},
+	"TypeLabel": {}, "KindLabel": {},
+	"LabelText": {}, "DisplayText": {}, "DisplayName": {},
 }
 
 var pendingDTOPresentation = map[string]int{
@@ -26,7 +30,7 @@ var pendingDTOPresentation = map[string]int{
 	"internal/module/order/dto/order_return_resp.go":  1,
 	"internal/module/user/dto/customer_admin_resp.go": 3,
 
-	"internal/module/ai/dto/ai_page_resp.go": 2,
+	"internal/module/ai/dto/ai_page_resp.go": 1,
 
 	"internal/module/ai/dto/ai_session_page_resp.go": 1,
 	"internal/module/user/dto/user_resp.go":          1,
@@ -75,32 +79,22 @@ var moduleTextFuncs = map[string]struct{}{
 }
 
 var pendingModuleText = map[string]int{
-	"internal/module/analytics/inbound/http/analytics_page.go":               2,
-	"internal/module/block/inbound/http/block_err.go":                        1,
-	"internal/module/comment/inbound/http/comment_handle.go":                 1,
-	"internal/module/comment/inbound/http/comment_page.go":                   4,
-	"internal/module/content/inbound/http/content_page.go":                   2,
-	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go": 1,
-	"internal/module/inventory/inbound/http/inventory_error_handle.go":       1,
-	"internal/module/purchase/inbound/http/purchase_page_handle.go":          1,
-	"internal/module/purchase/inbound/http/purchase_shared_handle.go":        1,
-	"internal/module/inventory/inbound/mcp/inventory_tools.go":               1,
-	"internal/module/mail/inbound/http/mail_err.go":                          2,
-	"internal/module/mail/inbound/http/mail_handle.go":                       2,
-	"internal/module/mail/service/mail_account.go":                           3,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":             6,
-	"internal/module/media/inbound/http/media_handle.go":                     1,
-	"internal/module/media/service/media.go":                                 8,
-	"internal/module/order/inbound/http/coupon_page.go":                      1,
-	"internal/module/order/inbound/http/order_handle.go":                     1,
-	"internal/module/order/inbound/http/order_shared.go":                     1,
-	"internal/module/order/inbound/http/return_page.go":                      1,
-	"internal/module/page/inbound/http/page_jump.go":                         1,
-	"internal/module/plugin/service/plugin.go":                               1,
-	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":        4,
-	"internal/module/user/inbound/http/customer_bulk_write.go":               3,
-	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
-	"internal/module/workbench/inbound/http/workbench_err.go":                3,
+	"internal/module/block/inbound/http/block_err.go":                  1,
+	"internal/module/content/inbound/http/content_page.go":             2,
+	"internal/module/inventory/inbound/http/inventory_error_handle.go": 1,
+	"internal/module/purchase/inbound/http/purchase_page_handle.go":    1,
+	"internal/module/purchase/inbound/http/purchase_shared_handle.go":  1,
+	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
+	"internal/module/mail/inbound/http/mail_err.go":                    1,
+	"internal/module/mail/inbound/http/mail_handle.go":                 2,
+	"internal/module/mail/service/mail_account.go":                     3,
+	// 打包下载把 README.txt 写进 zip 字节流，物理上不经过 Jet 模板；
+	// 这是全域唯一允许 service 取词的地方（理由见该文件头）。
+	"internal/module/media/service/media_export_text.go":      9,
+	"internal/module/order/inbound/http/order_handle.go":      1,
+	"internal/module/page/inbound/http/page_jump.go":          1,
+	"internal/module/webhook/inbound/http/webhook_handle.go":  1,
+	"internal/module/workbench/inbound/http/workbench_err.go": 2,
 
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go": 1,
