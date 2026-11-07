@@ -26,7 +26,6 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/builder/core"
 	"go_wp/pkg/builder/plugincomp"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/public/migrations"
 )
@@ -370,7 +369,8 @@ func (s *Service) buildAssembly(ctx context.Context, fingerprint string) (asm *p
 		Presets:          make([]plugindto.PresetSummary, 0),
 	}
 
-	defaultHint := defaultComponentHint()
+	// service 不取词：空提示保持为空，成品文案由消费方按自己的语言决定。
+
 	for _, row := range rows {
 
 		if st, serr := os.Stat(row.StoragePath); serr != nil || !st.IsDir() {
@@ -393,7 +393,7 @@ func (s *Service) buildAssembly(ctx context.Context, fingerprint string) (asm *p
 			asm.Components = append(asm.Components, plugindto.ComponentSummary{
 				Type:  plugincomp.TypeOf(manifest.ID, c.Name),
 				Label: c.Label,
-				Hint:  orDefault(c.Hint, defaultHint),
+				Hint:  c.Hint,
 				Props: defaultProps(c.Props),
 			})
 		}
@@ -427,17 +427,6 @@ func defaultProps(props map[string]plugincomp.PropControl) map[string]any {
 		}
 	}
 	return out
-}
-
-func defaultComponentHint() string {
-	return i18n.TranslateFunc(i18n.GetDefaultLang())(pluginenums.HintComponentDefault, "插件组件")
-}
-
-func orDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 var cssImportRe = regexp.MustCompile(`(?i)@import[^;]*;?`)
