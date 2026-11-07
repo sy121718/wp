@@ -3,10 +3,9 @@ package pagehttp
 import (
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
@@ -57,7 +56,7 @@ func TestPageLangSentinelsCarryTheirOwnFacingText(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			fact := adminui.PageErrorFactQuiet(c, pageErrScene, tc.err)
+			fact := view.PageErrorFactQuiet(c, pageErrScene, tc.err)
 			if !fact.Business {
 				t.Fatalf("%v 没被判定成业务错误", tc.err)
 			}

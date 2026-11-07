@@ -11,10 +11,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
+	view "go_wp/pkg/view"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	text "go_wp/pkg/view/jet"
@@ -93,7 +92,7 @@ func TestProductTranslationShortKeysRenderRealLanguages(t *testing.T) {
 	empty.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	empty.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	empty.GET("/empty", func(c *gin.Context) {
-		adminui.RenderPage(c, "admin/product/product_translations.html", gin.H{
+		view.RenderPage(c, "admin/product/product_translations.html", gin.H{
 			"Scope":        gin.H{"Projects": []any{}},
 			"Translations": gin.H{"ProductID": "", "ProjectID": "", "Langs": []string{}},
 		})

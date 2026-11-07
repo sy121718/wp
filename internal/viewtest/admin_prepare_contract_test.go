@@ -1,4 +1,4 @@
-package adminui
+package viewtest
 
 import (
 	jetpkg "go_wp/pkg/view/jet"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	view "go_wp/pkg/view"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/pkg/safepath"
 
@@ -26,6 +27,10 @@ func newPrepareContext(t *testing.T, target string, cookieName, cookieValue stri
 	return c
 }
 
+func contractNavTreeNodes() []view.AdminNavNode {
+	return navNodes(contractNavTree())
+}
+
 func contractNavTree() []admindto.MenuTreeNode {
 	return []admindto.MenuTreeNode{
 		{ID: 1, Title: "商品", Type: 1, Children: []admindto.MenuTreeNode{
@@ -39,9 +44,9 @@ func TestPrepareReadsAdminctxKeys(t *testing.T) {
 	c := newPrepareContext(t, "/admin/products", "", "")
 	c.Set(adminctx.PermSetKey, map[string]bool{"product.list": true})
 	c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
-	c.Set(adminctx.NavTreeKey, contractNavTree())
+	c.Set(view.NavTreeKey, contractNavTreeNodes())
 
-	data := prepare(c, gin.H{"title": "admin.products.title"})
+	data := view.PreparePage(c, gin.H{"title": "admin.products.title"})
 
 	perms, ok := data["PermSet"].(map[string]bool)
 	if !ok || !perms["product.list"] {
@@ -83,7 +88,7 @@ func TestPrepareFailsClosedOnInvalidContextValues(t *testing.T) {
 			c.Set(adminctx.PermSetKey, tc.value)
 			c.Set(adminctx.ButtonsKey, tc.value)
 			c.Set(adminctx.NavTreeKey, tc.value)
-			data := prepare(c, nil)
+			data := view.PreparePage(c, nil)
 			for _, key := range []string{"PermSet", "Buttons"} {
 				set, ok := data[key].(map[string]bool)
 				if !ok || len(set) != 0 {
@@ -101,25 +106,25 @@ func TestPrepareFailsClosedOnInvalidContextValues(t *testing.T) {
 func TestPrepareReadsSidebarCookiesByWireName(t *testing.T) {
 
 	pinnedCTX := newPrepareContext(t, "/admin/products", "sidebar_pinned", "1")
-	if data := prepare(pinnedCTX, nil); data["SidebarPinned"] != true {
+	if data := view.PreparePage(pinnedCTX, nil); data["SidebarPinned"] != true {
 		t.Fatalf("cookie sidebar_pinned=1 应让 SidebarPinned 为真，实际 %v", data["SidebarPinned"])
 	}
 
 	closedCTX := newPrepareContext(t, "/admin/products", "sidebar_open", "0")
-	if data := prepare(closedCTX, nil); data["SidebarOpen"] != false {
+	if data := view.PreparePage(closedCTX, nil); data["SidebarOpen"] != false {
 		t.Fatalf("cookie sidebar_open=0 应让 SidebarOpen 为假，实际 %v", data["SidebarOpen"])
 	}
 
 	defCTX := newPrepareContext(t, "/admin/products", "", "")
 	defCTX.Set(adminctx.NavTreeKey, contractNavTree())
-	if data := prepare(defCTX, nil); data["SidebarOpen"] != true {
+	if data := view.PreparePage(defCTX, nil); data["SidebarOpen"] != true {
 		t.Fatalf("无 cookie 且当前页归属目录分组时 SidebarOpen 应为真（首次访问体验），实际 %v", data["SidebarOpen"])
 	}
 }
 
 func TestPrepareInjectsI18nShellAndLangRedirect(t *testing.T) {
 	c := newPrepareContext(t, "/admin/products?page=2&keyword=%E4%B9%A6", "", "")
-	data := prepare(c, gin.H{"title": "admin.products.title"})
+	data := view.PreparePage(c, gin.H{"title": "admin.products.title"})
 
 	if data["lang"] == "" || data["lang"] == nil {
 		t.Fatal("lang 必须注入（模板 <html lang=…> 与语言选择器都读它）")
@@ -163,7 +168,7 @@ func TestPrepareLangRedirectFallsBackOnHostileURI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newPrepareContext(t, tc.request, "", "")
-			data := prepare(c, nil)
+			data := view.PreparePage(c, nil)
 			got, _ := data["lang_redirect"].(string)
 			if got != "/admin/products" {
 				t.Fatalf("非法 URI 应回落到当前请求路径（丢 query），实际 %q", got)
@@ -190,7 +195,7 @@ func TestPrepareLangRedirectFallbackChain(t *testing.T) {
 			if tc.path != "" {
 				c.Request.URL.Path = tc.path
 			}
-			got, ok := prepare(c, nil)["lang_redirect"].(string)
+			got, ok := view.PreparePage(c, nil)["lang_redirect"].(string)
 			if !ok || got != tc.want {
 				t.Fatalf("lang_redirect = %q (string=%v), want %q", got, ok, tc.want)
 			}

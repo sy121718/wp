@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -26,7 +24,7 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 
 	pages.GET("/content-templates",
 		mw.PageAuthz("/api/contenttemplate/list"),
-		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
+		pageview.Slot(ContentTemplatesPageTemplate, pageview.RenderPage),
 		contentTemplatePages.ContentTemplatesPage)
 	pages.GET("/content-templates/edit", mw.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
 }

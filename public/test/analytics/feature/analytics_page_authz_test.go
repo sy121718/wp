@@ -14,8 +14,6 @@ import (
 	"gorm.io/gorm"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
@@ -128,11 +126,11 @@ func newAnalyticsAuthzEngine(t *testing.T) *gin.Engine {
 	})
 	engine.GET("/admin/analytics",
 		mw.PageAuthz("/api/analytics/summary"),
-		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
+		pageview.Slot(analyticshttp.AnalyticsPageTemplate, pageview.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 	engine.GET("/admin/seo",
 		mw.PageAuthzAs("/api/seo/audit", http.MethodPost),
-		pageview.Slot(analyticshttp.SEOPageTemplate, adminui.RenderPage),
+		pageview.Slot(analyticshttp.SEOPageTemplate, pageview.RenderPage),
 		analyticshttp.NewSEOPageHandle(nil, authzProjects{}).SEOPage)
 	return engine
 }
@@ -201,7 +199,7 @@ func TestAnalyticsPageWithoutIdentityReturnsJSON401(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
 	engine.GET("/admin/analytics",
 		mw.PageAuthz("/api/analytics/summary"),
-		pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage),
+		pageview.Slot(analyticshttp.AnalyticsPageTemplate, pageview.RenderPage),
 		analyticshttp.NewAnalyticsPageHandle(authzAnalytics{}, authzProjects{}).AnalyticsPage)
 
 	rec := httptest.NewRecorder()

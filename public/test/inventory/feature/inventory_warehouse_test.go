@@ -31,8 +31,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	purchasemodel "go_wp/internal/module/purchase/model"
 	purchaseservice "go_wp/internal/module/purchase/service"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
@@ -583,7 +581,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们页面渲染为空。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
@@ -592,8 +590,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", pageview.Slot(producthttp.ProductListPageTemplate, adminui.RenderPage), handle.ProductsPage)
-	engine.GET("/admin/products/new", pageview.Slot(producthttp.ProductNewPageTemplate, adminui.RenderPage), handle.ProductNewPage)
+	engine.GET("/admin/products", pageview.Slot(producthttp.ProductListPageTemplate, pageview.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products/new", pageview.Slot(producthttp.ProductNewPageTemplate, pageview.RenderPage), handle.ProductNewPage)
 
 	engine.POST("/api/product/variant/create", pageview.HTMLFragment, producthttp.NewProductHandle(f.products).CreateVariant)
 
@@ -766,13 +764,13 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON 或空响应。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, adminui.RenderPage), handle.InventoryPage)
+	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, pageview.RenderPage), handle.InventoryPage)
 
-	engine.GET("/admin/inventory/warehouses", pageview.Slot(inventoryhttp.InventoryWarehousesPageTemplate, adminui.RenderPage), handle.InventoryWarehousesPage)
-	engine.GET("/admin/inventory/reasons", pageview.Slot(inventoryhttp.InventoryReasonsPageTemplate, adminui.RenderPage), handle.InventoryReasonsPage)
+	engine.GET("/admin/inventory/warehouses", pageview.Slot(inventoryhttp.InventoryWarehousesPageTemplate, pageview.RenderPage), handle.InventoryWarehousesPage)
+	engine.GET("/admin/inventory/reasons", pageview.Slot(inventoryhttp.InventoryReasonsPageTemplate, pageview.RenderPage), handle.InventoryReasonsPage)
 	engine.POST("/admin/inventory/warehouse/create", pageview.HTMLFragment, handle.InventoryWarehouseCreate)
 	engine.POST("/admin/inventory/warehouse/update", pageview.HTMLFragment, handle.InventoryWarehouseUpdate)
 	engine.POST("/admin/inventory/warehouse/default", pageview.HTMLFragment, handle.InventoryWarehouseDefault)

@@ -5,11 +5,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
@@ -145,7 +144,7 @@ func orderFacingMsg(c *gin.Context, err error) facing.Msg {
 	// orderFacingText 白名单里有 ErrInternal 这个中文常量（不是 key），
 	// 它上面已经命中过；走到这里说明是真实失败，记日志再归口。
 	logger.Scene("order-page").With("path", c.Request.URL.Path).Error(err, "订单后台页处理失败")
-	return adminui.InternalMsg()
+	return view.InternalMsg()
 }
 
 // orderFacingError 保留原签名：调用点都在页面 View 里填 LoadErr 字符串。

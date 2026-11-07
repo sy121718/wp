@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -24,11 +22,11 @@ func SetupMembershipPages(pages *gin.RouterGroup, svc membershipcontract.Members
 	pageHandle := NewMembershipPageHandle(svc, projects)
 	pages.GET("/membership",
 		mw.PageAuthz("/api/membership/tier/list"),
-		pageview.Slot(MembershipTiersPageTemplate, adminui.RenderPage),
+		pageview.Slot(MembershipTiersPageTemplate, pageview.RenderPage),
 		pageHandle.MembershipPage)
 	pages.GET("/membership/assignments",
 		mw.PageAuthz("/api/membership/assign/list"),
-		pageview.Slot(MembershipAssignmentsPageTemplate, adminui.RenderPage),
+		pageview.Slot(MembershipAssignmentsPageTemplate, pageview.RenderPage),
 		pageHandle.MembershipAssignmentsPage)
 
 }

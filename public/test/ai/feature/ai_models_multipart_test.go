@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
@@ -29,7 +27,7 @@ func saveModelsJSON(t *testing.T, h *aihttp.Handle, fields map[string]string) *h
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/ai/provider/models/save", pageview.HTMLFragment, h.SaveModels)
 

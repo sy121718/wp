@@ -12,8 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
@@ -56,16 +54,16 @@ func newContentTemplateAdminEnv(t *testing.T) *contentTemplateAdminEnv {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 与生产装配一致：失败出口、成功出口与请求级取词都在场。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates",
-		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, adminui.RenderPage),
+		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, pageview.RenderPage),
 		handle.ContentTemplatesPage)
 	// 与生产路由一致：启用是 HTML 片段端点，表单编码。
 	engine.POST("/api/contenttemplate/activate", pageview.HTMLFragment,
-		pageview.UseRenderer(adminui.RenderPage), contenttemplatehttp.NewHandle(templatesSvc).Activate)
+		pageview.UseRenderer(pageview.RenderPage), contenttemplatehttp.NewHandle(templatesSvc).Activate)
 	return &contentTemplateAdminEnv{engine: engine, db: db, projectID: project.ID, templates: templatesSvc}
 }
 

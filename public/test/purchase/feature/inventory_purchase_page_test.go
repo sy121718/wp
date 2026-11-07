@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
@@ -34,7 +32,7 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
@@ -50,13 +48,13 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	})
 	handle := purchasehttp.NewPurchasePageHandle(f.purchase, f.stock, f.projects)
 	handle.SetCatalog(f.catalog)
-	engine.GET("/admin/inventory/purchases", pageview.Slot(purchasehttp.PurchasesPageTemplate, adminui.RenderPage), handle.PurchasesPage)
+	engine.GET("/admin/inventory/purchases", pageview.Slot(purchasehttp.PurchasesPageTemplate, pageview.RenderPage), handle.PurchasesPage)
 	engine.POST("/admin/inventory/purchases/create", pageview.HTMLFragment, handle.PurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", pageview.HTMLFragment, handle.PurchaseReceipt)
 	engine.POST("/admin/inventory/purchases/production", pageview.HTMLFragment, handle.PurchaseProduction)
 
 	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, adminui.RenderPage), pageHandle.InventoryPage)
+	engine.GET("/admin/inventory", pageview.Slot(inventoryhttp.InventoryListPageTemplate, pageview.RenderPage), pageHandle.InventoryPage)
 	return engine, f
 }
 

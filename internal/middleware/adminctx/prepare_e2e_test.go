@@ -9,8 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
+	view "go_wp/pkg/view"
 	"go_wp/internal/middleware/adminctx"
 	admindto "go_wp/internal/module/admin/dto"
 )
@@ -41,6 +40,21 @@ func (s *sidebarStub) BuildAuthorizedTree(context.Context, []string) ([]admindto
 	return s.tree, nil
 }
 
+// navNodesForTest 复刻应用装配层的投影（routers.view_admin_port.go）：
+// 上下文里的菜单树是模块 DTO，pkg/view 只接受自己的渲染事实类型。
+func navNodesForTest(nodes []admindto.MenuTreeNode) []view.AdminNavNode {
+	out := make([]view.AdminNavNode, 0, len(nodes))
+	for i := range nodes {
+		n := &nodes[i]
+		out = append(out, view.AdminNavNode{
+			ID: n.ID, Title: n.Title, TitleKey: n.TitleKey,
+			Path: n.Path, Icon: n.Icon, Hidden: n.IsHidden == 1,
+			Children: navNodesForTest(n.Children),
+		})
+	}
+	return out
+}
+
 func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	st := &sidebarStub{
@@ -55,12 +69,12 @@ func TestMiddlewareErrorReachesPrepareAsEmptyPermissions(t *testing.T) {
 	})
 	r.Use(adminctx.PermContextMiddleware(st))
 	r.GET("/admin/pages", func(c *gin.Context) {
-		facts := adminui.PageFacts(c)
+		facts := view.PageFacts(c)
 		var tree []admindto.MenuTreeNode
 		if v, ok := c.Get(adminctx.NavTreeKey); ok {
 			tree, _ = v.([]admindto.MenuTreeNode)
 		}
-		items := adminui.NavItemsOf(tree)
+		items := view.NavItemsOf(navNodesForTest(tree))
 		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons,
 			"NavItems": items, "HasSubnav": len(items) > 0}
 		c.Status(http.StatusNoContent)
@@ -96,12 +110,12 @@ func TestMiddlewareTreeReachesAdminuiSidebar(t *testing.T) {
 	})
 	r.Use(adminctx.PermContextMiddleware(st))
 	r.GET("/admin/pages", func(c *gin.Context) {
-		facts := adminui.PageFacts(c)
+		facts := view.PageFacts(c)
 		var tree []admindto.MenuTreeNode
 		if v, ok := c.Get(adminctx.NavTreeKey); ok {
 			tree, _ = v.([]admindto.MenuTreeNode)
 		}
-		items := adminui.NavItemsOf(tree)
+		items := view.NavItemsOf(navNodesForTest(tree))
 		data = gin.H{"PermSet": facts.PermSet, "Buttons": facts.Buttons, "NavItems": items}
 		c.Status(http.StatusNoContent)
 	})

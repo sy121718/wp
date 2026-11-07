@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +52,7 @@ func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(base.products, base.products)
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailPage)
 	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
 	return engine, f
 }

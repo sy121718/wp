@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 )
 
 const MediaPageTemplate = "admin/media/media"
@@ -17,6 +15,6 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 	}
 	adminPages.GET("/media",
 		mw.PageAuthz("/api/media/list"),
-		pageview.Slot(MediaPageTemplate, adminui.RenderPage),
+		pageview.Slot(MediaPageTemplate, pageview.RenderPage),
 		MediaPage)
 }

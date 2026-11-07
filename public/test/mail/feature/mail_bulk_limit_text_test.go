@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
@@ -36,7 +34,7 @@ func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := mailhttp.NewMailPageHandle(nil)
 	engine.POST("/admin/mail/accounts/bulk-delete", pageview.HTMLFragment, handle.MailAccountsBulkDelete)

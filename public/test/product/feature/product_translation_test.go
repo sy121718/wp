@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -169,11 +168,11 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
+	engine.GET("/admin/products/translations", pageview.UseRenderer(pageview.RenderPage), handle.ProductTranslations)
 
-	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
+	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.SaveProductTranslations)
 	return engine
 }
 
@@ -722,9 +721,9 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
+	engine.POST("/api/product/translations/save", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.SaveProductTranslations)
 
 	saved := postForm(engine, "/api/product/translations/save", url.Values{
 		"projectId": {f.projectID}, "productId": {productID}, "lang": {"en-US"},

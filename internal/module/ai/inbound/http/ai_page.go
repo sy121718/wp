@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"
@@ -489,7 +487,7 @@ func (h *SessionPageHandle) attachSessionsBlocks(c *gin.Context, ctx context.Con
 	v.Total = total
 
 	// 请求事实由 adminctx 提供，这里只取不派生。
-	facts := adminui.PageFacts(c)
+	facts := pageview.PageFacts(c)
 	v.CSRFToken, v.T, v.PermSet, v.Buttons = facts.CSRFToken, facts.T, facts.PermSet, facts.Buttons
 
 	if err := h.attachSessionDetail(c, ctx, v); err != nil {
@@ -594,7 +592,7 @@ func (h *SessionPageHandle) attachProviders(c *gin.Context, ctx context.Context,
 
 	cards := make([]any, 0, len(list))
 	for i := range list {
-		cards = append(cards, adminui.ViewMap(cardData(aidto.ProviderCardBase{
+		cards = append(cards, pageview.ViewMap(cardData(aidto.ProviderCardBase{
 			CSRFToken: v.CSRFToken, T: v.T, PermSet: v.PermSet, Buttons: v.Buttons,
 		}, list[i], aiservice.BuiltinBaseURL(list[i].ProviderKey))))
 	}

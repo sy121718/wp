@@ -92,7 +92,8 @@ func TestSEOAuditHasNoPageExit(t *testing.T) {
 	for _, spec := range handler.Imports {
 		switch spec.Path.Value {
 		case `"go_wp/internal/adminui"`:
-			t.Errorf("%s: import 了后台渲染出口 —— handler 只做 binding → 调用 → JSON 出口", seoAuditHandleFile)
+			// 该包已清退；这条保留为终局断言：任何代码都不得再引用旧渲染出口。
+			t.Errorf("%s: import 了已清退的后台渲染包 —— handler 只做 binding → 调用 → JSON 出口", seoAuditHandleFile)
 		case `"go_wp/pkg/view"`:
 			t.Errorf("%s: import 了视图结果接口 —— 审计回数据，不回视图", seoAuditHandleFile)
 		}

@@ -14,8 +14,6 @@ import (
 	"github.com/spf13/viper"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -101,7 +99,7 @@ func newMailI18nEnv(t *testing.T) (*gin.Engine, *mailservice.Service, *gorm.DB) 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(svc)
-	engine.GET("/admin/mail/templates", pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), h.MailTemplatesPage)
+	engine.GET("/admin/mail/templates", pageview.Slot(mailhttp.TemplatesPageTemplate, pageview.RenderPage), h.MailTemplatesPage)
 	return engine, svc, db
 }
 

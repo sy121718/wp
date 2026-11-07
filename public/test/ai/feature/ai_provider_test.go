@@ -12,8 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
@@ -353,7 +351,7 @@ func newAIProviderEngine(t *testing.T) (*gin.Engine, *aiservice.Service) {
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
-	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := aihttp.NewHandle(svc)
 	e.GET("/api/ai/provider/list", h.ListProviders)

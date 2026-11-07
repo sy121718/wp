@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -46,12 +44,12 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 		})
 	}
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := mailhttp.NewMailPageHandle(svc)
 	router.GET("/admin/mail/contacts",
-		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), page.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, pageview.RenderPage), page.MailContactsPage)
 
 	api := router.Group("/api/mail")
 	write := mailhttp.NewHandle(svc)

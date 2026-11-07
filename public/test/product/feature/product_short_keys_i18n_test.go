@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
@@ -42,7 +40,7 @@ func TestProductShortKeysResolveMigratedLanguagesAtHTTPOutlets(t *testing.T) {
 
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure), templates.FailedRenderMiddleware(pageview.Fail))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure), templates.FailedRenderMiddleware(pageview.Fail))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	errorFact := func(key string) error {
 		return fmt.Errorf("private SQLSTATE detail: %w", facing.WithStatus(facing.New(key), http.StatusConflict))

@@ -3,7 +3,6 @@ package pagehttp_test
 import (
 	pageview "go_wp/pkg/view"
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,7 +112,7 @@ func renderMissPage(t *testing.T, svc *pageservice.Service, query string) *httpt
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	h := pagehttp.NewPagesAdminHandle(svc, nil, nil, nil)
-	router.GET("/admin/page-translation-misses", pageview.Slot(pagehttp.PageTranslationMissesTemplate, adminui.RenderPage), h.TranslationMissesPage)
+	router.GET("/admin/page-translation-misses", pageview.Slot(pagehttp.PageTranslationMissesTemplate, pageview.RenderPage), h.TranslationMissesPage)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/page-translation-misses"+query, nil))
 	return rec

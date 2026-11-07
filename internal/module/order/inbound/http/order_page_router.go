@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderenums "go_wp/internal/module/order/enums"
@@ -57,7 +55,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	orderPages := NewOrderPageHandle(svc, projects, dict)
 	pages.GET("/orders",
 		mw.PageAuthz("/api/order/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		orderPages.OrdersPage)
 
 	salesPages := NewOrderSalesPageHandle(svc, projects)
@@ -70,7 +68,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 
 	pages.GET("/orders/overview",
 		mw.PageAuthz("/admin/orders/overview"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		salesPages.SalesOverviewPage)
 
 	mw.DeclareRoute(mw.RouteSpec{
@@ -82,7 +80,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
 	pages.GET("/orders/new",
 		mw.PageAuthz("/api/order/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		orderCreate.OrderCreatePage)
 
 	pages.POST("/orders/create",
@@ -93,17 +91,17 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
 	pages.GET("/returns",
 		mw.PageAuthz("/api/order/return/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		returnPages.ReturnsPage)
 
 	shipPages := NewOrderShipmentPageHandle(svc, projects)
 	pages.GET("/orders/pending-ship", mw.PageAuthz("/api/order/shipment/pending"),
-		pageview.UseRenderer(adminui.RenderPage), shipPages.PendingShipPage)
+		pageview.UseRenderer(pageview.RenderPage), shipPages.PendingShipPage)
 
 	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
-		pageview.UseRenderer(adminui.RenderBare), shipPages.ShipFormFragment)
+		pageview.UseRenderer(pageview.RenderBare), shipPages.ShipFormFragment)
 	pages.GET("/order-carriers", mw.PageAuthz("/api/order/carrier/list"),
-		pageview.UseRenderer(adminui.RenderPage), shipPages.OrderCarriersPage)
+		pageview.UseRenderer(pageview.RenderPage), shipPages.OrderCarriersPage)
 
 	mw.DeclareRoute(mw.RouteSpec{
 		Method: http.MethodGet, Path: "/admin/orders/pending-ship",
@@ -119,10 +117,10 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",
 		mw.PageAuthz("/api/order/coupon/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		couponPages.CouponsPage)
 	pages.GET("/coupons/edit-form",
 		builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost),
-		pageview.UseRenderer(adminui.RenderBare),
+		pageview.UseRenderer(pageview.RenderBare),
 		couponPages.CouponEditForm)
 }

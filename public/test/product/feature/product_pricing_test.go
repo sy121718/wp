@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -774,12 +773,12 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), handle.ProductPricingPage)
-	engine.POST("/api/product/pricing/preview", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), producthttp.NewProductHandle(f.svc).PreviewPricing)
+	engine.GET("/admin/product-pricing", pageview.UseRenderer(pageview.RenderPage), handle.ProductPricingPage)
+	engine.POST("/api/product/pricing/preview", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), producthttp.NewProductHandle(f.svc).PreviewPricing)
 
 	engine.POST("/api/product/pricing/apply", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).ApplyPricing)
 	return engine, f

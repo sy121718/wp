@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
@@ -29,7 +27,7 @@ func newMasterDataPageEngine(t *testing.T) (*gin.Engine, *mdFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := masterdatahttp.NewMasterDataChangePageHandle(f.changes, f.projects)
 	engine.GET("/admin/masterdata/changes",
-		pageview.Slot(masterdatahttp.MasterDataChangesTemplate, adminui.RenderPage),
+		pageview.Slot(masterdatahttp.MasterDataChangesTemplate, pageview.RenderPage),
 		handle.MasterDataChangesPage)
 	return engine, f
 }

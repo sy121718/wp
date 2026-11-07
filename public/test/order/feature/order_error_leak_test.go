@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
@@ -92,7 +90,7 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 生产装配：失败出口与请求取词都必须在场，否则失败片段落成空响应。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.POST("/api/order/status", pageview.HTMLFragment, orderHandle.ChangeStatus)
@@ -175,7 +173,7 @@ func TestOrderPageHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
+	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, pageview.RenderPage), orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
 
 	if err := f.db.Exec("DROP TABLE IF EXISTS orders CASCADE").Error; err != nil {
 		t.Fatalf("制造故障失败：%v", err)

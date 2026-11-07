@@ -1,4 +1,4 @@
-package adminui
+package viewtest
 
 import (
 	"github.com/CloudyKit/jet/v6"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	view "go_wp/pkg/view"
 	"go_wp/internal/middleware/adminctx"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
@@ -36,14 +37,14 @@ func TestPrepareInjectsShellFactsWithRealPipeline(t *testing.T) {
 
 		c.Set(adminctx.PermSetKey, map[string]bool{"product.list": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
-		c.Set(adminctx.NavTreeKey, prepareRenderNavTree())
+		c.Set(view.NavTreeKey, navNodes(prepareRenderNavTree()))
 		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusOK, "probe.html", prepareView(c, gin.H{"Title": "商品"}))
+		c.HTML(http.StatusOK, "probe.html", view.PreparePage(c, gin.H{"Title": "商品"}))
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/products", nil)
 
-	req.AddCookie(&http.Cookie{Name: sidebarCookiePinned, Value: "1"})
+	req.AddCookie(&http.Cookie{Name: view.SidebarCookiePinned, Value: "1"})
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 

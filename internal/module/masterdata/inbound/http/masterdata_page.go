@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatadto "go_wp/internal/module/masterdata/dto"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -209,7 +207,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		LoadFailed: loadFailed,
 	}
 
-	if !adminui.AttachPaginationView(view, "", nil,
+	if !pageview.AttachPaginationView(view, "", nil,
 		pagination.Page{Total: total, Page: page, Limit: limit, Base: base}) {
 
 		logger.Scene("masterdata").Error(errors.New("变更记录视图缺少 Pagination 字段"), "分页事实挂载失败")

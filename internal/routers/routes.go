@@ -37,6 +37,9 @@ func SetupRoutesWithContext(ctx context.Context, router *gin.Engine, ready func(
 
 	a := &assembly{router: router, marks: newWiringMarks(), bgCtx: ctx}
 
+	// 页面渲染的请求事实来源（CSRF / 授权菜单树）由应用注入 pkg/view。
+	wireAdminViewPort()
+
 	a.buildFoundation(ready)
 	if a.db == nil {
 

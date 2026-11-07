@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -76,12 +75,12 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成空响应。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	pages := orderhttp.NewOrderPageHandle(orders, projects, nil)
 	returns := orderhttp.NewReturnPageHandle(orders, projects, nil, nil)
-	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), pages.OrdersPage)
-	engine.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
+	engine.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, pageview.RenderPage), pages.OrdersPage)
+	engine.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, pageview.RenderPage), returns.ReturnsPage)
 
 	return &tradePageEnv{engine: engine, db: db, project: project.ID}
 }
@@ -444,12 +443,12 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成空响应。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
 	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
-	engine.GET("/admin/orders/new", pageview.Slot(orderhttp.OrderNewPageTemplate, adminui.RenderPage), page.OrderCreatePage)
+	engine.GET("/admin/orders/new", pageview.Slot(orderhttp.OrderNewPageTemplate, pageview.RenderPage), page.OrderCreatePage)
 	engine.POST("/admin/orders/create", pageview.HTMLFragment, page.OrderCreateSubmit)
 	return &orderCreatePageEnv{engine: engine, fixture: f, project: f.projectID}
 }

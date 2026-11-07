@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -48,8 +46,8 @@ func productErrStatusRequest(t *testing.T, err error, method, path, body string)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := NewProductHandle(errStatusSvc{err: err})
 	engine.GET("/product/get", h.Get)

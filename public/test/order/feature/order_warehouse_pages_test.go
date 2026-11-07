@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
@@ -27,9 +25,9 @@ func newWarehousePagesEngine(t *testing.T, f *orderFixture) *gin.Engine {
 	returns := orderhttp.NewReturnPageHandle(f.orders, f.projects,
 		orderstock.NewWarehouseSource(f.inventory), nil)
 	engine.GET("/admin/orders/pending-ship",
-		pageview.Slot(orderhttp.PendingShipPageTemplate, adminui.RenderPage), ship.PendingShipPage)
+		pageview.Slot(orderhttp.PendingShipPageTemplate, pageview.RenderPage), ship.PendingShipPage)
 	engine.GET("/admin/returns",
-		pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
+		pageview.Slot(orderhttp.ReturnListPageTemplate, pageview.RenderPage), returns.ReturnsPage)
 	return engine
 }
 

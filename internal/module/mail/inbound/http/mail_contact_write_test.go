@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
@@ -115,8 +113,8 @@ func newMailContactWriteEngine(h *Handle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) {
 		text.AttachScope(c)
 		c.Set("user_id", mailContactWriteUserID)

@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -130,7 +128,7 @@ func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/mail",
-		pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), mailhttp.NewMailPageHandle(svc).MailPage)
+		pageview.Slot(mailhttp.AccountsPageTemplate, pageview.RenderPage), mailhttp.NewMailPageHandle(svc).MailPage)
 	return router, svc
 }
 

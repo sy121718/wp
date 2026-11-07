@@ -14,8 +14,6 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	gsessions "github.com/gorilla/sessions"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
@@ -108,10 +106,10 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 type customerMsg = facing.Msg
 
 func customerErrMsg(c *gin.Context, err error) customerMsg {
-	return customerErrFactOf(adminui.PageErrorFact(c, userErrScene, err))
+	return customerErrFactOf(pageview.PageErrorFact(c, userErrScene, err))
 }
 
-func customerErrFactOf(f adminui.ErrFact) customerMsg {
+func customerErrFactOf(f pageview.ErrFact) customerMsg {
 	if f.Key == "" && f.Fallback == "" {
 		return customerMsg{}
 	}
@@ -1678,7 +1676,7 @@ func customerDetailBackURL(c *gin.Context) string {
 const userErrScene = "user"
 
 func customerBulkIDsText(c *gin.Context, err error) string {
-	return adminui.BulkIDsFacingText(c, err)
+	return pageview.BulkIDsFacingText(c, err)
 }
 
 func customerQueryID(raw string) uint64 {

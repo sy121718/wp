@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
@@ -66,8 +64,8 @@ func TestSystemJSONAggregate(t *testing.T) {
 			h := sysconfighttp.NewAdminHandle(stub)
 			engine := gin.New()
 			engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-			engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-			engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+			engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+			engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Set("user_id", uint64(42)); c.Next() })
 			engine.POST("/api/sysconfig/system/save", pageview.HTMLFragment, h.APISystemSave)
 			req := httptest.NewRequest(http.MethodPost, "/api/sysconfig/system/save", strings.NewReader(tc.body))

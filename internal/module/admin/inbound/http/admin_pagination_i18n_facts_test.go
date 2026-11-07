@@ -1,7 +1,6 @@
 package adminhttp_test
 
 import (
-	"go_wp/internal/adminui"
 	"go_wp/pkg/pagination"
 	pageview "go_wp/pkg/view"
 	"html"
@@ -79,7 +78,7 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	engine.HTMLRender = rec
 	h := adminhttp.NewAdminI18nEntryHandle()
 
-	engine.GET("/admin/i18n", pageview.Slot(adminhttp.I18nPageTemplate, adminui.RenderPage), h.I18nEntriesPage)
+	engine.GET("/admin/i18n", pageview.Slot(adminhttp.I18nPageTemplate, pageview.RenderPage), h.I18nEntriesPage)
 
 	target := "/admin/i18n?lang=zh-CN&page=2"
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
@@ -87,7 +86,7 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 		t.Fatalf("模板名应为 %s，实际 %q", adminhttp.I18nPageTemplate, rec.name)
 	}
 
-	data := adminui.ViewMap(rec.data)
+	data := pageview.ViewMap(rec.data)
 	raw, ok := data["Pagination"]
 	if !ok {
 		t.Fatal("词条页应注入 Pagination 事实键")

@@ -1,7 +1,6 @@
 package producthttp
 
 import (
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +28,7 @@ func attributesPageRequest(t *testing.T, h *ProductPageHandle, target string) *h
 		})
 		c.Next()
 	})
-	engine.GET("/admin/product-attributes", pageview.UseRenderer(adminui.RenderPage), h.ProductAttributesPage)
+	engine.GET("/admin/product-attributes", pageview.UseRenderer(pageview.RenderPage), h.ProductAttributesPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

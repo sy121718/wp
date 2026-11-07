@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -46,10 +45,10 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/product-attributes", pageview.UseRenderer(adminui.RenderPage), handle.ProductAttributesPage)
+	engine.GET("/admin/product-attributes", pageview.UseRenderer(pageview.RenderPage), handle.ProductAttributesPage)
 	engine.POST("/api/product/attribute/set-values", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).SetAttributeValues)
 	return engine, f
 }

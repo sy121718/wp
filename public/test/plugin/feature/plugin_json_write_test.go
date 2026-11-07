@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	pluginenums "go_wp/internal/module/plugin/enums"
@@ -101,7 +99,7 @@ func TestPluginHTMLWriteContract(t *testing.T) {
 			h := pluginhttp.NewHandle(svc)
 			r := gin.New()
 			r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-			r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+			r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 			r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			r.POST("/api/plugin/toggle", pageview.HTMLFragment, h.Toggle)
 			r.POST("/api/plugin/uninstall", pageview.HTMLFragment, h.Uninstall)
@@ -150,7 +148,7 @@ func TestPluginHTMLWriteLocalizedReceipts(t *testing.T) {
 			h := pluginhttp.NewHandle(svc)
 			r := gin.New()
 			r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-			r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+			r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 			r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			r.POST("/api/plugin/toggle", pageview.HTMLFragment, h.Toggle)
 			r.POST("/api/plugin/uninstall", pageview.HTMLFragment, h.Uninstall)

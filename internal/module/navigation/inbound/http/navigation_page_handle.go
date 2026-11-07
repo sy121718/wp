@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -428,7 +426,7 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	}
 	if h.blocks == nil {
 		logger.Scene("page").With("project", projectID).Error(errPanelUnavailable, "新建面板块失败：块能力未装配")
-		navNotify(c, false, adminui.InternalMsg())
+		navNotify(c, false, pageview.InternalMsg())
 		return
 	}
 	name := panelBlockName(navTr(c), kind, title)

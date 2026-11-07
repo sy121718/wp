@@ -3,7 +3,6 @@ package pagehttp
 import (
 	pageview "go_wp/pkg/view"
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,7 +81,7 @@ func renderPagesList(t *testing.T, h *pagesAdminHandle, query string) *httptest.
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
-	router.GET("/admin/pages", pageview.Slot(PagesListPageTemplate, adminui.RenderPage), h.PagesList)
+	router.GET("/admin/pages", pageview.Slot(PagesListPageTemplate, pageview.RenderPage), h.PagesList)
 
 	target := "/admin/pages"
 	if query != "" {

@@ -15,7 +15,6 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/config"
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
@@ -284,7 +283,7 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		ListQuery: adminAdminsPage.listQuery(c),
 	}
 
-	if !adminui.AttachPaginationView(view, "/admin/administrators",
+	if !pageview.AttachPaginationView(view, "/admin/administrators",
 		map[string]string{"name": name, "email": email},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("管理员列表视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -391,7 +390,7 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 
 		ListQuery: adminDatarulesPage.listQuery(c),
 	}
-	if !adminui.AttachPaginationView(view, "/admin/datarules",
+	if !pageview.AttachPaginationView(view, "/admin/datarules",
 		map[string]string{"domain": domain},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("数据规则视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -585,7 +584,7 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 
 		ListQuery: adminDeptsPage.listQuery(c),
 	}
-	if !adminui.AttachPaginationView(view, "/admin/departments",
+	if !pageview.AttachPaginationView(view, "/admin/departments",
 		map[string]string{"keyword": keyword},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("部门视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -770,7 +769,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		"category": filter.Category,
 	})
 
-	if !adminui.AttachPaginationView(data, "", nil, pagination.Page{
+	if !pageview.AttachPaginationView(data, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: adminI18nEntryPageSize, Base: base,
 	}) {
 		logger.Scene("admin").Error(errors.New("文案词条视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -878,7 +877,7 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 
 		PermChoices: permChoices,
 	}
-	if !adminui.AttachPaginationView(view, "/admin/menus",
+	if !pageview.AttachPaginationView(view, "/admin/menus",
 		map[string]string{"keyword": keyword},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("菜单视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -1104,7 +1103,7 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 
 		ListQuery: adminPermsPage.listQuery(c),
 	}
-	if !adminui.AttachPaginationView(view, "/admin/permissions",
+	if !pageview.AttachPaginationView(view, "/admin/permissions",
 		map[string]string{"code": code, "module": module},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("权限点列表视图缺少 Pagination 字段"), "分页事实挂载失败")
@@ -1224,7 +1223,7 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 
 		ListQuery: adminRolesPage.listQuery(c),
 	}
-	if !adminui.AttachPaginationView(view, "/admin/roles",
+	if !pageview.AttachPaginationView(view, "/admin/roles",
 		map[string]string{"keyword": keyword},
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("角色视图缺少 Pagination 字段"), "分页事实挂载失败")

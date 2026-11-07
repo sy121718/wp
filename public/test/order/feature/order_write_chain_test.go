@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -132,10 +130,10 @@ func orderChainEngine(t *testing.T, listPage gin.HandlerFunc, routes func(e *gin
 		InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-			e.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+			e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+			e.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), listPage)
+			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, pageview.RenderPage), listPage)
 			routes(e, h)
 		},
 	})

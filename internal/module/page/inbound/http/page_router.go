@@ -3,8 +3,6 @@ package pagehttp
 import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -69,7 +67,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	g.GET("/detail", pageenums.PageDetail, handle.Detail)
 	g.POST("/draft/save", pageenums.PageDraftSave, handle.SaveDraft)
 	// 译文保存是 JSON 写出口：写基座只对接 /api/ 端点（data-write-url 的契约）。
-	g.POST("/translations/save", pageenums.PageTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderBare), adminHandle.SavePageTranslations)
+	g.POST("/translations/save", pageenums.PageTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderBare), adminHandle.SavePageTranslations)
 	g.GET("/revision/list", pageenums.PageRevisionList, handle.ListRevisions)
 	g.POST("/build", pageenums.PageBuild, handle.Build)
 	g.POST("/publish", pageenums.PagePublish, handle.Publish)
@@ -88,7 +86,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 		return
 	}
 	pages.GET("/pages", mw.PageAuthz("/api/page/list"),
-		pageview.UseRenderer(adminui.RenderPage), adminHandle.PagesList)
+		pageview.UseRenderer(pageview.RenderPage), adminHandle.PagesList)
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), pageview.HTMLFragment, adminHandle.CreatePage)
 
 	pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), pageview.HTMLFragment, adminHandle.DeletePage)
@@ -98,7 +96,7 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 
 	if workbenchPages != nil {
 		workbenchPages.POST("/workbench/history",
-			pageview.UseRenderer(adminui.RenderBare), adminHandle.HistoryPanel)
+			pageview.UseRenderer(pageview.RenderBare), adminHandle.HistoryPanel)
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
 	}
 
@@ -108,15 +106,15 @@ func registerPageRoutes(g *mw.RouteGroup, pages, workbenchPages *gin.RouterGroup
 	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.PageLangRepublish)
 
 	pages.GET("/pages/translations", mw.PageAuthz("/api/page/list"),
-		pageview.UseRenderer(adminui.RenderPage), adminHandle.PageTranslations)
+		pageview.UseRenderer(pageview.RenderPage), adminHandle.PageTranslations)
 
 	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
-		pageview.UseRenderer(adminui.RenderPage), adminHandle.TranslationMissesPage)
+		pageview.UseRenderer(pageview.RenderPage), adminHandle.TranslationMissesPage)
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), pageview.HTMLFragment, adminHandle.TranslationMissCancel)
 
 	g.GET("/redirect",
 		pageenums.PageRedirectView,
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		handle.RedirectPage)
 	g.POST("/redirect/create", pageenums.PageRedirectCreate, pageview.HTMLFragment, handle.RedirectCreate)
 	g.POST("/redirect/delete", pageenums.PageRedirectDelete, pageview.HTMLFragment, handle.RedirectDelete)

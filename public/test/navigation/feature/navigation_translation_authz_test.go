@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	builtin "go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -113,8 +111,8 @@ func newNavTranslationAuthzEnv(t *testing.T) *navTranslationAuthzEnv {
 
 			engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			// 生产装配在基础层挂请求取词与成功出口；缺了它们成功/失败片段都会渲染失败。
-			engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-			engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+			engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+			engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 			engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 			api := engine.Group("/api")

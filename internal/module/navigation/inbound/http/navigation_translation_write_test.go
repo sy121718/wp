@@ -16,8 +16,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -81,8 +79,8 @@ func newTranslationWriteRouter(svc navigationcontract.NavigationService, writer 
 	}
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 	router.POST("/api/navigation/update", pageview.HTMLFragment, handle.Update)
@@ -651,7 +649,7 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 	}}
 	router := newNavigationsPageTestRouter(t, workbench, projects)
 	router.GET("/admin/navigations/translations",
-		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
+		pageview.Slot(NavigationTranslationsTemplate, pageview.RenderPage),
 		NewNavigationTranslationHandle(workbench, projects).NavigationTranslations)
 
 	rec := httptest.NewRecorder()

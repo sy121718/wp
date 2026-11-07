@@ -17,7 +17,6 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 	pageview "go_wp/pkg/view"
@@ -71,8 +70,8 @@ func newPageErrorLeakEnv(t *testing.T) (engine *gin.Engine, db *gorm.DB, svc pag
 	engine = gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 与生产装配一致：失败出口、成功出口与请求级取词都在场。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := pagehttp.NewPagesAdminHandle(svc, nil, nil, nil)
 	// 生产路由把写端点声明为 HTML 片段；夹具必须同协议，否则失败会落到 JSON 出口。

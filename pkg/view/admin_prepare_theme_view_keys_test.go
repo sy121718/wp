@@ -1,9 +1,8 @@
-package adminui_test
+package view_test
 
 import (
+	view "go_wp/pkg/view"
 	"testing"
-
-	"go_wp/internal/adminui"
 )
 
 // ViewMap 的键名规则：默认取字段名，只有字段带 view tag 才换名。
@@ -50,7 +49,7 @@ func TestViewMapRenamesTaggedFieldsForThemePages(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := adminui.ViewMap(tc.view)
+			got := view.ViewMap(tc.view)
 			for _, key := range tc.wantKeys {
 				if _, ok := got[key]; !ok {
 					t.Fatalf("ViewMap 后缺少 %q（模板按这个名字取值，缺了整页渲染中断）；现有键：%v", key, keysOfViewMap(got))
@@ -68,7 +67,7 @@ func TestViewMapRenamesTaggedFieldsForThemePages(t *testing.T) {
 func TestViewMapKeepsFieldNameWithoutTag(t *testing.T) {
 	// 对照：没有 tag 的字段照旧用字段名。这条防止有人把「所有字段都改 tag」
 	// 当成修法，反而把别的页面键名一起改掉。
-	got := adminui.ViewMap(&themeManageViewLike{Title: "主题管理"})
+	got := view.ViewMap(&themeManageViewLike{Title: "主题管理"})
 	if _, ok := got["Title"]; !ok {
 		t.Fatalf("无 tag 的字段应保留字段名 Title；现有键：%v", keysOfViewMap(got))
 	}

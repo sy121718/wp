@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -56,8 +54,8 @@ func productHTMLWriteEngine(svc *productHTMLWriteStub, middleware ...gin.Handler
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) {
 		text.AttachScope(c)

@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
@@ -54,7 +52,7 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	api := producthttp.NewProductHandle(base.products)

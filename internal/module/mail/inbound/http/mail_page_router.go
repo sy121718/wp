@@ -4,8 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	mailcontract "go_wp/internal/module/mail/contract"
 	pageview "go_wp/pkg/view"
@@ -33,7 +31,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	pages.GET("/mail",
 		mw.PageAuthz("/api/mail/account/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailPage)
 	pages.POST("/mail/account/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
 	pages.POST("/mail/account/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
@@ -42,12 +40,12 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	pages.GET("/mail/templates",
 		mw.PageAuthz("/api/mail/template/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailTemplatesPage)
 
 	pages.GET("/mail/templates/editor",
 		mw.PageAuthz("/api/mail/template/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailTemplateEditor)
 	pages.POST("/mail/template/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
 	pages.POST("/mail/template/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
@@ -57,7 +55,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	pages.GET("/mail/contacts",
 		mw.PageAuthz("/api/mail/contact/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailContactsPage)
 	pages.POST("/mail/contact/import", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
 	pages.POST("/mail/contact/status", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
@@ -65,7 +63,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	pages.GET("/mail/campaigns",
 		mw.PageAuthz("/api/mail/campaign/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailCampaignsPage)
 	pages.POST("/mail/campaign/save", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
 	pages.POST("/mail/campaign/start", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
@@ -74,28 +72,28 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	pages.GET("/mail/campaign",
 		mw.PageAuthz("/api/mail/campaign/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailCampaignPage)
 
 	pages.GET("/mail/marketing", mailPage.MailMarketingRedirect)
 
 	pages.GET("/mail/automation",
 		mw.PageAuthz("/api/mail/automation/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailAutomationPage)
 
 	pages.GET("/mail/automation/runs",
 		mw.PageAuthz("/api/mail/automation/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailAutomationRunsPage)
 	pages.GET("/mail/automation/run",
 		mw.PageAuthz("/api/mail/automation/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailAutomationRunDetail)
 
 	pages.GET("/mail/automation/canvas",
 		mw.PageAuthz("/api/mail/automation/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		mailPage.MailAutomationCanvas)
 	pages.POST("/mail/automation/status", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	pages.POST("/mail/automation/delete", pageview.HTMLFragment, builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)

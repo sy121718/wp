@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -46,11 +44,11 @@ func TestPricingPreviewAndApplyShareFormDataContract(t *testing.T) {
 	service := &pricingProtocolStub{}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Set("user_id", int64(9)); c.Next() })
 	handle := NewProductHandle(service)
-	engine.POST("/api/product/pricing/preview", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.PreviewPricing)
+	engine.POST("/api/product/pricing/preview", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.PreviewPricing)
 	engine.POST("/api/product/pricing/apply", pageview.HTMLFragment, handle.ApplyPricing)
 	for _, action := range []string{"preview", "apply"} {
 		var body bytes.Buffer
@@ -92,11 +90,11 @@ func TestPricingFormParamsAndFailure(t *testing.T) {
 	service := &pricingProtocolStub{}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := NewProductHandle(service)
-	engine.POST("/preview", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.PreviewPricing)
+	engine.POST("/preview", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.PreviewPricing)
 	for _, fail := range []bool{false, true} {
 		service.fail = fail
 		values := url.Values{"projectId": {"p1"}, "ruleType": {"fixed_price"}, "amount": {"12.5"}, "scope": {"product"}, "targetId": {"p2"}}

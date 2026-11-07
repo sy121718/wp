@@ -6,8 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -37,12 +35,12 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	h.SetBlockPanelPort(blocks)
 	adminPages.GET("/navigations",
 		mw.PageAuthz("/api/navigation/list"),
-		pageview.Slot(NavigationsPageTemplate, adminui.RenderPage),
+		pageview.Slot(NavigationsPageTemplate, pageview.RenderPage),
 		h.NavigationsPage)
 
 	adminPages.GET("/navigations/edit",
 		builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost),
-		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare),
+		pageview.Slot(NavigationEditFormTemplate, pageview.RenderBare),
 		h.NavigationEditFragment)
 
 	// 这三个是抽屉内的局部写：失败只进宿主声明的错误区（HTML 片段），
@@ -62,6 +60,6 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/navigations/translations",
 		mw.PageAuthz("/api/navigation/list"),
-		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
+		pageview.Slot(NavigationTranslationsTemplate, pageview.RenderPage),
 		translations.NavigationTranslations)
 }

@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 )
 
 const SystemSettingsPageTemplate = "admin/system/settings"
@@ -17,6 +15,6 @@ func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
 	}
 	adminPages.GET("/system",
 		mw.PageAuthz("/api/sysconfig/get"),
-		pageview.Slot(SystemSettingsPageTemplate, adminui.RenderPage),
+		pageview.Slot(SystemSettingsPageTemplate, pageview.RenderPage),
 		h.SystemPage)
 }

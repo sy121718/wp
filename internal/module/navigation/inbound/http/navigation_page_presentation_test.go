@@ -4,7 +4,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,7 +156,7 @@ func newNavigationsPageTestRouter(t *testing.T,
 		c.Next()
 	})
 	h := NewNavigationPageHandle(nav, projects)
-	router.GET("/admin/navigations", pageview.Slot(NavigationsPageTemplate, adminui.RenderPage), h.NavigationsPage)
+	router.GET("/admin/navigations", pageview.Slot(NavigationsPageTemplate, pageview.RenderPage), h.NavigationsPage)
 	return router
 }
 

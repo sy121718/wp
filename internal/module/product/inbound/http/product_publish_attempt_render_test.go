@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -37,7 +35,7 @@ func publishRecordBodyWithButtons(t *testing.T, buttons map[string]bool) string 
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/products/publish-records", func(c *gin.Context) {
 		c.Set(adminctx.ButtonsKey, buttons)
-		pageview.UseRenderer(adminui.RenderPage)(c)
+		pageview.UseRenderer(pageview.RenderPage)(c)
 		handle.ProductPublishRecordPage(c)
 	})
 	rec := httptest.NewRecorder()

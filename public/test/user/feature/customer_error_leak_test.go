@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,11 +51,11 @@ func newCustomerLeakEnv(t *testing.T) (*gin.Engine, *userservice.Service, *gorm.
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	page := userhttp.NewCustomerPageHandle(users, nil, projects)
-	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, adminui.RenderPage), page.CustomersPage)
+	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, pageview.RenderPage), page.CustomersPage)
 	engine.POST("/api/customer/bulk-status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerStatus)
 	engine.POST("/api/customer/bulk-unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
 	return engine, users, db

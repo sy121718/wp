@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	projectdto "go_wp/internal/module/project/dto"
 	purchasedto "go_wp/internal/module/purchase/dto"
@@ -726,7 +724,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
@@ -739,7 +737,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *purchaseFixture) {
 
 	})
 	handle := purchasehttp.NewSourcePageHandle(f.purchase, f.projects)
-	engine.GET("/admin/inventory/sources", pageview.Slot(purchasehttp.SourcesPageTemplate, adminui.RenderPage), handle.SourcesPage)
+	engine.GET("/admin/inventory/sources", pageview.Slot(purchasehttp.SourcesPageTemplate, pageview.RenderPage), handle.SourcesPage)
 	engine.POST("/admin/inventory/sources/create", pageview.HTMLFragment, handle.SourceCreate)
 	engine.POST("/admin/inventory/sources/update", pageview.HTMLFragment, handle.SourceUpdate)
 	engine.POST("/admin/inventory/sources/delete", pageview.HTMLFragment, handle.SourceDelete)

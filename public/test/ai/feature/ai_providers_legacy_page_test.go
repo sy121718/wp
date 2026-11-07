@@ -20,8 +20,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
@@ -50,8 +48,8 @@ func newLegacyProvidersEngine(t *testing.T) *gin.Engine {
 		})
 		c.Next()
 	})
-	engine.GET("/admin/ai/providers", pageview.Slot(aihttp.SessionsPageTemplate, adminui.RenderPage), sessionPage.ProvidersPage)
-	engine.GET("/admin/ai/sessions", pageview.Slot(aihttp.SessionsPageTemplate, adminui.RenderPage), sessionPage.SessionsPage)
+	engine.GET("/admin/ai/providers", pageview.Slot(aihttp.SessionsPageTemplate, pageview.RenderPage), sessionPage.ProvidersPage)
+	engine.GET("/admin/ai/sessions", pageview.Slot(aihttp.SessionsPageTemplate, pageview.RenderPage), sessionPage.SessionsPage)
 	return engine
 }
 

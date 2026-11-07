@@ -12,8 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
@@ -43,8 +41,8 @@ func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/system", handle.SystemPage)
 	engine.POST("/api/sysconfig/system/save", pageview.HTMLFragment, handle.APISystemSave)

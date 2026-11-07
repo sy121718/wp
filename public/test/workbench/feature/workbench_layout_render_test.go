@@ -3,7 +3,6 @@ package feature
 import (
 	pageview "go_wp/pkg/view"
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -97,7 +96,7 @@ func newLayoutRenderEnv(t *testing.T) *layoutRenderEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/workbench", pageview.Slot(workbenchhttp.CanvasLayoutTemplate, adminui.RenderPage), h.Workbench)
+	engine.GET("/workbench", pageview.Slot(workbenchhttp.CanvasLayoutTemplate, pageview.RenderPage), h.Workbench)
 	return &layoutRenderEnv{
 		engine: engine, projectID: project.ID, pageID: page.ID,
 		blockID: block.ID, templateID: tpl.ID, instanceID: instanceID,

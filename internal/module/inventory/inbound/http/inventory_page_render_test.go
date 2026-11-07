@@ -4,7 +4,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"html"
 	"net/http"
@@ -150,9 +149,9 @@ func newInventoryPageTestRouter(t *testing.T, inv inventorycontract.InventorySer
 		products = catalog[0]
 	}
 	h := NewInventoryPageHandle(inv, projects, products)
-	router.GET("/admin/inventory", pageview.Slot(InventoryListPageTemplate, adminui.RenderPage), h.InventoryPage)
-	router.GET("/admin/inventory/warehouses", pageview.Slot(InventoryWarehousesPageTemplate, adminui.RenderPage), h.InventoryWarehousesPage)
-	router.GET("/admin/inventory/reasons", pageview.Slot(InventoryReasonsPageTemplate, adminui.RenderPage), h.InventoryReasonsPage)
+	router.GET("/admin/inventory", pageview.Slot(InventoryListPageTemplate, pageview.RenderPage), h.InventoryPage)
+	router.GET("/admin/inventory/warehouses", pageview.Slot(InventoryWarehousesPageTemplate, pageview.RenderPage), h.InventoryWarehousesPage)
+	router.GET("/admin/inventory/reasons", pageview.Slot(InventoryReasonsPageTemplate, pageview.RenderPage), h.InventoryReasonsPage)
 	return router
 }
 

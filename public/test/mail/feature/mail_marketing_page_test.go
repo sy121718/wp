@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
@@ -42,9 +40,9 @@ func newMarketingPageRouter(t *testing.T) (*gin.Engine, *mailFixture) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := mailhttp.NewMailPageHandle(f.svc)
 	router.GET("/admin/mail/contacts",
-		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), handle.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, pageview.RenderPage), handle.MailContactsPage)
 	router.GET("/admin/mail/campaigns",
-		pageview.Slot(mailhttp.CampaignsPageTemplate, adminui.RenderPage), handle.MailCampaignsPage)
+		pageview.Slot(mailhttp.CampaignsPageTemplate, pageview.RenderPage), handle.MailCampaignsPage)
 	router.GET("/admin/mail/marketing", handle.MailMarketingRedirect)
 	return router, f
 }

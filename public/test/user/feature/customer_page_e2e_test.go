@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -72,11 +71,11 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们失败会落成 JSON。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
-	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, adminui.RenderPage), page.CustomersPage)
-	engine.GET("/admin/customers/detail", pageview.Slot(userhttp.CustomerDetailPageTemplate, adminui.RenderPage), page.CustomerDetailPage)
+	engine.GET("/admin/customers", pageview.Slot(userhttp.CustomersListPageTemplate, pageview.RenderPage), page.CustomersPage)
+	engine.GET("/admin/customers/detail", pageview.Slot(userhttp.CustomerDetailPageTemplate, pageview.RenderPage), page.CustomerDetailPage)
 	engine.POST("/api/customer/status", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).SetCustomerStatus)
 	engine.POST("/api/customer/unlock", pageview.HTMLFragment, userhttp.NewCustomerHandle(users).UnlockCustomer)
 

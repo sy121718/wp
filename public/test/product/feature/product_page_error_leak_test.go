@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
@@ -42,7 +40,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductHandle(f.svc)
 	engine.POST("/api/product/delete", pageview.HTMLFragment, handle.Delete)

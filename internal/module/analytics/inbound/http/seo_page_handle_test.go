@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
@@ -50,7 +48,7 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	}
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, adminui.RenderPage), func(c *gin.Context) {
+	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, pageview.RenderPage), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/seo.html", data)
 	})
 
@@ -132,7 +130,7 @@ func TestSEOPageHandlerUsesAnalyticsContract(t *testing.T) {
 	)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, adminui.RenderPage), h.SEOPage)
+	engine.GET("/admin/seo", pageview.Slot(SEOPageTemplate, pageview.RenderPage), h.SEOPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/seo", nil))

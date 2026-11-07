@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -220,9 +219,9 @@ func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 			}
 		}
 	})
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), h.ProductsPage)
-	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), h.ProductNewPage)
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), h.ProductsPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(pageview.RenderPage), h.ProductNewPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), h.ProductDetailPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -236,7 +235,7 @@ func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, m
 	for _, m := range mw {
 		engine.Use(m)
 	}
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), h.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), h.ProductsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -251,13 +250,13 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 
 	switch route {
 	case "/admin/product-attributes":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductAttributesPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductAttributesPage)
 	case "/admin/product-categories":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductCategoriesPage)
 	case "/admin/product-brands":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductBrandsPage)
 	case "/admin/product-tags":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductTagsPage)
 	default:
 		t.Fatalf("productPageRequestFor 不认识这条路由 %q", route)
 	}

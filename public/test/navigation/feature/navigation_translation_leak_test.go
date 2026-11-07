@@ -3,7 +3,6 @@ package feature
 import (
 	"context"
 	"fmt"
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	pageview "go_wp/pkg/view"
 	text "go_wp/pkg/view/jet"
@@ -63,9 +62,9 @@ func TestNavigationTranslationSaveHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
@@ -102,9 +101,9 @@ func TestNavigationTranslationSaveMessageIsLocalizedWithoutFormatGarbage(t *test
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 
@@ -160,9 +159,9 @@ func TestNavigationTranslationRowKeysAreRequired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	// 生产装配在基础层挂统一成功出口；成功回执经共享提示组件渲染。
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/translations", pageview.HTMLFragment, handle.UpdateTranslations)
 

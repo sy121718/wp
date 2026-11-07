@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	projectdto "go_wp/internal/module/project/dto"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
@@ -33,9 +31,9 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SiteSettings)
-	router.POST("/admin/settings/locales/rows", pageview.Slot(projecthttp.LocaleRowsFragmentTemplate, adminui.RenderBare), handle.LocaleRowsFragment)
-	router.POST("/admin/settings/locales/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, adminui.RenderPage), handle.SaveSiteLocales)
+	router.GET("/admin/settings", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SiteSettings)
+	router.POST("/admin/settings/locales/rows", pageview.Slot(projecthttp.LocaleRowsFragmentTemplate, pageview.RenderBare), handle.LocaleRowsFragment)
+	router.POST("/admin/settings/locales/save", pageview.Slot(projecthttp.SiteSettingsPageTemplate, pageview.RenderPage), handle.SaveSiteLocales)
 	return router, projects, project.ID, db
 }
 

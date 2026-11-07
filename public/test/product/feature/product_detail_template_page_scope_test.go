@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"go_wp/pkg/facing"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -43,7 +42,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
@@ -59,7 +58,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailTemplatePage)
 	engine.POST("/api/product/detail-template/create", pageview.HTMLFragment, api.CreateDetailTemplate)
 	return engine, scope, port
 }

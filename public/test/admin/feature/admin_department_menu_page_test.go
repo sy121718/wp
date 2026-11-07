@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
@@ -34,8 +32,8 @@ func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 			// 页面标题在模板里本地取词，取词函数由请求级作用域注入 —— 与生产
 			// assembly 的接线一致；缺这一步模板执行期拿不到 t，页面空 body。
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/departments", pageview.Slot(adminhttp.DepartmentsPageTemplate, adminui.RenderPage), h.DepartmentsPage)
-			e.GET("/admin/menus", pageview.Slot(adminhttp.MenusPageTemplate, adminui.RenderPage), h.MenusPage)
+			e.GET("/admin/departments", pageview.Slot(adminhttp.DepartmentsPageTemplate, pageview.RenderPage), h.DepartmentsPage)
+			e.GET("/admin/menus", pageview.Slot(adminhttp.MenusPageTemplate, pageview.RenderPage), h.MenusPage)
 		},
 	})
 	if err != nil {

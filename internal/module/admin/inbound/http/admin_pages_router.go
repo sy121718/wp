@@ -4,8 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminenums "go_wp/internal/module/admin/enums"
@@ -39,7 +37,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/administrators",
 		mw.PageAuthz("/api/admin/list"),
-		view.Slot(AdministratorsPageTemplate, adminui.RenderPage),
+		view.Slot(AdministratorsPageTemplate, view.RenderPage),
 		handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
@@ -54,7 +52,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/roles",
 		mw.PageAuthz("/api/role/list"),
-		view.Slot(RolesPageTemplate, adminui.RenderPage),
+		view.Slot(RolesPageTemplate, view.RenderPage),
 		handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
@@ -66,7 +64,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/menus",
 		mw.PageAuthz("/api/menu/tree"),
-		view.Slot(MenusPageTemplate, adminui.RenderPage),
+		view.Slot(MenusPageTemplate, view.RenderPage),
 		handle.MenusPage)
 	adminPages.GET("/menus/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
 		handle.MenusEditFragment)
@@ -76,7 +74,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
 	adminPages.GET("/permissions", mw.PageAuthz("/api/permission/list"),
-		view.Slot(PermissionsPageTemplate, adminui.RenderPage), handle.PermissionsPage)
+		view.Slot(PermissionsPageTemplate, view.RenderPage), handle.PermissionsPage)
 	adminPages.GET("/permissions/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
 		handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
@@ -86,7 +84,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/departments",
 		mw.PageAuthz("/api/dept/tree"),
-		view.Slot(DepartmentsPageTemplate, adminui.RenderPage),
+		view.Slot(DepartmentsPageTemplate, view.RenderPage),
 		handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
@@ -95,10 +93,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/datarules",
 		mw.PageAuthz("/api/datarule/list"),
-		view.Slot(DatarulesPageTemplate, adminui.RenderPage),
+		view.Slot(DatarulesPageTemplate, view.RenderPage),
 		handle.DatarulesPage)
 	adminPages.GET("/datarules/edit", mw.PageAuthz("/api/datarule/detail"),
-		view.Slot(DataruleEditPageTemplate, adminui.RenderPage), handle.DatarulesEditPage)
+		view.Slot(DataruleEditPageTemplate, view.RenderPage), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
@@ -118,7 +116,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 		AuthObject: "/api/i18n/list", AuthMethod: http.MethodGet,
 	})
 	adminPages.GET("/i18n", view.HTMLPage, mw.PageAuthz("/api/i18n/list"),
-		view.Slot(I18nPageTemplate, adminui.RenderPage), i18nPages.I18nEntriesPage)
+		view.Slot(I18nPageTemplate, view.RenderPage), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", view.HTMLFragment, builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
 		i18nPages.I18nEntryEditFragment)
 
@@ -129,5 +127,5 @@ func SetupAdminShellPages(router *gin.Engine) {
 	if router == nil {
 		return
 	}
-	router.GET("/admin/login", view.Slot(LoginPageTemplate, adminui.RenderPage), AdminLoginPage)
+	router.GET("/admin/login", view.Slot(LoginPageTemplate, view.RenderPage), AdminLoginPage)
 }

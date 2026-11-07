@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
@@ -568,7 +567,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
 	rec := httptest.NewRecorder()
 
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

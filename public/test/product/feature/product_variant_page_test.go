@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -49,11 +48,11 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	grantProductPerms(engine)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
 
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailPage)
 
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
 	return engine, f
 }
 

@@ -13,8 +13,6 @@ import (
 
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/utils"
-
-	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
@@ -125,7 +123,7 @@ func serveAIPage(t *testing.T, h *aihttp.Handle, method, target, body string) *h
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	// 与 ai_router.go 注册的路径逐字一致：页面侧不再有 /admin 转发路由。
 	engine.POST("/api/ai/provider/save", pageview.HTMLFragment, h.SaveProvider)

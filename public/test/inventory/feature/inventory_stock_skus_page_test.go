@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
@@ -36,7 +34,7 @@ func newStockSKUsPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory/skus", pageview.Slot(inventoryhttp.InventoryStockSKUsPageTemplate, adminui.RenderPage), handle.InventoryStockSKUsPage)
+	engine.GET("/admin/inventory/skus", pageview.Slot(inventoryhttp.InventoryStockSKUsPageTemplate, pageview.RenderPage), handle.InventoryStockSKUsPage)
 	engine.POST("/admin/inventory/stock/create", handle.InventoryStockCreate)
 	engine.POST("/admin/inventory/stock/update", handle.InventoryStockUpdate)
 	engine.POST("/admin/inventory/stock/status", handle.InventoryStockStatus)

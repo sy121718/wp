@@ -6,8 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/safepath"
 
 	"github.com/gin-gonic/gin"
@@ -45,7 +44,7 @@ func TestAdminLangRedirectMatchesPrepareCriterion(t *testing.T) {
 	}
 	for _, tc := range cases {
 		c := adminLangRedirectCtx(t, tc.uri)
-		rendered := adminui.PageFacts(c).LangRedirect
+		rendered := view.PageFacts(c).LangRedirect
 		if rendered == "" {
 			t.Fatalf("lang_redirect 必须注入非空字符串，实际 %q", rendered)
 		}

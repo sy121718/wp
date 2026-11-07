@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	blockenums "go_wp/internal/module/block/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
@@ -1431,7 +1429,7 @@ func articleInternalMsg(c *gin.Context, err error) articleMsg {
 			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "content 后台页操作失败（非业务错误，只对外给归口文案）")
 	}
-	return adminui.InternalMsg()
+	return pageview.InternalMsg()
 }
 
 func articleErrMsg(c *gin.Context, err error) articleMsg {
@@ -1439,7 +1437,7 @@ func articleErrMsg(c *gin.Context, err error) articleMsg {
 }
 
 func articleErrMsgQuiet(c *gin.Context, err error) articleMsg {
-	return articleErrMsgOfFact(articleFallbacks, adminui.PageErrorFactQuiet(c, articleErrScene, err))
+	return articleErrMsgOfFact(articleFallbacks, pageview.PageErrorFactQuiet(c, articleErrScene, err))
 }
 
 func articleFacingErrMsg(c *gin.Context, err error) articleMsg {
@@ -1450,10 +1448,10 @@ func articleFacingErrMsg(c *gin.Context, err error) articleMsg {
 }
 
 func articleErrMsgOf(c *gin.Context, scoped map[string]string, err error) articleMsg {
-	return articleErrMsgOfFact(scoped, adminui.PageErrorFact(c, articleErrScene, err))
+	return articleErrMsgOfFact(scoped, pageview.PageErrorFact(c, articleErrScene, err))
 }
 
-func articleErrMsgOfFact(scoped map[string]string, fact adminui.ErrFact) articleMsg {
+func articleErrMsgOfFact(scoped map[string]string, fact pageview.ErrFact) articleMsg {
 	if fact.Key == "" {
 		return articleMsg{}
 	}

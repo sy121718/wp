@@ -7,8 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
@@ -28,20 +26,20 @@ func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 	mcpPage.SetPermDirectory(dir)
 
 	mcpPage.SetConfigService(aiConfig)
-	adminPages.GET("/ai/mcp", mw.PageAuthz("/api/ai/token/list"), pageview.Slot(McpPageTemplate, adminui.RenderPage), mcpPage.Page)
+	adminPages.GET("/ai/mcp", mw.PageAuthz("/api/ai/token/list"), pageview.Slot(McpPageTemplate, pageview.RenderPage), mcpPage.Page)
 
 	// 令牌的生成 / 撤销 / 对外接入点开关都只有 /api 一条入口（ai_router.go 的
 	// /ai/token/{create,revoke,toggle}）：页面侧的 POST 双轨已经清退。
 
 	// 老地址：532 迁移把「AI 模型」菜单并进了 /admin/ai/sessions?tab=models，
 	// 这条留着只为旧书签不 404，渲染的是同一个页面（不发 302）。
-	adminPages.GET("/ai/providers", mw.PageAuthz("/api/ai/provider/list"), pageview.Slot(SessionsPageTemplate, adminui.RenderPage), sessionPage.ProvidersPage)
+	adminPages.GET("/ai/providers", mw.PageAuthz("/api/ai/provider/list"), pageview.Slot(SessionsPageTemplate, pageview.RenderPage), sessionPage.ProvidersPage)
 
 	// 供应商与模型的写操作只有 /api 一条入口（见 ai_router.go 的 /ai/provider/*）：
 	// 页面侧的 POST 双轨已经清退 —— 同一件事有两个 URL 就必然有两份绑定与两份出口，
 	// 前端也永远不知道哪一条才是真的。写基座直接打 /api，这里不再保留转发路由。
 
-	adminPages.GET("/ai/sessions", mw.PageAuthz("/api/ai/session/list"), pageview.Slot(SessionsPageTemplate, adminui.RenderPage), sessionPage.SessionsPage)
+	adminPages.GET("/ai/sessions", mw.PageAuthz("/api/ai/session/list"), pageview.Slot(SessionsPageTemplate, pageview.RenderPage), sessionPage.SessionsPage)
 
 	// 会话的 append / rename / archive / fold / send 同样只有 /api 一条入口
 	// （ai_router.go 的 /ai/session/* 与 /ai/chat）。

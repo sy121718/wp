@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -90,7 +88,7 @@ func newWorkbenchRouter(t *testing.T, nav navigationcontract.NavigationService) 
 	injectWorkbenchKindEntries(t)
 	router := newNavigationsPageTestRouter(t, nav, &pagePresentationProjectStub{})
 	router.GET("/admin/navigations/translations",
-		pageview.Slot(NavigationTranslationsTemplate, adminui.RenderPage),
+		pageview.Slot(NavigationTranslationsTemplate, pageview.RenderPage),
 		NewNavigationTranslationHandle(nav, &pagePresentationProjectStub{}).NavigationTranslations)
 	return router
 }

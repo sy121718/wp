@@ -1,4 +1,4 @@
-package adminui
+package view
 
 import (
 	"go_wp/pkg/facing"
@@ -23,7 +23,7 @@ func TestViewMapFlattensExportedFields(t *testing.T) {
 		Title:        "新建商品",
 		Projects:     []string{"p1", "p2"},
 		LoadFailed:   true,
-		LoadError:    facing.Msg{Key: "admin.products.preview.failed", Fallback: "预览生成失败"},
+		LoadError:    facing.Msg{Key: "admin.products.prefailed", Fallback: "预览生成失败"},
 		renamed:      "内部值",
 		RenamedField: "带标签",
 	}

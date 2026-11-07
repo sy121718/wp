@@ -3,7 +3,6 @@ package feature
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	publish "go_wp/pkg/publish"
 	pageview "go_wp/pkg/view"
@@ -429,7 +428,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 
 	engine.Use(func(c *gin.Context) {
@@ -443,7 +442,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
 	})
-	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
 	engine.GET("/admin/products/preview-frame", handle.ProductPreviewFrame)
 	engine.POST("/api/product/detail-template/create", pageview.HTMLFragment, api.CreateDetailTemplate)

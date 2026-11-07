@@ -7,10 +7,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	bulkids "go_wp/pkg/bulkids"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/i18n"
 )
 
@@ -77,11 +76,11 @@ func TestBulkIDsFacingTextIsControlled(t *testing.T) {
 
 	c := noticeCtx("")
 	tooMany := &bulkids.IDsError{Count: bulkids.MaxIDs + 1, Max: bulkids.MaxIDs}
-	got := adminui.BulkIDsFacingText(c, tooMany)
+	got := view.BulkIDsFacingText(c, tooMany)
 	if !strings.Contains(got, "一次最多操作") {
 		t.Fatalf("上限拒绝应给可行动文案，实际 %q", got)
 	}
-	unknown := adminui.BulkIDsFacingText(c, errors.New("boom: relation \"pages\" does not exist (SQLSTATE 42P01)"))
+	unknown := view.BulkIDsFacingText(c, errors.New("boom: relation \"pages\" does not exist (SQLSTATE 42P01)"))
 	if strings.Contains(unknown, "boom") || strings.Contains(unknown, "SQLSTATE") {
 		t.Fatalf("未命中的错误不该透出原文，实际 %q", unknown)
 	}

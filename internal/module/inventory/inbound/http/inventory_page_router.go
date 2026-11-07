@@ -4,8 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -14,18 +12,18 @@ import (
 
 func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) {
 	pages.GET("/inventory", mw.PageAuthz("/api/inventory/warehouse/list"),
-		pageview.UseRenderer(adminui.RenderPage), h.InventoryPage)
+		pageview.UseRenderer(pageview.RenderPage), h.InventoryPage)
 
 	pages.GET("/inventory/warehouses", mw.PageAuthz("/api/inventory/warehouse/list"),
-		pageview.UseRenderer(adminui.RenderPage), h.InventoryWarehousesPage)
+		pageview.UseRenderer(pageview.RenderPage), h.InventoryWarehousesPage)
 	pages.GET("/inventory/reasons", mw.PageAuthz("/api/inventory/reason/list"),
-		pageview.UseRenderer(adminui.RenderPage), h.InventoryReasonsPage)
+		pageview.UseRenderer(pageview.RenderPage), h.InventoryReasonsPage)
 
 	pages.GET("/inventory/skus", mw.PageAuthz("/api/inventory/stock/list"),
-		pageview.UseRenderer(adminui.RenderPage), h.InventoryStockSKUsPage)
+		pageview.UseRenderer(pageview.RenderPage), h.InventoryStockSKUsPage)
 
 	pages.GET("/inventory/movements", mw.PageAuthz("/api/inventory/movement/list"),
-		pageview.UseRenderer(adminui.RenderPage), h.InventoryMovementsPage)
+		pageview.UseRenderer(pageview.RenderPage), h.InventoryMovementsPage)
 }
 
 const (
@@ -62,7 +60,7 @@ func registerInventoryTransferPage(pages *gin.RouterGroup, svc inventorycontract
 	project projectcontract.ProjectService, h *inventoryPageHandle) {
 	transferPages := NewInventoryTransferPageHandle(svc, project, h.listWarehouses)
 	pages.GET("/inventory/transfers", mw.PageAuthz("/api/inventory/transfer/list"),
-		pageview.UseRenderer(adminui.RenderPage), transferPages.InventoryTransfersPage)
+		pageview.UseRenderer(pageview.RenderPage), transferPages.InventoryTransfersPage)
 }
 
 func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.InventoryService,

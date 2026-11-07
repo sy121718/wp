@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	"go_wp/internal/templates"
@@ -45,8 +43,8 @@ func newEnvelopeRouter(t *testing.T, svc navigationcontract.NavigationService) *
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := NewHandle(svc)
 	router.POST("/api/navigation/update", pageview.HTMLFragment, h.Update)

@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	"go_wp/internal/templates"
@@ -26,7 +24,7 @@ func returnFormEngine(h *orderhttp.Handle) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/order/return/approve", pageview.HTMLFragment, h.ApproveReturn)
 	engine.POST("/api/order/return/reject", pageview.HTMLFragment, h.RejectReturn)

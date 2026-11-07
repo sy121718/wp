@@ -16,8 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-
-	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -159,7 +157,7 @@ func TestContentTemplatesPageMainListFailureReturnsJSON(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/content-templates",
-		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
+		pageview.Slot(ContentTemplatesPageTemplate, pageview.RenderPage),
 		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
@@ -229,7 +227,7 @@ func renderContentTemplatesPageWithDeps(t *testing.T, templatesSvc contenttempla
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/content-templates",
-		pageview.Slot(ContentTemplatesPageTemplate, adminui.RenderPage),
+		pageview.Slot(ContentTemplatesPageTemplate, pageview.RenderPage),
 		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()

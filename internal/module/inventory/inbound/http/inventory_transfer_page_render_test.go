@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 )
@@ -44,7 +42,7 @@ func newTransferPageRenderRouter(t *testing.T, stub *transferPageRenderStub) *gi
 	router := newInventoryPageTestRouter(t, stub, &inventoryPageRenderProjects{})
 	handle := NewInventoryTransferPageHandle(stub, &inventoryPageRenderProjects{}, warehouseRowLister)
 	router.GET("/admin/inventory/transfers",
-		pageview.Slot(InventoryTransfersPageTemplate, adminui.RenderPage), handle.InventoryTransfersPage)
+		pageview.Slot(InventoryTransfersPageTemplate, pageview.RenderPage), handle.InventoryTransfersPage)
 	return router
 }
 

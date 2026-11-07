@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
@@ -77,9 +75,9 @@ func TestProductSEORealBrowser(t *testing.T) {
 		c.Next()
 	})
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
-	engine.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), handle.ProductCategoriesPage)
-	engine.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), handle.ProductBrandsPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/product-categories", pageview.UseRenderer(pageview.RenderPage), handle.ProductCategoriesPage)
+	engine.GET("/admin/product-brands", pageview.UseRenderer(pageview.RenderPage), handle.ProductBrandsPage)
 	mountStaticAssets(engine)
 	server := httptest.NewServer(engine)
 	defer server.Close()

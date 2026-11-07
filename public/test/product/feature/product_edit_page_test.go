@@ -3,7 +3,6 @@ package feature
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -244,7 +243,7 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	grantProductPerms(engine)
 	failing := &failedAttributeListService{ProductService: f.svc}
 	handle := producthttp.NewProductPageHandle(failing, f.svc)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
 
 	page := httptest.NewRecorder()
 	engine.ServeHTTP(page, httptest.NewRequest(http.MethodGet,

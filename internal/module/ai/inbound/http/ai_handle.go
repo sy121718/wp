@@ -3,7 +3,7 @@ package aihttp
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -321,7 +321,7 @@ func (h *Handle) ModelCandidates(c *gin.Context) {
 	for _, id := range result.Existing {
 		existing[id] = true
 	}
-	adminui.RenderFragment(c, "admin/ai/provider_picker.html", gin.H{
+	view.RenderFragment(c, "admin/ai/provider_picker.html", gin.H{
 		"Provider":   result.Provider,
 		"Candidates": result.Candidates,
 		"Existing":   existing,
@@ -345,7 +345,7 @@ func (h *Handle) AppendModels(c *gin.Context) {
 		return
 	}
 	// 成功：模型目录换回服务端事实，并把候选弹窗宿主清空（弹窗随之关闭）。
-	adminui.RenderFragment(c, "admin/ai/ai_models_appended.html", gin.H{
+	view.RenderFragment(c, "admin/ai/ai_models_appended.html", gin.H{
 		"Models": providerCardModels(c, *provider),
 	})
 }
@@ -915,7 +915,7 @@ func (h *TokenHandle) Create(c *gin.Context) {
 		aiWriteFail(c, err)
 		return
 	}
-	adminui.RenderFragment(c, "admin/ai/mcp_token_created.html", gin.H{
+	view.RenderFragment(c, "admin/ai/mcp_token_created.html", gin.H{
 		"Token":  res.Token,
 		"Tokens": toAnyRows(tokenRows(rows)),
 	})
@@ -940,7 +940,7 @@ func (h *TokenHandle) Revoke(c *gin.Context) {
 		return
 	}
 	// 撤销不删行：审计要能回答「什么时候撤的」。回同一份行模板把状态换成已撤销事实。
-	adminui.RenderFragment(c, "admin/ai/mcp_token_row.html", gin.H{
+	view.RenderFragment(c, "admin/ai/mcp_token_row.html", gin.H{
 		"Token": tokenRows([]aidto.TokenItem{item})[0],
 	})
 }
@@ -969,7 +969,7 @@ func (h *TokenHandle) SetMcpEnabled(c *gin.Context) {
 	if enabled {
 		key = aienums.McpSwitchOnDone
 	}
-	adminui.RenderFragment(c, "admin/ai/mcp_switch_result.html", gin.H{
+	view.RenderFragment(c, "admin/ai/mcp_switch_result.html", gin.H{
 		"Key":     key,
 		"Enabled": enabled,
 	})

@@ -6,8 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -72,7 +70,7 @@ func SetupProductCatalogRoutes(router *gin.Engine, svc productcontract.PublicCat
 }
 
 func registerProductPublishHistoryAPI(g *mw.RouteGroup, handle *PublishAttemptHandle) {
-	g.GET("/publish-attempts", productenums.ProductPublishAttempts, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.ProductPublishAttempts)
+	g.GET("/publish-attempts", productenums.ProductPublishAttempts, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.ProductPublishAttempts)
 }
 
 func registerProductCoreAPI(g *mw.RouteGroup, handle *ProductHandle) {
@@ -92,8 +90,8 @@ func registerProductCoreAPI(g *mw.RouteGroup, handle *ProductHandle) {
 
 	g.POST("/variant/save", productenums.ProductVariantSave, handle.SaveVariantList)
 
-	g.POST("/rating/add", productenums.ProductRatingAdd, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.AddRating)
-	g.POST("/rating/delete", productenums.ProductRatingDelete, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.DeleteRating)
+	g.POST("/rating/add", productenums.ProductRatingAdd, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.AddRating)
+	g.POST("/rating/delete", productenums.ProductRatingDelete, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.DeleteRating)
 }
 
 func registerProductDetailTemplateAPI(g *mw.RouteGroup, handle *ProductHandle) {
@@ -152,7 +150,7 @@ func registerProductPricingAPI(g *mw.RouteGroup, handle *ProductHandle) {
 
 	g.GET("/pricing/rules", productenums.ProductPricingRules, handle.ListPricingRuleTypes)
 	g.GET("/pricing/roundings", productenums.ProductPricingRoundings, handle.ListPricingRoundingOptions)
-	g.POST("/pricing/preview", productenums.ProductPricingPreview, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.PreviewPricing)
+	g.POST("/pricing/preview", productenums.ProductPricingPreview, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.PreviewPricing)
 	g.POST("/pricing/apply", productenums.ProductPricingApply, pageview.HTMLFragment, handle.ApplyPricing)
 
 	g.POST("/bulk-pricing", productenums.ProductBulkPricing, pageview.HTMLFragment, handle.BulkPricing)
@@ -208,47 +206,47 @@ func registerProductReadAPI(g *mw.RouteGroup, handle *ProductPageHandle) {
 
 func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/products", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductsPage)
+	pages.GET("/products", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductsPage)
 
-	pages.GET("/products/new", mw.PageAuthzAs("/api/product/create", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductNewPage)
+	pages.GET("/products/new", mw.PageAuthzAs("/api/product/create", http.MethodPost), pageview.UseRenderer(pageview.RenderPage), productPages.ProductNewPage)
 
-	pages.GET("/products/detail", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailPage)
+	pages.GET("/products/detail", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductDetailPage)
 
-	pages.GET("/products/edit", mw.PageAuthzAs("/api/product/update", http.MethodPost), pageview.UseRenderer(adminui.RenderPage), productPages.ProductEditPage)
+	pages.GET("/products/edit", mw.PageAuthzAs("/api/product/update", http.MethodPost), pageview.UseRenderer(pageview.RenderPage), productPages.ProductEditPage)
 
-	pages.GET("/products/publish-records", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPublishRecordPage)
+	pages.GET("/products/publish-records", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductPublishRecordPage)
 
 	pages.GET("/products/preview-frame", mw.PageAuthzAs("/api/presentation/preview", http.MethodPost), productPages.ProductPreviewFrame)
 }
 
 func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/products/template", mw.PageAuthz("/api/product/get"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductDetailTemplatePage)
+	pages.GET("/products/template", mw.PageAuthz("/api/product/get"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
 }
 
 func registerProductAttributePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-attributes", mw.PageAuthz("/api/product/attribute/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductAttributesPage)
+	pages.GET("/product-attributes", mw.PageAuthz("/api/product/attribute/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductAttributesPage)
 }
 
 func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-categories", mw.PageAuthz("/api/product/category/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductCategoriesPage)
+	pages.GET("/product-categories", mw.PageAuthz("/api/product/category/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductCategoriesPage)
 
-	pages.GET("/product-brands", mw.PageAuthz("/api/product/brand/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductBrandsPage)
+	pages.GET("/product-brands", mw.PageAuthz("/api/product/brand/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductBrandsPage)
 
 }
 
 func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-tags", mw.PageAuthz("/api/product/tag/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductTagsPage)
+	pages.GET("/product-tags", mw.PageAuthz("/api/product/tag/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductTagsPage)
 
 }
 
 func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 
-	pages.GET("/product-pricing", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), productPages.ProductPricingPage)
+	pages.GET("/product-pricing", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), productPages.ProductPricingPage)
 
 }
 
@@ -256,9 +254,9 @@ func SetupProductTranslationRoutes(apiRoot *mw.RouteGroup, adminPages *gin.Route
 	products productcontract.ProductService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	handle := NewProductTranslationHandle(products, pages, instances)
-	adminPages.GET("/products/translations", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(adminui.RenderPage), handle.ProductTranslations)
+	adminPages.GET("/products/translations", mw.PageAuthz("/api/product/list"), pageview.UseRenderer(pageview.RenderPage), handle.ProductTranslations)
 
-	apiRoot.Group("/product").POST("/translations/save", productenums.ProductTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.SaveProductTranslations)
+	apiRoot.Group("/product").POST("/translations/save", productenums.ProductTranslationsSave, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.SaveProductTranslations)
 	return handle
 }
 

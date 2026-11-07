@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/url"
@@ -27,24 +26,24 @@ func newCreateFlowEngine(t *testing.T, middleware ...gin.HandlerFunc) (*gin.Engi
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(middleware...)
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
-	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(pageview.RenderPage), handle.ProductNewPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailPage)
 
 	write := producthttp.NewProductHandle(f.svc)
 	engine.POST("/api/product/create", pageview.HTMLFragment, write.Create)
 	engine.POST("/api/product/update", pageview.HTMLFragment, write.Update)
 	engine.POST("/api/product/delete", pageview.HTMLFragment, write.Delete)
 	engine.POST("/api/product/bulk-delete", pageview.HTMLFragment, write.BulkDelete)
-	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), write.AddRating)
-	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), write.DeleteRating)
+	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), write.AddRating)
+	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), write.DeleteRating)
 	engine.POST("/api/product/bulk-pricing", write.BulkPricing)
 	engine.POST("/api/product/seo-score", pageview.HTMLFragment, handle.SeoScore)
 	engine.POST("/api/product/category/seo-score", pageview.HTMLFragment, handle.CategorySeoScore)

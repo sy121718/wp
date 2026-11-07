@@ -4,7 +4,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -84,7 +83,7 @@ func newWorkbenchTemplateEnv(t *testing.T) *workbenchTemplateEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/workbench", pageview.Slot(workbenchhttp.CanvasLayoutTemplate, adminui.RenderPage), h.Workbench)
+	engine.GET("/workbench", pageview.Slot(workbenchhttp.CanvasLayoutTemplate, pageview.RenderPage), h.Workbench)
 	engine.GET("/workbench/template/preview", h.TemplatePreview)
 	engine.POST("/workbench/template/preview", h.TemplatePreviewDraft)
 	return &workbenchTemplateEnv{engine: engine, projectID: project.ID, templates: templatesSvc, preview: previewPort}

@@ -1,4 +1,4 @@
-package adminui
+package viewtest
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ func newSuccessEngine(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../templates", true)
-	engine.Use(view.UseSuccess(NewSuccessWriter()))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.POST("/ok", func(c *gin.Context) { view.Success(c) })
 	engine.POST("/msg", func(c *gin.Context) {
 		view.SuccessMessage(c, "", "已保存")

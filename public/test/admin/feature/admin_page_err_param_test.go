@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
@@ -120,7 +118,7 @@ func newAdminI18nWriteEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/i18n/save", view.HTMLFragment, adminhttp.NewAdminI18nEntryHandle().I18nEntryWrite)

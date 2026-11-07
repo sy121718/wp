@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
@@ -95,8 +93,8 @@ func drawerEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	r.Use(view.FailureMiddleware(adminui.RenderFailure))
-	r.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(view.FailureMiddleware(view.RenderFailure))
+	r.Use(view.UseSuccess(view.NewSuccessWriter()))
 	r.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	return r

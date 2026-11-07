@@ -14,8 +14,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
-
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -84,7 +82,7 @@ func renderReturnsPage(t *testing.T, query string, svc *returnLabelsService) str
 	cap := &returnPageCapture{delegate: templates.NewJetHTMLRender(adminTemplatesDir(t), true)}
 	engine.HTMLRender = cap
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/returns"+query, nil)
-	pageview.Slot(ReturnListPageTemplate, adminui.RenderPage)(c)
+	pageview.Slot(ReturnListPageTemplate, pageview.RenderPage)(c)
 	NewReturnPageHandle(svc, orderPaginationProjects{}, nil, nil).ReturnsPage(c)
 	c.Writer.WriteHeaderNow()
 	if cap.err != nil {

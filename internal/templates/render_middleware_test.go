@@ -8,8 +8,6 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
@@ -55,7 +53,7 @@ func newBadEngine(t *testing.T, source string, viaAdminUI bool) *gin.Engine {
 
 	if viaAdminUI {
 		// adminui 路径：真实 PageSlot → view.Slot → RenderPage → c.Render → jetInstance.Render。
-		engine.GET("/admin/page", view.Slot("bad.html", adminui.RenderPage), func(c *gin.Context) {
+		engine.GET("/admin/page", view.Slot("bad.html", view.RenderPage), func(c *gin.Context) {
 			view.Render(c, gin.H{"Title": "页面"})
 		})
 		return engine

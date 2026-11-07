@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -28,17 +27,17 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	api := producthttp.NewProductHandle(f.products)
 
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
-	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), api.AddRating)
-	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), api.DeleteRating)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
+	engine.POST("/api/product/rating/add", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), api.AddRating)
+	engine.POST("/api/product/rating/delete", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), api.DeleteRating)
 	return engine, f
 }
 

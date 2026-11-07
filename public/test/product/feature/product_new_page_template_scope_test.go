@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -44,7 +43,7 @@ func newNewPageTemplateEngine(t *testing.T) (*gin.Engine, *detailFixture, string
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(base.products, base.products)
 	handle.SetDetailTemplateDeps(base.templates, base.pres)
-	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(pageview.RenderPage), handle.ProductNewPage)
 	return engine, base, other.ID
 }
 

@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
@@ -27,7 +25,7 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/navigations", pageview.Slot(navigationhttp.NavigationsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
+	router.GET("/admin/navigations", pageview.Slot(navigationhttp.NavigationsPageTemplate, pageview.RenderPage), func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, perms)
 		c.Set(adminctx.ButtonsKey, buttonsOf(perms))
 		page(c)

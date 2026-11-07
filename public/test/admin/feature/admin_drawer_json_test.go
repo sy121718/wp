@@ -12,8 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
@@ -56,7 +54,7 @@ func newDrawerEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 	h := adminhttp.NewAdminPagesHandle(svc, svc, svc, svc, nil, nil)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.GET("/admin/administrators/roles/drawer", view.HTMLFragment, h.AdministratorRolesDrawer)

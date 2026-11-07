@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -44,7 +43,7 @@ func translationObjectsRequest(t *testing.T, facts *productcontract.ProductTrans
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/products/translations", pageview.UseRenderer(adminui.RenderPage), h.ProductTranslations)
+	engine.GET("/admin/products/translations", pageview.UseRenderer(pageview.RenderPage), h.ProductTranslations)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/translations?project=p1", nil))
 	return rec
@@ -109,7 +108,7 @@ func TestDetailTemplateRendersBindingFromOriginalObjects(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/products/template", pageview.UseRenderer(adminui.RenderPage), h.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", pageview.UseRenderer(pageview.RenderPage), h.ProductDetailTemplatePage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/template?project=p1&product=prod-1", nil))
 	body := rec.Body.String()

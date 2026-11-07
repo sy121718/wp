@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -71,8 +69,8 @@ func newNavigationErrRouter(t *testing.T, svc navigationcontract.NavigationServi
 	h := NewHandle(svc)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	r.POST("/create", h.Create)
 	r.POST("/update", pageview.HTMLFragment, h.Update)

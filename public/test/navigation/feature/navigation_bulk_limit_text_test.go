@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
@@ -73,7 +71,7 @@ func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/api/navigation/delete-bulk", pageview.HTMLFragment, navigationhttp.NewHandle(navOverLimitService{}).DeleteBulk)
 

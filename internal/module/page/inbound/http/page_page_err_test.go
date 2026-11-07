@@ -12,8 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-
-	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -62,11 +60,11 @@ func TestBusinessSentinelsAreRecognisable(t *testing.T) {
 			t.Errorf("sentinel %v 没有声明状态码：页面出口会把它吞成归口文案（用户看到「请稍后重试」，实际是自己填错了）", err)
 			continue
 		}
-		fact := adminui.PageErrorFactQuiet(c, pageErrScene, err)
+		fact := view.PageErrorFactQuiet(c, pageErrScene, err)
 		if !fact.Business || strings.TrimSpace(fact.Key) == "" {
 			t.Errorf("sentinel %v 没被判定成业务错误（取值必须是 Err* 常量名形态，页面上会静默变成归口文案）", err)
 		}
-		if strings.TrimSpace(adminui.ErrorFactText(c, fact)) == "" {
+		if strings.TrimSpace(view.ErrorFactText(c, fact)) == "" {
 			t.Errorf("sentinel %v 取词为空串（页面上会是一条空话）", err)
 		}
 	}
@@ -173,7 +171,7 @@ func TestPagesListIgnoresForgedNoticeQuery(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: filterProjectList{list: twoProjects()}, pages: &filterPageList{}}
-	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, adminui.RenderPage), h.PagesList)
+	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, view.RenderPage), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
@@ -199,7 +197,7 @@ func TestPagesListReceiptNoticeHidesWhenObservabilityUnknown(t *testing.T) {
 
 	var current *pagesPageData
 	router.GET("/admin/pages", func(c *gin.Context) {
-		adminui.RenderPage(c, "admin/page/pages", current)
+		view.RenderPage(c, "admin/page/pages", current)
 	})
 	render := func(known, alert bool) string {
 		t.Helper()
@@ -236,7 +234,7 @@ func TestPagesListDegradesOnProjectLoadFailure(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: failingProjectList{err: errors.New(`pq: relation "projects" does not exist (SQLSTATE 42P01)`)}}
-	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, adminui.RenderPage), h.PagesList)
+	router.GET("/admin/pages", view.Slot(PagesListPageTemplate, view.RenderPage), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))

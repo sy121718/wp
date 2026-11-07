@@ -20,7 +20,7 @@
 - 本模块内部按根规则的单向分层依赖（`inbound/http → service → model`，只往下不往回，model 不 import service）；**跨模块**只经对方的 `contract`，不 import 别人的 model/service，也不直接读别人的表。
 - service 不持有 `*gorm.DB`、不调 model 的 `DB(ctx)`/`RevisionDB(ctx)`（`scripts/check-service-db-boundary.sh`）；事务句柄从 model 下传。
 - `inbound/mcp` 读工具用 `mcp.New`、写工具用 `mcp.NewWrite`。
-- 控制器不 import `internal/adminui` 的业务语义（渲染基础设施可复用）。
+- 控制器不 import 已清退的 `internal/adminui`；页面渲染与取词经 `pkg/view` / `pkg/view/jet`，业务语义仍归 service。
 - 模块内 unit 只测纯逻辑与装配；接口链路走 `public/test/<mod>/feature`（真实 PG）。
 - **反向端口是正常接线**，不算反向依赖：调用方持接口、被调方实现——`inventory/outbound/orderstock` 实现 `order` 的 `StockOperator`；`inventory/outbound/purchasestock` 实现 `purchase` 的 `StockPort` 与 `VariantCatalog`；`page` 与 `presentation` 各自实现 `media` 的 `StaleMarker`。
 - 带 FORCE 策略的表在缺工程作用域时表现为「不存在」：只有 id 的入口必须**逐工程探测归属**再进事务，不得退化成「不限工程」。

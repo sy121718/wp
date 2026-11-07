@@ -13,8 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
-
-	"go_wp/internal/adminui"
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
@@ -209,13 +207,13 @@ func captureSiteData(t *testing.T, name string, total int64, target string) (str
 
 	h := siteHandler(newAdminPaginationHandle(total), name)
 	if tpl := adminPageTemplateFor(name); tpl != "" {
-		engine.GET(route, pageview.Slot(tpl, adminui.RenderPage), h)
+		engine.GET(route, pageview.Slot(tpl, pageview.RenderPage), h)
 	} else {
 		engine.GET(route, h)
 	}
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 
-	data := adminui.ViewMap(rec.data)
+	data := pageview.ViewMap(rec.data)
 	return rec.name, data
 }
 

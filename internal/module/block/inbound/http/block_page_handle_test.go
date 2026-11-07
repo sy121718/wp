@@ -8,9 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 
@@ -82,7 +81,7 @@ func TestBlockErrTextBusinessErrorKeepsKey(t *testing.T) {
 		t.Fatal("业务错误必须给出一句可展示文案（空串会让失败在页面上完全不可见）")
 	}
 
-	if got == response.MsgText(c, adminui.InternalMsg()) {
+	if got == response.MsgText(c, view.InternalMsg()) {
 		t.Fatalf("业务错误被吞成归口文案：%q", got)
 	}
 }
@@ -95,7 +94,7 @@ func TestBlockErrTextNonBusinessGivesInternal(t *testing.T) {
 	}
 	for _, err := range cases {
 		got := blockErrText(c, err)
-		if got != response.MsgText(c, adminui.InternalMsg()) {
+		if got != response.MsgText(c, view.InternalMsg()) {
 			t.Fatalf("非业务错误应落归口文案，实际 %q（原文 %q）", got, err.Error())
 		}
 		for _, leak := range []string{"pq:", "blocks", "SQLSTATE", "record not found"} {

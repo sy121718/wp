@@ -6,8 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -50,19 +48,19 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	}
 	pages.GET("/articles",
 		mw.PageAuthz("/api/content/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		articlePages.ArticlesPage)
 
 	pages.GET("/articles/stale/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"),
-		pageview.UseRenderer(adminui.RenderBare), articlePages.ArticleStaleDrawer)
+		pageview.UseRenderer(pageview.RenderBare), articlePages.ArticleStaleDrawer)
 
 	pages.GET("/articles/new",
 		builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		articlePages.ArticleNewPage)
 	pages.GET("/articles/edit",
 		mw.PageAuthz("/api/content/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
@@ -77,27 +75,27 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	}
 	pages.GET("/articles/translations",
 		mw.PageAuthz("/api/content/list"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		articleTranslations.ArticleTranslations)
 
 	pages.POST("/articles/translations/save",
 		builtin.CasbinMiddlewareForPath("/api/content/update"),
-		pageview.UseRenderer(adminui.RenderPage),
+		pageview.UseRenderer(pageview.RenderPage),
 		articleTranslations.SaveArticleTranslations)
 
 	pages.POST("/articles/score",
-		pageview.UseRenderer(adminui.RenderBare),
+		pageview.UseRenderer(pageview.RenderBare),
 		articlePages.ArticleScorePanel)
 
 	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"),
-		pageview.UseRenderer(adminui.RenderBare), articlePages.ArticleSeoDrawer)
+		pageview.UseRenderer(pageview.RenderBare), articlePages.ArticleSeoDrawer)
 
-	pages.GET("/articles/preview-frame", pageview.UseRenderer(adminui.RenderBare), articlePages.ArticlePreviewFrame)
+	pages.GET("/articles/preview-frame", pageview.UseRenderer(pageview.RenderBare), articlePages.ArticlePreviewFrame)
 
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)
 
 	pages.POST("/articles/import-preview",
-		pageview.UseRenderer(adminui.RenderBare),
+		pageview.UseRenderer(pageview.RenderBare),
 		articlePages.ArticleImportPreview)
 	pages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	pages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)

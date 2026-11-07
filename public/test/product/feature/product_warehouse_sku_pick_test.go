@@ -3,7 +3,6 @@ package feature
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net/http"
 	"net/http/httptest"
@@ -443,8 +442,8 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
-	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(pageview.RenderPage), handle.ProductNewPage)
 
 	rec := httptest.NewRecorder()
 

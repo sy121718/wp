@@ -3,7 +3,6 @@ package userhttp
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,7 +33,7 @@ const (
 
 func customerTestLayoutData(anyView any) gin.H {
 	lang := "zh-CN"
-	base := adminui.ViewMap(anyView)
+	base := pageview.ViewMap(anyView)
 	base["csrf_token"] = "test-token"
 	base["lang"] = lang
 	base["t"] = templates.TranslateFunc(lang)
@@ -185,12 +184,12 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/customers", pageview.HTMLPage, pageview.Slot(CustomersListPageTemplate, adminui.RenderPage), h.CustomersPage)
-	engine.GET("/admin/customers/overview", pageview.HTMLPage, pageview.Slot(CustomerOverviewPageTemplate, adminui.RenderPage), h.CustomerOverviewPage)
-	engine.GET("/admin/customers/detail", pageview.HTMLPage, pageview.Slot(CustomerDetailPageTemplate, adminui.RenderPage), h.CustomerDetailPage)
+	engine.GET("/admin/customers", pageview.HTMLPage, pageview.Slot(CustomersListPageTemplate, pageview.RenderPage), h.CustomersPage)
+	engine.GET("/admin/customers/overview", pageview.HTMLPage, pageview.Slot(CustomerOverviewPageTemplate, pageview.RenderPage), h.CustomerOverviewPage)
+	engine.GET("/admin/customers/detail", pageview.HTMLPage, pageview.Slot(CustomerDetailPageTemplate, pageview.RenderPage), h.CustomerDetailPage)
 	api := NewCustomerHandle(h.users)
 	engine.POST("/api/customer/status", pageview.HTMLFragment, api.SetCustomerStatus)
 	engine.POST("/api/customer/unlock", pageview.HTMLFragment, api.UnlockCustomer)

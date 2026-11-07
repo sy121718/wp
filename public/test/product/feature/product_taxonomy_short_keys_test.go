@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
@@ -105,9 +103,9 @@ func TestProductTaxonomyShortKeysRenderRealLanguages(t *testing.T) {
 		c.Next()
 	})
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/product-attributes", pageview.UseRenderer(adminui.RenderPage), handle.ProductAttributesPage)
-	engine.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), handle.ProductCategoriesPage)
-	engine.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), handle.ProductBrandsPage)
+	engine.GET("/admin/product-attributes", pageview.UseRenderer(pageview.RenderPage), handle.ProductAttributesPage)
+	engine.GET("/admin/product-categories", pageview.UseRenderer(pageview.RenderPage), handle.ProductCategoriesPage)
+	engine.GET("/admin/product-brands", pageview.UseRenderer(pageview.RenderPage), handle.ProductBrandsPage)
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		t.Run(lang, func(t *testing.T) {
 			for _, tc := range []struct {

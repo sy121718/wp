@@ -3,7 +3,6 @@ package feature
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -499,9 +498,9 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
 
-	engine.GET("/admin/products/new", pageview.UseRenderer(adminui.RenderPage), handle.ProductNewPage)
+	engine.GET("/admin/products/new", pageview.UseRenderer(pageview.RenderPage), handle.ProductNewPage)
 
 	pageRec := httptest.NewRecorder()
 	engine.ServeHTTP(pageRec, httptest.NewRequest(http.MethodGet, "/admin/products/new?project="+f.projectID, nil))
@@ -623,7 +622,7 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))
@@ -677,7 +676,7 @@ func TestProductsPageStockUnknownRendersFailure(t *testing.T) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products)
 
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))

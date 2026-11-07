@@ -4,7 +4,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"context"
 	"fmt"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,7 +44,7 @@ func newContentErrorLeakEnv(t *testing.T) (*gin.Engine, *gorm.DB) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	translations := contenthttp.NewArticleTranslationHandle(svc)
-	engine.GET("/admin/articles/translations", pageview.Slot(contenthttp.ArticleTranslationsTemplate, adminui.RenderPage), translations.ArticleTranslations)
+	engine.GET("/admin/articles/translations", pageview.Slot(contenthttp.ArticleTranslationsTemplate, pageview.RenderPage), translations.ArticleTranslations)
 	page := contenthttp.NewArticlePageHandle(svc, nil, nil, nil, nil)
 	engine.POST("/admin/articles/bulk-delete", page.ArticlesBulkDelete)
 	engine.POST("/admin/articles/delete", page.ArticleDelete)

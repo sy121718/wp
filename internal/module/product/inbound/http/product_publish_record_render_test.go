@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
@@ -26,7 +24,7 @@ func publishRecordRequest(t *testing.T, h *ProductPageHandle, target string) *ht
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/products/publish-records",
-		pageview.UseRenderer(adminui.RenderPage), h.ProductPublishRecordPage)
+		pageview.UseRenderer(pageview.RenderPage), h.ProductPublishRecordPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

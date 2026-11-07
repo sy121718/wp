@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -55,7 +54,7 @@ func pricingPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/product-pricing", pageview.UseRenderer(adminui.RenderPage), h.ProductPricingPage)
+	engine.GET("/admin/product-pricing", pageview.UseRenderer(pageview.RenderPage), h.ProductPricingPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

@@ -2,7 +2,6 @@ package adminhttp_test
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -42,11 +41,11 @@ func serveMenusPage(t *testing.T, handle *adminhttp.AdminPagesHandle, target str
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	engine.GET("/admin/menus", view.HTMLPage, view.Slot(adminhttp.MenusPageTemplate, adminui.RenderPage), handle.MenusPage)
+	engine.GET("/admin/menus", view.HTMLPage, view.Slot(adminhttp.MenusPageTemplate, view.RenderPage), handle.MenusPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
@@ -142,8 +141,8 @@ func serveMenusUpdate(t *testing.T, handle *adminhttp.AdminPagesHandle, form url
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(view.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/admin/menus/update", view.HTMLFragment, handle.MenusUpdate)

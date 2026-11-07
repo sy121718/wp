@@ -15,8 +15,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-
-	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -63,8 +61,8 @@ func newMoveWriteRouter(svc navigationcontract.NavigationService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	router.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	router.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.POST("/api/navigation/move", pageview.HTMLFragment, NewHandle(svc).Move)
 	return router

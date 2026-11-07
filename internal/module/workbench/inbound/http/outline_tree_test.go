@@ -2,7 +2,6 @@ package workbenchhttp
 
 import (
 	pageview "go_wp/pkg/view"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,7 +21,7 @@ func newOutlineRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.POST("/workbench/outline", pageview.Slot(OutlineTreeTemplate, adminui.RenderBare), handle.OutlineTree)
+	router.POST("/workbench/outline", pageview.Slot(OutlineTreeTemplate, pageview.RenderBare), handle.OutlineTree)
 	return router
 }
 

@@ -13,8 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
-
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -83,13 +81,13 @@ func orderPaginationPage(t *testing.T, kind, query string, svc *orderPaginationS
 	switch kind {
 	case "orders":
 
-		pageview.Slot(OrderListPageTemplate, adminui.RenderPage)(c)
+		pageview.Slot(OrderListPageTemplate, pageview.RenderPage)(c)
 		NewOrderPageHandle(svc, projects, nil).OrdersPage(c)
 	case "coupons":
-		pageview.Slot(CouponListPageTemplate, adminui.RenderPage)(c)
+		pageview.Slot(CouponListPageTemplate, pageview.RenderPage)(c)
 		NewCouponPageHandle(svc, projects).CouponsPage(c)
 	case "returns":
-		pageview.Slot(ReturnListPageTemplate, adminui.RenderPage)(c)
+		pageview.Slot(ReturnListPageTemplate, pageview.RenderPage)(c)
 		NewReturnPageHandle(svc, projects, nil, nil).ReturnsPage(c)
 	default:
 		t.Fatalf("unknown page %q", kind)

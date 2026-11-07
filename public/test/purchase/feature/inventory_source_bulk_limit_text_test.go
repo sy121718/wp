@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
@@ -31,7 +29,7 @@ func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := purchasehttp.NewSourcePageHandle(nil, nil)
 	engine.POST("/admin/inventory/sources/bulk-delete", pageview.HTMLFragment, handle.SourcesBulkDelete)

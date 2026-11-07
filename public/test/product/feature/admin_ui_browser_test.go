@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	pageview "go_wp/pkg/view"
 	"net"
 	"net/http"
@@ -60,7 +59,7 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		c.Next()
 	})
 
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure), templates.FailedRenderMiddleware(pageview.Fail))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure), templates.FailedRenderMiddleware(pageview.Fail))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	router.Use(func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, map[string]bool{
@@ -78,9 +77,9 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(f.svc, f.svc)
-	router.GET("/admin/product-brands", pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
-	router.GET("/admin/product-categories", pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
-	router.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
+	router.GET("/admin/product-brands", pageview.UseRenderer(pageview.RenderPage), h.ProductBrandsPage)
+	router.GET("/admin/product-categories", pageview.UseRenderer(pageview.RenderPage), h.ProductCategoriesPage)
+	router.GET("/admin/product-tags", pageview.UseRenderer(pageview.RenderPage), h.ProductTagsPage)
 
 	write := producthttp.NewProductHandle(f.svc)
 	router.GET("/api/product/category/parents", write.ProductCategoryParents)

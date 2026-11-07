@@ -4,7 +4,6 @@ import (
 	pageview "go_wp/pkg/view"
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -53,9 +52,9 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
-			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, adminui.RenderPage), orders.OrdersPage)
-			e.GET("/admin/coupons", pageview.Slot(orderhttp.CouponListPageTemplate, adminui.RenderPage), coupons.CouponsPage)
-			e.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, adminui.RenderPage), returns.ReturnsPage)
+			e.GET("/admin/orders", pageview.Slot(orderhttp.OrderListPageTemplate, pageview.RenderPage), orders.OrdersPage)
+			e.GET("/admin/coupons", pageview.Slot(orderhttp.CouponListPageTemplate, pageview.RenderPage), coupons.CouponsPage)
+			e.GET("/admin/returns", pageview.Slot(orderhttp.ReturnListPageTemplate, pageview.RenderPage), returns.ReturnsPage)
 		},
 	})
 	if err != nil {

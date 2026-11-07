@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -67,8 +65,8 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	conf := viper.New()
 	conf.Set("log.base_dir", "/tmp/navigation-edit-fragment-test-logs")
@@ -88,13 +86,13 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 		}
 		c.Next()
 	})
-	r.GET("/admin/navigations/edit", pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationEditFragment)
+	r.GET("/admin/navigations/edit", pageview.Slot(NavigationEditFormTemplate, pageview.RenderBare), h.NavigationEditFragment)
 	r.POST("/admin/navigations/update", pageview.HTMLFragment,
-		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.NavigationUpdate)
+		pageview.Slot(NavigationEditFormTemplate, pageview.RenderBare), h.NavigationUpdate)
 	r.POST("/admin/navigations/panel", pageview.HTMLFragment,
-		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelSet)
+		pageview.Slot(NavigationEditFormTemplate, pageview.RenderBare), h.PanelSet)
 	r.POST("/admin/navigations/panel/create", pageview.HTMLFragment,
-		pageview.Slot(NavigationEditFormTemplate, adminui.RenderBare), h.PanelCreate)
+		pageview.Slot(NavigationEditFormTemplate, pageview.RenderBare), h.PanelCreate)
 	return r
 }
 

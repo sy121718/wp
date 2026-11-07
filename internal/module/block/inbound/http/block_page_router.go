@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -27,12 +25,12 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 
 	adminPages.GET("/blocks",
 		mw.PageAuthz("/api/block/list"),
-		pageview.Slot(BlocksPageTemplate, adminui.RenderPage),
+		pageview.Slot(BlocksPageTemplate, pageview.RenderPage),
 		h.BlocksList)
 
 	adminPages.GET("/blocks/stale/drawer",
 		builtin.CasbinMiddlewareForPath("/api/block/list"),
-		pageview.Slot(StalePagesDrawerTemplate, adminui.RenderBare),
+		pageview.Slot(StalePagesDrawerTemplate, pageview.RenderBare),
 		h.BlocksStaleDrawer)
 
 	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), h.SaveBlockContent)

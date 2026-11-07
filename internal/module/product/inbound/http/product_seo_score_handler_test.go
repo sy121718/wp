@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -75,7 +73,7 @@ func postScoreHTML(t *testing.T, handler gin.HandlerFunc, form url.Values) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure), pageview.UseSuccess(adminui.NewSuccessWriter()), templates.FailedRenderMiddleware(pageview.Fail))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure), pageview.UseSuccess(pageview.NewSuccessWriter()), templates.FailedRenderMiddleware(pageview.Fail))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/score", pageview.HTMLFragment, handler)
 	req := httptest.NewRequest(http.MethodPost, "/score", strings.NewReader(form.Encode()))

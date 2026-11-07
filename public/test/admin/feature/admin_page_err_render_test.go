@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
 	jsonx "go_wp/pkg/jsonx"
@@ -37,7 +35,7 @@ func newAdminRolesPageEngineWith(t *testing.T, svc *fakeRoleService) *gin.Engine
 			// 作用域注入 —— 与生产 assembly 的接线一致。缺这一步模板会在执行期
 			// 拿不到 t，页面直接失败成空 body。
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-			e.GET("/admin/roles", pageview.Slot(adminhttp.RolesPageTemplate, adminui.RenderPage), handle.RolesPage)
+			e.GET("/admin/roles", pageview.Slot(adminhttp.RolesPageTemplate, pageview.RenderPage), handle.RolesPage)
 		},
 	})
 	if err != nil {

@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/templates"
@@ -27,8 +25,8 @@ func seoAuditEngine(run func(context.Context, string) (pubservice.AuditResult, e
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	r.POST("/api/publication/seo-audit", pageview.HTMLFragment, NewSeoAuditHandle(run).SeoAudit)
 	return r

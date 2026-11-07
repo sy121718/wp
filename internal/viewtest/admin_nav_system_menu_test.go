@@ -1,13 +1,12 @@
-package adminui_test
+package viewtest
 
 import (
 	"strings"
 	"testing"
 
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
+	view "go_wp/pkg/view"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -46,7 +45,7 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 	}
 	parent.Children = []admindto.MenuTreeNode{leaf}
 
-	items := adminui.NavItemsOf([]admindto.MenuTreeNode{parent})
+	items := view.NavItemsOf(navNodes([]admindto.MenuTreeNode{parent}))
 	var rendered strings.Builder
 	for _, g := range items {
 		for _, n := range g.Children {

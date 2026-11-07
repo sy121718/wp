@@ -9,8 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	aidto "go_wp/internal/module/ai/dto"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
@@ -47,7 +45,7 @@ func serveTokenPanel(t *testing.T, th *aihttp.TokenHandle, target, body string) 
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 生产装配在基础层挂失败出口与请求取词；缺了它们片段渲染为空。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(func(c *gin.Context) {
 		c.Set("user_id", tokenPanelTestUserID)

@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
@@ -49,8 +47,8 @@ func articleBulkTestEngine(s *articleBulkDeleteStub) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	e.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	e.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	e.POST("/admin/articles/bulk-delete", pageview.HTMLFragment, (&articlePageHandle{contents: s}).ArticlesBulkDelete)
 	return e
@@ -135,7 +133,7 @@ func TestArticlesPageIgnoresForgedResultQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.GET("/admin/articles", pageview.Slot(ArticlesPageTemplate, adminui.RenderPage), (&articlePageHandle{contents: &articleSearchContentStub{total: 0}}).ArticlesPage)
+	e.GET("/admin/articles", pageview.Slot(ArticlesPageTemplate, pageview.RenderPage), (&articlePageHandle{contents: &articleSearchContentStub{total: 0}}).ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
@@ -157,8 +155,8 @@ func TestArticleDeleteRendersJumpPageWithBusinessText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	e.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	e.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	e.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	e.POST("/admin/articles/delete", pageview.HTMLFragment, (&articlePageHandle{contents: &articleBulkDeleteStub{failIDs: map[string]bool{"bad": true}}}).ArticleDelete)
 

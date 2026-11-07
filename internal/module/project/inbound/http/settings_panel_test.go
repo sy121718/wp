@@ -2,7 +2,6 @@ package projecthttp
 
 import (
 	pageview "go_wp/pkg/view"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,8 +21,8 @@ func newSettingsRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 
-	router.POST("/workbench/settings", pageview.Slot(SettingsPanelFragmentTemplate, adminui.RenderBare), workbenchSettingsPanel)
-	router.POST("/workbench/seo-score-panel", pageview.Slot(SeoScoreFragmentTemplate, adminui.RenderBare), workbenchSeoScorePanel)
+	router.POST("/workbench/settings", pageview.Slot(SettingsPanelFragmentTemplate, pageview.RenderBare), workbenchSettingsPanel)
+	router.POST("/workbench/seo-score-panel", pageview.Slot(SeoScoreFragmentTemplate, pageview.RenderBare), workbenchSeoScorePanel)
 	return router
 }
 

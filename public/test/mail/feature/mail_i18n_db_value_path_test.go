@@ -3,7 +3,6 @@ package feature
 import (
 	pageview "go_wp/pkg/view"
 	"context"
-	"go_wp/internal/adminui"
 	"strings"
 	"testing"
 
@@ -45,11 +44,11 @@ func TestMailPagesRenderDBValueInsteadOfFallback(t *testing.T) {
 	engine := mailSplitEngine(t)
 	handle := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail/contacts",
-		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), handle.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, pageview.RenderPage), handle.MailContactsPage)
 	engine.GET("/admin/mail/templates",
-		pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), handle.MailTemplatesPage)
+		pageview.Slot(mailhttp.TemplatesPageTemplate, pageview.RenderPage), handle.MailTemplatesPage)
 	engine.GET("/admin/mail/campaign",
-		pageview.Slot(mailhttp.CampaignPageTemplate, adminui.RenderPage), handle.MailCampaignPage)
+		pageview.Slot(mailhttp.CampaignPageTemplate, pageview.RenderPage), handle.MailCampaignPage)
 
 	cases := []mailI18nSentinelCase{
 		{

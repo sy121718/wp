@@ -15,8 +15,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
-	"go_wp/internal/adminui"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
@@ -72,15 +70,15 @@ func newContentTemplateErrorLeakEnv(t *testing.T) *contentTemplateEnv {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	// 与生产装配一致：失败出口、成功出口与请求级取词都在场。
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates",
-		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, adminui.RenderPage),
+		pageview.Slot(contenttemplatehttp.ContentTemplatesPageTemplate, pageview.RenderPage),
 		handle.ContentTemplatesPage)
 	engine.POST("/api/contenttemplate/delete", pageview.HTMLFragment,
-		pageview.UseRenderer(adminui.RenderPage), contenttemplatehttp.NewHandle(templatesSvc).Delete)
+		pageview.UseRenderer(pageview.RenderPage), contenttemplatehttp.NewHandle(templatesSvc).Delete)
 	return &contentTemplateEnv{engine: engine, db: db, projectID: project.ID, products: products}
 }
 

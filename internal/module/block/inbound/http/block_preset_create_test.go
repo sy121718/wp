@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
@@ -38,8 +36,8 @@ func createEngine(svc blockcontract.BlockService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) {
 		text.AttachScope(c)
 		c.Next()

@@ -2,7 +2,6 @@ package feature
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	pageview "go_wp/pkg/view"
 	"net/http"
@@ -449,17 +448,17 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { pageview.FailScene(c, "template", err) }))
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
-	engine.GET("/admin/product-tags", pageview.UseRenderer(adminui.RenderPage), handle.ProductTagsPage)
+	engine.GET("/admin/product-tags", pageview.UseRenderer(pageview.RenderPage), handle.ProductTagsPage)
 
 	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(f.svc).ListTagProducts)
-	engine.GET("/admin/products", pageview.UseRenderer(adminui.RenderPage), handle.ProductsPage)
+	engine.GET("/admin/products", pageview.UseRenderer(pageview.RenderPage), handle.ProductsPage)
 
-	engine.GET("/admin/products/detail", pageview.UseRenderer(adminui.RenderPage), handle.ProductDetailPage)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/products/detail", pageview.UseRenderer(pageview.RenderPage), handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
 
 	engine.POST("/api/product/update", pageview.HTMLFragment, producthttp.NewProductHandle(f.svc).Update)
 	return engine, f

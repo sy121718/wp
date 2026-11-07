@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
@@ -27,7 +25,7 @@ func newMovementsPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/movements",
-		pageview.Slot(inventoryhttp.InventoryMovementsPageTemplate, adminui.RenderPage), handle.InventoryMovementsPage)
+		pageview.Slot(inventoryhttp.InventoryMovementsPageTemplate, pageview.RenderPage), handle.InventoryMovementsPage)
 	return engine, f
 }
 

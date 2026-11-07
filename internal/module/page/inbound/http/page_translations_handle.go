@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -149,7 +147,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 
 		logger.Scene("page").With("pageId", pageID).Error(errPagesServiceMissing, "打开翻译工作台失败")
 		h.renderTranslationsFailure(c, http.StatusInternalServerError, pageTranslationsFailure{
-			pageID: pageID, lang: lang, loadError: adminui.InternalMsg(),
+			pageID: pageID, lang: lang, loadError: pageview.InternalMsg(),
 		})
 		return
 	}

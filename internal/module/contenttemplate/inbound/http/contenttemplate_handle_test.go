@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 
@@ -38,10 +36,10 @@ func callContentTemplateDelete(t *testing.T, s *ctDeleteStub, form url.Values) (
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	r.POST("/api/contenttemplate/delete", pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), NewHandle(s).Delete)
+	r.POST("/api/contenttemplate/delete", pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), NewHandle(s).Delete)
 	req := httptest.NewRequest(http.MethodPost, "/api/contenttemplate/delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()

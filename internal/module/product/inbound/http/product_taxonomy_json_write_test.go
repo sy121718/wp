@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -29,11 +27,11 @@ func taxonomyJSONWriteRequest(t *testing.T, h *ProductPageHandle, route, target 
 	}
 	switch route {
 	case "/admin/product-categories":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductCategoriesPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductCategoriesPage)
 	case "/admin/product-brands":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductBrandsPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductBrandsPage)
 	case "/admin/product-tags":
-		engine.GET(route, pageview.UseRenderer(adminui.RenderPage), h.ProductTagsPage)
+		engine.GET(route, pageview.UseRenderer(pageview.RenderPage), h.ProductTagsPage)
 	}
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))

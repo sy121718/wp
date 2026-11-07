@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	commentcontract "go_wp/internal/module/comment/contract"
 )
 
@@ -20,6 +18,6 @@ func SetupCommentPages(pages *gin.RouterGroup, svc commentcontract.CommentServic
 	pageHandle := NewCommentPageHandle(svc, projects)
 	pages.GET("/comments",
 		mw.PageAuthz("/api/comment/list"),
-		pageview.Slot(CommentsPageTemplate, adminui.RenderPage),
+		pageview.Slot(CommentsPageTemplate, pageview.RenderPage),
 		pageHandle.CommentsPage)
 }

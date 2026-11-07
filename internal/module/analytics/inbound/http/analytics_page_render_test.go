@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -281,7 +279,7 @@ func renderAnalyticsPage(t *testing.T, over map[string]any) string {
 			t.Errorf("页面渲染错误: %v", err.Err)
 		}
 	})
-	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
+	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, pageview.RenderPage), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 	})
 	rec := httptest.NewRecorder()
@@ -300,7 +298,7 @@ func analyticsPageBody(t *testing.T, target string, resp *analyticscontract.Summ
 	}})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), handle.AnalyticsPage)
+	engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, pageview.RenderPage), handle.AnalyticsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	if rec.Code != http.StatusOK {

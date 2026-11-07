@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
@@ -26,7 +24,7 @@ func newAdminShellEngine(t *testing.T) *gin.Engine {
 		RouteRegistrar: func(e *gin.Engine) {
 
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin", pageview.Slot(workbenchhttp.DashboardPageTemplate, adminui.RenderPage), home.Dashboard)
+			e.GET("/admin", pageview.Slot(workbenchhttp.DashboardPageTemplate, pageview.RenderPage), home.Dashboard)
 		},
 	})
 	if err != nil {

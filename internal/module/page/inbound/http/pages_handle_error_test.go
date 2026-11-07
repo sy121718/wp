@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/pkg/response"
@@ -32,7 +30,7 @@ func TestRedirectPageLoadFailureReturnsJSON(t *testing.T) {
 
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
-	router.GET("/api/page/redirect", pageview.Slot(RedirectPageTemplate, adminui.RenderPage), NewHandle(&redirectListFailStub{err: rawErr}).RedirectPage)
+	router.GET("/api/page/redirect", pageview.Slot(RedirectPageTemplate, pageview.RenderPage), NewHandle(&redirectListFailStub{err: rawErr}).RedirectPage)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/redirect?project=p1&lang=zh-CN", nil))

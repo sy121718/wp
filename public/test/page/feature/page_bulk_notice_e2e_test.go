@@ -8,8 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
-	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
@@ -54,8 +52,8 @@ func TestBulkDeleteIsAllOrNothing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/admin/pages/bulk-delete", pageview.HTMLFragment, h.PagesBulkDelete)
 

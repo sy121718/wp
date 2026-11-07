@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	orderhttp "go_wp/internal/module/order/inbound/http"
@@ -25,11 +23,11 @@ func newShipPagesEngine(t *testing.T, f *orderFixture) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := orderhttp.NewOrderShipmentPageHandle(f.orders, f.projects)
 	engine.GET("/admin/orders/pending-ship",
-		pageview.Slot(orderhttp.PendingShipPageTemplate, adminui.RenderPage), handle.PendingShipPage)
+		pageview.Slot(orderhttp.PendingShipPageTemplate, pageview.RenderPage), handle.PendingShipPage)
 	engine.GET("/admin/orders/ship-form",
-		pageview.Slot(orderhttp.ShipFormPageTemplate, adminui.RenderBare), handle.ShipFormFragment)
+		pageview.Slot(orderhttp.ShipFormPageTemplate, pageview.RenderBare), handle.ShipFormFragment)
 	engine.GET("/admin/order-carriers",
-		pageview.Slot(orderhttp.OrderCarriersPageTemplate, adminui.RenderPage), handle.OrderCarriersPage)
+		pageview.Slot(orderhttp.OrderCarriersPageTemplate, pageview.RenderPage), handle.OrderCarriersPage)
 	return engine
 }
 

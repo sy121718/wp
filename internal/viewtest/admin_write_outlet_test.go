@@ -1,4 +1,4 @@
-package adminui
+package viewtest
 
 import (
 	"net/http"
@@ -19,8 +19,8 @@ func outletEngine(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../templates", true)
-	engine.Use(view.FailureMiddleware(RenderFailure))
-	engine.Use(view.UseSuccess(NewSuccessWriter()))
+	engine.Use(view.FailureMiddleware(view.RenderFailure))
+	engine.Use(view.UseSuccess(view.NewSuccessWriter()))
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	return engine

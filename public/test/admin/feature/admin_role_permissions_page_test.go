@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
@@ -41,7 +39,7 @@ func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, u
 		InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.Use(view.FailureMiddleware(adminui.RenderFailure))
+			e.Use(view.FailureMiddleware(view.RenderFailure))
 			e.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			e.GET("/admin/roles/permissions/drawer", view.HTMLFragment, handle.RolePermissionsDrawer)

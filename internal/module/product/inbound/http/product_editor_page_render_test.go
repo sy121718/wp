@@ -3,7 +3,6 @@ package producthttp
 import (
 	"errors"
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
 	pageview "go_wp/pkg/view"
@@ -21,7 +20,7 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { t.Errorf("编辑模板执行失败：%v", err) }))
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), h.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), h.ProductEditPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
 	return rec

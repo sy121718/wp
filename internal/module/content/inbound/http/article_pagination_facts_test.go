@@ -1,9 +1,9 @@
 package contenthttp
 
 import (
-	"go_wp/internal/adminui"
 	"testing"
 
+	view "go_wp/pkg/view"
 	"go_wp/internal/templates"
 	"go_wp/pkg/pagination"
 )
@@ -17,7 +17,7 @@ func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
 		Pagination: pg,
 	}
 
-	m := adminui.ViewMap(d)
+	m := view.ViewMap(d)
 
 	got, ok := m["Pagination"].(pagination.Page)
 	if !ok {
@@ -43,7 +43,7 @@ func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
 
 func TestArticleTranslationsMapperNoDataRendersNoPagination(t *testing.T) {
 	d := &articleTranslationsData{Title: "译文工作台", Lang: "zh-CN", HasData: false}
-	m := adminui.ViewMap(d)
+	m := view.ViewMap(d)
 
 	pg, ok := m["Pagination"].(pagination.Page)
 	if !ok {

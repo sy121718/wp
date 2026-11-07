@@ -1,6 +1,7 @@
 package pagehttp
 
 import (
+	view "go_wp/pkg/view"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -156,7 +155,7 @@ func renderPagesBareData(t *testing.T, data gin.H) string {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	router.GET("/admin/pages", func(c *gin.Context) {
-		adminui.RenderBare(c, "admin/page/pages", data)
+		view.RenderBare(c, "admin/page/pages", data)
 	})
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))

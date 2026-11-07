@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -37,7 +35,7 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 
 	router.GET("/admin/mail/campaign",
-		pageview.Slot(mailhttp.CampaignPageTemplate, adminui.RenderPage),
+		pageview.Slot(mailhttp.CampaignPageTemplate, pageview.RenderPage),
 		mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
 
 	recorder := httptest.NewRecorder()

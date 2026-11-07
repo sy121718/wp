@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
@@ -105,8 +103,8 @@ func TestCommentReviewHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	r.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	r.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	r.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	r.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	r.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	r.POST("/api/comment/review", pageview.HTMLFragment, NewHandle(&reviewHTTPStub{failure: errors.New("pq: secret_relation SQLSTATE")}).Review)
 	form := url.Values{"ids": {"1"}, "status": {"approved"}}

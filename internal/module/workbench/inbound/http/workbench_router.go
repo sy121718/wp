@@ -17,8 +17,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	workbenchservice "go_wp/internal/module/workbench/service"
-
-	"go_wp/internal/adminui"
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
@@ -94,16 +92,16 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 
 	g := workbenchPages
 
-	g.GET("/admin", pageview.UseRenderer(adminui.RenderPage), h.Dashboard)
+	g.GET("/admin", pageview.UseRenderer(pageview.RenderPage), h.Dashboard)
 
-	g.GET("/workbench", pageview.UseRenderer(adminui.RenderPage), h.Workbench)
+	g.GET("/workbench", pageview.UseRenderer(pageview.RenderPage), h.Workbench)
 
 	g.GET("/workbench/preview", previewContext, h.Preview)
 	g.POST("/workbench/preview", previewContext, h.PreviewDraft)
 
-	g.POST("/workbench/inspector", pageview.UseRenderer(adminui.RenderBare), h.InspectorPanel)
+	g.POST("/workbench/inspector", pageview.UseRenderer(pageview.RenderBare), h.InspectorPanel)
 
-	g.POST("/workbench/outline", pageview.UseRenderer(adminui.RenderBare), h.OutlineTree)
+	g.POST("/workbench/outline", pageview.UseRenderer(pageview.RenderBare), h.OutlineTree)
 
 	g.POST("/workbench/seo-score", h.SEOScore)
 

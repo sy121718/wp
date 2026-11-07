@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -100,7 +98,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 		}
 		engine := gin.New()
 		engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-		engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, adminui.RenderPage), func(c *gin.Context) {
+		engine.GET("/admin/analytics", pageview.Slot(AnalyticsPageTemplate, pageview.RenderPage), func(c *gin.Context) {
 			c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 		})
 		rec := httptest.NewRecorder()

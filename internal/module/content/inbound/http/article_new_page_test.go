@@ -3,7 +3,6 @@ package contenthttp
 import (
 	pageview "go_wp/pkg/view"
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -90,7 +89,7 @@ func TestArticleNewPageHandler(t *testing.T) {
 	}
 
 	engine := newEngine()
-	engine.GET("/admin/articles/new", pageview.Slot(ArticleNewPageTemplate, adminui.RenderPage), h.ArticleNewPage)
+	engine.GET("/admin/articles/new", pageview.Slot(ArticleNewPageTemplate, pageview.RenderPage), h.ArticleNewPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles/new", nil))
 	if rec.Code != http.StatusOK {

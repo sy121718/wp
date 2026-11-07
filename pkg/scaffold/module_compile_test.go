@@ -30,6 +30,15 @@ var moduleClosure = []string{
 	"pkg/casbin",
 	"pkg/pagination",
 	"pkg/jsonx",
+	// pkg/view 的页面渲染入口新增的依赖（bulkids / reqparams / view/jet / view/ui）。
+	"pkg/bulkids",
+	"pkg/reqparams",
+	"pkg/view/jet",
+	"pkg/view/ui",
+	"pkg/view/ui/icons",
+	"pkg/utils",
+	"pkg/safepath",
+	"pkg/sitetz",
 }
 
 // TestModuleGeneratedProjectCompilesAndBehaves 在真实临时目录中复制正式 pkg 闭包、
@@ -116,27 +125,40 @@ func rewriteModuleLine(t *testing.T, path, root string) {
 }
 
 // copyAndRewritePkg 复制正式包源码（跳过测试），并把 go_wp/ 导入换成 alternate 根。
+// copyAndRewritePkg 递归复制一个 pkg 目录，并按 alternate 根模块重写导入。
+//
+// 必须递归：包目录里的 //go:embed 资产（SVG 图标、公共 UI 资产）是编译期输入，
+// 漏掉它们会让生成模块在 embed 模式上直接编译失败。
 func copyAndRewritePkg(t *testing.T, srcDir, dstDir, root string) {
 	t.Helper()
-	if err := os.MkdirAll(dstDir, 0o755); err != nil {
-		t.Fatalf("创建 %s: %v", dstDir, err)
-	}
-	entries, err := os.ReadDir(srcDir)
+	err := filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, rerr := filepath.Rel(srcDir, path)
+		if rerr != nil {
+			return rerr
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dstDir, rel), 0o755)
+		}
+		if strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if strings.HasSuffix(d.Name(), ".go") {
+			raw = []byte(strings.ReplaceAll(string(raw), `"go_wp/`, `"`+root+`/`))
+		}
+		if werr := os.MkdirAll(filepath.Dir(filepath.Join(dstDir, rel)), 0o755); werr != nil {
+			return werr
+		}
+		return os.WriteFile(filepath.Join(dstDir, rel), raw, 0o644)
+	})
 	if err != nil {
-		t.Fatalf("读取 %s: %v", srcDir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(srcDir, e.Name()))
-		if err != nil {
-			t.Fatalf("读取 %s: %v", e.Name(), err)
-		}
-		rewritten := strings.ReplaceAll(string(raw), `"go_wp/`, `"`+root+`/`)
-		if err := os.WriteFile(filepath.Join(dstDir, e.Name()), []byte(rewritten), 0o644); err != nil {
-			t.Fatalf("写入 %s: %v", e.Name(), err)
-		}
+		t.Fatalf("复制 %s: %v", srcDir, err)
 	}
 }
 

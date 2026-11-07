@@ -1,7 +1,6 @@
 package contenttemplatehttp
 
 import (
-	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
@@ -24,7 +23,7 @@ func SetupContentTemplateRoutes(rg *mw.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/update", contenttemplateenums.ContenttemplateUpdate, handle.Update)
 
 	g.POST("/activate", contenttemplateenums.ContenttemplateActivate, pageview.HTMLFragment, handle.Activate)
-	g.POST("/delete", contenttemplateenums.ContenttemplateDelete, pageview.HTMLFragment, pageview.UseRenderer(adminui.RenderPage), handle.Delete)
+	g.POST("/delete", contenttemplateenums.ContenttemplateDelete, pageview.HTMLFragment, pageview.UseRenderer(pageview.RenderPage), handle.Delete)
 	g.GET("/get", contenttemplateenums.ContenttemplateGet, handle.Get)
 	g.GET("/list", contenttemplateenums.ContenttemplateList, handle.List)
 	return svc

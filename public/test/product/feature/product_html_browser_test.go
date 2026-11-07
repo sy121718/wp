@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventorymodel "go_wp/internal/module/inventory/model"
@@ -78,7 +76,7 @@ func TestProductHTMLRealBrowser(t *testing.T) {
 	}
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc)
 	handle.SetInventoryDeps(inventory)
-	engine.GET("/admin/products/edit", pageview.UseRenderer(adminui.RenderPage), handle.ProductEditPage)
+	engine.GET("/admin/products/edit", pageview.UseRenderer(pageview.RenderPage), handle.ProductEditPage)
 	mountStaticAssets(engine)
 	server := httptest.NewServer(engine)
 	defer server.Close()

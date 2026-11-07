@@ -401,7 +401,7 @@ func TestControllerRenderExit(t *testing.T) {
 					}
 					seen[rel] = true
 					if !pendingControllerRenderExit[rel] {
-						t.Errorf("%s:%d：控制器不渲染 —— 返回视图（any, error），由 *_router.go 用 adminui.Page / adminui.Bare 装配",
+						t.Errorf("%s:%d：控制器不渲染 —— 返回视图（any, error），由 *_router.go 用 pkg/view 的 Page / Bare 装配",
 							rel, fset.Position(call.Pos()).Line)
 					}
 					return true
@@ -416,49 +416,14 @@ func TestControllerRenderExit(t *testing.T) {
 	}
 }
 
-var pendingControllerUIImport = map[string]bool{
+// controllerUIRetiredPath 是已清退的旧后台渲染包：它不存在，控制器也不得再 import。
+const controllerUIRetiredPath = "go_wp/internal/adminui"
 
-	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/admin/inbound/http/admin_page.go":                     true,
-	"internal/module/block/inbound/http/block_err.go":                      true,
-	"internal/module/content/inbound/http/content_page.go":                 true,
-	"internal/module/contenttemplate/inbound/http/content_template_err.go": true,
-	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go": true,
-	"internal/module/mail/inbound/http/mail_err.go":                        true,
-	"internal/module/mail/inbound/http/mail_jump.go":                       true,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
-	"internal/module/navigation/inbound/http/navigation_error_handle.go":   true,
-	"internal/module/order/inbound/http/coupon_page.go":                    true,
-	"internal/module/order/inbound/http/order_shared.go":                   true,
-	"internal/module/order/inbound/http/return_page.go":                    true,
-	"internal/module/page/inbound/http/page_jump.go":                       true,
-	"internal/module/page/inbound/http/page_translations_handle.go":        true,
-	"internal/module/plugin/inbound/http/plugin_err.go":                    true,
-	"internal/module/project/inbound/http/project_jump.go":                 true,
-	"internal/module/user/inbound/http/user_page.go":                       true,
-	"internal/module/workbench/inbound/http/workbench_err.go":              true,
-	"internal/module/workbench/inbound/http/workbench_handle.go":           true,
-
-	"internal/module/workbench/inbound/http/inspector_handle.go":      true,
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go": true,
-	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  true,
-
-	"internal/module/plugin/inbound/http/plugin_page_handle.go": true,
-
-	"internal/module/analytics/inbound/http/analytics_page.go": true,
-
-	"internal/module/block/inbound/http/block_page.go": true,
-
-	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
-
-	"internal/module/mail/inbound/http/mail_page.go": true,
-}
-
-const controllerUIImportPath = "go_wp/internal/adminui"
-
+// TestControllerNoUILineImport 是终局断言：旧后台渲染包已删除，
+// 控制器不能再依赖它取词 / 读请求 / 写响应 —— 对应职责分别在
+// pkg/view/jet、pkg/binding、pkg/response。
 func TestControllerNoUILineImport(t *testing.T) {
 	root := repoRoot(t)
-	seen := map[string]bool{}
 	fset := token.NewFileSet()
 	for _, dir := range controllerDirs(t) {
 		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
@@ -475,22 +440,14 @@ func TestControllerNoUILineImport(t *testing.T) {
 				rel, _ := filepath.Rel(root, path)
 				rel = filepath.ToSlash(rel)
 				for _, imp := range file.Imports {
-					if imp.Path == nil || imp.Path.Value != "\""+controllerUIImportPath+"\"" {
+					if imp.Path == nil || imp.Path.Value != "\""+controllerUIRetiredPath+"\"" {
 						continue
 					}
-					seen[rel] = true
-					if !pendingControllerUIImport[rel] {
-						t.Errorf("%s:%d：控制器不 import internal/adminui —— 取词走 pkg/view/jet、"+
-							"读请求走 pkg/binding、响应走 pkg/response",
-							rel, fset.Position(imp.Pos()).Line)
-					}
+					t.Errorf("%s:%d：旧后台渲染包已删除，控制器不得再 import %s —— "+
+						"取词走 pkg/view/jet、读请求走 pkg/binding、响应走 pkg/response",
+						rel, fset.Position(imp.Pos()).Line, controllerUIRetiredPath)
 				}
 			}
-		}
-	}
-	for rel := range pendingControllerUIImport {
-		if !seen[rel] {
-			t.Errorf("pendingControllerUIImport 登记了 %s，但该文件已不 import adminui —— 请删掉这条登记", rel)
 		}
 	}
 }
@@ -567,7 +524,7 @@ func TestControllerPageExitSignature(t *testing.T) {
 			case *ast.FuncDecl:
 				if isAnyErrorResult(node.Type.Results) {
 					t.Errorf("%s:%d：页面处理器不再交 (any, error) —— 签名改 func(*gin.Context)，"+
-						"成功 pageview.Render(c, data)、失败 pageview.Fail(c, err)",
+						"成功 view.Render(c, data)、失败 view.Fail(c, err)",
 						rel, fset.Position(node.Pos()).Line)
 				}
 			case *ast.SelectorExpr:
@@ -575,18 +532,27 @@ func TestControllerPageExitSignature(t *testing.T) {
 					return true
 				}
 				ident, ok := node.X.(*ast.Ident)
-				if !ok || ident.Name != "adminui" {
+				if !ok || !viewsRenderIdent(ident.Name) {
 					return true
 				}
-				if node.Sel.Name == "Page" || node.Sel.Name == "Bare" ||
-					node.Sel.Name == "RenderPage" || node.Sel.Name == "RenderBare" {
-					t.Errorf("%s:%d：控制器不装配页面出口（adminui.%s）—— 模板名与渲染归 *_router.go",
+				if node.Sel.Name == "RenderPage" || node.Sel.Name == "RenderBare" {
+					t.Errorf("%s:%d：控制器不装配页面出口（view.%s）—— 模板名与渲染归 *_router.go",
 						rel, fset.Position(node.Pos()).Line, node.Sel.Name)
 				}
 			}
 			return true
 		})
 	}
+}
+
+// viewsRenderIdent 判断这个标识符是否指向 pkg/view 的渲染入口。
+// 导入别名可以是 pageview / view / viewpkg，按实际别名匹配而不是写死一个。
+func viewsRenderIdent(name string) bool {
+	switch name {
+	case "adminui", "view", "pageview", "viewpkg":
+		return true
+	}
+	return false
 }
 
 func isAnyErrorResult(results *ast.FieldList) bool {

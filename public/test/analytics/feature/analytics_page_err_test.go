@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
@@ -37,8 +35,8 @@ func serveAnalyticsPageOnce(t *testing.T, handler gin.HandlerFunc, path string) 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	engine.GET("/admin/analytics", pageview.Slot(analyticshttp.AnalyticsPageTemplate, adminui.RenderPage), handler)
-	engine.GET("/admin/seo", pageview.Slot(analyticshttp.SEOPageTemplate, adminui.RenderPage), handler)
+	engine.GET("/admin/analytics", pageview.Slot(analyticshttp.AnalyticsPageTemplate, pageview.RenderPage), handler)
+	engine.GET("/admin/seo", pageview.Slot(analyticshttp.SEOPageTemplate, pageview.RenderPage), handler)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec

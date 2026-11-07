@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -35,14 +33,14 @@ func pageMsgText(c *gin.Context, m pageMsg) string {
 const pageErrScene = "page"
 
 func pageErrMsg(c *gin.Context, err error) pageMsg {
-	return pageErrMsgOf(c, adminui.PageErrorFact(c, pageErrScene, err))
+	return pageErrMsgOf(c, view.PageErrorFact(c, pageErrScene, err))
 }
 
 func pageErrMsgQuiet(c *gin.Context, err error) pageMsg {
-	return pageErrMsgOf(c, adminui.PageErrorFactQuiet(c, pageErrScene, err))
+	return pageErrMsgOf(c, view.PageErrorFactQuiet(c, pageErrScene, err))
 }
 
-func pageErrMsgOf(c *gin.Context, f adminui.ErrFact) pageMsg {
+func pageErrMsgOf(c *gin.Context, f view.ErrFact) pageMsg {
 	if f.Key == "" {
 		return pageMsg{}
 	}
@@ -98,6 +96,6 @@ func outcomeMsg(o pageenums.Outcome) pageMsg {
 }
 
 func pageInternalMsg() pageMsg {
-	f := adminui.InternalErrorFact()
+	f := view.InternalErrorFact()
 	return pageMsg{Key: f.Key, Fallback: f.Fallback}
 }

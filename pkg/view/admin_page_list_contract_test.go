@@ -1,4 +1,4 @@
-package adminui
+package view
 
 import (
 	"net/http/httptest"
@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/pkg/pagination"
-	"go_wp/pkg/view"
 )
 
 func newTestCtx() *gin.Context {
@@ -36,13 +35,13 @@ func TestPrepareViewInjectsPaginationFromContract(t *testing.T) {
 	c := newTestCtx()
 	data := prepareView(c, pageListView{Rows: 2, Total: 120, Page: 3, Limit: 20, Base: "/admin/x?keyword=a"})
 
-	raw, ok := data[view.PaginationKey]
+	raw, ok := data[PaginationKey]
 	if !ok {
-		t.Fatalf("实现 view.PageList 的视图应自动获得 %q 键", view.PaginationKey)
+		t.Fatalf("实现 PageList 的视图应自动获得 %q 键", PaginationKey)
 	}
 	got, ok := raw.(pagination.Page)
 	if !ok {
-		t.Fatalf("%q 的值应是 pagination.Page，实际 %T", view.PaginationKey, raw)
+		t.Fatalf("%q 的值应是 pagination.Page，实际 %T", PaginationKey, raw)
 	}
 	if got.Total != 120 || got.Page != 3 || got.Limit != 20 || got.Base != "/admin/x?keyword=a" {
 		t.Fatalf("分页事实不对：%+v", got)
@@ -51,8 +50,8 @@ func TestPrepareViewInjectsPaginationFromContract(t *testing.T) {
 
 func TestPrepareViewNoPaginationWithoutContract(t *testing.T) {
 	c := newTestCtx()
-	if _, ok := prepareView(c, plainView{Rows: 1})[view.PaginationKey]; ok {
-		t.Fatalf("没实现 view.PageList 的视图不该被注入分页键")
+	if _, ok := prepareView(c, plainView{Rows: 1})[PaginationKey]; ok {
+		t.Fatalf("没实现 PageList 的视图不该被注入分页键")
 	}
 }
 
@@ -60,21 +59,21 @@ func TestPrepareViewKeepsExplicitPagination(t *testing.T) {
 	c := newTestCtx()
 	explicit := pagination.Page{Total: 7, Page: 1, Limit: 5, Base: "/hand-written"}
 	data := prepareView(c, gin.H{
-		view.PaginationKey: explicit,
+		PaginationKey: explicit,
 		"Rows":             0,
 	})
-	got, ok := data[view.PaginationKey].(pagination.Page)
+	got, ok := data[PaginationKey].(pagination.Page)
 	if !ok || got.Base != "/hand-written" || got.Total != 7 {
-		t.Fatalf("显式给的分页事实被覆盖了：%+v", data[view.PaginationKey])
+		t.Fatalf("显式给的分页事实被覆盖了：%+v", data[PaginationKey])
 	}
 }
 
 func TestPageListOfNilAndZero(t *testing.T) {
-	if _, ok := view.PageListOf(nil); ok {
+	if _, ok := PageListOf(nil); ok {
 		t.Fatalf("nil 视图不该报有分页")
 	}
 
-	p, ok := view.PageListOf(pageListView{})
+	p, ok := PageListOf(pageListView{})
 	if !ok {
 		t.Fatalf("实现了接口就应报 true")
 	}

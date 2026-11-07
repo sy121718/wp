@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	view "go_wp/pkg/view"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
@@ -83,7 +82,7 @@ func TestInventoryErrMsgSplitsFacts(t *testing.T) {
 			}
 			if tc.wantInternal {
 
-				want := adminui.InternalMsg()
+				want := view.InternalMsg()
 				if got.Key != want.Key || got.Fallback != want.Fallback {
 					t.Errorf("归口事实 = %+v，want %+v", got, want)
 				}

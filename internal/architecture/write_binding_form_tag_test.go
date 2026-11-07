@@ -28,7 +28,9 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 	root := repoRoot(t)
 	roots := []string{
 		filepath.Join(root, "internal", "module"),
-		filepath.Join(root, "internal", "adminui"),
+		// 后台页面渲染入口已并入 pkg/view：它现在持有页面/片段出口，
+		// 与模块同属「写端点绑定 DTO」的扫描面。
+		filepath.Join(root, "pkg", "view"),
 	}
 
 	used := map[string]bool{}

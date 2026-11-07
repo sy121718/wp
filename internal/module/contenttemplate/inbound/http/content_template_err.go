@@ -7,14 +7,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 )
 
 const contentTemplateErrScene = "content_template"
 
-var contentTemplateErrInternalFallback = adminui.InternalMsg().Fallback
+var contentTemplateErrInternalFallback = view.InternalMsg().Fallback
 
 type contentTemplateMsg = facing.Msg
 
@@ -39,7 +37,7 @@ func contentTemplateErrMsg(c *gin.Context, err error) contentTemplateMsg {
 	if err == nil {
 		return contentTemplateMsg{}
 	}
-	fact := adminui.PageErrorFact(c, contentTemplateErrScene, err)
+	fact := view.PageErrorFact(c, contentTemplateErrScene, err)
 	if !fact.Business {
 
 		return contentTemplateMsg{Key: fact.Key, Fallback: fact.Fallback}
@@ -57,9 +55,9 @@ func contentTemplateErrText(c *gin.Context, err error) string {
 
 func contentTemplateInternalText(c *gin.Context, err error) string {
 	if err == nil {
-		return response.MsgText(c, adminui.InternalMsg())
+		return response.MsgText(c, view.InternalMsg())
 	}
-	return adminui.ErrorFactText(c, adminui.PageErrorFact(c, contentTemplateErrScene, err))
+	return view.ErrorFactText(c, view.PageErrorFact(c, contentTemplateErrScene, err))
 }
 
 func sampleErrText(c *gin.Context, hint string, err error) string {

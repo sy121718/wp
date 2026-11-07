@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"go_wp/internal/adminui"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -65,11 +64,11 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.Use(pageview.FailureMiddleware(adminui.RenderFailure))
+	router.Use(pageview.FailureMiddleware(pageview.RenderFailure))
 	router.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
-	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, adminui.RenderPage), handle.PageTranslations)
+	router.GET("/admin/pages/translations", pageview.Slot(pagehttp.PageTranslationsTemplate, pageview.RenderPage), handle.PageTranslations)
 	router.POST("/api/page/translations/save", pageview.HTMLFragment, handle.SavePageTranslations)
-	router.GET("/admin/pages", pageview.Slot(pagehttp.PagesListPageTemplate, adminui.RenderPage), handle.PagesList)
+	router.GET("/admin/pages", pageview.Slot(pagehttp.PagesListPageTemplate, pageview.RenderPage), handle.PagesList)
 	return router, handle, db, project.ID, pageID
 }
 

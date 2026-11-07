@@ -13,8 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/html"
-
-	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -35,13 +33,13 @@ func newMailPaginationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail",
-		pageview.Slot(mailhttp.AccountsPageTemplate, adminui.RenderPage), h.MailPage)
+		pageview.Slot(mailhttp.AccountsPageTemplate, pageview.RenderPage), h.MailPage)
 	engine.GET("/admin/mail/templates",
-		pageview.Slot(mailhttp.TemplatesPageTemplate, adminui.RenderPage), h.MailTemplatesPage)
+		pageview.Slot(mailhttp.TemplatesPageTemplate, pageview.RenderPage), h.MailTemplatesPage)
 	engine.GET("/admin/mail/contacts",
-		pageview.Slot(mailhttp.ContactsPageTemplate, adminui.RenderPage), h.MailContactsPage)
+		pageview.Slot(mailhttp.ContactsPageTemplate, pageview.RenderPage), h.MailContactsPage)
 	engine.GET("/admin/mail/campaign",
-		pageview.Slot(mailhttp.CampaignPageTemplate, adminui.RenderPage), h.MailCampaignPage)
+		pageview.Slot(mailhttp.CampaignPageTemplate, pageview.RenderPage), h.MailCampaignPage)
 	return engine
 }
 

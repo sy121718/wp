@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
@@ -181,16 +179,16 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 
 const blockErrScene = "block"
 
-func blockErrFact(c *gin.Context, err error) adminui.ErrFact {
-	return adminui.PageErrorFactQuiet(c, blockErrScene, err)
+func blockErrFact(c *gin.Context, err error) pageview.ErrFact {
+	return pageview.PageErrorFactQuiet(c, blockErrScene, err)
 }
 
 func blockErrText(c *gin.Context, err error) string {
 	if err == nil {
 
-		return response.MsgText(c, adminui.InternalMsg())
+		return response.MsgText(c, pageview.InternalMsg())
 	}
-	return adminui.ErrorFactText(c, blockErrFact(c, err))
+	return pageview.ErrorFactText(c, blockErrFact(c, err))
 }
 
 const blockStalePageLimit = 8

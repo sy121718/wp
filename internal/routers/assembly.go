@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"go_wp/config"
-
-	"go_wp/internal/adminui"
 	"go_wp/pkg/mcp"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
@@ -280,7 +278,7 @@ func (a *assembly) buildFoundation(ready func() error) {
 		c.Next()
 	})
 	// 统一成功出口：默认“操作成功”，自定义消息只消费明确消息事实。
-	router.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+	router.Use(view.UseSuccess(view.NewSuccessWriter()))
 
 	// 唯一公共 UI 资产源：pkg 公共资产 + 应用专用资产，两层按逻辑键合成。
 	// 开发与生产都经同一复合 FS，不再有「release 用 embed、debug 用磁盘」两套来源。

@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
@@ -77,7 +75,7 @@ func pluginErrMsg(c *gin.Context, err error) pluginMsg {
 	if err == nil {
 		return pluginMsg{}
 	}
-	fact := adminui.PageErrorFact(c, pluginErrScene, err)
+	fact := view.PageErrorFact(c, pluginErrScene, err)
 	if !fact.Business {
 
 		return pluginMsg{Key: fact.Key, Fallback: fact.Fallback}

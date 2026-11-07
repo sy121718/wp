@@ -5,8 +5,6 @@ import (
 	pageview "go_wp/pkg/view"
 
 	mw "go_wp/pkg/middleware"
-
-	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -22,6 +20,6 @@ func SetupMasterDataPages(pages *gin.RouterGroup, svc masterdatacontract.MasterD
 
 	pages.GET("/masterdata/changes",
 		mw.PageAuthz("/api/masterdata/change/list"),
-		pageview.Slot(MasterDataChangesTemplate, adminui.RenderPage),
+		pageview.Slot(MasterDataChangesTemplate, pageview.RenderPage),
 		changePages.MasterDataChangesPage)
 }

@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"go_wp/internal/adminui"
 	membershipenums "go_wp/internal/module/membership/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
@@ -37,8 +35,8 @@ func membershipJSONRecorder(t *testing.T, lang string, err error) (int, string) 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.Use(pageview.FailureMiddleware(adminui.RenderFailure))
-	engine.Use(pageview.UseSuccess(adminui.NewSuccessWriter()))
+	engine.Use(pageview.FailureMiddleware(pageview.RenderFailure))
+	engine.Use(pageview.UseSuccess(pageview.NewSuccessWriter()))
 	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	engine.POST("/admin/api/membership/tier/create", pageview.HTMLFragment, func(c *gin.Context) {
 		membershipFail(c, err)

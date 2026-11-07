@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"go_wp/internal/adminui"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
@@ -49,7 +47,7 @@ func newI18nWriteFixture(t *testing.T) *i18nWriteFixture {
 			e.Use(templates.FailedRenderMiddleware(func(c *gin.Context, err error) { view.FailScene(c, "template", err) }))
 			e.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 			// 生产装配在 routers 层注册统一成功出口；测试补同一条接线，验证纯成功 HTML 片段。
-			e.Use(view.UseSuccess(adminui.NewSuccessWriter()))
+			e.Use(view.UseSuccess(view.NewSuccessWriter()))
 			db, err := database.GetDB()
 			if err != nil {
 				t.Fatalf("取测试库失败：%v", err)

@@ -1,4 +1,4 @@
-package adminui
+package viewtest
 
 import (
 	"context"
