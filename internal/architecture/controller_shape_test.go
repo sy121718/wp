@@ -346,14 +346,14 @@ func TestControllerMethodSize(t *testing.T) {
 	}
 }
 
-var pendingControllerRenderExit = map[string]bool{
-	"internal/module/page/inbound/http/page_translations_handle.go": true,
+var pendingControllerRenderExit = map[string]bool{}
 
-	"internal/module/workbench/inbound/http/inspector_handle.go": true,
-}
-
+// controllerRenderCalls 只约束**页面槽渲染**：整页/裸页的模板名必须归路由层，
+// 控制器返回视图（any, error）由 *_router.go 装配。
+//
+// 片段出口（c.HTML 写 HTML fragment）是 AGENTS.md 明确允许的第二种合法出口形状，
+// 控制器选真实模板并交业务 data，不在本判据范围内。
 var controllerRenderCalls = map[string]bool{
-	"HTML":       true,
 	"RenderPage": true,
 	"RenderBare": true,
 }
