@@ -3,13 +3,13 @@ package inventoryhttp
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"testing"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	view "go_wp/pkg/view"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+	view "go_wp/pkg/view"
+	"strings"
+	"testing"
 )
 
 func TestInventoryErrMsgSplitsFacts(t *testing.T) {

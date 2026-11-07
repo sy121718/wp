@@ -6,13 +6,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/money"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/view/jet"
 )
 
 const inventoryMovementsPath = "/admin/inventory/movements"
@@ -56,7 +54,6 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 	if err != nil {
 		return nil, err
 	}
-	tr := jet.TranslateFunc(jet.Lang(c))
 	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = reqparams.FilterBaseURL(inventoryMovementsPath, map[string]string{
 		"project":     selected,
@@ -68,13 +65,12 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 		"timeTo":      query.TimeTo,
 	})
 	return &InventoryPageResp{
-		Title:           tr(inventoryenums.InventoryMovementsTitle, "库存流水"),
 		Menu:            "inventory-movements",
 		Projects:        projectOptions(projects),
 		SelectedProject: selected,
 		Warehouses:      warehouses,
 		Reasons:         reasons,
-		Directions:      directionOptions(tr),
+		Directions:      directionOptions(),
 		Movements:       rows,
 		FilterSKU:       strings.TrimSpace(query.SKUCode),
 		FilterWarehouse: strings.TrimSpace(query.WarehouseID),
@@ -87,16 +83,16 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 	}, nil
 }
 
-func movementRowResp(tr func(key, fallback string) string, m *inventorydto.MovementResp) MovementRowResp {
+func movementRowResp(m *inventorydto.MovementResp) MovementRowResp {
 	return MovementRowResp{
 		ID: m.ID, StockID: m.StockID, SKUCode: m.SKUCode,
 		StockName: m.StockName, StockImageURL: m.StockImageURL,
 		WarehouseName: m.WarehouseName, WarehouseCode: m.WarehouseCode,
-		Direction: m.Direction, DirectionLabel: directionLabel(tr, m.Direction),
+		Direction:      m.Direction,
 		Quantity:       m.Quantity,
 		Delta:          m.Delta,
 		QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
-		ReasonName: tr(m.ReasonName, m.ReasonCode), ReasonCode: m.ReasonCode,
+		ReasonName: m.ReasonName, ReasonCode: m.ReasonCode,
 		SourceType: m.SourceType, SourceRef: m.SourceRef, Remark: m.Remark,
 		OperatorID: m.OperatorID, BatchID: m.BatchID,
 		UnitCostText: money.FormatYuanOrDash(m.UnitCost),

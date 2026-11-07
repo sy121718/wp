@@ -14,6 +14,8 @@
    数量只能经变动契约改（有变动必有流水），所以「调整数量」走库存调整的表单口径，
    编辑抽屉里数量是只读的。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.stock_skus.title", "仓库商品 SKU") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.stock_skus.title", "仓库商品 SKU") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -85,7 +87,7 @@
                     <select class="form-select" id="sk-status" name="status">
                         <option value="">{{tr("admin.inventory.filter.allStatus", "（全部）")}}</option>
                         {{range _, o := .StatusOptions}}
-                        <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{o.Label}}</option>
+                        <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{if o.Value == "active"}}{{tr("admin.inventory.status.active", "启用中")}}{{else if o.Value == "disabled"}}{{tr("admin.inventory.status.disabled", "已停用")}}{{else}}{{o.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -267,7 +269,7 @@
                 <label class="form-label">{{tr("admin.inventory.col.status", "状态")}}</label>
                 <select class="form-select" name="status">
                     {{range _, o := .StatusOptions}}
-                    <option value="{{o.Value}}">{{o.Label}}</option>
+                    <option value="{{o.Value}}">{{if o.Value == "active"}}{{tr("admin.inventory.status.active", "启用中")}}{{else if o.Value == "disabled"}}{{tr("admin.inventory.status.disabled", "已停用")}}{{else}}{{o.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>
@@ -332,7 +334,7 @@
                 <label class="form-label">{{tr("admin.inventory.col.status", "状态")}}</label>
                 <select class="form-select" name="status">
                     {{range _, o := .StatusOptions}}
-                    <option value="{{o.Value}}" {{if o.Value == r.Status}}selected{{end}}>{{o.Label}}</option>
+                    <option value="{{o.Value}}" {{if o.Value == r.Status}}selected{{end}}>{{if o.Value == "active"}}{{tr("admin.inventory.status.active", "启用中")}}{{else if o.Value == "disabled"}}{{tr("admin.inventory.status.disabled", "已停用")}}{{else}}{{o.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>

@@ -22,8 +22,8 @@ type StockByWarehouseRowResp struct {
 	ReservedQuantity  int
 	AvailableQuantity int
 
-	QuantityLabel string
-	UpdatedAt     string
+	// 数量展示由模板决定：TrackQuantity 与 Quantity 就是全部事实。
+	UpdatedAt string
 }
 
 type MovementRowResp struct {
@@ -36,9 +36,7 @@ type MovementRowResp struct {
 	WarehouseName string
 	WarehouseCode string
 	Direction     string
-
-	DirectionLabel string
-	Quantity       int
+	Quantity      int
 
 	Delta          int
 	QuantityBefore int
@@ -66,22 +64,17 @@ type WarehouseRowResp struct {
 
 	DeductPriority int
 
-	StatusLabel string
-	TypeLabel   string
-
 	ThirdParty *inventorydto.WarehouseThirdPartyResp
 }
 
 type ReasonRowResp struct {
-	ID             string
-	Code           string
-	Name           string
-	Direction      string
-	DirectionLabel string
-	IsBuiltin      bool
-	Status         string
-	StatusLabel    string
-	Sort           int
+	ID        string
+	Code      string
+	Name      string
+	Direction string
+	IsBuiltin bool
+	Status    string
+	Sort      int
 }
 
 type OptionResp struct {

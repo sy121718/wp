@@ -3,10 +3,10 @@ package inventoryhttp
 import (
 	"github.com/gin-gonic/gin"
 
-	mw "go_wp/pkg/middleware"
 	"go_wp/internal/middleware/builtin"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	mw "go_wp/pkg/middleware"
 	pageview "go_wp/pkg/view"
 )
 

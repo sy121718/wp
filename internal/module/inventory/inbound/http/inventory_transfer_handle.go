@@ -16,7 +16,6 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	text "go_wp/pkg/view/jet"
 )
 
 const inventoryTransfersPath = "/admin/inventory/transfers"
@@ -56,7 +55,6 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 			return nil, err
 		}
 	}
-	tr := text.RequestTranslateFunc(c)
 	page, size := transferPageArgsOf(query.Page, query.Size)
 	pg := pagination.Page{Total: total, Page: page, Limit: size}
 	pg.Base = reqparams.FilterBaseURL(inventoryTransfersPath, map[string]string{
@@ -69,14 +67,13 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	}
 	return &TransferListPageResp{
 		Warehouses:      warehouses,
-		Title:           tr(inventoryenums.InventoryTransfersTitle, "调拨单"),
 		Menu:            "inventory-transfers",
 		Projects:        projectOptions(projects),
 		SelectedProject: selected,
 		Rows:            list,
 		FilterStatus:    query.Status,
 		Keyword:         query.Keyword,
-		StatusOptions:   transferStatusOptions(tr),
+		StatusOptions:   transferStatusOptions(),
 		ListQuery:       binding.ListQuery(c, inventoryTransferBackKeys...),
 		Pagination:      pg,
 	}, nil
@@ -170,15 +167,16 @@ func NewInventoryTransferPageHandle(transfers inventoryTransferContract,
 	return &inventoryTransferPageHandle{transfers: transfers, projects: projects, warehouses: warehouseLister}
 }
 
-func transferStatusOptions(tr func(key, fallback string) string) []OptionResp {
+// transferStatusOptions 只交值与顺序；标签由模板按请求语言取词。
+func transferStatusOptions() []OptionResp {
 	return []OptionResp{
-		{Value: "", Label: tr(inventoryenums.InventoryFilterAll, "（全部）")},
-		{Value: "requested", Label: tr(inventoryenums.InventoryTransfersStatusRequested, "待审批")},
-		{Value: "pending", Label: tr(inventoryenums.InventoryTransfersStatusPending, "待出货")},
-		{Value: "in_transit", Label: tr(inventoryenums.InventoryTransfersStatusInTransit, "在途")},
-		{Value: "completed", Label: tr(inventoryenums.InventoryTransfersStatusCompleted, "已完成")},
-		{Value: "rejected", Label: tr(inventoryenums.InventoryTransfersStatusRejected, "已驳回")},
-		{Value: "cancelled", Label: tr(inventoryenums.InventoryTransfersStatusCancelled, "已取消")},
+		{Value: ""},
+		{Value: "requested"},
+		{Value: "pending"},
+		{Value: "in_transit"},
+		{Value: "completed"},
+		{Value: "rejected"},
+		{Value: "cancelled"},
 	}
 }
 

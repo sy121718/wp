@@ -1,11 +1,9 @@
 package inventoryhttp
 
 import (
-	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"go_wp/pkg/view/jet"
 	"strconv"
 	"strings"
 
@@ -15,7 +13,6 @@ import (
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -84,7 +81,6 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			inventoryFail(c, serr)
 			return
 		}
-		tr := jet.TranslateFunc(jet.Lang(c))
 		byWarehouse := make(map[string]*inventorydto.StockResp, len(rows))
 		for _, r := range rows {
 			byWarehouse[r.WarehouseID] = r
@@ -96,8 +92,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 				stockRows = append(stockRows, StockByWarehouseRowResp{
 					WarehouseID: w.ID, Present: false,
 					WarehouseName: w.Name, WarehouseCode: w.Code,
-					SKUCode:       sku,
-					QuantityLabel: tr(inventoryenums.InventoryStockNotStocked, "未入库"),
+					SKUCode: sku,
 				})
 				continue
 			}
@@ -111,7 +106,6 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 				ReservedQuantity:  r.ReservedQuantity,
 				AvailableQuantity: r.AvailableQuantity,
-				QuantityLabel:     stockQuantityLabel(tr, r.TrackQuantity, r.Quantity),
 				UpdatedAt:         r.UpdatedAt,
 			})
 		}
@@ -137,9 +131,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		return
 	}
 
-	tr := jet.TranslateFunc(jet.Lang(c))
 	pageData := &InventoryPageResp{
-		Title:           tr(inventoryenums.InventoryTitle, "库存管理"),
 		Menu:            "inventory",
 		Projects:        projectOptions(projects),
 		SelectedProject: selected,
@@ -151,8 +143,8 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		Reasons:         reasons,
 
 		AdjustReasons:    adjustReasonOptions(reasons),
-		AdjustDirections: adjustDirectionOptions(c),
-		Directions:       directionOptions(tr),
+		AdjustDirections: adjustDirectionOptions(),
+		Directions:       directionOptions(),
 		Movements:        movements,
 
 		FilterWarehouse: filterWarehouse,
@@ -205,9 +197,8 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 		return nil, 0, 0, err
 	}
 
-	tr := jet.TranslateFunc(jet.Lang(c))
 	for _, m := range rows {
-		out = append(out, movementRowResp(tr, m))
+		out = append(out, movementRowResp(m))
 	}
 	return out, total, curPage, nil
 }
@@ -249,20 +240,6 @@ func outstandingTone(outstanding int) string {
 		return "warn"
 	}
 	return "ok"
-}
-
-func statusLabel(tr func(key, fallback string) string, status string) string {
-	if status == inventoryenums.StatusDisabled {
-		return tr(inventoryenums.InventoryStatusDisabled, "已停用")
-	}
-	return tr(inventoryenums.InventoryStatusActive, "启用中")
-}
-
-func stockQuantityLabel(tr func(key, fallback string) string, track bool, quantity int) string {
-	if !track {
-		return "∞ " + tr(inventoryenums.InventoryStockUnlimited, "无限")
-	}
-	return fmt.Sprintf("%d", quantity)
 }
 
 func parseIntOr(s string, fallback int) int {

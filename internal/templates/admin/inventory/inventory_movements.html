@@ -11,6 +11,8 @@
    列的口径：货品列取流水里的**快照**（名称 / 图 / 编码 / 单价都是变动当时的），
    不是货行的当前值 —— 流水是审计，主档后来改名换图都不改写历史。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.movements.title", "库存流水") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.movements.title", "库存流水") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}
@@ -82,7 +84,7 @@
                     <select class="form-select" id="mv-direction" name="direction">
                         <option value="">{{tr("admin.inventory.filter.allDirections", "（全部）")}}</option>
                         {{range _, d := .Directions}}
-                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{d.Label}}</option>
+                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{if d.Value == "in"}}{{tr("admin.inventory.direction.in", "入库")}}{{else if d.Value == "out"}}{{tr("admin.inventory.direction.out", "出库")}}{{else if d.Value == "adjust"}}{{tr("admin.inventory.direction.adjust", "调整")}}{{else}}{{d.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -147,7 +149,7 @@
                     </div>
                 </td>
                 <td data-label="{{tr("admin.inventory.moves.col.warehouse", "仓库")}}">{{m.WarehouseName}} <code>{{m.WarehouseCode}}</code></td>
-                <td data-label="{{tr("admin.inventory.moves.col.direction", "方向")}}">{{m.DirectionLabel}}</td>
+                <td data-label="{{tr("admin.inventory.moves.col.direction", "方向")}}">{{if m.Direction == "in"}}{{tr("admin.inventory.direction.in", "入库")}}{{else if m.Direction == "out"}}{{tr("admin.inventory.direction.out", "出库")}}{{else if m.Direction == "adjust"}}{{tr("admin.inventory.direction.adjust", "调整")}}{{else}}{{m.Direction}}{{end}}</td>
                 <td data-label="{{tr("admin.inventory.moves.col.delta", "变动")}}">
                     {* 符号由 service 给（movementRowResp 的 Delta）——
                        模板不做算术（template_logic_test.go）。 *}
@@ -156,7 +158,7 @@
                     {{if m.Delta == 0}}<span class="move-delta-none">±0</span>{{end}}
                 </td>
                 <td data-label="{{tr("admin.inventory.moves.col.qtyChange", "数量变化")}}">{{m.QuantityBefore}} → {{m.QuantityAfter}}</td>
-                <td data-label="{{tr("admin.inventory.moves.col.reason", "原因")}}">{{m.ReasonName}} <span class="move-meta">{{m.ReasonCode}}</span></td>
+                <td data-label="{{tr("admin.inventory.moves.col.reason", "原因")}}">{{tr(m.ReasonName, m.ReasonCode)}} <span class="move-meta">{{m.ReasonCode}}</span></td>
                 <td data-label="{{tr("admin.inventory.movements.col.source", "来源 / 操作人")}}">
                     {{if m.SourceRef}}{{m.SourceRef}}{{else}}—{{end}}
                     {{if m.SourceType}}<span class="move-meta">{{m.SourceType}}</span>{{end}}

@@ -19,11 +19,14 @@
    明细行是 lines[i].stockId / lines[i].quantity：表单没有嵌套数组语法，DTO 的
    BindForm 收这个形状（见 inventory_transfer_req.go）。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.transfers.title", "调拨单") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.transfers.title", "调拨单") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
+{{filterStatus := .FilterStatus}}
 {* warehouses 收进局部变量：Jet 没有 `$` 父作用域语法（`$.Warehouses` 是解析错误，
    会让整页 500）。嵌套 range 里要取外层键只能事先绑到变量上。 *}
 {{warehouses := .Warehouses}}
@@ -72,8 +75,9 @@
                 <div class="filter-field">
                     <label for="tr-status">{{tr("admin.inventory.transfers.col.status", "状态")}}</label>
                     <select class="form-select" id="tr-status" name="status">
+                        {* 选项只交值与顺序；标签按请求语言取词（固定映射放模板）。 *}
                         {{range _, o := .StatusOptions}}
-                        <option value="{{o.Value}}" {{if o.Value == .FilterStatus}}selected{{end}}>{{o.Label}}</option>
+                        <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{if o.Value == ""}}{{tr("admin.inventory.filter.all", "（全部）")}}{{else if o.Value == "requested"}}{{tr("admin.inventory.transfers.status.requested", "待审批")}}{{else if o.Value == "pending"}}{{tr("admin.inventory.transfers.status.pending", "待出货")}}{{else if o.Value == "in_transit"}}{{tr("admin.inventory.transfers.status.in_transit", "在途")}}{{else if o.Value == "completed"}}{{tr("admin.inventory.transfers.status.completed", "已完成")}}{{else if o.Value == "rejected"}}{{tr("admin.inventory.transfers.status.rejected", "已驳回")}}{{else if o.Value == "cancelled"}}{{tr("admin.inventory.transfers.status.cancelled", "已取消")}}{{else}}{{o.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>

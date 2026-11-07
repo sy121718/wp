@@ -2,6 +2,8 @@
    它是「库存变动的取值范围」的定义处（内置原因不可改、自定义原因偶尔新增），
    属于配置而不是日常操作 —— 原先与库存流水挤在同一页靠折叠收纳，现独立成页。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.reasons.title", "变动原因字典") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.reasons.title", "变动原因字典") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
@@ -82,11 +84,11 @@
             {{range _, r := .Reasons}}
             <tr>
                 <td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
-                <td>{{r.DirectionLabel}}</td>
-                <td>{{r.Name}}</td>
+                <td>{{if r.Direction == "in"}}{{ .["t"]("admin.inventory.direction.in", "入库") }}{{else if r.Direction == "out"}}{{ .["t"]("admin.inventory.direction.out", "出库") }}{{else if r.Direction == "adjust"}}{{ .["t"]("admin.inventory.direction.adjust", "调整") }}{{else}}{{r.Direction}}{{end}}</td>
+                <td>{{ .["t"](r.Name, r.Code) }}</td>
                 <td><code>{{r.Code}}</code></td>
                 <td>{{if r.IsBuiltin}}{{ .["t"]("admin.inventory.reasons.builtin", "内置") }}{{else}}{{ .["t"]("admin.inventory.reasons.custom", "自定义") }}{{end}}</td>
-                <td>{{r.StatusLabel}}</td>
+                <td>{{if r.Status == "active"}}{{ .["t"]("admin.inventory.status.active", "启用中") }}{{else if r.Status == "disabled"}}{{ .["t"]("admin.inventory.status.disabled", "已停用") }}{{else}}{{r.Status}}{{end}}</td>
                 <td>{{r.Sort}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
                     {{if isset(.Buttons["inventory.reason_update"])}}
@@ -117,7 +119,7 @@
         <div data-inventory-reason-host>
             <form data-write method="post" action="/admin/inventory/reason/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/reason/update?{{ .ListQuery }}" hx-target="find [data-write-result]" hx-swap="innerHTML" data-write-reload>
                 <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}"><input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="builtin" value="{{if r.IsBuiltin}}1{{else}}0{{end}}">
-                {{if !r.IsBuiltin}}<div class="form-group"><label class="form-label req">{{ .["t"]("admin.inventory.reasons.labelName", "原因名称") }}</label><input type="text" class="form-input" name="name" value="{{r.Name}}" required></div>{{end}}
+                {{if !r.IsBuiltin}}<div class="form-group"><label class="form-label req">{{ .["t"]("admin.inventory.reasons.labelName", "原因名称") }}</label><input type="text" class="form-input" name="name" value="{{ .["t"](r.Name, "") }}" required></div>{{end}}
                 <div class="form-group"><label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label><input type="number" class="form-input" name="sort" value="{{r.Sort}}" step="1"></div>
                 <div class="action-row"><button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button><button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button></div>
             </form>
@@ -144,7 +146,7 @@
                 <label class="form-label req">{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</label>
                 <select class="form-select" name="direction" required>
                     {{range _, d := .Directions}}
-                    <option value="{{d.Value}}">{{d.Label}}</option>
+                    <option value="{{d.Value}}">{{if d.Value == "in"}}{{ .["t"]("admin.inventory.direction.in", "入库")}}{{else if d.Value == "out"}}{{ .["t"]("admin.inventory.direction.out", "出库")}}{{else if d.Value == "adjust"}}{{ .["t"]("admin.inventory.direction.adjust", "调整")}}{{else}}{{d.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </div>

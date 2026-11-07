@@ -14,7 +14,6 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	pageview "go_wp/pkg/view"
-	text "go_wp/pkg/view/jet"
 )
 
 const inventorySKUsPath = "/admin/inventory/skus"
@@ -72,7 +71,6 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		}
 	}
 
-	tr := text.RequestTranslateFunc(c)
 	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = reqparams.FilterBaseURL(inventorySKUsPath, map[string]string{
 		"project":     selected,
@@ -81,7 +79,6 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		"status":      query.Status,
 	})
 	return &StockSKUListPageResp{
-		Title:           tr(inventoryenums.InventoryStockSKUsTitle, "仓库商品 SKU"),
 		Menu:            "inventory-skus",
 		Projects:        projectOptions(projects),
 		SelectedProject: selected,
@@ -90,7 +87,7 @@ func (h *inventoryPageHandle) stockSKUsData(c *gin.Context, query *inventorydto.
 		FilterWarehouse: strings.TrimSpace(query.WarehouseID),
 		FilterKeyword:   strings.TrimSpace(query.Keyword),
 		FilterStatus:    strings.TrimSpace(query.Status),
-		StatusOptions:   stockStatusOptions(c),
+		StatusOptions:   stockStatusOptions(),
 		ListQuery:       binding.ListQuery(c, inventorySKUBackKeys...),
 		Pagination:      pg,
 	}, nil
@@ -142,10 +139,10 @@ func (h *inventoryPageHandle) InventoryStockStatus(c *gin.Context) {
 	inventoryWriteOK(c)
 }
 
-func stockStatusOptions(c *gin.Context) []OptionResp {
-	tr := text.RequestTranslateFunc(c)
+// stockStatusOptions 只交值与顺序；标签由模板按请求语言取词。
+func stockStatusOptions() []OptionResp {
 	return []OptionResp{
-		{Value: inventoryenums.StatusActive, Label: statusLabel(tr, inventoryenums.StatusActive)},
-		{Value: inventoryenums.StatusDisabled, Label: statusLabel(tr, inventoryenums.StatusDisabled)},
+		{Value: inventoryenums.StatusActive},
+		{Value: inventoryenums.StatusDisabled},
 	}
 }

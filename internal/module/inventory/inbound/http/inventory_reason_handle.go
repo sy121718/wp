@@ -3,7 +3,6 @@ package inventoryhttp
 import (
 	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/view/jet"
 	"net/http"
 	"strings"
 
@@ -31,15 +30,12 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	tr := jet.TranslateFunc(jet.Lang(c))
-
 	pageview.RenderTemplate(c, InventoryReasonsPageTemplate, &InventoryPageResp{
-		Title:           tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		Menu:            "inventory-reasons",
 		Projects:        projectOptions(projects),
 		SelectedProject: selected,
 		Reasons:         reasons,
-		Directions:      directionOptions(tr),
+		Directions:      directionOptions(),
 
 		ReasonCreateForm: reasonFormData(c, selected),
 		ListQuery:        binding.ListQuery(c, inventoryReasonBackKeys...),
@@ -117,13 +113,13 @@ func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out
 	if err != nil {
 		return nil, err
 	}
-	tr := jet.TranslateFunc(jet.Lang(c))
 	for _, r := range rows {
+		// 原因名是文案：内置与自定义原因的 name 都是 i18n key（迁移 241 收口），
+		// 文案真源只有 sys_i18n。这里原样交 key，由模板按请求语言取词。
 		out = append(out, ReasonRowResp{
-			ID: r.ID, Code: r.Code, Name: tr(r.Name, r.Code),
-			Direction: r.Direction, DirectionLabel: directionLabel(tr, r.Direction),
+			ID: r.ID, Code: r.Code, Name: r.Name,
+			Direction: r.Direction,
 			IsBuiltin: r.IsBuiltin, Status: r.Status, Sort: r.Sort,
-			StatusLabel: statusLabel(tr, r.Status),
 		})
 	}
 	return out, nil
@@ -143,39 +139,27 @@ func adjustReasonOptions(reasons []ReasonRowResp) (out []ReasonRowResp) {
 	return out
 }
 
-func directionOptions(tr func(key, fallback string) string) []OptionResp {
+// directionOptions 只交值与顺序；标签由模板按请求语言取词。
+func directionOptions() []OptionResp {
 	return []OptionResp{
-		{Value: inventoryenums.DirectionIn, Label: directionLabel(tr, inventoryenums.DirectionIn)},
-		{Value: inventoryenums.DirectionOut, Label: directionLabel(tr, inventoryenums.DirectionOut)},
-		{Value: inventoryenums.DirectionAdjust, Label: directionLabel(tr, inventoryenums.DirectionAdjust)},
+		{Value: inventoryenums.DirectionIn},
+		{Value: inventoryenums.DirectionOut},
+		{Value: inventoryenums.DirectionAdjust},
 	}
 }
 
-func adjustDirectionOptions(c *gin.Context) []OptionResp {
-	tr := jet.TranslateFunc(jet.Lang(c))
+// adjustDirectionOptions 只交值与顺序；标签由模板按请求语言取词。
+func adjustDirectionOptions() []OptionResp {
 	return []OptionResp{
-		{Value: inventoryenums.DirectionAdjust, Label: tr(inventoryenums.InventoryAdjustDirectionAdjust, "盘点（填目标绝对量）")},
-		{Value: inventoryenums.DirectionOut, Label: tr(inventoryenums.InventoryAdjustDirectionOut, "报损（填本次减少量）")},
-	}
-}
-
-func directionLabel(tr func(key, fallback string) string, direction string) string {
-	switch direction {
-	case inventoryenums.DirectionIn:
-		return tr(inventoryenums.InventoryDirectionIn, "入库")
-	case inventoryenums.DirectionOut:
-		return tr(inventoryenums.InventoryDirectionOut, "出库")
-	case inventoryenums.DirectionAdjust:
-		return tr(inventoryenums.InventoryDirectionAdjust, "调整")
-	default:
-		return direction
+		{Value: inventoryenums.DirectionAdjust},
+		{Value: inventoryenums.DirectionOut},
 	}
 }
 
 func reasonFormData(c *gin.Context, projectID string) *ReasonFormResp {
 	return &ReasonFormResp{
 		SelectedProject: projectID,
-		Directions:      toAnySlice(directionOptions(jet.TranslateFunc(jet.Lang(c)))),
+		Directions:      toAnySlice(directionOptions()),
 	}
 }
 

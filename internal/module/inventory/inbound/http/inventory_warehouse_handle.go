@@ -3,7 +3,6 @@ package inventoryhttp
 import (
 	"go_wp/pkg/binding"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/view/jet"
 	"net/http"
 	"strings"
 
@@ -31,14 +30,12 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	tr := jet.TranslateFunc(jet.Lang(c))
 	pageview.RenderTemplate(c, InventoryWarehousesPageTemplate, &WarehousesPageResp{
-		Title:               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		Menu:                "inventory-warehouses",
 		Projects:            toAnySlice(projects),
 		SelectedProject:     selected,
 		Warehouses:          warehouses,
-		WarehouseTypes:      warehouseTypeOptions(c),
+		WarehouseTypes:      warehouseTypeOptions(),
 		WarehouseCreateForm: warehouseFormData(c, selected, false, nil),
 
 		ListQuery: binding.ListQuery(c, inventoryWarehouseBackKeys...),
@@ -138,15 +135,12 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	if err != nil {
 		return nil, err
 	}
-	tr := jet.TranslateFunc(jet.Lang(c))
 	for _, w := range rows {
 		item := WarehouseRowResp{
 			ID: w.ID, Code: w.Code, Name: w.Name, Type: w.Type, Status: w.Status,
 			IsDefault:      w.IsDefault,
 			Sort:           w.Sort,
 			DeductPriority: w.DeductPriority,
-			StatusLabel:    statusLabel(tr, w.Status),
-			TypeLabel:      warehouseTypeLabelText(tr, w.Type),
 			ThirdParty:     w.ThirdParty,
 		}
 		out = append(out, item)
@@ -154,30 +148,19 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	return out, nil
 }
 
-func warehouseTypeOptions(c *gin.Context) []WarehouseTypeOptionResp {
-	tr := jet.TranslateFunc(jet.Lang(c))
+// warehouseTypeOptions 只交值与顺序；标签由模板按请求语言取词。
+func warehouseTypeOptions() []WarehouseTypeOptionResp {
 	return []WarehouseTypeOptionResp{
-		{Value: inventoryenums.WarehouseTypeSelf, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeSelf)},
-		{Value: inventoryenums.WarehouseTypeThirdParty, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeThirdParty)},
-		{Value: inventoryenums.WarehouseTypeVirtual, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeVirtual)},
-	}
-}
-
-func warehouseTypeLabelText(tr func(key, fallback string) string, typ string) string {
-	switch typ {
-	case inventoryenums.WarehouseTypeThirdParty:
-		return tr(inventoryenums.InventoryWarehouseTypeThirdParty, "第三方仓")
-	case inventoryenums.WarehouseTypeVirtual:
-		return tr(inventoryenums.InventoryWarehouseTypeVirtual, "虚拟仓")
-	default:
-		return tr(inventoryenums.InventoryWarehouseTypeSelf, "自营仓")
+		{Value: inventoryenums.WarehouseTypeSelf},
+		{Value: inventoryenums.WarehouseTypeThirdParty},
+		{Value: inventoryenums.WarehouseTypeVirtual},
 	}
 }
 
 func warehouseFormData(c *gin.Context, projectID string, edit bool, row *WarehouseRowResp) *WarehouseFormResp {
 	return &WarehouseFormResp{
 		IsEdit: edit, Row: row, SelectedProject: projectID,
-		WarehouseTypes: warehouseTypeOptions(c),
+		WarehouseTypes: warehouseTypeOptions(),
 	}
 }
 

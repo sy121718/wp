@@ -10,6 +10,8 @@
        变动原因字典 → /admin/inventory/reasons（独立页）
        「某 SKU 各仓库存」→ 并入本页 SKU 筛选的结果（同一查询对象的另一个视角）。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.title", "库存管理") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.title", "库存管理") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
@@ -106,7 +108,7 @@
                     <select class="form-select" id="mv-direction" name="direction">
                         <option value="">{{ .["t"]("admin.inventory.filter.allDirections", "（全部）") }}</option>
                         {{range _, d := .Directions}}
-                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{d.Label}}</option>
+                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{if d.Value == "in"}}{{ .["t"]("admin.inventory.direction.in", "入库")}}{{else if d.Value == "out"}}{{ .["t"]("admin.inventory.direction.out", "出库")}}{{else if d.Value == "adjust"}}{{ .["t"]("admin.inventory.direction.adjust", "调整")}}{{else}}{{d.Value}}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -176,7 +178,7 @@
                    看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。
                    预占 / 可售两列（迁移 621）：数字由 handler 算好（可售 = 数量 − 预占），
                    模板**不做减法**（template_logic_test.go）。未入库行没有这两列的语义，给 —。 *}
-                <td>{{if isset(r.QuantityLabel)}}{{r.QuantityLabel}}{{else}}—{{end}}</td>
+                <td>{{if r.Present}}{{if r.TrackQuantity}}{{r.Quantity}}{{else}}{{ .["t"]("admin.inventory.stock.unlimited", "∞ 无限") }}{{end}}{{else}}{{ .["t"]("admin.inventory.stock.notStocked", "未入库") }}{{end}}</td>
                 <td>{{if isset(r.Present)}}{{if r.Present}}{{r.ReservedQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>{{if isset(r.Present)}}{{if r.Present}}{{r.AvailableQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>
@@ -240,7 +242,7 @@
                 <td>{{m.CreatedAt}}</td>
                 <td><code>{{m.SKUCode}}</code></td>
                 <td>{{m.WarehouseName}} <span class="move-meta">{{m.WarehouseCode}}</span></td>
-                <td>{{m.DirectionLabel}}</td>
+                <td>{{if m.Direction == "in"}}{{ .["t"]("admin.inventory.direction.in", "入库") }}{{else if m.Direction == "out"}}{{ .["t"]("admin.inventory.direction.out", "出库") }}{{else if m.Direction == "adjust"}}{{ .["t"]("admin.inventory.direction.adjust", "调整") }}{{else}}{{m.Direction}}{{end}}</td>
                 <td>
                     {{if m.Direction == "in"}}<span class="move-delta-in">+{{m.Quantity}}</span>{{end}}
                     {{if m.Direction == "out"}}<span class="move-delta-out">-{{m.Quantity}}</span>{{end}}
@@ -292,7 +294,7 @@
                 <label class="form-label req">{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</label>
                 <select class="form-select" name="direction" required>
                     {{if isset(.AdjustDirections)}}{{range _, d := .AdjustDirections}}
-                    <option value="{{d.Value}}">{{d.Label}}</option>
+                    <option value="{{d.Value}}">{{if d.Value == "adjust"}}{{ .["t"]("admin.inventory.adjust.direction.adjust", "盘点（填目标绝对量）")}}{{else if d.Value == "out"}}{{ .["t"]("admin.inventory.adjust.direction.out", "报损（填本次减少量）")}}{{else}}{{d.Value}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
             </div>
@@ -305,7 +307,7 @@
                 <select class="form-select" name="reasonCode" required>
                     <option value="">{{ .["t"]("admin.inventory.change.optionReason", "（选择原因）") }}</option>
                     {{if isset(.AdjustReasons)}}{{range _, r := .AdjustReasons}}
-                    <option value="{{r.Code}}">[{{r.DirectionLabel}}] {{r.Name}}（{{r.Code}}）</option>
+                    <option value="{{r.Code}}">[{{if r.Direction == "in"}}{{ .["t"]("admin.inventory.direction.in", "入库") }}{{else if r.Direction == "out"}}{{ .["t"]("admin.inventory.direction.out", "出库") }}{{else if r.Direction == "adjust"}}{{ .["t"]("admin.inventory.direction.adjust", "调整") }}{{else}}{{r.Direction}}{{end}}] {{ .["t"](r.Name, r.Code) }}（{{r.Code}}）</option>
                     {{end}}{{end}}
                 </select>
             </div>

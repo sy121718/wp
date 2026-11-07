@@ -6,6 +6,8 @@
    这个手法与 menus.html / administrators.html 一致（.hidden-form 见 theme.css）。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.inventory.warehouses.title", "仓库管理") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.inventory.warehouses.title", "仓库管理") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -120,9 +122,9 @@
                     {{if isset(.Buttons["inventory.warehouse_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{w.Name}}</button>{{else}}{{w.Name}}{{end}}
                     {{if w.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.inventory.defaultWarehouse", "默认仓") }}</span>{{end}}
                 </td>
-                <td data-label="{{ .["t"]("admin.inventory.col.type", "类型") }}">{{w.TypeLabel}}{{if isset(w.ThirdParty)}}{{if w.ThirdParty.Provider}} <span class="move-meta">{{w.ThirdParty.Provider}}</span>{{end}}{{end}}</td>
+                <td data-label="{{ .["t"]("admin.inventory.col.type", "类型") }}">{{if w.Type == "self"}}{{ .["t"]("admin.inventory.warehouse.type.self", "自营仓") }}{{else if w.Type == "third_party"}}{{ .["t"]("admin.inventory.warehouse.type.third_party", "第三方仓") }}{{else if w.Type == "virtual"}}{{ .["t"]("admin.inventory.warehouse.type.virtual", "虚拟仓") }}{{else}}{{w.Type}}{{end}}{{if isset(w.ThirdParty)}}{{if w.ThirdParty.Provider}} <span class="move-meta">{{w.ThirdParty.Provider}}</span>{{end}}{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.label.code", "短码") }}"><code>{{w.Code}}</code></td>
-                <td data-label="{{ .["t"]("admin.inventory.col.status", "状态") }}">{{w.StatusLabel}}</td>
+                <td data-label="{{ .["t"]("admin.inventory.col.status", "状态") }}">{{if w.Status == "active"}}{{ .["t"]("admin.inventory.status.active", "启用中") }}{{else if w.Status == "disabled"}}{{ .["t"]("admin.inventory.status.disabled", "已停用") }}{{else}}{{w.Status}}{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.ph.sort", "排序") }}">{{w.Sort}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.warehouse.col.deductPriority", "扣减优先级") }}">{{w.DeductPriority}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
@@ -196,7 +198,7 @@
                 <label class="form-label req">{{ .["t"]("admin.inventory.col.type", "类型") }}</label>
                 <select class="form-select" name="type">
                     {{if isset(.WarehouseTypes)}}{{range _, t := .WarehouseTypes}}
-                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    <option value="{{t.Value}}">{{if t.Value == "self"}}{{tr("admin.inventory.warehouse.type.self", "自营仓")}}{{else if t.Value == "third_party"}}{{tr("admin.inventory.warehouse.type.third_party", "第三方仓")}}{{else if t.Value == "virtual"}}{{tr("admin.inventory.warehouse.type.virtual", "虚拟仓")}}{{else}}{{t.Value}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
                 <p class="form-hint">{{ .["t"]("admin.inventory.warehouse.typeHint", "自营仓为自有实体仓；第三方仓由外部服务商运营（下面的对接配置只对它生效）；虚拟仓只用于分组记账，不能作为默认仓。") }}</p>
@@ -258,7 +260,7 @@
                 <label class="form-label">{{ .["t"]("admin.inventory.col.type", "类型") }}</label>
                 <select class="form-select" name="type">
                     {{if isset(.WarehouseTypes)}}{{range _, t := .WarehouseTypes}}
-                    <option value="{{t.Value}}" {{if t.Value == w.Type}}selected{{end}}>{{t.Label}}</option>
+                    <option value="{{t.Value}}" {{if t.Value == w.Type}}selected{{end}}>{{if t.Value == "self"}}{{tr("admin.inventory.warehouse.type.self", "自营仓")}}{{else if t.Value == "third_party"}}{{tr("admin.inventory.warehouse.type.third_party", "第三方仓")}}{{else if t.Value == "virtual"}}{{tr("admin.inventory.warehouse.type.virtual", "虚拟仓")}}{{else}}{{t.Value}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
             </div>
