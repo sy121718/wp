@@ -70,7 +70,7 @@ func (s *Service) EntityTypeLabels(tr func(key, fallback string) string) []comme
 		if tr != nil {
 			label = tr(et.Label.Key, et.Label.Fallback)
 		}
-		out = append(out, commentdto.EntityType{Type: et.Type, Label: label})
+		out = append(out, commentdto.EntityType{Type: et.Type, Key: et.Label.Key, Label: label})
 	}
 	return out
 }

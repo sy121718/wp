@@ -68,5 +68,9 @@ type ReviewResp struct {
 type EntityType struct {
 	Type string
 
+	// Key 是文案词条 key，Fallback 是缺词兜底。
+	// 后端只交事实，成品译文由调用方（模板）按请求语言取。
+	Key string
+
 	Label string
 }

@@ -13,7 +13,10 @@
    选中的 id 由 data-bulk-template 的复选组提交（admin.js 的批量条约定）。
    权限：没有 comment:review 的账号看不到批量按钮（按钮码 comment.review 由 shell.Prepare 注入）。 *}
 {{extends "../layout.html"}}
+
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.comment.menu", "评论审核") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.comment.menu", "评论审核") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}
@@ -53,13 +56,13 @@
             <label class="sr-only" for="cm-f-status">{{ tr("admin.comment.filter.status", "状态") }}</label>
             <select class="form-select" id="cm-f-status" name="status">
                 {{range _, o := .StatusOptions}}
-                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.LabelKey}}{{t(o.LabelKey, o.LabelFallb)}}{{else}}{{o.LabelFallb}}{{end}}</option>
                 {{end}}
             </select>
             <label class="sr-only" for="cm-f-entity">{{ tr("admin.comment.filter.entity_type", "实体类型") }}</label>
             <select class="form-select" id="cm-f-entity" name="entityType">
                 {{range _, o := .EntityOptions}}
-                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.LabelKey}}{{t(o.LabelKey, o.LabelFallb)}}{{else}}{{o.LabelFallb}}{{end}}</option>
                 {{end}}
             </select>
             <label class="sr-only" for="cm-f-keyword">{{ tr("admin.comment.filter.keyword", "关键词") }}</label>
@@ -115,11 +118,11 @@
                         <div class="cell-body">{{r.Body}}</div>
                     </td>
                     <td class="cell-wrap">
-                        <div>{{r.EntityLabel}}</div>
+                        <div>{{if r.EntityKey}}{{t(r.EntityKey, r.EntityLabel)}}{{else}}{{r.EntityLabel}}{{end}}</div>
                         <div class="form-hint">{{r.EntityID}}</div>
                     </td>
                     <td>#{{r.UserID}}</td>
-                    <td><span class="badge {{r.StatusClass}}">{{r.StatusLabel}}</span></td>
+                    <td><span class="badge {{r.StatusClass}}">{{if r.StatusKey}}{{t(r.StatusKey, r.StatusFallb)}}{{else}}{{r.StatusFallb}}{{end}}</span></td>
                     <td>{{r.CreateTime}}</td>
                     <td class="col-actions">
                         {{if r.Reviewed != ""}}<span class="form-hint">{{r.Reviewed}}</span>{{end}}

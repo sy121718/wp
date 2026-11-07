@@ -12,7 +12,6 @@ import (
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -33,7 +32,6 @@ func NewCommentPageHandle(svc commentcontract.CommentService,
 }
 
 type commentsPageData struct {
-	Title           string
 	Menu            string
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
@@ -59,10 +57,13 @@ type commentsPageData struct {
 	Pagination pagination.Page
 }
 
+// commentOptionResp 只交枚举值与选中事实；
+// 选项文案由模板用 t/key 取词，后端不预取。
 type commentOptionResp struct {
-	Value    string
-	Label    string
-	Selected bool
+	Value      string
+	LabelKey   string
+	LabelFallb string
+	Selected   bool
 }
 
 func (h *commentPageHandle) render(c *gin.Context, d *commentsPageData) {
@@ -72,13 +73,10 @@ func (h *commentPageHandle) render(c *gin.Context, d *commentsPageData) {
 
 func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := i18n.TranslateFunc(response.RequestLanguage(c))
-
-	title := tr(commentenums.PageTitle.Key, commentenums.PageTitle.Fallback)
+	// 页面标题由模板 block 取词，后端不再预取。
 	data := &commentsPageData{
-		Title:         title,
 		Menu:          "comment",
-		StatusOptions: commentStatusOptions(c, ""),
+		StatusOptions: commentStatusOptions(""),
 		FilterStatus:  strings.TrimSpace(c.Query("status")),
 		FilterEntity:  strings.TrimSpace(c.Query("entityType")),
 		FilterKeyword: strings.TrimSpace(c.Query("keyword")),
@@ -97,8 +95,8 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	if data.SelectedProject == "" {
 		data.NoProject = true
 		data.Rows = []commentRow{}
-		data.StatusOptions = commentStatusOptions(c, data.FilterStatus)
-		data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntity)
+		data.StatusOptions = commentStatusOptions(data.FilterStatus)
+		data.EntityOptions = commentEntityOptions(h.svc, data.FilterEntity)
 		h.render(c, data)
 		return
 	}
@@ -109,8 +107,8 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 		EntityType: data.FilterEntity,
 		Keyword:    data.FilterKeyword,
 	}
-	data.StatusOptions = commentStatusOptions(c, data.FilterStatus)
-	data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntity)
+	data.StatusOptions = commentStatusOptions(data.FilterStatus)
+	data.EntityOptions = commentEntityOptions(h.svc, data.FilterEntity)
 
 	res, listErr := h.svc.AdminList(ctx, &commentdto.AdminListReq{
 		ProjectID:  data.SelectedProject,
@@ -128,10 +126,10 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 		h.render(c, data)
 		return
 	}
-	labels := commentEntityLabelMap(c, h.svc)
+	labels := commentEntityLabelMap(h.svc)
 	rows := make([]commentRow, 0, len(res.Items))
 	for _, item := range res.Items {
-		rows = append(rows, commentRowOf(tr, labels, item))
+		rows = append(rows, commentRowOf(labels, item))
 	}
 	data.Rows = rows
 	data.Total = res.Total
@@ -155,11 +153,13 @@ type commentRow struct {
 	ID          int64
 	Body        string
 	EntityType  string
+	EntityKey   string
 	EntityLabel string
 	EntityID    string
 	UserID      uint64
 	Status      string
-	StatusLabel string
+	StatusKey   string
+	StatusFallb string
 
 	StatusClass string
 	CreateTime  string
@@ -168,23 +168,21 @@ type commentRow struct {
 	IsReply  bool
 }
 
-func commentRowOf(tr func(key, fallback string) string, entityLabels map[string]string,
+func commentRowOf(entityLabels map[string]commentEntityLabel,
 	item commentdto.AdminItem) commentRow {
-	label := entityLabels[item.EntityType]
-	if label == "" {
-
-		label = item.EntityType
-	}
+	entity := entityLabels[item.EntityType]
 	pair := commentenums.StatusLabel(item.Status)
 	row := commentRow{
 		ID:          item.ID,
 		Body:        item.Body,
 		EntityType:  item.EntityType,
-		EntityLabel: label,
+		EntityKey:   entity.Key,
+		EntityLabel: firstNonEmpty(entity.Label, item.EntityType),
 		EntityID:    item.EntityID,
 		UserID:      item.UserID,
 		Status:      item.Status,
-		StatusLabel: tr(pair.Key, pair.Fallback),
+		StatusKey:   pair.Key,
+		StatusFallb: pair.Fallback,
 		StatusClass: commentStatusClass(item.Status),
 		CreateTime:  item.CreateTime.Time().Format("2006-01-02 15:04"),
 		IsReply:     item.IsReply,
@@ -229,54 +227,70 @@ func pickCommentProject(requested string, projects []projectdto.ProjectResp) str
 	return ""
 }
 
-func commentStatusOptions(c *gin.Context, selected string) []commentOptionResp {
-	tr := i18n.TranslateFunc(response.RequestLanguage(c))
+func commentStatusOptions(selected string) []commentOptionResp {
 	out := make([]commentOptionResp, 0, len(commentenums.Statuses())+1)
 	out = append(out, commentOptionResp{
-		Value:    "",
-		Label:    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
-		Selected: selected == "",
+		Value:      "",
+		LabelKey:   commentenums.LabelKeyFilterAll,
+		LabelFallb: commentenums.LabelFilterAll,
+		Selected:   selected == "",
 	})
 	for _, status := range commentenums.Statuses() {
 		pair := commentenums.StatusLabel(status)
 		out = append(out, commentOptionResp{
-			Value:    status,
-			Label:    tr(pair.Key, pair.Fallback),
-			Selected: status == selected,
+			Value:      status,
+			LabelKey:   pair.Key,
+			LabelFallb: pair.Fallback,
+			Selected:   status == selected,
 		})
 	}
 	return out
 }
 
-func commentEntityOptions(c *gin.Context, svc commentcontract.CommentService, selected string) []commentOptionResp {
-	tr := i18n.TranslateFunc(response.RequestLanguage(c))
+func commentEntityOptions(svc commentcontract.CommentService, selected string) []commentOptionResp {
 	out := []commentOptionResp{{
-		Value:    "",
-		Label:    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
-		Selected: selected == "",
+		Value:      "",
+		LabelKey:   commentenums.LabelKeyFilterAll,
+		LabelFallb: commentenums.LabelFilterAll,
+		Selected:   selected == "",
 	}}
 	if svc == nil {
 		return out
 	}
-	for _, et := range svc.EntityTypeLabels(tr) {
+	for _, et := range svc.EntityTypeLabels(nil) {
 		out = append(out, commentOptionResp{
-			Value:    et.Type,
-			Label:    et.Label,
-			Selected: et.Type == selected,
+			Value:      et.Type,
+			LabelKey:   et.Key,
+			LabelFallb: et.Label,
+			Selected:   et.Type == selected,
 		})
 	}
 	return out
 }
 
-func commentEntityLabelMap(c *gin.Context, svc commentcontract.CommentService) map[string]string {
-	out := map[string]string{}
+type commentEntityLabel struct {
+	Key   string
+	Label string
+}
+
+func commentEntityLabelMap(svc commentcontract.CommentService) map[string]commentEntityLabel {
+	out := map[string]commentEntityLabel{}
 	if svc == nil {
 		return out
 	}
-	for _, et := range svc.EntityTypeLabels(i18n.TranslateFunc(response.RequestLanguage(c))) {
-		out[et.Type] = et.Label
+	for _, et := range svc.EntityTypeLabels(nil) {
+		out[et.Type] = commentEntityLabel{Key: et.Key, Label: et.Label}
 	}
 	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 type commentFilterValues struct {

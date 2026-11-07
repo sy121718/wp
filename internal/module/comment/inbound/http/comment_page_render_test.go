@@ -2,6 +2,7 @@ package commenthttp
 
 import (
 	pageview "go_wp/pkg/view"
+	text "go_wp/pkg/view/jet"
 	"context"
 	"errors"
 	"net/http"
@@ -44,7 +45,7 @@ func (s *stubCommentSvc) Review(context.Context, *commentdto.ReviewReq) (*commen
 func (s *stubCommentSvc) EntityTypeLabels(tr func(key, fallback string) string) []commentdto.EntityType {
 	out := make([]commentdto.EntityType, 0, len(s.types))
 	for _, t := range s.types {
-		out = append(out, commentdto.EntityType{Type: t.Type, Label: t.Label})
+		out = append(out, commentdto.EntityType{Type: t.Type, Key: t.Key, Label: t.Label})
 	}
 	return out
 }
@@ -68,6 +69,8 @@ func renderCommentsPage(t *testing.T, svc *stubCommentSvc, projects stubProjects
 	engine := gin.New()
 
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	// 生产装配在基础层挂请求取词作用域：模板的 t / tf 依赖它。
+	engine.Use(func(c *gin.Context) { text.AttachScope(c); c.Next() })
 	h := NewCommentPageHandle(svc, projects)
 	engine.GET("/admin/comments", pageview.Slot(CommentsPageTemplate, pageview.RenderPage), func(c *gin.Context) {
 		perm := map[string]bool{"comment:list": true}
@@ -99,8 +102,8 @@ func thCount(body string) int {
 func pageFixture() *stubCommentSvc {
 	return &stubCommentSvc{
 		types: []commentdto.EntityType{
-			{Type: "article", Label: "文章"},
-			{Type: "product", Label: "商品"},
+			{Type: "article", Key: "admin.article.list.heading", Label: "文章"},
+			{Type: "product", Key: "trTypeProd", Label: "商品"},
 		},
 		res: &commentdto.AdminListResp{
 			Total: 1, Page: 1, PageSize: 20,
