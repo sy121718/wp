@@ -107,6 +107,12 @@ type ListTransferReq struct {
 	Keyword   string `form:"keyword" json:"keyword"`
 	Page      int    `form:"page" json:"page"`
 	Size      int    `form:"size" json:"size"`
+
+	// PageAfter / SizeAfter 是 service 归一后的生效值（默认值与上限由业务层决定）。
+	// 控制器读这两个值构造分页事实，不再自己算一遍默认值 —— 同一请求两处各算一次，
+	// 默认值一旦不同（控制器 50 / service 20）页面上显示的页码与真实查询就会对不上。
+	PageAfter int `form:"-" json:"-"`
+	SizeAfter int `form:"-" json:"-"`
 }
 
 type GetTransferReq struct {

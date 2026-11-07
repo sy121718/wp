@@ -46,16 +46,24 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	}
 	list := []*inventorydto.TransferRowResp{}
 	var total int64
+	// 分页口径归业务层：service 在 ListTransfers 时归一页码与页大小，
+	// 控制器只读生效值，不自己再算一遍默认值与上限。
+	page, size := 1, 0
 	if selected != "" {
 		query.ProjectID = selected
 		if list, err = h.transfers.ListTransfers(ctx, query); err != nil {
 			return nil, err
 		}
+		page, size = query.PageAfter, query.SizeAfter
+		if size < 1 {
+			// 无工程时不查库，仍要给出与 service 同口径的默认值供分页条渲染。
+			page, size = pagination.NormalizePaging(query.Page, query.Size, 20, 200).Page,
+				pagination.NormalizePaging(query.Page, query.Size, 20, 200).Size
+		}
 		if total, err = h.transfers.CountTransfers(ctx, query); err != nil {
 			return nil, err
 		}
 	}
-	page, size := transferPageArgsOf(query.Page, query.Size)
 	pg := pagination.Page{Total: total, Page: page, Limit: size}
 	pg.Base = reqparams.FilterBaseURL(inventoryTransfersPath, map[string]string{
 		"project": selected, "status": query.Status, "keyword": query.Keyword,
@@ -178,20 +186,6 @@ func transferStatusOptions() []OptionResp {
 		{Value: "rejected"},
 		{Value: "cancelled"},
 	}
-}
-
-func transferPageArgsOf(page, size int) (int, int) {
-	outPage, outSize := 1, 50
-	if page > 0 {
-		outPage = page
-	}
-	if size > 0 {
-		outSize = size
-	}
-	if outSize > 200 {
-		outSize = 200
-	}
-	return outPage, outSize
 }
 
 type inventoryTransferContract interface {

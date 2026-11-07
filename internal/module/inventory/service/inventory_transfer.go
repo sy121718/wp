@@ -633,6 +633,7 @@ func (s *Service) ListTransfers(ctx context.Context, req *inventorydto.ListTrans
 		return nil, perr
 	}
 	page, size := transferPageArgs(req.Page, req.Size)
+	req.PageAfter, req.SizeAfter = page, size
 	rows, err := s.m.ListTransfers(ctx, inventorymodel.TransferListFilter{
 		ProjectID: projectID, Status: strings.TrimSpace(req.Status),
 		Keyword: strings.TrimSpace(req.Keyword),
