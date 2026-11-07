@@ -34,7 +34,7 @@ func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		return response.InternalMsg()
 	}
 	if f.Tail != "" {
-		if detail := inventoryErrDetailText(text.RequestTranslateFunc(c), f.Tail); detail != "" {
+		if detail := inventoryErrDetailText(c, f.Tail); detail != "" {
 
 			return facing.Msg{Fallback: response.ArgsText(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}
@@ -46,7 +46,7 @@ func inventoryErrText(c *gin.Context, err error) string {
 	return inventoryMsgText(c, inventoryErrMsg(c, err))
 }
 
-func inventoryErrDetailText(tr func(key, fallback string) string, tail string) string {
+func inventoryErrDetailText(c *gin.Context, tail string) string {
 	parts, ok := i18n.ParseErrorDetails(tail)
 	if !ok {
 		return tail
@@ -59,7 +59,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 				Warn("业务错误的补充说明词条未登记，已省略该段")
 			continue
 		}
-		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+		out = append(out, response.FillText(c, p.Key, fallback, p.Args))
 	}
 	return strings.Join(out, "；")
 }
@@ -139,7 +139,7 @@ func (inventoryLoadFailedView) PageNoStore() bool { return true }
 
 func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) inventoryLoadFailedView {
 	return inventoryLoadFailedView{
-		"title": inventoryMsgText(c, facing.Msg{Key: meta.titleKey, Fallback: meta.titleFallback}),
+		"title": response.MsgText(c, facing.Msg{Key: meta.titleKey, Fallback: meta.titleFallback}),
 		"menu":  meta.menu,
 
 		"Projects":        []projectcontract.ProjectResp{},

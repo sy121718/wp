@@ -80,7 +80,6 @@ var moduleTextFuncs = map[string]struct{}{
 var pendingModuleText = map[string]int{
 	"internal/module/block/inbound/http/block_err.go":                  1,
 	"internal/module/content/inbound/http/content_page.go":             2,
-	"internal/module/inventory/inbound/http/inventory_error_handle.go": 1,
 	"internal/module/inventory/inbound/mcp/inventory_tools.go":         1,
 	"internal/module/mail/inbound/http/mail_err.go":                    1,
 	"internal/module/mail/service/mail_account.go":                     3,
