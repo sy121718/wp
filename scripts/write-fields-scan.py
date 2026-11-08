@@ -149,6 +149,44 @@ def write_endpoint(attrs):
     return None
 
 
+HX_VALS_PAIR = re.compile(
+    r'("[^"]+"|\'[^\']+\'|[A-Za-z_][\w.\-]*)\s*:\s*("[^"]*"|\'[^\']*\'|[^\s,}]+)')
+HX_VALS_BARE = re.compile(r'^[A-Za-z_][\w.\-]*(?:,[A-Za-z_][\w.\-]*)*$')
+
+
+def hx_vals_fields(value):
+    """把 hx-vals 的静态字面量解析成具名字段集合；解析不了返回 None。
+
+    htmx 4 的取值器先试 JSON（以 `{` 开头），失败再按 `name:value` / `name` 的
+    松散语法解析。这里只认这两种、且值必须是字面量或数字：含 Jet 表达式或
+    动态拼接的仍按「未检查」处理，不猜。
+    返回 (字段名集合, None)；无法静态确定时返回 None。
+    """
+    raw = (value or '').strip()
+    if not raw:
+        return set()
+    if raw.startswith('{'):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        keys = {str(k) for k in parsed}
+    elif HX_VALS_BARE.match(raw):
+        keys = {part.strip() for part in raw.split(',') if part.strip()}
+    else:
+        pairs = HX_VALS_PAIR.findall(raw)
+        if not pairs:
+            return None
+        keys = {name.strip('"\'').strip() for name, _ in pairs}
+    # htmx 会把 `a.b` 这类键合并成嵌套对象，DTO 的 form tag 不折叠点号：
+    # 含点号的键仍按「无法静态对账」处理，不放宽。
+    if any('.' in key for key in keys):
+        return None
+    return keys
+
+
 def unresolved_endpoint(attrs):
     """写端点是否仍含未展开的 Jet 表达式（动态字段名 / 路径）。
 
@@ -186,7 +224,10 @@ class FormParser(HTMLParser):
             self.templates.append(self.serial)
         uncertain = set()
         for ancestor in self.elements + [element]:
-            uncertain.update(set(ancestor['attrs']) & {'hx-vals', 'hx-inherit', 'hx-disinherit'})
+            uncertain.update(set(ancestor['attrs']) & {'hx-inherit', 'hx-disinherit'})
+            vals = ancestor['attrs'].get('hx-vals')
+            if vals is not None and not hx_vals_fields(vals):
+                uncertain.add('hx-vals')
             # hx-include 的字面 id 选择器可静态解析（见 included_controls）；含 Jet 表达式或
             # 非 id 选择器时照旧报未检查，不放宽判据。
             include = ancestor['attrs'].get('hx-include')
@@ -287,6 +328,9 @@ class FormParser(HTMLParser):
                     offered = fields | ({button['name']} if button.get('name') else set())
                     attrs = {**form['attrs'], **button}
                     offered |= self.included_fields(form, attrs)
+                    vals = hx_vals_fields(attrs.get('hx-vals'))
+                    if vals:
+                        offered |= vals
                     if button.get('formenctype'):
                         attrs['enctype'] = button['formenctype']
                     yield endpoint, attrs, offered, uncertain
@@ -304,6 +348,9 @@ class FormParser(HTMLParser):
                                 offered |= self.fields_of(target)
                     else:
                         included_uncertain.add('hx-include')
+                vals = hx_vals_fields(attrs.get('hx-vals'))
+                if vals:
+                    offered |= vals
                 yield write_endpoint(attrs), attrs, offered, control['uncertain'] | included_uncertain
 
 

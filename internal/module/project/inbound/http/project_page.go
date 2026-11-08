@@ -23,6 +23,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/builder"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -935,9 +936,22 @@ func (h *themeAdminHandle) ThemeManage(c *gin.Context) {
 	h.renderThemeManage(c, data)
 }
 
+// bindThemeCreateForm 绑定新建主题表单；失败已由这里按域错误出口写回。
+func bindThemeCreateForm(c *gin.Context) (*projectdto.ThemeCreateReq, bool) {
+	form, err := binding.ParseForm[projectdto.ThemeCreateReq](c)
+	if err != nil {
+		pageview.FailStatus(c, http.StatusBadRequest, "project", err)
+		return nil, false
+	}
+	return form, true
+}
+
 func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	name := strings.TrimSpace(c.PostForm("name"))
+	form, ok := bindThemeCreateForm(c)
+	if !ok {
+		return
+	}
+	projectID, name := form.ProjectID, form.Name
 	back := themesBack(c)
 
 	if projectID == "" {
@@ -965,14 +979,24 @@ func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
 	projectJump(c, true, themeCreatedMsg, back, themesBackMsg)
 }
 
-func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
-	id := strings.TrimSpace(c.PostForm("id"))
-	back := themesBack(c)
-	if id == "" {
+// bindThemeForm 绑定主题写表单；失败已由这里按域错误出口写回。
+func bindThemeForm(c *gin.Context) (*projectdto.ThemeActivateReq, bool) {
+	req, err := binding.ParseForm[projectdto.ThemeActivateReq](c)
+	if err != nil || req.ID == "" {
 		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			back, themesBackMsg)
+			themesBack(c), themesBackMsg)
+		return nil, false
+	}
+	return req, true
+}
+
+func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
+	form, ok := bindThemeForm(c)
+	if !ok {
 		return
 	}
+	id := form.ID
+	back := themesBack(c)
 	if err := h.projects.ActivateTheme(c.Request.Context(), &projectcontract.ThemeActivateReq{ID: id}); err != nil {
 		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
 			back, themesBackMsg)
@@ -1066,13 +1090,12 @@ func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.Raw
 }
 
 func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
-	id := strings.TrimSpace(c.PostForm("id"))
-	back := themesBack(c)
-	if id == "" {
-		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			back, themesBackMsg)
+	form, ok := bindThemeForm(c)
+	if !ok {
 		return
 	}
+	id := form.ID
+	back := themesBack(c)
 	projectID := ""
 	if theme, err := h.projects.GetTheme(c.Request.Context(), id); err == nil && theme != nil {
 		projectID = theme.ProjectID

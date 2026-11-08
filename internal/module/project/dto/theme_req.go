@@ -18,4 +18,7 @@ type ThemeUpdateReq struct {
 
 type ThemeActivateReq struct {
 	ID string `json:"id" form:"id" binding:"required"`
+
+	// ProjectID 只用于回跳筛选（列表页按工程过滤）；激活本身以主题自身归属为准。
+	ProjectID string `json:"projectId" form:"projectId"`
 }
