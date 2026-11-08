@@ -745,6 +745,24 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 			resolved = binding
 			return false
 		}
+		// 显式转换函数作为实参（(*FormReq).CreateReq）：**表单类型**才是线上字段的属主，
+		// 回调形参里的请求类型只是 service 侧形状，不能拿它当字段契约。
+		if formDTO := conversionFuncDTO(call, src, index); formDTO != "" {
+			// 骨架自身的登记说明协议（泛型体里的 DTO 已被清空），沿链只用来兜底。
+			protocol, okProtocol := index.Bindings[target.name]
+			if !okProtocol || protocol.Protocol == "" || protocol.Protocol == "unknown" {
+				protocol = chainedBinderProtocol(target, index, 4)
+			}
+			if protocol.Protocol == "" || protocol.Protocol == "unknown" {
+				if p := skeletonJSONProtocol(target); p != "" {
+					protocol = bodyBinding{Protocol: p}
+				}
+			}
+			if protocol.Protocol != "" && protocol.Protocol != "unknown" {
+				resolved = bodyBinding{Protocol: protocol.Protocol, DTO: formDTO}
+				return false
+			}
+		}
 		// 实参里的回调是 func(ctx, req *XReq) —— 兜底类型就是骨架上 T 的实例。
 		for _, arg := range call.Args {
 			lit, okLit := arg.(*ast.FuncLit)
@@ -796,6 +814,36 @@ func genericSkeletonBinding(name string, index sourceIndex) bodyBinding {
 	}
 	binding.DTO = dto
 	return binding
+}
+
+// conversionFuncDTO 取泛型骨架调用里「显式转换函数」的接收者类型。
+//
+//	runMembershipWrite(c, (*TierFormReq).CreateReq, call, success)
+//
+// 这类写法把「表单 → service 请求」的转换也交给骨架；线上字段由**表单类型**
+// 决定（TierFormReq 的 form tag），绝不是转换后 CreateTierReq 的字段名。
+// 找不到就返回空，交给回调形参推断。
+func conversionFuncDTO(call *ast.CallExpr, src *funcSource, index sourceIndex) string {
+	for _, arg := range call.Args {
+		sel, okSel := arg.(*ast.SelectorExpr)
+		if !okSel {
+			continue
+		}
+		paren, okParen := sel.X.(*ast.ParenExpr)
+		if !okParen {
+			continue
+		}
+		star, okStar := paren.X.(*ast.StarExpr)
+		if !okStar {
+			continue
+		}
+		if dto := typeName(star.X, src.pkg, src.imports); dto != "" {
+			if _, okType := index.Types[dto]; okType {
+				return dto
+			}
+		}
+	}
+	return ""
 }
 
 // explicitTypeArgDTO 处理显式泛型调用 `f[XReq](...)`：类型实参就是请求类型。

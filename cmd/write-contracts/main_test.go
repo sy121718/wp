@@ -353,3 +353,60 @@ func (h *Handle) Form(c *gin.Context) {
 		t.Fatalf("表单骨架应保持 form：%+v", got["POST /form"])
 	}
 }
+
+// 显式转换函数作为骨架实参时，字段契约属主是**表单类型**，不是转换后的 service 请求类型。
+func TestGenericSkeletonPrefersConversionFormType(t *testing.T) {
+	src := `package examplehttp
+import (
+ "context"
+ req "example/internal/dto"
+ wire "github.com/gin-gonic/gin/binding"
+ "github.com/gin-gonic/gin"
+)
+func runWrite[F any, R any](c *gin.Context,
+ build func(*F) (R, error),
+ call func(context.Context, R) (any, error),
+ success func(*gin.Context)) {
+ var form F
+ if err := c.ShouldBindWith(&form, wire.FormPost); err != nil { return }
+ r, err := build(&form)
+ if err != nil { return }
+ if _, err := call(c.Request.Context(), r); err != nil { return }
+ success(c)
+}
+type Handle struct{}
+func (h *Handle) Create(c *gin.Context) {
+ runWrite(c, (*req.SaveForm).CreateReq,
+  func(ctx context.Context, r *req.SaveReq) (any, error) { return nil, nil },
+  func(*gin.Context) {})
+}
+`
+	root := writeSources(t, map[string]string{
+		"dto/request.go": "package dto\n" +
+			"type SaveForm struct { Name string `form:\"name\"`; Amount string `form:\"amountYuan\"` }\n" +
+			"func (f *SaveForm) CreateReq() (*SaveReq, error) { return &SaveReq{}, nil }\n" +
+			"type SaveReq struct { Name string `json:\"name\"`; Amount int64 `json:\"amount\"` }\n",
+		"http/handle.go": src,
+	})
+	index, err := scanSources(root, "example/internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := buildContracts([]route{
+		{Method: "POST", Path: "/create", Handler: "example/internal/http.(*Handle).Create-fm"},
+	}, index)
+	create := got["POST /create"]
+	if create.Reason != "" || create.Protocol != "form" {
+		t.Fatalf("转换函数形态应解析成表单协议：%+v", create)
+	}
+	if create.DTO != "example/internal/dto.SaveForm" {
+		t.Fatalf("字段契约应取自表单类型 SaveForm，实际 %q", create.DTO)
+	}
+	names := map[string]bool{}
+	for _, f := range create.Fields {
+		names[f.Name] = true
+	}
+	if !names["amountYuan"] || names["amount"] {
+		t.Fatalf("表单字段应是 amountYuan（不是转换后请求的 amount）：%+v", create.Fields)
+	}
+}
