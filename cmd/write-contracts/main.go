@@ -789,9 +789,8 @@ func explicitTypeArgDTO(call *ast.CallExpr, calleeName string, target *funcSourc
 	}
 	binding, ok := index.Bindings[target.name]
 	if !ok || binding.Protocol == "" || binding.Protocol == "unknown" {
-		if protocol := skeletonJSONProtocol(target); protocol != "" {
-			binding = bodyBinding{Protocol: protocol}
-		}
+		// 骨架本身可能只是一层转发（bindX → bindXInto），沿链找真正的 binder。
+		binding = chainedBinderProtocol(target, index, 4)
 	}
 	if binding.Protocol == "" || binding.Protocol == "unknown" {
 		return bodyBinding{Protocol: "unknown", Reason: "泛型写骨架没有可确定的 binder：" + target.name}
