@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	ginbinding "github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 
 	"go_wp/config"
@@ -24,6 +25,7 @@ import (
 	"go_wp/pkg/auth"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/datarule"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
@@ -31,7 +33,6 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
 	pageview "go_wp/pkg/view"
-	"go_wp/pkg/facing"
 )
 
 type administratorRolesDrawerView struct {
@@ -291,17 +292,11 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) AdministratorsCreate(c *gin.Context) {
-	username := reqparams.FieldValue(c, "username")
-	email := reqparams.FieldValue(c, "email")
-	password := reqparams.FieldValue(c, "password")
-	if username == "" || email == "" || password == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.AdminCreateReq](c)
+	if !ok {
 		return
 	}
-	if _, err := h.admins.AdminCreate(c.Request.Context(), &admindto.AdminCreateReq{
-		Username: username, Email: email, Password: password,
-		Phone: reqparams.FieldValue(c, "phone"), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if _, err := h.admins.AdminCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -309,15 +304,11 @@ func (h *AdminPagesHandle) AdministratorsCreate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.AdminEditReq](c)
+	if !ok {
 		return
 	}
-	if _, err := h.admins.AdminEdit(c.Request.Context(), &admindto.AdminEditReq{
-		Id: id, Username: reqparams.FieldValue(c, "username"), Phone: reqparams.FieldValue(c, "phone"),
-		Email: reqparams.FieldValue(c, "email"), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if _, err := h.admins.AdminEdit(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -392,16 +383,13 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
-	ruleName := reqparams.FieldValue(c, "rule_name")
-	domain := reqparams.FieldValue(c, "domain")
-	if ruleName == "" || domain == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RuleCreateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rules.RuleCreate(c.Request.Context(), &admindto.RuleCreateReq{
-		RuleName: ruleName, Domain: domain, Config: admindto.RuleConfigDTO{},
-		Status: reqparams.ParseStatus(c.PostForm("status")), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	// 新建表单不带数据域配置：配置从空结构开始，由编辑页补齐。
+	req.Config = admindto.RuleConfigDTO{}
+	if err := h.rules.RuleCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -453,38 +441,37 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	ruleName := reqparams.FieldValue(c, "rule_name")
-	domain := reqparams.FieldValue(c, "domain")
-
-	if id == 0 || ruleName == "" || domain == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RuleUpdateReq](c)
+	if !ok {
 		return
 	}
-	config := admindto.RuleConfigDTO{}
-	if c.PostForm(dataruleEditorMarker) != "" {
-		config = dataruleDropEmptyGroups(dataruleConfigFromForm(c))
-	} else {
-		detail, detailErr := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
-		if detailErr != nil {
-			response.ErrorStatusAuto(c, "admin.datarule", detailErr)
-			return
-		}
-		if detail == nil {
-
-			response.ErrorStatusAuto(c, "admin.datarule", adminenums.Err(adminenums.ErrRuleNotFound))
-			return
-		}
-		config = detail.Config
+	config, cerr := h.dataruleConfigFor(c, req.ID)
+	if cerr != nil {
+		response.ErrorStatusAuto(c, "admin.datarule", cerr)
+		return
 	}
-	if err := h.rules.RuleUpdate(c.Request.Context(), &admindto.RuleUpdateReq{
-		ID: id, RuleName: ruleName, Domain: domain, Config: config,
-		Status: reqparams.ParseStatus(c.PostForm("status")), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	req.Config = config
+	if err := h.rules.RuleUpdate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.datarule", err)
 		return
 	}
 	response.Success(c)
+}
+
+// dataruleConfigFor 决定本次提交用哪份配置：
+// 编辑器在场就解析整份表单提交，否则沿用库里已有配置（清空整个配置是另一件事）。
+func (h *AdminPagesHandle) dataruleConfigFor(c *gin.Context, id uint64) (admindto.RuleConfigDTO, error) {
+	if c.PostForm(dataruleEditorMarker) != "" {
+		return dataruleDropEmptyGroups(dataruleConfigFromForm(c)), nil
+	}
+	detail, err := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
+	if err != nil {
+		return admindto.RuleConfigDTO{}, err
+	}
+	if detail == nil {
+		return admindto.RuleConfigDTO{}, adminenums.Err(adminenums.ErrRuleNotFound)
+	}
+	return detail.Config, nil
 }
 
 func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
@@ -580,17 +567,11 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DepartmentsCreate(c *gin.Context) {
-	deptName := reqparams.FieldValue(c, "dept_name")
-	deptCode := reqparams.FieldValue(c, "dept_code")
-	if deptName == "" || deptCode == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.DeptCreateReq](c)
+	if !ok {
 		return
 	}
-	sortOrder, _ := strconv.Atoi(reqparams.FieldValue(c, "sort_order"))
-	if err := h.depts.DeptCreate(c.Request.Context(), &admindto.DeptCreateReq{
-		ParentID: reqparams.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
-		SortOrder: sortOrder, Status: reqparams.ParseStatus(c.PostForm("status")), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if err := h.depts.DeptCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -598,18 +579,11 @@ func (h *AdminPagesHandle) DepartmentsCreate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	deptName := reqparams.FieldValue(c, "dept_name")
-	deptCode := reqparams.FieldValue(c, "dept_code")
-	if id == 0 || deptName == "" || deptCode == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.DeptUpdateReq](c)
+	if !ok {
 		return
 	}
-	sortOrder, _ := strconv.Atoi(reqparams.FieldValue(c, "sort_order"))
-	if err := h.depts.DeptUpdate(c.Request.Context(), &admindto.DeptUpdateReq{
-		ID: id, ParentID: reqparams.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
-		SortOrder: sortOrder, Status: reqparams.ParseStatus(c.PostForm("status")), Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if err := h.depts.DeptUpdate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -971,18 +945,11 @@ func menuPermissionCodes(c *gin.Context) []string {
 }
 
 func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
-	title := reqparams.FieldValue(c, "title")
-	if title == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.MenuCreateReq](c)
+	if !ok {
 		return
 	}
-	sortOrder, _ := strconv.Atoi(reqparams.FieldValue(c, "sort_order"))
-	if err := h.menus.MenuCreate(c.Request.Context(), &admindto.MenuCreateReq{
-		Title: title, ParentID: reqparams.ParseUint(c.PostForm("parent_id")),
-		Type: reqparams.ParseStatus(c.PostForm("type")), Path: reqparams.FieldValue(c, "path"),
-		Status: reqparams.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: reqparams.FieldValue(c, "remark"),
-		PermissionCodes: menuPermissionCodes(c),
-	}); err != nil {
+	if err := h.menus.MenuCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1108,23 +1075,16 @@ func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
-	code := reqparams.FieldValue(c, "permission_code")
-	name := reqparams.FieldValue(c, "permission_name")
-	module := reqparams.FieldValue(c, "module")
-	apiPath := reqparams.FieldValue(c, "api_path")
-	apiMethod := strings.ToUpper(reqparams.FieldValue(c, "api_method"))
-	if code == "" || name == "" || module == "" || apiPath == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.PermCreateReq](c)
+	if !ok {
 		return
 	}
-	if apiMethod != "GET" && apiMethod != "POST" {
-		apiMethod = "POST"
+	// 方法只接受 GET / POST：表单可能提交小写或空值，归一后再交给 service。
+	req.APIMethod = strings.ToUpper(strings.TrimSpace(req.APIMethod))
+	if req.APIMethod != "GET" && req.APIMethod != "POST" {
+		req.APIMethod = "POST"
 	}
-	if _, err := h.perms.PermCreate(c.Request.Context(), &admindto.PermCreateReq{
-		PermissionCode: code, PermissionName: name, Module: module,
-		APIPath: apiPath, APIMethod: apiMethod, Status: reqparams.ParseStatus(c.PostForm("status")),
-		Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if _, err := h.perms.PermCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1262,17 +1222,11 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) RolesCreate(c *gin.Context) {
-	roleCode := reqparams.FieldValue(c, "role_code")
-	roleName := reqparams.FieldValue(c, "role_name")
-	if roleCode == "" || roleName == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RoleCreateReq](c)
+	if !ok {
 		return
 	}
-	sortOrder, _ := strconv.Atoi(reqparams.FieldValue(c, "sort_order"))
-	if err := h.roles.RoleCreate(c.Request.Context(), &admindto.RoleCreateReq{
-		RoleCode: roleCode, RoleName: roleName, Status: reqparams.ParseStatusPtr(c.PostForm("status")),
-		SortOrder: sortOrder, Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if err := h.roles.RoleCreate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1280,17 +1234,11 @@ func (h *AdminPagesHandle) RolesCreate(c *gin.Context) {
 }
 
 func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	roleName := reqparams.FieldValue(c, "role_name")
-	if id == 0 || roleName == "" {
-		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+	req, ok := bindAdminForm[admindto.RoleUpdateReq](c)
+	if !ok {
 		return
 	}
-	sortOrder, _ := strconv.Atoi(reqparams.FieldValue(c, "sort_order"))
-	if err := h.roles.RoleUpdate(c.Request.Context(), &admindto.RoleUpdateReq{
-		ID: id, RoleName: roleName, Status: reqparams.ParseStatus(c.PostForm("status")),
-		SortOrder: sortOrder, Remark: reqparams.FieldValue(c, "remark"),
-	}); err != nil {
+	if err := h.roles.RoleUpdate(c.Request.Context(), req); err != nil {
 		response.ErrorStatusAuto(c, "admin.write", err)
 		return
 	}
@@ -1513,4 +1461,18 @@ func parseBulkIDs(raw []string) (ids []uint64, invalid []string) {
 		ids = append(ids, id)
 	}
 	return ids, invalid
+}
+
+// bindAdminForm 是后台页面写端点的统一表单绑定：原生 FormPost + DTO 的 tag 校验。
+//
+// 失败已由这里写出 401/400：参数错误的文案由词库给，控制器不自己拼。
+// 这些端点在页面里是标准表单提交，绑定必须显式声明 FormPost —— 不能靠
+// binding.JSON 的 Content-Type 自适应，否则同一个端点会悄悄接受两种形状。
+func bindAdminForm[T any](c *gin.Context) (*T, bool) {
+	var req T
+	if err := c.ShouldBindWith(&req, ginbinding.FormPost); err != nil {
+		response.ErrorStatusAuto(c, adminErrScene, adminenums.BadRequest())
+		return nil, false
+	}
+	return &req, true
 }
