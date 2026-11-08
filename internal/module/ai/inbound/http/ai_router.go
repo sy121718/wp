@@ -16,7 +16,9 @@ import (
 	mw "go_wp/pkg/middleware"
 )
 
-func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory) aicontract.AIService {
+// routeBindings 是装配期提供的路由绑定快照：工具授权与令牌 scope 校验都按它判断，
+// 执行期不再读全局登记（第二个 router 的装配不会影响已装配实例）。
+func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes, aiConfig sysconfigcontract.Service, dir aicontract.PermDirectory, routeBindings []mw.RouteSpec) aicontract.AIService {
 	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
@@ -33,7 +35,10 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 
 	// 两个执行入口（站内工具 Runner 与外部 MCP 端点）共用同一个授权闭包：
 	// 都按「登记的真实路由绑定 + Casbin 主体/对象/方法」判断，缺一即拒绝。
-	authorize := casbinAuthorizer
+	// 绑定快照在装配期传入，执行期不读全局登记。
+	authorize := func(ctx context.Context, userID int64, perm string) (bool, error) {
+		return casbinAuthorizer(routeBindings, userID, perm)
+	}
 	if toolRegistry != nil {
 		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, authorize)})
 	}
@@ -47,7 +52,7 @@ func SetupAIRoutes(authorizedAPI *mw.RouteGroup, adminPages *gin.RouterGroup, db
 	tokenSvc.SetScopeValidator(func(ctx context.Context, p string) bool {
 		// 令牌 scope 必须同时是「已启用的目录项」与「真实登记过路由的操作」：
 		// 只看目录会放行没有执行入口的码，查询失败按拒绝处理。
-		if dir == nil || len(mw.RoutesOf(p)) == 0 {
+		if dir == nil || len(BindingsOf(routeBindings, p)) == 0 {
 			return false
 		}
 		ok, err := dir.Exists(ctx, p)

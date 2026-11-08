@@ -435,7 +435,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 
 	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc))
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc, newAdminPermDirectory(adminAuthzSvc), mw.Snapshot())
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)

@@ -1052,14 +1052,17 @@ func fabImageRequest(req *aidto.SendMessageReq, images, labels []string) {
 	req.ImageLabels = labels
 }
 
-// casbinAuthorizer 按操作绑定当前用户的授权事实。
+// accountAuthorizer 按请求提供的路由绑定索引判断当前用户对某操作的授权事实。
+//
+// 绑定索引由装配方在启动期从同一个登记快照构造并注入 —— 执行期不再读全局登记，
+// 第二个 router 的装配不会悄悄改掉第一个实例看到的绑定。
 //
 // 每个登记里有两条事实：真实路由（Path/Method）与**实际被检查的鉴权目标**
 // （AuthObject/AuthMethod）。页面或 HTML 写入口复用别的权限时后者才不同 ——
 // 这里必须用后者判断，用 Path 会把「复用权限的页面入口」当成独立对象去查，
 // 结果永远是拒绝。
-func casbinAuthorizer(_ context.Context, userID int64, perm string) (bool, error) {
-	routes := mw.RoutesOf(perm)
+func casbinAuthorizer(bindings []mw.RouteSpec, userID int64, perm string) (bool, error) {
+	routes := BindingsOf(bindings, perm)
 	if len(routes) == 0 {
 
 		logger.Scene("ai").With("perm", string(perm)).Warn("权限点没有声明路由，工具调用按无权限处理")
@@ -1082,6 +1085,17 @@ func casbinAuthorizer(_ context.Context, userID int64, perm string) (bool, error
 		}
 	}
 	return false, nil
+}
+
+// BindingsOf 从装配期快照里取某权限点的绑定；索引缺失即无权限（不回落全局登记）。
+func BindingsOf(bindings []mw.RouteSpec, perm string) []mw.RouteSpec {
+	out := make([]mw.RouteSpec, 0, 2)
+	for _, r := range bindings {
+		if r.Perm == perm {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 type toolProvider struct {
