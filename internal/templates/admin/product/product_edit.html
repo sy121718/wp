@@ -13,7 +13,7 @@
 {{warehouseOptions := .WarehouseOptions}}
 {{canVariantCreate := isset(.Buttons["product.variant_create"])}}
 {{canVariantGenerate := isset(.Buttons["product.variant_generate"])}}
-{{canSEO := isset(.PermSet) && isset(.PermSet["product:seo_score"]) && .PermSet["product:seo_score"]}}
+{{canSEO := isset(.Buttons["product.seo_score"]) && .Buttons["product.seo_score"]}}
 {{editBlocked := false}}
 
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
@@ -355,7 +355,7 @@
         </template>
     </section>
 
-    {{include "product_rating_panel.html" map("Rating", p.Rating, "PermSet", .PermSet, "csrf_token", csrf)}}
+    {{include "product_rating_panel.html" map("Rating", p.Rating, "Buttons", .["Buttons"], "csrf_token", csrf)}}
 
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Available}}

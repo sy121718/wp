@@ -20,8 +20,12 @@ func TestProductRatingPanelUsesIndependentPermissions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := groupDData(map[string]any{
 				"Rating":  groupDProductRow().Rating,
-				"PermSet": tc.perms,
-				"Buttons": map[string]bool{"product.update": true},
+				"PermSet": map[string]bool{},
+				"Buttons": map[string]bool{
+					"product.update":        true,
+					"product.rating_add":    tc.add,
+					"product.rating_delete": tc.delete,
+				},
 			})
 			out, err := render(t, groupDSet(t), "admin/product/product_rating_panel.html", data, groupDRenderScope())
 			if err != nil {

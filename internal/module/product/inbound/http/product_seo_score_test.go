@@ -16,7 +16,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 
 	product := productRowForRender()
 	products := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
-		"title": "编辑商品", "menu": "products", "PermSet": map[string]bool{"product:seo_score": true},
+		"title": "编辑商品", "menu": "products", "Buttons": map[string]any{"product.seo_score": true},
 		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Attributes": []*productdto.AttributeResp{}, "Categories": []*productdto.CategoryResp{}, "Brands": []*productdto.BrandResp{}, "Tags": []*productdto.TagResp{},
 		"WarehouseOptions": []gin.H{}, "Err": "",
 		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
@@ -44,8 +44,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"title": "商品分类", "menu": "product-categories",
 		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Query": &productdto.CatalogTaxonomyReq{}, "Result": &productdto.CategorySearchResp{Page: 1, Size: 20, Items: []*productdto.CategoryResp{{ID: "c1", Name: "男装", Slug: "men"}}}, "Categories": []*productdto.CategoryResp{}, "req_path": "/admin/product-categories",
 
-		"Buttons": map[string]any{"product.category_update": true},
-		"PermSet": map[string]bool{"product:category_seo_score": true},
+		"Buttons": map[string]any{"product.category_update": true, "product.category_seo_score": true},
 		"Err":     "",
 	}))
 	for _, want := range []string{`hx-post="/api/product/category/seo-score"`, `hx-target="find [data-write-result]"`} {
@@ -58,8 +57,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"title": "商品品牌", "menu": "product-brands",
 		"Scope": &productcontract.CatalogScope{ProjectID: "proj-1"}, "Query": &productdto.CatalogTaxonomyReq{}, "Result": &productdto.TaxonomyListResp[*productdto.BrandResp]{Page: 1, Size: 20, Items: []*productdto.BrandResp{{ID: "b1", Name: "示例品牌", Slug: "demo"}}}, "req_path": "/admin/product-brands",
 
-		"Buttons": map[string]any{"product.brand_update": true},
-		"PermSet": map[string]bool{"product:brand_seo_score": true},
+		"Buttons": map[string]any{"product.brand_update": true, "product.brand_seo_score": true},
 		"Err":     "",
 	}))
 	for _, want := range []string{`hx-post="/api/product/brand/seo-score"`, `hx-target="find [data-write-result]"`} {
@@ -89,10 +87,16 @@ func TestProductSEOIndependentPermissions(t *testing.T) {
 			{"评分与编辑权限", map[string]bool{permission: true}, true, true},
 		} {
 			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				buttons := map[string]any{}
+				for code, allowed := range tc.perms {
+					if allowed {
+						buttons[strings.Replace(code, ":", ".", 1)] = true
+					}
+				}
 				data := productPageLayoutData(gin.H{
-					"title": "SEO 权限", "menu": "products", "Err": "", "PermSet": tc.perms,
+					"title": "SEO 权限", "menu": "products", "Err": "",
 					"Scope":   &productcontract.CatalogScope{ProjectID: "proj-1"},
-					"Buttons": map[string]any{}, "Query": &productdto.CatalogTaxonomyReq{},
+					"Buttons": buttons, "Query": &productdto.CatalogTaxonomyReq{},
 					"req_path": "/admin/products", "Categories": []*productdto.CategoryResp{},
 				})
 				template := "admin/product/product_edit.html"

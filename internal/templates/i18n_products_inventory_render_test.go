@@ -42,10 +42,11 @@ func groupDData(extra map[string]any) map[string]any {
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"title": "组D", "t": scope.Translate, "csrf_token": "tok",
 		"tn": scope.TranslateNamed,
-		"PermSet": map[string]bool{"product:rating_add": true, "product:rating_delete": true,
-			"product:seo_score": true, "product:category_seo_score": true, "product:brand_seo_score": true},
+		"PermSet": map[string]bool{},
 
 		"Buttons": map[string]any{
+			"product.seo_score": true, "product.category_seo_score": true,
+			"product.brand_seo_score": true, "product.rating_add": true, "product.rating_delete": true,
 			"contenttemplate.create": true, "contenttemplate.update": true,
 			"product.create": true, "product.update": true,
 

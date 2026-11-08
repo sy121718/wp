@@ -48,7 +48,7 @@
             <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("catNewSubmit", "新建分类")}}{{else}}{{tr("catListSave", "保存分类")}}{{end}}</button>
         </div>
     </form>
-    {{if !create && isset(.PermSet) && isset(.PermSet["product:category_seo_score"]) && .PermSet["product:category_seo_score"]}}
+    {{if !create && isset(.["Buttons"]) && isset(.Buttons["product.category_seo_score"]) && .Buttons["product.category_seo_score"]}}
     {{include "product_seo_form.html" map("Kind", "category", "ProjectID", .Project, "ID", entity.ID, "CSRF", .CSRF)}}
     {{end}}
 </div>

@@ -18,7 +18,7 @@
 {{canCreate := isset(.Buttons["product.brand_create"])}}
 {{canUpdate := isset(.Buttons["product.brand_update"])}}
 {{canDelete := isset(.Buttons["product.brand_delete"])}}
-{{canSEO := isset(.PermSet) && isset(.PermSet["product:brand_seo_score"]) && .PermSet["product:brand_seo_score"]}}
+{{canSEO := isset(.Buttons["product.brand_seo_score"]) && .Buttons["product.brand_seo_score"]}}
 
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">

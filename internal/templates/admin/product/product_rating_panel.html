@@ -1,7 +1,7 @@
 {{rating := .Rating}}
 {{csrf := .csrf_token}}
-{{canAdd := isset(.PermSet["product:rating_add"]) && .PermSet["product:rating_add"]}}
-{{canDelete := isset(.PermSet["product:rating_delete"]) && .PermSet["product:rating_delete"]}}
+{{canAdd := isset(.Buttons["product.rating_add"]) && .Buttons["product.rating_add"]}}
+{{canDelete := isset(.Buttons["product.rating_delete"]) && .Buttons["product.rating_delete"]}}
 <section id="product-ratings-{{rating.ProductID}}" class="card list-card" data-write-host>
     <div class="list-toolbar">
         <span class="card-title">{{t("pRating", "评分")}}</span>

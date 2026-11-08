@@ -17,7 +17,7 @@
 {{canCreate := isset(.Buttons["product.category_create"])}}
 {{canUpdate := isset(.Buttons["product.category_update"])}}
 {{canDelete := isset(.Buttons["product.category_delete"])}}
-{{canSEO := isset(.PermSet) && isset(.PermSet["product:category_seo_score"]) && .PermSet["product:category_seo_score"]}}
+{{canSEO := isset(.Buttons["product.category_seo_score"]) && .Buttons["product.category_seo_score"]}}
 
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
 <link rel="stylesheet" href="/static/css/rich-editor.css">
@@ -178,7 +178,7 @@
     {{if canUpdate || canSEO}}
     <template id="tpl-category-edit-{{row.ID}}">
         {{if canUpdate}}
-        {{include "product_category_form.html" map("Entity", row, "Project", selectedProject, "Categories", .Categories, "t", tr, "PermSet", .PermSet, "CSRF", .["csrf_token"])}}
+        {{include "product_category_form.html" map("Entity", row, "Project", selectedProject, "Categories", .Categories, "t", tr, "CSRF", .["csrf_token"], "Buttons", .Buttons)}}
         {{else}}
         {{include "product_seo_form.html" map("Kind", "category", "ProjectID", selectedProject, "ID", row.ID, "CSRF", csrf)}}
         {{end}}
